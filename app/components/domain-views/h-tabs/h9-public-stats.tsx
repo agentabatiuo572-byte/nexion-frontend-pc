@@ -39,6 +39,9 @@ import {
 } from "@/lib/admin/h9-validation";
 import type { HCtx } from "./types";
 import { H9DeviceRank } from "./h9-device-rank";
+import { H9GlobeDisplay } from "./h9-globe-display";
+import { TabGroup } from "@/app/components/kit/tab-group";
+import { reconcileH9Editor, type H9EditorState } from "@/lib/admin/h9-module-drafts";
 
 type ScalarKey = H9FieldDef["key"];
 type ScalarDrafts = Record<ScalarKey, string>;
@@ -56,19 +59,21 @@ const SECTIONS: { title: string; sub: string; keys: ScalarKey[] }[] = [
   { title: "网络脉搏注册用户", sub: "设置跳动间隔和每次最少、最多增加人数后，从基数开始每隔一段时间在范围内增加；三项留空时按月增长率推算。不参与设备预估排名，不改变真实账户", keys: ["registeredUsersBase", "registeredUsersTickIntervalSec", "registeredUsersTickStepMin", "registeredUsersTickStepMax", "registeredUsersMonthlyGrowthPct"] },
   { title: "历史排名估算", sub: "仅用于历史本地估算；虚拟人口不参与设备预估排名", keys: ["virtualUserCount"] },
 ];
+type H9Module = "home" | "network" | "globe" | "rank" | "history";
+const MODULES: { id: H9Module; label: string }[] = [
+  { id: "home", label: "首页数字增长" }, { id: "network", label: "首页网络实况" },
+  { id: "globe", label: "全球网络" }, { id: "rank", label: "设备预估排名" }, { id: "history", label: "历史估算" },
+];
+const MODULE_KEYS: Record<H9Module, ScalarKey[]> = {
+  home: HOME_SECTIONS.flatMap(section => section.keys), network: SECTIONS[1].keys,
+  globe: [], rank: [], history: [...SECTIONS[0].keys, ...SECTIONS[2].keys],
+};
 
 const int = (value: number) => (Number.isFinite(value) ? Math.round(value).toLocaleString("en-US") : "—");
 const money = (value: number) => (Number.isFinite(value) ? `$${Math.round(value).toLocaleString("en-US")}` : "—");
 const money2 = (value: number) => (Number.isFinite(value) ? `$${value.toFixed(2)}` : "—");
 const shown = (value: number | undefined, unit: string) => (value === undefined ? "未设置" : `${value}${unit}`);
 const when = (ms: number) => (Number.isFinite(ms) && ms > 0 ? new Date(ms).toLocaleString("zh-CN", { hour12: false }) : "—");
-
-function draftsFrom(values: H9PublicStatsValues): ScalarDrafts {
-  return Object.fromEntries(H9_FIELDS.map((field) => [
-    field.key,
-    h9DraftText(values[field.key]),
-  ])) as ScalarDrafts;
-}
 
 function bandDraftsFrom(values: H9PublicStatsValues): BandDraft[] {
   return values.hashratePercentileTable.map((band) => ({
@@ -96,31 +101,37 @@ function bandsText(rows: H9PercentileBand[]) {
 }
 
 export function H9PublicStats({ ctx }: { ctx: HCtx }) {
-  return <><H9DeviceRank ctx={ctx} /><H9DisplayStats ctx={ctx} /></>;
+  const [module, setModule] = useState<H9Module>("home");
+  return <div className="h9-workspace">
+    <div className="h9-navigation"><TabGroup label="H9展示模块" value={module} items={MODULES.map(item => item.id)} onSelect={setModule}
+      itemClassName={(_item, selected) => `l-btn${selected ? " mc" : ""}`}>{id => MODULES.find(item => item.id === id)!.label}</TabGroup></div>
+    <H9DisplayStats ctx={ctx} module={module} />
+    <div hidden={module !== "rank"}><H9DeviceRank ctx={ctx} /></div>
+  </div>;
 }
 
-function H9DisplayStats({ ctx }: { ctx: HCtx }) {
+function H9DisplayStats({ ctx, module }: { ctx: HCtx; module: H9Module }) {
   const canWrite = ctx.can("growth_h9_write");
   const [data, setData] = useState<H9PublicStatsOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [drafts, setDrafts] = useState<ScalarDrafts | null>(null);
-  const [bands, setBands] = useState<BandDraft[]>([]);
+  const [editor, setEditor] = useState<H9EditorState | null>(null);
+  const drafts = editor?.drafts ?? null;
+  const bands = editor?.bands ?? [];
+  const setDrafts = (update: (current: ScalarDrafts) => ScalarDrafts) => setEditor(current => current ? { ...current, drafts: update(current.drafts) } : current);
+  const setBands = (update: BandDraft[] | ((current: BandDraft[]) => BandDraft[])) => setEditor(current => current ? { ...current, bands: typeof update === "function" ? update(current.bands) : update } : current);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (scope?: H9Module) => {
     setLoading(true);
     try {
       const next = await fetchH9PublicStats();
       setData(next);
-      setDrafts(draftsFrom(next.values));
-      setBands(bandDraftsFrom(next.values));
+      setEditor(current => reconcileH9Editor(current, next.values, H9_FIELDS.map(field => field.key), scope ? MODULE_KEYS[scope] : [], !scope || scope === "history"));
       setError(null);
       setSaveError(null);
+      return next;
     } catch (cause) {
-      setData(null);
-      setDrafts(null);
-      setBands([]);
       // 运营面只出中文:解析错 / 网络错的机器码都过一遍共享错误字典。
       setError(formatAdminApiError(cause instanceof Error ? cause.message : null, "H9_DATA_LOAD_FAILED"));
     } finally {
@@ -153,29 +164,33 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
   const bandCountError = bands.length < H9_BAND_MIN
     ? `算力分位表至少要 ${H9_BAND_MIN} 档，现在只有 ${bands.length} 档`
     : "";
-  const allValid = Object.values(fieldErrors).every((text) => !text) && rowErrors.every((text) => !text) && !bandCountError;
+  const conflict = !!data && !!editor && (MODULE_KEYS[module].some(key => h9DraftText(editor.baseline[key]) !== h9DraftText(data.values[key]))
+    || module === "history" && !sameBands(editor.baseline.hashratePercentileTable, data.values.hashratePercentileTable));
+  const allValid = !loading && !conflict && MODULE_KEYS[module].every(key => !fieldErrors[key])
+    && (module !== "history" || rowErrors.every(text => !text) && !bandCountError);
 
   /** 草稿 → 可提交值(仅在 allValid 时有意义)。 */
   const nextValues: H9EditableValues | null = useMemo(() => {
-    if (!drafts || !allValid) return null;
+    if (!data || !drafts || !allValid) return null;
+    const { registeredUsersAnchorAt: _anchor, ...saved } = data.values;
     return {
-      homeDisplayEnabled: data?.values.homeDisplayEnabled ?? false,
+      ...saved,
       ...(Object.fromEntries(H9_FIELDS
-        .filter((field) => !(field.pairedOptional && !drafts[field.key].trim()))
+        .filter((field) => MODULE_KEYS[module].includes(field.key) && !(field.pairedOptional && !drafts[field.key].trim()))
         .map((field) => [field.key, num(drafts[field.key])])) as Record<ScalarKey, number>),
-      hashratePercentileTable: bands.map((row) => ({ tops: num(row.tops), cumPct: num(row.cumPct) })),
+      hashratePercentileTable: module === "history" ? bands.map((row) => ({ tops: num(row.tops), cumPct: num(row.cumPct) })) : saved.hashratePercentileTable,
     } as H9EditableValues;
-  }, [data, drafts, allValid, bands]);
+  }, [data, drafts, allValid, bands, module]);
 
   const dirty = useMemo(() => {
     if (!data || !drafts) return false;
-    if (H9_FIELDS.some((field) => drafts[field.key].trim() !== h9DraftText(data.values[field.key]))) return true;
-    return bands.length !== data.values.hashratePercentileTable.length
+    if (MODULE_KEYS[module].some(key => drafts[key].trim() !== h9DraftText(data.values[key]))) return true;
+    return module === "history" && (bands.length !== data.values.hashratePercentileTable.length
       || bands.some((row, index) => {
         const saved = data.values.hashratePercentileTable[index];
         return row.tops.trim() !== String(saved.tops) || row.cumPct.trim() !== String(saved.cumPct);
-      });
-  }, [data, drafts, bands]);
+      }));
+  }, [data, drafts, bands, module]);
 
   /** 影响预览:同一组公式分别代入「当前值」与「保存后」,让运营直接看到差在哪。 */
   const impact = useMemo(() => {
@@ -195,21 +210,20 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
     return { perDevice, current, next: derive(draftFleet, draftRate, draftVirtual) };
   }, [data, drafts]);
 
-  const setDraft = (key: ScalarKey, value: string) => setDrafts((current) => (current ? { ...current, [key]: value } : current));
+  const setDraft = (key: ScalarKey, value: string) => setDrafts((current) => ({ ...current, [key]: value }));
   const setBand = (index: number, key: keyof BandDraft, value: string) =>
     setBands((current) => current.map((row, i) => (i === index ? { ...row, [key]: value } : row)));
   const addBand = () => setBands((current) => [...current, { tops: "", cumPct: "" }]);
   const removeBand = (index: number) => setBands((current) => current.filter((_, i) => i !== index));
   const restoreCurrent = () => {
     if (!data) return;
-    setDrafts(draftsFrom(data.values));
-    setBands(bandDraftsFrom(data.values));
+    setEditor(current => reconcileH9Editor(current, data.values, H9_FIELDS.map(field => field.key), MODULE_KEYS[module], module === "history"));
     setSaveError(null);
   };
   const fillDefaults = () => {
     if (!data) return;
-    setDrafts(draftsFrom(data.defaults));
-    setBands(bandDraftsFrom(data.defaults));
+    setDrafts(current => ({ ...current, ...Object.fromEntries(MODULE_KEYS[module].map(key => [key, h9DraftText(data.defaults[key])])) }));
+    if (module === "history") setBands(bandDraftsFrom(data.defaults));
     ctx.toast("已填入默认值，还没保存。点「保存变更」确认后才生效");
   };
 
@@ -234,7 +248,7 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
     const nextDaily = nextValues.fleetDevices * data.publishedDailyUsdPerDevice;
 
     ctx.openActionConfirm({
-      action: "保存首页与历史展示设置",
+      action: `保存${MODULES.find(item => item.id === module)!.label}`,
       detail: <>
         <div>本次改动（{diffs.length} 项）：</div>
         {diffs.map((line) => <div key={line}>· {line}</div>)}
@@ -257,14 +271,13 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
         try {
           const saved = await updateH9PublicStats(submitted, data.version, reason);
           setData(saved);
-          setDrafts(draftsFrom(saved.values));
-          setBands(bandDraftsFrom(saved.values));
+          setEditor(current => reconcileH9Editor(current, saved.values, H9_FIELDS.map(field => field.key), MODULE_KEYS[module], module === "history"));
           setSaveError(null);
           ctx.toast(`展示设置已保存`);
         } catch (cause) {
           const message = formatAdminApiError(cause instanceof Error ? cause.message : null, "H9_SAVE_FAILED");
           setSaveError(message);
-          ctx.toast(`保存失败 · ${message}，没有生效，可以直接重试`);
+          ctx.toast(`保存结果待核对 · ${message}`);
           throw cause;
         }
       },
@@ -304,7 +317,7 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
         type="text"
         inputMode={field.integer ? "numeric" : "decimal"}
         value={drafts[key]}
-        disabled={!canWrite}
+        disabled={!canWrite || loading}
         onChange={(event) => setDraft(key, event.target.value)}
       />
       <span className="unit">{field.unit}</span>
@@ -312,6 +325,9 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
   };
 
   return <>
+    {error && <div className="htint danger" role="alert">刷新未完成：{error}；已填写内容保留，请重试。</div>}
+    {conflict && <div className="htint warn" role="alert">本模块已被其他操作员修改。草稿已保留，请刷新本模块后重新修改，避免覆盖他人的设置。</div>}
+    <div hidden={module !== "home"}>
     <section className="l-card" aria-label="首页数字增长" style={{ marginBottom: 24 }}>
       <div className="l-h">
         <span className="ttl">首页数字增长</span>
@@ -331,13 +347,19 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
       <div className="l-h" style={{ borderTop: "1px solid var(--border)", borderBottom: 0 }}>
         <span className="sub">每秒在区间内随机增加；暂停保留累计值。保存配置不会自动开启。</span>
         <div className="r">
-          <button className="l-btn sm" onClick={() => void load()}>刷新</button>
+          <button className="l-btn sm" onClick={() => void load("home")}>刷新</button>
           {canWrite && <button className="l-btn sm" disabled={!dirty} onClick={restoreCurrent}>放弃改动</button>}
           {canWrite && <button className="l-btn" disabled={!dirty || !allValid} title={!dirty ? "没有改动" : !allValid ? "有参数不对，请先按红字修改" : undefined} onClick={() => save()}>保存变更</button>}
         </div>
       </div>
     </section>
-    <div className="f-stats">
+    </div>
+    <div hidden={module !== "globe"}>
+      <H9GlobeDisplay ctx={ctx} data={data} refreshing={loading} onSaved={next => {
+        setData(next); setEditor(current => reconcileH9Editor(current, next.values, H9_FIELDS.map(field => field.key)));
+      }} onRefresh={() => load("globe")} />
+    </div>
+    <div className="f-stats" hidden={module !== "history"}>
       <div className="f-stat cyan"><div className="k">历史设备配置</div><div className="v">{int(data.values.fleetDevices)}</div><div className="sub">设置值，不是实际设备数</div></div>
       <div className="f-stat"><div className="k">历史在线估算</div><div className="v">{int(data.values.fleetDevices * data.values.onlineRatePct / 100)}</div><div className="sub">设备数 × 在线比例 {data.values.onlineRatePct}%</div></div>
       <div className="f-stat"><div className="k">网络脉搏注册基数</div><div className="v">{int(data.values.registeredUsersBase)}</div><div className="sub">「网络脉搏」显示用；{data.values.registeredUsersTickIntervalSec !== undefined && data.values.registeredUsersTickStepMin !== undefined && data.values.registeredUsersTickStepMax !== undefined
@@ -347,29 +369,30 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
     </div>
 
     {saveError && <div className="htint danger" style={{ marginBottom: 12 }}>
-      上次保存没成功：{saveError}。<b>改动没有生效</b>。
+      上次保存结果需核对：{saveError}。
       如果是别人同时改了这页，先点「刷新」再改；否则可以直接再点「保存变更」重试，不会重复保存；
       也可以点「放弃改动」恢复成当前生效的值。
     </div>}
 
-    <div className="two-col">
+    <div className={module === "history" ? "two-col" : undefined} hidden={module !== "network" && module !== "history"}>
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">注册用户与历史展示设置</span>
+          <span className="ttl">{module === "network" ? "首页网络实况" : "历史规模与排名估算"}</span>
           <span className="sub">· 生效版本 v{data.version} · {when(Date.parse(data.effectiveAt))} · {canWrite ? "可修改" : "你只能查看"}</span>
           <div className="r">
-            <button className="l-btn sm" onClick={() => void load()}>刷新</button>
+            <button className="l-btn sm" onClick={() => void load(module)}>刷新</button>
             {canWrite && <button className="l-btn sm" onClick={fillDefaults}>恢复默认</button>}
             {canWrite && <button className="l-btn sm" disabled={!dirty} onClick={restoreCurrent}>放弃改动</button>}
             {canWrite && <button className="l-btn mc" disabled={!dirty || !allValid} title={!dirty ? "没有改动" : !allValid ? "有参数不对，请先按红字修改" : undefined} onClick={() => save()}>保存变更</button>}
           </div>
         </div>
         <div className="l-b">
-          {SECTIONS.map((section) => <div key={section.title}>
+          {module === "network" && <div className="htint">注册用户在此配置；在线设备沿用「首页数字增长」，排名由「设备预估排名」独立配置。</div>}
+          {SECTIONS.filter((_section, index) => module === "network" ? index === 1 : index !== 1).map((section) => <div key={section.title}>
             <div className="hgrp"><span className="t">{section.title}</span><span className="s">{section.sub}</span></div>
             {section.keys.map((key) => renderField(key))}
           </div>)}
-          <div className="p-row">
+          <div className="p-row" hidden={module !== "network"}>
             <div className="txt">
               <div className="k">注册用户推算起点 </div>
               <div className="s">用于网络脉搏注册用户展示。修改基数、跳动间隔或每次增加人数范围时，起点自动重置为保存时刻。</div>
@@ -379,7 +402,7 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
         </div>
       </section>
 
-      <section className="l-card">
+      <section className="l-card" hidden={module !== "history"}>
         <div className="l-h"><span className="ttl">改动影响预览</span><span className="sub">· 按你填的值实时计算，保存前就能看到</span></div>
         <div className="l-b">
           <div className="htint cyan">
@@ -408,7 +431,7 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
       </section>
     </div>
 
-    <section className="l-card">
+    <section className="l-card" hidden={module !== "history"}>
       <div className="l-h">
         <span className="ttl">算力分位表</span>
         <span className="sub">· 只用于历史估算</span>

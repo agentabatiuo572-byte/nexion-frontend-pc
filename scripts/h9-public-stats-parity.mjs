@@ -59,7 +59,7 @@ const ADMIN_CLIENT = path.join(ROOT, "lib", "admin", "h9-client.ts");
 const ADMIN_RULES = path.join(ROOT, "lib", "admin", "h9-validation.ts");
 
 /** 派生锚点由服务端在改基数时重置,不给运营手填;分位表是表不是标量。 */
-const NON_SCALAR = new Set(["registeredUsersAnchorAt", "hashratePercentileTable", "homeDisplayEnabled"]);
+const NON_SCALAR = new Set(["registeredUsersAnchorAt", "hashratePercentileTable", "homeDisplayEnabled", "globeDisplay"]);
 
 const failures = [];
 

@@ -361,6 +361,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   H9_SAVE_FAILED: "历史估算配置保存失败，本次改动没有生效也没有记入操作记录；请刷新核对当前生效值后重试。",
   H9_MEMBER_TICK_INVALID: "网络脉搏跳动间隔、每次最少和最多增加人数要一起填写，最多不能小于最少，且都在可填范围内；本次改动没有生效。",
   DEVICE_RANK_CONFIG_INVALID: "设备预估排名档位配置无效，请检查名称、占比合计和算力范围。",
+  H9_GLOBE_DISPLAY_INVALID: "全球网络展示参数无效，请检查中心节点、延迟、变化间隔及上下限。",
   DEVICE_RANK_REQUEST_INVALID: "设备预估排名修改信息不完整，请重新加载配置并填写 8–200 字修改理由。",
   DEVICE_RANK_VERSION_CONFLICT: "设备预估排名配置已被其他操作员修改，请重新加载后核对并修改。",
   DEVICE_RANK_CONFIG_UNAVAILABLE: "设备预估排名配置暂不可用，请重新加载后核对。",

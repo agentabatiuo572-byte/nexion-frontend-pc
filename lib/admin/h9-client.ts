@@ -18,6 +18,7 @@ import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import { growthRequest } from "@/lib/admin/h-client";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import { parseGlobeDisplay, type GlobeDisplayConfig } from "@/lib/admin/globe-display-config";
 
 /** 算力分位档:tops = 算力档位,cumPct = 落在该档及以下的人口累计占比(%)。 */
 export interface H9PercentileBand {
@@ -27,6 +28,7 @@ export interface H9PercentileBand {
 
 /** 与前端 PublicStatsConfig 逐键等同(8 键)。 */
 export interface H9PublicStatsValues {
+  globeDisplay?: GlobeDisplayConfig;
   homeOnlineCurrent: number;
   homeOnlineStepMin: number;
   homeOnlineStepMax: number;
@@ -66,7 +68,7 @@ export interface H9PublicStatsOverview {
 
 /** 单个数值参数的运营面定义:中文标签 + 英文标识 + 合法域(逐字取自规格 FEAT-HOME02b ③)。 */
 export interface H9FieldDef {
-  key: keyof Omit<H9EditableValues, "hashratePercentileTable" | "homeDisplayEnabled">;
+  key: keyof Omit<H9EditableValues, "hashratePercentileTable" | "homeDisplayEnabled" | "globeDisplay">;
   /** 运营可读中文名(页面主标)。 */
   label: string;
   /** 单位,无量纲留空。 */
@@ -246,6 +248,7 @@ function values(value: unknown, field: string): H9PublicStatsValues {
   const raw = record(value, field);
   return {
     homeOnlineCurrent: nonNegative(raw.homeOnlineCurrent, `${field}.homeOnlineCurrent`),
+    ...(raw.globeDisplay === undefined ? {} : { globeDisplay: parseGlobeDisplay(raw.globeDisplay) ?? invalid(`${field}.globeDisplay`) }),
     homeOnlineStepMin: nonNegative(raw.homeOnlineStepMin, `${field}.homeOnlineStepMin`),
     homeOnlineStepMax: nonNegative(raw.homeOnlineStepMax, `${field}.homeOnlineStepMax`),
     homePaidCurrent: nonNegative(raw.homePaidCurrent, `${field}.homePaidCurrent`),

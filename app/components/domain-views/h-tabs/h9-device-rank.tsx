@@ -60,23 +60,23 @@ export function H9DeviceRank({ ctx }: { ctx: HCtx }) {
       },
     });
   };
-  return <section className="l-card" aria-label="设备预估排名" style={{ marginBottom: 24 }}>
+  return <section className="l-card h9-editor" aria-label="设备预估排名" style={{ marginBottom: 24 }}>
     <div className="l-h"><span className="ttl">设备预估排名</span><span className="sub">{data ? `已保存：${data.enabled ? "开启" : "关闭"} · v${data.version}` : "未加载"}</span></div>
     <div className="l-b">
       <p className="htint">按「首页数字增长」的在线设备数和下方档位，给用户算一个估计排名，用户手机按自己的算力参与比较。这不是真实榜单，不影响收益和奖励。</p>
-      <p className="sub">在线设备数要在 1–1000 万台之间，否则 App 显示「排名暂不可用」。</p>
+      <div className="h9-help">在线设备数要在 1–1000 万台之间，否则 App 显示「排名暂不可用」。</div>
       {loading && <p role="status">设备预估排名配置加载中…</p>}
       {error && <p className="htint danger" role="alert">{error}</p>}
       {data && <>
-        <label style={{ display: "block", margin: "16px 0" }}><input type="checkbox" role="switch" aria-label="启用设备预估排名" checked={enabled} disabled={locked} onChange={(event) => setEnabled(event.target.checked)} /> 启用设备预估排名（保存后生效）</label>
-        <div style={{ overflowX: "auto" }}><table className="l-table">
+        <label className="h9-switch"><input type="checkbox" role="switch" aria-label="启用设备预估排名" checked={enabled} disabled={locked} onChange={(event) => setEnabled(event.target.checked)} /><span>启用设备预估排名<span className="h9-help">保存后生效</span></span></label>
+        <div className="h9-table-wrap"><table className="l-tbl">
           <thead><tr><th>档位名称</th><th>占比（%）</th><th>最低算力（TOPS）</th><th>最高算力（TOPS）</th><th>操作</th></tr></thead>
           <tbody>{rows.map((row, index) => <tr key={index}>
             {(["name", "sharePct", "minTops", "maxTops"] as const).map((key) => <td key={key}><input className="l-inp" style={{ width: "100%", minWidth: key === "name" ? 120 : 90 }} type="text" inputMode={key === "name" ? "text" : "decimal"} aria-label={`第${index + 1}档${{ name: "名称", sharePct: "占比", minTops: "最低算力", maxTops: "最高算力" }[key]}`} value={row[key]} disabled={locked} onChange={(event) => change(index, key, event.target.value)} /></td>)}
             <td><button className="l-btn sm" aria-label={`删除第${index + 1}档`} disabled={locked} onClick={() => setRows((current) => current.filter((_, i) => i !== index))}>删除</button></td>
           </tr>)}</tbody>
         </table></div>
-        <p className="sub">最多 20 档，名称 1–60 字；占比最多两位小数且合计 100%；算力范围为 0–1000000000 TOPS，最多六位小数。关闭时允许空档位。</p>
+        <div className="h9-help">最多 20 档，名称 1–60 字；占比最多两位小数且合计 100%；算力范围为 0–1000000000 TOPS，最多六位小数。关闭时允许空档位。</div>
         {validation && <p className="ferr" role="alert">{validation}</p>}
         {!canWrite && <p>你只能查看。</p>}
       </>}

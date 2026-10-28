@@ -174,6 +174,22 @@
 /* 影响预览里「保存后会变」的那格 —— 与 dial-tbl 同一视觉语言。 */
 .hdom .l-tbl .chg { color: var(--warning); font-weight: 700; }
 
+.hdom .h9-workspace [hidden] { display: none !important; }
+.hdom .h9-navigation { margin-bottom: 20px; padding: 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
+.hdom .h9-navigation [role="tablist"] { display: flex; flex-wrap: wrap; gap: 8px; }
+.hdom .h9-help { color: var(--ink-4); font-size: 11.5px; line-height: 1.65; margin: 10px 0; }
+.hdom .h9-switch { display: flex; align-items: center; gap: 10px; margin: 18px 0; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; font-size: 12.5px; }
+.hdom .h9-switch input { width: 17px; height: 17px; accent-color: var(--h-ac); }
+.hdom .h9-switch .h9-help { display: inline; margin-left: 10px; }
+.hdom .h9-editor .h9-table-wrap { overflow-x: auto; margin-top: 16px; }
+.hdom .h9-editor .l-tbl { min-width: 660px; }
+.hdom .h9-editor .l-tbl .l-inp { width: 100%; min-width: 90px; box-sizing: border-box; }
+.hdom .h9-form-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; padding: 18px 0; }
+.hdom .h9-form-grid label { display: flex; flex-direction: column; gap: 8px; color: var(--ink-3); font-size: 12px; }
+.hdom .h9-form-grid .l-inp { width: 100%; box-sizing: border-box; }
+.hdom .h9-footer { border-top: 1px solid var(--border); border-bottom: 0; }
+@container hdom (max-width: 800px) { .hdom .h9-form-grid { grid-template-columns: 1fr; } }
+
 /* ============================ H8 参数卡栅格 ============================
    .param-grid 的样式只存在于 .kdom / .ldom —— 各域 CSS 互相独立,H8 抄了个类名过来,
    选择器根本不命中,参数卡一直退化成无栅格的堆叠(tsc / build / verify 全绿也看不出来)。 */
