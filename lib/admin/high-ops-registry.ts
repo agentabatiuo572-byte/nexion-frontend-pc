@@ -1284,7 +1284,8 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "device_order",
     buildCommand: (ctx) => ({ domain: "E", op: "e4_order_refund",
-      params: { orderNo: String(ctx.orderNo), refundChannel: String(ctx.refundChannel ?? "WALLET") } }),
+      params: { orderNo: String(ctx.orderNo), refundChannel: String(ctx.refundChannel ?? "WALLET"),
+        ...(ctx.refundReasonCode ? { refundReasonCode: String(ctx.refundReasonCode) } : {}) } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_order", id: String(ctx.orderNo) }),
   },
   {

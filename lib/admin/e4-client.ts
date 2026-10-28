@@ -105,6 +105,16 @@ interface BackendOrderDetail extends Omit<E4OrderDetail, "order" | "funding"> {
   funding?: Array<Omit<E4OrderFunding, "amount"> & { amount?: number | string | null }>;
 }
 
+/** User-visible refund reasons (backend OrderRefundReason); the App shows the matching localized label. */
+export const E4_REFUND_REASONS = ["USER_REQUEST", "DUPLICATE_PAYMENT", "DELIVERY_UNAVAILABLE", "ORDER_EXCEPTION", "OTHER"] as const;
+export const E4_REFUND_REASON_LABELS: Record<(typeof E4_REFUND_REASONS)[number], string> = {
+  USER_REQUEST: "用户申请退款",
+  DUPLICATE_PAYMENT: "重复支付",
+  DELIVERY_UNAVAILABLE: "设备无法交付",
+  ORDER_EXCEPTION: "订单异常",
+  OTHER: "其他原因",
+};
+
 let requestSeq = 0;
 
 function idempotencyKey(prefix: string) {
