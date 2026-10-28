@@ -150,14 +150,14 @@ export async function recoverPhoneCommand(row: PendingPhoneCommand): Promise<Pho
 }
 /** One installation's locked phone model, for C5 support. */
 export interface PhoneModelLock {
-    installationId: string; revision: number; platform: string | null; lockedModel: string | null; reportedModel: string | null;
+    installationId: string; revision: number; platform: string | null; lockedModel: string | null; lockedChip: string | null; reportedModel: string | null;
     held: boolean; released: boolean; releasable: boolean; calibrationStatus: string | null; activationStatus: string | null; updatedAt: number | null;
 }
 function parseModelLock(value: unknown): PhoneModelLock {
     const text = (field: unknown) => field === null || field === undefined || typeof field === "string";
     if (!record(value) || typeof value.installationId !== "string" || !Number.isSafeInteger(value.revision)
         || typeof value.held !== "boolean" || typeof value.released !== "boolean" || typeof value.releasable !== "boolean"
-        || ![value.platform, value.lockedModel, value.reportedModel, value.calibrationStatus, value.activationStatus].every(text)
+        || ![value.platform, value.lockedModel, value.lockedChip, value.reportedModel, value.calibrationStatus, value.activationStatus].every(text)
         || !(value.updatedAt === null || value.updatedAt === undefined || Number.isSafeInteger(value.updatedAt)))
         throw new PhoneApiError("机型锁数据异常，请刷新。", 502);
     return value as unknown as PhoneModelLock;

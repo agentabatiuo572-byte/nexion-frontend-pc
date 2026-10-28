@@ -8,7 +8,7 @@ import { phoneTime } from "../phone-replacement-receipt";
 
 function status(lock: PhoneModelLock): { text: string; tone: string } {
   if (lock.released) return { text: "已解除，等用户重新校准", tone: "cyan" };
-  if (lock.held) return { text: "换报机型被拦截", tone: "warn" };
+  if (lock.held) return { text: "换报机型或芯片被拦截", tone: "warn" };
   return lock.releasable ? { text: "已锁定", tone: "ok" } : { text: "未锁定（下次校准锁定）", tone: "dim" };
 }
 
@@ -56,7 +56,7 @@ export function PhoneModelLockSection({ userId, rights }: { userId: string; righ
             const state = status(lock);
             return <tr key={lock.installationId}>
               <td>{platformLabel(lock.platform)}<br /><small className="mono" style={{ overflowWrap: "anywhere" }}>{lock.installationId}</small></td>
-              <td>{lock.lockedModel ?? "—"}</td>
+              <td>{lock.lockedModel ?? "—"}{lock.lockedChip && <><br /><small>芯片：{lock.lockedChip}</small></>}</td>
               <td>{lock.reportedModel ?? "—"}</td>
               <td><span className={`bdg ${state.tone}`}>{state.text}</span></td>
               <td>{phoneTime(lock.updatedAt)}</td>
