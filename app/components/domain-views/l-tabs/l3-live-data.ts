@@ -1,3 +1,4 @@
+import { LIABILITY_DISPLAY_NAMES } from "../../../../lib/admin/liability-labels.ts";
 export type L3LiveFact = {
   key: "totalBills" | "earningBills" | "teamCommissionBills" | "genesisDividendBills" | "refundBills";
   label: string;
@@ -46,14 +47,7 @@ export function readL3LiveFacts(value: unknown): L3LiveFact[] {
 }
 
 const LIABILITY_LABELS: Record<string, string> = {
-  withdrawable_balance: "可提余额",
-  usdt_staking_principal: "USDT 质押本金",
-  staking_interest: "质押应付利息",
-  genesis_daily_emission: "创世节点应付分红",
-  nex_v2_future: "UVT 锁仓到期应付",
-  withdrawal_queue: "待处理提现",
-  commission_cooling: "冷却期内未发放的佣金",
-  lock_other: "其他锁仓本息",
+  ...LIABILITY_DISPLAY_NAMES,
   // Compatibility aliases for snapshots created before D3 adopted the eight
   // canonical liability keys. New responses must use the keys above.
   balance: "可提现余额",

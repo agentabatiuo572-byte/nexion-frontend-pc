@@ -12,7 +12,7 @@ test("guardedFetch converts network TypeError into operator-readable Chinese", a
     () => guardedFetch("/api/admin/anything"),
     (error) => {
       assert.ok(error instanceof Error);
-      assert.match(error.message, /网络连接失败或后台服务不可达/);
+      assert.match(error.message, /网络连接失败或系统暂时连不上/);
       assert.doesNotMatch(error.message, /检查输入/);
       assert.doesNotMatch(error.message, /Failed to fetch/);
       return true;

@@ -26,11 +26,11 @@ test("F3 首次用户从可见侧栏进入，理解结算、封顶、安置、�
   await expect(entry).toBeVisible();
   await entry.click();
   await expect(page).toHaveURL(/\/network\/binary$/);
-  await expect(page.getByText("平衡匹配公式")).toBeVisible();
-  await expect(page.getByText("双轨日封顶")).toBeVisible();
-  await expect(page.getByText("用户结算视图 · 当日")).toBeVisible();
-  await expect(page.getByText("结算周期 & 沉淀处置", { exact: false }).first()).toBeVisible();
-  await expect(page.getByText("双轨引擎暂停")).toBeVisible();
+  await expect(page.getByText("左右团队奖怎么算")).toBeVisible();
+  await expect(page.getByText("左右团队奖每日上限")).toBeVisible();
+  await expect(page.getByText("今日用户结算")).toBeVisible();
+  await expect(page.getByText("结算周期与未匹配业绩处理", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("暂停左右团队奖")).toBeVisible();
 
   const observations = {
     rows: await page.locator(".bin-row:not(.head)").count(),
@@ -62,7 +62,7 @@ test("F3 首次用户从可见侧栏进入，理解结算、封顶、安置、�
 test("F3 配置动作具备业务确认、无变更阻断、B1 解释和取消出口", async ({ page }) => {
   await login(page);
   await page.goto("/network/binary", { waitUntil: "domcontentloaded" });
-  await expect(page.getByText("平衡匹配公式")).toBeVisible();
+  await expect(page.getByText("左右团队奖怎么算")).toBeVisible();
 
   await page.getByRole("button", { name: "调整比例" }).click();
   const dialog = page.getByRole("dialog");
@@ -107,13 +107,13 @@ test("F3 真实接口未登录失败关闭，刷新与重登后恢复服务端�
   expect(response.status()).toBe(200);
   const initial = await response.json();
   await page.goto("/network/binary", { waitUntil: "domcontentloaded" });
-  await expect(page.getByText("平衡匹配公式")).toBeVisible();
+  await expect(page.getByText("左右团队奖怎么算")).toBeVisible();
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByText("平衡匹配公式")).toBeVisible();
+  await expect(page.getByText("左右团队奖怎么算")).toBeVisible();
   await page.request.post("/api/admin/auth/logout");
   await login(page);
   await page.goto("/network/binary", { waitUntil: "domcontentloaded" });
-  await expect(page.getByText("平衡匹配公式")).toBeVisible();
+  await expect(page.getByText("左右团队奖怎么算")).toBeVisible();
   const after = await page.request.get("/api/admin/teams/binary");
   expect(after.status()).toBe(200);
   expect((await after.json()).data).toEqual(initial.data);

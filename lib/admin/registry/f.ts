@@ -28,7 +28,7 @@ export const DOMAIN_F: ModuleEntry[] = [
   },
   {
     path: "/network/commissions",
-    summary: "核对八类佣金：直属购买、直属设备收益、网络购买、左右团队、平级、培育、领导池和创世，可查看来源、层级、退款和待追回情况。",
+    summary: "核对八类佣金：直属购买分成、直属设备收益分成、七层购买奖励、左右团队奖、平级奖、培育奖、领导奖池和创世节点分红，可查看来源、层级、退款和待追回情况。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

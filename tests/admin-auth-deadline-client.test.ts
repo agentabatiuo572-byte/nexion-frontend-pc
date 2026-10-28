@@ -29,7 +29,7 @@ describe("admin auth client deadline", () => {
     })));
 
     const pending = currentAdminSession();
-    const failure = expect(pending).rejects.toThrow(/网络连接失败或后台服务不可达/);
+    const failure = expect(pending).rejects.toThrow(/网络连接失败或系统暂时连不上/);
     await vi.advanceTimersByTimeAsync(15_000);
     await failure;
 

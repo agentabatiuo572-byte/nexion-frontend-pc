@@ -111,7 +111,7 @@ export function D1BankOrders({ refreshKey, onRetry, ...actions }: OrderActions &
   return <>
     <div className="l-h"><span className="ttl">全部银行转账订单</span><span className="sub">· 人工转账和 HDPay</span></div>
     <div className="l-b" style={{ paddingBottom: 8 }}>
-      <div className="dtint">包含所有状态的订单。订单数不等于实际收款；登记回单、匹配、核销和退回在下方「银行回单处理」操作。</div>
+      <div className="dtint">包含所有状态的订单。订单数不等于实际收款；登记回单、匹配、核销和退回在下方「银行回单处理与已入账记录」操作。</div>
       <div className="ui-form-grid" style={{ marginTop: 12 }}>
         <label>转账类型 <select className="ui-control" aria-label="银行订单转账类型" value={rail} disabled={disabled} onChange={event => { setRail(event.target.value); setPageNum(1); }}><option value="">全部类型</option><option value="MANUAL">人工银行转账</option><option value="HDPAY">HDPay</option></select></label>
         <label>订单状态 <select className="ui-control" aria-label="银行订单状态" value={status} disabled={disabled} onChange={event => { setStatus(event.target.value); setPageNum(1); }}><option value="">全部状态</option>{Object.entries(ORDER_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>

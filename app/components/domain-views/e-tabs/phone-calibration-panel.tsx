@@ -91,12 +91,12 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false }: { ctx: EV
   return <section className="pane phone-calibration-panel" data-proof="phone-calibration-panel" aria-label={thresholdsOnly ? "手机算力档位分界" : "手机算力规则"}>
     <div className="pane-head"><h3>{thresholdsOnly ? "手机算力档位分界" : "手机算力规则（Android 硬件 / iPhone 机型）"}</h3>
       <Btn disabled={busy || !!confirm} onClick={() => void refresh()}>刷新</Btn></div>
-    <p className="f-foot">手机激活自动匹配规则；人工只审批共用规则变更。这里的数值是平台算力值，不代表硬件物理 TOPS。重新读取会放弃未提交修改。</p>
+    <p className="f-foot">手机激活自动匹配规则；人工只审批共用规则变更。这里的数值是平台算力值，不代表硬件物理 TOPS。点「刷新」会放弃还没提交的修改。</p>
     {error && <p role="alert">{error}</p>}
     {!snapshot ? <p role="status">{busy ? "正在加载…" : "设置加载失败，请刷新重试。"}</p> : <>
       <p>发布版本：{snapshot.policy.revision} · 当前生效：{snapshot.policy.current ? `v${snapshot.policy.current.version}` : "尚未发布"}
         {snapshot.policy.scheduled && ` · 待生效 v${snapshot.policy.scheduled.version}，${time(snapshot.policy.scheduled.effectiveAt)}`}</p>
-      {snapshot.policy.scheduled && <p role="status">已有待生效版本，暂不能再次发布。生效后重新读取可继续修改。</p>}
+      {snapshot.policy.scheduled && <p role="status">已有待生效版本，暂不能再次发布。生效后点「刷新」即可继续修改。</p>}
       {!ctx.canWriteE6 && <p>你只能查看，修改和发布需要设备配置权限。</p>}
       <fieldset disabled={!editing}><legend>五档分界（左闭右开）</legend><div style={grid}>
         {thresholds.map((value,index) => <label key={index}>T{index+1} / T{index+2} 分界

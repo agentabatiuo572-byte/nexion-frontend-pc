@@ -524,7 +524,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   PLATFORM_EXPERIENCE_RESPONSE_INVALID: "App 体验配置服务返回的数据不完整或格式异常，页面已停止展示旧配置；请刷新重试或联系值班人员。",
   PLATFORM_EXPERIENCE_RELEASE_METADATA_REQUIRED: "选择官方安装包后，必须完整填写版本号、中英文发布说明，并至少配置一个 HTTPS 官方下载地址。",
   PLATFORM_EXPERIENCE_SOURCE_INVALID: "安装包来源只能选择“官方发布”或“暂不可用”；本次未保存，请重新选择。",
-  NETWORK_FAILURE: "网络连接失败或后台服务不可达；请检查网络后重试，提交类操作请先刷新核对是否已生效。",
+  NETWORK_FAILURE: "网络连接失败或系统暂时连不上；请检查网络后重试，提交类操作请先刷新，确认是否已生效。",
   ROLE_GRANTS_UNKNOWN_PERMISSION_OR_MENU: "授权清单中包含已停用或不存在的权限/菜单，本次未修改原授权；请刷新目录后重新选择。",
   ROLE_GRANTS_INVALID: "授权清单格式无效，本次未修改原授权；请刷新后重试。",
   ROLE_NO_LONGER_AVAILABLE: "目标角色已停用或删除，本次未分配；请刷新账号与角色目录。",
@@ -878,7 +878,7 @@ const MACHINE_CODE_RE = /^[A-Z][A-Z0-9_]+(?::[\s\S]*)?$/;
 
 export function formatAdminApiError(message: string | null | undefined, fallback: string) {
   const raw = (message || fallback || "").trim();
-  if (!raw) return "操作失败,请稍后重试。";
+  if (!raw) return "操作失败，请稍后重试。";
 
   if (raw.startsWith("J4_EXECUTION_PARTIAL:")) {
     const executionId = raw.split(":")[1] || "未知";
@@ -901,18 +901,18 @@ export function formatAdminApiError(message: string | null | undefined, fallback
   // 判据按「机器码以 _5xx 结尾」而非某个命名前缀——曾只认 _REQUEST_FAILED_5xx,换个命名
   // (BI_API_503 / TREASURY_API_502)就绕过分层,5xx 落到「请检查输入内容」冤枉运营。
   if (/(BACKEND|SERVICE)_UNAVAILABLE|service unavailable/i.test(raw) || /^[A-Z][A-Z0-9_]*_503$/.test(raw)) {
-    return "服务暂时不可用，当前结果尚未确认；请先查询原命令或核对原操作，不要重复提交。持续无法确认时请联系值班人员。";
+    return "服务暂时不可用，结果尚未确认；请先核对原操作是否已生效，不要重复提交。一直无法确认请联系值班人员。";
   }
   // 502/504 是网关侧失败,后端可能已处理完请求——只说「结果尚未确认」,不得断言未生效
   if (/^[A-Z][A-Z0-9_]*_(502|504)$/.test(raw)) {
-    return "后台服务链路异常，本次结果尚未确认；请保留当前输入，刷新核对最新状态后再决定是否重试。";
+    return "服务连接异常，结果尚未确认；请保留已填内容，刷新核对后再决定是否重试。";
   }
   if (/^[A-Z][A-Z0-9_]*_5\d\d$/.test(raw)) {
     return ADMIN_ERROR_MESSAGES.INTERNAL_SERVER_ERROR;
   }
   // fetch 网络异常目前多数 client 未接线进本函数(断网直接冒泡英文);此分支兜显式传入的场景,生效性未知不断言
   if (/failed to fetch|network ?error|load failed|network request failed/i.test(raw)) {
-    return "网络连接失败或后台服务不可达；请检查网络后重试，提交类操作请先刷新核对是否已生效。";
+    return "网络连接失败或系统暂时连不上；请检查网络后重试，提交类操作请先刷新，确认是否已生效。";
   }
 
   if (MACHINE_CODE_RE.test(raw)) {
@@ -920,13 +920,13 @@ export function formatAdminApiError(message: string | null | undefined, fallback
     // 而它们几乎全是协议/契约/数据形状类失败(*_INVALID / *_MISSING / *_PROTOCOL_ERROR /
     // *_TRUNCATED / *_EMPTY_RESPONSE),L1 KPI 这类只读报表页运营根本没有输入可检查。
     // 真属输入侧的码靠表内专属条目给可操作提示,不靠这句兜底。
-    return "操作未完成,请刷新页面核对最新状态后重试;若仍未恢复请联系值班人员。";
+    return "操作未完成，请刷新页面核对最新状态后重试；仍未恢复请联系值班人员。";
   }
 
   return raw;
 }
 
-const NEUTRAL_DISPLAY_FALLBACK = "操作失败,请稍后重试。";
+const NEUTRAL_DISPLAY_FALLBACK = "操作失败，请稍后重试。";
 const HAS_CJK_RE = /[一-鿿]/;
 
 // 展示边界统一入口:页面层拿到 unknown 错误后,唯一允许的「→ 屏幕文案」通道。

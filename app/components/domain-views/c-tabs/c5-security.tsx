@@ -138,7 +138,7 @@ function errorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || "C5_DATA_LOAD_FAILED");
   // client 层已接 guardedFetch 咽喉,网络异常到这里通常已是咽喉中文文案;按原压制意图把判据扩到
   // 咽喉网络文案前缀(error-messages.ts 未导出该文案常量,就地字面量),命中仍走 C5 自家短文案。
-  if (/failed to fetch|networkerror|network request failed/i.test(message) || message.includes("网络连接失败或后台服务不可达")) {
+  if (/failed to fetch|networkerror|network request failed/i.test(message) || message.includes("网络连接失败或系统暂时连不上")) {
     return "网络连接失败，数据没有变化，请检查网络后重试";
   }
   return displayAdminError(error);

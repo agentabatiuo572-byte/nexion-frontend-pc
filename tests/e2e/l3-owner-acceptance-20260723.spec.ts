@@ -77,7 +77,7 @@ test("L3 preserves the eight canonical D3 liability categories without collapsin
   };
 
   const canonicalLabels = [
-    "可提余额",
+    "可提现余额",
     "USDT 质押本金",
     "质押应付利息",
     "创世节点应付分红",

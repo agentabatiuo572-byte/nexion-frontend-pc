@@ -4,6 +4,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { LIABILITY_DISPLAY_NAMES } from "@/lib/admin/liability-labels";
 import {
   CalendarClock,
   Download,
@@ -52,17 +53,7 @@ const WATER_LABEL: Record<B2WaterLevel["tier"], string> = {
  *  服务端增删科目时四处同步变化,不再各自硬编码(#108:页首写「8 类」而实际展示 9 类)。 */
 const LIABILITY_CATEGORY_COUNT = B2_LIABILITY_KEYS.length;
 
-const LIABILITY_LABELS: Record<(typeof B2_LIABILITY_KEYS)[number], string> = {
-  withdrawable_balance: "可提现余额",
-  usdt_staking_principal: "USDT 质押本金",
-  staking_interest: "质押利息",
-  genesis_daily_emission: "创世节点每日分红",
-  nex_v2_future: "UVT 第二版远期权益",
-  withdrawal_queue: "提现队列",
-  commission_cooling: "冷却期佣金",
-  lock_other: "其他锁仓",
-  unverified_deposit: "待核实充值",
-};
+const LIABILITY_LABELS: Record<(typeof B2_LIABILITY_KEYS)[number], string> = LIABILITY_DISPLAY_NAMES;
 
 function money(value: number) {
   return `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -355,7 +346,7 @@ export default function LiquidityPage() {
           </div>
           <footer>
             {operatorCopyText(maturity.farLiabilityNote)}
-            <span>UVT 第二版远期权益默认不算作眼下必须付的钱。</span>
+            <span>UVT 锁仓到期应付默认不算作眼下必须付的钱。</span>
           </footer>
         </section>
 

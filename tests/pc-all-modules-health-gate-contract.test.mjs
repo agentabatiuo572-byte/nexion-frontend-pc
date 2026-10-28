@@ -80,18 +80,18 @@ test("semantic classifier rejects terminal failures without confusing operationa
     false,
   );
   assert.equal(
-    isUnmarkedBusinessErrorText("告警读取失败 · 网络连接失败或后台服务不可达 · 未展示缓存值"),
+    isUnmarkedBusinessErrorText("告警读取失败 · 网络连接失败或系统暂时连不上 · 未展示缓存值"),
     true,
   );
   assert.equal(
-    isUnmarkedBusinessErrorText("关键指标刷新失败 · 当前仍显示上一次已校验快照，时间窗未切换。网络连接失败或后台服务不可达"),
+    isUnmarkedBusinessErrorText("关键指标刷新失败 · 当前仍显示上一次已校验快照，时间窗未切换。网络连接失败或系统暂时连不上"),
     true,
   );
-  assert.equal(isUnmarkedBusinessErrorText("资金流历史暂不可用：网络连接失败或后台服务不可达"), true);
-  assert.equal(isUnmarkedBusinessErrorText("月新增入金暂不可用：网络连接失败或后台服务不可达"), true);
-  assert.equal(isUnmarkedBusinessErrorText("趋势暂不可用：网络连接失败或后台服务不可达"), true);
+  assert.equal(isUnmarkedBusinessErrorText("资金流历史暂不可用：网络连接失败或系统暂时连不上"), true);
+  assert.equal(isUnmarkedBusinessErrorText("月新增入金暂不可用：网络连接失败或系统暂时连不上"), true);
+  assert.equal(isUnmarkedBusinessErrorText("趋势暂不可用：网络连接失败或系统暂时连不上"), true);
   assert.equal(
-    isUnmarkedBusinessErrorText("操作未完成,请刷新页面核对最新状态后重试;若仍未恢复请联系值班人员。"),
+    isUnmarkedBusinessErrorText("操作未完成，请刷新页面核对最新状态后重试；仍未恢复请联系值班人员。"),
     true,
   );
 });

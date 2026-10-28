@@ -717,7 +717,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
           onRegister={(order) => openReceiptRegistration(order)} onManualCredit={openBankManualCredit}
           onRetry={(commandKey) => applyBankWrite(() => retryD1PendingBankOrderCommand(commandKey), "人工入账已重试，请核对订单和用户钱包", adminAuthLifecycleEpoch())} />
         <div className="l-h">
-          <span className="ttl">银行回单处置与已入账历史</span>
+          <span className="ttl">银行回单处理与已入账记录</span>
           <span className="sub">· 按下单时的汇率折算 · 待核实的款项会计入资金储备</span>
           <div className="r">
             <span className="dcode electric">待核实充值 {money(vietQr?.pendingUnverifiedDepositUsdt ?? 0)}</span>

@@ -54,7 +54,7 @@ const legacyView = [
   "        await reloadMContent();",
   "        const message = displayAdminError(error);",
   "        // client 已接咽喉,英文网络错误不再到达;按原压制意图改判「咽喉网络中文」,命中仍不附加 detail。",
-  "        const detail = message.includes(\"网络连接失败或后台服务不可达\") ? \"\" : ` · ${message}`;",
+  "        const detail = message.includes(\"网络连接失败或系统暂时连不上\") ? \"\" : ` · ${message}`;",
   "        setToast(`写入失败或结果未知,请保留当前输入并重试${detail}`);",
   "        return false;",
   "      }",

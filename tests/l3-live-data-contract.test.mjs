@@ -128,7 +128,7 @@ test("L3 reads the canonical treasury snapshot, liabilities and seven-day maturi
   assert.equal(result?.reserveUsd, 700000);
   assert.equal(result?.valuationReliable, true);
   assert.deepEqual(result?.accounts.map(({ label, amount }) => [label, amount]), [
-    ["可提余额", 500000],
+    ["可提现余额", 500000],
     ["USDT 质押本金", 100],
     ["质押应付利息", 20],
     ["创世节点应付分红", 30],

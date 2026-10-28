@@ -107,7 +107,7 @@ test("h9DraftNumber:空串与非数字给 NaN,不让 Number(\"\")===0 把空输�
 });
 
 // ── 2. 错误文案 ──────────────────────────────────────────────────────────
-const GENERIC_INPUT_FALLBACK = "操作未完成,请刷新页面核对最新状态后重试;若仍未恢复请联系值班人员。";
+const GENERIC_INPUT_FALLBACK = "操作未完成，请刷新页面核对最新状态后重试；仍未恢复请联系值班人员。";
 
 test("growth 代理闭集机器码翻成运营可读中文,不落「请检查输入内容」兜底(只读失败没有输入可检查)", () => {
   for (const code of ["GROWTH_BACKEND_UNAVAILABLE", "GROWTH_ROUTE_NOT_FOUND"]) {
@@ -132,7 +132,7 @@ test("占位卡拼接恒出恰好一个句号(字典整句 / 无句号透传串 
   ]) {
     const copy = h9PlaceholderCopy(input);
     assert.ok(!copy.includes("。。"), `${label}:拼出了双句号「。。」——「${copy}」`);
-    assert.match(copy, /。为免拿旧值当真值/, `${label}:错误句与固定尾句之间不是恰好一个句号 ——「${copy}」`);
+    assert.match(copy, /。为避免把旧数据当成当前数据/, `${label}:错误句与固定尾句之间不是恰好一个句号 ——「${copy}」`);
   }
 });
 

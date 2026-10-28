@@ -56,7 +56,7 @@ test("A5 real user flow, owner navigation, filtering and fail-closed recovery st
 
   await page.getByLabel("筛选业务域").selectOption("J");
   await expect(page.getByText("参数键 · emergency.geo-block", { exact: true })).toBeVisible();
-  expect(await page.getByText("当前值").count()).toBe(6);
+  expect(await page.getByText(/^当前值( · 未生效)?$/).count()).toBe(6);
   await page.getByLabel("搜索参数").fill("兑换开关");
   await expect(page.getByText("参数键 · emergency.gate.exchange", { exact: true })).toBeVisible();
   await page.screenshot({ path: `${EVIDENCE_DIR}/02-filter-owner.png` });
@@ -95,7 +95,7 @@ test("A5 real user flow, owner navigation, filtering and fail-closed recovery st
   }));
   await page.reload();
   await expect(page.getByText("数据一致性校验未通过", { exact: true })).toBeVisible();
-  await expect(page.getByText("当前值")).toHaveCount(0);
+  await expect(page.getByText(/^当前值( · 未生效)?$/)).toHaveCount(0);
   await page.screenshot({ path: `${EVIDENCE_DIR}/04-integrity-fail-closed.png` });
 
   await page.unrouteAll({ behavior: "wait" });

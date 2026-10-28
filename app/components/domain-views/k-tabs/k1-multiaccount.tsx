@@ -101,7 +101,7 @@ function strengthColor(v: number, threshold: number) {
 function errorText(error: unknown) {
   const message = error instanceof Error ? error.message : String(error ?? "");
   // client 已接咽喉,英文网络错误不再到达;按原压制意图改判「咽喉网络中文」,命中仍走自家短文案。
-  return message.includes("网络连接失败或后台服务不可达")
+  return message.includes("网络连接失败或系统暂时连不上")
     ? "暂时无法连接风险服务，请稍后重试"
     : message ? displayAdminError(error) : "暂时无法读取风险数据";
 }

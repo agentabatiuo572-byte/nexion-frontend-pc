@@ -4,7 +4,7 @@ type JsonRecord = Record<string, unknown>;
 
 export const F5_KIND_LABELS: Record<string, string> = {
   direct_purchase: "直属购买分成", direct_device_earning: "直属设备收益分成",
-  network: "七层购买奖励", binary: "左右团队奖", peer: "平级奖", cultivation: "培育奖", leadership: "领导奖池", genesis: "创世排放",
+  network: "七层购买奖励", binary: "左右团队奖", peer: "平级奖", cultivation: "培育奖", leadership: "领导奖池", genesis: "创世节点分红",
 };
 export const F5_KINDS = Object.keys(F5_KIND_LABELS);
 export const F5_STATUSES = ["cooling", "unlocked", "withdrawn", "reversed", "frozen", "rejected", "recovery_pending"];

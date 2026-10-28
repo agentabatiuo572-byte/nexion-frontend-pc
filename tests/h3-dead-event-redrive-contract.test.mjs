@@ -114,7 +114,7 @@ test("every controlled H3 redrive outcome has accurate operator guidance instead
   for (const [code, expected] of messages) {
     const shown = displayAdminError(new Error(code));
     assert.match(shown, expected, `${code} must retain its distinct operator guidance`);
-    assert.doesNotMatch(shown, /操作未完成,请刷新页面核对最新状态后重试/, `${code} must not use the generic retry fallback`);
+    assert.doesNotMatch(shown, /操作未完成，请刷新页面核对最新状态后重试/, `${code} must not use the generic retry fallback`);
   }
   assert.equal(displayAdminError(new Error("REASON_TOO_SHORT_MIN_8")), "操作理由至少填写 8 个可见字符。");
   assert.equal(displayAdminError(new Error("REASON_TOO_LONG_MAX_200")), "操作理由不能超过 200 个可见字符。");

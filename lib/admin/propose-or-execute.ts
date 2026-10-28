@@ -73,7 +73,7 @@ export async function proposeOrExecute(deps: ProposeDeps, spec: ProposeSpec): Pr
       target: spec.target,
       targets: spec.targets,
     }, spec.commandKey);
-    toast(`已提交，等待${spec.gateLabel}确认执行`);
+    toast("已提交，等待审批后执行");
     return "proposed";
   } catch (error) {
     if (isA2OutcomeUncertainError(error)) {

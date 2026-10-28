@@ -18,9 +18,10 @@ import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { formatReserveCoverDays } from "@/lib/admin/treasury-cover-days";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { DCtx } from "./types";
+import { liabilityDisplayName } from "@/lib/admin/liability-labels";
 
 const OPERATOR = currentAdminOperator;
-const categoryText = (key: string) => ({ usdt: "USDT 储备", otherLiquid: "其他可用资产", withdrawable_balance: "可提现余额", usdt_staking_principal: "USDT 质押本金", staking_interest: "待付质押利息", genesis_daily_emission: "创世节点每日分红", nex_v2_future: "UVT 第二版远期权益", withdrawal_queue: "待处理提现", commission_cooling: "待解锁佣金", lock_other: "其他锁仓本息", unverified_deposit: "待核实充值" } as Record<string,string>)[key] ?? "其他科目";
+const categoryText = (key: string) => liabilityDisplayName(key, ({ usdt: "USDT 储备", otherLiquid: "其他可用资产" } as Record<string,string>)[key] ?? "其他科目");
 const WATER_LABEL: Record<D3WaterLevel["tier"], string> = {
   NORMAL: "正常",
   WATCH: "关注",

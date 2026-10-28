@@ -65,7 +65,7 @@ describe("admin activity browser auth boundary", () => {
         ? { ok: true, status: 200, json: () => body }
         : Response.json(payload);
     }));
-    const failed = expect(recordAdminActivity(11)).rejects.toThrow(/网络连接失败或后台服务不可达/);
+    const failed = expect(recordAdminActivity(11)).rejects.toThrow(/网络连接失败或系统暂时连不上/);
     await vi.advanceTimersByTimeAsync(15_000);
     await failed;
     const login = loginAdmin("fixture-admin", "fixture-password");
