@@ -682,9 +682,9 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                   {s.purchaseGate && (() => {
                     const g = s.purchaseGate;
                     const parts: string[] = [];
-                    if (g.rankMin != null) parts.push(`V≥${g.rankMin}`);
-                    if (g.activeDirectMin != null) parts.push(`${g.activeDirectMin}直接邀请`);
-                    if (g.teamComputePointsMin != null) parts.push(`团队算力点 ${g.teamComputePointsMin.toLocaleString("en-US")}`);
+                    if (g.rankMin != null && g.rankMin > 0) parts.push(`V≥${g.rankMin}`);
+                    if (g.activeDirectMin != null && g.activeDirectMin > 0) parts.push(`${g.activeDirectMin}直接邀请`);
+                    if (g.teamComputePointsMin != null && g.teamComputePointsMin > 0) parts.push(`团队算力点 ${g.teamComputePointsMin.toLocaleString("en-US")}`);
                     const cond = parts.join(g.mode === "either" ? "/" : "+");
                     const remaining = gateRemaining(g);
                     const txt = `购买条件${cond ? " " + cond : ""}${remaining != null ? ` · 剩 ${remaining}` : ""}`;

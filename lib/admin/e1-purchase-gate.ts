@@ -14,9 +14,9 @@ export interface BackendPurchaseGate {
 export function fromPurchaseGate(gate: BackendPurchaseGate | null | undefined): PurchaseGate | undefined {
   if (!gate) return undefined;
   const purchaseGate: PurchaseGate = {
-    rankMin: gate.rankMin ?? undefined,
-    activeDirectMin: gate.activeDirectMin ?? undefined,
-    teamComputePointsMin: gate.teamComputePointsMin ?? undefined,
+    rankMin: gate.rankMin ?? 0,
+    activeDirectMin: gate.activeDirectMin ?? 0,
+    teamComputePointsMin: gate.teamComputePointsMin ?? 0,
     mode: gate.mode === "either" ? "either" : "all",
     quotaCap: gate.quotaCap ?? undefined,
     quotaSold: gate.quotaSold ?? undefined,
@@ -26,9 +26,9 @@ export function fromPurchaseGate(gate: BackendPurchaseGate | null | undefined): 
     enforce: gate.enforce !== false,
   };
   const hasValue =
-    purchaseGate.rankMin != null ||
-    purchaseGate.activeDirectMin != null ||
-    purchaseGate.teamComputePointsMin != null ||
+    (purchaseGate.rankMin ?? 0) > 0 ||
+    (purchaseGate.activeDirectMin ?? 0) > 0 ||
+    (purchaseGate.teamComputePointsMin ?? 0) > 0 ||
     purchaseGate.quotaCap != null;
   return hasValue ? purchaseGate : undefined;
 }
@@ -36,9 +36,9 @@ export function fromPurchaseGate(gate: BackendPurchaseGate | null | undefined): 
 export function toPurchaseGate(gate: PurchaseGate | undefined): BackendPurchaseGate | null {
   if (!gate) return null;
   return {
-    rankMin: gate.rankMin ?? null,
-    activeDirectMin: gate.activeDirectMin ?? null,
-    teamComputePointsMin: gate.teamComputePointsMin ?? null,
+    rankMin: gate.rankMin ?? 0,
+    activeDirectMin: gate.activeDirectMin ?? 0,
+    teamComputePointsMin: gate.teamComputePointsMin ?? 0,
     mode: gate.mode,
     quotaCap: gate.quotaCap ?? null,
     quotaSold: gate.quotaSold ?? null,

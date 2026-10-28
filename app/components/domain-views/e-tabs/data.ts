@@ -48,7 +48,7 @@ export const EMPTY_SKU_FORM = {
   // ⑦ 购买限制(扁平表单字段 → formToSku 组装为结构化 OpsSku.purchaseGate)。
   // gateType = 条件门形态:none(无门)/ activeDirect(单活跃直推)/ rank(单 V 级)/ combo(组合)。
   // 锁额(quota)与条件门正交,任意门类型下均可设。
-  gateType: "none", gateRankMin: "", gateActiveDirectMin: "", gateTeamComputePointsMin: "", gateMode: "all",
+  gateType: "none", gateRankMin: "0", gateActiveDirectMin: "0", gateTeamComputePointsMin: "0", gateMode: "all",
   gateQuotaCap: "", gateQuotaSold: "", gateQuotaPeriod: "lifetime", gateEnforce: "true",
 };
 export type SkuForm = typeof EMPTY_SKU_FORM;
@@ -57,7 +57,7 @@ export type SkuForm = typeof EMPTY_SKU_FORM;
 // 单 activeDirect → activeDirect;单 rank → rank;其余(含团队算力点或多条件)→ combo;无条件 → none(可能仍有锁额)。
 export function gateToType(g?: PurchaseGate): SkuForm["gateType"] {
   if (!g) return "none";
-  const hasRank = g.rankMin != null, hasDirect = g.activeDirectMin != null, hasPoints = g.teamComputePointsMin != null;
+  const hasRank = (g.rankMin ?? 0) > 0, hasDirect = (g.activeDirectMin ?? 0) > 0, hasPoints = (g.teamComputePointsMin ?? 0) > 0;
   const n = (hasRank ? 1 : 0) + (hasDirect ? 1 : 0) + (hasPoints ? 1 : 0);
   if (n === 0) return "none";
   if (n === 1 && hasDirect) return "activeDirect";
@@ -106,7 +106,7 @@ export function skuToForm(s: OpsSku): SkuForm {
     features: (s.features ?? []).join("\n"),
     lifecycle: s.lifecycle ?? "", unlock: s.unlock ?? "", tag: s.tag ?? "",
     gateType: gateToType(g),
-    gateRankMin: str(g?.rankMin), gateActiveDirectMin: str(g?.activeDirectMin), gateTeamComputePointsMin: str(g?.teamComputePointsMin),
+    gateRankMin: str(g?.rankMin ?? 0), gateActiveDirectMin: str(g?.activeDirectMin ?? 0), gateTeamComputePointsMin: str(g?.teamComputePointsMin ?? 0),
     gateMode: g?.mode === "either" ? "either" : "all",
     gateQuotaCap: str(g?.quotaCap), gateQuotaSold: str(g?.quotaSold),
     gateQuotaPeriod: g?.quotaPeriod === "month" ? "month" : "lifetime",
@@ -116,14 +116,14 @@ export function skuToForm(s: OpsSku): SkuForm {
 
 // 表单 → purchaseGate(无条件且无锁额 → undefined = 无门)。条件门按 gateType 取相应阈值;锁额正交。
 export function formToGate(f: SkuForm): PurchaseGate | undefined {
-  let rankMin: number | undefined, activeDirectMin: number | undefined, teamComputePointsMin: number | undefined;
-  if (f.gateType === "activeDirect") activeDirectMin = skuNumU(f.gateActiveDirectMin);
-  else if (f.gateType === "rank") rankMin = skuNumU(f.gateRankMin);
+  let rankMin = 0, activeDirectMin = 0, teamComputePointsMin = 0;
+  if (f.gateType === "activeDirect") activeDirectMin = skuNumU(f.gateActiveDirectMin) ?? 0;
+  else if (f.gateType === "rank") rankMin = skuNumU(f.gateRankMin) ?? 0;
   else if (f.gateType === "combo") {
-    rankMin = skuNumU(f.gateRankMin); activeDirectMin = skuNumU(f.gateActiveDirectMin); teamComputePointsMin = skuNumU(f.gateTeamComputePointsMin);
+    rankMin = skuNumU(f.gateRankMin) ?? 0; activeDirectMin = skuNumU(f.gateActiveDirectMin) ?? 0; teamComputePointsMin = skuNumU(f.gateTeamComputePointsMin) ?? 0;
   }
   const cap = skuNumU(f.gateQuotaCap);
-  const hasCond = rankMin != null || activeDirectMin != null || teamComputePointsMin != null;
+  const hasCond = rankMin > 0 || activeDirectMin > 0 || teamComputePointsMin > 0;
   const hasQuota = cap != null;
   if (!hasCond && !hasQuota) return undefined;
   return {
@@ -237,10 +237,6 @@ export function releaseMonthPresentation(releaseMonth: number, phaseOffset = 0):
 // 注:这是输入完整性/取值范围校验,非「锁死业务值」——阈值/开关本身全运营可调(铁律)。
 export function validateGateForm(f: SkuForm): string | null {
   if (f.tier !== "Share" && !f.unlock.trim()) return "请先选择开放阶段";
-  if (f.gateType === "activeDirect" && skuNumU(f.gateActiveDirectMin) == null) return "购买条件：请填写活跃直接邀请人数";
-  if (f.gateType === "rank" && skuNumU(f.gateRankMin) == null) return "购买条件：请填写最低会员等级";
-  if (f.gateType === "combo" && skuNumU(f.gateRankMin) == null && skuNumU(f.gateActiveDirectMin) == null && skuNumU(f.gateTeamComputePointsMin) == null)
-    return "购买条件：组合条件至少填一项";
   const rank = skuNumU(f.gateRankMin);
   if (rank != null && (rank < 0 || rank > 8)) return "购买条件：会员等级须在 0–8 之间";
   const direct = skuNumU(f.gateActiveDirectMin);
