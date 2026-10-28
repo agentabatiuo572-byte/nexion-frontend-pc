@@ -27,7 +27,7 @@ test("personal period uses explicit month/currency, clears missing data and reje
   assert.ok(periodEffect);
   for (const mode of ["PERSONAL", "MANAGED", "ALL"]) {
     const calls = []; let resolve;
-    const context = { scope: { scopeSummary: { mode } }, queryState: { month: "2026-09", currency: "NEX" }, AbortController,
+    const context = { scope: { scopeSummary: { mode } }, queryState: { month: "2026-09", currency: "UVT" }, AbortController,
       analyticsMonthWindow: month => { assert.equal(month, "2026-09"); return { from: "2026-08-31T16:00:00Z", to: "2026-09-30T16:00:00Z" }; },
       supportAnalyticsClient: { query: options => { calls.push(options); return new Promise(done => { resolve = done; }); } },
       setPersonalPeriod: value => { context.period = value; }, setPersonalPeriodError: value => { context.error = value; }, analyticsErrorText: () => "期间读取失败",
@@ -36,7 +36,7 @@ test("personal period uses explicit month/currency, clears missing data and reje
     runInNewContext(transpile(periodEffect), context);
     assert.equal(context.period, null);
     if (mode !== "PERSONAL") { assert.equal(calls.length, 0); context.cleanup(); continue; }
-    assert.equal(calls[0].basis, "PERIOD_EVENT"); assert.equal(calls[0].currency, "NEX"); assert.equal(calls[0].from, "2026-08-31T16:00:00Z");
+    assert.equal(calls[0].basis, "PERIOD_EVENT"); assert.equal(calls[0].currency, "UVT"); assert.equal(calls[0].from, "2026-08-31T16:00:00Z");
     context.cleanup(); resolve({ scopeSummary: { mode: "PERSONAL" }, asOf: "old" }); await flush();
     assert.equal(context.period, null, "an aborted old period cannot become visible");
   }

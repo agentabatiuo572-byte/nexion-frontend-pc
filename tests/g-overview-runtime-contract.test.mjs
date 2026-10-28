@@ -66,7 +66,7 @@ const g1 = {
 
 const g2 = {
   domain: "G2",
-  asset: "NEX",
+  asset: "UVT",
   currency: "USDT",
   currentPrice: 1,
   stats: {

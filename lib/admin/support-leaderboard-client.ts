@@ -8,7 +8,7 @@ const COVERAGE = ["COMPLETE", "PARTIAL", "UNKNOWN", "FAILED"] as const;
 const REASONS = ["NONE", "SOURCE_INCOMPLETE", "HISTORY_UNKNOWN", "ATTRIBUTION_UNKNOWN", "REFUNDS_UNKNOWN", "SOURCE_FAILED", "CANDIDATES_INCOMPLETE", "METRIC_INCOMPLETE", "HISTORICAL_MONTH", "MONTH_START", "NO_BASELINE", "DEFINITION_CHANGED", "SCOPE_CHANGED", "MEMBERS_CHANGED", "NOT_A_CANDIDATE", "LEADER"] as const;
 const PARAMETERS = "board month currency scope groupId keyword pageNum pageSize expectedVersion";
 const BASE = "/api/admin/content/support-workbench/leaderboard";
-export type LeaderboardQuery = { board: typeof BOARDS[number]; month?: string; currency?: "USDT" | "NEX"; scope: typeof SCOPES[number]; groupId?: string; keyword?: string; pageNum?: number; pageSize?: number; expectedVersion?: string };
+export type LeaderboardQuery = { board: typeof BOARDS[number]; month?: string; currency?: "USDT" | "UVT"; scope: typeof SCOPES[number]; groupId?: string; keyword?: string; pageNum?: number; pageSize?: number; expectedVersion?: string };
 export type LeaderboardScope = { scope: typeof SCOPES[number]; groups: { id: string; name: string }[] };
 function invalid(field: string): never { throw new Error(`SUPPORT_CONTRACT_MALFORMED:leaderboard.${field}`); }
 function object(value: unknown, fields: string): Record<string, unknown> {
@@ -44,9 +44,9 @@ const META_FIELDS = "viewVersion queryVersion sourceVersion definitionVersion bo
 function metadata(r: Record<string, unknown>) {
   const result = {
     viewVersion: version(r.viewVersion), queryVersion: version(r.queryVersion), sourceVersion: text(r.sourceVersion), definitionVersion: text(r.definitionVersion),
-    board: enumeration(r.board, BOARDS), rankMonth: r.rankMonth === null ? null : month(r.rankMonth), referenceMonth: month(r.referenceMonth), currency: enumeration(r.currency, ["USDT", "NEX"] as const), scope: enumeration(r.scope, SCOPES),
+    board: enumeration(r.board, BOARDS), rankMonth: r.rankMonth === null ? null : month(r.rankMonth), referenceMonth: month(r.referenceMonth), currency: enumeration(r.currency, ["USDT", "UVT"] as const), scope: enumeration(r.scope, SCOPES),
     businessZone: enumeration(r.businessZone, ["Asia/Shanghai"] as const), asOf: instant(r.asOf), publishedAt: instant(r.publishedAt), state: enumeration(r.state, ["COMPLETE", "PROVISIONAL"] as const), candidateCoverage: coverage(r.candidateCoverage), stale: bool(r.stale), refreshFailed: bool(r.refreshFailed),
-    selectableMonths: unique(array(r.selectableMonths, month), x => x), currencies: unique(array(r.currencies, v => enumeration(v, ["USDT", "NEX"] as const)), x => x),
+    selectableMonths: unique(array(r.selectableMonths, month), x => x), currencies: unique(array(r.currencies, v => enumeration(v, ["USDT", "UVT"] as const)), x => x),
     scopeOptions: unique(array(r.scopeOptions, value => { const s = object(value, "scope groups"); return { scope: enumeration(s.scope, SCOPES), groups: unique(array(s.groups, value => { const g = object(value, "id name"); return { id: id(g.id), name: text(g.name) }; }), g => g.id) }; }), s => s.scope),
   };
   if (result.queryVersion !== result.viewVersion || !result.sourceVersion || !result.definitionVersion || Date.parse(result.publishedAt) < Date.parse(result.asOf)
@@ -61,7 +61,7 @@ function row(value: unknown, meta: LeaderboardMetadata): SupportBoardRow {
   const r = object(value, "agentId name avatarUrl groupName qualification rank isTied rankMetricCoverage firstPayment customers amount movement canViewCustomers");
   enumeration(r.qualification, ["ACTIVE", "DISABLED", "REMOVED", "HANDOVER_REQUIRED", "UNKNOWN"] as const);
   const a = object(r.amount, "value currency month kind coverage reason"), state = coverage(a.coverage);
-  const amount = { value: decimal(a.value, true), currency: enumeration(a.currency, ["USDT", "NEX"] as const), periodLabel: month(a.month), sourceVersion: meta.sourceVersion, coverage: displayCoverage(state), reason: reason(a.reason) };
+  const amount = { value: decimal(a.value, true), currency: enumeration(a.currency, ["USDT", "UVT"] as const), periodLabel: month(a.month), sourceVersion: meta.sourceVersion, coverage: displayCoverage(state), reason: reason(a.reason) };
   enumeration(a.kind, ["NET_CONTRIBUTION"] as const);
   if (amount.currency !== meta.currency || amount.periodLabel !== meta.referenceMonth || (state === "UNKNOWN" || state === "FAILED") && amount.value !== null || state === "COMPLETE" && (amount.value === null || a.reason !== "NONE") || state !== "COMPLETE" && a.reason === "NONE") invalid("amount");
   const firstPayment = count(r.firstPayment), customers = count(r.customers), main = meta.board === "firstPayment" ? firstPayment : meta.board === "customers" ? customers : amount;
@@ -87,7 +87,7 @@ export function leaderboardQueryString(input: LeaderboardQuery): string {
   const q = object(input, PARAMETERS), params = new URLSearchParams();
   params.set("board", enumeration(q.board, BOARDS)); params.set("scope", enumeration(q.scope, SCOPES));
   if (q.month !== undefined) { if (q.board === "customers") invalid("customersMonth"); params.set("month", month(q.month)); }
-  if (q.currency !== undefined) params.set("currency", enumeration(q.currency, ["USDT", "NEX"] as const));
+  if (q.currency !== undefined) params.set("currency", enumeration(q.currency, ["USDT", "UVT"] as const));
   if (q.groupId !== undefined) { if (q.scope === "all") invalid("allGroup"); params.set("groupId", id(q.groupId)); }
   if (q.keyword !== undefined) { const keyword = text(q.keyword); if (keyword.length > 200 || /[\x00-\x1f\x7f-\x9f]/.test(keyword)) invalid("keyword"); if (keyword.trim()) params.set("keyword", keyword.trim()); }
   if (q.pageNum !== undefined) params.set("pageNum", String(integer(q.pageNum, 1)));

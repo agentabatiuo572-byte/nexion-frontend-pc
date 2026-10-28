@@ -12,7 +12,7 @@ import { GLOSSARY, GLOSSARY_TERMS, GLOSSARY_GUARD } from "@/lib/admin/glossary";
 import { createGlossaryMatcher } from "@/lib/admin/glossary-match";
 
 const PLAIN_LABELS: Record<string, string> = {
-  "NEX": "UVT",
+  "UVT": "UVT",
   "Genesis": "创世节点",
   "RBAC": "角色权限",
   "CAS": "版本校验",

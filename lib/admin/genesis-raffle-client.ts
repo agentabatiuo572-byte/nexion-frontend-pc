@@ -2,7 +2,7 @@ import { growthRequest } from "./h-client";
 import { createSlotAttemptStore } from "./pending-mutation-store";
 import { currentAdminOperator } from "./current-operator";
 
-export interface RafflePrize { id: string; nameZh: string; nameEn: string; nameVi: string; rewardType: "NEX" | "USDT" | "DEVICE"; amount: number | string; quantity: number; productNo?: string; }
+export interface RafflePrize { id: string; nameZh: string; nameEn: string; nameVi: string; rewardType: "UVT" | "USDT" | "DEVICE"; amount: number | string; quantity: number; productNo?: string; }
 export interface RaffleDraft { id: string; titleZh: string; titleEn: string; titleVi: string; startsAt: string; drawAt: string; prizes: RafflePrize[]; }
 export interface AdminRaffle extends RaffleDraft { status: "DRAFT" | "OPEN" | "PROCESSING" | "DRAWN"; revision: number; totalEntries: number; }
 export function raffleDraftError(value: RaffleDraft): string {
@@ -13,7 +13,7 @@ export function raffleDraftError(value: RaffleDraft): string {
   for (const prize of value.prizes) {
     if (![prize.nameZh, prize.nameEn, prize.nameVi].every(text => text.trim())) return "请填写每个奖项的三语名称。";
     if (!Number.isSafeInteger(prize.quantity) || prize.quantity < 1) return "每个奖项名额必须为正整数。";
-    if (!["NEX", "USDT", "DEVICE"].includes(prize.rewardType) || !Number.isFinite(Number(prize.amount)) || Number(prize.amount) <= 0) return "请填写有效的奖励金额。";
+    if (!["UVT", "USDT", "DEVICE"].includes(prize.rewardType) || !Number.isFinite(Number(prize.amount)) || Number(prize.amount) <= 0) return "请填写有效的奖励金额。";
     if (prize.rewardType === "DEVICE" && (!prize.productNo?.trim() || Number(prize.amount) !== 1)) return "设备奖需选择商品，每个中奖名额发放一台设备。";
   }
   return value.prizes.reduce((sum, prize) => sum + prize.quantity, 0) > 100 ? "本期总中奖名额不能超过 100。" : "";

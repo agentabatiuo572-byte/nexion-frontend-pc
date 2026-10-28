@@ -128,7 +128,7 @@ test("K3 isolated withdrawal fixture seeds and exactly cleans D4 authoritative o
   assert.match(liveAcceptance, /K3_D4_NEX_OPENING_BIZ_NO/);
   assert.match(liveAcceptance, /INSERT INTO nx_wallet_ledger/);
   assert.match(liveAcceptance, /'K3_ACCEPTANCE_OPENING','USDT','IN',10000,10000,'POSTED'/);
-  assert.match(liveAcceptance, /'K3_ACCEPTANCE_OPENING','NEX','IN',100,100,'POSTED'/);
+  assert.match(liveAcceptance, /'K3_ACCEPTANCE_OPENING','UVT','IN',100,100,'POSTED'/);
   assert.match(liveAcceptance, /biz_no='\$\{K3_D4_OPENING_BIZ_NO\}'/);
   assert.match(liveAcceptance, /biz_no='\$\{K3_D4_NEX_OPENING_BIZ_NO\}'/);
 });

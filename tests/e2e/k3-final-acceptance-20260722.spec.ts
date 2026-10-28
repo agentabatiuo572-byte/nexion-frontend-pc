@@ -107,7 +107,7 @@ test.beforeAll(async () => {
     VALUES
       (${APP_USER_ID},'${K3_D4_OPENING_BIZ_NO}','K3_ACCEPTANCE_OPENING','USDT','IN',10000,10000,'POSTED',
        'K3 isolated acceptance D4 USDT opening balance',NOW(),NOW(),0),
-      (${APP_USER_ID},'${K3_D4_NEX_OPENING_BIZ_NO}','K3_ACCEPTANCE_OPENING','NEX','IN',100,100,'POSTED',
+      (${APP_USER_ID},'${K3_D4_NEX_OPENING_BIZ_NO}','K3_ACCEPTANCE_OPENING','UVT','IN',100,100,'POSTED',
        'K3 isolated acceptance D4 NEX opening balance',NOW(),NOW(),0);
     INSERT INTO nx_admin_risk_withdraw_rule
       (rule_id,dimension,condition_text,action,state,built_in,priority,version,created_by,is_deleted)
@@ -708,7 +708,7 @@ function cleanupFixtures() {
      WHERE user_id=${APP_USER_ID}
        AND biz_no='${K3_D4_NEX_OPENING_BIZ_NO}'
        AND biz_type='K3_ACCEPTANCE_OPENING'
-       AND asset='NEX'
+       AND asset='UVT'
        AND direction='IN';
     DELETE FROM nx_withdrawal_order WHERE user_id=${APP_USER_ID};
     DELETE FROM nx_admin_risk_withdraw_rule

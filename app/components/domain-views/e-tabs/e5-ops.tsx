@@ -1,5 +1,5 @@
 import { operatorSkuTier } from "@/lib/admin/e-operator-display";
-import { datacenterNameText, catalogSkuBrandText } from "@/lib/admin/brand-copy";
+import { datacenterNameText} from "@/lib/admin/brand-copy";
 import { useEffect, useState } from "react";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { operatorDatacenterLabel, operatorDeviceIdentifier, operatorDeviceName, operatorDeviceStatus, operatorOperationalNote, operatorProductLabel, operatorRate, operatorTaskLabel, operatorThermalLabel, operatorTimestamp, operatorUserIdentifier, operatorUserName } from "@/lib/admin/e-operator-display";
@@ -247,7 +247,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
                 const skuSub = d.productTier && d.productTier !== skuMain ? d.productTier : "";
                 const displaySerial = operatorDeviceIdentifier(d.serial);
                 const displayName = d.productCode === "cloud-share" && d.deviceName === "Cloud Share" ? "云端共享份额" : operatorDeviceName(d.deviceName, d.serial);
-                const displaySku = operatorProductLabel(catalogSkuBrandText(d.productCode, skuMain));
+                const displaySku = operatorProductLabel((skuMain));
                 const displaySkuSub = skuSub ? operatorSkuTier(skuSub) : "";
                 const displayDc = operatorDatacenterLabel(d.dc);
                 const displayUserNo = operatorUserIdentifier(d.userNo);

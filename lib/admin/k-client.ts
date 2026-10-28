@@ -220,7 +220,7 @@ export type K1ProtectedEntry = {
   clusterId: string;
   sourceType: string;
   sourceRef: string;
-  asset: "USDT" | "NEX";
+  asset: "USDT" | "UVT";
   amount: number;
   bucket: "pending_review" | "bonus_locked";
   createdAt: string;
@@ -1566,7 +1566,7 @@ export const kRiskActions: Omit<KRiskActions, "reloadKRisk"> = {
       const row = requiredK1Record(value, path);
       const asset = requiredK1String(row.asset, `${path}.asset`);
       const bucket = requiredK1String(row.bucket, `${path}.bucket`);
-      if (asset !== "USDT" && asset !== "NEX") invalidK1Response(`${path}.asset`);
+      if (asset !== "USDT" && asset !== "UVT") invalidK1Response(`${path}.asset`);
       if (bucket !== "pending_review" && bucket !== "bonus_locked") invalidK1Response(`${path}.bucket`);
       return {
         entryNo: requiredK1String(row.entryNo, `${path}.entryNo`),

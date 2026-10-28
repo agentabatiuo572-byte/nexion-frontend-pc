@@ -1,6 +1,6 @@
 import type { Catalog, Draft, DraftPurchaseRule, DraftRewardSpec, Limit, Policy, PolicyRef, Template } from './promotion-types.ts';
 import { parseStrictFiniteNumber } from './strict-number.ts';
-import { catalogSkuBrandText, nexGridBrandText } from './brand-copy.ts';
+import { nexGridBrandText } from './brand-copy.ts';
 
 export type PromotionNumericKind = 'quantity' | 'limit' | 'priority' | 'device-budget' | 'amount';
 export const promotionInputText = (value: string | number | null | undefined) => value == null ? '' : String(value);
@@ -47,10 +47,10 @@ export const policyKey=(p:PolicyRef|null|undefined)=>p?`${p.policyId}:${p.versio
 /** Main labels describe the approved content; opaque identity stays in supplementary detail. */
 export function policyLabel(policy:Policy,catalog:Catalog):string {
   const c=policy.content, local=(v:{zh?:string;en?:string;vi?:string})=>v.zh||v.en||v.vi||'未提供说明';
-  const native=(resourceId:string)=>{const n=catalog.nativeContracts.find(n=>n.resourceId===resourceId);return n?catalogSkuBrandText(n.resourceId,local(n.title)):'已绑定原合同';};
+  const native=(resourceId:string)=>{const n=catalog.nativeContracts.find(n=>n.resourceId===resourceId);return n?(local(n.title)):'已绑定原合同';};
   switch(c.kind){
     case 'ASSET':return `${nexGridBrandText(c.asset)} · ${local(c.availabilityDescription)}`;
-    case 'DEVICE_RIGHTS':return `${catalogSkuBrandText(c.productNo,local(catalog.skus.find(s=>s.productNo===c.productNo)?.name||{}))} · ${local(c.rightsDescription)}`;
+    case 'DEVICE_RIGHTS':return `${(local(catalog.skus.find(s=>s.productNo===c.productNo)?.name||{}))} · ${local(c.rightsDescription)}`;
     case 'FIRST_PURCHASE':return `${c.mode==='FIRST_ELIGIBLE_ORDER'?'首笔合格订单':'首台合格设备'} · 退款后${c.restoreAfterRefund?'恢复':'不恢复'}资格`;
     case 'DEVICE_AUDIENCE':return `${c.sources.includes('PROMOTION_GIFT')?'购买及促销赠送设备':'购买设备'} · ${c.states.map(s=>s==='ACTIVE'?'有效':'在线').join(' / ')}`;
     case 'QUOTE':return `报价有效 ${c.ttlSeconds} 秒 · 不晚于订单及活动截止`;
@@ -74,7 +74,7 @@ export function changeRewardType(previous:DraftRewardSpec|null|undefined,type:Dr
   }
   return type==='DEVICE'?{...base,type,giftProductNo:null,quantity:null,deviceRightsProfile:null}:{...base,type,calculation:'FIXED',amount:null,assetPolicy:null};
 }
-export const promotionRewardTypes=(role:'BUYER'|'DIRECT_INVITER')=>role==='BUYER'?['DEVICE','USDT','NEX','DISCOUNT_USDT']:['DEVICE','USDT','NEX'];
+export const promotionRewardTypes=(role:'BUYER'|'DIRECT_INVITER')=>role==='BUYER'?['DEVICE','USDT','UVT','DISCOUNT_USDT']:['DEVICE','USDT','UVT'];
 export function dateInput(iso:string|null|undefined,zone:string):string {
   if(!iso)return '';
   const parts=new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(iso));

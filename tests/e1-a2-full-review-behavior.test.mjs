@@ -7,7 +7,6 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {summarizeSkuCreation,summarizeSkuProposal} from '../lib/admin/e1-a2-proposal-summary.ts';
 import {formToSku,skuToForm,validateGateForm} from '../app/components/domain-views/e-tabs/data.ts';
-import {catalogSkuBrandText} from '../lib/admin/brand-copy.ts';
 const require=createRequire(import.meta.url);
 const source=readFileSync(new URL('../app/components/domain-views/e-view.tsx',import.meta.url),'utf8');
 const ast=ts.createSourceFile('e-view.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
@@ -22,7 +21,7 @@ const full={id:'uvelbox-s1-trade-in',name:'UVELBox S1 Trade-in',tier:'Entry',lif
 function fixture(edit=false,version=1,sku=full){
  const old={...sku,price:1299,stock:3,datacenter:'旧机房',gpu:'旧GPU',tagline:'旧卖点'};
  const opened=[],toasts=[],proposals=[],closed=[];const form=skuToForm(sku);
- const b={catalogSkuBrandText,e1Gates:{skuReviewContractVersion:version},skuMediaUploading:false,skuMedia:null,form,skuDatacenterDefault:'US-EAST-2',skuDatacenterSet:new Set(['US-EAST-2']),editSkuId:edit?sku.id:null,skus:edit?[old]:[],validateSkuUnlockPool:()=>'',validateGateForm,attachSkuMedia:s=>s,formToSku,summarizeSkuCreation,summarizeSkuProposal,setToast:v=>toasts.push(v),openActionConfirm:v=>opened.push(v),setSkuDrawer:v=>closed.push(v),mc:{op:'sku-save',name:'商品变更'},isE2TaskMutation:()=>false,isE2ConfigMutation:()=>false,setActionConfirm:v=>closed.push(v),setEditSkuId:()=>{},resetSkuMedia:()=>{},ctx:{toast:()=>{}},findHighOp:()=>({type:'param',gateLabel:'门槛者',buildCommand:v=>({domain:'E',op:edit?'e1_sku_update':'e1_sku_create',params:v}),buildTarget:v=>({domain:'E',type:'device_sku',id:v.skuId})}),propose:async(_toast,p)=>proposals.push(p)};
+ const b={e1Gates:{skuReviewContractVersion:version},skuMediaUploading:false,skuMedia:null,form,skuDatacenterDefault:'US-EAST-2',skuDatacenterSet:new Set(['US-EAST-2']),editSkuId:edit?sku.id:null,skus:edit?[old]:[],validateSkuUnlockPool:()=>'',validateGateForm,attachSkuMedia:s=>s,formToSku,summarizeSkuCreation,summarizeSkuProposal,setToast:v=>toasts.push(v),openActionConfirm:v=>opened.push(v),setSkuDrawer:v=>closed.push(v),mc:{op:'sku-save',name:'商品变更'},isE2TaskMutation:()=>false,isE2ConfigMutation:()=>false,setActionConfirm:v=>closed.push(v),setEditSkuId:()=>{},resetSkuMedia:()=>{},ctx:{toast:()=>{}},findHighOp:()=>({type:'param',gateLabel:'门槛者',buildCommand:v=>({domain:'E',op:edit?'e1_sku_update':'e1_sku_create',params:v}),buildTarget:v=>({domain:'E',type:'device_sku',id:v.skuId})}),propose:async(_toast,p)=>proposals.push(p)};
  return {b,opened,toasts,proposals,closed,open:()=>compile(open,b)(),submit:()=>compile(submit,b)('真实完整商品修改理由')};
 }
 for(const edit of [false,true])test(`actual E1 ${edit?'update':'create'} opens confirmation and submits every field`,async()=>{
@@ -38,15 +37,15 @@ test('actual E1 still rejects invalid stock and missing edit snapshot',()=>{
 });
 
 const brandCases=[
- ['stellarbox-s1','NexGridBox S1','UVELBox S1'],
- ['stellarbox-pro-v2','NexGridBox Pro v2','UVELBox Pro v2'],
- ['stellarbox-pro','StellarBox Pro','UVELBox Pro'],
- ['stellarrack-p1','StellarRack P1','UVELRack P1'],
+ ['stellarbox-s1','NexGridBox S1','NexGridBox S1'],
+ ['stellarbox-pro-v2','NexGridBox Pro v2','NexGridBox Pro v2'],
+ ['stellarbox-pro','StellarBox Pro','StellarBox Pro'],
+ ['stellarrack-p1','StellarRack P1','StellarRack P1'],
  ['custom','NexGridBox Pro v2','NexGridBox Pro v2'],
  ['stellarbox-pro-v2','My NexGridBox Pro v2','My NexGridBox Pro v2'],
  ['stellarbox-pro-v2','NexGridBox Pro v2 Limited','NexGridBox Pro v2 Limited'],
 ];
-for(const edit of [false,true])test(`E1 actual ${edit?'edit':'create'} callback brands only generated action and preserves raw review command`,async()=>{
+for(const edit of [false,true])test(`E1 actual ${edit?'edit':'create'} callback uses stored names in actions and preserves raw review command`,async()=>{
  for(const [id,name,display] of brandCases){
   const sku=Object.freeze({...full,id,name});const f=fixture(edit,1,sku);
   const rawForm=structuredClone(f.b.form),rawPrevious=structuredClone(f.b.skus);
@@ -69,8 +68,8 @@ const statusClick=findNode(catalogAst,n=>ts.isJsxAttribute(n)&&n.name.getText(ca
 test('E1 actual delete and listing callbacks preserve custom names, raw before values and target/revision',async()=>{
  for(const [id,name,display] of brandCases)for(const mode of ['delete','on','off']){
   const sku=Object.freeze({...full,id,name,updatedAt:'2026-10-19T12:23:00Z'});const f=fixture();f.b.skus=[sku];
-  if(mode==='delete')compile(delSku,{catalogSkuBrandText,openActionConfirm:f.b.openActionConfirm})(id,name);
-  else compile(statusClick,{catalogSkuBrandText,s:sku,st:mode,ctx:{openActionConfirm:f.b.openActionConfirm}})();
+  if(mode==='delete')compile(delSku,{openActionConfirm:f.b.openActionConfirm})(id,name);
+  else compile(statusClick,{s:sku,st:mode,ctx:{openActionConfirm:f.b.openActionConfirm}})();
   assert.equal(f.opened.length,1);f.b.mc=f.opened[0];await f.submit();const p=f.proposals[0];
   assert.equal(p.action,`${mode==='delete'?'删除':mode==='on'?'下架':'上架'} SKU · ${display}`);
   assert.equal(p.before,name);assert.equal(p.obj,id);assert.equal(p.target.id,id);
@@ -78,11 +77,11 @@ test('E1 actual delete and listing callbacks preserve custom names, raw before v
   assert.equal(p.reason,'真实完整商品修改理由');assert.equal(sku.name,name);
  }
 });
-test('E1 actual generation-gate callbacks use exact official SKU pairs without rewriting configuration names',()=>{
+test('E1 actual generation-gate callbacks keep all persisted configuration names verbatim',()=>{
  for(const [id,name,display] of brandCases)for(const fnName of ['genShift','genForceUnlock','genForceLock','openGateEditor','archiveGate']){
   const g=Object.freeze({id,name,phase:'seed',releaseMonth:2,phaseOffset:0,eligibility:true,forceUnlock:false});const opened=[];
   const expression=findNode(catalogAst,n=>ts.isVariableDeclaration(n)&&n.name.getText(catalogAst)===fnName).initializer.getText(catalogAst);
-  const callback=compile(expression,{catalogSkuBrandText,ctx:{openActionConfirm:v=>opened.push(v)},
+  const callback=compile(expression,{ctx:{openActionConfirm:v=>opened.push(v)},
    gateReadiness:()=>({declaredPhase:'seed',phaseConflict:false,eligibilityReady:true,phaseReached:true}),phaseLabel:v=>v,
    phaseOptions:['seed'],gateSkuOptions:[id],platformMonth:1,phaseCur:'seed'});
   callback(g,0,-1);assert.equal(opened.length,1);const modal=opened[0];assert.ok(modal.name.endsWith(display));

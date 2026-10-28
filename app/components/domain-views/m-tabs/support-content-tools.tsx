@@ -3,7 +3,6 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import { createPortal } from "react-dom";
 import { supportEnhancements, type SupportLink } from "@/lib/admin/m-support-enhancements";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { catalogSkuBrandText } from "@/lib/admin/brand-copy";
 import { supportPhraseClient, type SupportPersonalPhrase } from "@/lib/admin/m-support-client";
 import type { MCtx } from "./types";
 import { Icon, Modal } from "../design-kit";
@@ -97,7 +96,7 @@ export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover
         <label className="support-content-field"><span>搜索商品名称或编号</span><input className="fld" value={skuQuery} disabled={disabled} onChange={e=>{setSkuQuery(e.target.value);setSkuPage(1);}}/></label>
         {disabled&&!skus?<p className="support-content-state" role="status">现在不能推荐商品：当前不能发消息，或上一个操作还没结束。</p>:error?<div className="support-content-state" role="alert">{error}<button className="l-btn sm" disabled={disabled} onClick={()=>setSkuRetry(n=>n+1)}>重试商品</button></div>:!skus?<p className="support-content-state" role="status">{skuBusy?"正在加载在售商品…":"在售商品还没加载。"}</p>:<>
           {!skus.length&&<p className="support-content-state">没有匹配的在售商品。</p>}
-          <div className="sku-pop-list" style={{maxHeight:300}}>{skus.map(s=><button type="button" className="l-btn sm sku-pop-item support-content-result" key={s.id} disabled={disabled} onClick={()=>{onSelect({kind:"SKU",skuId:s.id,name:catalogSkuBrandText(s.id,s.name)});setPicker(null);}}><span className="sku-pop-thumb"><Icon name="box" size={19}/></span><span className="sku-pop-info"><span className="sku-pop-title">{catalogSkuBrandText(s.id,s.name)}</span><span className="sku-pop-sub">{s.id}</span></span><Icon name="arrow" size={15}/></button>)}</div>
+          <div className="sku-pop-list" style={{maxHeight:300}}>{skus.map(s=><button type="button" className="l-btn sm sku-pop-item support-content-result" key={s.id} disabled={disabled} onClick={()=>{onSelect({kind:"SKU",skuId:s.id,name:(s.name)});setPicker(null);}}><span className="sku-pop-thumb"><Icon name="box" size={19}/></span><span className="sku-pop-info"><span className="sku-pop-title">{(s.name)}</span><span className="sku-pop-sub">{s.id}</span></span><Icon name="arrow" size={15}/></button>)}</div>
           <div className="support-content-pager"><button className="l-btn sm" disabled={skuPage<=1||disabled} onClick={()=>setSkuPage(n=>n-1)}>上一页</button><span>第 {skuPage} 页 · {total} 件</span><button className="l-btn sm" disabled={skuPage*10>=total||disabled} onClick={()=>setSkuPage(n=>n+1)}>下一页</button></div>
         </>}
       </div> : <div className="sku-pop-list">{(["HOME","WALLET","SUPPORT"] as const).map(type=><button type="button" className="l-btn sm sku-pop-item support-content-result" key={type} disabled={disabled} onClick={()=>{onSelect({kind:"LINK",linkTarget:{type,params:{}},name:{HOME:"首页",WALLET:"钱包",SUPPORT:"在线客服"}[type]});setPicker(null);}}>{ {HOME:"首页",WALLET:"钱包",SUPPORT:"在线客服"}[type]}<Icon name="arrow" size={15}/></button>)}</div>}

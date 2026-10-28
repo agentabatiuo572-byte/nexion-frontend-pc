@@ -354,7 +354,7 @@ function loadF1ClientRuntime() {
 function completeF1Overview() {
   const rewards = [
     { id: "r-usdt", type: "usdt", amount: 100 },
-    { id: "r-nex", type: "nex", amount: 50 },
+    { id: "r-nex", type: "uvt", amount: 50 },
     { id: "r-voucher", type: "voucher", voucherId: "voucher-real-test" },
     { id: "r-sku", type: "sku", skuId: "sku-real-test" },
     { id: "r-custom", type: "custom", custom: "Fixture reward" },

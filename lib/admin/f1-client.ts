@@ -1020,7 +1020,7 @@ function toBoolean(value: unknown, fallback = false) {
 }
 
 function normalizeRewardType(value: string | null | undefined): VRankRewardType {
-  return value === "usdt" || value === "nex" || value === "voucher" || value === "sku" || value === "custom" ? value : "custom";
+  return value === "usdt" || value === "uvt" || value === "voucher" || value === "sku" || value === "custom" ? value : "custom";
 }
 
 function normalizeReward(item: BackendReward): OpsVRankRewardItem {
@@ -1028,7 +1028,7 @@ function normalizeReward(item: BackendReward): OpsVRankRewardItem {
   return {
     id: asText(item.id, `vr-${type}`),
     type,
-    amount: type === "usdt" || type === "nex" ? toNumber(item.amount) : undefined,
+    amount: type === "usdt" || type === "uvt" ? toNumber(item.amount) : undefined,
     voucherId: type === "voucher" ? optionalText(item.voucherId) : undefined,
     skuId: type === "sku" ? optionalText(item.skuId) : undefined,
     custom: type === "custom" ? asText(item.custom, "自定义") : undefined,

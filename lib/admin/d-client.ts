@@ -502,7 +502,7 @@ export interface D4RunningBalance {
   unsettledCount: number;
   reconciliationScope: "CURRENT_WALLET" | "HISTORICAL_RANGE";
   reconciliationNote: string;
-  reconciliation: Record<"USDT" | "NEX", number> | null;
+  reconciliation: Record<"USDT" | "UVT", number> | null;
   balanced: boolean;
   sources: string[];
 }
@@ -1705,7 +1705,7 @@ function normalizeBill(value: unknown): D4Bill {
   const billType = d4String(row.billType, "bill.billType") as D4BillType;
   if (!D4_BILL_TYPES.has(billType)) d4Invalid("bill.billType");
   const asset = d4String(row.asset, "bill.asset").toUpperCase();
-  if (!["USDT", "NEX"].includes(asset)) d4Invalid("bill.asset");
+  if (!["USDT", "UVT"].includes(asset)) d4Invalid("bill.asset");
   const direction = d4String(row.direction, "bill.direction").toUpperCase();
   if (!["IN", "OUT", "CREDIT", "DEBIT"].includes(direction)) d4Invalid("bill.direction");
   const bizType = d4String(row.bizType, "bill.bizType");
@@ -2385,7 +2385,7 @@ export async function fetchD4UserLedger(userId: number, range?: Pick<D4BillQuery
     categoryTotals: numericRecord(rawCategories, "userLedger.categorySums"),
     balance: {
       USDT: d4Number(raw.currentUsdtBalance, "userLedger.currentUsdtBalance"),
-      NEX: d4Number(raw.currentNexBalance, "userLedger.currentNexBalance"),
+      UVT: d4Number(raw.currentNexBalance, "userLedger.currentNexBalance"),
     },
     sources: Array.isArray(raw.sources) ? raw.sources.map((item, index) => d4String(item, `userLedger.sources.${index}`)) : d4Invalid("userLedger.sources"),
   } satisfies D4UserLedger;
@@ -2412,7 +2412,7 @@ export async function fetchD4RunningBalance(
     const values = d4Object(raw.reconciliation, "runningBalance.reconciliation");
     reconciliation = {
       USDT: d4Number(values.USDT, "runningBalance.reconciliation.USDT"),
-      NEX: d4Number(values.NEX, "runningBalance.reconciliation.NEX"),
+      UVT: d4Number(values.UVT, "runningBalance.reconciliation.UVT"),
     };
   } else if (raw.reconciliation !== null) {
     d4Invalid("runningBalance.reconciliation");

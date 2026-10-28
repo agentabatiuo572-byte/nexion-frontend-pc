@@ -1,4 +1,4 @@
-import { orderSkuBrandText, nexGridBrandText, operatorNicknameText } from "./brand-copy.ts";
+import { nexGridBrandText, operatorNicknameText } from "./brand-copy.ts";
 const INTERNAL_FIXTURE_PATTERN = /(?:TRIALDEV|DEVTI|E3ACC|TIO|DEVICETRIALSTANDARD|INTERNAL|FIXTURE|QA(?:TEST)?|TEST(?:DEVICE|TASK)?)/i;
 const SAFE_DEVICE_IDENTIFIER = /^[A-Za-z0-9._:-]{3,64}$/;
 const SAFE_DATACENTER_IDENTIFIER = /^[A-Z]{2,6}-\d{1,3}$/;
@@ -164,7 +164,7 @@ export function operatorSkuLabel(input: { orderNo: string; skuName?: string | nu
         operatorSkuLabel({ ...input, skuName: name, skuId: skuIds[index] }) === "商品信息待补"))) {
     return "商品信息待补";
   }
-  return orderSkuBrandText(skuId, skuName);
+  return (skuName);
 }
 
 export function operatorSkuTier(value: string | undefined): string { return ({ Entry: "入门档", Pro: "专业档", Flagship: "旗舰档", Share: "共享份额" } as Record<string,string>)[value ?? ""] ?? "其他档位"; }

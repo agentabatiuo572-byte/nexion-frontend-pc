@@ -1176,7 +1176,7 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
   }
   if (spec.kind === "vrank-reward-edit") {
     return {
-      rtype: spec.currentType ?? "nex",
+      rtype: spec.currentType ?? "uvt",
       amount: spec.currentAmount ?? "",
       voucherId: spec.currentVoucherId ?? (spec.voucherOptions?.[0] ?? ""),
       skuId: spec.currentSkuId ?? (spec.skuOptions?.[0] ?? ""),
@@ -1546,7 +1546,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (!Number.isSafeInteger(cap) || cap < 1 || cap > 10) missing.push("单会话上限须为 1-10 次");
   } else if (spec.kind === "vrank-reward-edit") {
     needs("rtype", "奖励类型");
-    if (state.rtype === "usdt" || state.rtype === "nex") {
+    if (state.rtype === "usdt" || state.rtype === "uvt") {
       const a = Number(state.amount);
       if (!Number.isFinite(a) || a <= 0) missing.push("奖励金额(正数)");
     } else if (state.rtype === "voucher") {
@@ -1606,7 +1606,7 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
   if (spec.kind === "vrank-reward-edit") {
     const t = state.rtype;
     if (t === "usdt") return state.amount ? `USDT $${state.amount}` : undefined;
-    if (t === "nex") return state.amount ? `${Number(state.amount).toLocaleString()} UVT` : undefined;
+    if (t === "uvt") return state.amount ? `${Number(state.amount).toLocaleString()} UVT` : undefined;
     if (t === "voucher") return state.voucherId ? `代金券 ${spec.voucherLabels?.[state.voucherId] ?? state.voucherId}` : undefined;
     if (t === "sku") return state.skuId ? `SKU ${spec.skuLabels?.[state.skuId] ?? state.skuId}` : undefined;
     if (t === "custom") return state.custom || undefined;
@@ -1644,7 +1644,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     const proof = typeof proofOrLabels === "string" ? proofOrLabels : undefined;
     const labels = typeof proofOrLabels === "string" ? optionLabels : proofOrLabels;
     const current = value[key] ?? options[0] ?? "";
-    const displayOption = (option: string) => ({ NEX: "UVT", nex: "UVT", server: "服务器", client: "客户端", "server+client": "服务器与客户端", string: "文本", number: "数值", boolean: "是或否", enum: "固定选项", timestamp: "时间", id: "编号", "无 PII": "无个人隐私信息", "低(脱敏 ID)": "仅部分隐藏的编号", "默认脱敏": "默认隐藏敏感信息", "上架中 active": "上架中", "已下架 paused": "已下架", "超管": "超级管理员" } as Record<string, string>)[option] ?? option.replace(/^KPI/, "关键指标").replace(/\bStaking\b/g, "质押").replace(/\bGenesis\b/g, "创世节点").replace(/([\u3400-\u9fff])\s+(?:active|paused|fixed|percent|new|all|true|false)\b/g, "$1");
+    const displayOption = (option: string) => ({ UVT: "UVT", uvt: "UVT", server: "服务器", client: "客户端", "server+client": "服务器与客户端", string: "文本", number: "数值", boolean: "是或否", enum: "固定选项", timestamp: "时间", id: "编号", "无 PII": "无个人隐私信息", "低(脱敏 ID)": "仅部分隐藏的编号", "默认脱敏": "默认隐藏敏感信息", "上架中 active": "上架中", "已下架 paused": "已下架", "超管": "超级管理员" } as Record<string, string>)[option] ?? option.replace(/^KPI/, "关键指标").replace(/\bStaking\b/g, "质押").replace(/\bGenesis\b/g, "创世节点").replace(/([\u3400-\u9fff])\s+(?:active|paused|fixed|percent|new|all|true|false)\b/g, "$1");
     return (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}</span>
@@ -2640,16 +2640,16 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   }
 
   if (spec.kind === "vrank-reward-edit") {
-    const rtype = value.rtype ?? "nex";
+    const rtype = value.rtype ?? "uvt";
     const voucherOpts = spec.voucherOptions ?? [];
     const skuOpts = spec.skuOptions ?? [];
     return (
       <div className="field" data-business-form="vrank-reward-edit">
         <span className="bf-legend">等级奖励{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div style={{ marginBottom: 10 }}>
-          {select("rtype", "奖励类型", ["usdt", "nex", "voucher", "sku", "custom"], "vrank-reward-type", { usdt: "USDT 现金", nex: "UVT 代币", voucher: "代金券", sku: "商品", custom: "自定义" })}
+          {select("rtype", "奖励类型", ["usdt", "uvt", "voucher", "sku", "custom"], "vrank-reward-type", { usdt: "USDT 现金", uvt: "UVT 代币", voucher: "代金券", sku: "商品", custom: "自定义" })}
         </div>
-        {(rtype === "usdt" || rtype === "nex") && (
+        {(rtype === "usdt" || rtype === "uvt") && (
           <div data-proof="vrank-reward-amount">
             {input("amount", rtype === "usdt" ? "金额(USDT)" : "数量(UVT)", rtype === "usdt" ? "如 50" : "如 10000", "number")}
           </div>
@@ -2815,7 +2815,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {input("monthsTo", "注册时长到（月）", "2", "number")}
           {input("targetType", "目标类型", "如 earn")}
           {input("targetValue", "目标值", "200", "number")}
-          {select("rewardType", "奖励类型", ["NEX", "USDT"], "monthly-reward-type", { NEX: "UVT 代币", USDT: "USDT 现金" })}
+          {select("rewardType", "奖励类型", ["UVT", "USDT"], "monthly-reward-type", { UVT: "UVT 代币", USDT: "USDT 现金" })}
           {input("rewardAmount", "奖励量", "1500", "number")}
           {input("rewardName", "奖励展示", "如 1500 UVT")}
         </div>
@@ -2835,7 +2835,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {input("rewardName", "奖励展示", "如 100 UVT")}
           {input("probabilityPct", "中奖概率（%）", "0–100，如 5", "number")}
           {select("realOutflow", "是否发真钱", ["0", "1"], "tier-real-outflow", { "0": "否（积分等）", "1": "是" })}
-          {select("rewardKind", "奖励类型", ["nex", "points", "usdt", "coupon"], "tier-reward-kind", { nex: "UVT", points: "积分", usdt: "USDT", coupon: "代金券" })}
+          {select("rewardKind", "奖励类型", ["uvt", "points", "usdt", "coupon"], "tier-reward-kind", { uvt: "UVT", points: "积分", usdt: "USDT", coupon: "代金券" })}
           {input("rewardAmount", "实际发放数量", "如 100", "number")}
           {input("voucherId", "代金券编号（奖励为代金券时填）", "如 WHEEL-50")}
           {input("dailyStock", "每日总数量（0 为不限）", "如 50", "number")}
@@ -3343,7 +3343,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "balance-adjust") {
     const amtN = Number(value.amount);
     const dir = value.direction ?? "增加";
-    const signed = !Number.isFinite(amtN) || amtN <= 0 ? "—" : `${dir === "扣减" ? "−" : dir === "冲正" ? "∓" : "+"}${amtN} ${value.currency === "NEX" ? "UVT" : value.currency ?? "USDT"}`;
+    const signed = !Number.isFinite(amtN) || amtN <= 0 ? "—" : `${dir === "扣减" ? "−" : dir === "冲正" ? "∓" : "+"}${amtN} ${value.currency === "UVT" ? "UVT" : value.currency ?? "USDT"}`;
     return (
       <div className="field" data-business-form="balance-adjust">
         <span className="bf-legend">调整余额</span>
@@ -3351,7 +3351,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <div className="grid g-2" style={{ gap: 10 }}>
           {select("direction", "调整方向", spec.directions ?? ["增加", "扣减", "冲正"], "adjust-direction")}
           {input("amount", "调整金额(正数)", "100", "number")}
-          {select("currency", "币种", spec.currencies ?? ["USDT", "NEX"], "adjust-currency")}
+          {select("currency", "币种", spec.currencies ?? ["USDT", "UVT"], "adjust-currency")}
           {input("voucher", "关联凭证", "工单号 / 链上 txid / 银行流水号")}
         </div>
         <div className="tint tiny" data-proof="adjust-entry-preview" style={{ marginTop: 10 }}>

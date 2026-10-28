@@ -140,7 +140,7 @@ test("F5 恢复确认和提示使用相同奖种名称", async () => {
 
 test("①a 直属两类双币冷却行不提供提前解锁，包括剩余天数显示为零", () => {
   for (const kind of ["direct_purchase", "direct_device_earning"]) {
-    for (const cur of ["USDT", "NEX"]) {
+    for (const cur of ["USDT", "UVT"]) {
       for (const days of [3, 0]) {
         const view = renderRow(kind, "cooling", cur, true, days);
         assert.equal(button(view, "提前解锁"), undefined, `${kind}/${cur}/${days} 天仍处于 cooling，不应承诺跳过冷却`);
@@ -150,7 +150,7 @@ test("①a 直属两类双币冷却行不提供提前解锁，包括剩余天数
 });
 
 test("①b 历史 network 双币保留冻结、提前解锁与解冻确认", () => {
-  for (const cur of ["USDT", "NEX"]) {
+  for (const cur of ["USDT", "UVT"]) {
     for (const [status, actions] of [["cooling", ["冻结", "提前解锁"]], ["frozen", ["解冻"]]]) {
       const view = renderRow("network", status, cur);
       assert.deepEqual(view.buttons.map(textOf).filter((label) => disposalLabels.includes(label)), actions);
@@ -167,7 +167,7 @@ test("①b 历史 network 双币保留冻结、提前解锁与解冻确认", () 
 
 test("①c 直属两类双币保留整组冻结、解冻，解冻恢复 cooling", () => {
   for (const kind of ["direct_purchase", "direct_device_earning"]) {
-    for (const cur of ["USDT", "NEX"]) {
+    for (const cur of ["USDT", "UVT"]) {
       for (const [status, label, fixedVal] of [["cooling", "冻结", "frozen"], ["frozen", "解冻", "cooling"]]) {
         const view = renderRow(kind, status, cur);
         assert.deepEqual(view.buttons.map(textOf).filter((item) => disposalLabels.includes(item)), [label]);

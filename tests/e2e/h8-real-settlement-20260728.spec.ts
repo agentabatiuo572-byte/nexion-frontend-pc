@@ -169,7 +169,7 @@ test("H8 隔离夹具经独立 maker/checker 真实结算并贯通钱包、D4、
     );
     const ledgerRows = ledger.records ?? ledger.rows ?? [];
     expect(ledgerRows).toHaveLength(3);
-    expect(new Set(ledgerRows.map((row) => String(row.asset)))).toEqual(new Set(["USDT", "NEX"]));
+    expect(new Set(ledgerRows.map((row) => String(row.asset)))).toEqual(new Set(["USDT", "UVT"]));
 
     const audit = await checkerPage.request.get(
       `/api/admin/platform/audit/logs?keyword=${encodeURIComponent(settlement!.settlementNo)}&limit=100`,

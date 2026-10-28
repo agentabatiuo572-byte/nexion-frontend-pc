@@ -41,7 +41,7 @@ function setup(skus,mode) {
   let captured, calls=[];
   const data={skus},original=JSON.stringify(skus);
   const {openAdd,openEdit}=load(source,['skuList','activeSkus','skuOptions','skuLabels','toMs','toDateInput','parseVoucher','openAdd','openEdit'],{
-    data,catalogSkuBrandText:brand.catalogSkuBrandText,openActionConfirm:v=>captured=v,
+    data,openActionConfirm:v=>captured=v,
     createH7Voucher:async(...args)=>{calls.push(args);return {};},updateH7Voucher:async(...args)=>{calls.push(args);return {};},applyResponse:()=>{},toast:()=>{}
   });
   const voucher={id:'voucher-1',name:'Custom NexGrid coupon',type:'fixed',amountUSD:1,minPurchaseUSD:10,applicableSkus:['stellarbox-s1'],claimSurfaces:['store'],status:'active',audience:'all',version:7,startAt:0,endAt:0,issuanceLimit:10};
@@ -50,7 +50,7 @@ function setup(skus,mode) {
   const render=()=>BusinessFormBlock({spec,value,onChange:v=>value=v,onUploadStateChange:()=>{}});
   return {captured,spec,calls,render,get value(){return value;},assertRaw:()=>assert.equal(JSON.stringify(skus),original)};
 }
-const official=[['stellarbox-s1','NexGridBox S1','UVELBox S1'],['stellarbox-pro','StellarBox Pro','UVELBox Pro'],['stellarrack-p1','StellarRack P1','UVELRack P1']];
+const official=[['stellarbox-s1','NexGridBox S1','NexGridBox S1'],['stellarbox-pro','UVELBox Pro','UVELBox Pro'],['stellarrack-p1','StellarRack P1','StellarRack P1']];
 for(const mode of ['add','edit']){
   for(const [id,name,expected] of official)test(`${mode}: actual H7 selector displays ${expected}`,async()=>{
     const s=setup([Object.freeze({id,name,status:'on'})],mode);

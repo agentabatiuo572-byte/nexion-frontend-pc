@@ -25,9 +25,9 @@ const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-h8-co
 
 const PARAMS = [
   { key: "newcomer.usdt", label: "新人 USDT", unit: "USDT", kind: "number", max: 50, step: 0.000001 },
-  { key: "newcomer.nex", label: "新人 UVT", unit: "NEX", kind: "number", max: 500, step: 0.000001 },
+  { key: "newcomer.nex", label: "新人 UVT", unit: "UVT", kind: "number", max: 500, step: 0.000001 },
   { key: "newcomer.lockMode", label: "新人礼发放模式", unit: "", kind: "select", options: ["risk_bucket", "direct"] },
-  { key: "inviter.nex", label: "邀请人 UVT", unit: "NEX", kind: "number", max: 249_999_999.75, step: 0.000001 },
+  { key: "inviter.nex", label: "邀请人 UVT", unit: "UVT", kind: "number", max: 249_999_999.75, step: 0.000001 },
 ] as const;
 
 const LOCK_MODE_LABELS: Record<string, string> = {

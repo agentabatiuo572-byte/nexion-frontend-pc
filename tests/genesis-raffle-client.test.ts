@@ -3,7 +3,7 @@ import { parseAdminRaffle, raffleDraftError, saveAdminRaffle, type RaffleDraft }
 const remote = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock("../lib/admin/h-client", () => ({ growthRequest: remote.request }));
 vi.mock("../lib/admin/current-operator", () => ({ currentAdminOperator: () => "admin-a" }));
-const draft = (): RaffleDraft => ({ id: "draw-1", titleZh: "抽奖", titleEn: "Raffle", titleVi: "Quay thưởng", startsAt: "2030-01-01T00:00:00Z", drawAt: "2030-01-02T00:00:00Z", prizes: [{ id: "p1", nameZh: "奖品", nameEn: "Prize", nameVi: "Giải thưởng", rewardType: "NEX", amount: "10", quantity: 2 }] });
+const draft = (): RaffleDraft => ({ id: "draw-1", titleZh: "抽奖", titleEn: "Raffle", titleVi: "Quay thưởng", startsAt: "2030-01-01T00:00:00Z", drawAt: "2030-01-02T00:00:00Z", prizes: [{ id: "p1", nameZh: "奖品", nameEn: "Prize", nameVi: "Giải thưởng", rewardType: "UVT", amount: "10", quantity: 2 }] });
 beforeEach(() => {
   remote.request.mockReset(); const storage = new Map<string, string>();
   vi.stubGlobal("window", { sessionStorage: { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value), removeItem: (key: string) => storage.delete(key) } });

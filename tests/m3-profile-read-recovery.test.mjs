@@ -32,7 +32,7 @@ const group = (data = {}, status = "READY") => ({ status, data, evaluatedAt: "20
 const profile = (name = "当前客户") => ({ identity: group({ nickname: name, userNo: "U-7" }), finance: group({ byCurrency: [] }), devices: group(), risk: group(), annotations: group({ customTags: [name], notes: [] }), service: group({ conversationCount: 0 }), statistics: group(null, "UNKNOWN"), actions: {} });
 const statistics = () => {
   const money = amount => ({ observed: amount, confirmed: amount, observedEvents: 1, confirmedEvents: 1, observedCustomers: 1, status: "AVAILABLE" });
-  return { first: { state: "CONFIRMED", status: "AVAILABLE", kind: "DEVICE_PURCHASE", currency: "USDT", amount: "649.123456", succeededAt: "2026-10-12T00:00:00Z" }, lifetime: ["USDT", "NEX"].map(currency=>({currency,deposits:money(currency==="USDT"?"1000":"12"),purchases:money("649.123456"),net:money("900")})), lifetimeStatus: "AVAILABLE", invitations: { direct: { observed: 2, confirmed: 2, status: "AVAILABLE" }, descendants: { observed: 4, confirmed: 4, status: "AVAILABLE" }, status: "AVAILABLE", deposits: ["USDT", "NEX"].map(currency=>({currency,deposits:money(currency==="USDT"?"2000":"24")})) }, activity: { state: "ACTIVE", status: "AVAILABLE", lastEffectiveAt: "2026-10-12T00:00:00Z" } };
+  return { first: { state: "CONFIRMED", status: "AVAILABLE", kind: "DEVICE_PURCHASE", currency: "USDT", amount: "649.123456", succeededAt: "2026-10-12T00:00:00Z" }, lifetime: ["USDT", "UVT"].map(currency=>({currency,deposits:money(currency==="USDT"?"1000":"12"),purchases:money("649.123456"),net:money("900")})), lifetimeStatus: "AVAILABLE", invitations: { direct: { observed: 2, confirmed: 2, status: "AVAILABLE" }, descendants: { observed: 4, confirmed: 4, status: "AVAILABLE" }, status: "AVAILABLE", deposits: ["USDT", "UVT"].map(currency=>({currency,deposits:money(currency==="USDT"?"2000":"24")})) }, activity: { state: "ACTIVE", status: "AVAILABLE", lastEffectiveAt: "2026-10-12T00:00:00Z" } };
 };
 const maintenance = { cycles: [], executions: [], totalCycles: 0, totalExecutions: 0 };
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -267,7 +267,7 @@ test("360 statistics shares strict M1 parsing and never upgrades unknown observa
   const input = profile(); input.statistics = group(statistics());
   const result = parseSupportProfile({profile:input});
   assert.equal(result.statistics.data.first.amount, "649.123456");
-  assert.deepEqual(result.statistics.data.lifetime.map(row=>row.currency), ["USDT", "NEX"]);
+  assert.deepEqual(result.statistics.data.lifetime.map(row=>row.currency), ["USDT", "UVT"]);
   const bad = structuredClone(input); bad.statistics.data.invitations.direct = {observed:2,confirmed:2,status:"UNKNOWN"};
   assert.throws(()=>parseSupportProfile({profile:bad}), /countCoverage/);
   bad.statistics.data.invitations.direct.confirmed = null;
@@ -297,8 +297,8 @@ test("unknown first candidate is not shown as a confirmed payment and detail fil
   const detail=h.html(); assert.doesNotMatch(detail, /649\.123456 USDT|首充来源<\/span><span class="v">购机/); assert.match(detail,/首充状态<\/span><span class="v">未知/);
   assert.doesNotMatch(source, /<select\b/);
   const filters=elements(h.render()).find(node=>node.props?.["aria-label"]==="流水币种");
-  const picker=elements(filters).find(node=>typeof node.props?.onChange==="function"); picker.props.onChange("NEX"); h.render();
-  assert.equal(h.requests.at(-1).kind,"flows"); assert.equal(h.requests.at(-1).args[1].currency,"NEX"); assert.equal(h.requests.at(-1).args[1].pageNum,1); h.unmount();
+  const picker=elements(filters).find(node=>typeof node.props?.onChange==="function"); picker.props.onChange("UVT"); h.render();
+  assert.equal(h.requests.at(-1).kind,"flows"); assert.equal(h.requests.at(-1).args[1].currency,"UVT"); assert.equal(h.requests.at(-1).args[1].pageNum,1); h.unmount();
 });
 
 test("actual sidebar restores bounded identity, two-currency 2x2 funds and shortcuts while full editing remains in 360", async () => {
@@ -307,7 +307,7 @@ test("actual sidebar restores bounded identity, two-currency 2x2 funds and short
   initial.risk = group({ level: "LOW", serviceExplanation: "已核实风险说明" });
   initial.service.data.ticketCount = 1;
   initial.annotations.data.notes = [{ text: "较旧备注", createdAt: "2026-10-11T01:00:00Z" }, { text: "最新备注", createdAt: "2026-10-12T01:00:00Z" }];
-  initial.finance.data.byCurrency = [{ currency: "USDT", creditedDepositTotal: "12400", successfulWithdrawalPrincipalTotal: "6200", balance: "4820", fieldStatuses: { creditedDepositTotal: "READY", successfulWithdrawalPrincipalTotal: "READY", balance: "READY" } }, { currency: "NEX", creditedDepositTotal: "0", successfulWithdrawalPrincipalTotal: null, balance: "9007199254740993.12345678", fieldStatuses: { creditedDepositTotal: "READY", successfulWithdrawalPrincipalTotal: "UNKNOWN", balance: "PARTIAL" } }];
+  initial.finance.data.byCurrency = [{ currency: "USDT", creditedDepositTotal: "12400", successfulWithdrawalPrincipalTotal: "6200", balance: "4820", fieldStatuses: { creditedDepositTotal: "READY", successfulWithdrawalPrincipalTotal: "READY", balance: "READY" } }, { currency: "UVT", creditedDepositTotal: "0", successfulWithdrawalPrincipalTotal: null, balance: "9007199254740993.12345678", fieldStatuses: { creditedDepositTotal: "READY", successfulWithdrawalPrincipalTotal: "UNKNOWN", balance: "PARTIAL" } }];
   h.requests[0].resolve(initial); succeed(h.requests.slice(1)); await h.settle();
   const sidebar = h.html(); assert.match(sidebar, /UID U-7/); assert.match(sidebar, /V3/); assert.match(sidebar, /低风险/);
   assert.match(sidebar, /最新备注/); assert.doesNotMatch(sidebar, /较旧备注|<textarea|type="date"|设备记录（含历史）|KYC|闲置/);
@@ -316,8 +316,8 @@ test("actual sidebar restores bounded identity, two-currency 2x2 funds and short
   const currency = elements(h.render()).find(node => node.props?.className === "m3-profile-currency");
   assert.equal(currency.props["aria-label"], "资金摘要币种");
   const selector = elements(currency).find(node => typeof node.props?.onChange === "function");
-  assert.equal(selector.props.width, 92); assert.deepEqual(Array.from(selector.props.options, option => option.value), ["USDT", "NEX"]);
-  selector.props.onChange("NEX");
+  assert.equal(selector.props.width, 92); assert.deepEqual(Array.from(selector.props.options, option => option.value), ["USDT", "UVT"]);
+  selector.props.onChange("UVT");
   const shortcuts = elements(h.render()).find(node => node.props?.className === "m3-profile-shortcuts");
   assert.deepEqual(elements(shortcuts).filter(node => node.props?.size === 15).map(node => node.props.name), ["clock", "doc", "lock", "wallet", "doc"]);
   const nex = h.html(); assert.match(nex, />0<small>UVT/); assert.match(nex, /9007199254740993\.12345678 UVT/); assert.match(nex, /部分统计/); assert.doesNotMatch(nex, /12400 USDT/);

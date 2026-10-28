@@ -261,7 +261,7 @@ export async function produceHandoff({ identity, sourcePhase, reportPath, login 
           return observation;
         };
         let customerObservation;
-        for (const basis of ["CURRENT_CUSTOMER_HISTORY", "PERIOD_EVENT"]) for (const currency of ["USDT", "NEX"]) for (const [view, label] of accountCase.mode === "PERSONAL" ? [["CUSTOMERS", "客户"]] : [["OVERVIEW", "总览"], ["AGENTS", "客服"], ["CUSTOMERS", "客户"]]) {
+        for (const basis of ["CURRENT_CUSTOMER_HISTORY", "PERIOD_EVENT"]) for (const currency of ["USDT", "UVT"]) for (const [view, label] of accountCase.mode === "PERSONAL" ? [["CUSTOMERS", "客户"]] : [["OVERVIEW", "总览"], ["AGENTS", "客服"], ["CUSTOMERS", "客户"]]) {
           await page.getByRole("navigation", { name: "数据视角" }).getByRole("button", { name: label, exact: true }).click();
           await select(page, "统计口径", basis === "PERIOD_EVENT" ? "期间业绩" : "当前客户");
           await select(page, "币种", currency);
@@ -284,7 +284,7 @@ export async function produceHandoff({ identity, sourcePhase, reportPath, login 
           const groupId = customerObservation.data.records.find(row => row.owner.groupId !== null)?.owner.groupId;
           const group = customerObservation.data.scopeSummary.groups.find(row => row.groupId === groupId);
           assert.ok(group?.name, "A real authorized group with a nonempty customer table is required");
-          const grouped = waitAnalytics(page, { view: "CUSTOMERS", basis: "PERIOD_EVENT", currency: "NEX", groupId: group.groupId, pageNum: 1 });
+          const grouped = waitAnalytics(page, { view: "CUSTOMERS", basis: "PERIOD_EVENT", currency: "UVT", groupId: group.groupId, pageNum: 1 });
           await page.locator(".sa-group-tabs").getByRole("button", { name: group.name, exact: true }).click(); customerObservation = await observe(await grouped, true);
         }
         if (accountCase.mode === "PERSONAL") assert.equal(await page.getByRole("button", { name: "分组管理", exact: true }).count(), 0);

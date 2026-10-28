@@ -111,7 +111,7 @@ export interface OpsVoucher {
   status: "active" | "paused";
 }
 
-export type VRankRewardType = "usdt" | "nex" | "voucher" | "sku" | "custom";
+export type VRankRewardType = "usdt" | "uvt" | "voucher" | "sku" | "custom";
 
 export interface OpsVRankRewardItem {
   id: string;

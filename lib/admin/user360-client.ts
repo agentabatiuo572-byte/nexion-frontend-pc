@@ -474,7 +474,7 @@ export interface UserAssetAdjustmentContext extends JsonRecord {
 }
 
 export interface CreateUserAssetAdjustmentInput {
-  asset: "USDT" | "NEX";
+  asset: "USDT" | "UVT";
   direction: "CREDIT" | "DEBIT";
   amount: string;
   reasonCode: string;

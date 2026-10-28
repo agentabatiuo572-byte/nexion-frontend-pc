@@ -16,7 +16,7 @@ import Link from "next/link";
 import { Icon, Btn, Chip, Drawer, KV, Badge, OperationConfirmModal, useToast } from "./design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { catalogSkuBrandText, nexGridBrandText } from "@/lib/admin/brand-copy";
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -717,7 +717,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     setSkuDrawer(true);
   };
   const delSku = (skuId: string, rawDisplayName: string) => {
-    const displayName = catalogSkuBrandText(skuId, rawDisplayName);
+    const displayName = (rawDisplayName);
     openActionConfirm({
       name: "删除商品 · " + displayName,
       op: "sku-delete",
@@ -845,7 +845,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     })
     .map((sku) => {
       const id = sku.id || sku.name;
-      return id && id !== sku.name ? `${nexGridBrandText(sku.name)}(${id})` : nexGridBrandText(sku.name);
+      return id && id !== sku.name ? `${sku.name}(${id})` : sku.name;
   });
   const delTask = (t: { id: string; n: string }) => {
     if (!canMutateE2Tasks) return rejectE2Mutation();
@@ -1043,7 +1043,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setToast("没有任何修改，无需提交");
       return;
     }
-    openActionConfirm({ name: (editSkuId ? "编辑商品 · " : "新增商品 · ") + catalogSkuBrandText(editSkuId ?? (form.id.trim() || form.name.trim()), form.name || "未命名"), op: "sku-save", isNew: !editSkuId, hasImg: !!skuMedia });
+    openActionConfirm({ name: (editSkuId ? "编辑商品 · " : "新增商品 · ") + (form.name || "未命名"), op: "sku-save", isNew: !editSkuId, hasImg: !!skuMedia });
     setSkuDrawer(false);
   };
 

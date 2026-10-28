@@ -30,7 +30,7 @@ function row(changes = {}) {
 }
 const page = records => ({ records, total: records.length, pageNum: 1, pageSize: 10 });
 const ledger = rows => ({ userId: 7, userNo: "U00000007", nickname: "test", rows, total: rows.length,
-  sums: { USDT: -1299, NEX: 0 }, categorySums: { "purchase:USDT": -1299, "earning:USDT": 0 },
+  sums: { USDT: -1299, UVT: 0 }, categorySums: { "purchase:USDT": -1299, "earning:USDT": 0 },
   currentUsdtBalance: 0, currentNexBalance: 0, sources: ["nx_wallet_ledger", "nx_user_wallet"] });
 
 function loadClient(data, override) {

@@ -21,7 +21,7 @@ function Fixture({ mode }: { mode: string }) {
   const [query, setQuery] = useState<SupportBoardQuery>({ board: moneyMode ? "netContribution" : "firstPayment", month: "2026-10", scope: "all", currency: mode === "currency-query-missing" ? undefined : "USDT" });
   const amountMonth = query.board === "customers" ? "2026.10" : query.month === "2026-09" ? "2026.09" : "2026.10";
   let rows: SupportBoardRow[] = baseRows.map(row => ({ ...row, avatarUrl: window.fixtureAvatars[row.id], amount: { ...row.amount, currency: query.currency || "USDT", periodLabel: amountMonth } }));
-  if (mode.startsWith("currency-")) rows = rows.map(row => ({ ...row, amount: { ...row.amount, currency: mode === "currency-row-missing" ? "" : mode === "currency-wrong" || mode === "currency-self-wrong" && row.id === "mia" ? query.currency === "NEX" ? "USDT" : "NEX" : row.amount.currency } }));
+  if (mode.startsWith("currency-")) rows = rows.map(row => ({ ...row, amount: { ...row.amount, currency: mode === "currency-row-missing" ? "" : mode === "currency-wrong" || mode === "currency-self-wrong" && row.id === "mia" ? query.currency === "UVT" ? "USDT" : "UVT" : row.amount.currency } }));
   if (mode.startsWith("period-")) rows = rows.map(row => ({ ...row, amount: { ...row.amount,
     periodLabel: mode === "period-same-dash" ? amountMonth.replace(".", "-") : mode === "period-different" ? amountMonth === "2026.10" ? "2026.09" : "2026.10" : mode === "period-missing" ? "" : mode === "period-invalid" ? "2026.99" : row.amount.periodLabel,
     coverage: mode === "period-partial" ? "partial" : mode === "period-unavailable" ? "unavailable" : row.amount.coverage,
@@ -61,7 +61,7 @@ function Fixture({ mode }: { mode: string }) {
   return <SupportLeaderboard query={query} onQueryChange={next => { setQuery(next); setCurrentPage(1); onEvent(`query:${JSON.stringify(next)}`); }}
     monthOptions={[{ value: "2026-10", label: "本月" }, { value: "2026-09", label: "上月" }, { value: "disabled", label: "未覆盖月份", disabled: true }, { value: "long", label: "2026年10月 · 完整发布后的历史月份长选项" }]}
     scopeOptions={[{ value: "all", label: "全员" }, { value: "mine", label: "本人所在组" }, { value: "long", label: "负责组 · 星河客户运营与维护团队长名称" }]}
-    currencyOptions={[{ value: "USDT", label: "USDT" }, { value: "NEX", label: "NEX" }]}
+    currencyOptions={[{ value: "USDT", label: "USDT" }, { value: "UVT", label: "UVT" }]}
     rows={pagedRows} podium={podium} onViewAllRankings={() => { setCurrentPage(1); onEvent("all-rankings"); }} self={self ? { row: self, gap: mode === "big-gap" ? "987654321012345.99" : "6" } : undefined}
     currentMonth={mode === "period-header-missing" ? "" : "2026.10"} periodLabel={mode === "period-header-missing" ? "" : query.board === "customers" ? "截至现在" : amountMonth} updatedAt="10-07 13:00（模拟）" disclosure="排名公开，客户明细仍按权限查看"
     status={mode === "empty" ? "empty" : mode === "loading" ? "loading" : mode === "error" ? "error" : "ready"}

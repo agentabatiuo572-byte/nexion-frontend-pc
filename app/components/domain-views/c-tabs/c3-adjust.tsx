@@ -35,7 +35,7 @@ import { DataListPager, Drawer } from "../design-kit";
 import type { CCtx } from "./types";
 
 const OPERATOR = currentAdminOperator;
-const ASSETS = ["USDT", "NEX"] as const;
+const ASSETS = ["USDT", "UVT"] as const;
 const REASON_CODES = [
   ["SUPPORT_COMPENSATION", "客服补偿"],
   ["SYSTEM_CORRECTION", "系统纠错"],
@@ -50,7 +50,7 @@ const REASON_CODE_LABELS: Record<string, string> = {
   REVERSAL: "冲正",
   OPS_USER_ADJUSTMENT: "运营余额调整",
 };
-const HISTORY_FILTERS = ["全部", "USDT", "NEX"] as const;
+const HISTORY_FILTERS = ["全部", "USDT", "UVT"] as const;
 
 type Asset = (typeof ASSETS)[number];
 type Direction = "CREDIT" | "DEBIT";
@@ -290,7 +290,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
           ? "金额必须大于 0"
         : amountUsd > maxAmount
           ? `单笔金额不得超过 ${formatNumber(maxAmount)} USDT 等值`
-          : asset === "NEX" && nexUsdRate <= 0
+          : asset === "UVT" && nexUsdRate <= 0
             ? "当前 UVT 价格不可用，暂不能提交"
             : debitInsufficient
               ? "扣减后余额不足"
@@ -580,7 +580,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
 
               <div className="row"><TabGroup label="资产" labelClassName="bf-legend" value={asset} items={ASSETS} onSelect={setAsset} className="chips" itemClassName={(_item, selected) => `chip${selected ? " sel" : ""}`}>{(item) => nexGridBrandText(item)}</TabGroup></div>
               <div className="row"><TabGroup<Direction> label="方向" labelClassName="bf-legend" value={direction} items={["CREDIT", "DEBIT"]} onSelect={setDirection} className="chips" itemClassName={(_item, selected) => `chip${selected ? " sel" : ""}`}>{(item) => item === "CREDIT" ? "增加" : "扣减"}</TabGroup></div>
-              <div className="row"><span className="bf-legend">金额</span><input aria-label="调整金额" value={amountText} onChange={(event) => setAmountText(event.target.value)} inputMode="decimal" style={{ width: 140 }} /><span style={{ fontSize: 12, color: "var(--ink-4)" }}>{asset === "NEX" ? `≈ $${formatUsdEquivalent(amountUsd)}` : "USDT"}</span></div>
+              <div className="row"><span className="bf-legend">金额</span><input aria-label="调整金额" value={amountText} onChange={(event) => setAmountText(event.target.value)} inputMode="decimal" style={{ width: 140 }} /><span style={{ fontSize: 12, color: "var(--ink-4)" }}>{asset === "UVT" ? `≈ $${formatUsdEquivalent(amountUsd)}` : "USDT"}</span></div>
               <div className="row"><TabGroup label="原因分类" labelClassName="bf-legend" value={reasonCode} items={REASON_CODES.map(([code]) => code)} onSelect={setReasonCode} className="chips" itemClassName={(_item, selected) => `chip${selected ? " sel" : ""}`}>{(code) => REASON_CODES.find(([value]) => value === code)?.[1]}</TabGroup></div>
               <div className="row" style={{ alignItems: "flex-start" }}><span className="bf-legend">详细原因</span><textarea className="ui-control" aria-label="详细原因" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="8–200 字，说明事实、判断和处理依据" rows={3} style={{ flex: 1 }} /><span style={{ fontSize: 12, color: reasonLength >= 8 && reasonLength <= 200 ? "var(--success)" : "var(--ink-4)" }}>{reasonLength}/200</span></div>
               <div className="row"><span className="bf-legend">凭证</span><input aria-label="证据引用" value={evidenceRef} onChange={(event) => setEvidenceRef(event.target.value)} placeholder="例如：工单 20260718-001" style={{ flex: 1 }} /></div>

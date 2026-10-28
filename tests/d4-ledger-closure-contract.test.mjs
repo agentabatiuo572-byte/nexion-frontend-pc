@@ -23,7 +23,7 @@ test("D4 contains user-wide category totals, running-balance breaks, masked expo
   assert.match(client, /unsettledCount/);
   assert.match(client, /reconciliationScope/);
   assert.match(client, /reconciliationNote/);
-  assert.match(client, /reconciliation:\s*Record<"USDT" \| "NEX", number> \| null/);
+  assert.match(client, /reconciliation:\s*Record<"USDT" \| "UVT", number> \| null/);
   assert.match(page, /这段时间的账单余额都对得上/);
   assert.match(page, /历史时段不与当前钱包对比/);
   assert.match(page, /downloadD4BillsCsv/);

@@ -236,7 +236,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
             {KINDS.map((item) => <option key={item} value={item}>{KIND_LABELS[item]}</option>)}
           </select>
           <select aria-label="全部币种" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-            <option value="">全部币种</option><option value="USDT">USDT</option><option value="NEX">UVT</option>
+            <option value="">全部币种</option><option value="USDT">USDT</option><option value="UVT">UVT</option>
           </select>
           <input aria-label="用户编号" placeholder="用户编号" value={userId} onChange={(e) => setUserId(e.target.value.replace(/\D/g, ""))} />
           <input aria-label="用户群" type="month" title="按成员注册月份筛选" value={cohort} onChange={(e) => setCohort(e.target.value)} />

@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { subscribeAdminRealtime,getAdminRealtimeSnapshot,watchAdminConversation,sendAdminTyping } from '@/lib/admin/admin-conversation-realtime';
 import { useRouter } from "next/navigation";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { catalogSkuBrandText, supportMessageBrandText, userNicknameText } from "@/lib/admin/brand-copy";
+import { userNicknameText } from "@/lib/admin/brand-copy";
 import { Icon, MessageThread, type ThreadMessage } from "../design-kit";
 import {
   STANDBY_POOL_LABEL,
@@ -122,7 +122,7 @@ function toPushSku(sku: PushSkuSource): PushSku {
   const subtitle = [sku.tier, sku.tagline, sku.gpu || sku.vram].filter(Boolean).slice(0, 2).join(" · ");
   return {
     id: sku.id || sku.name,
-    title: catalogSkuBrandText(sku.id, sku.name || sku.id || "未命名 SKU"),
+    title: (sku.name || sku.id || "未命名 SKU"),
     subtitle: subtitle || "客服工作台商品",
     to: "/store",
   };
@@ -817,7 +817,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       agentName: m.agentName,
       senderName: isAgent ? m.agentName : selected?.profile?.nickname ?? selected?.customer ?? "用户",
       vlevel: !isAgent ? selected?.profile?.vlevel : undefined,
-      body: supportMessageBrandText(m),
+      body: (m).text,
       cta,
       receipt,
     };

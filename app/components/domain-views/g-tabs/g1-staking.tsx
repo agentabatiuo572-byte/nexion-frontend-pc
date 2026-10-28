@@ -172,9 +172,9 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
 
   const adjApy = (pool: G1Pool) => {
     openActionConfirm({
-      action: `调整质押年化收益率 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
+      action: `调整质押年化收益率 · ${(pool.product)} · ${displayTerm(pool)}`,
       detail: <>
-        当前年化收益率 {pool.apyDisplay} · 产品 <b>{nexGridBrandText(pool.product)} · {displayTerm(pool)}</b> · <b>只影响新订单</b>，已有订单仍按下单时的利率。
+        当前年化收益率 {pool.apyDisplay} · 产品 <b>{(pool.product)} · {displayTerm(pool)}</b> · <b>只影响新订单</b>，已有订单仍按下单时的利率。
         <div className="gtint" data-proof="g1-apy-preview" style={{ marginTop: 10 }}>
           <div><b>影响预览</b></div>
           <div>当前锁仓本金：<b>{pool.lockedDisplay}</b> · 计息中：<b>{fmtCount(stats.activeCount)}</b> 单</div>
@@ -189,14 +189,14 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
         if (!value) return;
         await mutate(`apy:${pool.tierKey}`, () => updateG1StakingPoolParam(
           pool.tierKey, "apy", value, reason, currentAdminOperator(),
-        ), `年化收益率已调整 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`);
+        ), `年化收益率已调整 · ${(pool.product)} · ${displayTerm(pool)}`);
       },
     });
   };
 
   const adjPenalty = (pool: G1Pool) => {
     openActionConfirm({
-      action: `调整提前赎回罚款 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
+      action: `调整提前赎回罚款 · ${(pool.product)} · ${displayTerm(pool)}`,
       detail: <>当前罚款 {operatorCopyText(pool.penaltyDisplay)}。降低罚款会多付钱，覆盖率低于红线时无法保存（当前 {cov}%，红线 {redline}%）。只影响新订单。</>,
       coverage: { coverageRatio: coverage.coverageRatio, redlinePct: coverage.redlinePct },
       edit: { kind: "number", current: pool.penalty, unit: "%", min: 0, max: 100, step: 0.01, disallowCurrent: true, amplifiesWhen: "decrease" },
@@ -204,14 +204,14 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
         if (!value) return;
         await mutate(`penalty:${pool.tierKey}`, () => updateG1StakingPoolParam(
           pool.tierKey, "penalty", value, reason, currentAdminOperator(),
-        ), `提前赎回罚款已调整 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`);
+        ), `提前赎回罚款已调整 · ${(pool.product)} · ${displayTerm(pool)}`);
       },
     });
   };
 
   const adjMin = (pool: G1Pool) => {
     openActionConfirm({
-      action: `调整最低锁仓额 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
+      action: `调整最低锁仓额 · ${(pool.product)} · ${displayTerm(pool)}`,
       detail: <>当前最低锁仓额 {pool.minDisplayValue}。只影响新订单，已有订单不变。</>,
       coverage: { coverageRatio: coverage.coverageRatio, redlinePct: coverage.redlinePct },
       edit: { kind: "number", current: pool.minStake, unit: "USDT", min: 0, max: 1_000_000_000, step: 0.01, disallowCurrent: true, amplifiesWhen: "decrease" },
@@ -219,7 +219,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
         if (!value) return;
         await mutate(`min:${pool.tierKey}`, () => updateG1StakingPoolParam(
           pool.tierKey, "min", value, reason, currentAdminOperator(),
-        ), `最低锁仓额已调整 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`);
+        ), `最低锁仓额已调整 · ${(pool.product)} · ${displayTerm(pool)}`);
       },
     });
   };
@@ -227,14 +227,14 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
   const togglePool = (pool: G1Pool) => {
     const nextEnabled = !pool.enabled;
     openActionConfirm({
-      action: `${pool.enabled ? "停售" : "恢复开售"}档位 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
+      action: `${pool.enabled ? "停售" : "恢复开售"}档位 · ${(pool.product)} · ${displayTerm(pool)}`,
       detail: <>{pool.enabled ? "停售后不能再买这一档，已有订单照常计息到期。" : `恢复后可以继续购买这一档。覆盖率低于红线时无法恢复（当前 ${cov}%，红线 ${redline}%）。`}</>,
       amplifies: nextEnabled,
       coverage: { coverageRatio: coverage.coverageRatio, redlinePct: coverage.redlinePct },
       run: async (reason) => {
         await mutate(`sale:${pool.tierKey}`, () => updateG1StakingPoolSaleStatus(
           pool.tierKey, nextEnabled, reason, currentAdminOperator(),
-        ), `${nextEnabled ? "已恢复开售" : "已停售"} · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`);
+        ), `${nextEnabled ? "已恢复开售" : "已停售"} · ${(pool.product)} · ${displayTerm(pool)}`);
       },
     });
   };
@@ -259,7 +259,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
   const resumeTier = (pool: G1Pool) => {
     if (!pool.killed) return;
     openActionConfirm({
-      action: `解除紧急暂停 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
+      action: `解除紧急暂停 · ${(pool.product)} · ${displayTerm(pool)}`,
       detail: <>解除后这一档马上可以继续购买。覆盖率低于红线时无法解除（当前 {cov}%，红线 {redline}%）。</>,
       amplifies: true,
       coverage: { coverageRatio: coverage.coverageRatio, redlinePct: coverage.redlinePct },
@@ -279,7 +279,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
           currentAdminOperator(),
           "MANUAL_RISK_REVIEW",
           businessValue?.dispositionPlan ?? "",
-        ), `已解除紧急暂停 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`);
+        ), `已解除紧急暂停 · ${(pool.product)} · ${displayTerm(pool)}`);
       },
     });
   };
@@ -287,7 +287,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
   const killTier = (pool: G1Pool) => {
     if (pool.killed) return;
     openActionConfirm({
-      action: `紧急暂停 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
+      action: `紧急暂停 · ${(pool.product)} · ${displayTerm(pool)}`,
       detail: <>这一档马上停止购买，并按你填写的方案处理已有订单。之后可在本页解除，解除时要求覆盖率不低于红线。</>,
       businessForm: {
         kind: "multi-field",
@@ -306,7 +306,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
           currentAdminOperator(),
           businessValue?.triggerBasis ?? "",
           businessValue?.dispositionPlan ?? "",
-        ), `已暂停 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`);
+        ), `已暂停 · ${(pool.product)} · ${displayTerm(pool)}`);
       },
     });
   };

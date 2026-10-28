@@ -19,7 +19,7 @@ test("profile PARTIAL finance preserves observed subtotals without promoting NET
   const fields=["creditedDepositTotal","depositRefundTotal","successfulWithdrawalPrincipalTotal","successfulWithdrawalFeeTotal","successfulWithdrawalNetTotal","processingWithdrawalPrincipalTotal","balance","availableBalance"];
   const row={currency:"USDT",creditedDepositTotal:"749.000001",successfulWithdrawalPrincipalTotal:"100",netContributionTotal:"849",balance:"200",fieldStatuses:{...Object.fromEntries(fields.map(f=>[f,"UNKNOWN"])),creditedDepositTotal:"PARTIAL",successfulWithdrawalPrincipalTotal:"PARTIAL",balance:"READY",netContributionTotal:"READY"}};
   const parse=value=>parseSupportProfile({profile:{identity:group({}),finance:group({byCurrency:[value]}),devices:group({}),risk:group({}),annotations:group({}),service:group({}),actions:{}}}).finance.data.byCurrency[0];
-  for(const currency of ["USDT","NEX"]){const result=parse({...structuredClone(row),currency});assert.equal(result.creditedDepositTotal,"749.000001");assert.equal(result.fieldStatuses.creditedDepositTotal,"PARTIAL");assert.equal(result.successfulWithdrawalPrincipalTotal,"100");assert.equal(result.netContributionTotal,"849");assert.equal(result.balance,"200");}
+  for(const currency of ["USDT","UVT"]){const result=parse({...structuredClone(row),currency});assert.equal(result.creditedDepositTotal,"749.000001");assert.equal(result.fieldStatuses.creditedDepositTotal,"PARTIAL");assert.equal(result.successfulWithdrawalPrincipalTotal,"100");assert.equal(result.netContributionTotal,"849");assert.equal(result.balance,"200");}
   for(const value of [null,0.1,"1e3","invalid"])assert.throws(()=>parse({...structuredClone(row),creditedDepositTotal:value}),/DECIMAL_INVALID/);
   assert.throws(()=>parse({...structuredClone(row),fieldStatuses:{...row.fieldStatuses,netContributionTotal:"PARTIAL"}}),/ENUM_INVALID/);
   for(const status of ["UNKNOWN","ERROR","FORBIDDEN"]){const result=parse({...structuredClone(row),fieldStatuses:{...row.fieldStatuses,creditedDepositTotal:status}});assert.equal(result.creditedDepositTotal,null);assert.equal(result.fieldStatuses.creditedDepositTotal,status);}
@@ -158,9 +158,9 @@ test("private quota revocation removes private bodies but a fresh page still rec
 test("funds-flow options use source statuses and reset the exact filter request to page one",async()=>{
   const source=readFileSync(new URL("../app/components/domain-views/m-tabs/m3-customer-profile.tsx",import.meta.url),"utf8"),require=createRequire(import.meta.url),jsx=require("react/jsx-runtime");
   const expected="CREATED PENDING CONFIRMING WAITING_CONFIRMATION OPEN SUBMITTED REVIEW_PENDING REVIEWING EXTENDED_HOLD DELAYED REVIEW_PASSED PENDING_CHAIN FROZEN PROCESSING SENT CHAIN_SUBMITTED CONFIRMED CREDITED PAID SUCCESS POSTED COMPLETED UNSETTLED MANUAL_REVIEW FAILED TX_FAILED TX_ORPHANED DEAD ADDRESS_INVALID REVIEW_REJECTED REJECTED DECLINED EXPIRED ABNORMAL CHARGEBACK DISPUTED CHARGEBACK_REVIEW CHARGEBACK_REFUNDED CHARGEBACK_RECOVERED CHARGEBACK_PARTIAL REFUNDED RETURNED CANCELLED".split(" ");
-  const records=[...expected,"UNRECOGNIZED","constructor","toString",null].map((status,i)=>({sourceId:`flow-${i}`,bizNo:`流水${i}`,kind:"DEPOSIT",currency:i%2?"NEX":"USDT",status})),state=[],effects=[],seen=[];
+  const records=[...expected,"UNRECOGNIZED","constructor","toString",null].map((status,i)=>({sourceId:`flow-${i}`,bizNo:`流水${i}`,kind:"DEPOSIT",currency:i%2?"UVT":"USDT",status})),state=[],effects=[],seen=[];
   const walk=node=>!node||typeof node!=="object"?[]:[node,...[node.props?.children].flat(Infinity).flatMap(walk)];
-  const profile={identity:group({}),finance:group({byCurrency:[{currency:"USDT"},{currency:"NEX"}]}),devices:group({}),risk:group({}),annotations:group({}),service:group({}),actions:{}};
+  const profile={identity:group({}),finance:group({byCurrency:[{currency:"USDT"},{currency:"UVT"}]}),devices:group({}),risk:group({}),annotations:group({}),service:group({}),actions:{}};
   let cursor=0;const context={exports:{},AbortController,Date,Intl,JSON,document:{querySelectorAll:()=>[]},require:name=>{ if(name==="@/lib/admin/brand-copy")return systemBrand;
     if(name==="react")return {useEffect:fn=>effects.push(fn),useRef:value=>({current:value}),useState:initial=>{const index=cursor++;if(!(index in state))state[index]=index===0?profile:index===5?3:index===7?group({records,total:records.length}):initial;return [state[index],value=>{state[index]=typeof value==="function"?value(state[index]):value;}];}};
     if(name==="react/jsx-runtime")return jsx;
@@ -186,7 +186,7 @@ test("funds-flow options use source statuses and reset the exact filter request 
   assert.equal(summaries.length,records.length);for(let i=0;i<records.length;i++)assert.equal(summaries[i].props.children.at(-1),i<expected.length?labels[records[i].status]:"未知");
   const original=globalThis.fetch;
   try{globalThis.fetch=async url=>{seen.push(new URL(String(url),"http://local.invalid"));return new Response(JSON.stringify({code:0,data:group({records:[],total:0})}),{headers:{"Content-Type":"application/json"}});};
-    for(const [status,currency] of [["CONFIRMED","USDT"],["CREDITED","NEX"],["REVIEW_PENDING","USDT"],["REFUNDED","NEX"],["",""]]){
+    for(const [status,currency] of [["CONFIRMED","USDT"],["CREDITED","UVT"],["REVIEW_PENDING","USDT"],["REFUNDED","UVT"],["",""]]){
       state[5]=3;state[10]=currency;select.props.onChange(status);render();
       const flowEffects=effects.filter(effect=>effect.toString().includes("supportEnhancements.flows("));assert.equal(flowEffects.length,1);flowEffects[0]();await new Promise(resolve=>setImmediate(resolve));
       const query=seen.at(-1).searchParams;assert.equal(query.get("status"),status||null);assert.equal(query.get("currency"),currency||null);assert.equal(query.get("pageNum"),"1");assert.equal(query.get("pageSize"),"10");

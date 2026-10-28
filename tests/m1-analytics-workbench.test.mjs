@@ -256,9 +256,9 @@ test("server scope alone picks personal, managed or global initial view", () => 
 });
 test("every query edit clears page/version; group edits additionally clear old agent selection", () => {
   const state = { ...initialAnalyticsQuery("MANAGED"), pageNum: 3, expectedVersion: version, agentId: "7" };
-  for (const change of [{ groupId: "5" }, { groupId: undefined }, { month: "2026-09" }, { currency: "NEX" }, { sortKey: "DEVICE_COUNT" }, { direction: "ASC" }, { basis: "PERIOD_EVENT" }, { view: "CUSTOMERS" }, { keyword: "test" }, { filter: "DUE" }]) { const next = changeAnalyticsQuery(state, change); assert.equal(next.pageNum, 1); assert.equal(next.expectedVersion, undefined); }
+  for (const change of [{ groupId: "5" }, { groupId: undefined }, { month: "2026-09" }, { currency: "UVT" }, { sortKey: "DEVICE_COUNT" }, { direction: "ASC" }, { basis: "PERIOD_EVENT" }, { view: "CUSTOMERS" }, { keyword: "test" }, { filter: "DUE" }]) { const next = changeAnalyticsQuery(state, change); assert.equal(next.pageNum, 1); assert.equal(next.expectedVersion, undefined); }
   assert.equal(changeAnalyticsQuery(state, { groupId: "5" }).agentId, undefined);
-  assert.equal(changeAnalyticsQuery(state, { currency: "NEX" }).agentId, "7");
+  assert.equal(changeAnalyticsQuery(state, { currency: "UVT" }).agentId, "7");
 });
 test("NET sort uses the current-customer selector and clears when switching basis", async () => {
   const d = await resolveScope("ALL");
@@ -292,7 +292,7 @@ test("natural month boundaries use Shanghai UTC conversion, include leap Februar
   const months = analyticsMonths(new Date("2026-10-01T00:00:00Z")); assert.equal(months.length, 24); assert.equal(new Set(months.map(x => x.value)).size, 24); assert.equal(months.at(-1).value, "2024-11");
   assert.throws(() => analyticsMonthWindow("2026-13"));
   assert.equal(analyticsWireQuery(initialAnalyticsQuery("MANAGED")).from, undefined);
-  const wire = analyticsWireQuery({ ...initialAnalyticsQuery("MANAGED", "2024-02"), basis: "PERIOD_EVENT", groupId: "5", currency: "NEX" });
+  const wire = analyticsWireQuery({ ...initialAnalyticsQuery("MANAGED", "2024-02"), basis: "PERIOD_EVENT", groupId: "5", currency: "UVT" });
   assert.equal(wire.groupId, "5"); assert.equal(wire.from, period.from); assert.equal(wire.month, undefined); assert.equal(wire.mode, undefined);
 });
 test("initial render is fail-closed until private OVERVIEW resolves; personal keeps original component", async () => {
@@ -401,7 +401,7 @@ test("device and finance clicks preserve scope conditions and issue only native 
 });
 
 test("all exposed dataset transitions satisfy actual client basis/filter/category/sort invariants", () => {
-  for (const category of ["ALL", "BOUND", "PENDING", "ANOMALY"]) for (const filter of ["ALL", "WINDOW_ACTIVE", "WAITING_REPLY", "DUE", "FIRST_CONTACT", "DORMANT", "UNKNOWN", "STOPPED"]) for (const firstState of ["ALL", "CONFIRMED", "NONE", "UNKNOWN"]) for (const basis of ["CURRENT_CUSTOMER_HISTORY", "PERIOD_EVENT", "CURRENT_ASSET"]) for (const currency of ["USDT", "NEX"]) {
+  for (const category of ["ALL", "BOUND", "PENDING", "ANOMALY"]) for (const filter of ["ALL", "WINDOW_ACTIVE", "WAITING_REPLY", "DUE", "FIRST_CONTACT", "DORMANT", "UNKNOWN", "STOPPED"]) for (const firstState of ["ALL", "CONFIRMED", "NONE", "UNKNOWN"]) for (const basis of ["CURRENT_CUSTOMER_HISTORY", "PERIOD_EVENT", "CURRENT_ASSET"]) for (const currency of ["USDT", "UVT"]) {
     const state = { ...initialAnalyticsQuery("ALL", "2026-10"), category, filter, firstState, basis, currency, agentId: "7", groupId: "5", pageNum: 3, expectedVersion: version };
     for (const view of ["OVERVIEW", "AGENTS", "CUSTOMERS", "FINANCE", "DEVICES", "ACTIVITY"]) {
       const next = changeAnalyticsQuery(state, { view, ...(view === "DEVICES" ? { basis: "CURRENT_ASSET" } : {}) });

@@ -89,7 +89,7 @@ function moneySnapshot(value: unknown, field: string) {
 }
 
 function expectedMoneyLabel(snapshot: { usdt: number; nex: number }) {
-  return `USDT ${snapshot.usdt.toFixed(2)} · NEX ${snapshot.nex.toFixed(2)}`;
+  return `USDT ${snapshot.usdt.toFixed(2)} · UVT ${snapshot.nex.toFixed(2)}`;
 }
 
 function domain(row: JsonRecord, expected: string) {
@@ -320,7 +320,7 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
     const currency = text(event.currency, "F5", `commissionEvents[${index}].currency`);
     const status = text(event.status, "F5", `commissionEvents[${index}].status`);
     if (!F5_KINDS.includes(kind)
-        || !["USDT", "NEX"].includes(currency)
+        || !["USDT", "UVT"].includes(currency)
         || !F5_STATUSES.includes(status)) {
       invalid("F5", `commissionEvents[${index}].enum`);
     }

@@ -228,7 +228,7 @@ function fmtUsd(value: number) {
 }
 
 function normalizeOrder(row: BackendOrder): G2ExchangeOrder {
-  const fromAsset = asText(row.fromAsset, "NEX");
+  const fromAsset = asText(row.fromAsset, "UVT");
   const toAsset = asText(row.toAsset, "USDT");
   const fromAmount = toNumber(row.fromAmount);
   const toAmount = toNumber(row.toAmount);

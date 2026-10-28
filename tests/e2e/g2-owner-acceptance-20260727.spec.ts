@@ -89,7 +89,7 @@ test("G2 首次用户真实入口、权威读模型、域外链接与失败关�
   const publicCaps = await (await backend.get("/api/config/exchange/caps")).json();
   expect(publicCaps.code).toBe(0);
   expect(publicCaps.data).toMatchObject({
-    asset: "NEX",
+    asset: "UVT",
     currency: "USDT",
     serverCanonical: true,
     source: "G2/G3 server configuration",

@@ -73,7 +73,7 @@ test("R20CE-PARTIAL actual finance shows partial amounts and keeps complete NET 
   const value=profile();const usd=value.finance.data.byCurrency[0];
   Object.assign(usd,{creditedDepositTotal:"749",successfulWithdrawalPrincipalTotal:"100",netContributionTotal:"849"});
   Object.assign(usd.fieldStatuses,{creditedDepositTotal:"PARTIAL",successfulWithdrawalPrincipalTotal:"PARTIAL",netContributionTotal:"READY"});
-  const nex=structuredClone(usd);Object.assign(nex,{currency:"NEX",creditedDepositTotal:"12.000001",successfulWithdrawalPrincipalTotal:null,netContributionTotal:"-12.000001",balance:"0"});
+  const nex=structuredClone(usd);Object.assign(nex,{currency:"UVT",creditedDepositTotal:"12.000001",successfulWithdrawalPrincipalTotal:null,netContributionTotal:"-12.000001",balance:"0"});
   nex.fieldStatuses.successfulWithdrawalPrincipalTotal="UNKNOWN";value.finance.data.byCurrency.push(nex);
   const html=profileHarness(value).html();
   assert.match(html,/749 USDT（部分统计）/);assert.match(html,/100 USDT（部分统计）/);assert.match(html,/12\.000001 UVT（部分统计）/);

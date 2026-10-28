@@ -1,7 +1,6 @@
 "use client";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
-import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DataListPager } from "../design-kit";
@@ -132,7 +131,7 @@ function ParamRow({
   const currentProduct = isProduct ? trialProducts.find((product) => product.productNo === current) : undefined;
   const displayCurrent = isDay ? `${current} 天`
     : isQuota || isActualQuota ? (current === "UNKNOWN" ? "-" : `${current} 张`)
-      : currentProduct ? `${nexGridBrandText(currentProduct.name)} · ${current}` : param.serverOnly ? operatorCopyText(current) : current;
+      : currentProduct ? `${(currentProduct.name)} · ${current}` : param.serverOnly ? operatorCopyText(current) : current;
   const readOnly = !!param.readOnly || isActualQuota || ["phaseOpen", "trialPriceUSD"].includes(param.key);
   const productOptions = trialProducts.map((product) => product.productNo);
   const disabledProductOptions = trialProducts
@@ -140,7 +139,7 @@ function ParamRow({
     .map((product) => product.productNo);
   const productOptionLabels = Object.fromEntries(trialProducts.map((product) => [
     product.productNo,
-    `${nexGridBrandText(product.name)} · ${product.productNo} · 库存 ${product.stock ?? 0} · $${text(product.priceUsdt, "-")}${product.selectable ? "" : ` · 不可选：${trialProductReason(product.unavailableReason)}`}`,
+    `${(product.name)} · ${product.productNo} · 库存 ${product.stock ?? 0} · $${text(product.priceUsdt, "-")}${product.selectable ? "" : ` · 不可选：${trialProductReason(product.unavailableReason)}`}`,
   ]));
   const options = ["autoPushEnabled"].includes(param.key)
     ? ["开", "关"]

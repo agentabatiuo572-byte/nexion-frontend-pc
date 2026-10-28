@@ -179,7 +179,7 @@ function validateG2Order(module: string, value: unknown, path: string): void {
 export function assertG2OverviewContract<T>(value: T): T {
   const module = "G2";
   const root = canonicalRoot(module, value, module);
-  if (root.asset !== "NEX" || root.currency !== "USDT") fail(module, "data.asset");
+  if (root.asset !== "UVT" || root.currency !== "USDT") fail(module, "data.asset");
   numeric(module, root.currentPrice, "data.currentPrice");
   const stats = record(module, root.stats, "data.stats");
   const statKeys = ["todayUsd", "poolPct", "queueDepth", "gateUser", "gatePlatform", "gateGeo"] as const;

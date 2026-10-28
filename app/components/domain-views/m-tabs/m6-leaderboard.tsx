@@ -107,10 +107,10 @@ export function M6Leaderboard() {
     if (!data) return;
     const [scope, groupId] = next.scope.split(":");
     if (!data.scopeOptions.some(option => option.scope === scope && (!groupId || option.groups.some(group => group.id === groupId)))
-      || !data.currencies.includes(next.currency as "USDT" | "NEX") || next.board !== "customers" && next.month && !data.selectableMonths.includes(next.month)) return;
+      || !data.currencies.includes(next.currency as "USDT" | "UVT") || next.board !== "customers" && next.month && !data.selectableMonths.includes(next.month)) return;
     closeDetail(); setNotice(undefined);
     if (next.month) selectedMonth.current = next.month;
-    setQuery({ board: next.board, currency: next.currency as "USDT" | "NEX", scope: scope as LeaderboardQuery["scope"], groupId, month: next.board === "customers" ? undefined : next.month || undefined, keyword: query.keyword, pageNum: 1, pageSize: query.pageSize });
+    setQuery({ board: next.board, currency: next.currency as "USDT" | "UVT", scope: scope as LeaderboardQuery["scope"], groupId, month: next.board === "customers" ? undefined : next.month || undefined, keyword: query.keyword, pageNum: 1, pageSize: query.pageSize });
   };
   const openDetail = (agentId: string) => {
     if (!data || !enabled || ![...data.rows, ...(data.podium?.rows ?? []), ...(data.self.row ? [data.self.row] : [])].some(row => row.id === agentId)) return;

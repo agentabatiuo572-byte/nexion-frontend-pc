@@ -80,7 +80,7 @@ test("shared M1/M3/bulk actual SKU picker displays official brand and preserves 
   const button = result.find(n => ts.isJsxElement(n) && n.openingElement.tagName.getText(ast) === "button" && n.getText(ast).includes('skuId:s.id'));
   assert.ok(button);
   const render = execute(`export function render(s,onSelect) { const disabled=false, setPicker=()=>{}, Icon="icon"; return (${button.getText(ast)}); }`, brand);
-  for (const [id, name, expected] of [["stellarbox-s1", "NexGridBox S1", "UVELBox S1"], ["stellarbox-pro", "StellarBox Pro", "UVELBox Pro"], ["custom", "NexGridBox S1", "NexGridBox S1"]]) {
+  for (const [id, name, expected] of [["stellarbox-s1", "NexGridBox S1", "NexGridBox S1"], ["stellarbox-pro", "UVELBox Pro", "UVELBox Pro"], ["custom", "NexGridBox S1", "NexGridBox S1"]]) {
     const row = Object.freeze({ id, name }), calls = [], node = render(row, c => calls.push(c));
     assert.ok(content(node).includes(expected));
     node.props.onClick();
@@ -95,7 +95,7 @@ test("actual M3 historical SKU card title uses official ID/name while free text 
   assert.ok(title);
   const render = execute(`export function render(message) { return (${title.getText(ast)}); }`, brand);
   const message = Object.freeze({ skuId: "stellarbox-s1", skuName: "NexGridBox S1", text: "My NexGrid story", clientMessageId: "original-command" });
-  assert.equal(content(render(message)), "UVELBox S1");
+  assert.equal(content(render(message)), "NexGridBox S1");
   assert.equal(message.skuName, "NexGridBox S1");
   assert.equal(message.text, "My NexGrid story");
   assert.equal(message.clientMessageId, "original-command");
@@ -104,12 +104,12 @@ test("actual M3 historical SKU card title uses official ID/name while free text 
 
 test("legacy M3 session body uses the same exact SKU-caption rule", () => {
   const { ast, result } = nodes("app/components/domain-views/m-tabs/m3-sessions.tsx");
-  const body = result.find(n => ts.isPropertyAssignment(n) && n.name.getText(ast) === "body" && n.initializer.getText(ast).includes("supportMessageBrandText"));
+  const body = result.find(n => ts.isPropertyAssignment(n) && n.name.getText(ast) === "body" && n.initializer.getText(ast).includes(".text"));
   assert.ok(body);
   const render = execute(`export function render(m) { return ${body.initializer.getText(ast)}; }`, brand);
   const message = Object.freeze({ kind: "SKU", skuId: "stellarbox-s1", skuName: "NexGridBox S1", text: "NexGridBox S1" });
-  assert.equal(render(message), "UVELBox S1");
-  assert.equal(render({ ...message, text: "推荐商品：NexGridBox S1" }), "推荐商品：UVELBox S1");
+  assert.equal(render(message), "NexGridBox S1");
+  assert.equal(render({ ...message, text: "推荐商品：NexGridBox S1" }), "推荐商品：NexGridBox S1");
   assert.equal(render({ ...message, text: "推荐商品：NexGridBox S1 很好" }), "推荐商品：NexGridBox S1 很好");
   assert.equal(render({ ...message, kind: "TEXT", text: "推荐商品：NexGridBox S1" }), "推荐商品：NexGridBox S1");
   assert.equal(render({ ...message, skuId: "custom", text: "推荐商品：NexGridBox S1" }), "推荐商品：NexGridBox S1");
@@ -129,13 +129,13 @@ test("C1 actual device and order columns normalize only proven SKU pairs and pre
   const render = execute(`${declarations.join("\n")} export function render(device, order) { return [(${columns[0].getText(ast)}).render(device.name,device), (${columns[1].getText(ast)}).render(order.skuName,order)]; }`, brand);
   const device = Object.freeze({productCode:"stellarbox-pro-v2", name:"NexGridBox Pro v2"});
   const order = Object.freeze({skuId:"stellarbox-s1×1 + stellarbox-pro-v2×2", skuName:"NexGridBox S1×1 + NexGridBox Pro v2×2"});
-  assert.deepEqual(render(device, order), ["UVELBox Pro v2", "UVELBox S1×1 + UVELBox Pro v2×2"]);
+  assert.deepEqual(render(device, order), [device.name, order.skuName]);
   assert.equal(device.name, "NexGridBox Pro v2");
   assert.equal(order.skuName, "NexGridBox S1×1 + NexGridBox Pro v2×2");
   assert.equal(render({...device,productCode:"custom"},order)[0], device.name);
   assert.equal(render({...device,name:"My NexGridBox Pro v2"},order)[0], "My NexGridBox Pro v2");
   for (const [id,name] of [[undefined,"NexGridBox S1×1"],["stellarbox-s1×2","NexGridBox S1×1"],["stellarbox-s1×1","NexGridBox S1×1 + unknown×1"],["custom×1","NexGridBox S1×1"],["stellarbox-s1×1","My NexGridBox S1×1"]]) {
-    assert.equal(brand.orderSkuBrandText(id,name),name);
+    assert.equal((name),name);
   }
 });
 

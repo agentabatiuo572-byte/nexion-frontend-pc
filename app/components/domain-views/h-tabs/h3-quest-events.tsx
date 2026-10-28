@@ -636,7 +636,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           monthsTo: Number(bv.monthsTo) || 999,
           targetType: String(bv.targetType || "").trim(),
           targetValue: Number(bv.targetValue) || 1,
-          rewardType: bv.rewardType || "NEX",
+          rewardType: bv.rewardType || "UVT",
           rewardAmount: Number(bv.rewardAmount) || 0,
           rewardName: String(bv.rewardName || "").trim(),
         };
@@ -1044,7 +1044,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           rewardName: String(bv.rewardName || "").trim(),
           probabilityPct: Number(bv.probabilityPct) || 0,
           realOutflow: bv.realOutflow === "1" ? 1 : 0,
-          rewardKind: bv.rewardKind || "nex",
+          rewardKind: bv.rewardKind || "uvt",
           rewardAmount: Number(bv.rewardAmount) || 0,
           voucherId: String(bv.voucherId || "").trim() || null,
           dailyStock: Math.max(0, Number(bv.dailyStock) || 0),
@@ -1190,7 +1190,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         requireAnyChange: true,
         fields: [
           { key: "rewardName", label: "奖项名称", current: text(tier.reward), inputKind: "text", required: true, showDiff: true },
-          { key: "rewardKind", label: "奖励类型", current: text(tier.kind, "nex"), inputKind: "select", options: ["nex", "points", "usdt", "coupon"], optionLabels: { nex: "UVT", points: "积分", usdt: "USDT", coupon: "代金券" }, required: true, showDiff: true },
+          { key: "rewardKind", label: "奖励类型", current: text(tier.kind, "uvt"), inputKind: "select", options: ["uvt", "points", "usdt", "coupon"], optionLabels: { uvt: "UVT", points: "积分", usdt: "USDT", coupon: "代金券" }, required: true, showDiff: true },
           { key: "realOutflow", label: "是否发真钱", current: boolValue(tier.real) ? "1" : "0", inputKind: "select", options: ["0", "1"], optionLabels: { "0": "否", "1": "是" }, required: true, showDiff: true },
           { key: "rewardAmount", label: "每次发放数量", current: String(numericValue(tier.amount)), inputKind: "number", min: 0.000001, max: 1000000, step: 0.000001, required: true, showDiff: true },
           { key: "voucherId", label: "代金券 ID", current: text(tier.voucherId, ""), inputKind: "text", showDiff: true },
@@ -1204,7 +1204,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           rewardName: String(bv.rewardName || "").trim(),
           probabilityPct: numericValue(tier.prob),
           realOutflow: bv.realOutflow === "1" ? 1 : 0,
-          rewardKind: bv.rewardKind || "nex",
+          rewardKind: bv.rewardKind || "uvt",
           rewardAmount: Number(bv.rewardAmount),
           voucherId: String(bv.voucherId || "").trim() || null,
           dailyStock: Math.max(0, Number(bv.dailyStock) || 0),
@@ -1808,7 +1808,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           </div>
           <div className="p-row">
             <span className="k">推荐设备 / 显示的日收益</span>
-            <span className="v">{nexGridBrandText(text(promoBanner.targetDevice))} · ${text(promoBanner.targetDaily)}/天</span>
+            <span className="v">{(text(promoBanner.targetDevice))} · ${text(promoBanner.targetDaily)}/天</span>
             <button className="l-btn sm mc" onClick={() => openSimpleConfig("promoBanner.targetDevice", "转化卡目标设备", text(promoBanner.targetDevice), false)} disabled={!canModuleWrite}>改设备</button>
             <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.targetDaily", "转化卡显示的日收益", text(promoBanner.targetDaily), 0, 1000000, 0.01)} disabled={!canModuleWrite}>改日收益</button>
           </div>
@@ -1962,7 +1962,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   <span style={{ fontWeight: 600, color: "var(--ink)" }}>{text(tier.tier)}</span>
                   <span className="mono">{wheelRewardText(tier.reward)}</span>
                   <span className="mono" style={{ fontWeight: 700 }}>{percentText(tier.prob)}%</span>
-                  <span>{real ? <span className="bdg bad">发真钱</span> : <span className="bdg dim">{({nex:"UVT奖励",NEX:"UVT奖励",usdt:"USDT奖励",USDT:"USDT奖励",voucher:"代金券",none:"未中奖"} as Record<string,string>)[text(tier.kind)] ?? "其他奖励"}</span>}</span>
+                  <span>{real ? <span className="bdg bad">发真钱</span> : <span className="bdg dim">{({nex:"UVT奖励",UVT:"UVT奖励",usdt:"USDT奖励",USDT:"USDT奖励",voucher:"代金券",none:"未中奖"} as Record<string,string>)[text(tier.kind)] ?? "其他奖励"}</span>}</span>
                   <span style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                     <button className="l-btn sm mc" aria-label={`编辑 ${text(tier.tier)}（${wheelRewardText(tier.reward)}）`} onClick={() => openEditWheelTier(tier)} disabled={!canWheelWrite}>编辑</button>
                     <button className="l-btn sm" aria-label={`删除 ${text(tier.tier)}（${wheelRewardText(tier.reward)}）`} onClick={() => openDeleteWheelTier(tier)} disabled={numericValue(tier.prob) !== 0 || !canWheelWrite} title={numericValue(tier.prob) === 0 ? "删除档位" : "先将概率调为 0%"}>删除</button>

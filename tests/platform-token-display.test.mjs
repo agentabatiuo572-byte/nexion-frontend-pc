@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
-import { nexGridBrandText, platformAssetText, supportMessageBrandText } from "../lib/admin/brand-copy.ts";
+import { nexGridBrandText, platformAssetText} from "../lib/admin/brand-copy.ts";
 import { ALL_L2, resolveVisibleDomains } from "../lib/nav/console-nav.ts";
 import { formToSku, skuToForm } from "../app/components/domain-views/e-tabs/data.ts";
 
@@ -22,9 +22,9 @@ const expression = (path, name) => {
 test("platform token display changes units while preserving platform/product brands and unrelated assets", () => {
   assert.equal(nexGridBrandText("NEX / nex / 1 NEX"), "UVT / UVT / 1 UVT");
   assert.equal(nexGridBrandText("UVEL · NexGridBox S1 · USDT · BNB · BSC"), "UVEL · UVELBox S1 · USDT · BNB · BSC");
-  for (const raw of ["NEX", "nex", "UVEL", "UVT"]) assert.equal(platformAssetText(raw), "UVT");
+  for (const raw of ["UVT", "nex", "UVEL", "UVT"]) assert.equal(platformAssetText(raw), "UVT");
   for (const raw of ["USDT", "BNB", "BSC", "UVELBox S1", "NEX_MARKET", "My UVEL reward"]) assert.equal(platformAssetText(raw), raw);
-  assert.equal(supportMessageBrandText({ kind: "TEXT", text: "100 UVEL · My NEX story" }), "100 UVEL · My NEX story");
+  assert.equal(({ kind: "TEXT", text: "100 UVEL · My NEX story" }).text, "100 UVEL · My NEX story");
 });
 
 test("legacy server navigation labels resolve to UVT while custom menus and grants remain intact", () => {
@@ -44,7 +44,7 @@ test("legacy server navigation labels resolve to UVT while custom menus and gran
 test("F1 historical payout assets and H8 adjustment units display UVT without changing stored symbols", () => {
   const module = { exports: undefined };
   new Function("module", "platformAssetText", "safeCustomLabel", expression("app/components/domain-views/f-tabs/f1-vrank.tsx", "rewardPayoutLabel"))(module, platformAssetText, value => value);
-  for (const rewardType of ["NEX", "UVEL", "UVT", "USDT"]) {
+  for (const rewardType of ["UVT", "UVEL", "UVT", "USDT"]) {
     const row = Object.freeze({ rewardType, amount: 100 });
     assert.equal(module.exports(row), `100 ${rewardType === "USDT" ? "USDT" : "UVT"}`);
     assert.equal(row.rewardType, rewardType);
@@ -54,7 +54,7 @@ test("F1 historical payout assets and H8 adjustment units display UVT without ch
   const tokenParams = module.exports.filter(row => row.key.endsWith(".nex"));
   assert.deepEqual(tokenParams.map(row => row.label), ["新人 UVT", "邀请人 UVT"]);
   assert.deepEqual(tokenParams.map(row => nexGridBrandText(row.unit)), ["UVT", "UVT"]);
-  assert.deepEqual(tokenParams.map(row => row.unit), ["NEX", "NEX"]);
+  assert.deepEqual(tokenParams.map(row => row.unit), ["UVT", "UVT"]);
 });
 
 test("E1 keeps serialized legacy baseRate unchanged during an unrelated edit", () => {

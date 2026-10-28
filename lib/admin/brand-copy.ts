@@ -33,39 +33,6 @@ export function platformSessionDeviceText(value: string): string {
   return ({ "NexGrid Phone App": "UVEL 手机应用", "NexGrid H5": "UVEL 网页版", "NexGrid App / H5": "UVEL 应用 / 网页版" } as Record<string, string>)[value] ?? value;
 }
 
-/** Only confirmed official SKU/name pairs; catalog names remain operator-owned. */
-export function catalogSkuBrandText(id: string | null | undefined, value: string): string {
-  if (id === "phone" && value === "Your phone") return "用户手机";
-  const officialModel = ({
-    "stellarbox-s1": "Box S1", "stellarbox-pro": "Box Pro", "stellarbox-pro-v2": "Box Pro v2",
-    "stellarrack-p1": "Rack P1", "stellarrack-p2": "Rack P2",
-  } as Record<string,string>)[id ?? ""];
-  if (id === "cloud-share" && value === "Cloud Share") return "云端共享份额";
-  return officialModel && new RegExp(`^(?:NexGrid|Nexion|Stellar)${officialModel}$`, "i").test(value)
-    ? `UVEL${officialModel}` : value;
-}
-
-/** Match the catalog's paired item summaries; quantities and product IDs stay unchanged. */
-export function orderSkuBrandText(id: string | undefined, value: string): string {
-  const ids = id?.split(" + "), names = value.split(" + ");
-  if (!ids || ids.length !== names.length) return value;
-  return names.map((name, index) => {
-    const itemId = /^(.*)×([1-9]\d*)$/.exec(ids[index]);
-    const itemName = /^(.*)×([1-9]\d*)$/.exec(name);
-    if (!itemId && !itemName) return catalogSkuBrandText(ids[index], name);
-    return itemId && itemName && itemId[2] === itemName[2]
-      ? `${catalogSkuBrandText(itemId[1], itemName[1])}×${itemName[2]}` : name;
-  }).join(" + ");
-}
-
-/** Only exact generated SKU captions; never rewrite authored message text. */
-export function supportMessageBrandText(message: { kind?: string; skuId?: string; skuName?: string; text: string }): string {
-  if (message.kind !== "SKU" || !message.skuName) return message.text;
-  const name = catalogSkuBrandText(message.skuId, message.skuName);
-  if (message.text === message.skuName) return name;
-  return message.text === `推荐商品：${message.skuName}` ? `推荐商品：${name}` : message.text;
-}
-
 /** Generated default nickname display, for DTOs that omit the masked phone. */
 export function operatorNicknameText(value: string): string {
   return /^(?:NexGrid|Nexion)(?: [0-9]{4}|-[A-F0-9]{8})$/i.test(value) ? nexGridBrandText(value) : value;

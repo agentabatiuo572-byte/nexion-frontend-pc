@@ -1,5 +1,4 @@
 "use client";
-import { catalogSkuBrandText } from "@/lib/admin/brand-copy";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 
 /** F1 · 团队等级晋升 —— 13 阶阶梯(V-badge 热度渐变 + log 人口条)+ 右栏人口金字塔 / 治理口径。
@@ -42,26 +41,26 @@ function safeCustomLabel(raw: string | undefined, fallback = "自定义"): strin
 function rewardLabel(it: OpsVRankRewardItem, voucherLabels: Record<string, string>, skuLabels: Record<string, string>): string {
   switch (it.type) {
     case "usdt": return `USDT $${(it.amount ?? 0).toLocaleString()}`;
-    case "nex": return `${(it.amount ?? 0).toLocaleString()} UVT`;
+    case "uvt": return `${(it.amount ?? 0).toLocaleString()} UVT`;
     case "voucher": return `券 · ${voucherLabels[it.voucherId ?? ""] ?? it.voucherId ?? "—"}`;
-    case "sku": return `商品 · ${catalogSkuBrandText(it.skuId ?? undefined, skuLabels[it.skuId ?? ""] ?? it.skuId ?? "—")}`;
+    case "sku": return `商品 · ${(skuLabels[it.skuId ?? ""] ?? it.skuId ?? "—")}`;
     case "custom": return safeCustomLabel(it.custom);
     default: return "—";
   }
 }
 // 业务表单值 → 奖励字段(add / update 共用;按类型只保留相关字段,其余清空防残留)。
 function rewardFields(bv: BusinessFormValue): Omit<OpsVRankRewardItem, "id"> {
-  const type = (bv.rtype ?? "nex") as VRankRewardType;
+  const type = (bv.rtype ?? "uvt") as VRankRewardType;
   return {
     type,
-    amount: type === "usdt" || type === "nex" ? (Number(bv.amount) || 0) : undefined,
+    amount: type === "usdt" || type === "uvt" ? (Number(bv.amount) || 0) : undefined,
     voucherId: type === "voucher" ? (bv.voucherId || undefined) : undefined,
     skuId: type === "sku" ? (bv.skuId || undefined) : undefined,
     custom: type === "custom" ? (bv.custom || undefined) : undefined,
   };
 }
 function genRewardId(): string { return `vr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`; }
-const isFund = (t: VRankRewardType): boolean => t === "usdt" || t === "nex";
+const isFund = (t: VRankRewardType): boolean => t === "usdt" || t === "uvt";
 
 // 门槛按钮按语义分色(易辨认):算力额/金额=lemon green · 人数/分支=cyan · 等级=橙。
 function toneOf(k: string): string {
@@ -156,7 +155,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   // ── 奖励 CRUD(复用 OperationConfirmModal + businessForm「vrank-reward-edit」;真写经 ctx.run 回调 + 审计)──
   const rewardFormBase = (r: VRow) => ({
     voucherOptions: ctx.voucherOptions, voucherLabels: ctx.voucherLabels,
-    skuOptions: ctx.skuOptions, skuLabels: Object.fromEntries(Object.entries(ctx.skuLabels).map(([id, label]) => [id, catalogSkuBrandText(id, label)])), subject: `${r.v} 等级`,
+    skuOptions: ctx.skuOptions, skuLabels: Object.fromEntries(Object.entries(ctx.skuLabels).map(([id, label]) => [id, (label)])), subject: `${r.v} 等级`,
   });
   const openAddReward = (r: VRow) => {
     // 新增是「配置奖励模板」,非即时发放资金;类型在表单内选,资金提示由表单内 per-type tint 给出,
@@ -252,7 +251,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     try { return JSON.stringify(snapshot); } catch { return "—"; }
   };
   const rewardPayoutLabel = (record: (typeof ctx.payoutRecords)[number]) => {
-    if (["USDT", "NEX", "UVEL", "UVT"].includes(record.rewardType.toUpperCase())) {
+    if (["USDT", "UVT", "UVEL", "UVT"].includes(record.rewardType.toUpperCase())) {
       return `${record.amount.toLocaleString()} ${platformAssetText(record.rewardType.toUpperCase())}`;
     }
     // 发放台账同样可能带内部标识符(custom_label 是自由文本),同 #30 一并归一。
@@ -516,7 +515,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
               {rows.map((row) => <option key={row.v} value={row.v}>{row.v}</option>)}
             </select>
             <select aria-label="奖励类型" value={payoutFilters.type} onChange={(event) => setPayoutFilter("type", event.target.value)}>
-              <option value="">全部奖励</option><option value="USDT">USDT</option><option value="NEX">UVT</option><option value="VOUCHER">代金券</option><option value="SKU">商品</option><option value="CUSTOM">自定义</option>
+              <option value="">全部奖励</option><option value="USDT">USDT</option><option value="UVT">UVT</option><option value="VOUCHER">代金券</option><option value="SKU">商品</option><option value="CUSTOM">自定义</option>
             </select>
             <select aria-label="发放状态" value={payoutFilters.status} onChange={(event) => setPayoutFilter("status", event.target.value)}>
               <option value="">全部状态</option><option value="PENDING_GRANT">待发放</option><option value="GRANTED">已发放</option><option value="REISSUED">已重发</option><option value="REVERSED">已冲正</option><option value="FAILED">失败</option>
