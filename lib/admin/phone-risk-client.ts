@@ -39,10 +39,17 @@ const count = (value: unknown) => Number.isSafeInteger(value) && Number(value) >
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 function invalid(): never { throw new Error("机型风控设置响应异常，请刷新后重试。"); }
 
-export function riskSettingsError(update: PhoneRiskUpdate): string | null {
+/** The settings themselves, without the reason a save also needs. */
+export function riskModeError(update: Omit<PhoneRiskUpdate, "reason">): string | null {
   for (const check of RISK_CHECKS) if (!check.modes.includes(update[check.key])) return `「${check.label}」不能设为${RISK_MODE_LABELS[update[check.key]] ?? "该模式"}。`;
   if (!Number.isInteger(update.churnWindowDays) || update.churnWindowDays < 1 || update.churnWindowDays > 365) return "统计窗口为 1 到 365 天。";
   if (!Number.isInteger(update.churnModelCount) || update.churnModelCount < 2 || update.churnModelCount > 20) return "机型数上限为 2 到 20 个。";
+  return null;
+}
+
+export function riskSettingsError(update: PhoneRiskUpdate): string | null {
+  const modeError = riskModeError(update);
+  if (modeError) return modeError;
   const reason = update.reason.trim();
   if (reason.length < 8 || reason.length > 200) return "请填写 8 到 200 字的修改理由。";
   return null;
@@ -59,12 +66,22 @@ export function parsePhoneRiskOverview(value: unknown): PhoneRiskOverview {
   return { settings: settings as unknown as PhoneRiskSettings, stats: stats as unknown as PhoneRiskStats };
 }
 
+/** A save whose response was lost may have been applied: say so instead of reporting a failure. */
+const UNKNOWN_SAVE = "保存结果暂不确定：设置可能已经生效。请关闭后点「刷新」核对版本号和当前设置，不要直接重复保存。";
 async function request(method: "GET" | "PUT", body?: unknown, key?: string): Promise<unknown> {
-  const response = await guardedFetch("/api/admin/config/phone-calibration/risk", {
-    method, cache: "no-store",
-    ...(body === undefined ? {} : { headers: { "Content-Type": "application/json", "Idempotency-Key": key ?? "" }, body: JSON.stringify(body) }),
-  });
+  let response: Response;
+  try {
+    response = await guardedFetch("/api/admin/config/phone-calibration/risk", {
+      method, cache: "no-store",
+      ...(body === undefined ? {} : { headers: { "Content-Type": "application/json", "Idempotency-Key": key ?? "" }, body: JSON.stringify(body) }),
+    });
+  } catch (failure) {
+    if (method === "PUT") throw new Error(UNKNOWN_SAVE);
+    throw failure;
+  }
   const envelope = await response.json().catch(() => null);
+  if (method === "PUT" && (response.status >= 500 || response.headers.get("X-Nexion-Upstream-Outcome") === "unknown"
+      || !envelope || typeof envelope.code !== "number")) throw new Error(UNKNOWN_SAVE);
   if (!response.ok || !envelope || envelope.code !== 0) throw new Error(formatAdminApiError(envelope?.message, "机型风控设置读取失败"));
   return envelope.data;
 }

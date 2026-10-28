@@ -66,8 +66,9 @@ function factIssues(rule: IosModelRule, add: (field: IosRuleField, message: stri
   else if (maxOs !== null && min && maxOs < min[0]) add("maxOsMajor", "最高大版本不能低于出厂系统版本。");
   if (!Array.isArray(scales) || scales.length > 3 || new Set(scales).size !== scales.length
       || scales.some(scale => ![1, 2, 3].includes(scale))) add("scales", "倍率只能是 1、2 或 3，不能重复。");
-  if (!Array.isArray(screens) || screens.length > 10 || new Set(screens).size !== screens.length
-      || screens.some(screen => !screenKey(screen))) add("screens", "屏幕尺寸写成 402x874，最多 10 组，不能重复。");
+  // "402x874" and "874x402" are one size, as on the server.
+  if (!Array.isArray(screens) || screens.length > 10 || screens.some(screen => !screenKey(screen))
+      || new Set(screens.map(screenKey)).size !== screens.length) add("screens", "屏幕尺寸写成 402x874，最多 10 组，不能重复（横竖算同一组）。");
 }
 
 export function namesOf(rule: Pick<IosModelRule, "model" | "aliases">): string[] {

@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { Btn, OperationConfirmModal } from "../design-kit";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { phoneTime } from "../phone-replacement-receipt";
-import { RISK_CHECKS, RISK_CODE_LABELS, RISK_MODE_LABELS, fetchPhoneRisk, riskSettingsError, savePhoneRisk,
+import { phonePlatformLabel as platformLabel } from "@/lib/admin/phone-replacement-contract";
+import { RISK_CHECKS, RISK_CODE_LABELS, RISK_MODE_LABELS, fetchPhoneRisk, riskModeError, savePhoneRisk,
   type PhoneRiskOverview, type PhoneRiskUpdate } from "@/lib/admin/phone-risk-client";
 
 const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 };
@@ -12,7 +13,6 @@ const draftOf = ({ settings }: PhoneRiskOverview): PhoneRiskUpdate => ({
   screenSize: settings.screenSize, missingSignals: settings.missingSignals, accountModelChurn: settings.accountModelChurn,
   churnWindowDays: settings.churnWindowDays, churnModelCount: settings.churnModelCount, reason: "",
 });
-const platformLabel = (platform: string | null) => platform === "ios" ? "iPhone" : platform === "android" ? "Android" : "未知";
 
 /** E6 "机型风控": checks run before a phone calibration draws a value. Saved directly; the server audits each save. */
 export function PhoneRiskSection({ canWrite, toast }: { canWrite: boolean; toast: (message: string) => void }) {
@@ -36,7 +36,7 @@ export function PhoneRiskSection({ canWrite, toast }: { canWrite: boolean; toast
   useEffect(() => { live.current = true; void load(); return () => { live.current = false; }; }, []);
 
   const saved = overview ? draftOf(overview) : null;
-  const validation = draft ? riskSettingsError({ ...draft, reason: "占位理由，仅用于校验" }) : null;
+  const validation = draft ? riskModeError(draft) : null;
   const editable = canWrite && !busy && !!overview;
   const statsOf = (code: string) => overview?.stats.checks.find(row => row.code === code);
   const summary = draft && saved ? [
@@ -73,10 +73,10 @@ export function PhoneRiskSection({ canWrite, toast }: { canWrite: boolean; toast
         })}</tbody>
       </table></div>
       <div style={grid}>
-        <label>同一账号多机型 · 统计窗口（天）<input type="number" min="1" max="365" step="1" value={draft.churnWindowDays} disabled={!editable}
-          onChange={event => setDraft({ ...draft, churnWindowDays: Number(event.target.value) })} /></label>
-        <label>同一账号多机型 · 达到几个机型算命中<input type="number" min="2" max="20" step="1" value={draft.churnModelCount} disabled={!editable}
-          onChange={event => setDraft({ ...draft, churnModelCount: Number(event.target.value) })} /></label>
+        <label>同一账号多机型 · 统计窗口（天）<input type="number" min="1" max="365" step="1" value={Number.isFinite(draft.churnWindowDays) ? draft.churnWindowDays : ""} disabled={!editable}
+          onChange={event => setDraft({ ...draft, churnWindowDays: event.target.value === "" ? NaN : Number(event.target.value) })} /></label>
+        <label>同一账号多机型 · 达到几个机型算命中<input type="number" min="2" max="20" step="1" value={Number.isFinite(draft.churnModelCount) ? draft.churnModelCount : ""} disabled={!editable}
+          onChange={event => setDraft({ ...draft, churnModelCount: event.target.value === "" ? NaN : Number(event.target.value) })} /></label>
       </div>
       {validation && <p role="alert">{validation}</p>}
       {bypassable && <p role="status">「缺少系统或屏幕信息」仍是观察：不上报系统版本或屏幕的请求不会被这两项拦下。新版 App 普及后，再把它改为拦截。</p>}

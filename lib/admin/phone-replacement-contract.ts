@@ -205,6 +205,8 @@ export const phoneLabels: Record<string, string> = {
     ONBOARDING_DEVICE_INVALID: "手机安装编号无效", PHONE_REPLACEMENT_REASON_INVALID: "请填写 8 到 200 字的处理理由",
     PHONE_REPLACEMENT_CONFIRMATION_REQUIRED: "请先确认本次操作", IDEMPOTENCY_KEY_REQUIRED: "缺少操作标识，请刷新后重试",
 };
+/** iPhone / Android for a reported phone platform. */
+export const phonePlatformLabel = (platform: string | null) => platform === "ios" ? "iPhone" : platform === "android" ? "Android" : "未知";
 export function phoneLabel(value: unknown): string {
     if (value == null || value === "")
         return "—";

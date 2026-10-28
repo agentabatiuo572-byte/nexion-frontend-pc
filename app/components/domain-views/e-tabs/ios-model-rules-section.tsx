@@ -24,7 +24,8 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
   const [catalog, setCatalog] = useState<IosCatalogClass | "all">("all");
   const [form, setForm] = useState<Editing | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
-  const [presets, setPresets] = useState<{ catalog: IosModelPresetCatalog; plan: IosImportPlan; selected: Set<string> } | null>(null);
+  // fillFacts: an operator may have cleared a model's facts on purpose, so refilling them is opted into.
+  const [presets, setPresets] = useState<{ catalog: IosModelPresetCatalog; plan: IosImportPlan; selected: Set<string>; fillFacts: boolean } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const live = useRef(true);
@@ -75,7 +76,7 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
       const result = await fetchIosModelPresets();
       if (!live.current) return;
       const plan = planIosImport(rules, result.models, androidRuleIds);
-      setPresets({ catalog: result, plan, selected: new Set(plan.added.map(rule => rule.id)) });
+      setPresets({ catalog: result, plan, selected: new Set(plan.added.map(rule => rule.id)), fillFacts: false });
     } catch (failure) {
       if (live.current) setError(displayAdminError(failure));
     } finally { if (live.current) setLoading(false); }
@@ -83,9 +84,10 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
   function applyImport() {
     if (!presets || !editable) return;
     // Re-plan against the current draft so an edit made meanwhile is never overwritten.
-    const plan = planIosImport(rules, presets.catalog.models.filter(rule => presets.selected.has(rule.id)), androidRuleIds);
-    const facts = new Map(planIosImport(rules, presets.catalog.models, androidRuleIds).factsFilled.map(fill => [fill.id, fill.facts]));
-    onChange([...rules.map(rule => facts.has(rule.id) ? { ...rule, ...facts.get(rule.id) } : rule), ...plan.added]);
+    const plan = planIosImport(rules, presets.catalog.models, androidRuleIds);
+    const facts = new Map(presets.fillFacts ? plan.factsFilled.map(fill => [fill.id, fill.facts]) : []);
+    onChange([...rules.map(rule => facts.has(rule.id) ? { ...rule, ...facts.get(rule.id) } : rule),
+      ...plan.added.filter(rule => presets.selected.has(rule.id))]);
     setPresets(null);
   }
 
@@ -124,8 +126,10 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
           }} />{rule.model} · {formatRange(rule)} · {rule.catalogClass ? IOS_CATALOG_LABELS[rule.catalogClass] : "未分类"}</label>)}</div>
       </>}
       <p className="f-foot">取消勾选只是本次不导入，不代表该机型不支持；以后可再次载入补齐。{presets.catalog.notice}</p>
-      {presets.plan.factsFilled.length > 0 && <p className="f-foot">已有的 {presets.plan.factsFilled.length} 个机型还没有设备信息，加入草稿时一并补上（只补设备信息，不改范围、别名和停用状态）。</p>}
-      <Btn variant="primary" disabled={!editable || presets.selected.size === 0 && presets.plan.factsFilled.length === 0} onClick={applyImport}>加入草稿</Btn>
+      {presets.plan.factsFilled.length > 0 && <label className="ios-check"><input type="checkbox" checked={presets.fillFacts}
+        onChange={event => setPresets({ ...presets, fillFacts: event.target.checked })} />
+        同时给 {presets.plan.factsFilled.length} 个还没有设备信息的已有机型补上（{presets.plan.factsFilled.slice(0, 6).map(fill => fill.model).join("、")}{presets.plan.factsFilled.length > 6 ? " 等" : ""}）。只补设备信息，不改范围、别名和停用状态；特意留空的机型请不要勾选。</label>}
+      <Btn variant="primary" disabled={!editable || presets.selected.size === 0 && !(presets.fillFacts && presets.plan.factsFilled.length > 0)} onClick={applyImport}>加入草稿</Btn>
       <Btn onClick={() => setPresets(null)}>取消</Btn>
       <p className="f-foot">加入草稿后仍需「试算并预览影响」→「提交审批」，审批通过才生效。</p>
     </div>}

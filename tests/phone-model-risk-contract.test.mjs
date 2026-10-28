@@ -26,6 +26,8 @@ test("iPhone device facts are optional, validated like the server and shown in d
   assert.equal(JSON.stringify(fields), JSON.stringify(["minOsVersion", "maxOsMajor", "scales", "screens"]));
   assert.equal(rules.iosRuleIssues([ios({ minOsVersion: "17.0", maxOsMajor: 16 })])[0].field, "maxOsMajor");
   assert.equal(rules.screenKey("874x402"), "402x874");
+  // Two orientations of one size are a duplicate, as on the server.
+  assert.equal(rules.iosRuleIssues([ios({ screens: ["402x874", "874x402"] })])[0].field, "screens");
   const change = rules.diffIosRules([ios()], [ios({ minOsVersion: "11.0", scales: [2] })])[0];
   assert.equal(change.kind, "modified");
   assert.match(change.details.join(" "), /设备信息 未填写 → iOS 11\.0–最新 · @2x/);
@@ -43,6 +45,8 @@ test("risk settings keep display size and account churn observe-only and need a 
   const update = { installModelLock: "ENFORCE", osVersion: "OBSERVE", screenScale: "OBSERVE", screenSize: "OBSERVE",
     missingSignals: "OBSERVE", accountModelChurn: "OBSERVE", churnWindowDays: 30, churnModelCount: 3, reason: "灰度观察结束，开启拦截" };
   assert.equal(risk.riskSettingsError(update), null);
+  const { reason: _reason, ...modes } = update;
+  assert.equal(risk.riskModeError({ ...modes, churnWindowDays: Number.NaN }), "统计窗口为 1 到 365 天。");
   assert.match(risk.riskSettingsError({ ...update, screenSize: "ENFORCE" }), /屏幕尺寸/);
   assert.match(risk.riskSettingsError({ ...update, accountModelChurn: "ENFORCE" }), /同一账号/);
   assert.match(risk.riskSettingsError({ ...update, churnModelCount: 1 }), /机型数/);

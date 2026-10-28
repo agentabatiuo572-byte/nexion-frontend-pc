@@ -3,10 +3,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Lock, RefreshCw, Unlock } from "lucide-react";
 import { OperationConfirmModal } from "../design-kit";
 import { PhoneApiError, fetchPhoneModelLocks, releasePhoneModelLock, type PhoneModelLock } from "@/lib/admin/phone-replacement-client";
-import { PHONE_GRANT } from "@/lib/admin/phone-replacement-contract";
+import { PHONE_GRANT, phonePlatformLabel as platformLabel } from "@/lib/admin/phone-replacement-contract";
 import { phoneTime } from "../phone-replacement-receipt";
 
-const platformLabel = (platform: string | null) => platform === "ios" ? "iPhone" : platform === "android" ? "Android" : "未知";
 function status(lock: PhoneModelLock): { text: string; tone: string } {
   if (lock.released) return { text: "已解除，等用户重新校准", tone: "cyan" };
   if (lock.held) return { text: "换报机型被拦截", tone: "warn" };
@@ -77,7 +76,8 @@ export function PhoneModelLockSection({ userId, rights }: { userId: string; righ
           await releasePhoneModelLock(userId, target.lock, reason, target.key);
         } catch (failure) {
           throw failure instanceof PhoneApiError && failure.unknownOutcome
-            ? new Error("提交结果暂不确定，请刷新列表核对，不要重复提交。") : failure;
+            // Safe to retry: release is bound to the revision, so a second try never releases twice.
+            ? new Error("提交结果暂不确定。可以直接再次确认，不会重复解除；也可以关闭后刷新列表核对。") : failure;
         }
         if (!live.current) return;
         setTarget(null);
