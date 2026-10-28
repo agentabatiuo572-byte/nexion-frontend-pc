@@ -269,9 +269,25 @@ function query(options: SupportAnalyticsQuery) {
   for (const [key, value] of Object.entries(parameters)) if (value !== undefined) params.set(key, String(value));
   return { params, view, basis, pageNum, pageSize, expectedVersion: options.expectedVersion };
 }
+/** One business month and its exact UTC window from the server's business calendar (BUG-005). */
+export type SupportAnalyticsMonth = { month: string; from: string; to: string };
+export function parseSupportAnalyticsMonths(value: unknown): SupportAnalyticsMonth[] {
+  const months = array(object(value, "months").months, entry => {
+    const row = object(entry, "month from to");
+    const month = text(row.month);
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) malformed("month");
+    const from = instant(row.from), to = instant(row.to);
+    if (parseBusinessTime(from) >= parseBusinessTime(to)) malformed("monthWindow");
+    return { month, from, to };
+  });
+  if (months.length === 0 || new Set(months.map(row => row.month)).size !== months.length) malformed("months");
+  return months;
+}
 export const supportAnalyticsClient = {
   query: (options: SupportAnalyticsQuery): Promise<SupportAnalyticsResponse> => {
     const expected = query(options);
     return supportRequest(`/support-workbench/analytics?${expected.params}`, value => parseSupportAnalyticsResponse(value, expected), { signal: options.signal });
   },
+  months: (signal?: AbortSignal): Promise<SupportAnalyticsMonth[]> =>
+    supportRequest("/support-workbench/analytics/months", parseSupportAnalyticsMonths, { signal }),
 };

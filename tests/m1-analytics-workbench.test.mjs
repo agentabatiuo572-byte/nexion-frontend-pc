@@ -286,13 +286,19 @@ test("paging uses only READY signed version and never fabricates continuation", 
   assert.equal(nextAnalyticsPage(state, { ...data, canContinue: true, versionState: "UNKNOWN", queryVersion: null }, 2), null);
   assert.equal(nextAnalyticsPage(next, data, 1).pageNum, 1); assert.equal(nextAnalyticsPage(state, { ...data, canContinue: true }, 99), null);
 });
-test("natural month boundaries use Shanghai UTC conversion, include leap February and stay unique", () => {
+test("month windows come from the server calendar, so months on either side of a zone change keep their own zone", () => {
   assert.equal(analyticsBusinessMonth(new Date("2026-09-30T16:00:00Z")), "2026-10");
-  const period = analyticsMonthWindow("2024-02"); assert.equal(period.from, "2024-01-31T16:00:00.000Z"); assert.equal(period.to, "2024-02-29T16:00:00.000Z");
-  const months = analyticsMonths(new Date("2026-10-01T00:00:00Z")); assert.equal(months.length, 24); assert.equal(new Set(months.map(x => x.value)).size, 24); assert.equal(months.at(-1).value, "2024-11");
-  assert.throws(() => analyticsMonthWindow("2026-13"));
-  assert.equal(analyticsWireQuery(initialAnalyticsQuery("MANAGED")).from, undefined);
-  const wire = analyticsWireQuery({ ...initialAnalyticsQuery("MANAGED", "2024-02"), basis: "PERIOD_EVENT", groupId: "5", currency: "NEX" });
+  const calendar = [
+    { month: "2026-12", from: "2026-11-30T15:00:00Z", to: "2026-12-31T15:00:00Z" },
+    { month: "2026-11", from: "2026-10-31T16:00:00Z", to: "2026-11-30T15:00:00Z" },
+    { month: "2024-02", from: "2024-01-31T16:00:00Z", to: "2024-02-29T16:00:00Z" },
+  ];
+  assert.deepEqual(analyticsMonthWindow("2026-12", calendar), { from: "2026-11-30T15:00:00Z", to: "2026-12-31T15:00:00Z" });
+  const period = analyticsMonthWindow("2024-02", calendar); assert.equal(period.from, "2024-01-31T16:00:00Z"); assert.equal(period.to, "2024-02-29T16:00:00Z");
+  assert.deepEqual(analyticsMonths(calendar).map(x => x.value), ["2026-12", "2026-11", "2024-02"]); assert.equal(analyticsMonths(calendar)[0].label, "2026年12月");
+  assert.throws(() => analyticsMonthWindow("2026-13", calendar)); assert.throws(() => analyticsMonthWindow("2025-01", calendar));
+  assert.equal(analyticsWireQuery(initialAnalyticsQuery("MANAGED"), calendar).from, undefined);
+  const wire = analyticsWireQuery({ ...initialAnalyticsQuery("MANAGED", "2024-02"), basis: "PERIOD_EVENT", groupId: "5", currency: "NEX" }, calendar);
   assert.equal(wire.groupId, "5"); assert.equal(wire.from, period.from); assert.equal(wire.month, undefined); assert.equal(wire.mode, undefined);
 });
 test("initial render is fail-closed until private OVERVIEW resolves; personal keeps original component", async () => {
@@ -405,7 +411,7 @@ test("all exposed dataset transitions satisfy actual client basis/filter/categor
     const state = { ...initialAnalyticsQuery("ALL", "2026-10"), category, filter, firstState, basis, currency, agentId: "7", groupId: "5", pageNum: 3, expectedVersion: version };
     for (const view of ["OVERVIEW", "AGENTS", "CUSTOMERS", "FINANCE", "DEVICES", "ACTIVITY"]) {
       const next = changeAnalyticsQuery(state, { view, ...(view === "DEVICES" ? { basis: "CURRENT_ASSET" } : {}) });
-      assert.doesNotThrow(() => validatorModule.namespace.validateQuery(analyticsWireQuery(next)), `${view}/${basis}/${category}/${filter}/${firstState}/${currency}`);
+      assert.doesNotThrow(() => validatorModule.namespace.validateQuery(analyticsWireQuery(next, [{ month: next.month, from: "2026-09-30T16:00:00Z", to: "2026-10-31T16:00:00Z" }])), `${view}/${basis}/${category}/${filter}/${firstState}/${currency}`);
       assert.equal(next.view, view); assert.equal(next.category, category); assert.equal(next.filter, filter); assert.equal(next.agentId, "7"); assert.equal(next.groupId, "5");
     }
   }

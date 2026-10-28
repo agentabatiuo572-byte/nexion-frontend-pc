@@ -5,11 +5,11 @@ import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
-import { supportAnalyticsClient, type SupportAnalyticsQuery, type SupportAnalyticsResponse, type SupportAnalyticsView, type SupportAnalyticsCustomer } from "@/lib/admin/support-analytics-client";
+import { supportAnalyticsClient, type SupportAnalyticsMonth, type SupportAnalyticsQuery, type SupportAnalyticsResponse, type SupportAnalyticsView, type SupportAnalyticsCustomer } from "@/lib/admin/support-analytics-client";
 import { SupportClientError } from "@/lib/admin/m-support-client";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { businessOffsetMinutes, businessZone, businessZoneText } from "@/lib/admin/business-time";
+import { businessZone, businessZoneText } from "@/lib/admin/business-time";
 import { Modal } from "../design-kit";
 import { HDSelect, type HDOption } from "./hd-ui";
 import { M1PersonalWorkbench, SupportSeatRolesButton, type PersonalWorkbenchView } from "./m1-personal-workbench";
@@ -57,19 +57,15 @@ export function analyticsBusinessMonth(now: Date = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: businessZone().zoneId, year: "numeric", month: "2-digit" }).formatToParts(now);
   return `${parts.find(p => p.type === "year")?.value}-${parts.find(p => p.type === "month")?.value}`;
 }
-export function analyticsMonthWindow(month: string): { from: string; to: string } {
-  const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(month);
-  if (!match || Number(match[1]) < 1001 || Number(match[1]) > 9998) throw new Error("统计月份无效，请重新选择。");
-  const year = Number(match[1]), number = Number(match[2]);
-  const offset = businessOffsetMinutes() * 60000;
-  return { from: new Date(Date.UTC(year, number - 1, 1) - offset).toISOString(), to: new Date(Date.UTC(year, number, 1) - offset).toISOString() };
+// Month windows come from the server's business calendar, so a month settled before a time-zone change
+// keeps the zone it was settled in (BUG-005).
+export function analyticsMonthWindow(month: string, calendar: readonly SupportAnalyticsMonth[]): { from: string; to: string } {
+  const row = calendar.find(entry => entry.month === month);
+  if (!row) throw new Error("统计月份无效，请重新选择。");
+  return { from: row.from, to: row.to };
 }
-export function analyticsMonths(now = new Date()): HDOption[] {
-  const [year, month] = analyticsBusinessMonth(now).split("-").map(Number);
-  return Array.from({ length: 24 }, (_, index) => {
-    const value = analyticsBusinessMonth(new Date(Date.UTC(year, month - 1 - index, 15)));
-    return { value, label: value.replace("-", "年") + "月" };
-  });
+export function analyticsMonths(calendar: readonly SupportAnalyticsMonth[]): HDOption[] {
+  return calendar.map(({ month }) => ({ value: month, label: month.replace("-", "年") + "月" }));
 }
 export function initialAnalyticsQuery(mode: SupportAnalyticsResponse["scopeSummary"]["mode"], month = analyticsBusinessMonth()): AnalyticsQueryState {
   return { view: mode === "MANAGED" ? "AGENTS" : mode === "ALL" ? "OVERVIEW" : "CUSTOMERS", basis: "CURRENT_CUSTOMER_HISTORY", currency: "USDT", category: "ALL", firstState: "ALL", filter: "ALL", month, pageNum: 1 };
@@ -101,9 +97,9 @@ export function changeAnalyticsQuery(state: AnalyticsQueryState, changes: Partia
   if (next.view === "DEVICES" && next.sortKey === undefined) next.sortKey = "LAST_ACTIVE_AT";
   return next;
 }
-export function analyticsWireQuery(state: AnalyticsQueryState): SupportAnalyticsQuery {
+export function analyticsWireQuery(state: AnalyticsQueryState, calendar: readonly SupportAnalyticsMonth[]): SupportAnalyticsQuery {
   const { month, ...query } = state;
-  return { ...query, pageSize: state.view === "OVERVIEW" ? 1 : 20, ...(state.basis === "PERIOD_EVENT" ? analyticsMonthWindow(month) : {}) };
+  return { ...query, pageSize: state.view === "OVERVIEW" ? 1 : 20, ...(state.basis === "PERIOD_EVENT" ? analyticsMonthWindow(month, calendar) : {}) };
 }
 export function nextAnalyticsPage(state: AnalyticsQueryState, data: SupportAnalyticsResponse, pageNum: number): AnalyticsQueryState | null {
   if (!Number.isSafeInteger(pageNum) || pageNum < 1 || Math.abs(pageNum - state.pageNum) !== 1 || data.versionState !== "READY" || !data.queryVersion || pageNum > state.pageNum && !data.canContinue) return null;
@@ -212,6 +208,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const [section, setSection] = useState<Section>("stats"), [personalView, setPersonalView] = useState<PersonalWorkbenchView>("dashboard");
   const lastDataView = useRef<SupportAnalyticsView>("OVERVIEW");
   const [profileId, setProfileId] = useState<string | null>(null);
+  const [monthCalendar, setMonthCalendar] = useState<SupportAnalyticsMonth[] | null>(null);
   const [personalPeriod, setPersonalPeriod] = useState<SupportAnalyticsResponse | null>(null), [personalPeriodError, setPersonalPeriodError] = useState("");
   const managementReturnQuery = useRef<AnalyticsQueryState | null>(null);
   const managementCustomerGroup = useRef<string | null>(null);
@@ -226,12 +223,18 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   useEffect(() => {
     const controller = new AbortController();
     setPersonalPeriod(null); setPersonalPeriodError("");
-    if (scope?.scopeSummary.mode !== "PERSONAL") return () => controller.abort();
-    void supportAnalyticsClient.query({ view: "OVERVIEW", basis: "PERIOD_EVENT", ...analyticsMonthWindow(queryState.month), currency: queryState.currency ?? "USDT", pageSize: 1, signal: controller.signal })
+    if (scope?.scopeSummary.mode !== "PERSONAL" || !monthCalendar) return () => controller.abort();
+    void supportAnalyticsClient.query({ view: "OVERVIEW", basis: "PERIOD_EVENT", ...analyticsMonthWindow(queryState.month, monthCalendar), currency: queryState.currency ?? "USDT", pageSize: 1, signal: controller.signal })
       .then(next => { if (!controller.signal.aborted && next.scopeSummary.mode === "PERSONAL") setPersonalPeriod(next); })
       .catch(cause => { if (!controller.signal.aborted) setPersonalPeriodError(analyticsErrorText(cause)); });
     return () => controller.abort();
-  }, [scope, queryState.month, queryState.currency]);
+  }, [scope, queryState.month, queryState.currency, monthCalendar]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void supportAnalyticsClient.months(controller.signal).then(months => { if (!controller.signal.aborted) setMonthCalendar(months); })
+      .catch(cause => { if (!controller.signal.aborted) { setError(analyticsErrorText(cause)); setPersonalPeriodError(analyticsErrorText(cause)); } });
+    return () => controller.abort();
+  }, []);
   useEffect(() => {
     const controller = new AbortController(); scopeControllerRef.current = controller; setScope(null); setScopeError(""); setData(null); setProfileId(null);
     (async () => {
@@ -266,10 +269,10 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     return () => window.removeEventListener("support-scope-invalidated", invalidate);
   }, [queryState]);
   useEffect(() => {
-    if (!showStatistics) return;
+    if (!showStatistics || queryState.basis === "PERIOD_EVENT" && !monthCalendar) return;
     const current = ++generation.current, controller = new AbortController(); controllerRef.current = controller;
     setData(null); setProfileId(null); setError(""); setLoading(true); setCancelled(false);
-    (async () => supportAnalyticsClient.query({ ...analyticsWireQuery(queryState), signal: controller.signal }))().then(next => {
+    (async () => supportAnalyticsClient.query({ ...analyticsWireQuery(queryState, monthCalendar ?? []), signal: controller.signal }))().then(next => {
       if (controller.signal.aborted || current !== generation.current) return;
       if (next.scopeSummary.mode !== scope?.scopeSummary.mode) { setScope(null); setScopeRetry(n => n + 1); return; }
       setData(next);
@@ -279,7 +282,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       if (cause instanceof SupportClientError && [401, 403].includes(cause.status)) { setScope(null); setScopeError(analyticsErrorText(cause)); }
     }).finally(() => { if (!controller.signal.aborted && current === generation.current) setLoading(false); });
     return () => { controller.abort(); generation.current++; };
-  }, [showStatistics, queryState, retry, scope?.scopeSummary.mode]);
+  }, [showStatistics, queryState, retry, scope?.scopeSummary.mode, monthCalendar]);
   const change: Drill = changes => { controllerRef.current?.abort(); generation.current++; setData(null); setProfileId(null); setError(""); setQueryState(previous => changeAnalyticsQuery(previous, changes)); };
   function refreshScope(invalidated = false) {
     scopeControllerRef.current?.abort(); controllerRef.current?.abort(); generation.current++;
@@ -319,7 +322,7 @@ if (!scope) return <section className="sa-workbench" aria-label="客服范围核
   const selectedGroup = queryState.groupId === undefined ? undefined : scope.scopeSummary.groups.find(g => g.groupId === String(queryState.groupId));
   const groups = scope.scopeSummary.groups;
   const activeConditions = activeAnalyticsConditions(queryState, groups, isPersonal);
-  const monthOptions = analyticsMonths();
+  const monthOptions = monthCalendar ? analyticsMonths(monthCalendar) : [];
   const drill: Drill = changes => { setSection("stats"); setKeyword(""); change({ groupId: undefined, agentId: undefined, category: "ALL", keyword: undefined, firstState: "ALL", filter: "ALL", sortKey: undefined, direction: undefined, ...changes }); };
   const current = data?.selectedCurrent, personnel = data?.scopeSummary.personnel;
   const deposits = queryState.basis === "PERIOD_EVENT" ? data?.scopeSummary.financial.currencies.find(x => x.currency === currency)?.deposits : current?.ownLifetime.find(x => x.currency === currency)?.deposits;
