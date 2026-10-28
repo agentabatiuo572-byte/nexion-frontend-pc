@@ -29,7 +29,7 @@ const LINK_STYLE = {
 function GatedLink({ allowed, href, label }: { allowed: boolean; href: string; label: string }) {
   return allowed
     ? <Link href={href} style={LINK_STYLE}>{label}</Link>
-    : <span title={`当前角色没有 ${label} 读取权限`} style={{ ...LINK_STYLE, cursor: "not-allowed" }}>{label} 无权限</span>;
+    : <span title={`你没有查看「${label}」的权限`} style={{ ...LINK_STYLE, cursor: "not-allowed" }}>{label} 无权限</span>;
 }
 
 function badge(status: string): { label: string; tone: "ok" | "warn" | "err" | "neutral" } {
@@ -40,14 +40,14 @@ function badge(status: string): { label: string; tone: "ok" | "warn" | "err" | "
   if (status === "rejected") return { label: "已拒绝", tone: "err" };
   if (status === "recovery_pending") return { label: "待追回", tone: "err" };
   if (status === "cooling") return { label: "奖励等待发放", tone: "warn" };
-  return { label: "状态待核实", tone: "warn" };
+  return { label: "状态未知", tone: "warn" };
 }
 
 const directGroup = (row: F5CommissionEvent) => row.kind === "direct_purchase" || row.kind === "direct_device_earning";
 const operationLabels: Record<string, string> = { REVERSE: "冲正", REISSUE: "补发", SUSPEND: "暂停", RESUME: "恢复" };
-const kindNames = (value: string) => value.split(",").map((kind) => KIND_LABELS[kind.trim()] ?? "未识别奖种").join("、");
+const kindNames = (value: string) => value.split(",").map((kind) => KIND_LABELS[kind.trim()] ?? "未知奖励类型").join("、");
 const amountLabel = (row: F5CommissionEvent) => directGroup(row)
-  ? `结算组 ${row.settlementNo} · ${row.amountUSDT} USDT + ${row.amountNEX} UVT（整组处理）`
+  ? `结算组 ${row.settlementNo} · ${row.amountUSDT} USDT + ${row.amountNEX} UVT（一起处理）`
   : `${row.amt.toLocaleString("en-US")} ${nexGridBrandText(row.cur)}`;
 
 export function F5Audit({ ctx }: { ctx: FViewCtx }) {
@@ -102,9 +102,9 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const dispose = (kind: "freeze" | "unlock" | "unfreeze", row: F5CommissionEvent) => {
     const amount = amountLabel(row);
     const map = {
-      freeze: { name: `冻结佣金 ${row.id}`, amplify: false, fixedVal: "frozen", detail: `冻结 ${row.id} · ${amount} · 先按住观察:暂停该笔的解锁与提现,可随时解冻,与不可逆冲正分层。确认后进入 A2 执行链,服务端检查当前状态及版本后更新并落审计。` },
-      unlock: { name: `佣金提前解锁 ${row.id}`, amplify: true, fixedVal: "unlocked", detail: `提前解锁 ${row.id} · ${amount} · 跳过剩余冷却直接进入可提余额,放大资金流出。确认后进入 A2 执行链,服务端按状态 防覆盖修改检查 变更并联动 D4 / B1 护栏。` },
-      unfreeze: { name: `解冻佣金 ${row.id}`, amplify: false, fixedVal: "cooling", detail: `解冻 ${row.id} · ${amount} · 恢复冻结前的冷却计提状态,不会绕过剩余冷却期。确认后进入 A2 执行链,服务端按状态与版本检查 变更并落审计。` },
+      freeze: { name: `冻结佣金 ${row.id}`, amplify: false, fixedVal: "frozen", detail: `冻结 ${row.id} · ${amount} · 先按住观察：这笔暂时不能解锁和提现，随时可以解冻。和冲正不同，冻结可以撤回。` },
+      unlock: { name: `佣金提前解锁 ${row.id}`, amplify: true, fixedVal: "unlocked", detail: `提前解锁 ${row.id} · ${amount} · 跳过剩余冷却期，马上可以提现。会让钱提前流出，先看兑付覆盖率。` },
+      unfreeze: { name: `解冻佣金 ${row.id}`, amplify: false, fixedVal: "cooling", detail: `解冻 ${row.id} · ${amount} · 回到冻结前的冷却期，剩下的冷却天数照常计算。` },
     }[kind];
     ctx.openActionConfirm({ name: map.name, amplify: map.amplify, op: "dispose", paramKey: row.auditKey, fixedVal: map.fixedVal, expectedVersion: row.version, detail: map.detail });
   };
@@ -112,41 +112,41 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const reverse = (row: F5CommissionEvent) => {
     ctx.openActionConfirm({
       name: `冲正佣金 ${row.id}`,
-      detail: `冲正 ${row.id} · ${amountLabel(row)}。服务端校验退款单、会员等级 派发单或工单证据，检查当前状态及版本，并联动 D4、A2、A4。余额不足时显示待追回，不把改状态当作追回成功。`,
+      detail: `冲正 ${row.id} · ${amountLabel(row)}。把这笔佣金收回，需要填写退款单、发放单或工单编号。用户余额不够时会标记为「待追回」，钱还没真正收回。`,
       businessForm: {
         kind: "multi-field",
         title: "冲正证据",
-        hint: "证据编号必须已存在且与该佣金事件相关；原因另在确认步骤填写。",
+        hint: "填写与这笔佣金有关的退款单、发放单或工单编号。原因在下一步填写。",
         fields: [
-          { key: "refundRef", label: "退款 / 派发 / 工单编号", inputKind: "text", required: true, wide: true },
+          { key: "refundRef", label: "退款 / 发放 / 工单编号", inputKind: "text", required: true, wide: true },
         ],
       },
       run: async (reason, value) => {
         const refundRef = value?.refundRef?.trim();
-        if (!refundRef) throw new Error("请填写可验证的证据编号");
+        if (!refundRef) throw new Error("请填写有效的单号");
         await ctx.reverseF5Commission(row.id, refundRef, reason);
-        ctx.toast(`${row.id} 已提交 A2 待确认；批准后才会冲正并联动 D4/A4`);
+        ctx.toast(`${row.id} 冲正已提交，等待审批`);
       },
     });
   };
 
   const reissue = () => {
     if (selectedRows.some(row => directGroup(row) || row.reversalRecorded || row.status === "recovery_pending")) {
-      ctx.toast("直属分成需按原来源核对，不能重复补发；已退款或待追回记录也不能补发。");
+      ctx.toast("直属分成、已退款或待追回的记录不能补发。");
       return;
     }
     if (!selectedRows.length) {
-      ctx.toast("请先勾选已撤销佣金");
+      ctx.toast("请先勾选要补发的已撤销佣金");
       return;
     }
     ctx.openActionConfirm({
       name: `批量补发 ${selectedRows.length} 笔佣金`,
       amplify: true,
-      detail: `仅补发已撤销/驳回记录：${selectedRows.map((row) => row.id).join("、")}。提交前实时校验 B1 覆盖率；低于红线或快照不可用时整批拒绝。`,
+      detail: `只补发已撤销或已拒绝的记录：${selectedRows.map((row) => row.id).join("、")}。兑付覆盖率低于红线时整批不能提交。`,
       run: async (reason) => {
         await ctx.reissueF5Commissions(selectedRows.map((row) => row.id), reason);
         setSelected([]);
-        ctx.toast("批量补发已提交 A2 待确认；批准后才会校验 B1 并联动 D4/A4");
+        ctx.toast("批量补发已提交，等待审批");
       },
     });
   };
@@ -154,14 +154,14 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const suspend = (row: F5CommissionEvent) => {
     ctx.openActionConfirm({
       name: `暂停用户 ${row.userId} 的佣金`,
-      detail: "按奖种暂停后，既有开放佣金立即冻结，后续所有佣金生产器也由数据库闸门阻断；恢复时仅解除闸门，不自动解冻历史记录。",
+      detail: "暂停后，这位用户所选类型的佣金马上冻结，以后也不再产生。恢复只会让以后的佣金照常产生，已冻结的不会自动解冻。",
       businessForm: {
         kind: "multi-field",
         title: "用户佣金暂停",
         fields: [
           {
             key: "kinds",
-            label: "暂停奖种",
+            label: "暂停哪些奖励",
             current: row.kind,
             inputKind: "multi-select",
             options: KINDS,
@@ -173,9 +173,9 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       },
       run: async (reason, value) => {
         const kinds = (value?.kinds ?? "").split(",").map((item) => item.trim()).filter(Boolean);
-        if (!kinds.length) throw new Error("至少选择一个奖种");
+        if (!kinds.length) throw new Error("至少选择一种奖励");
         await ctx.suspendF5UserCommissions(row.userId, kinds, true, reason);
-        ctx.toast(`用户 ${row.userId} 的 ${kinds.map((kind) => KIND_LABELS[kind] ?? "所选奖种").join("、")} 已提交 A2 待确认`);
+        ctx.toast(`用户 ${row.userId} 的 ${kinds.map((kind) => KIND_LABELS[kind] ?? "所选奖励").join("、")} 暂停已提交，等待审批`);
       },
     });
   };
@@ -184,21 +184,21 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     const sigma = data?.configValues.commissionAnomalySigma ?? "3";
     const ratio = data?.configValues.layerRatioAnomalyPct ?? "20";
     ctx.openActionConfirm({
-      name: "调整 F5 异常阈值",
-      detail: "金额异常阈值允许 2–5σ、步长 0.5；层比例偏离阈值允许 10%–50%。改后立即用于下一次服务端异常计算。",
+      name: "调整异常预警标准",
+      detail: "金额偏离可设 2–5 倍标准差（σ），每次加减 0.5；层级比例偏离可设 10%–50%。数字越小，预警越多。马上生效。",
       businessForm: {
         kind: "multi-field",
-        title: "异常判定阈值",
+        title: "异常预警标准",
         fields: [
-          { key: "sigma", label: "金额偏离 σ", current: sigma, inputKind: "number", min: 2, max: 5, step: 0.5, required: true },
-          { key: "ratio", label: "层比例偏离 %", current: ratio, inputKind: "number", min: 10, max: 50, step: 1, required: true },
+          { key: "sigma", label: "金额偏离（倍标准差 σ）", current: sigma, inputKind: "number", min: 2, max: 5, step: 0.5, required: true },
+          { key: "ratio", label: "层级比例偏离（%）", current: ratio, inputKind: "number", min: 10, max: 50, step: 1, required: true },
         ],
       },
       run: async (reason, value) => {
         const nextSigma = Number(value?.sigma);
         const nextRatio = Number(value?.ratio);
         await ctx.updateF5AnomalyConfig(nextSigma, nextRatio, reason);
-        ctx.toast("F5 异常阈值已更新 · A2/A4 已记录");
+        ctx.toast("异常预警标准已更新");
       },
     });
   };
@@ -207,26 +207,26 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     const filters = query();
     ctx.openActionConfirm({
       name: "导出当前筛选的全部佣金",
-      detail: "服务端会按当前类型、币种、用户、用户群和状态条件遍历全部匹配记录，不受页面 20 行限制；下载文件仅含脱敏字段，并校验行数与 SHA-256 后保存。",
+      detail: "按当前筛选条件导出全部记录，不只是这一页。敏感信息已隐藏。",
       run: async (reason) => {
         const receipt = await ctx.exportF5Commissions(filters, reason);
-        ctx.toast(`已下载 ${receipt.filename} · ${receipt.rowCount} 行 · 完整性校验通过`);
+        ctx.toast(`已下载 ${receipt.filename} · 共 ${receipt.rowCount} 行`);
       },
     });
   };
 
   if (ctx.f5Loading && !data) {
-    return <section className="pane"><div style={{ padding: 18 }}>F5 佣金记录核对加载中...</div></section>;
+    return <section className="pane"><div style={{ padding: 18 }}>佣金记录加载中…</div></section>;
   }
 
   return (
     <div className="f-section-stack">
       <section className="pane">
         <div className="pane-h">
-          <span className="ph-ttl">F5 佣金记录核对</span>
-          <span className="ph-sub">服务端游标 · 八类佣金真实账本</span>
+          <span className="ph-ttl">佣金记录核对</span>
+          <span className="ph-sub">8 类佣金的全部发放记录</span>
         </div>
-        {ctx.f5Error && <div style={{ padding: 12, color: "var(--danger)" }}>加载失败：{ctx.f5Error}。佣金权威快照不可用，批量补发已暂停。 <button className="fbtn" onClick={() => void ctx.refreshF5(query())}>重试</button></div>}
+        {ctx.f5Error && <div style={{ padding: 12, color: "var(--danger)" }}>加载失败：{ctx.f5Error}。数据不完整，批量补发已暂停。 <button className="fbtn" onClick={() => void ctx.refreshF5(query())}>重试</button></div>}
         <div className="filter-bar" style={{ gap: 8, flexWrap: "wrap" }}>
           <select aria-label="佣金类型" value={kind} onChange={(e) => setKind(e.target.value)}>
             <option value="">全部类型</option>
@@ -242,8 +242,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
             <option value="cooling">奖励等待发放</option><option value="unlocked">已解锁</option>
             <option value="withdrawn">已提现</option><option value="reversed">已撤销</option><option value="frozen">已冻结</option><option value="rejected">已拒绝</option><option value="recovery_pending">待追回</option>
           </select>
-          <button className="fbtn primary" onClick={() => void ctx.refreshF5(query())}>服务端筛选</button>
-          <button className="fbtn" onClick={exportAllFiltered}>导出筛选全量 CSV</button>
+          <button className="fbtn primary" onClick={() => void ctx.refreshF5(query())}>筛选</button>
+          <button className="fbtn" onClick={exportAllFiltered}>导出筛选结果（CSV）</button>
           {reissueAvailable && <button className="fbtn" onClick={reissue}>批量补发 ({selected.length})</button>}
         </div>
       </section>
@@ -251,16 +251,16 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       {data && (
         <>
           <div className="f-stats">
-            <div className="f-stat"><div className="k">佣金全量合计</div><div className="v">{nexGridBrandText(data.summary.monthlyCommissionSpendLabel)}</div><div className="sub">八类 · USDT / UVT 分币种</div></div>
-            <div className="f-stat warn"><div className="k">冷却中全量余额</div><div className="v">{nexGridBrandText(data.summary.coolingBalanceLabel)}</div><div className="sub">按各类奖励的冷却快照统计</div></div>
-            <div className="f-stat ok"><div className="k">已解锁佣金全量</div><div className="v">{nexGridBrandText(data.summary.withdrawableThisMonthLabel)}</div><div className="sub">佣金状态金额，当前可提现以钱包为准</div></div>
-            <div className="f-stat danger"><div className="k">已冻结（全量）</div><div className="v">{data.summary.frozenCount}</div><div className="sub">来自全量状态聚合；异常样本另列</div></div>
+            <div className="f-stat"><div className="k">佣金合计</div><div className="v">{nexGridBrandText(data.summary.monthlyCommissionSpendLabel)}</div><div className="sub">8 类 · USDT / UVT 分开统计</div></div>
+            <div className="f-stat warn"><div className="k">冷却中余额</div><div className="v">{nexGridBrandText(data.summary.coolingBalanceLabel)}</div><div className="sub">还在冷却期、暂不能提现</div></div>
+            <div className="f-stat ok"><div className="k">已解锁佣金</div><div className="v">{nexGridBrandText(data.summary.withdrawableThisMonthLabel)}</div><div className="sub">实际可提现金额以用户钱包为准</div></div>
+            <div className="f-stat danger"><div className="k">已冻结</div><div className="v">{data.summary.frozenCount}</div><div className="sub">笔数；异常记录见右侧预警</div></div>
           </div>
 
-          <section className="pane" aria-label="八类佣金支出与状态分布">
+          <section className="pane" aria-label="佣金去向与状态">
             <div className="pane-h">
-              <span className="ph-ttl">佣金支出去向与全量状态</span>
-              <span className="ph-sub">点击任一卡片后由服务端过滤流水，再点一次取消</span>
+              <span className="ph-ttl">佣金去向与状态</span>
+              <span className="ph-sub">点卡片可筛选下方记录，再点一次取消</span>
             </div>
             <div style={{ padding: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
               {data.commissionKinds.map((item) => (
@@ -306,12 +306,12 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           </section>
 
           <section className="pane" aria-label="待计算奖励">
-            <div className="pane-h"><span className="ph-ttl">待计算奖励</span><span className="ph-sub">本次显示 {data.pendingCalculationCount} 组 · 待价格可用后计算，尚无实际到账金额</span></div>
+            <div className="pane-h"><span className="ph-ttl">待计算奖励</span><span className="ph-sub">共 {data.pendingCalculationCount} 组 · 等 UVT 价格恢复后再计算，还没有到账</span></div>
             <div style={{ overflowX: "auto" }}>
               <table className="ctbl">
-                <thead><tr><th>结算号</th><th>奖种</th><th>来源 / 成员</th><th>层级</th><th>USDT 等价基数</th><th>双币奖励</th><th>预计冷却到期 / 发生时间</th><th>状态</th></tr></thead>
+                <thead><tr><th>结算号</th><th>奖励类型</th><th>来源 / 成员</th><th>层级</th><th>计算基数（USDT）</th><th>奖励</th><th>冷却到期 / 发生时间</th><th>状态</th></tr></thead>
                 <tbody>
-                  {!data.pendingCalculations.length && <tr className="empty-row"><td colSpan={8}>当前筛选暂无待计算奖励</td></tr>}
+                  {!data.pendingCalculations.length && <tr className="empty-row"><td colSpan={8}>没有待计算的奖励</td></tr>}
                   {data.pendingCalculations.map(row => <tr key={row.settlementNo}>
                     <td className="cid">{row.settlementNo}</td><td>{KIND_LABELS[row.kind]}</td><td>{row.sourceRef} / {operatorNicknameText(row.sourceUserName)}</td>
                     <td>{row.kind === "direct_purchase" ? `L${row.layer}` : "直属"}</td><td>{row.basisUsdt} USDT</td><td>USDT 待计算 · UVT 待计算</td>
@@ -320,50 +320,50 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                 </tbody>
               </table>
             </div>
-            <p style={{ padding: "12px 18px 16px", fontSize: 12, color: "var(--ink-3)" }}>待计算列表最多展示 100 组，可按奖种缩小范围；不混入已计佣账项或到账汇总，不提供改状态及资金处置。历史已形成金额的账项继续在下方核对。</p>
+            <p style={{ padding: "12px 18px 16px", fontSize: 12, color: "var(--ink-3)" }}>最多显示 100 组，可按奖励类型筛选。这些奖励还没算出金额，不能在这里处理；已算出金额的记录在下方。</p>
           </section>
 
           <section className="pane">
-            <div className="pane-h"><span className="ph-ttl">佣金流水</span><span className="ph-sub">总计 {data.total} 笔账项 · 当前 {events.length} 笔</span></div>
+            <div className="pane-h"><span className="ph-ttl">佣金流水</span><span className="ph-sub">共 {data.total} 笔 · 已显示 {events.length} 笔</span></div>
             <table className="ctbl">
-              <thead><tr><th>选择</th><th>佣金 ID</th><th>奖种</th><th>用户 / 来源</th><th>金额</th><th>层级 / 结算时间</th><th>冷却</th><th>状态</th><th>动作</th></tr></thead>
+              <thead><tr><th>选择</th><th>佣金 ID</th><th>奖励类型</th><th>用户 / 来源</th><th>金额</th><th>层级 / 结算时间</th><th>冷却</th><th>状态</th><th>动作</th></tr></thead>
               <tbody>
-                {!events.length && <tr className="empty-row"><td colSpan={9}>当前筛选无佣金事件；筛选器和处置入口仍可用</td></tr>}
+                {!events.length && <tr className="empty-row"><td colSpan={9}>没有符合条件的佣金记录</td></tr>}
                 {events.map((row) => {
                   const state = badge(row.status);
                   const selectable = canDispose && row.status === "reversed" && !directGroup(row) && !row.reversalRecorded;
                   return (
                     <tr key={row.id}>
-                      <td><input aria-label={`选择 ${row.id}`} type="checkbox" disabled={!selectable} title={directGroup(row) ? "直属分成需按原来源核对，不能重复补发" : row.reversalRecorded ? "已退款记录禁止补发" : undefined} checked={selected.includes(row.id)} onChange={(e) => setSelected((old) => e.target.checked ? [...old, row.id] : old.filter((id) => id !== row.id))} /></td>
+                      <td><input aria-label={`选择 ${row.id}`} type="checkbox" disabled={!selectable} title={directGroup(row) ? "直属分成不能补发" : row.reversalRecorded ? "已退款的记录不能补发" : undefined} checked={selected.includes(row.id)} onChange={(e) => setSelected((old) => e.target.checked ? [...old, row.id] : old.filter((id) => id !== row.id))} /></td>
                       <td><span className="cid">{row.id}</span>{(directGroup(row) || row.settlementNo) && <details style={{ marginTop: 6, maxWidth: 260 }}><summary>来源详情</summary><div style={{ display: "grid", gap: 5, padding: "8px 0", overflowWrap: "anywhere" }}>
                         <span>结算组：{row.settlementNo}</span><span>来源编号：{row.sourceRef}</span><span>设备：{row.sourceDeviceId || "不适用"}</span>
                         {directGroup(row) ? <>
-                        <span>政策版本：{row.policyVersion}</span><span>计价基数：{row.basisUsdt} USDT</span><span>当笔 UVT 价格：{row.nexUsdtPrice} USDT</span>
+                        <span>设置版本：{row.policyVersion}</span><span>计价基数：{row.basisUsdt} USDT</span><span>当笔 UVT 价格：{row.nexUsdtPrice} USDT</span>
                         <span>整组奖励：{row.amountUSDT} USDT + {row.amountNEX} UVT</span><span>待追回：{row.recoveryPendingUSDT} USDT + {row.recoveryPendingNEX} UVT</span>
-                        <span>{row.reversalRecorded ? "来源已退款或冲正，禁止补发" : "直属分成需按原来源核对，不能重复补发"}</span>
-                        </> : <><span>当前账项：{row.amt} {nexGridBrandText(row.cur)} · {state.label}</span><span>关联购买奖励组仅供核对，资金操作只作用于当前账项币种。</span></>}
+                        <span>{row.reversalRecorded ? "来源已退款或冲正，不能补发" : "直属分成不能补发"}</span>
+                        </> : <><span>当前账项：{row.amt} {nexGridBrandText(row.cur)} · {state.label}</span><span>同组的其他奖励只供参考，操作只影响这一笔。</span></>}
                       </div></details>}</td>
                       <td>{KIND_LABELS[row.kind] ?? row.kind}</td>
                       <td>{operatorNicknameText(row.user)} / {row.sourceUserId ? `U${row.sourceUserId}` : "--"}</td>
                       <td>{row.amt.toLocaleString()} {nexGridBrandText(row.cur)}</td>
                       <td>{directGroup(row) ? "直属" : row.layer ? `L${row.layer}` : "--"} / {row.settledAt}</td>
-                      <td>{row.coolingDaysLeft > 0 ? `剩余 ${row.coolingDaysLeft} 天` : "无独立冷却"}</td>
+                      <td>{row.coolingDaysLeft > 0 ? `剩余 ${row.coolingDaysLeft} 天` : "无冷却"}</td>
                       <td><Badge tone={state.tone}>{state.label}</Badge></td>
                       <td>
                         {canReadD4 && row.ledgerBizNo ? (
-                          <Link href={`/finance/ledger?bizNo=${encodeURIComponent(row.ledgerBizNo)}`} style={LINK_STYLE}>D4</Link>
+                          <Link href={`/finance/ledger?bizNo=${encodeURIComponent(row.ledgerBizNo)}`} style={LINK_STYLE}>账本</Link>
                         ) : !canReadD4 ? (
-                          <span title="当前角色没有 D4 账本读取权限" style={{ ...LINK_STYLE, cursor: "not-allowed" }}>D4 无权限</span>
+                          <span title="你没有查看资金账本的权限" style={{ ...LINK_STYLE, cursor: "not-allowed" }}>账本无权限</span>
                         ) : (
-                          <span title="该佣金事件尚无关联账本" style={{ ...LINK_STYLE, cursor: "not-allowed" }}>D4 暂无</span>
+                          <span title="这笔佣金还没有资金账本记录" style={{ ...LINK_STYLE, cursor: "not-allowed" }}>暂无账本</span>
                         )}
-                        <GatedLink allowed={canReadB1} href="/overview/dual-ledger" label="B1" />
+                        <GatedLink allowed={canReadB1} href="/overview/dual-ledger" label="覆盖率" />
                         <GatedLink allowed={canReadL4} href="/analytics/operations" label="L4" />
                         {canDispose && row.status === "cooling" && <button className="fbtn" onClick={() => dispose("freeze", row)}>冻结</button>}
                         {canDispose && row.status === "cooling" && !directGroup(row) && <button className="fbtn" onClick={() => dispose("unlock", row)}>提前解锁</button>}
                         {canDispose && row.status === "frozen" && <button className="fbtn" onClick={() => dispose("unfreeze", row)}>解冻</button>}
                         {canReject && !["reversed", "withdrawn", "rejected", "recovery_pending"].includes(row.status) && <button className="fbtn" onClick={() => reverse(row)}>冲正</button>}
-                        {canReject && <button className="fbtn" onClick={() => suspend(row)}>暂停奖种</button>}
+                        {canReject && <button className="fbtn" onClick={() => suspend(row)}>暂停此类奖励</button>}
                       </td>
                     </tr>
                   );
@@ -375,60 +375,60 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
 
           <div className="f5-main">
             <section className="pane">
-              <div className="pane-h"><span className="ph-ttl">异常预警列表</span>{canWrite && <button className="fbtn" onClick={editThreshold}>调整阈值</button>}</div>
+              <div className="pane-h"><span className="ph-ttl">异常预警</span>{canWrite && <button className="fbtn" onClick={editThreshold}>调整标准</button>}</div>
               <table className="ctbl">
-                <thead><tr><th>类型</th><th>佣金 / 用户</th><th>证据</th><th>K 簇</th></tr></thead>
+                <thead><tr><th>类型</th><th>佣金 / 用户</th><th>依据</th><th>关联风险群</th></tr></thead>
                 <tbody>
-                  {!data.anomalies.length && <tr className="empty-row"><td colSpan={4}>当前样本未命中异常阈值</td></tr>}
+                  {!data.anomalies.length && <tr className="empty-row"><td colSpan={4}>暂无异常</td></tr>}
                   {data.anomalies.map((item) => <tr key={item.id}><td>{item.type}</td><td>{item.commissionId || "--"} / {item.userId || "--"}</td><td>{item.evidence}</td><td>{item.relatedKCluster}</td></tr>)}
                 </tbody>
               </table>
             </section>
             <aside className="rail">
-              <div className="rail-card"><div className="rc-h">八类冷却统计规则</div>{data.coolingPolicy.map((item) => <div className="it" key={item.kind}>{KIND_LABELS[item.kind]} · {item.days ? `${item.days} 天` : "即时"} · {operatorCopyText(item.policy)}</div>)}</div>
-              <div className="rail-card"><div className="rc-h">跨域调用链</div>
+              <div className="rail-card"><div className="rc-h">各类奖励的冷却期</div>{data.coolingPolicy.map((item) => <div className="it" key={item.kind}>{KIND_LABELS[item.kind]} · {item.days ? `${item.days} 天` : "即时"} · {operatorCopyText(item.policy)}</div>)}</div>
+              <div className="rail-card"><div className="rc-h">相关页面</div>
                 {canReadD4
-                  ? <Link href="/finance/ledger" style={LINK_STYLE}>D4 账本</Link>
-                  : <span title="当前角色没有 D4 账本读取权限" style={{ ...LINK_STYLE, cursor: "not-allowed" }}>D4 账本无权限</span>}
-                <GatedLink allowed={canReadB1} href="/overview/dual-ledger" label="B1 覆盖率" />
-                <GatedLink allowed={canReadL4} href="/analytics/operations" label="L4 运营分析" />
-                <GatedLink allowed={canReadA2} href="/platform/audit" label="A2 审批审计" />
-                <GatedLink allowed={canReadA4} href="/platform/events" label="A4 事件中心" />
+                  ? <Link href="/finance/ledger" style={LINK_STYLE}>账本与账单核对</Link>
+                  : <span title="你没有查看资金账本的权限" style={{ ...LINK_STYLE, cursor: "not-allowed" }}>资金账本（无权限）</span>}
+                <GatedLink allowed={canReadB1} href="/overview/dual-ledger" label="兑付覆盖率" />
+                <GatedLink allowed={canReadL4} href="/analytics/operations" label="设备/任务/网络报表" />
+                <GatedLink allowed={canReadA2} href="/platform/audit" label="操作记录与审批" />
+                <GatedLink allowed={canReadA4} href="/platform/events" label="用户行为事件" />
               </div>
             </aside>
           </div>
 
           <section className="pane">
-            <div className="pane-h"><span className="ph-ttl">当前暂停闸门</span><span className="ph-sub">恢复仅解除未来佣金生产闸门，不自动解冻历史事件</span></div>
+            <div className="pane-h"><span className="ph-ttl">已暂停的奖励</span><span className="ph-sub">恢复后只影响以后的佣金，已冻结的不会自动解冻</span></div>
             <table className="ctbl">
-              <thead><tr><th>用户</th><th>奖种</th><th>原因 / 操作人</th><th>更新时间</th><th>动作</th></tr></thead>
+              <thead><tr><th>用户</th><th>奖励类型</th><th>原因 / 操作人</th><th>更新时间</th><th>动作</th></tr></thead>
               <tbody>
-                {!data.activeSuspensions.length && <tr className="empty-row"><td colSpan={5}>当前没有暂停中的用户奖种</td></tr>}
+                {!data.activeSuspensions.length && <tr className="empty-row"><td colSpan={5}>没有暂停中的奖励</td></tr>}
                 {data.activeSuspensions.map((item) => <tr key={`${item.userId}:${item.kind}`}>
                   <td>{item.userId}</td><td>{KIND_LABELS[item.kind] ?? item.kind}</td>
                   <td>{item.reason} / {item.operator}</td><td>{item.updatedAt}</td>
                   <td>{canReject && <button className="fbtn primary" onClick={() => ctx.openActionConfirm({
-                    name: `恢复奖种 · ${item.userId} / ${KIND_LABELS[item.kind] ?? "所选奖种"}`,
-                    detail: "提交 A2 审批；批准后解除暂停，后续该奖种可继续生产，历史冻结事件保持原状态。",
+                    name: `恢复奖励 · ${item.userId} / ${KIND_LABELS[item.kind] ?? "所选奖励"}`,
+                    detail: "需要审批。批准后这类佣金以后照常产生，已冻结的不会自动解冻。",
                     run: async (reason) => {
                       const numericUserId = Number(String(item.userId).replace(/\D/g, ""));
                       if (!Number.isSafeInteger(numericUserId) || numericUserId <= 0) throw new Error("无效用户编号");
                       await ctx.suspendF5UserCommissions(numericUserId, [item.kind], false, reason);
-                      ctx.toast(`用户 ${item.userId} 的 ${KIND_LABELS[item.kind] ?? "所选奖种"} 恢复已提交 A2 待确认`);
+                      ctx.toast(`用户 ${item.userId} 的 ${KIND_LABELS[item.kind] ?? "所选奖励"} 恢复已提交，等待审批`);
                     },
-                  })}>恢复奖种</button>}</td>
+                  })}>恢复</button>}</td>
                 </tr>)}
               </tbody>
             </table>
           </section>
 
           <section className="pane">
-            <div className="pane-h"><span className="ph-ttl">处置批次与历史</span><span className="ph-sub">冲正、补发、暂停、恢复、阈值变更</span></div>
+            <div className="pane-h"><span className="ph-ttl">处置批次与历史</span><span className="ph-sub">冲正、补发、暂停、恢复、预警标准修改</span></div>
             <table className="ctbl">
-              <thead><tr><th>批次</th><th>动作</th><th>源 / 结果</th><th>用户 / 奖种</th><th>证据</th><th>原因 / 操作人</th><th>时间</th></tr></thead>
+              <thead><tr><th>批次</th><th>动作</th><th>原记录 / 新记录</th><th>用户 / 奖励类型</th><th>单号</th><th>原因 / 操作人</th><th>时间</th></tr></thead>
               <tbody>
-                {!data.operationHistory.length && <tr className="empty-row"><td colSpan={7}>尚无 F5 处置批次；迁移完成后的动作会在此留痕</td></tr>}
-                {data.operationHistory.map((item) => <tr key={item.operationNo}><td>{item.operationNo}</td><td>{operationLabels[item.operationType] ?? "佣金处置"}</td><td>{item.sourceCommissionId || "--"} / {item.resultCommissionId || "--"}</td><td>{item.userId || "--"} / {item.kinds ? kindNames(item.kinds) : "--"}</td><td>{item.evidenceRef || "--"}</td><td>{item.reason} / {item.operator}</td><td>{item.createdAt}</td></tr>)}
+                {!data.operationHistory.length && <tr className="empty-row"><td colSpan={7}>还没有处理记录</td></tr>}
+                {data.operationHistory.map((item) => <tr key={item.operationNo}><td>{item.operationNo}</td><td>{operationLabels[item.operationType] ?? "佣金处理"}</td><td>{item.sourceCommissionId || "--"} / {item.resultCommissionId || "--"}</td><td>{item.userId || "--"} / {item.kinds ? kindNames(item.kinds) : "--"}</td><td>{item.evidenceRef || "--"}</td><td>{item.reason} / {item.operator}</td><td>{item.createdAt}</td></tr>)}
               </tbody>
             </table>
           </section>

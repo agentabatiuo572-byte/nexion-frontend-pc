@@ -53,9 +53,9 @@ export function A9DeveloperAccess() {
 
   const review = async (row: DeveloperAccessRequest, action: "approve" | "reject" | "revoke") => {
     if (!canReviewDeveloperAccess(row.status, action)) return;
-    const reason = window.prompt("请输入审批备注（至少 8 个字符）", "")?.trim() ?? "";
+    const reason = window.prompt("请填写备注（至少 8 个字）", "")?.trim() ?? "";
     if (reason.length < 8) {
-      setError("审批备注至少 8 个字符，未执行操作");
+      setError("备注至少 8 个字，操作未执行");
       return;
     }
     const identity = `${action}:${row.requestNo}`;
@@ -72,14 +72,14 @@ export function A9DeveloperAccess() {
       setReloadKey((value) => value + 1);
     } catch (cause) {
       if (!isDeveloperAccessOutcomeUnknownError(cause)) developerAccessAttempts.forget(identity);
-      setError(cause instanceof Error ? cause.message : "审批操作失败；服务器状态未确认，请刷新");
+      setError(cause instanceof Error ? cause.message : "操作失败，结果未确认，请刷新后查看");
     }
   };
 
   return (
     <div className="dkpage adom">
       <Card>
-        <CardH title="开发者访问审批" right={<span className="mono" style={{ color: "var(--ink-3)", fontSize: 12 }}>{loading ? "同步中…" : `共 ${data?.total ?? 0} 条`}</span>} />
+        <CardH title="开发者访问审批" right={<span className="mono" style={{ color: "var(--ink-3)", fontSize: 12 }}>{loading ? "加载中…" : `共 ${data?.total ?? 0} 条`}</span>} />
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
           <input className="ui-search-input" aria-label="开发者访问申请搜索" placeholder="申请编号 / 公司 / 邮箱" value={keywordInput} onChange={(event) => setKeywordInput(event.target.value)} style={{ flex: "1 1 220px", padding: "8px 12px" }} />
           <TabGroup

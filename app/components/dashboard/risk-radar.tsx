@@ -48,25 +48,25 @@ export function RiskRadar({
     <div className="flex h-full flex-col rounded-[16px] p-5" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
       <div className="flex items-center gap-2.5">
         <span className="font-display text-[14.5px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>风险提醒</AutoGloss></span>
-        <span className="ml-auto font-mono-tabular rounded-[7px] px-2 py-0.5 text-[11px]" style={{ background: "var(--v5-surface-3)", color: "var(--v5-ink-3)", border: "1px solid var(--v5-border)" }}>B5 · 只读</span>
+        <span className="ml-auto font-mono-tabular rounded-[7px] px-2 py-0.5 text-[11px]" style={{ background: "var(--v5-surface-3)", color: "var(--v5-ink-3)", border: "1px solid var(--v5-border)" }}>只能查看</span>
       </div>
-      <p className="mt-1 text-[12px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>挤兑预警 · 异常账户 · 紧急停止状态灯</AutoGloss></p>
+      <p className="mt-1 text-[12px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>提现压力、异常账户、紧急开关</AutoGloss></p>
 
       {/* 两项态势指标 */}
       <div className="mt-3 grid grid-cols-2 gap-3">
         <div className="rounded-[10px] p-3" style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)" }}>
-          <p className="text-[11px]" style={{ color: "var(--v5-ink-3)" }}><AutoGloss>挤兑比率(待提现/储备)</AutoGloss></p>
+          <p className="text-[11px]" style={{ color: "var(--v5-ink-3)" }}><AutoGloss>提现压力（待提现 ÷ 储备）</AutoGloss></p>
           <p className="font-mono-tabular mt-0.5" style={{ fontSize: 21, fontWeight: 600, color: bankRunRatio >= 10 ? "var(--v5-warning)" : "var(--v5-ink)" }}>{bankRunRatio.toFixed(1)}%</p>
         </div>
         <div className="rounded-[10px] p-3" style={{ background: "var(--v5-warning-soft)", border: "1px solid color-mix(in srgb, var(--v5-warning) 40%, transparent)" }}>
-          <p className="text-[11px]" style={{ color: "var(--v5-ink-3)" }}>异常账户(K 域标记)</p>
+          <p className="text-[11px]" style={{ color: "var(--v5-ink-3)" }}>风控标记的异常账户</p>
           <p className="font-mono-tabular mt-0.5" style={{ fontSize: 21, fontWeight: 600, color: "var(--v5-warning)" }}>{flaggedAccounts}</p>
         </div>
       </div>
 
       {/* Kill 状态灯 */}
       <p className="mt-3.5 text-[12px]" style={{ color: "var(--v5-ink-2)", fontWeight: 600 }}>
-        <AutoGloss>紧急停止状态灯 · </AutoGloss>{killOpen}/{killGates.length} 开{killMissing > 0 ? ` · ${killMissing} 未配置` : ""}
+        <AutoGloss>紧急开关 · 已关停 </AutoGloss>{killOpen}/{killGates.length}{killMissing > 0 ? ` · ${killMissing} 个未设置` : ""}
       </p>
       <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
         {killGates.map((k) => {
@@ -99,7 +99,7 @@ export function RiskRadar({
           </li>
         ))}
       </ul>
-      <Link href="/emergency/kill-switch" prefetch={false} className="mt-auto inline-flex pt-3 text-[12.5px]" style={{ color: "var(--v5-brand)" }}>前往 J 紧急合规 →</Link>
+      <Link href="/emergency/kill-switch" prefetch={false} className="mt-auto inline-flex pt-3 text-[12.5px]" style={{ color: "var(--v5-brand)" }}>前往紧急停用开关 →</Link>
     </div>
   );
 }

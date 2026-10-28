@@ -8,37 +8,37 @@ import { PORTED_EMPTY_CONTENT } from "./ported-content";
 export const DOMAIN_D: ModuleEntry[] = [
   {
     path: "/finance/recon",
-    summary: "核对银行转账、支付商及链上充值记录，处理未匹配、信息不符和逾期到账的银行回单。入账或退回款项前须核实证据并填写理由；待核实款项同步到资金储备页面。",
+    summary: "核对银行、支付商和链上的充值记录，处理没对上、信息不符或逾期到账的款项。入账或退回前须核实凭证。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/finance/withdrawals",
-    summary: "查看提现申请、风险评分与命中规则，按权限审核和处理异常。大额提现须先核对资金覆盖率；银行提现在确认支付商付款成功后完成资金结算。",
+    summary: "审核提现申请，查看风险评分和触发的规则。大额提现先看兑付覆盖率；银行提现以支付商付款成功为完成。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/finance/pool",
-    summary: "查看可用储备、九类应付款、预计到期金额和资金安全等级，调整应付款预测范围。补充储备须填写真实且唯一的凭证，所有修改均保存操作记录。",
+    summary: "查看可用储备、九类应付款、预计到期金额和资金安全等级。补充储备须上传真实凭证。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/finance/ledger",
-    summary: "查询用户资金账单，核对充值、提现、收益和人工调整记录，检查每笔变动后的余额与钱包是否一致。",
+    summary: "查用户资金账单，核对充值、提现、收益和人工调整，检查每笔变动后的余额是否与钱包一致。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/finance/params",
-    summary: "设置每日提现次数、余额比例、网络费用、UVT 抵扣、小额免审和到账时限。保存时检查修改冲突并记录操作；增加资金支出时须核对覆盖率。运营阶段相关设置在 H1 修改。",
+    summary: "设置每日提现次数、可提比例、网络费、UVT 抵扣、小额免审和到账时限。放宽限制前先看兑付覆盖率；随运营阶段变化的设置在「运营阶段设置」修改。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/finance/fx-rate",
-    summary: "设置 VND/USDT 基准汇率、买入点差和报价有效期。修改仅影响新建付款单；已创建的付款单沿用下单时锁定的汇率，所有调整均可追溯。",
+    summary: "设置 VND/USDT 基准汇率、买入点差和报价有效期。修改只影响新付款单，已创建的按下单时的汇率执行。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/finance/payout-vnd",
-    summary: "设置越南盾提现参数，基准汇率沿用 D6 设置。银行提现通过 HDPay 审核与付款，订单、资金账单和支付结果相互关联。",
+    summary: "设置越南盾银行提现的参数，汇率沿用「汇率设置」。银行提现通过 HDPay 审核和付款。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

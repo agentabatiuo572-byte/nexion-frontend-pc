@@ -11,7 +11,7 @@ test("PC exposes structured managers for developer docs and rank policy", () => 
   assert.match(editor, /developerDocs/); assert.match(editor, /rankHow/);
   assert.doesNotMatch(editor, /localesJson|JSON\.parse/);
   assert.match(editor, /DeveloperLocaleEditor/); assert.match(editor, /RankLocaleEditor/);
-  assert.match(editor, /变更理由/); assert.match(editor, /变更预览/); assert.match(editor, /保存并回读/);
+  assert.match(editor, /变更理由/); assert.match(editor, /变更预览/); assert.match(editor, /"保存中…" : "保存"/);
   assert.match(client, /\/api\/admin\/developer\/docs/); assert.match(client, /\/api\/admin\/teams\/rank-policy/);
   assert.match(client, /expectedRevision/); assert.match(client, /reason/);
   assert.match(developerProxy, /parts\[0\] === "docs"/); assert.match(developerProxy, /export async function PUT/);

@@ -27,7 +27,7 @@ export function H4SampleAccountSelect({ value, onChange, allowed, disabled }: {
         setInputError(null);
         const keyword = text.trim(), digits = keyword.replace(/\D/g, '');
         if (mode === 'keyword' && /^[+0-9()\s-]+$/.test(keyword) && digits.length >= 10 && digits.length <= 15) {
-            setInputError(new Error('含 10–15 位数字的号码样式输入会按 C1 隐私规则拦截；请用用户编码末几位（少于 10 位）或昵称查找，已知内部账户 ID 可切换精确查找。')); return;
+            setInputError(new Error('为保护隐私，不能输入 10–15 位的号码。请用用户编码末几位（少于 10 位）或昵称查找；知道账户 ID 可切换为精确查找。')); return;
         }
         setQuery({ [mode]: keyword, pageNum: 1 }); accounts.reload();
     };
@@ -45,6 +45,6 @@ export function H4SampleAccountSelect({ value, onChange, allowed, disabled }: {
             {!page.items.length && !accounts.loading && !accounts.error && <p className="help">没有符合条件的可读账户，可调整搜索内容后重试。</p>}
             <div className="actions"><span>共 {page.total} 个可读账户 · 第 {page.pageNum} 页</span><Button disabled={changing || !!accounts.error || page.pageNum <= 1} onClick={() => setQuery({ ...query!, pageNum: page.pageNum - 1 })}>上一页</Button><Button disabled={changing || !!accounts.error || page.pageNum * page.pageSize >= page.total} onClick={() => setQuery({ ...query!, pageNum: page.pageNum + 1 })}>下一页</Button></div>
         </>}
-        {value && <Button kind="link" onClick={() => { onChange(''); setSelectedLabel(''); }}>取消账户选择，资格标未知</Button>}
+        {value && <Button kind="link" onClick={() => { onChange(''); setSelectedLabel(''); }}>取消选择</Button>}
     </fieldset>;
 }

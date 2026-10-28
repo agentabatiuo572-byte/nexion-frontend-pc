@@ -65,7 +65,7 @@ test("② client 契约:缺席向后兼容,在场精确集合 + 逐键值校验,
 
 test("③ 组件:卡片 + fail-closed + 运营可读标签 + 可枚举值下拉禁自由输入", () => {
   assert.match(component, /data-proof="k1-risk-release-params"/, "释放参数卡的 data-proof 锚被删");
-  assert.match(component, /服务器尚未提供收益审核规则/, "releaseParams 缺席时必须有明确的未下发文案且不给编辑入口");
+  assert.match(component, /收益审核规则暂时加载不出来/, "releaseParams 缺席时必须有明确的未下发文案且不给编辑入口");
   assert.doesNotMatch(component, /attest_or_manual|appAttestationReleaseHours/);
   assert.match(component, /仅人工放行/, "manual_only 丢了中文标签");
   assert.match(component, /不会因等待时间到期自动放行/, "落地规则丢了「审核中不随时间自动放行」关键口径(SPEC-7 的灵魂句,削文案不许静默)");

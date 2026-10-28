@@ -30,11 +30,11 @@ for(const edit of [false,true])test(`actual E1 ${edit?'update':'create'} opens c
  const p=f.proposals[0];assert.equal(p.command.params.gpu,full.gpu);assert.equal(p.command.params.datacenter,full.datacenter);assert.deepEqual(p.command.params.features,full.features);assert.ok(p.after.includes(full.tagline));assert.equal(p.target.id,full.id);assert.equal(p.reason,'真实完整商品修改理由');
 });
 for(const version of [undefined,0,2,'1'])test(`older/unrecognized BE ${version} preserves draft and never proposes`,async()=>{
- const f=fixture(false,version);f.b.e1Gates.skuReviewContractVersion=version;f.open();assert.equal(f.opened.length,0);assert.deepEqual(f.closed,[]);await assert.rejects(f.submit(),/完整审核服务尚未就绪/);assert.equal(f.proposals.length,0);
+ const f=fixture(false,version);f.b.e1Gates.skuReviewContractVersion=version;f.open();assert.equal(f.opened.length,0);assert.deepEqual(f.closed,[]);await assert.rejects(f.submit(),/商品审核暂时不可用/);assert.equal(f.proposals.length,0);
 });
 test('actual E1 still rejects invalid stock and missing edit snapshot',()=>{
  const f=fixture();f.b.form.stock='1.5';f.open();assert.equal(f.opened.length,0);assert.match(f.toasts[0],/库存/);
- const g=fixture(true);g.b.skus=[];g.open();assert.equal(g.opened.length,0);assert.match(g.toasts[0],/原商品快照/);
+ const g=fixture(true);g.b.skus=[];g.open();assert.equal(g.opened.length,0);assert.match(g.toasts[0],/商品信息已更新/);
 });
 
 const brandCases=[
@@ -99,7 +99,7 @@ const js=ts.transpileModule(fn.getText(a2ast),{compilerOptions:{target:ts.Script
 const exports={};new Function('require','exports',js)(require,exports);
 test('new SKU empty canonical before snapshot is explicit',()=>{
  const html=renderToStaticMarkup(React.createElement(exports.A2ChangeReview,{before:'{}',after:JSON.stringify(full)}));
- assert.ok(html.includes('无原值 / 未创建'));
+ assert.ok(html.includes('无（新建）'));
  assert.ok(html.includes('UVELBox S1 Trade-in'));
 });
 test('actual A2 renderer retains late fields, multiline values, unknown fields and escapes markup',()=>{
@@ -107,7 +107,7 @@ test('actual A2 renderer retains late fields, multiline values, unknown fields a
  for(const value of ['历史原文','未创建','数据中心','US-EAST-2','GPU','4090','产品特性','尾项','末尾未丢失','最低 V 等级','启用限制：否'])assert.ok(html.includes(value),value);
  assert.ok(html.includes('&lt;script&gt;danger&lt;/script&gt;'));assert.ok(!html.includes('<script>'));
  assert.ok(html.includes('white-space:pre-wrap'));assert.ok(html.includes('overflow-wrap:anywhere'));
- assert.ok(html.includes('最低有效直推：5'));assert.ok(html.includes('最低团队业绩：20000'));
+ assert.ok(html.includes('最低有效直接邀请：5'));assert.ok(html.includes('最低团队业绩：20000'));
  assert.ok(!html.includes('activeDirectMin'));assert.ok(!html.includes('teamVolumeMin'));
  assert.equal((a2source.match(/<A2ChangeReview before=\{w.before\} after=\{w.after\} \/>/g)||[]).length,2);
 });

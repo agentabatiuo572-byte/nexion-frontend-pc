@@ -2692,7 +2692,7 @@
         {
           "type": "pc-runtime",
           "file": "app/components/domain-views/f-tabs/f5-audit.tsx",
-          "positivePatterns": ["恢复奖种", "suspendF5UserCommissions\\(numericUserId, \\[item\\.kind\\], false, reason\\)"],
+          "positivePatterns": ["恢复奖励", "suspendF5UserCommissions\\(numericUserId, \\[item\\.kind\\], false, reason\\)"],
           "negativePatterns": ["void ctx\\.suspendF5UserCommissions"]
         }
       ],
@@ -3804,7 +3804,7 @@
         {
           "type": "pc-runtime",
           "file": "app/components/domain-views/d-tabs/d1-recon.tsx",
-          "positivePatterns": ["onRetry=\\{\\(commandKey\\) => applyBankWrite", "retryD1PendingBankOrderCommand\\(commandKey\\)", "原请求号人工入账重试已受理"],
+          "positivePatterns": ["onRetry=\\{\\(commandKey\\) => applyBankWrite", "retryD1PendingBankOrderCommand\\(commandKey\\)", "人工入账已重试"],
           "negativePatterns": ["retryD1PendingBankOrderCommand\\(\\s*(?:nextId|Date\\.now)\\("]
         }
       ],
@@ -3826,7 +3826,7 @@
           "consumer": {
             "type": "pc-runtime",
             "file": "app/components/domain-views/d-tabs/d1-recon.tsx",
-            "positivePatterns": ["retryD1PendingBankOrderCommand\\(commandKey\\)", "原请求号人工入账重试已受理", "adminAuthLifecycleEpoch\\(\\)\\)\\} /\\>"]
+            "positivePatterns": ["retryD1PendingBankOrderCommand\\(commandKey\\)", "人工入账已重试", "adminAuthLifecycleEpoch\\(\\)\\)\\} /\\>"]
           },
           "behaviorTest": {
             "type": "test-runtime",

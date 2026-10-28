@@ -115,7 +115,7 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
           <div className="matrix-h">
             <span className="ttl">当前无法确认最新状态</span>
             <span className="sub">· {contentError} 为避免误操作，控制项已隐藏。</span>
-            <div className="r"><button type="button" onClick={() => void reloadJEmergency().catch(() => undefined)}>重新读取</button></div>
+            <div className="r"><button type="button" onClick={() => void reloadJEmergency().catch(() => undefined)}>刷新</button></div>
           </div>
         </section>
       )}

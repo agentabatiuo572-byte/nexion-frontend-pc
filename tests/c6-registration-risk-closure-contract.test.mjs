@@ -48,7 +48,7 @@ test("C6 keeps read-only roles out of its mutation flow", () => {
   assert.match(c6, /authorities\.includes\("user_c6_write"\)/);
   assert.match(c6, /disabled=\{!canWrite \|\| busy \|\| !key \|\| !!param\.readOnly\}/);
   assert.match(c6, /disabled=\{!canWrite \|\| busy\}/);
-  assert.match(c6, /当前账号只有 C6 读取权限/);
+  assert.match(c6, /你只有查看权限/);
 });
 
 test("C6 mirrors K2 CAPTCHA threshold separately from the OTP daily limit", () => {

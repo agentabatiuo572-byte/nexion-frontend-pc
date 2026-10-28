@@ -112,7 +112,7 @@ function modelPublishDiff(active: K4Model, draft: K4Model, dimensions: K4Dimensi
 }
 
 export function K4HeaderActions() {
-  return <span className="f-ro"><span className="d" />全平台唯一评分源 · 别处只引用不重算</span>;
+  return null;
 }
 
 function BandDonut({ dist, totalUsers }: { dist: K4Distribution[]; totalUsers: number }) {
@@ -260,17 +260,17 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
         await reloadCurrentScoring();
         if (afterReload) await afterReload();
       } catch (error) {
-        ctx.toast(`操作已生效但最新状态读取失败，不要重复提交；请仅重试 K4 读取 · ${errorText(error)}`);
+        ctx.toast(`操作已生效，但页面刷新失败。请不要重复提交，点「重新加载」核对 · ${errorText(error)}`);
         return;
       }
       ctx.toast(successText);
     } catch (error) {
       if (writeConfirmed) return;
       if (error instanceof K1OutcomeUncertainError) {
-        ctx.toast(`K4 结果未知 · 请保留确认框并使用同一请求重试或先核对 · 请求号 ${commandKey}`);
+        ctx.toast(`结果暂未确认 · 请保留弹窗直接重试，或先核对 · 命令号 ${commandKey}`);
       } else {
         commandAttempts.forget(operation);
-        ctx.toast(`K4 操作失败 · ${errorText(error)}`);
+        ctx.toast(`操作失败 · ${errorText(error)}`);
       }
       throw error;
     }
@@ -297,7 +297,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
       if (sequence !== lookupSequence.current) return null;
       setLookupUser(null);
       setLookupError(errorText(error));
-      ctx.toast(`K4 查询失败 · ${errorText(error)}`);
+      ctx.toast(`查询失败 · ${errorText(error)}`);
       return null;
     } finally {
       if (sequence === lookupSequence.current) setLookupLoading(false);
@@ -312,16 +312,16 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
 
   const openOverride = (user: K4User) => {
     ctx.openConfirm({
-      action: `人工覆盖评分 · ${user.userNo}`,
-      detail: `把用户评分从 ${user.effectiveScore} 调整到指定分数。该动作直接写入 K4，并保留操作理由与版本。`,
-      chips: [["单用户直接操作", "ready"], ["可重算回模型分", "done"]],
+      action: `手动改分 · ${user.userNo}`,
+      detail: `把这个用户的风险分从 ${user.effectiveScore} 改成指定分数，马上生效，并记入操作记录。`,
+      chips: [["只改这一个用户", "ready"], ["之后可恢复成系统算的分", "done"]],
       reason: true,
-      input: { label: "覆盖分（0-100）", placeholder: "例如 35", kind: "number", min: 0, max: 100, step: 1 },
-      okLabel: "确认覆盖",
+      input: { label: "新的风险分（0–100）", placeholder: "例如 35", kind: "number", min: 0, max: 100, step: 1 },
+      okLabel: "确认修改",
       run: (reason, value) => {
         const score = Number(value);
         if (!Number.isInteger(score) || score < 0 || score > 100) {
-          ctx.toast("覆盖分必须是 0-100 的整数");
+          ctx.toast("风险分要填 0–100 的整数");
           throw new Error("SCORE_OVERRIDE_INVALID");
         }
         const fingerprint = JSON.stringify({ userNo: user.userNo, score, expectedVersion: user.rowVersion, reason });
@@ -329,7 +329,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
           `override:${user.userNo}`,
           fingerprint,
           (commandKey) => ctx.actions.overrideK4Score(user.userNo, score, user.rowVersion, reason, commandKey),
-          `用户 ${user.userNo} 的人工覆盖已生效`,
+          `用户 ${user.userNo} 的风险分已修改`,
           async () => { await loadUser(user.userNo); },
         );
       },
@@ -338,9 +338,9 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
 
   const openRecompute = (user: K4User) => {
     ctx.openConfirm({
-      action: `重算回模型分 · ${user.userNo}`,
-      detail: `移除人工覆盖，并按当前生效模型重新计算。当前有效分 ${user.effectiveScore}，模型分 ${user.modelScore}。`,
-      chips: [["直接回归模型", "done"], ["前后分留痕", "ready"]],
+      action: `恢复系统评分 · ${user.userNo}`,
+      detail: `取消人工改的分，按当前评分规则重新计算。当前分 ${user.effectiveScore}，系统算的分 ${user.modelScore}。`,
+      chips: [["恢复系统评分", "done"], ["记入操作记录", "ready"]],
       reason: true,
       okLabel: "确认重算",
       run: (reason) => {
@@ -349,7 +349,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
           `recompute:${user.userNo}`,
           fingerprint,
           (commandKey) => ctx.actions.recomputeK4Score(user.userNo, user.rowVersion, reason, commandKey),
-          `用户 ${user.userNo} 已按当前模型重算`,
+          `用户 ${user.userNo} 已恢复系统评分`,
           async () => { await loadUser(user.userNo); },
         );
       },
@@ -389,16 +389,16 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
     lookupUser?.userNo, lookupUser?.modelVersion]);
 
   if (ctx.contentLoading) {
-    return <section className="l-card"><div className="l-h"><span className="ttl">K4 数据加载中</span><span className="sub">· 正在读取独立评分接口</span></div></section>;
+    return <section className="l-card"><div className="l-h"><span className="ttl">风险评分加载中</span><span className="sub">· 请稍候</span></div></section>;
   }
 
   if (ctx.contentError) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">K4 读取失败</span><span className="sub">· 未展示缓存值或推测值</span></div>
+        <div className="l-h"><span className="ttl">风险评分加载失败</span><span className="sub">· 为避免误判，不显示旧数据</span></div>
         <div className="l-b">
           <div className="ktint bad">{ctx.contentError}</div>
-          <button className="l-btn mc" style={{ marginTop: 12 }} onClick={() => reloadCurrentScoring()}>仅重试 K4</button>
+          <button className="l-btn mc" style={{ marginTop: 12 }} onClick={() => reloadCurrentScoring()}>重新加载</button>
         </div>
       </section>
     );
@@ -407,8 +407,8 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
   if (!overview || !sourceModel) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">K4 数据不可用</span><span className="sub">· 服务端未返回可验证的生效模型</span></div>
-        <div className="l-b"><button className="l-btn mc" onClick={() => reloadCurrentScoring()}>仅重试 K4</button></div>
+        <div className="l-h"><span className="ttl">风险评分暂不可用</span><span className="sub">· 没有拿到当前生效的评分规则</span></div>
+        <div className="l-b"><button className="l-btn mc" onClick={() => reloadCurrentScoring()}>重新加载</button></div>
       </section>
     );
   }
@@ -452,7 +452,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
 
   const saveModel = () => {
     if (!modelValid || !mappingsValid) {
-      ctx.toast("模型参数无效：权重合计须为 100%，升级线不得低于高风险下限，阈值和风险子分须保序");
+      ctx.toast("设置有误：权重加起来要等于 100%，自动升级线不能低于高风险下限，各档分数要从低到高");
       return;
     }
     if (!modelDirty) {
@@ -460,15 +460,15 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
       return;
     }
     ctx.openActionConfirm({
-      action: "保存 K4 评分模型草稿",
-      detail: `以当前 ${overview.draft ? "草稿" : "生效模型"} 修订号 ${modelInput.expectedVersion} 为基准保存。保存后不会影响线上评分，须由超级管理员另行发布。`,
+      action: "保存评分规则草稿",
+      detail: `在当前${overview.draft ? "草稿" : "生效规则"}的基础上保存。保存后不影响线上评分，需要超级管理员另外发布。`,
       run: (reason) => {
         const fingerprint = JSON.stringify({ ...modelInput, reason });
         return runAction(
           "model-draft",
           fingerprint,
           (commandKey) => ctx.actions.saveK4ModelDraft(modelInput, reason, commandKey),
-          "K4 模型草稿已保存，线上模型未改变",
+          "评分规则草稿已保存，线上评分不变",
         );
       },
     });
@@ -485,15 +485,15 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
       return;
     }
     ctx.openActionConfirm({
-      action: "发布 K4 评分模型草稿",
-      detail: `生效模型 v${overview.model.version} → 草稿 v${draft.version}。变更：${modelPublishDiff(overview.model, draft, overview.dimensions)}。发布即触发每批 200 人的重新计算全部用户，进度会在页面持续显示；影响 D2 路由、B5 点亮与 C1 展示分，旧生效版本自动归档并保留版本快照。`,
+      action: "发布评分规则草稿",
+      detail: `生效模型 v${overview.model.version} → 草稿 v${draft.version}。变更：${modelPublishDiff(overview.model, draft, overview.dimensions)}。发布后会分批（每批 200 人）重新计算所有用户的风险分，进度会显示在页面上；提现审核、风险提醒和用户资料里的风险分都会跟着变。旧版本自动归档。`,
       run: (reason) => {
         const fingerprint = JSON.stringify({ expectedVersion: draft.rowVersion, reason });
         return runAction(
           "model-publish",
           fingerprint,
           (commandKey) => ctx.actions.publishK4ModelDraft(draft.rowVersion, reason, commandKey),
-          `K4 模型 v${draft.version} 已发布，旧版本已归档`,
+          `评分规则 v${draft.version} 已发布，旧版本已归档`,
           async () => { if (lookupUser) await loadUser(lookupUser.userNo); },
         );
       },
@@ -511,14 +511,14 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
           </div>
         ))}
         {overview.totalUsers === 0 && <div className="f-stat"><div className="k">评分用户</div><div className="v">0</div><div className="sub">暂无风险评分用户</div></div>}
-        <div className="f-stat cyan"><div className="k">人工覆盖中</div><div className="v">{overview.overrideActive}</div><div className="sub">全部带原因留痕 · 可回归模型</div></div>
-        <div className={`f-stat ${overview.recomputePending > 0 ? "warn" : "good"}`}><div className="k">模型重算队列</div><div className="v">{overview.recomputePending}</div><div className="sub">{overview.recomputePending > 0 ? "后台每批 200 人推进，每秒续跑" : "全部用户已按当前模型评分"}</div></div>
+        <div className="f-stat cyan"><div className="k">手动改过分</div><div className="v">{overview.overrideActive}</div><div className="sub">都有原因记录 · 可恢复系统评分</div></div>
+        <div className={`f-stat ${overview.recomputePending > 0 ? "warn" : "good"}`}><div className="k">待重新计算</div><div className="v">{overview.recomputePending}</div><div className="sub">{overview.recomputePending > 0 ? "正在分批计算，每批 200 人" : "所有用户都已按当前规则评分"}</div></div>
       </div>
 
-      {canReadWithdrawalAlerts && <section className="l-card" aria-label="K4 提现升级告警">
-        <div className="l-h"><span className="ttl">K4 提现升级告警</span><span className="sub">· 需要风险评分人工调整权限或超级管理员权限；告警逐条发送并保存送达记录</span><div className="r"><span className={`bdg ${withdrawalAlerts.some((alert) => !alert.read) ? "bad" : "done"}`}>{withdrawalAlerts.filter((alert) => !alert.read).length} 条未读</span></div></div>
+      {canReadWithdrawalAlerts && <section className="l-card" aria-label="提现升级告警">
+        <div className="l-h"><span className="ttl">提现升级告警</span><span className="sub">· 风险分太高的提现会在这里提醒</span><div className="r"><span className={`bdg ${withdrawalAlerts.some((alert) => !alert.read) ? "bad" : "done"}`}>{withdrawalAlerts.filter((alert) => !alert.read).length} 条未读</span></div></div>
         <div className="l-b">
-          {withdrawalAlertError && <div className="dtint warn" data-module-health-state="error">告警读取失败 · {withdrawalAlertError} · 未展示缓存值</div>}
+          {withdrawalAlertError && <div className="dtint warn" data-module-health-state="error">告警加载失败 · {withdrawalAlertError}</div>}
           {!withdrawalAlertError && withdrawalAlerts.length === 0 && <div className="note">暂无提现升级告警。</div>}
           {!withdrawalAlertError && withdrawalAlerts.map((alert) => <div key={alert.id} className="dtint warn" style={{ marginBottom: 8 }}>
             <strong>{alert.title} · {alert.withdrawalNo}</strong> · {alert.hint} · 模型 {alert.modelVersion} · {alert.createdAt.replace("T", " ").slice(0, 19)}
@@ -527,7 +527,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
                 await markK4WithdrawalAlertRead(alert.id);
                 setWithdrawalAlerts((current) => current.map((item) => item.id === alert.id ? { ...item, read: true } : item));
               } catch (error) {
-                ctx.toast(`K4 告警确认失败 · ${errorText(error)}`);
+                ctx.toast(`标记已读失败 · ${errorText(error)}`);
               }
             }}>标为已读</button>}
           </div>)}
@@ -536,18 +536,18 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">K4 评分模型</span>
-          <span className="sub">· 生效版本 v{overview.model.version} · 状态 已生效 · 修订号 {overview.model.rowVersion}</span>
+          <span className="ttl">评分规则</span>
+          <span className="sub">· 生效版本 v{overview.model.version} · 已生效</span>
           <div className="r">
             {overview.draft
-              ? <span className="bdg warn">草稿 v{overview.draft.version} · 修订号 {overview.draft.rowVersion}</span>
+              ? <span className="bdg warn">草稿 v{overview.draft.version}</span>
               : <span className="bdg done">暂无未发布草稿</span>}
           </div>
         </div>
         <div className="l-b">
           <div className="two-col">
             <div>
-              <div className="note" style={{ marginBottom: 10 }}>五个维度权重合计必须为 100%；关闭输入源后该维度不参与新评分。</div>
+              <div className="note" style={{ marginBottom: 10 }}>五项权重加起来要等于 100%；关掉某一项后，它不再参与评分。</div>
               {overview.dimensions.map((dimension) => (
                 <div className="w-row" key={dimension.dimKey}>
                   <span className="nm">{dimension.name}<span className="src">{dimension.source}</span></span>
@@ -579,34 +579,34 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
                       disabled={!canModelWrite}
                       checked={edit.inputSources[dimension.dimKey]}
                       onChange={(event) => setModelDraft({ ...edit, inputSources: { ...edit.inputSources, [dimension.dimKey]: event.target.checked } })}
-                      aria-label={`${dimension.name}输入源`}
+                      aria-label={`${dimension.name}是否参与评分`}
                     />
-                    {edit.inputSources[dimension.dimKey] ? "输入源已启用" : "输入源已停用"}
+                    {edit.inputSources[dimension.dimKey] ? "参与评分" : "不参与评分"}
                   </label>
                 </div>
               ))}
-              <div className={`w-sum ${weightTotal === 100 ? "ok" : "bad"}`}>权重合计 {weightTotal}% · 必须等于 100%</div>
+              <div className={`w-sum ${weightTotal === 100 ? "ok" : "bad"}`}>权重合计 {weightTotal}%（要等于 100%）</div>
             </div>
             <div style={{ display: "grid", gap: 12, alignContent: "start" }}>
               <label className="ktint">
-                <span className="tx"><b>中风险起始分</b> · 低风险低于此分数</span>
+                <span className="tx"><b>中风险起始分</b> · 低于这个分是低风险</span>
                 <input type="number" min={0} max={100} step={1} disabled={!canModelWrite} value={edit.bandLowMax} onChange={(event) => setModelDraft({ ...edit, bandLowMax: Number(event.target.value) })} style={{ width: 86 }} />
               </label>
               <label className="ktint">
-                <span className="tx"><b>高风险下限</b> · 高风险分档从此分数开始</span>
+                <span className="tx"><b>高风险起始分</b> · 从这个分开始是高风险</span>
                 <input type="number" min={0} max={100} step={1} disabled={!canModelWrite} value={edit.bandHighMin} onChange={(event) => setModelDraft({ ...edit, bandHighMin: Number(event.target.value) })} style={{ width: 86 }} />
               </label>
               <label className="ktint warn">
-                <span className="tx"><b>自动升级线</b> · 达线后建议提现转人工，且不得低于高风险下限</span>
+                <span className="tx"><b>自动升级线</b> · 到这个分的提现建议转人工审核，不能低于高风险起始分</span>
                 <input type="number" min={0} max={100} step={1} disabled={!canModelWrite} value={edit.autoEscalateScore} onChange={(event) => setModelDraft({ ...edit, autoEscalateScore: Number(event.target.value) })} style={{ width: 86 }} />
               </label>
               {edit.autoEscalateScore < edit.bandHighMin && (
-                <div className="ktint bad">自动升级线不能低于高风险下限；请先调整这两个阈值。</div>
+                <div className="ktint bad">自动升级线不能低于高风险起始分，请先调整这两个数。</div>
               )}
             </div>
           </div>
           <details style={{ marginTop: 14 }}>
-            <summary className="note" style={{ cursor: "pointer" }}>子分映射版本快照 · 24h/7d 提现基线与五维阈值随模型版本保存</summary>
+            <summary className="note" style={{ cursor: "pointer" }}>各项打分细则（随评分规则版本一起保存）</summary>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10, marginTop: 12 }}>
               {K4_MAPPING_FIELDS.map((field) => (
                 <label className="ktint" key={field.key}>
@@ -629,25 +629,25 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
             </div>
           </details>
           <div className="w-foot" style={{ marginTop: 14 }}>
-            {canModelWrite && <button className="l-btn mc" disabled={!modelValid || !mappingsValid || !modelDirty} onClick={saveModel}>保存模型草稿</button>}
-            {canPublish && overview.draft && <button className="l-btn danger" disabled={modelDirty} onClick={publishModel}>发布模型草稿</button>}
+            {canModelWrite && <button className="l-btn mc" disabled={!modelValid || !mappingsValid || !modelDirty} onClick={saveModel}>保存草稿</button>}
+            {canPublish && overview.draft && <button className="l-btn danger" disabled={modelDirty} onClick={publishModel}>发布草稿</button>}
             {canPublish && overview.draft && modelDirty && <span className="note">当前有未保存修改，请先保存草稿后再发布。</span>}
-            <button className="l-btn" onClick={() => setModelDraft(editableModel(sourceModel))}>还原当前{overview.draft ? "草稿" : "生效模型"}</button>
-            {!canModelWrite && <span className="note">当前账号没有 K4 模型草稿写入权限；请由权限管理员在 A6 授予对应能力。</span>}
+            <button className="l-btn" onClick={() => setModelDraft(editableModel(sourceModel))}>还原为当前{overview.draft ? "草稿" : "生效规则"}</button>
+            {!canModelWrite && <span className="note">你没有修改评分规则的权限，请联系管理员在「角色管理」里开通。</span>}
           </div>
         </div>
       </section>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">模型版本历史</span><span className="sub">· 生效中、草稿、已归档版本的完整记录，可恢复为草稿后再发布</span></div>
+        <div className="l-h"><span className="ttl">模型版本历史</span><span className="sub">· 所有版本都在这里，可以把旧版本恢复成草稿再发布</span></div>
         <div className="l-b">
           {overview.modelHistory.map((model) => (
             <div className="ktint" key={`${model.version}-${model.state}`} style={{ marginBottom: 8 }}>
-              <span className="tx"><b>v{model.version}</b> · {({ active: "生效中", draft: "草稿", archived: "已归档" } as Record<string, string>)[model.state] ?? "版本状态待核实"} · {model.createdBy} · {model.createdAt} · {model.reason}</span>
+              <span className="tx"><b>v{model.version}</b> · {({ active: "生效中", draft: "草稿", archived: "已归档" } as Record<string, string>)[model.state] ?? "状态未知"} · {model.createdBy} · {model.createdAt} · {model.reason}</span>
               {canModelWrite && model.state === "archived" && (
                 <button className="l-btn" disabled={modelDirty} onClick={() => ctx.openActionConfirm({
-                  action: `恢复 K4 历史模型 v${model.version} 为草稿`,
-                  detail: `将用历史 v${model.version} 完整覆盖当前待发布草稿，但不改变线上 v${overview.model.version}；恢复后仍须另行核对差异并发布。`,
+                  action: `把旧版本 v${model.version} 恢复为草稿`,
+                  detail: `用 v${model.version} 覆盖当前草稿，线上的 v${overview.model.version} 不变；恢复后还要核对并发布才会生效。`,
                   run: (reason) => runAction(
                     `model-restore-${model.version}`,
                     JSON.stringify({ modelVersion: model.version, expectedVersion: modelInput.expectedVersion, reason }),
@@ -662,18 +662,18 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
       </section>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">分档与全平台分布</span><span className="sub">· 雷达告警线只引用当前生效模型</span>
+        <div className="l-h"><span className="ttl">分档与全平台分布</span><span className="sub">· 按当前生效的评分规则统计</span>
           {canRecompute && <div className="r"><button className="l-btn" disabled={overview.totalUsers > 1000} onClick={() => ctx.openActionConfirm({
-            action: "重新计算全部用户 K4 风险分",
-            detail: `按当前生效模型 v${overview.model.version} 统一重新计算 ${overview.totalUsers} 名在册用户，清除当前人工调整并保留历史版本快照。单次人工全量上限为 1000 人；更大规模由模型发布后的后台分批队列完成。`,
+            action: "重新计算所有用户的风险分",
+            detail: `按当前评分规则 v${overview.model.version} 重新计算 ${overview.totalUsers} 个用户的风险分，人工改过的分会被清除。手动一次最多 1000 人；更多用户请通过发布评分规则自动分批计算。`,
             run: (reason) => runAction(
               "batch-recompute",
               JSON.stringify({ modelVersion: overview.model.version, reason }),
               (commandKey) => ctx.actions.recomputeK4Scores([], overview.model.version, reason, commandKey),
-              "K4 全量评分已重算并留痕",
+              "所有用户的风险分已重新计算",
               async () => { if (lookupUser) await loadUser(lookupUser.userNo); },
             ),
-          })}>恢复全部用户的模型评分</button>{overview.totalUsers > 1000 && <span className="note">超过 1000 人时请通过发布模型触发后台分批重算。</span>}</div>}
+          })}>全部恢复系统评分</button>{overview.totalUsers > 1000 && <span className="note">超过 1000 人时，请通过发布评分规则自动分批计算。</span>}</div>}
         </div>
         <div className="l-b">
           {dist.length === 0 ? (
@@ -699,7 +699,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">单用户风险分查询</span>
-          <span className="sub">· 先读最新版本，再允许直接覆盖或重算</span>
+          <span className="sub">· 查到后可以手动改分或恢复系统评分</span>
           <div className="r" style={{ display: "flex", gap: 8 }}>
             <div className="lookup" style={{ width: 360, position: "relative" }}>
               <input
@@ -733,7 +733,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
               />
               {userSearchOpen && (
                 <div id={userOptionsId} role="listbox" style={{ position: "absolute", left: 0, right: 0, top: "calc(100% + 6px)", zIndex: 20, display: "grid", gap: 6, padding: 8, border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface)", boxShadow: "var(--shadow-lg)" }}>
-                  {userSearchLoading && <div className="note" style={{ padding: "8px 10px" }}>搜索中...</div>}
+                  {userSearchLoading && <div className="note" style={{ padding: "8px 10px" }}>搜索中…</div>}
                   {!userSearchLoading && userSearchError && <div className="note" style={{ padding: "8px 10px", color: "var(--danger)" }}>候选加载失败 · {userSearchError}</div>}
                   {!userSearchLoading && !userSearchError && userOptions.length === 0 && <div className="note" style={{ padding: "8px 10px" }}>暂无匹配用户</div>}
                   {!userSearchLoading && !userSearchError && userOptions.map((option) => (
@@ -761,9 +761,9 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
           </div>
         </div>
         <div className="l-b">
-          {lookupLoading && <div className="ktint" style={{ marginBottom: 12 }}>正在读取用户最新风险分...</div>}
+          {lookupLoading && <div className="ktint" style={{ marginBottom: 12 }}>正在加载…</div>}
           {lookupError && <div className="ktint bad" style={{ marginBottom: 12 }}>查询失败 · {lookupError}</div>}
-          {!lookupLoading && !lookupError && !lookupUser && <div className="ktint">请选择用户查看评分来源。</div>}
+          {!lookupLoading && !lookupError && !lookupUser && <div className="ktint">请选择用户，查看风险分怎么来的。</div>}
           {lookupUser && (
             <>
               <div className="score-hero">
@@ -774,12 +774,12 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
                     {shown >= overview.model.autoEscalateScore && <span className="bdg warn">超过自动升级线 {overview.model.autoEscalateScore}</span>}
                   </div>
                   <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 5 }}>
-                    模型分 {lookupUser.modelScore} · {lookupUser.overridden ? `人工覆盖后 ${lookupUser.effectiveScore}` : "未被人工覆盖"} · 模型版本 {lookupUser.modelVersion} · 用户修订号 {lookupUser.rowVersion} · 截止 {lookupUser.asOf}
+                    系统评分 {lookupUser.modelScore} · {lookupUser.overridden ? `人工改为 ${lookupUser.effectiveScore}` : "没有人工改过"} · 规则版本 {lookupUser.modelVersion} · 更新于 {lookupUser.asOf}
                   </div>
                   <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-                    {canOverride && <button className="l-btn" onClick={() => openOverride(lookupUser)}>人工覆盖评分</button>}
-                    {canRecompute && <button className="l-btn" onClick={() => openRecompute(lookupUser)}>重算回模型分</button>}
-                    {!canOverride && !canRecompute && <span className="note">当前账号没有单用户评分写权限。</span>}
+                    {canOverride && <button className="l-btn" onClick={() => openOverride(lookupUser)}>手动改分</button>}
+                    {canRecompute && <button className="l-btn" onClick={() => openRecompute(lookupUser)}>恢复系统评分</button>}
+                    {!canOverride && !canRecompute && <span className="note">你没有修改用户风险分的权限。</span>}
                   </div>
                 </div>
               </div>
@@ -797,13 +797,13 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
                 ))}
               </div>
               <details style={{ marginTop: 14 }}>
-                <summary className="note" style={{ cursor: "pointer" }}>评分历史回放 · 最近 {lookupUser.history.length} 次</summary>
+                <summary className="note" style={{ cursor: "pointer" }}>历史评分 · 最近 {lookupUser.history.length} 次</summary>
                 <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-                  {lookupUser.history.length === 0 && <div className="ktint">暂无历史评分；下一次覆盖或模型重算后会保留完整五维快照。</div>}
+                  {lookupUser.history.length === 0 && <div className="ktint">暂无历史评分。</div>}
                   {lookupUser.history.map((row, index) => (
                     <details className="ktint" key={`${row.createdAt}-${row.modelVersion}-${index}`}>
                       <summary style={{ cursor: "pointer" }}>
-                        v{row.modelVersion} · 模型分 {row.modelScore} · 有效分 {row.effectiveScore} · {({ "manually-overridden": "人工覆盖评分", "model-scored": "模型评分" } as Record<string,string>)[row.scoreState] ?? "评分来源待核实"} · {row.operator} · {row.createdAt}
+                        v{row.modelVersion} · 系统评分 {row.modelScore} · 实际分 {row.effectiveScore} · {({ "manually-overridden": "人工改分", "model-scored": "系统评分" } as Record<string,string>)[row.scoreState] ?? "来源未知"} · {row.operator} · {row.createdAt}
                       </summary>
                       <div className="note" style={{ marginTop: 8 }}>{row.reason}</div>
                       <div style={{ display: "grid", gap: 4, marginTop: 6 }}>
@@ -818,7 +818,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
                 </div>
               </details>
               {lookupUser.modelVersion !== `k4-v${overview.model.version}` && (
-                <div className="ktint warn" style={{ marginTop: 10 }}>该用户仍在后台分批重算队列中；当前卡片是旧模型快照，可点击“回归模型分”立即按 v{overview.model.version} 重算。</div>
+                <div className="ktint warn" style={{ marginTop: 10 }}>这个用户还在排队重新计算，这里显示的是旧规则下的分；可以点「恢复系统评分」马上按 v{overview.model.version} 计算。</div>
               )}
             </>
           )}
@@ -826,12 +826,12 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
       </section>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">人工覆盖记录</span><span className="sub">· 谁、把谁的分、从多少改到多少、为什么</span></div>
+        <div className="l-h"><span className="ttl">手动改分记录</span><span className="sub">· 谁、改了谁的分、从多少改到多少、为什么</span></div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 780 }}>
-            <thead><tr><th>账户</th><th className="num">模型分</th><th className="num">覆盖分</th><th>原因</th><th>操作人</th><th>时间</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
+            <thead><tr><th>账户</th><th className="num">系统评分</th><th className="num">改后分数</th><th>原因</th><th>操作人</th><th>时间</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
             <tbody>
-              {overrides.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-4)" }}>暂无人工覆盖记录</td></tr>}
+              {overrides.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-4)" }}>暂无手动改分记录</td></tr>}
               {overrides.map((row) => (
                 <tr key={`${row.userNo}-${row.timeText}`} style={!row.active ? { opacity: 0.62 } : undefined}>
                   <td className="mono" style={{ color: "var(--ink)" }}>{row.userNo}</td>
@@ -842,8 +842,8 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
                   <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{row.timeText}</td>
                   <td style={{ textAlign: "right" }}>
                     {row.active && canRecompute
-                      ? <button className="l-btn sm" onClick={async () => { await prepareRecompute(row.userNo); }}>回模型分</button>
-                      : <span className="bdg dim">{row.active ? "无重算权限" : "已回模型分"}</span>}
+                      ? <button className="l-btn sm" onClick={async () => { await prepareRecompute(row.userNo); }}>恢复系统评分</button>
+                      : <span className="bdg dim">{row.active ? "无权限" : "已恢复系统评分"}</span>}
                   </td>
                 </tr>
               ))}
@@ -851,7 +851,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
           </table>
         </div>
         <DataListPager
-          label="人工覆盖记录"
+          label="手动改分记录"
           page={overridesPage.pageNum}
           pageSize={overridesPage.pageSize}
           total={overridesPage.total}

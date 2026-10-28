@@ -72,7 +72,7 @@ const RELEASE_PARAM_COPY: Record<string, { name: string; sub: string }> = {
   duplicateAccountPendingFrom: { name: "第几个关联账号起审核收益", sub: "从这个账号开始，新增收益须先审核。" },
   duplicateAccountFreezeFrom: { name: "第几个关联账号起建议冻结", sub: "达到这个账号数只提出冻结建议，不会自动冻结账户。" },
   pendingReleaseHours: { name: "批量放行统计时间范围", sub: "只统计这段时间内的放行记录，不会自动放款。" },
-  releaseMode: { name: "收益放行方式", sub: "选择在线验证或人工审核如何放行收益。" },
+  releaseMode: { name: "收益放行方式", sub: "目前只能人工审核后放行。" },
   freeSlotRequiresBinding: { name: "正常名额是否需要绑定手机号", sub: "开启后，正常放行的名额须绑定手机号。" },
 };
 const releaseParamName = (p: KRiskParam) => RELEASE_PARAM_COPY[p.key]?.name ?? p.name;
@@ -83,7 +83,7 @@ const CLUSTER_EARNING_IMPACT: Record<ClusterStatus, { label: string; tone: strin
   detected: { label: "正常名额内可提现", tone: "dim", desc: "这组账户仍待判定；正常名额内的收益可提现，超出名额的收益须先审核。" },
   flagged: { label: "审核中", tone: "warn", desc: "标记为可疑后，超出正常名额的收益须人工审核。" },
   frozen: { label: "锁定奖励", tone: "bad", desc: "冻结这组账户后，新增收益会锁定，提现审核也会更严格。" },
-  released: { label: "恢复正常", tone: "ok", desc: "误判解除后,后续收益按正常账户释放;历史待审仍按审计结果处理。" },
+  released: { label: "恢复正常", tone: "ok", desc: "解除误判后，之后的收益按正常账户处理；之前待审核的仍按审核结果处理。" },
   cleared: { label: "正常释放", tone: "ok", desc: "判定正常后，这组账户退出风险监控；后续收益按普通账户处理。" },
 };
 
@@ -122,7 +122,7 @@ export function isLooseningRelease(key: string, current: string, next: string): 
 }
 
 function confirmedK1FailureText(error: unknown) {
-  return `K1 操作失败 · 本次写入未生效 · 服务端数据未变化，当前输入已保留 · ${errorText(error)}`;
+  return `操作失败，没有生效，已填写的内容还在 · ${errorText(error)}`;
 }
 
 function parseNamedWeight(value: string, label: string, fallback: string) {
@@ -154,7 +154,7 @@ function linkWeightValue(draft: WeightDraft) {
 }
 
 export function K1HeaderActions() {
-  return <span className="f-ro"><span className="d" />服务端分页 · 判定全部后端保存记录</span>;
+  return null;
 }
 
 // 账户状态三态口径,图与表共用一套 —— 两边各写一份必然漂开(表里三种处置全坍缩成
@@ -455,7 +455,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       await work();
     } catch (error) {
       ctx.toast(error instanceof K1OutcomeUncertainError
-        ? `K1 结果未知 · 请用同一命令键重试，不要重复新建操作 · ${error.commandKey}`
+        ? `结果暂未确认 · 请直接重试（不会重复执行），不要新建操作 · 命令号 ${error.commandKey}`
         : confirmedK1FailureText(error));
       throw error;
     }
@@ -463,7 +463,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       await ctx.reloadKRisk({ multiAccount: pageQuery });
       ctx.toast(ok);
     } catch {
-      ctx.toast(`${ok}，但最新数据回读失败；请点击“仅重试 K1”核对服务端状态`);
+      ctx.toast(`${ok}，但页面刷新失败；请点「重新加载」核对`);
     }
   };
 
@@ -484,7 +484,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     ctx.openConfirm({
       action: `标记可疑账户组 · ${c.id}`,
       detail: "只标记为可疑，不冻结资产。风险评分和风险提醒会同步更新，并保留操作记录。",
-      chips: [["仅标记 · 不动资产", "done"], ["服务器保存操作记录", "ready"]],
+      chips: [["只标记，不动资产", "done"], ["记入操作记录", "ready"]],
       reason: true,
       okLabel: "确认标记",
       run: (reason) => {
@@ -509,7 +509,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const freezeCluster = (c: K1Cluster) =>
     ctx.openActionConfirm({
       action: `批量冻结关联账户 · ${c.id}`,
-      detail: `将这组中的 ${c.n} 个账户交由服务器执行冻结。请填写原因；服务器会保存冻结记录和操作记录。`,
+      detail: `冻结这组里的 ${c.n} 个账户。请填写原因，会记入操作记录。`,
       reasonMax: 200,
       run: (reason) => {
         const def = findHighOp("k1_cluster_freeze")!;
@@ -533,7 +533,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const releaseCluster = (c: K1Cluster) =>
     ctx.openActionConfirm({
       action: `解除误判 · ${c.id}`,
-      detail: "解除后可能有更多收益可以提现。请核对影响并写明原因；服务器会保留操作记录。",
+      detail: "解除后，这些账户可能有更多收益可以提现。请核对影响并写明原因。",
       amplifies: true,
       reasonMax: 200,
       run: (reason) => {
@@ -585,10 +585,10 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     ctx.openConfirm({
       action: `人工复审备注 · ${c.id}`,
       detail: "记录复审备注并保持当前状态不变。",
-      chips: [["仅备注 · 不改状态", "done"], ["后端审计", "ready"]],
+      chips: [["只写备注，不改状态", "done"], ["记入操作记录", "ready"]],
       reason: true,
       okLabel: "保存备注",
-      run: (reason) => runAction(() => ctx.actions.updateK1ClusterReviewNote(c.id, c.version, reason, commandKey), `${c.id} 复审备注已留痕`),
+      run: (reason) => runAction(() => ctx.actions.updateK1ClusterReviewNote(c.id, c.version, reason, commandKey), `${c.id} 复审备注已保存`),
     });
   };
 
@@ -598,7 +598,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       return;
     }
     if (!PARAM_LIMITS[p.key]) {
-      ctx.toast(`K1 参数 ${p.key} 不在允许编辑清单中`);
+      ctx.toast(`这个参数不能在这里修改`);
       return;
     }
     setParamDraft({ param: p, value: p.value, reason: "", commandKey: newK1CommandKey() });
@@ -620,7 +620,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       amplifies: true,
       reasonMin: 8,
       reasonMax: 200,
-      completionCopy: "收益分录已人工放行并写入 A2 审计",
+      completionCopy: "收益已人工放行，并记入操作记录。",
       run: async (reason) => {
         const scope = `earnings-release:${entry.entryNo}`;
         const commandKey = commandAttempt.get(scope) ?? newK1CommandKey();
@@ -629,7 +629,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           await ctx.actions.manualReleaseK1Entry(entry.entryNo, reason, commandKey);
           commandAttempt.forget(scope);
           await refreshProtectedEntries();
-          ctx.toast(`${entry.entryNo} 已进入可提桶`);
+          ctx.toast(`${entry.entryNo} 已放行，可以提现`);
         } catch (error) {
           if (!(error instanceof K1OutcomeUncertainError)) commandAttempt.forget(scope);
           throw error;
@@ -655,7 +655,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       releaseAttempts.forget(scope);
     } catch (error) {
       ctx.toast(error instanceof K1OutcomeUncertainError
-        ? `K1 结果未知 · 请保留当前弹窗并原样重试 · ${error.commandKey}`
+        ? `结果暂未确认 · 请保留弹窗直接重试 · 命令号 ${error.commandKey}`
         : confirmedK1FailureText(error));
       // 确定性失败 = 本次命令已终结,丢弃该槽位;下次提交(无论输入变没变)都会铸新号。
       // 结果未知则**不丢弃** —— 原样重试要复用同号,改了值则由指纹自动换号。
@@ -689,7 +689,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       await ctx.actions.updateK1Param(weightDraft.param.key, value, weightDraft.reason.trim(), weightDraft.commandKey);
     } catch (error) {
       ctx.toast(error instanceof K1OutcomeUncertainError
-        ? `K1 结果未知 · 请保留当前弹窗并重试 · ${error.commandKey}`
+        ? `结果暂未确认 · 请保留弹窗直接重试 · 命令号 ${error.commandKey}`
         : confirmedK1FailureText(error));
       if (!(error instanceof K1OutcomeUncertainError)) {
         setWeightDraft((current) => current ? { ...current, commandKey: newK1CommandKey() } : current);
@@ -704,7 +704,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       await ctx.reloadKRisk({ multiAccount: pageQuery });
       ctx.toast(`${riskParamName(weightDraft.param)} 已更新为 ${value}`);
     } catch {
-      ctx.toast(`${riskParamName(weightDraft.param)} 已写入，但最新数据回读失败；请重试 K1 后核对`);
+      ctx.toast(`${riskParamName(weightDraft.param)} 已保存，但页面刷新失败；请点「重新加载」核对`);
     }
   };
 
@@ -715,7 +715,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     try {
       await ctx.actions.updateK1Param(paramDraft.param.key, paramDraft.value, paramDraft.reason.trim(), paramDraft.commandKey);
     } catch (error) {
-      ctx.toast(error instanceof K1OutcomeUncertainError ? `K1 结果未知 · 请保留当前弹窗并重试 · ${error.commandKey}` : confirmedK1FailureText(error));
+      ctx.toast(error instanceof K1OutcomeUncertainError ? `结果暂未确认 · 请保留弹窗直接重试 · 命令号 ${error.commandKey}` : confirmedK1FailureText(error));
       if (!(error instanceof K1OutcomeUncertainError)) setParamDraft((current) => current ? { ...current, commandKey: newK1CommandKey() } : current);
       return;
     } finally {
@@ -741,7 +741,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         whitelistDraft.expireText, whitelistDraft.commandKey,
       );
     } catch (error) {
-      ctx.toast(error instanceof K1OutcomeUncertainError ? `K1 结果未知 · 请保留当前弹窗并重试 · ${error.commandKey}` : confirmedK1FailureText(error));
+      ctx.toast(error instanceof K1OutcomeUncertainError ? `结果暂未确认 · 请保留弹窗直接重试 · 命令号 ${error.commandKey}` : confirmedK1FailureText(error));
       if (!(error instanceof K1OutcomeUncertainError)) setWhitelistDraft((current) => current ? { ...current, commandKey: newK1CommandKey() } : current);
       return;
     } finally {
@@ -751,9 +751,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     setWhitelistDraft(null);
     try {
       await ctx.reloadKRisk({ multiAccount: pageQuery });
-      ctx.toast("白名单已写入后端");
+      ctx.toast("已加入允许名单");
     } catch {
-      ctx.toast("白名单已写入，但最新数据回读失败；请重试 K1 后核对");
+      ctx.toast("已加入允许名单，但页面刷新失败；请点「重新加载」核对");
     }
   };
 
@@ -761,9 +761,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
   const rmWl = (cidr: string) =>
     ctx.openConfirm({
-      action: `移除白名单 · ${cidr}`,
+      action: `移出允许名单 · ${cidr}`,
       detail: "移除后该网段恢复同 IP 多账户检测。",
-      chips: [["恢复 IP 维度检测", "ready"]],
+      chips: [["恢复按 IP 检测", "ready"]],
       reason: true,
       okLabel: "确认移除",
       run: async (reason) => {
@@ -771,7 +771,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const commandKey = commandAttempt.get(scope) ?? newK1CommandKey();
         commandAttempt.remember(scope, commandKey);
         try {
-          await runAction(() => ctx.actions.disableK1Whitelist(cidr, reason, commandKey), "白名单已移除");
+          await runAction(() => ctx.actions.disableK1Whitelist(cidr, reason, commandKey), "已从允许名单移除");
           commandAttempt.forget(scope);
         } catch (error) {
           if (!(error instanceof K1OutcomeUncertainError)) commandAttempt.forget(scope);
@@ -784,10 +784,10 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     return (
       <section className="l-card" data-module-health-state="error">
         <div className="l-h">
-          <span className="ttl">K1 数据加载失败</span>
-          <span className="sub">· {errorText(ctx.contentError)} · 已隐藏旧数据与写操作，避免误处置</span>
+          <span className="ttl">多账户风险数据加载失败</span>
+          <span className="sub">· {errorText(ctx.contentError)} · 为避免误操作，已隐藏数据和操作按钮</span>
           <div className="r">
-            <button className="l-btn" onClick={() => void ctx.reloadKRisk({ multiAccount: pageQuery }).catch(() => undefined)}>仅重试 K1</button>
+            <button className="l-btn" onClick={() => void ctx.reloadKRisk({ multiAccount: pageQuery }).catch(() => undefined)}>重新加载</button>
           </div>
         </div>
       </section>
@@ -795,18 +795,18 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   }
 
   if (ctx.contentLoading && !overview) {
-    return <section className="l-card"><div className="l-h"><span className="ttl">K1 数据加载中</span><span className="sub">· 正在读取风险数据</span></div></section>;
+    return <section className="l-card"><div className="l-h"><span className="ttl">多账户风险数据加载中</span><span className="sub">· 请稍候</span></div></section>;
   }
 
   return (
     <div>
       {focusClusterId && (
         <div className="ctint" role="status" style={{ marginBottom: 12 }}>
-          已从 J3 带入关联账户组 <b>{focusClusterId}</b>；
+          从「篡改防御监控」跳转查看关联账户组 <b>{focusClusterId}</b>；
           {focusLookupState === "loading" && "正在查询全部分页中的关联账户组…"}
           {focusLookupState === "positioning" && "已找到这组账户，正在切换到对应分页…"}
-          {focusLookupState === "found" && "已按服务器查询结果自动定位。"}
-          {focusLookupState === "not-found" && "服务器未找到这组账户；请返回 J3 刷新后重试。"}
+          {focusLookupState === "found" && "已自动定位。"}
+          {focusLookupState === "not-found" && "没找到这组账户，请返回「篡改防御监控」刷新后重试。"}
           {focusLookupState === "error" && "网络异常或关联账户数据持续变化，暂时无法定位；请稍后重试。"}
           {focusLookupState !== "found" && (
             <button className="l-btn sm" style={{ marginLeft: 8 }} onClick={exitFocusMode}>退出定位后手动查看</button>
@@ -823,8 +823,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">风险判断标准</span>
-          <span className="sub">· 服务器统一判断同一 IP、设备或支付工具关联的账户</span>
-          <div className="r"><span className="kcode electric">改后下一次校验生效</span></div>
+          <span className="sub">· 按同一 IP、设备或支付工具找出可能是同一人的账户</span>
+          <div className="r"><span className="kcode electric">修改后下次检查生效</span></div>
         </div>
         <div className="l-b">
           <div className="param-list">
@@ -859,11 +859,11 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 ))}
               </div>
               <div className="ktint warn" style={{ marginTop: 12 }}>
-                <b>处理规则</b> · 正常名额内的收益可提现；超过审核起点后，新增收益须先审核。达到建议冻结的账号数时，系统只提出建议，不会自动冻结账户。只有人工冻结账户组，或短时间内放行数量超限，收益才会转为锁定奖励。待审核收益<b>不会因等待时间到期自动放行</b>，须通过 应用在线验证或人工放行。放宽规则可能增加资金支出，请写明依据。
+                <b>处理规则</b> · 正常名额内的收益可提现；超过审核起点后，新增收益须先审核。达到建议冻结的账号数时，系统只提出建议，不会自动冻结账户。只有人工冻结账户组，或短时间内放行数量超限，收益才会转为锁定奖励。待审核收益<b>不会因等待时间到期自动放行</b>，须通过应用在线验证或人工放行。放宽规则可能增加资金支出，请写明依据。
               </div>
             </>
           ) : (
-            <div className="ktint">服务器尚未提供收益审核规则，请稍后重试；当前不能调整。</div>
+            <div className="ktint">收益审核规则暂时加载不出来，请稍后重试；现在不能调整。</div>
           )}
         </div>
       </section>
@@ -884,14 +884,14 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 {protectedEntries.map((entry) => <tr key={entry.entryNo}>
                   <td className="mono">{entry.entryNo}</td>
                   <td><div className="mono">U{entry.userId}</div><div className="tiny">{entry.clusterId}</div></td>
-                  <td><div>{({ TRIAL: "试用收益", DEVICE: "设备收益", TASK: "任务奖励", COMMISSION: "团队分成", REFERRAL: "邀请奖励", WELCOME: "新人奖励" } as Record<string, string>)[entry.sourceType.toUpperCase()] ?? "来源待核实"}</div><div className="tiny mono">{entry.sourceRef}</div></td>
+                  <td><div>{({ TRIAL: "试用收益", DEVICE: "设备收益", TASK: "任务奖励", COMMISSION: "团队分成", REFERRAL: "邀请奖励", WELCOME: "新人奖励" } as Record<string, string>)[entry.sourceType.toUpperCase()] ?? "来源未知"}</div><div className="tiny mono">{entry.sourceRef}</div></td>
                   <td><span className={`bdg ${entry.bucket === "bonus_locked" ? "bad" : "warn"}`}>{entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}</span></td>
                   <td className="num mono">{entry.amount.toLocaleString("en-US")} {nexGridBrandText(entry.asset)}</td>
                   <td className="mono tiny">{entry.createdAt}</td>
                   <td style={{ textAlign: "right" }}>{canRelease && <button className="l-btn sm mc" onClick={() => releaseProtectedEntry(entry)}>人工放行</button>}</td>
                 </tr>)}
                 {!protectedEntriesLoading && protectedEntries.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-4)", padding: 22 }}>当前没有待审核或已锁定的收益。</td></tr>}
-                {protectedEntriesLoading && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-4)", padding: 22 }}>正在读取收益记录…</td></tr>}
+                {protectedEntriesLoading && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-4)", padding: 22 }}>正在加载收益记录…</td></tr>}
               </tbody>
             </table>
           </div>
@@ -1010,7 +1010,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                     <div style={{ marginTop: 6 }}>{impact.desc}</div>
                     <div style={{ marginTop: 6 }}>{slots && pendingFrom && freezeFrom
                       ? `当前规则：前 ${slots} 个手机号的收益可正常处理；第 ${pendingFrom} 个关联账号起须审核收益；第 ${freezeFrom} 个关联账号起建议冻结。`
-                      : "当前无法读取收益审核规则，请以服务器实际处理结果为准。"}</div>
+                      : "收益审核规则暂时加载不出来。"}</div>
                   </div>
                 );
               })()}
@@ -1053,7 +1053,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">IP 允许名单</span>
-          <span className="sub">· 只影响 IP 维度,不影响设备和支付维度</span>
+          <span className="sub">· 只是不按 IP 检测，设备和支付工具仍照常检测</span>
           <div className="r">{canWrite && <button className="l-btn" onClick={addWl}>+ 添加允许名单</button>}</div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -1069,12 +1069,12 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                   <td style={{ textAlign: "right" }}>{canWrite && <button className="l-btn sm" onClick={() => rmWl(w.cidr)}>移除</button>}</td>
                 </tr>
               ))}
-              {!whitelist.length && <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--ink-4)", padding: 20 }}>暂无白名单</td></tr>}
+              {!whitelist.length && <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--ink-4)", padding: 20 }}>暂无允许名单</td></tr>}
             </tbody>
           </table>
         </div>
         <DataListPager
-          label="K1 IP 允许名单"
+          label="IP 允许名单"
           page={whitelistPage}
           pageSize={whitelistPageSize}
           total={whitelistPageData.total}
@@ -1100,7 +1100,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             <button className="l-btn mc" disabled={!valueOk || !reasonOk || draftSubmitting === "param"} onClick={() => void saveParamDraft()}>{draftSubmitting === "param" ? "保存中…" : "确认保存"}</button>
             </>}>
             <div className="field">
-              <label htmlFor={`${formId}-param-value`}>目标值（{limits.min} - {limits.max}）</label>
+              <label htmlFor={`${formId}-param-value`}>新值（{limits.min}–{limits.max}）</label>
               <input id={`${formId}-param-value`} className="fld" type="number" min={limits.min} max={limits.max} step={limits.step} value={paramDraft.value} onChange={(event) => update({ value: event.target.value })} />
               {!valueOk && <div className="tiny" style={{ color: "var(--danger)", marginTop: 6 }}>{limits.integer ? "必须填写范围内的整数" : "必须填写范围内的数字"}</div>}
             </div>
@@ -1133,14 +1133,14 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           </>}>
             {limits ? (
               <div className="field">
-                <label htmlFor={`${formId}-release-value`}>目标值({limits.min} - {limits.max}{releaseDraft.param.unit ? ` · ${releaseDraft.param.unit}` : ""})</label>
+                <label htmlFor={`${formId}-release-value`}>新值（{limits.min}–{limits.max}{releaseDraft.param.unit ? ` · ${releaseDraft.param.unit}` : ""}）</label>
                 <input id={`${formId}-release-value`} className="fld" type="number" min={limits.min} max={limits.max} step={limits.step} value={releaseDraft.value} onChange={(event) => update({ value: event.target.value })} />
                 {!valueOk && <div className="tiny" style={{ color: "var(--danger)", marginTop: 6 }}>必须填写范围内的整数</div>}
               </div>
             ) : (
               // 可枚举值走下拉不手输(释放模式 / 开关);选项集合与 k-client 校验白名单同源。
               <div className="field">
-                <label htmlFor={`${formId}-release-value`}>目标值(下拉可选,不接受自由输入)</label>
+                <label htmlFor={`${formId}-release-value`}>新值（从下拉选择）</label>
                 <select id={`${formId}-release-value`} className="fld" value={releaseDraft.value} onChange={(event) => update({ value: event.target.value })}>
                   {(isMode ? [...K1_RELEASE_MODE_VALUES] : ["true", "false"]).map((option) => (
                     <option key={option} value={option}>{isMode ? RELEASE_MODE_LABELS[option] : RELEASE_BOOL_LABELS[option]}</option>
@@ -1158,7 +1158,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               // 放大资金流出方向的告知(与其它放大类动作同款口径):真正的拦截在服务端,
               // 本页没有覆盖率数据,不做客户端预检 —— 只如实告知会被核验,不假装拦得住。
               <div className="ktint warn" data-proof="k1-release-loosen-warning" style={{ marginTop: 10 }}>
-                <b>这项调整可能增加可提现收益</b> · 保存前，服务器会检查备付金覆盖率（备付金与应付款的比值）；低于安全底线时不会生效。请在操作理由中写明依据。
+                <b>这项调整可能增加可提现收益</b> · 保存前会检查兑付覆盖率，低于红线时无法保存。请在操作理由中写明依据。
               </div>
             )}
             <div className="ctint">{key === "releaseMode" && releaseDraft.param.adjustable === false
@@ -1178,11 +1178,11 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         return (
           <Modal title="添加 IP 允许名单" icon="shield" busy={draftSubmitting === "whitelist"} onClose={() => setWhitelistDraft(null)} footer={<>
             <button className="l-btn" disabled={draftSubmitting === "whitelist"} onClick={() => setWhitelistDraft(null)}>取消</button>
-            <button className="l-btn mc" disabled={!canSave || draftSubmitting === "whitelist"} onClick={() => void saveWhitelistDraft()}>{draftSubmitting === "whitelist" ? "提交中…" : "确认加白"}</button>
+            <button className="l-btn mc" disabled={!canSave || draftSubmitting === "whitelist"} onClick={() => void saveWhitelistDraft()}>{draftSubmitting === "whitelist" ? "提交中…" : "确认加入"}</button>
           </>}>
-            <div className="ctint" style={{ marginBottom: 12 }}>只排除 IP 维度；设备与支付关联仍继续检测，已冻结账户不会自动解冻。</div>
+            <div className="ctint" style={{ marginBottom: 12 }}>只是不再按 IP 检测；设备和支付工具仍照常检测，已冻结的账户不会自动解冻。</div>
             <div className="field"><label htmlFor={`${formId}-cidr`}>IP / CIDR 网段</label><input id={`${formId}-cidr`} className="fld" value={whitelistDraft.cidr} onChange={(event) => update({ cidr: event.target.value })} placeholder="198.51.100.0/24" />{whitelistDraft.cidr && !cidrOk && <div className="tiny" style={{ color: "var(--danger)", marginTop: 6 }}>请输入合法 IPv4 CIDR（每段不使用前导零）</div>}</div>
-            <div className="field"><label htmlFor={`${formId}-whitelist-note`}>白名单备注</label><input id={`${formId}-whitelist-note`} className="fld" maxLength={200} value={whitelistDraft.note} onChange={(event) => update({ note: event.target.value })} placeholder="例如：已核验的办公出口网段" /></div>
+            <div className="field"><label htmlFor={`${formId}-whitelist-note`}>备注</label><input id={`${formId}-whitelist-note`} className="fld" maxLength={200} value={whitelistDraft.note} onChange={(event) => update({ note: event.target.value })} placeholder="例如：已核验的办公出口网段" /></div>
             <div className="field"><label htmlFor={`${formId}-whitelist-expiry`}>失效日期</label><input id={`${formId}-whitelist-expiry`} className="fld" type="date" value={whitelistDraft.expireText} onChange={(event) => update({ expireText: event.target.value })} />{whitelistDraft.expireText && !expiryOk && <div className="tiny" style={{ color: "var(--danger)", marginTop: 6 }}>失效日期必须晚于今天</div>}</div>
             <div className="field"><label htmlFor={`${formId}-whitelist-reason`}>操作理由（必填 · 8-200 字）</label><textarea id={`${formId}-whitelist-reason`} rows={3} maxLength={200} value={whitelistDraft.reason} onChange={(event) => update({ reason: event.target.value })} /></div>
           </Modal>
@@ -1203,7 +1203,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const updateDraft = (patch: Partial<WeightDraft>) => setWeightDraft((current) => current ? { ...current, ...patch } : current);
         return (
           <Modal
-            title={`拦截阈值调整 · ${riskParamName(weightDraft.param)}`}
+            title={`调整关联权重 · ${riskParamName(weightDraft.param)}`}
             icon="shield"
             busy={draftSubmitting === "weight"}
             onClose={() => setWeightDraft(null)}
@@ -1215,7 +1215,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             }
           >
             <div className="ctint" style={{ marginBottom: 12 }}>
-              关联强度 = 设备指纹命中 × 设备权重 + 支付工具命中 × 支付权重 + IP 命中 × IP 权重。每项单独填写,合计必须等于 1.00。
+              关联强度 = 设备指纹命中 × 设备权重 + 支付工具命中 × 支付权重 + IP 命中 × IP 权重。每项单独填写，三项加起来要等于 1.00。
             </div>
             <div className="grid g-3" style={{ gap: 10 }}>
               {[
@@ -1248,7 +1248,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 maxLength={200}
                 value={weightDraft.reason}
                 onChange={(e) => updateDraft({ reason: e.target.value })}
-                placeholder="例: 根据误判样本回归,降低 IP 权重并提高设备指纹权重"
+                placeholder="例如：误判多来自同一网络，降低 IP 权重、提高设备指纹权重"
               />
             </div>
             <div className={`ctint${validNumbers && totalOk ? "" : " danger"}`} style={{ marginTop: 10 }}>

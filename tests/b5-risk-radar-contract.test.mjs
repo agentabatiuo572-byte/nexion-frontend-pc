@@ -72,7 +72,7 @@ test("B5 exhaustively localizes risk lights and D2 states without leaking unknow
 test("B5 threshold preview reuses the fail-closed risk-light label instead of exposing server codes", () => {
   assert.match(
     page,
-    /新阈值下灯色为\s*<b>\{formatB5RiskLight\(preview\.light\)\}<\/b>/,
+    /当前状态为\s*<b>\{formatB5RiskLight\(preview\.light\)\}<\/b>/,
   );
   assert.doesNotMatch(
     page,

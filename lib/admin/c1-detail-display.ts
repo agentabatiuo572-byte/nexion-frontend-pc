@@ -114,7 +114,7 @@ export function formatC1ReadFlag(value: unknown) {
   if (!raw) return "未读";
   if (raw === "READ" || raw === "TRUE" || raw === "1" || raw === "YES") return "已读";
   if (raw === "UNREAD" || raw === "FALSE" || raw === "0" || raw === "NO") return "未读";
-  return "已读状态待核实";
+  return "已读状态未知";
 }
 
 export function formatC1RiskBand(value: unknown) {

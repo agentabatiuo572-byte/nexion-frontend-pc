@@ -121,7 +121,7 @@ function statusLabel(row: UserAssetAdjustment) {
 }
 
 function reasonCodeLabel(value: unknown) {
-  return REASON_CODE_LABELS[text(value, "").toUpperCase()] ?? "其他已核验原因";
+  return REASON_CODE_LABELS[text(value, "").toUpperCase()] ?? "其他";
 }
 
 function errorMessage(error: unknown) {
@@ -279,13 +279,13 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const formError = !canCreate
     ? "当前角色只有查看权限，不能发起余额调整"
     : loading || error
-    ? "余额调整权威数据不可用，请重新加载后再操作"
+    ? "数据加载失败，请重新加载后再操作"
     : !selectedAccount
-    ? contextLoading ? "账户资金信息加载中" : "请先选择账户并等待资金信息校验完成"
+    ? contextLoading ? "正在加载账户资金" : "请先选择账户"
     : contextLoading
-      ? "账户资金信息加载中"
+      ? "正在加载账户资金"
       : !amountFormatValid || !Number.isFinite(amount)
-        ? "金额需使用普通数字格式，且最多保留 6 位小数"
+        ? "请输入数字，最多 6 位小数"
         : amount <= 0
           ? "金额必须大于 0"
         : amountUsd > maxAmount
@@ -299,9 +299,9 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
                 : evidenceRef.trim().length < 3
                   ? "请填写工单号、凭证号等证据引用"
                   : creditCoverageUnavailable && !supportLargeRequest
-                    ? "当前资金覆盖率不可可靠计算，暂不能执行增加余额"
+                    ? "兑付覆盖率暂时算不出来，暂不能加余额"
                   : creditBelowRedline && !supportLargeRequest
-                    ? "入账后资金覆盖率将低于红线"
+                    ? "加完后兑付覆盖率会低于红线"
                     : largeAdjustment && isFinance
                       ? "超过 500 USDT 等值需由财务主管或超级管理员执行"
                     : null;
@@ -316,14 +316,14 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     setUserQuery(displayUser(account));
     setShowUserMenu(false);
     if (!id) {
-      toast("该账户缺少有效的用户ID");
+      toast("该账户没有有效的用户 ID");
       return;
     }
     setContextLoading(true);
     fetchUserAssetAdjustmentContext(id)
       .then((nextContext) => {
         if (generation !== contextGeneration.current) return;
-        if (accountId(nextContext.account) !== id) throw new Error("账户资金信息与所选账户不一致，请重新选择");
+        if (accountId(nextContext.account) !== id) throw new Error("账户信息不一致，请重新选择");
         setContext(nextContext);
       })
       .catch((err) => { if (generation === contextGeneration.current) toast(errorMessage(err)); })
@@ -336,11 +336,11 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     let active = true;
     setFocusError("");
     setSelectedUser(null); setContext(null); setShowUserMenu(false); setContextLoading(false);
-    if (!/^\d+$/.test(focusUserId) || !/[1-9]/.test(focusUserId)) { setFocusError("客户定位编号无效，请返回会话核对。"); return; }
+    if (!/^\d+$/.test(focusUserId) || !/[1-9]/.test(focusUserId)) { setFocusError("客户编号无效，请返回会话核对。"); return; }
     setContextLoading(true);
     fetchUserAssetAdjustmentContext(focusUserId).then(next => {
       if (!active || generation !== contextGeneration.current) return;
-      if (!next.account || accountId(next.account) !== focusUserId) throw new Error("读取账户与会话客户不一致，请返回会话核对。");
+      if (!next.account || accountId(next.account) !== focusUserId) throw new Error("账户与会话中的客户不一致，请返回会话核对。");
       setSelectedUser(next.account); setUserQuery(displayUser(next.account)); setContext(next);
     }).catch(cause => { if (active && generation === contextGeneration.current) setFocusError(errorMessage(cause)); })
       .finally(() => { if (active && generation === contextGeneration.current) setContextLoading(false); });
@@ -353,7 +353,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       return;
     }
     const id = accountId(selectedAccount);
-    if (!id) return toast("账户缺少有效的用户ID");
+    if (!id) return toast("该账户没有有效的用户 ID");
     const fingerprint = submitFingerprint({ id, asset, direction, amount: amountText.trim(), reasonCode, reason: reason.trim(), evidenceRef: evidenceRef.trim() });
     const key = c3Commands.get(fingerprint) ?? newIdempotencyKey("c3-adjust");
     c3Commands.remember(fingerprint, key);
@@ -364,14 +364,14 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         ? `提交大额调整请求 · ${formatNumber(amount)} ${nexGridBrandText(asset)}`
         : `提交${direction === "CREDIT" ? "增加" : "扣减"}调整申请 · ${formatNumber(amount)} ${nexGridBrandText(asset)}`,
       detail: supportRequest
-        ? `${displayUser(selectedAccount)}；客服不能直接执行超过 500 USDT 等值的调整，本次只生成待独立复核请求，不改变余额。`
-        : `${displayUser(selectedAccount)}；本次只生成待放行调整，不改变余额。独立审核员批准后才更新余额并生成关联账单。网络重试或重复提交不会重复入账。`,
-      chips: supportRequest ? [["只建请求", "ready"], ["余额不变", "ready"]] : [["待独立复核", "ready"], ["余额不变", "ready"]],
+        ? `${displayUser(selectedAccount)}；超过 500 USDT 等值，提交后需由财务主管或超级管理员处理，余额暂不变。`
+        : `${displayUser(selectedAccount)}；提交后需由另一位同事复核，批准后余额才会变化。重复提交不会重复入账。`,
+      chips: supportRequest ? [["待主管处理", "ready"], ["余额暂不变", "ready"]] : [["待审核", "ready"], ["余额暂不变", "ready"]],
       reason: false,
-      okLabel: supportRequest ? "确认提交请求" : "确认提交调整申请",
+      okLabel: "确认提交",
       run: async () => {
         if (selectionGeneration !== contextGeneration.current) {
-          toast("目标账户已变化，请重新核对后提交");
+          toast("账户信息已变化，请重新核对后提交");
           return false;
         }
         setBusy(true);
@@ -384,17 +384,17 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
             ? await requestLargeUserAssetAdjustment(id, input)
             : await createUserAssetAdjustment(id, input);
           const [loaded] = await Promise.all([loadData(true), fetchUserAssetAdjustmentContext(id).then((nextContext) => {
-            if (accountId(nextContext.account) !== id) throw new Error("账户资金信息与所选账户不一致，请重新选择");
+            if (accountId(nextContext.account) !== id) throw new Error("账户信息不一致，请重新选择");
             if (selectionGeneration === contextGeneration.current) setContext(nextContext);
           })]);
-          if (!loaded) throw new Error("操作可能已成功，但结果回读失败；请保留当前表单并使用同一请求重试");
+          if (!loaded) throw new Error("可能已提交成功，但页面没刷新出来。请不要修改内容，直接重试（不会重复提交）");
           c3Commands.forget(fingerprint);
           setAmountText("");
           setReason("");
           setEvidenceRef("");
           toast(supportRequest
             ? `大额调整请求已提交 · ${text(result.requestNo)}`
-            : `调整申请已提交 · ${text(result.adjustmentNo)} · 等待独立复核`);
+            : `调整申请已提交 · ${text(result.adjustmentNo)} · 等待审核`);
         } catch (err) {
           toast(errorMessage(err));
           return false;
@@ -407,14 +407,14 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
 
   const reviewLargeRequest = (row: UserAssetAdjustment, approved: boolean) => {
     const adjustmentNo = text(row.adjustmentNo, "");
-    if (!adjustmentNo) return toast("请求编号缺失");
+    if (!adjustmentNo) return toast("缺少申请编号");
     openActionConfirm({
-      action: `${approved ? "批准" : "驳回"}待放行调整 · ${adjustmentNo}`,
+      action: `${approved ? "批准" : "驳回"}调整申请 · ${adjustmentNo}`,
       detail: `${displayRowUser(row)} · ${text(row.direction) === "CREDIT" ? "+" : "−"}${formatNumber(row.amount)} ${nexGridBrandText(text(row.asset))} · ${text(row.reason)}`,
       amplifies: approved && text(row.direction).toUpperCase() === "CREDIT",
       reasonMin: 8,
       reasonMax: 200,
-      completionCopy: approved ? "批准后才更新余额并生成关联账单。" : "驳回后请求关闭且余额不变。",
+      completionCopy: approved ? "批准后余额立即变化，并生成账单。" : "驳回后余额不变。",
       run: async (reviewReason) => {
         setBusy(true);
         try {
@@ -425,7 +425,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
           if (approved) await approveUserAssetAdjustment(adjustmentNo, reviewReason, OPERATOR(), commandKey);
           else await rejectUserAssetAdjustment(adjustmentNo, reviewReason, OPERATOR(), commandKey);
           if (!await loadData(true)) {
-            throw new Error("操作可能已成功，但结果回读失败；请保留当前确认框并使用同一请求重试");
+            throw new Error("可能已成功，但页面没刷新出来。请不要修改内容，直接重试（不会重复执行）");
           }
           c3Commands.forget(fingerprint);
           toast(`${adjustmentNo} 已${approved ? "执行" : "驳回"}`);
@@ -441,14 +441,14 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
 
   const withdrawRequest = (row: UserAssetAdjustment) => {
     const adjustmentNo = text(row.adjustmentNo, "");
-    if (!adjustmentNo) return toast("请求编号缺失");
+    if (!adjustmentNo) return toast("缺少申请编号");
     openActionConfirm({
-      action: `撤回待放行调整 · ${adjustmentNo}`,
-      detail: "仅发起人可撤回；撤回使用系统会检查当前状态是否变化，不改余额、不生成账单，并保留必达审计。",
+      action: `撤回调整申请 · ${adjustmentNo}`,
+      detail: "只有提交人能撤回，撤回后余额不变。",
       amplifies: false,
       reasonMin: 8,
       reasonMax: 200,
-      completionCopy: "撤回成功后该请求进入终态，复核员不能再批准或驳回。",
+      completionCopy: "撤回后不能再批准或驳回。",
       run: async (withdrawReason) => {
         setBusy(true);
         const fingerprint = withdrawFingerprint(adjustmentNo, withdrawReason);
@@ -456,9 +456,9 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         c3Commands.remember(fingerprint, commandKey);
         try {
           await withdrawUserAssetAdjustment(adjustmentNo, withdrawReason, OPERATOR(), commandKey);
-          if (!await loadData(true)) throw new Error("撤回可能已成功，但结果回读失败；请使用同一请求重试");
+          if (!await loadData(true)) throw new Error("可能已撤回，但页面没刷新出来，请直接重试");
           c3Commands.forget(fingerprint);
-          toast(`${adjustmentNo} 已由发起人撤回`);
+          toast(`${adjustmentNo} 已撤回`);
         } catch (err) {
           toast(errorMessage(err));
           return false;
@@ -471,14 +471,14 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
 
   const reverseAdjustment = (row: UserAssetAdjustment) => {
     const adjustmentNo = text(row.adjustmentNo, "");
-    if (!adjustmentNo) return toast("调整单号缺失");
+    if (!adjustmentNo) return toast("缺少调整单号");
     openActionConfirm({
       action: `冲正调整 · ${adjustmentNo}`,
-      detail: `将创建一条与原单金额相同、方向相反的新调整并立即记账；原记录保持不变，且同一原单只能冲正一次。`,
+      detail: `生成一笔金额相同、方向相反的调整，把原来那笔抵消掉。原记录保留，每笔只能冲正一次。`,
       amplifies: text(row.direction).toUpperCase() === "DEBIT",
       reasonMin: 8,
       reasonMax: 200,
-      completionCopy: "确认后立即冲正，并保留原单、新单、账单和审计关联。",
+      completionCopy: "确认后立即生效。",
       run: async (reverseReason) => {
         setBusy(true);
         try {
@@ -487,7 +487,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
           c3Commands.remember(fingerprint, commandKey);
           const result = await reverseUserAssetAdjustment(adjustmentNo, reverseReason, OPERATOR(), commandKey);
           if (!await loadData(true)) {
-            throw new Error("冲正可能已成功，但结果回读失败；请保留当前确认框并使用同一请求重试");
+            throw new Error("可能已冲正，但页面没刷新出来。请不要修改内容，直接重试（不会重复执行）");
           }
           c3Commands.forget(fingerprint);
           toast(`冲正已执行 · ${text(result.adjustmentNo)}`);
@@ -519,18 +519,18 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   return (
     <>
       <div className="f-stats">
-        <div className="f-stat"><div className="k">已执行</div><div className="v">{number(overview?.approved).toLocaleString("en-US")} 笔</div><div className="sub">余额与账单均已落地</div></div>
-        <div className="f-stat warn"><div className="k">待放行调整</div><div className="v">{number(overview?.pending).toLocaleString("en-US")} 笔</div><div className="sub">提交后由独立复核员处理</div></div>
-        <div className="f-stat cyan"><div className="k">UVT 价格</div><div className="v">${formatNumber(nexUsdRate || overview?.nexUsdRate)}</div><div className="sub">用于 500 USDT 等值权限判断</div></div>
-        <div className="f-stat ok"><div className="k">资金覆盖率</div><div className="v">{formatPercent(coverageRatio)}</div><div className="sub">红线 {formatPercent(redlinePct)}</div></div>
+        <div className="f-stat"><div className="k">已执行</div><div className="v">{number(overview?.approved).toLocaleString("en-US")} 笔</div><div className="sub">余额已变化</div></div>
+        <div className="f-stat warn"><div className="k">待审核</div><div className="v">{number(overview?.pending).toLocaleString("en-US")} 笔</div><div className="sub">由提交人以外的同事复核</div></div>
+        <div className="f-stat cyan"><div className="k">UVT 价格</div><div className="v">${formatNumber(nexUsdRate || overview?.nexUsdRate)}</div><div className="sub">用来换算是否超过 500 USDT 等值</div></div>
+        <div className="f-stat ok"><div className="k">兑付覆盖率</div><div className="v">{formatPercent(coverageRatio)}</div><div className="sub">红线 {formatPercent(redlinePct)}</div></div>
       </div>
 
       {error && <div className="ctint warn" style={{ marginBottom: 12 }}>余额调整数据加载失败 · {error}</div>}
-      {loading && <div className="ctint" style={{ marginBottom: 12 }}>余额调整数据加载中...</div>}
+      {loading && <div className="ctint" style={{ marginBottom: 12 }}>正在加载…</div>}
 
       <div className="two-col r1-12">
         <section className="l-card">
-          <div className="l-h"><span className="ttl">余额调整</span><span className="sub">· 选择账户后立即预览影响</span></div>
+          <div className="l-h"><span className="ttl">余额调整</span><span className="sub">· 选好账户后，右侧会显示调整后的余额</span></div>
           <div className="l-b">
             <div className="adj-form">
               <div className="row" style={{ alignItems: "flex-start" }}>
@@ -556,7 +556,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
                   />
                   {showUserMenu && (
                     <div role="listbox" style={{ position: "absolute", zIndex: 20, top: 36, left: 0, right: 0, maxHeight: 240, overflowY: "auto", border: "1px solid var(--border-strong)", borderRadius: 8, background: "var(--surface)", boxShadow: "0 14px 38px rgba(0,0,0,.22)", padding: 6 }}>
-                      {userSearchLoading && <div style={{ padding: "8px 10px", fontSize: 12, color: "var(--ink-4)" }}>搜索中...</div>}
+                      {userSearchLoading && <div style={{ padding: "8px 10px", fontSize: 12, color: "var(--ink-4)" }}>搜索中…</div>}
                       {!userSearchLoading && userOptions.length === 0 && <div style={{ padding: "8px 10px", fontSize: 12, color: "var(--ink-4)" }}>无匹配用户</div>}
                       {!userSearchLoading && userOptions.map((account) => (
                         <button key={`${text(account.userNo)}-${accountId(account)}`} type="button" onClick={() => selectUser(account)} style={{ width: "100%", display: "flex", justifyContent: "space-between", gap: 10, padding: "8px 10px", border: 0, borderRadius: 6, background: accountId(account) === accountId(selectedUser) ? "var(--surface-2)" : "transparent", color: "var(--ink)", cursor: "pointer", textAlign: "left" }}>
@@ -569,12 +569,12 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
                 </div>
               </div>
 
-              {focusError && <div className="itint danger" role="alert">会话客户定位失败：{focusError}<button className="l-btn sm" type="button" disabled={contextLoading} onClick={() => setFocusRetry(n => n + 1)}>重试客户定位</button></div>}
+              {focusError && <div className="itint danger" role="alert">找不到会话中的客户：{focusError}<button className="l-btn sm" type="button" disabled={contextLoading} onClick={() => setFocusRetry(n => n + 1)}>重试</button></div>}
               {selectedAccount && (
                 <div className="ctint cyan" data-proof="c3-target-card">
                   <b>{displayUser(selectedAccount)}</b> · 用户ID <span className="mono">{accountId(selectedAccount)}</span><br />
-                  状态 {({ ACTIVE: "正常", FROZEN: "冻结", RESTRICTED: "受限", BANNED: "禁用" } as Record<string,string>)[text(selectedAccount.status).toUpperCase()] ?? "状态待核实"} · 风险 {formatC1RiskBand(selectedAccount.riskBand)} / {text(selectedAccount.riskScore)} · 注册 {formatDate(selectedAccount.registeredAt)}<br />
-                  USDT {formatNumber(selectedAccount.walletUsdt)} · UVT {formatNumber(selectedAccount.walletNex)} · 提现处理中 {formatNumber(context?.pendingWithdraw)} USDT
+                  状态 {({ ACTIVE: "正常", FROZEN: "冻结", RESTRICTED: "受限", BANNED: "禁用" } as Record<string,string>)[text(selectedAccount.status).toUpperCase()] ?? "状态未知"} · 风险 {formatC1RiskBand(selectedAccount.riskBand)} / {text(selectedAccount.riskScore)} · 注册 {formatDate(selectedAccount.registeredAt)}<br />
+                  USDT {formatNumber(selectedAccount.walletUsdt)} · UVT {formatNumber(selectedAccount.walletNex)} · 提现中 {formatNumber(context?.pendingWithdraw)} USDT
                 </div>
               )}
 
@@ -583,16 +583,16 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
               <div className="row"><span className="bf-legend">金额</span><input aria-label="调整金额" value={amountText} onChange={(event) => setAmountText(event.target.value)} inputMode="decimal" style={{ width: 140 }} /><span style={{ fontSize: 12, color: "var(--ink-4)" }}>{asset === "NEX" ? `≈ $${formatUsdEquivalent(amountUsd)}` : "USDT"}</span></div>
               <div className="row"><TabGroup label="原因分类" labelClassName="bf-legend" value={reasonCode} items={REASON_CODES.map(([code]) => code)} onSelect={setReasonCode} className="chips" itemClassName={(_item, selected) => `chip${selected ? " sel" : ""}`}>{(code) => REASON_CODES.find(([value]) => value === code)?.[1]}</TabGroup></div>
               <div className="row" style={{ alignItems: "flex-start" }}><span className="bf-legend">详细原因</span><textarea className="ui-control" aria-label="详细原因" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="8–200 字，说明事实、判断和处理依据" rows={3} style={{ flex: 1 }} /><span style={{ fontSize: 12, color: reasonLength >= 8 && reasonLength <= 200 ? "var(--success)" : "var(--ink-4)" }}>{reasonLength}/200</span></div>
-              <div className="row"><span className="bf-legend">证据引用</span><input aria-label="证据引用" value={evidenceRef} onChange={(event) => setEvidenceRef(event.target.value)} placeholder="例如：工单 20260718-001" style={{ flex: 1 }} /></div>
-              <div className="row" style={{ justifyContent: "flex-end" }}><button className="l-btn mc" disabled={busy || !!formError} onClick={submitAdjustment}>{isSupport && largeAdjustment ? "提交大额调整请求" : "提交调整申请"}</button></div>
+              <div className="row"><span className="bf-legend">凭证</span><input aria-label="证据引用" value={evidenceRef} onChange={(event) => setEvidenceRef(event.target.value)} placeholder="例如：工单 20260718-001" style={{ flex: 1 }} /></div>
+              <div className="row" style={{ justifyContent: "flex-end" }}><button className="l-btn mc" disabled={busy || !!formError} onClick={submitAdjustment}>提交调整申请</button></div>
               {formError && <div className="ctint warn">{formError}</div>}
             </div>
-            <div className="ctint" style={{ marginTop: 12 }}>≤ ${formatNumber(largeThreshold)}：客服、财务可执行；&gt; ${formatNumber(largeThreshold)}：仅财务主管、超级管理员可执行。单笔上限 ${formatNumber(maxAmount)} USDT 等值。</div>
+            <div className="ctint" style={{ marginTop: 12 }}>${formatNumber(largeThreshold)} 及以下：客服、财务可以提交；超过 ${formatNumber(largeThreshold)}：只有财务主管或超级管理员能处理。单笔最多 ${formatNumber(maxAmount)} USDT 等值。</div>
           </div>
         </section>
 
         <section className="l-card">
-          <div className="l-h"><span className="ttl">执行影响预览</span><span className="sub">· 提交前核对余额与覆盖率</span></div>
+          <div className="l-h"><span className="ttl">调整后会怎样</span></div>
           <div className="l-b">
             {/* 🔴 zentao #231:未选账户时**不能**展示余额与覆盖率。此前本块无条件渲染,
                 于是 currentBalance 取到 number(undefined)=0 显示成「0 USDT」,覆盖率则来自
@@ -600,25 +600,25 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
                 位置上,读起来像是这笔操作的结果。页面别处(账户摘要)早已用 selectedAccount
                 门控,这里漏了。覆盖率总览另有独立卡片,不受此影响。 */}
             {!selectedAccount && (
-              <div className="ctint cyan" style={{ marginBottom: 12 }}>请先在上方选择目标账户,选定后此处才展示余额与覆盖率预估。</div>
+              <div className="ctint cyan" style={{ marginBottom: 12 }}>请先选择账户，这里会显示调整后的余额和覆盖率。</div>
             )}
-            <div className="kv"><span className="k">目标账户</span><span className="v">{displayUser(selectedAccount)}</span></div>
+            <div className="kv"><span className="k">账户</span><span className="v">{displayUser(selectedAccount)}</span></div>
             <div className="kv"><span className="k">当前余额</span><span className="v mono">{selectedAccount ? `${formatNumber(currentBalance)} ${nexGridBrandText(asset)}` : "—"}</span></div>
-            <div className="kv"><span className="k">批准后余额预估</span><span className="v mono" style={{ color: debitInsufficient ? "var(--danger)" : "var(--ink)" }}>{selectedAccount ? `${formatNumber(balanceAfter)} ${nexGridBrandText(asset)}` : "—"}</span></div>
+            <div className="kv"><span className="k">批准后余额</span><span className="v mono" style={{ color: debitInsufficient ? "var(--danger)" : "var(--ink)" }}>{selectedAccount ? `${formatNumber(balanceAfter)} ${nexGridBrandText(asset)}` : "—"}</span></div>
             <div className="kv"><span className="k">USDT 等值</span><span className="v mono">{selectedAccount ? `$${formatUsdEquivalent(amountUsd)}` : "—"}</span></div>
-            <div className="kv"><span className="k">当前覆盖率</span><span className="v">{selectedAccount ? formatPercent(coverageRatio) : "—"}</span></div>
-            <div className="kv"><span className="k">批准后覆盖率预估</span><span className="v" style={{ color: selectedAccount && (creditCoverageUnavailable || creditBelowRedline) ? "var(--danger)" : "var(--success)" }}>{selectedAccount ? formatPercent(projectedCoverage) : "—"}</span></div>
+            <div className="kv"><span className="k">当前兑付覆盖率</span><span className="v">{selectedAccount ? formatPercent(coverageRatio) : "—"}</span></div>
+            <div className="kv"><span className="k">批准后兑付覆盖率</span><span className="v" style={{ color: selectedAccount && (creditCoverageUnavailable || creditBelowRedline) ? "var(--danger)" : "var(--success)" }}>{selectedAccount ? formatPercent(projectedCoverage) : "—"}</span></div>
             <div className="kv"><span className="k">红线</span><span className="v">{selectedAccount ? formatPercent(redlinePct) : "—"}</span></div>
-            <div className="ctint cyan" style={{ marginTop: 14 }}><b>复核处理流程</b> · 提交时仅创建待审核申请并保存操作记录；独立复核员批准后，才同时更新余额、账单和相关业务事件。</div>
+            <div className="ctint cyan" style={{ marginTop: 14 }}><b>流程</b> · 提交后余额不会马上变，需由另一位同事复核批准后才生效。</div>
           </div>
         </section>
       </div>
 
       <section className="l-card" data-restored-capability="c3-pending-request-withdrawal">
-          <div className="l-h"><span className="ttl">待放行调整</span><span className="sub">· 提交阶段不改变余额</span><div className="r"><button type="button" className="l-btn sm" aria-label="刷新待放行调整队列" disabled={loading || busy} onClick={() => void loadData(true)}>刷新队列</button></div></div>
+          <div className="l-h"><span className="ttl">待审核的调整</span><span className="sub">· 批准前余额不变</span><div className="r"><button type="button" className="l-btn sm" aria-label="刷新待审核的调整" disabled={loading || busy} onClick={() => void loadData(true)}>刷新列</button></div></div>
           <div style={{ overflowX: "auto" }}>
             <table className="l-tbl" style={{ minWidth: 920 }}>
-              <thead><tr><th>请求编号</th><th>账户</th><th>金额</th><th>原因</th><th>证据</th><th>发起人</th><th style={{ textAlign: "right" }}>处理</th></tr></thead>
+              <thead><tr><th>申请编号</th><th>账户</th><th>金额</th><th>原因</th><th>凭证</th><th>提交人</th><th style={{ textAlign: "right" }}>处理</th></tr></thead>
               <tbody>
                 {requests.records.map((row) => (
                   <tr key={text(row.adjustmentNo)}>
@@ -628,16 +628,16 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
                     <td style={{ textAlign: "right" }}><span style={{ display: "inline-flex", gap: 6 }}>
                       {canCreate && text(row.maker).toLowerCase() === OPERATOR().toLowerCase() && <button className="l-btn sm" disabled={busy} onClick={() => withdrawRequest(row)}>撤回</button>}
                       {canApprove && text(row.maker).toLowerCase() !== OPERATOR().toLowerCase() && <><button className="l-btn sm primary" disabled={busy} onClick={() => reviewLargeRequest(row, true)}>批准</button><button className="l-btn sm" disabled={busy} onClick={() => reviewLargeRequest(row, false)}>驳回</button></>}
-                      {(!canApprove && !(canCreate && text(row.maker).toLowerCase() === OPERATOR().toLowerCase())) && <span style={{ color: "var(--ink-4)", fontSize: 12 }}>等待独立复核</span>}
+                      {(!canApprove && !(canCreate && text(row.maker).toLowerCase() === OPERATOR().toLowerCase())) && <span style={{ color: "var(--ink-4)", fontSize: 12 }}>等待其他同事复核</span>}
                     </span></td>
                   </tr>
                 ))}
-                {!requests.records.length && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-4)", padding: "22px 12px" }}>当前没有待放行调整；队列入口与分页结构继续保留</td></tr>}
+                {!requests.records.length && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-4)", padding: "22px 12px" }}>暂无待审核的调整</td></tr>}
               </tbody>
             </table>
           </div>
           <DataListPager
-            label="待放行调整队列"
+            label="待审核的调整"
             page={requestPage}
             pageSize={requestPageSize}
             total={requests.total}
@@ -648,10 +648,10 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       </section>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">调整历史</span><span className="sub">· 已执行与已拒绝记录</span><div className="r"><TabGroup label="调整历史资产筛选" value={historyFilter} items={HISTORY_FILTERS} onSelect={(item) => { setHistoryFilter(item); setHistoryPage(1); }} className="chips" itemClassName={(_item, selected) => `chip${selected ? " sel" : ""}`}>{(item) => nexGridBrandText(item)}</TabGroup></div></div>
+        <div className="l-h"><span className="ttl">调整历史</span><span className="sub">· 已生效和已拒绝的</span><div className="r"><TabGroup label="调整历史资产筛选" value={historyFilter} items={HISTORY_FILTERS} onSelect={(item) => { setHistoryFilter(item); setHistoryPage(1); }} className="chips" itemClassName={(_item, selected) => `chip${selected ? " sel" : ""}`}>{(item) => nexGridBrandText(item)}</TabGroup></div></div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 1120 }}>
-            <thead><tr><th>调整单</th><th>账户</th><th>资产</th><th className="num">增减</th><th>原因</th><th>证据</th><th>状态</th><th>账单</th><th>时间</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
+            <thead><tr><th>调整单</th><th>账户</th><th>资产</th><th className="num">增减</th><th>原因</th><th>凭证</th><th>状态</th><th>账单</th><th>时间</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
             <tbody>
               {history.records.map((row) => {
                 const approvedOriginal = text(row.status).toUpperCase() === "APPROVED" && !row.reversalOf && !row.reversedBy;
@@ -676,24 +676,24 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         <DataListPager label="余额调整历史" page={historyPage} pageSize={historyPageSize} total={history.total} onPageChange={setHistoryPage} onPageSizeChange={(next) => { setHistoryPageSize(next); setHistoryPage(1); }} pageSizeOptions={[5, 10, 20, 50]} />
       </section>
 
-      <p className="f-foot"><b>余额调整用于纠错与补偿</b>。提交后等待独立复核；只有批准才生效并记账；拒绝时不改余额；冲正以新的反向记录完成，不覆盖历史。</p>
+      <p className="f-foot">余额调整只用于纠错和补偿。调错了用「冲正」抵消，原记录会保留。</p>
 
       {detailRow && (
         <Drawer title={`调整单明细 · ${text(detailRow.adjustmentNo)}`} sub={`${displayRowUser(detailRow)} · ${nexGridBrandText(text(detailRow.asset))}`} onClose={() => { setDetail(null); setDetailFallback(null); }} footer={detailRow.ledgerId && canReadLedger ? <Link className="l-btn" style={{ flex: 1, justifyContent: "center" }} href={`/finance/ledger?bizNo=${encodeURIComponent(text(detailRow.adjustmentNo, ""))}`}>定位关联账单 →</Link> : undefined}>
-          {detailLoading && <div className="ctint" style={{ marginBottom: 12 }}>明细加载中...</div>}
+          {detailLoading && <div className="ctint" style={{ marginBottom: 12 }}>正在加载…</div>}
           <div className="kv"><span className="k">状态</span><span className="v"><span className={`bdg ${statusTone(detailRow)}`}>{statusLabel(detailRow)}</span></span></div>
           <div className="kv"><span className="k">金额</span><span className="v">{text(detailRow.direction) === "CREDIT" ? "+" : "−"}{formatNumber(detailRow.amount)} {nexGridBrandText(text(detailRow.asset))}（${formatUsdEquivalent(detailRow.amountUsd)}）</span></div>
           <div className="kv"><span className="k">执行后余额</span><span className="v">{formatNumber(detailRow.balanceAfter)} {nexGridBrandText(text(detailRow.asset))}</span></div>
           <div className="kv"><span className="k">原因分类</span><span className="v">{reasonCodeLabel(detailRow.reasonCode)}</span></div>
           <div className="kv"><span className="k">详细原因</span><span className="v">{text(detailRow.reason)}</span></div>
-          <div className="kv"><span className="k">证据引用</span><span className="v mono">{text(detailRow.evidenceRef)}</span></div>
-          <div className="kv"><span className="k">请求唯一标识</span><span className="v mono">{text(detailRow.idempotencyKey)}</span></div>
+          <div className="kv"><span className="k">凭证</span><span className="v mono">{text(detailRow.evidenceRef)}</span></div>
+          <div className="kv"><span className="k">请求编号</span><span className="v mono">{text(detailRow.idempotencyKey)}</span></div>
           <div className="kv"><span className="k">原调整单</span><span className="v mono">{text(detailRow.reversalOf)}</span></div>
-          <div className="kv"><span className="k">冲正调整单</span><span className="v mono">{text(detailRow.reversedBy)}</span></div>
+          <div className="kv"><span className="k">冲正单</span><span className="v mono">{text(detailRow.reversedBy)}</span></div>
           <div className="kv"><span className="k">账单号</span><span className="v mono">{text(detailRow.ledgerId)}</span></div>
           <div className="kv"><span className="k">操作人</span><span className="v">{text(detailRow.maker)}</span></div>
           <div className="kv"><span className="k">执行时间</span><span className="v">{formatDate(detailRow.reviewedAt ?? detailRow.updatedAt)}</span></div>
-          <div className="ctint cyan" style={{ marginTop: 14 }}><b>数据来源</b> · 余额调整、用户账户、资金覆盖率、必达审计</div>
+          
         </Drawer>
       )}
     </>

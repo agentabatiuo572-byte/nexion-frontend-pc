@@ -172,7 +172,7 @@ export function L2HeaderActions({ ctx }: { ctx: LCtx }) {
     try {
       await ctx.biActions?.createReport({
         exportType: complete ? "漏斗序列" : "漏斗生命周期事实",
-        timeRange: complete ? "当前 同批用户 窗口" : "当前快照",
+        timeRange: complete ? "当前同批用户时段" : "当前数据",
         fields: complete ? "漏斗去重人数/CVR/cohort 留存率" : "注册/资料/订单/钱包活动聚合计数",
         piiLevel: "NONE",
         maskPolicy: "NONE",
@@ -182,7 +182,7 @@ export function L2HeaderActions({ ctx }: { ctx: LCtx }) {
         phase: complete ? ctx.l2Query?.phase : undefined,
         locale: complete ? ctx.l2Query?.locale : undefined,
         ref: complete ? ctx.l2Query?.ref : undefined,
-      }, complete ? "导出漏斗 同批用户 聚合序列用于转化分析" : "导出 L2 当前生命周期事实用于数据核对");
+      }, complete ? "导出漏斗同批用户汇总，用于转化分析" : "导出当前各阶段人数，用于数据核对");
       await ctx.reloadBi?.();
       ctx.toast(complete ? "用户转化与留存数据导出任务已提交" : "用户各阶段人数导出任务已提交");
     } catch (error) {
@@ -193,7 +193,7 @@ export function L2HeaderActions({ ctx }: { ctx: LCtx }) {
     <>
       <span className="f-ro"><span className="d" />这里可以查看转化详情，不能修改计算方式</span>
       {!ctx.canExport && <span className="f-ro">当前角色仅可查看 · 导出需报表管理权限</span>}
-      <button className="f-cta" onClick={exportFunnel} disabled={!ctx.canExport || !exportable || ctx.biLoading} title={!ctx.canExport ? "当前角色没有报表导出权限" : !exportable ? "尚未返回可导出的 L2 数据" : undefined}>
+      <button className="f-cta" onClick={exportFunnel} disabled={!ctx.canExport || !exportable || ctx.biLoading} title={!ctx.canExport ? "当前角色没有报表导出权限" : !exportable ? "暂无可导出的数据" : undefined}>
         {complete ? "导出用户转化与留存数据" : "导出用户各阶段人数"}
       </button>
     </>
@@ -322,9 +322,9 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       setQueryData(response);
       ctx.setL2Query?.({ cohort, phase: draftPhase, locale, ref });
       ctx.setL2SliceExportable?.(true);
-      ctx.toast(stage ? "已按当前切片完成真实漏斗查看明细" : "切片已从服务端重新计算");
+      ctx.toast(stage ? "已按当前筛选加载明细" : "已按当前筛选重新计算");
     } catch (error) {
-      if (generation === queryGeneration.current) setQueryError(error instanceof Error ? displayAdminError(error) : "L2 查询失败");
+      if (generation === queryGeneration.current) setQueryError(error instanceof Error ? displayAdminError(error) : "查询失败");
     } finally {
       if (generation === queryGeneration.current) setQueryLoading(false);
     }
@@ -348,7 +348,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
   if (queryError) return (
     <section className="l-card">
       <div className="l-b">
-        <div className="ltint warn" role="alert"><b>L2 查询未采用</b> · {queryError}。页面已关闭旧切片导出，不会用部分或脏响应拼接分析结论。</div>
+        <div className="ltint warn" role="alert"><b>查询失败</b> · {queryError}。为避免数据混乱，暂时不能导出这次筛选的结果。</div>
         <button className="l-btn sm" style={{ marginTop: 12 }} onClick={() => {
           cancelQuery();
           setQueryData(null);
@@ -553,8 +553,8 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">查看四步转化详情</span>
-          <span className="sub">· <AutoGloss>点击任意一级展开「流入 / 转化 / 流失去向 / 停留时长」 · L1–L5 编号是内部生命周期标注,不对用户展示</AutoGloss></span>
-          <div className="r"><span className="lcode lock" title="漏斗统计规则由服务端统一维护">🔒 漏斗定义锁定</span><span className="lcode electric">和运营总览漏斗是同一份数字</span></div>
+          <span className="sub">· <AutoGloss>点击任意一级展开「流入 / 转化 / 流失去向 / 停留时长」 · L1–L5 是内部的阶段编号，用户看不到</AutoGloss></span>
+          <div className="r"><span className="lcode lock" title="漏斗的统计方式统一设定，这里不能改">🔒 统计方式固定</span><span className="lcode electric">和运营总览漏斗是同一份数字</span></div>
         </div>
         <div className="l-b">
           <TabGroup
@@ -589,7 +589,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
               <span className="lcode">{STAGE_EV[safeStage] ?? s.ev}</span>
               {ext.tg && <span className="bdg ok">目标 {ext.tg}</span>}
               <span style={{ marginLeft: "auto" }} />
-              <button className="l-btn sm" disabled={queryLoading} onClick={() => void applySlice(L2_STAGE_EVENTS[safeStage])}>刷新本级路径事实</button>
+              <button className="l-btn sm" disabled={queryLoading} onClick={() => void applySlice(L2_STAGE_EVENTS[safeStage])}>刷新这一级的数据</button>
             </div>
             <div className="stage-x-grid">
               <div className="cell"><div className="k">上级流入</div><div className="v">{ext.inflow}</div></div>
@@ -601,7 +601,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
             {ext.trial && (
               <>
                 <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-2)", marginTop: 14 }}>
-                  试用转化流程 · 首购前的试用路径 <span className="lcode" style={{ marginLeft: 6 }} title="统计规则权威 H2">试用规则归 H2,这里只看</span> <span className="bdg dim" style={{ marginLeft: 4 }}>单独计算 · 不算进首购转化率</span>
+                  试用转化流程 · 首购前的试用路径 <span className="lcode" style={{ marginLeft: 6 }} title="试用规则在「免费试用设置」里改">试用规则在「免费试用设置」改</span> <span className="bdg dim" style={{ marginLeft: 4 }}>单独计算 · 不算进首购转化率</span>
                 </div>
                 <div className="trial-strip">
                   {TRIAL_STEPS.map((t, i) => (
@@ -609,7 +609,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
                       <div className="bx"><div className="e">{t.e}</div><div className="n">{t.n.toLocaleString("en-US")}</div></div>
                       {i < TRIAL_STEPS.length - 1
                         ? <div className="arr"><b>{TRIAL_STEPS[i + 1].arr}</b>{TRIAL_STEPS[i + 1].arrLb}</div>
-                        : <div className="arr" style={{ color: "var(--ink-4)" }}>结束后发放奖励<br />账单归 D4</div>}
+                        : <div className="arr" style={{ color: "var(--ink-4)" }}>结束后发放奖励<br />账单见「账本与账单核对」</div>}
                     </div>
                   ))}
                 </div>
@@ -709,7 +709,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>L2 没有任何「写数据」动作</b>:<AutoGloss>漏斗与留存怎么算由统一统计规则治理,这里只做明细查询、视图配置与聚合导出。</AutoGloss><b>关于复投这一级</b>:<AutoGloss>优先采用 wallet.reinvest,并兼容首购后的第二笔 checkout.completed 降级统计规则。导出只含聚合计数,</AutoGloss><b>不含手机号、地址等明文</b>,<AutoGloss>每次导出都会生成可追溯记录。</AutoGloss></p>
+      <p className="f-foot"><b>这页只能查看，不会改任何数据</b>：<AutoGloss>可以看明细、调整显示方式、导出汇总。</AutoGloss><b>复投这一级</b>：<AutoGloss>按复投记录统计；没有复投记录时，用首购后的第二笔订单代替。导出只含汇总人数，</AutoGloss><b>不含手机号、地址等隐私</b>，<AutoGloss>每次导出都有记录。</AutoGloss></p>
       <PaginationExemptionList
         items={[
           {

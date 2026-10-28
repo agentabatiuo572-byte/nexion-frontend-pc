@@ -45,7 +45,7 @@ function profileHarness(initial = profile()) {
     react: h.react, "@/lib/store/admin-auth": { useAdminAuth: selector => selector({ authEpoch: 1, session: { adminId: 12, role: "super", authorities: ["service_m3_write"] } }) },
     "@/lib/admin/m-support-enhancements": { supportEnhancements: { profile() { const request = deferred(); requests.push(request); return request.promise; }, devices: async () => group({ total: 0, heldCount: 0, fieldStatuses: { heldCount: "READY" }, onlineCount: 0, records: [] }), flows: async () => group({ total: 0, records: [] }) } },
     "@/lib/admin/m-support-client": { supportClient: { maintenanceHistory: async () => ({ totalExecutions: 0, totalCycles: 0, cycles: [], executions: [] }) }, SupportClientError: class extends Error {} },
-    "@/lib/admin/error-messages": { displayAdminError: () => "读取失败" }, "../design-kit": { Modal: props => React.createElement("div", {}, props.children), Icon: () => null },
+    "@/lib/admin/error-messages": { displayAdminError: () => "加载失败" }, "../design-kit": { Modal: props => React.createElement("div", {}, props.children), Icon: () => null },
     "./hd-ui": { HDSelect: () => null },
     "./support-avatar": { SupportAvatar: () => null, customerAvatarPath: () => "", advisorAvatarPath: () => "" }, "./support-leaderboard": { compactSupportBoardValue },
   });
@@ -55,16 +55,16 @@ function profileHarness(initial = profile()) {
 }
 test("R20CE-01 actual finance retry clears 42.5 before request and after rejection", async () => {
   const h = profileHarness(); assert.match(h.html(), /42\.5 USDT/);
-  nodes(h.render()).find(node => node.type === "button" && text(node) === "重新读取资金").props.onClick();
+  nodes(h.render()).find(node => node.type === "button" && text(node) === "重新加载资金").props.onClick();
   assert.doesNotMatch(h.html(), /42\.5 USDT/);
   h.requests.at(-1).reject(new Error("failed")); await flush();
   assert.equal(h.h.states[0].finance.status, "ERROR"); assert.equal(h.h.states[0].finance.data, null);
-  assert.doesNotMatch(h.html(), /42\.5 USDT/); assert.match(h.html(), /读取失败/);
+  assert.doesNotMatch(h.html(), /42\.5 USDT/); assert.match(h.html(), /加载失败/);
 });
 test("R20CE-03 actual READY finance distinguishes field permissions, failure and unknown with valid next step", () => {
-  for (const [status, reason, retry] of [["FORBIDDEN", "无查看权限，请联系管理员核对权限", false], ["ERROR", "读取失败", true], ["UNKNOWN", "暂时无法确认", true]]) {
+  for (const [status, reason, retry] of [["FORBIDDEN", "无查看权限，请联系管理员核对权限", false], ["ERROR", "加载失败", true], ["UNKNOWN", "暂时无法确认", true]]) {
     const h = profileHarness(profile(status)), html = h.html();
-    assert.match(html, new RegExp(reason)); assert.equal(html.includes("重新读取资金"), retry);
+    assert.match(html, new RegExp(reason)); assert.equal(html.includes("重新加载资金"), retry);
     assert.match(html, /42\.5 USDT/); assert.equal((html.match(/<span class="v">-<\/span>/g) ?? []).length, 7);
     assert.doesNotMatch(html, /FORBIDDEN|UNKNOWN|API|数据库|fieldStatuses/);
   }
@@ -119,7 +119,7 @@ test("R20CE-DEVICE actual current holding stays separate from refund history in 
 });
 for (const action of ["retry", "annotate"]) for (const lifecycle of ["scope", "unmount"]) test(`R20CE-06 actual ${action} reread rejects ${lifecycle}`, async () => {
     const h = profileHarness(); h.h.states[14] = "标签";
-    const tree = h.render(), button = nodes(tree).find(node => node.type === "button" && text(node) === (action === "retry" ? "重新读取资金" : "添加标签"));
+    const tree = h.render(), button = nodes(tree).find(node => node.type === "button" && text(node) === (action === "retry" ? "重新加载资金" : "添加标签"));
     button.props.onClick(); await flush(); const old = h.requests.at(-1);
     assert.equal(h.requests.length, 2, `${action}: actual read started`);
     if (lifecycle === "scope") { h.props.scopeVersion = 2; h.render(); h.h.runEffects(); assert.equal(h.h.states[0], null); }
@@ -163,7 +163,7 @@ function m5Harness() {
     react: h.react, "@/lib/store/admin-auth": { useAdminAuth }, "@/lib/admin/shell-authorities": { adminShellSessionKey: value => String(value?.adminId) },
     "@/lib/admin/m-client": { fetchMSupportAgentsPage(pageNum) { const request = deferred(); request.pageNum = pageNum; requests.push(request); return request.promise; } },
     "@/lib/admin/support-analytics-client": { supportAnalyticsClient: { query: async () => ({ scopeSummary: { mode: "ALL" } }) } },
-    "@/lib/admin/error-messages": { displayAdminError: () => "读取失败" }, "../design-kit": { Icon: () => null, Toggle: () => null, Modal: () => null },
+    "@/lib/admin/error-messages": { displayAdminError: () => "加载失败" }, "../design-kit": { Icon: () => null, Toggle: () => null, Modal: () => null },
     "./support-leaderboard": { compactSupportBoardValue },
   });
   const render = () => { h.reset(); return exports.M5Scripts({ ctx: { params, pget: key => params[key], toast() {}, setParam() {}, openActionConfirm() {} } }); };
@@ -185,8 +185,8 @@ test("R20CE-02 actual M5 page reread hides stale rows/chips and retains failure 
   const pager = nodes(h.render()).find(node => typeof node.type === "function" && node.type.name === "Pager" && node.props.pageSize === 5);
   pager.props.onPage(2); h.render(); h.h.runEffects();
   assert.doesNotMatch(h.html(), /旧客服|私有客户|服务用户 9/); h.requests.at(-1).reject(new Error("page failed")); await flush();
-  const failed = h.html(); assert.doesNotMatch(failed, /旧客服|私有客户|服务用户 9|暂无客服管理员/); assert.match(failed, /重新读取客服/); assert.match(failed, />- 名客服/);
-  nodes(h.render()).find(node => node.type === "button" && text(node) === "重新读取客服").props.onClick(); h.render(); h.h.runEffects();
+  const failed = h.html(); assert.doesNotMatch(failed, /旧客服|私有客户|服务用户 9|暂无客服管理员/); assert.match(failed, /重新加载客服/); assert.match(failed, />- 名客服/);
+  nodes(h.render()).find(node => node.type === "button" && text(node) === "重新加载客服").props.onClick(); h.render(); h.h.runEffects();
   h.requests.at(-1).resolve({ total: 1, records: [{ ...h.agent, assignedUserCount: 0 }], advisorAssignments: [] }); await flush(); assert.match(h.html(), /服务用户 0 \/ 接派单上限 5/);
 });
 test("R20FIX2-01 actual M5 converged effects retain page2 during loading/failure/retry and clamp only a successful shrink", async () => {
@@ -202,10 +202,10 @@ test("R20FIX2-01 actual M5 converged effects retain page2 during loading/failure
   h.requests[0].resolve({ total: 6, pageNum: 1, pageSize: 5, records, advisorAssignments: [] }); await flush(); settle();
   pager().props.onPage(2); settle();
   assert.equal(pager().props.page, 2); assert.deepEqual(requestPages(), [1, 2]);
-  assert.match(h.html(), /正在加载客服分页/); assert.doesNotMatch(h.html(), /旧客服|服务用户 9/); settle();
+  assert.match(h.html(), /正在加载客服…/); assert.doesNotMatch(h.html(), /旧客服|服务用户 9/); settle();
   h.requests.at(-1).reject(new Error("page2 failed")); await flush(); settle();
   assert.equal(pager().props.page, 2); assert.deepEqual(requestPages(), [1, 2]);
-  nodes(settle()).find(node => node.type === "button" && text(node) === "重新读取客服").props.onClick(); settle();
+  nodes(settle()).find(node => node.type === "button" && text(node) === "重新加载客服").props.onClick(); settle();
   assert.equal(pager().props.page, 2); assert.deepEqual(requestPages(), [1, 2, 2]);
   h.requests.at(-1).resolve({ total: 6, pageNum: 2, pageSize: 5, records: [h.agent], advisorAssignments: [] }); await flush(); settle();
   assert.equal(pager().props.page, 2); assert.deepEqual(requestPages(), [1, 2, 2]);

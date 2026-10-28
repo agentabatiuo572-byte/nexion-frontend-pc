@@ -33,10 +33,10 @@ test("C3 creates a pending review request with structured evidence and retry-sta
   assert.match(c3, /setEvidenceRef\(""\)/);
   assert.match(client, /idempotencyKey: input\.idempotencyKey/);
   assert.match(c3, /requestLargeUserAssetAdjustment/);
-  assert.match(c3, /客服不能直接执行超过 500 USDT 等值/);
+  assert.match(c3, /超过 500 USDT 等值，提交后需由财务主管或超级管理员处理/);
   assert.match(c3, /调整申请已提交/);
-  assert.match(c3, /等待独立复核/);
-  assert.match(c3, /批准后才更新余额并生成关联账单/);
+  assert.match(c3, /等待审核/);
+  assert.match(c3, /批准后余额立即变化，并生成账单/);
   assert.doesNotMatch(c3, /usePropose|挂起中的加钱申请/);
 });
 
@@ -76,12 +76,12 @@ test("C3 reversal is dedicated, append-only and D4-linked by adjustment number",
   assert.doesNotMatch(dView, /服务器是唯一账本|客户端报的账一律不认|每笔资金动作必落账/);
   assert.doesNotMatch(dRegistry, /服务器唯一账本|C3 调账专用类|和 D3 的储备/);
   assert.match(d4, /BILL_TYPE_LABELS\[row\.billType\]/);
-  assert.match(d4, /BILL_STATUS_LABELS\[row\.status\.toUpperCase\(\)\] \?\? "账单状态待核实"/);
+  assert.match(d4, /BILL_STATUS_LABELS\[row\.status\.toUpperCase\(\)\] \?\? "状态未知"/);
   assert.match(d4, /assetAmount\(row\.amount, row\.asset\)/);
   assert.doesNotMatch(d4, /createD4Adjustment|submitAdjustment|手动调账|提交调账/);
   assert.doesNotMatch(dClient, /createD4Adjustment|\/ledger\/adjustments|d4-adjustment/);
   assert.doesNotMatch(treasuryRoute, /ledger\/adjustments/);
-  assert.match(dRegistry, /核对充值、提现、收益和人工调整记录/);
+  assert.match(dRegistry, /核对充值、提现、收益和人工调整/);
 });
 
 /**
@@ -93,9 +93,9 @@ test("C3 reversal is dedicated, append-only and D4-linked by adjustment number",
  */
 test("C3 impact preview withholds balances and coverage until a target account is chosen", () => {
   assert.match(c3, /!selectedAccount &&/, "缺少「未选账户」的提示分支");
-  assert.match(c3, /请先在上方选择目标账户/, "缺少未选账户时的引导文案");
+  assert.match(c3, /请先选择账户，这里会显示/, "缺少未选账户时的引导文案");
   // 影响预览内的所有读数都必须在账户上下文就绪前降级为占位。
-  for (const label of ["当前余额", "批准后余额预估", "USDT 等值", "当前覆盖率", "批准后覆盖率预估", "红线"]) {
+  for (const label of ["当前余额", "批准后余额", "USDT 等值", "当前兑付覆盖率", "批准后兑付覆盖率", "红线"]) {
     const row = new RegExp(`>${label}</span><span[^>]*>\\{[^}]*selectedAccount[^}]*\\}`);
     assert.match(c3, row, `${label} 未按 selectedAccount 降级`);
   }

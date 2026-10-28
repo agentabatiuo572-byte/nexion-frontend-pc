@@ -17,12 +17,12 @@ export function CoverageHero() {
   const bDomain = useBDomainDashboard();
   const { ledger: LEDGER } = bDomain;
   if ((bDomain.loading && !bDomain.hasData) || bDomain.error || !bDomain.hasData) {
-    return <BDomainDataState title="B1 兑付覆盖率" loading={bDomain.loading && !bDomain.error} error={bDomain.error} onRetry={bDomain.reload} />;
+    return <BDomainDataState title="兑付覆盖率" loading={bDomain.loading && !bDomain.error} error={bDomain.error} onRetry={bDomain.reload} />;
   }
   const cov = LEDGER.coverageRatio;
   const { redlinePct: red, healthyPct: healthy, reserveUsd, liabilitiesUsd, coverageSeries: cs } = LEDGER;
   if (cs.length < 2) {
-    return <BDomainDataState title="B1 兑付覆盖率" error="B1_COVERAGE_SERIES_EMPTY" onRetry={bDomain.reload} />;
+    return <BDomainDataState title="兑付覆盖率" error="覆盖率走势数据不足，暂时无法显示" onRetry={bDomain.reload} />;
   }
   const net = reserveUsd - liabilitiesUsd; // 净敞口(负 = 缺口)
   const series = cs;
@@ -49,9 +49,9 @@ export function CoverageHero() {
     { dot: zoneVar, nm: "当前", vl: `${cov.toFixed(1)}%`, strong: true },
   ];
   const tiles = [
-    { k: "真实储备账本", v: fmtUsdCompact(reserveUsd), cap: "口径同 D3 · 实时聚合" },
-    { k: "应付负债账本", v: fmtUsdCompact(liabilitiesUsd), cap: `${LEDGER.accounts.length} 类科目汇总 → B2` },
-    { k: "净敞口(储备 − 负债)", v: fmtUsdCompact(net), cap: net < 0 ? "覆盖率 <100% · 兑付缺口" : "30 天趋势 →", tone: net < 0 ? "var(--v5-danger)" : "var(--v5-success)" },
+    { k: "可用储备", v: fmtUsdCompact(reserveUsd), cap: "与「资金储备与应付款」一致" },
+    { k: "应付款", v: fmtUsdCompact(liabilitiesUsd), cap: `共 ${LEDGER.accounts.length} 类` },
+    { k: "储备 − 应付款", v: fmtUsdCompact(net), cap: net < 0 ? "储备不够付" : "储备有余", tone: net < 0 ? "var(--v5-danger)" : "var(--v5-success)" },
   ];
 
   return (
@@ -66,10 +66,10 @@ export function CoverageHero() {
       {/* 顶栏:B1 + 标题 + server-canonical */}
       <div className="relative flex flex-wrap items-center gap-2.5">
         <span className="font-mono-tabular rounded-[7px] px-2 py-0.5 text-[11px]" style={{ background: "var(--v5-surface-2)", color: "var(--v5-ink-4)", border: "1px solid var(--v5-border)" }}>B1</span>
-        <span className="font-display text-[14.5px]" style={{ color: "var(--v5-ink)" }}>资金与应付款总览 · <AutoGloss>兑付覆盖率</AutoGloss></span>
+        <span className="font-display text-[14.5px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>兑付覆盖率</AutoGloss></span>
         <span className="ml-auto inline-flex items-center gap-1.5 rounded-[7px] px-2 py-0.5 font-mono-tabular text-[11px]" style={{ background: "var(--v5-tech-cyan-soft)", color: "var(--v5-tech-cyan)", border: "1px solid var(--v5-tech-cyan-border)" }}>
           <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "var(--v5-tech-cyan)" }} />
-          以服务器数据为准
+          实时
         </span>
       </div>
 
@@ -86,10 +86,10 @@ export function CoverageHero() {
               {zoneLabel}
             </span>
             <span className="font-mono-tabular text-[12px]" style={{ color: "var(--v5-ink-4)", fontWeight: 500 }}>
-              {deltaPp <= 0 ? "↓" : "↑"} {Math.abs(deltaPp)}pp 较上窗口 · 近8窗口 {trendPp <= 0 ? "↓" : "↑"}{Math.abs(trendPp)}pp
+              {deltaPp <= 0 ? "↓" : "↑"} {Math.abs(deltaPp)} 个百分点（较上一时段）· 近 8 个时段 {trendPp <= 0 ? "↓" : "↑"}{Math.abs(trendPp)} 个百分点
             </span>
           </div>
-          <p className="mt-2 text-[12px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>储备 ÷ 应付负债 · 运营内部真实口径(独立于用户侧叙事)</AutoGloss></p>
+          <p className="mt-2 text-[12px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>可用储备 ÷ 应付款，只在后台显示</AutoGloss></p>
         </div>
 
         <div className="min-w-[224px] overflow-hidden rounded-[12px]" style={{ border: "1px solid var(--v5-border)", background: "rgba(255,255,255,0.02)" }}>

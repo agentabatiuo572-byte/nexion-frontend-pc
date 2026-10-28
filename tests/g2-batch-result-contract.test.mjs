@@ -85,11 +85,11 @@ test("G2 页面展示服务端批次结果，权威刷新，并对未知结果�
   assert.match(client, /throw stableMutationHttpFailure\(message, 0\)/);
   assert.match(client, /return \{ overview: authoritative, batch \}/);
   assert.match(page, /summarizeG2BatchResult/);
-  assert.match(page, /批次结果/);
-  assert.match(page, /跳过原因/);
-  assert.match(page, /失败明细/);
+  assert.match(page, /处理结果/);
+  assert.match(page, /跳过/);
+  assert.match(page, /<b>失败<\/b>/);
   assert.match(page, /row\.orderStatus === "CANCELLED"/);
-  assert.match(page, /权威剩余队列/);
+  assert.match(page, /还在排队：/);
   assert.match(page, /同一命令号/);
   assert.doesNotMatch(page, /"今日队列批次处理完成"/);
 });

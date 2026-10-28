@@ -26,8 +26,8 @@ const OPERATOR = currentAdminOperator;
 const CURVE_FIELDS: G3CurveField[] = ["targetPrice", "pumpProbability", "volatilityPct"];
 const CURVE_LABELS: Record<G3CurveField, { name: string; unit: string }> = {
   targetPrice: { name: "目标价", unit: "$" },
-  pumpProbability: { name: "上行概率", unit: "0-1" },
-  volatilityPct: { name: "波动", unit: "+/-%" },
+  pumpProbability: { name: "上涨概率", unit: "0-1" },
+  volatilityPct: { name: "波动幅度", unit: "+/-%" },
 };
 const CURVE_LOOSEN_DIR: Partial<Record<G3CurveField, "increase">> = {
   targetPrice: "increase",
@@ -90,20 +90,20 @@ export function deriveG3RuntimeStatus(paused: boolean, pinValue: string) {
   if (paused) {
     return {
       label: "已暂停",
-      detail: "现价冻结，自动推进已停止。",
+      detail: "价格停在当前值，不再自动变化。",
       tone: "bad",
     };
   }
   if (/^D[1-7]$/.test(pin)) {
     return {
-      label: `已锁定生效日期 ${pin}`,
-      detail: "当前帧已锁定生效日期，自动推进暂停。",
+      label: `已固定在 ${pin}`,
+      detail: "价格固定用这一天的设置，不再自动切换到下一天。",
       tone: "warn",
     };
   }
   return {
-    label: "按排程配置",
-    detail: "是否推进以服务端排程执行为准。",
+    label: "按计划自动运行",
+    detail: "每天按设定时间自动切换到下一天的价格。",
     tone: "",
   };
 }
@@ -199,7 +199,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
     } catch (err) {
       const message = messageOf(err);
       setError(message);
-      toast(`G3 操作失败 · ${message}`);
+      toast(`操作失败 · ${message}`);
       throw err;
     } finally {
       setBusyKey(null);
@@ -214,8 +214,8 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
   if (loading && !overview) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">G3 UVT 价格管理</span><span className="sub">· 正在读取真实接口数据</span></div>
-        <div className="l-b"><div className="gtint">G3 数据加载中...</div></div>
+        <div className="l-h"><span className="ttl">UVT 价格管理</span><span className="sub">· 加载中</span></div>
+        <div className="l-b"><div className="gtint">价格数据加载中…</div></div>
       </section>
     );
   }
@@ -223,9 +223,9 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
   if (!overview) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">G3 UVT 价格管理</span><span className="sub">· 真实接口数据</span></div>
+        <div className="l-h"><span className="ttl">UVT 价格管理</span></div>
         <div className="l-b">
-          <div className="gtint">G3 数据加载失败 · {error || "未收到本页数据，请重试；持续失败时请联系值班人员。"}</div>
+          <div className="gtint">价格数据加载失败 · {error || "没有收到数据，请重试；一直失败请联系值班同事。"}</div>
           <button className="l-btn mc" style={{ marginTop: 12 }} onClick={() => void reload()}>重新加载</button>
         </div>
       </section>
@@ -268,14 +268,14 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
     const current = frameValue(frame, field);
     const amp = !!CURVE_LOOSEN_DIR[field];
     openActionConfirm({
-      action: `周曲线关键帧 · D${dayIndex + 1} · ${label.name}`,
+      action: `修改一周价格计划 · D${dayIndex + 1} · ${label.name}`,
       detail: <>
         <b>D{dayIndex + 1} {label.name}</b> · 当前 {fmtCurveVal(field, current)}({label.unit})。
         {amp
-          ? <><b>属放大流出</b>:确认放行时以<b>周峰值价 {fmtPrice(peak)}</b> 重估全部 UVT 计价负债后核验 <b>B1 备付金覆盖率</b>(当前 {cov}%,红线 {redline}%),低于红线拒(422)。服务器收到新值后按实际方向二次精算。</>
-          : "做市波动不直接放大流出。"}
-        曲线修改只保存未来排程参数，不改写当前现价；到对应排程推进时才写入全站现价配置。
-        运营执行门槛:财务主管 / 超级管理员。
+          ? <><b>会让平台多付钱</b>：系统会按本周最高价 {fmtPrice(peak)} 重新计算 UVT 应付款，覆盖率低于红线时无法保存（当前 {cov}%，红线 {redline}%）。</>
+          : "波动幅度不会直接让平台多付钱。"}
+        这里只改计划，不改当前价格；到了那一天才会生效。
+        需要财务主管或超级管理员操作。
       </>,
       amplifies: amp,
       coverage: amp ? coverageSnapshot : undefined,
@@ -288,7 +288,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
         if (!value) return;
         await mutate(`curve:${dayIndex}:${field}`, () => updateG3CurveFrame(
           overview, dayIndex, field, value, reason, OPERATOR(),
-        ), `D${dayIndex + 1} ${label.name}已保存，将在对应排程推进时生效`);
+        ), `D${dayIndex + 1} ${label.name}已保存，到那一天生效`);
       },
     });
   };
@@ -297,11 +297,11 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
     const isSchedule = key === "schedule";
     const editCurrent = isSchedule ? (scheduleControl?.rawValue || current) : current;
     openActionConfirm({
-      action: `行情排程控制 · ${name}`,
-      detail: <><b>{name}</b> · 当前:{current}。{isSchedule ? <>请输入 <span className="mono">每日按“小时:分钟 时区”格式自动推进</span>,例如 <span className="mono">每天北京时间 08:30 自动推进</span>;后端会解析为自动执行计划,当前有效值 {scheduleMeta}。</> : <>排程按 服务器时间表推进当日生效帧;锁定生效日期 / 暂停推进不影响已配置的曲线本身。</>} 改排程产 <span className="mono">market.curve_advanced</span> / <span className="mono">market.schedule_changed</span> 审计。运营执行门槛:财务主管 / 超级管理员。</>,
+      action: `调整价格计划运行方式 · ${name}`,
+      detail: <><b>{name}</b> · 当前:{current}。{isSchedule ? <>填写每天几点切换，例如 <span className="mono">每天北京时间 08:30 自动推进</span>。当前设置：{scheduleMeta}。</> : <>固定某一天或暂停切换，都不会改动已设好的计划。</>} 需要财务主管或超级管理员操作。</>,
       amplifies: false,
       edit: ctlOptions[key]
-        ? { kind: "select", current, options: ctlOptions[key], optionLabels: { "未钉住": "不锁定生效日期" }, disallowCurrent: true }
+        ? { kind: "select", current, options: ctlOptions[key], optionLabels: { "未钉住": "不固定" }, disallowCurrent: true }
         : { kind: "text", current: editCurrent, disallowCurrent: true },
       run: async (reason, value) => {
         if (value == null) return;
@@ -312,8 +312,8 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
 
   const adj = (overrideKey: G3OverrideKey, label: string, current: string, note: string, amp?: boolean) => {
     openActionConfirm({
-      action: `手动覆盖设置 · ${label}`,
-      detail: <><b>{label}</b> · 当前 {current} · {note}。{amp && <><b>属放大流出</b>:确认放行时以周峰值价 {fmtPrice(peak)} 重估全部 UVT 计价负债后核验 <b>B1 备付金覆盖率</b>(当前 {cov}%,红线 {redline}%,低于红线拒绝 422)。</>}手动直写 = 临时压过自动排程,下次排程推进会以曲线值覆盖。</>,
+      action: `手动设置 · ${label}`,
+      detail: <><b>{label}</b> · 当前 {current} · {note}。{amp && <><b>会让平台多付钱</b>：系统会按本周最高价 {fmtPrice(peak)} 重新计算 UVT 应付款，覆盖率低于红线时无法保存（当前 {cov}%，红线 {redline}%）。</>}手动设置只是临时的，下次自动切换时会被计划里的值替换。</>,
       amplifies: !!amp,
       coverage: amp ? coverageSnapshot : undefined,
       edit: overrideKey === "volatilityPct"
@@ -329,14 +329,14 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
   };
 
   const pauseEngine = () => openActionConfirm({
-    action: paused ? "恢复行情引擎" : "暂停行情引擎",
+    action: paused ? "恢复价格自动变化" : "暂停价格自动变化",
     detail: paused
-      ? <>恢复后现价继续按曲线排程推进。恢复 = 价格继续上行预期,确认放行时核验 B1 覆盖率(当前 {cov}%,红线 {redline}%)。行情不在 J1 五闸内,作独立暂停开关 通知 J1 编排面联动。</>
-      : <>暂停后现价冻结在最后值、曲线自动推进暂停,全站 UVT 价格停止更新。执行门槛:风控主管 / 超级管理员。行情不在 J1 五闸内,作独立暂停开关 通知 J1 编排面联动。</>,
+      ? <>恢复后价格继续按计划变化。价格上涨会让平台多付钱，覆盖率低于红线时无法恢复（当前 {cov}%，红线 {redline}%）。</>
+      : <>暂停后全站 UVT 价格停在当前值，不再变化。需要风控主管或超级管理员操作。</>,
     amplifies: paused,
     coverage: paused ? coverageSnapshot : undefined,
     run: async (reason) => {
-      await mutate("override:paused", () => updateG3Override("paused", String(!paused), String(paused), reason, OPERATOR()), paused ? "行情引擎已立即恢复" : "行情引擎已立即暂停");
+      await mutate("override:paused", () => updateG3Override("paused", String(!paused), String(paused), reason, OPERATOR()), paused ? "价格已恢复自动变化" : "价格已暂停变化");
     },
   });
 
@@ -357,18 +357,18 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
 
   return (
     <>
-      {error && <div className="gtint" style={{ marginBottom: 12 }}>G3 操作提示 · {error}</div>}
+      {error && <div className="gtint" style={{ marginBottom: 12 }}>操作提示 · {error}</div>}
       <div className="f-stats">
-        <div className="f-stat ok"><div className="k">UVT 现价</div><div className="v">{price}</div><div className="sub">{change == null ? "24 小时 历史未返回" : `24h ${change >= 0 ? "+" : ""}${change.toFixed(2)}%`} · 当日帧 D{curDay} 派发</div></div>
-        <div className="f-stat cyan"><div className="k">排程进度</div><div className="v">D{curDay} / 7</div><div className="sub">{schedV} · 周峰值 {fmtPrice(peak)}</div></div>
-        <div className="f-stat"><div className="k">价格来源</div><div className="v">{oracle}</div><div className="sub">健康状态未提供 · 偏离告警阈值 {deviation}</div></div>
-        <div className="f-stat"><div className="k">引擎状态</div><div className="v" style={{ color: runtimeStatus.tone === "bad" ? "var(--danger)" : runtimeStatus.tone === "warn" ? "var(--warning)" : "var(--ink-3)" }}>{runtimeStatus.label}</div><div className="sub">{runtimeStatus.detail}</div></div>
+        <div className="f-stat ok"><div className="k">UVT 现价</div><div className="v">{price}</div><div className="sub">{change == null ? "24 小时涨跌暂无" : `24 小时 ${change >= 0 ? "+" : ""}${change.toFixed(2)}%`} · 今天用 D{curDay}</div></div>
+        <div className="f-stat cyan"><div className="k">计划进度</div><div className="v">D{curDay} / 7</div><div className="sub">{schedV} · 本周最高 {fmtPrice(peak)}</div></div>
+        <div className="f-stat"><div className="k">价格来源</div><div className="v">{oracle}</div><div className="sub">偏离告警 {deviation}</div></div>
+        <div className="f-stat"><div className="k">运行状态</div><div className="v" style={{ color: runtimeStatus.tone === "bad" ? "var(--danger)" : runtimeStatus.tone === "warn" ? "var(--warning)" : "var(--ink-3)" }}>{runtimeStatus.label}</div><div className="sub">{runtimeStatus.detail}</div></div>
       </div>
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">周曲线关键帧(7 天 × 3 项 · 逐值权威)</span>
-          <span className="sub">· 点有权限的单元格保存排程参数 · 当前生效日高亮 · 黄色 = 与昨日不同 · ★ 周峰值</span>
+          <span className="ttl">一周价格计划（7 天）</span>
+          <span className="sub">· 点格子修改 · 高亮 = 今天 · 黄色 = 和前一天不同 · ★ = 本周最高价</span>
           <div className="r">
             <span className={`bdg ${runtimeStatus.tone}`}>{runtimeStatus.label}</span>
           </div>
@@ -377,7 +377,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
           <table className="dial-tbl" style={{ minWidth: 680 }}>
             <thead>
               <tr>
-                <th>生效日</th>
+                <th>日期</th>
                 {CURVE_FIELDS.map((field) => (
                   <th key={field}>{CURVE_LABELS[field].name}<br /><span style={{ fontWeight: 400, fontSize: 10 }}>({CURVE_LABELS[field].unit})</span></th>
                 ))}
@@ -388,7 +388,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
                 const isCur = dayIndex === overview.activeDayIndex;
                 return (
                   <tr key={frame.dayIndex} className={isCur ? "cur" : undefined}>
-                    <td>D{dayIndex + 1}{isCur && " · 当前"}</td>
+                    <td>D{dayIndex + 1}{isCur && " · 今天"}</td>
                     {CURVE_FIELDS.map((field) => {
                       const current = frameValue(frame, field);
                       const previous = dayIndex > 0 ? frameValue(overview.frames[dayIndex - 1], field) : current;
@@ -397,7 +397,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
                       return (
                         <td key={field} className={isPeak ? "peak" : changed ? "chg" : undefined}
                           onClick={allowed(curveAuthority(field)) ? () => openCurveCellMc(dayIndex, field) : undefined}
-                          title={allowed(curveAuthority(field)) ? "点击修改排程参数" : "当前账号无此字段的修改权限"}>
+                          title={allowed(curveAuthority(field)) ? "点击修改" : "你没有修改这一项的权限"}>
                           {fmtCurveVal(field, current)}{isPeak && " ★"}
                         </td>
                       );
@@ -409,7 +409,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
           </table>
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
-          <div className="ttl" style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>排程控制</div>
+          <div className="ttl" style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>运行方式</div>
           {overview.controls.map((control) => (
             <div className="p-row" key={control.key}>
               <div className="txt"><div className="k">{operatorCopyText(control.name)}</div><div className="s">{operatorCopyText(control.description)}</div></div>
@@ -417,19 +417,19 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
               {allowed("finprod_g3_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => openCurveCtlMc(control.key, operatorCopyText(control.name), ctlVals[control.key] || control.value)}>调整(立即执行)</button>}
             </div>
           ))}
-          <div className="gtint" style={{ marginTop: 10 }}><b>自动生效怎么工作</b> · 排程开后,服务器定时任务按 <span className="mono">{schedV}</span> 把当日 <b>目标价</b> 写进全站现价配置 <span className="mono">wallet.exchange.nex_usdt_price</span>(G2 兑换 / G7 复投即时跟随),并产 <span className="mono">market.curve_advanced</span> 审计;当前有效执行计划: <span className="mono">{scheduleMeta}</span>。锁定生效日期= 演示 / 应急时把生效日冻在某天,自动推进暂停。改 <b>目标价 / 上行概率</b> 是放大流出,提交即以周峰值价过 B1 红线。</div>
+          <div className="gtint" style={{ marginTop: 10 }}><b>怎么生效</b> · 每天在 <span className="mono">{schedV}</span> 自动把当天的 <b>目标价</b> 设为全站 UVT 价格，兑换和复投马上跟着变。当前设置：<span className="mono">{scheduleMeta}</span>。「固定某天」用于演示或应急，固定后不再自动切换。调高 <b>目标价 / 上涨概率</b> 会让平台多付钱，覆盖率低于红线时无法保存。</div>
         </div>
       </section>
 
       <div className="two-col r13" style={{ marginBottom: 16 }}>
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">行情走势</span>
-            <span className="sub">· 近 24 小时 · 服务端最新采样 {latestSampledAt} · 周峰值 {fmtPrice(peak)}</span>
-            <div className="r">{allowed("finprod_g3_engine_pause_toggle") && (!paused || isSuper) && <button className="l-btn mc" disabled={busy} onClick={pauseEngine}>{paused ? "恢复引擎(立即执行)" : "暂停引擎(立即执行)"}</button>}</div>
+            <span className="ttl">价格走势</span>
+            <span className="sub">· 近 24 小时 · 最近更新 {latestSampledAt} · 本周最高 {fmtPrice(peak)}</span>
+            <div className="r">{allowed("finprod_g3_engine_pause_toggle") && (!paused || isSuper) && <button className="l-btn mc" disabled={busy} onClick={pauseEngine}>{paused ? "恢复价格变化" : "暂停价格变化"}</button>}</div>
           </div>
           <div className="l-b">
-            <div className="price-hero"><span className="big">{price}</span><span className="chg">{change == null ? "历史未返回" : `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`}</span>{paused && <span className="bdg bad">已冻结</span>}</div>
+            <div className="price-hero"><span className="big">{price}</span><span className="chg">{change == null ? "涨跌暂无" : `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`}</span>{paused && <span className="bdg bad">已冻结</span>}</div>
             {hasChart ? (
               <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: 180, display: "block" }}>
                 <line x1={P} y1={peakY} x2={W - P} y2={peakY} stroke="var(--ink-4)" strokeWidth={1} strokeDasharray="4 4" />
@@ -441,12 +441,12 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
             ) : (
               <div className="gtint" style={{ marginTop: 16 }} data-proof="g3-history-empty">
                 {historyError
-                  ? `近 24 小时 历史读取失败 · ${historyError}`
-                  : "近 24 小时 历史价格点未返回,不生成前端走势线。"}
+                  ? `近 24 小时价格加载失败 · ${historyError}`
+                  : "暂无近 24 小时价格数据。"}
                 <div className="row" style={{ marginTop: 10, gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                  <button className="l-btn sm mc" disabled={busy} onClick={() => void reload(true)}>重新加载行情历史</button>
+                  <button className="l-btn sm mc" disabled={busy} onClick={() => void reload(true)}>重新加载</button>
                   <span className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>
-                    价格历史记录 · 按价格更新计划记录，统计最近 24 小时
+                    最近 24 小时价格记录
                   </span>
                 </div>
               </div>
@@ -456,28 +456,28 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
 
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">手动覆盖设置 层</span>
-            <span className="sub">· 应急直写 · 下次排程推进以曲线值覆盖</span>
+            <span className="ttl">手动设置</span>
+            <span className="sub">· 应急用 · 下次自动切换时会被计划值替换</span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
-            <div className="p-row"><div className="txt"><div className="k">现价直写(应急)</div><div className="s">绕过曲线临时压价,过红线</div></div><span className="v">{price}</span>{allowed("finprod_g3_override_price_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => adj("currentPrice", "现价直写", rawValue(overview.currentPrice), "临时压过自动排程 · 过红线", true)}>调整(立即执行)</button>}</div>
-            <div className="p-row"><div className="txt"><div className="k">做市波动幅度</div><div className="s">单次更新 的最大波动(曲线未覆盖时备用)</div></div><span className="v">{volatility}</span>{allowed("finprod_g3_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => adj("volatilityPct", "做市波动幅度", rawValue(overview.overrides.volatilityPct), "范围 0-20%")}>调整(立即执行)</button>}</div>
-            <div className="p-row"><div className="txt"><div className="k">价格来源</div><div className="s">内部做市源 / 外部价格来源 · 当前接口未提供价格来源频率或健康状态</div></div><span className="v">{oracle === "内部做市" ? "内部定价" : oracle === "外部喂价" ? "外部价格来源" : "价格来源待核实"}</span>{isSuper && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
+            <div className="p-row"><div className="txt"><div className="k">直接改当前价格（应急）</div><div className="s">临时改价，要求覆盖率不低于红线</div></div><span className="v">{price}</span>{allowed("finprod_g3_override_price_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => adj("currentPrice", "当前价格", rawValue(overview.currentPrice), "临时改价，下次自动切换时恢复计划值", true)}>调整</button>}</div>
+            <div className="p-row"><div className="txt"><div className="k">波动幅度</div><div className="s">每次更新价格最多波动多少（计划里没设时使用）</div></div><span className="v">{volatility}</span>{allowed("finprod_g3_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => adj("volatilityPct", "波动幅度", rawValue(overview.overrides.volatilityPct), "可设 0–20%")}>调整</button>}</div>
+            <div className="p-row"><div className="txt"><div className="k">价格来源</div><div className="s">内部定价或外部价格来源</div></div><span className="v">{oracle === "内部做市" ? "内部定价" : oracle === "外部喂价" ? "外部价格来源" : "价格来源未知"}</span>{isSuper && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
               action: "切换价格来源",
-              detail: <>内部做市源 / 外部价格来源切换。基础设施操作,角色权限 细分前由超级管理员代理执行门槛:超级管理员。</>,
+              detail: <>在内部定价和外部价格来源之间切换。只有超级管理员可以操作。</>,
               edit: { kind: "select", current: oracle, options: ["内部做市", "外部喂价"], optionLabels: { "内部做市": "内部定价", "外部喂价": "外部价格来源" }, disallowCurrent: true },
               run: async (reason, value) => {
                 if (!value) return;
                 await mutate("override:oracle", () => updateG3Override("oracle", value, oracle, reason, OPERATOR()), "价格来源已立即切换");
               },
-            })}>切换源(立即执行)</button>}</div>
-            <div className="p-row"><div className="txt"><div className="k">偏离告警阈值</div><div className="s">现价与价格来源偏离超此即告警</div></div><span className="v">{deviation}</span>{allowed("finprod_g3_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => adj("deviationPct", "偏离告警阈值", rawValue(overview.overrides.deviationPct), "范围 0-50%")}>调整(立即执行)</button>}</div>
-            <div className="p-row"><div className="txt"><div className="k">初始成本价</div><div className="s">用户端 盈亏 卡的基准价(<span className="mono">盈亏 = 持有数量 ×（现价 − 初始成本价）</span>)· 仅作计算基准,不参与曲线</div></div><span className="v">{costBasis}</span>{allowed("finprod_g3_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => adj("costBasis", "初始成本价调整", rawValue(overview.overrides.costBasis), "仅作 盈亏 基准展示,不影响曲线或兑换报价")}>调整(立即执行)</button>}</div>
+            })}>切换</button>}</div>
+            <div className="p-row"><div className="txt"><div className="k">偏离告警阈值</div><div className="s">当前价格和外部价格相差超过这个比例就告警</div></div><span className="v">{deviation}</span>{allowed("finprod_g3_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => adj("deviationPct", "偏离告警阈值", rawValue(overview.overrides.deviationPct), "可设 0–50%")}>调整</button>}</div>
+            <div className="p-row"><div className="txt"><div className="k">初始成本价</div><div className="s">App 盈亏卡片的计算基准（<span className="mono">盈亏 = 持有数量 ×（现价 − 初始成本价）</span>），不影响价格</div></div><span className="v">{costBasis}</span>{allowed("finprod_g3_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => adj("costBasis", "初始成本价", rawValue(overview.overrides.costBasis), "只用于 App 显示盈亏，不影响价格和兑换")}>调整</button>}</div>
           </div>
         </section>
       </div>
 
-      <p className="f-foot"><b>价格 100% 服务端驱动</b>:运营配的是一周关键帧曲线,服务器定时任务按配置时间推进当日生效帧、把目标价写进现价配置;客户端价格线来自真实接口历史点。UVT 现价是<b>兑换(G2)报价和复投(G7)定价的单一源</b>,下游取服务端现价、不接客户端价;现价变动即时影响备付金里 UVT 计价负债的折算。改<b>目标价 / 上行概率</b>是放大流出,红线核验以<b>周峰值价</b>重估全部 UVT 计价应付负债后再判。引擎暂停 = 冻结现价 + 停自动推进,是紧急开关矩阵(J1)的生效面。</p>
+      <p className="f-foot">运营设置的是一周价格计划，系统每天按时切换到当天的目标价。UVT 价格是<b>兑换和复投的唯一价格</b>，价格一变，平台的 UVT 应付款也跟着变。调高<b>目标价 / 上涨概率</b>会让平台多付钱，系统按<b>本周最高价</b>检查覆盖率。暂停价格变化 = 价格停在当前值，「紧急停用开关」也能触发。</p>
     </>
   );
 }

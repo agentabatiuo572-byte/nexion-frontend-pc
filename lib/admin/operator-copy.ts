@@ -18,7 +18,7 @@ export function operatorCopyText(value: string): string {
     .replace(/H1 Phase/g, "H1 运营阶段")
     .replace(/节奏 \/ admin/g, "运营阶段与后台操作")
     .replace(/Model A 购前抵扣封顶/g, "购前抵扣设上限")
-    .replace(/\(server only\)/g, "（仅服务端可见）")
+    .replace(/\(server only\)/g, "（不公开）")
     .replace(/quest 配置 key/g, "任务配置项")
     .replace(/system kind/g, "系统通知类型")
     .replace(/\bTTL\b/g, "保留时长")

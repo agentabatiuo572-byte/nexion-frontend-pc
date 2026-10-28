@@ -31,7 +31,7 @@ export function parseEventRegions(text: string) {
 }
 export function eventRuleMissingLabel(key: string): string {
   if (key.startsWith("localized.")) return `活动${key.includes(".zh.") ? "中文" : key.includes(".vi.") ? "越南语" : "三语"}文案（在活动内容区维护）`;
-  const voucherIssue = ({ voucherId: "有效且已启用的百分比券（请在H7核对）", voucherDiscount: "优惠券须减免20%（八折），无最低消费及优惠封顶", voucherScope: "优惠券须面向全部用户、全硬件", voucherClaimSurface: "优惠券须允许商城领取", voucherPeriod: "优惠券有效期须覆盖活动全期", voucherStacking: "关联优惠券及促销政策均需允许叠加" } as Record<string, string>)[key];
+  const voucherIssue = ({ voucherId: "有效且已启用的百分比券（请在「代金券」核对）", voucherDiscount: "优惠券须减免20%（八折），无最低消费及优惠封顶", voucherScope: "优惠券须面向全部用户、全硬件", voucherClaimSurface: "优惠券须允许商城领取", voucherPeriod: "优惠券有效期须覆盖活动全期", voucherStacking: "关联优惠券及促销政策均需允许叠加" } as Record<string, string>)[key];
   if (voucherIssue) return voucherIssue;
   const field = Object.values(EVENT_RULE_FIELDS).flat().find(field => field.key === key);
   return field?.label ?? ({ startsAt: "开始时间", endsAt: "结束时间", locales: "三语活动文案", promotion: "关联促销活动", allocation: "奖池分配规则", metric: "区域排名统计项目", "regions.countries": "参赛国家范围", regions: "参赛地区", wheel: "转盘奖池", rules: "玩法配置", stakingAppVisible: "请先在G1展示App质押功能" } as Record<string, string>)[key] ?? "参与条件或奖励配置";

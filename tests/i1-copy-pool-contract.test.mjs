@@ -88,8 +88,8 @@ test("新增和编辑使用结构化受众，并序列化 P 范围、语言和�
   assert.match(designKit, /phaseMax/);
   assert.match(designKit, /language/);
   assert.match(designKit, /registrationDaysGt/);
-  assert.match(designKit, /最低 P 阶段/);
-  assert.match(designKit, /最高 P 阶段/);
+  assert.match(designKit, /最低阶段/);
+  assert.match(designKit, /最高阶段/);
   assert.match(designKit, /注册天数/);
 });
 
@@ -127,8 +127,8 @@ test("新增和编辑文案使用结构化受众条件，而不是扁平受众�
   const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
   const designKit = read("app/components/domain-views/design-kit.tsx");
 
-  assert.match(designKit, /select\("phaseMin", "最低 P 阶段"/);
-  assert.match(designKit, /select\("phaseMax", "最高 P 阶段"/);
+  assert.match(designKit, /select\("phaseMin", "最低阶段"/);
+  assert.match(designKit, /select\("phaseMax", "最高阶段"/);
   assert.match(designKit, /select\("language", "语言"/);
   assert.match(designKit, /input\("registrationDaysGt", "注册时长大于\(天\)"/);
   assert.match(component, /phaseMin: form\?\.phaseMin/);
@@ -242,9 +242,8 @@ test("版本列表只允许删除草稿版本，并通过独立 DELETE 接口保
   assert.match(client, /deleteI1CopyDraft: \(copyKey: string, version: string, revision: number, reason: string\) => Promise<void>/);
   assert.match(client, /deleteI1CopyDraft: \(copyKey, version, revision, reason\) => apiRequest\(`\/copy-ab\/copies\/\$\{encodeURIComponent\(copyKey\)\}\/versions\/\$\{encodeURIComponent\(version\)\}`, \{ method: "DELETE", body: JSON\.stringify\(withReason\(\{ expectedVersion: version, expectedRevision: revision \}, reason\)\) \}\)/);
   assert.match(component, /const deleteDraftVersion = \(copyKey: string, version: string, revision: number\) => openActionConfirm\(/);
-  assert.match(component, /只有草稿版本可以删除/);
-  assert.match(component, /删除后不可恢复/);
-  assert.match(component, /保留审计/);
+  assert.match(component, /只有草稿可以删除/);
+  assert.match(component, /删除后不能恢复，操作记录会保留/);
   assert.match(component, /actions\.deleteI1CopyDraft\(copyKey, version, revision, reason\)/);
   assert.match(component, /deleteInFlightRef\.current/);
   assert.match(component, /canWrite && status === "draft" && copy\?\.draftVersion === row\.v[\s\S]*?className="l-btn sm dgr"[\s\S]*?删除草稿/);
@@ -273,7 +272,7 @@ test("I1 写按钮按后端 authority 隐藏，并明确展示继承受众覆盖
   assert.match(component, /content_i1_copy_create/);
   assert.match(component, /canWrite &&/);
   assert.match(component, /预计覆盖/);
-  assert.match(component, /实验启动快照/);
+  assert.match(component, /启动时预计覆盖/);
 });
 
 test("I1 A/B 实验从同一文案的非草稿版本创建并走真实接口", () => {
@@ -303,11 +302,11 @@ test("I1 A/B 实验受众只读继承并明确显示预计覆盖人数", () => {
   const designKit = read("app/components/domain-views/design-kit.tsx");
 
   assert.match(component, /estimatedAudience/);
-  assert.match(designKit, /继承的文案受众/);
-  assert.match(designKit, /只读继承/);
+  assert.match(designKit, /测试对象（沿用文案设置）/);
+  assert.match(designKit, /沿用文案设置/);
   assert.match(designKit, /预计覆盖/);
   assert.match(designKit, /待估算/);
-  assert.match(designKit, /所选版本的继承受众必须完全一致/);
+  assert.match(designKit, /所选版本的投放对象须一致/);
   assert.match(designKit, /copyExperimentAudienceSignature/);
   assert.doesNotMatch(designKit, /copy-experiment-create[\s\S]{0,2500}copy-audience-builder/);
 });
@@ -325,7 +324,7 @@ test("scheduled 实验通过勾选确认和 8-200 字理由后启动", () => {
   assert.match(client, /\/copy-ab\/experiments\/\$\{encodeURIComponent\(experimentId\)\}\/start/);
   assert.match(client, /startI1Experiment:[\s\S]{0,280}JSON\.stringify\(withReason\(\{\}, reason\)\)/);
   assert.match(designKit, /data-business-form="copy-experiment-start"/);
-  assert.match(designKit, /我已确认实验版本、分流比例和继承受众/);
+  assert.match(designKit, /我已确认测试版本、分流比例和测试对象/);
   assert.match(designKit, /activeBusinessForm\?\.kind === "copy-experiment-create"/);
   assert.match(designKit, /activeBusinessForm\?\.kind === "copy-experiment-start"/);
   assert.match(designKit, /activeBusinessForm\?\.kind === "copy-experiment-discard"/);
@@ -344,8 +343,8 @@ test("I1 创建实验排除已有活动实验的文案，并限制备注长度",
   assert.match(component, /EXPERIMENT_COPY_CANDIDATES\.length === 0/);
   assert.match(component, /符合条件的文案已有待启动或进行中的实验/);
   assert.match(designKit, /state\.note\?\.length > 255/);
-  assert.match(designKit, /实验备注不能超过 255 字/);
-  assert.match(designKit, /textArea\("note", "实验备注（可选）", "实验假设、观察指标或停止条件", 2, 255\)/);
+  assert.match(designKit, /测试备注不能超过 255 字/);
+  assert.match(designKit, /textArea\("note", "测试备注（可选）", "想验证什么、看哪个指标", 2, 255\)/);
 });
 
 test("I1 没有可用文案时创建实验按钮仍可点击并解释阻塞原因", () => {
@@ -407,8 +406,8 @@ test("I1 转化仅统计服务端已支付或完成订单事件，PRD 使用独�
   const retiredPrd = read("docs/PRD/Nexion_运营控制后台PRD_v4.md");
   const prd = read("docs/changes/2026-08-07-prd-v4-merged-draft.md");
 
-  assert.match(component, /仅统计服务端已支付\/已完成订单事件/);
-  assert.match(component, /点击、加购、客户端自报不计入转化/);
+  assert.match(component, /只算已付款或已完成的订单/);
+  assert.match(component, /点击、加购不算/);
   assert.match(errors, /COPY_EXPERIMENT_NOT_DISCARDABLE:/);
   assert.match(errors, /CONTENT_EXPERIMENT_CONVERSION_INVALID:/);
   assert.match(retiredPrd, /本文件已退役/);

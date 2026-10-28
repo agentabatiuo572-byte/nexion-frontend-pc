@@ -107,7 +107,7 @@ function dayLimitHint(key: string) {
 }
 
 function trialProductReason(reason: string | undefined) {
-  return formatAdminApiError(reason, "请到 E1 核对商品状态");
+  return formatAdminApiError(reason, "请到「商品管理与上架条件」核对商品状态");
 }
 
 function ParamRow({
@@ -149,15 +149,15 @@ function ParamRow({
   const detail = (
     <>
       <b>{operatorCopyText(param.name)}</b> · 当前 <span className="mono">{displayCurrent}</span>。
-      {param.serverOnly ? "该值仅服务端可见,接口返回仍保持遮罩。" : ""}
-      {isInteger ? `请输入整数(${dayLimitHint(param.key)})。` : ""}
-      {isProduct ? "目标商品只能从 E1 中明确开启“允许试用”的在售实物商品 选择；试用价格始终读取 E1 当前售价。" : ""}
+      {param.serverOnly ? "这个值只在系统内部使用，页面不显示真实值。" : ""}
+      {isInteger ? `请输入整数（${dayLimitHint(param.key)}）。` : ""}
+      {isProduct ? "只能选「商品管理与上架条件」里开启了「允许试用」的在售实物商品；试用价格就是该商品的当前售价。" : ""}
       {isProduct && currentProduct && !currentProduct.selectable ? (
         <span style={{ display: "block", marginTop: 5, color: "var(--danger)", fontWeight: 700 }}>
           当前目标商品不可用 · 库存 {currentProduct.stock ?? 0} · {trialProductReason(currentProduct.unavailableReason)}
         </span>
       ) : null}
-      {param.section === "newonly" ? "只影响新开试用。" : "实时生效。"}
+      {param.section === "newonly" ? "只影响新开始的试用。" : "马上生效。"}
     </>
   );
 
@@ -175,7 +175,7 @@ function ParamRow({
     }
     await updateH2TrialParam(param.key, normalizedValue, reason);
     await onChanged();
-    toast(`H2 ${operatorCopyText(param.name)} 已更新`);
+    toast(`${operatorCopyText(param.name)} 已更新`);
   };
 
   if (param.key === "autoChargeAtEnd") return null;
@@ -185,21 +185,21 @@ function ParamRow({
       <div className="k">
         {operatorCopyText(param.name)}
         {param.sub && <small>{operatorCopyText(param.sub)}</small>}
-        {isActualQuota && param.businessDate && param.businessDate !== "UNKNOWN" && <small>业务日期 {param.businessDate}</small>}
+        {isActualQuota && param.businessDate && param.businessDate !== "UNKNOWN" && <small>日期 {param.businessDate}</small>}
       </div>
       <span className="v">{displayCurrent}</span>
-      {isProduct ? <a className="l-btn sm" href={`/devices/pricing?sku=${encodeURIComponent(current)}`}>去 E1 查看商品</a> : null}
+      {isProduct ? <a className="l-btn sm" href={`/devices/pricing?sku=${encodeURIComponent(current)}`}>去商品管理查看</a> : null}
       <button
         className={`l-btn sm${param.hot ? " mc" : ""}`}
         disabled={readOnly || !canWrite}
-        aria-label={readOnly ? `只读 · ${operatorCopyText(param.name)}` : canWrite ? `调整 ${operatorCopyText(param.name)}` : `无写权限 · ${operatorCopyText(param.name)}`}
-        title={readOnly ? (operatorCopyText(param.sub || "") || (param.key === "phaseOpen" ? "由 H1 当前阶段派发，只读"
-          : param.key === "trialPriceUSD" ? "由 E1 目标商品售价同步，只读" : "服务端只读参数")) : undefined}
+        aria-label={readOnly ? `只读 · ${operatorCopyText(param.name)}` : canWrite ? `调整 ${operatorCopyText(param.name)}` : `没有修改权限 · ${operatorCopyText(param.name)}`}
+        title={readOnly ? (operatorCopyText(param.sub || "") || (param.key === "phaseOpen" ? "跟随「运营阶段设置」，只能查看"
+          : param.key === "trialPriceUSD" ? "跟随商品售价，只能查看" : "只能查看")) : undefined}
         onClick={() => {
           if (readOnly || !canWrite) return;
           if (param.hot || isInteger || isProduct) {
             openActionConfirm({
-              action: `${param.hot ? "试用敏感参数" : "试用参数"} · ${operatorCopyText(param.name)}`,
+              action: `调整试用参数 · ${operatorCopyText(param.name)}`,
               detail,
               amplifies: false,
               edit: {
@@ -215,17 +215,17 @@ function ParamRow({
             return;
           }
           openConfirm({
-            action: `试用参数 · ${operatorCopyText(param.name)}`,
+            action: `调整试用参数 · ${operatorCopyText(param.name)}`,
             detail,
-            chips: [["写后端配置", "ready"], ["审计留痕", "done"]],
+            chips: [["记入操作记录", "done"]],
             reason: true,
-            input: { label: "目标新值", placeholder: `当前 ${displayCurrent}`, options },
+            input: { label: "新值", placeholder: `当前 ${displayCurrent}`, options },
             okLabel: "确认修改",
             run: submit,
           });
         }}
       >
-        {readOnly ? "只读" : canWrite ? "调整" : "无写权限"}
+        {readOnly ? "只读" : canWrite ? "调整" : "无权限"}
       </button>
     </div>
   );
@@ -273,7 +273,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     if (!canCancel || !knownTrialOwner(session)) return;
     openActionConfirm({
       action: `强制取消试用 · ${session.sid}`,
-      detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。会话会转为 <b>已取消</b> 终态,由后端防重复提交处理并审计。</>,
+      detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。这次试用会结束并标记为 <b>已取消</b>，重复提交不会重复处理。</>,
       amplifies: false,
       run: (reason) => {
         const def = findHighOp("h2_trial_cancel")!;
@@ -299,7 +299,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     if (!canCharge || !knownTrialOwner(session)) return;
     openActionConfirm({
       action: `强制触发扣款 · ${session.sid}`,
-      detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。后端会按当前试用结算规则重算,系统根据同一请求编号防止重复处理。直接动 USDT 台账,入 A2 等待有权限的管理员执行。</>,
+      detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。按当前试用规则重新计算并扣款，重复提交不会重复扣。会直接动用户的 USDT，需要有权限的管理员在「操作记录与审批」批准。</>,
       amplifies: true,
       run: (reason) => {
         const def = findHighOp("h2_trial_charge")!;
@@ -307,7 +307,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           action: `强制触发扣款 · ${session.sid}`,
           obj: `${trialOwnerLabel(session)} · ${session.sid}`,
           before: session.state,
-          after: "redeemed(扣款)",
+          after: "已扣款",
           type: "fund",
           amplifies: true,
           gate: { roles: [] },
@@ -323,29 +323,29 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
 
   const openPushKill = () => {
     openConfirm({
-      action: "试用邀请自动弹出 急停",
-      detail: <>立即关闭试用自动推送,后端写入配置并返回最新读模型。</>,
-      chips: [["实时急停", "ready"], ["后端留痕", "done"]],
+      action: "紧急关闭试用邀请弹窗",
+      detail: <>马上停止给用户自动弹出试用邀请。</>,
+      chips: [["马上生效", "ready"], ["记入操作记录", "done"]],
       reason: true,
-      okLabel: "确认急停",
+      okLabel: "确认关闭",
       run: async (reason) => {
         await killH2AutoPush(reason);
         await reload();
-        toast("试用邀请自动弹出 已急停");
+        toast("试用邀请弹窗已关闭");
       },
     });
   };
 
   if (loading) {
-    return <section className="l-card"><div className="l-b">H2 数据加载中...</div></section>;
+    return <section className="l-card"><div className="l-b">试用数据加载中…</div></section>;
   }
 
   if (error || !model) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">H2 数据加载失败</span></div>
+        <div className="l-h"><span className="ttl">试用数据加载失败</span></div>
         <div className="l-b">
-          <div style={{ marginBottom: 12 }}>{error ?? "未收到本页数据，请重试；持续失败时请联系值班人员。"}</div>
+          <div style={{ marginBottom: 12 }}>{error ?? "没有收到数据，请重试；一直失败请联系值班同事。"}</div>
           <button className="l-btn sm mc" onClick={() => void reload()}>重试</button>
         </div>
       </section>
@@ -356,7 +356,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     <>
       <div className="f-stats">
         <div className="f-stat">
-          <div className="k">进行中会话</div>
+          <div className="k">进行中的试用</div>
           <div className="v">{Number(stats.activeSessions ?? 0).toLocaleString()}</div>
           <div className="sub">试用中 {Number(stats.inTrial ?? 0).toLocaleString()} · 宽限 {Number(stats.inGrace ?? 0).toLocaleString()} · 延长 {Number(stats.inExtended ?? 0).toLocaleString()}</div>
         </div>
@@ -368,25 +368,25 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         <div className="f-stat cyan">
           <div className="k">抵扣上限</div>
           <div className="v">${text(model.params.find((param) => param.key === "trialOffsetCapUSD")?.cur)}</div>
-          <div className="sub">试用抵扣额由服务器计算</div>
+          <div className="sub">每笔抵扣额由系统自动计算</div>
         </div>
         <div className="f-stat danger">
-          <div className="k">循环养号阻断(K2)</div>
+          <div className="k">拦截反复薅试用</div>
           <div className="v">{text(stats.k2Blocked, "0")} 人</div>
-          <div className="sub">资格由服务器关闭</div>
+          <div className="sub">这些用户已不能再试用</div>
         </div>
       </div>
 
       <div className="htint cyan" style={{ marginBottom: 16 }}>
-        <b>试用收益抵扣规则</b> · 抵扣规则由后端返回: <span>抵扣额取试用累计收益与抵扣上限中的较小值</span>。
-        扣款失败概率等 仅供服务器内部计算的数据不会以真实值下发。
+        <b>试用收益怎么抵扣</b> · <span>抵扣额 = 试用期累计收益和抵扣上限中较小的那个</span>。
+        扣款失败概率等内部数据不在页面显示。
       </div>
 
       <div className="two-col">
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">试用参数 · 只影响新开</span>
-            <span className="sub">· 从服务器配置 读取</span>
+            <span className="ttl">试用参数 · 只影响新开始的试用</span>
+            <span className="sub">· 已在进行的试用不受影响</span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             {newOnlyParams.map((param) => (
@@ -397,11 +397,11 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
 
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">试用参数 · 实时生效</span>
-            <span className="sub">· 每次结算读最新后端配置</span>
+            <span className="ttl">试用参数 · 马上生效</span>
+            <span className="sub">· 每次结算都用最新设置</span>
             <div className="r">
               <button className="l-btn sm mc" onClick={openPushKill} disabled={!!model.autoPushKilled || !canWrite}>
-                {model.autoPushKilled ? "试用邀请自动弹出 已急停" : "试用邀请自动弹出 急停"}
+                {model.autoPushKilled ? "试用邀请弹窗已关闭" : "紧急关闭试用邀请弹窗"}
               </button>
             </div>
           </div>
@@ -416,7 +416,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">开始试用前的四项检查</span>
-          <span className="sub">· 由服务器统一判断</span>
+          <span className="sub">· 全部通过才能开始试用</span>
         </div>
         <div className="l-b" style={{ paddingTop: 4 }}>
           {model.gates.map((gate) => (
@@ -434,7 +434,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">试用流程的七种状态</span>
-          <span className="sub">· 状态由服务器更新</span>
+          <span className="sub">· 状态由系统自动更新</span>
         </div>
         <div className="l-b" style={{ paddingTop: 4 }}>
           <div className="sm-strip">
@@ -449,8 +449,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">会话监控</span>
-          <span className="sub">· 后端返回会话状态 · 处置接口防重复提交</span>
+          <span className="ttl">试用记录</span>
+          <span className="sub">· 可以强制取消或扣款</span>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 620 }}>
@@ -458,9 +458,9 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
               <tr>
                 <th>账户</th>
                 <th>状态</th>
-                <th className="num">影子累计</th>
-                <th>试用业务号</th>
-                <th style={{ textAlign: "right" }}>强制介入</th>
+                <th className="num">试用期累计收益</th>
+                <th>试用编号</th>
+                <th style={{ textAlign: "right" }}>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -493,7 +493,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
               {model.sessions.length === 0 && (
                 <tr>
                   <td colSpan={5} style={{ textAlign: "center", padding: 24 }}>
-                    暂无试用会话；用户完成绑卡并开始试用后将在此出现
+                    暂无试用记录；用户绑卡并开始试用后会显示在这里
                   </td>
                 </tr>
               )}
@@ -501,7 +501,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           </table>
         </div>
         <DataListPager
-          label="试用会话"
+          label="试用记录"
           page={model.sessionsPage?.pageNum ?? sessionPage}
           pageSize={model.sessionsPage?.pageSize ?? sessionPageSize}
           total={model.sessionsPage?.total ?? model.sessions.length}
@@ -511,7 +511,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       </section>
 
       <div className="htint warn">
-        <b>以服务器记录为准</b> · H2 参数、会话处置和自动推送急停均由服务端执行；当前没有会话时保持明确空态，不生成示例用户。
+        试用参数、强制取消/扣款、关闭邀请弹窗都会记入操作记录。
       </div>
 
     </>

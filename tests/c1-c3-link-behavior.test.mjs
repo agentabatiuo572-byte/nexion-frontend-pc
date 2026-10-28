@@ -14,7 +14,7 @@ let section;
 function findSection(node) {
   if (ts.isJsxElement(node) && node.openingElement.tagName.getText(ast) === "Section"
     && node.openingElement.attributes.properties.some(attr => ts.isJsxAttribute(attr)
-      && attr.name.text === "title" && attr.initializer?.text === "关联处置入口")) section = node;
+      && attr.name.text === "title" && attr.initializer?.text === "去处理")) section = node;
   ts.forEachChild(node, findSection);
 }
 findSection(page); assert.ok(section, "actual C1 related-action links");

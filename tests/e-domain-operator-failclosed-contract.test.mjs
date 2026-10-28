@@ -34,7 +34,7 @@ test("E3 and E5 redact internal fixture identifiers while preserving business-re
   assert.equal(operatorProductLabel("device-trial-standard"), "验收设备规格");
   assert.equal(operatorTaskLabel("TIO-001"), "已关联任务");
   assert.equal(operatorE3OperationLabel("DEV-TI-TRADEIN"), "升级置换处理");
-  assert.equal(operatorE3Reason("fixture TRIAL-DEV-001 ACTIVE"), "处理备注已记录；请在审计轨迹核验。");
+  assert.equal(operatorE3Reason("fixture TRIAL-DEV-001 ACTIVE"), "处理备注已记录，可在操作记录里查看。");
   assert.match(e3Client, /operatorE3OperationLabel/);
   assert.match(e3Client, /operatorE3Reason/);
   assert.match(e5Tab, /operatorDeviceIdentifier\(d\.serial\)/);
@@ -53,7 +53,7 @@ test("E6 treats a placeholder or non-package URL as unconfigured and offers no u
   assert.match(backend, /isApprovedComputeDownloadUrl/);
   assert.match(backend, /sanitizeComputeDownloadUrl/);
   assert.match(backend, /baidu\.com/);
-  assert.match(e6Tab, /未配置 · 当前无用户下载入口/);
+  assert.match(e6Tab, /未填写 · App 不显示下载入口/);
   assert.doesNotMatch(e6Tab, /服务端已保存真实地址/);
   assert.doesNotMatch(e6Tab, /<a[^>]+href=\{downloadUrl\}/);
 });

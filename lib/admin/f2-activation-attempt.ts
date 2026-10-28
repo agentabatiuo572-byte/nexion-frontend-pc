@@ -25,7 +25,7 @@ export async function submitF2Activation(
     attempts.remember(slot, mint(), { spec });
     original = pendingF2Activation()!;
   }
-  if (original.expiresAt <= Date.now()) throw new Error("原申请已超出服务端支持的安全重试期限，请到 A2 核对原工单；不能重新申请。");
+  if (original.expiresAt <= Date.now()) throw new Error("原申请已超过可以重试的时间，请到「操作记录与审批」核对；不能重新申请。");
   if (!attempts.isDurablyStored(slot, original.commandKey)) throw new Error("当前会话无法保留原申请，请恢复浏览器会话存储后重试。");
   try {
     await send({ ...original.spec, commandKey: original.commandKey });

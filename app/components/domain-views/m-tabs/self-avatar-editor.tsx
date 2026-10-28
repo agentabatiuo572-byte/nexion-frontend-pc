@@ -28,7 +28,7 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot }: { name: s
     avatarDrafts.forget(avatarDraftFingerprint(record.actorId, "self", "self"));
     setPending(null); setSnapshot(current); setAssetId(undefined); setBlocking(false); setOpen(false); onChanged(current);
     ctx.toast("本人头像已读回确认。");
-    void ctx.refreshContent().catch(() => ctx.toast("本人头像已保存，客服名单暂未同步，请重新读取名单。"));
+    void ctx.refreshContent().catch(() => ctx.toast("头像已保存，客服名单还没同步，请刷新名单。"));
   };
   async function read(hydrate = false) {
     if (!actorId || (!hydrate && busy)) return;
@@ -80,7 +80,7 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot }: { name: s
         const input = { assetId: selected, expectedVersion, reason };
         selfAvatarCommands.remember(fingerprint, commandKey, { actorId, input });
         const record = selfAvatarCommands.list().find(row => row.commandKey === commandKey);
-        if (!record || !selfAvatarCommands.isDurablyStored(fingerprint, commandKey)) { setError("原头像命令暂不能持久保存，尚未提交；请恢复浏览器会话存储后重试。"); return false; }
+        if (!record || !selfAvatarCommands.isDurablyStored(fingerprint, commandKey)) { setError("浏览器无法保存这次操作的记录，还没提交；请检查浏览器设置后重试。"); return false; }
         setPending(record); return submit(record);
       },
     });
@@ -90,7 +90,7 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot }: { name: s
       <div className="account-avatar-controls"><p>仅具备有效客服或主管资格的本人可更换，不需要账号管理权限。</p>
       {busy && <p role="status">正在核对头像资料…</p>}{error && <p role="alert">{error}</p>}
       {!allowed && !busy && <button type="button" className="l-btn" onClick={() => void read()}>重新核对本人资格与头像</button>}
-      {pending && <div role="status"><p>原头像保存结果待确认，原图片、版本、理由和命令号已保留。请先查询原结果。</p><button type="button" className="l-btn" disabled={busy} onClick={() => void read()}>查询原保存结果</button><button type="button" className="l-btn" disabled={busy || !allowed || Date.now() >= pending.expiresAt} onClick={() => void submit(pending)}>使用原资料与命令重试</button>{Date.now() >= pending.expiresAt && <p>原命令已超过安全重试窗口，只能查询结果；请联系管理员核对。</p>}</div>}
+      {pending && <div role="status"><p>上次保存头像的结果还没确认，请先查询结果。</p><button type="button" className="l-btn" disabled={busy} onClick={() => void read()}>查询保存结果</button><button type="button" className="l-btn" disabled={busy || !allowed || Date.now() >= pending.expiresAt} onClick={() => void submit(pending)}>使用原资料与命令重试</button>{Date.now() >= pending.expiresAt && <p>原命令已超过安全重试窗口，只能查询结果；请联系管理员核对。</p>}</div>}
       {snapshot && <><fieldset disabled={!allowed || busy || Boolean(pending) || blocking} style={{ border: 0, padding: 0 }}><legend>默认头像分类</legend><HDSelect value={gender} options={AVATAR_GENDER_OPTIONS} onChange={value => setGender(value as AvatarGender)} /><p>只用于下一次明确准备默认头像；不会修改本人资料中的性别或立即换图。</p></fieldset>
         <AccountAvatarPicker key={`${actorId}:${epoch}`} scope="self" name={name} gender={gender} allowDefault currentPath={snapshot.assetId ? "/api/admin/platform/accounts/self/avatar/content" : undefined} currentVersion={snapshot.avatarVersion} disabled={!allowed || busy || Boolean(pending)} onChange={setAssetId} onBlocking={setBlocking} />
       </>}

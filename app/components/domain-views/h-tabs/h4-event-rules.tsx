@@ -48,7 +48,7 @@ export default function H4EventRules({ ctx }: { ctx: HCtx }) {
         try {
           const saved = await updateEventRule(base.eventCode, next, base.revision, reason);
           if (own !== generation.current) return;
-          setRows(current => current.map(row => row.eventCode === saved.eventCode ? saved : row)); choose(saved); ctx.toast("活动规则已保存并回读");
+          setRows(current => current.map(row => row.eventCode === saved.eventCode ? saved : row)); choose(saved); ctx.toast("活动规则已保存");
         } catch (cause) { if (own === generation.current) setError(displayAdminError(cause)); throw cause; }
         finally { if (own === generation.current) setSaving(false); }
       },
@@ -59,7 +59,7 @@ export default function H4EventRules({ ctx }: { ctx: HCtx }) {
     <div className="l-h"><span className="ttl">活动玩法与开放设置</span><span className="sub">先保存完整配置，再开启活动</span><div className="r"><button className="l-btn sm" disabled={loading || saving || !!draft} onClick={() => void load()}>刷新</button></div></div>
     <div className="l-b">
       {error && <p role="alert">{error}</p>}
-      {loading ? <p role="status">正在读取活动规则…</p> : <>
+      {loading ? <p role="status">正在加载活动规则…</p> : <>
         {!rows.length && !error && <p>暂无活动规则。</p>}
         {!rows.length && error && <button className="l-btn" onClick={() => void load()}>重试</button>}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{rows.map(row => <button className="l-btn sm" key={row.eventCode} disabled={saving || !!selected} aria-pressed={selected?.eventCode === row.eventCode} onClick={() => choose(row)}>{EVENT_KIND_LABELS[row.kind] ?? "活动"} · {row.eventCode} · {row.enabled ? "已开启" : "已关闭"}</button>)}</div>

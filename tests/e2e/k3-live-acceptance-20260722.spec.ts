@@ -34,7 +34,7 @@ test("K3 审计员可见只读、写入口禁用且后端直调拒绝", async ({
   await loginAndOpenK3(page, AUDITOR_USERNAME);
   await expect(page.getByText("四道关 · 规则配置", { exact: true })).toBeVisible();
   await expect(page.getByText("规则总表", { exact: true })).toBeVisible();
-  await expect(page.getByText("命中日志", { exact: true })).toBeVisible();
+  await expect(page.getByText("触发记录", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /沙盒模拟/ })).toBeDisabled();
   await expect(page.getByRole("button", { name: "+ 新建规则", exact: true })).toBeDisabled();
   const denied = await page.request.post("/api/admin/risk/withdraw-rules/dry-runs", {

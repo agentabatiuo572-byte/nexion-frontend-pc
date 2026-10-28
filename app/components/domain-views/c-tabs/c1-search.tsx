@@ -100,7 +100,7 @@ function formatUsd(value: unknown) {
 
 function statusMeta(value: unknown) {
   const status = text(value, "").toUpperCase();
-  return STATUS_META[status] ?? ["状态待核实", "dim"];
+  return STATUS_META[status] ?? ["状态未知", "dim"];
 }
 
 function countText(value: unknown) {
@@ -231,7 +231,7 @@ export function C1Search({
       })
       .catch((err) => {
         if (!alive) return;
-        setError(`C1 统计加载失败 · ${errorMessage(err)}`);
+        setError(`统计加载失败 · ${errorMessage(err)}`);
       });
     return () => {
       alive = false;
@@ -264,7 +264,7 @@ export function C1Search({
       .catch((err) => {
         if (!alive) return;
         setPageData({ ...EMPTY_PAGE, pageNum: page, pageSize });
-        setError(`C1 用户列表加载失败 · ${errorMessage(err)}`);
+        setError(`用户列表加载失败 · ${errorMessage(err)}`);
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -320,7 +320,7 @@ export function C1Search({
   const openProfile = (profile: User360Profile) => {
     const key = profileKey(profile);
     if (!key) {
-      ctx.toast("该用户缺少用户编码,无法打开详情");
+      ctx.toast("该用户没有用户编码，无法打开详情");
       return;
     }
     const returnTo = `${window.location.pathname}${window.location.search}`;
@@ -332,20 +332,20 @@ export function C1Search({
   return (
     <>
       <div className="f-stats">
-        <div className="f-stat"><div className="k">注册用户</div><div className="v">{countText(stats?.totalUsers ?? pageData.total)}</div><div className="sub">真实账户表分页查询</div></div>
-        {canReadRisk && <div className="f-stat warn"><div className="k">高风险档(K4)</div><div className="v">{stats?.riskAuthorityAvailable ? countText(stats.highRisk) : "不可用"}</div><div className="sub">{stats?.highRiskThreshold == null ? "K4 权威阈值不可用" : `K4 动态阈值 ≥ ${stats.highRiskThreshold}`}</div></div>}
-        <div className="f-stat cyan"><div className="k">冻结/受限账户</div><div className="v">{countText(stats?.frozen)}</div><div className="sub">冻结、禁用、受限合计</div></div>
+        <div className="f-stat"><div className="k">注册用户</div><div className="v">{countText(stats?.totalUsers ?? pageData.total)}</div><div className="sub">全部注册账户</div></div>
+        {canReadRisk && <div className="f-stat warn"><div className="k">高风险用户</div><div className="v">{stats?.riskAuthorityAvailable ? countText(stats.highRisk) : "暂无数据"}</div><div className="sub">{stats?.highRiskThreshold == null ? "高风险分数线未获取到" : `风险分 ≥ ${stats.highRiskThreshold}`}</div></div>}
+        <div className="f-stat cyan"><div className="k">冻结/受限账户</div><div className="v">{countText(stats?.frozen)}</div><div className="sub">冻结、禁用、受限的合计</div></div>
       </div>
 
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">查找用户与查看资料</span>
-          <span className="sub">· 生命周期等级 L0-L5 / 团队等级 V0-V12 · 手机号仅显示部分数字</span>
+          <span className="sub">· 手机号只显示部分数字</span>
           <div className="r">
             <div className="search-bar">
               <input
                 aria-label="检索用户"
-                placeholder="用户编码 / 昵称 / 推荐码 / 脱敏手机号 / 手机号摘要"
+                placeholder="用户编码 / 昵称 / 推荐码 / 手机号"
                 value={q}
                 onChange={(e) => changeKeyword(e.target.value)}
               />
@@ -359,15 +359,15 @@ export function C1Search({
           </div>
         </div>
         <div className="ui-form-grid" style={{ borderBottom: "1px solid var(--line)", padding: "12px 16px" }}>
-          <label>生命周期<select className="ui-control" aria-label="生命周期" value={filters.tier} onChange={(event) => changeFilter("tier", event.target.value)}>
-            <option value="">全部生命周期</option>{[0, 1, 2, 3, 4, 5].map((value) => <option key={value} value={`L${value}`}>L{value}</option>)}
+          <label>用户分层<select className="ui-control" aria-label="用户分层" value={filters.tier} onChange={(event) => changeFilter("tier", event.target.value)}>
+            <option value="">全部分层</option>{[0, 1, 2, 3, 4, 5].map((value) => <option key={value} value={`L${value}`}>L{value}</option>)}
           </select></label>
           <label>团队等级<select className="ui-control" aria-label="团队等级" value={filters.vRank} onChange={(event) => changeFilter("vRank", event.target.value)}>
             <option value="">全部团队等级</option>{Array.from({ length: 13 }, (_, value) => <option key={value} value={`V${value}`}>V{value}</option>)}
           </select></label>
           <label>推荐码<input className="ui-control" aria-label="推荐码" placeholder="推荐码" value={filters.referralCode} onChange={(event) => changeFilter("referralCode", event.target.value)} /></label>
-          {canReadRisk && <label>风险档<select className="ui-control" aria-label="风险档" value={filters.riskBand} onChange={(event) => changeFilter("riskBand", event.target.value)}>
-            <option value="">全部风险档</option><option value="LOW">低风险</option><option value="MEDIUM">中风险</option><option value="HIGH">高风险</option>
+          {canReadRisk && <label>风险等级<select className="ui-control" aria-label="风险等级" value={filters.riskBand} onChange={(event) => changeFilter("riskBand", event.target.value)}>
+            <option value="">全部风险等级</option><option value="LOW">低风险</option><option value="MEDIUM">中风险</option><option value="HIGH">高风险</option>
           </select></label>}
           <label>累计充值下限<input className="ui-control" aria-label="累计充值下限" type="number" min="0" placeholder="累计充值 ≥" value={filters.depositMin} onChange={(event) => changeFilter("depositMin", event.target.value)} /></label>
           <label>累计充值上限<input className="ui-control" aria-label="累计充值上限" type="number" min="0" placeholder="累计充值 ≤" value={filters.depositMax} onChange={(event) => changeFilter("depositMax", event.target.value)} /></label>
@@ -375,13 +375,13 @@ export function C1Search({
           <label>USDT 余额上限<input className="ui-control" aria-label="USDT 余额上限" type="number" min="0" placeholder="USDT ≤" value={filters.usdtMax} onChange={(event) => changeFilter("usdtMax", event.target.value)} /></label>
           <label>UVT 余额下限<input className="ui-control" aria-label="UVT 余额下限" type="number" min="0" placeholder="UVT ≥" value={filters.nexMin} onChange={(event) => changeFilter("nexMin", event.target.value)} /></label>
           <label>UVT 余额上限<input className="ui-control" aria-label="UVT 余额上限" type="number" min="0" placeholder="UVT ≤" value={filters.nexMax} onChange={(event) => changeFilter("nexMax", event.target.value)} /></label>
-          <label>加入日期起<input className="ui-control" aria-label="加入日期起" type="date" value={filters.joinedFrom} onChange={(event) => changeFilter("joinedFrom", event.target.value)} /></label>
-          <label>加入日期止<input className="ui-control" aria-label="加入日期止" type="date" value={filters.joinedTo} onChange={(event) => changeFilter("joinedTo", event.target.value)} /></label>
+          <label>注册日期起<input className="ui-control" aria-label="注册日期起" type="date" value={filters.joinedFrom} onChange={(event) => changeFilter("joinedFrom", event.target.value)} /></label>
+          <label>注册日期止<input className="ui-control" aria-label="注册日期止" type="date" value={filters.joinedTo} onChange={(event) => changeFilter("joinedTo", event.target.value)} /></label>
         </div>
         {error && <div className="ctint warn" style={{ margin: 12 }}>{error}</div>}
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 1000 }}>
-            <thead><tr><th>用户编码</th><th>昵称</th><th>生命周期</th><th>团队等级</th><th className="num">设备</th><th>风险分</th><th className="num">USDT余额</th><th>状态</th></tr></thead>
+            <thead><tr><th>用户编码</th><th>昵称</th><th>用户分层</th><th>团队等级</th><th className="num">设备</th><th>风险分</th><th className="num">USDT余额</th><th>状态</th></tr></thead>
             <tbody>
               {rows.map((u) => {
                 const [statusLabel, statusTone] = statusMeta(u.status);
@@ -411,23 +411,23 @@ export function C1Search({
                     <td><span className="bdg dim">{text(u.userLevel)}</span></td>
                     <td><span className="bdg dim">{text(u.vRank)}</span></td>
                     <td className="num mono">{text(u.deviceCount)} / {text(u.activeDeviceCount)}</td>
-                    <td><span className={`bdg ${riskTone(u.riskBand)}`}>{canReadRisk ? text(u.riskScore, "不可用") : "无权限"}</span></td>
+                    <td><span className={`bdg ${riskTone(u.riskBand)}`}>{canReadRisk ? text(u.riskScore, "—") : "无权限"}</span></td>
                     <td className="num mono" style={{ fontWeight: 600 }}>{formatUsd(u.walletUsdt)}</td>
                     <td><span className={`bdg ${statusTone}`}>{statusLabel}</span></td>
                   </tr>
                 );
               })}
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--ink-4)", padding: "22px 12px" }}>无匹配用户 · 换个检索词或分组试试</td></tr>
+                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--ink-4)", padding: "22px 12px" }}>没有找到用户，换个关键词或筛选条件试试</td></tr>
               )}
               {loading && (
-                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--ink-4)", padding: "22px 12px" }}>正在加载用户列表...</td></tr>
+                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--ink-4)", padding: "22px 12px" }}>正在加载…</td></tr>
               )}
             </tbody>
           </table>
         </div>
         <DataListPager
-          label="C1 用户列表"
+          label="用户列表"
           page={page}
           pageSize={pageSize}
           total={pageData.total}
@@ -440,10 +440,10 @@ export function C1Search({
           pageSizeOptions={[20, 50, 100, 200]}
         />
         <div className="l-b" style={{ paddingTop: 12 }}>
-          <div className="ctint"><b>检索结果只读</b> · 本页只定位与展示;冻结/解冻去 C2,资产调整去 C3,安全处置去 C5,各自走操作确认。</div>
+          <div className="ctint"><b>这里只能查看</b> · 冻结或解冻去「账户操作」，调余额去「余额与资产调整」，安全问题去「安全与登录设备」。</div>
         </div>
       </section>
-      <p className="f-foot">手机号、地址等敏感字段在检索、展示、导出时仅显示隐藏隐私信息后的内容；名单导出按当前筛选条件生成文件并保留操作记录。生命周期 L0-L5 / 团队等级 V0-V12 是内部分类标准，用户端不会看到。</p>
+      <p className="f-foot">手机号、地址等隐私信息在查看和导出时都会隐藏。用户分层 L0–L5 和团队等级 V0–V12 只有后台能看到，用户看不到。</p>
     </>
   );
 }
@@ -458,11 +458,11 @@ export function C1HeaderActions({ ctx, query }: { ctx: CCtx; query: C1ExportQuer
 
   const runExport = useCallback(async (reason: string) => {
     if (!query) {
-      ctx.toast("当前筛选条件无效，已禁止导出；请修正检索条件后重试");
+      ctx.toast("筛选条件有误，请修改后再导出");
       return;
     }
     if (exportingRef.current || Date.now() < exportCooldownUntilRef.current) {
-      ctx.toast("C1 用户名单正在生成,请稍候");
+      ctx.toast("正在生成用户名单，请稍候");
       return;
     }
     exportingRef.current = true;
@@ -472,9 +472,9 @@ export function C1HeaderActions({ ctx, query }: { ctx: CCtx; query: C1ExportQuer
       const file = await exportUserProfilesCsv(query, exportKeyRef.current, reason);
       const fileName = downloadBlob(file.blob, file.fileName);
       exportKeyRef.current = null;
-      ctx.toast(`已下载隐藏隐私信息的用户名单 · ${fileName}`);
+      ctx.toast(`已下载用户名单 · ${fileName}`);
     } catch (err) {
-      ctx.toast(`C1 导出失败 · ${errorMessage(err)}`);
+      ctx.toast(`导出失败 · ${errorMessage(err)}`);
     } finally {
       exportCooldownUntilRef.current = Date.now() + 1_000;
       exportingRef.current = false;
@@ -489,17 +489,17 @@ export function C1HeaderActions({ ctx, query }: { ctx: CCtx; query: C1ExportQuer
       className="f-cta"
       disabled={exporting || !query}
       style={exporting || !query ? { opacity: 0.62, cursor: "not-allowed" } : undefined}
-      title="按当前筛选下载表格，隐藏手机号等隐私信息，并保存筛选条件、导出内容和操作理由"
+      title="按当前筛选导出用户名单，手机号等隐私信息会隐藏"
       onClick={() => ctx.openConfirm({
-        action: "导出用户名单（隐藏隐私信息）",
-        detail: "按当前筛选生成隐藏隐私信息的表格。导出理由、筛选摘要、行数和操作者会写入服务端审计。",
+        action: "导出用户名单",
+        detail: "按当前筛选导出，手机号等隐私信息会隐藏。",
         reason: true,
         okLabel: "确认并导出",
         run: (reason) => runExport(reason),
       })}
     >
       <Download size={14} />
-      {exporting ? "生成中..." : "导出表格（隐藏隐私信息）"}
+      {exporting ? "生成中…" : "导出名单"}
     </button>
   );
 }

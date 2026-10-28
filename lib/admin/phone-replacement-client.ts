@@ -73,7 +73,7 @@ export async function fetchPhoneOperation(input: {
 function verification(raw: unknown): PhoneVerification {
     if (!record(raw) || typeof raw.evidenceRef !== "string" || typeof raw.requestId !== "string" || typeof raw.supportRef !== "string"
         || typeof raw.verifiedBy !== "number" || typeof raw.verifiedAt !== "number")
-        throw new Error("核实回执不完整，请查询原核实记录。");
+        throw new Error("核实结果暂未确认，请查询原核实记录。");
     return raw as unknown as PhoneVerification;
 }
 export interface PendingPhoneCommand extends PendingMutationRecord {
@@ -90,7 +90,7 @@ const pending = createPendingMutationStore<PendingPhoneCommand>({ storageKey: "n
 export function pendingPhoneCommands(owner: number, userId: string) { return pending.list().filter(row => row.owner === owner && row.userId === userId); }
 export function preparePhoneCommand(owner: number, userId: string, type: PhoneCommand, target: string, body: Record<string, unknown>) {
     if (pendingPhoneCommands(owner, userId).length)
-        throw new Error("此账号有结果待核实的操作，请先查询原结果。");
+        throw new Error("这个账号有一个操作结果还没确认，请先查询结果。");
     const key = createA2CommandKey("phone");
     const fingerprint = `${owner}|${userId}|${type}|${key}`;
     pending.remember(fingerprint, key, { owner, userId, type, target, body });
@@ -117,7 +117,7 @@ export async function submitPhoneCommand(row: PendingPhoneCommand): Promise<Phon
             result = row.type === "PHONE_VERIFY" ? verification(data) : parsePhoneReceipt(data);
         }
         catch {
-            throw new PhoneApiError("回执读取不完整，请查询原操作，不要重新提交。", 502, true);
+            throw new PhoneApiError("结果暂未确认，请先查询原操作，不要重新提交。", 502, true);
         }
         if (!("status" in result) || result.status !== "PENDING")
             forgetPhoneCommand(row);

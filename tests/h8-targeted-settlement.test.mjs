@@ -82,7 +82,7 @@ test("invalid input disables targeted settlement and existing batch action stays
     assert.equal(render(input).button("结算指定新人").props.disabled, true);
   }
   const form = render("60723153032");
-  form.button("执行真实结算").props.onClick();
+  form.button("结算邀请奖励").props.onClick();
   await form.confirm().run("existing batch behavior", "2");
   assert.equal(form.proposals[0].command.op, "h8_referral_settlement");
   assert.equal(form.proposals[0].command.params.limit, 2);

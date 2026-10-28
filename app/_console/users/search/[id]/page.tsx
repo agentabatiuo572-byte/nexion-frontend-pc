@@ -291,7 +291,7 @@ function HubSection({
       <Section title={title}>
         {sectionFailed(section) && (
           <div className="ctint warn mb-3 flex flex-wrap items-center justify-between gap-2">
-            <span>此项资料暂时无法读取，请刷新重试。</span>
+            <span>这部分资料加载失败，请刷新重试。</span>
             <button className="btn btn-sec btn-sm" onClick={() => window.location.reload()}>刷新页面重试</button>
           </div>
         )}
@@ -355,7 +355,7 @@ export default function UserDetailPage() {
   const returnTo = supportScope ? conversationNo ? `/service/sessions?conversationNo=${encodeURIComponent(conversationNo)}` : "/service/overview" : requestedReturnTo.startsWith("/users/search") && !requestedReturnTo.startsWith("//")
     ? requestedReturnTo
     : "/users/search";
-  const returnLabel = supportScope ? conversationNo ? "返回原会话" : "返回工作台" : "返回检索";
+  const returnLabel = supportScope ? conversationNo ? "返回原会话" : "返回工作台" : "返回用户列表";
   const readKey = `${adminShellSessionKey(session, authEpoch)}|${supportScope}|${userKey}`;
   const currentReadKey = useRef(readKey), requestGeneration = useRef(0);
   currentReadKey.current = readKey;
@@ -419,7 +419,7 @@ export default function UserDetailPage() {
       const detail = (event as CustomEvent<{ customerId?: string; conversationNo?: string }>).detail ?? {};
       if (detail.customerId && detail.customerId !== userKey || !detail.customerId && detail.conversationNo && detail.conversationNo !== conversationNo) return;
       requestGeneration.current++; setDetail(null); setPaymentMethods(null); setLoading(false);
-      setError("客户资料暂时无法读取。请重新读取资料或返回列表核对。");
+      setError("客户资料加载失败，请重试或返回列表。");
     };
     window.addEventListener("support-scope-invalidated", revoke);
     return () => window.removeEventListener("support-scope-invalidated", revoke);
@@ -438,8 +438,8 @@ export default function UserDetailPage() {
   const hasRiskScore = rawRiskScore !== null && rawRiskScore !== undefined && rawRiskScore !== "";
   const riskScore = asNumber(rawRiskScore);
   const riskBand = riskAuthorityReady
-    ? asText(detail?.risk?.bandLabel, hasRiskScore ? (riskScore >= 70 ? "高风险" : riskScore >= 40 ? "中风险" : "低风险") : "风险评分不可用")
-    : "风险评分不可用";
+    ? asText(detail?.risk?.bandLabel, hasRiskScore ? (riskScore >= 70 ? "高风险" : riskScore >= 40 ? "中风险" : "低风险") : "暂无风险分")
+    : "暂无风险分";
   const nonActive = status !== "ACTIVE" && status !== "UNKNOWN";
   const actionDisabled = !!actionPending || !userId;
 
@@ -499,7 +499,7 @@ export default function UserDetailPage() {
         <Link href={returnTo} prefetch={false} className="inline-flex items-center gap-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
           <ArrowLeft size={14} /> {returnLabel}
         </Link>
-        <p className="mt-6 text-[14px]" style={{ color: "var(--v5-ink-3)" }}>正在加载用户详情...</p>
+        <p className="mt-6 text-[14px]" style={{ color: "var(--v5-ink-3)" }}>正在加载…</p>
       </div>
     );
   }
@@ -511,7 +511,7 @@ export default function UserDetailPage() {
           <ArrowLeft size={14} /> {returnLabel}
         </Link>
         <div className="mt-6 rounded-[12px] p-4" style={{ background: "var(--v5-surface)" }}>
-          <p className="text-[14px]" style={{ color: "var(--v5-danger)" }}>用户详情加载失败: {error}</p>
+          <p className="text-[14px]" style={{ color: "var(--v5-danger)" }}>用户详情加载失败：{error}</p>
           <button type="button" onClick={() => void load()} className="mt-3 inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px]" style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}>
             <RefreshCcw size={14} /> 重试
           </button>
@@ -526,7 +526,7 @@ export default function UserDetailPage() {
         <Link href={returnTo} prefetch={false} className="inline-flex items-center gap-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
           <ArrowLeft size={14} /> {returnLabel}
         </Link>
-        <p className="mt-6 text-[14px]" style={{ color: "var(--v5-ink-3)" }}>暂时无法读取客户资料，请重新加载。</p>
+        <p className="mt-6 text-[14px]" style={{ color: "var(--v5-ink-3)" }}>客户资料加载失败，请重新加载。</p>
       </div>
     );
   }
@@ -566,13 +566,13 @@ export default function UserDetailPage() {
 
       {nonActive && (
         <div className="mt-3 flex items-center gap-2 rounded-[10px] px-3 py-2 text-[12.5px]" style={{ background: "color-mix(in srgb, var(--v5-danger) 12%, transparent)", color: "var(--v5-danger)" }}>
-          <Snowflake size={14} /> 当前账户状态: {statusLabel(status)}。提现与交易能力以服务端状态为准。
+          <Snowflake size={14} /> 账户状态：{statusLabel(status)}，提现和交易可能受限。
         </div>
       )}
 
       <div className="customer-panorama-kpis mt-4">
         {kpis.map((kpi) => (
-          <button key={kpi.label} type="button" onClick={() => scrollToHub(kpi.anchor)} title={`查看该用户 ${kpi.label} 明细`} className="block w-full text-left transition-transform hover:-translate-y-0.5">
+          <button key={kpi.label} type="button" onClick={() => scrollToHub(kpi.anchor)} title={`查看${kpi.label}明细`} className="block w-full text-left transition-transform hover:-translate-y-0.5">
             <KpiStatCard label={kpi.label} value={kpi.value} accent={kpi.accent} />
           </button>
         ))}
@@ -580,7 +580,7 @@ export default function UserDetailPage() {
 
       <div className={`mt-4 grid gap-4 ${!supportScope || detail.sessions ? "lg:grid-cols-2" : ""}`}>
         <div className={supportScope && !detail.sessions ? "customer-panorama-primary" : "flex flex-col gap-4"}>
-          {detail.risk && <Section title="风险评估" tag={supportScope ? undefined : "K4 风险评分"}>
+          {detail.risk && <Section title="风险评估" tag={supportScope ? undefined : "来自风险评分规则"}>
             <div className="flex items-center gap-4">
               <div>
                 {hasRiskScore && <p className="font-mono-tabular text-[32px] leading-none" style={{ color: riskColor(riskScore) }}>{riskScore}</p>}
@@ -593,7 +593,7 @@ export default function UserDetailPage() {
             </div>
           </Section>}
 
-          {detail.financial && <Section title="资产 & 账户" tag={supportScope ? undefined : "C3 余额资产 · 双币 USDT/UVT"}>
+          {detail.financial && <Section title="资产 & 账户" tag={supportScope ? undefined : "USDT / UVT"}>
             <Row label="可提余额 · USDT"><span className="font-mono-tabular">{money(summary.walletUsdt ?? profile.walletUsdt)}</span></Row>
             <Row label="UVT 余额"><span className="font-mono-tabular">{numberLabel(summary.walletNex ?? profile.walletNex)} UVT</span></Row>
             <Row label="累计充值"><span className="font-mono-tabular">{money(summary.depositedUsd)}</span></Row>
@@ -603,7 +603,7 @@ export default function UserDetailPage() {
         </div>
 
         {(!supportScope || detail.sessions) && <div className="flex flex-col gap-4">
-          {!supportScope && <Section title="关联处置入口" tag="C1 只读 · 到业务页处理">
+          {!supportScope && <Section title="去处理" tag="这里只能查看，处理请进入对应页面">
             <div className="flex flex-wrap gap-2">
               {canReadC2 && (
                 <Link
@@ -611,7 +611,7 @@ export default function UserDetailPage() {
                   className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px]"
                   style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}
                 >
-                  <Snowflake size={14} style={{ color: "var(--v5-danger)" }} /> 去 C2 账户操作
+                  <Snowflake size={14} style={{ color: "var(--v5-danger)" }} /> 冻结 / 解冻账户
                 </Link>
               )}
               {canReadC5 && (
@@ -620,16 +620,16 @@ export default function UserDetailPage() {
                   className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px]"
                   style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}
                 >
-                  <ShieldAlert size={14} style={{ color: "var(--v5-warning)" }} /> 去 C5 安全会话
+                  <ShieldAlert size={14} style={{ color: "var(--v5-warning)" }} /> 安全与登录设备
                 </Link>
               )}
               {[
-                canReadC3 && /^[1-9]\d*$/.test(c3UserId) && ["C3 余额与资产", "/users/assets"],
-                canReadC6 && ["C6 注册登录风控", "/users/reg-risk"],
-                canReadD2 && ["D2 提现队列", "/finance/withdrawals"],
-                canReadD4 && ["D4 全账本", "/finance/ledger"],
-                canReadK4 && ["K4 风险评分", "/risk/scoring"],
-                canReadA2 && ["A2 审计中心", "/platform/audit"],
+                canReadC3 && /^[1-9]\d*$/.test(c3UserId) && ["调整余额", "/users/assets"],
+                canReadC6 && ["注册与登录风险", "/users/reg-risk"],
+                canReadD2 && ["待审核提现", "/finance/withdrawals"],
+                canReadD4 && ["资金账单", "/finance/ledger"],
+                canReadK4 && ["风险评分规则", "/risk/scoring"],
+                canReadA2 && ["操作记录", "/platform/audit"],
               ].filter((item): item is [string, string] => Array.isArray(item)).map(([label, pathname]) => (
                 <Link
                   key={pathname}
@@ -643,7 +643,7 @@ export default function UserDetailPage() {
               {canWriteC1 && <ActionButton
                 onClick={() => openActionConfirmReq({
                   action: `重置昵称 · ${displayNickname}`,
-                  detail: "服务器生成不暴露手机号等身份信息的新昵称；原昵称不再用于展示，操作写入审计。",
+                  detail: "系统会生成一个不含手机号等个人信息的新昵称，替换当前昵称。",
                   amplifies: false,
                   run: async (reason) => {
                     if (!userId) return;
@@ -673,19 +673,19 @@ export default function UserDetailPage() {
               </ActionButton>}
             </div>
             <p className="mt-2.5 flex items-center gap-1 text-[11px]" style={{ color: "var(--v5-ink-4)" }}>
-              <ShieldAlert size={12} /> C1 仅保留产品更新日志明确批准的昵称与支付方式操作；其他处置在 C2/C5 完成。{actionPending ? ` 当前执行: ${actionPending}` : ""}
+              <ShieldAlert size={12} /> 这里只能重置昵称和处理支付方式，其他操作请到「账户操作」或「安全与登录设备」。{actionPending ? ` 正在执行：${actionPending}` : ""}
             </p>
           </Section>}
 
-          {detail.sessions && <Section title="安全与登录设备" tag={supportScope ? undefined : "C5 安全会话"}>
+          {detail.sessions && <Section title="安全与登录设备" tag={supportScope ? undefined : "登录和设备"}>
             <div className="customer-panorama-security-kpis mb-2 grid grid-cols-3 gap-2">
-              <KpiStatCard label="活跃会话" value={numberLabel(summary.activeSessionCount)} accent="var(--admin-domain-c)" />
+              <KpiStatCard label="在线设备" value={numberLabel(summary.activeSessionCount)} accent="var(--admin-domain-c)" />
               <KpiStatCard label="两步验证" value={summary.twoFactorEnabled == null ? "-" : summary.twoFactorEnabled ? "开启" : "关闭"} accent="var(--admin-domain-e)" />
               <KpiStatCard label="锁定" value={summary.locked == null ? "-" : summary.locked ? "是" : "否"} accent="var(--v5-warning)" />
             </div>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <TabGroup<SessionStatusFilter>
-                label="会话状态筛选"
+                label="登录状态筛选"
                 value={sessionStatusFilter}
                 items={C1_SESSION_STATUS_FILTERS.map(([value]) => value)}
                 onSelect={setSessionStatusFilter}
@@ -698,7 +698,7 @@ export default function UserDetailPage() {
                 })}
               >{(value) => C1_SESSION_STATUS_FILTERS.find(([v]) => v === value)?.[1] ?? value}</TabGroup>
               <span className="text-[11.5px]" style={{ color: "var(--v5-ink-4)" }}>
-                最近最多50条会话样本 · 筛选后 {filteredSessions.length} 条 · 第 {sessionPage}/{sessionPageCount} 页
+                最近 50 条登录记录 · 筛选后 {filteredSessions.length} 条 · 第 {sessionPage}/{sessionPageCount} 页
               </span>
             </div>
             <DataTable
@@ -707,10 +707,10 @@ export default function UserDetailPage() {
                 { key: "deviceName", label: "设备", render: (value) => platformSessionDeviceText(displayValue(value)) },
                 { key: "clientIpMasked", label: "IP" },
                 { key: "status", label: "状态", render: (value) => <StatusPill label={formatC1SessionStatus(value)} tone={asText(value).toUpperCase() === "ACTIVE" ? "success" : "neutral"} size="sm" /> },
-                { key: "issuedAt", label: "签发", render: formatDate },
-                { key: "expiresAt", label: "过期", render: formatDate },
+                { key: "issuedAt", label: "登录时间", render: formatDate },
+                { key: "expiresAt", label: "过期时间", render: formatDate },
               ]}
-              emptyText={sessionStatusFilter === "ALL" ? "暂无会话" : "当前筛选下没有会话"}
+              emptyText={sessionStatusFilter === "ALL" ? "暂无登录记录" : "当前筛选下没有登录记录"}
             />
             {sessionPageCount > 1 && (
               <div className="mt-2 flex items-center justify-end gap-2">
@@ -730,21 +730,21 @@ export default function UserDetailPage() {
             </label>
             <button type="button" className="inline-flex items-center gap-1 rounded-[8px] px-2.5 py-1.5 text-[12px]" style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-3)" }} onClick={() => void loadPaymentMethods()}><RefreshCcw size={13} /> 刷新支付方式</button>
           </div>
-          {paymentError && <p className="mb-3 rounded-[8px] px-3 py-2 text-[12px]" style={{ color: "var(--v5-danger)", background: "color-mix(in srgb, var(--v5-danger) 10%, transparent)" }}>支付方式读取失败：{paymentError}</p>}
+          {paymentError && <p className="mb-3 rounded-[8px] px-3 py-2 text-[12px]" style={{ color: "var(--v5-danger)", background: "color-mix(in srgb, var(--v5-danger) 10%, transparent)" }}>支付方式加载失败：{paymentError}</p>}
           <div className="grid gap-3 md:grid-cols-2">
             {(paymentMethods?.items ?? []).map((method) => (
               <div key={method.id} className="rounded-[10px] p-3" style={{ background: method.status === "BOUND" ? "var(--v5-surface-2)" : "color-mix(in srgb, var(--v5-surface-2) 70%, var(--v5-ink-4) 30%)", opacity: method.status === "BOUND" ? 1 : 0.68, filter: method.status === "BOUND" ? "none" : "grayscale(0.85)" }}>
                 <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-2"><CreditCard size={17} /><div><p className="text-[13px]" style={{ color: "var(--v5-ink)" }}>{method.brand} ···· {method.last4}</p><p className="text-[11px]" style={{ color: "var(--v5-ink-4)" }}>{method.provider} · {method.expiryLabel || "无到期信息"}</p></div></div><StatusPill label={method.status === "BOUND" ? (method.isDefault ? "已绑定 · 默认" : "已绑定") : "已解绑"} tone={method.status === "BOUND" ? "success" : "neutral"} size="sm" dot={false} /></div>
-                {method.trialGuard && <p className="mt-2 text-[11px]" style={{ color: "var(--v5-warning)" }}>试用扣款占用中 · {method.trialRefId || "关联试用"}，禁止直接解绑</p>}
+                {method.trialGuard && <p className="mt-2 text-[11px]" style={{ color: "var(--v5-warning)" }}>正在用于试用扣款 · {method.trialRefId || "关联试用"}，暂不能解绑</p>}
                 {method.status !== "BOUND" && method.unboundAt && <p className="mt-2 text-[11px]" style={{ color: "var(--v5-ink-4)" }}>解绑时间：{formatDate(method.unboundAt)}</p>}
                 {/* 🔴 业务态已解绑 ≠ 支付商那边真的注销了(2026-08-06 原型对齐 P0):后端返回该状态但此前无渲染点,
                     运营会把「待重试/排队中」误读成彻底解绑,而支付商侧 token 仍有效、仍可能被扣款。
                     只在**未确认注销成功**时显眼提示;已成功(revoked/success/done)不占版面。 */}
                 {method.status !== "BOUND" && !!method.pspRevokeStatus && !/^(revoked|success|succeeded|done|completed)$/i.test(method.pspRevokeStatus) && (
                   <p className="mt-2 rounded-[6px] px-2 py-1 text-[11px]" style={{ color: "var(--v5-warning)", background: "color-mix(in srgb, var(--v5-warning) 12%, transparent)" }}>
-                    UVEL 本地解绑已成功，但支付商撤销{method.pspRevokeStatus === "FAILED" ? "失败" : "处理中"}：该支付方式在支付商仍可能有效，未完成前不可视为彻底解绑。
+                    我们这边已解绑，但支付商那边{method.pspRevokeStatus === "FAILED" ? "撤销失败" : "还在处理"}，这张卡仍可能被扣款，还不算彻底解绑。
                     {method.revokeCommandNo ? ` 命令 ${method.revokeCommandNo}` : ""}{method.revokeAttempts ? ` · 已重试 ${method.revokeAttempts} 次` : ""}
-                    {method.revokeDeadlineAt && new Date(method.revokeDeadlineAt).getTime() < Date.now() ? " · 已超过撤销处理时限，请立即联系主管" : ""}
+                    {method.revokeDeadlineAt && new Date(method.revokeDeadlineAt).getTime() < Date.now() ? " · 已超时，请立即联系主管" : ""}
                     {method.revokeLastError ? ` · ${method.revokeLastError}` : ""}
                   </p>
                 )}
@@ -799,21 +799,21 @@ export default function UserDetailPage() {
             { key: "name", label: "名称", render: (value, row) => catalogSkuBrandText(asText(row.productCode), displayValue(value)) },
             { key: "productTier", label: "规格", render: formatC1DeviceTier },
             { key: "status", label: "状态", render: formatC1DeviceStatus },
-            { key: "runtimeStatus", label: "运行态", render: formatC1RuntimeStatus },
-            { key: "dailyUsdt", label: "配置日产基准 USDT", numeric: true },
-            { key: "dailyNex", label: "配置日产基准 UVT", numeric: true },
+            { key: "runtimeStatus", label: "运行状态", render: formatC1RuntimeStatus },
+            { key: "dailyUsdt", label: "设定日收益 USDT", numeric: true },
+            { key: "dailyNex", label: "设定日收益 UVT", numeric: true },
           ]}
         >
           <Row label="在线 / 活跃">{numberLabel(detail.devices?.onlineCount)} / {numberLabel(detail.devices?.activeCount)}</Row>
-          <Row label="设备配置日产基准（所列记录合计）">{money(detail.devices?.dailyUsdt)} · {numberLabel(detail.devices?.dailyNex)} UVT</Row>
-          <p className="mt-2 text-[12px]" style={{ color: "var(--v5-ink-4)" }}>含已停用历史记录的配置值，不代表今日实际收益或钱包入账</p>
+          <Row label="设定日收益合计（含已停用设备）">{money(detail.devices?.dailyUsdt)} · {numberLabel(detail.devices?.dailyNex)} UVT</Row>
+          <p className="mt-2 text-[12px]" style={{ color: "var(--v5-ink-4)" }}>这是设定值，不是今天实际到账的收益</p>
           {canWriteC2 && asArray(detail.devices?.records).map((device) => {
             const deviceId = asNumber(device.id);
             const deviceStatus = asText(device.status).toUpperCase();
             if (!deviceId || ["RECYCLED", "DEACTIVATED", "INACTIVE", "RETIRED"].includes(deviceStatus)) return null;
             const execute = (operation: "replace" | "recycle") => openActionConfirmReq({
               action: operation === "replace" ? `设备置换 · ${asText(device.instanceNo)}` : `设备回收 · ${asText(device.instanceNo)}`,
-              detail: "该动作会变更当前用户的设备生命周期，并写入设备域审计与业务单号。",
+              detail: "会更改该用户这台设备的状态。",
               amplifies: false,
               run: async (reason) => {
                 if (!userId) return false;
@@ -828,7 +828,7 @@ export default function UserDetailPage() {
                   return true;
                 } catch (err) {
                   if (!(err instanceof UsersOutcomeUnknownError)) c1UserCommands.forget(slot);
-                  toast.error("设备生命周期操作失败", errorMessage(err));
+                  toast.error("设备操作失败", errorMessage(err));
                   return false;
                 } finally {
                   setActionPending(null);
@@ -846,15 +846,15 @@ export default function UserDetailPage() {
             { key: "bizNo", label: "业务单号" },
             { key: "bizType", label: "类型", render: formatD4Subtype },
             { key: "asset", label: "币种", render: (value) => nexGridBrandText(asText(value)) },
-            { key: "direction", label: "方向", render: (value) => ({IN:"收入",OUT:"支出"} as Record<string,string>)[asText(value).toUpperCase()] ?? "方向待核实" },
+            { key: "direction", label: "方向", render: (value) => ({IN:"收入",OUT:"支出"} as Record<string,string>)[asText(value).toUpperCase()] ?? "—" },
             { key: "amount", label: "金额", numeric: true },
             { key: "balanceAfter", label: "余额", numeric: true },
             { key: "createdAt", label: "时间", render: formatDate },
           ]}
         >
           <Row label="收益合计">{money(detail.earnings?.totalUsdt)} · {numberLabel(detail.earnings?.totalNex)} UVT</Row>
-          <Row label="设备配置日产基准（所列记录合计）">{money(detail.earnings?.deviceDailyUsdt)} · {numberLabel(detail.earnings?.deviceDailyNex)} UVT</Row>
-          <p className="mt-2 text-[12px]" style={{ color: "var(--v5-ink-4)" }}>含已停用历史记录的配置值，不代表今日实际收益或钱包入账</p>
+          <Row label="设定日收益合计（含已停用设备）">{money(detail.earnings?.deviceDailyUsdt)} · {numberLabel(detail.earnings?.deviceDailyNex)} UVT</Row>
+          <p className="mt-2 text-[12px]" style={{ color: "var(--v5-ink-4)" }}>这是设定值，不是今天实际到账的收益</p>
           <DataListPager label="收益明细" page={earningsPager.page} pageSize={earningsPager.pageSize} total={earningsPager.total} onPageChange={earningsPager.setPage} onPageSizeChange={earningsPager.setPageSize} />
         </HubSection>
 
@@ -872,7 +872,7 @@ export default function UserDetailPage() {
           ]}
         >
           <Row label="团队规模">{numberLabel(detail.referral?.teamSize)} 人</Row>
-          <Row label="直推人数">{numberLabel(detail.referral?.directCount)} 人</Row>
+          <Row label="直接邀请">{numberLabel(detail.referral?.directCount)} 人</Row>
           <Row label="团队业绩">{money(detail.referral?.teamVolumeUsd)}</Row>
         </HubSection>
 
@@ -902,11 +902,11 @@ export default function UserDetailPage() {
             <Row label="当前等级">{asText(detail.vrank?.currentRank)}</Row>
             <Row label="用户层级">{asText(detail.vrank?.userLevel)}</Row>
             <Row label="团队规模">{numberLabel(detail.vrank?.teamSize)} 人</Row>
-            <Row label="直推人数">{numberLabel(detail.vrank?.directCount)} 人</Row>
+            <Row label="直接邀请">{numberLabel(detail.vrank?.directCount)} 人</Row>
             <Row label="团队业绩">{money(detail.vrank?.teamVolumeUsd)}</Row>
           </Section>}
 
-          {detail.account && <Section title="账户合规">
+          {detail.account && <Section title="账户状态">
             <Row label="用户编码">{userNo}</Row>
             <Row label="账户状态"><StatusPill label={statusLabel(status)} tone={statusTone(status)} size="sm" /></Row>
             <Row label="两步验证">{summary.twoFactorEnabled == null ? "-" : summary.twoFactorEnabled ? "已开启" : "未开启"}</Row>
@@ -915,17 +915,17 @@ export default function UserDetailPage() {
         </div>
 
         <HubSection
-          title="财务轨迹"
+          title="兑换记录"
           section={detail.financial ? { records: asArray(detail.financial.exchangeRows), sourceStatus: asText(detail.financial.sourceStatus, "READY") } : undefined}
           columns={[
             { key: "bizNo", label: "业务单号" },
             { key: "bizType", label: "类型", render: formatD4Subtype },
             { key: "asset", label: "币种", render: (value) => nexGridBrandText(asText(value)) },
-            { key: "direction", label: "方向", render: (value) => ({IN:"收入",OUT:"支出"} as Record<string,string>)[asText(value).toUpperCase()] ?? "方向待核实" },
+            { key: "direction", label: "方向", render: (value) => ({IN:"收入",OUT:"支出"} as Record<string,string>)[asText(value).toUpperCase()] ?? "—" },
             { key: "amount", label: "金额", numeric: true },
             { key: "createdAt", label: "时间", render: formatDate },
           ]}
-          emptyText="暂无兑换/转换账单"
+          emptyText="暂无兑换记录"
         >
           <Row label="钱包 USDT">{money((detail.financial?.wallet as JsonRecord | undefined)?.usdt)}</Row>
           <Row label="钱包 UVT">{numberLabel((detail.financial?.wallet as JsonRecord | undefined)?.nex)} UVT</Row>
@@ -939,7 +939,7 @@ export default function UserDetailPage() {
             { key: "notificationId", label: "通知编号", render: value => {
               const id = Number(value);
               return canReadNotificationEvidence && Number.isSafeInteger(id) && id > 0
-                ? <button type="button" onClick={() => setNotificationEvidence({ userKey, authEpoch, id })}>查看证据 · {id}</button>
+                ? <button type="button" onClick={() => setNotificationEvidence({ userKey, authEpoch, id })}>查看详情 · {id}</button>
                 : displayValue(value);
             } },
             { key: "title", label: "标题", render: (value) => nexGridBrandText(displayValue(value)) },
@@ -972,7 +972,7 @@ export default function UserDetailPage() {
       </div>
 
       {detail.audit && <div className="mt-4">
-        <Section title="审计时间线" tag={supportScope ? undefined : "A2 全程留痕"}>
+        <Section title="后台操作记录">
           <AuditTimeline entries={auditEntries} />
         </Section>
       </div>}

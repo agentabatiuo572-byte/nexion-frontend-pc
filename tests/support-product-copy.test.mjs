@@ -37,7 +37,7 @@ test("support diagnostic mappings explain outcomes and recovery without internal
   for (const code of ["SUPPORT_CONTRACT_MALFORMED", "SUPPORT_DECIMAL_INVALID", "M3_TIMEOUT_POLICY_NOT_CONFIGURED", "M3_CONVERSATION_SNAPSHOT_UNSTABLE", "M3_CONVERSATION_SNAPSHOT_SUPERSEDED", "M3_CONVERSATION_DETAIL_INVALID", "M3_CONVERSATION_PAGE_MALFORMED", "M3_CONVERSATION_PAGE_INCOMPLETE"]) {
     const copy = formatAdminApiError(code, "");
     assert.doesNotMatch(copy, /后端|服务端|接口|初始化|迁移|本地默认值|快照|补拉|推测(?:值|金额)|分页读取|格式异常/);
-    assert.match(copy, /重试|刷新|重新连接|重新读取|联系/);
+    assert.match(copy, /重试|刷新|重新连接|重新加载|联系/);
   }
   const decimalCopy = formatAdminApiError("SUPPORT_DECIMAL_INVALID", "");
   assert.match(decimalCopy, /金额.*无法确认/);

@@ -164,7 +164,7 @@ function normalizeTone(value: string | null | undefined): A3SystemHealth["tone"]
 function normalizeGateUp(row: BackendA3KillSwitch) {
   if (typeof row.up === "boolean") return row.up;
   const status = row.status?.trim().toLowerCase();
-  return status === "enabled" || status === "on" || status === "true" || status === "空列表 · 无封锁";
+  return status === "enabled" || status === "on" || status === "true" || status === "空列表 · 无封锁" || status === "没有限制";
 }
 
 function normalizeFeature(row: BackendA3FeatureFlag): A3FeatureFlag {

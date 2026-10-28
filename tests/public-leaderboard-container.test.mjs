@@ -196,7 +196,7 @@ test("revocation with unchanged authEpoch cancels requests and clears rows, deta
 });
 test("page 409 clears old version and retry reads first page without expectedVersion", async () => {
   const h = harness(); h.pages[0].resolve(page()); await h.flush(); h.board().page.onChange(2); h.commit(); assert.equal(h.pages.at(-1).query.expectedVersion, VERSION); assert.equal(h.pages.at(-1).query.pageNum, 2);
-  h.pages.at(-1).reject({ status: 409 }); await h.flush(); assert.equal(h.board().rows.length, 0); assert.match(h.board().statusMessage, /重新读取第一页/); h.board().onRetry(); h.commit(); assert.equal(h.pages.at(-1).query.pageNum, 1); assert.equal(h.pages.at(-1).query.expectedVersion, undefined); h.unmount();
+  h.pages.at(-1).reject({ status: 409 }); await h.flush(); assert.equal(h.board().rows.length, 0); assert.match(h.board().statusMessage, /从第一页重新加载/); h.board().onRetry(); h.commit(); assert.equal(h.pages.at(-1).query.pageNum, 1); assert.equal(h.pages.at(-1).query.expectedVersion, undefined); h.unmount();
 });
 test("search and locate use whole-board self page, clear keyword and keep exact version", async () => {
   const h = harness(); h.pages[0].resolve(page()); await h.flush(); h.setKeyword("重名客服"); h.search(); assert.equal(h.pages.at(-1).query.keyword, "重名客服"); assert.equal(h.pages.at(-1).query.pageNum, 1); h.pages.at(-1).resolve(page("17", { matched: 1 })); await h.flush();

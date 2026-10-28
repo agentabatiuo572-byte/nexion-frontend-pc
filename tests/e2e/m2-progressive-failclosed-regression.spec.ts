@@ -140,7 +140,7 @@ async function heldRequestFailsClosed(
 }
 
 async function assertM2FailedClosed(page: Page, timeout: number) {
-  await expect(page.getByText(/工单数据暂时无法同步/)).toBeVisible({ timeout });
+  await expect(page.getByText(/工单数据同步失败/)).toBeVisible({ timeout });
   await expect(page.locator('[data-proof="support-ticket-create"]')).toHaveCount(0);
   await expect(page.locator('[data-proof="support-ticket-reply-save"]')).toHaveCount(0);
 }

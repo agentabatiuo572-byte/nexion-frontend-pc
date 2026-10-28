@@ -131,7 +131,7 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
             </button>
             {logoutError && (
               <p className="px-3 py-1.5 text-[11px]" role="alert" style={{ color: "var(--v5-danger)" }}>
-                {logoutError}；当前登录凭据已保留。
+                {logoutError}；你仍处于登录状态。
               </p>
             )}
           </div>
@@ -163,7 +163,7 @@ function CoveragePill({ enabled }: { enabled: boolean }) {
     <Link
       href="/overview/dual-ledger"
       prefetch={false}
-      title={unavailable ? "兑付覆盖率暂不可用 · 查看资金与应付款" : "兑付覆盖率 = 储备 ÷ 应付负债 · 点击进双账本"}
+      title={unavailable ? "兑付覆盖率暂不可用，点击查看资金总览" : "兑付覆盖率 = 可用储备 ÷ 应付款，点击查看资金总览"}
       aria-label={`兑付覆盖率：${statusLabel}，查看资金与应付款`}
       className="admin-topbar-coverage inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-[9px] px-3 py-1.5 text-[12px] transition-opacity hover:opacity-90"
       style={{ background: `color-mix(in srgb, ${zoneVar} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${zoneVar} 35%, transparent)` }}
@@ -234,7 +234,7 @@ function SupportInboxPill({ pending }: { pending: number }) {
         {unread > 0 && <span className="admin-topbar-support-count font-mono-tabular inline-flex items-center justify-center rounded-full px-1.5 text-[10.5px] font-semibold" style={{ ...badge, background: "var(--admin-domain-m)" }}>{unread}</span>}
       </Link>
       {pending > 0 && (
-        <Link href="/service/overview" prefetch={false} title="工作台 · 待办客户（待回复、首次联系、待维护）" aria-label={`${pending} 位待办客户`} className="hidden md:inline-flex items-center gap-1 hover:opacity-90" style={{ color: "var(--v5-ink-3)" }}>
+        <Link href="/service/overview" prefetch={false} title="待办客户：待回复、待首次联系、待维护" aria-label={`${pending} 位待办客户`} className="hidden md:inline-flex items-center gap-1 hover:opacity-90" style={{ color: "var(--v5-ink-3)" }}>
           待办 <span className="font-mono-tabular">{pending}</span>
         </Link>
       )}

@@ -127,7 +127,7 @@ test("I1-I6 401/404/500/超时/畸形 200 均失败关闭并恢复真实数据",
 });
 
 async function expectFailureClosed(page: Page, moduleId: string, malformed: boolean) {
-  await expect(page.getByText("I 域数据加载失败", { exact: false })).toBeVisible();
+  await expect(page.getByText("内容数据加载失败", { exact: false })).toBeVisible();
   const detail = malformed
     ? `${moduleId} 返回数据格式异常，请刷新重试`
     : `${moduleId} 数据加载失败，请刷新重试`;
@@ -141,7 +141,7 @@ async function expectFailureClosed(page: Page, moduleId: string, malformed: bool
 
 async function recover(page: Page, recoveredText: string) {
   await page.getByRole("button", { name: "重新加载", exact: true }).click();
-  await expect(page.getByText("I 域数据加载失败", { exact: false })).toHaveCount(0, { timeout: 20_000 });
+  await expect(page.getByText("内容数据加载失败", { exact: false })).toHaveCount(0, { timeout: 20_000 });
   await expect(page.getByText(recoveredText, { exact: false }).first()).toBeVisible({ timeout: 20_000 });
 }
 

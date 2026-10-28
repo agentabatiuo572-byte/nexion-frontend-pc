@@ -52,7 +52,7 @@ test("actual A1 action refuses both session edits even if a stale backend report
   const fixture = loadAction();
   for (const key of ["session_idle", "session_abs"]) fixture.run({ key, sourceKey: "session", locked: false, current: "8", min: 4, max: 12 });
   assert.equal(fixture.confirmation(), undefined); assert.equal(fixture.commands.length, 0);
-  assert.equal(fixture.messages.length, 2); assert.ok(fixture.messages.every((text) => text.includes("60分钟") && text.includes("无固定登录上限")));
+  assert.equal(fixture.messages.length, 2); assert.ok(fixture.messages.every((text) => text.includes("60 分钟") && text.includes("无固定登录上限")));
 });
 
 test("actual A1 lock-baseline edit still emits its original lock contract and expected value", () => {
@@ -79,19 +79,19 @@ test("A1 explicitly renders disabled idle as 已停用 without a minute unit and
     { key: "session_abs", current: "8", unit: "小时", locked: true, display: "8 小时" },
   ]);
   assert.ok(loadRows(undefined).every((row) => row.current === null && row.display === "—" && row.locked));
-  assert.equal(loadRows("disabled / unlimited", true), "闲置自动登出已停用 / 无固定登录上限");
-  assert.equal(loadRows("disabled / 8h", true), "闲置自动登出已停用 / 8小时登录上限");
-  assert.equal(loadRows("disabled / unknown", true), "闲置自动登出已停用 / 登录上限未确认");
+  assert.equal(loadRows("disabled / unlimited", true), "无操作自动登出已关闭 / 无固定登录上限");
+  assert.equal(loadRows("disabled / 8h", true), "无操作自动登出已关闭 / 最长保持登录 8 小时");
+  assert.equal(loadRows("disabled / unknown", true), "无操作自动登出已关闭 / 最长登录时间未获取到");
 });
 
 test("actual A1 session adjustment copy follows disabled, legacy and unknown server facts without opening an edit", () => {
-  for (const [value, expected] of [["disabled / unlimited", ["闲置自动登出已停用", "无固定登录上限"]],
-    ["30min / 8h", ["30分钟", "8小时登录上限"]], ["unknown", ["闲置策略未确认", "登录上限未确认"]]]) {
+  for (const [value, expected] of [["disabled / unlimited", ["无操作自动登出已关闭", "无固定登录上限"]],
+    ["30min / 8h", ["30 分钟", "最长保持登录 8 小时"]], ["unknown", ["无操作登出时间未获取到", "最长登录时间未获取到"]]]) {
     const fixture = loadAction(value);
     for (const key of ["session_idle", "session_abs"]) fixture.run({ key, sourceKey: "session", locked: false, current: "8" });
     assert.equal(fixture.confirmation(), undefined); assert.equal(fixture.commands.length, 0);
     assert.equal(fixture.messages.length, 2);
     assert.ok(fixture.messages.every((message) => expected.every((text) => message.includes(text))));
-    assert.ok(fixture.messages.every((message) => !message.includes("60分钟")));
+    assert.ok(fixture.messages.every((message) => !message.includes("60 分钟")));
   }
 });

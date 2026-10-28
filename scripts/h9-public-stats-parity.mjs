@@ -246,17 +246,13 @@ if (navSource && !new RegExp(`id:\\s*"H9"[^\\n]*path:\\s*"${H9_PATH}"`).test(nav
 if (registrySource && !registrySource.includes(`"${H9_PATH}"`)) {
   failures.push(`D registry/h.ts 缺 ${H9_PATH} 的 summary(页头口径副标会是空的)`);
 }
-// FOLD 每个值都必须在 RO 表里有键 —— 少一个,切到那个 Tab 就是解构 undefined 直接白屏。
+// The header no longer destructures a per-tab copy table (static header slogans were removed), so only FOLD is checked.
 const foldBlock = viewSource.match(/const FOLD[^=]*=\s*\{([^}]*)\}/);
-const roBlock = viewSource.match(/const RO_COPY[^=]*=\s*\{([\s\S]*?)\n\};/);
-if (!foldBlock || !roBlock) failures.push("D h-view.tsx 的 FOLD / RO_COPY 表解析不到(结构变了?同步更新本哨兵)");
+if (!foldBlock) failures.push("D h-view.tsx 的 FOLD 表解析不到(结构变了?同步更新本哨兵)");
 else {
   const foldValues = [...new Set([...foldBlock[1].matchAll(/:\s*"([^"]+)"/g)].map((m) => m[1]))];
-  const roKeys = [...roBlock[1].matchAll(/^\s*([A-Za-z0-9_]+):/gm)].map((m) => m[1]);
   if (foldValues.length === 0) failures.push("D FOLD 解析出 0 个 Tab(判据失效)");
-  for (const tab of foldValues) {
-    if (!roKeys.includes(tab)) failures.push(`D FOLD 有 ${tab} 但 RO_COPY 没有对应键 —— 切到该 Tab 会解构 undefined(白屏)`);
-  }
+  if (/RO_COPY\[tab\]/.test(viewSource)) failures.push("D h-view.tsx 又按 tab 解构 RO_COPY —— 缺键会白屏");
   if (!foldValues.includes("H9")) failures.push("D FOLD 里没有 H9(路由能进,页面会回落到 H1)");
 }
 if (viewSource && !/\{tab === "H9" && <H9PublicStats/.test(viewSource)) {

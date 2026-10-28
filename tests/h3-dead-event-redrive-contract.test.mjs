@@ -18,8 +18,8 @@ const H3_REDRIVABLE_TYPES = [
 test("H3 DEAD recovery previews one operator-entered event ID and never creates a list or payload editor", () => {
   assert.match(page, /redriveEventId/);
   assert.match(page, /fetchH3DeadOutboxRedrivePreview/);
-  assert.match(page, /核验事件/);
-  assert.match(page, /失败摘要/);
+  assert.match(page, /"查询"/);
+  assert.match(page, /原因 \{redrivePreview\.lastError/);
   assert.doesNotMatch(page, /(?:map|flatMap)\([^)]*redrive.*event/i);
   assert.doesNotMatch(page, /redrive[\s\S]{0,250}(?:payload|source)\s*:/i);
 });
@@ -60,8 +60,8 @@ test("changing the event input clears the live command, while a same-ID preview 
   assert.doesNotMatch(page.slice(previewStart, previewEnd), /redriveCommandRef\.current = null/);
   assert.match(page, /runH3DeadOutboxRedriveCommand\(/);
   assert.match(page, /redriveCommandRef/);
-  assert.match(page, /原 H3 事实重新发送结果未确认/);
-  assert.match(page, /请核对当前状态后再操作/);
+  assert.match(page, /重新发送结果未确认/);
+  assert.match(page, /请先查询当前状态再操作/);
 });
 
 test("one captured confirmation callback retries its uncertain command, rotates changed reason, and keeps identity after close/reopen", async () => {

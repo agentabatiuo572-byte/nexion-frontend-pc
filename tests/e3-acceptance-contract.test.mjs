@@ -42,7 +42,7 @@ test("E3 treats every FEAT-DEV02 trade-in control as required server-canonical d
   ]) {
     assert.match(e3, new RegExp(`REQUIRED_E3_KEYS[\\s\\S]*${key.replaceAll(".", "\\.")}`));
   }
-  assert.match(e3, /E3 配置不完整/);
+  assert.match(e3, /设置加载不完整/);
   assert.match(client, /tradeinLadderCredit5: "E\.tradein\.ladder\.credit5"/);
 });
 
@@ -130,5 +130,5 @@ test("E3 operator copy stays in business language and does not expose implementa
   }
   assert.match(e3, /当前在网设备平均使用时长/);
   assert.match(e3, /升级置换运行记录/);
-  assert.match(e3, /所有步骤一起完成，失败时不会留下半成品/);
+  assert.match(e3, /要么全成功，要么全撤回/);
 });

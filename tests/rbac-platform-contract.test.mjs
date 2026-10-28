@@ -294,7 +294,7 @@ test("RBAC screens keep read-only users non-mutating and preserve retry identity
   assert.match(a7, /await confirmReq\.run\(reason\); setConfirmReq\(null\)/);
   assert.doesNotMatch(a7, /setMode\(null\);\s*setConfirmReq/);
   assert.match(a8, /setResult\(null\)/);
-  assert.match(a8, /权限目录加载失败，当前没有可确认的数据/);
+  assert.match(a8, /权限列表加载失败，请重试/);
 });
 
 test("A7 relationship constraint failures have actionable operator messages", () => {
@@ -305,6 +305,6 @@ test("A7 relationship constraint failures have actionable operator messages", ()
   assert.match(errors, /MENU_NODE_HAS_ACTIVE_CHILDREN:[\s\S]*先停用或迁移启用中的子菜单/);
   assert.match(errors, /MENU_NODE_HAS_ROLE_BINDINGS:[\s\S]*先在角色管理中解除菜单授权/);
   assert.match(errors, /PARENT_MENU_NOT_ACTIVE:[\s\S]*先启用父菜单/);
-  assert.match(a7, /角色菜单授权[\s\S]*角色管理中解除菜单授权/);
+  assert.match(a7, /有角色能看到它[\s\S]*「角色管理」里取消勾选/);
   assert.doesNotMatch(a7, /删除成功后，角色侧栏入口会同步收回/);
 });

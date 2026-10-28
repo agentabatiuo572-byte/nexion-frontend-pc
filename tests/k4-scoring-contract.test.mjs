@@ -16,7 +16,7 @@ test("K4 loads only its own overview and fails closed on loading errors", () => 
   assert.match(component, /if \(ctx\.contentLoading\)/);
   assert.match(component, /if \(ctx\.contentError\)/);
   assert.ok(component.indexOf("if (ctx.contentError)") < component.lastIndexOf("return ("));
-  assert.match(component, /仅重试 K4/);
+  assert.match(component, />重新加载</);
 });
 
 test("K4 rejects malformed authoritative payloads instead of inventing defaults", () => {
@@ -30,7 +30,7 @@ test("K4 rejects malformed authoritative payloads instead of inventing defaults"
 });
 
 test("K4 current copy matches the five non-KYC scoring dimensions", () => {
-  assert.match(component, /五个维度权重合计必须为 100%/);
+  assert.match(component, /五项权重加起来要等于 100%/);
   assert.match(registry, /五个维度按权重/);
   assert.match(errors, /五个评分维度必须完整且权重合计为 100%/);
   assert.doesNotMatch(`${component}\n${registry}\n${errors}`, /六个评分维度|六个维度按权重|六个维度权重|六维阈值|完整六维快照/);
@@ -45,8 +45,8 @@ test("K4 model changes honor A6 draft authority but keep publication superadmin-
   assert.match(client, /\/scoring\/model\/draft/);
   assert.match(client, /\/scoring\/model\/publish/);
   assert.doesNotMatch(component, /updateK4Weights|updateK4Source|updateK4Band|updateK4Escalate/);
-  assert.match(component, /保存模型草稿/);
-  assert.match(component, /发布模型草稿/);
+  assert.match(component, />保存草稿</);
+  assert.match(component, />发布草稿</);
   assert.match(component, /expectedVersion/);
   assert.match(component, /modelDirty/);
   assert.match(component, /请先保存当前修改，再发布最新草稿/);
@@ -54,15 +54,15 @@ test("K4 model changes honor A6 draft authority but keep publication superadmin-
   assert.match(component, /没有待保存的模型修改/);
   assert.match(component, /disabled=\{!modelValid \|\| !mappingsValid \|\| !modelDirty\}/);
   assert.match(component, /modelPublishDiff\(overview\.model, draft, overview\.dimensions\)/);
-  assert.match(component, /发布即触发每批 200 人的重新计算全部用户/);
-  assert.match(component, /影响 D2 路由、B5 点亮与 C1 展示分/);
-  assert.match(component, /子分映射版本快照/);
+  assert.match(component, /分批（每批 200 人）重新计算所有用户的风险分/);
+  assert.match(component, /提现审核、风险提醒和用户资料里的风险分都会跟着变/);
+  assert.match(component, /各项打分细则/);
   assert.match(component, /scoreMappings/);
   assert.match(component, /模型版本历史/);
   assert.match(component, /restoreK4ModelDraft/);
   assert.match(component, /disabled=\{modelDirty\}/);
-  assert.match(component, /完整覆盖当前待发布草稿/);
-  assert.match(component, /恢复全部用户的模型评分/);
+  assert.match(component, /覆盖当前草稿/);
+  assert.match(component, /全部恢复系统评分/);
   assert.match(component, /recomputeK4Scores/);
   assert.match(component, /overview\.model\.version, reason, commandKey/);
   assert.match(client, /expectedModelVersion/);
@@ -102,11 +102,11 @@ test("K4 clears stale user details before lookup and exposes truthful empty stat
   assert.match(component, /if \(sequence !== lookupSequence\.current\) return null/);
   assert.match(component, /暂无风险评分用户/);
   assert.match(component, /暂无风险分布数据/);
-  assert.match(component, /暂无人工覆盖记录/);
+  assert.match(component, /暂无手动改分记录/);
   assert.match(component, /type="number"/);
   assert.match(component, /min=\{0\}/);
   assert.match(component, /max=\{100\}/);
-  assert.match(component, /评分历史回放/);
+  assert.match(component, /历史评分/);
   assert.match(client, /scoreUser\.history/);
 });
 
@@ -122,10 +122,10 @@ test("K4 score mappings fail closed on field bounds and severity order", () => {
 
 test("K4 large-scale recompute is observable and manual full-run fails closed above its transaction cap", () => {
   assert.match(client, /recomputePending/);
-  assert.match(component, /模型重算队列/);
-  assert.match(component, /后台每批 200 人推进/);
+  assert.match(component, /待重新计算/);
+  assert.match(component, /正在分批计算，每批 200 人/);
   assert.match(component, /disabled=\{overview\.totalUsers > 1000\}/);
-  assert.match(component, /超过 1000 人时请通过发布模型触发后台分批重算/);
+  assert.match(component, /超过 1000 人时，请通过发布评分规则自动分批计算/);
   assert.match(component, /ctx\.refreshK4Scoring/);
   assert.match(component, /window\.setTimeout\(poll, 1500\)/);
   assert.match(component, /overview\?\.recomputePending/);
@@ -142,16 +142,16 @@ test("K4 withdrawal escalation alerts are durable, A6-permission scoped and huma
   assert.match(client, /\/scoring\/withdrawal-alerts/);
   assert.match(client, /export async function markK4WithdrawalAlertRead/);
   assert.match(component, /const canReadWithdrawalAlerts = canOverride \|\| isSuperAdmin/);
-  assert.match(component, /需要风险评分人工调整权限或超级管理员权限/);
+  assert.match(component, /风险分太高的提现会在这里提醒/);
   assert.doesNotMatch(component, /RISK_LEAD/);
-  assert.match(component, /K4 提现升级告警/);
-  assert.match(component, /告警逐条发送并保存送达记录/);
+  assert.match(component, /提现升级告警/);
+  assert.match(component, /条未读/);
   assert.match(component, /markK4WithdrawalAlertRead/);
 });
 
 test("K4 band editor describes the backend's exclusive low boundary", () => {
   assert.match(component, /中风险起始分/);
-  assert.match(component, /低风险低于此分数/);
+  assert.match(component, /低于这个分是低风险/);
   assert.match(component, /edit\.autoEscalateScore >= edit\.bandHighMin/);
   assert.match(component, /自动升级线不能低于高风险下限/);
   assert.match(client, /if \(autoEscalateScore < bandHighMin\) invalidK4Response/);

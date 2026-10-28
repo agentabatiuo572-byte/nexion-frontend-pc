@@ -601,7 +601,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "k2_row_freeze",
     domain: "K",
-    action: "联动 K1 批量冻结",
+    action: "冻结关联账户",
     amplifies: false,
     type: "acct",
     gateLabel: "门槛者",
@@ -1212,7 +1212,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "e3_config",
     domain: "E",
-    action: "更新 E3 生命周期配置",
+    action: "更新以旧换新设置",
     amplifies: false,
     type: "param",
     gateLabel: "门槛者",
@@ -1228,7 +1228,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "e3_config_batch",
     domain: "E",
-    action: "批量更新 E3 生命周期配置",
+    action: "批量更新以旧换新设置",
     amplifies: false,
     type: "param",
     gateLabel: "门槛者",
@@ -1506,7 +1506,7 @@ export const HIGH_OPS: HighOpDef[] = [
     action: "调整每周任务地区映射",
     amplifies: true,
     type: "acct",
-    gateLabel: "A2 审批（发起与审批分人）",
+    gateLabel: "需要审批（发起人和审批人不能是同一人）",
     targetType: "config",
     buildCommand: (ctx) => ({ domain: "H", op: "h3_weekly_region_policy", params: {
       expectedRevision: ctx.expectedRevision, mappings: ctx.mappings,

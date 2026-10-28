@@ -151,7 +151,7 @@ export function PublishedContentEditor({ kind }: { kind: Kind }) {
                   <span>变更理由（必填，8–500 字）</span>
                   <input value={reason} maxLength={500} onChange={(event) => setReason(event.target.value)} />
                 </label>
-                <button className={`${styles.button} ${styles.primaryButton}`} type="button" disabled={saving || !hasChanges} onClick={() => void save()}>{saving ? "保存中…" : "保存并回读"}</button>
+                <button className={`${styles.button} ${styles.primaryButton}`} type="button" disabled={saving || !hasChanges} onClick={() => void save()}>{saving ? "保存中…" : "保存"}</button>
               </div>
             )}
           </>

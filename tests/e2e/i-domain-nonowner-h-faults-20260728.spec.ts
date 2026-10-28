@@ -90,7 +90,7 @@ async function openFromSidebar(page: Page, moduleId: string) {
 }
 
 async function expectFailureClosed(page: Page, moduleId: string) {
-  await expect(page.getByText("I 域数据加载失败", { exact: false })).toBeVisible();
+  await expect(page.getByText("内容数据加载失败", { exact: false })).toBeVisible();
   await expect(page.getByText(new RegExp(`${moduleId} 数据加载失败，请刷新重试`))).toBeVisible();
   await expect(page.getByRole("button", { name: "重新加载", exact: true })).toBeVisible();
   await expect(page.locator(".idom table")).toHaveCount(0);
@@ -100,7 +100,7 @@ async function expectFailureClosed(page: Page, moduleId: string) {
 }
 
 async function expectRecovered(page: Page, moduleId: string) {
-  await expect(page.getByText("I 域数据加载失败", { exact: false })).toHaveCount(0, { timeout: 20_000 });
+  await expect(page.getByText("内容数据加载失败", { exact: false })).toHaveCount(0, { timeout: 20_000 });
   await expect(page.getByText(new RegExp(`${moduleId} 数据加载失败，请刷新重试`))).toHaveCount(0);
   await expect(page.locator(".idom table").first()).toBeVisible();
 }

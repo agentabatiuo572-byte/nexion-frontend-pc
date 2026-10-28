@@ -140,7 +140,7 @@ test("L1 export stays disabled during refresh and exports only the latest accept
 test("L1 failed or malformed refresh keeps export disabled; a later successful read restores it", async () => {
   const flow = kpiFlow(); flow.render();
   flow.choose("滚动 30 天"); await settle(); flow.reads[0].reject(new Error("SERVICE_UNAVAILABLE")); await settle(); flow.render();
-  assert.equal(flow.header().props.disabled, true); assert.match(flow.header().props.title, /读取失败/);
+  assert.equal(flow.header().props.disabled, true); assert.match(flow.header().props.title, /加载失败/);
   await flow.header().props.onClick(); assert.equal(flow.exports.length, 0);
   flow.choose("当日"); await settle(); flow.reads[1].resolve({ module: "L1", kpis: [] }); await settle(); flow.render();
   assert.equal(flow.header().props.disabled, true);

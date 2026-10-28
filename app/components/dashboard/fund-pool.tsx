@@ -17,12 +17,12 @@ export function FundPool() {
   const bDomain = useBDomainDashboard();
   const { ledger: LEDGER, liquidity } = bDomain;
   if ((bDomain.loading && !bDomain.hasData) || bDomain.error || !bDomain.hasData) {
-    return <BDomainDataState title="B2 可用资金与应付款" loading={bDomain.loading && !bDomain.error} error={bDomain.error} onRetry={bDomain.reload} />;
+    return <BDomainDataState title="可用资金与应付款" loading={bDomain.loading && !bDomain.error} error={bDomain.error} onRetry={bDomain.reload} />;
   }
   const total = LEDGER.liabilitiesUsd;
   const accounts = [...LEDGER.accounts].sort((a, b) => b.amount - a.amount);
   if (!accounts.length || !liquidity.runway.length) {
-    return <BDomainDataState title="B2 可用资金与应付款" error="B2_REQUIRED_DATA_EMPTY" onRetry={bDomain.reload} />;
+    return <BDomainDataState title="可用资金与应付款" error="应付款数据为空，暂时无法显示" onRetry={bDomain.reload} />;
   }
   const top = accounts[0];
   const net = LEDGER.reserveUsd - total;
@@ -32,10 +32,10 @@ export function FundPool() {
   return (
     <div className="flex h-full flex-col rounded-[16px] p-5" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
       <div className="flex items-center gap-2.5">
-        <span className="font-display text-[14.5px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>可用资金与应付款 · {accounts.length} 类应付负债科目</AutoGloss></span>
-        <span className="ml-auto font-mono-tabular rounded-[7px] px-2 py-0.5 text-[11px]" style={{ background: "var(--v5-surface-3)", color: "var(--v5-ink-3)", border: "1px solid var(--v5-border)" }}><AutoGloss>B2 · 口径同 D3</AutoGloss></span>
+        <span className="font-display text-[14.5px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>应付款构成 · {accounts.length} 类</AutoGloss></span>
+        <span className="ml-auto font-mono-tabular rounded-[7px] px-2 py-0.5 text-[11px]" style={{ background: "var(--v5-surface-3)", color: "var(--v5-ink-3)", border: "1px solid var(--v5-border)" }}><AutoGloss>与资金储备页一致</AutoGloss></span>
       </div>
-      <p className="mt-1 text-[12px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>应付负债合计 </AutoGloss>{fmtUsdCompact(total)}<AutoGloss> · 须由储备覆盖</AutoGloss></p>
+      <p className="mt-1 text-[12px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>应付款合计 </AutoGloss>{fmtUsdCompact(total)}<AutoGloss>，需要储备来付</AutoGloss></p>
 
       {/* 堆叠条 */}
       <div className="mt-3.5 flex overflow-hidden rounded-[7px]" style={{ height: 16, border: "1px solid var(--v5-border)" }}>
@@ -59,21 +59,21 @@ export function FundPool() {
 
       <hr className="my-4 border-0" style={{ height: 1, background: "var(--v5-border)" }} />
       <div className="flex items-center justify-between gap-3 text-[12.5px]">
-        <span style={{ color: "var(--v5-ink-3)" }}>最大科目</span>
+        <span style={{ color: "var(--v5-ink-3)" }}>最大一类</span>
         <span style={{ color: "var(--v5-ink-2)" }}>
           <AutoGloss>{operatorCopyText(top.label)}</AutoGloss> <span className="font-mono-tabular" style={{ color: "var(--v5-ink)" }}>{fmtUsdCompact(top.amount)}</span> · {fmtPct(total > 0 ? r2((top.amount / total) * 100) : 0, 0)}
         </span>
       </div>
       <div className="mt-2 flex items-center justify-between gap-3 text-[12.5px]">
-        <span style={{ color: "var(--v5-ink-3)" }}>储备覆盖缺口</span>
+        <span style={{ color: "var(--v5-ink-3)" }}>储备缺口</span>
         <span className="font-mono-tabular" style={{ color: net < 0 ? "var(--v5-danger)" : "var(--v5-success)", fontWeight: 600 }}>{fmtUsdCompact(net)}</span>
       </div>
       {/* 到期预测(未来 7d)*/}
       <hr className="my-4 border-0" style={{ height: 1, background: "var(--v5-border)" }} />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <span className="text-[13px]" style={{ color: "var(--v5-ink)", fontWeight: 600 }}>到期预测(未来 7d)</span>
+        <span className="text-[13px]" style={{ color: "var(--v5-ink)", fontWeight: 600 }}>未来 7 天到期</span>
         <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: "var(--v5-ink-3)" }}><span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "var(--v5-success)" }} />到期兑付</span>
-        <span className="ml-auto text-[11px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>运营总览中的资金可支撑天数设置</AutoGloss></span>
+        <span className="ml-auto text-[11px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>按运营总览的可支撑天数设置计算</AutoGloss></span>
       </div>
       <div className="mt-3 flex items-end gap-2" style={{ height: 96 }}>
         {runway.map((m) => {
@@ -90,7 +90,7 @@ export function FundPool() {
           );
         })}
       </div>
-      <Link href="/overview/dual-ledger" prefetch={false} className="mt-auto inline-flex pt-3 text-[12.5px]" style={{ color: "var(--v5-brand)" }}>查看 B2 应付款明细 →</Link>
+      <Link href="/overview/dual-ledger" prefetch={false} className="mt-auto inline-flex pt-3 text-[12.5px]" style={{ color: "var(--v5-brand)" }}>查看应付款明细 →</Link>
     </div>
   );
 }

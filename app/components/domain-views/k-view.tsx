@@ -123,7 +123,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab !== "K1" && tab !== "K2" && tab !== "K3" && tab !== "K4" && contentError && (
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">K 域数据加载失败</span>
+            <span className="ttl">风控数据加载失败</span>
             <span className="sub">· {contentError}</span>
             <div className="r"><button className="l-btn" onClick={() => void reloadKRisk().catch(() => undefined)}>重试</button></div>
           </div>

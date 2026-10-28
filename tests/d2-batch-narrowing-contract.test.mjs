@@ -50,8 +50,8 @@ test("(b) 批量动作无默认值:初值为空 + 不自动选第一个可用项
   assert.doesNotMatch(page, /useState<[^>]*>\("APPROVE"\)/);
   // 红测:加一句「没权限就自动选第一个」→ FAIL(以为选的是 A、实际执行 B,与原缺陷同类)
   assert.doesNotMatch(page, /setBatchAction\([^)]*\[0\]/);
-  assert.match(page, /<option value="">选择批量动作<\/option>/);
-  assert.match(page, /if \(!action\) \{ toast\("请先选择批量动作/);
+  assert.match(page, /<option value="">选择批量操作<\/option>/);
+  assert.match(page, /if \(!action\) \{ toast\("请先选择批量操作/);
   // 下拉选项仍按权限过滤(既有纪律不许弱化)
   assert.match(page, /BATCH_ACTIONS\.filter\(\(action\) => hasAuthority\(ACTION_AUTHORITY\[action\]\)\)/);
 });
@@ -85,8 +85,8 @@ test("高敏批量纪律未被弱化:确认弹窗 + 必填理由 + 幂等 + 覆�
   assert.match(page, /const batchScope = \(action: D2BatchAction, ids: string\[\]\) => `batch\\|\$\{action\}\\|\$\{\[\.\.\.ids\]\.sort\(\)\.join\(","\)\}`/);
   assert.match(page, /finally \{ setSubmitting\(""\); \}/);
   // 运营可读中文:禁用原因 / 提交后果都用人话,不吐字段名与枚举值
-  assert.match(page, /可先勾选提现单，再选择批量动作；提交前会按权限和状态再次校验/);
-  assert.match(page, /被筛选隐藏的、以及当前状态不能执行该动作的提现单已自动排除/);
+  assert.match(page, /先选操作，再勾选提现单/);
+  assert.match(page, /不符合条件的已自动排除/);
 });
 
 // ─────────────── 行为固定靶:抽 d2-withdrawals.tsx 真源码跑 ───────────────
@@ -235,12 +235,12 @@ test("③ 固定靶:可以先勾选，但无权限不可选、未显式选动作
   ext.confirmBatch();
   assert.equal(ext.calls.opened.length, 0, "未选动作却开了确认弹窗");
   assert.equal(ext.calls.submitted.length, 0, "未选动作却提交了");
-  assert.match(ext.calls.toasts[0], /请先选择批量动作/);
+  assert.match(ext.calls.toasts[0], /请先选择批量操作/);
   // 选了动作但当前筛选下没有可执行行 → 同样不提交,并给运营可读的原因
   ext.setup({ batchAction: "APPROVE", submittableRows: [], selected: new Set(["W-HIDDEN-1"]) });
   ext.confirmBatch();
   assert.equal(ext.calls.opened.length, 0);
-  assert.match(ext.calls.toasts[0], /没有可执行该动作的提现单/);
+  assert.match(ext.calls.toasts[0], /没有可以执行这个操作的提现单/);
 });
 
 /** 并发两发 load:第一发慢(旧筛选),第二发立刻回(新筛选),旧响应最后才落地。 */

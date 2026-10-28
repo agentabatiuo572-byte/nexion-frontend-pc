@@ -70,8 +70,8 @@ test("B4 backend contract is H1-canonical, audited and exact-RBAC", () => {
 test("H1 attribution returns to the canonical B4 rhythm route", () => {
   const h1 = read("app/components/domain-views/h-tabs/h1-phase.tsx");
 
-  assert.match(h1, /href="\/overview\/rhythm"[^>]*>去 B4 节奏看板/);
-  assert.doesNotMatch(h1, /href="\/risk\/health-monitor"[^>]*>去 B4 节奏看板/);
+  assert.match(h1, /href="\/overview\/rhythm"[^>]*>去运营阶段状态/);
+  assert.doesNotMatch(h1, /href="\/risk\/health-monitor"[^>]*>去运营阶段状态/);
   assert.match(h1, /params\.get\("from"\) === "B4"/);
-  assert.match(h1, /B4 定位/);
+  assert.match(h1, /跳转定位/);
 });

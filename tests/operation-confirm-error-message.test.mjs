@@ -23,10 +23,10 @@ test("A2 uncertain outcomes remain actionable in the persistent confirmation err
     name: "A2OutcomeUncertainError",
     commandKey: "e3-command-1",
   });
-  assert.match(operationConfirmErrorMessage(error), /结果暂不确定/);
-  assert.match(operationConfirmErrorMessage(error), /保留当前弹窗与输入/);
-  assert.match(operationConfirmErrorMessage(error), /同一命令号.*e3-command-1/);
-  assert.match(operationConfirmErrorMessage(error), /A2 审计/);
+  assert.match(operationConfirmErrorMessage(error), /结果暂未确认/);
+  assert.match(operationConfirmErrorMessage(error), /不要关闭弹窗或修改内容/);
+  assert.match(operationConfirmErrorMessage(error), /命令号：e3-command-1/);
+  assert.match(operationConfirmErrorMessage(error), /操作记录/);
 });
 
 test("A2 uncertain outcomes survive a duplicated module or serialization boundary", () => {
@@ -34,7 +34,7 @@ test("A2 uncertain outcomes survive a duplicated module or serialization boundar
     name: "A2OutcomeUncertainError",
     commandKey: "shared-command-2",
   });
-  assert.match(operationConfirmErrorMessage(error), /同一命令号.*shared-command-2/);
+  assert.match(operationConfirmErrorMessage(error), /命令号：shared-command-2/);
 });
 
 test("非 A2 的 *OutcomeUncertainError 也拿到人话指引,但不承诺自动去重", () => {
@@ -42,8 +42,8 @@ test("非 A2 的 *OutcomeUncertainError 也拿到人话指引,但不承诺自动
   for (const name of ["F1OutcomeUncertainError", "H8OutcomeUncertainError", "K1OutcomeUncertainError"]) {
     const error = Object.assign(new Error("F1_REQUEST_FAILED_503"), { name, commandKey: `${name}-k1` });
     const message = operationConfirmErrorMessage(error);
-    assert.match(message, /结果暂不确定/);
-    assert.match(message, /核对审计记录/);
+    assert.match(message, /结果暂未确认/);
+    assert.match(message, /到操作记录里核对/);
     assert.match(message, new RegExp(`命令号：${name}-k1`));
     // A3/A1 也带 commandKey 却每次现铸,对全族承诺「系统会复用同一命令号」就是骗运营重试。
     assert.doesNotMatch(message, /系统会复用同一命令号/);

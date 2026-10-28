@@ -60,13 +60,13 @@ export function FunnelStrip({ stages }: { stages: FunnelStageInput[] }) {
           <span style={{ color: "var(--v5-ink-3)", fontSize: 16, fontWeight: 450 }}>今日</span>
         </div>
         <Link href="/overview/funnel" prefetch={false} className="group inline-flex items-center gap-1.5 text-[13px] transition-colors hover:text-[var(--v5-ink)]" style={{ color: "var(--v5-ink-3)" }}>
-          <AutoGloss>查看同批用户的明细</AutoGloss> <span className="transition-transform group-hover:translate-x-0.5" style={{ color: "var(--v5-brand)" }}>→</span>
+          <AutoGloss>查看明细</AutoGloss> <span className="transition-transform group-hover:translate-x-0.5" style={{ color: "var(--v5-brand)" }}>→</span>
         </Link>
       </div>
 
       {/* 摘要 */}
       <p className="font-mono-tabular mb-5 mt-1 text-[12.5px]" style={{ color: "var(--v5-ink-4)" }}>
-        端到端转化 <span style={{ color: "var(--v5-brand)", fontWeight: 500 }}>{fmtPct(e2e)}</span> · {fmtNum(first)} 注册 → {fmtNum(last)} 提现
+        注册到提现 <span style={{ color: "var(--v5-brand)", fontWeight: 500 }}>{fmtPct(e2e)}</span> · {fmtNum(first)} 注册 → {fmtNum(last)} 提现
       </p>
 
       {/* 主体:漏斗 + 阶段列表 */}
@@ -147,9 +147,9 @@ export function FunnelStrip({ stages }: { stages: FunnelStageInput[] }) {
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="text-[13px]" style={{ color: "var(--v5-ink-3)" }}>
                     {cvr != null ? (
-                      <>较上级转化 <span style={{ color: "var(--v5-ink)", fontWeight: 500 }}>{cvr}%</span></>
+                      <>较上一步 <span style={{ color: "var(--v5-ink)", fontWeight: 500 }}>{cvr}%</span></>
                     ) : (
-                      <AutoGloss>漏斗入口</AutoGloss>
+                      <AutoGloss>起点</AutoGloss>
                     )}
                   </span>
                   <span className="font-mono-tabular inline-flex items-baseline gap-1.5 text-[12.5px]">

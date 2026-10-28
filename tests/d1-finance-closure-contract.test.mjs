@@ -10,12 +10,12 @@ test("D1 load failures fail closed and clear stale business data", () => {
   assert.match(component, /setOverview\(null\)/);
   assert.match(component, /setFlows\(EMPTY_D1_FLOWS\)/);
   assert.match(component, /if \(error && !overview\)/);
-  assert.match(component, /重试读取/);
+  assert.match(component, /充值对账已停止展示旧数据/);
   assert.match(component, /disabled=\{loading \|\| busy\}/);
 });
 
 test("D1 distinguishes committed writes from a later flow refresh failure and preserves the confirmation form on write failure", () => {
-  assert.match(component, /操作已生效并写入审计，但充值流水刷新失败/);
+  assert.match(component, /操作已生效，但充值流水没刷新出来/);
   assert.match(component, /setOverview\(next\)/);
   assert.match(component, /throw err/);
   const domain = readFileSync(new URL("../app/components/domain-views/d-view.tsx", import.meta.url), "utf8");
@@ -69,12 +69,12 @@ test("D1 renders actions from exact authorities and links anomaly evidence to K 
   assert.match(component, /finance_d1_chargeback_refund/);
   assert.match(component, /\/finance\/ledger/);
   assert.match(component, /\/risk\//);
-  assert.match(component, /K1 多账户风险排查/);
-  assert.match(component, /历史账务证据尚未闭合/);
-  assert.match(component, /仅代表当前可验证部分/);
+  assert.match(component, /多账户风险排查/);
+  assert.match(component, /历史账目还有/);
+  assert.match(component, /只包含已核对的部分/);
   assert.match(component, /尚未确认/);
   assert.match(component, /尚未入账/);
-  assert.match(component, /BIN段|IP|设备指纹/);
+  assert.match(component, /卡段|IP|设备/);
   assert.doesNotMatch(component, /\["CHARGEBACK_RECOVERED", "CHARGEBACK_PARTIAL", "CHARGEBACK_REFUNDED"\]/);
 });
 

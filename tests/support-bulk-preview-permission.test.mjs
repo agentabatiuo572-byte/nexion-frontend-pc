@@ -69,7 +69,7 @@ test("scope403 explains current advisor permissions and offers no preview retry"
     const html = renderToStaticMarkup(tree);
     assert.match(html, /当前.*顾问.*客户.*范围|当前.*本人.*客户/);
     assert.match(html, /权限|无权/);
-    assert.doesNotMatch(html, /请刷新页面|重新读取名单/);
+    assert.doesNotMatch(html, /请刷新页面|重新加载名单/);
     assert.equal(button(tree, "查询筛选结果").props.disabled, true);
     assert.equal(button(tree, "下一步：编写内容").props.disabled, true);
     assert.equal(h.previews.length, 1);
@@ -82,8 +82,8 @@ test("temporary preview failure retains its read-only retry", async () => {
     try {
       h.render(); let tree = await h.settle();
       assert.equal(button(tree, "查询筛选结果").props.disabled, false);
-      button(tree, "重新读取名单").props.onClick(); h.render(); tree = await h.settle();
-      assert.ok(button(tree, "重新读取名单"));
+      button(tree, "重新加载名单").props.onClick(); h.render(); tree = await h.settle();
+      assert.ok(button(tree, "重新加载名单"));
       assert.equal(h.previews.length, 2);
       assert.equal(h.previews[0].input.selectionMode, "ALL_FILTERED");
     } finally { h.unmount(); }
@@ -101,8 +101,8 @@ test("freezing a stale selected scope rejects without advancing or retaining a r
     assert.equal(button(tree, "下一步：编写内容").props.disabled, false);
     button(tree, "下一步：编写内容").props.onClick(); tree = await h.settle();
     const html = renderToStaticMarkup(tree);
-    assert.match(html, /第 1 步：圈选客户/); assert.match(html, /无权读取.*专属客服客户范围/);
-    assert.doesNotMatch(html, /重新读取名单|选择当前全部筛选结果|当前本人归属（已核对）/);
+    assert.match(html, /第 1 步：圈选客户/); assert.match(html, /没有权限查看这位专属客服的客户名单/);
+    assert.doesNotMatch(html, /重新加载名单|选择当前全部筛选结果|当前本人归属（已核对）/);
     assert.equal(button(tree, "下一步：编写内容").props.disabled, true);
     assert.equal(h.previews[1].input.selectionMode, "CROSS_PAGE");
     assert.deepEqual([...h.previews[1].input.customerIds], ["42"]);
@@ -115,7 +115,7 @@ test("known advisor-unavailable denial keeps qualification guidance and unknown 
     const h = harness(cause);
     try {
       h.render(); const tree = await h.settle(), html = renderToStaticMarkup(tree);
-      assert.equal(Boolean(button(tree, "重新读取名单")), !blocked);
+      assert.equal(Boolean(button(tree, "重新加载名单")), !blocked);
       assert.equal(button(tree, "查询筛选结果").props.disabled, blocked);
       if (blocked) assert.match(html, /当前账号.*专属客服资格.*群发.*主管/);
       assert.doesNotMatch(html, /SUPPORT_SCOPE_FORBIDDEN|SUPPORT_AGENT_UNAVAILABLE|UNKNOWN_PRIVATE_TEXT/);

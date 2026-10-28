@@ -54,7 +54,7 @@ test("K1 uses the current backend freeze-suggestion threshold instead of a displ
   assert.doesNotMatch(component, /c\.strength >= 0\.7/);
   assert.doesNotMatch(component, /(?:0\.7|70%)[^0-9]/);
   assert.match(component, /formatThreshold\(freezeSuggestThreshold\)/);
-  assert.match(registry, /达到当前服务端冻结建议阈值时标红/);
+  assert.match(registry, /关联度高的标红/);
   assert.doesNotMatch(registry, /(?:≥\s*0\.7|70%)/);
 });
 
@@ -78,7 +78,7 @@ test("K1 exposes server-side status and sort controls with accessible selected s
 
 test("K1 whitelist collects CIDR, separate note, future expiry and reason", () => {
   assert.match(component, /type="date"/);
-  assert.match(component, /白名单备注/);
+  assert.match(component, />备注</);
   assert.match(component, /失效日期/);
   assert.match(component, /isValidCidr/);
   assert.doesNotMatch(client, /expireText = "2026-12-31"/);
@@ -159,15 +159,15 @@ test("K1 preserves command keys for uncertain retries and proxy identifies unkno
   assert.match(a2Client, /A2OutcomeUncertainError/);
   assert.match(platformProxy, /X-Nexion-Upstream-Outcome/);
   assert.match(proposer, /throw error/);
-  assert.match(proposer, /A2 提案结果暂不确定/);
-  assert.match(proposer, /使用同一命令号重试/);
+  assert.match(proposer, /提交结果暂未确认/);
+  assert.match(proposer, /保持弹窗内容不变直接重试/);
 });
 
 test("K1 distinguishes confirmed write failures from unknown outcomes", () => {
-  assert.match(component, /K1 操作失败/);
-  assert.match(component, /本次写入未生效/);
-  assert.match(component, /服务端数据未变化/);
-  assert.match(component, /当前输入已保留/);
+  assert.match(component, /操作失败，没有生效/);
+  assert.match(component, /没有生效/);
+  assert.match(component, /操作失败/);
+  assert.match(component, /已填写的内容还在/);
   assert.match(component, /confirmedK1FailureText\(error\)/);
 });
 
@@ -187,14 +187,14 @@ test("K1 rejects malformed successful overview payloads instead of normalizing t
   assert.match(client, /requiredK1Page\(data\.whitelist,\s*"multiAccount\.whitelist"/);
   assert.match(client, /requiredK1StringArray\(data\.sources,\s*"multiAccount\.sources"\)/);
   assert.match(errorMessages, /K1_RESPONSE_INVALID/);
-  assert.match(errorMessages, /旧数据与写操作已隐藏/);
+  assert.match(errorMessages, /已隐藏数据和操作按钮/);
   assert.match(riskService, /response\.put\("serverCanonical", true\)/);
   assert.match(riskService, /response\.put\("domain", "K1"\)/);
 });
 
 test("K1 separates confirmed writes from refresh failures", () => {
-  assert.match(component, /已写入，但最新数据回读失败/);
-  assert.match(component, /最新数据回读失败/);
+  assert.match(component, /已保存，但页面刷新失败/);
+  assert.match(component, /页面刷新失败/);
   assert.match(component, /setParamDraft\(null\);[\s\S]*await ctx\.reloadKRisk/);
 });
 
@@ -227,7 +227,7 @@ test("K1 translates network failures and lets keyboard users open a cluster", ()
   assert.match(component, /暂时无法连接风险服务/);
   assert.match(errorMessages, /RISK_BACKEND_UNAVAILABLE/);
   assert.match(errorMessages, /风险服务当前不可用/);
-  assert.match(errorMessages, /旧数据与写操作已隐藏/);
+  assert.match(errorMessages, /已隐藏数据和操作按钮/);
   assert.match(component, /event\.key === "Enter" \|\| event\.key === " "/);
   assert.match(component, /tabIndex=\{focusBlocksSelection \? undefined : 0\}/);
 });

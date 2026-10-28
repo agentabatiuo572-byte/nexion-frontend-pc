@@ -16,16 +16,6 @@ import type { ConfirmReq, DCtx, ActionConfirmReq } from "./d-tabs/types";
 
 const FOLD: Record<string, string> = { D1: "D1", D2: "D2", D3: "D3", D4: "D4", D5: "D5", D6: "D6", D7: "D7" };
 
-// 每页两枚签名 chip(设计稿 f-bar):f-ro = server-canonical 不变量,f-live = 节奏/SLA(K 域同款先例)。
-const RO_LIVE: Record<string, [ro: string, live: string]> = {
-  D1: ["到账以系统核实的支付结果为准", "对账实时比对"],
-  D2: ["提现状态由系统更新，本页显示最新处理进度", "到账时限以当前生效参数为准"],
-  D3: ["储备的底账在这里 · 覆盖率由总账(B1)裁定", "每天 UTC 00:00 批量对账"],
-  D4: ["账单与余额以系统记录为准", "每笔资金变动均可追溯"],
-  D5: ["节奏类参数由 H1 统一派发 · 这页只是生效的地方", "本页可调整提现参数；运营阶段设置仅可查看"],
-  D6: ["锁价快照以服务器记录为准 · 只影响新付款单", "越南盾牌价实时读取 · 调整全量审计"],
-  D7: ["倒挂默认拒绝 · D6 牌价保持单一来源", "参数统一保存，提交时检查是否已变化 · 写入 A2 审计 · 代收代付共用 HDPay 配置"],
-};
 
 export function DDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
@@ -39,17 +29,9 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
     openConfirm: setCf,
   } as DCtx;
 
-  const [ro, liveSeed] = RO_LIVE[tab];
-  const right = (
-    <>
-      <span className="f-ro"><span className="d" />{ro}</span>
-      <span className="f-live"><span className="dot" />{liveSeed}</span>
-    </>
-  );
-
   return (
     <div className="dkpage ddom">
-      <DomainHeader {...meta} right={right} />
+      <DomainHeader {...meta} />
 
       {tab === "D1" && <D1Recon ctx={ctx} />}
       {tab === "D2" && <D2Withdrawals ctx={ctx} />}

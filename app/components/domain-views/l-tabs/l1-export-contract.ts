@@ -47,19 +47,19 @@ export function resolveL1ExportUnavailableReason(
   raw: unknown,
   sourceState: "ready" | "loading" | "error" = "ready",
 ): string | undefined {
-  if (sourceState === "loading") return "正在读取关键指标数据，请稍候";
-  if (sourceState === "error") return "关键指标数据读取失败，请重试";
+  if (sourceState === "loading") return "关键指标加载中，请稍候";
+  if (sourceState === "error") return "关键指标加载失败，请重试";
   if (resolveL1ExportMode(raw, false)) return undefined;
-  if (record(raw).available === false) return "关键指标数据暂不可用，请重新读取后再试";
+  if (record(raw).available === false) return "关键指标暂时不能用，请刷新后再试";
   if (hasDetailedL1Attempt(raw)) {
     try {
       validateL1Dashboard(raw);
-      return "当前时间窗没有可用关键指标，暂不能导出";
+      return "当前时间范围没有可用的关键指标，暂时不能导出";
     } catch {
-      return "关键指标数据格式异常，请重新读取后再试";
+      return "关键指标数据有误，请刷新后再试";
     }
   }
-  return "尚未读取到可导出的关键指标数据";
+  return "暂无可导出的关键指标";
 }
 
 export async function submitL1Export(
@@ -81,7 +81,7 @@ export async function submitL1Export(
     locale: query.locale,
     ref: query.ref,
     exportType: complete ? "KPI 序列" : "KPI 当前汇总",
-    timeRange: complete ? "当前时间窗" : "当前快照",
+    timeRange: complete ? "当前时间范围" : "当前数据",
     fields: complete
       ? "8关键指标当前值/目标/环比序列"
       : detailedSnapshot
@@ -94,7 +94,7 @@ export async function submitL1Export(
   }, complete
     ? "导出关键指标聚合序列用于经营复盘"
     : detailedSnapshot
-      ? "趋势数据不足时导出可用关键指标当前快照用于经营核对"
-      : "导出 L1 当前累计事实用于经营核对");
+      ? "趋势数据不足，导出当前关键指标用于经营核对"
+      : "导出当前累计数用于经营核对");
   return mode;
 }

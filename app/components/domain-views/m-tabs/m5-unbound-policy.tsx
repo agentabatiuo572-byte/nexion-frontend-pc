@@ -45,8 +45,8 @@ export function M5UnboundPolicy({ permission }: { permission: MSupportPermission
     <h2>待分配客户</h2>
     <div className="m-admin-muted">没有专属客服的客户发来消息后：先提醒主管，等待过久则按负载自动分配；没有分组的新客户进入默认接收组。</div>
     {!editable && <div className="m-admin-muted">仅超级管理员可修改；当前为只读视图。</div>}
-    {error && <div className="m-admin-error" role="alert">{error} <button type="button" className="btn btn-sec btn-sm" onClick={() => setReload((n) => n + 1)}>重新读取</button></div>}
-    {!policy ? !error && <div className="m-admin-muted" role="status">正在读取…</div> : <>
+    {error && <div className="m-admin-error" role="alert">{error} <button type="button" className="btn btn-sec btn-sm" onClick={() => setReload((n) => n + 1)}>重新加载</button></div>}
+    {!policy ? !error && <div className="m-admin-muted" role="status">正在加载…</div> : <>
       <div className="m-admin-row">
         <div><label htmlFor="m-unbound-alert">提醒主管（分钟）</label><p>客户留言后超过该时长仍未分配，收件箱标红并提醒主管。</p></div>
         <input id="m-unbound-alert" type="number" min="1" max="120" step="1" value={draft.alert} disabled={!editable || saving} onChange={(event) => setDraft((old) => ({ ...old, alert: event.target.value }))} />

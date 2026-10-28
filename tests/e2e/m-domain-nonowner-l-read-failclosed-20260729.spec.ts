@@ -162,7 +162,7 @@ test("M1-M5 对 401/403/404/409/422/500、超时、畸形 200 与读取结果未
       moduleHref: "/service/tickets",
       fault: { kind: "status", status },
       failClosed: async () => {
-        await expect(page.getByText(/工单数据暂时无法同步/)).toBeVisible();
+        await expect(page.getByText(/工单数据同步失败/)).toBeVisible();
         await expect(page.locator('[data-proof="support-ticket-create"]')).toHaveCount(0);
       },
       recoveredText: "客服工单",
@@ -176,7 +176,7 @@ test("M1-M5 对 401/403/404/409/422/500、超时、畸形 200 与读取结果未
     moduleHref: "/service/sessions",
     fault: { kind: "status", status: 500 },
     failClosed: async () => {
-      await expect(page.getByText(/会话数据暂时无法同步/)).toBeVisible();
+      await expect(page.getByText(/会话数据同步失败/)).toBeVisible();
       await expect(page.locator('[data-proof="session-initiate"]')).toHaveCount(0);
     },
     recoveredText: "会话收件箱",
@@ -189,7 +189,7 @@ test("M1-M5 对 401/403/404/409/422/500、超时、畸形 200 与读取结果未
     moduleHref: "/service/sessions",
     fault: { kind: "malformed" },
     failClosed: async () => {
-      await expect(page.getByText(/会话数据暂时无法同步/)).toBeVisible();
+      await expect(page.getByText(/会话数据同步失败/)).toBeVisible();
       await expect(page.locator('[data-proof="session-initiate"]')).toHaveCount(0);
     },
     recoveredText: "会话收件箱",
@@ -411,7 +411,7 @@ async function timeoutAndRecover(page: Page) {
     await page.screenshot({ path: path.join(EVIDENCE_DIR, "M3-timeout-fails-closed.png"), fullPage: true });
     checks.push("M3-timeout-fails-closed");
     release();
-    await expect(page.getByText(/会话数据暂时无法同步/)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/会话数据同步失败/)).toBeVisible({ timeout: 30_000 });
   } finally {
     release?.();
     await page.unroute("**/api/admin/content/conversations?*", handler);

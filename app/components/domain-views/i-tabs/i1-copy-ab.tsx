@@ -400,7 +400,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
 
   const deleteCopyVersionOption = (option: VersionOptionRow) => openActionConfirm({
     action: <>删除文案版本 · {option.versionKey}</>,
-    detail: <>只有未被任何文案内容历史引用的版本配置可以删除；已引用版本必须保留，避免破坏发布历史和审计链。</>,
+    detail: <>只有从没被任何文案用过的版本可以删除；用过的必须保留，以免发布历史对不上。</>,
     amplifies: false,
     run: (reason) => runBackend(actions.deleteI1CopyVersionOption(option.versionKey, option.revision, reason), `文案版本 ${option.versionKey} 已删除`),
   });
@@ -423,7 +423,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
 
   const deleteCopyPosition = (positionKey: string) => openActionConfirm({
     action: <>删除文案位置 · {positionKey}</>,
-    detail: <>仅未被任何文案版本引用的位置可删除；后端会执行引用完整性校验。</>,
+    detail: <>只有没被任何文案用过的位置可以删除。</>,
     amplifies: false,
     run: (reason) => runBackend(actions.deleteI1CopyPosition(positionKey, reason), `文案位置 ${positionKey} 已删除`),
   });
@@ -456,7 +456,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
 
   const deleteDraftVersion = (copyKey: string, version: string, revision: number) => openActionConfirm({
     action: <>删除草稿 · {copyKey} {version}</>,
-    detail: <>只有草稿版本可以删除；删除后不可恢复，但操作理由和删除结果会保留审计。已发布或已归档版本必须保留完整历史，不能物理删除。</>,
+    detail: <>只有草稿可以删除，删除后不能恢复，操作记录会保留。已发布或已归档的版本不能删除。</>,
     amplifies: false,
     run: (reason) => {
       const mutationKey = `${copyKey}:${version}`;
@@ -476,14 +476,14 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
 
   const adjustFramework = (key: string, name: string, cur: string) => openConfirm({
     action: <>实验框架参数 · {name}</>,
-    detail: <>当前默认:<b>{cur}</b> · 只影响<b>之后新建</b>的实验的默认值;已启动实验按启动时锁定的快照跑,不回溯。</>,
-    chips: [["运营设定 · 仍需操作确认", "done"], ["改动留审计记录", "ready"]],
+    detail: <>当前默认:<b>{cur}</b> · 只影响<b>之后新建</b>的实验的默认值;已启动的实验按启动时的设置继续跑，不受影响。</>,
+    chips: [["记入操作记录", "done"]],
     input: { label: "新默认值", placeholder: cur },
     reason: true,
     okLabel: "保存",
     run: (reason, v) => {
       if (!v) return;
-      runBackend(actions.updateI1Framework(key, v, cur, reason), `${name} 默认值已更新为 ${v} · 留审计`);
+      runBackend(actions.updateI1Framework(key, v, cur, reason), `${name} 默认值已更新为 ${v}`);
     },
   });
 
@@ -525,7 +525,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
 
   const startExp = (id: string) => openActionConfirm({
     action: <>启动实验 · {id}</>,
-    detail: <>启动后会按当前版本、分流比例和继承受众生成不可变快照。请先完成确认勾选，并填写 8-200 字操作理由。</>,
+    detail: <>启动后，版本、分流比例和受众就固定下来，不能再改。请先完成确认勾选，并填写 8–200 字操作理由。</>,
     amplifies: false,
     businessForm: { kind: "copy-experiment-start", experimentId: id },
     run: (reason) => runBackend(actions.startI1Experiment(id, reason), `${id} 已启动`),
@@ -533,7 +533,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
 
   const discardExp = (id: string) => openActionConfirm({
     action: <>弃用实验 · {id}</>,
-    detail: <>仅待启动或已结算实验可以弃用。弃用后不能再次启动或采纳，已产生的数据与审计记录仍会保留。</>,
+    detail: <>只有待启动或已结束的实验可以弃用。弃用后不能再启动或采纳，已有数据和操作记录仍保留。</>,
     amplifies: false,
     businessForm: { kind: "copy-experiment-discard", experimentId: id },
     run: (reason) => runBackend(actions.discardI1Experiment(id, reason), `${id} 已弃用`),
@@ -544,16 +544,16 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     detail: <>停止后<b>全部用户回到当前发布版</b>,实验转已结(可再选择采纳或弃用)。停止会改变用户所见文案分布,所以要操作确认。已收集的曝光/转化数据保留,结算页可查。</>,
     amplifies: false,
     run: (reason) => {
-      runBackend(actions.stopI1Experiment(id, reason), `${id} 停止已确认生效`);
+      runBackend(actions.stopI1Experiment(id, reason), `${id} 已停止`);
     },
   });
 
   const adoptExp = (id: string) => openActionConfirm({
     action: <>采纳获胜变体 · {id}</>,
-    detail: <>把获胜变体<b>采纳为该文案位的发布版</b>——这等价于一次正式发布(对符合该版本受众和投放位置的用户生效),审计会记采纳来源实验号。采纳前确认:数据量达标、提升显著。</>,
+    detail: <>把获胜的版本<b>正式发布到这个文案位</b>，等同于一次正式发布（对符合受众和位置的用户生效）。采纳前请确认：数据量够、提升明显。</>,
     amplifies: false,
     run: (reason) => {
-      runBackend(actions.adoptI1Experiment(id, reason), `${id} 获胜变体采纳已确认生效`);
+      runBackend(actions.adoptI1Experiment(id, reason), `${id} 获胜版本已发布`);
     },
   });
 
@@ -587,14 +587,14 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
         acc[key] = (acc[key] ?? 0) + 1;
         return acc;
       }, {})).map(([surface, count]) => `${COPY_MODULE_LABELS[surface as CopyModule] ?? "其他页面"} ${count}`).join(" · ")
-    : "暂无后端文案位";
+    : "暂无文案位置";
   const topExperimentId = EXPS.find((exp) => exp.state === "running" || exp.state === "adopted")?.id ?? "";
 
   if (contentLoading && !data) {
-    return <section className="l-card"><div className="l-b"><div className="itint">I1 数据加载中...</div></div></section>;
+    return <section className="l-card"><div className="l-b"><div className="itint">文案数据加载中…</div></div></section>;
   }
   if (!data) {
-    return <section className="l-card"><div className="l-b"><div className="itint danger">I1 暂无真实接口数据</div></div></section>;
+    return <section className="l-card"><div className="l-b"><div className="itint danger">暂无文案数据</div></div></section>;
   }
 
   return (
@@ -608,24 +608,24 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
         <div className="f-stat cyan">
           <div className="k">进行中实验</div>
           <div className="v">{I1_STATS.runningExps} 个</div>
-          <div className="sub">分组固定 · 服务器掷签</div>
+          <div className="sub">用户分组随机且固定</div>
         </div>
         <div className="f-stat">
           <div className="k">本周变体曝光</div>
           <div className="v">{I1_STATS.weeklyExposures}</div>
-          <div className="sub">曝光/转化事件喂漏斗(B3/L2)</div>
+          <div className="sub">计入转化漏斗统计</div>
         </div>
         <div className="f-stat ok">
           <div className="k">最佳实验提升</div>
           <div className="v">{I1_STATS.topLift}</div>
-          <div className="sub">{topExperimentId ? `${topExperimentId} · 来自后端实验记录` : "暂无后端实验记录"}</div>
+          <div className="sub">{topExperimentId ? `${topExperimentId}` : "暂无实验记录"}</div>
         </div>
       </div>
 
       <section className="l-card" data-proof="copy-position-list">
         <div className="l-h">
           <span className="ttl">文案位置配置</span>
-          <span className="sub">· 位置由后端统一管理，文案只能选择所属投放模块下的启用位置</span>
+          <span className="sub">· 文案只能放在所属模块下已启用的位置</span>
           {canWrite && <div className="r"><button type="button" className="l-btn sm mc" onClick={createCopyPosition}>+ 新增位置</button></div>}
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -638,7 +638,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                   <tr key={position.positionKey}>
                     <td style={{ fontWeight: 600 }}>{position.name}</td>
                     <td className="mono">{position.positionKey}</td>
-                    <td><span className="bdg dim">{COPY_MODULE_LABELS[module] ?? "页面待核实"}</span></td>
+                    <td><span className="bdg dim">{COPY_MODULE_LABELS[module] ?? "页面未知"}</span></td>
                     <td>{position.status.toUpperCase() === "ACTIVE"
                       ? <span className="bdg ok">启用</span>
                       : <span className="bdg dim">停用</span>}</td>
@@ -720,7 +720,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                     <div style={{ fontWeight: 600, color: "var(--ink)" }}>{c.desc}</div>
                     <span className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>{c.key}</span>
                   </td>
-                  <td><span className="bdg dim">{COPY_MODULE_LABELS[c.surface as CopyModule] ?? "页面待核实"}</span></td>
+                  <td><span className="bdg dim">{COPY_MODULE_LABELS[c.surface as CopyModule] ?? "页面未知"}</span></td>
                   <td className="mono" style={{ fontSize: 11.5 }}>{c.copyPosition || "—"}</td>
                   <td className="mono" style={{ fontWeight: 700 }}>{c.version}</td>
                   <td>{renderCopyStatus(c)}</td>
@@ -755,7 +755,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       <section className="l-card" data-proof="copy-version-list">
         <div className="l-h">
           <span className="ttl">文案内容历史(b)</span>
-          <span className="sub">· 展示每条文案在各配置版本下的内容、发布状态与审计留痕</span>
+          <span className="sub">· 每条文案在各版本下的内容、发布状态和操作记录</span>
           <div className="r chips">
             <label className="lb" htmlFor="copy-version-filter">文案</label>
             <select id="copy-version-filter" className="fld" style={{ width: 190, height: 32 }} value={versionCopyFlt} onChange={(event) => { setVersionCopyFlt(event.target.value); setVersionPage(1); }}>
@@ -770,7 +770,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 1280 }}>
-            <thead><tr><th>文案标识</th><th>文案位置</th><th>版本</th><th>中英越文案</th><th>受众</th><th>状态</th><th>操作 / 留痕</th><th>时间</th><th style={{ textAlign: "right" }}></th></tr></thead>
+            <thead><tr><th>文案标识</th><th>文案位置</th><th>版本</th><th>中英越文案</th><th>受众</th><th>状态</th><th>操作记录</th><th>时间</th><th style={{ textAlign: "right" }}></th></tr></thead>
             <tbody>
               {pagedVersions.map((row) => {
                 const copy = COPY_POOL.find((item) => item.key === row.copyKey);
@@ -783,7 +783,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                 return (
                   <tr key={`${row.copyKey}:${row.v}`}>
                     <td><div style={{ fontWeight: 600 }}>{copy?.desc || row.copyKey}</div><span className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>{row.copyKey}</span></td>
-                    <td><div className="mono" style={{ fontSize: 11.5 }}>{row.copyPosition || "—"}</div><span className="bdg dim">{COPY_MODULE_LABELS[row.surface as CopyModule] ?? "页面待核实"}</span></td>
+                    <td><div className="mono" style={{ fontSize: 11.5 }}>{row.copyPosition || "—"}</div><span className="bdg dim">{COPY_MODULE_LABELS[row.surface as CopyModule] ?? "页面未知"}</span></td>
                     <td className="mono" style={{ fontWeight: 700 }}>{row.v}</td>
                     <td style={{ minWidth: 300 }}>
                       <div className="tiny" title={nexGridBrandText(row.zh)} style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><b>中文</b> · {nexGridBrandText(row.zh || "—")}</div>
@@ -838,10 +838,10 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
               );
             })}
             <div className="itint" style={{ marginTop: 10 }}>
-              <b>分组怎么发的</b> · 用户首次命中实验时由服务器随机分组,之后固定不变(换设备也不变);曝光和转化都按服务器记的组归因。用户在本地改自己的组,服务器照旧按原组算,不会污染结论。
+              <b>怎么分组</b> · 用户第一次进入实验时随机分组，之后一直不变（换设备也不变），曝光和转化都按这个分组统计。
             </div>
             <div className="itint cyan" style={{ marginTop: 8 }}>
-              <b>不碰钱</b> · 这页只改措辞,费率 / 奖励 / 价格一个都改不了——那些归各业务域,改之前要过备付金红线;文案发布没有这道约束。
+              <b>不涉及钱</b> · 这页只改文字，改不了费率、奖励和价格；那些在各自的业务页面修改。
             </div>
           </div>
       </section>
@@ -850,7 +850,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">A/B 实验面板(c)</span>
-          <span className="sub">· 曝光 / 转化 / 转化率 全部由系统业务记录统计(服务器统计规则),不是页面临时拼的数</span>
+          <span className="sub">· 曝光、转化、转化率都按系统实际记录统计</span>
           <div className="r chips">
             {canManageExperiments && <button type="button" className="l-btn sm mc" title={EXPERIMENT_COPY_OPTIONS.length === 0 ? experimentUnavailableReason : "创建 A/B 实验"} onClick={createExperiment}>+ 创建 A/B 实验</button>}
             {EXP_FLT.map(([k, l]) => (
@@ -859,7 +859,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
           </div>
         </div>
         <div className="itint cyan" style={{ margin: "0 14px 12px" }}>
-          <b>转化统计规则</b> · 仅统计服务端已支付/已完成订单事件；点击、加购、客户端自报不计入转化。
+          <b>怎么算转化</b> · 只算已付款或已完成的订单；点击、加购不算。
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 980 }}>
@@ -910,7 +910,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                     </td>
                     <td style={{ fontSize: 12 }}>
                       {e.audience}
-                      <div className="tiny" style={{ color: "var(--ink-4)" }}>实验启动快照 · 预计覆盖 {e.estimatedAudience == null ? "待估算" : `${e.estimatedAudience.toLocaleString()} 人`}</div>
+                      <div className="tiny" style={{ color: "var(--ink-4)" }}>启动时预计覆盖 {e.estimatedAudience == null ? "待估算" : `${e.estimatedAudience.toLocaleString()} 人`}</div>
                     </td>
                     <td className="num mono">{e.impressions}</td>
                     <td className="num mono">{e.conversions}</td>
@@ -955,8 +955,8 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       </section>
 
       <p className="f-foot">
-        <b>执行门槛</b>:普通文案新增、编辑、发布、下架与回滚使用 <span className="mono">content_i1_write</span>；实验框架、创建、启停、弃用与采纳使用独立权限 <span className="mono">content_i1_experiment_manage</span>，无该权限不渲染实验写按钮。<b>事件去向</b>:变体曝光喂实时转化分析与 数据分析；转化仅统计服务端确认的已支付/已完成订单事件，点击、加购和客户端自报不计入 转化率。
-        <b>边界</b>:活动卡里能独立做 A/B 的通用文案归这页;活动本身的玩法 / 奖励 / 时窗归活动页(H4),互不越界。
+        <b>权限</b>：修改、发布、下架、回滚文案需要「文案编辑」权限；创建、启停、弃用、采纳实验需要单独的「实验管理」权限。<b>数据</b>：曝光计入转化分析和数据分析；转化只算已付款或已完成的订单。
+        <b>分工</b>：活动卡上可以做对比测试的通用文案在这页改；活动本身的玩法、奖励、时间在「活动中心」改。
       </p>
       <PaginationExemptionList
         items={[
@@ -964,17 +964,17 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
             label: "文案池(a)",
             kind: "reference-catalog",
             maxRows: COPY_POOL.length,
-            reason: "文案池为后端返回的当前文案位列表,通过界面/状态字段定位后编辑",
+            reason: "按页面和状态筛选后编辑",
           },
           {
             label: "文案内容历史(b)",
             maxRows: VERSION_PAGE_SIZE,
-            reason: "版本列表按 20 条分页展示后端版本，并可按文案和状态筛选",
+            reason: "每页 20 条，可按文案和状态筛选",
           },
           {
             label: "A/B 实验面板(c)",
             maxRows: EXPS.length,
-            reason: "实验面板展示后端返回的实验记录,完整实验归埋点统计",
+            reason: "这里只显示实验摘要，完整数据见数据分析",
           },
         ]}
       />

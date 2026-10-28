@@ -105,16 +105,16 @@ test("J2 edge switching only exposes healthy alternatives and renders measured h
   assert.match(view, /data\.edge\.healthStatus/);
   assert.match(view, /stale.*已过期/);
   assert.match(view, /healthTone/);
-  assert.match(view, /暂无满足最近 5 分钟 20 个可信样本门槛的备用判定源/);
+  assert.match(view, /暂无可切换的备用识别来源/);
   assert.match(view, /edgeFallbackAvailable\s*=\s*edgeSourceKnown\s*&&\s*data\.edge\.healthy/);
-  assert.match(view, /旧源继续备用 5 分钟/);
-  assert.match(view, /当前源不可用，不具备回退能力/);
+  assert.match(view, /旧来源继续备用 5 分钟/);
+  assert.match(view, /当前来源不可用，无法退回/);
 });
 
 test("J2 treats an unregistered current edge source as a blocking fault without exposing its raw key", () => {
   assert.match(client, /sourceKnown:\s*requiredBool\(edge\.sourceKnown/);
   assert.match(view, /edgeSourceKnown\s*=\s*data\.edge\.sourceKnown/);
-  assert.match(view, /判定源未登记/);
+  assert.match(view, /识别来源未设置/);
   assert.match(view, /healthTone.*danger/s);
   assert.doesNotMatch(view, /edgeSourceLabels\[edgeSource\]\s*\?\?\s*edgeSource/);
 });
@@ -142,7 +142,7 @@ test("J2 tables expose truthful empty states", () => {
 
 test("J2 uncertain writes reuse one command key and reload authoritative state before guiding retry", () => {
   assert.match(client, /isEmergencyOutcomeUncertain/);
-  assert.match(view, /执行结果待确认/);
+  assert.match(view, /结果暂未确认/);
   assert.match(view, /await actions\.reloadJEmergency\(\)/);
   assert.match(view, /const commandKey = createJ2CommandKey/);
   assert.match(client, /"Idempotency-Key": commandKey/);

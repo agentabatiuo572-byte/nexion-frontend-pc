@@ -290,8 +290,8 @@ test("M3 fails closed when the conversation backend is unavailable and respects 
   assert.match(sessions, /pget\("I\.session\.conversationsAvailable"\) === "1"/);
   assert.doesNotMatch(sessions, /pget\("I\.session\.conversationsAvailable"\) !== "0"/);
   assert.match(sessions, /service_m3_write/);
-  assert.match(sessions, /会话数据暂时无法同步/);
-  assert.match(sessions, /当前账号为只读模式/);
+  assert.match(sessions, /会话数据同步失败/);
+  assert.match(sessions, /你只能查看和筛选/);
 });
 
 test("M3 loads all backend pages and exposes the PRD category filter", () => {
@@ -482,7 +482,7 @@ test("M3 can initiate from a real user search when the inbox is empty", () => {
   assert.match(sessions, /showInitiate, initiateCustomerQuery/);
   assert.match(modals, /onCustomerQueryChange/);
   assert.match(modals, /customerLoading/);
-  assert.match(modals, /从真实用户库搜索/);
+  assert.match(modals, /从全部用户里搜索/);
   assert.doesNotMatch(modals, /请先确认 M3 会话接口已返回客户档案/);
 });
 
@@ -720,7 +720,7 @@ test("M3 qualification and supervisor read-only branches retain denial and recov
   for (const [qualificationUnknown, query, expected] of [[true, "", "正在确认你的专属客服身份，稍后显示可查看的会话。"], [false, "x", "没有匹配的客户，请清除搜索。"], [false, "", "暂无会话。可从“我的客户”发起首次联系。"]]) assert.equal(f.evaluate(f.one(node => ts.isConditionalExpression(node) && node.condition.getText(f.file) === "qualificationUnknown" && ts.isStringLiteral(node.whenTrue)), { qualificationUnknown, query, listTab: "all" }), expected);
   const deny = f.one(node => ts.isConditionalExpression(node) && node.condition.getText(f.file) === "recoveryBlocksTarget" && node.getText(f.file).includes("主管审阅不能代发"));
   const common = { recoveryBlocksTarget: false, canAssign: false, canWriteM3: true, selected: { status: "open", ownerAdminId: "A" }, selectedUnbound: false, currentProfileDetail: { assignmentId: "binding", agentAdminId: "A" }, profileError: "", historyReadOnlyHint: "原历史只读提示" };
-  for (const [state, expected] of [[{ selectedUnbound: true }, "该客户还没有专属客服，等待主管分配后回复。"], [{}, "仅当前专属客服可发送消息；主管审阅不能代发。"], [{ canWriteM3: false, selectedUnbound: true }, "当前账号只可查看会话，发送需会话操作权限。"], [{ selected: { status: "transferred" } }, "原历史只读提示"], [{ currentProfileDetail: { assignmentId: "binding", agentAdminId: "B" } }, "客户归属已变化，请刷新会话后重试。刷新会话"], [{ recoveryBlocksTarget: true }, "原消息结果待确认，暂不能重复发送。返回列表查询原消息"]]) assert.equal(f.text(f.evaluate(deny, { ...common, ...state })), expected);
+  for (const [state, expected] of [[{ selectedUnbound: true }, "该客户还没有专属客服，等待主管分配后回复。"], [{}, "仅当前专属客服可发送消息；主管审阅不能代发。"], [{ canWriteM3: false, selectedUnbound: true }, "你只能查看会话，发消息需要会话操作权限。"], [{ selected: { status: "transferred" } }, "原历史只读提示"], [{ currentProfileDetail: { assignmentId: "binding", agentAdminId: "B" } }, "客户归属已变化，请刷新会话后重试。刷新会话"], [{ recoveryBlocksTarget: true }, "原消息结果待确认，暂不能重复发送。返回列表查询原消息"]]) assert.equal(f.text(f.evaluate(deny, { ...common, ...state })), expected);
   for (const [c, expected] of [[{ maintenanceEnabled: false, agentAdminId: "B" }, " · 不再维护"], [{ maintenanceEnabled: true, agentAdminId: "B" }, " · 当前归属其他专属客服"], [{ maintenanceEnabled: true, agentAdminId: "A" }, ""]]) assert.equal(f.evaluate(f.conditional("!c.maintenanceEnabled"), { c, adminId: "A" }), expected);
 });
 

@@ -65,15 +65,15 @@ export default function A7Menus() {
     <div className="dkpage adom">
       <DomainHeader domainCode="A" domainName="平台基础" accentVar="--admin-domain-a"
         l2Id="A7" l2Name="菜单管理"
-        summary={`A7 菜单状态、名称与排序（${overview?.domainCount ?? 0} 域 / ${overview?.pageCount ?? 0} 页）和 A6 角色绑定共同驱动侧栏；仅已部署且地址匹配的页面会显示在导航中。`}
-        right={canWrite ? <Btn variant="primary" sm onClick={() => setMode({ kind: "create" })}>+ 新建顶级菜单</Btn> : <Badge tone="neutral">只读</Badge>} />
+        summary={`调整后台左侧菜单的名称、顺序和显示（共 ${overview?.domainCount ?? 0} 个模块、${overview?.pageCount ?? 0} 个页面）。每个账号能看到哪些菜单，还取决于它的角色。`}
+        right={canWrite ? <Btn variant="primary" sm onClick={() => setMode({ kind: "create" })}>+ 新建一级菜单</Btn> : <Badge tone="neutral">只读</Badge>} />
       <Card>
         <CardH title="菜单树" />
         {loading ? (
           <div style={{ padding: 24, color: "var(--ink-3)" }}>加载中…</div>
         ) : loadError ? (
           <div className="alertbar warn" role="alert" style={{ margin: 16 }}>
-            菜单目录加载失败，当前数据不可确认。<Btn sm onClick={() => void refresh()}>重试</Btn>
+            菜单列表加载失败，请重试。<Btn sm onClick={() => void refresh()}>重试</Btn>
           </div>
         ) : overview && overview.tree.length > 0 ? (
           <div style={{ padding: "8px 12px" }}>
@@ -84,12 +84,12 @@ export default function A7Menus() {
                   const stableKey = newA7IdempotencyKey("a7-menu-delete");
                   setConfirmReq({
                     action: `删除菜单 · ${n.menuNameZh || n.menuName}`,
-                    detail: <>删除菜单 <b>{n.menuNameZh || n.menuName}</b>（<span className="mono">{n.menuCode}</span>）。{n.children.length ? <b>该节点仍有子菜单，请先迁移或删除子菜单。</b> : "若仍有权限清单归属或角色菜单授权，服务器会拒绝删除；请先迁移权限归属，并在角色管理中解除菜单授权。"}操作会写入审计记录。</>,
+                    detail: <>删除菜单 <b>{n.menuNameZh || n.menuName}</b>（<span className="mono">{n.menuCode}</span>）。{n.children.length ? <b>该节点仍有子菜单，请先迁移或删除子菜单。</b> : "如果还有权限挂在这个菜单下，或有角色能看到它，将无法删除；请先移走相关权限，并在「角色管理」里取消勾选。"}。</>,
                     run: async (reason) => {
                       try {
                         const next = await deleteA7Menu(n.id, n.version, reason, operator, stableKey);
                         setOverview(next);
-                        setToast("已删除 · 后端留痕");
+                        setToast("已删除");
                       } catch (error) {
                         setToast(error instanceof PlatformMutationReadbackError
                           ? error.message
@@ -124,7 +124,7 @@ export default function A7Menus() {
                     : await updateA7Menu(submittedMode.node.id, payload as A7MenuUpdateInput, reason, operator, stableKey);
                   setOverview(next);
                   setMode(null);
-                  setToast("已保存 · 后端留痕");
+                  setToast("已保存");
                 } catch (error) {
                   setToast(error instanceof PlatformMutationReadbackError
                     ? error.message
@@ -184,7 +184,7 @@ function MenuRow({ node, depth, expanded, onToggle, onCreate, onEdit, onDelete, 
         {node.routePath && <CodeTag><span className="mono" style={{ fontSize: 11 }}>{node.routePath}</span></CodeTag>}
         <Badge tone={node.status === 1 ? "ok" : "dim"}>{node.status === 1 ? "启用" : "停用"}</Badge>
         <span style={{ flex: 1 }} />
-        {canWrite && <Btn sm onClick={() => onCreate(node)} aria-label={`为 ${targetName} 新建子级`}>+ 子级</Btn>}
+        {canWrite && <Btn sm onClick={() => onCreate(node)} aria-label={`为 ${targetName} 新建下级菜单`}>+ 下级菜单</Btn>}
         {canWrite && <Btn sm onClick={() => onEdit(node)} aria-label={`编辑 ${targetName}`}>编辑</Btn>}
         {canWrite && <Btn sm onClick={() => onDelete(node)} aria-label={`删除 ${targetName}`}>删除</Btn>}
       </div>
@@ -225,7 +225,7 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
       return;
     }
     if (normalizedRoute && !/^\/[A-Za-z0-9/_-]*$/.test(normalizedRoute)) {
-      setValidationError("路由路径必须以 / 开头，且只能包含字母、数字、/、_ 或 -。");
+      setValidationError("页面地址须以 / 开头，只能包含字母、数字、/、_ 或 -。");
       return;
     }
     if (!Number.isInteger(sortOrder) || sortOrder < 0 || sortOrder > 100000) {
@@ -235,10 +235,10 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
     setValidationError("");
     if (isCreate) {
       const payload: A7MenuCreateInput = { menuCode: normalizedCode, menuName: normalizedName, menuNameZh: normalizedName, parentCode: parentCode.trim() || undefined, routePath: normalizedRoute || undefined, icon: icon.trim() || undefined, sortOrder };
-      onSubmit(payload, `新建菜单 · ${menuName}`, <>新建菜单节点 <b>{menuName}</b>（<span className="mono">{menuCode}</span>）。菜单变更影响前端导航,审计留痕。</>);
+      onSubmit(payload, `新建菜单 · ${menuName}`, <>新建菜单 <b>{menuName}</b>（<span className="mono">{menuCode}</span>），会出现在后台左侧导航。</>);
     } else if (existing) {
       const payload: A7MenuUpdateInput = { menuName: normalizedName, menuNameZh: normalizedName, routePath: normalizedRoute || undefined, icon: icon.trim() || undefined, sortOrder, status, expectedVersion: existing.version };
-      onSubmit(payload, `编辑菜单 · ${menuName}`, <>编辑菜单节点 <b>{menuName}</b>（<span className="mono">{existing.menuCode}</span>,菜单标识不可修改）。元数据变更不影响权限码缓存。</>);
+      onSubmit(payload, `编辑菜单 · ${menuName}`, <>修改菜单 <b>{menuName}</b>（<span className="mono">{existing.menuCode}</span>）。</>);
     }
   };
 
@@ -252,14 +252,14 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
 
   return (
     <Drawer
-      title={isCreate ? "新建菜单节点" : `编辑 · ${existing?.menuNameZh ?? existing?.menuName}`}
+      title={isCreate ? "新建菜单" : `编辑 · ${existing?.menuNameZh ?? existing?.menuName}`}
       sub={isCreate ? undefined : existing?.menuCode}
       onClose={onClose}
       footer={<Btn onClick={submit}>{isCreate ? "提交（需确认）" : "保存（需确认）"}</Btn>}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16 }}>
         <div>
-          <div style={labelStyle}>菜单标识 {isCreate ? "" : "（不可改）"}</div>
+          <div style={labelStyle}>菜单标识 {isCreate ? "" : "（不能修改）"}</div>
           <input style={fieldStyle} value={menuCode} onChange={(e) => setMenuCode(e.target.value)} disabled={!isCreate} placeholder="如 A9 或 CUSTOM_X" />
         </div>
         <div>
@@ -268,20 +268,20 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
         </div>
         {isCreate && (
           <div>
-            <div style={labelStyle}>父级菜单（空 = 顶级域）</div>
+            <div style={labelStyle}>上级菜单（不选则为一级菜单）</div>
             <select style={fieldStyle} value={parentCode} onChange={(e) => setParentCode(e.target.value)}>
-              <option value="">（顶级域）</option>
+              <option value="">（一级菜单）</option>
               {parentOptions.map((o) => <option key={o.code} value={o.code}>{o.label}</option>)}
             </select>
           </div>
         )}
         <div>
-          <div style={labelStyle}>路由路径</div>
+          <div style={labelStyle}>页面地址</div>
           <input style={fieldStyle} value={routePath} onChange={(e) => setRoutePath(e.target.value)} placeholder="/platform/xxx" />
         </div>
         <div className="row" style={{ gap: 12 }}>
           <div style={{ flex: 1 }}>
-            <div style={labelStyle}>图标名称（Lucide 图标库）</div>
+            <div style={labelStyle}>图标名称</div>
             <input style={fieldStyle} value={icon} onChange={(e) => setIcon(e.target.value)} placeholder="shield-check" />
           </div>
           <div style={{ width: 100 }}>
@@ -296,7 +296,7 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
               </select>
             </div>}
         </div>
-        <div className="atint" style={{ fontSize: 12 }}>提交后需在确认弹窗填写原因（≥8 字）,确认即由服务器执行并留痕审计。</div>
+
         {validationError && <div className="alertbar warn" role="alert">{validationError}</div>}
       </div>
     </Drawer>

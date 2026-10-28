@@ -20,7 +20,7 @@ export function AuditTimeline({ entries }: { entries: AuditEntry[] }) {
   if (entries.length === 0) {
     return (
       <p className="text-[12px]" style={{ color: "var(--v5-ink-4)" }}>
-        暂无审计记录
+        暂无操作记录
       </p>
     );
   }

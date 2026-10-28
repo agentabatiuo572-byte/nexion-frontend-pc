@@ -65,7 +65,7 @@ test("F2 七层购买参数恢复既有 A2 命令分发且不放开未接入参�
     assert.equal(resolve(key), "f_ui_config", key);
   }
   for (const key of ["F.unilevel.depth", "F.unilevel.nexCap", "F.unilevel.backfill", "F.unilevel.L8", "F.unilevel.L1junk", "F.unilevel.nex.L1.paused"]) {
-    assert.throws(() => resolve(key), /未接入结算/, key);
+    assert.throws(() => resolve(key), /还没用于结算/, key);
   }
 });
 

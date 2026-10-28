@@ -119,10 +119,10 @@ const TASK_STATUS: Record<string, [string, string]> = {
 };
 
 const COMPLETION_LABEL: Record<string, string> = {
-  event: "业务事件",
-  unbound: "待绑定业务事件",
-  visit: "访问路径",
-  ledger: "账本入账",
+  event: "完成指定操作",
+  unbound: "还没绑定完成条件",
+  visit: "访问指定页面",
+  ledger: "到账后算完成",
 };
 
 // 三语列在表格里只有按钮本身可读，语言名必须进可访问名称才能区分同行的三枚按钮。
@@ -204,7 +204,7 @@ const H3_BINDING_EVENT_PRODUCERS: Record<string, H3QuestEventBinding["producer"]
 const H3_BINDING_EVENT_OPTIONS = Object.keys(H3_BINDING_EVENT_PRODUCERS);
 
 const H3_BINDING_EVENT_LABELS: Record<string, string> = {
-  "checkout.started": "订单 · checkout.started",
+  "checkout.started": "开始下单",
   H8_REFERRAL_REWARD_SETTLED: "邀请奖励结算",
   LEARNING_COURSE_COMPLETED: "学习课程完成",
   "admin.device_activated": "设备激活",
@@ -363,8 +363,8 @@ export function H3WeeklyRegionPolicyPanel({ ctx }: { ctx: HCtx }) {
     ctx.openActionConfirm({
       action: def.action,
       detail: <><p>当前：{describe(draftBase.mappings)}</p><p>调整为：{describe(draft)}</p>
-        <p>未配置区号始终使用越南时间。已开始的周期保持原规则，批准后从账户下一周期生效。</p>
-        {draftBase.revision === 0 && <p>首次切换边界：{draftBase.nextActivation!.effectiveFrom}（UTC）。超过该时间需重新读取，不能自行顺延。</p>}</>,
+        <p>没设置的区号一律用越南时间。本周已开始的不变，批准后从用户的下一周开始生效。</p>
+        {draftBase.revision === 0 && <p>首次生效时间：{draftBase.nextActivation!.effectiveFrom}（UTC）。过了这个时间需要刷新后重新提交。</p>}</>,
       amplifies: true,
       run: async reason => {
         await withH3WeeklyRegionProposalKey(params, reason, commandKey => propose(ctx.toast, {
@@ -387,25 +387,25 @@ export function H3WeeklyRegionPolicyPanel({ ctx }: { ctx: HCtx }) {
       <button className="l-btn sm" disabled={loading} onClick={() => void reload()}>刷新地区规则</button>
     </div></div>
     <div style={{ padding: 16 }}>
-      <p>地区切换生效后，按注册手机号区号对应时区，每周一 00:00 开始新一周。未配置区号使用越南时间（Asia/Ho_Chi_Minh）。</p>
-      <p>已开始的周期保持原规则；批准后的调整从账户下一周期生效。团队与财务周期仍按越南时间。</p>
-      {loading && <p role="status">正在读取地区规则…</p>}
-      {error && <p role="alert">地区规则读取失败：{error} 请刷新后重试。</p>}
+      <p>按用户注册手机号的区号决定时区，每周一 00:00 开始新的一周。没设置的区号用越南时间。</p>
+      <p>本周已开始的不变，批准后从用户的下一周开始生效。团队和财务的周期仍按越南时间。</p>
+      {loading && <p role="status">正在加载地区规则…</p>}
+      {error && <p role="alert">地区规则加载失败：{error} 请刷新后重试。</p>}
       {policy && <>
-        <p>当前{policy.source === "DEFAULT" ? "默认规则" : `已发布规则 · 版本 ${policy.revision}`}
-          {policy.effectiveFrom ? ` · 首次切换边界 ${policy.effectiveFrom}（UTC）` : " · 尚未发布地区切换"}</p>
+        <p>当前使用{policy.source === "DEFAULT" ? "默认规则" : `已发布规则 · 版本 ${policy.revision}`}
+          {policy.effectiveFrom ? ` · 首次生效时间 ${policy.effectiveFrom}（UTC）` : " · 还没发布地区规则"}</p>
         <dl className="ui-facts-grid">{policy.mappings.map(row => <div key={row.callingCode}><dt>电话区号 {row.callingCode}</dt><dd>{row.zoneId}</dd></div>)}</dl>
         {policy.mappings.length === 0 && <p>全部区号使用越南时间。</p>}
-        {pending && <p role="status">调整已提交 A2，等待 A2 审批。当前显示的规则尚未因此更新。{canReadA2
-          ? <><a href="/platform/audit">查看审批队列</a>；审批处理后刷新地区规则以核对状态。</>
-          : "当前账号没有审批查看权限，请由有权限的管理员核对处理结果。"}</p>}
+        {pending && <p role="status">修改已提交，等待审批。批准前仍按当前规则执行。{canReadA2
+          ? <><a href="/platform/audit">查看审批进度</a>；批准后刷新这里核对。</>
+          : "你没有查看审批的权限，请让有权限的同事核对结果。"}</p>}
         {reviewError && <p role="alert">{reviewError}</p>}
-        {policy.revision === 0 && !policy.nextActivation && <p role="status">首次生效时间尚未确定，暂不能提交调整。</p>}
+        {policy.revision === 0 && !policy.nextActivation && <p role="status">首次生效时间还没确定，暂时不能提交修改。</p>}
         {canWrite && !draft && <button className="l-btn sm mc" disabled={loading || !!error || !!reviewError || !!pending || (policy.revision === 0 && !policy.nextActivation)}
-          onClick={() => { setDraftBase(policy); setDraft(policy.mappings.map(row => ({ ...row }))); }}>编辑地区映射</button>}
+          onClick={() => { setDraftBase(policy); setDraft(policy.mappings.map(row => ({ ...row }))); }}>编辑地区规则</button>}
       </>}
       {canWrite && draft && <fieldset disabled={loading || !!error || !!reviewError || !!pending} style={{ marginTop: 12 }}>
-        <legend>调整地区映射</legend>
+        <legend>修改地区规则</legend>
         {draft.map((row, index) => <div key={index} className="row wrap" style={{ gap: 8, marginBottom: 8 }}>
           <label>电话区号<input className="fld" aria-label={`电话区号 ${index + 1}`} value={row.callingCode} placeholder="+84"
             onChange={event => setDraft(draft.map((item, i) => i === index ? { ...item, callingCode: event.target.value.trim() } : item))} /></label>
@@ -414,11 +414,11 @@ export function H3WeeklyRegionPolicyPanel({ ctx }: { ctx: HCtx }) {
           <button className="l-btn sm" onClick={() => setDraft(draft.filter((_, i) => i !== index))}>删除 {row.callingCode || index + 1}</button>
         </div>)}
         <button className="l-btn sm" disabled={draft.length >= 999} onClick={() => setDraft([...draft, { callingCode: "", zoneId: "" }])}>添加区号</button>
-        {draft.length === 0 && <p>删除全部映射后，后续周期统一使用越南时间。</p>}
+        {draft.length === 0 && <p>全部删除后，以后所有用户都用越南时间。</p>}
         {invalid && <p role="alert">{invalid}</p>}
-        {staleDraft && <p role="alert">规则或首次生效边界已更新，草稿已保留。请取消编辑并重新读取当前规则后调整。</p>}
+        {staleDraft && <p role="alert">规则刚被别人修改过，你填写的内容还在。请取消编辑、刷新后重新修改。</p>}
         <div className="row" style={{ gap: 8, marginTop: 12 }}>
-          <button className="l-btn sm mc" disabled={!!invalid || !!staleDraft || !draftBase || (draftBase.revision === 0 && !draftBase.nextActivation)} onClick={submit}>提交 A2 审批</button>
+          <button className="l-btn sm mc" disabled={!!invalid || !!staleDraft || !draftBase || (draftBase.revision === 0 && !draftBase.nextActivation)} onClick={submit}>提交审批</button>
           <button className="l-btn sm" onClick={() => setDraft(null)}>取消编辑</button>
         </div>
       </fieldset>}
@@ -434,7 +434,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const [model, setModel] = useState<H3Model | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const moduleLabel = section === "events" ? "H4 活动中心" : "H3 用户任务管理";
+  const moduleLabel = section === "events" ? "活动中心" : "用户任务";
 
   const reload = async () => {
     setLoading(true);
@@ -487,7 +487,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     } catch (error) {
       if (isH3BindingOutcomeUncertainError(error) && error.readback) {
         apply(error.readback);
-        toast("写入结果未知；已回读当前服务端状态，请核对后以相同理由重试");
+        toast("保存结果暂未确认，页面已刷新。请核对后用相同理由重试");
       }
       throw error;
     }
@@ -499,7 +499,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     } catch (error) {
       if (isH3MissionOutcomeUncertainError(error) && error.readback) {
         apply(error.readback);
-        toast("任务写入结果未知；已回读当前服务端状态，请核对后以同一命令重试");
+        toast("任务保存结果暂未确认，页面已刷新。请核对后重试");
       }
       throw error;
     }
@@ -521,7 +521,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openSimpleConfig = (key: string, label: string, current: string, amplifies = false) => {
     openActionConfirm({
       action: label,
-      detail: <>当前值 <b>{current}</b>,提交后写入后端配置并刷新读模型。</>,
+      detail: <>当前值 <b>{current}</b>。保存后马上生效。</>,
       amplifies,
       edit: { kind: "text", current },
       run: async (reason, value) => {
@@ -534,7 +534,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openTaskReward = (key: string, label: string, current: string) => {
     openActionConfirm({
       action: `调整奖励 · ${label}`,
-      detail: <>当前奖励 <b>{current}</b>。升奖励可能放大流出,后端会做覆盖率红线校验。</>,
+      detail: <>当前奖励 <b>{current}</b>。调高奖励会多发钱，覆盖率低于红线时无法保存。</>,
       edit: {
         kind: "number",
         current: String(numericValue(current)),
@@ -569,10 +569,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openEventStatus = (event: QuestEvent) => {
     openConfirm({
       action: `活动状态 · ${event.name}`,
-      detail: <>当前状态 <b>{EVENT_LABEL[event.state]?.[0] ?? "活动状态待核实"}</b>，请确认目标状态。</>,
-      chips: [["写活动配置", "ready"], ["审计留痕", "done"]],
+      detail: <>当前状态 <b>{EVENT_LABEL[event.state]?.[0] ?? "状态未知"}</b>，请选择新状态。</>,
+      chips: [["记入操作记录", "done"]],
       reason: true,
-      input: { label: "目标状态", options: statusOptions(event.state) },
+      input: { label: "新状态", options: statusOptions(event.state) },
       okLabel: "确认修改",
       run: async (reason, value) => {
         if (!value) return;
@@ -586,7 +586,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     openConfirm({
       action: `${event.featured ? "取消主推" : "设为主推"} · ${event.name}`,
       detail: <>同时只能有一个进行中的主推活动。</>,
-      chips: [["主推唯一", "ready"], ["审计留痕", "done"]],
+      chips: [["只能有一个主推", "ready"], ["记入操作记录", "done"]],
       reason: true,
       okLabel: event.featured ? "取消主推" : "设为主推",
       run: async (reason) => {
@@ -599,7 +599,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openCreateMission = (missionType: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2", subject: string) => {
     openActionConfirm({
       action: `新建任务 · ${subject}`,
-      detail: <>新建一条{subject};初始为待绑定停用态。请先在下方「业务事件绑定」绑定可信服务端事件，再启用任务。</>,
+      detail: <>新建一条{subject}，新建后先是停用状态。请先在下方「任务完成条件」里绑定完成条件，再启用。</>,
       amplifies: true,
       businessForm: { kind: "mission-create", subject },
       run: async (reason, _v, bv) => {
@@ -615,7 +615,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           category: String(bv.category || "").trim(),
           actionRoute: String(bv.actionRoute || "").trim(),
         }, reason));
-        toast(`· 任务「${missionName}」已新建为待绑定停用态`);
+        toast(`任务「${missionName}」已新建（停用中，绑定完成条件后再启用）`);
       },
     });
   };
@@ -623,7 +623,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openCreateMonthlyMission = () => {
     openActionConfirm({
       action: "新建月度挑战",
-      detail: <>新建月度挑战主题;按账龄段派发,奖励 &gt; 0 过 B1 红线。</>,
+      detail: <>新建一个月度挑战主题，按用户注册时长分配。奖励大于 0 时，覆盖率低于红线无法保存。</>,
       amplifies: true,
       businessForm: { kind: "monthly-mission-create", subject: "新月度挑战" },
       run: async (reason, _v, bv) => {
@@ -642,7 +642,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         };
         if (!payload.challengeCode || !payload.challengeName) return;
         await applyMissionMutation(createH3MonthlyMission(payload, reason));
-        toast(`· 月度挑战「${payload.challengeName}」已新建`);
+        toast(`月度挑战「${payload.challengeName}」已新建`);
       },
     });
   };
@@ -659,7 +659,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const current = localizedValue(entity, code, field, locale);
     openActionConfirm({
       action: `编辑 ${locale.toUpperCase()} 内容 · ${source}`,
-      detail: <>这是运营填写的 {locale.toUpperCase()} 文案；未填写时 App 明确回退为现有原文，不会自动翻译或改名。</>,
+      detail: <>这里填写 {locale.toUpperCase()} 文案；不填时 App 显示原文，不会自动翻译。</>,
       edit: { kind: "text", current },
       run: async (reason, value) => {
         if (!value) return;
@@ -682,7 +682,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     if (status === "archived") return;
     openActionConfirm({
       action: `编辑任务 · ${label}`,
-      detail: <>只修改任务名称;奖励仍由“改奖励”独立提交。后端会校验页面旧值并返回最新任务清单。</>,
+      detail: <>只改任务名称；奖励用「改奖励」单独修改。</>,
       edit: { kind: "text", current: label, disallowCurrent: true },
       run: async (reason, value) => {
         if (!value) return;
@@ -699,10 +699,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const currentActionRoute = text(task.href, "/pages/missions/missions");
     openActionConfirm({
       action: `配置任务类别与去完成页面 · ${label}`,
-      detail: <>保存后同步到用户端；App 不再根据任务编号猜类别或跳转页面。并发修改会按页面旧值拒绝覆盖。</>,
+      detail: <>保存后 App 马上按这里的设置显示类别、跳转页面。</>,
       businessForm: {
         kind: "multi-field",
-        title: `App 展示与动作 · ${label}`,
+        title: `App 显示与跳转 · ${label}`,
         requireAnyChange: true,
         fields: [
           {
@@ -717,7 +717,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           },
           {
             key: "actionRoute",
-            label: "去完成路径",
+            label: "点「去完成」跳转到",
             current: currentActionRoute,
             inputKind: "select",
             options: TASK_ACTION_ROUTES,
@@ -748,8 +748,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const targetStatus = status === "active" ? "paused" : "active";
     openConfirm({
       action: `${targetStatus === "active" ? "启用" : "停用"}任务 · ${label}`,
-      detail: <>仅允许 启用与停用互相切换;归档任务不可恢复。后端按当前状态做 修改冲突检查。</>,
-      chips: [["处理流程校验", "ready"], ["审计留痕", "done"]],
+      detail: <>只能在启用和停用之间切换；已归档的任务不能恢复。</>,
+      chips: [["记入操作记录", "done"]],
       reason: true,
       okLabel: targetStatus === "active" ? "确认启用" : "确认停用",
       run: async (reason) => {
@@ -764,8 +764,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     if (status === "archived") return;
     openConfirm({
       action: `归档任务 · ${label}`,
-      detail: <>归档后不可重新启用或编辑;如需删除,必须先完成本次归档并以服务端回读状态为准。</>,
-      chips: [["不可逆状态", "ready"], ["审计留痕", "done"]],
+      detail: <>归档后不能再启用或编辑。要删除任务，需先归档。</>,
+      chips: [["不能撤回", "ready"], ["记入操作记录", "done"]],
       reason: true,
       okLabel: "确认归档",
       run: async (reason) => {
@@ -780,8 +780,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     if (status !== "archived") return;
     openConfirm({
       action: `删除已归档任务 · ${label}`,
-      detail: <>后端只允许删除 已归档任务;操作采用软删除并保留审计记录。</>,
-      chips: [["仅已归档", "ready"], ["软删除", "done"]],
+      detail: <>只能删除已归档的任务。删除后操作记录仍保留。</>,
+      chips: [["仅限已归档", "ready"], ["保留操作记录", "done"]],
       reason: true,
       okLabel: "确认删除",
       run: async (reason) => {
@@ -794,9 +794,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openBindingStatus = (binding: H3QuestEventBinding) => {
     const enabled = Number(binding.status) === 1;
     openConfirm({
-      action: `${enabled ? "停用" : "启用"}事件绑定 · ${binding.bindingCode}`,
-      detail: <>目标任务须为待启用或已生效；保存按当前整行 修改冲突检查，避免覆盖并发配置。</>,
-      chips: [["启用任务校验", "ready"], ["审计留痕", "done"]],
+      action: `${enabled ? "停用" : "启用"}完成条件 · ${binding.bindingCode}`,
+      detail: <>对应的任务要处于待启用或已启用状态。</>,
+      chips: [["记入操作记录", "done"]],
       reason: true,
       okLabel: enabled ? "确认停用" : "确认启用",
       run: async (reason) => {
@@ -813,7 +813,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           expectedEnabled: enabled,
           reason,
         }));
-        toast(`事件绑定「${binding.bindingCode}」已${enabled ? "停用" : "启用"}`);
+        toast(`完成条件「${binding.bindingCode}」已${enabled ? "停用" : "启用"}`);
       },
     });
   };
@@ -824,21 +824,21 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       ? [currentQuestCode, ...bindingMissionOptions.map((item) => item.missionCode)]
       : bindingMissionOptions.map((item) => item.missionCode);
     const questLabels = binding && !bindingMissionLabels[currentQuestCode]
-      ? { ...bindingMissionLabels, [currentQuestCode]: `${currentQuestCode} · 当前绑定（已不在可发布任务列表）` }
+      ? { ...bindingMissionLabels, [currentQuestCode]: `${currentQuestCode} · 当前绑定（这个任务已不能发布）` }
       : bindingMissionLabels;
     return [
       ...(binding ? [] : [{
         key: "bindingCode",
-        label: "绑定编号",
+        label: "条件编号",
         current: "",
         inputKind: "text" as const,
         required: true,
         placeholder: "例如 ORDER_FIRST_CHECKOUT",
-        hint: "仅英文大写、数字、_ 或 -；创建后不可修改。",
+        hint: "只能用大写英文、数字、_ 或 -；创建后不能改。",
       }]),
       {
         key: "eventType",
-        label: "规范业务事件",
+        label: "用户做了什么",
         current: binding?.eventType ?? H3_BINDING_EVENT_OPTIONS[0],
         inputKind: "select" as const,
         options: H3_BINDING_EVENT_OPTIONS,
@@ -848,7 +848,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       },
       {
         key: "questCode",
-        label: "目标可发布任务",
+        label: "对应任务",
         current: currentQuestCode,
         inputKind: "select" as const,
         options: questCodes,
@@ -858,7 +858,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       },
       {
         key: "userIdField",
-        label: "事件用户字段",
+        label: "算谁完成",
         current: binding?.userIdField ?? "user_id",
         inputKind: "select" as const,
         options: H3_BINDING_USER_FIELDS,
@@ -881,16 +881,16 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
   const openCreateBinding = () => {
     if (bindingMissionOptions.length === 0) {
-      toast("没有可绑定任务，请先新建 H3 任务；新任务保持待启用，绑定后再发布");
+      toast("没有可以绑定的任务，请先新建任务，绑定完成条件后再启用");
       return;
     }
     openActionConfirm({
-      action: "新增任务完成事件绑定",
-      detail: <>选择 系统已发布的业务事件与一条可发布任务（待启用或已生效）。新任务应先完成本绑定再发布；事件生产者由选择自动确定，后端会校验重复事件槽位并记录理由。</>,
+      action: "新增任务完成条件",
+      detail: <>选择「用户做了什么」和对应的任务。用户做了这件事，任务就算完成。新任务要先绑定再启用。</>,
       businessForm: {
         kind: "multi-field",
-        title: "新增事件绑定",
-        hint: "不接受 JSON；请选择业务事件、目标任务和事件用户字段。",
+        title: "新增完成条件",
+        hint: "依次选择用户操作、对应任务和算谁完成。",
         fields: bindingFormFields(),
       },
       run: async (reason, _value, form) => {
@@ -908,19 +908,19 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           enabled: form?.enabled === "true",
           reason,
         }));
-        toast(`事件绑定「${bindingCode}」已新增并回读`);
+        toast(`完成条件「${bindingCode}」已新增`);
       },
     });
   };
 
   const openBindingEdit = (binding: H3QuestEventBinding) => {
     openActionConfirm({
-      action: `改绑事件 · ${binding.bindingCode}`,
-      detail: <>选择新的业务事件、目标可发布任务或用户字段；提交时核对整条配置，防止覆盖他人的修改，冲突或结果未知时不会以页面猜测覆盖服务端状态。</>,
+      action: `修改完成条件 · ${binding.bindingCode}`,
+      detail: <>可以改「用户做了什么」、对应任务或「算谁完成」。如果别人刚改过，需要刷新后重改。</>,
       businessForm: {
         kind: "multi-field",
-        title: `改绑 · ${binding.bindingCode}`,
-        hint: "事件生产者随业务事件自动确定；保存成功后从 H3 任务接口重新读取。",
+        title: `修改 · ${binding.bindingCode}`,
+        hint: "保存后列表自动刷新。",
         requireAnyChange: true,
         fields: bindingFormFields(binding),
       },
@@ -944,7 +944,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           expectedEnabled: Number(binding.status) === 1,
           reason,
         }));
-        toast(`事件绑定「${binding.bindingCode}」已改绑并回读`);
+        toast(`完成条件「${binding.bindingCode}」已修改`);
       },
     });
   };
@@ -952,9 +952,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openBindingDelete = (binding: H3QuestEventBinding) => {
     const enabled = Number(binding.status) === 1;
     openConfirm({
-      action: `删除事件绑定 · ${binding.bindingCode}`,
-      detail: <>删除为软删除并留下审计记录；删除后该业务事件不会再驱动任务完成。</>,
-      chips: [["软删除", "ready"], ["审计留痕", "done"]],
+      action: `删除完成条件 · ${binding.bindingCode}`,
+      detail: <>删除后，用户做这件事不再算完成任务。操作记录会保留。</>,
+      chips: [["保留操作记录", "done"]],
       reason: true,
       okLabel: "确认删除",
       run: async (reason) => {
@@ -966,7 +966,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           expectedEnabled: enabled,
           reason,
         }));
-        toast(`事件绑定「${binding.bindingCode}」已删除`);
+        toast(`完成条件「${binding.bindingCode}」已删除`);
       },
     });
   };
@@ -975,7 +975,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const { status } = taskIdentity(task, monthly);
     return <>
       <button className="l-btn sm" onClick={() => openMissionEdit(task, label, monthly)} disabled={!canModuleWrite || status === "archived"}>编辑</button>{" "}
-      {!monthly ? <><button className="l-btn sm mc" onClick={() => openMissionPresentation(task, label)} disabled={!canModuleWrite || status === "archived"}>配置类别/去完成</button>{" "}</> : null}
+      {!monthly ? <><button className="l-btn sm mc" onClick={() => openMissionPresentation(task, label)} disabled={!canModuleWrite || status === "archived"}>设置类别/跳转</button>{" "}</> : null}
       {status === "archived" ? (
         <button className="l-btn sm" onClick={() => openMissionDelete(task, label, monthly)} disabled={!canModuleWrite}>删除</button>
       ) : <>
@@ -986,7 +986,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   };
 
   const runEventDelete = async (eventId: string, expectedVersion: string, reason: string) => {
-    if (!ctx.can("growth_h4_write")) throw new Error("当前账户没有删除活动的权限。");
+    if (!ctx.can("growth_h4_write")) throw new Error("你没有删除活动的权限。");
     try {
       apply(await deleteH4QuestEvent(eventId, expectedVersion, reason));
       toast("活动已删除，历史参与、奖励与操作记录保留");
@@ -996,7 +996,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     if (!canModuleWrite || loading || error || !isDeletableQuestEvent(event)) return;
     openActionConfirm({
       action: `删除活动 · ${event.name}`,
-      detail: <>删除后活动移出活动中心。历史参与、奖励权益和操作记录保留；仅草稿或已结束活动可以删除，状态变化时须刷新后再确认。</>,
+      detail: <>删除后活动从活动中心消失，已有的参与、奖励和操作记录仍保留。只能删除草稿或已结束的活动。</>,
       run: reason => runEventDelete(event.id, event.deleteVersion!, reason),
     });
   };
@@ -1004,7 +1004,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openCreateEvent = () => {
     openActionConfirm({
       action: "新建活动",
-      detail: <>新建活动事件;id 英文唯一,主推需进行中且全局唯一。</>,
+      detail: <>新建一个活动。活动 ID 用英文且不能重复；主推活动必须在进行中，且同时只能有一个。</>,
       amplifies: true,
       businessForm: { kind: "quest-event-config", subject: "新活动" },
       run: async (reason, _v, bv) => {
@@ -1026,15 +1026,15 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         };
         if (!payload.id || !payload.name) return;
         apply(await createH4QuestEvent(payload, reason));
-        toast(`· 活动「${payload.name}」已新建`);
+        toast(`活动「${payload.name}」已新建`);
       },
     });
   };
 
   const openCreateWheelTier = () => {
     openActionConfirm({
-      action: "新建轮盘档位",
-      detail: <>新建抽奖档位;概率 0-100,所有档位概率和应=100,真实出金过 B1 红线。</>,
+      action: "新建转盘奖项",
+      detail: <>新建一个转盘奖项。概率填 0–100，所有奖项加起来要等于 100%。发真钱的奖项，覆盖率低于红线时无法保存。</>,
       amplifies: true,
       businessForm: { kind: "wheel-tier-config", subject: "新档位" },
       run: async (reason, _v, bv) => {
@@ -1051,7 +1051,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         };
         if (!payload.tierName || !payload.rewardName) return;
         apply(await createH4WheelTier(payload, text(model?.wheelSignature, "__EMPTY__"), reason));
-        toast(`· 档位「${payload.tierName}」已新建`);
+        toast(`奖项「${payload.tierName}」已新建`);
       },
     });
   };
@@ -1059,7 +1059,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openCreateWheelGuard = () => {
     openActionConfirm({
       action: "新建转盘安全限制",
-      detail: <>新建转盘安全限制；标识须使用小写英文字母且不能重复。</>,
+      detail: <>新建一条转盘安全限制。标识只能用小写英文字母，不能重复。</>,
       businessForm: { kind: "wheel-guard-config", subject: "新安全限制" },
       run: async (reason, _v, bv) => {
         if (!bv) return;
@@ -1071,7 +1071,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         };
         if (!payload.guardKey || !payload.guardLabel) return;
         apply(await createH4WheelGuard(payload, reason));
-        toast(`· 安全限制「${payload.guardLabel}」已新建`);
+        toast(`安全限制「${payload.guardLabel}」已新建`);
       },
     });
   };
@@ -1090,13 +1090,13 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const current = text(guard.value);
     openActionConfirm({
       action: `转盘安全限制 · ${({ budget: "每日实际奖励预算（美元）", cap: "各奖档每日库存", kill: "实际奖品发放开关" } as Record<string,string>)[guard.key] ?? operatorCopyText(guard.label)}`,
-      detail: <>当前值 <b>{guard.key === "cap" ? "按各奖档每日库存" : ({on:"启用",off:"停用"} as Record<string,string>)[current] ?? operatorCopyText(current)}</b>；确认后更新转盘安全限制；内容已变化时须刷新后再确认。</>,
+      detail: <>当前值 <b>{guard.key === "cap" ? "按各奖档每日库存" : ({on:"启用",off:"停用"} as Record<string,string>)[current] ?? operatorCopyText(current)}</b>。如果别人刚改过，需要刷新后再改。</>,
       amplifies: guard.key !== "kill",
       edit: { kind: "text", current },
       run: async (reason, value) => {
         if (!value) return;
         apply(await updateH4WheelGuard(guard.key, value, current, reason));
-        toast(`· 转盘安全限制「${({ budget: "每日实际奖励预算（美元）", cap: "各奖档每日库存", kill: "实际奖品发放开关" } as Record<string,string>)[guard.key] ?? operatorCopyText(guard.label)}」已更新`);
+        toast(`转盘安全限制「${({ budget: "每日实际奖励预算（美元）", cap: "各奖档每日库存", kill: "实际奖品发放开关" } as Record<string,string>)[guard.key] ?? operatorCopyText(guard.label)}」已更新`);
       },
     });
   };
@@ -1104,13 +1104,13 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openWheelProbabilities = () => {
     const tiers = model?.wheelTiers ?? [];
     openActionConfirm({
-      action: "调整转盘档位概率",
-      detail: <>同时设置全部档位，概率合计须为 100%；提高资金奖励概率须通过 B1 红线。</>,
+      action: "调整转盘奖项概率",
+      detail: <>一次设置所有奖项，加起来要等于 100%。调高发钱奖项的概率时，覆盖率低于红线无法保存。</>,
       amplifies: true,
       businessForm: {
         kind: "multi-field",
-        title: "转盘档位概率",
-        hint: "所有档位必须同时提交,合计必须等于 100%。",
+        title: "转盘奖项概率",
+        hint: "所有奖项一起提交，加起来要等于 100%。",
         requireAnyChange: true,
         fields: tiers.map((tier) => ({
           key: text(tier.tier),
@@ -1132,14 +1132,14 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         ]));
         const total = Object.values(probabilities).reduce((sum, value) => sum + value, 0);
         if (Math.abs(total - 100) > 0.0001) {
-          throw new Error("转盘档位概率合计必须等于 100%");
+          throw new Error("所有奖项的概率加起来要等于 100%");
         }
         apply(await updateH4WheelProbabilities(
           probabilities,
           text(model?.wheelSignature, "__EMPTY__"),
           reason,
         ));
-        toast("· 转盘档位概率已更新并重新计算奖池签名");
+        toast("转盘概率已更新");
       },
     });
   };
@@ -1156,7 +1156,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const expected = String(numericValue(current));
     openActionConfirm({
       action: label,
-      detail: <>当前值 <b>{current}</b>，提交使用当前值比较，若其他管理员已修改则拒绝覆盖。</>,
+      detail: <>当前值 <b>{current}</b>。如果别人刚改过，需要刷新后再改。</>,
       edit: { kind: "number", current: expected, min, max, step, disallowCurrent: true, amplifiesWhen },
       run: async (reason, value) => {
         if (!value) return;
@@ -1169,11 +1169,11 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const current = text(model?.promoBanner?.status, "paused").toLowerCase();
     const next = current === "active" ? "paused" : "active";
     openActionConfirm({
-      action: next === "active" ? "启用首页促销备用" : "暂停首页促销备用",
-      detail: <>当前促销备用 <b>{current === "active" ? "已启用" : "已暂停"}</b>。该状态只控制“没有未领取周任务时跳商店”的备用卡，不影响活动周任务卡及其倒计时、目标设备和日产展示；并发变更会被拒绝。</>,
+      action: next === "active" ? "启用首页备用促销卡" : "暂停首页备用促销卡",
+      detail: <>当前 <b>{current === "active" ? "已启用" : "已暂停"}</b>。只控制「没有未领取的周任务时，显示跳转商城」的备用卡，不影响周任务卡本身。</>,
       amplifies: next === "active",
       run: async (reason) => {
-        await updateConfigWithExpected("promoBanner.status", next, current, reason, "首页促销备用状态");
+        await updateConfigWithExpected("promoBanner.status", next, current, reason, "首页备用促销卡状态");
       },
     });
   };
@@ -1181,20 +1181,20 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openEditWheelTier = (tier: Record<string, any>) => {
     const tierName = text(tier.tier);
     openActionConfirm({
-      action: `编辑转盘档位 · ${tierName}`,
-      detail: <>编辑奖项展示、奖励类型和真实流出属性；概率统一在“改奖池 / 概率”中调整，保证提交始终合计 100%。</>,
+      action: `编辑转盘奖项 · ${tierName}`,
+      detail: <>编辑奖项名称、奖励类型、是否发真钱。概率请在「改奖池 / 概率」里统一调，保证加起来是 100%。</>,
       amplifies: true,
       businessForm: {
         kind: "multi-field",
-        title: `档位配置 · ${tierName}`,
+        title: `奖项设置 · ${tierName}`,
         requireAnyChange: true,
         fields: [
-          { key: "rewardName", label: "奖项展示", current: text(tier.reward), inputKind: "text", required: true, showDiff: true },
+          { key: "rewardName", label: "奖项名称", current: text(tier.reward), inputKind: "text", required: true, showDiff: true },
           { key: "rewardKind", label: "奖励类型", current: text(tier.kind, "nex"), inputKind: "select", options: ["nex", "points", "usdt", "coupon"], optionLabels: { nex: "UVT", points: "积分", usdt: "USDT", coupon: "代金券" }, required: true, showDiff: true },
-          { key: "realOutflow", label: "真实流出", current: boolValue(tier.real) ? "1" : "0", inputKind: "select", options: ["0", "1"], optionLabels: { "0": "否", "1": "是" }, required: true, showDiff: true },
-          { key: "rewardAmount", label: "实际派奖数量", current: String(numericValue(tier.amount)), inputKind: "number", min: 0.000001, max: 1000000, step: 0.000001, required: true, showDiff: true },
+          { key: "realOutflow", label: "是否发真钱", current: boolValue(tier.real) ? "1" : "0", inputKind: "select", options: ["0", "1"], optionLabels: { "0": "否", "1": "是" }, required: true, showDiff: true },
+          { key: "rewardAmount", label: "每次发放数量", current: String(numericValue(tier.amount)), inputKind: "number", min: 0.000001, max: 1000000, step: 0.000001, required: true, showDiff: true },
           { key: "voucherId", label: "代金券 ID", current: text(tier.voucherId, ""), inputKind: "text", showDiff: true },
-          { key: "dailyStock", label: "每日全局库存(0=不限)", current: String(numericValue(tier.dailyStock)), inputKind: "number", min: 0, max: 1000000, step: 1, required: true, showDiff: true },
+          { key: "dailyStock", label: "每日库存（0 = 不限）", current: String(numericValue(tier.dailyStock)), inputKind: "number", min: 0, max: 1000000, step: 1, required: true, showDiff: true },
         ],
       },
       run: async (reason, _value, bv) => {
@@ -1209,7 +1209,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           voucherId: String(bv.voucherId || "").trim() || null,
           dailyStock: Math.max(0, Number(bv.dailyStock) || 0),
         }, text(model?.wheelSignature, "__EMPTY__"), reason));
-        toast(`· 档位「${tierName}」已更新并记审计`);
+        toast(`奖项「${tierName}」已更新`);
       },
     });
   };
@@ -1218,32 +1218,32 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const tierName = text(tier.tier);
     const probability = numericValue(tier.prob);
     openActionConfirm({
-      action: `删除转盘档位 · ${tierName}`,
+      action: `删除转盘奖项 · ${tierName}`,
       detail: probability === 0
-        ? <>删除后仍至少保留 2 个档位。</>
-        : <>为避免概率总和失真，请先在“改奖池 / 概率”把该档概率调为 0%，再删除。</>,
+        ? <>删除后至少还要保留 2 个奖项。</>
+        : <>请先在「改奖池 / 概率」把这个奖项的概率调成 0%，再删除。</>,
       run: async (reason) => {
-        if (probability !== 0) throw new Error("删除档位前必须先将概率调整为 0%");
+        if (probability !== 0) throw new Error("删除前请先把概率调成 0%");
         apply(await deleteH4WheelTier(
           tierName,
           text(model?.wheelSignature, "__EMPTY__"),
           reason,
         ));
-        toast(`· 档位「${tierName}」已删除并记审计`);
+        toast(`奖项「${tierName}」已删除`);
       },
     });
   };
 
   if (loading) {
-    return <section className="l-card"><div className="l-b">{moduleLabel} 数据加载中...</div></section>;
+    return <section className="l-card"><div className="l-b">{moduleLabel}数据加载中…</div></section>;
   }
 
   if (error || !model) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">{moduleLabel} 数据加载失败</span></div>
+        <div className="l-h"><span className="ttl">{moduleLabel}数据加载失败</span></div>
         <div className="l-b">
-          <div>{error ?? "未收到本页数据，请重试；持续失败时请联系值班人员。"}</div>
+          <div>{error ?? "没有收到数据，请重试；一直失败请联系值班同事。"}</div>
           <button className="l-btn sm mc" style={{ marginTop: 12 }} onClick={() => void reload()}>
             重试加载
           </button>
@@ -1260,9 +1260,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   // 两者是不同旋钮,却都被说成「当前 P2 任务加成」(#138)。这里只保留 H1 权威值作为「任务加成」,
   // 周任务曲线单独标注为「每周任务曲线倍率」,并在服务端未返回时统一显示「暂不可计算」而不是 0×。
   const phaseMultiplierRaw = text(model.phaseMultiplierReadonly?.value, "");
-  const phaseMultiplier = phaseMultiplierRaw ? `${phaseMultiplierRaw}x` : "暂不可计算";
+  const phaseMultiplier = phaseMultiplierRaw ? `${phaseMultiplierRaw}x` : "暂无法计算";
   const weeklyCurveMultiplier = model.weeklyMultipliers?.find((item) => cleanPhaseKey(item.p) === currentPhaseCode)?.mult;
-  const weeklyCurveLabel = weeklyCurveMultiplier ? `${weeklyCurveMultiplier}` : "暂不可计算";
+  const weeklyCurveLabel = weeklyCurveMultiplier ? `${weeklyCurveMultiplier}` : "暂无法计算";
   const promoBanner = model.promoBanner ?? {};
   const wheelProbabilitySum = (model.wheelTiers ?? []).reduce((sum, tier) => sum + numericValue(tier.prob), 0);
   const wheelProbabilityOk = Math.abs(wheelProbabilitySum - 100) < 0.001;
@@ -1296,22 +1296,22 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           <div className="f-stat">
             <div className="k">首日任务领取率</div>
             <div className="v">{text(h3Stats.dayOneRate24h)} / {text(h3Stats.dayOneRateGrace)}</div>
-            <div className="sub">24h 内全额 · 宽限期降档领</div>
+            <div className="sub">24 小时内领全额 · 超时后领得少</div>
           </div>
           <div className="f-stat ok">
-            <div className="k">本周任务完成 · 越南运营统计</div>
+            <div className="k">本周完成任务（越南时间）</div>
             <div className="v">{text(h3Stats.weeklyDone)}</div>
             <div className="sub">基础任务 {text(h3Stats.t1Done)} · 进阶任务 {text(h3Stats.t2Done)}</div>
           </div>
           <div className="f-stat warn">
-            <div className="k">本周 UVT 派发 · 越南运营统计</div>
+            <div className="k">本周发放 UVT（越南时间）</div>
             <div className="v">{text(h3Stats.weeklyNex)}</div>
-            <div className="sub">含 运营阶段加成 {currentPhaseCode} {phaseMultiplier}（H1 权威）；每周任务曲线 {weeklyCurveLabel}</div>
+            <div className="sub">含运营阶段加成 {currentPhaseCode} {phaseMultiplier}；每周任务倍率 {weeklyCurveLabel}</div>
           </div>
           <div className="f-stat cyan">
-            <div className="k">月度挑战在途</div>
+            <div className="k">正在做月度挑战</div>
             <div className="v">{numericValue(h3Stats.monthlyInflight).toLocaleString("en-US")} 人</div>
-            <div className="sub">5 主题按账龄自动派发</div>
+            <div className="sub">5 个主题按注册时长自动分配</div>
           </div>
         </div>
       ) : (
@@ -1319,7 +1319,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           <div className="f-stat">
             <div className="k">进行中活动</div>
             <div className="v">{text(h4Stats.ongoing)}</div>
-            <div className="sub">主推位:{text(h4Stats.featuredEv)}(唯一)</div>
+            <div className="sub">主推：{text(h4Stats.featuredEv)}</div>
           </div>
           <div className="f-stat ok">
             <div className="k">可追踪活动转化</div>
@@ -1331,9 +1331,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             <div className="v">{text(h4Stats.wheelToday)}</div>
           </div>
           <div className="f-stat danger">
-            <div className="k">地域屏蔽活动</div>
+            <div className="k">限地区的活动</div>
             <div className="v">{text(h4Stats.geoBlocked)}</div>
-            <div className="sub">地域限制 · 应急处置见 J1</div>
+            <div className="sub">紧急处理请去「紧急停用开关」</div>
           </div>
         </div>
       )}
@@ -1341,13 +1341,13 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">App 运营内容（三语）</span>
-          <span className="sub">· 英语 / 简体中文 / 越南语；缺失时保留当前原文，不自动生成翻译</span>
+          <span className="sub">· 英语 / 简体中文 / 越南语；没填的显示原文，不自动翻译</span>
         </div>
         {/* 缺失即阻断:事件转入「进行中」= 对用户发布,后端要求 zh/vi 填全。此前表格只把空值
             显示成中性的「填写」按钮,运营看不出缺内容会挡住发布;中文 App 于是直接回退英文原文。 */}
         {localizedGaps.length > 0 && (
           <div className="gtint" role="status" style={{ margin: "0 0 10px" }}>
-            有 {localizedGaps.length} 项目标语言内容未配置，相关事件无法发布为「进行中」：
+            有 {localizedGaps.length} 项翻译没填，相关活动不能设为「进行中」：
             {localizedGaps.slice(0, 6).map((gap) => `${gap.eventCode} ${LOCALE_LABEL[gap.locale]} ${LOCALIZED_FIELD_LABEL[gap.field]}`).join(" · ")}
             {localizedGaps.length > 6 ? ` 等 ${localizedGaps.length} 项` : ""}
           </div>
@@ -1376,11 +1376,11 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                     return (
                       <td key={language}>
                         <button className="l-btn sm mc" disabled={!canModuleWrite || !item.code}
-                          aria-label={`${current ? "编辑" : missing ? "填写(发布前必须补齐)" : "填写"} ${row.label} ${LOCALE_LABEL[language]}`}
+                          aria-label={`${current ? "编辑" : missing ? "填写（上线前必须补齐）" : "填写"} ${row.label} ${LOCALE_LABEL[language]}`}
                           onClick={() => openLocalizedContent(item.entity, item.code, row.field, language, row.source)}>
                           {current || (missing ? "缺失" : "填写")}
                         </button>
-                        {missing && <span className="bdg warn" style={{ marginLeft: 6 }} title="事件发布为「进行中」前必须补齐该语言">缺</span>}
+                        {missing && <span className="bdg warn" style={{ marginLeft: 6 }} title="活动设为「进行中」前必须补齐这个语言">缺</span>}
                       </td>
                     );
                   })}
@@ -1390,7 +1390,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           </table>
         </div>
         {section === "tasks" && model.monthlyMissions.length > 0 && (
-          <div className="sub" style={{ marginTop: 10 }}>月度任务尚无正式 App 消费入口，已禁用三语编辑，避免保存后无可见效果。</div>
+          <div className="sub" style={{ marginTop: 10 }}>App 还没有月度任务入口，暂不提供翻译编辑。</div>
         )}
       </section>
 
@@ -1400,12 +1400,12 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">首日任务</span>
-            <span className="sub">· 新人转化最核心的钩子 · 进入时冻结已启用任务、三相奖励与资格截止；此后改动仅影响尚未进入任务的用户</span>
+            <span className="sub">· 新用户转化最关键的一环 · 用户开始做任务时就锁定任务和奖励，之后的修改只影响还没开始的用户</span>
             <div className="r">
-              <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.windowMs", "首日任务时窗", text(model.dayOneWindow), false)} disabled={!canModuleWrite}>
+              <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.windowMs", "首日任务时长", text(model.dayOneWindow), false)} disabled={!canModuleWrite}>
                 调整
               </button>
-              <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.triReward", "首日三相奖励", text(model.dayOneTriReward), true)} disabled={!canModuleWrite}>
+              <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.triReward", "首日任务奖励", text(model.dayOneTriReward), true)} disabled={!canModuleWrite}>
                 调整奖励
               </button>
               <button className="l-btn sm mc" onClick={() => openCreateMission("DAY_ONE", "首日任务")} disabled={!canModuleWrite}>+ 新建任务</button>
@@ -1414,29 +1414,29 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           <div className="l-b" style={{ paddingTop: 4 }}>
             <div className="p-row">
               <span className="k">
-                时窗
-                <small>改窗对在窗用户按各自进窗时间锁定,不追溯。</small>
+                任务时长
+                <small>已开始的用户按各自开始时间计算，修改不影响他们。</small>
               </span>
               <span className="v">{text(model.dayOneWindow)}</span>
-              <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.windowMs", "首日任务时窗", text(model.dayOneWindow), false)} disabled={!canModuleWrite}>调整</button>
+              <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.windowMs", "首日任务时长", text(model.dayOneWindow), false)} disabled={!canModuleWrite}>调整</button>
             </div>
             <div className="p-row">
               <span className="k">
                 资格有效期
-                <small>服务端按注册时间裁决；到期后不再展示、完成或领取。</small>
+                <small>按注册时间计算；过期后不再显示，也不能完成或领取。</small>
               </span>
               <span className="v">注册后 {text(model.dayOneEligibilityHours)} 小时</span>
               <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.eligibilityHours", "新手任务资格有效期（小时）", text(model.dayOneEligibilityHours), false)} disabled={!canModuleWrite}>调整</button>
             </div>
             <div className="p-row">
-              <span className="k">完成奖励(三相)</span>
+              <span className="k">完成奖励</span>
               <span className="v">{operatorCopyText(text(model.dayOneTriReward))}</span>
-              <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.triReward", "首日三相奖励", text(model.dayOneTriReward), true)} disabled={!canModuleWrite}>调整</button>
+              <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.triReward", "首日任务奖励", text(model.dayOneTriReward), true)} disabled={!canModuleWrite}>调整</button>
             </div>
 
             <div className="l-h" style={{ marginTop: 12, border: 0, paddingBottom: 0 }}>
               <span className="ttl" style={{ fontSize: 13 }}>任务清单</span>
-              <span className="sub">· 多字段读模型 · 奖励可调 · 停用仅影响尚未进入任务的用户，既有实例按快照展示</span>
+              <span className="sub">· 停用只影响还没开始的用户，已开始的照旧</span>
             </div>
             <div style={{ overflowX: "auto", marginTop: 8 }}>
               <table className="l-tbl" style={{ minWidth: 680 }}>
@@ -1444,10 +1444,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   <tr>
                     <th>任务</th>
                     <th>类别</th>
-                    <th>去完成路径</th>
+                    <th>跳转页面</th>
                     <th className="num">奖励</th>
                     <th>状态</th>
-                    <th>完成判定</th>
+                    <th>完成条件</th>
                     <th style={{ textAlign: "right" }}>动作</th>
                   </tr>
                 </thead>
@@ -1459,13 +1459,13 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                     return (
                       <tr key={id}>
                         <td style={{ fontWeight: 600, color: active ? "var(--ink)" : "var(--ink-3)" }}>{taskTitleText(text(task.task))}</td>
-                        <td><span className="bdg">{TASK_CATEGORY_LABELS[text(task.category, "explore")] ?? "其他任务分类"}</span></td>
+                        <td><span className="bdg">{TASK_CATEGORY_LABELS[text(task.category, "explore")] ?? "其他"}</span></td>
                         <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(task.href)}</td>
-                        <td style={{ color: "var(--ink-3)" }}>新进入用户的快照总奖励</td>
+                        <td style={{ color: "var(--ink-3)" }}>见上方完成奖励</td>
                         <td><span className={`bdg ${statusTone}`}>{statusLabel}</span></td>
                         <td style={{ fontSize: 11.5 }}>
-                          <span style={{ color: task.completionEvent ? "var(--ink-2)" : "var(--warning)" }}>{COMPLETION_LABEL[text(task.completionType, "unbound")] ?? "待绑定业务事件"}</span>
-                          {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : <span style={{ color: "var(--warning)", marginLeft: 4 }}>· 未绑定则无法完成发奖</span>}
+                          <span style={{ color: task.completionEvent ? "var(--ink-2)" : "var(--warning)" }}>{COMPLETION_LABEL[text(task.completionType, "unbound")] ?? "还没绑定完成条件"}</span>
+                          {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : <span style={{ color: "var(--warning)", marginLeft: 4 }}>· 不绑定就无法完成和发奖</span>}
                         </td>
                         <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                           <span className="tiny" style={{ color: "var(--ink-3)" }}>统一奖励</span>
@@ -1481,21 +1481,21 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             <div className="sm-strip" style={{ marginTop: 10 }}>
               {(model.dayOneStates ?? []).map((state, index, states) => (
                 <span key={state.st}>
-                  <span className={`st ${state.tone}`}>{({ ACTIVE: "进行中", GRACE: "宽限中", EXPIRED: "已过期" } as Record<string,string>)[state.st.toUpperCase()] ?? "状态待核实"}</span>
+                  <span className={`st ${state.tone}`}>{({ ACTIVE: "进行中", GRACE: "宽限中", EXPIRED: "已过期" } as Record<string,string>)[state.st.toUpperCase()] ?? "状态未知"}</span>
                   {index < states.length - 1 && <span className="ar">→</span>}
                 </span>
               ))}
             </div>
             <div className="htint" style={{ marginTop: 10, fontSize: 12 }}>
-              <b>处理流程</b> · 按时完成（完成全部任务后领取对应奖励）→ 宽限期（按领取时限降低奖励）→ 已过期（奖励为零，不再展示首页任务）。
+              <b>流程</b> · 按时完成（做完全部任务领奖励）→ 超时（奖励变少）→ 过期（没有奖励，首页不再显示）。
             </div>
           </div>
         </section>
 
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">每周任务(两档 + 周冠军)</span>
-            <span className="sub">· 地区切换生效后，按注册手机号区号对应时区，每周一 00:00 开始新一周 · 未配置区号按越南时间 · 同周锁定</span>
+            <span className="ttl">每周任务（两档 + 周冠军）</span>
+            <span className="sub">· 按注册手机号区号的时区，每周一 00:00 开始新一周 · 没设置的区号用越南时间</span>
             <div className="r">
               <button className="l-btn sm mc" onClick={() => openCreateMission("WEEKLY_T1", "每周一档")} disabled={!canModuleWrite}>+ 新建一档</button>
               <button className="l-btn sm mc" onClick={() => openCreateMission("WEEKLY_T2", "每周二档")} disabled={!canModuleWrite}>+ 新建二档</button>
@@ -1504,18 +1504,18 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           <H3WeeklyRegionPolicyPanel ctx={ctx} />
           <div className="l-b" style={{ paddingTop: 4 }}>
             <div className="l-h" style={{ marginTop: 2, border: 0, paddingBottom: 0 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-2)" }}>一档(优先级派发 · 命中第一条)</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-2)" }}>一档（从上往下，用户符合哪条就做哪条）</span>
             </div>
             <div style={{ overflowX: "auto", marginTop: 6 }}>
               <table className="l-tbl" style={{ minWidth: 600 }}>
                 <thead>
                   <tr>
-                    <th>条件(优先级自上而下)</th>
+                    <th>条件（从上往下优先）</th>
                     <th>类别</th>
-                    <th>去完成路径</th>
+                    <th>跳转页面</th>
                     <th className="num">奖励 UVT</th>
                     <th>状态</th>
-                    <th>完成判定</th>
+                    <th>完成条件</th>
                     <th style={{ textAlign: "right" }}>动作</th>
                   </tr>
                 </thead>
@@ -1525,13 +1525,13 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                     return (
                       <tr key={`${task.cond}-${index}`}>
                         <td style={{ fontWeight: 600 }}>{taskTitleText(text(task.cond))}</td>
-                        <td><span className="bdg">{TASK_CATEGORY_LABELS[text(task.category, "explore")] ?? "其他任务分类"}</span></td>
+                        <td><span className="bdg">{TASK_CATEGORY_LABELS[text(task.category, "explore")] ?? "其他"}</span></td>
                         <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(task.href)}</td>
                         <td className="num mono" style={{ fontWeight: 700 }}>{nexGridBrandText(text(task.reward))}</td>
                         <td><span className={`bdg ${statusTone}`}>{statusLabel}</span></td>
                         <td style={{ fontSize: 11.5 }}>
-                          <span style={{ color: task.completionEvent ? "var(--ink-2)" : "var(--warning)" }}>{COMPLETION_LABEL[text(task.completionType, "unbound")] ?? "待绑定业务事件"}</span>
-                          {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : <span style={{ color: "var(--warning)", marginLeft: 4 }}>· 未绑定则无法完成发奖</span>}
+                          <span style={{ color: task.completionEvent ? "var(--ink-2)" : "var(--warning)" }}>{COMPLETION_LABEL[text(task.completionType, "unbound")] ?? "还没绑定完成条件"}</span>
+                          {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : <span style={{ color: "var(--warning)", marginLeft: 4 }}>· 不绑定就无法完成和发奖</span>}
                         </td>
                         <td style={{ textAlign: "right" }}>
                           <button className="l-btn sm mc" onClick={() => openTaskReward(`mission.${text(task.taskCode ?? task.missionCode ?? task.id)}.reward`, text(task.cond), text(task.reward))} disabled={!canModuleWrite}>改奖励</button>
@@ -1545,7 +1545,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             </div>
 
             <div className="l-h" style={{ marginTop: 14, border: 0, paddingBottom: 0 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-2)" }}>二档(完成池 · 每条独立派发)</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-2)" }}>二档（每条都可以做，各自发奖）</span>
             </div>
             <div style={{ overflowX: "auto", marginTop: 6 }}>
               <table className="l-tbl" style={{ minWidth: 600 }}>
@@ -1553,10 +1553,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   <tr>
                     <th>任务</th>
                     <th>类别</th>
-                    <th>去完成路径</th>
+                    <th>跳转页面</th>
                     <th className="num">奖励 UVT</th>
                     <th>状态</th>
-                    <th>完成判定</th>
+                    <th>完成条件</th>
                     <th style={{ textAlign: "right" }}>动作</th>
                   </tr>
                 </thead>
@@ -1566,13 +1566,13 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                     return (
                       <tr key={`${task.cond}-${index}`}>
                         <td style={{ fontWeight: 600 }}>{taskTitleText(text(task.cond))}</td>
-                        <td><span className="bdg">{TASK_CATEGORY_LABELS[text(task.category, "explore")] ?? "其他任务分类"}</span></td>
+                        <td><span className="bdg">{TASK_CATEGORY_LABELS[text(task.category, "explore")] ?? "其他"}</span></td>
                         <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(task.href)}</td>
                         <td className="num mono" style={{ fontWeight: 700 }}>{nexGridBrandText(text(task.reward))}</td>
                         <td><span className={`bdg ${statusTone}`}>{statusLabel}</span></td>
                         <td style={{ fontSize: 11.5 }}>
-                          <span style={{ color: task.completionEvent ? "var(--ink-2)" : "var(--warning)" }}>{COMPLETION_LABEL[text(task.completionType, "unbound")] ?? "待绑定业务事件"}</span>
-                          {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : <span style={{ color: "var(--warning)", marginLeft: 4 }}>· 未绑定则无法完成发奖</span>}
+                          <span style={{ color: task.completionEvent ? "var(--ink-2)" : "var(--warning)" }}>{COMPLETION_LABEL[text(task.completionType, "unbound")] ?? "还没绑定完成条件"}</span>
+                          {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : <span style={{ color: "var(--warning)", marginLeft: 4 }}>· 不绑定就无法完成和发奖</span>}
                         </td>
                         <td style={{ textAlign: "right" }}>
                           <button className="l-btn sm mc" onClick={() => openTaskReward(`mission.${text(task.taskCode ?? task.missionCode ?? task.id)}.reward`, text(task.cond), text(task.reward))} disabled={!canModuleWrite}>改奖励</button>
@@ -1587,13 +1587,13 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
             <div className="htint cyan" style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
               <span style={{ flex: 1 }}>
-                <b>周冠军加奖</b> · {operatorCopyText(text(model.weeklyChampionBonus))} · 累计 UVT 最高的当周用户额外加奖
+                <b>周冠军加奖</b> · {operatorCopyText(text(model.weeklyChampionBonus))} · 本周累计 UVT 最多的用户额外奖励
               </span>
               <button className="l-btn sm mc" onClick={() => openSimpleConfig("weekly.champBonus", "周冠军加奖", text(model.weeklyChampionBonus), true)} disabled={!canModuleWrite}>调整</button>
             </div>
 
             <div style={{ fontSize: 12, fontWeight: 600, margin: "12px 0 6px", color: "var(--ink-2)" }}>
-              阶段倍率曲线(点档位调整)
+              各阶段倍率（点击修改）
             </div>
             <div className="mult-track">
               {(model.weeklyMultipliers ?? []).map((item) => {
@@ -1619,13 +1619,13 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
       <section className="l-card" data-proof="h3-event-binding">
         <div className="l-h">
-          <span className="ttl">任务完成事件绑定</span>
-          <span className="sub">· 业务事件 → 可发布 H3 任务；新任务先绑定再启用。新增、改绑、启停和删除都保留理由、防覆盖修改检查 与服务端回读</span>
+          <span className="ttl">任务完成条件</span>
+          <span className="sub">· 用户做了某件事 → 对应任务算完成。新任务要先绑定再启用</span>
           <div className="r"><button className="l-btn sm mc" onClick={openCreateBinding} disabled={!canModuleWrite}>+ 新增绑定</button></div>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 780 }}>
-            <thead><tr><th>绑定编号</th><th>生产者</th><th>事件</th><th>目标任务</th><th>用户字段</th><th>状态</th><th>操作</th></tr></thead>
+            <thead><tr><th>条件编号</th><th>来源</th><th>用户操作</th><th>对应任务</th><th>算谁完成</th><th>状态</th><th>操作</th></tr></thead>
             <tbody>
               {(model.eventBindings ?? []).map((binding) => {
                 const enabled = Number(binding.status) === 1;
@@ -1637,13 +1637,13 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   <td className="mono">{binding.userIdField}</td>
                   <td>{enabled ? <span className="bdg ok">生效</span> : <span className="bdg dim">停用</span>}</td>
                   <td>
-                    <button className="l-btn sm mc" onClick={() => openBindingEdit(binding)} disabled={!canModuleWrite}>改绑</button>{" "}
+                    <button className="l-btn sm mc" onClick={() => openBindingEdit(binding)} disabled={!canModuleWrite}>修改</button>{" "}
                     <button className="l-btn sm" onClick={() => openBindingStatus(binding)} disabled={!canModuleWrite}>{enabled ? "停用" : "启用"}</button>{" "}
                     <button className="l-btn sm" onClick={() => openBindingDelete(binding)} disabled={!canModuleWrite}>删除</button>
                   </td>
                 </tr>;
               })}
-              {(model.eventBindings ?? []).length === 0 ? <tr><td colSpan={7} className="sub">暂无绑定</td></tr> : null}
+              {(model.eventBindings ?? []).length === 0 ? <tr><td colSpan={7} className="sub">暂无完成条件</td></tr> : null}
             </tbody>
           </table>
         </div>
@@ -1651,8 +1651,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
       <section className="l-card" data-proof="h3-event-contract">
         <div className="l-h">
-          <span className="ttl">任务完成记录与统计规则(只读)</span>
-          <span className="sub">· 任务编号、完成记录、关联业务、转化分析与数据报表</span>
+          <span className="ttl">任务数据口径（只读）</span>
+          <span className="sub">· 每个任务的完成记录会进入哪些统计</span>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 1080 }}>
@@ -1660,13 +1660,13 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               <tr>
                 <th>任务</th>
                 <th>任务编号</th>
-                <th>服务端完成事件</th>
-                <th>下游业务事件</th>
+                <th>完成记录</th>
+                <th>后续业务</th>
                 <th>用户转化分析</th>
                 <th>仅留存</th>
                 <th>注册满七天后的活跃贡献</th>
-                <th>数据分析 表.字段</th>
-                <th className="num">24h 样本</th>
+                <th>数据表字段</th>
+                <th className="num">24 小时完成数</th>
                 <th className="num">异常率</th>
               </tr>
             </thead>
@@ -1679,7 +1679,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                     <td className="mono" style={{ fontSize: 11 }}>{text(contract.taskKey)}</td>
                     <td className="mono" style={{ fontSize: 11 }}>{text(contract.serverEvent)}</td>
                     <td className="mono" style={{ fontSize: 11, color: text(contract.downstream) === "-" ? "var(--ink-4)" : undefined }}>{text(contract.downstream)}</td>
-                    <td>{boolValue(contract.b3) ? <span className="bdg ok">进 B3</span> : <span className="bdg dim">否</span>}</td>
+                    <td>{boolValue(contract.b3) ? <span className="bdg ok">计入转化</span> : <span className="bdg dim">否</span>}</td>
                     <td>{boolValue(contract.retentionOnly) ? <span className="bdg warn">是</span> : <span className="bdg dim">否</span>}</td>
                     <td style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{text(contract.day7)}</td>
                     <td className="mono" style={{ fontSize: 11 }}>{text(contract.bi)}</td>
@@ -1693,15 +1693,15 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="htint" style={{ fontSize: 12 }}>
-            <b>任务和统计共用同一份完成记录</b> · 任务编号关联任务配置、服务端完成事件、下游业务事件、用户转化分析和 数据分析。
+            <b>任务和统计用同一份完成记录</b>，所以发奖和报表的数字一致。
           </div>
         </div>
       </section>
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">月度挑战(按账龄派发)</span>
-          <span className="sub">· 每主题 3 个子目标全达成才可领 · 跨月清空重派</span>
+          <span className="ttl">月度挑战（按注册时长分配）</span>
+          <span className="sub">· 每个主题 3 个小目标全部完成才能领 · 每月重新开始</span>
           <div className="r">
             <button className="l-btn sm mc" onClick={() => openCreateMonthlyMission()} disabled={!canModuleWrite}>+ 新建月度挑战</button>
           </div>
@@ -1711,9 +1711,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             <thead>
               <tr>
                 <th>主题</th>
-                <th>账龄段</th>
+                <th>注册时长</th>
                 <th className="num">奖励 UVT</th>
-                <th>子目标</th>
+                <th>小目标</th>
                 <th>状态</th>
                 <th style={{ textAlign: "right" }}>动作</th>
               </tr>
@@ -1722,7 +1722,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               {model.monthlyMissions.length === 0 && (
                 <tr>
                   <td colSpan={6} style={{ textAlign: "center", padding: 24, color: "var(--ink-4)" }}>
-                    当前没有月度挑战。可点击右上角“+ 新建月度挑战”，按用户账龄配置主题、子目标与奖励。
+                    还没有月度挑战。点右上角「+ 新建月度挑战」，按用户注册时长设置主题、小目标和奖励。
                   </td>
                 </tr>
               )}
@@ -1749,25 +1749,25 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">阶段加成(只读)与完成监控</span>
-          <span className="sub">· 全局任务加成归 H1 派发 · 这页只套用</span>
+          <span className="ttl">阶段加成（只读）与领取情况</span>
+          <span className="sub">· 全局任务加成在「运营阶段设置」里改</span>
           <div className="r">
-            <a href="/growth/phase" className="l-btn">去 H1 调整 →</a>
+            <a href="/growth/phase" className="l-btn">去运营阶段设置 →</a>
           </div>
         </div>
         <div className="l-b" style={{ paddingTop: 4 }}>
           <div className="htint warn" style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ flex: 1 }}>
-              <b>全局任务加成 H1 派发</b> · 当前阶段 {currentPhaseCode},当前全局任务倍率 {phaseMultiplier}。要调去 H1。
+              <b>全局任务加成</b> · 当前阶段 {currentPhaseCode}，全局任务倍率 {phaseMultiplier}。修改请到「运营阶段设置」。
             </span>
             <span className="v mono" style={{ fontWeight: 700 }}>{phaseMultiplier}</span>
           </div>
           <div className="htint" style={{ marginTop: 8, fontSize: 12 }}>
-            <b>两套倍率别混</b> · 上方“一档阶段倍率”是每周任务自己的曲线;“全局任务加成”是 H1 的节奏旋钮。
+            <b>两种倍率别混</b> · 上方「各阶段倍率」只作用于每周任务；「全局任务加成」作用于所有任务，在「运营阶段设置」里改。
           </div>
 
           <div style={{ fontSize: 12, fontWeight: 600, margin: "12px 0 4px", color: "var(--ink-2)" }}>
-            完成 / 领取监控(服务器台账)
+            完成 / 领取情况
           </div>
           {(model.taskMonitor ?? []).map((item) => (
             <div className="p-row" key={item.label}>
@@ -1775,7 +1775,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             </div>
           ))}
           <div className="htint dim" style={{ marginTop: 8, fontSize: 12 }}>
-            <b>结算</b> · 重复领取不重复入账;过期与领取按过期优先。
+            <b>发放</b> · 重复领取不会重复到账；刚好过期时按过期处理。
           </div>
         </div>
       </section>
@@ -1783,10 +1783,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">本周任务卡展示参数（首页）</span>
-          <span className="sub">· 周任务优先、促销备用 · 首页固定视觉槽位 · 单实例配置</span>
+          <span className="sub">· 优先显示周任务，没有时显示备用促销卡</span>
           <div className="r">
             <span className={`bdg ${text(promoBanner.status, "") === "active" ? "ok" : "dim"}`}>
-              {text(promoBanner.status, "") === "active" ? "促销备用已启用" : "促销备用已暂停"}
+              {text(promoBanner.status, "") === "active" ? "备用促销卡已启用" : "备用促销卡已暂停"}
             </span>
           </div>
         </div>
@@ -1794,26 +1794,26 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           <div className="p-row">
             <span className="k">
               基础奖励 × 倍率 = 最终奖励
-              <small>仅在没有活动周任务时计算促销备用奖励。</small>
+              <small>只在没有周任务时，用于备用促销卡的奖励。</small>
             </span>
             <span className="v">{text(promoBanner.baseReward)} × {text(promoBanner.multiplier)} = {promoFinalReward(promoBanner.baseReward, promoBanner.multiplier)} UVT</span>
             <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.baseReward", "转化卡基础奖励", text(promoBanner.baseReward), 0, 100000, 1, "increase")} disabled={!canModuleWrite}>改基础</button>
             <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.multiplier", "转化卡倍率", text(promoBanner.multiplier), 0.1, 5, 0.1, "increase")} disabled={!canModuleWrite}>改倍率</button>
           </div>
           <div className="p-row">
-            <span className="k">倒计时窗口</span>
+            <span className="k">倒计时</span>
             <span className="v">{text(promoBanner.countdownDays)} 天 {text(promoBanner.countdownHours)} 小时</span>
             <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.countdownDays", "转化卡倒计时天数", text(promoBanner.countdownDays), 0, 365, 1)} disabled={!canModuleWrite}>改天数</button>
             <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.countdownHours", "转化卡倒计时小时", text(promoBanner.countdownHours), 0, 23, 1)} disabled={!canModuleWrite}>改小时</button>
           </div>
           <div className="p-row">
-            <span className="k">目标设备 / 日产展示</span>
+            <span className="k">推荐设备 / 显示的日收益</span>
             <span className="v">{nexGridBrandText(text(promoBanner.targetDevice))} · ${text(promoBanner.targetDaily)}/天</span>
             <button className="l-btn sm mc" onClick={() => openSimpleConfig("promoBanner.targetDevice", "转化卡目标设备", text(promoBanner.targetDevice), false)} disabled={!canModuleWrite}>改设备</button>
-            <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.targetDaily", "转化卡日产展示", text(promoBanner.targetDaily), 0, 1000000, 0.01)} disabled={!canModuleWrite}>改日产</button>
+            <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.targetDaily", "转化卡显示的日收益", text(promoBanner.targetDaily), 0, 1000000, 0.01)} disabled={!canModuleWrite}>改日收益</button>
           </div>
           <div className="p-row">
-            <span className="k">促销备用状态</span>
+            <span className="k">备用促销卡</span>
             <span className="v">{text(promoBanner.status, "") === "active" ? "已启用" : "已暂停"}</span>
             <button
               className="l-btn sm mc"
@@ -1824,8 +1824,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             </button>
           </div>
           <div className="htint" style={{ marginTop: 10, fontSize: 12 }}>
-            <b>数据归属</b> · 周任务名称和奖励来自活动任务，任务倍率来自 H1；倒计时、目标设备和日产展示来自本区配置。
-            暂停只禁止“没有活动周任务时跳商店”的促销备用，不影响活动周任务及其展示参数；升奖励 / 倍率走 B1 红线。
+            <b>数据来源</b> · 周任务名称和奖励来自上方每周任务，倍率来自「运营阶段设置」；倒计时、推荐设备和日收益在这里设置。
+            暂停只关闭「没有周任务时跳商城」的备用卡，不影响周任务卡。调高奖励或倍率时，覆盖率低于红线无法保存。
           </div>
         </div>
       </section>
@@ -1835,20 +1835,20 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       {section === "events" && (
         <>
       {pendingH4EventDeletes().map(record => <div className="l-card" key={record.commandKey} role="status">
-        删除操作「{record.eventId}」尚未核实；原理由：{record.reason}。
+        删除「{record.eventId}」的结果暂未确认；填写的理由：{record.reason}。
         <button className="l-btn sm" disabled={!canModuleWrite} onClick={() => openActionConfirm({
-          action: `恢复原删除操作 · ${record.eventId}`,
-          detail: <>沿用原操作编号、版本与理由核实删除结果，不创建第二次操作。</>,
+          action: `查看删除结果 · ${record.eventId}`,
+          detail: <>查看上次删除是否成功，不会重复删除。</>,
           run: () => runEventDelete(record.eventId, record.expectedVersion, record.reason),
-        })}>恢复原操作</button>
+        })}>查看结果</button>
       </div>)}
       <H4EventRules ctx={ctx} />
       <H4GenesisRaffle ctx={ctx} />
       <div className="two-col">
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">活动列表(支持 8 种玩法 · 当前 {(model.events ?? []).length} 条)</span>
-            <span className="sub">· 主推位同时只能有一个 · 陈旧页面提交会被拒绝</span>
+            <span className="ttl">活动列表（8 种玩法 · 共 {(model.events ?? []).length} 个）</span>
+            <span className="sub">· 同时只能有一个主推活动</span>
             <div className="r">
               <button className="l-btn sm mc" onClick={() => openCreateEvent()} disabled={!canModuleWrite}>+ 新建活动</button>
             </div>
@@ -1868,7 +1868,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               <tbody>
                 {(model.events ?? []).map((event) => {
                   const lifecycle = event.deleteState || event.state;
-                  const [label, tone] = lifecycle === "draft" ? ["草稿", "dim"] : EVENT_LABEL[lifecycle] ?? stateTone.get(event.state) ?? ["活动状态待核实", "dim"];
+                  const [label, tone] = lifecycle === "draft" ? ["草稿", "dim"] : EVENT_LABEL[lifecycle] ?? stateTone.get(event.state) ?? ["状态未知", "dim"];
                   const ended = lifecycle === "ended";
                   const wheelEvent = text(event.kind).toLowerCase() === "wheel";
                   const zhName = localizedValue("event", event.id, "name", "zh");
@@ -1886,7 +1886,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                       <td>{event.featured ? <span className="bdg warn">主推</span> : <span style={{ color: "var(--ink-4)" }}>-</span>}</td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         {wheelEvent ? (
-                          <span className="bdg dim" title="转盘实际奖励由下方奖池档位统一管理" style={{ marginRight: 6 }}>
+                          <span className="bdg dim" title="转盘奖励在下方「抽奖转盘设置」里管理" style={{ marginRight: 6 }}>
                             奖池管理
                           </span>
                         ) : (
@@ -1938,21 +1938,21 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">抽奖转盘设置</span>
-            <span className="sub">· 一个转盘一张奖池表(日免费 + 签到满 30 天加抽票共用)</span>
+            <span className="sub">· 每日免费抽奖和签到满 30 天的加抽共用一个奖池</span>
             <div className="r">
               <button className="l-btn mc" onClick={openWheelProbabilities} disabled={!canWheelWrite}>
                 改奖池 / 概率
               </button>
-              <button className="l-btn sm mc" onClick={() => openCreateWheelTier()} disabled={!canWheelWrite}>+ 新建档位</button>
+              <button className="l-btn sm mc" onClick={() => openCreateWheelTier()} disabled={!canWheelWrite}>+ 新建奖项</button>
               <button className="l-btn sm mc" onClick={() => openCreateWheelGuard()} disabled={!canWheelWrite}>+ 新建安全限制</button>
             </div>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             <div className="wheel-row" style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>
-              <span>档位</span>
               <span>奖项</span>
+              <span>奖品</span>
               <span>概率</span>
-              <span>性质</span>
+              <span>类型</span>
               <span />
             </div>
             {(model.wheelTiers ?? []).map((tier) => {
@@ -1962,7 +1962,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   <span style={{ fontWeight: 600, color: "var(--ink)" }}>{text(tier.tier)}</span>
                   <span className="mono">{wheelRewardText(tier.reward)}</span>
                   <span className="mono" style={{ fontWeight: 700 }}>{percentText(tier.prob)}%</span>
-                  <span>{real ? <span className="bdg bad">真实流出</span> : <span className="bdg dim">{({nex:"UVT奖励",NEX:"UVT奖励",usdt:"USDT奖励",USDT:"USDT奖励",voucher:"代金券",none:"未中奖"} as Record<string,string>)[text(tier.kind)] ?? "其他奖励"}</span>}</span>
+                  <span>{real ? <span className="bdg bad">发真钱</span> : <span className="bdg dim">{({nex:"UVT奖励",NEX:"UVT奖励",usdt:"USDT奖励",USDT:"USDT奖励",voucher:"代金券",none:"未中奖"} as Record<string,string>)[text(tier.kind)] ?? "其他奖励"}</span>}</span>
                   <span style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                     <button className="l-btn sm mc" aria-label={`编辑 ${text(tier.tier)}（${wheelRewardText(tier.reward)}）`} onClick={() => openEditWheelTier(tier)} disabled={!canWheelWrite}>编辑</button>
                     <button className="l-btn sm" aria-label={`删除 ${text(tier.tier)}（${wheelRewardText(tier.reward)}）`} onClick={() => openDeleteWheelTier(tier)} disabled={numericValue(tier.prob) !== 0 || !canWheelWrite} title={numericValue(tier.prob) === 0 ? "删除档位" : "先将概率调为 0%"}>删除</button>
@@ -2004,10 +2004,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             </div>
 
             <div className="htint cyan" style={{ marginTop: 8, fontSize: 12 }}>
-              <b>当前预期奖励金额 ≈ ${text(model.wheelEvUsd)} / 次抽奖</b> · 真实流出期望由现金档贡献,奖池变更后重新计算。
+              <b>平均每次抽奖发出 ≈ ${text(model.wheelEvUsd)}</b> · 只算发真钱的奖项，改奖池后自动重算。
             </div>
             <div className="htint ok" style={{ marginTop: 8, fontSize: 12 }}>
-              <b>第四项安全规则（自动）</b> · 抽奖前查覆盖率,跌破 100% 资金奖励暂停、改发库存可用的 UVT 安慰奖,回升自动恢复。
+              <b>自动保护</b> · 每次抽奖前检查覆盖率，低于 100% 时暂停发钱、改发 UVT 安慰奖，恢复后自动恢复。
             </div>
           </div>
         </section>
@@ -2016,9 +2016,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">可追踪活动监控</span>
-          <span className="sub">· 只读 · 设备、团队与金融活动进度</span>
+          <span className="sub">· 只读 · 设备、团队、理财类活动的进度</span>
           <div className="r">
-            <span className="bdg dim">参与 → 达标 → 领取漏斗</span>
+            <span className="bdg dim">参与 → 达标 → 领取</span>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -2026,11 +2026,11 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             <thead>
               <tr>
                 <th>活动</th>
-                <th>判定条件</th>
+                <th>达标条件</th>
                 <th className="num">参与</th>
                 <th className="num">达标</th>
                 <th className="num">已领</th>
-                <th>地域</th>
+                <th>地区</th>
               </tr>
             </thead>
             <tbody>
@@ -2049,7 +2049,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="htint" style={{ fontSize: 12 }}>
-            <b>参与和领取时间限制</b> · 活动关闭或结束后不接纳新参与，已获得的权益按活动规则领取或结算；参与及转盘次数以活动配置为准。
+            <b>时间限制</b> · 活动关闭或结束后不能再参加，已获得的奖励按活动规则领取。
           </div>
         </div>
       </section>
@@ -2062,29 +2062,29 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               {
                 label: "首日任务",
                 maxRows: model.dayOneTasks.length,
-                reason: "首日任务为小型配置清单,需要同屏核对奖励",
+                reason: "任务很少，需要一屏核对奖励",
               },
               {
                 label: "周任务",
                 maxRows: model.weeklyTier1.length + model.weeklyTier2.length,
-                reason: "周任务需要同屏核对两档奖励",
+                reason: "需要一屏核对两档奖励",
               },
               {
                 label: "月度任务",
                 maxRows: model.monthlyMissions.length,
-                reason: "月度主题数量固定较少,同屏核对奖励更高效",
+                reason: "主题很少，一屏核对更方便",
               },
             ]
           : [
               {
                 label: "活动列表",
                 maxRows: (model.events ?? []).length,
-                reason: "活动状态和主推关系需要同屏校验",
+                reason: "需要一屏核对活动状态和主推",
               },
               {
                 label: "可追踪活动",
                 maxRows: model.trackables?.length ?? 0,
-                reason: "可追踪活动监控为小型只读清单",
+                reason: "清单很短，只读",
               },
             ]}
       />

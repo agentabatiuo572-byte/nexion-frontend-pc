@@ -131,9 +131,9 @@ test("L5 exposes only implemented actions and L6 uses canonical filtered endpoin
   assert.match(l5, /availableAggregateExportTypes/);
   assert.match(l5, /canAccessReportType/);
   assert.match(l5, /reasonMax:\s*200/);
-  assert.match(l5, /历史无快照不可下载/);
+  assert.match(l5, /旧任务没有文件，不能下载/);
   assert.match(l5, /已就绪（含历史）/);
-  assert.match(l5, /历史无快照/);
+  assert.match(l5, /旧任务无文件/);
   assert.match(l5, /当前版本已关闭此历史类型/);
   assert.match(l5, /八类账单/);
   const d4Client = await readFile(new URL("../lib/admin/d-client.ts", import.meta.url), "utf8");
@@ -142,7 +142,7 @@ test("L5 exposes only implemented actions and L6 uses canonical filtered endpoin
   assert.ok(canonicalTypes && displayedTypes, "L5 must disclose the canonical D4 categories");
   assert.deepEqual(displayedTypes.split(" / "), Array.from(canonicalTypes.matchAll(/"([^"]+)"/g), match => ({ swap: "兑换", topup: "充值", withdraw: "提现", earning: "收益", commission: "佣金", refund: "退款", bonus: "奖励", purchase: "购买" })[match[1]]));
   assert.match(l5, /生成监管报告/);
-  assert.match(l5, /I5 当前适用地区 × 披露版本/);
+  assert.match(l5, /按地区当前生效的披露版本/);
   assert.doesNotMatch(l5, /调整排程/);
   assert.doesNotMatch(l5, /\+ 新建模板/);
   assert.doesNotMatch(l5, /发起解密导出/);
@@ -160,7 +160,7 @@ test("L5 exposes only implemented actions and L6 uses canonical filtered endpoin
   assert.match(l6, /语言筛选/);
   assert.match(l6, /setLiveRaw\(null\)/);
   assert.match(l6, /heatmapData\.status === "RETIRED_ENVIRONMENT"/);
-  assert.match(l6, /开发环境只接受主数据/);
+  assert.match(l6, /数据来源不对，已停止显示/);
   assert.match(l6, /if \(ctx\.biLoading\)/);
   assert.doesNotMatch(l6, /SANDBOX_ONLY|Sandbox 独立观察|查询隔离事实/);
   assert.match(l5Client, /l6UnavailableStateFromError/);

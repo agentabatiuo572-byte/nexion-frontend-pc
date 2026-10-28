@@ -107,13 +107,13 @@ export default function DualLedgerPage() {
               style={{ background: "color-mix(in srgb, var(--admin-domain-b) 14%, transparent)", color: "var(--admin-domain-b)" }}
             >
               <span className="inline-block rounded-full" style={{ width: 5, height: 5, background: "var(--admin-domain-b)" }} />
-              域 B · 运营总览
+              运营总览
             </span>
             <span className="font-mono-tabular text-[11px]" style={{ color: "var(--v5-ink-4)" }}>B1</span>
           </div>
           <h1 className="font-display mt-2 text-[24px]" style={{ color: "var(--v5-ink)" }}>资金与应付款总览</h1>
         </header>
-        <BDomainDataState title="B1 双账本" loading={bDomain.loading && !bDomain.error} error={bDomain.error} onRetry={bDomain.reload} />
+        <BDomainDataState title="资金与应付款" loading={bDomain.loading && !bDomain.error} error={bDomain.error} onRetry={bDomain.reload} />
         {toastNode}
       </div>
     );
@@ -135,7 +135,7 @@ export default function DualLedgerPage() {
   } = LEDGER;
   const b1DataError =
     coverageSeries.length < 2
-      ? "B1_COVERAGE_SERIES_EMPTY"
+      ? "覆盖率走势数据不足，暂时无法显示"
       : accounts.length === 0
         ? "B1_LEDGER_ACCOUNTS_EMPTY"
         : "";
@@ -149,14 +149,14 @@ export default function DualLedgerPage() {
               style={{ background: "color-mix(in srgb, var(--admin-domain-b) 14%, transparent)", color: "var(--admin-domain-b)" }}
             >
               <span className="inline-block rounded-full" style={{ width: 5, height: 5, background: "var(--admin-domain-b)" }} />
-              域 B · 运营总览
+              运营总览
             </span>
             <span className="font-mono-tabular text-[11px]" style={{ color: "var(--v5-ink-4)" }}>B1</span>
           </div>
           <h1 className="font-display mt-2 text-[24px]" style={{ color: "var(--v5-ink)" }}>资金与应付款总览</h1>
         </header>
         <BDomainWarnings warnings={bDomain.warnings} />
-        <BDomainDataState title="B1 双账本" error={b1DataError} onRetry={bDomain.reload} />
+        <BDomainDataState title="资金与应付款" error={b1DataError} onRetry={bDomain.reload} />
         {toastNode}
       </div>
     );
@@ -172,7 +172,7 @@ export default function DualLedgerPage() {
   const zoneColor = zone === "danger" ? "var(--danger)" : zone === "warning" ? "var(--warning)" : "var(--success)";
   const zoneCls = zone === "danger" ? "err" : zone === "warning" ? "warn" : "ok";
   const zoneDot = zone === "danger" ? "red" : zone === "warning" ? "amber" : "green";
-  const zoneLabel = zone === "danger" ? "跌破红线" : zone === "warning" ? "警戒 · 低于健康线" : "健康";
+  const zoneLabel = zone === "danger" ? "跌破红线" : zone === "warning" ? "警戒（低于健康线）" : "健康";
 
   // 仪表位置
   const fillPos = round2((Math.min(coverageRatio, SCALE_MAX) / SCALE_MAX) * 100);
@@ -187,10 +187,10 @@ export default function DualLedgerPage() {
     zone === "danger"
       ? `已跌破红线 ${(effRedline - coverageRatio).toFixed(1)} 个百分点`
       : bufferPct === 0
-        ? "触及红线 · 缓冲 0.0 个百分点"
+        ? "正好在红线上"
         : zone === "warning"
-          ? `当前高于红线 +${bufferPct.toFixed(1)} 个百分点，但已跌破健康线`
-          : `高于健康线 +${round2(coverageRatio - healthyPct).toFixed(1)} 个百分点`;
+          ? `高于红线 ${bufferPct.toFixed(1)} 个百分点，但已低于健康线`
+          : `高于健康线 ${round2(coverageRatio - healthyPct).toFixed(1)} 个百分点`;
 
   // 触红线预测:由近 8 窗口斜率外推(真实趋势,非装饰)
   const slope =
@@ -201,7 +201,7 @@ export default function DualLedgerPage() {
     slope < -0.01 && coverageRatio > effRedline
       ? Math.max(1, Math.round((coverageRatio - effRedline) / -slope))
       : null;
-  const trendMsg = windowsToRedline != null ? `持续下行 · 按当前斜率约 ${windowsToRedline} 窗口触红线` : "趋势平稳";
+  const trendMsg = windowsToRedline != null ? `持续下降，照这个速度约 ${windowsToRedline} 个时段后跌破红线` : "趋势平稳";
   const trendColor = windowsToRedline != null ? "var(--warning)" : "var(--ink-3)";
 
   // 真实环比(对上一统计窗口),替代硬编码 delta
@@ -225,16 +225,16 @@ export default function DualLedgerPage() {
     ext: string;
   }[] = [
     {
-      label: "可用资金与应付款(储备)", value: fmtUsdCompact(reserveUsd), valColor: "var(--ink)", href: "/finance/pool",
+      label: "可用储备", value: fmtUsdCompact(reserveUsd), valColor: "var(--ink)", href: "/finance/pool",
       arrow: reserveChg < 0 ? "↘" : "↗", deltaText: fmtPct(Math.abs(reserveChg)),
-      deltaColor: reserveChg < 0 ? "var(--negative)" : "var(--success)", ext: "环比上窗口",
+      deltaColor: reserveChg < 0 ? "var(--negative)" : "var(--success)", ext: "较上一时段",
     },
     {
       label: "24 小时资金净流入", value: `${netFlow24hUsd >= 0 ? "+" : "−"}${fmtUsdCompact(Math.abs(netFlow24hUsd))}`, valColor: netFlow24hUsd >= 0 ? "var(--success)" : "var(--negative)", href: "/overview/liquidity",
-      arrow: netFlow24hUsd >= 0 ? "↗" : "↘", deltaText: `${netFlow24hUsd >= 0 ? "流入" : "流出"} ${outflowChg >= 0 ? "+" : ""}${outflowChg}%`, deltaColor: netFlow24hUsd >= 0 ? "var(--success)" : "var(--warning)", ext: "较上窗口",
+      arrow: netFlow24hUsd >= 0 ? "↗" : "↘", deltaText: `${netFlow24hUsd >= 0 ? "流入" : "流出"} ${outflowChg >= 0 ? "+" : ""}${outflowChg}%`, deltaColor: netFlow24hUsd >= 0 ? "var(--success)" : "var(--warning)", ext: "较上一时段",
     },
     {
-      label: "提现队列积压", value: fmtNum(queueBacklogCount), valSmall: "单", valColor: "var(--ink)", href: "/finance/withdrawals",
+      label: "待审核提现", value: fmtNum(queueBacklogCount), valSmall: "单", valColor: "var(--ink)", href: "/finance/withdrawals",
       arrow: backlogChg > 0 ? "↗" : "↘", deltaText: `${backlogChg > 0 ? "+" : ""}${backlogChg} 单`,
       deltaColor: "var(--warning)", ext: `· ${fmtUsdCompact(queueBacklogUsd)}`,
     },
@@ -256,8 +256,8 @@ export default function DualLedgerPage() {
         const redline = round2(Number(businessValue?.redlinePct));
         const healthy = round2(Number(businessValue?.healthyPct));
         if (!Number.isFinite(redline) || redline < 80 || redline > 150) throw new Error("红线必须在 80%–150%");
-        if (!Number.isFinite(healthy) || healthy < 100 || healthy > 200) throw new Error("黄线必须在 100%–200%");
-        if (healthy <= redline) throw new Error("黄线必须高于红线");
+        if (!Number.isFinite(healthy) || healthy < 100 || healthy > 200) throw new Error("健康线必须在 100%–200%");
+        if (healthy <= redline) throw new Error("健康线必须高于红线");
         await updateD3Thresholds(
           { redlinePct: String(redline), healthyPct: String(healthy) },
           reason,
@@ -265,13 +265,13 @@ export default function DualLedgerPage() {
           current.idempotencyKey,
         );
         await bDomain.reload();
-        setToast(`阈值已更新 · 红线 ${fmtPct(redline, 0)} / 黄线 ${fmtPct(healthy, 0)} · 已记审计`);
+        setToast(`已更新 · 红线 ${fmtPct(redline, 0)} / 健康线 ${fmtPct(healthy, 0)}`);
       } else if (current.kind === "injection") {
         const amount = Number(businessValue?.amount);
         const voucherType = businessValue?.voucherType;
         const voucher = businessValue?.voucher?.trim();
-        if (!Number.isFinite(amount) || amount <= 0) throw new Error("请输入有效注资金额");
-        if (!["CHAIN", "BANK"].includes(voucherType || "")) throw new Error("请选择来源凭证类型");
+        if (!Number.isFinite(amount) || amount <= 0) throw new Error("请输入有效的注入金额");
+        if (!["CHAIN", "BANK"].includes(voucherType || "")) throw new Error("请选择凭证类型");
         if (!voucher) throw new Error("请输入凭证编号或哈希");
         await createD3Injection(
           String(amount),
@@ -281,14 +281,14 @@ export default function DualLedgerPage() {
           current.idempotencyKey,
         );
         await bDomain.reload();
-        setToast("注入已登记 · D3 储备权威账本已更新 · 已记审计");
+        setToast("储备注入已登记，覆盖率已更新");
       } else if (current.kind === "export") {
         await downloadD3Csv("reconciliation", reason, operator, current.idempotencyKey);
-        setToast("对账 CSV 已生成并下载 · 导出动作已记审计");
+        setToast("对账 CSV 已下载");
       } else {
         await acknowledgeBDomainAlert(ALERT_ID, reason, operator, current.idempotencyKey);
         await bDomain.reload();
-        setToast("告警已写入 B1 告警确认接口(A2 留痕)");
+        setToast("已标记为已处理");
       }
       setActionConfirm(null);
     } catch (err) {
@@ -307,7 +307,7 @@ export default function DualLedgerPage() {
             style={{ background: "color-mix(in srgb, var(--admin-domain-b) 14%, transparent)", color: "var(--admin-domain-b)" }}
           >
             <span className="inline-block rounded-full" style={{ width: 5, height: 5, background: "var(--admin-domain-b)" }} />
-            域 B · 运营总览
+            运营总览
           </span>
           <span className="font-mono-tabular text-[11px]" style={{ color: "var(--v5-ink-4)" }}>B1</span>
         </div>
@@ -324,8 +324,8 @@ export default function DualLedgerPage() {
             <div style={{ flex: 1 }}>
               <span className="cov-label">
                 <Gauge size={15} className="ttl-glyph" />
-                <span>兑付覆盖率 · 储备 ÷ 应付负债</span>
-                <span className="help" data-tip="兑付覆盖率 = 平台真实储备 ÷ 应付负债总额。运营内部资金安全水平,数据以服务端为准。">?</span>
+                <span>兑付覆盖率 · 可用储备 ÷ 应付款</span>
+                <span className="help" data-tip="平台手上能动用的钱，够付用户应得款项的多少。只在后台显示。">?</span>
               </span>
             </div>
             <span className={`status-pill ${zoneCls}`}>
@@ -364,7 +364,7 @@ export default function DualLedgerPage() {
           {/* 趋势 + 触红线预测 */}
           <div className="trend">
             <div className="tx">
-              <div className="k">覆盖率趋势 · 近 8 窗口</div>
+              <div className="k">覆盖率趋势 · 近 8 个时段</div>
               <div className="v" style={{ color: trendColor }}>{trendMsg}</div>
             </div>
             <div className="spark-wrap">
@@ -382,15 +382,15 @@ export default function DualLedgerPage() {
                 <div className="msg">
                   {alertAcked ? (
                     <>
-                      <b>已处置 ·</b> 已标记本轮警戒为已处置(写入 A2 审计)。覆盖率仍在监控中,跌破红线将再次置顶告警。
+                      <b>已处理</b> · 覆盖率仍在监控，再次跌破红线会重新提醒。
                     </>
                   ) : zone === "danger" ? (
                     <>
-                      <b>已跌破红线:</b>立即暂停增加资金支出的操作、暂停收益发放。放大资金流出动作须先核验本约束(§1.8 原则一)。
+                      <b>已跌破红线：</b>请立即暂停会多付钱的操作和收益发放。
                     </>
                   ) : (
                     <>
-                      <b>警戒区:</b>建议收紧大额提现、暂缓创世节点分红与提高年化收益率。覆盖率跌破健康线后,放大资金流出动作须先核验本约束(§1.8 原则一)。
+                      <b>警戒区：</b>建议收紧大额提现，暂缓创世节点分红和调高年化收益。
                     </>
                   )}
                 </div>
@@ -398,7 +398,7 @@ export default function DualLedgerPage() {
               <div className="acts">
                 {alertAcked ? (
                   <span className="muted tiny done-stamp">
-                    <CheckCircle2 size={14} /> 已于本运营总览标记处置 · A2 留痕
+                    <CheckCircle2 size={14} /> 已标记为已处理
                   </span>
                 ) : (
                   <>
@@ -407,7 +407,7 @@ export default function DualLedgerPage() {
                     </Link>
                     {canAcknowledge && (
                       <button type="button" className="btn" onClick={() => setActionConfirm(command("ack"))}>
-                        <CheckCircle2 size={15} /> 标记已处置
+                        <CheckCircle2 size={15} /> 标记已处理
                       </button>
                     )}
                   </>
@@ -421,14 +421,14 @@ export default function DualLedgerPage() {
         <section className="card ledger-card">
           <div className="ttl-row">
             <span className="ttl-ic"><Scale size={17} /></span>
-            <span className="h">双账本对照</span>
+            <span className="h">两本账对照</span>
             <span className="sub">储备与应付款</span>
             <div className="r"><span className="b1-tag">B-01</span></div>
           </div>
 
           <div className="ledger-row">
             <div className="lr-head">
-              <span className="lr-name">用户账本 · 应付 <small>承诺兑付</small></span>
+              <span className="lr-name">应付款 <small>欠用户的钱</small></span>
               <span className="lr-val" style={{ color: "var(--cyan)" }}>{fmtUsdCompact(liabilitiesUsd)}</span>
             </div>
             <div className="lr-bar"><div className="f" style={{ width: "100%", background: "var(--cyan)" }} /></div>
@@ -436,21 +436,21 @@ export default function DualLedgerPage() {
 
           <div className="ledger-row">
             <div className="lr-head">
-              <span className="lr-name">平台账本 · 储备 <small>真实可用</small></span>
+              <span className="lr-name">可用储备 <small>手上能动用的钱</small></span>
               <span className="lr-val" style={{ color: "var(--success)" }}>{fmtUsdCompact(reserveUsd)}</span>
             </div>
             <div className="lr-bar"><div className="f" style={{ width: `${round2(Math.min(coverageRatio, 100))}%`, background: "var(--success)" }} /></div>
             <div className="muted tiny" style={{ marginTop: 7 }}>
-              储备覆盖应付的 <b style={{ color: "var(--warning)", fontWeight: 600 }}>{fmtPct(coverageRatio)}</b>
+              储备够付应付款的 <b style={{ color: "var(--warning)", fontWeight: 600 }}>{fmtPct(coverageRatio)}</b>
               {/* 「超 100% 已现盈余」只在严格大于 100% 时成立;等于 100% 是刚好覆盖、无盈余(zentao #169)。 */}
-              {round2(coverageRatio - 100) > 0 ? "(超 100% 已现盈余)" : round2(coverageRatio - 100) === 0 ? "(刚好覆盖 · 无盈余)" : "(未达 100% · 覆盖不足)"}→ 即当前兑付覆盖率
+              {round2(coverageRatio - 100) > 0 ? "（有富余）" : round2(coverageRatio - 100) === 0 ? "（刚好够）" : "（不够付）"}，也就是当前兑付覆盖率
             </div>
           </div>
 
           <div className="net-box">
             <div className="nb-k">
-              储备与应付款差额(储备 − 负债){" "}
-              <span className="help" data-tip="储备与应付款差额 = 平台真实储备 − 应付负债总额。为负表示储备无法完全覆盖对用户的应付,即覆盖缺口。">?</span>
+              储备 − 应付款{" "}
+              <span className="help" data-tip="为负数表示储备不够付用户的应得款项。">?</span>
             </div>
             <div className="net-num" style={{ color: netExposure < 0 ? "var(--danger)" : "var(--success)" }}>
               {netExposure < 0 ? "−" : ""}{fmtUsd(Math.abs(netExposure))}
@@ -458,9 +458,9 @@ export default function DualLedgerPage() {
             <div className="net-tags">
               {/* 敞口为 0 时既不是缺口也不是盈余,是持平(zentao #169):旧写法把 0 归进「盈余」。 */}
               <span className="gap-tag" style={{ color: netExposure < 0 ? "var(--danger)" : netExposure > 0 ? "var(--success)" : "var(--v5-ink-3)" }}>
-                <TrendingDown size={13} /> {netExposure < 0 ? "缺口" : netExposure > 0 ? "盈余" : "持平 · 无盈余无缺口"}
+                <TrendingDown size={13} /> {netExposure < 0 ? "不够付" : netExposure > 0 ? "有富余" : "刚好够"}
               </span>
-              <span className="muted">覆盖差额 · {fmtUsdCompact(reserveUsd)} − {fmtUsdCompact(liabilitiesUsd)}</span>
+              <span className="muted">{fmtUsdCompact(reserveUsd)} − {fmtUsdCompact(liabilitiesUsd)}</span>
             </div>
           </div>
         </section>
@@ -472,7 +472,7 @@ export default function DualLedgerPage() {
         <section className="card">
           <div className="ttl-row">
             <span className="ttl-ic"><SlidersHorizontal size={17} /></span>
-            <span className="h">运营决策 · 确认后生效</span>
+            <span className="h">可执行的操作</span>
             <div className="r"><span className="b1-tag">B-02 / B-03</span></div>
           </div>
 
@@ -484,43 +484,43 @@ export default function DualLedgerPage() {
                   type="button"
                   className="thr"
                   onClick={() => setActionConfirm(command("threshold"))}
-                  title="同时调整兑付覆盖率红线与黄线，服务端强制校验黄线高于红线"
+                  title="调整兑付覆盖率的红线和健康线，健康线须高于红线"
                 >
                   <span className="ic"><SlidersHorizontal size={14} /></span>
-                  <span className="nm">阈值配置</span><span className="vl">{fmtPct(effRedline, 0)} / {fmtPct(healthyPct, 0)}</span>
+                  <span className="nm">红线 / 健康线</span><span className="vl">{fmtPct(effRedline, 0)} / {fmtPct(healthyPct, 0)}</span>
                 </button>
               )}
               {canInjectReserve && (
                 <button type="button" className="thr" onClick={() => setActionConfirm(command("injection"))}>
                   <span className="ic"><Layers size={14} /></span>
-                  <span className="nm">登记储备注入</span><span className="vl">D3 权威</span>
+                  <span className="nm">登记储备注入</span><span className="vl">新增到账资金</span>
                 </button>
               )}
             </div>
             {!canConfigureThresholds && !canInjectReserve && (
-              <div className="muted tiny">当前账号仅可查看；阈值与储备注入仅财务负责人 / 超级管理员可执行。</div>
+              <div className="muted tiny">你只能查看；调整红线和登记注入需财务负责人或超级管理员。</div>
             )}
           </div>
 
           <div className="dec-block">
-            <div className="dec-lbl">处置边界</div>
+            <div className="dec-lbl">紧急处理</div>
             <div className="fuse-row">
               <Link href="/emergency/kill-switch" prefetch={false} className="btn ghost">
-                前往 J1 管理业务开关 <ArrowRight size={14} />
+                前往紧急停用开关 <ArrowRight size={14} />
               </Link>
             </div>
             <div className="muted tiny" style={{ marginTop: 11 }}>
-              B1 只给出资金余额、告警与建议，不自动执行提现收紧或全局紧急暂停。
+              这页只给出提醒和建议，不会自动收紧提现或暂停业务。
             </div>
           </div>
 
           <div className="dec-foot">
             <div>
-              <div className="muted tiny">平台真实储备</div>
+              <div className="muted tiny">可用储备</div>
               <div className="mono dec-foot-v">{fmtUsd(reserveUsd)}</div>
             </div>
             <div>
-              <div className="muted tiny">应付负债总额</div>
+              <div className="muted tiny">应付款总额</div>
               <div className="mono dec-foot-v">{fmtUsd(liabilitiesUsd)}</div>
             </div>
           </div>
@@ -531,7 +531,7 @@ export default function DualLedgerPage() {
           <div className="ttl-row">
             <span className="ttl-ic"><Radar size={17} /></span>
             <span className="h">风险提醒</span>
-            <span className="sub">点击钻取</span>
+            <span className="sub">点击查看详情</span>
             <div className="r"><span className="b1-tag">B-05</span></div>
           </div>
 
@@ -555,7 +555,7 @@ export default function DualLedgerPage() {
           <div className="alertbar" style={{ marginTop: 14 }}>
             <span className="ico" style={{ color: "var(--warning)" }}><AlertTriangle size={16} /></span>
             <div style={{ fontSize: "12.5px" }}>
-              {netFlow24hUsd >= 0 ? "净流入为正" : "净流出放大"} + 覆盖率趋势联动 → 建议持续确认大额提现与排放节奏。
+              {netFlow24hUsd >= 0 ? "资金在净流入" : "资金在净流出"}，结合覆盖率走势，建议持续关注大额提现和奖励发放节奏。
             </div>
           </div>
         </section>
@@ -566,7 +566,7 @@ export default function DualLedgerPage() {
         <div className="ttl-row">
           <span className="ttl-ic"><TrendingDown size={17} /></span>
           <span className="h">储备与应付款差额趋势</span>
-          <span className="sub">储备 − 负债 · 系统记录的趋势</span>
+          <span className="sub">储备 − 应付款</span>
           <div className="r" style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {/* 互斥时间范围必须暴露「当前选中项」(zentao #159)。此前三个按钮只有
                 aria-pressed:浏览器把 aria-pressed 按钮当 toggle button,读屏按复选框朗读
@@ -594,12 +594,12 @@ export default function DualLedgerPage() {
         {exposureError ? (
           <BDomainDataState
             title="储备与应付款差额趋势暂不可用"
-            error={`${exposureError} · 已停止展示旧值或推测值。`}
+            error={`${exposureError}，已暂停显示。`}
           />
         ) : exposureSeries.length === 0 ? (
           <div className="alertbar">
             <AlertTriangle size={16} />
-            暂无储备与应付款差额序列 · 当前窗口没有服务端数据，不使用前端模拟序列。
+            这段时间暂无数据。
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 24, alignItems: "end" }}>
@@ -612,14 +612,14 @@ export default function DualLedgerPage() {
               />
             </div>
             <div style={{ minWidth: 210 }}>
-              <div className="muted tiny">窗口末日 · {exposureSeries.at(-1)!.date}</div>
+              <div className="muted tiny">截至 {exposureSeries.at(-1)!.date}</div>
               <div
                 className="mono dec-foot-v"
                 style={{ color: exposureSeries.at(-1)!.netExposureUsdt < 0 ? "var(--danger)" : "var(--success)" }}
               >
                 {fmtUsd(exposureSeries.at(-1)!.netExposureUsdt)}
               </div>
-              <div className="muted tiny">共 {exposureSeries.length} 个服务端日点</div>
+              <div className="muted tiny">共 {exposureSeries.length} 天</div>
             </div>
           </div>
         )}
@@ -629,11 +629,11 @@ export default function DualLedgerPage() {
       <section className="card">
         <div className="ttl-row">
           <span className="ttl-ic"><Layers size={17} /></span>
-          <span className="h">应付负债结构</span>
-          <span className="sub">用户应付项分账</span>
+          <span className="h">应付款构成</span>
+          <span className="sub">按类型</span>
           <div className="r">
             <span className="liab-total">{fmtUsd(liabilitiesUsd)}</span>
-            <span className="b1-tag">{liabRows.length} 类应付款 · 到 B2 查看明细</span>
+            <span className="b1-tag">{liabRows.length} 类应付款 · 明细见「可用资金与应付款」</span>
           </div>
         </div>
 
@@ -679,17 +679,17 @@ export default function DualLedgerPage() {
         <OperationConfirmModal
           action={
             mc.kind === "threshold"
-              ? "配置兑付覆盖率红线与黄线"
+              ? "设置兑付覆盖率红线和健康线"
               : mc.kind === "injection"
                 ? "登记储备注入"
-                : mc.kind === "export" ? "导出对账 CSV" : "标记兑付红线告警已处置"
+                : mc.kind === "export" ? "导出对账 CSV" : "标记覆盖率告警已处理"
           }
           detail={
             mc.kind === "threshold"
-              ? "红线触发高风险告警，黄线定义恢复资金健康水平；黄线必须严格高于红线。B1 只做建议与告警，不自动执行资金处置。"
+              ? "低于红线会触发高风险告警；高于健康线表示资金恢复健康。健康线须高于红线。这里只发提醒，不会自动处理资金。"
               : mc.kind === "injection"
-                ? "输入真实到账金额与链上交易哈希或银行流水号。提交后写入 D3 储备权威账本并刷新 B1 覆盖率。"
-                : mc.kind === "export" ? "导出当前对账明细；理由、操作者与命令号由服务端审计留痕。" : "仅在覆盖率仍处于红线或黄线告警区间时确认已跟进；健康态服务端拒绝伪处置。"
+                ? "填写实际到账金额和链上交易哈希或银行流水号，提交后储备和覆盖率会随之更新。"
+                : mc.kind === "export" ? "导出当前的对账明细。" : "确认已跟进当前的覆盖率告警。覆盖率已恢复健康时无需标记。"
           }
           amplifies={mc.kind === "threshold"}
           businessForm={
@@ -697,20 +697,20 @@ export default function DualLedgerPage() {
               ? {
                   kind: "multi-field",
                   title: "覆盖率阈值",
-                  hint: "范围由服务端同样强制校验：红线 80%–150%，黄线 100%–200%，且黄线 > 红线。",
+                  hint: "红线可设 80%–150%，健康线可设 100%–200%，健康线须高于红线。",
                   requireAnyChange: true,
                   fields: [
                     { key: "redlinePct", label: "红线 (%)", current: String(effRedline), inputKind: "number", min: 80, max: 150, step: 0.1, required: true, showDiff: true },
-                    { key: "healthyPct", label: "黄线 (%)", current: String(healthyPct), inputKind: "number", min: 100, max: 200, step: 0.1, required: true, showDiff: true },
+                    { key: "healthyPct", label: "健康线 (%)", current: String(healthyPct), inputKind: "number", min: 100, max: 200, step: 0.1, required: true, showDiff: true },
                   ],
                 }
               : mc.kind === "injection"
                 ? {
                     kind: "multi-field",
-                    title: "真实到账凭证",
-                    hint: "凭证必须可回查；同一提交使用固定防重复提交编号，结果未知时可安全重试。",
+                    title: "到账凭证",
+                    hint: "凭证必须能查到。如果提交结果没确认，可以放心重试，不会重复登记。",
                     fields: [
-                      { key: "amount", label: "注资金额 (USDT)", inputKind: "number", min: 0.01, step: 0.01, required: true },
+                      { key: "amount", label: "注入金额 (USDT)", inputKind: "number", min: 0.01, step: 0.01, required: true },
                       {
                         key: "voucherType",
                         label: "凭证类型",
@@ -719,7 +719,7 @@ export default function DualLedgerPage() {
                         optionLabels: { CHAIN: "链上交易哈希", BANK: "银行流水号" },
                         required: true,
                       },
-                      { key: "voucher", label: "凭证编号 / 哈希", inputKind: "text", required: true, placeholder: "至少 6 位，可回查" },
+                      { key: "voucher", label: "凭证编号 / 哈希", inputKind: "text", required: true, placeholder: "至少 6 位，须能查到" },
                     ],
                   }
                 : undefined

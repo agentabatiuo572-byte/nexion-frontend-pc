@@ -273,7 +273,7 @@ export function useB5Radar() {
     };
     stream.addEventListener("radar", onRadar);
     stream.onerror = () => {
-      setStreamWarning("实时通道正在重连；页面保留最近一次已确认数据，并继续每 30 秒从服务端核对。");
+      setStreamWarning("实时连接正在重连；页面先显示最近一次的数据，每 30 秒自动刷新。");
     };
     const timer = window.setInterval(() => void reload(), 30_000);
     return () => {

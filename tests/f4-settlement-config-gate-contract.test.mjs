@@ -83,10 +83,10 @@ test("first-time operator sees an in-place repair and refresh contract", () => {
 
   assert.doesNotMatch(tab, /F\.pool\.settleCron"\]\s*\?\?\s*"0 23 \* \* 0"/);
   assert.doesNotMatch(tab, /F\.pool\.unlockVRank"\]\s*\?\?\s*"V3"/);
-  assert.match(tab, /领导奖池结算配置不可用/);
-  assert.match(tab, /配置入口就在本卡片下方/);
-  assert.match(tab, /重新读取配置/);
-  assert.match(tab, /刷新失败.*旧配置/s);
+  assert.match(tab, /领导奖池设置不完整/);
+  assert.match(tab, /请在本卡片下方补齐/);
+  assert.match(tab, /刷新设置/);
+  assert.match(tab, /刷新失败.*旧设置/s);
   assert.match(
     tab,
     /disabled=\{!settlementOperable\}[^>]*onClick=\{\(\) => ctx\.openActionConfirm\(\{\s*name: "提前结算本周领导奖池"/s,

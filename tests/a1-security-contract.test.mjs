@@ -89,7 +89,7 @@ test("role changes fail closed when the A6 permission difference cannot be loade
 
   assert.match(page, /permissionDiffReady/);
   assert.match(page, /!permissionDiffReady/);
-  assert.match(page, /权限差异预览不可用/);
+  assert.match(page, /权限变化预览加载失败/);
 });
 
 test("A1 prevents impossible MFA reset and effective-super reduction in the UI", () => {

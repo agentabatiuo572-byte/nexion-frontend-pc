@@ -129,13 +129,13 @@ test("L3 reads the canonical treasury snapshot, liabilities and seven-day maturi
   assert.equal(result?.valuationReliable, true);
   assert.deepEqual(result?.accounts.map(({ label, amount }) => [label, amount]), [
     ["可提余额", 500000],
-    ["USDT质押本金", 100],
+    ["USDT 质押本金", 100],
     ["质押应付利息", 20],
     ["创世节点应付分红", 30],
-    ["UVT第二版未来兑付", 40],
-    ["待提现队列", 50],
-    ["等待解锁的佣金", 60],
-    ["锁仓本息其他", 70],
+    ["UVT 锁仓到期应付", 40],
+    ["待处理提现", 50],
+    ["冷却期内未发放的佣金", 60],
+    ["其他锁仓本息", 70],
   ]);
   assert.deepEqual(result?.maturity7d, [{ day: "2026-07-18", withdrawUsd: 120, interestUsd: 30 }]);
   assert.equal(readL3FinanceSnapshot({ ledgerLive: { totalBills: 1 } }), null);
@@ -168,8 +168,8 @@ test("L3 degraded view and export avoid fake periods and expose only governed ma
   assert.match(client, /同一请求会自动防重/);
   assert.doesNotMatch(source, /2026-05|48,210|admin\.report_exported/);
   assert.doesNotMatch(fallback, /withdraw\.|confirmed\s*[÷→]|nx_|\bPII\b/);
-  assert.match(fallback, /不展示推算值/);
-  assert.match(fallback, /字段白名单、行数上限、L5 审批与限时下载令牌/);
+  assert.match(fallback, /页面不会估算这些数字/);
+  assert.match(fallback, /需要审批，下载链接限时有效/);
 });
 
 test("L3 reuses treasury no-due semantics instead of presenting the 999 sentinel as an exact day count", async () => {

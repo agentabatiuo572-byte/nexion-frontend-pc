@@ -32,9 +32,9 @@ test("malformed pause status cannot masquerade as running or enable an action", 
 test("approval summary exposes changed stored shares even while split is disabled", () => {
   const before = directReferralSummary({ ...policy(), purchaseSplit: split({ enabled: false, usdtSharePct: 50 }) });
   const after = directReferralSummary(update({ purchaseSplit: split({ enabled: false, usdtSharePct: 61 }) }));
-  assert.match(before, /保存的拆分 USDT 50% \/ UVT 50%，停用期间不生效/);
-  assert.match(after, /保存的拆分 USDT 61% \/ UVT 39%，停用期间不生效/);
-  assert.match(directReferralSummary({ ...policy(), purchaseSplitConfigured: false }), /当前占位.*尚未生效/);
+  assert.match(before, /关闭拆分，全额发 USDT/);
+  assert.match(after, /已保存的比例 USDT 61% \/ UVT 39%，关闭期间不生效/);
+  assert.match(directReferralSummary({ ...policy(), purchaseSplitConfigured: false }), /默认比例.*尚未生效/);
 });
 
 test("v2 parser accepts both cutover states and actual unconfigured references without inventing a budget", () => {

@@ -6,7 +6,7 @@ import { formatAdminApiError, displayAdminError } from "../lib/admin/error-messa
 import { operationConfirmErrorMessage } from "../lib/admin/operation-confirm-error.ts";
 import { outcomeStaysUnknown } from "../lib/admin/outcome-classification.ts";
 
-const expected = "所配置的优惠券当前不可发放，可能尚未生效、已失效或已停用。请在 F1 核对奖励所选券，并在 H7 核对券状态和有效期；处理后再审核原申请。";
+const expected = "所选优惠券现在不能发放，可能还没生效、已失效或已停用。请在「团队等级晋升」核对奖励选的券，并在「代金券」核对券状态和有效期，处理后再审核原申请。";
 const source = readFileSync(new URL("../lib/admin/a2-client.ts", import.meta.url), "utf8");
 const ast = ts.createSourceFile("a2-client.ts", source, ts.ScriptTarget.Latest, true);
 const declarations = ast.statements.filter(node => node.name && ["a2Request", "A2OutcomeUncertainError"].includes(node.name.text));
@@ -45,7 +45,7 @@ test("unknown upstream outcome still retains its command and uncertain recovery"
   const state = client(new Response(JSON.stringify({ code: 504, message: "UPSTREAM_OUTCOME_UNKNOWN" }), { status: 504 }));
   await assert.rejects(state.request("/operations/original/approve", { method: "POST", commandKey: "original-command" }), error => {
     assert.equal(error.name, "A2OutcomeUncertainError");
-    assert.match(operationConfirmErrorMessage(error), /结果暂不确定/);
+    assert.match(operationConfirmErrorMessage(error), /结果暂未确认/);
     assert.match(operationConfirmErrorMessage(error), /original-command/);
     assert.doesNotMatch(operationConfirmErrorMessage(error), /优惠券/);
     return true;

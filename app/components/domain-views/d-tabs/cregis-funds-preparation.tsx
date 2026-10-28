@@ -79,7 +79,7 @@ function OwnedPreparation({ canManage, openActionConfirm, owner, ownerEpoch }: P
     if (mutation.current) throw new Error("上一项操作仍在处理，请刷新核对");
     mutation.current = true; setBusy(true); setError("");
     try { await exceptionCommand(`${ROOT}${path}`, body, request); request.assertOwner(); await refresh(); }
-    catch (failure) { if (owns()) setError(failure instanceof Error ? failure.message : "结果未知，请保留原请求号刷新核对"); throw failure; }
+    catch (failure) { if (owns()) setError(failure instanceof Error ? failure.message : "结果未确认，请刷新查看"); throw failure; }
     finally { mutation.current = false; if (owns()) setBusy(false); }
   };
   const create = () => {
@@ -130,7 +130,7 @@ function OwnedPreparation({ canManage, openActionConfirm, owner, ownerEpoch }: P
       <h4>准备记录 · 不代表已转账</h4>
       {page.records.length === 0 && !loading && <p>暂无准备单</p>}
       {page.records.map(row => <article key={String(row.planNo)} style={{ border: "1px solid var(--border)", padding: 12, overflowWrap: "anywhere" }}>
-        <strong>{kindLabel(row.kind)} · {String(row.amountUsdt)} USDT · {PREPARATION_STATE[String(row.state)] ?? "状态待核实"}</strong>
+        <strong>{kindLabel(row.kind)} · {String(row.amountUsdt)} USDT · {PREPARATION_STATE[String(row.state)] ?? "状态未知"}</strong>
         <p>准备单：{String(row.planNo)} · 业务参考：{String(row.businessReference)}</p><p>{String(row.sourceAddress)} → {String(row.targetAddress)}</p>
         <p>发起理由：{String(row.reason)}{row.decisionReason ? ` · 复核/取消理由：${String(row.decisionReason)}` : ""}</p>
         {canWrite && row.state === "DRAFT" && String(row.makerId) !== String(owner) && <button className="l-btn" disabled={busy || loading} onClick={() => decide(row,"REVIEW")}>复核准备</button>}

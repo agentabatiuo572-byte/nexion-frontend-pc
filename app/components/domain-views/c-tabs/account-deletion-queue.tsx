@@ -22,12 +22,12 @@ import {
 const LABELS: Record<string, string> = {
   REQUESTED: "待审核",
   IN_REVIEW: "审核中",
-  BLOCKED: "已阻断",
+  BLOCKED: "已拒绝",
   COMPLETED: "已完成",
   CANCELLED: "已取消",
 };
 
-const ACTION_LABELS = { review: "开始审核", block: "阻断申请", complete: "完成注销", cancel: "取消申请" } as const;
+const ACTION_LABELS = { review: "开始审核", block: "拒绝申请", complete: "完成注销", cancel: "取消申请" } as const;
 
 type ListQuery = { canRead: boolean; status: AccountDeletionStatus | ""; page: number };
 type DetailRead = { status: "loading" | "ready" | "error" | "stale"; sessionKey: string } | null;
@@ -211,12 +211,12 @@ export function AccountDeletionQueue({ toast }: { toast: (message: string) => vo
         selectedRef.current = next;
         setSelected(next);
         setReason("");
-        toast(`${ACTION_LABELS[action]}成功，审计反馈已写入；当前版本 ${next.version}。`);
+        toast(`${ACTION_LABELS[action]}成功`);
       }
       await refresh(true, currentQueryRef.current);
     } catch (cause) {
       if (sessionKey === currentSessionKey() && isCurrentAccountDeletionSelection(selectedRef.current?.requestNo ?? null, requestNo, detailGenerationRef.current, detailGeneration)) {
-        toast(`操作失败：${displayAdminError(cause)}；请刷新后核对版本，禁止盲目重提。`);
+        toast(`操作失败：${displayAdminError(cause)}。请先刷新查看最新状态，不要直接重复提交。`);
       }
     } finally {
       if (activeActionRef.current === actionToken) {
@@ -232,7 +232,7 @@ export function AccountDeletionQueue({ toast }: { toast: (message: string) => vo
   return (
     <section className="l-card" data-testid="account-deletion-queue">
       <div className="l-h">
-        <div><div className="ttl">账号注销申请</div><div className="sub">状态以系统记录为准；处理申请需有相应权限并填写理由，提交时检查记录是否已变化</div></div>
+        <div><div className="ttl">账号注销申请</div><div className="sub">用户在 App 里申请注销后，在这里审核处理</div></div>
         <div className="r">
           <select aria-label="注销申请状态筛选" value={status} onChange={(event) => changeStatus(event.target.value as AccountDeletionStatus | "")}>
             <option value="">全部状态</option>
@@ -243,37 +243,37 @@ export function AccountDeletionQueue({ toast }: { toast: (message: string) => vo
       </div>
       <div className="l-b">
         {error && <div className="ctint warn" style={{ marginBottom: 10 }}>{error}</div>}
-        {loading ? <div className="tiny">读取中…</div> : rows.length === 0 ? <div className="tiny">当前筛选没有申请。</div> : (
-          <table className="l-tbl"><thead><tr><th>申请号</th><th>用户</th><th>状态</th><th>版本</th><th>申请时间</th><th>理由</th></tr></thead><tbody>
+        {loading ? <div className="tiny">正在加载…</div> : rows.length === 0 ? <div className="tiny">暂无申请。</div> : (
+          <table className="l-tbl"><thead><tr><th>申请号</th><th>用户</th><th>状态</th><th>申请时间</th><th>理由</th></tr></thead><tbody>
             {rows.map((row) => <tr key={row.requestNo} className="click" onClick={() => void openDetail(row)}>
               <td className="mono">{row.requestNo}</td><td className="mono">{row.userId}</td>
-              <td><span className={`bdg ${tone(row.status)}`}>{LABELS[row.status] ?? "申请状态待核实"}</span></td>
-              <td className="mono">{row.version}</td><td>{date(row.requestedAt)}</td><td>{row.reason || "—"}</td>
+              <td><span className={`bdg ${tone(row.status)}`}>{LABELS[row.status] ?? "状态未知"}</span></td>
+              <td>{date(row.requestedAt)}</td><td>{row.reason || "—"}</td>
             </tr>)}
           </tbody></table>
         )}
-        <div className="row" style={{ justifyContent: "space-between", marginTop: 12 }}><span className="tiny">{total === null ? "总数待确认" : `共 ${total} 条`} · 第 {page} 页</span><span className="row"><button className="l-btn sm" disabled={page <= 1 || loading} onClick={() => changePage(page - 1)}>上一页</button><button className="l-btn sm" disabled={(total === null ? rows.length < 20 : page * 20 >= total) || loading} onClick={() => changePage(page + 1)}>下一页</button></span></div>
+        <div className="row" style={{ justifyContent: "space-between", marginTop: 12 }}><span className="tiny">{total === null ? "共 — 条" : `共 ${total} 条`} · 第 {page} 页</span><span className="row"><button className="l-btn sm" disabled={page <= 1 || loading} onClick={() => changePage(page - 1)}>上一页</button><button className="l-btn sm" disabled={(total === null ? rows.length < 20 : page * 20 >= total) || loading} onClick={() => changePage(page + 1)}>下一页</button></span></div>
       </div>
       {selected && detailRead?.sessionKey === sessionKey && <Drawer title={`注销申请详情 · ${selected.requestNo}`} onClose={closeDetail}>
         <div className="kv"><span className="k">用户 ID</span><span className="v">{selected.userId}</span></div>
         {!detailReady && <div className="ctint warn" role={detailRead.status === "error" ? "alert" : "status"} style={{ marginTop: 12 }}>
-          {detailRead.status === "loading" ? "正在读取申请详情…" : <>
-            {detailRead.status === "error" ? "详情读取失败，请重试后再审核。" : "申请已更新，请重新读取详情后审核。"}
-            <button className="l-btn sm" style={{ marginLeft: 8 }} disabled={busy} onClick={() => void openDetail(selected, false)}>{detailRead.status === "error" ? "重试" : "重新读取"}</button>
+          {detailRead.status === "loading" ? "正在加载…" : <>
+            {detailRead.status === "error" ? "详情加载失败，请重试。" : "申请状态已变化，请刷新后再审核。"}
+            <button className="l-btn sm" style={{ marginLeft: 8 }} disabled={busy} onClick={() => void openDetail(selected, false)}>{detailRead.status === "error" ? "重试" : "刷新"}</button>
           </>}
         </div>}
         {detailReady && <>
-        <div className="kv"><span className="k">状态</span><span className="v">{LABELS[selected.status] ?? "申请状态待核实"}</span></div>
-        <div className="kv"><span className="k">修改版本</span><span className="v mono">{selected.version}</span></div>
+        <div className="kv"><span className="k">状态</span><span className="v">{LABELS[selected.status] ?? "状态未知"}</span></div>
+
         <div className="kv"><span className="k">申请时间</span><span className="v">{date(selected.requestedAt)}</span></div>
         <div className="kv"><span className="k">审核时间</span><span className="v">{date(selected.reviewedAt)}</span></div>
         <div className="kv"><span className="k">完成时间</span><span className="v">{date(selected.completedAt)}</span></div>
-        <div className="kv"><span className="k">服务端理由</span><span className="v">{selected.reason === "USER_REQUESTED_CANCEL" ? "用户主动取消申请" : selected.reason || "—"}</span></div>
-        <div className="ctint" style={{ marginTop: 12 }}>完成注销会执行服务端账户禁用、匿名化与会话撤销；前端不把申请状态误报为即时删除。</div>
+        <div className="kv"><span className="k">原因</span><span className="v">{selected.reason === "USER_REQUESTED_CANCEL" ? "用户主动取消申请" : selected.reason || "—"}</span></div>
+        <div className="ctint" style={{ marginTop: 12 }}>完成注销后，该账号会被禁用并立即下线，个人信息会被匿名化处理。</div>
         </>}
         {canWrite && availableActions(selected.status).length > 0 && <>
           <label style={{ display: "block", marginTop: 14, fontSize: 12 }}>本次审核理由（必填）</label>
-          <textarea aria-label="注销审核理由" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={255} rows={3} style={{ width: "100%", marginTop: 6 }} placeholder="说明审核、阻断、完成或取消依据" />
+          <textarea aria-label="注销审核理由" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={255} rows={3} style={{ width: "100%", marginTop: 6 }} placeholder="说明审核、拒绝、完成或取消的原因" />
           <div className="row wrap" style={{ gap: 8, marginTop: 10 }}>{availableActions(selected.status).map((action) => <button key={action} className={`l-btn sm ${action === "complete" ? "mc" : ""}`} disabled={busy || !detailReady || !reason.trim()} onClick={() => void act(action)}>{ACTION_LABELS[action]}</button>)}</div>
         </>}
       </Drawer>}

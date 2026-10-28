@@ -65,7 +65,7 @@ try{
   page.on("pageerror",error=>errors.push(error.message));
   await page.route("**/*",route=>new URL(route.request().url()).hostname==="127.0.0.1"?route.continue():route.abort());
   await page.goto(base);await expect(page.getByText("尚未发布",{exact:false})).toBeVisible();
-  const publish=page.getByRole("button",{name:"提交 A2 审批",exact:true});
+  const publish=page.getByRole("button",{name:"提交审批",exact:true});
   await expect(publish).toBeDisabled();
   for(const [i,value] of ["19","25","35","47"].entries())await page.getByLabel(`T${i+1} / T${i+2} 分界`,{exact:true}).fill(value);
   await page.getByRole("button",{name:"添加硬件规则"}).click();
@@ -95,7 +95,7 @@ try{
   await page.goto(base+"?e2=1");await expect(page.getByLabel("T1 / T2 分界",{exact:true})).toHaveValue("20");await expect(page.getByRole("button",{name:"添加硬件规则"})).toHaveCount(0);
   await page.goto(base+"?readonly=1");await expect(page.getByLabel("T1 / T2 分界",{exact:true})).toBeDisabled();await expect(publish).toBeDisabled();
   failRead=true;await page.goto(base);await expect(page.getByRole("alert")).toContainText("配置读取失败");
-  failRead=false;await page.getByRole("button",{name:"重新读取配置"}).click();await expect(page.getByLabel("T1 / T2 分界",{exact:true})).toHaveValue("20");
+  failRead=false;await page.getByRole("button",{name:"刷新"}).click();await expect(page.getByLabel("T1 / T2 分界",{exact:true})).toHaveValue("20");
   const stored=read();stored.policy.revision=2;stored.policy.scheduled={...stored.policy.current,version:2,effectiveAt:Date.now()+60000};fs.writeFileSync(storage,JSON.stringify(stored));
   await page.reload();await expect(page.getByLabel("T1 / T2 分界",{exact:true})).toBeDisabled();await expect(page.getByText("已有待生效版本",{exact:false})).toBeVisible();
   assert.deepEqual(errors,[]);const timestamp=new Date().toISOString();

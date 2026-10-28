@@ -20,6 +20,6 @@ test("I1 publish blocks filler and retired brand in all three locales", () => {
 test("I1 gates publish paths while retaining editable drafts and I6 reports fresh scan results", () => {
   assert.match(kit, /state\.saveMode === "发布生效"\) missing\.push\(\.\.\.i6CopyQualityIssues/);
   assert.match(kit, /spec\.kind === "copy-create"[\s\S]*?missing\.push\(\.\.\.i6CopyQualityIssues/);
-  assert.match(view, /扫描完成 · 请核对刷新后的完整性问题/);
-  assert.match(view, /无意义占位文本 \/ 旧品牌/);
+  assert.match(view, /检查完成，请看下表的问题/);
+  assert.match(view, /占位文字 \/ 旧品牌名/);
 });

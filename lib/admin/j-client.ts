@@ -222,7 +222,7 @@ const J1_GATE_SEMANTICS: Record<string, { coveragePrecheckRequired: boolean; cov
 };
 
 function contractError(field: string): never {
-  throw new Error(`服务器返回的数据不完整或格式异常（字段：${field}），请重新读取；若持续出现请联系技术人员。`);
+  throw new Error(`收到的数据不完整（字段：${field}），请刷新重试；一直出现请联系技术人员。`);
 }
 
 function strArray(value: unknown) {

@@ -366,7 +366,7 @@ test("F5：真实冻结/解冻/提前解锁、A2、CAS/幂等、权限、D4/审�
     const uncertainDialog = operationDialog(maker);
     await uncertainDialog.getByLabel(/操作理由/).fill(uncertainReason);
     await uncertainDialog.getByRole("button", { name: "确认提交", exact: true }).click();
-    await expect(uncertainDialog.getByText(/A2 提案结果暂不确定/)).toBeVisible();
+    await expect(uncertainDialog.getByText(/提交结果暂未确认，可能已经生效/)).toBeVisible();
     await expect(uncertainDialog.getByText(/同一命令号/)).toBeVisible();
     await expect(uncertainDialog.getByLabel(/操作理由/)).toHaveValue(uncertainReason);
     expect(uncertainCommandKey).toMatch(/^f-config-/);
@@ -606,7 +606,7 @@ async function proposeF5Disposition(page: Page, eventId: string, action: "冻结
   const ticket = await ok<Ticket>(proposalResponse, `F5 ${action} proposal`);
   const operationId = String(ticket.id ?? ticket.operationId ?? "");
   expect(operationId).toMatch(/^(?:WO|OP)-/);
-  if (await dialog.getByText(/A2 提案结果暂不确定/).isVisible().catch(() => false)) {
+  if (await dialog.getByText(/提交结果暂未确认，可能已经生效/).isVisible().catch(() => false)) {
     f5ProductFindings.push(`F5_FALSE_OUTCOME_UNKNOWN_ON_HTTP_200:${operationId}`);
     await dialog.getByRole("button", { name: "关闭", exact: true }).click();
   } else {
@@ -639,7 +639,7 @@ async function approveVisibleA2(page: Page, operationId: string, reason: string,
   rememberF5CommandKey(idempotencyKey);
   if (expectedStatus === 200) {
     await ok(response, `approve ${operationId}`);
-    if (await dialog.getByText(/A2 提案结果暂不确定/).isVisible().catch(() => false)) {
+    if (await dialog.getByText(/提交结果暂未确认，可能已经生效/).isVisible().catch(() => false)) {
       f5ProductFindings.push(`F5_FALSE_OUTCOME_UNKNOWN_ON_HTTP_200_APPROVAL:${operationId}`);
       await dialog.getByRole("button", { name: "关闭", exact: true }).click();
     }
@@ -670,7 +670,7 @@ async function rejectVisibleA2(page: Page, operationId: string, reason: string) 
   const response = await responsePromise;
   rememberF5CommandKey(await response.request().headerValue("Idempotency-Key"));
   await ok(response, `reject ${operationId}`);
-  if (await dialog.getByText(/A2 提案结果暂不确定/).isVisible().catch(() => false)) {
+  if (await dialog.getByText(/提交结果暂未确认，可能已经生效/).isVisible().catch(() => false)) {
     f5ProductFindings.push(`F5_FALSE_OUTCOME_UNKNOWN_ON_HTTP_200_REJECTION:${operationId}`);
     await dialog.getByRole("button", { name: "关闭", exact: true }).click();
   } else {

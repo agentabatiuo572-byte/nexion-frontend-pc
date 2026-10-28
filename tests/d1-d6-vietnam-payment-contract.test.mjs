@@ -40,11 +40,11 @@ test("D1 and D6 writes use real finance proxy routes with idempotency and optimi
 
 test("D1 manual match trusts canonical intent ownership instead of an operator-entered user id", () => {
   assert.doesNotMatch(d1, /\{ key: "userId", label: "目标用户 ID"/);
-  assert.match(d1, /用户归属由服务端意向单唯一确定/);
+  assert.match(d1, /入账用户由付款单决定，不能手动指定/);
   assert.match(d1, /银行回单图片/);
   assert.match(client, /evidenceRef: string/);
-  assert.match(d1, /登记真实银行回单/);
-  assert.match(d1, /交易参考号不是付款单号，也不能自行编写/);
+  assert.match(d1, /登记银行回单/);
+  assert.match(d1, /交易参考号不是付款单号/);
   assert.match(d1, /inputKind: "asset-upload"/);
   assert.match(d1, /uploadPurpose: "vietqr-receipt"/);
   assert.match(financeProxy, /"receipt-evidence"/);
@@ -52,14 +52,14 @@ test("D1 manual match trusts canonical intent ownership instead of an operator-e
   assert.match(d1, /付款单分配账户/);
   assert.match(d1, /row\.viewType === "INFLIGHT"/);
   assert.match(d1, /mismatchReason/);
-  assert.match(d1, /收款账户不一致的回单不能按实收核销/);
+  assert.match(d1, /收款账户不一致，不能按实收核销/);
   assert.match(d1, /vietQrReceivedAtInstant/);
   assert.match(d1, /`\$\{normalized\}\+07:00`/);
   assert.match(d1, /calendarCheck\.getUTCFullYear\(\)/);
   assert.match(d1, /银行到账时间包含不存在的日期或时间/);
   assert.match(d1, /row\.paymentReference/);
   assert.match(d1, /timeText\(row\.receivedAt\)/);
-  assert.match(d1, /后续调参不会反向卡死已匹配回单/);
+  assert.match(d1, /已到账的钱不会因账户日收上限被拒/);
   for (const code of [
     "VIETQR_INTENT_NOT_FOUND",
     "VIETQR_INTENT_USER_MISMATCH",
@@ -79,7 +79,7 @@ test("D1 manual match trusts canonical intent ownership instead of an operator-e
   }
   assert.match(d1, /row\.viewType === "LATE"/);
   assert.match(d1, /\["ORPHAN", "MISMATCH", "LATE"\]\.includes\(row\.viewType\)/);
-  assert.match(d1, /迟到或补充回单不复用原付款单的过期锁价/);
+  assert.match(d1, /逾期或重复的回单不能按原付款单入账/);
   assert.doesNotMatch(d1, /action: `补入账/);
 });
 
@@ -88,7 +88,7 @@ test("D1 keeps the current bank queue visible after a deterministic reconciliati
   assert.match(bankWrite, /setError/);
   assert.doesNotMatch(bankWrite, /setVietQr\(null\)/);
   assert.match(bankWrite, /isDOutcomeUnknownError/);
-  assert.match(bankWrite, /操作已被服务端受理，但最新列表回读失败/);
+  assert.match(bankWrite, /操作已提交，但列表没刷新出来/);
   assert.match(bankWrite, /return;/);
   assert.doesNotMatch(bankWrite, /throw readbackError/);
 });
@@ -105,15 +105,15 @@ test("shared operation forms visibly mark and enforce required uploaded evidence
 test("D6 derives quote from base plus spread, renders history from the server, and fails closed", () => {
   assert.match(d6, /基准价/);
   assert.match(d6, /买入点差/);
-  assert.match(d6, /锁价窗/);
-  assert.match(d6, /调价不影响在途单/);
+  assert.match(d6, /报价有效期/);
+  assert.match(d6, /调价不影响已下的单/);
   assert.match(d6, /loadD6FxQuote/);
   assert.match(d6, /updateD6FxQuote/);
   assert.match(d6, /setData\(null\)/);
   assert.match(d6, /参数值未变化，本次未提交/);
-  assert.match(d6, /D1 新付款单与回单/);
-  assert.match(d6, /A2 调价审计/);
-  assert.match(d6, /A4 调价事件/);
+  assert.match(d6, /充值对账/);
+  assert.match(d6, /操作记录/);
+  assert.match(d6, /用户行为事件/);
   assert.match(client, /rangeOrDerivedQuote/);
   assert.match(client, /result\.quoteRateVndPerUsdt !== Math\.round/);
   assert.doesNotMatch(d6, /lib\/mock\//);
@@ -122,7 +122,7 @@ test("D6 derives quote from base plus spread, renders history from the server, a
 });
 
 test("D3 exposes nine canonical liabilities and the bank suspense source", () => {
-  assert.match(d3, /应付负债 · 9 类科目/);
+  assert.match(d3, /应付款 · 9 类/);
   assert.match(client, /unverified_deposit/);
   assert.match(client, /D3_LIABILITY_KEYS\.length !== 9|D3_LIABILITY_KEYS\.length != 9/);
   assert.doesNotMatch(d3, /应付负债 · 8 类科目/);

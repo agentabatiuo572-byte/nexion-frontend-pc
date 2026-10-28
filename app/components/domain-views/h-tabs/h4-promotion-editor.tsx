@@ -200,7 +200,7 @@ export default function PromotionEditor({ activity, catalog, can, onSaved, onBac
     const selectedStacking=catalog.policies.find(p=>policyKey(p)===policyKey(draft.policies?.stacking))?.content;
     const stacking=selectedStacking?.kind==='STACKING'?selectedStacking:null;
     const permitted=(value:string|undefined)=>!value?'政策未配置':value==='ALLOW'?'允许叠加':'不允许叠加';
-    const stackingFields=[['同类促销',stacking?'同一购买台互斥':'政策未配置'],['优惠券',permitted(stacking?.voucher)],['组合折扣',permitted(stacking?.bundleDiscount)],['试用优惠','当前政策未定义'],['现有邀请奖励',permitted(stacking?.existingReferral)],['H8 新人礼',permitted(stacking?.existingH8)]];
+    const stackingFields=[['同类促销',stacking?'同一购买台互斥':'政策未配置'],['优惠券',permitted(stacking?.voucher)],['组合折扣',permitted(stacking?.bundleDiscount)],['试用优惠','当前政策未定义'],['现有邀请奖励',permitted(stacking?.existingReferral)],['新人礼',permitted(stacking?.existingH8)]];
     const selectedPolicies=[draft.policies?.settlement,draft.policies?.stacking,draft.policies?.refund,draft.policies?.quote,draft.policies?.authorization];
     const approvedCount=selectedPolicies.filter(ref=>catalog.policies.some(p=>policyKey(p)===policyKey(ref)&&p.state==='APPROVED')).length;
     const policySummary='所需政策已批准 '+approvedCount+' / 5'+(approvedCount<5?' · 缺项不可提交审核':'')+' · 每单奖励义务上限 '+limitText(draft.maxRewardUnitsPerOrder);

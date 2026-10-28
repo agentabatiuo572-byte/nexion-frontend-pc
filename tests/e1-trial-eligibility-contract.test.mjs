@@ -16,7 +16,7 @@ test("E1 owns trialEligible and H2 never offers an unmarked product", () => {
   assert.match(types, /trialEligible\?: boolean/);
   assert.match(client, /trialEligible/);
   assert.match(editor, /允许试用/);
-  assert.match(h2, /明确开启“允许试用”/);
+  assert.match(h2, /开启了「允许试用」/);
   assert.match(h2, /const disabledProductOptions/);
   assert.match(h2, /disabledOptions: isProduct \? disabledProductOptions/);
   assert.match(designKit, /disabledOptions\?: string\[\]/);

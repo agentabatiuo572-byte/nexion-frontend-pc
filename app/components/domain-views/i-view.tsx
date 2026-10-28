@@ -32,14 +32,7 @@ const FOLD: Record<string, string> = {
   I6: "I6",
 };
 
-const RO_COPY: Record<string, string> = {
-  I1: "管理文案版本，实验分组按首次分配结果固定",
-  I2: "管理消息频道和推送间隔；整体停用前往紧急控制",
-  I3: "通知送达、已读和取消状态以系统记录为准",
-  I4: "信任中心发布内容与历史版本均可追溯",
-  I5: "管理披露版本、适用地区与用户重新确认记录",
-  I6: "词条、课程、推荐位与奖励以服务器为唯一来源 · 奖励上调走敏感审批",
-};
+
 
 function countText(value?: number) {
   return Number(value ?? 0).toLocaleString();
@@ -66,38 +59,44 @@ function contentErrorForTab(tab: string, content: IContentData) {
   return error;
 }
 
+// 页面上不显示 I1–I7 模块代号，只保留用户能看懂的原因。
+function contentErrorText(error: string) {
+  if (/^I\d 数据加载失败，请刷新重试$/.test(error)) return "请刷新重试。";
+  if (/^I\d 返回数据格式异常，请刷新重试$/.test(error)) return "收到的数据格式不对，请刷新重试。";
+  return error;
+}
+
 function liveFromBackend(tab: string, content: IContentData, loading: boolean, error: string | null) {
-  if (loading) return "数据加载中";
-  if (error) return "接口异常";
+  if (loading || error) return "";
   if (tab === "I1") {
     const stats = content.copyAb?.stats;
-    return stats ? `进行中实验:${countText(stats.runningExps)} 个 · 管理文案:${countText(stats.managedCopies)} 条` : "暂无后端业务数据";
+    return stats ? `进行中测试 ${countText(stats.runningExps)} 个 · 文案 ${countText(stats.managedCopies)} 条` : "";
   }
   if (tab === "I2") {
     const stats = content.nova?.stats;
-    return stats ? `消息点击率 ${stats.ctr} · 在线 ${countText(stats.onlineChannels)}/${countText(stats.totalChannels)}` : "暂无后端业务数据";
+    return stats ? `点击率 ${stats.ctr} · 启用频道 ${countText(stats.onlineChannels)}/${countText(stats.totalChannels)}` : "";
   }
   if (tab === "I3") {
     const stats = content.campaigns?.stats;
-    return stats ? `紧急通道:${countText(stats.criticalInflight)} 条在途 · 本月发送 ${stats.monthSent}` : "暂无后端业务数据";
+    return stats ? `紧急通知发送中 ${countText(stats.criticalInflight)} 条 · 本月已发 ${stats.monthSent}` : "";
   }
   if (tab === "I4") {
     const stats = content.trustDisclosure?.stats;
-    return stats ? `受管信任版块:${countText(stats.managedSections)} 个` : "暂无后端业务数据";
+    return stats ? `信任版块 ${countText(stats.managedSections)} 个` : "";
   }
   if (tab === "I5") {
     const stats = content.trustDisclosure?.stats;
-    if (!stats) return "暂无后端业务数据";
+    if (!stats) return "";
     const coverage = stats.reackPct !== undefined
-      ? `${stats.reackJurisdiction || "适用地区"} 重新确认 ${stats.reackPct}% · 当前待确认 ${countText(stats.staleAckUsers)}`
-      : `当前待确认 ${countText(stats.staleAckUsers)}`;
-    return `${coverage} · 近7天历史拦截 ${countText(stats.weeklyGateBlocked)}`;
+      ? `${stats.reackJurisdiction || "适用地区"} 已重新确认 ${stats.reackPct}% · 待确认 ${countText(stats.staleAckUsers)} 人`
+      : `待确认 ${countText(stats.staleAckUsers)} 人`;
+    return `${coverage} · 近 7 天拦截 ${countText(stats.weeklyGateBlocked)} 次`;
   }
   if (tab === "I6") {
     const stats = content.i18nLearning?.stats;
-    return stats ? `受管词条:${countText(stats.managedKeys)} 条 · 在线课程:${countText(stats.coursesOnline)} 门 · 本周派发 ${nexGridBrandText(stats.weeklyNexPayout)}` : "暂无后端业务数据";
+    return stats ? `词条 ${countText(stats.managedKeys)} 条 · 上线课程 ${countText(stats.coursesOnline)} 门 · 本周发放 ${nexGridBrandText(stats.weeklyNexPayout)}` : "";
   }
-  return "暂无后端业务数据";
+  return "";
 }
 
 export function IDomainView({ meta }: { meta: DomainViewMeta }) {
@@ -198,14 +197,8 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
     contentError,
   };
 
-  const ro = RO_COPY[tab];
   const live = liveFromBackend(tab, content, contentLoading, contentError);
-  const right = (
-    <>
-      <span className="f-ro"><span className="d" />{ro}</span>
-      <span className="f-live"><span className="dot" />{live}</span>
-    </>
-  );
+  const right = live ? <span className="f-live"><span className="dot" />{live}</span> : null;
 
   return (
     <div className="dkpage idom">
@@ -215,7 +208,7 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
         <section className="l-card">
           <div className="l-h">
             <div className="itint danger">
-              <b>I 域数据加载失败</b> · {contentError}
+              <b>内容数据加载失败</b> · {contentErrorText(contentError)}
             </div>
             <div className="r">
               <button className="l-btn" type="button" onClick={() => void reloadIContent()}>

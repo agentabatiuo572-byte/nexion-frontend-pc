@@ -40,7 +40,7 @@ async function fixture(run) {
     },
     fetchMConversationTimeoutPolicy: async () => { calls.push(['GET']); return { ...policy, version: 8 }; },
     updateMConversationTimeoutPolicy: async (...args) => { calls.push(['PUT', ...args]); throw { unknown: true }; },
-    isIndeterminateSupportError: cause => Boolean(cause.unknown), displayAdminError: () => '读取失败',
+    isIndeterminateSupportError: cause => Boolean(cause.unknown), displayAdminError: () => '加载失败',
     supportClient: { command: async key => { calls.push(['COMMAND', key]); return { status: commandStatus }; } },
   };
   for (const name of ['Open', 'Policy', 'Input', 'Saving', 'Pending', 'Conflict', 'Latest', 'ReadOnly', 'Error']) {
@@ -199,7 +199,7 @@ test('actual customer revocation quota fallback scrubs only affected private bod
 test('fully unwritable revocation erases private bodies and keeps original timeout fenced only in this page', async () => fixture(async h => {
   seedRevoke(h); h.setQuota(true); h.context.revoke('7', true);
   assert.equal(h.values.has(legacyKey), false); assert.equal(h.values.has(currentKey), false);
-  assert.match(h.context.recoveryError, /仅保留在本页/);
+  assert.match(h.context.recoveryError, /请不要刷新或关闭页面/);
   await h.actions.openTimeout(); await h.actions.checkTimeoutPending();
   assert.equal(h.context.timeoutPending.key, original.key); assert.equal(await h.actions.saveTimeout(input), false);
   assert.equal(h.calls.filter(x => x[0] === 'PUT' || x[0] === 'MINT').length, 0);
@@ -216,7 +216,7 @@ test('quota freed by privacy erasure durably preserves exact legacy timeout meta
   assert.deepEqual(migrated[original.key], before[original.key]);
   assert.deepEqual(migrated['other-admin-timeout'], before['other-admin-timeout']);
   assert.ok(Object.values(migrated).every(row => row.fingerprint.startsWith('nexion-m3-timeout:')));
-  assert.match(h.context.recoveryError, /原策略命令已保留/);
+  assert.match(h.context.recoveryError, /结果确认前请不要刷新或关闭页面/);
   await h.actions.openTimeout(); await h.actions.checkTimeoutPending();
   assert.equal(h.context.timeoutPending.key, original.key);
   assert.equal(h.calls.filter(x => x[0] === 'PUT' || x[0] === 'MINT').length, 0);
@@ -227,7 +227,7 @@ test('invalid legacy command cannot prevent privacy erasure or mint a replacemen
   h.seed(h.legacy, { ...original, input: { ...input, warnMinutes: 1.5 } });
   h.setQuota(true); h.context.revoke('7', true);
   assert.equal(h.values.has(legacyKey), false); assert.equal(h.values.has(currentKey), false);
-  assert.match(h.context.recoveryError, /仅保留在本页/);
+  assert.match(h.context.recoveryError, /请不要刷新或关闭页面/);
   h.setQuota(false);
   await h.actions.openTimeout(); assert.equal(h.context.timeoutPolicy, null);
   h.context.timeoutPolicy = policy; assert.equal(await h.actions.saveTimeout(input), false);
@@ -253,7 +253,7 @@ test('read-denied quota revocation uses available privacy erase and keeps origin
   const before = seedRevoke(h); h.setUnreadable(true); h.setQuota(true);
   assert.doesNotThrow(() => h.context.revoke('7', true));
   assert.ok(h.removals.includes(legacyKey)); assert.equal(h.values.has(legacyKey), false);
-  assert.match(h.context.recoveryError, /旧消息正文已清除/); assert.match(h.context.recoveryError, /仅保留在本页/);
+  assert.match(h.context.recoveryError, /原消息内容已清除/); assert.match(h.context.recoveryError, /请不要刷新或关闭页面/);
   assert.equal(await h.actions.saveTimeout(input), false);
   h.setUnreadable(false); await h.actions.openTimeout(); await h.actions.checkTimeoutPending();
   assert.deepEqual(plain(h.context.timeoutPending), original); assert.equal(h.legacy.isDurablyStored(slot, original.key), false);
@@ -280,7 +280,7 @@ test('missing private locator with quota failure erases retained body without re
   h.seed(h.legacy); h.seed(h.legacy, { key: 'private-without-locator', conversationId: 'CV-7', body: '定位信息缺失的撤权正文' }, 'nexion-m3-dedicated-pending:12');
   actualRevoke(h); h.setQuota(true); assert.doesNotThrow(() => h.context.revoke('7', true));
   assert.equal(h.values.has(legacyKey), false); assert.ok(h.removals.includes(legacyKey));
-  assert.match(h.context.recoveryError, /旧消息正文已清除/); assert.match(h.context.recoveryError, /仅保留在本页/);
+  assert.match(h.context.recoveryError, /原消息内容已清除/); assert.match(h.context.recoveryError, /请不要刷新或关闭页面/);
   await h.actions.openTimeout(); await h.actions.checkTimeoutPending();
   assert.deepEqual(plain(h.context.timeoutPending), original); assert.equal(await h.actions.saveTimeout(input), false);
   assert.equal(h.legacy.isDurablyStored(slot, original.key), false);

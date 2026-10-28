@@ -60,8 +60,8 @@ test("H3 identifies the real weekly-card display fields consumed by the App", ()
     assert.match(backendMapper, new RegExp(key));
     assert.match(appPresenter, new RegExp(key));
   }
-  assert.match(view, /周任务名称和奖励来自活动任务/);
-  assert.match(view, /启用首页促销备用/);
-  assert.match(view, /没有未领取周任务时跳商店/);
+  assert.match(view, /周任务名称和奖励来自上方每周任务/);
+  assert.match(view, /启用首页备用促销卡/);
+  assert.match(view, /没有未领取的周任务时，显示跳转商城/);
   assert.doesNotMatch(view, /上架本周转化卡|下架本周转化卡|转化卡上下架/);
 });

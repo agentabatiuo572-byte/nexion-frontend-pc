@@ -76,12 +76,12 @@ test("C3 待确认队列保留服务端分页，不再固定只取前五条", ()
   assert.match(source, /const \[requestPage, setRequestPage\]/);
   assert.match(source, /const \[requestPageSize, setRequestPageSize\]/);
   assert.match(source, /pageNum: requestPage, pageSize: requestPageSize/);
-  assert.match(source, /label="待放行调整队列"/);
+  assert.match(source, /label="待审核的调整"/);
   assert.match(source, /const requestPageCount/);
   assert.match(source, /requestPage > requestPageCount/);
   assert.match(source, /setRequestPage\(requestPageCount\)/);
   assert.match(source, /data-restored-capability="c3-pending-request-withdrawal"/);
-  assert.match(source, /aria-label="刷新待放行调整队列"/);
+  assert.match(source, /aria-label="刷新待审核的调整"/);
 });
 
 test("零值柱不绘制非零实体，压力零分母保留不可计算", () => {
@@ -92,7 +92,7 @@ test("零值柱不绘制非零实体，压力零分母保留不可计算", () =>
   assert.match(insight, /row\.outflowWan === 0 \? 0 : Math\.max/);
   assert.match(insight, /row\.ratio === null \? null : row\.ratio \* 100/);
   assert.match(insight, /summarizePressureHistory/);
-  assert.match(insight, /分母为 0，不可计算/);
+  assert.match(insight, /没有充值的时段无法计算/);
 });
 
 test("已恢复或等价迁移的能力保持可见，防止二次误删", () => {

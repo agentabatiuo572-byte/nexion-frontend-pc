@@ -26,11 +26,11 @@ function errorText(error: unknown) {
 }
 
 export function K2HeaderActions() {
-  return <span className="f-ro"><span className="d" />看的是行为闭环,不是单点</span>;
+  return null;
 }
 
-const lvlBadge = (n: number) => <span className={`bdg ${n >= 3 ? "bad" : n === 2 ? "warn" : "dim"}`}>{n} / 3 层</span>;
-const judge = (n: number): [string, string] => (n >= 3 ? ["闭环套利", "bad"] : n === 2 ? ["可疑预警", "warn"] : ["观察", "dim"]);
+const lvlBadge = (n: number) => <span className={`bdg ${n >= 3 ? "bad" : n === 2 ? "warn" : "dim"}`}>{n} / 3 步</span>;
+const judge = (n: number): [string, string] => (n >= 3 ? ["判定套利", "bad"] : n === 2 ? ["可疑预警", "warn"] : ["观察", "dim"]);
 
 type TrialThreshold = { kind: "trial"; operator: string; count: string; days: string };
 type GiftThreshold = { kind: "gift"; operator: string; count: string; scope: string };
@@ -39,7 +39,7 @@ type K2Threshold = TrialThreshold | GiftThreshold | BoardThreshold;
 
 const K2_PARAM_HELP: Record<string, string> = {
   trialCycleThreshold: "同一人或组织的关联账户在统计期间反复开试用的次数阈值。",
-  welcomeGiftAnomalyThreshold: "同一统计规则下重复领取新人礼的笔数阈值。",
+  welcomeGiftAnomalyThreshold: "同一人、同一账户组、同一手机号或同一设备重复领取新人礼的笔数阈值。",
   leaderboardVelocityMultiplier: "排行榜、邀请或佣金增长速度相对基线的倍数阈值。",
 };
 
@@ -47,7 +47,7 @@ const K2_DISPOSITION_LABELS: Record<string, string> = {
   account_flagged: "已标记套利",
   gift_blocked: "新人礼已拦截",
   leaderboard_flagged: "已标记刷榜",
-  cluster_frozen: "已联动 K1 冻结",
+  cluster_frozen: "已冻结关联账户",
 };
 
 type ExtraParamDef = { key: string; label: string; unit: string; min?: number; max?: number; step?: number; options?: string[] };
@@ -96,8 +96,8 @@ function k2ParamBusinessForm(p: KRiskParam): BusinessFormSpec | null {
   if (current.kind === "trial") {
     return {
       kind: "multi-field",
-      title: "业务表单 · 试用循环阈值",
-      hint: "提交值由字段生成,格式为“比较符 数值 次 / 周期 天”。后端校验范围:次数 2-10,周期 7-60 天。",
+      title: "反复试用阈值",
+      hint: "次数可填 2–10，统计周期可选 7–60 天。",
       fields: [
         { key: "operator", label: "比较符", current: current.operator, inputKind: "select", options: [">=", ">"] },
         { key: "count", label: "循环次数", current: current.count, inputKind: "number", min: 2, max: 10, step: 1 },
@@ -108,23 +108,23 @@ function k2ParamBusinessForm(p: KRiskParam): BusinessFormSpec | null {
   if (current.kind === "gift") {
     return {
       kind: "multi-field",
-      title: "业务表单 · 新人礼异常阈值",
-      hint: "提交值由字段生成,格式为“比较符 数值 笔 / 统计规则”。后端校验范围:笔数 1-5,统计规则只能从下拉选择。",
+      title: "新人礼重复领取阈值",
+      hint: "笔数可填 1–5，按什么统计从下拉选择。",
       fields: [
         { key: "operator", label: "比较符", current: current.operator, inputKind: "select", options: [">=", ">"] },
         { key: "count", label: "异常笔数", current: current.count, inputKind: "number", min: 1, max: 5, step: 1 },
-        { key: "scope", label: "统计规则", current: current.scope, inputKind: "select", options: ["实体", "账户簇", "手机号", "设备"], optionLabels: { "实体": "同一人或组织", "账户簇": "关联账户组", "手机号": "手机号", "设备": "设备" } },
+        { key: "scope", label: "按什么统计", current: current.scope, inputKind: "select", options: ["实体", "账户簇", "手机号", "设备"], optionLabels: { "实体": "同一人或组织", "账户簇": "关联账户组", "手机号": "手机号", "设备": "设备" } },
       ],
     };
   }
   return {
     kind: "multi-field",
-    title: "业务表单 · 刷榜增速阈值",
-    hint: "提交值由字段生成,格式为“比较符 倍数x 基线”。后端校验范围:倍数 2-20,基线只能从下拉选择。",
+    title: "刷榜增速阈值",
+    hint: "倍数可填 2–20，对比基准从下拉选择。",
     fields: [
       { key: "operator", label: "比较符", current: current.operator, inputKind: "select", options: [">", ">="] },
       { key: "multiplier", label: "增速倍数", current: current.multiplier, inputKind: "number", min: 2, max: 20, step: 1 },
-      { key: "baseline", label: "对比基线", current: current.baseline, inputKind: "select", options: ["基线", "上周期", "7日均值", "同层级均值"] },
+      { key: "baseline", label: "和什么比", current: current.baseline, inputKind: "select", options: ["基线", "上周期", "7日均值", "同层级均值"] },
     ],
   };
 }
@@ -222,10 +222,10 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       commandAttempt.forget(scope);
     } catch (error) {
       if (error instanceof K1OutcomeUncertainError) {
-        ctx.toast(`K2 结果未知 · 当前弹窗与命令键已保留，请用同一请求重试 · ${error.commandKey}`);
+        ctx.toast(`结果暂未确认 · 请保留弹窗直接重试 · 命令号 ${error.commandKey}`);
       } else {
         commandAttempt.forget(scope);
-        ctx.toast(`K2 操作失败 · 本次写入未生效，当前输入已保留 · ${errorText(error)}`);
+        ctx.toast(`操作失败，没有生效，已填写的内容还在 · ${errorText(error)}`);
       }
       throw error;
     }
@@ -233,7 +233,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       await ctx.reloadKRisk();
       ctx.toast(ok);
     } catch {
-      ctx.toast(`${ok}，已写入，但 K2 最新数据回读失败；请点击“仅重试 K2”核对服务端状态`);
+      ctx.toast(`${ok}，但页面刷新失败；请点「重新加载」核对`);
     }
   };
 
@@ -244,10 +244,10 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
     const def = findHighOp("k2_row_freeze")!;
     try {
       const result = await propose(ctx.toast, {
-        action: `联动 K1 批量冻结 · ${r.cells[0]}`,
+        action: `冻结关联账户 · ${r.cells[0]}`,
         obj: r.rowId,
-        before: "K1 已标记可疑",
-        after: "联动 K1 冻结",
+        before: "已标记可疑",
+        after: "冻结关联账户",
         type: "acct",
         amplifies: false,
         gate: { roles: [] },
@@ -273,8 +273,8 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   const markArb = (r: K2Row) =>
     ctx.openConfirm({
       action: `标记套利账户 · ${r.cells[0]}`,
-      detail: "打上套利标记并附证据链,不冻结、不动钱。标记会进风险评分和风险提醒。",
-      chips: [["仅标记 · 附证据链", "done"], ["后端审计", "ready"]],
+      detail: "标记为套利并附上证据，不冻结、不动钱。标记会计入风险分和风险提醒。",
+      chips: [["只标记，附证据", "done"], ["记入操作记录", "ready"]],
       reason: true,
       okLabel: "确认标记",
       run: (reason) => runAction(
@@ -287,8 +287,8 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   const blockGift = (r: K2Row) =>
     ctx.openConfirm({
       action: `拦截新人礼 · ${r.cells[0]}`,
-      detail: "停发后续新人礼,不动任何已入账资产。",
-      chips: [["预防性阻断", "done"], ["台账留痕", "ready"]],
+      detail: "以后不再给这个账户发新人礼，已到账的不动。",
+      chips: [["提前拦截", "done"], ["记入操作记录", "ready"]],
       reason: true,
       okLabel: "确认拦截",
       run: (reason) => runAction(
@@ -301,8 +301,8 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   const boardFlag = (r: K2Row) =>
     ctx.openConfirm({
       action: `标记刷榜账户 · ${r.cells[0]}`,
-      detail: "产出刷榜信号给排行榜反欺诈和风险提醒;取消资格由对应业务域执行。",
-      chips: [["仅标记 + 产信号", "done"], ["后端审计", "ready"]],
+      detail: "标记为刷榜，会通知排行榜和风险提醒；取消排行榜资格要去「奖励池、名额与排行榜」操作。",
+      chips: [["只标记", "done"], ["记入操作记录", "ready"]],
       reason: true,
       okLabel: "确认标记",
       run: (reason) => runAction(
@@ -314,8 +314,8 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
 
   const linkFreeze = (r: K2Row) =>
     ctx.openActionConfirm({
-      action: `联动 K1 批量冻结 · ${r.cells[0]}`,
-      detail: `复用 K1 冻结链路提交 ${r.cluster || r.rowId} 的冻结处置,并把套利证据链写入审计。`,
+      action: `冻结关联账户 · ${r.cells[0]}`,
+      detail: `冻结 ${r.cluster || r.rowId} 这组关联账户，套利证据会一起记入操作记录。`,
       reasonMax: 200,
       run: (reason) => proposeK2Freeze(r, reason),
     });
@@ -323,11 +323,11 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   const adjParam = (p: KRiskParam) => {
     const businessForm = k2ParamBusinessForm(p);
     if (!businessForm) {
-      ctx.toast(`${p.name} 暂未配置结构化编辑器`);
+      ctx.toast(`${p.name} 暂时不能在这里修改`);
       return;
     }
     ctx.openActionConfirm({
-      action: `检测阈值调整 · ${p.name}`,
+      action: `调整检测阈值 · ${p.name}`,
       detail: `${p.name} · 当前 ${p.value}。${K2_PARAM_HELP[p.key] ?? p.note}`,
       amplifies: true,
       businessForm,
@@ -350,12 +350,12 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   const adjExtraParam = (definition: ExtraParamDef) => {
     const param = allParams.find((item) => item.key === definition.key);
     if (!param) {
-      ctx.toast(`${definition.label} 后端配置未返回`);
+      ctx.toast(`${definition.label} 加载失败，请刷新后重试`);
       return;
     }
     ctx.openActionConfirm({
-      action: `K2 配置调整 · ${definition.label}`,
-      detail: `${definition.label} · 当前 ${param.value} ${definition.unit}。${param.sub}。调整后只影响后续判定并写入审计。`,
+      action: `调整验证码设置 · ${definition.label}`,
+      detail: `${definition.label} · 当前 ${param.value} ${definition.unit}。${param.sub}。只影响之后的判断。`,
       amplifies: false,
       edit: definition.options
         ? { kind: "select", current: param.value, options: definition.options }
@@ -374,23 +374,23 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   };
 
   if (ctx.contentLoading) {
-    return <section className="l-card"><div className="l-h"><span className="ttl">K2 数据加载中</span><span className="sub">· 正在读取风险数据</span></div></section>;
+    return <section className="l-card"><div className="l-h"><span className="ttl">套利与刷量数据加载中</span><span className="sub">· 请稍候</span></div></section>;
   }
 
   if (ctx.contentError) {
     return (
       <section className="l-card" data-module-health-state="error">
         <div className="l-h">
-          <span className="ttl">K2 数据加载失败</span>
-          <span className="sub">· {errorText(ctx.contentError)} · 已隐藏旧数据与写操作，避免误处置</span>
-          <div className="r"><button className="l-btn" onClick={() => void ctx.reloadKRisk().catch(() => undefined)}>仅重试 K2</button></div>
+          <span className="ttl">套利与刷量数据加载失败</span>
+          <span className="sub">· {errorText(ctx.contentError)} · 为避免误操作，已隐藏数据和操作按钮</span>
+          <div className="r"><button className="l-btn" onClick={() => void ctx.reloadKRisk().catch(() => undefined)}>重新加载</button></div>
         </div>
       </section>
     );
   }
 
   if (!overview) {
-    return <section className="l-card"><div className="l-h"><span className="ttl">K2 暂无可用数据</span></div></section>;
+    return <section className="l-card"><div className="l-h"><span className="ttl">暂无套利与刷量数据</span></div></section>;
   }
 
   return (
@@ -407,9 +407,9 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">闭环怎么判</span>
-          <span className="sub">· 分级预警,不是单点命中</span>
-          <div className="r"><span className="kcode electric">多层叠加判定</span></div>
+          <span className="ttl">怎么判断套利</span>
+          <span className="sub">· 看一连串行为，不看单个动作</span>
+          <div className="r"><span className="kcode electric">多步叠加判断</span></div>
         </div>
         <div className="l-b">
           <div className="loop-strip" style={{ marginBottom: 14 }}>
@@ -419,11 +419,11 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
             <span className="st hit">开免费试用</span><span className="ar">→</span>
             <span className="st">取消</span><span className="ar">→</span>
             <span className="st hit">清缓存 · 再来一轮</span>
-            <span className="tail">单步正常,连起来才是闭环</span>
+            <span className="tail">每一步单看都正常，连起来才是套利</span>
           </div>
           <div className="grade-row">
-            <div className="ktint warn"><b>≥ 2 层可疑</b> → 预警 + 转人工核查</div>
-            <div className="ktint bad"><b>3 层全中</b> → 判定闭环套利,联动 K1 批量冻结</div>
+            <div className="ktint warn"><b>命中 2 步</b> → 预警，转人工核查</div>
+            <div className="ktint bad"><b>3 步全中</b> → 判定为套利，可冻结关联账户</div>
           </div>
         </div>
       </section>
@@ -431,10 +431,10 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">检测阈值</span>
-          <span className="sub">· 置换抵扣阶梯归 E3 管；K2 依据高频下架置换与礼金/返佣叠加证据判定</span>
+          <span className="sub">· 以旧换新的抵扣比例在「设备使用与以旧换新」设置</span>
           <div className="r">
-            <Link className="kcode lock" href="/devices/trade-in" title="置换阶梯权威归 E3；K2 不维护置换价格参数">🔒 置换阶梯归 E3 · 首档抵扣 {ladderTopCredit ? `${ladderTopCredit}%` : "读取中"}</Link>
-            <Link className="kcode lock" href="/growth/referral-rewards" title="新人礼与邀请人奖励的金额、发放和结算统一在 H8">🔒 新人礼 / 邀请奖励配置归 H8</Link>
+            <Link className="kcode lock" href="/devices/trade-in" title="以旧换新抵扣比例在「设备使用与以旧换新」设置">🔒 以旧换新首档抵扣 {ladderTopCredit ? `${ladderTopCredit}%` : "加载中"}</Link>
+            <Link className="kcode lock" href="/growth/referral-rewards" title="新人礼与邀请奖励在「新人礼与邀请奖励」设置">🔒 新人礼 / 邀请奖励设置</Link>
           </div>
         </div>
         <div className="l-b">
@@ -455,13 +455,13 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       </section>
 
       {[
-        { title: "短信闸门参数", sub: "· 冷却 → 滑动窗口 → 24h 发送上限；调整只影响后续发送，已签发验证码沿用签发时参数。滑块触发场景与累计发送阈值在此管理；票据验证器接入状态由部署环境决定。", params: OTP_GATE_PARAMS, proof: "k2-otp-gate-params" },
+        { title: "短信验证码设置", sub: "· 只影响之后发送的验证码，已发出的不变。", params: OTP_GATE_PARAMS, proof: "k2-otp-gate-params" },
       ].map((group) => (
         <section className="l-card" key={group.title}>
           <div className="l-h">
             <span className="ttl">{group.title}</span>
             <span className="sub">{group.sub}</span>
-            <div className="r"><span className="kcode electric">配置以服务器为准</span></div>
+            <div className="r"><span className="kcode electric">修改后马上生效</span></div>
           </div>
           <div className="l-b">
             <div className="param-grid" data-proof={group.proof}>
@@ -474,7 +474,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
                       {definition.key === "captchaGate.alwaysScenes" && param ? (param?.value ?? "").split(",").map(value => ({register:"注册",login:"登录",reset:"找回密码"} as Record<string,string>)[value.trim()] ?? value.trim()).join("、") || "无" : param?.value ?? "—"} <span className="vu">{definition.unit}</span>
                       {canWrite && <button className="l-btn sm mc" aria-label={`调整${definition.label}`} disabled={!param} onClick={() => adjExtraParam(definition)}>调整</button>}
                     </div>
-                    <div className="s">{param?.sub ?? "等待后端配置"}</div>
+                    <div className="s">{param?.sub ?? "加载中"}</div>
                   </div>
                 );
               })}
@@ -486,7 +486,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">检测命中</span>
-          <span className="sub">{current?.sub ?? "后端暂无命中视图"}</span>
+          <span className="sub">{current?.sub ?? "暂无数据"}</span>
           <div className="r">
             <TabGroup
               className="chips"
@@ -503,7 +503,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
             <thead>
               <tr>
                 {(current?.head ?? []).map((h) => <th key={h}>{h}</th>)}
-                {current?.key !== "board" && <th>层数</th>}
+                {current?.key !== "board" && <th>命中步数</th>}
                 {(current?.key === "trial" || current?.key === "board") && <th>判定</th>}
                 <th style={{ textAlign: "right" }}>动作</th>
               </tr>
@@ -530,9 +530,9 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
                             if (action === "freeze") {
                               if (!canFreeze) return null;
                               const ready = r.clusterStatus === "flagged" && r.clusterVersion !== undefined;
-                              return <button key={action} className="l-btn sm mc" disabled={!ready} title={ready ? "提交 A2 确认链" : "需先在 K1 将关联账户组标记为可疑"} onClick={() => linkFreeze(r)}>{ready ? "联动 K1 冻结" : "先到 K1 标记为可疑"}</button>;
+                              return <button key={action} className="l-btn sm mc" disabled={!ready} title={ready ? "提交审批" : "需要先在「多账户风险排查」把这组账户标记为可疑"} onClick={() => linkFreeze(r)}>{ready ? "冻结关联账户" : "先去标记为可疑"}</button>;
                             }
-                            return <span key={action} className="bdg warn" title="服务端返回了无法识别的动作，已暂停执行">未知动作</span>;
+                            return <span key={action} className="bdg warn" title="出现了无法识别的操作，已暂停">未知动作</span>;
                           })}
                         </span>
                       )}
@@ -545,12 +545,12 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
           </table>
         </div>
         <div className="l-b" style={{ paddingTop: 12 }}>
-          <div className="ktint" style={{ fontSize: 12 }}><b>读法</b> · {current?.note ?? "命中结果由后端判定。"}</div>
+          <div className="ktint" style={{ fontSize: 12 }}><b>读法</b> · {current?.note ?? "命中结果由系统自动判断。"}</div>
         </div>
       </section>
 
       <PaginationExemptionList
-        items={[{ label: "检测命中", maxRows: Math.max(current?.rows.length ?? 0, 1), reason: "K2 命中由后端风险接口返回,按视图切换查看" }]}
+        items={[{ label: "检测命中", maxRows: Math.max(current?.rows.length ?? 0, 1), reason: "按类型切换查看" }]}
       />
     </div>
   );

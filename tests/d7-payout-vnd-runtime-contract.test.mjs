@@ -90,6 +90,6 @@ test("D7 rejects missing fields and invalid timestamps instead of rendering fall
 
 test("D7 malformed server responses are translated before they reach an operator", () => {
   const rendered = formatAdminApiError("D7_RESPONSE_INVALID:root.sellSpreadPct", "D7_RESPONSE_INVALID");
-  assert.match(rendered, /服务端返回的参数不完整|停止展示推测值/);
+  assert.match(rendered, /返回的数据不完整|页面已停止展示/);
   assert.doesNotMatch(rendered, /D7_RESPONSE_INVALID|sellSpreadPct/);
 });

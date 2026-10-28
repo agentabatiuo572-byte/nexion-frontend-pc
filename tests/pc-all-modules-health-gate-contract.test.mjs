@@ -118,41 +118,41 @@ test("centralized terminal read and protocol errors cannot bypass the semantic g
 test("actual terminal UI branches remain bound to the semantic gate", () => {
   const actualTerminalBranches = [
     ["../app/_console/users/search/[id]/page.tsx", "用户标识缺失，已停止加载"],
-    ["../app/components/domain-views/d-tabs/d6-fx.tsx", "写入结果未确认，已停止展示旧牌价"],
+    ["../app/components/domain-views/d-tabs/d6-fx.tsx", "保存结果未确认，已停止展示旧牌价"],
     ["../app/components/domain-views/d-tabs/d4-ledger.tsx", "资金账本已停止展示旧数据"],
-    ["../app/components/domain-views/d-tabs/d1-recon.tsx", "D1 已停止展示旧数据"],
-    ["../app/components/domain-views/d-tabs/d5-params.tsx", "旧值已清空，全部写操作保持冻结。"],
-    ["../app/components/domain-views/a-tabs/a2-audit.tsx", "审计中心读取失败，旧数据已清空，所有操作均已停用"],
+    ["../app/components/domain-views/d-tabs/d1-recon.tsx", "充值对账已停止展示旧数据"],
+    ["../app/components/domain-views/d-tabs/d5-params.tsx", "提现参数加载失败，旧值已清空，修改已暂停。"],
+    ["../app/components/domain-views/a-tabs/a2-audit.tsx", "操作记录加载失败，旧数据已清空，所有操作已暂停"],
     ["../app/components/domain-views/j-tabs/j1-killswitch.tsx", "当前无法确认业务开关状态"],
     ["../app/components/domain-views/j-tabs/j2-geoblock.tsx", "当前无法确认地区封锁状态"],
-    ["../app/components/domain-views/k-tabs/k1-multiaccount.tsx", "已隐藏旧数据与写操作，避免误处置"],
-    ["../app/components/domain-views/k-tabs/k2-arbitrage.tsx", "已隐藏旧数据与写操作，避免误处置"],
+    ["../app/components/domain-views/k-tabs/k1-multiaccount.tsx", "多账户风险数据加载失败"],
+    ["../app/components/domain-views/k-tabs/k2-arbitrage.tsx", "套利与刷量数据加载失败"],
     ["../app/components/domain-views/m-tabs/m1-overview.tsx", "系统已停止使用空名册推断权限,请刷新后重试。"],
-    ["../app/components/domain-views/m-tabs/m1-overview.tsx", "客服数据暂不可用,当前不会开放客服与负载调整。"],
+    ["../app/components/domain-views/m-tabs/m1-overview.tsx", "客服数据加载失败，暂时不能调整客服和接待量。"],
     ["../app/components/domain-views/l-tabs/l5-export.tsx", "能力边界加载失败，已按最小权限关闭解密导出。"],
-    ["../app/components/domain-views/k-tabs/k3-rules.tsx", "K3 权威数据不可用，已禁用模拟"],
+    ["../app/components/domain-views/k-tabs/k3-rules.tsx", "规则数据加载失败，暂时不能模拟"],
     ["../app/components/domain-views/k-tabs/k6/queue.tsx", "设备队列读取失败，数据未更新。"],
     ["../app/components/domain-views/k-tabs/k6/strategy-center.tsx", "策略列表读取失败，数据未更新。"],
     ["../app/components/domain-views/k-tabs/k6/audit-log.tsx", "审计记录读取失败，数据未更新。"],
     ["../app/components/domain-views/k-tabs/k6/dashboard.tsx", "看板读取失败，未显示旧数据且数据未更新。"],
     ["../app/components/domain-views/k-tabs/k6/device-detail.tsx", "详情加载失败，未展示队列摘要代替详情。"],
-    ["../app/components/domain-views/a-tabs/a1-accounts.tsx", "权限差异预览不可用，改角色已停用"],
-    ["../app/components/domain-views/a-tabs/a1-accounts.tsx", "后端刷新失败:"],
-    ["../app/components/domain-views/a-tabs/a6-roles.tsx", "角色目录加载失败，当前数据不可确认。"],
-    ["../app/components/domain-views/a-tabs/a7-menus.tsx", "菜单目录加载失败，当前数据不可确认。"],
-    ["../app/components/domain-views/a-tabs/a8-permissions.tsx", "角色授权读取失败,矩阵不可信。"],
-    ["../app/components/domain-views/e-tabs/e2-tasks.tsx", "E2 数据读取失败，当前空值不代表真实业务为零"],
-    ["../app/components/domain-views/e-tabs/e5-ops.tsx", "设备库存读取异常:"],
-    ["../app/components/domain-views/e-tabs/e6-compute-config.tsx", "E6 配置读取失败:"],
+    ["../app/components/domain-views/a-tabs/a1-accounts.tsx", "权限变化预览加载失败，暂时不能改角色"],
+    ["../app/components/domain-views/a-tabs/a1-accounts.tsx", "刷新失败："],
+    ["../app/components/domain-views/a-tabs/a6-roles.tsx", "角色列表加载失败，请重试。"],
+    ["../app/components/domain-views/a-tabs/a7-menus.tsx", "菜单列表加载失败，请重试。"],
+    ["../app/components/domain-views/a-tabs/a8-permissions.tsx", "各角色的权限加载失败，对照表暂不可信。"],
+    ["../app/components/domain-views/e-tabs/e2-tasks.tsx", "设备收益数据加载失败，页面上的空值不代表真的是零"],
+    ["../app/components/domain-views/e-tabs/e5-ops.tsx", "设备库存加载失败："],
+    ["../app/components/domain-views/e-tabs/e6-compute-config.tsx", "设备配置加载失败:"],
     ["../app/components/domain-views/e-view.tsx", "详情读取失败:"],
-    ["../app/components/domain-views/g-tabs/g4-admin-operations.tsx", "刷新失败，以下为上次成功快照"],
-    ["../app/components/domain-views/k-tabs/k4-scoring.tsx", "K4 读取失败"],
-    ["../app/components/domain-views/k-tabs/k4-scoring.tsx", "告警读取失败"],
-    ["../app/components/domain-views/m-tabs/m2-tickets.tsx", "工单数据暂时无法同步,当前不展示空队列,也不会开放写操作。"],
-    ["../app/components/domain-views/m-tabs/m3-sessions.tsx", "会话数据暂时无法同步,当前不会把空列表当作真实结果,写操作也已关闭。"],
+    ["../app/components/domain-views/g-tabs/g4-admin-operations.tsx", "刷新失败，下面是上次加载的数据"],
+    ["../app/components/domain-views/k-tabs/k4-scoring.tsx", "风险评分加载失败"],
+    ["../app/components/domain-views/k-tabs/k4-scoring.tsx", "告警加载失败"],
+    ["../app/components/domain-views/m-tabs/m2-tickets.tsx", "工单数据同步失败，队列为空不代表没有工单，暂时不能操作。"],
+    ["../app/components/domain-views/m-tabs/m3-sessions.tsx", "会话数据同步失败，列表为空不代表没有会话，暂时不能操作。"],
     ["../app/components/domain-views/m-tabs/m4-kb-sla.tsx", "知识库当前不可用，暂时无法修改。请稍后刷新重试。"],
     ["../app/components/domain-views/m-tabs/m5-scripts.tsx", "话术与模板当前不可用，暂时无法修改。请稍后刷新重试。"],
-    ["../app/components/domain-views/l-tabs/l1-kpi.tsx", "L1 权威响应协议校验失败"],
+    ["../app/components/domain-views/l-tabs/l1-kpi.tsx", "关键指标数据加载失败"],
     ["../app/components/domain-views/l-tabs/l1-kpi.tsx", "关键指标刷新失败"],
     ["../app/components/dashboard/restored-b-insights.tsx", "资金流历史暂不可用："],
     ["../app/components/dashboard/restored-b-insights.tsx", "月新增入金暂不可用："],
@@ -170,21 +170,21 @@ test("unmarked terminal renderers expose a structural error marker", () => {
   const markedBranches = [
     ["../app/components/domain-views/m-tabs/m4-kb-sla.tsx", /data-module-health-state="error"[^>]*>知识库当前不可用/],
     ["../app/components/domain-views/m-tabs/m5-scripts.tsx", /data-module-health-state="error"[^>]*>话术与模板当前不可用/],
-    ["../app/components/domain-views/l-tabs/l1-kpi.tsx", /data-module-health-state="error"[^>]*>[\s\S]{0,100}<b>L1 权威响应协议校验失败/],
-    ["../app/components/domain-views/a-tabs/a2-audit.tsx", /data-module-health-state=\{loadError \? "error" : undefined\}[\s\S]{0,200}审计中心读取失败/],
-    ["../app/components/domain-views/d-tabs/d5-params.tsx", /data-module-health-state="error">[\s\S]{0,160}D5 当前系统配置不可用/],
+    ["../app/components/domain-views/l-tabs/l1-kpi.tsx", /data-module-health-state="error"[^>]*>[\s\S]{0,100}<b>关键指标数据加载失败/],
+    ["../app/components/domain-views/a-tabs/a2-audit.tsx", /data-module-health-state=\{loadError \? "error" : undefined\}[\s\S]{0,200}操作记录加载失败/],
+    ["../app/components/domain-views/d-tabs/d5-params.tsx", /data-module-health-state="error">[\s\S]{0,160}提现参数加载失败/],
     ["../app/components/domain-views/j-tabs/j1-killswitch.tsx", /data-module-health-state="error"[^>]*>[\s\S]{0,160}当前无法确认业务开关状态/],
     ["../app/components/domain-views/j-tabs/j2-geoblock.tsx", /data-module-health-state="error"[^>]*>[\s\S]{0,160}当前无法确认地区封锁状态/],
-    ["../app/components/domain-views/k-tabs/k1-multiaccount.tsx", /data-module-health-state="error"[^>]*>[\s\S]{0,160}K1 数据加载失败/],
-    ["../app/components/domain-views/k-tabs/k2-arbitrage.tsx", /data-module-health-state="error"[^>]*>[\s\S]{0,160}K2 数据加载失败/],
-    ["../app/components/domain-views/k-tabs/k4-scoring.tsx", /data-module-health-state="error"[^>]*>告警读取失败/],
+    ["../app/components/domain-views/k-tabs/k1-multiaccount.tsx", /data-module-health-state="error"[^>]*>[\s\S]{0,160}多账户风险数据加载失败/],
+    ["../app/components/domain-views/k-tabs/k2-arbitrage.tsx", /data-module-health-state="error"[^>]*>[\s\S]{0,160}套利与刷量数据加载失败/],
+    ["../app/components/domain-views/k-tabs/k4-scoring.tsx", /data-module-health-state="error"[^>]*>告警加载失败/],
     ["../app/components/domain-views/k-tabs/k6/queue.tsx", /data-module-health-state="error"[^>]*>设备队列读取失败/],
     ["../app/components/domain-views/k-tabs/k6/strategy-center.tsx", /data-module-health-state="error"[^>]*>策略列表读取失败/],
     ["../app/components/domain-views/k-tabs/k6/audit-log.tsx", /data-module-health-state="error"[^>]*>审计记录读取失败/],
     ["../app/components/domain-views/k-tabs/k6/dashboard.tsx", /data-module-health-state="error"[^>]*>看板读取失败/],
     ["../app/components/domain-views/k-tabs/k6/device-detail.tsx", /data-module-health-state=\{detailStatus === "error" \? "error" : undefined\}[\s\S]{0,220}详情加载失败/],
-    ["../app/components/domain-views/a-tabs/a1-accounts.tsx", /data-module-health-state="error"[^>]*>[\s\S]{0,80}后端刷新失败/],
-    ["../app/components/domain-views/g-tabs/g4-admin-operations.tsx", /data-module-health-state="error"[^>]*>刷新失败，以下为上次成功快照/],
+    ["../app/components/domain-views/a-tabs/a1-accounts.tsx", /data-module-health-state="error"[^>]*>[\s\S]{0,80}刷新失败：/],
+    ["../app/components/domain-views/g-tabs/g4-admin-operations.tsx", /data-module-health-state="error"[^>]*>刷新失败，下面是上次加载的数据/],
     ["../app/components/domain-views/e-view.tsx", /data-module-health-state="error"[^>]*>详情读取失败:/],
     ["../app/components/domain-views/l-tabs/l1-kpi.tsx", /data-module-health-state="error"[^>]*>[\s\S]{0,100}<b>关键指标刷新失败/],
     ["../app/components/dashboard/restored-b-insights.tsx", /<Notice healthState="error">\{`资金流历史暂不可用：/],
@@ -217,17 +217,17 @@ test("full-menu gate rejects thin shells, persistent loading and unapproved role
 
 test("full-menu gate preserves explicit truthful B3 and J1 operational alerts", () => {
   assert.deepEqual(evaluateModuleHealthSnapshot("B3", healthySnapshot({
-    alertTexts: ["当前漏斗不可安全计算当前筛选范围没有可确认的注册用户，转化率不可计算；请检查 A4 注册事件或调整筛选条件。"],
+    alertTexts: ["暂时无法计算用户转化当前筛选范围内没有注册用户，无法计算转化率；请调整筛选条件，或到「用户行为事件」检查注册事件。"],
   })), []);
 
   assert.deepEqual(evaluateModuleHealthSnapshot("J1", healthySnapshot({
-    alertTexts: ["1 项自动关停结论已逾期未补录 —— 闸已止血,但处置理由仍空缺;逾期事项不会自行消失,请值班人员立即补录,或上报值班主管接手。· 提现闸(截止 2026-07-20 06:05)"],
+    alertTexts: ["1 项自动关停结论已逾期未补录 —— 相关业务已停止，但还没写处理结论；逾期事项不会自动消失，请值班同事马上补录，或交给值班主管处理。· 提现开关(截止 2026-07-20 06:05)"],
   })), []);
 });
 
 test("full-menu gate rejects prefix and suffix injection around approved alerts", () => {
-  const b3 = "当前漏斗不可安全计算当前筛选范围没有可确认的注册用户，转化率不可计算；请检查 A4 注册事件或调整筛选条件。";
-  const j1 = "1 项自动关停结论已逾期未补录 —— 闸已止血,但处置理由仍空缺;逾期事项不会自行消失,请值班人员立即补录,或上报值班主管接手。· 提现闸(截止 2026-07-20 06:05)";
+  const b3 = "暂时无法计算用户转化当前筛选范围内没有注册用户，无法计算转化率；请调整筛选条件，或到「用户行为事件」检查注册事件。";
+  const j1 = "1 项自动关停结论已逾期未补录 —— 相关业务已停止，但还没写处理结论；逾期事项不会自动消失，请值班同事马上补录，或交给值班主管处理。· 提现开关(截止 2026-07-20 06:05)";
 
   for (const [moduleId, alert] of [["B3", b3], ["J1", j1]]) {
     assert.ok(evaluateModuleHealthSnapshot(moduleId, healthySnapshot({
@@ -240,8 +240,8 @@ test("full-menu gate rejects prefix and suffix injection around approved alerts"
 });
 
 test("full-menu gate allows only the exact structured F4 settlement HOLD alert", () => {
-  const exact = "提前结算已暂停 · 领导奖池结算配置不可用：奖池比例 缺失或格式错误。配置入口就在本卡片下方，请依次补齐后重新读取配置。重新读取配置";
-  const allConcreteItems = "提前结算已暂停 · 领导奖池结算配置不可用：配置版本、奖池比例、月度 cap、解锁等级、结算周期 缺失或格式错误。配置入口就在本卡片下方，请依次补齐后重新读取配置。重新读取配置";
+  const exact = "提前结算已暂停 · 领导奖池设置不完整：奖池比例 未设置或格式有误。请在本卡片下方补齐后刷新设置。刷新设置";
+  const allConcreteItems = "提前结算已暂停 · 领导奖池设置不完整：设置版本、奖池比例、每月上限、参与等级、结算时间 未设置或格式有误。请在本卡片下方补齐后刷新设置。刷新设置";
 
   assert.deepEqual(evaluateModuleHealthSnapshot("F4", healthySnapshot({ alertTexts: [exact] })), []);
   assert.deepEqual(evaluateModuleHealthSnapshot("F4", healthySnapshot({ alertTexts: [allConcreteItems] })), []);
@@ -249,11 +249,11 @@ test("full-menu gate allows only the exact structured F4 settlement HOLD alert",
   for (const alert of [
     `未批准告警前缀；${exact}`,
     `${exact}；任意错误后缀`,
-    "领导奖池结算配置不可用：奖池比例 缺失或格式错误。配置入口就在本卡片下方，请依次补齐后重新读取配置。重新读取配置",
-    "提前结算已暂停 · 领导奖池结算配置不可用：权威配置 缺失或格式错误。配置入口就在本卡片下方，请依次补齐后重新读取配置。重新读取配置",
-    "提前结算已暂停 · 领导奖池结算配置不可用：奖池比例、奖池比例 缺失或格式错误。配置入口就在本卡片下方，请依次补齐后重新读取配置。重新读取配置",
-    "提前结算已暂停 · 领导奖池结算配置不可用：结算周期、配置版本 缺失或格式错误。配置入口就在本卡片下方，请依次补齐后重新读取配置。重新读取配置",
-    "提前结算已暂停 · 领导奖池结算配置不可用：奖池比例 缺失或格式错误。请联系管理员。重新读取配置",
+    "领导奖池设置不完整：奖池比例 未设置或格式有误。请在本卡片下方补齐后刷新设置。刷新设置",
+    "提前结算已暂停 · 领导奖池设置不完整：旧设置 未设置或格式有误。请在本卡片下方补齐后刷新设置。刷新设置",
+    "提前结算已暂停 · 领导奖池设置不完整：奖池比例、奖池比例 未设置或格式有误。请在本卡片下方补齐后刷新设置。刷新设置",
+    "提前结算已暂停 · 领导奖池设置不完整：结算时间、设置版本 未设置或格式有误。请在本卡片下方补齐后刷新设置。刷新设置",
+    "提前结算已暂停 · 领导奖池设置不完整：奖池比例 未设置或格式有误。请联系管理员。刷新设置",
   ]) {
     assert.ok(evaluateModuleHealthSnapshot("F4", healthySnapshot({ alertTexts: [alert] }))
       .some((failure) => failure.includes("role=alert")), `F4 alert must stay rejected: ${alert}`);

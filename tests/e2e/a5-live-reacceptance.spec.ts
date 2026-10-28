@@ -41,8 +41,8 @@ test("A5 real user flow, owner navigation, filtering and fail-closed recovery st
   }
 
   await expect(page.getByRole("heading", { name: "平台参数管理" })).toBeVisible();
-  await expect(page.getByText("当前服务端值").first()).toBeVisible();
-  expect(await page.getByText("当前服务端值").count()).toBeGreaterThanOrEqual(100);
+  await expect(page.getByText("当前值").first()).toBeVisible();
+  expect(await page.getByText("当前值").count()).toBeGreaterThanOrEqual(100);
   await expect(page.getByText("参数键 · feature.ops.maintenanceBanner", { exact: true })).toBeVisible();
   await expect(page.getByText("/api/admin/platform/config/overview", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: `${EVIDENCE_DIR}/01-live-registry.png` });
@@ -56,19 +56,19 @@ test("A5 real user flow, owner navigation, filtering and fail-closed recovery st
 
   await page.getByLabel("筛选业务域").selectOption("J");
   await expect(page.getByText("参数键 · emergency.geo-block", { exact: true })).toBeVisible();
-  expect(await page.getByText("当前服务端值").count()).toBe(6);
-  await page.getByLabel("搜索参数").fill("兑换闸");
+  expect(await page.getByText("当前值").count()).toBe(6);
+  await page.getByLabel("搜索参数").fill("兑换开关");
   await expect(page.getByText("参数键 · emergency.gate.exchange", { exact: true })).toBeVisible();
   await page.screenshot({ path: `${EVIDENCE_DIR}/02-filter-owner.png` });
   const j1Card = page.getByText("参数键 · emergency.gate.exchange", { exact: true }).locator("xpath=ancestor::article");
-  await j1Card.getByRole("link", { name: /J1 功能闸/ }).click();
+  await j1Card.getByRole("link", { name: /紧急停用开关/ }).click();
   await expect(page).toHaveURL(/\/emergency\/kill-switch$/);
   await page.goBack();
   await expect(page.getByRole("heading", { name: "平台参数管理" })).toBeVisible();
   await page.getByLabel("筛选业务域").selectOption("J");
-  await page.getByLabel("搜索参数").fill("地区屏蔽");
+  await page.getByLabel("搜索参数").fill("地区访问限制");
   const j2Card = page.getByText("参数键 · emergency.geo-block", { exact: true }).locator("xpath=ancestor::article");
-  await j2Card.getByRole("link", { name: /J2 地区屏蔽/ }).click();
+  await j2Card.getByRole("link", { name: /地区访问限制/ }).click();
   await expect(page).toHaveURL(/\/emergency\/geo-block$/);
   await page.goBack();
   await expect(page.getByRole("heading", { name: "平台参数管理" })).toBeVisible();
@@ -95,7 +95,7 @@ test("A5 real user flow, owner navigation, filtering and fail-closed recovery st
   }));
   await page.reload();
   await expect(page.getByText("数据一致性校验未通过", { exact: true })).toBeVisible();
-  await expect(page.getByText("当前服务端值")).toHaveCount(0);
+  await expect(page.getByText("当前值")).toHaveCount(0);
   await page.screenshot({ path: `${EVIDENCE_DIR}/04-integrity-fail-closed.png` });
 
   await page.unrouteAll({ behavior: "wait" });
@@ -111,7 +111,7 @@ test("A5 real user flow, owner navigation, filtering and fail-closed recovery st
 
   await page.unrouteAll({ behavior: "wait" });
   await page.reload();
-  await expect(page.getByText("当前服务端值").first()).toBeVisible();
+  await expect(page.getByText("当前值").first()).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
 

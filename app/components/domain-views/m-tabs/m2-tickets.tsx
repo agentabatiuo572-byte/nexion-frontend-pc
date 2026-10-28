@@ -243,14 +243,14 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
             setTicketDetail((detail) => detail ? { ...detail, replyAgentAdminId: customer.customerId === String(ticket.userId) ? customer.agentAdminId : null, replyError: "" } : detail);
           } catch {
             if (controller.signal.aborted || scope !== responseScope.current) return;
-            setTicketDetail((detail) => detail ? { ...detail, replyAgentAdminId: null, replyError: "客户归属暂时无法核对，请重试读取详情。" } : detail);
+            setTicketDetail((detail) => detail ? { ...detail, replyAgentAdminId: null, replyError: "暂时无法确认客户归属，请重新打开详情。" } : detail);
           }
         }
       })
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return;
         if (cause instanceof SupportClientError && [403, 404].includes(cause.status) && !selectedRow.contentRestricted && selectedRow.sourceConversationNo && selectedRow.sourceConversationNo !== "DIRECT") ctx.invalidateScope(selectedRow.sourceConversationNo, String(selectedRow.userId ?? ""));
-        setTicketDetail({ ticket: selectedRow, epoch: authEpoch, scope, replyAgentAdminId: null, replyError: "", error: "工单详情读取失败，请重试。" });
+        setTicketDetail({ ticket: selectedRow, epoch: authEpoch, scope, replyAgentAdminId: null, replyError: "", error: "工单详情加载失败，请重试。" });
       });
     return () => controller.abort();
   }, [drawerOpen, selectedRow?.id, selectedRow?.version, selectedRow?.contentRestricted, authEpoch, adminId, advisorQualified, detailRetry, ctx.invalidateScope]);
@@ -398,16 +398,16 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
       toast("客户编号 必须是正整数");
       return;
     }
-    if (!userId) { toast("请先核对已绑定的真实客户，再新建工单"); return; }
+    if (!userId) { toast("请先确认客户，再新建工单"); return; }
     if (!await verifyCustomerReply(userId)) return;
     const selectedOwner = ownerOptions.find((candidate) => candidate.adminId === form.ownerAdminId);
     if (!selectedOwner) {
-      toast("新建工单需要选择真实客服负责人");
+      toast("新建工单需要选择负责的客服");
       return;
     }
     const selectedSla = slaRows.find((item) => item.category === form.category);
     if (!selectedSla) {
-      toast("该分类 处理时限 权威规则不可用,请刷新后重试");
+      toast("这个分类的处理时限加载失败，请刷新后重试");
       return;
     }
     const now = Date.now();
@@ -443,7 +443,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
     };
     setPendingCreatedTicket({ subject: title, userId, existingIds: tickets.map((ticket) => ticket.id) });
     const succeeded = await commitTicketWrite(
-      () => setParam(TICKET_KEY, JSON.stringify([row, ...tickets]), { action: "新建客服工单 · admin.support_ticket_created", reason: "客服人工新建工单并自动留档" }),
+      () => setParam(TICKET_KEY, JSON.stringify([row, ...tickets]), { action: "新建客服工单", reason: "客服新建工单" }),
       `工单已创建并进入 ${selectedOwner.label} 队列`,
     );
     if (succeeded) {
@@ -474,7 +474,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
           messages: [...t.messages, { ts: now, author: "agent", agentName: t.owner === "Unassigned" ? "客服台" : t.owner, body: body.trim() }],
         }),
         "坐席回复(正文已留档)",
-        `工单回复 ${selected.id} · admin.support_ticket_replied`,
+        `工单回复 ${selected.id}`,
       ),
       `${selected.id} 已回复并转待用户`,
     );
@@ -488,7 +488,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
     if (!t || t.archived || t.status === status) return;
     const now = Date.now();
     await commitTicketWrite(
-      () => updateTicket(id, (x) => ({ ...x, status, updatedAt: now }), `状态流转「${TK_STATUS_CN[status]}」(例行,自动留档)`, `工单状态流转 ${id} · admin.support_ticket_status`),
+      () => updateTicket(id, (x) => ({ ...x, status, updatedAt: now }), `状态流转「${TK_STATUS_CN[status]}」`, `工单状态流转 ${id}`),
       `${id} → ${TK_STATUS_CN[status]}`,
     );
   };
@@ -500,7 +500,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
       () => updateTicket(
         selected.id,
         (t) => ({ ...t, status: nextStatus, updatedAt: now }),
-        `坐席${nextStatus === "closed" ? "关闭" : "重开"}工单(例行,自动留档)`,
+        `坐席${nextStatus === "closed" ? "关闭" : "重开"}工单`,
         `${nextStatus === "closed" ? "关闭" : "重开"}工单 ${selected.id} · admin.support_ticket_${nextStatus === "closed" ? "closed" : "reopened"}`,
       ),
       `${selected.id} 已${nextStatus === "closed" ? "关闭" : "重开"}`,
@@ -512,7 +512,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
     if (!canWriteM2 || !ticketsAvailable) return;
     const now = Date.now();
     await commitTicketWrite(
-      () => updateTicket(id, (t) => ({ ...t, priority, updatedAt: now }), `调整优先级「${PRIO_CN[priority]}」(例行,自动留档)`, `工单优先级 ${id} · admin.support_ticket_priority`),
+      () => updateTicket(id, (t) => ({ ...t, priority, updatedAt: now }), `调整优先级「${PRIO_CN[priority]}」`, `工单优先级 ${id}`),
       `${id} 优先级 → ${PRIO_CN[priority]}`,
     );
   };
@@ -525,7 +525,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
     }
     const now = Date.now();
     await commitTicketWrite(
-      () => updateTicket(id, (t) => ({ ...t, ownerAdminId: selectedOwner.adminId, owner: selectedOwner.name, updatedAt: now }), `转交坐席「${selectedOwner.label}」(例行,自动留档)`, `工单转交 ${id} · admin.support_ticket_owner`),
+      () => updateTicket(id, (t) => ({ ...t, ownerAdminId: selectedOwner.adminId, owner: selectedOwner.name, updatedAt: now }), `转交坐席「${selectedOwner.label}」`, `工单转交 ${id}`),
       `${id} 已转交 ${selectedOwner.label}`,
     );
   };
@@ -543,7 +543,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
       () => updateTicket(
         id,
         (item) => ({ ...item, archived, archivedAt: archived ? now : undefined, updatedAt: now }),
-        archived ? "已解决工单例行归档并自动留档" : "归档工单恢复到已解决队列并自动留档",
+        archived ? "已解决工单归档" : "归档工单恢复到已解决",
         `${archived ? "归档" : "恢复"}工单 ${id} · admin.support_ticket_${archived ? "archived" : "unarchived"}`,
       ),
       `${id} 已${archived ? "归档" : "恢复到已解决队列"}`,
@@ -564,8 +564,8 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
         expectedStatus: selected.status,
         expectedVersion: selected.version,
       }), {
-        action: `工单内部备注 ${selected.id} · admin.support_ticket_internal_note`,
-        reason: "客服内部协作备注自动留档",
+        action: `工单内部备注 ${selected.id}`,
+        reason: "客服内部备注",
         commandKey: `m2:ticket:${selected.id}:internal-note:${selected.version}:${note}`,
       }),
       `${selected.id} 内部备注已保存`,
@@ -590,7 +590,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
       action: <>升级为即时会话 · {ticket.id}</>,
       detail: (
         <>
-          把工单 <b>{supportTicketSubjectText(ticket.subject)}</b> 升级为即时会话,坐席 <b>{ticket.owner}</b> 在会话中心继续实时接待;系统会保留真实用户关联,并在本工单同步记录会话编号。仅迁移接待载体,资金放行仍需在提现处置页面办理。
+          把工单 <b>{supportTicketSubjectText(ticket.subject)}</b> 升级为即时会话,坐席 <b>{ticket.owner}</b> 在会话中心继续实时接待;用户关联保持不变，工单里会记下会话编号。这只是换成会话接待，放行提现仍需去「待审核提现」处理。
         </>
       ),
       amplifies: false,
@@ -604,7 +604,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
             expectedStatus: ticket.status,
             expectedVersion: ticket.version,
           }), {
-            action: `工单升级为即时会话 ${ticket.id} · admin.conversation_from_ticket`,
+            action: `工单升级为即时会话 ${ticket.id}`,
             reason,
             commandKey: `m2:ticket:${ticket.id}:escalate:${ticket.version}`,
           }),
@@ -641,7 +641,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
       </p>
       {!ticketsAvailable && (
         <div className="itint" role="alert" style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 13 }}>工单数据暂时无法同步,当前不展示空队列,也不会开放写操作。</div>
+          <div style={{ fontSize: 13 }}>工单数据同步失败，队列为空不代表没有工单，暂时不能操作。</div>
           <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>请稍后刷新页面;若持续失败,联系平台管理员检查客服工单服务。</div>
         </div>
       )}
@@ -816,8 +816,8 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
 
       {drawerOpen && selectedRow && !selected && (
         <div ref={drawerRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={`工单 ${selectedRow.id} 详情`} className="tk-drawer">
-          <div className="itint" role={detailError ? "alert" : "status"}>{detailError || "正在读取工单详情…"}</div>
-          {detailError && <button type="button" className="btn btn-sec btn-sm" onClick={() => { if (detailError.includes("已更新")) void ctx.refreshContent(); else setDetailRetry((value) => value + 1); }}>{detailError.includes("已更新") ? "刷新工单列表" : "重试读取详情"}</button>}
+          <div className="itint" role={detailError ? "alert" : "status"}>{detailError || "正在加载工单详情…"}</div>
+          {detailError && <button type="button" className="btn btn-sec btn-sm" onClick={() => { if (detailError.includes("已更新")) void ctx.refreshContent(); else setDetailRetry((value) => value + 1); }}>{detailError.includes("已更新") ? "刷新工单列表" : "重新加载详情"}</button>}
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setDrawerOpen(false)}>关闭</button>
         </div>
       )}
@@ -1049,7 +1049,7 @@ function TicketDrawer({
         {ticket.contentRestricted && <div className="callout warn">当前无法查看这段私聊；可继续处理内部备注、状态和指派。</div>}
         {canWrite && !ticket.contentRestricted && ticket.status !== "closed" && !ticket.archived && (
           <div className="ChatComposer">
-            {!canReply && <div className="callout" role="status">{replyReadonlyReason} <button type="button" className="btn btn-sec btn-sm" disabled={submitting} onClick={onRetryReply}>重试读取详情</button></div>}
+            {!canReply && <div className="callout" role="status">{replyReadonlyReason} <button type="button" className="btn btn-sec btn-sm" disabled={submitting} onClick={onRetryReply}>重新加载详情</button></div>}
             <div style={{ display: "flex", gap: 7, marginBottom: 9, flexWrap: "wrap", alignItems: "center" }}>
               <span className="dim2" style={{ fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 4 }}>
                 <Icon name="flame" size={13} />
@@ -1078,7 +1078,7 @@ function TicketDrawer({
               }}
             />
             <div style={{ display: "flex", alignItems: "center", marginTop: 9 }}>
-              <span className="dim2" style={{ fontSize: 11.5 }}>例行回复直接执行并自动留档,无需理由 · 资金放行请到提现处置、账户处置请到账户安全、设备换货请到设备售后办理</span>
+              <span className="dim2" style={{ fontSize: 11.5 }}>回复直接发送，不用填理由 · 放行提现去「待审核提现」，账户问题去「账户操作」，设备换货去设备售后处理</span>
               <button type="button" data-proof="support-ticket-reply-save" className="btn btn-pri btn-sm" style={{ marginLeft: "auto" }} disabled={submitting || !canReply} onClick={() => onSend(replyBody)}>
                 <Icon name="arrow" size={16} />
                 发送回复
@@ -1119,7 +1119,7 @@ function CreateTicketModal({
       onClose={onClose}
       footer={
         <>
-          <span className="dim2" style={{ fontSize: 11.5 }}>负责人来自客服坐席名册;新建会自动留档,无需填写理由</span>
+          <span className="dim2" style={{ fontSize: 11.5 }}>负责人从客服名单里选；新建不用填理由</span>
           <span style={{ flex: 1 }} />
           <button type="button" className="btn btn-sec btn-sm" disabled={submitting} onClick={onClose}>取消</button>
           <button
@@ -1157,7 +1157,7 @@ function CreateTicketModal({
       <div style={{ display: "grid", gap: 12 }}>
         <label className="field">
           <span className="bf-legend">客户编号（必填）</span>
-          <input className="fld" required inputMode="numeric" value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="填写当前归属的真实客户编号" />
+          <input className="fld" required inputMode="numeric" value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="填写客户编号" />
         </label>
         <label className="field">
           <span className="bf-legend">标题</span>

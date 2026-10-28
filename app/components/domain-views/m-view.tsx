@@ -236,7 +236,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       });
       return;
     }
-    throw new Error("会话列表正在刷新，请重试读取详情。");
+    throw new Error("会话列表正在刷新，请稍后再打开详情。");
   }, [authEpoch]);
   const reconcileLiveConversationSnapshot = useCallback(async (connectionSignal: AbortSignal) => {
     if (connectionSignal.aborted) return;
@@ -515,7 +515,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       } catch (error) {
         if (currentAuthEpoch.current !== authEpoch) return false;
         if (error instanceof MContentReadError && [403, 404].includes(error.status)) invalidateScope();
-        setToast(`客户标注已保存，会话刷新失败，请重新读取 · ${displayAdminError(error)}`);
+        setToast(`客户标注已保存，但会话刷新失败，请手动刷新 · ${displayAdminError(error)}`);
       }
       return true;
     } catch (error) {
@@ -1513,11 +1513,11 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
         </div>
       </div>
       <div className="ChatBody" style={{ flex: 1, minHeight: 0 }}>
-        {conv.detailReady ? <MessageThread messages={threadMessages} relWhen={dockRelWhen} resetKey={conv.id} /> : <div role={detailError ? "alert" : "status"} className="itint">{detailError ? `会话详情读取失败：${detailError}` : "正在读取会话消息…"} {detailError && <button type="button" className="btn btn-sec btn-sm" onClick={() => { setDetailError(""); setDetailRetry((value) => value + 1); }}>重试读取详情</button>}</div>}
+        {conv.detailReady ? <MessageThread messages={threadMessages} relWhen={dockRelWhen} resetKey={conv.id} /> : <div role={detailError ? "alert" : "status"} className="itint">{detailError ? `会话详情加载失败：${detailError}` : "正在加载会话消息…"} {detailError && <button type="button" className="btn btn-sec btn-sm" onClick={() => { setDetailError(""); setDetailRetry((value) => value + 1); }}>重新加载详情</button>}</div>}
       </div>
       {sendError && <div role="alert" style={{ padding: "8px 11px", color: "var(--danger)", fontSize: 12 }}>{sendError}{sendError.startsWith("消息已发送") && <button type="button" className="btn btn-ghost btn-sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</button>}</div>}
       {pendingDock && canAbandon && <div><button type="button" className="btn btn-sec btn-sm" disabled={sending} onClick={() => void copyOriginal(draft)}>复制原文</button><button type="button" className="btn btn-sec btn-sm" disabled={sending} onClick={() => abandonQuery(pendingDock)}>放弃查询</button></div>}
-      {!canWriteM3 && <div role="status" style={{ padding: "8px 11px", fontSize: 12 }}>当前账号只可查看会话，发送需会话操作权限。</div>}
+      {!canWriteM3 && <div role="status" style={{ padding: "8px 11px", fontSize: 12 }}>你只能查看会话，发消息需要会话操作权限。</div>}
       <div style={{ padding: "9px 11px", borderTop: "1px solid var(--border)", display: "flex", gap: 8, alignItems: "flex-end" }}>
         <textarea
           className="ta"

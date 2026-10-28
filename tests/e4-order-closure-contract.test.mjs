@@ -11,7 +11,7 @@ test("E4 uses the PRD canonical order vocabulary", async () => {
   assert.match(data, /"chargeback"/);
   assert.doesNotMatch(view, /"created", "paid", "allocating", "active"/);
   assert.doesNotMatch(view, /nx_order/);
-  assert.match(view, /补建失败终态不包含退款/);
+  assert.match(view, /「标记失败结果」不会退款/);
 });
 
 test("E4 detail and refund proposal carry real evidence and refund channel", async () => {
@@ -22,7 +22,7 @@ test("E4 detail and refund proposal carry real evidence and refund channel", asy
   assert.match(client, /fetchE4OrderDetail/);
   assert.match(proxy, /const isOrderItem = parts\[0\] === "orders" && parts\.length === 2/);
   assert.match(proxy, /&& !isOrderItem/);
-  assert.match(shell, /D1\/D4\/钱包\/累计充值同事务回退/);
+  assert.match(shell, /充值记录、账单和累计充值一起冲回/);
   assert.match(shell, /coverageProjected/);
   assert.match(shell, /canRefundE4/);
   assert.match(registry, /refundChannel: String\(ctx\.refundChannel/);

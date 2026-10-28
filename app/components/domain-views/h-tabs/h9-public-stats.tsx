@@ -80,7 +80,7 @@ function bandDraftsFrom(values: H9PublicStatsValues): BandDraft[] {
 function scalarError(field: H9FieldDef, raw: string): string {
   const value = num(raw);
   if (!Number.isFinite(value)) return "请填数字";
-  if (value < field.min || value > field.max) return `超出合法范围 ${field.min}–${field.max}${field.unit}`;
+  if (value < field.min || value > field.max) return `要在 ${field.min}–${field.max}${field.unit} 之间`;
   if (field.integer && !Number.isInteger(value)) return "只能填整数";
   return "";
 }
@@ -138,7 +138,7 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
 
   const rowErrors = useMemo(() => h9BandRowErrors(bands), [bands]);
   const bandCountError = bands.length < H9_BAND_MIN
-    ? `分位表至少要有 ${H9_BAND_MIN} 档,现在 ${bands.length} 档`
+    ? `算力分位表至少要 ${H9_BAND_MIN} 档，现在只有 ${bands.length} 档`
     : "";
   const allValid = Object.values(fieldErrors).every((text) => !text) && rowErrors.every((text) => !text) && !bandCountError;
 
@@ -195,7 +195,7 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
     if (!data) return;
     setDrafts(draftsFrom(data.defaults));
     setBands(bandDraftsFrom(data.defaults));
-    ctx.toast("已回填出厂默认值 —— 还没保存,点「保存变更」走确认后才生效");
+    ctx.toast("已填入默认值，还没保存。点「保存变更」确认后才生效");
   };
 
   const save = (enabled?: boolean) => {
@@ -218,23 +218,23 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
     ctx.openActionConfirm({
       action: "保存首页与历史展示设置",
       detail: <>
-        <div>本次改动({diffs.length} 项):</div>
+        <div>本次改动（{diffs.length} 项）：</div>
         {diffs.map((line) => <div key={line}>· {line}</div>)}
         {fleetChanged && <div>
           ⚠️ 历史估算日金额从 {money(data.values.fleetDevices * data.publishedDailyUsdPerDevice)} 变成 {money(nextDaily)}
           (每台每日配置值 {money2(data.publishedDailyUsdPerDevice)} 不变)。这是内部估算，不代表实际支付，也不改变正式 App 对外统计。
         </div>}
         {baseChanged && <div>改动注册用户基数后，网络脉搏推算起点会重置为本次保存时刻；注册用户数字不参与设备预估排名，也不改变真实账户。</div>}
-        {virtualZero && <div>虚拟人口填了 0:历史本地估算分母仅含真实注册人口({int(data.realUserCount)} 人)。虚拟人口不参与设备预估排名。</div>}
-        <div>本次提交基于配置版本 v{data.version};并发改动会返回 409,任何一项不合法都整组不保存记录。</div>
-        <div>首页数字仅在开启后增长，暂停保留当前值；页面最多 60 秒同步状态。操作理由会写入审计。</div>
+        {virtualZero && <div>虚拟人口填了 0：历史估算只按真实注册人数（{int(data.realUserCount)} 人）计算。</div>}
+        <div>如果别人同时改了这页，你需要刷新后重改；有任何一项不合法，整组都不会保存。</div>
+        <div>首页数字只在开启后增长，暂停后停在当前值；App 最多 60 秒内同步。</div>
       </>,
       // 🔴 不挂 amplifies:它的语义是「放大资金流出方向,系统会先检查备付金覆盖率」(K 域契约),
       //    而本页改的是历史数据展示设置,一分钱都不流出,也没传 coverage —— 挂上等于在弹窗里
       //    向运营承诺一道根本没跑的资金闸。改设备总数的警示由上方 fleetChanged 段落负责。
       reasonMin: 8,
       reasonMax: 200,
-      completionCopy: "保存成功后更新首页与历史展示设置并写入审计",
+      completionCopy: "保存后马上生效，并记入操作记录。",
       run: async (reason) => {
         try {
           const saved = await updateH9PublicStats(submitted, data.version, reason);
@@ -242,22 +242,22 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
           setDrafts(draftsFrom(saved.values));
           setBands(bandDraftsFrom(saved.values));
           setSaveError(null);
-          ctx.toast(`展示设置已保存 · 版本 v${saved.version} · 已记审计`);
+          ctx.toast(`展示设置已保存`);
         } catch (cause) {
           const message = formatAdminApiError(cause instanceof Error ? cause.message : null, "H9_SAVE_FAILED");
           setSaveError(message);
-          ctx.toast(`保存失败 · ${message} —— 未生效,可原样重试`);
+          ctx.toast(`保存失败 · ${message}，没有生效，可以直接重试`);
           throw cause;
         }
       },
     });
   };
 
-  if (loading && !data) return <section className="l-card"><div className="l-b">展示设置加载中...</div></section>;
+  if (loading && !data) return <section className="l-card"><div className="l-b">展示设置加载中…</div></section>;
 
   if (!data || !drafts) {
     return <section className="l-card">
-      <div className="l-h"><span className="ttl">展示设置暂时读不到</span></div>
+      <div className="l-h"><span className="ttl">展示设置加载失败</span></div>
       <div className="l-b">
         {/* 文案拼接走 h9PlaceholderCopy:字典整句自带句号,直接再拼「。」就是双句号(P2-15 回归)。 */}
         <div className="htint danger">{h9PlaceholderCopy(error)}</div>
@@ -271,7 +271,7 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
     return <div className="p-row" key={key}>
       <div className="txt">
         <div className="k">{field.label} </div>
-        {!compact && <div className="s">合法范围 {field.min}–{field.max}{field.unit}{field.integer ? "(整数)" : ""} · {field.hint}</div>}
+        {!compact && <div className="s">可填 {field.min}–{field.max}{field.unit}{field.integer ? "（整数）" : ""} · {field.hint}</div>}
         {fieldErrors[key] && <div className="ferr">{fieldErrors[key]}</div>}
       </div>
       {/* 🔴 type="text" 而不是 type="number"(zentao #200)。
@@ -315,34 +315,33 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
         <div className="r">
           <button className="l-btn sm" onClick={() => void load()}>刷新</button>
           {canWrite && <button className="l-btn sm" disabled={!dirty} onClick={restoreCurrent}>放弃改动</button>}
-          {canWrite && <button className="l-btn" disabled={!dirty || !allValid} title={!dirty ? "没有改动" : !allValid ? "有参数不合法,先按红字改" : undefined} onClick={() => save()}>保存变更</button>}
+          {canWrite && <button className="l-btn" disabled={!dirty || !allValid} title={!dirty ? "没有改动" : !allValid ? "有参数不对，请先按红字修改" : undefined} onClick={() => save()}>保存变更</button>}
         </div>
       </div>
     </section>
     <div className="f-stats">
-      <div className="f-stat cyan"><div className="k">历史设备配置</div><div className="v">{int(data.values.fleetDevices)}</div><div className="sub">非实测设备数，不用于对外事实</div></div>
-      <div className="f-stat"><div className="k">历史在线估算</div><div className="v">{int(data.values.fleetDevices * data.values.onlineRatePct / 100)}</div><div className="sub">配置设备数 × 配置占比 {data.values.onlineRatePct}%</div></div>
-      <div className="f-stat"><div className="k">网络脉搏注册基数</div><div className="v">{int(data.values.registeredUsersBase)}</div><div className="sub">网络脉搏展示；月增速 {data.values.registeredUsersMonthlyGrowthPct}%</div></div>
-      <div className="f-stat ok"><div className="k">历史估算分母</div><div className="v">{int(data.realUserCount + data.values.virtualUserCount)}</div><div className="sub">真实注册人口 + 虚拟人口；不用于设备预估排名</div></div>
+      <div className="f-stat cyan"><div className="k">历史设备配置</div><div className="v">{int(data.values.fleetDevices)}</div><div className="sub">设置值，不是实际设备数</div></div>
+      <div className="f-stat"><div className="k">历史在线估算</div><div className="v">{int(data.values.fleetDevices * data.values.onlineRatePct / 100)}</div><div className="sub">设备数 × 在线比例 {data.values.onlineRatePct}%</div></div>
+      <div className="f-stat"><div className="k">网络脉搏注册基数</div><div className="v">{int(data.values.registeredUsersBase)}</div><div className="sub">「网络脉搏」显示用；每月增长 {data.values.registeredUsersMonthlyGrowthPct}%</div></div>
+      <div className="f-stat ok"><div className="k">历史估算分母</div><div className="v">{int(data.realUserCount + data.values.virtualUserCount)}</div><div className="sub">真实注册人数 + 虚拟人口</div></div>
     </div>
 
     {saveError && <div className="htint danger" style={{ marginBottom: 12 }}>
-      上次保存没成功:{saveError} —— <b>本次改动没有生效,也没有落审计</b>。
-      如果是别人同时改了这页,先点「刷新」拿最新值再改;其它情况可以直接再点「保存变更」原样重试
-      —— 值、版本与理由都不变时用的是同一个防重复提交编号(刷新页面也还是它),服务端不会重复落账;
-      或先「放弃改动」把页面回填成当前生效值。
+      上次保存没成功：{saveError}。<b>改动没有生效</b>。
+      如果是别人同时改了这页，先点「刷新」再改；否则可以直接再点「保存变更」重试，不会重复保存；
+      也可以点「放弃改动」恢复成当前生效的值。
     </div>}
 
     <div className="two-col">
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">注册用户与历史展示设置</span>
-          <span className="sub">· 生效版本 v{data.version} · {when(Date.parse(data.effectiveAt))} · {canWrite ? "可改" : "当前角色只读"}</span>
+          <span className="sub">· 生效版本 v{data.version} · {when(Date.parse(data.effectiveAt))} · {canWrite ? "可修改" : "你只能查看"}</span>
           <div className="r">
             <button className="l-btn sm" onClick={() => void load()}>刷新</button>
             {canWrite && <button className="l-btn sm" onClick={fillDefaults}>恢复默认</button>}
             {canWrite && <button className="l-btn sm" disabled={!dirty} onClick={restoreCurrent}>放弃改动</button>}
-            {canWrite && <button className="l-btn mc" disabled={!dirty || !allValid} title={!dirty ? "没有改动" : !allValid ? "有参数不合法,先按红字改" : undefined} onClick={() => save()}>保存变更</button>}
+            {canWrite && <button className="l-btn mc" disabled={!dirty || !allValid} title={!dirty ? "没有改动" : !allValid ? "有参数不对，请先按红字修改" : undefined} onClick={() => save()}>保存变更</button>}
           </div>
         </div>
         <div className="l-b">
@@ -361,7 +360,7 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
       </section>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">改动影响预览</span><span className="sub">· 按当前草稿现算,保存前就能看见</span></div>
+        <div className="l-h"><span className="ttl">改动影响预览</span><span className="sub">· 按你填的值实时计算，保存前就能看到</span></div>
         <div className="l-b">
           <div className="htint cyan">
             每台每日配置值 <b>{money2(impact?.perDevice ?? Number.NaN)}</b> 仅用于历史估算；下表不是实付金额。
@@ -392,14 +391,14 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
     <section className="l-card">
       <div className="l-h">
         <span className="ttl">算力分位表</span>
-        <span className="sub">· 历史本地估算参数，不参与设备预估排名</span>
+        <span className="sub">· 只用于历史估算</span>
         <div className="r">
           <PaginationExemption label="算力分位表" reason="整表统一保存，需同时检查各行数值顺序" maxRows={bands.length} kind="fixed-matrix" />
           {canWrite && <button className="l-btn sm" onClick={addBand}>添加档</button>}
         </div>
       </div>
       <div className="l-b">
-        {bandCountError && <div className="htint danger" style={{ marginBottom: 10 }}>{bandCountError}。{bands.length < H9_BAND_MIN ? "点右上角「添加档」补齐 —— 少于两档没法把算力换算成百分比。" : ""}</div>}
+        {bandCountError && <div className="htint danger" style={{ marginBottom: 10 }}>{bandCountError}。{bands.length < H9_BAND_MIN ? "点右上角「添加档」补齐，少于两档无法换算成百分比。" : ""}</div>}
         {bands.length === 0
           ? <div className="htint">还没有任何档位。历史估算表至少需要 {H9_BAND_MIN} 档才能保存。</div>
           : <table className="l-tbl">
@@ -417,15 +416,15 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
               </tbody>
             </table>}
         <div className="htint" style={{ marginTop: 10 }}>
-          填表规则:算力档位从 {H9_BAND_TOPS_MIN} 起从小到大排,累计占比只能一行比一行大或持平,最高不超过 100%。
-          这些参数保留用于历史本地估算。设备预估排名使用独立配置的档位分布及在线设备展示量，与当前绑定手机的有效算力比较，不使用本表或虚拟人口。
+          填写规则：算力从 {H9_BAND_TOPS_MIN} 起从小到大排；累计占比要逐行不变小，最高 100%。
+          这张表只用于历史估算；设备预估排名用的是上方单独的档位设置。
         </div>
       </div>
     </section>
 
     <p className="f-foot">
-      <b>这页的数会去哪</b>:保存首页与历史展示设置并写审计。介绍页与网络脉搏共用在线设备展示，开启后按设置区间增长；网络脉搏注册用户按基数与月增长率推算。在线设备展示量用于设备预估排名；注册用户数字不参与设备排名；不改变真实设备算力和资金账单。改动记录去{" "}
-      <Link href="/platform/audit" className="l-btn sm">A2 审批与审计</Link>{" "}查。
+      <b>这些数字用在哪</b>：介绍页和「网络脉搏」显示的在线设备数，开启后按设置的区间增长；「网络脉搏」的注册用户按基数和月增长率推算；在线设备数也用于设备预估排名。这些都只是展示，不影响真实设备、算力和资金。修改记录在{" "}
+      <Link href="/platform/audit" className="l-btn sm">操作记录与审批</Link>{" "}查看。
     </p>
   </>;
 }

@@ -120,7 +120,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     if (rule.hot) {
       openActionConfirm({
         action: `签到规则 · ${operatorCopyText(rule.name)}`,
-        detail: <>当前 <b>{current}</b>。幸运概率由后端校验两档合计不超过 100%。</>,
+        detail: <>当前 <b>{current}</b>。两档幸运概率加起来不能超过 100%。</>,
         amplifies: true,
         edit: { kind: "number", current: currentNumber || current },
         run: submit,
@@ -129,10 +129,10 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     }
     openConfirm({
       action: `签到规则 · ${operatorCopyText(rule.name)}`,
-      detail: <>当前 <b>{current}</b>,提交后写入后端配置。</>,
-      chips: [["写后端配置", "ready"], ["审计留痕", "done"]],
+      detail: <>当前 <b>{current}</b>。保存后马上生效。</>,
+      chips: [["记入操作记录", "done"]],
       reason: true,
-      input: { label: "目标新值", placeholder: `当前 ${currentNumber || current}` },
+      input: { label: "新值", placeholder: `当前 ${currentNumber || current}` },
       okLabel: "确认修改",
       run: submit,
     });
@@ -141,7 +141,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const openStreak = (milestone: StreakMilestone) => {
     openActionConfirm({
       action: `连签里程碑 · ${milestone.day}`,
-      detail: <>当前奖励 <b>{operatorCopyText(milestone.reward)}</b>,升高奖励时后端会检查覆盖率红线。</>,
+      detail: <>当前奖励 <b>{operatorCopyText(milestone.reward)}</b>。调高奖励时，覆盖率低于红线无法保存。</>,
       amplifies: true,
       edit: { kind: "text", current: milestone.reward },
       run: async (reason, value) => {
@@ -155,7 +155,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const openPowerUp = (powerUp: PowerUp) => {
     openActionConfirm({
       action: `连续签到成长奖励 · ${operatorCopyText(powerUp.label)}`,
-      detail: <>当前触发天数 <b>{powerUp.day}</b>。可同步更新运营备注,两项都写后端。</>,
+      detail: <>当前连续签到 <b>{powerUp.day}</b> 天触发。可以顺便改运营备注。</>,
       amplifies: false,
       businessForm: {
         kind: "multi-field",
@@ -185,14 +185,14 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const openEarn = (milestone: EarnMilestone) => {
     openActionConfirm({
       action: `收益里程碑 · $${milestone.threshold}`,
-      detail: <>当前门槛 <b>${milestone.threshold}</b>,奖励 <b>{milestone.nex} UVT</b>。后端校验门槛顺序。</>,
+      detail: <>当前门槛 <b>${milestone.threshold}</b>，奖励 <b>{milestone.nex} UVT</b>。门槛要从小到大排列。</>,
       amplifies: true,
       businessForm: {
         kind: "multi-field",
         title: "收益里程碑",
         fields: [
-          { key: "threshold", label: "门槛(USD)", inputKind: "number", current: String(milestone.threshold), placeholder: "500" },
-          { key: "nex", label: "奖励(UVT)", inputKind: "number", current: String(milestone.nex), placeholder: "250" },
+          { key: "threshold", label: "门槛（USD）", inputKind: "number", current: String(milestone.threshold), placeholder: "500" },
+          { key: "nex", label: "奖励（UVT）", inputKind: "number", current: String(milestone.nex), placeholder: "250" },
         ],
       },
       run: async (reason, _value, form) => {
@@ -210,8 +210,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     const currentSeconds = String(model?.tickInterval?.seconds ?? numericText(model?.tickInterval?.value, "4"));
     openConfirm({
       action: "收益里程碑触发检查间隔",
-      detail: <>当前 <b>{text(model?.tickInterval?.value, current)}</b>,后端限制最小/最大值。</>,
-      chips: [["写后端配置", "ready"], ["审计留痕", "done"]],
+      detail: <>当前 <b>{text(model?.tickInterval?.value, current)}</b>。系统每隔这么多秒检查一次谁达到了收益里程碑。</>,
+      chips: [["记入操作记录", "done"]],
       reason: true,
       input: { label: "秒数", placeholder: currentSeconds },
       okLabel: "确认修改",
@@ -226,15 +226,15 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   };
 
   if (loading) {
-    return <section className="l-card"><div className="l-b">H5 数据加载中...</div></section>;
+    return <section className="l-card"><div className="l-b">签到数据加载中…</div></section>;
   }
 
   if (error || !model) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">H5 数据加载失败</span></div>
+        <div className="l-h"><span className="ttl">签到数据加载失败</span></div>
         <div className="l-b">
-          {error ?? "未收到本页数据，请重试；持续失败时请联系值班人员。"}
+          {error ?? "没有收到数据，请重试；一直失败请联系值班同事。"}
           <button className="l-btn sm" style={{ marginLeft: 8 }} onClick={() => void reload()}>重试</button>
         </div>
       </section>
@@ -252,12 +252,12 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           <div className="sub">签到率 {text(stats.signRate)}</div>
         </div>
         <div className="f-stat ok">
-          <div className="k">幸运倍率实际 / 配置</div>
+          <div className="k">幸运倍率 实际 / 设置</div>
           <div className="v">{text(stats.lucky15Actual)} / {text(stats.lucky15Config)}</div>
-          <div className="sub">2x 实际 {text(stats.lucky2Actual)} · 配置 {text(stats.lucky2Config)}</div>
+          <div className="sub">2x 实际 {text(stats.lucky2Actual)} · 设置 {text(stats.lucky2Config)}</div>
         </div>
         <div className="f-stat cyan">
-          <div className="k">本周复活</div>
+          <div className="k">本周断签后恢复</div>
           <div className="v">{Number(stats.weekRevive ?? 0).toLocaleString()}</div>
           <div className="sub">连签里程碑触发 {Number(stats.weekMsTrigger ?? 0).toLocaleString()}</div>
         </div>
@@ -272,7 +272,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">签到规则</span>
-            <span className="sub">· 签到规则 来自后端</span>
+            <span className="sub">· 每日签到奖励和幸运倍率</span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             {model.rules.map((rule) => (
@@ -293,7 +293,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">连签分布</span>
-            <span className="sub">· 后端摘要</span>
+            <span className="sub">· 用户连续签到天数分布</span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             {(model.streakDistribution ?? []).map((item) => (
@@ -312,7 +312,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">连签里程碑</span>
-          <span className="sub">· 奖励从后端配置读取</span>
+          <span className="sub">· 连续签到满指定天数的奖励</span>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 680 }}>
@@ -343,24 +343,24 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">连签成长奖励</span>
-          <span className="sub">· 触发天数和奖励说明由服务端保存</span>
+          <span className="sub">· 连续签到满指定天数解锁的权益</span>
         </div>
         <div className="l-b" style={{ paddingTop: 4 }}>
           {model.powerUps.map((powerUp) => (
             <div className="p-row" key={powerUp.id}>
               <span style={{ flex: 1 }}>
-                <b>{powerUp.businessAvailable === false ? "目标业务已停用" : powerUp.businessAvailable == null && (powerUp.downstream === "/wallet/staking" || powerUp.downstream === "/market/genesis") ? "目标业务状态待核实" : operatorCopyText(powerUp.label)}</b>
+                <b>{powerUp.businessAvailable === false ? "目标业务已停用" : powerUp.businessAvailable == null && (powerUp.downstream === "/wallet/staking" || powerUp.downstream === "/market/genesis") ? "目标业务状态未知" : operatorCopyText(powerUp.label)}</b>
                 <br />
                 <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>
-                  {powerUp.businessAvailable === false ? "当前不可兑现，历史权益记录保留"
-                    : powerUp.businessAvailable == null && (powerUp.downstream === "/wallet/staking" || powerUp.downstream === "/market/genesis") ? "暂不可确认能否兑现"
+                  {powerUp.businessAvailable === false ? "现在用不了，已获得的记录保留"
+                    : powerUp.businessAvailable == null && (powerUp.downstream === "/wallet/staking" || powerUp.downstream === "/market/genesis") ? "暂时无法确认能不能用"
                     : <>{text(powerUp.sub)} · 前往{rewardDestination(powerUp.downstream)}</>}
                 </span>
                 {/* BUG 195:该档指向的业务已停用时,App 不再给「激活」入口。
                     运营必须看得见这件事 —— 否则会一直以为用户连签 30/60 天后真能拿到入口。 */}
                 {powerUp.businessAvailable === false && (
                   <span style={{ display: "block", fontSize: 11.5, color: "var(--warning)", marginTop: 2 }}>
-                    目标业务当前已停用，客户端不会展示可激活承诺；请核对配置后再开放。
+                    目标业务已停用，App 不会显示这项权益；请核对后再开放。
                   </span>
                 )}
               </span>
@@ -374,7 +374,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">收益里程碑</span>
-          <span className="sub">· 门槛顺序和奖励由后端校验</span>
+          <span className="sub">· 累计收益达到门槛就发 UVT 奖励</span>
           <div className="r">
             <button className="l-btn sm mc" onClick={openTick} disabled={!canWrite}>检查间隔: {text(model.tickInterval?.value)}</button>
           </div>
@@ -383,10 +383,10 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           <table className="l-tbl" style={{ minWidth: 760 }}>
             <thead>
               <tr>
-                <th>键</th>
-                <th className="num">门槛(USD)</th>
-                <th className="num">奖励(UVT)</th>
-                <th className="num">周触发</th>
+                <th>编号</th>
+                <th className="num">门槛（USD）</th>
+                <th className="num">奖励（UVT）</th>
+                <th className="num">本周达成</th>
                 <th style={{ textAlign: "right" }}>操作</th>
               </tr>
             </thead>
@@ -408,7 +408,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       </section>
 
       <div className="htint warn">
-        <b>以服务器记录为准</b> · H5 页面只展示服务端返回的签到规则与里程碑；接口为空时保持空态，不使用本地示例数据。
+        签到规则和里程碑都按当前设置显示；没有数据时显示为空。
       </div>
 
       <PaginationExemptionList
@@ -416,12 +416,12 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           {
             label: "连签里程碑",
             maxRows: model.streakMilestones.length,
-            reason: "里程碑数量有限,需要同屏比较门槛和奖励",
+            reason: "里程碑很少，需要一屏比较门槛和奖励",
           },
           {
             label: "收益里程碑",
             maxRows: model.earnMilestones.length,
-            reason: "门槛必须严格递增,不适合分页割裂校验",
+            reason: "门槛要从小到大，需要一屏核对",
           },
         ]}
       />

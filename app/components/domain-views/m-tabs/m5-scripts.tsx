@@ -293,7 +293,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
       reasonMin: 8,
       reasonMax: 200,
       run: (reason: string) => commitM5Write("I.support.advisorAssignment.__delete", JSON.stringify({ adminId: agent.adminId, assignmentId: row.id }), {
-          action: "M5 专属客服解绑",
+          action: "解除专属客服",
           reason,
         }, `${row.userNo} 已解绑`),
     });
@@ -382,7 +382,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
   const publishScript = (id: string, currentStatus: AdvisorScript["status"]) =>
     canManageM5Content && sessionTemplatesAvailable && !writePending && currentStatus !== "archived" && openActionConfirm({
       action: <>{currentStatus === "published" ? "归档" : "发布"}专属客服话术 · {id}</>,
-      detail: currentStatus === "published" ? <>归档后从坐席可选话术池移除,归档为终态。</> : <>发布后可在坐席快捷话术菜单选用。发布前须完成中、英、越三语发布，中文正文须与话术一致，三语需填写的字段须一致。</>,
+      detail: currentStatus === "published" ? <>归档后客服就选不到这条话术了，不能撤回。</> : <>发布后可在坐席快捷话术菜单选用。发布前须完成中、英、越三语发布，中文正文须与话术一致，三语需填写的字段须一致。</>,
       amplifies: false,
       reasonMin: 8,
       reasonMax: 200,
@@ -419,7 +419,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
   const toggleTpl = (id: string, currentStatus: SessionReplyTpl["status"]) =>
     canManageM5Content && sessionTemplatesAvailable && !writePending && currentStatus !== "archived" && openActionConfirm({
       action: <>{currentStatus === "published" ? "归档" : "发布"}回复模板 · {id}</>,
-      detail: currentStatus === "published" ? <>归档后从快捷回复池移除,归档为终态。</> : <>发布后进入坐席快捷回复池。发布前须完成中、英、越三语发布，中文正文须与模板一致，三语需填写的字段须一致。</>,
+      detail: currentStatus === "published" ? <>归档后客服就选不到这个模板了，不能撤回。</> : <>发布后进入坐席快捷回复池。发布前须完成中、英、越三语发布，中文正文须与模板一致，三语需填写的字段须一致。</>,
       amplifies: false,
       reasonMin: 8,
       reasonMax: 200,
@@ -496,9 +496,9 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
           <SensTag />
         </div>
         <div style={{ padding: "0 8px 8px" }}>
-          {agentPageLoading && <div className="itint" style={{ margin: "0 10px 8px" }}>正在加载客服分页...</div>}
+          {agentPageLoading && <div className="itint" style={{ margin: "0 10px 8px" }}>正在加载客服…</div>}
           {!agentPageLoading && agentPageError && (
-            <div className="itint" role="alert" style={{ margin: "0 10px 8px" }}>客服分页加载失败 · {agentPageError}<button type="button" className="l-btn sm" onClick={()=>setAgentPageRetry(n=>n+1)}>重新读取客服</button></div>
+            <div className="itint" role="alert" style={{ margin: "0 10px 8px" }}>客服分页加载失败 · {agentPageError}<button type="button" className="l-btn sm" onClick={()=>setAgentPageRetry(n=>n+1)}>重新加载客服</button></div>
           )}
           {agentPageAvailable && agentTotal === 0 ? (
             <div className="itint" style={{ margin: 10 }}>
@@ -811,7 +811,7 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
         transferable,
         busy,
       }), {
-        action: "M5 客服接派单配置",
+        action: "客服接单设置",
         reason: reason.trim(),
       });
       if (succeeded) {
@@ -870,7 +870,7 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
               <Toggle on={enabled} onClick={() => setEnabled((v) => !v)} />
             </label>
             <label className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-              <span><span style={{ fontSize: 13 }}>允许被转交</span><span className="sub" style={{ display: "block" }}>关闭后不出现在 M3 转交坐席</span></span>
+              <span><span style={{ fontSize: 13 }}>允许被转交</span><span className="sub" style={{ display: "block" }}>关闭后，别人转交会话时选不到这位客服</span></span>
               <Toggle on={transferable} onClick={() => setTransferable((v) => !v)} />
             </label>
             <label className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "center" }}>
@@ -987,7 +987,7 @@ function AdvisorAssignModal({ agent, ctx, onClose }: { agent: MSupportAgent; ctx
         adminId: agent.adminId,
         userIds,
       }), {
-        action: "M5 专属客服绑定",
+        action: "绑定专属客服",
         reason: reason.trim(),
       });
       if (succeeded) {
@@ -1051,7 +1051,7 @@ function AdvisorAssignModal({ agent, ctx, onClose }: { agent: MSupportAgent; ctx
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
           <div className="sub" style={{ fontWeight: 600 }}>可选用户</div>
-          {loading && <div className="itint">正在查询用户...</div>}
+          {loading && <div className="itint">正在查询用户…</div>}
           {!loading && error && <div className="itint">用户加载失败 · {error} <button type="button" className="btn btn-sec btn-sm" onClick={() => setUserReload((value) => value + 1)}>重试</button></div>}
           {!loading && !error && users.length === 0 && (
             <div className="itint">

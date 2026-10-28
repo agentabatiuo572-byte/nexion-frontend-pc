@@ -68,7 +68,7 @@ test("A2 same-maker read-only withdrawal is disabled without falling through to 
     const fixture = withdrawalFixture(authorities);
     const action = fixture.row();
     assert.equal(action.type, "button");
-    assert.equal(action.props.children, "撤回本人提案");
+    assert.equal(action.props.children, "撤回我的申请");
     assert.equal(action.props.disabled, true);
     assert.match(renderToStaticMarkup(action), /disabled=""/);
     assert.equal(fixture.calls.approvals, 0);
@@ -187,9 +187,9 @@ test("F 域 toast 路径认「结果未知」族,不把它降级成通用失败�
 test("shared proposer uses the boundary-safe uncertain predicate", () => {
   assert.match(proposer, /isA2OutcomeUncertainError\(error\)/);
   assert.doesNotMatch(proposer, /error instanceof A2OutcomeUncertainError/);
-  assert.match(proposer, /结果暂不确定/);
-  assert.match(proposer, /同一命令号/);
-  assert.match(proposer, /A2 审计/);
+  assert.match(proposer, /结果暂未确认/);
+  assert.match(proposer, /保持弹窗内容不变直接重试/);
+  assert.match(proposer, /操作记录/);
 });
 
 /**

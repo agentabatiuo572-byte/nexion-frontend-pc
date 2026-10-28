@@ -95,7 +95,7 @@ async function openI1(page: Page) {
 
 async function expectI1Ready(page: Page) {
   await expect(page.getByText("I1 数据加载中...")).toHaveCount(0, { timeout: 20_000 });
-  await expect(page.getByText("I 域数据加载失败", { exact: false })).toHaveCount(0);
+  await expect(page.getByText("内容数据加载失败", { exact: false })).toHaveCount(0);
   await expect(page.locator('[data-proof="copy-pool"]')).toBeVisible();
 }
 

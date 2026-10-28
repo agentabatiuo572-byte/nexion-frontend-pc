@@ -124,7 +124,7 @@ test("K1-K4 风控域人工路径全流程真实提交", async ({ page }) => {
     await openModuleFromSidebar(page, moduleById("K3"));
     await expectPageHealthy(page, "K3");
     await assertPagerAndMaybeClick(page, "规则总表");
-    await assertPagerAndMaybeClick(page, "命中日志");
+    await assertPagerAndMaybeClick(page, "触发记录");
 
     await clickVisibleButton(page, /沙盒模拟/);
     await completeDialog(page, { confirmName: /开始模拟|确认/ });

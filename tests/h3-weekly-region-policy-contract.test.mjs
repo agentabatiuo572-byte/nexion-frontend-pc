@@ -125,72 +125,72 @@ function panel({ canRead = true, canWrite = true, canReadA2 = true, policy = ini
 }
 
 test("real panel submits first A2 proposal and keeps published/default table unchanged until publication", async () => {
-  const view = panel(); await view.flush(); view.click("编辑地区映射"); view.click("提交 A2 审批");
+  const view = panel(); await view.flush(); view.click("编辑地区规则"); view.click("提交审批");
   await view.dialogs[0].run("review regional policy");
   const spec = view.proposals[0];
   assert.equal(spec.sourceDomain, "H"); assert.equal(spec.type, "acct"); assert.equal(spec.amplifies, true);
   assert.equal(spec.obj, "growth.h3.weekly-region-policy");
   assert.deepEqual(spec.command.params, { expectedRevision: 0, mappings: initial().mappings, ...initial().nextActivation });
-  assert.match(view.text(view.render()), /当前默认规则/);
-  assert.match(view.text(view.render()), /等待 A2 审批/);
-  assert.ok(view.button("编辑地区映射").props.disabled);
+  assert.match(view.text(view.render()), /当前使用默认规则/);
+  assert.match(view.text(view.render()), /等待审批/);
+  assert.ok(view.button("编辑地区规则").props.disabled);
   view.setServer(published()); view.setReview("approved"); view.click("刷新地区规则"); await view.flush();
   assert.match(view.text(view.render()), /已发布规则 · 版本 3/);
-  assert.doesNotMatch(view.text(view.render()), /等待 A2 审批/);
+  assert.doesNotMatch(view.text(view.render()), /等待审批/);
 });
 
 test("real panel hides writes from read-only users and blocks missing first boundary or failed read", async () => {
-  const readonly = panel({ canWrite: false }); await readonly.flush(); assert.equal(readonly.button("编辑地区映射"), undefined);
+  const readonly = panel({ canWrite: false }); await readonly.flush(); assert.equal(readonly.button("编辑地区规则"), undefined);
   const noAccess = panel({ canRead: false }); await noAccess.flush(); assert.equal(noAccess.render(), null);
   const noBoundary = panel({ policy: { ...initial(), nextActivation: null } }); await noBoundary.flush();
-  assert.ok(noBoundary.button("编辑地区映射").props.disabled);
+  assert.ok(noBoundary.button("编辑地区规则").props.disabled);
   const failed = panel(); failed.failRead(); await failed.flush();
-  assert.match(failed.text(failed.render()), /读取失败/); assert.equal(failed.button("编辑地区映射"), undefined);
+  assert.match(failed.text(failed.render()), /加载失败/); assert.equal(failed.button("编辑地区规则"), undefined);
 });
 
 test("refresh preserves edited rows and original revision; stale refresh cannot silently authorize a new base", async () => {
-  const view = panel(); await view.flush(); view.click("编辑地区映射"); view.click("删除 +84");
+  const view = panel(); await view.flush(); view.click("编辑地区规则"); view.click("删除 +84");
   view.setServer(published()); view.click("刷新地区规则"); await view.flush();
-  assert.ok(view.button("提交 A2 审批").props.disabled);
-  assert.match(view.text(view.render()), /草稿已保留/);
+  assert.ok(view.button("提交审批").props.disabled);
+  assert.match(view.text(view.render()), /你填写的内容还在/);
   assert.equal(view.nodes().filter(node => node.type === "input").length, 2);
   assert.equal(view.proposals.length, 0);
 });
 
 for (const status of ["rejected", "withdrawn", "expired"]) {
   test(`real refresh restores same-revision editing after A2 ${status}`, async () => {
-    const view = panel(); await view.flush(); view.click("编辑地区映射"); view.click("提交 A2 审批");
+    const view = panel(); await view.flush(); view.click("编辑地区规则"); view.click("提交审批");
     await view.dialogs[0].run("review regional policy");
-    assert.ok(view.button("编辑地区映射").props.disabled);
+    assert.ok(view.button("编辑地区规则").props.disabled);
     view.setReview(status); view.click("刷新地区规则"); await view.flush();
-    assert.doesNotMatch(view.text(view.render()), /等待 A2 审批/);
-    assert.ok(!view.button("编辑地区映射").props.disabled);
-    view.click("编辑地区映射"); view.click("提交 A2 审批");
+    assert.doesNotMatch(view.text(view.render()), /等待审批/);
+    assert.ok(!view.button("编辑地区规则").props.disabled);
+    view.click("编辑地区规则"); view.click("提交审批");
     await view.dialogs[1].run("revised regional policy");
     assert.equal(view.proposals[1].command.params.expectedRevision, 0);
   });
 }
 
 test("pending or unreadable A2 state never unlocks a submitted same-revision policy", async () => {
-  const view = panel(); await view.flush(); view.click("编辑地区映射"); view.click("提交 A2 审批");
+  const view = panel(); await view.flush(); view.click("编辑地区规则"); view.click("提交审批");
   await view.dialogs[0].run("review regional policy");
   view.click("刷新地区规则"); await view.flush();
-  assert.ok(view.button("编辑地区映射").props.disabled);
-  assert.match(view.text(view.render()), /等待 A2 审批/);
+  assert.ok(view.button("编辑地区规则").props.disabled);
+  assert.match(view.text(view.render()), /等待审批/);
   view.failReview(); view.click("刷新地区规则"); await view.flush();
-  assert.ok(view.button("编辑地区映射").props.disabled);
+  assert.ok(view.button("编辑地区规则").props.disabled);
   assert.match(view.text(view.render()), /审批进度读取失败/);
   view.setReview("rejected"); view.click("刷新地区规则"); await view.flush();
-  assert.ok(!view.button("编辑地区映射").props.disabled);
+  assert.ok(!view.button("编辑地区规则").props.disabled);
 });
 
 test("A2 lookup blocks only the exact target and H3-only maker receives no new read permission", async () => {
   const view = panel(); view.setReview("pending", "another-policy"); await view.flush();
-  assert.ok(!view.button("编辑地区映射").props.disabled);
-  const maker = panel({ canReadA2: false }); await maker.flush(); maker.click("编辑地区映射"); maker.click("提交 A2 审批");
+  assert.ok(!view.button("编辑地区规则").props.disabled);
+  const maker = panel({ canReadA2: false }); await maker.flush(); maker.click("编辑地区规则"); maker.click("提交审批");
   await maker.dialogs[0].run("review regional policy");
   maker.setReview("rejected"); maker.click("刷新地区规则"); await maker.flush();
   assert.equal(maker.reviewReads(), 0);
-  assert.ok(maker.button("编辑地区映射").props.disabled);
-  assert.match(maker.text(maker.render()), /当前账号没有审批查看权限/);
+  assert.ok(maker.button("编辑地区规则").props.disabled);
+  assert.match(maker.text(maker.render()), /你没有查看审批的权限/);
 });

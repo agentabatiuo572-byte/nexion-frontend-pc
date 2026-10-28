@@ -30,32 +30,32 @@ function text(v){if(Array.isArray(v))return v.map(text).join('');return v&&typeo
 const button=(tree,label)=>nodes(tree).find(n=>n.type==='button'&&text(n)===label);
 const flush=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
 async function query(h){let tree=h.render();nodes(tree).find(n=>n.type==='input').props.onChange({target:{value:String(owner)}});tree=h.render();nodes(tree).find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await flush();return h.render();}
-async function choose(h){const tree=await query(h);button(tree,'安置到 A 轨').props.onClick();return h.render();}
+async function choose(h){const tree=await query(h);button(tree,'安置到 A 侧').props.onClick();return h.render();}
 
 test('real component queries owner, displays fixed identities and cancel sends no mutation',async()=>{
-  const h=harness();const tree=await choose(h);assert.match(text(tree),new RegExp(String(owner)));assert.match(text(tree),new RegExp(String(member)));assert.match(text(tree),/目标轨道：A 轨/);
+  const h=harness();const tree=await choose(h);assert.match(text(tree),new RegExp(String(owner)));assert.match(text(tree),new RegExp(String(member)));assert.match(text(tree),/安置到：A 侧/);
   button(tree,'取消').props.onClick();assert.equal(nodes(h.render()).some(n=>n.type==='Modal'),false);assert.equal(h.calls.filter(c=>c[0]==='POST').length,0);
 });
 test('read permission and write permission remain distinct; assigned rows cannot move',async()=>{
-  const h=harness({writable:false});assert.equal(button(await query(h),'安置到 A 轨'),undefined);
-  const assigned=harness({read:async()=>page([{...record,leg:'B',assignmentSource:'MANUAL'}])});assert.equal(button(await query(assigned),'安置到 A 轨'),undefined);
+  const h=harness({writable:false});assert.equal(button(await query(h),'安置到 A 侧'),undefined);
+  const assigned=harness({read:async()=>page([{...record,leg:'B',assignmentSource:'MANUAL'}])});assert.equal(button(await query(assigned),'安置到 A 侧'),undefined);
   h.auth.session.authorities=[];assert.equal(h.render(),null);
 });
 test('same-track replay and successful response refresh original owner; double click sends once',async()=>{
   let resolve;const h=harness({write:i=>new Promise(r=>resolve=()=>r({...i,replayed:true}))});let tree=await choose(h);
   const click=button(tree,'确认安置').props.onClick;click();click();assert.equal(h.calls.filter(c=>c[0]==='POST').length,1);
-  resolve();await flush();tree=h.render();assert.match(text(tree),/无需重复安置/);assert.equal(h.calls.filter(c=>c[0]==='GET').length,2);
+  resolve();await flush();tree=h.render();assert.match(text(tree),/不用重复安置/);assert.equal(h.calls.filter(c=>c[0]==='GET').length,2);
 });
 test('unknown auto-reads exact original member, never POST retries; unassigned remains unknown',async()=>{
   const h=harness({write:async()=>{throw new PlacementError('结果待确认','unknown',503);}});let tree=await choose(h);const click=button(tree,'确认安置').props.onClick;click();await flush();tree=h.render();
-  assert.match(text(tree),/原提交结果尚未确认/);assert.deepEqual(h.calls.at(-1),['GET',owner,'ALL',1,member]);
-  click();button(tree,'查询原成员结果').props.onClick();await flush();assert.equal(h.calls.filter(c=>c[0]==='POST').length,1);
+  assert.match(text(tree),/提交结果暂未确认/);assert.deepEqual(h.calls.at(-1),['GET',owner,'ALL',1,member]);
+  click();button(tree,'查看安置结果').props.onClick();await flush();assert.equal(h.calls.filter(c=>c[0]==='POST').length,1);
 });
 test('409 reads actual opposite leg and does not overwrite; absent member cannot imply failure',async()=>{
   for(const rows of [[{...record,leg:'B'}],[]]){
     const h=harness({write:async()=>{throw new PlacementError('已变化','rejected',409);},read:async(o,s,p,m)=>m?page(rows):page()});
     button(await choose(h),'确认安置').props.onClick();await flush();const tree=h.render();
-    assert.match(text(tree),rows.length?/不能改到 A 轨/:/无法确认原成员/);assert.equal(h.calls.filter(c=>c[0]==='POST').length,1);
+    assert.match(text(tree),rows.length?/不能改到 A 侧/:/暂时无法确认安置结果/);assert.equal(h.calls.filter(c=>c[0]==='POST').length,1);
   }
 });
 test('account switch rejects old confirm callback and ignores delayed GET',async()=>{

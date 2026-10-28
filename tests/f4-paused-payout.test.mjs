@@ -75,7 +75,7 @@ function text(node) {
 function buttons(node, found = []) {
   if (!node || typeof node !== "object") return found;
   if (Array.isArray(node)) { node.forEach((child) => buttons(child, found)); return found; }
-  if (node.type === "button" && text(node) === "派发总榜") found.push(node);
+  if (node.type === "button" && text(node) === "发放总榜奖励") found.push(node);
   buttons(node.props?.children, found);
   return found;
 }
@@ -106,7 +106,7 @@ test("paused F4 disables manual payout despite active period status and explains
   const [button] = buttons(f.tree());
   assert.ok(button, "authorized payout remains discoverable");
   assert.equal(button.props.disabled, true);
-  assert.match(f.html(), /排行榜已暂停.*派奖已挂起/);
+  assert.match(f.html(), /排行榜已暂停.*奖励暂停发放/);
 });
 
 test("a legacy pause hides live ranks and values instead of claiming a frozen podium", async () => {
@@ -117,7 +117,7 @@ test("a legacy pause hides live ranks and values instead of claiming a frozen po
   assert.equal(f.ctx.f4Overview.leaderboardSnapshotState, "UNAVAILABLE");
   assert.equal(f.ctx.f4Overview.leaderboardDataAvailable, false);
   const html = f.html();
-  assert.match(html, /冻结快照未确认/);
+  assert.match(html, /暂停时的榜单数据未确认/);
   assert.doesNotMatch(html, /U00000077|987654|765,432/);
 });
 
@@ -131,7 +131,7 @@ test("a factual frozen projection shows its recorded ranks and time, while live 
   const f = await fixture(true, true, false, facts);
   assert.match(f.html(), /U00000077/);
   assert.match(f.html(), /2026-10-08T12:30:00Z/);
-  assert.doesNotMatch(f.html(), /冻结快照未确认/);
+  assert.doesNotMatch(f.html(), /暂停时的榜单数据未确认/);
   const live = await fixture(false, true, false, { ...facts, leaderboardDataAvailable: false });
   assert.match(live.html(), /U00000077/);
 });
@@ -163,14 +163,14 @@ test("frozen metadata cannot confirm missing or malformed podium and count facts
   ]) {
     const f = await fixture(true, true, false, { ...good, ...bad });
     assert.equal(f.ctx.f4Overview.leaderboardDataAvailable, false);
-    assert.match(f.html(), /冻结快照未确认/);
+    assert.match(f.html(), /暂停时的榜单数据未确认/);
     assert.doesNotMatch(f.html(), /U00000077|\$900/);
   }
   await assert.rejects(fixture(true, true, false, { ...good, podium: undefined }), /F4_OVERVIEW_RESPONSE_INVALID:podium/);
   const empty = await fixture(true, true, false, { ...good, leaderboardParticipantCount: 0,
     leaderboardPoolLabel: "$0", podium: [], leaderboardPeriods: { week: { ...good.leaderboardPeriods.week, poolUsd: 0, participantCount: 0, topN: 0, podium: [] } } });
   assert.equal(empty.ctx.f4Overview.leaderboardDataAvailable, true);
-  assert.match(empty.html(), /冻结时参赛人数.*0/);
+  assert.match(empty.html(), /暂停时参赛人数.*0/);
 });
 
 test("a confirmation opened before pause propagates 409 as human failure, never execution success", async () => {
@@ -201,7 +201,7 @@ test("a confirmation opened before pause propagates 409 as human failure, never 
   }
   assert.equal(succeeded, false);
   assert.equal(toasts.length, 1);
-  assert.match(toasts[0], /A2 提案提交失败:排行榜已暂停，未执行派奖/);
+  assert.match(toasts[0], /提交失败：排行榜已暂停，未执行派奖/);
   assert.doesNotMatch(toasts[0], /已写入|已执行|已派发/);
   assert.equal(buttons(f.tree())[0].props.disabled, true);
 });
@@ -243,6 +243,6 @@ test("missing or invalid canonical period cannot expose legacy GV as a ranking",
     const f = await fixture(false, true, false, { leaderboardPeriods,
       podium: [{ rank: 1, memberUserId: 88, userId: "OLD_GV", gmvLabel: "$999999", tip: "本期 GV", className: "r-1" }] });
     assert.doesNotMatch(f.html(), /OLD_GV|999999/);
-    assert.match(f.html(), /周期榜单暂不可用/);
+    assert.match(f.html(), /榜单暂时无法显示/);
   }
 });

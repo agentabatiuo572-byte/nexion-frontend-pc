@@ -39,11 +39,11 @@ export function H9DeviceRank({ ctx }: { ctx: HCtx }) {
     const submitted = { version: data.version, enabled, tiers };
     ctx.openActionConfirm({
       action: "保存设备预估排名", reasonMin: 8, reasonMax: 200,
-      completionCopy: "保存设备预估排名配置并写入审计",
+      completionCopy: "保存后马上生效，并记入操作记录。",
       detail: <>
         <div>状态：{data.enabled ? "已开启" : "已关闭"} → {enabled ? "开启" : "关闭"}；配置版本 v{data.version}。</div>
         {tiers.map((tier, index) => <div key={index}>{tier.name}：{tier.sharePct}%，{tier.minTops}–{tier.maxTops} TOPS</div>)}
-        <div>在线规模来自 H9 首页数字增长。档位分布变化后建立新模拟参考；开关切换保留原模型，不改变真实设备算力、收益或奖励。</div>
+        <div>在线设备数取自「首页数字增长」。改了档位分布会重新生成参考；只开关不会。不影响真实算力、收益和奖励。</div>
       </>,
       run: async (reason) => {
         setSaving(true);
@@ -54,17 +54,17 @@ export function H9DeviceRank({ ctx }: { ctx: HCtx }) {
         } catch (cause) {
           const status = (cause as { status?: number })?.status;
           setConflict(status === 409);
-          setError(status === 409 ? "配置已被其他操作员修改，请重新读取后核对并修改。" : `${cause instanceof Error ? cause.message : "保存回执未取得。"} 请重新读取核对是否生效；原样重试会复用同一提交编号。`);
+          setError(status === 409 ? "设置刚被别人改过，请刷新后重新修改。" : `${cause instanceof Error ? cause.message : "保存结果暂未确认。"} 请刷新核对是否已生效；直接重试不会重复保存。`);
           throw cause;
         } finally { setSaving(false); }
       },
     });
   };
   return <section className="l-card" aria-label="设备预估排名" style={{ marginBottom: 24 }}>
-    <div className="l-h"><span className="ttl">设备预估排名</span><span className="sub">{data ? `已保存：${data.enabled ? "开启" : "关闭"} · v${data.version}` : "配置未读取"}</span></div>
+    <div className="l-h"><span className="ttl">设备预估排名</span><span className="sub">{data ? `已保存：${data.enabled ? "开启" : "关闭"} · v${data.version}` : "未加载"}</span></div>
     <div className="l-b">
-      <p className="htint">按 H9「首页数字增长」的在线设备规模和下方档位生成模拟参考，当前手机按自身有效算力参与比较。这不是实测设备榜单，不影响收益或奖励。</p>
-      <p className="sub">支持在线规模 1–1000 万台；在线展示量为 0 或超过 1000 万台时，App 显示排名暂不可用。切换开关保留原参考模型，档位分布变化才重新生成。</p>
+      <p className="htint">按「首页数字增长」的在线设备数和下方档位，给用户算一个估计排名，用户手机按自己的算力参与比较。这不是真实榜单，不影响收益和奖励。</p>
+      <p className="sub">在线设备数要在 1–1000 万台之间，否则 App 显示「排名暂不可用」。</p>
       {loading && <p role="status">设备预估排名配置加载中…</p>}
       {error && <p className="htint danger" role="alert">{error}</p>}
       {data && <>
@@ -78,15 +78,15 @@ export function H9DeviceRank({ ctx }: { ctx: HCtx }) {
         </table></div>
         <p className="sub">最多 20 档，名称 1–60 字；占比最多两位小数且合计 100%；算力范围为 0–1000000000 TOPS，最多六位小数。关闭时允许空档位。</p>
         {validation && <p className="ferr" role="alert">{validation}</p>}
-        {!canWrite && <p>当前角色只读。</p>}
+        {!canWrite && <p>你只能查看。</p>}
       </>}
     </div>
     <div className="l-h" style={{ borderTop: "1px solid var(--border)", borderBottom: 0 }}>
-      <span className="sub">独立保存，其他 H9 设置不会覆盖本配置。</span><div className="r">
-        <button className="l-btn sm" disabled={loading || saving} onClick={() => void load()}>重新读取设备排名配置</button>
+      <span className="sub">单独保存，不受本页其他设置影响。</span><div className="r">
+        <button className="l-btn sm" disabled={loading || saving} onClick={() => void load()}>刷新</button>
         {canWrite && <>
           <button className="l-btn sm" disabled={locked || rows.length >= 20} onClick={() => setRows((current) => [...current, { name: "", sharePct: "", minTops: "", maxTops: "" }])}>添加档位</button>
-          <button className="l-btn sm" disabled={locked || !dirty} onClick={() => data && accept(data)}>放弃排名改动</button>
+          <button className="l-btn sm" disabled={locked || !dirty} onClick={() => data && accept(data)}>放弃改动</button>
           <button className="l-btn mc" disabled={locked || !dirty || !!validation} onClick={save}>{saving ? "保存中…" : "保存设备预估排名"}</button>
         </>}
       </div>

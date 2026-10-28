@@ -23,7 +23,7 @@ export interface FunnelStageInput {
 export function FunnelBars() {
   const { data, loading, error, reload } = useB3Funnel({ cohort: "ALL", phase: "ALL", ref: "ALL" }, "purchase");
   if (!data?.available || !data.stages.length || error) {
-    return <BDomainDataState title="B3 用户转化分析" loading={loading} empty={!error && !loading} error={error ?? (loading ? null : data?.message ?? "暂无可计算的用户漏斗")} onRetry={reload} />;
+    return <BDomainDataState title="用户转化" loading={loading} empty={!error && !loading} error={error ?? (loading ? null : data?.message ?? "暂无转化数据")} onRetry={reload} />;
   }
   const stages = data.stages.map((stage) => ({ key: stage.key, label: stage.stage,
     count: stage.distinctUsers, prevCount: stage.previousUsers, cvr: stage.cvrFromPrev }));
@@ -46,10 +46,10 @@ export function FunnelBars() {
       <div className="flex items-baseline gap-2.5">
         <span className="font-display text-[14.5px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>用户转化分析</AutoGloss></span>
         <span className="hidden text-[12px] sm:inline" style={{ color: "var(--v5-ink-4)" }}>{stages.map((s) => s.label).join(" → ")}</span>
-        <span className="ml-auto font-mono-tabular rounded-[7px] px-2 py-0.5 text-[11px]" style={{ background: "var(--v5-surface-3)", color: "var(--v5-ink-3)", border: "1px solid var(--v5-border)" }}>B3 · A4 派生</span>
+        <span className="ml-auto font-mono-tabular rounded-[7px] px-2 py-0.5 text-[11px]" style={{ background: "var(--v5-surface-3)", color: "var(--v5-ink-3)", border: "1px solid var(--v5-border)" }}>按用户行为统计</span>
       </div>
       <p className="font-mono-tabular mt-1 text-[12px]" style={{ color: "var(--v5-ink-4)" }}>
-        端到端转化 <span style={{ color: "var(--v5-brand)", fontWeight: 500 }}>{e2e === null ? "暂不可计算" : fmtPct(e2e)}</span> · {fmtNum(first)} 注册 → {fmtNum(last)} 提现
+        注册到提现 <span style={{ color: "var(--v5-brand)", fontWeight: 500 }}>{e2e === null ? "暂无法计算" : fmtPct(e2e)}</span> · {fmtNum(first)} 注册 → {fmtNum(last)} 提现
       </p>
 
       {/* bar 区:垂直居中吸收余高 */}
@@ -72,17 +72,17 @@ export function FunnelBars() {
                 <div className="font-mono-tabular text-[16px]" style={{ color: "var(--v5-ink)", fontWeight: 600 }}>{fmtNum(s.count)}</div>
                 <div className="font-mono-tabular text-[11px]">
                   <span style={{ color: up ? "var(--v5-success)" : "var(--v5-danger)" }}>{up ? "+" : "−"}{Math.abs(d)}</span>
-                  <span style={{ color: "var(--v5-ink-4)" }}> {i === 0 ? "入口基数" : "较上一阶段"}</span>
+                  <span style={{ color: "var(--v5-ink-4)" }}> {i === 0 ? "起点" : "较上一步"}</span>
                 </div>
               </div>
               <div style={{ width: 96, flexShrink: 0, textAlign: "right" }}>
                 {cvr != null ? (
                   <>
                     <div className="font-mono-tabular text-[14px]" style={{ color: below ? "var(--v5-warning)" : "var(--v5-ink)", fontWeight: 600 }}>{cvr}%</div>
-                    <div className="text-[11px]" style={{ color: "var(--v5-ink-4)" }}>较上级{target != null ? ` · 目标 ${target}` : ""}</div>
+                    <div className="text-[11px]" style={{ color: "var(--v5-ink-4)" }}>较上一步{target != null ? ` · 目标 ${target}` : ""}</div>
                   </>
                 ) : (
-                  <div className="text-[11px]" style={{ color: "var(--v5-ink-4)" }}>{i === 0 ? "漏斗入口" : "暂无转化分母"}</div>
+                  <div className="text-[11px]" style={{ color: "var(--v5-ink-4)" }}>{i === 0 ? "起点" : "上一步没有人数"}</div>
                 )}
               </div>
             </div>
@@ -94,9 +94,9 @@ export function FunnelBars() {
       <div className="mt-auto flex items-center gap-2.5 rounded-[10px] px-3.5 py-2.5" style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)" }}>
         <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: "var(--v5-warning)" }} />
         <span className="text-[12px]" style={{ color: "var(--v5-ink-3)" }}>
-          {worst.from ? <>最大流失 · {worst.from}→{worst.to} 仅 <span className="font-mono-tabular" style={{ color: "var(--v5-warning)", fontWeight: 600 }}>{worst.cvr}%</span> 转化</> : "暂无可计算的阶段转化"}
+          {worst.from ? <>流失最多 · {worst.from} → {worst.to} 只有 <span className="font-mono-tabular" style={{ color: "var(--v5-warning)", fontWeight: 600 }}>{worst.cvr}%</span> 转化</> : "暂无转化数据"}
         </span>
-        <Link href="/overview/funnel" prefetch={false} className="ml-auto shrink-0 text-[12.5px]" style={{ color: "var(--v5-brand)" }}><AutoGloss>查看同批用户的明细 →</AutoGloss></Link>
+        <Link href="/overview/funnel" prefetch={false} className="ml-auto shrink-0 text-[12.5px]" style={{ color: "var(--v5-brand)" }}><AutoGloss>查看明细 →</AutoGloss></Link>
       </div>
     </div>
   );

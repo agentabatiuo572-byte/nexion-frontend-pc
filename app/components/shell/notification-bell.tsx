@@ -97,10 +97,10 @@ export function NotificationBell() {
   const bDomain = useBDomainDashboard(canReadBDomain);
   const bAlerts: ShellAlert[] = (() => {
     if (bDomain.error) {
-      return [{ id: "b-sync", level: "high", text: `B 域风险提醒同步失败: ${bDomain.error}`, href: "/overview/risk-radar" }];
+      return [{ id: "b-sync", level: "high", text: `风险提醒加载失败：${bDomain.error}`, href: "/overview/risk-radar" }];
     }
     if (!bDomain.hasData) {
-      return bDomain.loading ? [{ id: "b-sync", level: "low", text: "B 域风险提醒同步中", href: "/overview/risk-radar" }] : [];
+      return bDomain.loading ? [{ id: "b-sync", level: "low", text: "正在加载风险提醒", href: "/overview/risk-radar" }] : [];
     }
     const coverageLevel: AlertLevel =
       bDomain.ledger.coverageRatio < bDomain.ledger.redlinePct
@@ -113,7 +113,7 @@ export function NotificationBell() {
         ? `兑付覆盖率 ${fmtPct(bDomain.ledger.coverageRatio)} 已跌破红线 ${fmtPct(bDomain.ledger.redlinePct)}`
         : coverageLevel === "mid"
           ? `兑付覆盖率 ${fmtPct(bDomain.ledger.coverageRatio)} 低于健康线 ${fmtPct(bDomain.ledger.healthyPct)}`
-          : `兑付覆盖率 ${fmtPct(bDomain.ledger.coverageRatio)} · 风险提醒同步`;
+          : `兑付覆盖率 ${fmtPct(bDomain.ledger.coverageRatio)} · 正常`;
     return [
       { id: "b-coverage", level: coverageLevel, text: coverageText, href: "/overview/dual-ledger" },
       ...bDomain.riskRadar.feed.slice(0, 5).map((item, index) => ({
@@ -135,7 +135,7 @@ export function NotificationBell() {
     j1Alerts.push({
       id: "ops-dashboard-sync",
       level: "high",
-      text: `J1 值班告警同步失败: ${opsAlertError}`,
+      text: `紧急开关告警加载失败：${opsAlertError}`,
       href: "/emergency/kill-switch",
     });
   }
@@ -143,7 +143,7 @@ export function NotificationBell() {
     j1Alerts.push({
       id: "j2-alert-sync",
       level: "high",
-      text: `J2 超级管理员告警同步失败: ${j2AlertError}`,
+      text: `地区访问限制告警加载失败：${j2AlertError}`,
       href: "/emergency/geo-block",
     });
   }
@@ -151,7 +151,7 @@ export function NotificationBell() {
     j1Alerts.push({
       id: "j3-alert-sync",
       level: "high",
-      text: `J3 超级管理员告警同步失败: ${j3AlertError}`,
+      text: `篡改监控告警加载失败：${j3AlertError}`,
       href: "/emergency/tamper",
     });
   }
@@ -159,7 +159,7 @@ export function NotificationBell() {
     j1Alerts.push({
       id: "c2-alert-sync",
       level: "high",
-      text: `C2 高风险账户告警同步失败: ${c2AlertError}`,
+      text: `高风险账户告警加载失败：${c2AlertError}`,
       href: "/users/actions",
     });
   }
@@ -283,7 +283,7 @@ function NotificationDrawer({
           </div>
 
           {/* 操作确认 待确认 A2 */}
-          <p className="mb-2.5 mt-5 text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: "var(--v5-ink-3)" }}>操作确认 待确认 · A2</p>
+          <p className="mb-2.5 mt-5 text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: "var(--v5-ink-3)" }}>待确认的操作</p>
           <div className="flex flex-col gap-2">
             {a2Error && (
               <Link
@@ -294,7 +294,7 @@ function NotificationDrawer({
                 style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)" }}
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-[13px]" style={{ color: "var(--v5-ink)", fontWeight: 600 }}>A2 审计队列同步失败</span>
+                  <span className="text-[13px]" style={{ color: "var(--v5-ink)", fontWeight: 600 }}>待确认操作加载失败</span>
                 </div>
                 <p className="mt-1 text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}>{a2Error}</p>
               </Link>
@@ -304,7 +304,7 @@ function NotificationDrawer({
                 className="rounded-[10px] p-3 text-[12px]"
                 style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)", color: "var(--v5-ink-3)" }}
               >
-                A2 当前没有待确认操作。
+                暂无待确认的操作。
               </div>
             )}
             {pendingOperations.map((a) => {
@@ -338,7 +338,7 @@ function NotificationDrawer({
             className="flex items-center justify-center gap-1.5 rounded-[10px] py-2.5 text-[13px] font-medium transition-opacity hover:opacity-90"
             style={{ background: "var(--v5-brand)", color: "var(--v5-on-brand)" }}
           >
-            前往 A2 审计中心 <ChevronRight size={14} aria-hidden />
+            查看全部操作记录 <ChevronRight size={14} aria-hidden />
           </Link>
         </div>
       </aside>

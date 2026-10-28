@@ -22,7 +22,7 @@ export function L1LiveTotals({ metrics }: { metrics: L1LiveMetric[] }) {
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">实时业务事实 · 当前累计</span>
+          <span className="ttl">实时数据 · 当前累计</span>
           <span className="sub">· 当前可核验的业务计数</span>
           <div className="r"><span className="lcode electric">实时汇总</span></div>
         </div>
@@ -46,12 +46,12 @@ export function L1LiveTotals({ metrics }: { metrics: L1LiveMetric[] }) {
       <section className="l-card">
         <div className="l-b">
           <div className="ltint warn" style={{ fontSize: 12 }}>
-            <b>八项核心关键指标深度序列尚未开放</b> · 当前只提供已经核验的累计事实，尚无计算比率所需的分子、分母、同期群与周趋势。页面不会用累计值冒充关键指标比率；统计序列准备完成后，才会启用目标线、红黄绿状态与单项查看明细。
+            <b>8 项关键指标的详细数据还没开放</b> · 目前只有累计数，还算不出比率和周趋势，页面不会拿累计数冒充比率。数据准备好后，会显示目标线、达标状态和明细。
           </div>
         </div>
       </section>
 
-      <p className="f-foot"><b>L1 仍为只读分析面</b>：当前可导出的是上述累计事实汇总；完整八项关键指标 序列准备完成前保持明确降级，不展示推算值。</p>
+      <p className="f-foot"><b>这页只能查看</b>：目前可以导出上面的累计数；8 项关键指标准备好之前，不显示估算值。</p>
     </div>
   );
 }
@@ -67,14 +67,14 @@ export function L2LiveStages({ stages }: { stages: L2LiveStage[] }) {
           <div key={stage.key} className={`f-stat ${index === 0 ? "cyan" : index === 3 ? "ok" : ""}`}>
             <div className="k">{stage.label}</div>
             <div className="v">{stage.count.toLocaleString("zh-CN")}</div>
-            <div className="sub">独立事实计数 · {stage.sourceLabel}</div>
+            <div className="sub">单独计数 · {stage.sourceLabel}</div>
           </div>
         ))}
       </div>
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">生命周期事实计数</span>
+          <span className="ttl">各阶段人数</span>
           <span className="sub">· 各行是独立累计量，不直接相除为转化率</span>
           <div className="r"><span className="lcode electric">实时汇总</span></div>
         </div>
@@ -106,7 +106,7 @@ export function L2LiveStages({ stages }: { stages: L2LiveStage[] }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>L2 仍为只读分析面</b>：当前可导出的是上述生命周期事实计数；完整漏斗与同期群统计准备完成前，不用不同统计规则拼出转化率。</p>
+      <p className="f-foot"><b>这页只能查看</b>：目前可以导出上面的各阶段人数；完整漏斗准备好之前，不会拼凑转化率。</p>
     </div>
   );
 }

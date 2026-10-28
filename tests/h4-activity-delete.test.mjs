@@ -42,7 +42,7 @@ test('legacy deletion keeps the same command and original body across unknown wr
   await assert.rejects(client.deleteH4QuestEvent('A/1','v1','原始删除理由'));
   const key=client.requests[0].headers.get('Idempotency-Key');
   assert.equal(client.pendingH4EventDeletes().length,1);
-  await assert.rejects(client.deleteH4QuestEvent('A/1','v2','更改理由'),/待核实/);
+  await assert.rejects(client.deleteH4QuestEvent('A/1','v2','更改理由'),/还没确认/);
   assert.equal(client.requests.length,1);
   client.respond(ok({eventId:'A/1',deleted:true}),failed(503));
   await assert.rejects(client.deleteH4QuestEvent('A/1','v1','原始删除理由'));

@@ -56,7 +56,7 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
   const canReadI6 = isSuperadmin || authorities.includes("content_i6_read");
   const canReadI7 = isSuperadmin || authorities.includes("content_i7_read");
   if (!canReadI6 && !canReadI7) {
-    return <section className="l-card"><div className="l-b">当前角色没有 I6 文案或 I7 教程读取权限。</div></section>;
+    return <section className="l-card"><div className="l-b">你没有查看多语言词条或教程的权限。</div></section>;
   }
   return <>{canReadI6 && <I18nLearningPage ctx={ctx} view="i18n" />}{canReadI7 && <I18nLearningPage ctx={ctx} view="learn" />}</>;
 }
@@ -182,7 +182,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const query = messageSearch.trim().toLowerCase();
     return !query || message.messageKey.toLowerCase().includes(query) || message.namespace.toLowerCase().includes(query);
   });
-  const statusLabel = (status?: string) => ({ draft: "草稿", published: "已发布", archived: "已归档" }[status ?? ""] ?? "状态待核实");
+  const statusLabel = (status?: string) => ({ draft: "草稿", published: "已发布", archived: "已归档" }[status ?? ""] ?? "状态未知");
   const categoryLabel = (value: string) => ({ Basics: "基础", Earn: "赚取", Team: "团队", Wealth: "财富", Security: "安全" }[value] ?? "其他分类");
   const formatLabel = (value: string) => ({ Article: "图文", Video: "视频", "Hands-on": "实操" }[value] ?? value);
   const levelLabel = (value: string) => ({ Beginner: "入门", Intermediate: "进阶", Advanced: "高级" }[value] ?? value);
@@ -206,10 +206,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const rescan = () =>
     openConfirm({
       action: <>全量重扫 {I6_STATS.managedKeys} 词条</>,
-      detail: <>扫缺镜像 / 占位符不匹配 / 无意义占位文本 / 旧品牌 / 疑似硬编码 / 禁词，只读不改数据；结果刷新本表。</>,
+      detail: <>检查缺少翻译、变量不一致、占位文字、旧品牌名、写死的文字和禁用词。只检查不修改，结果会刷新到下表。</>,
       chips: [["只读扫描 · 普通确认", "done"]],
       okLabel: "开始扫描",
-      run: () => runBackend(actions.rescanI6("全量重扫词条完整性"), "扫描完成 · 请核对刷新后的完整性问题"),
+      run: () => runBackend(actions.rescanI6("全量重扫词条完整性"), "检查完成，请看下表的问题"),
     });
 
   const editKeyDraft = () => selectedMessage &&
@@ -247,9 +247,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       action: <>发布词条 · {selectedMessage?.messageKey ?? "未选择"} {selectedMessage?.version ?? ""}</>,
       detail: (
         <>
-          发布即对全体用户下一次渲染生效。服务器发布闸:
-          <b> zh/en/vi 镜像齐 ✓ 占位符一致 ✓ 无意义占位文本与旧品牌检查 ✓ 禁词扫描通过 ✓</b>
-          ——任何一项不过直接拒,<b>禁止单语言发布</b>。审计记录带语言集字段，印证三语同步。
+          发布后所有用户下次打开就会看到。发布前会检查：
+          <b> 中英越三语都有 ✓ 变量一致 ✓ 没有占位文字和旧品牌名 ✓ 没有禁用词 ✓</b>
+          有一项不通过就不能发布，<b>不能只发一种语言</b>。
         </>
       ),
       amplifies: false,
@@ -266,7 +266,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   const archiveKey = () => selectedMessage && openActionConfirm({
     action: <>归档词条 · {selectedMessage.messageKey}</>,
-    detail: <>归档后不再作为当前发布内容；历史版本和审计记录继续保留。</>,
+    detail: <>归档后不再显示，历史版本和操作记录仍保留。</>,
     amplifies: false,
     run: (reason) => runBackend(actions.archiveI6LocalizedMessage(
       selectedMessage.messageKey,
@@ -279,8 +279,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     selectedMessage && openActionConfirm({
       action: <>回滚词条 · {selectedMessage.messageKey} → {target.version}</>,
       detail: <>
-        服务器将历史三语快照复制为新的单调递增发布版本，不改写历史记录。
-        当前版本 <b>{selectedMessage.version}</b> 与目标版本 <b>{target.version}</b> 均会写入审计和 A4 事件。
+        把这个旧版本的三语内容复制成一个新版本发布，旧记录不会被改动。
+        当前版本 <b>{selectedMessage.version}</b>，回滚到 <b>{target.version}</b>。
       </>,
       amplifies: false,
       run: (reason) => runBackend(actions.rollbackI6LocalizedMessage(
@@ -296,7 +296,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       action: <>修复完整性问题 · {issue.kind}</>,
       detail: (
         <>
-          {issue.kind} 共 <b>{issue.cnt}</b> 处。补齐缺失的镜像 / 修正占位符 / 替换硬编码为词条引用;保存后入待重扫确认队列,重扫清零相关词条才能发版。
+          {issue.kind} 共 <b>{issue.cnt}</b> 处。请补齐缺少的翻译、修正变量、把写死的文字换成词条。保存后重新检查，问题清零后才能发布。
         </>
       ),
       amplifies: false,
@@ -326,7 +326,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       action: <>发布课程新版 · {nexGridBrandText(c.title)}</>,
       detail: (
         <>
-          分类「{categoryLabel(c.cat)}」 · 奖励 {c.reward} UVT/课。定版发布至 /learn;受 B1 红线约束(本次只发布版本,不涨奖励,此次发布不提高奖励)。
+          分类「{categoryLabel(c.cat)}」 · 奖励 {c.reward} UVT/课。发布到 /learn。这次只发布内容，不提高奖励。
         </>
       ),
       amplifies: false,
@@ -342,7 +342,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       detail: (
         <>
           分类「{categoryLabel(c.cat)}」完成 UVT 奖励调整 ·{" "}
-          <b>放大 UVT 流出,受 B1 兑付覆盖率红线约束</b>。后端会在提交时校验覆盖率,不达标直接拒绝。
+          <b>调高奖励会多发 UVT</b>，覆盖率低于红线时无法保存。
         </>
       ),
       amplifies: true,
@@ -377,7 +377,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       ),
       amplifies: false,
       run: (reason) => {
-        runBackend(actions.archiveI6Course(c.id, reason), `${nexGridBrandText(c.title)} 下架已确认生效`);
+        runBackend(actions.archiveI6Course(c.id, reason), `${nexGridBrandText(c.title)} 已下架`);
       },
     });
 
@@ -424,7 +424,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       action: <>新建课程(存为草稿)</>,
       detail: (
         <>
-          填 课程标识 / 分类 / 形式 / 难度 / 奖励({TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVT 区间内);标题正文另在词条库(I6)建立中英越三语词条。草稿不对外,发布需操作确认。
+          填 课程标识 / 分类 / 形式 / 难度 / 奖励（{TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVT）；标题和正文在「多语言文案」里另建中英越三语。草稿用户看不到，发布时需要确认。
         </>
       ),
       amplifies: false,
@@ -439,13 +439,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       },
       run: (reason, slug, form) => {
         const id = slug?.trim() || "new";
-        runBackend(actions.createI6Course(id, coursePayload(form), reason), "课程草稿已建 · 发布需操作确认");
+        runBackend(actions.createI6Course(id, coursePayload(form), reason), "课程草稿已创建");
       },
     });
 
   const editCrs = (c: Course) => openActionConfirm({
     action: <>编辑课程草稿 · {nexGridBrandText(c.title)}</>,
-    detail: <>仅草稿可编辑；分类、形式、难度均来自后端配置，测验按题目和选项结构化维护。</>,
+    detail: <>只有草稿可以编辑；测验按题目和选项填写。</>,
     amplifies: false,
     businessForm: {
       kind: "course-authoring",
@@ -467,7 +467,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   const deleteCrs = (c: Course) => openActionConfirm({
     action: <>删除课程草稿 · {nexGridBrandText(c.title)}</>,
-    detail: <>只允许删除未发布草稿；已发布或已归档课程由服务端拒绝删除，操作写入审计。</>,
+    detail: <>只能删除还没发布的草稿；已发布或已归档的课程不能删除。</>,
     amplifies: false,
     run: (reason) => runBackend(actions.deleteI7CourseDraft(c.id, reason), `${nexGridBrandText(c.title)} 草稿已删除`),
   });
@@ -514,7 +514,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   const editCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({
     action: <>编辑课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
-    detail: <>使用服务器当前版本 做并发校验；三语正文和三语测验必须同时完整。</>,
+    detail: <>三语正文和三语测验都要填完整。如果别人刚改过，需要刷新后重改。</>,
     amplifies: false,
     businessForm: {
       kind: "course-authoring", mode: "version-edit", rewardMin: TUTORIAL_REWARD_RANGE.min, rewardMax: TUTORIAL_REWARD_RANGE.max,
@@ -527,21 +527,21 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   const deleteCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({
     action: <>删除课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
-    detail: <>仅草稿可删除；已发布和历史版本由服务端拒绝，避免破坏用户进度与奖励账本。</>,
+    detail: <>只能删除草稿；已发布和历史版本不能删除，以免影响用户进度和奖励。</>,
     amplifies: false,
     run: (reason) => reloadVersions(c.id, actions.deleteI7CourseVersion(c.id, row.version, reason), `${row.version} 草稿已删除`),
   });
 
   const publishCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({
     action: <>发布课程版本 · {nexGridBrandText(c.title)} {row.version}</>,
-    detail: <>发布前服务端复核三语测验、B1 兑付覆盖率和专用权限；成功后旧发布版转为历史版。</>,
+    detail: <>发布前会检查三语测验、兑付覆盖率和权限；发布后旧版本变为历史版本。</>,
     amplifies: true,
     run: (reason) => reloadVersions(c.id, actions.publishI7CourseVersion(c.id, row.version, reason), `${row.version} 已发布`),
   });
 
   const rollbackCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({
     action: <>回滚课程版本 · {nexGridBrandText(c.title)} → {row.version}</>,
-    detail: <>回滚只接受服务端历史快照；课程内容、测验和奖励配置一起原子恢复，用户奖励仍按课程+用户+版本防重复提交。</>,
+    detail: <>回滚后课程内容、测验和奖励设置一起恢复成这个版本；已领过奖励的用户不会重复领取。</>,
     amplifies: true,
     run: (reason) => reloadVersions(c.id, actions.rollbackI7CourseVersion(c.id, row.version, reason), `已回滚到 ${row.version}`),
   });
@@ -566,7 +566,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         const target = COURSES.find((c) => c.id === v.trim());
         if (!target) { toast(`课程 id ${v} 不存在 · 未执行`); return; }
         if (liveStatus(target) !== "published") { toast(`${v} 不是已发布课程 · 不可作为推荐位 · 未执行`); return; }
-        runBackend(actions.updateI6FeaturedCourse(v.trim(), reason), `推荐位已更换为 ${v} · 已写审计`);
+        runBackend(actions.updateI6FeaturedCourse(v.trim(), reason), `推荐课程已换成 ${v}`);
       },
     });
   };
@@ -590,10 +590,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   };
 
   if (contentLoading && !data) {
-    return <section className="l-card"><div className="l-b"><div className="itint">{view === "i18n" ? "I6" : "I7"} 数据加载中...</div></div></section>;
+    return <section className="l-card"><div className="l-b"><div className="itint">{view === "i18n" ? "多语言词条" : "教程"}数据加载中…</div></div></section>;
   }
   if (!data) {
-    return <section className="l-card"><div className="l-b"><div className="itint danger">{view === "i18n" ? "I6" : "I7"} 暂无真实接口数据</div></div></section>;
+    return <section className="l-card"><div className="l-b"><div className="itint danger">暂无{view === "i18n" ? "多语言词条" : "教程"}数据</div></div></section>;
   }
 
   /* ============ render ============ */
@@ -618,7 +618,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       {/* (I6 · a) 命名空间矩阵 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">命名空间矩阵(I6 · a)</span>
+          <span className="ttl">词条分组</span>
           <span className="sub">· 按真实词条实时汇总三语覆盖率</span>
           <div className="r chips">
             {NS_FLT.map(([k, l]) => (
@@ -772,7 +772,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                 <div className="ab-prev"><div className="lc">越南语 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.vi || "待补齐"}</div></div>
               </div>
               <div className={`itint ${selectedMessage.zh && selectedMessage.en && selectedMessage.vi ? "ok" : "warn"}`} style={{ marginTop: 8 }}>
-                <b>三语镜像</b> · 版本 {selectedMessage.version} · 占位符 {selectedMessage.placeholders.length ? selectedMessage.placeholders.join("、") : "无"}。草稿保存不会覆盖当前发布版。
+                <b>三语内容</b> · 版本 {selectedMessage.version} · 变量 {selectedMessage.placeholders.length ? selectedMessage.placeholders.join("、") : "无"}。草稿保存不会覆盖当前发布版。
               </div>
               <div style={{ overflowX: "auto", marginTop: 12 }}>
                 <table className="l-tbl" style={{ minWidth: 520 }}>
@@ -793,7 +793,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                         </td>
                       </tr>;
                     })}
-                    {!messageVersionsLoading && messageVersions.length === 0 && <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--ink-4)" }}>暂无版本快照</td></tr>}
+                    {!messageVersionsLoading && messageVersions.length === 0 && <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--ink-4)" }}>暂无历史版本</td></tr>}
                     {messageVersionsLoading && <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--ink-4)" }}>版本加载中…</td></tr>}
                   </tbody>
                 </table>
@@ -808,7 +808,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             <span className="ttl">
               完整性扫描 · {liveIntegrity} 处问题
             </span>
-            <span className="sub">· 缺镜像 / 占位符不匹配 / 无意义占位文本 / 旧品牌 / 疑似硬编码 / 禁词</span>
+            <span className="sub">· 缺翻译 / 变量不一致 / 占位文字 / 旧品牌名 / 写死的文字 / 禁用词</span>
           </div>
           <div className="l-b" style={{ paddingTop: 6 }}>
             {INTEGRITY_ISSUES.map((iss) => (
@@ -869,18 +869,18 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           <div className="sub">{courseCategoryCount} 分类 · 推荐位 {TUTORIAL_FEATURED_DEFAULT ? 1 : 0} 个</div>
         </div>
         <div className="f-stat">
-          <div className="k">课程 UVT 派发(本周)</div>
+          <div className="k">本周课程发放 UVT</div>
           <div className="v">{operatorCopyText(I6_STATS.weeklyNexPayout)}</div>
-          <div className="sub">完成发奖 · 喂流出统计规则(B1)</div>
+          <div className="sub">学完课程发放，计入兑付统计</div>
         </div>
       </div>
 
       {/* I7 教程列表 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">教程中心(I7) · /learn · {allCourses.length} 课</span>
+          <span className="ttl">教程中心 · /learn · {allCourses.length} 门课</span>
           <span className="sub">
-            · {courseCategoryCount} 分类 · 学完发 UVT · 涨奖励过 B1 红线
+            · {courseCategoryCount} 个分类 · 学完发 UVT · 调高奖励要求覆盖率不低于红线
           </span>
           <div className="r chips">
             {categoryFilters.map(([k, l]) => (
@@ -1019,7 +1019,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       {versionCourse && <section className="l-card" data-proof="i7-course-version-crud">
         <div className="l-h">
           <span className="ttl">课程版本列表 · {nexGridBrandText(versionCourse.title)}</span>
-          <span className="sub">· 数据来自后端版本快照 · 当前 {versionCourse.v}</span>
+          <span className="sub">· 当前 {versionCourse.v}</span>
           <div className="r chips">
             {canWriteI7 && <button className="l-btn sm primary" onClick={() => newCourseVersion(versionCourse)}>+ 新版本草稿</button>}
             <button className="l-btn sm" onClick={() => setVersionCourseId("")}>关闭</button>
@@ -1030,7 +1030,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             <thead><tr><th>版本</th><th>状态</th><th>说明</th><th>修订号</th><th>更新时间</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
             <tbody>
               {courseVersions.map((row) => {
-                const statusText = { DRAFT: "草稿", PUBLISHED: "已发布", SUPERSEDED: "历史版本" }[row.status] ?? "版本状态待核实";
+                const statusText = { DRAFT: "草稿", PUBLISHED: "已发布", SUPERSEDED: "历史版本" }[row.status] ?? "状态未知";
                 return <tr key={`${row.courseId}-${row.version}`}>
                   <td className="mono">{row.version}</td>
                   <td><span className={`bdg ${row.status === "DRAFT" ? "warn" : row.status === "PUBLISHED" ? "ok" : "dim"}`}>{statusText}</span></td>
@@ -1048,7 +1048,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   </td>
                 </tr>;
               })}
-              {!versionsLoading && courseVersions.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", padding: 24, color: "var(--ink-4)" }}>暂无版本快照</td></tr>}
+              {!versionsLoading && courseVersions.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", padding: 24, color: "var(--ink-4)" }}>暂无历史版本</td></tr>}
               {versionsLoading && <tr><td colSpan={6} style={{ textAlign: "center", padding: 24, color: "var(--ink-4)" }}>版本加载中…</td></tr>}
             </tbody>
           </table>
@@ -1092,7 +1092,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           <div className="l-h">
             <span className="ttl">课程效果监控</span>
             <span className="sub">
-              · 只读 · 数字喂 数据分析(L 域)+ D 对账 + B1 流出
+              · 只读 · 数据会进入数据分析和资金对账
             </span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
@@ -1129,7 +1129,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               ))}
             </div>
             <div className="itint" style={{ marginTop: 10 }}>
-              <b>事件去向</b> · 开课、完课、测验通过实时写入学习事件；进度进入课程进度表，奖励进入奖励台账并同步钱包与资金流水。数据分析(L 域)可据此计算完课率、参与深度和回访贡献，B1/D 域可对账课程奖励流出。
+              <b>数据</b> · 开始学习、学完、测验通过都会记录；奖励直接到用户钱包并记账。数据分析可以据此算完课率等指标，财务可以核对课程奖励支出。
             </div>
           </div>
         </section>
@@ -1138,19 +1138,19 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       </>}
 
       <p className="f-foot">
-        {view === "i18n" ? <><b>执行门槛</b>:词条草稿保存即校验中、英、越三语和占位符并留审计；词条发布/归档需内容主管或超级管理员确认。<b>底座地位</b>:I1、I2、I4 与 I7 的可见文案都使用这里的三语词条。</> : <><b>执行门槛</b>:课程草稿可保存；发布、下架、换推荐课需内容主管或超级管理员确认。<b>课程奖励上调</b>必须走敏感审批并通过 B1 备付金红线校验。</>}
+        {view === "i18n" ? <><b>权限</b>：保存词条草稿时会检查中英越三语和变量；发布、归档需要内容主管或超级管理员确认。<b>说明</b>：文案测试、推送、信任中心和教程的文字都来自这里的词条。</> : <><b>权限</b>：课程草稿可以直接保存；发布、下架、换推荐课需要内容主管或超级管理员确认。<b>调高课程奖励</b>需要审批，且覆盖率不能低于红线。</>}
       </p>
       <PaginationExemptionList
         items={view === "i18n" ? [
           {
-            label: "命名空间矩阵(I6 · a)",
+            label: "词条分组",
             kind: "reference-catalog",
             maxRows: Math.max(1, NAMESPACES.length),
             reason: `命名空间来自真实词条目录,当前 ${NAMESPACES.length} 组,需要同屏核对三语覆盖率和缺少词条`,
           },
         ] : [
           {
-            label: `教程中心(I7) · /learn · ${allCourses.length} 课`,
+            label: `教程中心 · /learn · ${allCourses.length} 门课`,
             kind: "reference-catalog",
             maxRows: Math.max(1, allCourses.length),
             reason: `课程目录来自真实接口,当前 ${allCourses.length} 门;创建新课走草稿流`,

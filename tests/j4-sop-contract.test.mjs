@@ -63,7 +63,7 @@ test("J4 execution creates a real A2 replay proposal before cross-domain side ef
   assert.match(component, /createA2OperationProposal/);
   assert.match(component, /op: "j4_playbook_execute"/);
   assert.match(component, /target: \{ domain: "J", type: "playbook", id: p\.code \}/);
-  assert.match(component, /A2 确认队列/);
+  assert.match(component, /提交后需在「操作记录与审批」批准/);
   assert.match(a2Guard, /case "j4_playbook_execute" -> "emergency_j4_playbook_execute"/);
   assert.match(backend, /if \(!A2ReplayContext\.isReplaying\(\)\) \{[\s\S]*J4_A2_CONFIRMATION_REQUIRED/);
   assert.doesNotMatch(component, /后续 server|占位|立即生效 · 记入草稿位/);
@@ -134,7 +134,7 @@ test("J4 uses the versioned safe-execution contract and degrades old backends to
   assert.match(component, /const contractReady = data\.contractVersion === "J4_REAL_EXECUTION_V5"/);
   assert.match(component, /emergency\.sop\?\.contractVersion === "J4_REAL_EXECUTION_V5"/);
   assert.match(component, /p\.drillEvidence === true/);
-  assert.match(component, /!contractReady \? "后端未升级"/);
+  assert.match(component, /!contractReady \? "暂无法统计"/);
   assert.match(component, /应急执行服务尚未就绪/);
 });
 
@@ -186,8 +186,8 @@ test("J4 requires structured trigger evidence and every target-domain confirmati
 test("J4 trace action opens a real evidence view with domain, notification, audit and rollback facts", () => {
   assert.match(component, /setTraceExecution\(e\)/);
   assert.match(component, /逐步执行结果/);
-  assert.match(component, /通知与审计/);
-  assert.match(component, /回滚事实/);
+  assert.match(component, /通知与记录/);
+  assert.match(component, /回滚情况/);
   assert.match(component, /历史记录未保存逐步确认/);
   assert.match(component, /j4-trace-confirmation/);
   assert.match(client, /domainActions: Array<Record<string, unknown>>/);
@@ -226,7 +226,7 @@ test("J4 edit form de-duplicates the current owner from the fixed owner catalog"
 test("J4 distinguishes a completed rollback from the original step outcomes", () => {
   assert.match(component, /e\.rollbackStatus === "ROLLED_BACK"/);
   assert.match(component, /已回滚可逆动作/);
-  assert.match(component, /通知等不可逆动作不受影响/);
+  assert.match(component, /已发的通知不受影响/);
   assert.match(component, /authorities\.includes\("emergency_j1_gate_resume"\)/);
   assert.match(backend, /J4_TARGET_AUTHORITY_REQUIRED:J1:emergency_j1_gate_resume/);
 });

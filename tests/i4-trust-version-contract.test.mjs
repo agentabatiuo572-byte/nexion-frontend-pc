@@ -38,7 +38,7 @@ test("I4 draft validation allows optional URL fields to stay empty", () => {
 
 test("I4 shows authoritative A2 pending state and refreshes content after status changes", () => {
   assert.match(view, /pendingTrustSectionKeys/);
-  assert.match(view, /A2待确认/);
+  assert.match(view, /待审批/);
   assert.match(view, /actions\.reloadIContent\(\)/);
   assert.match(view, /setInterval/);
   assert.match(view, /const pendingA2Href = pendingTrustSectionList\.length === 1/);
@@ -75,7 +75,7 @@ test("I4 field identifiers are inherited from the published schema and cannot be
   assert.doesNotMatch(view, /key:\s*event\.target\.value/);
   assert.doesNotMatch(view, />添加字段</);
   assert.doesNotMatch(view, />移除字段</);
-  assert.match(designKit, /字段标识由当前发布版固定/);
+  assert.match(designKit, /字段由当前版本固定/);
   assert.match(designKit, /data-trust-field-key="fixed">锁定 · \{value\[`field\.\$\{index\}\.key`\] \?\? ""\}/);
   assert.doesNotMatch(designKit, />\+ 添加字段</);
   assert.doesNotMatch(designKit, />移除末项</);

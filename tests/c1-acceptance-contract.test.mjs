@@ -37,7 +37,7 @@ test("C1 is read-only outside the explicitly approved payment and nickname actio
   assert.match(detail, /pathname: "\/users\/actions"/);
   assert.match(detail, /pathname: "\/users\/security"/);
   assert.match(detail, /reasonMax=\{200\}/);
-  assert.match(detail, /此项资料暂时无法读取，请刷新重试/);
+  assert.match(detail, /这部分资料加载失败，请刷新重试/);
   assert.match(detail, /刷新页面重试/);
 });
 
@@ -58,7 +58,7 @@ test("C1 masked export requires a reasoned confirmation and a retry-stable idemp
 test("C1 renders unavailable when the current K4 score authority is absent", () => {
   assert.match(detail, /riskAuthorityReady/);
   assert.match(detail, /risk\?\.sourceStatus === "READY"/);
-  assert.match(detail, /风险评分不可用/);
+  assert.match(detail, /暂无风险分/);
   assert.doesNotMatch(detail, /summary\.riskScore \?\? profile\?\.riskScore/);
 });
 
@@ -137,7 +137,7 @@ test("full-profile unavailable sections offer retry without empty or stale recor
       title: "充值记录", section: { sourceStatus, records: [{ id: "STALE_PRIVATE" }] },
       columns: [{ key: "id", label: "订单" }], children: "STALE_SUMMARY",
     }));
-    assert.match(html, /此项资料暂时无法读取/); assert.match(html, /刷新页面重试/);
+    assert.match(html, /这部分资料加载失败/); assert.match(html, /刷新页面重试/);
     assert.doesNotMatch(html, /暂无记录|STALE_PRIVATE|STALE_SUMMARY/);
   }
   const empty = renderToStaticMarkup(createElement(fixture.HubSection, { title: "充值记录", section: { sourceStatus: "READY", records: [] }, columns: [{ key: "id", label: "订单" }] }));
@@ -218,12 +218,12 @@ const plain = html => html.replace(/<[^>]*>/g, "");
 test("C1 labels all listed device configuration values separately from actual earnings", () => {
   const html = renderDaily([historicalDevice]);
   const text = plain(html);
-  assert.match(html, /<th[^>]*>配置日产基准 USDT<\/th>/);
-  assert.match(html, /<th[^>]*>配置日产基准 UVT<\/th>/);
-  assert.equal(text.match(/设备配置日产基准（所列记录合计）/g)?.length, 2);
-  assert.equal(text.match(/含已停用历史记录的配置值，不代表今日实际收益或钱包入账/g)?.length, 2);
+  assert.match(html, /<th[^>]*>设定日收益 USDT<\/th>/);
+  assert.match(html, /<th[^>]*>设定日收益 UVT<\/th>/);
+  assert.equal(text.match(/设定日收益合计（含已停用设备）/g)?.length, 2);
+  assert.equal(text.match(/这是设定值，不是今天实际到账的收益/g)?.length, 2);
   assert.match(text, /收益合计\$0\.00 · 10 UVT/);
-  assert.equal(text.match(/设备配置日产基准（所列记录合计）\$1\.00 · 1 UVT/g)?.length, 2);
+  assert.equal(text.match(/设定日收益合计（含已停用设备）\$1\.00 · 1 UVT/g)?.length, 2);
   assert.doesNotMatch(text, /设备日产出|在线 \/ 活跃0 \/ 0日产出/);
 });
 
@@ -234,7 +234,7 @@ test("C1 keeps inactive history visible and renders backend totals without recal
   assert.match(text, /fixture-history/);
   assert.match(text, /fixture-active/);
   assert.match(text, /在线 \/ 活跃1 \/ 1/);
-  assert.match(text, /设备配置日产基准（所列记录合计）\$123\.45 · 67 UVT/);
+  assert.match(text, /设定日收益合计（含已停用设备）\$123\.45 · 67 UVT/);
   assert.match(text, /收益合计\$0\.00 · 10 UVT/);
   assert.match(html, /<tbody><tr[\s\S]*?fixture-history[\s\S]*?<\/tr><tr[\s\S]*?fixture-active/);
 });
@@ -242,7 +242,7 @@ test("C1 keeps inactive history visible and renders backend totals without recal
 test("C1 retains missing-section and source-error behavior alongside the configuration explanation", () => {
   assert.doesNotMatch(plain(renderDaily([], { devices: undefined, earnings: undefined })), /设备明细|收益明细/);
   const text = plain(renderDaily([], { devices: { sourceStatus: "ERROR", records: [], dailyUsdt: 0, dailyNex: 0 }, earnings: undefined }));
-  assert.match(text, /此项资料暂时无法读取/);
+  assert.match(text, /这部分资料加载失败/);
   assert.match(text, /刷新页面重试/);
   assert.doesNotMatch(text, /暂无记录|设备配置日产基准|\$0\.00/);
 });

@@ -29,14 +29,14 @@ function fixture(patch = {}, context = {}) {
   return { ctx, rendered, button, confirmations, requests };
 }
 
-for (const [patch, action, label] of [[{}, "ACTIVATE", "启用七层结算"], [{ sevenLayerEnabled: true }, "PAUSE", "暂停新来源"], [{ sevenLayerEnabled: true, sevenLayerPaused: true }, "RESUME", "恢复七层结算"]]) {
+for (const [patch, action, label] of [[{}, "ACTIVATE", "启用七层结算"], [{ sevenLayerEnabled: true }, "PAUSE", "暂停七层结算"], [{ sevenLayerEnabled: true, sevenLayerPaused: true }, "RESUME", "恢复七层结算"]]) {
   test(`actual F2 ${action} confirms independently and forwards only the captured versions`, async () => {
     const f = fixture(patch); assert.equal(f.button.props.disabled, false); assert.equal(text(f.button), label);
     f.button.props.onClick(); const c = f.confirmations[0];
     assert.equal(c.amplify, action !== "PAUSE"); assert.equal(c.edit, undefined); assert.equal(c.businessForm, undefined);
     assert.match(c.completionCopy, /另一位管理员/);
     await c.run("审批理由至少八个字"); assert.deepEqual(f.requests, [[action, 0, 4, "审批理由至少八个字"]]);
-    if (action === "RESUME") assert.match(c.detail, /因暂停滞留的原来源及新来源/);
+    if (action === "RESUME") assert.match(c.detail, /补算暂停期间积压的订单/);
   });
 }
 test("actual read model blocks repeat proposals while pending and preserves error versus absent state", () => {
@@ -53,7 +53,7 @@ test("enabled state displays actual server time and keeps historical boundaries 
   const f = fixture({ sevenLayerEnabled: true, cutoverAt: "2026-10-18T04:33:24Z" });
   assert.equal([...walk(f.rendered)].find(n => n.type === "time").props.dateTime, "2026-10-18T04:33:24Z");
   assert.match(text(f.rendered), /12:33:24（北京时间）/);
-  assert.match(text(f.rendered), /历史快照/); assert.match(text(f.rendered), /直属购买拆分需另行配置/);
+  assert.match(text(f.rendered), /启用前的订单仍按旧规则/); assert.match(text(f.rendered), /直属拆分需要在下方另外设置/);
 });
 
 const source = ts.createSourceFile("f-view.tsx", read("../app/components/domain-views/f-view.tsx"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -116,15 +116,15 @@ test("F2 expired unknown is retained for A2 query only and cannot mint or replay
     await assert.rejects(m.submitF2Activation(original, async () => { sent++; throw Object.assign(new Error("lost"), { name: "A2OutcomeUncertainError" }); }, () => `key-${++minted}`));
     Date.now = () => now() + 24 * 60 * 60 * 1000 + 1; m = attemptModule();
     assert.ok(m.pendingF2Activation());
-    await assert.rejects(m.submitF2Activation(null, async () => sent++, () => `key-${++minted}`), /超出服务端支持/);
+    await assert.rejects(m.submitF2Activation(null, async () => sent++, () => `key-${++minted}`), /已超过可以重试的时间/);
     assert.equal(sent, 1); assert.equal(minted, 1);
   } finally { Date.now = now; delete globalThis.window; }
 });
 test("actual F2 unknown banner blocks new actions and checks the original application", async () => {
   let checks = 0;
   const f = fixture({}, { f2ActivationAttempt: { spec: { action: "七层结算启用", reason: "原申请测试审批理由" }, expiresAt: Date.now() + 60000 }, recoverF2SevenLayerActivation: async () => checks++ });
-  assert.equal(f.button.props.disabled, true); assert.match(text(f.rendered), /不另建申请/);
-  const recovery = [...walk(f.rendered)].find(n => n.type === "button" && text(n) === "检查原申请");
+  assert.equal(f.button.props.disabled, true); assert.match(text(f.rendered), /不会重复提交/);
+  const recovery = [...walk(f.rendered)].find(n => n.type === "button" && text(n) === "查看原申请");
   recovery.props.onClick(); await new Promise(resolve => setImmediate(resolve)); assert.equal(checks, 1);
 });
 

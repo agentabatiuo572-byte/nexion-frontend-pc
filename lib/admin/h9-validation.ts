@@ -83,6 +83,6 @@ export function h9BandMeaning(tops: string, cumPct: string): string {
  * 这里统一收敛成**恰好一个**句号衔接。契约测试钉双向(有句号不叠、没句号补上)。
  */
 export function h9PlaceholderCopy(error: string | null): string {
-  const lead = (error || "没拿到服务端权威快照").replace(/。$/u, "");
+  const lead = (error || "数据加载失败").replace(/。$/u, "");
   return `${lead}。为免拿旧值当真值,这里不显示任何数字,写操作也一并冻结。`;
 }

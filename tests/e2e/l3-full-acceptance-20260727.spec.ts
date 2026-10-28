@@ -26,7 +26,7 @@ test("L3 visible entry renders the server-controlled BI sources and all four rep
   await expect(page.getByText("兑付报表", { exact: true })).toBeVisible();
   await expect(page.getByText("净敞口报表", { exact: true })).toBeVisible();
   await expect(page.getByText("负债到期报表", { exact: true })).toBeVisible();
-  await expect(page.getByText("待核实入金", { exact: true })).toBeVisible();
+  await expect(page.getByText("未确认的入金", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "申请导出脱敏资金明细", exact: true })).toBeEnabled();
   await expect(page.locator("body")).not.toContainText(/NaN|Infinity|undefined|null%|用户级资金明细暂不可导出/);
 
@@ -158,7 +158,7 @@ test("L3 refresh and real logout-login rebuild the same server-authoritative vie
   await page.getByRole("button", { name: /登录|继续/ }).click();
   await expect(page.locator("aside")).toBeVisible();
   await openL3(page);
-  await expect(page.getByText("待核实入金", { exact: true })).toBeVisible();
+  await expect(page.getByText("未确认的入金", { exact: true })).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/NaN|Infinity|undefined|null%/);
 });
 

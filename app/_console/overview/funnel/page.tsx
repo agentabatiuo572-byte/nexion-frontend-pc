@@ -33,13 +33,13 @@ const VIEW_SAVE_SLOT = "view-save";
 const ALL = "ALL";
 
 function pct(value: number | null) {
-  return value == null ? "不可计算" : `${value.toFixed(1)}%`;
+  return value == null ? "暂无法计算" : `${value.toFixed(1)}%`;
 }
 
 export default function FunnelPage() {
   const [filters, setFilters] = useState<B3Filters>({ cohort: ALL, phase: ALL, ref: ALL });
   const [stage, setStage] = useState("purchase");
-  const [viewName, setViewName] = useState("B3 当前视图");
+  const [viewName, setViewName] = useState("我的视图");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState<"save" | "export" | "">("");
   const auth = useAdminAuth((state) => state.session);
@@ -76,7 +76,7 @@ export default function FunnelPage() {
     try {
       const result = await saveB3View(viewName, filters, "WEEK", "PREVIOUS", commandKey);
       viewCommandKey.forget(VIEW_SAVE_SLOT);
-      setNotice(result.replayed ? "相同视图已存在，未重复写入。" : "视图已保存到服务端，刷新或重登后仍可回读。");
+      setNotice(result.replayed ? "这个视图已经保存过了。" : "视图已保存。");
       await reload();
     } catch (value) {
       if (!(value instanceof B3OutcomeUnknownError)) viewCommandKey.forget(VIEW_SAVE_SLOT);
@@ -97,7 +97,7 @@ export default function FunnelPage() {
       anchor.download = file.fileName;
       anchor.click();
       URL.revokeObjectURL(url);
-      setNotice("聚合 CSV 已生成并留痕；文件不含用户标识或原始个人隐私信息。");
+      setNotice("已导出，文件不含用户个人信息。");
     } catch (value) {
       setNotice(value instanceof Error ? displayAdminError(value) : "导出失败，请重试。");
     } finally {
@@ -112,8 +112,7 @@ export default function FunnelPage() {
         title="用户转化分析"
         desc={
           <>
-            从注册到提现的四级转化只读取 <b>A4 已登记事件</b>，并要求同一用户按时间顺序逐级进入。
-            没有符合条件的用户，或注册尚未满七天时，显示“不可计算”，不会用 0 冒充经营事实。
+            同一批用户从注册到提现，每一步还剩多少人。注册不满 7 天或没有符合条件的用户时显示「暂无法计算」。
           </>
         }
       />
@@ -121,14 +120,14 @@ export default function FunnelPage() {
       <section className="card b3-controls" aria-label="漏斗筛选与操作">
         <div className="b3-filter-grid">
           <label>
-            <span>注册时间分组</span>
+            <span>注册批次</span>
             <select
-              aria-label="注册时间分组"
+              aria-label="注册批次"
               value={filters.cohort}
               onChange={(event) => setFilters((current) => ({ ...current, cohort: event.target.value }))}
             >
-              <option value={ALL}>全部注册时间</option>
-              {options.cohorts.map((value) => <option key={value} value={value}>{value === "SYSTEM" ? "系统记录" : value}</option>)}
+              <option value={ALL}>全部批次</option>
+              {options.cohorts.map((value) => <option key={value} value={value}>{value === "SYSTEM" ? "系统默认" : value}</option>)}
             </select>
           </label>
           <label>
@@ -142,7 +141,7 @@ export default function FunnelPage() {
               {/^P[1-6]$/.test(filters.phase) && !options.phases.includes(filters.phase) && (
                 <option value={filters.phase}>{filters.phase}</option>
               )}
-              {options.phases.map((value) => <option key={value} value={value}>{value === "SYSTEM" ? "系统记录" : value}</option>)}
+              {options.phases.map((value) => <option key={value} value={value}>{value === "SYSTEM" ? "系统默认" : value}</option>)}
             </select>
           </label>
           <label>
@@ -168,7 +167,7 @@ export default function FunnelPage() {
         </div>
         <div className="b3-actions">
           <button type="button" className="b3-btn" onClick={() => void reload()} disabled={loading}>
-            <RefreshCw size={14} aria-hidden /> 重新读取
+            <RefreshCw size={14} aria-hidden /> 刷新
           </button>
           {canSave && (
             <button type="button" className="b3-btn" onClick={() => void saveView()} disabled={busy !== "" || !viewName.trim() || !data?.available}>
@@ -182,22 +181,22 @@ export default function FunnelPage() {
               onClick={() => void exportCohort()}
               disabled={busy !== "" || !data?.available || !data.stages.length}
             >
-              <Download size={14} aria-hidden /> 导出注册用户分组
+              <Download size={14} aria-hidden /> 导出 CSV
             </button>
           )}
         </div>
         {notice && <p className="b3-notice" role="status">{notice}</p>}
       </section>
 
-      {loading && !data && <BDomainDataState title="B3 用户转化分析" loading />}
-      {error && <BDomainDataState title="B3 用户转化分析" error={error} onRetry={reload} />}
+      {loading && !data && <BDomainDataState title="用户转化" loading />}
+      {error && <BDomainDataState title="用户转化" error={error} onRetry={reload} />}
 
       {data && !error && (
         <>
           {!data.available && (
             <section className="card b3-unavailable" role="alert">
-              <b>当前无法计算用户转化</b>
-              <span>{data.message || data.reason || "用户行为记录缺少可靠的用户标识。"}</span>
+              <b>暂时无法计算用户转化</b>
+              <span>{data.message || data.reason || "用户行为数据不完整。"}</span>
             </section>
           )}
 
@@ -263,7 +262,7 @@ export default function FunnelPage() {
             {biggestDrop && (
               <p className="b3-bottleneck">
                 当前流失最多的环节：<b>{biggestDrop.stage}</b>（从上一步转化 {pct(biggestDrop.cvrFromPrev)}）。
-                请结合 H1 运营阶段和 L2 用户转化与留存数据判断原因。
+                可以结合「运营阶段设置」和「用户转化与留存」找原因。
               </p>
             )}
           </section>
@@ -271,7 +270,7 @@ export default function FunnelPage() {
           <section className="card b3-table-card">
             <div className="ttl-row">
               <span className="h">各步骤转化数据</span>
-              <span className="sub">用户数、上一步人数、转化率和对应行为记录</span>
+              <span className="sub">用户数、上一步人数、转化率</span>
             </div>
             <div className="b3-table-wrap">
               <table>
@@ -283,7 +282,7 @@ export default function FunnelPage() {
                     <tr key={item.key}>
                       <td>{item.stage}</td><td>{item.lifecycleLabel}</td><td>{item.distinctUsers}</td>
                       <td>{item.previousUsers}</td><td>{pct(item.cvrFromPrev)}</td>
-                      <td>{item.momDelta == null ? "没有可比较的注册用户组" : pct(item.momDelta)}</td>
+                      <td>{item.momDelta == null ? "—" : pct(item.momDelta)}</td>
                       <td><code>{item.event}</code></td>
                     </tr>
                   ))}
@@ -296,7 +295,7 @@ export default function FunnelPage() {
             <div className="ttl-row">
               <TrendingUp size={15} aria-hidden />
               <span className="h">按注册周查看转化趋势 · {selectedStage?.stage ?? "首购"}</span>
-              <span className="sub">最近 13 个注册周；未命中筛选时明确为空</span>
+              <span className="sub">最近 13 周</span>
             </div>
             {data.trend.length ? (
               <div className="b3-trend-list">
@@ -309,26 +308,26 @@ export default function FunnelPage() {
                 ))}
               </div>
             ) : (
-              <p className="b3-empty">当前筛选条件下没有可比较的注册用户组，无法计算趋势。</p>
+              <p className="b3-empty">当前筛选下没有可比较的数据，暂无法显示趋势。</p>
             )}
           </section>
 
-          <section className="card b3-links" aria-label="跨域查看明细">
+          <section className="card b3-links" aria-label="相关页面">
             <div>
-              <b>原因分析与数据来源</b>
+              <b>继续分析</b>
               <span>{operatorCopyText(data.sourceStatement)}</span>
             </div>
             <nav>
-              {canCross("/analytics/funnel-cohort") ? <Link href="/analytics/funnel-cohort" prefetch={false}>到 L2 查看完整分析 →</Link> : <span aria-disabled="true">L2 完整分析 · 无权限</span>}
-              {canCross("/growth/phase") ? <Link href="/growth/phase" prefetch={false}>H1 运营阶段效果 →</Link> : <span aria-disabled="true">H1 运营阶段效果 · 无权限</span>}
-              {canCross("/platform/events") ? <Link href="/platform/events" prefetch={false}>A4 事件治理 →</Link> : <span aria-disabled="true">A4 事件治理 · 无权限</span>}
+              {canCross("/analytics/funnel-cohort") ? <Link href="/analytics/funnel-cohort" prefetch={false}>用户转化与留存 →</Link> : <span aria-disabled="true">用户转化与留存 · 无权限</span>}
+              {canCross("/growth/phase") ? <Link href="/growth/phase" prefetch={false}>运营阶段设置 →</Link> : <span aria-disabled="true">运营阶段设置 · 无权限</span>}
+              {canCross("/platform/events") ? <Link href="/platform/events" prefetch={false}>用户行为事件 →</Link> : <span aria-disabled="true">用户行为事件 · 无权限</span>}
             </nav>
           </section>
 
           {!!data.savedViews.length && (
             <section className="card b3-saved">
               <b>我的已保存视图</b>
-              <span>最近 {data.savedViews.length} 个，来自服务端持久化；刷新和重登后仍可见。</span>
+              <span>最近 {data.savedViews.length} 个</span>
             </section>
           )}
             </>

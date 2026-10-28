@@ -47,7 +47,7 @@ export function ViewParamModal({ req, onClose }: { req: ViewParamReq; onClose: (
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10 }}>
             <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>提交前</span>
-            <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.65 }}>输入 {req.min}–{req.max}{req.unit} 之间的数字。若要改真实业务统计规则,请回到对应权威模块。</span>
+            <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.65 }}>输入 {req.min}–{req.max}{req.unit} 之间的数字。这里只改显示方式，不影响业务规则。</span>
           </div>
         </div>
         <details style={{ marginTop: 12 }}>

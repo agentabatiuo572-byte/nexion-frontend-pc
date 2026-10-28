@@ -30,12 +30,12 @@ export function KpiWall({ kpis }: { kpis: DashboardKpi[] }) {
     <div>
       <div className="mb-2.5 flex items-center justify-between">
         <p className="text-[11px] uppercase tracking-[0.14em]" style={{ color: "var(--v5-ink-4)" }}>
-          八项关键指标 · 可查看明细
+          八项关键指标
         </p>
         <span className="text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}>
           达标 <span style={{ color: "var(--v5-success)" }}>{rollup.passed}</span> / 未达{" "}
           <span style={{ color: "var(--v5-danger)" }}>{rollup.failed}</span>
-          {" / 暂不可计算 "}{rollup.unknown}
+          {" / 暂无法计算 "}{rollup.unknown}
         </span>
       </div>
       <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
@@ -53,7 +53,7 @@ export function KpiWall({ kpis }: { kpis: DashboardKpi[] }) {
                 <span className="font-mono-tabular rounded-[6px] px-1.5 py-0.5 text-[10.5px]" style={{ background: "var(--v5-brand-soft)", color: "var(--v5-brand)", border: "1px solid var(--v5-brand-border)" }}>关键指标 #{i + 1}</span>
                 <span className="ml-auto inline-flex items-center gap-1 rounded-[6px] px-1.5 py-0.5 text-[10.5px] font-medium" style={{ background: k.pass ? "var(--v5-brand-soft)" : "var(--v5-danger-soft)", color }}>
                   <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color }} />
-                  {k.pass === null ? "暂不可计算" : k.pass ? "达标" : "未达标"}
+                  {k.pass === null ? "暂无法计算" : k.pass ? "达标" : "未达标"}
                 </span>
               </div>
               <p className="mt-2 text-[11.5px]" style={{ color: "var(--v5-ink-3)", minHeight: 30 }}><AutoGloss>{operatorCopyText(k.label)}</AutoGloss></p>
@@ -61,7 +61,7 @@ export function KpiWall({ kpis }: { kpis: DashboardKpi[] }) {
                 <span className="font-mono-tabular text-[22px] leading-none" style={{ color }}>{k.value}</span>
                 <Sparkline data={k.series} color={color} />
               </div>
-              <p className="mt-1.5 text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>目标 </AutoGloss>{operatorCopyText(k.target)}<AutoGloss> · 点击看口径</AutoGloss></p>
+              <p className="mt-1.5 text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>目标 </AutoGloss>{operatorCopyText(k.target)}<AutoGloss> · 点击看算法</AutoGloss></p>
             </button>
           );
         })}
@@ -83,9 +83,9 @@ function KpiModal({ kpi, n, onClose }: { kpi: DashboardKpi; n: number; onClose: 
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
   const rows = [
-    { k: "测量口径", v: kpi.hint },
-    { k: "数据源", v: "A4 服务端行为记录" },
-    { k: "后台可见性", v: "L1 关键指标 · 可按注册用户组及运营阶段查看明细" },
+    { k: "怎么算", v: kpi.hint || "—" },
+    { k: "数据来源", v: "用户行为事件" },
+    { k: "查看明细", v: "「关键指标」页，可按注册批次和运营阶段查看" },
   ];
   return (
     <div
@@ -106,7 +106,7 @@ function KpiModal({ kpi, n, onClose }: { kpi: DashboardKpi; n: number; onClose: 
           <span className="font-mono-tabular rounded-[6px] px-1.5 py-0.5 text-[10.5px]" style={{ background: "var(--v5-brand-soft)", color: "var(--v5-brand)", border: "1px solid var(--v5-brand-border)" }}>关键指标 #{n}</span>
           <span className="font-display text-[15px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>{operatorCopyText(kpi.label)}</AutoGloss></span>
           <span className="ml-auto inline-flex items-center gap-1 rounded-[6px] px-2 py-0.5 text-[11px] font-medium" style={{ background: kpi.pass ? "var(--v5-brand-soft)" : "var(--v5-danger-soft)", color }}>
-            {kpi.pass === null ? "暂不可计算" : kpi.pass ? "达标" : "未达标"}
+            {kpi.pass === null ? "暂无法计算" : kpi.pass ? "达标" : "未达标"}
           </span>
         </div>
         <div className="p-4">

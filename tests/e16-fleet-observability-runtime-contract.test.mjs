@@ -19,16 +19,16 @@ test("OPS-E-16 reads the fleet observability and durable activity endpoints", ()
   assert.doesNotMatch(page, /过去 24h 自动重连<\/span><span className="v">—/);
   assert.doesNotMatch(page, /调度延迟 P95<\/span><span className="v">—/);
   assert.match(client, /parseE5Observability/);
-  assert.match(page, /舰队可观测数据不可用/);
+  assert.match(page, /设备监控数据加载失败/);
   assert.match(page, /data-observability-state=/);
 });
 
 test("OPS-E-16 keeps the global online KPI and heartbeat-card metric semantics aligned", () => {
   const page = read("app/components/domain-views/e-tabs/e5-ops.tsx");
 
-  assert.match(page, /k: "在线设备\(全网\)", v: fmtCount\(onlineDevices\)/);
+  assert.match(page, /k: "在线设备", v: fmtCount\(onlineDevices\)/);
   assert.match(page, /className="hb-num">\{fmtCount\(totalDevices\)\}<\/div>/);
-  assert.match(page, /className="hb-lbl">设备总数 · 最近状态同步<\/div>/);
+  assert.match(page, /className="hb-lbl">设备总数 · 最近状态<\/div>/);
   assert.doesNotMatch(page, /className="hb-lbl">[\s\S]*在网设备/);
 });
 

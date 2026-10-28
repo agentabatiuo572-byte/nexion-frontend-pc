@@ -10,7 +10,7 @@ const GENERIC_UNMAPPED_FALLBACK = "操作未完成,请刷新页面核对最新�
 
 test("malformed support agent page explains the read failure and retry without internal diagnostics", () => {
   const shown = displayAdminError(new Error("M1_SUPPORT_AGENT_PAGE_MALFORMED"));
-  assert.equal(shown, "客服名单读取失败，请重试。持续失败时请联系值班人员。");
+  assert.equal(shown, "客服名单加载失败，请重试。持续失败时请联系值班人员。");
   assert.notEqual(shown, GENERIC_UNMAPPED_FALLBACK);
   assert.doesNotMatch(shown, /M1_|API|接口|字段|数据库|推测|成功|暂无客服|0/);
 });
@@ -45,7 +45,7 @@ test("browser network failures translate to operator-readable Chinese", () => {
 });
 
 test("existing domain-specific unavailable entries keep their bespoke copy", () => {
-  assert.match(formatAdminApiError("EMERGENCY_BACKEND_UNAVAILABLE", "X"), /应急控制后端/);
+  assert.match(formatAdminApiError("EMERGENCY_BACKEND_UNAVAILABLE", "X"), /应急控制系统/);
   assert.match(formatAdminApiError("RISK_BACKEND_UNAVAILABLE", "X"), /风险服务/);
   assert.match(formatAdminApiError("PLATFORM_BACKEND_UNAVAILABLE", "X"), /平台服务暂时不可用/);
 });
@@ -61,7 +61,7 @@ test("unavailable net contribution has a specific retry message", () => {
 
 test("account deletion detail mismatch explains the required reread before review", async () => {
   const { displayAdminError } = await import("../lib/admin/error-messages.ts");
-  const copy = "账号注销申请详情与当前记录不一致，请重新读取详情后再审核。";
+  const copy = "账号注销申请详情与当前记录不一致，请重新加载详情后再审核。";
   assert.equal(formatAdminApiError("ACCOUNT_DELETION_DETAIL_MISMATCH", ""), copy);
   assert.equal(displayAdminError(new Error("ACCOUNT_DELETION_DETAIL_MISMATCH")), copy);
 });

@@ -117,7 +117,7 @@ test('recovering an existing activity command refreshes its list exactly once',a
 });
 test('initial read state keeps the approved six-row card and four steps',()=>{
   const html=renderToStaticMarkup(ui.PromotionReadPanel({title:'购机赠奖',loading:true}));
-  assert.equal((html.match(/class="skeleton-row"/g)||[]).length,6);assert.match(html,/正在读取购机赠奖/);assert.match(html,/读取结束前不允许提交/);
+  assert.equal((html.match(/class="skeleton-row"/g)||[]).length,6);assert.match(html,/正在加载购机赠奖/);assert.match(html,/加载完成前不能提交/);
   const steps=renderToStaticMarkup(ui.PromotionSteps({step:2,onStep:()=>{},disabled:true}));assert.equal((steps.match(/disabled=""/g)||[]).length,4);
 });
 test('initial catalog and activity failures form one card with distinct recovery targets',()=>{
@@ -289,8 +289,8 @@ test('missing resolved rights remain unknown and existing reward disclosures reu
   const policy={state:'DRAFT',content:{kind:'DEVICE_RIGHTS',rightsDescription:{zh:'真实原说明'}},resolvedDeviceRights:null};const unknown=renderToStaticMarkup(policyDetails(policy,{nativeContracts:[]}));for(const label of rightsLabels)assert(unknown.includes(label));assert.equal((unknown.match(/未确认/g)||[]).length,9);assert.equal((unknown.match(/未知/g)||[]).length,2);assert(!unknown.includes('自动激活')&&!unknown.includes('未使用可收回'));
   const row={loading:false,error:null,data:{state:'ISSUED',version:1,beneficiaryRole:'BUYER',beneficiaryId:'12',reward:{type:'DEVICE',quantity:1},disclosure:{title:{zh:'原公开标题'},terms:{zh:'原活动规则'},benefitDescription:{zh:'原资产或设备权益'},refundTerms:{zh:'原售后条款'},deviceRights:{...rights,revocationMode:'REVOKE_IF_UNUSED'}},dispositionOptions:[],attempts:[]}};
   const rewardUi={...ui,useRead:()=>row};const Detail=component('h4-promotion-rewards.tsx',name=>name.startsWith('react')?require(name):name.endsWith('h4-promotion-ui')?rewardUi:{},'RewardDetail').RewardDetail;const html=renderToStaticMarkup(require('react').createElement(Detail,{id:'R1',can:()=>false,onClose:()=>{},onChanged:()=>{}}));for(const label of rightsLabels)assert(html.includes(label));assert(html.includes('未使用可收回')&&html.includes('原资产或设备权益')&&html.includes('原售后条款'));assert(!html.includes('REVOKE_IF_UNUSED'));
-  const unlimited=renderToStaticMarkup(ui.DeviceRightsSummary({rights:{...rights,durationDays:null}}));assert(unlimited.includes('原业务协议未限定'),'Preserve the established duration-null disclosure');
-  const partial=renderToStaticMarkup(ui.DeviceRightsSummary({rights:{activationMode:'UNRECOGNIZED',effectiveOn:undefined,durationDays:undefined,taskEnabled:null,countsAsDeviceHolding:'false',countsForRank:undefined,transferable:0,exchangeable:undefined,revocationMode:'UNRECOGNIZED'}}));assert.equal((partial.match(/未确认/g)||[]).length,9);assert(!partial.includes('原业务协议未限定')&&!partial.includes('手动激活')&&!partial.includes('<b>否</b>')&&!partial.includes('<b>是</b>'),'Unknown fields must not become a configured entitlement');
+  const unlimited=renderToStaticMarkup(ui.DeviceRightsSummary({rights:{...rights,durationDays:null}}));assert(unlimited.includes('不限'),'Preserve the established duration-null disclosure');
+  const partial=renderToStaticMarkup(ui.DeviceRightsSummary({rights:{activationMode:'UNRECOGNIZED',effectiveOn:undefined,durationDays:undefined,taskEnabled:null,countsAsDeviceHolding:'false',countsForRank:undefined,transferable:0,exchangeable:undefined,revocationMode:'UNRECOGNIZED'}}));assert.equal((partial.match(/未确认/g)||[]).length,9);assert(!partial.includes('不限')&&!partial.includes('手动激活')&&!partial.includes('<b>否</b>')&&!partial.includes('<b>是</b>'),'Unknown fields must not become a configured entitlement');
 });
 
 test('numeric formats follow the existing quantity, limit and exact amount contract while allowing empty drafts',()=>{

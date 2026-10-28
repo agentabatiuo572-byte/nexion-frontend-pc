@@ -72,7 +72,7 @@ test("I2 Nova first-user visible-entry walkthrough", async ({ page }) => {
     await expect(eventDrivenSection.getByText(key, { exact: true })).toBeVisible();
   }
 
-  const templateSection = page.getByText("推送模板池(b)", { exact: true }).locator("xpath=ancestor::section[1]");
+  const templateSection = page.getByText("推送模板", { exact: true }).locator("xpath=ancestor::section[1]");
   await expect(templateSection.locator("tbody tr")).toHaveCount(10);
   await expect(templateSection.getByText("已发布", { exact: true })).toHaveCount(10);
   await expect(page.getByText(/当前合计 100%/)).toBeVisible();

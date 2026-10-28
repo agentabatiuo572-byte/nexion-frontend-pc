@@ -86,11 +86,11 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     return (
       <section className="ladder">
         <div className="ladder-h">
-          <span className="ph-ttl">会员等级 {rows.length} 阶阶梯</span>
-          <span className="ph-sub">正在读取后端数据</span>
-          <span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="cyan">以服务器数据为准</CodeTag></span>
+          <span className="ph-ttl">会员等级 · 共 {rows.length} 级</span>
+          <span className="ph-sub">正在加载…</span>
+          
         </div>
-        <div className="empty">F1 数据加载中...</div>
+        <div className="empty">正在加载…</div>
       </section>
     );
   }
@@ -99,10 +99,10 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     return (
       <section className="ladder">
         <div className="ladder-h">
-          <span className="ph-ttl">会员等级 {rows.length} 阶阶梯</span>
-          <span className="ph-sub">后端接口返回失败</span>
+          <span className="ph-ttl">会员等级 · 共 {rows.length} 级</span>
+          <span className="ph-sub">加载失败</span>
         </div>
-        <div className="empty">F1 数据加载失败 · {ctx.f1Error}</div>
+        <div className="empty">会员等级加载失败 · {ctx.f1Error}</div>
         <button type="button" className="f-cta" onClick={() => void ctx.refreshF1()}>重试</button>
       </section>
     );
@@ -112,11 +112,11 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     return (
       <section className="ladder">
         <div className="ladder-h">
-          <span className="ph-ttl">会员等级 {rows.length} 阶阶梯</span>
-          <span className="ph-sub">后端暂无数据</span>
-          <span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="cyan">以服务器数据为准</CodeTag></span>
+          <span className="ph-ttl">会员等级 · 共 {rows.length} 级</span>
+          <span className="ph-sub">暂无数据</span>
+          
         </div>
-        <div className="empty">F1 暂无 会员等级 数据</div>
+        <div className="empty">暂无会员等级数据</div>
       </section>
     );
   }
@@ -127,16 +127,16 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const composeTh = (r: VRow): string => {
     const p: string[] = [];
     if (r.selfBuy != null) p.push(`自买 ${r.selfBuy}`);
-    if (r.teamGv != null) p.push(`团队算力额 ${r.teamGv}`);
-    if (r.directRefs != null) p.push(`直推 ${r.directRefs}`);
+    if (r.teamGv != null) p.push(`团队业绩 ${r.teamGv}`);
+    if (r.directRefs != null) p.push(`直接邀请 ${r.directRefs}`);
     if (r.legCount != null) p.push(`${r.legCount} 条分支 · 每条 ≥${r.legRank ?? "—"}`);
     return p.length ? p.join(" · ") : "—";
   };
   const fieldsOf = (r: VRow): VField[] => {
     const f: VField[] = [];
     if (r.selfBuy != null) f.push({ k: "selfBuy", label: "自买额", cur: r.selfBuy, kind: "text" });
-    if (r.teamGv != null) f.push({ k: "teamGv", label: "团队算力额", cur: r.teamGv, kind: "text" });
-    if (r.directRefs != null) f.push({ k: "directRefs", label: "直推数", cur: r.directRefs, kind: "number" });
+    if (r.teamGv != null) f.push({ k: "teamGv", label: "团队业绩", cur: r.teamGv, kind: "text" });
+    if (r.directRefs != null) f.push({ k: "directRefs", label: "直接邀请人数", cur: r.directRefs, kind: "number" });
     if (r.legCount != null) f.push({ k: "legCount", label: "达标分支数", cur: r.legCount, kind: "number" });
     // 分支最低等级 = V-Rank 13 阶有限枚举(运营从已存在等级里勾选,不手输「V3」串)。
     if (r.legRank != null) f.push({ k: "legRank", label: "分支最低等级", cur: r.legRank, kind: "text", options: rows.map((x) => x.v) });
@@ -146,9 +146,9 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     const fund = hasFundReward(r.v);
     const cur = f.cur;
     ctx.openActionConfirm({
-      name: `${r.v} 门槛 · ${f.label}调整`, amplify: fund, op: "param", paramKey: `F.vrank.${r.v}.${f.k}`,
+      name: `调整 ${r.v} 晋升条件 · ${f.label}`, amplify: fund, op: "param", paramKey: `F.vrank.${r.v}.${f.k}`,
       edit: f.options ? { kind: "select", current: cur, options: f.options } : { kind: f.kind, current: cur },
-      detail: `${r.v} 晋升门槛 · ${f.label} 当前 ${cur} · 服务器晋升判定改后对下一轮评估生效,不回溯已晋升用户。${fund ? "该阶含 UVT / USDT 奖励派发,放大资金流出,受 B1 覆盖率约束。" : ""}`,
+      detail: `${r.v} 的${f.label}当前为 ${cur}。从下一轮评估开始生效，已晋升的用户不受影响。${fund ? "这一级有 USDT / UVT 奖励，放宽条件会让平台多付钱，提交时检查兑付覆盖率。" : ""}`,
     });
   };
 
@@ -158,12 +158,12 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     skuOptions: ctx.skuOptions, skuLabels: Object.fromEntries(Object.entries(ctx.skuLabels).map(([id, label]) => [id, catalogSkuBrandText(id, label)])), subject: `${r.v} 等级`,
   });
   const openAddReward = (r: VRow) => {
-    // 新增是「配置奖励模板」,非即时派发资金;类型在表单内选,资金提示由表单内 per-type tint 给出,
-    // 真正 B1 备付金硬闸发生在派发结算侧。故入口不整弹窗 amplify(避免对 代金券/SKU/自定义 误挂资金流出警告 + 覆盖率压力档误阻断)。
+    // 新增是「配置奖励模板」,非即时发放资金;类型在表单内选,资金提示由表单内 per-type tint 给出,
+    // 真正 B1 备付金硬闸发生在发放结算侧。故入口不整弹窗 amplify(避免对 代金券/SKU/自定义 误挂资金流出警告 + 覆盖率压力档误阻断)。
     ctx.openActionConfirm({
       name: `${r.v} · 新增奖励`, amplify: false,
       businessForm: { kind: "vrank-reward-edit", ...rewardFormBase(r) },
-      detail: `为 ${r.v} 等级新增一项晋升奖励。USDT / UVT 类为资金 / 代币流出,派发时受 B1 备付金覆盖率约束;代金券 / SKU / 自定义不直接入资金账。`,
+      detail: `为 ${r.v} 新增一项晋升奖励。USDT / UVT 奖励发放时会检查兑付覆盖率；代金券、商品和自定义奖励不计入资金账。`,
       run: async (reason, bv) => {
         if (!bv) return;
         const item: OpsVRankRewardItem = { id: genRewardId(), ...rewardFields(bv) };
@@ -183,7 +183,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         currentSkuId: item.skuId,
         currentCustom: item.custom,
       },
-      detail: `编辑 ${r.v} 等级奖励「${rewardLabel(item, ctx.voucherLabels, ctx.skuLabels)}」。改类型 / 金额后对下一轮派发生效,不回溯已发放。`,
+      detail: `修改 ${r.v} 的奖励「${rewardLabel(item, ctx.voucherLabels, ctx.skuLabels)}」，从下一次发放开始生效，已发的不变。`,
       run: async (reason, bv) => {
         if (!bv) return;
         await ctx.updateReward(r.v, item.id, rewardFields(bv), reason);
@@ -194,7 +194,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const openRemoveReward = (r: VRow, item: OpsVRankRewardItem) => {
     ctx.openActionConfirm({
       name: `${r.v} · 移除奖励`,
-      detail: `移除 ${r.v} 等级的奖励「${rewardLabel(item, ctx.voucherLabels, ctx.skuLabels)}」。移除后该奖励不再发放;已派发的不回收。`,
+      detail: `移除 ${r.v} 的奖励「${rewardLabel(item, ctx.voucherLabels, ctx.skuLabels)}」，之后不再发放，已发的不收回。`,
       run: async (reason) => {
         await ctx.removeReward(r.v, item.id, reason);
         ctx.toast(`${r.v} · 已移除奖励`);
@@ -254,30 +254,30 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     if (["USDT", "NEX", "UVEL", "UVT"].includes(record.rewardType.toUpperCase())) {
       return `${record.amount.toLocaleString()} ${platformAssetText(record.rewardType.toUpperCase())}`;
     }
-    // 派发台账同样可能带内部标识符(custom_label 是自由文本),同 #30 一并归一。
+    // 发放台账同样可能带内部标识符(custom_label 是自由文本),同 #30 一并归一。
     return record.voucherId || record.skuId || safeCustomLabel(record.customLabel, record.rewardType || "—") || record.rewardType || "—";
   };
   const openManualOverride = () => {
     ctx.openActionConfirm({
-      name: "会员等级 人工晋升 / 回滚",
+      name: "手动调整会员等级",
       amplify: true,
       businessForm: {
         kind: "multi-field",
         title: "人工调整等级",
-        hint: "动作先进入 A2 确认队列；服务端再次校验用户、当前等级、目标等级和防重复提交状态。",
+        hint: "提交后需确认才生效。",
         requireAnyChange: false,
         fields: [
           { key: "userId", label: "用户编号", inputKind: "number", min: 1, required: true, placeholder: "请输入用户编号" },
           { key: "targetV", label: "目标等级", inputKind: "select", options: rows.map((row) => row.v), required: true },
-          { key: "direction", label: "动作", inputKind: "select", options: ["promote", "rollback"], optionLabels: { promote: "人工晋升", rollback: "人工回滚" }, required: true },
+          { key: "direction", label: "动作", inputKind: "select", options: ["promote", "rollback"], optionLabels: { promote: "升级", rollback: "降级" }, required: true },
         ],
       },
-      detail: "人工等级调整会改变用户权益与后续奖励资格。提交后只生成 A2 提案，不直接改库；复核执行时写审计号与晋升流水。",
+      detail: "会改变用户的权益和之后的奖励资格。提交后需在「操作记录与审批」确认才生效。",
       run: async (reason, businessValue) => {
         const userId = businessValue?.userId?.trim() ?? "";
         const targetV = businessValue?.targetV?.trim() ?? "";
         const direction = businessValue?.direction === "rollback" ? "rollback" : "promote";
-        if (!/^[1-9]\d*$/.test(userId)) throw new Error("用户编号 必须为正整数");
+        if (!/^[1-9]\d*$/.test(userId)) throw new Error("用户编号须为正整数");
         if (!rows.some((row) => row.v === targetV)) throw new Error("目标等级无效");
         await ctx.proposeVRankOverride(userId, targetV, direction, reason);
       },
@@ -285,9 +285,9 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   };
   const openPayoutAction = (payoutId: string, action: "reissue" | "reverse") => {
     ctx.openActionConfirm({
-      name: `奖励派发${action === "reissue" ? "重发" : "冲正"}`,
+      name: `${action === "reissue" ? "重新发放" : "冲正"}奖励`,
       amplify: action === "reissue",
-      detail: `${action === "reissue" ? "只有已冲正的派发单可以重发；可能放大资金流出。" : "只有已派发、已重发或待派发的派发单可以冲正。"} 动作进入 A2 确认队列并由服务端处理流程、系统会锁定处理对象并防止重复提交。`,
+      detail: `${action === "reissue" ? "只有已冲正的奖励可以重新发放，平台会多付钱。" : "只有已发放、已重发或待发放的奖励可以冲正。"}提交后需确认才生效。`,
       run: async (reason) => ctx.proposePayoutAction(payoutId, action, reason),
     });
   };
@@ -297,20 +297,20 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       <PublishedContentEditor kind="rankHow" />
       <div className="f-stats">
         <div className="f-stat"><div className="k">总会员</div><div className="v">{totalMembers.toLocaleString()}</div><div className="sub">含 V0 {v0Pop.toLocaleString()}</div></div>
-        <div className="f-stat ok"><div className="k">V3+ 高价值</div><div className="v">{v3plus}</div><div className="sub">≈ {v3plusPct}% · 顶部漏斗</div></div>
-        <div className="f-stat cyan"><div className="k">本月晋升</div><div className="v">{ctx.promotionTotal.toLocaleString()}</div><div className="sub">晋升流水 · 初始按本月筛选</div></div>
-        <div className="f-stat cyan"><div className="k">已配奖励等级</div><div className="v">{configuredLevels}</div><div className="sub">全 {rows.length} 阶 · 运营可增删</div></div>
+        <div className="f-stat ok"><div className="k">V3+ 高价值</div><div className="v">{v3plus}</div><div className="sub">约占 {v3plusPct}%</div></div>
+        <div className="f-stat cyan"><div className="k">本月晋升</div><div className="v">{ctx.promotionTotal.toLocaleString()}</div><div className="sub">本月晋升人次</div></div>
+        <div className="f-stat cyan"><div className="k">已配奖励等级</div><div className="v">{configuredLevels}</div><div className="sub">共 {rows.length} 级</div></div>
       </div>
 
       <div className="f1-layout-shell">
         <div className="f1-main">
           <section className="ladder">
           <div className="ladder-h">
-            <span className="ph-ttl">会员等级 {rows.length} 阶阶梯</span>
-            <span className="ph-sub">门槛 · 奖励 · 在册人数</span>
-            <span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="cyan">以服务器数据为准</CodeTag></span>
+            <span className="ph-ttl">会员等级 · 共 {rows.length} 级</span>
+            <span className="ph-sub">晋升条件、奖励和人数</span>
+            
           </div>
-          {ctx.f1Error && <div className="empty">F1 刷新失败 · {ctx.f1Error}</div>}
+          {ctx.f1Error && <div className="empty">刷新失败 · {ctx.f1Error}</div>}
           {rows.map((r, i) => {
             const flds = fieldsOf(r);
             const items = rewardsOf(r.v);
@@ -319,7 +319,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                 <div className={`vbadge v-${i}`}>{r.v}</div>
                 <div className="lcell">
                   <div className="l1">{r.label || r.v} · {composeTh(r)}</div>
-                  <div className="l2">F.vrank.{r.v} · 网络 {r.unilevelDepth || "—"} 层 · 同级奖 {(r.peerBonusRate * 100).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}% · {r.votes} 票 · {r.visible ? "客户端可见" : "客户端隐藏"}</div>
+                  <div className="l2">团队奖励 {r.unilevelDepth || "—"} 层 · 同级奖 {(r.peerBonusRate * 100).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}% · {r.votes} 票 · {r.visible ? "App 可见" : "App 隐藏"}</div>
                 </div>
                 <div className="lcell">
                   <div className="rwd-list">
@@ -331,7 +331,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                         {canWrite && <button type="button" className="rwd-del" title="移除奖励" onClick={() => openRemoveReward(r, it)}>×</button>}
                       </span>
                     ))}
-                    {canWrite && <button type="button" className="rwd-add" title={`为 ${r.v} 新增奖励`} onClick={() => openAddReward(r)}>＋ 加奖励</button>}
+                    {canWrite && <button type="button" className="rwd-add" title={`为 ${r.v} 新增奖励`} onClick={() => openAddReward(r)}>＋ 添加奖励</button>}
                   </div>
                 </div>
                 <div className="pop">
@@ -350,7 +350,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
 
         <aside className="rail">
           <div className="rail-card">
-            <div className="rc-h">人口金字塔<span className="tag">对数刻度</span></div>
+            <div className="rc-h">各等级人数<span className="tag">对数刻度</span></div>
             <div className="pyr">
               {[...rows].reverse().map((r) => {
                 const idx = rows.findIndex((x) => x.v === r.v);
@@ -364,73 +364,73 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                 );
               })}
             </div>
-            <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 6, lineHeight: 1.5 }}>按对数刻度展示各等级人数分布 · 真实在册 V8+ {v8plusPop.toLocaleString()} 人 · {highestRank} {highestPop.toLocaleString()} 人。</div>
+            <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 6, lineHeight: 1.5 }}>按对数刻度展示各等级人数分布 · V8 及以上 {v8plusPop.toLocaleString()} 人 · {highestRank} {highestPop.toLocaleString()} 人。</div>
           </div>
 
           <div className="rail-card">
-            <div className="rc-h">治理统计规则</div>
+            <div className="rc-h">规则说明</div>
             <div className="gov-groups">
               <div className="gov-grp">
                 <div className="gov-grp-h">晋升与保级</div>
-                <div className="gov-list"><div className="it">门槛调整只对<b>下一轮评估</b>生效,已晋升用户不降级。</div></div>
+                <div className="gov-list"><div className="it">修改晋升条件只对<b>下一轮评估</b>生效，已晋升的用户不降级。</div></div>
               </div>
               <div className="gov-grp">
                 <div className="gov-grp-h">激励与资金风控</div>
-                <div className="gov-list"><div className="it">发放 <b>UVT / USDT</b> 奖励会即时计入平台待付,受备付金覆盖率监控约束。</div></div>
+                <div className="gov-list"><div className="it">发放 <b>UVT / USDT</b> 奖励会立即计入平台应付款，受兑付覆盖率限制。</div></div>
               </div>
               <div className="gov-grp">
-                <div className="gov-grp-h">等级权力</div>
-                <div className="gov-list"><div className="it">等级越高,领导奖池投票权越大{voteWeightLabel ? <>(<b>{voteWeightLabel}</b>)</> : "(票权数据待领导池配置接入)"}。</div></div>
+                <div className="gov-grp-h">等级与票数</div>
+                <div className="gov-list"><div className="it">等级越高，领导奖池里的票数越多{voteWeightLabel ? <>（<b>{voteWeightLabel}</b>）</> : "（票数在「奖励池、名额与排行榜」设置）"}。</div></div>
               </div>
               <div className="gov-grp">
-                <div className="gov-grp-h">奖励派发</div>
-                <div className="gov-list"><div className="it">奖励发放与领取记录进<b>审计日志</b>留痕。</div></div>
+                <div className="gov-grp-h">奖励发放</div>
+                <div className="gov-list"><div className="it">奖励的发放和领取都会被<b>记录</b>。</div></div>
               </div>
             </div>
           </div>
 
           <div className="rail-card">
-            <div className="rc-h">晋升治理</div>
+            <div className="rc-h">保级规则</div>
             <div className="gov-list">
-              <div className="it">会员等级 不降级保护 · 当前 <b>{permanentOn ? "已开启" : "已关闭"}</b></div>
-              <div className="it" style={{ marginTop: 4 }}>{permanentOn ? "已晋升用户即使下轮未达当前阶门槛,也保持现有等级。" : "已按门槛严格评估 · 未达标的高阶用户将在下轮评估降级,影响其领导池票权。"}</div>
+              <div className="it">不降级保护 · 当前 <b>{permanentOn ? "已开启" : "已关闭"}</b></div>
+              <div className="it" style={{ marginTop: 4 }}>{permanentOn ? "已晋升的用户下一轮没达标，也保持现有等级。" : "下一轮没达标的用户会降级，领导奖池票数也会减少。"}</div>
             </div>
             {canProtect && <button type="button" className="f-cta" style={{ marginTop: 8, ...(permanentOn ? { borderColor: "var(--danger)", color: "var(--danger)" } : null) }} onClick={() => ctx.openActionConfirm({
-              name: permanentOn ? "关闭 会员等级 不降级保护" : "开启 会员等级 不降级保护",
+              name: permanentOn ? "关闭不降级保护" : "开启不降级保护",
               op: "dispose", paramKey: "F.vrank.permanent", fixedVal: permanentOn ? "off" : "on",
               detail: permanentOn
-                ? "关闭不降级保护 · 下轮评估起,未达当前阶门槛的用户将被降级,影响其等级身份与领导池票权,属高风险动作,写 A2 审计。"
-                : "开启不降级保护 · 已晋升用户即使下轮未达门槛也保持当前阶 · 仅对新晋升按门槛判定,写 A2 审计。",
+                ? "关闭后，从下一轮评估起，没达标的用户会被降级，等级和领导奖池票数都会受影响。请慎重。"
+                : "开启后，已晋升的用户即使下一轮没达标也保持现有等级。",
             })}>{permanentOn ? "关闭不降级保护" : "开启不降级保护"}</button>}
           </div>
 
           <div className="rail-card">
-            <div className="rc-h">全局展示文案</div>
+            <div className="rc-h">奖品名称</div>
             <div className="gov-list">
-              <div className="it">会员等级 体系全局奖品名 · 当前 <b>{prizeName || "未配置"}</b></div>
-              <div className="it" style={{ marginTop: 4 }}>用于 PC 与客户端展示,不影响资金计算与晋升判定。</div>
+              <div className="it">会员等级奖品名 · 当前 <b>{prizeName || "未配置"}</b></div>
+              <div className="it" style={{ marginTop: 4 }}>只用于显示，不影响奖励和晋升。</div>
             </div>
             {canWrite && <button type="button" className="f-cta" style={{ marginTop: 8 }} onClick={() => ctx.openActionConfirm({
               name: prizeName ? "修改全局奖品名" : "配置全局奖品名",
               op: "param",
               paramKey: "F.prize.name",
-              edit: { kind: "text", current: prizeName, unit: "会员等级 全局奖品名" },
-              detail: "团队等级晋升体系的全局唯一奖品名称,用于 PC 与客户端展示;不影响资金计算与晋升判定。",
+              edit: { kind: "text", current: prizeName, unit: "奖品名称" },
+              detail: "会员等级的奖品名称，只用于显示，不影响奖励和晋升。",
             })}>{prizeName ? "修改奖品名" : "配置奖品名"}</button>}
           </div>
 
           <div className="rail-card">
-            <div className="rc-h">{rows.length} 阶头衔</div>
+            <div className="rc-h">各级头衔</div>
             <div className="gov-list">
-              <div className="it">V0–{highestRank} 各阶展示头衔 · 已配 <b>{Object.keys(titlesByLevel).length}</b>/{rows.length} 阶</div>
-              <div className="it" style={{ marginTop: 4 }}>用于 PC 与客户端等级名称展示 · 不影响资金计算与晋升判定。</div>
+              <div className="it">V0–{highestRank} 各级显示的头衔 · 已设置 <b>{Object.keys(titlesByLevel).length}</b>/{rows.length} 级</div>
+              <div className="it" style={{ marginTop: 4 }}>只用于显示，不影响奖励和晋升。</div>
             </div>
             {canWrite && <button type="button" className="f-cta" style={{ marginTop: 8 }} onClick={() => ctx.openActionConfirm({
-              name: "会员等级各阶头衔调整",
+              name: "设置各级头衔",
               businessForm: {
                 kind: "multi-field",
-                title: "会员等级各阶头衔",
-                hint: "当前启用等级的展示头衔 · 各阶均须非空 · 用于 PC 与客户端等级名称展示 · 不影响资金计算与晋升判定。",
+                title: "各级头衔",
+                hint: "每一级都要填写，只用于显示，不影响奖励和晋升。",
                 fields: rows.map((r) => ({
                   key: r.v,
                   label: r.v,
@@ -439,32 +439,32 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                   placeholder: `${r.v} 头衔`,
                 })),
               },
-              detail: "会员等级各阶展示头衔 · 各阶均须非空 · 不影响资金计算与晋升判定 · 用于 PC 与客户端展示。",
+              detail: "每一级都要填写，只用于显示，不影响奖励和晋升。",
               run: async (reason, bv) => {
                 if (!bv) throw new Error("请填写头衔");
                 const titles: Record<string, string> = {};
                 for (const r of rows) {
                   const t = (bv[r.v] ?? "").trim();
-                  if (!t) throw new Error(`请填写 ${r.v} 的头衔(各阶均须非空)`);
+                  if (!t) throw new Error(`请填写 ${r.v} 的头衔（每一级都要填）`);
                   titles[r.v] = t;
                 }
                 await ctx.updateF1Config("F.vrank.titles", JSON.stringify(titles), reason);
-                ctx.toast("会员等级各阶头衔已确认生效");
+                ctx.toast("各级头衔已生效");
               },
-            })}>配置各阶头衔</button>}
+            })}>设置各级头衔</button>}
           </div>
           </aside>
         </div>
       </div>
 
       <div className="f1-flow-grid">
-        <section className="f1-flow" aria-label="晋升流水">
+        <section className="f1-flow" aria-label="晋升记录">
           <div className="f1-flow-h">
             <div>
-              <div className="ph-ttl">晋升流水</div>
-              <div className="ph-sub">引擎 / 人工 · 资格快照 · 触发事件 · A2 审计号</div>
+              <div className="ph-ttl">晋升记录</div>
+              <div className="ph-sub">自动 / 手动 · 当时的达标情况 · 触发原因</div>
             </div>
-            {canPromote && <button type="button" className="f-cta" onClick={openManualOverride}>人工晋升 / 回滚</button>}
+            {canPromote && <button type="button" className="f-cta" onClick={openManualOverride}>手动调整等级</button>}
           </div>
           <div className="f1-filter">
             <input aria-label="晋升用户编号" value={promotionFilters.userId} onChange={(event) => setPromotionFilter("userId", event.target.value)} placeholder="用户编号" inputMode="numeric" />
@@ -477,55 +477,55 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
             <input aria-label="晋升结束日期" type="date" value={promotionFilters.to} onChange={(event) => setPromotionFilter("to", event.target.value)} />
             <button type="button" className="f-cta" disabled={ctx.f1PromotionLoading} onClick={() => void ctx.queryPromotions(promotionFilters)}>查询</button>
           </div>
-          {ctx.f1PromotionError && <div className="empty">晋升流水加载失败 · {ctx.f1PromotionError}</div>}
+          {ctx.f1PromotionError && <div className="empty">晋升记录加载失败 · {ctx.f1PromotionError}</div>}
           <div className="f1-table-wrap">
             <table className="ctbl">
-              <thead><tr><th>用户</th><th>等级变化</th><th>方式 / 批次</th><th>资格快照</th><th>触发 / 审计</th><th>时间</th></tr></thead>
+              <thead><tr><th>用户</th><th>等级变化</th><th>方式 / 批次</th><th>达标情况</th><th>触发原因 / 记录</th><th>时间</th></tr></thead>
               <tbody>
                 {ctx.promotionRecords.map((record) => (
                   <tr key={record.id}>
                     <td><span className="cid">{operatorNicknameText(record.nickname || "—")}</span><br /><span className="uid">{record.userId}</span></td>
                     <td><span className="kind-tag network">{record.fromCode || "—"} → {record.toCode || "—"}</span></td>
-                    <td>{record.isManual ? "人工" : "引擎"}<br /><span className="uid">{record.operator || record.cohort || "—"}</span></td>
-                    <td><details><summary>查看快照</summary><code className="f1-snapshot">{snapshotLabel(record.snapshot)}</code></details></td>
+                    <td>{record.isManual ? "手动" : "自动"}<br /><span className="uid">{record.operator || record.cohort || "—"}</span></td>
+                    <td><details><summary>查看</summary><code className="f1-snapshot">{snapshotLabel(record.snapshot)}</code></details></td>
                     <td><span className="uid">{record.triggerEventId || "—"}</span><br /><span className="uid">{record.auditNo || "—"}</span></td>
                     <td className="uid">{record.createdAt || "—"}</td>
                   </tr>
                 ))}
-                {!ctx.f1PromotionLoading && ctx.promotionRecords.length === 0 && <tr className="empty-row"><td colSpan={6}>当前筛选无晋升流水</td></tr>}
-                {ctx.f1PromotionLoading && ctx.promotionRecords.length === 0 && <tr className="empty-row"><td colSpan={6}>正在读取晋升流水…</td></tr>}
+                {!ctx.f1PromotionLoading && ctx.promotionRecords.length === 0 && <tr className="empty-row"><td colSpan={6}>没有符合条件的晋升记录</td></tr>}
+                {ctx.f1PromotionLoading && ctx.promotionRecords.length === 0 && <tr className="empty-row"><td colSpan={6}>正在加载…</td></tr>}
               </tbody>
             </table>
           </div>
-          <div className="f1-flow-foot">当前筛选 {ctx.promotionTotal.toLocaleString()} 条 · 晋升引擎每个触发事件最多前进一阶，确保每阶权益与奖励不被跳过。{" "}{ctx.promotionNextCursor && <button type="button" className="l-btn sm" disabled={ctx.f1PromotionLoading} onClick={() => void ctx.queryPromotions({ ...promotionFilters, cursor: ctx.promotionNextCursor }, true)}>加载更早记录</button>}</div>
+          <div className="f1-flow-foot">当前筛选 {ctx.promotionTotal.toLocaleString()} 条 · 每次最多升一级，每一级的奖励都不会跳过。{" "}{ctx.promotionNextCursor && <button type="button" className="l-btn sm" disabled={ctx.f1PromotionLoading} onClick={() => void ctx.queryPromotions({ ...promotionFilters, cursor: ctx.promotionNextCursor }, true)}>加载更早记录</button>}</div>
         </section>
 
-        <section className="f1-flow" aria-label="奖励派发流水">
+        <section className="f1-flow" aria-label="奖励发放记录">
           <div className="f1-flow-h">
             <div>
-              <div className="ph-ttl">奖励派发流水</div>
-              <div className="ph-sub">派发处理流程 · D4 账单 · 触发事件 · 重发 / 冲正</div>
+              <div className="ph-ttl">奖励发放记录</div>
+              <div className="ph-sub">可重新发放或冲正</div>
             </div>
-            <CodeTag tone="cyan">以服务器数据为准</CodeTag>
+            
           </div>
           <div className="f1-filter">
-            <input aria-label="派发用户编号" value={payoutFilters.userId} onChange={(event) => setPayoutFilter("userId", event.target.value)} placeholder="用户编号" inputMode="numeric" />
-            <select aria-label="派发等级" value={payoutFilters.v} onChange={(event) => setPayoutFilter("v", event.target.value)}>
+            <input aria-label="发放用户编号" value={payoutFilters.userId} onChange={(event) => setPayoutFilter("userId", event.target.value)} placeholder="用户编号" inputMode="numeric" />
+            <select aria-label="发放等级" value={payoutFilters.v} onChange={(event) => setPayoutFilter("v", event.target.value)}>
               <option value="">全部等级</option>
               {rows.map((row) => <option key={row.v} value={row.v}>{row.v}</option>)}
             </select>
             <select aria-label="奖励类型" value={payoutFilters.type} onChange={(event) => setPayoutFilter("type", event.target.value)}>
               <option value="">全部奖励</option><option value="USDT">USDT</option><option value="NEX">UVT</option><option value="VOUCHER">代金券</option><option value="SKU">商品</option><option value="CUSTOM">自定义</option>
             </select>
-            <select aria-label="派发状态" value={payoutFilters.status} onChange={(event) => setPayoutFilter("status", event.target.value)}>
-              <option value="">全部状态</option><option value="PENDING_GRANT">待派发</option><option value="GRANTED">已派发</option><option value="REISSUED">已重发</option><option value="REVERSED">已冲正</option><option value="FAILED">失败</option>
+            <select aria-label="发放状态" value={payoutFilters.status} onChange={(event) => setPayoutFilter("status", event.target.value)}>
+              <option value="">全部状态</option><option value="PENDING_GRANT">待发放</option><option value="GRANTED">已发放</option><option value="REISSUED">已重发</option><option value="REVERSED">已冲正</option><option value="FAILED">失败</option>
             </select>
             <button type="button" className="f-cta" disabled={ctx.f1PayoutLoading} onClick={() => void ctx.queryPayouts(payoutFilters)}>查询</button>
           </div>
-          {ctx.f1PayoutError && <div className="empty">派发流水加载失败 · {ctx.f1PayoutError}</div>}
+          {ctx.f1PayoutError && <div className="empty">发放记录加载失败 · {ctx.f1PayoutError}</div>}
           <div className="f1-table-wrap">
             <table className="ctbl">
-              <thead><tr><th>派发单 / 用户</th><th>等级 / 奖励</th><th>赞助人</th><th>状态</th><th>D4 / 触发事件</th><th>时间</th><th>动作</th></tr></thead>
+              <thead><tr><th>发放单 / 用户</th><th>等级 / 奖励</th><th>邀请人</th><th>状态</th><th>账单 / 触发原因</th><th>时间</th><th>操作</th></tr></thead>
               <tbody>
                 {ctx.payoutRecords.map((record) => {
                   const canReissue = canReissuePayout && record.status === "REVERSED";
@@ -535,30 +535,30 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                       <td><span className="cid">{record.payoutId}</span><br /><span className="uid">用户 {record.userId}</span></td>
                       <td><span className="kind-tag peer">{record.rankCode || "—"}</span><br />{rewardPayoutLabel(record)}</td>
                       <td className="uid">{record.sponsorUserId || "—"}</td>
-                      <td><span className={`f1-state st-${record.status.toLowerCase()}`}>{({PENDING_GRANT:"待派发",GRANTED:"已派发",REISSUED:"已重发",REVERSED:"已冲正",FAILED:"失败"} as Record<string,string>)[record.status] ?? "派发状态待核实"}</span></td>
+                      <td><span className={`f1-state st-${record.status.toLowerCase()}`}>{({PENDING_GRANT:"待发放",GRANTED:"已发放",REISSUED:"已重发",REVERSED:"已冲正",FAILED:"失败"} as Record<string,string>)[record.status] ?? "状态未知"}</span></td>
                       <td><span className="uid">{record.billId || "—"}</span><br /><span className="uid">{record.triggerEventId || "—"}</span></td>
                       <td className="uid">{record.reversedAt || record.grantedAt || "—"}</td>
                       <td>
                         <div className="row-acts">
                           {canReissue && <button type="button" className="unlock" onClick={() => openPayoutAction(record.payoutId, "reissue")}>重发</button>}
                           {canReverse && <button type="button" className="reject" onClick={() => openPayoutAction(record.payoutId, "reverse")}>冲正</button>}
-                          {!canReissue && !canReverse && <span className="none">无可用动作</span>}
+                          {!canReissue && !canReverse && <span className="none">—</span>}
                         </div>
                       </td>
                     </tr>
                   );
                 })}
-                {!ctx.f1PayoutLoading && ctx.payoutRecords.length === 0 && <tr className="empty-row"><td colSpan={7}>当前筛选无奖励派发流水</td></tr>}
-                {ctx.f1PayoutLoading && ctx.payoutRecords.length === 0 && <tr className="empty-row"><td colSpan={7}>正在读取派发流水…</td></tr>}
+                {!ctx.f1PayoutLoading && ctx.payoutRecords.length === 0 && <tr className="empty-row"><td colSpan={7}>没有符合条件的发放记录</td></tr>}
+                {ctx.f1PayoutLoading && ctx.payoutRecords.length === 0 && <tr className="empty-row"><td colSpan={7}>正在加载…</td></tr>}
               </tbody>
             </table>
           </div>
-          <div className="f1-flow-foot">当前筛选 {ctx.payoutTotal.toLocaleString()} 条 · 重发会放大资金流出并受 B1 覆盖率约束；冲正与 D4 账单保持可追溯。{" "}{ctx.payoutNextCursor && <button type="button" className="l-btn sm" disabled={ctx.f1PayoutLoading} onClick={() => void ctx.queryPayouts({ ...payoutFilters, cursor: ctx.payoutNextCursor }, true)}>加载更早记录</button>}</div>
+          <div className="f1-flow-foot">当前筛选 {ctx.payoutTotal.toLocaleString()} 条 · 重新发放会让平台多付钱，受兑付覆盖率限制；冲正可在账单里查到。{" "}{ctx.payoutNextCursor && <button type="button" className="l-btn sm" disabled={ctx.f1PayoutLoading} onClick={() => void ctx.queryPayouts({ ...payoutFilters, cursor: ctx.payoutNextCursor }, true)}>加载更早记录</button>}</div>
         </section>
       </div>
 
       <div className="f1-chain-note">
-        <b>调用链核验：</b>App 展示等级与权益 ← F1 服务端阶梯；F2 网络层级 / 同级奖、F4 领导池票权、F5 佣金审计、D4 派发账单、A2 高风险复核、A4 触发事件均以同一 会员等级 / 奖励派发编号关联。
+        <b>关联：</b>App 上的等级和权益来自这里；团队分成、领导奖池票数、佣金记录和账单都按同一会员等级和发放编号关联。
       </div>
 
       <p className="f-foot">高等级人数较少、奖励分配权重较高。领导奖池向 V{unlockRank} 级及以上用户分配；前 {topN} 名高等级用户占比约 {topConcPct}%。修改晋升门槛会影响后续晋升和奖励分配，须先核验资金覆盖率。</p>

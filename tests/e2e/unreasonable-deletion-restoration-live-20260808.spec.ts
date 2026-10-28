@@ -311,8 +311,8 @@ test("首次用户从可见菜单逐页看到恢复能力，筛选、刷新与�
 
   await openMenuPage(page, "用户与账户", "余额 & 资产调整", "/users/assets");
   await expect(page.getByText("待放行调整", { exact: true }).last()).toBeVisible();
-  await expect(page.locator('[data-list-label="待放行调整队列"]')).toBeVisible();
-  await expect(page.getByLabel("待放行调整队列 每页条数")).toHaveValue("5");
+  await expect(page.locator('[data-list-label="待审核的调整"]')).toBeVisible();
+  await expect(page.getByLabel("待审核的调整 每页条数")).toHaveValue("5");
   const pageSizeResponse = page.waitForResponse((response) => {
     const url = new URL(response.url());
     return response.request().method() === "GET"
@@ -321,12 +321,12 @@ test("首次用户从可见菜单逐页看到恢复能力，筛选、刷新与�
       && url.searchParams.get("pageNum") === "1"
       && url.searchParams.get("pageSize") === "10";
   });
-  await page.getByLabel("待放行调整队列 每页条数").selectOption("10");
+  await page.getByLabel("待审核的调整 每页条数").selectOption("10");
   expect((await pageSizeResponse).status()).toBe(200);
-  await expect(page.locator('[data-list-label="待放行调整队列"]')).toContainText("第 1 /");
-  await shotLocator(page.locator('[data-list-label="待放行调整队列"]'), "06-c3-request-pager.png");
+  await expect(page.locator('[data-list-label="待审核的调整"]')).toContainText("第 1 /");
+  await shotLocator(page.locator('[data-list-label="待审核的调整"]'), "06-c3-request-pager.png");
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.locator('[data-list-label="待放行调整队列"]')).toBeVisible();
+  await expect(page.locator('[data-list-label="待审核的调整"]')).toBeVisible();
   (evidence.pages as string[]).push("C3");
 
   await openMenuPage(page, "平台基础", "系统配置", "/platform/config");
@@ -365,7 +365,7 @@ test("首次用户从可见菜单逐页看到恢复能力，筛选、刷新与�
   await openMenuPage(page, "用户与账户", "查找用户与查看资料", "/users/search");
   await expect(page.getByRole("button", { name: "导出脱敏 CSV" })).toBeEnabled();
   await openMenuPage(page, "用户与账户", "余额 & 资产调整", "/users/assets");
-  await expect(page.locator('[data-list-label="待放行调整队列"]')).toBeVisible();
+  await expect(page.locator('[data-list-label="待审核的调整"]')).toBeVisible();
   await openMenuPage(page, "平台基础", "系统配置", "/platform/config");
   await expect(page.locator('[data-restored-capability="a3-global-rate-limit"]')).toBeVisible();
   await openMenuPage(page, "平台基础", "用户行为事件", "/platform/events");

@@ -119,9 +119,9 @@ test("J3 keeps the committed report when the browser download fails and retries 
   assert.ok(component.indexOf("if (retryableReport)") < component.indexOf("actions.createJ3Report"));
   assert.match(component, /setPendingReport\(report\)/);
   assert.match(component, /API 成功就是服务端提交边界/);
-  assert.match(component, /仅重试下载已生成的报表，不会再次请求服务器/);
+  assert.match(component, /只重新下载已生成的报表，不会重新生成/);
   assert.match(component, /放弃本次报表/);
-  assert.match(component, /服务器已生成的报表和审计仍会保留/);
+  assert.match(component, /下次点击导出会重新生成报表/);
   assert.match(component, /const abandonPendingReport = \(\) => \{\s*setPendingReport\(null\)/);
 });
 
@@ -166,13 +166,13 @@ test("J3 truthful states do not claim K4 or B5 delivery without server status", 
   assert.match(client, /alertState/);
   assert.match(component, /a\.fedToK4/);
   assert.match(component, /a\.b5Triggered/);
-  assert.match(component, /当前窗口暂无服务器拦截事件/);
+  assert.match(component, /这段时间没有拦截记录/);
   assert.match(component, /disabled=\{[^}]*!hasData/);
   assert.doesNotMatch(component, /资金实际损失为 0/);
-  assert.match(component, /监控接入未完成/);
+  assert.match(component, /拦截还没全部接入/);
   assert.match(component, /activeCount/);
   assert.match(component, /registeredCount/);
-  assert.match(component, /服务器拒绝入口已全部接入/);
+  assert.match(component, /拦截已全部接入/);
   assert.match(component, /data\.coverage\.activeCount/);
   assert.doesNotMatch(component, /当前仅风险披露验真已接入/);
 });
@@ -188,7 +188,7 @@ test("J3 client and backend use PUT, optimistic snapshots and fixed-window valid
 
 test("J3 retains idempotency keys when a write outcome is uncertain", () => {
   assert.match(component, /isEmergencyOutcomeUncertain/);
-  assert.match(component, /复用同一请求编号/);
+  assert.match(component, /不会重复保存/);
   // 命令号落共享持久化 store(sessionStorage):刷新后重试仍是同一号,后端才能去重。
   assert.match(component, /commandAttempt = createSlotAttemptStore\(\{/);
   assert.doesNotMatch(component, /useRef<\{ fingerprint/);
@@ -254,7 +254,7 @@ test("J3 contextual actions carry the selected account or cluster into C2 and K1
 
 test("J3 distinguishes a committed config write from a failed follow-up refresh", () => {
   assert.match(component, /commandAttempt\.forget\(ALERT_CONFIG_SLOT\);\s*try \{\s*await ctx\.actions\.reloadJEmergency\(\)/);
-  assert.match(component, /监控配置已生效并已记审计，但页面刷新失败/);
+  assert.match(component, /提醒设置已生效，但页面刷新失败/);
   assert.doesNotMatch(component, /updateJ3AlertConfig\([\s\S]{0,300}reloadJEmergency\(\)[\s\S]{0,200}catch \(error\) \{\s*if \(isEmergencyOutcomeUncertain/);
 });
 
@@ -267,7 +267,7 @@ test("J3 accepts valid empty coverage sets and rejects incomplete threshold prev
   assert.match(client, /!Number\.isInteger\(count\) \|\| count < 0/);
   assert.match(component, /previewAvailable/);
   assert.match(component, /预览不可用/);
-  assert.match(component, /当前禁止提交/);
+  assert.match(component, /不能提交/);
   assert.doesNotMatch(component, /sevenDayPreviewByThreshold\[String\(threshold\)\] \?\? 0/);
 });
 

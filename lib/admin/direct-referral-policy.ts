@@ -40,18 +40,18 @@ export interface DirectReferralUpdate {
 }
 
 export function validateDirectReferralUpdate(value: DirectReferralUpdate): string | null {
-  if (value.schemaVersion !== 2 || "purchase" in value) return "配置协议已更新，请重新读取；购买仅调整拆分，不另设总比例。";
-  if (!Number.isSafeInteger(value.expectedVersion) || value.expectedVersion < 0) return "配置版本无效，请重新读取。";
-  if (!Number.isSafeInteger(value.expectedSevenLayerRevision) || value.expectedSevenLayerRevision < 0) return "七层引用版本无效，请重新读取。";
-  if (!value.purchaseSplit || Object.keys(value.purchaseSplit).some(key => !["enabled", "usdtSharePct"].includes(key))) return "直属购买仅支持开关与 USDT 占比；基础预算和冷却引用七层规则。";
+  if (value.schemaVersion !== 2 || "purchase" in value) return "页面版本已更新，请刷新后重试。";
+  if (!Number.isSafeInteger(value.expectedVersion) || value.expectedVersion < 0) return "设置版本有误，请刷新后重试。";
+  if (!Number.isSafeInteger(value.expectedSevenLayerRevision) || value.expectedSevenLayerRevision < 0) return "七层设置版本有误，请刷新后重试。";
+  if (!value.purchaseSplit || Object.keys(value.purchaseSplit).some(key => !["enabled", "usdtSharePct"].includes(key))) return "直属购买奖励只能设置开关和 USDT 占比。";
   for (const [key, label] of [["purchaseSplit", "直属购买奖励拆分"], ["deviceEarning", "直属设备收益分成"]] as const) {
     const rule = value[key];
     if (!rule || typeof rule.enabled !== "boolean") return `${label}：请选择启用状态。`;
-    if (!Number.isFinite(rule.usdtSharePct) || rule.usdtSharePct < 0 || rule.usdtSharePct > 100 || (rule.enabled && (rule.usdtSharePct === 0 || rule.usdtSharePct === 100))) return `${label}：启用时 USDT 占比须大于 0% 且小于 100%，保证双币分成。`;
+    if (!Number.isFinite(rule.usdtSharePct) || rule.usdtSharePct < 0 || rule.usdtSharePct > 100 || (rule.enabled && (rule.usdtSharePct === 0 || rule.usdtSharePct === 100))) return `${label}：开启时 USDT 占比要大于 0% 且小于 100%。`;
   }
   const device = value.deviceEarning;
-  if (!Number.isFinite(device.totalRatePct) || device.totalRatePct < 0 || device.totalRatePct > 100 || (device.enabled && device.totalRatePct === 0)) return "直属设备收益分成：总比例须为 0–100%，启用时须大于 0。";
-  if (!Number.isInteger(device.coolingDays) || device.coolingDays < 0 || device.coolingDays > 365) return "直属设备收益分成：冷却天数须为 0–365 的整数。";
+  if (!Number.isFinite(device.totalRatePct) || device.totalRatePct < 0 || device.totalRatePct > 100 || (device.enabled && device.totalRatePct === 0)) return "直属设备收益分成：总比例填 0–100%，开启时要大于 0。";
+  if (!Number.isInteger(device.coolingDays) || device.coolingDays < 0 || device.coolingDays > 365) return "直属设备收益分成：冷却天数填 0–365 的整数。";
   return null;
 }
 
@@ -99,7 +99,7 @@ export function parseDirectReferralPolicy(value: unknown): DirectReferralPolicy 
 
 export function directReferralSummary(value: Pick<DirectReferralUpdate, "purchaseSplit" | "deviceEarning"> & { purchaseSplitConfigured?: boolean }): string {
   const split = value.purchaseSplit, device = value.deviceEarning;
-  return `直属购买奖励拆分：${value.purchaseSplitConfigured === false ? `未配置，沿用原 直属层全额 USDT 与旧额外 UVT；当前占位 USDT ${split.usdtSharePct}% / UVT ${100 - split.usdtSharePct}%，尚未生效` : split.enabled ? `启用，USDT ${split.usdtSharePct}% / UVT ${100 - split.usdtSharePct}%，替代原直属层 额外 UVT` : `停用，恢复 直属层全额 USDT 与旧额外 UVT；保存的拆分 USDT ${split.usdtSharePct}% / UVT ${100 - split.usdtSharePct}%，停用期间不生效`}，基础预算及冷却引用原七层；直属设备收益分成：${device.enabled ? "启用" : "停用"}，总比例 ${device.totalRatePct}%，USDT ${device.usdtSharePct}% / UVT ${100 - device.usdtSharePct}%，冷却 ${device.coolingDays} 天`;
+  return `直属购买奖励：${value.purchaseSplitConfigured === false ? `未设置拆分，全额发 USDT（另加旧 UVT 奖励）；默认比例 USDT ${split.usdtSharePct}% / UVT ${100 - split.usdtSharePct}%，尚未生效` : split.enabled ? `开启拆分，USDT ${split.usdtSharePct}% / UVT ${100 - split.usdtSharePct}%` : `关闭拆分，全额发 USDT（另加旧 UVT 奖励）；已保存的比例 USDT ${split.usdtSharePct}% / UVT ${100 - split.usdtSharePct}%，关闭期间不生效`}；直属设备收益分成：${device.enabled ? "开启" : "关闭"}，总比例 ${device.totalRatePct}%，USDT ${device.usdtSharePct}% / UVT ${100 - device.usdtSharePct}%，冷却 ${device.coolingDays} 天`;
 }
 
 export function directReferralAmplifies(before: DirectReferralPolicy, after: DirectReferralUpdate): boolean {

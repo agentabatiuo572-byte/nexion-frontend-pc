@@ -11,7 +11,7 @@ test("H3 binding management offers structured creation and rebinding controls", 
   assert.match(page, /openCreateBinding/);
   assert.match(page, /openBindingEdit/);
   assert.match(page, /\+ 新增绑定/);
-  assert.match(page, />改绑</);
+  assert.match(page, />修改</);
   assert.match(page, /kind: "multi-field"/);
   assert.match(page, /key: "eventType"[\s\S]*?inputKind: "select"/);
   assert.match(page, /key: "questCode"[\s\S]*?inputKind: "select"/);
@@ -29,7 +29,7 @@ test("H3 binding commands retain an idempotency key for unknown outcomes and the
   assert.match(client, /h3BindingCommands\.forget/);
   assert.match(client, /fetchH3QuestEvents\("tasks"\)/);
   assert.match(page, /isH3BindingOutcomeUncertainError/);
-  assert.match(page, /写入结果未知；已回读当前服务端状态/);
+  assert.match(page, /保存结果暂未确认，页面已刷新/);
   for (const fn of ["createH3QuestEventBinding", "updateH3QuestEventBinding", "deleteH3QuestEventBinding"]) {
     assert.match(client, new RegExp(`export function ${fn}\\b`));
   }

@@ -265,7 +265,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
               </div>
             </div>
             <div className="ltint" style={{ marginTop: 14, fontSize: 12 }}>
-              <b>验收边界</b> · 等应用端产生上述两个真实事件、A4 提供埋点目录和字段字典后，再联调 24 小时 / 7 天 / 30 天统计期、页面层级、坐标热区与聚合导出。当前不展示热力数值、不开放导出，也不使用 演示数据补齐。
+              <b>还没上线</b> · 要等 App 开始上报上面两类数据后才能使用。目前不显示热力数据、不能导出，也不会用假数据凑数。
             </div>
           </div>
         </section>
@@ -281,7 +281,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
           </div>
           <div className="l-b">
             <div className="ltint warn" style={{ fontSize: 12.5 }}>
-              <b>开发环境只接受主数据。</b> · <AutoGloss>{heatmapData.message || "服务端返回了已退役的数据来源，页面已拒绝展示。"}</AutoGloss>
+              <b>数据来源不对，已停止显示。</b> · <AutoGloss>{heatmapData.message || "收到的是已停用的数据来源。"}</AutoGloss>
             </div>
           </div>
         </section></div>
@@ -303,7 +303,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
       {/* stat strip */}
       {(refreshing || liveError) && (
         <div className={`ltint ${liveError ? "warn" : "cyan"}`} style={{ marginBottom: 12, fontSize: 12 }}>
-          {liveError || "正在读取服务端行为聚合…"}
+          {liveError || "正在加载…"}
         </div>
       )}
       <div className="f-stats">
@@ -368,7 +368,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
         </div>
         <div className="sep" />
         <div className="chips">
-          <span className="lb">时间窗</span>
+          <span className="lb">时间范围</span>
           {WINDOWS.map((w) => (
             <button
               key={w.v}
@@ -376,7 +376,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
               onClick={() => {
                 setWin(w.v);
                 setSel(null);
-                ctx.toast(`时间窗:${w.lb} · 仅视图,实时生效`);
+                ctx.toast(`时间范围：${w.lb}`);
               }}
             >
               {w.lb}
@@ -404,7 +404,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
       </div>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">访问趋势</span><span className="sub">· 日趋势 / 周趋势均由服务端聚合</span></div>
+        <div className="l-h"><span className="ttl">访问趋势</span><span className="sub">· 按日、按周的访问趋势</span></div>
         <div className="l-b" style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 16 }}>
           {[{ label: "按日", values: heatmapData.dailyTrend }, { label: "按周", values: heatmapData.weeklyTrend }].map((series) => (
             <div key={series.label}>
@@ -543,7 +543,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
                   </div>
                 ))}
               <div className="ltint cyan" style={{ marginTop: 12, fontSize: 12 }}>
-                <b>提示</b> · <AutoGloss>点击坐标按页面线框分区聚合,来源为后端行为聚合数据;深色热区=用户实际点按密度高。</AutoGloss>
+                <b>提示</b> · <AutoGloss>按页面区域统计点击；颜色越深，点的人越多。</AutoGloss>
               </div>
             </div>
           </div>
@@ -557,8 +557,8 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
         <AutoGloss>{`共追踪 ${heatmapData.trackedCount} / ${heatmapData.totalPages} 个前端页面;`}</AutoGloss>
         <b>不纳入统计的系统页({heatmapData.excludedPages.length})</b>:
         <AutoGloss>{heatmapData.excludedPages.map((p) => behaviorPageTitle(p)).join(" · ")}（纯会话/工具页,无行为分析价值）。</AutoGloss>{" "}
-        <b>L6 没有任何「写数据」动作</b>:
-        <AutoGloss>粒度 / 时间窗 / 排序均为会话级视图参数,不改任何业务规则。业务时区 {heatmapData.businessTimeZone}；事件编号去重；乱序事件会被拒绝，客户端须按原事件 ID 顺序重试。</AutoGloss>
+        <b>这页只能查看，不会改任何数据</b>：
+        <AutoGloss>页面层级、时间范围、排序只影响你自己看到的视图。时区：{heatmapData.businessTimeZone}。</AutoGloss>
       </p>
     </div>
   );

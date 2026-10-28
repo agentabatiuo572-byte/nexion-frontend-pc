@@ -8,47 +8,47 @@ import { PORTED_EMPTY_CONTENT } from "./ported-content";
 export const DOMAIN_A: ModuleEntry[] = [
   {
     path: "/platform/rbac",
-    summary: "管后台账号、以及每个角色能做哪些操作。登录安全、最小权限、超级管理员保护、开户、停用、启用、改角色、重置两步验证和强制登出都以服务端返回为准,所有敏感动作都必须写明原因并进入审计。",
+    summary: "管理后台账号：开户、停用、改角色、重置两步验证和强制下线。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/platform/audit",
-    summary: "审计与操作确认中心(A2):后台所有高风险操作都在这里留痕,执行前必须填写原因。审计不可改写,确认动作由服务器执行时防止重复生效,重复提交不会重复影响目标业务。",
+    summary: "查看后台所有敏感操作的记录，处理等待确认的操作。记录只能新增，不能修改或删除。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/platform/config",
-    summary: "系统配置(A3):管整个平台通用的底层开关。① 分批开放设置——新功能先小范围放给一部分人试,放给谁由服务器决定、前端只能拿到结果;② 紧急停止开关的状态存在这里(开关本身的操作已搬到应急域 J1/J2,本页只能看);③ 系统健康面板——服务端关键依赖的实时状态,只读。",
+    summary: "全平台通用设置：功能开关、业务时区和平台参数，并可查看紧急开关状态和系统运行状况。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/platform/events",
-    summary: "数据事件管理(A4):运营总览、资金对账、风控信号和分析报表都以服务端事件流为准。统计规则登记、调整和业务接入都走确认流程,事件里禁止放用户隐私明文。",
+    summary: "登记和维护用户行为事件。运营总览、对账、风控和报表都按这些事件统计；事件里不得包含用户隐私信息。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/platform/params-registry",
-    summary: "平台参数总览(A5):把全平台运营能调的字段汇成索引,从服务端读取当前真实值;A1-A4 和各业务域改过的参数都能在这里反查、一键跳到所在页面、或发起确认修改。",
+    summary: "汇总全平台可调参数的当前值，修改请点进所在页面。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/platform/roles",
-    summary: "角色管理(A6):配置各类管理员的角色权限。管理角色(8 内置 + 自定义),为每个角色绑定权限码(操作权)与菜单(可见性)。改授权走操作确认 + 审计,并即时失效该角色下账号的权限缓存。",
+    summary: "管理后台角色，设置每个角色能做的操作和能看的菜单。修改立即对该角色下的所有账号生效。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/platform/menus",
-    summary: "菜单管理(A7):运营后台导航菜单树(13 域 → 页)的增删改、排序、显隐。仅已部署的页面可加入导航。",
+    summary: "调整后台左侧菜单的名称、顺序和显示。只有已上线的页面才能加入菜单。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/platform/permissions",
-    summary: "权限清单(A8):浏览全平台查询、修改及敏感操作的权限。按域/类型筛选 + 搜索 + 分页,查看每个权限点所属菜单、是否放大资金流出、已绑定角色数。权限标识由系统维护，本页不能新增或删除。",
+    summary: "查看全平台的操作权限，以及每项权限属于哪个菜单、分给了几个角色。权限项由系统维护，这里只能查看。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/platform/developer-access",
-    summary: "开发者访问审批(A9):查看开发者访问申请，批准、驳回或撤销申请。提交时填写备注，系统会检查状态是否变化、防止重复执行并保存操作记录。",
+    summary: "审批开发者的访问申请：批准、驳回或撤销。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

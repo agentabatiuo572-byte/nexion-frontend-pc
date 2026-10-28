@@ -19,7 +19,7 @@ export function SensitiveOperationFeed({ items }: { items: SensitiveOperationIte
   return (
     <div className="rounded-[14px] p-4" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
       <div className="flex items-center justify-between">
-        <span className="font-display text-[15px]" style={{ color: "var(--v5-ink)" }}>高敏操作动态</span>
+        <span className="font-display text-[15px]" style={{ color: "var(--v5-ink)" }}>待处理事项</span>
         <span
           className="font-mono-tabular rounded-full px-2 py-0.5 text-[11px]"
           style={{ background: "color-mix(in srgb, var(--v5-brand) 16%, transparent)", color: "var(--v5-brand)" }}
@@ -47,7 +47,7 @@ export function SensitiveOperationFeed({ items }: { items: SensitiveOperationIte
         ))}
         {items.length === 0 && (
           <li className="py-4 text-center text-[12.5px]" style={{ color: "var(--v5-ink-4)" }}>
-            暂无高敏动态
+            暂无待处理事项
           </li>
         )}
       </ul>

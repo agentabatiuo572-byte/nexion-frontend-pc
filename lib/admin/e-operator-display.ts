@@ -77,7 +77,7 @@ export function operatorE3OperationState(value: string | null | undefined) {
 }
 
 export function operatorE3Reason(value: string | null | undefined) {
-  return text(value) ? "处理备注已记录；请在审计轨迹核验。" : "暂无最新样本";
+  return text(value) ? "处理备注已记录，可在操作记录里查看。" : "暂无数据";
 }
 
 export function operatorProductLabel(value: string | null | undefined) {
@@ -189,5 +189,5 @@ export function operatorOrderFact(kind: "type" | "payment" | "paymentStatus" | "
     direction: { IN: "收入", OUT: "支出" },
     fundingStatus: { PAID: "已支付", POSTED: "已入账", COMPLETED: "已完成", SUCCESS: "已完成", PENDING: "处理中", FAILED: "失败", CANCELLED: "已取消", REVERSED: "已撤回", REFUNDED: "已退款", CHARGEBACK: "拒付" },
   };
-  return labels[kind][value.toUpperCase()] ?? ({ type: "订单类型待核实", payment: "支付方式待核实", paymentStatus: "支付状态待核实", source: "其他资金记录", direction: "方向待核实", fundingStatus: "资金状态待核实" })[kind];
+  return labels[kind][value.toUpperCase()] ?? ({ type: "订单类型未知", payment: "支付方式未知", paymentStatus: "支付状态未知", source: "其他资金记录", direction: "方向未知", fundingStatus: "资金状态未知" })[kind];
 }

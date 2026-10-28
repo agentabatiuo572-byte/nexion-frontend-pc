@@ -60,7 +60,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const toggleSel = (key: string) => setSel((s) => ({ ...s, [key]: !s[key] }));
 
   if (contentLoading && !data) {
-    return <section className="matrix-card"><div className="matrix-h"><span className="ttl">J1 状态同步中</span><span className="sub">· 正在确认各业务开关的最新状态</span></div></section>;
+    return <section className="matrix-card"><div className="matrix-h"><span className="ttl">业务开关加载中</span><span className="sub">· 正在确认各业务开关的最新状态</span></div></section>;
   }
   if (!data) {
     return <section className="matrix-card" data-module-health-state="error"><div className="matrix-h"><span className="ttl">当前无法确认业务开关状态</span><span className="sub">· 为避免误操作，控制项已隐藏，请刷新后重试</span></div></section>;
@@ -102,7 +102,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     openActionConfirm({
     action: `关停业务开关 · ${operatorCopyText(g.name)}`,
     detail: (
-      <><b>{operatorCopyText(g.name)}</b>控制{operatorCopyText(g.cap)}。确认后服务器立即拒绝对应业务请求，并记录操作人、理由、变更前后状态和时间。关停不会增加资金流出，不需要先检查备付金。</>
+      <><b>{operatorCopyText(g.name)}</b>控制{operatorCopyText(g.cap)}。确认后这项业务马上停止，并记入操作记录。关停不会多付钱，不需要先检查备付金。</>
     ),
     businessForm: {
       kind: "multi-field",
@@ -134,7 +134,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     detail: (
       <><b>{operatorCopyText(g.name)}</b>将从已关停恢复为在线，重新开放{operatorCopyText(g.cap)}。{g.coveragePrecheckRequired
         ? <><b>恢复前检查备付金</b>：当前覆盖率 <b>{coverageText(COV)}</b>，恢复红线 <b>{coverageText(RED)}</b>；{covPass ? <>检查通过，{coverageGapText}</> : <>检查不通过，暂不能恢复</>}。</>
-        : <>该业务不会直接增加资金流出，可在填写理由后立即恢复。</>}确认后由服务器立即执行并记录审计。</>
+        : <>该业务不会直接增加资金流出，可在填写理由后立即恢复。</>}确认后马上生效，并记入操作记录。</>
     ),
     run: (reason) => {
       return runBackend(actions.toggleJ1KillSwitch(g.key, true, reason, undefined, commandKey), `${operatorCopyText(g.name)}已立即恢复`);
@@ -150,12 +150,12 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     openActionConfirm({
       action: "应急批量停用 · 监管点名场景",
       detail: (
-        <>一次性立即关停<b>已选 {targets.length} 项业务</b>，用于监管点名、法务事件等重大场景。确认后服务器同步关停并逐项记录应急审计。<b>已选业务开关：{targets.map((g) => operatorCopyText(g.name)).join(" / ")}</b>。</>
+        <>一次性立即关停<b>已选 {targets.length} 项业务</b>，用于监管点名、法务事件等重大场景。确认后全部马上关停，每一项都记入操作记录。<b>已选业务开关：{targets.map((g) => operatorCopyText(g.name)).join(" / ")}</b>。</>
       ),
       businessForm: {
         kind: "multi-field",
         title: "批量应急依据与处置",
-        hint: "所有字段都会随本次操作写入审计记录。",
+        hint: "以下内容都会记入操作记录。",
         fields: [
           { key: "triggerBasis", label: "触发依据", current: "", inputKind: "select", options: TRIGGER_BASES, optionLabels: TRIGGER_LABELS },
           { key: "regulatoryContext", label: "监管事由或文号", current: "", inputKind: "text", wide: true, placeholder: "例如监管通知编号、法务事件编号" },
@@ -182,7 +182,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     const commandKey = createJEmergencyCommandKey();
     openActionConfirm({
       action: `应急参数调整 · ${row.k}`,
-      detail: <><b>{row.k}</b> · {operatorCopyText(row.d)}。自动关停即时生效，补录只补全审计信息，不会自动恢复业务开关。</>,
+      detail: <><b>{row.k}</b> · {operatorCopyText(row.d)}。自动关停马上生效；补录只是补写处理结论，不会自动恢复业务。</>,
       edit: { kind: row.kind, current: cur, unit: row.unit, min: row.id === "autoConfirmMins" ? 10 : undefined, max: row.id === "autoConfirmMins" ? 120 : undefined, step: 1, disallowCurrent: true },
       run: (reason, newValue) => {
         return runBackend(actions.updateJ1Sla(row.id, newValue ?? cur, cur, reason, commandKey), `${row.k} 已调整`);
@@ -195,10 +195,10 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     const commandKey = createJEmergencyCommandKey();
     openActionConfirm({
       action: `自动触发规则调整 · ${r.nm}`,
-      detail: <><b>{r.nm}</b>当前阈值为 {cur} {r.unit}。保存后服务器定时读取真实业务指标；超过阈值时自动关停对应业务开关并写入审计记录。</>,
+      detail: <><b>{r.nm}</b>当前阈值为 {cur} {r.unit}。保存后系统会定时检查实际数据，超过阈值就自动关停对应业务，并记入操作记录。</>,
       edit: { kind: "number", current: cur, unit: r.unit, min: 1, max: 1_000_000_000, step: 1, disallowCurrent: true },
       run: (reason, newValue) => {
-        return runBackend(actions.updateJ1AutoRule(r.id, newValue ?? cur, cur, reason, commandKey), `${r.nm} 已确认生效`);
+        return runBackend(actions.updateJ1AutoRule(r.id, newValue ?? cur, cur, reason, commandKey), `${r.nm} 已生效`);
       },
     });
   };
@@ -252,7 +252,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           data-proof="j1-backfill-overdue-banner"
         >
           <b>{overdueBackfills.length} 项自动关停结论已逾期未补录</b> ——
-          相关业务已停止,但处置理由仍空缺;逾期事项不会自行消失,请值班人员立即补录,或上报值班主管接手。
+          相关业务已停止，但还没写处理结论；逾期事项不会自动消失，请值班同事马上补录，或交给值班主管处理。
           {overdueBackfills.slice(0, 3).map((row) => (
             <span key={row.incidentId} style={{ marginLeft: 8 }}>
               · {operatorCopyText(row.name)}(截止 {row.dueAt.replace("T", " ").slice(0, 16)})
@@ -266,7 +266,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       <div className="f-stats">
         <div className="f-stat ok"><div className="k">在线功能开关</div><div className="v">{live} / {gates.length}</div><div className="sub">{killed === 0 ? "全部业务正常开放" : "部分业务已关停"}</div></div>
         <div className="f-stat warn"><div className="k">应急关停业务</div><div className="v">{emergencyGateCount}</div><div className="sub">自动或批量应急关停</div></div>
-        <div className="f-stat danger"><div className="k">已关停业务</div><div className="v">{killed}</div><div className="sub">备付金已阻断恢复 {coverageBlockedCount} 次</div></div>
+        <div className="f-stat danger"><div className="k">已关停业务</div><div className="v">{killed}</div><div className="sub">因备付金不足未能恢复 {coverageBlockedCount} 次</div></div>
         <div className="f-stat cyan"><div className="k">备付金覆盖率</div><div className="v">{coverageText(COV)}</div><div className="sub">红线 {coverageText(RED)} · {coverageGapText}</div></div>
       </div>
 
@@ -291,8 +291,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       <section className="matrix-card">
         <div className="matrix-h">
           <span className="ttl"><AutoGloss>{`功能开关总表 · ${gates.length} 个业务开关`}</AutoGloss></span>
-          <span className="sub">· 状态以服务器为准</span>
-          <div className="r"><CodeTag tone="electric">审计留痕</CodeTag><CodeTag>每次切换都记录</CodeTag></div>
+          <span className="sub">· 每次切换都会记录</span>
+          <div className="r"><CodeTag tone="electric">记入操作记录</CodeTag></div>
         </div>
         <div className="matrix-tblwrap"><div className="matrix-tbl">
           <div className="hd">
@@ -414,8 +414,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       <section className="rules-card">
         <div className="rules-h">
           <span className="ttl"><AutoGloss>应急判定与自动关停规则</AutoGloss></span>
-          <span className="sub">· R1、R2 由服务器读取真实指标自动关停；R3 仅告警；R4 人工发起</span>
-          <div className="r"><CodeTag tone="electric">审计留痕</CodeTag></div>
+          <span className="sub">· R1、R2 达到阈值自动关停；R3 只告警；R4 由人工发起</span>
+          <div className="r"><CodeTag tone="electric">记入操作记录</CodeTag></div>
         </div>
         <div className="rules-grid">
           {AUTO_RULES.map((r) => (
@@ -447,7 +447,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>关停后立即全站生效，客户端无法绕过</b>：<AutoGloss>开关状态以服务器为准。关停或恢复必须填写理由，服务器执行后立即写入审计。恢复提现、兑换、创世节点 或质押前，还会检查备付金是否达到红线。</AutoGloss></p>
+      <p className="f-foot"><b>关停后全站马上生效，App 无法绕过</b>：<AutoGloss>关停或恢复都要填写理由，并记入操作记录。恢复提现、兑换、创世节点或质押前，还会检查备付金是否达到红线。</AutoGloss></p>
     </div>
   );
 }

@@ -11,10 +11,10 @@ const REGISTERED_ATTRIBUTION_ROUTES = new Set([
 ]);
 
 export const L2_ATTRIBUTION_LINKS: readonly AttributionLink[] = [
-  { label: "B4 节奏", href: "/overview/rhythm" },
-  { label: "H1 运营阶段", href: "/growth/phase" },
-  { label: "I 域文案", href: "/content/copy-ab" },
-  { label: "F 域渠道", href: "/network/commissions" },
+  { label: "运营阶段状态", href: "/overview/rhythm" },
+  { label: "运营阶段设置", href: "/growth/phase" },
+  { label: "页面文案对比测试", href: "/content/copy-ab" },
+  { label: "佣金记录核对", href: "/network/commissions" },
 ];
 
 export function assertL1AttributionLinks(

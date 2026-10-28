@@ -47,13 +47,13 @@ export function readL3LiveFacts(value: unknown): L3LiveFact[] {
 
 const LIABILITY_LABELS: Record<string, string> = {
   withdrawable_balance: "可提余额",
-  usdt_staking_principal: "USDT质押本金",
+  usdt_staking_principal: "USDT 质押本金",
   staking_interest: "质押应付利息",
   genesis_daily_emission: "创世节点应付分红",
-  nex_v2_future: "UVT第二版未来兑付",
-  withdrawal_queue: "待提现队列",
-  commission_cooling: "等待解锁的佣金",
-  lock_other: "锁仓本息其他",
+  nex_v2_future: "UVT 锁仓到期应付",
+  withdrawal_queue: "待处理提现",
+  commission_cooling: "冷却期内未发放的佣金",
+  lock_other: "其他锁仓本息",
   // Compatibility aliases for snapshots created before D3 adopted the eight
   // canonical liability keys. New responses must use the keys above.
   balance: "可提现余额",

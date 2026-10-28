@@ -21,7 +21,7 @@ type Drafts = Record<PayoutVndWritableField, string>;
 
 const FX_FIELDS = ["sellSpreadPct", "quoteTtlMinWithdraw", "requoteTolerancePct"] as const;
 const FEE_FIELDS = ["feeRatePct", "feeMinUsd", "feeMaxUsd", "minAmountUsd", "maxAmountUsd"] as const;
-const FORCE_PHRASE = "确认倒挂风险";
+const FORCE_PHRASE = "确认价格倒挂风险";
 
 function draftsFrom(values: PayoutVndValues): Drafts {
   return Object.fromEntries(Object.keys(PAYOUT_VND_FIELDS).map((key) => [key, String(values[key as PayoutVndWritableField])])) as Drafts;
@@ -49,9 +49,9 @@ function parseDrafts(drafts: Drafts) {
     values[key] = value;
   }
   const cross: string[] = [];
-  if (values.feeMinUsd > 0 && values.feeMinUsd >= values.minAmountUsd) cross.push("最低收费不得大于等于单笔下限");
-  if (values.feeMinUsd > values.feeMaxUsd) cross.push("最低收费不得高于单笔封顶");
-  if (values.minAmountUsd > values.maxAmountUsd) cross.push("单笔下限不得高于单笔上限");
+  if (values.feeMinUsd > 0 && values.feeMinUsd >= values.minAmountUsd) cross.push("最低手续费须低于单笔最低金额");
+  if (values.feeMinUsd > values.feeMaxUsd) cross.push("最低手续费不能高于手续费封顶");
+  if (values.minAmountUsd > values.maxAmountUsd) cross.push("单笔最低金额不能高于单笔最高金额");
   return { values, errors, cross };
 }
 
@@ -101,7 +101,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const parsed = useMemo(() => drafts ? parseDrafts(drafts) : null, [drafts]);
 
   if (loading || !config || !drafts || !parsed) {
-    return <section className="l-card"><div className="l-b">{error ? <><div className="dtint warn">{error}</div><button className="l-btn primary" style={{ marginTop: 12 }} onClick={() => void reload()}>重试读取</button></> : "D7 服务端参数加载中..."}</div></section>;
+    return <section className="l-card"><div className="l-b">{error ? <><div className="dtint warn">{error}</div><button className="l-btn primary" style={{ marginTop: 12 }} onClick={() => void reload()}>重试</button></> : "正在加载…"}</div></section>;
   }
 
   const liveRates = derivePayoutVndRates(config);
@@ -120,23 +120,23 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
 
   const submit = (forceInverted = false) => {
     openActionConfirm({
-      action: forceInverted ? "D7 参数变更（倒挂强制）" : "D7 法币提现参数变更",
+      action: forceInverted ? "强制保存越南盾提现参数（价格倒挂）" : "调整越南盾提现参数",
       detail: <>
-        <div>整组配置 v{config.version} → v{config.version + 1}，任何字段失败均不部分生效。</div>
-        <div>报价预览：买入 {formatVnd(draftRates.buy)} / 卖出 {formatVnd(draftRates.sell)}。</div>
-        <div>新参数用于新报价；未提交的旧报价须重新报价并确认，已提交订单保留提交时确认的金额。</div>
-        <div>{amplifies ? "方向：放大资金流出，服务端会强制校验 B1 覆盖率。" : "方向：收紧或中性。"}</div>
-        {forceInverted && <div><b>风险：卖出牌价不低于买入牌价，可能形成循环套利空间。</b></div>}
+        <div>所有参数一起保存（版本 v{config.version} → v{config.version + 1}）。</div>
+        <div>预览：买入价 {formatVnd(draftRates.buy)} / 卖出价 {formatVnd(draftRates.sell)}。</div>
+        <div>只影响之后的报价；用户还没提交的旧报价需要重新报价，已提交的订单金额不变。</div>
+        <div>{amplifies ? "这是放宽：平台会多付钱，提交时检查兑付覆盖率。" : "这是收紧，或不影响付款金额。"}</div>
+        {forceInverted && <div><b>风险：卖出价不低于买入价，用户可能来回兑换套利。</b></div>}
       </>,
       amplifies,
       reasonMin: 8,
       reasonMax: 200,
-      completionCopy: "保存时检查配置是否已变化，并记录到 A2 操作日志",
+      completionCopy: "提交后立即生效。",
       run: async (reason) => {
         setBusy(true);
         try {
           applySnapshot(await updatePayoutVndConfig(parsed.values, config.version, reason, forceInverted));
-          toast("D7 参数已由服务端生效并写入审计");
+          toast("越南盾提现参数已生效");
         } catch (caught) {
           const message = displayAdminError(caught);
           await reload();
@@ -151,12 +151,12 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
 
   const startForcedSave = () => {
     openConfirm({
-      action: "倒挂价差二次确认",
-      detail: <div>此操作会突破默认价差保护。输入“{FORCE_PHRASE}”后仍需填写业务理由。</div>,
+      action: "确认保存倒挂的价格",
+      detail: <div>卖出价不低于买入价，系统默认不允许保存。请输入「{FORCE_PHRASE}」后再填写理由。</div>,
       input: { label: `输入“${FORCE_PHRASE}”`, placeholder: FORCE_PHRASE, kind: "text" },
       okLabel: "继续填写理由",
       run: (_reason, value) => {
-        if (value?.trim() !== FORCE_PHRASE) throw new Error("输入内容不匹配，未进入倒挂风险确认流程。");
+        if (value?.trim() !== FORCE_PHRASE) throw new Error("输入不一致，未保存。");
         submit(true);
       },
     });
@@ -167,7 +167,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     return <div className="p-row" key={key}>
       <div className="txt">
         <div className="k">{spec.label}</div>
-        <div className="s">合法范围 {spec.min}–{spec.max} {spec.unit}</div>
+        <div className="s">可设 {spec.min}–{spec.max} {spec.unit}</div>
         {parsed.errors[key] && <div className="s" style={{ color: "var(--danger)" }}>{parsed.errors[key]}</div>}
       </div>
       <input className="l-inp" aria-label={`${spec.label}目标值`} type="number" min={spec.min} max={spec.max} step={spec.step}
@@ -179,46 +179,46 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
 
   return <>
     {!config.providerReady && <div className="dtint warn" role="status" style={{ marginBottom: 12 }}>
-      <b>HDPay 配置不可用</b>：请检查支付共用的商户配置及服务状态。
+      <b>HDPay 设置不可用</b>：请联系技术人员检查商户设置和服务状态。
     </div>}
     {error && <div className="dtint warn" style={{ marginBottom: 12 }}>{error}</div>}
 
     <div className="f-stats">
-      <div className="f-stat ok"><div className="k">买入牌价（按 D6 配置）</div><div className="v">{formatVnd(liveRates.buy)}</div><div className="sub">基准价 {formatVnd(config.baseRateVndPerUsdt)} · 买入点差 {config.buySpreadPct}%</div></div>
-      <div className="f-stat cyan"><div className="k">卖出牌价（D7 派生）</div><div className="v">{formatVnd(liveRates.sell)}</div><div className="sub">卖出点差 {config.sellSpreadPct}%</div></div>
-      <div className={`f-stat ${inverted ? "danger" : ""}`}><div className="k">草稿双向价差</div><div className="v">{formatVnd(draftRates.buy - draftRates.sell)}</div><div className="sub">{inverted ? "倒挂，默认禁止保存" : "买入牌价 − 卖出牌价"}</div></div>
-      <div className={`f-stat ${config.providerReady ? "ok" : "warn"}`}><div className="k">HDPay 代付配置</div><div className="v">{config.providerReady ? "已配置" : "不可用"}</div><div className="sub">与代收共用商户配置</div></div>
+      <div className="f-stat ok"><div className="k">买入价（来自「汇率设置」）</div><div className="v">{formatVnd(liveRates.buy)}</div><div className="sub">基准价 {formatVnd(config.baseRateVndPerUsdt)} · 买入点差 {config.buySpreadPct}%</div></div>
+      <div className="f-stat cyan"><div className="k">卖出价</div><div className="v">{formatVnd(liveRates.sell)}</div><div className="sub">卖出点差 {config.sellSpreadPct}%</div></div>
+      <div className={`f-stat ${inverted ? "danger" : ""}`}><div className="k">买卖价差（修改后）</div><div className="v">{formatVnd(draftRates.buy - draftRates.sell)}</div><div className="sub">{inverted ? "价格倒挂，默认不能保存" : "买入价 − 卖出价"}</div></div>
+      <div className={`f-stat ${config.providerReady ? "ok" : "warn"}`}><div className="k">HDPay 打款设置</div><div className="v">{config.providerReady ? "已配置" : "不可用"}</div><div className="sub">和充值收款共用同一商户</div></div>
     </div>
 
     <section className="l-card" style={{ marginBottom: 12 }}>
-      <div className="l-h"><span className="ttl">配置来源与操作记录</span><span className="sub">· 服务器版本 v{config.version} · {config.effectiveAt.replace("T", " ").replace("Z", " UTC")}</span><div className="r"><button className="l-btn sm" disabled={busy} onClick={() => void reload()}>刷新</button></div></div>
+      <div className="l-h"><span className="ttl">相关页面</span><span className="sub">· 版本 v{config.version} · {config.effectiveAt.replace("T", " ").replace("Z", " UTC")}</span><div className="r"><button className="l-btn sm" disabled={busy} onClick={() => void reload()}>刷新</button></div></div>
       <div className="l-b"><div className="chips">
-        {authorities.includes("finance_d6_read") && <Link className="chip" href="/finance/fx-rate">D6 基准价与买入点差</Link>}
-        {authorities.includes("finance_d2_read") && <Link className="chip" href="/finance/withdrawals">D2 提现审核</Link>}
-        {authorities.includes("finance_d5_read") && <Link className="chip" href="/finance/params">D5 USDT 提现参数</Link>}
-        {authorities.includes("platform_a2_read") && <Link className="chip" href="/platform/audit">A2 审计</Link>}
+        {authorities.includes("finance_d6_read") && <Link className="chip" href="/finance/fx-rate">汇率设置</Link>}
+        {authorities.includes("finance_d2_read") && <Link className="chip" href="/finance/withdrawals">提现审核</Link>}
+        {authorities.includes("finance_d5_read") && <Link className="chip" href="/finance/params">USDT 提现参数</Link>}
+        {authorities.includes("platform_a2_read") && <Link className="chip" href="/platform/audit">操作记录</Link>}
       </div><div className="s" style={{ marginTop: 8 }}>最近操作者：{config.lastUpdatedBy}</div></div>
     </section>
 
     <div className="two-col r11">
-      <section className="l-card"><div className="l-h"><span className="ttl">卖出报价参数</span><span className="sub">· D6 两项只读，D7 三项可调整</span></div><div className="l-b">
-        <div className="p-row"><div className="txt"><div className="k">基准价 / 买入点差</div><div className="s">仅由 D6 维护，本页没有第二写入口</div></div><span>{formatVnd(config.baseRateVndPerUsdt)} / {config.buySpreadPct}%</span></div>
+      <section className="l-card"><div className="l-h"><span className="ttl">卖出报价参数</span><span className="sub">· 基准价和买入点差在「汇率设置」修改</span></div><div className="l-b">
+        <div className="p-row"><div className="txt"><div className="k">基准价 / 买入点差</div><div className="s">在「汇率设置」修改</div></div><span>{formatVnd(config.baseRateVndPerUsdt)} / {config.buySpreadPct}%</span></div>
         {FX_FIELDS.map(fieldRow)}
-        <div className={`dtint ${inverted ? "warn" : "ok"}`} style={{ marginTop: 10 }}>草稿预览：买入 {formatVnd(draftRates.buy)} / 卖出 {formatVnd(draftRates.sell)}</div>
+        <div className={`dtint ${inverted ? "warn" : "ok"}`} style={{ marginTop: 10 }}>修改后：买入价 {formatVnd(draftRates.buy)} / 卖出价 {formatVnd(draftRates.sell)}</div>
       </div></section>
-      <section className="l-card"><div className="l-h"><span className="ttl">手续费与单笔限额</span><span className="sub">· 与 D5 网络确认费分离</span></div><div className="l-b">
+      <section className="l-card"><div className="l-h"><span className="ttl">手续费与单笔限额</span><span className="sub">· 和 USDT 提现的网络确认费分开设置</span></div><div className="l-b">
         {FEE_FIELDS.map(fieldRow)}
         {parsed.cross.map((message) => <div className="dtint warn" style={{ marginTop: 8 }} key={message}>{message}</div>)}
         {canManage && <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-          <button className="l-btn sm mc" disabled={busy || !changed || invalid || inverted} onClick={() => submit(false)}>预览并提交整组配置</button>
-          {canForce && inverted && <button className="l-btn sm" disabled={busy || !changed || invalid} onClick={startForcedSave}>强制保存倒挂配置</button>}
-          <button className="l-btn sm" disabled={busy} onClick={() => setDrafts(draftsFrom(config.defaults))}>恢复默认草稿</button>
+          <button className="l-btn sm mc" disabled={busy || !changed || invalid || inverted} onClick={() => submit(false)}>提交修改</button>
+          {canForce && inverted && <button className="l-btn sm" disabled={busy || !changed || invalid} onClick={startForcedSave}>强制保存（价格倒挂）</button>}
+          <button className="l-btn sm" disabled={busy} onClick={() => setDrafts(draftsFrom(config.defaults))}>恢复默认值</button>
         </div>}
       </div></section>
     </div>
 
     <section className="l-card" style={{ marginTop: 12 }}><div className="l-h"><span className="ttl">银行卡提现 · HDPay</span></div><div className="l-b">
-      <div>绑定银行账户后申请提现，经审核放行后由 HDPay 代付，处理结果自动更新。</div>
+      <div>用户绑定银行卡后申请提现，审核通过后由 HDPay 打款，结果自动更新。</div>
     </div></section>
   </>;
 }

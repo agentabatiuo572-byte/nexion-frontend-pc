@@ -39,9 +39,9 @@ test("安装包地址判定是单一实现:E6 与 A5 都从共享模块取", () 
 test("A5 把未生效的值标成未生效,而不是当前服务端值", () => {
   const a5 = read("app/_console/platform/params-registry/params-registry-client.tsx");
   assert.match(a5, /rowValueEffective\(row\)/);
-  assert.match(a5, /"当前服务端值 · 未生效"/);
-  assert.match(a5, /已存储 · 未生效/);
-  assert.match(a5, /不会下发给用户端/);
+  assert.match(a5, /"当前值 · 未生效"/);
+  assert.match(a5, /已保存 · 未生效/);
+  assert.match(a5, /目前没有生效/);
   // 有效性判定必须真的调用共享规则,不能只看非空。
   assert.match(a5, /isSafeInstallerUrl\(row\.currentValue\.trim\(\)\)/);
 });

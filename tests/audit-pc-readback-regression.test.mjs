@@ -88,8 +88,8 @@ test("F2 exposes no writable controls for parameters that have no settlement con
   for (const key of ["F.royalty.minPayout", "F.peer.rate"]) {
     assert.ok(!visible[1].includes(key), `${key} has no settlement consumer and must not have an editable PC control`);
   }
-  assert.match(f2, /未接入实际结算/, "F2 must disclose why these values are unavailable");
-  assert.match(f2, /不可调整/, "F2 must not imply that an unavailable value is operationally writable");
+  assert.match(f2, /已不参与结算/, "F2 must disclose why these values are unavailable");
+  assert.match(f2, /不能修改/, "F2 must not imply that an unavailable value is operationally writable");
 
   for (const key of ["F.royalty.minPayout", "F.peer.rate"]) {
     assert.match(teamService, new RegExp(`(?:Set|List)\\.of\\([\\s\\S]{0,400}?"${key.replaceAll(".", "\\.")}"`),

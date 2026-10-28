@@ -196,7 +196,7 @@ export function Sidebar({
       >
         {!collapsed && (
           <span className="font-mono-tabular text-[10px]" style={{ color: "var(--v5-ink-4)" }}>
-            {domains.length} 域 · {visibleL2Count} 模块
+            {domains.length} 个模块 · {visibleL2Count} 个页面
           </span>
         )}
         <button

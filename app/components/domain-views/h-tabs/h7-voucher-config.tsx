@@ -249,8 +249,8 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       action: "新增代金券",
       detail: (
         <>
-          新增一张领券促销:满减 / 折扣、门槛、适用商品、受众、有效期、领取入口。
-          <b>代金券只抵扣订单价格，不增加代币应付款，也不受资金覆盖率门槛限制</b>;适用商品 留空 = 全设备(领券跳商城),单个 = 跳该商品 详情页。
+          新增一张代金券：满减或折扣、使用门槛、适用商品、发给谁、有效期、在哪领。
+          <b>代金券只抵扣订单价格，不增加平台应付款，也不受覆盖率限制</b>。适用商品不选 = 全部设备（领券后跳商城）；只选一个 = 跳该商品详情页。
         </>
       ),
       businessForm: {
@@ -276,7 +276,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         const id = `vc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
         const next = parseVoucher(bv, id);
         applyResponse(await createH7Voucher(next, reason));
-        toast(`· 代金券「${next.name}」已新增`);
+        toast(`代金券「${next.name}」已新增`);
       },
     });
   };
@@ -286,8 +286,8 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       action: `编辑代金券 · ${v.name}`,
       detail: (
         <>
-          <b>{v.name}</b> · 多字段编辑:类型 / 面值 / 门槛 / 适用商品 / 受众 / 有效期 / 领取入口 / 弹窗。
-          当前值已预填(改前可见 修改前后值);促销折扣非负债,不挂 B1。
+          <b>{v.name}</b> · 可修改类型、面值、门槛、适用商品、发给谁、有效期、领取入口和弹窗。
+          已填好当前值，修改前后对比可见。代金券不算平台负债，不受覆盖率限制。
         </>
       ),
       businessForm: {
@@ -321,7 +321,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         if (!bv) return;
         const next = parseVoucher(bv, v.id, v.version);
         applyResponse(await updateH7Voucher(v.id, next, reason, v.version));
-        toast(`· 代金券「${next.name}」已更新`);
+        toast(`代金券「${next.name}」已更新`);
       },
     });
   };
@@ -334,13 +334,12 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       detail: (
         <>
           <b>{v.name}</b> · 当前 {v.status === "active" ? "投放中" : "已暂停"} · {label}动作:
-          {next === "paused" ? "暂停后前端不再展示领券入口与弹窗,已领不回收。" : "投放后前端恢复展示。"}
-          {" "}操作确认留痕。
+          {next === "paused" ? "暂停后 App 不再显示领券入口和弹窗，已领的不收回。" : "投放后 App 恢复显示。"}
         </>
       ),
       run: async (reason) => {
         applyResponse(await updateH7VoucherStatus(v.id, next, reason, v.version));
-        toast(`· ${v.name} 已${label}`);
+        toast(`${v.name} 已${label}`);
       },
     });
   };
@@ -350,37 +349,37 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       action: `删除代金券 · ${v.name}`,
       detail: (
         <>
-          <b>{v.name}</b> · 从代金券列表<b>永久移除</b>,已领不回收;生效即时。临时下线建议改用「暂停」。操作确认留痕。
+          <b>{v.name}</b> · 从代金券列表<b>永久删除</b>，马上生效，已领的不收回。临时下线建议用「暂停」。
         </>
       ),
       run: async (reason) => {
         applyResponse(await deleteH7Voucher(v.id, reason, v.version));
-        toast(`· ${v.name} 已删除`);
+        toast(`${v.name} 已删除`);
       },
     });
   };
 
   const openRevoke = (v: OpsVoucher) => {
     openActionConfirm({
-      action: `撤销未核销代金券 · ${v.name}`,
+      action: `作废未使用的代金券 · ${v.name}`,
       detail: (
         <>
-          <b>{v.name}</b> · 将 {v.availableCount} 张已领取但未核销的券统一标记为已撤销。
-          已核销 {v.redeemedCount} 张保持历史事实不变;本操作使用版本校验并保留强审计。
+          <b>{v.name}</b> · 把 {v.availableCount} 张已领取但还没用的券全部作废。
+          已使用的 {v.redeemedCount} 张不受影响。
         </>
       ),
       run: async (reason) => {
         applyResponse(await revokeH7VoucherAvailableGrants(v.id, reason, v.version));
-        toast(`· ${v.name} 未核销券已撤销`);
+        toast(`${v.name} 未使用的券已作废`);
       },
     });
   };
 
-  if (loading) return <section className="l-card"><div className="l-b">H7 数据加载中...</div></section>;
+  if (loading) return <section className="l-card"><div className="l-b">代金券数据加载中…</div></section>;
   if (error) return (
     <section className="l-card">
-      <div className="l-h"><span className="ttl">H7 数据加载失败</span></div>
-      <div className="l-b">{error} · 为避免误操作，新增和编辑功能已关闭。<button className="l-btn sm" style={{ marginLeft: 8 }} onClick={() => void reload()}>重试</button></div>
+      <div className="l-h"><span className="ttl">代金券数据加载失败</span></div>
+      <div className="l-b">{error} · 为避免误操作，暂时不能新增和编辑。<button className="l-btn sm" style={{ marginLeft: 8 }} onClick={() => void reload()}>重试</button></div>
     </section>
   );
 
@@ -396,29 +395,29 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         <div className="f-stat ok">
           <div className="k">投放中</div>
           <div className="v">{activeN}</div>
-          <div className="sub">前端可领</div>
+          <div className="sub">用户可以领</div>
         </div>
         <div className="f-stat cyan">
           <div className="k">参与首页弹窗</div>
           <div className="v">{popupN}</div>
-          <div className="sub">进站自动弹出领取</div>
+          <div className="sub">打开 App 自动弹出</div>
         </div>
         <div className="f-stat dim">
           <div className="k">已暂停</div>
           <div className="v">{pausedN}</div>
-          <div className="sub">前端不展示</div>
+          <div className="sub">App 不显示</div>
         </div>
         <div className="f-stat">
-          <div className="k">累计领取 / 核销</div>
+          <div className="k">累计领取 / 使用</div>
           <div className="v">{list.reduce((sum, voucher) => sum + voucher.issuedCount, 0)} / {list.reduce((sum, voucher) => sum + voucher.redeemedCount, 0)}</div>
-          <div className="sub">服务端持券与订单事实</div>
+          <div className="sub">按实际领券和下单统计</div>
         </div>
       </div>
 
       <section className="l-card" data-proof="h7-voucher-config">
         <div className="l-h">
           <span className="ttl">代金券列表</span>
-          <span className="sub">· 满减 / 折扣 · 名称 / 参数 / 适用商品 / 受众 / 有效期 / 领取入口全部可配 · 改值经操作确认(当前值预填 修改前后值)</span>
+          <span className="sub">· 满减或折扣，所有设置都可以修改</span>
           <div className="r">
             <button className="l-btn sm mc" onClick={openAdd} disabled={!canWrite}>+ 新增代金券</button>
           </div>
@@ -431,13 +430,13 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
                 <th>类型 / 面值</th>
                 <th>条件</th>
                 <th>适用</th>
-                <th>受众</th>
+                <th>发给谁</th>
                 <th>有效期</th>
                 <th>领取入口</th>
                 <th>弹窗</th>
-                <th>发行 / 批次</th>
+                <th>发行量 / 批次</th>
                 <th>领取 / 可用</th>
-                <th>核销 / 撤销</th>
+                <th>已用 / 作废</th>
                 <th>状态</th>
                 <th style={{ textAlign: "right" }}>动作</th>
               </tr>
@@ -463,7 +462,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
                       <span style={{ display: "inline-flex", gap: 6, justifyContent: "flex-end" }}>
                         <button className="l-btn sm mc" onClick={() => openEdit(v)} disabled={!canWrite}>编辑</button>
                         <button className="l-btn sm mc" aria-label={`${isActive ? "暂停" : "投放"} ${v.name}`} onClick={() => openToggle(v)} disabled={!canWrite}>{isActive ? "暂停" : "投放"}</button>
-                        {v.availableCount > 0 ? <button className="l-btn sm mc" style={{ color: "var(--danger)" }} aria-label={`撤销未核销代金券 · ${v.name}`} onClick={() => openRevoke(v)} disabled={!canWrite}>撤销未核销</button> : null}
+                        {v.availableCount > 0 ? <button className="l-btn sm mc" style={{ color: "var(--danger)" }} aria-label={`作废未使用的代金券 · ${v.name}`} onClick={() => openRevoke(v)} disabled={!canWrite}>作废未使用</button> : null}
                         <button className="l-btn sm mc" style={{ color: "var(--danger)" }} aria-label={`删除代金券 · ${v.name}`} onClick={() => openDelete(v)} disabled={!canWrite}>删除</button>
                       </span>
                     </td>
@@ -475,7 +474,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="htint" style={{ fontSize: 12 }}>
-            <b>全端同一规则</b> · 代金券上下架或改参后，领取入口和首页活动位会按同一服务端配置生效。代金券属于促销折扣，不计入 UVT 兑付负债。
+            <b>说明</b> · 代金券投放、暂停或修改后，App 的领券入口和首页活动位马上跟着变。代金券只是折扣，不算平台负债。
           </div>
         </div>
       </section>
