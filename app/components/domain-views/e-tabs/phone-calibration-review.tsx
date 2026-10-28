@@ -4,7 +4,7 @@ import { IOS_CHANGE_LABELS, diffIosRules, formatRange } from "@/lib/admin/ios-mo
 export function PhoneCalibrationReview({ proposal }: { proposal: PhoneProposalView }) {
   const inherited = proposal.iosRulesInherited;
   // The server reads the baseline when the ticket is viewed; once another version is published
-  // (including this proposal's own approval) a diff against it would describe the wrong change.
+  // (this proposal's own publish included) a diff against it would describe the wrong change.
   const stale = !!proposal.baseline && proposal.baseline.revision !== proposal.expectedRevision;
   const baseline = stale ? null : proposal.baseline;
   const iosChanges = baseline && !inherited ? diffIosRules(baseline.iosModelRules, proposal.iosModelRules) : [];
