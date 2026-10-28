@@ -39,19 +39,19 @@ export function CregisPoolPolicy({canManage,openActionConfirm}:{canManage:boolea
         finally{if(owns())setBusy(false);}
       }});
   };
-  return <div className="cregis-history" style={{marginTop:16}}>
+  return <div className="cregis-history cregis-settings-card">
     <div className="cregis-section-title">专属充值地址 · 库存与自动补充 <button className="l-btn sm" disabled={busy} onClick={()=>void refresh()}>刷新配置</button></div>
     <p className="sub">首次进入充值页时分配专属地址，后续重复使用。低于补充阈值后，分批补至目标库存；已分配地址不计入备用库存。</p>
     {error && <div className="dtint warn" role="alert">{error}</div>}{notice && <div className="dtint">{notice}</div>}
     {!draft && !error && <div className="sub">正在读取地址池配置…</div>}
     {draft && <>
-      <label><input type="checkbox" checked={draft.enabled} disabled={!canManage||busy} onChange={e=>setDraft({...draft,enabled:e.target.checked})}/> 自动补充</label>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,margin:"12px 0"}}>
+      <label className="cregis-check"><input type="checkbox" checked={draft.enabled} disabled={!canManage||busy} onChange={e=>setDraft({...draft,enabled:e.target.checked})}/> 自动补充</label>
+      <div className="cregis-form-grid">
         {([["target","备用地址目标",10,100000],["lowWatermark","补充触发阈值",1,draft.target-1],["batchSize","每批补充数量",1,100],["concurrency","建址并发上限",1,10]] as const).map(([key,label,min,max])=>
           <label key={key}>{label}<input aria-label={label} type="number" min={min} max={max} step={1} value={draft[key]} disabled={!canManage||busy}
             onChange={e=>{setNotice("");setDraft({...draft,[key]:Number(e.target.value)});}} style={{display:"block",width:"100%"}}/></label>)}
       </div>
-      <p className="sub">阈值须低于目标，并发不能超过每批数量。供应商限流或额度不足时延后补充；结果不明的建址请求须核查后恢复。</p>
+      <p className="sub">保存后直接生效。阈值须低于目标，并发不能超过每批数量；供应商限流或额度不足时延后补充。</p>
       {canManage && <button className="l-btn sm" disabled={busy} onClick={save}>保存地址池配置</button>}
     </>}
   </div>;

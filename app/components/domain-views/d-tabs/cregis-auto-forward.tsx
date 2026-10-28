@@ -63,8 +63,8 @@ function Owned({canManage,openActionConfirm,owner,epoch}:Props&{owner:number;epo
     catch(failure){if(owns()&&at===read.current)setError((failure as Error).message);}
     finally{if(owns()&&at===read.current)setLoading(false);}
   };
-  return <section className="cregis-exceptions" aria-label="自动归集与甲方付款">
-    <div className="cregis-section-title">USDT-BSC 自动归集与甲方付款 <button className="l-btn sm" disabled={busy||loading} onClick={()=>void refresh()}>刷新自动流程</button></div>
+  return <section className="cregis-exceptions cregis-settings-card" aria-label="自动归集与甲方付款">
+    <div className="cregis-section-title">自动归集与甲方付款 <button className="l-btn sm" disabled={busy||loading} onClick={()=>void refresh()}>刷新自动流程</button></div>
     <p>充值核实入账 → 自动归集充值全额至平台钱包 → 链上确认 → 自动向甲方支付用户入账净额。充值手续费留平台，链上手续费由平台另付；不重复入账或扣用户余额。</p>
     {error&&<p role="alert" className="dtint bad">{error}</p>}{loading&&<p>正在读取自动资金流程…</p>}
     {status&&<>
@@ -72,7 +72,7 @@ function Owned({canManage,openActionConfirm,owner,epoch}:Props&{owner:number;epo
       {!status.runtimeApproved&&<p>当前不发送自动转账。未来启用前须确认 Cregis 自动审批/签名及套餐权益、绑定钱包和 BNB 手续费安排，再取得运行总开关批准，并由另一位管理员复核开关。</p>}
       <p style={{overflowWrap:"anywhere"}}>归集接收 / 付款来源：{String(status.platformAddress)}<br/>甲方接收：{String(status.counterpartyAddress)}</p>
       <p>{status.startEventId===null?"尚未首次启用，不会处理历史充值。":"仅处理首次启用水位之后的充值事件，暂停和恢复不会重置水位。"} 已发送单在关闭后仍继续只读核对。</p>
-      {canWrite&&<div>
+      {canWrite&&<div className="cregis-switch-form">
         <label><input aria-label="自动归集提案开关" type="checkbox" checked={collect} disabled={busy||loading||!status.runtimeApproved} onChange={e=>setCollect(e.target.checked)}/>自动归集</label>{" "}
         <label><input aria-label="自动甲方付款提案开关" type="checkbox" checked={pay} disabled={busy||loading||!status.runtimeApproved} onChange={e=>setPay(e.target.checked)}/>自动甲方付款</label>{" "}
         <button className="l-btn" disabled={busy||loading||!status.runtimeApproved||status.makerId!==null} onClick={()=>policy("PROPOSE")}>提交自动流程开关提案</button>{" "}

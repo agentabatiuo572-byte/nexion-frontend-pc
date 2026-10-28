@@ -110,13 +110,15 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm }: { owne
     } finally { mutation.current = false; if (owns()) setBusy(false); }
   }
   const isValid = valid(min, fee, Number(confirmations)) && /^\d+$/.test(confirmations);
-  return <div className="cregis-history" style={{ marginTop: 16 }}>
+  return <div className="cregis-history cregis-settings-card">
     <div className="cregis-section-title">USDT-BEP20 充值规则 <button className="l-btn sm" disabled={busy} onClick={() => void refresh()}>刷新规则</button></div>
-    <p className="sub">三项一起提交审批，批准并执行成功后生效。每笔交易保留系统首次发现时的规则快照；若环境安全确认数下限提高，未入账交易仍须满足更高的下限。已入账金额不重算。</p>
+    <p className="sub">调整三项规则后一起提交审批，另一管理员批准后生效。已发现交易保留原规则；未入账交易仍须满足环境安全确认数下限。</p>
     {error && <div className="dtint warn" role="alert">{error}</div>}{message && <div className="dtint" role="status">{message}</div>}
     {!policy && !error && <p>正在读取充值规则…</p>}
-    {policy && <><p>当前版本 v{policy.version} · 最低 {policy.minDepositUsdt} USDT · 手续费 {policy.feeUsdt} USDT · {policy.confirmations} 次确认</p>
-      <fieldset disabled={!canManage || busy || !!pending}><legend>拟调整为</legend>
+    {policy && <><div className="cregis-policy-current" aria-label="当前生效规则">
+      {[["最低充值额", policy.minDepositUsdt, "USDT"], ["固定手续费", policy.feeUsdt, "USDT"], ["链上确认数", policy.confirmations, "次"]].map(([title, value, unit]) => <div key={title}><span>{title}</span><strong>{value} <small>{unit}</small></strong></div>)}
+      <span className="cregis-version">生效版本 v{policy.version}</span></div>
+      <fieldset className="cregis-form-grid" disabled={!canManage || busy || !!pending}><legend>拟调整为 · 审批后生效</legend>
         <label>最低充值额（USDT）<input aria-label="最低充值额（USDT）" inputMode="decimal" value={min} onChange={e => setMin(e.target.value)} /></label>{" "}
         <label>固定手续费（USDT）<input aria-label="固定手续费（USDT）" inputMode="decimal" value={fee} onChange={e => setFee(e.target.value)} /></label>{" "}
         <label>链上确认数<input aria-label="链上确认数" type="number" min={15} max={10000} step={1} value={confirmations} onChange={e => setConfirmations(e.target.value)} /></label>

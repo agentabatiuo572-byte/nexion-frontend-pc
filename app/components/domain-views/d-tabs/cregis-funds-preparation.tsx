@@ -106,21 +106,21 @@ function OwnedPreparation({ canManage, openActionConfirm, owner, ownerEpoch }: P
   };
   const balance = preflight?.balance && typeof preflight.balance === "object" ? preflight.balance as ExceptionRecord : null;
 
-  return <section className="cregis-exceptions" aria-label="归集与甲方付款准备">
+  return <section className="cregis-exceptions cregis-settings-card" aria-label="归集与甲方付款准备">
     <div className="cregis-section-title">USDT-BSC 归集与甲方付款准备 <button className="l-btn sm" disabled={busy || loading} onClick={() => void refresh()}>刷新准备记录</button></div>
     <p className="dtint warn">这里只保存准备单和复核意见，不会转出资金。真实转账须另行授权后在 Cregis 执行，审批不自动发送。</p>
     {error && <p role="alert" className="dtint bad">{error}</p>}
     {loading && <p>正在读取资金准备记录…</p>}
     {config && <>
-      <dl><dt>归集接收 / 甲方付款来源</dt><dd style={{ overflowWrap: "anywhere" }}>{config.platformAddress}</dd><dt>甲方 USDT-BSC 接收地址</dt><dd style={{ overflowWrap: "anywhere" }}>{config.counterpartyAddress}</dd></dl>
+      <dl className="cregis-address-facts"><dt>归集接收 / 甲方付款来源</dt><dd style={{ overflowWrap: "anywhere" }}>{config.platformAddress}</dd><dt>甲方 USDT-BSC 接收地址</dt><dd style={{ overflowWrap: "anywhere" }}>{config.counterpartyAddress}</dd></dl>
       <ol><li>选择本项目充值子地址，核对金额后创建归集准备单。</li><li>由另一管理员复核，后续另行授权后在 Cregis 将资金归集到平台钱包。</li><li>平台钱包到账后，按业务金额创建并复核甲方付款准备单；后续在 Cregis 单独付款，保存原单号和交易哈希。</li></ol>
-      {canWrite && <div style={{ display: "grid", gap: 8 }}>
+      {canWrite && <div className="cregis-form-grid cregis-preparation-form">
         <label>操作类型 <select aria-label="资金准备操作类型" value={kind} disabled={busy} onChange={event => edit(() => setKind(event.target.value as PreparationKind))}><option value="COLLECTION">归集准备</option><option value="SUPPLIER_PAYMENT">甲方付款准备</option></select></label>
         {kind === "COLLECTION" && <label>来源子地址 <select aria-label="归集来源子地址" value={source} disabled={busy} onChange={event => edit(() => setSource(event.target.value))}><option value="">请选择</option>{config.sources.map(row => <option key={row.address} value={row.address}>{row.address} · 用户 {row.userId}</option>)}</select></label>}
         {kind === "COLLECTION" && config.sources.length === 0 && <p>当前没有已分配且可用于准备的充值子地址。</p>}
         <label>金额 USDT <input aria-label="准备金额 USDT" value={amount} inputMode="decimal" disabled={busy} onChange={event => edit(() => setAmount(event.target.value))} /></label>
         <label>业务参考号 <input aria-label="资金准备业务参考号" value={reference} maxLength={100} disabled={busy} onChange={event => edit(() => setReference(event.target.value))} /></label>
-        <div><button className="l-btn" disabled={busy || loading} onClick={() => void check()}>只读检查余额与条件</button> <button className="l-btn primary" disabled={busy || loading} onClick={create}>创建准备单</button></div>
+        <div className="cregis-form-actions"><button className="l-btn" disabled={busy || loading} onClick={() => void check()}>只读检查余额与条件</button> <button className="l-btn primary" disabled={busy || loading} onClick={create}>创建准备单</button></div>
       </div>}
       {preflight && <div role="status"><p>检查时间：{String(preflight.checkedAt)} · 仅供准备核对，仍未授权转账。</p>
         <p>来源 USDT：{balance ? String(balance.usdt) : "待核实"} · 来源 BNB：{balance ? String(balance.bnb) : "待核实"}</p>

@@ -23,9 +23,9 @@ function snapshot(capability = { configured: true, enabled: false, disabledReaso
 
 function harness(data) {
   const state = [data];
-  state[8] = Boolean(data.provisionGate.assignEnabled);
-  state[9] = Boolean(data.provisionGate.creditEnabled);
-  state[10] = Boolean(data.provisionGate.payoutEnabled);
+  state[9] = Boolean(data.provisionGate.assignEnabled);
+  state[10] = Boolean(data.provisionGate.creditEnabled);
+  state[11] = Boolean(data.provisionGate.payoutEnabled);
   let index = 0;
   const requests = [];
   const confirms = [];
@@ -34,6 +34,7 @@ function harness(data) {
     exports,
     require(name) {
       if (name === "./cregis-exceptions") return { CregisExceptionOperations: () => null };
+      if (name === "./cregis-deposit-policy") return { CregisDepositPolicy: () => null };
     if (name === "./cregis-funds-preparation") return { CregisFundsPreparation: () => null };
     if (name === "./cregis-pool-policy") return { CregisPoolPolicy: () => null };
     if (name === "./cregis-auto-forward") return { CregisAutoForward: () => null };
@@ -72,6 +73,24 @@ function nodes(root, type) {
   if (Array.isArray(root)) return root.flatMap((child) => nodes(child, type));
   return [...(root.type === type ? [root] : []), ...nodes(root.props?.children, type)];
 }
+
+test("navigation preserves an unfinished switch edit and does not send a command", () => {
+  const api = harness(snapshot());
+  let tree = api.render();
+  const area = () => nodes(tree, "section").filter(node => node.props.id?.startsWith("cregis-"));
+  assert.deepEqual(area().filter(node => !node.props.hidden).map(node => node.props.id), ["cregis-records"]);
+  nodes(tree, "button").find(node => node.props["aria-controls"] === "cregis-settings").props.onClick();
+  tree = api.render();
+  nodes(tree, "input").find(node => node.props.type === "checkbox").props.onChange({ target: { checked: false } });
+  nodes(tree, "button").find(node => node.props["aria-controls"] === "cregis-funds").props.onClick();
+  tree = api.render();
+  assert.equal(area().find(node => node.props.id === "cregis-funds").props.hidden, false);
+  nodes(tree, "button").find(node => node.props["aria-controls"] === "cregis-settings").props.onClick();
+  tree = api.render();
+  assert.equal(nodes(tree, "input").find(node => node.props.type === "checkbox").props.checked, false);
+  assert.equal(api.requests.length, 0);
+  assert.equal(api.confirms.length, 0);
+});
 
 test("capability fails closed for absent, unknown, held and malformed server facts", () => {
   const api = harness(snapshot());

@@ -185,7 +185,7 @@ function CregisDepositHistory() {
     {page?.available && <>
       <div className="cregis-history-scroll"><table className="l-tbl">
         <thead><tr><th>记录 / 充值单</th><th>用户</th><th>链上交易 / 地址</th><th className="num">毛额 USDT</th><th className="num">手续费</th><th className="num">净额 USDT</th><th>确认数</th><th>状态</th><th>发现 / 入账时间</th></tr></thead>
-        <tbody>{page.items.length === 0 ? <tr><td colSpan={9} className="cregis-history-empty">暂无已核实的链上入金；待处理的回调和缺单见下方异常列表。</td></tr>
+        <tbody>{page.items.length === 0 ? <tr><td colSpan={9} className="cregis-history-empty">暂无已核实的链上入金。待处理的回调和缺单可在“异常处理”查看。</td></tr>
           : page.items.map((row) => <tr key={row.id}>
             <td className="mono">CID {row.cid}<div className="sub">{row.depositNo || (row.status === "CREDITED" ? "充值单缺失，请核对" : "尚未生成充值单")}</div></td>
             <td className="mono">{row.userId}</td>
@@ -210,6 +210,7 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [section, setSection] = useState("records");
   const [cid, setCid] = useState("");
   const [reviewEvidence, setReviewEvidence] = useState<ExceptionRow | null>(null);
   const [extraAlerts, setExtraAlerts] = useState<ExceptionRow[]>([]);
@@ -301,7 +302,7 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
   const count = data ? QUEUES.reduce((sum, [key]) => sum + data[key].length, 0) : 0;
   const alerts = [...(data?.riskAlerts ?? []), ...extraAlerts];
   const reviewCases = [...(data?.reviewCases ?? []), ...extraReviewCases];
-  return <section className={embedded ? "l-card cregis-status-embedded" : "l-card cregis-status"} style={embedded ? undefined : { marginBottom: 12 }}>
+  return <section className={embedded ? "l-card cregis-status-embedded cregis-workspace" : "l-card cregis-status cregis-workspace"} style={embedded ? undefined : { marginBottom: 12 }}>
     <div className="l-h">
       <span className="ttl">USDT-BEP20 资金状态</span>
       <span className="sub">Cregis · 地址、入账、出款与链上异常</span>
@@ -333,6 +334,12 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
         </div>
         <div className="cregis-recon">
           <span>最近完整对账：<strong>{data.reconcileRuns?.find((row) => row.status === "COMPLETE")?.completedAt?.toString() ?? "尚无"}</strong></span>
+          {canManage && <>
+          <button className="l-btn sm" disabled={busy || loading} onClick={() => confirmCommand(
+            "立即运行 Cregis 完整对账", "核对 Cregis 和 BSC 链上记录，发现异常会生成告警。",
+            "/cregis/reconciliation/run",
+          )}>立即完整对账</button>
+          </>}
           <details><summary>查看最近对账与告警（{data.openRiskAlertCount ?? "未知"}）</summary>
             {data.reconcileRuns?.slice(0, 3).map((row, index) => <div className="s" key={`recon-${index}`}>对账 {cregisStateText(row.status)} · {String(row.completedAt ?? row.startedAt ?? "时间未知")}{row.failureCode ? ` · ${String(row.failureCode)}` : ""}</div>)}
             <div className="s">未解除告警：已载入 {alerts.length} / {data.openRiskAlertCount ?? "未知"}</div>
@@ -343,57 +350,29 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
         {(!data.depositEnabled || !data.depositCreditEnabled || !data.provisionGate.assignEnabled) && <div className="dtint warn">USDT 充值尚未开放；请勿向测试地址转账。</div>}
         {data.depositEnabled && data.depositCreditEnabled && data.provisionGate.assignEnabled && !data.provisionGate.creditEnabled && <div className="dtint warn">仅开放试点收款地址，到账后进入人工复核，暂不自动入账；请仅按测试安排转账。</div>}
       </>}
-      <CregisDepositPolicy canManage={canManage} openActionConfirm={openActionConfirm} />
-      <CregisDepositHistory />
-      {data && <>
-        {canManage && <div className="cregis-operations">
-        <div className="cregis-panel">
-          <div className="cregis-panel-title">资金核对与紧急暂停</div>
-          <p>对账会核对 Cregis 和 BSC 链上记录；修改开关需另一位管理员复核。</p>
-          <button className="l-btn sm" disabled={busy || loading} onClick={() => confirmCommand(
-            "立即运行 Cregis 完整对账", "核对 Cregis 和 BSC 链上记录，发现异常会生成告警。",
-            "/cregis/reconciliation/run",
-          )}>立即完整对账</button>
-          <div className="cregis-switch-form">
-          <label><input type="checkbox" checked={assign} onChange={(event) => setAssign(event.target.checked)} /> 分配地址</label>
-          <label><input type="checkbox" checked={credit} onChange={(event) => setCredit(event.target.checked)} /> 充值入账</label>
-          <button className="l-btn sm mc" disabled={busy || data.provisionGate.version == null} onClick={() => confirmCommand(
-            "提交 Cregis 收款开关修改", `分配地址：${assign ? "开" : "关"}；自动入账：${credit ? "开" : "关"}。需另一位管理员复核后生效。`,
-            "/cregis/switch-cases", { expectedVersion: data.provisionGate.version, assignEnabled: assign, creditEnabled: credit },
-          )}>提交开关提案</button>{" "}
-          <button className="l-btn sm mc" disabled={busy || data.provisionGate.version == null} onClick={() => confirmCommand(
-            "紧急关闭 Cregis 资金开关", "立即关闭地址分配、自动入账和链上出款。",
-            "/cregis/switches/emergency-off", { expectedVersion: data.provisionGate.version },
-          )}>紧急关闭三项开关</button>
-          </div>
-          <div className="cregis-switch-form">
-          <label><input type="checkbox" checked={payout}
-            disabled={busy || loading || (!payout && !canEnableProviderPayout(data))}
-            onChange={(event) => setPayout(event.target.checked)} /> 链上出款（独立开关）</label>
-          <button className="l-btn sm mc"
-            disabled={busy || loading || data.provisionGate.version == null
-              || payout === Boolean(data.provisionGate.payoutEnabled)
-              || (payout && !canEnableProviderPayout(data))}
-            onClick={() => confirmCommand(
-              "提交 Cregis 链上出款开关提案",
-              `链上出款：${payout ? "开" : "关"}；地址分配和自动入账不变。需另一位管理员复核后生效，不会直接放行任何提现。`,
-              "/cregis/switch-cases", { expectedVersion: data.provisionGate.version,
-                assignEnabled: Boolean(data.provisionGate.assignEnabled),
-                creditEnabled: Boolean(data.provisionGate.creditEnabled), payoutEnabled: payout },
-            )}>提交出款开关提案</button>
-          </div>
-          {data.switchCases?.filter((row) => row.status === "MAKER_DONE").map((row) => <div className="cregis-case" key={`switch-${row.id}`}>
-            提案 #{String(row.id)} · 发起人 {String(row.makerId)} · 地址 {row.assignEnabled ? "开" : "关"} / 入账 {row.creditEnabled ? "开" : "关"} / 出款 {payoutSwitchText(row)} · {String(row.reason)}{" "}
-            <button className="l-btn sm" disabled={busy} onClick={() => confirmCommand(
-              `复核通过 Cregis 开关提案 #${row.id}`, `发起人 ${String(row.makerId)}；地址 ${row.assignEnabled ? "开" : "关"} / 入账 ${row.creditEnabled ? "开" : "关"} / 出款 ${payoutSwitchText(row)}；发起理由 ${String(row.reason)}`,
-              `/cregis/switch-cases/${row.id}/decision`, { decision: "APPROVE" },
-            )}>复核通过</button>{" "}
-            <button className="l-btn sm" disabled={busy} onClick={() => confirmCommand(
-              `拒绝 Cregis 开关提案 #${row.id}`, `发起人 ${String(row.makerId)}；发起理由 ${String(row.reason)}`,
-              `/cregis/switch-cases/${row.id}/decision`, { decision: "REJECT" },
-            )}>拒绝</button>
-          </div>)}
+      <nav className="cregis-navigation" aria-label="USDT 操作分区">
+        {[["records", "收款记录"], ["exceptions", `异常处理${count ? `（${count}）` : ""}`], ["settings", "充值与地址设置"], ["funds", "归集与付款"]].map(([key, title]) =>
+          <button key={key} type="button" aria-pressed={section === key} aria-controls={`cregis-${key}`} onClick={() => setSection(key)}>{title}</button>)}
+      </nav>
+      <section id="cregis-records" hidden={section !== "records"} aria-label="收款记录" className="cregis-content">
+        <CregisDepositHistory />
+      </section>
+      <section id="cregis-exceptions" hidden={section !== "exceptions"} aria-label="异常处理" className="cregis-content">
+        <p className="sub">先查看异常来源，再核验证据并提交处置。资金仍按原有复核规则处理。</p>
+        {data && <>
+        <div className="cregis-exceptions">
+          <div className="cregis-section-title">异常队列 <span>共 {count} 项</span></div>
+          {count === 0 && (data.openRiskAlertCount ?? 0) === 0 && (data.pendingAcceptedDeliveries ?? 0) === 0 && <div className="dtint">暂无异常。</div>}
+          <div className="cregis-queue-grid">{QUEUES.map(([key, label]) => <div className={`cregis-queue ${data[key].length ? "active" : ""}`} key={key}>
+            <div className="cregis-queue-head"><span>{label}</span><strong>{data[key].length}</strong></div>
+            {data[key].slice(0, 5).map((item, index) => <div className="s" key={`${key}-${index}`}>{rowSummary(item)}</div>)}
+            {data[key].length > 5 && <div className="s">只显示前 5 项。</div>}
+          </div>)}</div>
         </div>
+        {data.addressPool?.lastError && <div className="dtint warn">{data.addressPool.lastError === "CREGIS_ADDRESS_QUOTA_EXCEEDED"
+          ? "Cregis 地址额度不足，请扩容后恢复补充。" : data.addressPool.lastError === "CREGIS_ADDRESS_RATE_LIMITED"
+          ? "Cregis 限制了请求频率，稍后会自动继续补充。" : "Cregis 暂未受理创建地址，请检查额度和接口状态后恢复。"}</div>}
+        {canManage && <>
         <div className="cregis-panel">
           <div className="cregis-panel-title">大额入金复核</div>
           <p>只支持暂停审核；找不到对应订单的资金或链上交易重组时，须保持冻结并核查。</p>
@@ -423,28 +402,72 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
           </div>)}
           {reviewCases.length > 0 && reviewCases.length < (data.openReviewCaseCount ?? 0) && <button className="l-btn sm" disabled={busy} onClick={() => void loadMoreReviewCases(Number(reviewCases[reviewCases.length - 1].id))}>加载更早工单</button>}
         </div>
-        </div>}
-        <div className="cregis-exceptions">
-          <div className="cregis-section-title">异常队列 <span>共 {count} 项</span></div>
-          {count === 0 && (data.openRiskAlertCount ?? 0) === 0 && (data.pendingAcceptedDeliveries ?? 0) === 0 && <div className="dtint">暂无异常。</div>}
-          <div className="cregis-queue-grid">{QUEUES.map(([key, label]) => <div className={`cregis-queue ${data[key].length ? "active" : ""}`} key={key}>
-            <div className="cregis-queue-head"><span>{label}</span><strong>{data[key].length}</strong></div>
-            {data[key].slice(0, 5).map((item, index) => <div className="s" key={`${key}-${index}`}>{rowSummary(item)}</div>)}
-            {data[key].length > 5 && <div className="s">只显示前 5 项。</div>}
-          </div>)}</div>
-        </div>
-        {data.addressPool?.lastError && <div className="dtint warn">{data.addressPool.lastError === "CREGIS_ADDRESS_QUOTA_EXCEEDED"
-          ? "Cregis 地址额度不足，请扩容后恢复补充。" : data.addressPool.lastError === "CREGIS_ADDRESS_RATE_LIMITED"
-          ? "Cregis 限制了请求频率，稍后会自动继续补充。" : "Cregis 暂未受理创建地址，请检查额度和接口状态后恢复。"}</div>}
-        <CregisPoolPolicy canManage={canManage} openActionConfirm={openActionConfirm} />
-        <CregisAutoForward canManage={canManage} openActionConfirm={openActionConfirm} />
-        <CregisFundsPreparation canManage={canManage} openActionConfirm={openActionConfirm} />
+        </>}
         <CregisExceptionOperations canManage={canManage} openActionConfirm={openActionConfirm}
           sources={[
             ...data.heldDeposits.filter(row => row.status === "DUST_HOLD").map(row => ({ sourceType: "EVENT", sourceId: String(row.id), title: `低额入金 #${row.id} · ${row.grossAmount ?? "待核对"} USDT` })),
             ...data.unattributed.map(row => ({ sourceType: "OBSERVATION", sourceId: String(row.id), title: `未归属入金 #${row.id} · ${row.rawAmount ?? "待核对"} USDT` })),
           ]} />
-      </>}
+        </>}
+      </section>
+      <section id="cregis-settings" hidden={section !== "settings"} aria-label="充值与地址设置" className="cregis-content">
+        <CregisDepositPolicy canManage={canManage} openActionConfirm={openActionConfirm} />
+        {data && <CregisPoolPolicy canManage={canManage} openActionConfirm={openActionConfirm} />}
+        {data && canManage && <>
+        <div className="cregis-panel">
+          <div className="cregis-panel-title">收款与出款开关</div>
+          <p>修改后提交提案，由另一管理员复核后生效；下方紧急停用立即执行。</p>
+
+          <div className="cregis-switch-form">
+          <label><input type="checkbox" checked={assign} onChange={(event) => setAssign(event.target.checked)} /> 分配地址</label>
+          <label><input type="checkbox" checked={credit} onChange={(event) => setCredit(event.target.checked)} /> 充值入账</label>
+          <button className="l-btn sm mc" disabled={busy || data.provisionGate.version == null} onClick={() => confirmCommand(
+            "提交 Cregis 收款开关修改", `分配地址：${assign ? "开" : "关"}；自动入账：${credit ? "开" : "关"}。需另一位管理员复核后生效。`,
+            "/cregis/switch-cases", { expectedVersion: data.provisionGate.version, assignEnabled: assign, creditEnabled: credit },
+          )}>提交开关提案</button>{" "}
+
+          </div>
+          <div className="cregis-switch-form">
+          <label><input type="checkbox" checked={payout}
+            disabled={busy || loading || (!payout && !canEnableProviderPayout(data))}
+            onChange={(event) => setPayout(event.target.checked)} /> 链上出款（独立开关）</label>
+          <button className="l-btn sm mc"
+            disabled={busy || loading || data.provisionGate.version == null
+              || payout === Boolean(data.provisionGate.payoutEnabled)
+              || (payout && !canEnableProviderPayout(data))}
+            onClick={() => confirmCommand(
+              "提交 Cregis 链上出款开关提案",
+              `链上出款：${payout ? "开" : "关"}；地址分配和自动入账不变。需另一位管理员复核后生效，不会直接放行任何提现。`,
+              "/cregis/switch-cases", { expectedVersion: data.provisionGate.version,
+                assignEnabled: Boolean(data.provisionGate.assignEnabled),
+                creditEnabled: Boolean(data.provisionGate.creditEnabled), payoutEnabled: payout },
+            )}>提交出款开关提案</button>
+          </div>
+          {data.switchCases?.filter((row) => row.status === "MAKER_DONE").map((row) => <div className="cregis-case" key={`switch-${row.id}`}>
+            提案 #{String(row.id)} · 发起人 {String(row.makerId)} · 地址 {row.assignEnabled ? "开" : "关"} / 入账 {row.creditEnabled ? "开" : "关"} / 出款 {payoutSwitchText(row)} · {String(row.reason)}{" "}
+            <button className="l-btn sm" disabled={busy} onClick={() => confirmCommand(
+              `复核通过 Cregis 开关提案 #${row.id}`, `发起人 ${String(row.makerId)}；地址 ${row.assignEnabled ? "开" : "关"} / 入账 ${row.creditEnabled ? "开" : "关"} / 出款 ${payoutSwitchText(row)}；发起理由 ${String(row.reason)}`,
+              `/cregis/switch-cases/${row.id}/decision`, { decision: "APPROVE" },
+            )}>复核通过</button>{" "}
+            <button className="l-btn sm" disabled={busy} onClick={() => confirmCommand(
+              `拒绝 Cregis 开关提案 #${row.id}`, `发起人 ${String(row.makerId)}；发起理由 ${String(row.reason)}`,
+              `/cregis/switch-cases/${row.id}/decision`, { decision: "REJECT" },
+            )}>拒绝</button>
+          </div>)}
+          <div className="cregis-danger-zone"><strong>紧急停用</strong><p>立即关闭地址分配、自动入账和链上出款。恢复须重新核对条件并提交审批。</p>          <button className="l-btn sm cregis-danger-button" disabled={busy || data.provisionGate.version == null} onClick={() => confirmCommand(
+            "紧急关闭 Cregis 资金开关", "立即关闭地址分配、自动入账和链上出款。",
+            "/cregis/switches/emergency-off", { expectedVersion: data.provisionGate.version },
+          )}>紧急关闭三项开关</button></div>
+        </div>
+        </>}
+      </section>
+      <section id="cregis-funds" hidden={section !== "funds"} aria-label="归集与付款" className="cregis-content">
+        <p className="sub">自动任务与人工准备单分别管理。查看各自的运行状态和执行条件后再操作。</p>
+        {data && <>
+          <CregisAutoForward canManage={canManage} openActionConfirm={openActionConfirm} />
+          <CregisFundsPreparation canManage={canManage} openActionConfirm={openActionConfirm} />
+        </>}
+      </section>
     </div>
   </section>;
 }
