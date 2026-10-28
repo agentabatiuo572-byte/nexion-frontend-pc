@@ -59,18 +59,6 @@ export function resolveNexionBackendRoot({
   });
 }
 
-export function resolveNexionJanusRoot({
-  adminRoot,
-  env = process.env,
-  exists = fs.existsSync,
-} = {}) {
-  return resolveCheckoutRoot({
-    adminRoot, env, exists,
-    envKey: "NEXION_JANUS_ROOT",
-    label: "Janus",
-    candidates: ["../NX1.0-Janus", "../../NX1.0-Janus"],
-  });
-}
 
 /**
  * 权威 PRD 位于真实 PC 仓的 docs/PRD。高保真仓只用于原型，不能反向成为

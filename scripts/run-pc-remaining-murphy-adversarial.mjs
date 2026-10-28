@@ -9,7 +9,6 @@ import { resolveNexionAppRoot, resolveNexionBackendRoot } from "./lib/nexion-wor
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BACKEND = resolveNexionBackendRoot({ adminRoot: ROOT });
 const APP = resolveNexionAppRoot({ adminRoot: ROOT });
-const JANUS = resolve(ROOT, "..", "NX1.0-Janus");
 const EVIDENCE_ROOT = join(ROOT, "adversarial-evidence", "pc-remaining-20260810");
 const LEDGER = join(EVIDENCE_ROOT, "script-files.sha256");
 const MVN = process.env.NEXION_MVN_CMD?.trim() || "D:\\software\\apache-maven-3.9.9\\bin\\mvn.cmd";
@@ -57,7 +56,7 @@ const lanes = [
     command: MVN,
     args: [
       "-q",
-      "-Dtest=AppPaymentMethodServiceTest,OpsUserPaymentMethodServiceTest,PaymentMethodRevocationSchedulerTest,PaymentMethodSandboxProfileGuardTest,PayoutVndConfigServiceTest,PayoutVndCommandBoundaryTest,PayoutVndSandboxProfileGuardTest,WithdrawalPayoutExecutorTest,WithdrawalPayoutCallbackServiceTest,CregisCallbackVerifierTest,CregisSandboxIsolationContractTest,JanusAppliedProofReleaseTest,OpsSupportAgentServiceTest,OpsSupportKnowledgeServiceTest,OpsSupportTicketServiceTest,OpsConversationStreamControllerTest",
+      "-Dtest=AppPaymentMethodServiceTest,OpsUserPaymentMethodServiceTest,PaymentMethodRevocationSchedulerTest,PaymentMethodSandboxProfileGuardTest,PayoutVndConfigServiceTest,PayoutVndCommandBoundaryTest,PayoutVndSandboxProfileGuardTest,WithdrawalPayoutExecutorTest,WithdrawalPayoutCallbackServiceTest,CregisCallbackVerifierTest,CregisSandboxIsolationContractTest,RetiredDeviceIntegrationControllerTest,OpsSupportAgentServiceTest,OpsSupportKnowledgeServiceTest,OpsSupportTicketServiceTest,OpsConversationStreamControllerTest",
       "test",
     ],
     covers: ["C23 revoke lease and environment isolation", "C34 production token rejection", "D19 provider state machine", "D22 provider-off boundary", "K17 proof", "M17 atomicity", "M19 CAS", "M23 compound update", "M24 SSE"],
@@ -68,13 +67,6 @@ const lanes = [
     command: process.execPath,
     args: ["--experimental-strip-types", "--test", "scripts/kl-sandbox-executor-contract.test.mjs"],
     covers: ["K17 production remote never falls back to sandbox"],
-  },
-  {
-    id: "janus-verify",
-    cwd: JANUS,
-    command: "npm.cmd",
-    args: ["run", "verify"],
-    covers: ["Janus type contract", "KYC removal", "executor-side integration boundary"],
   },
 ];
 
@@ -154,10 +146,8 @@ function criticalEvidenceDigests() {
     join(ROOT, "scripts", "run-pc-remaining-murphy-adversarial.mjs"),
     join(BACKEND, "src", "main", "java", "ffdd", "opsconsole", "finance", "application", "WithdrawalPayoutCallbackService.java"),
     join(BACKEND, "src", "main", "java", "ffdd", "opsconsole", "user", "application", "PaymentMethodRevocationScheduler.java"),
-    join(BACKEND, "src", "main", "java", "ffdd", "opsconsole", "janus", "application", "JanusAppliedProofVerifier.java"),
     join(BACKEND, "src", "main", "java", "ffdd", "opsconsole", "team", "application", "F5CommissionService.java"),
     join(APP, "src", "store", "app.ts"),
-    join(JANUS, "package.json"),
   ];
   return Object.fromEntries(files.map((absolute) => {
     if (!existsSync(absolute)) throw new Error(`CRITICAL_EVIDENCE_MISSING:${absolute}`);
@@ -274,12 +264,11 @@ const receipt = {
   scope: "PC remaining-development Murphy adversarial execution",
   generatedAt: new Date().toISOString(),
   fixtureOnly: true,
-  roots: { admin: ROOT, backend: BACKEND, app: APP, janus: JANUS },
+  roots: { admin: ROOT, backend: BACKEND, app: APP },
   candidateFingerprints: {
     admin: worktreeFingerprint(ROOT),
     backend: worktreeFingerprint(BACKEND),
     app: worktreeFingerprint(APP),
-    janus: worktreeFingerprint(JANUS),
   },
   criticalEvidence: criticalEvidenceDigests(),
   lockedAssets: readFileSync(LEDGER, "utf8").split(/\r?\n/).filter((line) => line && !line.startsWith("#")),

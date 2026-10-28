@@ -138,7 +138,7 @@ test("a stale K6 alias row cannot overwrite the canonical K6 menu metadata", () 
   const risk = resolveVisibleDomains({ role: "superadmin", menuCodes, menuNodes })
     .find((domain) => domain.code === "K");
 
-  assert.equal(risk?.l2.some((item) => item.id === "K6"), true);
+  assert.equal(risk?.l2.some((item) => item.id === "K6") ?? false, false);
 });
 
 test("a complete K6 alias row repairs incomplete canonical metadata", () => {
@@ -153,7 +153,7 @@ test("a complete K6 alias row repairs incomplete canonical metadata", () => {
   const risk = resolveVisibleDomains({ role: "superadmin", menuCodes, menuNodes })
     .find((domain) => domain.code === "K");
 
-  assert.equal(risk?.l2.some((item) => item.id === "K6"), true);
+  assert.equal(risk?.l2.some((item) => item.id === "K6") ?? false, false);
 });
 
 test("K6 visibility ignores a more complete alias with a stale route", () => {
@@ -168,7 +168,7 @@ test("K6 visibility ignores a more complete alias with a stale route", () => {
   const risk = resolveVisibleDomains({ role: "superadmin", menuCodes, menuNodes })
     .find((domain) => domain.code === "K");
 
-  assert.equal(risk?.l2.find((item) => item.id === "K6")?.path, "/risk/janus-c2");
+  assert.equal(risk?.l2.find((item) => item.id === "K6"), undefined);
 });
 
 test("interactive login confirms the server session before storing it", async () => {

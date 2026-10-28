@@ -15,10 +15,9 @@ import { K1HeaderActions, K1MultiAccount } from "./k-tabs/k1-multiaccount";
 import { K2HeaderActions, K2Arbitrage } from "./k-tabs/k2-arbitrage";
 import { K3HeaderActions, K3Rules } from "./k-tabs/k3-rules";
 import { K4HeaderActions, K4Scoring } from "./k-tabs/k4-scoring";
-import { K6JanusC2 } from "./k-tabs/k6-janus-c2";
 import type { ConfirmReq, KCtx, ActionConfirmReq } from "./k-tabs/types";
 
-const FOLD: Record<string, string> = { K1: "K1", K2: "K2", K3: "K3", K4: "K4", K6: "K6" };
+const FOLD: Record<string, string> = { K1: "K1", K2: "K2", K3: "K3", K4: "K4" };
 
 function errorText(error: unknown) {
   return displayAdminError(error);
@@ -90,8 +89,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
   }, []);
 
   useEffect(() => {
-    if (tab !== "K6" && tab !== "K1" && tab !== "K3") void reloadKRisk().catch(() => undefined);
-    else if (tab === "K6") setContentLoading(false);
+    if (tab !== "K1" && tab !== "K3") void reloadKRisk().catch(() => undefined);
   }, [reloadKRisk, tab]);
 
   const actions = useMemo<KRiskActions>(() => ({ ...kRiskActions, reloadKRisk }), [reloadKRisk]);
@@ -122,7 +120,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
     <div className="dkpage kdom">
       <DomainHeader {...meta} right={right} />
 
-      {tab !== "K6" && tab !== "K1" && tab !== "K2" && tab !== "K3" && tab !== "K4" && contentError && (
+      {tab !== "K1" && tab !== "K2" && tab !== "K3" && tab !== "K4" && contentError && (
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">K 域数据加载失败</span>
@@ -136,7 +134,6 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "K2" && <K2Arbitrage ctx={ctx} />}
       {tab === "K3" && <K3Rules ctx={ctx} dryRunResult={k3DryRunResult} />}
       {tab === "K4" && <K4Scoring ctx={ctx} />}
-      {tab === "K6" && <K6JanusC2 />}
 
       {mc && (
         <OperationConfirmModal

@@ -53,20 +53,11 @@ const MODULES: ModuleCase[] = [
     retry: /仅重试 K4/,
     mutation: /保存模型草稿|发布模型草稿|恢复为草稿|人工覆盖评分|重算回模型分|全部重算/,
   },
-  {
-    id: "K6",
-    path: "/risk/janus-c2",
-    endpoint: "/api/admin/janus/dashboard",
-    marker: /十二态服务端分布/,
-    error: /看板读取失败/,
-    retry: /^重试$/,
-    mutation: /新建策略|编辑|发布|暂停|归档|回滚|复制|下发|启用|禁用|新增目标|停用目标/,
-  },
 ];
 
 test.describe.configure({ mode: "serial", timeout: 240_000 });
 
-test("K1-K6 从登录页和可见侧栏首轮、刷新、退出重登均读取真实服务端事实", async ({ page }) => {
+test("K1-K4 从登录页和可见侧栏首轮、刷新、退出重登均读取真实服务端事实", async ({ page }) => {
   const failures = monitorUnexpectedFailures(page);
   await login(page);
   for (const module of MODULES) {

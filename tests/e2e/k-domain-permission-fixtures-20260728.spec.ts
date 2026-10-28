@@ -67,16 +67,6 @@ const MODULES: ModuleProbe[] = [
     writeBody: { expectedVersion: -1, reason: REASON },
     mutationButtons: /保存模型草稿|发布模型草稿|恢复为草稿|人工覆盖评分|重算回模型分|全部重算|标记已读/,
   },
-  {
-    id: "K6",
-    path: "/risk/janus-c2",
-    marker: /Janus C2/,
-    readPath: "/api/admin/janus/dashboard",
-    writePath: "/api/admin/janus/devices/UNKNOWN/status",
-    writeMethod: "POST",
-    writeBody: { status: "disabled", expectedVersion: -1, reason: REASON },
-    mutationButtons: /新建策略|编辑|发布|暂停|归档|回滚|复制|下发|启用|禁用|新增目标|停用目标/,
-  },
 ];
 
 test.describe.serial("K 域 readonly/no-write/no-menu 五层权限", () => {
@@ -107,7 +97,7 @@ test.describe.serial("K 域 readonly/no-write/no-menu 五层权限", () => {
     });
   }
 
-  test("maker：K1-K6 菜单与只读数据可达，刷新重登不漂移且不执行业务写", async ({ page }) => {
+  test("maker：K1-K4 菜单与只读数据可达，刷新重登不漂移且不执行业务写", async ({ page }) => {
     const pageErrors = monitorPageErrors(page);
     const account = fixtureAccount("maker");
     await login(page, account, "maker");
@@ -260,7 +250,7 @@ async function assertMakerSession(page: Page) {
   }
   expect(authorities).toContain("risk_k1_write");
   expect(authorities).toContain("risk_k4_write");
-  expect(authorities).toContain("risk_k6_write");
+  expect(authorities).not.toContain("risk_k6_write");
   expect(menus.length).toBeGreaterThan(0);
 }
 

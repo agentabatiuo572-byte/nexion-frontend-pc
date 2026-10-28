@@ -55,7 +55,6 @@ const CLUSTER_ST: Record<ClusterStatus, [string, string]> = {
 // enum/boolean 的运营可读中文标签(页面禁裸工程串);数值范围与键集统一来源在 k-client,
 // 读校验与编辑弹窗共用,避免两处漂移。
 const RELEASE_MODE_LABELS: Record<string, string> = {
-  attest_or_manual: "在线证明或人工放行",
   manual_only: "仅人工放行",
 };
 const RELEASE_BOOL_LABELS: Record<string, string> = { true: "开启", false: "关闭" };
@@ -73,7 +72,6 @@ const RELEASE_PARAM_COPY: Record<string, { name: string; sub: string }> = {
   duplicateAccountPendingFrom: { name: "第几个关联账号起审核收益", sub: "从这个账号开始，新增收益须先审核。" },
   duplicateAccountFreezeFrom: { name: "第几个关联账号起建议冻结", sub: "达到这个账号数只提出冻结建议，不会自动冻结账户。" },
   pendingReleaseHours: { name: "批量放行统计时间范围", sub: "只统计这段时间内的放行记录，不会自动放款。" },
-  appAttestationReleaseHours: { name: "应用在线验证有效时间", sub: "在线验证须在这段时间内达到要求。" },
   releaseMode: { name: "收益放行方式", sub: "选择在线验证或人工审核如何放行收益。" },
   freeSlotRequiresBinding: { name: "正常名额是否需要绑定手机号", sub: "开启后，正常放行的名额须绑定手机号。" },
 };
@@ -112,12 +110,12 @@ function errorText(error: unknown) {
  *  放宽 = 让更多收益更快进入可提桶 = 放大资金流出方向,须在弹窗告知并由服务端前置 B1 覆盖率核验。
  *  数值键分两族:调**大**是放宽(槽位 / 待审起点 / 重复账号建议线)· 调**小**是放宽(观察窗口 / 在线证明时长)。 */
 const RELEASE_LOOSEN_WHEN_LARGER = new Set(["freePhoneSlotsPerCluster", "duplicateAccountPendingFrom", "duplicateAccountFreezeFrom"]);
-const RELEASE_LOOSEN_WHEN_SMALLER = new Set(["pendingReleaseHours", "appAttestationReleaseHours"]);
+const RELEASE_LOOSEN_WHEN_SMALLER = new Set(["pendingReleaseHours"]);
 export function isLooseningRelease(key: string, current: string, next: string): boolean {
   if (RELEASE_LOOSEN_WHEN_LARGER.has(key)) return Number(next) > Number(current);
   if (RELEASE_LOOSEN_WHEN_SMALLER.has(key)) return Number(next) < Number(current);
   // 释放模式:仅人工放行 → 允许在线证明放行 = 多开一条自动放行来源 = 放宽。
-  if (key === "releaseMode") return current === "manual_only" && next === "attest_or_manual";
+  if (key === "releaseMode") return false;
   // 首号绑定要求:开启 → 关闭 = 免费槽不再要求绑定 = 放宽。
   if (key === "freeSlotRequiresBinding") return current === "true" && next === "false";
   return false;

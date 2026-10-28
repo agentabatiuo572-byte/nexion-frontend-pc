@@ -500,13 +500,6 @@ test("K2 检测命中视图是带组名的单选组", () => {
   assertSingleSelection(html, "套利检测命中视图", 0, ["试用循环", "换新套利", "新人礼刷取", "排行榜刷榜"]);
 });
 
-test("K6 模块导航暴露组名与唯一选中项", () => {
-  const html = renderToHtml("app/components/domain-views/k-tabs/k6-janus-c2.tsx", "K6JanusC2", {});
-  assert.equal(tablistNamed(html, "C2 控制台模块").length, 1, "K6 模块导航必须暴露组名");
-  const tabs = tabsOf(html, "C2 控制台模块");
-  assert.deepEqual(selectedFlags(tabs), ["true", "false", "false", "false", "false"], "K6 默认「看板」是唯一选中项");
-  assert.deepEqual(tabIndexes(tabs), [0, -1, -1, -1, -1], "roving 焦点落在选中模块");
-});
 
 test("E4 订单状态筛选暴露组名与唯一选中项", () => {
   const html = renderToHtml("app/components/domain-views/e-tabs/e4-orders.tsx", "E4Orders", {

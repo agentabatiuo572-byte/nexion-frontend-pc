@@ -52,9 +52,9 @@ test("T-02 · 结果未知不得丢弃槽位(丢了就无法原样重试复用�
     "只有确定性失败才丢弃槽位;结果未知必须保留");
 });
 
-test("T-01 · 放宽方向判定覆盖全部七个键,且两族数值方向相反", () => {
+test("T-01 · 放宽方向判定覆盖当前六个键,且两族数值方向相反", () => {
   const KEYS = ["freePhoneSlotsPerCluster", "duplicateAccountPendingFrom", "duplicateAccountFreezeFrom",
-    "pendingReleaseHours", "appAttestationReleaseHours", "releaseMode", "freeSlotRequiresBinding"];
+    "pendingReleaseHours", "releaseMode", "freeSlotRequiresBinding"];
   for (const k of KEYS) {
     assert.match(code, new RegExp(k), `放宽判定须覆盖键 ${k}`);
   }

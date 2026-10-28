@@ -76,11 +76,10 @@
     "J2": ["OPS-J-02", "OPS-J-07"],
     "J3": ["OPS-J-03", "OPS-J-08"],
     "J4": ["OPS-J-04", "OPS-J-05"],
-    "K1": ["OPS-K-01", "OPS-K-16", "OPS-K-18"],
+    "K1": ["OPS-K-01", "OPS-K-18"],
     "K2": ["OPS-K-02"],
     "K3": ["OPS-K-03"],
     "K4": ["OPS-K-04", "OPS-K-19", "OPS-K-20"],
-    "K6": ["OPS-K-15", "OPS-K-17"],
     "L1": ["OPS-L-01", "OPS-L-08"],
     "L2": ["OPS-L-01", "OPS-L-09"],
     "L3": ["OPS-L-01", "OPS-L-05"],
@@ -3024,87 +3023,6 @@
         }
       ],
       "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
-    },
-    {
-      "id": "OPS-K-15",
-      "domain": "K",
-      "object": "Janus C2 管理面(K6)",
-      "action": "管理策略/目标/设备状态和接管受理、执行预演并导出审计",
-      "status": "built",
-      "view": "k-tabs/k6-janus-c2.tsx",
-      "batch": "done",
-      "restActions": [
-        "createK6RemoteTargetVersion",
-        "disableK6RemoteTarget",
-        "updateK6DeviceStatus",
-        "reconcileK6Takeover",
-        "revokeK6Takeover",
-        "resendK6TakeoverRevoke",
-        "retryK6Takeover",
-        "changeK6TakeoverTarget",
-        "saveK6Strategy",
-        "runK6DryRun",
-        "changeK6StrategyStatus",
-        "deleteK6Strategy",
-        "rollbackK6Strategy",
-        "recordK6Export"
-      ],
-      "note": "管理面持久化、命令受理与沙箱预演已完成；实体 executor、ACK 与不可重放 applied proof 的生产真机交付仍属 OPS-K-17 pending/HOLD，收益隔离由 OPS-K-16 的服务端可信证明守卫约束。"
-    },
-    {
-      "id": "OPS-K-16",
-      "domain": "K",
-      "object": "K1 自动释放",
-      "action": "基于可信 Janus 在线证明自动释放收益",
-      "status": "built",
-      "view": "k-tabs/k1-multiaccount.tsx",
-      "batch": "done",
-      "runtimeEvidence": [
-        {
-          "type": "backend-runtime",
-          "file": "src/main/java/ffdd/opsconsole/finance/application/EarningsReleaseService.java",
-          "positivePatterns": ["\"JANUS_PRODUCTION_EXECUTOR\"\\.equals\\(proof\\.source\\(\\)\\)", "String\\s+sourceEnvironment\\s*=\\s*\"PRODUCTION\"", "mapper\\.attestedSeconds\\(userId,\\s*sourceEnvironment\\)", "mapper\\.protectedEntries\\(userId,\\s*sourceEnvironment\\)", "params\\.attestationHours\\(\\)", "params\\.manualOnly\\(\\)"],
-          "negativePatterns": ["JANUS_SANDBOX_EXECUTOR", "sourceEnvironment\\s*=\\s*\"SANDBOX\"", "USER_PROVIDED_ATTESTATION"]
-        }
-      ],
-      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
-    },
-    {
-      "id": "OPS-K-17",
-      "domain": "K",
-      "object": "Janus C2 生产执行(K6)",
-      "action": "已提交 Janus Sandbox/native 分支接线、UTS fail-closed 源码；Production 原生真机 enrollment/handoff 验收 HOLD（开发暂停）",
-      "status": "pending",
-      "view": "k-tabs/k6-janus-c2.tsx",
-      "batch": "P1",
-      "runtimeEvidence": [
-        {
-          "type": "janus-runtime",
-          "file": "src/lib/janus/executor-runtime.ts",
-          "positivePatterns": ["^[ \\t]*if \\(mode === \"disabled\"\\) return null;", "^[ \\t]*const executor: JanusExecutor = mode === \"sandbox\"\\s+\\? await \\(async \\(\\) => \\{[\\s\\S]{0,1800}return createSandboxJanusExecutor\\(", "^[ \\t]*: \\(\\(\\) => \\{\\s+const bridge = installNativeJanusExecutorBridge\\(\\);\\s+if \\(!bridge\\) throw new Error\\(\"JANUS_NATIVE_EXECUTOR_REQUIRED\"\\);\\s+return createProductionJanusExecutor\\(\\{ bridge \\}\\);\\s+\\}\\)\\(\\);", "^[ \\t]*const api = createJanusBackendCommandApi\\(", "^[ \\t]*return createJanusCommandCoordinator\\(\\{ api, executor, storage \\}\\);"],
-          "negativePatterns": ["mode === \"production\"\\s+\\? await", "bridge \\? createProductionJanusExecutor", "^[ \\t]*: \\(\\(\\) => \\{[^}]*createSandboxJanusExecutor\\("]
-        },
-        {
-          "type": "janus-runtime",
-          "file": "src/uni_modules/nexion-janus-executor/utssdk/app-android/index.uts",
-          "positivePatterns": ["JANUS_NATIVE_ENROLLMENT_REQUIRED", "required\\(\"webview_handoff_attestor\"\\)", "JANUS_NATIVE_WEBVIEW_HANDOFF_NOT_ATTESTED", "JANUS_NATIVE_APPLIED_PROOF_STATE_MISSING"],
-          "negativePatterns": ["proofMode:\\s*\"SANDBOX\"", "return \\{[\\s\\S]{0,120}proofMode:\\s*\"PRODUCTION\""]
-        },
-        {
-          "type": "janus-runtime",
-          "file": "src/lib/janus/sandbox-executor.ts",
-          "positivePatterns": ["JANUS_SANDBOX_PROFILE_FORBIDDEN", "proofMode: \"SANDBOX\"", "JANUS_SANDBOX_TARGET_FORBIDDEN"],
-          "negativePatterns": ["proofMode:\\s*\"PRODUCTION\"", "JANUS_PRODUCTION_EXECUTOR"]
-        }
-      ],
-      "runtimeConsumerContract": {
-        "profiles": ["sandbox", "production"],
-        "producer": "K6 command lease and proof challenge",
-        "consumer": "actual NX1.0-Janus runtime executor",
-        "successOutcome": "Janus claims the command and returns non-replayable ACK and applied proof",
-        "failureOutcome": "missing executor, invalid proof or profile mismatch leaves the command unapplied"
-      },
-      "note": "已提交源码证明 disabled 早退、显式 Sandbox 分支接入及其登记来源隔离、native 分支 bridge 缺失时 fail-closed、executor/coordinator 接线与 Android UTS 拒绝守卫；分支源码不替代真实环境验收，Production 原生真机 enrollment/handoff 仍未验收。Janus 开发暂停，保持 pending/HOLD，不以源码或未提交 WIP 代替交付证据。"
     },
     {
       "id": "OPS-M-18",

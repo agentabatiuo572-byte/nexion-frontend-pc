@@ -542,14 +542,13 @@ const K1_REQUIRED_SOURCES = [
   "nx_admin_risk_ip_whitelist",
 ] as const;
 
-/** 收益释放参数键集(SPEC-7,合并底账 §二#5)。releaseParams 组在场时七键齐备、不许未知键,
+/** 收益释放参数键集(SPEC-7,合并底账 §二#5)。releaseParams 组在场时六键齐备、不许未知键,
  *  与拦截参数 K1_REQUIRED_PARAM_KEYS 同款精确集合纪律。 */
 export const K1_RELEASE_PARAM_KEYS = [
   "freePhoneSlotsPerCluster",
   "duplicateAccountPendingFrom",
   "duplicateAccountFreezeFrom",
   "pendingReleaseHours",
-  "appAttestationReleaseHours",
   "releaseMode",
   "freeSlotRequiresBinding",
 ] as const;
@@ -564,11 +563,10 @@ export const K1_RELEASE_PARAM_LIMITS: Record<string, { min: number; max: number;
   duplicateAccountPendingFrom: { min: 1, max: 50, step: 1, integer: true },
   duplicateAccountFreezeFrom: { min: 1, max: 50, step: 1, integer: true },
   pendingReleaseHours: { min: 1, max: 720, step: 1, integer: true },
-  appAttestationReleaseHours: { min: 1, max: 168, step: 1, integer: true },
 };
 
 /** 释放模式取值全集(工程串)。运营可读中文标签由 UI 层映射,页面禁裸工程串。 */
-export const K1_RELEASE_MODE_VALUES = ["attest_or_manual", "manual_only"] as const;
+export const K1_RELEASE_MODE_VALUES = ["manual_only"] as const;
 
 export function validateK1ReleaseParamValue(key: string, value: string): boolean {
   const limits = K1_RELEASE_PARAM_LIMITS[key];
@@ -713,7 +711,7 @@ function normalizeK1(raw: unknown): MultiAccountOverview {
     if (!validateK1ParamValue(param.key, param.value)) invalidK1Response(`multiAccount.params[${index}].value`);
   });
 
-  // 收益释放参数:缺席(老后端未升级)→ [] 向后兼容;在场则七键精确集合 + 逐键值校验,坏形严格抛。
+  // 收益释放参数:缺席(老后端未升级)→ [] 向后兼容;在场则当前六键精确集合 + 逐键值校验,坏形严格抛。
   const releaseParams = data.releaseParams == null ? [] : requiredK1Array(data.releaseParams, "multiAccount.releaseParams").map((item, index) => {
     const path = `multiAccount.releaseParams[${index}]`;
     const row = requiredK1Record(item, path);
@@ -730,6 +728,13 @@ function normalizeK1(raw: unknown): MultiAccountOverview {
       note: requiredK1String(row.note, `${path}.note`, true),
     };
   });
+  // Ignore only the inert historical compatibility field; no automatic release is available.
+  const retiredIndex=releaseParams.findIndex(param => param.key === "appAttestationReleaseHours");
+  if(retiredIndex >= 0) releaseParams.splice(retiredIndex,1);
+  for (const param of releaseParams) if(param.key === "releaseMode") {
+    if (!["manual_only","attest_or_manual"].includes(param.value)) invalidK1Response("multiAccount.releaseParams.releaseMode");
+    param.value="manual_only"; param.val="manual_only"; param.adjustable=false;
+  }
   if (releaseParams.length > 0) {
     const releaseKeys = new Set(releaseParams.map((param) => param.key));
     if (releaseParams.length !== releaseKeys.size || releaseParams.length !== K1_RELEASE_PARAM_KEYS.length

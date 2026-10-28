@@ -81,17 +81,17 @@
 
 | ID | 三端改造业务 | 前端证据 | 后台控制 / 承接 | 状态 |
 |---|---|---|---|---|
-| M1 | 平台配置读取与电脑共享算力入口开关 | UniApp `config` store 读取默认关闭的电脑共享算力开关 | E6 `/devices/compute-config` 电脑共享算力入口，操作确认 + 理由 + A2 审计 | ✅ |
+| M1 | Janus 相关能力已退役；保留历史数据兼容，禁止新接入 | `tests/janus-retirement.test.mjs` | 已移除；历史账务与只读协议兼容保留 | ✅ |
 | M2 | 手机算力激活登记锚点 | UniApp 设备激活写入结算锚点 | 激活登记为前台固定行为，本期无后台登记开关；E6 在线加成系数承接登记后的收益参数 | ✅ |
 | M3 | 收益按墙钟结算 | UniApp `settleDevice` / `settle()` 单源结算 | D5 金融参数 + E6 算力参数承接口径，收益绝对值仍对齐经济模型单源 | ✅ |
 | M4 | 设备在线分层（真在线增强 / 无心跳托管） | UniApp `isDeviceOnline`（设备心跳）驱动因子；App 载体刷 `onlineHeartbeatAt`、H5 恒基线（R7 起 `carrier` 仅作登记载体 + 心跳源，不再定因子） | E6 在线加成系数（H5 基础托管系数 / App 连续在线满额时长） | ✅ |
-| M5 | 电脑算力弱入口与下载页 | UniApp Earn 弱入口、设备空槽位入口、下载页 | E6 入口开关、客户端下载地址、下载页中英标题与说明 | ✅ |
-| M6 | G1-G6 显卡算力档位与识别词 | UniApp `gpu-tiers` 与 pc-gpu 设备派生 | E6 显卡算力映射表，档位名称 / TOPS / 单个识别词逐项增删改，禁止单框多值 | ✅ |
-| M7 | pc-gpu 槽位与设备生命周期 | UniApp 6 槽位、pc-gpu 连接 / 下架 / 预留槽位逻辑 | E6 控制入口与映射，E5 继续承接设备运维和槽位上限口径 | ✅ |
+| M5 | Janus 相关能力已退役；保留历史数据兼容，禁止新接入 | `tests/janus-retirement.test.mjs` | 已移除；历史账务与只读协议兼容保留 | ✅ |
+| M6 | Janus 相关能力已退役；保留历史数据兼容，禁止新接入 | `tests/janus-retirement.test.mjs` | 已移除；历史账务与只读协议兼容保留 | ✅ |
+| M7 | 既有设备历史与槽位兼容 | 保留既有设备、账务与正常硬件能力；不再新建电脑共享设备 | E5 普通设备运维和槽位上限继续生效 | ✅ |
 | M8 | 三端入口首页新方案 | 新 `entry-surfaces` 三条首页 + 完整链接索引；旧签名版 APP / H5 / 白壳接管三条旧首页继续删除 | 当前为评审入口与静态首页，不开放后台改文案；若进入运营化，标题 / CTA / 多语言接 I1 文案 A/B 与 I6 i18n | ✅ |
-| M9 | 白壳变脸触发与远程接管地址 | 正式 App `janus-c2` 明确显示 `JANUS_NATIVE_EXECUTOR_REQUIRED` HOLD；设备身份、远程命令上报与回执仅由 `NX1.0-Janus` 原生执行器通过 `/api/app/janus/reports → commands/pending → commands/ack` 完成 | K6 `/risk/janus-c2` 经 PC 代理和后端 `/api/admin/janus` 管理策略、命令与审计，原生执行器 ACK 回写同一 `nx_janus_command` 调用链 | ✅ |
+| M9 | Janus 相关能力已退役；保留历史数据兼容，禁止新接入 | `tests/janus-retirement.test.mjs` | 已移除；历史账务与只读协议兼容保留 | ✅ |
 | M10 | 账户数据聚合 | App `account-cloud` 仅为兼容快照；密码、2FA、会话和 KYC 分别读取真实 `/api/app/security`、`/api/kyc/status`，写操作携带幂等键 | C1/C2/C3/C5/E5/D4 通过 PC `/api/admin/users` 代理和真实后端账户投影承接查询、处置、会话下线、设备运维、账本审计 | ✅ |
-| M11 | 三端入口与构建变体识别 | UniApp `entry-surface` 识别签名 App / H5 / 白 App | 载体识别本身无直接业务开关；白 App 接管归 K6，电脑入口归 E6 | ✅ |
+| M11 | APP/H5 载体识别 | 当前入口仅 signed-app 与 h5；white-app 仅保留历史会话类型 | Janus/white/cloak 查询参数不能恢复接管 | ✅ |
 
 ## 核对结论
 - H5 ~70 个用户页/杠杆,**绝大多数都已映射到 admin 控制面且可操作**(操作确认 角色感知)。

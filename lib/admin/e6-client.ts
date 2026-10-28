@@ -38,7 +38,6 @@ export {
   isSafeInstallerUrl,
 } from "@/lib/admin/installer-url";
 const exactKeys = [
-  e6FlagKey("computeShareEnabled"),
   e6PhoneBindingKey("allowReplacement"),
   e6PhoneBindingKey("minReplacementIntervalDays"),
   e6PhoneBindingKey("replacementWindowDays"),
@@ -47,12 +46,7 @@ const exactKeys = [
   e6YieldKey("topsBaseline"),
   e6YieldKey("dailyUsdtPerBaseline"),
   e6YieldKey("nexPerUsdt"),
-  ...E6_GPU_TIER_IDS.flatMap((id) => [
-    e6GpuTierKey(id, "label"),
-    e6GpuTierKey(id, "tops"),
-    ...E6_KEYWORD_FIELDS.map((field) => e6GpuTierKey(id, field)),
-  ]),
-  ...["url", "zhTitle", "zhGuide", "enTitle", "enGuide"].map(e6DownloadKey),
+
 ];
 export const E6_EXACT_PARAM_KEYS = new Set<string>(exactKeys);
 

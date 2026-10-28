@@ -251,7 +251,6 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "K2", name: "异常套利与刷量排查", path: "/risk/abuse", prdAnchor: "K2", batch: "V1", status: "flagship" },
       { id: "K3", name: "提现风险规则", path: "/risk/withdrawal-rules", prdAnchor: "K3", batch: "V1", status: "flagship" },
       { id: "K4", name: "风险评分规则", path: "/risk/scoring", prdAnchor: "K4", batch: "V1", status: "flagship" },
-      { id: "K6", name: "设备风险处置", path: "/risk/janus-c2", prdAnchor: "K6", batch: "V1", status: "flagship" },
     ],
   },
   {
@@ -334,7 +333,6 @@ const LEGACY_MENU_NAMES: Record<string, string> = {
   "K2": "套利 & 刷量检测",
   "K3": "提现风控规则引擎",
   "K4": "风险评分模型",
-  "K6": "Janus C2 控制台",
   "L1": "KPI 看板",
   "L2": "漏斗/cohort/留存",
   "L5": "导出 & 监管报告",

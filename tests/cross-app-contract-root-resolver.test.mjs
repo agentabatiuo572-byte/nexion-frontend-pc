@@ -21,7 +21,6 @@ const CONTRACTS = [
   "i4-owner-closure-contract.test.mjs",
   "i5-disclosure-contract.test.mjs",
   "i6-owner-closure-contract.test.mjs",
-  "k6-janus-real-api-contract.test.mjs",
 ];
 
 test("every cross-App acceptance contract resolves its App checkout through the declared root resolver", () => {

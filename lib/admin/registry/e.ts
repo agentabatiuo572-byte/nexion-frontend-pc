@@ -33,7 +33,7 @@ export const DOMAIN_E: ModuleEntry[] = [
   },
   {
     path: "/devices/compute-config",
-    summary: "算力与设备配置(E6)—— 管理手机绑定换机开关与最短间隔、电脑算力入口、App 在线加成系数、显卡映射表 G1-G6 和客户端下载配置(下载地址与中英文标题、引导文案)。变更须填写理由并经 A2 操作确认。H5 手机算力奖励已退役，其它已购设备不受影响。",
+    summary: "算力与设备配置(E6)—— 管理手机绑定换机开关与最短间隔、App 在线加成系数和收益估算参数。变更须填写理由并经 A2 操作确认。H5 手机算力奖励已退役，其它已购设备不受影响。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

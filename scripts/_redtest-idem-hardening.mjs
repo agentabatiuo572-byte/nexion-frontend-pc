@@ -132,7 +132,7 @@ const CASES = [
   ["T5⑫ 台账反解析抗排版漂移:MIGRATED 条目改缩进后清单不得静默缩短", "green",
     () => inject(SENTINEL, '  "lib/admin/i-client.ts",', '    "lib/admin/i-client.ts",', MIGRATION)],
   ["T5⑬ 台账反解析抗行尾注释:条目后加注释清单不得静默缩短", "green",
-    () => inject(SENTINEL, '  "lib/admin/k6-client.ts",', '  "lib/admin/k6-client.ts", // K6 远端写入', MIGRATION)],
+    () => inject(SENTINEL, '  "lib/admin/k1-client.ts",', '  "lib/admin/k1-client.ts", // K1 远端写入', MIGRATION)],
   // ⑭ 打的是哨兵而非迁移契约:契约那边只有 `>= 28` 的下限兜底(实际 30),少一条照样绿 ——
   //    本轮红测实测抓到,遂在哨兵补判据 5「用了共享 store 就必须在台账里」,由它来咬。
   ["T5⑭ 台账真少一条时必红(证明上面两条不是靠判据松垮才绿)", "red",

@@ -34,7 +34,6 @@ test("安装包地址判定是单一实现:E6 与 A5 都从共享模块取", () 
   const e6Component = read("app/components/domain-views/e-tabs/e6-compute-config.tsx");
   assert.doesNotMatch(e6Component, /function\s+isSafeInstallerUrl\s*\(/,
     "E6 组件内不得再保留第二份实现");
-  assert.match(e6Component, /import\s*\{\s*isSafeInstallerUrl\s*\}\s*from\s*"@\/lib\/admin\/installer-url"/);
 });
 
 test("A5 把未生效的值标成未生效,而不是当前服务端值", () => {

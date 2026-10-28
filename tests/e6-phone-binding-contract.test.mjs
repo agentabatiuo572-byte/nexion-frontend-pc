@@ -41,7 +41,7 @@ test("E6 write registry permits exactly the four phone keys and retires h5BaseFa
   for (const field of ["allowReplacement", "minReplacementIntervalDays", "replacementWindowDays", "maxReplacementsInWindow"]) {
     assert.equal(client.exports.isE6ParamKey(client.exports.e6PhoneBindingKey(field)), true);
   }
-  for (const key of ["E.compute.h5BaseFactor", "E.compute.phoneBinding", "E.compute.phoneBinding.other", "D.phoneBinding.allowReplacement"]) {
+  for (const key of ["E.compute.computeShareEnabled", "E.compute.gpuTier.G3.tops", "E.compute.download.url", "E.compute.h5BaseFactor", "E.compute.phoneBinding", "E.compute.phoneBinding.other", "D.phoneBinding.allowReplacement"]) {
     assert.equal(client.exports.isE6ParamKey(key), false);
   }
   assert.equal(client.exports.isE6ParamKey("E.compute.continuityFullHours"), true);

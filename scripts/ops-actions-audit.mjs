@@ -19,7 +19,6 @@ import {
 import {
   resolveNexionAppRoot,
   resolveNexionBackendRoot,
-  resolveNexionJanusRoot,
 } from "./lib/nexion-workspace-paths.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -50,10 +49,9 @@ const problems = [];
 const warnings = [];
 const BACKEND_ROOT = resolveNexionBackendRoot({ adminRoot: ROOT });
 const UNIAPP_ROOT = resolveNexionAppRoot({ adminRoot: ROOT });
-const JANUS_ROOT = resolveNexionJanusRoot({ adminRoot: ROOT });
 const evidenceRoot = (type) => type.startsWith("backend-") ? BACKEND_ROOT
   : type.startsWith("uniapp-") ? UNIAPP_ROOT
-    : type.startsWith("janus-") ? JANUS_ROOT : ROOT;
+    : ROOT;
 problems.push(...validateRuntimeEvidence(m, (type, file) => {
   const absolute = path.resolve(evidenceRoot(type), file);
   return absolute.startsWith(`${evidenceRoot(type)}${path.sep}`) ? read(absolute) || undefined : undefined;
@@ -68,7 +66,6 @@ problems.push(...validateServiceDelegations(m, (file) => read(path.resolve(BACKE
 function resolveConsumerEvidencePath(type, file) {
   const root = type === "backend-runtime" || type === "backend-test" ? BACKEND_ROOT
     : type === "uniapp-runtime" || type === "uniapp-test" ? UNIAPP_ROOT
-      : type === "janus-runtime" || type === "janus-test" ? JANUS_ROOT
         : type === "pc-runtime" || type === "test-runtime" ? ROOT : undefined;
   if (!root || typeof file !== "string" || !file.trim()) return undefined;
   const absolute = path.resolve(root, file);
