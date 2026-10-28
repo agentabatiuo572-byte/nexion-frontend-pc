@@ -11,6 +11,7 @@ import type { DCtx } from "./types";
 
 type ProposalInput = Parameters<typeof createA2OperationProposal>[0];
 type Pending = PendingMutationRecord & { owner: number; input: ProposalInput; ticketId?: string; terminal?: string };
+const RETRY_WINDOW_MS = 10 * 60 * 1000;
 const proposals = createPendingMutationStore<Pending>({ storageKey: "nexion-admin-cregis-deposit-policy-proposals-v1", retainExpiredRecords: true,
   isValidRecord: row => Number.isSafeInteger(row.owner) && !!row.input && !!row.input.command });
 
@@ -62,7 +63,7 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm }: { owne
           if (owns()) { syncPending(); setMessage("提案已提交，尚未生效。请另一位管理员审批。"); }
         } catch (failure) {
           if (!isA2OutcomeUncertainError(failure)) proposals.forget(fingerprint, key);
-          if (owns()) { syncPending(); setError(isA2OutcomeUncertainError(failure) ? "提交结果待核实，请查询原提案，不要重新提交。" : failure instanceof Error ? failure.message : "提案未提交，请核对后重试。"); }
+          if (owns()) { syncPending(); setError(isA2OutcomeUncertainError(failure) ? "提交结果待核实，请查询原提案，或使用原请求重试。" : failure instanceof Error ? failure.message : "提案未提交，请核对后重试。"); }
           throw failure;
         } finally { mutation.current = false; if (owns()) setBusy(false); }
       } });
@@ -73,13 +74,40 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm }: { owne
     try {
       const result = await fetchA2ProposalByKey(pending.commandKey);
       if (!owns()) return;
-      if (!result) { setMessage("暂未查到原提案，请继续核实，不能重复提交。"); return; }
+      if (!result) { setMessage("暂未查到原提案。可在首次提交后 10 分钟内使用原请求重试，或继续核实。"); return; }
       const status = result.status.toLowerCase();
       const terminal = ["approved", "rejected", "withdrawn", "expired"].includes(status) ? status : undefined;
       proposals.remember(pending.fingerprint, pending.commandKey, { owner, input: pending.input, ticketId: result.id, terminal });
       syncPending(); setMessage(terminal === "approved" ? "提案已批准，请重新读取生效规则并核对。" : terminal ? "提案已结束，请核对审批记录。" : "提案仍待处理，尚未确认生效。");
     } catch { if (owns()) setError("查询提案失败，请稍后重试或前往操作记录与审批。"); }
     finally { mutation.current = false; if (owns()) setBusy(false); }
+  }
+  async function retry() {
+    const auth = useAdminAuth.getState().session;
+    if (!pending || pending.ticketId || pending.terminal || mutation.current || !owns() || !canManage
+      || !auth || !(auth.role === "superadmin" || auth.role === "super" || auth.authorities.includes("finance_d1_channel_manage"))) return;
+    if (Date.now() < pending.createdAt || Date.now() >= Math.min(pending.expiresAt, pending.createdAt + RETRY_WINDOW_MS)) {
+      setError("原请求已超过重试时间或本机时间异常，请通过操作记录继续核实。"); return;
+    }
+    mutation.current = true; setBusy(true); setError(""); setMessage("");
+    try {
+      const ticket = await createA2OperationProposal(pending.input, pending.commandKey, true);
+      if (owns()) {
+        proposals.remember(pending.fingerprint, pending.commandKey, { owner, input: pending.input, ticketId: ticket.id });
+        syncPending(); setMessage("原提案已提交，尚未生效。请另一位管理员审批。");
+      }
+    } catch (failure) {
+      if (owns()) {
+        const rejection = failure as { status?: number; backendMessage?: string } | null;
+        if ((rejection?.status === 409 && rejection.backendMessage === "CREGIS_DEPOSIT_POLICY_VERSION_CONFLICT")
+          || (rejection?.status === 422 && rejection.backendMessage === "CREGIS_DEPOSIT_POLICY_INVALID")) {
+          proposals.forget(pending.fingerprint, pending.commandKey);
+          syncPending();
+          await refresh();
+          if (owns()) setMessage("原提案未创建，请核对最新规则后重新提交。");
+        } else setError("原提案结果仍待核实，请查询原提案；恢复记录已保留。");
+      }
+    } finally { mutation.current = false; if (owns()) setBusy(false); }
   }
   const isValid = valid(min, fee, Number(confirmations)) && /^\d+$/.test(confirmations);
   return <div className="cregis-history" style={{ marginTop: 16 }}>
@@ -98,6 +126,9 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm }: { owne
     </>}
     {pending && <div className="cregis-case"><p>原提案：{pending.ticketId ?? "结果待核实"} · 操作标识 {pending.commandKey}</p>
       <button className="l-btn sm" disabled={busy} onClick={() => void check()}>查询原提案</button>{" "}
+      {!pending.ticketId && !pending.terminal && canManage && (Date.now() >= pending.createdAt && Date.now() < Math.min(pending.expiresAt, pending.createdAt + RETRY_WINDOW_MS)
+        ? <button className="l-btn sm" disabled={busy} onClick={() => void retry()}>使用原请求重试</button>
+        : <p>原请求已超过重试时间或本机时间异常，请通过操作记录继续核实。</p>)}{" "}
       {pending.terminal && <button className="l-btn sm" disabled={busy} onClick={() => { proposals.forget(pending.fingerprint, pending.commandKey); syncPending(); void refresh(); }}>核对完成，准备新变更</button>}{" "}
       <Link href="/platform/audit?domain=D">查看操作记录与审批</Link></div>}
   </div>;
