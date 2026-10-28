@@ -155,7 +155,8 @@ for (const key of fieldKeys) {
 // ── C. 值域与规格 ③ 表逐字段相等 ─────────────────────────────────────────
 const specRanges = new Map();
 const homeSpec = read(path.join(ROOT, "docs/h9-home-display.md"), "H9 首页展示规格");
-for (const match of (specSource + "\n" + homeSpec).matchAll(/`H\.publicStats\.([\w$]+)`[^\n]*?\[\s*(-?[\d_]+)\s*,\s*(-?[\d_]+)\s*\]/g)) {
+const memberTickSpec = read(path.join(ROOT, "docs/h9-network-pulse-members.md"), "H9 网络脉搏注册用户跳动规格");
+for (const match of (specSource + "\n" + homeSpec + "\n" + memberTickSpec).matchAll(/`H\.publicStats\.([\w$]+)`[^\n]*?\[\s*(-?[\d_]+)\s*,\s*(-?[\d_]+)\s*\]/g)) {
   specRanges.set(match[1], [Number(match[2].replace(/_/g, "")), Number(match[3].replace(/_/g, ""))]);
 }
 if (specSource && specRanges.size === 0) failures.push("C 规格 ③ 表解析出 0 条值域(表结构变了?同步更新本哨兵)");
