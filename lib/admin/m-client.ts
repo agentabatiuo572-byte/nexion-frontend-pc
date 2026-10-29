@@ -1,5 +1,6 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { parseBusinessTime } from "@/lib/admin/business-time";
+import { compareM3Messages } from "./m3-message-order";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { supportWireId, supportRequest, supportObject, parseSupportCount, supportClient } from "@/lib/admin/m-support-client";
@@ -1170,7 +1171,7 @@ function assertConversationDetail(value: unknown): ContentConversationDetail {
     message
     && typeof message === "object"
     && Number.isSafeInteger(message.id)
-    && ["USER", "AGENT", "SYSTEM"].includes(upper(message.senderType, ""))
+    && ["USER", "AGENT", "SYSTEM", "INTERNAL"].includes(upper(message.senderType, ""))
     && typeof message.content === "string"
     && typeof message.createdAt === "string"
     && !Number.isNaN(Date.parse(message.createdAt)))) {
@@ -1806,6 +1807,49 @@ export async function fetchMConversationDetail(no: string, signal?: AbortSignal,
   const conversation = adaptConversation(detail);
   if (conversation.id !== no || !conversation.detailReady) throw new Error("M3_CONVERSATION_DETAIL_INVALID");
   return conversation;
+}
+
+export type M3ReadContext = { conversationNo: string; status: string; version: number; lastSeenMessageId: number; alreadyRead: boolean };
+export type M3MessagePage = {
+  conversation: SessionConvo; messages: SessionMsg[]; hasMore: boolean; nextBeforeMessageId: number | null;
+  customerIdentity: { customerId: number; userNo: string; nickname: string | null; phoneMasked: string | null };
+  replyContext: { ready: boolean; targets: Array<{ conversationNo: string; throughMessageId: number }> };
+  readContexts: M3ReadContext[];
+};
+export function parseM3MessagePage(value: unknown, no: string): M3MessagePage {
+  const invalid = (): never => { throw new Error("M3_MESSAGE_PAGE_INVALID"); };
+  const obj = (item: unknown): Record<string, unknown> => item && typeof item === "object" && !Array.isArray(item) ? item as Record<string, unknown> : invalid();
+  const positive = (item: unknown): number => Number.isSafeInteger(item) && Number(item) > 0 ? Number(item) : invalid();
+  const nonempty = (item: unknown): string => typeof item === "string" && item.trim() ? item : invalid();
+  const nullable = (item: unknown): string | null => item === null || typeof item === "string" ? item : invalid();
+  const row = obj(value), identity = obj(row.customerIdentity), reply = obj(row.replyContext);
+  const customerIdentity = { customerId: positive(identity.customerId), userNo: nonempty(identity.userNo), nickname: nullable(identity.nickname), phoneMasked: nullable(identity.phoneMasked) };
+  if (!Array.isArray(row.messages) || row.messages.length > 10 || typeof row.hasMore !== "boolean" || !Array.isArray(reply.targets) || typeof reply.ready !== "boolean" || !Array.isArray(row.readContexts)) invalid();
+  const detail = assertConversationDetail({ conversation: row.conversation, messages: row.messages, historyTruncated: row.hasMore });
+  const conversation = adaptConversation({ ...detail, customerProfile: { uid: customerIdentity.userNo, nickname: customerIdentity.nickname ?? undefined, phone: customerIdentity.phoneMasked ?? undefined } });
+  if (conversation.id !== no || conversation.customerId !== String(customerIdentity.customerId)) invalid();
+  const rawMessages = row.messages as Array<Record<string, unknown>>;
+  const messages = conversation.messages.map((message, index) => ({ ...message, id: positive(message.id), sourceConversationNo: nonempty(rawMessages[index].conversationNo), sourceCreatedAt: String(rawMessages[index].createdAt) }));
+  if (new Set(messages.map(message => message.id)).size !== messages.length || messages.some((message, index) => index > 0 && compareM3Messages(messages[index - 1], message) >= 0)) invalid();
+  const nextBeforeMessageId = row.nextBeforeMessageId === null ? null : positive(row.nextBeforeMessageId);
+  if (row.hasMore ? messages.length !== 10 || nextBeforeMessageId !== messages[0]?.id : nextBeforeMessageId !== null) invalid();
+  const targets = (reply.targets as unknown[]).map(item => { const target = obj(item); return { conversationNo: nonempty(target.conversationNo), throughMessageId: positive(target.throughMessageId) }; });
+  if (new Set(targets.map(target => target.conversationNo)).size !== targets.length || !reply.ready && targets.length) invalid();
+  const readContexts = (row.readContexts as unknown[]).map(item => {
+    const context = obj(item), conversationNo = nonempty(context.conversationNo), lastSeenMessageId = positive(context.lastSeenMessageId);
+    if (typeof context.alreadyRead !== "boolean" || !["OPEN", "CLOSED", "RESOLVED", "TRANSFERRED"].includes(String(context.status)) || !Number.isSafeInteger(context.version) || Number(context.version) < 0 || !messages.some(message => message.sourceConversationNo === conversationNo && message.id === lastSeenMessageId && message.sourceSenderType === "USER")) invalid();
+    return { conversationNo, status: String(context.status), version: Number(context.version), lastSeenMessageId, alreadyRead: context.alreadyRead as boolean };
+  });
+  if (new Set(readContexts.map(context => context.conversationNo)).size !== readContexts.length) invalid();
+  return { conversation, messages, hasMore: row.hasMore as boolean, nextBeforeMessageId, customerIdentity, replyContext: { ready: reply.ready as boolean, targets }, readContexts };
+}
+export async function fetchM3MessagePage(no: string, beforeMessageId?: number, signal?: AbortSignal): Promise<M3MessagePage> {
+  const cursor = beforeMessageId === undefined ? "" : `?beforeMessageId=${supportWireId(beforeMessageId, "beforeMessageId")}`;
+  return parseM3MessagePage(await apiRequest<unknown>(`/conversations/${encodeURIComponent(no)}/messages${cursor}`, { signal }), no);
+}
+export async function markM3MessagePageRead(context: M3ReadContext, signal: AbortSignal) {
+  if (context.alreadyRead || signal.aborted) return;
+  await apiRequest(`/conversations/${encodeURIComponent(context.conversationNo)}/read`, { method: "POST", signal, body: JSON.stringify({ lastSeenMessageId: context.lastSeenMessageId, expectedStatus: context.status, expectedVersion: context.version }) });
 }
 
 export async function fetchMSupportAgentsPage(pageNum = 1, pageSize = 5): Promise<MSupportAgentPage> {

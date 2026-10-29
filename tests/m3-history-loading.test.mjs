@@ -1,198 +1,111 @@
-import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import test from "node:test";
-import vm from "node:vm";
-import ts from "typescript";
-
-const source = readFileSync(new URL("../app/components/domain-views/m-tabs/m3-dedicated-chat.tsx", import.meta.url), "utf8");
-const ast = ts.createSourceFile("chat.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-const component = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "CustomerHistoryMessages");
-const permission = ast.statements.find(node => ts.isVariableStatement(node) && node.declarationList.declarations.some(item => item.name.getText(ast) === "lostPermission"));
-const main = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "M3DedicatedChat");
-let gate;
-function visit(node) {
-  if (ts.isJsxAttribute(node) && node.name.getText(ast) === "loadEnabled") gate = node.initializer.expression;
-  ts.forEachChild(node, visit);
-}
-visit(main);
-const candidateEffect = main.body.statements.find(node => ts.isExpressionStatement(node)
-  && ts.isCallExpression(node.expression) && node.expression.expression.getText(ast) === "useEffect"
-  && node.getText(ast).includes("loadConversationDetail(closedCandidateMissing[0]"));
-const ready = main.body.statements.flatMap(node => ts.isVariableStatement(node) ? [...node.declarationList.declarations] : [])
-  .find(node => node.name.getText(ast) === "closedCandidatesReady");
-const historyLoading = main.body.statements.flatMap(node => ts.isVariableStatement(node) ? [...node.declarationList.declarations] : [])
-  .find(node => node.name.getText(ast) === "historyLoadingIds");
-assert.ok(component && permission && gate && candidateEffect && ready, "execute the production history component and parent gates");
-const compile = text => ts.transpileModule(text, { compilerOptions: {
-  target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX,
-} }).outputText;
-const code = compile(`${permission.getText(ast)}\n${component.getText(ast)}\nglobalThis.Component=CustomerHistoryMessages;`);
-const tick = () => new Promise(resolve => setImmediate(resolve));
-const row = id => ({ id, customerId: "42", version: 1, messages: [], detailReady: false });
-const enabled = (selected, customerHistory, row, historyFailures = []) => {
-  const historyLoadingIds = vm.runInNewContext(historyLoading.initializer.getText(ast), { customerHistory, historyFailures });
-  return vm.runInNewContext(gate.getText(ast), { selected, historyLoadingIds, row });
-};
-const nodes = tree => !tree || typeof tree !== "object" ? [] : Array.isArray(tree)
-  ? tree.flatMap(nodes) : [tree, ...nodes(tree.props?.children)];
-
-// The production hooks run with deferred transports; nothing opens a server or browser.
-function harness(initial) {
-  const slots = [], effects = [], requests = [], invalidations = [], readRequests = [];
-  let cursor = 0, props, tree;
-  const ctx = {
-    loadConversationDetail: (id, signal, includeCustomerProfile) => new Promise((resolve, reject) => requests.push({ id, signal, includeCustomerProfile, resolve, reject })),
-    invalidateScope: (...args) => invalidations.push(args),
-  };
-  const sandbox = {
-    exports: {},
-    AbortController,
-    require: name => {
-      assert.equal(name, "react/jsx-runtime");
-      return { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) };
-    },
-    displayAdminError: cause => cause.message,
-    markMConversationRead: async (...args) => { readRequests.push(args); },
-    useState(initial) {
-      const index = cursor++;
-      slots[index] ??= { value: initial };
-      return [slots[index].value, value => { slots[index].value = typeof value === "function" ? value(slots[index].value) : value; }];
-    },
-    useEffect(effect, deps) {
-      const index = cursor++, previous = slots[index];
-      if (!previous || deps.some((value, i) => !Object.is(value, previous.deps[i]))) {
-        slots[index] = { deps, cleanup: previous?.cleanup };
-        effects.push(() => { slots[index].cleanup?.(); slots[index].cleanup = effect(); });
-      }
-    },
-  };
-  vm.runInNewContext(code, sandbox);
-  function render(patch = {}) {
-    props = { ...props, ...patch }; cursor = 0;
-    tree = sandbox.Component(props);
-    effects.splice(0).forEach(effect => effect());
-    return tree;
-  }
-  render({ conversation: initial, ctx, customerName: "Customer", loadEnabled: false });
-  return { requests, invalidations, readRequests, render,
-    error: () => slots[0].value,
-    retry: () => { const button = nodes(render()).find(node => node.type === "button"); assert.ok(button); button.props.onClick(); render(); },
-    unmount: () => slots.forEach(slot => slot.cleanup?.()),
-  };
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+import test from 'node:test';
+import ts from 'typescript';
+import { compareM3Messages } from '../lib/admin/m3-message-order.ts';
+const source=readFileSync(new URL('../app/components/domain-views/m-tabs/use-m3-message-pages.ts',import.meta.url),'utf8');
+const compiled=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
+const tick=()=>new Promise(resolve=>setImmediate(resolve));
+const row=(id='current',version=1)=>({id,customerId:id==='other'?'99':'42',ownerAdminId:12,assignmentId:null,version,status:'open',unread:0,lastPublicMessageId:69,messages:[]});
+const page=(first,last=first+9,version=1,id='current')=>({conversation:row(id,version),messages:Array.from({length:last-first+1},(_,i)=>({id:first+i,ts:(first+i)*100,sender:'user',sourceSenderType:'USER',sourceConversationNo:'legacy-'+Math.floor((first+i)/20),text:String(first+i)})),hasMore:first>1,nextBeforeMessageId:first>1?first:null,customerIdentity:{customerId:id==='other'?99:42,userNo:'REAL-UID',nickname:'Current name',phoneMasked:null},replyContext:{ready:true,targets:[{conversationNo:'legacy-outside-page',throughMessageId:2}]},readContexts:[]});
+function harness(){
+ const slots=[],effects=[],calls=[],denied=[];let cursor=0,dirty=true,value,summary=row(),scope='actor1',opening=0;
+ const sandbox={exports:{},AbortController,Map,Set,
+  require(name){return name==='react'?hooks:name==='@/lib/admin/m-client'?{fetchM3MessagePage:(no,before,signal)=>new Promise((resolve,reject)=>calls.push({no,before,signal,resolve,reject}))}:name==='@/lib/admin/error-messages'?{displayAdminError:error=>error.message}:name==='@/lib/admin/m3-message-order'?{compareM3Messages}:assert.fail(name);}};
+ const hooks={useState(initial){const i=cursor++;if(!(i in slots))slots[i]=typeof initial==='function'?initial():initial;return[slots[i],next=>{const val=typeof next==='function'?next(slots[i]):next;if(!Object.is(val,slots[i])){slots[i]=val;dirty=true;}}];},useRef(initial){const i=cursor++;return slots[i]??={current:initial};},useCallback(fn,deps){const i=cursor++,old=slots[i];if(!old||deps.some((dep,j)=>!Object.is(dep,old.deps[j])))slots[i]={deps,fn};return slots[i].fn;},useEffect(fn,deps){const i=cursor++,old=slots[i];if(!old||deps.some((dep,j)=>!Object.is(dep,old.deps[j])))effects.push(()=>{old?.cleanup?.();slots[i]={deps,cleanup:fn()};});}};
+ vm.runInNewContext(compiled,sandbox);
+ function render(changes={}){summary=changes.summary??summary;scope=changes.scope??scope;opening=changes.opening??opening;dirty=true;let n=0;while(dirty){assert.ok(++n<30,'hook convergence');dirty=false;cursor=0;value=sandbox.exports.useM3MessagePages(summary,scope,opening,(...args)=>denied.push(args));effects.splice(0).forEach(fn=>fn());}return value;}
+ render();return {calls,denied,render,get value(){return value;},async resolve(data,index=calls.length-1){calls[index].resolve(data);await tick();return render();},async reject(error,index=calls.length-1){calls[index].reject(error);await tick();return render();},close(){slots.forEach(slot=>slot?.cleanup?.());}};
 }
 
-test("disabled history gate and already hydrated rows do not start detail requests", () => {
-  const h = harness(row("old"));
-  assert.equal(h.requests.length, 0);
-  h.render({ conversation: { ...row("old"), detailReady: true }, loadEnabled: true });
-  assert.equal(h.requests.length, 0);
-  assert.equal(h.readRequests.length, 0);
-  h.unmount();
+test('opens latest ten only and traverses all 69 messages in seven explicit batches without duplicates',async()=>{
+ const h=harness();try{
+ assert.equal(h.calls.length,1);assert.equal(h.calls[0].before,undefined);
+ await h.resolve(page(60,69));for(let i=0;i<5;i++)h.render();assert.equal(h.calls.length,1);
+ for(const [first,last] of [[50,59],[40,49],[30,39],[20,29],[10,19],[1,9]]){
+  const before=h.value.cursor;h.value.loadOlder();h.value.loadOlder();assert.equal(h.calls.at(-1).before,before);
+  const count=h.calls.length;await h.resolve(page(first,last));assert.equal(h.calls.length,count);
+ }
+ assert.equal(h.calls.length,7);assert.equal(h.value.hasMore,false);assert.deepEqual(Array.from(h.value.messages,m=>m.id),Array.from({length:69},(_,i)=>i+1));
+ h.value.loadOlder();assert.equal(h.calls.length,7);assert.equal(h.value.page.replyContext.targets[0].throughMessageId,2);
+ }finally{h.close();}
+});
+test('page failure retains read history and retries the same cursor with one in-flight request',async()=>{
+ const h=harness();try{await h.resolve(page(60,69));h.value.loadOlder();await h.reject(new Error('page timeout'));
+ assert.equal(h.value.messages.length,10);assert.equal(h.value.cursor,60);assert.match(h.value.error,/page timeout/);assert.equal(h.value.contextReady,true,'older-page failures do not remove current reply metadata');
+ h.value.retry();assert.equal(h.calls.at(-1).before,60);await h.resolve(page(50,59));assert.equal(h.value.messages.length,20);assert.equal(h.value.error,'');
+ }finally{h.close();}
+});
+test('customer/identity/assignment changes cancel and hide old pages before a late result can mix',async()=>{
+ const h=harness();try{const old=h.calls[0];h.render({summary:row('other'),scope:'actor2'});assert.equal(old.signal.aborted,true);assert.equal(h.value.messages.length,0);
+ await h.resolve(page(60,69),0);assert.equal(h.value.messages.length,0);await h.resolve(page(10,19,1,'other'),1);assert.ok(h.value.messages.every(m=>m.id>=10&&m.id<=19));
+ h.render({summary:{...row('other'),assignmentId:'new-assignment'}});assert.equal(h.value.messages.length,0);
+ }finally{h.close();}
+});
+test('permission denial clears all private pages and reports the current customer once',async()=>{
+ const h=harness();try{await h.resolve(page(60,69));h.value.loadOlder();await h.reject({status:403,message:'denied'});assert.equal(h.value.messages.length,0);assert.deepEqual(h.denied,[['current','42']]);}finally{h.close();}
+});
+test('reopening the same customer resets to the newest ten instead of restoring an old scroll page',async()=>{
+ const h=harness();try{await h.resolve(page(60,69));h.value.loadOlder();await h.resolve(page(50,59));h.render({opening:1});assert.equal(h.value.messages.length,0);assert.equal(h.calls.at(-1).before,undefined);await h.resolve(page(60,69));assert.equal(h.value.messages.length,10);assert.equal(h.value.change,'reset');}finally{h.close();}
+});
+test('burst larger than ten never creates a hidden tail gap and keeps a bridge from the latest cursor',async()=>{
+ const h=harness();try{await h.resolve(page(60,69));h.render({summary:row('current',2)});assert.equal(h.calls.at(-1).before,undefined);await h.resolve(page(81,90,2));
+ assert.equal(h.value.gap,true);assert.equal(h.value.contextReady,false);assert.deepEqual(Array.from(h.value.messages,m=>m.id),Array.from({length:10},(_,i)=>60+i));assert.equal(h.value.cursor,60);
+ h.value.loadOlder();await h.resolve(page(50,59,2));assert.equal(h.value.messages.length,20);assert.equal(h.value.gap,true,'older reading remains available without pretending the new tail is contiguous');
+ h.value.newest();await h.resolve(page(81,90,2));assert.equal(h.value.gap,false);assert.equal(h.value.cursor,81);h.value.loadOlder();await h.resolve(page(71,80,2));h.value.loadOlder();await h.resolve(page(61,70,2));
+ assert.deepEqual(Array.from(h.value.messages,m=>m.id),Array.from({length:30},(_,i)=>61+i));
+ }finally{h.close();}
+});
+test('new version cancels an older in-flight page, merges an overlapping tail and keeps the history cursor',async()=>{
+ const h=harness();try{await h.resolve(page(60,69));h.value.loadOlder();const stale=h.calls.at(-1);h.render({summary:row('current',2)});assert.equal(stale.signal.aborted,true);
+ await h.resolve(page(65,74,2));assert.equal(h.value.cursor,60);assert.equal(h.value.messages.length,15);assert.equal(h.value.change,'latest');assert.equal(h.value.gap,false);
+ stale.resolve(page(50,59));await tick();h.render();assert.equal(h.value.messages.length,15);
+ }finally{h.close();}
+});
+test('a version change during the first page cancels it and cannot leave reply/read authority permanently pending',async()=>{
+ const h=harness();try{const stale=h.calls[0];h.render({summary:row('current',2)});assert.equal(stale.signal.aborted,true);assert.equal(h.calls.length,2);
+ stale.resolve(page(60,69,1));await tick();h.render();assert.equal(h.value.messages.length,0);
+ await h.resolve(page(60,69,2),1);assert.equal(h.value.contextReady,true);assert.equal(h.value.readReady,true);
+ }finally{h.close();}
+});
+test('receipt recovery can revalidate the failed older page after an intervening latest update',async()=>{
+ const h=harness();try{await h.resolve(page(60,69));h.value.loadOlder();await h.resolve(page(50,59));const failed={beforeMessageId:h.value.readCursor};assert.equal(failed.beforeMessageId,60);
+ h.render({summary:row('current',2)});await h.resolve(page(65,74,2));assert.equal(h.value.readCursor,undefined);
+ h.value.refreshReadContexts(failed);assert.equal(h.calls.at(-1).before,60);await h.resolve(page(50,59,2));assert.equal(h.value.readCursor,60);assert.equal(h.value.messages.length,25);
+ }finally{h.close();}
 });
 
-test("actual parent gate waits for primary detail, then loads all ten segments with at most three nearest-first reads", async () => {
-  const rows = Array.from({ length: 10 }, (_, i) => row(`history-${i}`));
-  const children = rows.map(item => harness(item));
-  const selected = { detailReady: false };
-  const render = () => children.forEach((child, i) => child.render({ conversation: rows[i], loadEnabled: enabled(selected, rows, rows[i]) }));
-  render();
-  assert.equal(children.flatMap(child => child.requests).length, 0);
-  selected.detailReady = true;
-  render();
-  assert.deepEqual(children.map(child => child.requests.length), rows.map((_, index) => index >= 7 ? 1 : 0));
-  for (let completed = 0; completed < rows.length; completed++) {
-    const active = children.flatMap((child, i) => !rows[i].detailReady && child.requests.length ? [{ child, i }] : []);
-    assert.ok(active.length > 0 && active.length <= 3);
-    const { child, i } = active.at(-1);
-    assert.equal(child.requests[0].includeCustomerProfile, false);
-    child.requests[0].resolve(); await tick(); rows[i] = { ...rows[i], detailReady: true }; render();
-  }
-  render();
-  assert.equal(children.flatMap(child => child.requests).length, 10);
-  children.forEach(child => child.unmount());
+const chat=readFileSync(new URL('../app/components/domain-views/m-tabs/m3-dedicated-chat.tsx',import.meta.url),'utf8');
+const ast=ts.createSourceFile('chat.tsx',chat,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);const main=ast.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='M3DedicatedChat');
+const layout=main.body.statements.find(node=>ts.isExpressionStatement(node)&&ts.isCallExpression(node.expression)&&node.expression.expression.getText(ast)==='useLayoutEffect'&&node.getText(ast).includes('messagePages.revision'));
+const layoutCode=ts.transpileModule(layout.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+test('actual layout opens at bottom, anchors prepended old messages, and leaves old reading unchanged on a new tail',()=>{
+ const body={scrollTop:0,scrollHeight:2000,clientHeight:400,getBoundingClientRect:()=>({top:100}),querySelector:()=>({getBoundingClientRect:()=>({top:175})})};
+ const scope={useLayoutEffect:fn=>fn(),messagePages:{key:'current',revision:1,change:'reset',gap:false},messageBodyRef:{current:body},messageAnchor:{current:null},messageScroll:{current:{top:0,bottom:true,touchY:0}}};
+ vm.runInNewContext(layoutCode,scope);assert.equal(body.scrollTop,2000);
+ scope.messagePages.change='older';body.scrollTop=300;scope.messageAnchor.current={id:'60',offset:25};vm.runInNewContext(layoutCode,scope);assert.equal(body.scrollTop,350,'visible message offset is preserved after prepend');
+ scope.messagePages.change='latest';scope.messageScroll.current.bottom=false;body.scrollTop=350;vm.runInNewContext(layoutCode,scope);assert.equal(body.scrollTop,350,'new arrivals must not pull an older reader to the bottom');
 });
-
-test("a failed segment releases its slot, leaves retry visible, and never blocks remaining history", async () => {
-  const rows = Array.from({ length: 4 }, (_, i) => row(`history-${i}`)), selected = { detailReady: true }, failures = [];
-  const children = rows.map(item => harness(item));
-  const onLoadFailure = (id, version) => failures.push(`${id}:${version}`), onRetry = (id, version) => failures.splice(failures.indexOf(`${id}:${version}`), 1);
-  const render = () => children.forEach((child, i) => child.render({ conversation: rows[i], loadEnabled: enabled(selected, rows, rows[i], failures), onLoadFailure, onRetry }));
-  render(); assert.equal(children[0].requests.length, 0);
-  children[3].requests[0].reject(new Error("detail timed out")); await tick(); render();
-  assert.equal(children[3].error(), "detail timed out"); assert.equal(children[0].requests.length, 1);
-  assert.deepEqual(failures, ["history-3:1"]);
-  children[3].retry(); render();
-  assert.equal(children[3].error(), ""); assert.equal(children[3].requests.length, 2);
-  assert.equal(children[3].requests[1].includeCustomerProfile, false);
-  children.forEach(child => child.unmount());
+test('image load grows the latest view at bottom without dragging a user who has scrolled upward',()=>{
+ const handler=main.body.statements.flatMap(node=>ts.isVariableStatement(node)?[...node.declarationList.declarations]:[]).find(node=>node.name.getText(ast)==='onMessageAssetLoad');
+ const code=ts.transpileModule(`globalThis.handler=${handler.initializer.getText(ast)};`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+ const body={scrollTop:300,scrollHeight:1800},scope={messageBodyRef:{current:body},messageScroll:{current:{bottom:true,top:300}}};
+ vm.runInNewContext(code,scope);scope.handler();assert.equal(body.scrollTop,1800);
+ scope.messageScroll.current.bottom=false;body.scrollTop=300;body.scrollHeight=2400;scope.handler();assert.equal(body.scrollTop,300);
+ assert.match(chat,/onLoadCapture=\{onMessageAssetLoad\}/);
 });
-
-test("a newly authorized conversation version is not blocked by an older failed version", () => {
-  const previous = row("history"), current = { ...previous, version: 2 };
-  assert.equal(enabled({ detailReady: true }, [previous], previous, ["history:1"]), false);
-  assert.equal(enabled({ detailReady: true }, [current], current, ["history:1"]), true);
+test('M3 has no full-detail/history/preflight bypass and keeps thin UID plus independent reply/read contexts',()=>{
+ assert.doesNotMatch(chat,/loadConversationDetail\(|markMConversationRead\(|CustomerHistoryMessages|customerHistory\.map/);
+ assert.match(chat,/identity\.userNo/);assert.match(chat,/messagePages\.page\?\.replyContext\.targets/);assert.match(chat,/markM3MessagePageRead\(context/);
+ assert.match(chat,/currentReplyTarget && \(intent === "SERVICE" \|\| includeCurrentReply\)/);assert.match(chat,/selectedClosedIds\.has\(row\.conversationNo\)/);
+ assert.match(readFileSync(new URL('../app/components/domain-views/m-view.tsx',import.meta.url),'utf8'),/tab !== "M3" && \(event\.eventType/);
 });
-
-test("out-of-order history completions retain chronological message order and do not duplicate public IDs", () => {
-  const messages = main.body.statements.flatMap(node => ts.isVariableStatement(node) ? [...node.declarationList.declarations] : []).find(node => node.name.getText(ast) === "threadMessages");
-  const evaluate = customerHistory => vm.runInNewContext(messages.initializer.getText(ast), { selected: { messages: [{ id: 9, ts: 900, sender: "user", text: "current" }] }, customerHistory });
-  const newest = { detailReady: true, messages: [{ id: 5, ts: 500, sender: "agent", text: "newer history" }, { id: 9, ts: 900, sender: "user", text: "current duplicate" }] };
-  const oldest = { detailReady: true, messages: [{ id: 1, ts: 100, sender: "user", text: "oldest" }, { id: 2, ts: 100, sender: "agent", text: "same-time reply" }] };
-  assert.deepEqual(Array.from(evaluate([newest, { detailReady: false, messages: [] }]), item => item.id), [5, 9]);
-  assert.deepEqual(Array.from(evaluate([newest, oldest]), item => item.id), [1, 2, 5, 9]);
-});
-
-test("an empty current segment cannot claim empty history while old segments are pending or completeness is unknown", () => {
-  const complete = main.body.statements.flatMap(node => ts.isVariableStatement(node) ? [...node.declarationList.declarations] : []).find(node => node.name.getText(ast) === "historyComplete");
-  const evaluate = (selected, customerHistory) => vm.runInNewContext(complete.initializer.getText(ast), { selected, customerHistory });
-  assert.equal(evaluate({ historyTruncated: false }, [{ detailReady: false }]), false);
-  assert.equal(evaluate({ historyTruncated: false }, [{ detailReady: true, historyTruncated: true }]), false);
-  assert.equal(evaluate({}, []), false);
-  assert.equal(evaluate({ historyTruncated: false }, [{ detailReady: true, historyTruncated: false }]), true);
-});
-
-for (const boundary of ["disabled", "new-version", "unmount"]) {
-  test(`${boundary} cancels the old read and suppresses a late permission failure`, async () => {
-    const h = harness(row("old")); h.render({ loadEnabled: true });
-    const previous = h.requests[0];
-    if (boundary === "disabled") h.render({ loadEnabled: false });
-    else if (boundary === "new-version") h.render({ conversation: { ...row("old"), version: 2 } });
-    else h.unmount();
-    assert.equal(previous.signal.aborted, true);
-    previous.reject({ status: 403, message: "late forbidden" }); await tick();
-    assert.equal(h.error(), ""); assert.deepEqual(h.invalidations, []);
-    assert.equal(h.requests.length, boundary === "new-version" ? 2 : 1);
-    h.unmount();
-  });
-}
-
-for (const status of [403, 404]) {
-  test(`current ${status} revokes the whole customer scope instead of retaining stale history`, async () => {
-    const h = harness(row("old")); h.render({ loadEnabled: true });
-    h.requests[0].reject({ status, message: "permission changed" }); await tick();
-    assert.deepEqual(h.invalidations, [["old", "42"]]);
-    assert.equal(h.error(), ""); h.unmount();
-  });
-}
-
-test("selected conversation disables the duplicate candidate loader but preserves first-contact loading", () => {
-  for (const selected of [{ id: "current" }, null]) {
-    const calls = [], context = { selected, replyCustomerId: "42", conversationsAvailable: true,
-      closedCandidateMissing: ["old"], closedCandidateError: "", authEpoch: 1, closedCandidateRetry: 0,
-      loadConversationDetail: (...args) => { calls.push(args); return Promise.resolve(); },
-      AbortController, useEffect: effect => effect() };
-    vm.runInNewContext(compile(candidateEffect.getText(ast)), context);
-    assert.equal(calls.length, selected ? 0 : 1);
-  }
-});
-
-test("a stale candidate-loader error cannot lock a loaded selected conversation or bypass missing history", () => {
-  const evaluate = patch => vm.runInNewContext(ready.initializer.getText(ast), {
-    selected: { id: "current" }, closedCandidateMissing: [], closedCandidateError: "previous failure",
-    selectedClosedIds: new Set(), closedReplyCandidates: [], ...patch,
-  });
-  assert.equal(evaluate({}), true);
-  assert.equal(evaluate({ closedCandidateMissing: ["old"] }), false);
-  assert.equal(evaluate({ selected: null }), false);
-  assert.equal(evaluate({ selectedClosedIds: new Set(["old"]) }), false);
+test('a customer never opened in the message pane is searchable by the real UserOps U-number',()=>{
+ const filtered=main.body.statements.flatMap(node=>ts.isVariableStatement(node)?[...node.declarationList.declarations]:[]).find(node=>node.name.getText(ast)==='filtered');
+ const code=ts.transpileModule(`globalThis.result=${filtered.initializer.getText(ast)};`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+ for(const [customerId,query] of [['42','U00000042'],['60723153007','U60723153007']]){
+  const scope={identityRows:[{id:'current',customerId,customer:'Customer',profile:{uid:`U-${customerId.padStart(5,'0')}`}}],query,listTab:'all',tabMatch:()=>true,customerIdOf:row=>row.customerId};
+  vm.runInNewContext(code,scope);assert.equal(scope.result.length,1);
+ }
 });

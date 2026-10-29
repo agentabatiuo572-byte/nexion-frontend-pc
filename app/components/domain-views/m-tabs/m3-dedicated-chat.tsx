@@ -2,14 +2,14 @@
 
 import { customerConversations, replyTimeout } from "@/lib/admin/customer-conversations";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { subscribeAdminRealtime, getAdminRealtimeSnapshot, watchAdminConversation, sendAdminTyping } from "@/lib/admin/admin-conversation-realtime";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { userNicknameText } from "@/lib/admin/brand-copy";
 import { supportClient, SupportClientError, isIndeterminateSupportError, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode } from "@/lib/admin/m-support-client";
-import { markMConversationRead, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
+import { markM3MessagePageRead, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
 import { parseBusinessTime } from "@/lib/admin/business-time";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
@@ -27,6 +27,7 @@ import { setSupportAlertPrefs, useSupportAlertPrefs } from "@/lib/admin/support-
 import { legacySupportDestination, privateMessageRecovery, type PrivateMessageRecovery } from "@/lib/admin/m-support-enhancements";
 import "./m3-dedicated-chat.css";
 import "./m3-conversation-list.css";
+import { useM3MessagePages } from "./use-m3-message-pages";
 
 type Intent = "SERVICE" | "MAINTENANCE";
 type Attachment = { file: File; url: string; uploadId: string; key: string; id?: string; state: "selected" | "uploading" | "ready" | "error"; error?: string };
@@ -142,27 +143,6 @@ function SupportContactPicker({onClose,onSelect}:{onClose:()=>void;onSelect:(id:
   return <Modal title="主动联系本人客户" icon="users" onClose={onClose} footer={<button className="btn btn-sec btn-sm" onClick={onClose}>取消</button>}><label>搜索客户姓名或编码<input className="fld" value={keyword} onChange={e=>{setKeyword(e.target.value);setPage(1);}}/></label><p>只可向当前本人客户发送；不再维护客户可在原求助会话中继续普通服务回复。</p>{error?<p role="alert">{error}<button className="l-btn sm" onClick={()=>setRetry(n=>n+1)}>重试客户列表</button></p>:!rows?<p role="status">正在加载客户…</p>:<>{!rows.records.length&&<p>暂无匹配的客户。</p>}{rows.records.map(c=><button className="l-btn sm" key={c.customerId} disabled={c.agentAdminId!==adminId||!c.maintenanceEnabled} onClick={()=>onSelect(c.customerId)}>{c.displayName||c.customerNo||c.customerId} · {c.customerNo||"编码未知"}{!c.maintenanceEnabled?" · 不再维护":c.agentAdminId!==adminId?" · 当前归属其他专属客服":""}</button>)}<div className="m-admin-toolbar"><button className="l-btn sm" disabled={page<=1} onClick={()=>setPage(n=>n-1)}>上一页</button><span>第 {page} 页 · {rows.total} 位</span><button className="l-btn sm" disabled={page*10>=rows.total} onClick={()=>setPage(n=>n+1)}>下一页</button></div></>}</Modal>;
 }
 
-function CustomerHistoryMessages({ conversation, ctx, customerName, loadEnabled, onLoadFailure, onRetry }: { conversation: SessionConvo; ctx: MCtx; customerName: string; loadEnabled: boolean; onLoadFailure?: (id: string, version: number) => void; onRetry?: (id: string, version: number) => void }) {
-  const [error, setError] = useState("");
-  const [retry, setRetry] = useState(0);
-  const load = ctx.loadConversationDetail;
-  useEffect(() => {
-    if (!loadEnabled || conversation.detailReady) return;
-    const controller = new AbortController();
-    setError("");
-    void load(conversation.id, controller.signal, false).catch(cause => { if (!controller.signal.aborted) { if (lostPermission(cause)) ctx.invalidateScope(conversation.id,conversation.customerId); else { setError(displayAdminError(cause)); onLoadFailure?.(conversation.id, conversation.version); } } });
-    return () => controller.abort();
-  }, [conversation.id, conversation.version, conversation.detailReady, loadEnabled, load, retry, onLoadFailure]);
-  const unread = conversation.detailReady ? [...conversation.messages].reverse().find(message => message.sender === "user" && message.id && message.status !== "read")?.id : undefined;
-  useEffect(() => {
-    if (!unread) return;
-    const controller = new AbortController();
-    void markMConversationRead(conversation.id,unread,controller.signal).catch(cause => { if (!controller.signal.aborted) setError(displayAdminError(cause)); });
-    return () => controller.abort();
-  },[conversation.id,unread,retry]);
-  return <section aria-label="历史消息">{error && <p role="alert">历史消息加载失败：{error}<button type="button" onClick={()=>{setError("");onRetry?.(conversation.id, conversation.version);setRetry(n=>n+1);}}>重试</button></p>}{!conversation.detailReady && !error && <p role="status">{loadEnabled ? "正在加载历史消息…" : "历史消息等待加载…"}</p>}</section>;
-}
-
 type ListTab = "pending" | "unassigned" | "open" | "all" | "archived";
 const LIST_TABS: Array<[ListTab, string]> = [["pending", "待回复"], ["unassigned", "待分配"], ["open", "进行中"], ["all", "全部"], ["archived", "归档"]];
 const LIST_CHUNK = 30;
@@ -199,6 +179,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   const canWriteM3 = session?.role === "super" || session?.role === "superadmin" || Boolean(session?.authorities?.includes("service_m3_write"));
   const [requestedCustomerId, setRequestedCustomerId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState("");
+  const [messageOpening, setMessageOpening] = useState(0);
   const selectionRestored = useRef(false);
   // A deep link or restored selection opens in whichever inbox scope holds it (supervisors default to "mine").
   const followSelection = useRef(false);
@@ -234,6 +215,9 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   const uploadControllerRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatColumnRef = useRef<HTMLDivElement>(null);
+  const messageBodyRef = useRef<HTMLDivElement>(null);
+  const messageAnchor = useRef<{ id: string; offset: number } | null>(null);
+  const messageScroll = useRef({ top: 0, bottom: true, touchY: 0 });
   const [busy, setBusy] = useState(false);
   const [firstDetail, setFirstDetail] = useState<SupportCustomerDetail | null>(null);
   const [detailError, setDetailError] = useState("");
@@ -242,13 +226,10 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   const [profileDetail, setProfileDetail] = useState<SupportCustomerDetail | null>(null);
   const [profileError, setProfileError] = useState("");
   const [profileRetry, setProfileRetry] = useState(0);
-  const [conversationError, setConversationError] = useState("");
-  const [conversationRetry, setConversationRetry] = useState(0);
-  const [closedCandidateError, setClosedCandidateError] = useState("");
-  const [closedCandidateRetry, setClosedCandidateRetry] = useState(0);
   const [firstPending, setFirstPending] = useState<{ key: string; body: string; intent: Intent; clientMessageId: string; customerId: string; assignmentId: string; version: number; replyTargets: Array<{ conversationNo: string; throughMessageId: number }> } | null>(null);
   const [readError, setReadError] = useState("");
   const [readRetry, setReadRetry] = useState(0);
+  const failedReadContext = useRef<{ key: string; beforeMessageId?: number } | null>(null);
   const [selectedClosedIds, setSelectedClosedIds] = useState<Set<string>>(() => new Set());
   const [includeCurrentReply, setIncludeCurrentReply] = useState(false);
   const [actionError, setActionError] = useState("");
@@ -288,27 +269,62 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   const teamAgents = useMemo(() => [...new Map(visible.filter((convo) => convo.ownerAdminId && convo.ownerAdminId !== adminId).map((convo) => [convo.ownerAdminId!, convo.owner])).entries()], [visible, adminId]);
   const customerRows = customerConversations(scoped);
   const tabs = LIST_TABS.filter(([value]) => value !== "unassigned" || reviewing);
-  const filtered = customerRows.filter(convo => tabMatch(convo,listTab) && (!query.trim() || [convo.customer ?? "", convo.profile?.nickname ?? "", convo.profile?.uid ?? "", customerIdOf(convo), convo.id].some(value => value.toLowerCase().includes(query.trim().toLowerCase()))))
-    .sort(listTab === "pending" || listTab === "unassigned" ? (a, b) => (a.pendingReplySince ?? Infinity) - (b.pendingReplySince ?? Infinity) : (a, b) => (b.lastHumanTs ?? b.lastTs) - (a.lastHumanTs ?? a.lastTs));
-  const listRows = filtered.slice(0, listLimit);
   const requestedConvo = validCustomerId(requestedCustomerId) ? customerRows.find((convo) => customerIdOf(convo) === requestedCustomerId) : null;
   const selectedCustomer = visible.find(row=>row.id===selectedId)?.customerId;
-  const selected = requestedCustomerId ? requestedConvo ?? null : selectedId ? customerRows.find(row=>row.customerId===selectedCustomer) ?? null : customerRows.find(convo=>!convo.archived) ?? null;
-  const customerHistory = visible.filter(row => row.customerId === selected?.customerId && row.id !== selected?.id).sort((a,b) => a.lastTs-b.lastTs);
-  const [historyFailures, setHistoryFailures] = useState<string[]>([]);
-  const onHistoryFailure = useCallback((id: string, version: number) => setHistoryFailures(previous => previous.includes(`${id}:${version}`) ? previous : [...previous, `${id}:${version}`]), []);
-  const onHistoryRetry = useCallback((id: string, version: number) => setHistoryFailures(previous => previous.filter(value => value !== `${id}:${version}`)), []);
-  useEffect(() => { setHistoryFailures([]); }, [selected?.customerId, authEpoch]);
-  // Keep at most three history reads active; a failed segment retains retry without blocking the rest.
-  const historyLoadingIds = new Set([...customerHistory].reverse().filter(row => !row.detailReady && !historyFailures.includes(`${row.id}:${row.version}`)).slice(0, 3).map(row => row.id));
-  const historyComplete = selected?.historyTruncated === false && customerHistory.every(row => row.detailReady && row.historyTruncated === false);
-  const threadMessages = [...new Map([...(selected?.messages ?? []), ...customerHistory.flatMap(row=>row.detailReady ? row.messages : [])].map(message=>[message.id ?? `${message.ts}:${message.sender}:${message.text}`,message])).values()].sort((a,b)=>a.ts-b.ts || (a.id??0)-(b.id??0));
-  // M-9: snapshots replace details, so the open thread would blank on every refresh. Keep showing its last loaded
-  // messages until the reloaded detail arrives, only for the same customer thread, owner and binding.
-  const lastShown = useRef<{ id: string; owner: SessionConvo["ownerAdminId"]; assignment: SessionConvo["assignmentId"]; messages: SessionMsg[] } | null>(null);
-  if (selected?.detailReady) lastShown.current = { id: selected.id, owner: selected.ownerAdminId, assignment: selected.assignmentId, messages: threadMessages };
-  const paneMessages = selected?.detailReady ? threadMessages
-    : selected && lastShown.current?.id === selected.id && lastShown.current.owner === selected.ownerAdminId && lastShown.current.assignment === selected.assignmentId ? lastShown.current.messages : null;
+  const selectedSummary = requestedCustomerId ? requestedConvo ?? null : selectedId ? customerRows.find(row=>row.customerId===selectedCustomer) ?? null : customerRows.find(convo=>!convo.archived) ?? null;
+  const pageScope = `${scopeIdentity}:${scopeGeneration.current}:${scopeRetry}:${qualificationUnknown}:${conversationsAvailable}`;
+  const messagePages = useM3MessagePages(qualificationUnknown || !conversationsAvailable ? null : selectedSummary, pageScope, messageOpening, ctx.invalidateScope);
+  const pageConversation = messagePages.page?.conversation.id === selectedSummary?.id ? messagePages.page?.conversation : null;
+  const selected = selectedSummary ? { ...selectedSummary, ...(pageConversation ?? {}),
+    version: Math.max(selectedSummary.version, pageConversation?.version ?? 0),
+    messages: messagePages.messages, detailReady: Boolean(messagePages.page),
+    status: selectedSummary.version > (pageConversation?.version ?? -1) ? selectedSummary.status : pageConversation?.status ?? selectedSummary.status,
+  } : null;
+  const identityMemory = useRef<{ scope: string; rows: Map<string, NonNullable<typeof messagePages.page>["customerIdentity"]> }>({ scope: pageScope, rows: new Map() });
+  if (identityMemory.current.scope !== pageScope) identityMemory.current = { scope: pageScope, rows: new Map() };
+  if (messagePages.page) identityMemory.current.rows.set(String(messagePages.page.customerIdentity.customerId), messagePages.page.customerIdentity);
+  const identityRows = customerRows.map(row => {
+    const identity = identityMemory.current.rows.get(String(row.customerId));
+    return identity ? { ...row, customer: identity.nickname ?? row.customer, profile: row.profile ? { ...row.profile, uid: identity.userNo, nickname: identity.nickname ?? row.profile.nickname, phone: identity.phoneMasked ?? row.profile.phone } : row.profile } : row;
+  });
+  const filtered = identityRows.filter(convo => tabMatch(convo,listTab) && (!query.trim() || [convo.customer ?? "", convo.profile?.nickname ?? "", convo.profile?.uid ?? "", `U${customerIdOf(convo).padStart(8, "0")}`, customerIdOf(convo), convo.id].some(value => value.toLowerCase().includes(query.trim().toLowerCase()))))
+    .sort(listTab === "pending" || listTab === "unassigned" ? (a, b) => (a.pendingReplySince ?? Infinity) - (b.pendingReplySince ?? Infinity) : (a, b) => (b.lastHumanTs ?? b.lastTs) - (a.lastHumanTs ?? a.lastTs));
+  const listRows = filtered.slice(0, listLimit);
+  const paneMessages = messagePages.page ? messagePages.messages : null;
+  const historyComplete = Boolean(messagePages.page && !messagePages.hasMore);
+  const conversationError = messagePages.error;
+  useEffect(() => { failedReadContext.current = null; markedRef.current = ""; setReadError(""); }, [messagePages.key]);
+  const loadOlderMessages = () => {
+    const body = messageBodyRef.current;
+    if (!body || messagePages.loading || !messagePages.hasMore) return;
+    const top = body.getBoundingClientRect().top;
+    const anchor = [...body.querySelectorAll<HTMLElement>("[data-m3-message-id]")].find(element => element.getBoundingClientRect().bottom > top);
+    messageAnchor.current = anchor ? { id: anchor.dataset.m3MessageId!, offset: anchor.getBoundingClientRect().top - top } : null;
+    void messagePages.loadOlder();
+  };
+  const onMessageScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    const body = event.currentTarget, previous = messageScroll.current.top;
+    messageScroll.current.top = body.scrollTop;
+    messageScroll.current.bottom = body.scrollHeight - body.scrollTop - body.clientHeight <= 40;
+    if (body.scrollTop < previous && body.scrollTop <= 60) loadOlderMessages();
+  };
+  const onMessageAssetLoad = () => {
+    const body = messageBodyRef.current;
+    if (body && messageScroll.current.bottom) { body.scrollTop = body.scrollHeight; messageScroll.current.top = body.scrollTop; }
+  };
+  useLayoutEffect(() => {
+    const body = messageBodyRef.current;
+    if (!body) return;
+    if (!messagePages.revision) { messageScroll.current = { top: 0, bottom: true, touchY: 0 }; messageAnchor.current = null; return; }
+    if (messagePages.change === "reset" || messagePages.change === "latest" && messageScroll.current.bottom && !messagePages.gap) body.scrollTop = body.scrollHeight;
+    else if (messagePages.change === "older" && messageAnchor.current) {
+      const anchor = body.querySelector<HTMLElement>(`[data-m3-message-id="${messageAnchor.current.id}"]`);
+      if (anchor) body.scrollTop += anchor.getBoundingClientRect().top - body.getBoundingClientRect().top - messageAnchor.current.offset;
+    }
+    messageAnchor.current = null;
+    messageScroll.current.top = body.scrollTop;
+    messageScroll.current.bottom = body.scrollHeight - body.scrollTop - body.clientHeight <= 40;
+  }, [messagePages.key, messagePages.revision]);
   const [timeoutNow, setTimeoutNow] = useState(Date.now());
   useEffect(() => { const timer = setInterval(() => setTimeoutNow(Date.now()), 30000); return () => clearInterval(timer); }, []);
   useEffect(() => { let current = true; void fetchMConversationTimeoutPolicy().then(policy => { if(current) setTimeoutPolicy(policy); }).catch(() => {}); return () => { current = false; }; }, [authEpoch]);
@@ -321,14 +337,14 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   const maintenanceOffered = Boolean(intentSource?.maintenanceEnabled && (intentSource.due === true || maintenanceChosen));
   const intent: Intent = maintenanceChosen && intentSource?.maintenanceEnabled ? "MAINTENANCE" : "SERVICE";
   const replyCustomerId = selected ? canSendTo(selected, adminId) ? customerIdOf(selected) : null : requestedCustomerId;
-  const closedCandidateRows = replyCustomerId ? visible.filter((convo) => customerIdOf(convo) === replyCustomerId && convo.ownerAdminId === adminId && convo.id !== selected?.id && convo.pendingReplyCount !== 0) : [];
-  const closedCandidateMissing = closedCandidateRows.filter((convo) => (intent === "SERVICE" || selectedClosedIds.has(convo.id)) && !convo.detailReady).map((convo) => convo.id);
-  const closedReplyCandidates = closedCandidateRows.filter((convo) => convo.detailReady).flatMap((convo) => {
-    const latest = [...convo.messages].reverse().find((message) => message.sender === "user" && message.sourceSenderType !== "SYSTEM" && message.sourceSenderType !== "INTERNAL" && Number.isSafeInteger(message.id));
-    return latest?.sender === "user" && Number.isSafeInteger(latest.id) ? [{ conversationNo: convo.id, throughMessageId: latest.id!, text: latest.text }] : [];
-  });
-  const closedReplyTargets = closedReplyCandidates.filter((row) => intent === "SERVICE" || selectedClosedIds.has(row.conversationNo)).map(({ conversationNo, throughMessageId }) => ({ conversationNo, throughMessageId }));
-  const closedCandidatesReady = closedCandidateMissing.length === 0 && (Boolean(selected) || !closedCandidateError) && [...selectedClosedIds].every((id) => closedReplyCandidates.some((row) => row.conversationNo === id));
+  const allReplyTargets = messagePages.page?.replyContext.targets ?? [];
+  const currentReplyTarget = allReplyTargets.find(target => target.conversationNo === selected?.id);
+  const closedReplyCandidates = allReplyTargets.filter(target => target.conversationNo !== selected?.id).map(target => ({ ...target, text: `会话 ${target.conversationNo} 的待回复消息` }));
+  const closedCandidateRows = closedReplyCandidates;
+  const closedCandidateMissing = selected && !messagePages.contextReady ? [selected.id] : [];
+  const closedCandidateError = selected && !messagePages.contextReady ? conversationError : "";
+  const closedReplyTargets = closedReplyCandidates.filter(row => intent === "SERVICE" || selectedClosedIds.has(row.conversationNo)).map(({ conversationNo, throughMessageId }) => ({ conversationNo, throughMessageId }));
+  const closedCandidatesReady = (!selected || messagePages.contextReady && messagePages.page?.replyContext.ready === true) && [...selectedClosedIds].every(id => closedReplyCandidates.some(row => row.conversationNo === id));
   const displayedIntent = pending?.intent ?? firstPending?.intent ?? intent;
   const lockedTargets = firstPending?.replyTargets ?? pending?.message.replyTargets ?? [];
   const displayedClosedIds = new Set([...selectedClosedIds, ...lockedTargets.map((target) => target.conversationNo)]);
@@ -353,7 +369,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   const recoveryBlocksTarget = recoveries.some(({ locator }) => Boolean(locator.conversationId && locator.conversationId === selected?.id) || Boolean(locator.customerId && locator.customerId === (selected?.customerId ?? requestedCustomerId)));
   const writable = !qualificationUnknown && !recoveryBlocksTarget && canWriteM3 && (selected ? selected.detailReady === true && closedCandidatesReady && canSendTo(selected, adminId) && Boolean(currentProfileDetail?.assignmentId && currentProfileDetail.agentAdminId === selected.ownerAdminId) : Boolean(validCustomerId(requestedCustomerId) && closedCandidatesReady && firstDetail?.assignmentId && firstDetail.agentAdminId === adminId));
   const lostAccess = Boolean(!qualificationUnknown && conversationsAvailable && selectedId && !requestedCustomerId && !visible.some((convo) => convo.id === selectedId));
-  const unreadMessageId = selected?.detailReady ? [...selected.messages].reverse().find((message) => message.sender === "user" && message.id && message.status !== "read")?.id : undefined;
+  const readContextsKey = JSON.stringify(messagePages.page?.readContexts ?? []);
   useEffect(()=>{
     if(!selected?.detailReady)return;
     const ids=new Set(selected.messages.flatMap(m=>Number.isSafeInteger(m.id)?[m.id!]:[])),previous=seenMessages.current;
@@ -361,33 +377,6 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     seenMessages.current={conversationId:selected.id,ids};
     const timer=setTimeout(()=>setNewMessageIds(new Set()),180);return()=>clearTimeout(timer);
   },[selected?.id,selected?.detailReady,selected?.messages]);
-
-  const loadConversationDetail = ctx.loadConversationDetail;
-  useEffect(() => {
-    if (!selected || selected.detailReady || !conversationsAvailable || conversationError) return;
-    const controller = new AbortController();
-    void loadConversationDetail(selected.id, controller.signal).catch((cause: unknown) => {
-      if (controller.signal.aborted) return;
-      if (lostPermission(cause)) {
-        ctx.invalidateScope(selected.id, selected.customerId);
-      } else setConversationError(displayAdminError(cause));
-    });
-    return () => controller.abort();
-  }, [selected?.id, selected?.version, selected?.ownerAdminId, selected?.detailReady, conversationsAvailable, authEpoch, conversationRetry, conversationError, loadConversationDetail]);
-  useEffect(() => { setConversationError(""); }, [selected?.id, selected?.version, selected?.lastTs, authEpoch]);
-
-  useEffect(() => {
-    if (selected || !replyCustomerId || !conversationsAvailable || !closedCandidateMissing.length || closedCandidateError) return;
-    const controller = new AbortController();
-    void loadConversationDetail(closedCandidateMissing[0], controller.signal).catch((cause: unknown) => {
-      if (controller.signal.aborted) return;
-      if (lostPermission(cause)) {
-        ctx.invalidateScope(closedCandidateMissing[0], replyCustomerId);
-      } else setClosedCandidateError(displayAdminError(cause));
-    });
-    return () => controller.abort();
-  }, [selected?.id, replyCustomerId, closedCandidateMissing.join("|"), conversationsAvailable, authEpoch, closedCandidateRetry, closedCandidateError, loadConversationDetail]);
-  useEffect(() => { setClosedCandidateError(""); }, [replyCustomerId, authEpoch]);
 
   useEffect(() => {
     if (selected && writable && ctx.pget("I.session.ui.lastConvo") !== selected.id) {
@@ -638,21 +627,27 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   }, [adminId, conversationsAvailable, authEpoch, visible, pending, requestedCustomerId, revokeCustomer, qualificationUnknown]);
   useEffect(() => { clearAttachment(); if (!pending && !firstPending) setSendError(""); }, [selected?.id, selected?.ownerAdminId, selected?.assignmentId, requestedCustomerId, clearAttachment]);
   useEffect(() => {
-    if (!selected || !conversationsAvailable || selected.ownerAdminId !== adminId || document.visibilityState === "hidden" || !chatColumnRef.current?.getClientRects().length) return;
-    if (!unreadMessageId) return;
-    const marker = `${authEpoch}:${selected.id}:${unreadMessageId}`;
+    if (!selected || !messagePages.readReady || !conversationsAvailable || selected.ownerAdminId !== adminId || document.visibilityState === "hidden" || !chatColumnRef.current?.getClientRects().length) return;
+    const contexts = messagePages.page?.readContexts.filter(context => !context.alreadyRead) ?? [];
+    if (!contexts.length) {
+      if (failedReadContext.current?.key === messagePages.key && failedReadContext.current.beforeMessageId === messagePages.readCursor) { failedReadContext.current = null; setReadError(""); }
+      return;
+    }
+    const marker = `${authEpoch}:${selected.id}:${readContextsKey}`;
     if (markedRef.current === marker) return;
     markedRef.current = marker;
-    const controller = new AbortController();
-    setReadError("");
-    void markMConversationRead(selected.id, unreadMessageId, controller.signal).catch((cause: unknown) => {
+    const controller = new AbortController(), batchCursor = messagePages.readCursor, batchKey = messagePages.key;
+    if (!failedReadContext.current) setReadError("");
+    void (async () => {
+      for (const context of contexts) { if (controller.signal.aborted) return; await markM3MessagePageRead(context, controller.signal); }
+      if (!controller.signal.aborted && failedReadContext.current?.key === batchKey && failedReadContext.current.beforeMessageId === batchCursor) { failedReadContext.current = null; setReadError(""); }
+    })().catch((cause: unknown) => {
       if (controller.signal.aborted) return;
-      if (lostPermission(cause)) {
-        ctx.invalidateScope(selected.id, String(selected.customerId));
-      } else setReadError(displayAdminError(cause));
+      if (lostPermission(cause)) ctx.invalidateScope(selected.id, String(selected.customerId));
+      else if (!failedReadContext.current) { failedReadContext.current = { key: batchKey, beforeMessageId: batchCursor }; setReadError(displayAdminError(cause)); }
     });
     return () => { controller.abort(); if (markedRef.current === marker) markedRef.current = ""; };
-  }, [selected?.id, selected?.ownerAdminId, unreadMessageId, conversationsAvailable, adminId, authEpoch, readRetry, screen, revokeCustomer]);
+  }, [selected?.id, selected?.ownerAdminId, selected?.version, readContextsKey, messagePages.readCursor, messagePages.readReady, conversationsAvailable, adminId, authEpoch, readRetry, screen, revokeCustomer]);
   useEffect(() => {
     if (qualificationUnknown || !lostAccess && (!selected || selected.ownerAdminId === adminId || canReviewAll)) return;
     revokeCustomer(selected ? String(selected.customerId) : undefined); setSendError("当前已无权访问该会话，请返回客户列表刷新。");
@@ -700,9 +695,10 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
       } else setProfileError(displayAdminError(cause));
     });
     return () => controller.abort();
-  }, [selected?.id, selected?.customerId, selected?.version, selected?.lastTs, selected?.unread, selected?.detailReady, selected?.messages.length, selectedUnbound, conversationsAvailable, authEpoch, profileRetry, revokeCustomer, canReviewAll, adminId]);
+  }, [selected?.id, selected?.customerId, selected?.version, selected?.lastTs, selected?.unread, selectedUnbound, conversationsAvailable, authEpoch, profileRetry, revokeCustomer, canReviewAll, adminId]);
 
   const select = (convo: SessionConvo) => {
+    setMessageOpening(value => value + 1);
     if (firstPending) { setSendError("首次联系的发送结果待确认，请先查询原命令结果，再切换会话。"); return; }
     clearAttachment(pending?.kind !== "IMAGE"); setRequestedCustomerId(null); setSelectedId(convo.id); setScreen("chat"); setMaintenanceChosen(false); setReadError(""); setSendError(pending ? "上条消息的结果待确认，请返回原会话用同一命令重试。" : "");
     const url = new URL(window.location.href); url.searchParams.delete("customerId"); url.searchParams.set("conversationNo",convo.id); window.history.replaceState(null, "", url);
@@ -810,9 +806,8 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     }
     if (identityRef.current !== identity) return;
     const record = retry ?? (() => {
-      const latest = [...selected.messages].reverse().find((message) => message.sender === "user" && message.sourceSenderType !== "SYSTEM" && message.sourceSenderType !== "INTERNAL" && Number.isSafeInteger(message.id));
       const replyTargets = [
-        ...(latest?.sender === "user" && Number.isSafeInteger(latest.id) && (intent === "SERVICE" || includeCurrentReply) ? [{ conversationNo: selected.id, throughMessageId: latest.id! }] : []),
+        ...(currentReplyTarget && (intent === "SERVICE" || includeCurrentReply) ? [currentReplyTarget] : []),
         ...closedReplyTargets,
       ];
       const message: SessionMsg = { ts: Date.now(), sender: "agent", agentName: session?.operator || session?.username || selected.owner, text: body, kind, attachmentId, skuId:kind==="SKU"&&contentChoice?.kind==="SKU"?contentChoice.skuId:undefined, linkTarget:kind==="LINK"&&contentChoice?.kind==="LINK"?contentChoice.linkTarget:undefined, intent, clientMessageId: crypto.randomUUID(), replyTargets: replyTargets.length ? replyTargets : undefined };
@@ -1139,24 +1134,27 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     </div>
     <div ref={chatColumnRef} className={`m3-col-chat ${screen === "list" ? "hide-narrow" : ""}`}>
       <header className="m3-chat-header"><button type="button" className="l-btn sm m3-desktop-back" onClick={() => setScreen("list")} aria-label="返回会话列表">返回</button><SupportAvatar name={title} path={selected?.customerAvatarRef??undefined}/><div className="m3-chat-identity"><h2 title={title}>{title}</h2><div className="m3-chat-subtitle">{selected ? `当前专属客服：${selected.owner} · ${selected.status === "transferred" ? "已转出 · 只读" : selected.status === "open" ? "当前会话" : "历史会话"}` : requestedCustomerId ? "首次联系" : "选择客户查看会话"}</div></div>{(selected || profileCustomerId) && <button type="button" className="l-btn sm m3-profile-toggle" onClick={() => setScreen("profile")}>客户资料</button>}{canAssign && <button type="button" className="l-btn sm primary" onClick={() => setAssignOpen(true)}>分配专属客服</button>}{canContinueClosed && <button type="button" className="l-btn sm" onClick={continueClosed} title="重新核对当前专属客服归属，继续当前对话">前往当前会话</button>}{writable && <><button type="button" className="l-btn sm" aria-label="结束服务会话" disabled={actionChecking} onClick={closeConversation}><Icon name="check" size={14}/>标记已解决</button></>}{selected && (writable || selected.ownerAdminId===adminId || linkedTicketNo || canReviewAll && selected.customerId) && <details className="m3-more"><summary className="l-btn sm" aria-label="更多操作">•••</summary><div className="m3-more-menu">{selected&&canWriteM3&&selected.ownerAdminId===adminId&&<button type="button" className="l-btn sm" disabled={actionChecking} onClick={()=>void archiveOne(selected)}>{selected.archived?"撤销归档":"归档"}</button>}{canReviewAll && selected.customerId && (selectedUnbound ? <a className="l-btn sm" href="/service/overview?view=pool">前往待绑定客户池</a> : <a className="l-btn sm" href={`/service/overview?customerId=${encodeURIComponent(selected.customerId)}`}>正式转绑客户</a>)}</div></details>}</header>
-      <div className="ChatBody" role="log" aria-label="会话消息" aria-live="polite">
+      <div ref={messageBodyRef} className="ChatBody" role="log" aria-label="会话消息" aria-live="polite" tabIndex={0} onLoadCapture={onMessageAssetLoad} onScroll={onMessageScroll} onTouchStart={event => { messageScroll.current.touchY = event.touches[0]?.clientY ?? 0; }} onTouchMove={event => { const y = event.touches[0]?.clientY ?? 0; if (y > messageScroll.current.touchY && event.currentTarget.scrollTop <= 60) loadOlderMessages(); messageScroll.current.touchY = y; }} onWheel={event => { if (event.deltaY < 0 && event.currentTarget.scrollTop <= 60) loadOlderMessages(); }} onKeyDown={event => { if (["ArrowUp", "PageUp", "Home"].includes(event.key) && event.currentTarget.scrollTop <= 60) loadOlderMessages(); }}>
         {serviceStatus && <div className="itint danger" role="alert">{serviceStatus}</div>}
         {actionError && <div className="itint danger" role="alert">{actionError}<button type="button" className="l-btn sm" onClick={() => setActionError("")}>知道了</button></div>}
         {!requestedCustomerIdValid && <div className="itint danger" role="alert">客户链接无效，无法打开会话。请从<a href="/service/overview">我的客户</a>重新进入。</div>}
-        {readError && <div className="itint warn" role="alert">已读状态更新失败：{readError} <button type="button" className="l-btn sm" onClick={() => { markedRef.current = ""; setReadRetry((value) => value + 1); }}>重试</button></div>}
-        {customerHistory.map(row => <CustomerHistoryMessages key={`${authEpoch}:${row.id}`} conversation={row} ctx={ctx} customerName={title} loadEnabled={Boolean(selected?.detailReady && historyLoadingIds.has(row.id))} onLoadFailure={onHistoryFailure} onRetry={onHistoryRetry}/>)}
-        {selected && !paneMessages ? <div className="itint" role={conversationError ? "alert" : "status"}>{conversationError ? `会话详情加载失败：${conversationError}` : "正在加载会话消息…"} {conversationError && <button type="button" className="l-btn sm" onClick={() => { setConversationError(""); setConversationRetry((value) => value + 1); }}>重新加载详情</button>}</div> : selected && paneMessages?.length ? paneMessages.map((message,index)=><SupportMessage key={message.id??`${message.ts}-${index}`} message={message} previous={paneMessages[index-1]} newlyArrived={message.id!==undefined&&newMessageIds.has(message.id)} customerId={String(selected.customerId)} customerAvatarRef={selected.customerAvatarRef} customerName={title} onRevoked={()=>ctx.invalidateScope(selected.id,String(selected.customerId))}/>) : <div className="itint">{requestedCustomerId?"尚无进行中会话。核对归属后即可发送首次联系。":selected?historyComplete?"这段会话尚无消息。":"历史消息尚未完整加载，请查看加载进度或重试失败片段。":"选择会话后查看消息。"}</div>}
+        {readError && <div className="itint warn" role="alert">已读状态更新失败：{readError} <button type="button" className="l-btn sm" onClick={() => { const failed = failedReadContext.current; if (!failed || failed.key !== messagePages.key) return; markedRef.current = ""; void messagePages.refreshReadContexts(failed).then(() => setReadRetry(value => value + 1)); }}>重试</button></div>}
+        {messagePages.loading && paneMessages && <div className="itint" role="status">{messagePages.failed === "older" ? "正在加载更早的10条消息…" : "正在核对新消息…"}</div>}
+        {paneMessages && messagePages.error && <div className="itint danger" role="alert">消息加载失败：{messagePages.error}<button type="button" onClick={() => void messagePages.retry()}>重试加载消息</button></div>}
+        {messagePages.gap && <div className="itint" role="status">有新消息尚未展开。<button type="button" onClick={() => void messagePages.newest()}>查看最新10条</button></div>}
+        {messagePages.hasMore && <button type="button" className="l-btn sm" disabled={messagePages.loading} onClick={loadOlderMessages}>向上加载更早10条</button>}
+        {selected && !paneMessages ? <div className="itint" role={conversationError ? "alert" : "status"}>{conversationError ? `会话详情加载失败：${conversationError}` : "正在加载会话消息…"} {conversationError && <button type="button" className="l-btn sm" onClick={() => { void messagePages.retry(); }}>重新加载详情</button>}</div> : selected && paneMessages?.length ? paneMessages.map((message,index)=><div key={message.id??`${message.ts}-${index}`} data-m3-message-id={message.id}><SupportMessage message={message} previous={paneMessages[index-1]} newlyArrived={message.id!==undefined&&newMessageIds.has(message.id)} customerId={String(selected.customerId)} customerAvatarRef={selected.customerAvatarRef} customerName={title} onRevoked={()=>ctx.invalidateScope(selected.id,String(selected.customerId))}/></div>) : <div className="itint">{requestedCustomerId?"尚无进行中会话。核对归属后即可发送首次联系。":selected?historyComplete?"这段会话尚无消息。":"历史消息尚未完整加载，请查看加载进度或重试失败片段。":"选择会话后查看消息。"}</div>}
       </div>
       <div className="ChatComposer">
         {detailLoading && <div className="itint">正在核对当前专属客服归属…</div>}
         {detailError && <div className="itint danger" role="alert">客户资料加载失败：{detailError} <button type="button" className="l-btn sm" onClick={() => setDetailRetry((value) => value + 1)}>重试</button> <a href="/service/overview">返回我的客户</a></div>}
         {requestedCustomerId && firstDetail && firstDetail.agentAdminId !== adminId && <div className="itint warn">该客户由当前专属客服服务，本账号仅可审阅。</div>}
         {requestedCustomerId && firstDetail && firstDetail.agentAdminId === adminId && !firstDetail.assignmentId && <div className="itint warn">当前归属资料未就绪，暂不能发送。请刷新客户资料。</div>}
-        {selected && !writable && composerMode === "write" && <div className="itint warn">{recoveryBlocksTarget ? <>原消息结果待确认，暂不能重复发送。<button className="l-btn sm" type="button" onClick={()=>setScreen("list")}>返回列表查询原消息</button></> : !canWriteM3 ? "你只能查看会话，发消息需要会话操作权限。" : selected.status !== "open" ? historyReadOnlyHint : selectedUnbound ? "该客户还没有专属客服，等待主管分配后回复。" : !currentProfileDetail ? <>正在核对客户归属。{profileError && <button type="button" className="l-btn sm" onClick={() => setProfileRetry((value) => value + 1)}>加载失败，重试</button>}</> : !currentProfileDetail.assignmentId || currentProfileDetail.agentAdminId !== selected.ownerAdminId ? <>客户归属已变化，请刷新会话后重试。<button type="button" className="l-btn sm" onClick={() => void ctx.refreshConversations()}>刷新会话</button></> : "仅当前专属客服可发送消息；主管审阅不能代发。"}</div>}
+        {selected && !writable && composerMode === "write" && <div className="itint warn">{recoveryBlocksTarget ? <>原消息结果待确认，暂不能重复发送。<button className="l-btn sm" type="button" onClick={()=>setScreen("list")}>返回列表查询原消息</button></> : !canWriteM3 ? "你只能查看会话，发消息需要会话操作权限。" : selected.status !== "open" ? historyReadOnlyHint : selectedUnbound ? "该客户还没有专属客服，等待主管分配后回复。" : !currentProfileDetail ? <>正在核对客户归属。{profileError && <button type="button" className="l-btn sm" onClick={() => setProfileRetry((value) => value + 1)}>加载失败，重试</button>}</> : !currentProfileDetail.assignmentId || currentProfileDetail.agentAdminId !== selected.ownerAdminId ? <>客户归属已变化，请刷新会话后重试。<button type="button" className="l-btn sm" onClick={() => void ctx.refreshConversations()}>刷新会话</button></> : messagePages.gap ? <>有新消息尚未展开，请查看后再发送。<button type="button" className="l-btn sm" onClick={() => void messagePages.newest()}>查看最新10条</button></> : !messagePages.contextReady || messagePages.page?.replyContext.ready !== true ? <>待回复目标暂时无法核对。<button type="button" className="l-btn sm" disabled={messagePages.loading} onClick={() => void messagePages.refresh()}>重新核对发送目标</button></> : "仅当前专属客服可发送消息；主管审阅不能代发。"}</div>}
         {!selected && recoveryBlocksTarget && <div className="itint warn">原消息结果待确认，暂不能重复发送。<button className="l-btn sm" type="button" onClick={()=>setScreen("list")}>返回列表查询原消息</button></div>}
-        {requestedCustomerId && !selected && !canWriteM3 && <div className="itint warn">你只能查看会话，发消息需要会话操作权限。</div>}{replyCustomerId && closedCandidateRows.length > 0 && <div className="itint" role={closedCandidateError?"alert":"status"}>{closedCandidateError?`历史待处理消息加载失败：${closedCandidateError}`:closedCandidateMissing.length?"正在核对历史待处理消息…":"服务回复会同步处理这位客户此前的待回复消息。"}{closedCandidateError&&<button type="button" onClick={()=>{setClosedCandidateError("");setClosedCandidateRetry(n=>n+1);}}>重试</button>}</div>}
+        {requestedCustomerId && !selected && !canWriteM3 && <div className="itint warn">你只能查看会话，发消息需要会话操作权限。</div>}{replyCustomerId && closedCandidateRows.length > 0 && <div className="itint" role={closedCandidateError?"alert":"status"}>{closedCandidateError?`历史待处理消息加载失败：${closedCandidateError}`:closedCandidateMissing.length?"正在核对历史待处理消息…":"服务回复会同步处理这位客户此前的待回复消息。"}{closedCandidateError&&<button type="button" onClick={()=>{void messagePages.refresh();}}>重试</button>}</div>}
 
-        {selected && currentProfileDetail?.waitingReply === true && displayedIntent === "MAINTENANCE" && selected.messages.some((message) => message.sender === "user" && message.sourceSenderType !== "SYSTEM" && message.sourceSenderType !== "INTERNAL" && Number.isSafeInteger(message.id)) && <label className="itint"><input type="checkbox" checked={includeCurrentReply || lockedTargets.some((target) => target.conversationNo === selected.id)} disabled={!writable || busy || Boolean(pending)} onChange={(event) => setIncludeCurrentReply(event.target.checked)} /> 同时标记本会话最近一条客户消息已处理（如仍待处理）</label>}
+        {selected && currentProfileDetail?.waitingReply === true && displayedIntent === "MAINTENANCE" && Boolean(currentReplyTarget) && <label className="itint"><input type="checkbox" checked={includeCurrentReply || lockedTargets.some((target) => target.conversationNo === selected.id)} disabled={!writable || busy || Boolean(pending)} onChange={(event) => setIncludeCurrentReply(event.target.checked)} /> 同时标记本会话最近一条客户消息已处理（如仍待处理）</label>}
         {composerMode === "write" && <>
         <div className="m3-composer-tools"><SupportContentTools key={`${identityRef.current}:${targetKey}:${selected?.ownerAdminId ?? adminId}:${selected?.assignmentId ?? ""}:${selected?.status ?? ""}:${canWriteM3}`} popover ctx={ctx} disabled={!writable||busy||Boolean(pending||firstPending)} onInsert={insertText} onSelect={choice=>{if(!selected){setSendError("请先发送首次联系，再推荐商品或发送页面链接。");return;}setContentChoice(choice);if(!draft.trim())insertText(choice.kind==="SKU"?"推荐商品："+choice.name:"查看："+choice.name);}}/>
           <input ref={fileInputRef} type="file" accept="image/jpeg,image/png" aria-label="选择图片" disabled={!writable || busy || Boolean(pending || firstPending) || !selected || !attachmentPolicy?.available} onChange={(event) => { chooseImage(event.target.files?.[0]); event.target.value = ""; }} hidden />
@@ -1176,7 +1174,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
         {(sendError || pending || firstPending) && <div className="itint danger" role="alert">{sendError || "上条消息的结果待确认，请查询发送结果。"} {sendError.startsWith("消息已发送") && <button type="button" className="l-btn sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</button>}{(pending || firstPending) && <button type="button" className="l-btn sm" disabled={busy || Boolean(pending && selected?.id !== pending.conversationId)} onClick={() => { if (pending) void send(pending.kind, pending); else void send("TEXT"); }}>查询结果并重试</button>}</div>}
       </div>
     </div>
-    <aside className={`cv-profile ${screen === "profile" ? "open" : ""}`} aria-label="客户资料"><div className="cvp-scroll"><div className="m3-profile-mobile-head"><h2>客户资料</h2><button type="button" className="l-btn sm" onClick={()=>setScreen("chat")}>返回会话</button></div>{selectedUnbound ? <div className="itint">待分配专属客服，尚无绑定客户的维护状态。</div> : profileCustomerId ? <M3CustomerProfile key={`${authEpoch}:${profileCustomerId}`} ctx={ctx} customerId={profileCustomerId} conversation={selected??undefined} scopeVersion={selected?.version??firstProfileCustomer?.version} messageError={conversationError} onRetryMessages={()=>{setConversationError("");setConversationRetry(n=>n+1);}} onHistory={no=>{const convo=visible.find(c=>c.id===no);if(convo)select(convo);}}/> : <div className="itint">{requestedCustomerId?"客户归属尚未核对，资料暂时加载不出来。":"选择客户后查看资料。"}</div>}</div></aside>
+    <aside className={`cv-profile ${screen === "profile" ? "open" : ""}`} aria-label="客户资料"><div className="cvp-scroll"><div className="m3-profile-mobile-head"><h2>客户资料</h2><button type="button" className="l-btn sm" onClick={()=>setScreen("chat")}>返回会话</button></div>{selectedUnbound ? <div className="itint">待分配专属客服，尚无绑定客户的维护状态。</div> : profileCustomerId ? <M3CustomerProfile key={`${authEpoch}:${profileCustomerId}`} ctx={ctx} customerId={profileCustomerId} conversation={selected??undefined} scopeVersion={selected?.version??firstProfileCustomer?.version} messageError={conversationError} onRetryMessages={()=>{void messagePages.retry();}} onHistory={no=>{const convo=visible.find(c=>c.id===no);if(convo)select(convo);}}/> : <div className="itint">{requestedCustomerId?"客户归属尚未核对，资料暂时加载不出来。":"选择客户后查看资料。"}</div>}</div></aside>
     {assignOpen&&selected?.customerId&&<AssignAdvisorDialog customerId={String(selected.customerId)} customerName={title} onClose={()=>setAssignOpen(false)} onAssigned={()=>{setAssignOpen(false);setActionError("");void ctx.refreshConversations().catch(()=>{});}}/>}
     {bulkOpen&&<SupportBulkComposer ctx={ctx} onClose={()=>setBulkOpen(false)}/>}
     {contactOpen&&<SupportContactPicker onClose={()=>setContactOpen(false)} onSelect={customerId=>{setRequestedCustomerId(customerId);setScreen("chat");setContactOpen(false);const url=new URL(window.location.href);url.searchParams.delete("conversationNo");url.searchParams.set("customerId",customerId);window.history.replaceState(null,"",url);}}/>}
