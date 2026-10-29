@@ -183,7 +183,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       const next = await fetchMContentData((partial) => {
         if (!isCurrent()) return;
         setMData((previous) => preserveVerifiedSupportAgentsDuringReload(previous, partial));
-      });
+      }, tab);
       if (!isCurrent()) return;
       setMData((previous) => preserveVerifiedSupportAgentsDuringReload(previous, next));
       setMError(null);
@@ -194,7 +194,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     } finally {
       if (isCurrent()) setMLoading(false);
     }
-  }, [authEpoch]);
+  }, [authEpoch, tab]);
 
   useEffect(() => {
     void reloadMContent();

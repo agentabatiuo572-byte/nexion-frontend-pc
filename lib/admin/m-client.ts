@@ -1576,7 +1576,7 @@ function isMContentSessionCurrent(sessionKey: string): boolean {
   return sessionKey === currentMContentSessionKey();
 }
 
-export async function fetchMContentData(onProgress?: (data: MContentData) => void): Promise<MContentData> {
+export async function fetchMContentData(onProgress?: (data: MContentData) => void, page?: string): Promise<MContentData> {
   const mContentSessionKey = currentMContentSessionKey();
   let snapshot = initialMContentData();
   const authorities = useAdminAuth.getState().session?.authorities ?? [];
@@ -1620,7 +1620,7 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
     // The M3 transfer dialog depends only on the validated support-agent
     // overview.  Start the unrelated load-config read concurrently, but never
     // make a usable transfer target wait for it to settle.
-    const loadConfigTask: Promise<PromiseSettledResult<Record<string, unknown>>> = apiRequest<Record<string, unknown>>("/tickets/load-config")
+    const loadConfigTask: Promise<PromiseSettledResult<Record<string, unknown>>> | null = page === "M1" ? null : apiRequest<Record<string, unknown>>("/tickets/load-config")
       .then((value) => ({ status: "fulfilled", value }) as const)
       .catch((reason: unknown) => ({ status: "rejected", reason }) as const);
     const agentResult: PromiseSettledResult<SupportAgentOverview> = await fetchSharedM1SupportAgentOverview()
@@ -1645,6 +1645,7 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
     if (!overview) publish({}, supportAgentsError === "permission" ? "坐席名单权限" : "坐席名单数据不可用");
 
     // M_FINAL13_TRANSFER_CANDIDATES_PROGRESS: load-config is independent.
+    if (!loadConfigTask) return;
     let loadConfigAvailable = false;
     const loadResult = await loadConfigTask;
     if (loadResult.status === "fulfilled") {

@@ -214,8 +214,10 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const managementCustomerGroup = useRef<string | null>(null);
   const [keyword, setKeyword] = useState("");
   const controllerRef = useRef<AbortController | null>(null), scopeControllerRef = useRef<AbortController | null>(null), generation = useRef(0);
+  const entryStatistics = useRef<{ query: string; data: SupportAnalyticsResponse } | null>(null);
   const isPersonal = scope?.scopeSummary.mode === "PERSONAL";
   const showStatistics = Boolean(scope && section === "stats");
+  const statisticsCalendar = queryState.basis === "PERIOD_EVENT" ? monthCalendar : null;
   const adminId = useAdminAuth(state => state.session?.adminId);
   // A supervisor who also holds a receiving seat keeps a tab for their own customers.
   const canMine = scope?.scopeSummary.mode === "MANAGED" && (() => { try { return (JSON.parse(ctx.pget("I.support.agents") ?? "[]") as Array<{ adminId?: number; assignmentEligible?: boolean }>).some(agent => agent.adminId === adminId && agent.assignmentEligible === true); } catch { return false; } })();
@@ -236,13 +238,15 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     return () => controller.abort();
   }, []);
   useEffect(() => {
-    const controller = new AbortController(); scopeControllerRef.current = controller; setScope(null); setScopeError(""); setData(null); setProfileId(null);
+    const controller = new AbortController(); scopeControllerRef.current = controller; entryStatistics.current = null; setScope(null); setScopeError(""); setData(null); setProfileId(null);
     (async () => {
       const agentId = analyticsEntryAgent(window.location.search);
-      const next = await supportAnalyticsClient.query({ view: "OVERVIEW", pageSize: 1, signal: controller.signal });
-      return { next, agentId };
-    })().then(({ next, agentId }) => {
+      const query = analyticsWireQuery(initialAnalyticsQuery("ALL"), []);
+      const next = await supportAnalyticsClient.query({ ...query, signal: controller.signal });
+      return { next, agentId, query };
+    })().then(({ next, agentId, query }) => {
       if (controller.signal.aborted) return;
+      entryStatistics.current = { query: JSON.stringify(query), data: next };
       const remembered = managementReturnQuery.current;
       managementReturnQuery.current = null;
       const customerGroup = managementCustomerGroup.current;
@@ -269,10 +273,17 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     return () => window.removeEventListener("support-scope-invalidated", invalidate);
   }, [queryState]);
   useEffect(() => {
-    if (!showStatistics || queryState.basis === "PERIOD_EVENT" && !monthCalendar) return;
+    if (!showStatistics) { entryStatistics.current = null; return; }
+    if (queryState.basis === "PERIOD_EVENT" && !statisticsCalendar) return;
     const current = ++generation.current, controller = new AbortController(); controllerRef.current = controller;
     setData(null); setProfileId(null); setError(""); setLoading(true); setCancelled(false);
-    (async () => supportAnalyticsClient.query({ ...analyticsWireQuery(queryState, monthCalendar ?? []), signal: controller.signal }))().then(next => {
+    (async () => {
+      const query = analyticsWireQuery(queryState, statisticsCalendar ?? []);
+      const entry = entryStatistics.current;
+      entryStatistics.current = null;
+      // Reuse only this mount's just-authorized response for the identical first query.
+      return entry?.query === JSON.stringify(query) ? entry.data : supportAnalyticsClient.query({ ...query, signal: controller.signal });
+    })().then(next => {
       if (controller.signal.aborted || current !== generation.current) return;
       if (next.scopeSummary.mode !== scope?.scopeSummary.mode) { setScope(null); setScopeRetry(n => n + 1); return; }
       setData(next);
@@ -282,7 +293,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       if (cause instanceof SupportClientError && [401, 403].includes(cause.status)) { setScope(null); setScopeError(analyticsErrorText(cause)); }
     }).finally(() => { if (!controller.signal.aborted && current === generation.current) setLoading(false); });
     return () => { controller.abort(); generation.current++; };
-  }, [showStatistics, queryState, retry, scope?.scopeSummary.mode, monthCalendar]);
+  }, [showStatistics, queryState, retry, scope?.scopeSummary.mode, statisticsCalendar]);
   const change: Drill = changes => { controllerRef.current?.abort(); generation.current++; setData(null); setProfileId(null); setError(""); setQueryState(previous => changeAnalyticsQuery(previous, changes)); };
   function refreshScope(invalidated = false) {
     scopeControllerRef.current?.abort(); controllerRef.current?.abort(); generation.current++;

@@ -139,6 +139,44 @@ function fixture(view = "OVERVIEW", mode = "MANAGED") {
 }
 async function resolveScope(mode = "MANAGED") { const d = new HookDriver(); d.render(); requests.at(-1).resolve(fixture("OVERVIEW", mode)); await d.settle(); return d; }
 
+test("global default entry renders its authorized USDT response once, while explicit refresh reads again", async () => {
+  const before = requests.length, d = await resolveScope("ALL");
+  try {
+    assert.equal(requests.length, before + 1, "scope and default statistics share one request");
+    assert.equal(requests.at(-1).options.currency, "USDT");
+    assert.match(content(d.tree), /平台运营总览/);
+    assert.doesNotMatch(content(d.tree), /正在加载当前范围的数据/);
+    button(d.tree, "刷新").props.onClick(); d.render();
+    assert.equal(requests.length, before + 2);
+    requests.at(-1).resolve(fixture("OVERVIEW", "ALL")); await d.settle();
+    assert.equal(requests.length, before + 2, "new authorized response also serves refreshed default statistics");
+  } finally { d.unmount(); }
+});
+
+test("a late month calendar does not restart current-customer statistics", async () => {
+  let resolveCalendar;
+  calendarReply = () => new Promise(resolve => { resolveCalendar = resolve; });
+  const d = await resolveScope("MANAGED");
+  try {
+    const current = requests.at(-1), before = requests.length;
+    resolveCalendar(calendar); await d.settle();
+    assert.equal(requests.length, before);
+    assert.equal(current.options.signal.aborted, false);
+    current.resolve(fixture("AGENTS")); await d.settle();
+    assert.equal(elements(d.tree).filter(x => x.type === AnalyticsTable).length, 1);
+  } finally { calendarReply = async () => calendar; d.unmount(); }
+});
+
+test("entering the pool cannot retain an old scope response for a later statistics visit", async () => {
+  context.window.location.search = "?view=pool";
+  const before = requests.length, d = await resolveScope("ALL");
+  try {
+    assert.equal(requests.length, before + 1);
+    button(d.tree, "数据").props.onClick(); d.render();
+    assert.equal(requests.length, before + 2, "returning to statistics requires a current response");
+  } finally { d.unmount(); context.window.location.search = ""; }
+});
+
 test("scope invalidation closes group management and rechecks permitted groups", async () => {
   const d = await resolveScope();
   try {

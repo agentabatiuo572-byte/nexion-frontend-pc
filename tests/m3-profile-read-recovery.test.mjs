@@ -126,7 +126,7 @@ function annotationWorkbench() {
   const writesApi = Object.fromEntries(names.filter(name => /Customer/.test(name)).map(name => [name, (...args) => new Promise((resolve, reject) => writes.push({ name, args, resolve, reject }))]));
   const context = {
     exports: {}, AbortController, Date, Math, crypto: globalThis.crypto,
-    useCallback: callback => callback, authEpoch: 1, currentAuthEpoch: { current: 1 }, mDataAuthEpoch: { current: 1 },
+    useCallback: callback => callback, tab: "M3", authEpoch: 1, currentAuthEpoch: { current: 1 }, mDataAuthEpoch: { current: 1 },
     mLoadCoordinator: { current: new MDomainLoadCoordinator() }, liveSnapshotController: { current: null },
     setMError() {}, setMLoading() {}, setToast: message => toasts.push(message), displayAdminError, MContentReadError,
     invalidateScope: () => { h?.invalidate({}); context.mLoadCoordinator.current.beginConversationSnapshot(); },
