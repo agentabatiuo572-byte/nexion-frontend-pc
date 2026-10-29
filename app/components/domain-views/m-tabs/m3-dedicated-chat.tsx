@@ -218,6 +218,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   const messageBodyRef = useRef<HTMLDivElement>(null);
   const messageAnchor = useRef<{ id: string; offset: number } | null>(null);
   const messageScroll = useRef({ top: 0, bottom: true, touchY: 0 });
+  const olderScrollIntent = useRef({ up: false, scrollbar: false, pointerY: 0 });
   const [busy, setBusy] = useState(false);
   const [firstDetail, setFirstDetail] = useState<SupportCustomerDetail | null>(null);
   const [detailError, setDetailError] = useState("");
@@ -295,6 +296,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   const conversationError = messagePages.error;
   useEffect(() => { failedReadContext.current = null; markedRef.current = ""; setReadError(""); }, [messagePages.key]);
   const loadOlderMessages = () => {
+    olderScrollIntent.current.up = false;
     const body = messageBodyRef.current;
     if (!body || messagePages.loading || !messagePages.hasMore) return;
     const top = body.getBoundingClientRect().top;
@@ -304,15 +306,48 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   };
   const onMessageScroll = (event: React.UIEvent<HTMLDivElement>) => {
     const body = event.currentTarget, previous = messageScroll.current.top;
+    const intended = olderScrollIntent.current.up;
+    olderScrollIntent.current.up = false;
     messageScroll.current.top = body.scrollTop;
     messageScroll.current.bottom = body.scrollHeight - body.scrollTop - body.clientHeight <= 40;
-    if (body.scrollTop < previous && body.scrollTop <= 60) loadOlderMessages();
+    if (intended && body.scrollTop < previous && body.scrollTop <= 60) loadOlderMessages();
   };
+  const onMessageUpInput = (up: boolean, body: HTMLDivElement) => {
+    olderScrollIntent.current.up = up;
+    if (up && body.scrollTop <= 60) loadOlderMessages();
+  };
+  const onMessageWheel = (event: React.WheelEvent<HTMLDivElement>) => onMessageUpInput(!event.ctrlKey && event.deltaY < 0, event.currentTarget);
+  const onMessageTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
+    const y = event.touches[0]?.clientY ?? 0;
+    onMessageUpInput(y > messageScroll.current.touchY, event.currentTarget);
+    messageScroll.current.touchY = y;
+  };
+  const onMessageKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => onMessageUpInput(["ArrowUp", "PageUp", "Home"].includes(event.key), event.currentTarget);
+  const onMessagePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const body = event.currentTarget;
+    olderScrollIntent.current.scrollbar = event.button === 0 && event.clientX >= body.getBoundingClientRect().left + body.clientLeft + body.clientWidth;
+    olderScrollIntent.current.pointerY = event.clientY;
+    olderScrollIntent.current.up = false;
+  };
+  const onMessagePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!olderScrollIntent.current.scrollbar) return;
+    onMessageUpInput(event.clientY < olderScrollIntent.current.pointerY, event.currentTarget);
+    olderScrollIntent.current.pointerY = event.clientY;
+  };
+  useEffect(() => {
+    const release = () => { olderScrollIntent.current.up = false; olderScrollIntent.current.scrollbar = false; };
+    document.addEventListener("pointerup", release); document.addEventListener("pointercancel", release);
+    return () => { document.removeEventListener("pointerup", release); document.removeEventListener("pointercancel", release); };
+  }, []);
   const onMessageAssetLoad = () => {
+    olderScrollIntent.current.up = false;
     const body = messageBodyRef.current;
     if (body && messageScroll.current.bottom) { body.scrollTop = body.scrollHeight; messageScroll.current.top = body.scrollTop; }
   };
   useLayoutEffect(() => {
+    olderScrollIntent.current.up = false;
+    olderScrollIntent.current.scrollbar = false;
+    if (!messagePages.revision) { olderScrollIntent.current.pointerY = 0; messageScroll.current.touchY = 0; }
     const body = messageBodyRef.current;
     if (!body) return;
     if (!messagePages.revision) { messageScroll.current = { top: 0, bottom: true, touchY: 0 }; messageAnchor.current = null; return; }
@@ -1134,7 +1169,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     </div>
     <div ref={chatColumnRef} className={`m3-col-chat ${screen === "list" ? "hide-narrow" : ""}`}>
       <header className="m3-chat-header"><button type="button" className="l-btn sm m3-desktop-back" onClick={() => setScreen("list")} aria-label="返回会话列表">返回</button><SupportAvatar name={title} path={selected?.customerAvatarRef??undefined}/><div className="m3-chat-identity"><h2 title={title}>{title}</h2><div className="m3-chat-subtitle">{selected ? `当前专属客服：${selected.owner} · ${selected.status === "transferred" ? "已转出 · 只读" : selected.status === "open" ? "当前会话" : "历史会话"}` : requestedCustomerId ? "首次联系" : "选择客户查看会话"}</div></div>{(selected || profileCustomerId) && <button type="button" className="l-btn sm m3-profile-toggle" onClick={() => setScreen("profile")}>客户资料</button>}{canAssign && <button type="button" className="l-btn sm primary" onClick={() => setAssignOpen(true)}>分配专属客服</button>}{canContinueClosed && <button type="button" className="l-btn sm" onClick={continueClosed} title="重新核对当前专属客服归属，继续当前对话">前往当前会话</button>}{writable && <><button type="button" className="l-btn sm" aria-label="结束服务会话" disabled={actionChecking} onClick={closeConversation}><Icon name="check" size={14}/>标记已解决</button></>}{selected && (writable || selected.ownerAdminId===adminId || linkedTicketNo || canReviewAll && selected.customerId) && <details className="m3-more"><summary className="l-btn sm" aria-label="更多操作">•••</summary><div className="m3-more-menu">{selected&&canWriteM3&&selected.ownerAdminId===adminId&&<button type="button" className="l-btn sm" disabled={actionChecking} onClick={()=>void archiveOne(selected)}>{selected.archived?"撤销归档":"归档"}</button>}{canReviewAll && selected.customerId && (selectedUnbound ? <a className="l-btn sm" href="/service/overview?view=pool">前往待绑定客户池</a> : <a className="l-btn sm" href={`/service/overview?customerId=${encodeURIComponent(selected.customerId)}`}>正式转绑客户</a>)}</div></details>}</header>
-      <div ref={messageBodyRef} className="ChatBody" role="log" aria-label="会话消息" aria-live="polite" tabIndex={0} onLoadCapture={onMessageAssetLoad} onScroll={onMessageScroll} onTouchStart={event => { messageScroll.current.touchY = event.touches[0]?.clientY ?? 0; }} onTouchMove={event => { const y = event.touches[0]?.clientY ?? 0; if (y > messageScroll.current.touchY && event.currentTarget.scrollTop <= 60) loadOlderMessages(); messageScroll.current.touchY = y; }} onWheel={event => { if (event.deltaY < 0 && event.currentTarget.scrollTop <= 60) loadOlderMessages(); }} onKeyDown={event => { if (["ArrowUp", "PageUp", "Home"].includes(event.key) && event.currentTarget.scrollTop <= 60) loadOlderMessages(); }}>
+      <div ref={messageBodyRef} className="ChatBody" role="log" aria-label="会话消息" aria-live="polite" tabIndex={0} onLoadCapture={onMessageAssetLoad} onScroll={onMessageScroll} onTouchStart={event => { messageScroll.current.touchY = event.touches[0]?.clientY ?? 0; }} onTouchMove={onMessageTouchMove} onWheel={onMessageWheel} onKeyDown={onMessageKeyDown} onPointerDown={onMessagePointerDown} onPointerMove={onMessagePointerMove}>
         {serviceStatus && <div className="itint danger" role="alert">{serviceStatus}</div>}
         {actionError && <div className="itint danger" role="alert">{actionError}<button type="button" className="l-btn sm" onClick={() => setActionError("")}>知道了</button></div>}
         {!requestedCustomerIdValid && <div className="itint danger" role="alert">客户链接无效，无法打开会话。请从<a href="/service/overview">我的客户</a>重新进入。</div>}

@@ -82,18 +82,59 @@ const layout=main.body.statements.find(node=>ts.isExpressionStatement(node)&&ts.
 const layoutCode=ts.transpileModule(layout.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
 test('actual layout opens at bottom, anchors prepended old messages, and leaves old reading unchanged on a new tail',()=>{
  const body={scrollTop:0,scrollHeight:2000,clientHeight:400,getBoundingClientRect:()=>({top:100}),querySelector:()=>({getBoundingClientRect:()=>({top:175})})};
- const scope={useLayoutEffect:fn=>fn(),messagePages:{key:'current',revision:1,change:'reset',gap:false},messageBodyRef:{current:body},messageAnchor:{current:null},messageScroll:{current:{top:0,bottom:true,touchY:0}}};
+ const scope={useLayoutEffect:fn=>fn(),messagePages:{key:'current',revision:1,change:'reset',gap:false},messageBodyRef:{current:body},messageAnchor:{current:null},messageScroll:{current:{top:0,bottom:true,touchY:0}},olderScrollIntent:{current:{up:false,scrollbar:false,pointerY:0}}};
  vm.runInNewContext(layoutCode,scope);assert.equal(body.scrollTop,2000);
  scope.messagePages.change='older';body.scrollTop=300;scope.messageAnchor.current={id:'60',offset:25};vm.runInNewContext(layoutCode,scope);assert.equal(body.scrollTop,350,'visible message offset is preserved after prepend');
  scope.messagePages.change='latest';scope.messageScroll.current.bottom=false;body.scrollTop=350;vm.runInNewContext(layoutCode,scope);assert.equal(body.scrollTop,350,'new arrivals must not pull an older reader to the bottom');
+ scope.olderScrollIntent.current={up:true,scrollbar:true,pointerY:150};scope.messageScroll.current.touchY=180;scope.messagePages.key='other-customer';scope.messagePages.revision=0;
+ vm.runInNewContext(layoutCode,scope);assert.equal(scope.olderScrollIntent.current.up,false);assert.equal(scope.olderScrollIntent.current.scrollbar,false);assert.equal(scope.olderScrollIntent.current.pointerY,0);assert.equal(scope.messageScroll.current.touchY,0,'a new customer cannot inherit an old input gesture');
 });
 test('image load grows the latest view at bottom without dragging a user who has scrolled upward',()=>{
  const handler=main.body.statements.flatMap(node=>ts.isVariableStatement(node)?[...node.declarationList.declarations]:[]).find(node=>node.name.getText(ast)==='onMessageAssetLoad');
  const code=ts.transpileModule(`globalThis.handler=${handler.initializer.getText(ast)};`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
- const body={scrollTop:300,scrollHeight:1800},scope={messageBodyRef:{current:body},messageScroll:{current:{bottom:true,top:300}}};
+ const body={scrollTop:300,scrollHeight:1800},scope={messageBodyRef:{current:body},messageScroll:{current:{bottom:true,top:300}},olderScrollIntent:{current:{up:false,scrollbar:false,pointerY:0}}};
  vm.runInNewContext(code,scope);scope.handler();assert.equal(body.scrollTop,1800);
  scope.messageScroll.current.bottom=false;body.scrollTop=300;body.scrollHeight=2400;scope.handler();assert.equal(body.scrollTop,300);
  assert.match(chat,/onLoadCapture=\{onMessageAssetLoad\}/);
+});
+function scrollHandlers() {
+ const names=['loadOlderMessages','onMessageScroll','onMessageUpInput','onMessageWheel','onMessageTouchMove','onMessageKeyDown','onMessagePointerDown','onMessagePointerMove','onMessageAssetLoad'];
+ const declarations=main.body.statements.flatMap(node=>ts.isVariableStatement(node)?[...node.declarationList.declarations]:[]);
+ const code=names.map(name=>`const ${name}=${declarations.find(node=>node.name.getText(ast)===name).initializer.getText(ast)};`).join('\n')+`\nglobalThis.handlers={${names.join(',')}};`;
+ let reads=0;
+ const body={scrollTop:105.333,scrollHeight:813,clientHeight:707,clientWidth:200,clientLeft:0,getBoundingClientRect:()=>({top:0,left:0}),querySelectorAll:()=>[]};
+ const scope={messageBodyRef:{current:body},messageAnchor:{current:null},messageScroll:{current:{top:105.333,bottom:true,touchY:100}},olderScrollIntent:{current:{up:false,scrollbar:false,pointerY:0}},messagePages:{loading:false,hasMore:true,loadOlder(){reads++;}}};
+ vm.runInNewContext(ts.transpileModule(code,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,scope);
+ return {...scope,body,get reads(){return reads;},event:extra=>({currentTarget:body,...extra})};
+}
+test('footer layout 707→754 and scrollTop105.33→58.67 cannot authorize an older page without upward input',()=>{
+ const h=scrollHandlers();h.body.clientHeight=754;h.body.scrollTop=58.667;h.handlers.onMessageScroll(h.event({isTrusted:true}));assert.equal(h.reads,0);
+ h.messageScroll.current.top=50;h.body.clientHeight=400;h.body.scrollHeight=449.333;h.body.scrollTop=49.333;h.handlers.onMessageScroll(h.event({isTrusted:true}));assert.equal(h.reads,0,'DPR rounding is also layout, not input');
+ h.handlers.onMessageAssetLoad();h.body.scrollTop=48.667;h.handlers.onMessageScroll(h.event({isTrusted:true}));assert.equal(h.reads,0,'image positioning cannot fetch another page');
+});
+test('wheel, touch and keyboard upward input can cross the top threshold but one input cannot auto-chain pages',()=>{
+ for(const method of ['wheel','touch','key']){
+  const h=scrollHandlers();h.body.scrollTop=105.333;
+  if(method==='wheel')h.handlers.onMessageWheel(h.event({deltaY:-100}));
+  if(method==='touch')h.handlers.onMessageTouchMove(h.event({touches:[{clientY:150}]}));
+  if(method==='key')h.handlers.onMessageKeyDown(h.event({key:'PageUp'}));
+  h.body.scrollTop=30;h.handlers.onMessageScroll(h.event());assert.equal(h.reads,1,method);
+  h.body.scrollTop=20;h.handlers.onMessageScroll(h.event());assert.equal(h.reads,1,'a later layout scroll cannot reuse the input');
+  h.body.scrollTop=0;
+  if(method==='wheel')h.handlers.onMessageWheel(h.event({deltaY:-10}));
+  if(method==='touch')h.handlers.onMessageTouchMove(h.event({touches:[{clientY:180}]}));
+  if(method==='key')h.handlers.onMessageKeyDown(h.event({key:'ArrowUp'}));
+  assert.equal(h.reads,2,'explicit upward input at an unscrollable top still loads one page');
+  h.body.scrollTop=-0.666;h.handlers.onMessageScroll(h.event());assert.equal(h.reads,2);
+ }
+});
+test('scrollbar upward drag grants one page while content clicks, stationary thumb and downward inputs do not',()=>{
+ const h=scrollHandlers();h.handlers.onMessagePointerDown(h.event({button:0,clientX:100,clientY:150}));h.body.scrollTop=30;h.handlers.onMessageScroll(h.event());assert.equal(h.reads,0,'content click');
+ h.body.scrollTop=105.333;h.messageScroll.current.top=105.333;h.handlers.onMessagePointerDown(h.event({button:0,clientX:205,clientY:150}));h.body.scrollTop=58.667;h.handlers.onMessageScroll(h.event());assert.equal(h.reads,0,'stationary scrollbar does not count as dragging upward');
+ h.body.scrollTop=105.333;h.messageScroll.current.top=105.333;h.handlers.onMessagePointerMove(h.event({clientY:80}));h.body.scrollTop=30;h.handlers.onMessageScroll(h.event());assert.equal(h.reads,1);
+ h.body.scrollTop=20;h.handlers.onMessageScroll(h.event());assert.equal(h.reads,1);
+ h.handlers.onMessageWheel(h.event({deltaY:20}));h.body.scrollTop=10;h.handlers.onMessageScroll(h.event());assert.equal(h.reads,1,'downward input');
+ h.handlers.onMessageWheel(h.event({deltaY:-20,ctrlKey:true}));assert.equal(h.reads,1,'zoom is not an upward scroll');
 });
 test('M3 has no full-detail/history/preflight bypass and keeps thin UID plus independent reply/read contexts',()=>{
  assert.doesNotMatch(chat,/loadConversationDetail\(|markMConversationRead\(|CustomerHistoryMessages|customerHistory\.map/);
