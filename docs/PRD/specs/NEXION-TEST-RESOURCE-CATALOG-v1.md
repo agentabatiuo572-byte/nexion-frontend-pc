@@ -89,7 +89,7 @@
 | EFX-01 | SKU | draft、active、有库存、售罄、delisted、coming-soon |
 | EFX-02 | 订单 | created、pending_payment、paid、fulfilling、completed、cancelled、refund_pending |
 | EFX-03 | 设备 | inventory、active、offline、task_running、deactivation_pending、unbound |
-| EFX-04 | 以旧换新 | eligible、quote_expired、submitted、accepted、rejected、completed |
+| EFX-04 | 升级置换 | eligible、quote_expired、submitted、accepted、rejected、completed |
 | FFX-01 | 推荐树 | 直属 0/1/多、深层 6+、断层、注销匿名节点、循环脏数据防御样本 |
 | FFX-02 | V Rank | 每一阈值的 `-1 / = / +1` 与降级周期边界 |
 | HFX-01 | 试用 | eligible、active、grace、expired、converted、cancelled；时钟前后 1ms |

@@ -1,5 +1,7 @@
 # UVEL 术语与多语言词典 v1
 
+> 2026-10-30 用户命名裁定：中文产品界面、帮助和现行 PRD 统一使用“升级置换”；`trade_in`、`tradein`、API、事件及路由等稳定标识保持兼容，不改变资格、抵扣或成交规则。
+
 > **现行裁决(2026-08-07)**:全项目已取消 KYC、钱包配对、C4 与 K5；本文相关旧字段、门禁、用例、权限或流程仅保留为历史基线，不得作为现行实现、运营或验收依据。
 
 > 品牌口径：当前 App 品牌是 UVEL；历史名称的解释以 `UVEL-NOVA-BRAND-20260927.md` 品牌迁移问答为准。
@@ -55,7 +57,7 @@
 | TERM-028 | 资金 | `coverage_ratio` | 兑付覆盖率 | Payout coverage ratio | Tỷ lệ đảm bảo chi trả | B1 权威指标；不得简写为“收益率” |
 | TERM-029 | 商城 | `sku` | SKU | SKU | SKU | 可售最小库存单元；对用户可显示“规格” |
 | TERM-030 | 商城 | `order` | 订单 | Order | Đơn hàng | 购买交易对象 |
-| TERM-031 | 商城 | `trade_in` | 以旧换新 | Trade-in | Thu cũ đổi mới | 旧设备折抵新设备，不译为普通“回收” |
+| TERM-031 | 商城 | `trade_in` | 升级置换 | Trade-in | Thu cũ đổi mới | 旧设备折抵新设备，不译为普通“回收” |
 | TERM-032 | 商城 | `delist` | 下架 | Delist | Ngừng niêm yết | 停止新售，不删除历史订单或库存事实 |
 | TERM-033 | 设备 | `device` | 设备 | Device | Thiết bị | 物理/虚拟设备业务对象；登录手机称“登录设备” |
 | TERM-034 | 设备 | `device_model` | 手机型号 | Device model | Mẫu thiết bị | 型号信息，不等于稳定硬件 ID |
