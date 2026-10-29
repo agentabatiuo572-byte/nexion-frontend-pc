@@ -75,4 +75,6 @@ Android 已完成单目标供应商/客户端烟测：冻结候选为 `54a3e566 
 
 Swift 编译修复已进入 App `test` 提交 `4f36f857`。完整云打包成功并已下载 `UVEL-TEST-2026103003.ipa`（36,697,634 bytes；SHA256 `3efc157150bb6ac55412ad0fcad7a4499d1ec6c6ce0a796959810333e355e454`）。实际 Bundle ID 为 ai.uvel.app，连接 TEST，包及全部内嵌 framework 的最低系统为 iOS 15.0，因此 iOS 16 位于声明支持范围；尚未作 iOS 16 实机运行验证。原生 Bridge 与 Hook 已进入独立推送 framework，包内签名权限及匹配描述文件的 APNs 环境均为 production；未发现供应商私钥文件或 PEM 私钥标记。
 
-本包使用 TestFlight 分发签名，须经 App Store Connect 上传及 TestFlight 邀请安装，不能把 IPA 下载链接当作直接安装入口。目前未进行 Apple 上传/验证、密码学验签、iPhone 安装或真实 APNs 投递；服务端全局发送与 scheduler 仍关闭。此更新只确认完整 IPA 产物及静态检查完成，未改变产品规则或补齐尚缺的业务链/双平台实机验收。证据：`D:/workspace/output/push-direct-20261030/native-ipa-inspection-2026103003.json`、`independent-ios-ipa-review-2026103003.md`。
+本包使用 TestFlight 分发签名，不能把 IPA 下载链接当作直接安装入口。经用户批准，已上传 Apple：上传状态 COMPLETE、构建处理状态 VALID，无错误或警告。内部组 UVEL TEST Push 关闭自动分发和公开链接，仅手动关联构建 2026103003 与用户指定的单个账号；构建状态为 IN_BETA_TESTING，该账号在 Apple 页面显示已邀请（2026-10-30），未确认邀请邮件收件箱送达。
+
+目前尚未完成 iPhone 安装、iOS 16 实机运行或真实 APNs 投递，本地亦未独立进行密码学验签；服务端全局发送与 scheduler 仍关闭。Apple 处理和定向内部邀请不补齐尚缺的业务链/双平台实机验收，也不构成公开发布。产物检查与分发证据位于 `D:/workspace/output/push-direct-20261030/`：`native-ipa-inspection-2026103003.json`、`independent-ios-ipa-review-2026103003.md`、`testflight-upload-receipt.json`、`testflight-processed-build.json`、`testflight-distribution-readback.json`、`testflight-invitation-readback.json`、`testflight-internal-testing-ready.png`。
