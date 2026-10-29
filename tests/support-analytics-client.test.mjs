@@ -43,6 +43,12 @@ const mock = async (data, action, status = 200) => {
   try { return await action(() => seen); } finally { globalThis.fetch = originalFetch; }
 };
 
+test("a retained completed version keeps its original asOf and missing versions remain unavailable", async () => {
+  const previous = payload(); previous.asOf = "2026-10-29T00:00:00.123456789Z";
+  await mock(previous, async () => assert.equal((await query()).asOf, previous.asOf));
+  await mock(null, async () => assert.rejects(query(), error => error instanceof SupportClientError && error.status === 503), 503);
+});
+
 test("NET sort sends explicit currency and rejects incompatible query contexts before transport", async () => {
   for (const currency of ["USDT", "UVT"]) await mock(payload(), async seen => {
     await query({ sortKey: "NET_CONTRIBUTION", currency });

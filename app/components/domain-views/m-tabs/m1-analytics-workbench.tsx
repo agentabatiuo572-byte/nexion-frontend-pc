@@ -18,6 +18,7 @@ import { M1PersonalWorkbench, SupportSeatRolesButton, type PersonalWorkbenchView
 import { M1LiveService } from "./m1-live-service";
 import { SupportAvatar } from "./support-avatar";
 import { compactSupportBoardValue } from "./support-leaderboard";
+import { AnalyticsFreshness } from "./analytics-freshness";
 import type { MCtx } from "./types";
 import "./m1-analytics-workbench.css";
 import "./m1-personal-priority.css";
@@ -365,6 +366,7 @@ if (!scope) return <section className="sa-workbench" aria-label="客服范围核
 {isPersonal && <div hidden={section === "stats"}><M1PersonalWorkbench permission="agent" ctx={ctx} view={personalView} onViewChange={next => { setSection("personal"); setPersonalView(next); }}
   onBrowseCustomers={filter => { if (queryState.view === "CUSTOMERS" && queryState.basis === "CURRENT_CUSTOMER_HISTORY" && queryState.filter === filter) { setSection("stats"); return; } drill({ view: "CUSTOMERS", category: "BOUND", basis: "CURRENT_CUSTOMER_HISTORY", filter, firstState: "ALL", keyword: undefined }); }}
   primarySummary={<section className="sa-personal-summary" aria-label="本人客户与期间业绩">
+    <AnalyticsFreshness asOf={scope.asOf} label="客户统计" onRefresh={() => refreshScope()} />
     {!monthCalendar && <p role={calendarError ? "alert" : "status"}>{calendarError || "正在读取业绩月份…"}{calendarError && <button type="button" onClick={() => setCalendarRetry(n => n + 1)}>重试读取月份</button>}</p>}
     <div className="sa-personal-period-controls"><AnalyticsSelect label="业绩自然月" value={queryState.month} options={monthOptions} onChange={month => change({ month })} /><AnalyticsSelect label="业绩币种" value={currency} options={[{ value: "USDT", label: "USDT" }, { value: "UVT", label: "UVT" }]} onChange={value => { if (value === "USDT" || value === "UVT") change({ currency: value }); }} /></div>
     <div className="sa-personal-primary-metrics">
@@ -373,7 +375,8 @@ if (!scope) return <section className="sa-workbench" aria-label="客服范围核
       <div><span>期间首充（含付费购机）</span><CountValue count={personalFinancial?.firstCandidates ?? { observed: null, confirmed: null, status: "UNKNOWN" }} label="期间首充客户" onClick={() => drill({ view: "CUSTOMERS", basis: "PERIOD_EVENT", firstState: "CONFIRMED", filter: "ALL" })} /></div>
       <div><span>期间净贡献 / {nexGridBrandText(currency)}</span><MoneyValue money={personalFinancial?.currencies.find(row => row.currency === currency)?.net} label={`期间净贡献 ${nexGridBrandText(currency)}`} onClick={() => drill({ view: "FINANCE", basis: "PERIOD_EVENT", filter: "ALL" })} /></div>
     </div>
-    <p>{queryState.month} · {nexGridBrandText(currency)} · {businessZoneText()} · 业绩统计于 {personalPeriod ? dateText(personalPeriod.asOf) : "加载中"}；绑定与活跃按当前客户统计。</p>
+    <p>{queryState.month} · {nexGridBrandText(currency)} · {businessZoneText()}；绑定与活跃按当前客户统计。</p>
+    {personalPeriod && <AnalyticsFreshness asOf={personalPeriod.asOf} label="期间业绩" onRefresh={() => refreshScope()} />}
     {personalPeriodError && <p role="alert">{personalPeriodError}<button type="button" onClick={() => refreshScope()}>重新加载业绩</button></p>}
     <div className="sa-personal-first-sources" aria-label="期间首充金额来源">{(["deposits", "purchases"] as const).map(source => <div key={source}><span>{source === "deposits" ? "充值首充" : "付费购机首充"} / {nexGridBrandText(currency)}</span><MoneyValue money={personalFinancial?.firstSources.find(row => row.currency === currency)?.[source]} label={source === "deposits" ? `充值首充金额 ${nexGridBrandText(currency)}` : `付费购机首充金额 ${nexGridBrandText(currency)}`} onClick={() => drill({ view: "FINANCE", basis: "PERIOD_EVENT" })} /></div>)}</div>
   </section>} /></div>}
@@ -385,7 +388,8 @@ if (!scope) return <section className="sa-workbench" aria-label="客服范围核
     }} />}
     {!isPersonal && section === "mine" && <M1PersonalWorkbench permission="supervisor" ctx={ctx} view={personalView} onViewChange={setPersonalView} />}
     {showStatistics && <>
-      <header className="sa-header"><div><h2>{isPersonal ? "本人客户画像" : currentTab === "customers" ? mode === "ALL" ? "全部客户" : "负责组客户" : mode === "ALL" ? "平台运营总览" : "我的分组数据"}</h2><p>{selectedGroup?.name || (queryState.groupId ? "组名未同步" : isPersonal ? "本人当前客户" : mode === "ALL" ? "全部获准客服范围" : "全部负责组")} · 截至 {data ? dateText(data.asOf) : "加载中"} · {businessZone().label}</p></div></header>
+      <header className="sa-header"><div><h2>{isPersonal ? "本人客户画像" : currentTab === "customers" ? mode === "ALL" ? "全部客户" : "负责组客户" : mode === "ALL" ? "平台运营总览" : "我的分组数据"}</h2><p>{selectedGroup?.name || (queryState.groupId ? "组名未同步" : isPersonal ? "本人当前客户" : mode === "ALL" ? "全部获准客服范围" : "全部负责组")} · {businessZone().label}</p></div></header>
+      {data && <AnalyticsFreshness asOf={data.asOf} onRefresh={() => refreshScope()} />}
 {!isPersonal && <nav className="sa-group-tabs" aria-label="负责组范围"><span className="sa-group-label">分组</span><button type="button" aria-pressed={queryState.groupId === undefined} onClick={() => change({ groupId: undefined })}>全部</button>{groups.map(group => <button type="button" key={group.groupId} title={group.name || "组名未同步"} aria-label={group.name || "组名未同步"} aria-pressed={String(queryState.groupId) === group.groupId} onClick={() => change({ groupId: group.groupId })}>{group.name || "组名未同步"}</button>)}</nav>}
       {(isPersonal || queryState.view !== "CUSTOMERS") && <nav className="sa-datasets" aria-label="数据视角">{DATASETS.filter(x => isPersonal ? !["OVERVIEW", "AGENTS"].includes(x.value) : x.value !== "CUSTOMERS").map(item => <button type="button" key={item.value} aria-pressed={queryState.view === item.value} onClick={() => change({ view: item.value, ...(item.value === "DEVICES" ? { basis: "CURRENT_ASSET" as const } : {}) })}>{item.label}</button>)}</nav>}
       <form className="sa-controls" onSubmit={event => { event.preventDefault(); change({ keyword: keyword.trim() || undefined }); }}>

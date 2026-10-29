@@ -63,6 +63,7 @@ const mocks = {
   "./m3-customer-profile": { M3CustomerProfile: props => React.createElement("section", { "data-profile": props.customerId }, "原客户资料权限") },
   "./support-avatar": { SupportAvatar: props => React.createElement("span", { "data-avatar-path": props.path }, props.name) },
   "./support-leaderboard": { compactSupportBoardValue: formatterModule.namespace.compactSupportBoardValue },
+  "./analytics-freshness": { AnalyticsFreshness: props => React.createElement("span", { "data-statistics-asof": props.asOf }) },
   "./m1-analytics-workbench.css": {},
   "./m1-personal-priority.css": {},
 };
@@ -167,6 +168,23 @@ test("current-customer statistics do not request an unused month calendar", asyn
     assert.equal(current.options.signal.aborted, false);
     current.resolve(fixture("AGENTS")); await d.settle();
     assert.equal(elements(d.tree).filter(x => x.type === AnalyticsTable).length, 1);
+  } finally { d.unmount(); }
+});
+
+test("statistics freshness uses the displayed response timestamp and manual refresh reads a newly completed version", async () => {
+  const d = await resolveScope("ALL");
+  try {
+    await d.settle();
+    const stamp = () => elements(d.tree).find(x => x.type === mocks["./analytics-freshness"].AnalyticsFreshness);
+    assert.equal(stamp().props.asOf, fixture("OVERVIEW", "ALL").asOf);
+    const before = requests.length; stamp().props.onRefresh(); d.render();
+    assert.equal(requests.length, before + 1);
+    assert.equal(stamp(), undefined, "a pending permission check must not retain the old statistics stamp");
+    const next = fixture("OVERVIEW", "ALL"); next.asOf = "2026-10-29T01:01:59.123456Z";
+    requests.at(-1).resolve(next); await d.settle(); await d.settle();
+    assert.equal(stamp().props.asOf, next.asOf);
+    assert.equal(requests.length, before + 1, "refresh reuses the completed identical query without a second computation request");
+    assert.equal(Object.hasOwn(requests.at(-1).options, "forceRefresh"), false);
   } finally { d.unmount(); }
 });
 
