@@ -5,6 +5,8 @@ import { boundedUpload } from "@/lib/admin/support-image-proxy";
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 const DEFAULT_UPLOAD_TRANSPORT_MAX_BYTES = 32 * 1024 * 1024;
+// 20 MB 的 PDF 加上表单字段与 multipart 边界。
+const TRUST_DOCUMENT_UPLOAD_MAX_BYTES = 21 * 1024 * 1024;
 
 type RouteContext = {
   params: Promise<{ path?: string[] }>;
@@ -35,6 +37,7 @@ function backendPath(parts: string[]) {
     "i18n-learning",
     "how-it-works",
     "privacy-policy",
+    "trust-documents",
   ]);
   if (!allowedHeads.has(parts[0])) return null;
   if (parts.some((part) => !isSafePart(part))) return null;
@@ -48,9 +51,14 @@ async function proxy(request: Request, context: RouteContext) {
   }
   const targetPath = backendPath(path);
   if (!targetPath) return jsonError(404, "CONTENT_ROUTE_NOT_FOUND");
+  // 信任中心资料文件上传：PDF 上限 20 MB，用自己的上限与错误码，不借用客服附件的配置。
+  const documentUpload = request.method === "POST" && path.length === 2 && path[0] === "trust-documents";
   const attachmentUpload = request.method === "POST"
     && (path.length === 2 && path[0] === "conversations" && path[1] === "attachments"
-      || path.length === 3 && path[0] === "support-workbench" && path[1] === "bulk" && path[2] === "attachments");
+      || path.length === 3 && path[0] === "support-workbench" && path[1] === "bulk" && path[2] === "attachments"
+      || documentUpload);
+  // 信任中心资料文件（PDF）预览：二进制原样转发，不能按文本读。
+  const documentContent = request.method === "GET" && path.length === 3 && path[0] === "trust-documents" && path[2] === "file";
   const publicLeaderboardAvatar = request.method === "GET" && path.length === 4 && path[0] === "support-workbench"
     && path[1] === "leaderboard" && /^[1-9]\d*$/.test(path[2]) && path[3] === "avatar";
   const avatarContent = request.method === "GET" && (path.length === 3 && path[0] === "support-agents" && path[2] === "avatar"
@@ -79,14 +87,16 @@ async function proxy(request: Request, context: RouteContext) {
   let uploadBody: ArrayBuffer | undefined;
   if (attachmentUpload) {
     // Transport safety ceiling; the backend attachment policy is the product limit.
-    const maxBytes = process.env.NEXION_SUPPORT_ATTACHMENT_PROXY_MAX_BYTES === undefined
-      ? DEFAULT_UPLOAD_TRANSPORT_MAX_BYTES : Number(process.env.NEXION_SUPPORT_ATTACHMENT_PROXY_MAX_BYTES);
+    const maxBytes = documentUpload ? TRUST_DOCUMENT_UPLOAD_MAX_BYTES
+      : process.env.NEXION_SUPPORT_ATTACHMENT_PROXY_MAX_BYTES === undefined
+        ? DEFAULT_UPLOAD_TRANSPORT_MAX_BYTES : Number(process.env.NEXION_SUPPORT_ATTACHMENT_PROXY_MAX_BYTES);
     if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) return jsonError(503, "CONTENT_ATTACHMENT_LIMIT_UNCONFIGURED");
+    const tooLarge = documentUpload ? "TRUST_DOCUMENT_TOO_LARGE" : "CONTENT_ATTACHMENT_TOO_LARGE";
     const declaredSize = Number(request.headers.get("Content-Length"));
-    if (Number.isFinite(declaredSize) && declaredSize > maxBytes) return jsonError(413, "CONTENT_ATTACHMENT_TOO_LARGE");
+    if (Number.isFinite(declaredSize) && declaredSize > maxBytes) return jsonError(413, tooLarge);
     const read = await boundedUpload(request, maxBytes).catch(() => undefined);
-    if (read === undefined) return jsonError(503, "CONTENT_ATTACHMENT_UPLOAD_INTERRUPTED");
-    if (!read) return jsonError(413, "CONTENT_ATTACHMENT_TOO_LARGE");
+    if (read === undefined) return jsonError(503, documentUpload ? "TRUST_DOCUMENT_UPLOAD_INTERRUPTED" : "CONTENT_ATTACHMENT_UPLOAD_INTERRUPTED");
+    if (!read) return jsonError(413, tooLarge);
     uploadBody = read;
   }
 
@@ -99,7 +109,9 @@ async function proxy(request: Request, context: RouteContext) {
         ? undefined : attachmentUpload ? uploadBody : await request.text(),
       cache: "no-store",
       redirect: "manual",
-      signal: attachmentContent || attachmentUpload ? AbortSignal.any([request.signal, AbortSignal.timeout(45_000)]) : request.signal,
+      // PDF 预览的计时覆盖整个下载过程，给到 120 秒，避免慢网络下大文件被截断。
+      signal: documentContent ? AbortSignal.any([request.signal, AbortSignal.timeout(120_000)])
+        : attachmentContent || attachmentUpload ? AbortSignal.any([request.signal, AbortSignal.timeout(45_000)]) : request.signal,
     });
     if (upstream.status >= 300 && upstream.status < 400) {
       return jsonError(502, "CONTENT_BACKEND_REDIRECT_BLOCKED");
@@ -114,6 +126,18 @@ async function proxy(request: Request, context: RouteContext) {
           Connection: "keep-alive",
         },
       });
+    }
+    if (documentContent) {
+      if (!upstream.ok) {
+        const failure = await upstream.json().catch(() => null) as { message?: unknown } | null;
+        const code = typeof failure?.message === "string" && /^[A-Z][A-Z0-9_]{2,80}$/.test(failure.message) ? failure.message : "TRUST_DOCUMENT_READ_FAILED";
+        return jsonError(upstream.status, code);
+      }
+      if (!upstream.body || upstreamType.split(";")[0].toLowerCase() !== "application/pdf") return jsonError(502, "TRUST_DOCUMENT_TYPE_INVALID");
+      const responseHeaders = new Headers({ "Content-Type": "application/pdf", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
+      const disposition = upstream.headers.get("Content-Disposition");
+      if (disposition) responseHeaders.set("Content-Disposition", disposition);
+      return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
     }
     if (attachmentContent) {
       if (!upstream.ok) return jsonError(upstream.status, "CONTENT_ATTACHMENT_READ_FAILED");

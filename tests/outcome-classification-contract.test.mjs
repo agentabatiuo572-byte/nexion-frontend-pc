@@ -136,6 +136,7 @@ const CLASSIFICATION_EXEMPT = {
   "e1-client.ts": "同上", "e2-client.ts": "同上", "e3-client.ts": "同上",
   "e4-client.ts": "同上", "e6-client.ts": "同上",
   "media-client.ts": "同上",
+  "trust-documents-client.ts": "I4 资料文件：命令号由卡片按表单内容持有，内容不变的重试沿用原号（结果未知时由后端幂等重放第一次的结果），改了文件或字段才换号、关闭弹层即弃号；没有按失败类型的保号/弃号决定",
   "business-calendar-client.ts": "R-1 业务时区：命令号由 A3 卡片每次确认现铸、不复用；结果不明时后端只允许一个待生效版本（重复设置 409、撤销只对未生效版本生效），刷新即可核对，没有保号/弃号的决定",
 };
 
