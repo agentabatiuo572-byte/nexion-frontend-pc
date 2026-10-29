@@ -138,9 +138,46 @@ function SupportMessage({message,previous,customerId,customerAvatarRef,customerN
 
 function SupportContactPicker({onClose,onSelect}:{onClose:()=>void;onSelect:(id:string)=>void}) {
   const adminId=useAdminAuth(s=>s.session?.adminId),epoch=useAdminAuth(s=>s.authEpoch);
-  const [keyword,setKeyword]=useState(""),[page,setPage]=useState(1),[retry,setRetry]=useState(0),[rows,setRows]=useState<Awaited<ReturnType<typeof supportClient.customers>>|null>(null),[error,setError]=useState("");
-  useEffect(()=>{const controller=new AbortController();setRows(null);setError("");supportClient.customers({mode:"PERSONAL",pageNum:page,pageSize:10,filter:"ALL",keyword,signal:controller.signal}).then(p=>{if(!controller.signal.aborted)setRows(p);}).catch(e=>{if(!controller.signal.aborted)setError(displayAdminError(e));});return()=>controller.abort();},[keyword,page,retry,epoch]);
-  return <Modal title="主动联系本人客户" icon="users" onClose={onClose} footer={<button className="btn btn-sec btn-sm" onClick={onClose}>取消</button>}><label>搜索客户姓名或编码<input className="fld" value={keyword} onChange={e=>{setKeyword(e.target.value);setPage(1);}}/></label><p>只可向当前本人客户发送；不再维护客户可在原求助会话中继续普通服务回复。</p>{error?<p role="alert">{error}<button className="l-btn sm" onClick={()=>setRetry(n=>n+1)}>重试客户列表</button></p>:!rows?<p role="status">正在加载客户…</p>:<>{!rows.records.length&&<p>暂无匹配的客户。</p>}{rows.records.map(c=><button className="l-btn sm" key={c.customerId} disabled={c.agentAdminId!==adminId||!c.maintenanceEnabled} onClick={()=>onSelect(c.customerId)}>{c.displayName||c.customerNo||c.customerId} · {c.customerNo||"编码未知"}{!c.maintenanceEnabled?" · 不再维护":c.agentAdminId!==adminId?" · 当前归属其他专属客服":""}</button>)}<div className="m-admin-toolbar"><button className="l-btn sm" disabled={page<=1} onClick={()=>setPage(n=>n-1)}>上一页</button><span>第 {page} 页 · {rows.total} 位</span><button className="l-btn sm" disabled={page*10>=rows.total} onClick={()=>setPage(n=>n+1)}>下一页</button></div></>}</Modal>;
+  const [keyword,setKeyword]=useState(""),[page,setPage]=useState(1),[retry,setRetry]=useState(0);
+  const search=keyword.trim(),requestKey=JSON.stringify([adminId,epoch,page,search]);
+  const [response,setResponse]=useState<{key:string;data:Awaited<ReturnType<typeof supportClient.customers>>|null;error:string}|null>(null);
+  const rows=response?.key===requestKey?response.data:null,error=response?.key===requestKey?response.error:"";
+  useEffect(()=>{
+    const controller=new AbortController();
+    setResponse(null);
+    const load=()=>supportClient.customers({mode:"PERSONAL",pageNum:page,pageSize:10,filter:"ALL",keyword:search,signal:controller.signal})
+      .then(data=>{
+        if(controller.signal.aborted)return;
+        const lastPage=Math.max(1,Math.ceil(data.total/10));
+        if(page>lastPage){setPage(lastPage);return;}
+        setResponse({key:requestKey,data,error:""});
+      })
+      .catch(cause=>{if(!controller.signal.aborted)setResponse({key:requestKey,data:null,error:displayAdminError(cause)});});
+    const timer=search?setTimeout(load,250):undefined;
+    if(!search)void load();
+    return()=>{controller.abort();clearTimeout(timer);};
+  },[search,page,retry,epoch,adminId,requestKey]);
+  const pages=Math.max(1,Math.ceil((rows?.total??0)/10));
+  return <Modal title="主动联系本人客户" icon="users" onClose={onClose} footer={<button className="btn btn-sec btn-sm" onClick={onClose}>取消</button>}>
+    <div className="ui-support-workflow ui-support-contact-picker">
+      <label>搜索客户<input className="fld" placeholder="昵称、手机号或用户编号" maxLength={200} value={keyword} onChange={e=>{setKeyword(e.target.value);setPage(1);}}/></label>
+      <p>只可选择当前本人客户；不再维护客户可在原求助会话中继续普通服务回复。</p>
+      {error?<p className="itint danger" role="alert">{error} <button className="l-btn sm" onClick={()=>setRetry(n=>n+1)}>重试客户列表</button></p>:!rows?<p role="status">正在加载客户…</p>:<>
+        <p className="ui-contact-count" role="status">共 {rows.total} 位客户 · 每页 10 条</p>
+        {!rows.records.length?<p className="itint">暂无匹配的客户。</p>:<ul className="ui-contact-list" aria-label="可联系客户">
+          {rows.records.map(c=><li key={c.customerId}><button type="button" disabled={c.agentAdminId!==adminId||!c.maintenanceEnabled} onClick={()=>onSelect(c.customerId)}>
+            <span className="ui-contact-identity"><strong>{c.displayName||c.customerNo||c.customerId}</strong><small>用户编号：U{c.customerId.padStart(8,"0")}</small></span>
+            <span>{!c.maintenanceEnabled?"不再维护":c.agentAdminId!==adminId?"当前归属其他专属客服":"选择"}</span>
+          </button></li>)}
+        </ul>}
+        <nav className="m-admin-toolbar ui-contact-pagination" aria-label="客户分页">
+          <button type="button" className="l-btn sm" disabled={page<=1} onClick={()=>setPage(n=>n-1)}>上一页</button>
+          <span>第 {page} / {pages} 页</span>
+          <button type="button" className="l-btn sm" disabled={page>=pages} onClick={()=>setPage(n=>n+1)}>下一页</button>
+        </nav>
+      </>}
+    </div>
+  </Modal>;
 }
 
 type ListTab = "pending" | "unassigned" | "open" | "all" | "archived";

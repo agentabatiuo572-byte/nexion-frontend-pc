@@ -22,6 +22,16 @@
 .ui-support-workflow details p { padding: 10px 0; margin: 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .ui-support-workflow details > button { display: block; max-width: 100%; margin: 8px 0; white-space: normal; text-align: left; overflow-wrap: anywhere; }
 .ui-random-assignment > p:first-child { padding: 12px 14px; background: var(--surface-2); border-radius: 8px; }
+.ui-support-contact-picker .ui-contact-count { font-size: 12px; }
+.ui-support-contact-picker .ui-contact-list { list-style: none; margin: 12px 0; padding: 0; max-height: min(55vh,640px); overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
+.ui-support-contact-picker .ui-contact-list li + li { border-top: 1px solid var(--border); }
+.ui-support-contact-picker .ui-contact-list button { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; padding: 12px 14px; border: 0; background: var(--surface); color: var(--ink); text-align: left; cursor: pointer; }
+.ui-support-contact-picker .ui-contact-list button:hover:not(:disabled) { background: var(--brand-soft); }
+.ui-support-contact-picker .ui-contact-list button:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.ui-support-contact-picker .ui-contact-list button:disabled { opacity: .5; cursor: not-allowed; }
+.ui-support-contact-picker .ui-contact-identity { display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.ui-support-contact-picker .ui-contact-identity small { color: var(--ink-3); }
+.ui-support-contact-picker .ui-contact-pagination { justify-content: space-between; margin-bottom: 0; font-size: 12px; }
 .k6c2 .ui-target-version .k6-form-row { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,200px),1fr)); gap: 14px; }
 .ui-target-version h4 { font-size: 14px; font-weight: 600; margin: 0 0 14px; }
 .ui-target-version .k6-ovr-field { min-width: 0; margin-bottom: 14px; }
