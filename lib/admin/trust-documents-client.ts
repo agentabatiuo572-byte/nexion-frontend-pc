@@ -25,20 +25,19 @@ export interface TrustDocumentUpload {
   reason: string;
 }
 
-export const TRUST_DOCUMENT_SLOTS: TrustDocumentSlot[] = ["whitepaper", "incorporation", "msb", "ein"];
 export const TRUST_DOCUMENT_NAMES: Record<TrustDocumentSlot, string> = {
   whitepaper: "白皮书",
   incorporation: "纽约州公司注册证书",
   msb: "FinCEN MSB 登记记录",
   ein: "IRS EIN 通知书",
 };
+export const TRUST_DOCUMENT_SLOTS = Object.keys(TRUST_DOCUMENT_NAMES) as TrustDocumentSlot[];
+/** Company registrations are compliance content and need the trust-section authority; the white paper takes standard publishing. */
+export const TRUST_DOCUMENT_SENSITIVE_AUTHORITY = "content_i4_trust_section_manage";
 export const TRUST_DOCUMENT_MAX_BYTES = 20 * 1024 * 1024;
 
 interface ApiResult<T> { code: number; message?: string; data?: T }
 
-function idempotencyKey() {
-  return `i4-doc-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await guardedFetch(`/api/admin/content/trust-documents${path}`, { ...init, cache: "no-store" });
@@ -86,22 +85,33 @@ export function trustDocumentPreviewHref(document: Pick<TrustDocument, "slot" | 
   return `/api/admin/content/trust-documents/${document.slot}/file?v=${document.sha256.slice(0, 12)}`;
 }
 
-export async function uploadTrustDocument(current: TrustDocument, file: File, fields: TrustDocumentUpload) {
+/** The PDF for preview; a failure carries the backend's code so the card can show operator copy. */
+export async function fetchTrustDocumentFile(document: Pick<TrustDocument, "slot" | "sha256">): Promise<Blob> {
+  const response = await guardedFetch(trustDocumentPreviewHref(document), { cache: "no-store" });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as ApiResult<unknown> | null;
+    throw new Error(formatAdminApiError(body?.message, `TRUST_DOCUMENT_REQUEST_FAILED_${response.status}`));
+  }
+  if (response.headers.get("Content-Type")?.split(";")[0] !== "application/pdf") throw new Error("TRUST_DOCUMENT_TYPE_INVALID");
+  return response.blob();
+}
+
+export async function uploadTrustDocument(current: TrustDocument, file: File, fields: TrustDocumentUpload, idempotencyKey: string) {
   const body = new FormData();
   body.append("file", file);
   for (const [key, value] of Object.entries(fields)) if (value.trim()) body.append(key, value.trim());
   body.append("expectedSha256", current.sha256);
   return normalizeTrustDocument(await request<unknown>(`/${current.slot}`, {
     method: "POST",
-    headers: { "Idempotency-Key": idempotencyKey() },
+    headers: { "Idempotency-Key": idempotencyKey },
     body,
   }));
 }
 
-export async function restoreTrustDocument(current: TrustDocument, reason: string) {
+export async function restoreTrustDocument(current: TrustDocument, reason: string, idempotencyKey: string) {
   return normalizeTrustDocument(await request<unknown>(`/${current.slot}/restore-default`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey() },
+    headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
     body: JSON.stringify({ reason: reason.trim(), expectedSha256: current.sha256 }),
   }));
 }

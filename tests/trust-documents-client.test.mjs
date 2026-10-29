@@ -5,7 +5,8 @@ import test from 'node:test';
 
 register('./e5-client-test-loader.mjs', import.meta.url);
 const {
-  normalizeTrustDocument, restoreTrustDocument, trustDocumentPreviewHref, uploadTrustDocument, TRUST_DOCUMENT_NAMES,
+  fetchTrustDocumentFile, normalizeTrustDocument, restoreTrustDocument, trustDocumentPreviewHref,
+  uploadTrustDocument, TRUST_DOCUMENT_NAMES, TRUST_DOCUMENT_SLOTS,
 } = await import('../lib/admin/trust-documents-client.ts');
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -20,9 +21,10 @@ test('documents keep only the published fields and reject unknown slots or sourc
   assert.throws(() => normalizeTrustDocument({ ...row, source: 'DRAFT' }), /TRUST_DOCUMENT_RESPONSE_INVALID/);
   assert.equal(trustDocumentPreviewHref(row), '/api/admin/content/trust-documents/whitepaper/file?v=aaaaaaaaaaaa');
   assert.deepEqual(Object.keys(TRUST_DOCUMENT_NAMES), ['whitepaper', 'incorporation', 'msb', 'ein']);
+  assert.deepEqual(TRUST_DOCUMENT_SLOTS, Object.keys(TRUST_DOCUMENT_NAMES));
 });
 
-test('upload and restore send the hash the operator saw with a fresh idempotency key', async (t) => {
+test('upload and restore send the hash the operator saw with the key the card holds for that form', async (t) => {
   const calls = [];
   t.mock.method(globalThis, 'fetch', async (url, init) => {
     calls.push({ url, init });
@@ -30,8 +32,10 @@ test('upload and restore send the hash the operator saw with a fresh idempotency
   });
   const current = normalizeTrustDocument(row);
   const file = new File([new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d])], 'paper.pdf', { type: 'application/pdf' });
-  const uploaded = await uploadTrustDocument(current, file, { version: ' v1.4 ', language: '', referenceNo: '', verifyUrl: '', reason: 'publish v1.4 paper' });
-  await restoreTrustDocument({ ...current, source: 'UPLOADED' }, ' back to default ');
+  const uploadKey = 'i4-trust-document-1';
+  const uploaded = await uploadTrustDocument(current, file, { version: ' v1.4 ', language: '', referenceNo: '', verifyUrl: '', reason: 'publish v1.4 paper' }, uploadKey);
+  await uploadTrustDocument(current, file, { version: ' v1.4 ', language: '', referenceNo: '', verifyUrl: '', reason: 'publish v1.4 paper' }, uploadKey);
+  await restoreTrustDocument({ ...current, source: 'UPLOADED' }, ' back to default ', 'i4-trust-document-2');
 
   assert.equal(uploaded.version, 'v1.4');
   assert.equal(calls[0].url, '/api/admin/content/trust-documents/whitepaper');
@@ -40,11 +44,21 @@ test('upload and restore send the hash the operator saw with a fresh idempotency
   assert.equal(form.get('expectedSha256'), 'a'.repeat(64));
   assert.equal(form.has('language'), false);
   assert.equal(form.get('file').name, 'paper.pdf');
-  assert.equal(calls[1].url, '/api/admin/content/trust-documents/whitepaper/restore-default');
-  assert.deepEqual(JSON.parse(calls[1].init.body), { reason: 'back to default', expectedSha256: 'a'.repeat(64) });
+  assert.equal(calls[2].url, '/api/admin/content/trust-documents/whitepaper/restore-default');
+  assert.deepEqual(JSON.parse(calls[2].init.body), { reason: 'back to default', expectedSha256: 'a'.repeat(64) });
   const keys = calls.map((call) => new Headers(call.init.headers).get('Idempotency-Key'));
   assert.ok(keys.every(Boolean));
-  assert.notEqual(keys[0], keys[1]);
+  // A retry of the same form replays the first result; another action gets its own key.
+  assert.equal(keys[0], keys[1]);
+  assert.notEqual(keys[0], keys[2]);
+});
+
+test('a failed preview reports the backend code instead of opening raw JSON', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ code: 503, message: 'TRUST_DOCUMENT_UNAVAILABLE', data: null }),
+    { status: 503, headers: { 'Content-Type': 'application/json' } }));
+  await assert.rejects(fetchTrustDocumentFile(row), /文件暂时读取不到/);
+  t.mock.method(globalThis, 'fetch', async () => new Response(new Uint8Array([0x25, 0x50, 0x44, 0x46]), { status: 200, headers: { 'Content-Type': 'application/pdf' } }));
+  assert.equal((await fetchTrustDocumentFile(row)).size, 4);
 });
 
 test('the content proxy forwards uploads and PDF previews as binary, and I4 shows the card', () => {
@@ -52,11 +66,14 @@ test('the content proxy forwards uploads and PDF previews as binary, and I4 show
   const card = read('app/components/domain-views/trust-documents-card.tsx');
   const trust = read('app/components/domain-views/i-tabs/i4-trust.tsx');
   assert.match(proxy, /"trust-documents"/);
-  assert.match(proxy, /path\.length === 2 && path\[0\] === "trust-documents"\)/);
+  assert.match(proxy, /documentUpload = request\.method === "POST" && path\.length === 2 && path\[0\] === "trust-documents"/);
+  assert.match(proxy, /const maxBytes = documentUpload \? TRUST_DOCUMENT_UPLOAD_MAX_BYTES/);
+  assert.match(proxy, /TRUST_DOCUMENT_UPLOAD_MAX_BYTES = 21 \* 1024 \* 1024/);
   assert.match(proxy, /documentContent = request\.method === "GET" && path\.length === 3 && path\[0\] === "trust-documents" && path\[2\] === "file"/);
   assert.match(proxy, /!== "application\/pdf"\) return jsonError\(502, "TRUST_DOCUMENT_TYPE_INVALID"\)/);
-  assert.match(card, /content_i4_publish_standard/);
-  assert.match(card, /content_i4_trust_section_manage/);
-  assert.match(card, /操作原因至少 8 个字/);
+  assert.match(card, /slot === "whitepaper" && authority === "content_i4_publish_standard"/);
+  assert.match(card, /TRUST_DOCUMENT_SENSITIVE_AUTHORITY/);
+  assert.match(card, /fetchA2ReasonPolicy\(\)/);
+  assert.match(card, /操作原因至少 \$\{reasonMin\} 个字/);
   assert.match(trust, /view === "trust" && <TrustDocumentsCard \/>/);
 });

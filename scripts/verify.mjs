@@ -323,7 +323,8 @@ const GEARS = [
   ["outcome classification contract", "node", ["--experimental-strip-types", "--test", "tests/outcome-classification-contract.test.mjs"]],
   // (同族「结果未知」契约 a2-outcome-uncertain 已在上面第 27 齿挂着,这里原本重复挂了第二遍,已去重。)
   ["b2/b3 outcome-unknown contract", "node", ["--test", "tests/b23-outcome-unknown-contract.test.mjs"]],
-  ["i4 A2 pending visibility contract", "node", ["--test", "tests/i4-a2-pending-visibility-contract.test.mjs", "tests/trust-documents-client.test.mjs"]],
+  ["i4 A2 pending visibility contract", "node", ["--test", "tests/i4-a2-pending-visibility-contract.test.mjs"]],
+  ["i4 trust documents client", "node", ["--test", "tests/trust-documents-client.test.mjs"]],
   // 红测脚本自身的守门人:它是唯一验证「这些门有判别力」的东西,却一度语法错误跑不起来而
   // verify 全绿。这里只做静态自检(不跑红测本体 —— 它会改写源文件,并行跑互相踩)。
   ["redtest harness self-check", "node", ["--test", "tests/redtest-harness-selfcheck.test.mjs"]],

@@ -648,6 +648,8 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   TRUST_DOCUMENT_READ_FAILED: "文件预览失败，请稍后再试。",
   TRUST_DOCUMENT_TYPE_INVALID: "返回的文件不是 PDF，请刷新后重试。",
   TRUST_DOCUMENT_RESPONSE_INVALID: "资料文件信息不完整，请刷新后重试。",
+  TRUST_DOCUMENT_FORBIDDEN: "公司登记资料需要信任中心管理权限才能更换。",
+  TRUST_DOCUMENT_UPLOAD_INTERRUPTED: "上传中断，请检查网络后重新上传。",
   OPERATOR_REQUIRED: "缺少操作人信息,请重新登录后再试。",
   FORCE_LOGOUT_SELF_FORBIDDEN: "不能强制登出自己的当前账号。",
   FORCE_LOGOUT_ROLE_FORBIDDEN: "只有超级管理员可以强制登出运营账号。",
