@@ -67,6 +67,12 @@ Android 已完成单目标供应商/客户端烟测：冻结候选为 `54a3e566 
 
 前台（通知 43814）、后台（43815）及冷启动（43816）三次单目标发送均获 FCM HTTP 200/ACCEPTED，有实际系统通知记录，点击均进入安全页。冷态通过 Home 后 `am kill` 确认进程不存在，未测试 force-stop。三条通知的 GET 路由解析与 POST opened 请求在服务访问日志中均为 HTTP 200，证据见 `D:/workspace/output/push-direct-20261030/android-push-click-http-readback.json`。
 
-本轮只使用三条明确标记 TEST 的验收消息，没有真实账号安全事件、权威业务事实或 native delivery 行。上述 HTTP 200 仅证明请求被接受，不证明 opened_at 已持久化；五类真实业务触发、dispatcher、租约与打开回执持久化仍待端到端实测。令牌轮换、登出/切号尚未完成真机全测；iOS 尚无签名 IPA，未完成真机验收。其余证据与剩余项见 `D:/workspace/output/push-direct-20261030/REPORT.md`，不得将本次 Android 烟测扩展为双平台或完整业务链通过。
+本轮只使用三条明确标记 TEST 的验收消息，没有真实账号安全事件、权威业务事实或 native delivery 行。上述 HTTP 200 仅证明请求被接受，不证明 opened_at 已持久化；五类真实业务触发、dispatcher、租约与打开回执持久化仍待端到端实测。令牌轮换、登出/切号尚未完成真机全测；iOS 已取得下述完整 IPA，真机验收仍未完成。其余证据与剩余项见 `D:/workspace/output/push-direct-20261030/REPORT.md`，不得将本次 Android 烟测扩展为双平台或完整业务链通过。
 
 当前 TEST 服务全局发送与 scheduler 仍关闭；本轮由本地安全发送器仅向已核验安装发送三条消息，未部署服务端供应商私钥或修改服务配置。服务端凭据部署及 TEST 业务自动队列端到端验收仍待完成，不代表生产推送已启用。
+
+### 2026-10-30 iOS 完整包交付状态
+
+Swift 编译修复已进入 App `test` 提交 `4f36f857`。完整云打包成功并已下载 `UVEL-TEST-2026103003.ipa`（36,697,634 bytes；SHA256 `3efc157150bb6ac55412ad0fcad7a4499d1ec6c6ce0a796959810333e355e454`）。实际 Bundle ID 为 ai.uvel.app，连接 TEST，包及全部内嵌 framework 的最低系统为 iOS 15.0，因此 iOS 16 位于声明支持范围；尚未作 iOS 16 实机运行验证。原生 Bridge 与 Hook 已进入独立推送 framework，包内签名权限及匹配描述文件的 APNs 环境均为 production；未发现供应商私钥文件或 PEM 私钥标记。
+
+本包使用 TestFlight 分发签名，须经 App Store Connect 上传及 TestFlight 邀请安装，不能把 IPA 下载链接当作直接安装入口。目前未进行 Apple 上传/验证、密码学验签、iPhone 安装或真实 APNs 投递；服务端全局发送与 scheduler 仍关闭。此更新只确认完整 IPA 产物及静态检查完成，未改变产品规则或补齐尚缺的业务链/双平台实机验收。证据：`D:/workspace/output/push-direct-20261030/native-ipa-inspection-2026103003.json`、`independent-ios-ipa-review-2026103003.md`。
