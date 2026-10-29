@@ -10,7 +10,7 @@ const Chevron = () => <svg width={14} height={14} viewBox="0 0 24 24" fill="none
 
 const CONNECTORS = [{ cls: "start", ln: "a" }, { cls: "mid", ln: "b" }, { cls: "end", ln: "c" }];
 // 筛选值 s 是后端订单进度契约(backend-canonical,不可改);label 运营可读中文,复用 data.ts 的 stateLabel 单一真源。
-const ORDER_STATES = ["placed", "paid", "provisioning", "activated", "payment_failed", "expired", "provisioning_failed", "refunded", "chargeback", "cancelled"] as const;
+const ORDER_STATES = ["placed", "paid", "provisioning", "activated", "inventory", "payment_failed", "expired", "provisioning_failed", "refunded", "chargeback", "cancelled"] as const;
 const FILTERS = [
   { s: "all", label: "全部" },
   ...ORDER_STATES.map((s) => ({ s, label: stateLabel(s) })),
@@ -38,7 +38,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
     { cls: "start", nm: "已下单", ct: `${stateCounts.get("placed") ?? 0} 单` },
     { cls: "flow", nm: "已支付", ct: `${stateCounts.get("paid") ?? 0} 单` },
     { cls: "flow", nm: "开通中", ct: `${stateCounts.get("provisioning") ?? 0} 单 · 分配数据中心中` },
-    { cls: "end", nm: "已激活 ✓", ct: `${stateCounts.get("activated") ?? 0} 单` },
+    { cls: "end", nm: "已交付 ✓", ct: `${stateCounts.get("activated") ?? 0} 单已激活 · ${stateCounts.get("inventory") ?? 0} 单已入库` },
   ];
   // 终态分支:nm 中文主标;desc 补因果(去状态码裸用,与 nm 不重复)。
   const branches = [
@@ -158,7 +158,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           pageSizeOptions={[10, 20, 50, 100]}
         />
       </section>
-      <p className="f-foot">只有已支付、开通中、已激活的订单能退款，提交时会检查兑付覆盖率。「标记失败结果」不会退款。</p>
+      <p className="f-foot">只有已支付、开通中、已激活或已入库的订单能退款，提交时会检查兑付覆盖率。「标记失败结果」不会退款。</p>
     </>
   );
 }

@@ -11,9 +11,9 @@ export const FOLD: Record<string, string> = { E1: "E1", E2: "E2", E3: "E3", E4: 
 
 export const ORDER_FLOW = ["placed", "paid", "provisioning", "activated"];
 // design-kit Badge tone 映射(订单状态)。
-export const ostate: Record<string, string> = { placed: "neutral", paid: "info", provisioning: "cyan", activated: "ok", refunded: "warn", cancelled: "neutral", payment_failed: "err", expired: "warn", provisioning_failed: "err", chargeback: "err" };
+export const ostate: Record<string, string> = { placed: "neutral", paid: "info", provisioning: "cyan", activated: "ok", inventory: "ok", refunded: "warn", cancelled: "neutral", payment_failed: "err", expired: "warn", provisioning_failed: "err", chargeback: "err" };
 // 终态中文标签。
-const STATE_LABEL: Record<string, string> = { placed: "已下单", paid: "已支付", provisioning: "开通中", activated: "已激活", cancelled: "已取消", payment_failed: "支付失败", expired: "已过期", refunded: "已退款", provisioning_failed: "开通失败", chargeback: "拒付" };
+const STATE_LABEL: Record<string, string> = { placed: "已下单", paid: "已支付", provisioning: "开通中", activated: "已激活", inventory: "已入库", cancelled: "已取消", payment_failed: "支付失败", expired: "已过期", refunded: "已退款", provisioning_failed: "开通失败", chargeback: "拒付" };
 export const stateLabel = (s: string): string => STATE_LABEL[s] ?? "状态未知";
 
 // E-13 补建终态可选值(为缺失终态的订单手动落定;真后台由订单状态机校验后写入)。

@@ -1153,7 +1153,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         const terminalOptions = eff === "placed" ? ["payment_failed", "expired"]
           : eff === "paid" ? ["chargeback"]
             : eff === "provisioning" ? ["provisioning_failed"] : [];
-        const idx = ORDER_FLOW.indexOf(eff);
+        const orderFlow = eff === "inventory" ? ["placed", "paid", "provisioning", "inventory"] : ORDER_FLOW;
+        const idx = orderFlow.indexOf(eff);
         const hasSettledFunding = e4Detail?.funding.some((item) => {
           const source = item.source.toUpperCase();
           const status = item.status.toUpperCase();
@@ -1178,7 +1179,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             : eff === "provisioning" && !e4Detail?.deviceActivatedAt
               ? { code: "ORDER_DEVICE_ACTIVATION_REQUIRED", text: "要先在「设备运行管理」激活设备，订单才能完成。" }
               : null;
-        const refundableState = ["paid", "provisioning", "activated"].includes(eff);
+        const refundableState = ["paid", "provisioning", "activated", "inventory"].includes(eff);
         const refundReady = canRefundE4 && refundableState && e4Detail?.refundAllowed === true;
         const closeOrder = () => { setSelOrder(null); setE4Detail(null); setE4DetailError(null); };
         const coverageText = e4Detail?.coverageCurrent == null
@@ -1232,7 +1233,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             {!isCancelled(o.id) && !isRefunded(o.id) && terminalOf(o.id) && <KV k="失败结果" v={<span style={{ color: "var(--warning)" }}>{stateLabel(terminalOf(o.id)!)} · 人工标记</span>} />}
             <div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 8px", color: "var(--ink)" }}>状态轨迹</div>
             <div className="edrawer-trail">
-              {ORDER_FLOW.map((s) => { const done = ORDER_FLOW.indexOf(s) <= idx; return <div key={s} className={`it ${done ? "done" : "grey"}`}><span className={`d ${done ? "done" : "grey"}`} /><span className="nm">{stateLabel(s)}</span></div>; })}
+              {orderFlow.map((s) => { const done = orderFlow.indexOf(s) <= idx; return <div key={s} className={`it ${done ? "done" : "grey"}`}><span className={`d ${done ? "done" : "grey"}`} /><span className="nm">{stateLabel(s)}</span></div>; })}
               {e4Detail?.history.map((item, index) => <div className="it" key={`${item.createdAt}-${index}`}><span className="d done" /><span className="nm">{stateLabel(item.fromState)} → {stateLabel(item.toState)} · {operatorOrderHistoryActor(item.operator)} · {operatorOrderHistoryReason(item.reason, e4Detail.paymentMethod)}</span></div>)}
               {isCancelled(o.id) && <div className="it grey"><span className="d grey" /><span className="nm">已取消 · 人工取消</span></div>}
               {!isCancelled(o.id) && !isRefunded(o.id) && terminalOf(o.id) && <div className="it red"><span className="d red" /><span className="nm">{stateLabel(terminalOf(o.id)!)} · 人工标记</span></div>}
