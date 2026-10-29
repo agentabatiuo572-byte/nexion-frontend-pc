@@ -128,13 +128,22 @@ test('wheel, touch and keyboard upward input can cross the top threshold but one
   h.body.scrollTop=-0.666;h.handlers.onMessageScroll(h.event());assert.equal(h.reads,2);
  }
 });
-test('scrollbar upward drag grants one page while content clicks, stationary thumb and downward inputs do not',()=>{
+test('native scrollbar pointerdown plus upward scroll grants one page without pointermove, while layout and content clicks do not',()=>{
  const h=scrollHandlers();h.handlers.onMessagePointerDown(h.event({button:0,clientX:100,clientY:150}));h.body.scrollTop=30;h.handlers.onMessageScroll(h.event());assert.equal(h.reads,0,'content click');
- h.body.scrollTop=105.333;h.messageScroll.current.top=105.333;h.handlers.onMessagePointerDown(h.event({button:0,clientX:205,clientY:150}));h.body.scrollTop=58.667;h.handlers.onMessageScroll(h.event());assert.equal(h.reads,0,'stationary scrollbar does not count as dragging upward');
- h.body.scrollTop=105.333;h.messageScroll.current.top=105.333;h.handlers.onMessagePointerMove(h.event({clientY:80}));h.body.scrollTop=30;h.handlers.onMessageScroll(h.event());assert.equal(h.reads,1);
+ h.body.scrollTop=105.333;h.messageScroll.current.top=105.333;h.handlers.onMessagePointerDown(h.event({button:0,clientX:205,clientY:150}));h.body.clientHeight=754;h.body.scrollTop=58.667;h.handlers.onMessageScroll(h.event());assert.equal(h.reads,0,'stationary scrollbar plus footer layout change does not authorize a page');
+ h.body.clientHeight=707;h.body.scrollTop=105.333;h.messageScroll.current.top=105.333;h.handlers.onMessagePointerDown(h.event({button:0,clientX:205,clientY:150}));
+ h.body.scrollTop=80;h.handlers.onMessageScroll(h.event());assert.equal(h.reads,0,'held native drag can cross the threshold over multiple scroll events');
+ h.body.scrollTop=30;h.handlers.onMessageScroll(h.event());assert.equal(h.reads,1,'native scrollbars need not deliver pointermove');
  h.body.scrollTop=20;h.handlers.onMessageScroll(h.event());assert.equal(h.reads,1);
  h.handlers.onMessageWheel(h.event({deltaY:20}));h.body.scrollTop=10;h.handlers.onMessageScroll(h.event());assert.equal(h.reads,1,'downward input');
  h.handlers.onMessageWheel(h.event({deltaY:-20,ctrlKey:true}));assert.equal(h.reads,1,'zoom is not an upward scroll');
+});
+test('scrollbar image mutation and pointer release cancel held intent before later layout scrolling',()=>{
+ const h=scrollHandlers();h.handlers.onMessagePointerDown(h.event({button:0,clientX:205,clientY:150}));h.handlers.onMessageAssetLoad();h.body.scrollTop=30;h.handlers.onMessageScroll(h.event());assert.equal(h.reads,0);
+ const releaseEffect=main.body.statements.find(node=>ts.isExpressionStatement(node)&&ts.isCallExpression(node.expression)&&node.expression.expression.getText(ast)==='useEffect'&&node.getText(ast).includes('document.addEventListener("pointerup"'));
+ const handlers={};const scope={olderScrollIntent:h.olderScrollIntent,useEffect:fn=>fn(),document:{addEventListener:(name,fn)=>handlers[name]=fn,removeEventListener(){}}};
+ vm.runInNewContext(ts.transpileModule(releaseEffect.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,scope);
+ for(const name of ['pointerup','pointercancel']){h.body.scrollTop=105.333;h.messageScroll.current.top=105.333;h.handlers.onMessagePointerDown(h.event({button:0,clientX:205,clientY:150}));handlers[name]();h.body.scrollTop=30;h.handlers.onMessageScroll(h.event());assert.equal(h.reads,0,name);}
 });
 test('M3 has no full-detail/history/preflight bypass and keeps thin UID plus independent reply/read contexts',()=>{
  assert.doesNotMatch(chat,/loadConversationDetail\(|markMConversationRead\(|CustomerHistoryMessages|customerHistory\.map/);

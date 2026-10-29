@@ -218,7 +218,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   const messageBodyRef = useRef<HTMLDivElement>(null);
   const messageAnchor = useRef<{ id: string; offset: number } | null>(null);
   const messageScroll = useRef({ top: 0, bottom: true, touchY: 0 });
-  const olderScrollIntent = useRef({ up: false, scrollbar: false, pointerY: 0 });
+  const olderScrollIntent = useRef({ up: false, scrollbar: false, pointerY: 0, clientHeight: 0, scrollHeight: 0 });
   const [busy, setBusy] = useState(false);
   const [firstDetail, setFirstDetail] = useState<SupportCustomerDetail | null>(null);
   const [detailError, setDetailError] = useState("");
@@ -297,6 +297,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   useEffect(() => { failedReadContext.current = null; markedRef.current = ""; setReadError(""); }, [messagePages.key]);
   const loadOlderMessages = () => {
     olderScrollIntent.current.up = false;
+    olderScrollIntent.current.scrollbar = false;
     const body = messageBodyRef.current;
     if (!body || messagePages.loading || !messagePages.hasMore) return;
     const top = body.getBoundingClientRect().top;
@@ -306,7 +307,9 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   };
   const onMessageScroll = (event: React.UIEvent<HTMLDivElement>) => {
     const body = event.currentTarget, previous = messageScroll.current.top;
-    const intended = olderScrollIntent.current.up;
+    const heldScrollbar = olderScrollIntent.current.scrollbar && olderScrollIntent.current.clientHeight === body.clientHeight && olderScrollIntent.current.scrollHeight === body.scrollHeight;
+    if (!heldScrollbar) olderScrollIntent.current.scrollbar = false;
+    const intended = olderScrollIntent.current.up || heldScrollbar;
     olderScrollIntent.current.up = false;
     messageScroll.current.top = body.scrollTop;
     messageScroll.current.bottom = body.scrollHeight - body.scrollTop - body.clientHeight <= 40;
@@ -327,6 +330,8 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     const body = event.currentTarget;
     olderScrollIntent.current.scrollbar = event.button === 0 && event.clientX >= body.getBoundingClientRect().left + body.clientLeft + body.clientWidth;
     olderScrollIntent.current.pointerY = event.clientY;
+    olderScrollIntent.current.clientHeight = body.clientHeight;
+    olderScrollIntent.current.scrollHeight = body.scrollHeight;
     olderScrollIntent.current.up = false;
   };
   const onMessagePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -341,6 +346,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   }, []);
   const onMessageAssetLoad = () => {
     olderScrollIntent.current.up = false;
+    olderScrollIntent.current.scrollbar = false;
     const body = messageBodyRef.current;
     if (body && messageScroll.current.bottom) { body.scrollTop = body.scrollHeight; messageScroll.current.top = body.scrollTop; }
   };
