@@ -39,6 +39,23 @@ test("E4 refund requires a user-visible reason that reaches the A2 command", asy
   assert.match(registry, /refundReasonCode: String\(ctx\.refundReasonCode\)/);
 });
 
+test("E4 cancel and failure results carry a user-visible close reason to the A2 command", async () => {
+  const client = await read("lib/admin/e4-client.ts");
+  const shell = await read("app/components/domain-views/e-view.tsx");
+  const registry = await read("lib/admin/high-ops-registry.ts");
+  assert.match(client, /cancelled: \["ORDER_EXCEPTION", "DELIVERY_UNAVAILABLE", "OTHER"\]/);
+  assert.match(client, /payment_failed: \["PAYMENT_NOT_RECEIVED", "PAYMENT_AMOUNT_MISMATCH", "ORDER_EXCEPTION", "OTHER"\]/);
+  assert.match(client, /provisioning_failed: \["DELIVERY_UNAVAILABLE", "ORDER_EXCEPTION", "OTHER"\]/);
+  assert.doesNotMatch(client, /expired: \[|chargeback: \[/, "expired and chargeback reasons are recorded by the backend");
+  assert.match(shell, /key: "closeReasonCode", label: "取消原因（用户可见）", current: ""/);
+  assert.match(shell, /visibleWhen: \{ key: "terminalState", equals: s \}/);
+  assert.match(shell, /if \(!E4_CLOSE_REASONS\.cancelled\.includes\(closeReasonCode\)\) \{ throw new Error\("请选择取消原因"\); \}/);
+  assert.match(shell, /if \(choices && !choices\.includes\(closeReasonCode\)\) \{ throw new Error\("请选择原因"\); \}/);
+  assert.match(shell, /def\.buildCommand\(\{ orderNo: mc\.orderId, closeReasonCode \}\)/);
+  assert.match(shell, /def\.buildCommand\(\{ orderNo: mc\.orderId, terminalState: v, closeReasonCode \}\)/);
+  assert.equal((registry.match(/closeReasonCode: String\(ctx\.closeReasonCode\)/g) ?? []).length, 2);
+});
+
 test("E4 removes reverse transitions and illegal refund terminal", async () => {
   const shell = await read("app/components/domain-views/e-view.tsx");
   const data = await read("app/components/domain-views/e-tabs/data.ts");

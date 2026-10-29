@@ -115,6 +115,23 @@ export const E4_REFUND_REASON_LABELS: Record<(typeof E4_REFUND_REASONS)[number],
   OTHER: "其他原因",
 };
 
+/**
+ * User-visible close reasons an operator chooses per target state (backend OrderCloseReason).
+ * Expired and chargeback have a single reason the backend records on its own.
+ */
+export const E4_CLOSE_REASONS: Record<string, readonly string[]> = {
+  cancelled: ["ORDER_EXCEPTION", "DELIVERY_UNAVAILABLE", "OTHER"],
+  payment_failed: ["PAYMENT_NOT_RECEIVED", "PAYMENT_AMOUNT_MISMATCH", "ORDER_EXCEPTION", "OTHER"],
+  provisioning_failed: ["DELIVERY_UNAVAILABLE", "ORDER_EXCEPTION", "OTHER"],
+};
+export const E4_CLOSE_REASON_LABELS: Record<string, string> = {
+  PAYMENT_NOT_RECEIVED: "未收到付款",
+  PAYMENT_AMOUNT_MISMATCH: "付款金额不符",
+  DELIVERY_UNAVAILABLE: "设备无法交付",
+  ORDER_EXCEPTION: "订单异常",
+  OTHER: "其他原因",
+};
+
 let requestSeq = 0;
 
 function idempotencyKey(prefix: string) {
