@@ -1,6 +1,6 @@
 # 安卓/iOS 业务推送第一批
 
-日期：2026-10-29；通道修订：2026-10-30。依据：用户要求补齐第一批，“设备到期”限定现有试用设备结束与抵扣保留期结束。现场确认 DCloud 国际应用没有 UniPush 入口后，用户选择保留国际应用，Android 直连 FCM、iOS 直连 APNs，并确定正式标识 ai.uvel.app、TEST 标识 ai.uvel.app.test。
+日期：2026-10-29；通道修订：2026-10-30。依据：用户要求补齐第一批，“设备到期”限定现有试用设备结束与抵扣保留期结束。现场确认 DCloud 国际应用没有 UniPush 入口后，用户选择保留国际应用，Android 直连 FCM、iOS 直连 APNs；后续要求 TEST 与正式统一使用 ai.uvel.app 标识及推送私钥，避免提交生产时人工更换配置，取代此前 ai.uvel.app.test 的 TEST 标识方案。
 
 ## 用户结果与范围
 
@@ -51,7 +51,9 @@ FCM 依赖可用 Google Play 服务和网络；没有 GMS 的安卓设备明确�
 
 ## 开通、发布与验收
 
-当前方案：保留 DCloud 国际应用 UVELProduction（__UNI__G77FFD9D），不依赖 UniPush/UniCloud。TEST 的 Firebase 项目为 uvel-test-push，Android 包名 ai.uvel.app.test；正式包名/Bundle ID 为 ai.uvel.app，正式通道单独配置与验收。iOS TEST 使用 ai.uvel.app.test 的 App ID、Push Notifications entitlement、匹配描述文件及 APNs 密钥；Android 从相应 google-services.json 生成构建资源，再重建包含直连原生插件的安装包。服务端安全文件/环境配置完成前保持投递关闭；不宣称安卓/iOS外部送达已验收。
+当前方案：保留 DCloud 国际应用 UVELProduction（__UNI__G77FFD9D），不依赖 UniPush/UniCloud。TEST 与正式的 Android 包名/iOS Bundle ID 统一为 ai.uvel.app，共用同一 Firebase 项目/Android 客户端/FCM 私钥与同一 Apple App ID。已试配 Firebase 项目为 uvel-test-push，其 ai.uvel.app.test 客户端保留；统一标识客户端、FCM 发送账号/私钥和 APNs 私钥已获用户确认并创建，私钥仅在受限安全配置中保存。APNs 新建密钥只支持一个环境；共用一把的候选方案为两环境均走 Production 通道，iOS TEST 使用匹配 production entitlement 的分发签名（例如 TestFlight），用户已确认此签名及共享凭据方案；本机原有分发签名已核对，新版 TestFlight profile 已重新生成并验证 production 推送权限。开发签名 Sandbox 包仍需额外密钥，不修改描述文件冒充 Production。签名/密钥/通道匹配后重建原生包，配置和真机验收完成前保持投递关闭。
+
+API、数据库、会话、消息队列与推送启停按业务环境独立配置，通过构建/部署安全注入避免人工改源码换密钥。统一包名不能同机并存，共用凭据也不提供跨后端令牌归属互斥；环境切换前需在线撤销旧绑定并退出登录，测试发送只面向获准安装。现有所有权和事实去重在各自数据库内执行，不把共用凭据表述为跨环境投递隔离。统一标识/密钥不包含生产发布批准。
 
 必要验证：五类消息真实事实映射/去重；过期/持续异常边界；资金事实不改变；用户、安装、会话隔离；签名、超时、失败重试和中断恢复；冷启动与点击权限；三语言与H5隔离。安卓与iOS分别覆盖前台、后台、结束进程、权限拒绝和重新开启的系统通知栏实际结果。
 
