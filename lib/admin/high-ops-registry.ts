@@ -1212,7 +1212,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "e3_config",
     domain: "E",
-    action: "更新以旧换新设置",
+    action: "更新升级置换设置",
     amplifies: false,
     type: "param",
     gateLabel: "门槛者",
@@ -1228,7 +1228,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "e3_config_batch",
     domain: "E",
-    action: "批量更新以旧换新设置",
+    action: "批量更新升级置换设置",
     amplifies: false,
     type: "param",
     gateLabel: "门槛者",
@@ -1253,7 +1253,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "e3_tradein",
     domain: "E",
-    action: "以旧换新/处置设备",
+    action: "升级置换/处置设备",
     amplifies: true, // 默认 recycle/replace 补偿放大;前端按 operation=deactivate 覆盖为 false(收缩方向)
     type: "fund",
     gateLabel: "门槛者",

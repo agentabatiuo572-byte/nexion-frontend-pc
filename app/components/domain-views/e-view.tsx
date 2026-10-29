@@ -429,7 +429,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   }, []);
   useEffect(() => { if (tab === "E1" || tab === "E2") void refreshE2(); }, [tab, refreshE2]);
 
-  // ── E3 设备使用与以旧换新:服务端配置 / 概览 / tx 监控为单一来源 ──
+  // ── E3 设备使用与升级置换:服务端配置 / 概览 / tx 监控为单一来源 ──
   const refreshE3 = useCallback(async () => {
     setE3Loading(true);
     setE3Error(null);

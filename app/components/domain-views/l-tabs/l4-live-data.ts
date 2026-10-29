@@ -31,9 +31,9 @@ const FACT_META: ReadonlyArray<Omit<L4LiveFact, "value">> = [
   { key: "teamRelationships", group: "network", label: "团队关系记录", description: "当前未删除的团队成员关系累计记录数。", sourceLabel: "团队关系" },
   { key: "commissionEvents", group: "network", label: "佣金事件", description: "当前未删除的佣金业务事件累计记录数。", sourceLabel: "佣金事件记录" },
   { key: "configuredPhases", group: "phase", label: "启用的阶段配置", description: "当前启用的阶段配置条目数，不代表阶段效果。", sourceLabel: "阶段配置" },
-  { key: "e3ConfigChanges", group: "tradein", label: "以旧换新设置修改", description: "以旧换新设置被修改的累计次数。", sourceLabel: "用户行为事件" },
-  { key: "tradeinApplications", group: "tradein", label: "置换申请", description: "以旧换新申请的累计数。", sourceLabel: "置换申请" },
-  { key: "completedTradeins", group: "tradein", label: "已完成置换", description: "已完成的以旧换新累计数。", sourceLabel: "置换申请" },
+  { key: "e3ConfigChanges", group: "tradein", label: "升级置换设置修改", description: "升级置换设置被修改的累计次数。", sourceLabel: "用户行为事件" },
+  { key: "tradeinApplications", group: "tradein", label: "置换申请", description: "升级置换申请的累计数。", sourceLabel: "置换申请" },
+  { key: "completedTradeins", group: "tradein", label: "已完成置换", description: "已完成的升级置换累计数。", sourceLabel: "置换申请" },
 ];
 
 function record(value: unknown): Record<string, unknown> {

@@ -185,7 +185,7 @@ test("E1 A2 SKU replay uses the backend canonical field names", () => {
 });
 
 test("E1 early-access promotional discount does not claim B1 cash-outflow gating", () => {
-  assert.match(catalog, /name: "调整以旧换新抢先购", op: "early-access", amplify: false/);
+  assert.match(catalog, /name: "调整升级置换抢先购", op: "early-access", amplify: false/);
   assert.match(registry, /op: "e1_early_access_update"[\s\S]*targetType: "device_release_early_access"/);
 });
 

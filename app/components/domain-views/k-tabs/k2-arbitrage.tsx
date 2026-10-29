@@ -431,9 +431,9 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">检测阈值</span>
-          <span className="sub">· 以旧换新的抵扣比例在「设备使用与以旧换新」设置</span>
+          <span className="sub">· 升级置换的抵扣比例在「设备使用与升级置换」设置</span>
           <div className="r">
-            <Link className="kcode lock" href="/devices/trade-in" title="以旧换新抵扣比例在「设备使用与以旧换新」设置">🔒 以旧换新首档抵扣 {ladderTopCredit ? `${ladderTopCredit}%` : "加载中"}</Link>
+            <Link className="kcode lock" href="/devices/trade-in" title="升级置换抵扣比例在「设备使用与升级置换」设置">🔒 升级置换首档抵扣 {ladderTopCredit ? `${ladderTopCredit}%` : "加载中"}</Link>
             <Link className="kcode lock" href="/growth/referral-rewards" title="新人礼与邀请奖励在「新人礼与邀请奖励」设置">🔒 新人礼 / 邀请奖励设置</Link>
           </div>
         </div>

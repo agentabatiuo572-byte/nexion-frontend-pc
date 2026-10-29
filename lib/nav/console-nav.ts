@@ -154,7 +154,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     l2: [
       { id: "E1", name: "商品管理与上架条件", path: "/devices/pricing", prdAnchor: "E1", batch: "V2", status: "flagship" },
       { id: "E2", name: "设备收益与任务", path: "/devices/tasks", prdAnchor: "E2", batch: "V2", status: "flagship" },
-      { id: "E3", name: "设备使用与以旧换新", path: "/devices/trade-in", prdAnchor: "E3", batch: "V2", status: "flagship" },
+      { id: "E3", name: "设备使用与升级置换", path: "/devices/trade-in", prdAnchor: "E3", batch: "V2", status: "flagship" },
       { id: "E4", name: "订单进度", path: "/devices/orders", prdAnchor: "E4", batch: "V2", status: "flagship" },
       { id: "E5", name: "设备运行管理", path: "/devices/ops", prdAnchor: "E5", batch: "V2", status: "flagship" },
       { id: "E6", name: "算力与设备配置", path: "/devices/compute-config", prdAnchor: "E6", batch: "V2", status: "flagship" },

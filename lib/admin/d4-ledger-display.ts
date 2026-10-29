@@ -23,7 +23,7 @@ const SUBTYPE_LABELS: Record<string, string> = {
   leaderboard_prize: "榜单奖励",
   order_purchase: "商品购买",
   genesis_purchase: "创世节点购买",
-  trade_in_purchase: "以旧换新抵扣",
+  trade_in_purchase: "升级置换抵扣",
   deposit: "充值",
   topup: "充值",
   recharge: "充值",

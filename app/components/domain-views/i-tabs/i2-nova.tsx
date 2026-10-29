@@ -496,7 +496,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                       /> : <span className={`bdg ${n.on ? "ok" : "dim"}`}>{n.on ? "开启" : "停推"}</span>}
                     </td>
                     <td>
-                      <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{({welcome:"欢迎消息",market:"市场动态",upgrade:"设备升级建议",dailySummary:"每日汇总",tradein:"以旧换新",social:"真实动态",eventClaim:"活动领奖",taskLockMonthly:"月度任务提醒"} as Record<string,string>)[n.key] ?? n.name}</span>
+                      <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{({welcome:"欢迎消息",market:"市场动态",upgrade:"设备升级建议",dailySummary:"每日汇总",tradein:"升级置换",social:"真实动态",eventClaim:"活动领奖",taskLockMonthly:"月度任务提醒"} as Record<string,string>)[n.key] ?? n.name}</span>
                       <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }}>{n.name}</div>
                     </td>
                     <td style={{ fontSize: 12, color: "var(--ink-3)", maxWidth: 240 }}>{trigger.startsWith("a4:") ? ({"a4:staking.opened":"质押订单创建时触发","a4:commission.paid":"佣金发放时触发","a4:referral.bound":"邀请关系绑定时触发","a4:market.curve_advanced":"行情曲线更新时触发"} as Record<string,string>)[trigger] ?? "收到已登记业务事件时触发" : operatorCopyText(trigger)}</td>
@@ -524,7 +524,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             <b>这不是紧急开关</b> · 停某个 Nova 频道用这页的开关就行，和「紧急停用开关」「地区访问限制」无关。只有要整体停掉 Nova 推送时，才去「紧急停用开关」。
           </div>
           <div className="itint" style={{ marginTop: 8 }}>
-          <b>两个跟随阶段的频道</b> · 以旧换新和月度任务给同一用户的最短推送间隔按运营阶段（P1–P6）分档，阶段切换时自动换档。<b>阶段在「运营阶段设置」里改，这里只能查看。</b>
+          <b>两个跟随阶段的频道</b> · 升级置换和月度任务给同一用户的最短推送间隔按运营阶段（P1–P6）分档，阶段切换时自动换档。<b>阶段在「运营阶段设置」里改，这里只能查看。</b>
           </div>
         </div>
       </section>

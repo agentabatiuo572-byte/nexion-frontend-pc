@@ -79,8 +79,8 @@ test("K2 keeps confirmation open, preserves uncertain command keys, and separate
 
 test("K2 removes retired holding gates and declares exact OTP boundaries", () => {
   assert.doesNotMatch(component, /minHoldingMonths|最小持仓月份|没满最短持有月|残值 \$0/);
-  assert.match(component, /以旧换新的抵扣比例/);
-  assert.match(component, /设备使用与以旧换新/);
+  assert.match(component, /升级置换的抵扣比例/);
+  assert.match(component, /设备使用与升级置换/);
   assert.match(component, /min: 30, max: 300/);
   assert.match(component, /min: 1, max: 10/);
   assert.match(component, /min: 60, max: 900, step: 60/);

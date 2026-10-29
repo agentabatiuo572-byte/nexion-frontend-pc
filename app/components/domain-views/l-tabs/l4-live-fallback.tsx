@@ -27,9 +27,9 @@ const GROUPS: ReadonlyArray<{ key: L4LiveFact["group"]; title: string; subtitle:
   },
   {
     key: "tradein",
-    title: "以旧换新数据",
+    title: "升级置换数据",
     subtitle: "设置修改、换新申请和完成情况",
-    missing: "暂无以旧换新数据。",
+    missing: "暂无升级置换数据。",
   },
 ];
 

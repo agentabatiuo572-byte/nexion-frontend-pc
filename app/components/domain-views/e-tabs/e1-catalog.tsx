@@ -296,9 +296,9 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   const earlyLead = ctx.pE("E.release.earlyAccess.leadDays");
   const adjEarlyAccess = () =>
     ctx.openActionConfirm({
-      name: "调整以旧换新抢先购", op: "early-access", amplify: false,
+      name: "调整升级置换抢先购", op: "early-access", amplify: false,
       businessForm: {
-        kind: "multi-field", title: "以旧换新抢先购",
+        kind: "multi-field", title: "升级置换抢先购",
         hint: "开启后，用旧设备换新的用户可以在新机正式上架前提前购买；普通购买不受影响。默认关闭。",
         fields: [
           { key: "enabled", label: "开关", current: earlyEnabled, inputKind: "select", options: ["关", "开"] },
@@ -431,7 +431,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
             <span className="h">分阶段开放</span>
             <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>到了对应阶段自动开放</span>
             <span className="now"><span className="d" />当前 {phaseLabel(phaseCur)} · {proV2Label}</span>
-            <span className="now">以旧换新抢先购：{earlyEnabled === "开" ? `开 · 提前 ${earlyLead} 天` : "关"}{canWrite ? <button style={{ marginLeft: 8 }} onClick={adjEarlyAccess}>调整</button> : null}</span>
+            <span className="now">升级置换抢先购：{earlyEnabled === "开" ? `开 · 提前 ${earlyLead} 天` : "关"}{canWrite ? <button style={{ marginLeft: 8 }} onClick={adjEarlyAccess}>调整</button> : null}</span>
           </div>
           <div className="phase-track" style={{ ["--phase-line" as string]: phaseLine } as CSSProperties}>
             {phases.map((ph, i) => {

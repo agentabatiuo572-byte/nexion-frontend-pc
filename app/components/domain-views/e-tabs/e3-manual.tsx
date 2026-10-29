@@ -1,5 +1,5 @@
 /**
- * E3 设备生命周期 & 以旧换新 — 运营操作说明手册(右上角「操作说明手册」按钮弹出)。
+ * E3 设备生命周期 & 升级置换 — 运营操作说明手册(右上角「操作说明手册」按钮弹出)。
  * 面向初级运营者:本页是什么、怎么读任务产能曲线、每个参数调高/调低的业务影响、怎么调整一个参数
  * (单值输入原理 + 各段月份在哪改)、高敏参数与 B1 资金护栏、换机 术语中英对照、换机处理。
  * 当前值经 ctx.pE 实时读出，手册随后台当前配置同步，不写死。
@@ -50,20 +50,20 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
 
   // 换机 术语中英对照(呼应右栏「置换配置」中文化)。
   const TERMS: { code: string; zh: string; note: string }[] = [
-    { code: "enabled", zh: "以旧换新开关", note: "关闭后 App 上所有以旧换新入口都会隐藏" },
+    { code: "enabled", zh: "升级置换开关", note: "关闭后 App 上所有升级置换入口都会隐藏" },
     { code: "ladder.cut1–4", zh: "分档界线", note: "按「已赚回金额 ÷ 买入价」划分 5 档的 4 条界线" },
     { code: "ladder.credit1–5", zh: "各档抵扣比例", note: "每档抵扣买入价的百分之几，逐档递减：赚回越多抵扣越少，越早换新抵扣越多" },
     { code: "requireHigherPrice", zh: "仅限升级更高价设备", note: "只能换比旧机更贵的新机" },
     { code: "maxDevicesPerOrder", zh: "单笔最多抵扣台数", note: "买一台新机最多能用几台旧机抵扣" },
-    { code: "eligibility", zh: "谁能以旧换新", note: "哪些等级的用户可以以旧换新" },
+    { code: "eligibility", zh: "谁能升级置换", note: "哪些等级的用户可以升级置换" },
   ];
 
   return (
-    <Modal title="操作说明 · 设备产能与以旧换新" icon="doc" onClose={onClose} wide
+    <Modal title="操作说明 · 设备产能与升级置换" icon="doc" onClose={onClose} wide
       footer={null}>
       <div className="e3man">
         <p className="e3man-lead">
-          这页管两件事：<b>设备能接的任务随使用时间逐月减少的节奏</b>，以及<b>旧机抵扣买新机（以旧换新）的规则</b>。
+          这页管两件事：<b>设备能接的任务随使用时间逐月减少的节奏</b>，以及<b>旧机抵扣买新机（升级置换）的规则</b>。
           两者一起决定用户多快升级：后期产能下降让用户考虑换新，抵扣力度决定换新有多划算。
           修改确认后立即生效，<b>已给出的报价不变</b>。
         </p>
@@ -73,7 +73,7 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
             <li><b>三个阶段</b>：前期（第 1–{s1} 月，缓慢下降）→ 中期（第 {Number(s1) + 1}–{s2} 月）→ 后期（第 {Number(s2) + 1} 月起，<b>快速下降</b>）。颜色从绿到黄到橙。</li>
             <li><b>最低产能 {floor}%</b>：降到这里就不再下降（虚线）。</li>
             <li>每个圆点是那个月的设备产能，大圆点是阶段分界。</li>
-            <li>后期（橙色）能接的任务逐月减少，用户可以按需以旧换新。</li>
+            <li>后期（橙色）能接的任务逐月减少，用户可以按需升级置换。</li>
             <li><b>新机任务补贴</b>：新设备激活后前 {subsidy} 天，App 只显示「补贴中」，不显示产能百分比（<b>只影响显示</b>，收益照常计算）。</li>
           </ul>
         </Sec>
@@ -104,19 +104,19 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
 
         <Sec n="4" title="标了「敏感」的参数">
           <p>
-            标了<em className="e3man-hot">敏感</em>的参数（<b>后期每月变化</b>、<b>各档抵扣比例</b>、<b>以旧换新开关</b>）影响最大：
+            标了<em className="e3man-hot">敏感</em>的参数（<b>后期每月变化</b>、<b>各档抵扣比例</b>、<b>升级置换开关</b>）影响最大：
           </p>
           <ul className="e3man-ul">
             <li><b>后期每月变化</b>：直接决定用户多快换新，以及换新带来的收入。</li>
             <li><b>各档抵扣比例</b>：调高任一档平台都会多让利。只要「仅限升级更高价」和「抵扣不能提现」这两条不同时放开，就不怕被套利。</li>
-            <li><b>以旧换新开关</b>：关闭后所有换新入口消失，会影响升级转化，操作前请告知增长同事。</li>
+            <li><b>升级置换开关</b>：关闭后所有换新入口消失，会影响升级转化，操作前请告知增长同事。</li>
           </ul>
           <p className="e3man-note">
             「敏感」只是提醒你修改时要慎重，不是勾选状态。
           </p>
         </Sec>
 
-        <Sec n="5" title="以旧换新设置说明">
+        <Sec n="5" title="升级置换设置说明">
           <div className="e3man-terms">
             {TERMS.map((t) => (
               <div key={t.code} className="e3man-term">
