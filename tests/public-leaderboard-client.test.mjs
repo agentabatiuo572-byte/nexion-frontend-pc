@@ -116,7 +116,7 @@ test("normal metrics expose no verification copy while exceptional reasons and s
   const missing = page(); delete missing.rows[0].amount.reason; assert.throws(() => client.parseLeaderboardPage(missing, q));
   const absent = page(); absent.self = { row: null, gap: null, reason: "NOT_A_CANDIDATE", pageNum: null }; assert.equal(client.parseLeaderboardPage(absent, q).self.reason, "当前账号未参榜");
 });
-test("real supportRequest/guardedFetch preserve envelope, same-origin credentials and HTTP 409/403", async () => {
+test("real supportRequest/guardedFetch preserve envelope, same-origin credentials and HTTP version/permission/cache errors", async () => {
   const actualSupport = await import(pathToFileURL(path.join(fe, "lib/admin/m-support-client.ts")).href);
   const actualGuard = await import(pathToFileURL(path.join(fe, "lib/admin/error-messages.ts")).href);
   const real = load("lib/admin/support-leaderboard-client.ts", { "./m-support-client.ts": actualSupport, "./error-messages.ts": actualGuard });
@@ -125,7 +125,7 @@ test("real supportRequest/guardedFetch preserve envelope, same-origin credential
   try {
     const controller = new AbortController(); const result = await real.supportLeaderboardClient.page(q, controller.signal);
     assert.equal(result.rows[0].amount.value, "9007199254740991.123456789"); assert.equal(seen[0].init.credentials, "same-origin"); assert.equal(seen[0].init.cache, "no-store"); assert.equal(seen[0].init.signal, controller.signal); assert.match(seen[0].url, /^\/api\/admin\/content\/support-workbench\/leaderboard\?/);
-    for (const status of [409, 403]) { upstream = new Response(JSON.stringify({ code: status, message: status === 409 ? "SUPPORT_LEADERBOARD_VERSION_CHANGED" : "SUPPORT_SCOPE_FORBIDDEN", data: null }), { status }); await assert.rejects(real.supportLeaderboardClient.page(q), error => error instanceof actualSupport.SupportClientError && error.status === status); }
+    for (const [status, message] of [[409, "SUPPORT_LEADERBOARD_VERSION_CHANGED"], [403, "SUPPORT_SCOPE_FORBIDDEN"], [503, "SUPPORT_LEADERBOARD_CACHE_NOT_READY"], [503, "SUPPORT_LEADERBOARD_CACHE_UNAVAILABLE"], [503, "SUPPORT_LEADERBOARD_CACHE_INVALID"]]) { upstream = new Response(JSON.stringify({ code: status, message, data: null }), { status }); await assert.rejects(real.supportLeaderboardClient.page(q), error => error instanceof actualSupport.SupportClientError && error.status === status); }
   } finally { globalThis.fetch = original; }
 });
 test("incomplete candidates and metric states never award ranks or fabricate zeros", () => {

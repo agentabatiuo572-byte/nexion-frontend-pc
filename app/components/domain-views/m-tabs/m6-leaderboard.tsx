@@ -140,7 +140,7 @@ export function M6Leaderboard() {
       {!!query.keyword && <Btn type="button" onClick={() => { setKeyword(""); setQuery(current => ({ ...current, keyword: undefined, pageNum: 1, expectedVersion: undefined })); }}>清除搜索</Btn>}
     </form>}
       notice={<>{notice && <p className="m6-leaderboard-notice" role="status">{notice}</p>}
-    {data?.stale && <p className="m6-leaderboard-notice" role="status">当前显示上次发布的榜单。{data.refreshFailed ? "榜单更新失败，请重试。" : "榜单还没更新，可以重新加载。"}<Btn onClick={() => resetFirstPage("正在重新加载…")}>重新加载</Btn></p>}
+    {data?.stale && <p className="m6-leaderboard-notice" role="status">当前显示上次发布的榜单。{data.refreshFailed ? "榜单更新暂未成功，请稍后读取最新结果。" : "榜单更新延迟，请稍后读取最新结果。"}<Btn onClick={() => resetFirstPage("正在重新加载…")}>重新加载</Btn></p>}
     {data && data.rows.length === 0 && <p className="m6-leaderboard-notice" role="status">{data.state === "PROVISIONAL"
       ? query.keyword ? "参榜资料还在汇总，暂未找到匹配的客服。请稍后重试。" : "参榜资料还在汇总，暂无法显示完整榜单。请稍后重试。"
       : query.keyword ? "没有匹配的客服；本人定位会清除搜索条件。" : "当前范围暂无参榜客服。"}</p>}</>}
@@ -151,7 +151,7 @@ export function M6Leaderboard() {
       selfUnavailableReason={data?.self.reason}
       podium={data?.podium ? { total: data.podium.total, rows: data.podium.rows.map(withPhoto) } : undefined}
       currentMonth={data?.referenceMonth ?? ""} periodLabel={period} updatedAt={data ? asOf(data) : "加载中"}
-      disclosure="业绩额按净贡献统计：充值与余额消费不重复计算；成功提现及后台退款仅冲减已计贡献部分，收益提现不冲减原业绩。客户明细按权限查看。"
+      disclosure="榜单每10分钟更新；重新加载只读取最新已完成结果。业绩额按净贡献统计：充值与余额消费不重复计算；成功提现及后台退款仅冲减已计贡献部分，收益提现不冲减原业绩。客户明细按权限查看。"
       candidateReason={data?.state === "PROVISIONAL" ? data.candidateCoverage !== "COMPLETE" ? "参榜资料还在汇总，暂不显示名次" : "成绩还在汇总，暂不显示名次" : undefined}
       status={data ? "ready" : !enabled || error ? "error" : "loading"} statusMessage={!enabled ? "当前账号不能查看此榜单，请确认登录和客服权限。" : error}
       onRetry={() => { if (allowed) { setDeniedIdentity(undefined); resetFirstPage("正在重新加载…"); } }}
@@ -166,7 +166,7 @@ export function M6Leaderboard() {
         <p>{detailRow.groupName || "待分组"} · {detailRow.rankStatus === "confirmed" ? `${detailRow.isTied ? "并列第" : "第"}${detailRow.rank}名` : "名次未确定"}</p>
         <dl><dt>业绩额 · {detailRow.amount.periodLabel} · {nexGridBrandText(detailRow.amount.currency)}</dt><dd><NumberValue value={detailRow.amount.coverage === "unavailable" ? null : detailRow.amount.value} kind="amount" label={`${detailRow.name}业绩额`} unit={nexGridBrandText(detailRow.amount.currency)} /></dd><dt>首充人数 · {period} · 人</dt><dd><NumberValue value={detailRow.firstPayment.coverage === "unavailable" ? null : detailRow.firstPayment.value} kind="count" label={`${detailRow.name}首充人数`} unit="人" /></dd><dt>绑定客户数 · 截至现在 · 人</dt><dd><NumberValue value={detailRow.customers.coverage === "unavailable" ? null : detailRow.customers.value} kind="count" label={`${detailRow.name}绑定客户数`} unit="人" /></dd></dl>
         {[...new Set([detailRow.amount.reason, detailRow.firstPayment.reason, detailRow.customers.reason].filter(Boolean))].map(reason => <p key={reason} role="status">{reason}</p>)}
-        <p>数据截至 {asOf(visibleDetail.data)}{visibleDetail.data.stale ? "；显示上次发布结果" : ""}{visibleDetail.data.refreshFailed ? "；榜单更新失败，请重试" : ""}</p>
+        <p>数据截至 {asOf(visibleDetail.data)}{visibleDetail.data.stale ? "；显示上次发布结果" : ""}{visibleDetail.data.refreshFailed ? "；榜单更新暂未成功，请稍后读取最新结果" : ""}</p>
         {(!privateRead || !detailRow.canViewCustomers) && <p>暂无这位客服的客户明细查看权限。</p>}
       </div>}
     </Modal>}

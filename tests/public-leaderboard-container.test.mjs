@@ -220,6 +220,33 @@ test("unmount aborts late avatar and revokes every created Blob; stale timestamp
   const h = harness(); h.pages[0].resolve(page("17", { stale: true, refreshFailed: true })); await h.flush(); assert.match(h.board().updatedAt, /2026\/10\/9/); assert.doesNotMatch(h.board().updatedAt, /正在/); h.avatars[0].resolve(new Blob(["png"])); await h.flush(); h.unmount(); assert.equal(h.avatars[0].signal.aborted, true); assert.deepEqual(h.revoked, ["blob:test-1"]);
   const late = harness(); late.pages[0].resolve(page()); await late.flush(); late.unmount(); late.avatars[0].resolve(new Blob(["png"])); await tick(); assert.equal(late.created.length, 0);
 });
+
+test("ten-minute publication stays usable before avatars and reload only rereads without pinning the old version", async () => {
+  const h = harness(); h.pages[0].resolve(page("17", { stale: true, refreshFailed: true })); await h.flush();
+  assert.equal(h.board().status, "ready"); assert.equal(h.board().rows.length, 1);
+  assert.equal(h.board().rows[0].avatarUrl, undefined); assert.equal(h.avatars.length, 1);
+  const before = h.board().updatedAt;
+  const markup = renderToStaticMarkup(createElement(display.SupportLeaderboard, h.board()));
+  assert.match(markup, /每10分钟更新/); assert.match(markup, /重新加载只读取最新已完成结果/);
+  assert.match(markup, /更新暂未成功/); assert.match(before, /2026\/10\/9/);
+  find(h.tree, node => node.type === Btn && node.props.children === "重新加载").props.onClick(); h.commit();
+  assert.equal(h.pages.length, 2); assert.equal(h.pages[1].query.pageNum, 1);
+  assert.equal(h.pages[1].query.expectedVersion, undefined); assert.equal(h.avatars[0].signal.aborted, true);
+  h.pages[1].resolve(page("17", { stale: true, refreshFailed: true })); await h.flush();
+  assert.equal(h.board().updatedAt, before); assert.equal(h.board().status, "ready"); h.unmount();
+});
+
+test("missing, unavailable or invalid published cache fails visibly and retries the same filters without fabricated rows", async () => {
+  for (const code of ["SUPPORT_LEADERBOARD_CACHE_NOT_READY", "SUPPORT_LEADERBOARD_CACHE_UNAVAILABLE", "SUPPORT_LEADERBOARD_CACHE_INVALID"]) {
+    const h = harness(); h.pages[0].reject({ status: 503, message: code }); await h.flush();
+    assert.equal(h.board().status, "error"); assert.match(h.board().statusMessage, /加载失败.*重试/);
+    assert.equal(h.board().rows.length, 0); assert.equal(h.board().self, undefined); assert.equal(h.avatars.length, 0);
+    h.board().onRetry(); h.commit();
+    assert.equal(h.pages.length, 2); assert.equal(JSON.stringify(h.pages[1].query), JSON.stringify(h.pages[0].query));
+    h.pages[1].resolve(page()); await h.flush();
+    assert.equal(h.board().status, "ready"); assert.equal(h.board().rows.length, 1); h.unmount();
+  }
+});
 test("uncertified empty publication stays ready with incomplete-data explanation rather than certified zero", async () => {
   for (const candidateCoverage of ["PARTIAL", "UNKNOWN"]) {
     const h = harness(); h.pages[0].resolve(page("17", { state: "PROVISIONAL", candidateCoverage, rows: [], self: { row: null, gap: null, reason: "资料待核实", pageNum: null }, total: 0, matched: 0 })); await h.flush();
