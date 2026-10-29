@@ -1,6 +1,6 @@
 # 安卓/iOS 业务推送第一批
 
-日期：2026-10-29。依据：用户本轮明确要求补齐第一批，并确认尚未开通UniPush，先完成代码与配置步骤；“设备到期”明确限定现有试用设备结束与抵扣保留期结束。
+日期：2026-10-29；通道修订：2026-10-30。依据：用户要求补齐第一批，“设备到期”限定现有试用设备结束与抵扣保留期结束。现场确认 DCloud 国际应用没有 UniPush 入口后，用户选择保留国际应用，Android 直连 FCM、iOS 直连 APNs，并确定正式标识 ai.uvel.app、TEST 标识 ai.uvel.app.test。
 
 ## 用户结果与范围
 
@@ -22,35 +22,37 @@
 
 ## 绑定、点击与账号隔离
 
-- 原生安装在已有APP会话下绑定CID，后端仅从认证会话取用户与合法安装身份；H5不能凭浏览器字段注册原生推送。
+- 原生安装在已有APP会话下绑定真实供应商令牌（Android FCM / iOS APNs），后端仅从认证会话取用户与合法安装身份；H5不能凭浏览器字段注册原生推送。平台与 provider 必须匹配。
 - 安装绑定需要随机绑定证明，客户端先持久化再发送，服务端只存哈希；注册首次响应丢失可用原证明重试，不把令牌放入URL或日志。
-- 登出、换账号、CID轮换与会话撤销使旧绑定/旧代际待投递失效。投递前再次核验用户、会话和绑定，不能把旧账号通知发到新账号安装。
-- 安全吊销或限制后的旧安装不绕过会话检查接收系统推送。用户完成正常重新登录后，当前有效安装可补收本次功能基线之后、最近24小时内的critical账号安全消息各一次，避免密码重置/新登录消息早于CID绑定而丢失；其他类型不补发绑定前消息。
+- 登出、换账号、令牌/供应商轮换与会话撤销使旧绑定/旧代际待投递失效。投递前再次核验用户、会话和绑定，不能把旧账号通知发到新账号安装。旧 UniPush 绑定不转换为直连令牌，需要新版本重新注册。
+- 安全吊销或限制后的旧安装不绕过会话检查接收系统推送。用户完成正常重新登录后，当前有效安装可补收本次功能基线之后、最近24小时内的critical账号安全消息各一次，避免密码重置/新登录消息早于令牌绑定而丢失；其他类型不补发绑定前消息。
 - 通知载荷只携带通知标识。点击后向服务端读取当前用户获准目标，仅允许已登记的内部详情页；不信任供应商载荷中的URL、金额或账号字段。
 - 冷启动/未登录时先恢复正常登录流程，再核验通知归属；他人通知或过期权限拒绝后，不显示旧私有内容，也不执行通知中携带的动作。
-- 拒绝系统权限仍可正常使用站内消息；恢复系统权限后，前台绑定刷新恢复后续投递，不反复弹窗请求。
+- 拒绝系统权限仍可正常使用站内消息；客户端撤销当前安装绑定并关闭原生注册，避免 iOS 拒绝授权无令牌时遗留旧绑定。恢复系统权限后，前台绑定刷新恢复后续投递，不反复弹窗请求。
 
 ## 投递与恢复合同
 
-业务消息统一使用NATIVE1:业务键与上述五类类型，按事实唯一键幂等。迁移/启用建立持久基线，不给历史用户补发大量旧提醒；重启不重置基线。外部推送以安装和通知为唯一投递对象，失败重试有上限，失效CID停用，并发领取与中断租约可恢复。
+业务消息统一使用NATIVE1:业务键与上述五类类型，按事实唯一键幂等。迁移/启用建立持久基线，不给历史用户补发大量旧提醒；重启不重置基线。外部推送以安装和通知为唯一投递对象；明确的临时拒绝有界重试，失效令牌停用。FCM/APNs 不提供本系统投递编号的严格幂等保证，发送后响应丢失、进程中断或发送租约过期进入 UNKNOWN，不盲目重发；用户仍可读取持久站内消息。
 
 状态分开记录：业务站内消息、待投递、供应商已接受、投递失败/失效、用户已打开。旧nx_notification.push_status=DELIVERED只代表既有站内投影，不能当作APNs/安卓设备送达。供应商成功受理也不能标成“用户已收到”；双平台真机通知栏证据单独保留。
 
-UniPush2采用官方服务端推送能力，经鉴权的服务端桥接由Java调用。桥接不允许客户端匿名群发，校验签名、时间与请求边界；配置不完整不伪报成功，不回退到旧推送版本。密钥从部署安全配置提供，不提交到仓库、PRD或验收报告。
+Android 使用官方 Firebase Messaging SDK 获取 FCM token，Java 通过 FCM HTTP v1 和服务账号短期 OAuth 令牌发送；iOS 使用 APNs 原生注册、通知点击生命周期，Java 通过 HTTP/2 与 ES256 短期认证发送。Android 通知渠道为 uvel_notifications，载荷只含概括内容与 notificationId。客户端不包含服务端私钥，不能匿名群发。APNs topic 必须与实际 Bundle ID 匹配，sandbox 与 production 显式区分；配置不完整不伪报成功。私钥从部署安全文件提供，不提交到仓库、PRD或验收报告。
+
+FCM 依赖可用 Google Play 服务和网络；没有 GMS 的安卓设备明确表现为系统推送不可用，站内消息保持正常。本批不宣称覆盖国内厂商离线通道。普通调试基座没有新增原生插件，必须重建自定义基座/安装包；JS 构建通过不等于 Kotlin/Swift 原生编译或真机送达通过。
 
 ## API合同
 
 | 方法/路径 | 输入 | 约束 |
 |---|---|---|
-| PUT /api/me/push-installations/{installationId} | clientId,platform,permission,appVersion；X-Push-Binding-Token | 当前APP会话、安装身份与绑定证明；不接受body授权userId |
+| PUT /api/me/push-installations/{installationId} | clientId（真实令牌）,provider（FCM/APNS）,platform,permission,appVersion；X-Push-Binding-Token | 当前APP会话、安装身份与绑定证明；Android=FCM、iOS=APNS；不接受body授权userId |
 | DELETE /api/me/push-installations/{installationId} | X-Push-Binding-Token | 只撤销当前合法绑定 |
 | GET /api/me/push-notifications/{notificationId} | 无 | 当前用户所有权，返回字符串notificationId与合法内部route |
 | POST /api/me/push-notifications/{notificationId}/opened | installationId | 当前用户与安装归属，幂等记录打开；不等同设备送达回执 |
 
 ## 开通、发布与验收
 
-当前状态：UniPush尚未开通。本轮允许代码、隔离验证、test分支交付和配置说明；不宣称安卓/iOS外部送达已验收。配置需使用真实DCloud AppID、绑定的UniCloud服务空间与UniPush2；iOS配置对应Bundle ID、签名权限和APNs证书/密钥；安卓配置包名/签名对应的厂商或FCM通道；上传鉴权云函数并提供安全桥接配置，再重建包含Push模块的原生安装包。已安装的普通调试基座不能证明已包含新原生模块。
+当前方案：保留 DCloud 国际应用 UVELProduction（__UNI__G77FFD9D），不依赖 UniPush/UniCloud。TEST 的 Firebase 项目为 uvel-test-push，Android 包名 ai.uvel.app.test；正式包名/Bundle ID 为 ai.uvel.app，正式通道单独配置与验收。iOS TEST 使用 ai.uvel.app.test 的 App ID、Push Notifications entitlement、匹配描述文件及 APNs 密钥；Android 从相应 google-services.json 生成构建资源，再重建包含直连原生插件的安装包。服务端安全文件/环境配置完成前保持投递关闭；不宣称安卓/iOS外部送达已验收。
 
 必要验证：五类消息真实事实映射/去重；过期/持续异常边界；资金事实不改变；用户、安装、会话隔离；签名、超时、失败重试和中断恢复；冷启动与点击权限；三语言与H5隔离。安卓与iOS分别覆盖前台、后台、结束进程、权限拒绝和重新开启的系统通知栏实际结果。
 
-验收状态按代码测试、隔离数据库/HTTP、TEST部署、安卓真机、iOS真机分别记录。本批完整测试计划：D:/workspace/output/push-batch1-20261029/TEST-PLAN.md。最终交付回执与代码配置说明记录实际完成情况，不能把计划或供应商受理当作真机通过。
+验收状态按代码测试、隔离数据库/HTTP、TEST部署、安卓真机、iOS真机分别记录。第一批业务测试计划：D:/workspace/output/push-batch1-20261029/TEST-PLAN.md；直连通道测试计划：D:/workspace/output/push-direct-20261030/TEST-PLAN.md。最终交付回执与代码配置说明记录实际完成情况，不能把计划或供应商受理当作真机通过。
