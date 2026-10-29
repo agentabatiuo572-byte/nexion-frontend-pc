@@ -29,7 +29,7 @@ import {
 } from "@/lib/admin/e1-client";
 import { fetchE2PhoneTiers, fetchE2TaskPricing, fetchE2Tasks, type E2PhoneTier, type E2TaskPricingSnapshot, type E2YieldComparison } from "@/lib/admin/e2-client";
 import { fetchE3Snapshot, type E3OperationMetric, type E3Stats } from "@/lib/admin/e3-client";
-import { E4_REFUND_REASONS, E4_REFUND_REASON_LABELS, e4FundingLedgerHref, fetchE4OrderDetail, fetchE4OrderPage, type E4OrderDetail } from "@/lib/admin/e4-client";
+import { E4_CLOSE_REASONS, E4_CLOSE_REASON_LABELS, E4_REFUND_REASONS, E4_REFUND_REASON_LABELS, e4FundingLedgerHref, fetchE4OrderDetail, fetchE4OrderPage, type E4OrderDetail } from "@/lib/admin/e4-client";
 import {
   fetchE5Datacenters,
   fetchE5Devices,
@@ -1188,8 +1188,16 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           <Drawer title={o.id} sub={`${o.sku} · ${o.user}`} onClose={closeOrder}
             footer={<>
                   {nextState && <Btn onClick={() => openActionConfirm({ name: `推进订单 · ${o.id} → ${stateLabel(nextState)}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, detail: `手动推进 ${o.id}：${stateLabel(eff)} → ${stateLabel(nextState)}` })}>推进到下一步</Btn>}
-                  {canCancel && <Btn onClick={() => openActionConfirm({ name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, detail: `取消 ${o.id}（${stateLabel(eff)}）。用户还没付款，取消后订单终止。` })}>取消订单</Btn>}
-                  {canWriteE4 && terminalOptions.length > 0 && <Btn onClick={() => openActionConfirm({ name: "标记失败结果 · " + o.id, op: "order-terminal", orderId: o.id, amplify: false, edit: { kind: "select", options: terminalOptions }, detail: `当前状态：${stateLabel(eff)}，选择一个失败结果。退款请用「退款」按钮。` })}>标记失败结果</Btn>}
+                  {canCancel && <Btn onClick={() => openActionConfirm({ name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, detail: `取消 ${o.id}（${stateLabel(eff)}）。用户还没付款，取消后订单终止。`,
+                    businessForm: { kind: "multi-field", title: "取消原因", fields: [
+                      { key: "closeReasonCode", label: "取消原因（用户可见）", current: "", inputKind: "select", options: ["", ...E4_CLOSE_REASONS.cancelled], optionLabels: { "": "请选择取消原因", ...E4_CLOSE_REASON_LABELS }, required: true, help: "App 订单详情会向用户展示这个原因；下方操作备注只进审计。" },
+                    ] } })}>取消订单</Btn>}
+                  {canWriteE4 && terminalOptions.length > 0 && <Btn onClick={() => openActionConfirm({ name: "标记失败结果 · " + o.id, op: "order-terminal", orderId: o.id, amplify: false, detail: `当前状态：${stateLabel(eff)}，选择一个失败结果。退款请用「退款」按钮。`,
+                    businessForm: { kind: "multi-field", title: "失败结果与原因", hint: "过期、拒付的原因会自动记录；支付失败、开通失败需要选择原因。", fields: [
+                      { key: "terminalState", label: "失败结果", current: "", inputKind: "select", options: ["", ...terminalOptions], optionLabels: { "": "请选择失败结果", ...Object.fromEntries(terminalOptions.map((s) => [s, stateLabel(s)])) }, required: true },
+                      ...terminalOptions.filter((s) => E4_CLOSE_REASONS[s]).map((s) => (
+                        { key: "closeReasonCode", label: "原因（用户可见）", current: "", inputKind: "select" as const, options: ["", ...E4_CLOSE_REASONS[s]], optionLabels: { "": "请选择原因", ...E4_CLOSE_REASON_LABELS }, required: true, visibleWhen: { key: "terminalState", equals: s }, help: "App 订单详情会向用户展示这个原因；下方操作备注只进审计。" })),
+                    ] } })}>标记失败结果</Btn>}
                   {canRefundE4 && refundableState && <Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!refundReady} onClick={() => {
                     if (!e4Detail || !refundReady) return;
                     const channels = e4Detail.refundChannels.length ? e4Detail.refundChannels : ["WALLET"];
@@ -1843,22 +1851,27 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               });
               setSelOrder(null);
             } else if (mc.op === "order-cancel" && mc.orderId) {
+              const closeReasonCode = (businessValue?.closeReasonCode ?? "").trim();
+              if (!E4_CLOSE_REASONS.cancelled.includes(closeReasonCode)) { throw new Error("请选择取消原因"); }
               const def = findHighOp("e4_order_cancel")!;
               await propose(ctx.toast, {
                 action: mc.name, obj: mc.orderId, before: effOrderState(mc.orderId), after: "已取消", type: def.type, amplifies: false,
                 gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
-                command: def.buildCommand({ orderNo: mc.orderId }),
+                command: def.buildCommand({ orderNo: mc.orderId, closeReasonCode }),
                 target: def.buildTarget({ orderNo: mc.orderId }),
               });
               setSelOrder(null);
             } else if (mc.op === "order-terminal" && mc.orderId) {
-              const v = (newValue ?? "").trim();
-              if (!v) { setSelOrder(null); return; }
+              const v = (businessValue?.terminalState ?? "").trim();
+              if (!v) { throw new Error("请选择失败结果"); }
+              const choices = E4_CLOSE_REASONS[v];
+              const closeReasonCode = choices ? (businessValue?.closeReasonCode ?? "").trim() : "";
+              if (choices && !choices.includes(closeReasonCode)) { throw new Error("请选择原因"); }
               const def = findHighOp("e4_order_terminal")!;
               await propose(ctx.toast, {
                 action: mc.name, obj: mc.orderId, before: effOrderState(mc.orderId), after: stateLabel(v), type: def.type, amplifies: false,
                 gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
-                command: def.buildCommand({ orderNo: mc.orderId, terminalState: v }),
+                command: def.buildCommand({ orderNo: mc.orderId, terminalState: v, closeReasonCode }),
                 target: def.buildTarget({ orderNo: mc.orderId }),
               });
               setSelOrder(null);

@@ -1297,7 +1297,8 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "device_order",
     buildCommand: (ctx) => ({ domain: "E", op: "e4_order_cancel",
-      params: { orderNo: String(ctx.orderNo) } }),
+      params: { orderNo: String(ctx.orderNo),
+        ...(ctx.closeReasonCode ? { closeReasonCode: String(ctx.closeReasonCode) } : {}) } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_order", id: String(ctx.orderNo) }),
   },
   {
@@ -1309,7 +1310,8 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "device_order",
     buildCommand: (ctx) => ({ domain: "E", op: "e4_order_terminal",
-      params: { orderNo: String(ctx.orderNo), terminalState: String(ctx.terminalState) } }),
+      params: { orderNo: String(ctx.orderNo), terminalState: String(ctx.terminalState),
+        ...(ctx.closeReasonCode ? { closeReasonCode: String(ctx.closeReasonCode) } : {}) } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_order", id: String(ctx.orderNo) }),
   },
   {
