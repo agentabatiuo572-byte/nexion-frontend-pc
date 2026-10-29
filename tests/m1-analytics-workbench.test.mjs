@@ -29,6 +29,7 @@ const calendar = [
 ];
 let forcedQueryError;
 let calendarReply = async () => calendar;
+const calendarCalls = [];
 const scopeEvents = new EventTarget();
 const context = vm.createContext({ console, AbortController, URL, URLSearchParams, Date, Intl, Number, Object, Math, queueMicrotask, window: { location: new URL("https://fixture.invalid/service/workbench"), history: { replaceState(_state, _unused, url) { context.window.location.href = String(url); } }, addEventListener: scopeEvents.addEventListener.bind(scopeEvents), removeEventListener: scopeEvents.removeEventListener.bind(scopeEvents) } });
 const synthetic = (values) => new vm.SyntheticModule(Object.keys(values), function () { for (const [key, value] of Object.entries(values)) this.setExport(key, value); }, { context });
@@ -47,7 +48,9 @@ const mocks = {
   react: { ...React, useState: (...args) => driver.useState(...args), useRef: (...args) => driver.useRef(...args), useEffect: (...args) => driver.useEffect(...args) },
   "react/jsx-runtime": jsxRuntime,
   "next/navigation": { useRouter: () => ({ push: href => navigations.push(href) }) },
-  "@/lib/admin/support-analytics-client": { supportAnalyticsClient: { months: signal => calendarReply(signal), query: options => { validatorModule.namespace.validateQuery(options); if (forcedQueryError) throw forcedQueryError; return new Promise((resolve, reject) => requests.push({ options, resolve, reject })); } } },
+  "next/dynamic": { default: loader => { const source = loader.toString(); return mocks[source.match(/import\("([^"]+)"\)/)[1]][source.match(/\.then\(\(?\w+\)?\s*=>\s*\w+\.(\w+)/)[1]]; } },
+  "../domain-module-state": { DomainModuleLoading: () => React.createElement("p", { role: "status" }, "正在加载页面功能…") },
+  "@/lib/admin/support-analytics-client": { supportAnalyticsClient: { months: signal => { calendarCalls.push(signal); return calendarReply(signal); }, query: options => { validatorModule.namespace.validateQuery(options); if (forcedQueryError) throw forcedQueryError; return new Promise((resolve, reject) => requests.push({ options, resolve, reject })); } } },
   "@/lib/admin/m-support-client": { SupportClientError },
   "@/lib/admin/shell-authorities": { adminShellSessionKey: (s, e) => `${e}:${s?.adminId}:${s?.authorities.join(",")}` },
   "@/lib/store/admin-auth": { useAdminAuth: selector => selector(auth) },
@@ -153,18 +156,74 @@ test("global default entry renders its authorized USDT response once, while expl
   } finally { d.unmount(); }
 });
 
-test("a late month calendar does not restart current-customer statistics", async () => {
-  let resolveCalendar;
-  calendarReply = () => new Promise(resolve => { resolveCalendar = resolve; });
+test("current-customer statistics do not request an unused month calendar", async () => {
+  const beforeCalendar = calendarCalls.length;
   const d = await resolveScope("MANAGED");
   try {
     const current = requests.at(-1), before = requests.length;
-    resolveCalendar(calendar); await d.settle();
+    await d.settle();
+    assert.equal(calendarCalls.length, beforeCalendar);
     assert.equal(requests.length, before);
     assert.equal(current.options.signal.aborted, false);
     current.resolve(fixture("AGENTS")); await d.settle();
     assert.equal(elements(d.tree).filter(x => x.type === AnalyticsTable).length, 1);
-  } finally { calendarReply = async () => calendar; d.unmount(); }
+  } finally { d.unmount(); }
+});
+
+test("current MANAGED session hint starts AGENTS and reuses the fully authorized identical response", async () => {
+  auth.session.supportReadModes = ["MANAGED"];
+  const before = requests.length, d = new HookDriver(); d.render();
+  try {
+    assert.equal(requests.at(-1).options.view, "AGENTS");
+    assert.match(content(d.tree), /正在核对/);
+    requests.at(-1).resolve(fixture("AGENTS", "MANAGED")); await d.settle(); await d.settle();
+    assert.equal(requests.length, before + 1);
+    assert.equal(elements(d.tree).filter(x => x.type === AnalyticsTable).length, 1);
+    button(d.tree, "刷新").props.onClick(); d.render();
+    assert.equal(requests.length, before + 2, "manual refresh still checks current server authority");
+  } finally { d.unmount(); delete auth.session.supportReadModes; }
+});
+
+test("stale MANAGED hint cannot reuse AGENTS rows after the response resolves PERSONAL scope", async () => {
+  auth.session.supportReadModes = ["MANAGED"];
+  const before = requests.length, d = new HookDriver(); d.render();
+  try {
+    requests.at(-1).resolve(fixture("AGENTS", "PERSONAL")); await d.settle();
+    assert.doesNotMatch(content(d.tree), /我的分组数据|平台运营总览|客服与分组/);
+    button(d.tree, "我的数据").props.onClick(); d.render();
+    assert.equal(requests.at(-1).options.view, "CUSTOMERS");
+    assert.equal(elements(d.tree).filter(x => x.type === AnalyticsTable).length, 0);
+    assert.ok(requests.length > before + 1);
+  } finally { d.unmount(); delete auth.session.supportReadModes; }
+});
+
+test("a denied stale hinted projection rechecks universal overview; a second denial stays closed", async () => {
+  auth.session.supportReadModes = ["MANAGED"];
+  const d = new HookDriver(); d.render();
+  try {
+    requests.at(-1).reject(new SupportClientError(403)); await d.settle();
+    assert.equal(requests.at(-1).options.view, "OVERVIEW");
+    assert.match(content(d.tree), /正在核对/);
+    requests.at(-1).reject(new SupportClientError(403)); await d.settle();
+    assert.match(content(d.tree), /当前范围已无查看权限/);
+    assert.equal(elements(d.tree).filter(x => x.type === AnalyticsTable).length, 0);
+  } finally { d.unmount(); delete auth.session.supportReadModes; }
+});
+
+test("period calendar failure remains unknown, retries, and only then requests exact server boundaries", async () => {
+  calendarReply = async () => { throw new SupportClientError(503); };
+  const d = await resolveScope("MANAGED");
+  try {
+    elements(d.tree).find(x => x.props?.label === "统计规则").props.onChange("PERIOD_EVENT"); d.render();
+    const before = requests.length; await d.settle();
+    assert.match(content(d.tree), /统计来源暂不可用/);
+    assert.equal(requests.length, before);
+    assert.equal(elements(d.tree).filter(x => x.type === AnalyticsTable).length, 0);
+    calendarReply = async () => calendar;
+    button(d.tree, "重试读取月份").props.onClick(); d.render(); await d.settle();
+    assert.equal(requests.length, before + 1);
+    assert.equal(requests.at(-1).options.from, calendar[0].from);
+  } finally { d.unmount(); calendarReply = async () => calendar; }
 });
 
 test("entering the pool cannot retain an old scope response for a later statistics visit", async () => {
@@ -290,7 +349,7 @@ test("stage strict TS checks candidate and exact m-view delta against actual ins
     }
     return ts.resolveModuleName(name, reference, options, host).resolvedModule;
   });
-  const program = ts.createProgram([componentPath, path.join(stage, "app/components/domain-views/m-view.tsx")], options, host);
+  const program = ts.createProgram([componentPath, path.join(stage, "app/components/domain-views/m-view.tsx"), path.join(stage, "app/components/domain-views/registry.tsx"), path.join(frontend, "node_modules/next/types/global.d.ts")], options, host);
   const diagnostics = ts.getPreEmitDiagnostics(program);
   assert.equal(diagnostics.length, 0, ts.formatDiagnosticsWithColorAndContext(diagnostics, { getCurrentDirectory: () => frontend, getCanonicalFileName: x => x, getNewLine: () => "\n" }));
   const original = readFileSync(baseView, "utf8").replaceAll("\r\n", "\n"), staged = readFileSync(path.join(stage, "app/components/domain-views/m-view.tsx"), "utf8").replaceAll("\r\n", "\n");
@@ -318,7 +377,7 @@ test("NET sort uses the current-customer selector and clears when switching basi
     assert.equal(requests.at(-1).options.pageNum, 1);
     assert.equal(requests.at(-1).options.expectedVersion, undefined);
     for (const basis of ["PERIOD_EVENT", "CURRENT_ASSET"]) {
-      elements(d.tree).find(x => x.props?.label === "统计规则").props.onChange(basis); d.render();
+      elements(d.tree).find(x => x.props?.label === "统计规则").props.onChange(basis); d.render(); await d.settle();
       assert.equal(requests.at(-1).options.sortKey, undefined);
       assert.ok(!select().props.options.some(x => x.value === "NET_CONTRIBUTION"));
     }
@@ -520,7 +579,7 @@ test("wire projection throws inside the protected effect and cannot reach transp
   try {
     const select = elements(d.tree).find(x => x.props?.label === "统计规则"); select.props.onChange("PERIOD_EVENT"); d.render();
     const monthSelect = elements(d.tree).find(x => x.props?.label === "自然月"); monthSelect.props.onChange("2026-13");
-    const before = requests.length; assert.doesNotThrow(() => d.render()); await d.settle(); assert.equal(requests.length, before); assert.match(content(d.tree), /统计资料暂时无法确认，请重试。/);
+    const before = requests.length; assert.doesNotThrow(() => d.render()); await d.settle(); await d.settle(); assert.equal(requests.length, before); assert.match(content(d.tree), /统计资料暂时无法确认，请重试。/);
   } finally { d.unmount(); }
 });
 

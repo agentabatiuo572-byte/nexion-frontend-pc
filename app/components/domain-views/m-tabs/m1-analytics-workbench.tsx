@@ -4,6 +4,8 @@ import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import dynamic from "next/dynamic";
+import { DomainModuleLoading } from "../domain-module-state";
 import { useRouter } from "next/navigation";
 import { supportAnalyticsClient, type SupportAnalyticsMonth, type SupportAnalyticsQuery, type SupportAnalyticsResponse, type SupportAnalyticsView, type SupportAnalyticsCustomer } from "@/lib/admin/support-analytics-client";
 import { SupportClientError } from "@/lib/admin/m-support-client";
@@ -13,15 +15,16 @@ import { businessZone, businessZoneText } from "@/lib/admin/business-time";
 import { Modal } from "../design-kit";
 import { HDSelect, type HDOption } from "./hd-ui";
 import { M1PersonalWorkbench, SupportSeatRolesButton, type PersonalWorkbenchView } from "./m1-personal-workbench";
-import { M1SupervisorPool } from "./m1-supervisor-pool";
 import { M1LiveService } from "./m1-live-service";
-import { M1GroupManagement } from "./m1-group-management";
-import { M3CustomerProfile } from "./m3-customer-profile";
 import { SupportAvatar } from "./support-avatar";
 import { compactSupportBoardValue } from "./support-leaderboard";
 import type { MCtx } from "./types";
 import "./m1-analytics-workbench.css";
 import "./m1-personal-priority.css";
+
+const M1SupervisorPool = dynamic(() => import("./m1-supervisor-pool").then(m => m.M1SupervisorPool), { loading: DomainModuleLoading });
+const M1GroupManagement = dynamic(() => import("./m1-group-management").then(m => m.M1GroupManagement), { loading: DomainModuleLoading });
+const M3CustomerProfile = dynamic(() => import("./m3-customer-profile").then(m => m.M3CustomerProfile), { loading: DomainModuleLoading });
 
 type Permission = "agent" | "supervisor" | "superadmin";
 /** M-41: one tab row per role. Agents: home / my-customers / my-data; supervisors and the super admin: data / customers / pool / team (+ mine for a supervisor with a seat). */
@@ -209,6 +212,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const lastDataView = useRef<SupportAnalyticsView>("OVERVIEW");
   const [profileId, setProfileId] = useState<string | null>(null);
   const [monthCalendar, setMonthCalendar] = useState<SupportAnalyticsMonth[] | null>(null);
+  const [calendarError, setCalendarError] = useState(""), [calendarRetry, setCalendarRetry] = useState(0);
   const [personalPeriod, setPersonalPeriod] = useState<SupportAnalyticsResponse | null>(null), [personalPeriodError, setPersonalPeriodError] = useState("");
   const managementReturnQuery = useRef<AnalyticsQueryState | null>(null);
   const managementCustomerGroup = useRef<string | null>(null);
@@ -219,6 +223,10 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const showStatistics = Boolean(scope && section === "stats");
   const statisticsCalendar = queryState.basis === "PERIOD_EVENT" ? monthCalendar : null;
   const adminId = useAdminAuth(state => state.session?.adminId);
+  const readModes = useAdminAuth(state => state.session?.supportReadModes);
+  // A session hint only chooses the requested projection. The response still resolves current authority.
+  const entryReadMode = readModes?.includes("ALL") ? "ALL" : readModes?.includes("MANAGED") ? "MANAGED" : readModes?.includes("PERSONAL") ? "PERSONAL" : "ALL";
+  const needsCalendar = Boolean(scope && (isPersonal || queryState.basis === "PERIOD_EVENT"));
   // A supervisor who also holds a receiving seat keeps a tab for their own customers.
   const canMine = scope?.scopeSummary.mode === "MANAGED" && (() => { try { return (JSON.parse(ctx.pget("I.support.agents") ?? "[]") as Array<{ adminId?: number; assignmentEligible?: boolean }>).some(agent => agent.adminId === adminId && agent.assignmentEligible === true); } catch { return false; } })();
   useEffect(() => { if (queryState.view !== "CUSTOMERS") lastDataView.current = queryState.view; }, [queryState.view]);
@@ -233,16 +241,26 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   }, [scope, queryState.month, queryState.currency, monthCalendar]);
   useEffect(() => {
     const controller = new AbortController();
+    setMonthCalendar(null); setCalendarError("");
+    if (!needsCalendar) return () => controller.abort();
     void supportAnalyticsClient.months(controller.signal).then(months => { if (!controller.signal.aborted) setMonthCalendar(months); })
-      .catch(cause => { if (!controller.signal.aborted) { setError(analyticsErrorText(cause)); setPersonalPeriodError(analyticsErrorText(cause)); } });
+      .catch(cause => { if (!controller.signal.aborted) setCalendarError(analyticsErrorText(cause)); });
     return () => controller.abort();
-  }, []);
+  }, [needsCalendar, scopeRetry, calendarRetry]);
   useEffect(() => {
     const controller = new AbortController(); scopeControllerRef.current = controller; entryStatistics.current = null; setScope(null); setScopeError(""); setData(null); setProfileId(null);
     (async () => {
       const agentId = analyticsEntryAgent(window.location.search);
-      const query = analyticsWireQuery(initialAnalyticsQuery("ALL"), []);
-      const next = await supportAnalyticsClient.query({ ...query, signal: controller.signal });
+      let query = analyticsWireQuery(initialAnalyticsQuery(entryReadMode), []);
+      let next: SupportAnalyticsResponse;
+      try {
+        next = await supportAnalyticsClient.query({ ...query, signal: controller.signal });
+      } catch (cause) {
+        // A stale seat/supervisor hint can request a projection no longer allowed to this operator.
+        if (controller.signal.aborted || query.view === "OVERVIEW" || !(cause instanceof SupportClientError) || cause.status !== 403) throw cause;
+        query = analyticsWireQuery(initialAnalyticsQuery("ALL"), []);
+        next = await supportAnalyticsClient.query({ ...query, signal: controller.signal });
+      }
       return { next, agentId, query };
     })().then(({ next, agentId, query }) => {
       if (controller.signal.aborted) return;
@@ -266,7 +284,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       setScope(next); setQueryState(restored);
     }).catch(cause => { if (!controller.signal.aborted) setScopeError(analyticsErrorText(cause)); });
     return () => controller.abort();
-  }, [scopeRetry]);
+  }, [scopeRetry, entryReadMode]);
   useEffect(() => {
     const invalidate = () => refreshScope(true);
     window.addEventListener("support-scope-invalidated", invalidate);
@@ -347,6 +365,7 @@ if (!scope) return <section className="sa-workbench" aria-label="客服范围核
 {isPersonal && <div hidden={section === "stats"}><M1PersonalWorkbench permission="agent" ctx={ctx} view={personalView} onViewChange={next => { setSection("personal"); setPersonalView(next); }}
   onBrowseCustomers={filter => { if (queryState.view === "CUSTOMERS" && queryState.basis === "CURRENT_CUSTOMER_HISTORY" && queryState.filter === filter) { setSection("stats"); return; } drill({ view: "CUSTOMERS", category: "BOUND", basis: "CURRENT_CUSTOMER_HISTORY", filter, firstState: "ALL", keyword: undefined }); }}
   primarySummary={<section className="sa-personal-summary" aria-label="本人客户与期间业绩">
+    {!monthCalendar && <p role={calendarError ? "alert" : "status"}>{calendarError || "正在读取业绩月份…"}{calendarError && <button type="button" onClick={() => setCalendarRetry(n => n + 1)}>重试读取月份</button>}</p>}
     <div className="sa-personal-period-controls"><AnalyticsSelect label="业绩自然月" value={queryState.month} options={monthOptions} onChange={month => change({ month })} /><AnalyticsSelect label="业绩币种" value={currency} options={[{ value: "USDT", label: "USDT" }, { value: "UVT", label: "UVT" }]} onChange={value => { if (value === "USDT" || value === "UVT") change({ currency: value }); }} /></div>
     <div className="sa-personal-primary-metrics">
       <div><span>当前本人绑定</span><Numeric value={scope.scopeSummary.bound === null ? null : String(scope.scopeSummary.bound)} label="当前本人绑定客户" onClick={() => drill({ view: "CUSTOMERS", category: "BOUND", basis: "CURRENT_CUSTOMER_HISTORY", filter: "ALL", firstState: "ALL" })} /></div>
@@ -380,6 +399,7 @@ if (!scope) return <section className="sa-workbench" aria-label="客服范围核
       </form>
       {activeConditions.length > 0 && <div className="sa-active-conditions" role="group" aria-label="当前生效条件"><span>当前生效：</span>{activeConditions.map(condition => <button type="button" key={condition.key} title={condition.label} aria-label={`移除${condition.label}`} onClick={() => { if (condition.key === "keyword") setKeyword(""); change(condition.remove); }}><span>{condition.label}</span><span aria-hidden="true">×</span></button>)}</div>}
       <p className="sa-disclosure" title="绑定与人员规模按所选分组统计，客户数据按当前筛选；邀请金额不计入分组经营金额。">{caption}{queryState.agentId !== undefined && ` · 已选客服编号 ${queryState.agentId}`}{data?.versionState === "READY" ? "" : " · 数据仍在同步"}</p>
+      {queryState.basis === "PERIOD_EVENT" && !monthCalendar && <div className="sa-state" role={calendarError ? "alert" : "status"}>{calendarError || "正在读取统计月份…"}{calendarError && <button type="button" onClick={() => setCalendarRetry(n => n + 1)}>重试读取月份</button>}</div>}
       {loading && <div className="sa-state" role="status">正在加载…<button type="button" onClick={() => { controllerRef.current?.abort(); generation.current++; setLoading(false); setCancelled(true); setData(null); }}>取消读取</button></div>}
       {(error || cancelled) && <div className="sa-state" role={error ? "alert" : "status"}>{error || "已取消加载，筛选条件不变。"}<button type="button" onClick={reloadFirstPage}>{error.includes("第一页") ? "从第一页重新加载" : "重试"}</button></div>}
       {data && current && personnel && <>

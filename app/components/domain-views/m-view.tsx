@@ -7,6 +7,8 @@
  * MC 显式 edit 契约:调参传 edit、处置不传。MessageThread 共享组件复用于 M2/M3。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { DomainModuleLoading } from "./domain-module-state";
 import "./m-domain.css";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { Icon, MessageThread, OperationConfirmModal, useToast, type ThreadMessage } from "./design-kit";
@@ -31,10 +33,6 @@ import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { M1AnalyticsWorkbench } from "./m-tabs/m1-analytics-workbench";
 import { useSupportInboxAlerts } from "@/lib/admin/support-alerts";
 import { supportUnboundPolicyClient } from "@/lib/admin/m-support-client";
-import { M3DedicatedChat } from "./m-tabs/m3-dedicated-chat";
-import { M4KbSla } from "./m-tabs/m4-kb-sla";
-import { M5Scripts } from "./m-tabs/m5-scripts";
-import { M5ServiceRules } from "./m-tabs/m5-service-rules";
 import { STANDBY_POOL_LABEL, type AdvisorScript, type SessionConvo, type SessionMsg, type SessionReplyTpl, type SessionType, type SupportFaq, type SupportSla, type SupportTicket, type SupportTicketCategory, type SupportTicketPriority } from "./m-tabs/data";
 import { MAvatar, ownerLabel } from "./m-tabs/hd-ui";
 import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
@@ -43,6 +41,11 @@ import { shouldSendOnEnter } from "@/lib/keyboard-submit";
 import { supportClient, SupportClientError, isIndeterminateSupportError, type SupportMessageInput } from "@/lib/admin/m-support-client";
 import { privateMessageRecovery } from "@/lib/admin/m-support-enhancements";
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
+
+const M3DedicatedChat = dynamic(() => import("./m-tabs/m3-dedicated-chat").then(m => m.M3DedicatedChat), { loading: DomainModuleLoading });
+const M4KbSla = dynamic(() => import("./m-tabs/m4-kb-sla").then(m => m.M4KbSla), { loading: DomainModuleLoading });
+const M5Scripts = dynamic(() => import("./m-tabs/m5-scripts").then(m => m.M5Scripts), { loading: DomainModuleLoading });
+const M5ServiceRules = dynamic(() => import("./m-tabs/m5-service-rules").then(m => m.M5ServiceRules), { loading: DomainModuleLoading });
 
 /**
  * M 域两类写入的命令号共用一张表,靠 fingerprint 前缀分命名空间:
