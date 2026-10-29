@@ -35,6 +35,7 @@ function backendPath(parts: string[]) {
     "i18n-learning",
     "how-it-works",
     "privacy-policy",
+    "trust-documents",
   ]);
   if (!allowedHeads.has(parts[0])) return null;
   if (parts.some((part) => !isSafePart(part))) return null;
@@ -50,7 +51,10 @@ async function proxy(request: Request, context: RouteContext) {
   if (!targetPath) return jsonError(404, "CONTENT_ROUTE_NOT_FOUND");
   const attachmentUpload = request.method === "POST"
     && (path.length === 2 && path[0] === "conversations" && path[1] === "attachments"
-      || path.length === 3 && path[0] === "support-workbench" && path[1] === "bulk" && path[2] === "attachments");
+      || path.length === 3 && path[0] === "support-workbench" && path[1] === "bulk" && path[2] === "attachments"
+      || path.length === 2 && path[0] === "trust-documents");
+  // 信任中心资料文件（PDF）预览：二进制原样转发，不能按文本读。
+  const documentContent = request.method === "GET" && path.length === 3 && path[0] === "trust-documents" && path[2] === "file";
   const publicLeaderboardAvatar = request.method === "GET" && path.length === 4 && path[0] === "support-workbench"
     && path[1] === "leaderboard" && /^[1-9]\d*$/.test(path[2]) && path[3] === "avatar";
   const avatarContent = request.method === "GET" && (path.length === 3 && path[0] === "support-agents" && path[2] === "avatar"
@@ -99,7 +103,7 @@ async function proxy(request: Request, context: RouteContext) {
         ? undefined : attachmentUpload ? uploadBody : await request.text(),
       cache: "no-store",
       redirect: "manual",
-      signal: attachmentContent || attachmentUpload ? AbortSignal.any([request.signal, AbortSignal.timeout(45_000)]) : request.signal,
+      signal: attachmentContent || attachmentUpload || documentContent ? AbortSignal.any([request.signal, AbortSignal.timeout(45_000)]) : request.signal,
     });
     if (upstream.status >= 300 && upstream.status < 400) {
       return jsonError(502, "CONTENT_BACKEND_REDIRECT_BLOCKED");
@@ -114,6 +118,14 @@ async function proxy(request: Request, context: RouteContext) {
           Connection: "keep-alive",
         },
       });
+    }
+    if (documentContent) {
+      if (!upstream.ok) return jsonError(upstream.status, "TRUST_DOCUMENT_READ_FAILED");
+      if (!upstream.body || upstreamType.split(";")[0].toLowerCase() !== "application/pdf") return jsonError(502, "TRUST_DOCUMENT_TYPE_INVALID");
+      const responseHeaders = new Headers({ "Content-Type": "application/pdf", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
+      const disposition = upstream.headers.get("Content-Disposition");
+      if (disposition) responseHeaders.set("Content-Disposition", disposition);
+      return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
     }
     if (attachmentContent) {
       if (!upstream.ok) return jsonError(upstream.status, "CONTENT_ATTACHMENT_READ_FAILED");
