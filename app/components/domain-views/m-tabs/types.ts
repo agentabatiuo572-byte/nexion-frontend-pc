@@ -14,7 +14,7 @@ export type MCtx = {
   setParam: (k: string, v: string, meta: { action: string; reason: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void }) => Promise<boolean>;
   refreshConversations: () => Promise<void>;
   refreshContent: () => Promise<void>;
-  loadConversationDetail: (no: string, signal?: AbortSignal) => Promise<void>;
+  loadConversationDetail: (no: string, signal?: AbortSignal, includeCustomerProfile?: boolean) => Promise<void>;
   invalidateScope: (conversationNo?: string, customerId?: string) => void;
   addCustomerTag: (convoId: string, tag: string) => Promise<boolean>;
   removeCustomerTag: (convoId: string, tag: string) => Promise<boolean>;

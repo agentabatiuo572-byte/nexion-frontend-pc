@@ -142,16 +142,17 @@ function SupportContactPicker({onClose,onSelect}:{onClose:()=>void;onSelect:(id:
   return <Modal title="主动联系本人客户" icon="users" onClose={onClose} footer={<button className="btn btn-sec btn-sm" onClick={onClose}>取消</button>}><label>搜索客户姓名或编码<input className="fld" value={keyword} onChange={e=>{setKeyword(e.target.value);setPage(1);}}/></label><p>只可向当前本人客户发送；不再维护客户可在原求助会话中继续普通服务回复。</p>{error?<p role="alert">{error}<button className="l-btn sm" onClick={()=>setRetry(n=>n+1)}>重试客户列表</button></p>:!rows?<p role="status">正在加载客户…</p>:<>{!rows.records.length&&<p>暂无匹配的客户。</p>}{rows.records.map(c=><button className="l-btn sm" key={c.customerId} disabled={c.agentAdminId!==adminId||!c.maintenanceEnabled} onClick={()=>onSelect(c.customerId)}>{c.displayName||c.customerNo||c.customerId} · {c.customerNo||"编码未知"}{!c.maintenanceEnabled?" · 不再维护":c.agentAdminId!==adminId?" · 当前归属其他专属客服":""}</button>)}<div className="m-admin-toolbar"><button className="l-btn sm" disabled={page<=1} onClick={()=>setPage(n=>n-1)}>上一页</button><span>第 {page} 页 · {rows.total} 位</span><button className="l-btn sm" disabled={page*10>=rows.total} onClick={()=>setPage(n=>n+1)}>下一页</button></div></>}</Modal>;
 }
 
-function CustomerHistoryMessages({ conversation, ctx, customerName, loadEnabled }: { conversation: SessionConvo; ctx: MCtx; customerName: string; loadEnabled: boolean }) {
+function CustomerHistoryMessages({ conversation, ctx, customerName, loadEnabled, onLoadFailure, onRetry }: { conversation: SessionConvo; ctx: MCtx; customerName: string; loadEnabled: boolean; onLoadFailure?: (id: string, version: number) => void; onRetry?: (id: string, version: number) => void }) {
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
   const load = ctx.loadConversationDetail;
   useEffect(() => {
     if (!loadEnabled || conversation.detailReady) return;
     const controller = new AbortController();
-    void load(conversation.id, controller.signal).catch(cause => { if (!controller.signal.aborted) { if (lostPermission(cause)) ctx.invalidateScope(conversation.id,conversation.customerId); else setError(displayAdminError(cause)); } });
+    setError("");
+    void load(conversation.id, controller.signal, false).catch(cause => { if (!controller.signal.aborted) { if (lostPermission(cause)) ctx.invalidateScope(conversation.id,conversation.customerId); else { setError(displayAdminError(cause)); onLoadFailure?.(conversation.id, conversation.version); } } });
     return () => controller.abort();
-  }, [conversation.id, conversation.version, conversation.detailReady, loadEnabled, load, retry]);
+  }, [conversation.id, conversation.version, conversation.detailReady, loadEnabled, load, retry, onLoadFailure]);
   const unread = conversation.detailReady ? [...conversation.messages].reverse().find(message => message.sender === "user" && message.id && message.status !== "read")?.id : undefined;
   useEffect(() => {
     if (!unread) return;
@@ -159,7 +160,7 @@ function CustomerHistoryMessages({ conversation, ctx, customerName, loadEnabled 
     void markMConversationRead(conversation.id,unread,controller.signal).catch(cause => { if (!controller.signal.aborted) setError(displayAdminError(cause)); });
     return () => controller.abort();
   },[conversation.id,unread,retry]);
-  return <section aria-label="历史消息">{error && <p role="alert">历史消息加载失败：{error}<button type="button" onClick={()=>{setError("");setRetry(n=>n+1);}}>重试</button></p>}{!conversation.detailReady && <p role="status">正在加载历史消息…</p>}</section>;
+  return <section aria-label="历史消息">{error && <p role="alert">历史消息加载失败：{error}<button type="button" onClick={()=>{setError("");onRetry?.(conversation.id, conversation.version);setRetry(n=>n+1);}}>重试</button></p>}{!conversation.detailReady && !error && <p role="status">{loadEnabled ? "正在加载历史消息…" : "历史消息等待加载…"}</p>}</section>;
 }
 
 type ListTab = "pending" | "unassigned" | "open" | "all" | "archived";
@@ -294,6 +295,13 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   const selectedCustomer = visible.find(row=>row.id===selectedId)?.customerId;
   const selected = requestedCustomerId ? requestedConvo ?? null : selectedId ? customerRows.find(row=>row.customerId===selectedCustomer) ?? null : customerRows.find(convo=>!convo.archived) ?? null;
   const customerHistory = visible.filter(row => row.customerId === selected?.customerId && row.id !== selected?.id).sort((a,b) => a.lastTs-b.lastTs);
+  const [historyFailures, setHistoryFailures] = useState<string[]>([]);
+  const onHistoryFailure = useCallback((id: string, version: number) => setHistoryFailures(previous => previous.includes(`${id}:${version}`) ? previous : [...previous, `${id}:${version}`]), []);
+  const onHistoryRetry = useCallback((id: string, version: number) => setHistoryFailures(previous => previous.filter(value => value !== `${id}:${version}`)), []);
+  useEffect(() => { setHistoryFailures([]); }, [selected?.customerId, authEpoch]);
+  // Keep at most three history reads active; a failed segment retains retry without blocking the rest.
+  const historyLoadingIds = new Set([...customerHistory].reverse().filter(row => !row.detailReady && !historyFailures.includes(`${row.id}:${row.version}`)).slice(0, 3).map(row => row.id));
+  const historyComplete = selected?.historyTruncated === false && customerHistory.every(row => row.detailReady && row.historyTruncated === false);
   const threadMessages = [...new Map([...(selected?.messages ?? []), ...customerHistory.flatMap(row=>row.detailReady ? row.messages : [])].map(message=>[message.id ?? `${message.ts}:${message.sender}:${message.text}`,message])).values()].sort((a,b)=>a.ts-b.ts || (a.id??0)-(b.id??0));
   // M-9: snapshots replace details, so the open thread would blank on every refresh. Keep showing its last loaded
   // messages until the reloaded detail arrives, only for the same customer thread, owner and binding.
@@ -1136,8 +1144,8 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
         {actionError && <div className="itint danger" role="alert">{actionError}<button type="button" className="l-btn sm" onClick={() => setActionError("")}>知道了</button></div>}
         {!requestedCustomerIdValid && <div className="itint danger" role="alert">客户链接无效，无法打开会话。请从<a href="/service/overview">我的客户</a>重新进入。</div>}
         {readError && <div className="itint warn" role="alert">已读状态更新失败：{readError} <button type="button" className="l-btn sm" onClick={() => { markedRef.current = ""; setReadRetry((value) => value + 1); }}>重试</button></div>}
-        {customerHistory.map(row => <CustomerHistoryMessages key={`${authEpoch}:${row.id}`} conversation={row} ctx={ctx} customerName={title} loadEnabled={Boolean(selected?.detailReady && customerHistory.find(item => !item.detailReady)?.id === row.id)}/>)}
-        {selected && !paneMessages ? <div className="itint" role={conversationError ? "alert" : "status"}>{conversationError ? `会话详情加载失败：${conversationError}` : "正在加载会话消息…"} {conversationError && <button type="button" className="l-btn sm" onClick={() => { setConversationError(""); setConversationRetry((value) => value + 1); }}>重新加载详情</button>}</div> : selected && paneMessages?.length ? paneMessages.map((message,index)=><SupportMessage key={message.id??`${message.ts}-${index}`} message={message} previous={paneMessages[index-1]} newlyArrived={message.id!==undefined&&newMessageIds.has(message.id)} customerId={String(selected.customerId)} customerAvatarRef={selected.customerAvatarRef} customerName={title} onRevoked={()=>ctx.invalidateScope(selected.id,String(selected.customerId))}/>) : <div className="itint">{requestedCustomerId?"尚无进行中会话。核对归属后即可发送首次联系。":selected?"这段会话尚无消息。":"选择会话后查看消息。"}</div>}
+        {customerHistory.map(row => <CustomerHistoryMessages key={`${authEpoch}:${row.id}`} conversation={row} ctx={ctx} customerName={title} loadEnabled={Boolean(selected?.detailReady && historyLoadingIds.has(row.id))} onLoadFailure={onHistoryFailure} onRetry={onHistoryRetry}/>)}
+        {selected && !paneMessages ? <div className="itint" role={conversationError ? "alert" : "status"}>{conversationError ? `会话详情加载失败：${conversationError}` : "正在加载会话消息…"} {conversationError && <button type="button" className="l-btn sm" onClick={() => { setConversationError(""); setConversationRetry((value) => value + 1); }}>重新加载详情</button>}</div> : selected && paneMessages?.length ? paneMessages.map((message,index)=><SupportMessage key={message.id??`${message.ts}-${index}`} message={message} previous={paneMessages[index-1]} newlyArrived={message.id!==undefined&&newMessageIds.has(message.id)} customerId={String(selected.customerId)} customerAvatarRef={selected.customerAvatarRef} customerName={title} onRevoked={()=>ctx.invalidateScope(selected.id,String(selected.customerId))}/>) : <div className="itint">{requestedCustomerId?"尚无进行中会话。核对归属后即可发送首次联系。":selected?historyComplete?"这段会话尚无消息。":"历史消息尚未完整加载，请查看加载进度或重试失败片段。":"选择会话后查看消息。"}</div>}
       </div>
       <div className="ChatComposer">
         {detailLoading && <div className="itint">正在核对当前专属客服归属…</div>}

@@ -702,6 +702,16 @@ test("M3 authoritative snapshot after switching selection clears old scoped deta
   assert.equal(mDataRef.current.conversations[0], summaries[0]);
   assert.equal(mDataRef.current.conversations[0].messages.length, 0);
   assert.equal(mDataRef.current.conversations[0].lastPublicMessageId, 3719);
+  const verifiedProfile = { nickname: "VERIFIED_EXISTING_PROFILE" };
+  mDataRef.current.conversations[1] = { ...selectedDetail, profile: verifiedProfile, customer: "VERIFIED_EXISTING_CUSTOMER" };
+  state.fetchMConversationDetail = async (no, signal, includeCustomerProfile) => {
+    assert.equal(no, "CV-HISTORY"); assert.equal(includeCustomerProfile, false);
+    return { ...selectedDetail, profile: { nickname: "LIGHT_PLACEHOLDER" }, customer: "LIGHT_PLACEHOLDER", messages: [{ id: 3687, sender: "user", text: "LIGHT_HISTORY_MESSAGE" }] };
+  };
+  await state.callbacks.loadConversationDetail("CV-HISTORY", undefined, false);
+  assert.equal(mDataRef.current.conversations[1].profile, verifiedProfile);
+  assert.equal(mDataRef.current.conversations[1].customer, "VERIFIED_EXISTING_CUSTOMER");
+  assert.equal(mDataRef.current.conversations[1].messages[0].text, "LIGHT_HISTORY_MESSAGE");
 });
 
 test("M3 owner headers and author fallbacks preserve history and named actors with exclusive support copy", () => {

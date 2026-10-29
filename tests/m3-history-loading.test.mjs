@@ -20,6 +20,8 @@ const candidateEffect = main.body.statements.find(node => ts.isExpressionStateme
   && node.getText(ast).includes("loadConversationDetail(closedCandidateMissing[0]"));
 const ready = main.body.statements.flatMap(node => ts.isVariableStatement(node) ? [...node.declarationList.declarations] : [])
   .find(node => node.name.getText(ast) === "closedCandidatesReady");
+const historyLoading = main.body.statements.flatMap(node => ts.isVariableStatement(node) ? [...node.declarationList.declarations] : [])
+  .find(node => node.name.getText(ast) === "historyLoadingIds");
 assert.ok(component && permission && gate && candidateEffect && ready, "execute the production history component and parent gates");
 const compile = text => ts.transpileModule(text, { compilerOptions: {
   target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX,
@@ -27,7 +29,10 @@ const compile = text => ts.transpileModule(text, { compilerOptions: {
 const code = compile(`${permission.getText(ast)}\n${component.getText(ast)}\nglobalThis.Component=CustomerHistoryMessages;`);
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const row = id => ({ id, customerId: "42", version: 1, messages: [], detailReady: false });
-const enabled = (selected, customerHistory, row) => vm.runInNewContext(gate.getText(ast), { selected, customerHistory, row });
+const enabled = (selected, customerHistory, row, historyFailures = []) => {
+  const historyLoadingIds = vm.runInNewContext(historyLoading.initializer.getText(ast), { customerHistory, historyFailures });
+  return vm.runInNewContext(gate.getText(ast), { selected, historyLoadingIds, row });
+};
 const nodes = tree => !tree || typeof tree !== "object" ? [] : Array.isArray(tree)
   ? tree.flatMap(nodes) : [tree, ...nodes(tree.props?.children)];
 
@@ -36,7 +41,7 @@ function harness(initial) {
   const slots = [], effects = [], requests = [], invalidations = [], readRequests = [];
   let cursor = 0, props, tree;
   const ctx = {
-    loadConversationDetail: (id, signal) => new Promise((resolve, reject) => requests.push({ id, signal, resolve, reject })),
+    loadConversationDetail: (id, signal, includeCustomerProfile) => new Promise((resolve, reject) => requests.push({ id, signal, includeCustomerProfile, resolve, reject })),
     invalidateScope: (...args) => invalidations.push(args),
   };
   const sandbox = {
@@ -85,7 +90,7 @@ test("disabled history gate and already hydrated rows do not start detail reques
   h.unmount();
 });
 
-test("actual parent gate waits for primary detail and releases ten historical segments one at a time", async () => {
+test("actual parent gate waits for primary detail, then loads all ten segments with at most three nearest-first reads", async () => {
   const rows = Array.from({ length: 10 }, (_, i) => row(`history-${i}`));
   const children = rows.map(item => harness(item));
   const selected = { detailReady: false };
@@ -93,32 +98,57 @@ test("actual parent gate waits for primary detail and releases ten historical se
   render();
   assert.equal(children.flatMap(child => child.requests).length, 0);
   selected.detailReady = true;
-  for (let i = 0; i < rows.length; i++) {
-    render();
-    assert.deepEqual(children.map(child => child.requests.length), rows.map((_, index) => index <= i ? 1 : 0));
-    children[i].requests[0].resolve(); await tick();
-    rows[i] = { ...rows[i], detailReady: true };
+  render();
+  assert.deepEqual(children.map(child => child.requests.length), rows.map((_, index) => index >= 7 ? 1 : 0));
+  for (let completed = 0; completed < rows.length; completed++) {
+    const active = children.flatMap((child, i) => !rows[i].detailReady && child.requests.length ? [{ child, i }] : []);
+    assert.ok(active.length > 0 && active.length <= 3);
+    const { child, i } = active.at(-1);
+    assert.equal(child.requests[0].includeCustomerProfile, false);
+    child.requests[0].resolve(); await tick(); rows[i] = { ...rows[i], detailReady: true }; render();
   }
   render();
   assert.equal(children.flatMap(child => child.requests).length, 10);
   children.forEach(child => child.unmount());
 });
 
-test("a failed historical segment stays retryable and does not release later segments prematurely", async () => {
-  const rows = [row("first"), row("second")], selected = { detailReady: true };
-  const first = harness(rows[0]), second = harness(rows[1]);
-  first.render({ loadEnabled: enabled(selected, rows, rows[0]) });
-  first.requests[0].reject(new Error("detail timed out")); await tick();
-  assert.equal(first.error(), "detail timed out");
-  second.render({ loadEnabled: enabled(selected, rows, rows[1]) });
-  assert.equal(second.requests.length, 0);
-  first.retry(); assert.equal(first.requests.length, 2);
-  assert.equal(first.error(), "");
-  first.requests[1].resolve(); await tick(); rows[0] = { ...rows[0], detailReady: true };
-  first.render({ conversation: rows[0], loadEnabled: enabled(selected, rows, rows[0]) });
-  second.render({ loadEnabled: enabled(selected, rows, rows[1]) });
-  assert.equal(second.requests.length, 1);
-  first.unmount(); second.unmount();
+test("a failed segment releases its slot, leaves retry visible, and never blocks remaining history", async () => {
+  const rows = Array.from({ length: 4 }, (_, i) => row(`history-${i}`)), selected = { detailReady: true }, failures = [];
+  const children = rows.map(item => harness(item));
+  const onLoadFailure = (id, version) => failures.push(`${id}:${version}`), onRetry = (id, version) => failures.splice(failures.indexOf(`${id}:${version}`), 1);
+  const render = () => children.forEach((child, i) => child.render({ conversation: rows[i], loadEnabled: enabled(selected, rows, rows[i], failures), onLoadFailure, onRetry }));
+  render(); assert.equal(children[0].requests.length, 0);
+  children[3].requests[0].reject(new Error("detail timed out")); await tick(); render();
+  assert.equal(children[3].error(), "detail timed out"); assert.equal(children[0].requests.length, 1);
+  assert.deepEqual(failures, ["history-3:1"]);
+  children[3].retry(); render();
+  assert.equal(children[3].error(), ""); assert.equal(children[3].requests.length, 2);
+  assert.equal(children[3].requests[1].includeCustomerProfile, false);
+  children.forEach(child => child.unmount());
+});
+
+test("a newly authorized conversation version is not blocked by an older failed version", () => {
+  const previous = row("history"), current = { ...previous, version: 2 };
+  assert.equal(enabled({ detailReady: true }, [previous], previous, ["history:1"]), false);
+  assert.equal(enabled({ detailReady: true }, [current], current, ["history:1"]), true);
+});
+
+test("out-of-order history completions retain chronological message order and do not duplicate public IDs", () => {
+  const messages = main.body.statements.flatMap(node => ts.isVariableStatement(node) ? [...node.declarationList.declarations] : []).find(node => node.name.getText(ast) === "threadMessages");
+  const evaluate = customerHistory => vm.runInNewContext(messages.initializer.getText(ast), { selected: { messages: [{ id: 9, ts: 900, sender: "user", text: "current" }] }, customerHistory });
+  const newest = { detailReady: true, messages: [{ id: 5, ts: 500, sender: "agent", text: "newer history" }, { id: 9, ts: 900, sender: "user", text: "current duplicate" }] };
+  const oldest = { detailReady: true, messages: [{ id: 1, ts: 100, sender: "user", text: "oldest" }, { id: 2, ts: 100, sender: "agent", text: "same-time reply" }] };
+  assert.deepEqual(Array.from(evaluate([newest, { detailReady: false, messages: [] }]), item => item.id), [5, 9]);
+  assert.deepEqual(Array.from(evaluate([newest, oldest]), item => item.id), [1, 2, 5, 9]);
+});
+
+test("an empty current segment cannot claim empty history while old segments are pending or completeness is unknown", () => {
+  const complete = main.body.statements.flatMap(node => ts.isVariableStatement(node) ? [...node.declarationList.declarations] : []).find(node => node.name.getText(ast) === "historyComplete");
+  const evaluate = (selected, customerHistory) => vm.runInNewContext(complete.initializer.getText(ast), { selected, customerHistory });
+  assert.equal(evaluate({ historyTruncated: false }, [{ detailReady: false }]), false);
+  assert.equal(evaluate({ historyTruncated: false }, [{ detailReady: true, historyTruncated: true }]), false);
+  assert.equal(evaluate({}, []), false);
+  assert.equal(evaluate({ historyTruncated: false }, [{ detailReady: true, historyTruncated: false }]), true);
 });
 
 for (const boundary of ["disabled", "new-version", "unmount"]) {

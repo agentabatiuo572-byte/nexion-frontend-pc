@@ -1779,7 +1779,7 @@ export async function fetchMRecentAdvisorConversations(ownerAdminId: number, sig
 }
 
 export async function markMConversationRead(no:string,lastSeenMessageId:number,signal:AbortSignal){
-  const detail=await apiRequest<{conversation:{status:string;version:number};messages:Array<{id:number;receiptStatus?:string}>}>(`/conversations/${encodeURIComponent(no)}`,{signal});
+  const detail=await apiRequest<{conversation:{status:string;version:number};messages:Array<{id:number;receiptStatus?:string}>}>(`/conversations/${encodeURIComponent(no)}?includeCustomerProfile=false`,{signal});
   if(signal.aborted || detail.messages.find(m=>m.id===lastSeenMessageId)?.receiptStatus==='read')return;
   await apiRequest(`/conversations/${encodeURIComponent(no)}/read`,{method:'POST',signal,body:JSON.stringify({lastSeenMessageId,expectedStatus:detail.conversation.status,expectedVersion:detail.conversation.version})});
 }
@@ -1801,8 +1801,8 @@ export async function fetchMConversationSnapshot(signal?: AbortSignal): Promise<
   throw new Error("M3_CONVERSATION_SNAPSHOT_UNSTABLE");
 }
 
-export async function fetchMConversationDetail(no: string, signal?: AbortSignal): Promise<SessionConvo> {
-  const detail = assertConversationDetail(await apiRequest<unknown>(`/conversations/${encodeURIComponent(no)}`, { signal }));
+export async function fetchMConversationDetail(no: string, signal?: AbortSignal, includeCustomerProfile = true): Promise<SessionConvo> {
+  const detail = assertConversationDetail(await apiRequest<unknown>(`/conversations/${encodeURIComponent(no)}${includeCustomerProfile ? "" : "?includeCustomerProfile=false"}`, { signal }));
   const conversation = adaptConversation(detail);
   if (conversation.id !== no || !conversation.detailReady) throw new Error("M3_CONVERSATION_DETAIL_INVALID");
   return conversation;

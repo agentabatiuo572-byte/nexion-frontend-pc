@@ -217,11 +217,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       ? { ...previous, conversations, conversationsAvailable: true }
       : previous);
   }, [authEpoch]);
-  const loadConversationDetail = useCallback(async (no: string, signal?: AbortSignal) => {
+  const loadConversationDetail = useCallback(async (no: string, signal?: AbortSignal, includeCustomerProfile = true) => {
     const detailEpoch = authEpoch;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const generation = mLoadCoordinator.current.captureConversationSnapshot();
-      const detail = await fetchMConversationDetail(no, signal);
+      const detail = await fetchMConversationDetail(no, signal, includeCustomerProfile);
       if (signal?.aborted) return;
       if (mDataAuthEpoch.current !== detailEpoch) throw new Error("会话身份已变化，请重新打开会话。");
       if (!mLoadCoordinator.current.isConversationSnapshotCurrent(generation)) continue;
@@ -234,7 +234,8 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         const index = previous.conversations.findIndex((conversation) => conversation.id === no);
         if (index < 0 || previous.conversations[index].version > detail.version || previous.conversations[index].ownerAdminId !== detail.ownerAdminId || previous.conversations[index].assignmentId !== detail.assignmentId) return previous;
         const conversations = previous.conversations.slice();
-        conversations[index] = detail;
+        // Message-only history reads must not replace an already verified profile with list placeholders.
+        conversations[index] = includeCustomerProfile ? detail : { ...detail, profile: previous.conversations[index].profile, customer: previous.conversations[index].customer };
         return { ...previous, conversations };
       });
       return;
