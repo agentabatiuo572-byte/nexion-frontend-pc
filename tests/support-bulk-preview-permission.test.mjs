@@ -16,11 +16,13 @@ const ts = require("typescript"), React = require("react");
 const { renderToStaticMarkup } = require("react-dom/server");
 const source = readFileSync(path.join(process.env.SUPPORT_BULK_SOURCE_ROOT || repo, "app/components/domain-views/m-tabs/support-bulk-composer.tsx"), "utf8");
 
-function harness(cause, preview, job = null, recipients = []) {
+export function harness(cause, preview, job = null, recipients = [], options = {}) {
   let cursor = 0, pending = true, tree;
-  const slots = [], effects = [], previews = [];
+  const slots = [], effects = [], previews = [], candidates = [], profileCalls = [];
+  let auth = { session: { adminId: 1, role: "superadmin", authorities: [] }, authEpoch: 1 }, calls = 0;
+  const onClose = () => {}; const events = new EventTarget();
   const context = { exports: {}, AbortController, URL, Date, Number, Set, Promise, File: class {},
-    window: { addEventListener() {}, removeEventListener() {} },
+    window: { addEventListener: events.addEventListener.bind(events), removeEventListener: events.removeEventListener.bind(events) },
     sessionStorage: { getItem() { return null; }, setItem() {} },
     require(name) {
       if (displayCopyModules[name]) return displayCopyModules[name];
@@ -33,10 +35,11 @@ function harness(cause, preview, job = null, recipients = []) {
         if (!old || dependencies.some((value, i) => !Object.is(value, old.dependencies[i]))) effects.push(() => { old?.cleanup?.(); slots[index] = { dependencies, cleanup: callback() }; });
       } };
       if (name === "react/jsx-runtime") return require(name);
-      if (name === "@/lib/store/admin-auth") return { useAdminAuth: selector => selector({ session: { adminId: 1, role: "superadmin", authorities: [] }, authEpoch: 1 }) };
+      if (name === "@/lib/store/admin-auth") return { useAdminAuth: selector => selector(auth) };
       if (name === "@/lib/admin/m-support-enhancements") return { supportEnhancements: {
-        bulkPreview(input, signal) { previews.push({ input, signal }); return preview ? preview(input, previews.length) : Promise.reject(cause); },
-        profile: async () => ({ identity: { data: {} }, annotations: { data: {} }, finance: { data: {} }, service: { data: {} } }),
+        bulkPreview(input, signal) { previews.push({ input, signal }); return preview ? preview(input, ++calls) : Promise.reject(cause); },
+        bulkCandidates(filters, pageNum, signal) { candidates.push({ filters, pageNum, pageSize: 10, signal }); if (options.candidates) return options.candidates(filters, pageNum, signal); return (preview ? preview({ filters }, ++calls) : Promise.reject(cause)).then(v => ({ actorId: v.actorId, pageNum, pageSize: 10, total: v.count + v.excluded.length, selectableCount: v.count, records: [...v.customers.map(c => ({ ...c, nickname: "客户", userNo: `U${c.id}`, reason: null })), ...v.excluded.map(c => ({ ...c, nickname: "客户", userNo: `U${c.id}` }))].slice((pageNum - 1) * 10, pageNum * 10) })); },
+        profile: async id => { profileCalls.push(id); return ({ identity: { data: {} }, annotations: { data: {} }, finance: { data: {} }, service: { data: {} } }); },
         bulkJobs: async () => ({ records: job ? [job] : [], total: job ? 1 : 0 }),
         bulkJob: async () => job,
         bulkRecipients: async () => ({ records: recipients, total: recipients.length }),
@@ -46,21 +49,21 @@ function harness(cause, preview, job = null, recipients = []) {
       if (name === "@/lib/admin/pending-mutation-store") return { createPendingMutationStore: () => ({ list: () => [] }) };
       if (name === "@/lib/admin/error-messages") return { displayAdminError };
       if (name === "../design-kit") return { Modal: props => React.createElement("section", null, props.children, props.footer) };
-      if (name === "./support-content-tools") return {};
+      if (name === "./support-content-tools") return { SupportContentTools: () => null };
       throw new Error(`Unexpected dependency ${name}`);
     },
   };
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText, context);
-  const render = () => { let loops = 0; while (pending) { assert.ok(++loops < 20, "effect loop"); pending = false; cursor = 0; tree = context.exports.SupportBulkComposer({ ctx: {}, onClose() {} }); effects.splice(0).forEach(run => run()); } return tree; };
-  return { render, previews, async settle() { await new Promise(resolve => setImmediate(resolve)); return render(); }, unmount() { slots.forEach(slot => slot?.cleanup?.()); } };
+  const render = () => { let loops = 0; while (pending) { assert.ok(++loops < 20, "effect loop"); pending = false; cursor = 0; tree = context.exports.SupportBulkComposer({ ctx: {}, onClose }); effects.splice(0).forEach(run => run()); } return tree; };
+  return { render, renderFrame() { pending=false;cursor=0;tree=context.exports.SupportBulkComposer({ctx:{},onClose});const frame=tree;effects.splice(0).forEach(run=>run());return frame; }, previews, candidates, profileCalls, setAuth(next) { auth = next; pending = true; }, invalidate() { events.dispatchEvent(new Event("support-scope-invalidated")); }, async settle() { await new Promise(resolve => setImmediate(resolve)); return render(); }, unmount() { slots.forEach(slot => slot?.cleanup?.()); } };
 }
-function nodes(node, result = []) {
+export function nodes(node, result = []) {
   if (!node || typeof node !== "object") return result;
   if (Array.isArray(node)) { node.forEach(value => nodes(value, result)); return result; }
   if (node.props) { result.push(node); nodes(node.props.children, result); nodes(node.props.footer, result); }
   return result;
 }
-function button(tree, text) { return nodes(tree).find(node => node.type === "button" && node.props.children === text); }
+export function button(tree, text) { return nodes(tree).find(node => node.type === "button" && node.props.children === text); }
 
 test("scope403 explains current advisor permissions and offers no preview retry", async () => {
   const h = harness(new SupportClientError(403, 403, "SUPPORT_SCOPE_FORBIDDEN"));
@@ -72,7 +75,7 @@ test("scope403 explains current advisor permissions and offers no preview retry"
     assert.doesNotMatch(html, /请刷新页面|重新加载名单/);
     assert.equal(button(tree, "查询筛选结果").props.disabled, true);
     assert.equal(button(tree, "下一步：编写内容").props.disabled, true);
-    assert.equal(h.previews.length, 1);
+    assert.equal(h.candidates.length, 1); assert.equal(h.previews.length, 0);
   } finally { h.unmount(); }
 });
 
@@ -84,8 +87,8 @@ test("temporary preview failure retains its read-only retry", async () => {
       assert.equal(button(tree, "查询筛选结果").props.disabled, false);
       button(tree, "重新加载名单").props.onClick(); h.render(); tree = await h.settle();
       assert.ok(button(tree, "重新加载名单"));
-      assert.equal(h.previews.length, 2);
-      assert.equal(h.previews[0].input.selectionMode, "ALL_FILTERED");
+      assert.equal(h.candidates.length, 2); assert.equal(h.previews.length, 0);
+      assert.equal(h.candidates[0].pageSize, 10);
     } finally { h.unmount(); }
   }
 });
@@ -97,16 +100,16 @@ test("freezing a stale selected scope rejects without advancing or retaining a r
     : Promise.reject(denied));
   try {
     h.render(); let tree = await h.settle();
-    button(tree, "选择当前全部筛选结果").props.onClick(); tree = h.render();
+    button(tree, "选择本页").props.onClick(); tree = h.render();
     assert.equal(button(tree, "下一步：编写内容").props.disabled, false);
     button(tree, "下一步：编写内容").props.onClick(); tree = await h.settle();
     const html = renderToStaticMarkup(tree);
     assert.match(html, /第 1 步：圈选客户/); assert.match(html, /没有权限查看这位专属客服的客户名单/);
     assert.doesNotMatch(html, /重新加载名单|选择当前全部筛选结果|当前本人归属（已核对）/);
     assert.equal(button(tree, "下一步：编写内容").props.disabled, true);
-    assert.equal(h.previews[1].input.selectionMode, "CROSS_PAGE");
-    assert.deepEqual([...h.previews[1].input.customerIds], ["42"]);
-    assert.equal(h.previews.length, 2);
+    assert.equal(h.previews[0].input.selectionMode, "CROSS_PAGE");
+    assert.deepEqual([...h.previews[0].input.customerIds], ["42"]);
+    assert.equal(h.previews.length, 1);
   } finally { h.unmount(); }
 });
 
@@ -137,19 +140,19 @@ test("closed and transferred customers are excluded with reasons before composin
   } finally { h.unmount(); }
 });
 
-test("closed during selection refreshes the excluded list and clears stale selection", async () => {
+test("closed during selection shows exclusions and preserves selection for manual removal", async () => {
   const h = harness(null, async (_input, call) => call === 1
     ? { actorId: 1, count: 1, customers: [{ id: "42" }], excluded: [] }
     : { actorId: 1, count: 0, customers: [], excluded: [{ id: "42", reason: "CONVERSATION_CLOSED" }] });
   try {
     h.render(); let tree = await h.settle();
-    button(tree, "选择当前全部筛选结果").props.onClick(); tree = h.render();
+    button(tree, "选择本页").props.onClick(); tree = h.render();
     button(tree, "下一步：编写内容").props.onClick(); tree = await h.settle();
     const html = renderToStaticMarkup(tree);
     assert.match(html, /第 1 步：圈选客户/);
     assert.match(html, /原会话已结束.*重新圈选/);
-    assert.match(html, /可选 0 位.*已选 0 位/);
-    assert.equal(button(tree, "下一步：编写内容").props.disabled, true);
+    assert.match(html, /已选 1 位/);
+    assert.match(html, /所选客户均被排除/);
   } finally { h.unmount(); }
 });
 

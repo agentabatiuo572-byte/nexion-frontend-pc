@@ -137,3 +137,7 @@
 @media (max-width: 640px) { .dkpage.edom .phone-policy-panel [aria-label="手机策略确认"] > .phone-grid { grid-template-columns: 1fr; } }
 
 .k6c2 .ui-target-version textarea.k6-field { min-height: 90px; resize: vertical; }
+
+.ui-support-contact-picker .ui-bulk-contact-list label:has(> input[type="checkbox"]) { display: flex; align-items: center; gap: 12px; margin: 0; padding: 12px 14px; border: 0; border-radius: 0; background: var(--surface); cursor: pointer; }
+.ui-support-contact-picker .ui-bulk-contact-list label:has(> input:disabled) { opacity: .5; cursor: not-allowed; }
+.ui-support-contact-picker .ui-bulk-contact-list label:focus-within { outline: 2px solid var(--brand); outline-offset: -2px; }

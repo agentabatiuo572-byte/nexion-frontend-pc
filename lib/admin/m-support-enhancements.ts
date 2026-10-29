@@ -6,7 +6,8 @@ export type SupportProfile = Record<"identity" | "finance" | "devices" | "risk" 
 export type SupportKind = "TEXT" | "IMAGE" | "SKU" | "LINK";
 export type SupportLink = { type: "HOME" | "WALLET" | "SUPPORT"; params: Record<string, never> };
 export type BulkFilters = { accountState?: string; maintenanceState?: string; level?: string; tagIds?: string[]; registeredFrom?: string; registeredTo?: string; activityFrom?: string; activityTo?: string; depositMin?: string; depositMax?: string; withdrawalMin?: string; withdrawalMax?: string; currency?: string; includeUnknown?: boolean; keyword?: string };
-export type BulkPreview = { selectionId: string; actorId: number; customers: Array<{ id: string; expectedAssignmentId: string }>; excluded: Array<{ id: string; reason: string }>; count: number; evaluatedAt: string; expiresAt: string };
+export type BulkPreview = { selectionId: string; actorId: number; customers: Array<{ id: string; expectedAssignmentId: string; nickname?: string; userNo?: string }>; excluded: Array<{ id: string; reason: string }>; count: number; evaluatedAt: string; expiresAt: string };
+export type BulkCandidatePage = { actorId: number; pageNum: number; pageSize: number; total: number; selectableCount: number; records: Array<{ id: string; expectedAssignmentId: string; nickname: string; userNo: string; reason: string | null }>; evaluatedAt: string };
 export type BulkContent = { selectionId: string; intent: "SERVICE" | "MAINTENANCE"; kind: SupportKind; content: string; skuId?: string; linkTarget?: SupportLink; assetId?: string; reason: string };
 export type BulkJob = { batchId: string; actorId: number; state: string; version: number; counts: Record<"total" | "pending" | "sent" | "failed" | "skipped" | "cancelled" | "unknown", number>; frozenCount: number; visibleCount: number; contentRestricted: boolean; key: string; intent?: string; kind?: string; content?: string; skuId?: string; assetId?: string };
 export type BulkRecipient = { customerId: string; state: "PENDING" | "SENT" | "FAILED" | "SKIPPED" | "CANCELLED"; resultCertainty: "KNOWN" | "UNKNOWN"; retryable: boolean; conversationNo?: string; failureCode?: string };
@@ -55,9 +56,15 @@ export function parseSupportProfile(v: unknown): SupportProfile {
   }
   return { ...groups, statistics: { ...statistics, data: statistics.data === null ? null : parseSupportCustomerStatistics(statistics.data) }, actions };
 }
+export function parseBulkCandidatePage(v: unknown): BulkCandidatePage {
+  const r = obj(v, "bulk.candidates"), pageNum = count(r.pageNum, "pageNum"), pageSize = count(r.pageSize, "pageSize"), total = count(r.total, "total"), selectableCount = count(r.selectableCount, "selectableCount");
+  const records = rows(r.records).map(v => { const c = obj(v, "candidate"); return { id: id(c.id, "customer.id"), expectedAssignmentId: id(c.expectedAssignmentId, "assignment"), nickname: typeof c.nickname === "string" ? c.nickname : "", userNo: text(c.userNo), reason: c.reason === null ? null : text(c.reason) }; });
+  if (pageNum < 1 || pageSize !== 10 || selectableCount > total || records.length > 10 || records.length !== Math.min(10, Math.max(0, total - (pageNum - 1) * 10)) || new Set(records.map(c => c.id)).size !== records.length) throw new Error("SUPPORT_CANDIDATE_PAGE_INVALID");
+  return { actorId: supportWireId(r.actorId, "actor"), pageNum, pageSize, total, selectableCount, records, evaluatedAt: time(r.evaluatedAt, "evaluatedAt") };
+}
 export function parseBulkPreview(v: unknown): BulkPreview {
   const r = obj(v, "bulk.preview");
-  const customers = rows(r.customers).map(v => { const c = obj(v, "customer"); return { id: id(c.id, "customer.id"), expectedAssignmentId: id(c.expectedAssignmentId, "assignment") }; });
+  const customers = rows(r.customers).map(v => { const c = obj(v, "customer"); return { id: id(c.id, "customer.id"), expectedAssignmentId: id(c.expectedAssignmentId, "assignment"), ...(c.nickname === undefined ? {} : { nickname: typeof c.nickname === "string" ? c.nickname : text(c.nickname) }), ...(c.userNo === undefined ? {} : { userNo: text(c.userNo) }) }; });
   const total = count(r.count, "count");
   if (total !== customers.length || new Set(customers.map(c => c.id)).size !== total) throw new Error("SUPPORT_SELECTION_COUNT_INVALID");
   return { selectionId: text(r.selectionId), actorId: supportWireId(r.actorId, "actor"), customers, excluded: rows(r.excluded).map(v => { const e = obj(v, "excluded"); return { id: id(e.id, "excluded.id"), reason: text(e.reason) }; }), count: total, evaluatedAt: time(r.evaluatedAt, "evaluatedAt"), expiresAt: time(r.expiresAt, "expiresAt") };
@@ -92,6 +99,7 @@ export const supportEnhancements = {
   flows: (customerId: string, filters: { pageNum: number; currency?: string; status?: string; from?: string; to?: string }, signal?: AbortSignal) => supportRequest(`${customer(customerId)}/flows${query({ ...filters, pageSize: 10 })}`, parseSupportGroup, { signal }),
   skus: (pageNum: number, keyword: string, signal?: AbortSignal) => supportRequest(`/support-workbench/skus${query({ pageNum, pageSize: 10, keyword })}`, v => page(v, v => { const r = obj(v, "sku"); return { id: text(r.skuId ?? r.id), name: text(r.name) }; }), { signal }),
   bulkPreview: (input: { filters: BulkFilters; customerIds: string[]; excludedIds: string[]; selectionMode: string }, signal?: AbortSignal) => supportRequest(`${bulk}/preview`, parseBulkPreview, { method: "POST", body: JSON.stringify({ ...input, customerIds: input.customerIds.map(v => supportWireId(v, "customer")), excludedIds: input.excludedIds.map(v => supportWireId(v, "excluded")) }), signal }),
+  bulkCandidates: (filters: BulkFilters, pageNum: number, signal?: AbortSignal) => supportRequest(`${bulk}/candidates`, parseBulkCandidatePage, { method: "POST", body: JSON.stringify({ filters, pageNum: count(pageNum, "pageNum"), pageSize: 10 }), signal }),
   bulkCreate: (input: BulkContent, key: string) => supportRequest(bulk, parseBulkJob, json("POST", input, key)),
   bulkJobs: (pageNum: number, signal?: AbortSignal) => supportRequest(`${bulk}${query({ pageNum, pageSize: 10 })}`, v => page(v, parseBulkJob), { signal }),
   bulkJob: (batchId: string, signal?: AbortSignal) => supportRequest(`${bulk}/${encodeURIComponent(batchId)}`, parseBulkJob, { signal }),
