@@ -27,6 +27,7 @@
 - 登出、换账号、令牌/供应商轮换与会话撤销使旧绑定/旧代际待投递失效。投递前再次核验用户、会话和绑定，不能把旧账号通知发到新账号安装。旧 UniPush 绑定不转换为直连令牌，需要新版本重新注册。
 - 安全吊销或限制后的旧安装不绕过会话检查接收系统推送。用户完成正常重新登录后，当前有效安装可补收本次功能基线之后、最近24小时内的critical账号安全消息各一次，避免密码重置/新登录消息早于令牌绑定而丢失；其他类型不补发绑定前消息。
 - 通知载荷只携带通知标识。点击后向服务端读取当前用户获准目标，仅允许已登记的内部详情页；不信任供应商载荷中的URL、金额或账号字段。
+- 已登录客户查看本人通知并进入其合法目标，不要求先完成设备初始化校准、购买或激活设备。客户端仍须真实远端认证、界面账号与服务端账号一致、当前页面路由就绪，且不处于登录/公开流程或静态预览；保留结账离开保护。先读取本人通知并验证通知标识与内部路由，再定位对应业务详情，导航成功后登记opened；客服回复进入该通知实际会话的cid，不只打开App或停留首页。
 - 冷启动/未登录时先恢复正常登录流程，再核验通知归属；他人通知或过期权限拒绝后，不显示旧私有内容，也不执行通知中携带的动作。
 - 拒绝系统权限仍可正常使用站内消息；客户端撤销当前安装绑定并关闭原生注册，避免 iOS 拒绝授权无令牌时遗留旧绑定。恢复系统权限后，前台绑定刷新恢复后续投递，不反复弹窗请求。
 
@@ -65,11 +66,11 @@ DCloud 官方 [UTS 生命周期回调说明](https://uniapp.dcloud.net.cn/plugin
 | GET /api/me/push-notifications/{notificationId} | 无 | 当前用户所有权，返回字符串notificationId与合法内部route |
 | POST /api/me/push-notifications/{notificationId}/opened | installationId | 当前用户与安装归属，幂等记录打开；不等同设备送达回执 |
 
-原生安装登记/撤销及通知打开回执属于基础设施操作，不要求客户先完成初始化校准或购买/激活设备。初始化未完成时也允许上述合法方法和完整路径；认证、当前 APP 会话、安装归属、绑定证明及回执校验继续由原服务执行。此例外不扩大订单、付款等业务命令，也不放行相似路径、错误方法或非法标识。
+原生安装登记/撤销、本人通知详情读取与点击定位、通知打开回执属于基础设施操作，不要求客户先完成初始化校准或购买/激活设备。初始化未完成时也允许上述合法方法和完整路径；认证、当前 APP 会话、安装归属、绑定证明及回执校验继续由原服务执行。此例外不扩大订单、付款等业务命令，也不放行相似路径、错误方法或非法标识。
 
 ## 开通、发布与验收
 
-当前方案：保留 DCloud 国际应用 UVELProduction（__UNI__G77FFD9D），不依赖 UniPush/UniCloud。TEST 与正式的 Android 包名/iOS Bundle ID 统一为 ai.uvel.app，共用同一 Firebase 项目/Android 客户端/FCM 私钥与同一 Apple App ID。已试配 Firebase 项目为 uvel-test-push，其 ai.uvel.app.test 客户端保留；统一标识客户端、FCM 发送账号/私钥和 APNs 私钥已获用户确认并创建，私钥仅在受限安全配置中保存。APNs 新建密钥只支持一个环境；共用一把的候选方案为两环境均走 Production 通道，iOS TEST 使用匹配 production entitlement 的分发签名（例如 TestFlight），用户已确认此签名及共享凭据方案；本机原有分发签名已核对，新版 TestFlight profile 已重新生成并验证 production 推送权限。开发签名 Sandbox 包仍需额外密钥，不修改描述文件冒充 Production。签名/密钥/通道匹配后重建原生包，配置和真机验收完成前保持投递关闭。
+当前方案：保留 DCloud 国际应用 UVELProduction（__UNI__G77FFD9D），不依赖 UniPush/UniCloud。TEST 与正式的 Android 包名/iOS Bundle ID 统一为 ai.uvel.app，共用同一 Firebase 项目/Android 客户端/FCM 私钥与同一 Apple App ID。已试配 Firebase 项目为 uvel-test-push，其 ai.uvel.app.test 客户端保留；统一标识客户端、FCM 发送账号/私钥和 APNs 私钥已获用户确认并创建，私钥仅在受限安全配置中保存。APNs 新建密钥只支持一个环境；共用一把的候选方案为两环境均走 Production 通道，iOS TEST 使用匹配 production entitlement 的分发签名（例如 TestFlight），用户已确认此签名及共享凭据方案；本机原有分发签名已核对，新版 TestFlight profile 已重新生成并验证 production 推送权限。开发签名 Sandbox 包仍需额外密钥，不修改描述文件冒充 Production。签名/密钥/通道匹配后重建原生包；配置核验前保持投递关闭，TEST真机验收按获准设备与持久初始边界受控启用，未验范围继续单列，生产启用另需批准。
 
 API、数据库、会话、消息队列与推送启停按业务环境独立配置，通过构建/部署安全注入避免人工改源码换密钥。统一包名不能同机并存，共用凭据也不提供跨后端令牌归属互斥；环境切换前需在线撤销旧绑定并退出登录，测试发送只面向获准安装。现有所有权和事实去重在各自数据库内执行，不把共用凭据表述为跨环境投递隔离。统一标识/密钥不包含生产发布批准。
 
@@ -77,7 +78,7 @@ API、数据库、会话、消息队列与推送启停按业务环境独立配�
 
 验收状态按代码测试、隔离数据库/HTTP、TEST部署、安卓真机、iOS真机分别记录。第一批业务测试计划：D:/workspace/output/push-batch1-20261029/TEST-PLAN.md；直连通道测试计划：D:/workspace/output/push-direct-20261030/TEST-PLAN.md。最终交付回执与代码配置说明记录实际完成情况，不能把计划或供应商受理当作真机通过。
 
-### 2026-10-30 TEST 真机验收进度
+### 2026-10-30 Android3003历史烟测
 
 Android 已完成单目标供应商/客户端烟测：冻结候选为 `54a3e566 + 53b6f010 / 1dfc0b74`，实际 APK 版本 `2026103003`，资源编译器与原生 SDK 均为 5.33，minSdk 23、targetSdk 33，同签名安装并连接 TEST。真实 FCM 令牌长度 142，当前 APP 会话与安装登记匹配；首次系统授权、从设置关闭通知后重新开启均已验证。
 
@@ -87,7 +88,7 @@ Android 已完成单目标供应商/客户端烟测：冻结候选为 `54a3e566 
 
 上述 Android 3003 烟测阶段由本地安全发送器仅向已核验安装发送三条消息，当时未部署服务端供应商私钥或修改服务配置；该历史烟测不代表 TEST 业务自动队列或生产推送已启用。后续运行状态以下方本轮配置记录为准。
 
-### 2026-10-30 iOS 完整包交付状态
+### 2026-10-30 iOS3003历史完整包交付
 
 Swift 编译修复已进入 App `test` 提交 `4f36f857`。完整云打包成功并已下载 `UVEL-TEST-2026103003.ipa`（36,697,634 bytes；SHA256 `3efc157150bb6ac55412ad0fcad7a4499d1ec6c6ce0a796959810333e355e454`）。实际 Bundle ID 为 ai.uvel.app，连接 TEST，包及全部内嵌 framework 的最低系统为 iOS 15.0，因此 iOS 16 位于声明支持范围；尚未作 iOS 16 实机运行验证。原生 Bridge 与 Hook 已进入独立推送 framework，包内签名权限及匹配描述文件的 APNs 环境均为 production；未发现供应商私钥文件或 PEM 私钥标记。
 
@@ -95,12 +96,22 @@ Swift 编译修复已进入 App `test` 提交 `4f36f857`。完整云打包成功
 
 上述 3003 交付回执当时未完成 iPhone 安装、iOS 16 实机运行或真实 APNs 投递，本地亦未独立进行密码学验签。Apple 处理和定向内部邀请不补齐尚缺的业务链/双平台实机验收，也不构成公开发布。产物检查与分发证据位于 `D:/workspace/output/push-direct-20261030/`：`native-ipa-inspection-2026103003.json`、`independent-ios-ipa-review-2026103003.md`、`testflight-upload-receipt.json`、`testflight-processed-build.json`、`testflight-distribution-readback.json`、`testflight-invitation-readback.json`、`testflight-internal-testing-ready.png`。
 
-### 2026-10-30 本轮修订与运行边界
+### 2026-10-30 本轮修订与分层验收
 
 App `test` 已提交并推送 `4c6f1362`（本轮 11 文件）：偏好卡片与设置失败反馈、隐藏质押展示、系统权限与连接状态分离，以及基础 Push、手动注册和持久 production entitlement。95 项定向行为测试及新增配置检查通过；这些是源码层验证。
 
-iPhone 用户已确认 3004 的系统通知卡片可打开系统设置、通知权限为已允许、质押到期选项隐藏。3004 实际包检查记录为基础 Push 模块存在、宿主手动注册及 production 签名权限匹配，见 `D:/workspace/output/push-direct-20261030/native-ipa-inspection-2026103004.json`。这部分记为已确认的界面/权限操作，不据此记录 iOS 系统推送通过。
+iPhone 用户已确认 3004 的系统通知卡片可打开系统设置、通知权限为已允许、质押到期选项隐藏。3004 实际包检查记录为基础 Push 模块存在、宿主手动注册及 production 签名权限匹配，见 `D:/workspace/output/push-direct-20261030/native-ipa-inspection-2026103004.json`。这部分单独记为界面/权限操作，实际系统通知与点击结果见下文。
 
 Android 在 Samsung 上以同签名 3003 原生宿主加 `4c6f1362` 资源测试包，实际验证卡片、隐藏质押选项、打开系统设置及返回 App；这不是完整 3004 云包。Android 完整云包被 DCloud 当日打包配额阻挡，资源测试不能证明新增原生打包配置已在新宿主生效，相关日志及页面图见 `D:/workspace/output/push-direct-20261030/`。
 
-后端缺陷 #686 的初始化门禁例外修复已进入 `test / 81c3b58d`，过滤器、原生登记服务及控制器共 61 项定向测试通过；这是代码与权限边界验证，不代替设备投递。本轮此前曾因业务消息扫描锁冲突阶段性回退 `nexion.business-notifications.enabled=false`、`native-push.scheduler-enabled=false`；最终运行开关及精确获准设备的安装登记、业务扫描、自动派发、APNs 受理和手机通知栏证据仍待主验收追加，不重放无关历史消息，也不因此开启生产。
+后端 #686 初始化门禁例外修复 `81c3b58d` 的61项定向测试通过。3779同一安装的登记PUT于10:05:44及10:07:16 UTC均HTTP200；18:07:16+08数据库读回APNS、ios、granted、active1、epoch2，token_digest长度64，仅保留长度、不记录令牌或散列值。界面缺陷683及登记缺陷686已由主控通过官方流程关闭，这两项不代替投递或点击验收。
+
+业务扫描性能修复 #687 / `47fccfed` 在真实runtime407相同RR快照下，旧OR完整查询2,976,340μs、新CASE85,767μs，2候选的完整五字段与顺序一致；索引迁移APPLIED、内容hash及查询计划匹配，19项专项通过。正常投影观察窗三来源待处理为0、累计35facts；期间独立发现 #688 通知页留存与通知INSERT的secondary-gap死锁。688仅将page事务改为READ_COMMITTED，留存规则与其他写事务保持，真实Spring+MySQL并发红绿及26项专项通过。Jenkins408已SUCCESS且可信DEPLOYED，runtime为`c2e3a0bb`，config/API200；这不扩大为所有并发故障已覆盖。
+
+TEST当前business/native/scheduler三开关均true，FCM/APNS配置客户端均为CONFIGURED。首次native边界在UTC10:54:25.334943按RC事务、control→cursor顺序加锁，三源pending0、全部待发queue0、control1及双baseline非空时，CAS1将43810一次推进至43889，提交后读回一致；baseline不变、没有历史重放，此后边界固定，不周期推进MAX。本次发送仅面向获准TEST安装，不构成生产发布。
+
+单条真实客服验收从独立PC页仅向3779发送`[TEST 推送验收1030-01]`：human3811（ADMIN1、assignment18）提交于UTC10:56:19.687646→fact SUPPORT:3811→notification43890/SUPPORT_REPLY、会话CV-APP-20261030124047266-a859d9c4→native delivery1/APNS_ACCEPTED/ACCEPTED、attempt1，供应商回执BEF5678E-A539-503C-FE2B-4F3042825F30。用户确认3004在后台实际收到系统通知；点击只打开App、未进入对应客服模块。该通知GET与opened POST观测请求次数均为0，opened_at为NULL，点击定位及打开回执未通过；3779既有assignment18/admin1/version1/MANUAL保持。
+
+点击缺陷 #689 已以App `test / c05b12c5` 修复设备初始化对本人通知导航的额外阻挡，保留认证、账号一致、路由就绪及原有安全保护。实际App旧源热/冷两例先红，新9项行为、controller63项、adapter20项共92项结果与类型检查通过，独立复核无阻塞；五类目标路由/页面参数协议及客服真实cid经源码核对，尚不是五类真机验收。精确该源码的3005 stage、真实5.33资源及官方CLI资源编译成功，但20:14:07云端明确返回当日免费打包配额耗尽；仅尝试一次，未生成云包/IPA、未上传Apple，未重试、换账号、付费或绕过额度。当前App没有既有runtime.install/WGT资源更新执行通道，资源包不能替代TestFlight安装。
+
+手机当前仍为3004。结论限于TEST后端配置、单条客服业务投递至真实APNs接受及iOS后台展示通过；689源码已修，3005受外部配额阻塞尚未发布，手机跳转客服与打开回执仍未通过。五类业务、iOS前台/后台/冷启动与点击全覆盖、首次拒绝/恢复、Token轮换及登出/切号缺口继续保留，后续新包需按精确通知ID重新验收。证据索引见 `D:/workspace/output/push-direct-20261030/REPORT.md` 与 `TEST-PLAN.md`。
