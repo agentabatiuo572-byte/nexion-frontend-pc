@@ -1376,7 +1376,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
           redactDockRecovery(recovery); setDraft("");
           setSendError("原消息暂不可查询；私聊原文已清除，原编号仍保留，请稍后重试。");
         } else if (cause instanceof SupportClientError && cause.status === 404 && !readOnlyRecovery) { setCanAbandon(true); setSendError("原命令未找到，当前会话不可发送。可复制原文后放弃查询。"); }
-        else setSendError(`原命令暂无法确认：${displayAdminError(cause)}。请稍后重试。`);
+        else setSendError(`原命令暂无法确认：${displayAdminError(cause)} 请稍后重试。`);
       }
       finally { if (generation === identityGeneration.current) setSending(false); }
     })()}>查询原命令结果</button>
@@ -1449,8 +1449,8 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       const rejected = submitted && error instanceof SupportClientError && [400, 401, 403, 404, 409, 422].includes(error.status) && !isIndeterminateSupportError(error);
       if (rejected) {
         dockCommands.forget(dockSlot, key);
-        setSendError(`本次发送已被拒绝：${displayAdminError(error)}。原文已保留，可修改后重发。`);
-      } else setSendError(`发送失败或结果待确认：${displayAdminError(error)}。请查询结果并重试。`);
+        setSendError(`本次发送已被拒绝：${displayAdminError(error)} 原文已保留，可修改后重发。`);
+      } else setSendError(`发送失败或结果待确认：${displayAdminError(error)} 请查询结果并重试。`);
       if (error instanceof SupportClientError && [403, 404].includes(error.status)) onScopeInvalidated(conv.id, conv.customerId);
     } finally {
       if (generation === identityGeneration.current) { sendInFlight.current = false; setSending(false); }

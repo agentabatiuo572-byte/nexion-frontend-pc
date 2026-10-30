@@ -792,7 +792,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
       if (result.status !== "SUCCEEDED" && result.status !== "FAILED") { setRecoveryError("原消息结果仍未确认，请稍后继续查询；不会重新发送。"); return; }
       pendingMessages.forget(slot); readRecoveries();
       setRecoveryError(result.status === "SUCCEEDED" ? "原消息已发送。请刷新会话查看。" : "原消息发送失败。重新发送前请核对当前归属。");
-    } catch (cause) { if (identityRef.current === identity) setRecoveryError(`原消息结果暂无法查询：${displayAdminError(cause)}。编号已保留，不会重新发送。`); }
+    } catch (cause) { if (identityRef.current === identity) setRecoveryError(`原消息结果暂无法查询：${displayAdminError(cause)} 编号已保留，不会重新发送。`); }
     finally { if (identityRef.current === identity) setRecoveryBusy(""); }
   };
   const send = async (kind: "TEXT" | "IMAGE" | "SKU" | "LINK", retry?: Pending) => {
@@ -846,7 +846,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
           if (submitted && rejectedSend(cause)) {
             pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId)); setFirstPending(null);
             if (lostPermission(cause)) { ctx.invalidateScope(undefined, requestedCustomerId); setSendError("当前客户归属或会话权限已变化，请返回客户列表核对。"); }
-            else { setDetailRetry((value) => value + 1); setSendError(`本次发送已被拒绝：${displayAdminError(cause)}。原文已保留，请核对客户归属后修改重发。`); }
+            else { setDetailRetry((value) => value + 1); setSendError(`本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对客户归属后修改重发。`); }
           } else { if (lostPermission(cause)) ctx.invalidateScope(undefined, requestedCustomerId); setSendError(`发送失败或结果待确认：${displayAdminError(cause)} 请查询发送结果。`); }
         }
       }
@@ -878,7 +878,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
         if (identityRef.current !== identity) return;
         setBusy(false);
         if (lostPermission(cause)) ctx.invalidateScope(selected.id, String(selected.customerId));
-        setSendError(`会话状态暂时无法确认：${displayAdminError(cause)}。原文已保留，请重试。`);
+        setSendError(`会话状态暂时无法确认：${displayAdminError(cause)} 原文已保留，请重试。`);
         return;
       }
     }
@@ -925,7 +925,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
         pendingMessages.forget(pendingKey(adminId)); setPending(null);
         void ctx.refreshConversations().catch(() => {});
         if (lostPermission(cause)) { ctx.invalidateScope(selected.id, String(selected.customerId)); setSendError("当前会话权限已变化，请返回客户列表核对。"); }
-        else setSendError(`本次发送已被拒绝：${displayAdminError(cause)}。原文已保留，请核对会话后修改重发。`);
+        else setSendError(`本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对会话后修改重发。`);
         return;
       }
       if (identityRef.current === identity) { if (lostPermission(cause)) ctx.invalidateScope(selected.id, String(selected.customerId)); setSendError(`发送结果待确认：${displayAdminError(cause)} 请查询发送结果。`); }
@@ -1003,7 +1003,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
       // waitingReply aggregates all customer history. The backend checks pending
       // replies for each selected conversation together with its versioned write.
       return true;
-    } catch (cause) { if(requestStamp!==identityRef.current)return false; if (lostPermission(cause)) ctx.invalidateScope(conversation.id, String(conversation.customerId)); setActionError(`客户归属暂时无法核对：${displayAdminError(cause)}。请重试。`); return false; }
+    } catch (cause) { if(requestStamp!==identityRef.current)return false; if (lostPermission(cause)) ctx.invalidateScope(conversation.id, String(conversation.customerId)); setActionError(`客户归属暂时无法核对：${displayAdminError(cause)} 请重试。`); return false; }
     finally { if(requestStamp===identityRef.current)setActionChecking(false); }
   };
   const closeConversation = async () => {

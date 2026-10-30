@@ -2,6 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { displayAdminError, formatAdminApiError } from "../lib/admin/error-messages.ts";
+import { SupportClientError, isIndeterminateSupportError } from "../lib/admin/m-support-client.ts";
+
+test("structured support rejection displays only registered backend reasons and retains recovery semantics", () => {
+  const rejected = new SupportClientError(409, 409, "CONVERSATION_PEER_CHANGED");
+  assert.match(displayAdminError(rejected), /客服归属已变化.*重新进入当前会话/);
+  assert.equal(rejected.status, 409);
+  assert.equal(isIndeterminateSupportError(rejected), false);
+  const unknown = new SupportClientError(409, 409, "UNKNOWN_PRIVATE_BACKEND_TEXT_未知原因");
+  assert.equal(displayAdminError(unknown), displayAdminError(new Error("SUPPORT_API_409")));
+  assert.doesNotMatch(displayAdminError(unknown), /UNKNOWN|未知原因/);
+  assert.equal(isIndeterminateSupportError(new SupportClientError(409, 409, "IDEMPOTENCY_RESULT_UNKNOWN")), true);
+});
 
 const UNAVAILABLE = "服务暂时不可用，结果尚未确认；请先核对原操作是否已生效，不要重复提交。一直无法确认请联系值班人员。";
 const NETWORK = "网络连接失败或系统暂时连不上；请检查网络后重试，提交类操作请先刷新，确认是否已生效。";

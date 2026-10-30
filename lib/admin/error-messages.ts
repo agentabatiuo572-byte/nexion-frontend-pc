@@ -1,4 +1,5 @@
 const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  CONVERSATION_PEER_CHANGED: "当前会话的客服归属已变化，请返回客户列表重新进入当前会话。",
   SKU_DOCUMENT_INVALID: "请填写资料名称和有效的 HTTPS 链接；移除资料时请同时清空两项。",
   CREGIS_AUTO_ACTIVATION_NOT_APPROVED: "自动资金流程运行总闸尚未批准或渠道风控条件未满足，不能开启。",
   CREGIS_AUTO_DIFFERENT_CHECKER_REQUIRED: "自动资金开关须由另一位有效且有权限的管理员复核。",
@@ -966,6 +967,10 @@ const HAS_CJK_RE = /[一-鿿]/;
 // 兜底取中性文案(不说「检查输入」):到这里的多是环境/协议类失败,不该归因运营输入。
 export function displayAdminError(error: unknown): string {
   if (!(error instanceof Error) && typeof error !== "string") return NEUTRAL_DISPLAY_FALLBACK;
+  if (error instanceof Error && "backendMessage" in error && typeof error.backendMessage === "string") {
+    const known = ADMIN_ERROR_MESSAGES[error.backendMessage];
+    if (typeof known === "string") return known;
+  }
   const shown = formatAdminApiError(error instanceof Error ? error.message : error, "");
   return HAS_CJK_RE.test(shown) ? shown : NEUTRAL_DISPLAY_FALLBACK;
 }
