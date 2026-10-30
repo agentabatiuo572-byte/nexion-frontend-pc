@@ -65,6 +65,8 @@ DCloud 官方 [UTS 生命周期回调说明](https://uniapp.dcloud.net.cn/plugin
 | GET /api/me/push-notifications/{notificationId} | 无 | 当前用户所有权，返回字符串notificationId与合法内部route |
 | POST /api/me/push-notifications/{notificationId}/opened | installationId | 当前用户与安装归属，幂等记录打开；不等同设备送达回执 |
 
+原生安装登记/撤销及通知打开回执属于基础设施操作，不要求客户先完成初始化校准或购买/激活设备。初始化未完成时也允许上述合法方法和完整路径；认证、当前 APP 会话、安装归属、绑定证明及回执校验继续由原服务执行。此例外不扩大订单、付款等业务命令，也不放行相似路径、错误方法或非法标识。
+
 ## 开通、发布与验收
 
 当前方案：保留 DCloud 国际应用 UVELProduction（__UNI__G77FFD9D），不依赖 UniPush/UniCloud。TEST 与正式的 Android 包名/iOS Bundle ID 统一为 ai.uvel.app，共用同一 Firebase 项目/Android 客户端/FCM 私钥与同一 Apple App ID。已试配 Firebase 项目为 uvel-test-push，其 ai.uvel.app.test 客户端保留；统一标识客户端、FCM 发送账号/私钥和 APNs 私钥已获用户确认并创建，私钥仅在受限安全配置中保存。APNs 新建密钥只支持一个环境；共用一把的候选方案为两环境均走 Production 通道，iOS TEST 使用匹配 production entitlement 的分发签名（例如 TestFlight），用户已确认此签名及共享凭据方案；本机原有分发签名已核对，新版 TestFlight profile 已重新生成并验证 production 推送权限。开发签名 Sandbox 包仍需额外密钥，不修改描述文件冒充 Production。签名/密钥/通道匹配后重建原生包，配置和真机验收完成前保持投递关闭。
@@ -95,6 +97,10 @@ Swift 编译修复已进入 App `test` 提交 `4f36f857`。完整云打包成功
 
 ### 2026-10-30 本轮修订与运行边界
 
-App `test` 已提交并推送 `4c6f1362`（本轮 11 文件）：偏好卡片与设置失败反馈、隐藏质押展示、系统权限与连接状态分离，以及基础 Push、手动注册和持久 production entitlement。95 项定向行为测试及新增配置检查通过；这些是源码层验证。3004 尚待完整云包、签名检查和安装，不能把 3003 的旧制品或 selector 检查当作新版手机操作、APNs Token 登记或通知栏验收。
+App `test` 已提交并推送 `4c6f1362`（本轮 11 文件）：偏好卡片与设置失败反馈、隐藏质押展示、系统权限与连接状态分离，以及基础 Push、手动注册和持久 production entitlement。95 项定向行为测试及新增配置检查通过；这些是源码层验证。
 
-本轮 TEST 开启业务消息扫描后遇到锁冲突，已回退 `nexion.business-notifications.enabled=false`、`native-push.scheduler-enabled=false`；后端最小事务隔离修复仍在验证。当前不记录业务扫描、自动派发或 iOS 实机推送通过，重新启用及精确获准设备的完整客服回复链仍需独立验收；不重放无关历史消息，也不因此开启生产。
+iPhone 用户已确认 3004 的系统通知卡片可打开系统设置、通知权限为已允许、质押到期选项隐藏。3004 实际包检查记录为基础 Push 模块存在、宿主手动注册及 production 签名权限匹配，见 `D:/workspace/output/push-direct-20261030/native-ipa-inspection-2026103004.json`。这部分记为已确认的界面/权限操作，不据此记录 iOS 系统推送通过。
+
+Android 在 Samsung 上以同签名 3003 原生宿主加 `4c6f1362` 资源测试包，实际验证卡片、隐藏质押选项、打开系统设置及返回 App；这不是完整 3004 云包。Android 完整云包被 DCloud 当日打包配额阻挡，资源测试不能证明新增原生打包配置已在新宿主生效，相关日志及页面图见 `D:/workspace/output/push-direct-20261030/`。
+
+后端缺陷 #686 的初始化门禁例外修复已进入 `test / 81c3b58d`，过滤器、原生登记服务及控制器共 61 项定向测试通过；这是代码与权限边界验证，不代替设备投递。本轮此前曾因业务消息扫描锁冲突阶段性回退 `nexion.business-notifications.enabled=false`、`native-push.scheduler-enabled=false`；最终运行开关及精确获准设备的安装登记、业务扫描、自动派发、APNs 受理和手机通知栏证据仍待主验收追加，不重放无关历史消息，也不因此开启生产。
