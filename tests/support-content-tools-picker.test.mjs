@@ -40,7 +40,7 @@ const modules = {
   "@/lib/admin/business-time": compile(read("lib/admin/business-time.ts")),
   "@/lib/admin/m-support-enhancements": `const group=data=>({status:"READY",data,evaluatedAt:null});exports.supportEnhancements={profile:async()=>({identity:group({nickname:"测试客户"}),finance:group({byCurrency:[{currency:"USDT",balance:"12",fieldStatuses:{balance:"READY"}},{currency:"UVT",balance:"24",fieldStatuses:{balance:"READY"}}]}),risk:group({}),annotations:group({}),service:group({}),actions:{}}),devices:async()=>group({records:[],total:0}),flows:async()=>group({records:[],total:0}),skus:(page,query,signal)=>{window.trace.requests.push({page,query,signal});return new Promise((resolve,reject)=>window.trace.pending.push({resolve,reject,signal}));}};`,
   "@/lib/store/admin-auth": "exports.useAdminAuth=selector=>selector({authEpoch:1,session:{adminId:12,role:'support',authorities:[]}});",
-  "@/lib/admin/m-support-client": "exports.SupportClientError=class extends Error{};exports.supportClient={maintenanceHistory:async()=>({cycles:[],executions:[],totalCycles:0,totalExecutions:0})};",
+  "@/lib/admin/m-support-client": "exports.supportPhraseClient={list:async()=>window.phraseFixtures||[]};exports.SupportClientError=class extends Error{};exports.supportClient={maintenanceHistory:async()=>({cycles:[],executions:[],totalCycles:0,totalExecutions:0})};",
   "./support-avatar": compile(read(tabs + "support-avatar.tsx")),
   "@/lib/admin/account-avatar-contract": "exports.avatarProxyRoute=()=>null;",
   "./support-leaderboard": "exports.compactSupportBoardValue=value=>value==null?'-':String(value);",
@@ -50,7 +50,7 @@ const modules = {
   "./support-content-tools.css": "", "./hd-select.css": "",
 };
 const entry = `const React=require("react"),{createRoot}=require("react-dom/client"),{flushSync}=require("react-dom"),{SupportContentTools}=require("./tools"),{M3CustomerProfile}=require("./profile"),{Modal}=require("../design-kit");let root;
-window.mount=(options={})=>{if(root)flushSync(()=>root.unmount());window.trace={inserted:[],selected:[],requests:[],pending:[],refresh:0,outerClosed:0};const templates=[{id:"pub",group:"通用",text:"已发布回复",status:"published"},{id:"draft",text:"草稿不能发送",status:"draft"},{id:"script",group:"维护",type:"advisor",text:"已发布话术",status:"published"}];function App(){const [disabled,setDisabled]=React.useState(!!options.disabled),[scope,setScope]=React.useState({identity:"actor-1",target:"CV-7",owner:12,assignment:"A1",status:"open",canWrite:true});window.disable=()=>setDisabled(true);window.enable=()=>setDisabled(false);window.changeScope=patch=>setScope(old=>({...old,...patch}));const identityRef={current:scope.identity},targetKey=scope.target,selected={ownerAdminId:scope.owner,assignmentId:scope.assignment,status:scope.status},adminId=12,canWriteM3=scope.canWrite;const tools=React.createElement(SupportContentTools,{key:${pickerKey},disabled,popover:options.popover,ctx:{pget:key=>key==="I.session.templatesAvailable"?options.unavailable?"0":"1":options.unavailable?"[]":JSON.stringify(key==="I.session.scripts"?templates.filter(x=>x.type):templates.filter(x=>!x.type)),refreshContent:async()=>{window.trace.refresh++;throw Error("模板读取失败");}},onInsert:text=>window.trace.inserted.push(text),onSelect:content=>window.trace.selected.push(content)});if(options.profile)return React.createElement(M3CustomerProfile,{ctx:{pget:()=>"[]"},customerId:"7",onHistory(){},onRetryMessages(){}});return options.nested?React.createElement(Modal,{title:"圈选客户群发",onClose:()=>window.trace.outerClosed++},tools):tools;}root=createRoot(document.getElementById("root"));flushSync(()=>root.render(React.createElement(App)));};`;
+window.mount=(options={})=>{if(root)flushSync(()=>root.unmount());window.trace={inserted:[],selected:[],requests:[],pending:[],refresh:0,outerClosed:0};window.phraseFixtures=options.phrases;const templates=options.templates||[{id:"pub",group:"通用",text:"已发布回复",status:"published"},{id:"draft",text:"草稿不能发送",status:"draft"},{id:"script",group:"维护",type:"advisor",text:"已发布话术",status:"published"}];function App(){const [disabled,setDisabled]=React.useState(!!options.disabled),[scope,setScope]=React.useState({identity:"actor-1",target:"CV-7",owner:12,assignment:"A1",status:"open",canWrite:true});window.disable=()=>setDisabled(true);window.enable=()=>setDisabled(false);window.changeScope=patch=>setScope(old=>({...old,...patch}));const identityRef={current:scope.identity},targetKey=scope.target,selected={ownerAdminId:scope.owner,assignmentId:scope.assignment,status:scope.status},adminId=12,canWriteM3=scope.canWrite;const tools=React.createElement(SupportContentTools,{key:${pickerKey},disabled,popover:options.popover,ctx:{pget:key=>key==="I.session.templatesAvailable"?options.unavailable?"0":"1":options.unavailable?"[]":JSON.stringify(key==="I.support.faqs"?options.faqs||[]:key==="I.session.scripts"?templates.filter(x=>x.type):templates.filter(x=>!x.type)),refreshContent:async()=>{window.trace.refresh++;throw Error("模板读取失败");}},onInsert:text=>window.trace.inserted.push(text),onSelect:content=>window.trace.selected.push(content)});if(options.profile)return React.createElement(M3CustomerProfile,{ctx:{pget:()=>"[]"},customerId:"7",onHistory(){},onRetryMessages(){}});return options.nested?React.createElement(Modal,{title:"圈选客户群发",onClose:()=>window.trace.outerClosed++},tools):tools;}root=createRoot(document.getElementById("root"));flushSync(()=>root.render(React.createElement(App)));};`;
 const modalPairEntry = `window.mountModalPair=(outerKind,innerKind,busy)=>{
   if(root)flushSync(()=>root.unmount());window.trace={outerClosed:0};
   const kit=require("../design-kit"),Outer=kit[outerKind],Inner=kit[innerKind],closeOuter=()=>window.trace.outerClosed++;
@@ -225,4 +225,50 @@ test("page targets remain HOME/WALLET/SUPPORT and selecting a target only stages
   await page.getByRole("dialog").getByRole("button", { name: "钱包", exact: true }).click();
   assert.deepEqual(await page.evaluate(() => window.trace.selected), [{kind:"LINK",linkTarget:{type:"WALLET",params:{}},name:"钱包"}]);
   assert.deepEqual(await page.evaluate(() => window.trace.inserted), []);
+});
+
+
+test("long picker results keep complete non-overlapping rows in modal and anchored popover", async () => {
+  const content = "说明第一行\n" + "请按真实条件操作，完整答案应当自然换行。".repeat(12) + "LONG_IDENTIFIER_".repeat(8);
+  const faqs = Array.from({length:6},(_,i)=>({id:String(i),question:`问题${i}：`+"长标题".repeat(25),answer:content+i,status:"published",language:"zh-CN"}));
+  async function assertRows() {
+    const rows = page.getByRole("dialog").last().locator(".support-content-result");
+    await rows.first().waitFor();
+    const metrics = await rows.evaluateAll(elements=>elements.map(element=>{
+      const row=element.getBoundingClientRect(), info=element.querySelector(".sku-pop-info")?.getBoundingClientRect();
+      return {top:row.top,bottom:row.bottom,left:row.left,right:row.right,info:info&&{top:info.top,bottom:info.bottom},clipped:[...element.querySelectorAll(".sku-pop-title,.sku-pop-sub")].some(text=>text.scrollWidth>text.clientWidth+1||text.scrollHeight>text.clientHeight+1)};
+    }));
+    for (let i=0;i<metrics.length;i++) {
+      const row=metrics[i];
+      assert.ok(!row.info||row.info.top>=row.top&&row.info.bottom<=row.bottom+1,"full text stays inside its own clickable row");
+      assert.ok(!row.clipped,"long result title and body are fully readable");
+      if(i)assert.ok(row.top>=metrics[i-1].bottom,"consecutive result rows never overlap");
+    }
+    return rows;
+  }
+  try {
+    for(const popover of [false,true]) {
+      await page.locator("#root").evaluate((element,popover)=>element.style.marginTop=popover?"500px":"0",popover);
+      await mount({popover,faqs});await open("查找知识库答案","知识库");
+      const rows=await assertRows();assert.equal(await rows.count(),6);
+      const list=page.getByRole("dialog").locator(".sku-pop-list");
+      assert.ok(await list.evaluate(element=>element.scrollHeight>element.clientHeight),"long FAQ list scrolls instead of shrinking rows");
+      await rows.last().click();assert.deepEqual(await page.evaluate(()=>window.trace.inserted),[content+5]);
+      for(const type of ["reply","script","mine"]) {
+        const templates=Array.from({length:6},(_,i)=>({id:String(i),text:content+i,status:"published",type:type==="script"?"advisor":undefined}));
+        const phrases=templates.map(t=>({id:t.id,content:t.text}));
+        await mount({popover,templates,phrases});await open("回复模板与专属客服话术");
+        if(type!=="reply") {
+          await page.getByRole("dialog").locator("button[aria-haspopup]").first().click();
+          await page.getByRole("option",{name:type==="script"?"专属客服话术":"我的常用语",exact:true}).click();
+        }
+        const choices=await assertRows();await choices.last().click();
+        assert.deepEqual(await page.evaluate(()=>window.trace.inserted),[content+5]);
+      }
+      await mount({popover});await open("推荐在售商品");
+      await page.evaluate(name=>window.trace.pending[0].resolve({records:Array.from({length:6},(_,i)=>({id:String(i),name:name+i})),total:6}),content);
+      await assertRows();await page.keyboard.press("Escape");
+      await open("发送页面链接");await assertRows();await page.keyboard.press("Escape");
+    }
+  } finally {await page.locator("#root").evaluate(element=>element.style.marginTop="0");}
 });

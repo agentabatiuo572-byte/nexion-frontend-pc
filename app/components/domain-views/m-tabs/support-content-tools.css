@@ -15,7 +15,9 @@
 .support-content-tools .support-content-state { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; color: var(--v5-ink-3); font-size: 12.5px; overflow-wrap: anywhere; }
 .support-content-tools .support-content-state[role='alert'], .support-content-tools .support-content-state [role='alert'] { color: var(--v5-warning); }
 .support-content-tools .support-content-results { display: grid; gap: 6px; min-width: 0; }
-.support-content-tools .support-content-result.l-btn { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; justify-content: flex-start; text-align: left; white-space: normal; overflow-wrap: anywhere; line-height: 1.6; padding: 10px 12px; }
+.support-content-tools .sku-pop-list { display: grid; grid-auto-rows: max-content; align-content: start; flex: none; }
+.support-content-tools .support-content-result.l-btn { box-sizing: border-box; width: 100%; height: auto; min-width: 0; min-height: 44px; justify-content: flex-start; text-align: left; white-space: normal; overflow-wrap: anywhere; line-height: 1.6; padding: 10px 12px; }
+.support-content-tools .support-content-result .sku-pop-title, .support-content-tools .support-content-result .sku-pop-sub { white-space: pre-wrap; overflow: visible; overflow-wrap: anywhere; text-overflow: clip; }
 .support-content-tools .support-content-result:not(:disabled):active { background: var(--v5-surface-3); }
 @media (hover: hover) and (pointer: fine) { .support-content-tools .support-content-result:not(:disabled):hover { background: var(--v5-surface-3); } }
 .support-content-tools .support-content-pager { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; }
