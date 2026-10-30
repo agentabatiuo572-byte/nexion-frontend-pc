@@ -30,6 +30,14 @@
 - 冷启动/未登录时先恢复正常登录流程，再核验通知归属；他人通知或过期权限拒绝后，不显示旧私有内容，也不执行通知中携带的动作。
 - 拒绝系统权限仍可正常使用站内消息；客户端撤销当前安装绑定并关闭原生注册，避免 iOS 拒绝授权无令牌时遗留旧绑定。恢复系统权限后，前台绑定刷新恢复后续投递，不反复弹窗请求。
 
+### 偏好设置与系统通知入口（2026-10-30 用户确认）
+
+App「偏好设置」隐藏「质押到期」通知选项，仅移除当前页面的展示与交互；保留后端 staking 偏好字段、既有值及历史通知，不因页面保存其他偏好而重置隐藏值。该隐藏决定不删除业务通知数据，也不新增质押到期推送能力。
+
+系统通知权限区复用设置页现有玻璃卡片（`nx-glass-card` / `cardStyle`）及图标行，完整显示标题、真实权限状态和明确的开启/设置动作；卡片间距、图标、文字层级及点击区域与其他设置项一致，不能显示成缺少卡片和操作辨识的裸文字。未知权限时发起正常系统授权；已授权或已拒绝时打开本应用系统设置，返回 App 后重新读取真实权限并刷新显示。原生 Token 获取或后端登记失败单独显示连接异常和重试，不覆盖真实系统权限；当前账号、会话与令牌代际匹配且登记成功后才清除连接异常。权限状态和动作结果不能由旧页面状态或本地成功提示代替。
+
+iOS 使用 Apple 公开的本应用设置入口（`app-settings:`，参见 [`UIApplication.openSettingsURLString`](https://developer.apple.com/documentation/uikit/uiapplication/opensettingsurlstring)）；当前 App 通过 HTML5+ `openURL` 调用，处理打开失败与同步异常。失败时向用户说明未能打开，提供从系统「设置」进入 UVEL 通知设置的手动路径，不静默无反应或显示成功。Android 同样进入本应用通知设置，失败有明确反馈。此处定义用户行为与界面合同；源码测试、资源构建、完整原生包及双平台手机实际操作分别验收，不以源码通过或旧签名包结果宣称本轮已在手机生效。
+
 ## 投递与恢复合同
 
 业务消息统一使用NATIVE1:业务键与上述五类类型，按事实唯一键幂等。迁移/启用建立持久基线，不给历史用户补发大量旧提醒；重启不重置基线。外部推送以安装和通知为唯一投递对象；明确的临时拒绝有界重试，失效令牌停用。FCM/APNs 不提供本系统投递编号的严格幂等保证，发送后响应丢失、进程中断或发送租约过期进入 UNKNOWN，不盲目重发；用户仍可读取持久站内消息。
@@ -41,6 +49,12 @@ Android 使用官方 Firebase Messaging SDK 获取 FCM token，Java 通过 FCM H
 FCM 依赖可用 Google Play 服务和网络；没有 GMS 的安卓设备明确表现为系统推送不可用，站内消息保持正常。本批不宣称覆盖国内厂商离线通道。普通调试基座没有新增原生插件，必须重建自定义基座/安装包；JS 构建通过不等于 Kotlin/Swift 原生编译或真机送达通过。
 
 本批 Android 安装包最低为 Android 6.0（API 23）；iOS 原生插件最低要求 iOS 13，最终安装包仍需签名后核对。Android 13 及以上使用目标 API 33 或更高版本，让通知权限在登录后的业务授权流程中发起。已有拒绝状态在升级后保留，用户从系统设置重新开启后恢复注册。资源编译器与原生 SDK 的运行版本必须一致，启动版本警告未解决时不判为真机验收通过。
+
+### iOS Hook 与原生打包前置
+
+DCloud 官方 [UTS 生命周期回调说明](https://uniapp.dcloud.net.cn/plugin/uts-plugin.html#应用程序生命周期函数监听)要求推送相关 Hook 配合基础 Push 模块、具备推送能力的证书及正确 `aps-environment`；自定义 Hook 类按协议自动注册。当前直连方案在 manifest 仅加入基础 `Push: {}`，不选择 UniPush 版本或供应商，两平台 `pushRegisterMode` 均为 `manual`，由现有授权流程发起原生注册；iOS 该字段语义见 [manifest 配置](https://uniapp.dcloud.net.cn/collocation/manifest-app.html#app-ios)。此基础模块不把 FCM/APNs 直连改回 UniPush，不恢复 CID 或 UniCloud 依赖。
+
+插件持久保存 `UTS.entitlements` 的 `aps-environment=production`，与已批准 TestFlight 分发签名一致；完整新包仍须核对最终签名权限及匹配 profile，源码文件不代替签名证据。3003 静态制品中的成功/失败 Hook selector 已存在，但 manifest 缺少上述基础 Push 模块；这是已确认的打包前置缺口，不能仅凭 selector 或补配置断定3779未取得 APNs Token 的唯一实机根因。
 
 ## API合同
 
@@ -69,7 +83,7 @@ Android 已完成单目标供应商/客户端烟测：冻结候选为 `54a3e566 
 
 本轮只使用三条明确标记 TEST 的验收消息，没有真实账号安全事件、权威业务事实或 native delivery 行。上述 HTTP 200 仅证明请求被接受，不证明 opened_at 已持久化；五类真实业务触发、dispatcher、租约与打开回执持久化仍待端到端实测。令牌轮换、登出/切号尚未完成真机全测；iOS 已取得下述完整 IPA，真机验收仍未完成。其余证据与剩余项见 `D:/workspace/output/push-direct-20261030/REPORT.md`，不得将本次 Android 烟测扩展为双平台或完整业务链通过。
 
-当前 TEST 服务全局发送与 scheduler 仍关闭；本轮由本地安全发送器仅向已核验安装发送三条消息，未部署服务端供应商私钥或修改服务配置。服务端凭据部署及 TEST 业务自动队列端到端验收仍待完成，不代表生产推送已启用。
+上述 Android 3003 烟测阶段由本地安全发送器仅向已核验安装发送三条消息，当时未部署服务端供应商私钥或修改服务配置；该历史烟测不代表 TEST 业务自动队列或生产推送已启用。后续运行状态以下方本轮配置记录为准。
 
 ### 2026-10-30 iOS 完整包交付状态
 
@@ -77,4 +91,10 @@ Swift 编译修复已进入 App `test` 提交 `4f36f857`。完整云打包成功
 
 本包使用 TestFlight 分发签名，不能把 IPA 下载链接当作直接安装入口。经用户批准，已上传 Apple：上传状态 COMPLETE、构建处理状态 VALID，无错误或警告。内部组 UVEL TEST Push 关闭自动分发和公开链接，仅手动关联构建 2026103003 与用户指定的单个账号；构建状态为 IN_BETA_TESTING，该账号在 Apple 页面显示已邀请（2026-10-30），未确认邀请邮件收件箱送达。
 
-目前尚未完成 iPhone 安装、iOS 16 实机运行或真实 APNs 投递，本地亦未独立进行密码学验签；服务端全局发送与 scheduler 仍关闭。Apple 处理和定向内部邀请不补齐尚缺的业务链/双平台实机验收，也不构成公开发布。产物检查与分发证据位于 `D:/workspace/output/push-direct-20261030/`：`native-ipa-inspection-2026103003.json`、`independent-ios-ipa-review-2026103003.md`、`testflight-upload-receipt.json`、`testflight-processed-build.json`、`testflight-distribution-readback.json`、`testflight-invitation-readback.json`、`testflight-internal-testing-ready.png`。
+上述 3003 交付回执当时未完成 iPhone 安装、iOS 16 实机运行或真实 APNs 投递，本地亦未独立进行密码学验签。Apple 处理和定向内部邀请不补齐尚缺的业务链/双平台实机验收，也不构成公开发布。产物检查与分发证据位于 `D:/workspace/output/push-direct-20261030/`：`native-ipa-inspection-2026103003.json`、`independent-ios-ipa-review-2026103003.md`、`testflight-upload-receipt.json`、`testflight-processed-build.json`、`testflight-distribution-readback.json`、`testflight-invitation-readback.json`、`testflight-internal-testing-ready.png`。
+
+### 2026-10-30 本轮修订与运行边界
+
+App `test` 已提交并推送 `4c6f1362`（本轮 11 文件）：偏好卡片与设置失败反馈、隐藏质押展示、系统权限与连接状态分离，以及基础 Push、手动注册和持久 production entitlement。95 项定向行为测试及新增配置检查通过；这些是源码层验证。3004 尚待完整云包、签名检查和安装，不能把 3003 的旧制品或 selector 检查当作新版手机操作、APNs Token 登记或通知栏验收。
+
+本轮 TEST 开启业务消息扫描后遇到锁冲突，已回退 `nexion.business-notifications.enabled=false`、`native-push.scheduler-enabled=false`；后端最小事务隔离修复仍在验证。当前不记录业务扫描、自动派发或 iOS 实机推送通过，重新启用及精确获准设备的完整客服回复链仍需独立验收；不重放无关历史消息，也不因此开启生产。
