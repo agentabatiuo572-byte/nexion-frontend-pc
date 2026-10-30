@@ -230,13 +230,14 @@ writeRecord({
 // 齿轮表:序号自动派生(新增/重排齿轮不再手工改 [x/N])。本机注意:channel-parity 起的后端依赖齿轮
 // 硬读兄弟仓 nexion-backend,缺仓环境链在该齿断(memory: nexion-backend-not-in-workspace)。
 const GEARS = [
+  ["payment password admin policy, scoped release and recovery contract", "node", ["--experimental-strip-types", "--test", "tests/payment-password-contract.test.mjs"]],
   ["F3 real placement query and manual assignment", "node", ["--test", "tests/f3-placements-client.test.mjs", "tests/f3-placements-component.test.mjs"]],
   ["promotion generated API contract", "node", ["--test", "tests/promotion-generated-types-eol.test.mjs"]],
   ["promotion interactions and public copy", "node", ["--unhandled-rejections=strict", "--experimental-strip-types", "--test", "scripts/growth-promotions-behavior.test.mjs", "scripts/growth-promotions-read-state.test.mjs", "scripts/growth-promotions-visual-gate.test.mjs", "scripts/growth-promotions-runtime-waits.test.mjs", "scripts/growth-promotions-public-copy.test.mjs", "scripts/growth-promotions-banner.test.mjs", "tests/h4-sample-account-select.test.mjs"]],
   ["promotion dialog capture", "node", ["--test", "scripts/growth-promotions-capture.test.mjs"]],
   ["direct referral policy contract", "node", ["--experimental-strip-types", "--test", "tests/direct-referral-policy.test.mjs", "tests/f2-seven-layer-activation.behavior.test.mjs", "tests/f5-event-runtime-contract.test.mjs"]],
   ["E6 phone binding policy contract", "node", ["--experimental-strip-types", "--test", "tests/e6-phone-binding-contract.test.mjs", "tests/phone-replacement-admin-contract.test.mjs"]],
-  ["E2/E6 phone calibration contract", "node", ["--test", "tests/phone-calibration-contract.test.mjs", "tests/phone-calibration-proxy.test.mjs"]],
+  ["E2/E6 phone calibration contract", "node", ["--test", "tests/phone-calibration-contract.test.mjs", "tests/phone-calibration-proxy.test.mjs", "tests/phone-model-risk-contract.test.mjs"]],
   ["L1 selected-source export contract", "node", ["--experimental-strip-types", "--test", "tests/l1-export-source-flow.test.mjs", "tests/l1-narrow-phase-readback.test.mjs", "tests/l-final10-protocol-repair-contract.test.mjs"]],
   ["typecheck", npxCmd, ["--no-install", "tsc", "--noEmit"]],
   ["Good CSS interaction and layout contract", "node", ["--test", "tests/good-css-hover-contract.test.mjs", "tests/good-css-layout-contract.test.mjs"]],

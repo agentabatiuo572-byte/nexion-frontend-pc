@@ -44,6 +44,7 @@ function gateway(path, namespace, entries = {}, upstream = async () => Response.
     "@/lib/admin/support-image-proxy": load("lib/admin/support-image-proxy.ts"),
     "@/lib/admin/promotion-routes": load("lib/admin/promotion-routes.ts"),
     "@/lib/admin/phone-replacement-routes": load("lib/admin/phone-replacement-routes.ts"),
+    "@/lib/admin/payment-password-routes": load("lib/admin/payment-password-routes.ts"),
     "@/lib/admin/cregis-exception-routes": load("lib/admin/cregis-exception-routes.ts"),
     "@/lib/admin/account-avatar-contract": load("lib/admin/account-avatar-contract.ts"),
   } });

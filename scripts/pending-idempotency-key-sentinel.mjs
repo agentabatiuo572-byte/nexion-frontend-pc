@@ -40,6 +40,13 @@ const EXECUTOR_MODULE = "lib/admin/stable-mutation.ts";
 
 /** 已迁到共享 store 的文件:必须仍 import 它,且不得再出现裸内存态幂等键。 */
 const MIGRATED = [
+  // Payment policy changes retain the original command for query-only audit recovery after unknown outcomes.
+  "lib/admin/payment-password-client.ts",
+  // These callers keep durable attempts and release them only after their authoritative readback.
+  "lib/admin/device-rank-client.ts",
+  "lib/admin/event-rules-client.ts",
+  "lib/admin/genesis-raffle-client.ts",
+  "app/components/domain-views/d-tabs/cregis-deposit-policy.tsx",
   // Phone operations retain original payload/key after expiry for GET-only recovery.
   "lib/admin/phone-replacement-client.ts",
   // E6 policy proposals recover their original A2 ticket by exact key, including archived evidence.
@@ -118,6 +125,7 @@ const MIGRATED = [
  * key = `<相对路径>#<标识符>`(**不写行号**:并发改动会漂移)。
  */
 const KNOWN = {
+  "app/components/domain-views/m-view.tsx#detailReads": { verdict: "not-idempotency", reason: "SSE 消息触发的只读会话详情 GET 合流表，只保存 again 标记并在读取后删除；不包含写命令号或写载荷，刷新仅多发 GET" },
   "app/components/domain-views/m-tabs/m1-overview.tsx#pendingCommandRef": { verdict: "not-idempotency", reason: "弹窗冻结输入与逻辑槽标识；实际 HTTP 键由 m-view 的共享 mCommands 按含版本的 value/reason 跨刷新恢复，真实 writer/sink 回归覆盖同输入保号与版本变更换号" },
   "app/components/domain-views/a-tabs/a4-events.tsx#redriveCommandRef": { verdict: "not-idempotency", reason: "确认框回显缓存；实际 HTTP 命令号由 a4-redrive-command 的共享持久槽位解析，真实模块刷新回归验证同号重试" },
   // ---- not-idempotency:不是命令号容器 ----

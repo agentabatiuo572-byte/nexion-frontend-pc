@@ -30,10 +30,10 @@
     "B3": ["OPS-B-07", "OPS-B-08"],
     "B4": ["OPS-B-09", "OPS-B-10"],
     "B5": ["OPS-B-11", "OPS-B-12", "OPS-B-13", "OPS-B-14", "OPS-B-16"],
-    "C1": ["OPS-C-22", "OPS-C-23", "OPS-C-34", "OPS-C-35", "OPS-C-36"],
+    "C1": ["OPS-C-22", "OPS-C-23", "OPS-C-34", "OPS-C-35", "OPS-C-36", "OPS-C-38"],
     "C2": ["OPS-C-01", "OPS-C-02a"],
     "C3": ["OPS-C-03", "OPS-C-21"],
-    "C5": ["OPS-C-18"],
+    "C5": ["OPS-C-18", "OPS-C-37", "OPS-C-38"],
     "C6": ["OPS-C-20"],
     "D1": ["OPS-D-04", "OPS-D-21", "OPS-D-23", "OPS-D-24", "OPS-D-26", "OPS-D-28", "OPS-D-29", "OPS-D-30"],
     "D2": ["OPS-D-10", "OPS-D-27"],
@@ -86,9 +86,8 @@
     "L4": ["OPS-L-01", "OPS-L-05"],
     "L5": ["OPS-L-02", "OPS-L-04"],
     "L6": ["OPS-L-10", "OPS-L-11"],
-    "M1": ["OPS-M-01", "OPS-M-17", "OPS-M-19", "OPS-M-32", "OPS-M-33", "OPS-M-34", "OPS-M-35", "OPS-M-36", "OPS-M-37"],
-    "M2": ["OPS-M-04", "OPS-M-21", "OPS-M-26"],
-    "M3": ["OPS-M-07", "OPS-M-16", "OPS-M-20", "OPS-M-22", "OPS-M-25", "OPS-M-27"],
+    "M1": ["OPS-M-01", "OPS-M-17", "OPS-M-19", "OPS-M-32", "OPS-M-33", "OPS-M-34", "OPS-M-35", "OPS-M-36", "OPS-M-37", "OPS-C-38"],
+    "M3": ["OPS-M-07", "OPS-M-16", "OPS-M-20", "OPS-M-22", "OPS-M-25", "OPS-M-27", "OPS-C-38"],
     "M4": ["OPS-M-11", "OPS-M-12", "OPS-M-23", "OPS-M-28"],
     "M5": ["OPS-M-13", "OPS-M-14", "OPS-M-15", "OPS-M-17", "OPS-M-19"],
     "M6": ["OPS-M-31"]
@@ -541,6 +540,28 @@
         "revokeUserSession",
         "disableUserTwoFactor"
       ]
+    },
+    {
+      "id": "OPS-C-37",
+      "domain": "C",
+      "object": "独立支付密码规则(C5)",
+      "action": "读取服务端边界与生效说明，按原版本、原因和确认调整支付规则；未知结果只查询原命令",
+      "status": "pending",
+      "view": "c-tabs/payment-password-panel.tsx",
+      "batch": "payment-password-20261031",
+      "restAction": "submitPaymentPolicy",
+      "note": "正式前端已接窄API合同并完成fixture验证；独立支付权限、规则服务、CAS、幂等与审计持久化待同事实现。不得当作真实写入闭环已完成。合同为docs/PRD/specs/FEAT-PAYPIN-ADMIN-OPERATIONS-20261031.md。"
+    },
+    {
+      "id": "OPS-C-38",
+      "domain": "C",
+      "object": "支付密码异常查询与人工解除(C5/C1/M1/M3)",
+      "action": "在支付列表与既有客户资料/客服右栏查看原异常，核对能力、原版本和影响，填写原因并确认后解除；未知仅查原键",
+      "status": "pending",
+      "view": "c-tabs/payment-password-panel.tsx",
+      "batch": "payment-password-20261031",
+      "restAction": "submitPaymentRelease",
+      "note": "前端已原位接入客户profile、M1抽屉和M3右栏，未新增360页面。支付与登录记录、规则、权限、计数及命令独立；后端客户归属、独立解除能力、CAS、幂等和审计事务待实现，fixture不构成真实解除完成。"
     },
     {
       "id": "OPS-C-19",
@@ -2920,11 +2941,22 @@
         {
           "type": "uniapp-runtime",
           "file": "src/store/app.ts",
-          "positivePatterns": ["taskAssignmentApi\\.state\\(\\)", "applyRemoteAssignments\\(devices\\.value, assignmentResult\\.value\\)", "refreshRemoteFleet\\(request,", "refreshHomeTruth\\(request\\)"],
-          "negativePatterns": ["taskAssignmentApi\\.claim\\(", "taskAssignmentApi\\.complete\\(", "function tick\\(deltaMs: number\\) \\{\\s*if \\(remoteApiEnabled\\) return;"]
+          "positivePatterns": [
+            "taskAssignmentApi\\.state\\(\\)",
+            "applyRemoteAssignments\\(devices\\.value, rememberTaskAssignments\\(request, assignmentResult\\.value\\)\\)",
+            "function rememberTaskAssignments\\(request: RemoteAccountRequest, state: CanonicalTaskAssignments\\): CanonicalTaskAssignments \\{[\\s\\S]*?lastConfirmedAssignments = \\{ request: \\{ \\.\\.\\.request \\}, state \\};\\s*return state;",
+            "readRemoteTaskAssignments\\(request\\)",
+            "refreshRemoteFleet\\(request,",
+            "refreshHomeTruth\\(request\\)"
+          ],
+          "negativePatterns": [
+            "taskAssignmentApi\\.claim\\(",
+            "taskAssignmentApi\\.complete\\(",
+            "function tick\\(deltaMs: number\\) \\{\\s*if \\(remoteApiEnabled\\) return;"
+          ]
         }
       ],
-      "note": "开发与生产客户端均只读服务端 assignment、设备收益和首页聚合；任务创建、完成、回执与资金变动由服务端作业执行，App 不再保留 Sandbox 写链。"
+      "note": "开发与生产客户端均只读服务端 assignment、设备收益和首页聚合；任务创建、完成、回执与资金变动由服务端作业执行，App 不再保留 Sandbox 写链。 服务端 assignment 经同账号/代次的 rememberTaskAssignments 保留已确认快照后再由 applyRemoteAssignments 消费；此包装不是本地任务执行腿。"
     },
     {
       "id": "OPS-E-19",
@@ -3615,26 +3647,54 @@
     {
       "id": "OPS-M-26",
       "domain": "M",
-      "object": "M App 工单",
-      "action": "App 通过真实 API 创建、读取并跟踪 ticket 状态",
-      "status": "built",
-      "view": "m-tabs/m2-tickets.tsx",
+      "object": "用户工单退役边界",
+      "action": "只读核对用户工单下线说明、App 无工单写入口及服务端 410 阻断",
+      "status": "readonly",
+      "view": "m-view.tsx",
       "batch": "done",
       "runtimeEvidence": [
         {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/m-view.tsx",
+          "positivePatterns": [
+            "tab === \"M2\" && <p>工单服务已下线",
+            "tab === \"M3\" && <M3DedicatedChat ctx=\\{ctx\\}"
+          ],
+          "negativePatterns": [
+            "<M2Tickets\\b",
+            "from [\"\\'][^\"\\']*m2-tickets[\"\\']"
+          ]
+        },
+        {
           "type": "uniapp-runtime",
           "file": "src/api/support-api.ts",
-          "positivePatterns": ["supportPath\\(\"/tickets\"\\)", "parseTicketDetail\\(await client\\.request", "SUPPORT_TICKET_RESPONSE_INVALID", "idempotencyKey: requiredKey\\(key\\)"],
-          "negativePatterns": ["localStorage", "status:\\s*\"open\"[\\s\\S]{0,80}Date\\.now"]
+          "positivePatterns": [
+            "export interface SupportApi",
+            "replyConversation: async",
+            "expectedVersion: conversation\\.version"
+          ],
+          "negativePatterns": [
+            "\\b(?:createTicket|replyTicket|closeTicket|allTickets)\\s*[:(]",
+            "supportPath\\([\"\\'`]\\/tickets"
+          ]
         },
         {
           "type": "backend-runtime",
-          "file": "src/main/java/ffdd/opsconsole/content/application/AppSupportService.java",
-          "positivePatterns": ["idempotent\\(\"APP_SUPPORT_TICKET_CREATE:", "ticketRepository\\.createTicket\\(", "matches\\(ticket\\.status\\(\\), ticket\\.version\\(\\), request\\.expectedStatus\\(\\), request\\.expectedVersion\\(\\)\\)"],
-          "negativePatterns": ["createTicket[\\s\\S]{0,120}catch[\\s\\S]{0,120}ApiResult\\.ok", "APP_SUPPORT_TICKET_CREATE:[\\s\\S]{0,160}local"]
+          "file": "src/main/java/ffdd/opsconsole/content/web/RetiredSupportTickets.java",
+          "positivePatterns": [
+            "class RetiredSupportTickets",
+            "response\\.setStatus\\(410\\)",
+            "ApiResult\\.fail\\(410, \"SUPPORT_TICKETS_RETIRED\"\\)",
+            "/api/admin/content/tickets/load-config"
+          ],
+          "negativePatterns": [
+            "response\\.setStatus\\(200\\)",
+            "ApiResult\\.ok\\("
+          ]
         }
       ],
-      "note": "Production：App 工单创建/读取/回复/关闭均经真实 API、幂等键与服务端 status/version 校验；失败或未知创建不会插入本地成功工单，刷新后仍以服务端为准。"
+      "note": "依据 handoffs/2026-10-28/backend/05-support-customer-chain.md：本项是禁止复活工单的只读退役能力，不计为 built 工单实现；退役路径与正常会话由 admin-support-surface-audit 继续同时验证。",
+      "reason": "05 客服交接已确认用户工单全端退役：不再创建、回复、转工单或调整工单 SLA；旧 URL 与历史工单回执返回 410。保留正常会话和 load-config，不恢复工单写能力。"
     },
     {
       "id": "OPS-M-27",
@@ -3642,7 +3702,7 @@
       "object": "M App 会话",
       "action": "App 通过真实 API 建立会话、收发消息并跟踪转交状态",
       "status": "built",
-      "view": "m-tabs/m3-sessions.tsx",
+      "view": "m-tabs/m3-dedicated-chat.tsx",
       "batch": "done",
       "runtimeEvidence": [
         {
@@ -3666,15 +3726,29 @@
             "idempotent\\(\"APP_CONVERSATION_REPLY:",
             "conversationRepository\\.replyAsUser\\(",
             "conversationConflict\\(\\)",
-            "transferToType\\(\\)"
+            "matches\\(conversation\\.status\\(\\), conversation\\.version\\(\\), request\\.expectedStatus\\(\\), request\\.expectedVersion\\(\\)\\)"
           ],
           "negativePatterns": [
             "replyConversation[\\s\\S]{0,120}catch[\\s\\S]{0,120}APP_CONVERSATION_REPLIED",
             "CONVERSATION_CONFLICT[\\s\\S]{0,100}return ApiResult\\.ok"
           ]
+        },
+        {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/m-tabs/m3-dedicated-chat.tsx",
+          "positivePatterns": [
+            "supportClient\\.sendConversationReply\\(record\\.conversationId, input, record\\.key\\)",
+            "supportClient\\.command\\(record\\.key\\)",
+            "expectedAssignmentId: record\\.expectedAssignmentId",
+            "expectedVersion: record\\.expectedVersion"
+          ],
+          "negativePatterns": [
+            "data-proof=[\"\\']session-to-ticket[\"\\']",
+            "supportClient\\.(?:createTicket|convertToTicket)\\("
+          ]
         }
       ],
-      "note": "Production：App 会话、消息已读/回复与转工单全部围绕服务端 conversationNo、status/version 读写；Acceptance Sandbox 下 PC 回复只写独立客服沙箱事实并以稳定命令号回读，断连、冲突或拒绝保持未发送，不伪造 delivered。",
+      "note": "当前生产会话链保留 conversationNo、状态/版本校验、归属校验、稳定命令号、发送结果查询和回复回读；持续会话由 M3DedicatedChat 与 supportClient 接入。工单及转工单已退役，不再将 transferToType 或 Sandbox 工单链作为此项的验收要求。",
       "restActions": [
         "markMConversationRead"
       ]

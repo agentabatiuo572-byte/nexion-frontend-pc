@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { phoneUserRoute } from "@/lib/admin/phone-replacement-routes";
+import { paymentPasswordRoute } from "@/lib/admin/payment-password-routes";
 import { ADMIN_TOKEN_COOKIE, requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
@@ -36,6 +37,8 @@ function sanitizePhoneMasked(value: unknown): unknown {
 }
 
 function backendPath(parts: string[]) {
+  const paymentPassword = paymentPasswordRoute(parts);
+  if (paymentPassword) return paymentPassword.path;
   const phone = phoneUserRoute(parts);
   if (phone) return phone.path;
   if (parts.length === 5 && parts[0] === "profiles" && isNonEmpty(parts[1])
@@ -174,6 +177,8 @@ async function proxy(request: Request, context: RouteContext) {
   const targetPath = backendPath(path);
   const phone = phoneUserRoute(path);
   if (phone && request.method !== phone.method) return jsonError(405, "METHOD_NOT_ALLOWED");
+  const paymentPassword = paymentPasswordRoute(path);
+  if (paymentPassword && !paymentPassword.methods.includes(request.method)) return jsonError(405, "METHOD_NOT_ALLOWED");
 
   if (!targetPath) {
     return jsonError(404, "USERS_ROUTE_NOT_FOUND");

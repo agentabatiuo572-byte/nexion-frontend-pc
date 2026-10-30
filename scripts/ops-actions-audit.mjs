@@ -20,6 +20,7 @@ import {
   resolveNexionAppRoot,
   resolveNexionBackendRoot,
 } from "./lib/nexion-workspace-paths.mjs";
+import { validateRetiredTicketAction } from "./admin-support-surface-audit.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => { try { return fs.readFileSync(p, "utf8"); } catch { return ""; } };
@@ -46,6 +47,7 @@ const m = JSON.parse(read(MANIFEST) || "{}");
 const rows = m.rows || [];
 const baseline = m.deadControlBaseline || {};
 const problems = [];
+problems.push(...validateRetiredTicketAction(m).map(problem => `[工单退役] ${problem}`));
 const warnings = [];
 const BACKEND_ROOT = resolveNexionBackendRoot({ adminRoot: ROOT });
 const UNIAPP_ROOT = resolveNexionAppRoot({ adminRoot: ROOT });

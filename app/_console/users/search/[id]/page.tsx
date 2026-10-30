@@ -40,6 +40,8 @@ import type { AdminRole } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
+import { PaymentSecurityCard } from "@/app/components/payment-security/payment-security-card";
+import { paymentSecurityPorts } from "@/lib/admin/payment-password-client";
 import {
   formatC1DeviceStatus,
   formatC1DeviceTier,
@@ -432,6 +434,10 @@ export default function UserDetailPage() {
   const userNo = asText(profile?.userNo ?? summary.userNo, "-");
   const nickname = asText(profile?.nickname, "用户详情");
   const displayNickname = userNicknameText(nickname, profile?.phoneMasked);
+  const paymentSecurityPort = useMemo(() => {
+    if (detailKey !== readKey || !detail || !c3UserId) return null;
+    return supportScope ? paymentSecurityPorts.support(c3UserId) : paymentSecurityPorts.global(c3UserId);
+  }, [detailKey, readKey, detail, c3UserId, supportScope]);
   const status = asText(profile?.status ?? summary.status, "UNKNOWN").toUpperCase();
   const riskAuthorityReady = detail?.risk?.sourceStatus === "READY";
   const rawRiskScore = riskAuthorityReady ? detail?.risk?.effectiveScore : null;
@@ -578,8 +584,8 @@ export default function UserDetailPage() {
         ))}
       </div>
 
-      <div className={`mt-4 grid gap-4 ${!supportScope || detail.sessions ? "lg:grid-cols-2" : ""}`}>
-        <div className={supportScope && !detail.sessions ? "customer-panorama-primary" : "flex flex-col gap-4"}>
+      <div className={`mt-4 grid gap-4 ${!supportScope || detail.sessions || paymentSecurityPort ? "lg:grid-cols-2" : ""}`}>
+        <div className={supportScope && !detail.sessions && !paymentSecurityPort ? "customer-panorama-primary" : "flex flex-col gap-4"}>
           {detail.risk && <Section title="风险评估" tag={supportScope ? undefined : "来自风险评分规则"}>
             <div className="flex items-center gap-4">
               <div>
@@ -602,8 +608,8 @@ export default function UserDetailPage() {
           </Section>}
         </div>
 
-        {(!supportScope || detail.sessions) && <div className="flex flex-col gap-4">
-          {!supportScope && <Section title="去处理" tag="这里只能查看，处理请进入对应页面">
+        {(!supportScope || detail.sessions || paymentSecurityPort) && <div className="flex flex-col gap-4">
+          {!supportScope && <Section title="去处理" tag="账户、登录及资金操作入口">
             <div className="flex flex-wrap gap-2">
               {canReadC2 && (
                 <Link
@@ -673,7 +679,7 @@ export default function UserDetailPage() {
               </ActionButton>}
             </div>
             <p className="mt-2.5 flex items-center gap-1 text-[11px]" style={{ color: "var(--v5-ink-4)" }}>
-              <ShieldAlert size={12} /> 这里只能重置昵称和处理支付方式，其他操作请到「账户操作」或「安全与登录设备」。{actionPending ? ` 正在执行：${actionPending}` : ""}
+              <ShieldAlert size={12} /> 昵称与支付方式可在本页处理；支付密码异常请见下方「支付安全」，账户或登录操作请进入对应页面。{actionPending ? ` 正在执行：${actionPending}` : ""}
             </p>
           </Section>}
 
@@ -719,6 +725,7 @@ export default function UserDetailPage() {
               </div>
             )}
           </Section>}
+          {paymentSecurityPort && <PaymentSecurityCard key={`${readKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={`${displayNickname} · ${userNo}`} />}
         </div>}
       </div>
 

@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { ADMIN_TOKEN_COOKIE, requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
 import { boundedUpload } from "@/lib/admin/support-image-proxy";
+import { paymentPasswordSupportRoute } from "@/lib/admin/payment-password-routes";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
@@ -51,6 +52,11 @@ async function proxy(request: Request, context: RouteContext) {
   }
   const targetPath = backendPath(path);
   if (!targetPath) return jsonError(404, "CONTENT_ROUTE_NOT_FOUND");
+  if (path[0] === "support-workbench" && path[1] === "customers" && path[3] === "payment-password") {
+    const payment = paymentPasswordSupportRoute(path);
+    if (!payment) return jsonError(404, "CONTENT_ROUTE_NOT_FOUND");
+    if (!payment.methods.includes(request.method)) return jsonError(405, "METHOD_NOT_ALLOWED");
+  }
   // 信任中心资料文件上传：PDF 上限 20 MB，用自己的上限与错误码，不借用客服附件的配置。
   const documentUpload = request.method === "POST" && path.length === 2 && path[0] === "trust-documents";
   const attachmentUpload = request.method === "POST"

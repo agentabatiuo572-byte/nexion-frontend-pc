@@ -2,7 +2,7 @@
 
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { userNicknameText} from "@/lib/admin/brand-copy";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { supportEnhancements, type SupportProfile, type SupportGroup, type SupportFinanceFieldStatus } from "@/lib/admin/m-support-enhancements";
 import { supportClient, SupportClientError, type SupportMaintenanceHistory } from "@/lib/admin/m-support-client";
@@ -16,6 +16,9 @@ import type { SessionConvo, SupportTicket } from "./data";
 import { SupportAvatar, customerAvatarPath, advisorAvatarPath } from "./support-avatar";
 import { compactSupportBoardValue } from "./support-leaderboard";
 import "./m3-customer-profile.css";
+import { PaymentSecurityCard } from "@/app/components/payment-security/payment-security-card";
+import { paymentSecurityPorts } from "@/lib/admin/payment-password-client";
+import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 
 const statusText = { READY: "已加载", UNKNOWN: "未知", FORBIDDEN: "无权限", ERROR: "加载失败" };
 const asRows = (value: unknown): Record<string, unknown>[] => Array.isArray(value) ? value.filter(v => v && typeof v === "object") : [];
@@ -44,6 +47,7 @@ function Group({ title, group, failed, retry, children }: { title: string; group
 export function M3CustomerProfile({ ctx, customerId, conversation, scopeVersion, onHistory, messageError, onRetryMessages }: { ctx: MCtx; customerId: string; conversation?: SessionConvo; scopeVersion?: number; onHistory: (no: string) => void; messageError?: string; onRetryMessages: () => void }) {
   const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
   const [profile, setProfile] = useState<SupportProfile | null>(null), [error, setError] = useState("");
+  const [paymentProfileScope, setPaymentProfileScope] = useState("");
   const [reload, setReload] = useState(0), [view360, setView360] = useState(false);
   const [devicePage, setDevicePage] = useState(1), [flowPage, setFlowPage] = useState(1);
   const [deviceGroup, setDeviceGroup] = useState<SupportGroup | null>(null), [flowGroup, setFlowGroup] = useState<SupportGroup | null>(null);
@@ -62,8 +66,9 @@ export function M3CustomerProfile({ ctx, customerId, conversation, scopeVersion,
   }, [view360, detailSection]);
   const scopeKey = `${epoch}:${customerId}`, revokedScope = useRef("");
   const scopeDenied = revokedScope.current === scopeKey;
+  const paymentScope = `${adminShellSessionKey(session, epoch)}:${customerId}:${scopeVersion ?? ""}:${conversation?.id ?? ""}:${conversation?.ownerAdminId ?? ""}:${conversation?.assignmentId ?? ""}`;
   const annotationWrite = useRef<object | null>(null);
-  const requestStamp = `${scopeKey}:${scopeVersion ?? ""}:${reload}:${scopeDenied}`;
+  const requestStamp = `${paymentScope}:${reload}:${scopeDenied}`;
   const stamp = useRef(""), mounted = useRef(true); stamp.current = requestStamp;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const revokeScope = () => {
@@ -82,27 +87,27 @@ export function M3CustomerProfile({ ctx, customerId, conversation, scopeVersion,
   useEffect(() => {
     if (revokedScope.current === scopeKey) return;
     const controller = new AbortController(), saved = stamp.current; setProfile(null); setError("");
-    supportEnhancements.profile(customerId, controller.signal).then(p => { if (!controller.signal.aborted && saved === stamp.current) setProfile(p); }).catch(e => { if (!controller.signal.aborted && saved === stamp.current && !denied(e)) setError(displayAdminError(e)); });
+    supportEnhancements.profile(customerId, controller.signal).then(p => { if (!controller.signal.aborted && saved === stamp.current) { setProfile(p); setPaymentProfileScope(paymentScope); } }).catch(e => { if (!controller.signal.aborted && saved === stamp.current && !denied(e)) setError(displayAdminError(e)); });
     return () => controller.abort();
-  }, [customerId, epoch, scopeVersion, reload]);
+  }, [customerId, epoch, scopeVersion, reload, paymentScope]);
   useEffect(() => {
     if (revokedScope.current === scopeKey) return;
     const controller = new AbortController(), saved = stamp.current; setDeviceGroup(null); setPageError(e => ({ ...e, devices: "" }));
     supportEnhancements.devices(customerId, devicePage, controller.signal).then(g => { if (!controller.signal.aborted && saved === stamp.current) setDeviceGroup(g); }).catch(e => { if (!controller.signal.aborted && saved === stamp.current && !denied(e)) setPageError(v => ({ ...v, devices: displayAdminError(e) })); });
     return () => controller.abort();
-  }, [customerId, epoch, scopeVersion, devicePage, pageRetry, reload]);
+  }, [customerId, epoch, scopeVersion, devicePage, pageRetry, reload, paymentScope]);
   useEffect(() => {
     if (revokedScope.current === scopeKey) return;
     const controller = new AbortController(), saved = stamp.current; setFlowGroup(null); setPageError(e => ({ ...e, flows: "" }));
     supportEnhancements.flows(customerId, { pageNum: flowPage, currency: currency || undefined, status: flowStatus || undefined, from: from ? new Date(from+"T00:00:00Z").toISOString() : undefined, to: to ? new Date(to+"T00:00:00Z").toISOString() : undefined }, controller.signal).then(g => { if (!controller.signal.aborted && saved === stamp.current) setFlowGroup(g); }).catch(e => { if (!controller.signal.aborted && saved === stamp.current && !denied(e)) setPageError(v => ({ ...v, flows: displayAdminError(e) })); });
     return () => controller.abort();
-  }, [customerId, epoch, scopeVersion, flowPage, currency, flowStatus, from, to, pageRetry, reload]);
+  }, [customerId, epoch, scopeVersion, flowPage, currency, flowStatus, from, to, pageRetry, reload, paymentScope]);
   useEffect(() => {
     if (revokedScope.current === scopeKey) return;
     const controller = new AbortController(), saved = stamp.current; setMaintenance(null); setMaintenanceError("");
     supportClient.maintenanceHistory(customerId, { pageNum: maintenancePage, pageSize: 10, signal: controller.signal }).then(v => { if (!controller.signal.aborted && saved === stamp.current) setMaintenance(v); }).catch(e => { if (!controller.signal.aborted && saved === stamp.current && !denied(e)) setMaintenanceError(displayAdminError(e)); });
     return () => controller.abort();
-  }, [customerId, epoch, scopeVersion, maintenancePage, reload]);
+  }, [customerId, epoch, scopeVersion, maintenancePage, reload, paymentScope]);
   useEffect(() => { setDevicePage(1); setFlowPage(1); setHistoryPage(1); setTicketPage(1); setMaintenancePage(1); setView360(false); setTag(""); setNote(""); annotationWrite.current = null; setWriting(false); setWriteError(""); }, [customerId, epoch]);
   useEffect(() => {
     const onInvalidated = (event: Event) => {
@@ -147,6 +152,11 @@ export function M3CustomerProfile({ ctx, customerId, conversation, scopeVersion,
     } finally { if (annotationWrite.current === writeToken) { annotationWrite.current = null; if (mounted.current) setWriting(false); } }
   }
   const identity = profile?.identity.data, finance = profile?.finance.data, service = profile?.service.data, annotations = profile?.annotations.data;
+  const paymentSecurityPort = useMemo(() => {
+    if (scopeDenied || paymentProfileScope !== paymentScope || profile?.identity.status !== "READY") return null;
+    return paymentSecurityPorts.support(customerId);
+  }, [scopeDenied, paymentProfileScope, paymentScope, profile?.identity.status, customerId]);
+  const paymentUserLabel = userNicknameText(String(identity?.nickname ?? identity?.userNo ?? customerId), identity?.phoneMasked);
   const statistics = profile?.statistics?.status === "READY" ? profile.statistics.data : null;
   const firstKnown = statistics?.first.status === "AVAILABLE";
   const firstConfirmed = firstKnown && statistics?.first.state === "CONFIRMED";
@@ -182,6 +192,7 @@ export function M3CustomerProfile({ ctx, customerId, conversation, scopeVersion,
       {pageError.flows ? <div role="alert">{pageError.flows}<button onClick={()=>setPageRetry(n=>n+1)}>重试流水</button></div> : !flowGroup ? <p role="status">正在加载流水…</p> : flowGroup.status !== "READY" ? <p>{statusText[flowGroup.status]}<button onClick={()=>setPageRetry(n=>n+1)}>重试流水</button></p> : <>{!flows.length && <p>没有匹配的流水。</p>}{flows.map((r,i)=><details key={String(r.sourceId??r.id??`${r.bizNo??"flow"}:${i}`)}><summary>{r.kind==="DEPOSIT"?"充值":r.kind==="WITHDRAWAL"?"提现":"资金流水"} · {show(r.bizNo??r.orderNo)} · {nexGridBrandText(String(r.currency ?? "币种未同步"))} · {flowStatusLabel(r.status)}</summary><Row numeric label="本金" value={r.principal}/><Row numeric label="费用" value={r.fee}/><Row numeric label="实际到账" value={r.net}/><Row label="创建时间" value={dates(r.createdAt)}/><Row label="完成时间" value={dates(r.completedAt)}/></details>)}{pager(flowPage,flowGroup.data?.total,setFlowPage)}</>}
     </details>
     <Group title="风险信息" group={profile?.risk} failed={Boolean(error)} retry={()=>void retryGroup("risk")}><Row label="风险等级" value={profile?.risk.data?.level}/><Row label="服务说明" value={profile?.risk.data?.serviceExplanation}/><Row label="评估时间" value={dates(profile?.risk.data?.evaluatedAt)}/><p className="m-admin-muted">专项案件与账户安全资料需原模块权限。</p></Group>
+    {view360 && paymentSecurityPort && <PaymentSecurityCard key={`${paymentScope}|modal|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={paymentUserLabel} />}
     <details open className="m3-profile-group"><summary>设备信息</summary>{pageError.devices ? <div role="alert">{pageError.devices}<button onClick={()=>setPageRetry(n=>n+1)}>重试设备</button></div> : !deviceGroup ? <p role="status">正在加载设备…</p> : deviceGroup.status !== "READY" ? <p>{statusText[deviceGroup.status]}<button onClick={()=>setPageRetry(n=>n+1)}>重试设备</button></p> : <><Row numeric="count" label="持有设备" value={deviceStatuses?.heldCount==="READY"?deviceGroup.data?.heldCount:null}/><Row numeric="count" label="在网设备" value={deviceGroup.data?.onlineCount}/><Row numeric label="实际总算力" value={deviceGroup.data?.hashrateTotal}/><p className="m-admin-muted">设备记录（含历史）</p>{!devices.length&&<p>没有设备记录。</p>}{devices.map((r,i)=><details key={String(r.id??i)}><summary>{show(r.name)} · {show(r.instanceNo)}</summary><Row label="在网情况" value={labelState(r.runtimeStatus)}/><Row numeric label="实际算力" value={r.hashrate}/><Row numeric label="实际收益" value={r.dailyUsdt}/><Row label="最近心跳" value={dates(r.heartbeatAt)}/><Row label="激活时间" value={dates(r.activatedAt)}/></details>)}{pager(devicePage,deviceGroup.data?.total,setDevicePage)}</>}</details>
     <Group title="标签与内部备注" group={profile?.annotations} failed={Boolean(error)} retry={()=>void retryGroup("annotations")}>
       <p>系统标签（只读）</p><div className="m3-profile-tags">{Array.isArray(annotations?.systemTags)&&annotations.systemTags.map(t=><span key={String(t)}>{show(t)}</span>)}</div>
@@ -222,6 +233,7 @@ export function M3CustomerProfile({ ctx, customerId, conversation, scopeVersion,
       {error && <div className="m3-profile-state" role="alert">{error}<button type="button" className="m3-profile-link" onClick={retryProfile}>重新加载资料</button></div>}
       {!scopeDenied && <>
         {summaryState("identity")}
+        {!view360 && paymentSecurityPort && <PaymentSecurityCard key={`${paymentScope}|sidebar|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={paymentUserLabel} compact />}
         <section className="m3-profile-section"><div className="m3-profile-heading"><h4>风险研判</h4><button type="button" className="m3-profile-link" onClick={()=>open360("风险信息")}>说明</button></div>{summaryState("risk") ?? (typeof risk?.serviceExplanation === "string" && risk.serviceExplanation
           ? <div className="m3-profile-risk" data-tone={riskLevel === "低风险" ? "low" : riskLevel === "中风险" ? "medium" : riskLevel === "高风险" ? "high" : "unknown"}><span>{riskLevel}</span><p>{risk.serviceExplanation}</p></div>
           // M-39: without an assessment behind it a level is not a conclusion.

@@ -1,6 +1,7 @@
 "use client";
 import { operatorNicknameText, userNicknameText, platformSessionDeviceText } from "@/lib/admin/brand-copy";
 import { PhoneReplacementPanel } from "./phone-replacement-panel";
+import { PaymentPasswordPanel } from "./payment-password-panel";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -524,6 +525,13 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
 
   return (
     <>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+        <a className="l-btn" href="#payment-password-panels" onClick={(event) => {
+          event.preventDefault();
+          window.history.replaceState(window.history.state, "", "#payment-password-panels");
+          document.getElementById("payment-password-panels")?.scrollIntoView({ block: "start", behavior: "auto" });
+        }}>支付密码规则与用户状态</a>
+      </div>
       <div className="f-stats">
         <StatCard label="在线设备（全平台）" value={activeSessions.toLocaleString("en-US")} sub="当前登录中" />
         <StatCard tone="ok" label="两步验证开启率" value={`${text(overview?.stats?.twoFactorRatePct, "0.0")}%`} sub="已开启的用户占比" />
@@ -741,6 +749,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
         </section>
       </div>
 
+      <PaymentPasswordPanel userId={!loading && selectedUser && [String(selectedUser.userId), String(selectedUser.userNo)].includes(selectedUserKey) ? String(selectedUserId) : null} userLabel={userLabel(selectedUser)} />
       <PhoneReplacementPanel userId={!loading && selectedUser && [String(selectedUser.userId), String(selectedUser.userNo)].includes(selectedUserKey) ? String(selectedUserId) : null} userLabel={userLabel(selectedUser)} />
 
       {selectedSession && (

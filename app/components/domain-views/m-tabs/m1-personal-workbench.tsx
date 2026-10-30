@@ -18,6 +18,8 @@ import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
 import { SelfAvatarEditor } from "./self-avatar-editor";
 import type { SelfAvatarSnapshot } from "@/lib/admin/a1-client";
 import type { MCtx } from "./types";
+import { PaymentSecurityCard } from "@/app/components/payment-security/payment-security-card";
+import { paymentSecurityPorts } from "@/lib/admin/payment-password-client";
 
 type Permission = "agent" | "supervisor" | "superadmin";
 export type PersonalWorkbenchView = "dashboard" | "customers";
@@ -86,7 +88,9 @@ function invalidateCustomerOnDenied(customerId: string, error: unknown): boolean
 
 export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, primarySummary, onBrowseCustomers }: { permission: Permission; ctx: MCtx; view: PersonalWorkbenchView; onViewChange: (view: PersonalWorkbenchView) => void; primarySummary?: ReactNode; onBrowseCustomers?: (filter: SupportCustomerFilter) => void }) {
   const router = useRouter();
+  const session = useAdminAuth((state) => state.session);
   const authEpoch = useAdminAuth((state) => state.authEpoch);
+  const sessionKey = adminShellSessionKey(session, authEpoch);
   const adminId = useAdminAuth((state) => state.session?.adminId);
   const operatorName = useAdminAuth((state) => state.operator || state.session?.operator || state.session?.username || "");
   const canBulk = useAdminAuth(state => state.session?.role==="super"||state.session?.role==="superadmin"||Boolean(state.session?.authorities.includes("service_m3_write")));
@@ -113,6 +117,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   const [keyword, setKeyword] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SupportCustomerDetail | null>(null);
+  const [detailActorKey, setDetailActorKey] = useState("");
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [history, setHistory] = useState<SupportMaintenanceHistory | null>(null);
@@ -137,6 +142,10 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   const recentController = useRef<AbortController | null>(null);
   const drawerRef = useRef<HTMLElement>(null);
   const drawerCloseRef = useRef<HTMLButtonElement>(null);
+  const paymentSecurityPort = useMemo(() => {
+    if (!detail || detailLoading || detailError || detail.customerId !== detailId || detailActorKey !== sessionKey) return null;
+    return paymentSecurityPorts.support(detail.customerId);
+  }, [detail, detailLoading, detailError, detailId, detailActorKey, sessionKey]);
 
   useEffect(() => {
     setSelfAvatarSnapshot(null);
@@ -167,9 +176,10 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
 
   const openDetail = useCallback(async (customerId: string) => {
     const generation = ++detailsGeneration.current;
+    const actorKey = actorStamp();
     const pending = maintenanceCommands.list().find((row) => row.actorId === adminId && row.payload.customerId === customerId) ?? null;
     setDetailId(customerId); setDetail(null); setHistory(null); setDetailLoading(true); setDetailError(null); setMaintenanceAction(null); setSaveError(pending ? "上次操作结果待确认，请先查询原命令。" : null); setReason(""); setMaintenancePending(pending);
-    try { const next = await supportClient.customerDetail(customerId); if (detailsGeneration.current === generation) setDetail(next); }
+    try { const next = await supportClient.customerDetail(customerId); if (detailsGeneration.current === generation && actorStamp() === actorKey) { setDetail(next); setDetailActorKey(actorKey); } }
     catch (error) { if (detailsGeneration.current === generation && !invalidateCustomerOnDenied(customerId, error)) setDetailError(errorText(error)); }
     finally { if (detailsGeneration.current === generation) setDetailLoading(false); }
   }, [adminId]);
@@ -200,6 +210,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     drawerCloseRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.target instanceof Element) || event.target.closest('[role="dialog"]') !== drawerRef.current) return;
       if (event.key === "Escape") { closeDetail(); return; }
       if (event.key !== "Tab" || !drawerRef.current) return;
       const focusable = [...drawerRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]')];
@@ -417,6 +428,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
       {detailError && <div className="s5a-alert" role="alert">{detailError}<button type="button" onClick={() => void openDetail(detailId)}>重试</button></div>}
       {detail && <div className="s5a-drawer-body">
         <div style={{display:"flex",gap:12,alignItems:"center"}}><SupportAvatar name={customerName(detail)} path={detail.customerAvatarRef??undefined}/><SupportAvatar name={detail.agentName??"当前专属客服"} path={detail.agentAdminId&&detail.advisorAvatar?advisorAvatarPath(detail.agentAdminId,detail.customerId):undefined} version={detail.advisorAvatar?.version}/><span>当前专属客服：{detail.agentName??"资料未知"}</span></div><dl><div><dt>客户编码</dt><dd>{detail.customerNo||"未知"}</dd></div><div><dt>客户编号</dt><dd>{detail.customerId}</dd></div><div><dt>账户状态</dt><dd>{labelForAccount(detail.accountState)}</dd></div><div><dt>维护状态</dt><dd>{labelForMaintenance(detail)}</dd></div><div><dt>上次账户活动</dt><dd>{formatTime(detail.lastEffectiveAt)}</dd></div><div><dt>下次维护</dt><dd>{formatTime(detail.nextMaintenanceAt)}</dd></div></dl>
+        {paymentSecurityPort && <PaymentSecurityCard key={`${sessionKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={customerName(detail)} compact />}
         {detail.accountState === "UNKNOWN" && <p className="s5a-note">账户活动数据不完整，无法判断沉睡或活跃。</p>}
         <button type="button" className="s5a-primary" onClick={() => openChat(detail.customerId)}>联系客户 <ArrowRight size={16} /></button>
         {canMaintain ? <button type="button" className="s5a-secondary" disabled={Boolean(maintenancePending)} onClick={() => { setMaintenanceAction(detail.maintenanceEnabled ? "stop" : "resume"); setReason(""); setSaveError(null); }}>{detail.maintenanceEnabled ? "不再维护" : "恢复维护"}</button> : <p className="s5a-note">仅当前专属客服可调整主动维护；主管可审阅并办理正式转绑。</p>}
