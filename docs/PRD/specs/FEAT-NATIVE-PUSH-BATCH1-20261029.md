@@ -112,6 +112,20 @@ TEST当前business/native/scheduler三开关均true，FCM/APNS配置客户端均
 
 单条真实客服验收从独立PC页仅向3779发送`[TEST 推送验收1030-01]`：human3811（ADMIN1、assignment18）提交于UTC10:56:19.687646→fact SUPPORT:3811→notification43890/SUPPORT_REPLY、会话CV-APP-20261030124047266-a859d9c4→native delivery1/APNS_ACCEPTED/ACCEPTED、attempt1，供应商回执BEF5678E-A539-503C-FE2B-4F3042825F30。用户确认3004在后台实际收到系统通知；点击只打开App、未进入对应客服模块。该通知GET与opened POST观测请求次数均为0，opened_at为NULL，点击定位及打开回执未通过；3779既有assignment18/admin1/version1/MANUAL保持。
 
-点击缺陷 #689 已以App `test / c05b12c5` 修复设备初始化对本人通知导航的额外阻挡，保留认证、账号一致、路由就绪及原有安全保护。实际App旧源热/冷两例先红，新9项行为、controller63项、adapter20项共92项结果与类型检查通过，独立复核无阻塞；五类目标路由/页面参数协议及客服真实cid经源码核对，尚不是五类真机验收。精确该源码的3005 stage、真实5.33资源及官方CLI资源编译成功，但20:14:07云端明确返回当日免费打包配额耗尽；仅尝试一次，未生成云包/IPA、未上传Apple，未重试、换账号、付费或绕过额度。当前App没有既有runtime.install/WGT资源更新执行通道，资源包不能替代TestFlight安装。
+点击缺陷 #689 已以App `test / c05b12c5` 修复设备初始化对本人通知导航的额外阻挡，保留认证、账号一致、路由就绪及原有安全保护。实际App旧源热/冷两例先红，新9项行为、controller63项、adapter20项共92项结果与类型检查通过，独立复核无阻塞；五类目标路由/页面参数协议及客服真实cid经源码核对，尚不是五类真机验收。当前App没有既有runtime.install/WGT资源更新执行通道，资源包不能替代TestFlight安装。
 
-手机当前仍为3004。结论限于TEST后端配置、单条客服业务投递至真实APNs接受及iOS后台展示通过；689源码已修，3005受外部配额阻塞尚未发布，手机跳转客服与打开回执仍未通过。五类业务、iOS前台/后台/冷启动与点击全覆盖、首次拒绝/恢复、Token轮换及登出/切号缺口继续保留，后续新包需按精确通知ID重新验收。证据索引见 `D:/workspace/output/push-direct-20261030/REPORT.md` 与 `TEST-PLAN.md`。
+3005首次官方云打包于20:14:07因当日免费配额耗尽失败，该记录独立保留。用户随后明确授权使用新登录DCloud账号再尝试一次，同c05b12c5/3005 stage、原AppID/ai.uvel.app及原profile签名配置，未新建App或改标识；20:40:05完整云打包成功。实际IPA为36,840,762bytes，SHA256=`9713f8215e5964501c91be32ddd5d8c973df407483d87591b5de8b01421ca507`，包内5.33资源、manual注册、production签名权限、TEST API及JS与精确stage一致。独立Mach-O类元数据与native实现复核无阻塞，实际编译导航gate仅移除onboarding条件；制品检查不代替手机安装或点击。
+
+Apple上传COMPLETE且无错误/警告，build `c3b2b6fe-7465-4689-9e90-d536c9ec976d` 为VALID，已进入原内部组IN_BETA_TESTING，仅用户指定测试者一人，组内含3005/3004/3003，无公开提交。用户已确认更新3005，并实际点击系统通知后直接进入对应客服会话；后端设备初始化完成标记EXISTS仍为0，验证本人通知点击无需设备初始化。683–689均已由主控官方API关闭并GET确认closed/fixed，各自具体缺陷范围闭合，不扩大为全部推送场景通过。
+
+3005实际点击证据对应用户自行在PC回复的三条消息，均为3779/user60723153015、ADMIN1/assignment18，APNS ACCEPTED、attempt1、bindingEpoch3；目标均为`/pages/support/chat?cid=CV-APP-20261030124047266-a859d9c4`，各自通知GET及opened POST均HTTP200，并独立持久读回：
+
+| PC客服消息 | notificationId | native delivery | opened_at（+08） |
+|---|---|---|---|
+| 3813（SUPPORT:3813） | 43896 | 244 | 19:58:27.984824 |
+| 3814（SUPPORT:3814） | 43897 | 246 | 19:58:59.252774 |
+| 3816（SUPPORT:3816） | 43899 | 252 | 20:00:02.392854 |
+
+主控后发`[TEST1030-02]`的human3819/notification43901/delivery257同获APNs受理、attempt1，但用户未点该ID、opened_at仍NULL；不将其当作点击或打开证明，也不为补证重复发送。主控服务器持久证据为`ios3005-functional-acceptance.json`与`click-id-correlation.json`，本地关联汇总为`D:/workspace/output/push-direct-20261030/ios3005-actual-click-acceptance.json`。
+
+本轮结论为未完成设备初始化账号的iOS3005后台客服业务链路、系统展示、对应会话定位及精确打开回执通过；3004的点击失败作为历史保留。五类业务、iOS前台/冷启动全覆盖、首次拒绝/恢复、Token轮换及登出/切号缺口继续保留。Android仍限同签名3003宿主资源UI与既有单安装FCM三态烟测，不扩大为完整新宿主或双平台五类全验。证据索引见 `D:/workspace/output/push-direct-20261030/REPORT.md` 与 `TEST-PLAN.md`。
