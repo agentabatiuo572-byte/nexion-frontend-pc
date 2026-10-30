@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
@@ -335,7 +335,9 @@ export function auditRepositoryReverseCoverage({ root, manifest }) {
   writeSymbols.delete("createA2OperationProposal");
   for (const symbol of Object.keys(CLIENT_WRITE_EXCEPTIONS)) writeSymbols.delete(symbol);
 
-  const sourceRoots = ["app", "lib/store/admin"];
+  // REST-backed consoles no longer have the legacy store directory. The App
+  // surfaces and lib/admin clients remain required; present legacy stores still participate.
+  const sourceRoots = ["app", ...(existsSync(join(root, "lib/store/admin")) ? ["lib/store/admin"] : [])];
   const files = sourceRoots.flatMap((sourceRoot) => sourceFiles(root, sourceRoot));
   const leafSurfaces = deriveLeafSurfaces(leaves, files);
   const writePoints = [];

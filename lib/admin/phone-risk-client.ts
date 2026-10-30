@@ -1,4 +1,5 @@
 import { guardedFetch, formatAdminApiError } from "./error-messages";
+import { outcomeStaysUnknown } from "./outcome-classification";
 
 /** Model consistency checks run before a phone calibration draws a value. Saved directly, not through A2. */
 export type PhoneRiskMode = "OFF" | "OBSERVE" | "ENFORCE";
@@ -69,6 +70,7 @@ export function parsePhoneRiskOverview(value: unknown): PhoneRiskOverview {
 
 /** A save whose response was lost may have been applied: say so instead of reporting a failure. */
 const UNKNOWN_SAVE = "保存结果暂不确定：设置可能已经生效。请关闭后点「刷新」核对版本号和当前设置，不要直接重复保存。";
+class PhoneRiskOutcomeUnknownError extends Error { constructor() { super(UNKNOWN_SAVE); } }
 async function request(method: "GET" | "PUT", body?: unknown, key?: string): Promise<unknown> {
   let response: Response;
   try {
@@ -81,8 +83,8 @@ async function request(method: "GET" | "PUT", body?: unknown, key?: string): Pro
     throw failure;
   }
   const envelope = await response.json().catch(() => null);
-  if (method === "PUT" && (response.status >= 500 || response.headers.get("X-Nexion-Upstream-Outcome") === "unknown"
-      || !envelope || typeof envelope.code !== "number")) throw new Error(UNKNOWN_SAVE);
+  if (method === "PUT" && (response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || !envelope || typeof envelope.code !== "number"
+      || (!response.ok || envelope.code !== 0) && outcomeStaysUnknown(response.status, envelope.code))) throw new PhoneRiskOutcomeUnknownError();
   if (!response.ok || !envelope || envelope.code !== 0) throw new Error(formatAdminApiError(envelope?.message, "机型风控设置读取失败"));
   return envelope.data;
 }

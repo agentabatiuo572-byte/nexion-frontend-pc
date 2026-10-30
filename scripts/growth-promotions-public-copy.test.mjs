@@ -10,6 +10,10 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import * as form from '../lib/admin/promotion-form.ts';
 import * as client from '../lib/admin/promotion-client.ts';
 import {displayAdminError} from '../lib/admin/error-messages.ts';
+import * as activityDelete from '../lib/admin/activity-delete.ts';
+import { resolveNexionBackendRoot } from './lib/nexion-workspace-paths.mjs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const require=createRequire(import.meta.url), base=new URL('../',import.meta.url);
 test('unavailable promotion reads do not assert a submission outcome',()=>{
@@ -45,6 +49,8 @@ function domain(file,hook,readState,privateNames=[],extras={}){
     if(name.endsWith('promotion-form'))return form;
     if(name.endsWith('promotion-client'))return {...client,pendingPromotionCommands:()=>[]};
     if(name.endsWith('error-messages'))return {displayAdminError};
+    if(name.endsWith('activity-delete'))return activityDelete;
+    if(name.endsWith('h-client'))return {pendingH4EventDeletes:()=>[]};
     if(name in extras)return extras[name];
     return {__esModule:true,default:noop,PromotionRightsDialog:noop,PromotionBanner:noop,PromotionBannerPreview:noop,PaginationExemptionList:noop};
   },privateNames);
@@ -272,11 +278,11 @@ test('PCOPY-09: actual coverage tooltip/a11y shows unavailable status without ze
 });
 
 test('PCOPY-10: actual H4 existing-events branch renders business state labels and preserves stock/time/claim rules',()=>{
-  const hook=hooks({0:{dayOneTasks:[],weeklyTier1:[],weeklyTier2:[],monthlyMissions:[],events:[],wheelTiers:[],wheelGuards:[{key:'cap',label:'每日上限',value:'-'}],trackables:[],h4Stats:{ongoing:0,trackJoin:0,trackDone:0,trackClaim:0,wheelToday:0,geoBlocked:0}},1:false,2:null});
+  const hook=hooks({0:0,1:{dayOneTasks:[],weeklyTier1:[],weeklyTier2:[],monthlyMissions:[],events:[],wheelTiers:[],wheelGuards:[{key:'cap',label:'每日上限',value:'-'}],trackables:[],h4Stats:{ongoing:0,trackJoin:0,trackDone:0,trackClaim:0,wheelToday:0,geoBlocked:0}},2:false,3:null});
   const Legacy=domain('h3-quest-events.tsx',hook,fresh).H3QuestEvents;hook.reset();const html=markup(Legacy({section:'events',ctx:{can:()=>false,toast(){},openActionConfirm(){},openConfirm(){}}}));
-  for(const text of ['每日上限按各奖项的每日库存设置','资金奖励暂停','可追踪活动监控','已参与','已达标','已领取','活动结束或下架后不可领取','每日仅可领取一次','地域限制'])assert(html.includes(text),text);
+  for(const text of ['每日上限按各奖项的每日库存设置','低于 100% 时暂停发钱','可追踪活动监控','已参与','已达标','已领取','活动关闭或结束后不能再参加','已获得的奖励按活动规则领取','限地区的活动'])assert(html.includes(text),text);
   assert.doesNotMatch(html,/后端|服务端|dailyStock|Trackable|各域状态消费|领取赛跑|真实奖正常开放|joined|claimed|ongoing|upcoming/);
-  assert(html.includes('>0</div>'));assert(html.includes('跌破 100%')&&html.includes('只发 UVEL/券')&&html.includes('回升自动恢复'));
+  assert(html.includes('>0</div>'));assert(html.includes('低于 100%')&&html.includes('改发 UVT 安慰奖')&&html.includes('恢复后自动恢复'));
 });
 
 test('all ten groups: exact public-source guard covers normal/empty/error/title and accessible consumers without renaming data',()=>{
@@ -333,9 +339,29 @@ test('PCOPY-08: actual client refuses storage-loss writes before dispatch and ex
 
 test('PCOPY-10: actual H4 confirmation callbacks preserve reasons, stale-value checks and probability/stock constraints',()=>{
   const model={dayOneTasks:[],weeklyTier1:[],weeklyTier2:[],monthlyMissions:[],events:[{id:'EV1',name:'PCGP event',kind:'quest',state:'ongoing',reward:'2 UVEL',featured:false}],wheelTiers:[{tier:'T1',prob:0,reward:'NEX'},{tier:'T2',prob:50,reward:'券'},{tier:'T3',prob:50,reward:'USDT',real:true}],wheelGuards:[{key:'kill',label:'启停',value:'已停用'}],trackables:[]};
-  const hook=hooks({0:model,1:false,2:null}),Legacy=domain('h3-quest-events.tsx',hook,fresh).H3QuestEvents,confirmations=[];hook.reset();const element=Legacy({section:'events',ctx:{can:()=>true,toast(){},openActionConfirm:value=>confirmations.push(value),openConfirm:value=>confirmations.push(value)}}),buttons=nodes(element).filter(n=>n.type==='button');
+  const hook=hooks({0:0,1:model,2:false,3:null}),Legacy=domain('h3-quest-events.tsx',hook,fresh).H3QuestEvents,confirmations=[];hook.reset();const element=Legacy({section:'events',ctx:{can:()=>true,toast(){},openActionConfirm:value=>confirmations.push(value),openConfirm:value=>confirmations.push(value)}}),buttons=nodes(element).filter(n=>n.type==='button');
   for(const label of ['编辑','下架','设主推','改奖池 / 概率'])buttons.find(n=>n.props.children===label).props.onClick();
-  buttons.find(n=>n.props['aria-label']==='删除 T1（UVEL）').props.onClick();
-  const html=confirmations.map(c=>markup(c.detail)).join('');for(const expected of ['确认后更新活动奖励','请确认目标状态','同时只能有一个进行中的主推活动','概率合计须为 100%','B1 红线','删除后仍至少保留 2 个档位'])assert(html.includes(expected),expected);assert.doesNotMatch(html,/后端|服务端|接口|互斥锁/);
-  const state=confirmations.find(c=>c.action.startsWith('活动状态'));assert.equal(state.reason,true);const probability=confirmations.find(c=>c.action==='调整转盘档位概率');assert.equal(probability.businessForm.fields.length,3);assert.equal(probability.amplifies,true);
+  buttons.find(n=>n.props['aria-label']==='删除 T1（UVT）').props.onClick();
+  const html=confirmations.map(c=>markup(c.detail)).join('');for(const expected of ['确认后更新活动奖励','请选择新状态','同时只能有一个进行中的主推活动','加起来要等于 100%','覆盖率低于红线无法保存','删除后至少还要保留 2 个奖项'])assert(html.includes(expected),expected);assert.doesNotMatch(html,/后端|服务端|接口|互斥锁/);
+  const state=confirmations.find(c=>c.action.startsWith('活动状态'));assert.equal(state.reason,true);const probability=confirmations.find(c=>c.action==='调整转盘奖项概率');assert.equal(probability.businessForm.fields.length,3);assert.equal(probability.amplifies,true);
+});
+
+test('ended participation preserves earned obligations while server eligibility and refund holds still gate issuance',()=>{
+  const spec=read('docs/PRD/specs/FEAT-HOME-EVENTS-20261025.md');
+  assert(spec.includes('关闭阻止新增参与，不取消已形成的结算义务'));
+  assert(spec.includes('关闭前已达标或已完成交易的个人奖励仍可见并可领取，关闭后不新增资格'));
+  const backend=resolveNexionBackendRoot({adminRoot:fileURLToPath(base)});
+  const engine=fs.readFileSync(path.join(backend,'src/main/java/ffdd/opsconsole/growth/application/H4EventEngine.java'),'utf8');
+  assert.match(engine,/!Boolean\.TRUE\.equals\(progress\.get\("eligible"\)\)\)throw new BizException\(409,"EVENT_NOT_CLAIMABLE"\)/);
+  assert(engine.includes("status='QUALIFIED'"));assert.match(engine,/eligible",earned\|\|"IN_PROGRESS"/);
+  const issuance=fs.readFileSync(path.join(backend,'src/main/java/ffdd/opsconsole/promotion/application/PromotionRewardService.java'),'utf8');
+  assert(issuance.includes('Set.of("PENDING","READY","RETRYABLE_FAILED").contains(text(reward.get("status")))'));
+  for(const rejection of ['PROMOTION_REFUND_HOLD','PROMOTION_ACCOUNT_FROZEN','PROMOTION_REWARD_NOT_MATURE'])assert(issuance.includes(rejection),rejection);
+  for(const [state,refundHold,enabled] of [['PENDING',false,false],['READY',false,false],['CANCELLED',false,false],['RETRYABLE_FAILED',true,false],['RETRYABLE_FAILED',false,true]]){
+    const record={state,refundHold,version:1,beneficiaryRole:'BUYER',beneficiaryId:'12',reward:{type:'USDT',amount:'1.000000'},disclosure:{title:draft.title,terms:draft.terms,benefitDescription:{zh:'锁定权益'},refundTerms:{zh:'整单钱包退款'}},recoveredAmount:null,recoveryOutstanding:null,dispositionOptions:[],attempts:[]};
+    const hook=hooks(),Detail=domain('h4-promotion-rewards.tsx',hook,{...fresh,data:record},['RewardDetail']).RewardDetail;
+    hook.reset();const element=Detail({id:'R1',can:()=>true,onClose(){},onChanged(){}});
+    const retry=nodes(element).find(node=>node.type===ui.Button&&node.props.children==='重试原奖励项');
+    assert(retry,`${state} retry control exists`);assert.equal(Boolean(retry.props.disabled),!enabled,`${state} refundHold=${refundHold}`);
+  }
 });

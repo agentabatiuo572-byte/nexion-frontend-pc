@@ -121,6 +121,9 @@ const CLIENTS = readdirSync(new URL("../lib/admin/", import.meta.url))
  *   新增一个发命令号的模块时,要么进覆盖面,要么在这里登记理由 —— 不许沉默。
  */
 const CLASSIFICATION_EXEMPT = {
+  "device-rank-client.ts": "HTTP 失败归类由共享 h-client growthRequest 负责；本层仅成功解析后弃槽，所有异常保留原槽，不自行判断 HTTP 结果",
+  "event-rules-client.ts": "HTTP 失败归类由共享 h-client growthRequest 负责；本层仅成功解析且活动标识匹配后弃槽，所有异常保留原槽",
+  "genesis-raffle-client.ts": "HTTP 失败归类由共享 h-client growthRequest 负责；本层仅权威抽奖列表回读成功后弃槽，所有异常保留原槽",
   "g1-client.ts": "走通用执行器,归类在 stable-mutation 统一做",
   "g2-client.ts": "同上",
   "g3-client.ts": "同上",

@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 
 const read = (path) => fs.readFileSync(path, "utf8").toLowerCase();
+const historicalKyc = /\bkyc\b|KYC-|kyc_|(?<!真)实名|钱包配对/i;
 
 function containsForbiddenKyc(source) {
   return /kyc/i.test(String(source).replace(/stickycta/ig, ""));
@@ -74,7 +75,6 @@ test("current operations product docs retire historical KYC requirements", () =>
 
 test("all KYC-bearing baseline specs are explicitly historical", () => {
   if (!fs.existsSync("docs/PRD/specs")) return;
-  const historicalKyc = /\bkyc\b|KYC-|kyc_|实名|钱包配对/i;
   const documents = sourceFiles("docs/PRD/specs")
     .filter((file) => file.endsWith(".md"))
     .filter((file) => historicalKyc.test(fs.readFileSync(file, "utf8")));
@@ -85,4 +85,9 @@ test("all KYC-bearing baseline specs are explicitly historical", () => {
       `${file} must carry a dated current removal ruling`);
     assert.match(preamble, /不得/, `${file} must prevent historical KYC restoration`);
   }
+});
+
+test("historical identity scanning distinguishes real product names from identity requirements", () => {
+  assert.equal(historicalKyc.test("保留相似的真实名称词与真实名单"), false);
+  for (const value of ["KYC", "kyc_required", "需要实名认证", "实名", "钱包配对"]) assert.equal(historicalKyc.test(value), true, value);
 });

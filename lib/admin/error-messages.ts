@@ -90,6 +90,8 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   PLATFORM_AVATAR_TYPE_INVALID: "头像图片格式暂无法核对，请稍后重试或联系技术人员。",
   PLATFORM_AVATAR_CONTENT_INVALID: "头像图片内容暂无法加载，请稍后重试或联系技术人员。",
   M3_MESSAGE_PAYLOAD_INVALID: "会话消息资料不完整，已停止展示；请重新加载详情。",
+  M3_MESSAGE_PAGE_INVALID: "会话消息列表不完整，暂时无法展示；请重新加载详情。",
+  SUPPORT_CANDIDATE_PAGE_INVALID: "可选客服名单不完整，暂时无法展示；请重新加载名单。",
   M3_TICKET_SOURCE_MISMATCH: "转工单结果关联的会话与当前会话不一致，请先查询原操作结果并核对源会话，不要重复创建工单。",
   M3_TICKET_RESULT_MALFORMED: "转工单返回的工单信息不完整，请先查询原操作结果并核对工单列表，不要重复创建工单。",
   SUPPORT_ENHANCEMENT_STRING_INVALID: "客服资料缺少必需内容，请重新加载。",

@@ -10,12 +10,12 @@ import ts from "typescript";
 const root = path.resolve(import.meta.dirname, "..");
 const nodeRequire = createRequire(import.meta.url);
 
-test("F4 normalizes applicant display branding across statuses without changing source fields", async () => {
+test("F4 preserves applicant source names across statuses without changing source fields", async () => {
   for (const status of ["PENDING", "APPROVED", "REJECTED"]) {
     const application = { id: 5, userId: 60723153027, applicantName: "NexGrid 1058", region: "NexGrid district", city: "Venue", currentRank: "V5", requestedBudgetUsd: 3000, status };
     const before = structuredClone(application);
     const text = await render({}, { ambassadorApplications: [application] });
-    assert.ok(text.includes("#5 · UVEL 1058 · NexGrid district/Venue"), text);
+    assert.ok(text.includes("#5 · NexGrid 1058 · NexGrid district/Venue"), text);
     assert.ok(text.includes(`V5 · $3,000 · ${({PENDING:"待审核",APPROVED:"已通过",REJECTED:"已驳回"})[status]}`), text);
     assert.deepEqual(application, before);
   }

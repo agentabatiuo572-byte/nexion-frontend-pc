@@ -113,9 +113,10 @@ test('cross-account request rows and incomplete envelopes fail closed',async()=>
 });
 
 const guard=load('lib/admin/require-password-change-cleared.ts');
+const paymentPasswordRoutes=load('lib/admin/payment-password-routes.ts');
 function proxy(file,{token='fixture-token',upstream=async()=>ok(receipt)}={}) {
   const calls=[];
-  const api=load(file,{'next/headers':{cookies:async()=>({get:name=>name==='nexion_admin_token'&&token?{value:token}:undefined})},'@/lib/admin/require-password-change-cleared':guard,'@/lib/admin/phone-replacement-routes':routes,'@/lib/admin/support-image-proxy':{},'@/lib/admin/account-avatar-contract':{avatarProxyRoute:()=>null}},{process:{env:{NEXION_BACKEND_URL:'http://fixture-backend'}},fetch:async(url,init)=>{calls.push({url,init});return upstream(url,init);}});
+  const api=load(file,{'next/headers':{cookies:async()=>({get:name=>name==='nexion_admin_token'&&token?{value:token}:undefined})},'@/lib/admin/require-password-change-cleared':guard,'@/lib/admin/phone-replacement-routes':routes,'@/lib/admin/payment-password-routes':paymentPasswordRoutes,'@/lib/admin/support-image-proxy':{},'@/lib/admin/account-avatar-contract':{avatarProxyRoute:()=>null}},{process:{env:{NEXION_BACKEND_URL:'http://fixture-backend'}},fetch:async(url,init)=>{calls.push({url,init});return upstream(url,init);}});
   return {calls,request:(parts,method='GET',query='',body)=>api[method](new Request(`http://fixture/api/${parts.join('/')}?${query}`,{method,...(body?{body,headers:{'Content-Type':'application/json','Idempotency-Key':'original-key'}}:{})}),{params:Promise.resolve({path:parts})})};
 }
 

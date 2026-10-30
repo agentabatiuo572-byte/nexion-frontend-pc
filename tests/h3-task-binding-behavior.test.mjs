@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
 import ts from "typescript";
+import * as activityDelete from "../lib/admin/activity-delete.ts";
 
 const require = createRequire(import.meta.url);
 const source = readFileSync(new URL("../app/components/domain-views/h-tabs/h3-quest-events.tsx", import.meta.url), "utf8");
@@ -18,11 +19,14 @@ function render(patch = {}, writable = true, client = {}) {
   const module = { exports: {} };
   new Function("require", "exports", "module", compiled)(name => {
     if(displayCopyModules[name])return displayCopyModules[name];
-    if (name === "react") return { useState: () => [[model, false, null][state++], () => {}], useEffect: () => {}, useMemo: fn => fn() };
+    if (name === "react") return { useState: () => [[0, model, false, null][state++], () => {}], useEffect: () => {}, useMemo: fn => fn(), useRef: current => ({ current }) };
     if (name === "react/jsx-runtime") return require(name);
     if (name.endsWith("design-kit")) return { PaginationExemptionList: () => null };
     if (name.endsWith("error-messages")) return { displayAdminError: e => String(e) };
     if (name.endsWith("a2-client")) return {};
+    if (name.endsWith("activity-delete")) return activityDelete;
+    // This suite exercises the H3 task section; H4 editors have their own behavior suites.
+    if (name === "./h4-event-rules" || name === "./h4-genesis-raffle") return { __esModule: true, default: () => assert.fail("H3 task case must not render an H4 editor") };
     if (name.endsWith("use-propose")) return { usePropose: () => assert.fail("unexpected policy proposal") };
     if (name.endsWith("high-ops-registry")) return { findHighOp: () => assert.fail("unexpected policy operation") };
     if (name.endsWith("h-client")) return new Proxy({
@@ -114,7 +118,7 @@ test("read-only users see disabled mutation controls and unknown completion kind
     const buttons = view.buttons(label); assert.ok(buttons.length, label);
     assert.ok(buttons.every(button => button.props.disabled), label);
   }
-  assert.match(view.text(view.tree), /待绑定业务事件/);
+  assert.match(view.text(view.tree), /还没绑定完成条件.*不绑定就无法完成和发奖/);
   assert.deepEqual(view.writes, []);
 });
 

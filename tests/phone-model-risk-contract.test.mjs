@@ -57,6 +57,19 @@ test("risk settings keep display size and account churn observe-only and need a 
   assert.throws(() => risk.parsePhoneRiskOverview({ ...overview, settings: { ...overview.settings, osVersion: "BLOCK" } }));
 });
 
+test("risk saves use shared outcome classification without treating a successful response as unknown", async () => {
+  const classification = load("lib/admin/outcome-classification.ts");
+  const update = { installModelLock: "OBSERVE", osVersion: "OBSERVE", screenScale: "OBSERVE", screenSize: "OBSERVE", missingSignals: "OBSERVE", accountModelChurn: "OBSERVE", churnWindowDays: 30, churnModelCount: 3, reason: "保持现有规则并核对保存结果" };
+  const run = fetchImpl => load("lib/admin/phone-risk-client.ts", id => id.endsWith("outcome-classification") ? classification : id.endsWith("error-messages") ? { guardedFetch: fetchImpl, formatAdminApiError: message => message } : {});
+  for (const response of [Response.json({ code: 503 }, { status: 503 }), Response.json({}), Response.json({ code: 401 }, { status: 401, headers: { "X-Nexion-Upstream-Outcome": "unknown" } })]) {
+    await assert.rejects(run(async () => response).savePhoneRisk(1, update, "original-key"), /保存结果暂不确定/);
+  }
+  await assert.rejects(run(async () => { throw new TypeError("offline"); }).savePhoneRisk(1, update, "original-key"), /保存结果暂不确定/);
+  await assert.rejects(run(async () => Response.json({ code: 409, message: "版本已更新" }, { status: 409 })).savePhoneRisk(1, update, "original-key"), /版本已更新/);
+  const saved = await run(async () => Response.json({ code: 0, data: { settings: { revision: 2, ...update, updatedAt: 1, updatedBy: 7 }, stats: { days: 7, checks: [], models: [] } } })).savePhoneRisk(1, update, "original-key");
+  assert.equal(saved.settings.revision, 2);
+});
+
 test("C5 support reaches only the model-lock list and its release through the user proxy", () => {
   assert.deepEqual({ ...routes.phoneUserRoute(["profiles", "9", "phone-model-locks"]) }, { path: "/api/admin/users/profiles/9/phone-model-locks", method: "GET" });
   assert.deepEqual({ ...routes.phoneUserRoute(["profiles", "9", "phone-model-locks", "install.a:1", "release"]) },

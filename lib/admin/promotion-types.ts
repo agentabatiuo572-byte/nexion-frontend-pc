@@ -1,5 +1,5 @@
 // Generated from the reviewed promotion OpenAPI; run scripts/generate-promotion-types.mjs.
-// Source SHA256: c1a3b89c5308581adba0a1bc3552b71e199a549e9404cbb1eff0ec8481bcd7f6
+// Source SHA256: 9c70f0f2652f8b8eea35098e7a273bc8b95026460c9658a60ccbb4bad2789a4a
 export type Id = string;
 export type EvidenceRef = (Id) | (string);
 export type Hash = string;

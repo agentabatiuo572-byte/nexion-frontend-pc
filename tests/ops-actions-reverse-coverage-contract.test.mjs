@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import {
   CLIENT_WRITE_EXCEPTIONS,
@@ -9,7 +11,34 @@ import {
   evaluateManifestClaims,
   validateRuntimeEvidence,
   validateServiceDelegations,
+  auditRepositoryReverseCoverage,
 } from "../scripts/lib/ops-actions-reverse-coverage.mjs";
+
+test("retired legacy stores are optional while primary sources and present-store writes stay audited", () => {
+  // Small source fixtures live in the project's trash area and are never hard-deleted.
+  const archive = join(process.cwd(), ".trash", "reverse-coverage-tests");
+  mkdirSync(archive, { recursive: true });
+  const fixture = ({ app = true, admin = true } = {}) => {
+    const root = mkdtempSync(join(archive, "case-"));
+    const write = (file, source) => { mkdirSync(dirname(join(root, file)), { recursive: true }); writeFileSync(join(root, file), source); };
+    write("lib/nav/console-nav.ts", 'export const nav = [{id:"A1",path:"/platform/accounts",status:"flagship"}];');
+    if (admin) {
+      write("lib/admin/high-ops-registry.ts", "export const HIGH_OPS=[];");
+      write("lib/admin/a1-client.ts", 'export function updateA1Status(){return request("/accounts/1",{method:"PATCH"});}');
+    }
+    if (app) write("app/_console/platform/accounts/page.tsx", "export function Accounts(){return <p>Accounts</p>;}");
+    return { root, write };
+  };
+  const manifest = { activeLeafCoverage: { A1: ["read-a1"] }, rows: [{ id: "read-a1", status: "readonly", reason: "read-only fixture" }] };
+  const normal = fixture();
+  assert.deepEqual(auditRepositoryReverseCoverage({ root: normal.root, manifest }).problems, []);
+  normal.write("lib/store/admin/a1.ts", 'export function retainedCaller(){updateA1Status();}');
+  assert.match(auditRepositoryReverseCoverage({ root: normal.root, manifest }).problems.join("\n"), /updateA1Status/);
+  for (const missing of [{ app: false }, { admin: false }]) {
+    const broken = fixture(missing);
+    assert.throws(() => auditRepositoryReverseCoverage({ root: broken.root, manifest }), { code: "ENOENT" });
+  }
+});
 
 test("semantic POST queries use exact documented exceptions", () => {
   assert.deepEqual(Object.keys(CLIENT_WRITE_EXCEPTIONS).toSorted(), ["estimateI3Audience", "previewB5Thresholds"]);

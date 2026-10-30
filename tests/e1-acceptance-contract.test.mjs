@@ -17,9 +17,11 @@ const e1Route = readFileSync(new URL("../app/api/admin/e1/[...path]/route.ts", i
 const domainCss = readFileSync(new URL("../app/components/domain-views/e-domain.css", import.meta.url), "utf8");
 const registry = readFileSync(new URL("../lib/admin/high-ops-registry.ts", import.meta.url), "utf8");
 
-test("E1 display maps persisted legacy product names in phase descriptions and action labels", () => {
-  assert.equal(nexGridBrandText("StellarBox S1 / StellarRack P1"), "UVELBox S1 / UVELRack P1");
-  assert.equal(nexGridBrandText("NexGridBox Pro v2 · NexGridRack P2"), "UVELBox Pro v2 · UVELRack P2");
+test("E1 display preserves source product names in phase descriptions and action labels", () => {
+  for (const value of ["StellarBox S1 / StellarRack P1", "NexGridBox Pro v2 · NexGridRack P2", "UVELBox S1"]) assert.equal(nexGridBrandText(value), value);
+  const sidebar = readFileSync(new URL("../app/components/shell/sidebar.tsx", import.meta.url), "utf8");
+  assert.match(sidebar, /aria-label="UVEL 运营控制台"/);
+  assert.doesNotMatch(sidebar, /aria-label="(?:NexGrid|Stellar) 运营控制台"/);
 });
 
 test("E1 rejects duplicate SKU ids already present in the first catalog page", () => {

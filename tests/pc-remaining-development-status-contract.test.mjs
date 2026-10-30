@@ -13,6 +13,7 @@ import {
   validateRuntimeEvidence,
   validateServiceDelegations,
 } from "../scripts/lib/ops-actions-reverse-coverage.mjs";
+import { auditReplyTimeoutBoundary } from "../scripts/admin-support-surface-audit.mjs";
 
 const ROOT = process.cwd();
 const BACKEND_ROOT = resolveNexionBackendRoot({ adminRoot: ROOT });
@@ -30,7 +31,7 @@ const SEMANTIC_PENDING_IDS = [
 const FINAL_ACCEPTED_IDS = [
   "OPS-A-15", "OPS-A-20", "OPS-L-10", "OPS-E-16", "OPS-F-15", "OPS-F-19", "OPS-E-20",
   "OPS-A-28", "OPS-A-29", "OPS-A-30", "OPS-A-31", "OPS-H-19", "OPS-H-20", "OPS-H-21",
-  "OPS-M-26", "OPS-M-27", "OPS-M-28",
+  "OPS-M-27", "OPS-M-28",
 ];
 
 function readSourceTree(root, excludedSuffix = "") {
@@ -157,6 +158,10 @@ test("final accepted semantic closures are built and retired Janus is absent", (
   }
 
   for (const id of ["OPS-K-15","OPS-K-16","OPS-K-17"]) assert.equal(row(id),undefined);
+  assert.equal(row("OPS-M-26")?.status, "readonly", "retired user tickets must not be counted as a built write");
+  assert.match(row("OPS-M-26")?.reason ?? "", /工单[\s\S]*退役[\s\S]*410/);
+  assert.equal(row("OPS-M-26")?.restAction, undefined);
+  assert.equal(row("OPS-M-26")?.restActions, undefined);
 });
 
 
@@ -260,7 +265,7 @@ test("remaining-development ledger has unique claims and preserves semantic cons
   assert.equal(manifest.rows.length, 268);
   assert.deepEqual(
     { built: counts.built?.length, readonly: counts.readonly?.length, pending: counts.pending?.length ?? 0, missing: counts.missing?.length ?? 0 },
-    { built: 236, readonly: 30, pending: 2, missing: 0 },
+    { built: 235, readonly: 31, pending: 2, missing: 0 },
   );
   assert.equal(row("OPS-F-28")?.restAction, "f_seven_layer_activation");
   for (const id of expectedBuiltClosures) assert.equal(row(id)?.status, "built", id + " must stay built");
@@ -611,10 +616,7 @@ test("built rows have real PC callers, including active L3/L4 and C1 detail acti
   assert.match(read("app/components/domain-views/m-tabs/m3-dedicated-chat.tsx"), /await updateMConversationTimeoutPolicy\(/);
   assert.match(readBackend("src/main/java/ffdd/opsconsole/content/application/ConversationTimeoutPolicyService.java"), /public ApiResult<ConversationTimeoutPolicy> update\(/);
   const timeoutScheduler = readBackend("src/main/java/ffdd/opsconsole/content/application/ConversationIdleTimeoutScheduler.java");
-  assert.match(timeoutScheduler, /mapper\.selectDueWarningCandidates\(now, BATCH_SIZE\)/);
-  assert.match(timeoutScheduler, /mapper\.selectDueCloseCandidates\(now, BATCH_SIZE\)/);
-  assert.match(timeoutScheduler, /mapper\.pendingRepliesCurrent\(candidate\.conversationNo\(\)\)/);
-  assert.doesNotMatch(timeoutScheduler, /mapper\.selectPolicy\(/);
+  assert.deepEqual(auditReplyTimeoutBoundary({ timeoutStatus: read("lib/admin/customer-conversations.ts"), idleScheduler: timeoutScheduler }), []);
 
   const f5Commission = readBackend("src/main/java/ffdd/opsconsole/team/application/F5CommissionService.java");
   const idempotencyExecutor = readBackend("src/main/java/ffdd/opsconsole/shared/idempotency/AdminIdempotencyTransactionExecutor.java");

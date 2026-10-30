@@ -1,198 +1,197 @@
-// 客服中心后台面静态守卫 — 客服已由域 I(I8 工单 + I9 即时会话)迁出,
-// 重组为独立域 M 客服中心(/service/*)。守:IA 接线 / M 视图接线 / 数据模型 /
-// data-proof 控件存活 / 真写键 / 共享 MessageThread / UniApp 服务端权威契约 / verify needle。
-// 真写键前缀沿用 I.support.* / I.session.*(persist 兼容,与 nav 域 code M 解耦)。
+// Current customer conversations and the retired-ticket boundary.
+// Authority: uvel-docs handoffs/2026-10-28/backend/05-support-customer-chain.md.
+// This source-contract gate does not claim a deployed customer-message proof.
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { resolveNexionAppRoot } from "./lib/nexion-workspace-paths.mjs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { resolveNexionAppRoot, resolveNexionBackendRoot } from "./lib/nexion-workspace-paths.mjs";
+import { collectActiveNavLeaves } from "./lib/ops-actions-reverse-coverage.mjs";
+import ts from "typescript";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const UNI_ROOT = resolveNexionAppRoot({ adminRoot: ROOT });
-const failures = [];
+export const supportSourceFiles = {
+  nav: ["admin", "lib/nav/console-nav.ts"],
+  registry: ["admin", "lib/admin/registry/m.ts"],
+  view: ["admin", "app/components/domain-views/m-view.tsx"],
+  dispatch: ["admin", "app/components/domain-views/registry.tsx"],
+  chat: ["admin", "app/components/domain-views/m-tabs/m3-dedicated-chat.tsx"],
+  client: ["admin", "lib/admin/m-support-client.ts"],
+  knowledge: ["admin", "app/components/domain-views/m-tabs/m4-kb-sla.tsx"],
+  proxy: ["admin", "app/api/admin/content/[...path]/route.ts"],
+  pipeline: ["admin", "scripts/verify.mjs"],
+  appApi: ["app", "src/api/support-api.ts"],
+  appStore: ["app", "src/store/conversations.ts"],
+  controller: ["backend", "src/main/java/ffdd/opsconsole/content/web/AppSupportController.java"],
+  service: ["backend", "src/main/java/ffdd/opsconsole/content/application/AppSupportService.java"],
+  retired: ["backend", "src/main/java/ffdd/opsconsole/content/web/RetiredSupportTickets.java"],
+  timeoutStatus: ["admin", "lib/admin/customer-conversations.ts"],
+  idleScheduler: ["backend", "src/main/java/ffdd/opsconsole/content/application/ConversationIdleTimeoutScheduler.java"],
+};
 
-function read(relOrAbs) {
-  const file = path.isAbsolute(relOrAbs) ? relOrAbs : path.join(ROOT, relOrAbs);
-  return fs.readFileSync(file, "utf8");
+export function loadSupportSources({ adminRoot = ROOT, appRoot, backendRoot }) {
+  const roots = { admin: adminRoot, app: appRoot, backend: backendRoot };
+  return {
+    ...Object.fromEntries(Object.entries(supportSourceFiles).map(([key, [scope, file]]) => {
+      try { return [key, fs.readFileSync(path.join(roots[scope], file), "utf8")]; }
+      catch { return [key, ""]; }
+    })),
+    appTicketStoreExists: fs.existsSync(path.join(appRoot, "src/store/tickets.ts")),
+  };
 }
 
-function assertContains(file, needles) {
-  const text = read(file);
-  for (const needle of needles) {
-    if (!text.includes(needle)) failures.push(`${file} missing ${needle}`);
+/** The old App ticket capability is a blocked, observed boundary, never a built write. */
+export function validateRetiredTicketAction(manifest) {
+  const row = manifest.rows?.find(item => item.id === "OPS-M-26");
+  const problems = [];
+  if (manifest.activeLeafCoverage?.M2 !== undefined) problems.push("retired M2 must not claim an active navigation capability");
+  if (!row || row.status !== "readonly" || !/工单/.test(row.reason ?? "")
+    || !/退役|下线/.test(row.reason ?? "") || !/410/.test(row.reason ?? "")) {
+    problems.push("OPS-M-26 must be readonly with the approved ticket retirement and 410 reason");
   }
+  if (row && (row.storeAction || row.restAction || row.restActions || row.serviceDelegations || row.runtimeConsumerContract)) {
+    problems.push("OPS-M-26 must not claim a ticket write action or pending implementation");
+  }
+  for (const type of ["pc-runtime", "uniapp-runtime", "backend-runtime"]) {
+    if (!row?.runtimeEvidence?.some(item => item.type === type)) problems.push("OPS-M-26 missing " + type + " retirement evidence");
+  }
+  return problems;
 }
 
-function assertRegex(file, regex, label) {
-  const text = read(file);
-  if (!regex.test(text)) failures.push(`${file} missing ${label}`);
+/** Reply deadlines remain visible; the retired idle closer must not terminate threads. */
+export function auditReplyTimeoutBoundary({ timeoutStatus = "", idleScheduler = "" }) {
+  const failures = [];
+  for (const regex of [/export function replyTimeout\(/, /已超时 · 待处理/, /严重超时 · 待处理/]) {
+    if (!regex.test(timeoutStatus)) failures.push("timeoutStatus: missing " + regex);
+  }
+  if (/closeConversation\(|transferConversation\(/.test(timeoutStatus)) failures.push("timeoutStatus: reply-time display must not close or transfer the conversation");
+  if (!/@Deprecated/.test(idleScheduler) || !/sweep\(\)\s*\{\s*return new SweepResult\(0,\s*0\);\s*\}/.test(idleScheduler)) failures.push("idleScheduler: retired automatic closer must remain disabled");
+  if (/mapper\.selectDue(?:Warning|Close)Candidates\(|mapper\.pendingRepliesCurrent\(/.test(idleScheduler)) failures.push("idleScheduler: retired idle close sweep revived");
+  return failures;
 }
 
-function assertAbsent(file, needle, why) {
-  if (read(file).includes(needle)) failures.push(`${file} 仍残留 ${needle}(${why})`);
+export function auditSupportSurface(sources) {
+  const callable = (source, name) => {
+    const tree = ts.createSourceFile("support.ts", source ?? "", ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    let found = "";
+    const visit = node => {
+      if (ts.isPropertyAssignment(node) && node.name.getText(tree) === name) found = node.getText(tree);
+      if (ts.isFunctionDeclaration(node) && node.name?.text === name) found = node.getText(tree);
+      ts.forEachChild(node, visit);
+    };
+    visit(tree); return found;
+  };
+  sources = { ...sources,
+    clientReply: callable(sources.client, "sendConversationReply"),
+    clientJson: callable(sources.client, "json"),
+    clientRequest: callable(sources.client, "request"),
+    appReply: callable(sources.appApi, "replyConversation"),
+    backendReply: sources.service?.match(/\bpublic[^\n]*\breplyConversation\([\s\S]*?(?=\r?\n    (?:public|private|protected)\b)/)?.[0] ?? "",
+  };
+  const failures = [];
+  function check(key, required, forbidden = []) {
+    const source = sources[key] ?? "";
+    if (!source) { failures.push(key + ": required source missing"); return; }
+    for (const regex of required) if (!regex.test(source)) failures.push(key + ": missing " + regex);
+    for (const regex of forbidden) if (regex.test(source)) failures.push(key + ": retired or unsafe contract " + regex);
+  }
+  const expectedRoutes = ["/service/overview", "/service/sessions", "/service/leaderboard", "/service/kb-sla", "/service/scripts"];
+  const routes = collectActiveNavLeaves(sources.nav ?? "").filter(leaf => leaf.path.startsWith("/service/")).map(leaf => leaf.path).sort();
+  if (JSON.stringify(routes) !== JSON.stringify([...expectedRoutes].sort())) failures.push("nav: active service routes must be the five live customer-service capabilities");
+  check("nav", [/code:\s*"M"/, /slug:\s*"service"/], [/path:\s*"\/service\/tickets"/, /path:\s*"\/content\/(?:support|conversation-center)"/]);
+  // The registry can retain a historical route description. Active IA/rendering grants the entry.
+  check("registry", expectedRoutes.map(route => new RegExp(route.replaceAll("/", "\\/"))));
+  check("view", [
+    /tab\s*===\s*"M2"\s*&&\s*<p>工单服务已下线/,
+    /tab\s*===\s*"M3"\s*&&\s*<M3DedicatedChat\s+ctx=\{ctx\}/,
+    /tab\s*===\s*"M4"\s*&&\s*<M4KbSla\s+ctx=\{ctx\}/,
+    /<M5ServiceRules\b/,
+  ], [/<M2Tickets\b/, /from\s*["'][^"']*m2-tickets["']/]);
+  check("dispatch", [/M:\s*MDomainView/, /meta\.l2Id\s*===\s*"M6"[\s\S]{0,60}<M6Leaderboard/]);
+  check("chat", [
+    /supportClient\.sendConversationReply\(record\.conversationId,\s*input,\s*record\.key\)/,
+    /supportClient\.startConversation\(/,
+    /supportClient\.command\(record\.key\)/,
+    /rememberPending\(pendingKey\(adminId\),\s*record\.key,\s*record\)/,
+    /expectedAssignmentId:\s*record\.expectedAssignmentId/,
+    /expectedVersion:\s*record\.expectedVersion/,
+    /replyTimeout\(convo\.pendingReplySince,\s*timeoutNow,\s*timeoutPolicy\.warnMinutes,\s*timeoutPolicy\.closeMinutes\)/,
+  ], [/data-proof=["']session-to-ticket["']/, /supportClient\.(?:createTicket|convertToTicket)\(/]);
+  check("client", [/"Idempotency-Key":\s*key/]);
+  check("clientJson", [/headers:\s*keyHeader\(key\)/, /body:\s*JSON\.stringify\(body\)/]);
+  check("clientRequest", [/const headers = new Headers\(init\.headers\)/, /guardedFetch\([^\n]*\{\s*\.\.\.init,\s*headers,/]);
+  check("clientReply", [
+    /sendConversationReply:\s*\(/,
+    /\/replies\x60[\s\S]{0,100}json\("POST"/,
+    /expectedStatus:\s*input\.expectedStatus/,
+    /expectedVersion:\s*count\(input\.expectedVersion/,
+    /expectedAssignmentId:\s*wireId\(input\.expectedAssignmentId/,
+    /\},\s*idempotencyKey,\s*signal\)\)\s*$/,
+  ], [/\bidempotencyKey\s*=(?!=|>)/]);
+  check("knowledge", [/data-proof="support-faq-save"/, /I\.support\.faqs/, /filter\(faq\s*=>\s*faq\.surface\s*!==\s*"Ticket Create"\)/], [/data-proof="support-sla-category"/, /setParam\(\s*["']I\.support\.sla/]);
+  check("proxy", [/["']conversations["']/, /ADMIN_TOKEN_COOKIE/, /Authorization:\s*\x60Bearer \$\{token\}\x60/, /headers\.set\(IDEMPOTENCY_KEY_HEADER,\s*idempotencyKey\)/, /method:\s*request\.method/, /cache:\s*"no-store"/]);
+  check("pipeline", [/admin-support-surface-audit\.mjs/]);
+  if (sources.appTicketStoreExists) failures.push("app: retired tickets store must stay absent");
+  check("appApi", [
+    /async function allConversations\(/,
+    /parseConversationPage\(await client\.request/,
+    /supportPath\("\/conversations\/cursor"\)/,
+    /SUPPORT_CONVERSATION_PAGE_INCOMPLETE/,
+  ], [/\b(?:createTicket|replyTicket|closeTicket|allTickets)\s*[:(]/, /supportPath\(["'\x60]\/tickets/]);
+  check("appReply", [/\/replies/, /idempotencyKey:\s*requiredKey\(key\)/, /clientMessageId:\s*key/, /expectedStatus:\s*conversation\.status\.toUpperCase\(\)/, /expectedVersion:\s*conversation\.version/], [/\bkey\s*=(?!=|>)/]);
+  check("appStore", [
+    /supportApi\.conversations\(\)/,
+    /supportApi\.conversation\(/,
+    /supportApi\.startConversation\(/,
+    /supportApi\.replyConversation\(/,
+    /supportApi\.commandResult\(/,
+    /persistSupportPending/,
+  ], [/@\/mock\/(?:tickets|conversations)/, /\buseTickets\(/]);
+  check("controller", [
+    /@RequestMapping\("\/api\/app\/support"\)/,
+    /@GetMapping\("\/conversations\/cursor"\)/,
+    /@PostMapping\("\/conversations\/\{conversationNo\}\/replies"\)/,
+    /service\.replyConversation\(/,
+  ], [/@(?:Get|Post|Patch)Mapping\("\/tickets/]);
+  check("backendReply", [
+    /idempotent\("APP_CONVERSATION_REPLY:/,
+    /matches\(conversation\.status\(\),\s*conversation\.version\(\),\s*request\.expectedStatus\(\),\s*request\.expectedVersion\(\)\)/,
+    /conversationRepository\.replyAsUser\(/,
+    /conversationConflict\(\)/,
+  ]);
+  check("service", [], [/idempotent\("APP_SUPPORT_TICKET_CREATE:/, /ticketRepository\.createTicket\(/]);
+  check("retired", [/class RetiredSupportTickets\b/,
+    /public boolean preHandle\([^\{]*\{\s*if\s*\(!retired\(request\.getServletPath\(\)\)\)\s*return true;\s*response\.setStatus\(410\);/,
+    /json\.writeValue\([^;]*ApiResult\.fail\(410,\s*"SUPPORT_TICKETS_RETIRED"\)\);\s*return false;/,
+  ]);
+  // Only the reviewed Java predicate grammar is interpreted. Unknown control
+  // flow fails closed rather than treating every matching string as reachable.
+  const retired = sources.retired ?? "";
+  const predicate = retired.match(/public static boolean retired\(String path\)\s*\{([\s\S]*?)\r?\n    \}/)?.[1]?.replace(/\/\/[^\r\n]*/g, "").trim() ?? "";
+  const flow = predicate.match(/^if\s*\(((?:path\.equals\("[^"]*"\)\s*(?:\|\|\s*)?)+)\)\s*return false;\s*return\s+((?:path\.matches\("[^"]*"\)\s*(?:\|\|\s*)?)+);$/);
+  if (!flow) failures.push("retired: predicate control flow changed and needs an explicit contract review");
+  const patterns = [...(flow?.[2] ?? "").matchAll(/path\.matches\("([^"]*)"\)/g)].map(match => new RegExp("^(?:" + match[1] + ")$"));
+  const exceptions = [...(flow?.[1] ?? "").matchAll(/path\.equals\("([^"]*)"\)/g)].map(match => match[1]);
+  const blocked = route => !exceptions.includes(route) && patterns.some(regex => regex.test(route));
+  for (const route of [
+    "/api/app/support/tickets", "/api/app/support/acceptance/tickets/TK-1",
+    "/api/admin/content/tickets/TK-1/replies", "/api/admin/content/support/acceptance/tickets/TK-1",
+    "/api/app/support/conversations/CV-1/ticket", "/api/admin/content/conversations/CV-1/ticket",
+    "/api/app/support/sla-targets", "/api/admin/content/knowledge/sla/technical",
+  ]) if (!blocked(route)) failures.push("retired: missing 410 path coverage " + route);
+  for (const route of ["/api/admin/content/tickets/load-config", "/api/admin/content/tickets/load-config/rebalance", "/api/app/support/conversations/CV-1/replies"]) {
+    if (blocked(route)) failures.push("retired: live customer-service route blocked " + route);
+  }
+  if (!/if\s*\(path\.equals[\s\S]*?\)\s*return false;/.test(retired)) failures.push("retired: seat-capacity exceptions must stay explicit");
+  failures.push(...auditReplyTimeoutBoundary(sources));
+  return failures;
 }
 
-// SPEC / modal-spec 文档(内容口径不随迁移变;路由锚点待 PRD 同步阶段更新)
-assertContains("docs/remediation/specs/SPEC-L3a01-support-admin-surface.md", [
-  "`modal-specs/content-support-ticket-workflow.md`",
-]);
-assertRegex(
-  "docs/remediation/specs/SPEC-L3a01-support-admin-surface.md",
-  /\| 状态 \| (approved|verified) \|/,
-  "approved or verified spec status",
-);
-assertContains("docs/remediation/modal-specs/content-support-ticket-workflow.md", [
-  "新增 FAQ",
-  "运营回复",
-  "关闭/重开",
-  "owner/lastReplyAt",
-]);
-
-// IA 真源:客服迁出域 I → 独立域 M 客服中心(/service/*)
-assertContains("lib/nav/console-nav.ts", [
-  'code: "M"',
-  "客服中心",
-  'slug: "service"',
-  'id: "M2"',
-  'path: "/service/tickets"',
-  'id: "M3"',
-  'path: "/service/sessions"',
-  'id: "M6"',
-  'path: "/service/leaderboard"',
-]);
-assertAbsent("lib/nav/console-nav.ts", 'path: "/content/support"', "I8 应已迁出至域 M");
-assertAbsent("lib/nav/console-nav.ts", 'path: "/content/conversation-center"', "I9 应已迁出至域 M");
-
-// registry summary(DomainHeader)
-assertContains("lib/admin/registry/m.ts", [
-  'path: "/service/tickets"',
-  'path: "/service/sessions"',
-  'path: "/service/leaderboard"',
-]);
-
-// 域 M 视图接线
-assertContains("app/components/domain-views/m-view.tsx", [
-  'M2: "M2"',
-  "<M2Tickets ctx={ctx} advisorQualified={Boolean(",
-  "<M3DedicatedChat ctx={ctx} />",
-]);
-assertContains("app/components/domain-views/ported.ts", ['"M"']);
-assertContains("app/components/domain-views/registry.tsx", ["MDomainView", "M: MDomainView"]);
-assertContains("app/components/domain-views/registry.tsx", ['if (code === "M" && meta.l2Id === "M6") return <M6Leaderboard />;']);
-
-// 数据模型(类型契约仍在 m-tabs/data.ts;工单/转交种子数组 2026-08 起服务端化,经 lib/admin/m-client 取数)
-assertContains("app/components/domain-views/m-tabs/data.ts", [
-  "export type SupportTicket",
-  "lastReplyAt: number",
-  "owner: string",
-  "SUPPORT_STATUS_LABEL",             // 状态字典(server-canonical 后仍为前端展示契约)
-  "SESSION_CONVOS",
-  "export type SessionTransfer",      // 跨坐席转交模型
-  "transfer?: SessionTransfer",       // 会话挂转交态(转入待处理)
-  "STANDBY_POOL_LABEL",               // 备勤池(转交超时回落语义)
-]);
-assertContains("lib/admin/m-client.ts", ["SupportTicket"]); // 服务端取数链路存活
-
-// M2 工单坐席台:控件存活 + 真写键 + 共享线程 + 互转 + 行为
-assertContains("app/components/domain-views/m-tabs/m2-tickets.tsx", [
-  'data-proof="support-ticket-reply-save"',
-  'data-proof="support-ticket-close"',
-  'data-proof="support-ticket-escalate"',
-  "I.support.tickets",
-  "I.session.convos",
-  "MessageThread",
-  'author: "agent"',
-]);
-assertRegex(
-  "app/components/domain-views/m-tabs/m2-tickets.tsx",
-  /closed:\s*\["open"\]/, // 2026-08-03 追平重写:翻转改为状态机转移表,closed 仅可重开为 open
-  "M2 关闭/重开状态翻转",
-);
-
-// M3 即时会话坐席台:控件存活 + 真写键 + 续聊 + 发起/互转/跨坐席转交 + 共享线程
-assertContains("app/components/domain-views/m-tabs/m3-sessions.tsx", [
-  'data-proof="session-reply-save"',
-  'data-proof="session-initiate"',
-  'data-proof="session-to-ticket"',
-  'data-proof="session-transfer"',          // 转交发起入口(完整流程,非直改 owner)
-  'data-proof="session-transfer-accept"',    // 转入待处理 B 侧:接收接入
-  'data-proof="session-transfer-return"',    // 转入待处理 B 侧:手动退回
-  'data-proof="session-transfer-fallback"',  // 工作台超时回落备勤池开关
-  "I.session.convos",
-  "I.session.ui.lastConvo",
-  "I.session.workbench.timeoutFallback",     // 超时回落开关真写键(沿用 I.session.* 命名空间)
-  "I.support.agents",                        // 2026-08-03:m3 工单联动改走后端转单,坐席字典键为 M3 与 I.support.* 的现存关联
-  "MessageThread",
-  'sender: "agent"',
-]);
-// M3 转交弹窗(选目标 + 转交/退回原因 · 例行内部交接,不走 MC)
-assertContains("app/components/domain-views/m-tabs/m3-modals.tsx", [
-  'data-proof="session-transfer-submit"',
-  'data-proof="session-transfer-return-submit"',
-  "export function TransferModal",
-  "export function ReturnModal",
-]);
-
-// M4 知识库与 SLA
-assertContains("app/components/domain-views/m-tabs/m4-kb-sla.tsx", [
-  'data-proof="support-faq-save"',
-  'data-proof="support-sla-category"',
-  "I.support.faqs",
-  "I.support.sla",
-]);
-
-// M5 话术与受众圈定
-assertContains("app/components/domain-views/m-tabs/m5-scripts.tsx", [
-  'data-proof="session-policy-audience"',
-  'data-proof="session-script-new"',
-  "I.session.advisor.policy",
-]);
-
-// 域 I 已干净摘除客服(改锚现役子页组件导入,防「N 子页」计数注释漂移)
-assertContains("app/components/domain-views/i-view.tsx", ["I1CopyAb", "I4Trust", "I6I18n"]);
-assertAbsent("app/components/domain-views/i-view.tsx", "I8Support", "客服已迁出域 M");
-assertAbsent("app/components/domain-views/i-view.tsx", "I9Conversation", "客服已迁出域 M");
-
-// 自接线断言:本门须在现役管线 verify.mjs 中(2026-08-03 由退役的 verify.sh 迁入;live 探活归 verify:owner-review:live)
-assertContains("scripts/verify.mjs", ["admin-support-surface-audit.mjs"]);
-
-// UniApp 工单必须以 App support API 为权威：服务端字段严格解析、不可变主键游标全量分页、刷新/详情回读。
-const uniTicketStore = path.join(UNI_ROOT, "src/store/tickets.ts");
-const uniSupportApi = path.join(UNI_ROOT, "src/api/support-api.ts");
-assertContains(uniTicketStore, [
-  'import { supportApi } from "@/api/runtime"',
-  "await supportApi.tickets()",
-  "await supportApi.ticket(id)",
-  "supportApi.createTicket(input, key)",
-  "supportApi.replyTicket(current, body, key)",
-  "supportApi.closeTicket(current, key)",
-  "tickets.value = []",
-]);
-assertContains(uniSupportApi, [
-  "const lastReplyAt = time(v?.lastMessageAt)",
-  "const owner = text(v?.assignedAdminName, true)",
-  "lastReplyAt === null",
-  "owner === null",
-  "async function allTickets()",
-  "do {",
-  "while (beforeId !== null)",
-  "page.nextCursor >= beforeId",
-  "SUPPORT_TICKET_PAGE_INCOMPLETE",
-  'supportPath("/tickets/cursor")',
-  'const page = parseTicketPage(await client.request',
-]);
-assertAbsent(uniTicketStore, "@/mock/tickets", "生产工单不得回退本地 mock");
-assertAbsent(uniTicketStore, "lastReplyAt: raw.lastReplyAt ?? ticket.updatedAt", "不得用旧本地字段回退服务端时间");
-assertAbsent(uniTicketStore, "lastReplyAt: now", "不得用客户端当前时间伪造服务端回复时间");
-
-// This gate covers the six service routes, including the separate public leaderboard.
-const serviceRouteCount = (read("lib/nav/console-nav.ts").match(/path:\s*"\/service\//g) || []).length;
-if (serviceRouteCount !== 6) failures.push(`/service routes ${serviceRouteCount}, expected 6`);
-
-if (failures.length) {
-  console.error("admin-support-surface-audit (domain M) failed");
-  for (const failure of failures) console.error(`- ${failure}`);
-  process.exit(1);
+if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+  const appRoot = resolveNexionAppRoot({ adminRoot: ROOT });
+  const backendRoot = resolveNexionBackendRoot({ adminRoot: ROOT });
+  const failures = auditSupportSurface(loadSupportSources({ appRoot, backendRoot }));
+  if (failures.length) {
+    console.error("admin-support-surface-audit failed\n" + failures.map(failure => "- " + failure).join("\n"));
+    process.exitCode = 1;
+  } else console.log("admin-support-surface-audit passed: live conversations + FAQ + five routes + ticket 410 retirement");
 }
-
-console.log("admin-support-surface-audit (domain M 客服中心) passed");
