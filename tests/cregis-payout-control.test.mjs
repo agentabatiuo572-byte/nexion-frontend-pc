@@ -218,6 +218,8 @@ test("ERC20 selected reconciliation never borrows BEP20 or unlabelled legacy com
   assert.equal(completion(tree), "BSC-completed");
   nodes(tree, "select").find(node => node.props["aria-label"] === "地址池网络").props.onChange({ target: { value: "ERC20" } });
   tree = api.render(); assert.equal(completion(tree), "尚无");
+  const labels = JSON.stringify(tree);
+  for (const globalLabel of ["全局 App 收款入口", "全局自动入账能力", "全局地址分配", "全局自动入账", "全局出款总闸："]) assert.ok(labels.includes(globalLabel));
   data.reconcileRuns.unshift({ status: "COMPLETE", chainId: "60", completedAt: "ETH-completed" });
   tree = api.render(); assert.equal(completion(tree), "ETH-completed");
   assert.equal(api.rowNetwork({ chain_id: "60" }), "ERC20");

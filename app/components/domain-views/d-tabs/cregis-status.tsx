@@ -333,10 +333,10 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
       {error && <div className="dtint warn">Cregis 状态加载失败：{error}</div>}
       {data && <>
         <div className="cregis-intro">
-          <div><strong>接入模式：{({PROVIDER:"支付服务商模式",provider:"支付服务商模式",MOCK:"模拟模式",DISABLED:"未启用"} as Record<string,string>)[data.mode] ?? "未知"}</strong><span>App 收款入口{data.depositEnabled ? "已启用" : "已关闭"} · 自动入账能力{data.depositCreditEnabled ? "已配置" : "未配置"}</span></div>
+          <div><strong>接入模式：{({PROVIDER:"支付服务商模式",provider:"支付服务商模式",MOCK:"模拟模式",DISABLED:"未启用"} as Record<string,string>)[data.mode] ?? "未知"}</strong><span>全局 App 收款入口{data.depositEnabled ? "已启用" : "已关闭"} · 全局自动入账能力{data.depositCreditEnabled ? "已配置" : "未配置"}</span></div>
           <span className={`bdg ${data.provisionGate.state === "IDLE" ? "ok" : "bad"}`}>{data.provisionGate.state === "IDLE" ? "暂无地址在创建" : "停止新地址分配"}</span>
         </div>
-        <div className="dtint">{payoutCapabilityText(data)}</div>
+        <div className="dtint">全局出款总闸：{payoutCapabilityText(data)}</div>
         <div className="cregis-recon" aria-label="分网络出款能力">{(["BEP20", "ERC20"] as const).map(network => {
           const capability = data.networkCapabilities?.find(item => item.network === network);
           return <span key={network}>{network}：{!capability ? "能力待核实" : capability.enabled ? "出款能力已启用，是否放行仍看「提现参数配置」里的网络开关" : !capability.configured ? "出款接入未就绪" : capability.disabledReason === "SWITCH_OFF" ? "出款开关已关闭" : "出款暂停，须核对配置与风险状态"}</span>;
@@ -352,10 +352,10 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
           )}>补充收款地址</button>}
         </div>
         <div className="f-stats cregis-overview">
-          <div className="f-stat"><div className="k">地址分配</div><div className={`v ${data.provisionGate.assignEnabled ? "" : "cregis-off"}`}>{data.provisionGate.assignEnabled ? "已开启" : "已关闭"}</div><div className="sub">{cregisStateText(data.provisionGate.state)} · {data.provisionGate.updatedAt ?? "更新时间未知"}</div></div>
-          <div className="f-stat"><div className="k">自动入账</div><div className={`v ${data.provisionGate.creditEnabled ? "" : "cregis-off"}`}>{data.provisionGate.creditEnabled ? "已开启" : "已关闭"}</div><div className="sub">以资金开关为准</div></div>
+          <div className="f-stat"><div className="k">全局地址分配</div><div className={`v ${data.provisionGate.assignEnabled ? "" : "cregis-off"}`}>{data.provisionGate.assignEnabled ? "已开启" : "已关闭"}</div><div className="sub">{cregisStateText(data.provisionGate.state)} · {data.provisionGate.updatedAt ?? "更新时间未知"}</div></div>
+          <div className="f-stat"><div className="k">全局自动入账</div><div className={`v ${data.provisionGate.creditEnabled ? "" : "cregis-off"}`}>{data.provisionGate.creditEnabled ? "已开启" : "已关闭"}</div><div className="sub">以资金开关为准</div></div>
           <div className="f-stat"><div className="k">待处理资金</div><div className="v">{String(data.unresolvedExposureUsdt ?? "未知")} <small>USDT</small></div><div className="sub">待处理回调 {data.pendingAcceptedDeliveries ?? "未知"}</div></div>
-          <div className={`f-stat ${(data.openRiskAlertCount ?? 0) > 0 ? "warn" : ""}`}><div className="k">未解除的紧急与严重告警</div><div className="v">{data.openRiskAlertCount ?? "未知"}</div><div className="sub">链上出款：{payoutSwitchText(data.provisionGate, "未知")}</div></div>
+          <div className={`f-stat ${(data.openRiskAlertCount ?? 0) > 0 ? "warn" : ""}`}><div className="k">未解除的紧急与严重告警</div><div className="v">{data.openRiskAlertCount ?? "未知"}</div><div className="sub">全局出款总闸：{payoutSwitchText(data.provisionGate, "未知")}</div></div>
         </div>
         <div className="cregis-recon">
           <span>{poolNetwork} 最近完整对账：<strong>{data.reconcileRuns?.find((row) => row.status === "COMPLETE" && rowNetwork(row) === poolNetwork)?.completedAt?.toString() ?? "尚无"}</strong></span>
