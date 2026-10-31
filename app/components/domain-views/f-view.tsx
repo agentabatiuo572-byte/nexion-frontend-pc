@@ -820,7 +820,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             } else {
               throw new Error(`F_BACKEND_ROUTE_MISSING:${mc.paramKey}`);
             }
-            setToast(mc.name + " 已提交，等待确认");
+            setToast(mc.name + (target ? " 已更新，下一轮评估使用新值" : " 已提交，等待确认"));
           } else if (mc.op === "param-multi" && mc.paramKeys && businessValue) {
             // 多字段调参只生成一张 A2 票；后端 replay 在单事务内整批写入，任一失败整批回滚。
             if (tab === "F3") {
