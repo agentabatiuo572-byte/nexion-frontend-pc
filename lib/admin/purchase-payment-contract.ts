@@ -12,6 +12,7 @@ export type PurchasePaymentRecord = {
   subtotalUsdt: string; channelFeeUsdt: string; networkConfirmFeeUsdt: string; totalUsdt: string;
   feePolicyVersion: number; version: number; reason: string | null; createdAt: string; updatedAt: string;
   providerReference?: string | null; providerActualFeeUsdt?: string | null; receipt?: Record<string, unknown> | null;
+  businessAmountUsdt?: string; roundingAdjustmentUsdt?: string; amountVnd?: string | null; fxRateVndPerUsdt?: string | null;
   fulfilmentStatus?: "NOT_DELIVERED" | "DELIVERED"; arrivals?: PurchasePaymentArrival[];
 };
 export type PurchasePaymentPage = { items: PurchasePaymentRecord[]; total: number; pageNum: number; pageSize: number };
@@ -58,6 +59,10 @@ export function parsePurchasePaymentRecord(raw: unknown, intentNo?: string): Pur
     || !optionalText(raw.reason) || !text(raw.createdAt) || !text(raw.updatedAt)
     || raw.providerReference !== undefined && !optionalText(raw.providerReference)
     || raw.providerActualFeeUsdt !== undefined && raw.providerActualFeeUsdt !== null && !exactAmount(raw.providerActualFeeUsdt)
+    || raw.businessAmountUsdt !== undefined && (typeof raw.businessAmountUsdt !== "string" || !/^(0|[1-9]\d*)(\.\d{1,6})?$/.test(raw.businessAmountUsdt))
+    || raw.roundingAdjustmentUsdt !== undefined && (typeof raw.roundingAdjustmentUsdt !== "string" || !/^-?(0|[1-9]\d*)(\.\d{1,6})?$/.test(raw.roundingAdjustmentUsdt))
+    || raw.amountVnd !== undefined && raw.amountVnd !== null && !purchaseTopupMinimum(raw.amountVnd)
+    || raw.fxRateVndPerUsdt !== undefined && raw.fxRateVndPerUsdt !== null && (!exactAmount(raw.fxRateVndPerUsdt) || Number(raw.fxRateVndPerUsdt) <= 0)
     || raw.receipt !== undefined && raw.receipt !== null && !object(raw.receipt)
     || raw.fulfilmentStatus !== undefined && !["NOT_DELIVERED", "DELIVERED"].includes(String(raw.fulfilmentStatus))
     || raw.arrivals !== undefined && (!Array.isArray(raw.arrivals) || raw.arrivals.some(row => !object(row) || !text(row.txid) || !integer(row.log_index)

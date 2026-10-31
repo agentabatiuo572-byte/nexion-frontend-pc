@@ -12,6 +12,12 @@ const channels = [
 ];
 const policy = { version: 2, channels, constraints };
 const record = { intentNo: "PP-1", userId: "12", kind: "ORDER_PAY", paymentMethod: "HDPAY_BANK", status: "MANUAL_REVIEW", subtotalUsdt: "0.50", channelFeeUsdt: "0.01", networkConfirmFeeUsdt: "0", totalUsdt: "0.51", feePolicyVersion: 2, version: 4, reason: "库存不足", createdAt: "2026-10-31T06:00:00Z", updatedAt: "2026-10-31T06:00:00Z" };
+
+test("payment snapshots preserve raw principal, signed rounding and exact integer VND", () => {
+  const snapshot = { ...record, businessAmountUsdt: "80.008000", roundingAdjustmentUsdt: "0.002000", amountVnd: "9007199254740993", fxRateVndPerUsdt: "25000.000000" };
+  assert.equal(contract.parsePurchasePaymentRecord(snapshot).amountVnd, "9007199254740993");
+  for (const patch of [{ businessAmountUsdt: 80.008 }, { businessAmountUsdt: "80.0080001" }, { roundingAdjustmentUsdt: "bad" }, { amountVnd: "12750.50" }, { fxRateVndPerUsdt: "0" }]) assert.throws(() => contract.parsePurchasePaymentRecord({ ...snapshot, ...patch }));
+});
 test("policy accepts decimals for fees while minimum principal stays a positive integer and HDPay has no network fee", () => {
   assert.deepEqual(contract.parsePurchasePaymentPolicy(policy), policy);
   assert.equal(contract.purchaseMoney("10"), "10.00");

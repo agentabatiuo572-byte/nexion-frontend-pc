@@ -9,7 +9,7 @@ const channels = [
 async function fixture(page: Page, options: { readOnly?: boolean; unknownPolicy?: boolean; unavailable?: boolean; afterDelivery?: boolean; missingConstraints?: boolean; unconfigured?: boolean } = {}) {
   let policy = { version: 2, channels: structuredClone(channels).map(row => options.unconfigured ? { ...row, configured: false, channelFeeRatePct: null, channelFeeFixed: null, networkConfirmFeeUsdt: null } : row), constraints }, posts = 0;
   const writes: { body: unknown; key: string; path: string }[] = [], errors: string[] = [];
-  let record = { intentNo: "PP-TEST-1", userId: "12", kind: "ORDER_PAY", paymentMethod: "HDPAY_BANK", status: "MANUAL_REVIEW", subtotalUsdt: "0.50", channelFeeUsdt: "0.01", networkConfirmFeeUsdt: "0", totalUsdt: "0.51", feePolicyVersion: 1, version: 4, reason: "当前库存不足", createdAt: "2026-10-31T06:00:00Z", updatedAt: "2026-10-31T06:00:00Z", providerReference: "provider-original-1", providerActualFeeUsdt: null };
+  let record = { intentNo: "PP-TEST-1", userId: "12", kind: "ORDER_PAY", paymentMethod: "HDPAY_BANK", status: "MANUAL_REVIEW", subtotalUsdt: "0.50", channelFeeUsdt: "0.01", networkConfirmFeeUsdt: "0", totalUsdt: "0.51", businessAmountUsdt: "0.504000", roundingAdjustmentUsdt: "-0.004000", fxRateVndPerUsdt: "25000.000000", amountVnd: "12750", feePolicyVersion: 1, version: 4, reason: "当前库存不足", createdAt: "2026-10-31T06:00:00Z", updatedAt: "2026-10-31T06:00:00Z", providerReference: "provider-original-1", providerActualFeeUsdt: null };
   page.on("pageerror", error => errors.push(error.message));
   await page.route("**/api/admin/**", async route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname;
@@ -88,6 +88,8 @@ test("D1 manual revalidation requires reason/CAS and preserves manual-review out
   const state = await fixture(page); await page.goto("/finance/recon"); const region = workspace(page);
   await region.getByRole("button", { name: "查看详情", exact: true }).click();
   const detail = page.getByRole("dialog").first(); await expect(detail).toContainText("支付商实际费用"); await expect(detail).toContainText("尚未提供");
+  await expect(detail).toContainText("0.504000 USDT"); await expect(detail).toContainText("-0.004000 USDT");
+  await expect(detail).toContainText("1 USDT = 25000.000000 VND"); await expect(detail).toContainText("12,750 VND");
   await detail.getByRole("button", { name: "重新核验并尝试交付", exact: true }).click(); await submitReason(page);
   await expect(detail).toContainText("尚未确认业务交付完成"); await expect(detail).toContainText("库存仍不足");
   expect(state.writes).toHaveLength(1); expect(state.writes[0].path).toMatch(/revalidate-deliver$/); expect(state.errors).toEqual([]);
