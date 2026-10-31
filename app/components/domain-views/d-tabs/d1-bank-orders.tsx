@@ -40,7 +40,7 @@ function D1BankOrderRow({ order, blocked, onSettled, showRail, ...actions }: Ord
   const registerAllowed = manualOrder && !credited && order.manualRegistrationAllowed;
   const tone = credited ? "ok" : ["FAILED", "REJECTED", "EXPIRED", "CANCELLED"].includes(order.status) ? "bad" : "warn";
   return <tr>
-    {showRail && <td><span className="bdg dim">{manualOrder ? "银行转账（VietQR）" : "银行卡（HDPay）"}</span></td>}
+    {showRail && <td><span className="bdg dim">{manualOrder ? "银行转账（VietQR）" : "银行卡支付"}</span></td>}
     <td className="mono">{order.intentNo}<div className="sub">用户 {order.userId}</div><div className="sub mono">{order.memoCode || "—"}</div></td>
     <td className="num mono">{orderUsdt(order.requestedUsdt)}<div className="sub">应付 {orderVnd(order.payableVnd)} · 锁价 {orderVnd(order.lockedFxRateVndPerUsdt)}/USDT</div></td>
     <td className="num mono">{orderVnd(order.receivedVnd)}<div className="sub">{order.receivedVnd === null ? "—" : orderTime(order.receivedAt)}</div></td>
@@ -111,11 +111,11 @@ export function D1BankOrders({ refreshKey, onRetry, hdpayOnly = false, ...action
     finally { if (authEpoch === adminAuthLifecycleEpoch()) { setRetrying(false); await load(); } }
   };
   return <>
-    <div className="l-h">{hdpayOnly ? <span className="ttl">银行卡充值订单（HDPay）</span> : <><span className="ttl">全部银行转账订单</span><span className="sub">· 人工转账和银行卡（HDPay）</span></>}</div>
+    <div className="l-h">{hdpayOnly ? <span className="ttl">银行卡支付订单</span> : <><span className="ttl">全部银行转账订单</span><span className="sub">· 人工转账和银行卡支付</span></>}</div>
     <div className="l-b" style={{ paddingBottom: 8 }}>
       <div className="dtint">{hdpayOnly ? "包含所有状态的订单。订单数不等于实际收款，实际入账看「实际入账」列。" : "包含所有状态的订单。订单数不等于实际收款；登记回单、匹配、核销和退回在下方「银行回单处理与已入账记录」操作。"}</div>
       <div className="ui-form-grid" style={{ marginTop: 12 }}>
-        {!hdpayOnly && <label>转账类型 <select className="ui-control" aria-label="银行订单转账类型" value={rail} disabled={disabled} onChange={event => { setRail(event.target.value); setPageNum(1); }}><option value="">全部类型</option><option value="MANUAL">银行转账（VietQR）</option><option value="HDPAY">银行卡（HDPay）</option></select></label>}
+        {!hdpayOnly && <label>转账类型 <select className="ui-control" aria-label="银行订单转账类型" value={rail} disabled={disabled} onChange={event => { setRail(event.target.value); setPageNum(1); }}><option value="">全部类型</option><option value="MANUAL">银行转账（VietQR）</option><option value="HDPAY">银行卡支付</option></select></label>}
         <label>订单状态 <select className="ui-control" aria-label="银行订单状态" value={status} disabled={disabled} onChange={event => { setStatus(event.target.value); setPageNum(1); }}><option value="">全部状态</option>{Object.entries(ORDER_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label>付款单、用户或附言<input className="ui-control" aria-label="银行订单查询：付款单、用户或附言" placeholder="付款单 / 用户 / 附言" value={keyword} disabled={disabled} onChange={event => setKeyword(event.target.value)} /></label>
         <button className="l-btn sm" disabled={disabled} onClick={() => { setPageNum(1); if (query === keyword.trim() && pageNum === 1) void load(); else setQuery(keyword.trim()); }}>查询</button>

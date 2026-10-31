@@ -46,17 +46,17 @@ test.beforeAll(() => mkdir(evidence, { recursive: true }));
 
 test("D1 unconfigured fees stay blank and explicit zero configures only the edited channel", async ({ page }) => {
   const state = await fixture(page, { unconfigured: true }), region = await openConfig(page);
-  const bank = region.getByRole('row').filter({ hasText: '银行卡（HDPay）' }).first();
+  const bank = region.getByRole('row').filter({ hasText: '银行卡支付' }).first();
   const bsc = region.getByRole('row').filter({ hasText: 'USDT（BEP20）' }).first();
   await expect(region.getByText(/^未设置手续费，用户暂时不能用/)).toHaveCount(2);
-  await expect(region.getByLabel('银行卡（HDPay）手续费比例')).toHaveValue('');
-  await expect(region.getByLabel('银行卡（HDPay）每笔固定费')).toHaveValue('');
+  await expect(region.getByLabel('银行卡支付手续费比例')).toHaveValue('');
+  await expect(region.getByLabel('银行卡支付每笔固定费')).toHaveValue('');
   await expect(bank.getByText('当前未设置', { exact: true })).toHaveCount(2);
   await expect(bank.getByRole('cell', { name: '不收', exact: true })).toBeVisible();
   await expect(bank.getByText('当前 10.00', { exact: true })).toBeVisible();
-  await region.getByLabel('银行卡（HDPay）手续费比例').fill('0');
+  await region.getByLabel('银行卡支付手续费比例').fill('0');
   await expect(region.getByRole('button', { name: '保存修改' })).toBeDisabled();
-  await region.getByLabel('银行卡（HDPay）每笔固定费').fill('0');
+  await region.getByLabel('银行卡支付每笔固定费').fill('0');
   await region.getByRole('button', { name: '保存修改' }).click(); await submitReason(page);
   await expect(region.getByText(/^已保存。新手续费只用于之后发起的付款/)).toBeVisible();
   await expect(bank.getByText(/^未设置手续费/)).toHaveCount(0);
@@ -68,10 +68,10 @@ test("D1 unconfigured fees stay blank and explicit zero configures only the edit
 
 test("D1 actual form enforces integer topup minimum, HDPay zero network fee, Cregis A2-only minimum and authoritative readback", async ({ page }) => {
   const state = await fixture(page), region = await openConfig(page);
-  await expect(region).toContainText("不需要支付密码"); const bank = region.getByRole("row").filter({ hasText: "银行卡（HDPay）" }).first(); await expect(bank.getByText("当前 10.00", { exact: true })).toBeVisible();
-  await expect(region.getByLabel("银行卡（HDPay）网络费")).toHaveCount(0); await expect(bank.getByRole("cell", { name: "不收", exact: true })).toBeVisible();
+  await expect(region).toContainText("不需要支付密码"); const bank = region.getByRole("row").filter({ hasText: "银行卡支付" }).first(); await expect(bank.getByText("当前 10.00", { exact: true })).toBeVisible();
+  await expect(region.getByLabel("银行卡支付网络费")).toHaveCount(0); await expect(bank.getByRole("cell", { name: "不收", exact: true })).toBeVisible();
   await expect(region.getByLabel("USDT（BEP20）最低充值金额")).toHaveAttribute("readonly");
-  const minimum = region.getByLabel("银行卡（HDPay）最低充值金额");
+  const minimum = region.getByLabel("银行卡支付最低充值金额");
   for (const value of ["0", "0.5", "10.5"]) { await minimum.fill(value); await expect(region.getByRole("button", { name: "保存修改" })).toBeDisabled(); }
   await minimum.fill("11"); await region.getByRole("button", { name: "保存修改" }).click(); await submitReason(page);
   await expect(region.getByText(/^已保存。/)).toBeVisible(); await expect(bank.getByText("当前 11.00", { exact: true })).toBeVisible();
@@ -79,7 +79,7 @@ test("D1 actual form enforces integer topup minimum, HDPay zero network fee, Cre
 });
 test("D1 unknown save survives reload and recovers through exact same request and key", async ({ page }) => {
   const state = await fixture(page, { unknownPolicy: true }); let region = await openConfig(page);
-  await region.getByLabel("银行卡（HDPay）最低充值金额").fill("11"); await region.getByRole("button", { name: "保存修改" }).click(); await submitReason(page);
+  await region.getByLabel("银行卡支付最低充值金额").fill("11"); await region.getByRole("button", { name: "保存修改" }).click(); await submitReason(page);
   await expect(page.getByRole("dialog").last()).toContainText("结果未确认"); await page.getByRole("dialog").last().getByRole("button", { name: "取消", exact: true }).click();
   await page.reload(); region = workspace(page); await expect(region.getByRole("button", { name: "再提交一次（不会重复执行）" })).toBeVisible();
   await region.getByRole("button", { name: "再提交一次（不会重复执行）" }).click(); await expect(region.getByRole("button", { name: "再提交一次（不会重复执行）" })).toHaveCount(0);
@@ -115,6 +115,6 @@ test("D1 business timezone and previously delivered business remain explicit aft
 test("D1 missing server constraints is read-only even with write authority", async ({ page }) => {
   const state = await fixture(page, { missingConstraints: true }); const region = await openConfig(page);
   await expect(region.getByText("暂时拿不到可填范围，只能查看，不能修改。")).toBeVisible();
-  await expect(region.getByLabel("银行卡（HDPay）最低充值金额")).toHaveAttribute("readonly");
+  await expect(region.getByLabel("银行卡支付最低充值金额")).toHaveAttribute("readonly");
   await expect(region.getByRole("button", { name: "保存修改" })).toBeDisabled(); expect(state.writes).toHaveLength(0);
 });

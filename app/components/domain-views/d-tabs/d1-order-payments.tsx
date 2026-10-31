@@ -10,7 +10,7 @@ import { fetchPurchasePaymentPolicy, fetchPurchasePaymentRecords, fetchPurchaseP
 import type { DCtx } from "./types";
 import "./d1-order-payments.css";
 
-const methodText = { HDPAY_BANK: "银行卡（HDPay）", CREGIS_USDT_BSC: "USDT（BEP20）", CREGIS_USDT_ERC20: "USDT（ERC20）" };
+const methodText = { HDPAY_BANK: "银行卡支付", CREGIS_USDT_BSC: "USDT（BEP20）", CREGIS_USDT_ERC20: "USDT（ERC20）" };
 // Spaced so Latin names read naturally inside the Chinese sentence.
 const methodShort = { HDPAY_BANK: "银行卡", CREGIS_USDT_BSC: " BEP20 ", CREGIS_USDT_ERC20: " ERC20 " };
 const methodNote = { HDPAY_BANK: "按下方手续费收取，不需要支付密码", CREGIS_USDT_BSC: "按下方手续费和网络费收取，不需要支付密码", CREGIS_USDT_ERC20: "以太坊网络费较高，单独设置，不需要支付密码" };

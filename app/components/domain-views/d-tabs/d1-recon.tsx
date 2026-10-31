@@ -51,7 +51,7 @@ import type { DCtx } from "./types";
 // 注意：HDPay 充值走 vietqr 渠道开关，这一行不能隐藏。
 const LEGACY_CHANNELS_VISIBLE = false;
 
-const depositChannelText = (value: string) => ({vietqr:LEGACY_CHANNELS_VISIBLE ? "银行转账（VietQR）" : "银行卡（HDPay）",bank:"银行转账",card:"刷卡支付",trc20:"USDT（TRC20）",bep20:"USDT（BEP20）",erc20:"USDT（ERC20）",hdpay:"银行卡（HDPay）",cregis:"USDT 链上充值"} as Record<string,string>)[value.toLowerCase()] ?? value;
+const depositChannelText = (value: string) => ({vietqr:LEGACY_CHANNELS_VISIBLE ? "银行转账（VietQR）" : "银行卡支付",bank:"银行转账",card:"国际卡刷卡",trc20:"USDT（TRC20）",bep20:"USDT（BEP20）",erc20:"USDT（ERC20）",hdpay:"银行卡支付",cregis:"USDT 链上充值"} as Record<string,string>)[value.toLowerCase()] ?? value;
 const EMPTY_D1_FLOWS: PageResult<D1DepositFlow> = { total: 0, pageNum: 1, pageSize: 10, records: [] };
 const FLOW_TABS = [
   ["", "全部"],
@@ -960,7 +960,7 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
         </section>}
 
         <section className="l-card">
-          <div className="l-h"><span className="ttl">{LEGACY_CHANNELS_VISIBLE ? "银行转账渠道参数" : "银行卡充值参数（HDPay）"}</span><span className="sub">{LEGACY_CHANNELS_VISIBLE ? "· 只对新付款单和新回单生效" : "· 只对之后的新付款单生效"}</span></div>
+          <div className="l-h"><span className="ttl">{LEGACY_CHANNELS_VISIBLE ? "银行转账渠道参数" : "银行卡支付参数"}</span><span className="sub">{LEGACY_CHANNELS_VISIBLE ? "· 只对新付款单和新回单生效" : "· 只对之后的新付款单生效"}</span></div>
           <div className="l-b">
             {vietQr && [
               ["toleranceVnd", "金额容差", vietQr.config.toleranceVnd, "VND", 0, 5_000],

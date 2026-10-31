@@ -8,7 +8,7 @@ import { PORTED_EMPTY_CONTENT } from "./ported-content";
 export const DOMAIN_D: ModuleEntry[] = [
   {
     path: "/finance/recon",
-    summary: "设置订单付款手续费，核对银行卡（HDPay）和 USDT 链上的充值与付款，处理没对上或异常的款项。",
+    summary: "设置订单付款手续费，核对银行卡支付和 USDT 链上的充值与付款，处理没对上或异常的款项。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
