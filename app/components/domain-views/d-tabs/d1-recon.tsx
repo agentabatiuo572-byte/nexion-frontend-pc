@@ -8,9 +8,9 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { adminAuthLifecycleEpoch, AdminAuthEpochChangedError } from "@/lib/admin/auth-lifecycle";
 import { d1VietQrUsdtAmount } from "@/lib/admin/d1-vietqr-amount";
 import { formatD1FuseReason, requiresReprovision } from "@/lib/admin/d1-account-display";
-import { CregisStatus } from "./cregis-status";
+import { CregisStatus, type D1CregisActivity } from "./cregis-status";
 import { D1BankOrders, orderStatusText } from "./d1-bank-orders";
-import { D1OrderPayments } from "./d1-order-payments";
+import { D1OrderPayments, type D1PaymentActivity } from "./d1-order-payments";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   createD1VietQrAccount,
@@ -197,17 +197,30 @@ function d1EnteredStatusText(status: string) {
 }
 
 export function D1Recon({ ctx }: { ctx: DCtx }) {
+  const owner = useAdminAuth(state => state.session?.adminId), epoch = useAdminAuth(state => state.authEpoch);
+  if (owner == null) return null;
+  return <D1Workspace key={`${owner}:${epoch}`} ctx={ctx} />;
+}
+
+function D1Workspace({ ctx }: { ctx: DCtx }) {
   const [section, setSection] = useState<"payments" | "bank" | "usdt" | "ledger">("payments");
+  const [paymentActivity, setPaymentActivity] = useState<D1PaymentActivity>({ dirtyChannels: 0, pendingCommands: 0 }), [rechargePending, setRechargePending] = useState(0);
+  const [usdtActivity, setUsdtActivity] = useState<D1CregisActivity>({ pendingCommands: 0, needsAttention: false });
   return <>
     <TabGroup label="D1 业务分区" value={section} items={["payments", "bank", "usdt", "ledger"] as const} onSelect={setSection} className="chips d1-business-tabs" itemClassName={(_value, selected) => `chip${selected ? " sel" : ""}`}>
       {value => ({ payments: "订单付款", bank: "银行卡充值", usdt: "USDT 充值", ledger: "充值流水与对账" })[value]}
     </TabGroup>
-    <div hidden={section !== "payments"}><D1OrderPayments ctx={ctx} /></div>
-    <div hidden={section === "payments"}><D1RechargeRecon ctx={ctx} section={section} onUsdt={() => setSection("usdt")} /></div>
+    {(paymentActivity.dirtyChannels > 0 || paymentActivity.pendingCommands > 0 || rechargePending > 0 || usdtActivity.pendingCommands > 0 || usdtActivity.needsAttention) && <div className="dtint warn d1-workspace-alerts" role="status" aria-label="D1 待处理提醒">
+      {(paymentActivity.dirtyChannels > 0 || paymentActivity.pendingCommands > 0) && <div className="p-row"><div className="txt">{paymentActivity.dirtyChannels > 0 && <div>订单付款有 {paymentActivity.dirtyChannels} 个渠道尚未保存。</div>}{paymentActivity.pendingCommands > 0 && <div>订单付款有 {paymentActivity.pendingCommands} 次操作结果待核对，请保留原请求。</div>}</div>{section !== "payments" && <button className="l-btn sm" onClick={() => setSection("payments")}>返回订单付款</button>}</div>}
+      {rechargePending > 0 && <div className="p-row"><div className="txt">充值操作有 {rechargePending} 次结果待核对，请保留原请求。</div>{section !== "bank" && <button className="l-btn sm" onClick={() => setSection("bank")}>返回银行卡充值</button>}</div>}
+      {(usdtActivity.pendingCommands > 0 || usdtActivity.needsAttention) && <div className="p-row"><div className="txt">{usdtActivity.pendingCommands > 0 ? `USDT 充值有 ${usdtActivity.pendingCommands} 次操作结果待核对，请保留原请求。` : "USDT 状态读取或操作反馈需要查看。"}</div>{section !== "usdt" && <button className="l-btn sm" onClick={() => setSection("usdt")}>返回 USDT 充值</button>}</div>}
+    </div>}
+    <div hidden={section !== "payments"}><D1OrderPayments ctx={ctx} onActivityChange={setPaymentActivity} /></div>
+    <div hidden={section === "payments"}><D1RechargeRecon ctx={ctx} section={section} onUsdt={() => setSection("usdt")} onPendingChange={setRechargePending} onUsdtActivity={setUsdtActivity} /></div>
   </>;
 }
 
-function D1RechargeRecon({ ctx, section, onUsdt }: { ctx: DCtx; section: "payments" | "bank" | "usdt" | "ledger"; onUsdt: () => void }) {
+function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity }: { ctx: DCtx; section: "payments" | "bank" | "usdt" | "ledger"; onUsdt: () => void; onPendingChange: (count: number) => void; onUsdtActivity: (activity: D1CregisActivity) => void }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
@@ -242,6 +255,8 @@ function D1RechargeRecon({ ctx, section, onUsdt }: { ctx: DCtx; section: "paymen
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [pendingCommands, setPendingCommands] = useState<D1PendingTopupCommand[]>([]);
+  const [bankPending, setBankPending] = useState(0);
+  useEffect(() => { onPendingChange(pendingCommands.length + bankPending); }, [onPendingChange, pendingCommands.length, bankPending]);
 
   const refreshPendingCommands = () => {
     setPendingCommands(listD1PendingTopupCommands());
@@ -599,13 +614,13 @@ function D1RechargeRecon({ ctx, section, onUsdt }: { ctx: DCtx; section: "paymen
   ) : null;
 
   // HDPay 订单有独立接口，概览加载中或失败时也照常显示。
-  const bankOrders = <D1BankOrders canManage={canBankReconcile} busy={busy} hdpayOnly={!LEGACY_CHANNELS_VISIBLE}
+  const bankOrders = <D1BankOrders canManage={canBankReconcile} busy={busy} hdpayOnly={!LEGACY_CHANNELS_VISIBLE} onPendingChange={setBankPending}
     canRegisterReceipt={!!vietQr?.accounts.length} refreshKey={vietQr?.asOf ?? ""}
     onRegister={(order) => openReceiptRegistration(order)} onManualCredit={openBankManualCredit}
     onRetry={(commandKey) => applyBankWrite(() => retryD1PendingBankOrderCommand(commandKey), "人工入账已重试，请核对订单和用户钱包", adminAuthLifecycleEpoch())} />;
 
   const hdpayOrders = !LEGACY_CHANNELS_VISIBLE && <section hidden={section !== "bank"} className="l-card" id="d1-hdpay-orders">{bankOrders}</section>;
-  const cregisStatus = !LEGACY_CHANNELS_VISIBLE && canReadCregis && <div hidden={section !== "usdt"} id="d1-collection-reconcile"><CregisStatus canManage={canManageChannels} openActionConfirm={openActionConfirm} /></div>;
+  const cregisStatus = !LEGACY_CHANNELS_VISIBLE && canReadCregis && <div hidden={section !== "usdt"} id="d1-collection-reconcile"><CregisStatus canManage={canManageChannels} openActionConfirm={openActionConfirm} onActivityChange={onUsdtActivity} /></div>;
 
   if (loading && !overview) {
     return <>{hdpayOrders}{cregisStatus}<section className="l-card"><div className="l-b">正在加载…</div></section></>;
@@ -737,7 +752,7 @@ function D1RechargeRecon({ ctx, section, onUsdt }: { ctx: DCtx; section: "paymen
           </TabGroup>
         </div>
         {reconciliationType === "cregis" && canReadCregis ? (
-          <CregisStatus canManage={canManageChannels} openActionConfirm={openActionConfirm} embedded />
+          <CregisStatus canManage={canManageChannels} openActionConfirm={openActionConfirm} embedded onActivityChange={onUsdtActivity} />
         ) : <>
         {bankOrders}
         <div className="l-h">

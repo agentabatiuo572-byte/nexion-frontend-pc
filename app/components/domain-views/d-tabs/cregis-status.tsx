@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { financeAdminRequest } from "@/lib/admin/d-client";
+import { financeAdminRequest, listD1PendingCregisCommands } from "@/lib/admin/d-client";
 import type { DCtx } from "./types";
 import { CregisExceptionOperations } from "./cregis-exceptions";
 import { CregisFundsPreparation } from "./cregis-funds-preparation";
@@ -221,8 +221,11 @@ function CregisDepositHistory() {
   </div>;
 }
 
-export function CregisStatus({ canManage = false, openActionConfirm, embedded = false }: {
+export type D1CregisActivity = { pendingCommands: number; needsAttention: boolean };
+
+export function CregisStatus({ canManage = false, openActionConfirm, embedded = false, onActivityChange }: {
   canManage?: boolean; openActionConfirm: DCtx["openActionConfirm"]; embedded?: boolean;
+  onActivityChange?: (activity: D1CregisActivity) => void;
 }) {
   const [data, setData] = useState<CregisExceptions | null>(null);
   const [error, setError] = useState("");
@@ -260,6 +263,8 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+  const pendingCommands = listD1PendingCregisCommands().length, needsAttention = !!error;
+  useEffect(() => { onActivityChange?.({ pendingCommands, needsAttention }); }, [onActivityChange, pendingCommands, needsAttention]);
 
   const command = async (path: string, body?: Record<string, unknown>) => {
     if (busy) return;

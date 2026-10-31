@@ -568,6 +568,12 @@ export function listD1PendingTopupCommands(): D1PendingTopupCommand[] {
     .sort((left, right) => left.createdAt - right.createdAt);
 }
 
+export function listD1PendingCregisCommands(): D1PendingTopupCommand[] {
+  return pendingMutations.list()
+    .filter(value => value.base === "finance" && value.path.startsWith("/cregis/"))
+    .map(({ commandKey, path, createdAt, expiresAt }) => ({ commandKey, path, createdAt, expiresAt }));
+}
+
 function nextId(prefix: string) {
   requestSeq = (requestSeq + 1) % 1_000_000;
   return `${prefix}-${Date.now()}-${requestSeq}`;

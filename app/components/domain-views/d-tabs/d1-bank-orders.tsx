@@ -66,8 +66,9 @@ function D1BankOrderRow({ order, blocked, onSettled, showRail, ...actions }: Ord
   </tr>;
 }
 
-export function D1BankOrders({ refreshKey, onRetry, hdpayOnly = false, ...actions }: OrderActions & {
+export function D1BankOrders({ refreshKey, onRetry, onPendingChange, hdpayOnly = false, ...actions }: OrderActions & {
   refreshKey: string; onRetry: (commandKey: string) => Promise<void>;
+  onPendingChange?: (count: number) => void;
   /** 人工银行转账隐藏时只列 HDPay 充值单，去掉转账类型筛选和类型列。 */
   hdpayOnly?: boolean;
 }) {
@@ -101,6 +102,7 @@ export function D1BankOrders({ refreshKey, onRetry, hdpayOnly = false, ...action
     } finally { if (authEpoch === adminAuthLifecycleEpoch() && current === requestId.current) setLoading(false); }
   }, [rail, status, query, pageNum, pageSize]);
   useEffect(() => { void load(); return () => { requestId.current++; }; }, [load, refreshKey]);
+  useEffect(() => { onPendingChange?.(pending.length); }, [onPendingChange, pending.length]);
   const disabled = actions.busy || loading || retrying;
   const pages = Math.max(1, Math.ceil((data?.total ?? 0) / pageSize));
   const retry = async (commandKey: string) => {

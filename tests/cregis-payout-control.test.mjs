@@ -50,6 +50,7 @@ function harness(data) {
         jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }),
       };
       if (name === "@/lib/admin/d-client") return {
+        listD1PendingCregisCommands: () => [],
         async financeAdminRequest(path, options) {
           requests.push({ path, options });
           return options ? { caseId: 1, status: "MAKER_DONE" } : data;
@@ -67,6 +68,15 @@ function harness(data) {
     },
   };
 }
+
+test("D1 USDT pending summary reads only persisted Cregis finance commands", () => {
+  const client = ts.createSourceFile('d-client.ts', readFileSync(new URL('../lib/admin/d-client.ts', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true);
+  const declaration = client.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'listD1PendingCregisCommands');
+  const rows = [{ base: 'finance', path: '/cregis/reconciliation/run?network=ERC20', commandKey: 'cregis-original', createdAt: 1, expiresAt: 2 }, { base: 'finance', path: '/topup/vietqr/fee', commandKey: 'bank' }, { base: 'finance', path: '/withdrawals/WD1/cregis/recover', commandKey: 'withdrawal' }, { base: 'treasury', path: '/cregis/test', commandKey: 'treasury' }];
+  const context = { exports: {}, pendingMutations: { list: () => rows } };
+  vm.runInNewContext(ts.transpileModule(declaration.getText(client), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, context);
+  assert.deepEqual(JSON.parse(JSON.stringify(context.exports.listD1PendingCregisCommands())), [{ commandKey: 'cregis-original', path: rows[0].path, createdAt: 1, expiresAt: 2 }]);
+});
 
 function nodes(root, type) {
   if (!root || typeof root !== "object") return [];

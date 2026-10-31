@@ -8,6 +8,7 @@ const channels = [
   { paymentMethod: "CREGIS_USDT_ERC20", configured: true, channelFeeRatePct: "0.25", channelFeeFixed: "0.50", networkConfirmFeeUsdt: "2.00", minTopupPrincipal: "1" },
 ];
 async function fixture(page: Page, options: { readOnly?: boolean; unknownPolicy?: boolean; unavailable?: boolean; afterDelivery?: boolean; missingConstraints?: boolean; unconfigured?: boolean } = {}) {
+  let readOnly = options.readOnly ?? false;
   let policy = { version: 2, channels: structuredClone(channels).map(row => options.unconfigured ? { ...row, configured: false, channelFeeRatePct: null, channelFeeFixed: null, networkConfirmFeeUsdt: null } : row), constraints }, posts = 0;
   const writes: { body: unknown; key: string; path: string }[] = [], errors: string[] = [];
   let record = { intentNo: "PP-TEST-1", userId: "12", kind: "ORDER_PAY", paymentMethod: "HDPAY_BANK", status: "MANUAL_REVIEW", subtotalUsdt: "0.50", channelFeeUsdt: "0.01", networkConfirmFeeUsdt: "0", totalUsdt: "0.51", businessAmountUsdt: "0.504000", roundingAdjustmentUsdt: "-0.004000", fxRateVndPerUsdt: "25000.000000", amountVnd: "12750", feePolicyVersion: 1, version: 4, reason: "当前库存不足", createdAt: "2026-10-31T06:00:00Z", updatedAt: "2026-10-31T06:00:00Z", providerReference: "provider-original-1", providerActualFeeUsdt: null };
@@ -16,9 +17,10 @@ async function fixture(page: Page, options: { readOnly?: boolean; unknownPolicy?
     const request = route.request(), url = new URL(request.url()), path = url.pathname;
     const ok = (data: unknown) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ code: 0, data }) });
     const failure = () => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ code: 503, data: null }) });
-    if (path === "/api/admin/auth/session" || path === "/api/admin/auth/activity") return ok({ tokenType: "Bearer", session: { adminId: 12, username: "fixture", operator: "验收管理员", role: "operator", authorities: options.readOnly ? ["finance_d1_read"] : ["finance_d1_read", "finance_d1_fx_manage", "finance_d1_bank_reconcile"], effectiveMenus: ["D", "D1"] } });
+    if (path === "/api/admin/auth/session" || path === "/api/admin/auth/activity") return ok({ tokenType: "Bearer", session: { adminId: readOnly ? 13 : 12, username: "fixture", operator: "验收管理员", role: "operator", authorities: readOnly ? ["finance_d1_read"] : ["finance_d1_read", "finance_d1_fx_manage", "finance_d1_bank_reconcile"], effectiveMenus: ["D", "D1"] } });
     if (path === "/api/admin/platform/business-calendar") return ok({ currentZoneId: "Asia/Shanghai", currentZoneLabel: "北京时间", currentOffset: "+08:00", unified: true, trackZones: {}, pending: null, history: [], options: [], earliestEffectiveDate: "2026-10-31" });
     if (path.endsWith("/reason-policy")) return ok({ minChars: 10, maxChars: 200, sourceKey: "admin.a2.reason_min_chars" });
+    if (path === '/api/admin/finance/cregis/exceptions') return ok({ mode: 'PROVIDER', depositEnabled: false, depositCreditEnabled: false, provisionGate: { state: 'IDLE', version: 1, assignEnabled: false, creditEnabled: false, payoutEnabled: false }, pendingDeliveries: [], uncertainAddresses: [], heldDeposits: [], failedDeliveries: [], unattributed: [], providerMissing: [] });
     if (path === "/api/admin/finance/purchase-payment-policy") {
       if (options.unavailable) return failure();
       if (request.method() === "PATCH") {
@@ -38,7 +40,7 @@ async function fixture(page: Page, options: { readOnly?: boolean; unknownPolicy?
     if (path === "/api/admin/finance/purchase-payment-records/PP-TEST-1") return ok(options.afterDelivery ? { ...record, fulfilmentStatus: "DELIVERED", receipt: { orderNo: "ORDER-1" }, reason: "新增重复到款待核查", providerActualFeeUsdt: "0.123456", arrivals: [{ txid: "0xproof-1", log_index: 3, amount: "0.510000", block_number: 130000000, block_hash: "0xblock-1", confirmations: 20, status: "CONFIRMED" }] } : record);
     return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ code: 404, data: null }) });
   });
-  return { writes, errors };
+  return { writes, errors, useReadOnlyIdentity: () => { readOnly = true; } };
 }
 const workspace = (page: Page) => page.getByRole("region", { name: "订单付款与手续费", exact: true });
 async function openConfig(page: Page) { await page.goto("/finance/recon"); const region = workspace(page); await expect(region).toBeVisible(); await expect(region.getByRole("heading", { name: "付款手续费", exact: true })).toBeVisible(); return region; }
@@ -85,8 +87,12 @@ test("D1 unknown save survives reload and recovers through exact same request an
   const state = await fixture(page, { unknownPolicy: true }); let region = await openConfig(page);
   await region.getByLabel("银行卡支付最低充值金额").fill("11"); await region.getByRole("button", { name: "保存修改" }).click(); await submitReason(page);
   await expect(page.getByRole("dialog").last()).toContainText("结果未确认"); await page.getByRole("dialog").last().getByRole("button", { name: "取消", exact: true }).click();
+  await page.getByRole('tab', { name: '银行卡充值', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'D1 待处理提醒', exact: true })).toContainText('订单付款有 1 次操作结果待核对');
+  await page.getByRole('button', { name: '返回订单付款', exact: true }).click();
   await page.reload(); region = workspace(page); await expect(region.getByRole("button", { name: "再提交一次（不会重复执行）" })).toBeVisible();
   await region.getByRole("button", { name: "再提交一次（不会重复执行）" }).click(); await expect(region.getByRole("button", { name: "再提交一次（不会重复执行）" })).toHaveCount(0);
+  await expect(page.getByRole('status', { name: 'D1 待处理提醒', exact: true })).toHaveCount(0);
   expect(state.writes).toHaveLength(2); expect(state.writes[0]).toEqual(state.writes[1]); expect(state.errors).toEqual([]);
 });
 test("D1 manual revalidation requires reason/CAS and preserves manual-review outcome without wallet credit or invented success", async ({ page }) => {
@@ -141,9 +147,11 @@ test("D1 channel and business tabs preserve distinct drafts and submit only the 
   await region.getByLabel('付款状态', { exact: true }).selectOption('MANUAL_REVIEW');
   await page.getByRole('tab', { name: '银行卡充值', exact: true }).click();
   await expect(region).toBeHidden();
+  await expect(page.getByRole('status', { name: 'D1 待处理提醒', exact: true })).toContainText('订单付款有 2 个渠道尚未保存');
   await expect(page.getByText('银行卡支付订单', { exact: true })).toBeVisible();
   await expect(page.getByText('USDT 资金状态（BEP20 / ERC20）', { exact: true })).toBeHidden();
   await page.getByRole('tab', { name: 'USDT 充值', exact: true }).click();
+  await expect(page.getByRole('button', { name: '返回订单付款', exact: true })).toBeVisible();
   await expect(page.getByText('银行卡支付订单', { exact: true })).toBeHidden();
   await expect(page.getByText('USDT 资金状态（BEP20 / ERC20）', { exact: true })).toBeVisible();
   await page.getByRole('tab', { name: '订单付款', exact: true }).click();
@@ -161,6 +169,7 @@ test("D1 channel and business tabs preserve distinct drafts and submit only the 
   await region.getByRole('button', { name: '保存修改', exact: true }).click();
   await submitReason(page);
   await expect(region.getByText(/^已保存。/)).toBeVisible();
+  await expect(page.getByRole('status', { name: 'D1 待处理提醒', exact: true })).toHaveCount(0);
   expect(state.writes).toHaveLength(1);
   expect((state.writes[0].body as { channels: unknown[] }).channels).toEqual([
     { ...channels[0], configured: undefined, channelFeeFixed: '0.75' },
@@ -183,5 +192,34 @@ test("D1 read authority keeps every channel read-only after switching", async ({
   await region.getByRole('tab', { name: 'ERC20', exact: true }).click();
   await expect(region.getByLabel('USDT（ERC20）网络费')).toHaveAttribute('readonly');
   await expect(region.getByRole('button', { name: '保存修改', exact: true })).toHaveCount(0);
+  expect(state.writes).toHaveLength(0); expect(state.errors).toEqual([]);
+});
+
+test("D1 bank unknown and unsaved fee summaries stay visible across sections and clear on identity change", async ({ page }) => {
+  await page.addInitScript(() => {
+    const commandKey = 'bank-pending-fixture', createdAt = Date.now();
+    sessionStorage.setItem('nexion-admin-command-owner', '12');
+    sessionStorage.setItem('nexgrid-admin-d1-uncertain-commands-v1', JSON.stringify({ [commandKey]: { commandKey, fingerprint: 'bank-pending-fixture', createdAt, expiresAt: createdAt + 86400000, base: 'finance', path: '/vietqr/orders/VQR-TEST20/manual-credit', method: 'POST', body: JSON.stringify({ expectedVersion: 2, reason: '合成银行未知结果保留原命令核查' }) }, 'cregis-pending-fixture': { commandKey: 'cregis-pending-fixture', fingerprint: 'cregis-pending-fixture', createdAt, expiresAt: createdAt + 86400000, base: 'finance', path: '/cregis/reconciliation/run?network=ERC20', method: 'POST', body: JSON.stringify({ reason: '合成USDT未知结果保留原命令核查' }) } }));
+  });
+  const state = await fixture(page), region = await openConfig(page);
+  const summary = page.getByRole('status', { name: 'D1 待处理提醒', exact: true });
+  await expect(summary).toContainText('充值操作有 1 次结果待核对');
+  await expect(summary).toContainText('USDT 充值有 1 次操作结果待核对');
+  await page.getByRole('button', { name: '返回 USDT 充值', exact: true }).click();
+  await expect(page.getByText('USDT 资金状态（BEP20 / ERC20）', { exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: '订单付款', exact: true }).click();
+  await region.getByLabel('银行卡支付每笔固定费').fill('0.75');
+  await page.getByRole('button', { name: '返回银行卡充值', exact: true }).click();
+  await expect(summary).toContainText('订单付款有 1 个渠道尚未保存');
+  await expect(page.getByText('bank-pending-fixture', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '返回订单付款', exact: true }).click();
+  await expect(region.getByLabel('银行卡支付每笔固定费')).toHaveValue('0.75');
+  state.useReadOnlyIdentity();
+  const changedSession = page.waitForResponse(response => response.url().endsWith('/api/admin/auth/session'));
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await changedSession;
+  await expect(region.getByLabel('银行卡支付每笔固定费')).toHaveAttribute('readonly');
+  await expect(region.getByLabel('银行卡支付每笔固定费')).toHaveValue('0.50');
+  await expect(summary).toHaveCount(0);
   expect(state.writes).toHaveLength(0); expect(state.errors).toEqual([]);
 });

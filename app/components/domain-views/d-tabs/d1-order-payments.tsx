@@ -22,13 +22,15 @@ const time = (value: string) => formatBusinessTimeCompact(value);
 const channelInput = (row: PurchasePaymentChannel) => ({ ...row, networkConfirmFeeUsdt: row.paymentMethod === "HDPAY_BANK" ? "0" : row.networkConfirmFeeUsdt });
 const allowed = (authority: string) => { const session = useAdminAuth.getState().session; return !!session && (session.authorities.includes(authority) || ["superadmin", "super"].includes(session.role)); };
 
-export function D1OrderPayments({ ctx }: { ctx: DCtx }) {
+export type D1PaymentActivity = { dirtyChannels: number; pendingCommands: number };
+
+export function D1OrderPayments({ ctx, onActivityChange }: { ctx: DCtx; onActivityChange: (activity: D1PaymentActivity) => void }) {
   const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
   if (!session || !allowed("finance_d1_read")) return null;
-  return <Workspace key={`${session.adminId}:${epoch}`} ctx={ctx} owner={session.adminId} epoch={epoch} />;
+  return <Workspace key={`${session.adminId}:${epoch}`} ctx={ctx} owner={session.adminId} epoch={epoch} onActivityChange={onActivityChange} />;
 }
 
-function Workspace({ ctx, owner, epoch }: { ctx: DCtx; owner: number; epoch: number }) {
+function Workspace({ ctx, owner, epoch, onActivityChange }: { ctx: DCtx; owner: number; epoch: number; onActivityChange: (activity: D1PaymentActivity) => void }) {
   const [policy, setPolicy] = useState<PurchasePaymentPolicy | null>(null), [draft, setDraft] = useState<PurchasePaymentChannel[]>([]);
   const [feeGroup, setFeeGroup] = useState<"bank" | "usdt">("bank"), [feeNetwork, setFeeNetwork] = useState<"CREGIS_USDT_BSC" | "CREGIS_USDT_ERC20">("CREGIS_USDT_BSC");
   const [records, setRecords] = useState<PurchasePaymentPage | null>(null), [status, setStatus] = useState(""), [method, setMethod] = useState(""), [page, setPage] = useState(1);
@@ -56,6 +58,7 @@ function Workspace({ ctx, owner, epoch }: { ctx: DCtx; owner: number; epoch: num
   const changedChannels = draft.filter(row => JSON.stringify(policy?.channels.find(item => item.paymentMethod === row.paymentMethod)) !== JSON.stringify(row)).map(channelInput);
   const valid = !!policy?.constraints && changedChannels.length > 0 && changedChannels.every(row => validPurchaseChannel(row, policy.constraints));
   const changed = changedChannels.length > 0;
+  useEffect(() => { onActivityChange({ dirtyChannels: changedChannels.length, pendingCommands: pending.length }); }, [onActivityChange, changedChannels.length, pending.length]);
   async function recover(row: PendingPurchasePayment, retry: boolean) {
     if (mutation.current || !owns()) return;
     mutation.current = true; setBusy(true); setOperationError(""); setNotice("");
@@ -81,7 +84,7 @@ function Workspace({ ctx, owner, epoch }: { ctx: DCtx; owner: number; epoch: num
     if (!policy || !valid || !changed || policyPending || busy || !allowed("finance_d1_fx_manage")) return;
     const currentPolicy = policy, channels = changedChannels.filter(row => validPurchaseChannel(row, policy.constraints)).map(({ configured: _configured, ...row }) => row);
     ctx.openActionConfirm({ action: "修改付款手续费", reasonMin: 10, reasonMax: 300,
-      detail: <><p>新手续费只用于之后发起的付款，已下单的按原费用。</p><table className="l-tbl"><thead><tr><th>付款方式</th><th>修改前</th><th>修改后</th></tr></thead><tbody>{channels.map(row => { const before = currentPolicy.channels.find(item => item.paymentMethod === row.paymentMethod)!; const label = (item: typeof row) => `${item.channelFeeRatePct}% + ${purchaseMoney(item.channelFeeFixed)} USDT${item.paymentMethod === "HDPAY_BANK" ? `，最低充值 ${purchaseMoney(item.minTopupPrincipal)} USDT` : `，网络费 ${purchaseMoney(item.networkConfirmFeeUsdt)} USDT`}`; return <tr key={row.paymentMethod}><td>{methodText[row.paymentMethod]}</td><td>{before.configured && validPurchaseChannel(before) ? label(before) : "未设置"}</td><td>{label(row)}</td></tr>; })}</tbody></table>{channels.some(row => !currentPolicy.channels.find(item => item.paymentMethod === row.paymentMethod)!.configured) && <p>保存后，用户就能用新设置的方式付款。</p>}</>,
+      detail: <><p>新手续费只用于之后发起的付款，已下单的按原费用。</p><table className="l-tbl"><thead><tr><th>付款方式</th><th>修改前</th><th>修改后</th></tr></thead><tbody>{channels.map(row => { const before = currentPolicy.channels.find(item => item.paymentMethod === row.paymentMethod)!; const label = (item: typeof row) => `${item.channelFeeRatePct}% + ${purchaseMoney(item.channelFeeFixed)} USDT${item.paymentMethod === "HDPAY_BANK" ? `，最低充值 ${purchaseMoney(item.minTopupPrincipal)} USDT` : `，网络费 ${purchaseMoney(item.networkConfirmFeeUsdt)} USDT`}`; return <tr key={row.paymentMethod}><td>{methodText[row.paymentMethod]}</td><td>{before.configured && validPurchaseChannel(before) ? label(before) : "未设置"}</td><td>{label(row)}</td></tr>; })}</tbody></table>{channels.some(row => !currentPolicy.channels.find(item => item.paymentMethod === row.paymentMethod)!.configured) && <p>保存后费用配置生效；能否付款仍取决于通道及收款地址是否可用。</p>}</>,
       completionCopy: "只修改手续费，不会收款、退款或改动用户余额。",
       run: async reason => {
         if (mutation.current || !owns()) throw new Error("页面状态已变化，请刷新后重试。");
