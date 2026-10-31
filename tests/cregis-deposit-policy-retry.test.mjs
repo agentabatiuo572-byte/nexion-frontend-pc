@@ -57,3 +57,21 @@ test("failure preserves original record and concurrent, unauthorized or expired 
     const blocked = fixture(); blocked.pending[property] = "known"; await blocked.retry(); assert.equal(blocked.calls.length, 0);
   }
 });
+
+test("actual policy editor reports unknown and awaiting approval separately, excluding every known terminal", () => {
+  const compiled = ts.transpileModule(source.text, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+  for (const [pending, expected] of [[null, { unknown: 0, awaitingApproval: 0 }], [{ commandKey: 'original-key' }, { unknown: 1, awaitingApproval: 0 }], [{ commandKey: 'original-key', ticketId: 'A2-1' }, { unknown: 0, awaitingApproval: 1 }], ...['approved', 'rejected', 'withdrawn', 'expired'].map(terminal => [{ commandKey: 'original-key', ticketId: 'A2-1', terminal }, { unknown: 0, awaitingApproval: 0 }])]) {
+    let slot = 0; const effects = [], activities = [], exports = {};
+    const context = { exports, require(name) {
+      if (name === 'react') return { useState: initial => [slot++ === 4 ? pending : initial, () => {}], useCallback: callback => callback, useRef: current => ({ current }), useEffect: callback => effects.push(callback) };
+      if (name === 'react/jsx-runtime') return { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) };
+      if (name === '@/lib/admin/pending-mutation-store') return { createPendingMutationStore: () => ({ list: () => [] }) };
+      if (name === '@/lib/admin/d-client') return { financeAdminRequest: () => { throw new Error('summary must not send requests'); } };
+      return {};
+    } };
+    runInNewContext(`${compiled}\nexports.Editor = Editor;`, context);
+    exports.Editor({ owner: 12, epoch: 1, operator: 'fixture', canManage: false, openActionConfirm() {}, onActivityChange: value => activities.push(JSON.parse(JSON.stringify(value))) });
+    effects.at(-1)();
+    assert.deepEqual(activities, [expected]);
+  }
+});

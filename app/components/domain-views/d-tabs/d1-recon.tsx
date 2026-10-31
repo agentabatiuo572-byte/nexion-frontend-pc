@@ -205,15 +205,22 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
 function D1Workspace({ ctx }: { ctx: DCtx }) {
   const [section, setSection] = useState<"payments" | "bank" | "usdt" | "ledger">("payments");
   const [paymentActivity, setPaymentActivity] = useState<D1PaymentActivity>({ dirtyChannels: 0, pendingCommands: 0 }), [rechargePending, setRechargePending] = useState(0);
-  const [usdtActivity, setUsdtActivity] = useState<D1CregisActivity>({ pendingCommands: 0, needsAttention: false });
+  const [usdtActivity, setUsdtActivity] = useState<D1CregisActivity>({ pendingCommands: 0, needsAttention: false, proposalUnknown: 0, proposalPending: 0 });
+  const usdtNeedsAttention = usdtActivity.pendingCommands > 0 || usdtActivity.needsAttention || usdtActivity.proposalUnknown > 0 || usdtActivity.proposalPending > 0;
   return <>
     <TabGroup label="D1 业务分区" value={section} items={["payments", "bank", "usdt", "ledger"] as const} onSelect={setSection} className="chips d1-business-tabs" itemClassName={(_value, selected) => `chip${selected ? " sel" : ""}`}>
       {value => ({ payments: "订单付款", bank: "银行卡充值", usdt: "USDT 充值", ledger: "充值流水与对账" })[value]}
     </TabGroup>
-    {(paymentActivity.dirtyChannels > 0 || paymentActivity.pendingCommands > 0 || rechargePending > 0 || usdtActivity.pendingCommands > 0 || usdtActivity.needsAttention) && <div className="dtint warn d1-workspace-alerts" role="status" aria-label="D1 待处理提醒">
+    {(paymentActivity.dirtyChannels > 0 || paymentActivity.pendingCommands > 0 || rechargePending > 0 || usdtNeedsAttention) && <div className="dtint warn d1-workspace-alerts" role="status" aria-label="D1 待处理提醒">
       {(paymentActivity.dirtyChannels > 0 || paymentActivity.pendingCommands > 0) && <div className="p-row"><div className="txt">{paymentActivity.dirtyChannels > 0 && <div>订单付款有 {paymentActivity.dirtyChannels} 个渠道尚未保存。</div>}{paymentActivity.pendingCommands > 0 && <div>订单付款有 {paymentActivity.pendingCommands} 次操作结果待核对，请保留原请求。</div>}</div>{section !== "payments" && <button className="l-btn sm" onClick={() => setSection("payments")}>返回订单付款</button>}</div>}
       {rechargePending > 0 && <div className="p-row"><div className="txt">充值操作有 {rechargePending} 次结果待核对，请保留原请求。</div>{section !== "bank" && <button className="l-btn sm" onClick={() => setSection("bank")}>返回银行卡充值</button>}</div>}
-      {(usdtActivity.pendingCommands > 0 || usdtActivity.needsAttention) && <div className="p-row"><div className="txt">{usdtActivity.pendingCommands > 0 ? `USDT 充值有 ${usdtActivity.pendingCommands} 次操作结果待核对，请保留原请求。` : "USDT 状态读取或操作反馈需要查看。"}</div>{section !== "usdt" && <button className="l-btn sm" onClick={() => setSection("usdt")}>返回 USDT 充值</button>}</div>}
+      {usdtNeedsAttention && <div className="p-row"><div className="txt">
+        {usdtActivity.pendingCommands > 0 && <div>USDT 充值有 {usdtActivity.pendingCommands} 次操作结果待核对，请保留原请求。</div>}
+        {usdtActivity.proposalUnknown > 0 && <div>USDT 共同充值规则有 {usdtActivity.proposalUnknown} 项提案结果待核对。</div>}
+        {usdtActivity.proposalPending > 0 && <div>USDT 共同充值规则有 {usdtActivity.proposalPending} 项提案待审批或处理。</div>}
+        {(usdtActivity.proposalUnknown > 0 || usdtActivity.proposalPending > 0) && <div className="sub">请在「USDT 充值 → 充值与地址设置」查询原提案。</div>}
+        {usdtActivity.needsAttention && <div>USDT 状态读取或操作反馈需要查看。</div>}
+      </div>{section !== "usdt" && <button className="l-btn sm" onClick={() => setSection("usdt")}>返回 USDT 充值</button>}</div>}
     </div>}
     <div hidden={section !== "payments"}><D1OrderPayments ctx={ctx} onActivityChange={setPaymentActivity} /></div>
     <div hidden={section === "payments"}><D1RechargeRecon ctx={ctx} section={section} onUsdt={() => setSection("usdt")} onPendingChange={setRechargePending} onUsdtActivity={setUsdtActivity} /></div>

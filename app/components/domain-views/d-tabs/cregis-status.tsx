@@ -7,7 +7,7 @@ import { CregisExceptionOperations } from "./cregis-exceptions";
 import { CregisFundsPreparation } from "./cregis-funds-preparation";
 import { CregisAutoForward } from "./cregis-auto-forward";
 import { CregisPoolPolicy } from "./cregis-pool-policy";
-import { CregisDepositPolicy } from "./cregis-deposit-policy";
+import { CregisDepositPolicy, type DepositProposalActivity } from "./cregis-deposit-policy";
 
 type ExceptionRow = Record<string, unknown>;
 type AddressPool = { available: boolean; total: number; unassigned: number; assigned: number; verifying: number; unknown: number; limit: number; reserveTarget?: number; automatic?: boolean; queued?: number; lastError?: string | null; retryAfter?: number | null };
@@ -221,7 +221,7 @@ function CregisDepositHistory() {
   </div>;
 }
 
-export type D1CregisActivity = { pendingCommands: number; needsAttention: boolean };
+export type D1CregisActivity = { pendingCommands: number; needsAttention: boolean; proposalUnknown: number; proposalPending: number };
 
 export function CregisStatus({ canManage = false, openActionConfirm, embedded = false, onActivityChange }: {
   canManage?: boolean; openActionConfirm: DCtx["openActionConfirm"]; embedded?: boolean;
@@ -240,6 +240,7 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
   const [credit, setCredit] = useState(false);
   const [payout, setPayout] = useState(false);
   const [poolNetwork, setPoolNetwork] = useState<"BEP20" | "ERC20">("BEP20");
+  const [proposalActivity, setProposalActivity] = useState<DepositProposalActivity>({ unknown: 0, awaitingApproval: 0 });
   const selectedPool = data?.addressPools?.[poolNetwork] ?? (poolNetwork === "BEP20" ? data?.addressPool : undefined);
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -264,7 +265,7 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
 
   useEffect(() => { void refresh(); }, [refresh]);
   const pendingCommands = listD1PendingCregisCommands().length, needsAttention = !!error;
-  useEffect(() => { onActivityChange?.({ pendingCommands, needsAttention }); }, [onActivityChange, pendingCommands, needsAttention]);
+  useEffect(() => { onActivityChange?.({ pendingCommands, needsAttention, proposalUnknown: proposalActivity.unknown, proposalPending: proposalActivity.awaitingApproval }); }, [onActivityChange, pendingCommands, needsAttention, proposalActivity.unknown, proposalActivity.awaitingApproval]);
 
   const command = async (path: string, body?: Record<string, unknown>) => {
     if (busy) return;
@@ -441,7 +442,7 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
         </>}
       </section>
       <section id="cregis-settings" hidden={section !== "settings"} aria-label="充值与地址设置" className="cregis-content">
-        <CregisDepositPolicy canManage={canManage} openActionConfirm={openActionConfirm} />
+        <CregisDepositPolicy canManage={canManage} openActionConfirm={openActionConfirm} onActivityChange={setProposalActivity} />
         {data && <CregisPoolPolicy canManage={canManage} openActionConfirm={openActionConfirm} />}
         {data && canManage && <>
         <div className="cregis-panel">

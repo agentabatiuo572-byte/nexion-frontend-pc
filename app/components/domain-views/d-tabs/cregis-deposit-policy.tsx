@@ -15,14 +15,16 @@ const RETRY_WINDOW_MS = 10 * 60 * 1000;
 const proposals = createPendingMutationStore<Pending>({ storageKey: "nexion-admin-cregis-deposit-policy-proposals-v1", retainExpiredRecords: true,
   isValidRecord: row => Number.isSafeInteger(row.owner) && !!row.input && !!row.input.command });
 
-export function CregisDepositPolicy({ canManage, openActionConfirm }: { canManage: boolean; openActionConfirm: DCtx["openActionConfirm"] }) {
+export type DepositProposalActivity = { unknown: number; awaitingApproval: number };
+
+export function CregisDepositPolicy({ canManage, openActionConfirm, onActivityChange }: { canManage: boolean; openActionConfirm: DCtx["openActionConfirm"]; onActivityChange?: (activity: DepositProposalActivity) => void }) {
   const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
   if (!session) return null;
   return <Editor key={`${session.adminId}:${epoch}`} owner={session.adminId} epoch={epoch} operator={session.operator || session.username}
-    canManage={canManage} openActionConfirm={openActionConfirm} />;
+    canManage={canManage} openActionConfirm={openActionConfirm} onActivityChange={onActivityChange} />;
 }
 
-function Editor({ owner, epoch, operator, canManage, openActionConfirm }: { owner: number; epoch: number; operator: string; canManage: boolean; openActionConfirm: DCtx["openActionConfirm"] }) {
+function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivityChange }: { owner: number; epoch: number; operator: string; canManage: boolean; openActionConfirm: DCtx["openActionConfirm"]; onActivityChange?: (activity: DepositProposalActivity) => void }) {
   const [policy, setPolicy] = useState<Policy | null>(null), [min, setMin] = useState(""), [fee, setFee] = useState(""), [confirmations, setConfirmations] = useState("");
   const [pending, setPending] = useState<Pending | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState(""), [message, setMessage] = useState("");
   const live = useRef(true), sequence = useRef(0), mutation = useRef(false);
@@ -37,6 +39,9 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm }: { owne
     finally { if (owns() && current === sequence.current) setBusy(false); }
   }, [owns]);
   useEffect(() => { live.current = true; syncPending(); void refresh(); return () => { live.current = false; sequence.current++; }; }, [refresh, syncPending]);
+  const unknown = pending && !pending.terminal && !pending.ticketId ? 1 : 0;
+  const awaitingApproval = pending && !pending.terminal && pending.ticketId ? 1 : 0;
+  useEffect(() => { onActivityChange?.({ unknown, awaitingApproval }); }, [onActivityChange, unknown, awaitingApproval]);
 
   function submit() {
     if (!policy || pending || busy || !canManage || !owns() || !/^[1-9]\d*$/.test(min) || !valid(min, fee, Number(confirmations)) || !/^\d+$/.test(confirmations)) return;

@@ -223,3 +223,28 @@ test("D1 bank unknown and unsaved fee summaries stay visible across sections and
   await expect(summary).toHaveCount(0);
   expect(state.writes).toHaveLength(0); expect(state.errors).toEqual([]);
 });
+
+for (const [phase, ticketId, terminal, expected] of [['unknown', undefined, undefined, 'USDT 共同充值规则有 1 项提案结果待核对'], ['awaiting', 'A2-FIXTURE-1', undefined, 'USDT 共同充值规则有 1 项提案待审批或处理'], ['terminal', 'A2-FIXTURE-1', 'approved', undefined]] as const) {
+  test(`D1 common USDT policy ${phase} proposal keeps its precise cross-section summary`, async ({ page }) => {
+    await page.addInitScript(({ ticketId, terminal }) => {
+      const commandKey = 'deposit-proposal-fixture', createdAt = Date.now();
+      sessionStorage.setItem('nexion-admin-command-owner', '12');
+      sessionStorage.setItem('nexion-admin-cregis-deposit-policy-proposals-v1', JSON.stringify({ [commandKey]: { commandKey, fingerprint: `12|${commandKey}`, owner: 12, createdAt, expiresAt: createdAt + 86400000, ticketId, terminal, input: { command: { domain: 'D', op: 'd_cregis_deposit_policy', params: { expectedVersion: 1, minDepositUsdt: '1', feeUsdt: '0.1', confirmations: 15 } } } } }));
+    }, { ticketId, terminal });
+    const state = await fixture(page); await openConfig(page);
+    const summary = page.getByRole('status', { name: 'D1 待处理提醒', exact: true });
+    if (expected) {
+      await expect(summary).toContainText(expected);
+      await page.getByRole('tab', { name: '银行卡充值', exact: true }).click();
+      await expect(summary).toContainText(expected);
+      await page.getByRole('button', { name: '返回 USDT 充值', exact: true }).click();
+    } else {
+      await expect(summary).toHaveCount(0);
+      await page.getByRole('tab', { name: 'USDT 充值', exact: true }).click();
+    }
+    await page.getByRole('button', { name: '充值与地址设置', exact: true }).click();
+    await expect(page.getByText(/操作标识 deposit-proposal-fixture/)).toBeVisible();
+    await expect(page.getByRole('button', { name: '查询原提案', exact: true })).toBeVisible();
+    expect(state.writes).toHaveLength(0); expect(state.errors).toEqual([]);
+  });
+}
