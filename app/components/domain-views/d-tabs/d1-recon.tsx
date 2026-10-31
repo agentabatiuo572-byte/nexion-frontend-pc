@@ -10,6 +10,7 @@ import { d1VietQrUsdtAmount } from "@/lib/admin/d1-vietqr-amount";
 import { formatD1FuseReason, requiresReprovision } from "@/lib/admin/d1-account-display";
 import { CregisStatus } from "./cregis-status";
 import { D1BankOrders, orderStatusText } from "./d1-bank-orders";
+import { D1OrderPayments } from "./d1-order-payments";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   createD1VietQrAccount,
@@ -192,6 +193,10 @@ function d1EnteredStatusText(status: string) {
 }
 
 export function D1Recon({ ctx }: { ctx: DCtx }) {
+  return <><D1OrderPayments ctx={ctx} /><D1RechargeRecon ctx={ctx} /></>;
+}
+
+function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
@@ -635,13 +640,13 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                 <div className="txt">
                   <div className="k">{channel.id}</div>
                   <div className="s">
-                    费率 {channel.fee} · 最小充值 {channel.minAmount}
+                    费率 {channel.fee} · {["vietqr", "hdpay"].includes(channel.code) ? "最低充值本金见上方「订单直付与费用」生效规则" : `最小充值 ${channel.minAmount}`}
                     {channel.code === "vietqr" && vietQr ? ` · 单笔上限 $${vietQr.config.perTxLimitUsd.toLocaleString("en-US")}` : ""}
                     {channel.maxAmountValue !== null ? ` · 单笔上限 $${channel.maxAmountValue.toLocaleString("en-US")}` : ""}
                   </div>
                 </div>
                 <span className={`bdg ${channel.enabled ? "ok" : "bad"}`}>{channel.enabled ? "启用" : "停用"}</span>
-                {canManageChannels && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => updateChannelNumber(channel, "min")}>最小额</button>}
+                {canManageChannels && !["vietqr", "hdpay"].includes(channel.code) && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => updateChannelNumber(channel, "min")}>最小额</button>}
                 {canManageChannels && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => updateChannelNumber(channel, "fee")}>费率</button>}
                 {canManageChannels && channel.maxAmountValue !== null && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => updateChannelNumber(channel, "max")}>单笔上限</button>}
                 {canManageChannels && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => openActionConfirm({

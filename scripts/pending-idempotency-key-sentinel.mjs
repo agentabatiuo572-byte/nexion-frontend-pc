@@ -42,6 +42,8 @@ const EXECUTOR_MODULE = "lib/admin/stable-mutation.ts";
 const MIGRATED = [
   // Payment policy changes retain the original command for query-only audit recovery after unknown outcomes.
   "lib/admin/payment-password-client.ts",
+  // Order-payment policy and revalidation retain immutable owner/payload/key after unknown outcomes; same-key retry is time bounded.
+  "lib/admin/purchase-payment-client.ts",
   // These callers keep durable attempts and release them only after their authoritative readback.
   "lib/admin/device-rank-client.ts",
   "lib/admin/event-rules-client.ts",

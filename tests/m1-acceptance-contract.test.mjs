@@ -34,6 +34,8 @@ test("M1 live workbench reaches the original seat form without widening its auth
     "@/lib/admin/pending-mutation-store": { createPendingMutationStore: () => ({ list: () => [], get: () => null }) },
     "@/lib/admin/business-time": { parseBusinessTime: Date.parse },
     "@/lib/admin/shell-authorities": { adminShellSessionKey: unavailable },
+    "@/app/components/payment-security/payment-security-card": { PaymentSecurityCard: no },
+    "@/lib/admin/payment-password-client": { paymentSecurityPorts: { support: userId => ({ key: `support:${userId}`, userId }) } },
     "@/lib/admin/m-support-client": { supportClient: new Proxy({}, { get: () => unavailable }), SupportClientError: Error, isIndeterminateSupportError: () => false },
     "../design-kit": { Icon: no, Modal: no, Toggle: no }, "./hd-ui": { MAvatar: no, catCN: no },
     "./m1-supervisor-pool": { M1SupervisorPool: no }, "./support-bulk-composer": { SupportBulkComposer: no },

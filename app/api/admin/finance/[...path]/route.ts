@@ -18,6 +18,13 @@ function isText(value: string | undefined) {
 }
 
 function backendPath(parts: string[]) {
+  if (parts.length === 1 && ["purchase-payment-policy", "purchase-payment-records"].includes(parts[0])) {
+    return `/api/admin/finance/${parts[0]}`;
+  }
+  if (parts[0] === "purchase-payment-records" && /^[A-Za-z0-9_-]{1,100}$/.test(parts[1] ?? "")
+    && (parts.length === 2 || parts.length === 3 && parts[2] === "revalidate-deliver")) {
+    return `/api/admin/finance/purchase-payment-records/${parts[1]}${parts.length === 3 ? "/revalidate-deliver" : ""}`;
+  }
   const exceptionRoute = cregisExceptionRoute(parts);
   if (exceptionRoute) return exceptionRoute.path;
   if (parts.length === 2 && parts[0] === "cregis" && parts[1] === "exceptions") {
@@ -135,6 +142,10 @@ function backendPath(parts: string[]) {
 
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
+  if ((path[0] === "purchase-payment-policy" && !["GET", "PATCH"].includes(request.method))
+    || (path[0] === "purchase-payment-records" && !(path.length === 3 ? request.method === "POST" : request.method === "GET"))) {
+    return jsonError(405, "PURCHASE_PAYMENT_METHOD_NOT_ALLOWED");
+  }
   const exceptionRoute = cregisExceptionRoute(path);
   if (exceptionRoute && !exceptionRoute.methods.includes(request.method)) {
     return jsonError(405, "CREGIS_EXCEPTION_METHOD_NOT_ALLOWED");

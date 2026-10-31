@@ -25,7 +25,8 @@ export function PaymentPasswordPanel({ userId, userLabel }: { userId: string | n
   if (!session?.authorities.includes("user_c5_read")) return <section id="payment-password-panels" className="payment-pin payment-pin__card" aria-label="支付密码"><h2>支付密码</h2><p>当前没有查看权限，请联系有权限的管理员。</p></section>;
   return <div id="payment-password-panels" className="payment-pin">
     <div className="payment-security ps-tabs" aria-label="支付密码管理视图"><button className="ps-tab" aria-pressed={view === "rules"} onClick={() => setView("rules")}>规则配置</button><button className="ps-tab" aria-pressed={view === "records"} onClick={() => setView("records")}>支付密码异常列表</button></div>
-    <div hidden={view !== "rules"}><PaymentPolicySection key={`policy:${session.adminId}:${epoch}`} owner={session.adminId} canWrite={session.authorities.includes("user_c5_write")} /></div>
+    <p className="payment-pin__secondary">支付密码仅用于钱包余额付款；HDPay 银行直付和 USDT-BSC 链上直付无需支付密码，不受支付密码锁定影响。</p>
+    <div hidden={view !== "rules"}><PaymentPolicySection key={`policy:${session.adminId}:${epoch}`} owner={session.adminId} canWrite={session.authorities.includes("user_c5_payment_password_policy_write")} /></div>
     {view === "records" && <section className="payment-pin__card"><PaymentSecurityList key={`records:${session.adminId}:${epoch}`} /></section>}
     {port && <section className="payment-pin__card"><PaymentSecurityCard key={`${port.key}:${session.adminId}:${epoch}`} port={port} userLabel={userLabel} /></section>}
     {userId ? <PaymentUserSection key={`payment:${session.adminId}:${epoch}:${userId}`} userId={userId} userLabel={userLabel} /> : <section className="payment-pin__card" aria-label="用户支付密码"><h2>用户支付密码</h2><p className="payment-pin__empty">请先在上方用户列表中点击“查看安全信息”，再查看该用户的支付密码状态及验证记录。</p></section>}
@@ -71,7 +72,7 @@ function PaymentPolicySection({ owner, canWrite }: { owner: number; canWrite: bo
   }
   return <section className="payment-pin__card" aria-label="支付密码规则">
     <header className="payment-pin__header">
-      <div><h2>支付密码规则</h2><p className="payment-pin__secondary">付款和修改原支付密码共用错误次数</p></div>
+      <div><h2>支付密码规则</h2><p className="payment-pin__secondary">钱包余额付款和修改原支付密码共用错误次数</p></div>
       <div className="payment-pin__actions">
         {!editing && <button className="payment-pin__button payment-pin__button--primary" aria-label="调整支付密码规则" disabled={!editable || loading || busy} onClick={() => { setValues({ maxAttempts: String(policy!.values.maxAttempts), windowMinutes: String(policy!.values.windowMinutes), lockMinutes: String(policy!.values.lockMinutes) }); setReason(""); setConfirmed(false); setReceipt(null); setEditing(true); }}>调整规则</button>}
         <button className="payment-pin__button payment-pin__icon-button" aria-label="重新加载规则" title="重新加载规则" disabled={loading || busy} onClick={() => void load()}><RefreshCw size={16} /></button>
@@ -124,7 +125,7 @@ function PaymentUserSection({ userId, userLabel }: { userId: string; userLabel: 
     <header className="payment-pin__header"><div><h2>用户支付密码</h2><p className="payment-pin__secondary">{userLabel} · {businessZoneText()}</p></div><div className="payment-pin__actions">{status && <span className={`payment-pin__status payment-pin__status--${status.state.toLowerCase()}`}>{status.state === "UNSET" ? "未设置" : status.state === "SET" ? "已设置" : "暂时锁定"}</span>}<button className="payment-pin__button payment-pin__icon-button" aria-label="重新加载支付密码信息" title="重新加载支付密码信息" disabled={loading} onClick={() => void load()}><RefreshCw size={16} /></button></div></header>
     {loading && <p className="payment-pin__notice" role="status">正在读取该用户的支付密码状态与验证记录…</p>}
     {error && <p className="payment-pin__notice payment-pin__notice--error" role="alert">{error}</p>}
-    {status && <><dl className="payment-pin__facts"><div><dt>最近设置或修改</dt><dd>{formatBusinessTimeCompact(status.updatedAt, "暂无记录")}</dd></div><div><dt>锁定至</dt><dd>{status.state === "LOCKED" ? formatBusinessTimeCompact(status.lockedUntil) : "当前未锁定"}</dd></div><div><dt>查询时间</dt><dd>{formatBusinessTimeCompact(status.observedAt)}</dd></div></dl>{status.state === "LOCKED" && <p className="payment-pin__lock-note">支付密码暂时锁定，登录不受影响。到期后请重新加载确认。</p>}</>}
+    {status && <><dl className="payment-pin__facts"><div><dt>最近设置或修改</dt><dd>{formatBusinessTimeCompact(status.updatedAt, "暂无记录")}</dd></div><div><dt>锁定至</dt><dd>{status.state === "LOCKED" ? formatBusinessTimeCompact(status.lockedUntil) : "当前未锁定"}</dd></div><div><dt>查询时间</dt><dd>{formatBusinessTimeCompact(status.observedAt)}</dd></div></dl>{status.state === "LOCKED" && <p className="payment-pin__lock-note">钱包付款的支付密码暂时锁定，HDPay 银行直付、USDT-BSC 链上直付和登录不受影响。到期后请重新加载确认。</p>}</>}
     <details className="payment-pin__help"><summary>忘记支付密码时如何处理</summary><p>用户应在 APP 或 H5 通过“忘记支付密码”验证身份；无法使用恢复渠道时，按既有账号身份核验流程协助处理。这里只查看状态和验证结果。</p></details>
     <div className="payment-pin__records"><h3>验证记录</h3><div className="payment-pin__table-scroll"><table className="payment-pin__table payment-pin__history" aria-label="支付密码验证记录"><colgroup><col /><col /><col /><col /><col /></colgroup><thead><tr><th>验证时间</th><th>用途</th><th>结果</th><th>来源</th><th>访问地址（已脱敏）</th></tr></thead><tbody>
       {attempts?.records.map(row => <tr key={row.id}><td>{formatBusinessTimeCompact(row.occurredAt)}</td><td>{row.purpose === "PAYMENT" ? "确认购买或置换" : "修改支付密码"}</td><td>{{ SUCCEEDED: "验证通过", INCORRECT: "密码不正确", LOCKED: "暂时锁定", BUSINESS_REJECTED: "交易条件不满足，未计为输错" }[row.result]}</td><td>{row.channel === "APP" ? "APP" : "H5"}</td><td>{row.clientIpMasked || "未记录"}</td></tr>)}

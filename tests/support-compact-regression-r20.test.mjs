@@ -15,6 +15,9 @@ const root = path.resolve(new URL("..", import.meta.url).pathname.replace(/^\/(\
 const read = file => fs.readFileSync(process.env.SUPPORT_COMPACT_SOURCE_ROOT && fs.existsSync(path.join(process.env.SUPPORT_COMPACT_SOURCE_ROOT, file)) ? path.join(process.env.SUPPORT_COMPACT_SOURCE_ROOT, file) : path.join(root, file), "utf8");
 const component = name => read(`app/components/domain-views/m-tabs/${name}.tsx`);
 function evaluate(source, bindings = {}, dependencies = {}) {
+  dependencies = { "@/app/components/payment-security/payment-security-card": { PaymentSecurityCard: () => null },
+    "@/lib/admin/payment-password-client": { paymentSecurityPorts: { support: userId => ({ key: `support:${userId}`, userId }) } },
+    "@/lib/admin/shell-authorities": { adminShellSessionKey: () => "1:12" }, ...dependencies };
   const module = { exports: {} };
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText,
     { module, exports: module.exports, AbortController, ...bindings, require: id => id === "@/lib/admin/brand-copy" ? systemBrand : Object.hasOwn(dependencies, id) ? dependencies[id] : id.endsWith(".css") ? {} : require(id) });

@@ -8,7 +8,7 @@ export function depositPolicyUnits(value: string): bigint | null {
 
 export function validDepositPolicy(min: string, fee: string, confirmations: number): boolean {
   const minimum = depositPolicyUnits(min), cost = depositPolicyUnits(fee);
-  return minimum !== null && minimum > BigInt(0) && cost !== null && cost < minimum
+  return minimum !== null && minimum > BigInt(0) && minimum % BigInt(1000000) === BigInt(0) && cost !== null && cost < minimum
     && Number.isSafeInteger(confirmations) && confirmations >= 15 && confirmations <= 10000;
 }
 

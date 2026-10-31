@@ -32,14 +32,14 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm }: { owne
     const current = ++sequence.current; setBusy(true); setError(""); setPolicy(null);
     try {
       const next = parsePolicy(await financeAdminRequest<unknown>("/cregis/deposit-policy"));
-      if (owns() && current === sequence.current) { setPolicy(next); setMin(next.minDepositUsdt); setFee(next.feeUsdt); setConfirmations(String(next.confirmations)); }
+      if (owns() && current === sequence.current) { setPolicy(next); setMin(String(Number(next.minDepositUsdt))); setFee(next.feeUsdt); setConfirmations(String(next.confirmations)); }
     } catch (failure) { if (owns() && current === sequence.current) setError(failure instanceof Error ? failure.message : "读取充值规则失败。"); }
     finally { if (owns() && current === sequence.current) setBusy(false); }
   }, [owns]);
   useEffect(() => { live.current = true; syncPending(); void refresh(); return () => { live.current = false; sequence.current++; }; }, [refresh, syncPending]);
 
   function submit() {
-    if (!policy || pending || busy || !canManage || !owns() || !valid(min, fee, Number(confirmations)) || !/^\d+$/.test(confirmations)) return;
+    if (!policy || pending || busy || !canManage || !owns() || !/^[1-9]\d*$/.test(min) || !valid(min, fee, Number(confirmations)) || !/^\d+$/.test(confirmations)) return;
     const before = `最低 ${policy.minDepositUsdt} USDT；手续费 ${policy.feeUsdt} USDT；确认数 ${policy.confirmations}；版本 ${policy.version}`;
     const after = `最低 ${min} USDT；手续费 ${fee} USDT；确认数 ${confirmations}`;
     openActionConfirm({ action: "提交 USDT-BEP20 充值规则", detail: `当前：${before}。目标：${after}。提交后需另一位管理员审批，批准前不生效。`,
@@ -109,21 +109,21 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm }: { owne
       }
     } finally { mutation.current = false; if (owns()) setBusy(false); }
   }
-  const isValid = valid(min, fee, Number(confirmations)) && /^\d+$/.test(confirmations);
+  const isValid = /^[1-9]\d*$/.test(min) && valid(min, fee, Number(confirmations)) && /^\d+$/.test(confirmations);
   return <div className="cregis-history cregis-settings-card">
     <div className="cregis-section-title">USDT-BEP20 充值规则 <button className="l-btn sm" disabled={busy} onClick={() => void refresh()}>刷新规则</button></div>
     <p className="sub">调整三项规则后一起提交审批，另一管理员批准后生效。已发现交易保留原规则；未入账交易仍须满足环境安全确认数下限。</p>
     {error && <div className="dtint warn" role="alert">{error}</div>}{message && <div className="dtint" role="status">{message}</div>}
     {!policy && !error && <p>正在读取充值规则…</p>}
     {policy && <><div className="cregis-policy-current" aria-label="当前生效规则">
-      {[["最低充值额", policy.minDepositUsdt, "USDT"], ["固定手续费", policy.feeUsdt, "USDT"], ["链上确认数", policy.confirmations, "次"]].map(([title, value, unit]) => <div key={title}><span>{title}</span><strong>{value} <small>{unit}</small></strong></div>)}
+      {[["最低充值额", Number(policy.minDepositUsdt).toFixed(2), "USDT"], ["固定手续费", policy.feeUsdt, "USDT"], ["链上确认数", policy.confirmations, "次"]].map(([title, value, unit]) => <div key={title}><span>{title}</span><strong>{value} <small>{unit}</small></strong></div>)}
       <span className="cregis-version">生效版本 v{policy.version}</span></div>
       <fieldset className="cregis-form-grid" disabled={!canManage || busy || !!pending}><legend>拟调整为 · 审批后生效</legend>
-        <label>最低充值额（USDT）<input aria-label="最低充值额（USDT）" inputMode="decimal" value={min} onChange={e => setMin(e.target.value)} /></label>{" "}
+        <label>最低充值额（USDT，正整数）<input aria-label="最低充值额（USDT）" type="number" inputMode="numeric" min={1} step={1} value={min} onChange={e => setMin(e.target.value)} /></label>{" "}
         <label>固定手续费（USDT）<input aria-label="固定手续费（USDT）" inputMode="decimal" value={fee} onChange={e => setFee(e.target.value)} /></label>{" "}
         <label>链上确认数<input aria-label="链上确认数" type="number" min={15} max={10000} step={1} value={confirmations} onChange={e => setConfirmations(e.target.value)} /></label>
       </fieldset>
-      <p className="sub">金额最多六位小数，最低额须大于零，手续费不得小于零且须低于最低额；确认数为 15–10000 的整数，并须满足服务端可能更高的安全下限。</p>
+      <p className="sub">最低充值本金须为正整数，统一显示两位小数；手续费最多六位小数，不得小于零且须低于最低额；确认数为 15–10000 的整数，并须满足服务端可能更高的安全下限。订单直付及其手续费仍可有小数，不受充值最低额限制。</p>
       {canManage && <button className="l-btn sm mc" disabled={busy || !!pending || !isValid || (units(min) === units(policy.minDepositUsdt) && units(fee) === units(policy.feeUsdt) && Number(confirmations) === policy.confirmations)} onClick={submit}>提交审批</button>}
     </>}
     {pending && <div className="cregis-case"><p>原提案：{pending.ticketId ?? "结果待核实"} · 操作标识 {pending.commandKey}</p>
