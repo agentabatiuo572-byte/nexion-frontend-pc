@@ -5,6 +5,7 @@ const constraints = { ratePct: { min: '0', max: '100', scale: 2 }, feeUsdt: { mi
 const channels = [
   { paymentMethod: "HDPAY_BANK", configured: true, channelFeeRatePct: "1.25", channelFeeFixed: "0.50", networkConfirmFeeUsdt: "0", minTopupPrincipal: "10" },
   { paymentMethod: "CREGIS_USDT_BSC", configured: true, channelFeeRatePct: "0", channelFeeFixed: "0.10", networkConfirmFeeUsdt: "0.20", minTopupPrincipal: "1" },
+  { paymentMethod: "CREGIS_USDT_ERC20", configured: true, channelFeeRatePct: "0.25", channelFeeFixed: "0.50", networkConfirmFeeUsdt: "2.00", minTopupPrincipal: "1" },
 ];
 async function fixture(page: Page, options: { readOnly?: boolean; unknownPolicy?: boolean; unavailable?: boolean; afterDelivery?: boolean; missingConstraints?: boolean; unconfigured?: boolean } = {}) {
   let policy = { version: 2, channels: structuredClone(channels).map(row => options.unconfigured ? { ...row, configured: false, channelFeeRatePct: null, channelFeeFixed: null, networkConfirmFeeUsdt: null } : row), constraints }, posts = 0;
@@ -48,7 +49,7 @@ test("D1 unconfigured fees stay blank and explicit zero configures only the edit
   const state = await fixture(page, { unconfigured: true }), region = await openConfig(page);
   const bank = region.getByRole('row').filter({ hasText: '银行卡支付' }).first();
   const bsc = region.getByRole('row').filter({ hasText: 'USDT（BEP20）' }).first();
-  await expect(region.getByText(/^未设置手续费，用户暂时不能用/)).toHaveCount(2);
+  await expect(region.getByText(/^未设置手续费，用户暂时不能用/)).toHaveCount(1);
   await expect(region.getByLabel('银行卡支付手续费比例')).toHaveValue('');
   await expect(region.getByLabel('银行卡支付每笔固定费')).toHaveValue('');
   await expect(bank.getByText('当前未设置', { exact: true })).toHaveCount(2);
@@ -60,6 +61,7 @@ test("D1 unconfigured fees stay blank and explicit zero configures only the edit
   await region.getByRole('button', { name: '保存修改' }).click(); await submitReason(page);
   await expect(region.getByText(/^已保存。新手续费只用于之后发起的付款/)).toBeVisible();
   await expect(bank.getByText(/^未设置手续费/)).toHaveCount(0);
+  await region.getByRole('tab', { name: 'USDT', exact: true }).click();
   await expect(bsc.getByText('未设置手续费，用户暂时不能用 BEP20 付款')).toBeVisible();
   expect(state.writes).toHaveLength(1);
   expect((state.writes[0].body as { channels: unknown[] }).channels).toEqual([{ paymentMethod: 'HDPAY_BANK', channelFeeRatePct: '0', channelFeeFixed: '0', networkConfirmFeeUsdt: '0', minTopupPrincipal: '10' }]);
@@ -70,7 +72,9 @@ test("D1 actual form enforces integer topup minimum, HDPay zero network fee, Cre
   const state = await fixture(page), region = await openConfig(page);
   await expect(region).toContainText("不需要支付密码"); const bank = region.getByRole("row").filter({ hasText: "银行卡支付" }).first(); await expect(bank.getByText("当前 10.00", { exact: true })).toBeVisible();
   await expect(region.getByLabel("银行卡支付网络费")).toHaveCount(0); await expect(bank.getByRole("cell", { name: "不收", exact: true })).toBeVisible();
+  await region.getByRole('tab', { name: 'USDT', exact: true }).click();
   await expect(region.getByLabel("USDT（BEP20）最低充值金额")).toHaveAttribute("readonly");
+  await region.getByRole('tab', { name: '银行卡', exact: true }).click();
   const minimum = region.getByLabel("银行卡支付最低充值金额");
   for (const value of ["0", "0.5", "10.5"]) { await minimum.fill(value); await expect(region.getByRole("button", { name: "保存修改" })).toBeDisabled(); }
   await minimum.fill("11"); await region.getByRole("button", { name: "保存修改" }).click(); await submitReason(page);
@@ -117,4 +121,67 @@ test("D1 missing server constraints is read-only even with write authority", asy
   await expect(region.getByText("暂时拿不到可填范围，只能查看，不能修改。")).toBeVisible();
   await expect(region.getByLabel("银行卡支付最低充值金额")).toHaveAttribute("readonly");
   await expect(region.getByRole("button", { name: "保存修改" })).toBeDisabled(); expect(state.writes).toHaveLength(0);
+});
+
+test("D1 channel and business tabs preserve distinct drafts and submit only the changed channels", async ({ page }) => {
+  const state = await fixture(page), region = await openConfig(page);
+  const fees = region.getByRole('table', { name: '付款手续费', exact: true });
+  await expect(fees.getByRole('row')).toHaveCount(2);
+  await expect(region.getByText('钱包余额', { exact: true })).toBeVisible();
+  await region.getByLabel('银行卡支付每笔固定费').fill('0.75');
+  await region.getByRole('tab', { name: 'USDT', exact: true }).click();
+  await expect(region.getByLabel('银行卡支付每笔固定费')).toHaveCount(0);
+  await region.getByLabel('USDT（BEP20）每笔固定费').fill('0.35');
+  await region.getByRole('tab', { name: 'ERC20', exact: true }).click();
+  await expect(region.getByLabel('USDT（ERC20）每笔固定费')).toHaveValue('0.50');
+  await expect(region.getByLabel('USDT（ERC20）最低充值金额')).toHaveAttribute('readonly');
+  await expect(region.getByLabel('USDT（BEP20）每笔固定费')).toHaveCount(0);
+  await region.getByRole('tab', { name: 'BEP20', exact: true }).click();
+  await expect(region.getByLabel('USDT（BEP20）每笔固定费')).toHaveValue('0.35');
+  await region.getByLabel('付款状态', { exact: true }).selectOption('MANUAL_REVIEW');
+  await page.getByRole('tab', { name: '银行卡充值', exact: true }).click();
+  await expect(region).toBeHidden();
+  await expect(page.getByText('银行卡支付订单', { exact: true })).toBeVisible();
+  await expect(page.getByText('USDT 资金状态（BEP20 / ERC20）', { exact: true })).toBeHidden();
+  await page.getByRole('tab', { name: 'USDT 充值', exact: true }).click();
+  await expect(page.getByText('银行卡支付订单', { exact: true })).toBeHidden();
+  await expect(page.getByText('USDT 资金状态（BEP20 / ERC20）', { exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: '订单付款', exact: true }).click();
+  await expect(region.getByLabel('USDT（BEP20）每笔固定费')).toHaveValue('0.35');
+  await expect(region.getByLabel('付款状态', { exact: true })).toHaveValue('MANUAL_REVIEW');
+  await region.getByRole('tab', { name: '银行卡', exact: true }).click();
+  await expect(region.getByLabel('银行卡支付每笔固定费')).toHaveValue('0.75');
+  await expect(region.getByText(/^待保存：/)).toContainText('银行卡支付、USDT（BEP20）');
+  const history = region.getByRole('link', { name: '修改历史', exact: true });
+  await expect(history).toHaveClass('l-btn sm');
+  await expect(history).toHaveAttribute('href', '/platform/audit?domain=D');
+  expect(await history.evaluate(element => getComputedStyle(element).display)).toBe('inline-flex');
+  expect(await history.evaluate(element => getComputedStyle(element).borderTopStyle)).toBe('solid');
+  await region.screenshot({ path: `${evidence}/d1-grouped-fees-desktop.png` });
+  await region.getByRole('button', { name: '保存修改', exact: true }).click();
+  await submitReason(page);
+  await expect(region.getByText(/^已保存。/)).toBeVisible();
+  expect(state.writes).toHaveLength(1);
+  expect((state.writes[0].body as { channels: unknown[] }).channels).toEqual([
+    { ...channels[0], configured: undefined, channelFeeFixed: '0.75' },
+    { ...channels[1], configured: undefined, channelFeeFixed: '0.35' },
+  ].map(({ configured, ...row }) => row));
+  await page.setViewportSize({ width: 760, height: 900 });
+  await region.getByRole('tab', { name: 'USDT', exact: true }).click();
+  await region.getByRole('tab', { name: 'ERC20', exact: true }).click();
+  await expect(region.getByLabel('USDT（ERC20）每笔固定费')).toHaveValue('0.50');
+  await expect(history).toBeVisible();
+  await region.screenshot({ path: `${evidence}/d1-grouped-fees-narrow.png` });
+  expect(state.errors).toEqual([]);
+});
+
+test("D1 read authority keeps every channel read-only after switching", async ({ page }) => {
+  const state = await fixture(page, { readOnly: true }), region = await openConfig(page);
+  await expect(region.getByLabel('银行卡支付每笔固定费')).toHaveAttribute('readonly');
+  await region.getByRole('tab', { name: 'USDT', exact: true }).click();
+  await expect(region.getByLabel('USDT（BEP20）每笔固定费')).toHaveAttribute('readonly');
+  await region.getByRole('tab', { name: 'ERC20', exact: true }).click();
+  await expect(region.getByLabel('USDT（ERC20）网络费')).toHaveAttribute('readonly');
+  await expect(region.getByRole('button', { name: '保存修改', exact: true })).toHaveCount(0);
+  expect(state.writes).toHaveLength(0); expect(state.errors).toEqual([]);
 });

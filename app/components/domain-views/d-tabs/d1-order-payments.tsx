@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { formatBusinessTimeCompact, businessZoneText } from "@/lib/admin/business-time";
 import { Modal, DataListPager } from "../design-kit";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import { purchasePaymentMethods, purchasePaymentStates, purchaseMoney, purchaseWasDelivered, validPurchaseChannel, type PurchasePaymentChannel, type PurchasePaymentPolicy, type PurchasePaymentPage, type PurchasePaymentRecord } from "@/lib/admin/purchase-payment-contract";
 import { fetchPurchasePaymentPolicy, fetchPurchasePaymentRecords, fetchPurchasePaymentRecord, updatePurchasePaymentPolicy, revalidatePurchasePayment, pendingPurchasePayments, retryPurchasePayment, canRetryPurchasePayment, type PendingPurchasePayment } from "@/lib/admin/purchase-payment-client";
 import type { DCtx } from "./types";
@@ -29,6 +30,7 @@ export function D1OrderPayments({ ctx }: { ctx: DCtx }) {
 
 function Workspace({ ctx, owner, epoch }: { ctx: DCtx; owner: number; epoch: number }) {
   const [policy, setPolicy] = useState<PurchasePaymentPolicy | null>(null), [draft, setDraft] = useState<PurchasePaymentChannel[]>([]);
+  const [feeGroup, setFeeGroup] = useState<"bank" | "usdt">("bank"), [feeNetwork, setFeeNetwork] = useState<"CREGIS_USDT_BSC" | "CREGIS_USDT_ERC20">("CREGIS_USDT_BSC");
   const [records, setRecords] = useState<PurchasePaymentPage | null>(null), [status, setStatus] = useState(""), [method, setMethod] = useState(""), [page, setPage] = useState(1);
   const [pending, setPending] = useState<PendingPurchasePayment[]>([]), [selected, setSelected] = useState<string | null>(null);
   const [policyError, setPolicyError] = useState(""), [recordsError, setRecordsError] = useState(""), [operationError, setOperationError] = useState(""), [notice, setNotice] = useState("");
@@ -94,34 +96,38 @@ function Workspace({ ctx, owner, epoch }: { ctx: DCtx; owner: number; epoch: num
       } });
   }
   const configuredMethods: PurchasePaymentChannel["paymentMethod"][] = policy ? policy.channels.map(row => row.paymentMethod) : ["HDPAY_BANK", "CREGIS_USDT_BSC"];
+  const activeFeeNetwork = configuredMethods.includes(feeNetwork) ? feeNetwork : "CREGIS_USDT_BSC";
+  const selectedFeeMethod = feeGroup === "bank" ? "HDPAY_BANK" : activeFeeNetwork;
   const canEdit = allowed("finance_d1_fx_manage");
   return <section className="l-card d1-order-payments" aria-label="订单付款与手续费">
     <div className="l-h"><span className="ttl">订单付款与手续费</span><span className="sub">用户购买设备、试用转购买、升级置换和扩容时的付款</span></div>
     <div className="l-b">
-      <ul className="d1-payment-methods" aria-label="付款方式说明">
-        <li><strong>钱包余额</strong><span>不收手续费，需要输入支付密码</span></li>
-        {configuredMethods.map(value => <li key={value}><strong>{methodText[value]}</strong><span>{methodNote[value]}</span></li>)}
-      </ul>
+      <p className="dtint"><strong>钱包余额</strong> · 不收手续费，需要输入支付密码。银行卡和 USDT 付款不需要支付密码。</p>
       {operationError && <p className="dtint warn" role="alert">{operationError}</p>}{notice && <p className="dtint" role="status">{notice}</p>}
-      {pending.length > 0 && <div className="dtint warn" role="alert" aria-label="还没确认结果的操作"><strong>有 {pending.length} 次操作还没确认结果</strong>{pending.map(row => <div className="p-row" key={row.commandKey}><div className="txt"><div className="k">{row.scope === "policy" ? "修改付款手续费" : `付款 ${row.scope}`}</div><div className="s">请求号 {row.commandKey}</div></div><button className="l-btn sm" disabled={busy} onClick={() => void recover(row, false)}>查看最新结果</button>{canRetryPurchasePayment(row) ? <button className="l-btn sm" disabled={busy || !allowed(row.scope === "policy" ? "finance_d1_fx_manage" : "finance_d1_bank_reconcile")} onClick={() => void recover(row, true)}>再提交一次（不会重复执行）</button> : <span>已超过可重试时间，请到「操作记录」核对。</span>}</div>)}<Link href="/platform/audit?domain=D">到「操作记录」查看</Link></div>}
+      {pending.length > 0 && <div className="dtint warn" role="alert" aria-label="还没确认结果的操作"><strong>有 {pending.length} 次操作还没确认结果</strong>{pending.map(row => <div className="p-row" key={row.commandKey}><div className="txt"><div className="k">{row.scope === "policy" ? "修改付款手续费" : `付款 ${row.scope}`}</div><div className="s">请求号 {row.commandKey}</div></div><button className="l-btn sm" disabled={busy} onClick={() => void recover(row, false)}>查看最新结果</button>{canRetryPurchasePayment(row) ? <button className="l-btn sm" disabled={busy || !allowed(row.scope === "policy" ? "finance_d1_fx_manage" : "finance_d1_bank_reconcile")} onClick={() => void recover(row, true)}>再提交一次（不会重复执行）</button> : <span>已超过可重试时间，请到「操作记录」核对。</span>}</div>)}<div className="d1-payment-actions"><Link className="l-btn sm" href="/platform/audit?domain=D">到「操作记录」查看</Link></div></div>}
       <div className="d1-payment-config" aria-label="付款手续费">
-        <div className="d1-payment-head"><h3>付款手续费</h3><Link href="/platform/audit?domain=D">修改历史</Link><button className="l-btn sm" disabled={busy || policyLoading} onClick={() => void loadPolicy()}>刷新</button></div>
+        <div className="d1-payment-head"><h3>付款手续费</h3><div className="d1-payment-actions"><Link className="l-btn sm" href="/platform/audit?domain=D">修改历史</Link><button className="l-btn sm" disabled={busy || policyLoading} onClick={() => void loadPolicy()}>刷新</button></div></div>
+        <div className="d1-payment-tabs"><TabGroup label="手续费付款方式" value={feeGroup} items={["bank", "usdt"] as const} onSelect={setFeeGroup} className="chips" itemClassName={(_value, selected) => `chip${selected ? " sel" : ""}`}>
+          {value => value === "bank" ? "银行卡" : "USDT"}
+        </TabGroup>{feeGroup === "usdt" && <TabGroup label="手续费 USDT 网络" value={activeFeeNetwork} items={configuredMethods.filter((value): value is typeof feeNetwork => value !== "HDPAY_BANK")} onSelect={setFeeNetwork} className="chips" itemClassName={(_value, selected) => `chip${selected ? " sel" : ""}`}>
+          {value => value === "CREGIS_USDT_BSC" ? "BEP20" : "ERC20"}
+        </TabGroup>}</div>
         {policyLoading && <p role="status">正在加载…</p>}{policyError && <p className="dtint warn" role="alert">{policyError}</p>}
         {policy && <><div className="d1-payment-scroll"><table className="l-tbl" aria-label="付款手续费"><thead><tr><th>付款方式</th><th>手续费比例（%）</th><th>每笔固定费（USDT）</th><th>网络费（USDT）</th><th>最低充值金额（USDT）</th></tr></thead><tbody>
-          <tr><td>钱包余额</td><td>免费</td><td>免费</td><td>免费</td><td>不适用</td></tr>
-          {draft.map((row, index) => <tr key={row.paymentMethod}><td>{methodText[row.paymentMethod]}{!policy.channels.find(item => item.paymentMethod === row.paymentMethod)!.configured && <div className="sub warn">未设置手续费，用户暂时不能用{methodShort[row.paymentMethod]}付款</div>}</td>{(["channelFeeRatePct", "channelFeeFixed", "networkConfirmFeeUsdt", "minTopupPrincipal"] as const).map(field => {
+          {draft.filter(row => row.paymentMethod === selectedFeeMethod).map(row => <tr key={row.paymentMethod}><td>{methodText[row.paymentMethod]}<div className="sub">{methodNote[row.paymentMethod]}</div>{!policy.channels.find(item => item.paymentMethod === row.paymentMethod)!.configured && <div className="sub warn">未设置手续费，用户暂时不能用{methodShort[row.paymentMethod]}付款</div>}</td>{(["channelFeeRatePct", "channelFeeFixed", "networkConfirmFeeUsdt", "minTopupPrincipal"] as const).map(field => {
             const readOnly = !policy.constraints || !canEdit || field === "minTopupPrincipal" && row.paymentMethod !== "HDPAY_BANK" || field === "networkConfirmFeeUsdt" && row.paymentMethod === "HDPAY_BANK";
             const label = { channelFeeRatePct: "手续费比例", channelFeeFixed: "每笔固定费", networkConfirmFeeUsdt: "网络费", minTopupPrincipal: "最低充值金额" }[field];
             const bounds = field === "channelFeeRatePct" ? policy.constraints?.ratePct : field === "minTopupPrincipal" ? policy.constraints?.minTopupPrincipal : policy.constraints?.feeUsdt;
             const current = policy.channels.find(item => item.paymentMethod === row.paymentMethod)!;
             const effective = current[field];
             if (field === "networkConfirmFeeUsdt" && row.paymentMethod === "HDPAY_BANK") return <td key={field}>不收</td>;
-            return <td key={field}><input aria-label={`${methodText[row.paymentMethod]}${label}`} type="number" inputMode={field === "minTopupPrincipal" ? "numeric" : "decimal"} placeholder="请填写" min={bounds ? Number(bounds.min) : undefined} max={bounds ? Number(bounds.max) : undefined} step={field === "minTopupPrincipal" ? 1 : "0.01"} value={row[field] ?? ""} readOnly={readOnly} disabled={busy || policyPending} onChange={event => setDraft(current => current.map((item, i) => i === index ? { ...item, [field]: event.target.value } : item))} /><div className="sub">{effective === null ? "当前未设置" : `当前 ${purchaseMoney(effective)}${field === "channelFeeRatePct" ? "%" : ""}`}{field === "minTopupPrincipal" && row.paymentMethod !== "HDPAY_BANK" ? " · 在下方「充值与地址设置」修改" : ""}</div></td>;
+            return <td key={field}><input aria-label={`${methodText[row.paymentMethod]}${label}`} type="number" inputMode={field === "minTopupPrincipal" ? "numeric" : "decimal"} placeholder="请填写" min={bounds ? Number(bounds.min) : undefined} max={bounds ? Number(bounds.max) : undefined} step={field === "minTopupPrincipal" ? 1 : "0.01"} value={row[field] ?? ""} readOnly={readOnly} disabled={busy || policyPending} onChange={event => setDraft(current => current.map(item => item.paymentMethod === row.paymentMethod ? { ...item, [field]: event.target.value } : item))} /><div className="sub">{effective === null ? "当前未设置" : `当前 ${purchaseMoney(effective)}${field === "channelFeeRatePct" ? "%" : ""}`}{field === "minTopupPrincipal" && row.paymentMethod !== "HDPAY_BANK" ? " · 在「USDT 充值 → 充值与地址设置」修改" : ""}</div></td>;
           })}</tr>)}
         </tbody></table></div>
           <p className="sub">用户实付 = 订单金额 + 订单金额 × 手续费比例 + 每笔固定费 + 网络费（仅 USDT）。全部填 0 表示免费。</p>
           <p className="sub">没设置手续费的付款方式，用户暂时不能用它付款。修改后只用于之后发起的付款，已下单的按原费用。</p>
-          <p className="sub">{policy.constraints ? `可填范围：比例 ${policy.constraints.ratePct.min}–${policy.constraints.ratePct.max}%，单项费用 ${policy.constraints.feeUsdt.min}–${policy.constraints.feeUsdt.max} USDT，最多两位小数；最低充值金额填 ${policy.constraints.minTopupPrincipal.min}–${policy.constraints.minTopupPrincipal.max} 的整数，只限制充值，不限制订单付款。USDT 的最低充值金额在下方「充值与地址设置」申请，另一位管理员批准后生效。` : "暂时拿不到可填范围，只能查看，不能修改。"}</p>
+          <p className="sub">{policy.constraints ? `可填范围：比例 ${policy.constraints.ratePct.min}–${policy.constraints.ratePct.max}%，单项费用 ${policy.constraints.feeUsdt.min}–${policy.constraints.feeUsdt.max} USDT，最多两位小数；最低充值金额填 ${policy.constraints.minTopupPrincipal.min}–${policy.constraints.minTopupPrincipal.max} 的整数，只限制充值，不限制订单付款。USDT 的最低充值金额在「USDT 充值 → 充值与地址设置」申请，另一位管理员批准后生效。` : "暂时拿不到可填范围，只能查看，不能修改。"}</p>
+          {changed && <p className="sub" role="status">待保存：{changedChannels.map(row => methodText[row.paymentMethod]).join("、")}。切换付款方式保留修改，保存会提交这些渠道。</p>}
           {canEdit && <div className="d1-payment-actions"><button className="l-btn sm" disabled={busy || policyLoading || policyPending || !changed} onClick={() => setDraft(policy.channels.map(row => ({ ...row })))}>撤销修改</button><button className="l-btn sm mc" disabled={busy || policyLoading || policyPending || !valid || !changed} onClick={savePolicy}>保存修改</button></div>}
         </>}
       </div>
@@ -167,7 +173,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, pending, onChanged, onClose
         <h3>基本信息</h3>{facts([["用户", record.userId], ["用途", kindText[record.kind] ?? "用途待确认"], ["付款方式", methodText[record.paymentMethod]], ["状态", stateText[record.status]], ["是否已完成", purchaseWasDelivered(record) ? "已完成" : record.receipt ? "已有回执，待确认" : "还没完成"], ["支付商单号", record.providerReference || "尚未提供"], ["创建 / 更新时间", `${time(record.createdAt)} / ${time(record.updatedAt)}（${businessZoneText()}）`], ["异常说明", record.reason || "无"]])}
         <h3>金额（USDT）</h3>{facts([["订单金额", record.businessAmountUsdt == null ? "尚未提供" : record.businessAmountUsdt], ["收款金额", purchaseMoney(record.subtotalUsdt)], ["取整差额", record.roundingAdjustmentUsdt == null ? "尚未提供" : record.roundingAdjustmentUsdt], ["手续费", purchaseMoney(record.channelFeeUsdt)], ["网络费", purchaseMoney(record.networkConfirmFeeUsdt)], ["用户实付", purchaseMoney(record.totalUsdt)], ["通道实际成本", record.providerActualFeeUsdt == null ? "尚未提供" : purchaseMoney(record.providerActualFeeUsdt)]])}
         {record.paymentMethod === "HDPAY_BANK" ? facts([["锁定汇率", record.fxRateVndPerUsdt ? `1 USDT = ${record.fxRateVndPerUsdt} VND` : "尚未提供"], ["应付越南盾", record.amountVnd ? `${BigInt(record.amountVnd).toLocaleString("zh-CN")} VND` : "尚未提供"]]) : <p className="sub">用户在自己钱包里另付的 {record.paymentMethod === "CREGIS_USDT_ERC20" ? "ETH" : "BNB"} 矿工费不算在内。</p>}
-        {record.arrivals && <><h3>链上到账</h3><div className="d1-payment-scroll"><table className="l-tbl" aria-label="链上到账"><thead><tr><th>交易号</th><th>到账金额（USDT）</th><th>区块 / 确认数</th><th>核对结果</th></tr></thead><tbody>{record.arrivals.map(row => <tr key={`${row.txid}:${row.log_index}`}><td>{row.txid}<div className="sub">日志 {row.log_index}</div></td><td>{row.amount}</td><td>{row.block_number} / {row.confirmations}<div className="sub">{row.block_hash}</div></td><td>{row.status === "CONFIRMED" ? "已核对" : row.status === "MANUAL_REVIEW" ? "需人工处理" : "待确认"}</td></tr>)}{record.arrivals.length === 0 && <tr><td colSpan={4}>还没有链上到账记录。</td></tr>}</tbody></table></div></>}<Link href="/platform/audit?domain=D">到「操作记录」查看处理过程</Link></>}
+        {record.arrivals && <><h3>链上到账</h3><div className="d1-payment-scroll"><table className="l-tbl" aria-label="链上到账"><thead><tr><th>交易号</th><th>到账金额（USDT）</th><th>区块 / 确认数</th><th>核对结果</th></tr></thead><tbody>{record.arrivals.map(row => <tr key={`${row.txid}:${row.log_index}`}><td>{row.txid}<div className="sub">日志 {row.log_index}</div></td><td>{row.amount}</td><td>{row.block_number} / {row.confirmations}<div className="sub">{row.block_hash}</div></td><td>{row.status === "CONFIRMED" ? "已核对" : row.status === "MANUAL_REVIEW" ? "需人工处理" : "待确认"}</td></tr>)}{record.arrivals.length === 0 && <tr><td colSpan={4}>还没有链上到账记录。</td></tr>}</tbody></table></div></>}<div className="d1-payment-actions"><Link className="l-btn sm" href="/platform/audit?domain=D">到「操作记录」查看处理过程</Link></div></>}
     </div>
   </Modal>;
 }

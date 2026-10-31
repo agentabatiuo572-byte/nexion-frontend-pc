@@ -197,10 +197,17 @@ function d1EnteredStatusText(status: string) {
 }
 
 export function D1Recon({ ctx }: { ctx: DCtx }) {
-  return <><D1OrderPayments ctx={ctx} /><D1RechargeRecon ctx={ctx} /></>;
+  const [section, setSection] = useState<"payments" | "bank" | "usdt" | "ledger">("payments");
+  return <>
+    <TabGroup label="D1 业务分区" value={section} items={["payments", "bank", "usdt", "ledger"] as const} onSelect={setSection} className="chips d1-business-tabs" itemClassName={(_value, selected) => `chip${selected ? " sel" : ""}`}>
+      {value => ({ payments: "订单付款", bank: "银行卡充值", usdt: "USDT 充值", ledger: "充值流水与对账" })[value]}
+    </TabGroup>
+    <div hidden={section !== "payments"}><D1OrderPayments ctx={ctx} /></div>
+    <div hidden={section === "payments"}><D1RechargeRecon ctx={ctx} section={section} onUsdt={() => setSection("usdt")} /></div>
+  </>;
 }
 
-function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
+function D1RechargeRecon({ ctx, section, onUsdt }: { ctx: DCtx; section: "payments" | "bank" | "usdt" | "ledger"; onUsdt: () => void }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
@@ -597,14 +604,15 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
     onRegister={(order) => openReceiptRegistration(order)} onManualCredit={openBankManualCredit}
     onRetry={(commandKey) => applyBankWrite(() => retryD1PendingBankOrderCommand(commandKey), "人工入账已重试，请核对订单和用户钱包", adminAuthLifecycleEpoch())} />;
 
-  const hdpayOrders = !LEGACY_CHANNELS_VISIBLE && <section className="l-card" id="d1-hdpay-orders">{bankOrders}</section>;
+  const hdpayOrders = !LEGACY_CHANNELS_VISIBLE && <section hidden={section !== "bank"} className="l-card" id="d1-hdpay-orders">{bankOrders}</section>;
+  const cregisStatus = !LEGACY_CHANNELS_VISIBLE && canReadCregis && <div hidden={section !== "usdt"} id="d1-collection-reconcile"><CregisStatus canManage={canManageChannels} openActionConfirm={openActionConfirm} /></div>;
 
   if (loading && !overview) {
-    return <>{hdpayOrders}{canReadCregis && <CregisStatus canManage={canManageChannels} openActionConfirm={openActionConfirm} />}<section className="l-card"><div className="l-b">正在加载…</div></section></>;
+    return <>{hdpayOrders}{cregisStatus}<section className="l-card"><div className="l-b">正在加载…</div></section></>;
   }
 
   if (error && !overview) {
-    return <>{hdpayOrders}{pendingCommandPanel}{canReadCregis && <CregisStatus canManage={canManageChannels} openActionConfirm={openActionConfirm} />}<section className="l-card"><div className="l-b"><div className="dtint warn">充值对账已停止展示旧数据 · {error}</div><button className="l-btn primary" disabled={loading || busy} style={{ marginTop: 12 }} onClick={() => void refresh()}>重试</button></div></section></>;
+    return <>{hdpayOrders}{pendingCommandPanel}{cregisStatus}<section className="l-card"><div className="l-b"><div className="dtint warn">充值对账已停止展示旧数据 · {error}</div><button className="l-btn primary" disabled={loading || busy} style={{ marginTop: 12 }} onClick={() => void refresh()}>重试</button></div></section></>;
   }
 
   return (
@@ -628,11 +636,11 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
         <div className="f-stat danger"><div className="k">卡段 / IP / 设备锁定</div><div className="v">{overview?.binLockedCount ?? 0}</div><div className="sub">到期自动解锁</div></div></>}
       </div>
 
-      <div className={LEGACY_CHANNELS_VISIBLE ? "two-col r11" : undefined}>
+      <div hidden={section !== "bank"} className={LEGACY_CHANNELS_VISIBLE ? "two-col r11" : undefined}>
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">充值渠道</span>
-            <span className="sub">· 链上收款详情见下方「USDT 资金状态」</span>
+            <span className="sub">· 链上收款详情见「USDT 充值」</span>
             <div className="r">
               <button className="l-btn sm" disabled={loading || busy} onClick={() => void refresh()}>刷新</button>
             </div>
@@ -644,8 +652,8 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
                 <div className="s">收款地址分配、入账和异常处理由 Cregis 开关控制。</div>
               </div>
               <button className="l-btn sm" onClick={() => {
+                onUsdt();
                 setReconciliationType("cregis");
-                document.getElementById("d1-collection-reconcile")?.scrollIntoView({ behavior: "smooth" });
               }}>查看实际状态</button>
             </div>
             {(overview?.channels ?? []).filter((channel) => !["trc20", "bep20", "erc20"].includes(channel.code) && (LEGACY_CHANNELS_VISIBLE || ["vietqr", "hdpay"].includes(channel.code))).map((channel) => (
@@ -653,7 +661,7 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
                 <div className="txt">
                   <div className="k">{depositChannelText(channel.code) ?? channel.id}</div>
                   <div className="s">
-                    费率 {channel.fee} · {["vietqr", "hdpay"].includes(channel.code) ? "最低充值金额见上方「订单付款与手续费」" : `最小充值 ${channel.minAmount}`}
+                    费率 {channel.fee} · {["vietqr", "hdpay"].includes(channel.code) ? "最低充值金额见「订单付款」" : `最小充值 ${channel.minAmount}`}
                     {channel.code === "vietqr" && vietQr ? ` · 单笔上限 $${vietQr.config.perTxLimitUsd.toLocaleString("en-US")}` : ""}
                     {channel.maxAmountValue !== null ? ` · 单笔上限 $${channel.maxAmountValue.toLocaleString("en-US")}` : ""}
                   </div>
@@ -715,8 +723,8 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
         </section>}
       </div>
 
-      {!LEGACY_CHANNELS_VISIBLE && canReadCregis && <div id="d1-collection-reconcile"><CregisStatus canManage={canManageChannels} openActionConfirm={openActionConfirm} /></div>}
-      {LEGACY_CHANNELS_VISIBLE && <section className="l-card" id="d1-collection-reconcile">
+      {cregisStatus}
+      {LEGACY_CHANNELS_VISIBLE && <section hidden={section !== "bank" && section !== "usdt"} className="l-card" id="d1-collection-reconcile">
         <div className="l-h">
           <span className="ttl">充值收款对账</span>
           <span className="sub">· 银行转账订单、回单处理和链上收款</span>
@@ -875,7 +883,7 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
         </>}
       </section>}
 
-      <div className={LEGACY_CHANNELS_VISIBLE ? "two-col r11" : undefined}>
+      <div hidden={section !== "bank"} className={LEGACY_CHANNELS_VISIBLE ? "two-col r11" : undefined}>
         {LEGACY_CHANNELS_VISIBLE && <section className="l-card">
           <div className="l-h">
             <span className="ttl">收款账户池</span>
@@ -992,7 +1000,7 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
         </section>
       </div>
 
-      <section className="l-card">
+      <section hidden={section !== "ledger"} className="l-card">
         <div className="l-h">
           <span className="ttl">充值流水</span>
           <span className="sub">· 可按状态和关键字查询</span>
@@ -1052,7 +1060,7 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
         </div>
       </section>
 
-      <div className={LEGACY_CHANNELS_VISIBLE ? "two-col r11" : undefined}>
+      <div hidden={section !== "ledger"} className={LEGACY_CHANNELS_VISIBLE ? "two-col r11" : undefined}>
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">对账差异</span>
@@ -1137,7 +1145,7 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
         </section>}
       </div>
 
-      {LEGACY_CHANNELS_VISIBLE && <section className="l-card">
+      {LEGACY_CHANNELS_VISIBLE && <section hidden={section !== "ledger"} className="l-card">
         <div className="l-h">
           <span className="ttl">拒付追回</span>
           <span className="sub">· 用户刷卡后被银行退款</span>
