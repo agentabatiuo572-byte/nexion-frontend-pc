@@ -8,7 +8,7 @@ import { PORTED_EMPTY_CONTENT } from "./ported-content";
 export const DOMAIN_D: ModuleEntry[] = [
   {
     path: "/finance/recon",
-    summary: "核对银行、支付商和链上的充值记录，处理没对上、信息不符或逾期到账的款项。入账或退回前须核实凭证。",
+    summary: "设置订单付款手续费，核对银行卡（HDPay）和 USDT 链上的充值与付款，处理没对上或异常的款项。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

@@ -1183,7 +1183,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         const refundReady = canRefundE4 && refundableState && e4Detail?.refundAllowed === true;
         const closeOrder = () => { setSelOrder(null); setE4Detail(null); setE4DetailError(null); };
         const coverageText = e4Detail?.coverageCurrent == null
-          ? "兑付覆盖率暂无"
+          ? "暂无数据"
           : `当前 ${e4Detail.coverageCurrent.toFixed(2)}% → 执行后 ${(e4Detail.coverageProjected ?? e4Detail.coverageCurrent).toFixed(2)}% · 红线 ${(e4Detail.coverageRedline ?? 0).toFixed(2)}%`;
         return (
           <Drawer title={o.id} sub={`${o.sku} · ${o.user}`} onClose={closeOrder}
@@ -1191,13 +1191,13 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                   {nextState && <Btn onClick={() => openActionConfirm({ name: `推进订单 · ${o.id} → ${stateLabel(nextState)}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, detail: `手动推进 ${o.id}：${stateLabel(eff)} → ${stateLabel(nextState)}` })}>推进到下一步</Btn>}
                   {canCancel && <Btn onClick={() => openActionConfirm({ name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, detail: `取消 ${o.id}（${stateLabel(eff)}）。用户还没付款，取消后订单终止。`,
                     businessForm: { kind: "multi-field", title: "取消原因", fields: [
-                      { key: "closeReasonCode", label: "取消原因（用户可见）", current: "", inputKind: "select", options: ["", ...E4_CLOSE_REASONS.cancelled], optionLabels: { "": "请选择取消原因", ...E4_CLOSE_REASON_LABELS }, required: true, help: "App 订单详情会向用户展示这个原因；下方操作备注只进审计。" },
+                      { key: "closeReasonCode", label: "取消原因（用户可见）", current: "", inputKind: "select", options: ["", ...E4_CLOSE_REASONS.cancelled], optionLabels: { "": "请选择取消原因", ...E4_CLOSE_REASON_LABELS }, required: true, help: "这个原因会显示在用户的订单详情里；下方备注只记在操作记录里，用户看不到。" },
                     ] } })}>取消订单</Btn>}
                   {canWriteE4 && terminalOptions.length > 0 && <Btn onClick={() => openActionConfirm({ name: "标记失败结果 · " + o.id, op: "order-terminal", orderId: o.id, amplify: false, detail: `当前状态：${stateLabel(eff)}，选择一个失败结果。退款请用「退款」按钮。`,
                     businessForm: { kind: "multi-field", title: "失败结果与原因", hint: "过期、拒付的原因会自动记录；支付失败、开通失败需要选择原因。", fields: [
                       { key: "terminalState", label: "失败结果", current: "", inputKind: "select", options: ["", ...terminalOptions], optionLabels: { "": "请选择失败结果", ...Object.fromEntries(terminalOptions.map((s) => [s, stateLabel(s)])) }, required: true },
                       ...terminalOptions.filter((s) => E4_CLOSE_REASONS[s]).map((s) => (
-                        { key: "closeReasonCode", label: "原因（用户可见）", current: "", inputKind: "select" as const, options: ["", ...E4_CLOSE_REASONS[s]], optionLabels: { "": "请选择原因", ...E4_CLOSE_REASON_LABELS }, required: true, visibleWhen: { key: "terminalState", equals: s }, help: "App 订单详情会向用户展示这个原因；下方操作备注只进审计。" })),
+                        { key: "closeReasonCode", label: "原因（用户可见）", current: "", inputKind: "select" as const, options: ["", ...E4_CLOSE_REASONS[s]], optionLabels: { "": "请选择原因", ...E4_CLOSE_REASON_LABELS }, required: true, visibleWhen: { key: "terminalState", equals: s }, help: "这个原因会显示在用户的订单详情里；下方备注只记在操作记录里，用户看不到。" })),
                     ] } })}>标记失败结果</Btn>}
                   {canRefundE4 && refundableState && <Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!refundReady} onClick={() => {
                     if (!e4Detail || !refundReady) return;
@@ -1206,11 +1206,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                       name: "退款 · " + o.id, op: "order-refund", orderId: o.id, amplify: true,
                       businessForm: { kind: "multi-field", title: "退款渠道与原因", hint: coverageText, fields: [
                         { key: "refundChannel", label: "退款渠道", current: channels[0], inputKind: "select", options: channels, optionLabels: { WALLET: "退回 USDT 钱包", ORIGINAL_PAYMENT: "原支付渠道" }, required: true, showDiff: true },
-                        { key: "refundReasonCode", label: "退款原因（用户可见）", current: "", inputKind: "select", options: ["", ...E4_REFUND_REASONS], optionLabels: { "": "请选择退款原因", ...E4_REFUND_REASON_LABELS }, required: true, help: "App 订单详情会向用户展示这个原因；下方操作备注只进审计。" },
+                        { key: "refundReasonCode", label: "退款原因（用户可见）", current: "", inputKind: "select", options: ["", ...E4_REFUND_REASONS], optionLabels: { "": "请选择退款原因", ...E4_REFUND_REASON_LABELS }, required: true, help: "这个原因会显示在用户的订单详情里；下方备注只记在操作记录里，用户看不到。" },
                       ] },
                       detail: `退款 ${o.id} · $${o.amt.toLocaleString()} · ${coverageText}。钱会退回用户，充值记录、账单和累计充值一起冲回，不可撤销。`,
                     });
-                  }}><AutoGloss>{e4DetailLoading ? "正在检查退款条件…" : e4Detail?.refundAllowed === false ? "覆盖率低于红线，暂不能退款" : "退款"}</AutoGloss></Btn>}
+                  }}><AutoGloss>{e4DetailLoading ? "正在检查退款条件…" : e4Detail?.refundAllowed === false ? "平台资金低于安全线，暂不能退款" : "退款"}</AutoGloss></Btn>}
                   <Btn style={{ flex: 1, justifyContent: "center" }} onClick={closeOrder}>关闭</Btn>
                 </>}>
             <div className="tint" style={{ marginBottom: 14, textAlign: "center" }}><div className="muted tiny">订单金额</div><div style={{ fontSize: 30, fontWeight: 600, color: "var(--ink)" }} className="tnum">${o.amt.toLocaleString()}</div></div>
@@ -1221,12 +1221,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             <KV k="用户" v={o.user} />
             <KV k="下单时间" v={o.age + " 前"} />
             {e4DetailLoading && <div className="tint tiny">正在加载…</div>}
-            {e4DetailError && <div className="tint warn tiny" data-module-health-state="error">详情读取失败:{e4DetailError} <button className="fchip" onClick={() => void openOrder(o)}>重试</button></div>}
+            {e4DetailError && <div className="tint warn tiny" data-module-health-state="error">详情加载失败:{e4DetailError} <button className="fchip" onClick={() => void openOrder(o)}>重试</button></div>}
             {e4Detail && <>
               <KV k="数量 / 类型" v={`${e4Detail.quantity} · ${operatorOrderFact("type", e4Detail.orderType)}`} />
               <KV k="支付" v={`${operatorOrderFact("payment", e4Detail.paymentMethod)} · ${operatorOrderFact("paymentStatus", e4Detail.paymentStatus)}${e4Detail.paymentNo ? ` · ${e4Detail.paymentNo}` : ""}`} />
               <KV k="设备实例" v={e4Detail.deviceInstanceNo ?? "尚未生成"} />
-              <KV k="兑付覆盖率" v={<span style={{ color: e4Detail.refundAllowed ? "var(--ok)" : "var(--danger)" }}>{coverageText}</span>} />
+              <KV k="平台资金覆盖率" v={<span style={{ color: e4Detail.refundAllowed ? "var(--ok)" : "var(--danger)" }}>{coverageText}</span>} />
             </>}
             {isCancelled(o.id) && <KV k="取消" v={<span style={{ color: "var(--ink-3)" }}>已取消 · 用户未付款，订单已终止</span>} />}
             {isRefunded(o.id) && <KV k="退款" v={<span style={{ color: "var(--warning)" }}>已退款 · 钱已退回，相关记录已冲回</span>} />}

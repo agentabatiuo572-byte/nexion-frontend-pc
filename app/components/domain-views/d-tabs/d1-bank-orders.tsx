@@ -19,7 +19,7 @@ const originalOrderStatusText = (value?: string | null) => value ? ({ AWAITING_P
 const submissionStatusText = (value?: string | null) => value ? ({ PENDING: "待提交", SUBMIT_UNKNOWN: "提交结果待核实", CREATED: "付款单已创建", REJECTED: "支付商拒绝创建" } as Record<string,string>)[value] ?? "未知" : "—";
 const settlementStatusText = (value?: string | null) => value ? ({ UNSETTLED: "未入账", CREDITED: "已入账", MANUAL_REVIEW: "待人工核对" } as Record<string,string>)[value] ?? "未知" : "—";
 const confirmationSourceText = (value?: string | null) => value ? ({ UNCONFIRMED: "尚未确认", ADMIN_MANUAL: "管理员人工确认", BANK_RECEIPT: "银行回单核实", AUTO_PROVIDER: "支付商自动确认", UNKNOWN: "未知" } as Record<string,string>)[value] ?? "未知" : "尚未确认";
-const providerStatusText = (value: unknown) => value == null ? "—" : ({ "0": "支付处理中", "1": "支付处理中", "3": "支付商已确认付款", "4": "支付商终态待核对", "5": "支付商终态待核对" } as Record<string,string>)[String(value)] ?? "未知";
+const providerStatusText = (value: unknown) => value == null ? "—" : ({ "0": "支付处理中", "1": "支付处理中", "3": "支付商已确认付款", "4": "支付商结果待核对", "5": "支付商结果待核对" } as Record<string,string>)[String(value)] ?? "未知";
 function orderVnd(value: number | null) { return value === null ? "—" : `${value.toLocaleString("en-US")} VND`; }
 function orderUsdt(value: number) { return `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 })} USDT`; }
 function orderTime(value: string) { return value ? value.replace("T", " ").slice(0, 19) : "—"; }
@@ -32,15 +32,15 @@ type OrderActions = {
   onManualCredit: (order: D1BankOrder, onSettled: () => void | Promise<void>) => void;
 };
 
-function D1BankOrderRow({ order, blocked, onSettled, ...actions }: OrderActions & {
-  order: D1BankOrder; blocked: boolean; onSettled: () => void | Promise<void>;
+function D1BankOrderRow({ order, blocked, onSettled, showRail, ...actions }: OrderActions & {
+  order: D1BankOrder; blocked: boolean; onSettled: () => void | Promise<void>; showRail: boolean;
 }) {
   const credited = order.creditedUsdt > 0 || order.status === "CREDITED";
   const manualOrder = order.paymentRail === "MANUAL";
   const registerAllowed = manualOrder && !credited && order.manualRegistrationAllowed;
   const tone = credited ? "ok" : ["FAILED", "REJECTED", "EXPIRED", "CANCELLED"].includes(order.status) ? "bad" : "warn";
   return <tr>
-    <td><span className="bdg dim">{manualOrder ? "人工银行转账 · VietQR" : "HDPay"}</span></td>
+    {showRail && <td><span className="bdg dim">{manualOrder ? "银行转账（VietQR）" : "银行卡（HDPay）"}</span></td>}
     <td className="mono">{order.intentNo}<div className="sub">用户 {order.userId}</div><div className="sub mono">{order.memoCode || "—"}</div></td>
     <td className="num mono">{orderUsdt(order.requestedUsdt)}<div className="sub">应付 {orderVnd(order.payableVnd)} · 锁价 {orderVnd(order.lockedFxRateVndPerUsdt)}/USDT</div></td>
     <td className="num mono">{orderVnd(order.receivedVnd)}<div className="sub">{order.receivedVnd === null ? "—" : orderTime(order.receivedAt)}</div></td>
@@ -66,10 +66,12 @@ function D1BankOrderRow({ order, blocked, onSettled, ...actions }: OrderActions 
   </tr>;
 }
 
-export function D1BankOrders({ refreshKey, onRetry, ...actions }: OrderActions & {
+export function D1BankOrders({ refreshKey, onRetry, hdpayOnly = false, ...actions }: OrderActions & {
   refreshKey: string; onRetry: (commandKey: string) => Promise<void>;
+  /** 人工银行转账隐藏时只列 HDPay 充值单，去掉转账类型筛选和类型列。 */
+  hdpayOnly?: boolean;
 }) {
-  const [rail, setRail] = useState("");
+  const [rail, setRail] = useState(hdpayOnly ? "HDPAY" : "");
   const [status, setStatus] = useState("");
   const [keyword, setKeyword] = useState("");
   const [query, setQuery] = useState("");
@@ -95,7 +97,7 @@ export function D1BankOrders({ refreshKey, onRetry, ...actions }: OrderActions &
         else setData(next);
       }
     } catch (failure) {
-      if (authEpoch === adminAuthLifecycleEpoch() && current === requestId.current) setError(failure instanceof Error ? displayAdminError(failure) : "银行订单读取失败");
+      if (authEpoch === adminAuthLifecycleEpoch() && current === requestId.current) setError(failure instanceof Error ? displayAdminError(failure) : "银行订单加载失败");
     } finally { if (authEpoch === adminAuthLifecycleEpoch() && current === requestId.current) setLoading(false); }
   }, [rail, status, query, pageNum, pageSize]);
   useEffect(() => { void load(); return () => { requestId.current++; }; }, [load, refreshKey]);
@@ -109,27 +111,27 @@ export function D1BankOrders({ refreshKey, onRetry, ...actions }: OrderActions &
     finally { if (authEpoch === adminAuthLifecycleEpoch()) { setRetrying(false); await load(); } }
   };
   return <>
-    <div className="l-h"><span className="ttl">全部银行转账订单</span><span className="sub">· 人工转账和 HDPay</span></div>
+    <div className="l-h">{hdpayOnly ? <span className="ttl">银行卡充值订单（HDPay）</span> : <><span className="ttl">全部银行转账订单</span><span className="sub">· 人工转账和银行卡（HDPay）</span></>}</div>
     <div className="l-b" style={{ paddingBottom: 8 }}>
-      <div className="dtint">包含所有状态的订单。订单数不等于实际收款；登记回单、匹配、核销和退回在下方「银行回单处理与已入账记录」操作。</div>
+      <div className="dtint">{hdpayOnly ? "包含所有状态的订单。订单数不等于实际收款，实际入账看「实际入账」列。" : "包含所有状态的订单。订单数不等于实际收款；登记回单、匹配、核销和退回在下方「银行回单处理与已入账记录」操作。"}</div>
       <div className="ui-form-grid" style={{ marginTop: 12 }}>
-        <label>转账类型 <select className="ui-control" aria-label="银行订单转账类型" value={rail} disabled={disabled} onChange={event => { setRail(event.target.value); setPageNum(1); }}><option value="">全部类型</option><option value="MANUAL">人工银行转账</option><option value="HDPAY">HDPay</option></select></label>
+        {!hdpayOnly && <label>转账类型 <select className="ui-control" aria-label="银行订单转账类型" value={rail} disabled={disabled} onChange={event => { setRail(event.target.value); setPageNum(1); }}><option value="">全部类型</option><option value="MANUAL">银行转账（VietQR）</option><option value="HDPAY">银行卡（HDPay）</option></select></label>}
         <label>订单状态 <select className="ui-control" aria-label="银行订单状态" value={status} disabled={disabled} onChange={event => { setStatus(event.target.value); setPageNum(1); }}><option value="">全部状态</option>{Object.entries(ORDER_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label>付款单、用户或附言<input className="ui-control" aria-label="银行订单查询：付款单、用户或附言" placeholder="付款单 / 用户 / 附言" value={keyword} disabled={disabled} onChange={event => setKeyword(event.target.value)} /></label>
         <button className="l-btn sm" disabled={disabled} onClick={() => { setPageNum(1); if (query === keyword.trim() && pageNum === 1) void load(); else setQuery(keyword.trim()); }}>查询</button>
         <button className="l-btn sm" disabled={disabled} onClick={() => void load()}>刷新订单</button>
       </div>
       {(error || writeError) && <div className="dtint warn" role="alert" style={{ marginTop: 12 }}>银行订单加载失败或操作结果未确认，不能当作已对平 · {error || writeError}</div>}
-      {pending.length > 0 && <div className="dtint warn" style={{ marginTop: 12 }}>以下人工入账结果暂未确认，可能已经生效。请先刷新核对；确实没成功再点「重试」，不要重新提交新的入账。
-        {pending.map(command => <div key={command.commandKey} className="p-row"><div className="txt"><div className="mono">{command.commandKey}</div><div className="sub">{command.path}</div></div>{actions.canManage && <button className="l-btn sm" disabled={disabled} onClick={() => void retry(command.commandKey)}>核对后按原请求号重试</button>}</div>)}
+      {pending.length > 0 && <div className="dtint warn" style={{ marginTop: 12 }}>以下人工入账结果暂未确认，可能已经生效。请先刷新核对；确实没成功再点「再提交一次」，不要重新提交新的入账。
+        {pending.map(command => <div key={command.commandKey} className="p-row"><div className="txt"><div className="mono">{command.commandKey}</div><div className="sub">{command.path}</div></div>{actions.canManage && <button className="l-btn sm" disabled={disabled} onClick={() => void retry(command.commandKey)}>核对后再提交一次（不会重复执行）</button>}</div>)}
       </div>}
     </div>
     <div style={{ overflowX: "auto" }}><table className="l-tbl" style={{ minWidth: 1250 }}>
-      <thead><tr><th>类型</th><th>付款单 / 用户 / 附言</th><th className="num">申请 / 应付</th><th className="num">实际收款 / 到账时间</th><th className="num">实际入账</th><th>订单状态</th><th>支付商 / 确认来源</th><th>创建 / 截止时间</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
+      <thead><tr>{!hdpayOnly && <th>类型</th>}<th>付款单 / 用户 / 附言</th><th className="num">申请 / 应付</th><th className="num">实际收款 / 到账时间</th><th className="num">实际入账</th><th>订单状态</th><th>支付商 / 确认来源</th><th>创建 / 截止时间</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
       <tbody>{data?.records.map(order => <D1BankOrderRow key={order.intentNo} order={order} {...actions} busy={disabled}
-        blocked={pending.some(command => command.path === `/vietqr/orders/${order.intentNo}/manual-credit`)} onSettled={load} />)}
-        {!data && <tr><td colSpan={9} style={{ padding: 24, textAlign: "center" }}>{loading ? "银行订单加载中…" : "银行订单加载失败，请刷新重试"}</td></tr>}
-        {data?.records.length === 0 && <tr><td colSpan={9} style={{ padding: 24, textAlign: "center" }}>没有符合条件的订单，可以换个筛选条件或用付款单号查询。</td></tr>}
+        blocked={pending.some(command => command.path === `/vietqr/orders/${order.intentNo}/manual-credit`)} onSettled={load} showRail={!hdpayOnly} />)}
+        {!data && <tr><td colSpan={hdpayOnly ? 8 : 9} style={{ padding: 24, textAlign: "center" }}>{loading ? "银行订单加载中…" : "银行订单加载失败，请刷新重试"}</td></tr>}
+        {data?.records.length === 0 && <tr><td colSpan={hdpayOnly ? 8 : 9} style={{ padding: 24, textAlign: "center" }}>没有符合条件的订单，可以换个筛选条件或用付款单号查询。</td></tr>}
       </tbody></table></div>
     <div className="l-b" style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
       <span className="sub">{data ? `共 ${data.total} 张付款单 · 第 ${data.pageNum} / ${pages} 页 · 数据时间 ${orderTime(data.asOf)}` : "—"}</span>

@@ -38,7 +38,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
     { cls: "start", nm: "已下单", ct: `${stateCounts.get("placed") ?? 0} 单` },
     { cls: "flow", nm: "已支付", ct: `${stateCounts.get("paid") ?? 0} 单` },
     { cls: "flow", nm: "开通中", ct: `${stateCounts.get("provisioning") ?? 0} 单 · 分配数据中心中` },
-    { cls: "end", nm: "已交付 ✓", ct: `${stateCounts.get("activated") ?? 0} 单已激活 · ${stateCounts.get("inventory") ?? 0} 单已入库` },
+    { cls: "end", nm: "已交付", ct: `${stateCounts.get("activated") ?? 0} 单已激活 · ${stateCounts.get("inventory") ?? 0} 单已入库` },
   ];
   // 终态分支:nm 中文主标;desc 补因果(去状态码裸用,与 nm 不重复)。
   const branches = [
@@ -106,7 +106,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
             aria-label="搜索订单"
             value={ctx.e4Keyword}
             onChange={(event) => ctx.setE4Keyword(event.target.value)}
-            placeholder="订单号 / 用户编码 / 商品"
+            placeholder="订单号 / 用户编号 / 商品"
             style={{ minWidth: 240, flex: "1 1 280px" }}
           />
           <TabGroup
@@ -158,7 +158,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           pageSizeOptions={[10, 20, 50, 100]}
         />
       </section>
-      <p className="f-foot">只有已支付、开通中、已激活或已入库的订单能退款，提交时会检查兑付覆盖率。「标记失败结果」不会退款。</p>
+      <p className="f-foot">只有已支付、开通中、已激活或已入库的订单能退款，提交时会检查平台资金是否够退。「标记失败结果」不会退款。</p>
     </>
   );
 }

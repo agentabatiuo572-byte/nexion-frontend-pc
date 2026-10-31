@@ -110,10 +110,10 @@ test("capability fails closed for absent, unknown, held and malformed server fac
   for (const flag of [undefined, null, "0", 2]) {
     const invalid = snapshot();
     invalid.provisionGate.payoutEnabled = flag;
-    assert.throws(() => api.parseExceptions(invalid), /资金开关状态无效/);
+    assert.throws(() => api.parseExceptions(invalid), /资金开关状态加载不完整/);
   }
-  assert.throws(() => api.parseExceptions(snapshot({ configured: true, enabled: true, disabledReason: null })), /能力响应无效/);
-  assert.throws(() => api.parseExceptions(snapshot(null)), /能力响应无效/);
+  assert.throws(() => api.parseExceptions(snapshot({ configured: true, enabled: true, disabledReason: null })), /出款状态加载不完整/);
+  assert.throws(() => api.parseExceptions(snapshot(null)), /出款状态加载不完整/);
 });
 
 test("payout proposal freezes current server pay-in bits rather than unsaved pay-in edits", async () => {
@@ -124,7 +124,7 @@ test("payout proposal freezes current server pay-in bits rather than unsaved pay
   inputs[1].props.onChange({ target: { checked: true } });
   inputs[2].props.onChange({ target: { checked: true } });
   tree = api.render();
-  const button = nodes(tree, "button").find((node) => node.props.children === "提交出款开关提案");
+  const button = nodes(tree, "button").find((node) => node.props.children === "提交出款开关审批");
   assert.equal(button.props.disabled, false);
   button.props.onClick();
   assert.match(api.confirms[0].detail, /不会直接放行任何提现/);
@@ -140,7 +140,7 @@ test("payout proposal freezes current server pay-in bits rather than unsaved pay
 test("pay-in proposal omits payout, read-only admins have no write controls, and unknown cannot enable", async () => {
   const api = harness(snapshot());
   const tree = api.render();
-  nodes(tree, "button").find((node) => node.props.children === "提交开关提案").props.onClick();
+  nodes(tree, "button").find((node) => node.props.children === "提交审批").props.onClick();
   await api.confirms[0].run("仅调整原有收款开关状态");
   const body = JSON.parse(api.requests.find((row) => row.options?.method === "POST").options.body);
   assert.equal(Object.hasOwn(body, "payoutEnabled"), false);
@@ -161,7 +161,7 @@ test("a held enabled gate can still be proposed off, and checker copy carries al
   assert.equal(input.props.disabled, false);
   input.props.onChange({ target: { checked: false } });
   tree = api.render();
-  assert.equal(nodes(tree, "button").find((node) => node.props.children === "提交出款开关提案").props.disabled, false);
+  assert.equal(nodes(tree, "button").find((node) => node.props.children === "提交出款开关审批").props.disabled, false);
   nodes(tree, "button").find((node) => node.props.children === "复核通过").props.onClick();
   assert.match(api.confirms[0].detail, /地址 开 \/ 入账 关 \/ 出款 开/);
   assert.equal(api.payoutSwitchText({}), "保持现值");
@@ -186,7 +186,7 @@ test("address replenishment uses verified pool facts and creates only one candid
     assert.equal(api.canProvisionAddress({ ...data, addressPool: pool }), false);
   }
   assert.equal(api.canProvisionAddress({ ...data, provisionGate: { ...data.provisionGate, state: "BLOCKED" } }), false);
-  assert.throws(() => api.parseExceptions({ ...data, addressPool: { ...data.addressPool, unassigned: "2" } }), /地址池状态无效/);
+  assert.throws(() => api.parseExceptions({ ...data, addressPool: { ...data.addressPool, unassigned: "2" } }), /地址池状态加载不完整/);
 });
 
 
@@ -205,7 +205,7 @@ test("network pools and payout capabilities stay independent and legacy pool nev
   assert.match(api.confirms[0].action, /ERC20/);
   await api.confirms[0].run("按ERC20网络单独补充一个待核验地址");
   assert.equal(api.requests.find(row => row.options?.method === "POST").path, "/cregis/addresses/provision?network=ERC20");
-  assert.throws(() => api.parseExceptions({ ...data, networkCapabilities: [{ network: "ERC20", configured: false, enabled: true, disabledReason: null }] }), /分网络出款能力/);
+  assert.throws(() => api.parseExceptions({ ...data, networkCapabilities: [{ network: "ERC20", configured: false, enabled: true, disabledReason: null }] }), /各网络出款状态加载不完整/);
 });
 
 

@@ -47,7 +47,11 @@ import {
 } from "@/lib/admin/d-client";
 import type { DCtx } from "./types";
 
-const depositChannelText = (value: string) => ({vietqr:"VietQR 银行转账",bank:"银行转账",card:"银行卡支付",trc20:"USDT（TRC20）",bep20:"USDT（BEP20）",erc20:"USDT（ERC20）",hdpay:"HDPay 银行转账",cregis:"Cregis 链上付款"} as Record<string,string>)[value.toLowerCase()] ?? value;
+// 人工银行转账和国际卡刷卡暂不使用，PC 先隐藏（2026-10-31）。代码和后端保留，改为 true 即恢复。
+// 注意：HDPay 充值走 vietqr 渠道开关，这一行不能隐藏。
+const LEGACY_CHANNELS_VISIBLE = false;
+
+const depositChannelText = (value: string) => ({vietqr:LEGACY_CHANNELS_VISIBLE ? "银行转账（VietQR）" : "银行卡（HDPay）",bank:"银行转账",card:"刷卡支付",trc20:"USDT（TRC20）",bep20:"USDT（BEP20）",erc20:"USDT（ERC20）",hdpay:"银行卡（HDPay）",cregis:"USDT 链上充值"} as Record<string,string>)[value.toLowerCase()] ?? value;
 const EMPTY_D1_FLOWS: PageResult<D1DepositFlow> = { total: 0, pageNum: 1, pageSize: 10, records: [] };
 const FLOW_TABS = [
   ["", "全部"],
@@ -326,7 +330,7 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
         toast(ok);
       } catch (readbackError) {
         checkAuth();
-        const detail = readbackError instanceof Error ? displayAdminError(readbackError) : "列表读取失败";
+        const detail = readbackError instanceof Error ? displayAdminError(readbackError) : "列表加载失败";
         setError(`操作已提交，但列表没刷新出来，请先刷新查看，不要重复提交 · ${detail}`);
         return;
       }
@@ -469,10 +473,10 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
     const unitLabel = kind === "fee" ? (channel.feeUnit === "PERCENT" ? "%" : "USDT 固定手续费") : "USD";
     openActionConfirm({
       action: kind === "fee"
-        ? `充值费率调整 · ${channel.id}`
+        ? `充值费率调整 · ${depositChannelText(channel.code) ?? channel.id}`
         : kind === "min"
-          ? `最小充值额调整 · ${channel.id}`
-          : `单笔上限调整 · ${channel.id}`,
+          ? `最小充值额调整 · ${depositChannelText(channel.code) ?? channel.id}`
+          : `单笔上限调整 · ${depositChannelText(channel.code) ?? channel.id}`,
       detail: `单位：${unitLabel}。只影响之后的新交易。`,
       edit: {
         kind: "number",
@@ -494,7 +498,7 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
             : kind === "min"
               ? updateD1TopupChannelMin(channel.code, numericValue, current, reason, operator)
               : updateD1TopupChannelMax(channel.code, numericValue, current, reason, operator),
-          `${channel.id} 已更新`,
+          `${depositChannelText(channel.code) ?? channel.id} 已更新`,
         );
       },
     });
@@ -587,16 +591,25 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
     </section>
   ) : null;
 
+  // HDPay 订单有独立接口，概览加载中或失败时也照常显示。
+  const bankOrders = <D1BankOrders canManage={canBankReconcile} busy={busy} hdpayOnly={!LEGACY_CHANNELS_VISIBLE}
+    canRegisterReceipt={!!vietQr?.accounts.length} refreshKey={vietQr?.asOf ?? ""}
+    onRegister={(order) => openReceiptRegistration(order)} onManualCredit={openBankManualCredit}
+    onRetry={(commandKey) => applyBankWrite(() => retryD1PendingBankOrderCommand(commandKey), "人工入账已重试，请核对订单和用户钱包", adminAuthLifecycleEpoch())} />;
+
+  const hdpayOrders = !LEGACY_CHANNELS_VISIBLE && <section className="l-card" id="d1-hdpay-orders">{bankOrders}</section>;
+
   if (loading && !overview) {
-    return <>{canReadCregis && <CregisStatus canManage={canManageChannels} openActionConfirm={openActionConfirm} />}<section className="l-card"><div className="l-b">正在加载…</div></section></>;
+    return <>{hdpayOrders}{canReadCregis && <CregisStatus canManage={canManageChannels} openActionConfirm={openActionConfirm} />}<section className="l-card"><div className="l-b">正在加载…</div></section></>;
   }
 
   if (error && !overview) {
-    return <>{pendingCommandPanel}{canReadCregis && <CregisStatus canManage={canManageChannels} openActionConfirm={openActionConfirm} />}<section className="l-card"><div className="l-b"><div className="dtint warn">充值对账已停止展示旧数据 · {error}</div><button className="l-btn primary" disabled={loading || busy} style={{ marginTop: 12 }} onClick={() => void refresh()}>重试</button></div></section></>;
+    return <>{hdpayOrders}{pendingCommandPanel}{canReadCregis && <CregisStatus canManage={canManageChannels} openActionConfirm={openActionConfirm} />}<section className="l-card"><div className="l-b"><div className="dtint warn">充值对账已停止展示旧数据 · {error}</div><button className="l-btn primary" disabled={loading || busy} style={{ marginTop: 12 }} onClick={() => void refresh()}>重试</button></div></section></>;
   }
 
   return (
     <>
+      {hdpayOrders}
       {pendingCommandPanel}
       {error && <div className="dtint warn" style={{ marginBottom: 12 }}>加载失败 · {error}</div>}
       {notice && <div className="dtint warn" style={{ marginBottom: 12 }}>{notice}</div>}
@@ -611,15 +624,15 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
       <div className="f-stats">
         <div className="f-stat ok"><div className="k">今日入账金额</div><div className="v">{money(overview?.ledgerTotal ?? 0)}</div><div className="sub">共 {overview?.ledgerCount ?? 0} 笔</div></div>
         <div className="f-stat warn"><div className="k">对账差异</div><div className="v">{overview?.diffCount ?? 0} 项</div><div className="sub">差异金额 {money(overview?.diffAmount ?? 0)}</div></div>
-        <div className="f-stat cyan"><div className="k">卡费缓冲</div><div className="v">{money(overview?.feeBufferUsd ?? 0)}</div><div className="sub">{overview?.feeBufferComplete ? "用来抵扣刷卡手续费" : "只含已核对部分，历史还没核对完"}</div></div>
-        <div className="f-stat danger"><div className="k">卡段 / IP / 设备锁定</div><div className="v">{overview?.binLockedCount ?? 0}</div><div className="sub">到期自动解锁</div></div>
+        {LEGACY_CHANNELS_VISIBLE && <><div className="f-stat cyan"><div className="k">卡费缓冲</div><div className="v">{money(overview?.feeBufferUsd ?? 0)}</div><div className="sub">{overview?.feeBufferComplete ? "用来抵扣刷卡手续费" : "只含已核对部分，历史还没核对完"}</div></div>
+        <div className="f-stat danger"><div className="k">卡段 / IP / 设备锁定</div><div className="v">{overview?.binLockedCount ?? 0}</div><div className="sub">到期自动解锁</div></div></>}
       </div>
 
-      <div className="two-col r11">
+      <div className={LEGACY_CHANNELS_VISIBLE ? "two-col r11" : undefined}>
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">充值渠道</span>
-            <span className="sub">· 银行转账和刷卡；链上收款见下方 Cregis 状态</span>
+            <span className="sub">· 链上收款详情见下方「USDT 资金状态」</span>
             <div className="r">
               <button className="l-btn sm" disabled={loading || busy} onClick={() => void refresh()}>刷新</button>
             </div>
@@ -627,7 +640,7 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
           <div className="l-b">
             <div className="p-row">
               <div className="txt">
-                <div className="k">USDT · Cregis（BEP20 / ERC20）</div>
+                <div className="k">USDT 链上充值（BEP20 / ERC20）</div>
                 <div className="s">收款地址分配、入账和异常处理由 Cregis 开关控制。</div>
               </div>
               <button className="l-btn sm" onClick={() => {
@@ -635,12 +648,12 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
                 document.getElementById("d1-collection-reconcile")?.scrollIntoView({ behavior: "smooth" });
               }}>查看实际状态</button>
             </div>
-            {(overview?.channels ?? []).filter((channel) => !["trc20", "bep20", "erc20"].includes(channel.code)).map((channel) => (
+            {(overview?.channels ?? []).filter((channel) => !["trc20", "bep20", "erc20"].includes(channel.code) && (LEGACY_CHANNELS_VISIBLE || ["vietqr", "hdpay"].includes(channel.code))).map((channel) => (
               <div className="p-row" key={channel.code}>
                 <div className="txt">
-                  <div className="k">{channel.id}</div>
+                  <div className="k">{depositChannelText(channel.code) ?? channel.id}</div>
                   <div className="s">
-                    费率 {channel.fee} · {["vietqr", "hdpay"].includes(channel.code) ? "最低充值本金见上方「订单直付与费用」生效规则" : `最小充值 ${channel.minAmount}`}
+                    费率 {channel.fee} · {["vietqr", "hdpay"].includes(channel.code) ? "最低充值金额见上方「订单付款与手续费」" : `最小充值 ${channel.minAmount}`}
                     {channel.code === "vietqr" && vietQr ? ` · 单笔上限 $${vietQr.config.perTxLimitUsd.toLocaleString("en-US")}` : ""}
                     {channel.maxAmountValue !== null ? ` · 单笔上限 $${channel.maxAmountValue.toLocaleString("en-US")}` : ""}
                   </div>
@@ -650,16 +663,16 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
                 {canManageChannels && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => updateChannelNumber(channel, "fee")}>费率</button>}
                 {canManageChannels && channel.maxAmountValue !== null && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => updateChannelNumber(channel, "max")}>单笔上限</button>}
                 {canManageChannels && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => openActionConfirm({
-                  action: `${channel.enabled ? "停用" : "启用"}充值渠道 · ${channel.id}`,
+                  action: `${channel.enabled ? "停用" : "启用"}充值渠道 · ${depositChannelText(channel.code) ?? channel.id}`,
                   detail: "只影响之后的新交易。",
                   run: (reason) => applyOverview(
                     () => updateD1TopupChannelEnabled(channel.code, !channel.enabled, channel.enabled, reason, operator),
-                    `${channel.id} 已${channel.enabled ? "停用" : "启用"}`,
+                    `${depositChannelText(channel.code) ?? channel.id} 已${channel.enabled ? "停用" : "启用"}`,
                   ),
                 })}>{channel.enabled ? "停用" : "启用"}</button>}
               </div>
             ))}
-            <div className="dtint" style={{ marginTop: 12 }}>
+            {LEGACY_CHANNELS_VISIBLE && <div className="dtint" style={{ marginTop: 12 }}>
               当前主要支付商: <b>{overview?.primaryPsp ?? "—"}</b> · 备用: {overview?.backupPsp ?? "—"}
               {canSwitchPsp && <button className="l-btn sm mc" disabled={loading || busy} style={{ marginLeft: 10 }} onClick={() => openActionConfirm({
                 action: "切换主要与备用支付商",
@@ -669,11 +682,11 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
                   "主要与备用支付商已切换",
                 ),
               })}>切换主备</button>}
-            </div>
+            </div>}
           </div>
         </section>
 
-        <section className="l-card">
+        {LEGACY_CHANNELS_VISIBLE && <section className="l-card">
           <div className="l-h">
             <span className="ttl">刷卡风控参数</span>
             <span className="sub">· 修改立即生效</span>
@@ -699,10 +712,11 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
               </div>
             ))}
           </div>
-        </section>
+        </section>}
       </div>
 
-      <section className="l-card" id="d1-collection-reconcile">
+      {!LEGACY_CHANNELS_VISIBLE && canReadCregis && <div id="d1-collection-reconcile"><CregisStatus canManage={canManageChannels} openActionConfirm={openActionConfirm} /></div>}
+      {LEGACY_CHANNELS_VISIBLE && <section className="l-card" id="d1-collection-reconcile">
         <div className="l-h">
           <span className="ttl">充值收款对账</span>
           <span className="sub">· 银行转账订单、回单处理和链上收款</span>
@@ -717,10 +731,7 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
         {reconciliationType === "cregis" && canReadCregis ? (
           <CregisStatus canManage={canManageChannels} openActionConfirm={openActionConfirm} embedded />
         ) : <>
-        <D1BankOrders canManage={canBankReconcile} busy={busy}
-          canRegisterReceipt={!!vietQr?.accounts.length} refreshKey={vietQr?.asOf ?? ""}
-          onRegister={(order) => openReceiptRegistration(order)} onManualCredit={openBankManualCredit}
-          onRetry={(commandKey) => applyBankWrite(() => retryD1PendingBankOrderCommand(commandKey), "人工入账已重试，请核对订单和用户钱包", adminAuthLifecycleEpoch())} />
+        {bankOrders}
         <div className="l-h">
           <span className="ttl">银行回单处理与已入账记录</span>
           <span className="sub">· 按下单时的汇率折算 · 待核实的款项会计入资金储备</span>
@@ -862,10 +873,10 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
           </div>
         </div>
         </>}
-      </section>
+      </section>}
 
-      <div className="two-col r11">
-        <section className="l-card">
+      <div className={LEGACY_CHANNELS_VISIBLE ? "two-col r11" : undefined}>
+        {LEGACY_CHANNELS_VISIBLE && <section className="l-card">
           <div className="l-h">
             <span className="ttl">收款账户池</span>
             <span className="sub">· 只显示账号后四位</span>
@@ -946,18 +957,18 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
               );
             })}
           </div>
-        </section>
+        </section>}
 
         <section className="l-card">
-          <div className="l-h"><span className="ttl">银行转账渠道参数</span><span className="sub">· 只对新付款单和新回单生效</span></div>
+          <div className="l-h"><span className="ttl">{LEGACY_CHANNELS_VISIBLE ? "银行转账渠道参数" : "银行卡充值参数（HDPay）"}</span><span className="sub">{LEGACY_CHANNELS_VISIBLE ? "· 只对新付款单和新回单生效" : "· 只对之后的新付款单生效"}</span></div>
           <div className="l-b">
             {vietQr && [
               ["toleranceVnd", "金额容差", vietQr.config.toleranceVnd, "VND", 0, 5_000],
               ["graceMinutes", "回单宽限", vietQr.config.graceMinutes, "分钟", 0, 60],
-              ["perTxLimitUsd", "VietQR 单笔上限", vietQr.config.perTxLimitUsd, "USD", 100, 10_000],
-            ].map(([key, label, value, unit, min, max]) => (
+              ["perTxLimitUsd", LEGACY_CHANNELS_VISIBLE ? "VietQR 单笔上限" : "单笔上限", vietQr.config.perTxLimitUsd, "USD", 100, 10_000],
+            ].filter(([key]) => LEGACY_CHANNELS_VISIBLE || key === "perTxLimitUsd").map(([key, label, value, unit, min, max]) => (
               <div className="p-row" key={String(key)}>
-                <div className="txt"><div className="k">{label}</div><div className="s">版本 v{vietQr.config.version}</div></div>
+                <div className="txt"><div className="k">{label}</div></div>
                 <span className="v">{Number(value).toLocaleString("en-US")} {unit}</span>
                 {canManageBankConfig && <button className="l-btn sm mc" disabled={busy} onClick={() => editBankNumber(
                   key as "toleranceVnd" | "graceMinutes" | "perTxLimitUsd" | "trc20Confirmations" | "erc20Confirmations" | "bep20Confirmations",
@@ -965,7 +976,7 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
                 )}>调整</button>}
               </div>
             ))}
-            {vietQr && <div className="p-row">
+            {LEGACY_CHANNELS_VISIBLE && vietQr && <div className="p-row">
               <div className="txt"><div className="k">账户轮换策略</div><div className="s">新付款单按这个规则分配收款账户</div></div>
               <span className="v">{vietQr.config.rotationStrategy === "ROUND_ROBIN" ? "轮询均匀派发" : "剩余额度优先"}</span>
               {canManageBankConfig && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
@@ -996,8 +1007,8 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
               <input className="ui-control"
                 id="d1-flow-keyword"
                 value={keyword}
-                aria-label="充值流水查询关键字：充值单号 / 用户编号 / 凭证"
-                placeholder="充值单 / 用户编号 / 凭证"
+                aria-label="充值流水查询关键字：充值单号 / 用户编号 / 交易号"
+                placeholder="充值单号 / 用户编号 / 交易号"
                 onChange={(e) => setKeyword(e.target.value)}
               />
               <button className="l-btn primary" disabled={loading || busy} onClick={() => { if (page === 1) void refresh(); else setPage(1); }}>查询</button>
@@ -1006,7 +1017,7 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 980 }}>
-            <thead><tr><th>充值单</th><th>用户</th><th>通道</th><th className="num">金额</th><th className="num">支付商实收</th><th>状态</th><th>凭证</th><th>提交时间</th><th>确认时间</th><th>入账时间</th></tr></thead>
+            <thead><tr><th>充值单</th><th>用户</th><th>通道</th><th className="num">金额</th><th className="num">支付商实收</th><th>状态</th><th>交易号</th><th>提交时间</th><th>确认时间</th><th>入账时间</th></tr></thead>
             <tbody>
               {flows.records.length === 0 ? (
                 <tr><td colSpan={10} style={{ textAlign: "center", color: "var(--ink-4)", padding: "26px 12px" }}>暂无充值流水</td></tr>
@@ -1041,7 +1052,7 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
         </div>
       </section>
 
-      <div className="two-col r11">
+      <div className={LEGACY_CHANNELS_VISIBLE ? "two-col r11" : undefined}>
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">对账差异</span>
@@ -1061,7 +1072,7 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
                     detail: `差异金额 ${money(row.diffAmount)}。只能标记为异常并挂账，须填写支付商账单或工单号。`,
                     businessForm: { kind: "multi-field", fields: [
                       { key: "method", label: "处理方式", inputKind: "select", current: "CONFIRM_EXCEPTION", options: ["CONFIRM_EXCEPTION"], optionLabels: { CONFIRM_EXCEPTION: "确认异常并挂账" } },
-                      { key: "evidenceRef", label: "支付商账单 / 工单凭证", inputKind: "text", placeholder: "如 PSP-STMT-20260720-001", required: true },
+                      { key: "evidenceRef", label: "支付商账单号或工单号", inputKind: "text", placeholder: "如 PSP-STMT-20260720-001", required: true },
                     ] },
                     run: (reason, _value, business) => {
                       const evidenceRef = business?.evidenceRef?.trim() ?? "";
@@ -1074,7 +1085,7 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
           </div>
         </section>
 
-        <section className="l-card">
+        {LEGACY_CHANNELS_VISIBLE && <section className="l-card">
           <div className="l-h">
             <span className="ttl">卡段 / IP / 设备锁定</span>
             <span className="sub">· 按 24 小时内的支付失败次数</span>
@@ -1123,10 +1134,10 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
               </div>;
             })}
           </div>
-        </section>
+        </section>}
       </div>
 
-      <section className="l-card">
+      {LEGACY_CHANNELS_VISIBLE && <section className="l-card">
         <div className="l-h">
           <span className="ttl">拒付追回</span>
           <span className="sub">· 用户刷卡后被银行退款</span>
@@ -1169,7 +1180,7 @@ function D1RechargeRecon({ ctx }: { ctx: DCtx }) {
             </tbody>
           </table>
         </div>
-      </section>
+      </section>}
     </>
   );
 }
