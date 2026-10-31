@@ -10,6 +10,7 @@ import type { FViewCtx } from "./types";
 import type { F1VRankRow } from "@/lib/admin/f1-client";
 import { nexGridBrandText, platformAssetText } from "@/lib/admin/brand-copy";
 import { PublishedContentEditor } from "@/app/components/domain-views/published-content-editor";
+import { F1VrankBootstrap } from "./f1-vrank-bootstrap";
 import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
 
 function popPct(p: number, logMax: number): number { return p <= 0 ? 0 : Math.max(2, (Math.log10(Math.max(p, 1)) / logMax) * 100); }
@@ -108,6 +109,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   }
 
   if (rows.length === 0) {
+    if (canWrite) return <F1VrankBootstrap ctx={ctx} />;
     return (
       <section className="ladder">
         <div className="ladder-h">
@@ -129,7 +131,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     if (r.selfBuy != null) p.push(`自购算力点 ${points(r.selfBuy)}`);
     if (r.teamGv != null) p.push(`团队算力点 ${points(r.teamGv)}`);
     if (r.directRefs != null) p.push(`直接邀请 ${r.directRefs}`);
-    if (r.legCount != null) p.push(`${r.legCount} 条分支 · 每条 ≥${r.legRank ?? "—"}`);
+    if (r.legCount != null) p.push(Number(r.legCount) === 0 ? "分支条件未启用" : `${r.legCount} 条分支 · 每条 ≥${r.legRank === "NONE" ? "尚未设置" : r.legRank ?? "尚未设置"}`);
     return p.length ? p.join(" · ") : "—";
   };
   const fieldsOf = (r: VRow): VField[] => {
@@ -139,7 +141,8 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     if (r.directRefs != null) f.push({ k: "directRefs", label: "直接邀请人数", cur: r.directRefs, kind: "number" });
     if (r.legCount != null) f.push({ k: "legCount", label: "达标分支数", cur: r.legCount, kind: "number" });
     // 分支最低等级 = V-Rank 13 阶有限枚举(运营从已存在等级里勾选,不手输「V3」串)。
-    if (r.legRank != null) f.push({ k: "legRank", label: "分支最低等级", cur: r.legRank, kind: "text", options: rows.map((x) => x.v) });
+    if (r.legRank != null) f.push({ k: "legRank", label: "分支最低等级", cur: r.legRank, kind: "text",
+      options: ["NONE", ...rows.filter((x) => Number(x.v.slice(1)) < Number(r.v.slice(1))).map((x) => x.v)] });
     return f;
   };
   const editField = (r: VRow, f: VField) => {
@@ -147,8 +150,8 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     const cur = f.cur;
     ctx.openActionConfirm({
       name: `调整 ${r.v} 晋升条件 · ${f.label}`, amplify: fund, op: "param", paramKey: `F.vrank.${r.v}.${f.k}`,
-      edit: f.options ? { kind: "select", current: cur, options: f.options } : { kind: f.kind, current: cur },
-      detail: `${r.v} 的${f.label}当前为 ${cur}。从下一轮评估开始生效，已晋升的用户不受影响。${fund ? "这一级有 USDT / UVT 奖励，放宽条件会让平台多付钱，提交时检查兑付覆盖率。" : ""}`,
+      edit: f.options ? { kind: "select", current: cur, options: f.options, optionLabels: { NONE: "不要求" } } : { kind: f.kind, current: cur },
+      detail: `${r.v} 的${f.label}当前为 ${cur === "NONE" ? "不要求" : cur}。从下一轮评估开始生效，已晋升的用户不受影响。${f.k === "legRank" || f.k === "legCount" ? "分支数大于 0 时还须设置低于当前等级的分支等级，未设置完整前不会按该条件晋升。" : ""}${fund ? "这一级有 USDT / UVT 奖励，放宽条件会让平台多付钱，提交时检查兑付覆盖率。" : ""}`,
     });
   };
 

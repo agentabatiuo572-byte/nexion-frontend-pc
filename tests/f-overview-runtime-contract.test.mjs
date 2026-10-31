@@ -33,6 +33,15 @@ test("F1 rejects an incomplete successful payload", () => {
   assert.throws(() => assertF1Overview({}), /F1_OVERVIEW_RESPONSE_INVALID/);
 });
 
+test("F1 accepts a complete empty overview for first configuration and still rejects broken or orphan data", () => {
+  const empty = { domain: "F1", vrankRows: [], rewards: {}, voucherOptions: [], voucherLabels: {},
+    skuOptions: [], skuLabels: {}, leadership: { ranks: [] }, configValues: {}, sources: ["nx_v_rank_config"] };
+  assert.doesNotThrow(() => assertF1Overview(empty));
+  assert.throws(() => assertF1Overview({ ...empty, rewards: { V1: [] } }), /orphanRewards/);
+  assert.throws(() => assertF1Overview({ ...empty, sources: [] }), /sources/);
+  assert.throws(() => assertF1Overview({ ...empty, vrankRows: null }), /vrankRows/);
+});
+
 test("F2 rejects an incomplete successful payload", () => {
   assert.throws(() => assertF2Overview({}), /F2_OVERVIEW_RESPONSE_INVALID/);
 });

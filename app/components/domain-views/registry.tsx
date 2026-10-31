@@ -9,6 +9,7 @@ import dynamic from "next/dynamic";
 import type { DomainViewMeta } from "./domain-header";
 import { MDomainView } from "./m-view";
 import { DomainModuleBoundary, DomainModuleLoading } from "./domain-module-state";
+import "./f-domain.css";
 
 // M1 is the critical entry: keep it eager and load unrelated domains on navigation.
 const ADomainView = dynamic(() => import("./a-view").then(m => m.ADomainView), { loading: DomainModuleLoading });

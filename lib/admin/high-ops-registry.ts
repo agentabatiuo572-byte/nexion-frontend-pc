@@ -1952,6 +1952,17 @@ export const HIGH_OPS: HighOpDef[] = [
     }),
   },
   {
+    op: "f_vrank_bootstrap",
+    domain: "F",
+    action: "首次配置 V0–V8 会员等级",
+    amplifies: true,
+    type: "param",
+    gateLabel: "门槛者",
+    targetType: "vrank_bootstrap",
+    buildCommand: (ctx) => ({ domain: "F", op: "f_vrank_bootstrap", params: { ranks: ctx.ranks } }),
+    buildTarget: () => ({ domain: "F", type: "vrank_bootstrap", id: "current" }),
+  },
+  {
     op: "f_vrank_override",
     domain: "F",
     action: "V-Rank 手动晋升/降级",

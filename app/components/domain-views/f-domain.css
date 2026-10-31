@@ -444,6 +444,16 @@
 .fdom .f1-filter select { min-width: 118px; height: 34px; padding: 0 9px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink); font-size: 12px; }
 .fdom .f1-filter input:focus,
 .fdom .f1-filter select:focus { outline: 1px solid var(--brand); border-color: var(--brand); }
+.fdom .f1-bootstrap { padding: 0 18px 18px; }
+.fdom .f1-bootstrap-levels, .fdom .f1-bootstrap-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+.fdom .f1-bootstrap-levels [aria-pressed="true"] { color: var(--brand); border-color: var(--brand); }
+.fdom .f1-bootstrap-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; margin: 0; padding: 16px; border: 1px solid var(--border-strong); border-radius: 12px; }
+.fdom .f1-bootstrap-fields legend { padding: 0 6px; color: var(--ink); font-size: 13px; }
+.fdom .f1-bootstrap-fields label { display: flex; flex-direction: column; gap: 7px; color: var(--ink-3); font-size: 12px; }
+.fdom .f1-bootstrap-fields input, .fdom .f1-bootstrap-fields select { width: 100%; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-2); color: var(--ink); font: inherit; }
+.fdom .f1-bootstrap-fields :is(input, select):focus-visible { outline: 1px solid var(--brand); border-color: var(--brand); }
+.fdom .f1-bootstrap-error { color: var(--danger); font-size: 12px; }
+.fdom .f1-bootstrap-actions button:disabled { opacity: .5; cursor: default; }
 .fdom .f1-table-wrap { width: 100%; overflow-x: auto; }
 .fdom .f1-table-wrap .ctbl { min-width: 900px; }
 .fdom .f1-table-wrap details { max-width: 260px; }

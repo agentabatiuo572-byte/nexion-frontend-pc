@@ -129,7 +129,8 @@ export function assertF1Overview(value: unknown): asserts value is JsonRecord {
   const row = record(value, "F1");
   domain(row, "F1");
   const ranks = array(row, "vrankRows", "F1");
-  if (ranks.length < 1 || ranks.length > 13) invalid("F1", "vrankRows");
+  // A complete, empty server overview is the entry to first-time configuration.
+  if (ranks.length > 13) invalid("F1", "vrankRows");
   uniqueCodes(ranks, "F1", "vrankRows", Array.from({ length: ranks.length }, (_, index) => `V${index}`), "v");
   ranks.forEach((value, index) => {
     const rank = record(value, "F1", `vrankRows[${index}]`);
@@ -138,6 +139,7 @@ export function assertF1Overview(value: unknown): asserts value is JsonRecord {
     if (!Array.isArray(rank.rewards)) invalid("F1", `vrankRows[${index}].rewards`);
   });
   object(row, "rewards", "F1");
+  if (ranks.length === 0 && Object.keys(row.rewards as JsonRecord).length !== 0) invalid("F1", "orphanRewards");
   array(row, "voucherOptions", "F1");
   object(row, "voucherLabels", "F1");
   array(row, "skuOptions", "F1");

@@ -170,12 +170,16 @@ export function A2ChangeReview({ before, after }: { before: string; after: strin
     rankMin: "最低 V 等级", directsMin: "最低有效直接邀请", teamUsdtMin: "最低团队业绩", mode: "条件组合",
     activeDirectMin: "最低有效直接邀请", teamComputePointsMin: "最低团队算力点",
     enforce: "启用限制", quotaCap: "总配额", quotaSold: "已用配额", quotaPeriod: "配额周期",
+    ranks: "会员等级", rankCode: "等级", titleCn: "中文头衔", titleEn: "英文头衔",
+    selfComputePoints: "自购算力点", directRefs: "直接邀请人数", teamComputePoints: "团队算力点",
+    requiredDownlineRank: "分支最低等级", requiredDownlineCount: "达标分支数", unilevelDepth: "团队奖励层数",
+    peerBonusRate: "同级奖比例", leadershipVotes: "领导奖池票数", rewards: "晋升奖励",
   };
   const format = (value: unknown): string => {
     if (value === null) return "未设置";
-    if (Array.isArray(value)) return value.map(format).join("\n");
+    if (Array.isArray(value)) return value.length ? value.map(format).join("\n\n") : "无";
     if (typeof value === "object") return Object.entries(value as Record<string, unknown>)
-      .map(([key, item]) => `${labels[key] ?? key}：${format(item)}`).join("\n") || "无（新建）";
+      .map(([key, item]) => `${labels[key] ?? key}：${key === "peerBonusRate" && typeof item === "number" ? `${(item * 100).toFixed(2)}%` : format(item)}`).join("\n") || "无（新建）";
     return typeof value === "boolean" ? (value ? "是" : "否") : String(value);
   };
   const review = (value: string) => {
@@ -707,7 +711,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     <td>
                       <span className="a2-ba">
                         <span className="k">变更前</span><span className="o">{w.before}</span>
-                        <span className="k">变更后</span><span className="n">{w.after}</span>
+                        <span className="k">变更后</span><span className="n">{w.action.startsWith("首次配置 V0–V8") ? "创建 V0–V8 共 9 个等级，点击本行核对完整配置" : w.after}</span>
                       </span>
                     </td>
                     <td style={{ fontSize: 12 }}>{w.operator}</td>

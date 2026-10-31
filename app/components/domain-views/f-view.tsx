@@ -63,7 +63,6 @@ import { F4Ops } from "./f-tabs/f4-ops";
 import { F5Audit } from "./f-tabs/f5-audit";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { directReferralAmplifies, directReferralSummary, validateDirectReferralUpdate, type DirectReferralPolicy } from "@/lib/admin/direct-referral-policy";
-import "./f-domain.css";
 import "./f-tabs/f2-design.css";
 
 const FOLD: Record<string, string> = { F1: "F1", F2: "F2", F3: "F3", F4: "F4", F5: "F5" };
@@ -513,6 +512,15 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f1PayoutError,
     queryPromotions: queryF1Promotions,
     queryPayouts: queryF1Payouts,
+    proposeVRankBootstrap: async (ranks, reason) => {
+      const def = findHighOp("f_vrank_bootstrap");
+      if (!def) throw new Error("F_OP_NOT_FOUND:f_vrank_bootstrap");
+      await proposeStable("f-vrank-bootstrap:current", JSON.stringify([ranks, reason]), {
+        action: def.action, obj: "current", before: "尚未配置会员等级", after: JSON.stringify(ranks),
+        type: "param", amplifies: true, gate: { roles: [] }, gateLabel: def.gateLabel,
+        reason, sourceDomain: "F1", command: def.buildCommand({ ranks }), target: def.buildTarget({}),
+      });
+    },
     proposeVRankOverride: async (userId, targetV, direction, reason) => {
       const def = findHighOp("f_vrank_override");
       if (!def) throw new Error("F_OP_NOT_FOUND:f_vrank_override");

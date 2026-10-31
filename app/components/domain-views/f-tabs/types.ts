@@ -2,6 +2,7 @@ import type { EditSpec, BusinessFormSpec, BusinessFormValue } from "../design-ki
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import type { DirectReferralPolicy, DirectReferralUpdate } from "@/lib/admin/direct-referral-policy";
 import type { A2OperationRow } from "@/lib/admin/a2-client";
+import type { VRankBootstrapRow } from "@/lib/admin/vrank-bootstrap";
 import type {
   F1Leadership,
   F1PayoutFilters,
@@ -87,6 +88,7 @@ export interface FViewCtx {
   queryPromotions: (filters?: F1PromotionFilters, append?: boolean) => Promise<void>;
   queryPayouts: (filters?: F1PayoutFilters, append?: boolean) => Promise<void>;
   proposeVRankOverride: (userId: string, targetV: string, direction: "promote" | "rollback", reason: string) => Promise<void>;
+  proposeVRankBootstrap: (ranks: VRankBootstrapRow[], reason: string) => Promise<void>;
   proposePayoutAction: (payoutId: string, action: "reissue" | "reverse", reason: string) => Promise<void>;
   // -- 网络版税费率(F2)· 读 + 配置写入 --
   f2Metrics: F2Metric[];
