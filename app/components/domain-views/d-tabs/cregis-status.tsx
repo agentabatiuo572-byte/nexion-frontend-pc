@@ -122,15 +122,21 @@ function payoutSwitchText(row: ExceptionRow, unknownText = "保持现值"): stri
 }
 
 const cregisStateText = (value: unknown) => ({ IDLE: "地址创建空闲", BUSY: "正在创建地址", BLOCKED: "风险暂停", DISABLED: "未启用支付商收款", MISSING: "控制配置缺失", UNKNOWN: "创建结果待核实", PROVISIONING: "地址创建中", VERIFYING: "地址核验中", UNATTRIBUTED_HOLD: "未归属充值待处理", RETIRED_HOLD: "停用地址充值待处理", DUST_HOLD: "低额充值待处理", REVIEW_HOLD: "大额充值待审核", REORG_INVESTIGATING: "链重组调查中", PROVIDER_CONFLICT_HOLD: "支付商与链上记录冲突待处理", PROVIDER_MISSING: "支付商缺单待核对", CHAIN_MISMATCH_HOLD: "链上记录不符待核对", RUNNING: "对账中", COMPLETE: "完整对账完成", INCOMPLETE: "对账未完成", MAKER_DONE: "待另一管理员复核", RESOLVED: "复核处理完成", REJECTED: "已驳回" } as Record<string,string>)[String(value)] ?? "状态待核实";
+function rowNetwork(row: { network?: unknown; chainId?: unknown; chain_id?: unknown }): "BEP20" | "ERC20" | null {
+  if (row.network === "BEP20" || row.network === "ERC20") return row.network;
+  if (row.network !== undefined && row.network !== null) return null;
+  const chain = row.chainId ?? row.chain_id;
+  return chain == null ? "BEP20" : chain === "60" || chain === 60 ? "ERC20" : chain === "2510" || chain === 2510 ? "BEP20" : null;
+}
 function rowSummary(row: ExceptionRow) {
   return [row.id == null ? null : `#${row.id}`, row.state == null && row.status == null ? null : cregisStateText(row.state ?? row.status),
-    row.network ?? (String(row.chainId ?? row.chain_id) === "60" ? "ERC20" : String(row.chainId ?? row.chain_id) === "2510" ? "BEP20" : null), row.address, row.cid == null ? null : `CID ${row.cid}`, row.txid,
+    rowNetwork(row), row.address, row.cid == null ? null : `CID ${row.cid}`, row.txid,
     row.ageSeconds == null ? null : `等待 ${row.ageSeconds} 秒`,
     row.lastError ?? row.last_error].filter((part) => part != null && part !== "").join(" · ");
 }
 
 type DepositRow = {
-  network?: "BEP20" | "ERC20"; chain_id?: string; id: string; cid: string; userId: string; txid: string; logIndex: number; address: string;
+  network?: "BEP20" | "ERC20"; chain_id?: string; chainId?: string; id: string; cid: string; userId: string; txid: string; logIndex: number; address: string;
   grossAmount: string; feeAmount: string; netAmount: string;
   confirmations: number; status: string; depositNo?: string | null;
   createdAt: string; creditedAt?: string | null;
@@ -200,7 +206,7 @@ function CregisDepositHistory() {
         <tbody>{page.items.length === 0 ? <tr><td colSpan={10} className="cregis-history-empty">暂无已核实的链上入金。待处理的回调和缺单可在“异常处理”查看。</td></tr>
           : page.items.map((row) => <tr key={row.id}>
             <td className="mono">CID {row.cid}<div className="sub">{row.depositNo || (row.status === "CREDITED" ? "充值单缺失，请核对" : "尚未生成充值单")}</div></td>
-            <td className="mono">{row.userId}</td><td>{row.network ?? (row.chain_id === "1" ? "ERC20" : row.chain_id === "56" ? "BEP20" : "BEP20（历史）")}</td>
+            <td className="mono">{row.userId}</td><td>{rowNetwork(row) ?? "网络待核实"}</td>
             <td className="cregis-chain-cell mono">{row.txid} <span>日志 {row.logIndex} · {row.address}</span></td>
             <td className="num mono">{String(row.grossAmount)}</td>
             <td className="num mono">{String(row.feeAmount)}</td>
@@ -352,7 +358,7 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
           <div className={`f-stat ${(data.openRiskAlertCount ?? 0) > 0 ? "warn" : ""}`}><div className="k">未解除的紧急与严重告警</div><div className="v">{data.openRiskAlertCount ?? "未知"}</div><div className="sub">链上出款：{payoutSwitchText(data.provisionGate, "未知")}</div></div>
         </div>
         <div className="cregis-recon">
-          <span>最近完整对账：<strong>{data.reconcileRuns?.find((row) => row.status === "COMPLETE")?.completedAt?.toString() ?? "尚无"}</strong></span>
+          <span>{poolNetwork} 最近完整对账：<strong>{data.reconcileRuns?.find((row) => row.status === "COMPLETE" && rowNetwork(row) === poolNetwork)?.completedAt?.toString() ?? "尚无"}</strong></span>
           {canManage && <>
           <button className="l-btn sm" disabled={busy || loading} onClick={() => confirmCommand(
             `立即运行 Cregis ${poolNetwork} 完整对账`, `核对 Cregis 和 ${poolNetwork} 链上记录，发现异常会生成告警。`,

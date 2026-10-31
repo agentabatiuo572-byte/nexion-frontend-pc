@@ -58,7 +58,7 @@ function harness(data) {
       throw new Error(`Unexpected module: ${name}`);
     },
   };
-  vm.runInNewContext(`${compiled}\nexports.checks = { parseExceptions, canEnableProviderPayout, payoutCapabilityText, payoutSwitchText, canProvisionAddress };`, context);
+  vm.runInNewContext(`${compiled}\nexports.checks = { parseExceptions, canEnableProviderPayout, payoutCapabilityText, payoutSwitchText, canProvisionAddress, rowNetwork };`, context);
   return {
     ...exports.checks, requests, confirms,
     render(canManage = true) {
@@ -206,4 +206,23 @@ test("network pools and payout capabilities stay independent and legacy pool nev
   await api.confirms[0].run("按ERC20网络单独补充一个待核验地址");
   assert.equal(api.requests.find(row => row.options?.method === "POST").path, "/cregis/addresses/provision?network=ERC20");
   assert.throws(() => api.parseExceptions({ ...data, networkCapabilities: [{ network: "ERC20", configured: false, enabled: true, disabledReason: null }] }), /分网络出款能力/);
+});
+
+
+test("ERC20 selected reconciliation never borrows BEP20 or unlabelled legacy completion", () => {
+  const data = snapshot();
+  data.reconcileRuns = [{ status: "COMPLETE", network: "BEP20", completedAt: "BSC-completed" }, { status: "COMPLETE", completedAt: "legacy-BSC-completed" }, { status: "INCOMPLETE", network: "ERC20", completedAt: "ETH-incomplete" }];
+  const api = harness(data);
+  let tree = api.render();
+  const completion = root => nodes(root, "strong").map(node => node.props.children).find(value => ["BSC-completed", "legacy-BSC-completed", "ETH-completed", "尚无"].includes(value));
+  assert.equal(completion(tree), "BSC-completed");
+  nodes(tree, "select").find(node => node.props["aria-label"] === "地址池网络").props.onChange({ target: { value: "ERC20" } });
+  tree = api.render(); assert.equal(completion(tree), "尚无");
+  data.reconcileRuns.unshift({ status: "COMPLETE", chainId: "60", completedAt: "ETH-completed" });
+  tree = api.render(); assert.equal(completion(tree), "ETH-completed");
+  assert.equal(api.rowNetwork({ chain_id: "60" }), "ERC20");
+  assert.equal(api.rowNetwork({ chainId: "2510" }), "BEP20");
+  assert.equal(api.rowNetwork({ chainId: ["60"] }), null);
+  assert.equal(api.rowNetwork({}), "BEP20");
+  assert.equal(api.rowNetwork({ chain_id: "1" }), null);
 });
