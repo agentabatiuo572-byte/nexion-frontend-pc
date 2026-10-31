@@ -150,6 +150,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     const cur = f.cur;
     ctx.openActionConfirm({
       name: `调整 ${r.v} 晋升条件 · ${f.label}`, amplify: fund, op: "param", paramKey: `F.vrank.${r.v}.${f.k}`,
+      completionCopy: "确认后更新本级晋升条件，下一轮评估使用新值。",
       edit: f.options ? { kind: "select", current: cur, options: f.options, optionLabels: { NONE: "不要求" } } : { kind: f.kind, current: cur },
       detail: `${r.v} 的${f.label}当前为 ${cur === "NONE" ? "不要求" : cur}。从下一轮评估开始生效，已晋升的用户不受影响。${f.k === "legRank" || f.k === "legCount" ? "分支数大于 0 时还须设置低于当前等级的分支等级，未设置完整前不会按该条件晋升。" : ""}${fund ? "这一级有 USDT / UVT 奖励，放宽条件会让平台多付钱，提交时检查兑付覆盖率。" : ""}`,
     });
