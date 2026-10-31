@@ -102,3 +102,13 @@ test("permission, owner, storage, identity change and retry expiry fail closed",
   await assert.rejects(changed.client.updatePurchasePaymentPolicy(12, 1, channels, "依据核验后的渠道费用调整本次规则"));
   assert.equal(changed.client.pendingPurchasePayments(12).length, 1);
 });
+
+
+test("ERC20 has its own initially unconfigured channel and preserves older two-channel responses", () => {
+  const erc20 = { paymentMethod: "CREGIS_USDT_ERC20", configured: false, channelFeeRatePct: null, channelFeeFixed: null, networkConfirmFeeUsdt: null, minTopupPrincipal: "10" };
+  assert.deepEqual(contract.parsePurchasePaymentPolicy({ ...policy, channels: [...channels, erc20] }).channels[2], erc20);
+  assert.equal(contract.parsePurchasePaymentPolicy(policy).channels.length, 2);
+  assert.throws(() => contract.parsePurchasePaymentPolicy({ ...policy, channels: [...channels, { ...erc20, configured: true }] }));
+  assert.throws(() => contract.parsePurchasePaymentPolicy({ ...policy, channels: [...channels, channels[1]] }));
+  assert.equal(contract.parsePurchasePaymentRecord({ ...record, paymentMethod: "CREGIS_USDT_ERC20" }).paymentMethod, "CREGIS_USDT_ERC20");
+});

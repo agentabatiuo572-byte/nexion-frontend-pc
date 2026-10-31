@@ -178,7 +178,7 @@ test("address replenishment uses verified pool facts and creates only one candid
   assert.match(api.confirms[0].detail, /核对归属、余额和链上历史/);
   await api.confirms[0].run("为测试用户补充一个经过核验的收款地址");
   assert.equal(api.requests.filter((row) => row.options?.method === "POST").length, 1);
-  assert.equal(api.requests.find((row) => row.options?.method === "POST").path, "/cregis/addresses/provision");
+  assert.equal(api.requests.find((row) => row.options?.method === "POST").path, "/cregis/addresses/provision?network=BEP20");
   assert.equal(nodes(api.render(false), "button").some((node) => node.props.children === "补充收款地址"), false);
   assert.equal(api.canProvisionAddress({ ...data, addressPool: { ...data.addressPool, limit: 0, total: 10000 } }), true);
   for (const pool of [undefined, { ...data.addressPool, available: false }, { ...data.addressPool, total: 60 },
@@ -187,4 +187,23 @@ test("address replenishment uses verified pool facts and creates only one candid
   }
   assert.equal(api.canProvisionAddress({ ...data, provisionGate: { ...data.provisionGate, state: "BLOCKED" } }), false);
   assert.throws(() => api.parseExceptions({ ...data, addressPool: { ...data.addressPool, unassigned: "2" } }), /地址池状态无效/);
+});
+
+
+test("network pools and payout capabilities stay independent and legacy pool never enables ERC20", async () => {
+  const data = snapshot();
+  data.addressPool = { available: true, total: 3, unassigned: 2, assigned: 1, verifying: 0, unknown: 0, limit: 60 };
+  data.addressPools = { BEP20: data.addressPool, ERC20: { ...data.addressPool, total: 0, unassigned: 0, assigned: 0 } };
+  data.networkCapabilities = [{ network: "BEP20", configured: true, enabled: false, disabledReason: "SWITCH_OFF" }, { network: "ERC20", configured: false, enabled: false, disabledReason: "NOT_CONFIGURED" }];
+  const api = harness(data);
+  assert.equal(api.canProvisionAddress({ ...data, addressPools: undefined }, "ERC20"), false);
+  assert.equal(api.canProvisionAddress(api.parseExceptions(data), "ERC20"), true);
+  let tree = api.render();
+  nodes(tree, "select").find(node => node.props["aria-label"] === "地址池网络").props.onChange({ target: { value: "ERC20" } });
+  tree = api.render();
+  nodes(tree, "button").find(node => node.props.children === "补充收款地址").props.onClick();
+  assert.match(api.confirms[0].action, /ERC20/);
+  await api.confirms[0].run("按ERC20网络单独补充一个待核验地址");
+  assert.equal(api.requests.find(row => row.options?.method === "POST").path, "/cregis/addresses/provision?network=ERC20");
+  assert.throws(() => api.parseExceptions({ ...data, networkCapabilities: [{ network: "ERC20", configured: false, enabled: true, disabledReason: null }] }), /分网络出款能力/);
 });

@@ -41,7 +41,7 @@ export function CregisPoolPolicy({canManage,openActionConfirm}:{canManage:boolea
   };
   return <div className="cregis-history cregis-settings-card">
     <div className="cregis-section-title">专属充值地址 · 库存与自动补充 <button className="l-btn sm" disabled={busy} onClick={()=>void refresh()}>刷新配置</button></div>
-    <p className="sub">首次进入充值页时分配专属地址，后续重复使用。低于补充阈值后，分批补至目标库存；已分配地址不计入备用库存。</p>
+    <p className="sub">首次进入充值页时分配专属地址，后续重复使用。BEP20 与 ERC20 分别计算库存，共用以下补充目标。低于补充阈值后，分批补至目标库存；已分配地址不计入备用库存。</p>
     {error && <div className="dtint warn" role="alert">{error}</div>}{notice && <div className="dtint">{notice}</div>}
     {!draft && !error && <div className="sub">正在读取地址池配置…</div>}
     {draft && <>

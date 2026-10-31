@@ -42,14 +42,14 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm }: { owne
     if (!policy || pending || busy || !canManage || !owns() || !/^[1-9]\d*$/.test(min) || !valid(min, fee, Number(confirmations)) || !/^\d+$/.test(confirmations)) return;
     const before = `最低 ${policy.minDepositUsdt} USDT；手续费 ${policy.feeUsdt} USDT；确认数 ${policy.confirmations}；版本 ${policy.version}`;
     const after = `最低 ${min} USDT；手续费 ${fee} USDT；确认数 ${confirmations}`;
-    openActionConfirm({ action: "提交 USDT-BEP20 充值规则", detail: `当前：${before}。目标：${after}。提交后需另一位管理员审批，批准前不生效。`,
+    openActionConfirm({ action: "提交 USDT BEP20 / ERC20 共同充值规则", detail: `当前：${before}。目标：${after}。提交后需另一位管理员审批，批准前不生效。`,
       reasonMin: 10, reasonMax: 200, completionCopy: "提交审批后，请在操作记录与审批中查看处理结果。",
       run: async reason => {
         const auth = useAdminAuth.getState().session;
         if (!owns() || !auth || !(auth.role === "superadmin" || auth.role === "super" || auth.authorities.includes("finance_d1_channel_manage"))) throw new Error("登录身份或权限已变化，请重新打开页面。");
         if (mutation.current || proposals.list().some(row => row.owner === owner)) throw new Error("已有提案待核实，请先查询原提案。");
         mutation.current = true; setBusy(true); setError(""); setMessage("");
-        const input: ProposalInput = { action: "调整 USDT-BEP20 充值规则", obj: "current", beforeValue: before, afterValue: after,
+        const input: ProposalInput = { action: "调整 USDT BEP20 / ERC20 共同充值规则", obj: "current", beforeValue: before, afterValue: after,
           operator, operatorRole: "运营人员", type: "param", amplifies: true, sos: false, roleGate: "另一位有审批权的管理员", reason, sourceDomain: "D1",
           command: { domain: "D", op: "d_cregis_deposit_policy", params: { minDepositUsdt: min, feeUsdt: fee, confirmations: Number(confirmations), expectedVersion: policy.version, reason } },
           target: { domain: "D", type: "cregis_deposit_policy", id: "current" } };
@@ -111,7 +111,7 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm }: { owne
   }
   const isValid = /^[1-9]\d*$/.test(min) && valid(min, fee, Number(confirmations)) && /^\d+$/.test(confirmations);
   return <div className="cregis-history cregis-settings-card">
-    <div className="cregis-section-title">USDT-BEP20 充值规则 <button className="l-btn sm" disabled={busy} onClick={() => void refresh()}>刷新规则</button></div>
+    <div className="cregis-section-title">USDT BEP20 / ERC20 共同充值规则 <button className="l-btn sm" disabled={busy} onClick={() => void refresh()}>刷新规则</button></div>
     <p className="sub">调整三项规则后一起提交审批，另一管理员批准后生效。已发现交易保留原规则；未入账交易仍须满足环境安全确认数下限。</p>
     {error && <div className="dtint warn" role="alert">{error}</div>}{message && <div className="dtint" role="status">{message}</div>}
     {!policy && !error && <p>正在读取充值规则…</p>}
