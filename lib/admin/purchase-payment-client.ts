@@ -37,8 +37,8 @@ export function canRetryPurchasePayment(row: PendingPurchasePayment) { return Da
 async function execute(row: PendingPurchasePayment, retry: boolean) {
   const session = useAdminAuth.getState().session;
   const authority = row.scope === "policy" ? "finance_d1_fx_manage" : "finance_d1_bank_reconcile";
-  if (session?.adminId !== row.owner || !session.authorities.includes(authority) && !["superadmin", "super"].includes(session.role)) throw new Error("登录身份或处置权限已变化，请重新打开页面。");
-  if (retry && !canRetryPurchasePayment(row)) throw new Error("原请求已超过重试时间，请通过操作记录继续核实，不能创建新请求。");
+  if (session?.adminId !== row.owner || !session.authorities.includes(authority) && !["superadmin", "super"].includes(session.role)) throw new Error("登录身份或权限已变化，请重新打开页面。");
+  if (retry && !canRetryPurchasePayment(row)) throw new Error("已超过可重试时间，请到「操作记录」核对，不能再次提交。");
   try {
     const raw = await request(row.path, row.method, row.body, row.commandKey);
     const result = row.scope === "policy" ? parsePurchasePaymentPolicy(raw) : parsePurchasePaymentRecord(raw, row.scope);
@@ -51,11 +51,11 @@ async function execute(row: PendingPurchasePayment, retry: boolean) {
 }
 async function submit(owner: number, scope: string, path: string, method: "PATCH" | "POST", body: Record<string, unknown>) {
   const session = useAdminAuth.getState().session, authority = scope === "policy" ? "finance_d1_fx_manage" : "finance_d1_bank_reconcile";
-  if (session?.adminId !== owner || !session.authorities.includes(authority) && !["superadmin", "super"].includes(session.role)) throw new Error("登录身份或处置权限已变化，请重新打开页面。");
-  if (pendingPurchasePayments(owner).some(row => row.scope === scope)) throw new Error("请先核对上一笔原请求，不能重新提交。");
+  if (session?.adminId !== owner || !session.authorities.includes(authority) && !["superadmin", "super"].includes(session.role)) throw new Error("登录身份或权限已变化，请重新打开页面。");
+  if (pendingPurchasePayments(owner).some(row => row.scope === scope)) throw new Error("上一次操作还没确认结果，请先查看最新结果，确认后再提交。");
   const key = createA2CommandKey("purchase-payment"), fingerprint = `${owner}|${scope}`;
   commands.remember(fingerprint, key, { owner, scope, path, method, body });
-  if (!commands.isDurablyStored(fingerprint, key)) { commands.forget(fingerprint, key); throw new Error("浏览器无法保存恢复记录，未提交。请允许会话存储后重试。"); }
+  if (!commands.isDurablyStored(fingerprint, key)) { commands.forget(fingerprint, key); throw new Error("浏览器无法保存这次操作的记录，未提交。请允许浏览器存储后重试。"); }
   return execute(commands.list().find(row => row.commandKey === key)!, false);
 }
 export const updatePurchasePaymentPolicy = (owner: number, expectedVersion: number, channels: PurchasePaymentChannelInput[], reason: string) => submit(owner, "policy", "/purchase-payment-policy", "PATCH", { expectedVersion, channels, reason });

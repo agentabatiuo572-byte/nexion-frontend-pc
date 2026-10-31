@@ -36,19 +36,19 @@ export function validPurchaseChannel(row: PurchasePaymentChannel | PurchasePayme
     && within(row.networkConfirmFeeUsdt, constraints.feeUsdt) && within(row.minTopupPrincipal, constraints.minTopupPrincipal);
 }
 export function parsePurchasePaymentPolicy(raw: unknown): PurchasePaymentPolicy {
-  if (!object(raw) || !integer(raw.version) || !Array.isArray(raw.channels)) throw new Error("订单付款规则不完整，请重新读取，当前不能调整。");
+  if (!object(raw) || !integer(raw.version) || !Array.isArray(raw.channels)) throw new Error("手续费数据不完整，请刷新后再试，暂时不能修改。");
   const channels = raw.channels;
   if (raw.constraints !== undefined) {
     const c = raw.constraints;
     if (!object(c) || !object(c.ratePct) || !object(c.feeUsdt) || !object(c.minTopupPrincipal)
       || ![c.ratePct, c.feeUsdt].every(range => purchasePaymentDecimal(range.min) && purchasePaymentDecimal(range.max) && range.scale === 2 && cents(range.min) <= cents(range.max))
       || !purchaseTopupMinimum(c.minTopupPrincipal.min) || !purchaseTopupMinimum(c.minTopupPrincipal.max) || c.minTopupPrincipal.integer !== true
-      || cents(c.minTopupPrincipal.min) > cents(c.minTopupPrincipal.max)) throw new Error("订单付款约束不完整，请重新读取，当前不能调整。");
+      || cents(c.minTopupPrincipal.min) > cents(c.minTopupPrincipal.max)) throw new Error("可填范围不完整，请刷新后再试，暂时不能修改。");
   }
   if (![2, 3].includes(channels.length) || !purchasePaymentMethods.slice(0, 2).every(method => channels.filter(row => object(row) && row.paymentMethod === method).length === 1)
     || channels.some((row, index) => !object(row) || !purchasePaymentMethods.includes(row.paymentMethod as PurchasePaymentMethod) || channels.findIndex(item => object(item) && item.paymentMethod === row.paymentMethod) !== index || typeof row.configured !== "boolean" || !purchaseTopupMinimum(row.minTopupPrincipal)
       || (row.configured ? !validPurchaseChannel(row as PurchasePaymentChannel, raw.constraints as PurchasePaymentConstraints | undefined)
-        : row.channelFeeRatePct !== null || row.channelFeeFixed !== null || row.networkConfirmFeeUsdt !== null))) throw new Error("订单付款规则不完整，请重新读取，当前不能调整。");
+        : row.channelFeeRatePct !== null || row.channelFeeFixed !== null || row.networkConfirmFeeUsdt !== null))) throw new Error("手续费数据不完整，请刷新后再试，暂时不能修改。");
   return raw as PurchasePaymentPolicy;
 }
 export function parsePurchasePaymentRecord(raw: unknown, intentNo?: string): PurchasePaymentRecord {
@@ -66,11 +66,11 @@ export function parsePurchasePaymentRecord(raw: unknown, intentNo?: string): Pur
     || raw.receipt !== undefined && raw.receipt !== null && !object(raw.receipt)
     || raw.fulfilmentStatus !== undefined && !["NOT_DELIVERED", "DELIVERED"].includes(String(raw.fulfilmentStatus))
     || raw.arrivals !== undefined && (!Array.isArray(raw.arrivals) || raw.arrivals.some(row => !object(row) || !text(row.txid) || !integer(row.log_index)
-      || !exactAmount(row.amount) || !integer(row.block_number) || !text(row.block_hash) || !integer(row.confirmations) || !text(row.status)))) throw new Error("订单付款记录不完整，请重新查询，当前不能处置。");
+      || !exactAmount(row.amount) || !integer(row.block_number) || !text(row.block_hash) || !integer(row.confirmations) || !text(row.status)))) throw new Error("付款信息不完整，请刷新后再试，暂时不能处理。");
   return raw as PurchasePaymentRecord;
 }
 export function parsePurchasePaymentPage(raw: unknown): PurchasePaymentPage {
   if (!object(raw) || !Array.isArray(raw.items) || !integer(raw.total) || !integer(raw.pageNum) || raw.pageNum < 1
-    || !integer(raw.pageSize) || raw.pageSize < 1 || raw.items.length > raw.pageSize || raw.items.length > raw.total) throw new Error("订单付款列表不完整，请重新查询。");
+    || !integer(raw.pageSize) || raw.pageSize < 1 || raw.items.length > raw.pageSize || raw.items.length > raw.total) throw new Error("付款记录不完整，请刷新后再试。");
   return { items: raw.items.map(row => parsePurchasePaymentRecord(row)), total: raw.total, pageNum: raw.pageNum, pageSize: raw.pageSize };
 }
