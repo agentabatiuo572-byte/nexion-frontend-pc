@@ -777,8 +777,8 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
 
   const select = (convo: SessionConvo) => {
     setMessageOpening(value => value + 1);
-    if (firstPending) { setSendError("首次联系的发送结果待确认，请先查询原命令结果，再切换会话。"); return; }
-    clearAttachment(pending?.kind !== "IMAGE"); setRequestedCustomerId(null); setSelectedId(convo.id); setScreen("chat"); setMaintenanceChosen(false); setReadError(""); setSendError(pending ? "上条消息的结果待确认，请返回原会话用同一命令重试。" : "");
+    if (firstPending) { if (!busy) setSendError("首次联系的发送结果待确认，请先查询原命令结果，再切换会话。"); return; }
+    clearAttachment(pending?.kind !== "IMAGE"); setRequestedCustomerId(null); setSelectedId(convo.id); setScreen("chat"); setMaintenanceChosen(false); setReadError(""); setSendError(pending && !busy ? "上条消息的结果待确认，请返回原会话用同一命令重试。" : "");
     const url = new URL(window.location.href); url.searchParams.delete("customerId"); url.searchParams.set("conversationNo",convo.id); window.history.replaceState(null, "", url);
   };
 
@@ -1247,7 +1247,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
         </>}
         {composerMode === "unbound" && <div className="m3-composer-state">{canAssign ? <>该客户还没有专属客服，分配后由专属客服回复。<button type="button" className="l-btn sm primary" onClick={() => setAssignOpen(true)}>分配专属客服</button></> : "该客户还没有专属客服，等待主管分配后回复。"}</div>}
         {composerMode === "review" && <div className="m3-composer-state">你以主管身份查看，不能回复。该客户由专属客服 {selected?.owner} 负责。</div>}
-        {pending && selected?.id !== pending.conversationId && <div className="itint warn">另一条消息的结果待确认。请先返回原会话处理。<button type="button" className="l-btn sm" onClick={() => { const original = visible.find((convo) => convo.id === pending.conversationId); if (original) select(original); }}>返回原会话</button></div>}
+        {!busy && pending && selected?.id !== pending.conversationId && <div className="itint warn">另一条消息的结果待确认。请先返回原会话处理。<button type="button" className="l-btn sm" onClick={() => { const original = visible.find((convo) => convo.id === pending.conversationId); if (original) select(original); }}>返回原会话</button></div>}
         {(sendError || !busy && (pending || firstPending)) && <div className="itint danger" role="alert">{sendError || "上条消息的结果待确认，请查询发送结果。"} {sendError.startsWith("消息已发送") && <button type="button" className="l-btn sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</button>}{(pending || firstPending) && <button type="button" className="l-btn sm" disabled={busy || Boolean(pending && selected?.id !== pending.conversationId)} onClick={() => { if (pending) void send(pending.kind, pending); else void send("TEXT"); }}>查询结果并重试</button>}</div>}
       </div>
     </div>

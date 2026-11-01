@@ -103,3 +103,19 @@ test("ownership checks stay quiet during loading but retain errors, permission a
   assert.match(markup(ownership, { ...scope, currentProfileDetail: { assignmentId: "9", agentAdminId: 2 } }), /客户归属已变化/);
   assert.match(markup(ownership, { ...scope, recoveryBlocksTarget: true }), /原消息结果待确认/);
 });
+
+test("switching conversations during submission stays quiet; settled unknown commands still offer recovery", () => {
+  const otherPending = expressions.find(text => text.includes("另一条消息的结果待确认"));
+  for (const first of [false, true]) for (const busy of [false, true]) {
+    let error = "", selectedId = "CV-1";
+    const scope = { firstPending: first ? { key: "original" } : null, pending: first ? null : { conversationId: "CV-1", kind: "TEXT" }, busy,
+      setMessageOpening() {}, setSendError: value => { error = value; }, clearAttachment() {}, setRequestedCustomerId() {},
+      setSelectedId: value => { selectedId = value; }, setScreen() {}, setMaintenanceChosen() {}, setReadError() {},
+      window: { location: { href: "https://test.invalid/service/sessions" }, history: { replaceState() {} } } };
+    execute(`const select = ${declarations.get("select").initializer.getText(ast)}; return select;`, scope)({ id: "CV-2" });
+    assert.equal(Boolean(error), !busy, "only a settled unknown result is an error");
+    assert.equal(selectedId, first ? "CV-1" : "CV-2");
+    const crossConversation = markup(otherPending, { ...scope, selected: { id: selectedId } });
+    assert.equal(Boolean(crossConversation), !first && !busy);
+  }
+});
