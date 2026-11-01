@@ -704,16 +704,18 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     setDraftOwner(adminId);
   }, [adminId, authEpoch, conversationsAvailable, qualificationUnknown]);
   useEffect(() => {
-    // The customer now has a conversation (e.g. a concurrent first contact won): carry the unsent first-contact draft over.
-    if (!selected || !validCustomerId(requestedCustomerId) || selected.customerId !== requestedCustomerId || firstPending) return;
-    const firstKey = `first:${requestedCustomerId}`;
+    // The customer now has a conversation (e.g. a concurrent first contact won): carry the unsent first-contact draft over,
+    // however the conversation was opened. A first contact whose result is still unconfirmed keeps its text where it is.
+    const customerId = selected?.customerId;
+    if (!selected || !validCustomerId(customerId ?? null) || firstPending || readPending(firstPendingKey(adminId, customerId!))) return;
+    const firstKey = `first:${customerId}`;
     setDrafts(old => {
       if (!old[firstKey]?.trim() || old[selected.id]?.trim()) return old;
       const next = { ...old, [selected.id]: old[firstKey] };
       delete next[firstKey];
       return next;
     });
-  }, [selected?.id, selected?.customerId, requestedCustomerId, firstPending]);
+  }, [selected?.id, selected?.customerId, firstPending, adminId]);
   useEffect(() => {
     if (!adminId || draftOwner!==adminId || qualificationUnknown) return;
     try { sessionStorage.setItem(`nexion-m3-drafts:${adminId}`,JSON.stringify(drafts)); } catch { setSendError("草稿保存不可用；当前输入仍保留在此页面。"); }
@@ -899,10 +901,12 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
         if (identityRef.current !== identity) return;
         pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId));
         window.dispatchEvent(new Event("support-todo-changed"));
-        setDrafts((old) => ({ ...old, [targetKey]: "" })); setFirstPending(null); setHoldRetry((value) => value + 1);
+        // The text is sent: drop it from the first-contact slot too, which may differ from the current target once the conversation is listed.
+        setDrafts((old) => { const next = { ...old, [targetKey]: "" }; delete next[`first:${record.customerId}`]; return next; });
+        setFirstPending(null); setHoldRetry((value) => value + 1);
         if (conversationNo && !refreshFailed) {
-          // A supervisor who also serves customers may be on 「我的客户」 while contacting a team customer.
-          if (canReviewAll) { setAgentFilter(0); setScopeView(firstDetail?.agentAdminId === adminId ? "mine" : "team"); }
+          // Open the inbox scope by the new conversation's actual owner (a supervisor may be on 「我的客户」 or 「组内审阅」).
+          followSelection.current = true;
           setSelectedId(conversationNo); setRequestedCustomerId(null);
         }
         if (!refreshFailed) { const url = new URL(window.location.href); url.searchParams.delete("customerId"); if(conversationNo)url.searchParams.set("conversationNo",conversationNo); window.history.replaceState(null, "", url); }

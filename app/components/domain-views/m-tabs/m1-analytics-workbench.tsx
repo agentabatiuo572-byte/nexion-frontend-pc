@@ -402,6 +402,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const change: Drill = changes => { controllerRef.current?.abort(); generation.current++; setData(null); setProfileId(null); setError(""); setQueryState(previous => changeAnalyticsQuery(previous, changes)); };
   function refreshScope(invalidated = false) {
     scopeControllerRef.current?.abort(); controllerRef.current?.abort(); generation.current++;
+    sessionController.current?.abort(); setSessionCheck(null); setSessionBusy(null); setSessionError(null);
     managementReturnQuery.current = invalidated ? changeAnalyticsQuery(queryState, { groupId: undefined, keyword: undefined }) : { ...queryState, pageNum: 1, expectedVersion: undefined };
     if (invalidated) setKeyword("");
     setScope(null); setScopeError(""); setData(null); setProfileId(null); setError("");
