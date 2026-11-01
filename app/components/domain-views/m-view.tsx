@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { DomainModuleLoading } from "./domain-module-state";
 import "./m-domain.css";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -138,6 +139,9 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const authEpoch = useAdminAuth((state) => state.authEpoch);
   const session = useAdminAuth((state) => state.session);
   const [m5Pane, setM5Pane] = useState<"rules" | "templates">("rules");
+  // M3 opened from the 客户 list (发起会话) links back to that list with its filters and page.
+  const [fromCustomers, setFromCustomers] = useState(false);
+  useEffect(() => { setFromCustomers(tab === "M3" && new URLSearchParams(window.location.search).get("from") === "customers"); }, [tab]);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const actionConfirmRunRef = useRef<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
@@ -615,7 +619,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
 
   return (
     <div className="dkpage mdom">
-      <DomainHeader {...meta} right={right} />
+      <DomainHeader {...meta} right={right} back={fromCustomers ? <Link className="m-back-link" href="/service/overview?view=customers&restore=customers">‹ 返回负责组客户</Link> : undefined} />
 
       {mError && (
         <div className="card card-pad" style={{ display: "flex", alignItems: "center", gap: 10 }}>

@@ -336,7 +336,7 @@ export const KV = ({ k, v }: { k: ReactNode; v: ReactNode }) => (
 );
 
 /* Modal — 补 ESC 关闭 + 打开聚焦(a11y 铁律) */
-export function Modal({ title, icon, onClose, children, footer, wide, busy = false }: { title: ReactNode; icon?: IconName; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; busy?: boolean }) {
+export function Modal({ title, icon, onClose, children, footer, wide, busy = false, className }: { title: ReactNode; icon?: IconName; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; busy?: boolean; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useEffect(() => {
@@ -353,7 +353,7 @@ export function Modal({ title, icon, onClose, children, footer, wide, busy = fal
   return (
     <div className="dkpage">
     <div className="modal-scrim" onClick={() => { if (!busy) onClose(); }}>
-      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-busy={busy} aria-labelledby={titleId} className="modal" style={wide ? { maxWidth: 680, outline: "none" } : { outline: "none" }} onClick={(e) => e.stopPropagation()} onKeyDown={(event) => {
+      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-busy={busy} aria-labelledby={titleId} className={className ? `modal ${className}` : "modal"} style={wide ? { maxWidth: 680, outline: "none" } : { outline: "none" }} onClick={(e) => e.stopPropagation()} onKeyDown={(event) => {
         if (event.key !== "Tab" || !ref.current) return;
         const controls = [...ref.current.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href], summary, [tabindex="0"]')].filter(element => !element.matches(":disabled") && element.getClientRects().length > 0);
         if (!controls.length) { event.preventDefault(); return; }

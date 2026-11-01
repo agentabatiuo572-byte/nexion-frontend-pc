@@ -63,3 +63,65 @@
 .m1-live-item strong { font-size: 18px; font-variant-numeric: tabular-nums; }
 .m1-live-item.alert strong { color: var(--v5-danger); }
 @media (max-width: 900px) { .m1-live { grid-template-columns: repeat(2, minmax(0, 1fr)); } .m1-live h3 { grid-column: 1 / -1; } }
+
+/* 客户列表（设计稿 ①）：每格一个短状态，未知灰色 -，金额单位写在图例里，操作列固定在右侧 */
+.sa-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;margin:6px 0 20px;font-size:12px;color:var(--v5-ink-3)}
+.sa-customers{--sa-pin-shadow:-12px 0 16px -12px rgba(20,16,8,.18);border:1px solid var(--v5-border);border-radius:12px;background:var(--v5-surface)}
+html[data-theme="dark"] .sa-customers{--sa-pin-shadow:-12px 0 16px -12px rgba(0,0,0,.9)}
+.sa-customers .sa-table{min-width:1120px}
+.sa-customers .sa-table th{padding:11px 14px;font-size:12px;font-weight:500;color:var(--v5-ink-3);background:var(--v5-surface-2);white-space:nowrap}
+.sa-customers .sa-table th:first-child{border-top-left-radius:11px}
+.sa-customers .sa-table :is(th,td).r{text-align:right}
+.sa-customers .sa-table td{padding:13px 14px;border-top:1px solid var(--v5-border);border-bottom:0;font-size:13.5px;line-height:1.5;white-space:nowrap}
+.sa-customers .sa-identity{gap:10px}
+.sa-workbench .sa-customers .sa-cell-name{min-height:0;padding:0;border:0;background:transparent;color:var(--admin-blue);font-size:13.5px;font-weight:400;line-height:1.5;text-align:left}
+.sa-customers .sa-table small{margin-top:3px;font-size:12px;color:var(--v5-ink-3)}
+.sa-mono{font-family:var(--font-jet-mono),ui-monospace,Menlo,monospace}
+.sa-workbench .sa-customers .sa-cell-value{min-height:0;padding:0;border:0;background:transparent;color:var(--admin-blue);font-size:13.5px;font-weight:400;line-height:1.5;font-variant-numeric:tabular-nums}
+.sa-workbench .sa-customers .sa-cell-value.zero,.sa-cell-zero{color:var(--v5-ink-2)}
+.sa-cell-unknown{color:var(--v5-ink-4)}
+.sa-cell-dim{font-size:12.5px;color:var(--v5-ink-3)}
+.sa-cell-time{font-family:var(--font-jet-mono),ui-monospace,Menlo,monospace;font-size:12.5px;color:var(--v5-ink-2)}
+.sa-dot{display:inline-block;box-sizing:border-box;width:7px;height:7px;margin-right:8px;border-radius:50%;vertical-align:1px}
+.sa-dot.on{background:var(--v5-success)}
+.sa-dot.off{border:1.5px solid var(--v5-ink-4)}
+.sa-tag{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:6px;font-size:12px;font-weight:600}
+.sa-tag.amber{background:var(--v5-warning-soft);color:var(--v5-warning)}
+.sa-tag.blue{background:color-mix(in srgb,var(--admin-blue) 14%,transparent);color:var(--admin-blue)}
+.sa-tag.sky{background:color-mix(in srgb,var(--admin-domain-m) 14%,transparent);color:var(--admin-domain-m)}
+.sa-tag.mute{padding:0;background:transparent;color:var(--v5-ink-3)}
+.sa-customers .sa-pin{position:sticky;right:0;z-index:1;background:var(--v5-surface);box-shadow:var(--sa-pin-shadow);border-left:1px solid var(--v5-border)}
+.sa-customers .sa-table th.sa-pin{background:var(--v5-surface-2);border-top-right-radius:11px}
+.sa-workbench .sa-row-action{display:inline-flex;align-items:center;gap:6px;height:30px;min-height:30px;padding:0 11px;border-radius:8px;border:1px solid var(--v5-border-strong);background:var(--v5-surface-2);color:var(--v5-ink);font-size:12.5px;font-weight:600;white-space:nowrap}
+.sa-workbench .sa-row-action svg{color:var(--v5-brand)}
+.sa-workbench .sa-row-action:disabled{opacity:.5;cursor:default}
+.sa-workbench .sa-row-action:disabled svg{color:currentColor}
+.sa-session-error{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 12px;padding:10px 12px;border-radius:10px;background:var(--v5-danger-soft);color:var(--v5-ink);font-size:13px}
+.sa-workbench .sa-session-error button{min-height:30px;padding:4px 11px;font-size:12.5px}
+
+/* 有人在会话 · 等待提示（设计稿 ②） */
+.dkpage .modal-scrim:has(> .sa-busy-modal){place-items:start center;padding-top:170px;background:rgba(0,0,0,.62);backdrop-filter:none}
+.dkpage .modal.sa-busy-modal{max-width:500px;background:var(--v5-surface-2);border-color:var(--v5-border-strong);box-shadow:0 24px 64px rgba(0,0,0,.6)}
+.sa-busy-modal .modal-h{padding:18px 20px 14px;border-bottom:0}
+.sa-busy-modal .modal-h .ttl{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:700}
+.sa-busy-modal .modal-h .icon-btn{width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:var(--v5-ink-3)}
+.sa-busy-icon{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:9px;background:var(--v5-warning-soft);color:var(--v5-warning)}
+.sa-busy-modal .modal-b{display:flex;flex-direction:column;gap:14px;padding:0 20px 18px}
+.sa-busy-text{margin:0;font-size:14px;line-height:1.7;color:var(--v5-ink-2)}
+.sa-busy-card{display:flex;flex-direction:column;gap:12px;padding:14px 16px;border-radius:12px;border:1px solid var(--v5-border);background:var(--v5-surface)}
+.sa-busy-holder{display:flex;align-items:center;gap:10px}
+.sa-busy-holder strong{font-size:14px;font-weight:700;color:var(--v5-ink)}
+.sa-busy-role{padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
+.sa-busy-role.advisor{background:color-mix(in srgb,var(--admin-blue) 14%,transparent);color:var(--admin-blue)}
+.sa-busy-role:is(.supervisor,.admin){background:var(--v5-warning-soft);color:var(--v5-warning)}
+.sa-busy-live{display:inline-flex;align-items:center;gap:6px;margin-left:auto;font-size:12px;color:var(--v5-success)}
+.sa-busy-live i{width:6px;height:6px;border-radius:50%;background:var(--v5-success)}
+.sa-busy-card dl{display:grid;grid-template-columns:96px minmax(0,1fr);row-gap:8px;margin:0;font-size:13px;color:var(--v5-ink)}
+.sa-busy-card dt{color:var(--v5-ink-3)}
+.sa-busy-card dd{margin:0}
+.sa-busy-card .sa-mono{color:var(--v5-ink-3)}
+.sa-busy-card small{display:block;margin-top:3px;font-size:12px;color:var(--v5-ink-3)}
+.sa-busy-modal .modal-f{gap:10px;padding:14px 20px 18px;border-top:1px solid var(--v5-border);background:transparent}
+.sa-busy-modal .modal-f button{display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 16px;border-radius:9px;border:1px solid var(--v5-border-strong);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer}
+.sa-busy-modal .sa-busy-secondary{background:var(--v5-surface-3);color:var(--v5-ink)}
+.sa-busy-modal .sa-busy-primary{background:var(--v5-brand);border-color:var(--v5-brand);color:var(--v5-on-brand)}

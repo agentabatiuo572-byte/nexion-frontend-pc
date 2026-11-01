@@ -8,7 +8,8 @@ import dynamic from "next/dynamic";
 import { DomainModuleLoading } from "../domain-module-state";
 import { useRouter } from "next/navigation";
 import { supportAnalyticsClient, type SupportAnalyticsMonth, type SupportAnalyticsQuery, type SupportAnalyticsResponse, type SupportAnalyticsView, type SupportAnalyticsCustomer } from "@/lib/admin/support-analytics-client";
-import { SupportClientError } from "@/lib/admin/m-support-client";
+import { SupportClientError, supportClient, SUPPORT_SESSION_ROLE_LABEL, type SupportSessionHold } from "@/lib/admin/m-support-client";
+import { parseBusinessTime } from "@/lib/admin/business-time";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessZone, businessZoneText } from "@/lib/admin/business-time";
@@ -145,6 +146,31 @@ function CountValue({ count, coverage = [], label, onClick }: { count: Count; co
 }
 function MoneyValue({ money, label, onClick }: { money?: Money; label: string; onClick?: () => void }) { return <Numeric value={money?.confirmed ?? null} observed={money?.observed ?? null} label={label} kind="amount" onClick={onClick} />; }
 
+// Customer table (design ①): full amounts, a real value drills down, a real 0 stays plain, unknown is a muted "-".
+function fullAmount(value: string): string {
+  const parts = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value);
+  if (!parts) return "-";
+  const hundred = BigInt(100), fraction = parts[3] ?? "";
+  const cents = BigInt(parts[2]) * hundred + BigInt(fraction.slice(0, 2).padEnd(2, "0")) + (fraction[2] !== undefined && fraction[2] >= "5" ? BigInt(1) : BigInt(0));
+  if (cents === BigInt(0)) return "0";
+  return `${parts[1]}${(cents / hundred).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${(cents % hundred).toString().padStart(2, "0")}`;
+}
+function CustomerValue({ value, observed, kind, label, onClick }: { value: string | null; observed?: string | null; kind: "count" | "amount"; label: string; onClick: () => void }) {
+  const text = value === null ? "-" : kind === "amount" ? fullAmount(value) : compactSupportBoardValue(value, "count");
+  if (text === "-") { const note = observed == null ? "数据还在同步" : `已观测 ${observed}，完整数值仍在统计`; return <span className="sa-cell-unknown" tabIndex={0} title={note} aria-label={`${label}：${note}`}>-</span>; }
+  return <button type="button" className={`sa-cell-value${text === "0" ? " zero" : ""}`} aria-label={`${label}：${text}；查看明细`} onClick={onClick}>{text}</button>;
+}
+function countValue(count: Count): string | null { return count.confirmed === null || count.status !== "AVAILABLE" ? null : String(count.confirmed); }
+function activityTime(value: string): string {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: businessZone().zoneId, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(value)).map(part => [part.type, part.value]));
+  return `${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
+}
+function serviceTag(task: SupportAnalyticsCustomer["task"]): [string, string] {
+  return task.status === "UNAVAILABLE" ? ["任务资料待加载", "mute"] : task.waitingReply === true ? ["待回复", "amber"] : task.due === true ? ["待维护", "blue"] : task.firstContact === true ? ["首次待联系", "sky"] : task.enabled === false ? ["暂停主动维护", "mute"] : task.status !== "COMPLETE" ? ["未知", "mute"] : ["正常跟进", "mute"];
+}
+export type CustomerSessionStart = { checkingId: string | null; start: (row: SupportAnalyticsCustomer) => void };
+const SESSION_RETURN_KEY = "nexion-m1-customers-return-v1";
+
 // The existing house picker lacks Escape/arrow focus; keep its appearance and supply keyboard behavior here.
 export function analyticsOptionIndex(key: string, selected: number, length: number): number {
   if (length === 0) return -1;
@@ -183,7 +209,7 @@ function AnalyticsSelect({ label, value, options, onChange }: { label: string; v
 }
 
 type Drill = (changes: Partial<AnalyticsQueryState>) => void;
-export function AnalyticsTable({ data, currency, drill, openProfile }: { data: SupportAnalyticsResponse; currency: Currency; drill: Drill; openProfile: (customerId: string) => void }) {
+export function AnalyticsTable({ data, currency, drill, openProfile, session }: { data: SupportAnalyticsResponse; currency: Currency; drill: Drill; openProfile: (customerId: string) => void; session?: CustomerSessionStart }) {
   if (!data.records.length) return <p className="sa-empty">当前范围与筛选下暂无已观测记录。{data.total === null && "总数仍在统计。"}</p>;
   const name = (row: SupportAnalyticsCustomer) => operatorNicknameText(row.nickname || "") || row.customerNo || `客户 ${row.customerId}`;
   if (data.view === "AGENTS") return <div className="sa-table-scroll"><table className="sa-table"><caption className="sr-only">客服当前客户画像；金额币种 {nexGridBrandText(currency)}</caption><thead><tr><th>客服 / 当前组</th><th>账号 / 资格</th><th>当前绑定</th><th>当前统计期活跃</th><th>已首充</th><th>持有设备</th><th>客户累计净贡献 / {nexGridBrandText(currency)}</th><th>客户累计充值 / {nexGridBrandText(currency)}</th><th>当前余额 / {nexGridBrandText(currency)}</th></tr></thead><tbody>{data.records.map(row => {
@@ -195,7 +221,46 @@ export function AnalyticsTable({ data, currency, drill, openProfile }: { data: S
   })}</tbody></table></div>;
   if (data.view === "FINANCE") return <div className="sa-table-scroll"><table className="sa-table"><caption className="sr-only">授权客户资金事件，金额币种 {nexGridBrandText(currency)}</caption><thead><tr><th>客户 / 编码</th><th>事件类型</th><th>成功时间</th><th>当前查到的金额 / {nexGridBrandText(currency)}</th><th>历史覆盖</th><th>详情</th></tr></thead><tbody>{data.records.map((row, index) => <tr key={`${row.customerId}:${row.orderNo}:${row.succeededAt}:${index}`}><td><button type="button" className="sa-name sa-link" title={operatorNicknameText(row.nickname || "") || row.customerNo || row.customerId} onClick={() => openProfile(row.customerId)}>{operatorNicknameText(row.nickname || "") || row.customerNo || `客户 ${row.customerId}`}</button><small>{row.customerNo || "编码未同步"}</small></td><td>{row.kind === "DEPOSIT" ? "充值" : row.kind === "DEVICE_PURCHASE" ? "购机" : row.kind === "CONSUMPTION" ? "付费消费" : "购机退款"}</td><td className="sa-time">{dateText(row.succeededAt)}</td><td><Numeric value={row.amount} kind="amount" label="此笔当前查到的金额" onClick={() => openProfile(row.customerId)} /></td><td>{row.historyStatus === "READY" ? "首充历史已核实" : "首充历史未同步"}</td><td><button type="button" className="sa-link" onClick={() => openProfile(row.customerId)}>客户资金详情</button></td></tr>)}</tbody></table></div>;
   if (data.view === "DEVICES") return <div className="sa-table-scroll"><table className="sa-table"><caption className="sr-only">当前托管设备数量</caption><thead><tr><th>设备 / 客户编号</th><th>类型</th><th>算力</th><th>当前持有</th><th>连接状态</th><th>取得来源</th><th>详情</th></tr></thead><tbody>{data.records.map(row => <tr key={row.deviceId}><td>{row.deviceId}<small>客户 {row.customerId}</small></td><td>{row.deviceType === "SHARE" || row.deviceType === "CLOUD_SHARE" ? "云份额" : row.deviceType === "DEVICE" ? "实体设备" : row.deviceType === "SERVER" ? "服务器" : "类型未知"}</td><td><Numeric value={row.hashrate} kind="amount" label="设备算力" onClick={() => openProfile(row.customerId)} /></td><td>{row.holdingStatus === "AVAILABLE" ? "已核实" : "未知"}</td><td>{row.connectionStatus === "ONLINE" ? "在网" : row.connectionStatus === "OFFLINE" ? "离线" : row.connectionStatus === "NOT_APPLICABLE" ? "不适用" : "未知"}</td><td>{row.acquisition === "PAID_PURCHASE" ? "付费购买" : "来源未知"}</td><td><button type="button" className="sa-link" onClick={() => openProfile(row.customerId)}>客户设备详情</button></td></tr>)}</tbody></table></div>;
-  return <div className="sa-table-scroll"><table className="sa-table"><caption className="sr-only">当前客户画像；金额币种 {nexGridBrandText(currency)}</caption><thead><tr><th>客户 / 专属客服</th><th>首充状态</th><th>直属邀请</th><th>下级邀请用户</th><th>本人累计净贡献 / {nexGridBrandText(currency)}</th><th>本人累充 / {nexGridBrandText(currency)}</th><th>邀请累充 / {nexGridBrandText(currency)}</th><th>当前统计期活跃 / 最近活动</th><th>服务状态</th></tr></thead><tbody>{data.records.map(row => <tr key={row.customerId}><td><div className="sa-identity"><SupportAvatar name={name(row)} path={row.avatar ?? undefined} /><div><button type="button" className="sa-name sa-link" title={name(row)} onClick={() => openProfile(row.customerId)}>{name(row)}</button><small>{row.customerNo || "编码未同步"} · {row.owner.agentName || "归属未知"}</small></div></div></td><td><button type="button" className="sa-link" onClick={() => openProfile(row.customerId)}>{row.first.state === "CONFIRMED" ? "已首充" : row.first.state === "NONE" ? "未首充" : "历史未同步"}</button><small>{row.first.state === "CONFIRMED" && row.first.kind ? row.first.kind === "DEPOSIT" ? "首笔充值" : "首笔购机" : "首次付费记录"}</small></td><td><CountValue count={row.invitations.direct} label="直属邀请" onClick={() => openProfile(row.customerId)} /></td><td><CountValue count={row.invitations.descendants} label="邀请后代" onClick={() => openProfile(row.customerId)} /></td><td><MoneyValue money={row.lifetime.find(x => x.currency === currency)?.net} label={`本人累计净贡献 ${nexGridBrandText(currency)}`} onClick={() => openProfile(row.customerId)} /></td><td><MoneyValue money={row.lifetime.find(x => x.currency === currency)?.deposits} label={`本人累充 ${nexGridBrandText(currency)}`} onClick={() => openProfile(row.customerId)} /></td><td><MoneyValue money={row.invitations.deposits.find(x => x.currency === currency)?.deposits} label={`邀请累充 ${nexGridBrandText(currency)}`} onClick={() => openProfile(row.customerId)} /></td><td>{row.activity.state === "ACTIVE" ? "当前统计期活跃" : row.activity.state === "INACTIVE" ? "当前统计期未活跃" : "未知"}<small className="sa-time">{dateText(row.activity.lastEffectiveAt)}</small></td><td>{row.task.status === "UNAVAILABLE" ? "任务资料待加载" : row.task.waitingReply === true ? "待回复" : row.task.due === true ? "待维护" : row.task.firstContact === true ? "首次待联系" : row.task.enabled === false ? "暂停主动维护" : row.task.status !== "COMPLETE" ? "未知" : "正常跟进"}<small><button type="button" className="sa-link" onClick={() => openProfile(row.customerId)}>客户资料与记录</button></small></td></tr>)}</tbody></table></div>;
+  const unit = nexGridBrandText(currency);
+  return <div className="sa-table-scroll sa-customers"><table className="sa-table"><caption className="sr-only">当前客户画像；金额币种 {unit}</caption><thead><tr><th>客户 / 专属客服</th><th>首充</th><th className="r">直属邀请</th><th className="r">下级邀请</th><th className="r">本人累计净贡献</th><th className="r">本人累充</th><th className="r">邀请累充</th><th>最近活动</th><th>服务状态</th>{session && <th className="sa-pin">操作</th>}</tr></thead><tbody>{data.records.map(row => {
+    const open = () => openProfile(row.customerId), money = row.lifetime.find(x => x.currency === currency), invited = row.invitations.deposits.find(x => x.currency === currency)?.deposits;
+    const [status, tone] = serviceTag(row.task), checking = session?.checkingId === row.customerId;
+    return <tr key={row.customerId}>
+      <td><div className="sa-identity"><SupportAvatar name={name(row)} path={row.avatar ?? undefined} /><div><button type="button" className="sa-name sa-cell-name" title={`${name(row)}：查看资料与记录`} onClick={open}>{name(row)}</button><small><span className="sa-mono">{row.customerNo || "编码未同步"}</span> · {row.owner.agentName || "归属未知"}</small></div></div></td>
+      <td>{row.first.state === "CONFIRMED" ? <>已首充{row.first.kind && <span className="sa-cell-dim"> {row.first.kind === "DEPOSIT" ? "充值" : "购机"}</span>}</> : row.first.state === "NONE" ? <span className="sa-cell-zero">未首充</span> : <span className="sa-cell-unknown" tabIndex={0} title="首充记录同步中" aria-label="首充：首充记录同步中">-</span>}</td>
+      <td className="r"><CustomerValue kind="count" value={countValue(row.invitations.direct)} observed={row.invitations.direct.observed === null ? null : String(row.invitations.direct.observed)} label="直属邀请" onClick={open} /></td>
+      <td className="r"><CustomerValue kind="count" value={countValue(row.invitations.descendants)} observed={row.invitations.descendants.observed === null ? null : String(row.invitations.descendants.observed)} label="下级邀请" onClick={open} /></td>
+      <td className="r"><CustomerValue kind="amount" value={money?.net.confirmed ?? null} observed={money?.net.observed} label={`本人累计净贡献 ${unit}`} onClick={open} /></td>
+      <td className="r"><CustomerValue kind="amount" value={money?.deposits.confirmed ?? null} observed={money?.deposits.observed} label={`本人累充 ${unit}`} onClick={open} /></td>
+      <td className="r"><CustomerValue kind="amount" value={invited?.confirmed ?? null} observed={invited?.observed} label={`邀请累充 ${unit}`} onClick={open} /></td>
+      <td>{row.activity.lastEffectiveAt === null ? <span className="sa-cell-unknown" tabIndex={0} title="最近活动还在同步" aria-label="最近活动：还在同步">-</span> : <span title={dateText(row.activity.lastEffectiveAt)}>{row.activity.state !== "UNKNOWN" && <span className={`sa-dot ${row.activity.state === "ACTIVE" ? "on" : "off"}`} role="img" aria-label={row.activity.state === "ACTIVE" ? "本统计期活跃" : "本统计期未活跃"} />}<span className="sa-cell-time">{activityTime(row.activity.lastEffectiveAt)}</span></span>}</td>
+      <td><span className={`sa-tag ${tone}`}>{status}</span></td>
+      {session && <td className="sa-pin">{row.category === "BOUND" && (checking
+        ? <button type="button" className="sa-row-action" disabled aria-busy="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.56" /></svg>核对中…</button>
+        : <button type="button" className="sa-row-action" onClick={() => session.start(row)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>发起会话</button>)}</td>}
+    </tr>;
+  })}</tbody></table></div>;
+}
+
+function clockText(value: string | null): string {
+  return value === null ? "-" : new Intl.DateTimeFormat("zh-CN", { timeZone: businessZone().zoneId, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(parseBusinessTime(value));
+}
+/** Design ②: someone else holds this customer; the operator can only wait or read the history. */
+function SessionBusyDialog({ customer, hold, onRead, onClose }: { customer: string; hold: SupportSessionHold; onRead: () => void; onClose: () => void }) {
+  const holder = hold.holder!, role = SUPPORT_SESSION_ROLE_LABEL[holder.role];
+  const minutes = hold.lastSentAt === null ? null : Math.max(0, Math.floor((Date.now() - parseBusinessTime(hold.lastSentAt)) / 60000));
+  return <Modal className="sa-busy-modal" onClose={onClose}
+    title={<><span className="sa-busy-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg></span>暂时不能发起会话</>}
+    footer={<><button type="button" className="sa-busy-secondary" onClick={onRead}>查看会话记录</button><button type="button" className="sa-busy-primary" onClick={onClose}>知道了</button></>}>
+    <p className="sa-busy-text">{holder.name}（{role}）正在和{customer}会话，不能同时会话。请等对方结束会话后再发起。</p>
+    <div className="sa-busy-card">
+      <div className="sa-busy-holder"><SupportAvatar name={holder.name} /><strong>{holder.name}</strong><span className={`sa-busy-role ${holder.role.toLowerCase()}`}>{role}</span><span className="sa-busy-live"><i aria-hidden="true" />会话中</span></div>
+      <dl>
+        <dt>最后发言</dt><dd>{minutes === null ? "-" : minutes < 1 ? "刚刚" : `${minutes} 分钟前`}{hold.lastSentAt && <span className="sa-mono">（{clockText(hold.lastSentAt)}）</span>}</dd>
+        <dt>自动结束</dt><dd>{hold.endMinutes === null ? "对方结束会话后" : `无人发言 ${hold.endMinutes} 分钟后`}{hold.autoEndAt && <span className="sa-mono">（约 {clockText(hold.autoEndAt)}）</span>}<small>对方再发消息会顺延</small></dd>
+      </dl>
+    </div>
+  </Modal>;
 }
 
 export function M1AnalyticsWorkbench(props: { permission: Permission; ctx: MCtx }) {
@@ -215,9 +280,25 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const [monthCalendar, setMonthCalendar] = useState<SupportAnalyticsMonth[] | null>(null);
   const [calendarError, setCalendarError] = useState(""), [calendarRetry, setCalendarRetry] = useState(0);
   const [personalPeriod, setPersonalPeriod] = useState<SupportAnalyticsResponse | null>(null), [personalPeriodError, setPersonalPeriodError] = useState("");
-  const managementReturnQuery = useRef<AnalyticsQueryState | null>(null);
+  const adminId = useAdminAuth(state => state.session?.adminId);
+  // 「返回负责组客户」 from M3 brings back the list view, filters and page saved when 发起会话 was clicked.
+  const [sessionReturn] = useState<AnalyticsQueryState | null>(() => {
+    if (typeof window === "undefined" || new URLSearchParams(window.location.search).get("restore") !== "customers") return null;
+    let saved: { adminId?: number; query?: AnalyticsQueryState } | null = null;
+    try { saved = JSON.parse(sessionStorage.getItem(SESSION_RETURN_KEY) ?? "null"); } catch { return null; }
+    return saved?.adminId === adminId && saved?.query?.view === "CUSTOMERS" ? saved.query : null;
+  });
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("restore") !== "customers") return;
+    const url = new URL(window.location.href); url.searchParams.delete("restore"); window.history.replaceState(null, "", url);
+    try { sessionStorage.removeItem(SESSION_RETURN_KEY); } catch { /* nothing left to clear */ }
+  }, []);
+  const managementReturnQuery = useRef<AnalyticsQueryState | null>(sessionReturn);
   const managementCustomerGroup = useRef<string | null>(null);
-  const [keyword, setKeyword] = useState("");
+  const [keyword, setKeyword] = useState(sessionReturn?.keyword ?? "");
+  const [sessionCheck, setSessionCheck] = useState<string | null>(null), [sessionBusy, setSessionBusy] = useState<{ row: SupportAnalyticsCustomer; hold: SupportSessionHold } | null>(null), [sessionError, setSessionError] = useState<SupportAnalyticsCustomer | null>(null);
+  const sessionController = useRef<AbortController | null>(null);
+  useEffect(() => () => sessionController.current?.abort(), []);
   const controllerRef = useRef<AbortController | null>(null), scopeControllerRef = useRef<AbortController | null>(null), generation = useRef(0);
   const entryStatistics = useRef<{ query: string; data: SupportAnalyticsResponse } | null>(null);
   const isPersonal = scope?.scopeSummary.mode === "PERSONAL";
@@ -273,6 +354,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       if (customerGroup && String(groupId) !== customerGroup) throw new SupportClientError(403, undefined, undefined);
       const restored: AnalyticsQueryState = remembered ? { ...changeAnalyticsQuery(remembered, { groupId, view: next.scopeSummary.mode === "PERSONAL" && ["OVERVIEW", "AGENTS"].includes(remembered.view) ? "CUSTOMERS" : remembered.view }), agentId: groupId === remembered.groupId ? remembered.agentId : undefined } : { ...initialAnalyticsQuery(next.scopeSummary.mode), ...(agentId === undefined ? {} : { view: "CUSTOMERS" as const, category: "BOUND" as const, agentId }) };
       if (remembered && remembered.view === restored.view) restored.sortKey = remembered.sortKey;
+      if (remembered === sessionReturn && sessionReturn && restored.groupId === sessionReturn.groupId && sessionReturn.pageNum > 1 && sessionReturn.expectedVersion) Object.assign(restored, { pageNum: sessionReturn.pageNum, expectedVersion: sessionReturn.expectedVersion });
       const personal = next.scopeSummary.mode === "PERSONAL";
       if (agentId !== undefined) setSection("stats");
       else if (!remembered) {
@@ -321,6 +403,21 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     setScopeRetry(n => n + 1);
   }
   function reloadFirstPage() { change({}); setRetry(n => n + 1); }
+  function openSessions(row: SupportAnalyticsCustomer) {
+    try { sessionStorage.setItem(SESSION_RETURN_KEY, JSON.stringify({ adminId, query: queryState })); } catch { /* without storage the back link opens the default list */ }
+    router.push(`/service/sessions?customerId=${encodeURIComponent(row.customerId)}&from=customers`);
+  }
+  const sessionStart: CustomerSessionStart = { checkingId: sessionCheck, start: row => {
+    sessionController.current?.abort();
+    const controller = new AbortController(); sessionController.current = controller;
+    setSessionCheck(row.customerId); setSessionError(null); setSessionBusy(null);
+    void supportClient.sessionHold(row.customerId, controller.signal).then(hold => {
+      if (controller.signal.aborted) return;
+      setSessionCheck(null);
+      if (hold.state === "OTHER") setSessionBusy({ row, hold }); else openSessions(row);
+    }).catch(() => { if (!controller.signal.aborted) { setSessionCheck(null); setSessionError(row); } });
+  } };
+  const customerName = (row: SupportAnalyticsCustomer) => operatorNicknameText(row.nickname || "") || row.customerNo || `客户 ${row.customerId}`;
   function page(number: number) {
     if (!data) return;
     const next = nextAnalyticsPage(queryState, data, number);
@@ -421,9 +518,12 @@ if (!scope) return <section className="sa-workbench" aria-label="客服范围核
           <div className="sa-coverage"><div>待分配 <Numeric value={data.scopeSummary.pending === null ? null : String(data.scopeSummary.pending)} label="待分配客户，打开待分配客户池" onClick={() => openTab("pool")} /></div><div>归属异常 <Numeric value={data.scopeSummary.anomaly === null ? null : String(data.scopeSummary.anomaly)} label="归属异常" onClick={() => change({ view: "CUSTOMERS", category: "ANOMALY", firstState: "ALL", filter: "ALL" })} /></div><div>有效净额 / {nexGridBrandText(currency)} <MoneyValue money={data.scopeSummary.financial.currencies.find(x => x.currency === currency)?.net} label={`有效净额 ${nexGridBrandText(currency)}`} /></div></div>
           {queryState.groupId === undefined && <section className="sa-group-comparison"><h3>负责组概览</h3><p>展示 {Math.min(data.scopeSummary.groups.length, 4)} / {data.scopeSummary.groups.length} 个组；完整组范围可在上方选择。</p><div>{data.scopeSummary.groups.slice(0, 4).map(group => <div key={group.groupId}><button type="button" className="sa-name sa-link" title={group.name ?? "组名未同步"} onClick={() => change({ groupId: group.groupId, view: "AGENTS" })}>{group.name || "组名未同步"}</button><span>{queryState.basis === "PERIOD_EVENT" ? "当期净贡献" : "当前客户累计净贡献"} / {nexGridBrandText(currency)} <MoneyValue money={queryState.basis === "PERIOD_EVENT" ? group.period?.currencies.find(x => x.currency === currency)?.net : group.current.ownLifetime.find(x => x.currency === currency)?.net} label={`组净贡献 ${nexGridBrandText(currency)}`} onClick={() => change({ groupId: group.groupId, view: "OVERVIEW" })} /></span><span>当前客户 <Numeric value={group.total === null ? null : String(group.total)} label="组当前客户" onClick={() => change({ groupId: group.groupId, view: "CUSTOMERS" })} /></span><span>专属客服 <CountValue count={group.personnel.serviceAccounts} label="组专属客服" onClick={() => change({ groupId: group.groupId, view: "AGENTS" })} /></span></div>)}</div></section>}
           {!data.scopeSummary.groups.length && mode === "MANAGED" && <p className="sa-empty">当前没有负责组。</p>}
-        </> : <><AnalyticsTable data={data} currency={currency} drill={change} openProfile={setProfileId} /><footer className="sa-pager"><p>{data.total === null ? `已观测 ${data.observedTotal} 条；总数仍在统计` : `共 ${data.total} 条`} · 第 {queryState.pageNum} 页</p><div><button type="button" disabled={queryState.pageNum <= 1 || data.versionState !== "READY"} onClick={() => page(queryState.pageNum - 1)}>上一页</button><button type="button" disabled={!data.canContinue || data.versionState !== "READY"} onClick={() => page(queryState.pageNum + 1)}>下一页</button></div></footer>{data.versionState === "UNKNOWN" && <p className="sa-disclosure">当前结果尚未确认，暂时无法继续翻页。请刷新后重试。</p>}</>}
+        </> : <>{queryState.view === "CUSTOMERS" && <div className="sa-legend"><span>金额单位 {nexGridBrandText(currency)}</span><span><span className="sa-dot on" aria-hidden="true" />本统计期活跃</span><span><span className="sa-dot off" aria-hidden="true" />本统计期未活跃</span><span><span className="sa-cell-unknown">-</span> 数据还在同步</span><span>点客户名查看资料与记录</span></div>}
+          {sessionError && <div className="sa-session-error" role="alert">{customerName(sessionError)}：暂时无法核对接待状态，请稍后重试。<button type="button" onClick={() => { const row = sessionError; setSessionError(null); openSessions(row); }}>查看会话记录</button><button type="button" onClick={() => setSessionError(null)}>知道了</button></div>}
+          <AnalyticsTable data={data} currency={currency} drill={change} openProfile={setProfileId} session={!isPersonal && queryState.view === "CUSTOMERS" ? sessionStart : undefined} /><footer className="sa-pager"><p>{data.total === null ? `已观测 ${data.observedTotal} 条；总数仍在统计` : `共 ${data.total} 条`} · 第 {queryState.pageNum} 页</p><div><button type="button" disabled={queryState.pageNum <= 1 || data.versionState !== "READY"} onClick={() => page(queryState.pageNum - 1)}>上一页</button><button type="button" disabled={!data.canContinue || data.versionState !== "READY"} onClick={() => page(queryState.pageNum + 1)}>下一页</button></div></footer>{data.versionState === "UNKNOWN" && <p className="sa-disclosure">当前结果尚未确认，暂时无法继续翻页。请刷新后重试。</p>}</>}
       </>}
     </>}
+    {sessionBusy && <SessionBusyDialog customer={customerName(sessionBusy.row)} hold={sessionBusy.hold} onClose={() => setSessionBusy(null)} onRead={() => { const row = sessionBusy.row; setSessionBusy(null); openSessions(row); }} />}
     {profileId && <Modal wide title="客户资料与原业务明细" onClose={() => setProfileId(null)} footer={<button type="button" onClick={() => setProfileId(null)}>返回统计列表</button>}><p className="sa-disclosure">按你的客户资料查看权限显示；统计可见不增加资金操作或回复权限。</p><M3CustomerProfile key={profileId} ctx={ctx} customerId={profileId} onHistory={no => router.push(`/service/sessions?conversationNo=${encodeURIComponent(no)}`)} onRetryMessages={() => void ctx.refreshConversations()} /></Modal>}
   </section>;
 }

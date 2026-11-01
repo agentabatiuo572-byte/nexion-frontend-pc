@@ -127,6 +127,11 @@ export type SupportAttachment = {
 };
 export type SupportAttachmentPolicy = { available: boolean; allowedMimeTypes: Array<"image/png" | "image/jpeg">; maxBytes: number | null; maxPixels: number | null; ttlSeconds: number | null; unavailableReason: string | null };
 export type SupportMessageResult = { conversationNo: string };
+/** B15: who currently holds the customer session. Absent fields mean the backend has not shipped B15. */
+export type SupportSessionRole = "ADVISOR" | "SUPERVISOR" | "ADMIN";
+export type SupportSessionHolder = { adminId: number; name: string; role: SupportSessionRole };
+export type SupportSessionHold = { state: "FREE" | "MINE" | "OTHER"; holder: SupportSessionHolder | null; lastSentAt: string | null; autoEndAt: string | null; endMinutes: number | null };
+export const SUPPORT_SESSION_ROLE_LABEL: Record<SupportSessionRole, string> = { ADVISOR: "专属客服", SUPERVISOR: "客服主管", ADMIN: "总管理员" };
 export type SupportCommandResult = { status: "PROCESSING" | "UNKNOWN" | "PENDING" | "SUCCEEDED" | "FAILED"; result?: unknown };
 export type SupportReplyTarget = { conversationNo: string; throughMessageId: number };
 export type SupportMessageInput = {
@@ -156,12 +161,14 @@ export class SupportClientError extends Error {
   readonly status: number;
   readonly apiCode: number | undefined;
   readonly backendMessage: string | undefined;
-  constructor(status: number, apiCode: number | undefined, backendMessage: string | undefined) {
+  readonly data: unknown;
+  constructor(status: number, apiCode: number | undefined, backendMessage: string | undefined, data?: unknown) {
     super(`SUPPORT_API_${status}`);
     this.name = "SupportClientError";
     this.status = status;
     this.apiCode = apiCode;
     this.backendMessage = backendMessage;
+    this.data = data;
   }
 }
 export function isIndeterminateSupportError(error: unknown): boolean {
@@ -359,7 +366,7 @@ async function request<T>(path: string, parse: (value: unknown) => T, init: Requ
   const text = await response.text();
   try { return parse(parseMContentApiEnvelope<unknown>(response.status, text, true)); }
   catch (error) {
-    if (error instanceof MContentReadError) throw new SupportClientError(error.status, error.apiCode, error.backendMessage);
+    if (error instanceof MContentReadError) throw new SupportClientError(error.status, error.apiCode, error.backendMessage, error.data);
     throw error;
   }
 }
@@ -394,6 +401,28 @@ export function setSupportPoolRoute(customerId: string, input: SupportRouteInput
   }, json("PATCH", body, key, signal));
 }
 
+export function parseSupportSessionHolder(value: unknown, field: string): SupportSessionHolder | null {
+  if (value === null) return null;
+  const row = object(value, field);
+  return { adminId: positive(row.adminId, `${field}.adminId`), name: nonempty(row.name, `${field}.name`), role: enumValue(row.role, ["ADVISOR", "SUPERVISOR", "ADMIN"] as const, `${field}.role`) };
+}
+function sessionHold(value: unknown): SupportSessionHold {
+  const row = object(value, "sessionHold");
+  const state = enumValue(row.state, ["FREE", "MINE", "OTHER"] as const, "sessionHold.state");
+  const holder = parseSupportSessionHolder(row.holder ?? null, "sessionHold.holder");
+  if (state === "OTHER" && !holder) malformed("sessionHold.holder");
+  return { state, holder, lastSentAt: nullableTimestamp(row.lastSentAt, "sessionHold.lastSentAt") ?? null, autoEndAt: nullableTimestamp(row.autoEndAt, "sessionHold.autoEndAt") ?? null, endMinutes: row.endMinutes == null ? null : positive(row.endMinutes, "sessionHold.endMinutes") };
+}
+/** A send or start refused because someone else holds the session; carries that holder for the locked composer. */
+export function supportSessionBusy(error: unknown): SupportSessionHold | null {
+  if (!(error instanceof SupportClientError) || error.status !== 409 || error.backendMessage !== "SUPPORT_SESSION_BUSY") return null;
+  try {
+    const row = object(error.data, "sessionBusy");
+    const holder = parseSupportSessionHolder(row.holder, "sessionBusy.holder");
+    return holder ? { state: "OTHER", holder, lastSentAt: nullableTimestamp(row.lastSentAt, "sessionBusy.lastSentAt") ?? null, autoEndAt: nullableTimestamp(row.autoEndAt, "sessionBusy.autoEndAt") ?? null, endMinutes: row.endMinutes == null ? null : positive(row.endMinutes, "sessionBusy.endMinutes") } : null;
+  } catch { return null; }
+}
+
 export const supportClient = {
   snapshot: (options: { pageNum: number; pageSize: number; keyword?: string; filter?: SupportCustomerFilter; agentId?: number; mode?: SupportReadMode; groupId?: number; from?: string; to?: string; signal?: AbortSignal }) =>
     request(`/support-workbench/customers${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize"), keyword: options.keyword, filter: options.filter, agentId: options.agentId, mode: options.mode === undefined ? undefined : enumValue(options.mode, ["PERSONAL", "MANAGED", "ALL"] as const, "mode"), groupId: options.groupId === undefined ? undefined : positive(options.groupId, "groupId"), from: options.from, to: options.to })}`, value => {
@@ -406,6 +435,8 @@ export const supportClient = {
   customers: async (options: { pageNum: number; pageSize: number; keyword?: string; filter?: SupportCustomerFilter; mode?: SupportReadMode; groupId?: number; agentId?: number; signal?: AbortSignal }) =>
     (await supportClient.snapshot(options)).customers,
   customerDetail: (customerId: string, signal?: AbortSignal) => request(customerPath(customerId), detail, { signal }),
+  sessionHold: (customerId: string, signal?: AbortSignal) => request(`${customerPath(customerId)}/session-hold`, sessionHold, { signal }),
+  endSessionHold: (customerId: string, idempotencyKey: string, signal?: AbortSignal) => request(`${customerPath(customerId)}/session-hold/end`, () => undefined, json("POST", {}, idempotencyKey, signal)),
   conversationState: (conversationNo: string, signal?: AbortSignal) => request(`/conversations/${encodeURIComponent(nonempty(conversationNo, "conversationNo"))}`, (value) => {
     const row = object(object(value, "conversation.detail").conversation, "conversation");
     return { status: enumValue(row.status, ["OPEN", "TRANSFERRED", "RESOLVED", "CLOSED"] as const, "conversation.status"), version: count(row.version, "conversation.version") };

@@ -15,18 +15,22 @@ export class MContentReadError extends Error {
   readonly status: number;
   readonly apiCode: number | undefined;
   readonly backendMessage: string | undefined;
+  /** Error payload `data`, e.g. the current holder returned with 409 SUPPORT_SESSION_BUSY. */
+  readonly data: unknown;
 
   constructor(
     status: number,
     apiCode: number | undefined,
     backendMessage: string | undefined,
     message: string,
+    data?: unknown,
   ) {
     super(message);
     this.name = "MContentReadError";
     this.status = status;
     this.apiCode = apiCode;
     this.backendMessage = backendMessage;
+    this.data = data;
   }
 }
 
@@ -159,7 +163,7 @@ export function parseMContentApiEnvelope<T>(status: number, text: string, requir
   const code = Number.isSafeInteger(rawPayload.code) ? Number(rawPayload.code) : undefined;
   const backendMessage = typeof rawPayload.message === "string" ? rawPayload.message : undefined;
   if (!httpOk || (code !== undefined && code >= 400)) {
-    throw new MContentReadError(status, code, backendMessage, `CONTENT_API_${status}`);
+    throw new MContentReadError(status, code, backendMessage, `CONTENT_API_${status}`, rawPayload.data);
   }
   if (code !== 0 || (requireData && !Object.prototype.hasOwnProperty.call(rawPayload, "data"))) {
     throw new Error("CONTENT_API_MALFORMED_RESPONSE");

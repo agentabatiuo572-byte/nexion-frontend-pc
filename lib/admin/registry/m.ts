@@ -18,7 +18,7 @@ export const DOMAIN_M: ModuleEntry[] = [
   },
   {
     path: "/service/sessions",
-    summary: "和你负责的客户沟通；主管可查看所有会话。更换客户的专属客服需走转绑流程。",
+    summary: "和你负责的客户沟通；主管可查看和接待负责组的客户。更换客户的专属客服需走转绑流程。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
