@@ -15,6 +15,8 @@ function jsonError(status: number, message: string) {
 function backendPath(parts: string[]) {
   const isOverview = parts[0] === "overview" && parts.length === 1;
   const isObservability = parts[0] === "observability" && parts.length === 1;
+  const isLegacyUnknown = parts[0] === "legacy-unknown-resolutions" && /^[1-9]\d*$/.test(parts[1] ?? "")
+    && (parts.length === 2 || (parts.length === 3 && parts[2] === "proposals"));
   const isSkuCollection = parts[0] === "skus" && parts.length === 1;
   const isSku = parts[0] === "skus" && parts.length === 2 && !!parts[1];
   const isSkuStatus = parts[0] === "skus" && parts.length === 3 && !!parts[1] && parts[2] === "status";
@@ -47,6 +49,7 @@ function backendPath(parts: string[]) {
   if (
     !isOverview
     && !isObservability
+    && !isLegacyUnknown
     && !isSkuCollection
     && !isSku
     && !isSkuStatus
@@ -87,6 +90,9 @@ async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
   const targetPath = backendPath(path);
   if (targetPath && path[0] === "compute-config" && request.method !== (path.length === 1 ? "GET" : "PATCH")) {
+    return jsonError(405, "METHOD_NOT_ALLOWED");
+  }
+  if (targetPath && path[0] === "legacy-unknown-resolutions" && request.method !== (path.length === 2 ? "GET" : "POST")) {
     return jsonError(405, "METHOD_NOT_ALLOWED");
   }
 

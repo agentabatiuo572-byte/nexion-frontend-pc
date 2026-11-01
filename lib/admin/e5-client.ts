@@ -8,6 +8,7 @@ import { parseE5DeviceDailyRate } from "@/lib/admin/e5-device-rate";
 import { parseE5DeviceIdentity } from "@/lib/admin/e5-device-identity";
 import { parseE5Observability, type E5Observability } from "@/lib/admin/e5-observability-contract";
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { parseLegacyUnknownCandidate, type LegacyUnknownCandidate } from "@/lib/admin/legacy-unknown-resolution";
 import {
   E5OutcomeUncertainError,
   e5StableDeviceCommand,
@@ -511,4 +512,24 @@ export async function deleteE5Datacenter(dcLocation: string, reason: string, ope
       idempotencyKey: commandKey,
     }),
   );
+}
+
+export async function fetchLegacyUnknownCandidate(deviceId: number, signal?: AbortSignal) {
+  return parseLegacyUnknownCandidate(await e5Request<unknown>(`/legacy-unknown-resolutions/${deviceId}`, { signal }), deviceId);
+}
+
+export async function proposeLegacyUnknownCancellation(candidate: LegacyUnknownCandidate, reason: string) {
+  if (!candidate.eligible || !candidate.proofSha || !candidate.caseId || reason.trim().length < 8 || reason.trim().length > 200)
+    throw new Error("LEGACY_UNKNOWN_PROPOSAL_INVALID");
+  const body = { reason: reason.trim(), proofSha: candidate.proofSha };
+  // A reason edit never turns an uncertain proposal into a new command; backend payload binding still applies.
+  const fingerprint = JSON.stringify([candidate.caseId, candidate.proofSha, candidate.backendInstanceId]);
+  return e5StableDeviceCommand(`legacy-unknown:${candidate.deviceId}:${candidate.caseId}`, fingerprint, async commandKey => {
+    const ticket = await e5Request<{ id: string }>(`/legacy-unknown-resolutions/${candidate.deviceId}/proposals`, {
+      method: "POST", body: JSON.stringify(body), idempotencyKey: commandKey,
+    });
+    if (!ticket || typeof ticket.id !== "string" || !ticket.id.trim())
+      throw new E5OutcomeUncertainError("提案提交结果未确认，请保持内容不变重试，或到 A2 核对原提案。", commandKey);
+    return ticket;
+  });
 }

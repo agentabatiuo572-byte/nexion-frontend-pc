@@ -7,6 +7,7 @@ import { Badge, DataListPager } from "../design-kit";
 import { e5HeartbeatLagMinutes, fetchE5Devices, fetchE5Observability, type E5Device, type E5DeviceState, type E5Observability } from "@/lib/admin/e5-client";
 import type { EViewCtx } from "./types";
 import { EStats } from "./stats";
+import { LegacyUnknownResolutionAction } from "./legacy-unknown-resolution-action";
 
 const DEV_STATE_LABEL: Record<E5DeviceState, string> = {
   active: "在线",
@@ -278,6 +279,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
                     </td>
                     <td style={{ padding: "9px 10px" }}><Badge tone={DEV_STATE_TONE[d.state]}>{DEV_STATE_LABEL[d.state]}</Badge></td>
                     <td style={{ padding: "9px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
+                      <LegacyUnknownResolutionAction device={d} canWrite={ctx.canWriteE5} toast={ctx.toast} />
                       {isActivatable(d.state) && (ctx.canWriteE5 || ctx.canForceActivateE5) && (
                         <>
                           {ctx.canWriteE5 && d.state === "inventory" && <><button className="l-btn sm mc" disabled={!reasonReady || actionBusy || maxDevicesPerUser == null || d.activeDevicesForUser >= maxDevicesPerUser} title={maxDevicesPerUser == null ? "每个用户的设备上限未获取到" : d.activeDevicesForUser >= maxDevicesPerUser ? `该用户已占满 ${maxDevicesPerUser} 个激活槽位` : undefined} onClick={() => void runDirect(() => ctx.runE5DeviceAction(d.deviceId, "activate", actionReason.trim()))}>激活</button>{" "}</>}
