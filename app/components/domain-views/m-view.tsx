@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { DomainModuleLoading } from "./domain-module-state";
 import "./m-domain.css";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -38,7 +39,7 @@ import { MAvatar, ownerLabel } from "./m-tabs/hd-ui";
 import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
 import { containsConversationMessage } from "./m-sse-dedup";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
-import { supportClient, SupportClientError, isIndeterminateSupportError, type SupportMessageInput } from "@/lib/admin/m-support-client";
+import { supportClient, SupportClientError, isIndeterminateSupportError, agentSwitchText, type SupportMessageInput } from "@/lib/admin/m-support-client";
 import { privateMessageRecovery } from "@/lib/admin/m-support-enhancements";
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 
@@ -138,6 +139,9 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const authEpoch = useAdminAuth((state) => state.authEpoch);
   const session = useAdminAuth((state) => state.session);
   const [m5Pane, setM5Pane] = useState<"rules" | "templates">("rules");
+  // M3 opened from the 客户 list (发起会话) links back to that list with its filters and page.
+  const [fromCustomers, setFromCustomers] = useState(false);
+  useEffect(() => { setFromCustomers(tab === "M3" && new URLSearchParams(window.location.search).get("from") === "customers"); }, [tab]);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const actionConfirmRunRef = useRef<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
@@ -615,7 +619,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
 
   return (
     <div className="dkpage mdom">
-      <DomainHeader {...meta} right={right} />
+      <DomainHeader {...meta} right={right} back={fromCustomers ? <Link className="m-back-link" href="/service/overview?view=customers&restore=customers">‹ 返回负责组客户</Link> : undefined} />
 
       {mError && (
         <div className="card card-pad" style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -769,7 +773,7 @@ function userIdFromProfile(convo: SessionConvo) {
 }
 
 function firstAgentText(convo: SessionConvo) {
-  return convo.messages.find((m) => m.sender === "agent" && m.agentName !== "系统")?.text || convo.messages.at(-1)?.text || "客服已主动发起会话";
+  return convo.messages.find((m) => m.sender === "agent" && m.sourceSenderType !== "SYSTEM" && m.kind !== "AGENT_SWITCH" && m.agentName !== "系统")?.text || convo.messages.at(-1)?.text || "客服已主动发起会话";
 }
 
 function ticketBody(ticket: SupportTicket) {
@@ -1479,7 +1483,8 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
 
   const threadMessages: ThreadMessage[] = conv.messages.map((m) => {
     const isAgent = m.sender === "agent";
-    const isSystem = isAgent && m.agentName === "系统";
+    // System rows are known by their source, not by a display name: 「客服已切换」 carries the new handler's name.
+    const isSystem = isAgent && (m.sourceSenderType === "SYSTEM" || m.kind === "AGENT_SWITCH" || m.agentName === "系统");
     return {
       ts: m.ts,
       fromAgent: isAgent,
@@ -1487,7 +1492,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       role: isAgent ? (conv.type === "advisor" ? "advisor" : "support") : "user",
       agentName: m.agentName,
       senderName: isAgent ? m.agentName : customer,
-      body: m.kind === "IMAGE" ? "[图片]" : m.text,
+      body: m.kind === "AGENT_SWITCH" ? agentSwitchText(m.agentName, m.senderRole) : m.kind === "IMAGE" ? "[图片]" : m.text,
       ctaHref: m.ctaHref,
     } as ThreadMessage;
   });

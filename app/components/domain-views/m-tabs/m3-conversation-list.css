@@ -32,3 +32,14 @@
 .mdom .m3-list-count.overdue { color: var(--v5-danger); font-weight: 600; }
 .mdom .m3-list-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .mdom .m3-list-scope { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+
+/* 接待状态（B15）：我接待中筛选、行内接待标记 */
+.mdom .m3-list-statuses .l-btn.sm.primary[data-tab="holding"] { background: color-mix(in srgb, var(--v5-brand) 13%, transparent); color: var(--v5-brand); font-weight: 600; }
+.mdom .m3-list-statuses .l-btn.sm.primary[data-tab="holding"] .m3-list-count { background: color-mix(in srgb, var(--v5-brand) 20%, transparent); }
+.mdom .m3-list-row .cv-hold { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.mdom .m3-list-row .cv-hold i { flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.mdom .m3-list-row .cv-hold.mine { color: var(--v5-brand); }
+.mdom .m3-list-row .cv-hold.other { color: var(--v5-warning); }
+.mdom .m3-list-row .cv-item.on.hold-mine { background: color-mix(in srgb, var(--v5-brand) 6%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--v5-brand) 35%, transparent); }
+.mdom .m3-list-row .cv-item.on.hold-other { background: color-mix(in srgb, var(--v5-warning) 5%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--v5-warning) 35%, transparent); }
+.mdom .m3-list-row .cv-item.on:is(.hold-mine, .hold-other)::before { display: none; }

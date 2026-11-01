@@ -3,7 +3,7 @@ import { parseBusinessTime } from "@/lib/admin/business-time";
 import { compareM3Messages } from "./m3-message-order";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
-import { supportWireId, supportRequest, supportObject, parseSupportCount, supportClient } from "@/lib/admin/m-support-client";
+import { supportWireId, supportRequest, supportObject, parseSupportCount, supportClient, parseSupportSessionHolder } from "@/lib/admin/m-support-client";
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { User360Profile, UserProfileQuery } from "@/lib/admin/user360-client";
@@ -70,6 +70,8 @@ export type ConversationTimeoutPolicy = {
   policyKey: string;
   warnMinutes: number;
   closeMinutes: number;
+  /** B15 无人发言自动结束；null = the backend does not return the field yet. */
+  sessionEndMinutes: number | null;
   version: number;
   updatedBy?: string;
   reason?: string;
@@ -161,6 +163,7 @@ type ContentConversationView = {
   transferredAt?: string;
   updatedAt?: string;
   version?: number;
+  holder?: unknown;
 };
 
 type ContentConversationMessageView = {
@@ -182,6 +185,7 @@ type ContentConversationMessageView = {
   replyTargets?: Array<{ conversationNo: string; throughMessageId: number }>;
   receiptStatus?: string;
   createdAt?: string;
+  senderRole?: string | null;
 };
 
 // 后端 ConversationCustomerProfile record 的镜像(跨域聚合客户档案,只读快照)。
@@ -588,8 +592,9 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function parseMConversationTimeoutPolicy(value: unknown): ConversationTimeoutPolicy {
   const row = supportObject(value, "timeout.policy"), warnMinutes = parseSupportCount(row.warnMinutes, "warn"), closeMinutes = parseSupportCount(row.closeMinutes, "close");
-  if (typeof row.policyKey !== "string" || !row.policyKey.trim() || warnMinutes < 1 || warnMinutes > 30 || closeMinutes <= warnMinutes || closeMinutes > 120) throw new Error("SUPPORT_CONTRACT_MALFORMED");
-  return { policyKey: row.policyKey, warnMinutes, closeMinutes, version: parseSupportCount(row.version, "version"), updatedBy: typeof row.updatedBy === "string" ? row.updatedBy : undefined, reason: typeof row.reason === "string" ? row.reason : undefined, updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : undefined };
+  const sessionEndMinutes = row.sessionEndMinutes == null ? null : parseSupportCount(row.sessionEndMinutes, "sessionEnd");
+  if (typeof row.policyKey !== "string" || !row.policyKey.trim() || warnMinutes < 1 || warnMinutes > 30 || closeMinutes <= warnMinutes || closeMinutes > 120 || sessionEndMinutes !== null && (sessionEndMinutes < 2 || sessionEndMinutes > 120)) throw new Error("SUPPORT_CONTRACT_MALFORMED");
+  return { policyKey: row.policyKey, warnMinutes, closeMinutes, sessionEndMinutes, version: parseSupportCount(row.version, "version"), updatedBy: typeof row.updatedBy === "string" ? row.updatedBy : undefined, reason: typeof row.reason === "string" ? row.reason : undefined, updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : undefined };
 }
 
 export function fetchMConversationTimeoutPolicy() {
@@ -598,7 +603,7 @@ export function fetchMConversationTimeoutPolicy() {
 
 export function updateMConversationTimeoutPolicy(
   policy: ConversationTimeoutPolicy,
-  input: { warnMinutes: number; closeMinutes: number; reason: string },
+  input: { warnMinutes: number; closeMinutes: number; sessionEndMinutes?: number; reason: string },
   stableIdempotencyKey?: string,
   operator = currentAdminOperator(),
 ) {
@@ -608,6 +613,7 @@ export function updateMConversationTimeoutPolicy(
     body: JSON.stringify({
       warnMinutes: input.warnMinutes,
       closeMinutes: input.closeMinutes,
+      sessionEndMinutes: input.sessionEndMinutes,
       expectedVersion: policy.version,
       operator,
       reason: input.reason,
@@ -1244,6 +1250,8 @@ async function fetchAllSupportConversations(signal?: AbortSignal): Promise<Admin
 
 function parseSupportMessageKind(message: ContentConversationMessageView, payloadRequired = true): NonNullable<SessionMsg["kind"]> {
   const kind = message.kind ?? "TEXT";
+  // B15: 「客服已切换」 is the only system row with its own kind.
+  if (kind === "AGENT_SWITCH" && upper(message.senderType, "") === "SYSTEM") return kind;
   if (!["TEXT", "IMAGE", "SKU", "LINK"].includes(kind)
       || payloadRequired && kind === "IMAGE" && !message.attachmentId
       || payloadRequired && kind === "SKU" && (!message.skuId || !message.skuName)
@@ -1266,7 +1274,7 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
       ts: asTs(m.createdAt, updated),
       sender: agent ? ("agent" as const) : ("user" as const),
       sourceSenderType,
-      agentName: agent ? sourceSenderType === "SYSTEM" ? "系统" : str(m.senderName, base.ownerAgentName || "客服台") : undefined,
+      agentName: agent ? sourceSenderType === "SYSTEM" ? m.kind === "AGENT_SWITCH" ? str(m.senderName) : "系统" : str(m.senderName, base.ownerAgentName || "客服台") : undefined,
       status: str(m.receiptStatus, "sent").toLowerCase() === "read" ? ("read" as const) : ("sent" as const),
       text: str(m.content, ""),
       kind: parseSupportMessageKind(m),
@@ -1280,6 +1288,7 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
       intent: m.intent === "MAINTENANCE" ? "MAINTENANCE" as const : "SERVICE" as const,
       replyTargets: m.replyTargets,
       attachmentId: typeof m.attachmentId === "string" ? m.attachmentId : undefined,
+      senderRole: m.senderRole === "ADVISOR" || m.senderRole === "SUPERVISOR" || m.senderRole === "ADMIN" ? m.senderRole as SessionMsg["senderRole"] : undefined,
     };
   });
   const transferType = base.transferToType?.toLowerCase();
@@ -1329,6 +1338,8 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
     archived: base.archived === true,
     origin: undefined,
     transfer,
+    // B15 inbox holder: undefined while the backend does not send the field.
+    holder: base.holder === undefined ? undefined : parseSupportSessionHolder(base.holder, "conversation.holder"),
   };
 }
 

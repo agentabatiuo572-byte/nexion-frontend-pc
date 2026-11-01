@@ -32,6 +32,7 @@ function Field({ label, required, children }: { label: string; required?: boolea
   );
 }
 
+type IdlePolicyInput = { warnMinutes: number; closeMinutes: number; sessionEndMinutes?: number; reason: string };
 export function IdlePolicyModal({
   policy,
   initialInput,
@@ -49,7 +50,7 @@ export function IdlePolicyModal({
   onSave,
 }: {
   policy: ConversationTimeoutPolicy;
-  initialInput?: {warnMinutes:number;closeMinutes:number;reason:string};
+  initialInput?: IdlePolicyInput;
   canSave: boolean;
   saving: boolean;
   error: string;
@@ -59,33 +60,40 @@ export function IdlePolicyModal({
   onCheckPending?: () => Promise<void>;
   onRefreshLatest?: () => Promise<void>;
   onReviewLatest?: () => void;
-  onDraftChange?: (input: { warnMinutes: number; closeMinutes: number; reason: string }) => void;
+  onDraftChange?: (input: IdlePolicyInput) => void;
   onClose: () => void;
-  onSave: (input: { warnMinutes: number; closeMinutes: number; reason: string }) => Promise<boolean>;
+  onSave: (input: IdlePolicyInput) => Promise<boolean>;
 }) {
+  // B15 无人发言自动结束: shown as unavailable and never sent until the policy returns sessionEndMinutes.
+  const endAvailable = policy.sessionEndMinutes !== null;
   const [warn, setWarn] = useState(String(initialInput?.warnMinutes??policy.warnMinutes));
   const [close, setClose] = useState(String(initialInput?.closeMinutes??policy.closeMinutes));
+  const [end, setEnd] = useState(String(initialInput?.sessionEndMinutes??policy.sessionEndMinutes??""));
   const [reason, setReason] = useState(initialInput?.reason??"");
   const [confirm, setConfirm] = useState(false);
   useEffect(() => { setConfirm(false); }, [policy.version, error, pending, conflict, canSave]);
   useEffect(() => {
-    if (!canSave) { setWarn(String(policy.warnMinutes)); setClose(String(policy.closeMinutes)); setReason(""); }
-  }, [canSave, policy.warnMinutes, policy.closeMinutes]);
+    if (!canSave) { setWarn(String(policy.warnMinutes)); setClose(String(policy.closeMinutes)); setEnd(String(policy.sessionEndMinutes ?? "")); setReason(""); }
+  }, [canSave, policy.warnMinutes, policy.closeMinutes, policy.sessionEndMinutes]);
   const warnN = Number(warn);
   const closeN = Number(close);
+  const endN = Number(end);
   const warnOk = Number.isInteger(warnN) && warnN >= 1 && warnN <= 30;
   const closeOk = Number.isInteger(closeN) && closeN >= 2 && closeN <= 120;
-  const orderOk = warnOk && closeOk && closeN > warnN;
+  const endOk = !endAvailable || Number.isInteger(endN) && endN >= 2 && endN <= 120;
+  const orderOk = warnOk && closeOk && closeN > warnN && endOk;
   const reasonOk = reason.trim().length >= 6 && reason.trim().length <= 200;
-  const unchanged = warnN === policy.warnMinutes && closeN === policy.closeMinutes;
+  const unchanged = warnN === policy.warnMinutes && closeN === policy.closeMinutes && (!endAvailable || endN === policy.sessionEndMinutes);
   const blocked = saving || pending || conflict;
-  useEffect(() => { if (canSave) onDraftChange?.({ warnMinutes: warnN, closeMinutes: closeN, reason }); }, [warnN, closeN, reason, canSave, onDraftChange]);
+  const sessionEndMinutes = endAvailable ? endN : undefined;
+  useEffect(() => { if (canSave) onDraftChange?.({ warnMinutes: warnN, closeMinutes: closeN, sessionEndMinutes, reason }); }, [warnN, closeN, sessionEndMinutes, reason, canSave, onDraftChange]);
 
   async function save() {
     if (!canSave || blocked || !confirm || !orderOk || !reasonOk || unchanged) return;
     const succeeded = await onSave({
       warnMinutes: warnN,
       closeMinutes: closeN,
+      sessionEndMinutes,
       reason: reason.trim(),
     });
     if (succeeded) onClose();
@@ -98,22 +106,23 @@ export function IdlePolicyModal({
     setValue: (value: string) => void,
     min: number,
     max: number,
+    available = true,
   ) => (
-    <label className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+    <label className="m3-policy-field">
       <span>
-        <span style={{ fontSize: 13 }}>{label}</span>
-        <span className="sub" style={{ display: "block" }}>{hint}</span>
+        <strong>{label}</strong>
+        <small>{hint}</small>
       </span>
       <input
-        className="fld mono"
+        className="m3-policy-num"
         type="number"
         min={min}
         max={max}
         step={1}
         value={value}
-        disabled={!canSave || blocked || confirm}
+        placeholder={available ? undefined : "-"}
+        disabled={!available || !canSave || blocked || confirm}
         onChange={(event) => { setConfirm(false); setValue(event.target.value); }}
-        style={{ width: 88, textAlign: "right" }}
         aria-label={label}
       />
     </label>
@@ -121,68 +130,57 @@ export function IdlePolicyModal({
 
   return (
     <Modal
-      title="会话超时策略"
-      icon="clock"
+      className="m3-policy-modal"
+      title={<><span className="m3-policy-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg></span>会话超时策略<span className="m3-policy-version">版本 {policy.version}</span></>}
       busy={saving}
       onClose={onClose}
       footer={(
-        <div className="row" style={{ gap: 10, alignItems: "center", width: "100%" }}>
-          <span className="sub" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Icon name="shield" size={13} />
-            待回复超时提醒设置
-          </span>
-          <div className="spacer" style={{ flex: 1 }} />
-          <button type="button" className="btn btn-sec btn-sm" onClick={onClose} disabled={saving}>取消</button>
-          {confirm && <button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => setConfirm(false)}>返回修改</button>}
-          <button
-            type="button"
-            data-proof="session-idle-policy-save"
-            className="btn btn-pri btn-sm"
-            onClick={() => { if (confirm) void save(); else setConfirm(true); }}
-            disabled={!canSave || blocked || !reasonOk || !orderOk || unchanged}
-          >
-            {saving ? "保存中…" : !canSave ? "仅供查看" : unchanged ? "策略未变更" : confirm ? "确认并保存" : "预览变更"}
-          </button>
+        <div className="m3-policy-foot">
+          <span>仅总管理员可修改</span>
+          <div>
+            <button type="button" className="btn btn-sec btn-sm" onClick={onClose} disabled={saving}>取消</button>
+            {confirm && <button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => setConfirm(false)}>返回修改</button>}
+            <button
+              type="button"
+              data-proof="session-idle-policy-save"
+              className="btn btn-pri btn-sm"
+              onClick={() => { if (confirm) void save(); else setConfirm(true); }}
+              disabled={!canSave || blocked || !reasonOk || !orderOk || unchanged}
+            >
+              {saving ? "保存中…" : !canSave ? "仅供查看" : unchanged ? "策略未变更" : confirm ? "确认并保存" : "预览变更"}
+            </button>
+          </div>
         </div>
       )}
     >
-      <div className="col" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {!canSave && <p role="status">仅获准总管理员可修改，当前为只读。</p>}
-        {numField("待回复提醒时长(分钟)", "客户消息等待回复达到该时长，标记待处理", warn, setWarn, 1, 30)}
-        {numField("严重超时时长(分钟)", "超过该时长仍未回复，标记严重超时", close, setClose, 2, 120)}
-        {!orderOk && (
-          <div className="sub" style={{ color: "var(--danger)" }}>
-            {!warnOk || !closeOk ? "请输入整数分钟并满足允许范围。" : "严重超时时长必须大于提醒时长。"}
-          </div>
-        )}
-        <div className="itint" style={{ padding: "11px 13px", lineHeight: 1.7, fontSize: 12.5 }}>
-          按最早未处理的客户消息计算等待时间；新策略保存后用于当前待回复消息。超时不会结束对话，也不会改变专属客服归属。
+      {!canSave && <p className="m3-policy-readonly" role="status">仅获准总管理员可修改，当前为只读。</p>}
+      {numField("待回复提醒时长（分钟）", "客户消息等待回复达到该时长，标记待处理。1–30", warn, setWarn, 1, 30)}
+      {numField("严重超时时长（分钟）", "超过该时长仍未回复，标记严重超时。2–120，须大于提醒时长", close, setClose, 2, 120)}
+      {numField("无人发言自动结束会话（分钟）", endAvailable ? "后台人员最后一次发消息后，超过该时长没人再发，会话自动结束，其他人就可以发起。2–120" : "暂不可用：自动结束时长还不能在这里设置，其他两项照常保存。", end, setEnd, 2, 120, endAvailable)}
+      {!orderOk && (
+        <div className="m3-policy-invalid">
+          {!warnOk || !closeOk || !endOk ? "请输入整数分钟并满足允许范围。" : "严重超时时长必须大于提醒时长。"}
         </div>
-        {confirm && <div className="itint" role="status" style={{ padding: "11px 13px" }}><strong>确认下列变更</strong><p>待回复提醒：{policy.warnMinutes} 分钟 → {warnN} 分钟</p><p>严重超时：{policy.closeMinutes} 分钟 → {closeN} 分钟</p><p>修改理由：{reason.trim()}</p></div>}
-        <label className="col" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <span style={{ fontSize: 13 }}>
-            变更理由 <span style={{ color: "var(--danger)" }}>*</span>
-            <span className="sub">（6–200 字，会记入操作记录）</span>
-          </span>
-          <textarea
-            className="fld"
-            rows={2}
-            value={reason}
-            disabled={!canSave || blocked || confirm}
-            maxLength={200}
-            onChange={(event) => { setConfirm(false); setReason(event.target.value); }}
-            placeholder="请说明调整会话静默时长的原因"
-            style={{ resize: "vertical" }}
-          />
-        </label>
-        {error && (
-          <div className="itint" role="alert" style={{ color: "var(--danger)", padding: "10px 12px" }}>
-            {error}
-          </div>
-        )}
-        {pending && <div role="status">原操作结果待确认，输入已锁定。原提交基于版本 {policy.version}。{latest && <p>当前策略为版本 {latest.version}：待回复提醒 {latest.warnMinutes} 分钟，严重超时 {latest.closeMinutes} 分钟；尚不能据此认定原操作成功。</p>}{canSave && onCheckPending && <button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => void onCheckPending()}>查询原操作结果</button>}</div>}
-        {conflict && <div role="alert">设置刚被别人改过，你填写的内容还在。{latest ? <><p>待回复提醒：原 {policy.warnMinutes} 分钟 → 最新 {latest.warnMinutes} 分钟；严重超时：原 {policy.closeMinutes} 分钟 → 最新 {latest.closeMinutes} 分钟。</p><button type="button" className="btn btn-sec btn-sm" disabled={saving || !canSave} onClick={onReviewLatest}>以最新策略重新确认</button></> : <button type="button" className="btn btn-sec btn-sm" disabled={saving || !canSave} onClick={() => void onRefreshLatest?.()}>读取最新策略</button>}</div>}
-      </div>
+      )}
+      <p className="m3-policy-note">待回复提醒和严重超时只做标记。自动结束只让出接待：不结束对话、不改专属客服，客户的待回复照常保留。保存后立即生效。</p>
+      {confirm && <div className="itint m3-policy-preview" role="status"><strong>确认下列变更</strong><p>待回复提醒：{policy.warnMinutes} 分钟 → {warnN} 分钟</p><p>严重超时：{policy.closeMinutes} 分钟 → {closeN} 分钟</p>{endAvailable && <p>无人发言自动结束：{policy.sessionEndMinutes} 分钟 → {endN} 分钟</p>}<p>修改理由：{reason.trim()}</p></div>}
+      <label className="m3-policy-reason">
+        <span>变更理由 <b>*</b></span>
+        <textarea
+          value={reason}
+          disabled={!canSave || blocked || confirm}
+          maxLength={200}
+          onChange={(event) => { setConfirm(false); setReason(event.target.value); }}
+          placeholder="请说明调整的原因（至少 6 个字）"
+        />
+      </label>
+      {error && (
+        <div className="itint" role="alert" style={{ color: "var(--danger)", padding: "10px 12px", marginTop: 12 }}>
+          {error}
+        </div>
+      )}
+      {pending && <div role="status" className="m3-policy-state">原操作结果待确认，输入已锁定。原提交基于版本 {policy.version}。{latest && <p>当前策略为版本 {latest.version}：待回复提醒 {latest.warnMinutes} 分钟，严重超时 {latest.closeMinutes} 分钟{latest.sessionEndMinutes !== null && `，无人发言自动结束 ${latest.sessionEndMinutes} 分钟`}；尚不能据此认定原操作成功。</p>}{canSave && onCheckPending && <button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => void onCheckPending()}>查询原操作结果</button>}</div>}
+      {conflict && <div role="alert" className="m3-policy-state">设置刚被别人改过，你填写的内容还在。{latest ? <><p>待回复提醒：原 {policy.warnMinutes} 分钟 → 最新 {latest.warnMinutes} 分钟；严重超时：原 {policy.closeMinutes} 分钟 → 最新 {latest.closeMinutes} 分钟{endAvailable && latest.sessionEndMinutes !== null && `；无人发言自动结束：原 ${policy.sessionEndMinutes} 分钟 → 最新 ${latest.sessionEndMinutes} 分钟`}。</p><button type="button" className="btn btn-sec btn-sm" disabled={saving || !canSave} onClick={onReviewLatest}>以最新策略重新确认</button></> : <button type="button" className="btn btn-sec btn-sm" disabled={saving || !canSave} onClick={() => void onRefreshLatest?.()}>读取最新策略</button>}</div>}
     </Modal>
   );
 }

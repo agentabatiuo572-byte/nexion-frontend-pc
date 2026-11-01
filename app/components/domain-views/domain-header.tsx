@@ -28,6 +28,7 @@ export function DomainHeader({
   summary,
   batch = "V1",
   right,
+  back,
 }: {
   domainCode: string;
   domainName: string;
@@ -37,12 +38,14 @@ export function DomainHeader({
   summary: string;
   batch?: string;
   right?: ReactNode;
+  /** A return link shown in place of the domain chip row (e.g. M3 opened from the M1 customer list). */
+  back?: ReactNode;
 }) {
   const accent = `var(${accentVar})`;
   return (
     <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
-        <div className="flex items-center gap-2">
+        {back ?? <div className="flex items-center gap-2">
           <span
             className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
             style={{ background: `color-mix(in srgb, ${accent} 14%, transparent)`, color: accent, border: `1px solid color-mix(in srgb, ${accent} 30%, transparent)` }}
@@ -51,7 +54,7 @@ export function DomainHeader({
             {domainName}
           </span>
           <span className="font-mono-tabular text-[11px]" style={{ color: "var(--v5-ink-4)" }}>{l2Id}</span>
-        </div>
+        </div>}
         <h1 className="font-display mt-2 text-[24px]" style={{ color: "var(--v5-ink)" }}>{l2Name}</h1>
         {summary && <p className="mt-1.5 max-w-[760px] text-[13px]" style={{ color: "var(--v5-ink-2)" }}><AutoGloss>{summary}</AutoGloss></p>}
       </div>
