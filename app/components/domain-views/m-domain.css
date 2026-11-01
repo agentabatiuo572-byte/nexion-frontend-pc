@@ -9,7 +9,7 @@
 .mdom {
   container: mdom / inline-size;
   /* Chat bubble glow: agent hue and the neutral used for customer bubbles (white on dark, ink on light). */
-  --m-bubble-agent: var(--admin-blue);
+  --m-bubble-agent: var(--m-ac);
   --m-bubble-neutral: var(--v5-ink);
   --m-ac: var(--admin-domain-m);
   --m-ac-soft: color-mix(in srgb, var(--admin-domain-m) 14%, transparent);
