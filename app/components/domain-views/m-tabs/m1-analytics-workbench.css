@@ -126,5 +126,4 @@ html[data-theme="dark"] .sa-customers{--sa-pin-shadow:-12px 0 16px -12px rgba(0,
 .sa-busy-modal .sa-busy-secondary{background:var(--v5-surface-3);color:var(--v5-ink)}
 .sa-busy-modal .sa-busy-primary{background:var(--v5-brand);border-color:var(--v5-brand);color:var(--v5-on-brand)}
 /* Designed areas render with the board's default font smoothing and initial avatars. */
-.sa-customers,.sa-legend,.sa-busy-modal{-webkit-font-smoothing:auto;-moz-osx-font-smoothing:auto}
 .sa-customers .support-avatar>span,.sa-busy-holder .support-avatar>span{background:color-mix(in srgb,var(--v5-brand) 10%,transparent)!important;color:var(--v5-ink-2)!important;font-size:13px!important}

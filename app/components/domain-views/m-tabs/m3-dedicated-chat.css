@@ -12,7 +12,7 @@
 .mdom .m3-more summary::-webkit-details-marker { display: none; }
 .mdom .m3-more-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 35; min-width: 190px; padding: 8px; display: grid; gap: 6px; border: 1px solid var(--v5-border); border-radius: 8px; background: var(--v5-surface); box-shadow: var(--m-sh-pop); }
 .mdom .m3-more-menu > * { width: 100%; justify-content: flex-start; white-space: nowrap; }
-.mdom .m3-stage .ChatBody { min-height: 120px; padding: 20px 11px 20px 22px; gap: 16px; scrollbar-gutter: stable; -webkit-font-smoothing: auto; -moz-osx-font-smoothing: auto; }
+.mdom .m3-stage .ChatBody { min-height: 120px; padding: 20px 11px 20px 22px; gap: 16px; scrollbar-gutter: stable; }
 .mdom .m3-stage .ChatBody > [data-m3-message-id] { display: flex; flex-direction: column; }
 .mdom .m3-message { align-self: flex-start; display: flex; align-items: flex-start; gap: 10px; max-width: 100%; }
 .mdom .m3-message.agent { align-self: flex-end; flex-direction: row-reverse; }
@@ -161,5 +161,4 @@
 .m3-policy-modal .m3-policy-foot .btn-sec { background: var(--v5-surface-3); border-color: var(--v5-border-strong); color: var(--v5-ink); }
 .mdom .m3-message .support-avatar > span { background: color-mix(in srgb, var(--v5-brand) 10%, transparent) !important; color: var(--v5-ink-2) !important; font-size: 12.5px !important; }
 .mdom .m3-sender-identity .support-avatar > span { background: color-mix(in srgb, var(--v5-brand) 10%, transparent) !important; color: var(--v5-ink-2) !important; font-size: 11px !important; }
-.mdom :is(.m3-hold-lock, .m3-hold-strip, .m3-sender-identity, .m3-composer-input), .m3-policy-modal { -webkit-font-smoothing: auto; -moz-osx-font-smoothing: auto; }
 .m3-policy-field strong, .m3-policy-reason > span { line-height: normal; }
