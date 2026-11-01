@@ -223,13 +223,12 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const isPersonal = scope?.scopeSummary.mode === "PERSONAL";
   const showStatistics = Boolean(scope && section === "stats");
   const statisticsCalendar = queryState.basis === "PERIOD_EVENT" ? monthCalendar : null;
-  const adminId = useAdminAuth(state => state.session?.adminId);
   const readModes = useAdminAuth(state => state.session?.supportReadModes);
   // A session hint only chooses the requested projection. The response still resolves current authority.
   const entryReadMode = readModes?.includes("ALL") ? "ALL" : readModes?.includes("MANAGED") ? "MANAGED" : readModes?.includes("PERSONAL") ? "PERSONAL" : "ALL";
   const needsCalendar = Boolean(scope && (isPersonal || queryState.basis === "PERIOD_EVENT"));
-  // A supervisor who also holds a receiving seat keeps a tab for their own customers.
-  const canMine = scope?.scopeSummary.mode === "MANAGED" && (() => { try { return (JSON.parse(ctx.pget("I.support.agents") ?? "[]") as Array<{ adminId?: number; assignmentEligible?: boolean }>).some(agent => agent.adminId === adminId && agent.assignmentEligible === true); } catch { return false; } })();
+  // A supervisor who also holds personal service keeps a tab for their own customers, grouped or not (the managed agent list omits an ungrouped self).
+  const canMine = scope?.scopeSummary.mode === "MANAGED" && Boolean(readModes?.includes("PERSONAL"));
   useEffect(() => { if (queryState.view !== "CUSTOMERS") lastDataView.current = queryState.view; }, [queryState.view]);
   useEffect(() => {
     const controller = new AbortController();
