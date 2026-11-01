@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import qrcode from "qrcode-generator";
-import { commandRejected, groupPendingCommands, isInvitePending, supportGroupClient, type InviteCodeView, type InviteIssueRecord } from "@/lib/admin/support-group-client";
+import { canReplayGroupCommand, commandRejected, groupPendingCommands, isInvitePending, supportGroupClient, type InviteCodeView, type InviteIssueRecord } from "@/lib/admin/support-group-client";
 import { SupportClientError } from "@/lib/admin/m-support-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import "./m1-invite-code.css";
@@ -48,6 +48,8 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
   // Generate/reset commands persist in the group command store, so an unsettled one survives leaving the workbench.
   const findPending = () => groupPendingCommands.list().find((r): r is InviteIssueRecord => isInvitePending(r) && r.intent.kind === "INVITE_ISSUE" && r.actorId === adminId);
   const [pending, setPending] = useState<InviteIssueRecord | undefined>(findPending);
+  // Set when the server has no record of the original command (or cannot be asked), which allows a same-key retry.
+  const [unresolved, setUnresolved] = useState(false);
   const [view, setView] = useState<InviteCodeView | null>(null);
   const [readFailed, setReadFailed] = useState(false);
   const [reload, setReload] = useState(0);
@@ -85,18 +87,35 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
       setError(errorText(cause));
     } finally { setBusy(false); }
   };
+  // Sharing comes back only after a fresh read of the current code.
+  const settle = (record: InviteIssueRecord) => { groupPendingCommands.forget(record.fingerprint, record.commandKey); setPending(undefined); setUnresolved(false); setView(null); setReload(n => n + 1); };
   const reconcile = async () => {
     if (!pending || busy) return;
     setBusy(true); setError("");
     try {
       const receipt = await supportGroupClient.command(pending.commandKey);
-      if (receipt.status !== "SUCCEEDED" && receipt.status !== "FAILED") { setError("原操作仍在处理，请稍后再查询。"); return; }
-      groupPendingCommands.forget(pending.fingerprint, pending.commandKey);
-      // Sharing comes back only after a fresh read of the current code.
-      setPending(undefined); setView(null); setReload(n => n + 1);
+      if (receipt.status !== "SUCCEEDED" && receipt.status !== "FAILED") { setUnresolved(false); setError("原操作仍在处理，请稍后再查询。"); return; }
+      settle(pending);
       toast(receipt.status === "SUCCEEDED" ? "原操作已生效，已重新读取邀请码。" : "原操作没有生效，已重新读取邀请码。");
-    } catch { setError("暂时无法查询原操作，原命令已保留，请稍后再查询。"); }
-    finally { setBusy(false); }
+    } catch (cause) {
+      setUnresolved(true);
+      const reason = cause instanceof SupportClientError && cause.status === 404 ? "服务端没有这条原操作的记录，请求可能没有送达。" : "暂时无法查询原操作。";
+      setError(reason + (canReplayGroupCommand(pending) ? "可以用原命令重试原操作。" : "原操作已超过可重发时间，不能直接重发，请稍后再查询。"));
+    } finally { setBusy(false); }
+  };
+  // Same key and frozen request body; the server dedupes it if the original did arrive.
+  const replay = async () => {
+    if (!pending || busy || !canReplayGroupCommand(pending)) return;
+    setBusy(true); setError("");
+    try {
+      await supportGroupClient.issueSelfInviteCode(pending.intent.payload.expectedVersion, pending.commandKey);
+      settle(pending);
+      toast(pending.intent.payload.expectedVersion === null ? "邀请码已生成。" : "邀请码已重置，旧码已失效。");
+    } catch (cause) {
+      if (!commandRejected(cause)) { setError("重试结果仍未确认，原命令已保留，请稍后再查询或重试。"); return; }
+      settle(pending);
+      setError(errorText(cause));
+    } finally { setBusy(false); }
   };
   const copy = async (value: string, label: string) => {
     try { await navigator.clipboard.writeText(value); toast(`${label}已复制。`); }
@@ -127,7 +146,8 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
     <div className="m1-invite-title"><h3>我的邀请码</h3><p>新用户注册时填写，注册后由你接待</p></div>
     {pending ? <>
       <p className="m1-invite-note m1-invite-muted" role="alert">上次{pending.intent.payload.expectedVersion === null ? "生成" : "重置"}邀请码的结果还没确认；确认前暂不提供复制、链接和二维码。</p>
-      <button type="button" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void reconcile()}>{busy ? "正在查询…" : "查询原操作"}</button>
+      <button type="button" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void reconcile()}>{busy ? "正在处理…" : "查询原操作"}</button>
+      {unresolved && canReplayGroupCommand(pending) && <button type="button" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void replay()}>重试原操作</button>}
     </> : readFailed ? <>
       <p className="m1-invite-note" role="alert">暂时无法读取邀请码，请重试。</p>
       <button type="button" className="m1-invite-btn m1-invite-retry" onClick={() => setReload(n => n + 1)}>重试</button>
