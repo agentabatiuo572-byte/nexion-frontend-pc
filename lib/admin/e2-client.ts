@@ -1,5 +1,6 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import type { OpsTask } from "@/lib/admin/platform-types";
+import { TASK_DURATION_DEFAULTS, validateComputeTaskConfig, type ComputeTaskConfig } from "@/lib/admin/e2-compute-config";
 import { parseE2OnboardingYieldConfig } from "@/lib/admin/e2-onboarding-yield-contract";
 import type {
   E2OnboardingYieldConfig,
@@ -26,7 +27,7 @@ interface PageResult<T> {
   records: T[];
 }
 
-interface BackendTask {
+interface BackendTask extends ComputeTaskConfig {
   taskId: string;
   name: string;
   price?: number | string | null;
@@ -209,6 +210,13 @@ function fromTask(task: BackendTask): OpsTask {
     maxReward: toNumber(task.maxReward),
     minVRAM: text(task.minVram),
     killInit: text(task.killInit),
+    selectionWeight: task.selectionWeight ?? 1,
+    expectedDurationMinSec: task.expectedDurationMinSec ?? TASK_DURATION_DEFAULTS[text(task.taskClass)],
+    expectedDurationMaxSec: task.expectedDurationMaxSec ?? TASK_DURATION_DEFAULTS[text(task.taskClass)],
+    executionTimeoutSec: task.executionTimeoutSec,
+    runtimeKey: task.runtimeKey,
+    validatorKey: task.validatorKey,
+    workloadConfigJson: task.workloadConfigJson,
   };
 }
 
@@ -255,6 +263,8 @@ export async function updateE2TaskPricing(
 }
 
 function toTaskPayload(task: OpsTask, reason: string, operator: string) {
+  const error = validateComputeTaskConfig(task);
+  if (error) throw new Error(error);
   return {
     name: task.n,
     price: task.price,
@@ -268,6 +278,13 @@ function toTaskPayload(task: OpsTask, reason: string, operator: string) {
     maxReward: task.maxReward ?? 0,
     minVram: task.minVRAM || "",
     killInit: task.killInit || "",
+    selectionWeight: task.selectionWeight,
+    expectedDurationMinSec: task.expectedDurationMinSec,
+    expectedDurationMaxSec: task.expectedDurationMaxSec,
+    executionTimeoutSec: task.executionTimeoutSec,
+    runtimeKey: task.runtimeKey,
+    validatorKey: task.validatorKey,
+    workloadConfigJson: task.workloadConfigJson,
     reason,
     operator,
   };

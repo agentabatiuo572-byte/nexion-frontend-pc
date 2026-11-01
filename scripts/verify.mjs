@@ -333,6 +333,7 @@ const GEARS = [
   ["F1 direct-write pending-store contract", "node", ["--test", "tests/f1-direct-pending-store-contract.test.mjs"]],
   ["E domain pending-store contract", "node", ["--test", "tests/e-pending-store-contract.test.mjs"]],
   ["E2 task status preservation contract", "node", ["--test", "tests/e2-task-status-preservation-contract.test.mjs"]],
+  ["E2 Compute V2 config contract", "node", ["--experimental-strip-types", "--test", "tests/e2-compute-config.test.mjs"]],
   ["H8 pending-store contract", "node", ["--test", "tests/h8-pending-store-contract.test.mjs"]],
   ["H8 targeted settlement", "node", ["--experimental-strip-types", "--test", "tests/h8-targeted-settlement.test.mjs"]],
   ["J emergency pending-store contract", "node", ["--experimental-strip-types", "--test", "tests/j-emergency-pending-store-contract.test.mjs"]],

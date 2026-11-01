@@ -1154,7 +1154,10 @@ export const HIGH_OPS: HighOpDef[] = [
       params: { name: String(ctx.name), price: ctx.price, unit: String(ctx.unit),
         requirement: String(ctx.requirement), saturation: ctx.saturation, status: String(ctx.status),
         taskClass: String(ctx.taskClass), model: String(ctx.model), minReward: ctx.minReward,
-        maxReward: ctx.maxReward, minVram: String(ctx.minVram), killInit: String(ctx.killInit) } }),
+        maxReward: ctx.maxReward, minVram: String(ctx.minVram), killInit: String(ctx.killInit),
+        selectionWeight: ctx.selectionWeight, expectedDurationMinSec: ctx.expectedDurationMinSec,
+        expectedDurationMaxSec: ctx.expectedDurationMaxSec, executionTimeoutSec: ctx.executionTimeoutSec,
+        runtimeKey: ctx.runtimeKey, validatorKey: ctx.validatorKey, workloadConfigJson: ctx.workloadConfigJson } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_task", id: String(ctx.taskId) }),
   },
   {
@@ -1169,7 +1172,10 @@ export const HIGH_OPS: HighOpDef[] = [
       params: { taskId: String(ctx.taskId), name: String(ctx.name), price: ctx.price, unit: String(ctx.unit),
         requirement: String(ctx.requirement), saturation: ctx.saturation, status: String(ctx.status),
         taskClass: String(ctx.taskClass), model: String(ctx.model), minReward: ctx.minReward,
-        maxReward: ctx.maxReward, minVram: String(ctx.minVram), killInit: String(ctx.killInit) } }),
+        maxReward: ctx.maxReward, minVram: String(ctx.minVram), killInit: String(ctx.killInit),
+        selectionWeight: ctx.selectionWeight, expectedDurationMinSec: ctx.expectedDurationMinSec,
+        expectedDurationMaxSec: ctx.expectedDurationMaxSec, executionTimeoutSec: ctx.executionTimeoutSec,
+        runtimeKey: ctx.runtimeKey, validatorKey: ctx.validatorKey, workloadConfigJson: ctx.workloadConfigJson } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_task", id: String(ctx.taskId) }),
   },
   {

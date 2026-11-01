@@ -21,6 +21,7 @@ import { operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReaso
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
+import { TASK_DURATION_DEFAULTS, validateComputeTaskConfig } from "@/lib/admin/e2-compute-config";
 import {
   fetchE1Catalog,
   type E1BundleDiscount,
@@ -648,7 +649,17 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const mediaSeq = useRef(0);
   const [taskDrawer, setTaskDrawer] = useState(false);
   const [editTaskId, setEditTaskId] = useState<string | null>(null);
-  const [taskForm, setTaskForm] = useState<{ n: string; price: string; req: string; unit: string; sat: string; taskClass: string; model: string; minReward: string; maxReward: string; minVRAM: string; killInit: string }>({ n: "", price: "", req: "", unit: "", sat: "", taskClass: "", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "" });
+  const emptyTaskForm = { n: "", price: "", req: "", unit: "", sat: "", taskClass: "", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "", selectionWeight: "1", expectedDurationMinSec: "18", expectedDurationMaxSec: "18", executionTimeoutSec: "", runtimeKey: "", validatorKey: "", workloadConfigJson: "" };
+  const [taskForm, setTaskForm] = useState(emptyTaskForm);
+  const taskComputeConfig = () => ({
+    selectionWeight: Number(taskForm.selectionWeight),
+    expectedDurationMinSec: Number(taskForm.expectedDurationMinSec),
+    expectedDurationMaxSec: Number(taskForm.expectedDurationMaxSec),
+    executionTimeoutSec: taskForm.executionTimeoutSec.trim() ? Number(taskForm.executionTimeoutSec) : undefined,
+    runtimeKey: taskForm.runtimeKey.trim() || undefined,
+    validatorKey: taskForm.validatorKey.trim() || undefined,
+    workloadConfigJson: taskForm.workloadConfigJson.trim() || undefined,
+  });
   const editedSku = editSkuId ? skus.find((sku) => sku.id === editSkuId) : undefined;
   const skuFormChanged = !editSkuId || !editedSku
     || summarizeSkuProposal(editedSku, attachSkuMedia(formToSku(form, editedSku), skuMedia)) !== null;
@@ -799,9 +810,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!taskForm.taskClass.trim() || !taskForm.model.trim() || !taskForm.minVRAM.trim()) return "请填写任务类型、代表模型和最低显存";
     const minR = Number(taskForm.minReward), maxR = Number(taskForm.maxReward);
     const minVram = Number(taskForm.minVRAM.replace(/GB$/i, "").trim());
-    if (!Number.isFinite(minR) || !Number.isFinite(maxR) || minR < 0 || maxR < minR) return "奖励范围有误：须 0 ≤ 最低奖励 ≤ 最高奖励";
+    if (![taskForm.minReward, taskForm.maxReward].every((value) => /^(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/.test(value.trim()))
+      || !Number.isFinite(minR) || !Number.isFinite(maxR) || minR < 0 || maxR < minR) return "奖励须为最多 6 位小数，且 0 ≤ 最低奖励 ≤ 最高奖励";
     if (!Number.isInteger(minVram) || minVram < 0) return "最低显存须为不小于 0 的整数（GB）";
-    return null;
+    if (![taskForm.selectionWeight, taskForm.expectedDurationMinSec, taskForm.expectedDurationMaxSec, taskForm.executionTimeoutSec || "1"].every((value) => /^\d+$/.test(value.trim()))) return "权重、预计时长和执行超时须填写整数";
+    return validateComputeTaskConfig(taskComputeConfig());
   };
   const rejectE2Mutation = () => {
     setToast("设备收益设置加载失败，本次没有提交");
@@ -809,7 +822,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   };
   const openAddTask = () => {
     if (!canMutateE2Tasks) return rejectE2Mutation();
-    setEditTaskId(null); setTaskForm({ n: "", price: "", req: "", unit: "", sat: "", taskClass: "", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "" }); setTaskDrawer(true);
+    setEditTaskId(null); setTaskForm(emptyTaskForm); setTaskDrawer(true);
   };
   // 编辑任务:把任务字段回填到抽屉全字段。
   const openEditTask = (t: OpsTask) => {
@@ -819,6 +832,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       taskClass: t.taskClass || "", model: t.model || "",
       minReward: t.minReward != null ? String(t.minReward) : "", maxReward: t.maxReward != null ? String(t.maxReward) : "",
       minVRAM: t.minVRAM || "", killInit: t.killInit || "",
+      selectionWeight: String(t.selectionWeight ?? 1),
+      expectedDurationMinSec: String(t.expectedDurationMinSec ?? TASK_DURATION_DEFAULTS[t.taskClass || ""] ?? 18),
+      expectedDurationMaxSec: String(t.expectedDurationMaxSec ?? TASK_DURATION_DEFAULTS[t.taskClass || ""] ?? 18),
+      executionTimeoutSec: t.executionTimeoutSec == null ? "" : String(t.executionTimeoutSec),
+      runtimeKey: t.runtimeKey || "", validatorKey: t.validatorKey || "", workloadConfigJson: t.workloadConfigJson || "",
     });
     setEditTaskId(t.id);
     setTaskDrawer(true);
@@ -1491,7 +1509,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           {/* #36 任务核心配置:taskClass / 代表模型 / 奖励区间 / 最低显存 / kill 初始态 */}
           <div className="grid g-2" style={{ gap: 12 }}>
             <label className="col" style={{ gap: 5 }}><span className="muted tiny">任务类型</span>
-              <select className="fld" value={taskForm.taskClass} onChange={(e) => setTaskForm({ ...taskForm, taskClass: e.target.value })}>
+              <select className="fld" value={taskForm.taskClass} onChange={(e) => setTaskForm({ ...taskForm, taskClass: e.target.value, ...(!editTaskId && TASK_DURATION_DEFAULTS[e.target.value] ? { expectedDurationMinSec: String(TASK_DURATION_DEFAULTS[e.target.value]), expectedDurationMaxSec: String(TASK_DURATION_DEFAULTS[e.target.value]) } : {}) })}>
                 <option value="">请选择任务类型</option>
                 {["IG", "VG", "LL", "FT", "EM", "SP"].map((c) => <option key={c} value={c}>{({IG:"图像生成",VG:"视频生成",LL:"大模型推理",FT:"模型微调",EM:"向量计算",SP:"语音处理"} as Record<string,string>)[c]}</option>)}
               </select>
@@ -1502,6 +1520,16 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             <label className="col" style={{ gap: 5 }}><span className="muted tiny">最低奖励（USDT）</span><input className="fld" type="number" value={taskForm.minReward} onChange={(e) => setTaskForm({ ...taskForm, minReward: e.target.value })} placeholder="0.80" /></label>
             <label className="col" style={{ gap: 5 }}><span className="muted tiny">最高奖励（USDT）</span><input className="fld" type="number" value={taskForm.maxReward} onChange={(e) => setTaskForm({ ...taskForm, maxReward: e.target.value })} placeholder="2.40" /></label>
           </div>
+          <div className="grid g-2" style={{ gap: 12 }}>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">抽选权重（1–1000000）</span><input className="fld" type="number" min={1} max={1000000} step={1} value={taskForm.selectionWeight} onChange={(e) => setTaskForm({ ...taskForm, selectionWeight: e.target.value })} /></label>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">执行超时（秒，可留空沿用）</span><input className="fld" type="number" min={1} max={172800} step={1} value={taskForm.executionTimeoutSec} onChange={(e) => setTaskForm({ ...taskForm, executionTimeoutSec: e.target.value })} /></label>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">预计最短时长（秒）</span><input className="fld" type="number" min={1} max={86400} step={1} value={taskForm.expectedDurationMinSec} onChange={(e) => setTaskForm({ ...taskForm, expectedDurationMinSec: e.target.value })} /></label>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">预计最长时长（秒）</span><input className="fld" type="number" min={1} max={86400} step={1} value={taskForm.expectedDurationMaxSec} onChange={(e) => setTaskForm({ ...taskForm, expectedDurationMaxSec: e.target.value })} /></label>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">执行器标识</span><input className="fld" maxLength={96} value={taskForm.runtimeKey} onChange={(e) => setTaskForm({ ...taskForm, runtimeKey: e.target.value })} /></label>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">独立校验器标识</span><input className="fld" maxLength={96} value={taskForm.validatorKey} onChange={(e) => setTaskForm({ ...taskForm, validatorKey: e.target.value })} /></label>
+          </div>
+          <label className="col" style={{ gap: 5 }}><span className="muted tiny">任务输入配置（JSON 对象，最多 16KB）</span><textarea className="fld" rows={4} value={taskForm.workloadConfigJson} onChange={(e) => setTaskForm({ ...taskForm, workloadConfigJson: e.target.value })} placeholder="留空沿用服务端配置" /></label>
+          <div className="tint tiny">预计时长只用于展示；排队不计运行时长。只有已安装且通过能力校验的执行器才可接单，填写标识不会安装执行器。配置仅影响新派任务。</div>
           <div className="grid g-2" style={{ gap: 12 }}>
             <label className="col" style={{ gap: 5 }}><span className="muted tiny">最低显存（GB）</span><input className="fld" type="number" min={0} step={1} value={taskForm.minVRAM.replace(/GB$/i, "")} onChange={(e) => setTaskForm({ ...taskForm, minVRAM: e.target.value })} placeholder="80" /></label>
             <label className="col" style={{ gap: 5 }}><span className="muted tiny">初始接单状态</span><div className="row wrap" style={{ gap: 6 }}>{["派发中", "已 kill", "限流中"].map((k) => <Chip key={k} tab sel={taskForm.killInit === k} onClick={() => setTaskForm({ ...taskForm, killInit: k })}>{k === "已 kill" ? "已停止接单" : k === "派发中" ? "正常接单" : "限量接单"}</Chip>)}</div></label>
@@ -1661,6 +1689,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 taskId: "", name: taskForm.n.trim(), price, unit: taskForm.unit, requirement: taskForm.req,
                 saturation: sat, status: "active", taskClass: taskForm.taskClass, model: taskForm.model.trim(),
                 minReward: minR, maxReward: maxR, minVram: taskForm.minVRAM.trim(), killInit: taskForm.killInit,
+                ...taskComputeConfig(),
               };
               await propose(ctx.toast, {
                 action: mc.name, obj: taskForm.n.trim(), before: "—", after: taskForm.n.trim() + " · taskClass=" + taskForm.taskClass,
@@ -1698,6 +1727,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 taskId: editTaskId, name: taskForm.n.trim(), price, unit: taskForm.unit, requirement: taskForm.req,
                 saturation: sat, status: currentTask.status, taskClass: taskForm.taskClass, model: taskForm.model.trim(),
                 minReward: minR, maxReward: maxR, minVram: taskForm.minVRAM.trim(), killInit: taskForm.killInit,
+                ...taskComputeConfig(),
               };
               await propose(ctx.toast, {
                 action: mc.name, obj: editTaskId, before: "编辑前任务", after: taskForm.n.trim(), type: def.type, amplifies: false,

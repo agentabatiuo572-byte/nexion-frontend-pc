@@ -53,7 +53,7 @@ function money(value: number) {
   return `$${value.toFixed(value >= 10 ? 0 : 2)}`;
 }
 function amount(value: number) {
-  return value.toFixed(5).replace(/\.?0+$/, "");
+  return value.toFixed(6).replace(/\.?0+$/, "");
 }
 
 const LIST_PAGE_SIZE = 6;   // 任务列表每页行数
@@ -256,7 +256,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
               return (
                 <div className="task" key={t.id}>
                   <span className={`ic ${k}`}><KindIcon k={k} /></span>
-                  <div className="nm">{nexGridBrandText(t.n)}<span className="pid">{t.id}</span></div>
+                  <div className="nm">{nexGridBrandText(t.n)}<span className="pid">{t.id}</span><small style={{ display: "block", color: "var(--ink-4)", marginTop: 4 }}>权重 {t.selectionWeight ?? 1} · 预计 {t.expectedDurationMinSec ?? "—"}–{t.expectedDurationMaxSec ?? "—"} 秒{t.executionTimeoutSec == null ? "" : ` · 超时 ${t.executionTimeoutSec} 秒`}{t.runtimeKey ? ` · ${t.runtimeKey}` : ""}{t.validatorKey ? ` / ${t.validatorKey}` : ""}</small></div>
                   <div className="price">${t.price.toFixed(2)}<small>{taskUnitText(t.unit)}</small></div>
                   <span className={`req ${locked ? "lock" : "open"}`}>{locked && <LockMini />}{reqLabel}</span>
                   <div className="sat">

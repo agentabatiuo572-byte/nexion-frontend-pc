@@ -1,4 +1,6 @@
-export interface OpsTask {
+import type { ComputeTaskConfig } from "./e2-compute-config";
+
+export interface OpsTask extends ComputeTaskConfig {
   id: string;
   n: string;
   price: number;

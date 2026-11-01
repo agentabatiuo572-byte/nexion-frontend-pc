@@ -103,8 +103,8 @@ test("E2 rejects malformed config envelopes without deadlocking an empty but rea
   assert.match(view, /current && isE2ConfigMutation\(current\.op\) && !canMutateE2/);
 });
 
-test("E2 preserves five-decimal micro-reward precision", () => {
-  assert.match(e2, /toFixed\(5\)/);
+test("E2 preserves six-decimal micro-reward precision", () => {
+  assert.match(e2, /toFixed\(6\)/);
 });
 
 test("E2 loads every server page instead of silently truncating the task catalog", () => {
