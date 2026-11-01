@@ -2,13 +2,13 @@
 
 日期：2026-11-01；TEST 进度更新：2026-11-02（现场回执使用 UTC）。依据：本聊天用户批准的《设备算力任务优化计划书：随机派单、Redis 运行态、RocketMQ 可靠事件、分钟批量结算》，以及同日后发决定“先满足效率，暂不考虑可靠事件要求”。本规格适用于正式后端、管理端及 App 共用 H5 页面；H5 Lite 分支仍独立维护、发布。
 
-状态：TEST已发布backend446/9eae08a0、App366/128ede89和PC280。App366于2026-11-01T20:19:39Z完成正常发布和任务恢复，后端PID1004534未重启；普通当前作业、无障碍名称、最近完成chip及Home当前作业均实际复验为产品名称Embedding，无内部执行器标识或普通任务编号。首轮5项ISSUED/模型OOM/RECOVERY及暂停均保留为历史；19:49:56Z快照73项VERIFIED=73分摊、4个USDT批次共1500微单位，独立资金复核3382项字段断言通过、0异常，随后19:56:08Z已达237任务/10批次4785微单位。两种真实输入、运行/完成秒数、PENDING/POSTED历史和批次已有实景证据，540秒资源窗口0新增OOM且20%余量保持；该窗口在正常前端维护后另起，不拼接计时。正UVT实景、2小时/24小时长稳仍PENDING，不能把短窗口成功当作全量验收。
+既有业务发布基线（本批增量见第9节）：TEST已发布backend446/9eae08a0、App366/128ede89和PC280。App366于2026-11-01T20:19:39Z完成正常发布和任务恢复，后端PID1004534未重启；普通当前作业、无障碍名称、最近完成chip及Home当前作业均实际复验为产品名称Embedding，无内部执行器标识或普通任务编号。首轮5项ISSUED/模型OOM/RECOVERY及暂停均保留为历史；19:49:56Z快照73项VERIFIED=73分摊、4个USDT批次共1500微单位，独立资金复核3382项字段断言通过、0异常，随后19:56:08Z已达237任务/10批次4785微单位。两种真实输入、运行/完成秒数、PENDING/POSTED历史和批次已有实景证据，540秒资源窗口0新增OOM且20%余量保持；该窗口在正常前端维护后另起，不拼接计时。正UVT实景、2小时/24小时长稳仍PENDING，不能把短窗口成功当作全量验收。
 
 ## 1. 边界与权威
 
 - 管理能力为 1000 个账号、每账号最多 6 个权益槽，共 6000 槽。权益槽数量不等于真实推理并发；现有 TEST 单机真实执行上限为 6，按资源预算调度，共用一个执行引擎，不新增分布式算力池。
-- TEST 当前只承认已部署、可真实计算并独立验证的 BGE 执行能力。六类任务配置可维护，不代表六类执行器均已安装。未安装、能力不符、禁用、暂停、kill 或无资格的候选不得派发；不能用计时器、Mock 或固定成功替代真实执行。
-- 任务、收益、钱包、凭证、配置版本均由服务端决定。App/H5 只读取，不提供领取、完成、领奖或写收益动作。预计进度达到 100% 不触发任何资金或任务状态迁移。
+- 此前 V2 业务上线仅具备 BGE 执行能力；本批五类新云端模型服务已实跑独立校验，但新业务后端尚未部署，接入和验收以第9节分别记录。六类任务配置可维护，不代表相应模型已安装或业务已启用。未安装、能力不符、禁用、暂停、kill 或无资格的候选不得派发；不能用计时器、Mock 或固定成功替代真实执行。
+- 任务、收益、钱包、凭证、配置版本均由服务端决定。普通任务展示和 H5 只读取；本批 Android 本机执行入口见第9.3节，不能由客户端直接写收益。预计进度达到 100% 不触发任何资金或任务状态迁移。
 - Redis 是可重建实时运行态；RocketMQ 保存生命周期事件；MySQL 保存任务、收益、钱包增量、批次与资金凭证；MinIO 保存产物。不得在 Redis/MQ 放全量产物、账号凭据或秘密。
 - 本轮优先效率，复用 TEST Broker 既有 `ASYNC_FLUSH` 与 72 小时保留，不修改 Broker；`SYNC_FLUSH`、7 天保留及强制关闭清理等可靠性增强延期，不作为 v2 启用门禁（`strictDurability=false` 默认）。保留 MQ 发送确认、重复保护与 DB 唯一约束；异步刷盘确认不代表已物理落盘，不能宣称断电绝对不丢或超过保留期仍能完整恢复。
 - 保留原设备及账号资格、E3 能力调整、每日 UVT 唯一性和 v1 UNKNOWN 恢复预算。新旧引擎不得对同设备双派，回滚停止新 v2 派单但继续收敛已有 v2。
@@ -218,3 +218,125 @@ App366现场名称验收：`APP366-NAMES-ACCEPTANCE.json`独立通过当前stage
 此次维护正常排空后，以专用兼容归档保留旧3c050回执原字节及同inode，实际只读plan、archive及new05 enter/admit全exit0（`APP366-ARCHIVE-PLAN.json`、`APP366-ARCHIVE-ENTER-ADMIT.json`）；五项必要故障验证与根/独立复核分别留证。新CI周期a64e0dc84dc446eaa616926b4d2aa509正常恢复原ad2预算、CI1GiB和原六模型身份/限额，未改写旧回执冒充新decoded。`APP366-PUBLICATION-STATUS.json`记录native366、后端未重启、worker1068871/observer1068906正常恢复；此前观察六文件完整归档至window-before-app366-20261101，新2h/24h窗口从20:19:38Z重新开始，仍未通过长稳验收。
 
 截至本节证据截止点，首次可信完成、两种输入真实执行、分钟USDT入账及五设备继续接单已有短窗口证据；正UVT收益实景、20%余量下2小时持续与24小时长稳仍PENDING。1209保持停用，不能自动重新激活以凑六路；1000账号/6000逻辑槽协议负载与真实执行并发仍分开报告。后续只按新的真实回执追加结论。
+
+## 9. 2026-11-02 增量：六类真实执行与手机本机 EM
+
+本节是本批实现合同。五项新云端配置的 E2/A2 审批与回读、五类真实模型执行/独立校验、手机 ARM 整模型预验已有本批证据；完整派发、分钟资金与长稳验收仍为 **PENDING**。多模态模型服务已在 TEST 就绪，本批新业务后端和正式 Android App 尚未部署。第 1、5 节旧版“App 仅只读”的适用范围由本节的原生手机入口更新；H5、普通任务展示和钱包读取仍只读。第 1 节“仅 BGE 已部署”以及第 8 节历史发布、测试数量和短窗口结论均属于此前版本，不能作为本批六类或手机端到端通过的证据。
+
+### 9.1 真实模型及可观察产物
+
+| 类别/执行位置 | 真实模型与冻结版本 | runtimeKey / validatorKey（必须相同） | 必须完成的工作及产物 |
+|---|---|---|---|
+| IG / CLOUD | `nota-ai/bk-sdm-tiny`，`0364108e53b7f7f4d2585e817a0b7a83dc261cfa` | `bk-sdm-tiny-image-v1` | T4 上真实扩散生成 PNG；核任务绑定、像素内容、尺寸、摘要及独立模型重算 |
+| VG / CLOUD | 同一正式 BK-SDM 权重版本，Text2Video-Zero 流程 | `bk-sdm-tiny-video-v1` | 生成有时序变化的多帧 MP4；独立解码、帧数/帧率/内容检查及模型重算，不接受静帧循环或修改扩展名 |
+| LL / CLOUD | `HuggingFaceTB/SmolLM2-135M-Instruct`，`12fd25f77366fa6b3b4b768ec3050bf629380bac` | `ll-smollm2-135m-instruct-v1` | CPU 真实 greedy token 生成；`tokens.json` 包含真实 token IDs、文本及输入/输出用量 |
+| FT / CLOUD | 同一 SmolLM2 135M 正式预训练基座及版本 | `ft-smollm2-135m-lora-v1` | CPU 真实反向传播、AdamW、LoRA 参数更新；`adapter.zip` 包含可加载 adapter 配置/权重及训练证据 |
+| EM / CLOUD | 现有 `BGE-M3` / `bge-m3:567m`，沿用任务冻结的实际 Ollama digest | `test-bge-m3-v1` | 保留 V2 的三个输入、3×1024 float32 向量和独立 BGE 校验；原最低显存 8GB 不变 |
+| SP / CLOUD | `openai/whisper-tiny`，`169d4a4341b33bc18d8881c4b69c2e104e1cc0af` | `sp-whisper-tiny-v1` | CPU 对真实 WAV 做识别；`transcript.json` 保存模型 token、文本、实际时间戳及音频摘要，可按公开参考文本计算 WER |
+| EM / PHONE | `sentence-transformers/all-MiniLM-L6-v2`，显示名 `all-MiniLM-L6-v2`，`1110a243fdf4706b3f48f1d95db1a4f5529b4d41` | `phone-minilm-wasm-v1` | 原生 App 的 Worker 内以 ONNX Runtime Web/WASM 执行 FP32 真实模型，masked mean pooling 后 L2 归一化；`embedding.f32` 为 2×384 little-endian float32，共 3072B；服务端独立 ONNX 重算 |
+
+上述模型如实显示其名称和规模，不冒充 70B、405B、Sora 或商业训练效果。FT 固定 LoRA rank=4、alpha=8、q_proj/v_proj、dropout=0，要求实际训练集 loss 下降、参数更新量非零、重新加载 adapter 后 loss 一致，并由独立进程重放；验证集 loss 如实记录，短训练不代表泛化质量提升。SP 使用公开的 Whisper 官方 `tests/jfk.flac` 语音样本，转换成 16kHz/mono/PCM16 WAV 后冻结转换产物 SHA256，不使用私有用户录音或纯音冒充识别。
+
+模型文件与依赖由后端 `scripts/compute_v2_image_video_models.json`、`compute_v2_text_audio_models.json`、`compute_v2_phone_embedding_models.json` 列出；安装 profile 由 `compute_v2_model_installations.json` 冻结类别、runtime、deviceKind、模型/版本、文件摘要、依赖、device 和 dtype。`modelDigest` 是该 profile 去掉 `modelDigest` 后 canonical sorted UTF-8 JSON 的 SHA256，不能用单个权重摘要替代。手机 ONNX 文件为约 90.4MB，权重 SHA256 为 `6fd5d72fe4589f189f8ebc006442dbb529bb7ce38f8082112682524616046452`；本批手机 profile digest 为 `sha256:4fd205f37776262f8e8d3224ce5a4ed0b19bd106129046da04322a6bd19b4562`。
+
+### 9.2 输入与安装资格
+
+- IG/VG：`prompt` 1–1000 字符，`width/height` 256–512 且为 64 的倍数，`steps` 8–32；VG 另有 `frames` 4–8、`fps` 1–16。
+- LL：`prompt` 1–2000 字符，实际输入最多 256 tokens；`maxNewTokens` 8–128，允许模型真实 EOS 提前结束。
+- FT：`trainingTexts` 2–8 条、每条 8–1024 字符；`evaluationText` 必须与训练文本不同；`maxSequenceLength` 32–128，`steps` 2–8，`learningRate` 0.0001–0.01。
+- SP：`audioPath` 是模型 snapshot 内的相对 WAV 引用，配 `audioSha256`、`language="english"`、`maxNewTokens` 16–128；音频 0.1–30 秒且非静音。可同时提供 `referenceText`、`maxWordErrorRate`（0–0.5），参考文本只用于验收质量，不能替代模型输出。
+- 手机 EM：仅 `inputIds`、`attentionMask`、`tokenTypeIds` 三个 2×N 整型矩阵；配置中的 base 输入为 2–120 tokens 且起始为 CLS（101），词表 ID 0–30521，mask/type 为 0/1，每条有效 mask 至少两个 token。签发新手机任务时，服务端复用 SecureRandom 在每行 CLS 后插入八个独立的 1000–30521 词表 ID，同时插入 mask=1/type=0，最终 N 不超过 128。完整实际挑战矩阵冻结进 manifest/inputHash 并同时发给真实 Worker 和独立 verifier，不在模型内部偷偷改输入。只换 seed 不能改变确定性 ONNX 计算，旧固定输入向量不得仅重绑任务摘要后用于新单。若未来增加可读文本，必须同时冻结其 tokenizer 映射，不能把任意文本与无关 token 混为同一输入。
+
+本批安装注册表的 IG/VG 默认 workload 采用已经实际复验的 `512×512/16 steps`；VG 为 `4 frames/4fps`。早期 `256×256/8 steps` 仅是此前真实模型跑通样本，其抽象画面不足以作为当前默认质量依据。E2 保存 `{}` 时仍由注册表展开实际 workload，不由预计 18/900 秒代替模型计算。
+
+`nexion.compute-v2.modal-runtime-registry-json` 是部署端的最多六个安装条目，每条包含 `taskClass/runtimeKey/modelName/modelRevision/modelDigest/deviceKind/ready/workload`。只有严格匹配固定模型、版本、类别及设备种类且 `ready=true` 的条目才能成为候选；runtime 与 validator 必须相同。空 E2 输入配置 `{}` 采用该安装条目的冻结默认 workload，非空配置必须满足对应类型合同；整个 workload UTF-8 最多 16KB。
+
+`deviceKind` 取 `CLOUD` 或 `PHONE`，属于安装注册信息，**不在 E2 表单、A2 task params 或 DeviceTaskUpsertRequest 中**。输入该字段不能安装模型或改变设备权限。五类新云端执行器均为 CLOUD；MiniLM 为 PHONE，云端 runner 不领取其排队任务，手机不领取云端任务。任务仍须通过正常 E2 配置审批、allowed-task-ids、状态/kill、设备权益及最低显存筛选，随后按权重抽选并冻结 E3 报价；注册表本身不授予权益。
+
+### 9.3 原生手机入口与恢复
+
+本批手机执行资格来自当前原生 APP 会话及其 installation、服务端当前绑定与 executionOwner，不能由请求指定任意 userId/deviceId/installationId。设备须为 OWNED 的 MOBILE/PHONE、已激活且有 server-canonical/PRODUCTION 校准，最近 120 秒心跳有效、电量至少 20%、网络可用、无暂停，并在真实模型 SHA 校验和 ONNX session 创建后上报本机 engine readiness。readiness 有效期 120 秒，授权运行心跳续期，退出后失效；填写 runtime 字符串或仅有电量/网络观测不构成模型就绪。
+
+正常APK/WGT仅携带ORT、Worker和许可证，90,405,214字节权重不进包；首次使用从固定官方HF HTTPS revision下载，按revision和SHA保存到App私有持久缓存，每次Worker仍核完整权重SHA后才加载ORT。HBuilderX 5.33与SM-A5760已实际完成首下载→私有保存→生产Worker推理199ms、完整进程重启后缓存命中（新增下载0字节）→推理202ms，两次完整产物分别独立Python ORT复算通过；199/202ms不是下载耗时。缓存路径实际为 `_doc/uniapp_save/<timestamp>.onnx`，经plus转换和renderjs文件URL送入Worker成功读取。下载中切后台后失败可能卡住准备标志的catch恢复P1已最小修代码，但后台失败→前台重试E2仍PENDING。调试壳缓存、正常云包、正式APK首次缓存及业务领取/结算分别验收，不能相互替代。
+
+手机同时加入全局 `device-ids` 和独立 `phone-device-ids` 才能执行。当前手机 1383 为真实 7GB 设备，手机 MiniLM 任务设置 `minVram=0`，服务端按真实 CPU runtime 资格派发；不将其内存伪报为 8GB，不降低或覆盖云端 BGE 的 8GB 门槛，不将手机登记成付费 fleet。手机 USDT 沿正常冻结报价及 VERIFIED 后分钟入账；不附加 CloudShare 付费每日 UVT。
+
+旧 v1 领取候选明确排除 `all-MiniLM-L6-v2`，防止该 minVram0 配置启用后被其他未 enrolled 手机或旧设备领取。此排除只作用于 v1 新领取的 chooseTask，不改变共享 mapper、V2 候选或已有在途任务；新 MiniLM 必须走手机 V2 身份绑定、真实本机执行和独立 ONNX 校验。
+
+新增普通 App bearer 入口 `/api/app/compute-v2/phone/{next,heartbeat,complete,receipt,exited}`。next 仅收 `runtimeKey/modelRevision/modelDigest/engineReady/modelSha256/enginePlatform`；其余请求以 taskNo/generation/claimToken 绑定当前 owner。complete 保留 proofNonce/inputHash/modelDigest/resultHash/resultArtifactBase64/proofTimestamp。最后一项时间戳可在重试时刷新，原 bundle、摘要、nonce 和冻结身份不能改变。
+
+客户端发 next 前保存 CLAIM_INTENT，开始真实计算前保存 COMPUTE_INTENT，发送完成前保存原完整 bundle。COMPUTE_INTENT 或 ACK 未知时先查原 receipt，不重算、不换任务/代际；只有 `COMPLETED` 且 taskNo/generation/inputHash/resultHash 一致才视为完成确认。后台、低电、断网或 Worker 失败时先实际终止 Worker，恢复可通信后携 `workerExited=true` 及退出原因确认原代际。服务端存在活跃校验或待确认完成事件时拒绝释放；其余中止记录为 FAILED/FENCED 和独立退出证据，再按同一 V2 EXITED 释放许可，不能记为完成或收益。手机退出证据由当前绑定 owner 提交，云端仍使用受信进程观察，不互相冒充。
+
+租约过期或校验失败后，receipt 在当前运行态仍精确匹配该 taskNo/generation、状态为 `FAILED/RECOVERING` 且没有待确认 VERIFIED 时返回 `state=FAILED`，`exitConfirmed` 仍只由真实 EXITED 证据决定。手机据此沿现有 `EXITING/WORKER_ERROR` 确认原 Worker 已退出，避免将已围栏任务无限重提 complete；新任务或新代际状态不得覆盖旧任务回执，staged/outgoing VERIFIED 的 MQ ACK 未知仍保留 `IN_PROGRESS`，已经 VERIFIED 的完成回执仍优先。此恢复路径的断网超过租约实景验收尚为 PENDING，编译通过不代表该业务流程已验收。
+
+### 9.4 资源与真实退出
+
+逻辑容量仍为 6000 槽、每账号最多六槽，服务器物理 permit 总数不超过六。当前部署方案复用单个共享 BGE 执行容器 1.5GiB、独立 BGE 校验容器 1.5GiB、多模态容器 7.5GiB（6GiB 工作池及 1.5GiB 开销），模型总承诺 10.5GiB，沿用原预算；整机 20% 内存余量仍以 host capacity 字节证据校验。不得为满足六类名称而驻留六份大模型。
+
+| 工作 | 执行准入成本 | 子进程/执行约束 |
+|---|---|---|
+| 云端 EM/BGE | 1536MiB、2 CPU threads，最多一个 EM permit | 执行和独立校验均 `num_thread=2,num_gpu=0`；同一 EM permit 保持到真实退出，计算与该单的独立校验按阶段运行 |
+| IG/VG | 每单 6144MiB、2 CPU threads | 正式权重在 T4/CUDA 执行；工作池仅容一个此类重任务 |
+| LL | 1536MiB、2 CPU threads | CPU，模型按需加载 |
+| FT | 2560MiB、2 CPU threads | CPU，实际训练及 adapter 加载，不以驻留时间替代工作 |
+| SP | 1024MiB、2 CPU threads | CPU，真实音频识别 |
+| 手机 EM | 本机执行对服务器准入成本为 0，仍占全局一个 permit | 手机 WASM 1 thread；独立服务端校验另占多模态工作池 512MiB/1 thread |
+
+资源策略须显式启用；服务器执行准入 CPU 合计上限为 6，多模态实际子进程 CPU 池上限为 4，配合单个 BGE 的执行/独立校验阶段控制活动推理线程。云端保持 FIFO，头任务资源不足时等待，不新增绕过计数或重抽；手机只 reserve 自己的绑定设备任务，独立于云端队首，但仍受全局 permit 与校验工作池限制。本批 IG/VG 512²/16 步整体模型复验已有资源观测：GPU 一秒采样峰值 6073MiB，modal 父 cgroup lifetime peak 6118756352B（约 5.70GiB），OOM 事件 0，MemAvailable 最低 17172692992B，高于当时 20% reserve。它只覆盖该模型复验窗口；新业务运行态的重轻任务推进、混合负载和持续余量仍待现场验证。
+
+新 `shared-bge-container-id`、`modal-container-id` 反映实际父容器身份。云端 V2 EM 回报共享 BGE CID 与独立 base validator CID；云端 V3 回报同一个 modal 父 CID，实际执行和校验必须是不同的新子进程；手机返回 `executionKind=PHONE` 并省略 Docker 计算身份。旧日志排空后才切换物理映射，不把停态旧 fleetN CID 当作真实执行身份。
+
+多模态服务按完整任务绑定单飞，执行、独立校验分别启动新进程。启动前持久化 intent，已有未知或失败记录不自动重算；校验首次冻结 bundle SHA，不允许另一个结果覆盖。正常或超时均须等待子进程实际退出，必要时 TERM/KILL 进程组并 wait，之后才归还本地预算。`/status` 中没有进程记录、没有 exitCode 或仅 activeProcesses 为空都不能证明实际退出。现有旧 UNKNOWN、钱包、任务和 journal 原证据继续保留。
+
+### 9.5 协议 3 与完成确权
+
+旧 EM 的 Manifest V2、原 f32 校验及原在途恢复继续兼容。新云端五类和手机 EM 使用 Manifest V3，冻结 `taskClass/runtimeKey/validatorKey/taskConfigId/revision/modelName/modelRevision/modelDigest/workload/seed/executionTimeoutSec`；inputHash 为该 manifest 字节摘要。worker/手机响应在原 taskType 之外返回 taskClass、协议版本、runtime/validator、真实模型/版本/摘要、workload、seed、配置版本及超时，并回填真实 taskNo/generation/inputHash。
+
+模型工作绑定八字段为 `taskNo,generation,inputHash,taskClass,runtimeKey,modelRevision,workload,seed`，按排序 UTF-8 JSON 计算 taskBindingHash。完成请求外形不变：`resultArtifactBase64` 是 bundle 原字节的 base64，bundle 包含模块 result 及真实 artifactBase64；resultHash 是 bundle 原字节 SHA256。先校类别/模型/输入绑定、大小、产物名/媒体类型/摘要，再做独立模型验证；bundle 上限 32MiB，手机固定 3072B 原向量，拒绝跨任务/代际/类型、篡改、截断及伪造。
+
+后端仅以独立 backend-only validator token 调用 loopback `/verify`，RPC 严格传 `task` 八字段、`bundleBase64` 原字节和冻结 `executionTimeoutSec`。不得先用 Jackson 重编码 bundle 再由 Python 重编码计算摘要，以免浮点表示差异改变合法 FT 结果。校验进程退出成功后返回 verified/taskBindingHash/resultHash；HTTP 请求时限为冻结执行超时加 120 秒，不持 SQL 锁等待模型。
+
+独立校验成功后仍调用原 verifiedComplete，存 MinIO `.bundle.json`（旧 V2 EM 仍 `.f32`），MQ/Redis 仅传引用与摘要。资金事件和 TaskSnapshot 仍为 schema 2，不复制钱包、分摊、去重或分钟 SQL 流程。阶段/预计时长不产生收益；只有 VERIFIED 进入待结算，真实分钟批次才进入已到账。
+
+### 9.6 正常 E2/A2 配置与实际审批
+
+本批五项新云端配置已沿 E2“收益&用户任务管理 → 任务列表 → 新增任务”填写正式类型、真实模型、最低显存、奖励与调度字段，提交业务确认及理由，再由 **superadmin 发起、suadmin 审批**。每项均在 A2 显示“已执行”后重新进入 E2，正常打开编辑抽屉完整回读并关闭，未另存修改。新增提案共用空 create target 锁，因此采用逐项提交→不同管理员批准→回读→下一项的正常流程；此前被该锁拦截的 VG 没有落库，锁释放后才正常重新提交。没有借 SQL 写入或隐藏 API 绕审批；旧待审批票未动。后续新增/修改仍按同一业务权限与 maker/checker 规则办理。
+
+实际 task command params 为 `name,price,unit,requirement,saturation,status,taskClass,model,minReward,maxReward,minVram,killInit,selectionWeight,expectedDurationMinSec,expectedDurationMaxSec,executionTimeoutSec,runtimeKey,validatorKey,workloadConfigJson`；update 另带 taskId。`workloadConfigJson` 是 JSON **字符串**，不是嵌套对象；PC 内部 `minVRAM` 映射到提交字段 `minVram`。modelRevision/modelDigest/deviceKind/ready 来自部署注册表，不是 E2 可授予字段。
+
+以下为已批准且完整回读的实际云端配置。代表模型及 runtime/validator 与 9.1 相同；IG/VG 为 `nota-ai/bk-sdm-tiny`，LL/FT 为 `HuggingFaceTB/SmolLM2-135M-Instruct`，SP 为 `openai/whisper-tiny`。
+
+| 任务 / taskId | A2 已执行票 | 保留原类报价 min–max（USDT/job） / price | minVram（GB） | 固定预计秒数 / 超时秒数 |
+|---|---|---|---:|---|
+| IG 图像生成 / `TK-1793572436690` | `WO-261101222208529-632` | 0.0001–0.045 / 0.045 | 12 | 18–18 / 3600 |
+| VG 视频生成 / `TK-1793572618490` | `WO-261101223602102-268` | 0.45–1.8 / 1.8 | 48 | 900–900 / 3600 |
+| LL 文本推理 / `TK-1793572684179` | `WO-261101223740659-515` | 0.00005–0.85 / 0.85 | 80 | 12–12 / 3600 |
+| FT 模型微调 / `TK-1793572862945` | `WO-261101224039984-75` | 0.06–0.42 / 0.42 | 48 | 1800–1800 / 3600 |
+| SP 语音处理 / `TK-1793573065179` | `WO-261101224402243-794` | 0.00005–0.072 / 0.072 | 8 | 30–30 / 3600 |
+
+五项共同配置为 `unit=/job`、权益 `S1+`、饱和度 35%、`status=active`、正常接单（`killInit=派发中`）、`selectionWeight=1`、`workloadConfigJson="{}"`；runtimeKey 与 validatorKey 均为各自 9.1 的同值。最低显存保留原类别 12/48/80/48/8GB，没有统一降为 8GB。预计秒数只是固定显示范围，实际模型完成和退出取真实进程与产物。目录 price 的既有四位小数显示限制不改变六位奖励报价。证据为本批 `run/{IG632,VG268,LL515,FT75,SP794}-A2-approved.jpg`、对应 `-E2-edit-readback.jpg` 和 `-E2-readback.txt`。
+
+手机配置尚未创建 A2 提案或批准，没有新 taskId。拟定名称“手机向量计算”、EM / `all-MiniLM-L6-v2` / `phone-minilm-wasm-v1`，报价 0.00002–0.00003 USDT/job、price=0.00003，手机+、minVram=0、权重1、饱和度35%、预计5–5秒、超时300秒、输入 `{}`；须先部署新业务后端并确认旧引擎排除手机任务，再按正常 E2/A2 流程办理。此计划不得写成已启用手机派单。
+
+`{}` 仅在安装条目已保存符合 9.2 的真实默认输入时使用，签发时必须展开为完整冻结 workload。后续价格、权益、时长和派发状态修改仍需正常 E2/A2；旧停用1209不因本批配置恢复。新 allowlist 尚未实施：本轮云端拟加入上述五项，以及旧 BGE 中仅短文本 `TK-1793552869608`；手机须取得正常批准的新ID后单独纳入。已有 A2 批准不等于实际派发、执行或收益入账。
+
+### 9.7 本批验收状态
+
+本批 TEST-PLAN C80–C98、FLOW05/06 的完整业务链路仍保持 **PENDING**，以下已取得的分阶段证据分别记账：
+
+| 环节 | 本批实际状态与边界 |
+|---|---|
+| 五项云端 E2/A2 | 上述五票均由不同管理员正常批准，新ID/报价/权益/VRAM/调度字段已在 E2 完整回读；手机配置未创建或批准 |
+| 云端五类整体模型 | TEST modal HTTP `execute→verify→status` 实跑 IG/VG/LL/FT/SP，每类执行和独立校验均为不同新进程且 exit0；未通过业务派单或资金入口 |
+| IG/VG 当前质量 | 512²/16 steps 再验通过；IG PNG 可辨，VG 4帧/4fps可完整解码且帧间有变化。已查看图片和四帧拼图；浏览器播放器实播尚未完成 |
+| LL/FT/SP 实际输出 | LL真实生成22 tokens；FT两步训练230400个LoRA参数，loss 4.313211→4.064163、更新量非零、adapter重载与独立重复训练通过；SP对11秒公开JFK音频识别，WER0且独立复算通过 |
+| 手机 ARM 整模型及缓存预验 | SM-A5760/Android16/WebView156、HBuilderX5.33运行生产Worker，2×16挑战输入产出3072B；独立Python ORT误差9.6857548×10⁻⁸、最小余弦1，旧向量重绑被真实数值比较拒绝。另完成固定URL首次下载、私有保存及完整重启cache命中（新增下载0字节），199/202ms均为推理且两次独立复算通过。catch恢复P1代码已修，后台下载失败重试、正常云包/正式APK、业务领取/结算及模型增量RAM峰值仍待实景 |
+| 新版本发布 | backend449在根卷空闲15GiB门禁失败，未checkout源码；不是本批源码编译失败。原维护已恢复/归档，未绕marker或降低门禁；后续backend450/App367及新业务后端、正式Android App均尚未完成部署 |
+| 本批资金基线 | 新路径before于2026-11-01T22:58:01.847470Z通过只读一致性事务采集，raw SHA `848d95bce0d53c96673aac805a698a2c201df58abd99e2527ee8554f7856bd05`；仅有基线/配置/设备/E3/daily，未执行after或新经济任务 |
+| 全业务与长稳 | 正常六类派发→真实产物→独立验真→VERIFIED/MQ/分钟SQL→钱包/分摊/流水逐字段对账、正式手机下一单、断网恢复、混合资源推进、2小时/24小时长稳均待新版本与实际证据 |
+
+五类模型原始回执见本批 `run/model-evidence/whole-model-e2e-results.json`，质量复验见 `quality-e2e-results.json`，手机见 `PHONE-ARM-EM-EVIDENCE.json` 及 `run/INDEPENDENT-BACKEND-REVIEW.md` 补记。生产 compile/package、静态审阅、HBuilder真机预验与模型服务实跑都只证明相应环节，不能替代完整业务终点；早期历史窗口不拼入本批长稳。
+
+必需证据包括：正常 E2/A2 保存及重新进入回读；六类真实产物和模型摘要；手机 1383 当前 owner/绑定/心跳/电量/网络及真实 WASM 输出；合法候选等权/不等权抽选及快照不重抽；错类型、错模型/摘要、跨任务/代际、假产物和普通用户越权被拒；实际执行/验证超时、ACK 未知及子进程真实退出；Redis→MQ→一分钟 SQL 批次/分摊/钱包逐字段一致；正常 App/PC 页面操作；资源余量与无新增 OOM。6000 逻辑槽负载、真实物理并发、2 小时和 24 小时各自独立记账，不拼接历史窗口或将未运行标成通过。只开展 E2E 和完整业务链路验证，不新增或运行单元测试/独立集成套件；临时验证源码按工作区规则清理，仅保留必要回执。
+
+手机反重放的整模型正反样本已实际通过：ARM新挑战向量可通过独立ORT，重绑旧3072B向量被拒。仍须在正式App业务流程核新单确由服务端签发两行各八token挑战、重复 next/ACK 恢复沿原冻结矩阵、旧向量被拒且不入账、新向量合法入账；这一全链路及断网超过租约的恢复/真实退出验收仍为 PENDING，不能用 SecureRandom 或编译成功代替。
