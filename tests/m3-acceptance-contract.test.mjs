@@ -742,7 +742,7 @@ test("M3 active surface excludes retired human labels while preserving client de
   const link = f.one(node => ts.isConditionalExpression(node) && node.getText(f.file).includes("客户端目标：") && node.condition.getText(f.file) === 'message.targetAvailability==="UNAVAILABLE"');
   for (const [type, expected] of [["HOME", "首页"], ["WALLET", "钱包"], ["SUPPORT", "在线客服"]]) assert.equal(f.evaluate(link, { message: { linkTarget: { type } } }), `客户端目标：${expected}`);
   assert.equal(f.evaluate(link, { message: { targetAvailability: "UNAVAILABLE", linkTarget: { type: "SUPPORT" } } }), "目标页面已不可用");
-  for (const copy of ["将这段服务会话标记为已解决，不改变客户的专属客服。客户再次发消息时，会继续当前对话。", "正在核对当前专属客服归属…", "该客户由当前专属客服服务，本账号仅可审阅。", "待分配专属客服，尚无绑定客户的维护状态。", "重新核对当前专属客服归属，继续当前对话"]) assert.ok(f.source.includes(copy), copy);
+  for (const copy of ["将这段服务会话标记为已解决，不改变客户的专属客服。客户再次发消息时，会继续当前对话。", "客户归属核对失败：", "该客户由当前专属客服服务，本账号仅可审阅。", "待分配专属客服，尚无绑定客户的维护状态。", "重新核对当前专属客服归属，继续当前对话"]) assert.ok(f.source.includes(copy), copy);
   assert.match(f.source, /qualificationUnknown \? \[\] : all\.filter/);
   assert.match(f.source, /const writable = !qualificationUnknown && !recoveryBlocksTarget && canWriteM3/);
   // An account without its own dedicated customers (e.g. a supervisor without a seat) cannot start a contact.
