@@ -16,6 +16,7 @@ import "./m1-personal-workbench.css";
 import { SupportBulkComposer } from "./support-bulk-composer";
 import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
 import { SelfAvatarEditor } from "./self-avatar-editor";
+import { SelfInviteCodeBar } from "./m1-invite-code";
 import type { SelfAvatarSnapshot } from "@/lib/admin/a1-client";
 import type { MCtx } from "./types";
 import { PaymentSecurityCard } from "@/app/components/payment-security/payment-security-card";
@@ -384,6 +385,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
           </div>
         </div>
         {primarySummary}
+        <SelfInviteCodeBar key={sessionKey} toast={ctx.toast} />
         {primarySummary && <h3 className="sa-personal-tasks-title">今日服务待办</h3>}
         {overviewError && <div className="s5a-alert" role="alert">{overviewError}<button type="button" onClick={() => setRowsRefresh((value) => value + 1)}><RefreshCw size={15} />重试</button></div>}
         <div className="s5a-metrics">

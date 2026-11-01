@@ -1,0 +1,121 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import qrcode from "qrcode-generator";
+import { ArrowDownToLine, Copy, Link2, RefreshCw } from "lucide-react";
+import { supportGroupClient, type InviteCodeView } from "@/lib/admin/support-group-client";
+import { SupportClientError, isIndeterminateSupportError } from "@/lib/admin/m-support-client";
+import "./m1-invite-code.css";
+
+function errorText(error: unknown): string {
+  if (isIndeterminateSupportError(error)) return "操作结果待确认，请稍后再点一次，会按原操作核对。";
+  if (error instanceof SupportClientError) {
+    if (error.status === 401) return "登录已失效，请重新登录后重试。";
+    if (error.status === 403) return "当前账号没有有效的个人服务资格，不能管理邀请码。";
+    if (error.status === 409) return "邀请码刚被修改过，已重新读取，请核对后再操作。";
+  }
+  return "暂时无法完成操作，请检查连接后重试。";
+}
+
+// Scanners need dark modules on a light quiet zone whatever the console theme is.
+function qrPng(link: string): string {
+  const qr = qrcode(0, "M");
+  qr.addData(link, "Byte");
+  qr.make();
+  const cell = 10, margin = 4, count = qr.getModuleCount(), size = (count + margin * 2) * cell;
+  const canvas = document.createElement("canvas");
+  canvas.width = size; canvas.height = size;
+  const g = canvas.getContext("2d")!;
+  g.fillStyle = "#FFFFFF"; g.fillRect(0, 0, size, size); g.fillStyle = "#000000";
+  for (let row = 0; row < count; row++) for (let col = 0; col < count; col++) if (qr.isDark(row, col)) g.fillRect((col + margin) * cell, (row + margin) * cell, cell, cell);
+  return canvas.toDataURL("image/png");
+}
+
+/** M 第 5 节：本人工作台「我的邀请码」。Remount (key) on actor change. */
+export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void }) {
+  const [view, setView] = useState<InviteCodeView | null>(null);
+  const [readFailed, setReadFailed] = useState(false);
+  const [reload, setReload] = useState(0);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  // One key per intended version, so a retry after an unknown result replays the same command.
+  const command = useRef<{ expectedVersion: number | null; key: string } | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    setReadFailed(false);
+    supportGroupClient.selfInviteCode(controller.signal)
+      .then(next => { if (!controller.signal.aborted) setView(next); })
+      .catch(() => { if (!controller.signal.aborted) { setView(null); setReadFailed(true); } });
+    return () => controller.abort();
+  }, [reload]);
+  const qr = useMemo(() => view?.link ? qrPng(view.link) : null, [view?.link]);
+
+  const issue = async () => {
+    if (busy || !view) return;
+    const expectedVersion = view.code === null ? null : view.version;
+    if (command.current?.expectedVersion !== expectedVersion) command.current = { expectedVersion, key: crypto.randomUUID() };
+    setBusy(true); setError("");
+    try {
+      const next = await supportGroupClient.issueSelfInviteCode(expectedVersion, command.current.key);
+      command.current = null; setView(next); setConfirming(false);
+      toast(expectedVersion === null ? "邀请码已生成。" : "邀请码已重置，旧码已失效。");
+    } catch (cause) {
+      if (cause instanceof SupportClientError && cause.status === 409 && !isIndeterminateSupportError(cause)) { command.current = null; setConfirming(false); setView(null); setReload(n => n + 1); }
+      setError(errorText(cause));
+    } finally { setBusy(false); }
+  };
+  const copy = async (value: string, label: string) => {
+    try { await navigator.clipboard.writeText(value); toast(`${label}已复制。`); }
+    catch { setError(`自动复制失败，请手动选择${label}复制。`); }
+  };
+  const saveQr = (code: string) => {
+    if (!qr) return;
+    const anchor = document.createElement("a");
+    anchor.href = qr; anchor.download = `客服邀请码-${code}.png`;
+    anchor.click();
+  };
+  const errorLine = error && <p className="m1-invite-error" role="alert">{error}</p>;
+
+  if (confirming && view?.code) return <section className="m1-invite m1-invite-confirming" aria-label="重置邀请码">
+    <div className="m1-invite-head"><h3>我的邀请码</h3><span className="m1-invite-mono">{view.code}</span></div>
+    <div className="m1-invite-confirm">
+      <h3>重置邀请码？</h3>
+      <p>旧码 {view.code} 会立即失效，之后填旧码注册会提示邀请码无效；已经绑定的客户不受影响。</p>
+      {errorLine}
+      <div className="m1-invite-actions">
+        <button type="button" className="m1-invite-btn" disabled={busy} onClick={() => { setConfirming(false); setError(""); }}>取消</button>
+        <button type="button" className="m1-invite-btn m1-invite-danger" disabled={busy} onClick={() => void issue()}>{busy ? "正在重置…" : "确认重置"}</button>
+      </div>
+    </div>
+  </section>;
+
+  return <section className="m1-invite" aria-label="我的邀请码">
+    <div className="m1-invite-title"><h3>我的邀请码</h3><p>新用户注册时填写，注册后由你接待</p></div>
+    {readFailed ? <>
+      <p className="m1-invite-note" role="alert">暂时无法读取邀请码，请重试。</p>
+      <button type="button" className="m1-invite-btn m1-invite-retry" onClick={() => setReload(n => n + 1)}>重试</button>
+    </> : !view ? <p className="m1-invite-note m1-invite-muted" role="status">正在读取邀请码…</p>
+      : view.code === null ? <>
+        <p className="m1-invite-note">生成后可以复制邀请码、链接或二维码发给新用户。</p>
+        <button type="button" className="m1-invite-primary" disabled={busy} onClick={() => void issue()}>{busy ? "正在生成…" : "生成邀请码"}</button>
+      </> : <>
+        <div className="m1-invite-box">
+          <div className="m1-invite-field"><span>邀请码</span><strong className="m1-invite-code">{view.code}</strong></div>
+          <button type="button" className="m1-invite-btn" onClick={() => void copy(view.code!, "邀请码")}><Copy size={15} aria-hidden="true" />复制</button>
+        </div>
+        {view.link && qr ? <>
+          <div className="m1-invite-box m1-invite-linkbox">
+            <div className="m1-invite-field"><span>邀请链接</span><span className="m1-invite-link" title={view.link}>{view.link}</span></div>
+            <button type="button" className="m1-invite-btn" onClick={() => void copy(view.link!, "邀请链接")}><Link2 size={15} aria-hidden="true" />复制链接</button>
+          </div>
+          <div className="m1-invite-qr">
+            <img src={qr} alt={`邀请二维码 ${view.code}`} width={56} height={56} />
+            <button type="button" className="m1-invite-btn" onClick={() => saveQr(view.code!)}><ArrowDownToLine size={15} aria-hidden="true" />保存二维码</button>
+          </div>
+        </> : <p className="m1-invite-note m1-invite-muted">分享地址未配置，暂时只能复制邀请码</p>}
+        <button type="button" className="m1-invite-reset" onClick={() => { setError(""); setConfirming(true); }}><RefreshCw size={15} aria-hidden="true" />重置</button>
+      </>}
+    {errorLine}
+  </section>;
+}
