@@ -3,8 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
-import { accountVersion, canReplayGroupCommand, groupPendingCommands, observedVersion, supportGroupClient, type GroupPendingRecord, type QualificationKind, type QualificationStatus, type SupportGroup, type SupportGroupDirectory, type SupportGroupDetail, type SupportGroupMember, type SupportQualifications } from "@/lib/admin/support-group-client";
-import { isIndeterminateSupportError } from "@/lib/admin/m-support-client";
+import { accountVersion, canReplayGroupCommand, commandRejected, groupPendingCommands, isInvitePending, observedVersion, supportGroupClient, type GroupPendingRecord, type InviteCodeView, type InviteRevokeRecord, type QualificationKind, type QualificationStatus, type SupportGroup, type SupportGroupDirectory, type SupportGroupDetail, type SupportGroupMember, type SupportQualifications } from "@/lib/admin/support-group-client";
 import { Btn, Modal } from "../design-kit";
 import { HDSelect } from "./hd-ui";
 import { compactSupportBoardValue } from "./support-leaderboard";
@@ -23,6 +22,7 @@ export function canManageSupportQualifications(session: { role: string; authorit
 function expiredText() { return "原操作超过回查保护期，请先核对是否已创建或执行，不能直接重发。原命令和理由仍保留。"; }
 const QUERY_PENDING_TEXT = "原操作尚未确认，不能重复提交；请先查询原操作。原命令、资料和理由保持不变。";
 type Intent = GroupPendingRecord["intent"];
+type InviteRow = { adminId: string; name: string; accountStatus: number; inviteCode?: { code: string | null; version: number | null } | null };
 type Draft = { actorStamp: string; kind: "CREATE" | "RENAME" | "STATUS" | "OWNER" | "MEMBER"; name: string; ownerId: string; targetGroupId: string; status: "ENABLED" | "DISABLED" | "ARCHIVED"; reason: string; member?: SupportGroupMember; source?: SupportGroup; target?: SupportGroup; group?: SupportGroup; stale?: boolean };
 
 /** Root supplies server-resolved mode; role names never manufacture group scope. */
@@ -39,7 +39,8 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
   const pending = pendingRecord?.actorId === session?.adminId ? pendingRecord : undefined;
   const [candidatePage, setCandidatePage] = useState(1), [candidateScope, setCandidateScope] = useState<string>(mode === "ALL" ? "global" : initialGroupId ?? ""), [candidateId, setCandidateId] = useState("");
   const [candidates, setCandidates] = useState<Awaited<ReturnType<typeof supportGroupClient.candidates>>>();
-  const [inviteRevoke, setInviteRevoke] = useState<{ adminId: string; reason: string; command?: { version: number; key: string } }>(), [inviteBusy, setInviteBusy] = useState(false), [inviteError, setInviteError] = useState("");
+  const [inviteRevoke, setInviteRevoke] = useState<{ adminId: string; reason: string }>(), [inviteBusy, setInviteBusy] = useState(false), [inviteError, setInviteError] = useState(""), [, setInviteStoreTick] = useState(0), inviteGen = useRef(0);
+  const [unassigned, setUnassigned] = useState<{ key: string; total: number; rows: Array<InviteRow & { inviteCode: InviteCodeView | null }> }>(), [unassignedPage, setUnassignedPage] = useState(1), [unassignedReload, setUnassignedReload] = useState(0), [unassignedError, setUnassignedError] = useState("");
   const readKey = `${identity}|${mode}|${selectedId ?? "directory"}|${refresh}`, liveKey = useRef(readKey); liveKey.current = allowed ? readKey : "";
   const previewAbort = useRef<AbortController | null>(null), previewGeneration = useRef(0), writeAbort = useRef<AbortController | null>(null);
   const directoryReady = allowed && groups?.key === `${identity}|${mode}|${refresh}`;
@@ -47,7 +48,7 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
   const writeAllowed = hasWritePermission && directoryReady && (!selectedId || !!currentDetail);
   const closeDraft = () => { previewGeneration.current++; previewAbort.current?.abort(); setDraft(undefined); setCandidates(undefined); setCandidateId(""); };
   const revoke = () => { setGroups(undefined); setDetail(undefined); setNames(undefined); setSupervisors([]); setCandidates(undefined); closeDraft(); setSelectedId(undefined); };
-  useEffect(() => { revoke(); setSaving(false); setPreviewBusy(false); setSelectedId(initialGroupId); setPage(1); setError(""); setNotice(""); setPending(groupPendingCommands.list().find(r => r.actorId === session?.adminId && r.intent.kind !== "QUALIFICATION")); return () => { previewGeneration.current++; previewAbort.current?.abort(); writeAbort.current?.abort(); }; }, [identity, mode, initialGroupId]);
+  useEffect(() => { revoke(); setSaving(false); setPreviewBusy(false); setSelectedId(initialGroupId); setPage(1); setError(""); setNotice(""); setPending(groupPendingCommands.list().find((r): r is GroupPendingRecord => !isInvitePending(r) && r.actorId === session?.adminId && r.intent.kind !== "QUALIFICATION")); return () => { previewGeneration.current++; previewAbort.current?.abort(); writeAbort.current?.abort(); }; }, [identity, mode, initialGroupId]);
   useEffect(() => {
     const controller = new AbortController(); setLoading(allowed); setError(""); setGroups(undefined); setDetail(undefined); setNames(undefined);
     if (allowed) void Promise.all([supportGroupClient.groups(controller.signal), selectedId ? supportGroupClient.detail(selectedId, controller.signal) : Promise.resolve(undefined)]).then(([groupRows, nextDetail]) => {
@@ -92,7 +93,7 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
     catch (cause) { if (authStamp() === identity && !controller.signal.aborted) { if ([401,403].includes(errorStatus(cause))) revoke(); setError("无法确认原操作，命令和理由仍保留。" + (canReplayGroupCommand(saved) ? errorText(cause) : expiredText())); } } finally { if (authStamp() === identity) setSaving(false); } };
   const submit = async () => {
     if (saving || !writeAllowed || previewBusy) return; let record = pending, createdThisAttempt = false;
-    const previous = record ?? groupPendingCommands.list().find(r => r.actorId === session?.adminId && r.intent.kind !== "QUALIFICATION");
+    const previous = record ?? groupPendingCommands.list().find((r): r is GroupPendingRecord => !isInvitePending(r) && r.actorId === session?.adminId && r.intent.kind !== "QUALIFICATION");
     if (previous) { setPending(previous); setError(QUERY_PENDING_TEXT); return; }
     if (!record) {
       if (!draft || draft.stale || !reasonValid(draft.reason)) return; let intent: Intent; const why = draft.reason.trim();
@@ -100,7 +101,7 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
       else if (draft.kind === "MEMBER") { if (!draft.member || draft.member.currentMember.state === "UNKNOWN" || draft.member.currentMember.groupId === (draft.targetGroupId || null) || draft.member.currentMember.groupId && !draft.source || draft.targetGroupId && !draft.target || mode === "MANAGED" && (!draft.source || !draft.target)) return; intent = { kind: "MEMBER", targetId: draft.member.adminId, payload: { targetGroupId: draft.targetGroupId || null, expectedMemberVersion: observedVersion(draft.member.currentMember), sourceGroupVersion: draft.source?.version ?? null, targetGroupVersion: draft.target?.version ?? null, reason: why } }; }
       else { if (!draft.group) return; if (draft.kind === "RENAME") intent = { kind: "RENAME", targetId: draft.group.id, payload: { name: draft.name.trim(), expectedVersion: draft.group.version, reason: why } }; else if (draft.kind === "OWNER") { if (mode !== "ALL" || !supervisors.some(s => s.adminId === draft.ownerId) || draft.ownerId === draft.group.supervisorAdminId) return; intent = { kind: "OWNER", targetId: draft.group.id, payload: { supervisorAdminId: draft.ownerId, expectedVersion: draft.group.version, reason: why } }; } else intent = { kind: "STATUS", targetId: draft.group.id, payload: { status: draft.status, expectedVersion: draft.group.version, reason: why } }; }
       const commandKey = crypto.randomUUID(), fingerprint = `group-management:${session!.adminId}`; groupPendingCommands.remember(fingerprint, commandKey, { actorId: session!.adminId, intent, label: draft.kind === "MEMBER" ? `调组 · ${draft.member?.name}` : `${draft.kind === "CREATE" ? "创建" : draft.kind === "RENAME" ? "重命名" : draft.kind === "OWNER" ? "移交负责人" : "调整状态"} · ${draft.name}` });
-      record = groupPendingCommands.list().find(r => r.commandKey === commandKey); if (!record) { setError("原命令无法保存，已停止提交。请恢复浏览器存储后重试。" ); return; } createdThisAttempt = true; setPending(record);
+      record = groupPendingCommands.list().find((r): r is GroupPendingRecord => !isInvitePending(r) && r.commandKey === commandKey); if (!record) { setError("原命令无法保存，已停止提交。请恢复浏览器存储后重试。" ); return; } createdThisAttempt = true; setPending(record);
     }
     if (!createdThisAttempt || !record) { setError(QUERY_PENDING_TEXT); return; }
     if (!groupPendingCommands.isDurablyStored(record.fingerprint, record.commandKey)) { setError("浏览器无法保存这次操作的记录，已停止提交。请检查浏览器设置后重试。" ); return; }
@@ -109,23 +110,87 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
       written = true; if (controller.signal.aborted || authStamp() !== identity) return; await readFacts(i, controller.signal); if (authStamp() !== identity || controller.signal.aborted) return; groupPendingCommands.forget(saved.fingerprint, saved.commandKey); setPending(undefined); closeDraft(); setRefresh(n => n + 1); onChanged(); setNotice("操作已成功，已重读当前可见组资料。");
     } catch (cause) { if (authStamp() !== identity || controller.signal.aborted) return; if (!written && errorStatus(cause) === 409) setDraft(old => old ? { ...old, stale: true } : old); if ([401,403,404].includes(errorStatus(cause))) revoke(); setError(errorText(cause)); } finally { if (authStamp() === identity) setSaving(false); }
   };
-  useEffect(() => { setInviteRevoke(undefined); setInviteError(""); }, [identity, selectedId, page]);
-  // The confirm reads the code and version from the latest member projection, so a refresh after 409 keeps the typed reason.
-  const inviteMember = inviteRevoke ? memberNames[inviteRevoke.adminId] : undefined, inviteTarget = inviteMember?.inviteCode?.code ? inviteMember.inviteCode : undefined;
+  // Leaving the group, page or account invalidates any in-flight invite result for this view (late answers must not touch the new one).
+  useEffect(() => { inviteGen.current++; setInviteRevoke(undefined); setInviteError(""); setInviteBusy(false); }, [identity, selectedId, page, unassignedPage]);
+  // 待分组 agents sit in no group, so the super admin pages the global agent list and reads each code by agent.
+  const unassignedKey = `${identity}|${refresh}|${unassignedPage}|${unassignedReload}`, unassignedRows = unassigned?.key === unassignedKey ? unassigned.rows : [];
+  useEffect(() => {
+    const controller = new AbortController(); setUnassignedError("");
+    if (!directoryReady || selectedId || mode !== "ALL") return () => controller.abort();
+    void supportGroupClient.candidates({ pageNum: unassignedPage, pageSize: PAGE_SIZE }, controller.signal).then(async result => {
+      const free = (await Promise.all(result.records.map(c => supportGroupClient.member(c.adminId, controller.signal)))).filter(m => m.currentMember.state !== "UNKNOWN" && m.currentMember.groupId === null);
+      // One unreadable code shows on its own row instead of failing the list.
+      const codes = await Promise.all(free.map(m => supportGroupClient.inviteCode(m.adminId, controller.signal).catch(() => null)));
+      if (controller.signal.aborted || authStamp() !== identity) return;
+      setUnassigned({ key: unassignedKey, total: result.total, rows: free.map((m, i) => ({ adminId: m.adminId, name: m.name, accountStatus: m.accountStatus, inviteCode: codes[i] })) });
+    }).catch(() => { if (!controller.signal.aborted && authStamp() === identity) setUnassignedError("待分组客服暂不可读，请刷新资料后重试。"); });
+    return () => controller.abort();
+  }, [directoryReady, selectedId, mode, unassignedKey]);
+  const inviteRows: Record<string, InviteRow> = selectedId ? memberNames : Object.fromEntries(unassignedRows.map(row => [row.adminId, row]));
+  // Unsettled revokes stay frozen (trimmed reason, target, version, key) until the original command is queried.
+  // Store changes re-render even when a late answer may not touch the current view's state.
+  const settleInviteCommand = (fingerprint: string, commandKey: string) => { groupPendingCommands.forget(fingerprint, commandKey); setInviteStoreTick(n => n + 1); };
+  const revokePendings = allowed ? groupPendingCommands.list().filter((r): r is InviteRevokeRecord => isInvitePending(r) && r.intent.kind === "INVITE_REVOKE" && r.actorId === session?.adminId) : [];
+  const inviteMember = inviteRevoke ? inviteRows[inviteRevoke.adminId] : undefined, inviteTarget = inviteMember?.inviteCode?.code ? inviteMember.inviteCode : undefined;
+  const invitePending = inviteRevoke ? revokePendings.find(r => r.intent.targetId === inviteRevoke.adminId) : undefined;
+  const afterInviteChange = () => { setRefresh(n => n + 1); setUnassignedReload(n => n + 1); };
   const revokeInviteCode = async () => {
-    if (!inviteRevoke || !inviteMember || !inviteTarget || inviteBusy || !writeAllowed || !reasonValid(inviteRevoke.reason)) return;
-    const version = inviteTarget.version!, command = inviteRevoke.command?.version === version ? inviteRevoke.command : { version, key: crypto.randomUUID() };
-    setInviteRevoke({ ...inviteRevoke, command }); setInviteBusy(true); setInviteError("");
-    try { await supportGroupClient.revokeInviteCode(inviteMember.adminId, { expectedVersion: version, reason: inviteRevoke.reason.trim() }, command.key); if (authStamp() !== identity) return; setInviteRevoke(undefined); setNotice(`已作废 ${inviteMember.name} 的邀请码，已重读当前组成员。`); setRefresh(n => n + 1); }
-    catch (cause) { if (authStamp() !== identity) return; const code = errorStatus(cause); if ([401,403,404].includes(code)) { revoke(); setError(errorText(cause)); return; } if (code === 409 && !isIndeterminateSupportError(cause)) setRefresh(n => n + 1); setInviteError(code === 409 && !isIndeterminateSupportError(cause) ? "邀请码刚被修改过，已重新读取；原因已保留，请核对后再确认。" : code === 422 ? errorText(cause) : "暂时无法确认作废结果，原因和原操作已保留；可再次确认，会按原操作核对。"); }
-    finally { setInviteBusy(false); }
+    if (!session || !inviteRevoke || !inviteMember || !inviteTarget?.code || invitePending || inviteBusy || !writeAllowed || !reasonValid(inviteRevoke.reason)) return;
+    if (inviteTarget.version === null) { setInviteError("这个邀请码没有版本号，暂时不能作废；请刷新资料后再试。"); return; }
+    const gen = inviteGen.current, live = () => inviteGen.current === gen && authStamp() === identity;
+    const payload = { expectedVersion: inviteTarget.version, reason: inviteRevoke.reason.trim(), code: inviteTarget.code, name: inviteMember.name };
+    const fingerprint = `invite-code:revoke:${session.adminId}:${inviteMember.adminId}`, commandKey = crypto.randomUUID();
+    groupPendingCommands.remember(fingerprint, commandKey, { actorId: session.adminId, intent: { kind: "INVITE_REVOKE", targetId: inviteMember.adminId, payload }, label: `作废邀请码 · ${payload.name}` });
+    if (!groupPendingCommands.isDurablyStored(fingerprint, commandKey)) { groupPendingCommands.forget(fingerprint, commandKey); setInviteError("浏览器无法保存这次操作的记录，已停止提交。请检查浏览器设置后重试。"); return; }
+    setInviteBusy(true); setInviteError("");
+    try {
+      await supportGroupClient.revokeInviteCode(inviteMember.adminId, { expectedVersion: payload.expectedVersion, reason: payload.reason }, commandKey);
+      settleInviteCommand(fingerprint, commandKey);
+      if (!live()) return;
+      setInviteRevoke(undefined); setNotice(`已作废 ${payload.name} 的邀请码，已重读当前成员。`); afterInviteChange();
+    } catch (cause) {
+      const rejected = commandRejected(cause), code = errorStatus(cause);
+      if (rejected) settleInviteCommand(fingerprint, commandKey);
+      if (!live()) return;
+      if (rejected && [401,403,404].includes(code)) { revoke(); setError(errorText(cause)); return; }
+      if (rejected && code === 409) afterInviteChange();
+      setInviteError(!rejected ? "作废结果还没确认，原因和原操作已冻结；请查询原操作。" : code === 409 ? "邀请码刚被修改过，已重新读取；原因已保留，请核对后再确认。" : errorText(cause));
+    } finally { if (live()) setInviteBusy(false); }
   };
+  const checkInviteRevoke = async (record: InviteRevokeRecord) => {
+    if (inviteBusy) return;
+    const gen = inviteGen.current, live = () => inviteGen.current === gen && authStamp() === identity;
+    setInviteBusy(true); setInviteError("");
+    try {
+      const receipt = await supportGroupClient.command(record.commandKey);
+      if (receipt.status === "SUCCEEDED" || receipt.status === "FAILED") {
+        settleInviteCommand(record.fingerprint, record.commandKey);
+        if (!live()) return;
+        setInviteRevoke(undefined); setNotice(receipt.status === "SUCCEEDED" ? `已确认作废 ${record.intent.payload.name} 的邀请码，已重读当前成员。` : `原作废操作没有生效，已重读当前成员。`); afterInviteChange();
+      } else if (live()) setInviteError("原作废操作仍在处理，原因和原操作保持冻结，请稍后再查询。");
+    } catch (cause) {
+      if (!live()) return;
+      if ([401,403].includes(errorStatus(cause))) { revoke(); setError(errorText(cause)); return; }
+      setInviteError("暂时无法查询原操作，原因和原操作保持冻结，请稍后再查询。");
+    } finally { if (live()) setInviteBusy(false); }
+  };
+  const openInviteRevoke = (adminId: string) => { setInviteRevoke({ adminId, reason: "" }); setInviteError(""); };
+  const inviteCell = (invite: InviteRow["inviteCode"], enabled: boolean) => invite === undefined ? "-" : invite === null ? <span className="m-invite-muted">读取失败</span> : invite.code === null ? <span className="m-invite-muted">未生成</span> : <span className={enabled ? "m-invite-code" : "m-invite-code m-invite-muted"}>{invite.code}{enabled ? "" : " · 不可使用"}</span>;
+  const revokeButton = (adminId: string, invite: InviteRow["inviteCode"]) => (invite?.code || revokePendings.some(r => r.intent.targetId === adminId)) && <Btn disabled={!writeAllowed || saving || inviteBusy} onClick={() => openInviteRevoke(adminId)}>作废邀请码</Btn>;
+  const invitePanel = inviteRevoke && (invitePending || inviteMember && inviteTarget) && <section className="m-invite-revoke" aria-label="作废邀请码">
+    <h3>作废 {invitePending?.intent.payload.name ?? inviteMember?.name} 的邀请码？</h3>
+    <p>{invitePending?.intent.payload.code ?? inviteTarget?.code} 会立即失效，之后填这个码注册会提示邀请码无效；已经绑定的客户不受影响。</p>
+    <label>作废原因<textarea className="fld" rows={2} value={invitePending ? invitePending.intent.payload.reason : inviteRevoke.reason} maxLength={200} disabled={inviteBusy || !!invitePending} placeholder="至少 8 个字，会记入操作记录" onChange={e => { const reason = e.target.value; setInviteRevoke(old => old && { ...old, reason }); }} /></label>
+    {inviteError && <p role="alert" className="m-admin-error">{inviteError}</p>}
+    <div className="m-invite-revoke-actions"><button type="button" disabled={inviteBusy} onClick={() => { setInviteRevoke(undefined); setInviteError(""); }}>取消</button>{invitePending ? <button type="button" disabled={inviteBusy} onClick={() => void checkInviteRevoke(invitePending)}>{inviteBusy ? "正在查询…" : "查询原操作"}</button> : <button type="button" className="m-invite-revoke-confirm" disabled={inviteBusy || !writeAllowed || !reasonValid(inviteRevoke.reason)} onClick={() => void revokeInviteCode()}>{inviteBusy ? "正在作废…" : "确认作废"}</button>}</div>
+  </section>;
   const targetGroups = rows.filter(g => g.status === "ENABLED" && g.id !== draft?.member?.currentMember.groupId);
   const draftReady = !!draft && !draft.stale && reasonValid(draft.reason) && (draft.kind === "CREATE" || draft.kind === "RENAME" ? !!draft.name.trim() && draft.name.trim().length <= 120 : true) && (draft.kind === "CREATE" || draft.kind === "OWNER" ? mode === "MANAGED" || supervisors.some(s => s.adminId === draft.ownerId) : true) && (draft.kind !== "MEMBER" || !!draft.member && draft.member.currentMember.state !== "UNKNOWN" && draft.member.currentMember.groupId !== (draft.targetGroupId || null) && (!draft.member.currentMember.groupId || !!draft.source) && (!draft.targetGroupId || !!draft.target) && (mode === "ALL" || !!draft.source && !!draft.target));
   return <section className="m1-group-management" aria-label="客服组管理">
     <header className="m-admin-toolbar"><h2>{selectedId ? currentDetail?.group.name ?? "组成员" : "组管理"}</h2>{actions}<Btn disabled={!allowed || saving} onClick={() => { setPage(1); setRefresh(n => n + 1); }}>刷新资料</Btn>{hasWritePermission && !selectedId && <Btn disabled={!writeAllowed || saving || !!pending} title={!directoryReady ? "先成功读取当前获准组目录" : undefined} onClick={() => open("CREATE")}>创建组</Btn>}</header>
     {!allowed && <p role="alert">当前账号不能管理客服组。主管只能管理本人负责的组。</p>}{notice && <p role="status" className="m-admin-muted">{notice}</p>}{error && <p role="alert" className="m-admin-error">{error}</p>}
     {allowed && pending && <div className="m-admin-error" role="alert"><p>{QUERY_PENDING_TEXT}{!canReplayGroupCommand(pending) && expiredText()}</p><Btn disabled={saving} onClick={() => void checkPending()}>查询原操作</Btn></div>}{allowed && loading && <p role="status">正在加载获准组资料…</p>}
+    {revokePendings.map(r => <div key={r.commandKey} className="m-admin-error" role="alert"><p>作废 {r.intent.payload.name} 的邀请码 {r.intent.payload.code} 结果待确认；原因已冻结：「{r.intent.payload.reason}」。确认前不能修改或重新提交。</p><Btn disabled={inviteBusy} onClick={() => void checkInviteRevoke(r)}>查询原操作</Btn></div>)}{!invitePanel && inviteError && <p role="alert" className="m-admin-error">{inviteError}</p>}
     {directoryReady && !loading && !selectedId && <div className="m-admin-table-wrap"><table className="m-admin-table m-group-directory"><thead><tr><th>组名</th><th>负责人</th><th>客服（人）</th><th>绑定客户（人）</th><th>待分配（人）</th><th>状态</th><th>操作</th></tr></thead><tbody>{rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map(g => <tr key={g.id}>
       <td data-label="组名"><span className="m-group-name" title={g.name}>{g.name}</span></td><td data-label="负责人"><span className="m-group-name" title={g.supervisorName ?? undefined}>{g.supervisorName ?? "-"}</span></td>
       <td data-label="客服（人）"><button className="m-group-count" type="button" disabled={saving} title={g.memberCount == null ? "客服数量暂不可用，查看名单" : `${g.memberCount} 人`} aria-label={`查看${g.name}的客服名单，${g.memberCount == null ? "数量暂不可用" : `${g.memberCount} 人`}`} onClick={() => { closeDraft(); setSelectedId(g.id); setPage(1); }}>{compactSupportBoardValue(g.memberCount, "count")}</button></td>
@@ -137,16 +202,17 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
       {writeAllowed && <div className="m-admin-toolbar"><Btn disabled={saving || !!pending || currentDetail.group.status === "ARCHIVED"} onClick={() => open("RENAME")}>重命名</Btn><Btn disabled={saving || !!pending || currentDetail.group.status !== "ENABLED"} onClick={() => open("MEMBER")}>加入或调入成员</Btn>{mode === "ALL" && <Btn disabled={saving || !!pending || !ownerAllowed} title={!ownerAllowed ? "读取主管目录需要账号读取权限" : undefined} onClick={() => open("OWNER")}>移交负责人</Btn>}{currentDetail.group.status === "ENABLED" ? <Btn disabled={saving || !!pending || !currentDetail.blockers.canExit} title={!currentDetail.blockers.canExit ? "先处理全部成员、待分配客户和未结束管理任务" : undefined} onClick={() => open("STATUS", undefined, "DISABLED")}>停用组</Btn> : currentDetail.group.status === "DISABLED" && <><Btn disabled={saving || !!pending} onClick={() => open("STATUS", undefined, "ENABLED")}>启用组</Btn><Btn disabled={saving || !!pending || !currentDetail.blockers.canExit} title={!currentDetail.blockers.canExit ? "先处理全部成员、待分配客户和未结束管理任务" : undefined} onClick={() => open("STATUS", undefined, "ARCHIVED")}>归档组</Btn></>}</div>}
       {!currentDetail.blockers.canExit && <p className="m-admin-muted">停用或归档前，先将成员调出、处理本组待分配客户，并结束或核对未完成的管理任务。{currentDetail.routedCustomers > 0 && "待分配客户在「待分配」页签处理。"}</p>}
       <p className="m-admin-muted">邀请码由客服本人生成，主管可作废</p>
-      <div className="m-admin-table-wrap"><table className="m-admin-table"><thead><tr><th>专属客服</th><th>账号 / 交接</th><th>当前绑定客户</th><th>邀请码</th><th>操作</th></tr></thead><tbody>{currentDetail.members.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map(m => { const invite = memberNames[m.adminId]?.inviteCode; return <tr key={m.adminId} className={inviteRevoke?.adminId === m.adminId && inviteTarget ? "m-invite-selected" : undefined}><td>{memberNames[m.adminId]?.name ?? "正在核对成员…"}</td><td>{m.accountStatus === 1 ? "账号启用" : "账号停用"}{m.handoverRequired ? " · 待交接" : ""}</td><td>{m.boundCustomers} 人</td><td>{!invite ? "-" : invite.code === null ? <span className="m-invite-muted">未生成</span> : <span className={m.accountStatus === 1 ? "m-invite-code" : "m-invite-code m-invite-muted"}>{invite.code}{m.accountStatus === 1 ? "" : " · 不可使用"}</span>}</td><td><div className="m-invite-ops"><Btn disabled={!writeAllowed || saving || !!pending || !memberNames[m.adminId]} onClick={() => { const member = memberNames[m.adminId]; if (member) open("MEMBER", member); }}>调组</Btn>{invite?.code && <Btn disabled={!writeAllowed || saving || inviteBusy} onClick={() => { setInviteRevoke({ adminId: m.adminId, reason: "" }); setInviteError(""); }}>作废邀请码</Btn>}</div></td></tr>; })}</tbody></table>{!currentDetail.members.length && <p>本组当前没有成员。</p>}</div>
-      {inviteRevoke && inviteMember && inviteTarget && <section className="m-invite-revoke" aria-label="作废邀请码">
-        <h3>作废 {inviteMember.name} 的邀请码？</h3>
-        <p>{inviteTarget.code} 会立即失效，之后填这个码注册会提示邀请码无效；已经绑定的客户不受影响。</p>
-        <label>作废原因<textarea className="fld" rows={2} value={inviteRevoke.reason} maxLength={200} disabled={inviteBusy} placeholder="至少 8 个字，会记入操作记录" onChange={e => { const reason = e.target.value; setInviteRevoke(old => old && { ...old, reason }); }} /></label>
-        {inviteError && <p role="alert" className="m-admin-error">{inviteError}</p>}
-        <div className="m-invite-revoke-actions"><button type="button" disabled={inviteBusy} onClick={() => { setInviteRevoke(undefined); setInviteError(""); }}>取消</button><button type="button" className="m-invite-revoke-confirm" disabled={inviteBusy || !writeAllowed || !reasonValid(inviteRevoke.reason)} onClick={() => void revokeInviteCode()}>{inviteBusy ? "正在作废…" : "确认作废"}</button></div>
-      </section>}
+      <div className="m-admin-table-wrap"><table className="m-admin-table"><thead><tr><th>专属客服</th><th>账号 / 交接</th><th>当前绑定客户</th><th>邀请码</th><th>操作</th></tr></thead><tbody>{currentDetail.members.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map(m => { const invite = memberNames[m.adminId]?.inviteCode; return <tr key={m.adminId} className={inviteRevoke?.adminId === m.adminId && invitePanel ? "m-invite-selected" : undefined}><td>{memberNames[m.adminId]?.name ?? "正在核对成员…"}</td><td>{m.accountStatus === 1 ? "账号启用" : "账号停用"}{m.handoverRequired ? " · 待交接" : ""}</td><td>{m.boundCustomers} 人</td><td>{inviteCell(invite, m.accountStatus === 1)}</td><td><div className="m-invite-ops"><Btn disabled={!writeAllowed || saving || !!pending || !memberNames[m.adminId]} onClick={() => { const member = memberNames[m.adminId]; if (member) open("MEMBER", member); }}>调组</Btn>{revokeButton(m.adminId, invite)}</div></td></tr>; })}</tbody></table>{!currentDetail.members.length && <p>本组当前没有成员。</p>}</div>
+      {invitePanel}
     </>}
     {directoryReady && !loading && <nav className="m-admin-toolbar" aria-label={selectedId ? "成员分页" : "组分页"}><Btn disabled={saving || page <= 1} onClick={() => setPage(n => n - 1)}>上一页</Btn><span>第 {page} / {selectedId && !currentDetail ? "-" : Math.max(1, Math.ceil((selectedId ? currentDetail!.memberCount : rows.length) / PAGE_SIZE))} 页</span><Btn disabled={saving || page >= Math.ceil((selectedId ? currentDetail?.memberCount ?? 0 : rows.length) / PAGE_SIZE)} onClick={() => setPage(n => n + 1)}>下一页</Btn></nav>}
+    {directoryReady && !loading && !selectedId && mode === "ALL" && <>
+      <div className="m-admin-toolbar"><span>待分组客服</span></div>
+      <p className="m-admin-muted">不在任何组里的专属客服；邀请码由客服本人生成，总管理员可作废。按全部客服分页，本页只列待分组的人。</p>
+      {unassignedError ? <p role="alert" className="m-admin-error">{unassignedError}</p> : !unassigned || unassigned.key !== unassignedKey ? <p role="status">正在读取待分组客服…</p> : <div className="m-admin-table-wrap"><table className="m-admin-table"><thead><tr><th>专属客服</th><th>账号</th><th>邀请码</th><th>操作</th></tr></thead><tbody>{unassignedRows.map(row => <tr key={row.adminId} className={inviteRevoke?.adminId === row.adminId && invitePanel ? "m-invite-selected" : undefined}><td>{row.name}</td><td>{row.accountStatus === 1 ? "账号启用" : "账号停用"}</td><td>{inviteCell(row.inviteCode, row.accountStatus === 1)}</td><td><div className="m-invite-ops">{revokeButton(row.adminId, row.inviteCode)}</div></td></tr>)}</tbody></table>{!unassignedRows.length && <p>本页没有待分组客服。</p>}</div>}
+      {invitePanel}
+      {unassigned && <nav className="m-admin-toolbar" aria-label="待分组客服分页"><Btn disabled={unassignedPage <= 1} onClick={() => setUnassignedPage(n => n - 1)}>上一页</Btn><span>第 {unassignedPage} / {Math.max(1, Math.ceil(unassigned.total / PAGE_SIZE))} 页</span><Btn disabled={unassignedPage >= Math.ceil(unassigned.total / PAGE_SIZE)} onClick={() => setUnassignedPage(n => n + 1)}>下一页</Btn></nav>}
+    </>}
     {draft && directoryReady && !pending && <Modal title={draft.kind === "CREATE" ? "创建客服组" : draft.kind === "MEMBER" ? "确认成员调组" : draft.kind === "OWNER" ? "移交组负责人" : draft.kind === "STATUS" ? `${STATUS_TEXT[draft.status]}客服组` : "重命名客服组"} busy={saving || previewBusy} onClose={() => { if (!saving && !previewBusy) closeDraft(); }} footer={<><Btn disabled={saving || previewBusy} onClick={closeDraft}>返回</Btn>{draft.stale && <Btn disabled={saving || previewBusy} onClick={() => void refreshDraft()}>重读预览</Btn>}<Btn variant="primary" disabled={saving || previewBusy || !writeAllowed || !draftReady} onClick={() => void submit()}>{saving ? "正在提交…" : "确认并提交"}</Btn></>}>
       {(draft.kind === "CREATE" || draft.kind === "RENAME") && <label className="field"><span>组名</span><input className="fld" value={draft.name} maxLength={120} disabled={saving || !!pending} onChange={e => setDraft({ ...draft, name: e.target.value })} /></label>}
       {(draft.kind === "CREATE" || draft.kind === "OWNER") && <label className="field"><span>组负责人</span>{mode === "MANAGED" ? <p>当前主管本人 · {session?.operator || "当前账号"}</p> : saving || pending ? <p>{supervisors.find(s => s.adminId === draft.ownerId)?.name ?? "原选择已锁定"}</p> : <HDSelect value={draft.ownerId} options={supervisors.map(s => ({ value: s.adminId, label: s.name }))} placeholder="选择启用的主管" onChange={ownerId => setDraft({ ...draft, ownerId })} />}</label>}
@@ -170,17 +236,17 @@ export function SupportQualificationEditor({ adminId, kind, onClose, onChanged }
   const [projection, setProjection] = useState<{ key: string; value: SupportQualifications }>(), [state, setState] = useState<QualificationStatus>("ENABLED"), [reason, setReason] = useState(""), [error, setError] = useState(""), [busy, setBusy] = useState(false), [stale, setStale] = useState(false), [refresh, setRefresh] = useState(0), [pendingRecord, setPending] = useState<GroupPendingRecord>();
   const pending = pendingRecord && pendingRecord.actorId === session?.adminId && pendingRecord.intent.kind === "QUALIFICATION" && pendingRecord.intent.targetId === adminId && pendingRecord.intent.payload.qualificationKind === kind ? pendingRecord : undefined;
   const controllerRef = useRef<AbortController | null>(null), data = allowed && projection?.key === key ? projection.value : undefined, fact = data?.qualifications.find(q => q.kind === kind);
-  useEffect(() => { setProjection(undefined); setReason(""); setError(""); setBusy(false); setStale(false); setPending(groupPendingCommands.list().find(r => r.actorId === session?.adminId && r.intent.kind === "QUALIFICATION" && r.intent.targetId === adminId && r.intent.payload.qualificationKind === kind)); return () => controllerRef.current?.abort(); }, [key]);
+  useEffect(() => { setProjection(undefined); setReason(""); setError(""); setBusy(false); setStale(false); setPending(groupPendingCommands.list().find((r): r is GroupPendingRecord => !isInvitePending(r) && r.actorId === session?.adminId && r.intent.kind === "QUALIFICATION" && r.intent.targetId === adminId && r.intent.payload.qualificationKind === kind)); return () => controllerRef.current?.abort(); }, [key]);
   useEffect(() => { const controller = new AbortController(); setProjection(undefined); if (allowed) void supportGroupClient.qualifications(adminId, controller.signal).then(next => { if (!controller.signal.aborted && liveKey.current === key && authStamp() === identity) { setProjection({ key, value: next }); setStale(false); } }).catch(cause => { if (!controller.signal.aborted && liveKey.current === key) { setProjection(undefined); setError(errorText(cause)); } }); return () => controller.abort(); }, [allowed, key, refresh]);
   const check = async () => { if (!pending || busy || !allowed) return; const saved = pending, controller = new AbortController(); controllerRef.current = controller; setBusy(true);
     try { const receipt = await supportGroupClient.command(saved.commandKey, controller.signal); if (controller.signal.aborted || authStamp() !== identity || liveKey.current !== key) return; if (receipt.status === "SUCCEEDED" || receipt.status === "FAILED") { const next = await supportGroupClient.qualifications(adminId, controller.signal); if (controller.signal.aborted || authStamp() !== identity || liveKey.current !== key) return; groupPendingCommands.forget(saved.fingerprint, saved.commandKey); setPending(undefined); setProjection({ key, value: next }); if (saved.intent.kind === "QUALIFICATION") { setReason(saved.intent.payload.reason); setState(saved.intent.payload.state); } setStale(receipt.status === "FAILED"); onChanged(); setError(receipt.status === "SUCCEEDED" ? "原操作已成功，已读取当前账号资格。" : "原操作已明确失败，理由已保留；请重读预览后重新确认。"); } else if (authStamp() === identity) setError(canReplayGroupCommand(saved) ? "原操作仍未确认，请稍后查询。" : expiredText()); } catch (cause) { if (authStamp() === identity && liveKey.current === key) { if ([401,403,404].includes(errorStatus(cause))) setProjection(undefined); setError("原命令和理由仍保留。" + errorText(cause)); } } finally { if (authStamp() === identity) setBusy(false); } };
   const submit = async () => {
     if (!allowed || busy) return; let saved = pending, createdThisAttempt = false;
-    const previous = saved ?? groupPendingCommands.list().find(r => r.actorId === session?.adminId && r.intent.kind === "QUALIFICATION" && r.intent.targetId === adminId && r.intent.payload.qualificationKind === kind);
+    const previous = saved ?? groupPendingCommands.list().find((r): r is GroupPendingRecord => !isInvitePending(r) && r.actorId === session?.adminId && r.intent.kind === "QUALIFICATION" && r.intent.targetId === adminId && r.intent.payload.qualificationKind === kind);
     if (previous) { setPending(previous); setError(QUERY_PENDING_TEXT); return; }
     if (!saved) { if (!data || !fact || fact.observationState === "UNKNOWN" || stale || !reasonValid(reason) || fact.state === state || state === "ENABLED" && data.accountStatus !== 1) return;
       const commandKey = crypto.randomUUID(), fingerprint = `support-qualification:${session!.adminId}:${adminId}:${kind}`, intent: Intent = { kind: "QUALIFICATION", targetId: adminId, payload: { qualificationKind: kind, state, expectedQualificationVersion: observedVersion(fact), expectedAccountVersion: accountVersion(data.accountVersion), reason: reason.trim() } };
-      groupPendingCommands.remember(fingerprint, commandKey, { actorId: session!.adminId, intent, label: `${KIND_TEXT[kind]}资格 · ${data.name}` }); saved = groupPendingCommands.list().find(r => r.commandKey === commandKey); if (!saved) { setError("命令保存失败，已停止提交。" ); return; } createdThisAttempt = true; setPending(saved);
+      groupPendingCommands.remember(fingerprint, commandKey, { actorId: session!.adminId, intent, label: `${KIND_TEXT[kind]}资格 · ${data.name}` }); saved = groupPendingCommands.list().find((r): r is GroupPendingRecord => !isInvitePending(r) && r.commandKey === commandKey); if (!saved) { setError("命令保存失败，已停止提交。" ); return; } createdThisAttempt = true; setPending(saved);
     }
     if (!createdThisAttempt || !saved) { setError(QUERY_PENDING_TEXT); return; }
     if (!groupPendingCommands.isDurablyStored(saved.fingerprint, saved.commandKey) || saved.intent.kind !== "QUALIFICATION") { setError("浏览器无法保存这次操作的记录，已停止提交。请检查浏览器设置后重试。" ); return; }

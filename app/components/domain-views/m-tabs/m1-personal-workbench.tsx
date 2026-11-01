@@ -411,6 +411,8 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
 
       {view === "customers" && <>
         <div className="s5a-intro"><div><h2>我的客户</h2><p>账户状态与维护状态分开查看</p></div><div className="s5a-personal-header-actions"><span className="s5a-stamp">{rows ? `共 ${rows.total} 位` : "总数待确认"}</span><button type="button" disabled={!canBulk} title={canBulk ? "联系明确圈选的本人客户" : "需要会话发送权限"} onClick={() => setBulkOpen(true)}>圈选群发</button></div></div>
+        {/* Supervisors with personal service reach their own view only through 我的客户, which has no dashboard. */}
+        {permission !== "agent" && <SelfInviteCodeBar key={sessionKey} toast={ctx.toast} />}
         <section className="s5a-panel"><form className="s5a-controls" onSubmit={(event) => { event.preventDefault(); setPage(1); setKeyword(keywordDraft.trim()); }}>
           <label><Search size={17} /><span className="sr-only">搜索客户名称或 ID</span><input value={keywordDraft} onChange={(event) => setKeywordDraft(event.target.value)} placeholder="搜索客户名称或 ID" /></label>
           <button type="submit">搜索</button>
