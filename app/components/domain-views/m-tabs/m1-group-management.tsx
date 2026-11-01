@@ -141,7 +141,7 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
       {inviteRevoke && inviteMember && inviteTarget && <section className="m-invite-revoke" aria-label="作废邀请码">
         <h3>作废 {inviteMember.name} 的邀请码？</h3>
         <p>{inviteTarget.code} 会立即失效，之后填这个码注册会提示邀请码无效；已经绑定的客户不受影响。</p>
-        <label>作废原因<textarea rows={2} value={inviteRevoke.reason} maxLength={200} disabled={inviteBusy} placeholder="至少 8 个字，会记入操作记录" onChange={e => { const reason = e.target.value; setInviteRevoke(old => old && { ...old, reason }); }} /></label>
+        <label>作废原因<textarea className="fld" rows={2} value={inviteRevoke.reason} maxLength={200} disabled={inviteBusy} placeholder="至少 8 个字，会记入操作记录" onChange={e => { const reason = e.target.value; setInviteRevoke(old => old && { ...old, reason }); }} /></label>
         {inviteError && <p role="alert" className="m-admin-error">{inviteError}</p>}
         <div className="m-invite-revoke-actions"><button type="button" disabled={inviteBusy} onClick={() => { setInviteRevoke(undefined); setInviteError(""); }}>取消</button><button type="button" className="m-invite-revoke-confirm" disabled={inviteBusy || !writeAllowed || !reasonValid(inviteRevoke.reason)} onClick={() => void revokeInviteCode()}>{inviteBusy ? "正在作废…" : "确认作废"}</button></div>
       </section>}

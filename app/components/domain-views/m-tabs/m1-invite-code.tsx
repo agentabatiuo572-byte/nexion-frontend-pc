@@ -2,10 +2,20 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import qrcode from "qrcode-generator";
-import { ArrowDownToLine, Copy, Link2, RefreshCw } from "lucide-react";
 import { supportGroupClient, type InviteCodeView } from "@/lib/admin/support-group-client";
 import { SupportClientError, isIndeterminateSupportError } from "@/lib/admin/m-support-client";
 import "./m1-invite-code.css";
+
+// Icon paths taken verbatim from the confirmed design (Main.dc.html).
+const ICON_PATHS = {
+  copy: <><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></>,
+  link: <><path d="M9 17H7A5 5 0 0 1 7 7h2" /><path d="M15 7h2a5 5 0 0 1 0 10h-2" /><path d="M8 12h8" /></>,
+  save: <><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></>,
+  reset: <><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16" /><path d="M3 21v-5h5" /></>,
+};
+function InviteIcon({ name }: { name: keyof typeof ICON_PATHS }) {
+  return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICON_PATHS[name]}</svg>;
+}
 
 function errorText(error: unknown): string {
   if (isIndeterminateSupportError(error)) return "操作结果待确认，请稍后再点一次，会按原操作核对。";
@@ -102,19 +112,19 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
       </> : <>
         <div className="m1-invite-box">
           <div className="m1-invite-field"><span>邀请码</span><strong className="m1-invite-code">{view.code}</strong></div>
-          <button type="button" className="m1-invite-btn" onClick={() => void copy(view.code!, "邀请码")}><Copy size={15} aria-hidden="true" />复制</button>
+          <button type="button" className="m1-invite-btn" onClick={() => void copy(view.code!, "邀请码")}><InviteIcon name="copy" />复制</button>
         </div>
         {view.link && qr ? <>
           <div className="m1-invite-box m1-invite-linkbox">
             <div className="m1-invite-field"><span>邀请链接</span><span className="m1-invite-link" title={view.link}>{view.link}</span></div>
-            <button type="button" className="m1-invite-btn" onClick={() => void copy(view.link!, "邀请链接")}><Link2 size={15} aria-hidden="true" />复制链接</button>
+            <button type="button" className="m1-invite-btn" onClick={() => void copy(view.link!, "邀请链接")}><InviteIcon name="link" />复制链接</button>
           </div>
           <div className="m1-invite-qr">
             <img src={qr} alt={`邀请二维码 ${view.code}`} width={56} height={56} />
-            <button type="button" className="m1-invite-btn" onClick={() => saveQr(view.code!)}><ArrowDownToLine size={15} aria-hidden="true" />保存二维码</button>
+            <button type="button" className="m1-invite-btn" onClick={() => saveQr(view.code!)}><InviteIcon name="save" />保存二维码</button>
           </div>
         </> : <p className="m1-invite-note m1-invite-muted">分享地址未配置，暂时只能复制邀请码</p>}
-        <button type="button" className="m1-invite-reset" onClick={() => { setError(""); setConfirming(true); }}><RefreshCw size={15} aria-hidden="true" />重置</button>
+        <button type="button" className="m1-invite-reset" onClick={() => { setError(""); setConfirming(true); }}><InviteIcon name="reset" />重置</button>
       </>}
     {errorLine}
   </section>;
