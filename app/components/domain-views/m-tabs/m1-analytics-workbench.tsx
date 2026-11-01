@@ -155,10 +155,10 @@ function fullAmount(value: string): string {
   if (cents === BigInt(0)) return "0";
   return `${parts[1]}${(cents / hundred).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${(cents % hundred).toString().padStart(2, "0")}`;
 }
-function CustomerValue({ value, observed, kind, label, onClick }: { value: string | null; observed?: string | null; kind: "count" | "amount"; label: string; onClick: () => void }) {
+function CustomerValue({ value, observed, status, kind, label, onClick }: { value: string | null; observed?: string | null; status: Count["status"]; kind: "count" | "amount"; label: string; onClick: () => void }) {
   const text = value === null ? "-" : kind === "amount" ? fullAmount(value) : compactSupportBoardValue(value, "count");
-  if (text === "-") { const note = observed == null ? "数据还在同步" : `已观测 ${observed}，完整数值仍在统计`; return <span className="sa-cell-unknown" tabIndex={0} title={note} aria-label={`${label}：${note}`}>-</span>; }
-  return <button type="button" className={`sa-cell-value${text === "0" ? " zero" : ""}`} aria-label={`${label}：${text}；查看明细`} onClick={onClick}>{text}</button>;
+  const note = text !== "-" ? text : status === "FAILED" || status === "UNAVAILABLE" ? "资料暂不可用" : observed == null ? "数据还在同步" : `已观测 ${observed}，完整数值仍在统计`;
+  return <button type="button" className={`sa-cell-value${text === "0" ? " zero" : text === "-" ? " unknown" : ""}`} title={text === "-" ? note : undefined} aria-label={`${label}：${note}；查看明细`} onClick={onClick}>{text}</button>;
 }
 function countValue(count: Count): string | null { return count.confirmed === null || count.status !== "AVAILABLE" ? null : String(count.confirmed); }
 function activityTime(value: string): string {
@@ -228,11 +228,11 @@ export function AnalyticsTable({ data, currency, drill, openProfile, session }: 
     return <tr key={row.customerId}>
       <td><div className="sa-identity"><SupportAvatar name={name(row)} path={row.avatar ?? undefined} /><div><button type="button" className="sa-name sa-cell-name" title={`${name(row)}：查看资料与记录`} onClick={open}>{name(row)}</button><small><span className="sa-mono">{row.customerNo || "编码未同步"}</span> · {row.owner.agentName || "归属未知"}</small></div></div></td>
       <td>{row.first.state === "CONFIRMED" ? <>已首充{row.first.kind && <span className="sa-cell-dim"> {row.first.kind === "DEPOSIT" ? "充值" : "购机"}</span>}</> : row.first.state === "NONE" ? <span className="sa-cell-zero">未首充</span> : <span className="sa-cell-unknown" tabIndex={0} title="首充记录同步中" aria-label="首充：首充记录同步中">-</span>}</td>
-      <td className="r"><CustomerValue kind="count" value={countValue(row.invitations.direct)} observed={row.invitations.direct.observed === null ? null : String(row.invitations.direct.observed)} label="直属邀请" onClick={open} /></td>
-      <td className="r"><CustomerValue kind="count" value={countValue(row.invitations.descendants)} observed={row.invitations.descendants.observed === null ? null : String(row.invitations.descendants.observed)} label="下级邀请" onClick={open} /></td>
-      <td className="r"><CustomerValue kind="amount" value={money?.net.confirmed ?? null} observed={money?.net.observed} label={`本人累计净贡献 ${unit}`} onClick={open} /></td>
-      <td className="r"><CustomerValue kind="amount" value={money?.deposits.confirmed ?? null} observed={money?.deposits.observed} label={`本人累充 ${unit}`} onClick={open} /></td>
-      <td className="r"><CustomerValue kind="amount" value={invited?.confirmed ?? null} observed={invited?.observed} label={`邀请累充 ${unit}`} onClick={open} /></td>
+      <td className="r"><CustomerValue kind="count" value={countValue(row.invitations.direct)} observed={row.invitations.direct.observed === null ? null : String(row.invitations.direct.observed)} status={row.invitations.direct.status} label="直属邀请" onClick={open} /></td>
+      <td className="r"><CustomerValue kind="count" value={countValue(row.invitations.descendants)} observed={row.invitations.descendants.observed === null ? null : String(row.invitations.descendants.observed)} status={row.invitations.descendants.status} label="下级邀请" onClick={open} /></td>
+      <td className="r"><CustomerValue kind="amount" value={money?.net.confirmed ?? null} observed={money?.net.observed} status={money?.net.status ?? "UNKNOWN"} label={`本人累计净贡献 ${unit}`} onClick={open} /></td>
+      <td className="r"><CustomerValue kind="amount" value={money?.deposits.confirmed ?? null} observed={money?.deposits.observed} status={money?.deposits.status ?? "UNKNOWN"} label={`本人累充 ${unit}`} onClick={open} /></td>
+      <td className="r"><CustomerValue kind="amount" value={invited?.confirmed ?? null} observed={invited?.observed} status={invited?.status ?? "UNKNOWN"} label={`邀请累充 ${unit}`} onClick={open} /></td>
       <td>{row.activity.lastEffectiveAt === null ? <span className="sa-cell-unknown" tabIndex={0} title="最近活动还在同步" aria-label="最近活动：还在同步">-</span> : <span title={dateText(row.activity.lastEffectiveAt)}>{row.activity.state !== "UNKNOWN" && <span className={`sa-dot ${row.activity.state === "ACTIVE" ? "on" : "off"}`} role="img" aria-label={row.activity.state === "ACTIVE" ? "本统计期活跃" : "本统计期未活跃"} />}<span className="sa-cell-time">{activityTime(row.activity.lastEffectiveAt)}</span></span>}</td>
       <td><span className={`sa-tag ${tone}`}>{status}</span></td>
       {session && <td className="sa-pin">{row.category === "BOUND" && (checking
@@ -299,6 +299,10 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const [sessionCheck, setSessionCheck] = useState<string | null>(null), [sessionBusy, setSessionBusy] = useState<{ row: SupportAnalyticsCustomer; hold: SupportSessionHold } | null>(null), [sessionError, setSessionError] = useState<SupportAnalyticsCustomer | null>(null);
   const sessionController = useRef<AbortController | null>(null);
   useEffect(() => () => sessionController.current?.abort(), []);
+  useEffect(() => { sessionController.current?.abort(); setSessionCheck(null); setSessionBusy(null); setSessionError(null); }, [queryState, section]);
+  // 9) A saved group that is no longer in this operator's scope is not widened silently.
+  const [restoreNotice, setRestoreNotice] = useState("");
+  useEffect(() => { setRestoreNotice(""); }, [queryState.groupId, section]);
   const controllerRef = useRef<AbortController | null>(null), scopeControllerRef = useRef<AbortController | null>(null), generation = useRef(0);
   const entryStatistics = useRef<{ query: string; data: SupportAnalyticsResponse } | null>(null);
   const isPersonal = scope?.scopeSummary.mode === "PERSONAL";
@@ -351,6 +355,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       const customerGroup = managementCustomerGroup.current;
       managementCustomerGroup.current = null;
       const groupId = remembered && next.scopeSummary.mode !== "PERSONAL" && next.scopeSummary.groups.some(group => group.groupId === String(remembered.groupId)) ? remembered.groupId : undefined;
+      if (remembered && remembered === sessionReturn && remembered.groupId !== undefined && groupId === undefined) setRestoreNotice("原来选的分组已不在你的负责范围，下面显示的是全部负责组。请重新选择分组。");
       if (customerGroup && String(groupId) !== customerGroup) throw new SupportClientError(403, undefined, undefined);
       const restored: AnalyticsQueryState = remembered ? { ...changeAnalyticsQuery(remembered, { groupId, view: next.scopeSummary.mode === "PERSONAL" && ["OVERVIEW", "AGENTS"].includes(remembered.view) ? "CUSTOMERS" : remembered.view }), agentId: groupId === remembered.groupId ? remembered.agentId : undefined } : { ...initialAnalyticsQuery(next.scopeSummary.mode), ...(agentId === undefined ? {} : { view: "CUSTOMERS" as const, category: "BOUND" as const, agentId }) };
       if (remembered && remembered.view === restored.view) restored.sortKey = remembered.sortKey;
@@ -486,6 +491,7 @@ if (!scope) return <section className="sa-workbench" aria-label="客服范围核
     {showStatistics && <>
       <header className="sa-header"><div><h2>{isPersonal ? "本人客户画像" : currentTab === "customers" ? mode === "ALL" ? "全部客户" : "负责组客户" : mode === "ALL" ? "平台运营总览" : "我的分组数据"}</h2><p>{selectedGroup?.name || (queryState.groupId ? "组名未同步" : isPersonal ? "本人当前客户" : mode === "ALL" ? "全部获准客服范围" : "全部负责组")} · {businessZone().label}</p></div></header>
       {data && <AnalyticsFreshness asOf={data.asOf} onRefresh={() => refreshScope()} />}
+{restoreNotice && <div className="sa-session-error" role="alert">{restoreNotice}<button type="button" onClick={() => setRestoreNotice("")}>知道了</button></div>}
 {!isPersonal && <nav className="sa-group-tabs" aria-label="负责组范围"><span className="sa-group-label">分组</span><button type="button" aria-pressed={queryState.groupId === undefined} onClick={() => change({ groupId: undefined })}>全部</button>{groups.map(group => <button type="button" key={group.groupId} title={group.name || "组名未同步"} aria-label={group.name || "组名未同步"} aria-pressed={String(queryState.groupId) === group.groupId} onClick={() => change({ groupId: group.groupId })}>{group.name || "组名未同步"}</button>)}</nav>}
       {(isPersonal || queryState.view !== "CUSTOMERS") && <nav className="sa-datasets" aria-label="数据视角">{DATASETS.filter(x => isPersonal ? !["OVERVIEW", "AGENTS"].includes(x.value) : x.value !== "CUSTOMERS").map(item => <button type="button" key={item.value} aria-pressed={queryState.view === item.value} onClick={() => change({ view: item.value, ...(item.value === "DEVICES" ? { basis: "CURRENT_ASSET" as const } : {}) })}>{item.label}</button>)}</nav>}
       <form className="sa-controls" onSubmit={event => { event.preventDefault(); change({ keyword: keyword.trim() || undefined }); }}>

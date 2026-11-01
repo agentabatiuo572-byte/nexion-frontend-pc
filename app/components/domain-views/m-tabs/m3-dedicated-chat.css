@@ -12,8 +12,9 @@
 .mdom .m3-more summary::-webkit-details-marker { display: none; }
 .mdom .m3-more-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 35; min-width: 190px; padding: 8px; display: grid; gap: 6px; border: 1px solid var(--v5-border); border-radius: 8px; background: var(--v5-surface); box-shadow: var(--m-sh-pop); }
 .mdom .m3-more-menu > * { width: 100%; justify-content: flex-start; white-space: nowrap; }
-.mdom .m3-stage .ChatBody { min-height: 120px; padding: 20px 22px; gap: 12px; }
-.mdom .m3-message { align-self: flex-start; display: flex; gap: 10px; max-width: 80%; }
+.mdom .m3-stage .ChatBody { min-height: 120px; padding: 20px 11px 20px 22px; gap: 16px; scrollbar-gutter: stable; -webkit-font-smoothing: auto; -moz-osx-font-smoothing: auto; }
+.mdom .m3-stage .ChatBody > [data-m3-message-id] { display: flex; flex-direction: column; }
+.mdom .m3-message { align-self: flex-start; display: flex; align-items: flex-start; gap: 10px; max-width: 100%; }
 .mdom .m3-message.agent { align-self: flex-end; flex-direction: row-reverse; }
 .mdom .m3-message.system { align-self: center; }
 .mdom .m3-system-note { align-self: center; display: flex; align-items: baseline; gap: 8px; max-width: 86%; padding: 4px 12px; border-radius: 999px; background: var(--v5-surface-2); color: var(--v5-ink-3); font-size: 12px; line-height: 1.5; text-align: center; overflow-wrap: anywhere; }
@@ -22,8 +23,8 @@
 .mdom .m3-internal-note-label { font-size: 12px; color: var(--v5-ink-3); }
 .mdom .m3-segment-divider { align-self: stretch; display: flex; align-items: center; gap: 10px; color: var(--v5-ink-3); font-size: 12px; }
 .mdom .m3-segment-divider::before, .mdom .m3-segment-divider::after { content: ""; flex: 1; border-top: 1px dashed var(--v5-border); }
-.mdom .m3-message-copy { min-width: 0; max-width: 480px; display: grid; gap: 4px; }
-.mdom .m3-message-author, .mdom .m3-message-receipt { font-size: 12px; color: var(--v5-ink-3); overflow-wrap: anywhere; }
+.mdom .m3-message-copy { min-width: 0; max-width: 480px; display: grid; gap: 5px; }
+.mdom .m3-message-author, .mdom .m3-message-receipt { font-size: 12px; line-height: normal; color: var(--v5-ink-3); overflow-wrap: anywhere; }
 .mdom .m3-message.agent .m3-message-author, .mdom .m3-message.agent .m3-message-receipt { text-align: right; }
 /* Bubbles keep their fill and blend it with a soft glow border: same-hue gradient fill, dimmer same-hue border, static inner and outer glow. */
 .mdom .m3-message .msg-bubble { width: fit-content; max-width: 460px; padding: 10px 14px; border-radius: 12px; border: 1px solid transparent; font-size: 14px; font-weight: 400; line-height: 1.6; overflow-wrap: anywhere; }
@@ -40,8 +41,8 @@
 .mdom .m3-composer-intent .hd-select { min-height: 32px; height: 32px; padding: 4px 12px 4px 10px; font-size: 12.5px; }
 .mdom .m3-composer-intent .hd-select-pop { top: calc(100% + 4px); bottom: auto; }
 .mdom .m3-composer-input { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 9px; align-items: stretch; }
-.mdom .m3-composer-input textarea.fld { width: 100%; height: 68px; min-height: 68px; max-height: 150px; resize: vertical; padding: 11px 12px; border-radius: 7px; border-color: var(--v5-border); background: var(--v5-surface); color: var(--v5-ink); font-size: 14px; line-height: 1.6; }
-.mdom .m3-composer-input .chat-send { width: 84px; height: auto; min-height: 68px; padding: 8px 5px; border-radius: 8px; justify-content: center; background: var(--v5-brand); font-size: 13.5px; color: var(--v5-bg); box-shadow: none; gap: 5px; white-space: nowrap; }
+.mdom .m3-composer-input textarea.fld { width: 100%; height: 68px; min-height: 68px; max-height: 150px; resize: vertical; padding: 11px 12px; border-radius: 7px; border-color: var(--v5-border); background: color-mix(in srgb, var(--v5-bg) 50%, var(--v5-surface)); color: var(--v5-ink); font-size: 14px; line-height: 1.6; }
+.mdom .m3-composer-input .chat-send { width: 84px; height: auto; min-height: 68px; padding: 8px 5px; border-radius: 8px; justify-content: center; background: var(--v5-brand); font-size: 13.5px; font-weight: 700; color: var(--v5-bg); box-shadow: none; gap: 5px; white-space: nowrap; }
 .mdom .m3-composer-note { font-size: 12px; color: var(--v5-ink-3); }
 .mdom .m3-stage .ChatComposer .itint { margin: 0; padding: 9px 11px; font-size: 12.5px; line-height: 1.6; }
 .mdom .m3-previous-replies > summary { cursor: pointer; display: flex; align-items: center; gap: 7px; min-height: 28px; font-size: 12.5px; color: var(--v5-ink-3); }
@@ -158,3 +159,7 @@
 .m3-policy-foot > div { display: flex; gap: 10px; }
 .m3-policy-modal .m3-policy-foot .btn { height: 36px; padding: 0 15px; border-radius: 9px; font-size: 13px; font-weight: 600; }
 .m3-policy-modal .m3-policy-foot .btn-sec { background: var(--v5-surface-3); border-color: var(--v5-border-strong); color: var(--v5-ink); }
+.mdom .m3-message .support-avatar > span { background: color-mix(in srgb, var(--v5-brand) 10%, transparent) !important; color: var(--v5-ink-2) !important; font-size: 12.5px !important; }
+.mdom .m3-sender-identity .support-avatar > span { background: color-mix(in srgb, var(--v5-brand) 10%, transparent) !important; color: var(--v5-ink-2) !important; font-size: 11px !important; }
+.mdom :is(.m3-hold-lock, .m3-hold-strip, .m3-sender-identity, .m3-composer-input), .m3-policy-modal { -webkit-font-smoothing: auto; -moz-osx-font-smoothing: auto; }
+.m3-policy-field strong, .m3-policy-reason > span { line-height: normal; }
