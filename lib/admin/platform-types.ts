@@ -3,7 +3,7 @@ import type { ComputeTaskConfig } from "./e2-compute-config";
 export interface TaskSimulation {
   durationMinutes: number;
   baseReward: number | string;
-  asset: "USDT" | "NEX";
+  asset: "USDT" | "UVT";
   enabled: boolean;
   version: number;
   effectiveAt?: string;

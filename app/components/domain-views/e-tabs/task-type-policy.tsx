@@ -17,7 +17,7 @@ export function TaskTypeChoices({ tasks, selected, onChange, ready }: {
     {!options.length && <div className="tint tiny">请先在 E2 发布任务类型。</div>}
     {options.map((task) => <label key={task.id} className="row" style={{ gap: 8 }}>
       <input type="checkbox" checked={selected.includes(task.id)} disabled={!task.simulation!.enabled && !selected.includes(task.id)} onChange={(e) => onChange(e.target.checked ? [...selected, task.id] : selected.filter((id) => id !== task.id))} />
-      <span>{task.n} · {task.simulation!.durationMinutes} 分钟 · {task.simulation!.baseReward} {task.simulation!.asset === "NEX" ? "UVT" : "USDT"}{task.simulation!.enabled ? "" : " · 已停用"}</span>
+      <span>{task.n} · {task.simulation!.durationMinutes} 分钟 · {task.simulation!.baseReward} {task.simulation!.asset}{task.simulation!.enabled ? "" : " · 已停用"}</span>
     </label>)}
     {selected.filter((id) => !options.some((task) => task.id === id)).map((id) => <label key={id} className="row" style={{ gap: 8 }}><input type="checkbox" checked onChange={() => onChange(selected.filter((value) => value !== id))} />{id} · 当前不可用，请取消后重新选择</label>)}
   </div>;
@@ -25,7 +25,7 @@ export function TaskTypeChoices({ tasks, selected, onChange, ready }: {
 
 interface PhonePolicy {
   policy: { allowedTaskTypeIds: string[]; productTaskPolicyVersion: number; productTaskPolicyEffectiveAt?: string };
-  taskTypes: { taskTypeId: string; typeVersion: number; name: string; durationSeconds: number; baseReward: string | number; asset: "NEX" | "USDT"; enabled: boolean }[];
+  taskTypes: { taskTypeId: string; typeVersion: number; name: string; durationSeconds: number; baseReward: string | number; asset: "UVT" | "USDT"; enabled: boolean }[];
 }
 
 export async function fetchTaskTypePolicy(): Promise<PhonePolicy> {

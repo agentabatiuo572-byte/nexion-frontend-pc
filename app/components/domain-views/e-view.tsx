@@ -1525,7 +1525,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             <div className="grid g-2" style={{ gap: 12 }}>
               <SkuFld label="固定时长（分钟）" type="number" value={taskForm.durationMinutes} onChange={(v) => setTaskForm({ ...taskForm, durationMinutes: v })} hint="1–1440，整数分钟" />
               <SkuFld label="固定基础奖励" value={taskForm.baseReward} onChange={(v) => setTaskForm({ ...taskForm, baseReward: v })} hint="最多 6 位小数" />
-              <label className="col" style={{ gap: 5 }}><span className="muted tiny">奖励资产</span><select className="fld" value={taskForm.asset} onChange={(e) => setTaskForm({ ...taskForm, asset: e.target.value })}><option value="USDT">USDT</option><option value="NEX">UVT</option></select></label>
+              <label className="col" style={{ gap: 5 }}><span className="muted tiny">奖励资产</span><select className="fld" value={taskForm.asset} onChange={(e) => setTaskForm({ ...taskForm, asset: e.target.value })}><option value="USDT">USDT</option><option value="UVT">UVT</option></select></label>
               <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={taskForm.enabled} onChange={(e) => setTaskForm({ ...taskForm, enabled: e.target.checked })} />启用新任务</label>
               <label className="col" style={{ gap: 5 }}><span className="muted tiny">展示类别</span><select className="fld" value={taskForm.taskClass || "EM"} onChange={(e) => setTaskForm({ ...taskForm, taskClass: e.target.value })}>{["IG", "VG", "LL", "FT", "EM", "SP"].map((c) => <option key={c} value={c}>{c}</option>)}</select></label>
             </div>
