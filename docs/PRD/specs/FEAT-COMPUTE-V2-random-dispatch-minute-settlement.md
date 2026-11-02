@@ -4,7 +4,7 @@
 >
 > 新方案同时覆盖手机与 IDC：SQL 保存任务、适用时刻配置与结算，Spring 共享调度推进；手机由当前安装确认在线并维持一小时有效区间，IDC 独立运行。后台 E2 发布固定整数分钟时长、固定基础奖励、资产与启停；E1 商品型号及手机类别勾选具体 `taskTypeId`，等概率抽取，无权重或独立等级体系。类型、商品、E3 采用追加历史版本，按任务逻辑开始时刻取适用版本，缺失明确报错；在途任务冻结原快照，旧真实任务与凭证按原路收尾。普通用户页面不新增测试提示。
 >
-> 本轮配置实现沿现有 E1/E2/A2 权限、商品发布及乐观锁入口；手机仅维护现有 `phone` 类别策略，不伪造硬件商品、订单或付费资格。商品草稿不会发布任务策略，上架须至少选择一个完整且启用的类型；类型后续停用造成空池时等待配置。后端生产编译、PC 生产构建与类型检查已有通过回执，公共 TEST 已实际部署 #451；隔离主链及公共手机服务端链见下方记录，IDC 公共新链、版本冲突、原生真机后台与恢复仍待实际验收，构建与发布不代表完整业务通过。硬件策略键为 `product_no`（E1 `skuId`），订单／置换按同值写入设备 `product_code`；手机固定 `phone`。初始类型及商品／手机范围已通过正常 MFA／A2 配置，迁移不 seed 时长、奖励或历史版本。
+> 本轮配置实现沿现有 E1/E2/A2 权限、商品发布及乐观锁入口；手机仅维护现有 `phone` 类别策略，不伪造硬件商品、订单或付费资格。商品草稿不会发布任务策略，上架须至少选择一个完整且启用的类型；类型后续停用造成空池时等待配置。公共 TEST 已部署 #451，手机＋五台 IDC 首笔资金链及真机任务／凭证 UI 主链 PASS；版本冲突、其他型号／全部类型、UVT 日奖、公共后台一小时和完整恢复仍属未覆盖范围。硬件策略键为 `product_no`（E1 `skuId`），订单／置换按同值写入设备 `product_code`；手机固定 `phone`。初始类型及商品／手机范围已通过正常 MFA／A2 配置，迁移不 seed 时长、奖励或历史版本。
 >
 > 币种统一：本轮新模拟类型的配置、API、E2 和手机策略仅使用 `USDT|UVT`。已有类型历史中的 NEX 原值不重写，读取时兼容为 UVT；追加 `20261102_simulated_task_policy_uvt_asset.sql` 扩展配置历史表约束，旧迁移字节、金额、账本约束及 `nex_available`／`reward_nex` 等内部列保持兼容。本文后续历史章节不据此追改原始事实。
 >
@@ -14,9 +14,17 @@
 >
 > E3 前长期日收益期望依 1–6 类型范围为 0.189936／1.000008／12.999996／18／45／75 USDT，按 `sum(奖励)/sum(分钟)×1440` 计算，不是日到账保证；cloud-share 原 3 UVT／日保持。P2 仍 off 草稿且无当前活跃设备，hd1／finite503 历史测试商品无当前活跃设备，未修改。
 >
-> 公共手机服务端自然周期链 PASS：PID 3560143 已核实 SIM／V2／test-cloud 均为 true，最终生效 EnvironmentFile 为 `/srv/nexgrid/secrets/cloud-bge-executor.env`。手机 1383 经 HBuilder CLI／onshow 启动 `SIM-00F26D8478FE454BA78F9E6DC140EB4C`；业务时间 UTC+8 开始 00:52:55.414772、到期 01:02:55.414772、入账 01:03:20.023576，USDT 0.001319，receipt CREDITED／proof NULL，ledger／earning／fund operation 各 1；钱包增量 0.001319 USDT，UVT 不变，version／fund revision 各 +1。
+> 公共手机自然周期链 PASS：手机 1383 经 HBuilder CLI／onshow 启动 `SIM-00F26D8478FE454BA78F9E6DC140EB4C`；业务时间 UTC+8 开始 00:52:55.414772、到期 01:02:55.414772、入账 01:03:20.023576，USDT 0.001319，receipt CREDITED／proof NULL，ledger／earning／fund operation 各 1；钱包增量 0.001319 USDT，UVT 不变，version／fund revision 各 +1。
 >
-> 未完成边界：App assignments 因旧 V2 503 仍 UI 未通过；旧 V2 5 项未 EXITED，IDC 无法进入新 SIM。旧 phone gen56 同 ID STARTED 重放 07:48:11.967 晚于原 VERIFIED 07:48:02.398／EXITED 07:48:03.295，四时间字段不同、其余相同，真实 `EVENT_PAYLOAD_CONFLICT`；原事件／收益／账本／seen／MQ 位点未改。新增持久审计隔离并恢复收尾或保持阻塞，待用户业务裁决，#451 未新增隔离功能，也未关闭 V2 中断旧收尾；旧 V1 收尾与 Python 永久退役未完成。客服资金汇总仍有 `503 SUPPORT_ANALYTICS_SOURCE_UNAVAILABLE`，H5／真机后台恢复及 1000 用户压测未完成，整体 **PARTIAL**，不宣称完整公共 E2E 或 prod 发布通过。
+> 最新用户裁决“把旧的直接删除，重新接新的任务”已按取消移除未结算队列执行：34 V1 CANCELLED，5 未 STARTED V2 追加 FAILED；39 对象无资金／执行／UNKNOWN 等关联，整个 wallet row hash 不变，原件／触发器／18 个事件（含 5 VERIFIED 原批次）保留。最终 PID 3626775 为 SIM=true、V2=false、test-cloud=false；全局 legacyUnresolved／v2Unexited／verifiedAllocationInvalid 均 0，四 protected case 各 1，5 IDC＋phone 均新 SIM RUNNING 无 error。原冲突事件及 MQ／Redis 坏重放保留停用，未改 seen、清 key 或跳 offset，未新增隔离功能。
+>
+> 四台 IDC 首笔 10 分钟公共链 PASS：1204／SP 0.012570 USDT，1208／1212／1214 的 EM 各 0.001319，合 0.016527；各 task／receipt／ledger／earning／fund operation／leg 为 1，journal USDT delta=quote，proof NULL；UTC+8 到期 01:33:18.460647、入账 01:33:26.02～.128。旧 3 运行模型 UTC 17:33:16 已先行停止，9 容器 restart=no；独立 ollama 11434／RAG 8010 未动。真机已实操新任务 64%→94%→新周期及凭证列表／详情已入账 +0.001319 USDT，截图 `artifact/native-debug-20261103/new-rule-task-receipt.png`，UI 主链 PASS。
+>
+> 第五台云补验 PASS：P1／1210 的 LL 首笔 20 分钟任务 `SIM-89636B168C374E089FCA5AEE889D56FA` 已 COMPLETED／CREDITED 0.388889 USDT，UTC+8 到期 01:43:18.460647、入账 01:43:31.042963；receipt／ledger／earning／fund operation 各 1，journal delta=quote，proof NULL。五 IDC 首笔共 0.405416 USDT，实际覆盖 EM／SP／LL，不外推 IG／FT／VG 或 UVT 日奖。最终时点新 RUNNING 27／COMPLETED 27／errors 0、用例账号 6 台设备 RUNNING，仅属时间观测，非压测。
+>
+> 永久退役实际 APPLY exit 0：retirement `b07f8aea51924a33a182362253ca0aa4`，drain `c5582f4afe0e45ebb9c65ea33a326fec` 经原 resume-maintenance 正常关闭，回执 `/var/lib/uvel-task-control/compute-retirement.json` SHA256 `cf920ab9a76f42bfa72869c1f050febd11645daf918ba9d0d3517ab4e59c5767`；committed 26600275968→15032385536 bytes，3 worker＋observer 永久条件停用，原 journal 只读封存。客服资金汇总 503、1000 用户压测未跑、其他型号／全类型及公共后台一小时等未覆盖限制继续保留，不宣称全量或 prod 验收通过。
+>
+> 最终运行门禁：3 worker disabled／PID 0，observer static／PID 0 且条件 block，独立 ollama／RAG healthy；allowNewActivations=true、draining=false、HALTED absent。旧 CI maintenance 只读 plan exit 1／`COMPUTE_PERMANENTLY_RETIRED` 为预期拒绝，未尝试 restore。
 
 
 日期：2026-11-01；TEST 进度更新：2026-11-02（现场回执使用 UTC）。依据：本聊天用户批准的《设备算力任务优化计划书：随机派单、Redis 运行态、RocketMQ 可靠事件、分钟批量结算》，以及同日后发决定“先满足效率，暂不考虑可靠事件要求”。本规格适用于正式后端、管理端及 App 共用 H5 页面；H5 Lite 分支仍独立维护、发布。
