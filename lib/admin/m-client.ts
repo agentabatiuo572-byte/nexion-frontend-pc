@@ -1270,12 +1270,14 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
   const messages = asArray<ContentConversationMessageView>("messages" in detail ? detail.messages : []).map((m) => {
     const sourceSenderType = upper(m.senderType, "USER") as "USER" | "AGENT" | "SYSTEM" | "INTERNAL";
     const agent = sourceSenderType !== "USER";
+    // B16: a welcome sent while the user had no advisor has no author; it is the system's, never the current owner's.
+    const ownerlessWelcome = m.origin === "WELCOME" && m.senderId == null;
     return {
       id: m.id,
       ts: asTs(m.createdAt, updated),
       sender: agent ? ("agent" as const) : ("user" as const),
       sourceSenderType,
-      agentName: agent ? sourceSenderType === "SYSTEM" ? m.kind === "AGENT_SWITCH" ? str(m.senderName) : "系统" : str(m.senderName, base.ownerAgentName || "客服台") : undefined,
+      agentName: agent ? sourceSenderType === "SYSTEM" ? m.kind === "AGENT_SWITCH" ? str(m.senderName) : "系统" : ownerlessWelcome ? "系统" : str(m.senderName, base.ownerAgentName || "客服台") : undefined,
       status: str(m.receiptStatus, "sent").toLowerCase() === "read" ? ("read" as const) : ("sent" as const),
       text: str(m.content, ""),
       kind: parseSupportMessageKind(m),

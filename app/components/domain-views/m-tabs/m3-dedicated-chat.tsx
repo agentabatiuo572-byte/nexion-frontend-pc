@@ -115,6 +115,8 @@ function SupportMessage({message,previous,customerId,customerAvatarRef,customerN
   const canCheckSku=Boolean(session?.authorities.includes("device_e1_read")&&canAccessResolvedPath(domains,"/devices/pricing"));
   const system=message.sourceSenderType==="SYSTEM"||message.sourceSenderType==="INTERNAL";
   const name=system?"系统":message.sender==="agent"?message.agentName||"历史专属客服":customerName;
+  // B16: a welcome without an author is the system's (agentName 「系统」 from the adapter); its author is not "unconfirmed".
+  const ownerlessWelcome=message.origin==="WELCOME"&&message.senderId==null;
   const grouped=!system&&previous?.sourceSenderType===message.sourceSenderType&&previous?.sender===message.sender&&message.authorConfidence==="VERIFIED"&&previous.authorConfidence==="VERIFIED"&&previous.senderId===message.senderId&&previous.origin===message.origin&&message.ts-previous.ts<300000;
   const path=message.authorConfidence==="VERIFIED"&&message.senderId?(message.sender==="agent"?message.senderAvatar?advisorAvatarPath(message.senderId,customerId):undefined:String(message.senderId)===customerId?customerAvatarRef??undefined:undefined):undefined;
   const safeLegacy=message.kind==="TEXT"||!message.kind?legacySupportDestination(message.text):undefined;
@@ -128,7 +130,7 @@ function SupportMessage({message,previous,customerId,customerAvatarRef,customerN
   return <div className={`m3-message ${system?"system":message.sender==="agent"?"agent":""}${newlyArrived&&!system?" m3-new-message":""}`}>
     {!system&&(grouped?<span style={{width:32,flexShrink:0}}/>:<SupportAvatar name={name} path={path} version={message.senderAvatar?.version} size={32}/>)}
     <div className="m3-message-copy">
-      {!grouped&&<span className="m3-message-author">{name}{message.sender==="agent"&&message.senderRole&&<span className={`m3-role-tag ${message.senderRole.toLowerCase()}`}>{SUPPORT_SESSION_ROLE_LABEL[message.senderRole]}</span>}{message.origin==="WELCOME"&&<span className="m3-role-tag welcome" title="注册后系统自动发送，不是客服手动输入">自动欢迎语</span>}{!system&&message.authorConfidence!=="VERIFIED"?" · 作者身份未确认":""} · <span className="m3-mono-time">{messageTime(message.ts)}</span></span>}
+      {!grouped&&<span className="m3-message-author">{name}{message.sender==="agent"&&message.senderRole&&<span className={`m3-role-tag ${message.senderRole.toLowerCase()}`}>{SUPPORT_SESSION_ROLE_LABEL[message.senderRole]}</span>}{message.origin==="WELCOME"&&<span className="m3-role-tag welcome" title="注册后系统自动发送，不是客服手动输入">自动欢迎语</span>}{!system&&!ownerlessWelcome&&message.authorConfidence!=="VERIFIED"?" · 作者身份未确认":""} · <span className="m3-mono-time">{messageTime(message.ts)}</span></span>}
       <div className={`msg-bubble ${message.sender==="agent"?"agent":"user"}`}>
         {message.kind==="IMAGE"?message.attachmentId?<PrivateImage id={message.attachmentId} onRevoked={onRevoked}/>:"图片暂不可用":<span style={{whiteSpace:"pre-wrap"}}>{(message).text}</span>}
         {imageCaption&&imageCaption!=="[图片]"&&<div className="m3-image-caption" style={{whiteSpace:"pre-wrap",marginTop:8}}>{message.text}</div>}

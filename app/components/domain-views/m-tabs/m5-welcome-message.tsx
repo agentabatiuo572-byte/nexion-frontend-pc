@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { supportClient, supportWelcomeMessageClient, isIndeterminateSupportError, type SupportWelcomeLanguage, type SupportWelcomeMessage, type SupportWelcomeTexts } from "../../../../lib/admin/m-support-client";
 import { formatBusinessTime } from "../../../../lib/admin/business-time";
 import { Modal } from "../design-kit";
-import { createPendingMutationStore } from "../../../../lib/admin/pending-mutation-store";
+import { createPendingMutationStore, PENDING_MUTATION_TTL_MS } from "../../../../lib/admin/pending-mutation-store";
 import { adminShellSessionKey } from "../../../../lib/admin/shell-authorities";
 import { useAdminAuth } from "../../../../lib/store/admin-auth";
 import type { MSupportPermission } from "./m5-service-rules";
@@ -14,6 +14,7 @@ type WelcomePendingRecord = { fingerprint: string; commandKey: string; createdAt
 const welcomeCommands = createPendingMutationStore<WelcomePendingRecord>({ storageKey: "nexion-admin-m-support-welcome-v1", isValidRecord: (row) => Boolean(Number.isSafeInteger(row.actorId) && row.payload && Number.isSafeInteger(row.payload.expectedVersion) && row.payload.texts) });
 const LANGUAGES: Array<{ key: SupportWelcomeLanguage; label: string }> = [{ key: "zh", label: "中文" }, { key: "en", label: "English" }, { key: "vi", label: "Tiếng Việt" }];
 const MAX = 500;
+const EXPIRED = "上次保存已超过 24 小时，不能再按原操作重试。请查询上次结果，或加载最新内容核对后重新提交。";
 const actorStamp = () => { const auth = useAdminAuth.getState(); return adminShellSessionKey(auth.session, auth.authEpoch); };
 const fingerprintOf = (payload: WelcomePayload) => `support-welcome:${payload.expectedVersion}`;
 
@@ -50,7 +51,8 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
   const [error, setError] = useState("");
   const [confirm, setConfirm] = useState(false);
   const [reason, setReason] = useState("");
-  const [retry, setRetry] = useState<{ key: string; payload: WelcomePayload } | null>(null);
+  // expiresAt = the original record's 24h limit: after it the key may no longer be replayed, only looked up.
+  const [retry, setRetry] = useState<{ key: string; payload: WelcomePayload; expiresAt: number } | null>(null);
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
@@ -60,7 +62,7 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
       if (controller.signal.aborted) return;
       const pending = permission === "superadmin" ? welcomeCommands.list().find((row) => row.actorId === adminId) : undefined;
       setCurrent(value); setDraft(pending ? pending.payload.texts : value.texts); setError(""); setLatest(null); setReadUnavailable(false); setConflict(false);
-      setRetry(pending ? { key: pending.commandKey, payload: pending.payload } : null);
+      setRetry(pending ? { key: pending.commandKey, payload: pending.payload, expiresAt: pending.expiresAt } : null);
       setReason(pending?.payload.reason ?? "");
     }).catch(() => { if (!controller.signal.aborted) { setReadUnavailable(true); setError("新用户欢迎语暂时加载不了，请重试。"); } })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -76,8 +78,10 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
 
   async function save() {
     if (permission !== "superadmin" || (!canConfirm && !retry) || !current || !draft || saving || !adminId) return;
+    if (retry && Date.now() >= retry.expiresAt) { setError(EXPIRED); return; }
     const actor = actorStamp();
     const command = retry ?? {
+      expiresAt: Date.now() + PENDING_MUTATION_TTL_MS,
       key: crypto.randomUUID(),
       payload: { expectedVersion: current.version, texts: { zh: draft.zh.trim(), en: draft.en.trim(), vi: draft.vi.trim() }, reason: reason.trim() },
     };
@@ -133,11 +137,26 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
       } else if (result.status === "FAILED") {
         welcomeCommands.forget(fingerprintOf(retry.payload));
         setRetry(null); setError("上次保存没有成功，输入已保留；请检查后重新提交。");
-      } else setError("上次保存仍在处理中，请稍后再查，或按原操作重试。");
+      } else setError(Date.now() >= retry.expiresAt ? "查不到上次保存的结果。请加载最新内容核对后重新提交。" : "上次保存仍在处理中，请稍后再查，或按原操作重试。");
     } catch { if (actor === actorStamp()) setError("暂时查不到上次保存的结果，输入已保留。"); }
     finally { setSaving(false); }
   }
 
+  // The original operation can no longer be replayed: drop it, load the latest saved copy and keep the operator's texts as the draft.
+  async function reloadAfterExpiry() {
+    if (!retry || saving) return;
+    const actor = actorStamp();
+    setSaving(true);
+    try {
+      const value = await supportWelcomeMessageClient.read();
+      if (actor !== actorStamp()) return;
+      welcomeCommands.forget(fingerprintOf(retry.payload), retry.key);
+      setCurrent(value); setDraft(retry.payload.texts); setRetry(null); setReason(""); setConfirm(false); setError("");
+    } catch (cause) { if (actor === actorStamp()) setError(errorText(cause)); }
+    finally { setSaving(false); }
+  }
+
+  const retryExpired = retry !== null && Date.now() >= retry.expiresAt;
   return (
     <div className="m-admin-panel m5-welcome-message" aria-label="新用户欢迎语">
       <h2>新用户欢迎语</h2>
@@ -160,12 +179,14 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
           {permission === "superadmin" && <button type="button" className="btn btn-pri btn-sm" disabled={retry ? false : !editable || !valid || changed.length === 0} onClick={() => setConfirm(true)}>{retry ? "继续确认上次提交" : "预览并保存"}</button>}
         </div>
       </>}
-      {confirm && current && draft && permission === "superadmin" && <Modal title="确认保存新用户欢迎语" icon="gauge" onClose={() => { if (!saving) setConfirm(false); }} busy={saving} wide footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => setConfirm(false)}>返回</button><button type="button" className="btn btn-pri btn-sm" disabled={(!canConfirm && !retry) || saving} onClick={() => void save()}>{saving ? "保存中…" : retry ? "按原操作重试" : "确认保存"}</button></>}>
+      {confirm && current && draft && permission === "superadmin" && <Modal title="确认保存新用户欢迎语" icon="gauge" onClose={() => { if (!saving) setConfirm(false); }} busy={saving} wide footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => setConfirm(false)}>返回</button><button type="button" className="btn btn-pri btn-sm" disabled={(!canConfirm && !retry) || retryExpired || saving} onClick={() => void save()}>{saving ? "保存中…" : retry ? "按原操作重试" : "确认保存"}</button></>}>
         <div className="m-admin-muted">保存后，之后注册的新用户会收到新内容；已经发出的欢迎语不变。</div>
         <div className="m-admin-list m5-welcome-diff">{(retry ? changedLanguages(current.texts, retry.payload.texts) : changed).map((key) => <div key={key}><strong>{LANGUAGES.find((item) => item.key === key)?.label}</strong><p>原：{current.texts[key]}</p><p>新：{(retry ? retry.payload.texts : draft)[key].trim()}</p></div>)}</div>
         <label className="field"><span>修改理由（8–200 字）</span><textarea value={reason} maxLength={200} disabled={saving || Boolean(retry)} onChange={(event) => setReason(event.target.value)} /></label>
         <div className="m-admin-muted">已输入 {reason.trim().length}/200 字</div>
-        {retry && <div className="m-admin-error">上次保存结果尚未确认。请先查询结果，或按原操作重试。<button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => void checkPending()}>查询上次结果</button></div>}
+        {retry && (retryExpired
+          ? <div className="m-admin-error">{EXPIRED}<button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => void checkPending()}>查询上次结果</button> <button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => void reloadAfterExpiry()}>加载最新内容</button></div>
+          : <div className="m-admin-error">上次保存结果尚未确认。请先查询结果，或按原操作重试。<button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => void checkPending()}>查询上次结果</button></div>)}
         {error && <div className="m-admin-error" role="alert">{error}</div>}
       </Modal>}
     </div>
