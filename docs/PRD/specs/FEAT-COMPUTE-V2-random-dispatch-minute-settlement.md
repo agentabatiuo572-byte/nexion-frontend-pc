@@ -257,7 +257,7 @@ App366现场名称验收：`APP366-NAMES-ACCEPTANCE.json`独立通过当前stage
 
 本批手机执行资格来自当前原生 APP 会话及其 installation、服务端当前绑定与 executionOwner，不能由请求指定任意 userId/deviceId/installationId。设备须为 OWNED 的 MOBILE/PHONE、已激活且有 server-canonical/PRODUCTION 校准，最近 120 秒心跳有效、电量至少 20%、网络可用、无暂停，并在真实模型 SHA 校验和 ONNX session 创建后上报本机 engine readiness。readiness 有效期 120 秒，授权运行心跳续期，退出后失效；填写 runtime 字符串或仅有电量/网络观测不构成模型就绪。
 
-正常APK/WGT仅携带ORT、Worker和许可证，90,405,214字节权重不进包；首次使用从固定官方HF HTTPS revision下载，按revision和SHA保存到App私有持久缓存，每次Worker仍核完整权重SHA后才加载ORT。HBuilderX 5.33与SM-A5760已实际完成首下载→私有保存→生产Worker推理199ms、完整进程重启后缓存命中（新增下载0字节）→推理202ms，两次完整产物分别独立Python ORT复算通过；199/202ms不是下载耗时。缓存路径实际为 `_doc/uniapp_save/<timestamp>.onnx`，经plus转换和renderjs文件URL送入Worker成功读取。下载中切后台后失败可能卡住准备标志的catch恢复P1已最小修代码，但后台失败→前台重试E2仍PENDING。调试壳缓存、正常云包、正式APK首次缓存及业务领取/结算分别验收，不能相互替代。
+正常APK/WGT仅携带ORT、Worker和许可证，90,405,214字节权重不进包；首次使用从固定官方HF HTTPS revision下载，按revision和SHA保存到App私有持久缓存，每次Worker仍核完整权重SHA后才加载ORT。HBuilderX 5.33与SM-A5760已实际完成首下载→私有保存→生产Worker推理199ms、完整进程重启后缓存命中（新增下载0字节）→推理202ms，两次完整产物分别独立Python ORT复算通过；199/202ms不是下载耗时。缓存路径实际为 `_doc/uniapp_save/<timestamp>.onnx`，经plus转换和renderjs文件URL送入Worker成功读取。下载中切后台后失败可能卡住准备标志的catch恢复P1已最小修代码，但后台失败→前台重试E2仍PENDING。调试壳缓存、正常云包、正式APK首次缓存分别记账。用户最新选择本轮直接用HBuilder真机基座调试，手机业务链路以该正常基座入口实际领取/独立验真/结算/恢复结果验收，正式APK安装不再是本轮前置条件。
 
 手机同时加入全局 `device-ids` 和独立 `phone-device-ids` 才能执行。当前手机 1383 为真实 7GB 设备，手机 MiniLM 任务设置 `minVram=0`，服务端按真实 CPU runtime 资格派发；不将其内存伪报为 8GB，不降低或覆盖云端 BGE 的 8GB 门槛，不将手机登记成付费 fleet。手机 USDT 沿正常冻结报价及 VERIFIED 后分钟入账；不附加 CloudShare 付费每日 UVT。
 
@@ -330,13 +330,13 @@ App366现场名称验收：`APP366-NAMES-ACCEPTANCE.json`独立通过当前stage
 | 云端五类整体模型 | TEST modal HTTP `execute→verify→status` 实跑 IG/VG/LL/FT/SP，每类执行和独立校验均为不同新进程且 exit0；未通过业务派单或资金入口 |
 | IG/VG 当前质量 | 512²/16 steps 再验通过；IG PNG 可辨，VG 4帧/4fps可完整解码且帧间有变化。已查看图片和四帧拼图；浏览器播放器实播尚未完成 |
 | LL/FT/SP 实际输出 | LL真实生成22 tokens；FT两步训练230400个LoRA参数，loss 4.313211→4.064163、更新量非零、adapter重载与独立重复训练通过；SP对11秒公开JFK音频识别，WER0且独立复算通过 |
-| 手机 ARM 整模型及缓存预验 | SM-A5760/Android16/WebView156、HBuilderX5.33运行生产Worker，2×16挑战输入产出3072B；独立Python ORT误差9.6857548×10⁻⁸、最小余弦1，旧向量重绑被真实数值比较拒绝。另完成固定URL首次下载、私有保存及完整重启cache命中（新增下载0字节），199/202ms均为推理且两次独立复算通过。catch恢复P1代码已修，后台下载失败重试、正常云包/正式APK、业务领取/结算及模型增量RAM峰值仍待实景 |
-| 新版本发布 | backend449在根卷空闲15GiB门禁失败，未checkout源码；不是本批源码编译失败。原维护已恢复/归档，未绕marker或降低门禁；后续backend450/App367及新业务后端、正式Android App均尚未完成部署 |
+| 手机 ARM 整模型及缓存预验 | SM-A5760/Android16/WebView156、HBuilderX5.33运行生产Worker，2×16挑战输入产出3072B；独立Python ORT误差9.6857548×10⁻⁸、最小余弦1，旧向量重绑被真实数值比较拒绝。另完成固定URL首次下载、私有保存及完整重启cache命中（新增下载0字节），199/202ms均为推理且两次独立复算通过。catch恢复P1代码已修；本轮用户已改选正常HBuilder真机基座为验收载体，干净9613/596ff资源恢复并正常3778重新登录，当前phone Online、复用模型缓存、等待任务服务且资格读取失败。后台下载失败重试、基座业务领取/结算及模型增量RAM峰值仍待实景；正式APK另记，不作本轮门禁 |
+| 新版本发布 | backend449在根卷空闲15GiB门禁失败，未checkout源码；不是本批源码编译失败。按用户指令清理闲置缓存、旧编译产物和过期系统日志后，根卷可用15.27GiB，原始预检exit0且返回CI_NETWORK_GATES_PASSED，门槛未修改。后续backend450/App367及新业务后端的部署仍以实际发布回执为准；本批同签名APK已本机构建并独立核来源，恢复时只读回拉为731739…，但当前验收载体按用户新指令为HBuilder基座，不执行新的安装/来源权限操作 |
 | 本批资金基线 | 新路径before于2026-11-01T22:58:01.847470Z通过只读一致性事务采集，raw SHA `848d95bce0d53c96673aac805a698a2c201df58abd99e2527ee8554f7856bd05`；仅有基线/配置/设备/E3/daily，未执行after或新经济任务 |
-| 全业务与长稳 | 正常六类派发→真实产物→独立验真→VERIFIED/MQ/分钟SQL→钱包/分摊/流水逐字段对账、正式手机下一单、断网恢复、混合资源推进、2小时/24小时长稳均待新版本与实际证据 |
+| 全业务与长稳 | 正常六类派发→真实产物→独立验真→VERIFIED/MQ/分钟SQL→钱包/分摊/流水逐字段对账、本轮基座手机下一单、断网恢复、混合资源推进、2小时/24小时长稳均待新版本与实际证据 |
 
 五类模型原始回执见本批 `run/model-evidence/whole-model-e2e-results.json`，质量复验见 `quality-e2e-results.json`，手机见 `PHONE-ARM-EM-EVIDENCE.json` 及 `run/INDEPENDENT-BACKEND-REVIEW.md` 补记。生产 compile/package、静态审阅、HBuilder真机预验与模型服务实跑都只证明相应环节，不能替代完整业务终点；早期历史窗口不拼入本批长稳。
 
 必需证据包括：正常 E2/A2 保存及重新进入回读；六类真实产物和模型摘要；手机 1383 当前 owner/绑定/心跳/电量/网络及真实 WASM 输出；合法候选等权/不等权抽选及快照不重抽；错类型、错模型/摘要、跨任务/代际、假产物和普通用户越权被拒；实际执行/验证超时、ACK 未知及子进程真实退出；Redis→MQ→一分钟 SQL 批次/分摊/钱包逐字段一致；正常 App/PC 页面操作；资源余量与无新增 OOM。6000 逻辑槽负载、真实物理并发、2 小时和 24 小时各自独立记账，不拼接历史窗口或将未运行标成通过。只开展 E2E 和完整业务链路验证，不新增或运行单元测试/独立集成套件；临时验证源码按工作区规则清理，仅保留必要回执。
 
-手机反重放的整模型正反样本已实际通过：ARM新挑战向量可通过独立ORT，重绑旧3072B向量被拒。仍须在正式App业务流程核新单确由服务端签发两行各八token挑战、重复 next/ACK 恢复沿原冻结矩阵、旧向量被拒且不入账、新向量合法入账；这一全链路及断网超过租约的恢复/真实退出验收仍为 PENDING，不能用 SecureRandom 或编译成功代替。
+手机反重放的整模型正反样本已实际通过：ARM新挑战向量可通过独立ORT，重绑旧3072B向量被拒。仍须在本轮HBuilder真机基座正常业务流程核新单确由服务端签发两行各八token挑战、重复 next/ACK 恢复沿原冻结矩阵、旧向量被拒且不入账、新向量合法入账；这一全链路及断网超过租约的恢复/真实退出验收仍为 PENDING，不能用 SecureRandom 或编译成功代替。
