@@ -55,6 +55,7 @@ import {
   EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, validateSkuSpecs, skuNum, stateLabel, ostate,
 } from "./e-tabs/data";
 import type { DatacenterForm, Mc, EOp, EViewCtx, EOrder } from "./e-tabs/types";
+import { TaskTypeChoices, PhoneTaskPolicy, fetchTaskTypePolicy, policyTaskChoices } from "./e-tabs/task-type-policy";
 import { E1Catalog } from "./e-tabs/e1-catalog";
 import { E2Tasks } from "./e-tabs/e2-tasks";
 import { E3Lifecycle } from "./e-tabs/e3-lifecycle";
@@ -642,6 +643,13 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const staleSkuDatacenter = form.datacenter.trim() && !skuDatacenterSet.has(form.datacenter.trim())
     ? form.datacenter.trim()
     : "";
+  const [skuTaskOptions, setSkuTaskOptions] = useState<ReturnType<typeof policyTaskChoices>>([]);
+  const [skuTaskOptionsReady, setSkuTaskOptionsReady] = useState(false);
+  useEffect(() => {
+    if (!skuDrawer) return;
+    setSkuTaskOptionsReady(false);
+    void fetchTaskTypePolicy().then((data) => { setSkuTaskOptions(policyTaskChoices(data)); setSkuTaskOptionsReady(true); }).catch((error) => setToast(displayAdminError(error)));
+  }, [skuDrawer, setToast]);
   const [skuMedia, setSkuMedia] = useState<SkuMedia>(null);
   const [skuMediaUploading, setSkuMediaUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -649,8 +657,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const mediaSeq = useRef(0);
   const [taskDrawer, setTaskDrawer] = useState(false);
   const [editTaskId, setEditTaskId] = useState<string | null>(null);
-  const emptyTaskForm = { n: "", price: "", req: "", unit: "", sat: "", taskClass: "", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "", selectionWeight: "1", expectedDurationMinSec: "18", expectedDurationMaxSec: "18", executionTimeoutSec: "", runtimeKey: "", validatorKey: "", workloadConfigJson: "" };
+  const emptyTaskForm = { simulated: true, durationMinutes: "5", baseReward: "", asset: "USDT", enabled: true, version: 0, n: "", price: "", req: "", unit: "", sat: "", taskClass: "", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "", selectionWeight: "1", expectedDurationMinSec: "18", expectedDurationMaxSec: "18", executionTimeoutSec: "", runtimeKey: "", validatorKey: "", workloadConfigJson: "" };
   const [taskForm, setTaskForm] = useState(emptyTaskForm);
+  const taskSimulation = () => taskForm.simulated ? ({ durationMinutes: Number(taskForm.durationMinutes), baseReward: taskForm.baseReward.trim(), asset: taskForm.asset, enabled: taskForm.enabled, expectedVersion: taskForm.version }) : undefined;
   const taskComputeConfig = () => ({
     selectionWeight: Number(taskForm.selectionWeight),
     expectedDurationMinSec: Number(taskForm.expectedDurationMinSec),
@@ -798,6 +807,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   };
   // 任务表单校验(新增 + 编辑共用):取值完整性,非锁死业务值。
   const validateTaskForm = (): string | null => {
+    if (taskForm.simulated) {
+      if (!taskForm.n.trim()) return "请填写任务名称";
+      if (!/^[1-9]\d*$/.test(taskForm.durationMinutes) || Number(taskForm.durationMinutes) > 1440) return "固定时长须为 1–1440 的整数分钟";
+      if (!/^(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/.test(taskForm.baseReward.trim())) return "固定奖励须为非负数，最多 12 位整数、6 位小数";
+      return null;
+    }
     const price = Number(taskForm.price) || 0;
     if (!taskForm.n.trim() || !price) return "请填写任务名称和单价";
     if (!taskForm.unit.trim() || !taskForm.req.trim() || !taskForm.killInit.trim()) return "请填写计价单位、设备要求和初始接单状态";
@@ -828,6 +843,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const openEditTask = (t: OpsTask) => {
     if (!canMutateE2Tasks) return rejectE2Mutation();
     setTaskForm({
+      simulated: !!t.simulation, durationMinutes: String(t.simulation?.durationMinutes ?? 5), baseReward: String(t.simulation?.baseReward ?? ""), asset: t.simulation?.asset ?? "USDT", enabled: t.simulation?.enabled ?? true, version: t.simulation?.version ?? 0,
       n: t.n, price: String(t.price), req: t.req, unit: t.unit, sat: t.sat == null ? "" : String(Math.round(t.sat * 100)),
       taskClass: t.taskClass || "", model: t.model || "",
       minReward: t.minReward != null ? String(t.minReward) : "", maxReward: t.maxReward != null ? String(t.maxReward) : "",
@@ -1032,6 +1048,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setToast("请选择一个当前有效的数据中心");
       return;
     }
+    if (!skuTaskOptionsReady) { setToast("任务类型列表尚未加载，请重新打开商品后再提交"); return; }
     const specErr = validateSkuSpecs(form);
     if (specErr) { setToast(specErr); return; }
     const poolErr = validateSkuUnlockPool();
@@ -1152,7 +1169,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     <div className="dkpage edom">
       <DomainHeader {...meta} right={headerRight} />
 
-      {tab === "E1" && <E1Catalog ctx={ctx} />}
+      {tab === "E1" && <><PhoneTaskPolicy canWrite={canUseE1Writes} toast={setToast} /><E1Catalog ctx={ctx} /></>}
       {tab === "E2" && <E2Tasks ctx={ctx} />}
       {tab === "E3" && <E3Lifecycle ctx={ctx} />}
       {tab === "E4" && <E4Orders ctx={ctx} />}
@@ -1301,6 +1318,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               <Btn sm disabled={skuMediaUploading} onClick={() => resetSkuMedia(null)}>移除</Btn>
             </div>}
           </div>
+          <SkuFieldGroup n="任务" title="可跑任务类型">
+            <TaskTypeChoices tasks={skuTaskOptions} selected={form.allowedTaskTypeIds} onChange={(ids) => setForm({ ...form, allowedTaskTypeIds: ids })} ready={skuTaskOptionsReady} />
+            <div className="tint tiny">上架时须勾选至少一个完整且启用的类型。发布后已售设备的新任务按此范围等概率抽取，运行中任务保留原版本。</div>
+          </SkuFieldGroup>
           <SkuFieldGroup n="①" title="基本信息">
             <SkuFld label="型号名称" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="如 UVELBox Pro v3" />
             <div className="grid g-2" style={{ gap: 12 }}>
@@ -1496,10 +1517,20 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       </Drawer>}
 
       {/* 任务新增 抽屉 */}
-      {taskDrawer && <Drawer title={editTaskId ? "编辑任务" : "新增任务"} sub={<AutoGloss>{editTaskId ? "修改后需确认，只对之后新派的任务生效" : "新增 AI 算力任务，确认后对新派的任务生效"}</AutoGloss>} onClose={() => { setTaskDrawer(false); setEditTaskId(null); }}
-        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setTaskDrawer(false); setEditTaskId(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!canMutateE2Tasks || !taskForm.n.trim() || !Number(taskForm.price)} onClick={editTaskId ? submitTaskEdit : submitTask}>{editTaskId ? "保存修改" : "提交新增"}</Btn></>}>
+      {taskDrawer && <Drawer title={editTaskId ? "编辑任务" : "新增任务"} sub={<AutoGloss>{editTaskId ? "修改后需确认，只对之后新派的任务生效" : "新增任务类型，确认后对新任务生效"}</AutoGloss>} onClose={() => { setTaskDrawer(false); setEditTaskId(null); }}
+        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setTaskDrawer(false); setEditTaskId(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!canMutateE2Tasks || !taskForm.n.trim()} onClick={editTaskId ? submitTaskEdit : submitTask}>{editTaskId ? "保存修改" : "提交新增"}</Btn></>}>
         <div className="col" style={{ gap: 12 }}>
           <label className="col" style={{ gap: 5 }}><span className="muted tiny">任务名称</span><input className="fld" value={taskForm.n} onChange={(e) => setTaskForm({ ...taskForm, n: e.target.value })} placeholder="如 大模型推理 405B" /></label>
+          {taskForm.simulated ? <>
+            <div className="grid g-2" style={{ gap: 12 }}>
+              <SkuFld label="固定时长（分钟）" type="number" value={taskForm.durationMinutes} onChange={(v) => setTaskForm({ ...taskForm, durationMinutes: v })} hint="1–1440，整数分钟" />
+              <SkuFld label="固定基础奖励" value={taskForm.baseReward} onChange={(v) => setTaskForm({ ...taskForm, baseReward: v })} hint="最多 6 位小数" />
+              <label className="col" style={{ gap: 5 }}><span className="muted tiny">奖励资产</span><select className="fld" value={taskForm.asset} onChange={(e) => setTaskForm({ ...taskForm, asset: e.target.value })}><option value="USDT">USDT</option><option value="NEX">UVT</option></select></label>
+              <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={taskForm.enabled} onChange={(e) => setTaskForm({ ...taskForm, enabled: e.target.checked })} />启用新任务</label>
+              <label className="col" style={{ gap: 5 }}><span className="muted tiny">展示类别</span><select className="fld" value={taskForm.taskClass || "EM"} onChange={(e) => setTaskForm({ ...taskForm, taskClass: e.target.value })}>{["IG", "VG", "LL", "FT", "EM", "SP"].map((c) => <option key={c} value={c}>{c}</option>)}</select></label>
+            </div>
+            <div className="tint tiny">商品及手机类别单独勾选可跑类型。各类型等概率抽取；发布修改只影响之后的新任务，运行中任务保留原版本。{taskForm.version ? ` 当前版本 v${taskForm.version}` : ""}</div>
+          </> : <>
           <div className="grid g-2" style={{ gap: 12 }}>
             <label className="col" style={{ gap: 5 }}><span className="muted tiny"><AutoGloss>单价(USDT)</AutoGloss></span><input className="fld" type="number" value={taskForm.price} onChange={(e) => setTaskForm({ ...taskForm, price: e.target.value })} placeholder="1.20" /></label>
             <label className="col" style={{ gap: 5 }}><span className="muted tiny">计价单位</span><div className="row wrap" style={{ gap: 6 }}>{["/job", "/1k", "/min"].map((u) => <Chip key={u} tab sel={taskForm.unit === u} onClick={() => setTaskForm({ ...taskForm, unit: u })}>{({ "/job": "每项任务", "/1k": "每千单位", "/min": "每分钟" } as Record<string,string>)[u]}</Chip>)}</div></label>
@@ -1535,6 +1566,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             <label className="col" style={{ gap: 5 }}><span className="muted tiny">初始接单状态</span><div className="row wrap" style={{ gap: 6 }}>{["派发中", "已 kill", "限流中"].map((k) => <Chip key={k} tab sel={taskForm.killInit === k} onClick={() => setTaskForm({ ...taskForm, killInit: k })}>{k === "已 kill" ? "已停止接单" : k === "派发中" ? "正常接单" : "限量接单"}</Chip>)}</div></label>
           </div>
           <div className="tint warn tiny"><AutoGloss>单价、设备要求和任务类型修改后需确认，只对之后新派的任务生效，用户任务页同步更新。</AutoGloss></div>
+          </>}
         </div>
       </Drawer>}
 
@@ -1689,7 +1721,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 taskId: "", name: taskForm.n.trim(), price, unit: taskForm.unit, requirement: taskForm.req,
                 saturation: sat, status: "active", taskClass: taskForm.taskClass, model: taskForm.model.trim(),
                 minReward: minR, maxReward: maxR, minVram: taskForm.minVRAM.trim(), killInit: taskForm.killInit,
-                ...taskComputeConfig(),
+                ...taskComputeConfig(), simulation: taskSimulation(),
               };
               await propose(ctx.toast, {
                 action: mc.name, obj: taskForm.n.trim(), before: "—", after: taskForm.n.trim() + " · taskClass=" + taskForm.taskClass,
@@ -1727,7 +1759,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 taskId: editTaskId, name: taskForm.n.trim(), price, unit: taskForm.unit, requirement: taskForm.req,
                 saturation: sat, status: currentTask.status, taskClass: taskForm.taskClass, model: taskForm.model.trim(),
                 minReward: minR, maxReward: maxR, minVram: taskForm.minVRAM.trim(), killInit: taskForm.killInit,
-                ...taskComputeConfig(),
+                ...taskComputeConfig(), simulation: taskSimulation(),
               };
               await propose(ctx.toast, {
                 action: mc.name, obj: editTaskId, before: "编辑前任务", after: taskForm.n.trim(), type: def.type, amplifies: false,

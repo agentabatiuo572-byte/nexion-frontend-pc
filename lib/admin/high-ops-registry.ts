@@ -971,6 +971,13 @@ export const HIGH_OPS: HighOpDef[] = [
     buildTarget: () => ({ domain: "E", type: "store_bundle_discount", id: "canonical" }),
   },
   {
+    op: "e1_phone_task_policy", domain: "E", action: "发布手机可跑任务", amplifies: false,
+    type: "param", gateLabel: "门槛者", targetType: "device_sku",
+    buildCommand: (ctx) => ({ domain: "E", op: "e1_phone_task_policy", params: {
+      allowedTaskTypeIds: ctx.allowedTaskTypeIds, expectedVersion: ctx.expectedVersion } }),
+    buildTarget: () => ({ domain: "E", type: "device_sku", id: "phone" }),
+  },
+  {
     op: "e1_sku_create",
     domain: "E",
     action: "新建设备 SKU",
@@ -1157,7 +1164,7 @@ export const HIGH_OPS: HighOpDef[] = [
         maxReward: ctx.maxReward, minVram: String(ctx.minVram), killInit: String(ctx.killInit),
         selectionWeight: ctx.selectionWeight, expectedDurationMinSec: ctx.expectedDurationMinSec,
         expectedDurationMaxSec: ctx.expectedDurationMaxSec, executionTimeoutSec: ctx.executionTimeoutSec,
-        runtimeKey: ctx.runtimeKey, validatorKey: ctx.validatorKey, workloadConfigJson: ctx.workloadConfigJson } }),
+        runtimeKey: ctx.runtimeKey, validatorKey: ctx.validatorKey, workloadConfigJson: ctx.workloadConfigJson, simulation: ctx.simulation } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_task", id: String(ctx.taskId) }),
   },
   {
@@ -1175,7 +1182,7 @@ export const HIGH_OPS: HighOpDef[] = [
         maxReward: ctx.maxReward, minVram: String(ctx.minVram), killInit: String(ctx.killInit),
         selectionWeight: ctx.selectionWeight, expectedDurationMinSec: ctx.expectedDurationMinSec,
         expectedDurationMaxSec: ctx.expectedDurationMaxSec, executionTimeoutSec: ctx.executionTimeoutSec,
-        runtimeKey: ctx.runtimeKey, validatorKey: ctx.validatorKey, workloadConfigJson: ctx.workloadConfigJson } }),
+        runtimeKey: ctx.runtimeKey, validatorKey: ctx.validatorKey, workloadConfigJson: ctx.workloadConfigJson, simulation: ctx.simulation } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_task", id: String(ctx.taskId) }),
   },
   {

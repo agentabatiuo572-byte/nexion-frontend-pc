@@ -55,6 +55,7 @@ const mediaIdentityText = (value: unknown): string => {
 
 // 高风险审核首先回答“改了哪个字段、从什么改成什么”。库存放在首位，避免长配置挤掉核心变更。
 const SKU_FIELDS: FieldDescriptor[] = [
+  { label: "可跑任务", read: (sku) => sku.allowedTaskTypeIds, format: features, equal: (a, b) => JSON.stringify(a ?? []) === JSON.stringify(b ?? []) },
   { label: "库存", read: (sku) => sku.stock, format: stock, equal: numberEqual },
   { label: "价格", read: (sku) => sku.price, format: money, equal: numberEqual },
   { label: "允许试用", read: (sku) => sku.trialEligible, format: yesNo, equal: (a, b) => Boolean(a) === Boolean(b) },

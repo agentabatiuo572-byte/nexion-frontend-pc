@@ -25,6 +25,9 @@ interface PageResult<T> {
 }
 
 interface BackendSku {
+  allowedTaskTypeIds?: string[];
+  productTaskPolicyVersion?: number;
+  productTaskPolicyEffectiveAt?: string;
   skuId: string;
   name: string;
   tier?: string | null;
@@ -219,6 +222,9 @@ function fromSku(sku: BackendSku): OpsSku {
   const inventoryMode = sku.inventoryMode;
   const stock = inventoryMode === "UNLIMITED" ? undefined : sku.stock as string;
   return {
+    allowedTaskTypeIds: sku.allowedTaskTypeIds,
+    productTaskPolicyVersion: sku.productTaskPolicyVersion,
+    productTaskPolicyEffectiveAt: sku.productTaskPolicyEffectiveAt,
     id: sku.skuId,
     name: sku.name,
     tier: sku.tier ?? "Entry",
@@ -279,6 +285,7 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     throw new Error("E1_SKU_INVENTORY_CONTRACT_INVALID");
   }
   return {
+    allowedTaskTypeIds: sku.allowedTaskTypeIds,
     skuId: sku.id || undefined,
     name: sku.name,
     tier: sku.tier,

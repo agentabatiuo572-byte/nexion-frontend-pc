@@ -39,6 +39,7 @@ export const EMPTY_SKU_FORM = {
   name: "", id: "", tier: "", tagline: "", badge: "",
   gpuCount: "", specDocumentTitle: "", specDocumentUrl: "",
   gpu: "", vram: "", hashRate: "", power: "", datacenter: "", uptime: "", warranty: "", phoneDailyEarn: "", phoneDailyEarnNEX: "",
+  allowedTaskTypeIds: [] as string[],
   price: "", computePoints: "",
   dailyEarn: "", dailyEarnNEX: "", shareYieldMin: "", shareYieldMax: "",
   inventoryMode: "FINITE", stock: "", trialEligible: "false",
@@ -99,6 +100,7 @@ export function skuToForm(s: OpsSku): SkuForm {
     name: s.name ?? "", id: s.id ?? "", tier: s.tier ?? "", tagline: s.tagline ?? "", badge: s.badge ?? "",
     gpuCount: gpuParts.count, specDocumentTitle: s.specDocumentTitle ?? "", specDocumentUrl: s.specDocumentUrl ?? "",
     gpu: gpuParts.model, vram: s.vram ?? "", hashRate: s.hashRate ?? "", power: s.power ?? "", datacenter: s.datacenter ?? "", uptime: s.uptime ?? "", warranty: s.warranty ?? "", phoneDailyEarn: str(s.phoneDailyEarn), phoneDailyEarnNEX: str(s.phoneDailyEarnNEX),
+    allowedTaskTypeIds: s.allowedTaskTypeIds ?? [],
     price: str(s.price), computePoints: str(s.computePoints),
     dailyEarn: str(s.dailyEarn), dailyEarnNEX: str(s.dailyEarnNEX), shareYieldMin: str(s.shareYieldMin), shareYieldMax: str(s.shareYieldMax),
     inventoryMode: s.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE", stock: s.inventoryMode === "UNLIMITED" ? "" : str(s.stock), trialEligible: s.trialEligible ? "true" : "false",
@@ -279,6 +281,7 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
     tier: f.tier, tagline: f.tagline.trim() || undefined, badge: f.badge.trim() || undefined,
     specDocumentTitle: f.specDocumentTitle.trim() || undefined, specDocumentUrl: f.specDocumentUrl.trim() || undefined,
     gpu: joinGpu(f.gpu, f.gpuCount), vram: f.vram.trim() || undefined, hashRate: f.hashRate.trim() || undefined, power: f.power.trim() || undefined, datacenter: f.datacenter.trim() || undefined, uptime: f.uptime.trim() || undefined, warranty: f.warranty.trim() || undefined, phoneDailyEarn: skuNumU(f.phoneDailyEarn), phoneDailyEarnNEX: skuNumU(f.phoneDailyEarnNEX),
+    allowedTaskTypeIds: f.allowedTaskTypeIds,
     price: skuNum(f.price), computePoints: skuNumU(f.computePoints),
     dailyEarn, dailyEarnNEX, shareYieldMin, shareYieldMax, baseRate,
     // Sales remains display-only; write payloads omit it and Java retains the live counter.

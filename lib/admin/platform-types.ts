@@ -1,6 +1,16 @@
 import type { ComputeTaskConfig } from "./e2-compute-config";
 
+export interface TaskSimulation {
+  durationMinutes: number;
+  baseReward: number | string;
+  asset: "USDT" | "NEX";
+  enabled: boolean;
+  version: number;
+  effectiveAt?: string;
+}
+
 export interface OpsTask extends ComputeTaskConfig {
+  simulation?: TaskSimulation | null;
   id: string;
   n: string;
   price: number;
@@ -29,6 +39,9 @@ export interface PurchaseGate {
 }
 
 export interface OpsSku {
+  allowedTaskTypeIds?: string[];
+  productTaskPolicyVersion?: number;
+  productTaskPolicyEffectiveAt?: string;
   name: string;
   id: string;
   tier?: string;

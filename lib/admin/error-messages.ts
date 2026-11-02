@@ -1,4 +1,18 @@
 const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  SIMULATED_DURATION_MINUTES_INVALID: "固定时长须为 1–1440 的整数分钟。",
+  SIMULATED_FIXED_REWARD_INVALID: "固定奖励须为非负数，最多 12 位整数、6 位小数。",
+  SIMULATED_ASSET_INVALID: "请选择 USDT 或 UVT 奖励资产。",
+  SIMULATED_POLICY_VERSION_REQUIRED: "配置版本缺失，请刷新后重新提交。",
+  SIMULATED_TASK_POLICY_VERSION_CONFLICT: "任务类型已更新，请刷新后重新编辑。",
+  SIMULATED_PRODUCT_POLICY_VERSION_CONFLICT: "可跑任务策略已更新，请刷新后重新编辑。",
+  SIMULATED_ALLOWED_TYPES_REQUIRED: "发布前须勾选至少一个可用任务类型。",
+  SIMULATED_TASK_TYPE_ID_INVALID: "可跑任务类型无效，请从列表重新选择。",
+  SIMULATED_TASK_TYPE_NOT_AVAILABLE: "所选任务类型尚未发布或已停用，请重新选择。",
+  SIMULATED_TASK_SETTINGS_REQUIRED: "请通过任务类型完整编辑入口提交固定时长与奖励。",
+  SIMULATED_TASK_SETTINGS_INVALID: "任务配置不完整，请刷新后重新编辑。",
+  SIMULATED_TASK_DISABLE_IN_SETTINGS: "请在编辑任务中关闭新任务，历史配置会保留。",
+  SIMULATED_TASK_FIXED_REWARD_REQUIRES_EDIT: "请在编辑任务中修改固定奖励及资产。",
+
   LEGACY_UNKNOWN_RESPONSE_INVALID: "原任务终结资格返回不完整，请重新核对；本次没有提交。",
   LEGACY_UNKNOWN_DEVICE_IDENTITY_CHANGED: "设备或用户归属已变化，请刷新设备列表后重新核对。",
   LEGACY_UNKNOWN_PROPOSAL_INVALID: "请重新核对退出证明和操作理由，本次没有提交。",

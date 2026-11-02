@@ -28,6 +28,7 @@ interface PageResult<T> {
 }
 
 interface BackendTask extends ComputeTaskConfig {
+  simulation?: OpsTask["simulation"];
   taskId: string;
   name: string;
   price?: number | string | null;
@@ -197,6 +198,7 @@ async function e2Request<T>(path: string, init?: RequestInit & { idempotencyPref
 
 function fromTask(task: BackendTask): OpsTask {
   return {
+    simulation: task.simulation,
     id: task.taskId,
     n: task.name,
     price: toNumber(task.price),
@@ -263,9 +265,10 @@ export async function updateE2TaskPricing(
 }
 
 function toTaskPayload(task: OpsTask, reason: string, operator: string) {
-  const error = validateComputeTaskConfig(task);
+  const error = task.simulation ? null : validateComputeTaskConfig(task);
   if (error) throw new Error(error);
   return {
+    simulation: task.simulation ? { ...task.simulation, expectedVersion: task.simulation.version } : undefined,
     name: task.n,
     price: task.price,
     unit: task.unit,

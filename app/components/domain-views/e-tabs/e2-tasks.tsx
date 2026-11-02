@@ -256,16 +256,16 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
               return (
                 <div className="task" key={t.id}>
                   <span className={`ic ${k}`}><KindIcon k={k} /></span>
-                  <div className="nm">{nexGridBrandText(t.n)}<span className="pid">{t.id}</span><small style={{ display: "block", color: "var(--ink-4)", marginTop: 4 }}>权重 {t.selectionWeight ?? 1} · 预计 {t.expectedDurationMinSec ?? "—"}–{t.expectedDurationMaxSec ?? "—"} 秒{t.executionTimeoutSec == null ? "" : ` · 超时 ${t.executionTimeoutSec} 秒`}{t.runtimeKey ? ` · ${t.runtimeKey}` : ""}{t.validatorKey ? ` / ${t.validatorKey}` : ""}</small></div>
-                  <div className="price">${t.price.toFixed(2)}<small>{taskUnitText(t.unit)}</small></div>
-                  <span className={`req ${locked ? "lock" : "open"}`}>{locked && <LockMini />}{reqLabel}</span>
+                  <div className="nm">{nexGridBrandText(t.n)}<span className="pid">{t.id}</span><small style={{ display: "block", color: "var(--ink-4)", marginTop: 4 }}>{t.simulation ? `固定 ${t.simulation.durationMinutes} 分钟 · v${t.simulation.version} · ${t.simulation.enabled ? "启用" : "停用"}` : <>权重 {t.selectionWeight ?? 1} · 预计 {t.expectedDurationMinSec ?? "—"}–{t.expectedDurationMaxSec ?? "—"} 秒</>}</small></div>
+                  <div className="price">{t.simulation ? `${t.simulation.baseReward} ${t.simulation.asset === "NEX" ? "UVT" : "USDT"}` : `$${t.price.toFixed(2)}`}<small>{t.simulation ? "每任务基础奖励" : taskUnitText(t.unit)}</small></div>
+                  <span className={`req ${locked ? "lock" : "open"}`}>{locked && <LockMini />}{t.simulation ? "按商品勾选范围" : reqLabel}</span>
                   <div className="sat">
                     <div className="bar">{pct == null ? null : <div className="f" style={{ width: `${pct}%`, background: satColor(pct) }} />}</div>
                     <span className="pct">{pct == null ? "—" : `${pct}%`}</span>
                   </div>
                   {canMutateTasks && <div className="acts">
                     <button className="primary" onClick={() => ctx.openEditTask(t)}>编辑</button>
-                    <button onClick={() => ctx.delTask({ id: t.id, n: t.n })}>下架</button>
+                    {!t.simulation && <button onClick={() => ctx.delTask({ id: t.id, n: t.n })}>下架</button>}
                   </div>}
                 </div>
               );
