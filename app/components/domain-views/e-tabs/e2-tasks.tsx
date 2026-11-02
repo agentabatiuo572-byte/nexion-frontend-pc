@@ -59,7 +59,7 @@ function amount(value: number) {
 const LIST_PAGE_SIZE = 6;   // 任务列表每页行数
 
 export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
-  const { tasks } = ctx;
+  const tasks = useMemo(() => ctx.tasks.filter((task) => task.simulation), [ctx.tasks]);
   const canMutate = ctx.canWriteE2 && !ctx.e2Loading && !ctx.e2Error && !!ctx.e2Pricing;
   const canMutateTasks = ctx.canWriteE2 && !ctx.e2Loading && ctx.e2TaskCatalogReady;
   const [teaserDevice, setTeaserDevice] = useState("phone");
