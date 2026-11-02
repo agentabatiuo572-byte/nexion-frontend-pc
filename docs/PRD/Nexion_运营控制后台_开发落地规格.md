@@ -628,10 +628,12 @@
 | `/api/admin/content/support-workbench/customers` · `/customers/{id}` | GET | 同一 `snapshotId` 返回本人或主管当前负责组范围的统计、客户页、绩效、完整性与规则；详情携当前归属和维护版本。活跃、沉睡、到期不可判定时为 `null`，待办按客户去重 | — | M1 |
 | `/api/admin/content/support-workbench/customers/{id}/maintenance` · `/maintenance/history` | PATCH / GET | 当前专属客服按归属 ID、偏好版本、理由和 Key 暂停或恢复主动维护；周期和人工执行分别分页，成功周期由后续真实活动确认 | 是 | M1 |
 | `/api/admin/content/support-agents/assignments/transfer` · `/rules` | POST / GET / PUT | 主管正式转绑；超管配置可空沉睡、维护、活跃天数及继承模式，`LIMITED` 深度 0 合法；写入均用版本、理由和 Key | 是 | M1/M5 |
-| `/api/admin/content/conversations` · `/{no}/replies` · `/attachments/policy` · `/attachments` | GET / POST | 本人当前归属下发起/回复专属客服会话，明确指定 `replyTargets`；图片按服务端策略上传，经授权读取并在撤权时清理 | 按动作 | M3 |
+| `/api/admin/content/conversations` · `/{no}/replies` · `/{no}/messages` · `/attachments/policy` · `/attachments` | GET / POST | 本人当前归属下发起/回复专属客服会话，明确指定 `replyTargets`；图片按服务端策略上传，经授权读取并在撤权时清理。会话详情和消息分页的消息带可选 `origin`（新用户欢迎语为 `"WELCOME"`，其余 `null`/缺省，B16） | 按动作 | M3 |
 | `/api/admin/content/support-workbench/commands/{key}` | GET | 结果未知时查询原命令；`PROCESSING`/`UNKNOWN` 不铸新 Key，成功或明确失败后才解除锁定 | — | M1/M3/M5 |
 | `/api/admin/content/tickets` · `/{no}` | GET | 私聊转工单副本正文、摘要、搜索只供当前专属客服、负责组审阅主管及获准总管理员；其他工单角色仍可协作指派、状态和内部备注 | — | M2 |
-| `/api/admin/content/conversations/timeout-policy` | GET / PUT | 读取/更新全局会话空闲提醒与自动关闭时长；PUT 携 Key + expectedVersion，定时器先提醒后自动关闭，并写审计 | 是(写仅超管) | M3 |
+| `/api/admin/content/conversations/timeout-policy` | GET / PUT | 读取/更新待回复提醒、严重超时（只标记待处理，不结束会话、不解绑）和无人发言自动结束接待时长；PUT 携 Key + expectedVersion + 理由，并写审计 | 是(写仅超管) | M3 |
+| `/api/admin/content/support-agents/unbound-policy` | GET / PUT | 待分配客户提醒主管与自动兜底分配时长、默认接收组；PUT 携 expectedVersion 与理由 | 是(写仅超管) | M5 |
+| `/api/admin/content/support-agents/welcome-message` | GET / PUT | 新用户欢迎语三语文案 `{version, texts:{zh,en,vi}, updatedAt, updatedBy, reason}`；PUT 携 Key + `expectedVersion` + `texts` + 理由，每种语言去空格后 1–500 字，版本不符 409，结果未知经 `/support-workbench/commands/{key}` 查询后同号重试；读权同 `/rules`，写仅超管。后端 B16 | 是(写仅超管) | M5 |
 
 ### 域 C6/K1 用户侧 server-enforce 端点(配置阈值,写权非 admin)
 
