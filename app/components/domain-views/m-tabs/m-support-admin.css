@@ -59,3 +59,15 @@
 .mdom .m5-impact-preview .m-admin-stats { grid-template-columns: minmax(0, 1fr); gap: 0; }
 .mdom .m5-impact-preview .m-admin-stat { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; padding: 8px 0; background: transparent; border: 0; border-radius: 0; color: var(--v5-ink-2); font-size: 14px; }
 .mdom .m5-impact-preview .m-admin-stat strong { display: inline; margin-top: 0; font-size: 15px; line-height: 1.4; }
+
+/* New-user welcome copy: one card spanning both columns, three multi-line inputs with counters. */
+.mdom .m5-service-rules .m5-welcome-message { grid-column: 1 / -1; }
+.mdom .m5-welcome-field { display: flex; flex-direction: column; gap: 6px; margin: 14px 0 0; }
+.mdom .m5-welcome-field > span:first-child { color: var(--v5-ink); font-size: 14px; font-weight: 600; }
+.mdom .m5-welcome-field textarea { min-height: 96px; font-size: 14px; line-height: 1.6; }
+.mdom .m5-welcome-field textarea:disabled { color: var(--v5-ink-2); cursor: default; }
+.mdom .m5-welcome-field textarea[aria-invalid="true"] { border-color: var(--v5-warning); }
+.mdom .m5-welcome-count { align-self: flex-end; color: var(--v5-ink-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.mdom .m5-welcome-count.invalid { color: var(--v5-warning); }
+.mdom .m5-welcome-diff { max-height: 260px; }
+.mdom .m5-welcome-diff p { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }

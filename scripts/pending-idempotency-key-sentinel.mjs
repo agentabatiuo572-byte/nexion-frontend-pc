@@ -110,6 +110,7 @@ const MIGRATED = [
   "app/components/domain-views/m-tabs/m1-supervisor-pool.tsx",
   "app/components/domain-views/m-tabs/m3-dedicated-chat.tsx",
   "app/components/domain-views/m-tabs/m5-service-rules.tsx",
+  "app/components/domain-views/m-tabs/m5-welcome-message.tsx",
   // Account creation, bulk and random retain immutable pending commands across refresh.
   "app/components/domain-views/a-tabs/a1-accounts.tsx",
   "app/components/domain-views/m-tabs/support-bulk-composer.tsx",

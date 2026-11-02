@@ -546,6 +546,27 @@ export const supportUnboundPolicyClient = {
     request("/support-agents/unbound-policy", unboundPolicy, { method: "PUT", body: JSON.stringify(input) }),
 };
 
+export type SupportWelcomeLanguage = "zh" | "en" | "vi";
+export type SupportWelcomeTexts = Record<SupportWelcomeLanguage, string>;
+export type SupportWelcomeMessage = { version: number; texts: SupportWelcomeTexts; updatedAt: string | null; updatedBy: string | null; reason: string | null };
+const welcomeMessage = (value: unknown): SupportWelcomeMessage => {
+  const row = object(value, "welcome");
+  const texts = object(row.texts, "welcome.texts");
+  return {
+    version: positive(row.version, "welcome.version"),
+    texts: { zh: nonempty(texts.zh, "welcome.texts.zh"), en: nonempty(texts.en, "welcome.texts.en"), vi: nonempty(texts.vi, "welcome.texts.vi") },
+    updatedAt: nullableTimestamp(row.updatedAt, "welcome.updatedAt") ?? null,
+    updatedBy: row.updatedBy == null ? null : nonempty(row.updatedBy, "welcome.updatedBy"),
+    reason: row.reason == null ? null : nonempty(row.reason, "welcome.reason"),
+  };
+};
+/** B16: the one welcome copy every new user receives in their support conversation right after registration. */
+export const supportWelcomeMessageClient = {
+  read: (signal?: AbortSignal) => request("/support-agents/welcome-message", welcomeMessage, { signal }),
+  update: (input: { expectedVersion: number; texts: SupportWelcomeTexts; reason: string }, idempotencyKey: string, signal?: AbortSignal) =>
+    request("/support-agents/welcome-message", welcomeMessage, json("PUT", { ...input, expectedVersion: positive(input.expectedVersion, "welcome.expectedVersion") }, idempotencyKey, signal)),
+};
+
 export type SupportPersonalPhrase = { id: string; content: string };
 const phraseList = (value: unknown): SupportPersonalPhrase[] => {
   if (!Array.isArray(value)) malformed("phrases");

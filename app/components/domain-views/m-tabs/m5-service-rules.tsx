@@ -1,6 +1,7 @@
 "use client";
 
 import { M5UnboundPolicy } from "./m5-unbound-policy";
+import { M5WelcomeMessage } from "./m5-welcome-message";
 import { useEffect, useMemo, useState } from "react";
 import { supportClient, isIndeterminateSupportError, type SupportRules } from "../../../../lib/admin/m-support-client";
 import { Modal } from "../design-kit";
@@ -219,6 +220,7 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
         <div className="m-admin-stats"><div className="m-admin-stat">沉睡判定<strong>{parsed?.dormantDays == null ? "未配置" : "可用"}</strong></div><div className="m-admin-stat">维护待办<strong>{parsed?.maintenanceDays == null ? "未配置" : "可用"}</strong></div><div className="m-admin-stat">活跃统计<strong>{parsed?.activityWindowDays == null ? "未配置" : "可用"}</strong></div></div>
         <div className="m-admin-muted">继承规则只影响之后的新注册；现有客户归属和待绑定池不会自动重排。变更天数只重算对应标签，不生成维护执行或成功记录。</div>
       </aside>
+      <M5WelcomeMessage permission={permission} />
       {confirm && current && parsed && permission === "superadmin" && <Modal title="确认保存服务规则" icon="gauge" onClose={() => { if (!saving) setConfirm(false); }} busy={saving} wide footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => setConfirm(false)}>返回</button><button type="button" className="btn btn-pri btn-sm" disabled={permission !== "superadmin" || (!canConfirm && !retry) || saving || Boolean(latest)} onClick={() => void save()}>{saving ? "保存中…" : retry ? "使用同一命令重试" : "确认保存"}</button></>}>
         <div className="m-admin-muted">仅保存下列实际修改；其余规则保留。更新后按新规则重新计算对应标签，继承只作用于未来注册。</div>
         <div className="m-admin-list">{changed.map((field) => <div key={field}>{LABELS[field]}：{labelValue(field, current[field])} → {labelValue(field, parsed[field])}</div>)}</div>

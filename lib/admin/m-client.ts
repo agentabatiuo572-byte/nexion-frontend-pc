@@ -186,6 +186,7 @@ type ContentConversationMessageView = {
   receiptStatus?: string;
   createdAt?: string;
   senderRole?: string | null;
+  origin?: string | null;
 };
 
 // 后端 ConversationCustomerProfile record 的镜像(跨域聚合客户档案,只读快照)。
@@ -1289,6 +1290,7 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
       replyTargets: m.replyTargets,
       attachmentId: typeof m.attachmentId === "string" ? m.attachmentId : undefined,
       senderRole: m.senderRole === "ADVISOR" || m.senderRole === "SUPERVISOR" || m.senderRole === "ADMIN" ? m.senderRole as SessionMsg["senderRole"] : undefined,
+      origin: m.origin === "WELCOME" ? "WELCOME" as const : undefined,
     };
   });
   const transferType = base.transferToType?.toLowerCase();
