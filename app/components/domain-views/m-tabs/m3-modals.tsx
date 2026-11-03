@@ -18,7 +18,7 @@ import {
   type TransferTarget,
 } from "./data";
 import { MAvatar, ownerLabel, relWhen } from "./hd-ui";
-import type { ConversationTimeoutPolicy } from "@/lib/admin/m-client";
+import { scriptGroupLabel, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
 
 function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
   return (
@@ -541,7 +541,7 @@ export function InitiateModal({
             {isAdvisor ? (
               <select className="fld" value={scriptId} onChange={(e) => setScriptId(e.target.value)}>
                 <option value="">自定义开场消息</option>
-                {advisorScripts.map((s) => <option key={s.id} value={s.id}>{s.id} · {s.group}{s.ctaHref !== "—" ? `（${s.ctaHref}）` : ""}</option>)}
+                {advisorScripts.map((s) => <option key={s.id} value={s.id}>{s.id} · {scriptGroupLabel(s.group)}{s.ctaHref !== "—" ? `（${s.ctaHref}）` : ""}</option>)}
               </select>
             ) : (
               <select className="fld" value={tplId} onChange={(e) => setTplId(e.target.value)}>

@@ -272,7 +272,7 @@ export default function LiquidityPage() {
         <article className="card b2-kpi">
           <span>可动用储备</span>
           <strong>{money(reserve.reserveTotalUsdt)}</strong>
-          <small>USDT 和其他可随时动用的资产，已扣除锁定的本金</small>
+          <small>USDT 和其他可随时动用的资产，已扣除质押锁定金额</small>
         </article>
         <article className="card b2-kpi">
           <span>应付款</span>
@@ -291,7 +291,7 @@ export default function LiquidityPage() {
         <article className="card b2-kpi">
           <span>{window} 累计到期</span>
           <strong>{money(maturity.cumulativeUsdt)}</strong>
-          <small>提现 + 利息 + 创世节点分红{maturity.trialStressIncluded ? " + 试用业务（压力测试）" : ""}</small>
+          <small>提现 + 质押奖励 + 创世节点收益{maturity.trialStressIncluded ? " + 试用业务（压力测试）" : ""}</small>
         </article>
       </section>
 
@@ -333,7 +333,7 @@ export default function LiquidityPage() {
                 <div>
                   <b>{row.date}</b>
                   <small>
-                    提现 {money(row.withdrawDueUsdt)} · 利息 {money(row.interestDueUsdt)} · 创世节点分红 {money(row.genesisDividendUsdt)}
+                    提现 {money(row.withdrawDueUsdt)} · 质押奖励 {money(row.interestDueUsdt)} · 创世节点收益 {money(row.genesisDividendUsdt)}
                     {maturity.trialStressIncluded ? ` · 试用业务（压力测试）${money(row.trialShadowStressUsdt)}` : ""}
                   </small>
                 </div>
@@ -354,7 +354,7 @@ export default function LiquidityPage() {
           <header><b>当前预测设置</b><span>版本 {config.version}</span></header>
           <dl>
             <div><dt>默认窗口</dt><dd>{config.forecastWindow}</dd></div>
-            <div><dt>质押利息</dt><dd>{config.stakingInterestMode === "LINEAR" ? "线性摊提" : "到期计提"}</dd></div>
+            <div><dt>质押奖励</dt><dd>{config.stakingInterestMode === "LINEAR" ? "线性摊提" : "到期计提"}</dd></div>
             <div><dt>创世节点</dt><dd>{config.genesisIncluded ? "纳入" : "不纳入"}</dd></div>
             <div><dt>试用业务压力测试</dt><dd>{config.trialStressEnabled ? "开启（不算必须付的钱）" : "关闭"}</dd></div>
             <div><dt>远期应付款</dt><dd>{config.includeFarLiabilities ? "纳入" : "排除"}</dd></div>
@@ -427,7 +427,7 @@ export default function LiquidityPage() {
                     </select>
                   </label>
                   <label>
-                    质押利息模式
+                    质押奖励计算方式
                     <select
                       value={draft.stakingInterestMode}
                       onChange={(event) => setDraft({ ...draft, stakingInterestMode: event.target.value as B2ForecastValues["stakingInterestMode"] })}
@@ -456,7 +456,7 @@ export default function LiquidityPage() {
                   </div>
                 </fieldset>
                 <div className="b2-check-grid compact">
-                  <label><input type="checkbox" checked={draft.genesisIncluded} onChange={(event) => setDraft({ ...draft, genesisIncluded: event.target.checked })} />计入创世节点每日分红</label>
+                  <label><input type="checkbox" checked={draft.genesisIncluded} onChange={(event) => setDraft({ ...draft, genesisIncluded: event.target.checked })} />计入创世节点每日收益</label>
                   <label><input type="checkbox" checked={draft.trialStressEnabled} onChange={(event) => setDraft({ ...draft, trialStressEnabled: event.target.checked })} />显示试用业务压力测试</label>
                   <label><input type="checkbox" checked={draft.includeFarLiabilities} onChange={(event) => setDraft({ ...draft, includeFarLiabilities: event.target.checked })} />计入远期应付款</label>
                 </div>
@@ -480,7 +480,7 @@ export default function LiquidityPage() {
                 <div className="b2-confirm">
                   <b>请核对以下内容</b>
                   <p>预测窗口：{draft.forecastWindow}</p>
-                  <p>质押利息：{draft.stakingInterestMode === "LINEAR" ? "线性摊提" : "到期计提"}</p>
+                  <p>质押奖励：{draft.stakingInterestMode === "LINEAR" ? "线性摊提" : "到期计提"}</p>
                   <p>创世节点：{draft.genesisIncluded ? "计入" : "不计入"}；试用业务压力测试：{draft.trialStressEnabled ? "开启" : "关闭"}</p>
                   <p>原因：{reason.trim()}</p>
                   <p>次日 UTC 00:00 起生效，不影响历史数据。</p>

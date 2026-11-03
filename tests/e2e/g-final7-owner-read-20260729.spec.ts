@@ -18,7 +18,7 @@ const modules = [
   { id: "G2", href: "/finance-products/exchange", title: "G2 兑换风险规则", api: "/api/admin/market/exchange" },
   { id: "G3", href: "/finance-products/market", title: "G3 NEX 价格管理", api: "/api/admin/market/nex/curve" },
   { id: "G4", href: "/finance-products/genesis", title: "G4 创世节点销售与收益", api: "/api/admin/market/nex/genesis?page=1&pageSize=10" },
-  { id: "G7", href: "/finance-products/repurchase", title: "G7 复投激励", api: "/api/admin/market/nex/repurchase" },
+  { id: "G7", href: "/finance-products/repurchase", title: "G7 锁定计划", api: "/api/admin/market/nex/repurchase" },
 ] as const;
 
 test.describe.configure({ mode: "serial" });
@@ -71,7 +71,7 @@ test("G Final7: first-user visible sidebar, canonical reads, refresh and relogin
   await login(page);
   if (await group.isVisible().catch(() => false)) await group.click();
   await page.locator('a[href="/finance-products/repurchase"]').first().click();
-  await expect(page.getByText("G7 复投激励", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("G7 锁定计划", { exact: false }).first()).toBeVisible();
   await page.screenshot({ path: path.join(EVIDENCE, "G7-relogin.png"), fullPage: true });
   fs.writeFileSync(path.join(EVIDENCE, "browser-read-diagnostics.json"), JSON.stringify(diagnostics, null, 2));
   await testInfo.attach("G-final7-read-diagnostics", { body: JSON.stringify(diagnostics, null, 2), contentType: "application/json" });

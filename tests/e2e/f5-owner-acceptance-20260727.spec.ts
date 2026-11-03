@@ -26,20 +26,20 @@ test("F5 首次用户从可见侧栏进入并盘点佣金事件全生命周期",
   await expect(entry).toBeVisible();
   await entry.click();
   await expect(page).toHaveURL(/\/network\/commissions$/);
-  await expect(page.getByText("佣金流水", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("奖励流水", { exact: false }).first()).toBeVisible();
 
   const body = await page.locator("main").innerText();
   const observations = {
-    hasKindFilter: /全部类型|网络版税|双轨平衡匹配/.test(body),
+    hasKindFilter: /全部类型|团队购买奖励|团队平衡奖励/.test(body),
     hasCurrencyFilter: /币种筛选|全部币种/.test(body),
     hasUserSearch: /用户筛选|用户 ID/.test(body),
     hasCohortFilter: /cohort|用户群/.test(body),
     hasStatusFilter: /全部状态/.test(body),
     hasAnomalyPanel: /异常类型|关联 K 簇|异常预警列表/.test(body),
-    hasCoolingPolicy: /仅 network.*binary|仅网络版税.*双轨/.test(body),
+    hasCoolingPolicy: /仅 network.*binary|团队购买奖励 · [\s\S]*团队平衡奖励 · /.test(body),
     hasReverse: /冲正|撤销/.test(body),
     hasReissue: /批量.*补发/.test(body),
-    hasSuspend: /暂停.*佣金/.test(body),
+    hasSuspend: /暂停.*奖励/.test(body),
     hasBatchHistory: /批次|处置历史/.test(body),
     hasCrossDomainLinks: /D4|B1|A2|A4/.test(body),
     consoleErrors,
@@ -79,9 +79,9 @@ test("F5 匿名失败关闭，刷新和重登后仍回读同一服务端事实",
   expect(before.status()).toBe(200);
   const beforeBody = await before.json();
   await page.goto("/network/commissions", { waitUntil: "domcontentloaded" });
-  await expect(page.getByText("佣金流水", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("奖励流水", { exact: false }).first()).toBeVisible();
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByText("佣金流水", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("奖励流水", { exact: false }).first()).toBeVisible();
   await page.request.post("/api/admin/auth/logout");
   await login(page);
   await page.goto("/network/commissions", { waitUntil: "domcontentloaded" });

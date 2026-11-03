@@ -1,6 +1,6 @@
 "use client";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { a2ActionText, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 
 /**
@@ -167,19 +167,19 @@ export function A2ChangeReview({ before, after }: { before: string; after: strin
     purchaseGate: "购买限制", imageAssetId: "产品图标识", imageObjectKey: "产品图对象键", imagePreviewUrl: "产品图预览",
     tag: "商品标签", status: "商城状态", inventoryMode: "库存模式", expectedUpdatedAt: "修改前的更新时间",
     updatedAt: "更新时间", trialEligible: "允许试用", productType: "商品类型", reason: "操作理由", operator: "操作人",
-    rankMin: "最低 V 等级", directsMin: "最低有效直接邀请", teamUsdtMin: "最低团队业绩", mode: "条件组合",
+    rankMin: "最低 V 等级", directsMin: "最低有效直接邀请", teamUsdtMin: "最低团队订单额", mode: "条件组合",
     activeDirectMin: "最低有效直接邀请", teamComputePointsMin: "最低团队算力点",
     enforce: "启用限制", quotaCap: "总配额", quotaSold: "已用配额", quotaPeriod: "配额周期",
     ranks: "会员等级", rankCode: "等级", titleCn: "中文头衔", titleEn: "英文头衔",
     selfComputePoints: "自购算力点", directRefs: "直接邀请人数", teamComputePoints: "团队算力点",
-    requiredDownlineRank: "分支最低等级", requiredDownlineCount: "达标分支数", unilevelDepth: "团队奖励层数",
-    peerBonusRate: "同级奖比例", leadershipVotes: "领导奖池票数", rewards: "晋升奖励",
+    requiredDownlineRank: "分支最低等级", requiredDownlineCount: "达标分支数", unilevelDepth: "团队购买奖励范围",
+    peerBonusRate: "同级奖比例", leadershipVotes: "团队激励池票数", rewards: "晋升奖励",
   };
   const format = (value: unknown): string => {
     if (value === null) return "未设置";
     if (Array.isArray(value)) return value.length ? value.map(format).join("\n\n") : "无";
     if (typeof value === "object") return Object.entries(value as Record<string, unknown>)
-      .map(([key, item]) => `${labels[key] ?? key}：${key === "peerBonusRate" && typeof item === "number" ? `${(item * 100).toFixed(2)}%` : format(item)}`).join("\n") || "无（新建）";
+      .map(([key, item]) => `${labels[key] ?? key}：${key === "peerBonusRate" && typeof item === "number" ? `${(item * 100).toFixed(2)}%` : key === "baseRate" && typeof item === "string" ? shareBaseRateText(item) : format(item)}`).join("\n") || "无（新建）";
     return typeof value === "boolean" ? (value ? "是" : "否") : String(value);
   };
   const review = (value: string) => {
@@ -363,7 +363,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (w.phoneCalibrationError) { toast(w.phoneCalibrationError); return; }
     const commandKey = createA2CommandKey(`a2-approve-${w.id}`);
     openActionConfirm({
-      action: <>确认执行 · {w.id}({w.action})</>,
+      action: <>确认执行 · {w.id}({a2ActionText(w.action)})</>,
       detail: (
         <>
           对象 <b>{w.obj}</b> · 发起人 {w.operator}。
@@ -397,7 +397,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const rejectWo = (w: A2OperationRow) => {
     const commandKey = createA2CommandKey(`a2-reject-${w.id}`);
     openActionConfirm({
-      action: <>取消执行 · {w.id} · {w.action}</>,
+      action: <>取消执行 · {w.id} · {a2ActionText(w.action)}</>,
       detail: (
         <>
           取消后不能恢复，如需再做请重新发起。
@@ -706,7 +706,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 return (
                   <tr key={w.id} className="click" onClick={() => setWoIdx(idx)}>
                     <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{w.id}</td>
-                    <td style={{ fontSize: 12.5 }}>{nexGridBrandText(w.action)}</td>
+                    <td style={{ fontSize: 12.5 }}>{a2ActionText(nexGridBrandText(w.action))}</td>
                     <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{w.obj}</td>
                     <td>
                       <span className="a2-ba">
@@ -868,7 +868,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     <tr key={l.id} className="click" onClick={() => setLogIdx(i)}>
                       <td className="mono" style={{ fontSize: 11, whiteSpace: "nowrap" }}>{l.ts}</td>
                       <td style={{ fontSize: 11.5 }}>{l.actor} · {l.role}</td>
-                      <td className="mono" style={{ fontSize: 11 }}>{l.action}</td>
+                      <td className="mono" style={{ fontSize: 11 }}>{a2ActionText(l.action)}</td>
                       <td style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{l.obj}</td>
                       <td className="mono" style={{ fontSize: 11 }}>{l.delta}</td>
                     </tr>
@@ -919,7 +919,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   return (
                     <tr key={h.id} className="click" onClick={() => setHistIdx(i)}>
                       <td className="mono">{h.id}</td>
-                      <td style={{ fontSize: 12 }}>{nexGridBrandText(h.action)}</td>
+                      <td style={{ fontSize: 12 }}>{a2ActionText(nexGridBrandText(h.action))}</td>
                       <td>
                         <span className={`bdg ${HIST_TONE[h.st] ?? "dim"}`}>{HIST_LABEL[h.st] ?? h.st}</span>
                       </td>
@@ -1010,7 +1010,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             title={`待确认操作 · ${w.id}`}
             sub={
               <>
-                {w.action} · 对象 {w.obj} · 发起人 {w.operator}
+                {a2ActionText(w.action)} · 对象 {w.obj} · 发起人 {w.operator}
               </>
             }
             onClose={() => setWoIdx(null)}
@@ -1085,7 +1085,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         const needIdem = l.action.includes("withdraw") || l.action.includes("balance") || l.action.includes("operation_confirmed");
         return (
           <Drawer
-            title={`操作记录 · ${l.action}`}
+            title={`操作记录 · ${a2ActionText(l.action)}`}
             sub={<>{l.obj} · {l.delta}</>}
             onClose={() => setLogIdx(null)}
           >
@@ -1115,7 +1115,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             title={`处理过程 · ${h.id}`}
             sub={
               <>
-                {h.action} · 结果 <span className={`bdg ${HIST_TONE[h.st] ?? "dim"}`} style={{ marginLeft: 4 }}>{HIST_LABEL[h.st] ?? h.st}</span>
+                {a2ActionText(h.action)} · 结果 <span className={`bdg ${HIST_TONE[h.st] ?? "dim"}`} style={{ marginLeft: 4 }}>{HIST_LABEL[h.st] ?? h.st}</span>
                 {" · "}{h.chain} · {h.t}
               </>
             }

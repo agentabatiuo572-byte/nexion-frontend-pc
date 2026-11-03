@@ -78,13 +78,13 @@ test("L3 preserves the eight canonical D3 liability categories without collapsin
 
   const canonicalLabels = [
     "可提现余额",
-    "USDT 质押本金",
-    "质押应付利息",
-    "创世节点应付分红",
+    "USDT 质押锁定金额",
+    "应付质押奖励",
+    "创世节点应付收益",
     "UVT 锁仓到期应付",
     "待处理提现",
-    "冷却期内未发放的佣金",
-    "其他锁仓本息",
+    "冷却期内未发放的奖励",
+    "其他锁定金额及奖励",
   ];
   const visibleRows: string[] = [];
   for (const label of canonicalLabels) {

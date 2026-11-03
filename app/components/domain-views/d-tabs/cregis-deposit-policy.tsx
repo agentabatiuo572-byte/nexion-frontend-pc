@@ -128,7 +128,7 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
         <label>固定手续费（USDT）<input aria-label="固定手续费（USDT）" inputMode="decimal" value={fee} onChange={e => setFee(e.target.value)} /></label>{" "}
         <label>链上确认数<input aria-label="链上确认数" type="number" min={15} max={10000} step={1} value={confirmations} onChange={e => setConfirmations(e.target.value)} /></label>
       </fieldset>
-      <p className="sub">最低充值本金须为正整数，统一显示两位小数；手续费最多六位小数，不得小于零且须低于最低额；确认数为 15–10000 的整数，并须满足服务端可能更高的安全下限。订单直付及其手续费仍可有小数，不受充值最低额限制。</p>
+      <p className="sub">最低充值金额须为正整数，统一显示两位小数；手续费最多六位小数，不得小于零且须低于最低额；确认数为 15–10000 的整数；实际最低要求可能更高，请按提示填写。订单直付及其手续费仍可有小数，不受充值最低额限制。</p>
       {canManage && <button className="l-btn sm mc" disabled={busy || !!pending || !isValid || (units(min) === units(policy.minDepositUsdt) && units(fee) === units(policy.feeUsdt) && Number(confirmations) === policy.confirmations)} onClick={submit}>提交审批</button>}
     </>}
     {pending && <div className="cregis-case"><p>原提案：{pending.ticketId ?? "结果待核实"} · 操作标识 {pending.commandKey}</p>

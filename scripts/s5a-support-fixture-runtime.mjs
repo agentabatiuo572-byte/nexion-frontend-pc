@@ -639,7 +639,7 @@ try {
     await page.getByRole("textbox", { name: /修改理由/ }).fill("测试后端明确校验失败后可修改");
     failNextRules400 = true;
     await page.getByRole("button", { name: "确认保存" }).click();
-    await page.getByText("输入未通过校验，请检查天数、继承层数和修改理由后再提交。").first().waitFor();
+    await page.getByText("输入未通过校验，请检查天数、继承次数上限和修改理由后再提交。").first().waitFor();
     assert.equal(await page.getByLabel("活跃统计窗口天数").isEnabled(), true);
   });
   await check("s5a-pool-conflict", page, async () => {

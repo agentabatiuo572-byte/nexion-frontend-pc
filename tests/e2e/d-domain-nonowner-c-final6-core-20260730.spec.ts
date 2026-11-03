@@ -92,7 +92,7 @@ test("首次用户从登录和可见侧栏完整找到 D1–D6，五视图/九�
   await expect(page.locator("section.l-card").filter({ hasText: "应付负债 · 9 类科目" }).locator("tbody tr")).toHaveCount(9);
 
   await openAndSettleD(page, "/finance/ledger", "全平台账单流水");
-  for (const label of ["充值", "提现", "收益", "佣金", "兑换", "退款", "奖励"]) {
+  for (const label of ["充值", "提现", "收益", "团队奖励", "兑换", "退款", "奖励"]) {
     const response = page.waitForResponse((candidate) =>
       candidate.request().method() === "GET"
       && new URL(candidate.url()).pathname === "/api/admin/bills");

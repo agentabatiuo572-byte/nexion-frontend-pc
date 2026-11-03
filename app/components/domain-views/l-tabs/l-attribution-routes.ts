@@ -14,7 +14,7 @@ export const L2_ATTRIBUTION_LINKS: readonly AttributionLink[] = [
   { label: "运营阶段状态", href: "/overview/rhythm" },
   { label: "运营阶段设置", href: "/growth/phase" },
   { label: "页面文案对比测试", href: "/content/copy-ab" },
-  { label: "佣金记录核对", href: "/network/commissions" },
+  { label: "奖励记录核对", href: "/network/commissions" },
 ];
 
 export function assertL1AttributionLinks(

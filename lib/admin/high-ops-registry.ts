@@ -927,7 +927,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "g4_genesis_rerun_dividend",
     domain: "G",
-    action: "重跑创世排放批次",
+    action: "重跑创世节点收益释放批次",
     amplifies: true, // 硬=true,直接资金 postLedgerEntry
     type: "fund",
     gateLabel: "门槛者",
@@ -1806,7 +1806,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "f_seven_layer_activation",
     domain: "F",
-    action: "七层结算状态调整",
+    action: "团队购买奖励结算状态调整",
     amplifies: true,
     type: "fund",
     gateLabel: "另一位审批管理员",
@@ -1819,7 +1819,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "f_direct_referral_policy",
     domain: "F",
-    action: "直属分成政策整组调整",
+    action: "好友奖励设置整组调整",
     amplifies: true,
     type: "fund",
     gateLabel: "门槛者",
@@ -1838,7 +1838,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "f_config",
     domain: "F",
-    action: "网络佣金政策参数调整",
+    action: "团队奖励参数调整",
     amplifies: true, // 资金类政策放大(royalty/match/pool)
     type: "fund",
     gateLabel: "门槛者",
@@ -1882,7 +1882,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "f_unilevel_rule",
     domain: "F",
-    action: "层级费率调整",
+    action: "L1–L7 奖励比例调整",
     amplifies: true, // 费率放大佣金流出
     type: "fund",
     gateLabel: "门槛者",
@@ -1900,7 +1900,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "f_commission_status",
     domain: "F",
-    action: "佣金事件处置",
+    action: "奖励记录处置",
     amplifies: true, // 硬=true,动资金 postLedgerEntry(解锁方向 IN/PENDING 放大可提余额)
     type: "fund",
     gateLabel: "门槛者",
@@ -1923,7 +1923,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "f5_commission_reverse",
     domain: "F",
-    action: "冲正佣金事件",
+    action: "冲正奖励记录",
     amplifies: false,
     type: "fund",
     gateLabel: "门槛者",
@@ -1936,7 +1936,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "f5_commission_reissue",
     domain: "F",
-    action: "批量补发佣金",
+    action: "批量补发奖励",
     amplifies: true,
     type: "fund",
     gateLabel: "门槛者",
@@ -1951,7 +1951,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "f5_commission_suspension",
     domain: "F",
-    action: "暂停或恢复用户佣金",
+    action: "暂停或恢复用户奖励",
     amplifies: false,
     type: "acct",
     gateLabel: "门槛者",
@@ -2007,7 +2007,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "f4_pool_settle",
     domain: "F",
-    action: "领导奖池提前结算",
+    action: "团队激励池提前结算",
     amplifies: true,
     type: "fund",
     gateLabel: "门槛者",

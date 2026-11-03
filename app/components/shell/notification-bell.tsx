@@ -16,6 +16,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { AdminRole } from "@/lib/nav/console-nav";
 import { fmtPct } from "@/lib/format";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { a2ActionText } from "@/lib/admin/operator-copy";
 import { B_DASHBOARD_READ_AUTHORITIES, canReadC2HighRiskAlerts } from "@/lib/admin/shell-authorities";
 
 type AlertLevel = "high" | "mid" | "low";
@@ -319,7 +320,7 @@ function NotificationDrawer({
                   style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)" }}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-[13px]" style={{ color: "var(--v5-ink)", fontWeight: 600 }}>{a.action}</span>
+                    <span className="text-[13px]" style={{ color: "var(--v5-ink)", fontWeight: 600 }}>{a2ActionText(a.action)}</span>
                     {operationRole && <span className="ml-auto"><RoleBadge role={operationRole} size="sm" /></span>}
                   </div>
                   <p className="mt-1 text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}>{operationDetail(a)}</p>

@@ -323,7 +323,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                 <div className={`vbadge v-${i}`}>{r.v}</div>
                 <div className="lcell">
                   <div className="l1">{r.label || r.v} · {composeTh(r)}</div>
-                  <div className="l2">团队奖励 {r.unilevelDepth || "—"} 层 · 同级奖 {(r.peerBonusRate * 100).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}% · {r.votes} 票 · {r.visible ? "App 可见" : "App 隐藏"}</div>
+                  <div className="l2">团队购买奖励范围 {r.unilevelDepth || "—"} · 同级奖 {(r.peerBonusRate * 100).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}% · {r.votes} 票 · {r.visible ? "App 可见" : "App 隐藏"}</div>
                 </div>
                 <div className="lcell">
                   <div className="rwd-list">
@@ -384,7 +384,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
               </div>
               <div className="gov-grp">
                 <div className="gov-grp-h">等级与票数</div>
-                <div className="gov-list"><div className="it">等级越高，领导奖池里的票数越多{voteWeightLabel ? <>（<b>{voteWeightLabel}</b>）</> : "（票数在「奖励池、名额与排行榜」设置）"}。</div></div>
+                <div className="gov-list"><div className="it">等级越高，团队激励池里的票数越多{voteWeightLabel ? <>（<b>{voteWeightLabel}</b>）</> : "（票数在「奖励池、名额与排行榜」设置）"}。</div></div>
               </div>
               <div className="gov-grp">
                 <div className="gov-grp-h">奖励发放</div>
@@ -397,13 +397,13 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
             <div className="rc-h">保级规则</div>
             <div className="gov-list">
               <div className="it">不降级保护 · 当前 <b>{permanentOn ? "已开启" : "已关闭"}</b></div>
-              <div className="it" style={{ marginTop: 4 }}>{permanentOn ? "已晋升的用户下一轮没达标，也保持现有等级。" : "下一轮没达标的用户会降级，领导奖池票数也会减少。"}</div>
+              <div className="it" style={{ marginTop: 4 }}>{permanentOn ? "已晋升的用户下一轮没达标，也保持现有等级。" : "下一轮没达标的用户会降级，团队激励池票数也会减少。"}</div>
             </div>
             {canProtect && <button type="button" className="f-cta" style={{ marginTop: 8, ...(permanentOn ? { borderColor: "var(--danger)", color: "var(--danger)" } : null) }} onClick={() => ctx.openActionConfirm({
               name: permanentOn ? "关闭不降级保护" : "开启不降级保护",
               op: "dispose", paramKey: "F.vrank.permanent", fixedVal: permanentOn ? "off" : "on",
               detail: permanentOn
-                ? "关闭后，从下一轮评估起，没达标的用户会被降级，等级和领导奖池票数都会受影响。请慎重。"
+                ? "关闭后，从下一轮评估起，没达标的用户会被降级，等级和团队激励池票数都会受影响。请慎重。"
                 : "开启后，已晋升的用户即使下一轮没达标也保持现有等级。",
             })}>{permanentOn ? "关闭不降级保护" : "开启不降级保护"}</button>}
           </div>
@@ -562,10 +562,10 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       </div>
 
       <div className="f1-chain-note">
-        <b>关联：</b>App 上的等级和权益来自这里；团队分成、领导奖池票数、佣金记录和账单都按同一会员等级和发放编号关联。
+        <b>关联：</b>App 上的等级和权益来自这里；团队奖励、团队激励池票数、奖励记录和账单都按同一会员等级和发放编号关联。
       </div>
 
-      <p className="f-foot">高等级人数较少、奖励分配权重较高。领导奖池向 V{unlockRank} 级及以上用户分配；前 {topN} 名高等级用户占比约 {topConcPct}%。修改晋升门槛会影响后续晋升和奖励分配，须先核验资金覆盖率。</p>
+      <p className="f-foot">高等级人数较少、奖励分配权重较高。团队激励池向 V{unlockRank} 级及以上用户分配；前 {topN} 名高等级用户占比约 {topConcPct}%。修改晋升门槛会影响后续晋升和奖励分配，须先核验资金覆盖率。</p>
     </>
   );
 }

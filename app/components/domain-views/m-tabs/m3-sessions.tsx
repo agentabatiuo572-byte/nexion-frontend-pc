@@ -36,6 +36,7 @@ import {
   fetchMSupportWorkbenchSkus,
   fetchMSupportWorkbenchUsers,
   updateMConversationTimeoutPolicy,
+  scriptGroupLabel,
   type ConversationTimeoutPolicy,
   type MSupportAgent,
 } from "@/lib/admin/m-client";
@@ -1272,7 +1273,7 @@ function TemplatePicker({ title, items, onClose, onPick }: { title: string; item
     };
   }, [onClose]);
   const ql = q.trim().toLowerCase();
-  const list = ql ? items.filter((t) => (t.id + t.group + t.text).toLowerCase().includes(ql)) : items;
+  const list = ql ? items.filter((t) => (t.id + t.group + scriptGroupLabel(t.group) + t.text).toLowerCase().includes(ql)) : items;
   return (
     <div ref={ref} className="sku-pop">
       <div className="sku-pop-h">
@@ -1300,7 +1301,7 @@ function TemplatePicker({ title, items, onClose, onPick }: { title: string; item
               <span className="sku-pop-info">
                 <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <span className="idtag" style={{ fontSize: 11 }}>{t.id}</span>
-                  <span className="dim2" style={{ fontSize: 11 }}>{t.group}</span>
+                  <span className="dim2" style={{ fontSize: 11 }}>{scriptGroupLabel(t.group)}</span>
                 </span>
                 <span style={{ fontSize: 13, color: "var(--ink-2)", lineHeight: 1.5, whiteSpace: "normal", marginTop: 3 }}>{t.text}</span>
               </span>

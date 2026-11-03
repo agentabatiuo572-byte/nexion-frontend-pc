@@ -164,12 +164,12 @@ export function B3RestoredInsights({ data }: { data: B3Dashboard }) {
 
 export function B4RestoredInsights() {
   const history = useB4GrowthFlowHistory();
-  if (!history.data) return <div style={GRID}><section data-testid="b3-growth-outflow-ratio" style={CARD}><Header title="新增 / 流出比趋势" meta="健康线 1.2" />{history.loading ? <Notice>正在加载…</Notice> : <Notice healthState="error">{`趋势暂不可用：${history.error ?? "响应为空"}`}</Notice>}</section><section data-testid="b6-monthly-budget-allocation" style={CARD}><Header title="本月运营预算分配" meta="拉新 / 佣金 / 创世节点 / 储备" /><Notice>预算数据未加载，暂不显示图表。</Notice></section></div>;
+  if (!history.data) return <div style={GRID}><section data-testid="b3-growth-outflow-ratio" style={CARD}><Header title="新增 / 流出比趋势" meta="健康线 1.2" />{history.loading ? <Notice>正在加载…</Notice> : <Notice healthState="error">{`趋势暂不可用：${history.error ?? "响应为空"}`}</Notice>}</section><section data-testid="b6-monthly-budget-allocation" style={CARD}><Header title="本月运营预算分配" meta="拉新 / 团队奖励 / 创世节点 / 储备" /><Notice>预算数据未加载，暂不显示图表。</Notice></section></div>;
   const data = history.data;
   const latest = data.currentRatio;
   return <div style={GRID}>
     <section data-testid="b3-growth-outflow-ratio" style={CARD}><Header title="新增 / 流出比趋势" meta={`当前 ${latest === null ? "暂无法计算" : latest.toFixed(2)} · 健康线 ${data.healthyRatio}`} /><TrendChart values={data.ratioSeries.map((row) => row.ratio)} labels={data.ratioSeries.map((row) => row.label.slice(5))} threshold={data.healthyRatio} thresholdLabel={`健康线 ${data.healthyRatio}`} ariaLabel={`新增流出比趋势与 ${data.healthyRatio} 健康线`} /><div data-testid="b7-rhythm-engine-decision" style={{ borderLeft: `3px solid ${latest !== null && latest >= data.healthyRatio ? "var(--success)" : "var(--warning)"}`, paddingLeft: 10, fontSize: 13 }}><b>运营阶段建议：{data.suggestion}</b><div style={{ color: "var(--ink-3)", marginTop: 3 }}>{latest === null ? "本月流出分母为 0，不能用 0 或无限大替代真实比值。" : latest >= data.healthyRatio ? "高于健康线，可保持当前扩张节奏。" : "低于健康线，应进入收紧观察；这里只给建议，不自动执行。"}</div></div></section>
-    <section data-testid="b6-monthly-budget-allocation" style={CARD}><Header title="本月运营预算分配" meta="拉新 / 佣金 / 创世节点 / 储备" />{data.budget.available ? <Donut center="本月预算" rows={data.budget.rows.map((row, index) => ({ label: operatorCopyText(row.label), value: row.sharePct, suffix: "%", color: COLORS[index % COLORS.length] }))} /> : <Notice>本月四类预算还没设置完整，暂不显示。</Notice>}</section>
+    <section data-testid="b6-monthly-budget-allocation" style={CARD}><Header title="本月运营预算分配" meta="拉新 / 团队奖励 / 创世节点 / 储备" />{data.budget.available ? <Donut center="本月预算" rows={data.budget.rows.map((row, index) => ({ label: operatorCopyText(row.label), value: row.sharePct, suffix: "%", color: COLORS[index % COLORS.length] }))} /> : <Notice>本月四类预算还没设置完整，暂不显示。</Notice>}</section>
   </div>;
 }
 

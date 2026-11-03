@@ -480,7 +480,7 @@ await step("FM-016", "params-registry-to-owner-module-switch", () => {
     return {
       href: location.href,
       body: bodyText(),
-      ok: location.href.includes('/finance-products/staking') && bodyText().includes('Staking 池配置'),
+      ok: location.href.includes('/finance-products/staking') && bodyText().includes('质押产品配置'),
     };
   `, 8000);
   evalJson(`

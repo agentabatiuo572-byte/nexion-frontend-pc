@@ -128,7 +128,7 @@ export function BusinessCalendarConfig() {
     {confirming && selected && <Modal title="确认设置业务时区" busy={saving} onClose={() => setConfirming(null)} footer={<><button className="l-btn sm" type="button" disabled={saving} onClick={() => setConfirming(null)}>取消</button><button className="l-btn sm primary" type="button" disabled={saving} onClick={() => void submit()}>确认设置</button></>}>
       <p>新的业务时区：<b>{zoneOptionLabel(selected, offsetOf(selected.zoneId))}</b></p>
       <p>生效时间：<b>{effectiveDate} 00:00（{selected.label}）</b></p>
-      <p className="tiny">生效后，所有日 / 周 / 月统计、每日结算、每周分红和月度榜单都按新时区切分；{previousDay(effectiveDate)} 及以前已结算的周期保持不变。生效前可以撤销。</p>
+      <p className="tiny">生效后，所有日 / 周 / 月统计、每日结算、每周奖励池发放和月度榜单都按新时区切分；{previousDay(effectiveDate)} 及以前已结算的周期保持不变。生效前可以撤销。</p>
       <p className="tiny">理由：{reason.trim()}</p>
     </Modal>}
   </section>;

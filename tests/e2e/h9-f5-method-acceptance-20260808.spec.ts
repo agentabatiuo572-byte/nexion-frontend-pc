@@ -333,7 +333,7 @@ test("F5：真实冻结/解冻/提前解锁、A2、CAS/幂等、权限、D4/审�
 
     await openF5(maker, fixtures.userId);
     await openF5(second, fixtures.userId);
-    await expect(maker.getByRole("main").getByText("F5 佣金记录核对", { exact: true })).toBeVisible();
+    await expect(maker.getByRole("main").getByText("F5 奖励记录核对", { exact: true })).toBeVisible();
     await expect(maker.getByText(/服务端游标 · 六类佣金真实账本/)).toBeVisible();
     await maker.screenshot({ path: join(EVIDENCE_DIR, "F5", "01-visible-entry.png"), fullPage: true });
 
@@ -699,7 +699,7 @@ async function openF5(page: Page, userId?: string, reload = false) {
     await link.click();
   }
   await expect(page).toHaveURL(/\/network\/commissions$/);
-  await expect(page.getByText("佣金流水", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("奖励流水", { exact: true })).toBeVisible({ timeout: 20_000 });
   if (userId) {
     await page.getByLabel("用户 ID").fill(userId);
     const response = page.waitForResponse((item) =>

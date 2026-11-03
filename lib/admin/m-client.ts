@@ -1384,6 +1384,11 @@ function adaptCategory(row: SessionCategoryView): SessionCategory {
   };
 }
 
+/** 后端话术分组「复投」的运营显示名；存取仍用原值。 */
+export function scriptGroupLabel(group: string): string {
+  return group === "复投" ? "锁定计划" : group;
+}
+
 function scriptGroup(value: string | undefined): AdvisorScript["group"] {
   const group = str(value, "开场");
   return ["开场", "升级", "锁仓", "复投"].includes(group) ? (group as AdvisorScript["group"]) : "开场";

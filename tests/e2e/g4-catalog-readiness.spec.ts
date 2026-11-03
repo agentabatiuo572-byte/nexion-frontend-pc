@@ -126,9 +126,9 @@ test("missing ACTIVE series stays closed and can be initialized without auto-ope
   const dialog = page.getByRole("dialog").last();
   await dialog.getByLabel("系列编码").fill("GENESIS-2026");
   await dialog.getByLabel("系列名称").fill("Genesis 2026");
-  await expect(dialog.getByLabel("二级版税（基点，100 = 1%）")).toHaveCount(0);
-  await expect(dialog.getByLabel("每日排放率（%）")).toHaveCount(0);
-  await expect(dialog.getByLabel("排放基数公式")).toHaveCount(0);
+  await expect(dialog.getByLabel("转让手续费（基点，100 = 1%）")).toHaveCount(0);
+  await expect(dialog.getByLabel("每日收益比例（%）")).toHaveCount(0);
+  await expect(dialog.getByLabel("每日收益基数公式")).toHaveCount(0);
   await dialog.getByLabel(/操作理由/).fill("initialize missing active series for bug 53");
   await dialog.getByRole("button", { name: "确认提交", exact: true }).click();
 

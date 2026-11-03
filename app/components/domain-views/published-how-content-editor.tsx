@@ -5,7 +5,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchHowContentAdmin, updateHowContentAdmin, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
 
-const PAGE_LABELS: Record<string, string> = { "genesis-how": "创世节点说明", "wallet-exchange-how": "兑换说明", "wallet-repurchase-how": "回购说明", "team-binary-how": "左右团队结算说明", "team-commissions-how": "团队分成说明", "team-unilevel-how": "多层团队说明" };
+const PAGE_LABELS: Record<string, string> = { "genesis-how": "创世节点说明", "wallet-exchange-how": "兑换说明", "wallet-repurchase-how": "锁定计划说明", "team-binary-how": "团队平衡奖励说明", "team-commissions-how": "奖励明细说明", "team-unilevel-how": "团队奖励说明" };
 const LANGUAGE_LABELS: Record<string, string> = { zh: "中文", "zh-cn": "简体中文", en: "英语", vi: "越南语" };
 const KEYS = ["genesis-how", "wallet-exchange-how", "wallet-repurchase-how", "team-binary-how", "team-commissions-how", "team-unilevel-how"] as const;
 type Row = Record<string, unknown>;

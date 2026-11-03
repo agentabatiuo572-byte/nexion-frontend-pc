@@ -1,5 +1,5 @@
 "use client";
-import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { a2ActionText, operatorCopyText } from "@/lib/admin/operator-copy";
 import { finiteDashboardNumber, rollupKpiPassState } from "@/lib/admin/dashboard-number";
 
 /**
@@ -329,7 +329,7 @@ export default function CommandCenter() {
       if (!operationRole) return [];
       return [{
         id: `a2-${row.id}`,
-        label: row.action,
+        label: a2ActionText(row.action),
         detail: operationDetail(row),
         href: "/platform/audit",
         role: operationRole,

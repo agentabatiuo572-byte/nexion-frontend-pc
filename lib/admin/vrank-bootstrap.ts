@@ -40,7 +40,7 @@ export function buildVRankBootstrap(drafts: VRankBootstrapDraft[]) {
     const directRefs = integer(draft.directRefs, "直接邀请人数", 2147483647);
     const teamComputePoints = integer(draft.teamComputePoints, "团队算力点", Number.MAX_SAFE_INTEGER);
     const requiredDownlineCount = integer(draft.requiredDownlineCount, "达标分支数", 2147483647);
-    const leadershipVotes = integer(draft.leadershipVotes, "领导奖池票数", 2147483647);
+    const leadershipVotes = integer(draft.leadershipVotes, "团队激励池票数", 2147483647);
     const requiredDownlineRank = draft.requiredDownlineRank || null;
     if (requiredDownlineCount === 0 ? requiredDownlineRank !== null
       : requiredDownlineRank === null || !bootstrapRankCodes.slice(0, index).includes(requiredDownlineRank)) {
@@ -49,7 +49,7 @@ export function buildVRankBootstrap(drafts: VRankBootstrapDraft[]) {
     if (index > 0 && selfComputePoints + directRefs + teamComputePoints + requiredDownlineCount === 0) {
       fail("至少填写一项大于 0 的晋升条件");
     }
-    if (!/^(?:0|L1(?:-L[1-7])?)$/.test(draft.unilevelDepth)) fail("请选择团队奖励层数");
+    if (!/^(?:0|L1(?:-L[1-7])?)$/.test(draft.unilevelDepth)) fail("请选择团队购买奖励范围");
     const percent = draft.peerBonusPercent.trim();
     if (!/^\d+(?:\.\d{1,2})?$/.test(percent) || Number(percent) > 100) fail("同级奖比例须为 0–100%，最多两位小数");
     return { rankCode: draft.rankCode, titleCn: title(draft.titleCn, "中文头衔"), titleEn: title(draft.titleEn, "英文头衔"),

@@ -8,7 +8,7 @@ import { PORTED_EMPTY_CONTENT } from "./ported-content";
 export const DOMAIN_G: ModuleEntry[] = [
   {
     path: "/finance-products/staking",
-    summary: "配置质押产品、监控持仓，可单独暂停某一档。调高年化或降低提前赎回罚金需先通过兑付覆盖率检查；已锁仓的订单按锁仓时的条件结算。",
+    summary: "配置质押产品、监控持仓，可单独暂停某一档。调高参考年奖励率或降低提前解锁扣款需先通过兑付覆盖率检查；已锁仓的订单按锁仓时的条件结算。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
@@ -18,17 +18,17 @@ export const DOMAIN_G: ModuleEntry[] = [
   },
   {
     path: "/finance-products/market",
-    summary: "管理 UVT 价格：走势、价格来源、偏离告警和暂停状态。兑换和复投都按这里的价格计算。",
+    summary: "管理 UVT 价格：走势、价格来源、偏离告警和暂停状态。兑换和锁定计划都按这里的价格计算。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/finance-products/genesis",
-    summary: "管理创世节点的销售、奖励产出、转售分成、批量派发和持仓。调高奖励产出需先通过兑付覆盖率检查，并注明决策依据。",
+    summary: "管理创世节点的销售、奖励产出、转让手续费、批量派发和持仓。调高奖励产出需先通过兑付覆盖率检查，并注明决策依据。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/finance-products/repurchase",
-    summary: "设置复投规则、奖励倍率、锁仓期和创世节点抽奖券。调高收益或降低罚金需先通过兑付覆盖率检查。",
+    summary: "设置锁定计划规则、奖励倍率、锁定期限和创世节点抽奖券。调高奖励或降低提前解锁扣款需先通过兑付覆盖率检查。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

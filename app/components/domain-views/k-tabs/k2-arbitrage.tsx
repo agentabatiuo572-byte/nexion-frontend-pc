@@ -36,11 +36,14 @@ type TrialThreshold = { kind: "trial"; operator: string; count: string; days: st
 type GiftThreshold = { kind: "gift"; operator: string; count: string; scope: string };
 type BoardThreshold = { kind: "board"; operator: string; multiplier: string; baseline: string };
 type K2Threshold = TrialThreshold | GiftThreshold | BoardThreshold;
+// 「同层级均值」是后端正则接受的取值；后端实际都按本期全体（未标记）用户增长中位数比较。
+const BOARD_BASELINE_LABELS: Record<string, string> = { 同层级均值: "全体增长中位数（同基线）" };
+const boardBaselineText = (value: string) => value.replace(/同层级均值/g, BOARD_BASELINE_LABELS.同层级均值);
 
 const K2_PARAM_HELP: Record<string, string> = {
   trialCycleThreshold: "同一人或组织的关联账户在统计期间反复开试用的次数阈值。",
   welcomeGiftAnomalyThreshold: "同一人、同一账户组、同一手机号或同一设备重复领取新人礼的笔数阈值。",
-  leaderboardVelocityMultiplier: "排行榜、邀请或佣金增长速度相对基线的倍数阈值。",
+  leaderboardVelocityMultiplier: "排行榜、邀请或团队奖励增长速度相对基线的倍数阈值。",
 };
 
 const K2_DISPOSITION_LABELS: Record<string, string> = {
@@ -124,7 +127,7 @@ function k2ParamBusinessForm(p: KRiskParam): BusinessFormSpec | null {
     fields: [
       { key: "operator", label: "比较符", current: current.operator, inputKind: "select", options: [">", ">="] },
       { key: "multiplier", label: "增速倍数", current: current.multiplier, inputKind: "number", min: 2, max: 20, step: 1 },
-      { key: "baseline", label: "和什么比", current: current.baseline, inputKind: "select", options: ["基线", "上周期", "7日均值", "同层级均值"] },
+      { key: "baseline", label: "和什么比", current: current.baseline, inputKind: "select", options: ["基线", "上周期", "7日均值", "同层级均值"], optionLabels: BOARD_BASELINE_LABELS },
     ],
   };
 }
@@ -185,7 +188,7 @@ function K2ParamValue({ param }: { param: KRiskParam }) {
     <span className="threshold-parts">
       <span className="seg op">{parts.operator}</span>
       <span className="seg num">{parts.multiplier}x</span>
-      <span className="seg scope">{parts.baseline}</span>
+      <span className="seg scope">{BOARD_BASELINE_LABELS[parts.baseline] ?? parts.baseline}</span>
     </span>
   );
 }
@@ -328,7 +331,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
     }
     ctx.openActionConfirm({
       action: `调整检测阈值 · ${p.name}`,
-      detail: `${p.name} · 当前 ${p.value}。${K2_PARAM_HELP[p.key] ?? p.note}`,
+      detail: `${p.name} · 当前 ${boardBaselineText(p.value)}。${K2_PARAM_HELP[p.key] ?? p.note}`,
       amplifies: true,
       businessForm,
       reasonMax: 200,
@@ -341,7 +344,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
         return runAction(
           `k2-param:${p.key}:${p.version}:${p.value}`,
           (commandKey) => ctx.actions.updateK2Param(p.key, nextValue, p.version, reason, commandKey),
-          `${p.name} 已更新为 ${nextValue}`,
+          `${p.name} 已更新为 ${boardBaselineText(nextValue)}`,
         );
       },
     });
@@ -414,7 +417,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
         <div className="l-b">
           <div className="loop-strip" style={{ marginBottom: 14 }}>
             <span className="st">注册小号</span><span className="ar">→</span>
-            <span className="st">绑上级</span><span className="ar">→</span>
+            <span className="st">绑定邀请人</span><span className="ar">→</span>
             <span className="st hit">领新人礼</span><span className="ar">→</span>
             <span className="st hit">开免费试用</span><span className="ar">→</span>
             <span className="st">取消</span><span className="ar">→</span>

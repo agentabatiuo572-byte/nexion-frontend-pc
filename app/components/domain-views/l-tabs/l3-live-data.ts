@@ -27,8 +27,8 @@ export type L3FinanceSnapshot = {
 const FACTS: ReadonlyArray<Omit<L3LiveFact, "value">> = [
   { key: "totalBills", label: "钱包账单总数", description: "当前钱包流水中已落账的全部账单数量。", sourceLabel: "钱包流水" },
   { key: "earningBills", label: "收益账单", description: "归类为用户收益的账单数量。", sourceLabel: "钱包流水" },
-  { key: "teamCommissionBills", label: "团队佣金账单", description: "归类为团队佣金的账单数量。", sourceLabel: "钱包流水" },
-  { key: "genesisDividendBills", label: "创世节点分红账单", description: "归类为创世节点分红的账单数量。", sourceLabel: "钱包流水" },
+  { key: "teamCommissionBills", label: "团队奖励账单", description: "归类为团队奖励的账单数量。", sourceLabel: "钱包流水" },
+  { key: "genesisDividendBills", label: "创世节点收益账单", description: "归类为创世节点收益的账单数量。", sourceLabel: "钱包流水" },
   { key: "refundBills", label: "退款账单", description: "归类为退款的账单数量。", sourceLabel: "钱包流水" },
 ];
 
@@ -51,8 +51,8 @@ const LIABILITY_LABELS: Record<string, string> = {
   // Compatibility aliases for snapshots created before D3 adopted the eight
   // canonical liability keys. New responses must use the keys above.
   balance: "可提现余额",
-  stake_principal: "质押本金",
-  stake_interest: "质押应计利息",
+  stake_principal: "质押锁定金额",
+  stake_interest: "质押应计奖励",
   nex_payable: "UVT 应付款",
   withdraw_queue: "提现队列",
   pending_withdraw: "钱包待提现金额",

@@ -82,7 +82,7 @@ test("L4 network tree export enforces reason, masks identifiers, downloads, and 
   await dialog.getByRole("button", { name: /执行摘要.*查看详情/ }).click();
   await expect(dialog.getByText(/部分隐藏的用户编码/)).toBeVisible();
   await expect(dialog.getByText(/文件下载令牌 24 小时有效/)).toBeVisible();
-  await dialog.getByLabel("团队树层级").selectOption("3");
+  await dialog.getByLabel("向下追溯的邀请次数").selectOption("3");
   const confirm = dialog.getByRole("button", { name: "确认提交" });
   await expect(confirm).toBeDisabled();
   await dialog.getByLabel(/操作理由/).fill("1234567");

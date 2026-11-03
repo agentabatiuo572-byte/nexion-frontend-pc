@@ -19,7 +19,7 @@ const routes = [
   { id: "F2", path: "/network/royalty", expected: "L1–L7 网络版税费率" },
   { id: "F3", path: "/network/binary", expected: "平衡匹配公式" },
   { id: "F4", path: "/network/leadership-pool", expected: "领导池" },
-  { id: "F5", path: "/network/commissions", expected: "F5 佣金事件审计" },
+  { id: "F5", path: "/network/commissions", expected: "F5 奖励记录核对" },
 ];
 
 mkdirSync(dirname(evidencePath), { recursive: true });
@@ -120,11 +120,11 @@ try {
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator("aside").waitFor({ state: "visible", timeout: 20_000 });
-  await page.getByText("F5 佣金事件审计", { exact: false }).first().waitFor({ state: "visible", timeout: 20_000 });
-  await page.getByText("F5 佣金事件审计加载中", { exact: false }).waitFor({ state: "hidden", timeout: 20_000 });
+  await page.getByText("F5 奖励记录核对", { exact: false }).first().waitFor({ state: "visible", timeout: 20_000 });
+  await page.getByText("奖励记录加载中", { exact: false }).waitFor({ state: "hidden", timeout: 20_000 });
   const postRefreshF5Body = await page.locator("body").innerText();
   assert(
-    /当前筛选无佣金事件|佣金 ID/.test(postRefreshF5Body),
+    /没有符合条件的奖励记录|奖励 ID/.test(postRefreshF5Body),
     "F5 did not finish its server data readback after refresh",
   );
   await page.screenshot({ path: evidencePath.replace(/\.json$/i, "-final.png"), fullPage: true });

@@ -884,7 +884,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 {protectedEntries.map((entry) => <tr key={entry.entryNo}>
                   <td className="mono">{entry.entryNo}</td>
                   <td><div className="mono">U{entry.userId}</div><div className="tiny">{entry.clusterId}</div></td>
-                  <td><div>{({ TRIAL: "试用收益", DEVICE: "设备收益", TASK: "任务奖励", COMMISSION: "团队分成", REFERRAL: "邀请奖励", WELCOME: "新人奖励" } as Record<string, string>)[entry.sourceType.toUpperCase()] ?? "来源未知"}</div><div className="tiny mono">{entry.sourceRef}</div></td>
+                  <td><div>{({ TRIAL: "试用收益", DEVICE: "设备收益", TASK: "任务奖励", COMMISSION: "团队奖励", REFERRAL: "邀请奖励", WELCOME: "新人奖励" } as Record<string, string>)[entry.sourceType.toUpperCase()] ?? "来源未知"}</div><div className="tiny mono">{entry.sourceRef}</div></td>
                   <td><span className={`bdg ${entry.bucket === "bonus_locked" ? "bad" : "warn"}`}>{entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}</span></td>
                   <td className="num mono">{entry.amount.toLocaleString("en-US")} {nexGridBrandText(entry.asset)}</td>
                   <td className="mono tiny">{entry.createdAt}</td>
@@ -1017,7 +1017,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             </div>
             <div className="tbl-pane">
               <table className="l-tbl">
-                <thead><tr><th>账户</th><th>注册时间</th><th>上级</th><th>领过新人礼</th><th className="num">累计入金</th><th>状态</th></tr></thead>
+                <thead><tr><th>账户</th><th>注册时间</th><th>邀请人</th><th>领过新人礼</th><th className="num">累计入金</th><th>状态</th></tr></thead>
                 <tbody>
                   {cur.nodes.map((n) => {
                     const restricted = isRestrictedStatus(n[5]);

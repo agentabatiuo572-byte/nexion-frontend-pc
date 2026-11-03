@@ -14,6 +14,7 @@ import {
   fetchMAdvisorBindingUsers,
   type MAdvisorBindingUser,
   fetchMSupportAgentsPage,
+  scriptGroupLabel,
   type MAdvisorAssignment,
   type MSupportAgentPage,
   type MSupportAgent,
@@ -323,7 +324,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
       || (!masterOn && !ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE)) return;
     openActionConfirm({
       action: <>{masterOn ? "停用" : "启用"}专属客服主动推送</>,
-      detail: masterOn ? <>停用后专属客服不再主动触达,只在用户发起时回复。引导转化触点暂停。</> : <>启用后专属客服按下方 主动联系规则 主动触达用户(引导购机 / 锁仓 / 复投)。</>,
+      detail: masterOn ? <>停用后专属客服不再主动触达,只在用户发起时回复。引导转化触点暂停。</> : <>启用后专属客服按下方 主动联系规则 主动触达用户(引导购机 / 锁仓 / 锁定计划)。</>,
       amplifies: false,
       reasonMin: 8,
       reasonMax: 200,
@@ -691,7 +692,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
               <div key={a.id} className="m5-script-row" style={{ gap: 10, alignItems: "center", padding: "11px 12px", borderTop: "1px solid var(--border)" }}>
                 <div>
                   <div className="idtag" style={{ fontSize: 11.5 }}>{a.id}</div>
-                  <div className="dim2" style={{ fontSize: 11 }}>{a.group}</div>
+                  <div className="dim2" style={{ fontSize: 11 }}>{scriptGroupLabel(a.group)}</div>
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 }}>{a.text}</div>

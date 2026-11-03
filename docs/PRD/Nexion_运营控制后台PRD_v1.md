@@ -890,11 +890,11 @@ Nexion 运营控制后台
 | 子模块 | 名称 | 对应前端 | §锚点 | 批次 |
 |---|---|---|---|---|
 | F1 | V-Rank 晋升管理 | /team/rank(13 级)+ 等级奖励清单(USDT/NEX/代金券/SKU/自定义,运营可配) | §8.2 / §9.11c.1 | V2 |
-| F2 | 直属分成配置 | /team/unilevel 直属购买与设备收益双币分成 + 独立 Partner Status 权益 | V2 F2 / F5 | V2 |
-| F3 | 双轨结算引擎 | /team/binary(min(A,B)×10% / binaryDailyCapUSD) | §8.4 / §13.4.1 | V2 |
-| F4 | 领导奖池 | /team/leadership-pool(5% 周 GMV / V_VOTES) | §8.5 / §9.11c.1 | V2 |
-| F5 | 佣金事件审计 | /team/commissions(6 类佣金流水) | §8.6 | V2 |
-| F4b | 硬件配额 | /team/quota(Pro 5 直推 / Rack 15 直推) | §8.9 | V2 |
+| F2 | 团队奖励设置 | /team/unilevel 团队购买奖励（L1–L7）、好友购买奖励与好友设备收益奖励双币拆分 + 独立 Partner Status 权益 | V2 F2 / F5 | V2 |
+| F3 | 团队平衡奖励 | /team/binary(A 组 / B 组较小一组订单额 ×10% / binaryDailyCapUSD) | §8.4 / §13.4.1 | V2 |
+| F4 | 团队激励池 | /team/leadership-pool(5% 周 GMV / V_VOTES) | §8.5 / §9.11c.1 | V2 |
+| F5 | 奖励记录核对 | /team/commissions(8 类奖励记录) | §8.6 | V2 |
+| F4b | 硬件配额 | /team/quota(Pro 5 位 / Rack 15 位直接邀请的好友) | §8.9 | V2 |
 | F4c | 区域大使审批 | /team/agent(4 类预算 / KOL 50%) | §8.10 | V2 |
 | F4d | 排行榜 & 反欺诈 | /team/leaderboard(4 周期奖池 / Podium) | §8.11 | V2 |
 
@@ -902,11 +902,11 @@ Nexion 运营控制后台
 
 | 子模块 | 名称 | 对应前端 | §锚点 | 批次 |
 |---|---|---|---|---|
-| G1 | Staking 池配置 | /staking(USDT 锁仓 4 档)/ penalty / kill | §9.6 / §9.11c.1 / §9.11d.1 | V3 |
+| G1 | 质押产品配置 | /staking(USDT 锁仓 4 档 / 参考年奖励率 / 提前解锁扣款 / kill) | §9.6 / §9.11c.1 / §9.11d.1 | V3 |
 | G2 | 兑换风控 | /me/wallet/exchange(三阈值 caps / queue) | §9.4 / §9.11c.1 | V3 |
 | G3 | NEX 周曲线关键帧排程器 | /market(price / 周关键帧曲线 / oracle) | §5.7 / §11.9 / §9.11c.1 | V3 |
-| G4 | Genesis 经济 | /genesis(一二级市场 / 排放 / pause / geo) | §10 / §9.11d.1 | V3 |
-| G7 | 复投激励 | /me/wallet/repurchase(APY / 培育 / Genesis 券) | §9.5 | V3 |
+| G4 | 创世节点销售与收益 | /genesis(认购与转让市场 / 排放 / pause / geo) | §10 / §9.11d.1 | V3 |
+| G7 | 锁定计划 | /me/wallet/repurchase(参考年奖励率 / 好友升级奖励倍率 / Genesis 券) | §9.5 | V3 |
 
 #### H 增长与运营节奏 — H1/H2 ★V1,H3–H6 V3
 

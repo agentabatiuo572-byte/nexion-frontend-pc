@@ -30,12 +30,12 @@ type H1Model = {
 const DIAL_COLUMNS = [
   ["newUserBonusMultiplier", "新用户加成", "x"],
   ["inviteRewardMultiplier", "邀请加成", "x"],
-  ["reinvestMultiplier", "复投加成", "x"],
+  ["reinvestMultiplier", "锁定计划加成", "x"],
   // FEAT-WD01 改名:实际语义是「大额提现的到账等待天数」,不是「两笔提现的间隔」。字段键不动。
   ["withdrawCooldownDays", "提现审核期", "天"],
   // FEAT-WD02:「提现惩罚费率」旋钮已下线 —— 费用模型换为按网络固定确认费(D5 自有可写),
   // 逐月费率旋钮无对应语义;历史审计记录不删账。
-  ["binaryDailyCap", "左右团队奖每日上限", "USD"],
+  ["binaryDailyCap", "团队平衡奖励每日上限", "USD"],
   ["questBonusMultiplier", "任务加成", "x"],
   ["complianceHoldEnabled", "增强合规审查", ""],
 ] as const;

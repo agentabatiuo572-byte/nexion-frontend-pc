@@ -12,8 +12,8 @@ import { F3Placements } from "./f3-placements";
 
 const usd = (n: number): string => "$" + n.toLocaleString();
 const text = (value?: string | null) => operatorCopyText(value && value.trim() ? value.trim() : "—");
-const trackLabel = (value: number, other: number) => value > other ? "较大侧"
-  : value < other ? "较小侧 · 按这一侧计算" : "两侧相同";
+const trackLabel = (value: number, other: number) => value > other ? "较大组"
+  : value < other ? "较小组 · 按这一组计算" : "两组相同";
 
 function metricClass(tone: string) {
   return ["ok", "warn", "cyan"].includes(tone) ? `f-stat ${tone}` : "f-stat";
@@ -81,7 +81,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   if (ctx.f3Loading && rows.length === 0) {
     return (
       <section className="pane">
-        <div className="pane-h"><span className="ph-ttl">左右团队数据加载中</span><span className="ph-sub">请稍候</span></div>
+        <div className="pane-h"><span className="ph-ttl">团队平衡奖励数据加载中</span><span className="ph-sub">请稍候</span></div>
         <div className="bin-empty">加载中...</div>
       </section>
     );
@@ -90,7 +90,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   if (ctx.f3Error && rows.length === 0) {
     return (
       <section className="pane">
-        <div className="pane-h"><span className="ph-ttl">左右团队数据加载失败</span><span className="ph-sub">{ctx.f3Error}</span></div>
+        <div className="pane-h"><span className="ph-ttl">团队平衡奖励数据加载失败</span><span className="ph-sub">{ctx.f3Error}</span></div>
         <div className="bin-empty"><button className="fbtn primary" onClick={() => void ctx.refreshF3()}>重试</button></div>
       </section>
     );
@@ -101,7 +101,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       <F3Placements />
       {ctx.f3Error && (
         <section className="pane">
-          <div className="pane-h"><span className="ph-ttl">左右团队数据刷新失败</span><span className="ph-sub">{ctx.f3Error}</span></div>
+          <div className="pane-h"><span className="ph-ttl">团队平衡奖励数据刷新失败</span><span className="ph-sub">{ctx.f3Error}</span></div>
         </section>
       )}
 
@@ -117,29 +117,29 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
 
       <div className="f3-hero">
         <section className="pane">
-          <div className="pane-h"><span className="ph-ttl">左右团队奖怎么算</span><span className="ph-sub">{text(periodEff)}结算</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="electric">左右团队</CodeTag></span></div>
+          <div className="pane-h"><span className="ph-ttl">团队平衡奖励怎么算</span><span className="ph-sub">{text(periodEff)}结算</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="electric">A 组 / B 组</CodeTag></span></div>
           <div className="formula">
-            <div className="track a"><div className="nm">A 侧团队</div><div className="gv">{formula ? usd(formula.trackA) : "—"}</div><div className="meta">{trackFormula ? trackLabel(trackFormula.trackA, trackFormula.trackB) : "暂无数据"}<br />本期累计业绩（每月 1 日归零）</div></div>
+            <div className="track a"><div className="nm">A 组</div><div className="gv">{formula ? usd(formula.trackA) : "—"}</div><div className="meta">{trackFormula ? trackLabel(trackFormula.trackA, trackFormula.trackB) : "暂无数据"}<br />本期累计订单额（每月 1 日归零）</div></div>
             <div className="balance">
               <div className="op">取较小值</div>
               <div className="fx"><div className="l">匹配奖励 {text(formula?.matchRate)}</div><div className="v">{formula ? usd(formula.matchAmount) : "—"}</div><div className="u">今日 · {text(formula?.user)}</div></div>
               <div className="op">× {text(formula?.matchRate)}</div>
             </div>
-            <div className="track b"><div className="nm">B 侧团队</div><div className="gv">{formula ? usd(formula.trackB) : "—"}</div><div className="meta">{trackFormula ? trackLabel(trackFormula.trackB, trackFormula.trackA) : "暂无数据"}<br />奖励按较小一侧计算</div></div>
+            <div className="track b"><div className="nm">B 组</div><div className="gv">{formula ? usd(formula.trackB) : "—"}</div><div className="meta">{trackFormula ? trackLabel(trackFormula.trackB, trackFormula.trackA) : "暂无数据"}<br />奖励按较小一组计算</div></div>
           </div>
           <div className="formula-foot">
-            <span className="mono">奖励 = 较小一侧业绩 × <b>匹配比例</b></span>
+            <span className="mono">奖励 = 较小一组订单额 × <b>匹配比例</b></span>
             <span className="sep">·</span>
             <span><b>匹配比例 = {text(rateEff)}</b></span>
             <span className="sep">·</span>
-            <span className="mono">每侧门槛 = {text(thEff)}</span>
+            <span className="mono">每组门槛 = {text(thEff)}</span>
             <span className="sep">·</span>
             <span className="mono">修改从下一期开始生效</span>
           </div>
         </section>
 
         <section className="pane cap-card">
-          <div className="pane-h"><span className="ph-ttl">左右团队奖每日上限</span><span className="ph-sub">每期上限 = 每日上限 × 天数</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="cyan">跟随运营阶段 · 只读</CodeTag></span></div>
+          <div className="pane-h"><span className="ph-ttl">团队平衡奖励每日上限</span><span className="ph-sub">每期上限 = 每日上限 × 天数</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="cyan">跟随运营阶段 · 只读</CodeTag></span></div>
           <div className="cap-body"><div className="vv" data-proof="f3-cap-h1">{text(dailyCap?.currentLabel)}</div><div className="lbl">{text(dailyCap?.windowLabel)}</div></div>
           <div className="next-step">跟随「运营阶段设置」当前值（<b>第 {dailyCap?.currentMonth ?? "—"} 个月 · {text(dailyCap?.currentPhase)}</b>），阶段推进后自动收紧。修改请到「运营阶段设置」。</div>
           <div className="cap-action"><button onClick={() => ctx.nav("H")}>去运营阶段设置 →</button></div>
@@ -153,7 +153,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <span className="ph-r" style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             <Link className="fbtn" href="/network/commissions">去补发 / 冲正</Link>
             {canSettle && <button className="fbtn primary" onClick={() => ctx.openActionConfirm({
-              name: "手动结算左右团队奖",
+              name: "手动结算团队平衡奖励",
               businessForm: {
                 kind: "multi-field",
                 title: "用户和结算日",
@@ -175,7 +175,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
                   return;
                 }
                 ctx.toast(result.replayed
-                  ? `这天已经结算过，没有重复发放 · 佣金记录 ${result.commissionEventId ?? "—"}`
+                  ? `这天已经结算过，没有重复发放 · 奖励记录 ${result.commissionEventId ?? "—"}`
                   : `已结算 · ${usd(result.amountUsdt)} 进入冷却期`);
               },
             })}>手动结算</button>}
@@ -247,7 +247,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <span className="muted tiny">{selectedUser ? `已选择 ${selectedUser}` : "未选择时展示全部"}</span>
           <span className="muted tiny" style={{ marginLeft: "auto" }}>{pager.total} 名用户</span>
         </div>
-        <div className="bin-row head"><span>用户</span><span>A 侧团队</span><span /><span>B 侧团队</span><span style={{ textAlign: "right" }}>匹配结算</span><span style={{ textAlign: "right" }}>当日已发</span><span style={{ textAlign: "right" }}>状态</span></div>
+        <div className="bin-row head"><span>用户</span><span>A 组</span><span /><span>B 组</span><span style={{ textAlign: "right" }}>匹配结算</span><span style={{ textAlign: "right" }}>当日已发</span><span style={{ textAlign: "right" }}>状态</span></div>
         {pager.pageRows.map((row) => (
           <div key={row.user} className="bin-row">
             <span className="uid">{row.user}</span>
@@ -274,17 +274,17 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
 
       <div className="cfg-grid">
         <div className="cfg-card">
-          <div className="ch">每侧业绩门槛</div>
-          <div className="cs">两侧都达到才参与结算 · 下一期生效</div>
+          <div className="ch">每组订单额门槛</div>
+          <div className="cs">两组都达到才参与结算 · 下一期生效</div>
           <div className="ckv"><span className="k">当前门槛</span><span className="v">{text(thEff)}</span></div>
-          <div className="ckv"><span className="k">未达门槛的业绩</span><span className="v">{text(cfg?.residualPool)}</span></div>
-          <div className="ckv"><span className="k">未匹配业绩处理</span><span className="v" style={{ color: "var(--ink-3)" }}>{text(residualEff)}</span></div>
-          {canConfigure && <div className="cfg-foot"><button className="fbtn primary" onClick={() => ctx.openActionConfirm({ name: "调整每侧业绩门槛", op: "param", paramKey: "F.binary.threshold", edit: { kind: "text", current: thEff }, detail: `每侧业绩门槛 · 当前 ${text(thEff)} · 从下一期开始生效，本期已算的不变。` })}>调整门槛</button></div>}
+          <div className="ckv"><span className="k">未达门槛的订单额</span><span className="v">{text(cfg?.residualPool)}</span></div>
+          <div className="ckv"><span className="k">未匹配订单额处理</span><span className="v" style={{ color: "var(--ink-3)" }}>{text(residualEff)}</span></div>
+          {canConfigure && <div className="cfg-foot"><button className="fbtn primary" onClick={() => ctx.openActionConfirm({ name: "调整每组订单额门槛", op: "param", paramKey: "F.binary.threshold", edit: { kind: "text", current: thEff }, detail: `每组订单额门槛 · 当前 ${text(thEff)} · 从下一期开始生效，本期已算的不变。` })}>调整门槛</button></div>}
         </div>
 
         <div className="cfg-card">
           <div className="ch">匹配比例</div>
-          <div className="cs">⚡ 调高会多发佣金，先看兑付覆盖率</div>
+          <div className="cs">⚡ 调高会多发奖励，先看兑付覆盖率</div>
           <div className="ckv"><span className="k">当前比例</span><span className="v" style={{ color: "var(--brand)" }}>{text(rateEff)}</span></div>
           <div className="ckv"><span className="k">今日匹配总额</span><span className="v">{usd(ctx.f3DailyMatchUsd)}</span></div>
           <div className="ckv"><span className="k">月累计匹配</span><span className="v">{usd(ctx.f3MonthlyMatchedUsd)}</span></div>
@@ -294,70 +294,70 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             op: "param",
             paramKey: "F.binary.matchRate",
             edit: { kind: "text", current: rateEff, unit: "%" },
-            detail: `较小一侧业绩 × 这个比例 = 奖励 · 当前 ${text(rateEff)}。调高会多发佣金，先看兑付覆盖率。从下一期开始生效，已算的不变。`,
+            detail: `较小一组订单额 × 这个比例 = 奖励 · 当前 ${text(rateEff)}。调高会多发奖励，先看兑付覆盖率。从下一期开始生效，已算的不变。`,
             completionCopy: "从下一期开始生效，已算的不变。",
           })}>调整比例</button></div>}
         </div>
 
         <div className="cfg-card">
-          <div className="ch">自动安置与归零</div>
-          <div className="cs">业绩每月 1 日 00:00（越南时间）归零</div>
-          <div className="ckv"><span className="k">自动安置</span><span className="v" style={{ color: spillOn ? "var(--success)" : "var(--ink-3)" }}>{spillOn ? "已启用" : "已关闭"}</span></div>
-          <div className="ckv"><span className="k">近 7 天自动安置</span><span className="v">{ctx.f3AutoPlacement7dCount.toLocaleString()} 成员</span></div>
+          <div className="ch">自动分组与归零</div>
+          <div className="cs">订单额每月 1 日 00:00（越南时间）归零</div>
+          <div className="ckv"><span className="k">自动分组</span><span className="v" style={{ color: spillOn ? "var(--success)" : "var(--ink-3)" }}>{spillOn ? "已启用" : "已关闭"}</span></div>
+          <div className="ckv"><span className="k">近 7 天自动分组</span><span className="v">{ctx.f3AutoPlacement7dCount.toLocaleString()} 成员</span></div>
           <div className="ckv"><span className="k">归零时间</span><span className="v" style={{ fontSize: 11 }}>{text(resetEff)}</span></div>
           {canConfigure && <div className="cfg-foot">
-            <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "调整自动安置", op: "param", paramKey: "F.binary.spillover", edit: { kind: "select", current: spillOn ? "已启用" : "已关闭", options: ["已启用", "已关闭"] }, detail: "关闭后，新成员需要手动安排到 A 侧或 B 侧。" })}>自动安置</button>
+            <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "调整自动分组", op: "param", paramKey: "F.binary.spillover", edit: { kind: "select", current: spillOn ? "已启用" : "已关闭", options: ["已启用", "已关闭"] }, detail: "关闭后，新成员需要手动分到 A 组或 B 组。" })}>自动分组</button>
             {/* 归零口径恢复可配(2026-08-06 主人裁决):后端结算策略一直读这个配置键、契约测试也把它
                 列进合法配置键清单,只是页面把入口撤了 —— 后端可配而控制台无门,是半截状态。
                 🔴 键名从 client 常量取、页面只出中文标签:本页有一道术语门扫原文(含注释),
                 禁止开发代号出现在页面正文里。 */}
-            <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "调整业绩归零时间", op: "param", paramKey: F3_GV_RESET_PARAM_KEY, edit: { kind: "select", current: resetEff, options: ["每月 1 日 00:00 Asia/Ho_Chi_Minh"], optionLabels: { "每月 1 日 00:00 Asia/Ho_Chi_Minh": "每月 1 日 00:00 越南时间 UTC+7" } }, detail: `两侧累计业绩的归零时间 · 当前 ${text(resetEff)} · 从下一期开始生效，已算的不变。` })}>归零时间</button>
+            <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "调整订单额归零时间", op: "param", paramKey: F3_GV_RESET_PARAM_KEY, edit: { kind: "select", current: resetEff, options: ["每月 1 日 00:00 Asia/Ho_Chi_Minh"], optionLabels: { "每月 1 日 00:00 Asia/Ho_Chi_Minh": "每月 1 日 00:00 越南时间 UTC+7" } }, detail: `两组累计订单额的归零时间 · 当前 ${text(resetEff)} · 从下一期开始生效，已算的不变。` })}>归零时间</button>
           </div>}
         </div>
 
         <div className="cfg-card">
-          <div className="ch">结算周期与未匹配业绩处理</div>
-          <div className="cs">多久结算一次、没匹配上的业绩怎么处理 · 下一期生效</div>
+          <div className="ch">结算周期与未匹配订单额处理</div>
+          <div className="cs">多久结算一次、没匹配上的订单额怎么处理 · 下一期生效</div>
           <div className="ckv"><span className="k">结算周期</span><span className="v" style={{ color: "var(--brand)" }}>{text(periodEff)}</span></div>
-          <div className="ckv"><span className="k">未匹配业绩处理</span><span className="v">{text(residualEff)}</span></div>
+          <div className="ckv"><span className="k">未匹配订单额处理</span><span className="v">{text(residualEff)}</span></div>
           {canConfigure && <div className="cfg-foot"><button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({
-            name: "结算周期与未匹配业绩处理调整",
+            name: "结算周期与未匹配订单额处理调整",
             op: "param-multi",
             amplify: true,
             businessForm: {
               kind: "multi-field",
-              title: "结算周期与未匹配业绩处理",
-              hint: "按越南时间（UTC+7）划分：每日 00:00、每周一 00:00、每月 1 日 00:00；2026-10-19 之前的周期不重算。「未匹配业绩」指两侧匹配后较大一侧多出来的业绩。选「转结」会留到下一期，增加之后要付的佣金，先看兑付覆盖率。",
+              title: "结算周期与未匹配订单额处理",
+              hint: "按越南时间（UTC+7）划分：每日 00:00、每周一 00:00、每月 1 日 00:00；2026-10-19 之前的周期不重算。「未匹配订单额」指两组匹配后较大一组多出来的订单额。选「转结」会留到下一期，增加之后要付的奖励，先看兑付覆盖率。",
               fields: [
                 { key: "period", label: "结算周期", current: periodEff, inputKind: "select", options: ["每日", "每周", "每月"] },
-                { key: "residual", label: "未匹配业绩处理", current: residualEff, inputKind: "select", options: ["每月清零", "每次对碰清零", "转结"] },
+                { key: "residual", label: "未匹配订单额处理", current: residualEff, inputKind: "select", options: ["每月清零", "每次对碰清零", "转结"], optionLabels: { "每次对碰清零": "每次匹配后清零" } },
               ],
             },
             paramKeys: [
               { key: "period", paramKey: "F.binary.settlePeriod" },
               { key: "residual", paramKey: "F.binary.residualPolicy" },
             ],
-            detail: "从下一期开始生效，已算的不变。选「转结」会增加之后要付的佣金，先看兑付覆盖率。",
+            detail: "从下一期开始生效，已算的不变。选「转结」会增加之后要付的奖励，先看兑付覆盖率。",
             completionCopy: "从下一期开始生效，已算的不变。",
           })}>调整</button></div>}
         </div>
 
         <div className="cfg-card">
-          <div className="ch">暂停左右团队奖</div>
+          <div className="ch">暂停团队平衡奖励</div>
           <div className="cs">⚡ 紧急情况下暂停全平台发放</div>
           <div className="ckv"><span className="k">状态</span><span className="v" style={{ color: binaryPaused ? "var(--danger)" : "var(--success)" }}>{binaryPaused ? "已暂停" : "运行中"}</span></div>
           <div className="ckv"><span className="k">影响范围</span><span className="v" style={{ color: "var(--ink-3)" }}>{binaryPaused ? "全平台暂停发放" : "按周期正常发放"}</span></div>
           {canPause && <div className="cfg-foot"><button className={`fbtn${binaryPaused ? " primary" : " danger"}`} onClick={() => ctx.openActionConfirm({
-            name: binaryPaused ? "恢复左右团队业绩结算" : "暂停左右团队业绩结算",
+            name: binaryPaused ? "恢复团队平衡奖励发放" : "暂停团队平衡奖励发放",
             op: "dispose", paramKey: "F.binary.paused", fixedVal: binaryPaused ? "off" : "on",
             detail: binaryPaused
               ? "恢复后从下一期开始正常发放。"
-              : "暂停后全平台所有用户的左右团队奖都停发，只在紧急情况下使用。",
+              : "暂停后全平台所有用户的团队平衡奖励都停发，只在紧急情况下使用。",
           })}>{binaryPaused ? "恢复发放" : "暂停发放"}</button></div>}
         </div>
       </div>
 
-      <p className="f-foot">两侧团队均达到门槛后参与结算。未匹配业绩按当前设置「{text(residualEff)}」处理；若结转至下期，会增加后续佣金应付款，修改前先看兑付覆盖率。</p>
+      <p className="f-foot">A 组和 B 组均达到门槛后参与结算。未匹配订单额按当前设置「{text(residualEff)}」处理；若结转至下期，会增加后续奖励应付款，修改前先看兑付覆盖率。</p>
     </>
   );
 }

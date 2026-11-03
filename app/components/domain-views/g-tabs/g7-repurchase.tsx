@@ -22,12 +22,12 @@ import type { GCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const PARAM_COPY: Record<string, { name: string; sub: string }> = {
-  apy: { name: "年化收益率", sub: "只影响新订单" },
+  apy: { name: "参考年奖励率", sub: "只影响新订单" },
   lockDays: { name: "锁仓期限", sub: "整数天 · 只影响新订单" },
-  nurture: { name: "培育奖倍率", sub: "复投用户的培育奖按这个倍率算，马上生效" },
-  lottery: { name: "创世节点抽奖券", sub: "每笔复投送几张 · 修改前核对奖池容量" },
-  penalty: { name: "提前赎回罚款", sub: "扣部分本金，利息和抽奖券作废" },
-  presets: { name: "复投金额快捷选项", sub: "用户复投时可直接点选的金额 · 马上生效" },
+  nurture: { name: "好友升级奖励倍率", sub: "参与锁定计划的用户，好友升级奖励按这个倍率算，马上生效" },
+  lottery: { name: "创世节点抽奖券", sub: "每笔锁定计划送几张 · 修改前核对奖池容量" },
+  penalty: { name: "提前解锁扣款", sub: "扣部分锁定金额，锁定奖励不发放，本单已发且未使用的抽奖券作废" },
+  presets: { name: "锁定金额快捷选项", sub: "用户参与锁定计划时可直接点选的金额 · 马上生效" },
 };
 
 /** 复投单处理流程的中文业务名;未知状态原样回显,不伪造中文。 */
@@ -36,7 +36,7 @@ const REPURCHASE_STATE_LABELS: Record<string, string> = {
   active: "锁仓中",
   mature_unclaimed: "到期未领取",
   claimed: "已领取",
-  early_withdrawn: "已提前赎回",
+  early_withdrawn: "已提前解锁",
 };
 
 /**
@@ -48,11 +48,11 @@ function paramDisplayValue(param: G7Param) {
   const raw = (param.value || "").trim();
   if (!raw) return "未配置";
   switch (param.key) {
-    case "apy": return `${raw}% 年化`;
+    case "apy": return `参考年奖励率 ${raw}%`;
     case "lockDays": return `${raw} 天`;
     case "nurture": return `${raw} 倍`;
     case "lottery": return `${raw} 张 / 单`;
-    case "penalty": return `扣本金 ${raw}%，利息和抽奖券作废`;
+    case "penalty": return `扣锁定金额的 ${raw}%，锁定奖励不发放，本单已发且未使用的抽奖券作废`;
     default: return raw;
   }
 }
@@ -87,7 +87,7 @@ function orderStatusLabel(status: string) {
     ACTIVE: "锁仓中",
     MATURE_UNCLAIMED: "到期未领取",
     CLAIMED: "已领取",
-    EARLY_WITHDRAWN: "已提前赎回",
+    EARLY_WITHDRAWN: "已提前解锁",
   } as Record<string, string>)[status] ?? "未知状态";
 }
 
@@ -198,8 +198,8 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
   if (loading && !overview) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">复投激励</span><span className="sub">· 加载中</span></div>
-        <div className="l-b"><div className="gtint">复投数据加载中…</div></div>
+        <div className="l-h"><span className="ttl">锁定计划</span><span className="sub">· 加载中</span></div>
+        <div className="l-b"><div className="gtint">锁定计划数据加载中…</div></div>
       </section>
     );
   }
@@ -207,9 +207,9 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
   if (!overview) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">复投激励</span></div>
+        <div className="l-h"><span className="ttl">锁定计划</span></div>
         <div className="l-b">
-          <div className="gtint">复投数据加载失败 · {error || "没有收到数据，请重试；一直失败请联系值班同事。"}</div>
+          <div className="gtint">锁定计划数据加载失败 · {error || "没有收到数据，请重试；一直失败请联系值班同事。"}</div>
           <button className="l-btn mc" style={{ marginTop: 12 }} onClick={() => void reload()}>重新加载</button>
         </div>
       </section>
@@ -223,10 +223,10 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
   const adjustParam = (param: G7Param) => {
     const label = paramName(param);
     openActionConfirm({
-      action: `调整复投参数 · ${label}`,
+      action: `调整锁定计划参数 · ${label}`,
       detail: (
         <>
-          <b>{label}</b> · 当前 {paramDisplayValue(param)} · {({ apy: "调高年化收益率会增加以后要付的利息，先看兑付覆盖率", lockDays: "只影响新订单，已有订单按原期限", nurture: "影响之后的培育奖计算", lottery: "改抽奖券数量前，先核对创世奖池还够不够", penalty: "已有订单按下单时的罚款规则", presets: "保存后 App 上的可选金额马上更新" } as Record<string,string>)[param.key] ?? "修改后按该参数生效规则执行"}。
+          <b>{label}</b> · 当前 {paramDisplayValue(param)} · {({ apy: "调高参考年奖励率会增加以后要付的锁定奖励，先看兑付覆盖率", lockDays: "只影响新订单，已有订单按原期限", nurture: "影响之后的好友升级奖励计算", lottery: "改抽奖券数量前，先核对创世奖池还够不够", penalty: "已有订单按下单时的扣款规则", presets: "保存后 App 上的可选金额马上更新" } as Record<string,string>)[param.key] ?? "修改后按该参数生效规则执行"}。
           {param.b1RedlineTriggered && <>这项修改会多付钱，覆盖率低于红线时无法保存（当前 {cov}%）。</>}
           {param.newOnly ? "只影响新订单。" : "保存后马上生效。"}
         </>
@@ -268,14 +268,14 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
     <>
       {error && <div className="gtint" style={{ marginBottom: 12 }}>操作提示 · {error}</div>}
       <div className="f-stats">
-        <div className="f-stat ok"><div className="k">本月复投单</div><div className="v">{fmtNumber(stats.ordersMonth)}</div><div className="sub">锁仓本金 {fmtUsdCompact(stats.principalUsd)}</div></div>
-        <div className="f-stat"><div className="k">待到期本息</div><div className="v">{fmtUsdCompact(stats.matureUsd)}</div><div className="sub">计入「可用资金与应付款」</div></div>
+        <div className="f-stat ok"><div className="k">本月锁定计划订单</div><div className="v">{fmtNumber(stats.ordersMonth)}</div><div className="sub">锁定金额 {fmtUsdCompact(stats.principalUsd)}</div></div>
+        <div className="f-stat"><div className="k">待到期锁定金额及奖励</div><div className="v">{fmtUsdCompact(stats.matureUsd)}</div><div className="sub">计入「可用资金与应付款」</div></div>
         <div className="f-stat cyan"><div className="k">本月发出抽奖券</div><div className="v">{fmtNumber(stats.ticketsMonth)} 张</div><div className="sub">创世节点每月开奖</div></div>
-        <div className="f-stat"><div className="k">复投率</div><div className="v">{stats.reinvestRateAvailable ? `${stats.reinvestRate.toFixed(1).replace(/\.0$/, "")}%` : "—"}</div><div className="sub">{stats.reinvestRateAvailable ? "到期后选择复投的比例" : "数据不足，暂无法计算"}</div></div>
+        <div className="f-stat"><div className="k">再次锁定率</div><div className="v">{stats.reinvestRateAvailable ? `${stats.reinvestRate.toFixed(1).replace(/\.0$/, "")}%` : "—"}</div><div className="sub">{stats.reinvestRateAvailable ? "到期后再次参与锁定计划的比例" : "数据不足，暂无法计算"}</div></div>
       </div>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">复投激励配置</span><span className="sub">· 鼓励用户把可提现余额继续锁仓</span></div>
+        <div className="l-h"><span className="ttl">锁定计划配置</span><span className="sub">· 鼓励用户把可提现余额继续锁定</span></div>
         <div className="l-b" style={{ paddingTop: 4 }}>
           {overview.params.map((param) => (
             <div className="p-row" key={param.key}>
@@ -286,16 +286,16 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
           ))}
           <div className="p-row">
             <div className="txt">
-              <div className="k">限时复投倍率 <span className="gate">跟随运营阶段</span></div>
-              <div className="s">第 5–6 个月限时 2 倍，按复投当时的倍率算 · 修改请到「运营阶段设置」</div>
+              <div className="k">限时锁定计划倍率 <span className="gate">跟随运营阶段</span></div>
+              <div className="s">第 5–6 个月限时 2 倍，按参与当时的倍率算 · 修改请到「运营阶段设置」</div>
             </div>
             <span className="v">{overview.phaseGate.value}</span>
             <Link href="/growth/phase" className="l-btn sm">去运营阶段设置 →</Link>
           </div>
-          <div className="gtint" style={{ marginTop: 10 }}><b>复投</b> · 一次复投 = 扣余额 + 锁仓，两步要么一起成功，要么都不发生。限时倍率按复投当时的值计算。</div>
+          <div className="gtint" style={{ marginTop: 10 }}><b>锁定计划</b> · 加入成功后，所选金额转为锁定金额；提交失败时不会扣款。限时倍率按参与时的规则计算。</div>
           <div className="gtint" style={{ marginTop: 10 }}><b>创世奖池容量</b> · 每月 {fmtNumber(overview.g4Capacity.monthlyCapacity)} 张 · 本月已发 {fmtNumber(overview.g4Capacity.ticketsIssuedThisMonth)} 张 · 修改抽奖券规则时要填写奖池核对编号。</div>
 
-          <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px" }}>复投订单状态与金额分布</div>
+          <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px" }}>锁定计划订单状态与金额分布</div>
           <div className="sm-strip">
             {overview.stateMachine.map((state, index) => (
               <span key={state} className={index === 1 ? "st ok" : index === 2 ? "st warn" : index === 4 ? "st bad" : "st"}>{REPURCHASE_STATE_LABELS[state] ?? "状态未知"}</span>
@@ -318,15 +318,15 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
               </div>
             ))}
           </div>
-          <div className="gtint" style={{ marginTop: 10 }}><b>金额分布（本月 {fmtNumber(stats.ordersMonth)} 单）</b> · {overview.amountDistribution} · 待到期本息 {fmtUsdCompact(stats.matureUsd)}，已计入「可用资金与应付款」。</div>
+          <div className="gtint" style={{ marginTop: 10 }}><b>金额分布（本月 {fmtNumber(stats.ordersMonth)} 单）</b> · {overview.amountDistribution} · 待到期锁定金额及奖励 {fmtUsdCompact(stats.matureUsd)}，已计入「可用资金与应付款」。</div>
         </div>
       </section>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">复投订单</span></div>
+        <div className="l-h"><span className="ttl">锁定计划订单</span></div>
         <div className="l-b" style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 1040 }}>
-            <thead><tr><th>订单号</th><th>用户</th><th>本金</th><th>下单时年化收益率 / 期限</th><th>预计利息</th><th>状态</th><th>开始 / 到期</th><th>账单</th></tr></thead>
+            <thead><tr><th>订单号</th><th>用户</th><th>锁定金额</th><th>下单时参考年奖励率 / 期限</th><th>预计锁定奖励</th><th>状态</th><th>开始 / 到期</th><th>账单</th></tr></thead>
             <tbody>
               {orders.map((order) => (
                 <tr key={order.orderNo}>
@@ -340,14 +340,14 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
                   <td className="mono">{order.billCorrelationPrefix}-*</td>
                 </tr>
               ))}
-              {!orders.length && <tr><td colSpan={8} style={{ textAlign: "center", padding: 20 }}>暂无复投订单</td></tr>}
+              {!orders.length && <tr><td colSpan={8} style={{ textAlign: "center", padding: 20 }}>暂无锁定计划订单</td></tr>}
             </tbody>
           </table>
           {hasMore && nextCursor !== null && <button className="btn" disabled={loading || loadingMore} onClick={() => void loadMore()}>加载更多</button>}
         </div>
       </section>
 
-      <p className="f-foot">「什么时候解锁、限时倍率」在「运营阶段设置」里控制，这里只能查看；「利率、倍率、罚款、复投金额快捷选项」在这页修改。调高利率或培育奖倍率、降低罚款时，覆盖率低于红线无法保存。</p>
+      <p className="f-foot">「什么时候解锁、限时倍率」在「运营阶段设置」里控制，这里只能查看；「奖励率、倍率、扣款、锁定金额快捷选项」在这页修改。调高奖励率或好友升级奖励倍率、降低扣款时，覆盖率低于红线无法保存。</p>
       <details className="f-foot"><summary>技术信息（数据来源）</summary>{overview.sources.join(" / ")}</details>
     </>
   );

@@ -1365,7 +1365,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             </div>
           </SkuFieldGroup>
 
-          <SkuFieldGroup n="③" title={form.tier === "Share" ? "收益（年化 + UVT）" : "收益（USDT + UVT）"}>
+          <SkuFieldGroup n="③" title={form.tier === "Share" ? "收益（参考年奖励率 + UVT）" : "收益（USDT + UVT）"}>
             {form.tier !== "Share" ? (
               <div className="grid g-2" style={{ gap: 12 }}>
                 <SkuFld label="每日收益 USDT" type="number" value={form.dailyEarn} onChange={(v) => setForm({ ...form, dailyEarn: v })} placeholder="38.50" />
@@ -1376,8 +1376,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             ) : (
               <>
                 <div className="grid g-2" style={{ gap: 12 }}>
-                  <SkuFld label="共享份额年化下限 %" type="number" value={form.shareYieldMin} onChange={(v) => setForm({ ...form, shareYieldMin: v })} placeholder="8" />
-                  <SkuFld label="共享份额年化上限 %" type="number" value={form.shareYieldMax} onChange={(v) => setForm({ ...form, shareYieldMax: v })} placeholder="15" />
+                  <SkuFld label="共享份额参考年奖励率下限 %" type="number" value={form.shareYieldMin} onChange={(v) => setForm({ ...form, shareYieldMin: v })} placeholder="8" />
+                  <SkuFld label="共享份额参考年奖励率上限 %" type="number" value={form.shareYieldMax} onChange={(v) => setForm({ ...form, shareYieldMax: v })} placeholder="15" />
                 </div>
                 <SkuFld label="每日额外发放 UVT" type="number" value={form.dailyEarnNEX} onChange={(v) => setForm({ ...form, dailyEarnNEX: v })} placeholder="30" />
               </>
@@ -1508,10 +1508,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             if (form.tier === "Share") {
               const lo = skuNum(form.shareYieldMin); const hi = skuNum(form.shareYieldMax); const nex = skuNum(form.dailyEarnNEX); const pr = skuNum(form.price);
               const complete = form.shareYieldMin.trim() !== "" && form.shareYieldMax.trim() !== "" && lo > 0 && hi >= lo;
-              return <div className="tint cyan tiny">估算 · {complete ? <>参考年化 <span className="nowrap">{lo}–{hi}%</span></> : "年化区间暂不可用"} · 每日收益 <span className="nowrap">{nex.toLocaleString()} UVT/天</span>{pr > 0 ? <> · 起投 <span className="nowrap">${pr.toLocaleString()}</span></> : null}</div>;
+              return <div className="tint cyan tiny">估算 · {complete ? <>参考年奖励率 <span className="nowrap">{lo}–{hi}%</span></> : "参考年奖励率区间暂不可用"} · 每日收益 <span className="nowrap">{nex.toLocaleString()} UVT/天</span>{pr > 0 ? <> · 起购 <span className="nowrap">${pr.toLocaleString()}</span></> : null}</div>;
             }
             const p = skuNum(form.price); const d = skuNum(form.dailyEarn);
-            return p > 0 && d > 0 ? <div className="tint cyan tiny">估算 · 回本 ≈ <span className="nowrap">{Math.round(p / d)} 天</span> · 首年净 ≈ <span className="nowrap">${(d * 365 - p).toLocaleString()}</span> · 年化 ≈ <span className="nowrap">{Math.round((d * 365 / p) * 100)}%</span> · vs 手机 ≈ <span className="nowrap">{Math.round(d / 0.08).toLocaleString()}×</span></div> : null;
+            return p > 0 && d > 0 ? <div className="tint cyan tiny">估算 · 回本 ≈ <span className="nowrap">{Math.round(p / d)} 天</span> · 首年净 ≈ <span className="nowrap">${(d * 365 - p).toLocaleString()}</span> · 参考年奖励率 ≈ <span className="nowrap">{Math.round((d * 365 / p) * 100)}%</span> · vs 手机 ≈ <span className="nowrap">{Math.round(d / 0.08).toLocaleString()}×</span></div> : null;
           })()}
           <div className="tint warn tiny"><AutoGloss>价格、每日收益和状态修改需确认后才生效；新商品确认后才会上架</AutoGloss></div>
         </div>

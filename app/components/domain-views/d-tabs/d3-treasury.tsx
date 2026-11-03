@@ -30,21 +30,21 @@ const WATER_LABEL: Record<D3WaterLevel["tier"], string> = {
 };
 const TREASURY_SOURCE_LABELS: Record<string, string> = {
   "nx_treasury_reserve_ledger": "储备资金账本",
-  "nx_staking_position.amount_usdt": "生效中的质押本金",
+  "nx_staking_position.amount_usdt": "生效中的质押锁定金额",
   "nx_user_wallet": "用户钱包余额",
   "nx_user_wallet.usdt_available": "用户可提余额",
-  "nx_staking_position": "质押本金与利息",
-  "nx_staking_position.estimated_interest_usdt": "待付质押利息",
+  "nx_staking_position": "质押锁定金额与奖励",
+  "nx_staking_position.estimated_interest_usdt": "待付质押奖励",
   "nx_genesis_holding": "创世节点持仓",
-  "nx_genesis_holding × nx_genesis_series.daily_dividend_rate_pct": "创世节点持仓与每日分红",
+  "nx_genesis_holding × nx_genesis_series.daily_dividend_rate_pct": "创世节点持仓与每日收益",
   "nx_nex_lock_order": "UVT 锁仓订单",
   "nx_nex_lock_order active maturity": "生效中的 UVT 锁仓到期额",
   "nx_withdrawal_order": "提现订单",
   "nx_withdrawal_order active queue": "待处理提现订单",
   "nx_wallet_ledger": "钱包资金流水",
-  "nx_wallet_ledger pending commission": "待解锁佣金流水",
-  "nx_treasury_legacy_lock_liability": "存量锁仓本息",
-  "nx_treasury_legacy_lock_liability active principal + accrued interest": "生效中的存量锁仓本息",
+  "nx_wallet_ledger pending commission": "待解锁奖励流水",
+  "nx_treasury_legacy_lock_liability": "存量锁定金额及奖励",
+  "nx_treasury_legacy_lock_liability active principal + accrued interest": "生效中的存量锁定金额及奖励",
   "nx_vietqr_reconciliation": "VietQR 银行回单",
   "nx_vietqr_reconciliation open suspense rows": "待处置 VietQR 银行回单",
 };
@@ -186,7 +186,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
     if (!draft) return;
     openConfirm({
       action: "调整应付款预测设置",
-      detail: `预测 ${draft.forecastWindow.replace("d", " 天")}，创世节点分红${draft.genesisIncluded ? "计入" : "不计入"}。次日 UTC 00:00 起生效，不影响历史。`,
+      detail: `预测 ${draft.forecastWindow.replace("d", " 天")}，创世节点收益${draft.genesisIncluded ? "计入" : "不计入"}。次日 UTC 00:00 起生效，不影响历史。`,
       reason: true,
       okLabel: "保存配置",
       run: async (reason) => {
@@ -256,10 +256,10 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
       {error && <div className="dtint warn" style={{ marginBottom: 12 }}>加载失败 · {error}</div>}
 
       <div className="f-stats">
-        <div className="f-stat ok"><div className="k">可用储备</div><div className="v">{money(data?.reserve.reserveTotalUsdt ?? 0)}</div><div className="sub">已扣除质押锁定本金</div></div>
+        <div className="f-stat ok"><div className="k">可用储备</div><div className="v">{money(data?.reserve.reserveTotalUsdt ?? 0)}</div><div className="sub">已扣除质押锁定金额</div></div>
         <div className="f-stat"><div className="k">应付款</div><div className="v">{money(data?.liabilities.totalUsdt ?? 0)}</div><div className="sub">共 9 类，待核实的银行充值算在第 9 类</div></div>
         <div className={`f-stat ${water?.tier === "DANGER" ? "danger" : water?.tier === "WARNING" ? "warn" : "cyan"}`}><div className="k">资金安全等级</div><div className="v">{water ? WATER_LABEL[water.tier] : "—"}</div><div className="sub">{formatReserveCoverDays(data.maturity.cumulativeUsdt, water?.reserveCoverDays ?? 0)}</div></div>
-        <div className="f-stat warn"><div className="k">{(data?.maturity.window ?? maturityWindow).replace("d", " 天")}到期应付款</div><div className="v">{money(data?.maturity.cumulativeUsdt ?? 0)}</div><div className="sub">提现 + 利息 + 创世节点分红</div></div>
+        <div className="f-stat warn"><div className="k">{(data?.maturity.window ?? maturityWindow).replace("d", " 天")}到期应付款</div><div className="v">{money(data?.maturity.cumulativeUsdt ?? 0)}</div><div className="sub">提现 + 质押奖励 + 创世节点收益</div></div>
       </div>
 
       <section className="l-card">
@@ -285,7 +285,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
             <div className="res-row"><span className="nm">USDT 储备<small>基础可动用储备</small></span><span className="v">{money(data?.reserve.usdtReserveUsdt ?? 0)}</span></div>
             <div className="res-row"><span className="nm">其他高流动资产<small>已计入储备</small></span><span className="v">{money(data?.reserve.otherLiquidUsdt ?? 0)}</span></div>
             <div className="res-row"><span className="nm">累计注入<small>按登记的凭证汇总</small></span><span className="v">{money(data?.reserve.injectedCumulativeUsdt ?? 0)}</span></div>
-            <div className="res-row"><span className="nm">已扣除质押锁定本金<small>锁定中，不能动用</small></span><span className="v">-{money(data?.reserve.lockedStakingPrincipalDeductedUsdt ?? 0)}</span></div>
+            <div className="res-row"><span className="nm">已扣除质押锁定金额<small>锁定中，不能动用</small></span><span className="v">-{money(data?.reserve.lockedStakingPrincipalDeductedUsdt ?? 0)}</span></div>
           </div>
         </section>
 
@@ -320,7 +320,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
         <section className="l-card">
           <div className="l-h"><span className="ttl">到期应付款预测</span><span className="sub">· 每天构成和累计</span><div className="r"><select className="ui-control" value={maturityWindow} onChange={(event) => selectMaturity(event.target.value as "7d" | "30d")}><option value="7d">7 天</option><option value="30d">30 天</option></select></div></div>
           <div className="l-b" style={{ maxHeight: 430, overflowY: "auto" }}>
-            {(data?.maturity.daily ?? []).map((row) => <div className="res-row" key={row.date}><span className="nm">{row.date}<small>提现 {money(row.withdrawDueUsdt)} · 利息 {money(row.interestDueUsdt)} · 创世节点 {money(row.genesisDividendUsdt)}{data.maturity.trialStressIncluded ? ` · 试用业务 压力测试 ${money(row.trialShadowStressUsdt)}` : ""}</small></span><span className="v">{money(row.totalDueUsdt)}</span></div>)}
+            {(data?.maturity.daily ?? []).map((row) => <div className="res-row" key={row.date}><span className="nm">{row.date}<small>提现 {money(row.withdrawDueUsdt)} · 质押奖励 {money(row.interestDueUsdt)} · 创世节点 {money(row.genesisDividendUsdt)}{data.maturity.trialStressIncluded ? ` · 试用业务 压力测试 ${money(row.trialShadowStressUsdt)}` : ""}</small></span><span className="v">{money(row.totalDueUsdt)}</span></div>)}
             <div className="dtint" style={{ marginTop: 10 }}>{operatorCopyText(data?.maturity.farLiabilityNote ?? "")}</div>
           </div>
         </section>
@@ -342,10 +342,10 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
           {draft && <>
             <div className="ui-form-grid" style={{ marginBottom: 12 }}>
               <label>默认预测天数 <select className="ui-control" disabled={!canConfig} value={draft.forecastWindow} onChange={(event) => setDraft({ ...draft, forecastWindow: event.target.value as D3ForecastConfig["forecastWindow"] })}><option value="7d">7 天</option><option value="30d">30 天</option><option value="90d">90 天</option></select></label>
-              <label>利息预测 <select className="ui-control" disabled={!canConfig} value={draft.stakingInterestMode} onChange={(event) => setDraft({ ...draft, stakingInterestMode: event.target.value as D3ForecastConfig["stakingInterestMode"] })}><option value="LINEAR">按日线性</option><option value="AT_MATURITY">到期确认</option></select></label>
+              <label>质押奖励预测 <select className="ui-control" disabled={!canConfig} value={draft.stakingInterestMode} onChange={(event) => setDraft({ ...draft, stakingInterestMode: event.target.value as D3ForecastConfig["stakingInterestMode"] })}><option value="LINEAR">按日线性</option><option value="AT_MATURITY">到期确认</option></select></label>
             </div>
             <div className="ui-form-grid" style={{ marginBottom: 12 }}>
-              <label><input type="checkbox" disabled={!canConfig} checked={draft.genesisIncluded} onChange={(event) => setDraft({ ...draft, genesisIncluded: event.target.checked })} /> 计入创世节点分红</label>
+              <label><input type="checkbox" disabled={!canConfig} checked={draft.genesisIncluded} onChange={(event) => setDraft({ ...draft, genesisIncluded: event.target.checked })} /> 计入创世节点收益</label>
               <label><input type="checkbox" disabled={!canConfig} checked={draft.includeFarLiabilities} onChange={(event) => setDraft({ ...draft, includeFarLiabilities: event.target.checked })} /> 计入远期应付款</label>
               <label><input type="checkbox" disabled={!canConfig} checked={draft.trialStressEnabled} onChange={(event) => setDraft({ ...draft, trialStressEnabled: event.target.checked })} /> 试用业务压力测试</label>
             </div>

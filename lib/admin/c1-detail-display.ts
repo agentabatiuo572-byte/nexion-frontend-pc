@@ -46,7 +46,7 @@ const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
   SYSTEM: "系统通知",
   WALLET: "钱包通知",
   PAYMENT_METHOD: "支付方式",
-  COMMISSION: "佣金",
+  COMMISSION: "团队奖励",
   TEAM: "团队",
   STAKING: "质押",
   MARKET: "市场",

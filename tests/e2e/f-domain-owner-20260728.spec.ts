@@ -22,10 +22,10 @@ type ModuleCase = {
 
 const MODULES: ModuleCase[] = [
   { id: "F1", path: "/network/v-rank", endpoint: "/api/admin/teams/ranks", marker: "V-Rank 13 阶阶梯" },
-  { id: "F2", path: "/network/royalty", endpoint: "/api/admin/teams/rates", marker: "F2 网络版税费率" },
+  { id: "F2", path: "/network/royalty", endpoint: "/api/admin/teams/rates", marker: "F2 团队奖励设置" },
   { id: "F3", path: "/network/binary", endpoint: "/api/admin/teams/binary", marker: "平衡匹配公式" },
   { id: "F4", path: "/network/leadership-pool", endpoint: "/api/admin/teams/leadership-pool", marker: "V 级票数权重 · 领导池分配依据" },
-  { id: "F5", path: "/network/commissions", endpoint: "/api/admin/teams/commissions", marker: "F5 佣金记录核对" },
+  { id: "F5", path: "/network/commissions", endpoint: "/api/admin/teams/commissions", marker: "F5 奖励记录核对" },
 ];
 
 test.describe.configure({ mode: "serial" });
@@ -128,7 +128,7 @@ test("F1-F5 主流程、空态、确认取消与跨域入口均可操作且不�
 
   await enterFromSidebar(page, MODULES[3]);
   const f4Text = await page.locator("main").innerText();
-  expect(f4Text).toMatch(/领导奖池/);
+  expect(f4Text).toMatch(/团队激励池/);
   expect(f4Text).toMatch(/硬件配额/);
   expect(f4Text).toMatch(/区域大使确认/);
   expect(f4Text).toMatch(/排行榜 · 反欺诈/);
@@ -143,7 +143,7 @@ test("F1-F5 主流程、空态、确认取消与跨域入口均可操作且不�
   );
   await page.getByRole("button", { name: "服务端筛选" }).click();
   await commissionResponse;
-  await expect(page.getByText("当前筛选无佣金事件；筛选器和处置入口仍可用")).toBeVisible();
+  await expect(page.getByText("没有符合条件的奖励记录")).toBeVisible();
   for (const link of ["D4 账本", "B1 覆盖率", "L4 运营分析", "A2 审批审计", "A4 事件中心"]) {
     await expect(page.getByRole("link", { name: link })).toBeVisible();
   }
@@ -164,13 +164,13 @@ test("F1-F5 刷新、返回、退出重登后仍从同一服务端恢复", async
   await login(page);
   await enterFromSidebar(page, MODULES[4]);
   await expect(
-    page.locator("main").getByText("F5 佣金记录核对", { exact: true }).first(),
+    page.locator("main").getByText("F5 奖励记录核对", { exact: true }).first(),
   ).toBeVisible();
   await page.goBack({ waitUntil: "domcontentloaded" });
   await expect(page.locator("aside")).toBeVisible();
   await page.goForward({ waitUntil: "domcontentloaded" });
   await expect(
-    page.locator("main").getByText("F5 佣金记录核对", { exact: true }).first(),
+    page.locator("main").getByText("F5 奖励记录核对", { exact: true }).first(),
   ).toBeVisible();
   await page.screenshot({ path: `${EVIDENCE_DIR}/03-refresh-relogin-history.png`, fullPage: true });
 });

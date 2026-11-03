@@ -102,7 +102,7 @@ function renderFx(fx: string, bold: string[]) {
     "checkout.completed ÷ store.viewed": "支付完成的去重用户数 ÷ 浏览商城的去重用户数",
     "device holder referral.invite_sent ÷ device holders": "发出邀请的设备持有者人数 ÷ 设备持有者人数",
     "nova.push_clicked ÷ nova.push_sent": "点击推送的去重用户数 ÷ 收到推送的去重用户数",
-    "L1 referred first commission.paid ÷ referral.bound": "直属邀请中产生首单佣金的人数 ÷ 直属邀请人数",
+    "L1 referred first commission.paid ÷ referral.bound": "直接邀请的好友中带来首笔团队奖励的人数 ÷ 直接邀请的好友人数",
     "genesis.purchased cumulative 1,000 days": "累计售出 1,000 个节点所用的自然日数",
   } as Record<string,string>)[fx] ?? fx;
   if (!bold.length) return fx;

@@ -867,7 +867,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
             <td><button className="l-btn sm d2-withdrawal-link" title={row.withdrawalNo} aria-label={`打开提现单 ${row.withdrawalNo} 的详情`} onClick={() => void openDetail(row)}><span className="d2-cell-ellipsis">{row.withdrawalNo}</span></button></td>
             <td>{row.userNo}<div className="sub">{operatorNicknameText(row.nickname)}</div></td>
             <td className="d2-asset-cell"><span className="d2-cell-ellipsis" title={`${row.asset} / ${row.chain}`} aria-label={`资产与渠道：${row.asset} / ${row.chain}`}>{row.chain === "BANK-VND" ? "越南银行卡 · HDPay" : `${row.asset} / ${row.chain}`}</span><div className="mono sub d2-address" title={row.targetAddress}>{row.chain === "BANK-VND" ? "账户信息见详情" : row.targetAddress}</div></td>
-            <td className="num d2-fee-summary"><strong>{money(row.amount)}</strong><div className="sub">{row.chain === "BANK-VND" ? "兑换本金" : "到账"} {money(row.netReceive)}</div><div className="sub">手续费 {money(row.actualFee)}</div><button className="d2-inline-link" onClick={() => void openDetail(row)}>详情中查看完整费用</button></td>
+            <td className="num d2-fee-summary"><strong>{money(row.amount)}</strong><div className="sub">{row.chain === "BANK-VND" ? "兑换金额" : "到账"} {money(row.netReceive)}</div><div className="sub">手续费 {money(row.actualFee)}</div><button className="d2-inline-link" onClick={() => void openDetail(row)}>详情中查看完整费用</button></td>
             <td className="d2-review-cell"><span className={`bdg ${routingPriorityTone(row)}`} title={`低风险 ≤ ${row.k4BandLowMax ?? "—"}，高风险 ≥ ${row.k4BandHighMin ?? "—"}，加强审核 ≥ ${row.k4AutoEscalateScore ?? "—"}`}>{routingPriorityLabel(row)} · {k4RiskText(row)}</span><div className="sub">风险规则：{routeLabel(row.k3RiskRoute)} · {ruleSummary(row.hitRules)}</div><div className="sub">账户 {userStatusLabel(row.userStatus)} · 近 24h {row.withdrawalCount24h} 笔 · 每日上限 {dailyLimit || "—"} 笔</div></td>
             <td><span className={`bdg ${statusTone(row.status)}`}>{bankStatusLabel(row)}</span></td>
             <td className="sub d2-lifecycle-cell">{lifecycleSummary(row)}{row.holdUntil && <div>复查时间：{timeText(row.holdUntil)}</div>}</td>
@@ -945,7 +945,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           <h3>提现与费用</h3>
           <KV k="提现金额" v={money(detail.amount)} />
           <KV k="实际手续费" v={money(detail.actualFee)} />
-          <KV k={detail.chain === "BANK-VND" ? "兑换本金（USDT）" : "实际到账"} v={money(detail.netReceive)} />
+          <KV k={detail.chain === "BANK-VND" ? "兑换金额（USDT）" : "实际到账"} v={money(detail.netReceive)} />
           {detail.chain === "BANK-VND" ? <KV k="银行手续费" v={money(detail.actualFee)} /> : detail.feeModel === "confirm" ? <KV k="网络确认费" v={`${money(detail.networkConfirmUsd ?? 0)}（每笔固定）`} /> : <>
             <KV k="网络费" v={money(detail.networkFee ?? 0)} />
             <KV k="网络费率 / 区间" v={`${detail.networkFeeRate ?? "—"} · ${money(detail.networkFeeMin ?? 0)}–${money(detail.networkFeeMax ?? 0)}`} />

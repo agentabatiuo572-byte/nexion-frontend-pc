@@ -240,7 +240,7 @@ export default function FunnelPage() {
           <section className="card b3-stage-card">
             <div className="ttl-row">
               <span className="h">同一批用户的四步转化</span>
-              <span className="sub">注册 → 首购 → 复投 → 提现</span>
+              <span className="sub">注册 → 首购 → 锁定计划 → 提现</span>
             </div>
             <TabGroup label="漏斗阶段" value={selectedStage?.key ?? data.stages[0]?.key ?? ""}
               items={data.stages.map((item) => item.key)} onSelect={setStage}
