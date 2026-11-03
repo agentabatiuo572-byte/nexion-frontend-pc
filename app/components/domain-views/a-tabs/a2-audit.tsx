@@ -706,7 +706,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 return (
                   <tr key={w.id} className="click" onClick={() => setWoIdx(idx)}>
                     <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{w.id}</td>
-                    <td style={{ fontSize: 12.5 }}>{nexGridBrandText(w.action)}</td>
+                    <td style={{ fontSize: 12.5 }}>{a2ActionText(nexGridBrandText(w.action))}</td>
                     <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{w.obj}</td>
                     <td>
                       <span className="a2-ba">
@@ -919,7 +919,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   return (
                     <tr key={h.id} className="click" onClick={() => setHistIdx(i)}>
                       <td className="mono">{h.id}</td>
-                      <td style={{ fontSize: 12 }}>{nexGridBrandText(h.action)}</td>
+                      <td style={{ fontSize: 12 }}>{a2ActionText(nexGridBrandText(h.action))}</td>
                       <td>
                         <span className={`bdg ${HIST_TONE[h.st] ?? "dim"}`}>{HIST_LABEL[h.st] ?? h.st}</span>
                       </td>
