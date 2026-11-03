@@ -53,7 +53,7 @@
 .edom .e1-phone-task-policy > header .row { flex-wrap: wrap; }
 .edom .e1-phone-task-policy > header strong { font-size: 16px; font-weight: 650; }
 .edom .e1-phone-task-policy > .col { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
-.edom .e1-phone-task-policy label {
+.edom .e1-phone-task-policy > .col > label {
   min-height: 40px;
   padding: 8px 11px;
   border: 1px solid var(--border);
@@ -64,11 +64,11 @@
   font-weight: 550;
   cursor: pointer;
 }
-.edom .e1-phone-task-policy label:has(:checked) { background: var(--brand-soft); border-color: var(--brand-border); color: var(--brand); }
-.edom .e1-phone-task-policy label:has(:focus-visible) { outline: 2px solid var(--brand); outline-offset: 2px; }
-.edom .e1-phone-task-policy label:has(:disabled) { cursor: default; }
-.edom .e1-phone-task-policy input[type="checkbox"] { width: 15px; height: 15px; margin: 0; flex: none; accent-color: var(--brand); }
-html[data-theme="dark"] .e1-phone-task-policy input[type="checkbox"] { color-scheme: dark; }
+.edom .e1-phone-task-policy > .col > label:has(:checked) { background: var(--brand-soft); border-color: var(--brand-border); color: var(--brand); }
+.edom .e1-phone-task-policy > .col > label:has(:focus-visible) { outline: 2px solid var(--brand); outline-offset: 2px; }
+.edom .e1-phone-task-policy > .col > label:has(:disabled) { cursor: default; }
+.edom .e1-phone-task-policy > .col input[type="checkbox"] { width: 15px; height: 15px; margin: 0; flex: none; accent-color: var(--brand); }
+html[data-theme="dark"] .e1-phone-task-policy > .col input[type="checkbox"] { color-scheme: dark; }
 .edom .e1-phone-task-policy > footer { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
 .edom .e1-phone-task-policy > footer p { flex: 1 1 16rem; margin: 0; }
 .edom .e1-phone-task-policy > footer .btn { margin-inline-start: auto; }
