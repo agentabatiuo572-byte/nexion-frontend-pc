@@ -30,13 +30,13 @@ test("F5 首次用户从可见侧栏进入并盘点佣金事件全生命周期",
 
   const body = await page.locator("main").innerText();
   const observations = {
-    hasKindFilter: /全部类型|网络版税|双轨平衡匹配/.test(body),
+    hasKindFilter: /全部类型|团队购买奖励|团队平衡奖励/.test(body),
     hasCurrencyFilter: /币种筛选|全部币种/.test(body),
     hasUserSearch: /用户筛选|用户 ID/.test(body),
     hasCohortFilter: /cohort|用户群/.test(body),
     hasStatusFilter: /全部状态/.test(body),
     hasAnomalyPanel: /异常类型|关联 K 簇|异常预警列表/.test(body),
-    hasCoolingPolicy: /仅 network.*binary|仅网络版税.*双轨/.test(body),
+    hasCoolingPolicy: /仅 network.*binary|团队购买奖励 · [\s\S]*团队平衡奖励 · /.test(body),
     hasReverse: /冲正|撤销/.test(body),
     hasReissue: /批量.*补发/.test(body),
     hasSuspend: /暂停.*奖励/.test(body),

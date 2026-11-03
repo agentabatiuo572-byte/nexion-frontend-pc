@@ -22,7 +22,7 @@ type ModuleCase = {
 
 const MODULES: ModuleCase[] = [
   { id: "F1", path: "/network/v-rank", endpoint: "/api/admin/teams/ranks", marker: "V-Rank 13 阶阶梯" },
-  { id: "F2", path: "/network/royalty", endpoint: "/api/admin/teams/rates", marker: "F2 网络版税费率" },
+  { id: "F2", path: "/network/royalty", endpoint: "/api/admin/teams/rates", marker: "F2 团队奖励设置" },
   { id: "F3", path: "/network/binary", endpoint: "/api/admin/teams/binary", marker: "平衡匹配公式" },
   { id: "F4", path: "/network/leadership-pool", endpoint: "/api/admin/teams/leadership-pool", marker: "V 级票数权重 · 领导池分配依据" },
   { id: "F5", path: "/network/commissions", endpoint: "/api/admin/teams/commissions", marker: "F5 奖励记录核对" },

@@ -151,7 +151,7 @@ async function openF2(page: Page) {
   await page.waitForTimeout(500);
   await page.locator('a[href="/network/royalty"]').first().click();
   await expect(page).toHaveURL(/\/network\/royalty/, { timeout: 30_000 });
-  await expect(page.getByRole("heading", { name: /网络版税费率/ })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: /团队奖励设置/ })).toBeVisible({ timeout: 20_000 });
   await page.waitForTimeout(800);
 }
 
@@ -225,8 +225,8 @@ test.describe("F2 网络版税费率 独立首次用户验收", () => {
       const expectedNex = [50, 20, 10, 5, 2.5, 1, 1];
       const usdtMatches = unilevelRates.every((r: any, i: number) => Math.abs(Number(r.usdtPct) - expectedUsdt[i]) < 0.001);
       const nexMatches = unilevelRates.every((r: any, i: number) => Math.abs(Number(r.nexReward) - expectedNex[i]) < 0.001);
-      const userFacingDirect = unilevelRates.filter((r: any) => r.label === "直推 DIRECT" || r.direct).length;
-      const userFacingExtended = unilevelRates.filter((r: any) => r.label === "扩展 EXTENDED" || !r.direct).length;
+      const userFacingDirect = unilevelRates.filter((r: any) => r.label === "好友 DIRECT" || r.direct).length;
+      const userFacingExtended = unilevelRates.filter((r: any) => r.label === "团队 EXTENDED" || !r.direct).length;
       await shot(page, "02-01-l1-l7-rates");
       const ok = cascRows >= 7 && unilevelRates.length === 7 && usdtMatches && nexMatches && userFacingDirect === 1 && userFacingExtended === 6;
       mark("F2-I-02", ok ? "passed" : "failed",
@@ -296,7 +296,7 @@ test.describe("F2 网络版税费率 独立首次用户验收", () => {
       const writeOk = Math.abs(Number(l3After.usdtPct ?? 0) - newNum) < 0.01;
       // 硬刷新
       await page.reload();
-      await expect(page.getByRole("heading", { name: /网络版税费率/ })).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByRole("heading", { name: /团队奖励设置/ })).toBeVisible({ timeout: 20_000 });
       await page.waitForTimeout(2000);
       const ratesReload = await getRatesSnapshot(page);
       const l3Reload = (ratesReload.unilevelRates ?? []).find((r: any) => r.level === "L3") ?? {};
@@ -552,7 +552,7 @@ test.describe("F2 网络版税费率 独立首次用户验收", () => {
       for (let i = 0; i < cnt; i++) {
         const btn = allAdjustBtns.nth(i);
         const parentText = await btn.locator("xpath=ancestor::*[position()=1]").innerText().catch(() => "");
-        if (/F\.cooldown|佣金冷却|冷却期/i.test(parentText)) {
+        if (/F\.cooldown|奖励冷却|冷却期/i.test(parentText)) {
           await btn.scrollIntoViewIfNeeded();
           await btn.click();
           clicked = true;
@@ -589,7 +589,7 @@ test.describe("F2 网络版税费率 独立首次用户验收", () => {
             coolingWriteOk = afterVal === "45";
             // 硬刷新
             await page.reload();
-            await expect(page.getByRole("heading", { name: /网络版税费率/ })).toBeVisible({ timeout: 20_000 });
+            await expect(page.getByRole("heading", { name: /团队奖励设置/ })).toBeVisible({ timeout: 20_000 });
             await page.waitForTimeout(2000);
             const bodyReload = await page.locator("body").innerText();
             const matchReload = bodyReload.match(/F\.cooldown[\s\S]{0,200}?(\d{1,3})/);
@@ -837,7 +837,7 @@ test.describe("F2 网络版税费率 独立首次用户验收", () => {
       const ratesBefore = await getRatesSnapshot(page);
       const l1Before = (ratesBefore.unilevelRates ?? []).find((r: any) => r.level === "L1") ?? {};
       await page.reload();
-      await expect(page.getByRole("heading", { name: /网络版税费率/ })).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByRole("heading", { name: /团队奖励设置/ })).toBeVisible({ timeout: 20_000 });
       await page.waitForTimeout(2000);
       const ratesAfterReload = await getRatesSnapshot(page);
       const l1AfterReload = (ratesAfterReload.unilevelRates ?? []).find((r: any) => r.level === "L1") ?? {};

@@ -54,7 +54,7 @@ const MODULES: ModuleProbe[] = [
   {
     id: "F2",
     path: "/network/royalty",
-    marker: /F2 网络版税费率/,
+    marker: /F2 团队奖励设置/,
     readPath: "/api/admin/teams/rates",
     writePath: "/api/admin/teams/commissions/config/F.__acceptance.invalid__.F2",
     writeMethod: "PATCH",

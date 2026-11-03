@@ -569,8 +569,8 @@ async function createL4NetworkTreeFromVisibleUi(page: Page, depth: 1 | 2) {
   const rows = payload.toString("utf8").trim().split(/\r?\n/).map(parseCsvLine);
   expect(rows[0]).toEqual([
     "成员用户编码（部分脱敏）",
-    "上级用户编码（部分脱敏）",
-    "团队深度",
+    "邀请人用户编码（部分脱敏）",
+    "关系深度",
     "V-Rank",
     "团队GMV USDT",
     "加入时间",
