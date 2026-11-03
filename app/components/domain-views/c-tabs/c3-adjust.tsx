@@ -149,6 +149,7 @@ const withdrawFingerprint = (adjustmentNo: string, reason: string) => `withdraw|
 export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
   const session = useAdminAuth((state) => state.session);
+  const makerUsername = session?.username?.trim().toLowerCase();
   const authEpoch = useAdminAuth((state) => state.authEpoch);
   const focusUserId = useSearchParams()?.get("userId") ?? "";
   const authorities = session?.authorities ?? [];
@@ -626,9 +627,9 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
                     <td className="mono">{text(row.direction) === "CREDIT" ? "+" : "−"}{formatNumber(row.amount)} {nexGridBrandText(text(row.asset))}（${formatUsdEquivalent(row.amountUsd)}）</td>
                     <td>{text(row.reason)}</td><td className="mono">{text(row.evidenceRef)}</td><td>{text(row.maker)}</td>
                     <td style={{ textAlign: "right" }}><span style={{ display: "inline-flex", gap: 6 }}>
-                      {canCreate && text(row.maker).toLowerCase() === OPERATOR().toLowerCase() && <button className="l-btn sm" disabled={busy} onClick={() => withdrawRequest(row)}>撤回</button>}
-                      {canApprove && text(row.maker).toLowerCase() !== OPERATOR().toLowerCase() && <><button className="l-btn sm primary" disabled={busy} onClick={() => reviewLargeRequest(row, true)}>批准</button><button className="l-btn sm" disabled={busy} onClick={() => reviewLargeRequest(row, false)}>驳回</button></>}
-                      {(!canApprove && !(canCreate && text(row.maker).toLowerCase() === OPERATOR().toLowerCase())) && <span style={{ color: "var(--ink-4)", fontSize: 12 }}>等待其他同事复核</span>}
+                      {canCreate && text(row.maker).toLowerCase() === makerUsername && <button className="l-btn sm" disabled={busy} onClick={() => withdrawRequest(row)}>撤回</button>}
+                      {canApprove && makerUsername && text(row.maker).toLowerCase() !== makerUsername && <><button className="l-btn sm primary" disabled={busy} onClick={() => reviewLargeRequest(row, true)}>批准</button><button className="l-btn sm" disabled={busy} onClick={() => reviewLargeRequest(row, false)}>驳回</button></>}
+                      {(!canApprove && !(canCreate && text(row.maker).toLowerCase() === makerUsername)) && <span style={{ color: "var(--ink-4)", fontSize: 12 }}>等待其他同事复核</span>}
                     </span></td>
                   </tr>
                 ))}
