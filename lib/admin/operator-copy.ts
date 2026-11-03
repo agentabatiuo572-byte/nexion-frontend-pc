@@ -4,6 +4,10 @@ import { nexGridBrandText } from "./brand-copy.ts";
 export function operatorCopyText(value: string): string {
   return nexGridBrandText(value)
     .replace(/Team volume\s*>=\s*/gi, "团队订单额不少于 ")
+    .replace(/USDT staking 本金/g, "USDT 质押锁定金额")
+    .replace(/staking 应付利息/g, "应付质押奖励")
+    .replace(/佣金冷却未解锁/g, "冷却期内未发放的奖励")
+    .replace(/锁仓本息其他/g, "其他锁定金额及奖励")
     .replace(/Tier\s*(\d+)/g, "第 $1 档")
     .replace(/TGE 10% · halve every 6 months/g, "初始发放 10%，每 6 个月减半")
     .replace(/platform daily volume \* 0\.1% \/ 1000 slots/g, "平台每日成交额 × 0.1% ÷ 1000 个节点")
@@ -124,4 +128,9 @@ export function operatorCopyText(value: string): string {
     .replace(/幂等/g, "防止重复执行")
     .replace(/落库/g, "保存记录")
     .replace(/创世节点\s*排放承诺/g, "创世节点应付收益");
+}
+
+/** A2 动作名的运营显示名。原值仍用于查找待审批申请（f-view F2 启用状态），这里只换显示。 */
+export function a2ActionText(action: string): string {
+  return action.replace(/七层结算(启用|暂停|恢复)/g, "团队购买奖励结算$1");
 }

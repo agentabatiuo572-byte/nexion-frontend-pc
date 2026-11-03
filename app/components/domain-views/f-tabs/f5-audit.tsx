@@ -37,7 +37,7 @@ function badge(status: string): { label: string; tone: "ok" | "warn" | "err" | "
   if (status === "withdrawn") return { label: "已提现", tone: "neutral" };
   if (status === "reversed") return { label: "已撤销", tone: "err" };
   if (status === "frozen") return { label: "已冻结", tone: "warn" };
-  if (status === "rejected") return { label: "已拒绝", tone: "err" };
+  if (status === "rejected") return { label: "未发放", tone: "err" };
   if (status === "recovery_pending") return { label: "待追回", tone: "err" };
   if (status === "cooling") return { label: "奖励等待发放", tone: "warn" };
   return { label: "状态未知", tone: "warn" };
@@ -243,7 +243,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           <select aria-label="奖励状态" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">全部状态</option>
             <option value="cooling">奖励等待发放</option><option value="unlocked">已解锁</option>
-            <option value="withdrawn">已提现</option><option value="reversed">已撤销</option><option value="frozen">已冻结</option><option value="rejected">已拒绝</option><option value="recovery_pending">待追回</option>
+            <option value="withdrawn">已提现</option><option value="reversed">已撤销</option><option value="frozen">已冻结</option><option value="rejected">未发放</option><option value="recovery_pending">待追回</option>
           </select>
           <button className="fbtn primary" onClick={() => void ctx.refreshF5(query())}>筛选</button>
           <button className="fbtn" onClick={exportAllFiltered}>导出筛选结果（CSV）</button>
@@ -300,7 +300,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                     style={{ display: "grid", gridTemplateColumns: "10px 1fr auto", alignItems: "center", gap: 8, padding: "12px 14px", borderColor: active ? "var(--cyan)" : undefined }}
                   >
                     <i aria-hidden style={{ width: 9, height: 9, borderRadius: 99, background: item.dot }} />
-                    <span style={{ textAlign: "left" }}>{item.nm === "已解锁可提" ? "已解锁" : operatorCopyText(item.nm)}</span>
+                    <span style={{ textAlign: "left" }}>{item.nm === "已解锁可提" ? "已解锁" : item.nm === "已拒绝" ? "未发放" : operatorCopyText(item.nm)}</span>
                     <b>{item.ct} 笔</b>
                   </button>
                 );

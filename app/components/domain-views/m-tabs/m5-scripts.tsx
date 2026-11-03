@@ -14,6 +14,7 @@ import {
   fetchMAdvisorBindingUsers,
   type MAdvisorBindingUser,
   fetchMSupportAgentsPage,
+  scriptGroupLabel,
   type MAdvisorAssignment,
   type MSupportAgentPage,
   type MSupportAgent,
@@ -691,7 +692,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
               <div key={a.id} className="m5-script-row" style={{ gap: 10, alignItems: "center", padding: "11px 12px", borderTop: "1px solid var(--border)" }}>
                 <div>
                   <div className="idtag" style={{ fontSize: 11.5 }}>{a.id}</div>
-                  <div className="dim2" style={{ fontSize: 11 }}>{a.group}</div>
+                  <div className="dim2" style={{ fontSize: 11 }}>{scriptGroupLabel(a.group)}</div>
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 }}>{a.text}</div>

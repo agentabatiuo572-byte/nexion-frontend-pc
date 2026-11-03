@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { formatBusinessTime } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { a2ActionText } from "@/lib/admin/operator-copy";
 import type { FViewCtx } from "./types";
 
 export function F2SevenLayerActivation({ ctx }: { ctx: FViewCtx }) {
@@ -50,8 +51,8 @@ export function F2SevenLayerActivation({ ctx }: { ctx: FViewCtx }) {
       {ctx.f2ActivationPendingError && <p role="alert" className="f2-policy-notice">{ctx.f2ActivationPendingError}</p>}
       {policy && !supported && <p className="f2-policy-notice">暂时不能提交申请，只能查看。请稍后刷新。</p>}
       {!allowed && <p className="f2-policy-notice">你只能查看，提交申请需要「团队购买奖励结算调整」权限。</p>}
-      {(ctx.f2ActivationPending || submitted) && <p role="status" className="f2-policy-notice">{ctx.f2ActivationPending?.action ?? "原申请"}已提交；{ctx.f2ActivationPending ? "等待另一位管理员审批，批准前状态不变。" : "请核对当前状态；还没批准的申请需要另一位管理员审批。"}{ctx.can("platform_a2_read") && <Link href="/platform/audit">查看审批进度</Link>}</p>}
-      {ctx.f2ActivationAttempt && <div className="f2-policy-notice" role="status"><p>{ctx.f2ActivationAttempt.spec.action}结果暂未确认，请先查看原申请。填写的理由：{ctx.f2ActivationAttempt.spec.reason}</p><p>查看不会重复提交。时间过长无法查看时，请到「操作记录与审批」核对。</p>{allowed && <button className="fbtn" disabled={recovering || busy || ctx.f2ActivationAttempt.expiresAt <= Date.now()} onClick={() => void recover()}>{recovering ? "正在查看原申请…" : "查看原申请"}</button>}{ctx.can("platform_a2_read") && <Link href="/platform/audit">查看审批进度</Link>}</div>}
+      {(ctx.f2ActivationPending || submitted) && <p role="status" className="f2-policy-notice">{ctx.f2ActivationPending ? a2ActionText(ctx.f2ActivationPending.action) : "原申请"}已提交；{ctx.f2ActivationPending ? "等待另一位管理员审批，批准前状态不变。" : "请核对当前状态；还没批准的申请需要另一位管理员审批。"}{ctx.can("platform_a2_read") && <Link href="/platform/audit">查看审批进度</Link>}</p>}
+      {ctx.f2ActivationAttempt && <div className="f2-policy-notice" role="status"><p>{a2ActionText(ctx.f2ActivationAttempt.spec.action)}结果暂未确认，请先查看原申请。填写的理由：{ctx.f2ActivationAttempt.spec.reason}</p><p>查看不会重复提交。时间过长无法查看时，请到「操作记录与审批」核对。</p>{allowed && <button className="fbtn" disabled={recovering || busy || ctx.f2ActivationAttempt.expiresAt <= Date.now()} onClick={() => void recover()}>{recovering ? "正在查看原申请…" : "查看原申请"}</button>}{ctx.can("platform_a2_read") && <Link href="/platform/audit">查看审批进度</Link>}</div>}
       {recoveryError && <p role="alert" className="f2-policy-notice">{recoveryError}</p>}
       <div className="f2-policy-actions">
         {allowed && <button className="fbtn primary" disabled={blocked} onClick={submit}>{label}</button>}

@@ -1,6 +1,6 @@
 "use client";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { a2ActionText, operatorCopyText } from "@/lib/admin/operator-copy";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 
 /**
@@ -363,7 +363,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (w.phoneCalibrationError) { toast(w.phoneCalibrationError); return; }
     const commandKey = createA2CommandKey(`a2-approve-${w.id}`);
     openActionConfirm({
-      action: <>确认执行 · {w.id}({w.action})</>,
+      action: <>确认执行 · {w.id}({a2ActionText(w.action)})</>,
       detail: (
         <>
           对象 <b>{w.obj}</b> · 发起人 {w.operator}。
@@ -397,7 +397,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const rejectWo = (w: A2OperationRow) => {
     const commandKey = createA2CommandKey(`a2-reject-${w.id}`);
     openActionConfirm({
-      action: <>取消执行 · {w.id} · {w.action}</>,
+      action: <>取消执行 · {w.id} · {a2ActionText(w.action)}</>,
       detail: (
         <>
           取消后不能恢复，如需再做请重新发起。
@@ -868,7 +868,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     <tr key={l.id} className="click" onClick={() => setLogIdx(i)}>
                       <td className="mono" style={{ fontSize: 11, whiteSpace: "nowrap" }}>{l.ts}</td>
                       <td style={{ fontSize: 11.5 }}>{l.actor} · {l.role}</td>
-                      <td className="mono" style={{ fontSize: 11 }}>{l.action}</td>
+                      <td className="mono" style={{ fontSize: 11 }}>{a2ActionText(l.action)}</td>
                       <td style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{l.obj}</td>
                       <td className="mono" style={{ fontSize: 11 }}>{l.delta}</td>
                     </tr>
@@ -1010,7 +1010,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             title={`待确认操作 · ${w.id}`}
             sub={
               <>
-                {w.action} · 对象 {w.obj} · 发起人 {w.operator}
+                {a2ActionText(w.action)} · 对象 {w.obj} · 发起人 {w.operator}
               </>
             }
             onClose={() => setWoIdx(null)}
@@ -1085,7 +1085,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         const needIdem = l.action.includes("withdraw") || l.action.includes("balance") || l.action.includes("operation_confirmed");
         return (
           <Drawer
-            title={`操作记录 · ${l.action}`}
+            title={`操作记录 · ${a2ActionText(l.action)}`}
             sub={<>{l.obj} · {l.delta}</>}
             onClose={() => setLogIdx(null)}
           >
@@ -1115,7 +1115,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             title={`处理过程 · ${h.id}`}
             sub={
               <>
-                {h.action} · 结果 <span className={`bdg ${HIST_TONE[h.st] ?? "dim"}`} style={{ marginLeft: 4 }}>{HIST_LABEL[h.st] ?? h.st}</span>
+                {a2ActionText(h.action)} · 结果 <span className={`bdg ${HIST_TONE[h.st] ?? "dim"}`} style={{ marginLeft: 4 }}>{HIST_LABEL[h.st] ?? h.st}</span>
                 {" · "}{h.chain} · {h.t}
               </>
             }

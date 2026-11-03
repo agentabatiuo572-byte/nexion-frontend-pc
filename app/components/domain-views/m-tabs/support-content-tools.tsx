@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { supportEnhancements, type SupportLink } from "@/lib/admin/m-support-enhancements";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { supportPhraseClient, type SupportPersonalPhrase } from "@/lib/admin/m-support-client";
+import { scriptGroupLabel } from "@/lib/admin/m-client";
 import type { MCtx } from "./types";
 import { Icon, Modal } from "../design-kit";
 import { HDSelect } from "./hd-ui";
@@ -77,7 +78,7 @@ export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover
       {picker==="template" ? <div className="support-content-body">
         <fieldset disabled={disabled} className="support-content-fields" style={{border:0,padding:0,margin:0}}>
           <label className="support-content-field"><span>模板类型</span><HDSelect value={templateType} width="100%" onChange={value=>{setTemplateType(value);setGroup("");}} options={[{value:"reply",label:"普通回复模板"},{value:"script",label:"专属客服话术"},{value:"mine",label:"我的常用语"}]}/></label>
-          {!mine&&<label className="support-content-field"><span>分组</span><HDSelect value={group} width="100%" onChange={setGroup} options={[{value:"",label:"全部分组"},...groups.map(g=>({value:g,label:g}))]}/></label>}
+          {!mine&&<label className="support-content-field"><span>分组</span><HDSelect value={group} width="100%" onChange={setGroup} options={[{value:"",label:"全部分组"},...groups.map(g=>({value:g,label:scriptGroupLabel(g)}))]}/></label>}
           <label className="support-content-field support-content-search"><span>搜索模板</span><input className="fld" value={keyword} disabled={disabled} onChange={e=>setKeyword(e.target.value)}/></label>
         </fieldset>
         {mine ? <>
@@ -86,7 +87,7 @@ export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover
           {!phrases ? <p className="support-content-state" role="status">{phraseError?"常用语加载失败。":"正在加载常用语…"}</p> : !phrases.filter(p=>!keyword.trim()||p.content.includes(keyword.trim())).length ? <p className="support-content-state">{phrases.length?"没有匹配的常用语。":"还没有常用语。保存后点一下即可插入输入框。"}</p> : <div className="sku-pop-list" style={{maxHeight:300}}>{phrases.filter(p=>!keyword.trim()||p.content.includes(keyword.trim())).map(p=><div className="support-phrase-row" key={p.id}><button type="button" className="l-btn sm sku-pop-item support-content-result" disabled={disabled} onClick={()=>{onInsert(p.content);setPicker(null);}}><span className="sku-pop-info"><span className="sku-pop-title">{p.content}</span></span><Icon name="arrow" size={15}/></button><button type="button" className="l-btn sm" aria-label="删除这条常用语" disabled={disabled||phraseBusy} onClick={()=>void changePhrases(()=>supportPhraseClient.remove(p.id))}>删除</button></div>)}</div>}
         </> : <>
         <p className="support-content-meta">{available ? filtered.length : "-"} 条已发布内容</p>
-        {!available && !templates.length ? <div className="support-content-state" role="status">模板加载失败。<button type="button" className="l-btn sm" disabled={templateBusy||disabled} onClick={()=>void retryTemplates()}>{templateBusy?"正在加载模板…":"重试模板与话术"}</button>{templateError&&<span role="alert">{templateError}</span>}</div> : !filtered.length ? <p className="support-content-state">暂无匹配的已发布内容。</p> : <div className="sku-pop-list" style={{maxHeight:300}}>{filtered.map(t=><button type="button" className="l-btn sm sku-pop-item support-content-result" key={t.id} disabled={disabled} onClick={()=>{onInsert(t.text);setPicker(null);}}><span className="sku-pop-info"><span className="sku-pop-sub">{t.group || (t.type==="advisor"?"专属客服":"客服")}</span><span style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{t.text}</span></span><Icon name="arrow" size={15}/></button>)}</div>}
+        {!available && !templates.length ? <div className="support-content-state" role="status">模板加载失败。<button type="button" className="l-btn sm" disabled={templateBusy||disabled} onClick={()=>void retryTemplates()}>{templateBusy?"正在加载模板…":"重试模板与话术"}</button>{templateError&&<span role="alert">{templateError}</span>}</div> : !filtered.length ? <p className="support-content-state">暂无匹配的已发布内容。</p> : <div className="sku-pop-list" style={{maxHeight:300}}>{filtered.map(t=><button type="button" className="l-btn sm sku-pop-item support-content-result" key={t.id} disabled={disabled} onClick={()=>{onInsert(t.text);setPicker(null);}}><span className="sku-pop-info"><span className="sku-pop-sub">{scriptGroupLabel(t.group || (t.type==="advisor"?"专属客服":"客服"))}</span><span style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{t.text}</span></span><Icon name="arrow" size={15}/></button>)}</div>}
         </>}
       </div> : picker==="faq" ? <div className="support-content-body">
         <label className="support-content-field support-content-search"><span>搜索常见问题</span><input className="fld" value={faqQuery} autoFocus disabled={disabled} onChange={e=>setFaqQuery(e.target.value)}/></label>
