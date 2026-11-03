@@ -109,7 +109,7 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "asset-adjustments" && isNonEmpty(parts[1])) {
     return `/api/admin/users/asset-adjustments/${encodeURIComponent(parts[1])}`;
   }
-  if (parts.length === 3 && parts[0] === "asset-adjustments" && isNonEmpty(parts[1]) && (parts[2] === "approve" || parts[2] === "reject" || parts[2] === "reverse")) {
+  if (parts.length === 3 && parts[0] === "asset-adjustments" && isNonEmpty(parts[1]) && ["approve", "reject", "reverse", "withdraw"].includes(parts[2])) {
     return `/api/admin/users/asset-adjustments/${encodeURIComponent(parts[1])}/${parts[2]}`;
   }
   if (parts.length === 3 && parts[0] === "account-lists" && isNonEmpty(parts[1]) && parts[2] === "remove") {
