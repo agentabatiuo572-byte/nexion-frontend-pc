@@ -630,7 +630,7 @@ export function parseH8ReferralRewardOverview(value: unknown): H8ReferralRewardO
         return {
           settlementNo: h8String(row.settlementNo, `recentSettlements.${index}.settlementNo`),
           invitedUserId: h8PositiveCount(row.invitedUserId, `recentSettlements.${index}.invitedUserId`),
-          inviterUserId: h8PositiveCount(row.inviterUserId, `recentSettlements.${index}.inviterUserId`),
+          inviterUserId: row.inviterUserId == null ? undefined : h8PositiveCount(row.inviterUserId, `recentSettlements.${index}.inviterUserId`),
           newcomerUsdt: h8Decimal(row.newcomerUsdt, `recentSettlements.${index}.newcomerUsdt`),
           newcomerNex: h8Decimal(row.newcomerNex, `recentSettlements.${index}.newcomerNex`),
           inviterNex: h8Decimal(row.inviterNex, `recentSettlements.${index}.inviterNex`),
