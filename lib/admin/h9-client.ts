@@ -281,7 +281,10 @@ function values(value: unknown, field: string): H9PublicStatsValues {
     hashratePercentileTable: bands(raw.hashratePercentileTable, `${field}.hashratePercentileTable`),
     // 后端未返回此键 = 还没支持:不放进值里,保存时也就不会提交。
     ...(raw.activeJobsBase === undefined ? {} : {
-      activeJobsBase: raw.activeJobsBase === null ? null : nonNegative(raw.activeJobsBase, `${field}.activeJobsBase`),
+      // 缺键 / null / 0–1亿整数三态;其他类型或越界走解析错误,不能让保存其他模块时把坏值回传。
+      activeJobsBase: raw.activeJobsBase === null ? null
+        : typeof raw.activeJobsBase === "number" && Number.isSafeInteger(raw.activeJobsBase) && raw.activeJobsBase >= 0 && raw.activeJobsBase <= 100_000_000
+          ? raw.activeJobsBase : invalid(`${field}.activeJobsBase`),
     }),
   };
 }
