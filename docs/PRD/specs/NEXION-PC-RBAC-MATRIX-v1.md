@@ -189,7 +189,7 @@
 | L3 财务报表 | `bi_l3_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR | X：FINANCE_LEAD；批准独立权限 | MASKED；明细/解密分权 |
 | L4 设备/任务/网络报表 | `bi_l4_read` | GROWTH、FINANCE、RISK、AUDITOR | X：GROWTH lead/FINANCE_LEAD | MASKED；团队树敏感导出单独授权 |
 | L5 导出 & 监管报告 | `bi_l5_read` | FINANCE_LEAD、RISK、AUDITOR | H/X：模板 Owner+独立批准人 | JURISDICTION/MASKED；READY 才能下载，24h 过期 |
-| L6 用户行为热力图 | `bi_l6_read` | GROWTH、CONTENT、RISK、AUDITOR | X：GROWTH/CONTENT，仅聚合 | 聚合；禁止回放单用户敏感操作轨迹 |
+| L6 用户行为热力图 | `bi_l6_read` | SUPER_ADMIN、GROWTH、AUDITOR、RISK | `bi_l6_export`：SUPER_ADMIN、GROWTH、AUDITOR，仅聚合 | 2026-11-03 按 L6 专项确认。RISK 只读，CONTENT 默认不可见；禁止回放单用户敏感操作轨迹 |
 
 ### 3.13 M 客服中心（5）
 
