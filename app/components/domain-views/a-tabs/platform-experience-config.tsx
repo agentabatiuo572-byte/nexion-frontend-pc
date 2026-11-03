@@ -6,6 +6,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   fetchPlatformExperienceConfig,
+  INTERFACE_LANGUAGES,
   recommendedExperienceChannels,
   updatePlatformExperienceConfig,
   type PlatformExperienceConfig,
@@ -56,7 +57,7 @@ export function PlatformExperienceConfig() {
   };
 
   return <><section className="l-card a3-experience" data-testid="platform-experience-config" onChange={() => { setError(null); setSuccess(null); }}>
-    <div className="l-h"><div><div className="ttl">应用体验配置</div><div className="sub">管理官方下载链接、分享渠道和首页开关</div></div><div className="r"><span className="bdg cyan">v{config?.version ?? "—"}</span><button className="l-btn sm" onClick={() => void refresh()} disabled={loading || saving}>刷新</button></div></div>
+    <div className="l-h"><div><div className="ttl">应用体验配置</div><div className="sub">管理官方下载链接、分享渠道、界面语言和首页开关</div></div><div className="r"><span className="bdg cyan">v{config?.version ?? "—"}</span><button className="l-btn sm" onClick={() => void refresh()} disabled={loading || saving}>刷新</button></div></div>
     <div className="l-b">
       {error && !config && <div role="alert" className="atint warn" style={{ marginBottom: 10 }}>{error}</div>}
       {loading && !config ? <div className="tiny">正在加载…</div> : !config ? <div className="atint warn">应用体验配置加载失败，暂时只能查看。</div> : <>
@@ -64,7 +65,7 @@ export function PlatformExperienceConfig() {
           <div className="atint"><b>首页新手任务</b><br />{config.homeNewcomerTasksEnabled ? "已开启" : "已关闭"}<br /><Link href="/growth/quest">去「用户任务管理」修改 →</Link></div>
           <div className="atint"><b>首页周促销</b><br />{config.homeWeeklyPromoEnabled ? "已开启" : "已关闭"}<br /><Link href="/growth/quest">去「用户任务管理」修改 →</Link></div>
         </div>
-        <nav className="a3-experience-nav" aria-label="应用体验配置分区"><a href="#a3-sharing" onClick={(event) => { event.preventDefault(); document.getElementById("a3-sharing")?.scrollIntoView({ block: "start" }); }}>分享渠道</a><a href="#a3-installer" onClick={(event) => { event.preventDefault(); document.getElementById("a3-installer")?.scrollIntoView({ block: "start" }); }}>官方应用安装</a></nav>
+        <nav className="a3-experience-nav" aria-label="应用体验配置分区"><a href="#a3-sharing" onClick={(event) => { event.preventDefault(); document.getElementById("a3-sharing")?.scrollIntoView({ block: "start" }); }}>分享渠道</a><a href="#a3-installer" onClick={(event) => { event.preventDefault(); document.getElementById("a3-installer")?.scrollIntoView({ block: "start" }); }}>官方应用安装</a><a href="#a3-languages" onClick={(event) => { event.preventDefault(); document.getElementById("a3-languages")?.scrollIntoView({ block: "start" }); }}>界面语言</a></nav>
         <h3 id="a3-sharing" className="a3-experience-heading">分享渠道与文案</h3>
         <label className="tiny">分享基础链接</label><input aria-label="分享基础链接" value={config.baseUrl} disabled={!canWrite} onChange={(event) => setConfig({ ...config, baseUrl: event.target.value })} style={{ width: "100%", margin: "4px 0 12px" }} />
         {config.channels.length === 0 && <div className="atint warn" style={{ marginBottom: 10 }}>
@@ -87,6 +88,17 @@ export function PlatformExperienceConfig() {
           <label className="tiny" style={{ display: "block", marginTop: 8 }}>发布说明（中文 / 英文）</label><div className="row"><input aria-label="中文发布说明" value={config.appDownload.releaseNotes.zh} disabled={!canWrite || config.appDownload.source === "unavailable"} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, releaseNotes: { ...config.appDownload.releaseNotes, zh: event.target.value } } })} /><input aria-label="英文发布说明" value={config.appDownload.releaseNotes.en} disabled={!canWrite || config.appDownload.source === "unavailable"} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, releaseNotes: { ...config.appDownload.releaseNotes, en: event.target.value } } })} /></div>
           {config.appDownload.source === "unavailable" && <div className="tiny" style={{ marginTop: 6 }}>当前暂不提供官方安装包；安装链接、版本和发布说明不生效。确定官方发布地址后再切换来源。</div>}
         </div></div>
+        <h3 id="a3-languages" className="a3-experience-heading">界面语言</h3>
+        {config.interfaceLanguages
+          ? <div className="tiny" style={{ marginBottom: 8 }}>关闭后，用户在语言列表里看不到这种语言；正在使用它的用户会改用英文。</div>
+          : <div className="atint" style={{ marginBottom: 8 }}>系统支持后，可以在这里开关界面语言，现在只能查看。</div>}
+        <div style={{ overflowX: "auto" }}><table className="l-tbl"><thead><tr><th>语言</th><th>中文名</th><th>代码</th><th>开启</th></tr></thead><tbody>{INTERFACE_LANGUAGES.map((language) => {
+          const languages = config.interfaceLanguages;
+          return <tr key={language.code}>
+            <td>{language.nativeName}{language.base && <span className="bdg dim" style={{ marginLeft: 8 }}>基础语言</span>}</td><td>{language.zhName}</td><td className="mono">{language.code}</td>
+            <td><input type="checkbox" aria-label={`${language.zhName} 开启`} checked={language.base || !languages || languages.includes(language.code)} disabled={!canWrite || language.base || !languages} onChange={(event) => languages && setConfig({ ...config, interfaceLanguages: INTERFACE_LANGUAGES.map((item) => item.code).filter((code) => code === language.code ? event.target.checked : languages.includes(code)) })} />{language.base && <span className="tiny" style={{ marginLeft: 6 }}>始终开启</span>}</td>
+          </tr>;
+        })}</tbody></table></div>
         {canWrite && <><label className="tiny" style={{ display: "block", marginTop: 12 }}>保存理由（8–200 字）</label><textarea aria-label="体验配置保存理由" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={200} rows={2} style={{ width: "100%", marginTop: 4 }} /><button className="l-btn mc" style={{ marginTop: 8 }} disabled={saving || loading} onClick={() => void save()}>{saving ? "保存中…" : "保存"}</button></>}
         {error && <div role="alert" className="atint warn" style={{ marginTop: 8 }}>{error}</div>}
         {success && <div role="status" className="atint" style={{ marginTop: 8 }}>{success}</div>}

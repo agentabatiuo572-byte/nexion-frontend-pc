@@ -553,6 +553,8 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   PLATFORM_BACKEND_UNAVAILABLE: "平台服务暂时不可用，请稍后重试；持续失败时请联系值班人员。",
   PLATFORM_EXPERIENCE_RESPONSE_INVALID: "App 体验配置服务返回的数据不完整或格式异常，页面已停止展示旧配置；请刷新重试或联系值班人员。",
   PLATFORM_EXPERIENCE_RELEASE_METADATA_REQUIRED: "选择官方安装包后，必须完整填写版本号、中英文发布说明，并至少配置一个 HTTPS 官方下载地址。",
+  PLATFORM_EXPERIENCE_LANGUAGES_INVALID: "界面语言必须保留中文、English、Tiếng Việt，且不能重复或包含未知语言；本次未保存，请刷新后重新选择。",
+  PLATFORM_EXPERIENCE_LANGUAGES_NOT_SAVED: "其他设置已保存，但界面语言没有按你的选择保存；请刷新后核对，再重新保存。",
   PLATFORM_EXPERIENCE_SOURCE_INVALID: "安装包来源只能选择“官方发布”或“暂不可用”；本次未保存，请重新选择。",
   NETWORK_FAILURE: "网络连接失败或系统暂时连不上；请检查网络后重试，提交类操作请先刷新，确认是否已生效。",
   ROLE_GRANTS_UNKNOWN_PERMISSION_OR_MENU: "授权清单中包含已停用或不存在的权限/菜单，本次未修改原授权；请刷新目录后重新选择。",

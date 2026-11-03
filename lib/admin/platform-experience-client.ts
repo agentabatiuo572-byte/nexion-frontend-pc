@@ -21,6 +21,20 @@ export interface ExperienceDownload {
   releaseNotes: { zh: string; en: string };
   source: ExperienceSource;
 }
+// Contract order. zh/en/vi are base languages and are always on.
+export const INTERFACE_LANGUAGES = [
+  { code: "zh", nativeName: "中文", zhName: "中文", base: true },
+  { code: "en", nativeName: "English", zhName: "英语", base: true },
+  { code: "vi", nativeName: "Tiếng Việt", zhName: "越南语", base: true },
+  { code: "id", nativeName: "Bahasa Indonesia", zhName: "印尼语", base: false },
+  { code: "ms", nativeName: "Bahasa Melayu", zhName: "马来语", base: false },
+  { code: "fil", nativeName: "Filipino", zhName: "菲律宾语", base: false },
+  { code: "ru", nativeName: "Русский", zhName: "俄语", base: false },
+  { code: "kk", nativeName: "Қазақ тілі", zhName: "哈萨克语", base: false },
+  { code: "uz", nativeName: "Oʻzbekcha", zhName: "乌兹别克语", base: false },
+] as const;
+export type InterfaceLanguageCode = typeof INTERFACE_LANGUAGES[number]["code"];
+
 export interface PlatformExperienceConfig {
   version: number;
   baseUrl: string;
@@ -28,6 +42,8 @@ export interface PlatformExperienceConfig {
   appDownload: ExperienceDownload;
   homeNewcomerTasksEnabled: boolean;
   homeWeeklyPromoEnabled: boolean;
+  /** Absent until the system supports switching interface languages; then it is never sent on save. */
+  interfaceLanguages?: InterfaceLanguageCode[];
   ready: boolean;
   sources: string[];
   updatedAt?: string;
@@ -69,6 +85,13 @@ function optionalChannelText(value: unknown): string | null | undefined {
   if (value === undefined || value === null) return value;
   if (typeof value !== "string") throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
   return value;
+}
+
+function strictInterfaceLanguages(value: unknown): InterfaceLanguageCode[] {
+  const known: readonly string[] = INTERFACE_LANGUAGES.map((language) => language.code);
+  if (!Array.isArray(value) || new Set(value).size !== value.length || value.some((code) => !known.includes(code))
+    || INTERFACE_LANGUAGES.some((language) => language.base && !value.includes(language.code))) throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
+  return INTERFACE_LANGUAGES.map((language) => language.code).filter((code) => value.includes(code));
 }
 
 class PlatformExperienceRequestError extends Error {
@@ -137,6 +160,7 @@ function normalize(raw: unknown): PlatformExperienceConfig {
     },
     homeNewcomerTasksEnabled: root.homeNewcomerTasksEnabled,
     homeWeeklyPromoEnabled: root.homeWeeklyPromoEnabled,
+    interfaceLanguages: root.interfaceLanguages === undefined ? undefined : strictInterfaceLanguages(root.interfaceLanguages),
     ready: Boolean(root.ready), sources: Array.isArray(root.sources) ? root.sources.map(String) : [], updatedAt: typeof root.updatedAt === "string" ? root.updatedAt : undefined,
   };
 }
@@ -163,6 +187,7 @@ export async function updatePlatformExperienceConfig(
     throw new Error("PLATFORM_EXPERIENCE_SOURCE_INVALID");
   }
   const body: Record<string, unknown> = { expectedVersion: config.version, baseUrl: config.baseUrl, channels: config.channels, appDownload: config.appDownload, reason: reason.trim(), operator };
+  if (config.interfaceLanguages) body.interfaceLanguages = config.interfaceLanguages;
   const slot = "platform-experience:update";
   const fingerprint = JSON.stringify(body);
   const idempotencyKey = commandAttempts.resolve(slot, fingerprint, () => `a3-experience-${crypto.randomUUID()}`);
@@ -173,7 +198,11 @@ export async function updatePlatformExperienceConfig(
       body: JSON.stringify(body),
     });
     commandAttempts.forget(slot);
-    return normalize(response);
+    const saved = normalize(response);
+    if (config.interfaceLanguages && saved.interfaceLanguages?.join() !== config.interfaceLanguages.join()) {
+      throw new Error("PLATFORM_EXPERIENCE_LANGUAGES_NOT_SAVED");
+    }
+    return saved;
   } catch (cause) {
     if (cause instanceof PlatformExperienceRequestError && !outcomeStaysUnknown(cause.status, cause.apiCode)) {
       commandAttempts.forget(slot);
