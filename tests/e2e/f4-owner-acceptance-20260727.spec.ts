@@ -30,7 +30,7 @@ test("F4 首次用户从侧栏进入，盘点奖池、资格、封顶与结算�
   }
 
   await expect(page).toHaveURL(/\/network\/leadership-pool$/);
-  await expect(page.getByText("领导奖池", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("团队激励池", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("V 级票数权重 · 领导池分配依据")).toBeVisible();
 
   const response = await page.request.get("/api/admin/teams/leadership-pool");
@@ -38,7 +38,7 @@ test("F4 首次用户从侧栏进入，盘点奖池、资格、封顶与结算�
   const api = await response.json();
   const visibleText = await page.locator("main").innerText();
   const observations = {
-    hasPool: visibleText.includes("领导奖池"),
+    hasPool: visibleText.includes("团队激励池"),
     hasQuota: visibleText.includes("硬件配额"),
     hasAmbassador: visibleText.includes("区域大使确认"),
     hasLeaderboard: visibleText.includes("排行榜 · 反欺诈"),

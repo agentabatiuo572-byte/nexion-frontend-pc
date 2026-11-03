@@ -26,7 +26,7 @@ async function openG7FromSidebar(page: Page) {
   await expect(link, "首次用户必须从可见侧边栏找到 G7").toBeVisible();
   await link.click();
   await expect(page).toHaveURL(/\/finance-products\/repurchase$/);
-  await expect(page.getByText("复投激励配置")).toBeVisible();
+  await expect(page.getByText("锁定计划配置")).toBeVisible();
 }
 
 test("G7 首次用户真实浏览器 + 权限/错误/刷新重登 + 墨菲复验", async ({ page }, testInfo) => {
@@ -76,7 +76,7 @@ test("G7 首次用户真实浏览器 + 权限/错误/刷新重登 + 墨菲复验
       if (request.method() === "PUT" && request.url().includes("/api/admin/market/nex/repurchase/config/")) writes += 1;
     };
     page.on("request", countWrite);
-    await page.getByRole("button", { name: "编辑 年化 APY" }).click();
+    await page.getByRole("button", { name: "编辑 参考年奖励率" }).click();
     const current = await page.getByLabel("目标新值").getAttribute("placeholder");
     const value = current?.match(/当前\s*([^)]+)/)?.[1] ?? "";
     await page.getByLabel("目标新值").fill(value);
@@ -89,7 +89,7 @@ test("G7 首次用户真实浏览器 + 权限/错误/刷新重登 + 墨菲复验
 
   await test.step("刷新与登出重登后仍由真实接口恢复", async () => {
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByText("复投激励配置")).toBeVisible();
+    await expect(page.getByText("锁定计划配置")).toBeVisible();
     await page.request.post("/api/admin/auth/logout");
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await expect(page.locator('input[autocomplete="username"]')).toBeVisible();

@@ -271,7 +271,7 @@ test("D2、D4、D5 从可见侧栏读取权威事实，D5 放大方向在红线�
   await page.screenshot({ path: path.join(evidenceDir, "07-d2-authoritative-queue.png"), fullPage: true });
 
   await openD4(page);
-  for (const label of ["充值", "提现", "收益", "佣金", "兑换", "退款", "奖励"]) {
+  for (const label of ["充值", "提现", "收益", "团队奖励", "兑换", "退款", "奖励"]) {
     const responsePromise = page.waitForResponse((response) =>
       response.request().method() === "GET" && new URL(response.url()).pathname === "/api/admin/bills");
     await page.getByRole("button", { name: label, exact: true }).click();

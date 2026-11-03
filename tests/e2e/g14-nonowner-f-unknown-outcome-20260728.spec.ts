@@ -52,7 +52,7 @@ const ALL_CASES = [
     path: "/finance-products/repurchase",
     endpoint: "/api/admin/market/nex/repurchase/config/apy",
     openEditor: async (page: Page) => {
-      await page.getByRole("button", { name: "编辑 年化 APY", exact: true }).click();
+      await page.getByRole("button", { name: "编辑 参考年奖励率", exact: true }).click();
     },
   },
 ] as const;

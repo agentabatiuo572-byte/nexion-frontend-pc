@@ -41,7 +41,7 @@ const MODULES = [
     id: "G7",
     path: "/finance-products/repurchase",
     endpoint: "/api/admin/market/nex/repurchase",
-    marker: /G7 复投激励/,
+    marker: /G7 锁定计划/,
   },
 ] as const;
 

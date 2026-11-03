@@ -204,7 +204,7 @@ test("首次用户从可见菜单逐页看到恢复能力，筛选、刷新与�
   await shotLocator(page.getByTestId("b4-alert-volume-history"), "04c-b5-alert-volume.png");
   (evidence.pages as string[]).push("B5");
 
-  await openMenuPage(page, "分销与团队", "佣金记录核对", "/network/commissions");
+  await openMenuPage(page, "分销与团队", "奖励记录核对", "/network/commissions");
   await expect(page.getByTestId("f5-commission-kind-card")).toHaveCount(6);
   await expect(page.getByTestId("f5-status-distribution-item")).toHaveCount(5);
   await expect(page.getByTestId("f5-status-distribution-item")).toContainText(["已解锁", "冷却", "已提现", "已撤销", "已冻结"]);
@@ -255,7 +255,7 @@ test("首次用户从可见菜单逐页看到恢复能力，筛选、刷新与�
   expect(filteredStatusPayload.data.commissionEvents.length).toBeGreaterThan(0);
   expect(filteredStatusPayload.data.commissionEvents.every((row: { status: string }) => row.status === expectedStatus)).toBe(true);
   expect(filteredStatusPayload.data.total).toBe(statusCardCount);
-  await shotLocator(page.getByRole("region", { name: "六类佣金支出与状态分布" }), "05-f5-filters.png");
+  await shotLocator(page.getByRole("region", { name: "奖励去向与状态" }), "05-f5-filters.png");
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("f5-commission-kind-card")).toHaveCount(6);
   await expect(page.getByTestId("f5-status-distribution-item")).toHaveCount(5);
@@ -283,7 +283,7 @@ test("首次用户从可见菜单逐页看到恢复能力，筛选、刷新与�
     expect(nextPayload.code).toBe(0);
     expect(nextPayload.data.pagination.requestCursor).toBeTruthy();
   }
-  await shotLocator(page.getByRole("region", { name: "六类佣金支出与状态分布" }), "05b-f5-refresh-stable.png");
+  await shotLocator(page.getByRole("region", { name: "奖励去向与状态" }), "05b-f5-refresh-stable.png");
   (evidence.pages as string[]).push("F5");
 
   await openMenuPage(page, "用户与账户", "查找用户与查看资料", "/users/search");
@@ -358,10 +358,10 @@ test("首次用户从可见菜单逐页看到恢复能力，筛选、刷新与�
   await expect(page.getByTestId("b1-withdraw-pressure-trend")).toContainText("出金压力走势图");
   await assertNoRestorationFallback(page);
   await shotLocator(page.getByTestId("b1-withdraw-pressure-trend"), "08a-b5-relogin-stable.png");
-  await openMenuPage(page, "分销与团队", "佣金记录核对", "/network/commissions");
+  await openMenuPage(page, "分销与团队", "奖励记录核对", "/network/commissions");
   await expect(page.getByTestId("f5-commission-kind-card")).toHaveCount(6);
   await expect(page.getByTestId("f5-status-distribution-item")).toHaveCount(5);
-  await shotLocator(page.getByRole("region", { name: "六类佣金支出与状态分布" }), "08b-f5-relogin-stable.png");
+  await shotLocator(page.getByRole("region", { name: "奖励去向与状态" }), "08b-f5-relogin-stable.png");
   await openMenuPage(page, "用户与账户", "查找用户与查看资料", "/users/search");
   await expect(page.getByRole("button", { name: "导出脱敏 CSV" })).toBeEnabled();
   await openMenuPage(page, "用户与账户", "余额 & 资产调整", "/users/assets");
@@ -414,7 +414,7 @@ test("畸形 200 必须失败关闭，恢复真实契约后不保留伪零", asy
   await page.getByRole("button", { name: "重试" }).click();
   await expect(page.getByTestId("f5-commission-kind-card")).toHaveCount(6);
   await expect(page.getByTestId("f5-status-distribution-item")).toHaveCount(5);
-  await shotLocator(page.getByRole("region", { name: "六类佣金支出与状态分布" }), "10-f5-contract-recovered.png");
+  await shotLocator(page.getByRole("region", { name: "奖励去向与状态" }), "10-f5-contract-recovered.png");
   runEvidence.failureRecovery = "malformed-200-failed-closed-then-authoritative-retry-pass";
 });
 

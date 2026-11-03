@@ -50,7 +50,7 @@ const ALL_MODULES: ModuleProbe[] = [
     writePath: "/api/admin/market/staking/pools/usdt30d/params/apy",
     writeMethod: "PATCH",
     writeBody: { value: "5", reason: REASON, operator: "g-permission-probe" },
-    mutationButtons: /调整 APY|调整罚款|调整最小额|停售|恢复销售|熔断/,
+    mutationButtons: /调整奖励率|调整扣款|调整最小额|停售|恢复销售|熔断/,
   },
   {
     id: "G2",
@@ -85,12 +85,12 @@ const ALL_MODULES: ModuleProbe[] = [
   {
     id: "G7",
     path: "/finance-products/repurchase",
-    marker: /G7 复投激励/,
+    marker: /G7 锁定计划/,
     readPath: "/api/admin/market/nex/repurchase",
     writePath: "/api/admin/market/nex/repurchase/config/apy",
     writeMethod: "PUT",
     writeBody: { value: "35", reason: REASON, operator: "g-permission-probe", g4Ref: "" },
-    mutationButtons: /编辑 年化 APY|编辑 锁仓期限|编辑 培育奖倍率|编辑 Genesis 抽奖券|编辑 早赎罚款|编辑 preset 金额档/,
+    mutationButtons: /编辑 参考年奖励率|编辑 锁仓期限|编辑 好友升级奖励倍率|编辑 创世节点抽奖券|编辑 提前解锁扣款|编辑 锁定金额快捷选项/,
   },
 ];
 const selectedModules = (process.env.G_PERMISSION_MODULES ?? "")

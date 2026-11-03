@@ -669,11 +669,11 @@ try {
       await page.getByLabel("沉睡判定天数").fill(values.dormantDays == null ? "" : String(values.dormantDays));
       await page.getByLabel("主动维护间隔天数").fill(values.maintenanceDays == null ? "" : String(values.maintenanceDays));
       await page.getByLabel("活跃统计窗口天数").fill(values.activityWindowDays == null ? "" : String(values.activityWindowDays));
-      const inheritanceLabels = { UNCONFIGURED: "未配置", LIMITED: "有限层数", UNLIMITED: "不限制" };
+      const inheritanceLabels = { UNCONFIGURED: "未配置", LIMITED: "有限深度", UNLIMITED: "不限制" };
       assert.ok(Object.hasOwn(inheritanceLabels, values.inheritanceMode), "known inheritance mode");
       await page.getByLabel("自动继承方式").click();
       await page.getByRole("option", { name: inheritanceLabels[values.inheritanceMode], exact: true }).click();
-      if (values.inheritanceMode === "LIMITED") await page.getByLabel("最大自动继承层数").fill(String(values.maxInheritanceDepth));
+      if (values.inheritanceMode === "LIMITED") await page.getByLabel("最大自动继承深度").fill(String(values.maxInheritanceDepth));
     };
     const confirm = async (reason) => {
       await page.getByRole("button", { name: "预览并保存" }).click();
@@ -702,7 +702,7 @@ try {
       await page.reload();
       await page.getByRole("region", { name: "服务规则" }).waitFor();
       assert.equal(await page.getByLabel("活跃统计窗口天数").inputValue(), "1");
-      assert.equal(await page.getByLabel("最大自动继承层数").inputValue(), "0");
+      assert.equal(await page.getByLabel("最大自动继承深度").inputValue(), "0");
       await fill(before);
       await confirm("S5b 验收结束从页面恢复原有服务规则");
       await page.getByRole("dialog", { name: "确认保存服务规则" }).waitFor({ state: "hidden" });

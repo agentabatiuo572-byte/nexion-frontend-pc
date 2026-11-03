@@ -135,11 +135,11 @@ try {
 
   slowPolicy = true;
   await open("/network/royalty");
-  await expect(page.getByLabel("直属分成配置加载中")).toBeVisible({ timeout: 60000 });
+  await expect(page.getByLabel("好友奖励设置加载中")).toBeVisible({ timeout: 60000 });
   await checkRhythmState("loading");
   releaseInitialPolicy();
   await expect(page.getByText("未配置，尚未启用。", { exact: false })).toBeVisible();
-  await expect(page.getByLabel("直属购买奖励拆分启用状态")).toBeDisabled();
+  await expect(page.getByLabel("好友购买奖励拆分启用状态")).toBeDisabled();
   check("F2-cutover-not-active", [await shot("f2-before-cutover"), "v2 reads current DIRECT_ONLY_V1 generation; policy is read-only until explicit cutover"]);
   const sevenPane = page.locator("section.pane").filter({ has: page.locator(".ph-ttl", { hasText: "七层购买奖励" }) });
   await expect(sevenPane).toContainText("当前尚未配置");
@@ -169,13 +169,13 @@ try {
   await expect(sevenPane.getByRole("columnheader", { name: "购买基础费率" })).toBeVisible();
   await expect(sevenPane.locator(".casc-row").first().locator(".casc-rate strong")).toHaveText("10%");
   await expect(sevenPane.locator(".casc-row").nth(1).getByRole("button", { name: /调整/ })).toBeVisible();
-  await expect(page.getByLabel("直属购买奖励拆分总分成比例 (%)", { exact: true })).toHaveCount(0);
-  await expect(page.getByLabel("直属购买奖励拆分冷却天数", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("好友购买奖励拆分总奖励比例 (%)", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("好友购买奖励拆分冷却天数", { exact: true })).toHaveCount(0);
   assert.doesNotMatch(await page.locator("body").innerText(), /Nexion|NexGrid/i);
   const order = await page.locator(".ph-ttl").allTextContents();
   assert.ok(order.indexOf("七层购买奖励") < order.indexOf("直属拆分与设备收益"));
   check("F2-seven-layer-current", [await shot("f2-seven-current"), "seven layers retain writes; L1 has one fixed base budget and readonly reference; DOM follows approved UVEL design order"]);
-  await page.getByLabel("直属购买奖励拆分USDT 占比 (%)", { exact: true }).fill("61");
+  await page.getByLabel("好友购买奖励拆分USDT 占比 (%)", { exact: true }).fill("61");
   await page.getByRole("button", { name: "提交审批", exact: true }).click();
   dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: /执行摘要/ }).click();
@@ -185,7 +185,7 @@ try {
   await dialog.getByRole("button", { name: "取消", exact: true }).click();
   legacyError = true; await page.reload();
   await expect(page.getByRole("alert").filter({ hasText: "七层购买奖励与独立参数加载失败" })).toBeVisible();
-  await expect(page.getByLabel("直属购买奖励拆分启用状态")).toBeEnabled();
+  await expect(page.getByLabel("好友购买奖励拆分启用状态")).toBeEnabled();
   await checkRhythmState("seven-layer-error");
   legacyError = false; await page.reload();
   policyError = true; await page.getByRole("button", { name: "重新读取", exact: true }).click();
@@ -193,29 +193,29 @@ try {
   await checkRhythmState("policy-error");
   await expect(page.getByRole("button", { name: "提交审批", exact: true })).toBeDisabled();
   policyError = false; await page.getByRole("button", { name: "重新读取", exact: true }).click();
-  await expect(page.getByLabel("直属购买奖励拆分启用状态")).toBeEnabled();
+  await expect(page.getByLabel("好友购买奖励拆分启用状态")).toBeEnabled();
   check("F2-error-retry", ["each independent API failure is visible; retries preserve draft; unknown policy disables L1 old NEX mutation"]);
   const fill = async () => {
-    for (const label of ["直属购买奖励拆分", "直属设备收益分成"]) {
+    for (const label of ["好友购买奖励拆分", "好友设备收益奖励"]) {
       await page.getByLabel(label + "启用状态", { exact: true }).selectOption("enabled");
       await page.getByLabel(label + "USDT 占比 (%)", { exact: true }).fill("60");
     }
-    await page.getByLabel("直属设备收益分成总分成比例 (%)", { exact: true }).fill("5");
-    await page.getByLabel("直属设备收益分成冷却天数", { exact: true }).fill("2");
+    await page.getByLabel("好友设备收益奖励总奖励比例 (%)", { exact: true }).fill("5");
+    await page.getByLabel("好友设备收益奖励冷却天数", { exact: true }).fill("2");
   };
   await fill();
-  await page.getByLabel("直属购买奖励拆分启用状态", { exact: true }).focus(); await page.keyboard.press("Tab");
-  await expect(page.getByLabel("直属购买奖励拆分USDT 占比 (%)", { exact: true })).toBeFocused();
-  await page.getByLabel("直属购买奖励拆分USDT 占比 (%)", { exact: true }).fill("100");
+  await page.getByLabel("好友购买奖励拆分启用状态", { exact: true }).focus(); await page.keyboard.press("Tab");
+  await expect(page.getByLabel("好友购买奖励拆分USDT 占比 (%)", { exact: true })).toBeFocused();
+  await page.getByLabel("好友购买奖励拆分USDT 占比 (%)", { exact: true }).fill("100");
   await expect(page.getByRole("button", { name: "提交审批", exact: true })).toBeDisabled();
-  await page.getByLabel("直属购买奖励拆分USDT 占比 (%)", { exact: true }).fill("60");
+  await page.getByLabel("好友购买奖励拆分USDT 占比 (%)", { exact: true }).fill("60");
   await page.getByRole("button", { name: "提交审批", exact: true }).focus(); await page.keyboard.press("Enter");
   dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("USDT 60% / NEX 40%");
   await expect(dialog).toContainText("替代旧 L1 额外 NEX");
   await paneShot("f2-confirm", dialog);
   await page.keyboard.press("Escape"); await expect(dialog).toHaveCount(0);
-  await expect(page.getByLabel("直属购买奖励拆分USDT 占比 (%)", { exact: true })).toHaveValue("60");
+  await expect(page.getByLabel("好友购买奖励拆分USDT 占比 (%)", { exact: true })).toHaveValue("60");
   assert.equal(proposals.length, 0);
   check("F2-validation-cancel", ["single-currency split blocked; Escape/Cancel preserve the two drafts and submit no request"]);
   await page.getByRole("button", { name: "提交审批", exact: true }).click(); dialog = page.getByRole("dialog");
@@ -238,19 +238,19 @@ try {
   await expect.poll(() => policy.policyVersion).toBe(1);
   await open("/network/royalty"); await page.reload();
   await expect(page.getByText("当前版本 1", { exact: false })).toBeVisible();
-  await expect(page.getByLabel("直属设备收益分成总分成比例 (%)", { exact: true })).toHaveValue("5");
+  await expect(page.getByLabel("好友设备收益奖励总奖励比例 (%)", { exact: true })).toHaveValue("5");
   await expect(sevenPane.locator(".casc-row").first().getByRole("button", { name: /NEX/ })).toHaveCount(0);
   await expect(sevenPane.locator(".casc-row").nth(1).getByRole("button", { name: /NEX/ })).toBeVisible();
-  check("F2-approved-readback-persistence", [await shot("f2-approved"), await paneShot("f2-approved-split", page.getByRole("region", { name: "直属分成配置" })), "real A2 UI changed only fixture policy; GET + reload retains both rules; effective split makes old L1 NEX readonly while L2-L7 remain editable"]);
-  await page.getByLabel("直属购买奖励拆分USDT 占比 (%)", { exact: true }).fill("65");
+  check("F2-approved-readback-persistence", [await shot("f2-approved"), await paneShot("f2-approved-split", page.getByRole("region", { name: "好友奖励设置" })), "real A2 UI changed only fixture policy; GET + reload retains both rules; effective split makes old L1 NEX readonly while L2-L7 remain editable"]);
+  await page.getByLabel("好友购买奖励拆分USDT 占比 (%)", { exact: true }).fill("65");
   policy = { ...policy, sevenLayerRevision: 2, sevenLayerReference: { ...policy.sevenLayerReference, revision: 2 } };
   await page.getByRole("button", { name: "重新读取", exact: true }).click();
   await expect(page.getByText("政策或七层引用版本已变化", { exact: false })).toBeVisible();
-  await expect(page.getByLabel("直属购买奖励拆分USDT 占比 (%)", { exact: true })).toHaveValue("65");
+  await expect(page.getByLabel("好友购买奖励拆分USDT 占比 (%)", { exact: true })).toHaveValue("65");
   await expect(page.getByRole("button", { name: "提交审批", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "放弃草稿并重载", exact: true }).click();
   check("F2-seven-revision-conflict", ["a seven-layer-only change invalidates old preview and preserves the dirty draft even though policyVersion did not change"]);
-  await page.getByLabel("直属购买奖励拆分USDT 占比 (%)", { exact: true }).fill("65");
+  await page.getByLabel("好友购买奖励拆分USDT 占比 (%)", { exact: true }).fill("65");
   await page.getByRole("button", { name: "提交审批", exact: true }).click(); dialog = page.getByRole("dialog");
   await dialog.getByLabel(/操作理由/).fill("验证确认期间政策变更仍阻止旧预览");
   policy = { ...policy, policyVersion: 2 };
@@ -262,7 +262,7 @@ try {
   await page.getByRole("button", { name: "放弃草稿并重载", exact: true }).click();
   check("F2-late-version-conflict", ["policy changes while confirmation is open; submit re-GET rejects before A2 POST and preserves reason + draft"]);
   coverage = 90; await page.getByRole("button", { name: "重新读取", exact: true }).click();
-  await page.getByLabel("直属购买奖励拆分启用状态", { exact: true }).selectOption("disabled");
+  await page.getByLabel("好友购买奖励拆分启用状态", { exact: true }).selectOption("disabled");
   await page.getByRole("button", { name: "提交审批", exact: true }).click(); dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("恢复 L1 全额 USDT");
   await expect(dialog).toContainText("现金占比增加 40 个百分点");
@@ -270,14 +270,14 @@ try {
   await expect(dialog.getByRole("button", { name: "确认提交", exact: true })).toBeDisabled();
   await dialog.getByRole("button", { name: "取消", exact: true }).click();
   await page.getByRole("button", { name: "放弃草稿并重载", exact: true }).click();
-  await page.getByLabel("直属设备收益分成启用状态", { exact: true }).selectOption("disabled");
+  await page.getByLabel("好友设备收益奖励启用状态", { exact: true }).selectOption("disabled");
   await page.getByRole("button", { name: "提交审批", exact: true }).click(); dialog = page.getByRole("dialog");
   await dialog.getByLabel(/操作理由/).fill("验证设备分成真实收缩允许提交");
   await expect(dialog.getByRole("button", { name: "确认提交", exact: true })).toBeEnabled();
   await dialog.getByRole("button", { name: "取消", exact: true }).click();
   check("F2-B1-direction", ["90% coverage blocks closing purchase split and restoring full cash; stopping only device reward is a true contraction and stays operable"]);
   readonly = true; await page.reload();
-  await expect(page.getByLabel("直属购买奖励拆分启用状态")).toBeDisabled();
+  await expect(page.getByLabel("好友购买奖励拆分启用状态")).toBeDisabled();
   await expect(page.getByRole("button", { name: "提交审批", exact: true })).toHaveCount(0);
   check("F2-readonly", [await shot("f2-readonly"), "read-only session has no money-policy write controls"]);
   readonly = false; coverage = 150; await open("/network/commissions");
@@ -310,17 +310,17 @@ try {
   await expect(pending.getByRole("button")).toHaveCount(0);
   await paneShot("f5-pending", pending);
   assert.doesNotMatch(await page.locator("body").innerText(), /Nexion|NexGrid/i);
-  assert.equal(await page.getByLabel("佣金类型").locator("option").count(), 9);
+  assert.equal(await page.getByLabel("奖励类型").locator("option").count(), 9);
   await expect(page.getByTestId("f5-commission-kind-card").filter({ hasText: "网络购买奖励" })).toBeVisible();
   const directRow = page.locator("tr").filter({ hasText: "CM-105" });
   await directRow.getByText("来源详情", { exact: true }).click();
   await expect(directRow).toContainText("60 USDT + 4000 NEX");
   await expect(directRow.getByRole("checkbox")).toBeDisabled();
   await expect(directRow.getByRole("button", { name: "提前解锁", exact: true })).toHaveCount(0);
-  await page.getByLabel("佣金类型").selectOption("direct_device_earning"); await page.getByRole("button", { name: "服务端筛选", exact: true }).click();
+  await page.getByLabel("奖励类型").selectOption("direct_device_earning"); await page.getByRole("button", { name: "服务端筛选", exact: true }).click();
   await expect(page.locator("tr").filter({ hasText: "CM-103" })).toBeVisible();
   await expect(pending).toContainText("暂无待计算奖励");
-  await page.getByLabel("佣金类型").selectOption("network"); await page.getByRole("button", { name: "服务端筛选", exact: true }).click();
+  await page.getByLabel("奖励类型").selectOption("network"); await page.getByRole("button", { name: "服务端筛选", exact: true }).click();
   await expect(page.locator("tr").filter({ hasText: "CM-101" })).toContainText("L2");
   check("F5-new-groups-and-current-network", [await shot("f5-current-network"), "eight kinds preserved; network is current L2 purchase; waiting groups have no CM ids or money actions and disappear under unrelated server kind filter"]);
 
@@ -337,9 +337,9 @@ try {
   check("F5-native-month-filter", ["real browser selects October 2026 in native month control; API receives cohort=2026-10"]);
   await monthFilter.fill("");
   for (const filters of [{}, { kind: "direct_purchase", currency: "NEX", status: "cooling" }]) {
-    await page.getByLabel("佣金类型").selectOption(filters.kind || "");
+    await page.getByLabel("奖励类型").selectOption(filters.kind || "");
     await page.getByLabel("全部币种", { exact: true }).selectOption(filters.currency || "");
-    await page.getByLabel("佣金状态", { exact: true }).selectOption(filters.status || "");
+    await page.getByLabel("奖励状态", { exact: true }).selectOption(filters.status || "");
     await page.getByRole("button", { name: "服务端筛选", exact: true }).click();
     await page.getByRole("button", { name: "导出筛选全量 CSV", exact: true }).click(); dialog = page.getByRole("dialog");
     await dialog.getByLabel(/操作理由/).fill("逐行核对两币来源层级状态与当前筛选");
@@ -354,20 +354,20 @@ try {
   await open("/network/royalty");
   await page.evaluate(() => localStorage.setItem("nexion-admin-theme-v1", JSON.stringify({ state: { mode: "light" }, version: 1 })));
   await page.reload(); await expect(page.locator("html")).not.toHaveAttribute("data-theme", "dark");
-  await expect(page.getByLabel("直属设备收益分成总分成比例 (%)", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("好友设备收益奖励总奖励比例 (%)", { exact: true })).toBeVisible();
   await shot("f2-light");
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => page.locator("aside").first().evaluate(el => Math.round(el.getBoundingClientRect().width))).toBe(64);
-  await expect(page.getByLabel("直属购买奖励拆分USDT 占比 (%)", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("直属设备收益分成冷却天数", { exact: true })).toBeVisible();
-  await paneShot("f2-narrow", page.getByRole("region", { name: "直属分成配置" }));
+  await expect(page.getByLabel("好友购买奖励拆分USDT 占比 (%)", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("好友设备收益奖励冷却天数", { exact: true })).toBeVisible();
+  await paneShot("f2-narrow", page.getByRole("region", { name: "好友奖励设置" }));
   await page.setViewportSize({ width: 1440, height: 1100 });
   check("F2-theme-narrow", ["actual persisted light mode hydrates after reload; both split panels remain accessible at 390px", ...report.screenshots.slice(-2)]);
   report.layouts = [];
   for (const theme of ["dark", "light"]) {
     await page.evaluate(mode => localStorage.setItem("nexion-admin-theme-v1", JSON.stringify({ state: { mode }, version: 1 })), theme);
     await page.reload();
-    await expect(page.getByLabel("直属设备收益分成总分成比例 (%)", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("好友设备收益奖励总奖励比例 (%)", { exact: true })).toBeVisible();
     for (const width of [2560, 1920, 1440, 1100, 1024, 768, 390]) {
       await page.setViewportSize({ width, height: 1000 });
       // The shell animates its sidebar for 200ms after a breakpoint change.
@@ -376,7 +376,7 @@ try {
       const layout = await page.evaluate(() => {
         const rect = el => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.right, bottom: r.bottom }; };
         const rows = [...document.querySelectorAll(".casc-row")].map(row => ({ bounds: rect(row), cells: [...row.children].map(cell => ({ ...rect(cell), overflow: cell.scrollWidth > cell.clientWidth + 1 })) }));
-        const panels = [...document.querySelectorAll('.f2-rule-params .param, [aria-label="直属分成配置"] fieldset, .f2-top .pane')].map(el => ({ ...rect(el), overflow: el.scrollWidth > el.clientWidth + 1 }));
+        const panels = [...document.querySelectorAll('.f2-rule-params .param, [aria-label="好友奖励设置"] fieldset, .f2-top .pane')].map(el => ({ ...rect(el), overflow: el.scrollWidth > el.clientWidth + 1 }));
         const header = document.querySelector("header");
         const headerContent = [...header.querySelectorAll("a,button,nav,span")].filter(el => el.getBoundingClientRect().height > 0 && el.textContent?.trim()).map(rect);
         const titles = [...document.querySelectorAll(".f2-direct-policy .pane-h > *, .f2-top .pane-h > *")].map(el => ({ ...rect(el), overflow: el.scrollWidth > el.clientWidth + 1 }));

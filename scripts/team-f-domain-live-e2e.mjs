@@ -124,7 +124,7 @@ try {
   await page.getByText("F5 佣金事件审计加载中", { exact: false }).waitFor({ state: "hidden", timeout: 20_000 });
   const postRefreshF5Body = await page.locator("body").innerText();
   assert(
-    /当前筛选无佣金事件|佣金 ID/.test(postRefreshF5Body),
+    /没有符合条件的奖励记录|奖励 ID/.test(postRefreshF5Body),
     "F5 did not finish its server data readback after refresh",
   );
   await page.screenshot({ path: evidencePath.replace(/\.json$/i, "-final.png"), fullPage: true });
