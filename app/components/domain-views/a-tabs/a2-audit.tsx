@@ -167,13 +167,13 @@ export function A2ChangeReview({ before, after }: { before: string; after: strin
     purchaseGate: "购买限制", imageAssetId: "产品图标识", imageObjectKey: "产品图对象键", imagePreviewUrl: "产品图预览",
     tag: "商品标签", status: "商城状态", inventoryMode: "库存模式", expectedUpdatedAt: "修改前的更新时间",
     updatedAt: "更新时间", trialEligible: "允许试用", productType: "商品类型", reason: "操作理由", operator: "操作人",
-    rankMin: "最低 V 等级", directsMin: "最低有效直接邀请", teamUsdtMin: "最低团队业绩", mode: "条件组合",
+    rankMin: "最低 V 等级", directsMin: "最低有效直接邀请", teamUsdtMin: "最低团队订单额", mode: "条件组合",
     activeDirectMin: "最低有效直接邀请", teamComputePointsMin: "最低团队算力点",
     enforce: "启用限制", quotaCap: "总配额", quotaSold: "已用配额", quotaPeriod: "配额周期",
     ranks: "会员等级", rankCode: "等级", titleCn: "中文头衔", titleEn: "英文头衔",
     selfComputePoints: "自购算力点", directRefs: "直接邀请人数", teamComputePoints: "团队算力点",
-    requiredDownlineRank: "分支最低等级", requiredDownlineCount: "达标分支数", unilevelDepth: "团队奖励层数",
-    peerBonusRate: "同级奖比例", leadershipVotes: "领导奖池票数", rewards: "晋升奖励",
+    requiredDownlineRank: "分支最低等级", requiredDownlineCount: "达标分支数", unilevelDepth: "团队购买奖励范围",
+    peerBonusRate: "同级奖比例", leadershipVotes: "团队激励池票数", rewards: "晋升奖励",
   };
   const format = (value: unknown): string => {
     if (value === null) return "未设置";

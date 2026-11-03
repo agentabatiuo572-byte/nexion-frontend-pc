@@ -169,10 +169,10 @@ export const CONSOLE_NAV: NavDomain[] = [
     roles: ["growth"],
     l2: [
       { id: "F1", name: "团队等级晋升", path: "/network/v-rank", prdAnchor: "F1", batch: "V2", status: "flagship" },
-      { id: "F2", name: "团队分成", path: "/network/royalty", prdAnchor: "F2", batch: "V2", status: "flagship" },
-      { id: "F3", name: "左右团队业绩结算", path: "/network/binary", prdAnchor: "F3", batch: "V2", status: "flagship" },
+      { id: "F2", name: "团队奖励设置", path: "/network/royalty", prdAnchor: "F2", batch: "V2", status: "flagship" },
+      { id: "F3", name: "团队平衡奖励", path: "/network/binary", prdAnchor: "F3", batch: "V2", status: "flagship" },
       { id: "F4", name: "奖励池、名额与排行榜", path: "/network/leadership-pool", prdAnchor: "F4", batch: "V2", status: "flagship" },
-      { id: "F5", name: "佣金记录核对", path: "/network/commissions", prdAnchor: "F5", batch: "V2", status: "flagship" },
+      { id: "F5", name: "奖励记录核对", path: "/network/commissions", prdAnchor: "F5", batch: "V2", status: "flagship" },
     ],
   },
   {
@@ -187,7 +187,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "G2", name: "兑换风险规则", path: "/finance-products/exchange", prdAnchor: "G2", batch: "V3", status: "flagship" },
       { id: "G3", name: "UVT价格管理", path: "/finance-products/market", prdAnchor: "G3", batch: "V3", status: "flagship" },
       { id: "G4", name: "创世节点销售与收益", path: "/finance-products/genesis", prdAnchor: "G4", batch: "V3", status: "flagship" },
-      { id: "G7", name: "复投激励", path: "/finance-products/repurchase", prdAnchor: "G7", batch: "V3", status: "flagship" },
+      { id: "G7", name: "锁定计划", path: "/finance-products/repurchase", prdAnchor: "G7", batch: "V3", status: "flagship" },
     ],
   },
   {
@@ -339,7 +339,7 @@ const LEGACY_MENU_NAMES: Record<string, string> = {
   "M4": "知识库与 SLA",
 };
 const STOCK_MENU_ALIASES: Record<string, string[]> = {
-  M1: ["客服总览"], M3: ["即时会话台"], M5: ["话术与模板配置"], C3: ["余额 & 资产调整"], C5: ["安全 & 会话"], F2: ["网络版税费率"], H3: ["Quest 引擎"], H4: ["活动中心 CMS"], I4: ["信任中心 CMS"], I6: ["i18n 文案与教程", "i18n 文案与课程"]
+  M1: ["客服总览"], M3: ["即时会话台"], M5: ["话术与模板配置"], C3: ["余额 & 资产调整"], C5: ["安全 & 会话"], F2: ["网络版税费率"], G7: ["复投激励"], H3: ["Quest 引擎"], H4: ["活动中心 CMS"], I4: ["信任中心 CMS"], I6: ["i18n 文案与教程", "i18n 文案与课程"]
 };
 const LEGACY_DOMAIN_NAMES: Record<string, string> = {
   B: "总览驾驶舱",

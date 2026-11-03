@@ -417,7 +417,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
         <div className="f-stat cyan">
           <div className="k">滑动直达转化(本周)</div>
           <div className="v">{I3_STATS.weeklySwipe}</div>
-          <div className="sub">佣金到账 → 左滑直跳复投</div>
+          <div className="sub">团队奖励到账 → 左滑直跳锁定计划</div>
         </div>
       </div>
 
@@ -566,7 +566,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
 
       {/* ===== f-foot ===== */}
       <p className="f-foot">
-        <b>权限</b>：内容同事（合规类可由风控同事）提交定时发送和取消，内容主管或超级管理员确认；调整通知保留数量需要主管。<b>数据</b>：送达、已读、左滑会进入送达统计和数据分析；带转化的左滑（比如佣金 → 复投）计入实时转化分析。重复点击不会发两遍。
+        <b>权限</b>：内容同事（合规类可由风控同事）提交定时发送和取消，内容主管或超级管理员确认；调整通知保留数量需要主管。<b>数据</b>：送达、已读、左滑会进入送达统计和数据分析；带转化的左滑（比如团队奖励 → 锁定计划）计入实时转化分析。重复点击不会发两遍。
       </p>
       <PaginationExemptionList
         items={[

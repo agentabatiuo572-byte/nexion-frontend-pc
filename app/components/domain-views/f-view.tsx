@@ -567,14 +567,14 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f2ActivationPendingError,
     f2ActivationAttempt,
     recoverF2SevenLayerActivation: async () => {
-      if (!can("network_f2_policy_amplify") || !can("platform_a2_proposal_create")) throw new Error("你没有申请七层结算的权限。");
+      if (!can("network_f2_policy_amplify") || !can("platform_a2_proposal_create")) throw new Error("你没有申请团队购买奖励结算的权限。");
       try { await submitF2Activation(null, spec => propose(setToast, spec), () => createA2CommandKey("f-seven-layer-activation")); }
       finally { setF2ActivationAttempt(pendingF2Activation()); }
       await refreshF2();
     },
     changeF2SevenLayerActivation: async (action, expectedSevenLayerRevision, expectedPolicyVersion, reason) => {
-      if (!can("network_f2_policy_amplify") || !can("platform_a2_proposal_create")) throw new Error("你没有申请七层结算的权限。");
-      if (f2DirectPolicy?.sevenLayerActivationContractVersion !== 1) throw new Error("七层结算暂时不能启用，请刷新后重试。");
+      if (!can("network_f2_policy_amplify") || !can("platform_a2_proposal_create")) throw new Error("你没有申请团队购买奖励结算的权限。");
+      if (f2DirectPolicy?.sevenLayerActivationContractVersion !== 1) throw new Error("团队购买奖励结算暂时不能启用，请刷新后重试。");
       const def = findHighOp("f_seven_layer_activation");
       if (!def) throw new Error("F_OP_NOT_FOUND:f_seven_layer_activation");
       const label = { ACTIVATE: "七层结算启用", PAUSE: "七层结算暂停", RESUME: "七层结算恢复" }[action];
@@ -593,12 +593,12 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       if (invalid) throw new Error(invalid);
       const current = await fetchF2DirectReferralPolicy();
       setF2DirectPolicy(current);
-      if (current.policyVersion !== policy.expectedVersion || current.sevenLayerRevision !== policy.expectedSevenLayerRevision) throw new Error("直属分成或七层规则已被修改，请刷新后再确认（已填写的内容会保留）。");
+      if (current.policyVersion !== policy.expectedVersion || current.sevenLayerRevision !== policy.expectedSevenLayerRevision) throw new Error("好友奖励或团队购买奖励规则已被修改，请刷新后再确认（已填写的内容会保留）。");
       const def = findHighOp("f_direct_referral_policy");
       if (!def) throw new Error("F_OP_NOT_FOUND:f_direct_referral_policy");
       await proposeStable("f-direct-referral-policy", JSON.stringify([policy, reason]), {
         action: def.action, obj: "current",
-        before: `当前政策版本 ${current.policyVersion}，七层引用版本 ${current.sevenLayerRevision}；${directReferralSummary(current)}；原直属层 UVT 系数 ${current.sevenLayerReference.legacyNexPerUsd ?? "未配置"}`,
+        before: `当前政策版本 ${current.policyVersion}，团队购买奖励规则版本 ${current.sevenLayerRevision}；${directReferralSummary(current)}；原 L1 UVT 系数 ${current.sevenLayerReference.legacyNexPerUsd ?? "未配置"}`,
         after: `${directReferralSummary(policy)}；审批通过后立即对新来源生效`,
         type: "fund", amplifies: directReferralAmplifies(current, policy),
         gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "F2",
@@ -660,7 +660,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       // 日键把该窗口压到当日,跨日重试铸新号(在途票期间由后端 current-week 目标锁兜底)。
       await proposeStable("f4-settle:current-week", JSON.stringify([reason, new Date().toISOString().slice(0, 10)]), {
         action: def.action,
-        obj: "本周领导奖池",
+        obj: "本周团队激励池",
         before: "待结算",
         after: "按本周已付款成交额、门槛、票数和月度上限结算",
         type: "fund",
@@ -707,7 +707,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         action: def.action,
         obj: `排行榜 ${period}`,
         before: "待发放",
-        after: "按本期佣金榜和奖池设置发放",
+        after: "按本期奖励榜和奖池设置发放",
         type: "fund",
         amplifies: true,
         gate: { roles: [] },
@@ -742,7 +742,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       if (!def) throw new Error("F_OP_NOT_FOUND:f5_commission_suspension");
       const sortedKinds = [...kinds].sort();
       await proposeStable(`f5-suspension:${userId}`, JSON.stringify([sortedKinds, suspended, reason]), {
-        action: `${suspended ? "暂停" : "恢复"}用户佣金 · ${userId}`,
+        action: `${suspended ? "暂停" : "恢复"}用户奖励 · ${userId}`,
         obj: `${userId}:${sortedKinds.join(",")}`,
         before: "当前状态",
         after: suspended ? "SUSPENDED" : "ACTIVE",
@@ -764,15 +764,15 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
 
   // 跨域 / 跨标签跳转 CTA(放进 DomainHeader 的 right 槽,不改 DomainHeader 组件)
   const CTA: Record<string, { label: string; onClick: () => void }> = {
-    F1: { label: "领导池票数权重 →", onClick: () => { setTab("F4"); router.push("/network/leadership-pool"); } },
+    F1: { label: "团队激励池票数权重 →", onClick: () => { setTab("F4"); router.push("/network/leadership-pool"); } },
     F3: { label: "风险提醒 →", onClick: () => nav("B") },
-    F4: { label: "佣金记录核对 →", onClick: () => { setTab("F5"); router.push("/network/commissions"); } },
+    F4: { label: "奖励记录核对 →", onClick: () => { setTab("F5"); router.push("/network/commissions"); } },
   };
   const cta = CTA[tab];
 
   return (
     <div className="dkpage fdom">
-      {tab === "F2" ? <div className="f2-page-header"><div><div className="f2-breadcrumb">网络 <span aria-hidden="true">›</span> 团队分成</div><h1>团队分成</h1></div><span className="f2-page-meta">{f2DirectPolicy?.effectiveAt ? `当前政策生效于 ${new Date(f2DirectPolicy.effectiveAt).toLocaleString()}` : "配置尚未生效"}</span></div> : <DomainHeader {...meta} right={cta ? <button className="f-cta" onClick={cta.onClick}>{cta.label}</button> : undefined} />}
+      {tab === "F2" ? <div className="f2-page-header"><div><div className="f2-breadcrumb">网络 <span aria-hidden="true">›</span> 团队奖励设置</div><h1>团队奖励设置</h1></div><span className="f2-page-meta">{f2DirectPolicy?.effectiveAt ? `当前政策生效于 ${new Date(f2DirectPolicy.effectiveAt).toLocaleString()}` : "配置尚未生效"}</span></div> : <DomainHeader {...meta} right={cta ? <button className="f-cta" onClick={cta.onClick}>{cta.label}</button> : undefined} />}
 
       {tab === "F1" && <F1Vrank ctx={ctx} />}
       {tab === "F2" && <><F2SevenLayerActivation ctx={ctx} /><F2Rates ctx={ctx} /></>}

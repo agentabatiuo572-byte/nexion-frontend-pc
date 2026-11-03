@@ -40,7 +40,7 @@ type K2Threshold = TrialThreshold | GiftThreshold | BoardThreshold;
 const K2_PARAM_HELP: Record<string, string> = {
   trialCycleThreshold: "同一人或组织的关联账户在统计期间反复开试用的次数阈值。",
   welcomeGiftAnomalyThreshold: "同一人、同一账户组、同一手机号或同一设备重复领取新人礼的笔数阈值。",
-  leaderboardVelocityMultiplier: "排行榜、邀请或佣金增长速度相对基线的倍数阈值。",
+  leaderboardVelocityMultiplier: "排行榜、邀请或团队奖励增长速度相对基线的倍数阈值。",
 };
 
 const K2_DISPOSITION_LABELS: Record<string, string> = {
@@ -414,7 +414,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
         <div className="l-b">
           <div className="loop-strip" style={{ marginBottom: 14 }}>
             <span className="st">注册小号</span><span className="ar">→</span>
-            <span className="st">绑上级</span><span className="ar">→</span>
+            <span className="st">绑定邀请人</span><span className="ar">→</span>
             <span className="st hit">领新人礼</span><span className="ar">→</span>
             <span className="st hit">开免费试用</span><span className="ar">→</span>
             <span className="st">取消</span><span className="ar">→</span>

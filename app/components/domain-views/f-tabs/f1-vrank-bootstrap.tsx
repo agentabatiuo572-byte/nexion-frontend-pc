@@ -8,7 +8,7 @@ import type { FViewCtx } from "./types";
 const numericFields = [
   ["selfComputePoints", "自购算力点"], ["teamComputePoints", "团队算力点"],
   ["directRefs", "直接邀请人数"], ["requiredDownlineCount", "达标分支数"],
-  ["leadershipVotes", "领导奖池票数"],
+  ["leadershipVotes", "团队激励池票数"],
 ] as const;
 
 export function F1VrankBootstrap({ ctx }: { ctx: FViewCtx }) {
@@ -26,7 +26,7 @@ export function F1VrankBootstrap({ ctx }: { ctx: FViewCtx }) {
     try {
       const ranks = buildVRankBootstrap(drafts);
       ctx.openActionConfirm({ name: "首次配置会员等级", amplify: true,
-        detail: "将创建完整的 V0–V8 晋升条件、团队奖励层数、同级奖比例和票数。另一位管理员审核后生效；晋升奖励请在等级建立后单独配置。",
+        detail: "将创建完整的 V0–V8 晋升条件、团队购买奖励范围、同级奖比例和票数。另一位管理员审核后生效；晋升奖励请在等级建立后单独配置。",
         completionCopy: "首次配置需另一位管理员审核后生效。",
         run: async (reason) => {
           await ctx.proposeVRankBootstrap(ranks, reason);
@@ -64,9 +64,9 @@ export function F1VrankBootstrap({ ctx }: { ctx: FViewCtx }) {
           <label>分支最低等级<select value={current.requiredDownlineRank} onChange={(event) => change("requiredDownlineRank", event.target.value)}>
             <option value="">不要求</option>{bootstrapRankCodes.slice(0, active).map((code) => <option key={code} value={code}>{code}</option>)}
           </select></label>
-          <label>团队奖励层数<select value={current.unilevelDepth} onChange={(event) => change("unilevelDepth", event.target.value)}>
+          <label>团队购买奖励范围<select value={current.unilevelDepth} onChange={(event) => change("unilevelDepth", event.target.value)}>
             <option value="" disabled>请选择</option><option value="0">不开通</option>
-            {Array.from({ length: 7 }, (_, index) => <option key={index} value={`L1-L${index + 1}`}>{index + 1} 层</option>)}
+            {Array.from({ length: 7 }, (_, index) => <option key={index} value={`L1-L${index + 1}`}>L1–L{index + 1}</option>)}
           </select></label>
           <label>同级奖比例（%）<input type="number" min="0" max="100" step="0.01" value={current.peerBonusPercent}
             placeholder="请填写" onChange={(event) => change("peerBonusPercent", event.target.value)} /></label>

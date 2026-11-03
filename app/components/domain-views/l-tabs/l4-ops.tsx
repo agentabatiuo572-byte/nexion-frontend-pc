@@ -302,7 +302,7 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
       action: "导出团队明细",
       detail: (
         <div>
-          将按当前 <b>{data.period.label}</b> 周期导出团队关系；预计 <b>{data.liveFacts.teamRelationships}</b> 条（以实际导出为准）。只包含部分隐藏的用户编码、层级、会员等级、团队业绩和加入时间，不含手机号、昵称等隐私。下载链接 24 小时有效，导出会通知超级管理员和增长负责人。
+          将按当前 <b>{data.period.label}</b> 周期导出团队关系；预计 <b>{data.liveFacts.teamRelationships}</b> 条（以实际导出为准）。只包含部分隐藏的用户编码、关系深度、会员等级、团队订单额和加入时间，不含手机号、昵称等隐私。下载链接 24 小时有效，导出会通知超级管理员和增长负责人。
         </div>
       ),
       reasonMin: 8,
@@ -310,21 +310,21 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
       businessForm: {
         kind: "multi-field",
         title: "导出范围",
-        hint: "层级越深，导出越多；最多 10 层、100,000 行。",
+        hint: "深度越大，导出越多；深度最多 10、最多 100,000 行。",
         fields: [{
           key: "depth",
-          label: "团队树层级",
+          label: "团队关系导出深度",
           current: "3",
           inputKind: "select",
           options: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
-          optionLabels: Object.fromEntries(Array.from({ length: 10 }, (_, index) => [String(index + 1), `${index + 1} 层`])),
+          optionLabels: Object.fromEntries(Array.from({ length: 10 }, (_, index) => [String(index + 1), `深度 ${index + 1}`])),
           required: true,
         }],
       },
       run: async (reason, _newValue, businessValue) => {
         if (exportingRef.current || !ctx.biActions) return;
         const depth = Number(businessValue?.depth ?? "3");
-        if (!Number.isInteger(depth) || depth < 1 || depth > 10) throw new Error("团队树层级必须为 1–10 层");
+        if (!Number.isInteger(depth) || depth < 1 || depth > 10) throw new Error("导出深度必须为 1–10");
         if (!intentKeyRef.current) intentKeyRef.current = `l4-network-tree-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
         exportingRef.current = true;
         setExporting(true);
@@ -353,16 +353,16 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
       <ReportHeader title="网络与团队报表" subtitle="F 域团队结构 +关键指标#5/#7 完整查看明细" />
       <div className="l-b">
         <MetricTiles rows={[
-          ["直推用户", s.directRefs, "邀请绑定按被邀请用户去重"],
+          ["直接邀请的好友", s.directRefs, "邀请绑定按被邀请用户去重"],
           ["团队成交额 USDT", s.teamGmvUsdt, "带推荐来源的完成订单"],
-          ["佣金发放 USDT", s.commissionPaidUsdt, "已发放的团队分成"],
+          ["团队奖励发放 USDT", s.commissionPaidUsdt, "已发放的团队奖励"],
           ["L4→L5 推广率", s.promotionRate, "设备持有者邀请 ÷ 设备持有者"],
-          ["团队佣金触发率", s.commissionTriggerRate, "直推中产生佣金人数 ÷ 直推人数"],
-        ]} percentKeys={new Set(["L4→L5 推广率", "团队佣金触发率"])} />
+          ["团队奖励触发率", s.commissionTriggerRate, "直接邀请的好友中带来奖励的人数 ÷ 直接邀请的好友人数"],
+        ]} percentKeys={new Set(["L4→L5 推广率", "团队奖励触发率"])} />
         <div className="net-grid">
           <Distribution title="团队规模分布" rows={data.network.teamSizeDist} />
           <Distribution title="会员等级 分布" rows={data.network.vRankDist} />
-          <Distribution title="佣金类型结构" rows={data.network.commissionStructure} />
+          <Distribution title="团队奖励类型结构" rows={data.network.commissionStructure} />
         </div>
         <div className="ltint" style={{ marginTop: 12 }}><b>隐私边界</b> · 当前页和聚合 CSV 只展示计数与金额汇总，不包含用户编码、手机号或团队树明细。专用明细导出仅向授权角色开放，用户编码部分隐藏，且必须填写原因。</div>
         {ctx.canExportNetworkTree && (
@@ -376,7 +376,7 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
                 ? "团队明细只能按日、周、月导出"
                 : data.liveFacts.teamRelationships <= 0 ? "当前没有可导出的团队关系" : undefined}
             >{exporting ? "正在生成…" : "导出团队明细"}</button>
-            <span className="f-ro">需选择 1–10 层并填写 8–200 字原因</span>
+            <span className="f-ro">需选择导出深度 1–10 并填写 8–200 字原因</span>
           </div>
         )}
       </div>
@@ -415,7 +415,7 @@ function HistoryTable({ data }: { data: L4OperationsData }) {
       <ReportHeader title="周期趋势" subtitle={`${data.period.from} 至 ${data.period.to} · ${data.phaseFilter === "ALL" ? "全部阶段" : data.phaseFilter}`} />
       <div style={{ overflowX: "auto" }}>
         <table className="l-tbl" style={{ minWidth: 760 }}>
-          <thead><tr><th>时间</th><th className="num">设备购置</th><th className="num">设备退役</th><th className="num">产出 USDT</th><th className="num">任务完成</th><th className="num">新增直接邀请</th><th className="num">佣金 USDT</th></tr></thead>
+          <thead><tr><th>时间</th><th className="num">设备购置</th><th className="num">设备退役</th><th className="num">产出 USDT</th><th className="num">任务完成</th><th className="num">新增直接邀请</th><th className="num">团队奖励 USDT</th></tr></thead>
           <tbody>{data.history.map((row) => <tr key={row.bucket}><td>{row.bucket}</td><td className="num mono">{row.devicePurchases}</td><td className="num mono">{row.deviceRetirements}</td><td className="num mono">{fmt(row.yieldUsdt)}</td><td className="num mono">{row.tasksCompleted}</td><td className="num mono">{row.directRefs}</td><td className="num mono">{fmt(row.commissionPaidUsdt)}</td></tr>)}</tbody>
         </table>
         {data.history.length === 0 && <Empty text="所选周期没有历史事件，趋势保持为空。" />}

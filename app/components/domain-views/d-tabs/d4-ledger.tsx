@@ -29,7 +29,7 @@ const BILL_TYPES: ReadonlyArray<readonly [D4BillType | "", string]> = [
   ["topup", "充值"],
   ["withdraw", "提现"],
   ["earning", "收益"],
-  ["commission", "佣金"],
+  ["commission", "团队奖励"],
   ["refund", "退款"],
   ["bonus", "奖励"],
   ["purchase", "商品购买"],

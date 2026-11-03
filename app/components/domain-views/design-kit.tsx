@@ -2783,17 +2783,17 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             "/pages/me/wallet-cards-new": "绑定银行卡",
             "/pages/me/wallet-topup": "钱包充值",
             "/pages/me/wallet-exchange": "UVT / USDT 兑换",
-            "/pages/me/wallet-repurchase": "复投",
+            "/pages/me/wallet-repurchase": "锁定计划",
             "/pages/me/devices": "我的设备",
             "/pages/earn/earn": "收益",
             "/pages/store/store": "商城",
             "/pages/store/detail?id=stellarbox-s1": "UVELBox S1 详情",
             "/pages/team/team": "团队",
-            "/pages/team/commissions": "佣金",
+            "/pages/team/commissions": "奖励明细",
             "/pages/learn/courses": "学习中心",
             "/pages/staking/staking": "Staking",
             "/pages/genesis/genesis": "Genesis",
-            "/pages/genesis/marketplace": "创世节点 二级市场",
+            "/pages/genesis/marketplace": "创世节点 转让市场",
           })}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>

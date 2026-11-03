@@ -3,8 +3,8 @@ import { parseStrictFiniteNumber } from "./strict-number.ts";
 type JsonRecord = Record<string, unknown>;
 
 export const F5_KIND_LABELS: Record<string, string> = {
-  direct_purchase: "直属购买分成", direct_device_earning: "直属设备收益分成",
-  network: "七层购买奖励", binary: "左右团队奖", peer: "平级奖", cultivation: "培育奖", leadership: "领导奖池", genesis: "创世节点分红",
+  direct_purchase: "好友购买奖励", direct_device_earning: "好友设备收益奖励",
+  network: "团队购买奖励", binary: "团队平衡奖励", peer: "同级奖励", cultivation: "好友升级奖励", leadership: "团队激励池", genesis: "创世节点收益",
 };
 export const F5_KINDS = Object.keys(F5_KIND_LABELS);
 export const F5_STATUSES = ["cooling", "unlocked", "withdrawn", "reversed", "frozen", "rejected", "recovery_pending"];

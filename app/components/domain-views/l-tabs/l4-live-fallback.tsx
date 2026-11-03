@@ -16,8 +16,8 @@ const GROUPS: ReadonlyArray<{ key: L4LiveFact["group"]; title: string; subtitle:
   {
     key: "network",
     title: "团队数据",
-    subtitle: "团队关系和佣金的当前情况",
-    missing: "暂无团队和佣金数据。",
+    subtitle: "团队关系和团队奖励的当前情况",
+    missing: "暂无团队和团队奖励数据。",
   },
   {
     key: "phase",
@@ -74,7 +74,7 @@ export function L4LiveFacts({ facts }: { facts: L4LiveFact[] }) {
       <section className="l-card">
         <div className="l-b">
           <div className="ltint warn" style={{ fontSize: 12 }}>
-            <b>跨模块历史分析待统一接入</b> · 设备机型与产出衰减、六类任务承接与饱和度、团队层级分布与团队成交额、阶段留存与转化效果，都需要各业务域提供同统计规则历史序列。当前页面明确降级，不使用目录数量替代活跃量，也不使用累计记录拼接周期趋势。
+            <b>跨模块历史分析待统一接入</b> · 设备机型与产出衰减、六类任务承接与饱和度、团队关系分布与团队成交额、阶段留存与转化效果，都需要各业务域提供同统计规则历史序列。当前页面明确降级，不使用目录数量替代活跃量，也不使用累计记录拼接周期趋势。
           </div>
           <div className="ltint" style={{ fontSize: 12, marginTop: 10 }}>
             <b>导出范围</b> · 「运营汇总」只包含本页数据。团队关系明细暂时不能导出。

@@ -170,17 +170,17 @@ const TASK_ACTION_ROUTE_LABELS: Record<string, string> = {
   "/pages/me/wallet-cards-new": "绑定银行卡",
   "/pages/me/wallet-topup": "钱包充值",
   "/pages/me/wallet-exchange": "UVT / USDT 兑换",
-  "/pages/me/wallet-repurchase": "复投",
+  "/pages/me/wallet-repurchase": "锁定计划",
   "/pages/me/devices": "我的设备",
   "/pages/earn/earn": "收益",
   "/pages/store/store": "商城",
   "/pages/store/detail?id=stellarbox-s1": "UVELBox S1 详情",
   "/pages/team/team": "团队",
-  "/pages/team/commissions": "佣金",
+  "/pages/team/commissions": "奖励明细",
   "/pages/learn/courses": "学习中心",
   "/pages/staking/staking": "Staking",
   "/pages/genesis/genesis": "创世节点",
-  "/pages/genesis/marketplace": "创世节点 二级市场",
+  "/pages/genesis/marketplace": "创世节点 转让市场",
 };
 
 // 只暴露 Java OpsGrowthController 已接受的规范事件，避免运营手填 JSON 或拼接事件名。
@@ -208,9 +208,9 @@ const H3_BINDING_EVENT_LABELS: Record<string, string> = {
   H8_REFERRAL_REWARD_SETTLED: "邀请奖励结算",
   LEARNING_COURSE_COMPLETED: "学习课程完成",
   "admin.device_activated": "设备激活",
-  COMMISSION_UNLOCKED: "佣金解锁",
+  COMMISSION_UNLOCKED: "团队奖励解锁",
   H3_STOREFRONT_THREE_PRODUCTS_VIEWED: "浏览3个不同商品",
-  H3_GENESIS_SECONDARY_MARKET_VIEWED: "查看创世节点二级市场",
+  H3_GENESIS_SECONDARY_MARKET_VIEWED: "查看创世节点转让市场",
   H3_COMPUTE_COMPLETED_50: "完成50笔已验证AI任务",
   H3_REFERRAL_REGISTERED: "有效邀请注册",
   H3_EXCHANGE_COMPLETED: "完成一次兑换",
@@ -1081,7 +1081,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     return ({
       "Start your first order": "开始首笔订单", "Complete a qualified referral": "完成一次符合条件的邀请",
       "Complete a learning course": "完成一门课程", "Activate a device": "激活一台设备",
-      "查看 UVELBox S1 ROI": "查看 UVELBox S1 预计回报", "购入 Genesis 创世节点": "购入创世节点",
+      "查看 UVELBox S1 ROI": "查看 UVELBox S1 预计收益", "购入 Genesis 创世节点": "购入创世节点",
       "锁仓 USDT $1,000+ 进入 365 天 Staking": "锁定不少于 1,000 USDT，参与 365 天质押",
       "扩展硬件 fleet · 加购一台": "扩充设备 · 加购一台", "首台 UVELBox · 止血 $7/天": "首台 UVELBox · 每日收益 7 美元",
     } as Record<string,string>)[branded] ?? branded;
@@ -2016,7 +2016,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">可追踪活动监控</span>
-          <span className="sub">· 只读 · 设备、团队、理财类活动的进度</span>
+          <span className="sub">· 只读 · 设备、团队、质押类活动的进度</span>
           <div className="r">
             <span className="bdg dim">参与 → 达标 → 领取</span>
           </div>

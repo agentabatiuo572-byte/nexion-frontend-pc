@@ -52,12 +52,12 @@ export function L3LiveFacts({ facts, snapshot }: { facts: L3LiveFact[]; snapshot
           <section className="l-card">
             <div className="l-h">
               <span className="ttl">未来七日到期排程</span>
-              <span className="sub">· 提现与利息应付款</span>
+              <span className="sub">· 提现与质押奖励应付款</span>
               <div className="r"><span className="lcode electric">到期排程</span></div>
             </div>
             <div style={{ overflowX: "auto" }}>
               <table className="l-tbl" style={{ minWidth: 620 }}>
-                <thead><tr><th>日期</th><th className="num">提现到期</th><th className="num">利息到期</th></tr></thead>
+                <thead><tr><th>日期</th><th className="num">提现到期</th><th className="num">质押奖励到期</th></tr></thead>
                 <tbody>{snapshot.maturity7d.map((item) => (
                   <tr key={item.day}><td>{item.day}</td><td className="num mono">{usd(item.withdrawUsd)}</td><td className="num mono">{usd(item.interestUsd)}</td></tr>
                 ))}</tbody>

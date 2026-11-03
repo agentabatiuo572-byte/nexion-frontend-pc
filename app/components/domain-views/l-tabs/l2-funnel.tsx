@@ -579,7 +579,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
                   <span className="ev" title={STAGE_EV[i] ?? f.ev ?? ""}><AutoGloss>{ex.plain}</AutoGloss></span>
                 </div>
                 <div className="barzone"><div className="bar" style={{ width: `${w}%`, background: f.color }}><span>{f.users.toLocaleString("en-US")}</span></div></div>
-                <div className="cvr">{f.cvr != null ? <><span className="pc">{f.cvr}%</span><span className="tg">{ex.tg ? `目标 ${ex.tg}` : "上级转化"}</span></> : <span className="tg">漏斗顶</span>}</div>
+                <div className="cvr">{f.cvr != null ? <><span className="pc">{f.cvr}%</span><span className="tg">{ex.tg ? `目标 ${ex.tg}` : "上一步转化"}</span></> : <span className="tg">漏斗顶</span>}</div>
               </>
             );
           }}</TabGroup>
@@ -592,7 +592,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
               <button className="l-btn sm" disabled={queryLoading} onClick={() => void applySlice(L2_STAGE_EVENTS[safeStage])}>刷新这一级的数据</button>
             </div>
             <div className="stage-x-grid">
-              <div className="cell"><div className="k">上级流入</div><div className="v">{ext.inflow}</div></div>
+              <div className="cell"><div className="k">上一步流入</div><div className="v">{ext.inflow}</div></div>
               <div className="cell"><div className="k">本级转化</div><div className="v" style={{ color: "var(--cyan)" }}>{s.cvr != null ? `${s.cvr}%` : "—"}</div><div className="s">{s.users.toLocaleString("en-US")} 人到达本级</div></div>
               <div className="cell"><div className="k">流失去向</div><div className="s" style={{ marginTop: 6 }}><AutoGloss>{ext.lost}</AutoGloss></div></div>
               <div className="cell"><div className="k">本级停留时长分布</div><div className="dwell">{ext.dwell.map((d, i) => <i key={i} style={{ height: `${(d / dwellMax) * 100}%` }} />)}</div><div className="s">0h → 7d+ 八档</div></div>
@@ -709,7 +709,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>这页只能查看，不会改任何数据</b>：<AutoGloss>可以看明细、调整显示方式、导出汇总。</AutoGloss><b>复投这一级</b>：<AutoGloss>按复投记录统计；没有复投记录时，用首购后的第二笔订单代替。导出只含汇总人数，</AutoGloss><b>不含手机号、地址等隐私</b>，<AutoGloss>每次导出都有记录。</AutoGloss></p>
+      <p className="f-foot"><b>这页只能查看，不会改任何数据</b>：<AutoGloss>可以看明细、调整显示方式、导出汇总。</AutoGloss><b>锁定计划这一步</b>：<AutoGloss>按锁定计划记录统计；没有锁定计划记录时，用首购后的第二笔订单代替。导出只含汇总人数，</AutoGloss><b>不含手机号、地址等隐私</b>，<AutoGloss>每次导出都有记录。</AutoGloss></p>
       <PaginationExemptionList
         items={[
           {

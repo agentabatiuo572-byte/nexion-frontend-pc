@@ -13,14 +13,14 @@ const F2_VISIBLE_PARAM_KEYS = new Set([
   "F.influence.clampMin", "F.influence.clampMax", "F.promo.weekMultiplier", "F.unilevel.mergeExitMaxPct",
 ]);
 const F2_HISTORICAL_PARAM_NAMES: Record<string, string> = {
-  "F.unilevel.depth": "最大层数",
-  "F.unilevel.depthGate": "层级解锁门槛",
+  "F.unilevel.depth": "最大计算范围（L1–Ln）",
+  "F.unilevel.depthGate": "等级解锁起点（L1–L7）",
   "F.unilevel.depthGateRank": "解锁等级",
   "F.influence.clampMin": "影响分下限",
   "F.influence.clampMax": "影响分上限",
   "F.promo.weekMultiplier": "活动周倍率",
   "F.unilevel.mergeExitMaxPct": "奖励总额上限（占订单）",
-  "F.peer.rate": "平级奖励比例",
+  "F.peer.rate": "同级奖励比例",
   "F.royalty.minPayout": "购买奖励支付阈值",
   "F.unilevel.nexCap": "UVT 日封顶（已停用）",
   "F.unilevel.backfill": "回溯时段（已停用）",
@@ -68,8 +68,8 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
   if (ctx.f2Loading) {
     return (
       <div className="f-section-stack f2-layout"><F2DirectPolicy key="direct-policy" ctx={ctx} /><section className="pane">
-        <div className="pane-h"><span className="ph-ttl">团队分成</span><span className="ph-sub">数据加载中</span></div>
-        <div style={{ padding: 18, color: "var(--ink-3)" }}>团队分成数据加载中…</div>
+        <div className="pane-h"><span className="ph-ttl">团队奖励设置</span><span className="ph-sub">数据加载中</span></div>
+        <div style={{ padding: 18, color: "var(--ink-3)" }}>团队奖励数据加载中…</div>
       </section></div>
     );
   }
@@ -77,8 +77,8 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
   if (ctx.f2Error) {
     return (
       <div className="f-section-stack f2-layout"><F2DirectPolicy key="direct-policy" ctx={ctx} /><section className="pane">
-        <div className="pane-h"><span className="ph-ttl">团队分成</span><span className="ph-sub">数据加载失败</span></div>
-        <div role="alert" style={{ padding: 18, color: "var(--ink-3)" }}>团队分成数据加载失败 · {ctx.f2Error}</div>
+        <div className="pane-h"><span className="ph-ttl">团队奖励设置</span><span className="ph-sub">数据加载失败</span></div>
+        <div role="alert" style={{ padding: 18, color: "var(--ink-3)" }}>团队奖励数据加载失败 ·  {ctx.f2Error}</div>
         <div style={{ padding: "0 18px 18px" }}>
           <button className="fbtn primary" onClick={() => void ctx.refreshF2()}>重试</button>
         </div>
@@ -89,15 +89,15 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
   return (
     <div className="f-section-stack f2-layout">
       <section className="pane">
-        <div className="pane-h"><div><span className="ph-ttl">七层购买奖励</span><span className="ph-sub">每一层成员购买时，邀请链上各层能拿到的 USDT 比例和 UVT 奖励。{ctx.f2Unilevel.length === 0 && "当前尚未配置。"}</span></div><button className="f2-history-link" aria-controls="royalty-history" onClick={() => { const history = document.getElementById("royalty-history"); if (history instanceof HTMLDetailsElement) { history.open = true; history.scrollIntoView({ block: "nearest" }); } }}>查看历史设置 <span aria-hidden="true">⌄</span></button></div>
+        <div className="pane-h"><div><span className="ph-ttl">团队购买奖励</span><span className="ph-sub">直接邀请的好友（L1）和团队其他成员（L2–L7）购买时，各自对应的 USDT 奖励比例和 UVT 奖励。{ctx.f2Unilevel.length === 0 && "当前尚未配置。"}</span></div><button className="f2-history-link" aria-controls="royalty-history" onClick={() => { const history = document.getElementById("royalty-history"); if (history instanceof HTMLDetailsElement) { history.open = true; history.scrollIntoView({ block: "nearest" }); } }}>查看历史设置 <span aria-hidden="true">⌄</span></button></div>
         {ctx.f2Metrics.length > 0 && <div className="f-stats">
           {ctx.f2Metrics.map((metric) => <div key={metric.id} className={`f-stat${metric.tone ? " " + metric.tone : ""}`}>
             <div className="k">{metric.id === "weeklyNexPayout" ? "近 7 天发放 UVT" : metric.id === "weeklyUsdtRoyalty" ? "近 7 天发放 USDT" : operatorCopyText(metric.name)}</div><div className="v">{operatorCopyText(metric.value)}</div>
           </div>)}
         </div>}
-        <div className="casc" role="table" aria-label="七层购买奖励费率">
+        <div className="casc" role="table" aria-label="团队购买奖励比例">
           <div className="casc-head" role="row">
-            {["层级", "USDT 奖励比例", "UVT 奖励系数", "发放状态", "操作"].map(label => <span key={label} role="columnheader">{label}</span>)}
+            {["邀请关系", "USDT 奖励比例", "UVT 奖励系数", "发放状态", "操作"].map(label => <span key={label} role="columnheader">{label}</span>)}
           </div>
           {F2_DEPTH_GATE_LAYERS.map((level) => {
             const rate = ctx.f2Unilevel.find((row) => row.l === level);
@@ -106,14 +106,14 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
             const paused = configuredValue(ctx.f2ConfigValues[`F.unilevel.${level}.paused`]);
             const direct = level === "L1";
             return <div key={level} className="casc-row" role="row">
-              <div role="rowheader" className="casc-level" title={direct ? "直属购买" : "下级购买"}><span className={`lchip${direct ? "" : " ext"}`}>{level}</span></div>
+              <div role="rowheader" className="casc-level" title={direct ? "直接邀请的好友购买" : "团队其他成员购买"}><span className={`lchip${direct ? "" : " ext"}`}>{level}</span></div>
               <div role="cell" className="casc-rate"><span className="casc-mobile-label">USDT 奖励比例</span><strong>{rate ? `${currentRate}%` : "未配置"}</strong>{rate && <div className="rate-bar" aria-hidden="true"><div className={`f${direct ? "" : " ext"}`} style={{ width: `${Math.max(0, Math.min(100, rate.usdt))}%` }} /></div>}</div>
               <div role="cell" className="casc-nex"><span className="casc-mobile-label">UVT 奖励系数</span>
               {canRoyaltyRate && (!direct || !l1NexReadonly) ? <button className="nex-val" title={`调整 ${level} UVT 奖励系数`} style={{ background: "none", border: 0, padding: 0, cursor: "pointer" }} onClick={() => ctx.openActionConfirm({
                 name: `调整 ${level} UVT 奖励系数`, amplify: true, op: "param", paramKey: `F.unilevel.nex.${level}`,
                 edit: { kind: "number", current: currentNex, min: 0, unit: "UVT / 每 1 USDT 奖励", amplifiesWhen: "increase" },
                 detail: `${level} 每发 1 USDT 奖励，额外发多少 UVT · 当前 ${currentNex || "未配置"}。调高前先看兑付覆盖率；只影响之后的结算。`,
-              })}>{currentNex || "未配置"}<small>UVT / 每 1 USDT 奖励</small></button> : <span className="nex-val">{currentNex || "未配置"}<small>{direct && l1NexReadonly ? "已停用 · 已改用直属拆分" : "UVT / 每 1 USDT 奖励"}</small></span>}
+              })}>{currentNex || "未配置"}<small>UVT / 每 1 USDT 奖励</small></button> : <span className="nex-val">{currentNex || "未配置"}<small>{direct && l1NexReadonly ? "已停用 · 已改用好友购买奖励拆分" : "UVT / 每 1 USDT 奖励"}</small></span>}
               </div>
               <div role="cell" className="casc-status"><span className="casc-mobile-label">发放状态</span><span className="f2-status" data-state={paused}>{paused === "on" ? "已暂停" : paused === "off" ? "未暂停" : paused ? "配置无效" : "未配置"}</span></div>
               <div role="cell" className="casc-action">{direct ? <span className="casc-fixed">{rate ? "L1 费率固定" : "L1 待配置"}<small>{rate ? "不能手动修改" : "不可手动调整"}</small></span> : canRoyaltyRate ? <button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({
@@ -125,25 +125,25 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
           })}
         </div>
         <div className="casc-foot">
-          <span>{ctx.f2Unilevel.length > 0 ? `七层合计 ${ctx.f2Unilevel.reduce((sum, rate) => sum + rate.usdt, 0)}% · ` : ""}各层门槛、暂停和上限分别设置</span>
+          <span>{ctx.f2Unilevel.length > 0 ? `L1–L7 合计 ${ctx.f2Unilevel.reduce((sum, rate) => sum + rate.usdt, 0)}% · ` : ""}L1–L7 的门槛、暂停和上限分别设置</span>
           {canPolicyAmplify && <button className="fbtn" style={{ marginLeft: "auto" }} onClick={() => ctx.openActionConfirm({
-            name: "按层暂停（L1–L7）",
+            name: "按 L1–L7 分别暂停",
             businessForm: {
-              kind: "multi-field", title: "按层暂停", hint: "每一层都要选择暂停或恢复。暂停期间没发的奖励不会补发。",
+              kind: "multi-field", title: "按 L1–L7 分别暂停", hint: "L1–L7 每项都要选择暂停或恢复。暂停期间没发的奖励不会补发。",
               fields: F2_DEPTH_GATE_LAYERS.map((level) => {
                 const value = configuredValue(ctx.f2ConfigValues[`F.unilevel.${level}.paused`]);
-                return { key: level, label: `${level} ${level === "L1" ? "直属购买" : "下级购买"}`, current: value === "on" || value === "off" ? value : "",
+                return { key: level, label: `${level} ${level === "L1" ? "直接邀请的好友购买" : "团队其他成员购买"}`, current: value === "on" || value === "off" ? value : "",
                   inputKind: "select" as const, options: ["", "on", "off"], optionLabels: { "": "请选择", on: "暂停", off: "恢复发放" } };
               }),
             },
             completionCopy: "提交后需在「操作记录与审批」确认才生效。",
-            detail: "7 层一起提交，确认后只影响之后的购买奖励，不影响设备收益分成。",
+            detail: "L1–L7 一起提交，确认后只影响之后的购买奖励，不影响好友设备收益奖励。",
             run: async (reason, values) => {
-              if (!values || F2_DEPTH_GATE_LAYERS.some((level) => values[level] !== "on" && values[level] !== "off")) throw new Error("请选择全部 7 层的暂停状态");
+              if (!values || F2_DEPTH_GATE_LAYERS.some((level) => values[level] !== "on" && values[level] !== "off")) throw new Error("请选择 L1–L7 全部的暂停状态");
               await ctx.updateFConfigBatch("F2", F2_DEPTH_GATE_LAYERS.map((level) => ({ key: `F.unilevel.${level}.paused`, value: values[level] })), reason);
-              ctx.toast("按层暂停已提交，确认后生效");
+              ctx.toast("L1–L7 暂停设置已提交，确认后生效");
             },
-          })}>按层暂停</button>}
+          })}>按 L1–L7 暂停</button>}
         </div>
         {ctx.f2RateTiers.length > 0 && <div className="tier-list">
           {ctx.f2RateTiers.map((tier) => <div key={operatorCopyText(tier.nm)} className={`tier ${tier.cls}`}>
@@ -162,7 +162,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
             const promo = key === "F.promo.weekMultiplier";
             const merge = key === "F.unilevel.mergeExitMaxPct";
             const allowed = promo ? canRoyaltyRate : canPolicyAmplify;
-            return <div key={key} className="param" title={enumSpec ? "请选择有效的层级和等级，否则结算会停止。" : promo ? "活动周奖励倍数，可设 1–3 倍；调高前先看兑付覆盖率。" : merge ? "奖励总额最多占订单金额的百分比，可设 0–100%。" : "影响分上下限只作用于第 2–7 层，不影响 L1。"}>
+            return <div key={key} className="param" title={enumSpec ? "请选择有效的起点（L1–L7）和等级，否则结算会停止。" : promo ? "活动周奖励倍数，可设 1–3 倍；调高前先看兑付覆盖率。" : merge ? "奖励总额最多占订单金额的百分比，可设 0–100%。" : "影响分上下限只作用于 L2–L7，不影响 L1。"}>
               <div className="pk">{name}</div>
               <div className={`pv${param?.vcls ? " " + param.vcls : ""}`}>{parsed && !parsed.legal ? `${value}（配置无效）` : value || "未配置"}</div>
               {parsed && !parsed.legal && <div className="psub" role="alert" style={{ color: "var(--danger)" }}>{enumSpec?.illegalCopy}</div>}
@@ -194,7 +194,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
       <F2DirectPolicy key="direct-policy" ctx={ctx} />
       <div className="f2-top">
         <section className="pane f2-partner">
-          <div className="pane-h"><div><span className="ph-ttl">合作伙伴权益</span><span className="ph-sub">按团队每月业绩解锁权益，不影响奖励比例。</span></div></div>
+          <div className="pane-h"><div><span className="ph-ttl">合作伙伴权益</span><span className="ph-sub">按团队每月订单额解锁权益，不影响奖励比例。</span></div></div>
           <div className="f2-partner-picker"><label htmlFor="royalty-partner-tier">查看权益档</label><select id="royalty-partner-tier" value={selectedTier} onChange={e => setSelectedTier(Number(e.target.value))}>{partnerTiers.map((tier, index) => <option key={tier.name} value={index}>{tier.name} · {tier.threshold === "" ? "未配置" : `$${tier.threshold}+`}</option>)}</select><button className="fbtn" aria-expanded={showTierDetails} aria-controls="royalty-partner-details" onClick={() => setShowTierDetails(!showTierDetails)}>{showTierDetails ? "收起权益详情" : "查看权益详情"}</button></div>
           {showTierDetails && <div className="tier-list" id="royalty-partner-details">
             {partnerTiers.filter((_, index) => index === selectedTier).map((tier) => (
@@ -221,7 +221,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
                 ],
               },
               completionCopy: "提交后需在「操作记录与审批」确认才生效。",
-              detail: `合作伙伴权益门槛 · ${partnerState} · 不影响佣金和购买奖励。`,
+              detail: `合作伙伴权益门槛 · ${partnerState} · 不影响任何奖励。`,
               run: async (reason, bv) => {
                 if (!bv || [bv.standard, bv.verified, bv.premium, bv.diamond].some((value) => !value?.trim())) throw new Error("请填写全部 4 档");
                 const standard = Number(bv.standard);
@@ -241,10 +241,10 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
           </div>
         </section>
         <section className="pane f2-cooling">
-          <div className="pane-h"><div><span className="ph-ttl">购买与其他奖励冷却</span><span className="ph-sub">购买奖励和其他奖励用同一个冷却期；直属设备收益单独设置。</span></div></div>
+          <div className="pane-h"><div><span className="ph-ttl">购买与其他奖励冷却</span><span className="ph-sub">购买奖励和其他奖励用同一个冷却期；好友设备收益奖励单独设置。</span></div></div>
         <div className="f2-cooling-body">
           <label className="f2-cooling-row">购买与其他奖励<span className="f2-readonly-value"><input aria-label="购买与其他奖励当前冷却天数" readOnly value={coolingDays || coolingState} /><span>天</span></span></label>
-          <label className="f2-cooling-row">直属设备收益<span className="f2-readonly-value"><input aria-label="直属设备收益当前冷却天数" readOnly value={ctx.f2DirectPolicy?.configured ? ctx.f2DirectPolicy.deviceEarning.coolingDays : "未配置"} /><span>天</span></span></label>
+          <label className="f2-cooling-row">好友设备收益<span className="f2-readonly-value"><input aria-label="好友设备收益当前冷却天数" readOnly value={ctx.f2DirectPolicy?.configured ? ctx.f2DirectPolicy.deviceEarning.coolingDays : "未配置"} /><span>天</span></span></label>
         </div>
         <div key={coolingParam?.id ?? "cool"} className="casc-foot">
           <span>购买冷却可设 0–90 天；设备冷却在上方设置。</span>
@@ -252,7 +252,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
             name: "购买与其他奖励冷却期调整", amplify: true, op: "param", paramKey: "F.cooldown",
             edit: { kind: "number", current: coolingDays, unit: "天", min: 0, max: 90, step: 1,
               ...(coolingDays !== "" ? { amplifiesWhen: "decrease" as const } : {}) },
-            detail: `购买与其他奖励冷却期 · ${coolingState}。缩短前先看兑付覆盖率；不影响直属设备收益的冷却期。`,
+            detail: `购买与其他奖励冷却期 · ${coolingState}。缩短前先看兑付覆盖率；不影响好友设备收益奖励的冷却期。`,
           })}>{coolingDays === "" ? "配置冷却期" : "调整"}</button>}
         </div>
         </section>
@@ -260,7 +260,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
 
 
 
-      <p className="f-foot">七层购买奖励照常发放，设备收益分成单独设置。合作伙伴档位只决定权益，不额外增加奖励比例。修改参数需填写理由并确认。</p>
+      <p className="f-foot">团队购买奖励照常发放，好友设备收益奖励单独设置。合作伙伴档位只决定权益，不额外增加奖励比例。修改参数需填写理由并确认。</p>
     </div>
   );
 }

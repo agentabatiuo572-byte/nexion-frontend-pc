@@ -315,7 +315,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     if (!overview.seriesInitializationAvailable || !allowed("finprod_g4_write")) return;
     openActionConfirm({
       action: "发布创世节点系列",
-      detail: <>总量和起始价格按价格档位自动计算。版税、每日收益率和收益公式先设为 0，之后再单独修改（需要决策编号）。发布后市场仍是「暂未开放」，核对无误后再手动开放。</>,
+      detail: <>总量和起始价格按价格档位自动计算。版税、每日收益比例和收益公式先设为 0，之后再单独修改（需要决策编号）。发布后市场仍是「暂未开放」，核对无误后再手动开放。</>,
       // Initializing the catalog does not start sales or create a payout. The
       // backend forces the market closed and requires a separate reviewed open.
       amplifies: false,
@@ -521,7 +521,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
             </div>
             {supplyParam && <div className="p-row"><div className="txt"><div className="k">节点总量</div><div className="s">{operatorCopyText(supplyParam.sub)}</div></div><span className="v">{operatorCopyText(supplyParam.displayValue)}</span>{allowed(paramAuthority(supplyParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${supplyParam.name}`} onClick={() => adjustParam(supplyParam)}>调整</button>}</div>}
             {priceParam && <div className="p-row"><div className="txt"><div className="k">单价{tiers && <span className="bdg ok" style={{ fontSize: 9, marginLeft: 6 }}>按价格档位</span>}</div><div className="s">{overview.tierPrice.status === "active" ? "已设置价格档位，单价按卖到第几张自动决定，这里的值不生效。改价请用下方「价格档位」" : tierPriceNote}</div></div><span className="v">{tierPriceText}</span>{overview.tierPrice.status === "legacy" && allowed(paramAuthority(priceParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${priceParam.name}`} onClick={() => adjustParam(priceParam)}>调整</button>}</div>}
-            {dividendParam && <div className="p-row"><div className="txt"><div className="k">每日收益率 <span className="bdg ok" style={{ fontSize: 9 }}>基准 0.1%/日</span></div><div className="s">{operatorCopyText(dividendParam.sub)}</div></div><span className="v">{operatorCopyText(dividendParam.displayValue)}</span>{allowed(paramAuthority(dividendParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${dividendParam.name}`} onClick={() => adjustParam(dividendParam)}>调整</button>}</div>}
+            {dividendParam && <div className="p-row"><div className="txt"><div className="k">每日收益比例 <span className="bdg ok" style={{ fontSize: 9 }}>基准 0.1%/日</span></div><div className="s">{operatorCopyText(dividendParam.sub)}</div></div><span className="v">{operatorCopyText(dividendParam.displayValue)}</span>{allowed(paramAuthority(dividendParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${dividendParam.name}`} onClick={() => adjustParam(dividendParam)}>调整</button>}</div>}
             {royaltyParam && <div className="p-row"><div className="txt"><div className="k">转让版税</div><div className="s">{operatorCopyText(royaltyParam.sub)}</div></div><span className="v">{operatorCopyText(royaltyParam.displayValue)}</span>{allowed(paramAuthority(royaltyParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${royaltyParam.name}`} onClick={() => adjustParam(royaltyParam)}>调整</button>}</div>}
             <div className="p-row"><div className="txt"><div className="k">开始发放收益 <span className="bdg ok" style={{ fontSize: 9 }}>跟随运营阶段</span></div><div className="s">上交易所前不发放；在「运营阶段设置」里控制，这里只能查看</div></div><span className="v">{overview.emissionGate.open ? "已开放" : "未开放"}</span></div>
             {airdropPctParam && <div className="p-row"><div className="txt"><div className="k">空投占比</div><div className="s">{operatorCopyText(airdropPctParam.sub)}</div></div><span className="v">{operatorCopyText(airdropPctParam.displayValue)}</span>{allowed(paramAuthority(airdropPctParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${airdropPctParam.name}`} onClick={() => adjustParam(airdropPctParam)}>调整</button>}</div>}
@@ -628,7 +628,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
             <div className="t"><div className="k">每个节点分到</div><div className="v">{fmtUsd(dividend.perSlotPerDay)} / 天</div></div>
             <div className="t"><div className="k">今日发放 {dividend.batchNo || "—"}</div><div className="v" style={{ color: "var(--success)" }}>{overview.emissionGate.open ? `已发 ${fmtNumber(stats.sold, 0)} 个节点 · ${fmtUsdCompact(dividend.payoutToday)}` : "未开始发放"}</div></div>
           </div>
-          <div className="gtint" style={{ marginTop: 12 }}><b>两种算法</b> · 用户实际收益按当前参数计算；财务预估按「节点价 × 持有量 × 收益率」保底。曲线只是策略说明，每天实际发多少仍按计算基数和收益率。修改收益率、曲线或计算基数时，覆盖率不足会无法保存（当前 {cov}%）。</div>
+          <div className="gtint" style={{ marginTop: 12 }}><b>两种算法</b> · 用户实际收益按当前参数计算；财务预估按「节点价 × 持有量 × 收益比例」保底。曲线只是策略说明，每天实际发多少仍按计算基数和收益比例。修改收益比例、曲线或计算基数时，覆盖率不足会无法保存（当前 {cov}%）。</div>
         </div>
       </section>
 

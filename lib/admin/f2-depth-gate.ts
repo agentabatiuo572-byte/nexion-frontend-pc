@@ -52,8 +52,8 @@ export function f2EnumGateSpec(key: string): F2EnumGateSpec | null {
   if (key === "F.unilevel.depthGate") {
     return {
       options: [...F2_DEPTH_GATE_LAYERS],
-      unit: "层",
-      illegalCopy: "当前值不是 L1–L7 中的层级，结算会因此停止；请选一个有效层级后提交。",
+      unit: "",
+      illegalCopy: "当前值不是 L1–L7 中的一项，结算会因此停止；请选一个有效值后提交。",
     };
   }
   if (key === "F.unilevel.depthGateRank") {

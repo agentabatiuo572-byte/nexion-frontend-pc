@@ -40,7 +40,7 @@ function currentMonthRange() {
   };
 }
 
-const liabilityName = (value: string) => ({ "可提余额": "可提现余额", "USDT staking 本金": "USDT 质押本金", "staking 应付利息": "质押应付利息", "Genesis 排放承诺": "创世节点应付分红", "待提现 queue": "待处理提现", "佣金冷却未解锁": "冷却期内未发放的佣金", "锁仓本息其他": "其他锁仓本息", "待核实入金": "未确认的入金" } as Record<string, string>)[value] ?? value;
+const liabilityName = (value: string) => ({ "可提余额": "可提现余额", "USDT staking 本金": "USDT 质押锁定金额", "staking 应付利息": "应付质押奖励", "Genesis 排放承诺": "创世节点应付收益", "待提现 queue": "待处理提现", "佣金冷却未解锁": "冷却期内未发放的奖励", "锁仓本息其他": "其他锁定金额及奖励", "待核实入金": "未确认的入金" } as Record<string, string>)[value] ?? value;
 const signedColor = (value: number | null) => value === null || value === 0 ? "var(--ink-3)" : value > 0 ? "var(--success)" : "var(--danger)";
 
 export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
@@ -494,10 +494,10 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
         <div className="l-b">
           <div className="mat-grid">
              <div className="t"><div className="k">提现到期</div><div className="e">未来窗口内应付的提现金额</div><div className="v">{fmtM(m.withdraw)}</div></div>
-             <div className="t"><div className="k">利息到期(质押本息)</div><div className="e">未来窗口内应付的质押本息</div><div className="v">{fmtM(m.interest)}</div></div>
-             <div className="t"><div className="k">创世节点每日分红到期</div><div className="e">按当前每日收益率计算</div><div className="v">{fmtM(m.genesis)}</div></div>
+             <div className="t"><div className="k">质押到期(锁定金额及奖励)</div><div className="e">未来窗口内应付的质押锁定金额及奖励</div><div className="v">{fmtM(m.interest)}</div></div>
+             <div className="t"><div className="k">创世节点每日收益到期</div><div className="e">按当前每日收益比例计算</div><div className="v">{fmtM(m.genesis)}</div></div>
           </div>
-           <div className="ltint cyan" style={{ fontSize: 12, marginBottom: 16 }}><b>创世节点每日分红怎么算</b> · <AutoGloss>每日分红 = 持有量 × 当前每日收益率。</AutoGloss></div>
+           <div className="ltint cyan" style={{ fontSize: 12, marginBottom: 16 }}><b>创世节点每日收益怎么算</b> · <AutoGloss>每日收益 = 持有量 × 当前每日收益比例。</AutoGloss></div>
           <div className="liab-split">
             <div>
               <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 10 }}>应付款明细 <span className="lcode" style={{ marginLeft: 6 }}>来自账本</span></div>
@@ -518,8 +518,8 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
               {matChart()}
               <div className="exp-legend" style={{ marginTop: 6 }}>
                 <span className="it"><span className="lsw" style={{ background: "var(--cyan)" }} />提现到期</span>
-                <span className="it"><span className="lsw" style={{ background: "var(--brand)" }} />利息到期</span>
-                <span className="it"><span className="lsw" style={{ background: "var(--warning)" }} />创世节点每日分红</span>
+                <span className="it"><span className="lsw" style={{ background: "var(--brand)" }} />质押到期</span>
+                <span className="it"><span className="lsw" style={{ background: "var(--warning)" }} />创世节点每日收益</span>
               </div>
             </div>
           </div>

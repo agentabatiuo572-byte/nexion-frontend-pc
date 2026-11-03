@@ -891,7 +891,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               <span className="st hot">注册</span><span className="ar">→</span>
               <span className="st">绑卡验证</span><span className="ar">→</span>
               <span className="st">首购</span><span className="ar">→</span>
-              <span className="st">复投</span><span className="ar">→</span>
+              <span className="st">锁定计划</span><span className="ar">→</span>
               <span className="st">提现</span>
             </div>
             <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 4 }}>

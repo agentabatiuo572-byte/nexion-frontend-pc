@@ -455,7 +455,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         </div>
         <div className="l-b">
           <div className="rev-row ui-export-row" style={{ gridTemplateColumns: "minmax(220px, 1fr) minmax(320px, 2fr) auto" }}>
-            <span className="nm">兑换 / 充值 / 提现 / 收益 / 佣金 / 退款 / 奖励 / 购买</span>
+            <span className="nm">兑换 / 充值 / 提现 / 收益 / 团队奖励 / 退款 / 奖励 / 购买</span>
             <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>用户编号只保留首尾字符，不导出昵称、备注等隐私。</span>
             <button className="l-btn sm" disabled={ledgerExporting} onClick={requestLedgerDownload}>
               {ledgerExporting ? "正在导出…" : "导出 8 类账单明细"}

@@ -44,11 +44,11 @@ export function F3Placements() {
     const result = await readPlacements(intent.ownerUserId, "ALL", 1, intent.memberUserId);
     const row = result.records.find(r => r.memberUserId === intent.memberUserId);
     if (row?.leg) return { resolved: true, message: row.leg === intent.leg
-      ? `已确认：成员 ${intent.memberUserId} 在用户 ${intent.ownerUserId} 的 ${row.leg} 侧。`
-      : `成员 ${intent.memberUserId} 已在用户 ${intent.ownerUserId} 的 ${row.leg} 侧，不能改到 ${intent.leg} 侧。` };
+      ? `已确认：成员 ${intent.memberUserId} 在用户 ${intent.ownerUserId} 的 ${row.leg} 组。`
+      : `成员 ${intent.memberUserId} 已在用户 ${intent.ownerUserId} 的 ${row.leg} 组，不能改到 ${intent.leg} 组。` };
     return { resolved: false, message: row
-      ? "该成员目前还没安置上，提交结果暂未确认，请稍后再查。"
-      : "暂时无法确认安置结果，请稍后再查。" };
+      ? "该成员目前还没分组，提交结果暂未确认，请稍后再查。"
+      : "暂时无法确认分组结果，请稍后再查。" };
   }
 
   async function checkPending() {
@@ -73,12 +73,12 @@ export function F3Placements() {
     try {
       const result = await assignPlacement(intent);
       if (!current(key, version)) return;
-      setNotice(result.replayed ? "该成员已在这一侧，不用重复安置。" : "成员安置成功。");
+      setNotice(result.replayed ? "该成员已在这一组，不用重复分组。" : "成员分组成功。");
       selectIntent(null); keepPending(null); setData(null);
       try {
         const page = await readPlacements(intent.ownerUserId, status, data.page);
         if (current(key, version)) setData(page);
-      } catch { if (current(key, version)) setError("安置成功，但列表刷新失败，请重新查询。"); }
+      } catch { if (current(key, version)) setError("分组成功，但列表刷新失败，请重新查询。"); }
     } catch (e) {
       if (!current(key, version)) return;
       selectIntent(null); setData(null); setError(displayAdminError(e));
@@ -93,28 +93,28 @@ export function F3Placements() {
   }
 
   if (!canRead) return null;
-  return <section className="pane ui-placements" aria-label="成员安置">
-    <div className="pane-h"><span className="ph-ttl">成员安置</span><span className="ph-sub">查看某个用户直接邀请的成员，把他们安排到 A 侧或 B 侧。安置后不能更改。</span></div>
+  return <section className="pane ui-placements" aria-label="成员分组">
+    <div className="pane-h"><span className="ph-ttl">成员分组</span><span className="ph-sub">查看某个用户直接邀请的好友，把他们分到 A 组或 B 组。分组后不能更改。</span></div>
     <div className="card-body">
       <form className="actions" onSubmit={event => { event.preventDefault(); void load(); }}>
         <label>邀请人用户编号 <input className="fld" inputMode="numeric" value={owner} disabled={busy || !!pending} onChange={event => { setOwner(event.target.value); setData(null); selectIntent(null); setNotice(""); setError(""); }} /></label>
-        <label>安置状态 <select className="fld" value={status} disabled={busy || !!pending} onChange={event => { setStatus(event.target.value as PlacementStatus); setData(null); selectIntent(null); }}><option value="ALL">全部成员</option><option value="ASSIGNED">已安置</option><option value="UNASSIGNED">未安置</option></select></label>
+        <label>分组状态 <select className="fld" value={status} disabled={busy || !!pending} onChange={event => { setStatus(event.target.value as PlacementStatus); setData(null); selectIntent(null); }}><option value="ALL">全部成员</option><option value="ASSIGNED">已分组</option><option value="UNASSIGNED">未分组</option></select></label>
         <button className="fbtn primary" type="submit" disabled={busy || !!pending}>查询成员</button>
       </form>
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
       {busy && <p role="status">正在处理…</p>}
-      {pending && <div><p>待确认：邀请人 {pending.ownerUserId} · 成员 {pending.memberUserId} · {pending.leg} 侧</p><button className="fbtn" disabled={busy} onClick={() => void checkPending()}>查看安置结果</button></div>}
+      {pending && <div><p>待确认：邀请人 {pending.ownerUserId} · 成员 {pending.memberUserId} · {pending.leg} 组</p><button className="fbtn" disabled={busy} onClick={() => void checkPending()}>查看分组结果</button></div>}
       {data && <>
-        <p>邀请人 {data.ownerUserId} · 共 {data.total} 名直接邀请的成员</p>
-        <div className="ui-table-scroll"><table className="ctbl"><thead><tr><th>成员用户编号</th><th>所在侧</th><th>安置来源</th><th>安置时间</th><th>操作人</th><th>操作</th></tr></thead><tbody>
-          {data.records.map(row => <tr key={row.memberUserId}><td>{row.memberUserId}</td><td>{row.leg ? `${row.leg} 侧` : "未安置"}</td><td>{row.assignmentSource === "AUTO" ? "自动安置" : row.assignmentSource === "MANUAL" ? "人工安置" : "—"}</td><td>{row.assignedAt?.replace("T", " ") || "—"}</td><td>{row.assignedBy || "—"}</td><td>{row.leg ? "已安置" : canWrite ? <div className="actions">{(["A", "B"] as const).map(leg => <button key={leg} className="fbtn" disabled={busy || !!pending} onClick={() => selectIntent({ownerUserId: data.ownerUserId, memberUserId: row.memberUserId, leg})}>安置到 {leg} 侧</button>)}</div> : "只读"}</td></tr>)}
+        <p>邀请人 {data.ownerUserId} · 共 {data.total} 名直接邀请的好友</p>
+        <div className="ui-table-scroll"><table className="ctbl"><thead><tr><th>成员用户编号</th><th>所在组</th><th>分组方式</th><th>分组时间</th><th>操作人</th><th>操作</th></tr></thead><tbody>
+          {data.records.map(row => <tr key={row.memberUserId}><td>{row.memberUserId}</td><td>{row.leg ? `${row.leg} 组` : "未分组"}</td><td>{row.assignmentSource === "AUTO" ? "自动分组" : row.assignmentSource === "MANUAL" ? "人工分组" : "—"}</td><td>{row.assignedAt?.replace("T", " ") || "—"}</td><td>{row.assignedBy || "—"}</td><td>{row.leg ? "已分组" : canWrite ? <div className="actions">{(["A", "B"] as const).map(leg => <button key={leg} className="fbtn" disabled={busy || !!pending} onClick={() => selectIntent({ownerUserId: data.ownerUserId, memberUserId: row.memberUserId, leg})}>分到 {leg} 组</button>)}</div> : "只读"}</td></tr>)}
         </tbody></table></div>
         {data.records.length === 0 && <p>没有符合条件的成员。</p>}
         <div className="actions"><button className="fbtn" disabled={busy || data.page <= 1} onClick={() => void load(data.page - 1)}>上一页</button><span>第 {data.page} 页</span><button className="fbtn" disabled={busy || data.page * data.pageSize >= data.total} onClick={() => void load(data.page + 1)}>下一页</button></div>
       </>}
-      {selected && <Modal title="人工安置确认" busy={busy} onClose={() => { if (!working.current) selectIntent(null); }} footer={<><button className="fbtn" disabled={busy} onClick={() => selectIntent(null)}>取消</button><button className="fbtn primary" disabled={busy || !canWrite || !!pending} onClick={() => void submit()}>确认安置</button></>}>
-        <p>邀请人用户编号：{selected.ownerUserId}</p><p>成员用户编号：{selected.memberUserId}</p><p>安置到：{selected.leg} 侧</p><p>安置后不能改到另一侧，也不会触发结算。</p>
+      {selected && <Modal title="人工分组确认" busy={busy} onClose={() => { if (!working.current) selectIntent(null); }} footer={<><button className="fbtn" disabled={busy} onClick={() => selectIntent(null)}>取消</button><button className="fbtn primary" disabled={busy || !canWrite || !!pending} onClick={() => void submit()}>确认分组</button></>}>
+        <p>邀请人用户编号：{selected.ownerUserId}</p><p>成员用户编号：{selected.memberUserId}</p><p>分到：{selected.leg} 组</p><p>分组后不能改到另一组，也不会触发结算。</p>
       </Modal>}
     </div>
   </section>;

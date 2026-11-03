@@ -417,7 +417,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
               {allowed("finprod_g3_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => openCurveCtlMc(control.key, operatorCopyText(control.name), ctlVals[control.key] || control.value)}>调整(立即执行)</button>}
             </div>
           ))}
-          <div className="gtint" style={{ marginTop: 10 }}><b>怎么生效</b> · 每天在 <span className="mono">{schedV}</span> 自动把当天的 <b>目标价</b> 设为全站 UVT 价格，兑换和复投马上跟着变。当前设置：<span className="mono">{scheduleMeta}</span>。「固定某天」用于演示或应急，固定后不再自动切换。调高 <b>目标价 / 上涨概率</b> 会让平台多付钱，覆盖率低于红线时无法保存。</div>
+          <div className="gtint" style={{ marginTop: 10 }}><b>怎么生效</b> · 每天在 <span className="mono">{schedV}</span> 自动把当天的 <b>目标价</b> 设为全站 UVT 价格，兑换和锁定计划马上跟着变。当前设置：<span className="mono">{scheduleMeta}</span>。「固定某天」用于演示或应急，固定后不再自动切换。调高 <b>目标价 / 上涨概率</b> 会让平台多付钱，覆盖率低于红线时无法保存。</div>
         </div>
       </section>
 
@@ -477,7 +477,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
         </section>
       </div>
 
-      <p className="f-foot">运营设置的是一周价格计划，系统每天按时切换到当天的目标价。UVT 价格是<b>兑换和复投的唯一价格</b>，价格一变，平台的 UVT 应付款也跟着变。调高<b>目标价 / 上涨概率</b>会让平台多付钱，系统按<b>本周最高价</b>检查覆盖率。暂停价格变化 = 价格停在当前值，「紧急停用开关」也能触发。</p>
+      <p className="f-foot">运营设置的是一周价格计划，系统每天按时切换到当天的目标价。UVT 价格是<b>兑换和锁定计划的唯一价格</b>，价格一变，平台的 UVT 应付款也跟着变。调高<b>目标价 / 上涨概率</b>会让平台多付钱，系统按<b>本周最高价</b>检查覆盖率。暂停价格变化 = 价格停在当前值，「紧急停用开关」也能触发。</p>
     </>
   );
 }

@@ -29,7 +29,7 @@ const FACT_META: ReadonlyArray<Omit<L4LiveFact, "value">> = [
   { key: "completedComputeTasks", group: "task", label: "已完成算力任务", description: "当前状态为已完成的算力任务累计记录数。", sourceLabel: "算力任务" },
   { key: "taskCatalogItems", group: "task", label: "任务目录条目", description: "当前任务目录中的有效配置条目数。", sourceLabel: "任务目录" },
   { key: "teamRelationships", group: "network", label: "团队关系记录", description: "当前未删除的团队成员关系累计记录数。", sourceLabel: "团队关系" },
-  { key: "commissionEvents", group: "network", label: "佣金事件", description: "当前未删除的佣金业务事件累计记录数。", sourceLabel: "佣金事件记录" },
+  { key: "commissionEvents", group: "network", label: "团队奖励记录", description: "当前未删除的团队奖励记录累计数。", sourceLabel: "团队奖励记录" },
   { key: "configuredPhases", group: "phase", label: "启用的阶段配置", description: "当前启用的阶段配置条目数，不代表阶段效果。", sourceLabel: "阶段配置" },
   { key: "e3ConfigChanges", group: "tradein", label: "升级置换设置修改", description: "升级置换设置被修改的累计次数。", sourceLabel: "用户行为事件" },
   { key: "tradeinApplications", group: "tradein", label: "置换申请", description: "升级置换申请的累计数。", sourceLabel: "置换申请" },

@@ -105,21 +105,21 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const dispose = (kind: "freeze" | "unlock" | "unfreeze", row: F5CommissionEvent) => {
     const amount = amountLabel(row);
     const map = {
-      freeze: { name: `冻结佣金 ${row.id}`, amplify: false, fixedVal: "frozen", detail: `冻结 ${row.id} · ${amount} · 先按住观察：这笔暂时不能解锁和提现，随时可以解冻。和冲正不同，冻结可以撤回。` },
-      unlock: { name: `佣金提前解锁 ${row.id}`, amplify: true, fixedVal: "unlocked", detail: `提前解锁 ${row.id} · ${amount} · 跳过剩余冷却期，马上可以提现。会让钱提前流出，先看兑付覆盖率。` },
-      unfreeze: { name: `解冻佣金 ${row.id}`, amplify: false, fixedVal: "cooling", detail: `解冻 ${row.id} · ${amount} · 回到冻结前的冷却期，剩下的冷却天数照常计算。` },
+      freeze: { name: `冻结奖励 ${row.id}`, amplify: false, fixedVal: "frozen", detail: `冻结 ${row.id} · ${amount} · 先按住观察：这笔暂时不能解锁和提现，随时可以解冻。和冲正不同，冻结可以撤回。` },
+      unlock: { name: `奖励提前解锁 ${row.id}`, amplify: true, fixedVal: "unlocked", detail: `提前解锁 ${row.id} · ${amount} · 跳过剩余冷却期，马上可以提现。会让钱提前流出，先看兑付覆盖率。` },
+      unfreeze: { name: `解冻奖励 ${row.id}`, amplify: false, fixedVal: "cooling", detail: `解冻 ${row.id} · ${amount} · 回到冻结前的冷却期，剩下的冷却天数照常计算。` },
     }[kind];
     ctx.openActionConfirm({ name: map.name, amplify: map.amplify, op: "dispose", paramKey: row.auditKey, fixedVal: map.fixedVal, expectedVersion: row.version, detail: map.detail });
   };
 
   const reverse = (row: F5CommissionEvent) => {
     ctx.openActionConfirm({
-      name: `冲正佣金 ${row.id}`,
-      detail: `冲正 ${row.id} · ${amountLabel(row)}。把这笔佣金收回，需要填写退款单、发放单或工单编号。用户余额不够时会标记为「待追回」，钱还没真正收回。`,
+      name: `冲正奖励 ${row.id}`,
+      detail: `冲正 ${row.id} · ${amountLabel(row)}。把这笔奖励收回，需要填写退款单、发放单或工单编号。用户余额不够时会标记为「待追回」，钱还没真正收回。`,
       businessForm: {
         kind: "multi-field",
         title: "冲正证据",
-        hint: "填写与这笔佣金有关的退款单、发放单或工单编号。原因在下一步填写。",
+        hint: "填写与这笔奖励有关的退款单、发放单或工单编号。原因在下一步填写。",
         fields: [
           { key: "refundRef", label: "退款 / 发放 / 工单编号", inputKind: "text", required: true, wide: true },
         ],
@@ -135,15 +135,15 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
 
   const reissue = () => {
     if (selectedRows.some(row => directGroup(row) || row.reversalRecorded || row.status === "recovery_pending")) {
-      ctx.toast("直属分成、已退款或待追回的记录不能补发。");
+      ctx.toast("好友奖励、已退款或待追回的记录不能补发。");
       return;
     }
     if (!selectedRows.length) {
-      ctx.toast("请先勾选要补发的已撤销佣金");
+      ctx.toast("请先勾选要补发的已撤销奖励");
       return;
     }
     ctx.openActionConfirm({
-      name: `批量补发 ${selectedRows.length} 笔佣金`,
+      name: `批量补发 ${selectedRows.length} 笔奖励`,
       amplify: true,
       detail: `只补发已撤销或已拒绝的记录：${selectedRows.map((row) => row.id).join("、")}。兑付覆盖率低于红线时整批不能提交。`,
       run: async (reason) => {
@@ -156,11 +156,11 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
 
   const suspend = (row: F5CommissionEvent) => {
     ctx.openActionConfirm({
-      name: `暂停用户 ${row.userId} 的佣金`,
-      detail: "暂停后，这位用户所选类型的佣金马上冻结，以后也不再产生。恢复只会让以后的佣金照常产生，已冻结的不会自动解冻。",
+      name: `暂停用户 ${row.userId} 的奖励`,
+      detail: "暂停后，这位用户所选类型的奖励马上冻结，以后也不再产生。恢复只会让以后的奖励照常产生，已冻结的不会自动解冻。",
       businessForm: {
         kind: "multi-field",
-        title: "用户佣金暂停",
+        title: "用户奖励暂停",
         fields: [
           {
             key: "kinds",
@@ -188,13 +188,13 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     const ratio = data?.configValues.layerRatioAnomalyPct ?? "20";
     ctx.openActionConfirm({
       name: "调整异常预警标准",
-      detail: "金额偏离可设 2–5 倍标准差（σ），每次加减 0.5；层级比例偏离可设 10%–50%。数字越小，预警越多。马上生效。",
+      detail: "金额偏离可设 2–5 倍标准差（σ），每次加减 0.5；L1–L7 比例偏离可设 10%–50%。数字越小，预警越多。马上生效。",
       businessForm: {
         kind: "multi-field",
         title: "异常预警标准",
         fields: [
           { key: "sigma", label: "金额偏离（倍标准差 σ）", current: sigma, inputKind: "number", min: 2, max: 5, step: 0.5, required: true },
-          { key: "ratio", label: "层级比例偏离（%）", current: ratio, inputKind: "number", min: 10, max: 50, step: 1, required: true },
+          { key: "ratio", label: "L1–L7 比例偏离（%）", current: ratio, inputKind: "number", min: 10, max: 50, step: 1, required: true },
         ],
       },
       run: async (reason, value) => {
@@ -209,7 +209,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const exportAllFiltered = () => {
     const filters = query();
     ctx.openActionConfirm({
-      name: "导出当前筛选的全部佣金",
+      name: "导出当前筛选的全部奖励",
       detail: "按当前筛选条件导出全部记录，不只是这一页。敏感信息已隐藏。",
       run: async (reason) => {
         const receipt = await ctx.exportF5Commissions(filters, reason);
@@ -219,19 +219,19 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   };
 
   if (ctx.f5Loading && !data) {
-    return <section className="pane"><div style={{ padding: 18 }}>佣金记录加载中…</div></section>;
+    return <section className="pane"><div style={{ padding: 18 }}>奖励记录加载中…</div></section>;
   }
 
   return (
     <div className="f-section-stack">
       <section className="pane">
         <div className="pane-h">
-          <span className="ph-ttl">佣金记录核对</span>
-          <span className="ph-sub">8 类佣金的全部发放记录</span>
+          <span className="ph-ttl">奖励记录核对</span>
+          <span className="ph-sub">8 类奖励的全部发放记录</span>
         </div>
         {ctx.f5Error && <div style={{ padding: 12, color: "var(--danger)" }}>加载失败：{ctx.f5Error}。数据不完整，批量补发已暂停。 <button className="fbtn" onClick={() => void ctx.refreshF5(query())}>重试</button></div>}
         <div className="filter-bar" style={{ gap: 8, flexWrap: "wrap" }}>
-          <select aria-label="佣金类型" value={kind} onChange={(e) => setKind(e.target.value)}>
+          <select aria-label="奖励类型" value={kind} onChange={(e) => setKind(e.target.value)}>
             <option value="">全部类型</option>
             {KINDS.map((item) => <option key={item} value={item}>{KIND_LABELS[item]}</option>)}
           </select>
@@ -240,7 +240,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           </select>
           <input aria-label="用户编号" placeholder="用户编号" value={userId} onChange={(e) => setUserId(e.target.value.replace(/\D/g, ""))} />
           <input aria-label="用户群" type="month" title="按成员注册月份筛选" value={cohort} onChange={(e) => setCohort(e.target.value)} />
-          <select aria-label="佣金状态" value={status} onChange={(e) => setStatus(e.target.value)}>
+          <select aria-label="奖励状态" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">全部状态</option>
             <option value="cooling">奖励等待发放</option><option value="unlocked">已解锁</option>
             <option value="withdrawn">已提现</option><option value="reversed">已撤销</option><option value="frozen">已冻结</option><option value="rejected">已拒绝</option><option value="recovery_pending">待追回</option>
@@ -254,15 +254,15 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       {data && (
         <>
           <div className="f-stats">
-            <div className="f-stat"><div className="k">佣金合计</div><div className="v">{nexGridBrandText(data.summary.monthlyCommissionSpendLabel)}</div><div className="sub">8 类 · USDT / UVT 分开统计</div></div>
+            <div className="f-stat"><div className="k">奖励合计</div><div className="v">{nexGridBrandText(data.summary.monthlyCommissionSpendLabel)}</div><div className="sub">8 类 · USDT / UVT 分开统计</div></div>
             <div className="f-stat warn"><div className="k">冷却中余额</div><div className="v">{nexGridBrandText(data.summary.coolingBalanceLabel)}</div><div className="sub">还在冷却期、暂不能提现</div></div>
-            <div className="f-stat ok"><div className="k">已解锁佣金</div><div className="v">{nexGridBrandText(data.summary.withdrawableThisMonthLabel)}</div><div className="sub">实际可提现金额以用户钱包为准</div></div>
+            <div className="f-stat ok"><div className="k">已解锁奖励</div><div className="v">{nexGridBrandText(data.summary.withdrawableThisMonthLabel)}</div><div className="sub">实际可提现金额以用户钱包为准</div></div>
             <div className="f-stat danger"><div className="k">已冻结</div><div className="v">{data.summary.frozenCount}</div><div className="sub">笔数；异常记录见右侧预警</div></div>
           </div>
 
-          <section className="pane" aria-label="佣金去向与状态">
+          <section className="pane" aria-label="奖励去向与状态">
             <div className="pane-h">
-              <span className="ph-ttl">佣金去向与状态</span>
+              <span className="ph-ttl">奖励去向与状态</span>
               <span className="ph-sub">点卡片可筛选下方记录，再点一次取消</span>
             </div>
             <div style={{ padding: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
@@ -312,12 +312,12 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
             <div className="pane-h"><span className="ph-ttl">待计算奖励</span><span className="ph-sub">共 {data.pendingCalculationCount} 组 · 等 UVT 价格恢复后再计算，还没有到账</span></div>
             <div style={{ overflowX: "auto" }}>
               <table className="ctbl">
-                <thead><tr><th>结算号</th><th>奖励类型</th><th>来源 / 成员</th><th>层级</th><th>计算基数（USDT）</th><th>奖励</th><th>冷却到期 / 发生时间</th><th>状态</th></tr></thead>
+                <thead><tr><th>结算号</th><th>奖励类型</th><th>来源 / 成员</th><th>邀请关系</th><th>计算基数（USDT）</th><th>奖励</th><th>冷却到期 / 发生时间</th><th>状态</th></tr></thead>
                 <tbody>
                   {!data.pendingCalculations.length && <tr className="empty-row"><td colSpan={8}>没有待计算的奖励</td></tr>}
                   {data.pendingCalculations.map(row => <tr key={row.settlementNo}>
                     <td className="cid">{row.settlementNo}</td><td>{KIND_LABELS[row.kind]}</td><td>{row.sourceRef} / {operatorNicknameText(row.sourceUserName)}</td>
-                    <td>{row.kind === "direct_purchase" ? `L${row.layer}` : "直属"}</td><td>{row.basisUsdt} USDT</td><td>USDT 待计算 · UVT 待计算</td>
+                    <td>{row.kind === "direct_purchase" ? `L${row.layer}` : "直接邀请的好友"}</td><td>{row.basisUsdt} USDT</td><td>USDT 待计算 · UVT 待计算</td>
                     <td>{row.unlockAt ? new Date(row.unlockAt).toLocaleString() : "待确认"} / {row.ts}</td><td><Badge tone="warn">等待价格</Badge></td>
                   </tr>)}
                 </tbody>
@@ -327,29 +327,29 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           </section>
 
           <section className="pane">
-            <div className="pane-h"><span className="ph-ttl">佣金流水</span><span className="ph-sub">共 {data.total} 笔 · 已显示 {events.length} 笔</span></div>
+            <div className="pane-h"><span className="ph-ttl">奖励流水</span><span className="ph-sub">共 {data.total} 笔 · 已显示 {events.length} 笔</span></div>
             <table className="ctbl">
-              <thead><tr><th>选择</th><th>佣金 ID</th><th>奖励类型</th><th>用户 / 来源</th><th>金额</th><th>层级 / 结算时间</th><th>冷却</th><th>状态</th><th>动作</th></tr></thead>
+              <thead><tr><th>选择</th><th>奖励 ID</th><th>奖励类型</th><th>用户 / 来源</th><th>金额</th><th>邀请关系 / 结算时间</th><th>冷却</th><th>状态</th><th>动作</th></tr></thead>
               <tbody>
-                {!events.length && <tr className="empty-row"><td colSpan={9}>没有符合条件的佣金记录</td></tr>}
+                {!events.length && <tr className="empty-row"><td colSpan={9}>没有符合条件的奖励记录</td></tr>}
                 {events.map((row) => {
                   const state = badge(row.status);
                   const selectable = canReissue && row.status === "reversed" && !directGroup(row) && !row.reversalRecorded;
                   return (
                     <tr key={row.id}>
-                      <td><input aria-label={`选择 ${row.id}`} type="checkbox" disabled={!selectable} title={directGroup(row) ? "直属分成不能补发" : row.reversalRecorded ? "已退款的记录不能补发" : undefined} checked={selected.includes(row.id)} onChange={(e) => setSelected((old) => e.target.checked ? [...old, row.id] : old.filter((id) => id !== row.id))} /></td>
+                      <td><input aria-label={`选择 ${row.id}`} type="checkbox" disabled={!selectable} title={directGroup(row) ? "好友奖励不能补发" : row.reversalRecorded ? "已退款的记录不能补发" : undefined} checked={selected.includes(row.id)} onChange={(e) => setSelected((old) => e.target.checked ? [...old, row.id] : old.filter((id) => id !== row.id))} /></td>
                       <td><span className="cid">{row.id}</span>{(directGroup(row) || row.settlementNo) && <details style={{ marginTop: 6, maxWidth: 260 }}><summary>来源详情</summary><div style={{ display: "grid", gap: 5, padding: "8px 0", overflowWrap: "anywhere" }}>
                         <span>结算组：{row.settlementNo}</span><span>来源编号：{row.sourceRef}</span><span>设备：{row.sourceDeviceId || "不适用"}</span>
                         {directGroup(row) ? <>
                         <span>设置版本：{row.policyVersion}</span><span>计价基数：{row.basisUsdt} USDT</span><span>当笔 UVT 价格：{row.nexUsdtPrice} USDT</span>
                         <span>整组奖励：{row.amountUSDT} USDT + {row.amountNEX} UVT</span><span>待追回：{row.recoveryPendingUSDT} USDT + {row.recoveryPendingNEX} UVT</span>
-                        <span>{row.reversalRecorded ? "来源已退款或冲正，不能补发" : "直属分成不能补发"}</span>
+                        <span>{row.reversalRecorded ? "来源已退款或冲正，不能补发" : "好友奖励不能补发"}</span>
                         </> : <><span>当前账项：{row.amt} {nexGridBrandText(row.cur)} · {state.label}</span><span>同组的其他奖励只供参考，操作只影响这一笔。</span></>}
                       </div></details>}</td>
                       <td>{KIND_LABELS[row.kind] ?? row.kind}</td>
                       <td>{operatorNicknameText(row.user)} / {row.sourceUserId ? `U${row.sourceUserId}` : "--"}</td>
                       <td>{row.amt.toLocaleString()} {nexGridBrandText(row.cur)}</td>
-                      <td>{directGroup(row) ? "直属" : row.layer ? `L${row.layer}` : "--"} / {row.settledAt}</td>
+                      <td>{directGroup(row) ? "直接邀请的好友" : row.layer ? `L${row.layer}` : "--"} / {row.settledAt}</td>
                       <td>{row.coolingDaysLeft > 0 ? `剩余 ${row.coolingDaysLeft} 天` : "无冷却"}</td>
                       <td><Badge tone={state.tone}>{state.label}</Badge></td>
                       <td>
@@ -358,7 +358,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                         ) : !canReadD4 ? (
                           <span title="你没有查看资金账本的权限" style={{ ...LINK_STYLE, cursor: "not-allowed" }}>账本无权限</span>
                         ) : (
-                          <span title="这笔佣金还没有资金账本记录" style={{ ...LINK_STYLE, cursor: "not-allowed" }}>暂无账本</span>
+                          <span title="这笔奖励还没有资金账本记录" style={{ ...LINK_STYLE, cursor: "not-allowed" }}>暂无账本</span>
                         )}
                         <GatedLink allowed={canReadB1} href="/overview/dual-ledger" label="覆盖率" />
                         <GatedLink allowed={canReadL4} href="/analytics/operations" label="L4" />
@@ -380,7 +380,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
             <section className="pane">
               <div className="pane-h"><span className="ph-ttl">异常预警</span>{canWrite && <button className="fbtn" onClick={editThreshold}>调整标准</button>}</div>
               <table className="ctbl">
-                <thead><tr><th>类型</th><th>佣金 / 用户</th><th>依据</th><th>关联风险群</th></tr></thead>
+                <thead><tr><th>类型</th><th>奖励 / 用户</th><th>依据</th><th>关联风险群</th></tr></thead>
                 <tbody>
                   {!data.anomalies.length && <tr className="empty-row"><td colSpan={4}>暂无异常</td></tr>}
                   {data.anomalies.map((item) => <tr key={item.id}><td>{item.type}</td><td>{item.commissionId || "--"} / {item.userId || "--"}</td><td>{item.evidence}</td><td>{item.relatedKCluster}</td></tr>)}
@@ -402,7 +402,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           </div>
 
           <section className="pane">
-            <div className="pane-h"><span className="ph-ttl">已暂停的奖励</span><span className="ph-sub">恢复后只影响以后的佣金，已冻结的不会自动解冻</span></div>
+            <div className="pane-h"><span className="ph-ttl">已暂停的奖励</span><span className="ph-sub">恢复后只影响以后的奖励，已冻结的不会自动解冻</span></div>
             <table className="ctbl">
               <thead><tr><th>用户</th><th>奖励类型</th><th>原因 / 操作人</th><th>更新时间</th><th>动作</th></tr></thead>
               <tbody>
@@ -412,7 +412,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                   <td>{item.reason} / {item.operator}</td><td>{item.updatedAt}</td>
                   <td>{canSuspend && <button className="fbtn primary" onClick={() => ctx.openActionConfirm({
                     name: `恢复奖励 · ${item.userId} / ${KIND_LABELS[item.kind] ?? "所选奖励"}`,
-                    detail: "需要审批。批准后这类佣金以后照常产生，已冻结的不会自动解冻。",
+                    detail: "需要审批。批准后这类奖励以后照常产生，已冻结的不会自动解冻。",
                     run: async (reason) => {
                       const numericUserId = Number(String(item.userId).replace(/\D/g, ""));
                       if (!Number.isSafeInteger(numericUserId) || numericUserId <= 0) throw new Error("无效用户编号");
@@ -431,7 +431,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
               <thead><tr><th>批次</th><th>动作</th><th>原记录 / 新记录</th><th>用户 / 奖励类型</th><th>单号</th><th>原因 / 操作人</th><th>时间</th></tr></thead>
               <tbody>
                 {!data.operationHistory.length && <tr className="empty-row"><td colSpan={7}>还没有处理记录</td></tr>}
-                {data.operationHistory.map((item) => <tr key={item.operationNo}><td>{item.operationNo}</td><td>{operationLabels[item.operationType] ?? "佣金处理"}</td><td>{item.sourceCommissionId || "--"} / {item.resultCommissionId || "--"}</td><td>{item.userId || "--"} / {item.kinds ? kindNames(item.kinds) : "--"}</td><td>{item.evidenceRef || "--"}</td><td>{item.reason} / {item.operator}</td><td>{item.createdAt}</td></tr>)}
+                {data.operationHistory.map((item) => <tr key={item.operationNo}><td>{item.operationNo}</td><td>{operationLabels[item.operationType] ?? "奖励处理"}</td><td>{item.sourceCommissionId || "--"} / {item.resultCommissionId || "--"}</td><td>{item.userId || "--"} / {item.kinds ? kindNames(item.kinds) : "--"}</td><td>{item.evidenceRef || "--"}</td><td>{item.reason} / {item.operator}</td><td>{item.createdAt}</td></tr>)}
               </tbody>
             </table>
           </section>

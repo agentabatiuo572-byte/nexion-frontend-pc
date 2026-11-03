@@ -873,14 +873,14 @@ export default function UserDetailPage() {
             { key: "memberNo", label: "成员编码" },
             { key: "nickname", label: "昵称", render: (value) => operatorNicknameText(asText(value)) },
             { key: "vRank", label: "团队等级" },
-            { key: "level", label: "层级", numeric: true },
+            { key: "level", label: "关系深度", numeric: true },
             { key: "volume", label: "贡献额", numeric: true },
             { key: "createdAt", label: "加入时间", render: formatDate },
           ]}
         >
           <Row label="团队规模">{numberLabel(detail.referral?.teamSize)} 人</Row>
           <Row label="直接邀请">{numberLabel(detail.referral?.directCount)} 人</Row>
-          <Row label="团队业绩">{money(detail.referral?.teamVolumeUsd)}</Row>
+          <Row label="团队订单额">{money(detail.referral?.teamVolumeUsd)}</Row>
         </HubSection>
 
         {/* 互动/参与明细表(2026-08-06 原型对比 C-6)。只渲染 User360Section 声明过的
@@ -907,10 +907,10 @@ export default function UserDetailPage() {
         <div className="customer-panorama-primary">
           {detail.vrank && <Section title="团队等级">
             <Row label="当前等级">{asText(detail.vrank?.currentRank)}</Row>
-            <Row label="用户层级">{asText(detail.vrank?.userLevel)}</Row>
+            <Row label="用户级别">{asText(detail.vrank?.userLevel)}</Row>
             <Row label="团队规模">{numberLabel(detail.vrank?.teamSize)} 人</Row>
             <Row label="直接邀请">{numberLabel(detail.vrank?.directCount)} 人</Row>
-            <Row label="团队业绩">{money(detail.vrank?.teamVolumeUsd)}</Row>
+            <Row label="团队订单额">{money(detail.vrank?.teamVolumeUsd)}</Row>
           </Section>}
 
           {detail.account && <Section title="账户状态">

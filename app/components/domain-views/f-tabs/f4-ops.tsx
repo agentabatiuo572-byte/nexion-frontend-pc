@@ -64,20 +64,20 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
   const ambassadorPolicy = ctx.f4AmbassadorPolicy;
 
   if (ctx.f4Loading && !data) {
-    return <section className="sect"><div className="empty">领导奖池数据加载中…</div></section>;
+    return <section className="sect"><div className="empty">团队激励池数据加载中…</div></section>;
   }
 
   if (ctx.f4Error && !data) {
     return (
       <section className="sect">
-        <div className="empty">领导奖池数据加载失败 · {ctx.f4Error}</div>
+        <div className="empty">团队激励池数据加载失败 · {ctx.f4Error}</div>
         <div className="sect-foot"><button onClick={() => void ctx.refreshF4()}>重新加载</button></div>
       </section>
     );
   }
 
   if (!data) {
-    return <section className="sect"><div className="empty">暂无领导奖池数据</div></section>;
+    return <section className="sect"><div className="empty">暂无团队激励池数据</div></section>;
   }
 
   const proEff = presentText(data.proUnlock);
@@ -127,7 +127,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
     ? "正在刷新设置，完成前暂不能提前结算。"
     : ctx.f4Error
       ? "设置刷新失败，为避免按旧设置结算，提前结算已暂停。请点「刷新设置」重试。"
-      : `领导奖池设置不完整：${settlementConfig.issues.map((issue) => issue.label).join("、")} 未设置或格式有误。请在本卡片下方补齐后刷新设置。`;
+      : `团队激励池设置不完整：${settlementConfig.issues.map((issue) => issue.label).join("、")} 未设置或格式有误。请在本卡片下方补齐后刷新设置。`;
   const lbMinUsd = data.configValues["F.leaderboard.minUsd"] ?? "1";
   const lbPaused = data.leaderboardPaused ?? (data.configValues["F.leaderboard.paused"] ?? "off") === "on";
   const lbDataAvailable = !!periodLeaderboard && (!lbPaused || (data.leaderboardSnapshotState === "FROZEN" && data.leaderboardDataAvailable === true));
@@ -153,7 +153,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
     <>
       {ctx.f4Error && (
         <section className="sect">
-          <div className="empty">领导奖池数据刷新失败 · {ctx.f4Error}</div>
+          <div className="empty">团队激励池数据刷新失败 · {ctx.f4Error}</div>
           <div className="sect-foot"><button onClick={() => void ctx.refreshF4()}>重新加载</button></div>
         </section>
       )}
@@ -172,7 +172,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
         <section className="sect">
           <div className="sect-h">
             <span className="ic pool"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="6" rx="7" ry="3" /><path d="M5 6v12c0 1.66 3.13 3 7 3s7-1.34 7-3V6" /><path d="M5 12c0 1.66 3.13 3 7 3s7-1.34 7-3" /></svg></span>
-            <div className="t"><div className="nm">领导奖池</div><div className="s">{data.poolRatio ? `每周已付款成交额的 ${ratioEff}，按会员等级票数分配` : "奖池比例未配置"}</div></div>
+            <div className="t"><div className="nm">团队激励池</div><div className="s">{data.poolRatio ? `每周已付款成交额的 ${ratioEff}，按会员等级票数分配` : "奖池比例未配置"}</div></div>
           </div>
           <div className="pool-hero">
             <div><div className="lbl">本周奖池 · 已结算按实发；未结算按本周已付款成交额 × 比例估算，不超过本月剩余额度</div><div className="v">{data.currentWeekPoolUsd === null ? "暂无法计算" : usd(data.currentWeekPoolUsd)}</div></div>
@@ -189,17 +189,17 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
           <div className="kv-row"><span className="k">分配方式</span><span className="v dim">按会员等级票数</span></div>
           <div className="sect-foot">
             {canFund && <button className="primary amp" disabled={!settlementOperable} title={!settlementOperable ? settlementBlockedCopy : undefined} onClick={() => ctx.openActionConfirm({
-              name: "提前结算本周领导奖池",
+              name: "提前结算本周团队激励池",
               amplify: true,
               detail: "按本周已付款成交额、奖池比例、每月上限、参与等级和会员等级票数计算并发放。需要审批；同一周不会重复发放。",
               run: async (reason) => {
                 await ctx.proposeF4Settlement(reason);
               },
             })}>提前结算本周池</button>}
-            {canFund && <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: "调整领导奖池比例", amplify: true, op: "param", paramKey: "F.pool.ratio", edit: { kind: "text", current: data.poolRatio, unit: "%" }, detail: `每周已付款成交额中放进领导奖池的比例 · 当前 ${ratioEff} · 调高会多发钱，先看兑付覆盖率。` })}>调整池比例</button>}
-            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "调整领导奖池每月上限", op: "param", paramKey: "F.pool.monthlyCap", edit: { kind: "text", current: data.monthlyCapLabel }, detail: `领导奖池每月最多发多少 · 当前 ${capEff} · 按本周估算整月约 ${monthPoolUsd === null ? "暂无法计算" : usdM(monthPoolUsd)}。` })}>调整月度上限</button>}
-            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "调整领导奖池结算时间", op: "param", paramKey: "F.pool.settleCron", edit: { kind: "text", current: settleCron, unit: "定时表达式" }, detail: `领导奖池自动结算时间 · 当前 ${settleCronEff} · 从下一期开始生效。` })}>结算时间</button>}
-            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "调整领导奖池参与等级", op: "param", paramKey: "F.pool.unlockVRank", edit: { kind: "select", current: unlockVRank, options: POOL_UNLOCK_OPTIONS }, detail: `达到这个等级才能分领导奖池 · 当前 ${unlockVRankEff} · 调高参与人数变少，调低参与人数变多。` })}>参与等级</button>}
+            {canFund && <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: "调整团队激励池比例", amplify: true, op: "param", paramKey: "F.pool.ratio", edit: { kind: "text", current: data.poolRatio, unit: "%" }, detail: `每周已付款成交额中放进团队激励池的比例 · 当前 ${ratioEff} · 调高会多发钱，先看兑付覆盖率。` })}>调整池比例</button>}
+            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "调整团队激励池每月上限", op: "param", paramKey: "F.pool.monthlyCap", edit: { kind: "text", current: data.monthlyCapLabel }, detail: `团队激励池每月最多发多少 · 当前 ${capEff} · 按本周估算整月约 ${monthPoolUsd === null ? "暂无法计算" : usdM(monthPoolUsd)}。` })}>调整月度上限</button>}
+            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "调整团队激励池结算时间", op: "param", paramKey: "F.pool.settleCron", edit: { kind: "text", current: settleCron, unit: "定时表达式" }, detail: `团队激励池自动结算时间 · 当前 ${settleCronEff} · 从下一期开始生效。` })}>结算时间</button>}
+            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "调整团队激励池参与等级", op: "param", paramKey: "F.pool.unlockVRank", edit: { kind: "select", current: unlockVRank, options: POOL_UNLOCK_OPTIONS }, detail: `达到这个等级才能分团队激励池 · 当前 ${unlockVRankEff} · 调高参与人数变少，调低参与人数变多。` })}>参与等级</button>}
             {canFund && <button onClick={() => ctx.openActionConfirm({ name: "调整第 1 名最高占比", amplify: true, op: "param", paramKey: "F.pool.top1MaxPct", edit: { kind: "number", current: top1MaxPct, unit: "%" }, detail: `第 1 名最多能分到奖池的百分比 · 当前 ${top1MaxPct}% · 可设 0–100。调低可防止奖池集中在少数人手里。` })}>第 1 名占比</button>}
             {canFund && <button onClick={() => ctx.openActionConfirm({ name: "调整前 5 名最高占比", amplify: true, op: "param", paramKey: "F.pool.top5MaxPct", edit: { kind: "number", current: top5MaxPct, unit: "%" }, detail: `前 5 名合计最多能分到奖池的百分比 · 当前 ${top5MaxPct}% · 可设 0–100。调低可防止奖池集中在少数人手里。` })}>前 5 名占比</button>}
           </div>
@@ -334,7 +334,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
             {([['today', '今日'], ['week', '本周'], ['month', '本月'], ['all', '总榜']] as const).map(([period, title]) =>
               <button key={period} aria-pressed={leaderboardPeriod === period} onClick={() => setLeaderboardPeriod(period)}>{title}</button>)}
           </div>
-          <p className="muted">按本期已解锁的 USDT 佣金排名 · 北京时间（UTC+8）· {periodLeaderboard ? `更新于 ${periodLeaderboard.snapshotAt} · 前 ${periodLeaderboard.topN} 名有奖励` : "榜单暂时无法显示"}</p>
+          <p className="muted">按本期已解锁的 USDT 奖励排名 · 北京时间（UTC+8）· {periodLeaderboard ? `更新于 ${periodLeaderboard.snapshotAt} · 前 ${periodLeaderboard.topN} 名有奖励` : "榜单暂时无法显示"}</p>
           <div className="podium">
             {!lbDataAvailable ? <div className="empty">{lbPaused ? "暂停时的榜单数据未确认" : "榜单暂时无法显示"}</div> : periodLeaderboard!.podium.length ? periodLeaderboard!.podium.map((row) => (
               <div key={row.userId} className={`pod ${row.className}`}><span className="rank">{row.rank}</span><div className="uid">{row.userId}</div><div className="gv">{row.gmvLabel}<small>{operatorCopyText(row.tip)}</small></div>
@@ -351,12 +351,12 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
           <div className="kv-row"><span className="k">疑似刷榜</span><span className="v" style={{ color: "var(--danger)" }}>{`${data.leaderboardFraudHitCount} 账户${lbDq ? " · 含已处理" : ""}`}</span></div>
           <div className="sect-foot">
             {canFund && leaderboardPeriod === "week" && <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: "调整本周榜单奖池", amplify: true, op: "param", paramKey: "F.leaderboard.poolUsd", edit: { kind: "text", current: data.leaderboardPoolLabel }, detail: `本周榜单奖池总额 · 当前 ${lbPool} · 调高会多发钱，先看兑付覆盖率。` })}>调整奖池</button>}
-            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "调整上榜最低佣金", op: "param", paramKey: "F.leaderboard.minUsd", edit: { kind: "number", current: lbMinUsd, unit: "USD" }, detail: `上榜最低佣金 · 当前 $${lbMinUsd} · 低于这个金额不参与排名。` })}>上榜门槛</button>}
+            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "调整上榜最低奖励", op: "param", paramKey: "F.leaderboard.minUsd", edit: { kind: "number", current: lbMinUsd, unit: "USD" }, detail: `上榜最低奖励 · 当前 $${lbMinUsd} · 低于这个金额不参与排名。` })}>上榜门槛</button>}
             {canControlLeaderboard && <button className={lbPaused ? "primary" : "danger"} onClick={() => ctx.openActionConfirm({ name: lbPaused ? "恢复排行榜" : "暂停排行榜", op: "dispose", paramKey: "F.leaderboard.paused", fixedVal: lbPaused ? "off" : "on", detail: lbPaused ? "恢复后榜单重新更新，奖励照常发放。" : "暂停后榜单停在当前名次，奖励暂停发放。" })}>{lbPaused ? "恢复榜单" : "暂停榜单"}</button>}
             {canFund && <button className="primary amp" disabled={lbPaused} onClick={() => ctx.openActionConfirm({
               name: "发放总榜奖励",
               amplify: true,
-              detail: `总榜不会自动清零。按累计佣金前 100 名发放当前奖池 $${ppAllTime}，需要审批，不会重复发放。`,
+              detail: `总榜不会自动清零。按累计奖励前 100 名发放当前奖池 $${ppAllTime}，需要审批，不会重复发放。`,
               run: (reason) => ctx.proposeF4LeaderboardPayout("allTime", reason),
             })}>发放总榜奖励</button>}
             {canFund && lbPaused && <span className="muted">排行榜已暂停，奖励暂停发放。</span>}
@@ -394,7 +394,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
       <section className="sect votes-card">
         <div className="sect-h">
           <span className="ic pool"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h4l3-7 4 14 3-7h4" /></svg></span>
-          <div className="t"><div className="nm">各等级票数 · 决定领导奖池怎么分</div><div className="s">{voteSummary}</div></div>
+          <div className="t"><div className="nm">各等级票数 · 决定团队激励池怎么分</div><div className="s">{voteSummary}</div></div>
 
         </div>
         <div className="votes-grid">
@@ -406,7 +406,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
           {data.voteWeights.map((row) => {
             const paramKey = row.configKey || `F.pool.votes.${row.v}`;
             return (
-              <div key={row.v} className="vote-cell" onClick={canFund ? () => ctx.openActionConfirm({ name: `调整 ${row.v} 票数`, amplify: true, op: "param", paramKey, edit: { kind: "number", current: String(row.votes), unit: "票" }, detail: `${row.v} 当前 ${row.votes} 票 · 票数越多，分到的领导奖池越多。` }) : undefined}>
+              <div key={row.v} className="vote-cell" onClick={canFund ? () => ctx.openActionConfirm({ name: `调整 ${row.v} 票数`, amplify: true, op: "param", paramKey, edit: { kind: "number", current: String(row.votes), unit: "票" }, detail: `${row.v} 当前 ${row.votes} 票 · 票数越多，分到的团队激励池越多。` }) : undefined}>
                 <div className="vlb">{row.v}</div><div className="vct">{row.votes} 票</div>
               </div>
             );
@@ -415,7 +415,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
         <div className="f4-warn"><b>票数决定分多少</b> · 调高高等级的票数，奖池会更集中到少数人（{voteSummary}）。<b>改票数前先看兑付覆盖率。</b></div>
       </section>
 
-      <p className="f-foot">领导奖池 <b>{settlementEff}</b>。按已付款订单金额、每月上限、参与等级和会员等级票数计算发放，同一周不会重复发放；提前结算需要审批。补发、冲正、冻结请到「佣金记录核对」处理。硬件配额、区域大使、排行榜各自独立生效；会多发钱的调整先看兑付覆盖率。</p>
+      <p className="f-foot">团队激励池 <b>{settlementEff}</b>。按已付款订单金额、每月上限、参与等级和会员等级票数计算发放，同一周不会重复发放；提前结算需要审批。补发、冲正、冻结请到「奖励记录核对」处理。硬件配额、区域大使、排行榜各自独立生效；会多发钱的调整先看兑付覆盖率。</p>
     </>
   );
 }
