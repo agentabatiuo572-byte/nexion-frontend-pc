@@ -666,7 +666,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const editedSku = editSkuId ? skus.find((sku) => sku.id === editSkuId) : undefined;
   const skuTaskClassesReady = e1Gates?.taskClassPolicySupported === true && (!editSkuId || Array.isArray(editedSku?.allowedTaskClasses));
   const skuFormChanged = !editSkuId || !editedSku
-    || summarizeSkuProposal(editedSku, attachSkuMedia(formToSku(form, editedSku), skuMedia)) !== null;
+    || summarizeSkuProposal(editedSku, attachSkuMedia(formToSku(form, editedSku), skuMedia), { includeDerived: false }) !== null;
   const [dcDrawer, setDcDrawer] = useState(false);
   const [editDcLocation, setEditDcLocation] = useState<string | null>(null);
   const [dcForm, setDcForm] = useState<DatacenterForm>({ dcLocation: "", regionLabel: "", location: "", displayName: "", status: "active", sortOrder: "100" });
@@ -1068,7 +1068,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }
     const candidateSku = attachSkuMedia(formToSku(form, currentSku), skuMedia);
     const previewSummary = currentSku
-      ? summarizeSkuProposal(currentSku, candidateSku)
+      ? summarizeSkuProposal(currentSku, candidateSku, { includeDerived: false })
       : summarizeSkuCreation(candidateSku);
     if (editSkuId && !previewSummary) {
       setToast("没有任何修改，无需提交");
@@ -1336,7 +1336,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             <SkuFld label="商品标语" value={form.tagline} onChange={(v) => setForm({ ...form, tagline: v })} placeholder="个人 AI 算力设备，由平台托管" hint="每款商品单独设置" />
             <div className="grid g-2" style={{ gap: 12 }}>
               <SkuFld label="售价(USD)" type="number" value={form.price} onChange={(v) => setForm({ ...form, price: v })} placeholder="1319" />
-              <SkuFld label="每件算力点" type="number" min={0} step={1} value={form.computePoints} onChange={(v) => setForm({ ...form, computePoints: v })} placeholder="留空按售价 × 10" hint="计入团队等级与配额，只影响之后的订单" />
+              <SkuFld label="每件算力点" type="number" min={0} step={1} value={form.computePoints} onChange={(v) => setForm({ ...form, computePoints: v })} placeholder={editSkuId ? "留空保留原值" : "留空按售价 × 10"} hint="计入团队等级与配额，只影响之后的订单" />
               <SkuFld label="商品编号" value={form.id} onChange={(v) => setForm({ ...form, id: v })} placeholder="uvelbox-pro-v2" disabled={Boolean(editSkuId)} hint={editSkuId ? "创建后不能修改" : undefined} />
             </div>
           </SkuFieldGroup>
@@ -1675,12 +1675,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 setActionConfirm(null);
                 return;
               }
-              const summary = ex ? summarizeSkuProposal(ex, sku) : summarizeSkuCreation(sku);
-              if (editSkuId && !summary) {
+              if (ex && !summarizeSkuProposal(ex, sku, { includeDerived: false })) {
                 setToast("没有任何修改，无需提交");
                 setActionConfirm(null);
                 return;
               }
+              const summary = ex ? summarizeSkuProposal(ex, sku) : summarizeSkuCreation(sku);
               await propose(ctx.toast, {
                 action: mc.name, obj: skuId,
                 before: summary?.before ?? "未创建",
