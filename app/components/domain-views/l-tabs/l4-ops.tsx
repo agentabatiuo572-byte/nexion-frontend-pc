@@ -302,7 +302,7 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
       action: "导出团队明细",
       detail: (
         <div>
-          将按当前 <b>{data.period.label}</b> 周期导出团队关系；预计 <b>{data.liveFacts.teamRelationships}</b> 条（以实际导出为准）。只包含部分隐藏的用户编码、相隔邀请次数、会员等级、团队订单额和加入时间，不含手机号、昵称等隐私。下载链接 24 小时有效，导出会通知超级管理员和增长负责人。
+          将按当前 <b>{data.period.label}</b> 周期导出团队关系；预计 <b>{data.liveFacts.teamRelationships}</b> 条（以实际导出为准）。只包含部分隐藏的用户编码、关系深度、会员等级、团队订单额和加入时间，不含手机号、昵称等隐私。下载链接 24 小时有效，导出会通知超级管理员和增长负责人。
         </div>
       ),
       reasonMin: 8,
