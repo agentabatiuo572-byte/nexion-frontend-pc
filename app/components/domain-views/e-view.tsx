@@ -22,6 +22,7 @@ import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
 import { TASK_DURATION_DEFAULTS, validateComputeTaskConfig } from "@/lib/admin/e2-compute-config";
+import { TASK_CLASSES } from "@/lib/admin/task-classes";
 import {
   fetchE1Catalog,
   type E1BundleDiscount,
@@ -1313,10 +1314,15 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               <Btn sm disabled={skuMediaUploading} onClick={() => resetSkuMedia(null)}>移除</Btn>
             </div>}
           </div>
-          <SkuFieldGroup n="任务" title="可跑任务类型">
+          <section className="col e1-sku-task-policy" aria-labelledby="e1-sku-task-heading">
+            <header className="row">
+              <span className="e1-sku-task-icon"><Icon name="tree" size={15} /></span>
+              <h3 id="e1-sku-task-heading">可跑任务类型</h3>
+              {skuTaskClassesReady && <output>已选 <b>{form.allowedTaskClasses.length}/{TASK_CLASSES.length}</b></output>}
+            </header>
             <TaskClassChoices selected={form.allowedTaskClasses} onChange={(classes) => setForm({ ...form, allowedTaskClasses: classes })} ready={skuTaskClassesReady} />
-            <div className="tint tiny">设备从已选大类的启用任务中随机接单。同类新任务启用后自动加入，正在运行的任务按原配置结算。</div>
-          </SkuFieldGroup>
+            <p className="muted tiny">设备从已选大类的启用任务中随机接单。同类新任务启用后自动加入，正在运行的任务按原配置结算。</p>
+          </section>
           <SkuFieldGroup n="①" title="基本信息">
             <SkuFld label="型号名称" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="如 UVELBox Pro v3" />
             <div className="grid g-2" style={{ gap: 12 }}>
