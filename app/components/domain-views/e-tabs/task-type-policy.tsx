@@ -29,7 +29,7 @@ interface PhonePolicy {
 }
 
 export async function fetchTaskTypePolicy(): Promise<PhonePolicy> {
-  const response = await guardedFetch("/api/admin/devices/skus/phone/task-policy", { cache: "no-store" });
+  const response = await guardedFetch("/api/admin/e1/skus/phone/task-policy", { cache: "no-store" });
   const result = await response.json() as { code: number; message?: string; data: PhonePolicy };
   if (!response.ok || result.code !== 0) throw new Error(formatAdminApiError(result.message, "任务策略加载失败"));
   return result.data;
