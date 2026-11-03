@@ -666,7 +666,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const editedSku = editSkuId ? skus.find((sku) => sku.id === editSkuId) : undefined;
   const skuTaskClassesReady = e1Gates?.taskClassPolicySupported === true && (!editSkuId || Array.isArray(editedSku?.allowedTaskClasses));
   const skuFormChanged = !editSkuId || !editedSku
-    || summarizeSkuProposal(editedSku, attachSkuMedia(formToSku(form, editedSku), skuMedia)) !== null;
+    || summarizeSkuProposal(editedSku, attachSkuMedia(formToSku(form, editedSku), skuMedia), { includeDerived: false }) !== null;
   const [dcDrawer, setDcDrawer] = useState(false);
   const [editDcLocation, setEditDcLocation] = useState<string | null>(null);
   const [dcForm, setDcForm] = useState<DatacenterForm>({ dcLocation: "", regionLabel: "", location: "", displayName: "", status: "active", sortOrder: "100" });
@@ -1068,7 +1068,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }
     const candidateSku = attachSkuMedia(formToSku(form, currentSku), skuMedia);
     const previewSummary = currentSku
-      ? summarizeSkuProposal(currentSku, candidateSku)
+      ? summarizeSkuProposal(currentSku, candidateSku, { includeDerived: false })
       : summarizeSkuCreation(candidateSku);
     if (editSkuId && !previewSummary) {
       setToast("没有任何修改，无需提交");
@@ -1675,12 +1675,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 setActionConfirm(null);
                 return;
               }
-              const summary = ex ? summarizeSkuProposal(ex, sku) : summarizeSkuCreation(sku);
-              if (editSkuId && !summary) {
+              if (ex && !summarizeSkuProposal(ex, sku, { includeDerived: false })) {
                 setToast("没有任何修改，无需提交");
                 setActionConfirm(null);
                 return;
               }
+              const summary = ex ? summarizeSkuProposal(ex, sku) : summarizeSkuCreation(sku);
               await propose(ctx.toast, {
                 action: mc.name, obj: skuId,
                 before: summary?.before ?? "未创建",

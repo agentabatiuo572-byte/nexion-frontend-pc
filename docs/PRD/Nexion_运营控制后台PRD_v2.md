@@ -76,7 +76,7 @@ SKU 目录管理台,自上而下三区:
 1. **SKU 列表表格**:每行一个 SKU `[SKU key / 名称 / 代际 / saleStatus(on|off|pending) / lifecycle(active|legacy) / price / 双币日产 / stock / unlockPhase]`,行尾操作入口(编辑 / 上下架)。列表不得写死商品数量或名称，以 `nx_product` 当前记录为准；Pro v2 等新代际商品通过 `unlockPhase` 展示发布阶段，不使用 `coming-soon` 销售状态。
    > **注 1(SKU 数量跨文档差异)**:V1 §3.2 E1 行记录为「/store 商品表(6 SKU)」(V1 时前端现状),本表列出 7 个管理对象(含 Pro v2 / Genesis 目录位)。**差异为 V2 落地补入 Pro v2 后修正为 7 个 SKU**(消除 §3.2「6 SKU」与本章「7 对象」的隐性矛盾)。
    > **注 2(Cloud Share Premium 待确认)**:Cloud Share Premium(12 月节奏表 §3.3 月 10 新品)的 SKU 治理方案待确认——若为独立 SKU 则 E1 补入 SKU 列表 + E1 补入代际发布门;若为原地 tier 升级则在 status 逻辑中补充 Cloud Share 的 `premium` 状态;先经 PM 确认。当前 7 个管理对象未涵盖该新品。
-2. **SKU 详情编辑面**:单 SKU 的价格 / baseRate / baseRateNEX / installMonths / stock 编辑表单 + 派生指标实时回显(回本天数 = round(price / baseRate)、首年净利 = baseRate × 365 − price);改价时高亮「影响全站回本 / ROI」红条 + 确认弹窗 + 理由必填提示(E1a-MD2)。
+2. **SKU 详情编辑抽屉**:编辑商品基本信息、价格、每件算力点、硬件规格、收益、库存、开放阶段、购买条件、资料及媒体等；份额型收益填写年化区间与每日 UVT。点击「保存修改」进入确认，填写理由后提交 A2，由另一名管理员审核通过后生效(E1a-MD2)。
 3. **套餐折扣 ladder 面**:阶梯折扣配置(4 件 12% / 3 件 8% / 2 件 5%,对齐 §9.11c.1 `GET /api/config/cart/bundle-discount` + 前端 `lib/store/cart.ts`),驱动结算购物车多件购买。
 4. **库存告警视图**:`stock < 50` 的 SKU 以橙色 `NN LEFT` 标注(对齐前端 §7.1 库存告警 `<50 时显示 NN LEFT 橙色`),供运营补货 / 控量决策。
 5. **SKU 购买门配置区（E1，COMPLETE）**：结构化配置 `rankMin / activeDirectMin / teamVolumeMin / mode(all|either) / quotaCap / quotaSold / quotaPeriod / enforce`。App 先通过 `GET /api/store/purchase-eligibility` 获取当前用户决策；普通单、组合单、Sandbox 单、Trade-in 询价/提交及容量替换由服务端按同一规则复验。规则畸形或用户事实缺失时失败关闭；空门表示不附加用户条件。当前仅支持 `quotaPeriod=lifetime`；旧 `month` 数据保留读取但标记 HOLD、不可直接保存，待建立按自然月隔离的原子 usage 计数后再恢复。E3 九类通用 eligibility 编辑器另列 HOLD，不得作为本门的运行时实现。
@@ -86,6 +86,7 @@ SKU 目录管理台,自上而下三区:
 | 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
 |---|---|---|---|---|
 | `price`(各 SKU,USDT) | **现状值(前端 §7.1)**:S1 $1,299(legacy)/ Pro $2,399(legacy)/ Pro v2 $2,639 / Rack P1 $8,999(legacy)/ Rack P2 $14,999 / Cloud Share $199 / Genesis $9,999 | > 0 | 仅新单(在途订单锁价,见 ⑦) | §7.1 ProductCard 价格行 / §7.2 详情 / 结账金额 |
+| `computePoints`（每件算力点） | 回显商品当前值；留空按售价 × 10 | 不小于 0 的整数 | A2 审核通过后仅影响之后的订单 | 商品详情算力点、团队等级与配额 |
 | `baseRate`(USDT/日,满效率) | **现状值**:S1 38.50 / Pro 76.00(原型 `lib/store/index.ts` 已核实)/ Pro v2 96.00 / Rack P1 142.60 / Rack P2 248.00 / Cloud Share 0.073 | > 0 | 仅新对象(已激活设备按购入时 baseRate,衰减叠加 E3) | §6.6 设备 baseline / §7.1 日产大字 / C1 fleet 卡(引用) |
 | `baseRateNEX`(NEX/日) | **现状值**:S1 65 / Pro 215 / Pro v2 280 / Rack P1 950 / Rack P2 1,820 / Cloud Share 30 | ≥ 0 | 仅新对象 | §7.1 双币副字 `+N NEX/d` |
 | 回本天数(派生) | **派生,非独立存储**:回本天数 = round(price / baseRate) | 派生 | 随 price / baseRate 实时 | §7.1 conversion chip `Pays back in Nd`(对齐 §7.1 结账计算器 `paybackDays`) |
@@ -105,11 +106,11 @@ SKU 目录管理台,自上而下三区:
 | 动作 | 执行权 | 确认弹窗 | 审计点 |
 |---|---|---|---|
 | 上下架 SKU(`saleStatus` on / off) | 商品运营(lead) | 行内确认；影响在售目录 | `admin.product_listed` / `admin.product_unlisted`(SKU / before-after saleStatus / operator / reason) |
-| 调定价(price / baseRate / baseRateNEX / installMonths) | 商品运营(lead)/ 超管 | E1a-MD2(理由必填)(**影响全站回本 / ROI 叙事,弹窗强制展示派生指标预览与警示条**) | `admin.product_price_changed`(SKU / 字段 / before-after / operator / reason) |
+| 编辑商品（含价格、每件算力点、收益） | 商品运营(lead)/ 超管 | E1a-MD2（理由必填），提交 A2 双人审批 | SKU / 变更字段 / 修改前后值 / 发起人 / 审批人 / 理由 |
 | 覆盖 stock | 商品运营 | SKU 编辑确认；库存只接受 0–2147483647 整数，并携商品版本防并发覆盖。`stock=0` 只形成售罄，不自动改销售状态；下架须另走状态动作 | admin 审计事件(SKU / before-after stock / operator) |
 | 调套餐折扣 ladder | 商品运营(lead) | E1a-MD3(理由必填)(放大转化向,影响客单价与毛利) | `admin.product_price_changed`(scope=bundle-discount / before-after / operator / reason) |
 
-> 2026-06 操作确认决议后,原复核层级转为执行门槛:上下架 / 调折扣执行权 = 商品运营 lead 层级(member 不可执行);调定价影响全站经济叙事,执行权就高 = 商品运营(lead)/ 超管。所有确认弹窗动作经理由必填(server 强制非空 400 `REASON_REQUIRED`)即时生效,落 A2 审计并实时告警超管 / 商品运营 lead。
+> 2026-06 操作确认决议后,原复核层级转为执行门槛:上下架 / 调折扣执行权 = 商品运营 lead 层级(member 不可执行);调定价影响全站经济叙事,执行权就高 = 商品运营(lead)/ 超管。理由必填(server 强制非空 400 `REASON_REQUIRED`)。商品完整编辑按现行 A2 双人审批流程提交，另一名管理员审核通过后才生效，不在抽屉保存时直接更新商品。
 
 **④a 交互与弹窗规格**
 
@@ -118,7 +119,7 @@ SKU 目录管理台,自上而下三区:
 | 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
 |---|---|---|---|---|
 | 上下架 SKU | ②第 1 区 SKU 列表行尾「上下架」 | 行内按钮 | 仅商品运营 lead / 超管渲染；阶段未到由 `unlockPhase` 独立展示锁定，不复用销售状态 | 调用独立状态接口，行内确认后执行 |
-| 调定价 | ②第 2 区 SKU 详情编辑面「保存定价变更」 | 主按钮 | 仅商品运营 lead / 超管渲染;表单无变更时置灰 | 打开弹窗 E1a-MD2 |
+| 编辑商品 | ②第 2 区 SKU 详情编辑抽屉「保存修改」 | 主按钮 | 仅商品运营 lead / 超管渲染；表单无变更时置灰；只改每件算力点即可启用，改回原值再次置灰 | 打开弹窗 E1a-MD2 |
 | 覆盖 stock | ②第 1 区 SKU 列表行尾「改库存」 | 行内按钮 | 商品运营及以上渲染 | 随完整 SKU 编辑提交；接受 0，显示售罄但不自动下架；携 `X-Product-Revision` 防止覆盖并发扣库存 |
 | 调套餐折扣 ladder | ②第 3 区套餐折扣 ladder 面「保存折扣配置」 | 主按钮 | 仅商品运营 lead / 超管渲染;各档未变更时置灰 | 打开弹窗 E1a-MD3 |
 | 查看库存告警视图 | ②第 4 区导航 tab | 链接 | 恒可用 | 跳转视图,无弹窗 |
@@ -139,22 +140,23 @@ SKU 目录管理台,自上而下三区:
 - **错误态**:400 `REASON_REQUIRED` / 409(销售状态已被他人变更,提示刷新)/ 403。
 - **成功反馈**:弹窗关闭;列表行 saleStatus 就地更新;toast「SKU 已上下架 · 已记审计」;事件 `admin.product_listed` / `admin.product_unlisted` 落 A2;实时告警超管 / 商品运营 lead。
 
-##### [E1a-MD2] 调定价确认
-- **功能**:更新单 SKU 的 price / baseRate / baseRateNEX / installMonths,确认即生效;仅新单 / 新对象生效(在途锁价,见 ⑦)。
-- **布局结构**:1. **信息区**:SKU key / 名称 / 代际 / 当前 price / baseRate / baseRateNEX / installMonths。2. **影响预览区(必有)**:**派生指标预览** —— before→after 并排展示「回本天数 = round(price / baseRate)」与「首年净利 = baseRate × 365 − price」(server 预检计算下发);**「影响全站回本 / ROI 叙事」红色警示条恒显**(改价即触发,提示结账金额 / conversion chip / C1 fleet 卡引用面同步变化);提示行「仅对新 `placed` 订单生效,在途订单锁价」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
+##### [E1a-MD2] 商品编辑抽屉与确认
+- **功能**:完整编辑单 SKU，确认后提交 A2，由另一名管理员审核通过后生效。价格和每件算力点仅影响之后的订单，在途订单沿用快照。
+- **变更判定（BUG-088，2026-11-04）**:S1、Pro、Pro v2、Rack P1、Rack P2、Cloud Share 打开编辑抽屉但未输入时，「保存修改」置灰；只改「每件算力点」即可启用，改回原值再次置灰。数字与表示同一数值的输入文本视为相等。「收益展示串」是派生字段，其差异不算运营修改；按钮、进入确认及提交前的无修改检查使用同一规则，仅展示串不同不能提交提案。
+- **A2 商品提案**:任一真实字段有改动时，保存的商品及 A2 摘要保留全部差异，包括派生字段。Cloud Share 每次保存仍按当前收益参数刷新展示串，避免旧的美元日产文案继续留在数据中。核心字段优先；「每件算力点」紧随价格，按整数显示。只改算力点时列出「每件算力点：旧值 → 新值」；Share 原展示串过期时另列「收益展示串」前后值，原展示串已是最新时不重复列出。
+- **抽屉相关输入**（其他商品字段沿用②及商品规格联动补充；理由在后续确认中填写）:
 
 | 字段 | 控件类型 | 必填 | 校验 | 默认值 |
 |---|---|---|---|---|
 | 目标 price(USDT) | 数字输入 | 否(至少改一项) | > 0(③ 参数表范围);client 即时校验 + server 复核 | 当前值 |
-| 目标 baseRate(USDT/日) | 数字输入 | 否(至少改一项) | > 0(③) | 当前值 |
-| 目标 baseRateNEX(NEX/日) | 数字输入 | 否(至少改一项) | ≥ 0(③) | 当前值 |
-| 目标 installMonths | 数字输入 | 否(至少改一项) | 1–24(③) | 当前值 |
+| 每件算力点（computePoints） | 数字输入 | 否(至少改一项) | 不小于 0 的整数；留空按售价 × 10 | 当前值 |
+| 每日收益 USDT / UVT（dailyEarn / dailyEarnNEX） | 数字输入 | 否(至少改一项) | 非负数；份额型改用年化区间与每日 UVT | 当前值 |
+| 共享份额年化下限 / 上限（shareYieldMin / shareYieldMax） | 数字输入 | 份额型 | 按现有收益区间校验 | 当前值 |
 | reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
 
-- **按钮区**:`[取消]` · `[确认调价]`(警示色主按钮;四个业务字段均未变更或 reason 未达标时置灰;loading 防双击)。
+- **按钮区**:抽屉 `[取消]` · `[保存修改]`；无业务变更、名称或售价为空、媒体仍在上传或未上传成功时不能保存。点击后按现有字段校验进入操作确认，填写理由并提交审批。
 - **错误态**:400(数值越界,server 回传违规字段与允许范围,弹窗不关内联警示)/ 400 `REASON_REQUIRED` / 409(他人已先变更,提示刷新当前值)/ 403。
-- **成功反馈**:弹窗关闭;详情面与列表行就地更新 + 派生指标重算;toast「定价已更新 · 仅新单生效 · 已记审计」;事件 `admin.product_price_changed` 落 A2;实时告警超管 / 商品运营 lead。
+- **成功反馈**:提案进入 A2 待审，商品此时仍显示原值；审核通过后重新读取商品，核对新值及审计记录。
 
 ##### [E1a-MD3] 调套餐折扣 ladder 确认
 - **功能**:更新阶梯折扣(4 件 / 3 件 / 2 件档),确认即生效,仅新购物车结算生效。
