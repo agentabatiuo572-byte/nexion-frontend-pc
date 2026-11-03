@@ -48,6 +48,8 @@ export interface H9PublicStatsValues {
   registeredUsersTickStepMax?: number;
   virtualUserCount: number;
   hashratePercentileTable: H9PercentileBand[];
+  /** 全球作业基座：缺省 = 后端还没支持（页面不提交此项）；null = 未发布；数字 = 赚取页任务中心在真实进行中作业数上加的数。只用于展示。 */
+  activeJobsBase?: number | null;
 }
 
 /** 运营可写的 7 项(锚点 registeredUsersAnchorAt 由服务端在改基数时重置,不给手填)。 */
@@ -82,6 +84,8 @@ export interface H9FieldDef {
   hint: string;
   /** 可留空的成对参数:成对字段要么都填、要么都空,留空不提交。 */
   pairedOptional?: boolean;
+  /** 可留空的单项参数:留空提交 null(不发布)。 */
+  clearable?: boolean;
 }
 
 export const H9_FIELDS: readonly H9FieldDef[] = [
@@ -187,6 +191,17 @@ export const H9_FIELDS: readonly H9FieldDef[] = [
     integer: true,
     hint: "历史本地估算分母 = 真实注册人口 + 本数值。虚拟人口不参与设备预估排名。",
   },
+  {
+    key: "activeJobsBase",
+    label: "全球作业基座",
+    unit: "个",
+    min: 0,
+    max: 100_000_000,
+    step: 1,
+    integer: true,
+    clearable: true,
+    hint: "赚取页任务中心「N 个全球作业进行中」显示真实进行中作业数加上这个数。留空表示不发布，只显示真实作业数。只用于展示。",
+  },
 ] as const;
 
 // 分位表合法域常量与逐行校验已收进 lib/admin/h9-validation.ts(零 import 纯模块,
@@ -264,6 +279,13 @@ function values(value: unknown, field: string): H9PublicStatsValues {
     ...optionalPair(raw, field),
     virtualUserCount: nonNegative(raw.virtualUserCount, `${field}.virtualUserCount`),
     hashratePercentileTable: bands(raw.hashratePercentileTable, `${field}.hashratePercentileTable`),
+    // 后端未返回此键 = 还没支持:不放进值里,保存时也就不会提交。
+    ...(raw.activeJobsBase === undefined ? {} : {
+      // 缺键 / null / 0–1亿整数三态;其他类型或越界走解析错误,不能让保存其他模块时把坏值回传。
+      activeJobsBase: raw.activeJobsBase === null ? null
+        : typeof raw.activeJobsBase === "number" && Number.isSafeInteger(raw.activeJobsBase) && raw.activeJobsBase >= 0 && raw.activeJobsBase <= 100_000_000
+          ? raw.activeJobsBase : invalid(`${field}.activeJobsBase`),
+    }),
   };
 }
 

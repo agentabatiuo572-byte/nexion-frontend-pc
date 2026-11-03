@@ -58,21 +58,22 @@ const SECTIONS: { title: string; sub: string; keys: ScalarKey[] }[] = [
   { title: "历史规模配置", sub: "仅用于历史估算；介绍页与网络脉搏在线设备使用上方首页数字设置", keys: ["fleetDevices", "onlineRatePct", "onlineJitter"] },
   { title: "网络脉搏注册用户", sub: "设置跳动间隔和每次最少、最多增加人数后，从基数开始每隔一段时间在范围内增加；三项留空时按月增长率推算。不参与设备预估排名，不改变真实账户", keys: ["registeredUsersBase", "registeredUsersTickIntervalSec", "registeredUsersTickStepMin", "registeredUsersTickStepMax", "registeredUsersMonthlyGrowthPct"] },
   { title: "历史排名估算", sub: "仅用于历史本地估算；虚拟人口不参与设备预估排名", keys: ["virtualUserCount"] },
+  { title: "全球作业进行中", sub: "只用于展示，不参与任务派发、结算或资金", keys: ["activeJobsBase"] },
 ];
-type H9Module = "home" | "network" | "globe" | "rank" | "history";
+type H9Module = "home" | "network" | "jobs" | "globe" | "rank" | "history";
 const MODULES: { id: H9Module; label: string }[] = [
-  { id: "home", label: "首页数字增长" }, { id: "network", label: "首页网络实况" },
+  { id: "home", label: "首页数字增长" }, { id: "network", label: "首页网络实况" }, { id: "jobs", label: "赚取页任务中心" },
   { id: "globe", label: "全球网络" }, { id: "rank", label: "设备预估排名" }, { id: "history", label: "历史估算" },
 ];
 const MODULE_KEYS: Record<H9Module, ScalarKey[]> = {
-  home: HOME_SECTIONS.flatMap(section => section.keys), network: SECTIONS[1].keys,
+  home: HOME_SECTIONS.flatMap(section => section.keys), network: SECTIONS[1].keys, jobs: SECTIONS[3].keys,
   globe: [], rank: [], history: [...SECTIONS[0].keys, ...SECTIONS[2].keys],
 };
 
 const int = (value: number) => (Number.isFinite(value) ? Math.round(value).toLocaleString("en-US") : "—");
 const money = (value: number) => (Number.isFinite(value) ? `$${Math.round(value).toLocaleString("en-US")}` : "—");
 const money2 = (value: number) => (Number.isFinite(value) ? `$${value.toFixed(2)}` : "—");
-const shown = (value: number | undefined, unit: string) => (value === undefined ? "未设置" : `${value}${unit}`);
+const shown = (value: number | null | undefined, unit: string) => (value == null ? "未设置" : `${value}${unit}`);
 const when = (ms: number) => (Number.isFinite(ms) && ms > 0 ? new Date(ms).toLocaleString("zh-CN", { hour12: false }) : "—");
 
 function bandDraftsFrom(values: H9PublicStatsValues): BandDraft[] {
@@ -84,7 +85,7 @@ function bandDraftsFrom(values: H9PublicStatsValues): BandDraft[] {
 
 /** 单个数值参数的合法域校验 → 返回运营看得懂的红字,合法返回空串。 */
 function scalarError(field: H9FieldDef, raw: string): string {
-  if (field.pairedOptional && !raw.trim()) return "";
+  if ((field.pairedOptional || field.clearable) && !raw.trim()) return "";
   const value = num(raw);
   if (!Number.isFinite(value)) return "请填数字";
   if (value < field.min || value > field.max) return `要在 ${field.min}–${field.max}${field.unit} 之间`;
@@ -169,6 +170,9 @@ function H9DisplayStats({ ctx, module }: { ctx: HCtx; module: H9Module }) {
   const allValid = !loading && !conflict && MODULE_KEYS[module].every(key => !fieldErrors[key])
     && (module !== "history" || rowErrors.every(text => !text) && !bandCountError);
 
+  /** 后端还没返回全球作业基座时,这一项不可编辑、也不提交。 */
+  const jobsBaseSupported = data?.values.activeJobsBase !== undefined;
+
   /** 草稿 → 可提交值(仅在 allValid 时有意义)。 */
   const nextValues: H9EditableValues | null = useMemo(() => {
     if (!data || !drafts || !allValid) return null;
@@ -176,11 +180,12 @@ function H9DisplayStats({ ctx, module }: { ctx: HCtx; module: H9Module }) {
     return {
       ...saved,
       ...(Object.fromEntries(H9_FIELDS
-        .filter((field) => MODULE_KEYS[module].includes(field.key) && !(field.pairedOptional && !drafts[field.key].trim()))
-        .map((field) => [field.key, num(drafts[field.key])])) as Record<ScalarKey, number>),
+        .filter((field) => MODULE_KEYS[module].includes(field.key) && !(field.pairedOptional && !drafts[field.key].trim())
+          && !(field.key === "activeJobsBase" && !jobsBaseSupported))
+        .map((field) => [field.key, field.clearable && !drafts[field.key].trim() ? null : num(drafts[field.key])])) as Record<ScalarKey, number | null>),
       hashratePercentileTable: module === "history" ? bands.map((row) => ({ tops: num(row.tops), cumPct: num(row.cumPct) })) : saved.hashratePercentileTable,
     } as H9EditableValues;
-  }, [data, drafts, allValid, bands, module]);
+  }, [data, drafts, allValid, bands, module, jobsBaseSupported]);
 
   const dirty = useMemo(() => {
     if (!data || !drafts) return false;
@@ -299,10 +304,11 @@ function H9DisplayStats({ ctx, module }: { ctx: HCtx; module: H9Module }) {
 
   const renderField = (key: ScalarKey, compact = false) => {
     const field = H9_FIELDS.find((item) => item.key === key)!;
+    const pending = key === "activeJobsBase" && !jobsBaseSupported;
     return <div className="p-row" key={key}>
       <div className="txt">
-        <div className="k">{field.label} </div>
-        {!compact && <div className="s">可填 {field.min}–{field.max}{field.unit}{field.integer ? "（整数）" : ""} · {field.hint}</div>}
+        <div className="k">{field.label} {pending && <span className="s">后端待支持</span>}</div>
+        {!compact && <div className="s">可填 {field.min}–{field.max}{field.unit}{field.integer ? "（整数）" : ""}{field.clearable ? "，可留空" : ""} · {field.hint}</div>}
         {fieldErrors[key] && <div className="ferr">{fieldErrors[key]}</div>}
       </div>
       {/* 🔴 type="text" 而不是 type="number"(zentao #200)。
@@ -317,7 +323,8 @@ function H9DisplayStats({ ctx, module }: { ctx: HCtx; module: H9Module }) {
         type="text"
         inputMode={field.integer ? "numeric" : "decimal"}
         value={drafts[key]}
-        disabled={!canWrite || loading}
+        placeholder={pending ? "后端待支持" : field.clearable ? "不发布" : undefined}
+        disabled={!canWrite || loading || pending}
         onChange={(event) => setDraft(key, event.target.value)}
       />
       <span className="unit">{field.unit}</span>
@@ -374,10 +381,10 @@ function H9DisplayStats({ ctx, module }: { ctx: HCtx; module: H9Module }) {
       也可以点「放弃改动」恢复成当前生效的值。
     </div>}
 
-    <div className={module === "history" ? "two-col" : undefined} hidden={module !== "network" && module !== "history"}>
+    <div className={module === "history" ? "two-col" : undefined} hidden={module !== "network" && module !== "jobs" && module !== "history"}>
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">{module === "network" ? "首页网络实况" : "历史规模与排名估算"}</span>
+          <span className="ttl">{module === "network" ? "首页网络实况" : module === "jobs" ? "赚取页任务中心" : "历史规模与排名估算"}</span>
           <span className="sub">· 生效版本 v{data.version} · {when(Date.parse(data.effectiveAt))} · {canWrite ? "可修改" : "你只能查看"}</span>
           <div className="r">
             <button className="l-btn sm" onClick={() => void load(module)}>刷新</button>
@@ -388,7 +395,8 @@ function H9DisplayStats({ ctx, module }: { ctx: HCtx; module: H9Module }) {
         </div>
         <div className="l-b">
           {module === "network" && <div className="htint">注册用户在此配置；在线设备沿用「首页数字增长」，排名由「设备预估排名」独立配置。</div>}
-          {SECTIONS.filter((_section, index) => module === "network" ? index === 1 : index !== 1).map((section) => <div key={section.title}>
+          {module === "jobs" && !jobsBaseSupported && <div className="htint warn">全球作业基座后端待支持，暂时不能修改；其他展示设置照常保存。</div>}
+          {SECTIONS.filter((_section, index) => module === "network" ? index === 1 : module === "jobs" ? index === 3 : index === 0 || index === 2).map((section) => <div key={section.title}>
             <div className="hgrp"><span className="t">{section.title}</span><span className="s">{section.sub}</span></div>
             {section.keys.map((key) => renderField(key))}
           </div>)}
@@ -466,7 +474,7 @@ function H9DisplayStats({ ctx, module }: { ctx: HCtx; module: H9Module }) {
     </section>
 
     <p className="f-foot">
-      <b>这些数字用在哪</b>：介绍页和「网络脉搏」显示的在线设备数，开启后按设置的区间增长；「网络脉搏」的注册用户按基数和月增长率推算；在线设备数也用于设备预估排名。这些都只是展示，不影响真实设备、算力和资金。修改记录在{" "}
+      <b>这些数字用在哪</b>：介绍页和「网络脉搏」显示的在线设备数，开启后按设置的区间增长；「网络脉搏」的注册用户按基数和月增长率推算；在线设备数也用于设备预估排名；赚取页任务中心「N 个全球作业进行中」显示真实进行中作业数加上全球作业基座，未发布时只显示真实作业数。这些都只是展示，不影响真实设备、算力和资金。修改记录在{" "}
       <Link href="/platform/audit" className="l-btn sm">操作记录与审批</Link>{" "}查看。
     </p>
   </>;

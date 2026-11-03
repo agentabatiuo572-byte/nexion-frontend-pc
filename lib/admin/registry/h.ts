@@ -51,7 +51,7 @@ export const DOMAIN_H: ModuleEntry[] = [
   {
     // H9 历史参数仍由后端 /api/admin/growth/public-stats 保存并审计。
     path: "/growth/public-stats",
-    summary: "按模块设置介绍页数字增长、首页网络实况、全球网络、设备预估排名与历史估算。展示设置不改变实际设备、任务或资金账单。",
+    summary: "按模块设置介绍页数字增长、首页网络实况、赚取页任务中心、全球网络、设备预估排名与历史估算。展示设置不改变实际设备、任务或资金账单。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];
