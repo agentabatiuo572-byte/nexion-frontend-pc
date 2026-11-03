@@ -36,6 +36,52 @@
 .edom .l-btn.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 6px; min-height: 24px; }
 
 /* ##################### E1 商品目录 & 代际门 ##################### */
+.edom .e1-phone-task-policy {
+  container: e1-phone-tasks / inline-size;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+.edom .e1-phone-task-policy > header,
+.edom .e1-phone-task-policy > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.edom .e1-phone-task-policy > header { margin-bottom: 16px; }
+.edom .e1-phone-task-policy > header .row { flex-wrap: wrap; }
+.edom .e1-phone-task-policy > header strong { font-size: 16px; font-weight: 650; }
+.edom .e1-phone-task-policy > .col { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.edom .e1-phone-task-policy label {
+  min-height: 40px;
+  padding: 8px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+}
+.edom .e1-phone-task-policy label:has(:checked) { background: var(--brand-soft); border-color: var(--brand-border); color: var(--brand); }
+.edom .e1-phone-task-policy label:has(:focus-visible) { outline: 2px solid var(--brand); outline-offset: 2px; }
+.edom .e1-phone-task-policy label:has(:disabled) { cursor: default; }
+.edom .e1-phone-task-policy input[type="checkbox"] { width: 15px; height: 15px; margin: 0; flex: none; accent-color: var(--brand); }
+html[data-theme="dark"] .e1-phone-task-policy input[type="checkbox"] { color-scheme: dark; }
+.edom .e1-phone-task-policy > footer { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.edom .e1-phone-task-policy > footer p { flex: 1 1 16rem; margin: 0; }
+.edom .e1-phone-task-policy > footer .btn { margin-inline-start: auto; }
+@container e1-phone-tasks (max-width: 55rem) {
+  .edom .e1-phone-task-policy > .col { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container e1-phone-tasks (max-width: 32rem) {
+  .edom .e1-phone-task-policy > .col { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container e1-phone-tasks (max-width: 15rem) {
+  .edom .e1-phone-task-policy > .col { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* ===== Phase timeline(代际门 · E2)— 动态列 track + 渐变连接线 + 当前节点光晕 ===== */
 .edom .phase-bar { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 18px 22px 14px; margin-bottom: 16px; }
 .edom .phase-bar .lbl { font-size: 12px; color: var(--ink-3); margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
