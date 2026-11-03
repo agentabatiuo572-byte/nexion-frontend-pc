@@ -282,7 +282,7 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
     specDocumentTitle: f.specDocumentTitle.trim() || undefined, specDocumentUrl: f.specDocumentUrl.trim() || undefined,
     gpu: joinGpu(f.gpu, f.gpuCount), vram: f.vram.trim() || undefined, hashRate: f.hashRate.trim() || undefined, power: f.power.trim() || undefined, datacenter: f.datacenter.trim() || undefined, uptime: f.uptime.trim() || undefined, warranty: f.warranty.trim() || undefined, phoneDailyEarn: skuNumU(f.phoneDailyEarn), phoneDailyEarnNEX: skuNumU(f.phoneDailyEarnNEX),
     allowedTaskClasses: f.allowedTaskClasses,
-    price: skuNum(f.price), computePoints: skuNumU(f.computePoints),
+    price: skuNum(f.price), computePoints: skuNumU(f.computePoints) ?? existing?.computePoints,
     dailyEarn, dailyEarnNEX, shareYieldMin, shareYieldMax, baseRate,
     // Sales remains display-only; write payloads omit it and Java retains the live counter.
     sold: existing?.sold ?? 0, productType, inventoryMode,
