@@ -127,7 +127,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
     ? "正在刷新设置，完成前暂不能提前结算。"
     : ctx.f4Error
       ? "设置刷新失败，为避免按旧设置结算，提前结算已暂停。请点「刷新设置」重试。"
-      : `领导奖池设置不完整：${settlementConfig.issues.map((issue) => issue.label).join("、")} 未设置或格式有误。请在本卡片下方补齐后刷新设置。`;
+      : `团队激励池设置不完整：${settlementConfig.issues.map((issue) => issue.label).join("、")} 未设置或格式有误。请在本卡片下方补齐后刷新设置。`;
   const lbMinUsd = data.configValues["F.leaderboard.minUsd"] ?? "1";
   const lbPaused = data.leaderboardPaused ?? (data.configValues["F.leaderboard.paused"] ?? "off") === "on";
   const lbDataAvailable = !!periodLeaderboard && (!lbPaused || (data.leaderboardSnapshotState === "FROZEN" && data.leaderboardDataAvailable === true));
