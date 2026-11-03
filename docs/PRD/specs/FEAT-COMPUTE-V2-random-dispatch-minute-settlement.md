@@ -1,5 +1,15 @@
 # FEAT-COMPUTE-V2：随机派单、独立运行态与分钟结算
 
+**设备收益的到期处理。** 设备槽独立计时，服务端共用一个调度器。空闲时每 30 秒检查一次，每批最多推进 500 个到期槽，并检查最多 500 台首次接单的 IDC。取满一批且派出或推进了任务，约 1 秒后处理下一批。未取满但有实际进展时，按批次结束时间查一次到期索引，有欠单也在约 1 秒后继续。没有进展时等待 30 秒，资金写入失败的任务保留原报价并退避。任务、凭证、收益记录和钱包流水在同一笔数据库事务内提交，已开始的任务继续使用原快照。
+
+设备规则周期仍发出任务完成和收益入账事件。H3「已核验模型任务」周参与度对规则任务记录“跳过”，不计周任务进度；真实模型任务继续核验执行凭据。容量验收须分开记录到期至钱包入账的延迟、仍未到账的积压，以及每笔任务的凭证、流水和事件是否唯一。
+
+**2026-11-03 隔离容量实测。** 1,000 个账号各持一个手机槽、五个 IDC 槽。从 90,768 笔已入账历史开始，6,000 槽同秒到期两轮共 12,000 笔，钱包可见 P95 为 392.9 秒，最长 431.3 秒。每秒 10 槽错峰四轮共 24,000 笔，P95 为 33.2 秒，最长 42.6 秒。约每 5 秒直接采样已提交的钱包流水。逐单均无漏发、重发、币种或金额差异，重启前的 60 笔欠单及之后的 6,000 笔续单分别核对。
+
+密码登录在同一事务先取得唯一请求编号再签发会话。[完整方案与验收范围](https://github.com/agentabatiuo572-byte/uvel-docs/blob/main/handoffs/2026-10-28/app/22-simulated-tasks-low-load.md)
+
+客服完整统计按分钟开始，上一轮跨过的分钟不补跑。资金历史按 32 个根客户分批读取，关联方仍在同一只读快照内完整校验。每批完成后仅当前持有者可续锁，服务停止推进后最多 120 秒锁会到期。完整新代发布前继续读取上一代及其真实统计时间。
+
 **2026-11-03 英文任务目录。** E2 任务列表只展示版本化的规则任务。六个类别各有 50 个不同的英文名称，例如 `image gen` 和 `image gen - watercolor portrait`。旧的按项市场单价留在市场定价和历史记录中。设备每次按商品已获准的大类，从在本单开始时已发布、已启用的具体任务中等概率抽取一项。每一类的 50 项沿用原类别的时长、奖励及币种。已开始的任务与历史凭证使用派发时冻结的名称。商品范围与任务名称分别维护，改名不会改变派发资格。
 
 PC 管理端 E1 的“新增商品”“编辑商品”和“手机类别可跑任务”只勾选六个大类：向量计算（EM）、语音处理（SP）、图像生成（IG）、大模型推理（LL）、模型微调（FT）、视频生成（VG）。商品回显自己的 `allowedTaskClasses`，手机回显手机策略。E2 维护各类的具体任务、时长、奖励和启停。商品与手机策略经现有审批发布后持续授权所选大类；例如 Pro 已勾图像生成，E2 发布并启用第 51 个图像任务后，它自动参与后续派单，无需再发布 Pro。停用会移出候选，改类后按新大类判断；所有获准大类都无启用任务时等待配置，同类新任务启用后恢复。每个具体候选等概率，正在运行的任务仍按派发时的快照结算。
@@ -32,7 +42,7 @@ E1 的「新增商品」和「编辑商品」抽屉以两列三行展示六个�
 >
 > 第五台云补验 PASS：P1／1210 的 LL 首笔 20 分钟任务 `SIM-89636B168C374E089FCA5AEE889D56FA` 已 COMPLETED／CREDITED 0.388889 USDT，UTC+8 到期 01:43:18.460647、入账 01:43:31.042963；receipt／ledger／earning／fund operation 各 1，journal delta=quote，proof NULL。五 IDC 首笔共 0.405416 USDT，实际覆盖 EM／SP／LL，不外推 IG／FT／VG 或 UVT 日奖。最终时点新 RUNNING 27／COMPLETED 27／errors 0、用例账号 6 台设备 RUNNING，仅属时间观测，非压测。
 >
-> 永久退役实际 APPLY exit 0：retirement `b07f8aea51924a33a182362253ca0aa4`，drain `c5582f4afe0e45ebb9c65ea33a326fec` 经原 resume-maintenance 正常关闭，回执 `/var/lib/uvel-task-control/compute-retirement.json` SHA256 `cf920ab9a76f42bfa72869c1f050febd11645daf918ba9d0d3517ab4e59c5767`；committed 26600275968→15032385536 bytes，3 worker＋observer 永久条件停用，原 journal 只读封存。客服资金汇总 503、1000 用户压测未跑、其他型号／全类型及公共后台一小时等未覆盖限制继续保留，不宣称全量或 prod 验收通过。
+> 永久退役实际 APPLY exit 0：retirement `b07f8aea51924a33a182362253ca0aa4`，drain `c5582f4afe0e45ebb9c65ea33a326fec` 经原 resume-maintenance 正常关闭，回执 `/var/lib/uvel-task-control/compute-retirement.json` SHA256 `cf920ab9a76f42bfa72869c1f050febd11645daf918ba9d0d3517ab4e59c5767`；committed 26600275968→15032385536 bytes，3 worker＋observer 永久条件停用，原 journal 只读封存。该次公共切换验收单列，后续千人隔离负载与客服资金汇总见方案 22。其他型号、全类型及公共后台一小时保留原验收边界。
 >
 > 最终运行门禁：3 worker disabled／PID 0，observer static／PID 0 且条件 block，独立 ollama／RAG healthy；allowNewActivations=true、draining=false、HALTED absent。旧 CI maintenance 只读 plan exit 1／`COMPUTE_PERMANENTLY_RETIRED` 为预期拒绝，未尝试 restore。
 
