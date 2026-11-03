@@ -19,7 +19,7 @@ import { setSupportPoolRoute, readSupportPoolCustomer, verifySupportTransfer, ty
 const PAGE_SIZE = 8;
 const actorStamp = () => { const auth = useAdminAuth.getState(); return adminShellSessionKey(auth.session, auth.authEpoch); };
 const POOL_REASONS: Record<SupportPoolReason, string> = {
-  NO_INVITER: "无邀请人", INVITER_UNBOUND: "邀请人未绑定", DEPTH_LIMIT: "继承深度已达上限", RULE_UNCONFIGURED: "继承规则未配置", AGENT_UNAVAILABLE: "专属客服暂不可接新继承", MIGRATION_REVIEW: "历史归属需人工确认",
+  NO_INVITER: "无邀请人", INVITER_UNBOUND: "邀请人未绑定", DEPTH_LIMIT: "已达自动继承的邀请次数上限", RULE_UNCONFIGURED: "继承规则未配置", AGENT_UNAVAILABLE: "专属客服暂不可接新继承", MIGRATION_REVIEW: "历史归属需人工确认",
 };
 
 type PoolPage = Awaited<ReturnType<typeof supportClient.bindingPool>>;

@@ -1,5 +1,6 @@
 import type { OpsSku } from "./platform-types";
 import { taskClassNames } from "./task-classes";
+import { shareBaseRateText } from "./operator-copy.ts";
 
 export interface SkuProposalSummary {
   before: string;
@@ -86,7 +87,7 @@ const SKU_FIELDS: FieldDescriptor[] = [
   { label: "卖点", read: (sku) => sku.tagline, format: text, equal: stringEqual },
   { label: "份额收益下限", read: (sku) => sku.shareYieldMin, format: number, equal: numberEqual },
   { label: "份额收益上限", read: (sku) => sku.shareYieldMax, format: number, equal: numberEqual },
-  { label: "收益展示串", derived: true, read: (sku) => sku.baseRate, format: text, equal: stringEqual },
+  { label: "收益展示串", derived: true, read: (sku) => sku.baseRate, format: (value) => shareBaseRateText(text(value)), equal: stringEqual },
   { label: "图像生成性能", read: (sku) => sku.aiImageGenPerMin, format: number, equal: numberEqual },
   { label: "LLM 推理性能", read: (sku) => sku.aiLlmTokensPerSec, format: number, equal: numberEqual },
   { label: "视频渲染性能", read: (sku) => sku.aiVideoMinPerHour, format: number, equal: numberEqual },

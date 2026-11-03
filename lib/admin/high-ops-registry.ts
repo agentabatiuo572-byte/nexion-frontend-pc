@@ -927,7 +927,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "g4_genesis_rerun_dividend",
     domain: "G",
-    action: "重跑创世排放批次",
+    action: "重跑创世节点收益释放批次",
     amplifies: true, // 硬=true,直接资金 postLedgerEntry
     type: "fund",
     gateLabel: "门槛者",

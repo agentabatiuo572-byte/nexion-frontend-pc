@@ -302,7 +302,7 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
       action: "导出团队明细",
       detail: (
         <div>
-          将按当前 <b>{data.period.label}</b> 周期导出团队关系；预计 <b>{data.liveFacts.teamRelationships}</b> 条（以实际导出为准）。只包含部分隐藏的用户编码、关系深度、会员等级、团队订单额和加入时间，不含手机号、昵称等隐私。下载链接 24 小时有效，导出会通知超级管理员和增长负责人。
+          将按当前 <b>{data.period.label}</b> 周期导出团队关系；预计 <b>{data.liveFacts.teamRelationships}</b> 条（以实际导出为准）。只包含部分隐藏的用户编码、相隔邀请次数、会员等级、团队订单额和加入时间，不含手机号、昵称等隐私。下载链接 24 小时有效，导出会通知超级管理员和增长负责人。
         </div>
       ),
       reasonMin: 8,
@@ -310,21 +310,21 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
       businessForm: {
         kind: "multi-field",
         title: "导出范围",
-        hint: "深度越大，导出越多；深度最多 10、最多 100,000 行。",
+        hint: "次数越多，导出越多；最多 10 次、100,000 行。1 次只含直接邀请的好友。",
         fields: [{
           key: "depth",
-          label: "团队关系导出深度",
+          label: "向下追溯的邀请次数",
           current: "3",
           inputKind: "select",
           options: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
-          optionLabels: Object.fromEntries(Array.from({ length: 10 }, (_, index) => [String(index + 1), `深度 ${index + 1}`])),
+          optionLabels: Object.fromEntries(Array.from({ length: 10 }, (_, index) => [String(index + 1), `${index + 1} 次`])),
           required: true,
         }],
       },
       run: async (reason, _newValue, businessValue) => {
         if (exportingRef.current || !ctx.biActions) return;
         const depth = Number(businessValue?.depth ?? "3");
-        if (!Number.isInteger(depth) || depth < 1 || depth > 10) throw new Error("导出深度必须为 1–10");
+        if (!Number.isInteger(depth) || depth < 1 || depth > 10) throw new Error("追溯次数必须为 1–10");
         if (!intentKeyRef.current) intentKeyRef.current = `l4-network-tree-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
         exportingRef.current = true;
         setExporting(true);
@@ -376,7 +376,7 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
                 ? "团队明细只能按日、周、月导出"
                 : data.liveFacts.teamRelationships <= 0 ? "当前没有可导出的团队关系" : undefined}
             >{exporting ? "正在生成…" : "导出团队明细"}</button>
-            <span className="f-ro">需选择导出深度 1–10 并填写 8–200 字原因</span>
+            <span className="f-ro">需选择追溯次数 1–10 并填写 8–200 字原因</span>
           </div>
         )}
       </div>

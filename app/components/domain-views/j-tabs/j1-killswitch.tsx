@@ -110,7 +110,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       fields: [
         { key: "triggerBasis", label: "触发依据", current: "", inputKind: "select", options: TRIGGER_BASES, optionLabels: TRIGGER_LABELS },
         ...(["staking", "genesis"].includes(g.key)
-          ? [{ key: "dispositionPlan", label: "存量权益处置方案", current: "", inputKind: "text" as const, wide: true, placeholder: "说明在锁仓位、排放或存量权益如何处置" }]
+          ? [{ key: "dispositionPlan", label: "存量权益处置方案", current: "", inputKind: "text" as const, wide: true, placeholder: "说明锁仓中的资金、待释放收益和已有权益如何处理" }]
           : []),
       ],
     },
@@ -160,7 +160,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           { key: "triggerBasis", label: "触发依据", current: "", inputKind: "select", options: TRIGGER_BASES, optionLabels: TRIGGER_LABELS },
           { key: "regulatoryContext", label: "监管事由或文号", current: "", inputKind: "text", wide: true, placeholder: "例如监管通知编号、法务事件编号" },
           ...(targets.some((g) => ["staking", "genesis"].includes(g.key))
-            ? [{ key: "dispositionPlan", label: "存量权益处置方案", current: "", inputKind: "text" as const, wide: true, placeholder: "说明在锁仓位、排放或存量权益如何处置" }]
+            ? [{ key: "dispositionPlan", label: "存量权益处置方案", current: "", inputKind: "text" as const, wide: true, placeholder: "说明锁仓中的资金、待释放收益和已有权益如何处理" }]
             : []),
         ],
       },

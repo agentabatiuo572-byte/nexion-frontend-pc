@@ -52,7 +52,7 @@ const SUBTYPE_LABELS: Record<string, string> = {
 /** 后端写入的英文技术备注 → 运营可读说明。 */
 const REMARK_LABELS: Record<string, string> = {
   "g1 early withdrawal net principal; unearned interest forfeited": "质押提前解锁 · 返还扣除扣款后的锁定金额，未获得的质押奖励不发放",
-  "g7 early withdrawal net principal; interest and tickets forfeited": "锁定计划提前解锁 · 返还扣除扣款后的锁定金额，锁定奖励与抽奖券不发放",
+  "g7 early withdrawal net principal; interest and tickets forfeited": "锁定计划提前解锁 · 返还扣除扣款后的锁定金额，锁定奖励不发放，本单已发且未使用的抽奖券作废",
   "bank payout net principal": "银行出款 · 净额",
   "d7 bank payout fee": "银行出款 · 手续费",
   "d2 withdrawal net principal": "提现 · 净额",

@@ -26,7 +26,7 @@ const PARAM_COPY: Record<string, { name: string; sub: string }> = {
   lockDays: { name: "锁仓期限", sub: "整数天 · 只影响新订单" },
   nurture: { name: "好友升级奖励倍率", sub: "参与锁定计划的用户，好友升级奖励按这个倍率算，马上生效" },
   lottery: { name: "创世节点抽奖券", sub: "每笔锁定计划送几张 · 修改前核对奖池容量" },
-  penalty: { name: "提前解锁扣款", sub: "扣部分锁定金额，锁定奖励和抽奖券不发放" },
+  penalty: { name: "提前解锁扣款", sub: "扣部分锁定金额，锁定奖励不发放，本单已发且未使用的抽奖券作废" },
   presets: { name: "锁定金额快捷选项", sub: "用户参与锁定计划时可直接点选的金额 · 马上生效" },
 };
 
@@ -52,7 +52,7 @@ function paramDisplayValue(param: G7Param) {
     case "lockDays": return `${raw} 天`;
     case "nurture": return `${raw} 倍`;
     case "lottery": return `${raw} 张 / 单`;
-    case "penalty": return `扣锁定金额的 ${raw}%，锁定奖励和抽奖券不发放`;
+    case "penalty": return `扣锁定金额的 ${raw}%，锁定奖励不发放，本单已发且未使用的抽奖券作废`;
     default: return raw;
   }
 }
@@ -292,7 +292,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
             <span className="v">{overview.phaseGate.value}</span>
             <Link href="/growth/phase" className="l-btn sm">去运营阶段设置 →</Link>
           </div>
-          <div className="gtint" style={{ marginTop: 10 }}><b>锁定计划</b> · 每笔锁定计划 = 扣余额 + 锁仓，两步要么一起成功，要么都不发生。限时倍率按参与当时的值计算。</div>
+          <div className="gtint" style={{ marginTop: 10 }}><b>锁定计划</b> · 加入成功后，所选金额转为锁定金额；提交失败时不会扣款。限时倍率按参与时的规则计算。</div>
           <div className="gtint" style={{ marginTop: 10 }}><b>创世奖池容量</b> · 每月 {fmtNumber(overview.g4Capacity.monthlyCapacity)} 张 · 本月已发 {fmtNumber(overview.g4Capacity.ticketsIssuedThisMonth)} 张 · 修改抽奖券规则时要填写奖池核对编号。</div>
 
           <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px" }}>锁定计划订单状态与金额分布</div>

@@ -1,6 +1,6 @@
 "use client";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import { a2ActionText, operatorCopyText } from "@/lib/admin/operator-copy";
+import { a2ActionText, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 
 /**
@@ -179,7 +179,7 @@ export function A2ChangeReview({ before, after }: { before: string; after: strin
     if (value === null) return "未设置";
     if (Array.isArray(value)) return value.length ? value.map(format).join("\n\n") : "无";
     if (typeof value === "object") return Object.entries(value as Record<string, unknown>)
-      .map(([key, item]) => `${labels[key] ?? key}：${key === "peerBonusRate" && typeof item === "number" ? `${(item * 100).toFixed(2)}%` : format(item)}`).join("\n") || "无（新建）";
+      .map(([key, item]) => `${labels[key] ?? key}：${key === "peerBonusRate" && typeof item === "number" ? `${(item * 100).toFixed(2)}%` : key === "baseRate" && typeof item === "string" ? shareBaseRateText(item) : format(item)}`).join("\n") || "无（新建）";
     return typeof value === "boolean" ? (value ? "是" : "否") : String(value);
   };
   const review = (value: string) => {

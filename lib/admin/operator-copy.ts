@@ -130,6 +130,11 @@ export function operatorCopyText(value: string): string {
     .replace(/创世节点\s*排放承诺/g, "创世节点应付收益");
 }
 
+/** E1 为 Share 商品生成的收益展示串（`baseRate`，原值写回后端不变）在审批里的显示。 */
+export function shareBaseRateText(value: string): string {
+  return value.replace(/^参考年化 /, "参考年奖励率 ").replace(/^年化区间暂不可用/, "参考年奖励率区间暂不可用");
+}
+
 /** A2 动作名的运营显示名。原值仍用于查找待审批申请（f-view F2 启用状态），这里只换显示。 */
 export function a2ActionText(action: string): string {
   return action.replace(/七层结算(启用|暂停|恢复)/g, "团队购买奖励结算$1");

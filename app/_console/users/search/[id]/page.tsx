@@ -873,7 +873,7 @@ export default function UserDetailPage() {
             { key: "memberNo", label: "成员编码" },
             { key: "nickname", label: "昵称", render: (value) => operatorNicknameText(asText(value)) },
             { key: "vRank", label: "团队等级" },
-            { key: "level", label: "关系深度", numeric: true },
+            { key: "level", label: "相隔邀请次数", numeric: true },
             { key: "volume", label: "贡献额", numeric: true },
             { key: "createdAt", label: "加入时间", render: formatDate },
           ]}

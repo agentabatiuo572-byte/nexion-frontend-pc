@@ -23,7 +23,7 @@ export const DOMAIN_G: ModuleEntry[] = [
   },
   {
     path: "/finance-products/genesis",
-    summary: "管理创世节点的销售、奖励产出、转售版税、批量派发和持仓。调高奖励产出需先通过兑付覆盖率检查，并注明决策依据。",
+    summary: "管理创世节点的销售、奖励产出、转让手续费、批量派发和持仓。调高奖励产出需先通过兑付覆盖率检查，并注明决策依据。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

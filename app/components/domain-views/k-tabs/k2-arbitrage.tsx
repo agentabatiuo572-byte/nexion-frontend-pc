@@ -38,6 +38,7 @@ type BoardThreshold = { kind: "board"; operator: string; multiplier: string; bas
 type K2Threshold = TrialThreshold | GiftThreshold | BoardThreshold;
 // 「同层级均值」是后端正则接受的取值；后端实际都按本期全体（未标记）用户增长中位数比较。
 const BOARD_BASELINE_LABELS: Record<string, string> = { 同层级均值: "全体增长中位数（同基线）" };
+const boardBaselineText = (value: string) => value.replace(/同层级均值/g, BOARD_BASELINE_LABELS.同层级均值);
 
 const K2_PARAM_HELP: Record<string, string> = {
   trialCycleThreshold: "同一人或组织的关联账户在统计期间反复开试用的次数阈值。",
@@ -330,7 +331,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
     }
     ctx.openActionConfirm({
       action: `调整检测阈值 · ${p.name}`,
-      detail: `${p.name} · 当前 ${p.value}。${K2_PARAM_HELP[p.key] ?? p.note}`,
+      detail: `${p.name} · 当前 ${boardBaselineText(p.value)}。${K2_PARAM_HELP[p.key] ?? p.note}`,
       amplifies: true,
       businessForm,
       reasonMax: 200,
@@ -343,7 +344,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
         return runAction(
           `k2-param:${p.key}:${p.version}:${p.value}`,
           (commandKey) => ctx.actions.updateK2Param(p.key, nextValue, p.version, reason, commandKey),
-          `${p.name} 已更新为 ${nextValue}`,
+          `${p.name} 已更新为 ${boardBaselineText(nextValue)}`,
         );
       },
     });

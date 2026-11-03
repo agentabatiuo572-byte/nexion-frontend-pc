@@ -19,7 +19,7 @@ type RulePendingRecord = { fingerprint: string; commandKey: string; createdAt: n
 const ruleCommands = createPendingMutationStore<RulePendingRecord>({ storageKey: "nexion-admin-m-support-rules-v1", isValidRecord: (row) => Boolean(Number.isSafeInteger(row.actorId) && row.payload && Number.isSafeInteger(row.payload.expectedVersion)) });
 const LABELS: Record<Field, string> = {
   unboundAssignmentMode: "无专属客服客户分配方式",
-  dormantDays: "沉睡判定天数", maintenanceDays: "主动维护间隔天数", activityWindowDays: "活跃统计窗口天数", inheritanceMode: "自动继承方式", maxInheritanceDepth: "最大自动继承深度",
+  dormantDays: "沉睡判定天数", maintenanceDays: "主动维护间隔天数", activityWindowDays: "活跃统计窗口天数", inheritanceMode: "自动继承方式", maxInheritanceDepth: "自动继承的邀请次数上限",
 };
 const dayFields = ["dormantDays", "maintenanceDays", "activityWindowDays"] as const;
 const actorStamp = () => { const auth = useAdminAuth.getState(); return adminShellSessionKey(auth.session, auth.authEpoch); };
@@ -58,8 +58,8 @@ function changedFields(before: SupportRules, after: Omit<SupportRules, "version"
 
 function labelValue(key: Field, value: SupportRules[Field]): string {
   if (key === "unboundAssignmentMode") return value === "AUTO_RANDOM" ? "自动随机分配" : "客服主管分配";
-  if (key === "inheritanceMode") return value === "LIMITED" ? "有限深度" : value === "UNLIMITED" ? "不限制" : "未配置";
-  return value == null ? "未配置" : `${key === "maxInheritanceDepth" ? "深度 " : ""}${value}${key === "maxInheritanceDepth" ? "" : " 天"}`;
+  if (key === "inheritanceMode") return value === "LIMITED" ? "限定次数" : value === "UNLIMITED" ? "不限制" : "未配置";
+  return value == null ? "未配置" : `${value}${key === "maxInheritanceDepth" ? " 次" : " 天"}`;
 }
 
 function errorText(error: unknown): string {
@@ -68,7 +68,7 @@ function errorText(error: unknown): string {
   if (status === 401) return "登录已失效，请重新登录。";
   if (status === 403) return "当前账号无权修改服务规则。";
   if (status === 409) return "规则已被其他管理员修改，请查看差异后重新确认。";
-  if (status === 400 || status === 422) return "输入未通过校验，请检查天数、继承深度和修改理由后再提交。";
+  if (status === 400 || status === 422) return "输入未通过校验，请检查天数、继承次数上限和修改理由后再提交。";
   return "服务规则暂不可用，请重试；当前输入已保留。";
 }
 
@@ -200,14 +200,14 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
             <input id={`m-rule-${field}`} type="number" min="1" step="1" placeholder="未配置" value={draft[field]} disabled={!editable} onChange={(event) => setField(field, event.target.value)} />
           </div>)}
           <div className="m-admin-row">
-            <div><label htmlFor="m-rule-inheritanceMode">自动继承方式</label><p>从人工分配的客户（深度 0）开始，其后续邀请注册可向下继承的最大深度。</p></div>
-            <HDSelect id="m-rule-inheritanceMode" value={draft.inheritanceMode} disabled={!editable} options={[{ value: "UNCONFIGURED", label: "未配置" }, { value: "LIMITED", label: "有限深度" }, { value: "UNLIMITED", label: "不限制" }]} onChange={(value) => { if (editable) setDraft((old) => old ? { ...old, inheritanceMode: value as RuleDraft["inheritanceMode"], maxInheritanceDepth: value === "LIMITED" ? old.maxInheritanceDepth : "" } : old); }} />
+            <div><label htmlFor="m-rule-inheritanceMode">自动继承方式</label><p>人工分配的客户之后邀请注册的用户，会沿邀请关系自动归给同一位专属客服；这里设置最多沿几次邀请继承。</p></div>
+            <HDSelect id="m-rule-inheritanceMode" value={draft.inheritanceMode} disabled={!editable} options={[{ value: "UNCONFIGURED", label: "未配置" }, { value: "LIMITED", label: "限定次数" }, { value: "UNLIMITED", label: "不限制" }]} onChange={(value) => { if (editable) setDraft((old) => old ? { ...old, inheritanceMode: value as RuleDraft["inheritanceMode"], maxInheritanceDepth: value === "LIMITED" ? old.maxInheritanceDepth : "" } : old); }} />
           </div>
           {draft.inheritanceMode === "LIMITED" && <div className="m-admin-row">
-            <div><label htmlFor="m-rule-maxInheritanceDepth">最大自动继承深度</label><p>可填 0，表示仅人工分配的起点客户归属专属客服。</p></div>
-            <input id="m-rule-maxInheritanceDepth" type="number" min="0" step="1" placeholder="请输入深度" value={draft.maxInheritanceDepth} disabled={!editable} onChange={(event) => setField("maxInheritanceDepth", event.target.value)} />
+            <div><label htmlFor="m-rule-maxInheritanceDepth">自动继承的邀请次数上限</label><p>可填 0，表示仅人工分配的起点客户归属专属客服。</p></div>
+            <input id="m-rule-maxInheritanceDepth" type="number" min="0" step="1" placeholder="请输入次数" value={draft.maxInheritanceDepth} disabled={!editable} onChange={(event) => setField("maxInheritanceDepth", event.target.value)} />
           </div>}
-          {!parsed && <div className="m-admin-error" role="alert">天数须为正整数，继承深度须为非负整数；同时设置沉睡与活跃天数时，活跃窗口不得大于沉睡天数。</div>}
+          {!parsed && <div className="m-admin-error" role="alert">天数须为正整数，继承次数上限须为非负整数；同时设置沉睡与活跃天数时，活跃窗口不得大于沉睡天数。</div>}
           {conflict && <div className="m-admin-error" role="alert">规则版本已变化。{latest ? `新版本为 ${latest.version}，原版本为 ${current.version}。` : "尚未取得最新版本。"}输入已保留。{latest && <ul>{changedFields(current, latest).map((field) => <li key={field}>{LABELS[field]}：原值 {labelValue(field, current[field])} → 最新 {labelValue(field, latest[field])}</li>)}</ul>}{latest ? <button type="button" className="btn btn-sec btn-sm" onClick={reviewLatest} disabled={!parsed}>以最新规则重审</button> : <button type="button" className="btn btn-sec btn-sm" onClick={() => void refreshLatest()}>读取最新规则</button>}</div>}
           <div className="m-admin-toolbar"><span className="m-admin-muted">当前版本 {current.version} · {changed.length} 项变更</span><button type="button" className="btn btn-pri btn-sm" disabled={permission !== "superadmin" || (retry ? false : !editable || !parsed || changed.length === 0)} onClick={() => setConfirm(true)}>{retry ? "继续确认上次提交" : "预览并保存"}</button></div>
         </>}

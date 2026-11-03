@@ -315,7 +315,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     if (!overview.seriesInitializationAvailable || !allowed("finprod_g4_write")) return;
     openActionConfirm({
       action: "发布创世节点系列",
-      detail: <>总量和起始价格按价格档位自动计算。版税、每日收益比例和收益公式先设为 0，之后再单独修改（需要决策编号）。发布后市场仍是「暂未开放」，核对无误后再手动开放。</>,
+      detail: <>总量和起始价格按价格档位自动计算。转让手续费、每日收益比例和收益公式先设为 0，之后再单独修改（需要决策编号）。发布后市场仍是「暂未开放」，核对无误后再手动开放。</>,
       // Initializing the catalog does not start sales or create a payout. The
       // backend forces the market closed and requires a separate reviewed open.
       amplifies: false,
@@ -522,7 +522,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
             {supplyParam && <div className="p-row"><div className="txt"><div className="k">节点总量</div><div className="s">{operatorCopyText(supplyParam.sub)}</div></div><span className="v">{operatorCopyText(supplyParam.displayValue)}</span>{allowed(paramAuthority(supplyParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${supplyParam.name}`} onClick={() => adjustParam(supplyParam)}>调整</button>}</div>}
             {priceParam && <div className="p-row"><div className="txt"><div className="k">单价{tiers && <span className="bdg ok" style={{ fontSize: 9, marginLeft: 6 }}>按价格档位</span>}</div><div className="s">{overview.tierPrice.status === "active" ? "已设置价格档位，单价按卖到第几张自动决定，这里的值不生效。改价请用下方「价格档位」" : tierPriceNote}</div></div><span className="v">{tierPriceText}</span>{overview.tierPrice.status === "legacy" && allowed(paramAuthority(priceParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${priceParam.name}`} onClick={() => adjustParam(priceParam)}>调整</button>}</div>}
             {dividendParam && <div className="p-row"><div className="txt"><div className="k">每日收益比例 <span className="bdg ok" style={{ fontSize: 9 }}>基准 0.1%/日</span></div><div className="s">{operatorCopyText(dividendParam.sub)}</div></div><span className="v">{operatorCopyText(dividendParam.displayValue)}</span>{allowed(paramAuthority(dividendParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${dividendParam.name}`} onClick={() => adjustParam(dividendParam)}>调整</button>}</div>}
-            {royaltyParam && <div className="p-row"><div className="txt"><div className="k">转让版税</div><div className="s">{operatorCopyText(royaltyParam.sub)}</div></div><span className="v">{operatorCopyText(royaltyParam.displayValue)}</span>{allowed(paramAuthority(royaltyParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${royaltyParam.name}`} onClick={() => adjustParam(royaltyParam)}>调整</button>}</div>}
+            {royaltyParam && <div className="p-row"><div className="txt"><div className="k">转让手续费</div><div className="s">{operatorCopyText(royaltyParam.sub)}</div></div><span className="v">{operatorCopyText(royaltyParam.displayValue)}</span>{allowed(paramAuthority(royaltyParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${royaltyParam.name}`} onClick={() => adjustParam(royaltyParam)}>调整</button>}</div>}
             <div className="p-row"><div className="txt"><div className="k">开始发放收益 <span className="bdg ok" style={{ fontSize: 9 }}>跟随运营阶段</span></div><div className="s">上交易所前不发放；在「运营阶段设置」里控制，这里只能查看</div></div><span className="v">{overview.emissionGate.open ? "已开放" : "未开放"}</span></div>
             {airdropPctParam && <div className="p-row"><div className="txt"><div className="k">空投占比</div><div className="s">{operatorCopyText(airdropPctParam.sub)}</div></div><span className="v">{operatorCopyText(airdropPctParam.displayValue)}</span>{allowed(paramAuthority(airdropPctParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${airdropPctParam.name}`} onClick={() => adjustParam(airdropPctParam)}>调整</button>}</div>}
             {emissionCurveParam && <div className="p-row"><div className="txt"><div className="k">收益发放曲线</div><div className="s">{operatorCopyText(emissionCurveParam.sub)}</div></div><span className="v">{operatorCopyText(emissionCurveParam.displayValue).replace("TGE 10% · halve every 6 months", "初始发放 10%，每 6 个月减半")}</span>{allowed(paramAuthority(emissionCurveParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${emissionCurveParam.name}`} onClick={() => adjustParam(emissionCurveParam)}>调整</button>}</div>}
@@ -694,7 +694,7 @@ function NodeDrawer({ node, onClose }: { node: G4Node; onClose: () => void }) {
       ))}
       <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px" }}>转让记录</div>
       <table className="l-tbl">
-        <thead><tr><th>时间</th><th>事件</th><th>版税</th></tr></thead>
+        <thead><tr><th>时间</th><th>事件</th><th>转让手续费</th></tr></thead>
         <tbody>{node.transfers.map((transfer, index) => (
           <tr key={`${transfer.time}-${index}`}><td className="mono">{transfer.time}</td><td style={{ fontSize: 12 }}>{operatorCopyText(transfer.event)}</td><td style={{ fontSize: 12, color: "var(--ink-3)" }}>{operatorCopyText(transfer.royalty)}</td></tr>
         ))}</tbody>
