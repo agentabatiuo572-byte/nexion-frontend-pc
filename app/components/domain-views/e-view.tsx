@@ -55,7 +55,7 @@ import {
   EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, validateSkuSpecs, skuNum, stateLabel, ostate,
 } from "./e-tabs/data";
 import type { DatacenterForm, Mc, EOp, EViewCtx, EOrder } from "./e-tabs/types";
-import { TaskTypeChoices, PhoneTaskPolicy, fetchTaskTypePolicy, policyTaskChoices } from "./e-tabs/task-type-policy";
+import { TaskClassChoices, PhoneTaskPolicy } from "./e-tabs/task-type-policy";
 import { E1Catalog } from "./e-tabs/e1-catalog";
 import { E2Tasks } from "./e-tabs/e2-tasks";
 import { E3Lifecycle } from "./e-tabs/e3-lifecycle";
@@ -643,13 +643,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const staleSkuDatacenter = form.datacenter.trim() && !skuDatacenterSet.has(form.datacenter.trim())
     ? form.datacenter.trim()
     : "";
-  const [skuTaskOptions, setSkuTaskOptions] = useState<ReturnType<typeof policyTaskChoices>>([]);
-  const [skuTaskOptionsReady, setSkuTaskOptionsReady] = useState(false);
-  useEffect(() => {
-    if (!skuDrawer) return;
-    setSkuTaskOptionsReady(false);
-    void fetchTaskTypePolicy().then((data) => { setSkuTaskOptions(policyTaskChoices(data)); setSkuTaskOptionsReady(true); }).catch((error) => setToast(displayAdminError(error)));
-  }, [skuDrawer, setToast]);
   const [skuMedia, setSkuMedia] = useState<SkuMedia>(null);
   const [skuMediaUploading, setSkuMediaUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -670,6 +663,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     workloadConfigJson: taskForm.workloadConfigJson.trim() || undefined,
   });
   const editedSku = editSkuId ? skus.find((sku) => sku.id === editSkuId) : undefined;
+  const skuTaskClassesReady = e1Gates?.taskClassPolicySupported === true && (!editSkuId || Array.isArray(editedSku?.allowedTaskClasses));
   const skuFormChanged = !editSkuId || !editedSku
     || summarizeSkuProposal(editedSku, attachSkuMedia(formToSku(form, editedSku), skuMedia)) !== null;
   const [dcDrawer, setDcDrawer] = useState(false);
@@ -1048,7 +1042,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setToast("请选择一个当前有效的数据中心");
       return;
     }
-    if (!skuTaskOptionsReady) { setToast("任务类型列表尚未加载，请重新打开商品后再提交"); return; }
+    if (!skuTaskClassesReady) { setToast("商品任务大类尚未加载，请刷新后再提交"); return; }
+    if (editedSku?.status === "on" && !form.allowedTaskClasses.length) { setToast("在售商品至少要勾选一个可跑任务大类"); return; }
     const specErr = validateSkuSpecs(form);
     if (specErr) { setToast(specErr); return; }
     const poolErr = validateSkuUnlockPool();
@@ -1319,8 +1314,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             </div>}
           </div>
           <SkuFieldGroup n="任务" title="可跑任务类型">
-            <TaskTypeChoices tasks={skuTaskOptions} selected={form.allowedTaskTypeIds} onChange={(ids) => setForm({ ...form, allowedTaskTypeIds: ids })} ready={skuTaskOptionsReady} />
-            <div className="tint tiny">上架时须勾选至少一个完整且启用的类型。发布后已售设备的新任务按此范围等概率抽取，运行中任务保留原版本。</div>
+            <TaskClassChoices selected={form.allowedTaskClasses} onChange={(classes) => setForm({ ...form, allowedTaskClasses: classes })} ready={skuTaskClassesReady} />
+            <div className="tint tiny">设备从已选大类的启用任务中随机接单。同类新任务启用后自动加入，正在运行的任务按原配置结算。</div>
           </SkuFieldGroup>
           <SkuFieldGroup n="①" title="基本信息">
             <SkuFld label="型号名称" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="如 UVELBox Pro v3" />

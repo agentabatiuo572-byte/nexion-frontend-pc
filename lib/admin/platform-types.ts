@@ -39,7 +39,7 @@ export interface PurchaseGate {
 }
 
 export interface OpsSku {
-  allowedTaskTypeIds?: string[];
+  allowedTaskClasses?: string[];
   productTaskPolicyVersion?: number;
   productTaskPolicyEffectiveAt?: string;
   name: string;

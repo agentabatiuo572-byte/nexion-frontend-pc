@@ -974,7 +974,7 @@ export const HIGH_OPS: HighOpDef[] = [
     op: "e1_phone_task_policy", domain: "E", action: "发布手机可跑任务", amplifies: false,
     type: "param", gateLabel: "门槛者", targetType: "device_sku",
     buildCommand: (ctx) => ({ domain: "E", op: "e1_phone_task_policy", params: {
-      allowedTaskTypeIds: ctx.allowedTaskTypeIds, expectedVersion: ctx.expectedVersion } }),
+      allowedTaskClasses: ctx.allowedTaskClasses, expectedVersion: ctx.expectedVersion } }),
     buildTarget: () => ({ domain: "E", type: "device_sku", id: "phone" }),
   },
   {
