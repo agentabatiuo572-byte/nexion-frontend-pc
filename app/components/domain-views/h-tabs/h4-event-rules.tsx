@@ -62,7 +62,7 @@ export default function H4EventRules({ ctx }: { ctx: HCtx }) {
       {loading ? <p role="status">正在加载活动规则…</p> : <>
         {!rows.length && !error && <p>暂无活动规则。</p>}
         {!rows.length && error && <button className="l-btn" onClick={() => void load()}>重试</button>}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{rows.map(row => <button className="l-btn sm" key={row.eventCode} disabled={saving || !!selected} aria-pressed={selected?.eventCode === row.eventCode} onClick={() => choose(row)}>{EVENT_KIND_LABELS[row.kind] ?? "活动"} · {row.eventCode} · {row.enabled ? "已开启" : "已关闭"}</button>)}</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{rows.map(row => <button className="l-btn sm" key={row.eventCode} disabled={saving || !!selected || !EVENT_KIND_LABELS[row.kind]} aria-pressed={selected?.eventCode === row.eventCode} onClick={() => choose(row)}>{EVENT_KIND_LABELS[row.kind] ?? "其他活动（已停用）"} · {row.eventCode} · {row.enabled ? "已开启" : "已关闭"}</button>)}</div>
         {selected && draft && <><fieldset disabled={!canWrite || saving} style={{ marginTop: 16, border: 0, padding: 0 }}>
           <p>{eventRuleReadinessText(selected)}</p>
           <p>{selected.rulesLocked ? "活动玩法和有效期已固定，只可关闭活动；关闭后不能重新开启。" : "活动首次开放后，玩法和有效期固定；关闭后不能重新开启。"}</p>
@@ -78,7 +78,6 @@ export default function H4EventRules({ ctx }: { ctx: HCtx }) {
           </fieldset>
           {selected.kind === "boost" && draft.rules.action === "CHECKIN_MULTIPLIER" && <p>加成预算耗尽后恢复原有签到奖励，不影响用户继续签到。</p>}
           {selected.kind === "wheel" && <p>抽奖奖项、概率和奖池限制在下方转盘配置维护。</p>}
-          {selected.kind === "holding" && <p>总奖池由达成连续持有条件的用户平均分配。</p>}
           {selected.kind === "regional" && <p>排名按加入活动后的有效支付订单金额统计；获胜地区内按个人有效支付金额比例分配奖池，并列第一的地区共同分享总奖池。</p>}
           <div style={{ marginTop: 14 }}><button className="l-btn mc" onClick={save}>{saving ? "正在保存…" : "保存配置"}</button></div>
         </fieldset><button className="l-btn" style={{ marginTop: 10 }} disabled={saving} onClick={() => { setSelected(null); setDraft(null); setError(""); }}>关闭配置</button></>}

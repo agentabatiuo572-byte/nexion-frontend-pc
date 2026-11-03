@@ -18,7 +18,9 @@
 
 > **PC 代币展示规格**：[平台代币名称统一 UVT](specs/FEAT-PC-UVT-TERMINOLOGY-20261026.md)。PC 中的平台代币显示为 UVT；结构化资产代码以后发 2026-11-01 数据规格为准，UVEL 平台品牌及其他币种不变。
 
-> **首页与活动现行规格**：[FEAT-HOME-EVENTS-20261025](specs/FEAT-HOME-EVENTS-20261025.md)：I3 推荐课程、H9 网络脉搏、I4 信任资料、H4 十项活动与独立创世抽奖，含默认关闭、配置校验、开奖与奖励恢复。
+> **2026-11-04 H4 产品决定**：移除 `holding` 持币活动及前端创建、规则配置入口；后端同步删除该类型与钱包触发。旧类型在 PC 显示为其他活动，玩法不可选择。
+
+> **首页与活动现行规格**：[FEAT-HOME-EVENTS-20261025](specs/FEAT-HOME-EVENTS-20261025.md)：I3 推荐课程、H9 网络脉搏、I4 信任资料、H4 九项活动与独立创世抽奖，含默认关闭、配置校验、开奖与奖励恢复。
 
 > **V8 与首页规格**：[FEAT-APP-20261025：V8、H9 与 App 体验联动](specs/FEAT-APP-20261025-experience-alignment.md)。F1 有效等级 V0–V8，H9 独立首页数字增长板块及开关；资产代码以后发 2026-11-01 数据规格为准。旧原型阈值不得覆盖已发布配置。
 
@@ -190,7 +192,7 @@
 | H1 | 12 月节奏 Phase 调度器 | 12 月节奏唯一操作面 + 全平台 10-dial 权威源 | H 增长 | V1·Ch7 | §13.4 / 节奏表§6.4 / §9.11c.1 |
 | H2 | 免费试用引擎 | 试用漏斗(绑卡→shadow→自动扣款/提前购)控制面 | H 增长 | V1·Ch7 | §9.11a / §9.11b / §9.11.1 |
 | H3 | Quest 任务引擎 | 三层任务(首日/每周/每月)清单/NEX 奖励/3-phase 时窗 | H 增长 | V3·Ch13 | §5.15 / §11.13 / §9.11c.1 |
-| H4 | 活动中心 CMS | 限时活动上下架/featured/奖励/追踪/8 种 EventKind | H 增长 | V3·Ch13 | §11.10 / §9.11c.2 |
+| H4 | 活动中心 CMS | 限时活动上下架/featured/奖励/追踪/7 种 EventKind | H 增长 | V3·Ch13 | §11.10 / §9.11c.2 |
 | H5 | 签到 & 积分 | 签到积分/Lucky 倍率/30 天里程碑/Streak Saver/Power-Ups | H 增长 | V3·Ch13 | §9.8 / §9.11c.1 / §9.11d.3 |
 | H6 | 里程碑庆祝 | 收益累计里程碑 5 档阈值与 NEX 奖励(被动触发) | H 增长 | V3·Ch13 | §11.3a / §9.11c.1 |
 | I1 | 转化文案 A/B | 转化文案池版本管理/A/B 实验框架/上下架 | I 内容 | V4·Ch14 | §9.11c.2 / §6.6 |
@@ -312,7 +314,7 @@
 | **TrialConfig**(H2,20参数) | trialDays/graceDays/extensionDays/discountRate/discountCapUSD/autoChargeAtEnd/highQualityThresholdUSD/**chargeFailRate(server-only)**/trialProductId(仅可选 E1 `trialEligible=true` 的在售有库存实物有限库存商品)/trialPriceUSD/shadowDailyUSD/shadowDailyNEX/cooldownDays(30,≠withdrawCooldownDays)/phaseOpen(只读)/autoPush{Enabled,DelayMs,CooldownHours,MaxPerSession}/**trialOffsetCapUSD(=50)**/**seatsLeftToday(每日上限=47,实时；当日剩余由 Java+日额度表计算)** | SC | §9.1 / Ch7 H2 |
 | **TrialSession 7态**(H2) | userId · status:enum{idle\|active\|grace\|extended\|redeemed\|failed\|cancelled} · shadowUSD · shadowNEX · 时间线 · 绑卡 token · cohort · phase;**Model A computeTrialOffset** | SC | §9.1 / Ch7 H2 / §9.11.1 |
 | **Quest 配置**(H3) | Day-One{WINDOW_MS=24h,GRACE_END=72h,phase 奖励 500/200/0,6任务} · Weekly{Tier1 9条/Tier2 8条,base+phase mult 曲线 P1 1.0→P6 1.5,Champion +500×mult} · Monthly{5主题,reward 1.5k–10k,3 subGoals};questBonusMultiplier 由 H1 下发 | SC | §17.1 / Ch13 H3 |
-| **活动/Event**(H4) | id · kind:enum{discount\|referral\|wheel\|regional\|boost\|seasonal\|holding\|onboarding} · status:enum{ongoing\|upcoming\|ended} · reward(USDT/NEX) · featured(同时仅1) · trackable · href;**Lucky Spin 8档 EV≈$0.78,Genesis 不进转盘,3护栏+B1红线** | SC(RNG) | §17.1 / Ch13 H4 |
+| **活动/Event**(H4) | id · kind:enum{discount\|referral\|wheel\|regional\|boost\|seasonal\|onboarding} · status:enum{ongoing\|upcoming\|ended} · reward(USDT/NEX) · featured(同时仅1) · trackable · href;**Lucky Spin 8档 EV≈$0.78,Genesis 不进转盘,3护栏+B1红线** | SC(RNG) | §17.1 / Ch13 H4 |
 | **签到/Lucky/Power-Ups**(H5) | baseline(+1/日) · 7天 bonus(+5) · Lucky 1.5×(15%)/2×(5%)(和≤100%,server RNG) · 断签(>48h) · Streak Saver(默认1,恢复至 min(longest,30)) · 里程碑7阶 · Power-Ups 4档(→F2/G5/G1/G4) | SC(RNG) | §17.1 / Ch13 H5 |
 | **里程碑 H6** | 5档{阈值/USD,NEX 奖励}(100/+100·500/+250·1000/+500·5000/+1500·10000/+3000) · firedIds(不重触发) · tick 4s;**阈值保序 422,一次 fire 一档** | SC | §17.1 / Ch13 H6 |
 
@@ -879,7 +881,7 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | Weekly Tier1 phase mult 曲线 | P1 1.0/P2 1.0/P3 1.1/P4 1.2/P5 1.3/P6 1.5 | ≥0 | 仅新 weekKey | H3(独立于 questBonusMult) |
 | Monthly 5 主题奖励 | foundation 1,500 / network 2,500 / premium 4,000 / diamond 6,000 / founders 10,000 NEX | ≥0 | 仅新月派发 | H3 |
 | `questBonusMultiplier` | 月1–2=4 / 其余=1(前端未实装) | 1–4 H1 dial | Phase 派发 | **H1**(H3 只读) |
-| 活动 `kind`(8 枚举) | discount/referral/wheel/regional/boost/seasonal/holding/onboarding | 8 枚举闭集 | 仅新建/改 | H4 |
+| 活动 `kind`(7 枚举) | discount/referral/wheel/regional/boost/seasonal/onboarding | 7 枚举闭集 | 仅新建/改 | H4 |
 | `featured`(主推位) | evt-pro-upgrade-7d | **同时仅 1 个 true** | 实时 | H4 |
 | Lucky Spin 奖池(8 档) | 5NEX 38% / 50积分 24% / 30NEX 18% / 150NEX 11% / $1 5% / $50券 3% / $20 0.9% / $500 0.1%(EV≈$0.78/spin) | 档位 2–12;weight 和=100 | 实时(server RNG) | H4 |
 | `wheelDailyPayoutBudgetUSD` | $2,000(达上限关真实奖) | — | 实时 | H4 |
