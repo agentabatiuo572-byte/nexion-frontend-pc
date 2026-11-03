@@ -2871,7 +2871,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("id", "活动编号（英文，不能重复）", "如 evt-summer")}
           {input("name", "活动名", "如 夏日狂欢")}
-          {select("kind", "类型", ["discount", "referral", "regional", "boost", "seasonal", "holding", "onboarding"], "event-kind", { discount: "限时折扣", referral: "邀请挑战", regional: "区域活动", boost: "加成活动", seasonal: "季节活动", holding: "持币活动", onboarding: "新手活动" })}
+          {select("kind", "类型", ["discount", "referral", "regional", "boost", "seasonal", "onboarding"], "event-kind", { discount: "限时折扣", referral: "邀请挑战", regional: "区域活动", boost: "加成活动", seasonal: "季节活动", onboarding: "新手活动" })}
           {select("state", "状态", ["ongoing", "upcoming", "ended"], "event-state", { ongoing: "进行中", upcoming: "待开始", ended: "已结束" })}
           {input("reward", "奖励", "如 100 UVT")}
           {input("condition", "完成条件", "如 order.paid")}

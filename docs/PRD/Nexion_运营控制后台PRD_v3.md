@@ -842,32 +842,35 @@
 ---
 
 #### [H4] 活动中心 CMS
-**① 目的 & 对齐**: 配置限时活动(campaign / 活动位)的上下架、featured、奖励、追踪逻辑与 8 种 EventKind,作为周期性流量回访点的活动运营面。对齐前端 **§11.10**(`/events`:§11.10.3 8 种 EventKind / §11.10.2 页面结构 / §11.10.6 Trackable vs Decorative 真任务化引擎)+ **§9.11c.2**(`GET /api/events?status=ongoing&region=`「季度活动滚动」)。服务业务目标:用限时折扣 / 邀请挑战 / 抽奖 / 区域 PK 等活动卡形成「周期性回访 + 独立 conversion hook」;活动卡内的任务 CTA 引导用户产生 `store.viewed` / `checkout.completed` 这些 B3 漏斗级事件(行为驱动),并通过回访→`app.dau` 路径间接提升 Day7 活跃(KPI #2 口径为 `app.dau ÷ register cohort`,§2.4.6;本机制经回访间接贡献,非 KPI 直接口径);每个 trackable 活动接真平台状态(§11.10.6 `evaluateEventProgress`),完成直接 `creditNex` + unlock badge。
+
+> **2026-11-04 产品决定**：移除持币活动（`holding`，原 NEX Holders Share），后端同步删除该类型及钱包余额变化触发。PC 不再提供创建选项、专属标签、规则字段或奖池说明；旧记录按未知类型显示“其他活动”，玩法区标为“其他活动（已停用）”且不可选择。不增加兼容玩法，其他活动沿用现有配置及服务端结果。
+
+**① 目的 & 对齐**: 配置限时活动(campaign / 活动位)的上下架、featured、奖励、追踪逻辑与 7 种 EventKind,作为周期性流量回访点的活动运营面。对齐前端 **§11.10**(`/events`:§11.10.3 7 种 EventKind / §11.10.2 页面结构 / §11.10.6 参与条件与奖励)+ **§9.11c.2**(`GET /api/events?status=ongoing&region=`「季度活动滚动」)。服务业务目标:用限时折扣 / 邀请挑战 / 抽奖 / 区域 PK 等活动卡形成「周期性回访 + 独立 conversion hook」;活动卡内的任务 CTA 引导用户产生 `store.viewed` / `checkout.completed` 这些 B3 漏斗级事件(行为驱动),并通过回访→`app.dau` 路径间接提升 Day7 活跃(KPI #2 口径为 `app.dau ÷ register cohort`,§2.4.6;本机制经回访间接贡献,非 KPI 直接口径);活动进度、参与及奖励结果均由服务端按真实业务状态返回，客户端不本地评估或发奖。
 > **域边界(H4 活动运营 vs V4 I 通用 CMS,§3.14 标注)**:**H4 管限时活动与活动追踪**(campaign / 活动位:EventKind 枚举 / featured / trackable progress / 活动奖励 / 倒计时 / geo 区域 / wheel 转盘奖项池);**V4 I 域管通用内容**(通用文章 / 营销 banner / 合规法务文案 / i18n namespace 多版,前端 §9.11c.2 `GET /i18n/{namespace}`)。二者在 **§3.14 跨域归属补一行**:`活动运营 → H4(V3);通用内容 CMS → I(V4)`。交集处理:活动卡内嵌的营销文案若属可独立 A/B 的通用 copy,文案池归 I,活动结构(kind / reward / progress / 时窗)归 H4;H4 引用 I 的文案 key,不重复持有通用 copy 权威。
 
 **② 后台界面**:
-- **活动列表**(§11.10.5,server-canonical):`id / kind(8 枚举)/ status(ongoing/upcoming/ended)/ title / subtitle / ribbon / emoji / tint / reward(USDT/NEX)/ featured / trackable?/ progress / countdown / startsIn / joined 计数 / claimed 计数 / href`。
-- **活动详情 / 编辑**:单活动全字段编辑 + Featured Hero 主推位指派(同时仅 1 个 featured,§11.10.2)+ trackable 活动的 evaluator 绑定(§11.10.6:`evaluateEventProgress` 字段 / target / 奖励 NEX / badge id)。
-- **Trackable 监控**(只读):4 个 trackable 活动(§11.10.6)的真实 progress 分布 + join / done / claim 漏斗:`evt-pro-upgrade-7d`(target 1·2,000 NEX)/ `evt-refer-5-get-pro`(target 5·5,000 NEX)/ `evt-onboarding-7d`(target 4·200 NEX)/ `evt-nex-holders-share`(target 1,000·500 NEX)。
+- **活动列表**(§11.10.5,server-canonical):`id / kind(7 枚举)/ status(ongoing/upcoming/ended)/ title / subtitle / ribbon / emoji / tint / reward(USDT/NEX)/ featured / trackable?/ progress / countdown / startsIn / joined 计数 / claimed 计数 / href`。
+- **活动详情 / 编辑**：维护活动内容、主推位（同时仅 1 个）及玩法配置；参与条件、期限、奖励和预算由服务端校验，首次开放后冻结经济规则。
+- **Trackable 监控**（只读）：按服务端返回的活动进度与参与/领取状态展示；升级优惠、邀请赠机、新手奖励等以[现行活动规则](specs/FEAT-HOME-EVENTS-20261025.md)为准，不使用原型本地 evaluator 或固定 UVT 奖励替代真实权益。
 - **Lucky Spin 转盘治理**(`wheel` EventKind,server-canonical RNG):转盘奖项池 + 各奖项概率 + 派奖;含两类 wheel 入口——`evt-spring-spin`(日重置型:`events.ts:116-125`,subtitle「1 free spin per day」,ribbon「DAILY · RESETS 00:00 UTC」,每日一次)+ `evt-anniversary-spin`(周年型:`events.ts:188+`,status=ended,周年活动)。**✅ 转盘奖项池 / 概率已裁定(PM 2026-06-02,见 ③ Lucky Spin 奖池表 + 护栏)**;原型仅 §11.10.3 `wheel` 枚举、无 prize pool / 概率,本配置面为净新落地。**Genesis 节点不进转盘 + 真实奖受日预算/库存/B1 红线三护栏**(风险最低)。H5 签到 milestone 发「spin 票」,H4 wheel 治理「票兑奖的奖项池 / 概率 / 派奖」,两入口经「spin 票」凭证解耦。
 - **geo / 区域面**:活动 `region` 过滤(§9.11c.2)+ `geo_block` 国家清单(随活动配置,边缘 IP 判定,§9.11d.1 通用 region geo-block 在活动面的派生)。
-- **状态机**(活动,§11.10.4,server-canonical):`upcoming(Starts in X·Notify-me)→ ongoing(全亮·Join/Claim)→ ended(可查历史)`;trackable 用户参与旁路(§11.10.7):`未 join → joined(useEventQuest.join)→ done(progress 达 target)→ claimed(creditNex + unlock badge)`。
+- **状态机**(活动,§11.10.4,server-canonical):`upcoming(Starts in X·Notify-me)→ ongoing(全亮·Join/Claim)→ ended(可查历史)`;trackable 用户参与旁路(§11.10.7):`AVAILABLE → JOINED → CLAIMABLE → CLAIMED`，均以服务端结果为准。
 
 **③ 可控参数**:
 
 | 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
 |---|---|---|---|---|
-| 活动 `kind`(8 枚举) | **现状值(§11.10.3 / `events.ts:8-16`)**:`discount / referral / wheel / regional / boost / seasonal / holding / onboarding` | 8 枚举闭集(新增 kind 须前后端 schema 联动,见下注) | 仅新建 / 改活动 | §11.10.3 活动类型 chip + 标签 |
+| 活动 `kind`(7 枚举) | **当前类型(§11.10.3)**:`discount / referral / wheel / regional / boost / seasonal / onboarding` | 7 枚举闭集(新增 kind 须前后端 schema 联动,见下注) | 仅新建 / 改活动 | §11.10.3 活动类型 chip + 标签 |
 | 活动 `status` | **现状值(§11.10.4)**:ongoing / upcoming / ended | 3 枚举 | 实时(状态切换即改卡视觉与可点性) | §11.10.4 卡片视觉 + 行为 |
 | `featured`(主推位) | **现状值(§11.10.2)**:默认 `evt-pro-upgrade-7d`(NexionBox Pro Flash Upgrade) | 同时仅 1 个 true | 实时 | §11.10.2 Featured Hero 大卡 |
-| 活动奖励(USDT / NEX) | **现状值(§11.10.6 trackable)**:pro-upgrade 2,000 / refer-5 5,000 / onboarding 200 / nex-holders 500 NEX | ≥ 0 | 仅新 claim(已 done 未 claim 按当前值) | 活动卡 `Claim +N NEX` |
-| trackable evaluator 绑定 | **现状值(§11.10.6)**:`ctx.ownsProOrHigher` / `ctx.directInviteCount(≤5)` / `ctx.vRank(7d内达V2)` / `ctx.nexBalance(≤1,000)` | evaluator 字段 + target | 仅新 join | 活动 progress bar |
+| 活动奖励（USDT / UVT / 设备 / 券 / 创世票） | 按玩法显式配置，见现行活动规则；不采用原型示例奖励兜底 | 服务端校验类型、金额及预算 | 首次开放前配置，开放后冻结 | 活动奖励及本人真实领取结果 |
+| 参与条件与目标 | 服务端按已支付订单、有效直推、账号等级等真实业务事实评估 | 按玩法配置 | 首次开放前配置 | 活动进度与参与资格 |
 | Lucky Spin 转盘奖池(档位 + 概率,`wheel`)| **✅ 已裁定(PM 2026-06-02),见下方 Lucky Spin 奖池表**(初始 8 档 · EV≈$0.73/spin · Genesis 不进转盘) | **档位可增删 2-12 档**;各档概率(weight)之和 = 100(server 校验,≠100 或档位越界返 422) | 实时(server 裁决) | `evt-spring-spin` 日重置转盘 / `evt-anniversary-spin` 周年转盘 |
 | `countdown / startsIn`(时窗) | per-event(UTC,§11.10.2「Events run on UTC time」) | 起止时间戳 | 实时(到期自动转 ended) | 卡倒计时 / 开始时间 |
 | `region` / `geo_block` | 空(全区) | 国家码数组 | 实时(边缘 IP 判定) | §9.11c.2 region 过滤 / geo 拦截 |
 | 活动 pause(下架) | 关 | bool | 实时(下架即停 join/claim) | 活动卡熔断 / 隐藏态 |
 
-> **默认值口径**:8 EventKind / featured / trackable 奖励取前端现状值(标注「现状值」);wheel 转盘奖项池 / 概率 ✅ 已裁定(PM 2026-06-02,见下方 Lucky Spin 奖池表;治理归属见 §① 域边界);12 月 §6 未覆盖活动配置。**升活动 NEX 奖励 = 放大流出**,受跨域事实 2 的 B1 红线前置约束。`geo_block` 为 §9.11d.1 通用 region geo-block 在活动面派生,kill 矩阵编排归 J1(V4)。
+> **默认值口径**:7 EventKind 为当前类型闭集；主推位、奖励与预算以服务端已保存配置为准;wheel 转盘奖项池 / 概率 ✅ 已裁定(PM 2026-06-02,见下方 Lucky Spin 奖池表;治理归属见 §① 域边界);12 月 §6 未覆盖活动配置。**升活动 NEX 奖励 = 放大流出**,受跨域事实 2 的 B1 红线前置约束。`geo_block` 为 §9.11d.1 通用 region geo-block 在活动面派生,kill 矩阵编排归 J1(V4)。
 > **EventKind / evaluator 扩展治理**:新增 EventKind / evaluator 字段属前后端 schema 联动变更,须经操作确认(确认弹窗 + 理由必填)+ 前端 ctx 同步发布(类比 A4 domain 扩展工单),非后台单方可加。
 
 > **Lucky Spin 奖池表(PM 2026-06-02 裁定 — 风险最低 + 运营最简口径)**:转盘机制原型未实现(§11.10.3 `wheel` 仅枚举),本表为 PM 裁定的净新落地口径。**一个转盘、一张奖池表**——`evt-spring-spin`(日重置)与 `evt-anniversary-spin`(周年型)复用同一奖池,仅活动外壳 / 文案不同,不分两套奖池。
@@ -989,10 +992,10 @@
 审计字段(A2 统一 schema,§2.x ⑥):`action / event_id / kind / field / before / after / coverageAtSubmit(改奖励/转盘时) / geo_block / reason / operator / ts`。
 
 **⑦ 风控 & 联动**:
-- **server-canonical(§9.11d.2)**:trackable 活动 progress + join/claim 态 server 权威;前端 §11.10.6 `useEventQuest`(persist key `nexion-event-quest-v1`)+ `evaluateEventProgress` 当前 client 评估,**真后台对接后 progress 由 server 按真实平台状态(`ownsProOrHigher` / `directInviteCount` / `vRank` / `nexBalance`)裁决**,client 仅展示;decorative 活动的 `joined` 为 `events.ts` hardcode 展示字段,无权威态。**防伪造完成**:client 不得本地标记 trackable progress 达标或伪造 claim(§9.11d.2)。
+- **server-canonical(§9.11d.2)**：活动进度、参与及领取状态由服务端裁决；客户端仅展示，不得本地标记达标、发奖或将示例参与状态当作真实结果。
 - **转盘 server-canonical RNG + 三护栏(`wheel`)**:Lucky Spin 随机裁决须 server 执行(`POST /api/events/:id/spin`)+ NODE_ENV guard,client 不 roll / 不可知概率(§9.11d.3);奖项池 / 概率已裁定(§③ 奖池表),受**日派彩预算上限 / 单奖每日全局库存 / B1 覆盖率红线自动降级(低于红线只发 NEX/积分/券档)**三护栏约束;Genesis 不入转盘。
-- **NEX 流出联动 B1(跨域事实 2)**:活动 `event.claimed` 的 NEX 派发(如 refer-5 的 5,000 NEX)增 NEX 流出;升活动奖励 / 转盘奖项提交即 server 核验 B1 覆盖率红线。
-- **跨模块联动**:trackable evaluator 消费的真实状态来自多域——`ownsProOrHigher`(E 设备 / 商城,V2)/ `directInviteCount`(F 分销 / 团队,V2)/ `vRank`(F V-Rank,V2)/ `nexBalance`(G 代币,V3);H4 只读消费,不持这些状态权威。活动内嵌 CTA 跳转(折扣→商城 / 邀请→团队 / 抽奖→转盘)联动下游域转化。
+- **UVT 流出联动 B1（跨域事实 2）**：真实活动及转盘奖励影响流出；提高奖励须由服务端核验预算与覆盖率，不以旧邀请赠机的示例 UVT 数值替代设备权益。
+- **跨模块联动**：H4 只读消费订单、有效直推及 V 等级等事实，不持有其权威；活动内 CTA 跳转联动商城、团队和转盘。钱包余额变化不再触发持币活动。
 - **幂等 & 并发裁决(§9.11e)**:活动 claim / 转盘派奖携 **`Idempotency-Key`**(§9.11e 通则,沿用作 V3 新登记事务边界行,§9.11e 表当前未含 event 行)去重,**dedup key 维度区分两类**:(a) 一次性活动 claim(trackable `done`→`claimed`)去重 `eventId × userId`;(b) 每日重置 spin(`wheel` daily,如 `evt-spring-spin`)去重 `eventId × userId × spinDate`(UTC 日桶),显式声明「每日一次上限 = server 按 `spinDate` 计票,超额返 **409**」,体例对齐 G4 batchDate(§9.11e)——纯 `eventId × userId` 会误锁次日合法 spin,纯 UUID 又无法强制每日一次上限,故须 `spinDate` 维度。竞态 `done → claimed` 与活动 `ongoing → ended`(时窗滚动 / 下架)以 server 终态为准——**ended/下架锁定优先**:活动转 ended 后并发到达的 claim 按 §11.10 现状(ended 卡可查历史,不可新 claim)返 **409**;配置变更对 in-flight 参与按 join / 派发时锁定值结算(不追溯)。
 - **kill 联动 J1(V4)**:活动 pause / 下架 + geo_block 是 J1 矩阵生效面(监管点名某类活动如「抽奖涉赌」时批量下架转盘)。
 

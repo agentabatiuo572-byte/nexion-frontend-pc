@@ -1847,7 +1847,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       <div className="two-col">
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">活动列表（8 种玩法 · 共 {(model.events ?? []).length} 个）</span>
+            <span className="ttl">活动列表（7 种玩法 · 共 {(model.events ?? []).length} 个）</span>
             <span className="sub">· 同时只能有一个主推活动</span>
             <div className="r">
               <button className="l-btn sm mc" onClick={() => openCreateEvent()} disabled={!canModuleWrite}>+ 新建活动</button>
@@ -1880,7 +1880,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                         <div style={{ fontWeight: 600 }}>{zhName || "中文标题未配置"}</div>
                         <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{zhDescription || "中文说明未配置"}</div>
                       </td>
-                      <td><span className="bdg dim">{({ discount: "限时优惠", referral: "邀请推广", wheel: "幸运转盘", regional: "地区活动", boost: "收益加成", seasonal: "节日活动", holding: "持有奖励", onboarding: "新人活动" } as Record<string,string>)[text(event.kind)] ?? "其他活动"}</span></td>
+                      <td><span className="bdg dim">{({ discount: "限时优惠", referral: "邀请推广", wheel: "幸运转盘", regional: "地区活动", boost: "收益加成", seasonal: "节日活动", onboarding: "新人活动" } as Record<string,string>)[text(event.kind)] ?? "其他活动"}</span></td>
                       <td><span className={`bdg ${tone}`}>{label}</span></td>
                       <td className="num">{zhRewardName || "中文奖项未配置"}</td>
                       <td>{event.featured ? <span className="bdg warn">主推</span> : <span style={{ color: "var(--ink-4)" }}>-</span>}</td>
