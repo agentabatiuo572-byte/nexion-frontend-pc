@@ -587,11 +587,14 @@ A3 托管**平台级横切配置**——feature flag 平台、**kill-switch conf
 > **kill-switch 托管的 V1→V4 边界**:**V1 阶段由 A3 config store 托管 6 闸(5 个二元功能闸〔4 源自前端 §9.11d.1 + 后台应急新增 withdraw 提现闸〕 + 1 个 geo-block 闸)的闸状态与切换入口**(临时承载);**V4 由 J1(Kill-Switch 矩阵,5 功能闸)/ J2(Geo-block)接管管理操作面**——J1/J2 是 kill-switch 的管理操作面,A3 config store 是 V1 阶段的状态存储与临时切换面。**本章是 kill-switch config store 的存储端定义**:B5⑦ 为消费方声明,二者协作而非竞争——A3 为存储端权威、B5 为消费引用方。B5⑦ 中「或专属 config endpoint 待开发确认」的不确定性由本章终结:A3 config store 已终结 B5⑦「落点待开发确认」的不确定性,**B5⑦ 正文须同批次更新为「V1 由 A3 `/api/admin/killswitch` 承载;切换面 V4 归 J1/J2」**,B5⑦「以本子模块此处声明为准」限定改为「仅指消费端读取视图,存储端权威见后台 PRD §2.3 A3」。B5② / B5④ / B5⑦ 已声明「状态在 V1 阶段来自服务端 kill-switch config store(§9.11d.1),V4 归 J1/J2」,本子模块即该 config store 的托管定义,与 B5 引用逐一吻合。(§3.14 跨域归属表目前无「kill-switch 状态」权威归属行。)
 
 **② 后台界面**
-三视图:(a) feature flag 平台 + (b) kill-switch config store + (c) 系统健康。**server time 单源与 Idempotency-Key 去重不在本配置面**——为固定后端不变量(平台强制、运营不可调,无卡;约束见 ⑦)。
+四视图:(a) feature flag 平台 + (b) kill-switch config store + (c) 系统健康 + (d) 应用体验配置。**server time 单源与 Idempotency-Key 去重不在本配置面**——为固定后端不变量(平台强制、运营不可调,无卡;约束见 ⑦)。
 
 1. **(a) feature flag 平台**:feature flag 清单 `[flag key / 当前态(on/off/灰度%)/ 适用范围(全量/cohort/Phase)/ 最近变更]`;A-B 实验值 server-driven(§9.11d.3),客户端读取派发结果。flag 切换经 ④ 确认弹窗(A3-MD1,理由必填)。**A3 feature flag 覆盖范围示例**:归 A3 的横切 flag(A-B 实验开关 / 灰度发布百分比 / 跨域通用能力开关);不归 A3 的反例(PHASES→H1 / chargeFailRate→H2 / 业务域 multiplier→对应业务域)。
 2. **(b) kill-switch config store**:6 闸(5 个二元功能闸 + 1 个 geo-block 闸)的服务端闸状态托管表 `[闸 key / 状态(enabled/disabled,geo-block 为 activeCountries 非空判定)/ 最近变更(operator / reason)]`——`withdraw 提现(后台应急新增,enforce 于 D 域提现 endpoint)/ staking 单档 / genesis / exchange / trial`(5 个二元功能闸,其中 4 个源自前端 §9.11d.1)+ `geo-block`(国家级屏蔽,结构 `{ key:'geo-block', enabled: countryList.length>0, activeCountries:[] }`);闸切换经 ④ 确认弹窗(熔断 A3-MD2 / 恢复 A3-MD3,V1 临时入口,V4 转 J1/J2)。**默认态**:5 个二元功能闸 `enabled=true`(未熔断);geo-block 默认 `activeCountries` 为空列表(无封锁),`enabled = activeCountries.length > 0`(非 boolean ON/OFF)。
 3. **(c) 系统健康**:服务端关键依赖健康面(事件管道 / 账本写入 / endpoint 可用性 / NTP 同步)的运营内部监控总览。
+4. **(d) 应用体验配置 · 界面语言(2026-11-04)**:「应用体验配置」卡片(分享渠道、官方应用安装、首页新手任务与周促销开关回显)新增「界面语言」一节,按固定顺序列出 9 种界面语言:中文 `zh`、English `en`、Tiếng Việt `vi`、Bahasa Indonesia `id`、Bahasa Melayu `ms`、Filipino `fil`、Русский `ru`、Қазақ тілі `kk`、Oʻzbekcha `uz`;每行显示语言本身的写法、中文名和代码。zh/en/vi 为基础语言,始终开启、不能取消;其余 6 种可勾选开关。随卡片原有「保存」一起提交,沿用同一保存理由(8–200 字)、版本号和操作记录。关闭后 App 与 H5 Lite 用户在语言列表里看不到该语言,正在使用它的用户改用英文;重新开启后需要用户再选一次。从未配置时为全部 9 种开启。权限同卡片其他部分(`platform_a3_read` 查看 / `platform_a3_write` 修改)。
+   - 后端 B26 上线前(读取结果不含 `interfaceLanguages`):该节只读,全部显示为开启,并提示「系统支持后，可以在这里开关界面语言，现在只能查看。」保存时不提交该字段,卡片其余保存行为不变。
+   - 读取到的列表含未知代码、重复或缺少 zh/en/vi 时,整张卡片按数据异常处理(与其他字段相同);保存后返回的列表与提交的不一致时,提示「其他设置已保存，但界面语言没有按你的选择保存」,需刷新核对后重新保存。
 
 **③ 可控参数**
 
@@ -672,6 +675,7 @@ A3 托管**平台级横切配置**——feature flag 平台、**kill-switch conf
 
 **⑤ 接口**
 - `GET /api/admin/system/config` — 返回系统健康 `{ health:{ pipeline, ledger, ntp, endpoints } }`(server time 单源 / Idempotency-Key 为固定后端不变量,**不在本 endpoint 配置面**;feature flag / kill-switch 走各自 endpoint)。
+- `GET /api/admin/platform/config/experience` / `PUT /api/admin/platform/config/experience` — 应用体验配置(②(d))。PUT 携 `expectedVersion / baseUrl / channels / appDownload / reason / operator` 与 `Idempotency-Key`;GET 返回 `interfaceLanguages` 时 PUT 一并提交 `interfaceLanguages: string[]`(已开启的代码,含 zh/en/vi,按固定顺序),与其他字段同一版本号、同一条操作记录;校验不通过返回 422 `PLATFORM_EXPERIENCE_LANGUAGES_INVALID`。该字段由后端 B26(uvel-docs 交接 20)提供,App 公共接口 `GET /api/config/platform` 顶层下发同名字段。
 - `GET /api/admin/feature-flags` / `PUT /api/admin/feature-flags` — feature flag 清单查询 / 切换(body 携 reason;服务端按 flag 分类校验执行角色资质;切换产 `admin.feature_flag_changed`)。
 - `GET /api/admin/killswitch` / `PUT /api/admin/killswitch`(**V1 临时**)— kill-switch 闸状态查询 / 切换 `{ key, enabled, activeCountries?, reason }`,geo-block 闸 `enabled = activeCountries.length > 0`(非纯 boolean,对齐 B5⑤)。**单一 endpoint 按 key 路由**:每次调用切换单一闸,**服务端按 key 与方向校验执行角色资质——功能闸熔断(→disabled)可为风控/财务/超管;功能闸恢复(→enabled)仅超管,且 server 前置 B1 覆盖率红线核验(低于红线返回 422 `COVERAGE_BELOW_REDLINE`);geo-block 拒绝财务(返回 403),仅风控/超管可执行**;geo-block 不设独立 endpoint(经同一 `PUT /api/admin/killswitch?key=geo-block` + activeCountries 字段实现)。**请求体须携 `Idempotency-Key`(server 24h dedup,防网络抖动重复熔断/恢复,§1.8 原则二.3)与 reason(缺失 400 `REASON_REQUIRED`);操作者经确认弹窗(A3-MD2~MD4)直接调用,写入与审计同事务,熔断动作另触发全运营账号广播**;切换产 `admin.killswitch_toggled`。**V4 落地后切换面迁移至 J1/J2 endpoint**,A3 `/killswitch` 标注「V1 临时,V4 转 J 域」。
 
