@@ -19,6 +19,7 @@ import { M1PersonalWorkbench, SupportSeatRolesButton, type PersonalWorkbenchView
 import { M1StatisticDetails, fundLabels, type FundMetric, type StatisticSource } from "./m1-statistic-details";
 import { M1LiveService } from "./m1-live-service";
 import { CustomerTransferDialog, TransferPendingNotes } from "./m1-customer-transfer";
+import { SelfAvatarEditor } from "./self-avatar-editor";
 import { SupportAvatar } from "./support-avatar";
 import { compactSupportBoardValue } from "./support-leaderboard";
 import { AnalyticsFreshness } from "./analytics-freshness";
@@ -284,6 +285,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const [calendarError, setCalendarError] = useState(""), [calendarRetry, setCalendarRetry] = useState(0);
   const [personalPeriod, setPersonalPeriod] = useState<SupportAnalyticsResponse | null>(null), [personalPeriodError, setPersonalPeriodError] = useState("");
   const adminId = useAdminAuth(state => state.session?.adminId);
+  const operatorName = useAdminAuth(state => state.session?.operator || state.session?.username || "本人账号");
   // 「返回负责组客户」 from M3 brings back the list view, filters and page saved when 发起会话 was clicked.
   const [sessionReturn] = useState<AnalyticsQueryState | null>(() => {
     if (typeof window === "undefined" || new URLSearchParams(window.location.search).get("restore") !== "customers") return null;
@@ -490,7 +492,7 @@ if (!scope) return <section className="sa-workbench" aria-label="客服范围核
 {!isPersonal && <M1LiveService ctx={ctx} />}
 <div className="sa-tabbar">
   <nav className="sa-main-tabs" aria-label="客服工作台">{tabs.map(tab => <button type="button" key={tab} aria-current={currentTab === tab ? "page" : undefined} onClick={() => openTab(tab)}>{TAB_LABEL[tab]}{tab === "pool" && scope.scopeSummary.pending ? <span className="sa-tab-count">{scope.scopeSummary.pending}</span> : null}</button>)}</nav>
-  <div className="sa-actions">{!isPersonal && <button type="button" onClick={() => { window.location.href = "/service/sessions?tab=pending"; }}>会话审阅</button>}<button type="button" onClick={() => router.push("/service/leaderboard")}>业绩榜</button><button type="button" onClick={() => refreshScope()}>刷新</button></div>
+  <div className="sa-actions">{mode === "MANAGED" && <SelfAvatarEditor name={operatorName} ctx={ctx} onChanged={() => undefined} />}{!isPersonal && <button type="button" onClick={() => { window.location.href = "/service/sessions?tab=pending"; }}>会话审阅</button>}<button type="button" onClick={() => router.push("/service/leaderboard")}>业绩榜</button><button type="button" onClick={() => refreshScope()}>刷新</button></div>
 </div>
 <TransferPendingNotes key={transferRevision} onOpen={setTransferCustomer} />
 {transferNotice && <div className="sa-notice" role="status">{transferNotice}<button type="button" onClick={() => setTransferNotice("")}>知道了</button></div>}
