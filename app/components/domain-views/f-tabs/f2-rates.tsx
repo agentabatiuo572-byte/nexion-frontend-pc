@@ -37,6 +37,10 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
   const canRoyaltyRate = ctx.can("network_f2_royalty_rate");
   const canPolicyAmplify = ctx.can("network_f2_policy_amplify");
   const l1NexReadonly = !ctx.f2DirectPolicy || !!ctx.f2DirectPolicyError || ctx.f2DirectPolicyLoading || (ctx.f2DirectPolicy.sevenLayerEnabled && ctx.f2DirectPolicy.purchaseSplit.enabled);
+  const l1NexStatus = ctx.f2DirectPolicyLoading ? "好友奖励设置加载中，暂不能修改"
+    : ctx.f2DirectPolicyError ? "好友奖励设置加载失败，暂不能修改"
+      : !ctx.f2DirectPolicy ? "好友奖励设置尚未确认，暂不能修改"
+        : "已停用 · 已改用好友购买奖励拆分";
   const coolingRaw = configuredValue(ctx.f2ConfigValues["F.cooldown"]);
   const coolingDays = /^[+-]?\d+$/.test(coolingRaw) && Number(coolingRaw) >= 0 && Number(coolingRaw) <= 90
     ? String(Number(coolingRaw)) : "";
@@ -113,7 +117,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
                 name: `调整 ${level} UVT 奖励系数`, amplify: true, op: "param", paramKey: `F.unilevel.nex.${level}`,
                 edit: { kind: "number", current: currentNex, min: 0, unit: "UVT / 每 1 USDT 奖励", amplifiesWhen: "increase" },
                 detail: `${level} 每发 1 USDT 奖励，额外发多少 UVT · 当前 ${currentNex || "未配置"}。调高前先看兑付覆盖率；只影响之后的结算。`,
-              })}>{currentNex || "未配置"}<small>UVT / 每 1 USDT 奖励</small></button> : <span className="nex-val">{currentNex || "未配置"}<small>{direct && l1NexReadonly ? "已停用 · 已改用好友购买奖励拆分" : "UVT / 每 1 USDT 奖励"}</small></span>}
+              })}>{currentNex || "未配置"}<small>UVT / 每 1 USDT 奖励</small></button> : <span className="nex-val">{currentNex || "未配置"}<small>{direct && l1NexReadonly ? l1NexStatus : "UVT / 每 1 USDT 奖励"}</small></span>}
               </div>
               <div role="cell" className="casc-status"><span className="casc-mobile-label">发放状态</span><span className="f2-status" data-state={paused}>{paused === "on" ? "已暂停" : paused === "off" ? "未暂停" : paused ? "配置无效" : "未配置"}</span></div>
               <div role="cell" className="casc-action">{direct ? <span className="casc-fixed">{rate ? "L1 费率固定" : "L1 待配置"}<small>{rate ? "不能手动修改" : "不可手动调整"}</small></span> : canRoyaltyRate ? <button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({

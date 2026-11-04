@@ -294,17 +294,19 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         fetchF2RatesOverview(), fetchF2DirectReferralPolicy(),
         canReadA2 ? fetchA2Overview({ domain: "F", object: "current" }) : Promise.resolve(null),
       ]);
-      if (request !== f2Generation.current) return;
+      if (request !== f2Generation.current) return null;
       if (policy.status === "fulfilled") setF2DirectPolicy(policy.value);
       else { setF2DirectPolicy(null); setF2DirectPolicyError(errorMessage(policy.reason)); }
       if (overview.status === "fulfilled") setF2Overview(overview.value);
       else { setF2Overview(null); setF2Error(errorMessage(overview.reason)); }
       if (audit.status === "fulfilled") setF2ActivationPending(audit.value?.operationQueue.find(row => row.status === "pending" && row.obj === "current" && ["七层结算启用", "七层结算暂停", "七层结算恢复"].includes(row.action)) ?? null);
       else { setF2ActivationPending(null); setF2ActivationPendingError("审批进度加载失败，请刷新后继续。"); }
+      return policy.status === "fulfilled" ? policy.value : null;
     } catch (error) {
-      if (request !== f2Generation.current) return;
+      if (request !== f2Generation.current) return null;
       setF2Overview(null);
       setF2Error(errorMessage(error));
+      return null;
     } finally {
       if (request === f2Generation.current) { setF2Loading(false); setF2DirectPolicyLoading(false); setF2ActivationPendingLoading(false); }
     }
