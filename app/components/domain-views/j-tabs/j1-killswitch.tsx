@@ -379,7 +379,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           <div className="b1cov-legend">
             <span className="it"><span className="d red" />危险 &lt;{coverageText(RED)}</span>
             <span className="it"><span className="d yellow" />审慎 {coverageText(RED)}–{coverageText(YELLOW)}</span>
-            <span className="it"><span className="d green" />健康 ≥{coverageText(YELLOW)}</span>
+            <span className="it"><span className="d green" />正常 ≥{coverageText(YELLOW)}</span>
             <span className="it" style={{ marginLeft: "auto", color: covPass ? "var(--success)" : "var(--danger)", fontWeight: 600 }}>当前 {coverageText(COV)} · {covPass ? "通过" : "不通过"}</span>
           </div>
           <div className="b1cov-detail">

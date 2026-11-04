@@ -9,13 +9,13 @@
  * 柱状：<ColumnChart label="每天到期" series={[{ label: "到期", slot: 3 }]} format={money}
  *   data={[{ key: date, tick: "11-05", values: [120], detail: "提现 …" }]} />
  *   两个系列成对画，两个系列以上自动带图例。
- * 走势：<TrendLine label="差额" data={[{ key, tick, value }]} format={money} slot={3} />
- *   diverging 时 0 以上用正色、以下用负色（VS-45）。纵轴总是包住 0。
+ * 走势：<TrendLine label="累计到期" data={[{ key, tick, value }]} format={money} slot={3} />
+ *   纵轴总是包住 0。只画真实历史或明确标为预测的序列，当前值倒推的不画（DP-63）。
  *
  * 全是 0、数据不足或只有一类时不要用这些组件，页面写一句话（DP-62）。
  * 图是 role="img"，数值要能在图外读到：结论、表格或明细（ST-63）。
  */
-import { useId, useState, type MouseEvent, type ReactNode } from "react";
+import { useState, type MouseEvent, type ReactNode } from "react";
 
 export type ChartSlot = 1 | 2 | 3 | 4 | "other";
 
@@ -112,16 +112,14 @@ export function ColumnChart({ label, data, series, format, axisFormat = format, 
   );
 }
 
-export function TrendLine({ label, data, format, axisFormat = format, slot = 1, diverging = false, height = 180 }: {
+export function TrendLine({ label, data, format, axisFormat = format, slot = 1, height = 180 }: {
   label: string;
   data: readonly { key: string; tick: string; value: number; detail?: ReactNode }[];
   format: (value: number) => string;
   axisFormat?: (value: number) => string;
   slot?: ChartSlot;
-  diverging?: boolean;
   height?: number;
 }) {
-  const clipId = useId().replace(/:/g, "");
   const [active, setActive] = useState<number | null>(null);
   const values = data.map((row) => row.value);
   const high = niceCeil(Math.max(0, ...values));
@@ -130,7 +128,6 @@ export function TrendLine({ label, data, format, axisFormat = format, slot = 1, 
   const yRatio = (value: number) => (value - low) / span;
   const xRatio = (index: number) => data.length > 1 ? index / (data.length - 1) : 0.5;
   const path = data.map((row, index) => `${index ? "L" : "M"}${(xRatio(index) * 1000).toFixed(1)} ${((1 - yRatio(row.value)) * 200).toFixed(1)}`).join(" ");
-  const zeroY = (1 - yRatio(0)) * 200;
   const every = tickEvery(data.length);
   const ticks = [...new Set([low, 0, high])].map((value) => ({ value, ratio: yRatio(value) }));
   const hover = (event: MouseEvent<HTMLDivElement>) => {
@@ -145,20 +142,12 @@ export function TrendLine({ label, data, format, axisFormat = format, slot = 1, 
         <div className="rd-chart-plot" style={{ height }} onMouseMove={hover} onMouseLeave={() => setActive(null)}>
           <Ticks ticks={ticks} format={axisFormat} />
           <svg className="rd-chart-line" viewBox="0 0 1000 200" preserveAspectRatio="none" aria-hidden>
-            {diverging ? (
-              <>
-                <clipPath id={`${clipId}-pos`}><rect x="0" y="0" width="1000" height={zeroY} /></clipPath>
-                <clipPath id={`${clipId}-neg`}><rect x="0" y={zeroY} width="1000" height={200 - zeroY} /></clipPath>
-                <path d={path} data-sign="pos" clipPath={`url(#${clipId}-pos)`} vectorEffect="non-scaling-stroke" />
-                <path d={path} data-sign="neg" clipPath={`url(#${clipId}-neg)`} vectorEffect="non-scaling-stroke" />
-              </>
-            ) : <path d={path} data-slot={slot} vectorEffect="non-scaling-stroke" />}
+            <path d={path} data-slot={slot} vectorEffect="non-scaling-stroke" />
           </svg>
           {active !== null && <span className="rd-chart-cross" style={{ left: `${xRatio(active) * 100}%` }} />}
           <span
             className="rd-chart-dot"
-            data-slot={diverging ? undefined : slot}
-            data-sign={diverging ? (data[marker].value < 0 ? "neg" : "pos") : undefined}
+            data-slot={slot}
             style={{ left: `${xRatio(marker) * 100}%`, bottom: `${yRatio(data[marker].value) * 100}%` }}
           />
           {current && active !== null && (

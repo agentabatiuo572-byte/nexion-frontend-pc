@@ -876,6 +876,8 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   // 无域前缀的通用码,**必须挂在表尾**:includes 兜底循环按插入顺序命中,
   // 排在带前缀的同族(VIETQR_/H8_/C6_CONFIG_VERSION_CONFLICT)之后才不会把它们的专属文案抢掉。
   CONFIG_VERSION_CONFLICT: "该配置已被其他操作员更新，本次未覆盖；请刷新页面并核对最新值后重试。",
+  VOUCHER_ALREADY_REGISTERED: "这个凭证号已经登记过，这次没有入账。请核对凭证号，确实是新到账再换正确的凭证号。",
+  VOUCHER_NO_INVALID: "凭证号不符合要求，这次没有入账。请填到账凭证上的原始编号。",
   // 抛出侧写成 `H1_RESPONSE_INVALID:<字段名>`,字段名只留给日志排查:
   // 兜底 includes 循环用基础码命中本条,冒号后缀不会上屏(与 H7_VOUCHER_RESPONSE_INVALID 同款)。
   H1_RESPONSE_INVALID: "增长节奏服务返回的数据不完整或不一致，页面已停止展示；请重新加载或联系值班人员。",

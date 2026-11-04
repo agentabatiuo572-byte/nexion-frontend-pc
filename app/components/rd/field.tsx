@@ -11,6 +11,7 @@
  * - 说明按 DP-31 写：基础档一句话不超过 25 字，加强档再写怎么填和改了会怎样。
  */
 import { useId, type InputHTMLAttributes, type ReactNode } from "react";
+import { Checkbox } from "./checkbox";
 
 export interface FieldControlProps {
   id: string;
@@ -40,8 +41,8 @@ export function Field({ label, help, error, required, children }: {
 export function Check({ label, help, ...input }: Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & { label: ReactNode; help?: ReactNode }) {
   const id = useId();
   return (
-    <div className="rd-check">
-      <input {...input} id={id} type="checkbox" aria-describedby={help ? `${id}-help` : undefined} />
+    <div className="rd-check-item">
+      <Checkbox {...input} id={id} aria-describedby={help ? `${id}-help` : undefined} />
       <label htmlFor={id}>{label}</label>
       {help && <div id={`${id}-help`} className="rd-form-help">{help}</div>}
     </div>

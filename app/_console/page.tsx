@@ -15,6 +15,7 @@ import { BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { a2ActionText } from "@/lib/admin/operator-copy";
 import { b0Blocks } from "@/lib/admin/b0-access";
+import { coverDaysText } from "@/lib/admin/treasury-cover-days";
 import { fetchB0Devices, fetchB0NewUsers, fetchB0Sales } from "@/lib/admin/b0-client";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { fetchB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
@@ -24,7 +25,6 @@ import { requiredReadAuthority } from "@/lib/admin/cross-domain-authority";
 import { fetchD2Withdrawals } from "@/lib/admin/d-client";
 import { supportClient } from "@/lib/admin/m-support-client";
 import { opsAlertHref, refreshJ1DutyAlerts, useJ1DutyAlerts } from "@/lib/admin/ops-dashboard-client";
-import { fmtNum } from "@/lib/format";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { FlowFold, FundFold, FunnelFold, KpiFold, pressureLevel, RiskFold, useFoldChoices } from "./command-center/folds";
@@ -175,8 +175,8 @@ export default function CommandCenter() {
   };
 
   // 没有到期时后端给占位值 999，不能直接显示；有到期时天数可以比 999 大。
-  const days = !water ? null : water.dailyAverageDueUsdt === 0 ? "未来 7 天没有到期" : `可覆盖 ${fmtNum(Math.floor(water.reserveCoverDays))} 天`;
-  const fundWord = level === "danger" ? (belowRedline ? "跌破红线" : "危险") : level === "warn" ? "警戒" : "健康";
+  const days = !water ? null : water.dailyAverageDueUsdt === 0 ? "未来 7 天没有到期" : `可覆盖 ${coverDaysText(water.reserveCoverDays)}`;
+  const fundWord = level === "danger" ? (belowRedline ? "跌破红线" : "危险") : level === "warn" ? "警戒" : "正常";
   const fundText = `资金安全：${fundWord}${days ? `，${days}` : ""}`;
   const advice = water && water.tier !== "NORMAL" && water.tier !== "WATCH" ? water.suggestedAction : "建议收紧提现和奖励等支出设置";
   const phase = rhythm.h1;
