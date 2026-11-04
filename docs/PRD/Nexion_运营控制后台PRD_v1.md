@@ -1689,6 +1689,8 @@ C1 是 C 域的**入口与单用户全景态势面**——以多维检索定位�
 | 导出用户列表(脱敏 CSV) | 超管或具备 `user_c1_write` 权限的管理员 | 普通确认，填写 8–200 字理由 | `admin.user_list_exported`(范围 / 操作者) |
 | 从画像跳各子模块处置 | 按目标子模块角色 | 否(跳转;处置确认由目标子模块确认弹窗承接) | 跳转记审计(operator / 目标模块) |
 
+**账户操作入口（BUG-202）**：用户详情的「冻结 / 解冻账户」同时要求账户操作读取权和当前会话解析后的目标菜单授权；沿用外壳的菜单解析与路径检查。有读取权但没有该菜单时不显示链接，保持当前用户详情；获准时带入当前用户编码和原列表返回地址，不增加任何菜单或业务权限。
+
 > **C1 本身不持任何写 / 处置权**:C1 只做检索、聚合展示与跳转;一切处置(冻结 / 调资产 / 改 KYC / 改安全)落对应子模块(C2–C6 / D2 / D4),由其确认弹窗与审计约束。这与「画像是聚合视图、各域权威唯一」一致。
 
 **导出结果恢复（BUG-209）**：打开确认框时保留本次筛选，首次提交把筛选、trim 后理由与原操作编号绑定。提交中禁止重复确认、关闭或发起新导出。未完成下载时确认框保持打开，就地显示原因与「原操作结果尚未确认」，原理由只读；「按原操作重试」始终发送相同筛选、理由和编号。关闭确认框、修改页面筛选后再点「继续原导出」，仍显示并重试原操作，不混用新条件。「发起新导出」明确改用当前页面筛选，重新填写理由并使用新编号；该动作不会撤销原操作可能已生成的文件或记录。收到 CSV 并触发浏览器下载后清除本次操作、关闭确认框并显示已下载提示。
@@ -1925,7 +1927,7 @@ C2 是**单用户账户处置入口**——冻结 / 解冻、强制登出、加�
 |---|---|---|---|
 | 冻结账户(+ 原因码) | 风控(lead)/ 超管(财务可发起冻结请求单转风控) | C2-MD1(理由必填) | `admin.user_frozen`(operator / reason)+ 联动 D2 frozen |
 | 解冻账户 | 风控(lead)/ 超管 | C2-MD2(理由必填) | `admin.user_unfrozen`(operator / reason) |
-| 强制登出(指定 / 全部 session) | 风控 / 客服 | C2-MD3(理由必填;止血动作,确认即生效) | `admin.session_revoked`(scope / reason);实际 revoke 经 C5 session 体系 |
+| 强制登出全部 session | 具备 `user_c5_session_revoke_all` 的操作者，且可进入账户操作页 | C2-MD3(理由必填;止血动作,确认后立即生效) | `admin.session_revoked`(scope / reason);实际请求 `/profiles/{userId}/security/sessions/revoke-all`，使用 C5 session 体系 |
 | impersonate(模拟登录) | 客服 / 风控 | C2-MD4(理由必填;只读+限时+全审计三重约束) | `admin.user_impersonation_started` / `admin.user_impersonation_ended`(operator / reason / ttl) |
 | 加白 / 拉黑 | 风控(lead)/ 超管 | C2-MD5(加白)/ C2-MD6(拉黑)(理由必填) | admin 审计(名单类型 / reason / 失效时间 / operator) |
 
@@ -1968,8 +1970,8 @@ C2 是**单用户账户处置入口**——冻结 / 解冻、强制登出、加�
 - **成功反馈**:弹窗关闭;状态更新「正常」;toast;事件 `admin.user_unfrozen`;实时告警;D2 联动恢复。
 
 ##### [C2-MD3] 强制登出确认
-- **功能**:立即终止该用户指定 / 全部活跃 session(被盗号止血),确认即生效。
-- **布局结构**:1. **信息区**:userId / 目标 scope(指定 session 的设备/IP/起始时间,或「全部 N 个 session」)。2. **输入区**:reason(多行文本,必填,8–200 字)。3. **按钮区**:取消 / 确认登出。
+- **功能**:立即终止该用户全部活跃 session(被盗号止血)，确认后立即生效；按钮要求实际接口的 `user_c5_session_revoke_all`，仅有 C2 同名权限不显示。
+- **布局结构**:1. **信息区**:userId / 全部在线设备数量。2. **输入区**:reason(多行文本,必填,8–200 字)。3. **按钮区**:取消 / 确认提交。
 - **错误态**:409(session 已结束)/ 400 / 403。
 - **成功反馈**:弹窗关闭;session 列表就地更新;toast;事件 `admin.session_revoked`。
 
@@ -2002,7 +2004,7 @@ C2 是**单用户账户处置入口**——冻结 / 解冻、强制登出、加�
 **⑤ 接口**
 - `POST /api/admin/users/:userId/freeze`(冻结,确认弹窗 C2-MD1:body 携 `{reasonCode, reason}`,reason 空值 400 `REASON_REQUIRED`;`Idempotency-Key` 必带,防重复冻结)。冻结确认后 server **原子**置账户 frozen + 联动 D2 提现 frozen(§9.11f),client 不本地冻结。
 - `POST /api/admin/users/:userId/unfreeze`(解冻,确认弹窗 C2-MD2,body 携 reason;`Idempotency-Key` 必带)。
-- `POST /api/admin/users/:userId/logout`(强制登出;`?scope=current|all`;确认弹窗 C2-MD3,body 携 reason;实际 revoke 经 C5 session revocation,§4.5.2:revoke sessionId 的 refresh + 加入 access token revocation list)。
+- `POST /api/admin/users/profiles/{userId}/security/sessions/revoke-all`（强制登出全部会话，确认弹窗 C2-MD3；body 携 `{reason, operator}`，带 `Idempotency-Key`，要求 `user_c5_session_revoke_all`。C2 专用 `/profiles/{userId}/sessions/revoke-all` 的权限不代替此路由权限）。
 - `POST /api/admin/users/:userId/impersonate`(发起模拟登录,确认弹窗 C2-MD4,body 携 `{ttlMin, reasonCode, reason}`;返回**只读受限**的 impersonation 会话句柄 + 到期时间 ≤ 30min)。**只读识别机制**:impersonation 会话句柄包含特殊 claim(如 `scope:'impersonate_readonly'` 或独立的 impersonation token type),所有写操作 endpoint 的 auth middleware 须检测该 claim 并对会话内一切写请求返回 403 `IMPERSONATION_READ_ONLY`;具体实现方案见 A3 / Ch9 auth middleware 规范。运营端以该会话句柄载入**用户前端只读会话视图**(②(b) 代入会话视图,渲染用户视角画面);句柄到期(≤ 30min)或运营退出即失效,失效后该会话一切请求(含读)一并拒绝。
 - 名单:`POST /api/admin/users/:userId/{allowlist|blocklist}`(确认弹窗 C2-MD5/MD6,body 携 reason;**账户级 userId 维度**,与 K1 IP 维度白名单不重叠)。
 
@@ -2014,7 +2016,7 @@ C2 是**单用户账户处置入口**——冻结 / 解冻、强制登出、加�
 |---|---|---|---|---|---|---|
 | 查看账户状态 / impersonate 台账 | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | 冻结 / 解冻 | ✅ | —(可发起冻结请求单) | ✅(lead) | — | — | — |
-| 强制登出 | ✅ | ✅ | ✅ | — | ✅ | — |
+| 强制登出全部会话 | 按实际 `user_c5_session_revoke_all` 授权 | 不因角色名放行 | 按实际授权 | 不因角色名放行 | 按实际授权 | — |
 | impersonate | ✅ | — | ✅ | — | ✅ | — |
 | 加白 / 拉黑 | ✅ | — | ✅(lead) | — | — | — |
 
