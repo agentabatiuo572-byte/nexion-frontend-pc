@@ -78,15 +78,6 @@ const RELEASE_PARAM_COPY: Record<string, { name: string; sub: string }> = {
 const releaseParamName = (p: KRiskParam) => RELEASE_PARAM_COPY[p.key]?.name ?? p.name;
 const releaseParamSub = (p: KRiskParam) => RELEASE_PARAM_COPY[p.key]?.sub ?? p.sub;
 
-// 簇状态 → 收益桶结论(展示派生,不动处理流程;权威结算在服务端)。
-const CLUSTER_EARNING_IMPACT: Record<ClusterStatus, { label: string; tone: string; desc: string }> = {
-  detected: { label: "锁定奖励", tone: "bad", desc: "这组账户仍待判定，新增收益直接记为锁定奖励，无需先人工冻结账户组。" },
-  flagged: { label: "锁定奖励", tone: "bad", desc: "这组账户已标记为可疑，新增收益直接记为锁定奖励，无需先人工冻结账户组。" },
-  frozen: { label: "锁定奖励", tone: "bad", desc: "冻结这组账户后，新增收益会锁定，提现审核也会更严格。" },
-  released: { label: "恢复正常", tone: "ok", desc: "解除误判后，之后的收益按正常账户处理；之前待审核的仍按审核结果处理。" },
-  cleared: { label: "正常释放", tone: "ok", desc: "判定正常后，这组账户退出风险监控；后续收益按普通账户处理。" },
-};
-
 function formatThreshold(value: number) {
   return Number.isFinite(value) ? value.toFixed(2) : "未配置";
 }
@@ -998,12 +989,21 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               <ClusterGraph c={cur} />
               <div className="ktint" style={{ fontSize: 12 }}><b>判读</b> · {cur.note}</div>
               {(() => {
-                // 收益影响(SPEC-7 搬回):簇状态 → 收益桶结论 + 当前释放参数,展示派生不动处理流程。
-                const impact = CLUSTER_EARNING_IMPACT[cur.status];
+                // 按结算顺序展示新增收益分流，解除误判或判定正常后仍须判断人数。
                 const releaseValue = (key: string) => overview?.releaseParams.find((p) => p.key === key)?.value;
                 const slots = releaseValue("freePhoneSlotsPerCluster");
                 const pendingFrom = releaseValue("duplicateAccountPendingFrom");
                 const freezeFrom = releaseValue("duplicateAccountFreezeFrom");
+                let impact = { label: "尚未确认", tone: "dim", desc: "收益审核规则暂时加载不出来，新增收益的处理方式尚未确认。" };
+                if (["detected", "flagged", "frozen"].includes(cur.status)) {
+                  impact = { label: "锁定奖励", tone: "bad", desc: "账户组处于待判定、可疑或已冻结，新增收益直接记为锁定奖励；收益锁定与账户冻结是两种处理。" };
+                } else if (pendingFrom && freezeFrom) {
+                  impact = cur.n >= Number(freezeFrom)
+                    ? { label: "锁定奖励", tone: "bad", desc: `同组 ${cur.n} 个账号已达到收益锁定起点 ${freezeFrom}，新增收益直接记为锁定奖励。` }
+                    : cur.n >= Number(pendingFrom)
+                      ? { label: "须审核收益", tone: "warn", desc: `同组 ${cur.n} 个账号已达到收益审核起点 ${pendingFrom}，新增收益须先人工审核。` }
+                      : { label: "可提现收益", tone: "ok", desc: "同组账号数未达到收益审核起点，新增收益记为可提现收益。" };
+                }
                 return (
                   <div className={`ktint${impact.tone === "bad" ? " bad" : impact.tone === "warn" ? " warn" : ""}`} data-proof="k1-cluster-earning-impact" style={{ fontSize: 12, marginTop: 10 }}>
                     <b>收益影响</b> · 当前结论:<span className={`bdg ${impact.tone}`} style={{ marginLeft: 6 }}>{impact.label}</span>
