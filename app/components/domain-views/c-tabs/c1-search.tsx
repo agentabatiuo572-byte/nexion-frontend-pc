@@ -165,9 +165,9 @@ function filterQuery(filters: AdvancedFilters): C1ExportQuery {
 
 function currentExportQuery(seg: Seg, keyword: string, filters: AdvancedFilters): C1ExportQuery {
   return {
-    ...queryForSeg(seg),
     ...keywordQuery(keyword),
     ...filterQuery(filters),
+    ...queryForSeg(seg),
   };
 }
 
@@ -304,6 +304,7 @@ export function C1Search({
 
   const changeSeg = (next: Seg) => {
     setSeg(next);
+    if (next === "highrisk") setFilters((current) => ({ ...current, riskBand: "" }));
     setPage(1);
   };
 
@@ -313,6 +314,7 @@ export function C1Search({
   };
 
   const changeFilter = (key: keyof AdvancedFilters, value: string) => {
+    if (key === "riskBand" && effectiveSeg === "highrisk") setSeg("all");
     setFilters((current) => ({ ...current, [key]: value }));
     setPage(1);
   };
@@ -366,7 +368,7 @@ export function C1Search({
             <option value="">全部团队等级</option>{Array.from({ length: 13 }, (_, value) => <option key={value} value={`V${value}`}>V{value}</option>)}
           </select></label>
           <label>推荐码<input className="ui-control" aria-label="推荐码" placeholder="推荐码" value={filters.referralCode} onChange={(event) => changeFilter("referralCode", event.target.value)} /></label>
-          {canReadRisk && <label>风险等级<select className="ui-control" aria-label="风险等级" value={filters.riskBand} onChange={(event) => changeFilter("riskBand", event.target.value)}>
+          {canReadRisk && <label>风险等级<select className="ui-control" aria-label="风险等级" value={effectiveSeg === "highrisk" ? "HIGH" : filters.riskBand} onChange={(event) => changeFilter("riskBand", event.target.value)}>
             <option value="">全部风险等级</option><option value="LOW">低风险</option><option value="MEDIUM">中风险</option><option value="HIGH">高风险</option>
           </select></label>}
           <label>累计充值下限<input className="ui-control" aria-label="累计充值下限" type="number" min="0" placeholder="累计充值 ≥" value={filters.depositMin} onChange={(event) => changeFilter("depositMin", event.target.value)} /></label>
