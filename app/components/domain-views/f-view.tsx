@@ -405,7 +405,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   };
 
   // F 域 5 写函数统一改 A2 propose:按 key 分发到 4 polymorphic op(commit afe51f2)。
-  const proposeFConfig = async (sourceDomain: string, key: string, value: string, reason: string, expectedVersion?: number) => {
+  const proposeFConfig = async (sourceDomain: string, key: string, value: string, reason: string, expectedVersion?: number, amplifies?: boolean) => {
     if (key === "F.unilevel.nex.L1") {
       const current = await fetchF2DirectReferralPolicy();
       setF2DirectPolicy(current);
@@ -414,9 +414,6 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     const op = resolveFOp(key);
     const def = findHighOp(op);
     if (!def) throw new Error(`F_OP_NOT_FOUND:${op}`);
-    const direction = sourceDomain === "F3" ? mc?.edit?.amplifiesWhen : undefined;
-    const currentValue = Number(mc?.edit?.current);
-    const requestedValue = Number(value.replace(/%$/, ""));
     await proposeStable(`f-config:${key}`, JSON.stringify([value, reason]), {
       action: `${def.action} · ${key}`,
       obj: key,
@@ -424,9 +421,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       after: value,
       type: def.type === "fund" ? "fund" : "param",
       // F3 数值编辑按实际方向标记；其他参数保留既有分类，系统执行时仍须按当前值复核。
-      amplifies: direction && Number.isFinite(currentValue)
-        ? direction === "increase" ? requestedValue > currentValue : requestedValue < currentValue
-        : isFFundAmplifyingKey(key) || def.amplifies,
+      amplifies: amplifies ?? (isFFundAmplifyingKey(key) || def.amplifies),
       gate: { roles: [] },
       gateLabel: def.gateLabel,
       reason,
@@ -645,8 +640,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f3Loading,
     f3Error,
     refreshF3,
-    updateF3Config: async (key, value, reason) => {
-      await proposeFConfig("F3", key, value, reason);
+    updateF3Config: async (key, value, reason, amplifies) => {
+      await proposeFConfig("F3", key, value, reason, undefined, amplifies);
     },
     executeF3Settlement: async (ownerUserId, settlementDate, reason) => {
       const result = await executeF3Settlement(ownerUserId, settlementDate, reason);

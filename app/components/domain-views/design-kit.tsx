@@ -3418,7 +3418,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const isJ4Command = businessForm?.kind === "sop-authoring" || /应急剧本|应急预案|启动演练|回滚剧本|回滚预案/.test(actionText);
   const kind = spec?.kind ?? "text";
   const opts = spec?.options ?? (kind === "select" || kind === "toggle" ? ["开启", "关闭"] : []);
-  const currentNumber = Number(spec?.current);
+  const currentNumber = spec?.current?.trim() ? Number(spec.current) : Number.NaN;
   const newNumber = Number(newVal);
   const directionalAmplifies = typeof spec?.amplifiesWhen === "object"
     ? spec.current === spec.amplifiesWhen.from && newVal === spec.amplifiesWhen.to

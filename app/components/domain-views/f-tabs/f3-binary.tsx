@@ -2,11 +2,12 @@
 
 /** F3 · 左右团队业绩结算。
  * 页面读模型来自后端 teams/binary。 */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { Badge, CodeTag, DataListPager, useDataListPager } from "../design-kit";
 import { F3_GV_RESET_PARAM_KEY } from "@/lib/admin/f1-client";
+import { fetchBusinessCalendar } from "@/lib/admin/business-calendar-client";
 import type { FViewCtx } from "./types";
 import { F3Placements } from "./f3-placements";
 
@@ -48,6 +49,13 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   const [statusFilter, setStatusFilter] = useState("");
   const [cohortFilter, setCohortFilter] = useState("");
   const [lookupOpen, setLookupOpen] = useState(false);
+  const [growthZone, setGrowthZone] = useState<string | null>(null);
+  useEffect(() => {
+    void fetchBusinessCalendar().then(
+      (calendar) => setGrowthZone(calendar.trackZones.GROWTH_TEAM ?? null),
+      () => setGrowthZone(null),
+    );
+  }, []);
   const rows = ctx.f3Settlements;
   const lookupKw = lookupText.trim().toLowerCase();
   const userOptions = useMemo(() => {
@@ -75,6 +83,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   const dailyCap = ctx.f3DailyCap;
   const maxTrackGmv = Math.max(1, ctx.f3MaxTrackGmv, ...rows.flatMap((row) => [row.a, row.b]));
   const thEff = cfg?.threshold ?? "";
+  const thresholdCurrent = thEff.replace(/[$,]/g, "").trim();
   const ratePercent = matchRatePercent(cfg?.matchRate ?? "");
   const rateEff = ratePercent === null ? `比例尚未确认 · 已存值 ${text(cfg?.matchRate)}` : `${ratePercent}%`;
   const spillOn = cfg?.spilloverEnabled ?? cfg?.spillover !== "已关闭";
@@ -302,13 +311,13 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="ckv"><span className="k">未匹配订单额处理</span><span className="v" style={{ color: "var(--ink-3)" }}>{text(residualEff)}</span></div>
           {canConfigure && <div className="cfg-foot"><button className="fbtn primary" onClick={() => ctx.openActionConfirm({
             name: "调整每组订单额门槛",
-            edit: { kind: "number", current: thEff.replace(/[$,]/g, "").trim(), unit: "USDT", min: 0.000001, max: 5000, amplifiesWhen: "decrease" },
+            edit: { kind: "number", current: thresholdCurrent, unit: "USDT", min: 0.000001, max: 5000, amplifiesWhen: "decrease" },
             detail: `每组订单额门槛 · 当前 ${text(thEff)}。须大于 0、不超过 5000，最多 6 位小数；降低门槛会增加奖励流出，需检查兑付覆盖率。`,
             completionCopy: "批准后生效，后续结算使用新设置；已结算的不变。",
             run: async (reason, _fields, newValue) => {
               const value = (newValue ?? "").trim();
               if (!/^(?:\d+(?:\.\d{1,6})?|\.\d{1,6})$/.test(value)) throw new Error("门槛须填写普通数字，最多 6 位小数，不会自动取整。");
-              await ctx.updateF3Config("F.binary.threshold", value, reason);
+              await ctx.updateF3Config("F.binary.threshold", value, reason, thresholdCurrent !== "" && Number(value) < Number(thresholdCurrent));
               ctx.toast("门槛已提交，批准后生效；批准前仍按原设置执行");
             },
           })}>调整门槛</button></div>}
@@ -328,7 +337,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             run: async (reason, _fields, newValue) => {
               const value = (newValue ?? "").trim();
               if (!/^(?:\d+(?:\.\d{1,10})?|\.\d{1,10})$/.test(value)) throw new Error("比例须填写普通数字，最多 10 位小数，不会自动四舍五入。");
-              await ctx.updateF3Config("F.binary.matchRate", `${value}%`, reason);
+              await ctx.updateF3Config("F.binary.matchRate", `${value}%`, reason, ratePercent !== null && Number(value) > Number(ratePercent));
               ctx.toast("匹配比例已提交，批准后生效；批准前仍按原设置执行");
             },
           })}>调整比例</button></div>}
@@ -336,7 +345,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
 
         <div className="cfg-card">
           <div className="ch">自动分组与归零</div>
-          <div className="cs">实际归零按系统业务日历：每月 1 日 00:00（越南时间 UTC+7）。历史周期不重算。</div>
+          <div className="cs">实际归零按系统业务日历：每月 1 日 00:00（{growthZone || "业务时区尚未确认"}）。历史周期不重算。</div>
           <div className="ckv"><span className="k">自动分组</span><span className="v" style={{ color: spillOn ? "var(--success)" : "var(--ink-3)" }}>{spillOn ? "已启用" : "已关闭"}</span></div>
           <div className="ckv"><span className="k">近 7 天自动分组</span><span className="v">{ctx.f3AutoPlacement7dCount.toLocaleString()} 成员</span></div>
           <div className="ckv"><span className="k">已存归零说明</span><span className="v" style={{ fontSize: 11 }}>{text(resetEff)}</span></div>
