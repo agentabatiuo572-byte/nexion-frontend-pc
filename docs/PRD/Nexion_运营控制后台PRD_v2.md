@@ -76,7 +76,7 @@ SKU 目录管理台,自上而下三区:
 1. **SKU 列表表格**:每行一个 SKU `[SKU key / 名称 / 代际 / saleStatus(on|off|pending) / lifecycle(active|legacy) / price / 双币日产 / stock / unlockPhase]`,行尾操作入口(编辑 / 上下架)。列表不得写死商品数量或名称，以 `nx_product` 当前记录为准；Pro v2 等新代际商品通过 `unlockPhase` 展示发布阶段，不使用 `coming-soon` 销售状态。
    > **注 1(SKU 数量跨文档差异)**:V1 §3.2 E1 行记录为「/store 商品表(6 SKU)」(V1 时前端现状),本表列出 7 个管理对象(含 Pro v2 / Genesis 目录位)。**差异为 V2 落地补入 Pro v2 后修正为 7 个 SKU**(消除 §3.2「6 SKU」与本章「7 对象」的隐性矛盾)。
    > **注 2(Cloud Share Premium 待确认)**:Cloud Share Premium(12 月节奏表 §3.3 月 10 新品)的 SKU 治理方案待确认——若为独立 SKU 则 E1 补入 SKU 列表 + E1 补入代际发布门;若为原地 tier 升级则在 status 逻辑中补充 Cloud Share 的 `premium` 状态;先经 PM 确认。当前 7 个管理对象未涵盖该新品。
-2. **SKU 详情编辑抽屉**:编辑商品基本信息、价格、每件算力点、硬件规格、收益、库存、开放阶段、购买条件、资料及媒体等；份额型收益填写年化区间与每日 UVT。点击「保存修改」进入确认，填写理由后提交 A2，由另一名管理员审核通过后生效(E1a-MD2)。
+2. **SKU 详情编辑抽屉**:编辑商品基本信息、价格、每件算力点、硬件规格、收益、库存、开放阶段、购买条件、资料及媒体等；份额型收益填写年化区间与每日 UVT。已有非份额商品的开放阶段为空时显示「请选择开放阶段」，不冒充已选首项；即使只有一个合法阶段也可明确选择。未选仍拒绝保存；没有可用阶段时显示「请先配置阶段」并禁用选择。可跑任务大类及其他商品校验照常执行（BUG-150）。点击「保存修改」进入确认，填写理由后提交 A2，由另一名管理员审核通过后生效(E1a-MD2)。
 3. **套餐折扣 ladder 面**:阶梯折扣配置(4 件 12% / 3 件 8% / 2 件 5%,对齐 §9.11c.1 `GET /api/config/cart/bundle-discount` + 前端 `lib/store/cart.ts`),驱动结算购物车多件购买。
 4. **库存告警视图**:`stock < 50` 的 SKU 以橙色 `NN LEFT` 标注(对齐前端 §7.1 库存告警 `<50 时显示 NN LEFT 橙色`),供运营补货 / 控量决策。
 5. **SKU 购买门配置区（E1，COMPLETE）**：结构化配置 `rankMin / activeDirectMin / teamVolumeMin / mode(all|either) / quotaCap / quotaSold / quotaPeriod / enforce`。App 先通过 `GET /api/store/purchase-eligibility` 获取当前用户决策；普通单、组合单、Sandbox 单、Trade-in 询价/提交及容量替换由服务端按同一规则复验。规则畸形或用户事实缺失时失败关闭；空门表示不附加用户条件。当前仅支持 `quotaPeriod=lifetime`；旧 `month` 数据保留读取但标记 HOLD、不可直接保存，待建立按自然月隔离的原子 usage 计数后再恢复。E3 九类通用 eligibility 编辑器另列 HOLD，不得作为本门的运行时实现。
