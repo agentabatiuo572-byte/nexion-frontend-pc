@@ -7,6 +7,7 @@
 ## 权威定价
 
 - 资格与开关：`tradeinEnabled`、`eligibility`。
+- 开关修改批准后生效：开启后允许显示升级置换入口，仍须满足设备及购买资格；关闭后隐藏入口。调整详情必须同时说明两个方向，不得把“关闭后隐藏”写成所有修改都会隐藏（BUG-148 复核）。
 - 阶梯：4 个严格递增的累计产出/实付比例界点 `tradeinLadderCut1..4`，对应 5 个严格递减折抵率 `tradeinLadderCredit1..5`。
 - 限制：`tradeinRequireHigherPrice`、`tradeinMaxDevicesPerOrder`；当前用户流程一笔只接受一台属于该用户且为 ACTIVE 的旧设备。
 - 报价按服务端累计已结算产出、旧机真实实付价和目标商品当前价计算；submit 必须重新计算，绝不信任 quote 返回值或客户端金额。

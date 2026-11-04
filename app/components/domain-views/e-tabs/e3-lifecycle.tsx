@@ -245,7 +245,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
         {/* 右:升级置换阶梯(FEAT-DEV02 · 随时下架,产出阶梯抵扣) */}
         <section className="param-card">
           <div className="param-h"><span className="ic trade"><TradeIcon /></span><div className="t"><div className="nm">升级置换阶梯</div><div className="s">按已赚回的比例决定抵扣多少，随时可换</div></div><span className="tag">升级置换</span></div>
-          <div className="pkv"><Lbl zh="升级置换开关" code="enabled" desc="关闭后 App 上所有升级置换入口都会隐藏" hot /><span className="v" style={{ fontSize: 13, fontWeight: 600 }}>{pE("E.tradein.enabled")}</span><Adj label="升级置换开关" k="E.tradein.enabled" unit="" editKind="select" options={["开", "关"]} detail="批准后 App 上所有升级置换入口隐藏。" /></div>
+          <div className="pkv"><Lbl zh="升级置换开关" code="enabled" desc="开启后允许显示入口，关闭后隐藏；设备及购买资格仍须满足" hot /><span className="v" style={{ fontSize: 13, fontWeight: 600 }}>{pE("E.tradein.enabled")}</span><Adj label="升级置换开关" k="E.tradein.enabled" unit="" editKind="select" options={["开", "关"]} detail="开启后允许显示升级置换入口，仍须满足设备及购买资格；关闭后隐藏升级置换入口。" /></div>
           <div className="pkv"><Lbl zh="当前阶梯一览" desc="抵扣金额 = 买入价 × 档位比例；旧机已赚回的越多，抵扣越少" /><span className="v" style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{ladderCredits.join(" / ")}%(界点 {ladderCuts.join("/")}%)</span><span /></div>
           <div className="pkv"><Lbl zh="分档界线（4 个）" code="ladder.cut1–4" desc="按「已赚回金额 ÷ 买入价」分成 5 档的 4 条界线" /><span className="v" style={{ fontSize: 13 }}>{ladderCuts.map((c) => `${c}%`).join(" · ")}</span><AdjMulti title="分档界线" ascending hint="按「已赚回金额 ÷ 买入价」分 5 档：低于界线 1 为第 1 档，以此类推，超过界线 4 为第 5 档。须从小到大。" detail="修改后对之后的新报价生效。" fields={[
             { key: "cut1", paramKey: "E.tradein.ladder.cut1", label: "界线 1（%）", inputKind: "number", placeholder: "25" },
