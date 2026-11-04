@@ -74,6 +74,8 @@
 | A7 菜单管理 | `platform_a7_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR | W：CONFIG_ADMIN；根菜单/删除 H：SUPER_ADMIN | ALL；父子、角色授权和路由完整性保护 |
 | A8 权限字典 | `platform_a8_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR | H：SUPER_ADMIN | ALL；permission code 发布后不可改语义，只能停用/新建 |
 
+A6 当前执行路径（2026-11-04）：新建角色、修改名称和备注保存后生效；角色启停、授权和删除提交待确认票，由「操作记录与审批」确认后才生效。页头按这两种路径说明，不把所有修改概括为立即生效或全部待确认；本次不改变审批流程。切换角色时详情只属于当前选中角色；加载中或失败时不提供旧角色的操作，失败明确提示并可重试。后续对审批范围的产品调整须先明确裁决。
+
 ### 3.2 B 总览驾驶舱（5）
 
 | 模块 | R 权限 | 可读角色 | W/H/X 角色 | 数据范围与关键限制 |

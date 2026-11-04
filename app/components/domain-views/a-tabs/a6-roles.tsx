@@ -46,7 +46,10 @@ export default function A6Roles() {
   const canGrant = isSuper || authorities.includes("platform_a6_role_grants_update");
   const [overview, setOverview] = useState<A6RoleOverview | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [detail, setDetail] = useState<A6RoleDetail | null>(null);
+  const [loadedDetail, setDetail] = useState<A6RoleDetail | null>(null);
+  const detail = loadedDetail?.id === selectedId ? loadedDetail : null;
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailRetry, setDetailRetry] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [menuTree, setMenuTree] = useState<A7MenuTreeNode[]>([]);
@@ -111,11 +114,15 @@ export default function A6Roles() {
   }, [canGrant, refreshOverview, setToast]);
 
   useEffect(() => {
-    if (selectedId == null) { setDetail(null); return; }
+    let active = true;
+    setDetail(null);
+    setDetailError(null);
+    if (selectedId == null) return;
     fetchA6RoleDetail(selectedId)
-      .then(setDetail)
-      .catch((e) => setToast(displayAdminError(e)));
-  }, [selectedId, setToast]);
+      .then((result) => { if (active) setDetail(result); })
+      .catch((e) => { if (active) setDetailError(displayAdminError(e)); });
+    return () => { active = false; };
+  }, [selectedId, detailRetry]);
 
   const roles = overview?.roles ?? [];
 
@@ -123,7 +130,7 @@ export default function A6Roles() {
     <div className="dkpage adom">
       <DomainHeader domainCode="A" domainName="平台基础" accentVar="--admin-domain-a"
         l2Id="A6" l2Name="角色管理"
-        summary="管理后台角色，设置每个角色能做的操作和能看的菜单。修改提交后，需在「操作记录与审批」确认才生效。"
+        summary="管理后台角色，设置每个角色能做的操作和能看的菜单。新建角色、修改名称和备注保存后生效；启停、授权和删除需在「操作记录与审批」确认才生效。"
         right={canWrite ? <Btn variant="primary" sm onClick={() => setFormMode({ kind: "create" })}>+ 新建角色</Btn> : <Badge tone="neutral">只读</Badge>} />
 
       <div className="two-col" style={{ alignItems: "flex-start" }}>
@@ -168,9 +175,13 @@ export default function A6Roles() {
         </Card>
 
         <Card>
-          <CardH title="角色详情" sub={detail ? `权限 ${detail.permissionCodes.length} 项 · 菜单 ${detail.menuIds.length} 个` : "选择左侧角色"} />
-          {!detail ? (
-            <div style={{ padding: 24, color: "var(--ink-3)", textAlign: "center" }}>选择一个角色查看详情</div>
+          <CardH title="角色详情" sub={detail ? `权限 ${detail.permissionCodes.length} 项 · 菜单 ${detail.menuIds.length} 个` : selectedId == null ? "选择左侧角色" : "当前选中角色"} />
+          {detailError ? (
+            <div className="alertbar warn" role="alert" style={{ margin: 16 }}>
+              角色详情加载失败：{detailError} <Btn sm onClick={() => setDetailRetry((value) => value + 1)}>重试</Btn>
+            </div>
+          ) : !detail ? (
+            <div style={{ padding: 24, color: "var(--ink-3)", textAlign: "center" }}>{selectedId == null ? "选择一个角色查看详情" : "角色详情加载中…"}</div>
           ) : (
             <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
               <Row label="角色标识"><span className="mono">{detail.roleCode}</span></Row>
