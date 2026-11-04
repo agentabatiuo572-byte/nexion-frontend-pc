@@ -12,6 +12,7 @@
 | `H.publicStats.homePaidCurrent` | [0, 9000000000000]，最多两位小数 | 130532 |
 | `H.publicStats.homePaidStepMin` | [0, 1000000]，最多两位小数 | 1.10 |
 | `H.publicStats.homePaidStepMax` | [0, 1000000]，最多两位小数 | 5.50 |
+| `H.publicStats.activeJobsBase` | [0, 100000000]，整数，可留空 | 留空（null，不发布） |
 
 两个区间均要求最小值不大于最大值。到上限停止增加。
 
