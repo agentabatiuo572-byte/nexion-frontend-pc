@@ -7,13 +7,13 @@
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Bell, X, AlertTriangle, ChevronRight } from "lucide-react";
-import { RoleBadge } from "@/app/components/kit/role-badge";
+import { Bell, AlertTriangle, ChevronRight } from "lucide-react";
+import { Drawer } from "@/app/components/rd/overlay";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { opsAlertHref, useC2HighRiskAlerts, useJ1DutyAlerts, useJ2GeoAlerts, useJ3TamperConfigAlerts } from "@/lib/admin/ops-dashboard-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import type { AdminRole } from "@/lib/nav/console-nav";
+import { roleLabel, type AdminRole } from "@/lib/nav/console-nav";
 import { fmtPct } from "@/lib/format";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { a2ActionText } from "@/lib/admin/operator-copy";
@@ -27,10 +27,10 @@ interface ShellAlert {
   href: string;
 }
 
-const LEVEL: Record<AlertLevel, { color: string; label: string }> = {
-  high: { color: "var(--v5-danger)", label: "高危" },
-  mid: { color: "var(--v5-warning)", label: "关注" },
-  low: { color: "var(--v5-ink-4)", label: "正常" },
+const LEVEL: Record<AlertLevel, { tone: "danger" | "warn" | "done"; label: string }> = {
+  high: { tone: "danger", label: "高危" },
+  mid: { tone: "warn", label: "关注" },
+  low: { tone: "done", label: "正常" },
 };
 
 function severityLevel(sev: string): AlertLevel {
@@ -174,175 +174,85 @@ export function NotificationBell() {
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={`告警与待办${badge > 0 ? ` · ${badge} 条待处理` : ""}`}
-        className="relative grid h-9 w-9 place-items-center rounded-[9px] transition-colors hover:bg-[var(--v5-surface-2)]"
-        style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}
+        className="rd-top-item rd-bell"
       >
         <Bell size={16} aria-hidden />
-        {badge > 0 && (
-          <span
-            className="font-mono-tabular absolute -right-1.5 -top-1.5 grid h-[16px] min-w-[16px] place-items-center rounded-full px-1 text-[10px]"
-            style={{ background: "var(--v5-danger)", color: "#fff", border: "2px solid var(--v5-surface)", fontWeight: 600 }}
-          >
-            {badge > 9 ? "9+" : badge}
-          </span>
-        )}
+        {badge > 0 && <span className="rd-top-count font-mono-tabular">{badge > 9 ? "9+" : badge}</span>}
       </button>
-      {open && <NotificationDrawer alerts={alerts} pendingOperations={pendingOperations} a2Error={a2Error} onClose={() => setOpen(false)} />}
+      <NotificationDrawer open={open} alerts={alerts} pendingOperations={pendingOperations} a2Error={a2Error} onClose={() => setOpen(false)} />
     </>
   );
 }
 
 function NotificationDrawer({
+  open,
   alerts,
   pendingOperations,
   a2Error,
   onClose,
 }: {
+  open: boolean;
   alerts: ShellAlert[];
   pendingOperations: A2OperationRow[];
   a2Error: string | null;
   onClose: () => void;
 }) {
-  const [shown, setShown] = useState(false);
-  useEffect(() => {
-    setShown(true);
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   return (
-    <>
-      {/* 遮罩 */}
-      <div
-        className="fixed inset-0"
-        style={{ background: "rgba(0,0,0,0.5)", zIndex: "var(--admin-z-drawer)", opacity: shown ? 1 : 0, transition: "opacity .2s ease" }}
-        onClick={onClose}
-        aria-hidden
-      />
-      {/* 右侧滑入抽屉 */}
-      <aside
-        role="dialog"
-        aria-modal="true"
-        aria-label="告警与待办"
-        className="fixed right-0 top-0 flex h-screen w-full max-w-[420px] flex-col"
-        style={{
-          background: "var(--v5-surface)",
-          borderLeft: "1px solid var(--v5-border-strong)",
-          boxShadow: "-16px 0 48px rgba(0,0,0,0.55)",
-          zIndex: "calc(var(--admin-z-drawer) + 1)",
-          transform: shown ? "translateX(0)" : "translateX(100%)",
-          transition: "transform .26s cubic-bezier(0.16,1,0.3,1)",
-        }}
-      >
-        {/* 头部 */}
-        <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: "1px solid var(--v5-border)" }}>
-          <div className="min-w-0">
-            <p className="font-display text-[15px]" style={{ color: "var(--v5-ink)" }}>告警 &amp; 待办</p>
-            <p className="mt-0.5 text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}>{alerts.length} 条告警 · {pendingOperations.length} 项待确认</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="关闭"
-            className="ml-auto grid h-8 w-8 place-items-center rounded-[9px] transition-colors hover:bg-[var(--v5-surface-2)]"
-            style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-3)" }}
-          >
-            <X size={15} aria-hidden />
-          </button>
-        </div>
+    <Drawer
+      open={open}
+      onClose={onClose}
+      title="告警 & 待办"
+      sub={`${alerts.length} 条告警 · ${pendingOperations.length} 项待确认`}
+      aria-label="告警与待办"
+      footer={
+        <Link href="/platform/audit" prefetch={false} onClick={onClose} className="rd-btn rd-alert-cta" data-variant="primary">
+          <span className="rd-btn-face">查看全部操作记录 <ChevronRight size={14} aria-hidden /></span>
+        </Link>
+      }
+    >
+      {/* 风险与应急告警 */}
+      <h3 className="rd-alert-heading">风险与应急告警</h3>
+      <div className="rd-alert-list">
+        {alerts.map((a) => {
+          const lv = LEVEL[a.level];
+          return (
+            <Link key={a.id} href={a.href} prefetch={false} onClick={onClose} className="rd-alert" data-tone={lv.tone}>
+              <AlertTriangle className="rd-alert-icon" size={14} aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span className="rd-alert-text">{a.text}</span>
+                <span className="rd-alert-level">{lv.label}</span>
+              </span>
+              <ChevronRight className="rd-alert-go" size={14} aria-hidden />
+            </Link>
+          );
+        })}
+      </div>
 
-        {/* 主体(滚动)*/}
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          {/* 风险与应急告警 */}
-          <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: "var(--v5-ink-3)" }}>风险与应急告警</p>
-          <div className="flex flex-col gap-2">
-            {alerts.map((a) => {
-              const lv = LEVEL[a.level];
-              return (
-                <Link
-                  key={a.id}
-                  href={a.href}
-                  prefetch={false}
-                  onClick={onClose}
-                  className="flex items-start gap-2.5 rounded-[10px] p-3 transition-colors hover:bg-[var(--v5-surface-2)]"
-                  style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)" }}
-                >
-                  <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-[7px]" style={{ background: `color-mix(in srgb, ${lv.color} 14%, transparent)` }}>
-                    <AlertTriangle size={13} style={{ color: lv.color }} aria-hidden />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[13px]" style={{ color: "var(--v5-ink-2)", fontWeight: 500 }}>{a.text}</span>
-                    <span className="mt-0.5 block text-[11px]" style={{ color: lv.color }}>{lv.label}</span>
-                  </span>
-                  <ChevronRight size={14} style={{ color: "var(--v5-ink-4)", marginTop: 2 }} aria-hidden />
-                </Link>
-              );
-            })}
-          </div>
-
-          {/* 操作确认 待确认 A2 */}
-          <p className="mb-2.5 mt-5 text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: "var(--v5-ink-3)" }}>待确认的操作</p>
-          <div className="flex flex-col gap-2">
-            {a2Error && (
-              <Link
-                href="/platform/audit"
-                prefetch={false}
-                onClick={onClose}
-                className="block rounded-[10px] p-3 transition-colors hover:bg-[var(--v5-surface-3)]"
-                style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)" }}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-[13px]" style={{ color: "var(--v5-ink)", fontWeight: 600 }}>待确认操作加载失败</span>
-                </div>
-                <p className="mt-1 text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}>{a2Error}</p>
-              </Link>
-            )}
-            {!a2Error && pendingOperations.length === 0 && (
-              <div
-                className="rounded-[10px] p-3 text-[12px]"
-                style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)", color: "var(--v5-ink-3)" }}
-              >
-                暂无待确认的操作。
-              </div>
-            )}
-            {pendingOperations.map((a) => {
-              const operationRole = roleForA2Operation(a);
-              return (
-                <Link
-                  key={a.id}
-                  href="/platform/audit"
-                  prefetch={false}
-                  onClick={onClose}
-                  className="block rounded-[10px] p-3 transition-colors hover:bg-[var(--v5-surface-3)]"
-                  style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)" }}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-[13px]" style={{ color: "var(--v5-ink)", fontWeight: 600 }}>{a2ActionText(a.action)}</span>
-                    {operationRole && <span className="ml-auto"><RoleBadge role={operationRole} size="sm" /></span>}
-                  </div>
-                  <p className="mt-1 text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}>{operationDetail(a)}</p>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* 底部 CTA */}
-        <div className="px-5 py-4" style={{ borderTop: "1px solid var(--v5-border)", background: "var(--v5-surface-2)" }}>
-          <Link
-            href="/platform/audit"
-            prefetch={false}
-            onClick={onClose}
-            className="flex items-center justify-center gap-1.5 rounded-[10px] py-2.5 text-[13px] font-medium transition-opacity hover:opacity-90"
-            style={{ background: "var(--v5-brand)", color: "var(--v5-on-brand)" }}
-          >
-            查看全部操作记录 <ChevronRight size={14} aria-hidden />
+      {/* 待确认的操作 */}
+      <h3 className="rd-alert-heading">待确认的操作</h3>
+      <div className="rd-alert-list">
+        {a2Error && (
+          <Link href="/platform/audit" prefetch={false} onClick={onClose} className="rd-alert" data-tone="danger">
+            <span className="min-w-0 flex-1">
+              <span className="rd-alert-text">待确认操作加载失败</span>
+              <span className="rd-alert-note">{a2Error}</span>
+            </span>
           </Link>
-        </div>
-      </aside>
-    </>
+        )}
+        {!a2Error && pendingOperations.length === 0 && <div className="rd-alert-empty">暂无待确认的操作。</div>}
+        {pendingOperations.map((a) => {
+          const operationRole = roleForA2Operation(a);
+          return (
+            <Link key={a.id} href="/platform/audit" prefetch={false} onClick={onClose} className="rd-alert">
+              <span className="min-w-0 flex-1">
+                <span className="rd-alert-text">{a2ActionText(a.action)}</span>
+                <span className="rd-alert-note">{operationDetail(a)}</span>
+              </span>
+              {operationRole && <span className="rd-role">{roleLabel(operationRole)}</span>}
+            </Link>
+          );
+        })}
+      </div>
+    </Drawer>
   );
 }

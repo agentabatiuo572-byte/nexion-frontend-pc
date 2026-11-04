@@ -23,12 +23,12 @@ export function UtcClock() {
 
   return (
     <span
-      className="font-mono-tabular text-[12px] tracking-tight"
-      style={{ color: "var(--v5-ink-3)" }}
+      className="font-mono-tabular text-[13px] tracking-tight"
+      style={{ color: "var(--rd-text-3)" }}
       suppressHydrationWarning
     >
       {time ?? "--:--:--"}
-      <span style={{ color: "var(--v5-ink-4)" }}> UTC</span>
+      <span> UTC</span>
     </span>
   );
 }

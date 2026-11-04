@@ -1,4 +1,5 @@
 "use client";
+import { PageHeader } from "@/app/components/rd/page-header";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import Link from "next/link";
@@ -149,13 +150,9 @@ export function PlatformParamsRegistry() {
 
   return (
     <div className="mx-auto w-full max-w-[1240px]">
-      <header className="mb-4">
-        <p className="font-mono-tabular text-[11px]" style={{ color: "var(--admin-domain-a)" }}>A5 · 平台基础</p>
-        <h1 className="font-display mt-1 text-[24px]" style={{ color: "var(--v5-ink)" }}>平台参数管理</h1>
-        <p className="mt-1.5 max-w-[820px] text-[12.5px] leading-relaxed" style={{ color: "var(--v5-ink-3)" }}>
-          汇总全平台可调参数和紧急开关的当前值。这里只能查看，修改请点进每行标注的所在页面。
-        </p>
-      </header>
+      <div className="mb-4">
+        <PageHeader pageId="A5" title="平台参数管理" summary="汇总全平台可调参数和紧急开关的当前值。这里只能查看，修改请点进每行标注的所在页面。" />
+      </div>
 
       {loading ? (
         <StateCard title="正在加载平台参数" detail="请稍候…" spinning />

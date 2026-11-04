@@ -2,7 +2,7 @@
 
 /**
  * 面包屑 — usePathname() → nav 查表 → 「UVEL 运营控制台 / 域 / L2」。
- * 根路径 / 显示「运营总览」。未匹配路径回退展示原始 segment。
+ * 根路径 / 显示「指挥台」。未匹配路径回退展示原始 segment。域字母和页面编号不显示(DP-30)。
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -11,25 +11,25 @@ import { findByPath } from "@/lib/nav/console-nav";
 
 export function Breadcrumb() {
   const pathname = usePathname() ?? "";
-  const crumbs: { label: string; accent?: string }[] = [{ label: "UVEL 运营控制台" }];
+  const crumbs: { label: string }[] = [{ label: "UVEL 运营控制台" }];
 
   if (pathname === "/" || pathname === "") {
-    crumbs.push({ label: "运营总览" });
+    crumbs.push({ label: "指挥台" });
   } else if (/^\/service\/customers\/[1-9]\d*\/?$/.test(pathname)) {
     const parent = findByPath("/service/overview");
-    if (parent) crumbs.push({ label: `${parent.domain.code} ${parent.domain.name}`, accent: `var(${parent.domain.accentVar})` });
-    crumbs.push({ label: "客户全景档案" });
+    if (parent) crumbs.push({ label: parent.domain.name });
+    crumbs.push({ label: "完整客户档案" });
   } else {
     const match = findByPath(pathname);
     if (match) {
-      crumbs.push({ label: `${match.domain.code} ${match.domain.name}`, accent: `var(${match.domain.accentVar})` });
-      crumbs.push({ label: `${match.l2.id} ${match.l2.name}` });
+      crumbs.push({ label: match.domain.name });
+      crumbs.push({ label: match.l2.name });
     } else {
       // L3 详情:用父路径(去末段)匹配 L2,末段作详情面包屑
       const parts = pathname.split("/").filter(Boolean);
       const parent = findByPath("/" + parts.slice(0, -1).join("/"));
       if (parent) {
-        crumbs.push({ label: `${parent.domain.code} ${parent.domain.name}`, accent: `var(${parent.domain.accentVar})` });
+        crumbs.push({ label: parent.domain.name });
         crumbs.push({ label: parent.l2.name });
         crumbs.push({ label: decodeURIComponent(parts[parts.length - 1]) });
       } else {
@@ -39,32 +39,26 @@ export function Breadcrumb() {
   }
 
   return (
-    <nav aria-label="面包屑" className="admin-topbar-breadcrumb flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[12.5px]">
+    <nav aria-label="面包屑" className="admin-topbar-breadcrumb flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
       {crumbs.map((c, i) => {
         const last = i === crumbs.length - 1;
         return (
           <span key={i} className={`admin-topbar-crumb ${last ? "admin-topbar-crumb-current flex min-w-0" : "admin-topbar-crumb-ancestor hidden shrink-0 xl:flex"} items-center gap-1.5`}>
             {i > 0 && (
-              <ChevronRight size={13} className="shrink-0" style={{ color: "var(--v5-ink-4)" }} aria-hidden />
-            )}
-            {c.accent && (
-              <span
-                className="inline-block rounded-full"
-                style={{ width: 6, height: 6, background: c.accent }}
-              />
+              <ChevronRight size={13} className="shrink-0" style={{ color: "var(--rd-text-3)" }} aria-hidden />
             )}
             {i === 0 ? (
               <Link
                 href="/"
                 prefetch={false}
-                className="admin-topbar-crumb-label transition-colors hover:opacity-80"
+                className="admin-topbar-crumb-label rd-crumb"
                 title={c.label}
-                style={{ color: last ? "var(--v5-ink)" : "var(--v5-ink-3)", fontWeight: last ? 600 : 400 }}
+                data-current={last ? "" : undefined}
               >
                 {c.label}
               </Link>
             ) : (
-              <span className="admin-topbar-crumb-label truncate" title={c.label} aria-current={last ? "page" : undefined} style={{ color: last ? "var(--v5-ink)" : "var(--v5-ink-3)", fontWeight: last ? 600 : 400 }}>
+              <span className="admin-topbar-crumb-label rd-crumb truncate" title={c.label} aria-current={last ? "page" : undefined} data-current={last ? "" : undefined}>
                 {c.label}
               </span>
             )}

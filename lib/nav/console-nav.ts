@@ -10,6 +10,7 @@
  */
 import type { LucideIcon } from "lucide-react";
 import {
+  Settings,
   ShieldCheck,
   Gauge,
   Users,
@@ -20,7 +21,6 @@ import {
   TrendingUp,
   Megaphone,
   Siren,
-  Radar,
   BarChart3,
   Headset,
 } from "lucide-react";
@@ -81,7 +81,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     code: "A",
     name: "平台基础",
     slug: "platform",
-    icon: ShieldCheck,
+    icon: Settings,
     accentVar: "--admin-domain-a",
     roles: ["config"],
     l2: [
@@ -243,7 +243,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     code: "K",
     name: "风控与反作弊",
     slug: "risk",
-    icon: Radar,
+    icon: ShieldCheck,
     accentVar: "--admin-domain-k",
     roles: ["risk"],
     l2: [
