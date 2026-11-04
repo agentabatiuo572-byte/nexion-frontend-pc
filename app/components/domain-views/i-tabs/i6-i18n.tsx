@@ -254,7 +254,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       ),
       amplifies: false,
       run: (reason) => {
-        if (!selectedMessage) return;
+        if (!selectedMessage) return false;
         return runBackend(actions.publishI6LocalizedMessage(selectedMessage.messageKey, {
           zh: selectedMessage.zh,
           en: selectedMessage.en,
@@ -310,7 +310,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         placeholders: selectedMessage?.placeholders,
       },
       run: (reason, _v, form) => {
-        if (!selectedMessage) return;
+        if (!selectedMessage) return false;
         return runBackend(actions.fixI6Integrity(issue.code, {
           messageKey: selectedMessage.messageKey,
           zh: form?.zh || "",
@@ -331,7 +331,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       ),
       amplifies: false,
       run: (reason) => {
-        runBackend(actions.publishI6Course(c.id, reason), `${nexGridBrandText(c.title)} 已发布至 /learn`);
+        return runBackend(actions.publishI6Course(c.id, reason), `${nexGridBrandText(c.title)} 已发布至 /learn`);
       },
     });
 
@@ -348,9 +348,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       amplifies: true,
       edit: { kind: "number", current: String(c.reward), unit: "UVT/课", min: TUTORIAL_REWARD_RANGE.min, max: TUTORIAL_REWARD_RANGE.max, step: 1 },
       run: (reason, v) => {
-        if (!v) return;
+        if (!v) return false;
         const def = findHighOp("i7_course_reward_adjust")!;
-        void propose(toast, {
+        return propose(toast, {
           action: `课程奖励调整 · ${nexGridBrandText(c.title)}`,
           obj: c.id,
           before: `${c.reward} UVT/课`,
@@ -377,7 +377,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       ),
       amplifies: false,
       run: (reason) => {
-        runBackend(actions.archiveI6Course(c.id, reason), `${nexGridBrandText(c.title)} 已下架`);
+        return runBackend(actions.archiveI6Course(c.id, reason), `${nexGridBrandText(c.title)} 已下架`);
       },
     });
 
@@ -439,7 +439,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       },
       run: (reason, slug, form) => {
         const id = slug?.trim() || "new";
-        runBackend(actions.createI6Course(id, coursePayload(form), reason), "课程草稿已创建");
+        return runBackend(actions.createI6Course(id, coursePayload(form), reason), "课程草稿已创建");
       },
     });
 
@@ -473,10 +473,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   });
 
   const reloadVersions = (courseId: string, task: Promise<void>, ok: string) => {
-    task.then(() => actions.reloadIContent())
+    return task.then(() => actions.reloadIContent())
       .then(() => actions.fetchI7CourseVersions(courseId))
       .then((versions) => { setCourseVersions(versions); toast(ok); })
-      .catch((error) => toast(`操作失败:${displayAdminError(error)}`));
+      .catch((error) => { toast(`操作失败:${displayAdminError(error)}`); return false; });
   };
 
   const courseCurrent = (c: Course, version: string, payload?: Record<string, unknown>) => ({
@@ -560,13 +560,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       amplifies: false,
       edit: { kind: "select", current: cur, options: publishedCourseOptions, optionLabels: publishedCourseLabels, unit: "课程" },
       run: (reason, v) => {
-        if (!v) return;
+        if (!v) return false;
         // audit P1 修:换课必须是「已发布课程 id」(SPEC §4 + 设计稿文案承诺);
         // 校验失败拒写并 toast 提示,防 dev/操作员误输入空字符串/已下架课程让首页大卡指向死链。
         const target = COURSES.find((c) => c.id === v.trim());
-        if (!target) { toast(`课程 id ${v} 不存在 · 未执行`); return; }
-        if (liveStatus(target) !== "published") { toast(`${v} 不是已发布课程 · 不可作为推荐位 · 未执行`); return; }
-        runBackend(actions.updateI6FeaturedCourse(v.trim(), reason), `推荐课程已换成 ${v}`);
+        if (!target) { toast(`课程 id ${v} 不存在 · 未执行`); return false; }
+        if (liveStatus(target) !== "published") { toast(`${v} 不是已发布课程 · 不可作为推荐位 · 未执行`); return false; }
+        return runBackend(actions.updateI6FeaturedCourse(v.trim(), reason), `推荐课程已换成 ${v}`);
       },
     });
   };
