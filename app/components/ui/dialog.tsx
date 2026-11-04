@@ -34,7 +34,7 @@ function DialogOverlay({ className, ...props }: React.ComponentProps<typeof Dial
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn("fixed inset-0", className)}
-      style={{ background: "rgba(0,0,0,0.5)", zIndex: "var(--admin-z-drawer)" }}
+      style={{ background: "rgba(0,0,0,0.5)", zIndex: "var(--admin-z-modal)" }}
       {...props}
     />
   );
@@ -56,7 +56,7 @@ function DialogContent({
           className,
         )}
         style={{
-          zIndex: "calc(var(--admin-z-drawer) + 1)",
+          zIndex: "calc(var(--admin-z-modal) + 1)",
           background: "var(--v5-surface)",
           border: "1px solid var(--v5-border-strong)",
           color: "var(--v5-ink)",

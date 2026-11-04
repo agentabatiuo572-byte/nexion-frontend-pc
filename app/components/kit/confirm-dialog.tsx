@@ -15,7 +15,7 @@ export function ConfirmDialog() {
         <motion.div
           key={top.id}
           className="fixed inset-0 flex items-center justify-center p-6"
-          style={{ zIndex: "calc(var(--admin-z-toast) + 5)", background: "rgba(0,0,0,0.55)" }}
+          style={{ zIndex: "var(--admin-z-confirm)", background: "rgba(0,0,0,0.55)" }}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}

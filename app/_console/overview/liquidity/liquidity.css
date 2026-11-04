@@ -358,7 +358,7 @@
 
 .liqpage .b2-dialog-backdrop {
   position: fixed;
-  z-index: 1000;
+  z-index: var(--admin-z-modal);
   inset: 0;
   display: grid;
   place-items: center;

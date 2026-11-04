@@ -108,10 +108,14 @@
   --admin-gutter: 22px;
   --admin-radius: 14px;
   --admin-radius-sm: 9px;
+  /* 浮层只用这张表：页面内容 < 侧栏 < 顶栏 < 抽屉 < 弹窗 < 确认框 < 提示条 < 悬停说明 */
   --admin-z-sidebar: 40;
   --admin-z-topbar: 50;
-  --admin-z-drawer: 60;
-  --admin-z-toast: 80;
+  --admin-z-drawer: 90;
+  --admin-z-modal: 100;
+  --admin-z-confirm: 110;
+  --admin-z-toast: 200;
+  --admin-z-tooltip: 9999;
 
   /* ---- 字体链(本地系统字体优先,避免构建期外网字体下载依赖) ---- */
   --font-display: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -455,7 +459,7 @@ select option:disabled { color: var(--v5-ink-3); }
 .gloss { border-bottom: 1px dashed var(--v5-ink-3, #8a8a8a); cursor: help; position: relative; }
 /* 浮层改用全局 [data-tip] 层(app/components/kit/tooltip-layer.tsx):position:fixed + portal 到 body,
    逃出 .tbl-wrap / .card.pad-0 / .modal / .drawer 等 overflow 祖先的裁切(遮挡根治)。.gloss 与 .has-tip 共用此浮层。 */
-.gloss-tip { position: fixed; z-index: 9999; max-width: 264px; padding: 8px 11px; border-radius: 8px; background: var(--v5-surface-3, #1e1e1e); color: var(--v5-ink, #f5f5f5); border: 1px solid var(--v5-border-strong, #3a3a3a); font-size: 12px; font-weight: 400; line-height: 1.55; white-space: normal; text-align: left; box-shadow: 0 10px 28px rgba(0, 0, 0, .45); pointer-events: none; animation: glossTipIn .12s ease-out; }
+.gloss-tip { position: fixed; z-index: var(--admin-z-tooltip); max-width: 264px; padding: 8px 11px; border-radius: 8px; background: var(--v5-surface-3, #1e1e1e); color: var(--v5-ink, #f5f5f5); border: 1px solid var(--v5-border-strong, #3a3a3a); font-size: 12px; font-weight: 400; line-height: 1.55; white-space: normal; text-align: left; box-shadow: 0 10px 28px rgba(0, 0, 0, .45); pointer-events: none; animation: glossTipIn .12s ease-out; }
 @keyframes glossTipIn { from { opacity: 0; } to { opacity: 1; } }
 .dkpage .wrap { flex-wrap: wrap; }
 .dkpage .spacer { flex: 1; }
@@ -501,7 +505,7 @@ select option:disabled { color: var(--v5-ink-3); }
 .dkpage .ph-img { background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 9px, var(--surface-3) 9px, var(--surface-3) 18px); border: 1px solid var(--border); border-radius: var(--r-sm); display: grid; place-items: center; color: var(--ink-3); font-family: var(--font-jet-mono), monospace; font-size: 11px; }
 
 /* overlays (fixed, viewport-relative even inside .dkpage) */
-.dkpage .modal-scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); backdrop-filter: blur(3px); z-index: 100; display: grid; place-items: center; padding: 24px; }
+.dkpage .modal-scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); backdrop-filter: blur(3px); z-index: var(--admin-z-modal); display: grid; place-items: center; padding: 24px; }
 .dkpage .modal { background: var(--surface); border-radius: 16px; border: 1px solid var(--border); width: 100%; max-width: 520px; box-shadow: 0 20px 60px rgba(0, 0, 0, .5); overflow: hidden; max-height: 88vh; display: flex; flex-direction: column; }
 .dkpage .modal-h { padding: 18px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
 .dkpage .modal-h .ttl { font-size: 16px; font-weight: 600; color: var(--ink); }
@@ -515,8 +519,8 @@ select option:disabled { color: var(--v5-ink-3); }
 /* 勾选/单选框不套用全宽输入样式:原生小方框 + 与文案同行左对齐(ack/确认/多选类弹窗) */
 .dkpage .field input[type="checkbox"], .dkpage .field input[type="radio"] { width: auto; padding: 0; margin: 0; border: 0; border-radius: 0; vertical-align: middle; flex-shrink: 0; accent-color: var(--brand); cursor: pointer; }
 .dkpage .field label.row { display: flex; align-items: center; gap: 8px; margin-bottom: 0; font-weight: 400; cursor: pointer; }
-.dkpage .drawer-scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); z-index: 90; }
-.dkpage .drawer { position: fixed; top: 0; right: 0; height: 100vh; width: 460px; max-width: 94vw; background: var(--surface); border-left: 1px solid var(--border); z-index: 91; display: flex; flex-direction: column; box-shadow: -12px 0 40px rgba(0, 0, 0, .4); animation: slidein .2s ease; }
+.dkpage .drawer-scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); z-index: var(--admin-z-drawer); }
+.dkpage .drawer { position: fixed; top: 0; right: 0; height: 100vh; width: 460px; max-width: 94vw; background: var(--surface); border-left: 1px solid var(--border); z-index: calc(var(--admin-z-drawer) + 1); display: flex; flex-direction: column; box-shadow: -12px 0 40px rgba(0, 0, 0, .4); animation: slidein .2s ease; }
 @keyframes slidein { from { transform: translateX(30px); opacity: .5; } to { transform: none; opacity: 1; } }
 .dkpage .drawer-h { padding: 18px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
 .dkpage .drawer-b { padding: 20px; overflow-y: auto; flex: 1; }
