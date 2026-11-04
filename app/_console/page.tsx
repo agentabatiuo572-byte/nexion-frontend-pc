@@ -183,7 +183,9 @@ export default function CommandCenter() {
   };
 
   // 没有到期时后端给占位值 999，不能直接显示；有到期时天数可以比 999 大。
-  const days = !water ? null : water.dailyAverageDueUsdt === 0 ? "未来 7 天没有到期" : `可覆盖 ${coverDaysText(water.reserveCoverDays)}`;
+  const noDue = water?.dailyAverageDueUsdt === 0;
+  const coverDays = water ? Math.floor(water.reserveCoverDays) : 0;
+  const days = !water ? null : noDue ? "未来 7 天没有到期" : `可覆盖 ${coverDaysText(water.reserveCoverDays)}`;
   // 等级词和资金储备页一致：正常、预警、危险；跌破红线、警戒是覆盖率给的。
   const fundWord = belowRedline ? "跌破红线" : water?.tier === "DANGER" ? "危险" : water?.tier === "WARNING" ? "预警" : belowHealthy ? "警戒" : "正常";
   const fundText = `资金安全：${fundWord}${days ? `，${days}` : ""}`;
