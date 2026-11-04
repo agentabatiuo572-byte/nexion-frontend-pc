@@ -16,7 +16,7 @@ import { businessZone, businessZoneText } from "@/lib/admin/business-time";
 import { Modal } from "../design-kit";
 import { HDSelect, type HDOption } from "./hd-ui";
 import { M1PersonalWorkbench, SupportSeatRolesButton, type PersonalWorkbenchView } from "./m1-personal-workbench";
-import { M1StatisticDetails, fundLabels, type FundMetric, type StatisticSource } from "./m1-statistic-details";
+import { M1StatisticDetails, fundAmount, fundLabels, type FundMetric, type StatisticSource } from "./m1-statistic-details";
 import { M1LiveService } from "./m1-live-service";
 import { CustomerTransferDialog, TransferPendingNotes } from "./m1-customer-transfer";
 import { SelfAvatarEditor } from "./self-avatar-editor";
@@ -552,8 +552,8 @@ if (!scope) return <section className="sa-workbench" aria-label="客服范围核
           {queryState.basis === "PERIOD_EVENT" && <><div><span>期间首次付费</span><CountValue count={data.scopeSummary.financial.firstCandidates} label="期间首次付费；查看同范围资金事件" onClick={() => change({ view: "FINANCE" })} /></div><div><span>期间购机 / {nexGridBrandText(currency)}</span><MoneyValue money={data.scopeSummary.financial.currencies.find(x => x.currency === currency)?.purchases} label={`期间购机 ${nexGridBrandText(currency)}；查看同范围资金事件`} onClick={() => change({ view: "FINANCE" })} /></div></>}
         </div>
         {queryState.view === "FINANCE" && <section className="sa-current-funds" aria-label="当前客户资金观测"><p>当前筛选客户的余额与提现观测，不受月份筛选；提现发生时的客户归属暂无记录。</p><div className="sa-inline-metrics">{(["balance", "successPrincipal", "successNet", "processingPrincipal"] as const).map(metric => {
-          const amount = metric === "balance" ? data.funds.balances?.find(row => row.currency === currency) : data.funds.withdrawals?.find(row => row.currency === currency)?.[metric];
-          return <div key={metric}><span>{fundLabels[metric]} / {nexGridBrandText(currency)}</span><Numeric kind="amount" value={amount?.confirmedAmount ?? null} observed={amount?.observedAmount} label={fundLabels[metric] + " " + nexGridBrandText(currency)} onClick={() => setFundMetric(metric)} /></div>;
+          const amount = fundAmount(data.funds, metric, currency);
+          return <div key={metric}><span>{fundLabels[metric]} / {nexGridBrandText(currency)}</span><Numeric kind="amount" value={amount.confirmed} observed={amount.observed} label={fundLabels[metric] + " " + nexGridBrandText(currency)} onClick={() => setFundMetric(metric)} /></div>;
         })}</div></section>}
         {queryState.view === "OVERVIEW" ? <>
           <div className="sa-coverage"><div>待分配 <Numeric value={data.scopeSummary.pending === null ? null : String(data.scopeSummary.pending)} label="待分配客户，打开待分配客户池" onClick={() => openTab("pool")} /></div><div>归属异常 <Numeric value={data.scopeSummary.anomaly === null ? null : String(data.scopeSummary.anomaly)} label="归属异常" onClick={() => change({ view: "CUSTOMERS", category: "ANOMALY", firstState: "ALL", filter: "ALL" })} /></div><div>有效净额 / {nexGridBrandText(currency)} <MoneyValue money={data.scopeSummary.financial.currencies.find(x => x.currency === currency)?.net} label={`有效净额 ${nexGridBrandText(currency)}`} onClick={() => setFundMetric("net")} /></div></div>

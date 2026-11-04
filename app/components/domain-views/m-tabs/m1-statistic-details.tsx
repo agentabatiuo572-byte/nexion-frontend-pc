@@ -64,7 +64,9 @@ async function maintenancePage(source: Extract<StatisticSource, { kind: "mainten
 }
 
 type Amount = { confirmed: string | null; observed: string | null };
-function fundAmount(funds: SupportAnalyticsCustomer["funds"], metric: Exclude<FundMetric, "net">, currency: string): Amount {
+export function fundAmount(funds: SupportAnalyticsCustomer["funds"], metric: Exclude<FundMetric, "net">, currency: string): Amount {
+  // READY means the read finished, so no row for this currency is a real 0. Any other status stays unknown.
+  if (metric !== "balance" && funds.withdrawalStatus === "READY" && !funds.withdrawals?.some(row => row.currency === currency)) return { confirmed: "0", observed: "0" };
   const amount = metric === "balance" ? funds.balances?.find(row => row.currency === currency) : funds.withdrawals?.find(row => row.currency === currency)?.[metric];
   return { confirmed: amount?.confirmedAmount ?? null, observed: amount?.observedAmount ?? null };
 }
