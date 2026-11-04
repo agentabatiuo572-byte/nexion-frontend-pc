@@ -1615,7 +1615,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         edit={mc.edit}
         businessForm={mc.businessForm}
         reasonMax={200}
-        completionCopy="提交后需在「操作记录与审批」确认才生效。"
+        completionCopy="批准后生效：提交后请另一位超级管理员在「操作记录与审批」中批准。"
         onClose={() => setActionConfirm(null)}
         onConfirm={async (reason, newValue, businessValue) => {
           if (!mc) return;
