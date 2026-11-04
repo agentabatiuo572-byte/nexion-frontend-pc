@@ -6,7 +6,7 @@ import {promotionVisualCases,validatePromotionVisualBoards,validatePromotionVisu
 
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const design=JSON.parse(fs.readFileSync('docs/design/growth-promotions/admin-r1-baseline.json'));
-const baseline=JSON.parse(fs.readFileSync('docs/design/growth-promotions/evidence/admin-r1-design/v4-purchase-interval/export-report.json'));
+const baseline=JSON.parse(fs.readFileSync('docs/design/growth-promotions/evidence/admin-r1-design/v5-dark-only/export-report.json'));
 const expected=promotionVisualCases(design,baseline);
 function fixture(){
   const files=new Map(),proof={status:'captured-awaiting-independent-review',pageErrors:[],source:{designHash:'design',dirtySourceHash:'source'},boards:[]};
@@ -17,8 +17,8 @@ function fixture(){
   }
   const read=file=>{assert(files.has(file),'Missing self-test file '+file);return files.get(file);};return {proof,files,read};
 }
-test('approved manifest has exactly 398 unique cases including every special group',()=>{
-  assert.equal(expected.length,398);const data=fixture();assert.equal(validatePromotionVisualBoards(data.proof,expected,data.read).length,398);
+test('approved manifest has exactly 200 unique cases including every special group',()=>{
+  assert.equal(expected.length,200);const data=fixture();assert.equal(validatePromotionVisualBoards(data.proof,expected,data.read).length,200);
 });
 for(const group of ['-modal-rule-dark-','-phase-draft-','-modal-publish-error-','-row-rule-','-reduced-transparency-'])test('missing '+group+' rejects the complete capture',()=>{
   const data=fixture();data.proof.boards=data.proof.boards.filter(b=>!b.caseId.includes(group));assert.throws(()=>validatePromotionVisualBoards(data.proof,expected,data.read),/Incomplete product cases/);
@@ -34,7 +34,7 @@ test('canonical case binds its actual viewport and theme',()=>{
 });
 test('special fixture and original actual DTO bytes remain bound to current sources',()=>{
   const data=fixture(),dto=Buffer.from('self-test DTO only'),capturedFixture={kind:'explicit-ui-response-fixtures',designHash:'design',sourceHash:'source',serviceSourceHash:'service',actualDtoInputs:[{path:'dto.json',sha256:hash(dto)}],scenes:{}};data.files.set('dto.json',dto);data.proof.source.serviceSourceHash='service';
-  for(const board of data.proof.boards.filter(b=>!/^ADM\d{2}-(normal|empty|loading|error|disabled|long)-/.test(b.caseId))){const key=board.caseId.includes('-reduced-transparency-')?board.caseId.replace(/-reduced-transparency-\d+$/,''):board.caseId.replace(/-(dark|light)-\d+$/,'');capturedFixture.scenes[key]={mapping:['self-test only'],actualDtoInputs:['dto.json']};board.mapping=['self-test only'];board.actualDtoInputs=['dto.json'];board.fixtureKind=capturedFixture.kind;}
+  for(const board of data.proof.boards.filter(b=>!/^ADM\d{2}-(normal|empty|loading|error|disabled|long)-/.test(b.caseId))){const key=board.caseId.includes('-reduced-transparency-')?board.caseId.replace(/-reduced-transparency-\d+$/,''):board.caseId.replace(/-dark-\d+$/,'');capturedFixture.scenes[key]={mapping:['self-test only'],actualDtoInputs:['dto.json']};board.mapping=['self-test only'];board.actualDtoInputs=['dto.json'];board.fixtureKind=capturedFixture.kind;}
   const raw=Buffer.from(JSON.stringify(capturedFixture));data.files.set('fixture.json',raw);data.proof.specialFixture={path:'fixture.json',sha256:hash(raw),kind:capturedFixture.kind,actualDtoInputs:capturedFixture.actualDtoInputs};validatePromotionVisualFixture(data.proof,data.read);
   data.files.set('dto.json',Buffer.from('changed'));assert.throws(()=>validatePromotionVisualFixture(data.proof,data.read),/Actual DTO input changed/);
   data.files.set('dto.json',dto);data.files.set('fixture.json',Buffer.from('changed'));assert.throws(()=>validatePromotionVisualFixture(data.proof,data.read),/Special fixture changed/);

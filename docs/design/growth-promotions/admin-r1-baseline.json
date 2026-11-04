@@ -1,27 +1,27 @@
 {
   "schemaVersion": 1,
   "kind": "design-baseline-only",
-  "designVersion": "admin-r1-20261008-v4",
-  "frozenAt": "2026-10-08T16:46:44.027Z",
-  "sourceCommit": "cbbd7303e2297d9c5d5d2e204c8bc337b0c676fb",
+  "designVersion": "admin-r1-20261104-v5",
+  "frozenAt": "2026-11-04T02:51:17.894Z",
+  "sourceCommit": "124c2953ee4399b50cecb85ea82447cc0d7b13fe",
   "designFile": "admin-r1-baseline.html",
-  "designHash": "cb708656e143d3583f59e35372cfa2423470668ef1f7dc9d6d31892dd6240943",
-  "checkerHash": "562b7199b5c3cd675a0e67b05687122b3dc031969f4fa0a9993258439e70426b",
+  "designHash": "c1d2900d33b22d54972be24f0b598ceeb6213fd436765e4a8e5667944ecfb6c6",
+  "checkerHash": "84c1ca9624394b55a243a744d2b86792d9c02e03433e8ba074e36cdc277629b7",
   "sourceHashes": {
-    "app/globals.css": "37b6846cc9e4f48dd2b093e6ca134706f6cc125339a723aaf8a86d94b6d039b7",
-    "app/components/domain-views/h-domain.css": "1819c845b126fa3f5c2a60242e591d9d87c7bc2c4bcf7edaa2feaba01652c5a8",
-    "app/components/shell/console-shell.tsx": "9d554edd8f23fa2c9149dc3078967b767c7bf40bbf7a33ca4544dfbe16ab8837",
-    "app/components/shell/sidebar.tsx": "9106dbededd13e38603b88d796020d05e88982fc4287fc3c87e0a53df815dbaa",
-    "lib/admin/registry/f.ts": "772fa25e8939898adbe8163d3a57f97a9c4a9bae1c4355ae9d4dbaa5c859b36c",
-    "app/components/domain-views/f-tabs/f1-vrank.tsx": "b1dc518f0069b73c599c1b16821f8b1f4d80880429b98631f1f6b7318347fd45",
-    "docs/PRD/growth-promotions/PRODUCT-PRD.md": "ce04748d81d2281ba1f3281e27fd0e2524f5829caacbfbe84f7b7efcd199d094",
-    "docs/PRD/growth-promotions/ADMIN-PRD.md": "51dc083cc634a89822af046f225b336f21ccc06674e07fad959ebc62a9366b6e",
-    "docs/PRD/growth-promotions/IMPLEMENTATION.md": "d32ff75ab092dcd1864d96614b8d261bdfc268ff721b2c46e687dbd44fde043b",
+    "app/globals.css": "1d32ea017f59c15de9809eed3a1f7fe93a70558436e9f5f449c72ea5fd6543d2",
+    "app/components/domain-views/h-domain.css": "c3d35bd7033db06bf6fa9f9f5f7c3162eaa547ddcad17f96b09bd6f6365fcf2a",
+    "app/components/shell/console-shell.tsx": "d41915926625283f737b417ab77ab4f3344a0f0ae7daf125230ae970ff17ff8f",
+    "app/components/shell/sidebar.tsx": "9359b7c340b570f99bfdcc2751eedd04d1ee85cecec2914523e9f2b7f6ae857f",
+    "lib/admin/registry/f.ts": "52ccac3281aa9da2ec863c02dcbd4db12e3c65f5fe45406e0acc19bb97fc963b",
+    "app/components/domain-views/f-tabs/f1-vrank.tsx": "d7fad0f1cf21aaaf1e56acc430d7656cad8c8e17504d9d2d6d0e54e79b3e49d2",
+    "docs/PRD/growth-promotions/PRODUCT-PRD.md": "6c84312a019879bdb15dd6c9db571c246b073e794cbe72f3c3d1d81a9f34ba19",
+    "docs/PRD/growth-promotions/ADMIN-PRD.md": "bf414b9a3a6c7d2d8ff3b74ff3426af130097b1ba538351e9e10df519dce76fd",
+    "docs/PRD/growth-promotions/IMPLEMENTATION.md": "0da16386002faad099b47a071087d0896abcb5d4803bba16b798b559b620312a",
     "docs/design/growth-promotions/assets/concept-admin-app.png": "bc3e7d499b52ea8027f194af2fa18df79dad4219d11922de9594fabced885aa0",
-    "public/uvel-mark-dark.png": "af094b551aa23b8067033e5c40cb8d925e4e8a5f65f78f2fbd071acdf06d774b",
-    "public/uvel-mark-light.png": "db4b06d8bf6e50e38ddf12d0ccd902dfc15d34b45f2a421c69c01a95ab4c59c7"
+    "public/uvel-mark-dark.png": "af094b551aa23b8067033e5c40cb8d925e4e8a5f65f78f2fbd071acdf06d774b"
   },
   "authority": "docs/PRD/growth-promotions/PRODUCT-PRD.md is the sole business contract. This fixture does not approve production policies.",
+  "themeDecision": "The console keeps one dark theme since 2026-11-04; v5 drops the light boards and renders the v4 dark boards unchanged. evidence/admin-r1-design/v4-purchase-interval keeps the historical dark and light v4 export.",
   "designDecision": "Refine the existing concept and H4 V5 shell. Preserve H-domain orange, flat surfaces, real shell geometry and local font fallback. Never backfill this baseline from product runtime screenshots.",
   "tokens": {
     "dark": {
@@ -55,38 +55,6 @@
       "--font-display": "\"Manrope\",-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,\"Helvetica Neue\",Arial,sans-serif",
       "--font-jet-mono": "\"JetBrains Mono\",ui-monospace,\"SFMono-Regular\",Menlo,Consolas,monospace",
       "--font-v5": "\"Manrope\",-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,\"Helvetica Neue\",Arial,sans-serif,\"Manrope\",-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,\"Helvetica Neue\",Arial,sans-serif"
-    },
-    "light": {
-      "--v5-bg": "#F4F1E9",
-      "--v5-surface": "#FFFFFF",
-      "--v5-surface-2": "#FAF7F0",
-      "--v5-surface-3": "#F0EBE0",
-      "--v5-border": "#E5DFD0",
-      "--v5-border-strong": "#D5CDB8",
-      "--v5-ink": "#13141A",
-      "--v5-ink-2": "#3C3F47",
-      "--v5-ink-3": "#6A6F78",
-      "--v5-ink-4": "#A4A8B0",
-      "--v5-brand": "#0E48E6",
-      "--v5-on-brand": "#FFFFFF",
-      "--v5-on-brand-2": "#0A0A0A",
-      "--v5-success": "#0E8E4A",
-      "--v5-success-soft": "#DFF5E8",
-      "--v5-warning": "#C68316",
-      "--v5-warning-soft": "#FBF1D9",
-      "--v5-danger": "#B9554A",
-      "--v5-danger-soft": "#F8E1DC",
-      "--admin-domain-h": "#EA580C",
-      "--admin-blue": "#2563EB",
-      "--admin-violet": "#7C3AED",
-      "--admin-teal": "#0D9488",
-      "--admin-sidebar-w": "252px",
-      "--admin-topbar-h": "56px",
-      "--admin-gutter": "22px",
-      "--r-card": "16px",
-      "--font-display": "\"Manrope\",-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,\"Helvetica Neue\",Arial,sans-serif",
-      "--font-jet-mono": "\"JetBrains Mono\",ui-monospace,\"SFMono-Regular\",Menlo,Consolas,monospace",
-      "--font-v5": "\"Manrope\",-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,\"Helvetica Neue\",Arial,sans-serif,\"Manrope\",-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,\"Helvetica Neue\",Arial,sans-serif"
     }
   },
   "fonts": {
@@ -94,48 +62,54 @@
     "actualPlatformFonts": {
       "h1": [
         {
-          "familyName": "Microsoft YaHei",
-          "postScriptName": "MicrosoftYaHei-Bold",
+          "familyName": "PingFang SC",
+          "postScriptName": "PingFangSC-Semibold",
           "isCustomFont": false,
           "glyphCount": 4
         }
       ],
       ".logo b": [
         {
-          "familyName": "Segoe UI Semibold",
-          "postScriptName": "SegoeUI-Semibold",
+          "familyName": ".SF NS",
+          "postScriptName": ".SFNS-Regular_wdth_opsz120000_GRAD_wght2580000",
           "isCustomFont": false,
           "glyphCount": 4
         }
       ],
       ".stat .value": [
         {
-          "familyName": "Segoe UI Semibold",
-          "postScriptName": "SegoeUI-Semibold",
+          "familyName": ".SF NS",
+          "postScriptName": ".SFNS-Regular_wdth_opsz160000_GRAD_wght2580000",
           "isCustomFont": false,
           "glyphCount": 1
         }
       ],
       ".pagehead p": [
         {
-          "familyName": "Microsoft YaHei",
-          "postScriptName": "MicrosoftYaHei",
+          "familyName": "PingFang SC",
+          "postScriptName": "PingFangSC-Regular",
           "isCustomFont": false,
           "glyphCount": 24
         }
       ],
       "tbody td": [
         {
-          "familyName": "Segoe UI",
-          "postScriptName": "SegoeUI",
+          "familyName": "PingFang SC",
+          "postScriptName": "PingFangSC-Medium",
           "isCustomFont": false,
-          "glyphCount": 3
+          "glyphCount": 6
         },
         {
-          "familyName": "Microsoft YaHei",
-          "postScriptName": "MicrosoftYaHei",
+          "familyName": "PingFang SC",
+          "postScriptName": "PingFangSC-Regular",
           "isCustomFont": false,
-          "glyphCount": 13
+          "glyphCount": 7
+        },
+        {
+          "familyName": ".SF NS",
+          "postScriptName": ".SFNS-Regular",
+          "isCustomFont": false,
+          "glyphCount": 3
         }
       ]
     },
@@ -144,7 +118,7 @@
   "renderer": {
     "browser": "Chromium",
     "version": "149.0.7827.55",
-    "os": "win32",
+    "os": "darwin",
     "viewportUnit": "CSS px",
     "viewports": [
       {
@@ -185,10 +159,9 @@
       "long"
     ],
     "themes": [
-      "dark",
-      "light"
+      "dark"
     ],
-    "baseBoards": 216,
+    "baseBoards": 108,
     "modalScenes": [
       [
         "ADM02",
@@ -287,7 +260,7 @@
         "adjudicate"
       ]
     ],
-    "modalBoards": 96,
+    "modalBoards": 48,
     "phaseScenes": [
       [
         "ADM06",
@@ -398,8 +371,7 @@
     },
     "disabled": "missing policy references and RBAC mapping; publish disabled",
     "assetImages": [
-      "public/uvel-mark-dark.png",
-      "public/uvel-mark-light.png"
+      "public/uvel-mark-dark.png"
     ],
     "productImagery": "No invented device photo used in PC tables. Product names are fixtures, not catalog assertions."
   },

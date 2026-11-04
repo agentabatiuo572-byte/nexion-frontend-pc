@@ -23,7 +23,7 @@ const report=path.resolve(argument('--report')||path.join(dir,'candidate.json'))
 assert(report.toLowerCase().startsWith(path.resolve(external).toLowerCase()+path.sep),'Visual report cannot overwrite another task input');
 assert(!fs.existsSync(report),'Capture reports are immutable; select a fresh --report path');
 const hash=x=>createHash('sha256').update(x).digest('hex');
-const baselineRaw=fs.readFileSync('docs/design/growth-promotions/evidence/admin-r1-design/v4-purchase-interval/export-report.json'),baseline=JSON.parse(baselineRaw),requiredCases=promotionVisualCases(manifest,baseline);
+const baselineRaw=fs.readFileSync('docs/design/growth-promotions/evidence/admin-r1-design/v5-dark-only/export-report.json'),baseline=JSON.parse(baselineRaw),requiredCases=promotionVisualCases(manifest,baseline);
 const files=promotionVisualSources();
 const hashes=()=>Object.fromEntries(files.sort().map(f=>[f,hash(fs.readFileSync(f))]));
 const sourceFiles=hashes(),sourceHash=hash(JSON.stringify(sourceFiles));
@@ -77,7 +77,7 @@ try{
   }
   if(!baseOnly)for(const caseId of requiredCases.filter(id=>!/^ADM\d{2}-(normal|empty|loading|error|disabled|long)-/.test(id))){
     const reduced=caseId.includes('-reduced-transparency-'),width=Number(caseId.split('-').at(-1)),theme=reduced?'dark':caseId.split('-').at(-2),viewport={width,height:1000};
-    const key=reduced?caseId.replace(/-reduced-transparency-\d+$/,''):caseId.replace(/-(dark|light)-\d+$/,'');
+    const key=reduced?caseId.replace(/-reduced-transparency-\d+$/,''):caseId.replace(/-dark-\d+$/,'');
     const scene=special.scenes[key];assert(scene,'Missing declared special scene '+key);assert(scene.route&&scene.actor&&scene.mapping?.length,'Special scene must identify its actual product route, actor and design mapping');
     assert(scene.actualDtoInputs?.length&&scene.actualDtoInputs.every(file=>special.actualDtoInputs.some(input=>input.path===file)),'Special scene has no bound actual DTO input');
     const ctx=await context(scene.actor,viewport);current=await ctx.newPage();current.setDefaultTimeout(12000);current.setDefaultNavigationTimeout(120000);

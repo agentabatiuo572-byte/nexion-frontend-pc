@@ -10,8 +10,8 @@ export const promotionCaseId=file=>path.basename(file).replace(/\.png$/,'').repl
 export function promotionVisualCases(design,baseline){
   assert.equal(baseline.designHash,design.designHash,'Frozen export and design differ');
   const expected=[...new Set(baseline.captures.map(capture=>promotionCaseId(capture.file)))].sort();
-  const base=expected.filter(id=>/^ADM\d{2}-(normal|empty|loading|error|disabled|long)-(dark|light)-(1280|1440)$/.test(id));
-  assert.equal(base.length,design.coverage.baseBoards,'Frozen base coverage changed');assert.equal(expected.length,398,'Expected the approved v4 complete case set');return expected;
+  const base=expected.filter(id=>/^ADM\d{2}-(normal|empty|loading|error|disabled|long)-dark-(1280|1440)$/.test(id));
+  assert.equal(base.length,design.coverage.baseBoards,'Frozen base coverage changed');assert.equal(expected.length,200,'Expected the approved v5 dark-only case set');return expected;
 }
 export function promotionVisualSources(repo=process.cwd()){
   return ['scripts/growth-promotions-capture.mjs','scripts/growth-promotions-visual.mjs','scripts/growth-promotions-workflow-runtime.mjs','app/api/admin/growth/[...path]/route.ts','app/components/domain-views/design-kit.tsx','app/components/domain-views/h-view.tsx',...fs.readdirSync(path.join(repo,'app/components/domain-views/h-tabs')).filter(n=>/^h4-promotion/.test(n)).map(n=>'app/components/domain-views/h-tabs/'+n),...fs.readdirSync(path.join(repo,'lib/admin')).filter(n=>/^promotion-/.test(n)).map(n=>'lib/admin/'+n)].sort();
@@ -39,7 +39,7 @@ export function validatePromotionVisualFixture(proof,readFile=fs.readFileSync){
   assert.equal(binding.kind,'explicit-ui-response-fixtures');assert.equal(fixture.kind,binding.kind);assert.equal(fixture.designHash,proof.source.designHash);assert.equal(fixture.sourceHash,proof.source.dirtySourceHash);assert.equal(fixture.serviceSourceHash,proof.source.serviceSourceHash);assert(fixture.actualDtoInputs?.length,'Missing actual DTO inputs');assert.deepEqual(binding.actualDtoInputs,fixture.actualDtoInputs);
   for(const input of fixture.actualDtoInputs)assert.equal(digest(readFile(input.path)),input.sha256,'Actual DTO input changed');
   for(const board of proof.boards.filter(b=>!/^ADM\d{2}-(normal|empty|loading|error|disabled|long)-/.test(b.caseId))){
-    const key=board.caseId.includes('-reduced-transparency-')?board.caseId.replace(/-reduced-transparency-\d+$/,''):board.caseId.replace(/-(dark|light)-\d+$/,'');const scene=fixture.scenes[key];assert(scene,'Missing declared scene');assert.equal(board.fixtureKind,fixture.kind);assert.deepEqual(board.actualDtoInputs,scene.actualDtoInputs);assert.deepEqual(board.mapping,scene.mapping);assert(scene.actualDtoInputs?.length&&scene.actualDtoInputs.every(file=>fixture.actualDtoInputs.some(input=>input.path===file)),'Unbound scene DTO input');
+    const key=board.caseId.includes('-reduced-transparency-')?board.caseId.replace(/-reduced-transparency-\d+$/,''):board.caseId.replace(/-dark-\d+$/,'');const scene=fixture.scenes[key];assert(scene,'Missing declared scene');assert.equal(board.fixtureKind,fixture.kind);assert.deepEqual(board.actualDtoInputs,scene.actualDtoInputs);assert.deepEqual(board.mapping,scene.mapping);assert(scene.actualDtoInputs?.length&&scene.actualDtoInputs.every(file=>fixture.actualDtoInputs.some(input=>input.path===file)),'Unbound scene DTO input');
   }
 }
 export function validatePromotionVisualReviews(review,proof,candidateHash,images,readFile=fs.readFileSync){
@@ -110,7 +110,7 @@ try{
     assert.equal(proof.status,'captured-awaiting-independent-review');assert.deepEqual(proof.pageErrors,[]);
     validatePromotionNativeGuard(proof,guard.binding);
     const design=JSON.parse(fs.readFileSync('docs/design/growth-promotions/admin-r1-baseline.json'));
-    const baselineRaw=fs.readFileSync('docs/design/growth-promotions/evidence/admin-r1-design/v4-purchase-interval/export-report.json'),baseline=JSON.parse(baselineRaw);
+    const baselineRaw=fs.readFileSync('docs/design/growth-promotions/evidence/admin-r1-design/v5-dark-only/export-report.json'),baseline=JSON.parse(baselineRaw);
     assert.equal(hash(fs.readFileSync(path.join('docs/design/growth-promotions',design.designFile))),design.designHash,'Approved design changed');assert.equal(proof.source.baselineManifestHash,hash(baselineRaw));
     assert.equal(proof.source.designHash,design.designHash);
     exactSet(Object.keys(proof.source.files),promotionVisualSources(),'bound product sources');
