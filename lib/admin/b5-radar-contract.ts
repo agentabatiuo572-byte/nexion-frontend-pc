@@ -132,6 +132,14 @@ function isoLocalDateTime(value: unknown, field: string): string {
   return parsed;
 }
 
+function radarGeneratedAt(value: unknown): string {
+  const raw = text(value, "generatedAt");
+  const offset = /(?:Z|[+-](?:0\d|1[0-7]):[0-5]\d|[+-]18:00)$/.exec(raw)?.[0] ?? "";
+  // The old backend emitted this field using the fixed Asia/Shanghai clock.
+  const local = isoLocalDateTime(offset ? raw.slice(0, -offset.length) : raw, "generatedAt");
+  return local + (offset || "+08:00");
+}
+
 export function normalizeB5Radar(value: unknown): B5Radar {
   const source = row(value, "root");
   const bankrun = row(source.bankrun, "bankrun");
@@ -303,7 +311,7 @@ export function normalizeB5Radar(value: unknown): B5Radar {
   const coverageLight = rawCoverageLight as Light | "unavailable";
   roundedMoneyMatches(coverageReserveUsdt, coverageRatioReserveUsdt, "coverage.reserveUsdt");
   roundedMoneyMatches(coverageLiabilitiesUsdt, coverageRatioLiabilitiesUsdt, "coverage.liabilitiesUsdt");
-  if (coverageRedlinePct > 100) invalid("coverage.redlinePct");
+  if (coverageRedlinePct < 80 || coverageRedlinePct > 150) invalid("coverage.redlinePct");
   if (coverageRatioLiabilitiesUsdt === 0) {
     if (coverageRatio !== null || coverageLight !== "unavailable") invalid("coverage.ratio");
   } else {
@@ -321,7 +329,7 @@ export function normalizeB5Radar(value: unknown): B5Radar {
   }
 
   return {
-    generatedAt: isoLocalDateTime(source.generatedAt, "generatedAt"),
+    generatedAt: radarGeneratedAt(source.generatedAt),
     bankrun: { ratio24h, ratioCalculable, light: bankrunLight, withdraw24hUsdt, reserveUsdt, ratioWithdraw24hUsdt, ratioReserveUsdt, pressureRatio, pressureCalculable, pressureRedLine, pressureLight, yellowPct, redPct, version: whole(bankrun.version, "bankrun.version") },
     abnormalAccounts: { count: abnormalCount, byCategory },
     withdrawBacklog: { byState, totalCount, totalAmountUsdt, slaHours, overSlaCount, light: backlogLight },

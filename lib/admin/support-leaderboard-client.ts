@@ -41,11 +41,21 @@ function count(value: unknown) {
   return { value: amount, coverage: displayCoverage(state), reason: reason(r.reason) };
 }
 const META_FIELDS = "viewVersion queryVersion sourceVersion definitionVersion board rankMonth referenceMonth currency scope businessZone asOf publishedAt state candidateCoverage stale refreshFailed selectableMonths currencies scopeOptions";
+function businessZoneId(value: unknown): string {
+  const zone = text(value);
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: zone });
+  } catch {
+    invalid("businessZone");
+  }
+  return zone;
+}
+
 function metadata(r: Record<string, unknown>) {
   const result = {
     viewVersion: version(r.viewVersion), queryVersion: version(r.queryVersion), sourceVersion: text(r.sourceVersion), definitionVersion: text(r.definitionVersion),
     board: enumeration(r.board, BOARDS), rankMonth: r.rankMonth === null ? null : month(r.rankMonth), referenceMonth: month(r.referenceMonth), currency: enumeration(r.currency, ["USDT", "UVT"] as const), scope: enumeration(r.scope, SCOPES),
-    businessZone: enumeration(r.businessZone, ["Asia/Shanghai"] as const), asOf: instant(r.asOf), publishedAt: instant(r.publishedAt), state: enumeration(r.state, ["COMPLETE", "PROVISIONAL"] as const), candidateCoverage: coverage(r.candidateCoverage), stale: bool(r.stale), refreshFailed: bool(r.refreshFailed),
+    businessZone: businessZoneId(r.businessZone), asOf: instant(r.asOf), publishedAt: instant(r.publishedAt), state: enumeration(r.state, ["COMPLETE", "PROVISIONAL"] as const), candidateCoverage: coverage(r.candidateCoverage), stale: bool(r.stale), refreshFailed: bool(r.refreshFailed),
     selectableMonths: unique(array(r.selectableMonths, month), x => x), currencies: unique(array(r.currencies, v => enumeration(v, ["USDT", "UVT"] as const)), x => x),
     scopeOptions: unique(array(r.scopeOptions, value => { const s = object(value, "scope groups"); return { scope: enumeration(s.scope, SCOPES), groups: unique(array(s.groups, value => { const g = object(value, "id name"); return { id: id(g.id), name: text(g.name) }; }), g => g.id) }; }), s => s.scope),
   };
