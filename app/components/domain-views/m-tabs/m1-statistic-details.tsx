@@ -107,7 +107,8 @@ async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page
     return { headings: ["负责组", "组编号", "期间净额 / " + nexGridBrandText(currency)], rows: origin.queryVersion ? rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) : rows, total: origin.queryVersion ? groups.length : null, next: Boolean(origin.queryVersion) && page * PAGE_SIZE < groups.length, summary, note: (matches ? "已返回的分组净额之和与原统计一致。" : "已返回的分组数据无法完整核对原统计。") + " 期间按发生时归属统计，接口提供到组级，无逐客户或逐笔净额明细。" + (origin.queryVersion ? "" : " 当前显示本次核权回执中的 " + rows.length + " 组。") };
   }
   // Net uses the entire authorized scope. Wallet and withdrawal totals use the selected current customers.
-  const projection: SupportAnalyticsQuery = { ...query, view: "CUSTOMERS", sortKey: undefined, direction: undefined, pageNum: page, pageSize: PAGE_SIZE, expectedVersion: version, signal };
+  // Without a query version there is no next page, so this one read takes everything the backend allows instead of cutting the list at PAGE_SIZE.
+  const projection: SupportAnalyticsQuery = { ...query, view: "CUSTOMERS", sortKey: undefined, direction: undefined, pageNum: page, pageSize: origin.queryVersion ? PAGE_SIZE : 100, expectedVersion: version, signal };
   if (metric === "net") Object.assign(projection, { keyword: undefined, firstState: "ALL", category: "ALL", filter: "ALL" });
   const list = await supportAnalyticsClient.query(projection);
   if (list.view !== "CUSTOMERS") throw new Error("CUSTOMER_PROJECTION_UNAVAILABLE");
