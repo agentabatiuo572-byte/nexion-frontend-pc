@@ -14,6 +14,14 @@ export type ActionConfirmReq = {
   reasonMin?: number;
   reasonMax?: number;
   completionCopy?: string;
+  /** 生效标签，只在 RdPage 里显示。 */
+  effect?: ReactNode;
+  /** 确认按钮写动作，比如「确认放行」，默认「确认提交」。 */
+  confirmLabel?: string;
+  /** 这次不能再提交的原因：写在框里，确认按钮禁用。比如提交时发现单据已被别人处理。 */
+  blockedReason?: ReactNode;
+  /** 这个操作自己声明的影响和提交前检查，传了就不按文字猜摘要（OP-51）。 */
+  statedBrief?: { impact: string; check: string };
   /** 这项操作实际是什么；传了就不再按文字猜摘要。客服中心（M）的调用必须传。 */
   briefKind?: OperatorBriefKind;
   /**

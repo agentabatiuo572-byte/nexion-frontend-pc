@@ -673,7 +673,7 @@ export type BusinessFormSpec =
   // 通用多字段配置:一个「调整」按钮 → 一个弹窗里编辑 N 个带标签的值(各值独立 backend-replaceable,
   // 配合 EOp "param-multi" + McSpec.paramKeys 把每字段写到自己的 param key)。
   // ascending=true 时校验 number 字段严格递增(如 分段月界 早末<中末<总月数)。
-  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "datetime-local" | "asset-upload"; options?: string[]; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
+  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "datetime-local" | "asset-upload"; options?: string[]; mustChoose?: boolean; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentIssuanceLimit?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentPopupCadenceEnabled?: string; currentPopupDelayMs?: string; currentPopupCooldownHours?: string; currentPopupMaxPerSession?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
@@ -712,12 +712,12 @@ function compactText(s: string): string {
   return s.replace(/\s+/g, " ").replace(/\s+([,，.。:：;；])/g, "$1").trim();
 }
 
-function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boolean, hasEdit: boolean, localHistory?: boolean, kind?: OperatorBriefKind): BriefRow[] {
+function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boolean, hasEdit: boolean, localHistory?: boolean, kind?: OperatorBriefKind, statedBrief?: { impact: string; check: string }): BriefRow[] {
   const actionText = compactText(plainText(action));
   const detailText = compactText(plainText(detail));
   const all = `${actionText} ${detailText}`;
   const includes = (terms: string[]) => !kind && terms.some((term) => all.includes(term));
-  const stated = kind && STATED_BRIEF[kind];
+  const stated = statedBrief ?? (kind && STATED_BRIEF[kind]);
   if (stated) return [{ label: "要做什么", text: actionText }, { label: "影响", text: stated.impact }, { label: "提交前", text: stated.check }];
   const defaultCheck = hasEdit
     ? "核对新值和影响范围，理由写清依据或工单号。"
@@ -786,9 +786,9 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
   ];
 }
 
-export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, completionCopy, auditSink, kind }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean; completionCopy?: string; auditSink?: "a2" | "local-history"; kind?: OperatorBriefKind }) {
+export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, completionCopy, auditSink, kind, stated }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean; completionCopy?: string; auditSink?: "a2" | "local-history"; kind?: OperatorBriefKind; stated?: { impact: string; check: string } }) {
   const surface = useRdSurface();
-  const brief = buildOperatorBrief(action, detail, !!amplifies, !!hasEdit, auditSink === "local-history", kind)
+  const brief = buildOperatorBrief(action, detail, !!amplifies, !!hasEdit, auditSink === "local-history", kind, stated)
     .map((row) => row.label === "影响" && completionCopy ? { ...row, text: completionCopy } : row);
   const detailText = compactText(plainText(detail));
   const rows = (
@@ -1169,7 +1169,7 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
     return { active: spec.currentActive ?? "500", grace: spec.currentGrace ?? "200", expired: spec.currentExpired ?? "0" };
   }
   if (spec.kind === "multi-field") {
-    return Object.fromEntries(spec.fields.map((f) => [f.key, f.current ?? f.options?.[0] ?? ""]));
+    return Object.fromEntries(spec.fields.map((f) => [f.key, f.mustChoose ? "" : f.current ?? f.options?.[0] ?? ""]));
   }
   if (spec.kind === "weekly-task-edit") {
     return { cond: spec.currentCond ?? "", reward: spec.currentReward ?? "", status: spec.currentStatus ?? "active", completionType: spec.currentCompletionType ?? "event", completionEvent: spec.currentCompletionEvent ?? "" };
@@ -1858,7 +1858,8 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
               <span>{f.label} {f.required !== false && <b style={{ color: "var(--v5-danger)" }}>· 必填</b>}</span>
               {f.inputKind === "select" ? (
                 // 能枚举的值用下拉,不让运营手输(最高设计铁律:能勾选的不要输入)
-                <select className="fld" required={f.required !== false} aria-required={f.required !== false} value={value[f.key] ?? f.options?.[0] ?? ""} onChange={(e) => set(f.key, e.target.value)}>
+                <select className="fld" required={f.required !== false} aria-required={f.required !== false} value={value[f.key] ?? (f.mustChoose ? "" : f.options?.[0]) ?? ""} onChange={(e) => set(f.key, e.target.value)}>
+                  {f.mustChoose && <option value="" disabled>请选择</option>}
                   {(f.options ?? []).map((o) => <option key={o} value={o}>{f.optionLabels?.[o] ?? o}</option>)}
                 </select>
               ) : (
@@ -3413,7 +3414,7 @@ export type CoverageSnapshot = {
 };
 
 /* 操作确认弹窗 — 高敏动作确认 + 理由必填 + 可编辑「目标新值」(配置型调整);纯动作(放行/退款/封禁/pause)仅确认。 */
-export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交" }: { effect?: ReactNode; confirmLabel?: string; action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; reasonMin?: number; reasonMax?: number; auditSink?: "a2" | "local-history"; briefKind?: OperatorBriefKind; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", blockedReason, statedBrief }: { effect?: ReactNode; confirmLabel?: string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string }; action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; reasonMin?: number; reasonMax?: number; auditSink?: "a2" | "local-history"; briefKind?: OperatorBriefKind; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const surface = useRdSurface();
   const [reason, setReason] = useState("");
   const [newVal, setNewVal] = useState(() => initEditValue(edit));
@@ -3473,7 +3474,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
     : businessNewValue(activeBusinessForm, businessValue) ?? newVal;
   const editValueOk = isEditValueValid(spec, newVal);
   const uploadBlocked = Object.values(uploadStates).some(Boolean);
-  const canConfirm = reasonPolicyReady && !covBlocked && !businessSelectionLoading && !submitting && reasonOk && editValueOk && businessMissing.length === 0 && !uploadBlocked;
+  const canConfirm = !blockedReason && reasonPolicyReady && !covBlocked && !businessSelectionLoading && !submitting && reasonOk && editValueOk && businessMissing.length === 0 && !uploadBlocked;
   useEffect(() => {
     let active = true;
     setAuthoritativeReasonMin(null);
@@ -3555,15 +3556,17 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         </Btn>
       </>}>
       {surface && effect && <div className="rd-effect">{effect}</div>}
-      <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={briefKind} />
-      {submitError && <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{submitError}</div>}
+      <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={briefKind} stated={statedBrief} />
+      {blockedReason
+        ? <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{blockedReason}</div>
+        : submitError && <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{submitError}</div>}
       {!reasonPolicyReady && (
         <div className="alertbar warn" role="alert" data-policy-state="fail-closed" style={{ marginBottom: 16 }}>
           {reasonPolicyError ?? "正在加载，稍候即可提交。"}
         </div>
       )}
       {!surface && coverageNotice}
-      {completionCopy && <div className="tint tiny" style={{ marginBottom: 14 }}>{completionCopy}</div>}
+      {!surface && completionCopy && <div className="tint tiny" style={{ marginBottom: 14 }}>{completionCopy}</div>}
       {activeBusinessForm && (
         <BusinessFormBlock spec={activeBusinessForm} value={businessValue} onChange={setBusinessValue} onSelectionChange={(next) => void handleBusinessSelectionChange(next)} onUploadStateChange={(key, state) => setUploadStates((current) => ({ ...current, [key]: state }))} />
       )}

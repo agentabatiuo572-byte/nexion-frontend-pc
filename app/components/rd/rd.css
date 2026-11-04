@@ -55,7 +55,8 @@
 /* ── 焦点（CP-05）── */
 .rd-btn:focus-visible, .rd-iconbtn:focus-visible, .rd-link:focus-visible, .rd-tab:focus-visible, .rd-seg:focus-visible,
 .rd-fold > summary:focus-visible, .rd-explain:focus-visible, .rd-select:focus-visible, .rd-input:focus-visible,
-.rd-table-scroll:focus-visible, .rd-chip-x:focus-visible, .rd-col-option input:focus-visible, .rd-guide-entry:focus-visible {
+.rd-table-scroll:focus-visible, .rd-chip-x:focus-visible, .rd-col-option input:focus-visible, .rd-guide-entry:focus-visible,
+.rd-check:focus-visible, .rd-menu-item:focus-visible {
   outline: 2px solid var(--rd-focus); outline-offset: 2px;
 }
 
@@ -171,7 +172,15 @@
 .rd-table tbody tr[data-selected] td { background: var(--rd-selected); }
 .rd-table tbody tr[data-selected] > td:first-child:not([data-sticky]) { position: relative; }
 .rd-table tbody tr[data-selected] > td:first-child::before { content: ""; position: absolute; top: 50%; left: 7px; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--rd-brand-ink); }
-.rd-cell { display: block; min-width: 0; }
+.rd-table th[data-control] { width: 1px; padding-right: 0; }
+.rd-check { width: 16px; height: 16px; margin: 0; vertical-align: middle; accent-color: var(--rd-brand-ink); cursor: pointer; }
+.rd-check:disabled { cursor: not-allowed; }
+.rd-row-actions { display: inline-flex; align-items: center; gap: 4px; }
+.rd-row-action { color: var(--rd-text); }
+.rd-cell-link { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.rd-cell-link:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+.rd-cell-sub .rd-link { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
+.rd-cell { display: block; min-width: 0; max-width: 280px; }
 .rd-cell-main { display: block; color: var(--rd-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rd-cell-sub { display: block; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rd-cell[data-mono] .rd-cell-main, .rd-cell[data-mono] .rd-cell-sub { font-family: var(--rd-font-mono); font-variant-numeric: tabular-nums; }
@@ -195,6 +204,7 @@
 .rd-filter-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .rd-chip { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 4px 0 8px; border-radius: var(--rd-radius-tag); background: var(--rd-panel-inner); color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 .rd-chip-x { display: inline-grid; place-items: center; width: 20px; height: 20px; border: 0; border-radius: 4px; background: transparent; color: var(--rd-text-3); cursor: pointer; }
+.rd-filter-notice { margin: 0; color: var(--rd-warn); }
 .rd-filter-result { margin-left: auto; font-size: 13px; color: var(--rd-text-3); }
 .rd-field { display: grid; gap: 4px; font-size: 13px; color: var(--rd-text-3); }
 .rd-input { width: 100%; height: var(--rd-control-h); padding: 0 12px; border: 0; border-radius: 8px; background: var(--rd-control); color: var(--rd-text); font: inherit; font-size: 14px; }
@@ -373,7 +383,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-block-state-detail { max-width: 560px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); overflow-wrap: anywhere; }
 .rd-notice { display: flex; align-items: flex-start; gap: 10px; padding: 12px 16px; border-radius: var(--rd-radius-panel); background: var(--tone-bg); color: var(--rd-text); }
 .rd-notice-icon { flex: none; margin-top: 3px; color: var(--tone); }
-.rd-notice-text { flex: 1; min-width: 0; }
+.rd-notice-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .rd-notice-title { font-weight: 500; }
 .rd-notice-action { flex: none; display: inline-flex; align-items: center; gap: 8px; }
 
@@ -458,3 +468,37 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-panel-inset:last-child { padding-top: 12px; padding-bottom: var(--rd-panel-pad-y); }
 .rd-conclusion-action .rd-btn { text-decoration: none; }
 .rd-check-group + .rd-check-group { margin-top: 8px; }
+
+/* ── 分页 ── */
+.rd-pager { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px var(--rd-panel-pad-x); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-pager-range { font-variant-numeric: tabular-nums; }
+.rd-pager-tools { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+.rd-pager .rd-select { height: var(--rd-control-h-sm); }
+
+/* ── 批量操作条 ── */
+.rd-batch { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-height: 44px; padding: 8px var(--rd-panel-pad-x); background: var(--rd-panel-inner); }
+.rd-batch-count { font-weight: 500; color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.rd-batch-hint { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-batch-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+
+/* ── 更多操作菜单 ── */
+.rd-menu { display: grid; gap: 2px; min-width: 160px; padding: 4px; }
+.rd-menu-item { display: block; width: 100%; padding: 6px 10px; border: 0; border-radius: var(--rd-radius-tag); background: transparent; color: var(--rd-text); font: inherit; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); text-align: left; cursor: pointer; }
+.rd-menu-item[data-danger] { color: var(--rd-danger); }
+.rd-menu-item[aria-disabled="true"] { color: var(--rd-text-disabled); cursor: not-allowed; }
+.rd-menu-reason { display: block; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+@media (hover: hover) and (pointer: fine) { .rd-menu-item:not([aria-disabled="true"]):hover { background: var(--rd-control); } }
+
+/* ── 内联提示 ── */
+
+/* ── 键值列表 ── */
+.rd-facts { display: grid; gap: 6px; margin: 0; }
+.rd-fact { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; }
+.rd-fact dt { font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); color: var(--rd-text-3); }
+.rd-fact dd { margin: 0; color: var(--rd-text); overflow-wrap: anywhere; }
+.rd-fact [data-mono] { font-family: var(--rd-font-mono); }
+
+/* ── 流程示意 ── */
+.rd-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--rd-text-3); }
+td .rd-flow { margin-bottom: 0; }
+.rd-flow-step { display: inline-flex; align-items: center; gap: 8px; }

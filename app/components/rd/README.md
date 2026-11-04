@@ -41,10 +41,15 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 表格 | `Table`、`Th`、`Tr`、`Td`、`Cell` | `table.tsx` |
 | 显示更多列 | `useTableColumns`、`ColumnPicker` | `table.tsx` |
 | 表格加载、空、失败 | `TableLoading`、`TableMessage` | `table.tsx` |
+| 表格分页 | `Pager`，有数据才渲染 | `pager.tsx` |
+| 勾选后的批量操作 | `BatchBar`，勾选框用 `Checkbox`，勾选列的表头传 `Th control` | `batch-bar.tsx`、`checkbox.tsx` |
+| 行操作放不下 | `MoreMenu` | `menu.tsx` |
 | 查询区 | `FilterBar`、`FilterField`、`Input` | `filter-bar.tsx` |
 | 下拉、排序 | `Select` | `select.tsx` |
 | 单条详情、长表单 | `Drawer`，底部用 `Decision` | `overlay.tsx` |
 | 详情开头 3～5 行 | `JudgmentPoints` | `judgment.tsx` |
+| 详情里成对的名称和值 | `Facts`、`Fact` | `facts.tsx` |
+| 要人看到的提醒、错误、待确认条 | `Notice` | `notice.tsx` |
 | 短任务弹窗 | `Modal` | `overlay.tsx` |
 | 写操作确认 | 继续用 `OperationConfirmModal` | 见下 |
 | 按钮 | `Button`、`IconButton` | `button.tsx` |
@@ -92,6 +97,10 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 
 - `effect`：生效标签，比如 `<StatusTag tone="progress" filled>立即生效</StatusTag>`，只在 `RdPage` 里显示。
 - `confirmLabel`：确认按钮写动作，比如 `确认放行`，默认 `确认提交`。
+- `statedBrief`：这个操作自己的 `{ impact, check }`，传了摘要就不按文字猜（OP-51）。
+- `blockedReason`：这次不能再提交的原因，写在框里，确认按钮禁用。比如提交时发现单据已被别人处理：再调一次 `openActionConfirm`，传最新内容和这个字段，框不关，已填的理由留着。
+
+业务表单的字段传 `mustChoose: true` 时不给默认值，下拉多一项「请选择」，必须人选了才能提交。核验类字段（大额放行的「地址与风险信息」、手动退款的「已核实」）都要这样，不能取第一项当默认值。
 
 ## 已经由组件保证的事
 
