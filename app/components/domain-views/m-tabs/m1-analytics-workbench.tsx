@@ -18,6 +18,7 @@ import { HDSelect, type HDOption } from "./hd-ui";
 import { M1PersonalWorkbench, SupportSeatRolesButton, type PersonalWorkbenchView } from "./m1-personal-workbench";
 import { M1StatisticDetails, fundLabels, type FundMetric, type StatisticSource } from "./m1-statistic-details";
 import { M1LiveService } from "./m1-live-service";
+import { CustomerTransferDialog, TransferPendingNotes } from "./m1-customer-transfer";
 import { SupportAvatar } from "./support-avatar";
 import { compactSupportBoardValue } from "./support-leaderboard";
 import { AnalyticsFreshness } from "./analytics-freshness";
@@ -298,6 +299,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const managementReturnQuery = useRef<AnalyticsQueryState | null>(sessionReturn);
   const managementCustomerGroup = useRef<string | null>(null);
   const [keyword, setKeyword] = useState(sessionReturn?.keyword ?? "");
+  const [transferCustomer, setTransferCustomer] = useState<string | null>(null), [transferRevision, setTransferRevision] = useState(0), [transferNotice, setTransferNotice] = useState("");
   const [sessionCheck, setSessionCheck] = useState<string | null>(null), [sessionBusy, setSessionBusy] = useState<{ row: SupportAnalyticsCustomer; hold: SupportSessionHold } | null>(null), [sessionError, setSessionError] = useState<SupportAnalyticsCustomer | null>(null);
   const sessionController = useRef<AbortController | null>(null);
   useEffect(() => () => sessionController.current?.abort(), []);
@@ -319,6 +321,12 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   // A supervisor who also holds personal service keeps a tab for their own customers, grouped or not (the managed agent list omits an ungrouped self).
   const canMine = scope?.scopeSummary.mode === "MANAGED" && Boolean(readModes?.includes("PERSONAL"));
   useEffect(() => { if (queryState.view !== "CUSTOMERS") lastDataView.current = queryState.view; }, [queryState.view]);
+  // The 正式转绑 links from M3 land on the customer's transfer form, whichever tab this role opens on. Personal mode keeps its drawer.
+  const scopeMode = scope?.scopeSummary.mode;
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search), customerId = params.get("customerId");
+    if (scopeMode && scopeMode !== "PERSONAL" && params.get("action") === "transfer" && customerId && /^[1-9]\d*$/.test(customerId)) setTransferCustomer(customerId);
+  }, [scopeMode]);
   useEffect(() => {
     const controller = new AbortController();
     setPersonalPeriod(null); setPersonalPeriodError("");
@@ -414,6 +422,10 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     setScopeRetry(n => n + 1);
   }
   function reloadFirstPage() { change({}); setRetry(n => n + 1); }
+  function closeTransfer(keepCustomer = false) {
+    const url = new URL(window.location.href); url.searchParams.delete("action"); if (!keepCustomer) url.searchParams.delete("customerId"); window.history.replaceState(null, "", url);
+    setTransferCustomer(null);
+  }
   const invalidateFund = useCallback((status: number) => {
     if (status === 409) {
       setRestoreNotice("统计已变化，正在重新读取汇总和明细第一页。");
@@ -480,6 +492,8 @@ if (!scope) return <section className="sa-workbench" aria-label="客服范围核
   <nav className="sa-main-tabs" aria-label="客服工作台">{tabs.map(tab => <button type="button" key={tab} aria-current={currentTab === tab ? "page" : undefined} onClick={() => openTab(tab)}>{TAB_LABEL[tab]}{tab === "pool" && scope.scopeSummary.pending ? <span className="sa-tab-count">{scope.scopeSummary.pending}</span> : null}</button>)}</nav>
   <div className="sa-actions">{!isPersonal && <button type="button" onClick={() => { window.location.href = "/service/sessions?tab=pending"; }}>会话审阅</button>}<button type="button" onClick={() => router.push("/service/leaderboard")}>业绩榜</button><button type="button" onClick={() => refreshScope()}>刷新</button></div>
 </div>
+<TransferPendingNotes key={transferRevision} onOpen={setTransferCustomer} />
+{transferNotice && <div className="sa-notice" role="status">{transferNotice}<button type="button" onClick={() => setTransferNotice("")}>知道了</button></div>}
 {isPersonal && <div hidden={section === "stats"}><M1PersonalWorkbench permission="agent" ctx={ctx} view={personalView} onViewChange={next => { setSection("personal"); setPersonalView(next); }}
   onBrowseCustomers={filter => { if (queryState.view === "CUSTOMERS" && queryState.basis === "CURRENT_CUSTOMER_HISTORY" && queryState.filter === filter) { setSection("stats"); return; } drill({ view: "CUSTOMERS", category: "BOUND", basis: "CURRENT_CUSTOMER_HISTORY", filter, firstState: "ALL", keyword: undefined }); }}
   primarySummary={<section className="sa-personal-summary" aria-label="本人客户与期间业绩">
@@ -503,7 +517,7 @@ if (!scope) return <section className="sa-workbench" aria-label="客服范围核
       managementReturnQuery.current = changeAnalyticsQuery(queryState, { groupId, view: "CUSTOMERS", basis: "CURRENT_CUSTOMER_HISTORY", category, agentId: undefined, keyword: undefined, firstState: "ALL", filter: "ALL" });
       setKeyword(""); setSection("stats"); setScope(null); setScopeRetry(n => n + 1);
     }} />}
-    {!isPersonal && section === "mine" && <M1PersonalWorkbench permission="supervisor" ctx={ctx} view={personalView} onViewChange={setPersonalView} />}
+    {!isPersonal && section === "mine" && <M1PersonalWorkbench permission="supervisor" ctx={ctx} view={personalView} onViewChange={setPersonalView} onTransfer={setTransferCustomer} transferRevision={transferRevision} />}
     {showStatistics && <>
       <header className="sa-header"><div><h2>{isPersonal ? "本人客户画像" : currentTab === "customers" ? mode === "ALL" ? "全部客户" : "负责组客户" : mode === "ALL" ? "平台运营总览" : "我的分组数据"}</h2><p>{selectedGroup?.name || (queryState.groupId ? "组名未同步" : isPersonal ? "本人当前客户" : mode === "ALL" ? "全部获准客服范围" : "全部负责组")} · {businessZone().label}</p></div></header>
       {data && <AnalyticsFreshness asOf={data.asOf} onRefresh={() => refreshScope()} />}
@@ -550,6 +564,7 @@ if (!scope) return <section className="sa-workbench" aria-label="客服范围核
     </>}
     {showStatistics && fundSource && <M1StatisticDetails key={data?.asOf} source={fundSource} onClose={() => setFundMetric(null)} onInvalid={invalidateFund} />}
     {sessionBusy && <SessionBusyDialog customer={customerName(sessionBusy.row)} hold={sessionBusy.hold} onClose={() => setSessionBusy(null)} onRead={() => { const row = sessionBusy.row; setSessionBusy(null); openSessions(row); }} />}
+    {transferCustomer && <CustomerTransferDialog key={transferCustomer} customerId={transferCustomer} mode={mode === "ALL" ? "ALL" : "MANAGED"} onClose={() => closeTransfer()} onDone={notice => { closeTransfer(); setTransferNotice(notice); setTransferRevision(n => n + 1); setRetry(n => n + 1); }} onOpenOwn={canMine ? () => { closeTransfer(true); openTab("mine"); } : undefined} />}
     {profileId && <Modal wide title="客户资料与原业务明细" onClose={() => setProfileId(null)} footer={<button type="button" onClick={() => setProfileId(null)}>返回统计列表</button>}><p className="sa-disclosure">按你的客户资料查看权限显示；统计可见不增加资金操作或回复权限。</p><M3CustomerProfile key={profileId} ctx={ctx} customerId={profileId} onHistory={no => router.push(`/service/sessions?conversationNo=${encodeURIComponent(no)}`)} onRetryMessages={() => void ctx.refreshConversations()} /></Modal>}
   </section>;
 }

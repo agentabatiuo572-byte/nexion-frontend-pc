@@ -87,6 +87,12 @@
 .s5a-confirm textarea { width: 100%; min-height: 84px; resize: vertical; padding: 10px; color: var(--v5-ink); background: var(--v5-surface); border: 1px solid var(--v5-border-strong); border-radius: 8px; }
 .s5a-confirm select { width: 100%; min-height: 44px; padding: 8px 10px; color: var(--v5-ink); background: var(--v5-surface); border: 1px solid var(--v5-border-strong); border-radius: 8px; }
 .s5a-confirm small { color: var(--v5-ink-3); }
+.s5a-transfer { margin: 0; }
+.s5a-transfer dl { display: grid; gap: 6px; margin: 8px 0 12px; font-size: 12.5px; }
+.s5a-transfer dl div { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; }
+.s5a-transfer dt { color: var(--v5-ink-3); }
+.s5a-transfer dd { margin: 0; overflow-wrap: anywhere; }
+.s5a-transfer-effect { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
 .s5a-confirm footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .s5a-confirm footer button:first-child { border: 1px solid var(--v5-border); border-radius: 8px; background: var(--v5-surface); color: var(--v5-ink); min-height: 44px; padding: 8px 14px; }
 .s5a-history { border-top: 1px solid var(--v5-border); padding-top: 8px; font-size: 12.5px; }

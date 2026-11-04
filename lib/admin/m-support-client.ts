@@ -183,6 +183,11 @@ export function isIndeterminateSupportError(error: unknown): boolean {
     && (error.backendMessage ?? "").startsWith("IDEMPOTENCY_");
 }
 
+/** The server read the request and said no: nothing was written, so the command can be released. */
+export function isDefiniteSupportRefusal(error: unknown): error is SupportClientError {
+  return error instanceof SupportClientError && [400, 403, 404, 409, 422].includes(error.status) && !isIndeterminateSupportError(error);
+}
+
 function malformed(field: string): never { throw new Error(`SUPPORT_CONTRACT_MALFORMED:${field}`); }
 function object(value: unknown, field: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) malformed(field);

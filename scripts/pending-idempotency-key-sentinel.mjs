@@ -107,6 +107,8 @@ const MIGRATED = [
   "app/components/domain-views/m-view.tsx",
   // S5a maintenance, pool assignment and rule CAS retain command keys across retries.
   "app/components/domain-views/m-tabs/m1-personal-workbench.tsx",
+  // Transfer keeps number, target and reason until the original command is confirmed.
+  "app/components/domain-views/m-tabs/m1-customer-transfer.tsx",
   "app/components/domain-views/m-tabs/m1-supervisor-pool.tsx",
   "app/components/domain-views/m-tabs/m3-dedicated-chat.tsx",
   "app/components/domain-views/m-tabs/m5-service-rules.tsx",
