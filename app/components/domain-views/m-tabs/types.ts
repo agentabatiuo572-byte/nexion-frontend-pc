@@ -14,6 +14,10 @@ export type MCtx = {
   setParam: (k: string, v: string, meta: { action: string; reason: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void }) => Promise<boolean>;
   refreshConversations: () => Promise<void>;
   refreshContent: () => Promise<void>;
+  /** A full content load is running; availability flags are not final yet. */
+  contentLoading: boolean;
+  /** Re-reads only the knowledge base. A full refresh rebuilds the open conversation and would close the picker. */
+  refreshKnowledge: () => Promise<void>;
   loadConversationDetail: (no: string, signal?: AbortSignal, includeCustomerProfile?: boolean) => Promise<void>;
   invalidateScope: (conversationNo?: string, customerId?: string) => void;
   addCustomerTag: (convoId: string, tag: string) => Promise<boolean>;
@@ -23,6 +27,6 @@ export type MCtx = {
   toast: (s: string) => void;
   /** M5 未绑定策略的「等待分配提醒」分钟数；未读到时按 5 分钟。 */
   unboundAlertMinutes?: number;
-  openActionConfirm: (req: import("../k-tabs/types").ActionConfirmReq) => void;
+  openActionConfirm: (req: import("../k-tabs/types").ActionConfirmReq & { briefKind: import("../design-kit").OperatorBriefKind }) => void;
   openConfirm: (req: import("../k-tabs/types").ConfirmReq) => void;
 };

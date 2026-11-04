@@ -34,6 +34,9 @@ export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover
   const faqs: Array<{ id: string; question: string; answer: string; status: string; language: string }> = (() => { try { const rows = JSON.parse(ctx.pget("I.support.faqs") ?? "[]"); return Array.isArray(rows) ? rows.filter(r => r.status === "published" && typeof r.answer === "string" && (r.language ?? "zh-CN") === "zh-CN") : []; } catch { return []; } })();
   const [faqQuery, setFaqQuery] = useState("");
   const faqMatches = faqs.filter(f => !faqQuery.trim() || `${f.question}${f.answer}`.includes(faqQuery.trim()));
+  const faqAvailable = ctx.pget("I.support.knowledgeAvailable") === "1";
+  const [faqBusy, setFaqBusy] = useState(false), [faqError, setFaqError] = useState("");
+  async function retryFaqs() { setFaqBusy(true); setFaqError(""); try { await ctx.refreshKnowledge(); } catch (e) { setFaqError(displayAdminError(e)); } finally { setFaqBusy(false); } }
   const source = templateType === "reply" ? "I.session.replyTemplates" : "I.session.scripts";
   const available = ctx.pget("I.session.templatesAvailable") === "1";
   async function retryTemplates(){setTemplateBusy(true);setTemplateError("");try{await ctx.refreshContent();}catch(e){setTemplateError(displayAdminError(e));}finally{setTemplateBusy(false);}}
@@ -91,8 +94,8 @@ export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover
         </>}
       </div> : picker==="faq" ? <div className="support-content-body">
         <label className="support-content-field support-content-search"><span>搜索常见问题</span><input className="fld" value={faqQuery} autoFocus disabled={disabled} onChange={e=>setFaqQuery(e.target.value)}/></label>
-        <p className="support-content-meta">{faqMatches.length} 条已发布问答 · 点一下把答案插入输入框</p>
-        {!faqMatches.length ? <p className="support-content-state">{faqs.length ? "没有匹配的问答。" : "知识库暂无已发布的中文问答。"}</p> : <div className="sku-pop-list" style={{maxHeight:300}}>{faqMatches.map(f=><button type="button" className="l-btn sm sku-pop-item support-content-result" key={f.id} disabled={disabled} onClick={()=>{onInsert(f.answer);setPicker(null);}}><span className="sku-pop-info"><span className="sku-pop-title">{f.question}</span><span className="sku-pop-sub" style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{f.answer}</span></span><Icon name="arrow" size={15}/></button>)}</div>}
+        <p className="support-content-meta">{faqAvailable ? faqMatches.length : "-"} 条已发布问答 · 点一下把答案插入输入框</p>
+        {!faqAvailable ? (ctx.contentLoading ? <p className="support-content-state" role="status">正在加载知识库…</p> : <div className="support-content-state" role="alert">知识库加载失败。<button type="button" className="l-btn sm" disabled={faqBusy||disabled} onClick={()=>void retryFaqs()}>{faqBusy?"正在加载知识库…":"重试知识库"}</button>{faqError&&<span>{faqError}</span>}</div>) : !faqMatches.length ? <p className="support-content-state">{faqs.length ? "没有匹配的问答。" : "知识库暂无已发布的中文问答。"}</p> : <div className="sku-pop-list" style={{maxHeight:300}}>{faqMatches.map(f=><button type="button" className="l-btn sm sku-pop-item support-content-result" key={f.id} disabled={disabled} onClick={()=>{onInsert(f.answer);setPicker(null);}}><span className="sku-pop-info"><span className="sku-pop-title">{f.question}</span><span className="sku-pop-sub" style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{f.answer}</span></span><Icon name="arrow" size={15}/></button>)}</div>}
       </div> : picker==="sku" ? <div className="support-content-body">
         <label className="support-content-field"><span>搜索商品名称或编号</span><input className="fld" value={skuQuery} disabled={disabled} onChange={e=>{setSkuQuery(e.target.value);setSkuPage(1);}}/></label>
         {disabled&&!skus?<p className="support-content-state" role="status">现在不能推荐商品：当前不能发消息，或上一个操作还没结束。</p>:error?<div className="support-content-state" role="alert">{error}<button className="l-btn sm" disabled={disabled} onClick={()=>setSkuRetry(n=>n+1)}>重试商品</button></div>:!skus?<p className="support-content-state" role="status">{skuBusy?"正在加载在售商品…":"在售商品还没加载。"}</p>:<>

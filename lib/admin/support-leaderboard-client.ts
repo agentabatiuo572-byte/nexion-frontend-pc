@@ -59,7 +59,7 @@ function metadata(r: Record<string, unknown>) {
 export type LeaderboardMetadata = ReturnType<typeof metadata>;
 function row(value: unknown, meta: LeaderboardMetadata): SupportBoardRow {
   const r = object(value, "agentId name avatarUrl groupName qualification rank isTied rankMetricCoverage firstPayment customers amount movement canViewCustomers");
-  enumeration(r.qualification, ["ACTIVE", "DISABLED", "REMOVED", "HANDOVER_REQUIRED", "UNKNOWN"] as const);
+  const qualification = enumeration(r.qualification, ["ACTIVE", "DISABLED", "REMOVED", "HANDOVER_REQUIRED", "UNKNOWN"] as const);
   const a = object(r.amount, "value currency month kind coverage reason"), state = coverage(a.coverage);
   const amount = { value: decimal(a.value, true), currency: enumeration(a.currency, ["USDT", "UVT"] as const), periodLabel: month(a.month), sourceVersion: meta.sourceVersion, coverage: displayCoverage(state), reason: reason(a.reason) };
   enumeration(a.kind, ["NET_CONTRIBUTION"] as const);
@@ -81,7 +81,7 @@ function row(value: unknown, meta: LeaderboardMetadata): SupportBoardRow {
   const agentId = id(r.agentId), name = text(r.name);
   if (!name.trim()) invalid("name");
   const avatarUrl = r.avatarUrl === null ? undefined : text(r.avatarUrl);
-  return { id: agentId, name, groupName: text(r.groupName), avatarUrl, rank, isTied: tied, rankStatus: confirmed ? "confirmed" : main.coverage === "unavailable" ? "unavailable" : "provisional", amount, firstPayment, customers, movement, unavailableReason: confirmed ? undefined : "名次未确定", canViewCustomers: bool(r.canViewCustomers) };
+  return { id: agentId, name, groupName: text(r.groupName), avatarUrl, qualification, rank, isTied: tied, rankStatus: confirmed ? "confirmed" : main.coverage === "unavailable" ? "unavailable" : "provisional", amount, firstPayment, customers, movement, unavailableReason: confirmed ? undefined : "名次未确定", canViewCustomers: bool(r.canViewCustomers) };
 }
 export function leaderboardQueryString(input: LeaderboardQuery): string {
   const q = object(input, PARAMETERS), params = new URLSearchParams();

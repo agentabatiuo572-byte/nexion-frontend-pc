@@ -1597,6 +1597,12 @@ function isMContentSessionCurrent(sessionKey: string): boolean {
   return sessionKey === currentMContentSessionKey();
 }
 
+/** One read of the knowledge base, shared by the full M load and the FAQ picker's retry. */
+export async function readSupportKnowledge() {
+  const knowledge = assertSupportKnowledgeOverview(await apiRequest<unknown>("/knowledge/overview"));
+  return { faqs: knowledge.faqs!.map(adaptFaq), sla: knowledge.sla!.map(adaptSla), knowledgeAvailable: true };
+}
+
 export async function fetchMContentData(onProgress?: (data: MContentData) => void, page?: string): Promise<MContentData> {
   const mContentSessionKey = currentMContentSessionKey();
   let snapshot = initialMContentData();
@@ -1702,12 +1708,7 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
       return;
     }
     try {
-      const knowledge = assertSupportKnowledgeOverview(await apiRequest<unknown>("/knowledge/overview"));
-      publish({
-        faqs: knowledge.faqs!.map(adaptFaq),
-        sla: knowledge.sla!.map(adaptSla),
-        knowledgeAvailable: true,
-      });
+      publish(await readSupportKnowledge());
     } catch {
       publish({ faqs: [], sla: [], knowledgeAvailable: false }, "响应时限");
     }

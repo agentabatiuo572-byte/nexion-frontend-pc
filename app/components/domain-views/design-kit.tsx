@@ -675,6 +675,19 @@ export type BusinessFormSpec =
 
 type BriefRow = { label: string; text: string };
 
+/**
+ * What the action really is, stated by the caller. A stated kind turns word matching off, so a note or an FAQ question
+ * that happens to contain 提现 or 会话 cannot change the summary. Domains that state nothing still fall back to word matching.
+ */
+export type OperatorBriefKind = "config" | "content" | "record" | "self-avatar" | "conversation" | "note-delete" | "faq-delete" | "session-category";
+const STATED_BRIEF: Partial<Record<OperatorBriefKind, { impact: string; check: string }>> = {
+  "self-avatar": { impact: "只更换本人头像，账号、角色和接待资格不变。", check: "确认这张图片可以作为本人头像，理由写清依据或工单号。" },
+  conversation: { impact: "只改变客户对话的处理状态或列表位置，不改变账号、资金和专属客服归属。", check: "核对客户和会话，理由写清依据或工单号。" },
+  "note-delete": { impact: "删除这条内部备注，不改变账户状态或风险结论。", check: "核对要删除的备注和客户，理由写清依据或工单号。" },
+  "faq-delete": { impact: "这条问答会从帮助中心移除，不影响账号和资金。", check: "核对问答内容，确认不再需要，理由写清依据或工单号。" },
+  "session-category": { impact: "只决定用户能否在会话中心选择这个类别，进行中的会话不受影响。", check: "核对类别和启用或禁用方向，理由写清依据或工单号。" },
+};
+
 function plainText(node: ReactNode): string {
   if (node == null || typeof node === "boolean") return "";
   if (typeof node === "string" || typeof node === "number") return String(node);
@@ -687,11 +700,13 @@ function compactText(s: string): string {
   return s.replace(/\s+/g, " ").replace(/\s+([,，.。:：;；])/g, "$1").trim();
 }
 
-function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boolean, hasEdit: boolean, localHistory?: boolean): BriefRow[] {
+function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boolean, hasEdit: boolean, localHistory?: boolean, kind?: OperatorBriefKind): BriefRow[] {
   const actionText = compactText(plainText(action));
   const detailText = compactText(plainText(detail));
   const all = `${actionText} ${detailText}`;
-  const includes = (terms: string[]) => terms.some((term) => all.includes(term));
+  const includes = (terms: string[]) => !kind && terms.some((term) => all.includes(term));
+  const stated = kind && STATED_BRIEF[kind];
+  if (stated) return [{ label: "要做什么", text: actionText }, { label: "影响", text: stated.impact }, { label: "提交前", text: stated.check }];
   const defaultCheck = hasEdit
     ? "核对新值和影响范围，理由写清依据或工单号。"
     : "核对操作对象和凭证，理由写清依据或工单号。";
@@ -704,7 +719,7 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
     ];
   }
 
-  if (hasEdit || includes(["调整", "配置", "改值", "改旋钮", "参数", "阈值", "权重", "比例", "排程", "新增", "创建", "设置"])) {
+  if (kind === "config" || !kind && hasEdit || includes(["调整", "配置", "改值", "改旋钮", "参数", "阈值", "权重", "比例", "排程", "新增", "创建", "设置"])) {
     return [
       { label: "要做什么", text: actionText || "修改后台参数或规则。" },
       { label: "影响", text: "按页面说明生效，可能影响之后的订单、风控、报表或用户看到的内容。" },
@@ -736,7 +751,7 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
     ];
   }
 
-  if (includes(["发布", "下架", "回滚", "披露", "文案", "模板", "通知", "课程", "CMS", "重确认"])) {
+  if (kind === "content" || includes(["发布", "下架", "回滚", "披露", "文案", "模板", "通知", "课程", "CMS", "重确认"])) {
     return [
       { label: "要做什么", text: actionText || "发布、回滚或下架内容。" },
       { label: "影响", text: "用户看到的内容、通知或披露会随之变化，披露更新可能要求用户重新确认。" },
@@ -759,8 +774,8 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
   ];
 }
 
-export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, completionCopy, auditSink }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean; completionCopy?: string; auditSink?: "a2" | "local-history" }) {
-  const brief = buildOperatorBrief(action, detail, !!amplifies, !!hasEdit, auditSink === "local-history")
+export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, completionCopy, auditSink, kind }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean; completionCopy?: string; auditSink?: "a2" | "local-history"; kind?: OperatorBriefKind }) {
+  const brief = buildOperatorBrief(action, detail, !!amplifies, !!hasEdit, auditSink === "local-history", kind)
     .map((row) => row.label === "影响" && completionCopy ? { ...row, text: completionCopy } : row);
   const detailText = compactText(plainText(detail));
   return (
@@ -3382,7 +3397,7 @@ export type CoverageSnapshot = {
 };
 
 /* 操作确认弹窗 — 高敏动作确认 + 理由必填 + 可编辑「目标新值」(配置型调整);纯动作(放行/退款/封禁/pause)仅确认。 */
-export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, auditSink, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; reasonMin?: number; reasonMax?: number; auditSink?: "a2" | "local-history"; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; reasonMin?: number; reasonMax?: number; auditSink?: "a2" | "local-history"; briefKind?: OperatorBriefKind; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const [reason, setReason] = useState("");
   const [newVal, setNewVal] = useState(() => initEditValue(edit));
   const [activeBusinessForm, setActiveBusinessForm] = useState<BusinessFormSpec | undefined>(businessForm);
@@ -3496,7 +3511,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
           <Icon name="check" size={15} /> {submitting ? "提交中…" : "确认提交"}
         </Btn>
       </>}>
-      <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} />
+      <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={briefKind} />
       {submitError && <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{submitError}</div>}
       {!reasonPolicyReady && (
         <div className="alertbar warn" role="alert" data-policy-state="fail-closed" style={{ marginBottom: 16 }}>

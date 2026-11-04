@@ -71,7 +71,7 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot }: { name: s
   function confirm() {
     if (!snapshot || !assetId || busy || blocking || !allowed || !actorId || pending) return;
     const selected = assetId, expectedVersion = snapshot.accountVersion, confirmationGeneration = generation.current;
-    ctx.openActionConfirm({ action: "更换本人头像", detail: <span className="self-avatar-confirm-detail">仅替换当前登录账号的头像；姓名、角色和接待资格保持原值。失败或冲突不会清除原头像。</span>, reasonMin: 8, reasonMax: 500,
+    ctx.openActionConfirm({ action: "更换本人头像", briefKind: "self-avatar", detail: <span className="self-avatar-confirm-detail">仅替换当前登录账号的头像；姓名、角色和接待资格保持原值。失败或冲突不会清除原头像。</span>, reasonMin: 8, reasonMax: 500,
       run: async reason => {
         if (!active(confirmationGeneration)) return false;
         const existing = selfAvatarCommands.list().find(row => row.actorId === actorId);

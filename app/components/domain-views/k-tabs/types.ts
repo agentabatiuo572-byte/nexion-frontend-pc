@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { K4PaginationQuery, KRiskActions, KRiskData, KRiskOverviewQuery, MultiAccountOverview, ScoringOverview } from "@/lib/admin/k-client";
-import type { BusinessFormSpec, BusinessFormValue, CoverageSnapshot, EditSpec } from "../design-kit";
+import type { BusinessFormSpec, BusinessFormValue, CoverageSnapshot, EditSpec, OperatorBriefKind } from "../design-kit";
 
 export type ActionConfirmReq = {
   action: ReactNode;
@@ -14,6 +14,8 @@ export type ActionConfirmReq = {
   reasonMin?: number;
   reasonMax?: number;
   completionCopy?: string;
+  /** 这项操作实际是什么；传了就不再按文字猜摘要。客服中心（M）的调用必须传。 */
+  briefKind?: OperatorBriefKind;
   /**
    * 审计落点口径(缺省 "a2" = 既有文案不变)。"local-history" 供本地假数据面(如 D7)使用:
    * 弹窗上「写入 A2 审计」「后端实时校验覆盖率」类承诺会替换成如实的本地口径,不许假承诺。

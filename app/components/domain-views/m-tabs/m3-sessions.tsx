@@ -684,6 +684,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     const convo = selected;
     openActionConfirm({
       action: <>转工单 · {convo.id}</>,
+      briefKind: "record",
       detail: <>把会话 <b>{convo.agentName}</b>(<span className="mono">{convo.id}</span>)转为可追踪工单并进入 处理时限 队列。适用于需要跨班次跟进的提现或设备问题。</>,
       amplifies: false,
       reasonMin: 8,

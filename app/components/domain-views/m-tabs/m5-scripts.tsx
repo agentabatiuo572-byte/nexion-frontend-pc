@@ -289,6 +289,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
     if (!canManageSupportSeats || writePending) return;
     openActionConfirm({
       action: <>解绑专属客服 · {row.nickname}</>,
+      briefKind: "record",
       detail: <>解除 <b>{agent.name}</b> 与用户 <span className="mono">{row.userNo}</span> 的专属客服服务关系。解绑后该用户不再固定分配给该客服。</>,
       amplifies: false,
       reasonMin: 8,
@@ -306,6 +307,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
     const on = catEnabled(cat);
     openActionConfirm({
       action: <>{on ? "禁用" : "启用"}会话类别 · {cat.name}</>,
+      briefKind: "session-category",
       detail: on ? <>该类别从会话中心入口移除;<b>进行中的会话保留,不会强制关闭</b>。此操作不影响全部客服能力。</> : <>恢复后新用户可在会话中心选择该类别。</>,
       amplifies: false,
       reasonMin: 8,
@@ -324,6 +326,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
       || (!masterOn && !ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE)) return;
     openActionConfirm({
       action: <>{masterOn ? "停用" : "启用"}专属客服主动推送</>,
+      briefKind: "record",
       detail: masterOn ? <>停用后专属客服不再主动触达,只在用户发起时回复。引导转化触点暂停。</> : <>启用后专属客服按下方 主动联系规则 主动触达用户(引导购机 / 锁仓 / 锁定计划)。</>,
       amplifies: false,
       reasonMin: 8,
@@ -341,6 +344,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
   const editPolicy = (field: string, label: string, current: string, unit: string) =>
     canManageM5Operations && sessionTemplatesAvailable && !writePending && openActionConfirm({
       action: <>调整专属客服推送 · {label}</>,
+      briefKind: "config",
       detail: ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE
         ? <>影响全体进入会话中心用户的专属客服主动触达频率/时机。对新会话即时生效。</>
         : <>主动推送当前不可用；保存该参数不会触发主动推送。</>,
@@ -362,6 +366,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
   const editAudience = () =>
     canManageM5Operations && sessionTemplatesAvailable && !writePending && audienceOptions.length > 0 && openActionConfirm({
       action: <>圈定专属客服推送受众</>,
+      briefKind: "config",
       detail: ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE
         ? <>限定专属客服主动触达的人群范围;对新会话即时生效,已在会话中的用户不受影响。</>
         : <>主动推送当前不可用；保存受众设置不会触发主动推送。</>,
@@ -383,6 +388,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
   const publishScript = (id: string, currentStatus: AdvisorScript["status"]) =>
     canManageM5Content && sessionTemplatesAvailable && !writePending && currentStatus !== "archived" && openActionConfirm({
       action: <>{currentStatus === "published" ? "归档" : "发布"}专属客服话术 · {id}</>,
+      briefKind: currentStatus === "published" ? "record" : "content",
       detail: currentStatus === "published" ? <>归档后客服就选不到这条话术了，不能撤回。</> : <>发布后可在坐席快捷话术菜单选用。发布前须完成中、英、越三语发布，中文正文须与话术一致，三语需填写的字段须一致。</>,
       amplifies: false,
       reasonMin: 8,
@@ -397,6 +403,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
   const newScript = () =>
     canManageM5Content && sessionTemplatesAvailable && !writePending && audienceOptions.length > 0 && openActionConfirm({
       action: <>新增专属客服话术</>,
+      briefKind: "config",
       detail: <>新建草稿后进入坐席可选话术库;发布走操作确认。</>,
       amplifies: false,
       edit: { kind: "text", current: "", unit: "话术文案" },
@@ -420,6 +427,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
   const toggleTpl = (id: string, currentStatus: SessionReplyTpl["status"]) =>
     canManageM5Content && sessionTemplatesAvailable && !writePending && currentStatus !== "archived" && openActionConfirm({
       action: <>{currentStatus === "published" ? "归档" : "发布"}回复模板 · {id}</>,
+      briefKind: "content",
       detail: currentStatus === "published" ? <>归档后客服就选不到这个模板了，不能撤回。</> : <>发布后进入坐席快捷回复池。发布前须完成中、英、越三语发布，中文正文须与模板一致，三语需填写的字段须一致。</>,
       amplifies: false,
       reasonMin: 8,
@@ -434,6 +442,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
   const newReplyTemplate = () =>
     canManageM5Content && sessionTemplatesAvailable && !writePending && openActionConfirm({
       action: <>新增即时回复模板</>,
+      briefKind: "config",
       detail: <>新增草稿后进入坐席快捷回复模板库，发布后可在专属会话回复框中选用。</>,
       amplifies: false,
       edit: { kind: "text", current: "", unit: "模板文案" },

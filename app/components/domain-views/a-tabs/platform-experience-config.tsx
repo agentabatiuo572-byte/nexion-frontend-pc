@@ -29,7 +29,7 @@ export function PlatformExperienceConfig() {
     if (!canRead) return;
     setLoading(true); setError(null); setSuccess(null);
     try { setConfig(await fetchPlatformExperienceConfig()); }
-    catch (cause) { setError(displayAdminError(cause)); }
+    catch (cause) { setConfig(null); setError(displayAdminError(cause)); }
     finally { setLoading(false); }
   }, [canRead]);
   useEffect(() => { void refresh(); }, [refresh]);

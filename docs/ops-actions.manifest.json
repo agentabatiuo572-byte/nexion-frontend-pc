@@ -2930,9 +2930,9 @@
           "type": "uniapp-runtime",
           "file": "src/store/app.ts",
           "positivePatterns": [
-            "taskAssignmentApi\\.state\\(\\)",
-            "applyRemoteAssignments\\(devices\\.value, rememberTaskAssignments\\(request, assignmentResult\\.value\\)\\)",
-            "function rememberTaskAssignments\\(request: RemoteAccountRequest, state: CanonicalTaskAssignments\\): CanonicalTaskAssignments \\{[\\s\\S]*?lastConfirmedAssignments = \\{ request: \\{ \\.\\.\\.request \\}, state \\};\\s*return state;",
+            "taskAssignmentApi\\.state\\(true\\)",
+            "applyRemoteAssignments\\(devices\\.value, rememberTaskAssignments\\(request, state\\)\\)",
+            "function rememberTaskAssignments\\(request: RemoteAccountRequest, state: CanonicalTaskAssignments\\): CanonicalTaskAssignments \\{[\\s\\S]*?lastConfirmedAssignments = \\{ request: \\{ \\.\\.\\.request \\}, state,[\\s\\S]*?return state;",
             "readRemoteTaskAssignments\\(request\\)",
             "refreshRemoteFleet\\(request,",
             "refreshHomeTruth\\(request\\)"

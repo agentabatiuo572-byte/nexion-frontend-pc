@@ -588,6 +588,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
     }
     openActionConfirm({
       action: <>升级为即时会话 · {ticket.id}</>,
+      briefKind: "record",
       detail: (
         <>
           把工单 <b>{supportTicketSubjectText(ticket.subject)}</b> 升级为即时会话,坐席 <b>{ticket.owner}</b> 在会话中心继续实时接待;用户关联保持不变，工单里会记下会话编号。这只是换成会话接待，放行提现仍需去「待审核提现」处理。

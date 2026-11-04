@@ -36,14 +36,15 @@ type TrialThreshold = { kind: "trial"; operator: string; count: string; days: st
 type GiftThreshold = { kind: "gift"; operator: string; count: string; scope: string };
 type BoardThreshold = { kind: "board"; operator: string; multiplier: string; baseline: string };
 type K2Threshold = TrialThreshold | GiftThreshold | BoardThreshold;
-// 「同层级均值」是后端正则接受的取值；后端实际都按本期全体（未标记）用户增长中位数比较。
-const BOARD_BASELINE_LABELS: Record<string, string> = { 同层级均值: "全体增长中位数（同基线）" };
-const boardBaselineText = (value: string) => value.replace(/同层级均值/g, BOARD_BASELINE_LABELS.同层级均值);
+// 阈值文本里的四个基线词都是后端正则接受的存储值，检测时一律按本期全体（未标记）用户增长中位数比较，
+// 所以页面只显示这一种比较方式，保存时沿用已存的基线词。
+const BOARD_COMPARISON = "全体增长中位数";
+const boardBaselineText = (value: string) => value.replace(/基线|上周期|7日均值|同层级均值/g, BOARD_COMPARISON);
 
 const K2_PARAM_HELP: Record<string, string> = {
   trialCycleThreshold: "同一人或组织的关联账户在统计期间反复开试用的次数阈值。",
   welcomeGiftAnomalyThreshold: "同一人、同一账户组、同一手机号或同一设备重复领取新人礼的笔数阈值。",
-  leaderboardVelocityMultiplier: "排行榜、邀请或团队奖励增长速度相对基线的倍数阈值。",
+  leaderboardVelocityMultiplier: "排行榜、邀请或团队奖励增长速度相对全体增长中位数的倍数阈值。",
 };
 
 const K2_DISPOSITION_LABELS: Record<string, string> = {
@@ -123,11 +124,10 @@ function k2ParamBusinessForm(p: KRiskParam): BusinessFormSpec | null {
   return {
     kind: "multi-field",
     title: "刷榜增速阈值",
-    hint: "倍数可填 2–20，对比基准从下拉选择。",
+    hint: `倍数可填 2–20，固定和「${BOARD_COMPARISON}」比较。`,
     fields: [
       { key: "operator", label: "比较符", current: current.operator, inputKind: "select", options: [">", ">="] },
       { key: "multiplier", label: "增速倍数", current: current.multiplier, inputKind: "number", min: 2, max: 20, step: 1 },
-      { key: "baseline", label: "和什么比", current: current.baseline, inputKind: "select", options: ["基线", "上周期", "7日均值", "同层级均值"], optionLabels: BOARD_BASELINE_LABELS },
     ],
   };
 }
@@ -137,7 +137,8 @@ function intValue(value: string | undefined, min: number, max: number): number |
   return Number.isInteger(n) && n >= min && n <= max ? n : null;
 }
 
-function buildK2ThresholdValue(key: string, value?: BusinessFormValue): string | null {
+function buildK2ThresholdValue(param: KRiskParam, value?: BusinessFormValue): string | null {
+  const key = param.key;
   if (!value) return null;
   const operator = value.operator === ">" ? ">" : ">=";
   if (key === "trialCycleThreshold") {
@@ -152,8 +153,8 @@ function buildK2ThresholdValue(key: string, value?: BusinessFormValue): string |
   }
   if (key === "leaderboardVelocityMultiplier") {
     const multiplier = intValue(value.multiplier, 2, 20);
-    const baseline = ["基线", "上周期", "7日均值", "同层级均值"].includes(value.baseline ?? "") ? value.baseline : null;
-    return multiplier && baseline ? `${operator} ${multiplier}x ${baseline}` : null;
+    const current = parseK2Threshold(key, param.value) ?? defaultK2Threshold(key);
+    return multiplier && current?.kind === "board" ? `${operator} ${multiplier}x ${current.baseline}` : null;
   }
   return null;
 }
@@ -188,7 +189,7 @@ function K2ParamValue({ param }: { param: KRiskParam }) {
     <span className="threshold-parts">
       <span className="seg op">{parts.operator}</span>
       <span className="seg num">{parts.multiplier}x</span>
-      <span className="seg scope">{BOARD_BASELINE_LABELS[parts.baseline] ?? parts.baseline}</span>
+      <span className="seg scope">{BOARD_COMPARISON}</span>
     </span>
   );
 }
@@ -336,7 +337,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       businessForm,
       reasonMax: 200,
       run: (reason, _newVal, businessValue) => {
-        const nextValue = buildK2ThresholdValue(p.key, businessValue);
+        const nextValue = buildK2ThresholdValue(p, businessValue);
         if (!nextValue) {
           ctx.toast(`${p.name} 参数不完整或超出范围`);
           return;

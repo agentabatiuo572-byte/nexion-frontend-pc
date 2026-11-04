@@ -594,7 +594,7 @@ A3 托管**平台级横切配置**——feature flag 平台、**kill-switch conf
 3. **(c) 系统健康**:服务端关键依赖健康面(事件管道 / 账本写入 / endpoint 可用性 / NTP 同步)的运营内部监控总览。
 4. **(d) 应用体验配置 · 界面语言(2026-11-04)**:「应用体验配置」卡片(分享渠道、官方应用安装、首页新手任务与周促销开关回显)新增「界面语言」一节,按固定顺序列出 9 种界面语言:中文 `zh`、English `en`、Tiếng Việt `vi`、Bahasa Indonesia `id`、Bahasa Melayu `ms`、Filipino `fil`、Русский `ru`、Қазақ тілі `kk`、Oʻzbekcha `uz`;每行显示语言本身的写法、中文名和代码。zh/en/vi 为基础语言,始终开启、不能取消;其余 6 种可勾选开关。随卡片原有「保存」一起提交,沿用同一保存理由(8–200 字)、版本号和操作记录。关闭后 App 与 H5 Lite 用户在语言列表里看不到该语言,正在使用它的用户改用英文;重新开启后需要用户再选一次。从未配置时为全部 9 种开启。权限同卡片其他部分(`platform_a3_read` 查看 / `platform_a3_write` 修改)。
    - 后端 B26 上线前(读取结果不含 `interfaceLanguages`):该节只读,全部显示为开启,并提示「系统支持后，可以在这里开关界面语言，现在只能查看。」保存时不提交该字段,卡片其余保存行为不变。
-   - 读取到的列表含未知代码、重复或缺少 zh/en/vi 时,整张卡片按数据异常处理(与其他字段相同);保存后返回的列表与提交的不一致时,提示「其他设置已保存，但界面语言没有按你的选择保存」,需刷新核对后重新保存。
+   - 读取到的列表含未知代码、重复或缺少 zh/en/vi 时,整张卡片按数据异常处理(与其他字段相同):首次加载和点「刷新」都隐藏表单,只显示报错,之后刷新成功即恢复编辑;保存后返回的列表与提交的不一致时,提示「其他设置已保存，但界面语言没有按你的选择保存」,需刷新核对后重新保存。
 
 **③ 可控参数**
 
@@ -2666,7 +2666,7 @@ D2 是后台**最高频操盘动作**,控制平台**资金流出节奏**与**兑
 **② 后台界面**
 (a) 队列列表 + (b) 完整状态机 + (c) 批量操作面 + (d) 单笔详情,四区。
 
-**(a) 队列列表**:`[withdrawalNo / userId / 金额(USDT)/ 目标地址 + 链(TRC20/ERC20/BTC/ETH)/ 提交时间 / 风险评分(来自 K4)/ KYC 态(来自 C4)/ 手续费明细(惩罚费率 penaltyFeeRate / 毛手续费 grossFee / NEX 抵扣额 nexBurned / 实际手续费 actualFee / 实际到账 netReceive)/ 24h 第几笔 / 命中规则(来自 K3 提现风控规则引擎)/ 当前状态]`;支持按状态 / 风险评分 / 金额 / 命中规则筛选与排序。**提现不因 NEX 不足被拒**——NEX 仅可选抵扣手续费,无 NEX 则付全额惩罚费、NEX 凑齐则手续费全免(无门槛)。风险评分**引用 K4**(§3.14:风险评分权威归 K4),D2 不另设评分模型;KYC 态**引用 C4**(§3.14:KYC 状态权威归 C4)。
+**(a) 队列列表**:`[withdrawalNo / userId / 金额(USDT)/ 目标地址 + 链(TRC20/ERC20/BTC/ETH)/ 提交时间 / 风险评分(来自 K4)/ KYC 态(来自 C4)/ 手续费明细(惩罚费率 penaltyFeeRate / 毛手续费 grossFee / NEX 抵扣额 nexBurned / 实际手续费 actualFee / 实际到账 netReceive)/ 24h 第几笔 / 命中规则(来自 K3 提现风控规则引擎)/ 当前状态]`;支持按状态 / 风险评分 / 金额 / 命中规则筛选与排序。「最低风险分」只接受 0–100 的整数:其他输入不发查询,在字段旁提示范围,并说明列表仍按上次生效的风险分。之后的翻页、切状态和操作后刷新按上次生效的值查询,同时把输入框改回这个值,并提示刚才的输入没有生效,页面显示值与实际查询值保持一致。**提现不因 NEX 不足被拒**——NEX 仅可选抵扣手续费,无 NEX 则付全额惩罚费、NEX 凑齐则手续费全免(无门槛)。风险评分**引用 K4**(§3.14:风险评分权威归 K4),D2 不另设评分模型;KYC 态**引用 C4**(§3.14:KYC 状态权威归 C4)。
 **D2 字段契约**:单笔主键线上真名为 `withdrawalNo`，由 `lib/admin/d-client.ts` 的详情寻址与响应模型共同约束；批量入参保持 `withdrawalIds:[]`，冲突回传成员保持 `conflicts[].withdrawalId`，三者不可互换。
 
 **(b) 完整提现状态机**(server-canonical,client 仅订阅):
@@ -3011,6 +3011,8 @@ D4 是平台 **server 唯一账本**的审计面——全平台账单流水、�
 3. **Running Balance**:单用户账本按时间轴的滚动余额(每笔后的余额快照),用于核对"账单加总 = 当前余额",任一断点即账实不符告警。
 4. **对账导出**:账单流水 CSV 导出(全平台按 type / 单用户),供监管报告与外部审计;导出为聚合 / 脱敏数据(不含 PII 明文,§2.4.3)。
 
+**查询提示**(2026-11-04 产品决定):用户编号或时间不合法时不发查询,保留上次结果,提示条件有误、这次没有查询,并写明表格仍是哪次条件的结果;按用户查账单同理,写明仍显示的用户和这份结果用的时间范围(没有限制时写「不限时间」),余额核对一并保留;条件有误期间不能导出。读取真实失败时清空对应数据块,提示只说明被清空的那一块(全平台账单或用户账单),另一块照常显示。
+
 **③ 可控参数**
 
 | 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 / 依据 |
@@ -3040,7 +3042,7 @@ D4 是平台 **server 唯一账本**的审计面——全平台账单流水、�
 | 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
 |---|---|---|---|---|
 | 手动 refund / 调整账单 | ②1 全平台账单流水行内「调整」/ ②2 单用户账本行内 | 行内按钮 | 财务(lead)/超管渲染;仅可调整态账单可用 | 打开弹窗 D4-MD1 |
-| 导出账单 | ②4 对账导出区导出项 | 次按钮 | 财务/只读审计渲染 | 直接触发脱敏 CSV 下载(留痕,无弹窗) |
+| 导出账单 | ②4 对账导出区导出项 | 次按钮 | 有导出权限时可用 | 打开确认框填写理由后下载脱敏 CSV(留痕);导出失败时确认框不关闭,保留理由并显示原因,页面上的账单不受影响 |
 | 异常账单核查 | ②3 Running Balance 断点行内「核查」 | 行内按钮 | 财务/风控/只读审计渲染 | 打开只读核查面板(无写动作;留痕核查结论);若需调整经 D4-MD1 |
 | 查看流水 / 账本 / Running Balance | ②1–③ 导航 | 链接 | 按角色裁剪(客服单用户受限) | 跳转视图,无弹窗 |
 
@@ -3091,7 +3093,9 @@ D4 是平台 **server 唯一账本**的审计面——全平台账单流水、�
 **① 目的 & 对齐**
 D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示与配置(其中日限额 / 余额上限 / 网络费 / NEX 抵扣率由 D5 配置,cooldown / 惩罚费率由 H1 Phase 派发 D5 只读)。对齐前端 §9.3.2(NEX 优惠抵扣提现手续费)+ §13.4.1(Phase 派发提现参数)+ §9.11c.1(Wallet 提现限额 + fee 公式 + 日额度)+ 12 月 §6.4。服务的业务目标:提现摩擦的运营调节(日限 / 上限 / fee / NEX 抵扣率由 D5 owns),同时**对齐 Phase 派发**——**cooldown / 惩罚费率是 Phase 派发参数,权威归 H1,D5 是生效面**(§3.14),D5 不独立设这两个参数,避免与 H1 双源。
 
-> **提现手续费模型(本子模块权威定义)**:提现手续费 = 提现额 × `withdrawPenaltyFeeRate`(惩罚费率,Phase 派发)= grossFee;NEX **可选**抵扣(非强制门槛,无 NEX 也能提现)——`requiredNex = grossFee / nexFeeOffsetRate`(凑齐即手续费全免)、`nexBurned = min(用户 NEX 余额, requiredNex)`、`feeWaived = nexBurned × nexFeeOffsetRate`、`actualFee = grossFee − feeWaived`、`netReceive = 提现额 − actualFee`。无 NEX → 付全额惩罚费、不阻断;NEX 凑齐 → 手续费全免(免费提现)。`nexFeeOffsetRate` 默认 $0.40/NEX,约为 NEX 市场兑换价($0.027)的 ~15×——抵扣比例高于实际兑换价值为**设计意图**(NEX 保留兑换 USDT 功能,但抵扣手续费时按高于实际兑换价值的比例换算)。
+> **提现手续费模型(本子模块权威定义)**:提现手续费 = 所选网络的固定确认费 `networkConfirmFeeUsd`(FEAT-WD02,D5 配置)= grossFee;NEX **可选**抵扣(非强制门槛,无 NEX 也能提现)——`requiredNex = grossFee / nexFeeOffsetRate`(凑齐即手续费全免)、`nexBurned = min(用户 NEX 余额, requiredNex)`、`feeWaived = nexBurned × nexFeeOffsetRate`、`actualFee = grossFee − feeWaived`、`netReceive = 提现额 − actualFee`。无 NEX → 付全额网络确认费、不阻断;NEX 凑齐 → 手续费全免(免费提现)。`nexFeeOffsetRate` 默认 $0.40/NEX,约为 NEX 市场兑换价($0.027)的 ~15×——抵扣比例高于实际兑换价值为**设计意图**(NEX 保留兑换 USDT 功能,但抵扣手续费时按高于实际兑换价值的比例换算)。
+
+> **FEAT-WD02 更正(2026-11-04)**:提现手续费已改为按网络固定确认费,D5 页面不再显示惩罚费率。本节其余 Phase 说明里的惩罚费率是旧口径,随 H1 章节一起更正前以本条和手续费模型为准。
 
 > **D 域生效面定位(§3.14 铁律)**:提现 cooldown / 惩罚费率由 H1 Phase 引擎按用户 Phase 下发(权威源 H1),**D5 是这两个参数在 D 域的生效面 / 展示面,非权威源**——D5 只读展示 Phase 现值 + 跳 H1 调整;D5 **owns** 的是非 Phase 参数(日限额 / 余额上限 / 网络费 / NEX 抵扣率)。这一分工避免"两源"问题(H1 派发 + D5 又设一套)。
 
@@ -3104,10 +3108,9 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
    |---|---|---|
    | 日限额(次数) | D5 配置 | ✅ 可配(确认弹窗 D5-MD1,理由必填) |
    | 余额上限(可提比例) | D5 配置 | ✅ 可配(同 D5-MD1) |
-   | 网络费 | D5 配置 | ✅ 可配(同 D5-MD1) |
+   | 网络确认费(`networkConfirmFeeUsd`,TRC20 / BEP20 / ERC20 每笔固定) | D5 配置 | ✅ 可配(同 D5-MD1,三个一起保存) |
    | NEX 抵扣率(`nexFeeOffsetRate`) | D5 配置 | ✅ 可配(同 D5-MD1) |
    | cooldown(`withdrawCooldownDays`) | **H1 Phase 派发**(只读) | ❌ 只读,跳 H1 |
-   | 惩罚费率(`withdrawPenaltyFeeRate`) | **H1 Phase 派发**(只读) | ❌ 只读,跳 H1 |
    | `complianceHoldEnabled` | **H1 Phase 派发**(只读) | ❌ 只读,跳 H1 |
 
 2. **Phase 联动现值**:展示当前 Phase 下 cooldown / 惩罚费率 / complianceHoldEnabled 的派发值(来自 H1)+ 距下一拐点(如"月 8:cooldown→35d;月 9:cooldown→45d;P5:惩罚费率 20%→25%;P6:25%→30%")+ "在 H1 调整 →"跳转。**非 Phase 参数**(日限 / 上限 / fee / NEX 抵扣率)提供手动覆盖配置入口。
@@ -3120,10 +3123,9 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 |---|---|---|---|---|
 | 提现日限额(次数) | **1 次 / 日**(前端 §9.3 现状) | 1–10 次/日 | 实时(改后新申请按新限) | §9.11c.1 日额度 / §9.2.4 提现限额 copy「Daily limit: 1 withdrawal」;**12 月 §6 未覆盖 → 前端现状参考** |
 | 余额上限(可提比例) | **80%**(前端 §9.3 现状) | 50%–100% | 实时 | §9.2.4 提现限额 copy「80% balance max」;**12 月 §6 未覆盖 → 前端现状参考** |
-| 网络费 | **2%**(min $1 / max $20,前端 §9.3 现状) | 0%–5%,min/max 可配 | 仅新对象(在途不变) | §9.11c.1 fee 公式;**12 月 §6 未覆盖 → 前端现状参考** |
+| 网络确认费(`networkConfirmFeeUsd`) | **TRC20 $1 / BEP20 $1 / ERC20 $5**(每笔固定) | 各 0–25 USD,步进 0.5 | 仅新对象(在途不变) | FEAT-WD02;取代原比例加最低最高额的算法 |
 | NEX 抵扣率(`nexFeeOffsetRate`,**D5 owns,可写**) | **$0.40 / NEX**(每 1 NEX 抵扣 $0.40 手续费;约为 NEX 市场兑换价 $0.027 的 ~15×) | > 0 | 实时全量(改后用户下次提现按新率算抵扣) | §9.3.2 NEX 优惠抵扣提现手续费(`requiredNex = grossFee / nexFeeOffsetRate`);抵扣比例高于市场兑换价是设计意图;**12 月 §6 未覆盖 → 前端现状参考** |
 | cooldown(`withdrawCooldownDays`,**Phase 派发,只读**) | **月 1–7=30d / 月 8=35d(P4 带末月粒度拐点)/ 月 9+=45d**(12 月 §6.4) | 由 H1 Phase 引擎控制 | Phase 派发(按用户月龄) | §6.4 `withdrawCooldownDays`;**权威 H1**,D5 只读展示 |
-| 惩罚费率(`withdrawPenaltyFeeRate`,**Phase 派发,只读**) | **P1–P4=20% / P5=25% / P6=30%**(12 月 §6.4) | 由 H1 Phase 引擎控制 | Phase 派发 | §6.4 `withdrawPenaltyFeeRate` / §9.3.2(grossFee=提现额×费率);**权威 H1**,D5 只读展示 |
 | `complianceHoldEnabled`(**Phase 派发,只读**) | **P5 带(月 8)起 = true,无月内拐点**(增强合规审查 extended hold) | 由 H1 Phase 引擎控制 | Phase 派发(P5 带月 8 激活,§1.7 P5 整带月 8–10 均标 ✅) | H1 Phase 派发;启用后 D2 提现申请进入增强合规审查;**权威 H1**,D5 只读展示,跳 H1 |
 
 > **cooldown / 惩罚费率默认值忠实引用 12 月 §6.4**:cooldown **月 1–7=30d / 月 8=35d / 月 9+=45d**、惩罚费率 **P1–P4=20% / P5=25% / P6=30%**,为 12 月 §6.4 月粒度权威目标值;其中月 8=35d 中间档须前端新增实现(前端 §13.4.1 现 Phase 实现为 P4=30d、P5 直接 45d,缺 35d 中间档)。**月 8=35d 为权威目标值**——本表正文行不否定 35d。**D5 不独立设 cooldown / 惩罚费率**——其值由 H1 按 Phase 下发,D5 仅展示派发现值。
@@ -3158,18 +3160,19 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 **(2) 弹窗规格**
 
 ##### [D5-MD1] 提现参数变更确认(日限额 / 余额上限 / 网络费 / NEX 抵扣率)
-- **功能**:变更 D5 owns 的非 Phase 提现参数(`dailyLimitCount` / `balanceMaxRatio` / `networkFeeRatio` + min/max / `nexFeeOffsetRate`),确认即时生效(网络费按 ③ 表"仅新对象",在途不变;NEX 抵扣率"实时全量")。
+- **功能**:变更 D5 owns 的非 Phase 提现参数(`dailyLimitCount` / `balanceMaxRatio` / `networkConfirmFeeUsd` / `nexFeeOffsetRate`),确认即时生效(网络确认费按 ③ 表"仅新对象",在途不变;NEX 抵扣率"实时全量")。
 - **布局结构**:1. **信息区**:本次变更字段(field / 当前值 → 目标新值)/ 方向判定标签(**放大流出** / 收紧流出)/ 当前 Phase 与 cooldown / 惩罚费率派发现值(供联动研判,只读)。2. **影响预览区**(放大流出方向必有):server 预检「拟生效后兑付覆盖率」;低于黄线警示条(当前值 + 黄/红线);低于红线升级为阻断(确认钮置灰,文案含「覆盖率低于红线,server 将拒绝(422)」);收紧方向展示提示行「收紧流出,不受红线约束,正常生效」。3. **输入区**:目标新值控件(日限额 = 数字输入 1–10 次/日;余额上限 = 数字输入 50%–100%;网络费 = 比例 0%–5% + min/max 数字输入;NEX 抵扣率 = 数字输入 > 0,单位 $/NEX;范围引 ③ 表)+ reason(多行文本,必填,8–200 字;server 空值 400 `REASON_REQUIRED`)。4. **按钮区**:`[取消]` · `[确认变更]`(必填未过 / 超 ③ 表范围 / 覆盖率阻断置灰;loading 防双击)。
+- **网络确认费**:三网合法域 [0, 25],步进 0.5(FEAT-WD02)。输入时实时提示,不合法时「预览并提交」不可用;0、0.5、25 等合法值照常提交,后端保留同样的校验。
 - **错误态**:422 `COVERAGE_BELOW_REDLINE`(放大流出方向,含 server 回传当前覆盖率,弹窗不关)/ 422 `PHASE_PARAM_READONLY`(误携 Phase 参数字段,提示跳 H1)/ 400 `REASON_REQUIRED` / 400(超 ③ 表范围)/ 409(参数已被他人变更,提示刷新)/ 403。
 - **成功反馈**:关窗;参数表现值就地更新;toast「已生效 · 已记审计」;事件 `admin.withdraw_limit_changed`;实时告警超管 / 财务 lead;联动 D2 队列按新参数判定。
 
 **⑤ 接口**
-- `GET /api/admin/withdraw/limits` — 返回提现参数现值 `{ dailyLimitCount, balanceMaxRatio, networkFeeRatio, networkFeeMin, networkFeeMax, nexFeeOffsetRate(来自 D5,可写,source:'d5'), penaltyFeeRate(来自 H1 Phase 派发,只读,source:'phase-h1'), cooldownDays(来自 H1 Phase 派发,只读,source:'phase-h1'), complianceHoldEnabled(来自 H1,只读,source:'phase-h1'), currentPhase }`;日限 / 上限 / fee / NEX 抵扣率标注 `source:'d5'`(可写)。对齐前端 §9.11c.1 `GET /api/config/wallet/withdraw-limits`。
-- `PUT /api/admin/withdraw/limits`(**仅非 Phase 参数**:`dailyLimitCount / balanceMaxRatio / networkFeeRatio / networkFeeMin / networkFeeMax / nexFeeOffsetRate`,确认弹窗 D5-MD1:body 必携 `{reason}`,空值 400 `REASON_REQUIRED`,确认即生效;**请求体含 cooldownDays / penaltyFeeRate / complianceHoldEnabled 时 server 返回 422 Unprocessable Entity** + error body `{code:'PHASE_PARAM_READONLY', message:'cooldownDays/penaltyFeeRate/complianceHoldEnabled 为 Phase 派发参数，请经 H1 调整', redirect:'/admin/phase/h1'}` —— 这些参数只能经 H1 `PUT /api/admin/phase/dials` 修改,D5 不接受其写入)。
+- `GET /api/admin/withdraw/limits` — 返回提现参数现值 `{ dailyLimitCount, balanceMaxRatio, networkConfirmFeeUsd: { trc20, bep20, erc20 }, nexFeeOffsetRate(来自 D5,可写,source:'d5'), penaltyFeeRate(来自 H1 Phase 派发,只读,source:'phase-h1'), cooldownDays(来自 H1 Phase 派发,只读,source:'phase-h1'), complianceHoldEnabled(来自 H1,只读,source:'phase-h1'), currentPhase }`;日限 / 上限 / fee / NEX 抵扣率标注 `source:'d5'`(可写)。对齐前端 §9.11c.1 `GET /api/config/wallet/withdraw-limits`。
+- `PUT /api/admin/withdraw/limits`(**仅非 Phase 参数**:`dailyLimitCount / balanceMaxRatio / networkConfirmFeeUsd / nexFeeOffsetRate`,确认弹窗 D5-MD1:body 必携 `{reason}`,空值 400 `REASON_REQUIRED`,确认即生效;**请求体含 cooldownDays / penaltyFeeRate / complianceHoldEnabled 时 server 返回 422 Unprocessable Entity** + error body `{code:'PHASE_PARAM_READONLY', message:'cooldownDays/penaltyFeeRate/complianceHoldEnabled 为 Phase 派发参数，请经 H1 调整', redirect:'/admin/phase/h1'}` —— 这些参数只能经 H1 `PUT /api/admin/phase/dials` 修改,D5 不接受其写入)。
 
 > **D5 PUT 拒绝 Phase 参数写入(防双源)**:`PUT /api/admin/withdraw/limits` 服务端**仅接受非 Phase 参数**;若请求体携带 `cooldownDays` / `penaltyFeeRate` / `complianceHoldEnabled`,server 返回 **422 Unprocessable Entity** + error body `{code:'PHASE_PARAM_READONLY', message:'cooldownDays/penaltyFeeRate/complianceHoldEnabled 为 Phase 派发参数，请经 H1 调整', redirect:'/admin/phase/h1'}`。这从接口层 enforce "D5 不是这些参数的权威源"(§3.14)。
 >
-> **PUT 放大流出方向为覆盖率红线强约束(§1.8 原则一)**:server 在执行确认时,若操作朝**放大流出**方向(上调 `dailyLimitCount`、上调 `balanceMaxRatio`、下调 `networkFeeRatio`、上调 `nexFeeOffsetRate`),且 B1 兑付覆盖率**低于红线(100%)**,server **拒绝**(返回 422 `COVERAGE_BELOW_REDLINE` + 当前覆盖率值;拒绝码全卷统一 422,PM 2026-06-02),而非仅附快照建议;**收紧方向**(降日限、降余额上限、升网络费、降 NEX 抵扣率)**不受此约束**,正常生效。这与 §1.8 原则一(放大流出前置强约束)一致;弹窗影响预览区的「拟生效后兑付覆盖率」预检与本约束同口径(D5-MD1)。
+> **PUT 放大流出方向为覆盖率红线强约束(§1.8 原则一)**:server 在执行确认时,若操作朝**放大流出**方向(上调 `dailyLimitCount`、上调 `balanceMaxRatio`、下调任一网络的 `networkConfirmFeeUsd`、上调 `nexFeeOffsetRate`),且 B1 兑付覆盖率**低于红线(100%)**,server **拒绝**(返回 422 `COVERAGE_BELOW_REDLINE` + 当前覆盖率值;拒绝码全卷统一 422,PM 2026-06-02),而非仅附快照建议;**收紧方向**(降日限、降余额上限、升网络费、降 NEX 抵扣率)**不受此约束**,正常生效。这与 §1.8 原则一(放大流出前置强约束)一致;弹窗影响预览区的「拟生效后兑付覆盖率」预检与本约束同口径(D5-MD1)。
 
 金额 / 比例字段明示口径,时间戳 ms epoch 服务端权威。
 
@@ -3186,7 +3189,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 **⑦ 风控 & 联动**
 - **cooldown / 惩罚费率 / complianceHoldEnabled 由 Phase 引擎(H1)按用户 Phase 下发,D5 是生效面非权威源**(§3.14 铁律):这三个参数的权威值在 H1,按用户 `joinedAt` → 所处 Phase 派发(§1.7 月粒度);D5 展示派发现值并作 D2 队列"毛手续费 / 冷却是否到期 / 是否进增强合规审查"判定的生效面,**不重设、不缓存为权威**,避免 H1 派发 + D5 又设一套的双源分叉。
 - **D5 owns 日限 / 上限 / fee / NEX 抵扣率**:日限额、余额上限、网络费、NEX 抵扣率四个非 Phase 参数由 D5 单一拥有与配置(server-canonical);其调整属放大 / 收紧资金流出,**放大流出方向改前须过 B1 覆盖率红线强约束**(§1.8 原则一:覆盖率低于红线时 server 拒绝放大流出,见 ⑤);收紧方向不受此约束。
-- **联动 D2 队列**:D5 生效的参数是 D2 提现队列的判定输入——日限(24h 第几笔)、余额上限(可提额)、网络费(到账额)、cooldown(冷却到期)、惩罚费率(grossFee=额×费率)、NEX 抵扣率(NEX 可抵扣手续费额,可选不阻断)、complianceHold(P5+ 增强审查);D2 消费 D5 生效值,不重设。
+- **联动 D2 队列**:D5 生效的参数是 D2 提现队列的判定输入——日限(24h 第几笔)、余额上限(可提额)、网络确认费(grossFee 与到账额)、cooldown(冷却到期)、NEX 抵扣率(NEX 可抵扣手续费额,可选不阻断)、complianceHold(P5+ 增强审查);D2 消费 D5 生效值,不重设。
 - **Phase 拐点连带**:H1 在 Phase 拐点改 cooldown / 惩罚费率 / complianceHoldEnabled(如月 8→35d P4 带末月粒度拐点、月 9→45d、P5 带惩罚费率→25%、P6→30%、P5 带月 8→complianceHold true)时,D5 Phase 联动现值同步更新展示;运营在拐点须知 D5 展示随 H1 派发变化(非 D5 自行改动)。
 
 **⑧ 埋点(事件)**
@@ -3858,11 +3861,13 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 |---|---|---|---|---|
 | trial 复活异常阈值(`trialCycleThreshold`) | **同实体 ≥ 3 次 / 30 天** | 2–10 次 / 周期 | H2 下一次检测时采用(权威归属待定,见下注) | trial 资格判定 server canonical(§9.11d.2);该阈值供 trial 循环养号检测产出 `risk.trial_cycle_detected`(12 月未覆盖,按 §9.11e.1 循环闭环逻辑设默认;周期取 trial 冷却 30 天同窗) |
 | welcome gift 异常发放阈值(`welcomeGiftAnomalyThreshold`) | 同实体 ≥ 2 笔 | 1–5 笔 | 实时 | 与 K1 `maxAccountsPerDevice`(≤2)对齐:同实体超 1 笔即异常,拦截后续 gift(12 月未覆盖,按反 gift-farming 逻辑设默认) |
-| 刷榜增速异常倍数(`leaderboardVelocityMultiplier`) | **> 5× 基线 → 触发信号 + 转人工** | 2×–20× | 实时(下一 snapshot 周期生效) | `/team/leaderboard` 入榜资格:增速 > 倍数 → 标记 + 转人工核(取消资格执行归 F4d V2,见 ④;12 月未覆盖,按 §8.11 刷榜防御逻辑设默认) |
+| 刷榜增速异常倍数(`leaderboardVelocityMultiplier`) | **> 5× 全体增长中位数 → 触发信号 + 转人工** | 2×–20× | 实时(下一 snapshot 周期生效) | `/team/leaderboard` 入榜资格:增速 > 倍数 → 标记 + 转人工核(取消资格执行归 F4d V2,见 ④;12 月未覆盖,按 §8.11 刷榜防御逻辑设默认) |
 
 > **`trialCycleThreshold` 配置权威归属待定(H2/K2 二选一,V4 收口前明确)**:本参数若检测逻辑在 H2 执行,则 H2 为实际消费方,K2 持有权威存疑,存在 H2/K2 各自维护同一阈值的双源风险。须明确单一归属方向后落地:(A)若权威在 K2(K2 持有、H2 运行时读取),须在 K2⑤ 补充 H2 读取 K2 阈值的方式(如 `GET /api/admin/risk/config?key=trialCycleThreshold`)与推送机制;(B)若权威在 H2(H2 自配),则本行不应列为 K2 可控参数,改为「引用 H2 检测阈值配置」。当前生效时机暂记为「H2 下一次检测时采用」(不暗示 poll 逻辑归 K2),随产消方向核实一并定稿。
 >
 > **`minHoldingMonths` 不在 K2 设定**:该值权威归 **E3 Trade-in 配置(§3.3 E3,V2)**,K2 只读消费 `GET /api/config/tradein` 热改值检测套利(§7.5.1),故不列入本子模块可控参数表。
+>
+> **比较方式(刷榜,2026-11-04 产品决定)**:后端始终按本期全体未标记用户的增长额中位数比较,页面只显示这一种比较方式「全体增长中位数」,不可选择,运营只调比较符和倍数。阈值文本格式不变(如 `> 5x 基线`),后端接受的基线词(基线 / 上周期 / 7日均值 / 同层级均值)都不改变比较方式,已存的词原样读取和保存,页面一律显示「全体增长中位数」。
 >
 > **基线计算口径(刷榜)**:基线 = 同一排行榜周期内所有活跃参榜账户(已确认佣金 > 0)在最近 N 个 snapshot 间隔内的佣金增量中位数;单位 USDT / snapshot 周期;snapshot 周期与 §8.11.3「每 5 分钟 snapshot」一致。触发判定「> 5× 基线」时,**排除已标记 flagged 账户后重新计算基线**,防止被刷账户污染基线导致阈值虚高。
 >

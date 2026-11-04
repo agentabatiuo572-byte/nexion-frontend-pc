@@ -459,7 +459,11 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const [keyword, setKeyword] = useState("");
   const [minAmount, setMinAmount] = useState("");
   const [maxAmount, setMaxAmount] = useState("");
-  const [minRiskScore, setMinRiskScore] = useState("");
+  // 输入框里的值和实际查询用的值分开存：后端把阈值夹到 0–100，所以不合法的值不发请求。
+  const [riskDraft, setRiskDraft] = useState("");
+  const appliedRiskScore = useRef("");
+  const [riskDropped, setRiskDropped] = useState("");
+  const riskScoreValid = riskDraft === "" || /^\d{1,3}$/.test(riskDraft) && Number(riskDraft) <= 100;
   const [ruleFilter, setRuleFilter] = useState("");
   const [ipSegment, setIpSegment] = useState("");
   const [sortBy, setSortBy] = useState("createdAt");
@@ -495,6 +499,12 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   const load = async (nextPage = page, overrides: D2FilterOverrides = {}) => {
     const seq = ++requestSeq.current;
+    const riskScore = overrides.minRiskScore ?? (riskScoreValid ? riskDraft : appliedRiskScore.current);
+    // 翻页、切状态或操作后的刷新按上次生效的值查，输入框改回这个值，不再留着被拒绝的数。
+    const dropped = riskScoreValid || overrides.minRiskScore !== undefined ? "" : riskDraft;
+    if (dropped) setRiskDraft(riskScore);
+    setRiskDropped(dropped);
+    appliedRiskScore.current = riskScore;
     setLoading(true);
     setError("");
     setWritesEnabled(false);
@@ -505,7 +515,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           keyword: overrides.keyword ?? keyword,
           minAmount: overrides.minAmount ?? minAmount,
           maxAmount: overrides.maxAmount ?? maxAmount,
-          minRiskScore: overrides.minRiskScore ?? minRiskScore,
+          minRiskScore: appliedRiskScore.current,
           ipSegment: overrides.ipSegment ?? ipSegment,
           sortBy: overrides.sortBy ?? sortBy,
           sortDirection: overrides.sortDirection ?? sortDirection,
@@ -744,7 +754,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const resetAdvancedFilters = () => {
     setMinAmount("");
     setMaxAmount("");
-    setMinRiskScore("");
+    setRiskDraft("");
     setRuleFilter("");
     setIpSegment("");
     setSortBy("createdAt");
@@ -827,13 +837,13 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         <div className="d2-search-toolbar">
           <label className="d2-filter-field d2-keyword-field"><span>提现单 / 用户</span><input placeholder="输入提现单号、用户编号或昵称" value={keyword} onChange={(event) => setKeyword(event.target.value)} /></label>
           <label className="d2-filter-field"><span>状态</span><select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>{STATUS_TABS.map(([value, label]) => <option key={value || "all"} value={value}>{label}</option>)}</select></label>
-          <button className="l-btn primary" onClick={() => { setPage(1); void load(1); }}>查询</button>
+          <button className="l-btn primary" onClick={() => { if (!riskScoreValid) { setAdvancedOpen(true); return; } setPage(1); void load(1); }}>查询</button>
           <button className="l-btn" aria-expanded={advancedOpen} onClick={() => setAdvancedOpen((value) => !value)}>{advancedOpen ? "收起高级筛选" : "高级筛选"}</button>
         </div>
         {advancedOpen && <div className="d2-advanced-filters">
           <label className="d2-filter-field"><span>最低金额</span><input type="number" min="0" value={minAmount} onChange={(event) => setMinAmount(event.target.value)} /></label>
           <label className="d2-filter-field"><span>最高金额</span><input type="number" min="0" value={maxAmount} onChange={(event) => setMaxAmount(event.target.value)} /></label>
-          <label className="d2-filter-field"><span>最低风险分</span><input type="number" min="0" max="100" value={minRiskScore} onChange={(event) => setMinRiskScore(event.target.value)} /></label>
+          <label className="d2-filter-field"><span>最低风险分</span><input inputMode="numeric" placeholder="0–100" aria-invalid={!riskScoreValid} value={riskDraft} onChange={(event) => { setRiskDraft(event.target.value); setRiskDropped(""); }} />{!riskScoreValid ? <small role="alert" style={{ color: "var(--admin-danger, #e5484d)" }}>须为 0–100 的整数。未查询{error ? "。" : `，列表${appliedRiskScore.current ? `仍按最低风险分 ${appliedRiskScore.current}` : "仍是不限风险分的结果"}。`}</small> : riskDropped && <small role="status">「{riskDropped}」不是 0–100 的整数，没有生效。已改回{riskDraft ? `最低风险分 ${riskDraft}` : "不限风险分"}。</small>}</label>
           <label className="d2-filter-field"><span>触发规则</span><input value={ruleFilter} onChange={(event) => setRuleFilter(event.target.value)} /></label>
           <label className="d2-filter-field"><span>IP 段</span><input placeholder="例如 192.168.1" value={ipSegment} onChange={(event) => setIpSegment(event.target.value)} /></label>
           <label className="d2-filter-field"><span>排序字段</span><select value={sortBy} onChange={(event) => setSortBy(event.target.value)}><option value="createdAt">提交时间</option><option value="amount">金额</option><option value="riskScore">风险分</option><option value="status">状态</option></select></label>
