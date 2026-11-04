@@ -10,16 +10,8 @@
 .jdom { container: jdom / inline-size; }
 
 /* ===== 共享 chrome(j-chrome 真值 · J 域 danger 主题) ===== */
-.jdom .f-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
 @container jdom (max-width: 980px) { .jdom .f-stats { grid-template-columns: repeat(2, 1fr); } }
-.jdom .f-stat { background: var(--surface); border-radius: var(--r-card); padding: 14px 16px; }
-.jdom .f-stat .k { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
-.jdom .f-stat .v { font-size: 22px; font-weight: 600; letter-spacing: -.01em; margin-top: 4px; font-variant-numeric: tabular-nums; color: var(--ink); }
 .jdom .f-stat .sub { font-size: 11.5px; color: var(--ink-4); margin-top: 3px; }
-.jdom .f-stat.warn .v { color: var(--warning); }
-.jdom .f-stat.ok .v { color: var(--success); }
-.jdom .f-stat.cyan .v { color: var(--cyan); }
-.jdom .f-stat.danger .v { color: var(--danger); }
 
 .jdom .f-cta { display: inline-flex; align-items: center; gap: 7px; padding: 8px 15px; border-radius: 9px;
   border: 1px solid var(--danger-border); background: var(--danger-soft); color: var(--danger);
@@ -27,9 +19,6 @@
 @media (hover: hover) and (pointer: fine) { .jdom .f-cta:hover { background: var(--danger); color: #fff; } }
 .jdom .f-cta.neutral { border-color: var(--border-strong); background: var(--surface-2); color: var(--ink-2); }
 @media (hover: hover) and (pointer: fine) { .jdom .f-cta.neutral:hover { background: var(--surface-3); color: var(--ink); } }
-
-.jdom .f-foot { margin-top: 18px; font-size: 12.5px; line-height: 1.6; color: var(--ink-4); }
-.jdom .f-foot b { color: var(--ink-3); font-weight: 600; }
 
 /* segmented(J3 趋势窗口 / J4 场景过滤 · danger 实底选中) */
 .jdom .seg { display: inline-flex; padding: 3px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); gap: 2px; }
