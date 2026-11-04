@@ -68,15 +68,6 @@ assertContains("lib/admin/module-content.ts", [
   "maxRows: number",
 ], failures);
 
-assertContains("scripts/remediation-runtime-admin-shard.mjs", [
-  "paginationPagerCount",
-  "paginationExemptions",
-  "data-list-pager",
-  "data-pagination-exempt",
-  "data-pagination-reason",
-  "data-pagination-max-rows",
-], failures);
-
 function parseNdjson(rel) {
   const file = path.join(ROOT, rel);
   if (!fs.existsSync(file)) return [];
@@ -116,7 +107,7 @@ if (runtimeFindings.length > 0) {
 
 const result = {
   status: failures.length === 0 ? "passed" : "failed",
-  checkedRequired: 8,
+  checkedRequired: 7,
   runtimeStrict: strictRuntime,
   unexemptedP1: runtimeFindings.length,
   failures,

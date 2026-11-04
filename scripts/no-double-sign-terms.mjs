@@ -19,7 +19,6 @@ function promotionContractTerms(relativePath, line) {
   if (file === 'lib/admin/promotion-types.ts') return line.replaceAll('"separateMakerChecker"', '"separateReviewActors"');
   if (file === 'lib/admin/promotion-form.ts') return line.replace(/\bc\.separateMakerChecker\b/g, 'c.separateReviewActors');
   if (file === 'app/components/domain-views/h-tabs/h4-promotion-policies.tsx') return line.replace(/\bseparateMakerChecker(?=:)/g, 'separateReviewActors').replaceAll("'separateMakerChecker'", "'separateReviewActors'");
-  if (file === 'scripts/growth-promotions-workflow-runtime.mjs') return line.replaceAll("'approval-publish-dual-lifecycle'", "'promotion-version-lifecycle'");
   return line;
 }
 
@@ -74,7 +73,6 @@ const protocolCases = [
   ['lib/admin/promotion-types.ts', '"separateMakerChecker": boolean'],
   ['lib/admin/promotion-form.ts', 'c.separateMakerChecker'],
   ['app/components/domain-views/h-tabs/h4-promotion-policies.tsx', "separateMakerChecker: '审核与发布分人执行'; choice('separateMakerChecker')"],
-  ['scripts/growth-promotions-workflow-runtime.mjs', "['approval-publish-dual-lifecycle']"],
 ];
 const rejects = (file, line) => banned.some(pattern => pattern.test(promotionContractTerms(file, line)));
 for (const [file, line] of protocolCases) {
