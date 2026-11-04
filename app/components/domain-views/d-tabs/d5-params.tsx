@@ -71,9 +71,9 @@ function draftsFrom(params: D5ParamData): Drafts {
   };
 }
 
-/** 单网络费值域校验([0,25],有限数)。 */
+/** 单网络费合法域(FEAT-WD02):[0,25],步进 0.5。后端同样要求乘 2 为整数。 */
 function confirmFeeValid(value: number) {
-  return Number.isFinite(value) && value >= 0 && value <= D5_NETWORK_CONFIRM_FEE_MAX;
+  return Number.isInteger(value * 2) && value >= 0 && value <= D5_NETWORK_CONFIRM_FEE_MAX;
 }
 
 export function D5Params({ ctx }: { ctx: DCtx }) {
@@ -262,9 +262,9 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
             <div className="txt">
               <div className="k">网络确认费（三个一起保存）</div>
               <div className="s">每笔固定收取，按网络区分，0–{D5_NETWORK_CONFIRM_FEE_MAX} USD，每档 0.5。<b>调低任一网络都算放宽</b>。默认 TRC20 $1 / BEP20 $1 / ERC20 $5</div>
-              {canFeeWrite && !feeTrcValid && drafts.feeTrc !== "" && <div className="s" style={{ color: "var(--admin-danger, #e5484d)" }}>TRC20 超出 0–{D5_NETWORK_CONFIRM_FEE_MAX} 范围</div>}
-              {canFeeWrite && !feeBepValid && drafts.feeBep !== "" && <div className="s" style={{ color: "var(--admin-danger, #e5484d)" }}>BEP20 超出 0–{D5_NETWORK_CONFIRM_FEE_MAX} 范围</div>}
-              {canFeeWrite && !feeErcValid && drafts.feeErc !== "" && <div className="s" style={{ color: "var(--admin-danger, #e5484d)" }}>ERC20 超出 0–{D5_NETWORK_CONFIRM_FEE_MAX} 范围</div>}
+              {canFeeWrite && !feeTrcValid && drafts.feeTrc !== "" && <div className="s" style={{ color: "var(--admin-danger, #e5484d)" }}>TRC20 须在 0–{D5_NETWORK_CONFIRM_FEE_MAX} 之间，每档 0.5，例如 1 或 1.5</div>}
+              {canFeeWrite && !feeBepValid && drafts.feeBep !== "" && <div className="s" style={{ color: "var(--admin-danger, #e5484d)" }}>BEP20 须在 0–{D5_NETWORK_CONFIRM_FEE_MAX} 之间，每档 0.5，例如 1 或 1.5</div>}
+              {canFeeWrite && !feeErcValid && drafts.feeErc !== "" && <div className="s" style={{ color: "var(--admin-danger, #e5484d)" }}>ERC20 须在 0–{D5_NETWORK_CONFIRM_FEE_MAX} 之间，每档 0.5，例如 1 或 1.5</div>}
               {feeValid && (feeTrc === 0 || feeBep === 0 || feeErc === 0) && <div className="s" style={{ color: "var(--admin-warning, #f5a623)" }}>设为 0 的网络将不收手续费，请确认</div>}
             </div>
             <label className="ui-network-field">TRC20（美元 / 笔）<input aria-label="TRC20 网络确认费目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.feeTrc} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeTrc", event.target.value)} /></label>
