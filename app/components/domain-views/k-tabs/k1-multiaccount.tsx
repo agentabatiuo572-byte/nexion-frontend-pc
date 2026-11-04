@@ -80,8 +80,8 @@ const releaseParamSub = (p: KRiskParam) => RELEASE_PARAM_COPY[p.key]?.sub ?? p.s
 
 // 簇状态 → 收益桶结论(展示派生,不动处理流程;权威结算在服务端)。
 const CLUSTER_EARNING_IMPACT: Record<ClusterStatus, { label: string; tone: string; desc: string }> = {
-  detected: { label: "正常名额内可提现", tone: "dim", desc: "这组账户仍待判定；正常名额内的收益可提现，超出名额的收益须先审核。" },
-  flagged: { label: "审核中", tone: "warn", desc: "标记为可疑后，超出正常名额的收益须人工审核。" },
+  detected: { label: "锁定奖励", tone: "bad", desc: "这组账户仍待判定，新增收益直接记为锁定奖励，无需先人工冻结账户组。" },
+  flagged: { label: "锁定奖励", tone: "bad", desc: "这组账户已标记为可疑，新增收益直接记为锁定奖励，无需先人工冻结账户组。" },
   frozen: { label: "锁定奖励", tone: "bad", desc: "冻结这组账户后，新增收益会锁定，提现审核也会更严格。" },
   released: { label: "恢复正常", tone: "ok", desc: "解除误判后，之后的收益按正常账户处理；之前待审核的仍按审核结果处理。" },
   cleared: { label: "正常释放", tone: "ok", desc: "判定正常后，这组账户退出风险监控；后续收益按普通账户处理。" },
@@ -1009,7 +1009,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                     <b>收益影响</b> · 当前结论:<span className={`bdg ${impact.tone}`} style={{ marginLeft: 6 }}>{impact.label}</span>
                     <div style={{ marginTop: 6 }}>{impact.desc}</div>
                     <div style={{ marginTop: 6 }}>{slots && pendingFrom && freezeFrom
-                      ? `当前规则：前 ${slots} 个手机号的收益可正常处理；第 ${pendingFrom} 个关联账号起须审核收益；第 ${freezeFrom} 个关联账号起建议冻结。`
+                      ? `当前规则：正常手机号名额为 ${slots} 个。账户组待判定、可疑、已冻结，或同组账号数达到 ${freezeFrom} 时，新增收益锁定；其余情况下，账号数达到 ${pendingFrom} 时须审核，未达到时可提现。`
                       : "收益审核规则暂时加载不出来。"}</div>
                   </div>
                 );
