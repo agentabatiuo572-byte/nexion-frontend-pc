@@ -53,6 +53,15 @@ export function formatBusinessTime(value: unknown, options: Intl.DateTimeFormatO
   return `${new Intl.DateTimeFormat("zh-CN", { ...options, timeZone: current.zoneId, hourCycle: "h23" }).format(timestamp)}（${current.label}）`;
 }
 
+/** 完整时间「2026-10-19 19:18:05」（TX-26），时区由调用方写一次。 */
+export function formatBusinessTimeFull(value: unknown, fallback = "-"): string {
+  if (typeof value !== "string" || !value.trim()) return fallback;
+  const timestamp = parseBusinessTime(value.trim());
+  if (!Number.isFinite(timestamp)) return fallback;
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: current.zoneId, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(timestamp).map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
 /** Compact business-local stamp ("2026-10-19 19:18") for dense side panels; the zone is stated once by the caller (M-12). */
 export function formatBusinessTimeCompact(value: unknown, fallback = "-"): string {
   if (typeof value !== "string" || !value.trim()) return fallback;

@@ -686,7 +686,7 @@ export type BusinessFormSpec =
   // 通用多字段配置:一个「调整」按钮 → 一个弹窗里编辑 N 个带标签的值(各值独立 backend-replaceable,
   // 配合 EOp "param-multi" + McSpec.paramKeys 把每字段写到自己的 param key)。
   // ascending=true 时校验 number 字段严格递增(如 分段月界 早末<中末<总月数)。
-  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "datetime-local" | "asset-upload"; options?: string[]; mustChoose?: boolean; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
+  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; derive?: (key: string, next: Record<string, string>) => Record<string, string>; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "datetime-local" | "asset-upload"; options?: string[]; mustChoose?: boolean; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentIssuanceLimit?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentPopupCadenceEnabled?: string; currentPopupDelayMs?: string; currentPopupCooldownHours?: string; currentPopupMaxPerSession?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
@@ -1667,7 +1667,8 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   const latestValueRef = useRef(value);
   useEffect(() => { latestValueRef.current = value; }, [value]);
   const set = (key: string, v: string) => {
-    const next = { ...latestValueRef.current, [key]: v };
+    const changed = { ...latestValueRef.current, [key]: v };
+    const next = spec.kind === "multi-field" && spec.derive ? spec.derive(key, changed) : changed;
     latestValueRef.current = next;
     onChange(next);
   };
@@ -3426,7 +3427,7 @@ export type CoverageSnapshot = {
 };
 
 /* 操作确认弹窗 — 高敏动作确认 + 理由必填 + 可编辑「目标新值」(配置型调整);纯动作(放行/退款/封禁/pause)仅确认。 */
-export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", blockedReason, statedBrief }: { effect?: ReactNode; confirmLabel?: string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string }; action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; reasonMin?: number; reasonMax?: number; auditSink?: "a2" | "local-history"; briefKind?: OperatorBriefKind; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱" }: { effect?: ReactNode; confirmLabel?: string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string }; facts?: ReactNode; confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; reasonMin?: number; reasonMax?: number; auditSink?: "a2" | "local-history"; briefKind?: OperatorBriefKind; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const surface = useRdSurface();
   const [reason, setReason] = useState("");
   const [newVal, setNewVal] = useState(() => initEditValue(edit));
@@ -3538,10 +3539,10 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
     }
   };
   const coverageNotice = effectiveAmplifies && (
-    <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
+    <div className={surface && !covBlocked ? "alertbar calm" : "alertbar danger"} style={{ marginBottom: 16, border: 0 }}>
       <span className="ico"><Icon name="alert" size={16} /></span>
       <div className="tiny">
-        <b>这项操作会让平台多付钱</b> · 提交时会先检查兑付覆盖率。
+        <b>{coverageLead}</b> · 提交时会先检查兑付覆盖率。
         {coverage ? (
           <>
             当前覆盖率 <b className="mono">{coverage.coverageRatio}%</b>
@@ -3563,7 +3564,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
     <Modal title={action} icon="shield" onClose={handleClose} className="rd-confirm"
       footer={<>
         <Btn disabled={submitting} onClick={handleClose}>取消</Btn>
-        <Btn variant="primary" disabled={!canConfirm} onClick={() => void handleConfirm()}>
+        <Btn variant={confirmTone} disabled={!canConfirm} onClick={() => void handleConfirm()}>
           <Icon name="check" size={15} /> {submitting ? "提交中…" : confirmLabel}
         </Btn>
       </>}>
@@ -3579,6 +3580,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       )}
       {!surface && coverageNotice}
       {!surface && completionCopy && <div className="tint tiny" style={{ marginBottom: 14 }}>{completionCopy}</div>}
+      {facts && <div className="rd-confirm-facts">{facts}</div>}
       {activeBusinessForm && (
         <BusinessFormBlock spec={activeBusinessForm} value={businessValue} onChange={setBusinessValue} onSelectionChange={(next) => void handleBusinessSelectionChange(next)} onUploadStateChange={(key, state) => setUploadStates((current) => ({ ...current, [key]: state }))} />
       )}

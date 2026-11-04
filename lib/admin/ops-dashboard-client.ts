@@ -48,7 +48,7 @@ function normalizeAlert(value: unknown, index: number): OpsDashboardAlert {
   };
 }
 
-export async function fetchOpsDashboardAlerts(): Promise<OpsDashboardAlert[]> {
+async function readKillSwitchAlerts() {
   // 所有已登录运营账号读取最小化告警快照；不暴露 J1 配置与控制权限。
   const response = await guardedFetch("/api/admin/emergency/kill-switches/alerts", { cache: "no-store" });
   const payload = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
@@ -104,6 +104,17 @@ export async function fetchOpsDashboardAlerts(): Promise<OpsDashboardAlert[]> {
   if (new Set(pending.map((row) => row.key)).size !== pending.length) {
     throw new Error("J1_ALERTS_CONTRACT_INVALID:autoConfirmations.keys");
   }
+  return { gates, pending };
+}
+
+/** 提现总开关现在开着吗。没设置也算关（后端失败关闭）。 */
+export async function fetchWithdrawalGateOpen() {
+  const { gates } = await readKillSwitchAlerts();
+  return gates.find((gate) => gate.key === "withdraw")?.enabled === true;
+}
+
+export async function fetchOpsDashboardAlerts(): Promise<OpsDashboardAlert[]> {
+  const { gates, pending } = await readKillSwitchAlerts();
   const alerts: OpsDashboardAlert[] = [];
   const disabled = gates.filter((gate) => !gate.enabled);
   if (disabled.length > 0) {

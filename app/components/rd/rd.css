@@ -176,11 +176,11 @@
 .rd-check { width: 16px; height: 16px; margin: 0; vertical-align: middle; accent-color: var(--rd-brand-ink); cursor: pointer; }
 .rd-check:disabled { cursor: not-allowed; }
 .rd-row-actions { display: inline-flex; align-items: center; gap: 4px; }
-.rd-row-action { color: var(--rd-text); }
-.rd-cell-link { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.rd-cell-link { display: block; max-width: 100%; padding: 0; overflow: hidden; border: 0; background: none; color: inherit; font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .rd-cell-link:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
 .rd-cell-sub .rd-link { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
 .rd-cell { display: block; min-width: 0; max-width: 280px; }
+.rd-cell[data-full] { max-width: none; }
 .rd-cell-main { display: block; color: var(--rd-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rd-cell-sub { display: block; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rd-cell[data-mono] .rd-cell-main, .rd-cell[data-mono] .rd-cell-sub { font-family: var(--rd-font-mono); font-variant-numeric: tabular-nums; }
@@ -262,6 +262,10 @@
 .rd-modal.rd-confirm .field textarea, .rd-modal.rd-confirm .field input:not([type="checkbox"]):not([type="radio"]), .rd-modal.rd-confirm .fld { border: 0; border-radius: var(--rd-radius-control); background: var(--rd-control); color: var(--rd-text); font-size: var(--rd-text-body); }
 .rd-modal.rd-confirm .alertbar { border: 0; border-radius: var(--rd-radius-control); }
 .rd-modal.rd-confirm .alertbar.danger { background: var(--rd-danger-bg); }
+.rd-modal.rd-confirm .alertbar.calm { background: var(--rd-panel-inner); }
+.rd-modal.rd-confirm .alertbar.calm .ico { background: var(--rd-control); color: var(--rd-text-2); }
+.rd-confirm-facts { margin-bottom: 16px; padding: 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.rd-recipients { display: grid; gap: 8px; max-height: 200px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
 .rd-modal.rd-confirm .alertbar .ico { background: var(--rd-danger-tile); color: var(--rd-danger-tile-ink); }
 .rd-modal.rd-confirm .alertbar .tiny { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text); }
 .rd-modal.rd-confirm .tiny { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
@@ -491,7 +495,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-fact { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; }
 .rd-fact dt { font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); color: var(--rd-text-3); }
 .rd-fact dd { margin: 0; color: var(--rd-text); overflow-wrap: anywhere; }
-.rd-fact [data-mono] { font-family: var(--rd-font-mono); }
+:is(.rd-fact, .rd-point-reason, .rd-recipients) [data-mono] { font-family: var(--rd-font-mono); overflow-wrap: anywhere; }
 
 /* ── 流程示意 ── */
 .rd-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--rd-text-3); }
