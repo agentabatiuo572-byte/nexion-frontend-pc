@@ -362,6 +362,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
             {canFund && lbPaused && <span className="muted">排行榜已暂停，奖励暂停发放。</span>}
             {canFund && <button className="primary amp" onClick={() => ctx.openActionConfirm({
               name: "调整各榜奖池", amplify: true,
+              completionCopy: "提交到「操作记录与审批」，由另一位管理员批准后生效。",
               businessForm: {
                 kind: "multi-field",
                 title: "各榜奖池（USD）",
@@ -384,7 +385,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
                   throw new Error("奖池要填 0 或正数");
                 }
                 await ctx.updateF4Config("F.pool.periodPrize", JSON.stringify({ today, week, month, allTime }), reason);
-                ctx.toast(`各榜奖池已生效 · 日 ${today} / 周 ${week} / 月 ${month} / 总 ${allTime}`);
+                ctx.toast(`各榜奖池已提交，批准后生效 · 日 ${today} / 周 ${week} / 月 ${month} / 总 ${allTime}；批准前仍按原设置执行`);
               },
             })}>各榜奖池</button>}
           </div>
