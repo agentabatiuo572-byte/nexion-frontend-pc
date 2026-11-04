@@ -223,12 +223,13 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   }
 
   return (
-    <div className="f-section-stack">
+    <fieldset className="f-section-stack" disabled={ctx.f5Loading} aria-busy={ctx.f5Loading} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <section className="pane">
         <div className="pane-h">
           <span className="ph-ttl">奖励记录核对</span>
           <span className="ph-sub">8 类奖励的全部发放记录</span>
         </div>
+        {ctx.f5Loading && <div role="status" style={{ padding: 12 }}>奖励记录更新中，暂不能查询或处理。</div>}
         {ctx.f5Error && <div style={{ padding: 12, color: "var(--danger)" }}>加载失败：{ctx.f5Error}。数据不完整，批量补发已暂停。 <button className="fbtn" onClick={() => void ctx.refreshF5(query())}>重试</button></div>}
         <div className="filter-bar" style={{ gap: 8, flexWrap: "wrap" }}>
           <select aria-label="奖励类型" value={kind} onChange={(e) => setKind(e.target.value)}>
@@ -245,9 +246,9 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
             <option value="cooling">奖励等待发放</option><option value="unlocked">已解锁</option>
             <option value="withdrawn">已提现</option><option value="reversed">已撤销</option><option value="frozen">已冻结</option><option value="rejected">未发放</option><option value="recovery_pending">待追回</option>
           </select>
-          <button className="fbtn primary" onClick={() => void ctx.refreshF5(query())}>筛选</button>
+          <button className="fbtn primary" disabled={ctx.f5Loading} onClick={() => { setSelected([]); void ctx.refreshF5(query()); }}>筛选</button>
           <button className="fbtn" onClick={exportAllFiltered}>导出筛选结果（CSV）</button>
-          {reissueAvailable && <button className="fbtn" onClick={reissue}>批量补发 ({selected.length})</button>}
+          {reissueAvailable && <button className="fbtn" onClick={reissue}>批量补发 ({selectedRows.length})</button>}
         </div>
       </section>
 
@@ -437,6 +438,6 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           </section>
         </>
       )}
-    </div>
+    </fieldset>
   );
 }
