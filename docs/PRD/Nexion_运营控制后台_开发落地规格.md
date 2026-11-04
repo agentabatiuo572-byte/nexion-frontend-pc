@@ -1039,8 +1039,8 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 - **I1 文案 A/B**:版本 `draft → published(MC)→ archived`(回滚=重发历史版,MC);实验 `scheduled → running → concluded(adopted|discarded)`。分组 assignment server 权威,已分组 sticky。
 - **I5 风险披露**:版本 `draft → published(per jurisdiction,批准后封存)→ superseded`；发布不切换 App 当前版本。生效版本映射另行批准切换；用户 ack `not_acked → acked → stale` 在生效映射改变时触发，不能在客户端直接置 accepted。提现、质押不再前置拦截，也不支持重新纳入。
 - **I2 Nova**:channel `enabled ⇄ disabled`(kill);模板 `draft → published → archived`(MC)。
-- **I3 通知 campaign**:`draft → scheduled → sending → sent`;任一态 `→ cancelled`;调度下发=MC;优先级 in-place 升级 server emit canonical。
-- **I4 信任 / I6 i18n / I7 课程**:内容版本 `draft → published → archived`(I4 财务/NEX 叙事须合规审查,发布经确认弹窗;I6 发布前镜像+占位符 gate;I7 featured set⇄unset 单位互斥)。
+- **I3 通知 campaign**:`draft → scheduled → sending → sent`;仅 `scheduled → cancelled`；紧急取消另核紧急执行权；调度下发=MC;优先级 in-place 升级 server emit canonical。
+- **I4 信任 / I6 i18n / I7 课程**:内容与课程 `draft → published → archived`；I7 课程版本 `DRAFT → PUBLISHED → SUPERSEDED`，回滚重新选定历史版本为当前版。I4 财务/NEX 叙事须合规审查，I6 发布前镜像+占位符 gate；I7 初次发布、版本发布和回滚均须课程写与奖励调整双权限，featured set⇄unset 单位互斥。
 - **J1 功能闸**:闸 `enabled ⇄ disabled`;提案 `pending_approval → approved|rejected`;应急 `pending_approval[emergency] → escalating`(N min 未放行自动升级,工单维持 pending 不自动放行)`→ approved|rejected`,升级耗尽 → `escalation_exhausted`(终态,永不自动放行);恢复(前置 B1 闸)未达覆盖率 → `blocked_by_coverage`(409+快照)。批量熔断逐闸独立生效(非原子),返 status[]。
 - **J3 篡改告警**:`normal → flagged`(超频次)→ `escalated`(喂 K4+B5);纯只读监控,处置跳 K 域。
 
@@ -1360,6 +1360,10 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | H6-MD2 | watcher tick 间隔变更 | 是 | v3 H6④a |
 
 ### 9.9 I 内容与合规 CMS
+
+**通知取消与课程发布权限（2026-11-04，BUG-189、BUG-190）**：通知排期的取消与实际执行路由一致，普通通知须 `content_i3_write`，紧急通知还须 `content_i3_critical_send`；缺少紧急执行权时不显示取消入口，并说明没有发送或取消紧急通知的权限。无写权限只读。课程初次发布、版本草稿发布和历史版本回滚，均须同时具备 `content_i7_write` 与 `content_i7_course_reward_adjust`；单权限和只读账号不显示这些入口。读取课程仍只需真实合并路由允许的任一读权并有菜单，不额外要求词条读取权。原状态、测验、理由、版本和兑付覆盖率门不变。超级管理员沿用系统全权身份。
+
+**Nova 模板状态入口（2026-11-04，BUG-187）**：具有 `content_i2_write` 的账号仅可发布草稿、归档已发布模板；已归档模板不提供再次发布，草稿不提供归档。只读账号不显示这些写入口。菜单与读取权仍按实际路由要求，确认理由及系统的三语、变量和内容质量检查保持有效。
 
 **披露发布核对与生效（2026-11-04，BUG-180、BUG-182）**：发布前按七章的中文、越南语、英语标题和正文比较差异，英语单独变化也计入对应章节；核对框预览三语内容，缺少的英语译文明确显示未提供，勾选确认覆盖三语。核对内容仍来自已保存草稿，提案绑定同一 revision / contentHash，原审批门不变。草稿保存立即生效于草稿；发布提交审批，批准后仅封存七章，不改变 App 当前版本、不触发重新确认。生效版本映射另行提交审批，批准切换后才要求用户重新确认。提现和质押已移出前置确认范围，只读说明不再纳入，不提供恢复纳入入口；受限范围为空时明确告知，历史拦截记录继续保留。
 

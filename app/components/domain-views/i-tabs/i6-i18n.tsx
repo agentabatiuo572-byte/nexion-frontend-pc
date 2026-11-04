@@ -69,6 +69,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const canWriteI6 = isSuperadmin || !!session?.authorities.includes("content_i6_write");
   const canWriteI7 = isSuperadmin || !!session?.authorities.includes("content_i7_write");
   const canAdjustI7Reward = isSuperadmin || !!session?.authorities.includes("content_i7_course_reward_adjust");
+  const canPublishI7 = canWriteI7 && canAdjustI7Reward;
   const propose = usePropose();
   const [nsFlt, setNsFlt] = useState<NsFlt>("all");
   const [catFlt, setCatFlt] = useState<CatFlt>("all");
@@ -988,7 +989,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                       {canWriteI7 && <>
                       {isDraft && <>
                       <button className="l-btn sm" aria-label={`编辑 ${nexGridBrandText(c.title)}`} onClick={() => editCrs(c)} style={{ marginRight: 6 }}>编辑</button>
-                      <button className="l-btn sm mc" aria-label={`发布 ${nexGridBrandText(c.title)}`} onClick={() => pubCrs(c)} style={{ marginRight: 6 }}>发布</button>
+                      {canPublishI7 && <button className="l-btn sm mc" aria-label={`发布 ${nexGridBrandText(c.title)}`} onClick={() => pubCrs(c)} style={{ marginRight: 6 }}>发布</button>}
                       <button className="l-btn sm" aria-label={`删除草稿 ${nexGridBrandText(c.title)}`} onClick={() => deleteCrs(c)} style={{ marginRight: 6 }}>删除草稿</button>
                       </>}
                       {!archived && !isDraft && (
@@ -1053,8 +1054,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                       <button className="l-btn sm" onClick={() => editCourseVersion(versionCourse, row)} style={{ marginRight: 6 }}>编辑草稿</button>
                       <button className="l-btn sm" onClick={() => deleteCourseVersion(versionCourse, row)} style={{ marginRight: 6 }}>删除草稿</button>
                     </>}
-                    {row.status === "DRAFT" && canAdjustI7Reward && <button className="l-btn sm mc" onClick={() => publishCourseVersion(versionCourse, row)}>发布</button>}
-                    {row.status === "SUPERSEDED" && canAdjustI7Reward && <button className="l-btn sm mc" onClick={() => rollbackCourseVersion(versionCourse, row)}>回滚到此版本</button>}
+                    {row.status === "DRAFT" && canPublishI7 && <button className="l-btn sm mc" onClick={() => publishCourseVersion(versionCourse, row)}>发布</button>}
+                    {row.status === "SUPERSEDED" && canPublishI7 && <button className="l-btn sm mc" onClick={() => rollbackCourseVersion(versionCourse, row)}>回滚到此版本</button>}
                     {row.status === "PUBLISHED" && <span className="muted">当前线上版本</span>}
                   </td>
                 </tr>;
