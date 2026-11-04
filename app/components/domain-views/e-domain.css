@@ -68,7 +68,7 @@
 :is(.edom .e1-phone-task-policy, .dkpage .e1-sku-task-policy) > .col > label:has(:focus-visible) { outline: 2px solid var(--brand); outline-offset: 2px; }
 :is(.edom .e1-phone-task-policy, .dkpage .e1-sku-task-policy) > .col > label:has(:disabled) { cursor: default; }
 :is(.edom .e1-phone-task-policy, .dkpage .e1-sku-task-policy) > .col input[type="checkbox"] { width: 15px; height: 15px; margin: 0; flex: none; accent-color: var(--brand); }
-html[data-theme="dark"] :is(.e1-phone-task-policy, .e1-sku-task-policy) > .col input[type="checkbox"] { color-scheme: dark; }
+:is(.e1-phone-task-policy, .e1-sku-task-policy) > .col input[type="checkbox"] { color-scheme: dark; }
 .edom .e1-phone-task-policy > footer { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
 .edom .e1-phone-task-policy > footer p { flex: 1 1 16rem; margin: 0; }
 .edom .e1-phone-task-policy > footer .btn { margin-inline-start: auto; }

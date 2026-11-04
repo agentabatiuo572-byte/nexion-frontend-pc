@@ -1,7 +1,7 @@
 /* ============================================================================
    B2 资金池水位 — 设计稿专属布局类(端口自 project/B2 资金池水位.html <style>)。
    作用域 .liqpage,与 b-domain.css(.bpage)+ globals(.dkpage)共享类组合。
-   token 全部走 globals bare-token 别名(--warning/--ink-3/--surface…→ --v5-*),双主题安全。
+   token 全部走 globals bare-token 别名(--warning/--ink-3/--surface…→ --v5-*)。
    设计的 @media(viewport) → @container bpage(内容区实宽),免疫固定侧栏宽度。
    仅本页引用;page.tsx 以 `import "./liquidity.css"` 装载。
    ============================================================================ */

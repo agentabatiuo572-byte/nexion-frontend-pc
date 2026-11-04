@@ -41,17 +41,17 @@ if(special){
 }
 const browser=await chromium.launch({headless:true});
 let current;
-async function context(role,theme,viewport){const ctx=await browser.newContext({viewport,deviceScaleFactor:1,locale:'zh-CN',timezoneId:'Asia/Tokyo',reducedMotion:'reduce',serviceWorkers:'block'});await guard.installContext(ctx,adminActor(role));await ctx.addCookies([{name:'nexion_admin_token',value:sessions.admins[role].accessToken,url:base,httpOnly:true,sameSite:'Lax'}]);await ctx.addInitScript(theme=>localStorage.setItem('nexion-admin-theme-v1',JSON.stringify({state:{mode:theme},version:1})),theme);return ctx;}
+async function context(role,viewport){const ctx=await browser.newContext({viewport,deviceScaleFactor:1,locale:'zh-CN',timezoneId:'Asia/Tokyo',reducedMotion:'reduce',serviceWorkers:'block'});await guard.installContext(ctx,adminActor(role));await ctx.addCookies([{name:'nexion_admin_token',value:sessions.admins[role].accessToken,url:base,httpOnly:true,sameSite:'Lax'}]);return ctx;}
 async function api(ctx,url,method='GET',data){const scope={channel:'api',actor:adminActor('growth_author'),method,url:base+'/api/admin/growth'+url,body:data};await guard.beforeRequest(scope);const r=await ctx.request.fetch(scope.url,{method,maxRedirects:0,headers:method==='GET'?{}:{'Idempotency-Key':'pc-visual-'+randomUUID()},data}),responseText=await r.text();await guard.observeResponse({...scope,responseText,status:r.status()});const b=JSON.parse(responseText);assert.equal(r.status(),200,`${url}: ${b.message}`);assert.equal(b.code,0);return b.data;}
 try{
-  const setup=await context('growth_author','dark',manifest.renderer.viewports[0]);
+  const setup=await context('growth_author',manifest.renderer.viewports[0]);
   const detail=await api(setup,`/promotions/${activities.activityId}`);
   const empty=await api(setup,'/promotions','POST',{reason:'PC 空草稿画板：隔离环境真实持久化，仅用于实景验收。',draft:{category:'PROMOTION',template:'SKU_GIFT'}});
   const long=await api(setup,'/promotions','POST',{reason:'PC 长文案画板：隔离环境未发布活动，仅用于实景验收。',draft:{...detail.current.draft,name:'隔离验收长活动名称 · '.repeat(10),title:{zh:'本地实景长标题 '.repeat(18),en:'Isolated long title '.repeat(10),vi:'Tiêu đề kiểm thử '.repeat(10)},terms:{zh:'本活动仅限隔离验收，权益以真实批准引用为准，不代表线上承诺。'.repeat(30),en:'Isolated acceptance only; approved policy references remain authoritative. '.repeat(20),vi:'Chỉ kiểm thử độc lập; quyền lợi theo chính sách đã duyệt. '.repeat(20)}}});
   proof.fixtures={normal:activities.activityId,empty:empty.resource.id,long:long.resource.id,rewards:activities.sourceActivityId};await setup.close();
   const statesArg=process.argv.indexOf('--states'),states=statesArg>=0?process.argv[statesArg+1].split(','):manifest.coverage.states;
   for(const viewport of manifest.renderer.viewports)for(const theme of manifest.coverage.themes)for(const state of states){
-    const ctx=await context(state==='disabled'?'growth_reader':'growth_author',theme,viewport);
+    const ctx=await context(state==='disabled'?'growth_reader':'growth_author',viewport);
     for(const screen of manifest.coverage.screens){
       current=await ctx.newPage();current.setDefaultTimeout(12000);current.setDefaultNavigationTimeout(120000);current.on('pageerror',e=>proof.pageErrors.push({screen,state,message:e.message}));
       const clicks=[],network=[],delays=[];current.on('response',r=>{if(new URL(r.url()).pathname.startsWith('/api/admin/growth/promotion'))network.push({path:new URL(r.url()).pathname,method:r.request().method(),status:r.status()});});
@@ -69,7 +69,7 @@ try{
       }
       await current.evaluate(()=>document.fonts.ready);await current.evaluate(()=>scrollTo(0,0));
       const filename=`${screen}-${state}-${theme}-${viewport.width}.png`,file=path.join(dir,filename);const segments=await capturePromotionPage(current,file);
-      const geometry=await current.evaluate(()=>{const box=s=>{const e=document.querySelector(s);if(!e)return null;const r=e.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height}};return{viewport:{width:innerWidth,height:innerHeight},documentWidth:document.documentElement.scrollWidth,bodyFont:getComputedStyle(document.body).fontFamily,heading:box('.prm h1'),content:box('.prm'),cards:[...document.querySelectorAll('.prm .card')].map(e=>({height:e.getBoundingClientRect().height,width:e.getBoundingClientRect().width})),theme:document.documentElement.dataset.theme};});
+      const geometry=await current.evaluate(()=>{const box=s=>{const e=document.querySelector(s);if(!e)return null;const r=e.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height}};return{viewport:{width:innerWidth,height:innerHeight},documentWidth:document.documentElement.scrollWidth,bodyFont:getComputedStyle(document.body).fontFamily,heading:box('.prm h1'),content:box('.prm'),cards:[...document.querySelectorAll('.prm .card')].map(e=>({height:e.getBoundingClientRect().height,width:e.getBoundingClientRect().width}))};});
       proof.boards.push({caseId:`${screen}-${state}-${theme}-${viewport.width}`,screen,state,theme,viewport,dpr:1,file,segments,sha256:hash(fs.readFileSync(file)),url,clicks,network,geometry,faultInjection:['loading','error'].includes(state)?state:null,mask:[]});
       for(const release of delays)release();await current.close();current=null;
     }
@@ -80,7 +80,7 @@ try{
     const key=reduced?caseId.replace(/-reduced-transparency-\d+$/,''):caseId.replace(/-(dark|light)-\d+$/,'');
     const scene=special.scenes[key];assert(scene,'Missing declared special scene '+key);assert(scene.route&&scene.actor&&scene.mapping?.length,'Special scene must identify its actual product route, actor and design mapping');
     assert(scene.actualDtoInputs?.length&&scene.actualDtoInputs.every(file=>special.actualDtoInputs.some(input=>input.path===file)),'Special scene has no bound actual DTO input');
-    const ctx=await context(scene.actor,theme,viewport);current=await ctx.newPage();current.setDefaultTimeout(12000);current.setDefaultNavigationTimeout(120000);
+    const ctx=await context(scene.actor,viewport);current=await ctx.newPage();current.setDefaultTimeout(12000);current.setDefaultNavigationTimeout(120000);
     current.on('pageerror',error=>proof.pageErrors.push({caseId,message:error.message}));const clicks=[],network=[],interceptions=[];
     current.on('response',response=>{const url=new URL(response.url());if(url.pathname.startsWith('/api/admin/'))network.push({path:url.pathname,method:response.request().method(),status:response.status()});});
     await current.route('**/api/admin/**',async route=>{

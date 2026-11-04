@@ -172,7 +172,7 @@ for (const f of walk(path.join(ROOT, "app/components/domain-views"), /-view\.tsx
 (() => {
   const file = path.join(ROOT, "app/globals.css");
   if (!hasNativeSelectTheme(read(file))) {
-    add("J", "HIGH", file, "原生下拉菜单缺双主题或成对前景/背景规则，可能再次出现白底白字。恢复共用规则并实景检查展开菜单。");
+    add("J", "HIGH", file, "原生下拉菜单缺深色 color-scheme 或成对前景/背景规则，可能再次出现白底白字。恢复共用规则并实景检查展开菜单。");
   }
 })();
 

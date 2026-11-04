@@ -90,8 +90,7 @@ try{
   await page.goto(base);
   fs.writeFileSync(storage,JSON.stringify({...empty,policy:{revision:1,current:{version:1,effectiveAt:Date.now(),thresholds:proposal.thresholds,rules:proposal.rules},scheduled:null}}));
   await page.reload();await expect(page.getByLabel("T1 / T2 分界",{exact:true})).toHaveValue("20");
-  const screenshots=[];
-  for(const theme of ["light","dark"]){await page.evaluate(value=>document.documentElement.dataset.theme=value,theme);const file=path.join(artifacts,`rules-${theme}.png`);await page.screenshot({path:file,fullPage:true});screenshots.push(file);}
+  const rulesShot=path.join(artifacts,"rules.png");await page.screenshot({path:rulesShot,fullPage:true});const screenshots=[rulesShot];
   await page.goto(base+"?e2=1");await expect(page.getByLabel("T1 / T2 分界",{exact:true})).toHaveValue("20");await expect(page.getByRole("button",{name:"添加硬件规则"})).toHaveCount(0);
   await page.goto(base+"?readonly=1");await expect(page.getByLabel("T1 / T2 分界",{exact:true})).toBeDisabled();await expect(publish).toBeDisabled();
   failRead=true;await page.goto(base);await expect(page.getByRole("alert")).toContainText("配置读取失败");

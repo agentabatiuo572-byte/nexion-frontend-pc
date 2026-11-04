@@ -16,8 +16,7 @@ import { SidebarGroup } from "./sidebar-group";
 function LogoMark() {
   return (
     <span className="uvel-logo-mark" aria-hidden>
-      <Image className="uvel-logo-mark__dark" src="/uvel-mark-dark.png" width={30} height={30} alt="" />
-      <Image className="uvel-logo-mark__light" src="/uvel-mark-light.png" width={30} height={30} alt="" />
+      <Image src="/uvel-mark-dark.png" width={30} height={30} alt="" />
     </span>
   );
 }

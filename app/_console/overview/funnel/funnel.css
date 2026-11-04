@@ -1,7 +1,7 @@
 /* ============================================================================
    B3 转化漏斗 — 设计稿专属布局类(端口自 project/B3 转化漏斗.html <style>)。
    作用域 .funnelpage,与 globals .dkpage + 共享 .bpage(b-domain.css)组合。
-   token 全部走 globals bare-token 别名(--brand/--ink-3/--surface…→ --v5-*),双主题安全。
+   token 全部走 globals bare-token 别名(--brand/--ink-3/--surface…→ --v5-*)。
    仅本页引用;page.tsx 以 `import "./funnel.css"` 装载(App Router 全局样式)。
    去除设计稿 B1-B5 分段导航(.b-nav)与 server-canonical pill(.b-live)——由外壳承载。
    ============================================================================ */

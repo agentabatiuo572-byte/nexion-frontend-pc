@@ -1,6 +1,6 @@
 /* UVEL F2: confirmed v4 design. Route scope preserves the other console pages. */
 [data-royalty-shell] { --admin-sidebar-w: 168px; --admin-topbar-h: 40px; --admin-gutter: 16px; }
-html[data-theme="dark"] [data-royalty-shell] .fdom { --surface: #101115; --surface-2: #16181e; --border: #292c35; --border-strong: #383d4b; --ink-3: #a5aabb; --cyan: #b799ff; --brand: #b5ef62; }
+[data-royalty-shell] .fdom { --surface: #101115; --surface-2: #16181e; --border: #292c35; --border-strong: #383d4b; --ink-3: #a5aabb; --cyan: #b799ff; --brand: #b5ef62; }
 [data-royalty-shell] .content-shell { max-width: none; margin: 0; }
 [data-royalty-shell] header button[aria-label^="告警与待办"] > span { top: 0; }
 [data-royalty-shell] aside > a[aria-label="UVEL 运营控制台"] > :first-child:not(:only-child) { display: none; }

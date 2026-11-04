@@ -1,7 +1,7 @@
 /* ============================================================================
    B1 双账本总览 — 设计稿专属布局类(端口自 project/B1 双账本总览.html <style>)。
    作用域 .dlpage,与 globals .dkpage 共享组件类(.card/.btn/.dot/.muted/.alertbar…)组合。
-   token 全部走 globals bare-token 别名(--warning/--ink-3/--surface…→ --v5-*),双主题安全。
+   token 全部走 globals bare-token 别名(--warning/--ink-3/--surface…→ --v5-*)。
    仅本页引用;page.tsx 以 `import "./dual-ledger.css"` 装载(App Router 全局样式)。
    ============================================================================ */
 

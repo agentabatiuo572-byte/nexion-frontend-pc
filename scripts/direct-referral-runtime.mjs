@@ -352,72 +352,67 @@ try {
     check(filters.kind ? "F5-CSV-filtered-rows" : "F5-CSV-all-rows", [file, `compared all ${exportRows(filters).length} rows exactly; no waiting groups fabricated as 0-money events`]);
   }
   await open("/network/royalty");
-  await page.evaluate(() => localStorage.setItem("nexion-admin-theme-v1", JSON.stringify({ state: { mode: "light" }, version: 1 })));
-  await page.reload(); await expect(page.locator("html")).not.toHaveAttribute("data-theme", "dark");
   await expect(page.getByLabel("好友设备收益奖励总奖励比例 (%)", { exact: true })).toBeVisible();
-  await shot("f2-light");
+  await shot("f2-wide");
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => page.locator("aside").first().evaluate(el => Math.round(el.getBoundingClientRect().width))).toBe(64);
   await expect(page.getByLabel("好友购买奖励拆分USDT 占比 (%)", { exact: true })).toBeVisible();
   await expect(page.getByLabel("好友设备收益奖励冷却天数", { exact: true })).toBeVisible();
   await paneShot("f2-narrow", page.getByRole("region", { name: "好友奖励设置" }));
   await page.setViewportSize({ width: 1440, height: 1100 });
-  check("F2-theme-narrow", ["actual persisted light mode hydrates after reload; both split panels remain accessible at 390px", ...report.screenshots.slice(-2)]);
+  check("F2-narrow", ["both split panels remain accessible at 390px", ...report.screenshots.slice(-2)]);
   report.layouts = [];
-  for (const theme of ["dark", "light"]) {
-    await page.evaluate(mode => localStorage.setItem("nexion-admin-theme-v1", JSON.stringify({ state: { mode }, version: 1 })), theme);
-    await page.reload();
-    await expect(page.getByLabel("好友设备收益奖励总奖励比例 (%)", { exact: true })).toBeVisible();
-    for (const width of [2560, 1920, 1440, 1100, 1024, 768, 390]) {
-      await page.setViewportSize({ width, height: 1000 });
-      // The shell animates its sidebar for 200ms after a breakpoint change.
-      await expect.poll(() => page.locator("aside").first().evaluate(el => Math.round(el.getBoundingClientRect().width))).toBe(width <= 640 ? 64 : 168);
-      await page.locator("main").evaluate(el => { el.scrollTop = 0; });
-      const layout = await page.evaluate(() => {
-        const rect = el => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.right, bottom: r.bottom }; };
-        const rows = [...document.querySelectorAll(".casc-row")].map(row => ({ bounds: rect(row), cells: [...row.children].map(cell => ({ ...rect(cell), overflow: cell.scrollWidth > cell.clientWidth + 1 })) }));
-        const panels = [...document.querySelectorAll('.f2-rule-params .param, [aria-label="好友奖励设置"] fieldset, .f2-top .pane')].map(el => ({ ...rect(el), overflow: el.scrollWidth > el.clientWidth + 1 }));
-        const header = document.querySelector("header");
-        const headerContent = [...header.querySelectorAll("a,button,nav,span")].filter(el => el.getBoundingClientRect().height > 0 && el.textContent?.trim()).map(rect);
-        const titles = [...document.querySelectorAll(".f2-direct-policy .pane-h > *, .f2-top .pane-h > *")].map(el => ({ ...rect(el), overflow: el.scrollWidth > el.clientWidth + 1 }));
-        const parameters = [...document.querySelectorAll(".f2-rule-params .param")].map(rect);
-        const fieldRows = [...document.querySelectorAll(".f2-policy-row")].map(el => ({ bounds: rect(el), label: rect(el.firstElementChild), control: rect(el.querySelector("input,select")) }));
-        const bottomCards = [...document.querySelectorAll(".f2-top > .pane")].map(rect);
-        const actions = rect(document.querySelector(".f2-policy-actions"));
-        const lastAction = rect(document.querySelector(".f2-policy-actions > :last-child"));
-        return { viewport: innerWidth, pageWidth: document.documentElement.scrollWidth, bars: [...document.querySelectorAll(".rate-bar")].map(rect), rows, panels, header: rect(header), headerContent, titles, parameters, fieldRows, bottomCards, actions, lastAction };
-      });
-      const screenshot = await shot(`f2-layout-${theme}-${width}`);
-      const rhythm = await measureRhythm();
-      assertRhythm(rhythm, width);
-      report.layouts.push({ theme, width, ...layout, rhythm, screenshot });
-      assert.ok(layout.pageWidth <= width + 1, `F2 page overflows at ${theme}/${width}`);
-      assert.equal(layout.rows.length, 7);
-      assert.equal(layout.bars.length, 7);
-      for (const bar of layout.bars) assert.ok(bar.width <= 100 && bar.height <= 4, `Layer bar dominates at ${width}`);
-      for (const row of layout.rows) for (const [index, cell] of row.cells.entries()) {
-        assert.ok(!cell.overflow && cell.x >= row.bounds.x - 1 && cell.right <= row.bounds.right + 1, `Layer cell is squeezed at ${width}`);
-        for (const other of row.cells.slice(index + 1)) assert.ok(Math.min(cell.right, other.right) - Math.max(cell.x, other.x) <= 1 || Math.min(cell.bottom, other.bottom) - Math.max(cell.y, other.y) <= 1, `Layer cells overlap at ${width}`);
-      }
-      for (const panel of layout.panels) assert.ok(!panel.overflow && panel.x >= -1 && panel.right <= width + 1, `F2 section overflows at ${width}`);
-      for (const item of layout.headerContent) assert.ok(item.y >= layout.header.y - 1 && item.bottom <= layout.header.bottom + 1 && item.right <= width + 1, `Header wraps or clips at ${width}`);
-      for (const title of layout.titles) assert.ok(!title.overflow && title.right <= width + 1, `F2 section title clips at ${width}`);
-      if (width > 850) {
-        assert.equal(layout.parameters.length, 6);
-        assert.ok(Math.abs(layout.parameters[0].y - layout.parameters[2].y) < 1 && layout.parameters[3].y > layout.parameters[0].bottom, "reference design: six parameters form 3x2 outlined cells");
-        for (const row of layout.rows) assert.ok(row.bounds.height <= 54, "reference design: compact layer rows");
-        for (const row of layout.fieldRows) assert.ok(row.control.x >= row.label.right + 10 && row.control.right <= row.bounds.right + 1, "reference design: label left, control right");
-        assert.ok(Math.abs(layout.bottomCards[0].width - layout.bottomCards[1].width) < 1 && Math.abs(layout.bottomCards[0].y - layout.bottomCards[1].y) < 1, "reference design: equal bottom cards");
-        assert.ok(Math.abs(layout.lastAction.right - layout.actions.right) < 1, "reference design: actions align right");
-      }
-      // Content scrolls inside main; fullPage alone captures only the shell viewport.
-      const scroll = await page.locator("main").evaluate(el => ({ max: el.scrollHeight - el.clientHeight, step: el.clientHeight - 80 }));
-      for (let top = scroll.step; top < scroll.max + scroll.step; top += scroll.step) {
-        const target = Math.min(top, scroll.max);
-        await page.locator("main").evaluate((el, value) => { el.scrollTop = value; }, target);
-        await expect.poll(() => page.locator("main").evaluate(el => Math.round(el.scrollTop))).toBe(Math.round(target));
-        await shot(`f2-layout-${theme}-${width}-scroll-${Math.round(target)}`);
-      }
+  await page.reload();
+  await expect(page.getByLabel("好友设备收益奖励总奖励比例 (%)", { exact: true })).toBeVisible();
+  for (const width of [2560, 1920, 1440, 1100, 1024, 768, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    // The shell animates its sidebar for 200ms after a breakpoint change.
+    await expect.poll(() => page.locator("aside").first().evaluate(el => Math.round(el.getBoundingClientRect().width))).toBe(width <= 640 ? 64 : 168);
+    await page.locator("main").evaluate(el => { el.scrollTop = 0; });
+    const layout = await page.evaluate(() => {
+      const rect = el => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.right, bottom: r.bottom }; };
+      const rows = [...document.querySelectorAll(".casc-row")].map(row => ({ bounds: rect(row), cells: [...row.children].map(cell => ({ ...rect(cell), overflow: cell.scrollWidth > cell.clientWidth + 1 })) }));
+      const panels = [...document.querySelectorAll('.f2-rule-params .param, [aria-label="好友奖励设置"] fieldset, .f2-top .pane')].map(el => ({ ...rect(el), overflow: el.scrollWidth > el.clientWidth + 1 }));
+      const header = document.querySelector("header");
+      const headerContent = [...header.querySelectorAll("a,button,nav,span")].filter(el => el.getBoundingClientRect().height > 0 && el.textContent?.trim()).map(rect);
+      const titles = [...document.querySelectorAll(".f2-direct-policy .pane-h > *, .f2-top .pane-h > *")].map(el => ({ ...rect(el), overflow: el.scrollWidth > el.clientWidth + 1 }));
+      const parameters = [...document.querySelectorAll(".f2-rule-params .param")].map(rect);
+      const fieldRows = [...document.querySelectorAll(".f2-policy-row")].map(el => ({ bounds: rect(el), label: rect(el.firstElementChild), control: rect(el.querySelector("input,select")) }));
+      const bottomCards = [...document.querySelectorAll(".f2-top > .pane")].map(rect);
+      const actions = rect(document.querySelector(".f2-policy-actions"));
+      const lastAction = rect(document.querySelector(".f2-policy-actions > :last-child"));
+      return { viewport: innerWidth, pageWidth: document.documentElement.scrollWidth, bars: [...document.querySelectorAll(".rate-bar")].map(rect), rows, panels, header: rect(header), headerContent, titles, parameters, fieldRows, bottomCards, actions, lastAction };
+    });
+    const screenshot = await shot(`f2-layout-${width}`);
+    const rhythm = await measureRhythm();
+    assertRhythm(rhythm, width);
+    report.layouts.push({ width, ...layout, rhythm, screenshot });
+    assert.ok(layout.pageWidth <= width + 1, `F2 page overflows at ${width}`);
+    assert.equal(layout.rows.length, 7);
+    assert.equal(layout.bars.length, 7);
+    for (const bar of layout.bars) assert.ok(bar.width <= 100 && bar.height <= 4, `Layer bar dominates at ${width}`);
+    for (const row of layout.rows) for (const [index, cell] of row.cells.entries()) {
+      assert.ok(!cell.overflow && cell.x >= row.bounds.x - 1 && cell.right <= row.bounds.right + 1, `Layer cell is squeezed at ${width}`);
+      for (const other of row.cells.slice(index + 1)) assert.ok(Math.min(cell.right, other.right) - Math.max(cell.x, other.x) <= 1 || Math.min(cell.bottom, other.bottom) - Math.max(cell.y, other.y) <= 1, `Layer cells overlap at ${width}`);
+    }
+    for (const panel of layout.panels) assert.ok(!panel.overflow && panel.x >= -1 && panel.right <= width + 1, `F2 section overflows at ${width}`);
+    for (const item of layout.headerContent) assert.ok(item.y >= layout.header.y - 1 && item.bottom <= layout.header.bottom + 1 && item.right <= width + 1, `Header wraps or clips at ${width}`);
+    for (const title of layout.titles) assert.ok(!title.overflow && title.right <= width + 1, `F2 section title clips at ${width}`);
+    if (width > 850) {
+      assert.equal(layout.parameters.length, 6);
+      assert.ok(Math.abs(layout.parameters[0].y - layout.parameters[2].y) < 1 && layout.parameters[3].y > layout.parameters[0].bottom, "reference design: six parameters form 3x2 outlined cells");
+      for (const row of layout.rows) assert.ok(row.bounds.height <= 54, "reference design: compact layer rows");
+      for (const row of layout.fieldRows) assert.ok(row.control.x >= row.label.right + 10 && row.control.right <= row.bounds.right + 1, "reference design: label left, control right");
+      assert.ok(Math.abs(layout.bottomCards[0].width - layout.bottomCards[1].width) < 1 && Math.abs(layout.bottomCards[0].y - layout.bottomCards[1].y) < 1, "reference design: equal bottom cards");
+      assert.ok(Math.abs(layout.lastAction.right - layout.actions.right) < 1, "reference design: actions align right");
+    }
+    // Content scrolls inside main; fullPage alone captures only the shell viewport.
+    const scroll = await page.locator("main").evaluate(el => ({ max: el.scrollHeight - el.clientHeight, step: el.clientHeight - 80 }));
+    for (let top = scroll.step; top < scroll.max + scroll.step; top += scroll.step) {
+      const target = Math.min(top, scroll.max);
+      await page.locator("main").evaluate((el, value) => { el.scrollTop = value; }, target);
+      await expect.poll(() => page.locator("main").evaluate(el => Math.round(el.scrollTop))).toBe(Math.round(target));
+      await shot(`f2-layout-${width}-scroll-${Math.round(target)}`);
     }
   }
   await page.getByRole("button", { name: "查看历史设置", exact: true }).click();
@@ -428,7 +423,7 @@ try {
   await expect(page.locator(".f2-legacy")).not.toHaveAttribute("open", "");
   await page.locator(".f2-legacy summary").click();
   await expect(page.locator(".f2-legacy p")).toBeVisible();
-  check("F2-whole-page-layout", ["seven widths including1100 reference in both themes: seven compact rows, thin bars, 3x2 outlined parameters, left-label/right-control fields, equal bottom cards and right-aligned actions; 20px section gaps and12px row gaps; titles/legends/body/help/values16/14/13/12/16px; all error/loading states and legacy disclosure checked", ...report.layouts.map(item => item.screenshot)]);
+  check("F2-whole-page-layout", ["seven widths including1100 reference: seven compact rows, thin bars, 3x2 outlined parameters, left-label/right-control fields, equal bottom cards and right-aligned actions; 20px section gaps and12px row gaps; titles/legends/body/help/values16/14/13/12/16px; all error/loading states and legacy disclosure checked", ...report.layouts.map(item => item.screenshot)]);
   await page.setViewportSize({ width: 1440, height: 1100 });
   for (const [route, text] of [["/network/v-rank", "V-Rank"], ["/network/binary", "双轨"], ["/network/leadership-pool", "领导"]]) {
     await open(route); await expect(page).toHaveURL(report.source.url + route); await expect(page.locator("body")).toContainText(text); check(`preserved-${route}`, [await shot(route.split("/").pop()), "existing independent team route remains rendered"]);

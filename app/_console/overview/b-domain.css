@@ -1,7 +1,7 @@
 /* ============================================================================
    域 B 总览驾驶舱 — B2/B3/B4/B5 共享页面 chrome(端口自设计稿 b-chrome.css)。
    作用域 .bpage,与 globals .dkpage 共享组件类(.card/.btn/.dot/.muted/.alertbar…)组合。
-   token 走 globals bare-token 别名(--brand/--ink-3/--surface…→ --v5-*),双主题安全。
+   token 走 globals bare-token 别名(--brand/--ink-3/--surface…→ --v5-*)。
    去除设计稿的 B1-B5 分段导航(.b-nav)与 server-canonical pill(.b-live)——
    导航由 console 外壳承载,实时状态由全局顶栏 SyncChip 承载,避免重复。
    各页另在 co-located <route>.css 写自己的 signature 图表布局。

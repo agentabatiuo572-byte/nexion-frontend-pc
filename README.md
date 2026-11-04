@@ -66,7 +66,7 @@ lib/
 │   ├── registry/           # A–L 12 域 × 模块注册表（只保留路由 summary）
 │   └── module-content.ts   # 模块内容装配
 ├── nav/console-nav.ts      # 导航树（路由生成单一真源）
-├── store/                  # Zustand store（鉴权 / 角色 / UI / 主题 …）
+├── store/                  # Zustand store（鉴权 / 角色 / UI …）
 └── format.ts
 
 docs/                       # 控制核对表 / 杠杆映射 / 评审 rubric
