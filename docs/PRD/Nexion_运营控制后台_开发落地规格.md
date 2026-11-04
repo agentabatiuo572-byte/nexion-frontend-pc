@@ -773,7 +773,7 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | `scoreBand.{low,mid,high}` | <40 / 40–69 / ≥70 | 0–100(low<mid<high) | K4 | K4 |
 | `autoEscalateScore` | ≥ 85 | 70–100 | K4 | K4 |
 | `riskScore.dimensionWeights.{7维}`(SPEC-7 聚簇) | serverDeviceId 0.9 / ipBucket 0.8 / withdrawAddress 0.9 / paymentInstrument 0.5 / sponsor 0.4 / uaFingerprint 0.2 / signupTiming 0.3 + `weakSignalClusterThreshold` 0.6 | 各 0–1 | **K4**(聚簇维度权重面板;区别于上 6 维评分权重) | K4 |
-| SPEC-7 收益释放 / 提现前置全参数 | 见 SPEC-7 | — | `releaseMode` / `freeSlotRequiresBinding` / `appAttestationReleaseHours` / `firstWithdrawalManual` / `newAddressHoldHours` / `sameAddressRoute` 等全表在 `PRD/三端架构改造/specs/SPEC-7-H5风险簇与收益释放.md` §5,K1/K3 面板可调 | K1/K3 |
+| SPEC-7 收益释放 / 提现前置全参数 | 见 SPEC-7 | — | K1 `releaseMode` 固定 `manual_only`，仅人工放行；旧 `attest_or_manual` 模式及 `appAttestationReleaseHours` 写入返回 410，不可调。`freeSlotRequiresBinding` / `firstWithdrawalManual` / `newAddressHoldHours` / `sameAddressRoute` 等其余参数参见 `PRD/三端架构改造/specs/SPEC-7-H5风险簇与收益释放.md` §5,K1/K3 面板可调 | K1/K3 |
 
 ### 4.8 域 E — 设备与商城(出处 v2 §10 各 ③)
 
