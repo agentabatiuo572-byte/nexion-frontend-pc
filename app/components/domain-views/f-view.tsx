@@ -39,6 +39,7 @@ import {
   type F4LeadershipPoolOverview,
   type F4AmbassadorPolicy,
   type F5CommissionAuditOverview,
+  type F5CommissionQuery,
   type F2RatesOverview,
   type F1Page,
   type F1PayoutFilters,
@@ -157,7 +158,10 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f4AmbassadorPolicy, setF4AmbassadorPolicy] = useState<F4AmbassadorPolicy | null>(null);
   const [f4Loading, setF4Loading] = useState(tab === "F4");
   const [f4Error, setF4Error] = useState<string | null>(null);
-  const [f5Overview, setF5Overview] = useState<F5CommissionAuditOverview | null>(null);
+  const [f5Page, setF5Page] = useState<{
+    overview: F5CommissionAuditOverview;
+    nextQuery: F5CommissionQuery | null;
+  } | null>(null);
   const [f5Loading, setF5Loading] = useState(tab === "F5");
   const [f5Error, setF5Error] = useState<string | null>(null);
   const f1Generation = useRef(0);
@@ -364,17 +368,20 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (tab === "F4") void refreshF4();
   }, [refreshF4, tab]);
 
-  const refreshF5 = useCallback(async (query = {}) => {
+  const refreshF5 = useCallback(async (query: F5CommissionQuery = {}) => {
     const request = ++f5Generation.current;
     setF5Loading(true);
     setF5Error(null);
     try {
       const overview = await fetchF5CommissionAuditOverview(query);
       if (request !== f5Generation.current) return;
-      setF5Overview(overview);
+      setF5Page({
+        overview,
+        nextQuery: overview.nextCursor ? { ...query, cursor: overview.nextCursor } : null,
+      });
     } catch (error) {
       if (request !== f5Generation.current) return;
-      setF5Overview(null);
+      setF5Page(null);
       setF5Error(errorMessage(error));
     } finally {
       if (request === f5Generation.current) setF5Loading(false);
@@ -678,7 +685,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         target: def.buildTarget({ weekKey: "current-week" }),
       });
     },
-    f5Overview,
+    f5Overview: f5Page?.overview ?? null,
+    f5NextQuery: f5Page?.nextQuery ?? null,
     f5Loading,
     f5Error,
     refreshF5,
@@ -795,7 +803,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           : tab === "F2" ? f2Overview?.coverage
           : tab === "F3" ? f3Overview?.coverage
           : tab === "F4" ? f4Overview?.coverage
-          : tab === "F5" ? f5Overview?.coverage
+          : tab === "F5" ? f5Page?.overview.coverage
           : undefined) as { coverageRatio: number; redlinePct: number } | undefined}
         edit={mc.edit}
         businessForm={mc.businessForm}

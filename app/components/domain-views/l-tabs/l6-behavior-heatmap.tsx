@@ -214,7 +214,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
   }, [activeKey, activeRow, depth, device, locale, sort, win]);
   const heat = useMemo(() => {
     if (!activeKey) return null;
-    if (!liveHeat) return clickHeatForRoute(heatmapData, activeKey);
+    if (!liveHeat || liveHeat.route !== activeKey) return clickHeatForRoute(heatmapData, activeKey);
     const withHeat = normalizeL6BehaviorHeatmap({ ...liveRaw, clickHeatByRoute: { [activeKey]: liveHeat } });
     return clickHeatForRoute(withHeat, activeKey);
   }, [activeKey, heatmapData, liveHeat, liveRaw]);
@@ -227,7 +227,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
     if (!canExportCurrent || exporting) return;
     setExporting(true);
     try {
-      const file = await downloadL6Behavior({ window: win, device, locale, depth, sort });
+      const file = await downloadL6Behavior({ window: win, device, locale, depth, sort, sortDir });
       const href = URL.createObjectURL(file.blob);
       const link = document.createElement("a");
       link.href = href;

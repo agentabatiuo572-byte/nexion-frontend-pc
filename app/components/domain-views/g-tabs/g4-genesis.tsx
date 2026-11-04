@@ -227,7 +227,11 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
       action: `修改创世节点参数 · ${operatorCopyText(param.name)}`,
       detail: <><b>{operatorCopyText(param.name)}</b> · 当前 {operatorCopyText(param.displayValue)} · {operatorCopyText(param.note)}<br />当前兑付覆盖率 {cov}%，会多付钱的修改在覆盖率不足时无法保存。</>,
       amplifies: param.b1RedlineTriggered,
-      edit: numeric ? { kind: "number", current: paramEditValue(param), ...bounds } : { kind: "text", current: paramEditValue(param) },
+      edit: {
+        ...(numeric ? { kind: "number", ...bounds } : { kind: "text" }),
+        current: paramEditValue(param),
+        submitEditValue: needsDecision,
+      },
       businessForm: needsDecision ? { kind: "multi-field", title: "决策依据", fields: [
         { key: "decisionRef", label: "产品或财务决策编号", current: "", inputKind: "text", required: true },
       ] } : undefined,

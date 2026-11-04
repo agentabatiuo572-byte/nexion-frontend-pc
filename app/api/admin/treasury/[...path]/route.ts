@@ -17,7 +17,7 @@ function isText(value: string | undefined) {
   return !!value && value.trim().length > 0;
 }
 
-function backendPath(parts: string[]) {
+function backendPath(parts: string[], method: string) {
   if (parts.length === 1 && [
     "overview",
     "dual-ledger",
@@ -37,6 +37,9 @@ function backendPath(parts: string[]) {
   }
   if (parts.length === 2 && ["reconciliation", "liabilities"].includes(parts[0]) && parts[1] === "export") {
     return `/api/admin/treasury/${parts[0]}/export`;
+  }
+  if (method === "GET" && parts.length === 3 && parts.join("/") === "b2/liabilities/export") {
+    return "/api/admin/treasury/b2/liabilities/export";
   }
   if (parts.length === 4 && parts[0] === "b-domain" && parts[1] === "alerts" && isText(parts[2]) && parts[3] === "ack") {
     return `/api/admin/treasury/b-domain/alerts/${encodeURIComponent(parts[2])}/ack`;
@@ -58,7 +61,7 @@ function backendPath(parts: string[]) {
 
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
-  const targetPath = backendPath(path);
+  const targetPath = backendPath(path, request.method);
 
   if (!targetPath) {
     return jsonError(404, "TREASURY_ROUTE_NOT_FOUND");
