@@ -1099,6 +1099,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     const requestStamp=identityRef.current;
     ctx.openActionConfirm({
       action: `结束服务会话 ${conversation.id}`,
+      briefKind: "conversation",
       detail: "将这段服务会话标记为已解决，不改变客户的专属客服。客户再次发消息时，会继续当前对话。",
       reasonMin: 8, reasonMax: 200,
       run: async (reason) => {
@@ -1146,11 +1147,11 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
       for (const row of members) if (!await checkActionReady(row)) return;
       const stamp=identityRef.current, commandKey=newKey();
       const payload={conversationNos:members.map(row=>row.id),expectedVersions:Object.fromEntries(members.map(row=>[row.id,row.version]))};
-      ctx.openActionConfirm({action:"归档客户对话",detail:"归档此客户的全部历史会话。未处理的客户消息不能归档。",reasonMin:8,reasonMax:200,run:reason=>stamp===identityRef.current?ctx.setParam("I.session.archiveBatch.__create",JSON.stringify(payload),{action:"归档客户对话",reason,commandKey}):Promise.resolve(false)});
+      ctx.openActionConfirm({action:"归档客户对话",briefKind:"conversation",detail:"归档此客户的全部历史会话。未处理的客户消息不能归档。",reasonMin:8,reasonMax:200,run:reason=>stamp===identityRef.current?ctx.setParam("I.session.archiveBatch.__create",JSON.stringify(payload),{action:"归档客户对话",reason,commandKey}):Promise.resolve(false)});
       return;
     }
     const requestStamp=identityRef.current;
-    ctx.openActionConfirm({action:conversation.archived?"撤销归档":"归档会话",detail:`会话 ${conversation.id}；只是从列表里归档，会话、消息和归属都不变。`,reasonMin:8,reasonMax:200,run:reason=>requestStamp===identityRef.current?ctx.setParam(CONVO_KEY,JSON.stringify(all.map(c=>c.id===conversation.id?{...c,archived:!conversation.archived}:c)),{action:"修改会话归档",reason,commandKey:`m3:archive:${conversation.id}:${conversation.version}:${!conversation.archived}`}):Promise.resolve(false)});
+    ctx.openActionConfirm({action:conversation.archived?"撤销归档":"归档会话",briefKind:"conversation",detail:`会话 ${conversation.id}；只是从列表里归档，会话、消息和归属都不变。`,reasonMin:8,reasonMax:200,run:reason=>requestStamp===identityRef.current?ctx.setParam(CONVO_KEY,JSON.stringify(all.map(c=>c.id===conversation.id?{...c,archived:!conversation.archived}:c)),{action:"修改会话归档",reason,commandKey:`m3:archive:${conversation.id}:${conversation.version}:${!conversation.archived}`}):Promise.resolve(false)});
   };
   const archiveBatch = async () => {
     if(!archiveIds.size||actionChecking||pending||firstPending)return;
@@ -1161,7 +1162,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     const payload={conversationNos:chosen.map(c=>c.id),expectedVersions:Object.fromEntries(chosen.map(c=>[c.id,c.version]))};
     const key=newKey();
     const requestStamp=identityRef.current;
-    ctx.openActionConfirm({action:"批量归档",detail:`确认归档 ${new Set(chosen.map(customerIdOf)).size} 位客户的全部对话。未处理客户消息不能归档。`,reasonMin:8,reasonMax:200,run:async reason=>{if(requestStamp!==identityRef.current)return false;const ok=await ctx.setParam("I.session.archiveBatch.__create",JSON.stringify(payload),{action:"批量归档已选会话",reason,commandKey:key});if(requestStamp!==identityRef.current)return false;if(ok)setArchiveIds(new Set());return ok;}});
+    ctx.openActionConfirm({action:"批量归档",briefKind:"conversation",detail:`确认归档 ${new Set(chosen.map(customerIdOf)).size} 位客户的全部对话。未处理客户消息不能归档。`,reasonMin:8,reasonMax:200,run:async reason=>{if(requestStamp!==identityRef.current)return false;const ok=await ctx.setParam("I.session.archiveBatch.__create",JSON.stringify(payload),{action:"批量归档已选会话",reason,commandKey:key});if(requestStamp!==identityRef.current)return false;if(ok)setArchiveIds(new Set());return ok;}});
   };
   const canReadTimeout = Boolean(session?.authorities?.includes("service_m3_read"));
   const canTimeout = (session?.role === "super" || session?.role === "superadmin") && Boolean(session?.authorities?.includes("service_m3_timeout_manage")) && !timeoutReadOnly;

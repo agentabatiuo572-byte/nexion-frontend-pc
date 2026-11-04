@@ -675,6 +675,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
           businessForm={mc.businessForm}
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
+          briefKind={mc.briefKind}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {
             const confirming = mc;

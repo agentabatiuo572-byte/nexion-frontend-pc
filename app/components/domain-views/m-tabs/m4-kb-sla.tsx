@@ -150,6 +150,7 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
   const requestDeleteFaq = (faq: SupportFaq) => {
     openActionConfirm({
       action: <>删除常见问答 <span className="mono">{faq.id}</span></>,
+      briefKind: "faq-delete",
       detail: <>删除后将从帮助中心内容池移除“{faq.question}”,且不可在本页恢复。</>,
       reasonMin: 8,
       run: (reason) => commitM4Write(
