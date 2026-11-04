@@ -13,7 +13,6 @@ import { Download, Landmark, RefreshCw } from "lucide-react";
 import { OperationConfirmModal, useToast, type OperatorBriefKind } from "../design-kit";
 import { BlockState, Button, Conclusion, Decision, DiffList, Drawer, Field, Input, KeyValues, Modal, Notice, PageHeader, PageTabs, RdPage, Select, StatusTag } from "@/app/components/rd";
 import { useB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
-import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { canAccessCrossDomainPath } from "@/lib/admin/cross-domain-authority";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import {
@@ -33,7 +32,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { createPendingMutationStore, createSlotAttemptStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
-import { DueTab, FlowTab, OverviewTab, SettingsTab, amountText, categoryText, effectiveText, forecastDiffRows, money, type CrossLink, type ForecastValues, type Loadable } from "./d3-treasury-views";
+import { DueTab, FlowTab, FundConclusion, OverviewTab, SettingsTab, categoryText, effectiveText, forecastDiffRows, money, timeText, type CrossLink, type ForecastValues, type Loadable } from "./d3-treasury-views";
 
 const OPERATOR = currentAdminOperator;
 
@@ -52,7 +51,6 @@ const forecastCommand = createSlotAttemptStore({ storageKey: "nexion-admin-b2-li
 const FORECAST_SLOT = "forecast-config";
 
 type TabValue = "overview" | "due" | "flow" | "settings";
-type ExposureWindow = D3NetExposure["window"];
 type MaturityWindow = D3MaturityForecast["window"];
 
 const TABS: readonly { value: TabValue; label: string }[] = [
@@ -68,6 +66,7 @@ interface ConfirmRequest {
   action: string;
   detail: ReactNode;
   briefKind: OperatorBriefKind;
+  reasonMax?: number;
   effect?: string;
   confirmLabel: string;
   run: (reason: string) => Promise<void>;
@@ -132,16 +131,14 @@ export function D3Treasury() {
   const loadGeneration = useRef(0);
 
   const [maturityChoice, setMaturityChoice] = useState<MaturityWindow | null>(() => queryValue("maturity", ["7d", "30d"] as const));
-  const [exposureChoice, setExposureChoice] = useState<ExposureWindow | null>(() => queryValue("exposure", ["7d", "30d", "90d"] as const));
   const maturityWindow: MaturityWindow = maturityChoice ?? (main?.config.forecastWindow === "30d" ? "30d" : "7d");
-  const exposureWindow: ExposureWindow | null = exposureChoice ?? main?.config.forecastWindow ?? (canReadMain && loading ? null : "30d");
 
   const [maturity30, setMaturity30] = useState<Loadable<D3MaturityForecast>>({ data: null, loading: false, error: "" });
   const [exposure, setExposure] = useState<Loadable<D3NetExposure>>({ data: null, loading: false, error: "" });
   const maturityGeneration = useRef(0);
   const exposureGeneration = useRef(0);
   const maturityLoadedFor = useRef<D3Main | null>(null);
-  const exposureLoadedFor = useRef<{ main: D3Main | null; window: ExposureWindow } | null>(null);
+  const exposureLoadedFor = useRef<D3Main | null | undefined>(undefined);
 
   const [flowVisited, setFlowVisited] = useState(tab === "flow");
   const history = useB2LiquidityHistory(canReadFlow && flowVisited);
@@ -189,11 +186,12 @@ export function D3Treasury() {
     }
   }, []);
 
-  const loadExposure = useCallback(async (window: ExposureWindow) => {
+  // 只取当前差额。序列不是真实历史，不画图（DP-63），窗口用最短的。
+  const loadExposure = useCallback(async () => {
     const generation = ++exposureGeneration.current;
     setExposure((current) => ({ ...current, loading: true, error: "" }));
     try {
-      const data = await fetchD3NetExposure(window);
+      const data = await fetchD3NetExposure("7d");
       if (generation === exposureGeneration.current) setExposure({ data, loading: false, error: "" });
     } catch (err) {
       if (generation === exposureGeneration.current) setExposure({ data: null, loading: false, error: errorText(err, "读取失败，请重试") });
@@ -211,12 +209,10 @@ export function D3Treasury() {
   }, [tab, main, maturityWindow, loadMaturity30]);
 
   useEffect(() => {
-    if (tab !== "due" || !canReadExposure || !exposureWindow) return;
-    const seen = exposureLoadedFor.current;
-    if (seen && seen.main === main && seen.window === exposureWindow) return;
-    exposureLoadedFor.current = { main, window: exposureWindow };
-    void loadExposure(exposureWindow);
-  }, [tab, main, exposureWindow, canReadExposure, loadExposure]);
+    if (tab !== "due" || !canReadExposure || exposureLoadedFor.current === main) return;
+    exposureLoadedFor.current = main;
+    void loadExposure();
+  }, [tab, main, canReadExposure, loadExposure]);
 
   const selectTab = (next: TabValue) => {
     setRequestedTab(next);
@@ -230,17 +226,12 @@ export function D3Treasury() {
     writeQuery("maturity", next);
   };
 
-  const selectExposure = (next: ExposureWindow) => {
-    setExposureChoice(next);
-    writeQuery("exposure", next);
-  };
-
   const baseValues = useMemo(() => (main ? forecastValues(main.config) : null), [main]);
   const dirty = Boolean(draft && baseValues && JSON.stringify(draft) !== JSON.stringify(baseValues));
 
   const reloadAll = () => {
     if (canReadMain) void load();
-    else if (tab === "due" && exposureWindow) void loadExposure(exposureWindow);
+    else if (tab === "due") void loadExposure();
     if (flowVisited && canReadFlow) void history.reload();
   };
 
@@ -280,22 +271,25 @@ export function D3Treasury() {
 
   const saveInjection = () => {
     const nextAmount = amount.trim();
-    const voucher = voucherNo.trim();
-    const nextVoucher = `${voucherType}:${voucher}`;
+    const nextVoucher = voucherNo.trim();
     const errors: { amount?: string; voucher?: string } = {};
     if (!nextAmount || !Number.isFinite(Number(nextAmount)) || Number(nextAmount) <= 0) errors.amount = "请输入有效的注入金额";
     else if (!/^\d+(\.\d{1,2})?$/.test(nextAmount)) errors.amount = "最多两位小数，不会自动四舍五入";
-    if (!voucher) errors.voucher = "请输入到账凭证号";
-    else if (voucher.length < 6 || !/^[A-Za-z0-9:_./-]+$/.test(voucher) || nextVoucher.length > 96) errors.voucher = "至少 6 位，只能用字母、数字和 : _ . / -";
+    if (!nextVoucher) errors.voucher = "请输入到账凭证号";
+    else if (!/^[A-Za-z0-9][A-Za-z0-9:_./-]{5,95}$/.test(nextVoucher)) errors.voucher = "6–96 位，字母或数字开头，只能用字母、数字和 : _ . / -";
     setInjectErrors(errors);
     if (errors.amount || errors.voucher) return;
+    // 凭证号原样提交，后端按原值判重。类型只有说明作用，写进理由，理由随注入记录和操作记录保存。
+    const typeLabel = VOUCHER_TYPES.find((item) => item.value === voucherType)?.label;
+    const reasonPrefix = `凭证类型：${typeLabel}。`;
     setConfirm({
       action: "储备注入登记",
-      detail: `登记 ${money(Number(nextAmount))}，凭证号 ${nextVoucher}。凭证号不可重复。登记后计入可用储备。`,
+      detail: `登记 ${money(Number(nextAmount))}，${typeLabel}，凭证号 ${nextVoucher}。凭证号不可重复。登记后计入可用储备。凭证类型会写在理由前面，留在操作记录里。`,
       briefKind: "record",
       effect: "立即生效",
       confirmLabel: "确认登记",
-      run: (reason) => submitInjection(nextAmount, nextVoucher, reason),
+      reasonMax: 200 - reasonPrefix.length,
+      run: (reason) => submitInjection(nextAmount, nextVoucher, `${reasonPrefix}${reason}`),
     });
   };
 
@@ -397,11 +391,15 @@ export function D3Treasury() {
   });
 
   const dataBlocked = !main ? "资金数据没读到，刷新后再试" : loading ? "正在刷新，稍等" : undefined;
+  const mainFailed = canReadMain && !main && !loading;
   const mainState = loading && !main
     ? <BlockState state="loading" title="正在读取资金数据…" />
-    : !main && canReadMain
-      ? <BlockState state="error" title="加载失败，已暂停显示旧数据" detail={mainError || "数据不完整，已暂停显示旧数据"} onRetry={reloadAll} retryLabel="重新加载" />
+    : mainFailed
+      ? <BlockState state="error" title="资金数据没读到，这里先不显示" detail="页面上方可以重新加载。" />
       : null;
+  const tier = main?.reserve.waterLevel.tier;
+  const fundAlarm = tier === "DANGER" || tier === "WARNING";
+  const fundConclusion = main ? <FundConclusion main={main} emergencyLink={crossLink("/emergency/kill-switch", "去紧急停用开关")} withdrawalsLink={crossLink("/finance/withdrawals", "去待审核提现")} /> : null;
 
   const asOf = main?.reserve.asOf;
   const header = (
@@ -409,12 +407,12 @@ export function D3Treasury() {
       pageId="D3"
       title="资金储备与应付款"
       summary="看平台的钱够不够付，要不要补储备。"
-      meta={tab ? <>{asOf ? `统计时间：${formatBusinessTimeCompact(asOf)}（${businessZone().label}）· ` : ""}打开时读取 · <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={refresh}>刷新</Button></> : undefined}
+      meta={tab ? <>{asOf ? `统计时间：${timeText(asOf)} · ` : ""}打开时读取 <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={refresh}>刷新</Button></> : undefined}
       readOnly={canInject || !tab ? undefined : "你只能查看；登记储备注入需财务负责人。"}
       actions={(
         <>
           {canExportReconciliation && <Button icon={<Download size={14} aria-hidden />} disabledReason={dataBlocked} onClick={() => exportCsv("reconciliation")}>导出对账 CSV</Button>}
-          {canInject && <Button variant="primary" disabledReason={dataBlocked} onClick={() => setInjectOpen(true)}>登记储备注入</Button>}
+          {canInject && <Button variant={tier && tier !== "NORMAL" ? "primary" : "secondary"} disabledReason={dataBlocked} onClick={() => setInjectOpen(true)}>登记储备注入</Button>}
         </>
       )}
     />
@@ -433,6 +431,12 @@ export function D3Treasury() {
   return (
     <RdPage>
       {header}
+      {fundAlarm && fundConclusion}
+      {mainFailed && (
+        <Notice tone="warn" title="资金状态：暂时无法判断" action={<Button size="sm" onClick={reloadAll}>重新加载</Button>}>
+          加载失败，已暂停显示旧数据。{mainError || "数据不完整。"}
+        </Notice>
+      )}
       {unknownCommands.injections.map((record) => (
         <Notice
           key={record.commandKey}
@@ -453,7 +457,7 @@ export function D3Treasury() {
             </>
           )}
         >
-          {money(Number(record.amount))}，凭证号 {record.voucherNo}，{formatBusinessTimeCompact(new Date(record.createdAt).toISOString())} 提交。先看累计注入有没有变；重试用同一个请求号，不会重复登记。
+          {money(Number(record.amount))}，凭证号 {record.voucherNo}，{timeText(new Date(record.createdAt).toISOString())} 提交。先看累计注入有没有变；重试用同一个请求号，不会重复登记。
         </Notice>
       ))}
       {forecastUnknown && (
@@ -478,7 +482,7 @@ export function D3Treasury() {
             </>
           )}
         >
-          {formatBusinessTimeCompact(new Date(forecastUnknown.createdAt).toISOString())} 提交。先看「预测设置」的版本有没有变；重试用同一个请求号，不会重复保存。
+          {timeText(new Date(forecastUnknown.createdAt).toISOString())} 提交。先看「预测设置」的版本有没有变；重试用同一个请求号，不会重复保存。
         </Notice>
       )}
       <PageTabs
@@ -488,10 +492,15 @@ export function D3Treasury() {
         items={visibleTabs.map((item) => ({ ...item, count: item.value === "settings" && main?.config.pendingConfig ? 1 : undefined }))}
       />
       {tab === "overview" && (main
-        ? <OverviewTab main={main} emergencyLink={crossLink("/emergency/kill-switch", "去紧急停用开关")} withdrawalsLink={crossLink("/finance/withdrawals", "去待审核提现")} links={[crossLink("/overview/dual-ledger", "资金与应付款总览"), crossLink("/overview/risk-radar", "风险提醒")]} />
+        ? (
+          <>
+            {!fundAlarm && fundConclusion}
+            <OverviewTab main={main} links={[crossLink("/overview/dual-ledger", "资金与应付款总览（看覆盖率和告警）"), crossLink("/overview/risk-radar", "风险提醒")]} />
+          </>
+        )
         : (
           <>
-            <Conclusion state="unknown">资金状态：{loading ? "正在读取" : "暂时无法判断"}</Conclusion>
+            {loading && <Conclusion state="unknown">资金状态：正在读取</Conclusion>}
             {mainState}
           </>
         ))}
@@ -503,9 +512,7 @@ export function D3Treasury() {
           onWindow={selectMaturity}
           maturity={maturityWindow === "7d" ? { data: main?.maturity7 ?? null, loading, error: mainError } : maturity30}
           exposure={exposure}
-          exposureWindow={exposureWindow}
-          onExposureWindow={selectExposure}
-          onExposureRetry={() => { if (exposureWindow) void loadExposure(exposureWindow); }}
+          onExposureRetry={() => void loadExposure()}
           onMaturityRetry={() => void loadMaturity30()}
           canReadExposure={canReadExposure}
           canExport={canExportLiabilities}
@@ -537,15 +544,15 @@ export function D3Treasury() {
         sub="须填写到账凭证号"
         icon={Landmark}
         tone="role-1"
-        footer={<Decision note="凭证号重复时不会登记。" others={<Button variant="ghost" onClick={() => setInjectOpen(false)}>取消</Button>} primary={<Button variant="primary" disabledReason={dataBlocked} onClick={saveInjection}>登记</Button>} />}
+        footer={<Decision note="凭证号重复时不会登记。下一步核对金额和凭证，再写理由。" others={<Button variant="ghost" onClick={() => setInjectOpen(false)}>取消</Button>} primary={<Button variant="primary" disabledReason={dataBlocked} onClick={saveInjection}>下一步：确认</Button>} />}
       >
         <Field label="注入金额" required help="单位 USDT，最多两位小数。" error={injectErrors.amount}>
           {(control) => <Input {...control} value={amount} onChange={(event) => { setAmount(event.target.value); setInjectErrors((current) => ({ ...current, amount: undefined })); }} inputMode="decimal" placeholder="注入金额 USDT" aria-label="注入金额（USDT，最多两位小数）" />}
         </Field>
-        <Field label="凭证类型" required help="到账凭证是链上交易还是银行流水。">
+        <Field label="凭证类型" required help="到账凭证是链上交易还是银行流水。会写进理由，不进凭证号。">
           <Select aria-label="凭证类型" value={voucherType} options={VOUCHER_TYPES} onChange={setVoucherType} />
         </Field>
-        <Field label="凭证编号 / 哈希" required help="至少 6 位，须能查到。" error={injectErrors.voucher}>
+        <Field label="凭证编号 / 哈希" required help="填原始编号，至少 6 位，须能查到。" error={injectErrors.voucher}>
           {(control) => <Input {...control} value={voucherNo} onChange={(event) => { setVoucherNo(event.target.value); setInjectErrors((current) => ({ ...current, voucher: undefined })); }} placeholder="凭证号（不能重复）" aria-label="凭证号（必填，不能重复）" />}
         </Field>
       </Drawer>
@@ -559,7 +566,7 @@ export function D3Treasury() {
           effect={confirm.effect ? <StatusTag tone="progress" filled>{confirm.effect}</StatusTag> : undefined}
           confirmLabel={confirm.confirmLabel}
           reasonMin={8}
-          reasonMax={200}
+          reasonMax={confirm.reasonMax ?? 200}
           onClose={() => setConfirm(null)}
           onConfirm={async (reason) => {
             await confirm.run(reason);

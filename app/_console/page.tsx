@@ -15,6 +15,7 @@ import { BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { a2ActionText } from "@/lib/admin/operator-copy";
 import { b0Blocks } from "@/lib/admin/b0-access";
+import { coverDaysText } from "@/lib/admin/treasury-cover-days";
 import { fetchB0Devices, fetchB0NewUsers, fetchB0Sales } from "@/lib/admin/b0-client";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { fetchB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
@@ -182,9 +183,7 @@ export default function CommandCenter() {
   };
 
   // 没有到期时后端给占位值 999，不能直接显示；有到期时天数可以比 999 大。
-  const noDue = water?.dailyAverageDueUsdt === 0;
-  const coverDays = water ? Math.floor(water.reserveCoverDays) : 0;
-  const days = !water ? null : noDue ? "未来 7 天没有到期" : coverDays > 365 ? "可覆盖超过 1 年" : `可覆盖 ${fmtNum(coverDays)} 天`;
+  const days = !water ? null : water.dailyAverageDueUsdt === 0 ? "未来 7 天没有到期" : `可覆盖 ${coverDaysText(water.reserveCoverDays)}`;
   // 等级词和资金储备页一致：正常、预警、危险；跌破红线、警戒是覆盖率给的。
   const fundWord = belowRedline ? "跌破红线" : water?.tier === "DANGER" ? "危险" : water?.tier === "WARNING" ? "预警" : belowHealthy ? "警戒" : "正常";
   const fundText = `资金安全：${fundWord}${days ? `，${days}` : ""}`;
