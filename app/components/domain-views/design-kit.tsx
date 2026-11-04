@@ -3422,7 +3422,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const newNumber = Number(newVal);
   const directionalAmplifies = typeof spec?.amplifiesWhen === "object"
     ? spec.current === spec.amplifiesWhen.from && newVal === spec.amplifiesWhen.to
-    : spec?.amplifiesWhen && Number.isFinite(currentNumber) && Number.isFinite(newNumber)
+    : spec?.amplifiesWhen && newVal.trim() !== "" && Number.isFinite(currentNumber) && Number.isFinite(newNumber)
     ? spec.amplifiesWhen === "increase" ? newNumber > currentNumber : newNumber < currentNumber
     : undefined;
   const effectiveAmplifies = directionalAmplifies ?? Boolean(amplifies);

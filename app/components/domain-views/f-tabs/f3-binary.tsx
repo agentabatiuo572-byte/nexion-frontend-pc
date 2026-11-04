@@ -19,6 +19,26 @@ function metricClass(tone: string) {
   return ["ok", "warn", "cyan"].includes(tone) ? `f-stat ${tone}` : "f-stat";
 }
 
+// The settlement policy treats bare values <= 1 as ratios; explicit % values are percentages.
+function matchRatePercent(raw: string): string | null {
+  const value = raw.trim();
+  if (!/^(?:\d+(?:\.\d+)?|\.\d+)\s*%?$/.test(value)) return null;
+  const percent = value.endsWith("%");
+  const number = value.replace(/%$/, "").trim();
+  if (Number(number) <= 0) return null;
+  let [whole, fraction = ""] = number.split(".");
+  if (!percent && (Number(whole || "0") < 1 || (Number(whole) === 1 && !/[1-9]/.test(fraction)))) {
+    const padded = fraction.padEnd(2, "0");
+    whole += padded.slice(0, 2);
+    fraction = padded.slice(2);
+  } else if (fraction.replace(/0+$/, "").length > 10) {
+    // The policy rounds longer percentage values. Do not present the raw value as the effective rate.
+    return null;
+  }
+  const result = `${whole || "0"}.${fraction}`.replace(/^0+(?=\d)/, "").replace(/0+$/, "").replace(/\.$/, "");
+  return Number(result) <= 100 ? result : null;
+}
+
 export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   const canSettle = ctx.can("network_f3_write");
   const canConfigure = ctx.can("network_f3_match_rate");
@@ -55,7 +75,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   const dailyCap = ctx.f3DailyCap;
   const maxTrackGmv = Math.max(1, ctx.f3MaxTrackGmv, ...rows.flatMap((row) => [row.a, row.b]));
   const thEff = cfg?.threshold ?? "";
-  const rateEff = cfg?.matchRate ?? "";
+  const ratePercent = matchRatePercent(cfg?.matchRate ?? "");
+  const rateEff = ratePercent === null ? `比例尚未确认 · 已存值 ${text(cfg?.matchRate)}` : `${ratePercent}%`;
   const spillOn = cfg?.spilloverEnabled ?? cfg?.spillover !== "已关闭";
   const resetEff = cfg?.gvResetCron ?? "";
   const periodEff = cfg?.settlePeriod ?? "";
@@ -122,8 +143,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             <div className="track a"><div className="nm">A 组</div><div className="gv">{formula ? usd(formula.trackA) : "—"}</div><div className="meta">{trackFormula ? trackLabel(trackFormula.trackA, trackFormula.trackB) : "暂无数据"}<br />本期累计订单额（每月 1 日归零）</div></div>
             <div className="balance">
               <div className="op">取较小值</div>
-              <div className="fx"><div className="l">匹配奖励 {text(formula?.matchRate)}</div><div className="v">{formula ? usd(formula.matchAmount) : "—"}</div><div className="u">今日 · {text(formula?.user)}</div></div>
-              <div className="op">× {text(formula?.matchRate)}</div>
+              <div className="fx"><div className="l">匹配奖励 {rateEff}</div><div className="v">{formula ? usd(formula.matchAmount) : "—"}</div><div className="u">今日 · {text(formula?.user)}</div></div>
+              <div className="op">× {rateEff}</div>
             </div>
             <div className="track b"><div className="nm">B 组</div><div className="gv">{formula ? usd(formula.trackB) : "—"}</div><div className="meta">{trackFormula ? trackLabel(trackFormula.trackB, trackFormula.trackA) : "暂无数据"}<br />奖励按较小一组计算</div></div>
           </div>
@@ -134,7 +155,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             <span className="sep">·</span>
             <span className="mono">每组门槛 = {text(thEff)}</span>
             <span className="sep">·</span>
-            <span className="mono">修改从下一期开始生效</span>
+            <span className="mono">批准后生效，后续结算使用新设置</span>
           </div>
         </section>
 
@@ -275,11 +296,22 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       <div className="cfg-grid">
         <div className="cfg-card">
           <div className="ch">每组订单额门槛</div>
-          <div className="cs">两组都达到才参与结算 · 下一期生效</div>
+          <div className="cs">两组都达到才参与结算 · 批准后生效</div>
           <div className="ckv"><span className="k">当前门槛</span><span className="v">{text(thEff)}</span></div>
           <div className="ckv"><span className="k">未达门槛的订单额</span><span className="v">{text(cfg?.residualPool)}</span></div>
           <div className="ckv"><span className="k">未匹配订单额处理</span><span className="v" style={{ color: "var(--ink-3)" }}>{text(residualEff)}</span></div>
-          {canConfigure && <div className="cfg-foot"><button className="fbtn primary" onClick={() => ctx.openActionConfirm({ name: "调整每组订单额门槛", op: "param", paramKey: "F.binary.threshold", edit: { kind: "text", current: thEff }, detail: `每组订单额门槛 · 当前 ${text(thEff)} · 从下一期开始生效，本期已算的不变。` })}>调整门槛</button></div>}
+          {canConfigure && <div className="cfg-foot"><button className="fbtn primary" onClick={() => ctx.openActionConfirm({
+            name: "调整每组订单额门槛",
+            edit: { kind: "number", current: thEff.replace(/[$,]/g, "").trim(), unit: "USDT", min: 0.000001, max: 5000, amplifiesWhen: "decrease" },
+            detail: `每组订单额门槛 · 当前 ${text(thEff)}。须大于 0、不超过 5000，最多 6 位小数；降低门槛会增加奖励流出，需检查兑付覆盖率。`,
+            completionCopy: "批准后生效，后续结算使用新设置；已结算的不变。",
+            run: async (reason, _fields, newValue) => {
+              const value = (newValue ?? "").trim();
+              if (!/^(?:\d+(?:\.\d{1,6})?|\.\d{1,6})$/.test(value)) throw new Error("门槛须填写普通数字，最多 6 位小数，不会自动取整。");
+              await ctx.updateF3Config("F.binary.threshold", value, reason);
+              ctx.toast("门槛已提交，批准后生效；批准前仍按原设置执行");
+            },
+          })}>调整门槛</button></div>}
         </div>
 
         <div className="cfg-card">
@@ -290,28 +322,28 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="ckv"><span className="k">月累计匹配</span><span className="v">{usd(ctx.f3MonthlyMatchedUsd)}</span></div>
           {canConfigure && <div className="cfg-foot"><button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({
             name: "调整匹配比例",
-            amplify: true,
-            op: "param",
-            paramKey: "F.binary.matchRate",
-            edit: { kind: "text", current: rateEff, unit: "%" },
-            detail: `较小一组订单额 × 这个比例 = 奖励 · 当前 ${text(rateEff)}。调高会多发奖励，先看兑付覆盖率。从下一期开始生效，已算的不变。`,
-            completionCopy: "从下一期开始生效，已算的不变。",
+            edit: { kind: "number", current: ratePercent ?? "", unit: "%", min: 0.0000000001, max: 20, amplifiesWhen: "increase" },
+            detail: `较小一组订单额 × 这个比例 = 奖励 · 当前 ${rateEff}。按百分比填写，填 1 就是 1%；须大于 0、不超过 20，最多 10 位小数。调高会多发奖励，需检查兑付覆盖率。`,
+            completionCopy: "批准后生效，后续结算使用新设置；已结算的不变。",
+            run: async (reason, _fields, newValue) => {
+              const value = (newValue ?? "").trim();
+              if (!/^(?:\d+(?:\.\d{1,10})?|\.\d{1,10})$/.test(value)) throw new Error("比例须填写普通数字，最多 10 位小数，不会自动四舍五入。");
+              await ctx.updateF3Config("F.binary.matchRate", `${value}%`, reason);
+              ctx.toast("匹配比例已提交，批准后生效；批准前仍按原设置执行");
+            },
           })}>调整比例</button></div>}
         </div>
 
         <div className="cfg-card">
           <div className="ch">自动分组与归零</div>
-          <div className="cs">订单额每月 1 日 00:00（越南时间）归零</div>
+          <div className="cs">实际归零按系统业务日历：每月 1 日 00:00（越南时间 UTC+7）。历史周期不重算。</div>
           <div className="ckv"><span className="k">自动分组</span><span className="v" style={{ color: spillOn ? "var(--success)" : "var(--ink-3)" }}>{spillOn ? "已启用" : "已关闭"}</span></div>
           <div className="ckv"><span className="k">近 7 天自动分组</span><span className="v">{ctx.f3AutoPlacement7dCount.toLocaleString()} 成员</span></div>
-          <div className="ckv"><span className="k">归零时间</span><span className="v" style={{ fontSize: 11 }}>{text(resetEff)}</span></div>
+          <div className="ckv"><span className="k">已存归零说明</span><span className="v" style={{ fontSize: 11 }}>{text(resetEff)}</span></div>
+          <div className="cs">这段说明不决定归零时点；旧 UTC 文字不改变实际业务日历。</div>
           {canConfigure && <div className="cfg-foot">
             <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "调整自动分组", op: "param", paramKey: "F.binary.spillover", edit: { kind: "select", current: spillOn ? "已启用" : "已关闭", options: ["已启用", "已关闭"] }, detail: "关闭后，新成员需要手动分到 A 组或 B 组。" })}>自动分组</button>
-            {/* 归零口径恢复可配(2026-08-06 主人裁决):后端结算策略一直读这个配置键、契约测试也把它
-                列进合法配置键清单,只是页面把入口撤了 —— 后端可配而控制台无门,是半截状态。
-                🔴 键名从 client 常量取、页面只出中文标签:本页有一道术语门扫原文(含注释),
-                禁止开发代号出现在页面正文里。 */}
-            <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "调整订单额归零时间", op: "param", paramKey: F3_GV_RESET_PARAM_KEY, edit: { kind: "select", current: resetEff, options: ["每月 1 日 00:00 Asia/Ho_Chi_Minh"], optionLabels: { "每月 1 日 00:00 Asia/Ho_Chi_Minh": "每月 1 日 00:00 越南时间 UTC+7" } }, detail: `两组累计订单额的归零时间 · 当前 ${text(resetEff)} · 从下一期开始生效，已算的不变。` })}>归零时间</button>
+            <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "更新归零说明", op: "param", paramKey: F3_GV_RESET_PARAM_KEY, edit: { kind: "select", current: resetEff, options: ["每月 1 日 00:00 Asia/Ho_Chi_Minh"], optionLabels: { "每月 1 日 00:00 Asia/Ho_Chi_Minh": "每月 1 日 00:00 越南时间 UTC+7" } }, detail: `当前已存说明：${text(resetEff)}。本操作只更新说明；实际归零仍按系统业务日历，历史周期不重算。`, completionCopy: "说明批准后生效，不改变业务日历或历史结算。" })}>更新归零说明</button>
           </div>}
         </div>
 

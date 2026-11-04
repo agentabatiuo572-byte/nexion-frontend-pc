@@ -407,16 +407,19 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     const op = resolveFOp(key);
     const def = findHighOp(op);
     if (!def) throw new Error(`F_OP_NOT_FOUND:${op}`);
+    const direction = sourceDomain === "F3" ? mc?.edit?.amplifiesWhen : undefined;
+    const currentValue = Number(mc?.edit?.current);
+    const requestedValue = Number(value.replace(/%$/, ""));
     await proposeStable(`f-config:${key}`, JSON.stringify([value, reason]), {
       action: `${def.action} · ${key}`,
       obj: key,
       before: "—",
       after: value,
       type: def.type === "fund" ? "fund" : "param",
-      // F.* UI keys 资金放大类(F.pool.ratio/F.binary.matchRate 等)由 resolveFOp 路由到 f_ui_config(amplifies=false),
-      // 但后端 loosensPayoutControlUiKey 运行时按方向兜底为放大;前端按 key 标 amplifies=true 对齐,
-      // 避免「弹窗显 🔥 但 A2 队列丢 🔥」(验收 5.12 缺口 ②)。
-      amplifies: isFFundAmplifyingKey(key) || def.amplifies,
+      // F3 数值编辑按实际方向标记；其他参数保留既有分类，系统执行时仍须按当前值复核。
+      amplifies: direction && Number.isFinite(currentValue)
+        ? direction === "increase" ? requestedValue > currentValue : requestedValue < currentValue
+        : isFFundAmplifyingKey(key) || def.amplifies,
       gate: { roles: [] },
       gateLabel: def.gateLabel,
       reason,
