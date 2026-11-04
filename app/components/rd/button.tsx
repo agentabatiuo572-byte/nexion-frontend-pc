@@ -16,7 +16,8 @@ import { forwardRef, useId, type ButtonHTMLAttributes, type ReactNode } from "re
 import { Loader2 } from "lucide-react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+/** danger 是最终确认的实心红；danger-outline 是抽屉里和主按钮并排的危险入口，描边红字，一屏只有一个实心按钮（VS-25）。 */
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "danger-outline";
 
 interface CommonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   loading?: boolean;

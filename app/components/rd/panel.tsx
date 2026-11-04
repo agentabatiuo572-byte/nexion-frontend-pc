@@ -11,18 +11,20 @@ import type { LucideIcon } from "lucide-react";
 import { IconTile } from "./icon-tile";
 import type { RoleTone, StateTone } from "./tone";
 
-export function Panel({ title, sub, icon, tone = "role-other", actions, flush, headingLevel = 2, children, className, ...rest }: Omit<HTMLAttributes<HTMLElement>, "title"> & {
+export function Panel({ title, sub, icon, tone = "role-other", actions, flush, plain, headingLevel = 2, children, className, ...rest }: Omit<HTMLAttributes<HTMLElement>, "title"> & {
   title?: ReactNode;
   sub?: ReactNode;
   icon?: LucideIcon;
   tone?: RoleTone | StateTone;
   actions?: ReactNode;
   flush?: boolean;
+  /** 不带自己的底和内边距：已经在一个面板里的分区用这个，面板不套面板（VS-72）。 */
+  plain?: boolean;
   headingLevel?: 2 | 3;
 }) {
   const Heading = headingLevel === 3 ? "h3" : "h2";
   return (
-    <section {...rest} className={className ? `rd-panel ${className}` : "rd-panel"} data-flush={flush ? "" : undefined}>
+    <section {...rest} className={className ? `rd-panel ${className}` : "rd-panel"} data-flush={flush ? "" : undefined} data-plain={plain ? "" : undefined}>
       {(title || actions) && (
         <div className="rd-panel-head">
           {icon && <IconTile tone={tone} icon={icon} />}

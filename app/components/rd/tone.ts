@@ -4,7 +4,8 @@
  * - 角色色：页内的不同角色。四个槽位固定含义，见 VS-12。不表达好坏。
  * - 域色：这是哪个业务域。只在侧栏、表头小图标这些位置出现，不进内容区（VS-15）。
  */
-export type StateTone = "ok" | "warn" | "danger" | "progress" | "done";
+/** neutral 是列表里的默认状态（要处理列表里的待审核）：灰字加图标，颜色留给例外行（VS-21）。 */
+export type StateTone = "ok" | "warn" | "danger" | "progress" | "done" | "neutral";
 export type RoleTone = "role-1" | "role-2" | "role-3" | "role-4" | "role-other";
 export type DomainTone = "money" | "users" | "devices" | "risk" | "system";
 export type Tone = StateTone | RoleTone | DomainTone;

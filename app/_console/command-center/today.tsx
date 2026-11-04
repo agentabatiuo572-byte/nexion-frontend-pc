@@ -3,7 +3,8 @@
 /**
  * 今日经营：4 个数，销售额最大（没有权限时下一个能看的放大）。
  * 只并排写昨天全天，不算百分比：今天没过完，和昨天全天比百分比会误导（DP-63）。
- * 图标底只留销售额和新增用户，一屏主色不超过上限（06 第 2.1 节的破例）。
+ * 颜色按 06 第 2.1 节：销售额金、新增用户紫，各带图标底；资金净流入是带正负号的差额，用正文色；
+ * 设备异常是告警数，0 灰字，大于 0 橙黄（VS-11）。这块放在「今天」面板里，不带自己的底。
  */
 import { CircleDollarSign, UserPlus } from "lucide-react";
 import { InlineRetry, Panel, Stat } from "@/app/components/rd";
@@ -34,7 +35,7 @@ export function TodayPanel({ blocks, sales, newUsers, flows, devices, clock, net
   const leadKey = blocks.sales ? "sales" : blocks.newUsers ? "newUsers" : blocks.netFlow ? "netFlow" : "devices";
   const abnormal = devices.data?.abnormal ?? 0;
   return (
-    <Panel title="今日经营" sub={clock ? `截至 ${clock}` : undefined} className="cc-today">
+    <Panel plain title="今日经营" sub={clock ? `截至 ${clock}` : undefined} className="cc-today">
       <div className="cc-today-grid">
         {blocks.sales && (
           <Stat
@@ -70,7 +71,6 @@ export function TodayPanel({ blocks, sales, newUsers, flows, devices, clock, net
         {blocks.netFlow && (
           <Stat
             lead={leadKey === "netFlow"}
-            tone="role-4"
             label="资金净流入"
             value={flowToday ? signed(toUsdt(flowToday.netWan)) : flows.loading ? "…" : "—"}
             unit="USDT"
@@ -86,7 +86,7 @@ export function TodayPanel({ blocks, sales, newUsers, flows, devices, clock, net
         {blocks.devices && (
           <Stat
             lead={leadKey === "devices"}
-            tone={abnormal > 0 ? "warn" : "role-2"}
+            tone={abnormal > 0 ? "warn" : "done"}
             label="设备异常"
             value={value(devices, (data) => fmtNum(data.abnormal))}
             unit="台"
