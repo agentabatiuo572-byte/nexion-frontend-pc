@@ -6,8 +6,6 @@
    ============================================================ */
 
 /* ===== 共享:pane / pane-h / rail / 标题 ===== */
-.fdom .pane { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); }
-.fdom .pane-h { padding: 16px 18px 12px; display: flex; align-items: center; gap: 10px; }
 .fdom .pane-h .ph-ttl { font-size: 14.5px; font-weight: 600; white-space: nowrap; }
 .fdom .pane-h .ph-sub { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
 .fdom .pane-h .ph-r { margin-left: auto; display: flex; align-items: center; gap: 8px; }
@@ -15,8 +13,6 @@
 .fdom .rail-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 16px 18px; }
 .fdom .rail-card .rc-h { font-size: 13.5px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
 .fdom .rail-card .rc-h .tag { font-family: var(--mono); font-size: 10px; color: var(--ink-4); border: 1px solid var(--border); padding: 1px 6px; border-radius: 5px; margin-left: auto; }
-.fdom .f-foot { margin-top: 16px; font-size: 11.5px; color: var(--ink-3); line-height: 1.6; }
-.fdom .f-foot b { color: var(--ink-2); font-weight: 600; }
 
 /* ===== F-stats(per-tab 着色 stat strip)===== */
 .fdom .f-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
@@ -25,10 +21,6 @@
 .fdom .f-stat .k { font-size: 11.5px; color: var(--ink-3); }
 .fdom .f-stat .v { font-size: 22px; font-weight: 600; color: var(--ink); margin-top: 4px; font-variant-numeric: tabular-nums; }
 .fdom .f-stat .sub { font-size: 11px; color: var(--ink-4); margin-top: 3px; }
-.fdom .f-stat.ok .v { color: var(--success); }
-.fdom .f-stat.cyan .v { color: var(--cyan); }
-.fdom .f-stat.warn .v { color: var(--warning); }
-.fdom .f-stat.danger .v { color: var(--danger); }
 
 /* ===== F1 · V-Rank 阶梯 ===== */
 .fdom .f1-layout-shell { container: f1-layout / inline-size; }
