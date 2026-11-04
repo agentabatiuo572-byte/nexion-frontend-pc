@@ -138,13 +138,14 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
   const currentAdminId = useAdminAuth((s) => s.session?.adminId ?? null);
   const currentSessionRole = useAdminAuth((s) => s.session?.role ?? s.role);
+  const isSuperAdmin = useAdminAuth((s) => s.session?.role === "super" || s.session?.role === "superadmin");
   const authorities = useAdminAuth((s) => s.session?.authorities ?? []);
-  const canPropose = authorities.includes("platform_a2_write") || authorities.includes("platform_a2_proposal_create");
-  const canCreateAccount = authorities.includes("platform_a1_write");
+  const canPropose = authorities.includes("platform_a2_write");
+  const canCreateAccount = isSuperAdmin && authorities.includes("platform_a1_write");
   const canEditAccount = authorities.includes("platform_a1_write") && canPropose;
   const canChangeRole = authorities.includes("platform_a1_account_role_change") && canPropose;
   const canReset2fa = authorities.includes("platform_a1_account_2fa_reset") && canPropose;
-  const canResetPassword = authorities.includes("platform_a1_account_password_reset");
+  const canResetPassword = isSuperAdmin && authorities.includes("platform_a1_account_password_reset");
   const canChangeStatus = authorities.includes("platform_a1_account_disable") && canPropose;
   const canRegisterPermission = authorities.includes("platform_a1_rbac_grants_update");
   const [overview, setOverview] = useState<A1Overview | null>(null);
