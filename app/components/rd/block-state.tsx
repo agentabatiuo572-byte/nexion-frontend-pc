@@ -1,45 +1,57 @@
 /**
- * BlockState 区块状态（CP-72）。一块内容读取中、失败、空，只替换这一块（T09、ST-30）。
+ * BlockState 区块状态（CP-72）、Notice 页内提示（CP-70、CP-71）。
  *
- * <BlockState loading />
- * <BlockState title="资金明细加载失败" error={message} onRetry={reload} />
- * <BlockState empty="近 8 天没有资金进出" />
+ * <BlockState state="loading" title="正在读取到期预测…" />
+ * <BlockState state="error" title="资金流历史暂不可用" detail={error} onRetry={reload} />
+ * <BlockState state="empty" title="未来 7 天没有到期" />
+ * <BlockState state="denied" title="无权限访问" detail="这个账号没有这块内容的读取权限。" />
  *
- * - 失败、空、0 不共用文字。错误卡是标题、原因、「重试」三样（ST-34、ST-35）。
- * - 一个数字或一行读不到时用 InlineRetry，其他内容不受影响。
+ * 失败和空不共用文字（T09）。重试只重读这一块。失败带 data-module-health-state="error"。
+ *
+ * <Notice tone="progress" title="待生效 v3" action={<Button size="sm">刷新</Button>}>明天 08:00 起生效。</Notice>
+ * tone 是状态色，图标由 tone 决定。待处理、结果未知这类不能收起的内容放这里（DP-03）。
  */
 import type { ReactNode } from "react";
+import { AlertTriangle, CheckCircle2, Clock3, Info, Loader2, ShieldAlert, type LucideIcon } from "lucide-react";
 import { Button } from "./button";
+import type { StateTone } from "./tone";
 
-export function BlockState({ loading, title, error, empty, onRetry, retrying }: {
-  loading?: boolean;
-  title?: ReactNode;
-  error?: ReactNode;
-  empty?: ReactNode;
+export function BlockState({ state, title, detail, onRetry, retrying, retryLabel = "重试" }: {
+  state: "loading" | "error" | "empty" | "denied";
+  title: ReactNode;
+  detail?: ReactNode;
   onRetry?: () => void;
   retrying?: boolean;
+  retryLabel?: string;
 }) {
-  if (error) {
-    return (
-      <div className="rd-block" role="alert" data-state="error">
-        <span className="rd-block-title">{title}</span>
-        <span className="rd-block-reason">{error}</span>
-        {onRetry && <span className="rd-block-actions"><Button size="sm" loading={retrying} onClick={onRetry}>重试</Button></span>}
-      </div>
-    );
-  }
-  if (loading) {
-    return (
-      <div className="rd-block-loading" role="status" aria-label="正在加载…">
-        <span className="rd-skeleton" />
-        <span className="rd-skeleton" />
-        <span className="rd-skeleton" />
-      </div>
-    );
-  }
-  return <div className="rd-block" data-state="empty">{empty}</div>;
+  const failed = state === "error";
+  return (
+    <div className="rd-block-state" data-state={state} data-module-health-state={failed ? "error" : undefined} role={failed ? "alert" : "status"}>
+      {state === "loading" && <Loader2 className="rd-spin" size={16} aria-hidden />}
+      <div className="rd-block-state-title">{title}</div>
+      {detail && <div className="rd-block-state-detail">{detail}</div>}
+      {onRetry && <Button size="sm" loading={retrying} onClick={onRetry}>{retryLabel}</Button>}
+    </div>
+  );
 }
 
+/** 一个数字或一行读不到时用这个，其他内容不受影响。 */
 export function InlineRetry({ onRetry }: { onRetry: () => void }) {
   return <button type="button" className="rd-inline-retry" onClick={onRetry}>重试</button>;
+}
+
+const NOTICE_ICON: Record<StateTone, LucideIcon> = { ok: CheckCircle2, warn: AlertTriangle, danger: ShieldAlert, progress: Clock3, done: Info };
+
+export function Notice({ tone, title, action, children }: { tone: StateTone; title?: ReactNode; action?: ReactNode; children?: ReactNode }) {
+  const Icon = NOTICE_ICON[tone];
+  return (
+    <div className="rd-notice" data-tone={tone} role={tone === "danger" ? "alert" : "status"}>
+      <Icon className="rd-notice-icon" size={16} strokeWidth={1.9} aria-hidden />
+      <div className="rd-notice-text">
+        {title && <div className="rd-notice-title">{title}</div>}
+        {children}
+      </div>
+      {action && <div className="rd-notice-action">{action}</div>}
+    </div>
+  );
 }

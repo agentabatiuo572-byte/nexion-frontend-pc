@@ -50,6 +50,13 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 按钮 | `Button`、`IconButton` | `button.tsx` |
 | 状态 | `StatusTag` | `status-tag.tsx` |
 | 点开看口径或解释 | `Explain`，`Stat`、`StatusTag` 传 `explain` 就有 | `explain.tsx` |
+| 构成条、柱图、走势线 | `SegmentBar`、`ColumnChart`、`TrendLine`，传槽位 `slot` | `chart.tsx` |
+| 表单字段、勾选 | `Field`、`Check`、`CheckGroup` | `field.tsx` |
+| 名称和值成对 | `KeyValues` | `key-values.tsx` |
+| 一块内容的加载、空、失败、无权限 | `BlockState` | `block-state.tsx` |
+| 页内提示：待生效、结果未知、只读说明 | `Notice` | `block-state.tsx` |
+| 确认框里的前后值 | `DiffList` | `diff-list.tsx` |
+| 一列固定的等级 | `LevelList` | `level-list.tsx` |
 
 ## 颜色：只传 tone，不写色值
 

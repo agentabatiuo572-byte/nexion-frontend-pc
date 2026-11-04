@@ -357,6 +357,8 @@ export interface SlotAttemptStore {
   isDurablyStored(slot: string, inputFingerprint: string, commandKey: string): boolean;
   /** 命令已收敛,丢弃该槽位。 */
   forget(slot: string): void;
+  /** 当前仍未收敛的尝试,页面刷新后据此恢复「结果未知」提示。 */
+  list(): SlotAttemptRecord[];
 }
 
 /**
@@ -402,5 +404,6 @@ export function createSlotAttemptStore(options: { storageKey: string; ttlMs?: nu
       }
     },
     forget: store.forget,
+    list: store.list,
   };
 }

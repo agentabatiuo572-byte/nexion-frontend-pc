@@ -1,12 +1,17 @@
 export { Bars, type BarSeries } from "./bars";
-export { BlockState, InlineRetry } from "./block-state";
+export { BlockState, InlineRetry, Notice } from "./block-state";
 export { Button, IconButton, type ButtonVariant } from "./button";
+export { ChartLegend, ColumnChart, SegmentBar, TrendLine, type ChartSlot } from "./chart";
 export { Conclusion } from "./conclusion";
+export { DiffList } from "./diff-list";
 export { Explain } from "./explain";
+export { Check, CheckGroup, Field, type FieldControlProps } from "./field";
 export { FilterBar, FilterField, Input } from "./filter-bar";
 export { Fold } from "./fold";
 export { IconTile } from "./icon-tile";
 export { JudgmentPoints, type JudgmentRow } from "./judgment";
+export { KeyValues, type KeyValueRow } from "./key-values";
+export { LevelList } from "./level-list";
 export { Decision, Drawer, Modal, type DrawerNav } from "./overlay";
 export { PageGuide } from "./page-guide";
 export { PageHeader } from "./page-header";

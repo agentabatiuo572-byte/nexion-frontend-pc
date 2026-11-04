@@ -81,8 +81,8 @@ export function FundFold({ ledger, liquidity, error, retrying, onRetry, alert, l
   const gap = ledger ? ledger.coverageRatio - ledger.redlinePct : 0;
   return (
     <Fold title="资金明细" summary={fundFoldSummary(ledger, liquidity, error)} icon={Wallet} tone="role-1" alert={alert} alertTone={level === "danger" ? "danger" : "warn"} open={open} onOpenChange={onOpenChange}>
-      {error ? <BlockState title="资金数据加载失败" error={error} onRetry={onRetry} retrying={retrying} />
-        : !ledger || !liquidity ? <BlockState loading />
+      {error ? <BlockState state="error" title="资金数据加载失败" detail={error} onRetry={onRetry} retrying={retrying} />
+        : !ledger || !liquidity ? <BlockState state="loading" title="正在读取…" />
           : (
             <div className="cc-fold-stack">
               <div className="cc-amounts">
@@ -158,8 +158,8 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
   const alertTone = pressure.worst === "danger" || closed.some((gate) => !gate.unset) ? "danger" : "warn";
   return (
     <Fold title="风险与开关" summary={riskFoldSummary(ledger, risk, error)} icon={ShieldAlert} tone="role-4" alert={alert} alertTone={alertTone} open={open} onOpenChange={onOpenChange}>
-      {error ? <BlockState title="风险数据加载失败" error={error} onRetry={onRetry} retrying={retrying} />
-        : !ledger || !risk ? <BlockState loading />
+      {error ? <BlockState state="error" title="风险数据加载失败" detail={error} onRetry={onRetry} retrying={retrying} />
+        : !ledger || !risk ? <BlockState state="loading" title="正在读取…" />
           : (
             <div className="cc-fold-stack">
               <section aria-label="业务开关">
@@ -245,8 +245,8 @@ export function FlowFold({ blocks, history, historyError, historyRetrying, onRet
         <div className="cc-cols">
           {blocks.netFlow && (
             <section aria-label="近 8 天资金进出">
-              {historyError ? <BlockState title="资金进出加载失败" error={historyError} onRetry={onRetryHistory} retrying={historyRetrying} />
-                : !history ? <BlockState loading />
+              {historyError ? <BlockState state="error" title="资金进出加载失败" detail={historyError} onRetry={onRetryHistory} retrying={historyRetrying} />
+                : !history ? <BlockState state="loading" title="正在读取…" />
                   : moved
                     ? <Bars label="近 8 天每天流入和流出" series={[{ name: "流入", slot: 2 }, { name: "流出", slot: 4 }]} rows={history.flowWindows.map((item) => ({ label: item.label, values: [item.inflowWan * 10_000, item.outflowWan * 10_000] }))} format={usdt} height={96} />
                     : <p className="cc-line">近 8 天没有资金进出</p>}
@@ -256,8 +256,8 @@ export function FlowFold({ blocks, history, historyError, historyRetrying, onRet
             {blocks.topup && (
               <section aria-label="今日充值">
                 <h3 className="cc-sub">今日充值</h3>
-                {topup.error ? <BlockState title="今日充值加载失败" error={topup.error} onRetry={topup.reload} retrying={topup.loading} />
-                  : !topup.data ? <BlockState loading />
+                {topup.error ? <BlockState state="error" title="今日充值加载失败" detail={topup.error} onRetry={topup.reload} retrying={topup.loading} />
+                  : !topup.data ? <BlockState state="loading" title="正在读取…" />
                     : (
                       <>
                         <p className="cc-line">{usdt(topup.data.ledgerTotal)}，{fmtNum(topup.data.ledgerCount)} 笔</p>
@@ -273,8 +273,8 @@ export function FlowFold({ blocks, history, historyError, historyRetrying, onRet
             {blocks.redemption && (
               <section aria-label="今日提现">
                 <h3 className="cc-sub">今日提现</h3>
-                {redemption.error ? <BlockState title="今日提现加载失败" error={redemption.error} onRetry={redemption.reload} retrying={redemption.loading} />
-                  : !redemption.data ? <BlockState loading />
+                {redemption.error ? <BlockState state="error" title="今日提现加载失败" detail={redemption.error} onRetry={redemption.reload} retrying={redemption.loading} />
+                  : !redemption.data ? <BlockState state="loading" title="正在读取…" />
                     : <p className="cc-line">提交 {fmtNum(redemption.data.submitted)} 笔，完成 {fmtNum(redemption.data.confirmed)} 笔，拒绝 {fmtNum(redemption.data.rejected)} 笔{redemption.data.averageLatencyHours == null ? "" : `，平均到账 ${redemption.data.averageLatencyHours} 小时`}</p>}
               </section>
             )}
@@ -302,9 +302,9 @@ function FunnelBody({ onSummary, reach }: { onSummary: (text: string) => void; r
         : tooFew ? "注册不足 5 人，样本过小"
           : worst ? `流失最多的一步是${worst.from}到${worst.to}` : "每一步人数都太少，样本过小";
   useEffect(() => { onSummary(conclusion); }, [conclusion, onSummary]);
-  if (error) return <BlockState title="用户转化加载失败" error={error} onRetry={() => void reload()} retrying={loading} />;
-  if (!data) return <BlockState loading />;
-  if (!data.available || !stages.length) return <BlockState title="用户转化暂无数据" error={data.message ?? "暂无转化数据"} onRetry={() => void reload()} retrying={loading} />;
+  if (error) return <BlockState state="error" title="用户转化加载失败" detail={error} onRetry={() => void reload()} retrying={loading} />;
+  if (!data) return <BlockState state="loading" title="正在读取…" />;
+  if (!data.available || !stages.length) return <BlockState state="error" title="用户转化暂无数据" detail={data.message ?? "暂无转化数据"} onRetry={() => void reload()} retrying={loading} />;
   return (
     <div className="cc-fold-stack">
       {tooFew ? <p className="cc-line">注册不足 5 人，样本过小</p> : (
@@ -339,7 +339,7 @@ export function FunnelFold({ blocks, refreshKey, reach, open, onOpenChange }: Fo
         <div className="cc-cols">
           <div className="cc-fold-stack">
             {blocks.totalUsers && (
-              total.error ? <BlockState title="累计用户加载失败" error={total.error} onRetry={total.reload} retrying={total.loading} />
+              total.error ? <BlockState state="error" title="累计用户加载失败" detail={total.error} onRetry={total.reload} retrying={total.loading} />
                 : <p className="cc-line">累计用户 <span className="cc-num" data-tone="role-3">{total.data ? `${fmtNum(total.data.totalUsers)} 人` : "…"}</span></p>
             )}
             <p className="cc-line" data-muted="">活跃用户暂未统计</p>
@@ -396,9 +396,9 @@ export function KpiFold({ refreshKey, reach, open, onOpenChange }: FoldProps & {
   ));
   return (
     <Fold title="关键指标" summary={summary} icon={Target} tone="role-3" open={open} onOpenChange={onOpenChange}>
-      {opened && (kpis.error ? <BlockState title="关键指标加载失败" error={kpis.error} onRetry={kpis.reload} retrying={kpis.loading} />
-        : !kpis.data ? <BlockState loading />
-          : rows.length === 0 ? <BlockState empty="关键指标暂无数据" />
+      {opened && (kpis.error ? <BlockState state="error" title="关键指标加载失败" detail={kpis.error} onRetry={kpis.reload} retrying={kpis.loading} />
+        : !kpis.data ? <BlockState state="loading" title="正在读取…" />
+          : rows.length === 0 ? <BlockState state="empty" title="关键指标暂无数据" />
             : (
               <div className="cc-fold-stack">
                 {failedKpis.length > 0 && (
