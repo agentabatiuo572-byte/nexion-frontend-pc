@@ -34,6 +34,8 @@ function backendPath(parts: string[]) {
   const isE3Config = parts[0] === "e3" && parts[1] === "config" && parts.length === 2;
   const isE3TradeinOverview = parts[0] === "e3" && parts[1] === "tradein" && parts[2] === "overview" && parts.length === 3;
   const isE3TradeinAction = parts[0] === "e3" && parts[1] === "tradein" && parts.length === 3 && ["recycle", "replace", "deactivate"].includes(parts[2]);
+  const isUserTradeinAction = parts.length === 4 && parts[0] === "users" && /^[1-9]\d*$/.test(parts[1])
+    && parts[2] === "tradein" && (parts[3] === "replace" || parts[3] === "recycle");
   const isDeviceRestore = parts.length === 2 && /^[1-9]\d*$/.test(parts[0]) && parts[1] === "restore";
   const isE5DeviceAction = parts.length === 2 && /^[1-9]\d*$/.test(parts[0])
     && ["activate", "force-activate", "deactivate", "unbind"].includes(parts[1]);
@@ -67,6 +69,7 @@ function backendPath(parts: string[]) {
     && !isE3Config
     && !isE3TradeinOverview
     && !isE3TradeinAction
+    && !isUserTradeinAction
     && !isDeviceRestore
     && !isE5DeviceAction
     && !isE5BatchAction
@@ -93,6 +96,9 @@ async function proxy(request: Request, context: RouteContext) {
     return jsonError(405, "METHOD_NOT_ALLOWED");
   }
   if (targetPath && path[0] === "legacy-unknown-resolutions" && request.method !== (path.length === 2 ? "GET" : "POST")) {
+    return jsonError(405, "METHOD_NOT_ALLOWED");
+  }
+  if (targetPath && path[0] === "users" && request.method !== "POST") {
     return jsonError(405, "METHOD_NOT_ALLOWED");
   }
 

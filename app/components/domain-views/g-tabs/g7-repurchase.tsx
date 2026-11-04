@@ -240,6 +240,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
             max: param.key === "apy" ? 300 : param.key === "penalty" || param.key === "lottery" ? 100 : param.key === "lockDays" ? 3650 : 10,
             step: param.key === "lockDays" || param.key === "lottery" ? 1 : 0.01,
             disallowCurrent: true,
+            submitEditValue: param.key === "lottery",
             amplifiesWhen: param.key === "penalty" ? "decrease"
               : param.key === "apy" || param.key === "nurture" || param.key === "lottery" ? "increase" : undefined },
       businessForm: param.key === "lottery" ? {

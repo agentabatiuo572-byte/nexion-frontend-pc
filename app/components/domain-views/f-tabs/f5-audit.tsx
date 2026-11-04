@@ -68,7 +68,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const [cohort, setCohort] = useState("");
   const [status, setStatus] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
-  const data = ctx.f5Overview;
+  const { f5Overview: data, f5NextQuery } = ctx;
   const reissueAvailable = canReissue && !ctx.f5Error && !!data;
   const events = data?.commissionEvents ?? [];
   const selectedRows = useMemo(
@@ -373,7 +373,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                 })}
               </tbody>
             </table>
-            {data.nextCursor && <div style={{ padding: 10 }}><button className="fbtn" onClick={() => void ctx.refreshF5({ ...query(), cursor: data.nextCursor })}>下一批</button></div>}
+            {f5NextQuery && <div style={{ padding: 10 }}><button className="fbtn" onClick={() => void ctx.refreshF5(f5NextQuery)}>下一批</button></div>}
           </section>
 
           <div className="f5-main">
