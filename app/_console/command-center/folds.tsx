@@ -7,7 +7,7 @@
  */
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowLeftRight, ShieldAlert, Target, Users, Wallet } from "lucide-react";
+import { ArrowLeftRight, ShieldAlert, Target, Users, Wallet, XCircle } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { AreaChart } from "@/app/components/kit/charts/area-chart";
 import { Bars, BlockState, Button, Explain, Fold, Modal, StatusTag } from "@/app/components/rd";
@@ -90,7 +90,7 @@ export function FundFold({ ledger, liquidity, error, retrying, onRetry, alert, l
                 <Amount label="应付款" value={ledger.liabilitiesUsd} tone="role-2" href="/overview/dual-ledger" reach={reach} />
                 <Amount label="差额（储备 − 应付款）" value={net} note={net > 0 ? "有富余" : net === 0 ? "刚好够" : "不够付"} href="/overview/dual-ledger" reach={reach} />
               </div>
-              <p className="cc-line"><AutoGloss>{`红线 ${fmtPct(ledger.redlinePct, 0)} · 健康线 ${fmtPct(ledger.healthyPct, 0)} · 距红线 ${gap >= 0 ? "+" : ""}${gap.toFixed(1)} 个百分点`}</AutoGloss></p>
+              <p className="cc-line"><AutoGloss>{`红线 ${fmtPct(ledger.redlinePct, 0)} · 健康线 ${fmtPct(ledger.healthyPct, 0)} · 覆盖率${gap >= 0 ? "比红线高" : "比红线低"} ${Math.abs(gap).toFixed(1)} 个点`}</AutoGloss></p>
               <div className="cc-cols">
               <section aria-label="应付款">
                 <h3 className="cc-sub">应付款最多的几类</h3>
@@ -136,7 +136,7 @@ function riskFoldSummary(ledger: BLedger | null, risk: BRiskRadar | null, error:
   if (!ledger || !risk) return "正在读取…";
   const closed = risk.gates.filter((gate) => !gate.on);
   const parts = [
-    closed.length === 0 ? "五个业务都开着" : `${closed.length} 个业务没有开`,
+    closed.length === 0 ? "五个业务都开着" : `${closed.length} 个业务没有开启`,
     risk.flaggedAccounts === 0 ? "没有异常账户" : `异常账户 ${fmtNum(risk.flaggedAccounts)} 个`,
   ];
   const { worst } = pressureLevel(ledger, risk);
@@ -155,7 +155,8 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
 }) {
   const closed = (risk?.gates ?? []).filter((gate) => !gate.on);
   const pressure = pressureLevel(ledger, risk);
-  const alertTone = pressure.worst === "danger" || closed.some((gate) => !gate.unset) ? "danger" : "warn";
+  // 同一件事同一个颜色：业务没开用橙，和状态句一样。红只给压力到红线。
+  const alertTone = pressure.worst === "danger" ? "danger" : "warn";
   return (
     <Fold title="风险与开关" summary={riskFoldSummary(ledger, risk, error)} icon={ShieldAlert} tone="role-4" alert={alert} alertTone={alertTone} open={open} onOpenChange={onOpenChange}>
       {error ? <BlockState state="error" title="风险数据加载失败" detail={error} onRetry={onRetry} retrying={retrying} />
@@ -169,8 +170,8 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                       <li key={gate.dom}>
                         <span>{GATE_NAMES[gate.dom] ?? gate.nm}</span>
                         {gate.unset
-                          ? <StatusTag tone="warn" explain="这个开关还没有配置，系统按关闭处理。到紧急停用开关页设置，上线前要配齐。">未设置</StatusTag>
-                          : <StatusTag tone="danger" explain="这项业务已经被关停，用户现在用不了。恢复要到紧急停用开关页操作。">已关停</StatusTag>}
+                          ? <StatusTag tone="warn" explain="这个开关还没人设置过，系统按关闭处理，用户现在用不了这项业务。要开放，到「紧急停用开关」页设置。">未设置</StatusTag>
+                          : <StatusTag tone="warn" icon={XCircle} explain="有人关了这项业务，用户现在用不了。为什么关、怎么恢复，到「紧急停用开关」页看。">已关停</StatusTag>}
                       </li>
                     ))}
                   </ul>
@@ -188,27 +189,27 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                 <li>
                   <span>
                     异常账户
-                    <Explain label="异常账户怎么算" content="当前规则下风控标记的账户数。" />
+                    <Explain label="异常账户怎么算" content="风控按当前评分规则标记的账户数。等待重新评分的账户不算在内，它们在待处理里。" />
                   </span>
                   <span className="cc-num" data-tone={risk.flaggedAccounts > 0 ? "warn" : "done"}>{fmtNum(risk.flaggedAccounts)} 个</span>
                 </li>
                 <li>
                   <span>
                     提现在途
-                    <Explain label="提现在途怎么算" content="还没走完流程的提现单数和金额。不只是待审核，也含已拒绝和打款失败等状态的单，待审核数量看上面的待处理。" />
+                    <Explain label="提现在途怎么算" content="还没结案的提现单：等审核、打款中，也包括被拒绝或打款失败、钱还没退回的单。所以比待处理里的待审核提现多。" />
                   </span>
                   <span className="cc-num">{fmtNum(ledger.queueBacklogCount)} 单，{usdt(ledger.queueBacklogUsd)}</span>
                 </li>
                 <li>
                   <span>
                     在途提现平均风险分
-                    <Explain label="风险分怎么算" content="提现申请的平均风险分。满分 100，70 以上为高危。" />
+                    <Explain label="风险分怎么算" content="这些提现单绑定的风控决定分的平均，满分 100，70 以上为高危。没有风控决定的单按 0 算，所以可能比提现审核页的分低，单笔以提现审核页为准。" />
                   </span>
                   <span className="cc-num">{ledger.avgRiskScore}</span>
                 </li>
               </ul>
               <p className="cc-links">
-                <FoldLink reach={reach} href="/emergency/kill-switch">前往紧急停用开关</FoldLink>
+                <FoldLink reach={reach} href="/emergency/kill-switch">查看或恢复业务开关</FoldLink>
                 <FoldLink reach={reach} href="/overview/risk-radar">查看风险提醒</FoldLink>
                 <FoldLink reach={reach} href="/risk/scoring">风险评分规则</FoldLink>
               </p>
@@ -221,7 +222,7 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
 function flowConclusion(history: B2LiquidityHistory) {
   const inflow = history.flowWindows.reduce((sum, item) => sum + item.inflowWan, 0);
   const outflow = history.flowWindows.reduce((sum, item) => sum + item.outflowWan, 0);
-  if (inflow === 0 && outflow === 0) return "近 8 天没有资金进出";
+  if (inflow === 0 && outflow === 0) return "近 8 天储备账没有进出";
   return inflow > outflow ? "近 8 天流入多于流出" : inflow < outflow ? "近 8 天流出多于流入" : "近 8 天流入流出持平";
 }
 
@@ -249,7 +250,8 @@ export function FlowFold({ blocks, history, historyError, historyRetrying, onRet
                 : !history ? <BlockState state="loading" title="正在读取…" />
                   : moved
                     ? <Bars label="近 8 天每天流入和流出" series={[{ name: "流入", slot: 2 }, { name: "流出", slot: 4 }]} rows={history.flowWindows.map((item) => ({ label: item.label, values: [item.inflowWan * 10_000, item.outflowWan * 10_000] }))} format={usdt} height={96} />
-                    : <p className="cc-line">近 8 天没有资金进出</p>}
+                    : <p className="cc-line">近 8 天储备账没有进出</p>}
+              <p className="cc-line" data-muted="">这里只算到账的充值、财务注资和已打款的提现。用余额买设备、还没打款的提现申请不算。</p>
             </section>
           )}
           <div className="cc-fold-stack">
@@ -272,7 +274,7 @@ export function FlowFold({ blocks, history, historyError, historyRetrying, onRet
             )}
             {blocks.redemption && (
               <section aria-label="今日提现">
-                <h3 className="cc-sub">今日提现</h3>
+                <h3 className="cc-sub">今日提现申请</h3>
                 {redemption.error ? <BlockState state="error" title="今日提现加载失败" detail={redemption.error} onRetry={redemption.reload} retrying={redemption.loading} />
                   : !redemption.data ? <BlockState state="loading" title="正在读取…" />
                     : <p className="cc-line">提交 {fmtNum(redemption.data.submitted)} 笔，完成 {fmtNum(redemption.data.confirmed)} 笔，拒绝 {fmtNum(redemption.data.rejected)} 笔{redemption.data.averageLatencyHours == null ? "" : `，平均到账 ${redemption.data.averageLatencyHours} 小时`}</p>}
@@ -334,7 +336,7 @@ export function FunnelFold({ blocks, refreshKey, reach, open, onOpenChange }: Fo
   const [summary, setSummary] = useState<string | null>(null);
   const total = useBlock(fetchC1Overview, opened && blocks.totalUsers, refreshKey);
   return (
-    <Fold title="用户与转化" summary={summary ?? (opened ? "正在读取…" : "点开读取累计用户和四步转化")} icon={Users} tone="role-3" open={open} onOpenChange={onOpenChange}>
+    <Fold title="用户与转化" summary={summary ?? (opened ? "正在读取…" : "点开看累计用户和注册到提现各步人数")} icon={Users} tone="role-3" open={open} onOpenChange={onOpenChange}>
       {opened && (
         <div className="cc-cols">
           <div className="cc-fold-stack">
@@ -386,7 +388,7 @@ export function KpiFold({ refreshKey, reach, open, onOpenChange }: FoldProps & {
   const unknownKpis = effective.filter((kpi) => kpi.pass === null);
   const passedKpis = effective.filter((kpi) => kpi.pass === true);
   const summary = kpis.error ? "读取失败"
-    : !opened ? "点开读取未达标的指标"
+    : !opened ? "点开看哪些目标没达到"
       : !kpis.data ? "正在读取…"
         : rows.length === 0 ? "关键指标暂无数据"
           : rollup.failed === 0 && rollup.unknown === 0 ? (rollup.total === 8 ? "八项都达标" : `${rollup.total} 项都达标`)

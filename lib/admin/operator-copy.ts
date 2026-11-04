@@ -111,6 +111,8 @@ export function operatorCopyText(value: string): string {
     .replace(/OTHER\s*\/\s*UNREGISTERED/g, "其他及未登记类型")
     .replace(/Day0 接入/g, "首笔收益到账")
     .replace(/Day7 留存/g, "注册后第 7 天的活跃率")
+    .replace(/L4→L5 推广(?!率)/g, "设备持有者邀请好友的比例")
+    .replace(/Nova 推送点击/g, "推送点击率")
     .replace(/幂等键/g, "防重复提交编号")
     .replace(/冷归档/g, "长期归档")
     .replace(/用户画像/g, "用户资料")

@@ -2,8 +2,9 @@
 
 /**
  * 顶栏消息入口(设计稿 admin-shell 的 bell → Drawer 侧滑抽屉,非下拉)。
- * 右侧滑入、整高;标题「告警 & 待办」,两段:风险与应急告警 + 操作确认 待确认(A2);
- * 底部 CTA「前往 A2 审计中心」。告警取 B 域与 J 域真实接口;A2 待办取审计待确认队列。
+ * 右侧滑入、整高,两段:风险与应急告警 + 操作确认 待确认(A2);底部 CTA「查看全部操作记录」。
+ * 告警取 B 域与 J 域真实接口;A2 待办取审计待确认队列。
+ * 只放要处理的事(DP-65):覆盖率正常、风险结论行这类正常状态不进列表。铃铛数字 = 列表里的告警 + 待确认,两边一致。
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -17,6 +18,7 @@ import { roleLabel, type AdminRole } from "@/lib/nav/console-nav";
 import { fmtPct } from "@/lib/format";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { a2ActionText } from "@/lib/admin/operator-copy";
+import { isRiskConclusion, riskFeedTitle } from "@/lib/admin/risk-feed";
 import { B_DASHBOARD_READ_AUTHORITIES, canReadC2HighRiskAlerts } from "@/lib/admin/shell-authorities";
 
 type AlertLevel = "high" | "mid" | "low";
@@ -100,27 +102,19 @@ export function NotificationBell() {
     if (bDomain.error) {
       return [{ id: "b-sync", level: "high", text: `风险提醒加载失败：${bDomain.error}`, href: "/overview/risk-radar" }];
     }
-    if (!bDomain.hasData) {
-      return bDomain.loading ? [{ id: "b-sync", level: "low", text: "正在加载风险提醒", href: "/overview/risk-radar" }] : [];
-    }
-    const coverageLevel: AlertLevel =
-      bDomain.ledger.coverageRatio < bDomain.ledger.redlinePct
-        ? "high"
-        : bDomain.ledger.coverageRatio < bDomain.ledger.healthyPct
-          ? "mid"
-          : "low";
-    const coverageText =
-      coverageLevel === "high"
-        ? `兑付覆盖率 ${fmtPct(bDomain.ledger.coverageRatio)} 已跌破红线 ${fmtPct(bDomain.ledger.redlinePct)}`
-        : coverageLevel === "mid"
-          ? `兑付覆盖率 ${fmtPct(bDomain.ledger.coverageRatio)} 低于健康线 ${fmtPct(bDomain.ledger.healthyPct)}`
-          : `兑付覆盖率 ${fmtPct(bDomain.ledger.coverageRatio)} · 正常`;
+    if (!bDomain.hasData) return [];
+    const { coverageRatio, redlinePct, healthyPct } = bDomain.ledger;
+    const coverage: ShellAlert[] = coverageRatio < redlinePct
+      ? [{ id: "b-coverage", level: "high", text: `兑付覆盖率 ${fmtPct(coverageRatio)} 已跌破红线 ${fmtPct(redlinePct)}`, href: "/overview/dual-ledger" }]
+      : coverageRatio < healthyPct
+        ? [{ id: "b-coverage", level: "mid", text: `兑付覆盖率 ${fmtPct(coverageRatio)} 低于健康线 ${fmtPct(healthyPct)}`, href: "/overview/dual-ledger" }]
+        : [];
     return [
-      { id: "b-coverage", level: coverageLevel, text: coverageText, href: "/overview/dual-ledger" },
-      ...bDomain.riskRadar.feed.slice(0, 5).map((item, index) => ({
+      ...coverage,
+      ...bDomain.riskRadar.feed.filter((item) => !isRiskConclusion(item)).slice(0, 5).map((item, index) => ({
         id: `b-feed-${index}-${item.sev}`,
         level: severityLevel(item.sev),
-        text: item.t,
+        text: riskFeedTitle(item.t),
         href: item.href || "/overview/risk-radar",
       })),
     ];
@@ -164,8 +158,8 @@ export function NotificationBell() {
       href: "/users/actions",
     });
   }
-  const alerts = [...j1Alerts, ...bAlerts];
-  const badge = alerts.filter((a) => a.level !== "low").length;
+  const alerts = [...j1Alerts, ...bAlerts].filter((a) => a.level !== "low");
+  const badge = alerts.length + pendingOperations.length;
   return (
     <>
       <button
@@ -173,13 +167,13 @@ export function NotificationBell() {
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={`告警与待办${badge > 0 ? ` · ${badge} 条待处理` : ""}`}
+        aria-label={`告警和待确认操作${badge > 0 ? ` · ${badge} 条` : ""}`}
         className="rd-top-item rd-bell"
       >
         <Bell size={16} aria-hidden />
         {badge > 0 && <span className="rd-top-count font-mono-tabular">{badge > 9 ? "9+" : badge}</span>}
       </button>
-      <NotificationDrawer open={open} alerts={alerts} pendingOperations={pendingOperations} a2Error={a2Error} onClose={() => setOpen(false)} />
+      <NotificationDrawer open={open} alerts={alerts} alertsLoading={bDomain.loading && !bDomain.hasData} pendingOperations={pendingOperations} a2Error={a2Error} onClose={() => setOpen(false)} />
     </>
   );
 }
@@ -187,12 +181,14 @@ export function NotificationBell() {
 function NotificationDrawer({
   open,
   alerts,
+  alertsLoading,
   pendingOperations,
   a2Error,
   onClose,
 }: {
   open: boolean;
   alerts: ShellAlert[];
+  alertsLoading: boolean;
   pendingOperations: A2OperationRow[];
   a2Error: string | null;
   onClose: () => void;
@@ -201,9 +197,9 @@ function NotificationDrawer({
     <Drawer
       open={open}
       onClose={onClose}
-      title="告警 & 待办"
+      title="告警和待确认操作"
       sub={`${alerts.length} 条告警 · ${pendingOperations.length} 项待确认`}
-      aria-label="告警与待办"
+      aria-label="告警和待确认操作"
       footer={
         <Link href="/platform/audit" prefetch={false} onClick={onClose} className="rd-btn rd-alert-cta" data-variant="primary">
           <span className="rd-btn-face">查看全部操作记录 <ChevronRight size={14} aria-hidden /></span>
@@ -213,6 +209,7 @@ function NotificationDrawer({
       {/* 风险与应急告警 */}
       <h3 className="rd-alert-heading">风险与应急告警</h3>
       <div className="rd-alert-list">
+        {alerts.length === 0 && <div className="rd-alert-empty">{alertsLoading ? "正在读取告警…" : "现在没有要处理的告警。"}</div>}
         {alerts.map((a) => {
           const lv = LEVEL[a.level];
           return (

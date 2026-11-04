@@ -9,8 +9,8 @@
 import "./command-center/command-center.css";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, ListChecks, ShieldAlert, ShieldCheck } from "lucide-react";
-import { Button, Conclusion, InlineRetry, PageHeader, RdPage } from "@/app/components/rd";
+import { ChevronDown, ListChecks, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Button, Conclusion, Explain, InlineRetry, PageHeader, RdPage } from "@/app/components/rd";
 import { BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { a2ActionText } from "@/lib/admin/operator-copy";
@@ -19,12 +19,13 @@ import { fetchB0Devices, fetchB0NewUsers, fetchB0Sales } from "@/lib/admin/b0-cl
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { fetchB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import { fetchB2Reserve } from "@/lib/admin/b2-client";
-import { businessClock } from "@/lib/admin/business-time";
+import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { requiredReadAuthority } from "@/lib/admin/cross-domain-authority";
 import { fetchD2Withdrawals } from "@/lib/admin/d-client";
 import { supportClient } from "@/lib/admin/m-support-client";
 import { opsAlertHref, refreshJ1DutyAlerts, useJ1DutyAlerts } from "@/lib/admin/ops-dashboard-client";
-import { fmtNum } from "@/lib/format";
+import { isRiskConclusion, riskFeedTitle } from "@/lib/admin/risk-feed";
+import { fmtAmount, fmtNum } from "@/lib/format";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { FlowFold, FundFold, FunnelFold, KpiFold, pressureLevel, RiskFold, useFoldChoices } from "./command-center/folds";
@@ -82,7 +83,8 @@ export default function CommandCenter() {
   // 有 M 读权限但没有客服读取范围的账号，接口回 403，这一行不出现，不算读取失败。
   const canReadSupportTodo = blocks.support && Boolean(session?.supportReadModes?.length) && reach("/service/overview");
   const supportTodo = useBlock(countSupportTodo, canReadSupportTodo, refreshKey);
-  const j1 = useJ1DutyAlerts(blocks.j1 && reach("/emergency/kill-switch"));
+  const canReadJ1 = blocks.j1 && reach("/emergency/kill-switch");
+  const j1 = useJ1DutyAlerts(canReadJ1);
 
   // 客服待办和紧急开关告警每 30 秒更新（5.3）；紧急开关的轮询在 useJ1DutyAlerts 里。
   const reloadSupport = supportTodo.reload;
@@ -102,33 +104,37 @@ export default function CommandCenter() {
   const belowHealthy = Boolean(coverage && coverage.ratio < coverage.healthy);
   const fundFailed = Boolean(bDomain.error) || Boolean(reserve.error);
   const withdrawGate = fundReady ? riskRadar.gates.find((gate) => gate.dom === "withdraw") : undefined;
+  // 没有 B1 的账号也读到了 J1：没开的业务在这里呈现，不补 B1 权限（F07）。有 B1 时「风险与开关」写得更细。
+  const closedBusinesses = !blocks.fund || bDomain.error ? j1.alerts.find((alert) => alert.id === "J1-KILL-STATE") : undefined;
+  const withdrawClosed = withdrawGate ? !withdrawGate.on : Boolean(closedBusinesses?.closedKeys?.includes("withdraw"));
 
   const rows: (PendingRow | PendingFailure)[] = [];
   if (fundReady && belowRedline && !alerts.coverageRedlineAcked && reach(RESERVE_PAGE)) {
     rows.push({ key: "coverage", title: "覆盖率告警待确认", sub: "跌破红线，还没人确认", owner: "财务", href: RESERVE_PAGE, tone: "danger" });
   }
   const backfill = j1.alerts.find((alert) => alert.id === "J1-AUTO-CONFIRM");
-  if (j1.error) rows.push({ key: "j1", title: "紧急开关待补录读取失败", onRetry: () => void refreshJ1DutyAlerts() });
+  if (j1.error) rows.push({ key: "j1", name: "紧急开关", onRetry: () => void refreshJ1DutyAlerts() });
   else if (backfill) rows.push({ key: "j1", title: `紧急开关待补录 ${backfill.count ?? 0} 项`, sub: backfill.hint, owner: "风控", href: opsAlertHref(backfill), tone: backfill.level === "high" ? "danger" : undefined });
-  const risks = fundReady ? riskRadar.feed.filter((item) => (item.sev === "p0" || item.sev === "p1") && reach(item.href)) : [];
-  risks.forEach((item, index) => rows.push({ key: `risk-${index}`, title: item.t, sub: item.m, owner: "风控", href: item.href, tone: item.sev === "p0" ? "danger" : undefined }));
-  if (orphaned.error) rows.push({ key: "orphaned", title: "打款异常读取失败", onRetry: orphaned.reload });
+  if (closedBusinesses) rows.push({ key: "j1-closed", title: closedBusinesses.title, sub: closedBusinesses.hint, owner: "风控", href: opsAlertHref(closedBusinesses), tone: "warn" });
+  const risks = fundReady ? riskRadar.feed.filter((item) => !isRiskConclusion(item) && reach(item.href)) : [];
+  risks.forEach((item, index) => rows.push({ key: `risk-${index}`, title: riskFeedTitle(item.t), sub: item.m, owner: "风控", href: item.href, tone: item.sev === "p0" ? "danger" : undefined }));
+  if (orphaned.error) rows.push({ key: "orphaned", name: "打款异常", onRetry: orphaned.reload });
   else if (orphaned.data) rows.push({ key: "orphaned", title: `打款异常 ${orphaned.data} 单`, sub: "需要人工核对", owner: "财务", href: "/finance/withdrawals", tone: "warn" });
-  if (approvals.error) rows.push({ key: "a2", title: "待审批操作读取失败", onRetry: approvals.reload });
+  if (approvals.error) rows.push({ key: "a2", name: "待审批操作", onRetry: approvals.reload });
   else if (approvals.data?.stats.pendingTickets) {
     const queue = approvals.data.operationQueue.filter((row) => row.status === "pending").sort((a, b) => a.ts.localeCompare(b.ts));
     rows.push({ key: "a2", title: `待审批操作 ${approvals.data.stats.pendingTickets} 条`, sub: queue[0] && approvalDetail(queue[0]), owner: queue[0] ? approvalOwner(queue[0]) : "其他", href: "/platform/audit" });
   }
-  if (reviewPending.error) rows.push({ key: "review", title: "待审核提现读取失败", onRetry: reviewPending.reload });
+  if (reviewPending.error) rows.push({ key: "review", name: "待审核提现", onRetry: reviewPending.reload });
   else if (reviewPending.data) rows.push({ key: "review", title: `待审核提现 ${reviewPending.data} 单`, owner: "财务", href: "/finance/withdrawals" });
-  if (supportTodo.error) rows.push({ key: "support", title: "客服待跟进读取失败", onRetry: supportTodo.reload });
+  if (supportTodo.error) rows.push({ key: "support", name: "客服待跟进", onRetry: supportTodo.reload });
   else if (supportTodo.data) rows.push({ key: "support", title: `客服待跟进 ${supportTodo.data} 位`, owner: "客服", href: "/service/overview" });
 
-  const pendingFailures = rows.filter((row) => "onRetry" in row).length;
-  const pendingRows = rows.length - pendingFailures;
+  const pendingFailed = rows.flatMap((row) => ("onRetry" in row ? [row.name] : []));
+  const pendingRows = rows.length - pendingFailed.length;
   const urgentRows = risks.filter((item) => item.sev === "p0").length + (!j1.error && backfill?.level === "high" ? 1 : 0);
   const firstLoad = (block: Block<unknown>) => block.loading && block.data === null;
-  const pendingLoading = [approvals, reviewPending, orphaned, supportTodo].some(firstLoad);
+  const pendingLoading = [approvals, reviewPending, orphaned, supportTodo].some(firstLoad) || (canReadJ1 && !j1.settled);
   const hasPendingSource = blocks.fund || blocks.j1 || blocks.withdrawals || blocks.approvals || blocks.support;
   const showPending = hasPendingSource && (rows.length > 0 || pendingLoading);
 
@@ -139,17 +145,18 @@ export default function CommandCenter() {
     tier: water?.tier ?? null,
     urgentRows,
     fundFailed,
-    withdrawClosed: Boolean(withdrawGate && !withdrawGate.on),
+    withdrawClosed,
     withdrawUnset: Boolean(withdrawGate?.unset),
+    withdrawRows: closedBusinesses ? 1 : 0,
     belowHealthy,
     pendingRows,
-    fundKnown: fundReady,
+    fundSafe: fundReady && level === "ok" && !reserve.error,
     failed: [
       ...(sales.error ? ["销售额"] : []),
       ...(newUsers.error ? ["新增用户"] : []),
       ...(flows.error ? ["资金净流入"] : []),
       ...(devices.error ? ["设备数据"] : []),
-      ...(pendingFailures > 0 ? ["待处理"] : []),
+      ...pendingFailed,
     ],
     loading: statusLoading,
   });
@@ -175,12 +182,23 @@ export default function CommandCenter() {
   };
 
   // 没有到期时后端给占位值 999，不能直接显示；有到期时天数可以比 999 大。
-  const days = !water ? null : water.dailyAverageDueUsdt === 0 ? "未来 7 天没有到期" : `可覆盖 ${fmtNum(Math.floor(water.reserveCoverDays))} 天`;
-  const fundWord = level === "danger" ? (belowRedline ? "跌破红线" : "危险") : level === "warn" ? "警戒" : "健康";
+  const noDue = water?.dailyAverageDueUsdt === 0;
+  const coverDays = water ? Math.floor(water.reserveCoverDays) : 0;
+  const days = !water ? null : noDue ? "未来 7 天没有到期" : coverDays > 365 ? "可覆盖超过 1 年" : `可覆盖 ${fmtNum(coverDays)} 天`;
+  // 等级词和资金储备页一致：正常、预警、危险；跌破红线、警戒是覆盖率给的。
+  const fundWord = belowRedline ? "跌破红线" : water?.tier === "DANGER" ? "危险" : water?.tier === "WARNING" ? "预警" : belowHealthy ? "警戒" : "正常";
   const fundText = `资金安全：${fundWord}${days ? `，${days}` : ""}`;
+  const fundExplain = (
+    <>
+      看两样，取更差的：覆盖率（储备除以应付款，和红线、健康线比）和可覆盖天数（储备除以未来 7 天日均到期金额）。
+      {water && !noDue && ` 现在按日均到期 ${fmtAmount(water.dailyAverageDueUsdt)} USDT 算，可覆盖 ${fmtNum(coverDays)} 天。天数很大是因为近期要付的钱少，不是算错。`}
+      {clock && ` 数据时间 ${clock}。`}
+    </>
+  );
   const advice = water && water.tier !== "NORMAL" && water.tier !== "WATCH" ? water.suggestedAction : "建议收紧提现和奖励等支出设置";
   const phase = rhythm.h1;
   const phaseText = phase.currentPhase ? `${phase.currentPhase} 阶段 · 第 ${phase.currentMonth}/${phase.totalMonths} 月` : "运营阶段未配置";
+  const fundOpen = folds.isOpen("fund", fundAlert);
 
   const anyTodayBlock = blocks.sales || blocks.newUsers || blocks.netFlow || blocks.devices;
   const showFundLine = blocks.fund && !(fundReady && level !== "ok");
@@ -193,15 +211,29 @@ export default function CommandCenter() {
         summary="今天的状况和要处理的事"
         meta={(
           <span className="cc-meta">
-            {fundReady && (reach("/overview/rhythm") ? <Link href="/overview/rhythm" prefetch={false}>{phaseText}</Link> : <span>{phaseText}</span>)}
-            <span>{clock ? `${clock} 读取` : "正在读取…"}</span>
+            {fundReady && (
+              <span className="cc-meta-item">
+                {reach("/overview/rhythm") ? <Link href="/overview/rhythm" prefetch={false}>{phaseText}</Link> : phaseText}
+                <Explain label="运营阶段是什么" content="平台按运营阶段调整提现冷却、奖励加成这些参数，这里写现在是哪个阶段、这轮运营的第几个月。在运营阶段设置里调整，这页只显示。" />
+              </span>
+            )}
+            <span>{clock ? `${clock} 读取（${businessZone().label}）` : "正在读取…"}</span>
             <Button size="sm" variant="ghost" loading={firstScreenLoading} onClick={refresh}>刷新</Button>
           </span>
         )}
       />
       <BDomainWarnings warnings={warnings} />
 
-      <Conclusion state={sentence.state} strong={sentence.strong} lead icon={sentence.state === "neutral" ? ListChecks : undefined} hint={sentence.hint}>{sentence.text}</Conclusion>
+      <Conclusion
+        state={sentence.state}
+        strong={sentence.strong}
+        lead
+        icon={sentence.state === "neutral" ? ListChecks : undefined}
+        hint={sentence.hint}
+        action={sentence.aboutSwitch && reach("/emergency/kill-switch") ? <Link className="rd-btn" data-variant="secondary" data-size="md" href="/emergency/kill-switch" prefetch={false}><span className="rd-btn-face">查看或恢复业务开关</span></Link> : undefined}
+      >
+        {sentence.text}
+      </Conclusion>
 
       {blocks.fund && fundReady && level !== "ok" && (
         <Conclusion
@@ -216,7 +248,7 @@ export default function CommandCenter() {
 
       {(showPending || anyTodayBlock || showFundLine) && (
         <div className="cc-main" data-solo={showPending && (anyTodayBlock || showFundLine) ? undefined : ""}>
-          {showPending && <PendingPanel rows={rows} failures={pendingFailures} loading={pendingLoading} />}
+          {showPending && <PendingPanel rows={rows} failures={pendingFailed.length} loading={pendingLoading} />}
           {(anyTodayBlock || showFundLine) && (
             <div className="cc-side">
               {anyTodayBlock && (
@@ -243,11 +275,17 @@ export default function CommandCenter() {
                   <span>{fundText} · 可覆盖天数读取失败 · <InlineRetry onRetry={reserve.reload} /></span>
                 </div>
               ) : (
-                <button type="button" className="cc-fundline" data-tone={fundReady ? "ok" : undefined} disabled={!fundReady} onClick={() => openFold("fund", "fund")}>
+                <div className="cc-fundline" data-tone={fundReady ? "ok" : undefined}>
                   <ShieldCheck size={16} aria-hidden />
                   <span>{fundReady ? fundText : "正在读取资金安全…"}</span>
-                  <ChevronRight className="cc-fundline-chevron" size={16} aria-hidden />
-                </button>
+                  {fundReady && <Explain label="资金安全怎么看" content={fundExplain} />}
+                  {fundReady && (
+                    <button type="button" className="cc-fundline-toggle" aria-expanded={fundOpen} onClick={() => (fundOpen ? folds.setOpen("fund", false) : openFold("fund", "fund"))}>
+                      {fundOpen ? "收起明细" : "展开明细"}
+                      <ChevronDown className="cc-fundline-chevron" data-open={fundOpen ? "" : undefined} size={16} aria-hidden />
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           )}

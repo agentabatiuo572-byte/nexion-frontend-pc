@@ -46,7 +46,7 @@ export function TodayPanel({ blocks, sales, newUsers, flows, devices, clock, net
             unit="USDT"
             sub={sales.error ? failed(sales) : sales.data ? `昨天全天 ${fmtAmountCompact(sales.data.yesterday)} USDT` : undefined}
             explain={<>
-              已付款且已完成的设备订单，按付款时间算。只算设备订单，退款后这笔不再算，所以同一天的数字可能变小。
+              设备订单里已付款且已完成的金额，按付款时间算，不含团队奖励。订单退款后这笔会扣掉，所以同一天的数字可能变小。
               {sales.data && ` 今天 ${fmtAmount(sales.data.today)} USDT，昨天全天 ${fmtAmount(sales.data.yesterday)} USDT。`}{dataTime}
             </>}
             href={sales.data && reach("/devices/orders") ? "/devices/orders" : undefined}
@@ -62,7 +62,7 @@ export function TodayPanel({ blocks, sales, newUsers, flows, devices, clock, net
             value={value(newUsers, (data) => fmtNum(data.today))}
             unit="人"
             sub={newUsers.error ? failed(newUsers) : newUsers.data ? `昨天全天 ${fmtNum(newUsers.data.yesterday)} 人` : undefined}
-            explain={<>当天注册且没有删除的账号，按北京时间切日。没有注册就是 0。{dataTime}</>}
+            explain={<>今天注册、账号没删除的人数，按北京时间切日。{dataTime}</>}
             href={newUsers.data && reach("/users/search") ? "/users/search" : undefined}
             openLabel="查找用户与查看资料"
           />
@@ -76,8 +76,8 @@ export function TodayPanel({ blocks, sales, newUsers, flows, devices, clock, net
             unit="USDT"
             sub={flows.error ? failed(flows) : flowToday ? `流入 ${fmtAmountCompact(toUsdt(flowToday.inflowWan))} USDT · 流出 ${fmtAmountCompact(toUsdt(flowToday.outflowWan))} USDT` : undefined}
             explain={<>
-              今天已确认的流入减流出。流入是用户充值加财务注资，所以一笔注资也算流入；流出是提现出款和拒付退回。
-              {netFlow24h != null && ` 近 24 小时流入的钱减去流出的钱：${fmtAmount(netFlow24h)} USDT。`}{dataTime}
+              今天到现在已确认的流入减流出。流入是用户充值加财务注资，所以财务打一笔注资也算流入；流出是提现打款和拒付退回。用余额买设备不算。
+              {netFlow24h != null && ` 另一个算法是滚动近 24 小时：${fmtAmount(netFlow24h)} USDT，时间段不同，数可能不一样。`}{dataTime}
             </>}
             onOpen={flowToday ? onOpenFlows : undefined}
             openLabel="展开资金进出"
@@ -90,8 +90,8 @@ export function TodayPanel({ blocks, sales, newUsers, flows, devices, clock, net
             label="设备异常"
             value={value(devices, (data) => fmtNum(data.abnormal))}
             unit="台"
-            sub={devices.error ? failed(devices) : devices.data ? `10 分钟内有心跳 ${fmtNum(devices.data.online)} 台` : undefined}
-            explain={<>离线或异常的设备，已包含离线。上报在线且 10 分钟内有心跳才算有心跳。设备没有历史，不和昨天比。{dataTime}</>}
+            sub={devices.error ? failed(devices) : devices.data ? (devices.data.online === 0 && abnormal > 0 ? "现在没有设备有心跳" : `10 分钟内有心跳 ${fmtNum(devices.data.online)} 台`) : undefined}
+            explain={<>离线或异常的设备，已包含离线。上报在线且 10 分钟内有心跳才算有心跳。这个数没有告警线，不进待处理，橙色只提醒有设备不在线。要看是哪些设备、为什么不在线，去设备运行管理。设备没有历史，不和昨天比。{dataTime}</>}
             href={devices.data && reach("/devices/ops") ? "/devices/ops" : undefined}
             openLabel="查看设备运行管理"
           />
