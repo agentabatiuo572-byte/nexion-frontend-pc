@@ -1,6 +1,6 @@
 # 支付密码后台运营与现有客户资料原位接入
 
-状态：用户明确要求真实现有客户资料原位接入，已获实施指令。本文件记录正式 PC 前端功能合同；服务端与数据库尚待同事实现，前端代码与本地测试不表示真实接口、解除或审计已生效。
+状态：正式 PC 前端功能合同。全局支付规则接口已实现，2026-11-04 本轮已在隔离后端完成规则保存、原操作回执与刷新读回验证；异常解除、APP/H5 联动及投产状态以各自交接验收为准，不由本轮规则验证推定。
 
 依据：[支付密码主方案](https://github.com/agentabatiuo572-byte/uvel-docs/blob/main/handoffs/2026-10-28/app/18-payment-password.md)及 [后台运营合同](https://github.com/agentabatiuo572-byte/uvel-docs/blob/main/handoffs/2026-10-28/app/payment-password-20261030/ADMIN-OPERATIONS.md)。最新用户原位实施要求优先于早期“后台仅只读、不提供解除”的范围限制；禁止查看、代设或清除支付密码仍保留。
 
@@ -15,6 +15,7 @@
 **② 后台界面、验收与异常路径**
 
 - C5 `/users/security` 在既有页面内提供规则配置与支付密码异常列表，不创建独立 360 页面或新一级菜单。查询用户、状态、发生日期，支持分页与逐条详情。
+- 全局支付规则调整（BUG-210）：数值须在系统返回的范围内，至少变更一项；核对前后值与生效说明后填写理由并勾选确认。理由按去除首尾空白后的长度校验，允许 8–200 个字符，与系统一致；按钮与提交入口共用同一长度条件。超长时保留原文供修改，说明范围且不能提交，不按包含首尾空白的原始长度截断有效理由；合法理由仍按原权限、版本与操作编号保存并读回结果。
 - C1 客户列表打开的 `/users/search/{id}` 详情、共用详情组件的 `/service/customers/{id}`、M1 客户列表现有“客户详情”抽屉，以及 M3 会话右栏/既有完整档案均原位增加支付安全信息。
 - Given 服务端返回完整能力、生效说明与原版本，When 运营填写 8–200 字理由并确认，Then 单次提交支付专属解除命令，成功须回读同命令、同用户、同异常、同操作与完整审计。
 - 异常—无能力或未知类型：Given 能力、版本、生效说明缺失或异常类型未受支持，When 打开详情，Then 只读并说明原因，不凭按钮或已有客服写权限授权。
@@ -79,11 +80,11 @@ flowchart TD
 
 **⑦ 一致性、接口、权限、审计与联动**
 
-全局规则沿用 `payment-password-policy`。新增候选为用户 `profiles/{userId}/security/payment-password/summary`、C5 `security/payment-password-records` 列表、异常 `/{recordId}`/`attempts`/`release` 与 `commands/{key}`。support 对等接口均在 `/api/admin/content/support-workbench/customers/{id}/payment-password/` 内。具体后端授权与分页实现待同事确认；前端 BFF 仅放行明确路径/方法，不实施权限或数据库业务。
+全局规则沿用 `payment-password-policy`。异常查询与处置路径为用户 `profiles/{userId}/security/payment-password/summary`、C5 `security/payment-password-records` 列表、异常 `/{recordId}`/`attempts`/`release` 与 `commands/{key}`。support 对等接口均在 `/api/admin/content/support-workbench/customers/{id}/payment-password/` 内。各路径的授权与分页按接口合同及对应验收确认；前端 BFF 仅放行明确路径/方法，不实施权限或数据库业务。
 
 全局 C5 列表沿用 C5 查询权限；规则编辑仍需 C5 写权限及服务端 editable/范围/影响。客户详情读取遵循所在资料权限；支付解除能力由服务端单独判断，不能把 `user_c5_write`、`service_m3_write` 或只读权限直接当作解除许可。support 必须复核客户归属、原状态和操作范围，不能回退全局端口。
 
-服务端原子执行权限、客户归属、CAS、幂等、状态/错误窗口更新与审计；解除是否清空对应窗口及凭证失效处理，以已批准合同及返回生效说明为准。真实接口、审计持久化、APP/H5 联动和数据库迁移均待后端接手；本地 fixture 不能证明已上线。
+服务端原子执行权限、客户归属、CAS、幂等、状态/错误窗口更新与审计；解除是否清空对应窗口及凭证失效处理，以已批准合同及返回生效说明为准。全局规则已通过真实保存、原操作 APPLIED 回执及当前规则刷新读回验证；本轮没有直接 SQL 核对，也未验证异常解除、APP/H5 联动或数据库迁移。各项部署与验收状态按交接记录确认，本地 fixture 不能证明已上线。
 
 **⑧ 事件**
 

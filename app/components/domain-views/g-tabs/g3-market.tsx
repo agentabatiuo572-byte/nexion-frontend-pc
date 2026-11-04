@@ -313,7 +313,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
   const adj = (overrideKey: G3OverrideKey, label: string, current: string, note: string, amp?: boolean) => {
     openActionConfirm({
       action: `手动设置 · ${label}`,
-      detail: <><b>{label}</b> · 当前 {current} · {note}。{amp && <><b>会让平台多付钱</b>：系统会按本周最高价 {fmtPrice(peak)} 重新计算 UVT 应付款，覆盖率低于红线时无法保存（当前 {cov}%，红线 {redline}%）。</>}手动设置只是临时的，下次自动切换时会被计划里的值替换。</>,
+      detail: <><b>{label}</b> · 当前 {current} · {note}。{amp && <><b>会让平台多付钱</b>：系统会按本周最高价 {fmtPrice(peak)} 重新计算 UVT 应付款，覆盖率低于红线时无法保存（当前 {cov}%，红线 {redline}%）。</>}{overrideKey === "deviationPct" || overrideKey === "costBasis" ? "保存后立即生效，之后的价格计划切换不会覆盖此设置，直到再次修改。" : "手动设置只是临时的，下次自动切换时会被计划里的值替换。"}</>,
       amplifies: !!amp,
       coverage: amp ? coverageSnapshot : undefined,
       edit: overrideKey === "volatilityPct"
@@ -457,7 +457,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">手动设置</span>
-            <span className="sub">· 应急用 · 下次自动切换时会被计划值替换</span>
+            <span className="sub">· 当前价格与波动幅度会在下次计划切换时恢复计划值；偏离阈值与成本价保留</span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             <div className="p-row"><div className="txt"><div className="k">直接改当前价格（应急）</div><div className="s">临时改价，要求覆盖率不低于红线</div></div><span className="v">{price}</span>{allowed("finprod_g3_override_price_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => adj("currentPrice", "当前价格", rawValue(overview.currentPrice), "临时改价，下次自动切换时恢复计划值", true)}>调整</button>}</div>

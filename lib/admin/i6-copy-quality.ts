@@ -7,7 +7,7 @@ export function i6CopyQualityIssues(zh: string, en: string, vi: string): string[
     if (/^(.)\1{4,}$/u.test(bare) || /^(?:test|todo|tbd|placeholder|dummy|样例|测试|占位)+$/u.test(compact)) {
       issues.push(`${locale}含占位文本`);
     }
-    if (/(^|[^A-Za-z0-9])nexion/i.test(value)) issues.push(`${locale}仍使用旧品牌 Nexion`);
+    if (/(^|[^A-Za-z0-9])(nexion|nex[ _-]*grid|stellar[ _-]*(box|rack))/i.test(value)) issues.push(`${locale}仍使用旧品牌`);
   }
   return issues;
 }

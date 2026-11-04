@@ -232,10 +232,13 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
   const COPY_POSITION_OPTIONS = COPY_POSITIONS;
 
   const runBackend = (task: Promise<void>, ok: string) => {
-    task
+    return task
       .then(() => actions.reloadIContent())
       .then(() => toast(ok))
-      .catch((error) => toast(`操作失败:${displayAdminError(error)}`));
+      .catch((error) => {
+        toast(`操作失败:${displayAdminError(error)}`);
+        return false;
+      });
   };
 
   const liveCopyStatus = (c: CopyRow): string => c.status;
@@ -311,9 +314,9 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
           expectedRevision: c.revision,
         };
         if (form?.saveMode === "存草稿") {
-          runBackend(actions.saveI1CopyDraft(c.key, payload, reason), `${c.key} 草稿已保存 · 尚未对用户生效`);
+          return runBackend(actions.saveI1CopyDraft(c.key, payload, reason), `${c.key} 草稿已保存 · 尚未对用户生效`);
         } else {
-          runBackend(actions.publishI1CopyVersion(c.key, payload, reason), `${c.key} 新版本已发布生效`);
+          return runBackend(actions.publishI1CopyVersion(c.key, payload, reason), `${c.key} 新版本已发布生效`);
         }
       },
     });
@@ -336,9 +339,9 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       trafficSplits: COPY_TRAFFIC_SPLITS,
     },
     run: (reason, _value, form) => {
-      if (!form?.copyKey?.trim()) return;
+      if (!form?.copyKey?.trim()) return false;
       const copyKey = form.copyKey.trim();
-      runBackend(actions.createI1Copy({
+      return runBackend(actions.createI1Copy({
         copyKey,
         version: form.version,
         description: form.description?.trim() || copyKey,
@@ -411,8 +414,8 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     amplifies: false,
     businessForm: { kind: "copy-position-create", modules: COPY_MODULE_OPTIONS },
     run: (reason, _value, form) => {
-      if (!form?.positionKey?.trim()) return;
-      runBackend(actions.createI1CopyPosition({
+      if (!form?.positionKey?.trim()) return false;
+      return runBackend(actions.createI1CopyPosition({
         positionKey: form.positionKey.trim(),
         name: form.positionName?.trim() || form.positionKey.trim(),
         surface: form.surface || "home",
@@ -435,9 +438,9 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     run: (reason) => {
       if (copy.revision == null) {
         toast("当前文案修订号缺失，请刷新后重试");
-        return;
+        return false;
       }
-      runBackend(actions.rollbackI1CopyVersion(copy.key, v, copy.version, copy.revision, reason), `${copy.key} 已回滚到 ${v}`);
+      return runBackend(actions.rollbackI1CopyVersion(copy.key, v, copy.version, copy.revision, reason), `${copy.key} 已回滚到 ${v}`);
     },
   });
 
@@ -448,9 +451,9 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     run: (reason) => {
       if (copy.revision == null) {
         toast("当前文案修订号缺失，请刷新后重试");
-        return;
+        return false;
       }
-      runBackend(actions.archiveI1Copy(copy.key, version, copy.revision, reason), `${copy.key} ${version} 已下架`);
+      return runBackend(actions.archiveI1Copy(copy.key, version, copy.revision, reason), `${copy.key} ${version} 已下架`);
     },
   });
 
@@ -460,13 +463,13 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     amplifies: false,
     run: (reason) => {
       const mutationKey = `${copyKey}:${version}`;
-      if (deleteInFlightRef.current) return;
+      if (deleteInFlightRef.current) return false;
       deleteInFlightRef.current = true;
       setDeletingDraftKey(mutationKey);
-      actions.deleteI1CopyDraft(copyKey, version, revision, reason)
+      return actions.deleteI1CopyDraft(copyKey, version, revision, reason)
         .then(() => actions.reloadIContent())
         .then(() => toast(`${copyKey} ${version} 草稿已删除`))
-        .catch((error) => toast(`操作失败:${displayAdminError(error)}`))
+        .catch((error) => { toast(`操作失败:${displayAdminError(error)}`); return false; })
         .finally(() => {
           deleteInFlightRef.current = false;
           setDeletingDraftKey(null);
@@ -482,8 +485,8 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     reason: true,
     okLabel: "保存",
     run: (reason, v) => {
-      if (!v) return;
-      runBackend(actions.updateI1Framework(key, v, cur, reason), `${name} 默认值已更新为 ${v}`);
+      if (!v) return false;
+      return runBackend(actions.updateI1Framework(key, v, cur, reason), `${name} 默认值已更新为 ${v}`);
     },
   });
 
@@ -511,10 +514,10 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
           && variants.reduce((sum, variant) => sum + variant.splitPct, 0) === 100;
         if (!valid) {
           toast("实验版本或分流比例无效，请确认至少 2 个不同版本且分流合计为 100%");
-          return;
+          return false;
         }
         const note = form?.note?.trim();
-        runBackend(actions.createI1Experiment({
+        return runBackend(actions.createI1Experiment({
           copyKey: form!.copyKey,
           variants,
           ...(note ? { note } : {}),
@@ -544,7 +547,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     detail: <>停止后<b>全部用户回到当前发布版</b>,实验转已结(可再选择采纳或弃用)。停止会改变用户所见文案分布,所以要操作确认。已收集的曝光/转化数据保留,结算页可查。</>,
     amplifies: false,
     run: (reason) => {
-      runBackend(actions.stopI1Experiment(id, reason), `${id} 已停止`);
+      return runBackend(actions.stopI1Experiment(id, reason), `${id} 已停止`);
     },
   });
 
@@ -553,7 +556,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     detail: <>把获胜的版本<b>正式发布到这个文案位</b>，等同于一次正式发布（对符合受众和位置的用户生效）。采纳前请确认：数据量够、提升明显。</>,
     amplifies: false,
     run: (reason) => {
-      runBackend(actions.adoptI1Experiment(id, reason), `${id} 获胜版本已发布`);
+      return runBackend(actions.adoptI1Experiment(id, reason), `${id} 获胜版本已发布`);
     },
   });
 

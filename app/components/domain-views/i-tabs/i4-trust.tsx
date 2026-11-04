@@ -365,7 +365,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         const trilingual = validateTrustSectionTrilingualFields(draft.fields);
         if (!trilingual.valid) {
           toast(`中越英字段不完整：${trilingual.missing.join("、")}`);
-          return;
+          return false;
         }
         const def = findHighOp("i4_trust_section_manage")!;
         const dataSource = form?.dataSource?.trim() || "";
@@ -405,13 +405,13 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       action: <>回滚信任版块 · {s.key}</>,
       detail: (
         <>
-          当前 <b>{s.v}</b>。回滚 = 把旧版本重新发布，对外内容马上变回旧版，权限要求和发布一样。
+          当前 <b>{s.v}</b>。请选择要恢复的历史版本。提交后等待审批；审批通过并执行后，对外内容恢复为所选版本，权限要求和发布一样。
         </>
       ),
       amplifies: false,
-      edit: { kind: "select", current: sectionVersionOptions(s)[0] ?? "", options: sectionVersionOptions(s) },
+      edit: { kind: "select", current: s.v, options: sectionVersionOptions(s) },
       run: async (reason, nv) => {
-        if (!nv) return;
+        if (!nv) return false;
         const def = findHighOp("i4_trust_section_manage")!;
         const fingerprint = JSON.stringify(["rollback", s.key, s.v, s.status, nv, reason]);
         return proposeTrustSection(`${s.key}:rollback`, fingerprint, {
@@ -516,7 +516,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         const en = form?.en?.trim() || "";
         if (!targetVersion || !jurisdiction || !zh || !vi) {
           toast("缺少版本号、适用地区或正文，无法保存草稿");
-          return;
+          return false;
         }
         const payload = {
           jurisdiction,
@@ -532,7 +532,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         const task = editing
           ? actions.updateI5DisclosureVersion(jurisdiction, targetVersion, payload, reason)
           : actions.createI5DisclosureVersion(jurisdiction, payload, reason);
-        runBackend(task, "披露草稿已存 · 发布需风控操作确认");
+        return runBackend(task, "披露草稿已存 · 发布需风控操作确认");
       },
     });
   };
@@ -544,9 +544,9 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     run: (reason) => {
       if (row.revision == null || !row.contentHash) {
         toast("草稿并发校验信息缺失，请刷新后重试");
-        return;
+        return false;
       }
-      runBackend(actions.deleteI5DisclosureVersion(row.jurisdiction, row.version, row.revision, row.contentHash, reason), "披露草稿已删除");
+      return runBackend(actions.deleteI5DisclosureVersion(row.jurisdiction, row.version, row.revision, row.contentHash, reason), "披露草稿已删除");
     },
   });
 
@@ -564,11 +564,11 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     run: (reason, _v, form) => {
       const code = form?.code?.trim().toUpperCase() || "";
       const name = form?.name?.trim() || "";
-      if (!code || !name) return;
+      if (!code || !name) return false;
       const task = current
         ? actions.updateI5Jurisdiction(current.code, { name, expectedRevision: current.revision }, reason)
         : actions.createI5Jurisdiction({ code, name }, reason);
-      runBackend(task, current ? "适用地区名称已更新" : "适用地区已新增");
+      return runBackend(task, current ? "适用地区名称已更新" : "适用地区已新增");
     },
   });
 
@@ -664,7 +664,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       },
       run: (reason, _v, form) => {
         const jurisdictionCode = form?.jurisdictionCode?.trim().toUpperCase() || "";
-        if (!jurisdictionCode) return;
+        if (!jurisdictionCode) return false;
         const jurisdictionName = jurisdictionCatalog.find((item) => item.code === jurisdictionCode)?.name ?? "";
         const countryCodes = (form?.countryCodes || "").split(",").map((code) => code.trim()).filter(Boolean);
         const version = form?.version || "";

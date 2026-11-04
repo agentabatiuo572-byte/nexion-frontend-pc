@@ -29,7 +29,7 @@ export function PublishedContentEditor({ kind }: { kind: Kind }) {
   const [newLocale, setNewLocale] = useState("");
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const refresh = useCallback(async () => {
@@ -84,7 +84,7 @@ export function PublishedContentEditor({ kind }: { kind: Kind }) {
           <div className={styles.subtitle}>{meta.subtitle}</div>
         </div>
         <div className={styles.headerActions}>
-          <span className={styles.status}>{({DRAFT:"草稿",PUBLISHED:"已发布",SUPERSEDED:"历史版本",REVOKED:"已撤回",draft:"草稿",published:"已发布"} as Record<string,string>)[document?.status ?? ""] ?? "状态待核实"} · 版本 {document?.revision ?? 0}{document && (document.hasPublishedVersion ? " · 已有公开版，草稿不替换" : " · 暂无公开版")}</span>
+          <span className={styles.status}>{({DRAFT:"草稿",PUBLISHED:"已发布",SUPERSEDED:"历史版本",REVOKED:"已撤回",UNPUBLISHED:"已撤下公开版本",draft:"草稿",published:"已发布"} as Record<string,string>)[document?.status ?? ""] ?? "状态待核实"}{document && <> · 版本 {document.revision}</>}{document && (document.hasPublishedVersion ? " · 已有公开版，草稿不替换" : " · 暂无公开版")}</span>
           <button className={`${styles.button} ${styles.smallButton}`} type="button" onClick={() => void refresh()} disabled={loading}>刷新</button>
           <button
             className={`${styles.button} ${styles.smallButton} ${styles.toggleButton}`}
@@ -101,9 +101,11 @@ export function PublishedContentEditor({ kind }: { kind: Kind }) {
       <div id={`${kind}-published-content-body`} className={styles.body}>
         {error && <div className={`${styles.notice} ${styles.warning}`} role="alert">{error}</div>}
         {loading && !document ? (
-          <div className={styles.loading} aria-live="polite">读取发布内容中…</div>
+          <div className={styles.loading} aria-live="polite">正在加载发布内容…</div>
+        ) : !document && error ? (
+          <div className={`${styles.notice} ${styles.warning}`}>公开内容状态尚未确认，请刷新重试。</div>
         ) : !document ? (
-          <div className={`${styles.notice} ${styles.warning}`}>当前没有已发布内容，应用暂不展示该内容。</div>
+          <div className={`${styles.notice} ${styles.warning}`}>公开内容尚未加载，请刷新重试。</div>
         ) : (
           <>
             <div className={styles.formGrid}>

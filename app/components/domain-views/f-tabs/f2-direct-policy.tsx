@@ -23,7 +23,10 @@ export function F2DirectPolicy({ ctx }: { ctx: FViewCtx }) {
   const invalid = draft ? validateDirectReferralUpdate(draft) || (draft.purchaseSplit.enabled && (!policy || policy.sevenLayerReference.baseRatePct === null || policy.sevenLayerReference.coolingDays === null) ? "团队购买奖励的 L1 比例或购买冷却还没设置，请先到上方设置。" : null) : null;
   const changed = !!draft && !!policy && (JSON.stringify(draft.purchaseSplit) !== JSON.stringify(policy.purchaseSplit) || JSON.stringify(draft.deviceEarning) !== JSON.stringify(policy.deviceEarning));
   const disabled = !allowed || busy || !!ctx.f2DirectPolicyError || !policy || !draft || stale || !policy.sevenLayerEnabled;
-  const reset = () => { if (policy) { setDraft(draftOf(policy)); setSubmitted(false); } };
+  const reset = async () => {
+    const latest = await ctx.refreshF2();
+    if (latest) { setDraft(draftOf(latest)); setSubmitted(false); }
+  };
   const submit = () => {
     if (disabled || !draft || !policy || invalid || !changed) return;
     const value = structuredClone(draft), ref = policy.sevenLayerReference;
@@ -75,7 +78,7 @@ export function F2DirectPolicy({ ctx }: { ctx: FViewCtx }) {
       <div className="f2-policy-actions">
         {allowed && <button className="fbtn primary" disabled={disabled || !!invalid || !changed || submitted} onClick={submit}>提交审批</button>}
         <button className="fbtn" disabled={busy} onClick={() => void ctx.refreshF2()}>刷新</button>
-        {draft && policy && <button className="fbtn" disabled={busy} onClick={reset}>放弃修改并刷新</button>}
+        {draft && policy && <button className="fbtn" disabled={busy} onClick={() => void reset()}>放弃修改并刷新</button>}
       </div>
     </div>
   </section>;

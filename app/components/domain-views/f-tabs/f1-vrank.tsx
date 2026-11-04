@@ -431,6 +431,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
             </div>
             {canWrite && <button type="button" className="f-cta" style={{ marginTop: 8 }} onClick={() => ctx.openActionConfirm({
               name: "设置各级头衔",
+              completionCopy: "提交到「操作记录与审批」，由另一位管理员批准后生效。",
               businessForm: {
                 kind: "multi-field",
                 title: "各级头衔",
@@ -453,7 +454,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                   titles[r.v] = t;
                 }
                 await ctx.updateF1Config("F.vrank.titles", JSON.stringify(titles), reason);
-                ctx.toast("各级头衔已生效");
+                ctx.toast("各级头衔已提交，批准后生效；批准前仍按原设置显示");
               },
             })}>设置各级头衔</button>}
           </div>

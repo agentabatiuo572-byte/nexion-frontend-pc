@@ -112,7 +112,7 @@ export interface FViewCtx {
   f2ConfigValues: Record<string, string>;
   f2Loading: boolean;
   f2Error: string | null;
-  refreshF2: () => Promise<void>;
+  refreshF2: () => Promise<DirectReferralPolicy | null>;
   updateF2Config: (key: string, value: string, reason: string) => Promise<void>;
   updateFConfigBatch: (sourceDomain: "F2" | "F3" | "F4", changes: Array<{ key: string; value: string }>, reason: string) => Promise<void>;
   // -- 双轨结算引擎(F3)· 读 + 配置写入 --
@@ -132,7 +132,7 @@ export interface FViewCtx {
   f3Loading: boolean;
   f3Error: string | null;
   refreshF3: () => Promise<void>;
-  updateF3Config: (key: string, value: string, reason: string) => Promise<void>;
+  updateF3Config: (key: string, value: string, reason: string, amplifies?: boolean) => Promise<void>;
   executeF3Settlement: (
     ownerUserId: number,
     settlementDate: string,

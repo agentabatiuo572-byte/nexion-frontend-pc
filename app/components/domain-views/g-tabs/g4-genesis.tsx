@@ -399,8 +399,8 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
       action: firstTier ? "创建第一个价格档位" : "新增价格档位",
       detail: firstTier
         ? <>创建第一档（从 0 到截止）及价格，用来确定节点总量和起始价格。不会发布系列、不会开放市场。已有用户持仓时不能创建。</>
-        : <>在最后一档 <b>{lastTier!.id}</b>（截止 {fmtInt(lastTier!.to)}）之后新增一档，起点自动为 {fmtInt(lastTier!.to)}，总供应量随之增加。<b>多卖节点意味着以后要多发收益</b>，覆盖率低于红线时无法新增（当前 {cov}%）。新档单价一般不低于上一档的 ${fmtInt(lastTier!.priceUSDT)}。只影响以后的销售。</>,
-      amplifies: firstTier ? false : overview.coverage.redlineBreached,
+        : <>在最后一档 <b>{lastTier!.id}</b>（截止 {fmtInt(lastTier!.to)}）之后新增一档，起点自动为 {fmtInt(lastTier!.to)}。这里只保存价格档位，不会自动更新节点总量或开放销售。新增后需核对节点总量与档位范围，目录未就绪时不能销售。只影响以后的销售，已下单的按下单时价格结算。</>,
+      amplifies: false,
       businessForm: { kind: "multi-field", title: firstTier ? "第一个价格档位" : "新价格档位", hint: `起点 = ${fmtInt(rangeFrom)}${firstTier ? "" : "（上一档的截止）"}。截止和单价都填整数。`, fields: [
         { key: "to", label: "截止（卖到第几张）", inputKind: "number", min: rangeFrom + 1, step: 1, required: true },
         { key: "priceUSDT", label: "单价（USDT）", inputKind: "number", min: 1, step: 1, required: true },

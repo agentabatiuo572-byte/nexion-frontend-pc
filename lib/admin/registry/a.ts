@@ -33,7 +33,7 @@ export const DOMAIN_A: ModuleEntry[] = [
   },
   {
     path: "/platform/roles",
-    summary: "管理后台角色，设置每个角色能做的操作和能看的菜单。修改立即对该角色下的所有账号生效。",
+    summary: "管理后台角色，设置每个角色能做的操作和能看的菜单。新建角色、修改名称和备注保存后生效；启停、授权和删除需在「操作记录与审批」确认才生效。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

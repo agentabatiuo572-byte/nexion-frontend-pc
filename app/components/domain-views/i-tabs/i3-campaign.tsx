@@ -122,6 +122,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     canWriteI3 && (campaign.tier !== "critical" || canSendCriticalI3);
   const [stFlt, setStFlt] = useState<StFlt>("all");
   const [newOpen, setNewOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [editing, setEditing] = useState<CampaignRow | null>(null);
   const [form, setForm] = useState<NewForm>(FORM_INIT);
   const [estimatedAudience, setEstimatedAudience] = useState<number | null>(null);
@@ -143,10 +144,13 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
   const DELIVERY_CATALOG = data?.deliveryCatalog;
   const SWIPE_ROWS = data?.swipeRoutes ?? [];
   const runBackend = (task: Promise<void>, ok: string) => {
-    task
+    return task
       .then(() => actions.reloadIContent())
-      .then(() => toast(ok))
-      .catch((error) => toast(`操作失败:${displayAdminError(error)}`));
+      .then(() => { toast(ok); return true; })
+      .catch((error) => {
+        toast(`操作失败:${displayAdminError(error)}`);
+        return false;
+      });
   };
 
   useEffect(() => {
@@ -231,7 +235,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     ),
     amplifies: false,
     run: (reason) => {
-      runBackend(actions.sendI3CampaignNow(c.id, c.revision, reason), `${c.id} 已开始发送`);
+      return runBackend(actions.sendI3CampaignNow(c.id, c.revision, reason), `${c.id} 已开始发送`);
     },
   });
 
@@ -245,7 +249,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     reason: true,
     okLabel: "确认取消",
     run: (reason) => {
-      runBackend(actions.cancelI3Campaign(c.id, c.revision, reason), `${c.id} 已取消`);
+      return runBackend(actions.cancelI3Campaign(c.id, c.revision, reason), `${c.id} 已取消`);
     },
   });
 
@@ -270,7 +274,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       step: 1,
     },
     run: async (reason, v) => {
-      if (!v) return;
+      if (!v) return false;
       const def = findHighOp("i3_cap_adjust")!;
       const fingerprint = JSON.stringify([tier, cap, v, reason]);
       const commandKey = capCommandAttempts.resolve(`cap|${tier}`, fingerprint, () => createA2CommandKey("i3-cap-adjust"));
@@ -302,7 +306,8 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
   });
 
   /* ---------- new campaign drawer 提交 ---------- */
-  const submitNew = () => {
+  const submitNew = async () => {
+    if (submitting) return;
     const trimmedName = form.name.trim();
     if (!trimmedName) {
       toast("请填写 通知活动名称");
@@ -338,10 +343,16 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     const task = editing
       ? actions.updateI3CampaignDraft(editing.id, payload, editing.revision, `编辑通知草稿 ${editing.id}`)
       : actions.createI3Campaign(payload, `新建通知草稿 ${id}`);
-    runBackend(task, editing ? `${editing.id} 草稿已保存` : `通知草稿已创建 · ${id}`);
-    setNewOpen(false);
-    setEditing(null);
-    setForm(FORM_INIT);
+    setSubmitting(true);
+    try {
+      if (await runBackend(task, editing ? `${editing.id} 草稿已保存` : `通知草稿已创建 · ${id}`)) {
+        setNewOpen(false);
+        setEditing(null);
+        setForm(FORM_INIT);
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   /* ---------- render helpers ---------- */
@@ -589,17 +600,17 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
         <Drawer
           title={editing ? `编辑 通知活动 草稿 · ${editing.id}` : "新建 通知活动（存为草稿）"}
           sub="中文、越南语必填，英文可选 · 受众条件要同时满足 · 发送时另行确认"
-          onClose={() => { setNewOpen(false); setEditing(null); }}
+          onClose={() => { if (!submitting) { setNewOpen(false); setEditing(null); } }}
           footer={
             <>
-              <button className="l-btn sm" onClick={() => { setNewOpen(false); setEditing(null); }}>取消</button>
+              <button className="l-btn sm" disabled={submitting} onClick={() => { setNewOpen(false); setEditing(null); }}>取消</button>
               {" "}
               <button
                 className="l-btn sm primary"
-                disabled={!AUDIENCE_CATALOG || estimating}
+                disabled={!AUDIENCE_CATALOG || estimating || submitting}
                 onClick={submitNew}
               >
-                {editing ? "保存修改" : "保存草稿"}
+                {submitting ? "提交中…" : editing ? "保存修改" : "保存草稿"}
               </button>
             </>
           }
@@ -792,23 +803,28 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
         <Drawer
           title={`定时发送 · ${scheduleRow.id}`}
           sub="选择发送时间，必须晚于现在"
-          onClose={() => setScheduleRow(null)}
+          onClose={() => { if (!submitting) setScheduleRow(null); }}
           footer={
             <>
-              <button className="l-btn sm" onClick={() => setScheduleRow(null)}>取消</button>
+              <button className="l-btn sm" disabled={submitting} onClick={() => setScheduleRow(null)}>取消</button>
               {" "}
               <button
                 className="l-btn sm primary"
-                disabled={!scheduledAt || !scheduleVerified || scheduleReason.trim().length < 8 || scheduleReason.trim().length > 200}
-                onClick={() => {
-                  runBackend(
-                    actions.scheduleI3Campaign(scheduleRow.id, scheduledAt, scheduleRow.revision, scheduleReason.trim()),
-                    `${scheduleRow.id} 已进入排期`,
-                  );
-                  setScheduleRow(null);
+                disabled={submitting || !scheduledAt || !scheduleVerified || scheduleReason.trim().length < 8 || scheduleReason.trim().length > 200}
+                onClick={async () => {
+                  setSubmitting(true);
+                  try {
+                    const saved = await runBackend(
+                      actions.scheduleI3Campaign(scheduleRow.id, scheduledAt, scheduleRow.revision, scheduleReason.trim()),
+                      `${scheduleRow.id} 已进入排期`,
+                    );
+                    if (saved) setScheduleRow(null);
+                  } finally {
+                    setSubmitting(false);
+                  }
                 }}
               >
-                确认排期
+                {submitting ? "提交中…" : "确认排期"}
               </button>
             </>
           }

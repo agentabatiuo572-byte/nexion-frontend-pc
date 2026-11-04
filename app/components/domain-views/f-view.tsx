@@ -298,17 +298,19 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         fetchF2RatesOverview(), fetchF2DirectReferralPolicy(),
         canReadA2 ? fetchA2Overview({ domain: "F", object: "current" }) : Promise.resolve(null),
       ]);
-      if (request !== f2Generation.current) return;
+      if (request !== f2Generation.current) return null;
       if (policy.status === "fulfilled") setF2DirectPolicy(policy.value);
       else { setF2DirectPolicy(null); setF2DirectPolicyError(errorMessage(policy.reason)); }
       if (overview.status === "fulfilled") setF2Overview(overview.value);
       else { setF2Overview(null); setF2Error(errorMessage(overview.reason)); }
       if (audit.status === "fulfilled") setF2ActivationPending(audit.value?.operationQueue.find(row => row.status === "pending" && row.obj === "current" && ["七层结算启用", "七层结算暂停", "七层结算恢复"].includes(row.action)) ?? null);
       else { setF2ActivationPending(null); setF2ActivationPendingError("审批进度加载失败，请刷新后继续。"); }
+      return policy.status === "fulfilled" ? policy.value : null;
     } catch (error) {
-      if (request !== f2Generation.current) return;
+      if (request !== f2Generation.current) return null;
       setF2Overview(null);
       setF2Error(errorMessage(error));
+      return null;
     } finally {
       if (request === f2Generation.current) { setF2Loading(false); setF2DirectPolicyLoading(false); setF2ActivationPendingLoading(false); }
     }
@@ -403,7 +405,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   };
 
   // F 域 5 写函数统一改 A2 propose:按 key 分发到 4 polymorphic op(commit afe51f2)。
-  const proposeFConfig = async (sourceDomain: string, key: string, value: string, reason: string, expectedVersion?: number) => {
+  const proposeFConfig = async (sourceDomain: string, key: string, value: string, reason: string, expectedVersion?: number, amplifies?: boolean) => {
     if (key === "F.unilevel.nex.L1") {
       const current = await fetchF2DirectReferralPolicy();
       setF2DirectPolicy(current);
@@ -418,10 +420,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       before: "—",
       after: value,
       type: def.type === "fund" ? "fund" : "param",
-      // F.* UI keys 资金放大类(F.pool.ratio/F.binary.matchRate 等)由 resolveFOp 路由到 f_ui_config(amplifies=false),
-      // 但后端 loosensPayoutControlUiKey 运行时按方向兜底为放大;前端按 key 标 amplifies=true 对齐,
-      // 避免「弹窗显 🔥 但 A2 队列丢 🔥」(验收 5.12 缺口 ②)。
-      amplifies: isFFundAmplifyingKey(key) || def.amplifies,
+      // F3 数值编辑按实际方向标记；其他参数保留既有分类，系统执行时仍须按当前值复核。
+      amplifies: amplifies ?? (isFFundAmplifyingKey(key) || def.amplifies),
       gate: { roles: [] },
       gateLabel: def.gateLabel,
       reason,
@@ -640,8 +640,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f3Loading,
     f3Error,
     refreshF3,
-    updateF3Config: async (key, value, reason) => {
-      await proposeFConfig("F3", key, value, reason);
+    updateF3Config: async (key, value, reason, amplifies) => {
+      await proposeFConfig("F3", key, value, reason, undefined, amplifies);
     },
     executeF3Settlement: async (ownerUserId, settlementDate, reason) => {
       const result = await executeF3Settlement(ownerUserId, settlementDate, reason);

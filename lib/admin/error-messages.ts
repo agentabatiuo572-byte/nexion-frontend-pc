@@ -267,6 +267,8 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   E5_OBSERVABILITY_SCHEMA_INVALID: "设备运行监测数据不完整或格式异常，页面已停止展示推测状态；请重新加载，持续出现时联系设备运维值班人员。",
   E5_DEVICE_ACTION_OUTCOME_UNCERTAIN: "设备操作的结果尚未确认；请保留当前输入并原样重试，系统会复用同一命令号避免重复执行。",
   G2_BATCH_RESPONSE_INVALID: "兑换队列批处理返回的数据不完整或计数不一致，结果尚未确认；请用同一命令号重试并刷新队列核对。",
+  G4_CAPACITY_REF_REQUIRED: "创世奖池核对编号至少填写 3 个字符，本次修改未保存。请补全编号后重试。",
+  G4_LOTTERY_CAPACITY_EXCEEDED: "本月已发券数加目标张数超过奖池月容量，本次修改未保存。请调低张数后重试。",
   C3_REQUEST_FAILED: "余额调整请求失败，请刷新账户资金信息后重试。",
   C3_RESPONSE_INVALID: "余额调整服务返回的数据不完整或不一致，页面已停止展示；请刷新重试，持续出现时联系财务值班人员。",
   ACCOUNT_DELETION_RESPONSE_INVALID: "账号注销申请服务返回的数据不完整或不一致，页面已停止展示推测状态；请刷新重试或联系值班人员。",

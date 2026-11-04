@@ -18,6 +18,7 @@ import { Drawer, PaginationExemptionList } from "../design-kit";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 type NsFlt = "all" | "issues";
@@ -80,9 +81,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const [versionCourseId, setVersionCourseId] = useState("");
   const [courseVersions, setCourseVersions] = useState<LearningCourseVersionView[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
+  const [versionsError, setVersionsError] = useState<string | null>(null);
+  const [versionsRetry, setVersionsRetry] = useState(0);
   const data = content.i18nLearning;
   useEffect(() => {
     setCourseVersions([]);
+    setVersionsError(null);
     if (!versionCourseId) { setVersionsLoading(false); return; }
     let active = true;
     setVersionsLoading(true);
@@ -90,13 +94,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       .then((versions) => { if (active) setCourseVersions(versions); })
       .catch((error) => {
         if (active) {
-          setCourseVersions([]);
-          toast(`版本加载失败:${displayAdminError(error)}`);
+          setVersionsError(displayAdminError(error));
         }
       })
       .finally(() => { if (active) setVersionsLoading(false); });
     return () => { active = false; };
-  }, [actions, toast, versionCourseId, content.i18nLearning]);
+  }, [actions, versionCourseId, content.i18nLearning, versionsRetry]);
   const I6_STATS = data?.stats ?? { managedKeys: 0, totalKeys: 0, integrityIssues: 0, coursesOnline: 0, weeklyNexPayout: "—" };
   const NAMESPACES: Namespace[] = data?.namespaces ?? [];
   const MESSAGES = data?.messages ?? [];
@@ -159,6 +162,19 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const liveFeatured = (): string =>
     TUTORIAL_FEATURED_DEFAULT;
   const selectedMessage = MESSAGES.find((message) => message.messageKey === selectedMessageKey) ?? MESSAGES[0];
+  const missingLocales = selectedMessage
+    ? ([["中文", selectedMessage.zh], ["英文", selectedMessage.en], ["越南语", selectedMessage.vi]] as const).filter(([, value]) => !value.trim()).map(([label]) => label)
+    : [];
+  const messageVariables = selectedMessage
+    ? [selectedMessage.zh, selectedMessage.en, selectedMessage.vi].map((value) => [...new Set(value.match(/\{[a-zA-Z0-9_.-]+}/g) ?? [])].sort().join("、"))
+    : [];
+  const variablesMatch = new Set(messageVariables).size === 1;
+  const qualityIssues = selectedMessage ? i6CopyQualityIssues(selectedMessage.zh, selectedMessage.en, selectedMessage.vi) : [];
+  const publicationIssues = [
+    ...missingLocales.map((locale) => `缺少${locale}文案`),
+    ...(missingLocales.length === 0 && !variablesMatch ? ["三语变量不一致"] : []),
+    ...qualityIssues,
+  ];
   useEffect(() => {
     const messageKey = selectedMessage?.messageKey;
     if (!messageKey) {
@@ -247,14 +263,15 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       action: <>发布词条 · {selectedMessage?.messageKey ?? "未选择"} {selectedMessage?.version ?? ""}</>,
       detail: (
         <>
-          发布后所有用户下次打开就会看到。发布前会检查：
-          <b> 中英越三语都有 ✓ 变量一致 ✓ 没有占位文字和旧品牌名 ✓ 没有禁用词 ✓</b>
-          有一项不通过就不能发布，<b>不能只发一种语言</b>。
+          发布前检查：<b>中英越三语{missingLocales.length === 0 ? "完整 ✓" : `待补齐（${missingLocales.join("、")}）`}</b>；
+          <b>变量{missingLocales.length > 0 ? "尚未检查（请先补齐三语）" : variablesMatch ? `一致 ✓（${messageVariables[0] || "无变量"}）` : "不一致"}</b>；
+          <b>占位文字与旧品牌{qualityIssues.length === 0 ? "检查通过 ✓" : `检查未通过：${qualityIssues.join("、")}`}</b>。
+          发布后用户下次加载该词条时使用新版本。系统提交时仍会核对发布条件。
         </>
       ),
       amplifies: false,
       run: (reason) => {
-        if (!selectedMessage) return;
+        if (!selectedMessage || selectedMessage.status !== "draft" || publicationIssues.length > 0) return false;
         return runBackend(actions.publishI6LocalizedMessage(selectedMessage.messageKey, {
           zh: selectedMessage.zh,
           en: selectedMessage.en,
@@ -310,7 +327,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         placeholders: selectedMessage?.placeholders,
       },
       run: (reason, _v, form) => {
-        if (!selectedMessage) return;
+        if (!selectedMessage) return false;
         return runBackend(actions.fixI6Integrity(issue.code, {
           messageKey: selectedMessage.messageKey,
           zh: form?.zh || "",
@@ -331,7 +348,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       ),
       amplifies: false,
       run: (reason) => {
-        runBackend(actions.publishI6Course(c.id, reason), `${nexGridBrandText(c.title)} 已发布至 /learn`);
+        return runBackend(actions.publishI6Course(c.id, reason), `${nexGridBrandText(c.title)} 已发布至 /learn`);
       },
     });
 
@@ -348,9 +365,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       amplifies: true,
       edit: { kind: "number", current: String(c.reward), unit: "UVT/课", min: TUTORIAL_REWARD_RANGE.min, max: TUTORIAL_REWARD_RANGE.max, step: 1 },
       run: (reason, v) => {
-        if (!v) return;
+        if (!v) return false;
         const def = findHighOp("i7_course_reward_adjust")!;
-        void propose(toast, {
+        return propose(toast, {
           action: `课程奖励调整 · ${nexGridBrandText(c.title)}`,
           obj: c.id,
           before: `${c.reward} UVT/课`,
@@ -377,7 +394,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       ),
       amplifies: false,
       run: (reason) => {
-        runBackend(actions.archiveI6Course(c.id, reason), `${nexGridBrandText(c.title)} 已下架`);
+        return runBackend(actions.archiveI6Course(c.id, reason), `${nexGridBrandText(c.title)} 已下架`);
       },
     });
 
@@ -439,7 +456,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       },
       run: (reason, slug, form) => {
         const id = slug?.trim() || "new";
-        runBackend(actions.createI6Course(id, coursePayload(form), reason), "课程草稿已创建");
+        return runBackend(actions.createI6Course(id, coursePayload(form), reason), "课程草稿已创建");
       },
     });
 
@@ -472,13 +489,6 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     run: (reason) => runBackend(actions.deleteI7CourseDraft(c.id, reason), `${nexGridBrandText(c.title)} 草稿已删除`),
   });
 
-  const reloadVersions = (courseId: string, task: Promise<void>, ok: string) => {
-    task.then(() => actions.reloadIContent())
-      .then(() => actions.fetchI7CourseVersions(courseId))
-      .then((versions) => { setCourseVersions(versions); toast(ok); })
-      .catch((error) => toast(`操作失败:${displayAdminError(error)}`));
-  };
-
   const courseCurrent = (c: Course, version: string, payload?: Record<string, unknown>) => ({
     slug: c.id,
     version,
@@ -507,7 +517,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         categories: courseCategories, formats: data?.formats, levels: data?.levels,
         current: courseCurrent(c, `v${maxVersion + 1}`),
       },
-      run: (reason, _value, form) => reloadVersions(c.id,
+      run: (reason, _value, form) => runBackend(
         actions.createI7CourseVersion(c.id, coursePayload(form), reason), `${nexGridBrandText(c.title)} ${form?.version} 草稿已创建`),
     });
   };
@@ -521,7 +531,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       categories: courseCategories, formats: data?.formats, levels: data?.levels,
       current: courseCurrent(c, row.version, row.payload),
     },
-    run: (reason, _value, form) => reloadVersions(c.id,
+    run: (reason, _value, form) => runBackend(
       actions.updateI7CourseVersion(c.id, row.version, coursePayload(form, row.revision), reason), `${nexGridBrandText(c.title)} ${row.version} 草稿已更新`),
   });
 
@@ -529,21 +539,21 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     action: <>删除课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
     detail: <>只能删除草稿；已发布和历史版本不能删除，以免影响用户进度和奖励。</>,
     amplifies: false,
-    run: (reason) => reloadVersions(c.id, actions.deleteI7CourseVersion(c.id, row.version, reason), `${row.version} 草稿已删除`),
+    run: (reason) => runBackend(actions.deleteI7CourseVersion(c.id, row.version, reason), `${row.version} 草稿已删除`),
   });
 
   const publishCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({
     action: <>发布课程版本 · {nexGridBrandText(c.title)} {row.version}</>,
     detail: <>发布前会检查三语测验、兑付覆盖率和权限；发布后旧版本变为历史版本。</>,
     amplifies: true,
-    run: (reason) => reloadVersions(c.id, actions.publishI7CourseVersion(c.id, row.version, reason), `${row.version} 已发布`),
+    run: (reason) => runBackend(actions.publishI7CourseVersion(c.id, row.version, reason), `${row.version} 已发布`),
   });
 
   const rollbackCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({
     action: <>回滚课程版本 · {nexGridBrandText(c.title)} → {row.version}</>,
     detail: <>回滚后课程内容、测验和奖励设置一起恢复成这个版本；已领过奖励的用户不会重复领取。</>,
     amplifies: true,
-    run: (reason) => reloadVersions(c.id, actions.rollbackI7CourseVersion(c.id, row.version, reason), `已回滚到 ${row.version}`),
+    run: (reason) => runBackend(actions.rollbackI7CourseVersion(c.id, row.version, reason), `已回滚到 ${row.version}`),
   });
 
   const setFeat = () => {
@@ -560,13 +570,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       amplifies: false,
       edit: { kind: "select", current: cur, options: publishedCourseOptions, optionLabels: publishedCourseLabels, unit: "课程" },
       run: (reason, v) => {
-        if (!v) return;
+        if (!v) return false;
         // audit P1 修:换课必须是「已发布课程 id」(SPEC §4 + 设计稿文案承诺);
         // 校验失败拒写并 toast 提示,防 dev/操作员误输入空字符串/已下架课程让首页大卡指向死链。
         const target = COURSES.find((c) => c.id === v.trim());
-        if (!target) { toast(`课程 id ${v} 不存在 · 未执行`); return; }
-        if (liveStatus(target) !== "published") { toast(`${v} 不是已发布课程 · 不可作为推荐位 · 未执行`); return; }
-        runBackend(actions.updateI6FeaturedCourse(v.trim(), reason), `推荐课程已换成 ${v}`);
+        if (!target) { toast(`课程 id ${v} 不存在 · 未执行`); return false; }
+        if (liveStatus(target) !== "published") { toast(`${v} 不是已发布课程 · 不可作为推荐位 · 未执行`); return false; }
+        return runBackend(actions.updateI6FeaturedCourse(v.trim(), reason), `推荐课程已换成 ${v}`);
       },
     });
   };
@@ -757,7 +767,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               <button className="l-btn sm" onClick={editKeyDraft}>
                 编辑三语草稿
               </button>
-              {selectedMessage.status === "draft" && <button className="l-btn sm mc" onClick={pubKey}>
+              {selectedMessage.status === "draft" && <button className="l-btn sm mc" disabled={publicationIssues.length > 0} onClick={pubKey}>
                 发布
               </button>}
               {selectedMessage.status === "published" && <button className="l-btn sm" onClick={archiveKey}>归档</button>}
@@ -766,6 +776,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           </div>
           <div className="l-b" style={{ paddingTop: 6 }}>
             {selectedMessage ? <>
+              {selectedMessage.status === "draft" && publicationIssues.length > 0 && <div className="itint warn" role="status">暂不能发布：{publicationIssues.join("；")}。请编辑三语草稿后再发布。</div>}
               <div className="ab-grid">
                 <div className="ab-prev"><div className="lc">中文 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.zh || "待补齐"}</div></div>
                 <div className="ab-prev"><div className="lc">英文 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.en || "待补齐"}</div></div>
@@ -1021,7 +1032,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           <span className="ttl">课程版本列表 · {nexGridBrandText(versionCourse.title)}</span>
           <span className="sub">· 当前 {versionCourse.v}</span>
           <div className="r chips">
-            {canWriteI7 && <button className="l-btn sm primary" onClick={() => newCourseVersion(versionCourse)}>+ 新版本草稿</button>}
+            {canWriteI7 && <button className="l-btn sm primary" disabled={versionsLoading || !!versionsError} onClick={() => newCourseVersion(versionCourse)}>+ 新版本草稿</button>}
             <button className="l-btn sm" onClick={() => setVersionCourseId("")}>关闭</button>
           </div>
         </div>
@@ -1029,7 +1040,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           <table className="l-tbl" style={{ minWidth: 840 }}>
             <thead><tr><th>版本</th><th>状态</th><th>说明</th><th>修订号</th><th>更新时间</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
             <tbody>
-              {courseVersions.map((row) => {
+              {!versionsLoading && !versionsError && courseVersions.map((row) => {
                 const statusText = { DRAFT: "草稿", PUBLISHED: "已发布", SUPERSEDED: "历史版本" }[row.status] ?? "状态未知";
                 return <tr key={`${row.courseId}-${row.version}`}>
                   <td className="mono">{row.version}</td>
@@ -1048,7 +1059,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   </td>
                 </tr>;
               })}
-              {!versionsLoading && courseVersions.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", padding: 24, color: "var(--ink-4)" }}>暂无历史版本</td></tr>}
+              {versionsError && <tr><td colSpan={6}><div className="itint warn" role="alert">版本列表加载失败：{versionsError}<button className="l-btn sm" style={{ marginLeft: 8 }} onClick={() => setVersionsRetry((value) => value + 1)}>重试</button></div></td></tr>}
+              {!versionsLoading && !versionsError && courseVersions.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", padding: 24, color: "var(--ink-4)" }}>暂无历史版本</td></tr>}
               {versionsLoading && <tr><td colSpan={6} style={{ textAlign: "center", padding: 24, color: "var(--ink-4)" }}>版本加载中…</td></tr>}
             </tbody>
           </table>
