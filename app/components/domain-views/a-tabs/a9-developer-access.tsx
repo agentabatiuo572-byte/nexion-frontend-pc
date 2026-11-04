@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Btn, Card, CardH, DataListPager } from "../design-kit";
 import { TabGroup } from "@/app/components/kit/tab-group";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   approveDeveloperAccess,
   fetchDeveloperAccessRequests,
@@ -23,6 +24,13 @@ const developerAccessAttempts = createSlotAttemptStore({
 const developerStatusText = (value: string) => ({ PENDING: "待审批", APPROVED: "已批准", REJECTED: "已驳回", REVOKED: "已撤销", EXPIRED: "已过期" } as Record<string,string>)[value] ?? "未知状态";
 
 export function A9DeveloperAccess() {
+  const authorities = useAdminAuth((s) => s.session?.authorities ?? []);
+  const isSuper = authorities.includes("ROLE_SUPER_ADMIN");
+  const reviewPermissions = {
+    approve: isSuper || authorities.includes("developer_access_approve"),
+    reject: isSuper || authorities.includes("developer_access_reject"),
+    revoke: isSuper || authorities.includes("developer_access_revoke"),
+  };
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [status, setStatus] = useState<"" | DeveloperAccessRequest["status"]>("PENDING");
@@ -52,7 +60,7 @@ export function A9DeveloperAccess() {
   useEffect(() => load(), [load]);
 
   const review = async (row: DeveloperAccessRequest, action: "approve" | "reject" | "revoke") => {
-    if (!canReviewDeveloperAccess(row.status, action)) return;
+    if (!reviewPermissions[action] || !canReviewDeveloperAccess(row.status, action)) return;
     const reason = window.prompt("请填写备注（至少 8 个字）", "")?.trim() ?? "";
     if (reason.length < 8) {
       setError("备注至少 8 个字，操作未执行");
@@ -100,6 +108,9 @@ export function A9DeveloperAccess() {
             <tbody>
               {loading ? <tr><td colSpan={6} style={{ padding: 24, textAlign: "center" }}>加载中…</td></tr> : (data?.records ?? []).map((row) => {
                 const guard = developerAccessResourceGuard(row.status);
+                const canApprove = guard.canApprove && reviewPermissions.approve;
+                const canReject = guard.canReject && reviewPermissions.reject;
+                const canRevoke = guard.canRevoke && reviewPermissions.revoke;
                 return <tr key={row.requestNo} style={{ borderBottom: "1px solid var(--border)" }}>
                   <td style={{ padding: 10 }}><div className="mono">{row.requestNo}</div><div style={{ color: "var(--ink-3)", fontSize: 11 }}>{row.createdAt}</div></td>
                   <td style={{ padding: 10 }}><div>#{row.userId} · {row.company}</div><div style={{ color: "var(--ink-3)" }}>{row.email}</div></td>
@@ -107,10 +118,10 @@ export function A9DeveloperAccess() {
                   <td style={{ padding: 10 }}><Badge tone={row.status === "APPROVED" ? "ok" : row.status === "PENDING" ? "warn" : row.status === "EXPIRED" ? "err" : "neutral"}>{developerStatusText(row.status)}</Badge></td>
                   <td style={{ padding: 10, maxWidth: 240 }}>{row.reviewReason || "—"}</td>
                   <td style={{ padding: 10, whiteSpace: "nowrap" }}>
-                    {guard.canApprove && <Btn sm onClick={() => void review(row, "approve")}>批准</Btn>}
-                    {guard.canReject && <Btn sm onClick={() => void review(row, "reject")}>驳回</Btn>}
-                    {guard.canRevoke && <Btn sm onClick={() => void review(row, "revoke")}>撤销</Btn>}
-                    {!guard.canApprove && !guard.canReject && !guard.canRevoke && <span style={{ color: "var(--ink-4)" }}>无可用操作</span>}
+                    {canApprove && <Btn sm onClick={() => void review(row, "approve")}>批准</Btn>}
+                    {canReject && <Btn sm onClick={() => void review(row, "reject")}>驳回</Btn>}
+                    {canRevoke && <Btn sm onClick={() => void review(row, "revoke")}>撤销</Btn>}
+                    {!canApprove && !canReject && !canRevoke && <span style={{ color: "var(--ink-4)" }}>无可用操作</span>}
                   </td>
                 </tr>;
               })}
