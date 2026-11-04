@@ -115,7 +115,7 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
 
   async function save() {
     if (permission !== "superadmin" || ((!canConfirm && !retry) || !current || !parsed || saving || !adminId)) return;
-    // BUG-056: past the window the system no longer recognises this number, so a resend proves nothing. Only the latest result can be read.
+    // BUG-056: this page stops resending 24 hours after the first attempt; from then on only the latest result can be read.
     if (retry && Date.now() >= retry.expiresAt) { setError(RETRY_EXPIRED); return; }
     const actor = actorStamp();
     const command = retry ?? {
