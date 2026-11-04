@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
@@ -20,29 +20,38 @@ export function LegalTermsEditor() {
   const canPublish = session?.role === "superadmin" || session?.authorities?.includes("content_legal_terms_publish") === true;
   const [locale, setLocale] = useState("en");
   const [jurisdiction, setJurisdiction] = useState("GLOBAL");
-  const [rows, setRows] = useState<LegalTermsVersion[]>([]);
-  const [selected, setSelected] = useState<LegalTermsVersion | null>(null);
+  const [versionRows, setRows] = useState<LegalTermsVersion[]>([]);
+  const [selectedVersion, setSelected] = useState<LegalTermsVersion | null>(null);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(true);
+  const requestSequence = useRef(0);
+  const rows = versionRows.filter((row) => row.locale === locale && row.jurisdiction === jurisdiction);
+  const selected = selectedVersion?.locale === locale && selectedVersion.jurisdiction === jurisdiction ? selectedVersion : null;
 
   const refresh = useCallback(async () => {
     if (!canRead) return;
+    const sequence = ++requestSequence.current;
     setBusy(true);
     setError(null);
+    setRows([]);
+    setSelected(null);
+    setReason("");
     try {
       const value = await fetchLegalTermsAdmin(locale, jurisdiction);
+      if (sequence !== requestSequence.current) return;
       setRows(value);
       setSelected(value.find((row) => row.status === "DRAFT") ?? value[0] ?? null);
     } catch (e) {
-      setError(displayAdminError(e));
+      if (sequence === requestSequence.current) setError(displayAdminError(e));
     } finally {
-      setBusy(false);
+      if (sequence === requestSequence.current) setBusy(false);
     }
   }, [canRead, locale, jurisdiction]);
 
   useEffect(() => {
     void refresh();
+    return () => { requestSequence.current += 1; };
   }, [refresh]);
 
   if (!canRead) return null;
@@ -160,7 +169,7 @@ export function LegalTermsEditor() {
           </div>
         )}
 
-        {canWrite && <div className={styles.createRow}><button className="l-btn sm" onClick={createDraft}>新建草稿</button></div>}
+        {canWrite && !busy && !error && <div className={styles.createRow}><button className="l-btn sm" onClick={createDraft}>新建草稿</button></div>}
 
         {selected ? (
           <div className={styles.editor}>
@@ -220,7 +229,9 @@ export function LegalTermsEditor() {
               {canPublish && selected.status === "PUBLISHED" && <button className="l-btn sm" onClick={() => void transition("revoke")} disabled={busy}>撤回</button>}
             </div>
           </div>
-        ) : <div className={`atint warn ${styles.emptyState}`}>当前适用地区暂无有效条款版本，应用暂不提供该内容。</div>}
+        ) : busy ? <div className={styles.emptyState}>正在加载条款…</div>
+          : error ? <div className={styles.emptyState}>当前范围的条款尚未确认，请刷新重试。</div>
+          : <div className={`atint warn ${styles.emptyState}`}>当前适用地区暂无条款版本。</div>}
       </div>
     </section>
   );

@@ -16,6 +16,10 @@ App 隐私政策、用户协议及服务端发布正文中的历史项目品牌�
 
 App 使用 `GET /api/legal/terms/current?locale=&jurisdiction=`。回退顺序是请求 Locale 精确值、基础语言、`en`，并在每一层先尝试请求法域，再尝试 `GLOBAL`；响应返回 resolved 字段和 `provenance`。响应必须声明 `source=server` 及 `PRODUCTION`/`SANDBOX` 环境，生产环境不得携带 RunID。无发布版本、结构非法、环境不一致或读取失败均失败关闭。
 
+## PC 管理页加载状态（2026-11-04，BUG-185、BUG-188）
+
+语言与适用法律地区决定列表和编辑对象。切换范围即隐藏上一范围的版本与正文，清空旧理由；旧请求不得回填新范围。加载期间显示进度，失败显示原因及「当前范围的条款尚未确认」，支持刷新恢复，禁止从失败结果新建或操作旧版本。只有当前范围成功返回空列表时才说明「当前适用地区暂无条款版本」；管理页加载失败不表示 App 没有公开条款，App 的语言和地区回退仍按上述规则执行。保存及发布/撤回继续使用所见版本自身的范围与 revision。
+
 ## 确认
 
 App 使用 `POST /api/legal/terms/acknowledgment`，提交当前 resolved locale、jurisdiction、version、确认标记、幂等键和当前 Sandbox RunID。服务端重新读取当前发布版本后再写入，重复请求幂等；用户、环境、RunID、版本不匹配时拒绝。确认写入必有审计记录。
