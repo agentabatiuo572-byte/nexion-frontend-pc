@@ -51,7 +51,7 @@ export function CoverageHero() {
   const tiles = [
     { k: "可用储备", v: fmtUsdCompact(reserveUsd), cap: "与「资金储备与应付款」一致" },
     { k: "应付款", v: fmtUsdCompact(liabilitiesUsd), cap: `共 ${LEDGER.accounts.length} 类` },
-    { k: "储备 − 应付款", v: fmtUsdCompact(net), cap: net < 0 ? "储备不够付" : "储备有余", tone: net < 0 ? "var(--v5-danger)" : "var(--v5-success)" },
+    { k: "储备 − 应付款", v: fmtUsdCompact(net), cap: net < 0 ? "储备不够付" : net === 0 ? "储备与应付款持平" : "储备有余", tone: net < 0 ? "var(--v5-danger)" : "var(--v5-success)" },
   ];
 
   return (
