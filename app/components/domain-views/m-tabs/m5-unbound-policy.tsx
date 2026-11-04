@@ -27,6 +27,8 @@ export function M5UnboundPolicy({ permission }: { permission: MSupportPermission
   const [reason, setReason] = useState("");
   const [error, setError] = useState(""), [savedVersion, setSavedVersion] = useState<number>(), [reload, setReload] = useState(0);
   const [loading, setLoading] = useState(true);
+  // BUG-122: a failed directory read is not an empty one; the saved group stays shown and stays the value saved.
+  const [groupsFailed, setGroupsFailed] = useState(false);
   const preserveDraft = useRef(false);
   const editable = permission === "superadmin" && Boolean(session?.authorities.includes("service_m1_write"));
   const command = useSupportManagementCommand<SupportUnboundPolicyUpdate, SupportUnboundPolicy>({
@@ -47,9 +49,9 @@ export function M5UnboundPolicy({ permission }: { permission: MSupportPermission
   useEffect(() => {
     const controller = new AbortController();
     setError(""); setLoading(true);
-    Promise.all([supportUnboundPolicyClient.read(controller.signal), supportGroupClient.groups(controller.signal).catch(() => [])]).then(([row, list]) => {
+    Promise.all([supportUnboundPolicyClient.read(controller.signal), supportGroupClient.groups(controller.signal).catch(() => null)]).then(([row, list]) => {
       if (controller.signal.aborted) return;
-      setPolicy(row); setGroups(list.filter((group) => group.status === "ENABLED"));
+      setPolicy(row); setGroupsFailed(list === null); setGroups((list ?? []).filter((group) => group.status === "ENABLED"));
       if (!preserveDraft.current) setDraft(draftOf(row));
     }).catch((cause) => { if (!controller.signal.aborted) { setPolicy(null); setError(displayAdminError(cause)); } })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -97,8 +99,9 @@ export function M5UnboundPolicy({ permission }: { permission: MSupportPermission
       </div>
       <div className="m-admin-row">
         <div><label htmlFor="m-unbound-group">默认接收组</label><p>从未分组的新客户在自动分配或兜底时进入该组；主管手动调整过分组的客户不受影响。</p></div>
-        <HDSelect id="m-unbound-group" value={draft.group} disabled={!editable || saving} options={[{ value: "", label: "不设置" }, ...groups.map((group) => ({ value: group.id, label: group.name }))]} onChange={(value) => setDraft((old) => ({ ...old, group: value }))} />
+        <HDSelect id="m-unbound-group" value={draft.group} disabled={!editable || saving || groupsFailed} options={[{ value: "", label: "不设置" }, ...(groupsFailed && policy.defaultGroupId ? [{ value: String(policy.defaultGroupId), label: policy.defaultGroupName ?? `组 ${policy.defaultGroupId}` }] : groups.map((group) => ({ value: group.id, label: group.name })))]} onChange={(value) => setDraft((old) => ({ ...old, group: value }))} />
       </div>
+      {groupsFailed && <div className="m-admin-error" role="alert">分组名单加载失败，暂时不能改默认接收组；当前设置保持不变。<button type="button" className="btn btn-sec btn-sm" onClick={() => { preserveDraft.current = true; setReload((n) => n + 1); }}>重试加载分组</button></div>}
       {!valid && <div className="m-admin-error" role="alert">提醒为 1–120 分钟，兜底须大于提醒且不超过 1440 分钟。</div>}
       {editable && changed && <label className="field"><span>修改理由（8–200 字）</span><textarea value={reason} maxLength={200} disabled={saving} onChange={(event) => setReason(event.target.value)} /></label>}
       <div className="m-admin-toolbar"><span className="m-admin-muted">当前版本 {policy.version}</span>{editable && <button type="button" className="btn btn-pri btn-sm" disabled={loading || !valid || !changed || !reasonOk || saving} onClick={save}>{saving ? "保存中…" : "保存"}</button>}</div>

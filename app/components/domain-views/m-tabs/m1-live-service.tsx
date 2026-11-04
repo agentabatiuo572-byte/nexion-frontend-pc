@@ -24,6 +24,8 @@ export function M1LiveService({ ctx, alertMinutes = ctx.unboundAlertMinutes ?? 5
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 30000); return () => window.clearInterval(timer); }, []);
   const conversationsReady = ctx.pget("I.session.conversationsAvailable") === "1";
+  // An unread roster is not an empty one (BUG-122): 0 only comes from a successful read.
+  const agentsReady = ctx.pget("I.support.agentsAvailable") === "1", agentsFailed = !agentsReady && ctx.pget("I.support.agentsError") !== "none";
   const facts = useMemo(() => {
     const convos = parse<SessionConvo>(ctx.pget("I.session.convos")).filter((row) => !row.archived && (row.pendingReplyCount ?? 0) > 0);
     const customers = (rows: SessionConvo[]) => new Set(rows.map((row) => String(row.customerId ?? row.id))).size;
@@ -42,6 +44,6 @@ export function M1LiveService({ ctx, alertMinutes = ctx.unboundAlertMinutes ?? 5
     <Link href="/service/sessions?tab=pending" className="m1-live-item"><span>待回复客户</span><strong>{dash(conversationsReady, facts.waiting)}</strong></Link>
     <Link href="/service/sessions?tab=pending" className={`m1-live-item${late ? " alert" : ""}`}><span>最长等待</span><strong>{!conversationsReady ? "-" : facts.oldest === null ? "无" : durationText(facts.oldest)}</strong></Link>
     <Link href="/service/sessions?tab=unassigned" className={`m1-live-item${facts.unassigned ? " alert" : ""}`}><span>待分配（有留言）</span><strong>{dash(conversationsReady, facts.unassigned)}</strong></Link>
-    <div className="m1-live-item"><span>可接待专属客服</span><strong>{facts.agents}</strong></div>
+    <div className="m1-live-item"><span>可接待专属客服</span><strong title={agentsFailed ? "客服名单加载失败" : undefined}>{dash(agentsReady, facts.agents)}</strong>{agentsFailed && <button type="button" onClick={() => void ctx.refreshContent().catch(() => ctx.toast("客服名单还是没有加载出来，请稍后重试。"))}>名单加载失败，重试</button>}</div>
   </section>;
 }
