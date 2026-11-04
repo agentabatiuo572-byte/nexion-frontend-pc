@@ -15,6 +15,7 @@ import {
   fetchUserAccountActionOverview,
   isUsersRequestNotFound,
   UsersRequestError,
+  UsersOutcomeUnknownError,
   removeUserAccountList,
   revokeUserSessions,
   startUserImpersonation,
@@ -563,13 +564,23 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     completionCopy: "确认后立即生效。",
     reasonMin: 8,
     reasonMax: 200,
-    run: (reason) => {
+    run: async (reason) => {
       const id = accountId(account);
-      if (!id) return toast("该账户没有系统编号");
-      void perform(
-        () => revokeUserSessions(id, reason, OPERATOR()).then(() => `${displayAccount(account)} 已强制登出`),
-        "已强制下线",
-      );
+      if (!id) throw new Error("该账户没有系统编号");
+      setBusy(true);
+      try {
+        await revokeUserSessions(id, reason, OPERATOR());
+        await loadOverview(true);
+        if (acct) await refreshAccountContext(accountId(acct));
+        toast(`${displayAccount(account)} 已强制登出`);
+      } catch (error) {
+        if (error instanceof UsersOutcomeUnknownError) {
+          throw new Error("原操作结果尚未确认，请保留当前输入并重试原操作，不会重复执行。");
+        }
+        throw error;
+      } finally {
+        setBusy(false);
+      }
     },
     });
   };

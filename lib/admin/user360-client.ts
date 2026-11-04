@@ -442,7 +442,7 @@ export interface User360Detail extends JsonRecord {
 }
 
 let requestSeq = 0;
-/** 命令号跨刷新存活:五类高敏动作(状态变更 / 两种 impersonate / 两种账户清单)共用本表,
+/** 命令号跨刷新存活:账户状态、全设备登出、两种 impersonate 与两种账户清单动作共用本表,
  *  靠 fingerprint = `${method}|${path}|${body}` 分命名空间 —— path 或 body 必带目标 id。 */
 const pendingUserMutations = createPendingMutationStore({
   storageKey: "nexion-admin-users-uncertain-commands-v1",
@@ -1331,7 +1331,7 @@ export async function revokeUserSessions(userId: number | string, reason: string
   return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/security/sessions/revoke-all`, {
     method: "POST",
     body: JSON.stringify({ reason, operator }),
-    idempotencyKey: commandKey ?? idempotencyKey("c5-user-revoke-sessions"),
+    ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "c5-user-revoke-sessions" }),
   });
 }
 
