@@ -138,7 +138,15 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
   const currentAdminId = useAdminAuth((s) => s.session?.adminId ?? null);
   const currentSessionRole = useAdminAuth((s) => s.session?.role ?? s.role);
-  const canRegisterPermission = useAdminAuth((s) => s.session?.authorities.includes("platform_a1_rbac_grants_update") ?? false);
+  const authorities = useAdminAuth((s) => s.session?.authorities ?? []);
+  const canPropose = authorities.includes("platform_a2_write") || authorities.includes("platform_a2_proposal_create");
+  const canCreateAccount = authorities.includes("platform_a1_write");
+  const canEditAccount = authorities.includes("platform_a1_write") && canPropose;
+  const canChangeRole = authorities.includes("platform_a1_account_role_change") && canPropose;
+  const canReset2fa = authorities.includes("platform_a1_account_2fa_reset") && canPropose;
+  const canResetPassword = authorities.includes("platform_a1_account_password_reset");
+  const canChangeStatus = authorities.includes("platform_a1_account_disable") && canPropose;
+  const canRegisterPermission = authorities.includes("platform_a1_rbac_grants_update");
   const [overview, setOverview] = useState<A1Overview | null>(null);
   const [permissionCodesByRole, setPermissionCodesByRole] = useState<Record<string, string[]>>({});
   const [permissionDiffReady, setPermissionDiffReady] = useState(false);
@@ -235,6 +243,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const stats = overview?.stats;
   const effectiveSupers = stats?.effectiveSupers ?? 0;
   const governanceFrozen = effectiveSupers < 2;
+  const profileEditBlockReason = !canEditAccount ? "你没有编辑账号资料的权限"
+    : governanceFrozen ? "可用的超级管理员不足 2 个，暂时不能编辑账号资料"
+    : mutatingAction ? "正在提交，请稍候" : null;
   const permissionActions = useMemo(() => {
     const codes = [...new Set(Object.values(permissionCodesByRole).flat())].sort();
     return codes.map((code) => ({ label: code, domainGroup: code.split("_")[0]?.toUpperCase() || "OTHER" }));
@@ -310,18 +321,21 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const protectsEffectiveSuperFloor = (op: A1Operator) =>
     op.role === "super" && op.status === "enabled" && op.tfa && effectiveSupers <= 2;
   const changeRoleBlockReason = (op: A1Operator) => {
+    if (!canChangeRole) return "你没有变更账号角色的权限";
     if (!permissionDiffReady) return permissionDiffError ?? "权限变化预览加载失败，暂时不能改角色";
     if (governanceFrozen) return "可用的超级管理员不足 2 个，账号操作已暂停。请先新建一个超级管理员并绑定两步验证";
     if (protectsEffectiveSuperFloor(op)) return "操作后可用的超级管理员会少于 2 个";
     return null;
   };
   const reset2faBlockReason = (op: A1Operator) => {
+    if (!canReset2fa) return "你没有重置两步验证的权限";
     if (!op.tfa) return "该账号尚未绑定两步验证，无需重置";
     if (governanceFrozen) return "可用的超级管理员不足 2 个，账号操作已暂停";
     if (protectsEffectiveSuperFloor(op)) return "重置后可用的超级管理员会少于 2 个";
     return null;
   };
   const disableAccountBlockReason = (op: A1Operator) => {
+    if (!canChangeStatus) return "你没有启停账号的权限";
     if (governanceFrozen) return "可用的超级管理员不足 2 个，账号操作已暂停";
     if (protectsEffectiveSuperFloor(op)) return "禁用后可用的超级管理员会少于 2 个";
     return null;
@@ -748,12 +762,12 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       reasonMin: 8,
       reasonMax: 200,
       run: async (reason) => {
-        await runMutation(`登记权限 ${permissionDraft.code}`, async () => registerA1Permission({
+        const ok = await runMutation(`登记权限 ${permissionDraft.code}`, async () => registerA1Permission({
           permissionCode: permissionDraft.code.trim(), permissionName: permissionDraft.name.trim(),
           resourcePath: permissionDraft.path.trim(), permType: permissionDraft.type,
           amplifies: permissionDraft.amplifies, reason, operator,
         }), `${permissionDraft.code.trim()} 已登记，尚未分给任何角色`);
-        setPermissionDraft({ code: "", name: "", path: "", type: "WRITE", amplifies: false });
+        if (ok) setPermissionDraft({ code: "", name: "", path: "", type: "WRITE", amplifies: false });
       },
     });
   };
@@ -837,7 +851,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           </span>
           <div className="r">
             <button className="l-btn sm" onClick={() => void refreshOverview(true)} disabled={!!mutatingAction}>刷新</button>
-            <button className="l-btn sm mc" onClick={() => setNaOpen(true)} disabled={!roles.length || !!mutatingAction}>+ 新建账号</button>
+            <button className="l-btn sm mc" onClick={() => setNaOpen(true)} disabled={!canCreateAccount || !roles.length || !!mutatingAction}>+ 新建账号</button>
           </div>
         </div>
         {permissionDiffError && (
@@ -887,11 +901,11 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                     <td><span className="mono">{op.sessions}</span></td>
                     <td style={{ textAlign: "right" }}>
                       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
-                        <button className="l-btn sm" aria-label={`编辑 ${operatorDisplayLabel(op)}`} onClick={(event) => stopRowAction(event, () => setEditAccountTarget(op))} disabled={!!mutatingAction || governanceFrozen}>编辑</button>
+                        <button className="l-btn sm" aria-label={`编辑 ${operatorDisplayLabel(op)}`} title={profileEditBlockReason ?? undefined} onClick={(event) => stopRowAction(event, () => setEditAccountTarget(op))} disabled={!!profileEditBlockReason}>编辑</button>
                         {canManageQualifications && <><button className="l-btn sm" aria-label={`管理 ${operatorDisplayLabel(op)} 的专属客服资格`} onClick={event => stopRowAction(event, () => setQualificationTarget({ id: op.id, kind: "SERVICE" }))} disabled={!!mutatingAction}>专属客服资格</button><button className="l-btn sm" aria-label={`管理 ${operatorDisplayLabel(op)} 的主管资格`} onClick={event => stopRowAction(event, () => setQualificationTarget({ id: op.id, kind: "SUPERVISOR" }))} disabled={!!mutatingAction}>主管资格</button></>}
                         <button className="l-btn sm" aria-label={`修改 ${operatorDisplayLabel(op)} 的角色`} title={changeRoleBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => changeRole(op))} disabled={!!mutatingAction || !roles.length || !!changeRoleBlockReason(op)}>改角色</button>
                         <button className="l-btn sm" aria-label={`重置 ${operatorDisplayLabel(op)} 的两步验证`} title={reset2faBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => reset2fa(op))} disabled={!!mutatingAction || !!reset2faBlockReason(op)}>重置 两步验证</button>
-                        <button className="l-btn sm" aria-label={`重置 ${operatorDisplayLabel(op)} 的密码`} onClick={(event) => stopRowAction(event, () => resetPassword(op))} disabled={!!mutatingAction || governanceFrozen}>重置密码</button>
+                        <button className="l-btn sm" aria-label={`重置 ${operatorDisplayLabel(op)} 的密码`} onClick={(event) => stopRowAction(event, () => resetPassword(op))} disabled={!canResetPassword || !!mutatingAction || governanceFrozen}>重置密码</button>
                         <button
                           className="l-btn sm"
                           aria-label={`强制登出 ${operatorDisplayLabel(op)}`}
@@ -906,7 +920,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                         {op.status === "enabled" ? (
                           <button className="l-btn sm dgr" aria-label={`禁用 ${operatorDisplayLabel(op)}`} title={disableAccountBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => disableAcct(op))} disabled={!!mutatingAction || !!disableAccountBlockReason(op)}>禁用</button>
                         ) : (
-                          <button className="l-btn sm mc" aria-label={`启用 ${operatorDisplayLabel(op)}`} onClick={(event) => stopRowAction(event, () => enableAcct(op))} disabled={!!mutatingAction || governanceFrozen}>启用</button>
+                          <button className="l-btn sm mc" aria-label={`启用 ${operatorDisplayLabel(op)}`} onClick={(event) => stopRowAction(event, () => enableAcct(op))} disabled={!canChangeStatus || !!mutatingAction || governanceFrozen}>启用</button>
                         )}
                       </div>
                     </td>
@@ -994,6 +1008,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           account={detailAccount}
           roles={roles}
           sessionRevokeBlockReason={forceLogoutBlockReason(detailAccount)}
+          editBlockReason={profileEditBlockReason}
           onClose={() => setDetailAccount(null)}
           onEdit={() => {
             setEditAccountTarget(detailAccount);
@@ -1257,6 +1272,7 @@ function AccountDetailDrawer({
   account,
   roles,
   sessionRevokeBlockReason,
+  editBlockReason,
   onClose,
   onEdit,
   onRevokeSession,
@@ -1264,6 +1280,7 @@ function AccountDetailDrawer({
   account: A1Operator;
   roles: A1RoleDefinition[];
   sessionRevokeBlockReason: string | null;
+  editBlockReason: string | null;
   onClose: () => void;
   onEdit: () => void;
   onRevokeSession: (sessionId: string) => void;
@@ -1289,7 +1306,7 @@ function AccountDetailDrawer({
       footer={
         <div style={{ padding: "10px 16px 12px", borderTop: "1px solid var(--border)", display: "flex", gap: 8 }}>
           <button className="l-btn" onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>关闭</button>
-          <button className="l-btn primary" onClick={onEdit} style={{ flex: 2, justifyContent: "center" }}>编辑账号</button>
+          <button className="l-btn primary" onClick={onEdit} disabled={!!editBlockReason} title={editBlockReason ?? undefined} style={{ flex: 2, justifyContent: "center" }}>编辑账号</button>
         </div>
       }
     >
