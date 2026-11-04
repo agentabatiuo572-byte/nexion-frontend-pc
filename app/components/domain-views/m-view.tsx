@@ -20,6 +20,7 @@ import {
   fetchMConversationSnapshot,
   fetchMConversationDetail,
   fetchMContentData,
+  readSupportKnowledge,
   mContentActions,
   type MContentData,
   type MLoadConfigWrite,
@@ -202,6 +203,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       if (isCurrent()) setMLoading(false);
     }
   }, [authEpoch, tab]);
+
+  const refreshKnowledge = useCallback(async () => {
+    const next = await readSupportKnowledge();
+    if (currentAuthEpoch.current === authEpoch) setMData((previous) => previous && { ...previous, ...next });
+  }, [authEpoch]);
 
   useEffect(() => {
     void reloadMContent();
@@ -580,6 +586,8 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       }
     },
     refreshContent: reloadMContent,
+    contentLoading: mLoading,
+    refreshKnowledge,
     loadConversationDetail,
     invalidateScope,
     addCustomerTag,

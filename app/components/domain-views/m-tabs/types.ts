@@ -14,6 +14,10 @@ export type MCtx = {
   setParam: (k: string, v: string, meta: { action: string; reason: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void }) => Promise<boolean>;
   refreshConversations: () => Promise<void>;
   refreshContent: () => Promise<void>;
+  /** A full content load is running; availability flags are not final yet. */
+  contentLoading: boolean;
+  /** Re-reads only the knowledge base. A full refresh rebuilds the open conversation and would close the picker. */
+  refreshKnowledge: () => Promise<void>;
   loadConversationDetail: (no: string, signal?: AbortSignal, includeCustomerProfile?: boolean) => Promise<void>;
   invalidateScope: (conversationNo?: string, customerId?: string) => void;
   addCustomerTag: (convoId: string, tag: string) => Promise<boolean>;
