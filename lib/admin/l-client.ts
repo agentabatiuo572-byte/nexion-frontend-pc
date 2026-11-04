@@ -458,8 +458,10 @@ export async function fetchL6ClickHeat(route: string, input: L6BehaviorQuery = {
   return apiRequest<unknown>(`/behavior/click-heat?${query.toString()}`).then(rec);
 }
 
-export async function downloadL6Behavior(input: L6BehaviorQuery = {}) {
-  const res = await guardedFetch(`/api/admin/bi/export/behavior?${l6Query(input).toString()}`, { cache: "no-store" });
+export async function downloadL6Behavior(input: L6BehaviorQuery & { sortDir?: "asc" | "desc" } = {}) {
+  const query = l6Query(input);
+  if (input.sortDir) query.set("sortDir", input.sortDir);
+  const res = await guardedFetch(`/api/admin/bi/export/behavior?${query.toString()}`, { cache: "no-store" });
   const contentType = res.headers.get("Content-Type") || "";
   if (!res.ok || contentType.includes("application/json")) {
     const payload = (await res.json().catch(() => null)) as ApiResult<unknown> | null;
