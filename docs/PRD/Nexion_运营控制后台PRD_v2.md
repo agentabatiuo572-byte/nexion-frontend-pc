@@ -848,8 +848,8 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
   - `POST /api/devices/deactivate` — 出槽(槽满 replace-lowest 路径)。
   - 三者均须 `Idempotency-Key`(防双击 / 重放,对齐 §7.5.3 M3 confirmingRef + M1 原子回滚)。
 - **360 设备卡 per-device 运维处置**(C1 用户 360 设备卡 inline CRUD,`app/components/hub/devices-section.tsx`,复用 `lib/store/ui.ts` confirm 弹窗 + 理由)— 单设备运营处置,均经操作确认(理由必填)+ 写设备审计,server-canonical 真改设备态(行状态 / 在线数 / 今日产出即时更新):
-  - 下线 / 上线 `POST /api/admin/devices/:id/{deactivate|activate}`(停止 / 恢复该设备算力产出)· 换机(代际置换,复用上方 `replace`)。
-  - **回收(退役)** `POST /api/admin/devices/:id/recycle` — 停止产出 + 退出车队,salvage 残值不入余额;**与上方 trade-in 置换 `recycle` 区分:本路径为纯退役,无新设备、无 salvage 抵扣**。
+  - 下线 / 上线 `POST /api/admin/devices/:id/{deactivate|activate}`(停止 / 恢复该设备算力产出)。
+  - **设备置换 / 回收**经 PC 代理提交 `POST /api/admin/devices/users/:userId/tradein/replace` 或 `POST /api/admin/devices/users/:userId/tradein/recycle`，请求含 `deviceId`、操作理由和 `Idempotency-Key` 请求头。服务端校验 `user_c2_write` 和设备归属，成功后写 `admin.tradein_action_executed` 审计并刷新设备状态。置换另生成设备置换记录，回收为纯退役，无新设备和残值抵扣。
   - **撤销回收** `POST /api/admin/devices/:id/restore`(**2026-06 新增,误回收纠偏**)— 把已回收设备恢复为**离线**态(可再上线接回车队);此前「回收」为终态(已回收行只剩占位),本动作给运营误操作留后路。仅对已回收设备生效,经确认(理由必填)+ 写「撤销回收」设备审计。
 
 **⑥ 权限 & 审计**
@@ -1848,7 +1848,7 @@ flowchart TD
 | 触发控件 | 响应 | 可用条件 / 反馈 |
 |---|---|---|
 | 奖种卡、状态分布、筛选查询 | 同一服务端查询 | 切条件清空已选行；八类与七态完整 |
-| 下一批 | 服务端游标 | 继续同条件，失败可重试 |
+| 下一批 | 服务端游标 | 沿用返回该游标的查询条件。筛选框中的新值应用后从首批读取，读取失败可重试 |
 | 来源详情 | 当前行完整快照 | 可折叠；双币、退款和待追回信息同屏 |
 | 导出 | 脱敏 CSV 确认 | 理由必填，使用当前完整筛选，校验文件与行数 |
 | 冻结 / 提前解锁 / 解冻 | 对应业务确认 | 状态允许且有处置权限；直属明确整组 |
