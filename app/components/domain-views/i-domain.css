@@ -14,103 +14,26 @@
 }
 
 /* ===== 共享 chrome ===== */
-.idom .f-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
 @container idom (max-width: 980px) { .idom .f-stats { grid-template-columns: repeat(2, 1fr); } }
-.idom .f-stat { background: var(--surface); border-radius: var(--r-card); padding: 14px 16px; }
-.idom .f-stat .k { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
-.idom .f-stat .v { font-size: 22px; font-weight: 600; letter-spacing: -.01em; margin-top: 4px; font-variant-numeric: tabular-nums; color: var(--ink); }
-.idom .f-stat .sub { font-size: 12px; color: var(--ink-4); margin-top: 3px; }
-.idom .f-stat.warn .v { color: var(--warning); }
-.idom .f-stat.ok .v { color: var(--success); }
 .idom .f-stat.cyan .v { color: var(--i-ac); }
-.idom .f-stat.danger .v { color: var(--danger); }
-
-.idom .f-cta { display: inline-flex; align-items: center; gap: 7px; padding: 8px 15px; border-radius: 9px;
-  border: 1px solid var(--i-ac-strong); background: var(--i-ac-soft); color: var(--i-ac);
-  font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; font-family: inherit; }
-@media (hover: hover) and (pointer: fine) { .idom .f-cta:hover { background: var(--i-ac); color: #0A0A0A; } }
-.idom .f-ro { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
-  background: var(--surface-2); color: var(--ink-3); font-size: 12px; font-weight: 600; white-space: nowrap; }
-.idom .f-ro .d { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-4); }
-.idom .f-live { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 999px;
-  background: var(--success-soft); color: var(--success); font-size: 12px; font-weight: 600; white-space: nowrap; }
-.idom .f-live .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
-.idom .f-foot { margin-top: 18px; font-size: 12.5px; line-height: 1.6; color: var(--ink-4); }
-.idom .f-foot b { color: var(--ink-3); font-weight: 600; }
-
-.idom .l-card { background: var(--surface); border-radius: var(--r-card); margin-bottom: 16px; overflow: hidden; }
-.idom .l-card .l-h { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-.idom .l-card .l-h .ttl { font-size: 14px; font-weight: 600; color: var(--ink); }
-.idom .l-card .l-h .sub { font-size: 12px; color: var(--ink-4); }
-.idom .l-card .l-h .r { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.idom .l-card .l-b { padding: 16px 20px 20px; }
 
 .idom .icode { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3);
   background: var(--surface-3); border-radius: 5px; padding: 2px 7px; white-space: nowrap; }
 .idom .icode.electric { background: var(--i-ac-soft); color: var(--i-ac); }
 .idom .icode.lock { background: var(--surface-3); color: var(--ink-3); }
 .idom .icode.danger { background: var(--danger-soft); color: var(--danger); }
-
-.idom .chips { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.idom .chips .lb { font-size: 12px; color: var(--ink-4); margin-right: 2px; white-space: nowrap; }
-.idom .chip { padding: 5px 11px; border-radius: 999px; background: var(--surface-2); color: var(--ink-3);
-  font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; border: none; font-family: inherit; transition: background .12s, color .12s; }
-@media (hover: hover) and (pointer: fine) { .idom .chip:hover { background: var(--surface-3); color: var(--ink); } }
 .idom .chip.sel { background: var(--i-ac); color: #0A0A0A; font-weight: 600; }
-
-.idom .l-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 8px;
-  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2);
-  font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit; white-space: nowrap; text-decoration: none; }
-@media (hover: hover) and (pointer: fine) { .idom .l-btn:hover { background: var(--surface-3); color: var(--ink); } }
 .idom .l-btn.primary { background: var(--i-ac); border-color: var(--i-ac); color: #0A0A0A; font-weight: 600; }
-@media (hover: hover) and (pointer: fine) { .idom .l-btn.primary:hover { filter: brightness(1.07); } }
-.idom .l-btn.mc { color: var(--warning); border-color: var(--warning-border); background: color-mix(in srgb, var(--warning) 8%, transparent); font-weight: 600; }
-@media (hover: hover) and (pointer: fine) { .idom .l-btn.mc:hover { background: color-mix(in srgb, var(--warning) 18%, transparent); } }
 .idom .l-btn.dgr { color: var(--danger); border-color: var(--danger-border); background: var(--danger-soft); }
 @media (hover: hover) and (pointer: fine) { .idom .l-btn.dgr:hover { filter: brightness(.96); } }
-.idom .l-btn.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 6px; min-height: 24px; }
-
-.idom .l-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.idom .l-tbl th { font-family: var(--mono); font-size: 11.5px; font-weight: 700; color: var(--ink-4);
-  letter-spacing: .06em; text-transform: uppercase; text-align: left; padding: 10px 12px;
-  background: var(--surface-2); border-bottom: 1px solid var(--border-strong); white-space: nowrap; }
-.idom .l-tbl td { padding: 11px 12px; border-bottom: 1px solid var(--border); color: var(--ink-2); vertical-align: middle; }
-.idom .l-tbl tr:last-child td { border-bottom: none; }
-.idom .l-tbl tr.click { cursor: pointer; }
-@media (hover: hover) and (pointer: fine) { .idom .l-tbl tr.click:hover td { background: var(--surface-2); } }
-.idom .l-tbl .num, .idom .l-tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
-.idom .l-tbl .mono { font-family: var(--mono); font-size: 12px; }
 .idom .i-version-config .version-key { font-weight: 700; color: var(--ink); }
 .idom .i-version-config .version-description { color: var(--ink-3); line-height: 1.5; }
-
-.idom .bdg { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 5px;
-  font-size: 11.5px; font-weight: 700; font-family: var(--mono); letter-spacing: .02em; white-space: nowrap; }
-.idom .bdg.ok { background: var(--success-soft); color: var(--success); }
-.idom .bdg.warn { background: var(--warning-soft); color: var(--warning); }
-.idom .bdg.bad { background: var(--danger-soft); color: var(--danger); }
-.idom .bdg.dim { background: var(--surface-3); color: var(--ink-2); }
 .idom .bdg.cyan { background: var(--i-ac-soft); color: var(--i-ac); }
-
-.idom .itint { padding: 11px 14px; border-radius: 9px; background: var(--surface-2); font-size: 12px; line-height: 1.55; color: var(--ink-3); }
-.idom .itint b { color: var(--ink-2); font-weight: 600; }
 .idom .itint.cyan { background: var(--i-ac-soft); color: var(--ink-2); }
 .idom .itint.cyan b { color: var(--i-ac); }
-.idom .itint.warn { background: var(--warning-soft); color: var(--ink-2); }
-.idom .itint.warn b { color: var(--warning); }
-.idom .itint.ok { background: var(--success-soft); color: var(--ink-2); }
-.idom .itint.ok b { color: var(--success); }
-.idom .itint.danger { background: var(--danger-soft); color: var(--ink-2); }
-.idom .itint.danger b { color: var(--danger); }
 
 .idom .two-col { display: grid; grid-template-columns: 1.1fr .9fr; gap: 16px; margin-bottom: 16px; }
 @container idom (max-width: 1100px) { .idom .two-col { grid-template-columns: 1fr; } }
-.idom .two-col .l-card { margin-bottom: 0; display: flex; flex-direction: column; }
-.idom .two-col .l-card .l-b { flex: 1; }
-
-.idom .kv { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 12.5px; }
-.idom .kv:last-child { border-bottom: none; }
-.idom .kv .k { color: var(--ink-4); }
-.idom .kv .v { color: var(--ink-2); font-weight: 600; text-align: right; }
 
 /* p-row 通用参数行(I1 框架默认 / I2 cadence / I3 CAP / I5 gated / I6 rules) */
 .idom .p-row { display: flex; align-items: center; gap: 14px; padding: 11px 2px; border-bottom: 1px dashed var(--border); }
