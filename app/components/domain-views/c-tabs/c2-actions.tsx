@@ -16,7 +16,7 @@ import {
   isUsersRequestNotFound,
   UsersRequestError,
   removeUserAccountList,
-  revokeUserAccountActionSessions,
+  revokeUserSessions,
   startUserImpersonation,
   terminateUserImpersonation,
   updateUserStatus,
@@ -37,7 +37,7 @@ import { AccountDeletionQueue } from "./account-deletion-queue";
 
 const OPERATOR = currentAdminOperator;
 const K1_PATH = "/risk/multi-account";
-const FOCUS_SOURCES = new Map([["C1", "用户详情"], ["M1", "客服工作台"], ["M3", "专属会话"], ["J3", "篡改防御监控"]]);
+const FOCUS_SOURCES: Record<string, string> = { C1: "用户详情", M1: "客服工作台", M3: "专属会话", J3: "篡改防御监控" };
 
 const STATUS_META: Record<string, [label: string, tone: string]> = {
   ACTIVE: ["正常", "ok"],
@@ -269,7 +269,8 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const [focusLookupState, setFocusLookupState] = useState<"idle" | "loading" | "found" | "not-found" | "error">("idle");
   const searchParams = useSearchParams();
   const focusUserCode = (searchParams?.get("userCode") ?? "").trim().toUpperCase();
-  const focusSource = FOCUS_SOURCES.get(searchParams?.get("source") ?? "");
+  const source = searchParams?.get("source") ?? "";
+  const focusSource = Object.hasOwn(FOCUS_SOURCES, source) ? FOCUS_SOURCES[source] : undefined;
 
   const loadOverview = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -566,7 +567,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       const id = accountId(account);
       if (!id) return toast("该账户没有系统编号");
       void perform(
-        () => revokeUserAccountActionSessions(id, reason, OPERATOR()).then(() => `${displayAccount(account)} 已强制登出`),
+        () => revokeUserSessions(id, reason, OPERATOR()).then(() => `${displayAccount(account)} 已强制登出`),
         "已强制下线",
       );
     },

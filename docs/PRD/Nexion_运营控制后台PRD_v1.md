@@ -1930,7 +1930,7 @@ C2 是**单用户账户处置入口**——冻结 / 解冻、强制登出、加�
 |---|---|---|---|
 | 冻结账户(+ 原因码) | 风控(lead)/ 超管(财务可发起冻结请求单转风控) | C2-MD1(理由必填) | `admin.user_frozen`(operator / reason)+ 联动 D2 frozen |
 | 解冻账户 | 风控(lead)/ 超管 | C2-MD2(理由必填) | `admin.user_unfrozen`(operator / reason) |
-| 强制登出全部 session | 具备 `user_c2_session_revoke_all` 的操作者，且可进入账户操作页 | C2-MD3(理由必填;止血动作,确认后立即生效) | `admin.session_revoked`(scope / reason);实际请求 `/profiles/{userId}/sessions/revoke-all`，终止用户会话 |
+| 强制登出全部 session | 页面按 `user_c2_session_revoke_all` 显示按钮；执行另受现有 C5 接口权限约束 | C2-MD3(理由必填;止血动作,确认后立即生效) | `admin.session_revoked`(scope / reason);沿用 `revokeUserSessions`，实际请求 `/profiles/{userId}/security/sessions/revoke-all` |
 | impersonate(模拟登录) | 客服 / 风控 | C2-MD4(理由必填;只读+限时+全审计三重约束) | `admin.user_impersonation_started` / `admin.user_impersonation_ended`(operator / reason / ttl) |
 | 加白 / 拉黑 | 风控(lead)/ 超管 | C2-MD5(加白)/ C2-MD6(拉黑)(理由必填) | admin 审计(名单类型 / reason / 失效时间 / operator) |
 
@@ -1973,7 +1973,7 @@ C2 是**单用户账户处置入口**——冻结 / 解冻、强制登出、加�
 - **成功反馈**:弹窗关闭;状态更新「正常」;toast;事件 `admin.user_unfrozen`;实时告警;D2 联动恢复。
 
 ##### [C2-MD3] 强制登出确认
-- **功能**:立即终止该用户全部活跃 session(被盗号止血)，确认后立即生效；列表和详情按钮均要求 `user_c2_session_revoke_all`。有 C2 菜单、读取和强制登出权限即可完成，不要求 C5 同名权限；仅有 C5 强制登出权限不能操作本页此动作。
+- **功能**:立即终止该用户全部活跃 session(被盗号止血)，确认后立即生效；列表和详情按钮均以 `user_c2_session_revoke_all` 控制显示，沿用 `revokeUserSessions` 调用现有 C5 接口。接口另要求 `user_c5_session_revoke_all`，不能承诺仅有 C2 权限即可完成；该权限错位仍待修复，当前不发布切换到 C2 专用接口的改动。
 - **布局结构**:1. **信息区**:userId / 全部在线设备数量。2. **输入区**:reason(多行文本,必填,8–200 字)。3. **按钮区**:取消 / 确认提交。
 - **错误态**:409(session 已结束)/ 400 / 403。
 - **成功反馈**:弹窗关闭;session 列表就地更新;toast;事件 `admin.session_revoked`。
@@ -2007,7 +2007,7 @@ C2 是**单用户账户处置入口**——冻结 / 解冻、强制登出、加�
 **⑤ 接口**
 - `POST /api/admin/users/:userId/freeze`(冻结,确认弹窗 C2-MD1:body 携 `{reasonCode, reason}`,reason 空值 400 `REASON_REQUIRED`;`Idempotency-Key` 必带,防重复冻结)。冻结确认后 server **原子**置账户 frozen + 联动 D2 提现 frozen(§9.11f),client 不本地冻结。
 - `POST /api/admin/users/:userId/unfreeze`(解冻,确认弹窗 C2-MD2,body 携 reason;`Idempotency-Key` 必带)。
-- `POST /api/admin/users/profiles/{userId}/sessions/revoke-all`（C2 强制登出全部会话，确认弹窗 C2-MD3；body 携 `{reason, operator}`，带 `Idempotency-Key`，要求 `user_c2_session_revoke_all`）。C5 页面继续调用独立的 `/profiles/{userId}/security/sessions/revoke-all` 并要求 `user_c5_session_revoke_all`；两处权限和入口分别校验，底层都终止用户会话。
+- `POST /api/admin/users/profiles/{userId}/security/sessions/revoke-all`（当前 C2、C5 页面均沿用的全部会话登出接口；body 携 `{reason, operator}`，带 `Idempotency-Key`，接口要求 `user_c5_session_revoke_all`）。C2 按钮仍以 C2 强制登出权限控制显示，C5 按钮以 C5 权限控制显示；C2 的按钮与接口权限错位尚未闭环。
 - `POST /api/admin/users/:userId/impersonate`(发起模拟登录,确认弹窗 C2-MD4,body 携 `{ttlMin, reasonCode, reason}`;返回**只读受限**的 impersonation 会话句柄 + 到期时间 ≤ 30min)。**只读识别机制**:impersonation 会话句柄包含特殊 claim(如 `scope:'impersonate_readonly'` 或独立的 impersonation token type),所有写操作 endpoint 的 auth middleware 须检测该 claim 并对会话内一切写请求返回 403 `IMPERSONATION_READ_ONLY`;具体实现方案见 A3 / Ch9 auth middleware 规范。运营端以该会话句柄载入**用户前端只读会话视图**(②(b) 代入会话视图,渲染用户视角画面);句柄到期(≤ 30min)或运营退出即失效,失效后该会话一切请求(含读)一并拒绝。
 - 名单:`POST /api/admin/users/:userId/{allowlist|blocklist}`(确认弹窗 C2-MD5/MD6,body 携 reason;**账户级 userId 维度**,与 K1 IP 维度白名单不重叠)。
 
@@ -2019,7 +2019,7 @@ C2 是**单用户账户处置入口**——冻结 / 解冻、强制登出、加�
 |---|---|---|---|---|---|---|
 | 查看账户状态 / impersonate 台账 | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | 冻结 / 解冻 | ✅ | —(可发起冻结请求单) | ✅(lead) | — | — | — |
-| 强制登出全部会话 | 按实际 `user_c2_session_revoke_all` 授权 | 不因角色名放行 | 按实际授权 | 不因角色名放行 | 按实际授权 | — |
+| 强制登出全部会话 | 页面按 C2 强退权限显示，接口另校验 C5 强退权限 | 不因角色名放行 | 按实际授权 | 不因角色名放行 | 按实际授权 | — |
 | impersonate | ✅ | — | ✅ | — | ✅ | — |
 | 加白 / 拉黑 | ✅ | — | ✅(lead) | — | — | — |
 

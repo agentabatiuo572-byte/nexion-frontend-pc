@@ -1327,14 +1327,6 @@ export async function updateUserStatus(userId: number | string, status: UserStat
   });
 }
 
-export async function revokeUserAccountActionSessions(userId: number | string, reason: string, operator: string, commandKey?: string) {
-  return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/sessions/revoke-all`, {
-    method: "POST",
-    body: JSON.stringify({ reason, operator }),
-    idempotencyKey: commandKey ?? idempotencyKey("c2-user-revoke-sessions"),
-  });
-}
-
 export async function revokeUserSessions(userId: number | string, reason: string, operator: string, commandKey?: string) {
   return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/security/sessions/revoke-all`, {
     method: "POST",
