@@ -90,15 +90,21 @@ export default function RiskRadarPage() {
   const [webhookMode, setWebhookMode] = useState("disabled");
   const [updatingSignal, setUpdatingSignal] = useState("");
   const [inbox, setInbox] = useState<B5InboxItem[]>([]);
+  const [inboxLoading, setInboxLoading] = useState(true);
+  const [inboxError, setInboxError] = useState("");
+  const [inboxReload, setInboxReload] = useState(0);
   const [acknowledgingDelivery, setAcknowledgingDelivery] = useState<number | null>(null);
 
   useEffect(() => {
     let alive = true;
+    setInboxLoading(true);
+    setInboxError("");
     fetchB5Inbox()
       .then((items) => { if (alive) setInbox(items); })
-      .catch((cause) => { if (alive) setToast(displayAdminError(cause)); });
+      .catch((cause) => { if (alive) setInboxError(displayAdminError(cause)); })
+      .finally(() => { if (alive) setInboxLoading(false); });
     return () => { alive = false; };
-  }, [setToast]);
+  }, [inboxReload]);
 
   useEffect(() => {
     if (!canSubscribe) return;
@@ -156,7 +162,9 @@ export default function RiskRadarPage() {
   const subscriptionValid = subscription.inApp || subscription.email || subscription.webhook;
 
   const changeSignalStatus = async (alert: B5Radar["recentAlerts"][number], targetStatus: "handled" | "resolved") => {
-    const reason = window.prompt(`请输入将 ${alert.signalNo} 标记为 ${targetStatus} 的理由（8–200 字）`)?.trim() || "";
+    const input = window.prompt(`请输入将 ${alert.signalNo} 标记为 ${targetStatus} 的理由（8–200 字）`);
+    if (input === null) return;
+    const reason = input.trim();
     if (reason.length < 8 || reason.length > 200) { setToast("理由必须为 8–200 字"); return; }
     const slot = `signal-status:${alert.signalNo}`;
     const fingerprint = JSON.stringify([alert.signalNo, alert.handlingStatus, alert.handlingVersion, targetStatus, reason]);
@@ -180,7 +188,7 @@ export default function RiskRadarPage() {
     try {
       await acknowledgeB5Inbox(delivery.id, commandKey);
       b5Commands.forget(slot);
-      setInbox(await fetchB5Inbox());
+      setInboxReload((value) => value + 1);
       setToast(`${delivery.signalNo} 已确认`);
     } catch (cause) {
       if (!(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(slot);
@@ -431,6 +439,9 @@ export default function RiskRadarPage() {
 
       <section className="b5-subscription" data-capability="b5-subscriber-inbox">
         <div className="b5-card-head"><div><BellRing size={18} /><b>我的站内告警</b></div><span>只显示发给你的告警</span></div>
+        {inboxLoading || inboxError ? (
+          <BDomainDataState title="站内告警" loading={inboxLoading} error={inboxError} onRetry={() => setInboxReload((value) => value + 1)} />
+        ) : <>
         {inbox.map((delivery) => <div className="b5-channel-row" key={delivery.id}>
           <b>{delivery.signalNo}</b><span>{deliveryStatusText(delivery.deliveryStatus)}</span>
           <span>渠道：{({ "durable-inbox": "站内", "controlled-proxy": "外部接口", provider: "外部通知服务", mock: "测试" } as Record<string,string>)[delivery.receiptSource] ?? "未知"} · 送达 {delivery.deliveredAt}</span>
@@ -439,6 +450,7 @@ export default function RiskRadarPage() {
           {canTriage && !delivery.acknowledgedAt && <button disabled={acknowledgingDelivery === delivery.id} onClick={() => void acknowledgeInbox(delivery)}>确认已读</button>}
         </div>)}
         {!inbox.length && <p>当前没有站内告警。</p>}
+        </>}
       </section>
 
       <section className="b5-subscription" data-capability="b5-signal-disposition">

@@ -1493,7 +1493,9 @@ GET 与实时推送共用 `generatedAt`，表示服务器生成快照的 UTC 时
    - **kill-switch 闸数量口径(雷达呈现 5 功能闸灯)+ geo-block 归属**:前端 §9.11d.1 Kill Switch 表原列 Staking pool 单档 / Genesis 一二级 pause / NEX↔USDT swap pause(exchange)/ Free-trial entry / NEX v2 Lock / Premium 订阅 / Region geo-block 等二元闸 + 「Risk-disclosure 双维 re-acknowledge」条款 re-ack 机制(非二元熔断闸,运营面归 I5 / J 域,V4)。**NEX v2 Lock / Premium 订阅两产品已下线,其 kill 闸随产品移除**;后台另在 §9.11d.1 之外应急新增 withdraw 提现闸。故 **B5 雷达呈现 5 个功能闸状态灯 = withdraw(后台应急新增)+ §9.11d.1 的 4 个二元功能闸(staking/genesis/exchange/trial);geo-block 不计入功能闸灯,其状态归 J2 地域屏蔽面**。
    - **geo-block 归属与 V4 切换面**:geo-block 灯状态 = 已封锁国家列表是否非空,但**该灯归 J2(Geo-block,V4)地域屏蔽面、不在 B5 功能闸灯内**;5 个功能闸(withdraw〔后台应急新增〕/staking/genesis/exchange/trial)的切换操作面在 **V4 J1(Kill-Switch 矩阵)**。geo-block API 结构标准化为 `{ key:'geo-block', enabled: countryList.length > 0, activeCountries: string[] }`(非纯 boolean),归 J2。
 5. **兑付覆盖率告警**:引用 **B1** 覆盖率灯(§3.14:覆盖率权威归 B1);跌破红线/黄线时雷达点亮 + 与 B1 告警条联动。
-6. **告警订阅配置**:各维度告警的通知渠道(站内 / 邮件 / Webhook)与阈值订阅(与 B1 共用订阅体系)。
+6. **告警订阅配置**:与 B1 共用订阅体系。当前站内可用，邮件固定禁用；外部消息通知仅在系统已配置受控代理时可开启，已有外部订阅仍可关闭。至少保留一个可用渠道，有变更时才允许保存。
+7. **我的站内告警**:只显示发给当前账号的告警。加载中显示区内加载状态；失败时区内持续显示「站内告警加载失败」、原因和「重试」，不显示无告警结论或旧告警操作。重试只重新加载收件箱，其他风险卡片和近期信号仍可查看。只有成功返回空列表才显示「当前没有站内告警。」；确认已读成功后按相同流程重新加载收件箱，重读失败在本区提示，不覆盖已确认的成功反馈。
+8. **近期风险信号的处理状态**:有分类处理权限时，待处理信号可「标记已处理」，已处理信号可「标记已解决」。理由框取消立即结束本次操作，不请求写入、不改变状态、不提示字数错误；实际提交时去掉首尾空白后的理由须为 8–200 字，不足或超出则提示「理由必须为 8–200 字」，不发送状态变更请求。状态标记只记录处理进度，实际风险处置仍前往对应业务页。
 
 **③ 可控参数**
 
