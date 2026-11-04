@@ -29,6 +29,11 @@ const backend = read(
   "src/main/java/ffdd/opsconsole/finance/application/OpsFinanceService.java",
   "Backend OpsFinanceService.java",
 );
+const cardLifecycle = read(
+  BACKEND_ROOT,
+  "src/main/java/ffdd/opsconsole/finance/application/TopupCardLifecycleService.java",
+  "Backend TopupCardLifecycleService.java",
+);
 const client = read(ROOT, "lib/admin/d-client.ts", "PC D1 client");
 const page = read(ROOT, "app/components/domain-views/d-tabs/d1-recon.tsx", "PC D1 page");
 const proxy = read(ROOT, "app/api/admin/finance/[...path]/route.ts", "PC finance proxy");
@@ -51,8 +56,14 @@ for (const [code, feeExpression, min, max] of [
     `Backend ${code} channel policy`,
   );
 }
-// The international card channel is retired (DEC-D-03, backend B28): it must stay switched off, its old limits no longer matter.
-pin(backend, /new TopupChannelDef\([^\n]*"card"[^\n]*,\s*false\)/, "Backend card channel retired");
+// The international card channel is retired (DEC-D-03, backend B28): every way in must answer 410 before doing anything.
+for (const method of ["admit", "settle", "recordFailure", "recordChargeback"]) {
+  pin(cardLifecycle, new RegExp(`public \\w+ ${method}\\(\\w+ input\\) \\{\\s*throw new BizException\\(410, "CARD_TOPUP_CHANNEL_RETIRED"\\);`), `Backend card ${method} answers 410`);
+}
+pin(cardLifecycle, /case "CARD" -> throw new BizException\(410, "CARD_TOPUP_CHANNEL_RETIRED"\);/, "Backend card statements answer 410");
+const adminCardRefusals = backend.match(/if \("card"\.equals\(channel\.code\(\)\)\) \{\s*return ApiResult\.fail\(410, "CARD_TOPUP_CHANNEL_RETIRED"\);/g) ?? [];
+if (adminCardRefusals.length === 2) checks.push("Backend card admin writes answer 410");
+else failures.push(`Backend card admin writes answer 410 不匹配 (found ${adminCardRefusals.length}, expected 2)`);
 pin(client, /updateD1TopupChannelMax[\s\S]*?\/max-amount/, "PC channel maximum command");
 pin(page, /maxAmountValue[\s\S]*?单笔上限/, "PC renders backend maximum");
 pin(page, /perTxLimitUsd/, "PC renders VietQR maximum");
