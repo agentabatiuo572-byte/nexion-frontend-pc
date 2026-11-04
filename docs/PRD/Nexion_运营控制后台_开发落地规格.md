@@ -769,11 +769,13 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | `velocity24h` | 笔数>3 或 >$5,000/24h | 笔数 1–20 / $500–$50,000 | K3 | K3 |
 | `newAccountProtectDays` | 7 天 | 0–30 天 | K3 | K3 |
 | `ruleActionMap` | 大额→manual / 高速→delay / 新账户→delay / 低信誉→freeze | delay/freeze/manual | K3 | K3 |
-| `weight.{6维}` | multiAccount 0.25/arbitrage 0.2/kycStatus 0.2/withdrawVelocity 0.15/accountAge 0.1/anomalyBehavior 0.1 | 各 0–1(**和=1 强制**) | **K4** | K4 |
-| `scoreBand.{low,mid,high}` | <40 / 40–69 / ≥70 | 0–100(low<mid<high) | K4 | K4 |
-| `autoEscalateScore` | ≥ 85 | 70–100 | K4 | K4 |
-| `riskScore.dimensionWeights.{7维}`(SPEC-7 聚簇) | serverDeviceId 0.9 / ipBucket 0.8 / withdrawAddress 0.9 / paymentInstrument 0.5 / sponsor 0.4 / uaFingerprint 0.2 / signupTiming 0.3 + `weakSignalClusterThreshold` 0.6 | 各 0–1 | **K4**(聚簇维度权重面板;区别于上 6 维评分权重) | K4 |
+| `weights.{multiAccount,arbitrage,withdrawVelocity,accountAge,anomalyBehavior}` | 0.30 / 0.25 / 0.20 / 0.10 / 0.15（五维，旧 KYC 维度已退役） | 各 0–1(**和=1 强制**)，页面以百分比编辑 | **K4** | K4 |
+| `bandLowMax` / `bandHighMin` | 40 / 70，即低 <40 / 中 40–69 / 高 ≥70 | 整数 0–100，中风险起始分小于高风险起始分 | K4 | K4 |
+| `autoEscalateScore` | 85 | 70–100，且不低于高风险起始分 | K4 | K4 |
+| `riskScore.dimensionWeights.{7维}`(SPEC-7 聚簇) | serverDeviceId 0.9 / ipBucket 0.8 / withdrawAddress 0.9 / paymentInstrument 0.5 / sponsor 0.4 / uaFingerprint 0.2 / signupTiming 0.3 + `weakSignalClusterThreshold` 0.6 | 各 0–1 | **K4**(聚簇维度权重面板;区别于上 5 维评分权重) | K4 |
 | SPEC-7 收益释放 / 提现前置全参数 | 见 SPEC-7 | — | K1 `releaseMode` 固定 `manual_only`，仅人工放行；旧 `attest_or_manual` 模式及 `appAttestationReleaseHours` 写入返回 410，不可调。`freeSlotRequiresBinding` / `firstWithdrawalManual` / `newAddressHoldHours` / `sameAddressRoute` 等其余参数参见 `PRD/三端架构改造/specs/SPEC-7-H5风险簇与收益释放.md` §5,K1/K3 面板可调 | K1/K3 |
+
+**K4 页头与权限口径（2026-11-04，BUG-127）**：权重、打分细则、风险分档和自动升级线均可配置；表内数值只是默认值，当前分档取生效模型，不把默认 40 / 70 / 85 写成固定规则。评分规则区可能显示未发布草稿，全平台分布按生效模型展示。有 `risk_k4_write` 可编辑、保存草稿和将历史版本恢复为草稿，草稿不生效；发布同时要求该权限和超级管理员身份。单用户手动改分要求 `risk_k4_user_override`，单用户及批量恢复系统评分要求 `risk_k4_user_recompute`，不以“只有超级管理员能改”概括这些操作。
 
 ### 4.8 域 E — 设备与商城(出处 v2 §10 各 ③)
 
