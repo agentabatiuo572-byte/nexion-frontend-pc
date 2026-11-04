@@ -2,7 +2,7 @@
 
 /**
  * 侧栏单域分组 — 折叠态=图标按钮(点击展开侧栏并打开该组);展开态=域头 + L2 链接列表。
- * 图标按业务类别上色(DOMAIN_TONE);当前页用品牌色小点和浅底标出。域字母和页面编号不显示(DP-30)。
+ * 图标按业务类别上色(DOMAIN_TONE)。页名前的点表示页面状态:flagship 实心,其他空心;当前页另用浅底和右端品牌色小点标出,两者互不替代。域字母和页面编号不显示(DP-30)。
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -94,9 +94,10 @@ export function SidebarGroup({
                     aria-current={active ? "page" : undefined}
                     data-active={active ? "" : undefined}
                   >
-                    <span className="rd-nav-dot" data-current={active ? "" : undefined} data-scaffold={l2.status === "flagship" ? undefined : ""} aria-hidden />
+                    <span className="rd-nav-dot" data-tone={tone} data-scaffold={l2.status === "flagship" ? undefined : ""} aria-hidden />
                     <span className="flex-1 truncate" title={l2.name}>{l2.name}</span>
                     {(badges?.[l2.path] ?? 0) > 0 && navBadge(badges?.[l2.path] ?? 0)}
+                    {active && <span className="rd-nav-dot" data-current="" aria-hidden />}
                   </Link>
                 </li>
               );

@@ -8,10 +8,17 @@
  * <Select aria-label="状态" value={status} onChange={setStatus}
  *   groups={[{ label: "要处理", options: [...] }, { label: "已结束", options: [...] }]} />
  *
- * value 可以是空字符串，表示「全部」。Radix 自带 portal、首字母跳转、Home、End、Esc 回到触发器和表单
- * required；这里补方向键环绕和 Tab 收起（CP-57）。
+ * 空字符串有两种意思，看 required：
+ * - 不必填：有 value 为空的选项时，它就是能选中的「全部」，onChange 和表单值都是空串。
+ * - 必填：空串就是没选，显示 placeholder，表单提交时被拦下。value 为空的选项不进列表，
+ *   它的文字在没传 placeholder 时当占位用。
+ *
+ * <Select aria-label="收款方式" name="method" required value={method} onChange={setMethod}
+ *   placeholder="请选择收款方式" options={[{ value: "BANK", label: "银行卡" }]} />
+ *
+ * Radix 自带 portal、首字母跳转、Home、End、Esc 回到触发器；这里补方向键环绕、Tab 收起和禁用时收起（CP-57）。
  */
-import { useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import * as Radix from "@radix-ui/react-select";
 import { Check, ChevronDown } from "lucide-react";
 
@@ -44,6 +51,9 @@ export function Select({ value, onChange, options, groups, placeholder, disabled
   "aria-label": string;
 }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
+  const emptyOption = [...(options ?? []), ...(groups ?? []).flatMap((group) => group.options)].find((option) => option.value === "");
+  const choices = (list: readonly SelectOption[]) => (required ? list.filter((option) => option.value !== "") : list);
   const onKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Tab") {
       event.preventDefault();
@@ -59,19 +69,21 @@ export function Select({ value, onChange, options, groups, placeholder, disabled
     (event.key === "ArrowDown" ? items[0] : items.at(-1))?.focus();
   };
   return (
-    <Radix.Root value={value || EMPTY} onValueChange={(next) => onChange(next === EMPTY ? "" : next)} open={open && !disabled} onOpenChange={setOpen} disabled={disabled} name={name} required={required}>
+    <Radix.Root value={value || (emptyOption && !required ? EMPTY : "")} onValueChange={(next) => onChange(next === EMPTY ? "" : next)} open={open && !disabled} onOpenChange={setOpen} disabled={disabled} required={required}>
+      {/* Radix 的原生 select 只管必填校验；表单值走这里，「全部」才是空串，不是内部占位值。 */}
+      {name && <input type="hidden" name={name} value={value} disabled={disabled} />}
       <Radix.Trigger className="rd-select" aria-label={ariaLabel}>
-        <Radix.Value placeholder={placeholder} />
+        <Radix.Value placeholder={placeholder ?? (required ? emptyOption?.label : undefined)} />
         <Radix.Icon><ChevronDown size={14} aria-hidden /></Radix.Icon>
       </Radix.Trigger>
       <Radix.Portal>
         <Radix.Content className="rd-select-content" position="popper" sideOffset={4} collisionPadding={12} onKeyDownCapture={onKeyDownCapture}>
           <Radix.Viewport className="rd-select-viewport">
-            {options?.map((option) => <Option key={option.value} option={option} />)}
+            {options && choices(options).map((option) => <Option key={option.value} option={option} />)}
             {groups?.map((group) => (
               <Radix.Group key={group.label}>
                 <Radix.Label className="rd-select-label">{group.label}</Radix.Label>
-                {group.options.map((option) => <Option key={option.value} option={option} />)}
+                {choices(group.options).map((option) => <Option key={option.value} option={option} />)}
               </Radix.Group>
             ))}
           </Radix.Viewport>
