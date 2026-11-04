@@ -109,6 +109,9 @@ const MIGRATED = [
   "app/components/domain-views/m-tabs/m1-personal-workbench.tsx",
   // Transfer keeps number, target and reason until the original command is confirmed.
   "app/components/domain-views/m-tabs/m1-customer-transfer.tsx",
+  // First assignment and the unbound policy recover through useSupportManagementCommand.
+  "app/components/domain-views/m-tabs/m3-assign-advisor.tsx",
+  "app/components/domain-views/m-tabs/m5-unbound-policy.tsx",
   "app/components/domain-views/m-tabs/m1-supervisor-pool.tsx",
   "app/components/domain-views/m-tabs/m3-dedicated-chat.tsx",
   "app/components/domain-views/m-tabs/m5-service-rules.tsx",
@@ -357,7 +360,7 @@ for (const rel of MIGRATED) {
   const storeBindings = runtimeBindings(code, full, SHARED_STORE);
   const importsStore = ["createPendingMutationStore", "createSlotAttemptStore"].some((name) => storeBindings.has(name));
   const callsStore = [...storeBindings].some((name) =>
-    new RegExp(`\\b${name}\\s*(?:<[^>]*>)?\\s*\\(`).test(code));
+    new RegExp(`\\b${name}\\s*(?:<(?:[^<>]|<[^<>]*>)*>)?\\s*\\(`).test(code));
   const direct = importsStore && callsStore;
 
   // executor 间接路径:同样按真绑定判,且**不再发免检金牌**(原来命中即 continue,
