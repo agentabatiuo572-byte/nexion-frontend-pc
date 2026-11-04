@@ -56,6 +56,7 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
           completionCopy={mc.completionCopy}
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
+          getPendingReason={mc.getPendingReason}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {
             const succeeded = await mc.run(reason, newValue, businessValue);

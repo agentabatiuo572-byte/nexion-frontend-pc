@@ -3410,8 +3410,10 @@ export type CoverageSnapshot = {
 };
 
 /* 操作确认弹窗 — 高敏动作确认 + 理由必填 + 可编辑「目标新值」(配置型调整);纯动作(放行/退款/封禁/pause)仅确认。 */
-export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; reasonMin?: number; reasonMax?: number; auditSink?: "a2" | "local-history"; briefKind?: OperatorBriefKind; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
-  const [reason, setReason] = useState("");
+export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; auditSink?: "a2" | "local-history"; briefKind?: OperatorBriefKind; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+  const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
+  const [draftReason, setReason] = useState(pendingReason ?? "");
+  const reason = pendingReason ?? draftReason;
   const [newVal, setNewVal] = useState(() => initEditValue(edit));
   const [activeBusinessForm, setActiveBusinessForm] = useState<BusinessFormSpec | undefined>(businessForm);
   const [businessValue, setBusinessValue] = useState<BusinessFormValue>(() => initBusinessForm(businessForm));
@@ -3496,6 +3498,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       // consume the rejection so a rejected A2/K2 request never escapes as pageerror.
       setSubmitError(operationConfirmErrorMessage(error));
     } finally {
+      setPendingReason(getPendingReason?.());
       setSubmitting(false);
     }
   };
@@ -3525,7 +3528,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       footer={<>
         <Btn disabled={submitting} onClick={handleClose}>取消</Btn>
         <Btn variant="primary" disabled={!canConfirm} onClick={() => void handleConfirm()}>
-          <Icon name="check" size={15} /> {submitting ? "提交中…" : "确认提交"}
+          <Icon name="check" size={15} /> {submitting ? "提交中…" : pendingReason !== undefined ? "重试原操作" : "确认提交"}
         </Btn>
       </>}>
       <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={briefKind} />
@@ -3603,7 +3606,8 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       )}
       <div className="field">
         <label htmlFor={reasonFieldId}>操作理由（必填，{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）</label>
-        <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例如：工单号、处理依据" />
+        <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} disabled={!!getPendingReason && (submitting || pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} placeholder="例如：工单号、处理依据" />
+        {pendingReason !== undefined && <div className="tiny" style={{ marginTop: 7 }}>原操作结果尚未确认，理由已锁定。重试将继续原操作，不会重复执行。</div>}
         {!reasonOk && (
           <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
             {reasonLength < reasonMin
