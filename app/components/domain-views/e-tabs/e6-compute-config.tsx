@@ -35,7 +35,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
         min: Number.MIN_VALUE,
         disallowCurrent: true,
       },
-      detail: `${operatorCopyText(c.label)}：${operatorCopyText(c.desc)} 批准后从下次结算开始生效，已结算的收益不变。${operatorCopyText(c.frontendEffect)}`,
+      detail: `${operatorCopyText(c.label)}：批准后生效，发布到公共配置。`,
     });
   };
 
@@ -46,7 +46,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
       op: "param",
       paramKey: e6YieldKey(p.key),
       edit: { kind: "number", current: p.value, unit: operatorCopyText(p.unit), min: Number.MIN_VALUE, disallowCurrent: true },
-      detail: `${operatorCopyText(p.label)}批准后生效，用于估算收益；已结算的收益不变。`,
+      detail: `${operatorCopyText(p.label)}：批准后生效，发布到公共配置。`,
     });
   };
 
@@ -71,7 +71,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
     <div>
       <div id="phone-calibration"><PhoneCalibrationPanel ctx={ctx} /></div>
       <EStats items={[
-        { k: "在线系数", v: coefficients.length, sub: "App 在线奖励", tone: "cyan" },
+        { k: "在线系数", v: coefficients.length, sub: "公共配置参数", tone: "cyan" },
       ]} />
 
       <PhoneReplacementPolicyPanel />
@@ -79,31 +79,31 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
       <section className="pane" style={{ marginTop: 14 }}>
         <div className="pane-h">
           <span className="ttl">在线加成系数</span>
-          <span className="sub">只影响之后的结算</span>
+          <span className="sub">批准后发布到公共配置</span>
         </div>
         {coefficients.map((c) => (
           <div className="pkv" key={c.key}>
             <div className="lhs">
               <span className="zh">{operatorCopyText(c.label)}</span>
-              <span className="desc"><AutoGloss>{operatorCopyText(c.desc)}</AutoGloss></span>
+              <span className="desc">批准后发布到公共配置。</span>
             </div>
             <span className="v">{ready ? c.value : "—"}<span className="u">{operatorCopyText(c.unit)}</span></span>
             {canWriteE6 && <button type="button" className="adj" data-proof={`e6-coeff-${c.key}`} onClick={() => editCoefficient(c)}>调整</button>}
           </div>
         ))}
         <div className="tint cyan tiny" style={{ margin: "12px 16px 14px" }}>
-          <AutoGloss>决定用户连续在线多久能拿满 App 在线加成。缩短时间会让平台多付钱，兑付覆盖率低于红线时无法保存；延长时间不受限制。已结算的收益不变，H5 手机算力奖励也不会恢复。</AutoGloss>
+          <AutoGloss>修改提交审批，批准后发布到公共配置。</AutoGloss>
         </div>
       </section>
 
       <section className="pane" style={{ marginTop: 14 }} data-proof="e6-yield-estimate">
         <div className="pane-h">
           <span className="ttl">收益估算参数</span>
-          <span className="sub">已结算的收益不变</span>
+          <span className="sub">批准后发布到公共配置</span>
 
         </div>
         <div className="tint cyan tiny" style={{ margin: "12px 16px 0" }}>
-          <AutoGloss>以下参数用于估算收益，修改提交审批，批准后生效。</AutoGloss>
+          <AutoGloss>以下参数提交审批，批准后发布到公共配置。</AutoGloss>
         </div>
         <div data-proof="e6-yield-estimate-params" style={{ margin: "0 16px 14px" }}>
           {yields.map((p) => (
@@ -137,12 +137,12 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
           <span className="sub">不随运营阶段变化</span>
         </div>
         <div className="tint cyan tiny" style={{ margin: "12px 16px 14px" }}>
-          <AutoGloss>机型风控填理由保存后立即生效，用于之后的校准。手机校准规则须由另一位超级管理员批准后生效；预约发布还须等到所选时间，若批准时已过预约时间，则批准后生效。手机换机策略、在线加成系数和收益估算参数均为批准后生效，不用等运营阶段切换。在线系数从批准后的下次结算开始使用，已结算的收益不变。</AutoGloss>
+          <AutoGloss>机型风控填理由保存后立即生效，用于之后的校准。手机校准规则须由另一位超级管理员批准后生效；预约发布还须等到所选时间，若批准时已过预约时间，则批准后生效。手机换机策略批准后生效，用于之后的换机资格检查。在线加成系数和收益估算参数批准后发布到公共配置，不用等运营阶段切换。</AutoGloss>
         </div>
       </section>
 
       <p className="f-foot">
-        <b>说明</b>：<AutoGloss>机型风控立即生效；手机校准、换机、在线系数和收益估算参数批准后生效，校准预约发布还须到达生效时间。App 在启动、返回前台或用户下拉刷新时重新加载公共配置。</AutoGloss>
+        <b>说明</b>：<AutoGloss>机型风控立即生效；手机校准和换机策略批准后生效，校准预约发布还须到达生效时间。在线系数和收益估算参数批准后发布到公共配置。</AutoGloss>
       </p>
     </div>
   );
