@@ -344,7 +344,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
         </div>
       </section>
 
-      <p className="f-foot">「什么时候解锁、限时倍率」在「运营阶段设置」里控制，这里只能查看；「奖励率、倍率、扣款、锁定金额快捷选项」在这页修改。调高奖励率或好友升级奖励倍率、降低扣款时，覆盖率低于红线无法保存。</p>
+      <p className="f-foot">锁仓期限在本页修改，只影响新订单，已有订单按下单时的期限解锁。限时锁定计划倍率由「运营阶段设置」控制，本页只读展示。奖励率、好友升级奖励倍率、抽奖券、扣款和锁定金额快捷选项也在本页修改。调高奖励率或好友升级奖励倍率、降低扣款时，覆盖率低于红线无法保存。</p>
       <details className="f-foot"><summary>技术信息（数据来源）</summary>{overview.sources.join(" / ")}</details>
     </>
   );
