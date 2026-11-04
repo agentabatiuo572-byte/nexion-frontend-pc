@@ -11,8 +11,11 @@
  *
  * 读取失败传 value="—"，不写 0（CP-42）。explain 是口径说明，点开看（DP-36）。
  * 带 data-cp="stat"，首屏检查按它数。
+ * 整张可点：传 href 跳页，或传 onOpen 做页内动作，openLabel 是读屏名字。问号和 sub 里的按钮浮在上面，各点各的。
+ * 目标页不可达时不传（X03）。
  */
 import type { ReactNode } from "react";
+import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 import { Explain } from "./explain";
 import { IconTile } from "./icon-tile";
@@ -22,7 +25,7 @@ export function StatBand({ children, label }: { children: ReactNode; label?: str
   return <div className="rd-stats" role="group" aria-label={label}>{children}</div>;
 }
 
-export function Stat({ label, value, unit, sub, tone, icon, iconTone, lead, explain }: {
+export function Stat({ label, value, unit, sub, tone, icon, iconTone, lead, explain, href, onOpen, openLabel }: {
   label: ReactNode;
   value: ReactNode;
   unit?: ReactNode;
@@ -32,9 +35,14 @@ export function Stat({ label, value, unit, sub, tone, icon, iconTone, lead, expl
   iconTone?: RoleTone | StateTone;
   lead?: boolean;
   explain?: ReactNode;
+  href?: string;
+  onOpen?: () => void;
+  openLabel?: string;
 }) {
   return (
     <div className="rd-stat" data-cp="stat" data-lead={lead ? "" : undefined}>
+      {href && <Link className="rd-stat-hit" href={href} prefetch={false} aria-label={openLabel} />}
+      {!href && onOpen && <button type="button" className="rd-stat-hit" aria-label={openLabel} onClick={onOpen} />}
       {icon && <IconTile tone={iconTone ?? tone ?? "role-other"} icon={icon} size={lead ? 40 : 28} />}
       <div>
         <div className="rd-stat-label">

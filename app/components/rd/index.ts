@@ -1,3 +1,5 @@
+export { Bars, type BarSeries } from "./bars";
+export { BlockState, InlineRetry } from "./block-state";
 export { Button, IconButton, type ButtonVariant } from "./button";
 export { Conclusion } from "./conclusion";
 export { Explain } from "./explain";
@@ -13,6 +15,7 @@ export { Select, type SelectOption } from "./select";
 export { Stat, StatBand } from "./stat";
 export { StatusTag } from "./status-tag";
 export { RdPage, useRdSurface } from "./surface";
+export { TodoFailed, TodoItem, TodoList } from "./todo-list";
 export { Cell, ColumnPicker, Table, TableLoading, TableMessage, Td, Th, Tr, useTableColumns, type TableColumn, type TableColumns } from "./table";
 export { PageTabs, Segments, type PageTabItem, type SegmentItem } from "./tabs";
 export { DOMAIN_TONE, type DomainTone, type RoleTone, type StateTone, type Tone } from "./tone";

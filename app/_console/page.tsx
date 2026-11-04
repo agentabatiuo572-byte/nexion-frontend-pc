@@ -1,540 +1,318 @@
 "use client";
-import { a2ActionText, operatorCopyText } from "@/lib/admin/operator-copy";
-import { finiteDashboardNumber, rollupKpiPassState } from "@/lib/admin/dashboard-number";
 
 /**
- * 运营指挥台(首页 /)。按 Claude Design「NexGrid 运营控制后台」稿优点重构:
- * ① 页头(口径副标 + 对账导出)→ 破线条件 alertbar(仅建议)
- * ② 资金兑付安全 B1·B2·B5:CoverageHero(横向分区条 + 三账本)+ RiskRadar;FundPool 堆叠条 + 覆盖率趋势
- * ③ 实时运营脉搏 → ④ 待处理(操作确认)→ ⑤ 用户转化分析 → ⑥ 八项 KPI → ⑦ 域速览
- * B 域资金/漏斗/节奏/风险和提现积压取后端聚合接口。按角色过滤。
+ * 指挥台（首页 /）。先说现状，再给要处理的事和今日经营，其余收进 5 行带结论的折叠摘要。
+ * 所有运营角色都能进，每块看自己的读权限，没有权限的块不出现、不发请求（重构说明 5.7）。
+ * 每块各自加载、各自报错，一块失败不挡别的块（5.6）。这页不提交任何东西，要处理就跳业务页。
+ * 导出资金数据等 BE-21（权限、理由、记录）一起上，不继续无记录下载（决定 7）。
  */
+import "./command-center/command-center.css";
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { AlertTriangle, Download, Loader2 } from "lucide-react";
-import type { NavDomain, AdminRole } from "@/lib/nav/console-nav";
-import { canAccessResolvedPath, CONSOLE_NAV, resolveVisibleDomains } from "@/lib/nav/console-nav";
-import { useAdminAuth } from "@/lib/store/admin-auth";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight, ListChecks, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Button, Conclusion, InlineRetry, PageHeader, RdPage } from "@/app/components/rd";
+import { BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
+import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
+import { a2ActionText } from "@/lib/admin/operator-copy";
+import { b0Blocks } from "@/lib/admin/b0-access";
+import { fetchB0Devices, fetchB0NewUsers, fetchB0Sales } from "@/lib/admin/b0-client";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
-import { fetchA2Overview, type A2OperationRow, type A2Overview } from "@/lib/admin/a2-client";
-import { fetchLBiOverviews, type LBiData } from "@/lib/admin/l-client";
-import { opsAlertHref, useJ1DutyAlerts } from "@/lib/admin/ops-dashboard-client";
-import { fmtPct, fmtUsdCompact, fmtNum } from "@/lib/format";
-import { KpiStatCard } from "@/app/components/kit/kpi-stat-card";
-import { AutoGloss } from "@/app/components/kit/gloss";
-import { StatusPill } from "@/app/components/kit/status-pill";
-import { SecLabel } from "@/app/components/kit/sec-label";
-import { CoverageHero } from "@/app/components/dashboard/coverage-hero";
-import { ExposureCard } from "@/app/components/dashboard/exposure-card";
-import { FundPool } from "@/app/components/dashboard/fund-pool";
-import { BDomainDataState, BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
-import { RiskRadar, type AlertItem, type KillGate } from "@/app/components/dashboard/risk-radar";
-import { SensitiveOperationFeed, type SensitiveOperationItem } from "@/app/components/dashboard/sensitive-operation-feed";
-import { FunnelBars } from "@/app/components/dashboard/funnel-bars";
-import { KpiWall, type DashboardKpi } from "@/app/components/dashboard/kpi-wall";
-import { displayAdminError } from "@/lib/admin/error-messages";
-import { B_DASHBOARD_READ_AUTHORITIES, L_BI_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
+import { fetchB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
+import { fetchB2Reserve } from "@/lib/admin/b2-client";
+import { businessClock } from "@/lib/admin/business-time";
+import { requiredReadAuthority } from "@/lib/admin/cross-domain-authority";
+import { fetchD2Withdrawals } from "@/lib/admin/d-client";
+import { supportClient } from "@/lib/admin/m-support-client";
+import { opsAlertHref, refreshJ1DutyAlerts, useJ1DutyAlerts } from "@/lib/admin/ops-dashboard-client";
+import { fmtNum } from "@/lib/format";
+import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
+import { useAdminAuth } from "@/lib/store/admin-auth";
+import { FlowFold, FundFold, FunnelFold, KpiFold, pressureLevel, RiskFold, useFoldChoices } from "./command-center/folds";
+import { PendingPanel, type PendingFailure, type PendingRow } from "./command-center/pending";
+import { fundLevel, statusSentence } from "./command-center/status";
+import { TodayPanel } from "./command-center/today";
+import { useBlock, type Block } from "./command-center/use-block";
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
+const RESERVE_PAGE = "/overview/dual-ledger";
 
-function rawRec(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
+const countReviewPending = async () => (await fetchD2Withdrawals({ status: "REVIEW_PENDING", pageNum: 1, pageSize: 1 })).total;
+const countOrphaned = async () => (await fetchD2Withdrawals({ status: "TX_ORPHANED", pageNum: 1, pageSize: 1 })).total;
+const countSupportTodo = async () => (await supportClient.customers({ pageNum: 1, pageSize: 1, filter: "TODO" })).total;
 
-function rawRows(value: unknown): Record<string, unknown>[] {
-  return Array.isArray(value) ? value.filter((item) => item && typeof item === "object").map((item) => item as Record<string, unknown>) : [];
-}
-
-function rawText(value: unknown, fallback = "") {
-  return typeof value === "string" ? value : value == null ? fallback : String(value);
-}
-
-function rawNum(value: unknown, fallback = 0) {
-  if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function finiteRawNum(value: unknown) {
-  return finiteDashboardNumber(value);
-}
-
-function rawNumRows(value: unknown): number[] {
-  return Array.isArray(value) ? value.map((item) => rawNum(item, Number.NaN)).filter(Number.isFinite) : [];
-}
-
-function kpiTargetLabel(kpi: Record<string, unknown>) {
-  const unit = rawText(kpi.unit);
-  if (rawText(kpi.dir) === "band") {
-    const [low, high] = rawNumRows(kpi.band);
-    if (!Number.isFinite(low) || !Number.isFinite(high)) return null;
-    return `${low}-${high}${unit}`;
-  }
-  const dir = rawText(kpi.dir);
-  if (dir !== "lte" && dir !== "gte") return null;
-  const target = finiteRawNum(kpi.target);
-  if (target == null) return null;
-  const sign = dir === "lte" ? "<=" : ">=";
-  return `${sign}${target}${unit}`;
-}
-
-function kpiPass(kpi: Record<string, unknown>) {
-  const value = finiteRawNum(kpi.value);
-  if (value == null) return null;
-  const dir = rawText(kpi.dir);
-  if (dir === "band") {
-    const [low, high] = rawNumRows(kpi.band);
-    if (!Number.isFinite(low) || !Number.isFinite(high)) return null;
-    return value >= low && value <= high;
-  }
-  if (dir !== "lte" && dir !== "gte") return null;
-  const target = finiteRawNum(kpi.target);
-  if (target == null) return null;
-  return dir === "lte" ? value <= target : value >= target;
-}
-
-function normalizeDashboardKpis(data: LBiData | null): DashboardKpi[] {
-  const l1 = rawRec(data?.l1);
-  const kpiPlain = rawRec(l1.kpiPlain);
-  const kpiExt = rawRec(l1.kpiExt);
-  return rawRows(l1.kpis).flatMap((row, index) => {
-    const n = finiteRawNum(row.n) ?? index + 1;
-    const ext = rawRec(kpiExt[String(n)]);
-    const spark = rawNumRows(row.spark);
-    const unit = rawText(row.unit);
-    const label = rawText(row.name).trim();
-    const value = finiteRawNum(row.value);
-    const target = kpiTargetLabel(row);
-    const pass = kpiPass(row);
-    if (!label || target == null) return [];
-    return [{
-      key: `l1-${n}`,
-      label,
-      value: value == null ? "—" : `${value}${unit}`,
-      target,
-      pass,
-      series: spark,
-      hint: rawText(kpiPlain[String(n)] ?? ext.note ?? row.vis, ""),
-    }];
-  });
-}
-
-function roleForA2Operation(row: A2OperationRow): AdminRole | null {
+/** 接口给的角色，认不出写「其他」，不丢这一条（B0-H06）。 */
+function approvalOwner(row: A2OperationRow): PendingRow["owner"] {
   const gate = `${row.roleGate} ${row.operatorRole}`.toLowerCase();
-  if (gate.includes("财务") || gate.includes("finance")) return "finance";
-  if (gate.includes("风控") || gate.includes("risk")) return "risk";
-  if (gate.includes("内容") || gate.includes("content")) return "content";
-  if (gate.includes("增长") || gate.includes("growth")) return "growth";
-  if (gate.includes("客服") || gate.includes("support")) return "support";
-  if (gate.includes("审计") || gate.includes("auditor")) return "auditor";
-  if (row.type === "fund") return "finance";
-  if (row.type === "sos") return "risk";
-  return null;
+  if (gate.includes("财务") || gate.includes("finance")) return "财务";
+  if (gate.includes("风控") || gate.includes("risk")) return "风控";
+  if (gate.includes("内容") || gate.includes("content")) return "内容";
+  if (gate.includes("增长") || gate.includes("growth")) return "增长";
+  if (gate.includes("客服") || gate.includes("support")) return "客服";
+  if (gate.includes("审计") || gate.includes("auditor")) return "审计";
+  if (row.type === "fund") return "财务";
+  if (row.type === "sos") return "风控";
+  return "其他";
 }
 
-function operationDetail(row: A2OperationRow) {
-  const delta = row.before !== "—" || row.after !== "—" ? `${row.before} → ${row.after}` : row.reason;
-  return `${row.obj} · ${delta}`;
-}
-
-function DomainTile({ domain, pulse }: { domain: NavDomain; pulse: string }) {
-  const Icon = domain.icon;
-  const accent = `var(${domain.accentVar})`;
-  const flagship = domain.l2.find((l) => l.status === "flagship");
-  const target = flagship ?? domain.l2[0];
-  return (
-    <Link
-      href={target.path}
-      prefetch={false}
-      className="group flex flex-col rounded-[12px] border p-3 transition-all duration-200 hover:-translate-y-0.5 border-[var(--v5-border)] bg-[var(--v5-surface)] hover:border-[var(--v5-border-strong)]"
-    >
-      <div className="flex items-center gap-2.5">
-        <span
-          className="flex h-8 w-8 items-center justify-center rounded-[9px]"
-          style={{ background: `color-mix(in srgb, ${accent} 16%, transparent)` }}
-        >
-          <Icon size={16} style={{ color: accent }} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-[13px]" style={{ color: "var(--v5-ink)" }}>{domain.name}</p>
-          <p className="font-mono-tabular text-[10px]" style={{ color: "var(--v5-ink-4)" }}>{domain.l2.length} 个页面</p>
-        </div>
-        {!flagship && <StatusPill label="未上线" tone="info" size="sm" dot={false} />}
-      </div>
-      <p className="mt-2 text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}><AutoGloss>{operatorCopyText(pulse)}</AutoGloss></p>
-    </Link>
-  );
-}
-
-function DashboardDataState({ title, loading, error }: { title: string; loading?: boolean; error?: string | null }) {
-  const isLoading = loading && !error;
-  return (
-    <section
-      className="rounded-[12px] p-5"
-      style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}
-    >
-      <div className="flex items-start gap-3">
-        <span
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px]"
-          style={{
-            background: isLoading
-              ? "color-mix(in srgb, var(--v5-brand) 14%, transparent)"
-              : "color-mix(in srgb, var(--v5-warning) 16%, transparent)",
-            color: isLoading ? "var(--v5-brand)" : "var(--v5-warning)",
-          }}
-        >
-          {isLoading ? <Loader2 size={17} className="animate-spin" /> : <AlertTriangle size={17} />}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-medium" style={{ color: "var(--v5-ink)" }}>
-            {isLoading ? `正在加载${title}` : `${title}暂无数据`}
-          </div>
-          <div className="mt-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
-            {isLoading ? "请稍候…" : error || "暂时没有可显示的数据。"}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
+function approvalDetail(row: A2OperationRow) {
+  const change = row.before !== "—" || row.after !== "—" ? `${row.before} → ${row.after}` : row.reason;
+  return [a2ActionText(row.action), row.obj, change].filter((part) => part && part !== "—").join(" · ");
 }
 
 export default function CommandCenter() {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  const sessionRole = useAdminAuth((s) => s.role);
-  const sessionOperator = useAdminAuth((s) => s.operator);
-  const session = useAdminAuth((s) => s.session);
-  const [a2Overview, setA2Overview] = useState<A2Overview | null>(null);
-  const [a2Error, setA2Error] = useState<string | null>(null);
-  const [lBiData, setLBiData] = useState<LBiData | null>(null);
-  const [lBiError, setLBiError] = useState<string | null>(null);
-  const [lBiLoading, setLBiLoading] = useState(false);
-  const authorities = session?.authorities ?? [];
-  const canReadA2 = authorities.includes("platform_a2_read");
-  const canReadBDomain = B_DASHBOARD_READ_AUTHORITIES.every((authority) => authorities.includes(authority));
-  const canReadLBi = L_BI_READ_AUTHORITIES.every((authority) => authorities.includes(authority));
-  const canReadJ1 = authorities.includes("emergency_j1_read");
-  const { alerts: opsAlerts, error: opsAlertError } = useJ1DutyAlerts(canReadJ1);
+  const session = useAdminAuth((state) => state.session);
+  const blocks = useMemo(() => b0Blocks(session?.authorities ?? []), [session?.authorities]);
+  const domains = useMemo(() => (session ? resolveVisibleDomains(session) : []), [session]);
+  /** 目标页可达并有读权限才给入口（X03、ST-58）。 */
+  const reach = useCallback((href: string) => {
+    const path = href.split(/[?#]/, 1)[0];
+    const read = requiredReadAuthority(path);
+    return canAccessResolvedPath(domains, path) && (read === null || Boolean(session?.authorities.includes(read)));
+  }, [domains, session?.authorities]);
+
+  const [refreshKey, setRefreshKey] = useState(0);
+  const bDomain = useBDomainDashboard(blocks.fund);
+  const reserve = useBlock(fetchB2Reserve, blocks.coverDays, refreshKey);
+  const flows = useBlock(fetchB2LiquidityHistory, blocks.netFlow, refreshKey);
+  const sales = useBlock(fetchB0Sales, blocks.sales, refreshKey);
+  const newUsers = useBlock(fetchB0NewUsers, blocks.newUsers, refreshKey);
+  const devices = useBlock(fetchB0Devices, blocks.devices, refreshKey);
+  const approvals = useBlock(fetchA2Overview, blocks.approvals && reach("/platform/audit"), refreshKey);
+  const reviewPending = useBlock(countReviewPending, blocks.withdrawals && reach("/finance/withdrawals"), refreshKey);
+  const orphaned = useBlock(countOrphaned, blocks.withdrawals && reach("/finance/withdrawals"), refreshKey);
+  // 有 M 读权限但没有客服读取范围的账号，接口回 403，这一行不出现，不算读取失败。
+  const canReadSupportTodo = blocks.support && Boolean(session?.supportReadModes?.length) && reach("/service/overview");
+  const supportTodo = useBlock(countSupportTodo, canReadSupportTodo, refreshKey);
+  const j1 = useJ1DutyAlerts(blocks.j1 && reach("/emergency/kill-switch"));
+
+  // 客服待办和紧急开关告警每 30 秒更新（5.3）；紧急开关的轮询在 useJ1DutyAlerts 里。
+  const reloadSupport = supportTodo.reload;
   useEffect(() => {
-    let alive = true;
-    if (canReadA2) {
-      fetchA2Overview()
-        .then((overview) => {
-          if (!alive) return;
-          setA2Overview(overview);
-          setA2Error(null);
-        })
-        .catch((error: unknown) => {
-          if (!alive) return;
-          setA2Overview(null);
-          setA2Error(displayAdminError(error));
-        });
-    } else {
-      setA2Overview(null);
-      setA2Error(null);
-    }
-    if (canReadLBi) {
-      setLBiLoading(true);
-      fetchLBiOverviews()
-        .then((data) => {
-          if (!alive) return;
-          setLBiData(data);
-          setLBiError(null);
-        })
-        .catch((error: unknown) => {
-          if (!alive) return;
-          setLBiData(null);
-          setLBiError(displayAdminError(error));
-        })
-        .finally(() => {
-          if (alive) setLBiLoading(false);
-        });
-    } else {
-      setLBiData(null);
-      setLBiError(null);
-      setLBiLoading(false);
-    }
-    return () => {
-      alive = false;
-    };
-  }, [canReadA2, canReadLBi]);
-  const role = mounted ? sessionRole : null;
-  const operator = mounted ? sessionOperator : "";
-  const bDomain = useBDomainDashboard(canReadBDomain);
-  const { ledger: LEDGER, rhythm, riskRadar } = bDomain;
-  const renderBDomainState = (error: string | null, loading = false) => (
-    <div className="w-full">
-      <header className="mb-5 flex flex-wrap items-end gap-4">
-        <div className="min-w-0 flex-1">
-          <p className="font-mono-tabular text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--v5-ink-3)" }}>
-            UVEL 运营控制台
-          </p>
-          <h1 className="font-display mt-1.5 text-[26px]" style={{ color: "var(--v5-ink)" }}>运营总览</h1>
-          <p className="mt-1.5 text-[13.5px]" style={{ color: "var(--v5-ink-2)" }}>
-            欢迎，{operator || "运营同学"}<AutoGloss> · 正在加载资金、转化、节奏和风险数据…</AutoGloss>
-          </p>
-        </div>
-      </header>
-      <BDomainWarnings warnings={bDomain.warnings} />
-      <BDomainDataState title="运营总览" loading={loading} error={error} onRetry={bDomain.reload} />
-    </div>
-  );
+    if (!canReadSupportTodo) return undefined;
+    const timer = window.setInterval(reloadSupport, 30_000);
+    return () => window.clearInterval(timer);
+  }, [canReadSupportTodo, reloadSupport]);
 
-  if (!canReadBDomain) {
-    return renderBDomainState("你的角色没有运营总览的查看权限，请从左侧菜单进入其他页面。");
+  const { ledger, liquidity, rhythm, riskRadar, warnings, alerts } = bDomain;
+  // 刷新失败时不用旧的资金数据下结论（T05 第 4 条）。
+  const fundReady = bDomain.hasData && !bDomain.error;
+  const coverage = fundReady ? { ratio: ledger.coverageRatio, redline: ledger.redlinePct, healthy: ledger.healthyPct } : null;
+  const water = reserve.data?.waterLevel ?? null;
+  const level = fundLevel(coverage, water?.tier ?? null);
+  const belowRedline = Boolean(coverage && coverage.ratio < coverage.redline);
+  const belowHealthy = Boolean(coverage && coverage.ratio < coverage.healthy);
+  const fundFailed = Boolean(bDomain.error) || Boolean(reserve.error);
+  const withdrawGate = fundReady ? riskRadar.gates.find((gate) => gate.dom === "withdraw") : undefined;
+
+  const rows: (PendingRow | PendingFailure)[] = [];
+  if (fundReady && belowRedline && !alerts.coverageRedlineAcked && reach(RESERVE_PAGE)) {
+    rows.push({ key: "coverage", title: "覆盖率告警待确认", sub: "跌破红线，还没人确认", owner: "财务", href: RESERVE_PAGE, tone: "danger" });
   }
-  if ((bDomain.loading && !bDomain.hasData) || bDomain.error || !bDomain.hasData) {
-    return renderBDomainState(bDomain.error, bDomain.loading && !bDomain.error);
+  const backfill = j1.alerts.find((alert) => alert.id === "J1-AUTO-CONFIRM");
+  if (j1.error) rows.push({ key: "j1", title: "紧急开关待补录读取失败", onRetry: () => void refreshJ1DutyAlerts() });
+  else if (backfill) rows.push({ key: "j1", title: `紧急开关待补录 ${backfill.count ?? 0} 项`, sub: backfill.hint, owner: "风控", href: opsAlertHref(backfill), tone: backfill.level === "high" ? "danger" : undefined });
+  const risks = fundReady ? riskRadar.feed.filter((item) => (item.sev === "p0" || item.sev === "p1") && reach(item.href)) : [];
+  risks.forEach((item, index) => rows.push({ key: `risk-${index}`, title: item.t, sub: item.m, owner: "风控", href: item.href, tone: item.sev === "p0" ? "danger" : undefined }));
+  if (orphaned.error) rows.push({ key: "orphaned", title: "打款异常读取失败", onRetry: orphaned.reload });
+  else if (orphaned.data) rows.push({ key: "orphaned", title: `打款异常 ${orphaned.data} 单`, sub: "需要人工核对", owner: "财务", href: "/finance/withdrawals", tone: "warn" });
+  if (approvals.error) rows.push({ key: "a2", title: "待审批操作读取失败", onRetry: approvals.reload });
+  else if (approvals.data?.stats.pendingTickets) {
+    const queue = approvals.data.operationQueue.filter((row) => row.status === "pending").sort((a, b) => a.ts.localeCompare(b.ts));
+    rows.push({ key: "a2", title: `待审批操作 ${approvals.data.stats.pendingTickets} 条`, sub: queue[0] && approvalDetail(queue[0]), owner: queue[0] ? approvalOwner(queue[0]) : "其他", href: "/platform/audit" });
   }
+  if (reviewPending.error) rows.push({ key: "review", title: "待审核提现读取失败", onRetry: reviewPending.reload });
+  else if (reviewPending.data) rows.push({ key: "review", title: `待审核提现 ${reviewPending.data} 单`, owner: "财务", href: "/finance/withdrawals" });
+  if (supportTodo.error) rows.push({ key: "support", title: "客服待跟进读取失败", onRetry: supportTodo.reload });
+  else if (supportTodo.data) rows.push({ key: "support", title: `客服待跟进 ${supportTodo.data} 位`, owner: "客服", href: "/service/overview" });
 
-  const homeDataError =
-    LEDGER.coverageSeries.length < 2
-      ? "覆盖率走势数据不足，暂时无法显示"
-      : "";
-  if (homeDataError) {
-    return renderBDomainState(homeDataError);
-  }
+  const pendingFailures = rows.filter((row) => "onRetry" in row).length;
+  const pendingRows = rows.length - pendingFailures;
+  const urgentRows = risks.filter((item) => item.sev === "p0").length + (!j1.error && backfill?.level === "high" ? 1 : 0);
+  const firstLoad = (block: Block<unknown>) => block.loading && block.data === null;
+  const pendingLoading = [approvals, reviewPending, orphaned, supportTodo].some(firstLoad);
+  const hasPendingSource = blocks.fund || blocks.j1 || blocks.withdrawals || blocks.approvals || blocks.support;
+  const showPending = hasPendingSource && (rows.length > 0 || pendingLoading);
 
-  const KILL_GATES: KillGate[] = riskRadar.gates.map((gate) => ({ key: gate.dom, on: gate.on, state: gate.state }));
-  const flaggedAccounts = riskRadar.flaggedAccounts || riskRadar.rules.reduce((sum, rule) => sum + rule.ct, 0);
+  const firstScreenLoading = bDomain.loading || reserve.loading || flows.loading || sales.loading || newUsers.loading || devices.loading || pendingLoading;
+  const statusLoading = (bDomain.loading && !bDomain.hasData) || pendingLoading || [reserve, flows, sales, newUsers, devices].some(firstLoad);
+  const sentence = statusSentence({
+    belowRedline,
+    tier: water?.tier ?? null,
+    urgentRows,
+    fundFailed,
+    withdrawClosed: Boolean(withdrawGate && !withdrawGate.on),
+    withdrawUnset: Boolean(withdrawGate?.unset),
+    belowHealthy,
+    pendingRows,
+    fundKnown: fundReady,
+    failed: [
+      ...(sales.error ? ["销售额"] : []),
+      ...(newUsers.error ? ["新增用户"] : []),
+      ...(flows.error ? ["资金净流入"] : []),
+      ...(devices.error ? ["设备数据"] : []),
+      ...(pendingFailures > 0 ? ["待处理"] : []),
+    ],
+    loading: statusLoading,
+  });
 
-  const domains = role ? resolveVisibleDomains({
-    role,
-    menuCodes: session?.menuCodes,
-    menuNodes: session?.menuNodes,
-    authorities: session?.authorities ?? [],
-  }) : [];
-  const visibleModuleCount = domains.reduce((sum, domain) => sum + domain.l2.length, 0);
+  const [readAt, setReadAt] = useState<number | null>(null);
+  useEffect(() => { if (!firstScreenLoading) setReadAt(Date.now()); }, [firstScreenLoading]);
+  const clock = readAt === null ? null : businessClock(readAt);
+  const refresh = () => {
+    setRefreshKey((key) => key + 1);
+    if (blocks.fund) void bDomain.reload();
+    if (blocks.j1) void refreshJ1DutyAlerts();
+  };
 
-  // ── 生命体征 / 实时派生 ──
-  const cov = LEDGER.coverageRatio;
-  const zoneLabel = cov < LEDGER.redlinePct ? "跌破红线" : cov < LEDGER.healthyPct ? "警戒" : "健康";
-  const inReview = LEDGER.queueBacklogCount;
-  const backlogUsd = LEDGER.queueBacklogUsd;
-  // 队列积压比率 = 待提现负债存量 ÷ 储备(B5 雷达「挤兑比率」为 24h 申请流量口径 7.9%,两者口径不同,RiskRadar 内已分别标注)
-  const bankRunRatio = riskRadar.bankRunRatio || round2((LEDGER.queueBacklogUsd / Math.max(LEDGER.reserveUsd, 1)) * 100);
-  const prevFlowAbs = Math.max(Math.abs(LEDGER.prev.netFlow24hUsd), 1);
-  const outflowChg = Math.round(((Math.abs(LEDGER.netFlow24hUsd) - prevFlowAbs) / prevFlowAbs) * 100);
-  const netFlowPositive = LEDGER.netFlow24hUsd >= 0;
-  const netFlowDeltaText = `${netFlowPositive ? "流入" : "流出"} ${outflowChg >= 0 ? "+" : ""}${outflowChg}%`;
-  const riskChg = LEDGER.avgRiskScore - LEDGER.prev.avgRiskScore;
-  const dashboardKpis = normalizeDashboardKpis(lBiData);
-  const pendingA2Operations = (a2Overview?.operationQueue ?? []).filter((item) => item.status === "pending");
+  const folds = useFoldChoices(session?.adminId);
+  const pressure = pressureLevel(fundReady ? ledger : null, fundReady ? riskRadar : null);
+  const riskAlert = (fundReady && riskRadar.gates.some((gate) => !gate.on)) || pressure.worst !== "ok" || Boolean(bDomain.error);
+  const fundAlert = level !== "ok" || Boolean(bDomain.error);
 
-  // ── 高敏操作动态(按角色过滤)──
-  const sensitiveOperationItems: SensitiveOperationItem[] = [
-    { id: "pa-wd", label: "待审核提现", detail: `${inReview} 单审核中 · 共 ${fmtUsdCompact(backlogUsd)}`, href: "/finance/withdrawals", role: "finance" as AdminRole },
-    ...pendingA2Operations.flatMap((row) => {
-      const operationRole = roleForA2Operation(row);
-      if (!operationRole) return [];
-      return [{
-        id: `a2-${row.id}`,
-        label: a2ActionText(row.action),
-        detail: operationDetail(row),
-        href: "/platform/audit",
-        role: operationRole,
-      }];
-    }),
-  ].filter((it) => role && canAccessResolvedPath(domains, it.href));
+  const foldsRef = useRef<HTMLDivElement>(null);
+  const openFold = (fold: string, anchor: string) => {
+    folds.setOpen(fold, true);
+    window.setTimeout(() => foldsRef.current?.querySelector(`[data-fold="${anchor}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }), 0);
+  };
 
-  // ── 实时告警(喂给 RiskRadar)──
-  const sevLevel = (sev: string): AlertItem["level"] => (sev === "p0" || sev === "p1" ? "high" : sev === "p2" ? "mid" : "low");
-  const covLevel: AlertItem["level"] = cov < LEDGER.redlinePct ? "high" : cov < LEDGER.healthyPct ? "mid" : "low";
-  const covText =
-    cov < LEDGER.redlinePct
-      ? `兑付覆盖率 ${fmtPct(cov)} 已跌破红线 ${fmtPct(LEDGER.redlinePct, 0)} · 请立即暂停会多付钱的操作`
-      : cov < LEDGER.healthyPct
-        ? `兑付覆盖率 ${fmtPct(cov)} 逼近红线 ${fmtPct(LEDGER.redlinePct, 0)}`
-        : `兑付覆盖率 ${fmtPct(cov)} 健康`;
-  // Kill 闸告警文案派生自 KILL_GATES(统一来源,与 J1/B5 一致;非硬编码,operator 熔断后即时反映)。
-  const killTripped = KILL_GATES.filter((g) => (g.state ? g.state === "off" : !g.on)).length;
-  const killMissing = KILL_GATES.filter((g) => g.state === "missing").length;
-  const killOnline = KILL_GATES.filter((g) => (g.state ? g.state === "on" : g.on)).length;
-  const killText =
-    KILL_GATES.length === 0
-      ? "正在加载紧急开关状态"
-      : killTripped === 0
-      ? `紧急开关 ${killOnline}/${KILL_GATES.length} 正常${killMissing ? ` · ${killMissing} 个未设置` : ""}`
-      : `紧急开关 ${killOnline}/${KILL_GATES.length} 正常 · ${killTripped} 个已关停`;
-  const liveAlerts: AlertItem[] = [
-    ...opsAlerts.filter((alert) => alert.id === "J1-AUTO-CONFIRM").map((alert) => ({
-      id: `ops-${alert.id}`,
-      level: alert.level,
-      text: `${alert.title} · ${alert.hint}`,
-      href: opsAlertHref(alert),
-    })),
-    ...(opsAlertError ? [{
-      id: "ops-dashboard-sync",
-      level: "high" as AlertItem["level"],
-      text: `紧急开关告警加载失败：${opsAlertError}`,
-      href: "/emergency/kill-switch",
-    }] : []),
-    { id: "al-cov", level: covLevel, text: covText, href: "/overview/dual-ledger" },
-    ...riskRadar.feed.slice(0, 4).map((item, index) => ({ id: `al-feed-${index}-${item.sev}`, level: sevLevel(item.sev), text: item.t, href: item.href })),
-    { id: "al-kill", level: killTripped === 0 ? "low" : "mid", text: killText, href: "/emergency/kill-switch" },
-  ];
+  // 没有到期时后端给占位值 999，不能直接显示；有到期时天数可以比 999 大。
+  const days = !water ? null : water.dailyAverageDueUsdt === 0 ? "未来 7 天没有到期" : `可覆盖 ${fmtNum(Math.floor(water.reserveCoverDays))} 天`;
+  const fundWord = level === "danger" ? (belowRedline ? "跌破红线" : "危险") : level === "warn" ? "警戒" : "健康";
+  const fundText = `资金安全：${fundWord}${days ? `，${days}` : ""}`;
+  const advice = water && water.tier !== "NORMAL" && water.tier !== "WATCH" ? water.suggestedAction : "建议收紧提现和奖励等支出设置";
+  const phase = rhythm.h1;
+  const phaseText = phase.currentPhase ? `${phase.currentPhase} 阶段 · 第 ${phase.currentMonth}/${phase.totalMonths} 月` : "运营阶段未配置";
 
-  // 三态口径与八项 KPI 验收墙共用同一个汇总函数:pass === null 是「没有分母、暂不可计算」,
-  // 不是「未达标」。此前这里用「总数减达标数」倒推未达标,把不可计算也算成失败,
-  // L 域速览显示「达标 0 / 未达 8」,而同屏验收墙显示「达标 0 / 未达 4 / 暂不可计算 4」(zentao #208)。
-  const kpiRollup = rollupKpiPassState(dashboardKpis);
-  function pulseFor(code: string): string {
-    if (code === "B") return `覆盖率 ${fmtPct(cov)} · ${zoneLabel}`;
-    if (code === "A") {
-      return a2Overview
-        ? `待确认 ${pendingA2Operations.length} · 今日操作 ${a2Overview.stats.todayAuditEvents}`
-        : a2Error
-          ? "操作记录加载失败"
-          : "正在加载操作记录";
-    }
-    if (code === "D") return `待确认提现 ${inReview} · 积压 ${fmtUsdCompact(backlogUsd)}`;
-    if (code === "J") return KILL_GATES.length > 0 ? `业务开关 ${killOnline}/${KILL_GATES.length} 正常${killTripped ? ` · ${killTripped} 个已关停` : ""}${killMissing ? ` · ${killMissing} 个未设置` : ""}` : "正在加载业务开关";
-    if (code === "K") return `风险账户 ${fmtNum(flaggedAccounts)} · 规则 ${riskRadar.rules.length} 条`;
-    if (code === "L") {
-      if (dashboardKpis.length) return `${kpiRollup.total} 项关键指标 · 达标 ${kpiRollup.passed} / 未达标 ${kpiRollup.failed}${kpiRollup.unknown ? ` / 暂无法计算 ${kpiRollup.unknown}` : ""}`;
-      return lBiError ? "关键指标加载失败" : "正在加载关键指标";
-    }
-    if (code === "H") {
-      // H 域脉搏 = 节奏统一来源(运营在 H1 可配),与 B4/H1/L1/L4 同源。
-      const rs = rhythm.h1;
-      return `${rs.currentPhase} ${rs.currentPhaseName}期 · 第 ${rs.currentMonth}/${rs.totalMonths} 月`;
-    }
-    const domain = CONSOLE_NAV.find((item) => item.code === code);
-    const flagship = domain?.l2.find((item) => item.status === "flagship") ?? domain?.l2[0];
-    return flagship ? `${flagship.name} 等 ${domain?.l2.length ?? 0} 个页面` : "";
-  }
-
-  // 对账导出 — 客户端导出当前账本快照(真实功能,无需后端)
-  function exportSnapshot() {
-    const snap = {
-      generatedAt: new Date().toISOString(),
-      coverageRatio: round2(LEDGER.coverageRatio),
-      redlinePct: LEDGER.redlinePct,
-      healthyPct: LEDGER.healthyPct,
-      reserveUsd: LEDGER.reserveUsd,
-      liabilitiesUsd: LEDGER.liabilitiesUsd,
-      netExposureUsd: LEDGER.reserveUsd - LEDGER.liabilitiesUsd,
-      accounts: LEDGER.accounts.map((a) => ({ key: a.key, label: a.label, amount: a.amount })),
-    };
-    const blob = new Blob([JSON.stringify(snap, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `uvel-reconciliation-${snap.generatedAt.slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
+  const anyTodayBlock = blocks.sales || blocks.newUsers || blocks.netFlow || blocks.devices;
+  const showFundLine = blocks.fund && !(fundReady && level !== "ok");
 
   return (
-    <div className="w-full">
-      {/* 页头 */}
-      <header className="mb-5 flex flex-wrap items-end gap-4">
-        <div className="min-w-0 flex-1">
-          <p className="font-mono-tabular text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--v5-ink-3)" }}>
-            UVEL 运营控制台
-          </p>
-          <h1 className="font-display mt-1.5 text-[26px]" style={{ color: "var(--v5-ink)" }}>运营总览</h1>
-          <p className="mt-1.5 text-[13.5px]" style={{ color: "var(--v5-ink-2)" }}>
-            欢迎，{operator || "运营同学"}<AutoGloss> · 资金安全和用户转化，一屏看全。</AutoGloss>
-          </p>
-        </div>
-        <div className="flex items-center gap-2.5">
-          <button
-            type="button"
-            onClick={exportSnapshot}
-            className="inline-flex items-center gap-2 rounded-[9px] px-3.5 py-2 text-[13px] font-medium transition-colors hover:bg-[var(--v5-surface-2)]"
-            style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border-strong)", color: "var(--v5-ink)" }}
-          >
-            <Download size={15} aria-hidden /> <AutoGloss>导出资金数据</AutoGloss>
-          </button>
-        </div>
-      </header>
-      <BDomainWarnings warnings={bDomain.warnings} />
+    <RdPage className="cc">
+      <PageHeader
+        pageId="B0"
+        title="指挥台"
+        summary="今天的状况和要处理的事"
+        meta={(
+          <span className="cc-meta">
+            {fundReady && (reach("/overview/rhythm") ? <Link href="/overview/rhythm" prefetch={false}>{phaseText}</Link> : <span>{phaseText}</span>)}
+            <span>{clock ? `${clock} 读取` : "正在读取…"}</span>
+            <Button size="sm" variant="ghost" loading={firstScreenLoading} onClick={refresh}>刷新</Button>
+          </span>
+        )}
+      />
+      <BDomainWarnings warnings={warnings} />
 
-      {/* 破线告警条(覆盖率低于健康线 · 仅建议,不自动执行)*/}
-      {cov < LEDGER.healthyPct && (
-        <Link
-          href="/overview/dual-ledger"
-          prefetch={false}
-          className="mb-4 flex items-center gap-3 rounded-[11px] p-3 transition-colors"
-          style={{ background: "var(--v5-warning-soft)", border: "1px solid color-mix(in srgb, var(--v5-warning) 40%, transparent)" }}
+      <Conclusion state={sentence.state} strong={sentence.strong} lead icon={sentence.state === "neutral" ? ListChecks : undefined} hint={sentence.hint}>{sentence.text}</Conclusion>
+
+      {blocks.fund && fundReady && level !== "ok" && (
+        <Conclusion
+          state={level}
+          icon={ShieldAlert}
+          hint={advice}
+          action={reach(RESERVE_PAGE) ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={RESERVE_PAGE} prefetch={false}><span className="rd-btn-face">查看资金总览</span></Link> : undefined}
         >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px]" style={{ background: "color-mix(in srgb, var(--v5-warning) 18%, transparent)" }}>
-            <AlertTriangle size={16} style={{ color: "var(--v5-warning)" }} aria-hidden />
-          </span>
-          <span className="text-[13px]" style={{ color: "var(--v5-ink-2)" }}>
-            <AutoGloss>{covText}</AutoGloss><AutoGloss> · 建议收紧提现和奖励等支出设置</AutoGloss>
-          </span>
-        </Link>
+          {fundText}
+        </Conclusion>
       )}
 
-      {/* ② 资金兑付安全 */}
-      <SecLabel title="资金安全" />
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <CoverageHero />
+      {(showPending || anyTodayBlock || showFundLine) && (
+        <div className="cc-main" data-solo={showPending && (anyTodayBlock || showFundLine) ? undefined : ""}>
+          {showPending && <PendingPanel rows={rows} failures={pendingFailures} loading={pendingLoading} />}
+          {(anyTodayBlock || showFundLine) && (
+            <div className="cc-side">
+              {anyTodayBlock && (
+                <TodayPanel
+                  blocks={blocks}
+                  sales={sales}
+                  newUsers={newUsers}
+                  flows={flows}
+                  devices={devices}
+                  clock={clock}
+                  netFlow24h={fundReady ? ledger.netFlow24hUsd : null}
+                  reach={reach}
+                  onOpenFlows={() => openFold("flow", "flow")}
+                />
+              )}
+              {showFundLine && (bDomain.error ? (
+                <div className="cc-fundline" role="alert" data-tone="warn">
+                  <ShieldAlert size={16} aria-hidden />
+                  <span>资金数据读取失败 · <InlineRetry onRetry={() => void bDomain.reload()} /></span>
+                </div>
+              ) : reserve.error ? (
+                <div className="cc-fundline" role="alert" data-tone="warn">
+                  <ShieldAlert size={16} aria-hidden />
+                  <span>{fundText} · 可覆盖天数读取失败 · <InlineRetry onRetry={reserve.reload} /></span>
+                </div>
+              ) : (
+                <button type="button" className="cc-fundline" data-tone={fundReady ? "ok" : undefined} disabled={!fundReady} onClick={() => openFold("fund", "fund")}>
+                  <ShieldCheck size={16} aria-hidden />
+                  <span>{fundReady ? fundText : "正在读取资金安全…"}</span>
+                  <ChevronRight className="cc-fundline-chevron" size={16} aria-hidden />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-        <ExposureCard />
-      </div>
-      <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <FundPool />
-        </div>
-        <RiskRadar alerts={liveAlerts} bankRunRatio={bankRunRatio} flaggedAccounts={flaggedAccounts} killGates={KILL_GATES} />
-      </div>
+      )}
 
-      {/* ③ 实时运营脉搏 */}
-      <SecLabel title="实时动态" modules="与上一时段相比" />
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Link href="/overview/liquidity" prefetch={false} className="block transition-transform hover:-translate-y-0.5">
-          <KpiStatCard
-            label="24 小时资金净流入"
-            value={`${netFlowPositive ? "+" : "−"}${fmtUsdCompact(Math.abs(LEDGER.netFlow24hUsd))}`}
-            accent={netFlowPositive ? "var(--v5-success)" : "var(--v5-warning)"}
-            sublabel="较上一时段"
-            hint="近 24 小时流入的钱减去流出的钱。"
-            delta={{ dir: netFlowPositive ? "up" : "down", text: netFlowDeltaText, good: netFlowPositive }}
-          />
-        </Link>
-        <Link href="/finance/withdrawals" prefetch={false} className="block transition-transform hover:-translate-y-0.5">
-          <KpiStatCard label="提现积压" value={`${fmtNum(inReview)} 单`} accent="var(--admin-domain-k)" sublabel={fmtUsdCompact(backlogUsd)} hint="正在审核、还没放款的提现单数和金额。" />
-        </Link>
-        <Link href="/risk/scoring" prefetch={false} className="block transition-transform hover:-translate-y-0.5">
-          <KpiStatCard label="风险评分均值" value={`${LEDGER.avgRiskScore}`} accent="var(--admin-domain-k)" sublabel="满分 100 · 70 以上为高危" hint="正在审核的提现申请的平均风险分。" delta={{ dir: riskChg > 0 ? "up" : "down", text: `${riskChg > 0 ? "+" : ""}${riskChg}`, good: riskChg <= 0 }} />
-        </Link>
-      </div>
-
-      {/* ④ 待处理 · 操作确认 */}
-      <SecLabel title="待你确认的操作" />
-      <SensitiveOperationFeed items={sensitiveOperationItems} />
-
-      {/* ⑤ 用户转化分析 */}
-      <SecLabel title="用户转化" />
-      <FunnelBars />
-
-      {/* ⑥ 八项 KPI 验收墙 */}
-      <div className="mt-7">
-        {dashboardKpis.length ? (
-          <KpiWall kpis={dashboardKpis} />
-        ) : (
-          <DashboardDataState title="关键指标" loading={lBiLoading} error={lBiError} />
+      <div className="cc-folds" ref={foldsRef}>
+        {blocks.fund && (
+          <div data-fold="fund">
+            <FundFold
+              ledger={fundReady ? ledger : null}
+              liquidity={fundReady ? liquidity : null}
+              error={bDomain.error}
+              retrying={bDomain.loading}
+              onRetry={() => void bDomain.reload()}
+              alert={fundAlert}
+              level={level}
+              clock={clock}
+              reach={reach}
+              open={folds.isOpen("fund", fundAlert)}
+              onOpenChange={(open) => folds.setOpen("fund", open)}
+            />
+          </div>
+        )}
+        {blocks.fund && (
+          <div data-fold="risk">
+            <RiskFold
+              ledger={fundReady ? ledger : null}
+              risk={fundReady ? riskRadar : null}
+              error={bDomain.error}
+              retrying={bDomain.loading}
+              onRetry={() => void bDomain.reload()}
+              alert={riskAlert}
+              reach={reach}
+              open={folds.isOpen("risk", riskAlert)}
+              onOpenChange={(open) => folds.setOpen("risk", open)}
+            />
+          </div>
+        )}
+        {(blocks.netFlow || blocks.topup || blocks.redemption) && (
+          <div data-fold="flow">
+            <FlowFold
+              blocks={blocks}
+              history={flows.data}
+              historyError={flows.error}
+              historyRetrying={flows.loading}
+              onRetryHistory={flows.reload}
+              refreshKey={refreshKey}
+              reach={reach}
+              open={folds.isOpen("flow")}
+              onOpenChange={(open) => folds.setOpen("flow", open)}
+            />
+          </div>
+        )}
+        {(blocks.funnel || blocks.totalUsers) && (
+          <div data-fold="funnel">
+            <FunnelFold blocks={blocks} refreshKey={refreshKey} reach={reach} open={folds.isOpen("funnel")} onOpenChange={(open) => folds.setOpen("funnel", open)} />
+          </div>
+        )}
+        {blocks.kpi && (
+          <div data-fold="kpi">
+            <KpiFold refreshKey={refreshKey} reach={reach} open={folds.isOpen("kpi")} onOpenChange={(open) => folds.setOpen("kpi", open)} />
+          </div>
         )}
       </div>
-
-      {/* ⑦ 域速览 */}
-      <div className="mt-7">
-        <div className="mb-2.5 flex items-center justify-between">
-          <p className="text-[11px] uppercase tracking-[0.14em]" style={{ color: "var(--v5-ink-4)" }}>各模块概况</p>
-          <span className="text-[11.5px]" style={{ color: "var(--v5-ink-4)" }}>{domains.length} 个模块 · {visibleModuleCount} 个页面</span>
-        </div>
-        <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(248px,1fr))]">
-          {domains.map((d) => (
-            <DomainTile key={d.code} domain={d} pulse={pulseFor(d.code)} />
-          ))}
-        </div>
-      </div>
-    </div>
+    </RdPage>
   );
 }

@@ -7,6 +7,7 @@
  * </Conclusion>
  * <Conclusion state="danger" strong>资金安全：危险，只够覆盖 <b>4</b> 天</Conclusion>   strong 只给资金告警这类必须最醒目的
  * <Conclusion state="unknown">资金状态：暂时无法判断</Conclusion>
+ * <Conclusion state="neutral" icon={ListChecks}>有 3 件事要处理</Conclusion>   有日常待办但没有异常，不上色
  *
  * - 组件不算结论。状态来自现有阈值和比较方式，页面传进来，不新增算法。
  * - 正常时安静，只有 warn、danger 才上色底（DP-05）。danger 走 role=alert。
@@ -18,8 +19,9 @@ import { AlertTriangle, CheckCircle2, CircleHelp, ShieldAlert, type LucideIcon }
 import { IconTile } from "./icon-tile";
 import type { StateTone } from "./tone";
 
-const STATE: Record<"ok" | "warn" | "danger" | "unknown", { tone: StateTone; icon: LucideIcon }> = {
+const STATE: Record<"ok" | "neutral" | "warn" | "danger" | "unknown", { tone: StateTone | "role-other"; icon: LucideIcon }> = {
   ok: { tone: "ok", icon: CheckCircle2 },
+  neutral: { tone: "role-other", icon: CheckCircle2 },
   warn: { tone: "warn", icon: AlertTriangle },
   danger: { tone: "danger", icon: ShieldAlert },
   unknown: { tone: "done", icon: CircleHelp },

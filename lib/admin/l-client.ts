@@ -299,24 +299,6 @@ function normalizeL5(raw: unknown) {
   };
 }
 
-function normalizeOverviews(raw: unknown): LBiData {
-  const data = rec(raw);
-  return {
-    currentPhase: rec(data.currentPhase),
-    phases: rows<Record<string, unknown>>(data.phases),
-    l1: rec(data.l1),
-    l2: rec(data.l2),
-    l3: rec(data.l3),
-    l4: rec(data.l4),
-    l5: normalizeL5(data.l5),
-    l6: rec(data.l6),
-  };
-}
-
-export async function fetchLBiOverviews(): Promise<LBiData> {
-  return apiRequest("/overview").then(normalizeOverviews);
-}
-
 export type LModuleCode = "L1" | "L2" | "L3" | "L4" | "L5" | "L6";
 
 export type L3FinanceQuery = {
