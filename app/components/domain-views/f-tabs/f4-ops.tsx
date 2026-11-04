@@ -407,9 +407,9 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
           {data.voteWeights.map((row) => {
             const paramKey = row.configKey || `F.pool.votes.${row.v}`;
             return (
-              <div key={row.v} className="vote-cell" onClick={canFund ? () => ctx.openActionConfirm({ name: `调整 ${row.v} 票数`, amplify: true, op: "param", paramKey, edit: { kind: "number", current: String(row.votes), unit: "票" }, detail: `${row.v} 当前 ${row.votes} 票 · 票数越多，分到的团队激励池越多。` }) : undefined}>
-                <div className="vlb">{row.v}</div><div className="vct">{row.votes} 票</div>
-              </div>
+              <button key={row.v} type="button" className="vote-cell" disabled={!canFund} aria-label={`调整 ${row.v} 票数，当前 ${row.votes} 票`} onClick={canFund ? () => ctx.openActionConfirm({ name: `调整 ${row.v} 票数`, amplify: true, op: "param", paramKey, edit: { kind: "number", current: String(row.votes), unit: "票" }, detail: `${row.v} 当前 ${row.votes} 票 · 票数越多，分到的团队激励池越多。` }) : undefined}>
+                <span className="vlb" style={{ display: "block" }}>{row.v}</span><span className="vct" style={{ display: "block" }}>{row.votes} 票</span>
+              </button>
             );
           })}
         </div>
