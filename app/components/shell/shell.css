@@ -33,9 +33,9 @@
 .rd-nav-children { list-style: none; margin: 0; padding: 2px 0 6px 26px; }
 .rd-nav-sub { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 8px; border-radius: 8px; color: var(--rd-text-2); font-size: 14px; line-height: 22px; }
 .rd-nav-sub[data-active] { background: var(--rd-panel-inner); color: var(--rd-text); font-weight: 500; }
-.rd-nav-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: transparent; }
-.rd-nav-dot[data-scaffold] { border: 1px solid var(--rd-text-3); }
-.rd-nav-dot[data-current] { border: 0; background: var(--rd-brand-ink); }
+.rd-nav-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tone, transparent); }
+.rd-nav-dot[data-scaffold] { border: 1px solid var(--rd-text-3); background: transparent; }
+.rd-nav-dot[data-current] { background: var(--rd-brand-ink); }
 .rd-nav-badge { flex: none; color: var(--rd-warn); font-size: 13px; font-weight: 500; }
 .rd-nav-rail { position: relative; display: grid; place-items: center; width: 40px; height: 40px; margin-inline: auto; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
 .rd-nav-rail[data-active] { background: var(--rd-panel-inner); }
