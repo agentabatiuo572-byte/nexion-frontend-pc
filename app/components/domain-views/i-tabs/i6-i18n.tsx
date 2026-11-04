@@ -488,10 +488,16 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   });
 
   const reloadVersions = (courseId: string, task: Promise<void>, ok: string) => {
-    return task.then(() => actions.reloadIContent())
-      .then(() => actions.fetchI7CourseVersions(courseId))
-      .then((versions) => { setCourseVersions(versions); toast(ok); })
-      .catch((error) => { toast(`操作失败:${displayAdminError(error)}`); return false; });
+    return task.then(async () => {
+      await actions.reloadIContent();
+      try {
+        const versions = await actions.fetchI7CourseVersions(courseId);
+        setCourseVersions(versions);
+        toast(ok);
+      } catch (error) {
+        toast(`${ok}；版本列表加载失败：${displayAdminError(error)}。请刷新核对。`);
+      }
+    }).catch((error) => { toast(`操作失败:${displayAdminError(error)}`); return false; });
   };
 
   const courseCurrent = (c: Course, version: string, payload?: Record<string, unknown>) => ({

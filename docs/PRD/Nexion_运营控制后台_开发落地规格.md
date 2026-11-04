@@ -322,12 +322,12 @@
 
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
-| **Content version**(I1) | key · version · status:enum{draft\|published\|archived} · body{en,zh} · activeExperimentId?;A/B state:enum{scheduled\|running\|concluded(adopted\|discarded)} | SC | §17.1 / Ch14 I1 |
+| **Content version**(I1) | key · version · status:enum{draft\|published\|archived} · body{zh,en,vi} · activeExperimentId?;A/B state:enum{scheduled\|running\|concluded(adopted\|discarded)} | SC | §17.1 / Ch14 I1 |
 | **Nova cadence**(I2) | 10 channel × {enabled,tickMs,cooldownMs};phase-keyed(tradein/task-lock 随 H1);per-channel kill(不入 J1) | SC | §17.1 / Ch14 I2 |
-| **Notification Campaign**(I3) | campaignId · 优先级:enum{critical\|high\|normal\|low} · NotifKind · 受众 · state:enum{draft\|scheduled\|sending\|sent\|cancelled};CAP{CRITICAL ∞/HIGH 50/NORMAL 200/LOW 30} | SC | Ch14 I3 |
-| **Disclosure version × jurisdiction**(I5) | jurisdiction × version(单调递增) · 7章节体 · locale{en,zh} · acceptedVersion · acceptedJurisdiction;版本 state:enum{draft\|published\|superseded};用户 ack:enum{not_acked\|acked\|stale};**server 边缘按 IP 判法域** | SC | §17.1 / Ch14 I5 |
+| **Notification Campaign**(I3) | campaignId · 优先级:enum{critical\|high\|normal\|low} · NotifKind · 受众 · state:enum{draft\|scheduled\|sending\|sent\|failed\|cancelled};CAP{CRITICAL ∞/HIGH 50/NORMAL 200/LOW 30} | SC | Ch14 I3 |
+| **Disclosure version × jurisdiction**(I5) | jurisdiction × version(单调递增) · 7章节体 · locale{zh,en,vi} · acceptedVersion · acceptedJurisdiction;版本 state:enum{draft\|published\|superseded};用户 ack:enum{not_acked\|acked\|stale};**server 边缘按 IP 判法域** | SC | §17.1 / Ch14 I5 |
 | **i18n**(I6) | namespace × 基础 locale{zh,en,vi} · key 数 · 覆盖率;**三语完整与变量一致性、占位文字/退役品牌发布检查；完整性扫描单独触发** | SC | Ch14 I6 |
-| **教程课程**(I7) | slug · 分类:enum{Basics\|Earn\|Team\|Wealth\|Security} · format:enum{Article\|Video\|Hands-on} · level · NEX 奖励(10–50) · featured(单) · quiz;state:enum{draft\|published\|archived} | SC | §17.1 / Ch14 I7 |
+| **教程课程**(I7) | slug · 分类:enum{Basics\|Earn\|Team\|Wealth\|Security} · format:enum{Article\|Video\|Hands-on} · level · UVT 奖励(10–50) · featured(单) · quiz;state:enum{draft\|published\|archived} | SC | §17.1 / Ch14 I7 |
 
 ### 域 J — 紧急合规
 
@@ -1363,7 +1363,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 **词条发布检查（2026-11-04，BUG-183）**：发布前按当前草稿实际内容检查中、英、越三语非空、三语变量集合一致、占位文字及退役品牌；不通过时显示具体原因，发布入口置灰。合格草稿的确认框回显这些已执行的检查与实际变量，不显示未执行的禁词扫描通过标记。理由门和系统提交时的质量、权限及版本校验继续保留。六种新增语言输入仍按 B26 留待后续客户端工作。
 
-**提交结果（2026-11-04，BUG-181）**：页面文案对比测试的文案、版本、位置与实验操作，通知活动的新建/编辑草稿、排期、发送与取消，信任中心删除草稿，风险披露草稿及适用地区维护，以及教程的课程、版本、推荐位与奖励操作，均等待实际请求结果。提交期间锁定重复提交和关窗；明确拒绝、版本冲突或网络失败时保留窗口、业务输入和理由并显示原因；只有确认成功才关闭，随后更新列表。奖励调整成功表示已提交审批，仍须审批后执行，不代表奖励已生效。原有权限、理由规则和后端版本校验保持有效。
+**提交结果（2026-11-04，BUG-181）**：页面文案对比测试的文案、版本、位置与实验操作，通知活动的新建/编辑草稿、排期、发送与取消，信任中心删除草稿，风险披露草稿及适用地区维护，以及教程的课程、版本、推荐位与奖励操作，均等待实际请求结果。提交期间锁定重复提交和关窗；明确拒绝、版本冲突或网络失败时保留窗口、业务输入和理由并显示原因；只有确认成功才关闭，随后更新列表。课程版本写入已成功但后续版本列表加载失败时，关闭确认框，说明本次操作已成功并提示刷新核对，不引导重复提交。重复适用地区代码被拒时说明代码已存在并引导改用编辑已有地区。奖励调整成功表示已提交审批，仍须审批后执行，不代表奖励已生效。原有权限、理由规则和后端版本校验保持有效。
 
 | 弹窗 ID | 标题 | B1 红线预检 | 细则 |
 |---|---|---|---|
@@ -1388,10 +1388,10 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | I6-MD1 | i18n key 发布确认 | — | v4 I6④a |
 | I6-MD2 | i18n key 下架 / 回滚确认 | — | v4 I6④a |
 | I6-MD3 | marketing 多版 A/B 启停确认 | — | v4 I6④a |
-| I7-MD1 | 课程发布确认 | — | v4 I7④a |
+| I7-MD1 | 课程发布确认 | 版本发布时 | v4 I7④a |
 | I7-MD2 | featured 位设置确认 | — | v4 I7④a |
-| I7-MD3 | 完成 NEX 奖励额调整确认 | 是 | v4 I7④a |
-| I7-MD4 | 课程下架 / 回滚确认 | 是 | v4 I7④a |
+| I7-MD3 | 完成 UVT 奖励额调整确认 | 是 | v4 I7④a |
+| I7-MD4 | 课程下架 / 回滚确认 | 回滚时 | v4 I7④a |
 
 ### 9.9a 客服后台(/service/* · 域 M;原 /content/support 已退役)
 
