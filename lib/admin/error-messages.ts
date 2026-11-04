@@ -264,6 +264,8 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   ACCOUNT_DELETION_RESPONSE_INVALID: "账号注销申请服务返回的数据不完整或不一致，页面已停止展示推测状态；请刷新重试或联系值班人员。",
   ACCOUNT_DELETION_DETAIL_MISMATCH: "账号注销申请详情与当前记录不一致，请重新加载详情后再审核。",
   ACCOUNT_DELETION_COMMAND_INVALID: "账号注销操作缺少有效申请号、版本或理由，本次未执行；请刷新申请详情后重试。",
+  STOPPED_LIST_UNAVAILABLE: "停止维护的客户名单暂时加载不了，请重试。",
+  CUSTOMER_PROJECTION_UNAVAILABLE: "客户明细暂时加载不了，请重试。",
   AUTHORITATIVE_PAGE_INVALID: "系统确认页面数据不完整或不一致，页面已停止展示旧数据与写操作；请刷新重试，持续出现时联系值班人员。",
   B_RESTORATION_RESPONSE_INVALID: "业务恢复服务返回的数据不完整或不一致，页面已停止展示推测状态；请刷新重试，持续出现时联系值班人员。",
   F5_OVERVIEW_RESPONSE_INVALID: "奖励处置服务返回的数据不完整或不一致，页面已停止展示旧数据与写操作；请刷新重试，持续出现时联系值班人员。",
