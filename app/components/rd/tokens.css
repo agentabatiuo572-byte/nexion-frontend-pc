@@ -1,0 +1,200 @@
+/* 运营后台视觉 tokens v1。规则见 uvel-docs-console/admin-console/spec/06-视觉规则.md。
+   深色是默认主题；浅色挂 data-theme="light"。两套变量名相同，取值分别实测过对比度。
+   命名：--rd-<组>-<名>。颜色里 *-bg 是横幅和色块底，*-tile 是图标底，*-tile-ink 是图标底上的图标色，*-pill 是状态标签底。 */
+
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* 表面 */
+  --rd-bg: #0E0F11;            /* 页面底 */
+  --rd-bg-sidebar: #131417;    /* 侧栏 */
+  --rd-panel: #1A1B1F;         /* 面板 */
+  --rd-panel-inner: #232429;   /* 面板内小块、折叠组、已结束标签底 */
+  --rd-control: #2D2E34;       /* 输入框、普通按钮 */
+  --rd-hover: #202126;         /* 行悬停 */
+  --rd-selected: #232A14;      /* 选中行、选中页签（品牌色暗底） */
+  --rd-scrim: rgba(0, 0, 0, 0.6);
+
+  /* 文字 */
+  --rd-text: #F1F2F4;          /* 主文字、数值 */
+  --rd-text-2: #BDC1C9;        /* 次文字、字段名 */
+  --rd-text-3: #989EA9;        /* 弱文字、时间、单位；最低 4.5:1 */
+  --rd-text-disabled: #6B7280; /* 禁用、占位，不承载信息 */
+  --rd-text-on-brand: #0A0A0A;
+  --rd-text-on-danger: #FFFFFF;
+
+  /* 线 */
+  --rd-line: #26272C;          /* 表格行分隔、图表网格 */
+  --rd-line-strong: #34363C;   /* 坐标轴、分割条 */
+  --rd-focus: #9EDC1D;         /* 焦点环 */
+
+  /* 品牌 */
+  --rd-brand: #9EDC1D;         /* 主按钮底、选中标记 */
+  --rd-brand-hover: #B2E53E;
+  --rd-brand-ink: #9EDC1D;     /* 品牌色文字、选中点 */
+  --rd-brand-soft: #232A14;    /* 品牌色暗底，同 --rd-selected */
+
+  /* 状态色 */
+  --rd-ok: #32C392;            --rd-ok-bg: #14342D;      --rd-ok-tile: #114436;      --rd-ok-tile-ink: #32C392;      --rd-ok-pill: #1E3934;
+  --rd-warn: #ED9300;          --rd-warn-bg: #3E2918;    --rd-warn-tile: #553214;    --rd-warn-tile-ink: #ED9300;    --rd-warn-pill: #403119;
+  --rd-danger: #FF5F6D;        --rd-danger-bg: #401F27;  --rd-danger-tile: #59212C;  --rd-danger-tile-ink: #FF5F6D;  --rd-danger-pill: #43272D;
+  --rd-danger-bg-strong: #4E202A; /* 资金告警这类必须最醒目的横幅 */
+  --rd-progress: #3B9EF7;      --rd-progress-bg: #142F45; --rd-progress-tile: #113B5D; --rd-progress-tile-ink: #3B9EF7; --rd-progress-pill: #203346;
+  --rd-done: #989EA9;          --rd-done-bg: #232429;    --rd-done-tile: #2A2B31;    --rd-done-tile-ink: #989EA9;    --rd-done-pill: #232429;
+  --rd-danger-button: #DC2626; --rd-danger-button-hover: #C21F1F;
+
+  /* 信息色（业务域色）：只用在侧栏、页头、面包屑和引用别的域的小图标 */
+  --rd-domain-money: #F9D46B;    --rd-domain-money-tile: #4E3E0F;    --rd-domain-money-tile-ink: #F9D46B;
+  --rd-domain-users: #C497FF;    --rd-domain-users-tile: #3E2B55;    --rd-domain-users-tile-ink: #C497FF;
+  --rd-domain-devices: #51DDED;  --rd-domain-devices-tile: #0C474F;  --rd-domain-devices-tile-ink: #51DDED;
+  --rd-domain-risk: #FFA6CA;     --rd-domain-risk-tile: #593249;     --rd-domain-risk-tile-ink: #FFA6CA;
+  --rd-domain-system: #989EA9;   --rd-domain-system-tile: #1F2025;   --rd-domain-system-tile-ink: #989EA9;
+
+  /* 页内角色色：关键数字、数字前的图标底、图表系列。四个槽位顺序固定 */
+  --rd-role-1: #F9D46B;        --rd-role-1-bg: #3D3318;  --rd-role-1-tile: #534314;  --rd-role-1-tile-ink: #F9D46B;   /* 金 */
+  --rd-role-2: #51DDED;        --rd-role-2-bg: #14393F;  --rd-role-2-tile: #114C54;  --rd-role-2-tile-ink: #51DDED;   /* 青 */
+  --rd-role-3: #C497FF;        --rd-role-3-bg: #332843;  --rd-role-3-tile: #42305A;  --rd-role-3-tile-ink: #C497FF;   /* 紫 */
+  --rd-role-4: #FFA6CA;        --rd-role-4-bg: #432C3C;  --rd-role-4-tile: #5E364E;  --rd-role-4-tile-ink: #FFA6CA;   /* 品红 */
+  --rd-role-other: #989EA9;    --rd-role-other-bg: #232429; --rd-role-other-tile: #2A2B31; --rd-role-other-tile-ink: #989EA9;
+
+  /* 图表 */
+  --rd-chart-1: #B88A00;       /* 金 */
+  --rd-chart-2: #00A3B2;       /* 青 */
+  --rd-chart-3: #8A55C4;       /* 紫 */
+  --rd-chart-4: #D667A1;       /* 品红 */
+  --rd-chart-other: #6A707C;
+  --rd-chart-grid: #26272C;
+  --rd-chart-axis: #34363C;
+  --rd-chart-label: #989EA9;
+  --rd-chart-seq-low: #3D3318; /* 单色渐变（金）：浅端 */
+  --rd-chart-seq-high: #F9D46B;/* 单色渐变（金）：深端 */
+  --rd-chart-neg: #C82D43;     /* 正负对比：负 */
+  --rd-chart-pos: #0074CA;     /* 正负对比：正 */
+  --rd-chart-mid: #34363C;     /* 正负对比：中点 */
+
+  /* 圆角 */
+  --rd-radius-panel: 12px;
+  --rd-radius-control: 8px;
+  --rd-radius-tag: 6px;
+  --rd-radius-tile: 8px;
+  --rd-radius-tile-sm: 6px;
+  --rd-radius-bar: 4px;        /* 图表条的数据端 */
+
+  /* 字体 */
+  --rd-font: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --rd-font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --rd-weight-regular: 400;
+  --rd-weight-medium: 500;
+  --rd-weight-semibold: 600;
+
+  /* 字号 / 行高：只有四级加一个关键数字 */
+  --rd-text-title: 24px;       --rd-lh-title: 32px;     /* 页面标题 */
+  --rd-text-section: 16px;     --rd-lh-section: 24px;   /* 区块标题、统计数字 */
+  --rd-text-body: 14px;        --rd-lh-body: 22px;      /* 正文、表格第一行、按钮，最小正文 */
+  --rd-text-aux: 13px;         --rd-lh-aux: 18px;       /* 辅助：第二行、字段名、时间、单位 */
+  --rd-text-key: 40px;         --rd-lh-key: 48px;       /* 关键数字，每屏一个 */
+
+  /* 间距 */
+  --rd-space-1: 4px;
+  --rd-space-2: 8px;
+  --rd-space-3: 12px;
+  --rd-space-4: 16px;
+  --rd-space-5: 20px;
+  --rd-space-6: 24px;
+  --rd-space-7: 32px;
+  --rd-space-8: 40px;
+  --rd-page-pad: 24px;         /* 内容区边距 */
+  --rd-section-gap: 20px;      /* 区块之间 */
+  --rd-panel-pad-y: 18px;      /* 面板上下内边距 */
+  --rd-panel-pad-x: 20px;      /* 面板左右内边距 */
+  --rd-cell-pad: 10px;         /* 表格单元格 */
+
+  /* 控件和尺寸 */
+  --rd-control-h: 36px;        /* 输入框、按钮、页签 */
+  --rd-control-h-sm: 30px;     /* 表内和标题栏里的小按钮 */
+  --rd-row-h: 52px;            /* 表格行最低高度 */
+  --rd-row-h-2: 61px;          /* 两行内容的表格行 */
+  --rd-sidebar-w: 216px;
+  --rd-aside-w: 408px;         /* 详情侧栏 */
+  --rd-icon: 16px;
+  --rd-icon-sm: 14px;
+  --rd-tile: 28px;             /* 统计数字前的图标底 */
+  --rd-tile-sm: 22px;          /* 侧栏图标底 */
+  --rd-tile-title: 26px;       /* 区块标题前的图标底 */
+  --rd-tile-lg: 36px;          /* 结论横幅的图标底 */
+  --rd-tile-hero: 40px;        /* 关键数字前的图标底 */
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* 表面：面板和侧栏是白，页面底浅灰 */
+  --rd-bg: #F2F3F6;
+  --rd-bg-sidebar: #FFFFFF;
+  --rd-panel: #FFFFFF;
+  --rd-panel-inner: #F3F4F7;
+  --rd-control: #E8EAEF;
+  --rd-hover: #F6F7F9;
+  --rd-selected: #ECF8D2;
+  --rd-scrim: rgba(22, 24, 29, 0.45);
+
+  /* 文字 */
+  --rd-text: #16181D;
+  --rd-text-2: #474C55;
+  --rd-text-3: #5B616B;
+  --rd-text-disabled: #9AA0A9;
+  --rd-text-on-brand: #0A0A0A;
+  --rd-text-on-danger: #FFFFFF;
+
+  /* 线 */
+  --rd-line: #E2E5EA;
+  --rd-line-strong: #C9CED6;
+  --rd-focus: #4F7100;
+
+  /* 品牌：按钮底仍是柠檬绿；文字和选中点用深柠檬，柠檬绿在白底上只有 1.7:1 */
+  --rd-brand: #9EDC1D;
+  --rd-brand-hover: #8FCA12;
+  --rd-brand-ink: #4F7100;
+  --rd-brand-soft: #ECF8D2;
+
+  /* 状态色：文字加深；图标底改为实色底配白图标 */
+  --rd-ok: #007646;            --rd-ok-bg: #E0EFE9;      --rd-ok-tile: #009962;      --rd-ok-tile-ink: #FFFFFF;      --rd-ok-pill: #E0EFE9;
+  --rd-warn: #B24400;          --rd-warn-bg: #F6E9E0;    --rd-warn-tile: #D1601F;    --rd-warn-tile-ink: #FFFFFF;    --rd-warn-pill: #F6E9E0;
+  --rd-danger: #B61537;        --rd-danger-bg: #F6E3E7;  --rd-danger-tile: #D3384E;  --rd-danger-tile-ink: #FFFFFF;  --rd-danger-pill: #F6E3E7;
+  --rd-danger-bg-strong: #F2D5DB;
+  --rd-progress: #145EC1;      --rd-progress-bg: #E3ECF8; --rd-progress-tile: #3177DC; --rd-progress-tile-ink: #FFFFFF; --rd-progress-pill: #E3ECF8;
+  --rd-done: #5B616B;          --rd-done-bg: #F3F4F7;    --rd-done-tile: #E8EAEF;    --rd-done-tile-ink: #5B616B;    --rd-done-pill: #E8EAEF;
+  --rd-danger-button: #DC2626; --rd-danger-button-hover: #C21F1F;
+
+  /* 信息色（业务域色） */
+  --rd-domain-money: #8B6000;    --rd-domain-money-tile: #AD7D00;    --rd-domain-money-tile-ink: #FFFFFF;
+  --rd-domain-users: #7E4AC2;    --rd-domain-users-tile: #794DB6;    --rd-domain-users-tile-ink: #FFFFFF;
+  --rd-domain-devices: #007283;  --rd-domain-devices-tile: #0093A5;  --rd-domain-devices-tile-ink: #FFFFFF;
+  --rd-domain-risk: #B32F77;     --rd-domain-risk-tile: #CB5790;     --rd-domain-risk-tile-ink: #FFFFFF;
+  --rd-domain-system: #5B616B;   --rd-domain-system-tile: #E8EAEF;   --rd-domain-system-tile-ink: #5B616B;
+
+  /* 页内角色色 */
+  --rd-role-1: #8B6000;        --rd-role-1-bg: #F1ECE0;  --rd-role-1-tile: #AD7D00;  --rd-role-1-tile-ink: #FFFFFF;
+  --rd-role-2: #007283;        --rd-role-2-bg: #E0EEF0;  --rd-role-2-tile: #0093A5;  --rd-role-2-tile-ink: #FFFFFF;
+  --rd-role-3: #7E4AC2;        --rd-role-3-bg: #F0E9F8;  --rd-role-3-tile: #794DB6;  --rd-role-3-tile-ink: #FFFFFF;
+  --rd-role-4: #B32F77;        --rd-role-4-bg: #F6E6EF;  --rd-role-4-tile: #CB5790;  --rd-role-4-tile-ink: #FFFFFF;
+  --rd-role-other: #5B616B;    --rd-role-other-bg: #F3F4F7; --rd-role-other-tile: #E8EAEF; --rd-role-other-tile-ink: #5B616B;
+
+  /* 图表 */
+  --rd-chart-1: #AD7D00;
+  --rd-chart-2: #0093A5;
+  --rd-chart-3: #794DB6;
+  --rd-chart-4: #CB5790;
+  --rd-chart-other: #8A919C;
+  --rd-chart-grid: #E2E5EA;
+  --rd-chart-axis: #C9CED6;
+  --rd-chart-label: #5B616B;
+  --rd-chart-seq-low: #F1ECE0;
+  --rd-chart-seq-high: #8B6000;
+  --rd-chart-neg: #D3384E;
+  --rd-chart-pos: #3177DC;
+  --rd-chart-mid: #C9CED6;
+
+  /* 圆角、字体、字号、间距、控件尺寸和深色相同，不重复声明 */
+}

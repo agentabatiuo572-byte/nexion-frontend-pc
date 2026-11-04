@@ -23,6 +23,7 @@ import { TopBar } from "./topbar";
 import { PageTransition } from "./page-transition";
 import { LoginGate } from "./login-gate";
 import { useServicePendingCount } from "./use-service-badges";
+import { Button } from "@/app/components/rd/button";
 import { fetchBusinessCalendar } from "@/lib/admin/business-calendar-client";
 import { businessZone, subscribeBusinessZone } from "@/lib/admin/business-time";
 
@@ -35,8 +36,7 @@ function AdminLogoutGate() {
   return (
     <div
       aria-busy="true"
-      className="flex h-screen w-screen items-center justify-center"
-      style={{ background: "var(--v5-bg)", color: "var(--v5-ink-3)" }}
+      className="rd-gate"
     >
       正在安全退出…
     </div>
@@ -47,8 +47,7 @@ function AdminRouteRedirectGate() {
   return (
     <div
       aria-busy="true"
-      className="flex h-screen w-screen items-center justify-center"
-      style={{ background: "var(--v5-bg)", color: "var(--v5-ink-3)" }}
+      className="rd-gate"
     >
       正在进入有权限的页面…
     </div>
@@ -59,8 +58,7 @@ function AdminSessionBootstrapGate() {
   return (
     <div
       aria-busy="true"
-      className="flex h-screen w-screen items-center justify-center"
-      style={{ background: "var(--v5-bg)", color: "var(--v5-ink-3)" }}
+      className="rd-gate"
     >
       正在验证登录状态…
     </div>
@@ -71,20 +69,12 @@ function AdminSessionRecoveryGate({ onRetry, onLogout, noAccess = false, error }
   return (
     <div
       role="alert"
-      className="flex h-screen w-screen flex-col items-center justify-center gap-4"
-      style={{ background: "var(--v5-bg)", color: "var(--v5-ink-3)" }}
+      className="rd-gate rd-gate-recovery"
     >
-      <strong style={{ color: "var(--v5-ink)" }}>{noAccess ? "当前账号没有可访问的后台页面" : "登录状态校验失败"}</strong>
-      <span className="text-[13px]">{error || (noAccess ? "请重新读取权限，或退出后切换账号。" : "暂时无法确认登录状态，请重试。")}</span>
-      <button
-        type="button"
-        className="rounded-[8px] px-4 py-2 text-[13px] font-medium"
-        style={{ background: "var(--v5-brand)", color: "var(--v5-on-brand)" }}
-        onClick={onRetry}
-      >
-        {noAccess ? "重新读取权限" : "重新校验"}
-      </button>
-      {onLogout && <button type="button" className="rounded-[8px] px-4 py-2 text-[13px] font-medium" style={{ color: "var(--v5-ink)" }} onClick={onLogout}>退出登录</button>}
+      <strong>{noAccess ? "当前账号没有可访问的后台页面" : "登录状态校验失败"}</strong>
+      <span>{error || (noAccess ? "请重新读取权限，或退出后切换账号。" : "暂时无法确认登录状态，请重试。")}</span>
+      <Button variant="primary" onClick={onRetry}>{noAccess ? "重新读取权限" : "重新校验"}</Button>
+      {onLogout && <Button variant="ghost" onClick={onLogout}>退出登录</Button>}
     </div>
   );
 }
@@ -359,11 +349,11 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       style={{
         gridTemplateColumns: `${narrow ? "var(--admin-sidebar-w-collapsed)" : collapsed ? "var(--admin-sidebar-w-collapsed)" : "var(--admin-sidebar-w)"} 1fr`,
         gridTemplateRows: "var(--admin-topbar-h) 1fr",
-        background: "var(--v5-bg)",
+        background: "var(--rd-bg)",
         transition: "grid-template-columns 200ms ease",
       }}
     >
-      {narrow && mobileNavOpen && <button type="button" aria-label="关闭侧栏" onClick={() => setMobileNavOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 39, border: 0, background: "rgba(0,0,0,.55)" }} />}
+      {narrow && mobileNavOpen && <button type="button" aria-label="关闭侧栏" onClick={() => setMobileNavOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 39, border: 0, background: "var(--rd-scrim)" }} />}
       <div style={{ gridColumn: 1, gridRow: "1 / span 2", minWidth: 0, ...(narrow && mobileNavOpen ? { position: "fixed" as const, inset: "0 auto 0 0", width: 252, zIndex: 40 } : {}) }}>
         <Sidebar
           role={role}
@@ -395,18 +385,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       >
         <div className="content-shell">
           {maintenanceBanner && (
-            <div
-              role="status"
-              style={{
-                marginBottom: 12,
-                padding: "10px 14px",
-                border: "1px solid color-mix(in srgb, var(--warning) 52%, transparent)",
-                borderRadius: 8,
-                background: "color-mix(in srgb, var(--warning) 10%, var(--surface))",
-                color: "var(--ink)",
-                fontSize: 12.5,
-              }}
-            >
+            <div role="status" className="rd-maintenance">
               <b>平台维护提示已开启</b> · 当前后台可能正在进行维护操作，请谨慎提交高风险变更。
             </div>
           )}

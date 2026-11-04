@@ -17,6 +17,8 @@ import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/med
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
 import { isL5KpiExport, l5KpiRange, L5_KPI_WINDOWS, l5BusinessToday } from "./l-tabs/l5-kpi-range";
+import { Modal as RdModal } from "@/app/components/rd/overlay";
+import { useRdSurface } from "@/app/components/rd/surface";
 
 /* ---------------- 域 → 落地路由(ctx.navigate 跨域跳转) ---------------- */
 export const DOMAIN_HOME: Record<string, string> = {
@@ -336,7 +338,17 @@ export const KV = ({ k, v }: { k: ReactNode; v: ReactNode }) => (
 );
 
 /* Modal — 补 ESC 关闭 + 打开聚焦(a11y 铁律) */
-export function Modal({ title, icon, onClose, children, footer, wide, busy = false, className }: { title: ReactNode; icon?: IconName; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; busy?: boolean; className?: string }) {
+type ModalProps = { title: ReactNode; icon?: IconName; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; busy?: boolean; className?: string };
+
+/* 改版页面(RdPage 里)走 Radix 弹窗和新外观,能叠在新抽屉上;旧页面走原来的实现,行为不变。 */
+export function Modal({ icon, ...props }: ModalProps) {
+  const surface = useRdSurface();
+  return surface
+    ? <RdModal {...props} icon={icon && <Icon name={icon} size={16} />} />
+    : <LegacyModal {...props} icon={icon} />;
+}
+
+function LegacyModal({ title, icon, onClose, children, footer, wide, busy = false, className }: ModalProps) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useEffect(() => {
@@ -775,9 +787,32 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
 }
 
 export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, completionCopy, auditSink, kind }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean; completionCopy?: string; auditSink?: "a2" | "local-history"; kind?: OperatorBriefKind }) {
+  const surface = useRdSurface();
   const brief = buildOperatorBrief(action, detail, !!amplifies, !!hasEdit, auditSink === "local-history", kind)
     .map((row) => row.label === "影响" && completionCopy ? { ...row, text: completionCopy } : row);
   const detailText = compactText(plainText(detail));
+  const rows = (
+    <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+      {brief.map((row) => (
+        <div key={row.label} style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10, alignItems: "start" }}>
+          <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>{row.label}</span>
+          <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.65 }}>
+            <AutoGloss>{row.text}</AutoGloss>
+          </span>
+        </div>
+      ))}
+      {detailText && (
+        <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10, alignItems: "start" }}>
+          <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>说明</span>
+          <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.7 }}>
+            <AutoGloss>{detail}</AutoGloss>
+          </span>
+        </div>
+      )}
+    </div>
+  );
+  // 改版页面的确认框摘要常显(OP-48);旧页面保持默认收起。
+  if (surface) return <div className="operator-brief" style={{ marginBottom: 16 }}><p className="rd-brief-title">执行摘要</p>{rows}</div>;
   return (
     <details className="tint brand operator-brief" style={{ marginBottom: 16, border: 0 }}>
       <summary
@@ -789,26 +824,7 @@ export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, complet
           <span className="brief-open">收起 <span aria-hidden="true">▲</span></span>
         </span>
       </summary>
-      <div>
-        <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-          {brief.map((row) => (
-            <div key={row.label} style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10, alignItems: "start" }}>
-              <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>{row.label}</span>
-              <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.65 }}>
-                <AutoGloss>{row.text}</AutoGloss>
-              </span>
-            </div>
-          ))}
-          {detailText && (
-            <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10, alignItems: "start" }}>
-              <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>说明</span>
-              <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.7 }}>
-                <AutoGloss>{detail}</AutoGloss>
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
+      <div>{rows}</div>
     </details>
   );
 }
@@ -3397,7 +3413,8 @@ export type CoverageSnapshot = {
 };
 
 /* 操作确认弹窗 — 高敏动作确认 + 理由必填 + 可编辑「目标新值」(配置型调整);纯动作(放行/退款/封禁/pause)仅确认。 */
-export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; reasonMin?: number; reasonMax?: number; auditSink?: "a2" | "local-history"; briefKind?: OperatorBriefKind; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交" }: { effect?: ReactNode; confirmLabel?: string; action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; reasonMin?: number; reasonMax?: number; auditSink?: "a2" | "local-history"; briefKind?: OperatorBriefKind; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+  const surface = useRdSurface();
   const [reason, setReason] = useState("");
   const [newVal, setNewVal] = useState(() => initEditValue(edit));
   const [activeBusinessForm, setActiveBusinessForm] = useState<BusinessFormSpec | undefined>(businessForm);
@@ -3507,14 +3524,37 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       if (selectionRequestRef.current === requestId) setBusinessSelectionLoading(false);
     }
   };
+  const coverageNotice = effectiveAmplifies && (
+    <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
+      <span className="ico"><Icon name="alert" size={16} /></span>
+      <div className="tiny">
+        <b>这项操作会让平台多付钱</b> · 提交时会先检查兑付覆盖率。
+        {coverage ? (
+          <>
+            当前覆盖率 <b className="mono">{coverage.coverageRatio}%</b>
+            {coverage.healthyPct !== undefined && coverage.coverageRatio >= coverage.healthyPct
+              ? `，高于健康线 ${coverage.healthyPct}%`
+              : coverage.coverageRatio > coverage.redlinePct
+                ? `，高于红线 ${coverage.redlinePct}%，请谨慎提交`
+                : coverage.coverageRatio === coverage.redlinePct
+                  ? `，正好在红线 ${coverage.redlinePct}%，请谨慎提交`
+                  : `，低于红线 ${coverage.redlinePct}%，提交会被拒绝`}
+          </>
+        ) : (
+          <>{auditSink === "local-history" ? "本页暂不自动检查覆盖率，请自行确认资金影响。" : "提交时会实时检查覆盖率。"}</>
+        )}
+      </div>
+    </div>
+  );
   return (
-    <Modal title={action} icon="shield" onClose={handleClose}
+    <Modal title={action} icon="shield" onClose={handleClose} className="rd-confirm"
       footer={<>
         <Btn disabled={submitting} onClick={handleClose}>取消</Btn>
         <Btn variant="primary" disabled={!canConfirm} onClick={() => void handleConfirm()}>
-          <Icon name="check" size={15} /> {submitting ? "提交中…" : "确认提交"}
+          <Icon name="check" size={15} /> {submitting ? "提交中…" : confirmLabel}
         </Btn>
       </>}>
+      {surface && effect && <div className="rd-effect">{effect}</div>}
       <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={briefKind} />
       {submitError && <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{submitError}</div>}
       {!reasonPolicyReady && (
@@ -3522,28 +3562,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
           {reasonPolicyError ?? "正在加载，稍候即可提交。"}
         </div>
       )}
-      {effectiveAmplifies && (
-        <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
-          <span className="ico"><Icon name="alert" size={16} /></span>
-          <div className="tiny">
-            <b>这项操作会让平台多付钱</b> · 提交时会先检查兑付覆盖率。
-            {coverage ? (
-              <>
-                当前覆盖率 <b className="mono">{coverage.coverageRatio}%</b>
-                {coverage.healthyPct !== undefined && coverage.coverageRatio >= coverage.healthyPct
-                  ? `，高于健康线 ${coverage.healthyPct}%`
-                  : coverage.coverageRatio > coverage.redlinePct
-                    ? `，高于红线 ${coverage.redlinePct}%，请谨慎提交`
-                    : coverage.coverageRatio === coverage.redlinePct
-                      ? `，正好在红线 ${coverage.redlinePct}%，请谨慎提交`
-                      : `，低于红线 ${coverage.redlinePct}%，提交会被拒绝`}
-              </>
-            ) : (
-              <>{auditSink === "local-history" ? "本页暂不自动检查覆盖率，请自行确认资金影响。" : "提交时会实时检查覆盖率。"}</>
-            )}
-          </div>
-        </div>
-      )}
+      {!surface && coverageNotice}
       {completionCopy && <div className="tint tiny" style={{ marginBottom: 14 }}>{completionCopy}</div>}
       {activeBusinessForm && (
         <BusinessFormBlock spec={activeBusinessForm} value={businessValue} onChange={setBusinessValue} onSelectionChange={(next) => void handleBusinessSelectionChange(next)} onUploadStateChange={(key, state) => setUploadStates((current) => ({ ...current, [key]: state }))} />
@@ -3588,6 +3607,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
           )}
         </div>
       )}
+      {surface && coverageNotice}
       <div className="field">
         <label htmlFor={reasonFieldId}>操作理由（必填，{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）</label>
         <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例如：工单号、处理依据" />

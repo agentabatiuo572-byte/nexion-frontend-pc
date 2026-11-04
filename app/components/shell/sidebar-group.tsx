@@ -2,13 +2,15 @@
 
 /**
  * 侧栏单域分组 — 折叠态=图标按钮(点击展开侧栏并打开该组);展开态=域头 + L2 链接列表。
- * active L2 左侧强调条 + surface-2 底;flagship L2 实心色点,scaffold 空心点。
+ * 图标按业务类别上色(DOMAIN_TONE);当前页用品牌色小点和浅底标出。域字母和页面编号不显示(DP-30)。
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { NavDomain } from "@/lib/nav/console-nav";
+import { IconTile } from "@/app/components/rd/icon-tile";
+import { DOMAIN_TONE } from "@/app/components/rd/tone";
 
 export function SidebarGroup({
   domain,
@@ -24,17 +26,12 @@ export function SidebarGroup({
   onToggle: () => void;
 }) {
   const pathname = usePathname();
-  const Icon = domain.icon;
-  const accent = `var(${domain.accentVar})`;
+  const tone = DOMAIN_TONE[domain.code] ?? "system";
   const groupActive = domain.l2.some((l2) => l2.path === pathname);
   const groupBadge = badges ? domain.l2.reduce((sum, l2) => sum + (badges[l2.path] ?? 0), 0) : 0;
-  // 待处理计数徽标(实心域签名色 + on-bg 文字,镜像 cv-unread 风格)。
+  // 待处理计数徽标:橙黄表示有要处理的(06 第 2.2 节)。
   const navBadge = (n: number) => (
-    <span
-      className="font-mono-tabular shrink-0"
-      style={{ minWidth: 16, height: 16, display: "inline-grid", placeItems: "center", padding: "0 4px", borderRadius: 999, background: accent, color: "var(--v5-bg)", fontSize: 9.5, lineHeight: 1, fontWeight: 600 }}
-      aria-label={`${n} 条待处理`}
-    >
+    <span className="rd-nav-badge font-mono-tabular" aria-label={`${n} 条待处理`}>
       {n > 99 ? "99+" : n}
     </span>
   );
@@ -44,21 +41,13 @@ export function SidebarGroup({
       <button
         type="button"
         onClick={onToggle}
-        title={`${domain.code} ${domain.name}`}
-        aria-label={`${domain.code} ${domain.name}`}
-        className="relative mx-auto flex h-10 w-10 items-center justify-center rounded-[10px] transition-colors"
-        style={{
-          background: groupActive ? "var(--v5-surface-2)" : "transparent",
-        }}
+        title={domain.name}
+        aria-label={domain.name}
+        className="rd-nav-rail"
+        data-active={groupActive ? "" : undefined}
       >
-        <Icon size={18} style={{ color: groupActive ? accent : "var(--v5-ink-3)" }} />
-        {groupBadge > 0 && (
-          <span
-            className="absolute"
-            style={{ top: 6, right: 6, minWidth: 6, height: 6, borderRadius: 999, background: accent }}
-            aria-label={`${groupBadge} 条待处理`}
-          />
-        )}
+        <IconTile tone={tone} icon={domain.icon} size={22} />
+        {groupBadge > 0 && <span className="rd-nav-dot-badge" aria-label={`${groupBadge} 条待处理`} />}
       </button>
     );
   }
@@ -70,26 +59,16 @@ export function SidebarGroup({
         onClick={onToggle}
         aria-expanded={isOpen}
         aria-controls={`nav-group-${domain.code}`}
-        className="group flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 transition-colors hover:bg-[var(--v5-surface-2)]"
+        className="rd-nav-item"
+        data-group-open={isOpen ? "" : undefined}
       >
-        <Icon size={17} style={{ color: accent }} />
-        <span className="flex-1 text-left text-[13px]" style={{ color: "var(--v5-ink-2)" }}>
-          {domain.name}
-        </span>
+        <IconTile tone={tone} icon={domain.icon} size={22} />
+        <span className="flex-1 truncate text-left">{domain.name}</span>
         {!isOpen && groupBadge > 0 && navBadge(groupBadge)}
-        <span
-          className="font-mono-tabular text-[10px]"
-          style={{ color: "var(--v5-ink-4)" }}
-        >
-          {domain.code}
-        </span>
-        <ChevronDown
+        <ChevronRight
           size={14}
-          style={{
-            color: "var(--v5-ink-4)",
-            transform: isOpen ? "rotate(0deg)" : "rotate(-90deg)",
-            transition: "transform 180ms ease",
-          }}
+          className="rd-nav-chevron"
+          style={{ transform: isOpen ? "rotate(90deg)" : "rotate(0deg)" }}
           aria-hidden
         />
       </button>
@@ -101,48 +80,23 @@ export function SidebarGroup({
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="overflow-hidden"
+            className="rd-nav-children overflow-hidden"
             id={`nav-group-${domain.code}`}
           >
             {domain.l2.map((l2) => {
               const active = l2.path === pathname;
-              const flagship = l2.status === "flagship";
               return (
                 <li key={l2.id}>
                   <Link
                     href={l2.path}
                     prefetch={false}
-                    className="relative flex items-center gap-2.5 rounded-[8px] py-1.5 pl-8 pr-2.5 text-[12.5px] transition-colors hover:bg-[var(--v5-surface-2)]"
-                    style={{
-                      color: active ? "var(--v5-ink)" : "var(--v5-ink-3)",
-                      background: active ? "var(--v5-surface-2)" : "transparent",
-                      fontWeight: active ? 600 : 400,
-                    }}
+                    className="rd-nav-sub"
+                    aria-current={active ? "page" : undefined}
+                    data-active={active ? "" : undefined}
                   >
-                    {active && (
-                      <span
-                        className="absolute left-[14px] top-1/2 h-3.5 w-[2px] -translate-y-1/2 rounded-full"
-                        style={{ background: accent }}
-                      />
-                    )}
-                    <span
-                      className="inline-block shrink-0 rounded-full"
-                      style={{
-                        width: 5,
-                        height: 5,
-                        background: flagship ? accent : "transparent",
-                        border: flagship ? "none" : "1px solid var(--v5-ink-4)",
-                      }}
-                      aria-hidden
-                    />
-                    <span className="flex-1 truncate">{l2.name}</span>
+                    <span className="rd-nav-dot" data-current={active ? "" : undefined} data-scaffold={l2.status === "flagship" ? undefined : ""} aria-hidden />
+                    <span className="flex-1 truncate" title={l2.name}>{l2.name}</span>
                     {(badges?.[l2.path] ?? 0) > 0 && navBadge(badges?.[l2.path] ?? 0)}
-                    <span
-                      className="font-mono-tabular text-[9px] uppercase tracking-wide"
-                      style={{ color: "var(--v5-ink-4)" }}
-                    >
-                      {l2.id}
-                    </span>
                   </Link>
                 </li>
               );

@@ -47,7 +47,7 @@ export function CommandPalette({ domains, open, onOpenChange }: CommandPalettePr
       <CommandList>
         <CommandEmpty>无匹配模块</CommandEmpty>
         {domains.map((domain) => (
-          <CommandGroup key={domain.code} heading={`${domain.code} · ${domain.name}`}>
+          <CommandGroup key={domain.code} heading={domain.name}>
             {domain.l2.map((l2) => (
               <CommandItem
                 key={l2.id}

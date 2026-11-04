@@ -1,4 +1,5 @@
 "use client";
+import { PageHeader } from "@/app/components/rd/page-header";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
@@ -7,7 +8,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
  *   BAND1 兑付覆盖率 hero + 双账本对照卡(B-01)
  *   BAND2 运营决策卡(B-02/B-03)+ 风险提醒卡(B-05)
  *   BAND3 应付负债结构(查看明细 B2)
- * 顶部域标保留本项目外壳风格;其下布局端口设计稿(dual-ledger.css · .dlpage 作用域)。
+ * 页头走 rd/PageHeader;其下布局端口设计稿(dual-ledger.css · .dlpage 作用域)。
  * 决策动作保留真实接线:阈值写 B1、储备注入写 D3、告警确认写 B1 告警接口并进入 A2 审计。
  * 数据从 /api/admin/treasury/b-domain 读取;后端无 B 域配置时先写入 MySQL 种子再读出。
  */
@@ -100,19 +101,7 @@ export default function DualLedgerPage() {
   if ((bDomain.loading && !bDomain.hasData) || bDomain.error || !bDomain.hasData) {
     return (
       <div className="dkpage dlpage">
-        <header className="mb-5">
-          <div className="flex items-center gap-2">
-            <span
-              className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
-              style={{ background: "color-mix(in srgb, var(--admin-domain-b) 14%, transparent)", color: "var(--admin-domain-b)" }}
-            >
-              <span className="inline-block rounded-full" style={{ width: 5, height: 5, background: "var(--admin-domain-b)" }} />
-              运营总览
-            </span>
-            <span className="font-mono-tabular text-[11px]" style={{ color: "var(--v5-ink-4)" }}>B1</span>
-          </div>
-          <h1 className="font-display mt-2 text-[24px]" style={{ color: "var(--v5-ink)" }}>资金与应付款总览</h1>
-        </header>
+        <div className="mb-5"><PageHeader pageId="B1" title="资金与应付款总览" /></div>
         <BDomainDataState title="资金与应付款" loading={bDomain.loading && !bDomain.error} error={bDomain.error} onRetry={bDomain.reload} />
         {toastNode}
       </div>
@@ -142,19 +131,7 @@ export default function DualLedgerPage() {
   if (b1DataError) {
     return (
       <div className="dkpage dlpage">
-        <header className="mb-5">
-          <div className="flex items-center gap-2">
-            <span
-              className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
-              style={{ background: "color-mix(in srgb, var(--admin-domain-b) 14%, transparent)", color: "var(--admin-domain-b)" }}
-            >
-              <span className="inline-block rounded-full" style={{ width: 5, height: 5, background: "var(--admin-domain-b)" }} />
-              运营总览
-            </span>
-            <span className="font-mono-tabular text-[11px]" style={{ color: "var(--v5-ink-4)" }}>B1</span>
-          </div>
-          <h1 className="font-display mt-2 text-[24px]" style={{ color: "var(--v5-ink)" }}>资金与应付款总览</h1>
-        </header>
+        <div className="mb-5"><PageHeader pageId="B1" title="资金与应付款总览" /></div>
         <BDomainWarnings warnings={bDomain.warnings} />
         <BDomainDataState title="资金与应付款" error={b1DataError} onRetry={bDomain.reload} />
         {toastNode}
@@ -299,20 +276,7 @@ export default function DualLedgerPage() {
 
   return (
     <div className="dkpage dlpage">
-      {/* 顶部域标(保留本项目外壳风格)。服务端权威/实时状态由全局顶栏 SyncChip 承载,此处不再重复。 */}
-      <header className="mb-5">
-        <div className="flex items-center gap-2">
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
-            style={{ background: "color-mix(in srgb, var(--admin-domain-b) 14%, transparent)", color: "var(--admin-domain-b)" }}
-          >
-            <span className="inline-block rounded-full" style={{ width: 5, height: 5, background: "var(--admin-domain-b)" }} />
-            运营总览
-          </span>
-          <span className="font-mono-tabular text-[11px]" style={{ color: "var(--v5-ink-4)" }}>B1</span>
-        </div>
-        <h1 className="font-display mt-2 text-[24px]" style={{ color: "var(--v5-ink)" }}>资金与应付款总览</h1>
-      </header>
+      <div className="mb-5"><PageHeader pageId="B1" title="资金与应付款总览" /></div>
       <BDomainWarnings warnings={bDomain.warnings} />
 
       {/* BAND 1: 覆盖率 hero + 双账本对照 */}
