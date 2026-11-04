@@ -81,9 +81,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const [versionCourseId, setVersionCourseId] = useState("");
   const [courseVersions, setCourseVersions] = useState<LearningCourseVersionView[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
+  const [versionsError, setVersionsError] = useState<string | null>(null);
+  const [versionsRetry, setVersionsRetry] = useState(0);
   const data = content.i18nLearning;
   useEffect(() => {
     setCourseVersions([]);
+    setVersionsError(null);
     if (!versionCourseId) { setVersionsLoading(false); return; }
     let active = true;
     setVersionsLoading(true);
@@ -91,13 +94,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       .then((versions) => { if (active) setCourseVersions(versions); })
       .catch((error) => {
         if (active) {
-          setCourseVersions([]);
-          toast(`版本加载失败:${displayAdminError(error)}`);
+          setVersionsError(displayAdminError(error));
         }
       })
       .finally(() => { if (active) setVersionsLoading(false); });
     return () => { active = false; };
-  }, [actions, toast, versionCourseId, content.i18nLearning]);
+  }, [actions, versionCourseId, content.i18nLearning, versionsRetry]);
   const I6_STATS = data?.stats ?? { managedKeys: 0, totalKeys: 0, integrityIssues: 0, coursesOnline: 0, weeklyNexPayout: "—" };
   const NAMESPACES: Namespace[] = data?.namespaces ?? [];
   const MESSAGES = data?.messages ?? [];
@@ -487,19 +489,6 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     run: (reason) => runBackend(actions.deleteI7CourseDraft(c.id, reason), `${nexGridBrandText(c.title)} 草稿已删除`),
   });
 
-  const reloadVersions = (courseId: string, task: Promise<void>, ok: string) => {
-    return task.then(async () => {
-      await actions.reloadIContent();
-      try {
-        const versions = await actions.fetchI7CourseVersions(courseId);
-        setCourseVersions(versions);
-        toast(ok);
-      } catch (error) {
-        toast(`${ok}；版本列表加载失败：${displayAdminError(error)}。请刷新核对。`);
-      }
-    }).catch((error) => { toast(`操作失败:${displayAdminError(error)}`); return false; });
-  };
-
   const courseCurrent = (c: Course, version: string, payload?: Record<string, unknown>) => ({
     slug: c.id,
     version,
@@ -528,7 +517,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         categories: courseCategories, formats: data?.formats, levels: data?.levels,
         current: courseCurrent(c, `v${maxVersion + 1}`),
       },
-      run: (reason, _value, form) => reloadVersions(c.id,
+      run: (reason, _value, form) => runBackend(
         actions.createI7CourseVersion(c.id, coursePayload(form), reason), `${nexGridBrandText(c.title)} ${form?.version} 草稿已创建`),
     });
   };
@@ -542,7 +531,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       categories: courseCategories, formats: data?.formats, levels: data?.levels,
       current: courseCurrent(c, row.version, row.payload),
     },
-    run: (reason, _value, form) => reloadVersions(c.id,
+    run: (reason, _value, form) => runBackend(
       actions.updateI7CourseVersion(c.id, row.version, coursePayload(form, row.revision), reason), `${nexGridBrandText(c.title)} ${row.version} 草稿已更新`),
   });
 
@@ -550,21 +539,21 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     action: <>删除课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
     detail: <>只能删除草稿；已发布和历史版本不能删除，以免影响用户进度和奖励。</>,
     amplifies: false,
-    run: (reason) => reloadVersions(c.id, actions.deleteI7CourseVersion(c.id, row.version, reason), `${row.version} 草稿已删除`),
+    run: (reason) => runBackend(actions.deleteI7CourseVersion(c.id, row.version, reason), `${row.version} 草稿已删除`),
   });
 
   const publishCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({
     action: <>发布课程版本 · {nexGridBrandText(c.title)} {row.version}</>,
     detail: <>发布前会检查三语测验、兑付覆盖率和权限；发布后旧版本变为历史版本。</>,
     amplifies: true,
-    run: (reason) => reloadVersions(c.id, actions.publishI7CourseVersion(c.id, row.version, reason), `${row.version} 已发布`),
+    run: (reason) => runBackend(actions.publishI7CourseVersion(c.id, row.version, reason), `${row.version} 已发布`),
   });
 
   const rollbackCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({
     action: <>回滚课程版本 · {nexGridBrandText(c.title)} → {row.version}</>,
     detail: <>回滚后课程内容、测验和奖励设置一起恢复成这个版本；已领过奖励的用户不会重复领取。</>,
     amplifies: true,
-    run: (reason) => reloadVersions(c.id, actions.rollbackI7CourseVersion(c.id, row.version, reason), `已回滚到 ${row.version}`),
+    run: (reason) => runBackend(actions.rollbackI7CourseVersion(c.id, row.version, reason), `已回滚到 ${row.version}`),
   });
 
   const setFeat = () => {
@@ -1043,7 +1032,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           <span className="ttl">课程版本列表 · {nexGridBrandText(versionCourse.title)}</span>
           <span className="sub">· 当前 {versionCourse.v}</span>
           <div className="r chips">
-            {canWriteI7 && <button className="l-btn sm primary" onClick={() => newCourseVersion(versionCourse)}>+ 新版本草稿</button>}
+            {canWriteI7 && <button className="l-btn sm primary" disabled={versionsLoading || !!versionsError} onClick={() => newCourseVersion(versionCourse)}>+ 新版本草稿</button>}
             <button className="l-btn sm" onClick={() => setVersionCourseId("")}>关闭</button>
           </div>
         </div>
@@ -1051,7 +1040,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           <table className="l-tbl" style={{ minWidth: 840 }}>
             <thead><tr><th>版本</th><th>状态</th><th>说明</th><th>修订号</th><th>更新时间</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
             <tbody>
-              {courseVersions.map((row) => {
+              {!versionsLoading && !versionsError && courseVersions.map((row) => {
                 const statusText = { DRAFT: "草稿", PUBLISHED: "已发布", SUPERSEDED: "历史版本" }[row.status] ?? "状态未知";
                 return <tr key={`${row.courseId}-${row.version}`}>
                   <td className="mono">{row.version}</td>
@@ -1070,7 +1059,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   </td>
                 </tr>;
               })}
-              {!versionsLoading && courseVersions.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", padding: 24, color: "var(--ink-4)" }}>暂无历史版本</td></tr>}
+              {versionsError && <tr><td colSpan={6}><div className="itint warn" role="alert">版本列表加载失败：{versionsError}<button className="l-btn sm" style={{ marginLeft: 8 }} onClick={() => setVersionsRetry((value) => value + 1)}>重试</button></div></td></tr>}
+              {!versionsLoading && !versionsError && courseVersions.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", padding: 24, color: "var(--ink-4)" }}>暂无历史版本</td></tr>}
               {versionsLoading && <tr><td colSpan={6} style={{ textAlign: "center", padding: 24, color: "var(--ink-4)" }}>版本加载中…</td></tr>}
             </tbody>
           </table>
