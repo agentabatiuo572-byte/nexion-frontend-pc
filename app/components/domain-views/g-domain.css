@@ -8,55 +8,16 @@
 .gdom { container: gdom / inline-size; }
 
 /* ===== 共享 chrome(g-chrome 真值) ===== */
-.gdom .f-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
 @container gdom (max-width: 980px) { .gdom .f-stats { grid-template-columns: repeat(2, 1fr); } }
-.gdom .f-stat { background: var(--surface); border-radius: var(--r-card); padding: 14px 16px; }
-.gdom .f-stat .k { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
-.gdom .f-stat .v { font-size: 22px; font-weight: 600; letter-spacing: -.01em; margin-top: 4px; font-variant-numeric: tabular-nums; color: var(--ink); }
-.gdom .f-stat .sub { font-size: 12px; color: var(--ink-4); margin-top: 3px; }
-.gdom .f-stat.warn .v { color: var(--warning); }
-.gdom .f-stat.ok .v { color: var(--success); }
-.gdom .f-stat.cyan .v { color: var(--cyan); }
-.gdom .f-stat.danger .v { color: var(--danger); }
-
-.gdom .f-ro { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
-  background: var(--surface-2); color: var(--ink-3); font-size: 12px; font-weight: 600; white-space: nowrap; }
-.gdom .f-ro .d { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-4); }
 .gdom .f-live { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 999px;
   background: color-mix(in srgb, var(--admin-domain-g) 14%, transparent); color: var(--admin-domain-g); font-size: 12px; font-weight: 600; white-space: nowrap; }
 .gdom .f-live .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--admin-domain-g); }
-.gdom .f-foot { margin-top: 18px; font-size: 12.5px; line-height: 1.6; color: var(--ink-4); }
-.gdom .f-foot b { color: var(--ink-3); font-weight: 600; }
-
-.gdom .l-card { background: var(--surface); border-radius: var(--r-card); margin-bottom: 16px; overflow: hidden; }
-.gdom .l-card .l-h { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-.gdom .l-card .l-h .ttl { font-size: 14px; font-weight: 600; color: var(--ink); }
-.gdom .l-card .l-h .sub { font-size: 12px; color: var(--ink-4); }
-.gdom .l-card .l-h .r { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.gdom .l-card .l-b { padding: 16px 20px 20px; }
 
 .gdom .gcode { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3);
   background: var(--surface-3); border-radius: 5px; padding: 2px 7px; white-space: nowrap; }
 .gdom .gcode.electric { background: color-mix(in srgb, var(--admin-domain-g) 14%, transparent); color: var(--admin-domain-g); }
-
-.gdom .l-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 8px;
-  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2);
-  font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit; white-space: nowrap; text-decoration: none; }
-@media (hover: hover) and (pointer: fine) { .gdom .l-btn:hover { background: var(--surface-3); color: var(--ink); } }
 .gdom .l-btn.mc { color: var(--admin-domain-g); border-color: color-mix(in srgb, var(--admin-domain-g) 38%, transparent); background: color-mix(in srgb, var(--admin-domain-g) 8%, transparent); font-weight: 600; }
 @media (hover: hover) and (pointer: fine) { .gdom .l-btn.mc:hover { background: color-mix(in srgb, var(--admin-domain-g) 18%, transparent); } }
-.gdom .l-btn.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 6px; min-height: 24px; }
-
-.gdom .l-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.gdom .l-tbl th { font-family: var(--mono); font-size: 11.5px; font-weight: 700; color: var(--ink-4);
-  letter-spacing: .06em; text-transform: uppercase; text-align: left; padding: 10px 12px;
-  background: var(--surface-2); border-bottom: 1px solid var(--border-strong); white-space: nowrap; }
-.gdom .l-tbl td { padding: 11px 12px; border-bottom: 1px solid var(--border); color: var(--ink-2); vertical-align: middle; }
-.gdom .l-tbl tr:last-child td { border-bottom: none; }
-.gdom .l-tbl tr.click { cursor: pointer; }
-@media (hover: hover) and (pointer: fine) { .gdom .l-tbl tr.click:hover td { background: var(--surface-2); } }
-.gdom .l-tbl .num, .gdom .l-tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
-.gdom .l-tbl .mono { font-family: var(--mono); font-size: 12px; }
 
 /* ===== G3 行情周曲线排程器矩阵(port 自 h-domain .dial-tbl,换 .gdom 金色调性) ===== */
 .gdom .dial-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -68,21 +29,10 @@
 @media (hover: hover) and (pointer: fine) { .gdom .dial-tbl td:hover:not(:first-child) { background: var(--surface-3); } }
 .gdom .dial-tbl .chg { color: var(--warning); font-weight: 700; }
 .gdom .dial-tbl .peak { color: var(--admin-domain-g); font-weight: 700; }
-
-.gdom .bdg { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 5px;
-  font-size: 11.5px; font-weight: 700; font-family: var(--mono); letter-spacing: .02em; white-space: nowrap; }
-.gdom .bdg.ok { background: var(--success-soft); color: var(--success); }
-.gdom .bdg.warn { background: var(--warning-soft); color: var(--warning); }
-.gdom .bdg.bad { background: var(--danger-soft); color: var(--danger); }
-.gdom .bdg.dim { background: var(--surface-3); color: var(--ink-2); }
-
-.gdom .gtint { padding: 11px 14px; border-radius: 9px; background: var(--surface-2); font-size: 12px; line-height: 1.55; color: var(--ink-3); }
-.gdom .gtint b { color: var(--ink-2); font-weight: 600; }
 .gdom .gtint .mono { font-family: var(--mono); font-size: 11.5px; }
 
 .gdom .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 @container gdom (max-width: 1100px) { .gdom .two-col { grid-template-columns: 1fr; } }
-.gdom .two-col .l-card { margin-bottom: 0; }
 .gdom .two-col.r11 { grid-template-columns: 1fr 1fr; }
 .gdom .two-col.r13 { grid-template-columns: 1.3fr 1fr; }
 @container gdom (max-width: 1100px) { .gdom .two-col.r11, .gdom .two-col.r13 { grid-template-columns: 1fr; } }
