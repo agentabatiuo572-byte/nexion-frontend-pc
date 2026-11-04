@@ -261,7 +261,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
         await task();
       } catch (err) {
         checkAuth();
-        const detail = err instanceof Error ? displayAdminError(err) : "银行转账渠道操作失败";
+        const detail = err instanceof Error ? displayAdminError(err) : "银行卡支付渠道操作失败";
         setError(isDOutcomeUnknownError(err)
           ? `操作结果暂未确认，请先刷新核对；需要重试时请在下方「待核对的请求」里重试 · ${detail}`
           : `操作没有成功，未入账，可以按提示修改后重试 · ${detail}`);
@@ -320,7 +320,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
   const updateChannelNumber = (channel: D1Overview["channels"][number], kind: "fee" | "max") => {
     const current = kind === "fee" ? channel.feeValue : channel.maxAmountValue;
     if (current === null) {
-      toast("这个渠道没有单独的单笔上限；银行转账的上限在下方「银行转账渠道参数」调整");
+      toast("这个渠道没有单独的单笔上限；银行卡支付的单笔上限在下方「银行卡支付参数」调整");
       return;
     }
     const unitLabel = kind === "fee" ? (channel.feeUnit === "PERCENT" ? "%" : "USDT 固定手续费") : "USD";
@@ -357,8 +357,8 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
     if (!vietQr) return;
     const current = vietQr.config.perTxLimitUsd;
     openActionConfirm({
-      action: "调整银行转账参数 · 单笔上限",
-      detail: `单笔上限当前为 ${current} USD，可设 100–10,000。只对之后的新回单和新付款单生效。`,
+      action: "调整银行卡支付参数 · 单笔上限",
+      detail: `单笔上限当前为 ${current} USD，可设 100–10,000。只对之后的新付款单生效。`,
       edit: { kind: "number", current: String(current), unit: "USD", min: 100, max: 10_000, step: 1 },
       run: (reason, value) => {
         const next = Number(value);
