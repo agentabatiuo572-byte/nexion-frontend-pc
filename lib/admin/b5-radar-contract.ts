@@ -303,7 +303,7 @@ export function normalizeB5Radar(value: unknown): B5Radar {
   const coverageLight = rawCoverageLight as Light | "unavailable";
   roundedMoneyMatches(coverageReserveUsdt, coverageRatioReserveUsdt, "coverage.reserveUsdt");
   roundedMoneyMatches(coverageLiabilitiesUsdt, coverageRatioLiabilitiesUsdt, "coverage.liabilitiesUsdt");
-  if (coverageRedlinePct > 100) invalid("coverage.redlinePct");
+  if (coverageRedlinePct < 80 || coverageRedlinePct > 150) invalid("coverage.redlinePct");
   if (coverageRatioLiabilitiesUsdt === 0) {
     if (coverageRatio !== null || coverageLight !== "unavailable") invalid("coverage.ratio");
   } else {

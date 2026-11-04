@@ -1219,7 +1219,7 @@ B2 是驾驶舱域内的**资金池水位概览卡**,把 B1 应付负债账本�
 - `GET /api/admin/treasury/liabilities?breakdown=true` — 返回 8 类负债科目分解 `[{ category, amountUsdt, share }]` + 储备水位 + 覆盖率(引用 B1 口径)。
 - `GET /api/admin/treasury/maturity-forecast?window=7d|30d` — 到期负债预测,返回 `{ daily:[{date, withdrawDueUsdt, interestDueUsdt, genesisDividendUsdt}], cumulative, reserveCoverDays }`(三类到期叠加,与 Ch6 D3⑤ 一致;`genesisDividendUsdt` 排放率已裁定 0.1%/日(PM 2026-06-01,§A.1 row5);已过滤超窗口远期负债如 NEX v2)。
 - `PUT /api/admin/treasury/forecast-config`(预测参数配置,确认弹窗 B2-MD1:body 必携 `{reason}`,空值返 400 `REASON_REQUIRED`;计提口径切换时返回 `{ before, after, forecastDeltaPreview }` 供执行前在弹窗影响预览区确认)。
-- `GET /api/admin/treasury/liabilities/export`(导出)。
+- `GET /api/admin/treasury/b2/liabilities/export` 导出当前应付款科目 CSV。后台校验 `overview_b2_export`，成功记录 `D3_LIABILITIES_EXPORTED` 审计。D3 的高敏导出使用独立的 POST 接口和权限。
 
 > **B2 作为驾驶舱层调用 D3,不独立建账本**:§3.14 已明确**资金池水位权威归 D3**(非条件选项)。B2 驾驶舱负债分解 / 到期预测数据**来自 D3(权威)**——以下 endpoint(`/treasury/liabilities`、`/treasury/maturity-forecast` 等)待 D3 子模块(Ch6,D 域)确定后统一命名,B2 作为驾驶舱层调用 D3 服务层聚合结果,不独立建账本。D3 对应 endpoint 的最终归属与命名以 Ch6 D3 子模块为准(需开发回源确认 D3 已定义对应 endpoint)。
 
@@ -1565,6 +1565,7 @@ B3 服务的 **V1 KPI 收窄至 #1/#2/#3/#4**:**#1 Day0 接入**(分子与分母
 **⑤ 接口**
 - `GET /api/admin/risk/radar` — 返回五维风险态势 `{ bankrun:{ ratio24h, light, withdraw24hUsdt, reserveUsdt, pressureRatio }, abnormalAccounts:{ count, byCategory }, withdrawBacklog:{ byState:[{state, count, amountUsdt}] }, killSwitches:[{ key, enabled }], coverage:{ ratio, light } }`(`pressureRatio` = 出金压力比 e(t),模型 §5.3,红线 0.7 固定);各维度数据**引用单一源**——挤兑分母储备来自 B1/D3、覆盖率来自 B1、kill-switch(**5 功能闸**:§9.11d.1 的 4 个二元功能闸 + 后台应急新增 withdraw)来自服务端 config store(V4 归 J1)、异常账户来自 K、队列来自 D2。**geo-block 闸不在本雷达 `killSwitches[]` 内,其状态归 J2 地域屏蔽面(见 ②)**。
 - **SSE 实时**:`GET /api/admin/risk/radar/stream`(Server-Sent Events)推送风险维度实时变化(挤兑比率 / kill-switch 状态 / 覆盖率灯),保证雷达实时性。
+- GET 和 SSE 使用相同的 `coverage.redlinePct` 契约。红线来自 B1，合法范围为 80%–150%，含两端。B5 同时校验服务端返回的覆盖率与灯色。
 - `PUT /api/admin/risk/bankrun-thresholds`(挤兑阈值配置,确认弹窗 B5-MD1:body 必携 `{reason}`,空值返 400 `REASON_REQUIRED`,确认即生效;**服务端强制校验 `bankrunRed > bankrunYellow`,违反返回 400**)。
 - `PUT /api/admin/risk/alert-subscription`(告警订阅)。
 
@@ -2979,7 +2980,7 @@ D3 是**储备 / 负债 / 到期负债的底层账本权威页**(§3.14:储备�
 - `PUT /api/admin/treasury/forecast-config`(口径配置,确认弹窗 D3-MD1:body 必携 `{reason}`,空值 400 `REASON_REQUIRED`;计提口径切换提交预检返回 `{ before, after, forecastDeltaPreview }`,供弹窗影响预览区展示后确认执行)。
 - `POST /api/admin/treasury/reserve-injection`(储备注入登记,**唯一 server 实现,B1 仅 UI 触发入口**;确认弹窗 D3-MD2(B1 侧入口为 B1-MD2,同一 server 契约):body 携 reason;`Idempotency-Key` 必带,防重复登记同一笔)。
 - `GET /api/admin/treasury/reconciliation/export`(对账导出,**server 实现权威归 D3**;§3.14;B1⑤  同名 endpoint 须补注「server 实现权威归 D3,§3.14;B1 为 UI 调用入口,实现定义以 D3⑤ 为准」,避免双重建模)。
-- `GET /api/admin/treasury/liabilities/export`(8 类负债科目分解导出,对应 B2 负债科目导出引用路径;与 `/reconciliation/export` 并列,范围差异:本 endpoint 仅导出负债科目分解明细,`/reconciliation/export` 导出储备 vs 负债对账全量快照)。
+- `POST /api/admin/treasury/liabilities/export` 导出应付款科目分解明细，须具备 `finance_d3_export`，提交理由和 `Idempotency-Key`。B2 使用 `GET /api/admin/treasury/b2/liabilities/export` 读取同一账本的应付款科目。`/reconciliation/export` 导出储备与负债对账全量快照。
 
 > **D3 是 B1/B2 调用的底层账本服务层**:Ch4 B1⑤/B2⑤ 引用的 `/api/admin/treasury/*` endpoint(`/reserve`、`/liabilities`、`/maturity-forecast`、`/net-exposure`、`/reconciliation/export`、`/liabilities/export`、`reserve-injection`)的**底层储备 / 负债明细 / 到期聚合 server 实现权威在 D3**;B1 `/coverage` 在 D3 储备(分子)与 B1 自有负债账本(分母)之上计算覆盖率比值与红黄线灯,B2 `/liabilities` `/maturity-forecast` 直接是 D3 同名 endpoint 的驾驶舱调用。本子模块为这些 endpoint 的命名与 server 实现归属定锚(§3.14:储备底层账本权威归 D3),B1/B2 作驾驶舱层调用方,不独立建储备账本。**reserve-injection(B1⑤ )与 reconciliation/export(B1⑤ )的 B1 侧补注,草稿落地前须同步 B1⑤**。
 
@@ -4437,7 +4438,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | B1 | `/api/admin/treasury/reconciliation/export` | GET | 对账导出(**server 实现权威归 D3**) | Ch4 B1 / Ch6 D3 | — | — |
 | B2 | `/api/admin/treasury/liabilities?breakdown=true` | GET | 8 类负债科目分解 + 储备水位 + 覆盖率(UI 调用方;server 实现在 D3,见 D3 行) | Ch4 B2(调用方;实现 Ch6 D3) | — | — |
 | B2 | `/api/admin/treasury/maturity-forecast?window=` | GET | 到期负债预测(提现 / 利息 / Genesis 日排放三类叠加;UI 调用方,server 实现在 D3,见 D3 行) | Ch4 B2(调用方;实现 Ch6 D3) | — | — |
-| B2 | `/api/admin/treasury/liabilities/export` | GET | 8 类负债科目分解导出(UI 调用方;server 实现在 D3,见 D3 行) | Ch4 B2(调用方;实现 Ch6 D3) | — | — |
+| B2 | `/api/admin/treasury/b2/liabilities/export` | GET | 应付款科目 CSV 导出，校验 `overview_b2_export` 并记审计 | Ch4 B2（账本来源见 Ch6 D3） | — | — |
 | B2 | `/api/admin/treasury/forecast-config` | PUT | 预测参数配置(计提口径切换返回差值预览) | Ch4 B2 / Ch6 D3 | 是 | — |
 | B3 | `/api/admin/funnel?cohort=&phase=&ref=` | GET | 五级漏斗(A4 事件预聚合,非临时查询) | Ch4 B3 | — | — |
 | B3 | `/api/admin/funnel/aux-metrics?cohort=` | GET | 辅助指标卡(KPI #1 Day0 / #2 Day7) | Ch4 B3 | — | — |
@@ -4491,7 +4492,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | D3 | `/api/admin/treasury/forecast-config` | PUT | 口径配置(计提口径切换返回差值预览) | Ch6 D3 | 是 | — |
 | D3 | `/api/admin/treasury/reserve-injection` | POST | 储备注入登记(**唯一 server 实现**,B1 仅 UI 入口) | Ch6 D3 | 是 | 是 |
 | D3 | `/api/admin/treasury/reconciliation/export` | GET | 对账导出(储备 vs 负债全量快照) | Ch6 D3 | — | — |
-| D3 | `/api/admin/treasury/liabilities/export` | GET | 8 类负债科目分解导出(B2 驾驶舱调用方) | Ch6 D3(权威)/ Ch4 B2(调用方) | — | — |
+| D3 | `/api/admin/treasury/liabilities/export` | POST | 高敏应付款科目 CSV 导出，校验 `finance_d3_export` | Ch6 D3 | 是 | 是 |
 | D4 | `/api/admin/bills?type=&userId=&status=&cursor=` | GET | 全平台 / 单用户账单流水(游标分页) | Ch6 D4 | — | — |
 | D4 | `/api/admin/bills/running-balance?userId=` | GET | 单用户 Running Balance 序列 | Ch6 D4 | — | — |
 | D4 | `/api/admin/bills/:id/adjust` | POST | 手动 refund / 调整账单(server 账本唯一合法写入路径) | Ch6 D4 | 是 | 是 |
