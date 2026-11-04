@@ -108,10 +108,10 @@ export function Tr({ selected, onOpen, children, onClick, onKeyDown, ...rest }: 
   );
 }
 
-/** 一格两行：第一行主值，第二行弱化。长文本单行省略，title 给全文，只是显示截断（ST-04）。 */
-export function Cell({ main, sub, mono, title }: { main: ReactNode; sub?: ReactNode; mono?: boolean; title?: string }) {
+/** 一格两行：第一行主值，第二行弱化。长文本单行省略，title 给全文，只是显示截断（ST-04）。单号这类不能截短的传 full（TX-28）。 */
+export function Cell({ main, sub, mono, title, full }: { main: ReactNode; sub?: ReactNode; mono?: boolean; title?: string; full?: boolean }) {
   return (
-    <span className="rd-cell" data-mono={mono ? "" : undefined} title={title}>
+    <span className="rd-cell" data-mono={mono ? "" : undefined} data-full={full ? "" : undefined} title={title}>
       <span className="rd-cell-main">{main}</span>
       {sub !== undefined && sub !== null && <span className="rd-cell-sub">{sub}</span>}
     </span>

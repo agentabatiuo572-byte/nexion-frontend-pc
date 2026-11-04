@@ -59,6 +59,9 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
           confirmLabel={mc.confirmLabel}
           blockedReason={mc.blockedReason}
           statedBrief={mc.statedBrief}
+          facts={mc.facts}
+          confirmTone={mc.confirmTone}
+          coverageLead={mc.coverageLead}
           onBusinessSelectionChange={mc.onBusinessSelectionChange}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {

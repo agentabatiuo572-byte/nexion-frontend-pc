@@ -22,6 +22,12 @@ export type ActionConfirmReq = {
   blockedReason?: ReactNode;
   /** 这个操作自己声明的影响和提交前检查，传了就不按文字猜摘要（OP-51）。 */
   statedBrief?: { impact: string; check: string };
+  /** 做决定要核对的事实，常显在业务字段上面，比如收款网络和完整地址。 */
+  facts?: ReactNode;
+  /** 不能撤销的操作传 danger，确认按钮用危险色。 */
+  confirmTone?: "primary" | "danger";
+  /** 放大方向提示的开头，默认「这项操作会让平台多付钱」。 */
+  coverageLead?: ReactNode;
   /** 这项操作实际是什么；传了就不再按文字猜摘要。客服中心（M）的调用必须传。 */
   briefKind?: OperatorBriefKind;
   /**
