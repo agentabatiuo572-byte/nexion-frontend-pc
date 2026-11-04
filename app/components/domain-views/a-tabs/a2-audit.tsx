@@ -6,7 +6,7 @@ import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 /**
  * A2 操作记录与审批中心 — design_handoff_a_domain/A2 设计稿 port(387 行 + SPEC §4 矩阵 14 行权威 + §7 三铁律)。
  *
- * 全后台最高频工作台:高敏操作动态 + 审计日志 + 执行历史 + 机制参数四块,落 9 大类操作确认清单。
+ * 全后台最高频工作台:高敏操作动态 + 审计日志 + 执行历史 + 机制参数四块,展示系统返回的操作确认分类。
  *
  * A 域三铁律(A2 实装,server-canonical 镜像):
  *  ① append-only — 审计日志只导出不改/删,导出按钮仍需操作确认(强制留痕)。无 endpoint = 无 UI;
@@ -976,8 +976,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               if (p.key === "confirm_list") {
                 return (
                   <div className="a-vrow" key={p.key}>
-                    <span className="nm">{p.name}<small>{p.sub}</small></span>
-                    <span className="v">{operatorCopyText(p.value)}</span>
+                    <span className="nm">{p.name}<small>分类说明以当前清单为准，不改变实际权限和审批规则</small></span>
+                    <span className="v">{confirmCategories.length ? `${confirmCategories.length} 类` : "暂无分类说明"}</span>
                     <button className="l-btn sm" onClick={() => setActionConfirmListOpen(true)}>查看清单</button>
                   </div>
                 );
@@ -1129,11 +1129,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         );
       })()}
 
-      {/* ───── 9 大类操作确认清单 Drawer ───── */}
+      {/* ───── 操作确认清单 Drawer ───── */}
       {mcListOpen && (
         <Drawer
-          title="需要确认的操作（9 类）"
-          sub="以下操作都要填写理由并确认"
+          title={`需要确认的操作（${confirmCategories.length} 类）`}
+          sub="分类说明不改变各操作的权限和审批规则"
           onClose={() => setActionConfirmListOpen(false)}
         >
           <div style={{ overflowX: "auto" }}>
@@ -1151,11 +1151,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     <td style={{ fontSize: 12 }}>{operatorCopyText(c.roleGate)}</td>
                   </tr>
                 ))}
+                {!confirmCategories.length && <tr><td colSpan={3} style={{ padding: 20, color: "var(--ink-3)" }}>系统暂未提供分类说明，不代表操作无需审批。请按各操作页面的权限和审批提示办理。</td></tr>}
               </tbody>
             </table>
           </div>
           <div className="atint" style={{ marginTop: 14 }}>
-            判断标准：是否会让平台多付钱、改变权限、动到用户资产或合规状态。强制登出、标记、查看和风控自动检测等止损操作无需确认，立即生效并记录。
+            此清单仅作说明。提交审批的操作须由另一位有权管理员批准后生效；直接执行的操作按各页面提示立即生效并保留操作记录。
           </div>
         </Drawer>
       )}
