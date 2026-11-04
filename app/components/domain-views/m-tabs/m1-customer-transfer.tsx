@@ -78,7 +78,7 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
   const trimmed = reason.trim();
   const reasonOk = trimmed.length >= 8 && trimmed.length <= 200;
 
-  async function send(record: TransferRecord) {
+  async function send(record: TransferRecord, replay = false) {
     const actor = actorStamp();
     let written = false;
     setSaving(true); setError(""); setNotReceived(false);
@@ -93,10 +93,13 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
       onDone(`已转给 ${record.targetName ?? "新的专属客服"}，并核对了最新归属。`);
     } catch (cause) {
       if (actor !== actorStamp()) return;
-      if (!written && isDefiniteSupportRefusal(cause)) {
+      if (written || !isDefiniteSupportRefusal(cause)) { setPending(record); setError("转绑结果尚未确认，原操作已保留。请查询原操作，不要另发新的转绑。"); }
+      // A replay is refused by today's scope and version, which says nothing about the earlier attempt: only a first write's refusal releases the command.
+      else if (replay) setError(`重试被拒绝：${displayAdminError(cause)} 这不能说明原转绑没有成功，原操作已保留，请再查询原操作。`);
+      else {
         transferCommands.forget(record.fingerprint, record.commandKey);
         setPending(null); setError(`转绑没有成功：${displayAdminError(cause)}`); setReload((value) => value + 1);
-      } else { setPending(record); setError("转绑结果尚未确认，原操作已保留。请查询原操作，不要另发新的转绑。"); }
+      }
     } finally { setSaving(false); }
   }
   async function submit() {
@@ -114,22 +117,28 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
     try {
       const result = await supportClient.command(pending.commandKey);
       if (actor !== actorStamp()) return;
-      if (result.status !== "SUCCEEDED" && result.status !== "FAILED") { setError("原转绑仍在处理，请稍后再查询。"); return; }
-      await verifySupportTransfer(pending.payload, result.status);
+      if (result.status === "FAILED") {
+        // The receipt settles it. The binding may well have moved on, which is what a version conflict means, so the form reloads the latest one for a fresh confirmation.
+        transferCommands.forget(pending.fingerprint, pending.commandKey);
+        setPending(null); setReason(pending.payload.reason); setError("原转绑没有成功。下面是最新归属，请重新确认后提交。");
+        return;
+      }
+      if (result.status !== "SUCCEEDED") { setError("原转绑仍在处理，请稍后再查询。"); return; }
+      await verifySupportTransfer(pending.payload, "SUCCEEDED");
       if (actor !== actorStamp()) return;
       transferCommands.forget(pending.fingerprint, pending.commandKey);
       window.dispatchEvent(new Event("support-todo-changed"));
-      if (result.status === "SUCCEEDED") { onDone("原转绑已完成，并核对了最新归属。"); return; }
-      setPending(null); setError("原转绑没有成功，客户归属未变。可重新确认后提交。");
+      onDone("原转绑已完成，并核对了最新归属。");
     } catch (cause) {
       if (actor !== actorStamp()) return;
-      if (cause instanceof SupportClientError && cause.status === 404) { setNotReceived(true); setError("系统没有这次转绑的记录，可以按原操作重试；编号和内容都不会变。"); }
+      // Only this code means there is no receipt. A 404 from the scope re-check or the read-back says nothing about the write.
+      if (cause instanceof SupportClientError && cause.status === 404 && cause.backendMessage === "SUPPORT_COMMAND_NOT_FOUND") { setNotReceived(true); setError("系统没有这次转绑的记录，可以按原操作重试；编号和内容都不会变。"); }
       else setError("结果暂时无法核对，原操作和客户范围已保留。");
     } finally { setSaving(false); }
   }
 
   const footer = pending
-    ? <><button type="button" className="l-btn sm" disabled={saving} onClick={onClose}>稍后再查</button>{notReceived && <button type="button" className="l-btn sm" disabled={saving} onClick={() => void send(pending)}>按原操作重试</button>}<button type="button" className="l-btn sm primary" disabled={saving} onClick={() => void check()}>{saving ? "查询中…" : "查询原操作"}</button></>
+    ? <><button type="button" className="l-btn sm" disabled={saving} onClick={onClose}>稍后再查</button>{notReceived && <button type="button" className="l-btn sm" disabled={saving} onClick={() => void send(pending, true)}>按原操作重试</button>}<button type="button" className="l-btn sm primary" disabled={saving} onClick={() => void check()}>{saving ? "查询中…" : "查询原操作"}</button></>
     : <><button type="button" className="l-btn sm" disabled={saving} onClick={onClose}>返回</button>{onOpenOwn && denied && detail?.agentAdminId === adminId && <button type="button" className="l-btn sm" onClick={onOpenOwn}>查看我的客户资料</button>}{targets && <button type="button" className="l-btn sm primary" disabled={!chosen || !reasonOk || saving} onClick={() => void submit()}>{saving ? "提交中…" : "确认正式转绑"}</button>}</>;
 
   return <Modal title="正式转绑客户" icon="users" busy={saving} onClose={onClose} footer={footer}><div className="s5a-confirm s5a-transfer">
