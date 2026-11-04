@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Btn, OperationConfirmModal } from "../design-kit";
 import { TASK_CLASSES, TASK_CLASS_LABELS, taskClassNames } from "@/lib/admin/task-classes";
-import { guardedFetch, formatAdminApiError, displayAdminError } from "@/lib/admin/error-messages";
+import { guardedFetch, formatAdminApiError } from "@/lib/admin/error-messages";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
@@ -44,14 +44,14 @@ export function PhoneTaskPolicy({ canWrite, toast }: { canWrite: boolean; toast:
     const next = await fetchTaskClassPolicy();
     setData(next); setSelected(next.policy.allowedTaskClasses);
   }
-  useEffect(() => { void refresh().catch((failure: Error) => setError(displayAdminError(failure))); }, []);
+  useEffect(() => { void refresh().catch(() => setError("任务策略加载失败")); }, []);
   return <section className="pane e1-phone-task-policy">
     <header>
       <div className="row">
         <strong>手机类别可跑任务</strong>
         <span className="badge-s neutral">当前版本 {data?.policy.productTaskPolicyVersion ?? "—"}</span>
       </div>
-      <Btn sm onClick={() => void refresh().catch((failure: Error) => setError(displayAdminError(failure)))}>刷新</Btn>
+      <Btn sm onClick={() => void refresh().catch(() => setError("任务策略加载失败"))}>刷新</Btn>
     </header>
     {error && <div className="tint warn tiny" role="alert">{error}</div>}
     <TaskClassChoices selected={selected} onChange={setSelected} ready={!!data && !error} readOnly={!canWrite} />
