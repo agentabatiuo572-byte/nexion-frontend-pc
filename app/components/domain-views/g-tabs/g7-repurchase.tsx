@@ -218,7 +218,6 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
 
   const stats = overview.stats;
   const busy = !!busyKey;
-  const cov = overview.coverage.coverageRatio.toFixed(1);
 
   const adjustParam = (param: G7Param) => {
     const label = paramName(param);
@@ -226,12 +225,10 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
       action: `调整锁定计划参数 · ${label}`,
       detail: (
         <>
-          <b>{label}</b> · 当前 {paramDisplayValue(param)} · {({ apy: "调高参考年奖励率会增加以后要付的锁定奖励，先看兑付覆盖率", lockDays: "只影响新订单，已有订单按原期限", nurture: "影响之后的好友升级奖励计算", lottery: "改抽奖券数量前，先核对创世奖池还够不够", penalty: "已有订单按下单时的扣款规则", presets: "保存后 App 上的可选金额马上更新" } as Record<string,string>)[param.key] ?? "修改后按该参数生效规则执行"}。
-          {param.b1RedlineTriggered && <>这项修改会多付钱，覆盖率低于红线时无法保存（当前 {cov}%）。</>}
-          {param.newOnly ? "只影响新订单。" : "保存后马上生效。"}
+          <b>{label}</b> · 当前 {paramDisplayValue(param)} · {({ apy: "设置新订单的参考年奖励率", lockDays: "已有订单按原期限", nurture: "影响之后的好友升级奖励计算", lottery: "系统会检查奖池核对编号至少 3 字，以及本月已发券数加目标张数是否超过创世奖池月容量", penalty: "已有订单按下单时的扣款规则", presets: "保存后 App 上的可选金额立即更新" } as Record<string,string>)[param.key] ?? "修改后按该参数生效规则执行"}。
+          {param.newOnly ? "保存后立即生效，只影响新订单。" : "保存后立即生效。"}
         </>
       ),
-      amplifies: param.b1RedlineTriggered,
       edit: param.key === "presets"
         ? { kind: "text", current: paramEditValue(param), disallowCurrent: true }
         : { kind: "number", current: paramEditValue(param),
@@ -241,7 +238,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
             step: param.key === "lockDays" || param.key === "lottery" ? 1 : 0.01,
             disallowCurrent: true,
             amplifiesWhen: param.key === "penalty" ? "decrease"
-              : param.key === "apy" || param.key === "nurture" || param.key === "lottery" ? "increase" : undefined },
+              : param.key === "apy" || param.key === "nurture" ? "increase" : undefined },
       businessForm: param.key === "lottery" ? {
         kind: "multi-field",
         title: "核对创世奖池容量",

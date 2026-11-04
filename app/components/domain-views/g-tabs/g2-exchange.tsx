@@ -185,10 +185,8 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
     );
   }
 
-  const { stats, coverage, swap, caps, queue, gateDetails, geoBlocked } = overview;
+  const { stats, swap, caps, queue, gateDetails, geoBlocked } = overview;
   const busy = !!busyKey;
-  const cov = coverage.coverageRatio.toFixed(1);
-  const redline = coverage.redlinePct.toFixed(1);
   const totalGate = stats.gateUser + stats.gatePlatform + stats.gateGeo;
   const selectedQueue = queueDrawer ? queue.find((row) => row.exchangeNo === queueDrawer) : null;
   const gateTiles: { key: GateKey; label: string; count: number; tone?: "warn" | "danger" }[] = [
@@ -202,26 +200,22 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
     openActionConfirm({
       action: `调整兑换${isQueueMode ? "超额处理方式" : "参数"} · ${operatorCopyText(cap.name)}`,
       detail: <>
-        <b>{operatorCopyText(cap.name)}</b> · 当前 {cap.displayValue} · {operatorCopyText(cap.note)}。
+        <b>{operatorCopyText(cap.name)}</b> · 当前 {cap.displayValue} · {operatorCopyText(cap.sub)}。
         <div className="gtint" data-proof="g2-cap-preview" style={{ marginTop: 10 }}>
           <div><b>影响预览</b></div>
           <div>额度已用：{cap.meterPct !== undefined ? `${cap.meterPct}%` : "—"} · 今日已兑换 {fmtUsdK(stats.todayUsd)}（占平台每日额度 {stats.poolPct}%）</div>
           <div>排队到明天：{fmtCount(stats.queueDepth)} 单 · 今日超额拦截 {fmtCount(stats.gateUser + stats.gatePlatform)} 次</div>
-          <div>调高额度：更多兑换马上成交，排队变少。调低额度：更多兑换要排队或被拒绝，USDT 流出变少。</div>
-          <div>兑付覆盖率：{cov}% · 红线 {redline}%</div>
+          <div>{isQueueMode ? "超出额度的兑换按所选方式排队或拒绝。" : cap.key === "fee" || cap.key === "feeMin" ? "调低手续费会少收钱，调高手续费会多收钱。" : "调高额度：更多兑换马上成交，排队变少。调低额度：更多兑换要排队或被拒绝，USDT 流出变少。"}</div>
         </div>
-        {cap.loosen
-          ? <>放宽额度会让更多 USDT 流出，覆盖率低于红线时无法保存；收紧不受限制。</>
-          : isQueueMode
-            ? <>从「排队」改成「拒绝」是收紧。需要运营主管操作。</>
-            : "保存后马上生效。"}
+        {isQueueMode && <>从「排队」改成「拒绝」是收紧。需要运营主管操作。</>}
+        保存后立即生效。
       </>,
-      amplifies: cap.loosen,
       edit: isQueueMode
-        ? { kind: "select", current: cap.displayValue, options: ["排队", "拒绝"] }
+        ? { kind: "select", current: cap.displayValue, options: ["排队", "拒绝"], amplifiesWhen: { from: "拒绝", to: "排队" } }
         : { kind: "number", current: capEditValue(cap), min: 0,
             max: cap.key === "userDailyCap" ? 10000 : cap.key === "platformDailyCap" ? 10000000 : cap.key === "fee" ? 10 : cap.key === "feeMin" ? 5 : 1000000,
-            step: cap.key === "fee" ? 0.01 : 0.1 },
+            step: cap.key === "fee" ? 0.01 : 0.1,
+            amplifiesWhen: cap.key === "fee" || cap.key === "feeMin" ? "decrease" : "increase" },
       run: async (reason, value) => {
         const nextValue = normalizeCapSubmitValue(cap, value);
         if (!nextValue) return;

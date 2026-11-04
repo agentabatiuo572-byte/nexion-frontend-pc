@@ -543,7 +543,7 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 }
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
-export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; step?: number; disallowCurrent?: boolean; amplifiesWhen?: "increase" | "decrease" };
+export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; step?: number; disallowCurrent?: boolean; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } };
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
@@ -3420,7 +3420,9 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const opts = spec?.options ?? (kind === "select" || kind === "toggle" ? ["开启", "关闭"] : []);
   const currentNumber = Number(spec?.current);
   const newNumber = Number(newVal);
-  const directionalAmplifies = spec?.amplifiesWhen && Number.isFinite(currentNumber) && Number.isFinite(newNumber)
+  const directionalAmplifies = typeof spec?.amplifiesWhen === "object"
+    ? spec.current === spec.amplifiesWhen.from && newVal === spec.amplifiesWhen.to
+    : spec?.amplifiesWhen && Number.isFinite(currentNumber) && Number.isFinite(newNumber)
     ? spec.amplifiesWhen === "increase" ? newNumber > currentNumber : newNumber < currentNumber
     : undefined;
   const effectiveAmplifies = directionalAmplifies ?? Boolean(amplifies);
