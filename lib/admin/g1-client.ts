@@ -1,7 +1,7 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { assertG1OverviewContract } from "@/lib/admin/g-overview-contract";
-import { createStableMutationExecutor, stableMutationFingerprint, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
+import { stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
 
 interface ApiResult<T> {
   code: number;
@@ -194,15 +194,6 @@ export interface G1Overview {
   sources: string[];
 }
 
-let requestSeq = 0;
-
-function idempotencyKey(prefix: string) {
-  requestSeq = (requestSeq + 1) % 1_000_000;
-  return `${prefix}-${Date.now()}-${requestSeq}`;
-}
-
-const executeG1Mutation = createStableMutationExecutor(idempotencyKey, "nexion-admin-g1-staking-commands-v1");
-
 function toNumber(value: number | string | null | undefined, fallback = 0) {
   if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
   if (typeof value === "string" && value.trim()) {
@@ -370,67 +361,6 @@ async function g1Request<T>(path: string, init?: RequestInit) {
   return result.data as T;
 }
 
-function g1OverviewMutation(
-  path: string,
-  method: "PATCH" | "POST",
-  body: Record<string, unknown>,
-  prefix: string,
-) {
-  const serialized = JSON.stringify(body);
-  // 指纹带 path:tierKey 只在 path 里,不带就会让「不同质押档、恰好同值同理由」的两次调参共用命令号。
-  return executeG1Mutation(
-    prefix,
-    stableMutationFingerprint(method, path, serialized),
-    (commandKey) => g1Request<BackendOverview>(path, {
-      method,
-      headers: { "Idempotency-Key": commandKey },
-      body: serialized,
-    }),
-    normalizeOverview,
-  );
-}
-
 export async function fetchG1StakingOverview() {
   return normalizeOverview(await g1Request<BackendOverview>("/staking"));
-}
-
-export async function updateG1StakingVisibility(visible: boolean, reason: string, operator: string) {
-  return g1OverviewMutation("/staking/visibility", "PATCH", { value: String(visible), reason, operator }, "g1-visibility");
-}
-
-export async function updateG1StakingPoolParam(tierKey: string, paramKey: "apy" | "penalty" | "min", value: string, reason: string, operator: string) {
-  return g1OverviewMutation(
-    `/staking/pools/${encodeURIComponent(tierKey)}/params/${encodeURIComponent(paramKey)}`,
-    "PATCH",
-    { value, reason, operator },
-    `g1-${paramKey}`,
-  );
-}
-
-export async function updateG1StakingPoolSaleStatus(tierKey: string, enabled: boolean, reason: string, operator: string) {
-  return g1OverviewMutation(
-    `/staking/pools/${encodeURIComponent(tierKey)}/sale-status`,
-    "PATCH",
-    { value: String(enabled), reason, operator },
-    "g1-sale",
-  );
-}
-
-export async function updateG1StakingPoolKillStatus(
-  tierKey: string,
-  killed: boolean,
-  reason: string,
-  operator: string,
-  triggerBasis: string,
-  dispositionPlan: string,
-) {
-  const path = killed
-    ? `/staking/pools/${encodeURIComponent(tierKey)}/kill-status`
-    : `/staking/pools/${encodeURIComponent(tierKey)}/restore`;
-  return g1OverviewMutation(
-    path,
-    "PATCH",
-    { value: String(killed), reason, operator, triggerBasis, dispositionPlan },
-    killed ? "g1-kill" : "g1-restore",
-  );
 }

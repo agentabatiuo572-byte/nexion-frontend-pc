@@ -70,7 +70,6 @@ const MIGRATED = [
   // H3 task-event bindings keep their key across an unknown write outcome before server readback.
   "lib/admin/h-client.ts",
   "lib/admin/e5-stable-device-command.ts",
-  "lib/admin/g1-client.ts",
   "lib/admin/g2-client.ts",
   "lib/admin/g3-client.ts",
   "lib/admin/g4-client.ts",
