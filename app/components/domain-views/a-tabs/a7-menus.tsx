@@ -235,7 +235,7 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
     setValidationError("");
     if (isCreate) {
       const payload: A7MenuCreateInput = { menuCode: normalizedCode, menuName: normalizedName, menuNameZh: normalizedName, parentCode: parentCode.trim() || undefined, routePath: normalizedRoute || undefined, icon: icon.trim() || undefined, sortOrder };
-      onSubmit(payload, `新建菜单 · ${menuName}`, <>新建菜单 <b>{menuName}</b>（<span className="mono">{menuCode}</span>），会出现在后台左侧导航。</>);
+      onSubmit(payload, `新建菜单 · ${menuName}`, <>新建菜单 <b>{menuName}</b>（<span className="mono">{menuCode}</span>），保存后立即生效。只有已上线并登记在导航中的页面，且菜单标识、页面地址与所属模块匹配，才会向获该菜单授权的账号显示；新建菜单不会自动生成页面或授予访问权。</>);
     } else if (existing) {
       const payload: A7MenuUpdateInput = { menuName: normalizedName, menuNameZh: normalizedName, routePath: normalizedRoute || undefined, icon: icon.trim() || undefined, sortOrder, status, expectedVersion: existing.version };
       onSubmit(payload, `编辑菜单 · ${menuName}`, <>修改菜单 <b>{menuName}</b>（<span className="mono">{existing.menuCode}</span>）。</>);

@@ -191,7 +191,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     ...DOMAIN_EXTENSIONS
       .filter((extension) => extension.state === "inprogress" || extension.state === "registered")
       .flatMap((extension) => extension.newDomains.filter((domain) => domain.n).map((domain) => domain.name)),
-  ]));
+  ])).filter((domain) => /^[a-z][a-z0-9_]*$/.test(domain));
   const paramValue = (key: string, fallback = "") => KPI_DIMENSION_PARAMS.find((param) => param.key === key)?.value ?? fallback;
   const liveSchemaVer = A4_STATS.schemaVersion;
   const liveDay0 = paramValue("day0");

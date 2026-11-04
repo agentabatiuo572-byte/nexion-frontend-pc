@@ -36,7 +36,7 @@ import { TabGroup } from "@/app/components/kit/tab-group";
 import { StatusPill, type PillTone } from "@/app/components/kit/status-pill";
 import { AuditTimeline, type AuditEntry } from "@/app/components/kit/audit-timeline";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
-import type { AdminRole } from "@/lib/nav/console-nav";
+import { canAccessResolvedPath, resolveVisibleDomains, type AdminRole } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
@@ -341,7 +341,9 @@ export default function UserDetailPage() {
   const canCorrectNotificationTime = canReadNotificationEvidence && canWriteC1
     && (session?.role === "superadmin" || !!session?.authorities.includes("platform_a4_write"));
   const canWriteC2 = !supportScope && (session?.role === "superadmin" || !!session?.authorities.includes("user_c2_write"));
-  const canReadC2 = session?.role === "superadmin" || !!session?.authorities.includes("user_c2_read");
+  const canReadC2 = !!session
+    && (session.role === "superadmin" || session.authorities.includes("user_c2_read"))
+    && canAccessResolvedPath(resolveVisibleDomains(session), "/users/actions");
   const canReadC3 = session?.role === "superadmin" || !!session?.authorities.includes("user_c3_read");
   const canReadC5 = session?.role === "superadmin" || !!session?.authorities.includes("user_c5_read");
   const canReadC6 = session?.role === "superadmin" || !!session?.authorities.includes("user_c6_read");
@@ -613,7 +615,7 @@ export default function UserDetailPage() {
             <div className="flex flex-wrap gap-2">
               {canReadC2 && (
                 <Link
-                  href={{ pathname: "/users/actions", query: { userCode: userNo, returnTo } }}
+                  href={{ pathname: "/users/actions", query: { userCode: userNo, source: "C1", returnTo } }}
                   className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px]"
                   style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}
                 >

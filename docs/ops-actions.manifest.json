@@ -1192,25 +1192,21 @@
       "id": "OPS-G-01",
       "domain": "G",
       "object": "Staking质押池",
-      "action": "改APY/罚款/最小额(操作确认+B1红线+跨档保序;升APY/降罚amplifies)",
-      "status": "built",
+      "action": "历史档位与持仓只读查询，APY/罚款/最小额修改入口已退役",
+      "status": "readonly",
       "view": "g-tabs/g1-staking.tsx",
       "batch": "P1",
-      "restAction": "updateG1StakingPoolParam"
+      "reason": "T04：质押产品已退役，G1 仅查询原档位与持仓，不提供参数写入入口。"
     },
     {
       "id": "OPS-G-02",
       "domain": "G",
       "object": "Staking质押池",
-      "action": "停售/恢复开售 + 单档熔断(附处置方案；单档恢复另列欠账) + App 质押展示开关(隐藏存量入口并停止新开仓，持仓保留)",
-      "status": "built",
+      "action": "开售/停售、单档熔断及 App 展示开关入口已退役",
+      "status": "readonly",
       "view": "g-tabs/g1-staking.tsx",
       "batch": "P1",
-      "restActions": [
-        "updateG1StakingPoolSaleStatus",
-        "updateG1StakingPoolKillStatus",
-        "updateG1StakingVisibility"
-      ]
+      "reason": "T04：质押产品已退役，G1 只读保留历史档位及持仓，不再改变开售、熔断或展示状态。"
     },
     {
       "id": "OPS-G-03",
@@ -2738,19 +2734,11 @@
       "id": "OPS-G-14",
       "domain": "G",
       "object": "G1 单档质押熔断",
-      "action": "恢复被熔断的单一质押档位",
-      "status": "built",
+      "action": "单档恢复入口已退役，仅查看历史熔断状态与持仓",
+      "status": "readonly",
       "view": "g-tabs/g1-staking.tsx",
       "batch": "done",
-      "runtimeEvidence": [
-        {
-          "type": "pc-runtime",
-          "file": "lib/admin/g1-client.ts",
-          "positivePatterns": ["killed\\s*\\?", "\\/kill-status", "\\/restore"],
-          "negativePatterns": ["\\/restore[\\s\\S]{0,80}\\?[\\s\\S]{0,80}\\/kill-status"]
-        }
-      ],
-      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+      "reason": "T04：质押产品已退役，G1 不再提供单档恢复命令；原恢复路由证据不代表当前页面仍有可执行动作。"
     },
     {
       "id": "OPS-H-11",

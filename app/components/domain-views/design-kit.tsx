@@ -595,6 +595,21 @@ function initEditValue(spec?: EditSpec | null): string {
   return options.includes(current) ? current : "";
 }
 
+// 用十进制整数校验步长，避免合法小数被浮点除法误拒；不舍入输入。
+function isDecimalStepAligned(value: string, base: number, step: number): boolean {
+  const parts = [value, String(base), String(step)].map((raw) => {
+    const [mantissa, exponent = "0"] = raw.toLowerCase().split("e");
+    return {
+      coefficient: BigInt(mantissa.replace(".", "")),
+      scale: (mantissa.split(".")[1]?.length ?? 0) - Number(exponent),
+    };
+  });
+  const scale = Math.max(0, ...parts.map((part) => part.scale));
+  const [numeric, origin, increment] = parts.map((part) =>
+    part.coefficient * BigInt(10) ** BigInt(scale - part.scale));
+  return (numeric - origin) % increment === BigInt(0);
+}
+
 function isEditValueValid(spec: EditSpec | null, value: string): boolean {
   if (!spec) return true;
   if (!value.trim()) return false;
@@ -607,11 +622,9 @@ function isEditValueValid(spec: EditSpec | null, value: string): boolean {
   if (!Number.isFinite(numeric)) return false;
   if (spec.min !== undefined && numeric < spec.min) return false;
   if (spec.max !== undefined && numeric > spec.max) return false;
-  if (spec.step !== undefined && spec.step > 0) {
-    const base = spec.min ?? 0;
-    const steps = (numeric - base) / spec.step;
-    if (Math.abs(steps - Math.round(steps)) > 1e-9) return false;
-  }
+  if (spec.disallowCurrent && numeric === Number(spec.current)) return false;
+  if (spec.step !== undefined && spec.step > 0
+    && !isDecimalStepAligned(normalized, spec.min ?? 0, spec.step)) return false;
   return true;
 }
 
@@ -1515,8 +1528,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
         if (f.min != null && n < f.min) missing.push(`${f.label} 须 ≥ ${f.min}`);
         if (f.max != null && n > f.max) missing.push(`${f.label} 须 ≤ ${f.max}`);
         if (f.step != null && f.step > 0 && f.min != null) {
-          const quotient = (n - f.min) / f.step;
-          if (Math.abs(quotient - Math.round(quotient)) > 1e-9) missing.push(`${f.label} 须按 ${f.step} 递增`);
+          if (!isDecimalStepAligned(String(state[f.key]).trim(), f.min, f.step)) missing.push(`${f.label} 须按 ${f.step} 递增`);
         }
       });
     }

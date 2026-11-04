@@ -529,7 +529,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   A4_REASON_LENGTH_INVALID: "操作理由必须填写 8-200 个字符。",
   A4_DAY0_VALUE_INVALID: "Day0 接入窗口必须是 30-600 秒。",
   A4_EVENT_RETENTION_INVALID: "事件留存期必须是 13-60 个月。",
-  A4_SAMPLING_VALUE_INVALID: "浏览或会话采样率必须是 1%-100%。",
+  A4_SAMPLING_VALUE_INVALID: "浏览或会话采样率必须是 0%–100%；资金、风控、转化类必须保持 100%。",
   A4_PROTECTED_EVENT_SAMPLING_INVALID: "资金、风控和转化事件必须保持 100% 全量采集。",
   A4_EVENT_PARAM_SAME_VALUE: "统计规则与当前值相同，无需重复提交。",
   A4_SCHEMA_EVENT_NAME_INVALID: "事件名必须符合 domain.object_action，并使用已发生动作。",

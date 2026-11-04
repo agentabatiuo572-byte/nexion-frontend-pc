@@ -40,7 +40,7 @@ export function GDomainView({ meta }: { meta: DomainViewMeta }) {
     <div className="dkpage gdom">
       <DomainHeader {...meta} />
 
-      {tab === "G1" && <G1Staking ctx={ctx} />}
+      {tab === "G1" && <G1Staking />}
       {tab === "G2" && <G2Exchange ctx={ctx} />}
       {tab === "G3" && <G3Market ctx={ctx} />}
       {tab === "G4" && <G4Genesis ctx={ctx} />}
