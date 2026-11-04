@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import "./d-domain.css";
+import { RdPage } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
@@ -29,9 +30,9 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
     openConfirm: setCf,
   } as DCtx;
 
-  return (
-    <div className="dkpage ddom">
-      <DomainHeader {...meta} />
+  const page = (
+    <>
+      {tab !== "D2" && <DomainHeader {...meta} />}
 
       {tab === "D1" && <D1Recon ctx={ctx} />}
       {tab === "D2" && <D2Withdrawals ctx={ctx} />}
@@ -53,6 +54,10 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
           auditSink={mc.auditSink}
+          effect={mc.effect}
+          confirmLabel={mc.confirmLabel}
+          blockedReason={mc.blockedReason}
+          statedBrief={mc.statedBrief}
           onBusinessSelectionChange={mc.onBusinessSelectionChange}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {
@@ -63,6 +68,8 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
       )}
       {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
       {toastNode}
-    </div>
+    </>
   );
+
+  return tab === "D2" ? <RdPage className="ddom">{page}</RdPage> : <div className="dkpage ddom">{page}</div>;
 }

@@ -59,9 +59,10 @@ export function Table({ label, children, className, ...rest }: HTMLAttributes<HT
   );
 }
 
-export function Th({ align, sticky, icon: Icon, tone, children, ...rest }: ThHTMLAttributes<HTMLTableCellElement> & { align?: "left" | "right"; sticky?: "start" | "end"; icon?: LucideIcon; tone?: DomainTone }) {
+/** control 是勾选这类控件列，不是数据列，不算进默认 6 列。 */
+export function Th({ align, sticky, control, icon: Icon, tone, children, ...rest }: ThHTMLAttributes<HTMLTableCellElement> & { align?: "left" | "right"; sticky?: "start" | "end"; control?: boolean; icon?: LucideIcon; tone?: DomainTone }) {
   return (
-    <th {...rest} scope={rest.scope ?? "col"} data-cp="column" data-align={align} data-sticky={sticky}>
+    <th {...rest} scope={rest.scope ?? "col"} data-cp={control ? undefined : "column"} data-control={control ? "" : undefined} data-align={align} data-sticky={sticky}>
       <span className="rd-th-inner">
         {Icon && <span className="rd-th-icon" data-tone={tone ?? "system"}><Icon size={13} strokeWidth={1.9} aria-hidden /></span>}
         {children}

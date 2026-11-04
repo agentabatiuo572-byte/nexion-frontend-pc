@@ -13,7 +13,7 @@ export const DOMAIN_D: ModuleEntry[] = [
   },
   {
     path: "/finance/withdrawals",
-    summary: "审核提现申请，查看风险评分和触发的规则。大额提现先看兑付覆盖率；银行提现以支付商付款成功为完成。",
+    summary: "审核用户提现，先看风险和兑付覆盖率。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

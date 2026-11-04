@@ -12,6 +12,7 @@
  *   sort={<Select … />}
  *   result="共 128 条"
  *   applied={[{ key: "min", label: "金额 ≥ 1000", onRemove: … }]}
+ *   notice="最低风险分须为 0–100 的整数。这次没有查询。"   条件不合法时写在这里，更多筛选收着也看得到（ST-19）
  * >
  *   <FilterField grow><Input aria-label="搜索提现" placeholder="输入提现单号、用户编号或昵称" … /></FilterField>
  * </FilterBar>
@@ -37,7 +38,7 @@ export function FilterField({ label, grow, children }: { label?: ReactNode; grow
   );
 }
 
-export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, onSubmit, querying = false, onClear, canClear = false, clearLabel = "清除筛选", sort, result, applied }: {
+export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, onSubmit, querying = false, onClear, canClear = false, clearLabel = "清除筛选", sort, result, applied, notice }: {
   scope?: ReactNode;
   children?: ReactNode;
   more?: ReactNode;
@@ -51,6 +52,7 @@ export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, o
   sort?: ReactNode;
   result?: ReactNode;
   applied?: readonly { key: string; label: ReactNode; onRemove: () => void }[];
+  notice?: ReactNode;
 }) {
   const moreId = useId();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -93,6 +95,7 @@ export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, o
           {result && <span className="rd-filter-result" role="status">{result}</span>}
         </div>
       )}
+      {notice && <p className="rd-filter-notice" role="alert">{notice}</p>}
     </form>
   );
 }

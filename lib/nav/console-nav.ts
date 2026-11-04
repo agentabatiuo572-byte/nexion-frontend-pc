@@ -134,7 +134,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     roles: ["finance", "risk", "config"],
     l2: [
       { id: "D1", name: "充值对账中心", path: "/finance/recon", prdAnchor: "D1", batch: "V1", status: "flagship" },
-      { id: "D2", name: "待审核提现", path: "/finance/withdrawals", prdAnchor: "D2", batch: "V1", status: "flagship" },
+      { id: "D2", name: "提现审核", path: "/finance/withdrawals", prdAnchor: "D2", batch: "V1", status: "flagship" },
       { id: "D3", name: "资金储备与应付款", path: "/finance/pool", prdAnchor: "D3", batch: "V1", status: "flagship" },
       { id: "D4", name: "账本与账单核对", path: "/finance/ledger", prdAnchor: "D4", batch: "V1", status: "flagship" },
       { id: "D5", name: "提现参数配置", path: "/finance/params", prdAnchor: "D5", batch: "V1", status: "flagship" },
