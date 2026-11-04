@@ -57,10 +57,12 @@ function PaymentPolicySection({ owner, canWrite }: { owner: number; canWrite: bo
   const parsed = Object.fromEntries(paymentPolicyFields.map(key => [key, Number(values[key])])) as PaymentPolicyValues;
   const valid = !!policy?.constraints && paymentPolicyFields.every(key => /^\d+$/.test(values[key]) && Number.isSafeInteger(parsed[key]) && parsed[key] >= policy.constraints![key].min && parsed[key] <= policy.constraints![key].max);
   const changed = !!policy && paymentPolicyFields.some(key => parsed[key] !== policy.values[key]);
+  const reasonLength = reason.trim().length;
+  const reasonValid = reasonLength >= 8 && reasonLength <= 200;
   const editable = !!policy && canWrite && policy.editable && !!policy.constraints && !!policy.effectDescription && !pending;
   const editReason = !canWrite ? "当前只有查看权限" : pending ? "请先查询上一笔调整结果" : policy && (!policy.constraints || !policy.effectDescription) ? "可调整范围或生效说明尚未确认，暂时只能查看" : policy && !policy.editable ? "当前规则只能查看" : "";
   async function finish(queryOnly = false) {
-    if (mutation.current || !queryOnly && (!editable || !policy || !valid || !changed || reason.trim().length < 8 || !confirmed)) return;
+    if (mutation.current || !queryOnly && (!editable || !policy || !valid || !changed || !reasonValid || !confirmed)) return;
     mutation.current = true; setBusy(true); setError(""); setReceipt(null);
     try {
       const result = queryOnly ? await queryPaymentPolicy(owner) : await submitPaymentPolicy(owner, parsed, policy!.version, reason.trim());
@@ -93,11 +95,11 @@ function PaymentPolicySection({ owner, canWrite }: { owner: number; canWrite: bo
       </> : <>
         <table className="payment-pin__table payment-pin__comparison" aria-label="支付密码规则调整对照"><thead><tr><th>规则</th><th>调整前</th><th>调整后</th></tr></thead><tbody>{paymentPolicyFields.map(key => <tr key={key}><td>{labels[key]}</td><td>{policy.values[key]} {units[key]}</td><td className={policy.values[key] !== parsed[key] ? "payment-pin__changed" : undefined}>{parsed[key]} {units[key]}</td></tr>)}</tbody></table>
         <p className="payment-pin__secondary payment-pin__effect">{policy.effectDescription}</p>
-        <div className="payment-pin__reason"><label>调整理由（至少 8 个字）<textarea aria-label="支付密码规则调整理由" value={reason} disabled={busy} onChange={event => setReason(event.target.value)} rows={3} /></label><label className="payment-pin__check"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.target.checked)} />我已核对调整前后数值与生效说明</label>{reason.trim().length < 8 && <p className="payment-pin__secondary">请填写至少 8 个字的调整理由后保存。</p>}</div>
+        <div className="payment-pin__reason"><label>调整理由（8–200 字）<textarea aria-label="支付密码规则调整理由" value={reason} disabled={busy} onChange={event => setReason(event.target.value)} rows={3} /></label><label className="payment-pin__check"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.target.checked)} />我已核对调整前后数值与生效说明</label>{!reasonValid && <p className="payment-pin__secondary">请填写 8–200 字的调整理由后保存。</p>}</div>
       </>}
       <footer className="payment-pin__form-actions">
         <button className="payment-pin__button" disabled={busy} onClick={() => { setEditing(false); setReviewing(false); setReason(""); setConfirmed(false); }}>取消调整</button>
-        {reviewing ? <><button className="payment-pin__button" disabled={busy} onClick={() => setReviewing(false)}>返回修改</button><button className="payment-pin__button payment-pin__button--primary" disabled={busy || !confirmed || reason.trim().length < 8 || !valid || !changed || !editable} onClick={() => void finish()}>{busy ? "正在保存并核对审计…" : "确认并保存规则"}</button></> : <button className="payment-pin__button payment-pin__button--primary" disabled={!valid || !changed || busy} onClick={() => { setReviewing(true); setConfirmed(false); }}>下一步：核对调整</button>}
+        {reviewing ? <><button className="payment-pin__button" disabled={busy} onClick={() => setReviewing(false)}>返回修改</button><button className="payment-pin__button payment-pin__button--primary" disabled={busy || !confirmed || !reasonValid || !valid || !changed || !editable} onClick={() => void finish()}>{busy ? "正在保存并核对审计…" : "确认并保存规则"}</button></> : <button className="payment-pin__button payment-pin__button--primary" disabled={!valid || !changed || busy} onClick={() => { setReviewing(true); setConfirmed(false); }}>下一步：核对调整</button>}
       </footer>
     </div>}
     {!policy && !loading && <p className="payment-pin__empty">当前生效规则尚未确认。方案默认：错误上限 5 次、统计窗口 15 分钟、锁定 15 分钟；此处不是当前生效值。</p>}
