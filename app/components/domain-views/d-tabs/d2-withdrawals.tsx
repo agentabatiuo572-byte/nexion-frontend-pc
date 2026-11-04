@@ -92,6 +92,13 @@ function reviewAtForBackend(value: string) {
   return new Date(Date.parse(`${value.slice(0, 16)}:00Z`) + (480 - businessOffsetMinutes()) * 60_000).toISOString().slice(0, 16);
 }
 
+/** 第一次发送前定下后端时间，存进待确认记录。重试原样发送，不随业务时区重新换算（OP-94）。 */
+function formForBackend(value?: BusinessFormValue): BusinessFormValue | undefined {
+  const raw = value as Record<string, unknown> | undefined;
+  if (typeof raw?.reviewAt !== "string" || !raw.reviewAt) return value;
+  return { ...value, reviewAt: reviewAtForBackend(raw.reviewAt) } as BusinessFormValue;
+}
+
 function statusLabel(status: string) {
   return ({
     SUBMITTED: "已提交", PENDING: "已提交",
@@ -521,7 +528,7 @@ function businessInput(value?: BusinessFormValue): D2ReviewInput {
     holdDays: raw.holdDays === undefined ? undefined : Number(raw.holdDays),
     period: typeof raw.period === "string" ? raw.period : undefined,
     owner: typeof raw.owner === "string" ? raw.owner : undefined,
-    reviewAt: typeof raw.reviewAt === "string" && raw.reviewAt ? reviewAtForBackend(raw.reviewAt) : undefined,
+    reviewAt: typeof raw.reviewAt === "string" && raw.reviewAt ? raw.reviewAt : undefined,
     fundsVerified: raw.fundsVerified === true || raw.fundsVerified === "true",
     addressVerified: raw.addressVerified === true || raw.addressVerified === "true",
   };
@@ -1006,7 +1013,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       blockedReason: gateClosed ? GATE_CLOSED_BLOCK : undefined,
       run: async (reason, _newValue, businessValue) => {
         try {
-          await runReview(row.withdrawalNo, action, reason, businessValue, row.status.toUpperCase());
+          await runReview(row.withdrawalNo, action, reason, formForBackend(businessValue), row.status.toUpperCase());
         } catch (cause) {
           // 状态已被别人改了：框里刷新成最新状态，确认按钮禁用，写清现在是什么状态（S05 实测）。
           const latest = await fetchD2WithdrawalDetail(row.withdrawalNo).catch(() => null);
@@ -1207,7 +1214,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       confirmLabel: `确认批量${actionLabel(action)}`,
       confirmTone: action === "REJECT" ? "danger" : undefined,
       blockedReason: gateClosed ? GATE_CLOSED_BLOCK : undefined,
-      run: (reason, _newValue, businessValue) => runBatch(action, ids, reason, businessValue),
+      run: (reason, _newValue, businessValue) => runBatch(action, ids, reason, formForBackend(businessValue)),
     });
   };
 
