@@ -3475,7 +3475,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
     setSubmitting(true);
     setSubmitError(null);
     try {
-      await onConfirm(reason.trim(), (derivedNewVal ?? newVal) || undefined, activeBusinessForm ? businessValue : undefined);
+      await onConfirm(reason.trim(), (spec ? newVal : derivedNewVal ?? newVal) || undefined, activeBusinessForm ? businessValue : undefined);
     } catch (error) {
       // The domain callback owns the detailed toast. Keep the form open and
       // consume the rejection so a rejected A2/K2 request never escapes as pageerror.
