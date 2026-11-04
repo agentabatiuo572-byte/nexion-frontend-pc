@@ -244,13 +244,16 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
   const deviation = fmtOptionalPct(overview.overrides.deviationPct);
   const costBasis = fmtOptionalPrice(overview.overrides.costBasis);
   const scheduleControl = overview.controls.find((control) => control.key === "schedule");
-  const schedV = controlValue(overview, "schedule");
+  const scheduleMissing = scheduleControl?.value === "";
+  const schedV = scheduleMissing ? "未配置" : controlValue(overview, "schedule");
   const scheduleMeta = scheduleControl?.cronExpression
     ? `${scheduleControl.cronExpression} · ${scheduleControl.zone || "—"}`
     : "—";
   const pinV = controlValue(overview, "pin");
   const loopV = controlValue(overview, "loop");
-  const runtimeStatus = deriveG3RuntimeStatus(paused, pinV);
+  const runtimeStatus = scheduleMissing && !paused && !/^D[1-7]$/.test(pinV.trim().toUpperCase())
+    ? { label: "自动推进未配置", detail: "请在「自动按日推进」补充配置。价格查看、修改和暂停仍可使用。", tone: "warn" }
+    : deriveG3RuntimeStatus(paused, pinV);
   const coverageSnapshot = {
     coverageRatio: overview.coverage.coverageRatio,
     redlinePct: overview.coverage.redlinePct,
@@ -295,10 +298,10 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
 
   const openCurveCtlMc = (key: string, name: string, current: string) => {
     const isSchedule = key === "schedule";
-    const editCurrent = isSchedule ? (scheduleControl?.rawValue || current) : current;
+    const editCurrent = isSchedule ? (scheduleControl?.rawValue ?? (scheduleMissing ? "" : current)) : current;
     openActionConfirm({
       action: `调整价格计划运行方式 · ${name}`,
-      detail: <><b>{name}</b> · 当前:{current}。{isSchedule ? <>填写每天几点切换，例如 <span className="mono">每天北京时间 08:30 自动推进</span>。当前设置：{scheduleMeta}。</> : <>固定某一天或暂停切换，都不会改动已设好的计划。</>} 需要财务主管或超级管理员操作。</>,
+      detail: <><b>{name}</b> · 当前:{current}。{isSchedule ? <>填写每天几点切换，例如 <span className="mono">每日 08:30 Asia/Shanghai 自动推进</span>（北京时间 08:30）。时区名称须紧随时刻；未填时区按 UTC。当前设置：{scheduleMeta}。</> : <>固定某一天或暂停切换，都不会改动已设好的计划。</>} 需要财务主管或超级管理员操作。</>,
       amplifies: false,
       edit: ctlOptions[key]
         ? { kind: "select", current, options: ctlOptions[key], optionLabels: { "未钉住": "不固定" }, disallowCurrent: true }
@@ -417,7 +420,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
               {allowed("finprod_g3_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => openCurveCtlMc(control.key, operatorCopyText(control.name), ctlVals[control.key] || control.value)}>调整(立即执行)</button>}
             </div>
           ))}
-          <div className="gtint" style={{ marginTop: 10 }}><b>怎么生效</b> · 每天在 <span className="mono">{schedV}</span> 自动把当天的 <b>目标价</b> 设为全站 UVT 价格，兑换和锁定计划马上跟着变。当前设置：<span className="mono">{scheduleMeta}</span>。「固定某天」用于演示或应急，固定后不再自动切换。调高 <b>目标价 / 上涨概率</b> 会让平台多付钱，覆盖率低于红线时无法保存。</div>
+          <div className="gtint" style={{ marginTop: 10 }}><b>怎么生效</b> · {scheduleMissing ? <>自动推进尚未配置，请用上方「自动按日推进」的调整入口补充配置。价格查看、修改和暂停仍可使用。</> : <>按 <span className="mono">{schedV}</span> 自动把当天的 <b>目标价</b> 设为全站 UVT 价格，兑换和锁定计划马上跟着变。当前设置：<span className="mono">{scheduleMeta}</span>。</>}「固定某天」用于演示或应急，固定后不再自动切换。调高 <b>目标价 / 上涨概率</b> 会让平台多付钱，覆盖率低于红线时无法保存。</div>
         </div>
       </section>
 
