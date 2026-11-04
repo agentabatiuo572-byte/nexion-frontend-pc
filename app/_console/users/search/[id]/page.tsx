@@ -615,7 +615,7 @@ export default function UserDetailPage() {
             <div className="flex flex-wrap gap-2">
               {canReadC2 && (
                 <Link
-                  href={{ pathname: "/users/actions", query: { userCode: userNo, returnTo } }}
+                  href={{ pathname: "/users/actions", query: { userCode: userNo, source: "C1", returnTo } }}
                   className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px]"
                   style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}
                 >

@@ -37,6 +37,7 @@ import { AccountDeletionQueue } from "./account-deletion-queue";
 
 const OPERATOR = currentAdminOperator;
 const K1_PATH = "/risk/multi-account";
+const FOCUS_SOURCES = new Map([["C1", "用户详情"], ["M3", "专属会话"], ["J3", "篡改防御监控"]]);
 
 const STATUS_META: Record<string, [label: string, tone: string]> = {
   ACTIVE: ["正常", "ok"],
@@ -268,6 +269,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const [focusLookupState, setFocusLookupState] = useState<"idle" | "loading" | "found" | "not-found" | "error">("idle");
   const searchParams = useSearchParams();
   const focusUserCode = (searchParams?.get("userCode") ?? "").trim().toUpperCase();
+  const focusSource = FOCUS_SOURCES.get(searchParams?.get("source") ?? "");
 
   const loadOverview = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -738,10 +740,10 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       <AccountDeletionQueue toast={toast} />
       {focusUserCode && (
         <div className="ctint" role="status" style={{ marginBottom: 12 }}>
-          从「篡改防御监控」带入用户 <b>{focusUserCode}</b>：
+          {focusSource ? `从「${focusSource}」带入用户 ` : "带入用户 "}<b>{focusUserCode}</b>：
           {focusLookupState === "loading" && "正在查找该账户…"}
           {focusLookupState === "found" && "已打开该用户。"}
-          {focusLookupState === "not-found" && "没有找到该用户，请回到「篡改防御监控」刷新后重试。"}
+          {focusLookupState === "not-found" && `没有找到该用户，请${focusSource ? `回到「${focusSource}」核对用户编码` : "核对用户编码"}后重试。`}
           {focusLookupState === "error" && "查找失败，请检查网络后刷新重试。"}
         </div>
       )}
