@@ -183,6 +183,15 @@ export function isIndeterminateSupportError(error: unknown): boolean {
     && (error.backendMessage ?? "").startsWith("IDEMPOTENCY_");
 }
 
+/** The server read the request and said no: nothing was written, so the command can be released. */
+export function isDefiniteSupportRefusal(error: unknown): error is SupportClientError {
+  return error instanceof SupportClientError && [400, 403, 404, 409, 422].includes(error.status) && !isIndeterminateSupportError(error);
+}
+/** BUG-121: the policy endpoint names why images are off; operators get that reason, not a storage guess. */
+export function supportAttachmentUnavailableText(reason: string | null): string {
+  return reason === "ATTACHMENT_POLICY_UNCONFIGURED" ? "图片发送规则还没配置，请联系管理员配置后再发图片" : "图片功能暂不可用，请稍后重试";
+}
+
 function malformed(field: string): never { throw new Error(`SUPPORT_CONTRACT_MALFORMED:${field}`); }
 function object(value: unknown, field: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) malformed(field);
@@ -607,12 +616,14 @@ export type SupportWelcomeMessage = { version: number; texts: SupportWelcomeText
 const welcomeMessage = (value: unknown): SupportWelcomeMessage => {
   const row = object(value, "welcome");
   const texts = object(row.texts, "welcome.texts");
+  // B16 always returns these three; null means never edited, a missing field means the response is incomplete.
+  if (row.updatedAt === undefined || row.updatedBy === undefined || row.reason === undefined) malformed("welcome.audit");
   return {
     version: positive(row.version, "welcome.version"),
     texts: { zh: nonempty(texts.zh, "welcome.texts.zh"), en: nonempty(texts.en, "welcome.texts.en"), vi: nonempty(texts.vi, "welcome.texts.vi") },
     updatedAt: nullableTimestamp(row.updatedAt, "welcome.updatedAt") ?? null,
-    updatedBy: row.updatedBy == null ? null : nonempty(row.updatedBy, "welcome.updatedBy"),
-    reason: row.reason == null ? null : nonempty(row.reason, "welcome.reason"),
+    updatedBy: row.updatedBy === null ? null : nonempty(row.updatedBy, "welcome.updatedBy"),
+    reason: row.reason === null ? null : nonempty(row.reason, "welcome.reason"),
   };
 };
 /** B16: the one welcome copy every new user receives in their support conversation right after registration. */

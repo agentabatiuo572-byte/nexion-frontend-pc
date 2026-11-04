@@ -81,6 +81,24 @@ function positiveUserId(value: string) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
+function appliedTimeRange({ from, to }: { from: string; to: string }) {
+  if (from && to) return `${timeText(from)} 至 ${timeText(to)}`;
+  if (from) return `${timeText(from)} 起`;
+  return to ? `截至 ${timeText(to)}` : "不限时间";
+}
+
+/** Names the conditions the table was really loaded with, so a refused query can say what is still on screen. */
+function appliedConditions(applied: { userId?: number; keyword: string; status: string; from: string; to: string }, type: D4BillType | "") {
+  const parts = [
+    type && BILL_TYPE_LABELS[type],
+    applied.userId && `用户 ${applied.userId}`,
+    applied.status && (BILL_STATUS_LABELS[applied.status] ?? applied.status),
+    (applied.from || applied.to) && appliedTimeRange(applied),
+    applied.keyword && `关键词「${applied.keyword}」`,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "未加筛选";
+}
+
 export function D4Ledger({ ctx }: { ctx: DCtx }) {
   const searchParams = useSearchParams();
   const deepBizNo = searchParams?.get("bizNo")?.trim() ?? "";
@@ -108,6 +126,9 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
   const [userLoading, setUserLoading] = useState(false);
   const [error, setError] = useState("");
   const [userError, setUserError] = useState("");
+  // Refused before any request: nothing was queried, so the last results stay and these say so.
+  const [filterProblem, setFilterProblem] = useState("");
+  const [userProblem, setUserProblem] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   const billsRequest = useRef(0);
   const userRequest = useRef(0);
@@ -185,13 +206,14 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
   const applyFilters = () => {
     const parsedUserId = draft.userId.trim() ? positiveUserId(draft.userId) : null;
     if (draft.userId.trim() && !parsedUserId) {
-      setError("用户 ID 必须是正整数");
+      setFilterProblem("用户 ID 必须是正整数");
       return;
     }
     if (draft.from && draft.to && draft.from >= draft.to) {
-      setError("开始时间必须早于结束时间");
+      setFilterProblem("开始时间必须早于结束时间");
       return;
     }
+    setFilterProblem("");
     setApplied({ userId: parsedUserId ?? undefined, keyword: draft.keyword.trim(), status: draft.status, from: draft.from, to: draft.to });
     setPage(1);
   };
@@ -199,25 +221,21 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
   const openUser = (value = userInput) => {
     const userId = positiveUserId(value);
     if (!userId) {
-      setUserError("请输入有效的正整数用户 ID");
+      setUserProblem("请输入有效的正整数用户 ID");
       return;
     }
+    setUserProblem("");
     setUserInput(String(userId));
     setSelectedUserId(userId);
   };
 
+  // A failed export rejects into the confirm dialog, which stays open with the reason; the loaded bills are unaffected.
   const exportCsv = async (reason: string) => {
-    if (error) return;
-    try {
-      setError("");
-      await downloadD4BillsCsv(
-        { type, ...applied, bizNo: deepBizNo && applied.keyword === deepBizNo ? deepBizNo : undefined },
-        reason,
-      );
-      ctx.toast("账单 CSV 已下载");
-    } catch (reason) {
-      setError(reason instanceof Error ? displayAdminError(reason) : "账单导出失败");
-    }
+    await downloadD4BillsCsv(
+      { type, ...applied, bizNo: deepBizNo && applied.keyword === deepBizNo ? deepBizNo : undefined },
+      reason,
+    );
+    ctx.toast("账单 CSV 已下载");
   };
   const requestExport = () => ctx.openActionConfirm({
     action: "导出账单明细",
@@ -231,8 +249,18 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
     <>
       {(error || userError) && (
         <div className="dtint warn" data-proof="d4-fail-closed" style={{ marginBottom: 12 }}>
-          资金账本已停止展示旧数据 · {error || userError}　
+          {[error && `全平台账单已停止展示旧数据 · ${error}`, userError && `用户账单已停止展示旧数据 · ${userError}`].filter(Boolean).join("；")}　
           <button className="l-btn sm" onClick={() => setReloadKey((value) => value + 1)}>重试</button>
+        </div>
+      )}
+      {filterProblem && (
+        <div className="dtint warn" data-proof="d4-filter-refused" style={{ marginBottom: 12 }}>
+          查询条件有误：{filterProblem}。这次没有查询{error ? "。" : `，下方表格仍是上次查询的结果（${appliedConditions(applied, type)}）。`}
+        </div>
+      )}
+      {userProblem && (
+        <div className="dtint warn" data-proof="d4-user-refused" style={{ marginBottom: 12 }}>
+          用户 ID 有误：{userProblem}。这次没有查询{userLedger ? `，下方仍是用户 ${userLabel(userLedger)} 的账单和余额核对（时间范围：${appliedTimeRange(applied)}）。` : "。"}
         </div>
       )}
       {deepBizNo && <div className="dtint cyan" data-proof="d4-deep-link" style={{ marginBottom: 12 }}>正在查找相关账单 · <b className="mono">{deepBizNo}</b>{!loading && bills.records.length === 0 ? " · 未找到匹配账单" : ""}</div>}
@@ -279,7 +307,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
                       <td className="num mono">{assetAmount(row.balanceAfter, row.asset)} {nexGridBrandText(row.asset)}</td>
                       <td><span className={`bdg ${tone(row)}`}>{BILL_STATUS_LABELS[row.status.toUpperCase()] ?? "状态未知"}</span></td>
                       <td style={{ color: "var(--ink-4)" }}><D4RemarkCell value={row.remark} /></td><td className="mono" style={{ color: "var(--ink-4)" }}>{timeText(row.createdAt)}</td>
-                      <td style={{ textAlign: "right" }}><button className="l-btn sm" onClick={() => { setUserInput(String(row.userId)); setSelectedUserId(row.userId); }}>查看账户</button></td>
+                      <td style={{ textAlign: "right" }}><button className="l-btn sm" onClick={() => { setUserProblem(""); setUserInput(String(row.userId)); setSelectedUserId(row.userId); }}>查看账户</button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -333,7 +361,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
       </section>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">导出账单</span><span className="sub">· 按上方当前筛选导出</span><div className="r"><button className="l-btn primary" disabled={!canExport || loading || Boolean(error)} title={error ? "账单加载失败，暂不能导出" : undefined} onClick={requestExport}>{canExport ? "导出 CSV" : "无导出权限"}</button></div></div>
+        <div className="l-h"><span className="ttl">导出账单</span><span className="sub">· 按上方当前筛选导出</span><div className="r"><button className="l-btn primary" disabled={!canExport || loading || Boolean(error || filterProblem)} title={error ? "账单加载失败，暂不能导出" : filterProblem ? "查询条件有误，改好后再导出" : undefined} onClick={requestExport}>{canExport ? "导出 CSV" : "无导出权限"}</button></div></div>
         <div className="l-b"><div className="dtint">导出时会隐藏昵称等个人信息，用户编码只保留首尾。需要调余额请到「余额与资产调整」。</div><div className="chips" style={{ marginTop: 10 }}><Link className="chip" href="/users/assets" prefetch={false}>余额与资产调整</Link><Link className="chip" href="/finance/recon" prefetch={false}>充值对账</Link><Link className="chip" href="/finance/withdrawals" prefetch={false}>提现审核</Link><Link className="chip" href="/finance/pool" prefetch={false}>资金储备</Link><Link className="chip" href="/platform/audit" prefetch={false}>操作记录</Link><Link className="chip" href="/platform/events" prefetch={false}>用户行为事件</Link><Link className="chip" href="/analytics/export" prefetch={false}>数据导出</Link></div></div>
       </section>
     </>

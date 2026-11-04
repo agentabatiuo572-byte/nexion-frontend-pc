@@ -8,7 +8,7 @@ import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/ad
 import { parseBusinessTime } from "@/lib/admin/business-time";
 import { fetchMRecentAdvisorConversations, type MSupportAgent } from "@/lib/admin/m-client";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
-import { supportClient, verifySupportTransfer, SupportClientError, isIndeterminateSupportError, type SupportAgentCandidate, type SupportCustomer, type SupportCustomerDetail, type SupportCustomerFilter, type SupportMaintenanceHistory, type SupportWorkbenchSnapshot } from "@/lib/admin/m-support-client";
+import { supportClient, SupportClientError, isIndeterminateSupportError, type SupportAgentCandidate, type SupportCustomer, type SupportCustomerDetail, type SupportCustomerFilter, type SupportMaintenanceHistory, type SupportWorkbenchSnapshot } from "@/lib/admin/m-support-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { SupportSeatRoleModal } from "./m1-overview";
 import "./m-support-workbench.css";
@@ -17,6 +17,7 @@ import { SupportBulkComposer } from "./support-bulk-composer";
 import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
 import { SelfAvatarEditor } from "./self-avatar-editor";
 import { SelfInviteCodeBar } from "./m1-invite-code";
+import { readTransferTargets } from "./m1-customer-transfer";
 import { M1StatisticDetails, maintenanceLabels, beijing, type MaintenanceChoice, type StatisticSource } from "./m1-statistic-details";
 import type { SelfAvatarSnapshot } from "@/lib/admin/a1-client";
 import type { MCtx } from "./types";
@@ -49,9 +50,6 @@ const filters: Array<{ value: SupportCustomerFilter; label: string }> = [
 type MaintenancePayload = { customerId: string; assignmentId: string; enabled: boolean; reason: string; expectedVersion: number };
 type MaintenanceRecord = PendingMutationRecord & { actorId: number; payload: MaintenancePayload };
 const maintenanceCommands = createPendingMutationStore<MaintenanceRecord>({ storageKey: "nexion-admin-m-maintenance-v1", ttlMs: Math.floor(Number.MAX_SAFE_INTEGER / 2), retainExpiredRecords: true, isValidRecord: (row) => Boolean(Number.isSafeInteger(row.actorId) && row.payload?.customerId && row.payload.assignmentId && row.payload.reason) });
-type TransferPayload = Parameters<typeof supportClient.transfer>[0];
-type TransferRecord = { fingerprint: string; commandKey: string; createdAt: number; expiresAt: number; actorId: number; payload: TransferPayload };
-const transferCommands = createPendingMutationStore<TransferRecord>({ storageKey: "nexion-admin-m-transfer-v1", ttlMs: Math.floor(Number.MAX_SAFE_INTEGER / 2), retainExpiredRecords: true, isValidRecord: (row) => Boolean(Number.isSafeInteger(row.actorId) && row.payload && Array.isArray(row.payload.customers)) });
 const actorStamp = () => { const auth = useAdminAuth.getState(); return adminShellSessionKey(auth.session, auth.authEpoch); };
 
 function formatTime(value: string | null | undefined): string {
@@ -88,7 +86,7 @@ function invalidateCustomerOnDenied(customerId: string, error: unknown): boolean
   return true;
 }
 
-export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, primarySummary, onBrowseCustomers }: { permission: Permission; ctx: MCtx; view: PersonalWorkbenchView; onViewChange: (view: PersonalWorkbenchView) => void; primarySummary?: ReactNode; onBrowseCustomers?: (filter: SupportCustomerFilter) => void }) {
+export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, primarySummary, onBrowseCustomers, onTransfer, transferRevision = 0 }: { permission: Permission; ctx: MCtx; view: PersonalWorkbenchView; onViewChange: (view: PersonalWorkbenchView) => void; primarySummary?: ReactNode; onBrowseCustomers?: (filter: SupportCustomerFilter) => void; onTransfer?: (customerId: string) => void; transferRevision?: number }) {
   const router = useRouter();
   const session = useAdminAuth((state) => state.session);
   const authEpoch = useAdminAuth((state) => state.authEpoch);
@@ -133,15 +131,8 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [maintenancePending, setMaintenancePending] = useState<MaintenanceRecord | null>(null);
-  const [transferOpen, setTransferOpen] = useState(false);
-  const [transferAgents, setTransferAgents] = useState<SupportAgentCandidate[]>([]);
-  const [transferLoading, setTransferLoading] = useState(false);
-  const [transferTarget, setTransferTarget] = useState<number | null>(null);
-  const [transferReason, setTransferReason] = useState("");
-  const [transferError, setTransferError] = useState("");
-  const [transferAgentsError, setTransferAgentsError] = useState(false);
-  const [transferSaving, setTransferSaving] = useState(false);
-  const [transferPending, setTransferPending] = useState<TransferRecord | null>(null);
+  // null while unchecked or unreadable: the dialog then gives the real answer. false hides the entry (BUG-040).
+  const [transferInScope, setTransferInScope] = useState<boolean | null>(null);
   const detailsGeneration = useRef(0);
   const snapshotController = useRef<AbortController | null>(null);
   const recentController = useRef<AbortController | null>(null);
@@ -191,14 +182,22 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     const actorKey = actorStamp();
     const pending = maintenanceCommands.list().find((row) => row.actorId === adminId && row.payload.customerId === customerId) ?? null;
     setDetailId(customerId); setDetail(null); setHistory(null); setDetailLoading(true); setDetailError(null); setMaintenanceAction(null); setSaveError(pending ? "上次操作结果待确认，请先查询原命令。" : null); setReason(""); setMaintenancePending(pending);
-    try { const next = await supportClient.customerDetail(customerId); if (detailsGeneration.current === generation && actorStamp() === actorKey) { setDetail(next); setDetailActorKey(actorKey); } }
+    setTransferInScope(null);
+    try {
+      const next = await supportClient.customerDetail(customerId);
+      if (detailsGeneration.current !== generation || actorStamp() !== actorKey) return;
+      setDetail(next); setDetailActorKey(actorKey);
+      if (permission !== "agent") void readTransferTargets(next.agentAdminId, "MANAGED").then((targets) => { if (detailsGeneration.current === generation) setTransferInScope(targets !== null); }).catch(() => undefined);
+    }
     catch (error) { if (detailsGeneration.current === generation && !invalidateCustomerOnDenied(customerId, error)) setDetailError(errorText(error)); }
     finally { if (detailsGeneration.current === generation) setDetailLoading(false); }
-  }, [adminId]);
+  }, [adminId, permission]);
   const closeDetail = useCallback(() => {
-    detailsGeneration.current += 1; setDetailId(null); setDetail(null); setHistory(null); setMaintenanceAction(null); setReason(""); setSaveError(null); setMaintenancePending(null); setTransferOpen(false); setTransferAgents([]); setTransferTarget(null); setTransferPending(null);
+    detailsGeneration.current += 1; setDetailId(null); setDetail(null); setHistory(null); setMaintenanceAction(null); setReason(""); setSaveError(null); setMaintenancePending(null); setTransferInScope(null);
   }, []);
   useEffect(() => { closeDetail(); }, [authEpoch, closeDetail]);
+  // A finished transfer moves the customer away from this list; drop the open drawer and reload.
+  useEffect(() => { if (transferRevision) { closeDetail(); setRowsRefresh((value) => value + 1); } }, [transferRevision, closeDetail]);
   useEffect(() => {
     const onScope = (event: Event) => {
       const customerId = (event as CustomEvent<{ customerId?: string }>).detail?.customerId;
@@ -305,67 +304,6 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     } catch { if (actor === actorStamp()) { closeDetail(); setSnapshot(null); setNotice("结果暂时无法核对，原命令与理由已保留。"); } }
     finally { setSaving(false); }
   };
-  const loadTransferAgents = async () => {
-    const actor = actorStamp();
-    setTransferAgents([]); setTransferLoading(true); setTransferError(""); setTransferAgentsError(false);
-    try {
-      const first = await supportClient.agents({ pageNum: 1, pageSize: 100 });
-      if (actor !== actorStamp()) return;
-      const pages = [first];
-      for (let pageNum = 2; (pageNum - 1) * 100 < first.total; pageNum++) { pages.push(await supportClient.agents({ pageNum, pageSize: 100 })); if (actor !== actorStamp()) return; }
-      setTransferAgents(pages.flatMap((page) => page.records));
-    } catch (error) { if (actor === actorStamp()) { setTransferAgents([]); setTransferTarget(null); setTransferAgentsError(true); setTransferError(errorText(error)); } }
-    finally { if (actor === actorStamp()) setTransferLoading(false); }
-  };
-  const openTransfer = async () => {
-    if (!detail || permission === "agent") return;
-    setTransferOpen(true);
-    const existing = transferCommands.list().find((row) => row.actorId === adminId && row.payload.customers.some((item) => item.id === detail.customerId));
-    if (existing) { closeDetail(); setNotice("原转绑尚未核对，请通过查询原命令继续核对。"); return; }
-    setTransferPending(null);
-    setTransferTarget(null);
-    setTransferReason("");
-    await loadTransferAgents();
-  };
-  const submitTransfer = async () => {
-    if (!detail || !detail.assignmentId || !adminId || permission === "agent" || transferSaving || transferPending) return;
-    const actor = actorStamp();
-    const target = transferAgents.find((agent) => agent.adminId === transferTarget && agent.assignmentEligible === true);
-    if (!transferPending && (!target || transferReason.trim().length < 8 || transferReason.trim().length > 200)) return;
-    const payload: TransferPayload = { targetAgentAdminId: target!.adminId, customers: [{ id: detail.customerId, expectedAssignmentId: detail.assignmentId, expectedVersion: detail.assignmentVersion }], reason: transferReason.trim() };
-    const fingerprint = `bound-transfer:${detail.customerId}:${detail.assignmentId}:${detail.assignmentVersion}`;
-    if (transferCommands.list().some(row => row.actorId === adminId && row.payload.customers.some(item => item.id === detail.customerId))) return;
-    const commandKey = crypto.randomUUID();
-    transferCommands.remember(fingerprint, commandKey, { actorId: adminId, payload });
-    if (!transferCommands.isDurablyStored(fingerprint, commandKey)) { transferCommands.forget(fingerprint, commandKey); setTransferError("暂时无法保存命令，未提交转绑。请恢复浏览器存储后重试。"); return; }
-    setTransferSaving(true); setTransferError("");
-    try {
-      await supportClient.transfer(payload, commandKey);
-      if (actor !== actorStamp()) return;
-      await verifySupportTransfer(payload, "SUCCEEDED");
-      if (actor !== actorStamp()) return;
-      transferCommands.forget(fingerprint, commandKey); setTransferPending(null); setTransferOpen(false); closeDetail();
-      window.dispatchEvent(new Event("support-todo-changed")); setRowsRefresh((value) => value + 1);
-    } catch (error) {
-      if (actor !== actorStamp()) return;
-      closeDetail(); setSnapshot(null); setRowsRefresh(value => value + 1); setNotice("转绑结果尚未核对，原命令已保留。请查询原命令并核对当前授权资料。");
-    } finally { setTransferSaving(false); }
-  };
-  const checkTransfer = async (record = transferPending) => {
-    if (!record || transferSaving || record.actorId !== adminId) return;
-    const actor = actorStamp();
-    setTransferSaving(true);
-    try {
-      const result = await supportClient.command(record.commandKey);
-      if (actor !== actorStamp()) return;
-      if (result.status === "SUCCEEDED" || result.status === "FAILED") {
-        await verifySupportTransfer(record.payload, result.status);
-        if (actor !== actorStamp() || record.actorId !== useAdminAuth.getState().session?.adminId) return;
-        transferCommands.forget(record.fingerprint, record.commandKey); setTransferPending(null); closeDetail(); setRowsRefresh((value) => value + 1); setNotice(result.status === "FAILED" ? "原转绑已失败，当前资料已核对，请重新确认。" : "原转绑已核对，请读取当前资料。");
-      } else setNotice("原转绑仍待确认，请稍后继续查询。");
-    } catch { if (actor === actorStamp()) { closeDetail(); setSnapshot(null); setNotice("结果暂时无法核对，原命令和客户范围已保留。"); } }
-    finally { setTransferSaving(false); }
-  };
   const metrics = useMemo(() => {
     const items = metricDefs.map((item) => ({ ...item, count: overview?.counts[item.key] ?? null }));
     const priority = ["waitingReplyCustomers", "firstContactCustomers", "dueMaintenanceCustomers", "boundCustomers", "windowActiveCustomers", "dormantCustomers"];
@@ -381,7 +319,6 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
 
   return <section className={primarySummary ? "s5a s5a-personal-priority" : "s5a"} data-proof="s5a-workbench">
     {maintenanceCommands.list().filter(record => record.actorId === adminId).map((record, index) => <p className="s5a-note" key={record.commandKey}>存在未核对的维护操作。<button type="button" disabled={saving} onClick={() => void checkMaintenance(record)}>查询维护结果 {index + 1}</button></p>)}
-    {transferCommands.list().filter(record => record.actorId === adminId).map((record, index) => <p className="s5a-note" key={record.commandKey}>存在未核对的转绑操作。<button type="button" disabled={transferSaving} onClick={() => void checkTransfer(record)}>查询转绑结果 {index + 1}</button></p>)}
     {notice && <div className="s5a-alert" role="alert">{notice}<button type="button" onClick={() => setNotice(null)}>关闭提示</button></div>}
 
     <>
@@ -457,17 +394,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
         {detail.accountState === "UNKNOWN" && <p className="s5a-note">账户活动数据不完整，无法判断沉睡或活跃。</p>}
         <button type="button" className="s5a-primary" onClick={() => openChat(detail.customerId)}>联系客户 <ArrowRight size={16} /></button>
         {canMaintain ? <button type="button" className="s5a-secondary" disabled={Boolean(maintenancePending)} onClick={() => { setMaintenanceAction(detail.maintenanceEnabled ? "stop" : "resume"); setReason(""); setSaveError(null); }}>{detail.maintenanceEnabled ? "不再维护" : "恢复维护"}</button> : <p className="s5a-note">仅当前专属客服可调整主动维护；主管可审阅并办理正式转绑。</p>}
-        {permission !== "agent" && detail.assignmentId && <button type="button" className="s5a-secondary" onClick={() => void openTransfer()}>正式转绑客户</button>}
-        {transferOpen && <div className="s5a-confirm"><h3>正式转绑此客户</h3><p>仅变更当前客户的专属客服；提交后原专属客服立即失去私聊与图片权限。</p>
-          {transferLoading ? <p role="status">正在加载可接待的专属客服…</p> : <label>目标专属客服<select value={transferTarget ?? ""} disabled={transferSaving || Boolean(transferPending)} onChange={(event) => setTransferTarget(Number(event.target.value) || null)}><option value="">请选择专属客服</option>{transferAgents.filter((agent) => agent.assignmentEligible === true && agent.adminId !== detail.agentAdminId).map((agent) => <option key={agent.adminId} value={agent.adminId}>{agent.name}{agent.busy ? " · 忙碌" : ""}</option>)}</select></label>}
-          {transferTarget&&<SupportAvatar name={transferAgents.find(a=>a.adminId===transferTarget)?.name??"目标专属客服"} path={transferAgents.find(a=>a.adminId===transferTarget)?.avatarAssetId?advisorAvatarPath(transferTarget):undefined} version={transferAgents.find(a=>a.adminId===transferTarget)?.avatarVersion??undefined}/>}
-          {!transferLoading && transferAgentsError && <button type="button" onClick={() => void loadTransferAgents()}>重新加载专属客服名单</button>}
-          {!transferLoading && !transferAgentsError && !transferAgents.some((agent) => agent.assignmentEligible === true && agent.adminId !== detail.agentAdminId) && <p className="s5a-note">暂无可接待的其他专属客服。请到 A1 账号管理核对接待资格。</p>}
-          <label>转绑理由（8–200 字）<textarea value={transferReason} maxLength={200} disabled={transferSaving || Boolean(transferPending)} onChange={(event) => setTransferReason(event.target.value)} /></label><small>{transferReason.trim().length}/200 字</small>
-          {transferPending && <p role="alert">上次转绑结果未确认，原客户范围和命令已锁定。<button type="button" onClick={() => void checkTransfer()} disabled={transferSaving}>查询原命令</button></p>}
-          {transferError && <p role="alert">{transferError}</p>}
-          <footer><button type="button" onClick={() => setTransferOpen(false)} disabled={transferSaving}>返回</button><button type="button" className="s5a-primary" disabled={Boolean(transferPending) || transferSaving || transferLoading || transferAgentsError || (!transferPending && (!transferTarget || transferTarget === detail.agentAdminId || transferReason.trim().length < 8 || transferReason.trim().length > 200))} onClick={() => void submitTransfer()}>{transferSaving ? "提交中…" : transferPending ? "等待原命令结果" : "确认正式转绑"}</button></footer>
-        </div>}
+        {permission !== "agent" && detail.assignmentId && transferInScope !== false && <button type="button" className="s5a-secondary" onClick={() => onTransfer?.(detail.customerId)}>正式转绑客户</button>}
         {maintenanceAction && <div className="s5a-confirm"><h3>{maintenanceAction === "stop" ? "暂停主动维护" : "恢复主动维护"}</h3><p>{maintenanceAction === "stop" ? "仅停止主动跟进。客户归属、私聊和求助保持可用。" : "旧周期不会恢复，也不会自动产生执行或成功。"}</p><label>操作理由（8–200 字）<textarea value={reason} maxLength={200} disabled={Boolean(maintenancePending)} onChange={(event) => setReason(event.target.value)} placeholder="填写本次操作的原因" /></label><small>{reason.trim().length}/200 字</small>{maintenancePending && <p role="alert">上次操作结果待确认，原理由与命令已保留。<button type="button" onClick={() => void checkMaintenance()} disabled={saving}>查询原命令</button></p>}{saveError && <p role="alert">{saveError}</p>}<footer><button type="button" onClick={() => { setMaintenanceAction(null); setSaveError(null); }} disabled={saving || Boolean(maintenancePending)}>取消</button><button type="button" className="s5a-primary" disabled={Boolean(maintenancePending) || saving || reason.trim().length < 8 || reason.trim().length > 200} onClick={() => void saveMaintenance()}>{saving ? "提交中…" : maintenancePending ? "等待原命令结果" : "确认"}</button></footer></div>}
         <section className="s5a-history"><button type="button" disabled={historyLoading} onClick={() => void loadHistory()}>{historyLoading ? "加载中…" : "查看维护记录"} <ArrowRight size={15} /></button>{historyError && <p role="alert">{historyError}</p>}{history && <><p>维护周期 {history.totalCycles} 条 · 主动联系 {history.totalExecutions} 条</p>{history.cycles.length || history.executions.length ? <ul>{[...history.cycles, ...history.executions].sort((a, b) => parseBusinessTime(b.occurredAt) - parseBusinessTime(a.occurredAt)).map((item) => <li key={`${item.kind}:${item.id}`}>{historyLabel(item.kind, HISTORY_KINDS)} · {formatTime(item.occurredAt)}{item.state ? ` · ${historyLabel(item.state, HISTORY_STATES)}` : ""}</li>)}</ul> : <p>尚无人工联系记录。</p>}{(history.cycles.length < history.totalCycles || history.executions.length < history.totalExecutions) && <button type="button" disabled={historyLoading} onClick={() => void loadHistory(history.pageNum + 1)}>加载更多维护记录</button>}</>}</section>
       </div>}

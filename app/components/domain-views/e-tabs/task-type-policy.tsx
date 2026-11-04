@@ -44,14 +44,14 @@ export function PhoneTaskPolicy({ canWrite, toast }: { canWrite: boolean; toast:
     const next = await fetchTaskClassPolicy();
     setData(next); setSelected(next.policy.allowedTaskClasses);
   }
-  useEffect(() => { void refresh().catch((failure: Error) => setError(failure.message)); }, []);
+  useEffect(() => { void refresh().catch(() => setError("任务策略加载失败")); }, []);
   return <section className="pane e1-phone-task-policy">
     <header>
       <div className="row">
         <strong>手机类别可跑任务</strong>
         <span className="badge-s neutral">当前版本 {data?.policy.productTaskPolicyVersion ?? "—"}</span>
       </div>
-      <Btn sm onClick={() => void refresh().catch((failure: Error) => setError(failure.message))}>刷新</Btn>
+      <Btn sm onClick={() => void refresh().catch(() => setError("任务策略加载失败"))}>刷新</Btn>
     </header>
     {error && <div className="tint warn tiny" role="alert">{error}</div>}
     <TaskClassChoices selected={selected} onChange={setSelected} ready={!!data && !error} readOnly={!canWrite} />

@@ -17,9 +17,11 @@ const MAX = 500;
 const EXPIRED = "上次保存已超过 24 小时，不能再按原操作重试。请查询上次结果，或加载最新内容核对后重新提交。";
 const actorStamp = () => { const auth = useAdminAuth.getState(); return adminShellSessionKey(auth.session, auth.authEpoch); };
 const fingerprintOf = (payload: WelcomePayload) => `support-welcome:${payload.expectedVersion}`;
+// Same count as the backend: Unicode code points after trim. UTF-16 length counts 𠮷 twice.
+const codePointLength = (value: string) => Array.from(value.trim()).length;
 
 function textProblem(text: string): string {
-  const length = text.trim().length;
+  const length = codePointLength(text);
   if (length === 0) return "不能为空";
   if (length > MAX) return `超出 ${length - MAX} 字，最多 ${MAX} 字`;
   return "";
@@ -166,7 +168,7 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
       {error && <div className="m-admin-error" role="alert">{error} {readUnavailable && <button type="button" className="btn btn-sec btn-sm" onClick={() => setReload((n) => n + 1)}>重试</button>}</div>}
       {draft && current && <>
         {LANGUAGES.map(({ key, label }, index) => {
-          const problem = problems[index], length = draft[key].trim().length;
+          const problem = problems[index], length = codePointLength(draft[key]);
           return <label className="field m5-welcome-field" key={key}>
             <span>{label}</span>
             <textarea value={draft[key]} disabled={!editable} aria-invalid={Boolean(problem)} aria-describedby={`m5-welcome-${key}-count`} onChange={(event) => { const value = event.target.value; setDraft((old) => old ? { ...old, [key]: value } : old); setSaved(false); }} />

@@ -127,3 +127,5 @@ html[data-theme="dark"] .sa-customers{--sa-pin-shadow:-12px 0 16px -12px rgba(0,
 .sa-busy-modal .sa-busy-primary{background:var(--v5-brand);border-color:var(--v5-brand);color:var(--v5-on-brand)}
 /* Designed areas render with the board's default font smoothing and initial avatars. */
 .sa-customers .support-avatar>span,.sa-busy-holder .support-avatar>span{background:color-mix(in srgb,var(--v5-brand) 10%,transparent)!important;color:var(--v5-ink-2)!important;font-size:13px!important}
+.sa-notice{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin:0 0 12px;padding:10px 12px;border-radius:10px;background:var(--v5-surface-2);color:var(--v5-ink);font-size:13px}
+.sa-workbench .sa-notice button{min-height:30px;padding:4px 11px;font-size:12.5px}

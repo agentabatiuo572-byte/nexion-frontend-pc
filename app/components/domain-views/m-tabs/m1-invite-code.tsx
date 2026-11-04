@@ -30,7 +30,8 @@ function errorText(error: unknown): string {
 // Scanners need dark modules on a light quiet zone whatever the console theme is.
 function qrPng(link: string): string {
   const qr = qrcode(0, "M");
-  qr.addData(link, "Byte");
+  // Byte mode keeps only the low 8 bits of each character, so non-ASCII must be escaped first. Existing %XX escapes stay as they are.
+  qr.addData(link.replace(/[^\x00-\x7f]+/g, encodeURI), "Byte");
   qr.make();
   const cell = 10, margin = 4, count = qr.getModuleCount(), size = (count + margin * 2) * cell;
   const canvas = document.createElement("canvas");
