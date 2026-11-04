@@ -17,6 +17,7 @@ import { SupportBulkComposer } from "./support-bulk-composer";
 import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
 import { SelfAvatarEditor } from "./self-avatar-editor";
 import { SelfInviteCodeBar } from "./m1-invite-code";
+import { M1StatisticDetails, maintenanceLabels, beijing, type MaintenanceChoice, type StatisticSource } from "./m1-statistic-details";
 import type { SelfAvatarSnapshot } from "@/lib/admin/a1-client";
 import type { MCtx } from "./types";
 import { PaymentSecurityCard } from "@/app/components/payment-security/payment-security-card";
@@ -102,6 +103,9 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   const [bulkOpen,setBulkOpen]=useState(false);
   const [snapshot, setSnapshot] = useState<SupportWorkbenchSnapshot | null>(null);
   const overview = snapshot?.overview ?? null;
+  const [maintenanceChoice, setMaintenanceChoice] = useState<MaintenanceChoice | null>(null);
+  const statSource = useMemo<StatisticSource | null>(() => overview && maintenanceChoice && (!maintenanceChoice.day || overview.performance.trend.some(day => day.day === maintenanceChoice.day))
+    ? { kind: "maintenance", overview, choice: maintenanceChoice } : null, [overview, maintenanceChoice]);
   const rows = snapshot?.customers.available ? snapshot.customers : null;
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [overviewError, setOverviewError] = useState<string | null>(null);
@@ -143,13 +147,20 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   const recentController = useRef<AbortController | null>(null);
   const drawerRef = useRef<HTMLElement>(null);
   const drawerCloseRef = useRef<HTMLButtonElement>(null);
+  const invalidateStatistic = useCallback((status: number) => {
+    snapshotController.current?.abort();
+    setSnapshot(null);
+    if (status !== 409) setMaintenanceChoice(null);
+    setNotice(status === 409 ? "统计已变化，已重新读取工作台和明细第一页。" : "查看权限已变化，已关闭明细并重新核对范围。");
+    setRowsRefresh(n => n + 1);
+  }, []);
   const paymentSecurityPort = useMemo(() => {
     if (!detail || detailLoading || detailError || detail.customerId !== detailId || detailActorKey !== sessionKey) return null;
     return paymentSecurityPorts.support(detail.customerId);
   }, [detail, detailLoading, detailError, detailId, detailActorKey, sessionKey]);
 
   useEffect(() => {
-    setSelfAvatarSnapshot(null);
+    setSelfAvatarSnapshot(null); setMaintenanceChoice(null);
     setDetailId(null); setDetail(null); setSnapshot(null);
   }, [authEpoch]);
 
@@ -191,6 +202,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   useEffect(() => {
     const onScope = (event: Event) => {
       const customerId = (event as CustomEvent<{ customerId?: string }>).detail?.customerId;
+      setMaintenanceChoice(null);
       if (!customerId || detailId === customerId) { closeDetail(); setNotice("客户归属已变化，详情已关闭。"); }
       snapshotController.current?.abort(); recentController.current?.abort();
       setSnapshot(null); setRowsRefresh((value) => value + 1);
@@ -403,10 +415,19 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
             {recentError ? <div className="s5a-alert" role="alert">{recentError}<button type="button" onClick={() => setRecentRefresh((value) => value + 1)}>重试</button></div> : recent === null ? <div className="s5a-skeleton" aria-label="正在加载最近会话"><i /><i /><i /></div> : recent.length ? <ul>{recent.map((item) => <li key={item.conversationNo}><button type="button" onClick={() => router.push(`/service/sessions?conversationNo=${encodeURIComponent(item.conversationNo)}`)}><strong>{item.customerName || `客户 ${item.customerId}`}</strong><span>{item.lastMessageKind === "IMAGE" ? "[图片]" : item.lastMessage || "暂无消息预览"}</span><small>{formatTime(new Date(item.lastTs).toISOString())}{item.unreadCount > 0 ? ` · ${item.unreadCount} 条未读` : ""}</small></button></li>)}</ul> : <p className="s5a-empty">暂无最近会话。可从本人客户列表发起联系。</p>}
           </section>
         </div>
-        <div className="s5a-progress-grid"><section className="s5a-panel s5a-progress"><header><div><h3>维护进展</h3><p>{overview?.performance ? `${formatTime(overview.performance.from)} 至 ${formatTime(overview.performance.to)}` : "统计区间待同步"}</p></div></header>
-          <div className="s5a-performance"><div><span>已执行维护</span><strong>{overview?.performance?.executionCount ?? "-"}</strong><small>成功提交的人工维护消息次数</small></div><div><span>成功周期</span><strong>{overview?.performance?.successfulCycleCount ?? "-"}</strong><small>由后续真实活动完成</small></div><div><span>成功客户</span><strong>{overview?.performance?.successfulCustomerCount ?? "-"}</strong><small>统计期间去重人数</small></div><div><span>暂停主动维护</span><strong>{overview?.counts.stoppedMaintenanceCustomers ?? "-"}</strong><small>当前仍归属本人</small></div></div>
+        <div className="s5a-progress-grid"><section className="s5a-panel s5a-progress"><header><div><h3>维护进展</h3><p>{overview?.performance ? `${beijing(overview.performance.from)} 至 ${beijing(overview.performance.to)}（北京时间）` : "统计区间待同步"}</p></div></header>
+          <div className="s5a-performance">{([
+            ["EXECUTION", overview?.performance.executionCount, "成功提交的人工维护消息次数"],
+            ["SUCCESSFUL_CYCLE", overview?.performance.successfulCycleCount, "由后续真实活动完成"],
+            ["SUCCESSFUL_CUSTOMER", overview?.performance.successfulCustomerCount, "统计期间去重人数"],
+            ["STOPPED", overview?.counts.stoppedMaintenanceCustomers, "当前仍归属本人"],
+          ] as const).map(([metric, count, hint]) => <div key={metric}><span>{maintenanceLabels[metric]}</span><button type="button" className="m1-stat-number" aria-label={maintenanceLabels[metric] + " " + (count ?? "未知") + "，查看明细"} disabled={count == null} onClick={() => setMaintenanceChoice({ metric })}><strong>{count ?? "-"}</strong><ChevronRight size={16} aria-hidden /></button><small>{hint}</small></div>)}</div>
           <p className="s5a-note">执行后仍须出现新的真实账户活动才计成功。暂停主动维护不会解除专属客服归属或屏蔽求助。</p>
-        </section><section className="s5a-panel"><header><div><h3>维护趋势</h3><p>逐日执行与成功周期</p></div></header>{trend?.length ? <figure className="s5a-trend" aria-label="维护执行与成功趋势"><div className="s5a-trend-bars">{trend.map((point) => <div key={point.day} className="s5a-trend-day"><div className="s5a-trend-pair" aria-label={`${point.day} 执行 ${point.executionCount} 次，成功 ${point.successfulCycleCount} 个周期`}><i style={{ height: `${point.executionCount ? Math.max(3, point.executionCount / trendMax * 100) : 0}%` }} /><i style={{ height: `${point.successfulCycleCount ? Math.max(3, point.successfulCycleCount / trendMax * 100) : 0}%` }} /></div><small>{point.day.slice(5)}</small><span>{point.executionCount} / {point.successfulCycleCount}</span></div>)}</div><p>紫色：执行次数　绿色：成功周期；每组数字为执行 / 成功。</p></figure> : <p className="s5a-note">趋势数据待同步，当前只展示已核实的汇总。</p>}</section></div>
+        </section><section className="s5a-panel"><header><div><h3>维护趋势</h3><p>逐日执行与成功周期</p></div></header>{trend?.length ? <figure className="s5a-trend" aria-label="维护执行与成功趋势"><div className="s5a-trend-bars">{trend.map(point => <div key={point.day} className="s5a-trend-day"><div className="s5a-trend-pair">{([["EXECUTION", point.executionCount], ["SUCCESSFUL_CYCLE", point.successfulCycleCount]] as const).map(([metric, count]) => {
+          const label = point.day + " " + maintenanceLabels[metric] + " " + count + "，查看明细";
+          return <button type="button" key={metric} className="m1-stat-bar" title={label} aria-label={label} onClick={() => setMaintenanceChoice({ metric, day: point.day })}><i style={{ height: (count ? Math.max(3, count / trendMax * 100) : 0) + "%" }} /></button>;
+        })}</div><small>{point.day.slice(5)}</small><span>{point.executionCount} / {point.successfulCycleCount}</span></div>)}</div><p>每组数字为执行 / 成功。点选柱形区域可核对该业务日，包括 0 次。</p></figure> : <p className="s5a-note">趋势数据待同步，当前只展示已核实的汇总。</p>}</section></div>
+        {statSource && <M1StatisticDetails key={overview?.snapshotId} source={statSource} onClose={() => setMaintenanceChoice(null)} onInvalid={invalidateStatistic} />}
       </>}
 
       {view === "customers" && <>

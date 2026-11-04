@@ -2,12 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { supportClient, isIndeterminateSupportError, readSupportPoolCustomer, type SupportAgentCandidate, type SupportBindingPoolItem } from "@/lib/admin/m-support-client";
+import { supportClient, readFirstAssignmentCommand, readSupportPoolCustomer, type SupportAgentCandidate, type SupportBindingPoolItem } from "@/lib/admin/m-support-client";
+import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
+import { useSupportManagementCommand, type SupportIntent } from "@/lib/admin/use-support-management-command";
 import { Modal } from "../design-kit";
 import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
 
 /** D-7: a routine first assignment gets a preset reason; it can still be edited. */
 const FIRST_ASSIGNMENT_REASON = "新客户首次咨询分配";
+type Assignment = { targetName: string; request: Parameters<typeof supportClient.transfer>[0] };
+const assignmentCommands = createPendingMutationStore<SupportIntent<Assignment>>({
+  storageKey: "nexion-m3-first-assignment-v1", retainExpiredRecords: true,
+  isValidRecord: row => typeof row.payload?.targetName === "string" && row.payload.request?.customers?.length === 1,
+});
+const assignmentSlot = (adminId: number, customerId: string) => `first-assignment:${adminId}:${customerId}`;
+export const hasPendingFirstAssignment = (adminId: number, customerId: string) => Boolean(assignmentCommands.get(assignmentSlot(adminId, customerId)));
 
 /** Least load first: fewer bound customers, then fewer live sessions; busy advisors last. */
 function byLoad(a: SupportAgentCandidate, b: SupportAgentCandidate): number {
@@ -15,19 +24,24 @@ function byLoad(a: SupportAgentCandidate, b: SupportAgentCandidate): number {
 }
 
 /** M-13: assign a dedicated advisor from inside the conversation instead of the pool page. */
-export function AssignAdvisorDialog({ customerId, customerName, onClose, onAssigned }: { customerId: string; customerName: string; onClose: () => void; onAssigned: (advisorName: string) => void }) {
+export function AssignAdvisorDialog({ adminId, customerId, customerName, canWrite, onClose, onAssigned }: { adminId: number; customerId: string; customerName: string; canWrite: boolean; onClose: () => void; onAssigned: (advisorName: string) => void }) {
   const [item, setItem] = useState<SupportBindingPoolItem | null>(null);
   const [agents, setAgents] = useState<SupportAgentCandidate[] | null>(null);
   const [loadError, setLoadError] = useState("");
   const [retry, setRetry] = useState(0);
   const [target, setTarget] = useState<number | null>(null);
   const [reason, setReason] = useState(FIRST_ASSIGNMENT_REASON);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  // One key per attempt so a retry after an unknown result can never assign twice.
-  const [commandKey, setCommandKey] = useState(() => `m3-assign-${crypto.randomUUID()}`);
+  const command = useSupportManagementCommand({
+    store: assignmentCommands, slot: assignmentSlot(adminId, customerId), canQuery: true, canWrite,
+    write: async ({ request }, key) => (await supportClient.transfer(request, key)).assignments[0].assignmentId,
+    query: (key, { request }) => readFirstAssignmentCommand(key, customerId, request.targetAgentAdminId),
+    onSuccess: (_, payload) => onAssigned(payload.targetName),
+    onFailure: ({ request }) => { setTarget(request.targetAgentAdminId); setReason(request.reason); setRetry(value => value + 1); },
+  });
+  const { busy: saving, pending, message: error } = command;
 
   useEffect(() => {
+    if (pending || !canWrite) return;
     const controller = new AbortController();
     setLoadError(""); setItem(null); setAgents(null);
     void (async () => {
@@ -36,29 +50,38 @@ export function AssignAdvisorDialog({ customerId, customerName, onClose, onAssig
       const page = await supportClient.agents({ pageNum: 1, pageSize: 100, groupId, signal: controller.signal });
       if (controller.signal.aborted) return;
       const eligible = page.records.filter((agent) => agent.assignmentEligible).sort(byLoad);
-      setItem(pool); setAgents(eligible); setTarget(eligible[0]?.adminId ?? null);
+      setItem(pool); setAgents(eligible); setTarget(previous => eligible.some(agent => agent.adminId === previous) ? previous : eligible[0]?.adminId ?? null);
     })().catch((cause: unknown) => { if (!controller.signal.aborted) setLoadError(cause instanceof Error && cause.message === "SUPPORT_RECOVERY_FACTS_UNAVAILABLE" ? "该客户已不在待分配池，可能已被分配。请刷新会话。" : displayAdminError(cause)); });
     return () => controller.abort();
-  }, [customerId, retry]);
+  }, [customerId, retry, pending, canWrite]);
 
   const chosen = agents?.find((agent) => agent.adminId === target);
   const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
 
-  async function assign() {
-    if (!item || !chosen || !reasonOk || saving) return;
-    setSaving(true); setError("");
-    try {
-      await supportClient.transfer({ targetAgentAdminId: chosen.adminId, customers: [{ id: customerId, expectedAssignmentId: null, expectedVersion: item.version }], reason: reason.trim() }, commandKey);
-      onAssigned(chosen.name);
-    } catch (cause) {
-      if (isIndeterminateSupportError(cause)) setError("分配结果暂未确认。可以再点一次确认，不会重复分配。");
-      else { setCommandKey(`m3-assign-${crypto.randomUUID()}`); setError(`分配未完成：${displayAdminError(cause)}`); }
-    } finally { setSaving(false); }
+  function assign() {
+    if (!item || !chosen || !reasonOk || saving || !canWrite) return;
+    void command.run("submit", { targetName: chosen.name, request: {
+      targetAgentAdminId: chosen.adminId, customers: [{ id: customerId, expectedAssignmentId: null, expectedVersion: item.version }], reason: reason.trim(),
+    } });
   }
+
+  if (pending) return <Modal title={`核对上次分配 · ${customerName}`} icon="users" busy={saving} onClose={onClose} footer={<>
+    <button type="button" className="l-btn sm" disabled={saving} onClick={onClose}>关闭</button>
+    <button type="button" className={command.canReplay ? "l-btn sm" : "l-btn sm primary"} disabled={saving} onClick={() => void command.run("query")}>查询原操作</button>
+    {canWrite && <button type="button" className={command.canReplay ? "l-btn sm primary" : "l-btn sm"} style={command.canReplay ? undefined : { opacity: .5, cursor: "not-allowed" }} disabled={saving || !command.canReplay} onClick={() => void command.run("replay")}>按原操作重试</button>}
+  </>}>
+    <div className="itint" role="status">{saving ? "正在核对原操作…" : error || "上次分配结果待确认，请先查询原操作。"}</div>
+    {!command.denied && <>
+      <p>原分配目标客服：{pending.payload.targetName} · 客服编号 {pending.payload.request.targetAgentAdminId}</p>
+      <p>客户编号 {customerId} · 原待分配版本 {pending.payload.request.customers[0].expectedVersion}</p>
+      <label className="field"><span>原分配原因</span><textarea value={pending.payload.request.reason} readOnly /></label>
+      <p className="m-admin-muted">原操作编号 {pending.commandKey}</p>
+    </>}
+  </Modal>;
 
   return <Modal title={`分配专属客服 · ${customerName}`} icon="users" busy={saving} onClose={onClose} footer={<>
     <button type="button" className="l-btn sm" disabled={saving} onClick={onClose}>取消</button>
-    <button type="button" className="l-btn sm primary" disabled={!chosen || !reasonOk || saving} onClick={() => void assign()}>{saving ? "分配中…" : chosen ? `分配给 ${chosen.name}` : "选择专属客服"}</button>
+    <button type="button" className="l-btn sm primary" disabled={!canWrite || !chosen || !reasonOk || saving} onClick={assign}>{saving ? "分配中…" : chosen ? `分配给 ${chosen.name}` : "选择专属客服"}</button>
   </>}>
     {loadError ? <div className="itint danger" role="alert">{loadError} <button type="button" className="l-btn sm" onClick={() => setRetry((value) => value + 1)}>重试</button></div>
       : !agents ? <div className="itint" role="status">正在加载可分配的专属客服…</div>

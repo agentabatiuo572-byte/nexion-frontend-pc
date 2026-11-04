@@ -30,8 +30,11 @@ export type SupportOverview = {
   knownActiveCount: number;
   unknownWindowCount: number;
   activityWindowDays?: number | null;
-  performance: { executionCount: number; successfulCycleCount: number; successfulCustomerCount: number; from: string; to: string; timeZone: string; trend: Array<{ day: string; executionCount: number; successfulCycleCount: number }> };
+  performance: { executionCount: number; successfulCycleCount: number; successfulCustomerCount: number; from: string; to: string; timeZone: string; scopeVersion: string | null; trend: Array<{ day: string; executionCount: number; successfulCycleCount: number }> };
 };
+export type PerformanceMetric = "EXECUTION" | "SUCCESSFUL_CYCLE";
+export type PerformanceFact = { id: string; customerId: string; agentId: string; assignmentId: string; cycleId: string; sourceId: string | null; eventAt: string };
+export type PerformanceDetails = SupportPage<PerformanceFact> & { visibleCount: number; restrictedCount: number; windowFrom: string; windowTo: string; timeZone: string; queryVersion: string };
 export type SupportWorkbenchSnapshot = { overview: SupportOverview; customers: SupportPage<SupportCustomer>; completeness: { unknownCount: number; unknownWindowCount: number; coverageStartAt: string; observedThroughAt: string; observationLagMillis: number; activitySource: "INTERACTIVE_LOGIN" } };
 export type SupportCustomer = {
   customerId: string;
@@ -318,7 +321,7 @@ function workbenchSnapshot(value: unknown): SupportWorkbenchSnapshot {
     knownActiveCount: count(totals.knownActiveCount, "workbench.knownActiveCount"),
     unknownWindowCount,
     activityWindowDays: nullablePositive(rules.activityWindowDays, "workbench.rules.activityWindowDays"),
-    performance: { executionCount: count(performance.executionCount, "workbench.performance.executionCount"), successfulCycleCount: count(performance.successfulCycleCount, "workbench.performance.successfulCycleCount"), successfulCustomerCount: count(performance.successfulCustomerCount, "workbench.performance.successfulCustomerCount"), from: timestamp(performance.from, "workbench.performance.from"), to: timestamp(performance.to, "workbench.performance.to"), timeZone: nonempty(performance.timeZone, "workbench.performance.timeZone"), trend },
+    performance: { executionCount: count(performance.executionCount, "workbench.performance.executionCount"), successfulCycleCount: count(performance.successfulCycleCount, "workbench.performance.successfulCycleCount"), successfulCustomerCount: count(performance.successfulCustomerCount, "workbench.performance.successfulCustomerCount"), from: timestamp(performance.from, "workbench.performance.from"), to: timestamp(performance.to, "workbench.performance.to"), timeZone: nonempty(performance.timeZone, "workbench.performance.timeZone"), scopeVersion: performance.scopeVersion == null ? null : nonempty(performance.scopeVersion, "workbench.performance.scopeVersion"), trend },
   };
   const customers = { ...page(rawPage, customer), available: bool(rawPage.available, "workbench.customers.available"), filter: enumValue(rawPage.filter, FILTERS, "workbench.customers.filter") };
   if (!customers.available && customers.records.length) malformed("workbench.customers.records");
@@ -436,6 +439,29 @@ export const supportClient = {
     }, { signal: options.signal }),
   overview: async (options: { from?: string; to?: string; mode?: SupportReadMode; groupId?: number; agentId?: number; signal?: AbortSignal } = {}) =>
     (await supportClient.snapshot({ pageNum: 1, pageSize: 1, filter: "ALL", ...options })).overview,
+  performanceDetails: (overview: SupportOverview, metric: PerformanceMetric, day: string | undefined, options: { pageNum: number; pageSize: number; expectedQueryVersion?: string; signal?: AbortSignal }): Promise<PerformanceDetails> => {
+    const { scope, performance, evaluatedAt } = overview;
+    if (!performance.scopeVersion) malformed("performance.scopeVersion");
+    const point = day === undefined ? performance : performance.trend.find(row => row.day === day);
+    if (!point) malformed("performance.day");
+    const expectedTotal = metric === "EXECUTION" ? point.executionCount : point.successfulCycleCount;
+    const { pageNum, pageSize, expectedQueryVersion, signal } = options;
+    return request(`/support-workbench/performance/details${query({ mode: scope.mode, groupId: scope.groupId ?? undefined, agentId: scope.agentAdminId ?? undefined, from: performance.from, to: performance.to, evaluatedAt, scopeVersion: performance.scopeVersion, expectedTotal, metric, day, pageNum, pageSize, expectedQueryVersion })}`, value => {
+      const r = object(value, "performance.details");
+      const result = page(r, entry => {
+        const fact = object(entry, "performance.fact");
+        const sourceId = metric === "EXECUTION" ? fact.messageId : fact.successEventId;
+        return { id: id(fact.id, "fact.id"), customerId: id(fact.customerId, "fact.customerId"), agentId: id(fact.agentAdminId, "fact.agentAdminId"), assignmentId: id(fact.assignmentId, "fact.assignmentId"), cycleId: id(fact.cycleId, "fact.cycleId"), sourceId: sourceId == null ? null : id(sourceId, "fact.sourceId"), eventAt: timestamp(metric === "EXECUTION" ? fact.executedAt : fact.closedAt, "fact.eventAt") };
+      });
+      const visibleCount = count(r.visibleCount, "performance.visibleCount"), restrictedCount = count(r.restrictedCount, "performance.restrictedCount");
+      const queryVersion = nonempty(r.queryVersion, "performance.queryVersion");
+      const receiptScope = object(r.scope, "performance.scope");
+      if (receiptScope.mode !== scope.mode || receiptScope.actorId !== scope.actorId || (receiptScope.agentAdminId ?? null) !== scope.agentAdminId || (receiptScope.groupId ?? null) !== scope.groupId) malformed("performance.scope");
+      if (r.metric !== metric || (r.day ?? undefined) !== day || r.scopeVersion !== performance.scopeVersion || r.from !== performance.from || r.to !== performance.to || r.evaluatedAt !== evaluatedAt || result.total !== expectedTotal || visibleCount + restrictedCount !== result.total || result.pageNum !== pageNum || result.pageSize !== pageSize || (expectedQueryVersion && expectedQueryVersion !== queryVersion)) malformed("performance.receipt");
+      if (result.records.length !== Math.min(pageSize, Math.max(0, visibleCount - (pageNum - 1) * pageSize))) malformed("performance.records");
+      return { ...result, visibleCount, restrictedCount, queryVersion, windowFrom: timestamp(r.windowFrom, "performance.windowFrom"), windowTo: timestamp(r.windowTo, "performance.windowTo"), timeZone: nonempty(r.timeZone, "performance.timeZone") };
+    }, { signal });
+  },
   customers: async (options: { pageNum: number; pageSize: number; keyword?: string; filter?: SupportCustomerFilter; mode?: SupportReadMode; groupId?: number; agentId?: number; signal?: AbortSignal }) =>
     (await supportClient.snapshot(options)).customers,
   customerDetail: (customerId: string, signal?: AbortSignal) => request(customerPath(customerId), detail, { signal }),
@@ -535,16 +561,45 @@ export const supportClient = {
 };
 
 export type SupportUnboundPolicy = { alertMinutes: number; fallbackMinutes: number; defaultGroupId: number | null; defaultGroupName: string | null; version: number; updatedBy: string; reason: string; updatedAt: string };
+export type SupportUnboundPolicyUpdate = Pick<SupportUnboundPolicy, "alertMinutes" | "fallbackMinutes" | "defaultGroupId" | "reason"> & { expectedVersion: number };
 const unboundPolicy = (value: unknown): SupportUnboundPolicy => {
   const row = object(value, "unboundPolicy");
   return { alertMinutes: positive(row.alertMinutes, "unboundPolicy.alertMinutes"), fallbackMinutes: positive(row.fallbackMinutes, "unboundPolicy.fallbackMinutes"), defaultGroupId: row.defaultGroupId == null ? null : positive(row.defaultGroupId, "unboundPolicy.defaultGroupId"), defaultGroupName: row.defaultGroupName == null ? null : nonempty(row.defaultGroupName, "unboundPolicy.defaultGroupName"), version: positive(row.version, "unboundPolicy.version"), updatedBy: nonempty(row.updatedBy, "unboundPolicy.updatedBy"), reason: nonempty(row.reason, "unboundPolicy.reason"), updatedAt: timestamp(row.updatedAt, "unboundPolicy.updatedAt") };
 };
+function savedPolicy(value: unknown, input: SupportUnboundPolicyUpdate): SupportUnboundPolicy {
+  const row = unboundPolicy(value);
+  if (row.version !== input.expectedVersion + 1 || row.alertMinutes !== input.alertMinutes || row.fallbackMinutes !== input.fallbackMinutes
+    || row.defaultGroupId !== input.defaultGroupId || row.reason !== input.reason) malformed("unboundPolicy.receipt");
+  return row;
+}
 /** D-3 / M-18: how long an unassigned inquiry may wait before an alert / automatic fallback, and the default receiving group. */
 export const supportUnboundPolicyClient = {
   read: (signal?: AbortSignal) => request("/support-agents/unbound-policy", unboundPolicy, { signal }),
-  update: (input: { alertMinutes: number; fallbackMinutes: number; defaultGroupId: number | null; expectedVersion: number; reason: string }) =>
-    request("/support-agents/unbound-policy", unboundPolicy, { method: "PUT", body: JSON.stringify(input) }),
+  update: (input: SupportUnboundPolicyUpdate, key: string) =>
+    request("/support-agents/unbound-policy", value => savedPolicy(value, input), json("PUT", input, key)),
+  command: (key: string, input: SupportUnboundPolicyUpdate) => readManagementCommand(key, "SUPPORT_UNBOUND_POLICY", value => savedPolicy(value, input)),
 };
+
+/** A successful management receipt contains the original API envelope, not the current entity. */
+function readManagementCommand<T>(key: string, resultType: string, parse: (value: unknown) => T) {
+  return request(`/support-workbench/commands/${encodeURIComponent(key)}`, (value) => {
+    const row = object(value, "command");
+    const status = enumValue(row.status, ["PROCESSING", "UNKNOWN", "PENDING", "SUCCEEDED", "FAILED"] as const, "command.status");
+    if (status !== "SUCCEEDED") return { status } as const;
+    const result = object(row.result, "command.result");
+    if (row.resultType !== resultType || result.code !== 0) malformed("command.resultType");
+    return { status, result: parse(result.data) } as const;
+  });
+}
+
+export function readFirstAssignmentCommand(key: string, customerId: string, targetAgentAdminId: number) {
+  return readManagementCommand(key, "SUPPORT_TRANSFER", (value) => {
+    if (!Array.isArray(value) || value.length !== 1) malformed("transfer.assignments");
+    const row = object(value[0], "transfer.assignment");
+    if (id(row.customerId, "transfer.customerId") !== customerId || row.agentAdminId !== targetAgentAdminId) malformed("transfer.assignment");
+    return id(row.id, "transfer.id");
+  });
+}
 
 export type SupportWelcomeLanguage = "zh" | "en" | "vi";
 export type SupportWelcomeTexts = Record<SupportWelcomeLanguage, string>;

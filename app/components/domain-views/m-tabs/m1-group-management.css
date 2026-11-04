@@ -33,6 +33,7 @@
 .m1-group-management .m-invite-revoke p { margin:0; font-size:12.5px; line-height:1.5; color:var(--v5-ink-3); }
 .m1-group-management .m-invite-revoke label { display:flex; flex-direction:column; gap:6px; margin-top:4px; font-size:12.5px; color:var(--v5-ink-2); }
 .m1-group-management .m-invite-revoke textarea.fld { height:50px; line-height:15px; }
+.m1-group-management .m-invite-reason-hint { text-align: right; }
 .m1-group-management .m-invite-revoke-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:4px; }
 .m1-group-management .m-invite-revoke-actions button { display:inline-flex; align-items:center; min-height:38px; padding:0 14px; border:1px solid var(--v5-border-strong); border-radius:9px; background:var(--v5-surface); color:var(--v5-ink); font:inherit; font-size:13px; font-weight:500; cursor:pointer; }
 .m1-group-management .m-invite-revoke-actions .m-invite-revoke-confirm { border-color:color-mix(in srgb, var(--v5-danger) 55%, transparent); background:var(--v5-danger-soft); color:color-mix(in srgb, var(--v5-danger) 80%, var(--v5-ink)); font-weight:600; }
