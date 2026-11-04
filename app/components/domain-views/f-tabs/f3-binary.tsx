@@ -49,12 +49,15 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   const [statusFilter, setStatusFilter] = useState("");
   const [cohortFilter, setCohortFilter] = useState("");
   const [lookupOpen, setLookupOpen] = useState(false);
-  const [growthZone, setGrowthZone] = useState<string | null>(null);
+  const [growthZoneLabel, setGrowthZoneLabel] = useState<string | null>(null);
   useEffect(() => {
-    void fetchBusinessCalendar().then(
-      (calendar) => setGrowthZone(calendar.trackZones.GROWTH_TEAM ?? null),
-      () => setGrowthZone(null),
-    );
+    void fetchBusinessCalendar().then((calendar) => {
+      const zone = calendar.trackZones.GROWTH_TEAM;
+      const label = zone === "Asia/Shanghai" ? "北京时间" : calendar.options.find((option) => option.zoneId === zone)?.label;
+      if (!label) { setGrowthZoneLabel(null); return; }
+      const offset = new Intl.DateTimeFormat("en-US", { timeZone: zone, timeZoneName: "shortOffset" }).formatToParts(new Date()).find((part) => part.type === "timeZoneName")?.value ?? "";
+      setGrowthZoneLabel(offset ? `${label} ${offset === "GMT" ? "UTC+0" : offset.replace("GMT", "UTC")}` : null);
+    }).catch(() => setGrowthZoneLabel(null));
   }, []);
   const rows = ctx.f3Settlements;
   const lookupKw = lookupText.trim().toLowerCase();
@@ -317,7 +320,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             run: async (reason, _fields, newValue) => {
               const value = (newValue ?? "").trim();
               if (!/^(?:\d+(?:\.\d{1,6})?|\.\d{1,6})$/.test(value)) throw new Error("门槛须填写普通数字，最多 6 位小数，不会自动取整。");
-              await ctx.updateF3Config("F.binary.threshold", value, reason, thresholdCurrent !== "" && Number(value) < Number(thresholdCurrent));
+              await ctx.updateF3Config("F.binary.threshold", value, reason, thresholdCurrent === "" ? undefined : Number(value) < Number(thresholdCurrent));
               ctx.toast("门槛已提交，批准后生效；批准前仍按原设置执行");
             },
           })}>调整门槛</button></div>}
@@ -337,7 +340,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             run: async (reason, _fields, newValue) => {
               const value = (newValue ?? "").trim();
               if (!/^(?:\d+(?:\.\d{1,10})?|\.\d{1,10})$/.test(value)) throw new Error("比例须填写普通数字，最多 10 位小数，不会自动四舍五入。");
-              await ctx.updateF3Config("F.binary.matchRate", `${value}%`, reason, ratePercent !== null && Number(value) > Number(ratePercent));
+              await ctx.updateF3Config("F.binary.matchRate", `${value}%`, reason, ratePercent === null ? undefined : Number(value) > Number(ratePercent));
               ctx.toast("匹配比例已提交，批准后生效；批准前仍按原设置执行");
             },
           })}>调整比例</button></div>}
@@ -345,7 +348,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
 
         <div className="cfg-card">
           <div className="ch">自动分组与归零</div>
-          <div className="cs">实际归零按系统业务日历：每月 1 日 00:00（{growthZone || "业务时区尚未确认"}）。历史周期不重算。</div>
+          <div className="cs">实际归零按系统业务日历：每月 1 日 00:00（{growthZoneLabel || "业务时区尚未确认"}）。历史周期不重算。</div>
           <div className="ckv"><span className="k">自动分组</span><span className="v" style={{ color: spillOn ? "var(--success)" : "var(--ink-3)" }}>{spillOn ? "已启用" : "已关闭"}</span></div>
           <div className="ckv"><span className="k">近 7 天自动分组</span><span className="v">{ctx.f3AutoPlacement7dCount.toLocaleString()} 成员</span></div>
           <div className="ckv"><span className="k">已存归零说明</span><span className="v" style={{ fontSize: 11 }}>{text(resetEff)}</span></div>
