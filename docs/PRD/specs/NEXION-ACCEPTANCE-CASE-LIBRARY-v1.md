@@ -160,7 +160,7 @@
 |---|---|---|---|
 | AC-I1-01 | 转化文案 A/B | 创建草稿、发布、运行实验并采纳 → 旧版本保留，采纳不静默覆盖发布版本 | PK-STATE、PK-CROSS |
 | AC-I2-01 | Nova 推送运营 | 新建模板并启用通道、发送样例、禁用 → 禁用后无新发送，历史送达不消失 | PK-STATE、PK-CROSS |
-| AC-I3-01 | 通知 Campaign | draft→scheduled→sending→sent，发送中取消另一批 → 只阻止未发送部分，发送事实可追踪 | PK-STATE、PK-IDEM |
+| AC-I3-01 | 通知 Campaign | draft→scheduled→sending→sent，另建一条 scheduled→cancelled 再删除 → 取消后不能编辑或重新排期，发送事实可追踪 | PK-STATE、PK-IDEM |
 | AC-I4-01 | 信任中心 | 发布信任版块、App 查看、回滚/下架 → 版本可追溯，App 不回退硬编码内容 | PK-CROSS、PK-PRIV |
 | AC-I5-01 | 风险披露 | 发布新披露 → 已确认用户变 stale，重新确认后资金动作恢复 → 确认绑定具体版本和辖区 | PK-STATE、PK-CROSS、PK-PRIV |
 | AC-I6-01 | i18n 文案 | 同时编辑 zh/en/vi → 缺占位符、禁词、超长分别拒绝，合法发布三端同步 → placeholder 等集 | PK-PROTO、PK-CROSS |

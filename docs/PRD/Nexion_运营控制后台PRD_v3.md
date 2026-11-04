@@ -443,6 +443,8 @@
 | `dailyDividendShare`(每日排放率) | **✅ 0.1%/日**(§10.1.1 权威,PM 2026-06-01 裁定;§10.3=1.5% 为前端笔误待 V4 订正)。日排放应付 = `节点价 × 持有量 × 0.1%/日` | 0–可调,升率受 B1 约束 | 实时 | §10.1 日预估收益 / §10.3 holder dashboard 排放 |
 | 二级版税(`royalty`) | **现状值(§10.2.3 / §13.3)**:2.5%(卖家成交扣) | 0–20% | 仅新二级成交 | §10.2 挂单 confirm「扣 2.5% 版税」 |
 | 一二级市场 pause(kill) | 关 | bool | 实时(熔断停一二级 + 排放保留 / 暂停按 J1 处置) | §10 市场熔断态(§9.11d.1) |
+| 市场开放状态(`marketOpenState`) | 配置缺失按 `closed` | `open` / `closed`,双向切换都要确认和理由 | 下次配置读取 | `closed` = 可见但不可认购;不影响已成交订单和已持有资产 |
+| 市场关闭提示(`closedNoticeKey`) | `default` | 四选一:`default`「当前市场暂未开放」/ `maintenance`「系统维护中，暂停认购」/ `phase_control`「当前阶段暂不开放认购」/ `compliance`「合规审核中，暂停认购」;不接受自由文本,旧补货提示已废弃 | 随市场状态生效 | App 关闭态提示 |
 | `geo_block`(地域限制) | 空 | 国家码数组 | 实时(边缘 IP 判定) | §10 marketplace geo 拦截 |
 
 > **默认值口径**:总量 / 单价 / 版税取前端现状值(标注「现状值」);**排放率已裁定 = 0.1%/日**(PM 2026-06-01,§10.1.1 权威;③ 已标注,前端 §10.3=1.5% 笔误待 V4 订正)。升排放率 = 放大 USDT 流出,受 ① B1 红线前置约束。
@@ -549,6 +551,7 @@
 - **开发 / Sandbox 区别**:标准 `dev` 是真实业务代码对本地开发数据库的联调环境，Genesis 认购、扣款、订单、持仓和 G4 监控统一走正式业务表；Sandbox 仅指显式 `test`/专项验收轨，不能由普通开发启动脚本隐式开启，也不能混入 G4 正式台账。历史开发 Sandbox 成交迁入正式表时只迁订单/持仓并复用原钱包流水，严禁再次扣款。
 - **负债联动(② 跨域事实)**:`genesis.purchased` 增 B2 应付负债科目 4「Genesis 日排放承诺」,**精算公式 = `节点价 × 持有量 × 0.1%/日`**(排放率已裁定 0.1%,§10.1.1;根因账本归 **D3,B2 为其驾驶舱概览卡同口径**,§3.14);日排放派发落 D4 bill。二级版税收入入网络金库(§10.2.3)。
 - **B1 前置(① 跨域事实)**:升排放率提交即 server 核验覆盖率红线。
+- **市场关闭与紧急暂停并存**:两者独立,各自禁止交易,解除其中一个不能替代解除另一个;同时存在时先显示市场关闭原因。本条优先于 `specs-snapshot-20260807/FEAT-GEN10-genesis-market-closed.md` 里的默认 `open` 和「当前生效的是熔断」写法(该目录是只读快照)。
 - **篡改防御(§9.11d.2)**:tokenId / 排放 server 单源,client 不可枚举 / 撞 ID;OpenSea 外链为站内 P2P 导流,无真实跨链写。
 - **幂等 & 并发裁决(章首贯穿事实 ⑧;§9.11e)**:每日 00:00 UTC 日排放派发批次携 **`Idempotency-Key`**(batchDate 维度去重,retry / 重跑不重复派发);Genesis pause 后并发到达的当批未结排放按 ④ 排放处置方案处理(`held` 保留 / 暂停按 J1),pause 锁定优先于 in-flight 派发。
 - **kill 联动 J1(V4)**:Genesis pause + geo_block 是 J1 矩阵生效面(证券类风险 / 国家级屏蔽)。
@@ -579,12 +582,14 @@
 |---|---|---|---|---|
 | 复投 `APY` | **现状值(§9.5)**:35% | 0–300% | 仅新复投单(在锁锁定) | §9.5 `35% APY · 90 days` benefit |
 | 复投 `LOCK_DAYS` | **现状值(§9.5)**:90 天 | ≥ 1 | 仅新复投单 | §9.5 `90 天` 锁仓 + 预测 |
-| 培育奖倍率(Cultivation) | **现状值(§9.5)**:×1.5 | ≥ 1.0 | 实时(复投者培育奖计算即用) | §9.5 `Cultivation ×1.5` benefit |
+| 好友升级奖励倍率(培育奖,Cultivation) | **现状值(§9.5)**:×1.5 | ≥ 1.0 | 立即生效,影响之后的计算 | §9.5 `Cultivation ×1.5` benefit |
 | Genesis 抽奖券发放 | **现状值(§9.5)**:每复投单 +1 张(每月开奖,联动 G4) | ≥ 0 张 / 单 | 仅新复投单 | §9.5 `Genesis lottery ticket` benefit |
 | preset 金额档 | **现状值(§9.5)**:$100 / 200 / 500 / 1,000 | 自定义档位 | 实时 | §9.5 金额输入 presets |
 | 早赎罚款 | **现状值(§9.5 how-it-works)**:罚本金 15% + forfeit 利息/券 | 0–100% 本金 | 仅新复投单 | §9.5 how-it-works `Early withdrawal cost` callout |
 
 > **默认值口径**:12 月节奏表 §6 未覆盖复投 APY/倍率(注:12 月 §6.4 `reinvestMultiplier` 月 5–6 限时 2× 的**消费/生效面归 G7 复投域**(PM 2026-06-02 裁定:复投动作发生在 G7 `/me/wallet/repurchase`,倍率在复投那一刻套用,与 V1 §⑤ dial 表「G7 域生效」一致),与本子模块的复投**产品** APY/培育倍率为同域不同杠杆;G7 既配置产品参数、又是 H1 下发 `reinvestMultiplier` 的生效面)。取前端现状值(标注「现状值」)。升 APY / 升培育倍率 / 降罚款属放大流出,受 ① B1 红线前置约束。
+
+> **两种倍率分开算**:好友升级奖励倍率(本页配置)改后立即影响之后的计算,不回算已发放的奖励;限时锁定计划倍率(`reinvestMultiplier`,H1 派发,月 5–6 为 2×)按用户参与时的值快照。
 
 **④ 操作动作**:
 | 动作 | 执行权 | 确认弹窗 | 审计点 |
@@ -609,7 +614,7 @@
 
 ##### [G7-MD1] 复投产品参数变更
 - **功能**:修改复投 `APY` / `LOCK_DAYS` / 培育奖倍率,确认即生效(APY / 锁期仅新复投单,培育倍率实时)。
-- **布局结构**:1. **信息区**:当前 APY / 锁期 / 培育倍率 / 在锁复投单数 + 金额合计(② 复投监控同源)。2. **影响预览区**:before→after 并排;升 APY / 升倍率方向 server 预检「**拟生效后覆盖率**」,低于 B1 红线展示红线警示条(确认钮置灰,文案含「覆盖率低于红线,server 将拒绝(422)」);提示「在锁复投单按开锁锁定值结算,不追溯」。3. **输入区**:见下表。4. **按钮区**:取消 / 确认变更。
+- **布局结构**:1. **信息区**:当前 APY / 锁期 / 培育倍率 / 在锁复投单数 + 金额合计(② 复投监控同源)。2. **影响预览区**:before→after 并排;升 APY / 升倍率方向 server 预检「**拟生效后覆盖率**」,低于 B1 红线展示红线警示条(确认钮置灰,文案含「覆盖率低于红线,server 将拒绝(422)」);提示「奖励率和锁定期按开锁值结算,不追溯;好友升级奖励倍率改后立即影响之后的计算」。3. **输入区**:见下表。4. **按钮区**:取消 / 确认变更。
 - **输入与选择控件**:
 
 | 字段 | 控件类型 | 必填 | 校验 | 默认值 |
@@ -660,7 +665,7 @@
 - **抽奖券联动 G4**:复投发放的 Genesis 抽奖券进 G4 每月开奖池;改发放规则须核对 G4 抽奖池容量(④ 确认弹窗 G7-MD2 附 G4 核对 ref)。
 - **负债联动(② 跨域事实)**:`staking.opened(product=repurchase)` 增 B2 应付负债(本金 + 90 天 APY 应付利息);到期本息落 D4 bill。
 - **B1 前置(① 跨域事实)**:升 APY / 培育倍率提交即 server 核验覆盖率红线。
-- **原子性 + 幂等 & 并发裁决(§9.11e;章首贯穿事实 ⑧;§9.11e)**:复投两 store 写(`debitBalance + stake`)收敛 server 单事务,crash 中途不得部分持久化;复投提交 + 90 天到期本息 `claim` 派发携 **`Idempotency-Key`** 去重(retry 不重复扣款 / 重复入账);竞态 `mature_unclaimed → claimed` 与早赎 `active → early_withdrawn`(罚本金 15% + forfeit）以 server 终态为准,early_withdrawn / kill 锁定后并发 claim 返 **409**;改 APY/倍率对在锁复投单按开锁锁定值结算(不追溯)。
+- **原子性 + 幂等 & 并发裁决(§9.11e;章首贯穿事实 ⑧;§9.11e)**:复投两 store 写(`debitBalance + stake`)收敛 server 单事务,crash 中途不得部分持久化;复投提交 + 90 天到期本息 `claim` 派发携 **`Idempotency-Key`** 去重(retry 不重复扣款 / 重复入账);竞态 `mature_unclaimed → claimed` 与早赎 `active → early_withdrawn`(罚本金 15% + forfeit）以 server 终态为准,early_withdrawn / kill 锁定后并发 claim 返 **409**;改 APY 对在锁复投单按开锁锁定值结算(不追溯);好友升级奖励倍率改后立即影响之后的计算;H1 限时倍率按参与时快照,之后调整不改已参与的单。
 
 **⑧ 埋点(事件)**:
 - **产生 / 消费**:`wallet.reinvest`(§2.4.7 漏斗定义已列,但 **V1 阶段尚未在 A4 schema registry 正式注册**且 **domain 归属 `wallet` vs `checkout` 待 A4 治理确认**,§2.4.8;V1 B3 §③ 因此降级用二次 `checkout.completed`。**G7（V3）落地即随 schema 变更确认流程(§2.4.8,仅超管经 A2-MD1 确认弹窗执行）完成 `wallet.reinvest` 正式注册并切换 B3 复投级双口径**)+ `staking.opened(product=repurchase)` / `staking.claimed`(money family,复用 `staking` domain)。
@@ -874,7 +879,7 @@
 | Lucky Spin 转盘奖池(档位 + 概率,`wheel`)| **✅ 已裁定(PM 2026-06-02),见下方 Lucky Spin 奖池表**(初始 8 档 · EV≈$0.73/spin · Genesis 不进转盘) | **档位可增删 2-12 档**;各档概率(weight)之和 = 100(server 校验,≠100 或档位越界返 422) | 实时(server 裁决) | `evt-spring-spin` 日重置转盘 / `evt-anniversary-spin` 周年转盘 |
 | `countdown / startsIn`(时窗) | per-event(UTC,§11.10.2「Events run on UTC time」) | 起止时间戳 | 实时(到期自动转 ended) | 卡倒计时 / 开始时间 |
 | `region` / `geo_block` | 空(全区) | 国家码数组 | 实时(边缘 IP 判定) | §9.11c.2 region 过滤 / geo 拦截 |
-| 活动 pause(下架) | 关 | bool | 实时(下架即停 join/claim) | 活动卡熔断 / 隐藏态 |
+| 活动 pause(下架) | 关 | bool | 实时(只停新参与,既有承诺继续) | 活动卡熔断 / 隐藏态 |
 
 > **默认值口径**:7 EventKind 为当前类型闭集；主推位、奖励与预算以服务端已保存配置为准;wheel 转盘奖项池 / 概率 ✅ 已裁定(PM 2026-06-02,见下方 Lucky Spin 奖池表;治理归属见 §① 域边界);12 月 §6 未覆盖活动配置。**升活动 NEX 奖励 = 放大流出**,受跨域事实 2 的 B1 红线前置约束。`geo_block` 为 §9.11d.1 通用 region geo-block 在活动面派生,kill 矩阵编排归 J1(V4)。
 > **EventKind / evaluator 扩展治理**:新增 EventKind / evaluator 字段属前后端 schema 联动变更,须经操作确认(确认弹窗 + 理由必填)+ 前端 ctx 同步发布(类比 A4 domain 扩展工单),非后台单方可加。
@@ -935,8 +940,8 @@
 **(2) 弹窗规格**
 
 ##### [H4-MD1] 活动上下架确认
-- **功能**:新建活动(全字段)或切换活动 status(upcoming/ongoing/ended、上架 / 下架),确认即生效(下架即停 join/claim)。
-- **布局结构**:1. **信息区**:活动 id / kind / 当前 status / joined·claimed 计数(server 派生)。2. **影响预览区**:status before→after;下架时警示行「下架后该活动 join/claim 即时拒绝,已 claim 不回收」;新建时展示全字段摘要。3. **输入区**:目标 status 单选(③ 表 3 枚举)+ reason(多行文本,必填,8–200 字)。4. **按钮区**:取消 / 确认执行(提交 loading 锁定)。
+- **功能**:新建活动(全字段)或切换活动 status(upcoming/ongoing/ended、上架 / 下架),确认即生效(下架只停新参与,既有承诺继续)。
+- **布局结构**:1. **信息区**:活动 id / kind / 当前 status / joined·claimed 计数(server 派生)。2. **影响预览区**:status before→after;下架时警示行「下架后不再接受新参与;关闭前已达标或已完成交易的个人奖励仍可领取,奖池既有参与者继续到原截止时间,已领取的不回收」;新建时展示全字段摘要。3. **输入区**:目标 status 单选(③ 表 3 枚举)+ reason(多行文本,必填,8–200 字)。4. **按钮区**:取消 / 确认执行(提交 loading 锁定)。
 - **错误态**:400 `REASON_REQUIRED` / 409(status 已被他人变更,提示刷新)/ 403。
 - **成功反馈**:弹窗关闭;活动列表行就地更新;toast「活动状态已生效 · 已记审计」;事件 `admin.event_published`;实时告警超管 + 增长 lead。
 

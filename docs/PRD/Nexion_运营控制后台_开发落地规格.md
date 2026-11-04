@@ -150,13 +150,13 @@
 | A2 | 审计 & 操作确认 | 高敏写 append-only 审计留痕 + 高敏动作确认契约权威(确认弹窗 + 理由必填) | A 平台基础 | V1·Ch2 | §9.11d / §9.11e |
 | A3 | 系统配置 | feature flag / kill-switch config store / 系统健康(server time / Idempotency 为固定后端不变量,运营无配置面) | A 平台基础 | V1·Ch2 | §9.11a.4 / §9.11d.1 / §9.11e |
 | B1 | 双账本总览 | 真实储备 vs 应付负债并列 + 兑付覆盖率(资金安全最高水位) | B 总览 | V1·Ch4 | §5.14 / §9.6.3 |
-| B2 | 资金池水位 | 应付负债 8 类科目 + 到期负债预测概览(口径同 D3) | B 总览 | V1·Ch4 | §9.2/§9.3/§9.6/§10 |
-| B3 | 转化漏斗 | 注册→绑卡→首购→复投→提现五级漏斗 + L2–L5 + Day7 留存 | B 总览 | V1·Ch4 | §1.6 / §2.4.7 |
+| B2 | 资金池水位 | 应付款 9 类科目 + 到期负债预测概览(口径同 D3) | B 总览 | V1·Ch4 | §9.2/§9.3/§9.6/§10 |
+| B3 | 转化漏斗 | 注册→首购→锁定计划→提现四步漏斗 + L1–L5 + Day7 留存 | B 总览 | V1·Ch4 | §1.6 / §2.4.7 |
 | B4 | 节奏状态 | 各 Phase 用户分布 + 10-dial 现值 + 距拐点(dial 只读) | B 总览 | V1·Ch4 | §13.4 / 节奏表§6.4 |
 | B5 | 风险雷达 | 挤兑/异常账户/提现积压/kill-switch/覆盖率五维只读雷达 + 跳转 | B 总览 | V1·Ch4 | §9.11d.1 |
 | C1 | 检索 & 画像 | 多维检索 + 聚合各域权威的单用户全景(聚合视图,不持权威) | C 用户 | V1·Ch5 | §2.1/§2.2/§2.4/§12.1 |
 | C2 | 账户操作 | 冻结/解冻、强制登出、加白/拉黑、impersonate | C 用户 | V1·Ch5 | §4.5 / §4.5.2 |
-| C3 | 余额 & 资产调整 | 人工增减 USDT/NEX/积分(确认弹窗 + 理由必填,USDT/NEX 入 D4) | C 用户 | V1·Ch5 | §9.7 / §12.1 / §12.12 |
+| C3 | 余额 & 资产调整 | 人工增减 USDT/NEX(提交后全部待复核,批准人不得是发起人,批准后入 D4) | C 用户 | V1·Ch5 | §9.7 / §12.1 / §12.12 |
 | C5 | 安全 & 会话 | 2FA / session / 密码重置 / 锁定解除 | C 用户 | V1·Ch5 | §4.5 / §4.6 / §4.2.3 |
 | C6 | 注册/登录风控配置 | OTP / 登录锁定 / CAPTCHA(与 K1 去重互补) | C 用户 | V1·Ch5 | §4.1 / §4.2 / §4.6.2 |
 | D1 | 充值对账中心 | 订单付款 / 银行卡支付与 USDT 充值 / 充值流水与差异核销 | D 资金 | V1·Ch6 | §9.2 / §9.2.4 / §9.11c.1 |
@@ -356,7 +356,7 @@
 
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
-| KPI/漏斗口径 | KPI 比率(§2.4.6)+ 五级漏斗(§2.4.7);**L 域只读引用,不重定义** | 派生视图 | §17.1 / §2.4.6 / §2.4.7 |
+| KPI/漏斗口径 | KPI 比率(§2.4.6)+ 四步漏斗(§2.4.7);**L 域只读引用,不重定义** | 派生视图 | §17.1 / §2.4.6 / §2.4.7 |
 | BI 导出/报表(L5) | 运营/cohort/财务报表(读引用 /api/admin/treasury/*);**只认 is_server_authoritative=true 事件** | 派生视图 | §17.1 / Ch16 |
 
 ## 第 3 章 API 契约总表(后端实现接口)
@@ -388,9 +388,9 @@
 | `/api/admin/treasury/ledger` | GET | 双账本明细+净敞口序列 | — | B1 |
 | `/api/admin/treasury/thresholds` | PUT | 覆盖率红/黄线(校验 yellow>red,违反 400) | B1-MD1 | B1 |
 | `/api/admin/treasury/reserve-injection` | POST | 储备注入登记(实现权威 D3,携 Key) | B1-MD2 | B1→D3 |
-| `/api/admin/treasury/liabilities?breakdown=true` | GET | 8 类负债科目分解(实现 D3) | — | B2→D3 |
+| `/api/admin/treasury/liabilities?breakdown=true` | GET | 9 类应付款科目分解(实现 D3) | — | B2→D3 |
 | `/api/admin/treasury/maturity-forecast?window=` | GET | 到期负债预测(提现/利息/Genesis 三类叠加;实现 D3) | — | B2→D3 |
-| `/api/admin/funnel?cohort=&phase=&ref=` | GET | 五级漏斗(A4 事件预聚合) | — | B3 |
+| `/api/admin/funnel?cohort=&phase=&ref=` | GET | 四步漏斗(A4 事件预聚合) | — | B3 |
 | `/api/admin/funnel/cohort-trend` · `/funnel/export` · `/funnel/view` | GET/POST | cohort 序列/导出/保存视图 | — | B3 |
 | `/api/admin/phase/overview` · `/phase/distribution/export` | GET | Phase 分布+10 dial 现值(只读) | — | B4 |
 | `/api/admin/risk/radar` | GET | 五维风险态势 | — | B5 |
@@ -407,8 +407,8 @@
 | `/api/admin/users/:userId/logout` | POST | 强制登出(scope=current\|all) | C2-MD3 | C2 |
 | `/api/admin/users/:userId/impersonate` | POST | 只读模拟登录(≤30min;写请求 403) | C2-MD4 | C2 |
 | `/api/admin/users/:userId/{allowlist\|blocklist}` | POST | 账户级名单(userId 维度) | C2-MD5/MD6 | C2 |
-| `/api/admin/users/:userId/adjust` | POST | 人工资产调整(usdt/nex 落 D4;points 走字段+audit;加余额过 B1;携 Key;server 按金额校验执行资质) | C3-MD1/MD2 | C3 |
-| `/api/admin/users/:userId/adjust/:requestId` | DELETE | 发起人撤回未处理的调整请求单(客服超额发起场景) | — | C3 |
+| `/api/admin/users/profiles/:userId/asset-adjustments` · `/asset-adjustment-requests` | POST | 普通调整申请 / 客服大额请求(>$500 至 10,000 USDT 等值);都创建待复核,不动余额;携 Key | C3-MD1 | C3 |
+| `/api/admin/users/asset-adjustments/:adjustmentNo/{approve\|reject\|withdraw\|reverse}` | POST | 批准(加余额过 B1,原子入账并落 D4)/ 驳回 / 发起人撤回 / 冲正;批准人不得是发起人 | C3-MD2(reverse) | C3 |
 | `/api/admin/users/:userId/sessions` · `/revoke-session` | GET/POST | 多载体 session 列表 / 指定会话下线（不因异端登录自动强踢） | C5-MD1(POST) | C5 / 三端 SPEC-4 |
 | `/api/admin/users/:userId/invalidate-password` · `/disable-2fa` | POST | 密码重置/disable 2FA(理由必填+账户归属核实;携 Key) | C5-MD2/MD3 | C5 |
 | `/api/admin/users/:userId/unlock` | POST | 解除账户锁定(24h 长锁执行=风控 lead/超管;15min 短锁即时) | C5-MD4 | C5 |
@@ -611,7 +611,7 @@
 | `/api/admin/bi/{devices,tasks,network,phase-effect}` | GET | 设备/任务/网络/Phase 效果报表(只读聚合) | — | L4 |
 | `/api/admin/bi/export/{kpi,funnel,finance,network,operations}` | GET | 各类 CSV 导出(落 admin.report_exported;含 PII/资金明细 MC) | 是(含敏感) | L1-L4 |
 | `/api/admin/bills/export?type=&userId=` | GET | 账单导出**复用 D4 endpoint**(L5 叠加管控/脱敏) | 是(含明细) | L5→D4 |
-| `/api/admin/bi/export/request` · `/:exportId` | POST/GET | 发起导出(经确认弹窗+理由必填;含敏感 OR row>rowCap 执行权升仅超管;携 Key)/ 状态+限时下载(TTL 24h) | 条件 | L5 |
+| `/api/admin/bi/export/request` · `/:exportId` | POST/GET | 发起导出(经确认弹窗+理由必填;含敏感 OR row>rowCap 执行权升仅超管;携 Key)/ 状态+下载(每次签发的下载令牌 24h 有效,不是任务或快照的期限) | 条件 | L5 |
 | `/api/admin/regulatory/report` · `/bi/export/audit` | POST/GET | 生成监管报告(关联 I5)/ 导出审计台 | 是(report) | L5 |
 
 ### 域 M — 客服中心
@@ -668,8 +668,8 @@
 |---|---|---|---|---|---|
 | 运营账号角色集 | A6 启用角色；内置 8 角色(SUPER_ADMIN/CONFIG_ADMIN/FINANCE/RISK/CONTENT/GROWTH/SUPPORT/AUDITOR) | A6 可扩展；A1 默认不分配 | 角色分配实时 | A6 | A1/A6 |
 | 后台强制 2FA | 强制开启(全角色) | 不可关 | 实时 | A1 | A1 |
-| 运营 session 时限 | 滑动 30min / 绝对 8h | 滑动 15–60min / 绝对 4–12h | 每次请求实时校验 | A1 | A1 |
-| 后台登录短锁/长锁 | 5 次→15min / 24h 累计 15 次→锁 24h | 固定安全基线 | 密码/MFA 失败实时计数 | A1 | A1 |
+| 运营 session 时限 | 无有效操作 60min / 无绝对时限 | 只读基线,不可调 | 每次请求实时校验 | A1 | A1 |
+| 后台登录短锁/长锁 | 5 次→15min / 累计 10 次→24h(C6 默认值) | 只读展示;阈值由 C6 `auth.risk.*` 派生 | 密码/MFA 失败实时计数 | C6 | A1 |
 | 最少有效超管数 | ≥ 2(启用+超管角色+MFA 已绑定) | 固定下限 2 | 每次账号治理写操作前 | A1 | A1 |
 | 审计日志保留期 | ≥ 13 个月 | 13–36 月 | 仅新对象 | A2 | A2 |
 | 理由最小长度 | 8 字 | 0–50 字 | 实时 | A2 | A2 |
@@ -692,8 +692,7 @@
 
 | 参数(key) | 默认值 | 范围 | 生效时机 | 权威源 | 模块 |
 |---|---|---|---|---|---|
-| 单次调整上限(USDT) | $500/笔(超额升级审批) | $0–$10,000 | 实时 | C3 | C3 |
-| 单次调整上限(积分) | 1,000 积分/笔 | 可配 | 实时 | C3 | C3 |
+| 单次调整上限(USDT) | $500/笔(超额走大额请求,全部待复核) | $0–$10,000 | 实时 | C3 | C3 |
 | impersonate 时限 | ≤ 30min(强制只读) | 5–30min | 实时(发起授时) | C2 | C2 |
 | access/refresh token | 4h / 30 天滑动 | 1–24h / 7–90d | 仅新签发 | C5 | C5 |
 | step-up auth 阈值 | V1 只读(现状硬编码 7d) | 目标 1–30d(须可配化,见第7章) | 实时 | C5 | C5 |
@@ -711,10 +710,10 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | 银行卡支付单笔上限 | $5,000 | $100–$10,000 整数 | 仅新对象 | D1 | D1 |
 | Card 充值费、3DS 阈值、同卡重试/锁卡、按渠道最小充值额、主备 PSP | 已退役(2026-11-04) | — | — | — | D1 |
 | 大额人工审核阈值(D2 后台) | $1,000(≥强制人工+MC) | $0–$5,000 | 实时 | D2(独立于 K3) | D2 |
-| review SLA / 整体到账 SLA | ≤2 工作日 / 48h | 1–5 工作日 / 24–72h | 实时 | D2 | D2 |
+| review SLA / 整体到账 SLA | ≤2 工作日 / 48h | 1–5 工作日 / 1–168 小时(`payoutSlaHours`,D5 配置) | 实时 | D2 / D5 | D2 |
 | 提现日限额(次数) | 1 次/日 | 1–10 次/日 | 实时(新申请) | D5 | D5 |
 | 余额上限(可提比例) | 80% | 50%–100% | 实时 | D5 | D5 |
-| 网络费 | 2%(min $1/max $20) | 0%–5% | 仅新对象 | D5 | D5 |
+| 网络确认费(`networkConfirmFeeUsd`,每笔固定) | TRC20 $1 / BEP20 $1 / ERC20 $5 | 各 0–25 USD,步进 0.5 | 仅新对象(在途不变) | D5 | D5 |
 | `withdrawCooldownDays` | 月1–7=30 / 月8=35 / 月9+=45 | 7–90d | Phase 派发 | **H1**(D5 只读) | D5 |
 | `withdrawPointsRatio` | 月1–8=10 / 月9–12=20(每$100) | 0–100 | Phase 派发 | **H1**(D5 只读) | D5 |
 | `complianceHoldEnabled` | 月8+=true | 是/否 | Phase 派发 | **H1**(D5 只读) | D5 |
@@ -774,7 +773,8 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | `scoreBand.{low,mid,high}` | <40 / 40–69 / ≥70 | 0–100(low<mid<high) | K4 | K4 |
 | `autoEscalateScore` | ≥ 85 | 70–100 | K4 | K4 |
 | `riskScore.dimensionWeights.{7维}`(SPEC-7 聚簇) | serverDeviceId 0.9 / ipBucket 0.8 / withdrawAddress 0.9 / paymentInstrument 0.5 / sponsor 0.4 / uaFingerprint 0.2 / signupTiming 0.3 + `weakSignalClusterThreshold` 0.6 | 各 0–1 | **K4**(聚簇维度权重面板;区别于上 6 维评分权重) | K4 |
-| SPEC-7 收益释放 / 提现前置全参数 | 见 SPEC-7 | — | `releaseMode` / `freeSlotRequiresBinding` / `appAttestationReleaseHours` / `firstWithdrawalManual` / `newAddressHoldHours` / `sameAddressRoute` 等全表在 `PRD/三端架构改造/specs/SPEC-7-H5风险簇与收益释放.md` §5,K1/K3 面板可调 | K1/K3 |
+| K1 收益规则(SPEC-7) | 6 项:`freePhoneSlotsPerCluster` / `duplicateAccountPendingFrom` / `duplicateAccountFreezeFrom` / `pendingReleaseHours` / `releaseMode` / `freeSlotRequiresBinding` | `releaseMode` 固定 `manual_only` | 仅人工放行;在线验证(`appAttestationReleaseHours`、`attest_or_manual`)已退役,不做自动放行 | K1 |
+| SPEC-7 提现前置参数 | 见 SPEC-7 | — | `firstWithdrawalManual` / `newAddressHoldHours` / `sameAddressRoute` 等全表在 `PRD/三端架构改造/specs/SPEC-7-H5风险簇与收益释放.md` §5,K3 面板可调 | K3 |
 
 ### 4.8 域 E — 设备与商城(出处 v2 §10 各 ③)
 
@@ -939,7 +939,7 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | 财务口径(储备/负债/覆盖率/到期) | 锁定 B1/D3/B2 | B1/D3/B2(L3 不重算) | L3 |
 | 含敏感数据导出 MC | 强制开启 | L5 | L5 |
 | 数据脱敏策略 | 手机号 hash/卡 token 掩码/地址行政区级;解密须 MC+事由 | L5 | L5 |
-| 导出下载链接 TTL / 行数上限 | 24h / ≤100 万行(超走 split_approval) | L5 | L5 |
+| 下载令牌 TTL / 行数上限 | 24h(每次签发的令牌有效期,快照继续复用) / ≤100 万行(超走 split_approval) | L5 | L5 |
 
 ### 4.15 平台参数寄存器 owner-link
 
@@ -1026,7 +1026,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 ### 5.11 H3 Quest / H4 活动 / H5 签到 / H6 里程碑(Ch13)
 - **H3 Day-One**:`active(0–24h·500NEX)→ grace(24–72h·200NEX)→ expired(72h+·0)` / `{active,grace} → claimed`(全 6 任务,creditNex+badge)。Weekly 按 weekKey reset;Monthly 跨月清。
-- **H4 活动**:`upcoming → ongoing → ended`(时窗);trackable 用户 `(未join)→ joined → done → claimed`。Lucky Spin server RNG+NODE_ENV guard;日上限 `eventId×userId×spinDate` 超额 409;B1 红线自动降级(只发 NEX/积分/券)。
+- **H4 活动**:`upcoming → ongoing → ended`(时窗);下架只停新参与,已形成的结算义务继续;trackable 用户 `(未join)→ joined → done → claimed`。Lucky Spin server RNG+NODE_ENV guard;日上限 `eventId×userId×spinDate` 超额 409;B1 红线自动降级(只发 NEX/积分/券)。
 - **H5 签到**:`signed_today →(次日)pending → signed` / `signed → broken`(>48h 归 0)/ `broken → restored`(耗 1 Saver,恢复 min(longest,30));里程碑 `locked → claimable → claimed`。
 - **H6 累计里程碑**:`unfired → fired`(跨阈自动 creditNex+overlay);一次 fire 一档(watcher 4s 串行);firedIds server 记录不重触发;自动派 NEX 携 Key(milestoneId×userId 去重)。
 
@@ -1038,7 +1038,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 - **I1 文案 A/B**:版本 `draft → published(MC)→ archived`(回滚=重发历史版,MC);实验 `scheduled → running → concluded(adopted|discarded)`。分组 assignment server 权威,已分组 sticky。
 - **I5 风险披露**:版本 `draft → published(per jurisdiction,MC,改版强制 re-ack)→ superseded`;用户 ack `not_acked → acked → stale`(发布新版/jurisdiction 变更触发)。client 检测 acceptedVersion 落后或 jurisdiction 变 → 强制 re-prompt,不可本地置 accepted。
 - **I2 Nova**:channel `enabled ⇄ disabled`(kill);模板 `draft → published → archived`(MC)。
-- **I3 通知 campaign**:`draft → scheduled → sending → sent`;任一态 `→ cancelled`;调度下发=MC;优先级 in-place 升级 server emit canonical。
+- **I3 通知 campaign**:`draft → scheduled → sending → sent`;仅 `scheduled → cancelled`;`cancelled` 不能编辑或重新排期,只能删除,要改就新建;`draft` 和 `cancelled` 可删,`sent` 不可删;调度下发=MC;优先级 in-place 升级 server emit canonical。
 - **I4 信任 / I6 i18n / I7 课程**:内容版本 `draft → published → archived`(I4 财务/NEX 叙事须合规审查,发布经确认弹窗;I6 发布前镜像+占位符 gate;I7 featured set⇄unset 单位互斥)。
 - **J1 功能闸**:闸 `enabled ⇄ disabled`;提案 `pending_approval → approved|rejected`;应急 `pending_approval[emergency] → escalating`(N min 未放行自动升级,工单维持 pending 不自动放行)`→ approved|rejected`,升级耗尽 → `escalation_exhausted`(终态,永不自动放行);恢复(前置 B1 闸)未达覆盖率 → `blocked_by_coverage`(409+快照)。批量熔断逐闸独立生效(非原子),返 status[]。
 - **J3 篡改告警**:`normal → flagged`(超频次)→ `escalated`(喂 K4+B5);纯只读监控,处置跳 K 域。
@@ -1077,8 +1077,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | 提现 freeze / unfreeze / manual-refund-override | ✅ | ✅(lead) | ✅(lead) | — | — | — | 是(理由必填) | D2 |
 | 提现参数(日限/上限/网络费) | ✅ | — | ✅(lead) | — | — | — | 是(理由必填;放宽方向 B1 预检) | D5 |
 | VND/USDT 汇率、点差、锁价时长 | ✅ | 读 | ✅(lead) | — | — | 读 | 是(理由必填+Key+CAS) | D6 |
-| **余额调整 ≤$500 / >$500** | ✅ | — | ✅(>$500 用 lead) | — | ✅(≤$500) | — | 是(理由必填;加余额方向 B1 预检) | C3 |
-| 积分调整 | ✅ | — | ✅(lead) | ✅ | ✅ | — | 是(理由必填;走 points 字段,不入 D4) | C3 |
+| **余额调整申请 ≤$500 / >$500** | ✅ | — | ✅(>$500 用 lead) | — | ✅(>$500 走大额请求) | — | 是(全部进待复核;批准人不得是发起人;加余额方向 B1 预检) | C3 |
 | **账户冻结/解冻(单用户)** | ✅ | ✅(lead) | ✅ | — | — | — | 是(理由必填;联动 D2 frozen) | C2 |
 | **impersonate(模拟登录)** | ✅ | ✅(lead) | — | — | ✅ | — | 是(理由必填;只读+≤30min+全审计) | C2 |
 | 账户加白/拉黑(userId 级) | ✅ | ✅(lead) | — | — | — | — | 是(理由必填) | C2 |
@@ -1202,8 +1201,8 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | C2-MD4 | 发起 impersonate(代入会话) | — | v1 C2④a |
 | C2-MD5 | 加白(信任名单) | — | v1 C2④a |
 | C2-MD6 | 拉黑(禁入名单) | — | v1 C2④a |
-| C3-MD1 | 余额调整确认(USDT / NEX) | 是 | v1 C3④a |
-| C3-MD2 | 积分调整确认 | 是 | v1 C3④a |
+| C3-MD1 | 余额调整申请确认(USDT / NEX) | 是 | v1 C3④a |
+| C3-MD2 | 调整冲正确认 | 是 | v1 C3④ |
 | C5-MD1 | 指定会话下线确认 | 多载体 session;理由必填 + A2 审计 | v1 C5④a / 三端 SPEC-4 |
 | C5-MD2 | 人工 disable 2FA | — | v1 C5④a |
 | C5-MD3 | 密码重置确认 | — | v1 C5④a |
@@ -1213,6 +1212,8 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | C6-MD3 | CAPTCHA 开关 / 阈值变更 | 是 | v1 C6④a |
 
 ### 9.4 D 资金与财务
+
+> **D1 现行版本**：订单直付以 [D1 订单直付费用与异常核验](specs/FEAT-PURCHASE-PAYMENT-OPERATIONS-20261031.md) 为准，旧 HDPay 直付草案已废止。USDT 共同充值规则走 A2 提案，由另一位有权限管理员批准，不属于本表的单次确认。
 
 | 弹窗 ID | 标题 | B1 红线预检 | 细则 |
 |---|---|---|---|
@@ -1224,7 +1225,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | D2-MD2 | 提现拒绝确认 | — | v1 D2④a |
 | D2-MD3 | 提现延迟(extended-hold)确认 | — | v1 D2④a |
 | D2-MD4 | 提现资金冻结确认 | — | v1 D2④a |
-| D2-MD5 | 提现解冻确认 | 是 | v1 D2④a |
+| D2-MD5 | 提现解冻确认 | — | v1 D2④a |
 | D2-MD6 | 手动退款覆盖确认 | — | v1 D2④a |
 | D2-MD7 | 批量操作确认 | 是 | v1 D2④a |
 | D3-MD1 | 口径配置确认 | — | v1 D3④a |
