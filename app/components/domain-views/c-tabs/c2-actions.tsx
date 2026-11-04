@@ -37,7 +37,7 @@ import { AccountDeletionQueue } from "./account-deletion-queue";
 
 const OPERATOR = currentAdminOperator;
 const K1_PATH = "/risk/multi-account";
-const FOCUS_SOURCES = new Map([["C1", "用户详情"], ["M3", "专属会话"], ["J3", "篡改防御监控"]]);
+const FOCUS_SOURCES = new Map([["C1", "用户详情"], ["M1", "客服工作台"], ["M3", "专属会话"], ["J3", "篡改防御监控"]]);
 
 const STATUS_META: Record<string, [label: string, tone: string]> = {
   ACTIVE: ["正常", "ok"],
