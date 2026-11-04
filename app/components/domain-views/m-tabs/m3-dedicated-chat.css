@@ -163,3 +163,6 @@
 .mdom .m3-message .support-avatar > span { background: color-mix(in srgb, var(--v5-brand) 10%, transparent) !important; color: var(--v5-ink-2) !important; font-size: 12.5px !important; }
 .mdom .m3-sender-identity .support-avatar > span { background: color-mix(in srgb, var(--v5-brand) 10%, transparent) !important; color: var(--v5-ink-2) !important; font-size: 11px !important; }
 .m3-policy-field strong, .m3-policy-reason > span { line-height: normal; }
+.m3-closed-targets { display: grid; gap: 6px; margin: 0 0 8px; border: 0; }
+.m3-closed-targets legend { padding: 0; font-weight: 600; }
+.m3-closed-targets label { display: flex; align-items: center; gap: 6px; overflow-wrap: anywhere; }

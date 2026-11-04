@@ -476,6 +476,9 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   const closedCandidateError = selected && !messagePages.contextReady ? conversationError : "";
   const closedReplyTargets = closedReplyCandidates.filter(row => intent === "SERVICE" || selectedClosedIds.has(row.conversationNo)).map(({ conversationNo, throughMessageId }) => ({ conversationNo, throughMessageId }));
   const closedCandidatesReady = (!selected || messagePages.contextReady && messagePages.page?.replyContext.ready === true) && [...selectedClosedIds].every(id => closedReplyCandidates.some(row => row.conversationNo === id));
+  const closedCandidateIds = closedReplyCandidates.map(row => row.conversationNo).join("|"), replyContextReady = messagePages.contextReady && messagePages.page?.replyContext.ready === true;
+  // A target someone else cleared would otherwise hold closedCandidatesReady false with nothing on screen to untick.
+  useEffect(() => { if (replyContextReady) setSelectedClosedIds(old => { const offered = new Set(closedCandidateIds.split("|")), next = [...old].filter(id => offered.has(id)); return next.length === old.size ? old : new Set(next); }); }, [closedCandidateIds, replyContextReady]);
   const displayedIntent = pending?.intent ?? firstPending?.intent ?? intent;
   const lockedTargets = firstPending?.replyTargets ?? pending?.message.replyTargets ?? [];
   const displayedClosedIds = new Set([...selectedClosedIds, ...lockedTargets.map((target) => target.conversationNo)]);
@@ -999,7 +1002,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
       } else {
         submitted = true; await supportClient.sendConversationReply(record.conversationId, input, record.key);
       }
-      ok = true; setMaintenanceChosen(false); // one explicit maintenance contact per choice
+      ok = true; setMaintenanceChosen(false); setSelectedClosedIds(new Set()); // one explicit maintenance contact per choice
       try { await ctx.refreshConversations(); }
       catch { setSendError("消息已发送，但会话列表暂未刷新。请刷新会话查看最新消息。"); }
     }
@@ -1336,7 +1339,9 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
         {requestedCustomerId && firstDetail && firstDetail.agentAdminId === adminId && !firstDetail.assignmentId && <div className="itint warn">当前归属资料未就绪，暂不能发送。请刷新客户资料。</div>}
         {selected && !writable && composerMode === "write" && (currentProfileDetail || profileError || recoveryBlocksTarget || !canWriteM3 || selected.status !== "open") && <div className="itint warn">{recoveryBlocksTarget ? <>原消息结果待确认，暂不能重复发送。<button className="l-btn sm" type="button" onClick={()=>setScreen("list")}>返回列表查询原消息</button></> : !canWriteM3 ? "你只能查看会话，发消息需要会话操作权限。" : selected.status !== "open" ? historyReadOnlyHint : selectedUnbound ? "该客户还没有专属客服，等待主管分配后回复。" : !currentProfileDetail ? <>客户归属核对失败：{profileError} <button type="button" className="l-btn sm" onClick={() => setProfileRetry((value) => value + 1)}>重试</button></> : !currentProfileDetail.assignmentId || currentProfileDetail.agentAdminId !== selected.ownerAdminId ? <>客户归属已变化，请刷新会话后重试。<button type="button" className="l-btn sm" onClick={() => void ctx.refreshConversations()}>刷新会话</button></> : messagePages.gap ? <>有新消息尚未展开，请查看后再发送。<button type="button" className="l-btn sm" onClick={() => void messagePages.newest()}>查看最新10条</button></> : !messagePages.contextReady || messagePages.page?.replyContext.ready !== true ? <>待回复目标暂时无法核对。<button type="button" className="l-btn sm" disabled={messagePages.loading} onClick={() => void messagePages.refresh()}>重新核对发送目标</button></> : "仅当前专属客服可发送消息；主管审阅不能代发。"}</div>}
         {!selected && recoveryBlocksTarget && <div className="itint warn">原消息结果待确认，暂不能重复发送。<button className="l-btn sm" type="button" onClick={()=>setScreen("list")}>返回列表查询原消息</button></div>}
-        {requestedCustomerId && !selected && !canWriteM3 && <div className="itint warn">你只能查看会话，发消息需要会话操作权限。</div>}{replyCustomerId && closedCandidateRows.length > 0 && <div className="itint" role={closedCandidateError?"alert":"status"}>{closedCandidateError?`历史待处理消息加载失败：${closedCandidateError}`:closedCandidateMissing.length?"正在核对历史待处理消息…":"服务回复会同步处理这位客户此前的待回复消息。"}{closedCandidateError&&<button type="button" onClick={()=>{void messagePages.refresh();}}>重试</button>}</div>}
+        {requestedCustomerId && !selected && !canWriteM3 && <div className="itint warn">你只能查看会话，发消息需要会话操作权限。</div>}{replyCustomerId && closedCandidateRows.length > 0 && (displayedIntent === "MAINTENANCE" && !closedCandidateError && !closedCandidateMissing.length
+          ? <fieldset className="itint m3-closed-targets"><legend>同时标记旧会话的待回复消息已处理（可不选）</legend>{closedCandidateRows.map(row => <label key={row.conversationNo}><input type="checkbox" checked={displayedClosedIds.has(row.conversationNo)} disabled={!writable || busy || Boolean(pending || firstPending)} onChange={event => setSelectedClosedIds(old => { const next = new Set(old); if (event.target.checked) next.add(row.conversationNo); else next.delete(row.conversationNo); return next; })} /> {row.text}</label>)}</fieldset>
+          : <div className="itint" role={closedCandidateError?"alert":"status"}>{closedCandidateError?`历史待处理消息加载失败：${closedCandidateError}`:closedCandidateMissing.length?"正在核对历史待处理消息…":"服务回复会同步处理这位客户此前的待回复消息。"}{closedCandidateError&&<button type="button" onClick={()=>{void messagePages.refresh();}}>重试</button>}</div>)}
 
         {selected && currentProfileDetail?.waitingReply === true && displayedIntent === "MAINTENANCE" && Boolean(currentReplyTarget) && <label className="itint"><input type="checkbox" checked={includeCurrentReply || lockedTargets.some((target) => target.conversationNo === selected.id)} disabled={!writable || busy || Boolean(pending)} onChange={(event) => setIncludeCurrentReply(event.target.checked)} /> 同时标记本会话最近一条客户消息已处理（如仍待处理）</label>}
         {composerMode === "write" && <>
