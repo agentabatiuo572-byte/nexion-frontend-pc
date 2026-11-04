@@ -50,7 +50,7 @@ export function PhoneRiskSection({ canWrite, toast }: { canWrite: boolean; toast
   const bypassable = !!draft && draft.missingSignals !== "ENFORCE" && (draft.osVersion === "ENFORCE" || draft.screenScale === "ENFORCE");
 
   return <fieldset className="phone-risk" aria-label="机型风控">
-    <legend>机型风控（保存即生效，不走审批）</legend>
+    <legend>机型风控（保存后立即生效）</legend>
     <p className="f-foot">检查在分配算力之前执行。观察：照常校准，只记录命中；拦截：这次校准进入待核验，不分配算力、不能激活。用户只看到「机型待核验」，不会知道命中了哪一项。已激活的手机不受影响。</p>
     {error && <p role="alert">{error}</p>}
     {!overview || !draft ? <p role="status">{busy ? "正在加载…" : "设置加载失败，请刷新重试。"}</p> : <>
@@ -103,6 +103,7 @@ export function PhoneRiskSection({ canWrite, toast }: { canWrite: boolean; toast
     </>}
     {confirming && draft && overview && <OperationConfirmModal action="保存机型风控设置"
       detail={<>{summary.map(line => <span key={line}>{line}<br /></span>)}保存后立即用于之后的校准，不走审批；已激活的手机和历史结算不受影响。</>}
+      completionCopy="立即生效：保存后用于之后的校准，已激活的手机和历史结算不受影响。"
       reasonMin={8} reasonMax={200} onClose={() => setConfirming(null)} onConfirm={async reason => {
         if (!canWrite) throw new Error("你没有修改设备配置的权限");
         const next = await savePhoneRisk(overview.settings.revision, { ...draft, reason }, confirming);

@@ -76,7 +76,7 @@ SKU 目录管理台,自上而下三区:
 1. **SKU 列表表格**:每行一个 SKU `[SKU key / 名称 / 代际 / saleStatus(on|off|pending) / lifecycle(active|legacy) / price / 双币日产 / stock / unlockPhase]`,行尾操作入口(编辑 / 上下架)。列表不得写死商品数量或名称，以 `nx_product` 当前记录为准；Pro v2 等新代际商品通过 `unlockPhase` 展示发布阶段，不使用 `coming-soon` 销售状态。
    > **注 1(SKU 数量跨文档差异)**:V1 §3.2 E1 行记录为「/store 商品表(6 SKU)」(V1 时前端现状),本表列出 7 个管理对象(含 Pro v2 / Genesis 目录位)。**差异为 V2 落地补入 Pro v2 后修正为 7 个 SKU**(消除 §3.2「6 SKU」与本章「7 对象」的隐性矛盾)。
    > **注 2(Cloud Share Premium 待确认)**:Cloud Share Premium(12 月节奏表 §3.3 月 10 新品)的 SKU 治理方案待确认——若为独立 SKU 则 E1 补入 SKU 列表 + E1 补入代际发布门;若为原地 tier 升级则在 status 逻辑中补充 Cloud Share 的 `premium` 状态;先经 PM 确认。当前 7 个管理对象未涵盖该新品。
-2. **SKU 详情编辑抽屉**:编辑商品基本信息、价格、每件算力点、硬件规格、收益、库存、开放阶段、购买条件、资料及媒体等；份额型收益填写年化区间与每日 UVT。点击「保存修改」进入确认，填写理由后提交 A2，由另一名管理员审核通过后生效(E1a-MD2)。
+2. **SKU 详情编辑抽屉**:编辑商品基本信息、价格、每件算力点、硬件规格、收益、库存、开放阶段、购买条件、资料及媒体等；份额型收益填写年化区间与每日 UVT。已有非份额商品的开放阶段为空时显示「请选择开放阶段」，不冒充已选首项；即使只有一个合法阶段也可明确选择。未选仍拒绝保存；没有可用阶段时显示「请先配置阶段」并禁用选择。可跑任务大类及其他商品校验照常执行（BUG-150）。点击「保存修改」进入确认，填写理由后提交 A2，由另一名管理员审核通过后生效(E1a-MD2)。
 3. **套餐折扣 ladder 面**:阶梯折扣配置(4 件 12% / 3 件 8% / 2 件 5%,对齐 §9.11c.1 `GET /api/config/cart/bundle-discount` + 前端 `lib/store/cart.ts`),驱动结算购物车多件购买。
 4. **库存告警视图**:`stock < 50` 的 SKU 以橙色 `NN LEFT` 标注(对齐前端 §7.1 库存告警 `<50 时显示 NN LEFT 橙色`),供运营补货 / 控量决策。
 5. **SKU 购买门配置区（E1，COMPLETE）**：结构化配置 `rankMin / activeDirectMin / teamVolumeMin / mode(all|either) / quotaCap / quotaSold / quotaPeriod / enforce`。App 先通过 `GET /api/store/purchase-eligibility` 获取当前用户决策；普通单、组合单、Sandbox 单、Trade-in 询价/提交及容量替换由服务端按同一规则复验。规则畸形或用户事实缺失时失败关闭；空门表示不附加用户条件。当前仅支持 `quotaPeriod=lifetime`；旧 `month` 数据保留读取但标记 HOLD、不可直接保存，待建立按自然月隔离的原子 usage 计数后再恢复。E3 九类通用 eligibility 编辑器另列 HOLD，不得作为本门的运行时实现。
@@ -349,7 +349,7 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 
 **② 后台界面**
 1. **6 类 AI 任务定价表**:每类一行 `[任务类 / 代表模型 / minReward / maxReward(USDT)/ minVRAM 路由门槛 / 当前是否可承接(kill 开关)]`。6 类:**IG(Image Gen)**(SDXL Turbo / Flux Schnell)/ **VG(Video Gen)**(Sora-class)/ **LL(LLM)**(Llama 70B / Phi-3-mini)/ **FT(Fine-tune)** / **EM(Embedding)** / **SP(Speech)**(Whisper)。
-2. **QUEUE_SATURATION 配置**:全局饱和因子(影响 locked teaser 的 `dailyPotential` 估算)。
+2. **QUEUE_SATURATION 配置**:全局饱和因子(影响 locked teaser 的 `dailyPotential` 估算)。负载环图按当前展示任务的有效饱和度分组：高负载 ≥75%，中负载 ≥40% 且 <75%，低负载 <40%；恰好 75% 计入高负载，恰好 40% 计入中负载。图例必须明确相同的包含边界，缺失饱和度不计入三组（BUG-153）。
 3. **任务路由门槛**:各类 `minVRAM`(决定哪些设备能承接该类任务,与 fleet 最大 VRAM 对齐,§6.3)。
 4. **Locked teaser 预览**:按设备 VRAM 档(**phone 8** / S1 96 / Pro 192 / Rack 640 / cloud-share 物理显示 0、路由等效 8)预览「被锁任务 + daily potential」文案,校验升级叙事不失真。
    > **注(phone / cloud-share 口径区别)**:前端 §6.7 写「phone 12 GB」,但原型 `lib/store/index.ts` 定义 `phone.vramTotal=8`(8 GB)。**以原型代码 8 GB 为准**,本预览段标注 8 GB;前端 §6.7 的 12 GB 与原型 `vramTotal=8` 的矛盾记 V4 跨文档收口。Cloud Share 继续显示 `vramTotal=0`（它没有用户侧实体显卡），仅在服务端任务路由时按受管 8 GB 等效能力进入低能力池；展示值与路由值不可混写。
@@ -1012,6 +1012,8 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 
 #### [E5] 设备运维
 
+**取消激活结果（BUG-149）**：成功反馈按系统返回的 `pendingDeactivate` 区分。待停用时显示「已申请停用，等待当前任务结算后自动停用」，刷新列表仍显示「任务结算后停用」；只有已完成停用时显示「设备已取消激活」。请求失败或结果尚未确认时沿用原错误处理，不显示完成提示，不改任务收尾和槽位规则。
+
 **① 目的 & 对齐**
 在网设备 fleet 的运维面——heartbeat 监控、批量操作、库存激活、强制激活 / 解绑。对齐前端 §6.1(我的设备 / `/earn` 已激活 fleet)+ §11.1(`/me/devices` 全 inventory 激活 / 取消激活管理)+ §9.11d.2(`MAX_DEVICES` server enforce)。服务的业务目标:设备产出连续性运维(heartbeat / 槽位)、风控应急处置(批量 pause / 强制解绑)、防多设备 yield 篡改(MAX_DEVICES server enforce)。
 
@@ -1170,16 +1172,19 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 | 参数 | 约束 | 生效 |
 |---|---|---|
 | thresholds | 四个严格递增正数，划分五档 | 下次校准 |
-| rules | 最多 500 条；唯一 id、android/ios、可选型号、必填 SoC/GPU、RAM 左闭右开区间、平台算力值、来源说明；同优先级不得重叠 | 下次校准 |
+| androidSocRules / iosModelRules | Android 按规范芯片及已核实标识匹配；iOS 按机型及已核实硬件别名匹配，配置运营算力区间；来源须可核实，冲突进入待核验。详见手机校准发布规格 | 批准后用于后续校准 |
 | computeValue | 大于 0、不超过 1,000,000、最多三位小数；不是 TOPS | 下次校准 |
 | expectedRevision | 必须匹配服务端当前修订 | 审批执行时再校验 |
-| effectiveAt | 立即或未来至多 366 天；仅允许一个待生效版本 | 到达时间自动读取为当前版本 |
+| effectiveAt | 留空为批准后生效，或预约未来至多 366 天；仅允许一个待生效版本 | 须先批准且到达预约时间；若批准时已过预约时间，则批准后生效 |
 | phoneBinding.allowReplacement | 允许或禁止替换绑定 | 新安装登录与激活时 |
 | phoneBinding.minReplacementIntervalDays | 非负整数天数，按最近成功替换时间计算 | 新安装登录与激活时 |
+| phoneBinding.replacementWindowDays / maxReplacementsInWindow | 统计窗口为 1–365 天，窗口内次数上限为 1–100 次，均为整数，与另两项策略一起审批 | 批准后用于后续换机资格检查 |
 
 不提供未经核实的硬件种子或默认能力值。未知硬件进入待核验；精确型号已知但硬件不符时不能使用泛型号兜底。普通注册礼独立于手机能力，H5 登记奖励与基础托管收益停用。
 
 **④ 操作动作**：编辑规则→试算及影响预览→输入 8–200 字理由→提交 A2 审批。编辑后原试算失效。提交成功仅表示待审批，不显示已生效。另一名具备权限的操作员检查完整阈值、规则、来源、目标版本与生效时间后批准；确认弹窗仍展示完整提案。审批重放按版本锁、幂等键与覆盖率护栏执行，禁止自批及过期版本覆盖。
+
+**当前生效路径（BUG-147，T02）**：机型风控填理由保存后立即生效，用于之后的校准；不走审批。手机校准规则由另一位超级管理员批准后生效，预约发布还须到达所选时间；批准时若已过预约时间则批准后生效。手机换机策略批准后生效，用于后续换机资格检查。在线加成系数与收益估算参数批准后发布到公共配置 `/api/config/platform`；页面、详情和确认说明仅承诺这一已核实的发布结果，不承诺它们被任务结算或 App 收益估算消费。当前模拟任务按已保存的任务金额结算，本轮不改变结算。全页说明、页脚和各确认说明必须区分这些路径，不把风控写为待审批，也不把预约版本写为批准即发布。校准和风控确认框在未展开详情时也直接显示各自的生效路径。
 
 **⑤ 接口**：GET /api/admin/config/phone-calibration 返回当前/待生效策略与待核验硬件汇总；POST /api/admin/config/phone-calibration/preview 试算样本并返回历史影响统计。写入使用既有 A2 提案流程，command.op=e6_phone_calibration，目标为 E / phone_calibration_policy / phone-calibration。APP 只读校准结果，不获得管理端规则编辑权限。
 

@@ -8,7 +8,7 @@ import { PORTED_EMPTY_CONTENT } from "./ported-content";
 export const DOMAIN_G: ModuleEntry[] = [
   {
     path: "/finance-products/staking",
-    summary: "配置质押产品、监控持仓，可单独暂停某一档。调高参考年奖励率或降低提前解锁扣款需先通过兑付覆盖率检查；已锁仓的订单按锁仓时的条件结算。",
+    summary: "质押已退役，只保留原档位配置和已有持仓记录供查询。参数、显示、开售、暂停和恢复均不可操作。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

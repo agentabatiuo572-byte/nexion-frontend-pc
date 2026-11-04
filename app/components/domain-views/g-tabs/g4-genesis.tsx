@@ -94,6 +94,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const [overview, setOverview] = useState<G4Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [refreshError, setRefreshError] = useState("");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [nodeDrawer, setNodeDrawer] = useState<string | null>(null);
   const [nodePageNo, setNodePageNo] = useState(1);
@@ -105,15 +106,19 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     try {
       const next = await fetchG4GenesisOverview(page, pageSize);
       setOverview(next);
+      setRefreshError("");
       setNodePageNo(next.nodePage.page);
       setNodePageSize(next.nodePage.pageSize);
     } catch (err) {
-      setOverview(null);
-      setError(messageOf(err));
+      if (refreshError) setRefreshError(messageOf(err));
+      else {
+        setOverview(null);
+        setError(messageOf(err));
+      }
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [nodePageNo, nodePageSize]);
+  }, [nodePageNo, nodePageSize, refreshError]);
 
   useEffect(() => {
     let cancelled = false;
@@ -147,11 +152,17 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     setError("");
     try {
       await action();
-      const next = await fetchG4GenesisOverview(nodePageNo, nodePageSize);
-      setOverview(next);
-      setNodePageNo(next.nodePage.page);
-      setNodePageSize(next.nodePage.pageSize);
+      // 写入回执已确认，附加刷新失败不能再抛给写入确认框。
       toast(success);
+      const [result] = await Promise.allSettled([fetchG4GenesisOverview(nodePageNo, nodePageSize)]);
+      if (result.status === "fulfilled") {
+        setOverview(result.value);
+        setRefreshError("");
+        setNodePageNo(result.value.nodePage.page);
+        setNodePageSize(result.value.nodePage.pageSize);
+      } else {
+        setRefreshError(messageOf(result.reason));
+      }
     } catch (err) {
       const message = messageOf(err);
       setError(message);
@@ -188,7 +199,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     );
   }
 
-  const busy = !!busyKey;
+  const busy = !!busyKey || !!refreshError;
   const cov = overview.coverage.coverageRatio.toFixed(1);
   const marketOn = overview.market.enabled;
   const stats = overview.stats;
@@ -461,6 +472,10 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   return (
     <>
       {error && <div className="gtint" style={{ marginBottom: 12 }}>操作提示 · {error}</div>}
+      {refreshError && <div className="gtint" role="status" style={{ marginBottom: 12 }}>
+        <b>操作已成功，页面刷新失败。</b> 以下为刷新前的数据，重新加载成功前暂不能修改；无需再次提交原操作。
+        <button className="l-btn sm" style={{ marginLeft: 10 }} disabled={loading || !!busyKey} onClick={() => void reload()}>重试刷新</button>
+      </div>}
       {!overview.catalogAvailable && <div className="gtint" role="status" style={{ marginBottom: 12 }}>
         <b>创世节点设置不完整</b>：{catalogBlockText(overview.tradeBlockedReason)}。目前不能交易；
         {overview.seriesRecoveryRequired

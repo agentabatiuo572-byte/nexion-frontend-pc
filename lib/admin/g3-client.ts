@@ -211,7 +211,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): G3Overview
       key: requireText(control.key, "controls.key"),
       name: requireText(control.name, "controls.name"),
       description: asText(control.description),
-      value: requireText(control.value, "controls.value"),
+      value: control.key === "schedule" && control.value === "" ? "" : requireText(control.value, "controls.value"),
       rawValue: typeof control.rawValue === "string" ? control.rawValue : undefined,
       cronExpression: typeof control.cronExpression === "string" ? control.cronExpression : undefined,
       zone: typeof control.zone === "string" ? control.zone : undefined,

@@ -115,12 +115,14 @@ for (const f of PENDING_FOCAL) {
 }
 
 const g1 = read("app/components/domain-views/g-tabs/g1-staking.tsx");
-if (g1 != null) {
+if (g1 == null) {
+  failures.push("g1-staking: 退役产品的只读页面未找到");
+} else {
   if (g1.includes("usePropose")) {
-    failures.push("g1-staking: 当前 G1 PRD 要求理由确认后立即执行并由后端原子写 A2,不得进入待审批队列");
+    failures.push("g1-staking: T04 退役只读页不得提交写操作提案");
   }
-  for (const command of ["updateG1StakingPoolParam", "updateG1StakingPoolSaleStatus", "updateG1StakingPoolKillStatus"]) {
-    if (!g1.includes(command)) failures.push(`g1-staking: 缺少直接业务命令 ${command}`);
+  for (const command of ["updateG1StakingPoolParam", "updateG1StakingPoolSaleStatus", "updateG1StakingPoolKillStatus", "updateG1StakingVisibility"]) {
+    if (g1.includes(command)) failures.push(`g1-staking: T04 退役只读页仍含写命令 ${command}`);
   }
 }
 const d2 = read("app/components/domain-views/d-tabs/d2-withdrawals.tsx");
@@ -144,7 +146,7 @@ const result = {
     a2BackendWorkflow: A2,
     a1BackendWorkflow: A1,
     eviewGapBranches: `${EVIEW} (${GAP_OPS.length} ops)`,
-    focalProposalCardinality: "A1 >= 7, G1/D2 immediate-with-required-audit, D2 approve coverage gate",
+    focalProposalCardinality: "A1 >= 7, G1 retired-readonly (0 write commands), D2 immediate-with-required-audit, D2 approve coverage gate",
     pendingRealtime: `${A2} backend tickets + J1 immediate + ${PENDING_FOCAL.length} 焦点域 usePropose`,
   },
   failureCount: failures.length,

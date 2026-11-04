@@ -99,12 +99,13 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const s1 = Math.max(1, Math.round(num(pE("E.device.stageEarlyEnd"), 3)));
   const s2 = Math.max(s1 + 1, Math.round(num(pE("E.device.stageMidEnd"), 8)));
   const cyc = Math.max(s2 + 1, Math.round(num(pE("E.device.cycleMonths"), 12)));
-  const floorPct = Math.max(0, Math.min(99, num(pE("E.device.capacity.floorPct"), 22)));
+  const floorPct = Math.max(0, Math.min(100, num(pE("E.device.capacity.floorPct"), 22)));
   const exemptCount = APPLY_TO_SKUS.filter((s) => pE(`E.device.capacity.applyTo.${s.kind}`) === "免递减").length;
   // FEAT-DEV02 置换阶梯:界点 4 + 抵扣率 5(区间左闭右开,连续性由构造保证)。
   const ladderCuts = [1, 2, 3, 4].map((i) => pE(`E.tradein.ladder.cut${i}`));
   const ladderCredits = [1, 2, 3, 4, 5].map((i) => pE(`E.tradein.ladder.credit${i}`));
   const curve = effCurve(early, mid, late, s1, s2, cyc, floorPct);
+  const curveTop = floorPct === 100 ? Math.max(...curve) : 100;
   const stats = e3Stats ?? { averageAgeMonths: 0, cliffDeviceCount: 0, tradeinMonthCount: 0, tradeinDiscountUsdt: 0, k2ArbitrageHits: 0 };
   const totalTxSuccess = e3Operations.reduce((sum, item) => sum + item.ok, 0);
   const totalTxFailure = e3Operations.reduce((sum, item) => sum + item.fail, 0);
@@ -114,7 +115,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const txSuccessRate = txSampleSize > 0 ? (totalTxSuccess / txSampleSize) * 100 : null;
 
   const px = (i: number) => (i / cyc) * 700;
-  const py = (v: number) => 4 + ((100 - v) / (100 - floorPct)) * 183;
+  const py = (v: number) => curveTop === floorPct ? 4 : 4 + ((curveTop - v) / (curveTop - floorPct)) * 183;
   const pathOf = (from: number, to: number) =>
     curve.slice(from, to + 1).map((v, j) => `${j ? "L" : "M"}${px(from + j).toFixed(1)} ${py(v).toFixed(1)}`).join(" ");
   const emphasized = [0, s1, s2, cyc];
@@ -131,7 +132,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     ctx.openActionConfirm({
       name: `${label} 调整`, op: "param", paramKey: key, amplify,
       edit: { kind: editKind, current: pE(key), unit, options, disallowCurrent: true, ...(editKind === "number" ? numericBounds(key) : {}) },
-      detail: detail ?? `${label}：修改后对所有设备的产能和升级置换估价生效，已给出的报价不变。`,
+      detail: `批准后生效。${detail ?? `${label}：影响所有设备的产能和升级置换估价，换新提交时重新计算报价，已完成交易不回溯。`}`,
     });
   // editKind="select" 时传 options → 弹窗渲染勾选 chips(能枚举的值不让手输,最高设计铁律)
   const Adj = ({ label, k, unit, amplify = false, editKind = "number", detail, options }: { label: string; k: string; unit: string; amplify?: boolean; editKind?: "number" | "text" | "select"; detail?: string; options?: string[] }) =>
@@ -153,7 +154,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
         }),
       },
       paramKeys: fields.map((f) => ({ key: f.key, paramKey: f.paramKey })),
-      detail: opts.detail ?? `${title}：修改后对所有设备生效，已给出的报价不变。`,
+      detail: `批准后生效。${opts.detail ?? `${title}：影响所有设备，换新提交时重新计算报价，已完成交易不回溯。`}`,
     });
   const AdjMulti = ({ title, fields, ascending, hint, amplify = false, detail }: { title: string; fields: MFField[]; ascending?: boolean; hint?: string; amplify?: boolean; detail?: string }) =>
     ctx.canWriteE3
@@ -177,7 +178,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           <span className="r"><CodeTag tone="electric">E.device.capacity.*</CodeTag></span>
         </div>
         <div className="curve-wrap">
-          <div className="curve-y">{[100, 80, 60, 40, floorPct].map((y) => <span key={y}>{y}%</span>)}</div>
+          <div className="curve-y">{(floorPct === 100 ? (curveTop === 100 ? [100] : [curveTop, 100]) : [100, 80, 60, 40, floorPct]).map((y) => <span key={y}>{y}%</span>)}</div>
           <div className="canvas">
             <svg viewBox="0 0 700 240" preserveAspectRatio="none">
               <rect className="zone-early" x="0" y="0" width={px(s1)} height="240" />
@@ -208,7 +209,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
               return <div key={i} className={`curve-label ${cls}`} style={{ left: `${(px(i) / 700) * 100}%`, top: `${(py(curve[i]) / 240) * 100}%`, color: dotColor(i) }}>m{i} · {curve[i].toFixed(1)}%</div>;
             })}
           </div>
-          <div className="curve-floor" style={{ top: `${(py(floorPct) / 240) * 100}%` }}>最低产能 {floorPct}%</div>
+          <div className="curve-floor" style={{ top: `${(py(floorPct) / 240) * 100}%`, transform: floorPct === 100 ? "translateY(50%)" : undefined }}>最低产能 {floorPct}%</div>
           <div className="curve-x">{Array.from({ length: Math.floor(cyc / 2) + 1 }, (_, j) => <span key={j}>m{j * 2}</span>)}</div>
         </div>
         <div className="stage-lbl">
@@ -228,7 +229,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           <div className="pkv"><Lbl zh={`后期每月变化（第 ${s2 + 1} 月起）`} code="band3DeltaPct" desc="后期每月下降多少，降得越快，用户越早换新" hot /><span className="v danger">{pE("E.device.capacity.band3DeltaPct")}%</span><Adj label="后期每月变化" k="E.device.capacity.band3DeltaPct" unit="%" amplify detail="后期降得越快，用户越早升级置换，但老设备收益下降会让用户不满。提交时会检查兑付覆盖率。" /></div>
           <div className="pkv"><Lbl zh="产能下限" code="floorPct" desc="产能降到这里就不再下降" /><span className="v">{pE("E.device.capacity.floorPct")}%</span><Adj label="产能下限" k="E.device.capacity.floorPct" unit="%" /></div>
           <div className="pkv"><Lbl zh="新机任务补贴天数" code="subsidyDays" desc="新设备激活后的这些天里，App 只显示「补贴中」，不显示产能百分比；不影响收益计算" /><span className="v cyan">{pE("E.device.capacity.subsidyDays")} 天</span><Adj label="新机任务补贴天数" k="E.device.capacity.subsidyDays" unit="天" detail="只影响 App 上的显示，不影响收益计算。" /></div>
-          <div className="pkv"><Lbl zh="产能分段周期" code="stageEarlyEnd / stageMidEnd / cycleMonths" desc={`三段的分界月份：前期第 1–${s1} 月，中期第 ${s1 + 1}–${s2} 月，后期第 ${s2 + 1} 月起`} /><span className="v" style={{ fontSize: 13 }}>前期到第 {s1} 月 · 中期到第 {s2} 月 · 显示 {cyc} 个月</span><AdjMulti title="产能分段周期" ascending hint="须满足：前期截止月 < 中期截止月 < 曲线显示月数。曲线显示月数只影响图表范围。" detail="修改后所有设备的产能曲线和升级置换估价随之更新，已给出的报价不变。" fields={[
+          <div className="pkv"><Lbl zh="产能分段周期" code="stageEarlyEnd / stageMidEnd / cycleMonths" desc={`三段的分界月份：前期第 1–${s1} 月，中期第 ${s1 + 1}–${s2} 月，后期第 ${s2 + 1} 月起`} /><span className="v" style={{ fontSize: 13 }}>前期到第 {s1} 月 · 中期到第 {s2} 月 · 显示 {cyc} 个月</span><AdjMulti title="产能分段周期" ascending hint="须满足：前期截止月 < 中期截止月 < 曲线显示月数。曲线显示月数只影响图表范围。" detail="修改后所有设备的产能曲线和升级置换估价随之更新，换新提交时重新计算报价，已完成交易不回溯。" fields={[
             { key: "early", paramKey: "E.device.stageEarlyEnd", label: "前期截止月", inputKind: "number", placeholder: "3" },
             { key: "mid", paramKey: "E.device.stageMidEnd", label: "中期截止月", inputKind: "number", placeholder: "8" },
             { key: "total", paramKey: "E.device.cycleMonths", label: "曲线显示月数", inputKind: "number", placeholder: "12" },
@@ -245,7 +246,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
         {/* 右:升级置换阶梯(FEAT-DEV02 · 随时下架,产出阶梯抵扣) */}
         <section className="param-card">
           <div className="param-h"><span className="ic trade"><TradeIcon /></span><div className="t"><div className="nm">升级置换阶梯</div><div className="s">按已赚回的比例决定抵扣多少，随时可换</div></div><span className="tag">升级置换</span></div>
-          <div className="pkv"><Lbl zh="升级置换开关" code="enabled" desc="关闭后 App 上所有升级置换入口都会隐藏" hot /><span className="v" style={{ fontSize: 13, fontWeight: 600 }}>{pE("E.tradein.enabled")}</span><Adj label="升级置换开关" k="E.tradein.enabled" unit="" editKind="select" options={["开", "关"]} detail="关闭后 App 上所有升级置换入口立即隐藏。" /></div>
+          <div className="pkv"><Lbl zh="升级置换开关" code="enabled" desc="开启后允许显示入口，关闭后隐藏；设备及购买资格仍须满足" hot /><span className="v" style={{ fontSize: 13, fontWeight: 600 }}>{pE("E.tradein.enabled")}</span><Adj label="升级置换开关" k="E.tradein.enabled" unit="" editKind="select" options={["开", "关"]} detail="开启后允许显示升级置换入口，仍须满足设备及购买资格；关闭后隐藏升级置换入口。" /></div>
           <div className="pkv"><Lbl zh="当前阶梯一览" desc="抵扣金额 = 买入价 × 档位比例；旧机已赚回的越多，抵扣越少" /><span className="v" style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{ladderCredits.join(" / ")}%(界点 {ladderCuts.join("/")}%)</span><span /></div>
           <div className="pkv"><Lbl zh="分档界线（4 个）" code="ladder.cut1–4" desc="按「已赚回金额 ÷ 买入价」分成 5 档的 4 条界线" /><span className="v" style={{ fontSize: 13 }}>{ladderCuts.map((c) => `${c}%`).join(" · ")}</span><AdjMulti title="分档界线" ascending hint="按「已赚回金额 ÷ 买入价」分 5 档：低于界线 1 为第 1 档，以此类推，超过界线 4 为第 5 档。须从小到大。" detail="修改后对之后的新报价生效。" fields={[
             { key: "cut1", paramKey: "E.tradein.ladder.cut1", label: "界线 1（%）", inputKind: "number", placeholder: "25" },
@@ -305,7 +306,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           <span>失败样本 → <Link href="/finance/ledger?keyword=tradein&status=FAILED" style={{ color: "var(--cyan)", cursor: "pointer" }}>查看相关账单</Link></span>
         </div>
       </section>
-      <p className="f-foot">产能下降节奏和升级置换抵扣<b>一起决定用户多快升级</b>：后期产能降得快，用户会考虑换新；抵扣越多，换新越有吸引力。修改会影响换新销量、平台让利和套利风险，<b>立即生效</b>（已给出的报价不变）。</p>
+      <p className="f-foot">产能下降节奏和升级置换抵扣<b>一起决定用户多快升级</b>：后期产能降得快，用户会考虑换新；抵扣越多，换新越有吸引力。修改会影响换新销量、平台让利和套利风险，提交审批，由另一位超级管理员<b>批准后生效</b>。换新提交时重新计算报价，已完成交易不回溯。</p>
     </>
   );
 }

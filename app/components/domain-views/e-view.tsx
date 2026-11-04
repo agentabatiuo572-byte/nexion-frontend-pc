@@ -597,10 +597,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const e5PausedDcs = useMemo(() => new Map(e5Datacenters.map((dc) => [dc.dcLocation, dc.dispatchPaused])), [e5Datacenters]);
   const isDcPaused = (dc: string): boolean => e5PausedDcs.get(dc) ?? false;
   const runE5DeviceAction = useCallback(async (deviceId: number, action: "activate" | "deactivate", reason: string) => {
-    if (action === "activate") await activateE5Device(deviceId, false, reason, operator);
-    else await deactivateE5Device(deviceId, false, reason, operator);
+    const device = action === "activate"
+      ? await activateE5Device(deviceId, false, reason, operator)
+      : await deactivateE5Device(deviceId, false, reason, operator);
     await refreshE5();
-    setToast(action === "activate" ? "设备已激活" : "设备已取消激活");
+    setToast(action === "activate" ? "设备已激活" : device.pendingDeactivate ? "已申请停用，等待当前任务结算后自动停用" : "设备已取消激活");
   }, [operator, refreshE5, setToast]);
   const runE5UserBatch = useCallback(async (userId: number, paused: boolean, reason: string) => {
     const result = await setE5UserDevicesPaused(userId, paused, reason, operator);
@@ -1448,7 +1449,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             </div>
             {form.tier !== "Share" && <>
               <div className="grid g-2" style={{ gap: 12 }}>
-                <label className="col" style={{ gap: 5 }}><span className="muted tiny"><AutoGloss>开放阶段</AutoGloss></span><select className="fld" value={form.unlock} onChange={(e) => setForm({ ...form, unlock: e.target.value })} disabled={skuPhaseIds.length === 0}>{skuPhaseIds.length === 0 ? <option value="">请先配置阶段</option> : skuPhaseIds.map((p) => <option key={p} value={p}>{e1PhaseLabel(p)}{p === phaseCur ? " · 当前阶段 · A2 执行后 App 进入正常商品区" : ""}</option>)}</select></label>
+                <label className="col" style={{ gap: 5 }}><span className="muted tiny"><AutoGloss>开放阶段</AutoGloss></span><select className="fld" value={form.unlock} onChange={(e) => setForm({ ...form, unlock: e.target.value })} disabled={skuPhaseIds.length === 0}><option value="">{skuPhaseIds.length === 0 ? "请先配置阶段" : "请选择开放阶段"}</option>{skuPhaseIds.map((p) => <option key={p} value={p}>{e1PhaseLabel(p)}{p === phaseCur ? " · 当前阶段 · A2 执行后 App 进入正常商品区" : ""}</option>)}</select></label>
               </div>
             </>}
           <label className="col" style={{ gap: 5 }}><span className="muted tiny">特性清单 · 每行一条</span><textarea className="fld" style={{ minHeight: 72, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }} value={form.features} onChange={(e) => setForm({ ...form, features: e.target.value })} placeholder={"UVEL 托管服务\n设备规格\n服务说明"} /></label>
@@ -1615,7 +1616,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         edit={mc.edit}
         businessForm={mc.businessForm}
         reasonMax={200}
-        completionCopy="提交后需在「操作记录与审批」确认才生效。"
+        completionCopy="批准后生效：提交后请另一位超级管理员在「操作记录与审批」中批准。"
         onClose={() => setActionConfirm(null)}
         onConfirm={async (reason, newValue, businessValue) => {
           if (!mc) return;
