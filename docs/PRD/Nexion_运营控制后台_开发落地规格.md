@@ -322,12 +322,12 @@
 
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
-| **Content version**(I1) | key · version · status:enum{draft\|published\|archived} · body{en,zh} · activeExperimentId?;A/B state:enum{scheduled\|running\|concluded(adopted\|discarded)} | SC | §17.1 / Ch14 I1 |
+| **Content version**(I1) | key · version · status:enum{draft\|published\|archived} · body{zh,en,vi} · activeExperimentId?;A/B state:enum{scheduled\|running\|concluded(adopted\|discarded)} | SC | §17.1 / Ch14 I1 |
 | **Nova cadence**(I2) | 10 channel × {enabled,tickMs,cooldownMs};phase-keyed(tradein/task-lock 随 H1);per-channel kill(不入 J1) | SC | §17.1 / Ch14 I2 |
-| **Notification Campaign**(I3) | campaignId · 优先级:enum{critical\|high\|normal\|low} · NotifKind · 受众 · state:enum{draft\|scheduled\|sending\|sent\|cancelled};CAP{CRITICAL ∞/HIGH 50/NORMAL 200/LOW 30} | SC | Ch14 I3 |
-| **Disclosure version × jurisdiction**(I5) | jurisdiction × version(单调递增) · 7章节体 · locale{en,zh} · acceptedVersion · acceptedJurisdiction;版本 state:enum{draft\|published\|superseded};用户 ack:enum{not_acked\|acked\|stale};**server 边缘按 IP 判法域** | SC | §17.1 / Ch14 I5 |
-| **i18n**(I6) | namespace(30+) × locale{en,zh} · key 数 · 覆盖率;**镜像同步 gate + 占位符一致性 + 禁词扫描** | SC | Ch14 I6 |
-| **教程课程**(I7) | slug · 分类:enum{Basics\|Earn\|Team\|Wealth\|Security} · format:enum{Article\|Video\|Hands-on} · level · NEX 奖励(10–50) · featured(单) · quiz;state:enum{draft\|published\|archived} | SC | §17.1 / Ch14 I7 |
+| **Notification Campaign**(I3) | campaignId · 优先级:enum{critical\|high\|normal\|low} · NotifKind · 受众 · state:enum{draft\|scheduled\|sending\|sent\|failed\|cancelled};CAP{CRITICAL ∞/HIGH 50/NORMAL 200/LOW 30} | SC | Ch14 I3 |
+| **Disclosure version × jurisdiction**(I5) | jurisdiction × version(单调递增) · 7章节体 · locale{zh,en,vi} · acceptedVersion · acceptedJurisdiction;版本 state:enum{draft\|published\|superseded};用户 ack:enum{not_acked\|acked\|stale};**server 边缘按 IP 判法域** | SC | §17.1 / Ch14 I5 |
+| **i18n**(I6) | namespace × 基础 locale{zh,en,vi} · key 数 · 覆盖率;**三语完整与变量一致性、占位文字/退役品牌发布检查；完整性扫描单独触发** | SC | Ch14 I6 |
+| **教程课程**(I7) | slug · 分类:enum{Basics\|Earn\|Team\|Wealth\|Security} · format:enum{Article\|Video\|Hands-on} · level · UVT 奖励(10–50) · featured(单) · quiz;state:enum{draft\|published\|archived} | SC | §17.1 / Ch14 I7 |
 
 ### 域 J — 紧急合规
 
@@ -773,8 +773,7 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | `scoreBand.{low,mid,high}` | <40 / 40–69 / ≥70 | 0–100(low<mid<high) | K4 | K4 |
 | `autoEscalateScore` | ≥ 85 | 70–100 | K4 | K4 |
 | `riskScore.dimensionWeights.{7维}`(SPEC-7 聚簇) | serverDeviceId 0.9 / ipBucket 0.8 / withdrawAddress 0.9 / paymentInstrument 0.5 / sponsor 0.4 / uaFingerprint 0.2 / signupTiming 0.3 + `weakSignalClusterThreshold` 0.6 | 各 0–1 | **K4**(聚簇维度权重面板;区别于上 6 维评分权重) | K4 |
-| K1 收益规则(SPEC-7) | 6 项:`freePhoneSlotsPerCluster` / `duplicateAccountPendingFrom` / `duplicateAccountFreezeFrom` / `pendingReleaseHours` / `releaseMode` / `freeSlotRequiresBinding` | `releaseMode` 固定 `manual_only` | 仅人工放行;在线验证(`appAttestationReleaseHours`、`attest_or_manual`)已退役,不做自动放行 | K1 |
-| SPEC-7 提现前置参数 | 见 SPEC-7 | — | `firstWithdrawalManual` / `newAddressHoldHours` / `sameAddressRoute` 等全表在 `PRD/三端架构改造/specs/SPEC-7-H5风险簇与收益释放.md` §5,K3 面板可调 | K3 |
+| SPEC-7 收益释放 / 提现前置全参数 | 见 SPEC-7 | — | K1 `releaseMode` 固定 `manual_only`，仅人工放行；旧 `attest_or_manual` 模式及 `appAttestationReleaseHours` 写入返回 410，不可调。`freeSlotRequiresBinding` / `firstWithdrawalManual` / `newAddressHoldHours` / `sameAddressRoute` 等其余参数参见 `PRD/三端架构改造/specs/SPEC-7-H5风险簇与收益释放.md` §5,K1/K3 面板可调 | K1/K3 |
 
 ### 4.8 域 E — 设备与商城(出处 v2 §10 各 ③)
 
@@ -1361,6 +1360,12 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 ### 9.9 I 内容与合规 CMS
 
+**信任中心回滚对照（2026-11-04，BUG-186）**：确认框的当前版始终取所选版块真实版本，历史候选只作为目标版。切换目标不改变当前版说明及当前→目标对比的起点。回滚仍提交至「操作记录与审批」，审批执行时按真实当前版本、状态及所选目标核对后生效；确认提交不代表立即回滚。
+
+**词条发布检查（2026-11-04，BUG-183）**：发布前按当前草稿实际内容检查中、英、越三语非空、三语变量集合一致、占位文字及退役品牌；不通过时显示具体原因，发布入口置灰。合格草稿的确认框回显这些已执行的检查与实际变量，不显示未执行的禁词扫描通过标记。理由门和系统提交时的质量、权限及版本校验继续保留。六种新增语言输入仍按 B26 留待后续客户端工作。
+
+**提交结果（2026-11-04，BUG-181）**：页面文案对比测试的文案、版本、位置与实验操作，通知活动的新建/编辑草稿、排期、发送与取消，信任中心删除草稿，风险披露草稿及适用地区维护，以及教程的课程、版本、推荐位与奖励操作，均等待实际请求结果。提交期间锁定重复提交和关窗；明确拒绝、版本冲突或网络失败时保留窗口、业务输入和理由并显示原因；只有确认成功才关闭，随后更新列表。课程版本写入成功后关闭确认框并单独提示成功；列表由同一加载流程在打开课程、概览更新或点击重试时加载，提交回调不另发版本列表请求。列表加载中显示进度；失败在版本区显示原因及重试，不覆盖写入成功反馈，不显示暂无历史版本，也不提供基于未加载版本的写操作。只有成功返回空列表才显示暂无历史版本。重复适用地区代码被拒时说明代码已存在并引导改用编辑已有地区。奖励调整成功表示已提交审批，仍须审批后执行，不代表奖励已生效。原有权限、理由规则和后端版本校验保持有效。
+
 | 弹窗 ID | 标题 | B1 红线预检 | 细则 |
 |---|---|---|---|
 | I1-MD1 | 发布文案版本确认 | — | v4 I1④a |
@@ -1384,10 +1389,10 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | I6-MD1 | i18n key 发布确认 | — | v4 I6④a |
 | I6-MD2 | i18n key 下架 / 回滚确认 | — | v4 I6④a |
 | I6-MD3 | marketing 多版 A/B 启停确认 | — | v4 I6④a |
-| I7-MD1 | 课程发布确认 | — | v4 I7④a |
+| I7-MD1 | 课程发布确认 | 版本发布时 | v4 I7④a |
 | I7-MD2 | featured 位设置确认 | — | v4 I7④a |
-| I7-MD3 | 完成 NEX 奖励额调整确认 | 是 | v4 I7④a |
-| I7-MD4 | 课程下架 / 回滚确认 | 是 | v4 I7④a |
+| I7-MD3 | 完成 UVT 奖励额调整确认 | 是 | v4 I7④a |
+| I7-MD4 | 课程下架 / 回滚确认 | 回滚时 | v4 I7④a |
 
 ### 9.9a 客服后台(/service/* · 域 M;原 /content/support 已退役)
 

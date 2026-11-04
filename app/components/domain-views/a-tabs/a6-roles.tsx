@@ -46,7 +46,10 @@ export default function A6Roles() {
   const canGrant = isSuper || authorities.includes("platform_a6_role_grants_update");
   const [overview, setOverview] = useState<A6RoleOverview | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [detail, setDetail] = useState<A6RoleDetail | null>(null);
+  const [loadedDetail, setDetail] = useState<A6RoleDetail | null>(null);
+  const detail = loadedDetail?.id === selectedId ? loadedDetail : null;
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailRetry, setDetailRetry] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [menuTree, setMenuTree] = useState<A7MenuTreeNode[]>([]);
@@ -111,11 +114,15 @@ export default function A6Roles() {
   }, [canGrant, refreshOverview, setToast]);
 
   useEffect(() => {
-    if (selectedId == null) { setDetail(null); return; }
+    let active = true;
+    setDetail(null);
+    setDetailError(null);
+    if (selectedId == null) return;
     fetchA6RoleDetail(selectedId)
-      .then(setDetail)
-      .catch((e) => setToast(displayAdminError(e)));
-  }, [selectedId, setToast]);
+      .then((result) => { if (active) setDetail(result); })
+      .catch((e) => { if (active) setDetailError(displayAdminError(e)); });
+    return () => { active = false; };
+  }, [selectedId, detailRetry]);
 
   const roles = overview?.roles ?? [];
 
@@ -123,7 +130,7 @@ export default function A6Roles() {
     <div className="dkpage adom">
       <DomainHeader domainCode="A" domainName="平台基础" accentVar="--admin-domain-a"
         l2Id="A6" l2Name="角色管理"
-        summary="管理后台角色，设置每个角色能做的操作和能看的菜单。修改提交后，需在「操作记录与审批」确认才生效。"
+        summary="管理后台角色，设置每个角色能做的操作和能看的菜单。新建角色、修改名称和备注：立即生效。启停、授权和删除：提交到「操作记录与审批」，由另一位管理员批准后生效。"
         right={canWrite ? <Btn variant="primary" sm onClick={() => setFormMode({ kind: "create" })}>+ 新建角色</Btn> : <Badge tone="neutral">只读</Badge>} />
 
       <div className="two-col" style={{ alignItems: "flex-start" }}>
@@ -168,9 +175,13 @@ export default function A6Roles() {
         </Card>
 
         <Card>
-          <CardH title="角色详情" sub={detail ? `权限 ${detail.permissionCodes.length} 项 · 菜单 ${detail.menuIds.length} 个` : "选择左侧角色"} />
-          {!detail ? (
-            <div style={{ padding: 24, color: "var(--ink-3)", textAlign: "center" }}>选择一个角色查看详情</div>
+          <CardH title="角色详情" sub={detail ? `权限 ${detail.permissionCodes.length} 项 · 菜单 ${detail.menuIds.length} 个` : selectedId == null ? "选择左侧角色" : "当前选中角色"} />
+          {detailError ? (
+            <div className="alertbar warn" role="alert" style={{ margin: 16 }}>
+              角色详情加载失败：{detailError} <Btn sm onClick={() => setDetailRetry((value) => value + 1)}>重试</Btn>
+            </div>
+          ) : !detail ? (
+            <div style={{ padding: 24, color: "var(--ink-3)", textAlign: "center" }}>{selectedId == null ? "选择一个角色查看详情" : "角色详情加载中…"}</div>
           ) : (
             <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
               <Row label="角色标识"><span className="mono">{detail.roleCode}</span></Row>
@@ -188,7 +199,7 @@ export default function A6Roles() {
                   const stableKey = newA6IdempotencyKey("a6-role-status");
                   setConfirmReq({
                     action: `${actionLabel}角色 · ${detail.roleName}`,
-                    completionCopy: "提交后需在「操作记录与审批」确认才生效。",
+                    completionCopy: "提交到「操作记录与审批」，由另一位管理员批准后生效。",
                     detail: <>{actionLabel}角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）。确认生效后，该角色下账号的权限随之{actionLabel === "停用" ? "失效" : "恢复"}。</>,
                     run: async (reason) => {
                       try {
@@ -214,7 +225,7 @@ export default function A6Roles() {
                   const stableKey = newA6IdempotencyKey("a6-role-delete");
                   setConfirmReq({
                     action: `删除角色 · ${detail.roleName}`,
-                    completionCopy: "提交后需在「操作记录与审批」确认才生效。",
+                    completionCopy: "提交到「操作记录与审批」，由另一位管理员批准后生效。",
                     detail: <>删除角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）。确认生效后，该角色下 {roles.find((x) => x.id === detail.id)?.adminCount ?? 0} 个账号会失去这个角色和对应的权限。</>,
                     run: async (reason) => {
                       try {
@@ -241,6 +252,7 @@ export default function A6Roles() {
             const stableKey = newA6IdempotencyKey(formMode.kind === "create" ? "a6-role-create" : "a6-role-update");
             setConfirmReq({
               action, detail: detailNode,
+              completionCopy: "填写理由并确认后立即生效，保留操作记录。",
               run: async (reason) => {
                 try {
                   if (formMode.kind === "create") {
@@ -273,8 +285,8 @@ export default function A6Roles() {
             const stableKey = newA6IdempotencyKey("a6-role-grants");
             setConfirmReq({
                action: `改角色授权 · ${detail.roleName}`,
-               completionCopy: "提交后需在「操作记录与审批」确认才生效，生效后该角色下的账号立即按新权限使用。",
-               detail: <>改角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）的权限/菜单绑定。权限 {permBefore}→{payload.permissionCodes.length} · 菜单 {menuBefore}→{payload.menuIds.length}。该 敏感操作只提交 A2 待确认票，具备执行权限的操作者确认后才由服务器同步白名单并更新缓存。</>,
+               completionCopy: "由另一位管理员批准后生效，生效后该角色下的账号按新权限使用。",
+               detail: <>改角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）的权限/菜单绑定。权限 {permBefore}→{payload.permissionCodes.length} · 菜单 {menuBefore}→{payload.menuIds.length}。提交到「操作记录与审批」，由另一位管理员批准后生效。</>,
                run: async (reason) => {
                  try {
                    const ticket = await proposeA6RoleGrants(detail.id, payload, reason, operator, stableKey);

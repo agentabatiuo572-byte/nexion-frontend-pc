@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
@@ -19,30 +19,46 @@ export function LegalTermsEditor() {
   const canWrite = session?.role === "superadmin" || session?.authorities?.includes("content_legal_terms_write") === true;
   const canPublish = session?.role === "superadmin" || session?.authorities?.includes("content_legal_terms_publish") === true;
   const [locale, setLocale] = useState("en");
-  const [jurisdiction, setJurisdiction] = useState("GLOBAL");
-  const [rows, setRows] = useState<LegalTermsVersion[]>([]);
-  const [selected, setSelected] = useState<LegalTermsVersion | null>(null);
+  const [jurisdictionInput, setJurisdictionInput] = useState("GLOBAL");
+  const jurisdiction = jurisdictionInput.trim().toUpperCase();
+  const scopeError = !jurisdiction
+    ? "请填写适用法律地区，例如 GLOBAL。"
+    : !/^[A-Z][A-Z0-9_-]{1,15}$/.test(jurisdiction)
+      ? "适用法律地区需为 2–16 位，以字母开头，只含字母、数字、下划线或短横线。"
+      : null;
+  const [versionRows, setRows] = useState<LegalTermsVersion[]>([]);
+  const [selectedVersion, setSelected] = useState<LegalTermsVersion | null>(null);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(true);
+  const requestSequence = useRef(0);
+  const rows = scopeError ? [] : versionRows.filter((row) => row.locale === locale && row.jurisdiction === jurisdiction);
+  const selected = !scopeError && selectedVersion?.locale === locale && selectedVersion.jurisdiction === jurisdiction ? selectedVersion : null;
 
   const refresh = useCallback(async () => {
     if (!canRead) return;
-    setBusy(true);
+    const sequence = ++requestSequence.current;
     setError(null);
+    setRows([]);
+    setSelected(null);
+    setReason("");
+    setBusy(!scopeError);
+    if (scopeError) return;
     try {
       const value = await fetchLegalTermsAdmin(locale, jurisdiction);
+      if (sequence !== requestSequence.current) return;
       setRows(value);
       setSelected(value.find((row) => row.status === "DRAFT") ?? value[0] ?? null);
     } catch (e) {
-      setError(displayAdminError(e));
+      if (sequence === requestSequence.current) setError(displayAdminError(e));
     } finally {
-      setBusy(false);
+      if (sequence === requestSequence.current) setBusy(false);
     }
-  }, [canRead, locale, jurisdiction]);
+  }, [canRead, locale, jurisdiction, scopeError]);
 
   useEffect(() => {
     void refresh();
+    return () => { requestSequence.current += 1; };
   }, [refresh]);
 
   if (!canRead) return null;
@@ -99,6 +115,7 @@ export function LegalTermsEditor() {
   };
 
   const createDraft = () => {
+    if (scopeError || busy || error) return;
     const next = rows.reduce((max, row) => {
       const match = /^v(\d+)/.exec(row.version);
       return Math.max(max, match ? Number(match[1]) : 0);
@@ -126,7 +143,7 @@ export function LegalTermsEditor() {
           <div className="ttl">法律条款</div>
           <div className="sub">按 语言 + 适用法律地区 管理结构化版本，用户端读取已发布版本</div>
         </div>
-        <button className="l-btn sm" onClick={() => void refresh()} disabled={busy}>刷新</button>
+        <button className="l-btn sm" onClick={() => void refresh()} disabled={busy || !!scopeError}>刷新</button>
       </div>
       <div className={`l-b ${styles.body}`}>
         {error && <div className={`atint warn ${styles.alert}`} role="alert">{error}</div>}
@@ -141,7 +158,8 @@ export function LegalTermsEditor() {
           </label>
           <label className={styles.field}>
             <span>适用法律地区</span>
-            <input value={jurisdiction} maxLength={32} onChange={(e) => setJurisdiction(e.target.value.toUpperCase())} />
+            <input value={jurisdictionInput} maxLength={32} aria-invalid={!!scopeError} onChange={(e) => setJurisdictionInput(e.target.value)} onBlur={() => setJurisdictionInput(jurisdiction)} />
+            <span>{scopeError ?? `当前适用法律地区：${jurisdiction}`}</span>
           </label>
         </div>
 
@@ -160,9 +178,9 @@ export function LegalTermsEditor() {
           </div>
         )}
 
-        {canWrite && <div className={styles.createRow}><button className="l-btn sm" onClick={createDraft}>新建草稿</button></div>}
+        {canWrite && !scopeError && !busy && !error && <div className={styles.createRow}><button className="l-btn sm" onClick={createDraft}>新建草稿</button></div>}
 
-        {selected ? (
+        {scopeError ? <div className={styles.emptyState}>请先完成适用法律地区，再加载条款。</div> : selected ? (
           <div className={styles.editor}>
             <div className={styles.metadataGrid}>
               <label className={styles.field}>
@@ -220,7 +238,9 @@ export function LegalTermsEditor() {
               {canPublish && selected.status === "PUBLISHED" && <button className="l-btn sm" onClick={() => void transition("revoke")} disabled={busy}>撤回</button>}
             </div>
           </div>
-        ) : <div className={`atint warn ${styles.emptyState}`}>当前适用地区暂无有效条款版本，应用暂不提供该内容。</div>}
+        ) : busy ? <div className={styles.emptyState}>正在加载条款…</div>
+          : error ? <div className={styles.emptyState}>当前范围的条款尚未确认，请刷新重试。</div>
+          : <div className={`atint warn ${styles.emptyState}`}>当前适用地区暂无条款版本。</div>}
       </div>
     </section>
   );

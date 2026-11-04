@@ -277,18 +277,23 @@ export function K3Rules({ ctx, dryRunResult }: { ctx: KCtx; dryRunResult: K3DryR
   const runAction = async (scope: string, work: (commandKey: string) => Promise<void>, ok: string) => {
     const commandKey = commandAttempt.get(scope) ?? newK1CommandKey();
     commandAttempt.remember(scope, commandKey);
-    let writeConfirmed = false;
     try {
       await work(commandKey);
-      writeConfirmed = true;
-      await ctx.reloadKRisk(query);
-      commandAttempt.forget(scope);
-      ctx.toast(ok);
     } catch (error) {
-      if (!writeConfirmed && !(error instanceof K1OutcomeUncertainError)) commandAttempt.forget(scope);
-      ctx.toast(`${error instanceof K1OutcomeUncertainError ? "结果暂未确认，请直接重试" : "操作失败"} · ${errorText(error)}`);
+      if (!(error instanceof K1OutcomeUncertainError)) commandAttempt.forget(scope);
+      ctx.toast(error instanceof K1OutcomeUncertainError
+        ? "结果尚未确认，请先核对操作记录；需要重试时使用原操作。"
+        : `操作失败 · ${errorText(error)}`);
       throw error;
     }
+    commandAttempt.forget(scope);
+    try {
+      await ctx.reloadKRisk(query);
+    } catch {
+      ctx.toast(`${ok}；最新列表加载失败，请刷新查看。`);
+      return;
+    }
+    ctx.toast(ok);
   };
 
   const toggleRule = (rule: K3Rule, state: "active" | "paused") => ctx.openActionConfirm({

@@ -5,11 +5,11 @@
  * 用户列表、分组筛选与搜索均走 /api/admin/users/profiles;接口在种子用户缺失时由后端先写入真实表再分页返回。
  * 本页只读:行点击深链 /users/search/<userNo> 进 360 画像;处置去 C2/C3/C5。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TabGroup } from "@/app/components/kit/tab-group";
 import { Download } from "lucide-react";
-import { DataListPager } from "../design-kit";
+import { Btn, DataListPager, Modal } from "../design-kit";
 import {
   exportUserProfilesCsv,
   fetchC1Overview,
@@ -35,6 +35,14 @@ type C1Stats = {
   frozen: number;
 };
 export type C1ExportQuery = Omit<UserProfileQuery, "pageNum" | "pageSize">;
+type C1ExportOperation = { key: string; query: C1ExportQuery; reason: string };
+const EXPORT_FILTER_LABELS: Record<keyof C1ExportQuery, string> = {
+  keyword: "关键词", status: "账户状态", riskMin: "最低风险分", userId: "用户编号",
+  phoneHash: "手机号摘要", phoneMasked: "脱敏手机号", tier: "用户分层", vRank: "团队等级",
+  referralCode: "推荐码", depositMin: "累计充值下限", depositMax: "累计充值上限",
+  usdtMin: "USDT 余额下限", usdtMax: "USDT 余额上限", nexMin: "UVT 余额下限", nexMax: "UVT 余额上限",
+  riskBand: "风险等级", joinedFrom: "注册日期起", joinedTo: "注册日期止",
+};
 
 const SEGS: [Seg, string][] = [["all", "全部"], ["frozen", "冻结"], ["highrisk", "高风险"]];
 const EMPTY_PAGE: UserPage<User360Profile> = { total: 0, pageNum: 1, pageSize: 50, records: [] };
@@ -165,9 +173,9 @@ function filterQuery(filters: AdvancedFilters): C1ExportQuery {
 
 function currentExportQuery(seg: Seg, keyword: string, filters: AdvancedFilters): C1ExportQuery {
   return {
-    ...queryForSeg(seg),
     ...keywordQuery(keyword),
     ...filterQuery(filters),
+    ...queryForSeg(seg),
   };
 }
 
@@ -304,6 +312,7 @@ export function C1Search({
 
   const changeSeg = (next: Seg) => {
     setSeg(next);
+    if (next === "highrisk") setFilters((current) => ({ ...current, riskBand: "" }));
     setPage(1);
   };
 
@@ -313,6 +322,7 @@ export function C1Search({
   };
 
   const changeFilter = (key: keyof AdvancedFilters, value: string) => {
+    if (key === "riskBand" && effectiveSeg === "highrisk") setSeg("all");
     setFilters((current) => ({ ...current, [key]: value }));
     setPage(1);
   };
@@ -366,7 +376,7 @@ export function C1Search({
             <option value="">全部团队等级</option>{Array.from({ length: 13 }, (_, value) => <option key={value} value={`V${value}`}>V{value}</option>)}
           </select></label>
           <label>推荐码<input className="ui-control" aria-label="推荐码" placeholder="推荐码" value={filters.referralCode} onChange={(event) => changeFilter("referralCode", event.target.value)} /></label>
-          {canReadRisk && <label>风险等级<select className="ui-control" aria-label="风险等级" value={filters.riskBand} onChange={(event) => changeFilter("riskBand", event.target.value)}>
+          {canReadRisk && <label>风险等级<select className="ui-control" aria-label="风险等级" value={effectiveSeg === "highrisk" ? "HIGH" : filters.riskBand} onChange={(event) => changeFilter("riskBand", event.target.value)}>
             <option value="">全部风险等级</option><option value="LOW">低风险</option><option value="MEDIUM">中风险</option><option value="HIGH">高风险</option>
           </select></label>}
           <label>累计充值下限<input className="ui-control" aria-label="累计充值下限" type="number" min="0" placeholder="累计充值 ≥" value={filters.depositMin} onChange={(event) => changeFilter("depositMin", event.target.value)} /></label>
@@ -452,54 +462,112 @@ export function C1HeaderActions({ ctx, query }: { ctx: CCtx; query: C1ExportQuer
   const [exporting, setExporting] = useState(false);
   const exportingRef = useRef(false);
   const exportCooldownUntilRef = useRef(0);
-  const exportKeyRef = useRef<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [dialogQuery, setDialogQuery] = useState<C1ExportQuery>({});
+  const [reason, setReason] = useState("");
+  const [exportOperation, setExportOperation] = useState<C1ExportOperation | null>(null);
+  const [exportError, setExportError] = useState("");
   const session = useAdminAuth((state) => state.session);
   const canExport = session?.role === "superadmin" || session?.authorities.includes("user_c1_write") === true;
+  const exportReason = exportOperation?.reason ?? reason;
+  const reasonLength = exportReason.trim().length;
+  const reasonValid = reasonLength >= 8 && reasonLength <= 200;
 
-  const runExport = useCallback(async (reason: string) => {
-    if (!query) {
-      ctx.toast("筛选条件有误，请修改后再导出");
-      return;
-    }
+  const runExport = async () => {
+    if (!reasonValid) return;
     if (exportingRef.current || Date.now() < exportCooldownUntilRef.current) {
       ctx.toast("正在生成用户名单，请稍候");
       return;
     }
     exportingRef.current = true;
     setExporting(true);
-    exportKeyRef.current ??= `c1-user-profile-export-${crypto.randomUUID()}`;
+    const operation = exportOperation ?? {
+      key: `c1-user-profile-export-${crypto.randomUUID()}`,
+      query: dialogQuery,
+      reason: reason.trim(),
+    };
+    setExportOperation(operation);
+    setExportError("");
     try {
-      const file = await exportUserProfilesCsv(query, exportKeyRef.current, reason);
+      const file = await exportUserProfilesCsv(operation.query, operation.key, operation.reason);
       const fileName = downloadBlob(file.blob, file.fileName);
-      exportKeyRef.current = null;
+      setExportOperation(null);
+      setExportOpen(false);
+      setReason("");
       ctx.toast(`已下载用户名单 · ${fileName}`);
     } catch (err) {
-      ctx.toast(`导出失败 · ${errorMessage(err)}`);
+      setExportError(errorMessage(err));
+      ctx.toast(`导出未完成 · ${errorMessage(err)}`);
     } finally {
       exportCooldownUntilRef.current = Date.now() + 1_000;
       exportingRef.current = false;
       setExporting(false);
     }
-  }, [ctx, query]);
+  };
 
   if (!canExport) return null;
 
   return (
-    <button
+    <><button
       className="f-cta"
-      disabled={exporting || !query}
-      style={exporting || !query ? { opacity: 0.62, cursor: "not-allowed" } : undefined}
-      title="按当前筛选导出用户名单，手机号等隐私信息会隐藏"
-      onClick={() => ctx.openConfirm({
-        action: "导出用户名单",
-        detail: "按当前筛选导出，手机号等隐私信息会隐藏。",
-        reason: true,
-        okLabel: "确认并导出",
-        run: (reason) => runExport(reason),
-      })}
+      disabled={exporting || (!query && !exportOperation)}
+      style={exporting || (!query && !exportOperation) ? { opacity: 0.62, cursor: "not-allowed" } : undefined}
+      title={exportOperation ? "按原筛选和理由继续导出" : "按当前筛选导出用户名单，手机号等隐私信息会隐藏"}
+      onClick={() => {
+        if (!exportOperation) {
+          if (!query) return;
+          setDialogQuery({ ...query });
+          setReason("");
+          setExportError("");
+        }
+        setExportOpen(true);
+      }}
     >
       <Download size={14} />
-      {exporting ? "生成中…" : "导出名单"}
+      {exporting ? "生成中…" : exportOperation ? "继续原导出" : "导出名单"}
     </button>
+    {exportOpen && <Modal
+      title="导出用户名单"
+      icon="check"
+      busy={exporting}
+      onClose={() => { if (!exporting) setExportOpen(false); }}
+      footer={<>
+        <Btn disabled={exporting} onClick={() => setExportOpen(false)}>{exportOperation ? "稍后处理" : "取消"}</Btn>
+        {exportOperation && <Btn disabled={exporting || !query} onClick={() => {
+          if (!query) return;
+          setExportOperation(null);
+          setDialogQuery({ ...query });
+          setReason("");
+          setExportError("");
+        }}>发起新导出</Btn>}
+        <Btn variant="primary" disabled={exporting || !reasonValid} onClick={() => void runExport()}>
+          {exporting ? "生成中…" : exportOperation ? "按原操作重试" : "确认并导出"}
+        </Btn>
+      </>}
+    >
+      <p>导出固定字段的脱敏 CSV，最多 5000 条；手机号等隐私信息会隐藏。</p>
+      <div className="ctint">
+        <b>{exportOperation ? "原操作筛选" : "本次导出筛选"}</b>
+        <div>{Object.entries(exportOperation?.query ?? dialogQuery)
+          .filter(([, value]) => value !== undefined && value !== "")
+          .map(([key, value]) => `${EXPORT_FILTER_LABELS[key as keyof C1ExportQuery]}：${key === "riskBand"
+            ? ({ HIGH: "高风险", MEDIUM: "中风险", LOW: "低风险" }[String(value)] ?? value)
+            : key === "status" ? String(value).split(",").map((status) => statusMeta(status)[0]).join("、") : value}`)
+          .join("；") || "全部用户"}</div>
+      </div>
+      {exportError && <div className="ctint warn" role="alert" style={{ marginTop: 12 }}>
+        <b>名单尚未下载成功，原操作结果尚未确认。</b>
+        <p>{exportError}</p>
+        <div>可按原筛选、理由和编号重试；要更改筛选或理由，请发起新导出。新导出会使用当前页面的筛选和新编号。</div>
+        <div>发起新导出不会撤销原操作可能已生成的文件或记录。</div>
+      </div>}
+      <label className="field" style={{ marginTop: 13 }}>
+        <span>操作理由（必填，8–200 字）{exportOperation ? " · 原操作理由不可修改" : ""}</span>
+        <textarea aria-label="导出用户名单理由" className="ui-control" value={exportReason}
+          readOnly={!!exportOperation} disabled={exporting} rows={3}
+          onChange={(event) => setReason(event.target.value)} />
+      </label>
+    </Modal>}
+    </>
   );
 }

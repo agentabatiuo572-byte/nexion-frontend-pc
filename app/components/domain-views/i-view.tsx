@@ -239,8 +239,8 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
           onBusinessSelectionChange={mc.onBusinessSelectionChange}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {
-            await mc.run(reason, newValue, businessValue);
-            setActionConfirm(null);
+            const succeeded = await mc.run(reason, newValue, businessValue);
+            if (succeeded !== false) setActionConfirm(null);
           }}
         />
       )}
