@@ -87,6 +87,7 @@ export default function LiquidityPage() {
   const [notice, setNotice] = useState("");
   const [dialogStep, setDialogStep] = useState<"closed" | "edit" | "confirm">("closed");
   const [reason, setReason] = useState("");
+  const [reasonError, setReasonError] = useState("");
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async (nextWindow: B2MaturityWindow) => {
@@ -131,16 +132,17 @@ export default function LiquidityPage() {
     if (!data || !canConfig) return;
     setDraft(activeConfig(data.config));
     setReason("");
+    setReasonError("");
     setDialogStep("edit");
   };
 
   const proceedToConfirm = () => {
     const length = reason.trim().length;
     if (length < 8 || length > 200) {
-      setError("操作原因需为 8–200 个字");
+      setReasonError("操作原因需为 8–200 个字");
       return;
     }
-    setError("");
+    setReasonError("");
     setDialogStep("confirm");
   };
 
@@ -465,11 +467,14 @@ export default function LiquidityPage() {
                   <textarea
                     value={reason}
                     maxLength={200}
+                    aria-invalid={Boolean(reasonError)}
+                    aria-describedby={reasonError ? "b2-reason-error" : undefined}
                     placeholder="为什么要调整预测设置"
-                    onChange={(event) => setReason(event.target.value)}
+                    onChange={(event) => { setReason(event.target.value); setReasonError(""); }}
                   />
                   <span>{reason.trim().length}/200</span>
                 </label>
+                {reasonError && <div id="b2-reason-error" className="b2-alert error" role="alert">{reasonError}</div>}
                 <div className="b2-dialog-actions">
                   <button type="button" className="b2-button" onClick={() => setDialogStep("closed")}>取消</button>
                   <button type="button" className="b2-button primary" onClick={proceedToConfirm}>下一步：确认</button>
