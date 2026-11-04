@@ -461,11 +461,11 @@ export function C1HeaderActions({ ctx, query }: { ctx: CCtx; query: C1ExportQuer
   const runExport = useCallback(async (reason: string) => {
     if (!query) {
       ctx.toast("筛选条件有误，请修改后再导出");
-      return;
+      return false;
     }
     if (exportingRef.current || Date.now() < exportCooldownUntilRef.current) {
       ctx.toast("正在生成用户名单，请稍候");
-      return;
+      return false;
     }
     exportingRef.current = true;
     setExporting(true);
@@ -477,6 +477,7 @@ export function C1HeaderActions({ ctx, query }: { ctx: CCtx; query: C1ExportQuer
       ctx.toast(`已下载用户名单 · ${fileName}`);
     } catch (err) {
       ctx.toast(`导出失败 · ${errorMessage(err)}`);
+      return false;
     } finally {
       exportCooldownUntilRef.current = Date.now() + 1_000;
       exportingRef.current = false;
