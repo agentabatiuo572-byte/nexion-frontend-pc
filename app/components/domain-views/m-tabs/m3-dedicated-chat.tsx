@@ -8,7 +8,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { userNicknameText } from "@/lib/admin/brand-copy";
-import { supportClient, SupportClientError, isIndeterminateSupportError, supportSessionBusy, agentSwitchText, SUPPORT_SESSION_ROLE_LABEL, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode, type SupportSessionHold } from "@/lib/admin/m-support-client";
+import { supportClient, SupportClientError, isIndeterminateSupportError, supportAttachmentUnavailableText, supportSessionBusy, agentSwitchText, SUPPORT_SESSION_ROLE_LABEL, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode, type SupportSessionHold } from "@/lib/admin/m-support-client";
 import { markM3MessagePageRead, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
 import { parseBusinessTime } from "@/lib/admin/business-time";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -1041,7 +1041,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   const chooseImage = async (file: File | undefined) => {
     const selection = ++imageSelectionRef.current;
     if (!file || !writable || busy || pending) return;
-    if (!attachmentPolicy?.available) { setAttachmentPolicyError("图片功能暂不可用，请稍后重试。"); return; }
+    if (!attachmentPolicy?.available) { setAttachmentPolicyError(`${supportAttachmentUnavailableText(attachmentPolicy?.unavailableReason ?? null)}。`); return; }
     if (!attachmentPolicy.allowedMimeTypes.includes(file.type as "image/png" | "image/jpeg") || attachmentPolicy.maxBytes !== null && file.size > attachmentPolicy.maxBytes) {
       setAttachmentPolicyError("请选择符合当前图片格式和大小要求的文件。"); return;
     }
@@ -1364,7 +1364,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
         {composerMode === "write" && <>
         <div className="m3-composer-tools">{holdAllowsOther && <span className="m3-sender-identity"><SupportAvatar name={myName || myRoleLabel} size={22} />以 <strong>{myRoleLabel} · {myName}</strong> 发送</span>}<SupportContentTools key={`${identityRef.current}:${targetKey}:${selected?.ownerAdminId ?? adminId}:${selected?.assignmentId ?? ""}:${selected?.status ?? ""}:${canWriteM3}`} popover ctx={ctx} disabled={!writable||busy||Boolean(pending||firstPending)} onInsert={insertText} onSelect={choice=>{if(!selected){setSendError("请先发送首次联系，再推荐商品或发送页面链接。");return;}setContentChoice(choice);if(!draft.trim())insertText(choice.kind==="SKU"?"推荐商品："+choice.name:"查看："+choice.name);}}/>
           <input ref={fileInputRef} type="file" accept="image/jpeg,image/png" aria-label="选择图片" disabled={!writable || busy || Boolean(pending || firstPending) || !selected || !attachmentPolicy?.available} onChange={(event) => { chooseImage(event.target.files?.[0]); event.target.value = ""; }} hidden />
-          <button type="button" className="l-btn sm" aria-label="选择图片" title={attachmentPolicyError || (!attachmentPolicy ? "正在加载图片规则…" : !attachmentPolicy.available ? "图片功能暂不可用（存储服务未就绪）" : "发送图片")} disabled={!writable || busy || Boolean(pending || firstPending) || !selected || !attachmentPolicy?.available} onClick={() => fileInputRef.current?.click()}><Icon name="image" size={14}/>图片</button>
+          <button type="button" className="l-btn sm" aria-label="选择图片" title={attachmentPolicyError || (!attachmentPolicy ? "正在加载图片规则…" : !attachmentPolicy.available ? supportAttachmentUnavailableText(attachmentPolicy.unavailableReason) : "发送图片")} disabled={!writable || busy || Boolean(pending || firstPending) || !selected || !attachmentPolicy?.available} onClick={() => fileInputRef.current?.click()}><Icon name="image" size={14}/>图片</button>
         </div>
         {selected && attachmentPolicyError && <div className="itint warn" role="status">{attachmentPolicyError} <button type="button" className="l-btn sm" onClick={() => setAttachmentPolicyRetry((value) => value + 1)}>重试</button></div>}
         {maintenanceOffered&&!pending&&!firstPending&&<label className="m3-maintenance-intent"><input type="checkbox" checked={maintenanceChosen} disabled={!writable&&!requestedCustomerId||busy} onChange={event=>setMaintenanceChosen(event.target.checked)}/>本条记为联系维护{intentSource?.due===true?"（该客户维护已到期）":""}</label>}

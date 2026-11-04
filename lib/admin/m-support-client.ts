@@ -187,6 +187,10 @@ export function isIndeterminateSupportError(error: unknown): boolean {
 export function isDefiniteSupportRefusal(error: unknown): error is SupportClientError {
   return error instanceof SupportClientError && [400, 403, 404, 409, 422].includes(error.status) && !isIndeterminateSupportError(error);
 }
+/** BUG-121: the policy endpoint names why images are off; operators get that reason, not a storage guess. */
+export function supportAttachmentUnavailableText(reason: string | null): string {
+  return reason === "ATTACHMENT_POLICY_UNCONFIGURED" ? "图片发送规则还没配置，请联系管理员配置后再发图片" : "图片功能暂不可用，请稍后重试";
+}
 
 function malformed(field: string): never { throw new Error(`SUPPORT_CONTRACT_MALFORMED:${field}`); }
 function object(value: unknown, field: string): Record<string, unknown> {
