@@ -247,7 +247,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
     setQueueDrawer(null);
     openActionConfirm({
       action: `取消排队中的兑换 · ${order.exchangeNo}`,
-      detail: <>取消这笔排队中的兑换，冻结的 {order.exchangeAmountDisplay} 会原路退回用户钱包，之后不会再成交。常用于地区封锁或风险命中，确认后马上执行。</>,
+      detail: <>取消这笔排队中的兑换（{order.exchangeAmountDisplay}），立即生效，之后不会再成交。有资金预占记录的，退回已预占的来源币种金额并记退款账本；无预占记录的历史订单，只取消订单，不扣款也不退款。</>,
       run: async (reason) => {
         await mutate(`cancel:${order.exchangeNo}`, () => cancelG2ExchangeQueueOrder(order.exchangeNo, reason, OPERATOR()), "已取消");
       },
@@ -331,7 +331,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
                 <span className="bdg warn">{order.etaLabel} 处理</span>
               </div>
             ))}
-            <div className="gtint" style={{ marginTop: 10 }}><b>排队与拒绝</b> · 超出额度的兑换默认排到明天（用户可以自己取消），也可以改成直接拒绝。排队时不扣用户余额；某个国家被封锁后，该国排队中的兑换会自动取消。</div>
+            <div className="gtint" style={{ marginTop: 10 }}><b>排队与拒绝</b> · 超出额度的兑换默认排到明天（用户可以自己取消），也可以改成直接拒绝。排队订单如已预占来源资金，可用余额已减少，成交时不会重复扣款；取消时退回已预占金额并记退款账本。无预占记录的历史订单在成交时扣款，取消不扣款也不退款；某个国家被封锁后，该国排队中的兑换会自动取消。</div>
           </div>
         </section>
       </div>

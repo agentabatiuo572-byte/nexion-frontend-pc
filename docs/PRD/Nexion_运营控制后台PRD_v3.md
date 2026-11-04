@@ -148,7 +148,7 @@
 **② 后台界面**:
 - **caps 配置面**:`USER_DAILY_CAP / PLATFORM_DAILY_CAP / KYC_LIFETIME_THRESHOLD` 三阈值 + 当前实时占用(用户侧分布 / 平台日池占用 %)。
 - **Gate 决策监控**:三类拦截命中计数与趋势(`kyc-required / user-cap / platform-cap`)。
-- **Queue 视图**(只读,server-canonical):超 cap 进入次日队列的待处理兑换单列表(`userId 脱敏 / 方向 / 金额 / 入队时间 / 预计处理日`),可取消(用户侧「funds never locked unilaterally」叙事的运营内部对应面)。
+- **Queue 视图**：展示超额度排队订单及取消入口。已预占来源资金的订单，其可用余额已减少；成交不会重复扣款，取消退回来源币种的预占金额并写退款账本。无预占记录的历史订单在成交时扣来源金额；取消仅终止订单，不扣款也不退款。页面说明与取消确认均按此区分，不把全部队列描述为未扣余额（2026-11-04，BUG-217）。
 - **风控仪表盘**(对齐 §9.4.4):平台日池进度条 + KYC 触发线命中分布 + Queue 深度。
 - **状态机**(兑换单,server-canonical):`submitted → gated(被拦截)| queued(排队) | swapped(成交·落 swap bill)`;`queued → swapped(次日处理)| cancelled(用户取消)`。
 
