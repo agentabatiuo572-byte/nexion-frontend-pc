@@ -15,6 +15,8 @@ export type OpsDashboardAlert = {
   level: "high" | "mid" | "low";
   title: string;
   hint: string;
+  /** 待补录的项数，只有 J1-AUTO-CONFIRM 带。 */
+  count?: number;
 };
 
 const J1_ALERT_GATE_KEYS = ["withdraw", "staking", "genesis", "exchange", "trial"] as const;
@@ -114,15 +116,18 @@ export async function fetchOpsDashboardAlerts(): Promise<OpsDashboardAlert[]> {
   }
   const overdue = pending.filter((row) => row.overdue === true).length;
   if (pending.length > 0) {
-    alerts.push(normalizeAlert({
-      id: "J1-AUTO-CONFIRM",
-      domain: "J",
-      level: overdue > 0 ? "high" : "mid",
-      title: `自动关停待补录 ${pending.length} 项`,
-      hint: overdue > 0
-        ? `已有 ${overdue} 项逾期，请马上去「紧急停用开关」补录`
-        : "请在截止时间前去「紧急停用开关」补录处理结论",
-    }, alerts.length));
+    alerts.push({
+      ...normalizeAlert({
+        id: "J1-AUTO-CONFIRM",
+        domain: "J",
+        level: overdue > 0 ? "high" : "mid",
+        title: `自动关停待补录 ${pending.length} 项`,
+        hint: overdue > 0
+          ? `已有 ${overdue} 项逾期，请马上去「紧急停用开关」补录`
+          : "请在截止时间前去「紧急停用开关」补录处理结论",
+      }, alerts.length),
+      count: pending.length,
+    });
   }
   return alerts;
 }
@@ -179,7 +184,7 @@ function publishJ1DutyAlertSnapshot(snapshot: J1DutyAlertSnapshot) {
   j1DutyAlertSubscribers.forEach((subscriber) => subscriber(snapshot));
 }
 
-async function refreshJ1DutyAlerts() {
+export async function refreshJ1DutyAlerts() {
   const requestSequence = ++j1DutyAlertRequestSequence;
   try {
     const alerts = await fetchOpsDashboardAlerts();

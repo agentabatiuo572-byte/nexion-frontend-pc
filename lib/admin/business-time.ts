@@ -29,6 +29,16 @@ export function businessOffsetMinutes(zone: BusinessZone = current): number {
   return (match[1] === "-" ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3] ?? 0));
 }
 
+/** 业务日历的日期 YYYY-MM-DD，offsetDays 传 -1 是昨天。业务时区都没有夏令时，按整天减就行。 */
+export function businessDay(offsetDays = 0): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: current.zoneId, year: "numeric", month: "2-digit", day: "2-digit" }).format(Date.now() + offsetDays * 86_400_000);
+}
+
+/** 读取时间「09:21」，按业务时区。 */
+export function businessClock(timestamp: number): string {
+  return new Intl.DateTimeFormat("zh-CN", { timeZone: current.zoneId, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(timestamp);
+}
+
 /** Backend LocalDateTime has no offset and uses the Asia/Shanghai storage clock. */
 export function parseBusinessTime(value: string): number {
   const unzoned = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?)$/.exec(value);

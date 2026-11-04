@@ -29,12 +29,15 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 页头：标题、一句说明、「这页怎么用」、动作、数据时间 | `PageHeader` | `page-header.tsx` |
 | 这页怎么用 | `PageGuide`，`PageHeader` 自动带 | `page-guide.tsx` |
 | 看板第一句话 | `Conclusion` | `conclusion.tsx` |
-| 一排关键数字，最多 4 个 | `StatBand`、`Stat` | `stat.tsx` |
+| 一排关键数字，最多 4 个 | `StatBand`、`Stat`；整张可点传 `href` 或 `onOpen` | `stat.tsx` |
 | 一块内容 | `Panel` | `panel.tsx` |
 | 区块标题、统计数字前的图标 | `IconTile`，`Panel`、`Stat` 传 `icon` 就有 | `icon-tile.tsx` |
 | 切不同内容 | `PageTabs` | `tabs.tsx` |
 | 筛同一张表、切时间窗 | `Segments` | `tabs.tsx` |
 | 次要内容收起来 | `Fold`，`summary` 必填 | `fold.tsx` |
+| 看板里要处理的事 | `TodoList`、`TodoItem`，读不到用 `TodoFailed` | `todo-list.tsx` |
+| 一块内容读取中、失败、空 | `BlockState`；一个数字或一行读不到用 `InlineRetry` | `block-state.tsx` |
+| 按天的柱图 | `Bars`，全是 0 别画，写一句话 | `bars.tsx` |
 | 表格 | `Table`、`Th`、`Tr`、`Td`、`Cell` | `table.tsx` |
 | 显示更多列 | `useTableColumns`、`ColumnPicker` | `table.tsx` |
 | 表格加载、空、失败 | `TableLoading`、`TableMessage` | `table.tsx` |

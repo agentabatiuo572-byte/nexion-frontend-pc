@@ -10,6 +10,8 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { PanelLeftClose, PanelLeftOpen, LayoutGrid } from "lucide-react";
 import type { AdminRole, NavDomain } from "@/lib/nav/console-nav";
+import { b0Blocks, b0HasAnyBlock } from "@/lib/admin/b0-access";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useAdminUi } from "@/lib/store/admin-ui";
 import { IconTile } from "@/app/components/rd/icon-tile";
 import { SidebarGroup } from "./sidebar-group";
@@ -88,12 +90,13 @@ export function Sidebar({
       clearTimeout(t2);
     };
   }, [pathname]);
+  const authorities = useAdminAuth((s) => s.session?.authorities) ?? [];
   const toggleGroup = useAdminUi((s) => s.toggleGroup);
   const setExpanded = useAdminUi((s) => s.setExpanded);
   const setSidebar = useAdminUi((s) => s.setSidebar);
   const toggleSidebar = useAdminUi((s) => s.toggleSidebar);
   const visibleL2Count = domains.reduce((total, domain) => total + domain.l2.length, 0);
-  const showHomeEntry = role !== "support";
+  const showHomeEntry = b0HasAnyBlock(b0Blocks(authorities));
   const badges: Record<string, number> = servicePending > 0 ? { "/service/sessions": servicePending } : {};
 
   const onCollapsedOpen = (code: string) => {

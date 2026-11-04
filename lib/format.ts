@@ -25,6 +25,23 @@ export function fmtUsdCompact(n: number): string {
   return (neg ? "-" : "") + out;
 }
 
+/** 完整金额，不带币种：1,234.56（TX-20）。 */
+export function fmtAmount(n: number): string {
+  const neg = n < 0;
+  const [int, dec] = Math.abs(n).toFixed(2).split(".");
+  return `${neg ? "-" : ""}${groupThousands(int)}.${dec}`;
+}
+
+/** 概览金额，不带币种：0 / 小于 0.01 / 864.50 / 86.4K / 1.23M（TX-21）。 */
+export function fmtAmountCompact(n: number): string {
+  const neg = n < 0;
+  const abs = Math.abs(n);
+  if (abs === 0) return "0";
+  if (abs < 0.01) return "小于 0.01";
+  const out = abs >= 1_000_000 ? `${(abs / 1_000_000).toFixed(2)}M` : abs >= 1_000 ? `${(abs / 1_000).toFixed(1)}K` : abs.toFixed(2);
+  return (neg ? "-" : "") + out;
+}
+
 /** 1,234 */
 export function fmtNum(n: number): string {
   return groupThousands(Math.round(n).toString());

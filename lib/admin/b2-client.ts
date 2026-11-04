@@ -396,6 +396,10 @@ async function request<T>(path: string, init?: RequestInit) {
   return result.data;
 }
 
+export async function fetchB2Reserve(): Promise<B2Reserve> {
+  return normalizeReserve(await request<unknown>("/reserve"));
+}
+
 export async function fetchB2Dashboard(window: B2MaturityWindow): Promise<B2Dashboard> {
   const [reserve, liabilities, maturity, config] = await Promise.all([
     request<unknown>("/reserve"),

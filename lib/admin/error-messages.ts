@@ -277,6 +277,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   STOPPED_LIST_UNAVAILABLE: "停止维护的客户名单暂时加载不了，请重试。",
   CUSTOMER_PROJECTION_UNAVAILABLE: "客户明细暂时加载不了，请重试。",
   AUTHORITATIVE_PAGE_INVALID: "系统确认页面数据不完整或不一致，页面已停止展示旧数据与写操作；请刷新重试，持续出现时联系值班人员。",
+  B0_RESPONSE_INVALID: "收到的数据不完整，已停止显示；请点重试，持续出现时联系值班人员。",
   B_RESTORATION_RESPONSE_INVALID: "业务恢复服务返回的数据不完整或不一致，页面已停止展示推测状态；请刷新重试，持续出现时联系值班人员。",
   F5_OVERVIEW_RESPONSE_INVALID: "奖励处置服务返回的数据不完整或不一致，页面已停止展示旧数据与写操作；请刷新重试，持续出现时联系值班人员。",
   DIRECT_REFERRAL_POLICY_INVALID: "好友奖励设置返回不完整，已停止提交；请重新加载，持续失败时联系技术值班人员。",

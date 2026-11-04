@@ -90,7 +90,7 @@ export interface BRhythm {
 }
 
 export interface BRiskRadar {
-  gates: Array<{ nm: string; dom: string; on: boolean; state?: "on" | "off" | "missing"; configKey?: string }>;
+  gates: Array<{ nm: string; dom: string; on: boolean; state?: "on" | "off" | "missing"; configKey?: string; unset?: boolean }>;
   trippedGateCount: number;
   feed: Array<{ sev: "p0" | "p1" | "p2" | "p3"; t: string; m: string; href: string }>;
   pressureSeries: number[];
@@ -426,6 +426,8 @@ function normalizeRisk(raw: Record<string, unknown>): BRiskRadar {
         on: state === "missing" ? true : state === "on",
         state,
         configKey: text(item.configKey, ""),
+        // 没有配置行时后端发 default_off，业务按关闭处理（KillSwitchState 失败关闭），显示成「未设置」。
+        unset: rawState === "default_off",
       };
     }),
     trippedGateCount: requiredNum(raw.trippedGateCount, "riskRadar.trippedGateCount"),
