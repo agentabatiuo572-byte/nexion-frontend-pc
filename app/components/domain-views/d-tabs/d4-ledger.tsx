@@ -81,14 +81,19 @@ function positiveUserId(value: string) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
+function appliedTimeRange({ from, to }: { from: string; to: string }) {
+  if (from && to) return `${timeText(from)} 至 ${timeText(to)}`;
+  if (from) return `${timeText(from)} 起`;
+  return to ? `截至 ${timeText(to)}` : "不限时间";
+}
+
 /** Names the conditions the table was really loaded with, so a refused query can say what is still on screen. */
 function appliedConditions(applied: { userId?: number; keyword: string; status: string; from: string; to: string }, type: D4BillType | "") {
   const parts = [
     type && BILL_TYPE_LABELS[type],
     applied.userId && `用户 ${applied.userId}`,
     applied.status && (BILL_STATUS_LABELS[applied.status] ?? applied.status),
-    applied.from && `从 ${timeText(applied.from)}`,
-    applied.to && `到 ${timeText(applied.to)}`,
+    (applied.from || applied.to) && appliedTimeRange(applied),
     applied.keyword && `关键词「${applied.keyword}」`,
   ].filter(Boolean);
   return parts.length ? parts.join(" · ") : "未加筛选";
@@ -255,7 +260,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
       )}
       {userProblem && (
         <div className="dtint warn" data-proof="d4-user-refused" style={{ marginBottom: 12 }}>
-          用户 ID 有误：{userProblem}。这次没有查询{userLedger ? `，下方仍是用户 ${userLabel(userLedger)} 的账单和余额核对。` : "。"}
+          用户 ID 有误：{userProblem}。这次没有查询{userLedger ? `，下方仍是用户 ${userLabel(userLedger)} 的账单和余额核对（时间范围：${appliedTimeRange(applied)}）。` : "。"}
         </div>
       )}
       {deepBizNo && <div className="dtint cyan" data-proof="d4-deep-link" style={{ marginBottom: 12 }}>正在查找相关账单 · <b className="mono">{deepBizNo}</b>{!loading && bills.records.length === 0 ? " · 未找到匹配账单" : ""}</div>}
