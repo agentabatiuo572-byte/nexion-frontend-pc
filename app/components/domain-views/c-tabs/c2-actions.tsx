@@ -16,7 +16,7 @@ import {
   isUsersRequestNotFound,
   UsersRequestError,
   removeUserAccountList,
-  revokeUserSessions,
+  revokeUserAccountActionSessions,
   startUserImpersonation,
   terminateUserImpersonation,
   updateUserStatus,
@@ -244,7 +244,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const authorities = session?.authorities ?? [];
   const canFreeze = authorities.includes("user_c2_account_freeze");
   const canUnfreeze = authorities.includes("user_c2_account_unfreeze");
-  const canLogout = authorities.includes("user_c5_session_revoke_all");
+  const canLogout = authorities.includes("user_c2_session_revoke_all");
   const canStartImpersonation = authorities.includes("user_c2_impersonate_start");
   const canTerminateImpersonation = authorities.includes("user_c2_impersonate_terminate");
   const canManageLists = authorities.includes("user_c2_blocklist_add");
@@ -566,7 +566,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       const id = accountId(account);
       if (!id) return toast("该账户没有系统编号");
       void perform(
-        () => revokeUserSessions(id, reason, OPERATOR()).then(() => `${displayAccount(account)} 已强制登出`),
+        () => revokeUserAccountActionSessions(id, reason, OPERATOR()).then(() => `${displayAccount(account)} 已强制登出`),
         "已强制下线",
       );
     },
