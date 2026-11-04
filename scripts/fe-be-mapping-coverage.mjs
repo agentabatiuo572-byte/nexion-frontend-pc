@@ -66,7 +66,6 @@ expect(mapping.includes("scripts/fe-be-mapping-coverage.mjs"), "mapping does not
 expect(mapping.includes("scripts/verify.mjs"), "mapping does not declare verify.mjs integration");
 
 const evidence = [
-  ["M9", ROOT, "tests/janus-retirement.test.mjs", ["retired"]],
   ["M2", APP_ROOT, "src/store/app.ts", ["activateDevice", "lastSettledAt"]],
   ["M3", APP_ROOT, "src/store/app.ts", ["settleDevice", "function settle()"]],
   ["M4", APP_ROOT, "src/lib/hashpower.ts", ["isDeviceOnline", "continuityFactor"]],

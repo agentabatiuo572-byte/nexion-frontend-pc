@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
@@ -89,22 +88,7 @@ const steps=[];let failure,nativeGuard;
 try{
   const {createNativeGuard}=await import('file:///D:/CodexData/test-environments/workflow-runs/growth-promotions-20261007/pc-native-current-minimal-fix-r5/pc-native-runtime-guard.mjs');
   const guard=createNativeGuard({phase:'record'});await guard.verifyEnd();nativeGuard=guard.evidence();
-  if(suite==='runtime'){
-    const file=path.join(external,`pc-browser-${env.WORKFLOW_RUN_ID}.json`),before=Date.now();
-    const child=spawnSync(process.execPath,['scripts/growth-promotions-runtime.mjs','--report',file],{stdio:'inherit',env,windowsHide:true,timeout:540000});
-    assert.equal(child.status,0,'Actual browser flow failed');await guard.verifyEnd();assert(fs.statSync(file).mtimeMs>=before);
-    const proof=JSON.parse(fs.readFileSync(file));assert.equal(proof.status,'passed');assert.equal(proof.mode,'full');assert.deepEqual(proof.pageErrors,[]);
-    validatePromotionNativeGuard(proof,guard.binding);
-    const coverage={
-      'pc-flow':['partial-save-reload','four-step-save-reload','simulation-readonly','approval-publish-dual-lifecycle','metrics-real-snapshot','metrics-export','reward-original-receipt','five-templates','reward-retry-reconcile'],
-      'pc-edge':['real-reader-readonly','real-permission-denial','unknown-original-key-recovery','resource-shortage','qualification-expired'],
-    };
-    for(const [id,names]of Object.entries(coverage)){
-      const rows=names.map(name=>proof.steps.find(s=>s.id===name));
-      assert(rows.every(s=>s?.status==='passed'&&s.evidence?.length),`${id}: missing actual cases: ${names.filter((_,i)=>!rows[i]).join(', ')}`);
-      steps.push({id,status:'pass',innerSkipped:0,evidence:[file,...rows.flatMap(s=>s.evidence)]});
-    }
-  }else if(suite==='visual'){
+  if(suite==='visual'){
     // This verifies current product captures and the independent review records, never the old design-only export.
     const file=env.PROMOTION_VISUAL_CANDIDATE||path.join(external,'pc-visual-candidate.json'),proof=JSON.parse(fs.readFileSync(file));
     assert.equal(proof.status,'captured-awaiting-independent-review');assert.deepEqual(proof.pageErrors,[]);

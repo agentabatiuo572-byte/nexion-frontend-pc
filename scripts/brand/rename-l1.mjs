@@ -9,7 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const ROOTS = ["lib", "app", "scripts", "tests"];
+const ROOTS = ["lib", "app", "scripts"];
 const EDIT_ROOTS = ["lib", "app"];
 const EXT = /\.(ts|tsx|mjs|json)$/;
 

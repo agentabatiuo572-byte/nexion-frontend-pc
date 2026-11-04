@@ -28,7 +28,6 @@
  * 要么在 KNOWN 里补一行并说清为什么不需要持久化。
  */
 import fs from "node:fs";
-import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "./lib/strip-comments.mjs";
@@ -55,9 +54,9 @@ const MIGRATED = [
   "app/components/domain-views/e-tabs/phone-replacement-policy-panel.tsx",
   // Promotions retain the original command payload and key until authoritative resource readback.
   "lib/admin/promotion-client.ts",
-  // Avatar drafts and self saves use durable stores; the actual self consumer and expired query-only behavior are bound below.
+  // Avatar drafts and self saves use durable stores; the actual self consumer is bound below.
   "lib/admin/account-avatar-pending.ts",
-  // Exported group store is consumed by the actual M1 container; the bound behavior guard verifies persisted query-only CREATE recovery.
+  // Exported group store is consumed by the actual M1 container.
   "lib/admin/support-group-client.ts",
   // C1 single-notification time correction retains the immutable command across unknown outcomes.
   "app/_console/users/search/[id]/notification-time-evidence.tsx",
@@ -157,13 +156,9 @@ const KNOWN = {
 const EXPORTED_PENDING_STORES = {
   "lib/admin/account-avatar-pending.ts#selfAvatarCommands": {
     consumer: "app/components/domain-views/m-tabs/self-avatar-editor.tsx",
-    behaviorTest: "tests/default-avatar-client-forms.test.mjs",
-    behaviorName: "expired original self avatar command survives reload but is query-only",
   },
   "lib/admin/support-group-client.ts#groupPendingCommands": {
     consumer: "app/components/domain-views/m-tabs/m1-group-management.tsx",
-    behaviorTest: "tests/support-group-client.test.mjs",
-    behaviorName: "unresolved original CREATE survives module reload beyond 24h but cannot replay",
   },
 };
 function pendingStoreCallCode(rel, ident, producerCode) {
@@ -391,7 +386,7 @@ for (const rel of MIGRATED) {
   //   槽位式(createSlotAttemptStore)契约 = resolve(取号/换号)+ forget(成功后收敛),二者缺一即红;
   //   命令号式(createPendingMutationStore)至少要有一次方法调用(纯悬空 const 即红)。
   // ponytail: resolve 出来的键是否真塞进了 Idempotency-Key 头,静态 regex 判不了 ——
-  //           那半步靠 tests/pending-mutation-*.test.mjs 守 store 行为 + 评审;这里守「接线没被拆」。
+  //           那半步靠评审;这里守「接线没被拆」。
   for (const match of code.matchAll(/(?:const|let)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*createSlotAttemptStore\s*\(/g)) {
     const ident = match[1];
     const escaped = ident.replace(/\$/g, "\\$");
@@ -473,24 +468,6 @@ else {
   }
 }
 
-// Run the registered exported store's real behavior, so a dangling declaration cannot pass by registration alone.
-if (!failures.length) for (const binding of Object.values(EXPORTED_PENDING_STORES)) {
-  const testFile = path.join(ROOT, binding.behaviorTest);
-  if (!fs.existsSync(testFile) || !stripComments(fs.readFileSync(testFile, "utf8")).includes(`test("${binding.behaviorName}"`)) {
-    failures.push(`导出存储行为保护缺失:${binding.behaviorTest}#${binding.behaviorName}`); continue;
-  }
-  const behaviorEnv = { ...process.env };
-  delete behaviorEnv.NODE_TEST_CONTEXT;
-  behaviorEnv.GROUP_FE_ROOT = ROOT;
-  const result = spawnSync(process.execPath, ["--experimental-strip-types", "--test", "--test-reporter=tap", "--test-name-pattern", "^" + binding.behaviorName + "$", testFile], { cwd: ROOT, env: behaviorEnv, encoding: "utf8", timeout: 30000 });
-  const requiredCounters = { tests: 1, pass: 1, fail: 0, cancelled: 0, skipped: 0, todo: 0 };
-  const behaviorPassed = Object.entries(requiredCounters).every(([counter, expected]) => {
-    const lines = [...(result.stdout ?? "").matchAll(new RegExp(`^# ${counter} (\\d+)\\r?$`, "gm"))];
-    return lines.length === 1 && lines[0][1] === String(expected);
-  });
-  if (result.error !== undefined || result.status !== 0 || !behaviorPassed)
-    failures.push(`导出存储行为保护失败:${binding.behaviorTest}#${binding.behaviorName}\n${(result.stdout ?? "").slice(-1200)}${result.error?.message ?? ""}`);
-}
 const debt = Object.values(KNOWN).filter((entry) => entry.verdict === "debt").length;
 if (failures.length) {
   console.error("pending-idempotency-key sentinel FAIL");

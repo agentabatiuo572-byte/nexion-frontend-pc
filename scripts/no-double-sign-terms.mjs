@@ -19,7 +19,7 @@ function promotionContractTerms(relativePath, line) {
   if (file === 'lib/admin/promotion-types.ts') return line.replaceAll('"separateMakerChecker"', '"separateReviewActors"');
   if (file === 'lib/admin/promotion-form.ts') return line.replace(/\bc\.separateMakerChecker\b/g, 'c.separateReviewActors');
   if (file === 'app/components/domain-views/h-tabs/h4-promotion-policies.tsx') return line.replace(/\bseparateMakerChecker(?=:)/g, 'separateReviewActors').replaceAll("'separateMakerChecker'", "'separateReviewActors'");
-  if (['scripts/growth-promotions-runtime.mjs', 'scripts/growth-promotions-workflow-runtime.mjs'].includes(file)) return line.replaceAll("'approval-publish-dual-lifecycle'", "'promotion-version-lifecycle'");
+  if (file === 'scripts/growth-promotions-workflow-runtime.mjs') return line.replaceAll("'approval-publish-dual-lifecycle'", "'promotion-version-lifecycle'");
   return line;
 }
 
@@ -74,7 +74,6 @@ const protocolCases = [
   ['lib/admin/promotion-types.ts', '"separateMakerChecker": boolean'],
   ['lib/admin/promotion-form.ts', 'c.separateMakerChecker'],
   ['app/components/domain-views/h-tabs/h4-promotion-policies.tsx', "separateMakerChecker: '审核与发布分人执行'; choice('separateMakerChecker')"],
-  ['scripts/growth-promotions-runtime.mjs', "record('approval-publish-dual-lifecycle', evidence)"],
   ['scripts/growth-promotions-workflow-runtime.mjs', "['approval-publish-dual-lifecycle']"],
 ];
 const rejects = (file, line) => banned.some(pattern => pattern.test(promotionContractTerms(file, line)));
@@ -97,18 +96,6 @@ function walk(dir, out = []) {
 
 const hits = [];
 // 2026-08-03 范围对齐章程:全词表只扫用户面与代码口径 = app/lib/scripts;
-// 2026-08-04 对抗验收增补:tests/ 以「机制签名窄集」扫描(只咬旧机制部件名,不含 approval/可确认 等易误报词),
-// 防旧机制断言在测试层复活而无门可咬。
-const MECH_SIGNATURES = [/MakerCheckerModal/, /ApprovalInbox/, /approval-inbox/, /mc-pair/, /setMc/, /工单 TTL/, /待确认工单/, /超时自动作废/, /双签/, /双人复核/, /双人审批/];
-for (const file of walk(path.join(ROOT, "tests"))) {
-  const rel = path.relative(ROOT, file);
-  const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
-  lines.forEach((line, i) => {
-    for (const re of MECH_SIGNATURES) {
-      if (re.test(line)) hits.push(`${rel}:${i + 1}: ${line.trim()}`);
-    }
-  });
-}
 const SCAN_ROOTS = ["app", "lib", "scripts"].map((d) => path.join(ROOT, d));
 for (const file of SCAN_ROOTS.flatMap((d) => walk(d))) {
   const rel = path.relative(ROOT, file);

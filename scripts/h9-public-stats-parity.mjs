@@ -31,7 +31,7 @@
  *       (旧 `H9_BAND_MAX = 8`)也红 —— 后台比权威侧更严时,一张合法的表会把整页锁成不可保存。
  *   C3. 分位表**单档 tops 下限**随前端:前端 `network-rank.ts` 判非法的门槛 = `H9_BAND_TOPS_MIN`,
  *       且面板必须真的用共享常量与共享校验(判据打在**剥掉 import 后的用途位**,一行悬空
- *       import 不算接上;行为级等价另由 tests/h9-public-stats-contract.test.mjs 钉死)。
+ *       import 不算接上)。
  *   F. **默认(种子)值三处一致**(规格 ⑦):规格 ③「默认」列 ↔ 前端 `mock/platform-config.ts` 种子。
  *      fleetDevices 在种子里是锚常量,故经 `lib/platform-stats.ts` 间接取值——种子里写字面量本身
  *      就是把单源变双源(前端另有 platform_stats_anchor 哨兵守那条)。

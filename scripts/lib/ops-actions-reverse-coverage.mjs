@@ -520,7 +520,6 @@ const CONSUMER_RUNTIME_TYPES = new Set([
   "uniapp-runtime",
 ]);
 const CONSUMER_TEST_TYPES = new Set([
-  "test-runtime",
   "backend-test",
   "uniapp-test",
 ]);
