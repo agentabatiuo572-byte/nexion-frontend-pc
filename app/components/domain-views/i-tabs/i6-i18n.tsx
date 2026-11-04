@@ -18,6 +18,7 @@ import { Drawer, PaginationExemptionList } from "../design-kit";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 type NsFlt = "all" | "issues";
@@ -159,6 +160,19 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const liveFeatured = (): string =>
     TUTORIAL_FEATURED_DEFAULT;
   const selectedMessage = MESSAGES.find((message) => message.messageKey === selectedMessageKey) ?? MESSAGES[0];
+  const missingLocales = selectedMessage
+    ? ([["中文", selectedMessage.zh], ["英文", selectedMessage.en], ["越南语", selectedMessage.vi]] as const).filter(([, value]) => !value.trim()).map(([label]) => label)
+    : [];
+  const messageVariables = selectedMessage
+    ? [selectedMessage.zh, selectedMessage.en, selectedMessage.vi].map((value) => [...new Set(value.match(/\{[a-zA-Z0-9_.-]+}/g) ?? [])].sort().join("、"))
+    : [];
+  const variablesMatch = new Set(messageVariables).size === 1;
+  const qualityIssues = selectedMessage ? i6CopyQualityIssues(selectedMessage.zh, selectedMessage.en, selectedMessage.vi) : [];
+  const publicationIssues = [
+    ...missingLocales.map((locale) => `缺少${locale}文案`),
+    ...(missingLocales.length === 0 && !variablesMatch ? ["三语变量不一致"] : []),
+    ...qualityIssues,
+  ];
   useEffect(() => {
     const messageKey = selectedMessage?.messageKey;
     if (!messageKey) {
@@ -247,14 +261,15 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       action: <>发布词条 · {selectedMessage?.messageKey ?? "未选择"} {selectedMessage?.version ?? ""}</>,
       detail: (
         <>
-          发布后所有用户下次打开就会看到。发布前会检查：
-          <b> 中英越三语都有 ✓ 变量一致 ✓ 没有占位文字和旧品牌名 ✓ 没有禁用词 ✓</b>
-          有一项不通过就不能发布，<b>不能只发一种语言</b>。
+          发布前检查：<b>中英越三语{missingLocales.length === 0 ? "完整 ✓" : `待补齐（${missingLocales.join("、")}）`}</b>；
+          <b>变量{missingLocales.length > 0 ? "尚未检查（请先补齐三语）" : variablesMatch ? `一致 ✓（${messageVariables[0] || "无变量"}）` : "不一致"}</b>；
+          <b>占位文字与旧品牌{qualityIssues.length === 0 ? "检查通过 ✓" : `检查未通过：${qualityIssues.join("、")}`}</b>。
+          发布后用户下次加载该词条时使用新版本。系统提交时仍会核对发布条件。
         </>
       ),
       amplifies: false,
       run: (reason) => {
-        if (!selectedMessage) return false;
+        if (!selectedMessage || selectedMessage.status !== "draft" || publicationIssues.length > 0) return false;
         return runBackend(actions.publishI6LocalizedMessage(selectedMessage.messageKey, {
           zh: selectedMessage.zh,
           en: selectedMessage.en,
@@ -757,7 +772,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               <button className="l-btn sm" onClick={editKeyDraft}>
                 编辑三语草稿
               </button>
-              {selectedMessage.status === "draft" && <button className="l-btn sm mc" onClick={pubKey}>
+              {selectedMessage.status === "draft" && <button className="l-btn sm mc" disabled={publicationIssues.length > 0} onClick={pubKey}>
                 发布
               </button>}
               {selectedMessage.status === "published" && <button className="l-btn sm" onClick={archiveKey}>归档</button>}
@@ -766,6 +781,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           </div>
           <div className="l-b" style={{ paddingTop: 6 }}>
             {selectedMessage ? <>
+              {selectedMessage.status === "draft" && publicationIssues.length > 0 && <div className="itint warn" role="status">暂不能发布：{publicationIssues.join("；")}。请编辑三语草稿后再发布。</div>}
               <div className="ab-grid">
                 <div className="ab-prev"><div className="lc">中文 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.zh || "待补齐"}</div></div>
                 <div className="ab-prev"><div className="lc">英文 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.en || "待补齐"}</div></div>
