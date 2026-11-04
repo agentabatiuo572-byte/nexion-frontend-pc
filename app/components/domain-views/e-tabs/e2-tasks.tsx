@@ -293,8 +293,8 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
               <div className="ctr"><div className="num">{avgSat == null ? "—" : avgSat}<small>{avgSat == null ? "" : "%"}</small></div><div className="lb">{peakTask ? `最高 ${Math.round(peakTask.sat * 100)}%` : "暂无数据"}</div></div>
             </div>
             <div className="legend">
-              <div className="row"><span className="dot" style={{ background: "var(--warning)" }} /><span className="nm">高负载(&gt;75%)</span><span className="pct">{hiLoad} 个</span></div>
-              <div className="row"><span className="dot" style={{ background: "var(--success)" }} /><span className="nm">中负载(40–75%)</span><span className="pct">{midLoad} 个</span></div>
+              <div className="row"><span className="dot" style={{ background: "var(--warning)" }} /><span className="nm">高负载(≥75%)</span><span className="pct">{hiLoad} 个</span></div>
+              <div className="row"><span className="dot" style={{ background: "var(--success)" }} /><span className="nm">中负载(40%≤负载&lt;75%)</span><span className="pct">{midLoad} 个</span></div>
               <div className="row"><span className="dot" style={{ background: "var(--ink-4)" }} /><span className="nm">低负载(&lt;40%)</span><span className="pct">{loLoad} 个</span></div>
             </div>
           </div>

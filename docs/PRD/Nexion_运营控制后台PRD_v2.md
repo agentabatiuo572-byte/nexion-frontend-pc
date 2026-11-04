@@ -349,7 +349,7 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 
 **② 后台界面**
 1. **6 类 AI 任务定价表**:每类一行 `[任务类 / 代表模型 / minReward / maxReward(USDT)/ minVRAM 路由门槛 / 当前是否可承接(kill 开关)]`。6 类:**IG(Image Gen)**(SDXL Turbo / Flux Schnell)/ **VG(Video Gen)**(Sora-class)/ **LL(LLM)**(Llama 70B / Phi-3-mini)/ **FT(Fine-tune)** / **EM(Embedding)** / **SP(Speech)**(Whisper)。
-2. **QUEUE_SATURATION 配置**:全局饱和因子(影响 locked teaser 的 `dailyPotential` 估算)。
+2. **QUEUE_SATURATION 配置**:全局饱和因子(影响 locked teaser 的 `dailyPotential` 估算)。负载环图按当前展示任务的有效饱和度分组：高负载 ≥75%，中负载 ≥40% 且 <75%，低负载 <40%；恰好 75% 计入高负载，恰好 40% 计入中负载。图例必须明确相同的包含边界，缺失饱和度不计入三组（BUG-153）。
 3. **任务路由门槛**:各类 `minVRAM`(决定哪些设备能承接该类任务,与 fleet 最大 VRAM 对齐,§6.3)。
 4. **Locked teaser 预览**:按设备 VRAM 档(**phone 8** / S1 96 / Pro 192 / Rack 640 / cloud-share 物理显示 0、路由等效 8)预览「被锁任务 + daily potential」文案,校验升级叙事不失真。
    > **注(phone / cloud-share 口径区别)**:前端 §6.7 写「phone 12 GB」,但原型 `lib/store/index.ts` 定义 `phone.vramTotal=8`(8 GB)。**以原型代码 8 GB 为准**,本预览段标注 8 GB;前端 §6.7 的 12 GB 与原型 `vramTotal=8` 的矛盾记 V4 跨文档收口。Cloud Share 继续显示 `vramTotal=0`（它没有用户侧实体显卡），仅在服务端任务路由时按受管 8 GB 等效能力进入低能力池；展示值与路由值不可混写。
