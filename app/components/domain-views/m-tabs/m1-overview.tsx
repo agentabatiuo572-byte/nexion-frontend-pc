@@ -655,7 +655,7 @@ export function SupportSeatRoleModal({ canManage, onClose }: { ctx: MCtx; operat
   return <Modal title="客服资格管理" icon="users" onClose={onClose} footer={<button type="button" className="btn btn-sec btn-sm" onClick={onClose}>关闭</button>}>
     <p>人工接待统一由专属客服负责。接待资格和主管资格由超级管理员在「运营账号与权限」里设置。</p>
     {canManageQualifications && <Link className="btn btn-pri btn-sm" href="/platform/rbac">前往账号管理</Link>}
-    <p className="sub">当前页仍可调整会话承载量与在线状态；已有会话、客户资料和绑定关系保留。</p>
+    <p className="sub">资格调整后，已有会话、客户资料和绑定关系保留。</p>
   </Modal>;
 }
 
