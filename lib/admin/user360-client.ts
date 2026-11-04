@@ -657,7 +657,8 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
-    if (isAdminAuthFailure(response.status, result?.message)) {
+    const authFailure = isAdminAuthFailure(response.status, result?.message);
+    if (authFailure) {
       resetAdminSession();
     }
     const commandKey = headers.get("Idempotency-Key");
@@ -668,8 +669,12 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
       || outcomeStaysUnknown(response.status, result?.code))) {
       throw new UsersOutcomeUnknownError(commandKey);
     }
-    // A terminal refusal also settles a retry (including a cached refusal).
-    if (mutationFingerprint) pendingUserMutations.forget(mutationFingerprint);
+    // A retry can be denied by the proxy before reaching the original command.
+    // Keep its key through login/permission recovery; a cached business refusal settles it.
+    const retryBlockedByAccess = pendingKeyBeforeRequest && (
+      authFailure || response.status === 403 || result?.code === 401 || result?.code === 403
+    );
+    if (mutationFingerprint && !retryBlockedByAccess) pendingUserMutations.forget(mutationFingerprint);
     // classification-ok:这里的 5xx 判定只挑**错误文案**(不把后端原始消息透给运营),
     // 不参与「命令号要不要丢」的归类 —— 归类在上面一条,走共享谓词。
     const serverMessage = response.status >= 500 ? "INTERNAL_SERVER_ERROR" : result?.message;
