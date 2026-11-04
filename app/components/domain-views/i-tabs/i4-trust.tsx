@@ -405,11 +405,11 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       action: <>回滚信任版块 · {s.key}</>,
       detail: (
         <>
-          当前 <b>{s.v}</b>。回滚 = 把旧版本重新发布，对外内容马上变回旧版，权限要求和发布一样。
+          当前 <b>{s.v}</b>。请选择要恢复的历史版本。提交后等待审批；审批通过并执行后，对外内容恢复为所选版本，权限要求和发布一样。
         </>
       ),
       amplifies: false,
-      edit: { kind: "select", current: sectionVersionOptions(s)[0] ?? "", options: sectionVersionOptions(s) },
+      edit: { kind: "select", current: s.v, options: sectionVersionOptions(s) },
       run: async (reason, nv) => {
         if (!nv) return false;
         const def = findHighOp("i4_trust_section_manage")!;
