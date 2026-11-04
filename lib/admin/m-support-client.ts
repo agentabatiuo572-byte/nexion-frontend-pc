@@ -607,12 +607,14 @@ export type SupportWelcomeMessage = { version: number; texts: SupportWelcomeText
 const welcomeMessage = (value: unknown): SupportWelcomeMessage => {
   const row = object(value, "welcome");
   const texts = object(row.texts, "welcome.texts");
+  // B16 always returns these three; null means never edited, a missing field means the response is incomplete.
+  if (row.updatedAt === undefined || row.updatedBy === undefined || row.reason === undefined) malformed("welcome.audit");
   return {
     version: positive(row.version, "welcome.version"),
     texts: { zh: nonempty(texts.zh, "welcome.texts.zh"), en: nonempty(texts.en, "welcome.texts.en"), vi: nonempty(texts.vi, "welcome.texts.vi") },
     updatedAt: nullableTimestamp(row.updatedAt, "welcome.updatedAt") ?? null,
-    updatedBy: row.updatedBy == null ? null : nonempty(row.updatedBy, "welcome.updatedBy"),
-    reason: row.reason == null ? null : nonempty(row.reason, "welcome.reason"),
+    updatedBy: row.updatedBy === null ? null : nonempty(row.updatedBy, "welcome.updatedBy"),
+    reason: row.reason === null ? null : nonempty(row.reason, "welcome.reason"),
   };
 };
 /** B16: the one welcome copy every new user receives in their support conversation right after registration. */
