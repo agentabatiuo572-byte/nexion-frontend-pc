@@ -206,7 +206,7 @@
 .rd-select-check { position: absolute; right: 8px; display: inline-flex; color: var(--rd-brand-ink); }
 
 /* ── 抽屉和弹窗 ── */
-/* 抽屉不用暗遮罩，列表和高亮行都留在眼前（PG-63）；这层透明，只接点击。 */
+/* 抽屉不用暗遮罩（PG-63）。这层透明，只在抽屉提交中挡住外面的点击；data-modal 是弹窗的暗遮罩。 */
 .rd-scrim { position: fixed; inset: 0; z-index: var(--rd-z-drawer); background: transparent; }
 .rd-scrim[data-modal] { z-index: var(--rd-z-modal); background: var(--rd-scrim); }
 .rd-scrim[data-modal][data-state="open"] { animation: rd-fade-in .16s ease-out; }

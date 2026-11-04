@@ -232,7 +232,7 @@ export function TopBar({
       </div>
       <div className="admin-topbar-actions flex shrink-0 items-center gap-2 whitespace-nowrap">
         {!supportOnly && canReadBDomain && <CoveragePill enabled />}
-        <span className="admin-topbar-clock hidden 2xl:block"><UtcClock /></span>
+        <span className="admin-topbar-clock hidden xl:block"><UtcClock /></span>
         {canReadMContent && <SupportInboxPill pending={servicePending} />}
         {!supportOnly && <NotificationBell />}
         <RoleSwitcher role={role} operator={operator} />

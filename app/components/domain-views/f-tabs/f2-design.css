@@ -1,17 +1,5 @@
 /* UVEL F2: confirmed v4 design. Route scope preserves the other console pages. */
-[data-royalty-shell] { --admin-sidebar-w: 168px; --admin-topbar-h: 40px; --admin-gutter: 16px; }
 [data-royalty-shell] .fdom { --surface: #101115; --surface-2: #16181e; --border: #292c35; --border-strong: #383d4b; --ink-3: #a5aabb; --cyan: #b799ff; --brand: #b5ef62; }
-[data-royalty-shell] .content-shell { max-width: none; margin: 0; }
-[data-royalty-shell] header button[aria-label^="告警与待办"] > span { top: 0; }
-[data-royalty-shell] aside > a[aria-label="UVEL 运营控制台"] > :first-child:not(:only-child) { display: none; }
-[data-royalty-shell] aside > a[aria-label="UVEL 运营控制台"] .font-display { font-size: 23px; font-weight: 750; letter-spacing: .02em; }
-[data-royalty-shell] aside > a[aria-label="UVEL 运营控制台"] .font-display::after { content: '•'; color: var(--cyan); }
-[data-royalty-shell] aside > a[aria-label="UVEL 运营控制台"] .text-\[10px\],
-[data-royalty-shell] aside > a[aria-label="UVEL 运营控制台"] > .font-mono-tabular,
-[data-royalty-shell] aside nav .font-mono-tabular { display: none; }
-[data-royalty-shell] aside nav button { gap: 7px; padding-inline: 8px; }
-[data-royalty-shell] aside nav button > .flex-1 { font-size: 12px; }
-[data-royalty-shell] aside nav a { border-radius: 4px; }
 .fdom .f2-page-header { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin: 0 0 18px; }
 .fdom .f2-page-header h1 { margin: 6px 0 0; font-size: 28px; font-weight: 650; line-height: 1.35; }
 .fdom .f2-breadcrumb { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--ink-3); }
@@ -107,8 +95,6 @@
   .fdom .f2-layout .params.f2-rule-params { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
-  [data-royalty-shell] { --admin-gutter: 12px; }
-  [data-royalty-shell] aside > a[aria-label="UVEL 运营控制台"] > :first-child { display: block; }
   .fdom .f2-page-header h1 { font-size: 24px; }
   .fdom .f2-layout .pane-h { padding-inline: 18px; }
   .fdom .f2-layout .params.f2-rule-params, .fdom .f2-legacy-values { grid-template-columns: minmax(0, 1fr); }

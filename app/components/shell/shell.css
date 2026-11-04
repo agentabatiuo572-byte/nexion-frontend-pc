@@ -9,6 +9,14 @@
 .rd-gate-recovery strong { color: var(--rd-text); font-size: 16px; font-weight: 600; }
 .rd-maintenance { margin-bottom: 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-warn-bg); color: var(--rd-text); font-size: 14px; line-height: 22px; }
 
+/* 浅色 Logo：横版 on-light；侧栏折叠放不下，用透明符号图。主题选定后删掉落选的一套。 */
+.rd-logo-symbol, .rd-logo-lockup { display: none; }
+[data-theme="light"] .rd-logo-dark, [data-theme="light"] .rd-side-name { display: none; }
+[data-theme="light"] .rd-logo-symbol { display: inline-flex; align-items: center; }
+[data-theme="light"] .rd-logo-symbol img { height: auto; }
+[data-theme="light"] .rd-logo-lockup { display: block; }
+[data-theme="light"] .rd-side-brand:has(.rd-logo-lockup) .rd-logo-symbol { display: none; }
+
 /* 侧栏 */
 .rd-side { background: var(--rd-bg-sidebar); }
 .rd-side-brand { flex: none; display: flex; align-items: center; gap: 10px; height: var(--admin-topbar-h); padding: 0 16px; }

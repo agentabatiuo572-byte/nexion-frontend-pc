@@ -70,8 +70,8 @@
   white-space: nowrap;
 }
 
-/* Use the space beside the sidebar, not the full browser width. */
-@container admin-topbar (max-width: 1200px) {
+/* 1280 及以上显示搜索文字、覆盖率标签和 UTC 钟，低于 1280 收起。 */
+@media (max-width: 1279.98px) {
   .admin-topbar-search {
     width: 44px;
     justify-content: center;

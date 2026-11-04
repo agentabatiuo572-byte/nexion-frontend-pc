@@ -16,9 +16,14 @@ import { SidebarGroup } from "./sidebar-group";
 
 function LogoMark() {
   return (
-    <span className="uvel-logo-mark" aria-hidden>
-      <Image src="/uvel-mark-dark.png" width={30} height={30} alt="" />
-    </span>
+    <>
+      <span className="uvel-logo-mark rd-logo-dark" aria-hidden>
+        <Image src="/uvel-mark-dark.png" width={30} height={30} alt="" />
+      </span>
+      <span className="uvel-logo-mark rd-logo-symbol" aria-hidden>
+        <Image src="/uvel-symbol.png" width={30} height={22} alt="" />
+      </span>
+    </>
   );
 }
 
@@ -110,6 +115,7 @@ export function Sidebar({
         <LogoMark />
         {!collapsed && (
           <>
+            <Image className="rd-logo-lockup" src="/uvel-lockup-on-light.png" width={86} height={30} alt="" aria-hidden />
             <span className="flex flex-col leading-tight">
               <span className="font-display rd-side-name">UVEL</span>
               <span className="text-[10px] rd-side-role">运营控制台</span>

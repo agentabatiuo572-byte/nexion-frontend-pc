@@ -17,7 +17,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 </RdPage>
 ```
 
-**一定要包 `RdPage`。** 它保留 `.dkpage`，把旧组件的颜色接到新配色，并让里面的旧 `Modal`、`OperationConfirmModal` 走 Radix 弹窗。不包的话，旧弹窗开在新抽屉上面会点不动，因为抽屉会锁住抽屉外的点击和焦点。
+**一定要包 `RdPage`。** 它保留 `.dkpage`，把旧组件的颜色接到新配色，并让里面的旧 `Modal`、`OperationConfirmModal` 走 Radix 弹窗。不包的话，旧弹窗开在新抽屉上按 Esc 会连抽屉一起关。
 
 `PageHeader` 的 `pageId` 同时决定「这页怎么用」的内容，内容写在 `lib/admin/page-guides/index.ts`，没写的页不显示入口。
 
@@ -60,7 +60,9 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 
 ## 单条详情的抽屉
 
-默认关着，列表占满宽度。点一行滑出，浮在列表上，不用暗遮罩，列表不变窄。被点的行传 `selected` 保持高亮，上一条下一条切到视口外的行会自动滚过去。点抽屉外面关抽屉，这一下不会点到下面的行。工作台页才让列表和详情并排，并排不用 `Drawer`。
+默认关着，列表占满宽度。点一行滑出，浮在列表上，不用暗遮罩，列表不变窄。被点的行传 `selected` 保持高亮，上一条下一条切到视口外的行会自动滚过去。工作台页才让列表和详情并排，并排不用 `Drawer`。
+
+抽屉开着时列表还能滚、还能点：点另一行直接切到那一行，不关抽屉，审核时不用来回开关；点行里的按钮也不关。点空白处或页面其他地方才关，这一下照常点到那个控件。提交中（`busy`）抽屉外面点不了。
 
 ```tsx
 <Tr selected={row.id === current?.id} onOpen={() => open(row)}>…</Tr>
@@ -72,7 +74,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 </Drawer>
 ```
 
-风险、阻断原因放 `JudgmentPoints`，不能放进 `Fold`。有未保存内容时在 `onPrev`、`onNext`、`onClose` 里先拦；切条时让旧请求失效，这两件都是页面的事。
+风险、阻断原因放 `JudgmentPoints`，不能放进 `Fold`。有未保存内容时在 `onPrev`、`onNext`、`onClose` 和行的 `onOpen` 里先拦；切条时让旧请求失效，这两件都是页面的事。
 
 ## 写操作确认
 
@@ -85,7 +87,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 
 - `Button`：`type` 默认 `button`，属性全部透传，`loading` 时点击无效、宽度不变；`disabledReason` 时不可点但能聚焦，悬停和聚焦都看得到原因。
 - `Tr`：传 `onOpen` 后 Tab 能到，Enter、Space 打开，行内的按钮、链接、输入不触发。
-- `Drawer`、`Modal`：Tab 圈在里面，Esc 只关最上层，打开时聚焦容器，关闭后焦点回到原位，`busy` 时全部锁住。
+- `Drawer`、`Modal`：Tab 圈在里面，Esc 只关最上层，打开时聚焦容器，关闭后焦点回到当前高亮行或原来的按钮，`busy` 时全部锁住。
 - `PageTabs`、`Segments`：方向键、Home、End 移动并立即选中，禁用项跳过。页签的网址读写在页面做。
 - `Select`：方向键环绕，Tab 和 Esc 收起，选后焦点回到触发器。
 - `FilterBar`：Enter 等于查询；查询中只禁「查询」，条件照常能改；更多筛选收起不丢值。
@@ -99,7 +101,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 
 ## 深浅切换（临时）
 
-网址加 `?theme=light` 或 `?theme=dark`，选择记在浏览器里，默认深色。选定后删掉 `theme-switch.tsx`、`app/layout.tsx` 里的引用、`tokens.css` 里落选的那一套，以及 `rd.css` 里 `:root[data-theme="light"]` 这个选择器。旧页面浅色下靠 `rd.css` 的变量映射保持可读，写死颜色的地方不会跟着变。
+网址加 `?theme=light` 或 `?theme=dark`，选择记在浏览器里，默认深色。选定后删掉 `theme-switch.tsx`、`app/layout.tsx` 里的引用、`tokens.css` 里落选的那一套、`rd.css` 里 `:root[data-theme="light"]` 这个选择器，以及 `shell.css` 里落选的 Logo 规则和对应的图（`public/uvel-mark-dark.png` 或 `public/uvel-lockup-on-light.png`、`public/uvel-symbol.png`）。旧页面浅色下靠 `rd.css` 的变量映射保持可读，写死颜色的地方不会跟着变。
 
 ## 依赖
 
