@@ -35,110 +35,25 @@
 
 #### [G1] 质押产品配置
 
-> 后台页面名「质押产品配置」。列与操作：参考年奖励率、提前解锁扣款、最低锁仓额、锁定金额、累计应付质押奖励；持仓状态「计算奖励中 / 到期未领 / 提前解锁 / 已退回」。
-**① 目的 & 对齐**: 配置平台 USDT 锁仓定期质押产品的 4 档期限 APY、提前赎回罚款、最小额、启用态与单档 kill,作为 NEX 代币经济(§1.4 第三支柱)质押利率/利差的核心调节面(质押为 USDT-only 单产品,NEX 不可质押)。对齐前端 **§9.6**(`/staking` 4 档 30/90/180/365 天)+ **§13.3.1**(USDT 锁仓数值)+ **§9.11c.1**(staking pools 统一接口)+ **§9.11d.1**(单档 disable kill)。服务业务目标:在 B1 兑付安全约束内,用高档 APY 沉淀长周期锁仓资金(提升留存与「已收资金」规模),服务 **§18.2 Day7 留存(>60%)** 的资金侧留存路径与 **B1 兑付安全水位**(内部风控口径;§18.2 八项 KPI 闭集无「资金留存 / LTV」项,staking 按前端 §1.4 商业模式四支柱归入第三支柱「NEX 平台代币经济(兑换/二级市场)」、未单列独立收入科目,故不以臆造 KPI 锚定)。
+> **现行规则（2026-11-04，T04 / PCN-15，BUG-227、BUG-228）**：质押已退役，只保留历史查看，不恢复业务。此规则取代原参数编辑、App 显示、开售、单档暂停和恢复规格；不再生成这些操作的确认框或影响预览。
 
-**② 后台界面**:
-- **池配置列表**(USDT 锁仓 4 档行):`产品(USDT 锁仓)· 期限(30/90/180/365d)· APY · penalty% · minStake · enabled · 在锁本金合计 · 在锁 position 数 · 累计应付利息(D3 派生)· 单档 kill 状态灯`。
-- **Position 监控视图**(只读,server-canonical):按状态机分组计数 + 可下钻单 position(`userId 脱敏 / 产品 / 期限 / 本金 / APY 锁定值 / 开锁时间 / 到期时间 / 累计应付利息 / 状态`)。
-- **状态机**(V1 §9 数据模型,server-canonical):`pending_lock(提交锁仓待确认)→ active(锁仓计息中)→ mature_unclaimed(到期未领)→ claimed(已领本息)`;旁路:`active → early_withdrawn(提前赎回·扣罚款 forfeit 利息)`、`active/mature_unclaimed → slashed(单档 kill 后处置)`、`pending_lock → refunded(锁仓失败退本金)`。
-- **关键视图**:到期日历(未来 N 天到期本息热力,喂 B2 到期负债预测)+ 单档 kill 影响预览(disable 某档对在锁 position 的处置说明)。
+**① 目的**：核对 USDT 原质押档位和已有持仓记录。页面名称、路由和读取权限保持不变，不以已有配置状态表示业务获准开放。
 
-**③ 可控参数**:
+**② 后台界面**：
+- **原档位配置**：按 30 / 90 / 180 / 365 天展示系统已有档位，列为期限、参考年奖励率、提前解锁扣款、最低锁仓额、锁定金额和原档位状态。缺档位时不补默认数据。原档位状态仅供历史核对。
+- **概览**：USDT 锁定金额、持仓数、累计应付质押奖励、已暂停档位及原总开关状态，均按系统返回值展示。
+- **持仓状态**：待确认、计算奖励中、到期未领、提前解锁、已领取、已罚没、已退款；可打开清单核对订单编号、用户、档位、锁定金额、下单奖励率与扣款、开始与到期时间、预计奖励和备注。
+- **历史清单**：只读，不修改订单，不新增到期日历或单档处置功能。已有订单条件以订单记录为准。
 
-| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
-|---|---|---|---|---|
-| USDT 锁仓 APY(30/90/180/365d) | **现状值(§9.6 / §13.3.1)**:12% / 35% / 80% / 180% | 各档 0–300%,保序(长期 ≥ 短期) | 仅新 position(在锁按开锁时锁定 APY 到期) | `/staking` plan 卡 APY 大字 + Stake sheet 预测 |
-| USDT 锁仓 penalty(30/90/180/365d) | **现状值(§9.6)**:5% / 15% / 30% / 50% 本金 | 各档 0–100% | 仅新 position | `/staking` plan 卡罚款警告 + early withdraw 提示 |
-| `enabled`(每档) | true | bool | 实时(关闭即停新锁,在锁不受影响,除非走 kill) | plan 卡是否可 Stake |
-| 单档 kill(尤其 180%/365d) | 关 | bool | 实时(熔断停新锁 + 在锁处置走 ⑦) | plan 卡熔断态(对齐 §9.11d.1) |
+**③ 操作边界**：
+- 所有角色（含超级管理员）均不显示参数编辑、App 显示或隐藏、开售、停售、暂停、解除暂停和恢复入口。
+- 不再存在引用全页持仓数和奖励的单档调参预览，也不再承诺解除单档暂停后即可购买；两个旧缺陷通过移除退役入口关闭，不新增统计口径或恢复能力。
+- 本页只提供历史查看和加载失败后的重试；历史档位、持仓和状态清单仍可读。
 
-> **⚠️ USDT-staking APY 多披露面收敛(承接前端 §13.3.1 已记录的 withdraw 页 mismatch 并落实其收敛方案,记入 §3.14 待补)**:**canonical 仅 §9.6 主表**(`12% / 35% / 80% / 180%`,源 `lib/v3/staking.ts`);其余披露面均**误用 `5/12/20/35`**——① **§9.6.3 how-it-works** `$100` 示例(`30d/5% · 90d/12% · 180d/20% · 365d/35%`,且美元值 `30d/$4.11` 等按复利/夸大口径,与 simple-interest 不符:`$100×5%×30/365 = $0.41`,差约 10×,$ 值须按 simple-interest 重算);② **§9.3.4 StakeAlternativeCard**(`5%/12%/20%`);③ **withdraw 页**(`0.05/0.12/0.20`)。前端 **§13.3.1已记录 withdraw 页一处 mismatch 及收敛方案**(单一 `GET /api/config/staking/pools` 数据源);本审查另发现 §9.6.3 / §9.3.4 两处同源误用,**合计 4 披露面**(前端 §13.3.1 称 withdraw 页为「第三套」,本卷按 canonical §9.6 计为含主表共 4 披露面):四面逐条登记统一改读 `GET /api/config/staking/pools`(USDT product),消除 UI/业务 mismatch;§9.6.3 美元示例须按 simple-interest 重算。区分「前端已记录(withdraw 页)」与「本章新增发现(§9.6.3 / §9.3.4)」。
-> **默认值口径**:12 月节奏表 §6 未覆盖 staking APY/penalty,故取前端现状值(标注「现状值」);升 APY / 降 penalty 属放大流出,受 ① B1 红线前置约束。
-
-**④ 操作动作**:
-| 动作 | 执行权 | 确认弹窗 | 审计点 |
-|---|---|---|---|
-| 改 APY / penalty / minStake | 财务(lead)/ 超管(2026-06 操作确认决议,原复核层级就高为执行门槛) | G1-MD1(理由必填+B1 红线预检) | `admin.staking_pool_config_changed`(产品 / 期限 / 前后值 / 原因 / operator) |
-| 切换单档 `enabled` | 运营(lead)/ 超管 | G1-MD2(理由必填) | `admin.staking_pool_enabled_changed` |
-| 单档 kill(熔断) | 风控(lead)/ 超管(止血方向) | G1-MD3(理由必填;在锁 position 处置方案须随单提交) | `admin.staking_pool_killed`(poolId / 处置方案 / operator)→ 同步 J1 矩阵 |
-| 查看池配置 / position 监控 / 到期日历 | 全角色(按可见性裁剪) | 否(只读) | — |
-
-> **单档恢复(disable→enable)不在本表**:恢复属放大流出方向,V1 经 A3 kill-switch config store 执行(A3-MD3:仅超管 + B1 红线预检),V4 归 J1 矩阵;G1 仅作生效面(章首贯穿事实 ④)。
-
-**④a 交互与弹窗规格**
-
-**(1) 动作触发总表**
-
-| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
-|---|---|---|---|---|
-| 改 APY / penalty / minStake | ② 池配置列表行内「编辑」(每产品每档) | 行内按钮 | 仅财务(lead)/ 超管渲染;已 kill 档置灰 | 打开弹窗 G1-MD1 |
-| 切换单档 enabled | ② 池配置列表行内 `enabled` 开关 | 开关 | 仅运营(lead)/ 超管可操作;已 kill 档置灰 | 打开弹窗 G1-MD2 |
-| 单档 kill(熔断) | ② 池配置列表行内「熔断」(联动「单档 kill 影响预览」关键视图) | 行内警示按钮 | 仅风控(lead)/ 超管渲染;仅未 kill 档显示 | 打开弹窗 G1-MD3 |
-| 查看 position 监控 / 到期日历 | ② Position 监控视图 / 关键视图 tab | 链接 | 恒可用(按角色裁剪) | 跳转对应视图,无弹窗 |
-
-**(2) 弹窗规格**
-
-##### [G1-MD1] Staking 单档参数变更
-- **功能**:修改单产品单档的 APY / penalty / minStake,确认即生效(仅对新 position,在锁按开锁锁定值结算)。
-- **布局结构**:1. **信息区**:产品 / 期限 / 当前 APY / penalty / minStake / 该档在锁本金合计 / 在锁 position 数。2. **影响预览区**:before→after 并排;server 预检「**拟生效后覆盖率**」+ **受影响在锁 position 数**(在锁按开锁锁定值结算,新值仅对新 position 生效);升 APY / 降 penalty 且预检低于 B1 红线时展示红线警示条(确认钮置灰,文案含「覆盖率低于红线,server 将拒绝(422)」);跨档保序冲突时内联指出冲突档位。3. **输入区**:见下表。4. **按钮区**:取消 / 确认变更。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标 APY | 数字输入(%) | 改 APY 时必填 | 各档 0–300%,同产品跨档保序(③ 表);违反 server 返 422 | 当前值 |
-| 目标 penalty | 数字输入(%) | 改 penalty 时必填 | 各档 0–100%(③ 表) | 当前值 |
-| 目标 minStake | 数字输入 | 改 minStake 时必填 | ≥ 0(③ 表) | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认变更]`(主按钮;必填未过校验 / 升 APY · 降 penalty 预检低于红线时置灰;提交 loading 锁定)。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(含 server 回传当前覆盖率,弹窗不关,内联阻断条)/ 422(跨档保序违反,内联指出冲突档位)/ 400 `REASON_REQUIRED` / 409(配置已被他人变更,提示刷新)/ 403(执行权不符)。
-- **成功反馈**:弹窗关闭;池配置行就地更新;toast「单档参数已生效 · 已记审计」;事件 `admin.staking_pool_config_changed`;实时告警超管 + 财务 lead。
-
-##### [G1-MD2] 单档启用态切换
-- **功能**:切换单产品单档 `enabled`(关闭即停新锁,在锁不受影响),确认即生效。
-- **布局结构**:1. **信息区**:产品 / 期限 / 当前 `enabled` 态 / 该档在锁 position 数(关闭不影响在锁,仅停新锁)。2. **输入区**:reason(多行文本,必填,8–200 字)。3. **按钮区**:取消 / 确认切换。
-- **错误态**:400 `REASON_REQUIRED` / 409(状态已被他人变更,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;行内开关就地更新;toast「启用态已切换 · 已记审计」;事件 `admin.staking_pool_enabled_changed`;实时告警超管 + 运营 lead。
-
-##### [G1-MD3] Staking 单档熔断
-- **功能**:单档 kill(对齐 §9.11d.1),止血方向,确认即 server enforce(停新锁 + 在锁处置走 ⑦),处置方案随单提交。
-- **布局结构**:1. **信息区**:产品 / 期限 / **该档在锁本金合计 + 在锁 position 数 + 处置预案说明**(②「单档 kill 影响预览」同源)/ 最近一次该档变更记录(引自审计)。2. **影响预览区**:警示条「熔断后该档全局停新锁,在锁 position 按处置方案进入 `slashed` 处置;即时生效并同步 J1 矩阵 + B5 风险雷达」。3. **输入区**:在锁处置方案(多行文本,必填;随单落审计)+ reason(多行文本,必填,8–200 字)+ 触发依据单选(监管点名 / 兑付风险 / 安全事件 / 其他)。4. **按钮区**:取消 / 确认熔断(警示色)。
-- **错误态**:400 `REASON_REQUIRED` / 409(该档已为 kill 态,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;单档 kill 状态灯变红;toast「已熔断 · 已记审计」;事件 `admin.staking_pool_killed`(携 `Idempotency-Key` 提交);实时告警超管 + 风控 lead;同步 J1 矩阵 + B5 风险雷达。恢复经 A3-MD3(仅超管 + B1 红线预检)。
-
-**⑤ 接口**(收敛 §9.11c.1 / §9.11d.1):
-- `GET /api/config/staking/pools` — USDT 锁仓 4 档全表(APY/penalty/minStake/enabled);**server-canonical 配置源**,前端 `/staking`(§9.6 主表)+ §9.6.3 how-it-works 示例 + §9.3.4 StakeAlternativeCard + withdraw 页 stake-alternative 卡**四面统一读此**(消除 USDT-staking 多披露面 mismatch,见 ③ 收敛注)。
-- `GET /api/admin/staking/positions?status=&product=&cursor=` — position 监控(按状态机 / 产品筛,游标分页);返回 server 权威 position 列表 + 累计应付利息(D3 派生)。
-- `PUT /api/admin/staking/pools/:product/:term` — 改单档参数(经确认弹窗 G1-MD1,reason 必填(空值 400 `REASON_REQUIRED`);**升 APY / 降 penalty server 先核 B1 覆盖率,< 红线返 422**;**单档 APY 改动还须通过同产品跨档保序校验(长期档 APY ≥ 相邻短期档),违反返 422 + 提示冲突档位**——保序校验与 B1 红线校验同为提交前 server 硬门,非文档建议)。
-- `POST /api/admin/staking/pool/:id/disable` — 单档 kill(对齐 §9.11d.1;经确认弹窗 G1-MD3,reason + 在锁处置方案必填;携 `Idempotency-Key`)。
-
-**⑥ 权限 & 审计**:
-| 角色 | 查看池/position | 改 APY/penalty/minStake | 切 enabled | 单档 kill |
-|---|---|---|---|---|
-| 运营 | ✅ | — | ✅(lead) | — |
-| 财务 | ✅ | ✅(lead) | — | — |
-| 风控/合规 | ✅ | — | — | ✅(lead) |
-| 超管 | ✅ | ✅ | ✅ | ✅ |
-| 客服 / 只读审计 | ✅(只读) | — | — | — |
-
-> 执行权 = 单人执行(2026-06 操作确认决议):放大流出方向(改 APY/penalty/minStake)按原复核层级就高为执行门槛(财务(lead)/ 超管 + B1 红线预检);enabled 切换 = 运营(lead)/ 超管;单档 kill = 止血方向,风控(lead)/ 超管。
-
-审计字段(A2):`action / product / term / field / before / after / reason / coverageAtSubmit(改 APY 时记提交时覆盖率) / operator / ts`。
-
-**⑦ 风控 & 联动**:
-- **server-canonical(§9.11d.2)**:position 状态机、在锁本金、累计利息、APY 锁定值全部 server 权威;client `/staking` 实时累积利息(每 4s tick)仅 UI 预览,不写账;`Bills` 客户端 push 无效,到期本息以 server 派发的 D4 bill 为准。
-- **负债联动(② 跨域事实)**:`staking.opened` 增 B2 应付负债(本金 + 按 APY × 已锁天数线性派生的应付利息,Ch4 B2 §负债科目 2/3);`staking.claimed` 核减;到期派发落 D4 bill。**B2 到期负债预测**消费 G1 到期日历。
-- **B1 前置(① 跨域事实)**:升 APY / 降 penalty 提交即被 `PUT` server 拦截核验覆盖率红线。
-- **篡改防御(§9.11d.2)**:client 不得本地推进 position 状态或伪造到期 claim;早赎 forfeit 利息由 server 计算扣除,client 仅展示。
-- **幂等 & 并发裁决(章首贯穿事实 ⑧;§9.11e)**:`claim` 本息派发携 `Idempotency-Key` 去重(retry 不重复入账);竞态 `mature_unclaimed/active → claimed` 与 `active/mature_unclaimed → slashed`(单档 kill)同源,**kill 锁定优先**——position 进 `slashed` 后并发 `claim` 返 **409**;改 APY/penalty 对 in-flight position 按开锁时锁定值结算(乐观锁,不追溯)。
-- **kill 联动 J1(V4)**:单档 disable 是 J1 kill-switch 矩阵的生效面;熔断 180%/365d 高息档时 J1 编排跨闸联动(如同步预警 B5 风险雷达)。
-
-**⑧ 埋点(事件)**:
-- **消费**:`staking.opened / staking.claimed`(§2.4.5 ③ money,`is_server_authoritative=true`;G1 监控视图与到期日历消费)。
-- **产生(admin 审计)**:`admin.staking_pool_config_changed` · `admin.staking_pool_enabled_changed` · `admin.staking_pool_killed`(走 A2 操作确认审计(operator / reason),登记 A4 schema registry)。
-- **domain 状态**:`staking` 已在 §2.4.3 枚举内,无需扩展。
-- **喂给**:`staking.opened/claimed` → B2 应付负债 / D3 资金池 / D4 账本 / B1 覆盖率;到期日历 → B2 到期预测;kill 审计 → J1(V4)+ B5 风险雷达 + L3 财务报表。
+**④ 接口与后端交接**：
+- 查询继续使用 `GET /api/admin/market/staking`，数据来自既有档位、持仓、配置和账本。
+- BE-11 负责让质押五个写接口统一返回退役错误，并停用罚没命令入口。页面移除写入口不等待 BE-11，不把页面只读视作后端写保护已完成。
+- 不修改现有订单、奖励结算、钱包、账本或独立总开关权限。
 
 ---
 
