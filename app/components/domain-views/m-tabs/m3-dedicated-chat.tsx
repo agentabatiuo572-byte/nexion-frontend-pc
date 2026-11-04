@@ -469,8 +469,8 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   const intentSource = requestedCustomerId && !selected ? firstDetail : profileDetail?.customerId === selected?.customerId ? profileDetail : null;
   const [maintenanceChosen, setMaintenanceChosen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("intent") === "maintenance");
   // 联系维护 is the advisor's own task; supervisor and super-admin messages never count as maintenance.
-  const maintenanceOffered = actsAsAdvisor && Boolean(intentSource?.maintenanceEnabled && (intentSource.due === true || maintenanceChosen));
-  const intent: Intent = actsAsAdvisor && maintenanceChosen && intentSource?.maintenanceEnabled ? "MAINTENANCE" : "SERVICE";
+  const maintenanceOffered = actsAsAdvisor && Boolean(intentSource?.maintenanceEnabled && intentSource.due === true);
+  const intent: Intent = maintenanceOffered && maintenanceChosen ? "MAINTENANCE" : "SERVICE";
   const replyCustomerId = selected ? canSendTo(selected, adminId) || holdAllowsOther ? customerIdOf(selected) : null : requestedCustomerId;
   const allReplyTargets = messagePages.page?.replyContext.targets ?? [];
   const currentReplyTarget = allReplyTargets.find(target => target.conversationNo === selected?.id);
@@ -874,6 +874,21 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     } catch (cause) { if (identityRef.current === identity) setRecoveryError(`原消息结果暂无法查询：${displayAdminError(cause)} 编号已保留，不会重新发送。`); }
     finally { if (identityRef.current === identity) setRecoveryBusy(""); }
   };
+  // Decision M-C23: a new maintenance message goes out only while the customer is due. What the page read earlier can be stale, so ask once more. Original commands are not rechecked.
+  const maintenanceStillDue = async (customerId: string) => {
+    const identity = identityRef.current;
+    try {
+      const current = await supportClient.customerDetail(customerId);
+      if (identityRef.current !== identity) return false;
+      if (current.due === true) return true;
+      setMaintenanceChosen(false);
+      if (selected) setProfileDetail(current); else setFirstDetail(current);
+      setSendError("该客户的维护已不再到期，本条没有发送，原文已保留。可以作为服务回复发送。");
+    } catch (cause) {
+      if (identityRef.current === identity) setSendError(`维护到期状态暂时无法核对：${displayAdminError(cause)} 本条没有发送，原文已保留。`);
+    }
+    return false;
+  };
   const send = async (kind: "TEXT" | "IMAGE" | "SKU" | "LINK", retry?: Pending) => {
     if (busy || !conversationsAvailable || recoveryBlocksTarget) return;
     sendAdminTyping(false);
@@ -882,6 +897,12 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
       if (kind !== "TEXT" || !validCustomerId(requestedCustomerId) || (!firstPending && (!writable || !closedCandidatesReady || !firstDetail?.assignmentId))) return;
       const record = firstPending ?? { key: newKey(), clientMessageId: crypto.randomUUID(), body: draft.trim(), intent, customerId: requestedCustomerId, assignmentId: firstDetail!.assignmentId!, version: firstDetail!.version, replyTargets: closedReplyTargets };
       if (!record.body) return;
+      if (!firstPending && record.intent === "MAINTENANCE") {
+        setBusy(true); setSendError("");
+        const due = await maintenanceStillDue(requestedCustomerId);
+        if (identityRef.current === identity) setBusy(false);
+        if (!due) return;
+      }
       const stored = rememberPending(firstPendingKey(adminId, requestedCustomerId), record.key, record);
       setFirstPending(record);
       if (!stored) { setBusy(false); setSendError("浏览器无法保存这次发送的记录，消息还没发出；请检查浏览器设置后重试。"); return; }
@@ -973,6 +994,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
       }
     }
     if (identityRef.current !== identity) return;
+    if (!retry && intent === "MAINTENANCE" && !await maintenanceStillDue(String(selected.customerId))) { if (identityRef.current === identity) setBusy(false); return; }
     const record = retry ?? (() => {
       const replyTargets = [
         ...(currentReplyTarget && (intent === "SERVICE" || includeCurrentReply) ? [currentReplyTarget] : []),
