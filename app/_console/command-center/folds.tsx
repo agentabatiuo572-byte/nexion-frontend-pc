@@ -2,6 +2,7 @@
 
 /**
  * 第二层：5 行带结论的折叠摘要，点一下原地展开。标题写结论，不重复首屏数字（DP-04、DP-61）。
+ * 每块最多一个「查看…」入口，放在标题行右侧，正文色不加箭头（VS-06）；读取失败一行写完，不占整块。
  * 资金和风险用首屏已读的数据；资金进出的今日明细、用户与转化、关键指标展开时才读，
  * 转化每读一次写一条审计，所以第一次展开后才挂载，收起也不卸载。
  */
@@ -10,7 +11,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowLeftRight, ShieldAlert, Target, Users, Wallet, XCircle } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { AreaChart } from "@/app/components/kit/charts/area-chart";
-import { Bars, BlockState, Button, Explain, Fold, Modal, StatusTag } from "@/app/components/rd";
+import { Bars, BlockState, Button, Explain, Fact, Facts, Fold, Modal, StatusTag } from "@/app/components/rd";
 import { fetchB0Kpis, fetchB0Redemption, type B0Kpi } from "@/lib/admin/b0-client";
 import type { B0Blocks } from "@/lib/admin/b0-access";
 import type { B2LiquidityHistory } from "@/lib/admin/b-restoration-client";
@@ -42,7 +43,12 @@ function useOpenedOnce(open: boolean) {
 
 /** 目标页可达才显示（X03）。 */
 function FoldLink({ href, reach, children }: { href: string; reach: Reach; children: ReactNode }) {
-  return reach(href) ? <Link href={href} prefetch={false}>{children} →</Link> : null;
+  return reach(href) ? <Link href={href} prefetch={false}>{children}</Link> : null;
+}
+
+/** 后端的目标写成 >=95%，页面上写 ≥ 95%。 */
+function targetText(value: string) {
+  return operatorCopyText(value).replace(/>=\s*/g, "≥ ").replace(/<=\s*/g, "≤ ");
 }
 
 function Amount({ label, value, tone, note, href, reach }: { label: string; value: number; tone?: "role-1" | "role-2"; note?: string; href: string; reach: Reach }) {
@@ -55,12 +61,14 @@ function Amount({ label, value, tone, note, href, reach }: { label: string; valu
   return reach(href) ? <Link className="cc-amount" href={href} prefetch={false}>{body}</Link> : <div className="cc-amount">{body}</div>;
 }
 
-function fundFoldSummary(ledger: BLedger | null, liquidity: BLiquidity | null, error: string | null) {
+function fundFoldSummary(ledger: BLedger | null, liquidity: BLiquidity | null, error: string | null, level: FundLevel) {
   if (error) return "读取失败";
   if (!ledger || !liquidity) return "正在读取…";
   const net = ledger.reserveUsd - ledger.liabilitiesUsd;
   const word = net > 0 ? "储备多于应付款" : net === 0 ? "储备刚好够付应付款" : "储备不够付应付款";
-  return `${word}，未来 7 天${liquidity.runwayTotalWan > 0 ? "有到期" : "没有到期"}`;
+  // 摘要上色时文字也要说出状态（VS-21）。
+  const prefix = level === "danger" ? "资金告警，" : level === "warn" ? "资金需要注意，" : "";
+  return `${prefix}${word}，未来 7 天${liquidity.runwayTotalWan > 0 ? "有到期" : "没有到期"}`;
 }
 
 export function FundFold({ ledger, liquidity, error, retrying, onRetry, alert, level, clock, reach, open, onOpenChange }: FoldProps & {
@@ -80,8 +88,9 @@ export function FundFold({ ledger, liquidity, error, retrying, onRetry, alert, l
   const dueRows = (liquidity?.runway ?? []).map((item) => ({ label: item.day.slice(5), values: [item.valueWan * 10_000] }));
   const gap = ledger ? ledger.coverageRatio - ledger.redlinePct : 0;
   return (
-    <Fold title="资金明细" summary={fundFoldSummary(ledger, liquidity, error)} icon={Wallet} tone="role-1" alert={alert} alertTone={level === "danger" ? "danger" : "warn"} open={open} onOpenChange={onOpenChange}>
-      {error ? <BlockState state="error" title="资金数据加载失败" detail={error} onRetry={onRetry} retrying={retrying} />
+    <Fold title="资金明细" summary={fundFoldSummary(ledger, liquidity, error, level)} icon={Wallet} tone="role-1" alert={alert} alertTone={level === "danger" ? "danger" : "warn"} open={open} onOpenChange={onOpenChange}
+      actions={<FoldLink reach={reach} href="/overview/dual-ledger">查看资金总览</FoldLink>}>
+      {error ? <BlockState compact state="error" title="资金数据加载失败" detail={error} onRetry={onRetry} retrying={retrying} />
         : !ledger || !liquidity ? <BlockState state="loading" title="正在读取…" />
           : (
             <div className="cc-fold-stack">
@@ -93,7 +102,7 @@ export function FundFold({ ledger, liquidity, error, retrying, onRetry, alert, l
               <p className="cc-line"><AutoGloss>{`红线 ${fmtPct(ledger.redlinePct, 0)} · 健康线 ${fmtPct(ledger.healthyPct, 0)} · 覆盖率${gap >= 0 ? "比红线高" : "比红线低"} ${Math.abs(gap).toFixed(1)} 个点`}</AutoGloss></p>
               <div className="cc-cols">
               <section aria-label="应付款">
-                <h3 className="cc-sub">应付款最多的几类</h3>
+                <h3 className="cc-sub">应付款最多的几类<FoldLink reach={reach} href="/overview/liquidity">查看全部 9 类</FoldLink></h3>
                 {accounts.length === 0 ? <p className="cc-line">目前没有应付款</p> : (
                   <ul className="cc-list">
                     {accounts.slice(0, 3).map((item) => <li key={item.key}><span>{liabilityDisplayName(item.key, operatorCopyText(item.label))}</span><span className="cc-num">{usdt(item.amount)}</span></li>)}
@@ -103,18 +112,13 @@ export function FundFold({ ledger, liquidity, error, retrying, onRetry, alert, l
               </section>
               <section aria-label="未来 7 天到期">
                 <h3 className="cc-sub">
-                  未来 7 天到期
-                  <Explain label="到期怎么算" content={`每天到期要付的金额，按运营总览的可支撑天数设置计算，是预测，不是历史。${clock ? `数据时间 ${clock}。` : ""}`} />
+                  <Explain label="到期怎么算" content={`每天到期要付的金额，按运营总览的可支撑天数设置计算，是预测，不是历史。${clock ? `数据时间 ${clock}。` : ""}`}>未来 7 天到期</Explain>
                 </h3>
                 {liquidity.runwayTotalWan > 0
                   ? <Bars label="未来 7 天哪天付款压力大" series={[{ name: "到期", slot: 3 }]} rows={dueRows} format={usdt} height={96} />
                   : <p className="cc-line">未来 7 天没有到期</p>}
               </section>
               </div>
-              <p className="cc-links">
-                <FoldLink reach={reach} href="/overview/dual-ledger">查看资金总览</FoldLink>
-                <FoldLink reach={reach} href="/overview/liquidity">查看全部 9 类</FoldLink>
-              </p>
             </div>
           )}
     </Fold>
@@ -158,13 +162,18 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
   // 同一件事同一个颜色：业务没开用橙，和状态句一样。红只给压力到红线。
   const alertTone = pressure.worst === "danger" ? "danger" : "warn";
   return (
-    <Fold title="风险与开关" summary={riskFoldSummary(ledger, risk, error)} icon={ShieldAlert} tone="role-4" alert={alert} alertTone={alertTone} open={open} onOpenChange={onOpenChange}>
-      {error ? <BlockState state="error" title="风险数据加载失败" detail={error} onRetry={onRetry} retrying={retrying} />
+    <Fold title="风险与开关" summary={riskFoldSummary(ledger, risk, error)} icon={ShieldAlert} tone="role-4" alert={alert} alertTone={alertTone} open={open} onOpenChange={onOpenChange}
+      actions={<>
+        <FoldLink reach={reach} href="/overview/risk-radar">查看风险提醒</FoldLink>
+        {reach("/emergency/kill-switch") && <Link className="rd-btn" data-variant="secondary" data-size="sm" href="/emergency/kill-switch" prefetch={false}><span className="rd-btn-face">查看或恢复业务开关</span></Link>}
+      </>}>
+      {error ? <BlockState compact state="error" title="风险数据加载失败" detail={error} onRetry={onRetry} retrying={retrying} />
         : !ledger || !risk ? <BlockState state="loading" title="正在读取…" />
           : (
             <div className="cc-fold-stack">
+              {closed.length > 0 && (
               <section aria-label="业务开关">
-                {closed.length === 0 ? <p className="cc-line">五个业务都开着</p> : (
+                {(
                   <ul className="cc-gates">
                     {closed.map((gate) => (
                       <li key={gate.dom}>
@@ -177,6 +186,7 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                   </ul>
                 )}
               </section>
+              )}
               <ul className="cc-list" data-cols="">
                 <li>
                   <span>近 24 小时提现申请占储备</span>
@@ -188,31 +198,23 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                 </li>
                 <li>
                   <span>
-                    异常账户
-                    <Explain label="异常账户怎么算" content="风控按当前评分规则标记的账户数。等待重新评分的账户不算在内，它们在待处理里。" />
+                    <Explain label="异常账户怎么算" content="风控按当前评分规则标记的账户数。等待重新评分的账户不算在内，它们在待处理里。">异常账户</Explain>
                   </span>
                   <span className="cc-num" data-tone={risk.flaggedAccounts > 0 ? "warn" : "done"}>{fmtNum(risk.flaggedAccounts)} 个</span>
                 </li>
                 <li>
                   <span>
-                    提现在途
-                    <Explain label="提现在途怎么算" content="还没结案的提现单：等审核、打款中，也包括被拒绝或打款失败、钱还没退回的单。所以比待处理里的待审核提现多。" />
+                    <Explain label="提现在途怎么算" content="还没结案的提现单：等审核、打款中，也包括被拒绝或打款失败、钱还没退回的单。所以比待处理里的待审核提现多。">提现在途</Explain>
                   </span>
                   <span className="cc-num">{fmtNum(ledger.queueBacklogCount)} 单，{usdt(ledger.queueBacklogUsd)}</span>
                 </li>
                 <li>
                   <span>
-                    在途提现平均风险分
-                    <Explain label="风险分怎么算" content="这些提现单绑定的风控决定分的平均，满分 100，70 以上为高危。没有风控决定的单按 0 算，所以可能比提现审核页的分低，单笔以提现审核页为准。" />
+                    <Explain label="风险分怎么算" content={<>这些提现单绑定的风控决定分的平均，满分 100，70 以上为高危。没有风控决定的单按 0 算，所以可能比提现审核页的分低，单笔以提现审核页为准。 <FoldLink reach={reach} href="/risk/scoring">风险评分规则</FoldLink></>}>在途提现平均风险分</Explain>
                   </span>
                   <span className="cc-num">{ledger.avgRiskScore}</span>
                 </li>
               </ul>
-              <p className="cc-links">
-                <FoldLink reach={reach} href="/emergency/kill-switch">查看或恢复业务开关</FoldLink>
-                <FoldLink reach={reach} href="/overview/risk-radar">查看风险提醒</FoldLink>
-                <FoldLink reach={reach} href="/risk/scoring">风险评分规则</FoldLink>
-              </p>
             </div>
           )}
     </Fold>
@@ -241,12 +243,13 @@ export function FlowFold({ blocks, history, historyError, historyRetrying, onRet
   const summary = !blocks.netFlow ? "今日充值和提现明细" : historyError ? "读取失败" : history ? flowConclusion(history) : "正在读取…";
   const moved = history?.flowWindows.some((item) => item.inflowWan > 0 || item.outflowWan > 0);
   return (
-    <Fold title="资金进出" summary={summary} icon={ArrowLeftRight} tone="role-2" open={open} onOpenChange={onOpenChange}>
+    <Fold title="资金进出" summary={summary} icon={ArrowLeftRight} tone="role-2" open={open} onOpenChange={onOpenChange}
+      actions={blocks.netFlow ? <FoldLink reach={reach} href="/overview/liquidity">查看资金流</FoldLink> : undefined}>
       <div className="cc-fold-stack">
         <div className="cc-cols">
           {blocks.netFlow && (
             <section aria-label="近 8 天资金进出">
-              {historyError ? <BlockState state="error" title="资金进出加载失败" detail={historyError} onRetry={onRetryHistory} retrying={historyRetrying} />
+              {historyError ? <BlockState compact state="error" title="资金进出加载失败" detail={historyError} onRetry={onRetryHistory} retrying={historyRetrying} />
                 : !history ? <BlockState state="loading" title="正在读取…" />
                   : moved
                     ? <Bars label="近 8 天每天流入和流出" series={[{ name: "流入", slot: 2 }, { name: "流出", slot: 4 }]} rows={history.flowWindows.map((item) => ({ label: item.label, values: [item.inflowWan * 10_000, item.outflowWan * 10_000] }))} format={usdt} height={96} />
@@ -258,7 +261,7 @@ export function FlowFold({ blocks, history, historyError, historyRetrying, onRet
             {blocks.topup && (
               <section aria-label="今日充值">
                 <h3 className="cc-sub">今日充值</h3>
-                {topup.error ? <BlockState state="error" title="今日充值加载失败" detail={topup.error} onRetry={topup.reload} retrying={topup.loading} />
+                {topup.error ? <BlockState compact state="error" title="今日充值加载失败" detail={topup.error} onRetry={topup.reload} retrying={topup.loading} />
                   : !topup.data ? <BlockState state="loading" title="正在读取…" />
                     : (
                       <>
@@ -275,20 +278,19 @@ export function FlowFold({ blocks, history, historyError, historyRetrying, onRet
             {blocks.redemption && (
               <section aria-label="今日提现">
                 <h3 className="cc-sub">今日提现申请</h3>
-                {redemption.error ? <BlockState state="error" title="今日提现加载失败" detail={redemption.error} onRetry={redemption.reload} retrying={redemption.loading} />
+                {redemption.error ? <BlockState compact state="error" title="今日提现加载失败" detail={redemption.error} onRetry={redemption.reload} retrying={redemption.loading} />
                   : !redemption.data ? <BlockState state="loading" title="正在读取…" />
                     : <p className="cc-line">提交 {fmtNum(redemption.data.submitted)} 笔，完成 {fmtNum(redemption.data.confirmed)} 笔，拒绝 {fmtNum(redemption.data.rejected)} 笔{redemption.data.averageLatencyHours == null ? "" : `，平均到账 ${redemption.data.averageLatencyHours} 小时`}</p>}
               </section>
             )}
           </div>
         </div>
-        {blocks.netFlow && <p className="cc-links"><FoldLink reach={reach} href="/overview/liquidity">查看资金流</FoldLink></p>}
       </div>
     </Fold>
   );
 }
 
-function FunnelBody({ onSummary, reach }: { onSummary: (text: string) => void; reach: Reach }) {
+function FunnelBody({ onSummary }: { onSummary: (text: string) => void }) {
   const { data, loading, error, reload } = useB3Funnel(FUNNEL_FILTERS, "purchase");
   const stages = useMemo(() => data?.stages ?? [], [data]);
   const first = stages[0]?.distinctUsers ?? 0;
@@ -304,9 +306,9 @@ function FunnelBody({ onSummary, reach }: { onSummary: (text: string) => void; r
         : tooFew ? "注册不足 5 人，样本过小"
           : worst ? `流失最多的一步是${worst.from}到${worst.to}` : "每一步人数都太少，样本过小";
   useEffect(() => { onSummary(conclusion); }, [conclusion, onSummary]);
-  if (error) return <BlockState state="error" title="用户转化加载失败" detail={error} onRetry={() => void reload()} retrying={loading} />;
+  if (error) return <BlockState compact state="error" title="用户转化加载失败" detail={error} onRetry={() => void reload()} retrying={loading} />;
   if (!data) return <BlockState state="loading" title="正在读取…" />;
-  if (!data.available || !stages.length) return <BlockState state="error" title="用户转化暂无数据" detail={data.message ?? "暂无转化数据"} onRetry={() => void reload()} retrying={loading} />;
+  if (!data.available || !stages.length) return <BlockState compact state="error" title="用户转化暂无数据" detail={data.message ?? "暂无转化数据"} onRetry={() => void reload()} retrying={loading} />;
   return (
     <div className="cc-fold-stack">
       {tooFew ? <p className="cc-line">注册不足 5 人，样本过小</p> : (
@@ -326,7 +328,6 @@ function FunnelBody({ onSummary, reach }: { onSummary: (text: string) => void; r
           {worst && <p className="cc-line">流失最多的一步是{worst.from}到{worst.to}，只有 {worst.cvr}% 走到下一步</p>}
         </>
       )}
-      <p className="cc-links"><FoldLink reach={reach} href="/overview/funnel">查看明细</FoldLink></p>
     </div>
   );
 }
@@ -336,17 +337,18 @@ export function FunnelFold({ blocks, refreshKey, reach, open, onOpenChange }: Fo
   const [summary, setSummary] = useState<string | null>(null);
   const total = useBlock(fetchC1Overview, opened && blocks.totalUsers, refreshKey);
   return (
-    <Fold title="用户与转化" summary={summary ?? (opened ? "正在读取…" : "点开看累计用户和注册到提现各步人数")} icon={Users} tone="role-3" open={open} onOpenChange={onOpenChange}>
+    <Fold title="用户与转化" summary={summary ?? (opened ? "正在读取…" : "点开看累计用户和注册到提现各步人数")} icon={Users} tone="role-3" open={open} onOpenChange={onOpenChange}
+      actions={blocks.funnel ? <FoldLink reach={reach} href="/overview/funnel">查看明细</FoldLink> : undefined}>
       {opened && (
         <div className="cc-cols">
           <div className="cc-fold-stack">
             {blocks.totalUsers && (
-              total.error ? <BlockState state="error" title="累计用户加载失败" detail={total.error} onRetry={total.reload} retrying={total.loading} />
+              total.error ? <BlockState compact state="error" title="累计用户加载失败" detail={total.error} onRetry={total.reload} retrying={total.loading} />
                 : <p className="cc-line">累计用户 <span className="cc-num" data-tone="role-3">{total.data ? `${fmtNum(total.data.totalUsers)} 人` : "…"}</span></p>
             )}
             <p className="cc-line" data-muted="">活跃用户暂未统计</p>
           </div>
-          {blocks.funnel && <FunnelBody key={refreshKey} onSummary={setSummary} reach={reach} />}
+          {blocks.funnel && <FunnelBody key={refreshKey} onSummary={setSummary} />}
         </div>
       )}
     </Fold>
@@ -364,14 +366,14 @@ function KpiDetail({ kpi, reach, onClose }: { kpi: B0Kpi; reach: Reach; onClose:
         </p>
         <div className="cc-amounts" data-two="">
           <div className="cc-amount"><span className="cc-amount-label">当前值</span><span className="cc-amount-value">{kpi.smallSample ? "—" : kpi.value}</span></div>
-          <div className="cc-amount"><span className="cc-amount-label">目标</span><span className="cc-amount-value">{operatorCopyText(kpi.target)}</span></div>
+          <div className="cc-amount"><span className="cc-amount-label">目标</span><span className="cc-amount-value">{targetText(kpi.target)}</span></div>
         </div>
         {kpi.series.length >= 2 ? <AreaChart data={kpi.series} color="var(--rd-chart-2)" height={70} /> : <p className="cc-line" data-muted="">趋势数据不足，暂时不画</p>}
-        <ul className="cc-list">
-          <li><span>怎么算</span><span>{operatorCopyText(kpi.hint) || "—"}</span></li>
-          <li><span>数据来源</span><span>用户行为事件</span></li>
-        </ul>
-        <p className="cc-links"><FoldLink reach={reach} href="/analytics/kpi">查看关键指标</FoldLink></p>
+        <Facts>
+          <Fact k="怎么算">{operatorCopyText(kpi.hint) || "—"}</Fact>
+          <Fact k="数据来源">用户行为事件</Fact>
+        </Facts>
+        <p className="cc-line"><FoldLink reach={reach} href="/analytics/kpi">查看关键指标</FoldLink></p>
       </div>
     </Modal>
   );
@@ -397,8 +399,9 @@ export function KpiFold({ refreshKey, reach, open, onOpenChange }: FoldProps & {
     <span key={kpi.n}>{index > 0 && "、"}<button type="button" className="cc-link-button" onClick={() => setSelected(kpi)}>{operatorCopyText(kpi.label)}</button></span>
   ));
   return (
-    <Fold title="关键指标" summary={summary} icon={Target} tone="role-3" open={open} onOpenChange={onOpenChange}>
-      {opened && (kpis.error ? <BlockState state="error" title="关键指标加载失败" detail={kpis.error} onRetry={kpis.reload} retrying={kpis.loading} />
+    <Fold title="关键指标" summary={summary} icon={Target} tone="role-3" open={open} onOpenChange={onOpenChange}
+      actions={<FoldLink reach={reach} href="/analytics/kpi">查看关键指标</FoldLink>}>
+      {opened && (kpis.error ? <BlockState compact state="error" title="关键指标加载失败" detail={kpis.error} onRetry={kpis.reload} retrying={kpis.loading} />
         : !kpis.data ? <BlockState state="loading" title="正在读取…" />
           : rows.length === 0 ? <BlockState state="empty" title="关键指标暂无数据" />
             : (
@@ -410,7 +413,7 @@ export function KpiFold({ refreshKey, reach, open, onOpenChange }: FoldProps & {
                         <button type="button" className="cc-kpi" onClick={() => setSelected(kpi)}>
                           <span className="cc-kpi-name">{operatorCopyText(kpi.label)}</span>
                           <span className="cc-num">{kpi.value}</span>
-                          <span className="cc-kpi-target">目标 {operatorCopyText(kpi.target)}</span>
+                          <span className="cc-kpi-target">目标 {targetText(kpi.target)}</span>
                         </button>
                       </li>
                     ))}
@@ -418,7 +421,6 @@ export function KpiFold({ refreshKey, reach, open, onOpenChange }: FoldProps & {
                 )}
                 {unknownKpis.length > 0 && <p className="cc-line" data-muted="">暂无法计算：{names(unknownKpis)}</p>}
                 {passedKpis.length > 0 && <p className="cc-line" data-muted="">已达标：{names(passedKpis)}</p>}
-                <p className="cc-links"><FoldLink reach={reach} href="/analytics/kpi">查看关键指标</FoldLink></p>
               </div>
             ))}
       {selected && <KpiDetail kpi={selected} reach={reach} onClose={() => setSelected(null)} />}

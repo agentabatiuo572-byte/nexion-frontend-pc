@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * 指挥台（首页 /）。先说现状，再给要处理的事和今日经营，其余收进 5 行带结论的折叠摘要。
+ * 指挥台（首页 /）。一个「今天」面板：结论句是头，下面是要处理的事和今日经营；其余收进 5 行带结论的折叠摘要。
+ * 一屏只有一条结论横幅（VS-23）：资金告警把可覆盖天数和建议并进这一句，不再另起一条。
  * 所有运营角色都能进，每块看自己的读权限，没有权限的块不出现、不发请求（重构说明 5.7）。
  * 每块各自加载、各自报错，一块失败不挡别的块（5.6）。这页不提交任何东西，要处理就跳业务页。
  * 导出资金数据等 BE-21（权限、理由、记录）一起上，不继续无记录下载（决定 7）。
@@ -141,27 +142,6 @@ export default function CommandCenter() {
 
   const firstScreenLoading = bDomain.loading || reserve.loading || flows.loading || sales.loading || newUsers.loading || devices.loading || pendingLoading;
   const statusLoading = (bDomain.loading && !bDomain.hasData) || pendingLoading || [reserve, flows, sales, newUsers, devices].some(firstLoad);
-  const sentence = statusSentence({
-    belowRedline,
-    tier: water?.tier ?? null,
-    urgentRows,
-    fundFailed,
-    withdrawClosed,
-    withdrawUnset: Boolean(withdrawGate?.unset),
-    withdrawRows: closedBusinesses ? 1 : 0,
-    belowHealthy,
-    pendingRows,
-    fundSafe: fundReady && level === "ok" && !reserve.error,
-    failed: [
-      ...(sales.error ? ["销售额"] : []),
-      ...(newUsers.error ? ["新增用户"] : []),
-      ...(flows.error ? ["资金净流入"] : []),
-      ...(devices.error ? ["设备数据"] : []),
-      ...pendingFailed,
-    ],
-    loading: statusLoading,
-  });
-
   const [readAt, setReadAt] = useState<number | null>(null);
   useEffect(() => { if (!firstScreenLoading) setReadAt(Date.now()); }, [firstScreenLoading]);
   const clock = readAt === null ? null : businessClock(readAt);
@@ -197,6 +177,37 @@ export default function CommandCenter() {
     </>
   );
   const advice = water && water.tier !== "NORMAL" && water.tier !== "WATCH" ? water.suggestedAction : "建议收紧提现和奖励等支出设置";
+  const sentence = statusSentence({
+    belowRedline,
+    tier: water?.tier ?? null,
+    days,
+    advice: fundReady && level !== "ok" ? advice : null,
+    urgentRows,
+    fundFailed,
+    pressure: pressure.worst,
+    withdrawClosed,
+    withdrawUnset: Boolean(withdrawGate?.unset),
+    withdrawRows: closedBusinesses ? 1 : 0,
+    belowHealthy,
+    pendingRows,
+    fundSafe: fundReady && level === "ok" && !reserve.error,
+    failed: [
+      ...(sales.error ? ["销售额"] : []),
+      ...(newUsers.error ? ["新增用户"] : []),
+      ...(flows.error ? ["资金净流入"] : []),
+      ...(devices.error ? ["设备数据"] : []),
+      ...pendingFailed,
+    ],
+    loading: statusLoading,
+  });
+  // 结论句的入口只放一个：说开关给开关页，说资金给资金总览，说提现压力就展开「风险与开关」。
+  const briefAction = sentence.aboutSwitch && reach("/emergency/kill-switch")
+    ? <Link className="rd-btn" data-variant="secondary" data-size="md" href="/emergency/kill-switch" prefetch={false}><span className="rd-btn-face">查看或恢复业务开关</span></Link>
+    : sentence.aboutFund && reach(RESERVE_PAGE)
+      ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={RESERVE_PAGE} prefetch={false}><span className="rd-btn-face">查看资金总览</span></Link>
+      : sentence.aboutRisk
+        ? <Button onClick={() => openFold("risk", "risk")}>查看风险与开关</Button>
+        : undefined;
   const phase = rhythm.h1;
   const phaseText = phase.currentPhase ? `${phase.currentPhase} 阶段 · 第 ${phase.currentMonth}/${phase.totalMonths} 月` : "运营阶段未配置";
   const fundOpen = folds.isOpen("fund", fundAlert);
@@ -214,8 +225,9 @@ export default function CommandCenter() {
           <span className="cc-meta">
             {fundReady && (
               <span className="cc-meta-item">
-                {reach("/overview/rhythm") ? <Link href="/overview/rhythm" prefetch={false}>{phaseText}</Link> : phaseText}
-                <Explain label="运营阶段是什么" content="平台按运营阶段调整提现冷却、奖励加成这些参数，这里写现在是哪个阶段、这轮运营的第几个月。在运营阶段设置里调整，这页只显示。" />
+                {reach("/overview/rhythm")
+                  ? <><Link href="/overview/rhythm" prefetch={false}>{phaseText}</Link><Explain label="运营阶段是什么" content="平台按运营阶段调整提现冷却、奖励加成这些参数，这里写现在是哪个阶段、这轮运营的第几个月。在运营阶段设置里调整，这页只显示。" /></>
+                  : <Explain label="运营阶段是什么" content="平台按运营阶段调整提现冷却、奖励加成这些参数，这里写现在是哪个阶段、这轮运营的第几个月。在运营阶段设置里调整，这页只显示。">{phaseText}</Explain>}
               </span>
             )}
             <span>{clock ? `${clock} 读取（${businessZone().label}）` : "正在读取…"}</span>
@@ -225,30 +237,20 @@ export default function CommandCenter() {
       />
       <BDomainWarnings warnings={warnings} />
 
-      <Conclusion
-        state={sentence.state}
-        strong={sentence.strong}
-        lead
-        icon={sentence.state === "neutral" ? ListChecks : undefined}
-        hint={sentence.hint}
-        action={sentence.aboutSwitch && reach("/emergency/kill-switch") ? <Link className="rd-btn" data-variant="secondary" data-size="md" href="/emergency/kill-switch" prefetch={false}><span className="rd-btn-face">查看或恢复业务开关</span></Link> : undefined}
-      >
-        {sentence.text}
-      </Conclusion>
-
-      {blocks.fund && fundReady && level !== "ok" && (
+      <section className="rd-panel cc-brief" aria-label="今天的状况">
         <Conclusion
-          state={level}
-          icon={ShieldAlert}
-          hint={advice}
-          action={reach(RESERVE_PAGE) ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={RESERVE_PAGE} prefetch={false}><span className="rd-btn-face">查看资金总览</span></Link> : undefined}
+          state={sentence.state}
+          strong={sentence.strong}
+          lead
+          icon={sentence.state === "neutral" ? ListChecks : sentence.aboutFund ? ShieldAlert : undefined}
+          hint={sentence.hint}
+          action={briefAction}
         >
-          {fundText}
+          {sentence.text}
         </Conclusion>
-      )}
 
-      {(showPending || anyTodayBlock || showFundLine) && (
-        <div className="cc-main" data-solo={showPending && (anyTodayBlock || showFundLine) ? undefined : ""}>
+        {(showPending || anyTodayBlock || showFundLine) && (
+        <div className="cc-brief-body" data-solo={showPending && (anyTodayBlock || showFundLine) ? undefined : ""}>
           {showPending && <PendingPanel rows={rows} failures={pendingFailed.length} loading={pendingLoading} />}
           {(anyTodayBlock || showFundLine) && (
             <div className="cc-side">
@@ -278,8 +280,7 @@ export default function CommandCenter() {
               ) : (
                 <div className="cc-fundline" data-tone={fundReady ? "ok" : undefined}>
                   <ShieldCheck size={16} aria-hidden />
-                  <span>{fundReady ? fundText : "正在读取资金安全…"}</span>
-                  {fundReady && <Explain label="资金安全怎么看" content={fundExplain} />}
+                  {fundReady ? <Explain label="资金安全怎么看" content={fundExplain}>{fundText}</Explain> : <span>正在读取资金安全…</span>}
                   {fundReady && (
                     <button type="button" className="cc-fundline-toggle" aria-expanded={fundOpen} onClick={() => (fundOpen ? folds.setOpen("fund", false) : openFold("fund", "fund"))}>
                       {fundOpen ? "收起明细" : "展开明细"}
@@ -291,7 +292,8 @@ export default function CommandCenter() {
             </div>
           )}
         </div>
-      )}
+        )}
+      </section>
 
       <div className="cc-folds" ref={foldsRef}>
         {blocks.fund && (

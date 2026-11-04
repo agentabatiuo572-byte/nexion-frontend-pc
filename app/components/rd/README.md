@@ -30,15 +30,15 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 这页怎么用 | `PageGuide`，`PageHeader` 自动带 | `page-guide.tsx` |
 | 看板第一句话 | `Conclusion` | `conclusion.tsx` |
 | 一排关键数字，最多 4 个 | `StatBand`、`Stat`；整张可点传 `href` 或 `onOpen` | `stat.tsx` |
-| 一块内容 | `Panel` | `panel.tsx` |
+| 一块内容 | `Panel`；已经在一个面板里的分区传 `plain`，不套底 | `panel.tsx` |
 | 区块标题、统计数字前的图标 | `IconTile`，`Panel`、`Stat` 传 `icon` 就有 | `icon-tile.tsx` |
 | 切不同内容 | `PageTabs` | `tabs.tsx` |
 | 筛同一张表、切时间窗 | `Segments` | `tabs.tsx` |
-| 次要内容收起来 | `Fold`，`summary` 必填 | `fold.tsx` |
+| 次要内容收起来 | `Fold`，`summary` 必填；区块的「查看…」传 `actions` 放标题行右侧，每块最多一个 | `fold.tsx` |
 | 看板里要处理的事 | `TodoList`、`TodoItem`，读不到用 `TodoFailed` | `todo-list.tsx` |
-| 一块内容读取中、失败、空 | `BlockState`；一个数字或一行读不到用 `InlineRetry` | `block-state.tsx` |
+| 一块内容读取中、失败、空 | `BlockState`，折叠摘要里的失败传 `compact` 一行写完；一个数字或一行读不到用 `InlineRetry` | `block-state.tsx` |
 | 按天的柱图 | `Bars`，全是 0 别画，写一句话 | `bars.tsx` |
-| 表格 | `Table`、`Th`、`Tr`、`Td`、`Cell` | `table.tsx` |
+| 表格 | `Table`、`Th`、`Tr`、`Td`、`Cell`；金额、数量、日期传 `num`，单号、哈希、地址才传 `mono` | `table.tsx` |
 | 显示更多列 | `useTableColumns`、`ColumnPicker` | `table.tsx` |
 | 表格加载、空、失败 | `TableLoading`、`TableMessage` | `table.tsx` |
 | 表格分页 | `Pager`，有数据才渲染 | `pager.tsx` |
@@ -52,9 +52,9 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 要人看到的提醒、错误、待确认条 | `Notice` | `notice.tsx` |
 | 短任务弹窗 | `Modal` | `overlay.tsx` |
 | 写操作确认 | 继续用 `OperationConfirmModal` | 见下 |
-| 按钮 | `Button`、`IconButton` | `button.tsx` |
-| 状态 | `StatusTag` | `status-tag.tsx` |
-| 点开看口径或解释 | `Explain`，`Stat`、`StatusTag` 传 `explain` 就有 | `explain.tsx` |
+| 按钮 | `Button`、`IconButton`；和主按钮并排的危险入口用 `danger-outline`，实心 `danger` 只给最终确认 | `button.tsx` |
+| 状态 | `StatusTag`；列表筛成只有一种状态时，这个默认状态传 `neutral`（灰字加图标） | `status-tag.tsx` |
+| 点开看口径或解释 | `Explain`，`Stat`、`StatusTag` 传 `explain` 就有；把要解释的词写成 children，词带虚线下划线，不加问号 | `explain.tsx` |
 | 构成条、柱图、走势线 | `SegmentBar`、`ColumnChart`、`TrendLine`，传槽位 `slot` | `chart.tsx` |
 | 表单字段、勾选 | `Field`、`Check`、`CheckGroup` | `field.tsx` |
 | 名称和值成对 | `KeyValues` | `key-values.tsx` |
@@ -67,11 +67,11 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 
 组件只收 `tone`，取值在 `tone.ts`，含义在规范 06。
 
-- 状态 `ok`、`warn`、`danger`、`progress`、`done`：这件事现在怎么样。已结束用 `done`，不用 `ok`。
+- 状态 `ok`、`warn`、`danger`、`progress`、`done`、`neutral`：这件事现在怎么样。已结束用 `done`，不用 `ok`；列表的默认状态（要处理列表里的待审核）用 `neutral`，颜色留给例外行（VS-21）。
 - 角色 `role-1` 金（持有的钱）、`role-2` 青（往来的钱和物）、`role-3` 紫（人和时限）、`role-4` 品红（规则给的数）、`role-other` 灰：页内的数字和图标底。常见数字的槽位看 VS-12。
 - 域色 `money`、`users`、`devices`、`risk`、`system`：只用在侧栏和表头小图标（`Th` 的 `tone`）。内容区的数字和图标底不用它。
 
-一个数字先问状态，再问角色。页面自己的样式也只写 `var(--rd-*)`，变量表在 `tokens.css`。
+一个数字先问状态，再问角色。深色主题数字用角色色字，浅色主题数字用正文色、身份靠实色图标底（VS-14），这条在 `rd.css` 里，页面不用管。链接不用品牌色，`rd-link` 是正文色加下划线（VS-06）。数字用 Inter，等宽只给单号、哈希、地址（VS-52）。页面自己的样式也只写 `var(--rd-*)`，变量表在 `tokens.css`。
 
 ## 单条详情的抽屉
 

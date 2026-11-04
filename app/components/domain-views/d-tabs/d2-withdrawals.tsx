@@ -6,10 +6,10 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, ClipboardList, Coins, FileText, Flag, Gauge, History, Inbox, Landmark, Link2, Lock, Receipt, RefreshCw, Route, Shield, ShieldAlert, User, Wallet, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ClipboardList, Coins, Copy, FileText, Flag, Gauge, History, Inbox, Landmark, Link2, Lock, Receipt, RefreshCw, Route, Shield, ShieldAlert, User, Wallet, type LucideIcon } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import {
-  BatchBar, Button, Cell, Checkbox, ColumnPicker, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, Input,
+  BatchBar, Button, Cell, Checkbox, ColumnPicker, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input,
   JudgmentPoints, Modal, MoreMenu, Notice, PageHeader, Pager, Panel, Segments, Select, Stat, StatBand, StatusTag, Table,
   TableLoading, TableMessage, Td, Th, Tr, useTableColumns, type JudgmentRow, type SegmentItem, type StateTone, type TableColumn,
 } from "@/app/components/rd";
@@ -312,13 +312,20 @@ function freezePeriodLabel(value?: string) {
   return ({ "7d": "7 天", "14d": "14 天", "30d": "30 天", "45d": "45 天", LONG_TERM: "长期（需复查）", SEVEN_DAYS: "7 天" } as Record<string, string>)[value ?? ""] ?? (value ? "未知" : "—");
 }
 
+/** 待审核是「要处理」列表的默认状态，灰字加时钟；颜色留给冻结、失败、异常这些例外（VS-21）。 */
 function statusTone(status: string): StateTone {
   const value = status.toUpperCase();
   if (["CONFIRMED", "SUCCESS"].includes(value)) return "ok";
   if (value === "REFUNDED") return "done";
   if (["REVIEW_REJECTED", "REJECTED", "ADDRESS_INVALID", "TX_FAILED", "FAILED", "TX_ORPHANED", "DEAD"].includes(value)) return "danger";
-  if (["REVIEW_PENDING", "REVIEWING", "FROZEN"].includes(value)) return "warn";
+  if (["REVIEW_PENDING", "REVIEWING"].includes(value)) return "neutral";
+  if (value === "FROZEN") return "warn";
   return "progress";
+}
+
+/** 待审核行的第二行是套话，只给例外状态写说明。 */
+function isReviewPending(status: string) {
+  return ["REVIEW_PENDING", "REVIEWING"].includes(status.toUpperCase());
 }
 
 const STATUS_ICON: Record<string, LucideIcon> = { FROZEN: Lock, TX_ORPHANED: AlertTriangle, DEAD: AlertTriangle };
@@ -740,6 +747,11 @@ const GATE_CLOSED_BLOCK = "提现已关停，现在放行不会生效，确认�
 
 function shortAddress(value: string) {
   return value.length > 14 ? `${value.slice(0, 6)}…${value.slice(-4)}` : value;
+}
+
+/** 真实单号有 36 位，列表里中间省略，全文在 title 和详情里；读屏仍读全号。 */
+function shortNo(value: string) {
+  return value.length > 24 ? `${value.slice(0, 12)}…${value.slice(-6)}` : value;
 }
 
 function countEntries(value: string | undefined, separator: string) {
@@ -1296,8 +1308,9 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const prevRow = detailIndex >= 0 ? visibleRows[detailIndex - 1] : visibleRows[lastDetailIndex.current - 1];
   const nextRow = detailIndex >= 0 ? visibleRows[detailIndex + 1] : visibleRows[Math.min(lastDetailIndex.current, visibleRows.length - 1)];
 
+  // 抽屉里只有「放行」一个实心；拒绝是描边红，最终确认框里才是实心红（VS-25）。
   const decisionButton = (row: D2Withdrawal, action: D2ReviewAction) => (
-    <Button key={action} variant={action === "REJECT" ? "danger" : action === "DELAY" || action === "FREEZE" ? "ghost" : "primary"}
+    <Button key={action} variant={action === "REJECT" ? "danger-outline" : action === "DELAY" || action === "FREEZE" ? "ghost" : "primary"}
       disabled={!!submitting} disabledReason={detailBlockedReason(row, action)} onClick={() => confirmReview(row, action)}>{actionLabel(action)}</Button>
   );
 
@@ -1333,6 +1346,9 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const recordCount = shown ? countEntries(shown.auditTrail, " | ") : 0;
 
   const tableColumnCount = QUEUE_COLUMNS.filter((column) => columns.isVisible(column.key)).length + (showSelection ? 1 : 0);
+  const copyNo = (value: string) => {
+    void navigator.clipboard?.writeText(value).then(() => toast("已复制提现单号"), () => toast("复制失败，请手动选择单号"));
+  };
   const pendingNotices = pendingCommands.map((record) => (
     <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未确认`}
       action={<>
@@ -1348,8 +1364,13 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   return <>
     <PageHeader pageId="D2" title="提现审核" summary={<AutoGloss>审核用户提现，先看风险和兑付覆盖率。</AutoGloss>}
-      actions={<Button icon={<RefreshCw size={14} aria-hidden />} disabled={loading} onClick={() => void refresh()}>刷新</Button>}
-      meta={<>{readAt ? `${readAt} 读取（${businessZone().label}）· ` : ""}打开和操作后读取，不自动刷新 · 当前到账时限：{canReadD5 ? (resultsUnavailable || d5?.payoutSlaHours == null ? "—" : `${d5.payoutSlaHours} 小时`) : "无权限"} · 已提交的提现按提交时的时限</>}
+      meta={<span className="rd-toolbar">
+        <span>
+          {readAt ? `${readAt} 读取（${businessZone().label}），` : ""}不自动刷新 ·{" "}
+          <Explain label="到账时限怎么算" content="打开和操作后读取，不自动刷新。当前到账时限按「USDT 提现参数」的设置，已提交的提现按提交时的时限。">到账时限 {canReadD5 ? (resultsUnavailable || d5?.payoutSlaHours == null ? "—" : `${d5.payoutSlaHours} 小时`) : "无权限"}</Explain>
+        </span>
+        <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => void refresh()}>刷新</Button>
+      </span>}
       readOnly={canWriteAny ? undefined : "你只能查看；处理提现需要对应的审核权限"} />
 
     {withdrawGate === "closed" && <Notice tone="warn" title="提现已关停"
@@ -1360,13 +1381,13 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     {pendingNotices}
 
     <StatBand label="提现汇总">
-      <Stat lead tone="warn" icon={Inbox} label="要处理" value={todoCount ?? "—"} unit={todoCount === undefined ? undefined : "笔"} sub={countsFailed ? "数量暂时读不到" : undefined}
+      <Stat lead tone="role-2" icon={Inbox} label="要处理" value={todoCount ?? "—"} unit={todoCount === undefined ? undefined : "笔"} sub={countsFailed ? "数量暂时读不到" : undefined}
         explain="待审核、冻结、审核拒绝、地址无效、打款失败、打款异常的全部笔数，不随下方筛选变。" />
       <Stat icon={Flag} iconTone="warn" label="高优先队列" value={resultsUnavailable ? "—" : visibleRows.filter((row) => ["HIGH", "ESCALATED"].includes(routingPriority(row))).length} unit={resultsUnavailable ? undefined : "笔"} sub="本页 · 按风险分自动分配"
         explain="只算当前页里风险列是「高优先」或「加强审核」的笔数，和金额大小无关。" />
       <Stat tone="role-1" icon={Coins} label="本页金额" value={resultsUnavailable ? "—" : amountText(visibleRows.reduce((sum, row) => sum + row.amount, 0))} unit={resultsUnavailable ? undefined : "USDT"} sub={resultsUnavailable ? undefined : `${visibleRows.length} 笔`}
         explain="只算当前页显示的提现单，不是全部；页里有已退款的单也算在内。" />
-      <Stat tone="role-4" icon={Gauge} label="每日提现次数上限" value={!canReadD5 ? "无权限" : resultsUnavailable ? "—" : dailyLimit || "—"} unit={canReadD5 && !resultsUnavailable ? "次" : undefined}
+      <Stat tone={canReadD5 ? "role-4" : undefined} icon={Gauge} label="每日提现次数上限" value={!canReadD5 ? "无权限" : resultsUnavailable ? "—" : dailyLimit || "—"} unit={canReadD5 && !resultsUnavailable ? "次" : undefined}
         sub={!canReadD5 ? "用到额度的放行已禁用" : reach("/finance/params", "finance_d5_read") ? <>在<Link className="rd-link" href="/finance/params">「USDT 提现参数」</Link>设置</> : "在「USDT 提现参数」设置"} />
     </StatBand>
 
@@ -1428,7 +1449,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         </tr></thead>
         <tbody>
           {loading ? <TableLoading columns={tableColumnCount} rows={Math.min(query.pageSize, 10)} />
-            : error ? <TableMessage columns={tableColumnCount} role="alert">加载失败 · {error} · 已暂停所有操作，请重试。 <Button size="sm" onClick={() => { setPage(1); void loadCounts(); void loadGate(); }}>重试</Button></TableMessage>
+            : error ? <TableMessage columns={tableColumnCount} role="alert">加载失败，已暂停操作。{error} <Button size="sm" onClick={() => { setPage(1); void loadCounts(); void loadGate(); }}>重试</Button></TableMessage>
               : !writesEnabled ? <TableMessage columns={tableColumnCount} role="alert">提现数据暂不可用，请重试</TableMessage>
                 : visibleRows.length === 0 ? <TableMessage columns={tableColumnCount} role="status">
                   {rows.records.length > 0 ? <>当前页没有匹配，其他页可能有。 <Button size="sm" onClick={() => setRuleFilter("")}>清除触发规则</Button></>
@@ -1456,14 +1477,14 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
                     const reviewBasis = `风险规则：${routeLabel(row.k3RiskRoute)} · ${hitCount ? `${hitCount} 条命中` : "无"}`;
                     return <Tr key={row.withdrawalNo} selected={row.withdrawalNo === detail?.withdrawalNo} onOpen={() => { if (!submitting) void openDetail(row); }}>
                       {showSelection && <Td><Checkbox aria-label={`${selectionHint}：${row.withdrawalNo}`} title={`${selectionNote}${selectionHint}`} disabled={!selectable && !selectedNow} checked={selectedNow} onChange={(event) => setSelected((current) => { const next = new Set(current); event.target.checked ? next.add(row.withdrawalNo) : next.delete(row.withdrawalNo); return next; })} /></Td>}
-                      <Td sticky="start"><Cell mono full main={<button type="button" className="rd-cell-link" title={row.withdrawalNo} aria-label={`打开提现单 ${row.withdrawalNo} 的详情`} onClick={() => { if (!submitting) void openDetail(row); }}>{row.withdrawalNo}</button>} sub={listTime(row.createdAt)} /></Td>
+                      <Td sticky="start"><Cell mono full main={<button type="button" className="rd-cell-link" title={row.withdrawalNo} aria-label={`打开提现单 ${row.withdrawalNo} 的详情`} onClick={() => { if (!submitting) void openDetail(row); }}>{shortNo(row.withdrawalNo)}</button>} sub={listTime(row.createdAt)} /></Td>
                       {columns.isVisible("user") && <Td><Cell main={operatorNicknameText(row.nickname)} sub={row.userNo} /></Td>}
                       {columns.isVisible("asset") && <Td><Cell main={<span title={`${row.asset} / ${row.chain}`} aria-label={`资产与渠道：${row.asset} / ${row.chain}`}>{row.chain === "BANK-VND" ? "越南银行卡 · HDPay" : chainText(row)}</span>} sub={<span title={row.targetAddress}>{row.chain === "BANK-VND" ? "账户信息见详情" : shortAddress(row.targetAddress)}</span>} /></Td>}
-                      {columns.isVisible("amount") && <Td align="right"><Cell mono main={amountText(row.amount)} sub={`${row.chain === "BANK-VND" ? "兑换" : "到账"} ${amountText(row.netReceive)}`} /></Td>}
-                      {columns.isVisible("fee") && <Td align="right"><Cell mono main={amountText(row.actualFee)} sub={<button type="button" className="rd-link" onClick={() => void openDetail(row)}>详情中查看完整费用</button>} /></Td>}
-                      <Td><Cell title={`低风险 ≤ ${row.k4BandLowMax ?? "—"}，高风险 ≥ ${row.k4BandHighMin ?? "—"}，加强审核 ≥ ${row.k4AutoEscalateScore ?? "—"}`} main={tone ? <StatusTag tone={tone} icon={tone === "danger" ? ShieldAlert : Flag}>{riskLabel}</StatusTag> : riskLabel} sub={reviewBasis} /></Td>
+                      {columns.isVisible("amount") && <Td align="right"><Cell num main={amountText(row.amount)} sub={`${row.chain === "BANK-VND" ? "兑换" : "到账"} ${amountText(row.netReceive)}`} /></Td>}
+                      {columns.isVisible("fee") && <Td align="right"><Cell num main={amountText(row.actualFee)} sub={<button type="button" className="rd-link" onClick={() => void openDetail(row)}>详情中查看完整费用</button>} /></Td>}
+                      <Td><Cell title={`低风险 ≤ ${row.k4BandLowMax ?? "—"}，高风险 ≥ ${row.k4BandHighMin ?? "—"}，加强审核 ≥ ${row.k4AutoEscalateScore ?? "—"}`} main={tone ? <StatusTag tone={tone} icon={tone === "danger" ? ShieldAlert : Flag}>{riskLabel}</StatusTag> : riskLabel} sub={hitCount ? reviewBasis : undefined} /></Td>
                       {columns.isVisible("account") && <Td><Cell main={`账户 ${userStatusLabel(row.userStatus)}`} sub={`近 24h ${row.withdrawalCount24h} 笔 · 每日上限 ${canReadD5 ? `${dailyLimit || "—"} 笔` : "无权限"}`} /></Td>}
-                      <Td><Cell main={<StatusTag tone={statusTone(row.status)} icon={STATUS_ICON[row.status.toUpperCase()]}>{bankStatusLabel(row)}</StatusTag>} sub={pendingRow ? "有操作结果未确认" : lifecycleSummary(row)} title={lifecycleSummary(row)} /></Td>
+                      <Td><Cell main={<StatusTag tone={statusTone(row.status)} icon={STATUS_ICON[row.status.toUpperCase()]}>{bankStatusLabel(row)}</StatusTag>} sub={pendingRow ? "有操作结果未确认" : isReviewPending(row.status) ? undefined : lifecycleSummary(row)} title={lifecycleSummary(row)} /></Td>
                       {columns.isVisible("lifecycle") && <Td><Cell main={lifecycleSummary(row)} sub={holdsForReview(row) ? `复查时间：${timeText(row.holdUntil)}` : undefined} title={lifecycleSummary(row)} /></Td>}
                       <Td sticky="end"><span className="rd-row-actions">
                         {mainAction
@@ -1483,7 +1504,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     <D2StatusFlow />
 
     <Drawer open={Boolean(detail)} onClose={closeDetail} title="单笔详情" icon={Wallet} tone="role-1" busy={!!submitting}
-      sub={shown && <>{shown.withdrawalNo} · <StatusTag tone={statusTone(shown.status)} icon={STATUS_ICON[shown.status.toUpperCase()]} explain={STATUS_EXPLAIN[shown.status.toUpperCase()]}>{detailProvider ? cregisStatusLabel(cregisDetail?.state ?? shown.status) : bankStatusLabel(shown)}</StatusTag></>}
+      sub={shown && <>{shown.withdrawalNo} <IconButton aria-label="复制提现单号" data-size="sm" onClick={() => copyNo(shown.withdrawalNo)}><Copy size={13} aria-hidden /></IconButton> · <StatusTag tone={statusTone(shown.status)} icon={STATUS_ICON[shown.status.toUpperCase()]} explain={STATUS_EXPLAIN[shown.status.toUpperCase()]}>{detailProvider ? cregisStatusLabel(cregisDetail?.state ?? shown.status) : bankStatusLabel(shown)}</StatusTag></>}
       nav={{ hasPrev: Boolean(prevRow), hasNext: Boolean(nextRow), onPrev: () => { if (prevRow) void openDetail(prevRow); }, onNext: () => { if (nextRow) void openDetail(nextRow); } }}
       footer={shown && <Decision note={decisionNote}
         danger={detailActions.includes("REJECT") ? decisionButton(shown, "REJECT") : undefined}
@@ -1504,7 +1525,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
             <Fact k="风险分明细">{riskBreakdownText(shown.riskScoreBreakdown)}</Fact>
           </Facts>
         </Fold>
-        {["USDT-BEP20", "BEP20"].includes(shown.chain) && <Fold inset title="Cregis 打款核对" icon={Link2} alert={!detailLoading && (!cregisDetail || cregisDetail.canRecover)}
+        {["USDT-BEP20", "BEP20"].includes(shown.chain) && <Fold inset title="Cregis 打款核对" icon={Link2} alert={!detailLoading && (!cregisDetail || cregisDetail.canRecover)} alertTone={cregisDetail?.canRecover ? "danger" : "warn"}
           summary={cregisDetail ? (detailProvider ? cregisStatusLabel(cregisDetail.state) : "未经 Cregis 打款") : "暂时无法获取"}>
           {cregisDetail ? <Facts>
             <Fact k="打款渠道">{detailProvider ? "Cregis" : "未经 Cregis 打款"}</Fact>

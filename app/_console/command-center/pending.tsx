@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 待处理：每行一件事和一个入口。只跳转，不在这里审批（PG-41、B0-L05）。
+ * 待处理：每行一件事和一个入口。只跳转，不在这里审批（PG-41、B0-L05）。放在「今天」面板里，结论句是它的头。
  * 数量为 0 的行不显示；读不到的行写失败和重试，不当 0（B0-S06）；最多 5 行，其余写在下面一行，不折叠（DP-03）。
  */
 import Link from "next/link";
@@ -37,7 +37,7 @@ export function PendingPanel({ rows, failures, loading }: { rows: readonly (Pend
   const rest = rows.slice(LIMIT);
   const isFailure = (row: PendingRow | PendingFailure): row is PendingFailure => "onRetry" in row;
   return (
-    <Panel title="待处理" icon={ListChecks} tone="role-other" className="cc-pending" aria-busy={loading || undefined} sub={failures > 0 ? "部分来源读取失败，数量可能不全" : undefined}>
+    <Panel plain title="待处理" icon={ListChecks} tone="role-other" className="cc-pending" aria-busy={loading || undefined} sub={failures > 0 ? "部分来源读取失败，数量可能不全" : undefined}>
       <TodoList label="待处理">
         {shown.map((row) => isFailure(row)
           ? <TodoFailed key={row.key} title={`${row.name}读取失败`} onRetry={row.onRetry} />

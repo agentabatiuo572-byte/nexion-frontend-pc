@@ -26,7 +26,7 @@
  *       {rows.map((row) => (
  *         <Tr key={row.id} selected={row.id === current} onOpen={() => open(row.id)}>
  *           <Td sticky="start"><Cell mono main={row.no} sub={row.time} title={row.no} /></Td>
- *           <Td align="right"><Cell mono main="12,480.00" sub="到账 12,417.60" /></Td>
+ *           <Td align="right"><Cell num main="12,480.00" sub="到账 12,417.60" /></Td>
  *           <Td sticky="end"><Button size="sm" onClick={…}>放行</Button></Td>
  *         </Tr>
  *       ))}
@@ -108,10 +108,11 @@ export function Tr({ selected, onOpen, children, onClick, onKeyDown, ...rest }: 
   );
 }
 
-/** 一格两行：第一行主值，第二行弱化。长文本单行省略，title 给全文，只是显示截断（ST-04）。单号这类不能截短的传 full（TX-28）。 */
-export function Cell({ main, sub, mono, title, full }: { main: ReactNode; sub?: ReactNode; mono?: boolean; title?: string; full?: boolean }) {
+/** 一格两行：第一行主值，第二行弱化。长文本单行省略，title 给全文，只是显示截断（ST-04）。单号这类不能截短的传 full（TX-28）。
+ *  mono 只给单号、哈希、地址（等宽字体）；金额、数量、日期传 num（Inter 等宽数字，VS-52）。 */
+export function Cell({ main, sub, mono, num, title, full }: { main: ReactNode; sub?: ReactNode; mono?: boolean; num?: boolean; title?: string; full?: boolean }) {
   return (
-    <span className="rd-cell" data-mono={mono ? "" : undefined} data-full={full ? "" : undefined} title={title}>
+    <span className="rd-cell" data-mono={mono ? "" : undefined} data-num={num ? "" : undefined} data-full={full ? "" : undefined} title={title}>
       <span className="rd-cell-main">{main}</span>
       {sub !== undefined && sub !== null && <span className="rd-cell-sub">{sub}</span>}
     </span>

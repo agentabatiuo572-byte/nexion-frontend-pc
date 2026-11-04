@@ -5,6 +5,8 @@
  *
  * <Fold title="费用明细" summary="手续费 62.40 USDT">…</Fold>
  * <Fold title="风险规则" summary="2 条命中" alert icon={Shield} tone="risk" inset>…</Fold>
+ * <Fold title="资金明细" summary="储备多于应付款" icon={Wallet} tone="role-1" actions={<Link …>查看资金总览</Link>}>…</Fold>
+ *   顶层折叠的图标是 26px 图标底（VS-80）；inset 的只用小图标。actions 放在标题行右侧，每块最多一个链接（VS-06），点它不展开折叠。
  *
  * - summary 必填，写数量和结论；写不出来就别折（DP-04）。
  * - alert 时默认展开，摘要上色。用户手动收起后摘要里的异常仍看得见。
@@ -13,9 +15,10 @@
  */
 import { useEffect, useState, type ReactNode } from "react";
 import { ChevronRight, type LucideIcon } from "lucide-react";
+import { IconTile } from "./icon-tile";
 import type { StateTone, Tone } from "./tone";
 
-export function Fold({ title, summary, alert = false, alertTone = "warn", icon: Icon, tone, inset, defaultOpen = false, open, onOpenChange, children }: {
+export function Fold({ title, summary, alert = false, alertTone = "warn", icon: Icon, tone, inset, actions, defaultOpen = false, open, onOpenChange, children }: {
   title: ReactNode;
   summary: ReactNode;
   alert?: boolean;
@@ -23,6 +26,7 @@ export function Fold({ title, summary, alert = false, alertTone = "warn", icon: 
   icon?: LucideIcon;
   tone?: Tone;
   inset?: boolean;
+  actions?: ReactNode;
   defaultOpen?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -47,9 +51,12 @@ export function Fold({ title, summary, alert = false, alertTone = "warn", icon: 
     >
       <summary>
         <ChevronRight className="rd-fold-chevron" size={14} aria-hidden />
-        {Icon && <span data-tone={tone ?? "system"} style={{ display: "inline-flex", color: "var(--tone)" }}><Icon size={15} strokeWidth={1.9} aria-hidden /></span>}
+        {Icon && (inset
+          ? <span data-tone={tone ?? "system"} style={{ display: "inline-flex", color: "var(--tone)" }}><Icon size={15} strokeWidth={1.9} aria-hidden /></span>
+          : <IconTile tone={tone ?? "role-other"} icon={Icon} />)}
         <span className="rd-fold-title">{title}</span>
         <span className="rd-fold-summary">{summary}</span>
+        {actions && <span className="rd-fold-actions">{actions}</span>}
       </summary>
       <div className="rd-fold-body">{children}</div>
     </details>
