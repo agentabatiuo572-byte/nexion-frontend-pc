@@ -17,6 +17,8 @@ export type OpsDashboardAlert = {
   hint: string;
   /** 待补录的项数，只有 J1-AUTO-CONFIRM 带。 */
   count?: number;
+  /** 没有开启的业务键，只有 J1-KILL-STATE 带。 */
+  closedKeys?: string[];
 };
 
 const J1_ALERT_GATE_KEYS = ["withdraw", "staking", "genesis", "exchange", "trial"] as const;
@@ -106,13 +108,17 @@ export async function fetchOpsDashboardAlerts(): Promise<OpsDashboardAlert[]> {
   const disabled = gates.filter((gate) => !gate.enabled);
   if (disabled.length > 0) {
     const emergencyCount = disabled.filter((gate) => gate.emergency).length;
-    alerts.push(normalizeAlert({
-      id: "J1-KILL-STATE",
-      domain: "J",
-      level: emergencyCount > 0 ? "high" : "mid",
-      title: `已关停的业务 ${disabled.length} 个`,
-      hint: disabled.map((gate) => gate.name).join("、"),
-    }, alerts.length));
+    // 这个接口分不出「已关停」和「未设置」，两种业务都用不了，统一写没有开启，细分看风险与开关。
+    alerts.push({
+      ...normalizeAlert({
+        id: "J1-KILL-STATE",
+        domain: "J",
+        level: emergencyCount > 0 ? "high" : "mid",
+        title: `没有开启的业务 ${disabled.length} 个`,
+        hint: disabled.map((gate) => gate.name).join("、"),
+      }, alerts.length),
+      closedKeys: disabled.map((gate) => gate.key),
+    });
   }
   const overdue = pending.filter((row) => row.overdue === true).length;
   if (pending.length > 0) {
@@ -171,6 +177,8 @@ export async function fetchC2HighRiskAlerts(): Promise<OpsDashboardAlert[]> {
 type J1DutyAlertSnapshot = {
   alerts: OpsDashboardAlert[];
   error: string | null;
+  /** 第一次读取有结果了。还没读完时不能当成没有告警。 */
+  settled?: boolean;
 };
 
 const EMPTY_J1_DUTY_ALERT_SNAPSHOT: J1DutyAlertSnapshot = { alerts: [], error: null };
@@ -189,12 +197,13 @@ export async function refreshJ1DutyAlerts() {
   try {
     const alerts = await fetchOpsDashboardAlerts();
     if (requestSequence !== j1DutyAlertRequestSequence) return;
-    publishJ1DutyAlertSnapshot({ alerts, error: null });
+    publishJ1DutyAlertSnapshot({ alerts, error: null, settled: true });
   } catch (error: unknown) {
     if (requestSequence !== j1DutyAlertRequestSequence) return;
     publishJ1DutyAlertSnapshot({
       alerts: [],
       error: "紧急停用告警加载失败，请稍后重试",
+      settled: true,
     });
   }
 }

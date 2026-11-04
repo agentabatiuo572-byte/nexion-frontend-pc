@@ -1,10 +1,12 @@
 /* 指挥台版面。颜色、字号、圆角只用 --rd-*，组件样式在 rd.css。 */
 .cc-meta { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .cc-meta a { color: var(--rd-text-2); }
-.cc-main { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--rd-section-gap); align-items: start; }
+.cc-meta-item { display: inline-flex; align-items: center; gap: 4px; }
+.cc-main { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--rd-section-gap); align-items: stretch; }
 .cc-main[data-solo] { grid-template-columns: minmax(0, 1fr); }
 @media (max-width: 1100px) { .cc-main { grid-template-columns: minmax(0, 1fr); } }
 .cc-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.cc-side .cc-today { flex: 1; }
 .cc-pending-rest { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .cc-pending-rest a { color: var(--rd-text-2); }
 
@@ -14,13 +16,13 @@
 .cc-main[data-solo] .cc-today-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .cc-main[data-solo] .cc-today-grid .rd-stat[data-lead] { grid-column: auto; }
 
-.cc-fundline { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 8px 20px; border: 0; border-radius: var(--rd-radius-panel); background: var(--rd-panel); color: var(--rd-text); font: inherit; text-align: left; }
-button.cc-fundline { cursor: pointer; }
-button.cc-fundline:disabled { cursor: default; color: var(--rd-text-3); }
-button.cc-fundline:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
-@media (hover: hover) and (pointer: fine) { button.cc-fundline:not(:disabled):hover { background: var(--rd-hover); } }
+.cc-fundline { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 8px 20px; border-radius: var(--rd-radius-panel); background: var(--rd-panel); color: var(--rd-text); }
 .cc-fundline svg:first-child { flex: none; color: var(--tone, var(--rd-text-3)); }
-.cc-fundline-chevron { flex: none; margin-left: auto; color: var(--rd-text-3); }
+.cc-fundline-toggle { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; padding: 4px 8px; border: 0; border-radius: var(--rd-radius-control); background: none; color: var(--rd-text-2); font: inherit; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); cursor: pointer; }
+.cc-fundline-toggle:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) { .cc-fundline-toggle:hover { background: var(--rd-hover); } }
+.cc-fundline-chevron { flex: none; color: var(--rd-text-3); transition: transform .15s; }
+.cc-fundline-chevron[data-open] { transform: rotate(180deg); }
 
 .cc-folds { display: flex; flex-direction: column; gap: 4px; }
 .cc-folds .rd-fold-summary { margin-left: 8px; text-align: left; }
@@ -48,7 +50,7 @@ a.cc-amount:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 
 .cc-amount-value[data-tone] { color: var(--tone); }
 
 .cc-list { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
-.cc-list li { display: flex; justify-content: space-between; gap: 16px; }
+.cc-list li { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 1fr); gap: 16px; }
 .cc-list[data-cols] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 40px; }
 @media (max-width: 1100px) { .cc-list[data-cols] { grid-template-columns: minmax(0, 1fr); } }
 .cc-list li > span:first-child { display: inline-flex; align-items: center; gap: 4px; color: var(--rd-text-2); }

@@ -80,9 +80,6 @@ function AdminSessionRecoveryGate({ onRetry, onLogout, noAccess = false, error }
   );
 }
 
-/** 外壳随路由重新挂载，已落地这件事要记在模块里；整页刷新时清空，等于重新进来一次。 */
-let landedSession: string | null = null;
-
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
   const [bootstrapState, setBootstrapState] = useState<AdminBootstrapState>("checking");
@@ -120,6 +117,11 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const sessionKey = adminShellSessionKey(session, authEpoch);
   const servicePending = useServicePendingCount(canReadMContent, sessionKey);
   const observedAuthEpochRef = useRef(authEpoch);
+  const [justLoggedIn, setJustLoggedIn] = useState(false);
+  const enterAfterLogin = () => {
+    setJustLoggedIn(true);
+    setBootstrapState("authenticated");
+  };
 
   const restoreAdminSession = useCallback(async (signal?: AbortSignal) => {
     const attempt = ++bootstrapAttemptRef.current;
@@ -317,8 +319,8 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
     supportReadModes: session?.supportReadModes,
   }), [role, session?.authorities, session?.menuCodes, session?.menuNodes, session?.supportReadModes]);
   const landingPath = defaultConsolePath(role, domains, authorities);
-  // 落地页只管刚进来的那一下。落定后点侧栏「指挥台」要能留在 /，一块都看不到的账号除外（PG-22）。
-  const canStayHome = landedSession === sessionKey && b0HasAnyBlock(b0Blocks(authorities));
+  // 落地规则只在登录后用一次（Q-20）。刷新、书签直达、点侧栏都留在 /，一块都看不到的账号除外（PG-22）。
+  const canStayHome = !justLoggedIn && b0HasAnyBlock(b0Blocks(authorities));
   const shouldRedirectHome = pathname === "/" && landingPath !== null && landingPath !== "/" && !canStayHome;
   const shouldRedirectForbidden = !canAccessResolvedPath(domains, pathname);
   const redirecting = isAuthenticated && landingPath !== null && (shouldRedirectHome || shouldRedirectForbidden);
@@ -326,7 +328,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!mounted || bootstrapState !== "authenticated" || !isAuthenticated || landingPath === null) return;
     if (shouldRedirectHome || shouldRedirectForbidden) router.replace(landingPath);
-    else landedSession = sessionKey;
+    else setJustLoggedIn(false);
   }, [
     isAuthenticated,
     mounted,
@@ -334,18 +336,17 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
     domains,
     landingPath,
     router,
-    sessionKey,
     shouldRedirectForbidden,
     shouldRedirectHome,
   ]);
 
   if (logoutPending) return <AdminLogoutGate />;
   if (logoutUnknown) return <AdminSessionRecoveryGate onRetry={() => void restoreAdminSession()} />;
-  if (sessionResolution === "anonymous") return <LoginGate onAuthenticated={() => setBootstrapState("authenticated")} />;
+  if (sessionResolution === "anonymous") return <LoginGate onAuthenticated={enterAfterLogin} />;
   if (!mounted || bootstrapState === "checking") return <AdminSessionBootstrapGate />;
   if (bootstrapState === "error") return <AdminSessionRecoveryGate error={logoutError ?? undefined} onRetry={() => void restoreAdminSession()} onLogout={() => void logoutWithoutAccess()} />;
-  if (bootstrapState === "anonymous") return <LoginGate onAuthenticated={() => setBootstrapState("authenticated")} />;
-  if (!isAuthenticated) return <LoginGate onAuthenticated={() => setBootstrapState("authenticated")} />;
+  if (bootstrapState === "anonymous") return <LoginGate onAuthenticated={enterAfterLogin} />;
+  if (!isAuthenticated) return <LoginGate onAuthenticated={enterAfterLogin} />;
   if (landingPath === null) return <AdminSessionRecoveryGate noAccess error={logoutError ?? undefined} onRetry={() => void restoreAdminSession()} onLogout={() => void logoutWithoutAccess()} />;
   if (redirecting) return <AdminRouteRedirectGate />;
 
