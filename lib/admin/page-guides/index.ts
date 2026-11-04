@@ -30,6 +30,21 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
       { name: "风险分", text: "系统按规则算的分数，越高越要仔细看。" },
     ],
   },
+  D3: {
+    purpose: "看平台的钱够不够付，要不要补储备。",
+    tasks: [
+      { title: "看资金安全", steps: ["先读顶部一句话", "正常就不用处理", "变红时按建议上报"] },
+      { title: "查应付款和到期", steps: ["切到「应付款与到期」", "选 7 天或 30 天", "点九类里的一行看这类的详情"] },
+      { title: "登记储备注入", steps: ["点「登记储备注入」", "填金额和到账凭证", "写理由后确认登记"] },
+    ],
+    terms: [
+      { name: "可用储备", text: "扣掉质押锁定金额后，平台能动用的钱。" },
+      { name: "应付款", text: "平台之后要付给用户的九类钱。" },
+      { name: "可覆盖天数", text: "可用储备够付多少天的到期应付款，按未来 7 天的平均到期额算。" },
+      { name: "资金安全等级", text: "按可覆盖天数分四档：正常、关注、预警、危险。" },
+      { name: "差额", text: "储备减应付款。正数是有富余，负数是不够付。" },
+    ],
+  },
 };
 
 export function getPageGuide(pageId: string): PageGuideContent | undefined {

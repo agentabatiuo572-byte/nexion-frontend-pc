@@ -445,11 +445,11 @@ export interface D3ForecastConfig {
   effectiveVersion: number;
 }
 
-export interface D3Dashboard {
+export interface D3Main {
   reserve: D3Reserve;
   liabilities: D3Liabilities;
-  maturity: D3MaturityForecast;
-  exposure: D3NetExposure;
+  /** 固定未来 7 天：资金安全等级按这个窗口算，不随页面选的窗口变（B2-C03）。 */
+  maturity7: D3MaturityForecast;
   config: D3ForecastConfig;
 }
 
@@ -2117,23 +2117,29 @@ export async function reviewD2WithdrawalsBatch(
   });
 }
 
-export async function fetchD3Dashboard(maturityWindow?: "7d" | "30d", exposureWindow?: "7d" | "30d" | "90d"): Promise<D3Dashboard> {
-  const config = normalizeD3ForecastConfig(await apiRequest<Record<string, unknown>>("treasury", "/forecast-config"));
-  const selectedMaturity = maturityWindow ?? (config.forecastWindow === "30d" ? "30d" : "7d");
-  const selectedExposure = exposureWindow ?? config.forecastWindow;
-  const [reserve, liabilities, maturity, exposure] = await Promise.all([
+/** 储备、应付款、到期预测、预测配置接受 B2 或 D3 读权限，任一失败整块失败，不留旧水位（D3-S01）。 */
+export async function fetchD3Main(): Promise<D3Main> {
+  const [config, reserve, liabilities, maturity7] = await Promise.all([
+    apiRequest<Record<string, unknown>>("treasury", "/forecast-config"),
     apiRequest<Record<string, unknown>>("treasury", "/reserve"),
     apiRequest<Record<string, unknown>>("treasury", "/liabilities?breakdown=true"),
-    apiRequest<Record<string, unknown>>("treasury", `/maturity-forecast?window=${selectedMaturity}`),
-    apiRequest<Record<string, unknown>>("treasury", `/net-exposure?window=${selectedExposure}`),
+    apiRequest<Record<string, unknown>>("treasury", "/maturity-forecast?window=7d"),
   ]);
   return {
     reserve: normalizeD3Reserve(reserve),
     liabilities: normalizeD3Liabilities(liabilities),
-    maturity: normalizeD3Maturity(maturity),
-    exposure: normalizeD3Exposure(exposure),
-    config,
+    maturity7: normalizeD3Maturity(maturity7),
+    config: normalizeD3ForecastConfig(config),
   };
+}
+
+export async function fetchD3Maturity(window: D3MaturityForecast["window"]) {
+  return normalizeD3Maturity(await apiRequest<Record<string, unknown>>("treasury", `/maturity-forecast?window=${window}`));
+}
+
+/** 差额曲线单独读：它接受 B1 或 D3 读权限，和主数据的授权不同（X05）。 */
+export async function fetchD3NetExposure(window: D3NetExposure["window"]) {
+  return normalizeD3Exposure(await apiRequest<Record<string, unknown>>("treasury", `/net-exposure?window=${window}`));
 }
 
 export async function createD3Injection(
@@ -2156,11 +2162,12 @@ export async function updateD3ForecastConfig(
   expectedVersion: number,
   reason: string,
   operator: string,
+  idempotencyKey: string,
 ) {
   return apiRequest<Record<string, unknown>>("treasury", "/forecast-config", {
     method: "PUT",
     body: JSON.stringify({ ...values, expectedVersion, reason, operator }),
-    idempotencyPrefix: "d3-forecast-config",
+    idempotencyKey,
   });
 }
 

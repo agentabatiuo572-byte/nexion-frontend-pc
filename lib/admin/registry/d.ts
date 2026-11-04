@@ -18,7 +18,7 @@ export const DOMAIN_D: ModuleEntry[] = [
   },
   {
     path: "/finance/pool",
-    summary: "查看可用储备、九类应付款、预计到期金额和资金安全等级。补充储备须上传真实凭证。",
+    summary: "查看可用储备、九类应付款、预计到期金额和资金安全等级。补充储备须填写真实凭证号。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

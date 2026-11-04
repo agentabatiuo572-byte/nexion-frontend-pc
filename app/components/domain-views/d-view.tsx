@@ -29,13 +29,14 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
     openConfirm: setCf,
   } as DCtx;
 
+  if (tab === "D3") return <D3Treasury />;
+
   return (
     <div className="dkpage ddom">
       <DomainHeader {...meta} />
 
       {tab === "D1" && <D1Recon ctx={ctx} />}
       {tab === "D2" && <D2Withdrawals ctx={ctx} />}
-      {tab === "D3" && <D3Treasury ctx={ctx} />}
       {tab === "D4" && <D4Ledger ctx={ctx} />}
       {tab === "D5" && <D5Params ctx={ctx} />}
       {tab === "D6" && <D6Fx ctx={ctx} />}

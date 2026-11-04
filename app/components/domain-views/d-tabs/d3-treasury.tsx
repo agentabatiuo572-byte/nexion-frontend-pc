@@ -1,370 +1,598 @@
 "use client";
-import { operatorCopyText } from "@/lib/admin/operator-copy";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+/**
+ * 资金储备与应付款：看平台的钱够不够付，要不要补储备。四个页签，当前页签和时间窗写进网址（PG-33、ST-23）。
+ * 读取按接口原授权分开判断，不合成一个权限（X05）：
+ *   储备、应付款、到期预测、预测配置：B2 或 D3 读权限，一起读，任一失败全部清掉，不留旧水位（D3-S01）。
+ *   差额曲线：B1 或 D3 读权限，单独读。资金流历史：只认 B2 读权限，单独读。两块失败都不影响别的内容。
+ * 四个动作互不替代：应付款导出认 B2 或 D3 导出权限，对账导出只认 D3 导出权限，
+ * 预测保存认 B2 或 D3 写权限，储备注入只认注入权限。
+ */
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Download, Landmark, RefreshCw } from "lucide-react";
+import { OperationConfirmModal, useToast, type OperatorBriefKind } from "../design-kit";
+import { BlockState, Button, Conclusion, Decision, DiffList, Drawer, Field, Input, KeyValues, Modal, Notice, PageHeader, PageTabs, RdPage, Select, StatusTag } from "@/app/components/rd";
+import { useB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { canAccessCrossDomainPath } from "@/lib/admin/cross-domain-authority";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { displayAdminError } from "@/lib/admin/error-messages";
 import {
   createD3Injection,
   downloadD3Csv,
-  fetchD3Dashboard,
-  updateD3ForecastConfig,
-  type D3Dashboard,
-  type D3ForecastConfig,
-  type D3WaterLevel,
+  fetchD3Main,
+  fetchD3Maturity,
+  fetchD3NetExposure,
   isDOutcomeUnknownError,
+  updateD3ForecastConfig,
+  type D3ForecastConfig,
+  type D3Main,
+  type D3MaturityForecast,
+  type D3NetExposure,
 } from "@/lib/admin/d-client";
-import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
-import { formatReserveCoverDays } from "@/lib/admin/treasury-cover-days";
+import { displayAdminError } from "@/lib/admin/error-messages";
+import { createPendingMutationStore, createSlotAttemptStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import type { DCtx } from "./types";
-import { liabilityDisplayName } from "@/lib/admin/liability-labels";
+import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
+import { DueTab, FlowTab, OverviewTab, SettingsTab, amountText, categoryText, effectiveText, forecastDiffRows, money, type CrossLink, type ForecastValues, type Loadable } from "./d3-treasury-views";
 
 const OPERATOR = currentAdminOperator;
-const categoryText = (key: string) => liabilityDisplayName(key, ({ usdt: "USDT 储备", otherLiquid: "其他可用资产" } as Record<string,string>)[key] ?? "其他科目");
-const WATER_LABEL: Record<D3WaterLevel["tier"], string> = {
-  NORMAL: "正常",
-  WATCH: "关注",
-  WARNING: "预警",
-  DANGER: "危险",
-};
-const TREASURY_SOURCE_LABELS: Record<string, string> = {
-  "nx_treasury_reserve_ledger": "储备资金账本",
-  "nx_staking_position.amount_usdt": "生效中的质押锁定金额",
-  "nx_user_wallet": "用户钱包余额",
-  "nx_user_wallet.usdt_available": "用户可提余额",
-  "nx_staking_position": "质押锁定金额与奖励",
-  "nx_staking_position.estimated_interest_usdt": "待付质押奖励",
-  "nx_genesis_holding": "创世节点持仓",
-  "nx_genesis_holding × nx_genesis_series.daily_dividend_rate_pct": "创世节点持仓与每日收益",
-  "nx_nex_lock_order": "UVT 锁仓订单",
-  "nx_nex_lock_order active maturity": "生效中的 UVT 锁仓到期额",
-  "nx_withdrawal_order": "提现订单",
-  "nx_withdrawal_order active queue": "待处理提现订单",
-  "nx_wallet_ledger": "钱包资金流水",
-  "nx_wallet_ledger pending commission": "待解锁奖励流水",
-  "nx_treasury_legacy_lock_liability": "存量锁定金额及奖励",
-  "nx_treasury_legacy_lock_liability active principal + accrued interest": "生效中的存量锁定金额及奖励",
-  "nx_vietqr_reconciliation": "VietQR 银行回单",
-  "nx_vietqr_reconciliation open suspense rows": "待处置 VietQR 银行回单",
-};
-
-function treasurySourceLabel(source: string) {
-  const value = source.trim();
-  return TREASURY_SOURCE_LABELS[value] ?? (value.startsWith("nx_") ? "系统账目" : value || "系统账目");
-}
-
-function money(value: number) {
-  return `$${Number(value).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
-}
 
 /** 储备注入命令号跨刷新存活:注资是真金白银入账,重铸命令号 = 后端无法去重 = 重复入账。
- *  fingerprint 已编码动作类型(injection)与目标对象(凭证号,后端唯一去重位)+ 金额。 */
-const pendingKeys = createPendingMutationStore({
+ *  fingerprint 已编码动作类型(injection)与目标对象(凭证号,后端唯一去重位)+ 金额。
+ *  结果未知时要能原样重试(OP-94),所以连金额、凭证号和理由一起存。 */
+const pendingKeys = createPendingMutationStore<PendingMutationRecord & { amount?: string; voucherNo?: string; reason?: string }>({
   storageKey: "nexion-admin-d3-treasury-commands-v1",
 });
 const injectionScope = (voucherNo: string, amount: string) => `injection|${voucherNo}|${amount}`;
 const exportScope = (kind: "reconciliation" | "liabilities") => `sensitive-export|${kind}`;
 
-function reasonValid(reason: string, toast: (message: string) => void) {
-  const length = reason.trim().length;
-  if (length < 8 || length > 200) {
-    toast("操作原因需为 8–200 个字");
-    return false;
-  }
-  return true;
+/** 预测保存只有一个槽位:草稿 / 期望版本 / 理由 / 操作人没变就复用命令号。和旧「可用资金与应付款」共用这张表,
+ *  那边留下的未决记录在这里接着恢复(B2-H02)。 */
+const forecastCommand = createSlotAttemptStore({ storageKey: "nexion-admin-b2-liquidity-commands-v1" });
+const FORECAST_SLOT = "forecast-config";
+
+type TabValue = "overview" | "due" | "flow" | "settings";
+type ExposureWindow = D3NetExposure["window"];
+type MaturityWindow = D3MaturityForecast["window"];
+
+const TABS: readonly { value: TabValue; label: string }[] = [
+  { value: "overview", label: "资金概况" },
+  { value: "due", label: "应付款与到期" },
+  { value: "flow", label: "资金流" },
+  { value: "settings", label: "预测设置" },
+];
+
+const VOUCHER_TYPES = [{ value: "CHAIN", label: "链上交易哈希" }, { value: "BANK", label: "银行流水号" }];
+
+interface ConfirmRequest {
+  action: string;
+  detail: ReactNode;
+  briefKind: OperatorBriefKind;
+  effect?: string;
+  confirmLabel: string;
+  run: (reason: string) => Promise<void>;
 }
 
-export function D3Treasury({ ctx }: { ctx: DCtx }) {
-  const { toast, openConfirm } = ctx;
-  const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
-  const canConfig = authorities.includes("finance_d3_write");
-  const canInject = authorities.includes("finance_d3_injection_create");
-  const canExport = authorities.includes("finance_d3_export");
-  const [data, setData] = useState<D3Dashboard | null>(null);
-  const [draft, setDraft] = useState<D3ForecastConfig | null>(null);
-  const [maturityWindow, setMaturityWindow] = useState<"7d" | "30d">("7d");
-  const [exposureWindow, setExposureWindow] = useState<"7d" | "30d" | "90d">("30d");
-  const [amount, setAmount] = useState("");
-  const [voucherNo, setVoucherNo] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  // merge 2026-08-06:pendingKeys 用分支侧 store 化版本(稳定命令号,声明在下方);
-  // loadGeneration 是 main 侧独立功能(请求代际防过期响应),消费在 load() 内,保留。
+interface RetryRequest {
+  title: string;
+  rows: Array<{ key: string; label: string; value: string }>;
+  run: () => Promise<void>;
+}
+
+function queryValue<T extends string>(name: string, allowed: readonly T[]): T | null {
+  if (typeof window === "undefined") return null;
+  const value = new URLSearchParams(window.location.search).get(name);
+  return allowed.find((item) => item === value) ?? null;
+}
+
+/** 替换写入,不增加浏览器历史;别的参数(比如临时的 theme)原样留着。 */
+function writeQuery(name: string, value: string | null) {
+  const url = new URL(window.location.href);
+  if (value === null) url.searchParams.delete(name);
+  else url.searchParams.set(name, value);
+  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
+function forecastValues(config: D3ForecastConfig): ForecastValues {
+  const source = config.pendingConfig ?? config;
+  return {
+    reserveCategories: source.reserveCategories,
+    liabilityCategories: source.liabilityCategories,
+    forecastWindow: source.forecastWindow,
+    genesisIncluded: source.genesisIncluded,
+    includeFarLiabilities: source.includeFarLiabilities,
+    stakingInterestMode: source.stakingInterestMode,
+    trialStressEnabled: source.trialStressEnabled,
+  };
+}
+
+const errorText = (error: unknown, fallback: string) => (error instanceof Error ? displayAdminError(error) : fallback);
+
+export function D3Treasury() {
+  const [toastNode, toast] = useToast();
+  const session = useAdminAuth((state) => state.session);
+  const authorities = useMemo(() => session?.authorities ?? [], [session?.authorities]);
+  const has = (code: string) => authorities.includes(code);
+  const canReadMain = has("finance_d3_read") || has("overview_b2_read");
+  const canReadExposure = has("finance_d3_read") || has("overview_b1_read");
+  const canReadFlow = has("overview_b2_read");
+  const canConfig = has("finance_d3_write") || has("overview_b2_write");
+  const canInject = has("finance_d3_injection_create");
+  const canExportLiabilities = has("overview_b2_export") || has("finance_d3_export");
+  const canExportReconciliation = has("finance_d3_export");
+
+  const visibleTabs = TABS.filter((item) => (item.value === "flow" ? canReadFlow : item.value === "due" ? canReadMain || canReadExposure : canReadMain));
+  const [requestedTab, setRequestedTab] = useState<TabValue | null>(() => queryValue("tab", TABS.map((item) => item.value)));
+  const tab = visibleTabs.find((item) => item.value === requestedTab)?.value ?? visibleTabs[0]?.value ?? null;
+
+  const [main, setMain] = useState<D3Main | null>(null);
+  const [draft, setDraft] = useState<ForecastValues | null>(null);
+  const [loading, setLoading] = useState(canReadMain);
+  const [mainError, setMainError] = useState("");
   const loadGeneration = useRef(0);
 
-  const operationKey = (scope: string) => {
+  const [maturityChoice, setMaturityChoice] = useState<MaturityWindow | null>(() => queryValue("maturity", ["7d", "30d"] as const));
+  const [exposureChoice, setExposureChoice] = useState<ExposureWindow | null>(() => queryValue("exposure", ["7d", "30d", "90d"] as const));
+  const maturityWindow: MaturityWindow = maturityChoice ?? (main?.config.forecastWindow === "30d" ? "30d" : "7d");
+  const exposureWindow: ExposureWindow | null = exposureChoice ?? main?.config.forecastWindow ?? (canReadMain && loading ? null : "30d");
+
+  const [maturity30, setMaturity30] = useState<Loadable<D3MaturityForecast>>({ data: null, loading: false, error: "" });
+  const [exposure, setExposure] = useState<Loadable<D3NetExposure>>({ data: null, loading: false, error: "" });
+  const maturityGeneration = useRef(0);
+  const exposureGeneration = useRef(0);
+  const maturityLoadedFor = useRef<D3Main | null>(null);
+  const exposureLoadedFor = useRef<{ main: D3Main | null; window: ExposureWindow } | null>(null);
+
+  const [flowVisited, setFlowVisited] = useState(tab === "flow");
+  const history = useB2LiquidityHistory(canReadFlow && flowVisited);
+
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [injectOpen, setInjectOpen] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [voucherType, setVoucherType] = useState("CHAIN");
+  const [voucherNo, setVoucherNo] = useState("");
+  const [injectErrors, setInjectErrors] = useState<{ amount?: string; voucher?: string }>({});
+  const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
+  const [retry, setRetry] = useState<RetryRequest | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState("");
+  const [refreshAsk, setRefreshAsk] = useState(false);
+  const [unknownTick, setUnknownTick] = useState(0);
+
+  const load = useCallback(async ({ keepDraft = false }: { keepDraft?: boolean } = {}) => {
+    const generation = ++loadGeneration.current;
+    setLoading(true);
+    setMainError("");
+    try {
+      const next = await fetchD3Main();
+      if (generation !== loadGeneration.current) return;
+      setMain(next);
+      if (!keepDraft) setDraft(forecastValues(next.config));
+    } catch (err) {
+      if (generation !== loadGeneration.current) return;
+      setMain(null);
+      setDraft(null);
+      setMainError(errorText(err, "加载失败，请重试"));
+    } finally {
+      if (generation === loadGeneration.current) setLoading(false);
+    }
+  }, []);
+
+  const loadMaturity30 = useCallback(async () => {
+    const generation = ++maturityGeneration.current;
+    setMaturity30({ data: null, loading: true, error: "" });
+    try {
+      const data = await fetchD3Maturity("30d");
+      if (generation === maturityGeneration.current) setMaturity30({ data, loading: false, error: "" });
+    } catch (err) {
+      if (generation === maturityGeneration.current) setMaturity30({ data: null, loading: false, error: errorText(err, "读取失败，请重试") });
+    }
+  }, []);
+
+  const loadExposure = useCallback(async (window: ExposureWindow) => {
+    const generation = ++exposureGeneration.current;
+    setExposure((current) => ({ ...current, loading: true, error: "" }));
+    try {
+      const data = await fetchD3NetExposure(window);
+      if (generation === exposureGeneration.current) setExposure({ data, loading: false, error: "" });
+    } catch (err) {
+      if (generation === exposureGeneration.current) setExposure({ data: null, loading: false, error: errorText(err, "读取失败，请重试") });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (canReadMain) void load();
+  }, [canReadMain, load]);
+
+  useEffect(() => {
+    if (tab !== "due" || !main || maturityWindow !== "30d" || maturityLoadedFor.current === main) return;
+    maturityLoadedFor.current = main;
+    void loadMaturity30();
+  }, [tab, main, maturityWindow, loadMaturity30]);
+
+  useEffect(() => {
+    if (tab !== "due" || !canReadExposure || !exposureWindow) return;
+    const seen = exposureLoadedFor.current;
+    if (seen && seen.main === main && seen.window === exposureWindow) return;
+    exposureLoadedFor.current = { main, window: exposureWindow };
+    void loadExposure(exposureWindow);
+  }, [tab, main, exposureWindow, canReadExposure, loadExposure]);
+
+  const selectTab = (next: TabValue) => {
+    setRequestedTab(next);
+    writeQuery("tab", next === visibleTabs[0]?.value ? null : next);
+    if (next === "flow") setFlowVisited(true);
+    setSelectedCategory(null);
+  };
+
+  const selectMaturity = (next: MaturityWindow) => {
+    setMaturityChoice(next);
+    writeQuery("maturity", next);
+  };
+
+  const selectExposure = (next: ExposureWindow) => {
+    setExposureChoice(next);
+    writeQuery("exposure", next);
+  };
+
+  const baseValues = useMemo(() => (main ? forecastValues(main.config) : null), [main]);
+  const dirty = Boolean(draft && baseValues && JSON.stringify(draft) !== JSON.stringify(baseValues));
+
+  const reloadAll = () => {
+    if (canReadMain) void load();
+    else if (tab === "due" && exposureWindow) void loadExposure(exposureWindow);
+    if (flowVisited && canReadFlow) void history.reload();
+  };
+
+  const refresh = () => {
+    if (dirty) setRefreshAsk(true);
+    else reloadAll();
+  };
+
+  const operationKey = (scope: string, extra: { amount?: string; voucherNo?: string; reason?: string } = {}) => {
     const existing = pendingKeys.get(scope);
     if (existing) return existing;
     const uuid = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
     const key = `d3-${scope.replace(/[^A-Za-z0-9_-]/g, "-")}-${uuid.replaceAll("-", "").replace(".", "").slice(0, 18)}`;
-    pendingKeys.remember(scope, key);
+    pendingKeys.remember(scope, key, extra);
     return key;
   };
 
-  const load = async (nextMaturity?: "7d" | "30d", nextExposure?: "7d" | "30d" | "90d") => {
-    const generation = ++loadGeneration.current;
-    setLoading(true);
-    setError("");
+  const submitInjection = async (nextAmount: string, nextVoucher: string, reason: string) => {
+    const scope = injectionScope(nextVoucher, nextAmount);
     try {
-      const next = await fetchD3Dashboard(nextMaturity, nextExposure);
-      if (generation !== loadGeneration.current) return;
-      setData(next);
-      setMaturityWindow(next.maturity.window);
-      setExposureWindow(next.exposure.window);
-      setDraft(next.config.pendingConfig ? { ...next.config, ...next.config.pendingConfig } : next.config);
+      await createD3Injection(nextAmount, nextVoucher, reason, OPERATOR(), operationKey(scope, { amount: nextAmount, voucherNo: nextVoucher, reason }));
+      pendingKeys.forget(scope);
+      setAmount("");
+      setVoucherNo("");
+      setInjectOpen(false);
+      toast("储备注入已登记");
+      await load({ keepDraft: true });
     } catch (err) {
-      if (generation !== loadGeneration.current) return;
-      setData(null);
-      setDraft(null);
-      setError(err instanceof Error ? displayAdminError(err) : "加载失败，请重试");
+      // 确定性拒绝必须丢号(同 D2:留着旧号会让运营改完输入重提时撞载荷不符,
+      // 这笔注资 24h 内做不了);结果未知必须保号,丢了重试就是第二笔注资。
+      if (!isDOutcomeUnknownError(err)) pendingKeys.forget(scope);
+      throw err;
     } finally {
-      if (generation === loadGeneration.current) setLoading(false);
+      setUnknownTick((tick) => tick + 1);
     }
-  };
-
-  useEffect(() => {
-    void load();
-    // The window controls explicitly invoke load with their selected value.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const exposureMax = useMemo(
-    () => Math.max(1, ...(data?.exposure.series.map((row) => Math.abs(row.netExposureUsdt)) ?? [1])),
-    [data?.exposure.series],
-  );
-
-  const selectMaturity = (value: "7d" | "30d") => {
-    setMaturityWindow(value);
-    void load(value, exposureWindow);
-  };
-
-  const selectExposure = (value: "7d" | "30d" | "90d") => {
-    setExposureWindow(value);
-    void load(maturityWindow, value);
   };
 
   const saveInjection = () => {
     const nextAmount = amount.trim();
-    const nextVoucher = voucherNo.trim();
-    if (!nextAmount || !Number.isFinite(Number(nextAmount)) || Number(nextAmount) <= 0) {
-      toast("请输入有效的注入金额");
-      return;
-    }
-    if (!nextVoucher) {
-      toast("请输入到账凭证号");
-      return;
-    }
-    openConfirm({
+    const voucher = voucherNo.trim();
+    const nextVoucher = `${voucherType}:${voucher}`;
+    const errors: { amount?: string; voucher?: string } = {};
+    if (!nextAmount || !Number.isFinite(Number(nextAmount)) || Number(nextAmount) <= 0) errors.amount = "请输入有效的注入金额";
+    else if (!/^\d+(\.\d{1,2})?$/.test(nextAmount)) errors.amount = "最多两位小数，不会自动四舍五入";
+    if (!voucher) errors.voucher = "请输入到账凭证号";
+    else if (voucher.length < 6 || !/^[A-Za-z0-9:_./-]+$/.test(voucher) || nextVoucher.length > 96) errors.voucher = "至少 6 位，只能用字母、数字和 : _ . / -";
+    setInjectErrors(errors);
+    if (errors.amount || errors.voucher) return;
+    setConfirm({
       action: "储备注入登记",
-      detail: `登记 ${money(Number(nextAmount))}，凭证号 ${nextVoucher}。凭证号不可重复。`,
-      reason: true,
-      okLabel: "确认登记",
-      run: async (reason) => {
-        if (!reasonValid(reason, toast)) return false;
-        const scope = injectionScope(nextVoucher, nextAmount);
-        try {
-          await createD3Injection(nextAmount, nextVoucher, reason.trim(), OPERATOR(), operationKey(scope));
-          pendingKeys.forget(scope);
-          setAmount("");
-          setVoucherNo("");
-          toast("储备注入已登记");
-          await load();
-          return true;
-        } catch (err) {
-          // 确定性拒绝必须丢号(同 D2:留着旧号会让运营改完输入重提时撞载荷不符,
-          // 这笔注资 24h 内做不了);结果未知必须保号,丢了重试就是第二笔注资。
-          if (!isDOutcomeUnknownError(err)) pendingKeys.forget(scope);
-          setError(err instanceof Error ? displayAdminError(err) : "储备注入失败");
-          throw err;
-        }
-      },
+      detail: `登记 ${money(Number(nextAmount))}，凭证号 ${nextVoucher}。凭证号不可重复。登记后计入可用储备。`,
+      briefKind: "record",
+      effect: "立即生效",
+      confirmLabel: "确认登记",
+      run: (reason) => submitInjection(nextAmount, nextVoucher, reason),
     });
   };
 
+  const submitForecast = async (values: ForecastValues, version: number, reason: string, operator: string, commandKey: string) => {
+    try {
+      await updateD3ForecastConfig(values, version, reason, operator, commandKey);
+      forecastCommand.forget(FORECAST_SLOT);
+      toast("已保存，次日 UTC 00:00 起生效");
+      await load();
+    } catch (err) {
+      if (!isDOutcomeUnknownError(err)) forecastCommand.forget(FORECAST_SLOT);
+      throw err;
+    } finally {
+      setUnknownTick((tick) => tick + 1);
+    }
+  };
+
   const saveConfig = () => {
-    if (!draft) return;
-    openConfirm({
+    if (!main || !draft || !baseValues) return;
+    const values = draft;
+    const version = main.config.version;
+    const dropped = main.liabilities.breakdown.filter((row) => baseValues.liabilityCategories[row.category] && !values.liabilityCategories[row.category]);
+    setConfirm({
       action: "调整应付款预测设置",
-      detail: `预测 ${draft.forecastWindow.replace("d", " 天")}，创世节点收益${draft.genesisIncluded ? "计入" : "不计入"}。次日 UTC 00:00 起生效，不影响历史。`,
-      reason: true,
-      okLabel: "保存配置",
+      detail: (
+        <>
+          预测 {values.forecastWindow.replace("d", " 天")}，创世节点收益{values.genesisIncluded ? "计入" : "不计入"}。{effectiveText()}，不影响历史。
+          {!values.reserveCategories.usdt && <Notice tone="danger">不计入 USDT 储备后，资金安全等级会按储备 0 算。</Notice>}
+          {dropped.map((row) => <Notice key={row.category} tone="warn">不再计入「{categoryText(row.category)}」，这类现在是 {money(row.amountUsdt)}。</Notice>)}
+          <DiffList rows={forecastDiffRows(baseValues, values)} emptyNote="这次没有改动任何设置，保存只会多一个版本。" />
+        </>
+      ),
+      briefKind: "config",
+      effect: effectiveText(),
+      confirmLabel: "保存配置",
       run: async (reason) => {
-        if (!reasonValid(reason, toast)) return false;
-        const values = {
-          reserveCategories: draft.reserveCategories,
-          liabilityCategories: draft.liabilityCategories,
-          forecastWindow: draft.forecastWindow,
-          genesisIncluded: draft.genesisIncluded,
-          includeFarLiabilities: draft.includeFarLiabilities,
-          stakingInterestMode: draft.stakingInterestMode,
-          trialStressEnabled: draft.trialStressEnabled,
-        };
-        try {
-          await updateD3ForecastConfig(values, draft.version, reason.trim(), OPERATOR());
-          toast("已保存，次日 UTC 00:00 起生效");
-          await load();
-          return true;
-        } catch (err) {
-          setError(err instanceof Error ? displayAdminError(err) : "预测配置保存失败");
-          throw err;
-        }
+        const operator = OPERATOR();
+        const fingerprint = JSON.stringify({ draft: values, expectedVersion: version, reason, operator });
+        const commandKey = forecastCommand.resolve(FORECAST_SLOT, fingerprint, () => `b2-forecast-config-${crypto.randomUUID()}`);
+        await submitForecast(values, version, reason, operator, commandKey);
       },
     });
   };
 
   const exportCsv = (kind: "reconciliation" | "liabilities") => {
-    openConfirm({
+    setConfirm({
       action: "导出",
-      detail: kind === "reconciliation" ? "导出储备与应付款对账数据。" : "导出应付款明细。",
-      reason: true,
-      okLabel: "确认导出",
+      detail: kind === "reconciliation" ? "导出储备与应付款对账数据：储备、应付款、净差额三行。" : "导出应付款明细：全部 9 类的当前数据，不随页面窗口变。",
+      briefKind: "record",
+      confirmLabel: "确认导出",
       run: async (reason) => {
-        if (!reasonValid(reason, toast)) return false;
         const scope = exportScope(kind);
         const pendingKeyBeforeRequest = pendingKeys.get(scope);
         const commandKey = operationKey(scope);
         try {
-          await downloadD3Csv(kind, reason.trim(), OPERATOR(), commandKey);
+          await downloadD3Csv(kind, reason, OPERATOR(), commandKey);
           pendingKeys.forget(scope);
           toast(kind === "reconciliation" ? "对账 CSV 已导出" : "应付款明细 CSV 已导出");
-          return true;
         } catch (err) {
           if (!pendingKeyBeforeRequest && !isDOutcomeUnknownError(err)) pendingKeys.forget(scope);
-          setError(err instanceof Error ? displayAdminError(err) : "CSV 导出失败");
-          return false;
+          throw err;
         }
       },
     });
   };
 
-  if (loading && !data) {
-    return <section className="l-card"><div className="l-b">正在加载…</div></section>;
+  // 结果未知的提交写在页面最上面,刷新后还在(OP-93)。unknownTick 在每次提交收尾时变,让这里重读。
+  const unknownCommands = useMemo(() => {
+    void unknownTick;
+    return {
+      injections: pendingKeys.list().filter((record) => record.fingerprint.startsWith("injection|") && record.amount && record.voucherNo && record.reason),
+      forecast: forecastCommand.list().find((record) => record.fingerprint === FORECAST_SLOT) ?? null,
+    };
+  }, [unknownTick]);
+
+  const startRetry = (request: RetryRequest) => {
+    setRetryError("");
+    setRetry(request);
+  };
+
+  const runRetry = async () => {
+    if (!retry) return;
+    setRetrying(true);
+    setRetryError("");
+    try {
+      await retry.run();
+      setRetry(null);
+    } catch (err) {
+      setRetryError(errorText(err, "重试失败，请刷新后核对"));
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  const crossLink = (href: string, label: string): CrossLink => ({
+    href,
+    label,
+    reachable: Boolean(session) && canAccessCrossDomainPath(href, session?.role, authorities) && canAccessResolvedPath(resolveVisibleDomains(session!), href),
+  });
+
+  const dataBlocked = !main ? "资金数据没读到，刷新后再试" : loading ? "正在刷新，稍等" : undefined;
+  const mainState = loading && !main
+    ? <BlockState state="loading" title="正在读取资金数据…" />
+    : !main && canReadMain
+      ? <BlockState state="error" title="加载失败，已暂停显示旧数据" detail={mainError || "数据不完整，已暂停显示旧数据"} onRetry={reloadAll} retryLabel="重新加载" />
+      : null;
+
+  const asOf = main?.reserve.asOf;
+  const header = (
+    <PageHeader
+      pageId="D3"
+      title="资金储备与应付款"
+      summary="看平台的钱够不够付，要不要补储备。"
+      meta={tab ? <>{asOf ? `统计时间：${formatBusinessTimeCompact(asOf)}（${businessZone().label}）· ` : ""}打开时读取 · <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={refresh}>刷新</Button></> : undefined}
+      readOnly={canInject || !tab ? undefined : "你只能查看；登记储备注入需财务负责人。"}
+      actions={(
+        <>
+          {canExportReconciliation && <Button icon={<Download size={14} aria-hidden />} disabledReason={dataBlocked} onClick={() => exportCsv("reconciliation")}>导出对账 CSV</Button>}
+          {canInject && <Button variant="primary" disabledReason={dataBlocked} onClick={() => setInjectOpen(true)}>登记储备注入</Button>}
+        </>
+      )}
+    />
+  );
+
+  if (!tab) {
+    return (
+      <RdPage>
+        {header}
+        <BlockState state="denied" title="无权限访问" detail="这个账号没有这页内容的读取权限，需要时联系超级管理员。" />
+      </RdPage>
+    );
   }
 
-  if (!data || !draft) {
-    return <section className="l-card"><div className="l-b"><div className="dtint warn">加载失败 · {error || "数据不完整，已暂停显示旧数据"}</div><button className="l-btn primary" style={{ marginTop: 12 }} onClick={() => void load()}>重新加载</button></div></section>;
-  }
-
-  const water = data?.reserve.waterLevel;
-  const sourceText = Array.from(new Set(
-    [...(data?.reserve.sources ?? []), ...(data?.liabilities.sources ?? [])].map(treasurySourceLabel),
-  )).join(" / ");
-
+  const forecastUnknown = unknownCommands.forecast;
   return (
-    <>
-      {error && <div className="dtint warn" style={{ marginBottom: 12 }}>加载失败 · {error}</div>}
+    <RdPage>
+      {header}
+      {unknownCommands.injections.map((record) => (
+        <Notice
+          key={record.commandKey}
+          tone="danger"
+          title="储备注入登记结果未知，可能已经入账"
+          action={(
+            <>
+              <Button size="sm" onClick={refresh}>刷新核对</Button>
+              <Button size="sm" onClick={() => startRetry({
+                title: "按原操作重试储备注入",
+                rows: [
+                  { key: "amount", label: "金额", value: money(Number(record.amount)) },
+                  { key: "voucher", label: "凭证号", value: record.voucherNo ?? "" },
+                  { key: "reason", label: "理由", value: record.reason ?? "" },
+                ],
+                run: () => submitInjection(record.amount ?? "", record.voucherNo ?? "", record.reason ?? ""),
+              })}>按原操作重试</Button>
+            </>
+          )}
+        >
+          {money(Number(record.amount))}，凭证号 {record.voucherNo}，{formatBusinessTimeCompact(new Date(record.createdAt).toISOString())} 提交。先看累计注入有没有变；重试用同一个请求号，不会重复登记。
+        </Notice>
+      ))}
+      {forecastUnknown && (
+        <Notice
+          tone="danger"
+          title="预测设置保存结果未知，可能已经保存"
+          action={(
+            <>
+              <Button size="sm" onClick={refresh}>刷新核对</Button>
+              <Button size="sm" onClick={() => {
+                const saved = JSON.parse(forecastUnknown.inputFingerprint) as { draft: ForecastValues; expectedVersion: number; reason: string; operator: string };
+                startRetry({
+                  title: "按原操作重试保存预测设置",
+                  rows: [
+                    { key: "version", label: "基于版本", value: `v${saved.expectedVersion}` },
+                    { key: "window", label: "默认预测天数", value: saved.draft.forecastWindow.replace("d", " 天") },
+                    { key: "reason", label: "理由", value: saved.reason },
+                  ],
+                  run: () => submitForecast(saved.draft, saved.expectedVersion, saved.reason, saved.operator, forecastUnknown.commandKey),
+                });
+              }}>按原操作重试</Button>
+            </>
+          )}
+        >
+          {formatBusinessTimeCompact(new Date(forecastUnknown.createdAt).toISOString())} 提交。先看「预测设置」的版本有没有变；重试用同一个请求号，不会重复保存。
+        </Notice>
+      )}
+      <PageTabs
+        label="资金储备内容"
+        value={tab}
+        onChange={selectTab}
+        items={visibleTabs.map((item) => ({ ...item, count: item.value === "settings" && main?.config.pendingConfig ? 1 : undefined }))}
+      />
+      {tab === "overview" && (main
+        ? <OverviewTab main={main} emergencyLink={crossLink("/emergency/kill-switch", "去紧急停用开关")} withdrawalsLink={crossLink("/finance/withdrawals", "去待审核提现")} links={[crossLink("/overview/dual-ledger", "资金与应付款总览"), crossLink("/overview/risk-radar", "风险提醒")]} />
+        : (
+          <>
+            <Conclusion state="unknown">资金状态：{loading ? "正在读取" : "暂时无法判断"}</Conclusion>
+            {mainState}
+          </>
+        ))}
+      {tab === "due" && (
+        <DueTab
+          main={main}
+          mainState={mainState}
+          windowValue={maturityWindow}
+          onWindow={selectMaturity}
+          maturity={maturityWindow === "7d" ? { data: main?.maturity7 ?? null, loading, error: mainError } : maturity30}
+          exposure={exposure}
+          exposureWindow={exposureWindow}
+          onExposureWindow={selectExposure}
+          onExposureRetry={() => { if (exposureWindow) void loadExposure(exposureWindow); }}
+          onMaturityRetry={() => void loadMaturity30()}
+          canReadExposure={canReadExposure}
+          canExport={canExportLiabilities}
+          exportBlocked={dataBlocked}
+          onExport={() => exportCsv("liabilities")}
+          selected={selectedCategory}
+          onSelect={setSelectedCategory}
+        />
+      )}
+      {tab === "flow" && <FlowTab history={history} />}
+      {tab === "settings" && (
+        <SettingsTab
+          main={main}
+          draft={draft}
+          mainState={mainState}
+          canConfig={canConfig}
+          dirty={dirty}
+          busyReason={forecastUnknown ? "上次保存结果未知，先在页面上方核对" : loading ? "正在刷新，稍等" : undefined}
+          onChange={setDraft}
+          onDiscard={() => { if (baseValues) setDraft(baseValues); }}
+          onSave={saveConfig}
+        />
+      )}
 
-      <div className="f-stats">
-        <div className="f-stat ok"><div className="k">可用储备</div><div className="v">{money(data?.reserve.reserveTotalUsdt ?? 0)}</div><div className="sub">已扣除质押锁定金额</div></div>
-        <div className="f-stat"><div className="k">应付款</div><div className="v">{money(data?.liabilities.totalUsdt ?? 0)}</div><div className="sub">共 9 类，待核实的银行充值算在第 9 类</div></div>
-        <div className={`f-stat ${water?.tier === "DANGER" ? "danger" : water?.tier === "WARNING" ? "warn" : "cyan"}`}><div className="k">资金安全等级</div><div className="v">{water ? WATER_LABEL[water.tier] : "—"}</div><div className="sub">{formatReserveCoverDays(data.maturity.cumulativeUsdt, water?.reserveCoverDays ?? 0)}</div></div>
-        <div className="f-stat warn"><div className="k">{(data?.maturity.window ?? maturityWindow).replace("d", " 天")}到期应付款</div><div className="v">{money(data?.maturity.cumulativeUsdt ?? 0)}</div><div className="sub">提现 + 质押奖励 + 创世节点收益</div></div>
-      </div>
+      <Drawer
+        open={injectOpen}
+        onClose={() => setInjectOpen(false)}
+        title="储备注入登记"
+        sub="须填写到账凭证号"
+        icon={Landmark}
+        tone="role-1"
+        footer={<Decision note="凭证号重复时不会登记。" others={<Button variant="ghost" onClick={() => setInjectOpen(false)}>取消</Button>} primary={<Button variant="primary" disabledReason={dataBlocked} onClick={saveInjection}>登记</Button>} />}
+      >
+        <Field label="注入金额" required help="单位 USDT，最多两位小数。" error={injectErrors.amount}>
+          {(control) => <Input {...control} value={amount} onChange={(event) => { setAmount(event.target.value); setInjectErrors((current) => ({ ...current, amount: undefined })); }} inputMode="decimal" placeholder="注入金额 USDT" aria-label="注入金额（USDT，最多两位小数）" />}
+        </Field>
+        <Field label="凭证类型" required help="到账凭证是链上交易还是银行流水。">
+          <Select aria-label="凭证类型" value={voucherType} options={VOUCHER_TYPES} onChange={setVoucherType} />
+        </Field>
+        <Field label="凭证编号 / 哈希" required help="至少 6 位，须能查到。" error={injectErrors.voucher}>
+          {(control) => <Input {...control} value={voucherNo} onChange={(event) => { setVoucherNo(event.target.value); setInjectErrors((current) => ({ ...current, voucher: undefined })); }} placeholder="凭证号（不能重复）" aria-label="凭证号（必填，不能重复）" />}
+        </Field>
+      </Drawer>
 
-      <section className="l-card">
-        <div className="l-h"><span className="ttl">资金安全等级</span><span className="sub">· 按未来 7 天到期的应付款判断</span><div className="r"><button className="l-btn sm" onClick={() => void load()}>刷新</button></div></div>
-        <div className="l-b">
-          <div className="f-stats">
-            {(water?.thresholds ?? []).map((row) => (
-              <div className={`f-stat ${row.tier === water?.tier ? (row.tier === "DANGER" ? "danger" : row.tier === "WARNING" ? "warn" : "ok") : ""}`} key={row.tier}>
-                <div className="k">{WATER_LABEL[row.tier]}</div>
-                <div className="v">{row.condition}</div>
-                <div className="sub">{row.tier === water?.tier ? "当前等级" : "等级标准"}</div>
-              </div>
-            ))}
+      {confirm && (
+        <OperationConfirmModal
+          key={confirm.action}
+          action={confirm.action}
+          detail={confirm.detail}
+          briefKind={confirm.briefKind}
+          effect={confirm.effect ? <StatusTag tone="progress" filled>{confirm.effect}</StatusTag> : undefined}
+          confirmLabel={confirm.confirmLabel}
+          reasonMin={8}
+          reasonMax={200}
+          onClose={() => setConfirm(null)}
+          onConfirm={async (reason) => {
+            await confirm.run(reason);
+            setConfirm(null);
+          }}
+        />
+      )}
+
+      {retry && (
+        <Modal
+          title={retry.title}
+          busy={retrying}
+          onClose={() => setRetry(null)}
+          footer={<><Button disabled={retrying} onClick={() => setRetry(null)}>取消</Button><Button variant="primary" loading={retrying} loadingText="提交中…" onClick={() => void runRetry()}>按原操作重试</Button></>}
+        >
+          <div className="rd-stack">
+            <p className="rd-note">用同一个请求号重发原来的内容，已经成功的不会重复执行。</p>
+            <KeyValues rows={retry.rows} />
+            {retryError && <Notice tone="danger">{retryError}</Notice>}
           </div>
-          {water && <div className="dtint" style={{ marginTop: 12 }}>建议：{water.suggestedAction}；通知方式：{water.notification}；平均每天到期 {money(water.dailyAverageDueUsdt)}。</div>}
-        </div>
-      </section>
+        </Modal>
+      )}
 
-      <div className="two-col r11">
-        <section className="l-card">
-          <div className="l-h"><span className="ttl">可用储备明细</span></div>
-          <div className="l-b">
-            <div className="res-row"><span className="nm">USDT 储备<small>基础可动用储备</small></span><span className="v">{money(data?.reserve.usdtReserveUsdt ?? 0)}</span></div>
-            <div className="res-row"><span className="nm">其他高流动资产<small>已计入储备</small></span><span className="v">{money(data?.reserve.otherLiquidUsdt ?? 0)}</span></div>
-            <div className="res-row"><span className="nm">累计注入<small>按登记的凭证汇总</small></span><span className="v">{money(data?.reserve.injectedCumulativeUsdt ?? 0)}</span></div>
-            <div className="res-row"><span className="nm">已扣除质押锁定金额<small>锁定中，不能动用</small></span><span className="v">-{money(data?.reserve.lockedStakingPrincipalDeductedUsdt ?? 0)}</span></div>
-          </div>
-        </section>
-
-        <section className="l-card">
-          <div className="l-h"><span className="ttl">储备注入登记</span><span className="sub">· 须填写到账凭证号</span></div>
-          <div className="l-b">
-            {canInject ? (
-              <>
-                <div className="lookup" style={{ marginBottom: 10 }}>
-                  <input className="ui-control" value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" placeholder="注入金额 USDT" aria-label="注入金额（USDT，最多两位小数）" />
-                  <input className="ui-control" value={voucherNo} onChange={(event) => setVoucherNo(event.target.value)} placeholder="凭证号（不能重复）" aria-label="凭证号（必填，不能重复）" />
-                  <button className="l-btn primary" onClick={saveInjection}>登记</button>
-                </div>
-                <div className="dtint">凭证号重复时不会登记。</div>
-              </>
-            ) : <div className="dtint">你只能查看；登记储备注入需财务负责人。</div>}
-          </div>
-        </section>
-      </div>
-
-      <section className="l-card">
-        <div className="l-h"><span className="ttl">应付款 · 9 类</span><span className="sub">· {data?.liabilities.hardLiabilityCategoryCount ?? 0}/9</span>{canExport && <div className="r"><button className="l-btn sm" onClick={() => exportCsv("liabilities")}>导出应付款 CSV</button></div>}</div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 920 }}>
-            <thead><tr><th>类型</th><th>说明</th><th className="num">金额</th><th className="num">占比</th><th>数据来源</th></tr></thead>
-            <tbody>{(data?.liabilities.breakdown ?? []).map((row) => <tr key={row.category}><td className="mono">{categoryText(row.category)}</td><td>{operatorCopyText(row.label)}</td><td className="num mono">{money(row.amountUsdt)}</td><td className="num mono">{(row.share * 100).toFixed(2)}%</td><td style={{ color: "var(--ink-4)" }}>{treasurySourceLabel(row.source)}</td></tr>)}</tbody>
-          </table>
-        </div>
-      </section>
-
-      <div className="two-col r11">
-        <section className="l-card">
-          <div className="l-h"><span className="ttl">到期应付款预测</span><span className="sub">· 每天构成和累计</span><div className="r"><select className="ui-control" value={maturityWindow} onChange={(event) => selectMaturity(event.target.value as "7d" | "30d")}><option value="7d">7 天</option><option value="30d">30 天</option></select></div></div>
-          <div className="l-b" style={{ maxHeight: 430, overflowY: "auto" }}>
-            {(data?.maturity.daily ?? []).map((row) => <div className="res-row" key={row.date}><span className="nm">{row.date}<small>提现 {money(row.withdrawDueUsdt)} · 质押奖励 {money(row.interestDueUsdt)} · 创世节点 {money(row.genesisDividendUsdt)}{data.maturity.trialStressIncluded ? ` · 试用业务 压力测试 ${money(row.trialShadowStressUsdt)}` : ""}</small></span><span className="v">{money(row.totalDueUsdt)}</span></div>)}
-            <div className="dtint" style={{ marginTop: 10 }}>{operatorCopyText(data?.maturity.farLiabilityNote ?? "")}</div>
-          </div>
-        </section>
-
-        <section className="l-card">
-          <div className="l-h"><span className="ttl">储备与应付款差额曲线</span><span className="sub">· 储备 − 应付款</span><div className="r"><select className="ui-control" value={exposureWindow} onChange={(event) => selectExposure(event.target.value as "7d" | "30d" | "90d")}><option value="7d">7 天</option><option value="30d">30 天</option><option value="90d">90 天</option></select></div></div>
-          <div className="l-b">
-            <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(1, data?.exposure.series.length ?? 1)}, minmax(2px, 1fr))`, gap: 2, alignItems: "end", height: 220 }}>
-              {(data?.exposure.series ?? []).map((row) => <div key={row.date} title={`${row.date}: ${money(row.netExposureUsdt)}`} style={{ minHeight: 4, height: `${Math.max(4, Math.abs(row.netExposureUsdt) / exposureMax * 200)}px`, background: row.negative ? "var(--danger)" : "var(--success)", borderRadius: 2 }} />)}
-            </div>
-            <div className="dtint" style={{ marginTop: 12 }}>绿色表示储备有富余，红色表示储备不够付。</div>
-          </div>
-        </section>
-      </div>
-
-      <section className="l-card">
-        <div className="l-h"><span className="ttl">应付款预测设置</span><span className="sub">· 次日 UTC 00:00 起生效，不影响历史</span>{canExport && <div className="r"><button className="l-btn sm" onClick={() => exportCsv("reconciliation")}>导出对账 CSV</button></div>}</div>
-        <div className="l-b">
-          {draft && <>
-            <div className="ui-form-grid" style={{ marginBottom: 12 }}>
-              <label>默认预测天数 <select className="ui-control" disabled={!canConfig} value={draft.forecastWindow} onChange={(event) => setDraft({ ...draft, forecastWindow: event.target.value as D3ForecastConfig["forecastWindow"] })}><option value="7d">7 天</option><option value="30d">30 天</option><option value="90d">90 天</option></select></label>
-              <label>质押奖励预测 <select className="ui-control" disabled={!canConfig} value={draft.stakingInterestMode} onChange={(event) => setDraft({ ...draft, stakingInterestMode: event.target.value as D3ForecastConfig["stakingInterestMode"] })}><option value="LINEAR">按日线性</option><option value="AT_MATURITY">到期确认</option></select></label>
-            </div>
-            <div className="ui-form-grid" style={{ marginBottom: 12 }}>
-              <label><input type="checkbox" disabled={!canConfig} checked={draft.genesisIncluded} onChange={(event) => setDraft({ ...draft, genesisIncluded: event.target.checked })} /> 计入创世节点收益</label>
-              <label><input type="checkbox" disabled={!canConfig} checked={draft.includeFarLiabilities} onChange={(event) => setDraft({ ...draft, includeFarLiabilities: event.target.checked })} /> 计入远期应付款</label>
-              <label><input type="checkbox" disabled={!canConfig} checked={draft.trialStressEnabled} onChange={(event) => setDraft({ ...draft, trialStressEnabled: event.target.checked })} /> 试用业务压力测试</label>
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <div className="dtint" style={{ marginBottom: 8 }}>计入哪些储备</div>
-              <div className="ui-form-grid">{Object.entries(draft.reserveCategories).map(([key, enabled]) => <label key={key}><input type="checkbox" disabled={!canConfig} checked={enabled} onChange={(event) => setDraft({ ...draft, reserveCategories: { ...draft.reserveCategories, [key]: event.target.checked } })} /> {categoryText(key)}</label>)}</div>
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <div className="dtint" style={{ marginBottom: 8 }}>计入哪些应付款</div>
-              <div className="ui-form-grid">{Object.entries(draft.liabilityCategories).map(([key, enabled]) => <label key={key}><input type="checkbox" disabled={!canConfig} checked={enabled} onChange={(event) => setDraft({ ...draft, liabilityCategories: { ...draft.liabilityCategories, [key]: event.target.checked } })} /> {categoryText(key)}</label>)}</div>
-            </div>
-            <div className="dtint" style={{ marginBottom: 12 }}>当前版本 v{draft.version}（已生效 v{draft.effectiveVersion}）；储备 {Object.values(draft.reserveCategories).filter(Boolean).length}/{Object.keys(draft.reserveCategories).length} 开启；负债科目 {Object.values(draft.liabilityCategories).filter(Boolean).length}/{Object.keys(draft.liabilityCategories).length} 开启。</div>
-            {draft.pendingConfig && <div className="dtint warn" style={{ marginBottom: 12 }}>待生效 v{draft.pendingVersion}：窗口 {draft.pendingConfig.forecastWindow.replace("d", " 天")}，储备科目 {Object.values(draft.pendingConfig.reserveCategories).filter(Boolean).length}/{Object.keys(draft.pendingConfig.reserveCategories).length}，负债科目 {Object.values(draft.pendingConfig.liabilityCategories).filter(Boolean).length}/{Object.keys(draft.pendingConfig.liabilityCategories).length}，创世节点 {draft.pendingConfig.genesisIncluded ? "纳入" : "不纳入"}，生效时间 {draft.pendingEffectiveAt}。</div>}
-            {canConfig ? <button className="l-btn primary" onClick={saveConfig}>保存预测设置</button> : <div className="dtint">你只能查看；调整预测设置需财务负责人。</div>}
-          </>}
-        </div>
-      </section>
-
-      <p className="f-foot">数据来源：{sourceText || "资金储备记录"}。</p>
-    </>
+      {refreshAsk && (
+        <Modal
+          title="有未保存的修改，刷新后会丢失"
+          onClose={() => setRefreshAsk(false)}
+          footer={<><Button onClick={() => setRefreshAsk(false)}>继续编辑</Button><Button onClick={() => { setRefreshAsk(false); reloadAll(); }}>放弃修改并刷新</Button></>}
+        >
+          <p className="rd-note">「预测设置」里的修改还没保存。</p>
+        </Modal>
+      )}
+      {toastNode}
+    </RdPage>
   );
 }
