@@ -142,7 +142,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     };
   }, []);
 
-  const mutate = useCallback(async (key: string, action: () => Promise<G4Overview>, success: string) => {
+  const mutate = useCallback(async (key: string, action: () => Promise<unknown>, success: string) => {
     setBusyKey(key);
     setError("");
     try {
@@ -193,6 +193,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const marketOn = overview.market.enabled;
   const stats = overview.stats;
   const dividend = overview.dividend;
+  const showPaidEmission = overview.emissionGate.open || dividend.paidCount > 0;
   const geoBlocked = overview.geoBlocked.filter((geo) => geo.status === "blocked").map((geo) => geo.cc).join(" / ") || "-";
   const batchRerun = dividend.batchStatus === "done";
   const soldPct = Math.max(0, Math.min(100, stats.soldPct));
@@ -630,7 +631,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
             <div className="t"><div className="k">今日平台交易量（计算基数）</div><div className="v">{fmtUsdCompact(dividend.dailyVolumeBase)}</div></div>
             <div className="t"><div className="k">今日收益总额</div><div className="v" style={{ color: "var(--success)" }}>{fmtUsdCompact(dividend.poolToday)}</div></div>
             <div className="t"><div className="k">每个节点分到</div><div className="v">{fmtUsd(dividend.perSlotPerDay)} / 天</div></div>
-            <div className="t"><div className="k">今日发放 {dividend.batchNo || "—"}</div><div className="v" style={{ color: "var(--success)" }}>{overview.emissionGate.open ? `已发 ${fmtNumber(stats.sold, 0)} 个节点 · ${fmtUsdCompact(dividend.payoutToday)}` : "未开始发放"}</div></div>
+            <div className="t"><div className="k">今日发放 {dividend.batchNo || "—"}</div><div className="v" style={{ color: "var(--success)" }}>{showPaidEmission ? `已发 ${fmtNumber(dividend.paidCount, 0)} 个节点 · ${fmtUsdCompact(dividend.paidAmountUsdt)}` : "未开始发放"}</div></div>
           </div>
           <div className="gtint" style={{ marginTop: 12 }}><b>两种算法</b> · 用户实际收益按当前参数计算；财务预估按「节点价 × 持有量 × 收益比例」保底。曲线只是策略说明，每天实际发多少仍按计算基数和收益比例。修改收益比例、曲线或计算基数时，覆盖率不足会无法保存（当前 {cov}%）。</div>
         </div>

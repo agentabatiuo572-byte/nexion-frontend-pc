@@ -239,7 +239,7 @@ function validateParam(module: string, value: unknown, path: string, allowed: Re
   flags.forEach((key) => bool(module, row[key], `${path}.${key}`));
 }
 
-export function assertG4OverviewContract<T>(value: T): T {
+export function assertG4OverviewContract<T>(value: T, requirePaidEmission = false): T {
   const module = "G4";
   const root = canonicalRoot(module, value, module);
   if (root.product !== "genesis" || root.asset !== "GENESIS_NODE") fail(module, "data.product");
@@ -261,6 +261,10 @@ export function assertG4OverviewContract<T>(value: T): T {
   const dividendKeys = ["dailyVolumeBase", "dividendPct", "poolToday", "perSlotPerDay", "floorPerNodePerDay", "payoutToday"] as const;
   requiredKeys(module, dividend, "data.dividend", [...dividendKeys, "batchNo", "batchStatus"]);
   dividendKeys.forEach((key) => numeric(module, dividend[key], `data.dividend.${key}`, 0, key === "dividendPct" ? 100 : Number.POSITIVE_INFINITY));
+  if (requirePaidEmission || "paidCount" in dividend || "paidAmountUsdt" in dividend) {
+    if (!Number.isSafeInteger(numeric(module, dividend.paidCount, "data.dividend.paidCount"))) fail(module, "data.dividend.paidCount");
+    numeric(module, dividend.paidAmountUsdt, "data.dividend.paidAmountUsdt");
+  }
   text(module, dividend.batchNo, "data.dividend.batchNo", true);
   text(module, dividend.batchStatus, "data.dividend.batchStatus", true);
   const emission = record(module, root.emissionGate, "data.emissionGate");

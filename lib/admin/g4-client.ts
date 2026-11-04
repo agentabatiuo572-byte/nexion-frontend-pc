@@ -48,6 +48,8 @@ interface BackendDividend {
   perSlotPerDay?: RawNumber;
   floorPerNodePerDay?: RawNumber;
   payoutToday?: RawNumber;
+  paidCount?: RawNumber;
+  paidAmountUsdt?: RawNumber;
   batchNo?: string | null;
   batchStatus?: string | null;
 }
@@ -190,6 +192,8 @@ export interface G4Dividend {
   perSlotPerDay: number;
   floorPerNodePerDay: number;
   payoutToday: number;
+  paidCount: number;
+  paidAmountUsdt: number;
   batchNo: string;
   batchStatus: string;
 }
@@ -411,7 +415,7 @@ function normalizeTiers(value: BackendTier[] | null | undefined, sold: number): 
 }
 
 function normalizeOverview(data: BackendOverview | null | undefined): G4Overview {
-  assertG4OverviewContract(data);
+  assertG4OverviewContract(data, true);
   const stats = data?.stats ?? {};
   const secondary = stats.secondary ?? {};
   const dividend = data?.dividend ?? {};
@@ -483,6 +487,8 @@ function normalizeOverview(data: BackendOverview | null | undefined): G4Overview
       perSlotPerDay: toNumber(dividend.perSlotPerDay),
       floorPerNodePerDay: toNumber(dividend.floorPerNodePerDay),
       payoutToday: toNumber(dividend.payoutToday),
+      paidCount: toNumber(dividend.paidCount),
+      paidAmountUsdt: toNumber(dividend.paidAmountUsdt),
       batchNo: asText(dividend.batchNo, ""),
       batchStatus: asText(dividend.batchStatus, "ready"),
     },
@@ -583,7 +589,9 @@ function g4OverviewMutation(
       headers: { "Idempotency-Key": commandKey },
       body: serialized,
     }),
-    normalizeOverview,
+    // Historical idempotency receipts can predate the paid fields. The page reads
+    // the current overview separately after the command acknowledgement.
+    (value) => assertG4OverviewContract(value),
   );
 }
 
