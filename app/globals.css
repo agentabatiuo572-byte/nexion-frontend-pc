@@ -543,3 +543,115 @@ select option:disabled { color: var(--v5-ink-3); }
 .dkpage .operator-brief .brief-open,
 .dkpage .operator-brief[open] .brief-closed { display: none; }
 .dkpage .operator-brief[open] .brief-open { display: inline; }
+
+/* ============================================================================
+   各域共用的外观类。各域 CSS 里相同的规则上提到这里，只留一份。
+   必须放在本文件末尾：要压过上面的 .dkpage .chip、.dkpage .kv、.dkpage .mc，
+   又要被后加载的域 CSS 覆盖。不能拆成单独文件，Next 按路径给 layout 的 CSS 排序，
+   app/components/ 会排到 globals.css 前面。
+   域文件里还留着的同名规则是不同变体，靠相同优先级和后加载覆盖这里，所以这里不能加高优先级。
+   .dkpage 和 :is(.xdom) 都算一个类，:where() 不算，优先级和原来的 .xdom 选择器相同。
+   ============================================================================ */
+
+/* 统计卡。F 的 .k、.v 属性少，排除 F，否则会多出 flex 和字距。 */
+.dkpage .f-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px; }
+.dkpage .f-stat { background:var(--surface); border-radius:var(--r-card); padding:14px 16px; }
+.dkpage:where(:not(.fdom, .fdom *)) .f-stat .k { font-size:12px; color:var(--ink-3); display:flex; align-items:center; gap:6px; }
+.dkpage:where(:not(.fdom, .fdom *)) .f-stat .v { font-size:22px; font-weight:600; letter-spacing:-.01em; margin-top:4px; font-variant-numeric:tabular-nums; color:var(--ink); }
+.dkpage .f-stat .sub { font-size:12px; color:var(--ink-4); margin-top:3px; }
+.dkpage .f-stat.warn .v { color:var(--warning); }
+.dkpage .f-stat.ok .v { color:var(--success); }
+.dkpage .f-stat.cyan .v { color:var(--cyan); }
+.dkpage .f-stat.danger .v { color:var(--danger); }
+
+/* 脚注和状态标签 */
+.dkpage .f-foot { margin-top:18px; font-size:12.5px; line-height:1.6; color:var(--ink-4); }
+.dkpage .f-foot b { color:var(--ink-3); font-weight:600; }
+:is(.edom, .fdom) .f-foot { margin-top:16px; font-size:11.5px; color:var(--ink-3); line-height:1.6; }
+:is(.edom, .fdom) .f-foot b { color:var(--ink-2); font-weight:600; }
+.dkpage .f-ro { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:var(--surface-2); color:var(--ink-3); font-size:12px; font-weight:600; white-space:nowrap; }
+.dkpage .f-ro .d { width:6px; height:6px; border-radius:50%; background:var(--ink-4); }
+.dkpage .f-live { display:inline-flex; align-items:center; gap:7px; padding:5px 12px; border-radius:999px; background:var(--success-soft); color:var(--success); font-size:12px; font-weight:600; white-space:nowrap; }
+.dkpage .f-live .dot { width:7px; height:7px; border-radius:50%; background:var(--success); }
+
+/* 域强调色按钮。--dom-ac 在各域根取本域的 --x-ac，其余域的 .f-cta 是不同变体，留在域文件。 */
+:is(.adom, .cdom, .hdom, .idom, .mdom) .f-cta { display:inline-flex; align-items:center; gap:7px; padding:8px 15px; border-radius:9px; border:1px solid var(--dom-ac-strong); background:var(--dom-ac-soft); color:var(--dom-ac); font-size:13px; font-weight:600; white-space:nowrap; cursor:pointer; font-family:inherit; }
+@media (hover: hover) and (pointer: fine) { :is(.adom, .cdom, .idom, .mdom) .f-cta:hover { background:var(--dom-ac); color:#0A0A0A; } }
+
+/* 卡片 */
+.dkpage .l-card { background:var(--surface); border-radius:var(--r-card); margin-bottom:16px; overflow:hidden; }
+.dkpage .l-card .l-h { display:flex; align-items:center; gap:12px; padding:14px 20px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+.dkpage .l-card .l-h .ttl { font-size:14px; font-weight:600; color:var(--ink); }
+.dkpage .l-card .l-h .sub { font-size:12px; color:var(--ink-4); }
+.dkpage .l-card .l-h .r { margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.dkpage .l-card .l-b { padding:16px 20px 20px; }
+
+/* 按钮。F 有 2 个 .l-btn 一直靠浏览器默认样式，排除 F。.primary 各域取色不同，留在域文件。 */
+.dkpage:where(:not(.fdom, .fdom *)) .l-btn { display:inline-flex; align-items:center; gap:6px; padding:7px 13px; border-radius:8px; border:1px solid var(--border-strong); background:var(--surface-2); color:var(--ink-2); font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; white-space:nowrap; text-decoration:none; }
+@media (hover: hover) and (pointer: fine) { .dkpage:where(:not(.fdom, .fdom *)) .l-btn:hover { background:var(--surface-3); color:var(--ink); } }
+.dkpage:where(:not(.fdom, .fdom *)) .l-btn.mc { color:var(--warning); border-color:var(--warning-border); background:color-mix(in srgb,var(--warning) 8%,transparent); font-weight:600; }
+@media (hover: hover) and (pointer: fine) { .dkpage:where(:not(.fdom, .fdom *)) .l-btn.mc:hover { background:color-mix(in srgb,var(--warning) 18%,transparent); } }
+.dkpage:where(:not(.fdom, .fdom *)) .l-btn.sm { padding:4px 9px; font-size:11.5px; border-radius:6px; min-height:24px; }
+@media (hover: hover) and (pointer: fine) { .dkpage:where(:not(.fdom, .fdom *)) .l-btn.primary:hover { filter:brightness(1.07); } }
+
+/* 表格 */
+.dkpage .l-tbl { width:100%; border-collapse:collapse; font-size:12.5px; }
+.dkpage .l-tbl th { font-family:var(--mono); font-size:11.5px; font-weight:700; color:var(--ink-4); letter-spacing:.06em; text-transform:uppercase; text-align:left; padding:10px 12px; background:var(--surface-2); border-bottom:1px solid var(--border-strong); white-space:nowrap; }
+.dkpage .l-tbl td { padding:11px 12px; border-bottom:1px solid var(--border); color:var(--ink-2); vertical-align:middle; }
+.dkpage .l-tbl tr:last-child td { border-bottom:none; }
+.dkpage .l-tbl .num { text-align:right; font-variant-numeric:tabular-nums; }
+.dkpage .l-tbl th.num { text-align:right; font-variant-numeric:tabular-nums; }
+.dkpage .l-tbl .mono { font-family:var(--mono); font-size:12px; }
+.dkpage .l-tbl tr.click { cursor:pointer; }
+@media (hover: hover) and (pointer: fine) { .dkpage .l-tbl tr.click:hover td { background:var(--surface-2); } }
+
+/* 数字输入 */
+.dkpage .l-inp { width:128px; flex-shrink:0; padding:7px 10px; border-radius:8px; border:1px solid var(--border-strong); background:var(--surface-2); color:var(--ink); font-family:var(--mono); font-size:13px; outline:none; }
+.dkpage .l-inp:disabled { color:var(--ink-4); cursor:not-allowed; }
+
+/* 状态标签。.cyan 在 A、C、H、I、M 取本域色，留在域文件。 */
+.dkpage .bdg { display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:5px; font-size:11.5px; font-weight:700; font-family:var(--mono); letter-spacing:.02em; white-space:nowrap; }
+.dkpage .bdg.ok { background:var(--success-soft); color:var(--success); }
+.dkpage .bdg.warn { background:var(--warning-soft); color:var(--warning); }
+.dkpage .bdg.bad { background:var(--danger-soft); color:var(--danger); }
+.dkpage .bdg.dim { background:var(--surface-3); color:var(--ink-2); }
+.dkpage .bdg.cyan { background:var(--cyan-soft); color:var(--cyan); }
+
+/* 筛选胶囊。globals 的 .dkpage .chip 是另一套外观，E、F、G、J 和 B 用它，所以这里按域列出。.sel 各域取色不同，留在域文件。 */
+:is(.adom, .cdom, .ddom, .hdom, .idom, .kdom, .ldom, .mdom) .chips { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+:is(.adom, .cdom, .hdom, .idom, .ldom, .mdom) .chips .lb { font-size:12px; color:var(--ink-4); margin-right:2px; white-space:nowrap; }
+:is(.adom, .cdom, .ddom, .hdom, .idom, .kdom, .ldom, .mdom) .chip { padding:5px 11px; border-radius:999px; background:var(--surface-2); color:var(--ink-3); font-size:12px; font-weight:500; cursor:pointer; white-space:nowrap; border:none; font-family:inherit; transition:background .12s,color .12s; }
+@media (hover: hover) and (pointer: fine) { :is(.adom, .cdom, .ddom, .hdom, .idom, .kdom, .ldom, .mdom) .chip:hover { background:var(--surface-3); color:var(--ink); } }
+
+/* 键值行。globals 的 .dkpage .kv 是另一套外观，理由同上。 */
+:is(.adom, .cdom, .ddom, .idom, .mdom) .kv { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px dashed var(--border); font-size:12.5px; }
+:is(.adom, .cdom, .ddom, .idom, .mdom) .kv:last-child { border-bottom:none; }
+:is(.adom, .cdom, .ddom, .idom, .mdom) .kv .k { color:var(--ink-4); }
+:is(.adom, .cdom, .ddom, .idom, .mdom) .kv .v { color:var(--ink-2); font-weight:600; text-align:right; }
+
+/* 两栏。比例各域不同，只收完全相同的那几份。 */
+:is(.adom, .hdom, .ldom) .two-col { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
+:is(.adom, .cdom, .ddom, .hdom, .idom, .kdom, .mdom) .two-col .l-card { margin-bottom:0; display:flex; flex-direction:column; }
+:is(.gdom, .ldom) .two-col .l-card { margin-bottom:0; }
+:is(.adom, .cdom, .ddom, .hdom, .idom) .two-col .l-card .l-b { flex:1; }
+
+/* 面板 */
+.dkpage .pane { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-card); }
+.dkpage .pane-h { padding:16px 18px 12px; display:flex; align-items:center; gap:10px; }
+
+/* 说明块。类名本来就按域分（.dtint、.itint），K、J 等页面借用别域类名时现在没有样式，所以按域绑定。M 用 .itint。 */
+:is(.adom .atint, .cdom .ctint, .ddom .dtint, .gdom .gtint, .hdom .htint, :is(.idom, .mdom) .itint, .kdom .ktint, .ldom .ltint) { padding:11px 14px; border-radius:9px; background:var(--surface-2); font-size:12px; line-height:1.55; color:var(--ink-3); }
+:is(.adom .atint, .cdom .ctint, .ddom .dtint, .gdom .gtint, .hdom .htint, :is(.idom, .mdom) .itint, .kdom .ktint, .ldom .ltint) b { color:var(--ink-2); font-weight:600; }
+:is(.adom .atint, .cdom .ctint, .ddom .dtint, .hdom .htint, :is(.idom, .mdom) .itint, .kdom .ktint, .ldom .ltint).warn { background:var(--warning-soft); color:var(--ink-2); }
+:is(.adom .atint, .cdom .ctint, .ddom .dtint, .hdom .htint, :is(.idom, .mdom) .itint, .kdom .ktint, .ldom .ltint).warn b { color:var(--warning); }
+:is(.adom .atint, .cdom .ctint, .ddom .dtint, .hdom .htint, :is(.idom, .mdom) .itint).ok { background:var(--success-soft); color:var(--ink-2); }
+:is(.adom .atint, .cdom .ctint, .ddom .dtint, .hdom .htint, :is(.idom, .mdom) .itint).ok b { color:var(--success); }
+:is(.adom .atint, .hdom .htint, :is(.idom, .mdom) .itint).danger { background:var(--danger-soft); color:var(--ink-2); }
+:is(.adom .atint, .hdom .htint, :is(.idom, .mdom) .itint).danger b { color:var(--danger); }
+
+/* 域强调色的统一入口，只服务上面的 .f-cta。 */
+.adom { --dom-ac: var(--a-ac); --dom-ac-soft: var(--a-ac-soft); --dom-ac-strong: var(--a-ac-strong); }
+.cdom { --dom-ac: var(--c-ac); --dom-ac-soft: var(--c-ac-soft); --dom-ac-strong: var(--c-ac-strong); }
+.hdom { --dom-ac: var(--h-ac); --dom-ac-soft: var(--h-ac-soft); --dom-ac-strong: var(--h-ac-strong); }
+.idom { --dom-ac: var(--i-ac); --dom-ac-soft: var(--i-ac-soft); --dom-ac-strong: var(--i-ac-strong); }
+.mdom { --dom-ac: var(--m-ac); --dom-ac-soft: var(--m-ac-soft); --dom-ac-strong: var(--m-ac-strong); }
