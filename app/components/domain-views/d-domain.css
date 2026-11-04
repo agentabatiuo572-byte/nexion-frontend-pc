@@ -9,36 +9,12 @@
 .ddom { container: ddom / inline-size; }
 
 /* ===== 共享 chrome(d-chrome 真值) ===== */
-.ddom .f-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
 @container ddom (max-width: 980px) { .ddom .f-stats { grid-template-columns: repeat(2, 1fr); } }
-.ddom .f-stat { background: var(--surface); border-radius: var(--r-card); padding: 14px 16px; }
-.ddom .f-stat .k { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
-.ddom .f-stat .v { font-size: 22px; font-weight: 600; letter-spacing: -.01em; margin-top: 4px; font-variant-numeric: tabular-nums; color: var(--ink); }
-.ddom .f-stat .sub { font-size: 12px; color: var(--ink-4); margin-top: 3px; }
-.ddom .f-stat.warn .v { color: var(--warning); }
-.ddom .f-stat.ok .v { color: var(--success); }
-.ddom .f-stat.cyan .v { color: var(--cyan); }
-.ddom .f-stat.danger .v { color: var(--danger); }
 
 .ddom .f-cta { display: inline-flex; align-items: center; gap: 7px; padding: 8px 15px; border-radius: 9px;
   border: 1px solid var(--success-border); background: var(--success-soft); color: var(--success);
   font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; font-family: inherit; }
 @media (hover: hover) and (pointer: fine) { .ddom .f-cta:hover { background: var(--success); color: #0A0A0A; } }
-.ddom .f-ro { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
-  background: var(--surface-2); color: var(--ink-3); font-size: 12px; font-weight: 600; white-space: nowrap; }
-.ddom .f-ro .d { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-4); }
-.ddom .f-live { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 999px;
-  background: var(--success-soft); color: var(--success); font-size: 12px; font-weight: 600; white-space: nowrap; }
-.ddom .f-live .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
-.ddom .f-foot { margin-top: 18px; font-size: 12.5px; line-height: 1.6; color: var(--ink-4); }
-.ddom .f-foot b { color: var(--ink-3); font-weight: 600; }
-
-.ddom .l-card { background: var(--surface); border-radius: var(--r-card); margin-bottom: 16px; overflow: hidden; }
-.ddom .l-card .l-h { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-.ddom .l-card .l-h .ttl { font-size: 14px; font-weight: 600; color: var(--ink); }
-.ddom .l-card .l-h .sub { font-size: 12px; color: var(--ink-4); }
-.ddom .l-card .l-h .r { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.ddom .l-card .l-b { padding: 16px 20px 20px; }
 .ddom .cregis-status .l-b { display: grid; gap: 16px; }
 .ddom .cregis-intro { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--ink-3); }
 .ddom .cregis-intro strong { color: var(--ink-2); margin-right: 12px; }
@@ -122,58 +98,20 @@
 .ddom .dcode { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3);
   background: var(--surface-3); border-radius: 5px; padding: 2px 7px; white-space: nowrap; }
 .ddom .dcode.electric { background: var(--success-soft); color: var(--success); }
-
-.ddom .chips { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.ddom .chip { padding: 5px 11px; border-radius: 999px; background: var(--surface-2); color: var(--ink-3);
-  font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; border: none; font-family: inherit; transition: background .12s, color .12s; }
-@media (hover: hover) and (pointer: fine) { .ddom .chip:hover { background: var(--surface-3); color: var(--ink); } }
 .ddom .chip.sel { background: var(--success); color: #0A0A0A; font-weight: 600; }
-
-.ddom .l-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 8px;
-  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2);
-  font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit; white-space: nowrap; text-decoration: none; }
+/* 不上提：要排在 .cregis-danger-zone .l-btn 之后，悬停才盖得住它的文字色和底色。 */
 @media (hover: hover) and (pointer: fine) { .ddom .l-btn:hover { background: var(--surface-3); color: var(--ink); } }
 .ddom .l-btn:disabled { cursor: not-allowed; opacity: .5; filter: grayscale(.25); }
 @media (hover: hover) and (pointer: fine) { .ddom .l-btn:disabled:hover { background: var(--surface-2); color: var(--ink-2); } }
 .ddom .l-btn.primary { background: var(--success); border-color: var(--success); color: #0A0A0A; font-weight: 600; }
-@media (hover: hover) and (pointer: fine) { .ddom .l-btn.primary:hover { filter: brightness(1.07); } }
 .ddom .l-btn.mc { color: var(--success); border-color: var(--success-border); background: color-mix(in srgb, var(--success) 8%, transparent); font-weight: 600; }
 @media (hover: hover) and (pointer: fine) { .ddom .l-btn.mc:hover { background: color-mix(in srgb, var(--success) 18%, transparent); } }
-.ddom .l-btn.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 6px; min-height: 24px; }
-
-.ddom .l-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.ddom .l-tbl th { font-family: var(--mono); font-size: 11.5px; font-weight: 700; color: var(--ink-4);
-  letter-spacing: .06em; text-transform: uppercase; text-align: left; padding: 10px 12px;
-  background: var(--surface-2); border-bottom: 1px solid var(--border-strong); white-space: nowrap; }
-.ddom .l-tbl td { padding: 11px 12px; border-bottom: 1px solid var(--border); color: var(--ink-2); vertical-align: middle; }
-.ddom .l-tbl tr:last-child td { border-bottom: none; }
-.ddom .l-tbl tr.click { cursor: pointer; }
-@media (hover: hover) and (pointer: fine) { .ddom .l-tbl tr.click:hover td { background: var(--surface-2); } }
-.ddom .l-tbl .num, .ddom .l-tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
-.ddom .l-tbl .mono { font-family: var(--mono); font-size: 12px; }
-
-.ddom .bdg { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 5px;
-  font-size: 11.5px; font-weight: 700; font-family: var(--mono); letter-spacing: .02em; white-space: nowrap; }
-.ddom .bdg.ok { background: var(--success-soft); color: var(--success); }
-.ddom .bdg.warn { background: var(--warning-soft); color: var(--warning); }
-.ddom .bdg.bad { background: var(--danger-soft); color: var(--danger); }
-.ddom .bdg.dim { background: var(--surface-3); color: var(--ink-2); }
-.ddom .bdg.cyan { background: var(--cyan-soft); color: var(--cyan); }
 .ddom .bdg.electric { background: var(--success-soft); color: var(--success); }
 .ddom .bdg.brand { background: var(--brand-soft, color-mix(in srgb, var(--brand) 14%, transparent)); color: var(--brand); }
-
-.ddom .dtint { padding: 11px 14px; border-radius: 9px; background: var(--surface-2); font-size: 12px; line-height: 1.55; color: var(--ink-3); }
-.ddom .dtint b { color: var(--ink-2); font-weight: 600; }
-.ddom .dtint.warn { background: var(--warning-soft); color: var(--ink-2); }
-.ddom .dtint.warn b { color: var(--warning); }
-.ddom .dtint.ok { background: var(--success-soft); color: var(--ink-2); }
-.ddom .dtint.ok b { color: var(--success); }
 .ddom .dtint.row-tint { display: flex; align-items: center; gap: 10px; }
 
 .ddom .two-col { display: grid; grid-template-columns: 1fr 1.25fr; gap: 16px; margin-bottom: 16px; }
 @container ddom (max-width: 1100px) { .ddom .two-col { grid-template-columns: 1fr; } }
-.ddom .two-col .l-card { margin-bottom: 0; display: flex; flex-direction: column; }
-.ddom .two-col .l-card .l-b { flex: 1; }
 .ddom .two-col.r11 { grid-template-columns: 1fr 1fr; }
 .ddom .two-col.r12 { grid-template-columns: 1.2fr 1fr; }
 .ddom .two-col.r135 { grid-template-columns: 1.35fr 1fr; }
@@ -273,10 +211,6 @@
 .ddom .dt-split > div:first-child { padding: 16px 20px; border-right: 1px solid var(--border); }
 @container ddom (max-width: 1100px) { .ddom .dt-split > div:first-child { border-right: none; border-bottom: 1px solid var(--border); } }
 .ddom .dt-split > div:last-child { padding: 16px 20px; }
-.ddom .kv { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 12.5px; }
-.ddom .kv:last-child { border-bottom: none; }
-.ddom .kv .k { color: var(--ink-4); }
-.ddom .kv .v { color: var(--ink-2); font-weight: 600; text-align: right; }
 .ddom .batch-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; border-radius: 10px; background: var(--surface-2); margin-top: 12px; }
 
 /* ============================ D3 ============================ */
@@ -323,8 +257,4 @@
 /* D7 法币提现参数:l-inp 此前仅 .hdom 有定义,D 域(D5/D7)一直靠浏览器原生兜底;
    本块从 h-domain.css:158 复制换前缀(模块位置清单第 4 条),focus 色用全局 brand。
    注:13px 沿用 H 域现值保持横向一致;9 档对齐(13→13.5)留全局硬化单统一处理。 */
-.ddom .l-inp { width: 128px; flex-shrink: 0; padding: 7px 10px; border-radius: 8px;
-  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink);
-  font-family: var(--mono); font-size: 13px; outline: none; }
 .ddom .l-inp:focus { border-color: var(--brand); }
-.ddom .l-inp:disabled { color: var(--ink-4); cursor: not-allowed; }
