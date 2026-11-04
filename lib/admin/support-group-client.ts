@@ -19,7 +19,15 @@ function id(value: unknown): string { const result = parseSupportId(value, "grou
 function nullableId(value: unknown): string | null { return value === null ? null : id(value); }
 function array<T>(value: unknown, parse: (value: unknown) => T): T[] { if (!Array.isArray(value)) bad("array"); return value.map(parse); }
 function unique<T>(rows: T[], key: (row: T) => string): T[] { if (new Set(rows.map(key)).size !== rows.length) bad("duplicate"); return rows; }
-function reason(value: unknown): string { const result = text(value).trim(); if (Array.from(result).length < 8 || result.length > 200 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(result)) bad("reason"); return result; }
+const invalidReasonControl = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/;
+export function inviteRevokeReason(value: string) {
+  // B8 uses Java String.trim(), which preserves Unicode spaces above U+0020.
+  const normalized = value.replace(/^[\x00-\x20]+|[\x00-\x20]+$/g, "");
+  const length = Array.from(normalized).length;
+  const error = length < 8 ? "作废原因至少需要 8 个字" : length > 200 ? "作废原因最多可填 200 个字" : invalidReasonControl.test(normalized) ? "作废原因含有不支持的控制字符" : "";
+  return { normalized, length, error };
+}
+function reason(value: unknown): string { const result = text(value).trim(); if (Array.from(result).length < 8 || result.length > 200 || invalidReasonControl.test(result)) bad("reason"); return result; }
 function name(value: unknown): string { const result = nonempty(value).trim(); if (result.length > 120) bad("name"); return result; }
 export function accountVersion(value: unknown): number { const s = text(value); if (!/^(0|[1-9]\d*)$/.test(s) || BigInt(s) > BigInt(Number.MAX_SAFE_INTEGER)) bad("accountVersion"); return Number(s); }
 export function parseSupportGroup(value: unknown) { const r = object(value, "id name supervisorAdminId status version"); return { id: id(r.id), name: name(r.name), supervisorAdminId: id(r.supervisorAdminId), status: enumeration(r.status, GROUP_STATES), version: positive(r.version) }; }
@@ -103,6 +111,13 @@ export const supportGroupClient = {
   selfInviteCode(signal?: AbortSignal): Promise<InviteCodeView> { return supportRequest("/support-agents/self/invite-code", value => inviteCodeView(value, true), { signal }); },
   /** expectedVersion null generates the first code; the current version resets it (old code revoked). */
   issueSelfInviteCode(expectedVersion: number | null, commandKey: string, signal?: AbortSignal): Promise<InviteCodeView> { const body = { expectedVersion: expectedVersion === null ? null : positive(expectedVersion) }; return supportRequest("/support-agents/self/invite-code", value => { const result = inviteCodeView(value, true); if (result.code === null) bad("inviteAcknowledgement"); return result; }, supportJson("POST", body, key(commandKey), signal)); },
-  revokeInviteCode(adminId: string, input: { expectedVersion: number; reason: string }, commandKey: string, signal?: AbortSignal): Promise<InviteCodeView> { const target = id(adminId); object(input, "expectedVersion reason"); const body = { expectedVersion: positive(input.expectedVersion), reason: reason(input.reason) }; return supportRequest(`/support-agents/${target}/invite-code/revoke`, value => { const result = inviteCodeView(value, true); if (result.code !== null) bad("revokeAcknowledgement"); return result; }, supportJson("POST", body, key(commandKey), signal)); },
+  revokeInviteCode(adminId: string, input: { expectedVersion: number; reason: string }, commandKey: string, signal?: AbortSignal): Promise<InviteCodeView> {
+    const target = id(adminId);
+    object(input, "expectedVersion reason");
+    const detail = inviteRevokeReason(text(input.reason));
+    if (detail.error) bad("reason");
+    const body = { expectedVersion: positive(input.expectedVersion), reason: detail.normalized };
+    return supportRequest(`/support-agents/${target}/invite-code/revoke`, value => { const result = inviteCodeView(value, true); if (result.code !== null) bad("revokeAcknowledgement"); return result; }, supportJson("POST", body, key(commandKey), signal));
+  },
   setSupportQualification(adminId: string, input: QualificationInput, commandKey: string, signal?: AbortSignal) { const target = id(adminId); object(input, "qualificationKind state expectedQualificationVersion expectedAccountVersion reason"); const body = { qualificationKind: enumeration(input.qualificationKind, ["SERVICE", "SUPERVISOR"] as const), state: enumeration(input.state, QUAL_STATES), expectedQualificationVersion: count(input.expectedQualificationVersion), expectedAccountVersion: count(input.expectedAccountVersion), reason: reason(input.reason) }; return supportRequest(`/support-agents/${target}/qualification`, value => { const rows = parseQualificationWrites(value, target), changed = rows.find(q => q.kind === body.qualificationKind); if (!changed || changed.state !== body.state || changed.version <= body.expectedQualificationVersion) bad("qualificationAcknowledgement"); return rows; }, supportJson("PATCH", body, key(commandKey), signal)); },
 };

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
-import { accountVersion, canReplayGroupCommand, commandRejected, groupPendingCommands, isInvitePending, observedVersion, supportGroupClient, type GroupPendingRecord, type InviteCodeView, type InviteRevokeRecord, type QualificationKind, type QualificationStatus, type SupportGroup, type SupportGroupDirectory, type SupportGroupDetail, type SupportGroupMember, type SupportQualifications } from "@/lib/admin/support-group-client";
+import { accountVersion, canReplayGroupCommand, commandRejected, groupPendingCommands, inviteRevokeReason, isInvitePending, observedVersion, supportGroupClient, type GroupPendingRecord, type InviteCodeView, type InviteRevokeRecord, type QualificationKind, type QualificationStatus, type SupportGroup, type SupportGroupDirectory, type SupportGroupDetail, type SupportGroupMember, type SupportQualifications } from "@/lib/admin/support-group-client";
 import { Btn, Modal } from "../design-kit";
 import { HDSelect } from "./hd-ui";
 import { compactSupportBoardValue } from "./support-leaderboard";
@@ -135,12 +135,14 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
   const revokePendings = allowed ? groupPendingCommands.list().filter((r): r is InviteRevokeRecord => isInvitePending(r) && r.intent.kind === "INVITE_REVOKE" && r.actorId === session?.adminId) : [];
   const inviteMember = inviteRevoke ? inviteRows[inviteRevoke.adminId] : undefined, inviteTarget = inviteMember?.inviteCode?.code ? inviteMember.inviteCode : undefined;
   const invitePending = inviteRevoke ? revokePendings.find(r => r.intent.targetId === inviteRevoke.adminId) : undefined;
+  const inviteReasonInput = invitePending?.intent.payload.reason ?? inviteRevoke?.reason ?? "";
+  const inviteReason = inviteRevokeReason(inviteReasonInput);
   const afterInviteChange = () => { setRefresh(n => n + 1); setUnassignedReload(n => n + 1); };
   const revokeInviteCode = async () => {
-    if (!session || !inviteRevoke || !inviteMember || !inviteTarget?.code || invitePending || inviteBusy || !writeAllowed || !reasonValid(inviteRevoke.reason)) return;
+    if (!session || !inviteRevoke || !inviteMember || !inviteTarget?.code || invitePending || inviteBusy || !writeAllowed || !!inviteReason.error) return;
     if (inviteTarget.version === null) { setInviteError("这个邀请码没有版本号，暂时不能作废；请刷新资料后再试。"); return; }
     const gen = inviteGen.current, live = () => inviteGen.current === gen && authStamp() === identity;
-    const payload = { expectedVersion: inviteTarget.version, reason: inviteRevoke.reason.trim(), code: inviteTarget.code, name: inviteMember.name };
+    const payload = { expectedVersion: inviteTarget.version, reason: inviteReason.normalized, code: inviteTarget.code, name: inviteMember.name };
     const fingerprint = `invite-code:revoke:${session.adminId}:${inviteMember.adminId}`, commandKey = crypto.randomUUID();
     groupPendingCommands.remember(fingerprint, commandKey, { actorId: session.adminId, intent: { kind: "INVITE_REVOKE", targetId: inviteMember.adminId, payload }, label: `作废邀请码 · ${payload.name}` });
     if (!groupPendingCommands.isDurablyStored(fingerprint, commandKey)) { groupPendingCommands.forget(fingerprint, commandKey); setInviteError("浏览器无法保存这次操作的记录，已停止提交。请检查浏览器设置后重试。"); return; }
@@ -204,9 +206,10 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
   const invitePanel = inviteRevoke && (invitePending || inviteMember && inviteTarget) && <section className="m-invite-revoke" aria-label="作废邀请码">
     <h3>作废 {invitePending?.intent.payload.name ?? inviteMember?.name} 的邀请码？</h3>
     <p>{invitePending?.intent.payload.code ?? inviteTarget?.code} 会立即失效，之后填这个码注册会提示邀请码无效；已经绑定的客户不受影响。</p>
-    <label>作废原因<textarea className="fld" rows={2} value={invitePending ? invitePending.intent.payload.reason : inviteRevoke.reason} maxLength={200} disabled={inviteBusy || !!invitePending} placeholder="至少 8 个字，会记入操作记录" onChange={e => { const reason = e.target.value; setInviteRevoke(old => old && { ...old, reason }); }} /></label>
+    <label>作废原因<textarea className="fld" rows={2} value={inviteReasonInput} aria-describedby="m1-invite-reason-hint" aria-invalid={!!inviteReason.error} disabled={inviteBusy || !!invitePending} placeholder="至少 8 个字，会记入操作记录" onChange={e => { const reason = e.target.value; setInviteRevoke(old => old && { ...old, reason }); }} /></label>
+    <p id="m1-invite-reason-hint" className="m-invite-reason-hint">{inviteReason.error && <span>{inviteReason.error}。</span>}{inviteReason.length} / 200</p>
     {inviteError && <p role="alert" className="m-admin-error">{inviteError}</p>}
-    <div className="m-invite-revoke-actions"><button type="button" disabled={inviteBusy} onClick={() => { setInviteRevoke(undefined); setInviteError(""); }}>取消</button>{invitePending ? <><button type="button" disabled={inviteBusy} onClick={() => void checkInviteRevoke(invitePending)}>{inviteBusy ? "正在处理…" : "查询原操作"}</button>{replayButton(invitePending) && <button type="button" disabled={inviteBusy} onClick={() => void replayInviteRevoke(invitePending)}>重试原操作</button>}</> : <button type="button" className="m-invite-revoke-confirm" disabled={inviteBusy || !writeAllowed || !reasonValid(inviteRevoke.reason)} onClick={() => void revokeInviteCode()}>{inviteBusy ? "正在作废…" : "确认作废"}</button>}</div>
+    <div className="m-invite-revoke-actions"><button type="button" disabled={inviteBusy} onClick={() => { setInviteRevoke(undefined); setInviteError(""); }}>取消</button>{invitePending ? <><button type="button" disabled={inviteBusy} onClick={() => void checkInviteRevoke(invitePending)}>{inviteBusy ? "正在处理…" : "查询原操作"}</button>{replayButton(invitePending) && <button type="button" disabled={inviteBusy} onClick={() => void replayInviteRevoke(invitePending)}>重试原操作</button>}</> : <button type="button" className="m-invite-revoke-confirm" disabled={inviteBusy || !writeAllowed || !!inviteReason.error} onClick={() => void revokeInviteCode()}>{inviteBusy ? "正在作废…" : "确认作废"}</button>}</div>
   </section>;
   const targetGroups = rows.filter(g => g.status === "ENABLED" && g.id !== draft?.member?.currentMember.groupId);
   const draftReady = !!draft && !draft.stale && reasonValid(draft.reason) && (draft.kind === "CREATE" || draft.kind === "RENAME" ? !!draft.name.trim() && draft.name.trim().length <= 120 : true) && (draft.kind === "CREATE" || draft.kind === "OWNER" ? mode === "MANAGED" || supervisors.some(s => s.adminId === draft.ownerId) : true) && (draft.kind !== "MEMBER" || !!draft.member && draft.member.currentMember.state !== "UNKNOWN" && draft.member.currentMember.groupId !== (draft.targetGroupId || null) && (!draft.member.currentMember.groupId || !!draft.source) && (!draft.targetGroupId || !!draft.target) && (mode === "ALL" || !!draft.source && !!draft.target));

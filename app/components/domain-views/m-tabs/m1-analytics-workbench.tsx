@@ -3,7 +3,7 @@ import { operatorNicknameText } from "@/lib/admin/brand-copy";
 
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import dynamic from "next/dynamic";
 import { DomainModuleLoading } from "../domain-module-state";
 import { useRouter } from "next/navigation";
@@ -16,6 +16,7 @@ import { businessZone, businessZoneText } from "@/lib/admin/business-time";
 import { Modal } from "../design-kit";
 import { HDSelect, type HDOption } from "./hd-ui";
 import { M1PersonalWorkbench, SupportSeatRolesButton, type PersonalWorkbenchView } from "./m1-personal-workbench";
+import { M1StatisticDetails, fundLabels, type FundMetric, type StatisticSource } from "./m1-statistic-details";
 import { M1LiveService } from "./m1-live-service";
 import { SupportAvatar } from "./support-avatar";
 import { compactSupportBoardValue } from "./support-leaderboard";
@@ -277,6 +278,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const [section, setSection] = useState<Section>("stats"), [personalView, setPersonalView] = useState<PersonalWorkbenchView>("dashboard");
   const lastDataView = useRef<SupportAnalyticsView>("OVERVIEW");
   const [profileId, setProfileId] = useState<string | null>(null);
+  const [fundMetric, setFundMetric] = useState<FundMetric | null>(null);
   const [monthCalendar, setMonthCalendar] = useState<SupportAnalyticsMonth[] | null>(null);
   const [calendarError, setCalendarError] = useState(""), [calendarRetry, setCalendarRetry] = useState(0);
   const [personalPeriod, setPersonalPeriod] = useState<SupportAnalyticsResponse | null>(null), [personalPeriodError, setPersonalPeriodError] = useState("");
@@ -308,6 +310,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const isPersonal = scope?.scopeSummary.mode === "PERSONAL";
   const showStatistics = Boolean(scope && section === "stats");
   const statisticsCalendar = queryState.basis === "PERIOD_EVENT" ? monthCalendar : null;
+  const fundSource = useMemo<StatisticSource | null>(() => data && fundMetric && (queryState.basis !== "PERIOD_EVENT" || statisticsCalendar)
+    ? { kind: "fund", metric: fundMetric, origin: data, query: analyticsWireQuery(queryState, statisticsCalendar ?? []) } : null, [data, fundMetric, queryState, statisticsCalendar]);
   const readModes = useAdminAuth(state => state.session?.supportReadModes);
   // A session hint only chooses the requested projection. The response still resolves current authority.
   const entryReadMode = readModes?.includes("ALL") ? "ALL" : readModes?.includes("MANAGED") ? "MANAGED" : readModes?.includes("PERSONAL") ? "PERSONAL" : "ALL";
@@ -399,8 +403,9 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     }).finally(() => { if (!controller.signal.aborted && current === generation.current) setLoading(false); });
     return () => { controller.abort(); generation.current++; };
   }, [showStatistics, queryState, retry, scope?.scopeSummary.mode, statisticsCalendar]);
-  const change: Drill = changes => { controllerRef.current?.abort(); generation.current++; setData(null); setProfileId(null); setError(""); setQueryState(previous => changeAnalyticsQuery(previous, changes)); };
+  const change: Drill = changes => { controllerRef.current?.abort(); generation.current++; setData(null); setProfileId(null); setFundMetric(null); setError(""); setQueryState(previous => changeAnalyticsQuery(previous, changes)); };
   function refreshScope(invalidated = false) {
+    setFundMetric(null);
     scopeControllerRef.current?.abort(); controllerRef.current?.abort(); generation.current++;
     sessionController.current?.abort(); setSessionCheck(null); setSessionBusy(null); setSessionError(null);
     managementReturnQuery.current = invalidated ? changeAnalyticsQuery(queryState, { groupId: undefined, keyword: undefined }) : { ...queryState, pageNum: 1, expectedVersion: undefined };
@@ -409,6 +414,16 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     setScopeRetry(n => n + 1);
   }
   function reloadFirstPage() { change({}); setRetry(n => n + 1); }
+  const invalidateFund = useCallback((status: number) => {
+    if (status === 409) {
+      setRestoreNotice("统计已变化，正在重新读取汇总和明细第一页。");
+      setData(null);
+      setQueryState(previous => ({ ...previous, pageNum: 1, expectedVersion: undefined }));
+    } else {
+      refreshScope();
+      setRestoreNotice("查看权限已变化，已关闭资金明细并重新核对范围。");
+    }
+  }, [queryState]);
   function openSessions(row: SupportAnalyticsCustomer) {
     try { sessionStorage.setItem(SESSION_RETURN_KEY, JSON.stringify({ adminId, query: queryState })); } catch { /* without storage the back link opens the default list */ }
     router.push(`/service/sessions?customerId=${encodeURIComponent(row.customerId)}&from=customers`);
@@ -520,9 +535,12 @@ if (!scope) return <section className="sa-workbench" aria-label="客服范围核
           <div><span>{queryState.basis === "PERIOD_EVENT" ? "期间充值" : "客户累计充值"} / {nexGridBrandText(currency)}</span><MoneyValue money={deposits} label={`充值 ${nexGridBrandText(currency)}`} onClick={() => change({ view: "FINANCE", basis: queryState.basis === "CURRENT_ASSET" ? "CURRENT_CUSTOMER_HISTORY" : queryState.basis })} /></div>
           {queryState.basis === "PERIOD_EVENT" && <><div><span>期间首次付费</span><CountValue count={data.scopeSummary.financial.firstCandidates} label="期间首次付费；查看同范围资金事件" onClick={() => change({ view: "FINANCE" })} /></div><div><span>期间购机 / {nexGridBrandText(currency)}</span><MoneyValue money={data.scopeSummary.financial.currencies.find(x => x.currency === currency)?.purchases} label={`期间购机 ${nexGridBrandText(currency)}；查看同范围资金事件`} onClick={() => change({ view: "FINANCE" })} /></div></>}
         </div>
-        {queryState.view === "FINANCE" && <section className="sa-current-funds" aria-label="当前客户资金观测"><p>当前筛选客户的余额与提现观测，不受月份筛选；提现发生时的客户归属暂无记录。</p><div className="sa-inline-metrics"><div><span>当前余额 / {nexGridBrandText(currency)}</span><Numeric kind="amount" value={data.funds.balances?.find(x => x.currency === currency)?.confirmedAmount ?? null} observed={data.funds.balances?.find(x => x.currency === currency)?.observedAmount} label={`当前余额 ${nexGridBrandText(currency)}`} /></div><div><span>成功提现金额 /  {nexGridBrandText(currency)}</span><Numeric kind="amount" value={data.funds.withdrawals?.find(x => x.currency === currency)?.successPrincipal.confirmedAmount ?? null} observed={data.funds.withdrawals?.find(x => x.currency === currency)?.successPrincipal.observedAmount} label={`已观测成功提现金额  ${nexGridBrandText(currency)}`} /></div><div><span>成功提现实到 / {nexGridBrandText(currency)}</span><Numeric kind="amount" value={data.funds.withdrawals?.find(x => x.currency === currency)?.successNet.confirmedAmount ?? null} observed={data.funds.withdrawals?.find(x => x.currency === currency)?.successNet.observedAmount} label={`已观测提现实到 ${nexGridBrandText(currency)}`} /></div><div><span>处理中提现金额 /  {nexGridBrandText(currency)}</span><Numeric kind="amount" value={data.funds.withdrawals?.find(x => x.currency === currency)?.processingPrincipal.confirmedAmount ?? null} observed={data.funds.withdrawals?.find(x => x.currency === currency)?.processingPrincipal.observedAmount} label={`已观测处理中提现金额  ${nexGridBrandText(currency)}`} /></div></div></section>}
+        {queryState.view === "FINANCE" && <section className="sa-current-funds" aria-label="当前客户资金观测"><p>当前筛选客户的余额与提现观测，不受月份筛选；提现发生时的客户归属暂无记录。</p><div className="sa-inline-metrics">{(["balance", "successPrincipal", "successNet", "processingPrincipal"] as const).map(metric => {
+          const amount = metric === "balance" ? data.funds.balances?.find(row => row.currency === currency) : data.funds.withdrawals?.find(row => row.currency === currency)?.[metric];
+          return <div key={metric}><span>{fundLabels[metric]} / {nexGridBrandText(currency)}</span><Numeric kind="amount" value={amount?.confirmedAmount ?? null} observed={amount?.observedAmount} label={fundLabels[metric] + " " + nexGridBrandText(currency)} onClick={() => setFundMetric(metric)} /></div>;
+        })}</div></section>}
         {queryState.view === "OVERVIEW" ? <>
-          <div className="sa-coverage"><div>待分配 <Numeric value={data.scopeSummary.pending === null ? null : String(data.scopeSummary.pending)} label="待分配客户，打开待分配客户池" onClick={() => openTab("pool")} /></div><div>归属异常 <Numeric value={data.scopeSummary.anomaly === null ? null : String(data.scopeSummary.anomaly)} label="归属异常" onClick={() => change({ view: "CUSTOMERS", category: "ANOMALY", firstState: "ALL", filter: "ALL" })} /></div><div>有效净额 / {nexGridBrandText(currency)} <MoneyValue money={data.scopeSummary.financial.currencies.find(x => x.currency === currency)?.net} label={`有效净额 ${nexGridBrandText(currency)}`} /></div></div>
+          <div className="sa-coverage"><div>待分配 <Numeric value={data.scopeSummary.pending === null ? null : String(data.scopeSummary.pending)} label="待分配客户，打开待分配客户池" onClick={() => openTab("pool")} /></div><div>归属异常 <Numeric value={data.scopeSummary.anomaly === null ? null : String(data.scopeSummary.anomaly)} label="归属异常" onClick={() => change({ view: "CUSTOMERS", category: "ANOMALY", firstState: "ALL", filter: "ALL" })} /></div><div>有效净额 / {nexGridBrandText(currency)} <MoneyValue money={data.scopeSummary.financial.currencies.find(x => x.currency === currency)?.net} label={`有效净额 ${nexGridBrandText(currency)}`} onClick={() => setFundMetric("net")} /></div></div>
           {queryState.groupId === undefined && <section className="sa-group-comparison"><h3>负责组概览</h3><p>展示 {Math.min(data.scopeSummary.groups.length, 4)} / {data.scopeSummary.groups.length} 个组；完整组范围可在上方选择。</p><div>{data.scopeSummary.groups.slice(0, 4).map(group => <div key={group.groupId}><button type="button" className="sa-name sa-link" title={group.name ?? "组名未同步"} onClick={() => change({ groupId: group.groupId, view: "AGENTS" })}>{group.name || "组名未同步"}</button><span>{queryState.basis === "PERIOD_EVENT" ? "当期净贡献" : "当前客户累计净贡献"} / {nexGridBrandText(currency)} <MoneyValue money={queryState.basis === "PERIOD_EVENT" ? group.period?.currencies.find(x => x.currency === currency)?.net : group.current.ownLifetime.find(x => x.currency === currency)?.net} label={`组净贡献 ${nexGridBrandText(currency)}`} onClick={() => change({ groupId: group.groupId, view: "OVERVIEW" })} /></span><span>当前客户 <Numeric value={group.total === null ? null : String(group.total)} label="组当前客户" onClick={() => change({ groupId: group.groupId, view: "CUSTOMERS" })} /></span><span>专属客服 <CountValue count={group.personnel.serviceAccounts} label="组专属客服" onClick={() => change({ groupId: group.groupId, view: "AGENTS" })} /></span></div>)}</div></section>}
           {!data.scopeSummary.groups.length && mode === "MANAGED" && <p className="sa-empty">当前没有负责组。</p>}
         </> : <>{queryState.view === "CUSTOMERS" && <div className="sa-legend"><span>金额单位 {nexGridBrandText(currency)}</span><span><span className="sa-dot on" aria-hidden="true" />本统计期活跃</span><span><span className="sa-dot off" aria-hidden="true" />本统计期未活跃</span><span><span className="sa-cell-unknown">-</span> 数据还在同步</span><span>点客户名查看资料与记录</span></div>}
@@ -530,6 +548,7 @@ if (!scope) return <section className="sa-workbench" aria-label="客服范围核
           <AnalyticsTable data={data} currency={currency} drill={change} openProfile={setProfileId} session={!isPersonal && queryState.view === "CUSTOMERS" ? sessionStart : undefined} /><footer className="sa-pager"><p>{data.total === null ? `已观测 ${data.observedTotal} 条；总数仍在统计` : `共 ${data.total} 条`} · 第 {queryState.pageNum} 页</p><div><button type="button" disabled={queryState.pageNum <= 1 || data.versionState !== "READY"} onClick={() => page(queryState.pageNum - 1)}>上一页</button><button type="button" disabled={!data.canContinue || data.versionState !== "READY"} onClick={() => page(queryState.pageNum + 1)}>下一页</button></div></footer>{data.versionState === "UNKNOWN" && <p className="sa-disclosure">当前结果尚未确认，暂时无法继续翻页。请刷新后重试。</p>}</>}
       </>}
     </>}
+    {showStatistics && fundSource && <M1StatisticDetails key={data?.asOf} source={fundSource} onClose={() => setFundMetric(null)} onInvalid={invalidateFund} />}
     {sessionBusy && <SessionBusyDialog customer={customerName(sessionBusy.row)} hold={sessionBusy.hold} onClose={() => setSessionBusy(null)} onRead={() => { const row = sessionBusy.row; setSessionBusy(null); openSessions(row); }} />}
     {profileId && <Modal wide title="客户资料与原业务明细" onClose={() => setProfileId(null)} footer={<button type="button" onClick={() => setProfileId(null)}>返回统计列表</button>}><p className="sa-disclosure">按你的客户资料查看权限显示；统计可见不增加资金操作或回复权限。</p><M3CustomerProfile key={profileId} ctx={ctx} customerId={profileId} onHistory={no => router.push(`/service/sessions?conversationNo=${encodeURIComponent(no)}`)} onRetryMessages={() => void ctx.refreshConversations()} /></Modal>}
   </section>;
