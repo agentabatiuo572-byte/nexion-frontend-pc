@@ -381,7 +381,6 @@ for (const matched of (interfaceBody(uniSource, "PublicStatsConfig") ?? "").matc
 if (uniSource && uniDocs.size === 0) failures.push("G 前端 PublicStatsConfig 解析出 0 条字段注释(判据失效)");
 for (const key of fieldKeys) {
   if (HOME_DISPLAY_KEYS.has(key)) continue; // Home values are validated and consumed by the server batch service.
-  if (key === "activeJobsBase") continue; // B21: the server validates it; the client only adds it to a displayed count.
   const spec = specRanges.get(key);
   if (!spec || uniDocs.size === 0) continue; // 规格缺值域已在 C 报过,不重复刷屏
   const doc = uniDocs.get(key);
