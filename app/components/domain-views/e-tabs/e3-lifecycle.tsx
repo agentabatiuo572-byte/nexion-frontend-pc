@@ -104,7 +104,8 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   // FEAT-DEV02 置换阶梯:界点 4 + 抵扣率 5(区间左闭右开,连续性由构造保证)。
   const ladderCuts = [1, 2, 3, 4].map((i) => pE(`E.tradein.ladder.cut${i}`));
   const ladderCredits = [1, 2, 3, 4, 5].map((i) => pE(`E.tradein.ladder.credit${i}`));
-  const curve = floorPct === 100 ? Array<number>(cyc + 1).fill(100) : effCurve(early, mid, late, s1, s2, cyc, floorPct);
+  const curve = effCurve(early, mid, late, s1, s2, cyc, floorPct);
+  const curveTop = floorPct === 100 ? Math.max(...curve) : 100;
   const stats = e3Stats ?? { averageAgeMonths: 0, cliffDeviceCount: 0, tradeinMonthCount: 0, tradeinDiscountUsdt: 0, k2ArbitrageHits: 0 };
   const totalTxSuccess = e3Operations.reduce((sum, item) => sum + item.ok, 0);
   const totalTxFailure = e3Operations.reduce((sum, item) => sum + item.fail, 0);
@@ -114,7 +115,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const txSuccessRate = txSampleSize > 0 ? (totalTxSuccess / txSampleSize) * 100 : null;
 
   const px = (i: number) => (i / cyc) * 700;
-  const py = (v: number) => floorPct === 100 ? 4 : 4 + ((100 - v) / (100 - floorPct)) * 183;
+  const py = (v: number) => curveTop === floorPct ? 4 : 4 + ((curveTop - v) / (curveTop - floorPct)) * 183;
   const pathOf = (from: number, to: number) =>
     curve.slice(from, to + 1).map((v, j) => `${j ? "L" : "M"}${px(from + j).toFixed(1)} ${py(v).toFixed(1)}`).join(" ");
   const emphasized = [0, s1, s2, cyc];
@@ -177,7 +178,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           <span className="r"><CodeTag tone="electric">E.device.capacity.*</CodeTag></span>
         </div>
         <div className="curve-wrap">
-          <div className="curve-y">{(floorPct === 100 ? [100] : [100, 80, 60, 40, floorPct]).map((y) => <span key={y}>{y}%</span>)}</div>
+          <div className="curve-y">{(floorPct === 100 ? (curveTop === 100 ? [100] : [curveTop, 100]) : [100, 80, 60, 40, floorPct]).map((y) => <span key={y}>{y}%</span>)}</div>
           <div className="canvas">
             <svg viewBox="0 0 700 240" preserveAspectRatio="none">
               <rect className="zone-early" x="0" y="0" width={px(s1)} height="240" />
