@@ -866,7 +866,7 @@ Nexion 运营控制后台
 
 | 子模块 | 名称 | 对应前端 / 运营职能 | §锚点 | 批次 |
 |---|---|---|---|---|
-| D1 | 充值对账中心 | 5 渠道 topup / PSP / fee_buffer / BIN 风控 | §9.2 / §9.2.4 | V1 |
+| D1 | 充值对账中心 | 订单付款 / 银行卡支付与 USDT 充值 / 充值流水与差异核销 | §9.2 / §9.2.4 | V1 |
 | D2 | 提现审核队列 | /me/wallet/withdraw 全生命周期 + 失败态机 | §9.3 / §9.3.6 / §9.11f | V1 |
 | D3 | 资金池水位仪表盘 | B2 的财务深度页(储备 vs 负债 / 到期利息) | §9.6 / §9.6.3 | V1 |
 | D4 | 账本 / 账单审计 | /me/wallet/bills(server 唯一账本) | §9.7 / §12 | V1 |
@@ -2531,59 +2531,54 @@ C6 是**注册登录侧风控参数配置面**——OTP 配置、登录锁定配
 
 #### [D1] 充值对账中心
 
+> **旧充值通道已退役（2026-11-04）**：人工银行转账回单、国际卡（含 PSP 主备、卡风控参数、BIN/IP/设备锁、拒付追回）和旧收款账户池已从 PC 删除。依据：产品未上线，没有历史回单和拒付；后端已禁止新建人工转账单（`VIETQR_MANUAL_TOPUP_RETIRED`）和新卡支付授权（`CARD_TOPUP_CHANNEL_RETIRED`），当前 App 不再产生这两类交易。PC 代理不再转发对应写接口，后端接口的关闭由后端单独处理。`nx_topup_fee_buffer_*` 账本仍由 G2 兑换写入，D1 不再展示「卡费缓冲」。
+
 **① 目的 & 对齐**
-管控平台**资金流入侧**的全链路对账:充值流水确认、各渠道 PSP 报表 vs 平台入账的差异核销、风控备付金(`fee_buffer`)余额监控、卡渠道 BIN attack 与 chargeback 处置。对齐前端 §9.2(`/me/wallet/topup` 5 充值渠道)+ §9.2.4(业务规则)+ §9.11c.1 Deposit write path / `cumulativeDepositUsdt`。服务的业务目标:资金流入真实可对账(入账不丢不重)、卡渠道反欺诈、`user.cumulativeDepositUsdt`(trade-in 资格门槛源,§9.11c.1)的权威写入正确性。**充值入账是储备账本的流入来源**——D1 入账数据喂 D3 储备聚合(§3.14:储备底层账本权威归 D3)。
+管控平台**资金流入侧**的对账：订单付款手续费与付款记录、银行卡支付（HDPay）充值订单与人工确认、USDT 链上充值（Cregis）、充值流水与支付商差异核销。服务的业务目标：资金流入真实可对账（入账不丢不重）、`user.cumulativeDepositUsdt`（trade-in 资格门槛源，§9.11c.1）的权威写入正确性。**充值入账是储备账本的流入来源**——D1 入账数据喂 D3 储备聚合（§3.14：储备底层账本权威归 D3）。
 
 **② 后台界面**
-五区:充值流水 + 渠道 PSP 对账 + fee_buffer 余额 + BIN attack 监控 + chargeback 处置。
+四个页签：订单付款、银行卡充值、USDT 充值、充值流水与对账；默认打开订单付款。「今日入账金额」和「对账差异」两张统计卡在银行卡充值、USDT 充值、充值流水与对账三个页签都显示。
 
-1. **充值流水列表**:全平台充值单 `[topupId / userId / 渠道(USDT-TRC20/USDT-ERC20/BTC/ETH/Card)/ 金额(USDT 到账额)/ 渠道实收(链上 amount 或 Card charged 含 fee)/ 状态 / PSP/链上 txHash / 提交时间 / 确认时间 / 入账时间]`;三个时间必须分列，未发生时分别展示「尚未确认 / 尚未入账」，不得用提交时间回填。状态分三类 tab——**待确认**(链上未达确认数 / Card processing/3ds 中)、**已确认**(入账完成、已写 bill + 更 `cumulativeDepositUsdt`)、**异常**(对账差异 / Card declined / chargeback / 超时未入账)。
-2. **各渠道 PSP 报表 vs 平台入账对账面**:按渠道(Card 走 Checkout.com/Stripe PSP 报表;链上走链上浏览器入账)对齐——左列 PSP/链上侧金额与笔数,右列平台入账侧金额与笔数,中间高亮**对账差异**(金额差 / 笔数差 / 单边挂账)。差异项进入异常 tab 待人工核销。
-3. **`fee_buffer` 余额卡**:Card 渠道 3.5% 手续费累计进入的风控备付金余额(§9.2.4:fee 进 `fee_buffer`,非利润口径)+ 流入流出明细(退款 / chargeback 从此扣)。
-4. **BIN attack 监控**:卡渠道失败重试热力——按 BIN 段 / IP / 设备指纹分别聚合 24h 失败次数,达到服务端阈值后创建带到期时间的真实风控锁;支持手动 BIN 锁定及对已有 BIN/IP/设备锁执行释放或重新锁定。页面显示服务端锁定到期时间,不以浏览器状态代替实际门禁。
-5. **chargeback 处置面**:已发生拒付的 Card 充值单列表 `[案件号 / userId / 金额 / chargeback 原因码 / 原始 D4 入账证据 / 处置状态]`,仅允许处置已找到原始入账分录的案件;处置在同一事务中完成余额追回、`cumulativeDepositUsdt` 核减、D4 追回分录、`fee_buffer` 扣回与不足额风险信号。用户与案件可分别深链 K 域和 D4 核对。
+1. **订单付款**：手续费设置（银行卡 / USDT，USDT 分 BEP20、ERC20）和付款记录，规则见 [订单付款运营规格](specs/FEAT-PURCHASE-PAYMENT-OPERATIONS-20261031.md)。
+2. **银行卡充值**：
+   - **银行卡支付订单**：HDPay 充值单列表，按状态和关键字查询，含实际入账、支付商状态与确认来源；符合条件的订单可「人工确认入账」，必须填写交易参考号、到账时间并上传回单图片。
+   - **充值渠道**：USDT 链上充值入口（跳到 USDT 充值）和「银行卡支付」行。这一行的渠道码仍是 `vietqr`，是 HDPay 充值的开关，可调费率、启停；最低充值金额在订单付款配置。
+   - **银行卡支付参数**：只有单笔上限可调。
+3. **USDT 充值**：Cregis 状态、地址池和对账告警，下分「收款记录」「异常处理」「充值与地址设置」「归集与付款」，规则见 [D1 USDT-BEP20 充值规则](D1-USDT-BEP20充值规则.md)。
+4. **充值流水与对账**：
+   - **充值流水**：`[充值单 / 用户 / 通道 / 金额 / 支付商实收 / 状态 / 交易号 / 提交时间 / 确认时间 / 入账时间]`；三个时间分列，未发生时分别显示「尚未确认 / 尚未入账」，不得用提交时间回填。状态页签为全部、处理中、已入账、异常。
+   - **对账差异**：按渠道对比支付商和平台的笔数与金额。差异项可核销；今天没有数据时明确提示「没有数据不代表已经对上」。
 
-数据来源:充值业务事实由服务端充值单、支付记录、D4 钱包分录、D3 储备分录和独立 `fee_buffer` 分录共同闭环；PSP/链上侧事实通过独立签名接入的支付商账单保存，不从平台入账记录反推。A4 的 `wallet.topup_initiated/topup_confirmed` 仅用于事件治理和消费通知，不替代账务表。对账差异由支付商/链上独立记录与 D4 入账聚合比对得出，**server-canonical**(PSP webhook → server 原子入账,见 ⑦)。
+数据来源:充值业务事实由服务端充值单、支付记录、D4 钱包分录和 D3 储备分录共同闭环；支付商或链上事实保存在独立账单中，不从平台入账记录反推。A4 的 `wallet.topup_initiated/topup_confirmed` 仅用于事件治理和消费通知，不替代账务表。对账差异由独立账单与 D4 入账聚合比对得出，**server-canonical**(支付回调或链上确认 → server 原子入账,见 ⑦)。
 
-> **channel 枚举值口径**:界面展示采用前端 id 格式(USDT-TRC20 / USDT-ERC20 / BTC / ETH / Card)作可读标签;**枚举值实际定义以 A4 schema 为权威**(§2.4.8 schema registry),不混用缩写与全称。
+> **channel 枚举值口径**:枚举值实际定义以 A4 schema 为权威(§2.4.8 schema registry),不混用缩写与全称。页面把 `vietqr`、`hdpay` 都显示为「银行卡支付」；历史流水中的 `card` 仍显示为「国际卡刷卡」。
 
 **③ 可控参数**
 
-> **默认值口径声明**:12 月运营周期(§6)**未覆盖充值费率 / 渠道阈值**——本子模块参数默认值**以前端 §9.2 / §9.2.4 现状为参考值就地标注**(§1.3:12 月未覆盖项以前端现状为参考、就地标注)。若后续 12 月周期补入充值侧目标值,以 12 月为准。
->
-> **channel 枚举值采用 A4 schema 权威定义**(本表"渠道"列标签为可读展示,非枚举原值)。
-
-| 参数 | 默认值(前端 §9.2 现状参考) | 范围 | 生效时机 | 影响的前端 / 依据 |
+| 参数 | 默认值 | 范围 | 生效时机 | 说明 |
 |---|---|---|---|---|
-| TRC20 充值费 | **1 USDT**(固定) | ≥ 0 | 仅新对象(改后新充值单按新费,在途不变) | §9.2.1;链上固定费 |
-| ERC20 充值费 | **5 USDT**(固定) | ≥ 0 | 仅新对象 | §9.2.1 |
-| BTC 充值费 | **0.5%** | 0%–5% | 仅新对象 | §9.2.1(费率制) |
-| ETH 充值费 | **0.5%** | 0%–5% | 仅新对象 | §9.2.1 |
-| Card 充值费 | **3.5%**(进 `fee_buffer`) | 0%–10% | 仅新对象 | §9.2.1 / §9.2.4;非利润口径,进风控备付金 |
-| 3DS 强制阈值 | **$50** | $0–$500 | 实时(改后新交易按新阈值触发 SCA) | §9.2.4(MasterCard/Visa SCA 触发线) |
-| Card 同卡 24h 重试上限 | **5 次**(超过自动锁卡 24h) | 3–10 次 | 实时 | §9.2.4(防 BIN attack) |
-| Card 锁卡时长 | **24h** | 1h–72h | 实时 | §9.2.4 |
-| 最小充值额(`MIN_TOPUP`) | 链上 TRC20/ERC20 **$10** · BTC/ETH **$20** · Card **$10** | per-channel,≥ 0 | 仅新对象 | §9.2.1 Min 列(各渠道不同) |
-| 主备 PSP 路由 | **Checkout.com(主)+ Stripe(备)**,按地区 BIN 自动路由 | 主/备切换 | 实时(改后新 Card 交易走新主 PSP) | §9.2.4(支付商主备) |
+| 银行卡支付费率 | **0%** | 百分比 0%–10%;固定费 0–100 USDT | 仅新交易 | `vietqr` 渠道行,D1-MD1 调整 |
+| 银行卡支付单笔上限(`perTxLimitUsd`) | **$5,000** | $100–$10,000 整数 | 仅新付款单 | 后端要求整组配置提交;轮换策略、容差、回单宽限和旧确认数不再有编辑入口,按读回值原样提交 |
+| 订单付款手续费 | 未设置 | 见订单付款运营规格 | 仅之后发起的付款 | 按银行卡、BEP20、ERC20 分别配置 |
+| USDT 充值规则与地址池 | 见 D1 USDT-BEP20 充值规则 | 见规则 | 见规则 | 走 A2 审批或地址池配置,不再使用旧渠道固定费 |
 
-> **费率"在途"边界精确定义**:链上充值以「topup ID 已创建且链上 txHash 已广播(状态非 `pending-submission`)」为在途边界;Card 充值以「PSP 已授权(`authorizationId` 已生成)」为在途边界——授权后费率锁定,费率变更不影响已授权单。
+> **退役参数**:Card 充值费、3DS 强制阈值、Card 同卡重试上限、Card 锁卡时长、主备 PSP 路由、BTC/ETH 渠道费率和按渠道最小充值额(`MIN_TOPUP`)不再有 PC 入口。
+
 > **BEP20 Cregis 例外（2026-10-28）**：此通道没有充值预订单，以系统首次发现交易时的充值配置作为该交易的规则快照；在此之前已广播但之后才被发现的交易，按首次发现时的配置处理。详见 [D1 USDT-BEP20 充值规则](D1-USDT-BEP20充值规则.md)。
->
-> **`MIN_TOPUP` 是 per-channel 而非单值**:前端 §9.2.1 Min 列各渠道不同(链上稳定币 $10、BTC/ETH $20、Card $10),后台参数须按渠道分别配置,不可设单一全局最小额。
 
 **④ 操作动作**
 
 | 动作 | 角色 | 确认弹窗 | 审计点 |
 |---|---|---|---|
-| 渠道启停(per-channel kill:停用某充值渠道) | 财务(lead)/ 超管 | D1-MD1(理由必填) | `admin.topup_channel_toggled`(渠道 / enable\|disable / operator / reason) |
-| 主备 PSP 切换(Checkout.com ↔ Stripe) | 仅超管 | D1-MD2(理由必填) | `admin.topup_psp_switched`(from_psp / to_psp / operator / reason) |
-| 渠道费率 / 最小额调整 | 财务(lead)/ 超管 | D1-MD1(结构化数字+固定单位+理由必填) | `D1_TOPUP_CHANNEL_FEE_CHANGED` / `D1_TOPUP_CHANNEL_MIN_CHANGED` |
-| Card 风控参数调整 | 财务(lead)/ 超管 | D1-MD1(结构化数字+固定单位+理由必填) | `D1_TOPUP_CARD_RISK_PARAM_CHANGED` |
-| BIN / IP / 设备锁定或释放 | 风控 / 财务(lead)/ 超管 | 轻量确认(理由必填) | `D1_TOPUP_BIN_LOCKED` / `D1_TOPUP_BIN_UNLOCKED`(targetType / targetValue / expiresAt / reason / operator) |
-| chargeback 追回(追回已入账 + fee_buffer 扣回) | 财务(lead)/ 超管 | D1-MD3(凭证+勾选+理由必填) | `D1_TOPUP_CHARGEBACK_RECOVERED`(caseNo / amount / recovered / shortfall / evidence / operator / reason) |
+| 渠道启停(停用银行卡支付渠道) | 财务(lead)/ 超管 | D1-MD1(理由必填) | `admin.topup_channel_toggled`(渠道 / enable\|disable / operator / reason) |
+| 渠道费率调整 | 财务(lead)/ 超管 | D1-MD1(结构化数字+固定单位+理由必填) | `D1_TOPUP_CHANNEL_FEE_CHANGED` |
+| 单笔上限调整 | `finance_d1_bank_config_manage` | 操作确认(理由必填) | 请求携理由与操作者,以 A2 查询为准 |
+| HDPay 人工确认入账 | `finance_d1_bank_reconcile` | 操作确认(参考号、到账时间、回单图片、理由必填) | 请求携理由与操作者,以 A2 查询为准 |
 | 对账差异确认挂账 | 财务(lead)/ 超管 | D1-MD4(方式+凭证+理由必填) | `D1_TOPUP_RECONCILIATION_WRITEOFF`(差异额 / 核销方式 / evidence / operator / reason) |
 
-> **D1 所有写动作均为高敏动作**:统一要求持久 `Idempotency-Key`、8–200 字理由、认证会话操作者与必达 A2 审计;相同键同载荷回放原结果,不同载荷拒绝。服务端执行精确动作权限,页面隐藏按钮不能替代后端门禁。渠道启停 / 费率 / 最小额 / Card 风控参数 / chargeback 追回 / 差异确认 = 财务(lead)/ 超管,主备 PSP 切换 = 仅超管,BIN/IP/设备锁 = 风控 / 财务(lead)/ 超管。任一资金、审计或幂等写入失败均整体回滚并失败关闭。
+> **D1 所有写动作均为高敏动作**:统一要求持久 `Idempotency-Key`、理由、认证会话操作者与必达 A2 审计;相同键同载荷回放原结果,不同载荷拒绝。服务端执行精确动作权限,页面隐藏按钮不能替代后端门禁。任一资金、审计或幂等写入失败均整体回滚并失败关闭。结果未知的请求保留原命令,只能在「待核对的请求」里按原载荷重试。
+
+> **已退役动作**:主备 PSP 切换、Card 风控参数调整、BIN/IP/设备锁定与释放、chargeback 追回、人工回单登记、回单匹配入账、按实收核销、登记退回、收款账户新增与维护、轮换策略切换。
 
 **④a 交互与弹窗规格**
 
@@ -2591,32 +2586,25 @@ C6 是**注册登录侧风控参数配置面**——OTP 配置、登录锁定配
 
 | 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
 |---|---|---|---|---|
-| 渠道启停 | ②2 渠道对账面各渠道卡「停用」/「启用」 | 警示按钮 / 次按钮 | 财务(lead)/超管渲染;按渠道当前态显示对向动作 | 打开弹窗 D1-MD1 |
-| 主备 PSP 切换 | ②2 Card 渠道卡「主备切换」 | 警示按钮 | 仅超管渲染 | 打开弹窗 D1-MD2 |
-| BIN / IP / 设备锁定或释放 | ②4 风控锁监控行内「锁定」/「解锁」 | 行内按钮 | 按 `finance_d1_bin_lock` / `finance_d1_bin_unlock` 分别渲染;手动新增仅接受 6–8 位 BIN | 轻量确认 reason 后写服务端真实锁与到期时间 |
-| chargeback 追回 | ②5 chargeback 处置面行内「追回」 | 行内警示按钮 | `finance_d1_chargeback_refund`;仅「已入账 + 未处置」案件可用 | 打开弹窗 D1-MD3 |
-| 对账差异确认 | ②2 对账差异项行内「核销」 | 行内按钮 | `finance_d1_reconcile`;仅真实独立源存在差异且未确认项可用 | 打开弹窗 D1-MD4 |
-| 查看流水 / 对账 / fee_buffer | ②1–③ 导航 | 链接 | 按角色裁剪 | 跳转视图,无弹窗 |
+| 渠道启停 | ②2 充值渠道「停用」/「启用」 | 警示按钮 / 次按钮 | `finance_d1_channel_manage`;按渠道当前态显示对向动作 | 打开弹窗 D1-MD1 |
+| 费率调整 | ②2 充值渠道「费率」 | 次按钮 | `finance_d1_channel_manage` | 打开数字确认弹窗 |
+| 单笔上限调整 | ②2 银行卡支付参数「调整」 | 次按钮 | `finance_d1_bank_config_manage`,配置已加载 | 打开数字确认弹窗 |
+| HDPay 人工确认入账 | ②2 银行卡支付订单行内「人工确认入账」 | 行内按钮 | `finance_d1_bank_reconcile`;服务端返回 `manualCreditAllowed`,未入账,无待核对请求 | 打开确认表单 |
+| 对账差异确认 | ②4 对账差异行内「核销」 | 行内按钮 | `finance_d1_reconcile`;存在差异且未核销 | 打开弹窗 D1-MD4 |
 
 **(2) 弹窗规格**
 
 ##### [D1-MD1] 充值渠道启停确认
-- **功能**:停用 / 启用单一充值渠道(per-channel kill),确认即时生效,新充值请求按新通道集路由。
-- **布局结构**:1. **信息区**:渠道(USDT-TRC20/USDT-ERC20/BTC/ETH/Card)/ 当前态(启用/停用)/ 目标态 / 该渠道 24h 充值笔数与金额(供评估影响面)。2. **影响预览区**:提示行「停用后该渠道新充值入口即时下线(在途单不受影响,继续按原流程入账)」;停用 Card 渠道时加提示「Card 为唯一法币入口,停用将关闭全部法币充值」。3. **输入区**:reason(多行文本,必填,8–200 字;server 空值 400 `REASON_REQUIRED`)。4. **按钮区**:`[取消]` · `[确认停用 / 确认启用]`(停用为警示色;必填未过置灰;loading 防双击)。
+- **功能**:停用 / 启用银行卡支付渠道,确认即时生效,只影响之后的新交易。
+- **布局结构**:1. **信息区**:标题写明动作和渠道,说明「只影响之后的新交易。」。2. **输入区**:reason(必填,8–200 字;server 空值 400 `REASON_REQUIRED`)。3. **按钮区**:`[取消]` · `[确认提交]`(必填未过置灰;loading 防双击)。
 - **错误态**:409(渠道态已被他人变更,提示刷新)/ 400 `REASON_REQUIRED` / 403。
-- **成功反馈**:弹窗关闭;渠道卡状态就地更新;toast「已生效 · 已记审计」;事件 `admin.topup_channel_toggled`;实时告警超管 / 财务 lead。
+- **成功反馈**:弹窗关闭;渠道行状态就地更新;toast;事件 `admin.topup_channel_toggled`。
 
 ##### [D1-MD2] 主备 PSP 切换确认
-- **功能**:切换 Card 渠道主备 PSP(Checkout.com ↔ Stripe),确认即时生效,新 Card 交易走新主 PSP。
-- **布局结构**:1. **信息区**:当前主 PSP / 目标主 PSP / 24h Card 交易笔数与金额 / 两 PSP 近 24h 成功率对比(供切换决策)。2. **影响预览区**:提示行「切换仅影响新交易路由;在途授权单仍按原 PSP 完成;对账面将出现双 PSP 并行期」。3. **输入区**:reason(必填,8–200 字)。4. **按钮区**:`[取消]` · `[确认切换]`(警示色;置灰条件同上;loading)。
-- **错误态**:409(PSP 路由已被他人变更)/ 400 `REASON_REQUIRED` / 403(非超管)。
-- **成功反馈**:弹窗关闭;PSP 路由标识就地更新;toast;事件 `admin.topup_psp_switched`;实时告警全体超管 / 财务 lead。
+已退役(2026-11-04)。
 
 ##### [D1-MD3] chargeback 退款确认
-- **功能**:对已发生拒付的 Card 充值单执行余额追回 + fee_buffer 扣回 + 同事务核减 `cumulativeDepositUsdt`,确认即时生效。
-- **布局结构**:1. **信息区**:caseNo / userId(链 K1)/ 金额 / chargeback 原因码 / 原始 D4 入账状态 / fee_buffer 余额。2. **影响预览区**:说明「余额追回 / D4 追回分录 / fee_buffer 扣回 / cumulative 核减为同一事务」;余额或缓冲不足时,服务端按实际可追回额落 `PARTIAL_ANOMALY` 并向 K 域写风险信号,余额与累计充值不允许扣为负数。3. **输入区**:reason(必填,8–200 字)+ `evidenceRef`(PSP 拒付凭证,必填)+ 确认勾选「我已核对 PSP chargeback 凭证」(未勾置灰)。4. **按钮区**:`[取消]` · `[确认追回]`(警示色;loading 防双击;携 `Idempotency-Key`)。
-- **错误态**:409(该单已处置)/ 400 `REASON_REQUIRED` / 403 / 422(状态不满足追回条件,如未入账单)。
-- **成功反馈**:弹窗关闭;处置状态就地更新;toast「已追回 · 已记审计」;事件 `admin.topup_chargeback_refunded`;实时告警超管 / 财务 lead;联动用户标记(喂 K 域)。
+已退役(2026-11-04)。
 
 ##### [D1-MD4] 对账差异核销确认
 - **功能**:对渠道日聚合的真实差异执行「确认异常并挂账」,记录处理方式、凭证和幂等键;本动作不擅自补记用户余额或冲销 D4 历史。需要真实补记 / 冲正时必须进入对应业务单与 D4 专用记账闭环。
@@ -2625,53 +2613,48 @@ C6 是**注册登录侧风控参数配置面**——OTP 配置、登录锁定配
 - **成功反馈**:弹窗关闭;差异项闭环并移出异常 tab;toast;事件 `admin.deposit_reconciled`;实时告警财务 lead;喂 L3 / L5。
 
 **⑤ 接口**
-- `GET /api/admin/finance/topup/overview` — 返回渠道结构化费率 / 最小额、Card 风控参数、独立支付商流水 vs D4 入账聚合、真实 fee buffer 账户、BIN/IP/设备锁与 chargeback 案件;空数据保持为空,不补造对平行。
+- `GET /api/admin/finance/topup/overview` — 返回渠道结构化费率、独立支付商流水 vs D4 入账聚合及历史回填完整性;空数据保持为空,不补造对平行。响应中的 Card 风控参数、fee buffer、BIN/IP/设备锁与 chargeback 字段暂按契约保留,页面不再展示。
 - `GET /api/admin/finance/topup/flows?status=pending|confirmed|abnormal&userId=&keyword=&pageNum=&pageSize=` — 服务端分页充值流水;`status` 空值表示全部,不得隐式映射为已确认。
-- `PATCH /api/admin/finance/topup/channels/:channel/{enabled|fee|min-amount}` — 渠道启停及结构化数值调整,body 分别携 `{enabled}` 或 `{numericValue,unit}` + reason。
-- `PATCH /api/admin/finance/topup/psp/primary` — 主备 PSP 切换,仅 `finance_d1_psp_switch`。
-- `PATCH /api/admin/finance/topup/card-risk/:key` — Card 风控参数结构化数字与固定单位更新。
-- `POST /api/admin/finance/topup/bin-locks` / `PATCH /api/admin/finance/topup/bin-locks/:target` — 新建手动 BIN 锁 / 按 BIN、IP、设备目标锁定或释放。
-- `POST /api/admin/finance/topup/chargebacks/:caseNo/refund` — chargeback 原子追回,body 携 `{evidenceRef,evidenceConfirmed:true,reason}`;`Idempotency-Key` 必带。
+- `PATCH /api/admin/finance/topup/channels/:channel/{enabled|fee|max-amount}` — 渠道启停及结构化数值调整,body 分别携 `{enabled}` 或 `{numericValue,unit}` + reason。
 - `POST /api/admin/finance/topup/reconciliation/:channel/writeoff` — 独立源差异确认,body 携 `{method:"CONFIRM_EXCEPTION",evidenceRef,reason}`;`Idempotency-Key` 必带。
-- `POST /openapi/v1/topups/card/{admission|settlements|failures|chargebacks}` — 支付网关 Card 生命周期接入；原始请求体必须使用 `X-Nexion-Payment-Timestamp` 与 `X-Nexion-Payment-Signature` 做 HMAC-SHA256 验签，时间偏差超过 5 分钟、签名缺失/错误或密钥未配置均在业务解析前失败关闭。
-- `POST /openapi/v1/topups/provider-statements` — PSP/链上独立账单接入；同样要求精确原始请求体签名，只接受渠道与 provider 白名单匹配、可核对凭证和 31 日内观察时间。接入只写独立对账记录，不得直接改变用户余额、累计充值或 D4/D3 分录。
+- `GET /api/admin/finance/vietqr/overview?view=inflight&pageNum=1&pageSize=20` — 页面取 `config` 和 `asOf`;响应中的账户和队列字段暂按契约保留,页面不再展示。
+- `PATCH /api/admin/finance/vietqr/config` — 整组配置提交,携 `expectedVersion`、理由和 `Idempotency-Key`。
+- `GET /api/admin/finance/vietqr/orders?paymentRail=HDPAY&status=&keyword=&pageNum=&pageSize=` — 银行卡支付订单列表。
+- `POST /api/admin/finance/vietqr/orders/:intentNo/manual-credit` — HDPay 人工确认入账。
+- `POST /api/admin/finance/vietqr/receipt-evidence` — 上传人工确认用的回单图片,JPG/PNG,最大 10 MB。
+- `POST /openapi/v1/topups/provider-statements` — 支付商或链上独立账单接入;要求精确原始请求体签名,只接受渠道与 provider 白名单匹配、可核对凭证和 31 日内观察时间。接入只写独立对账记录,不得直接改变用户余额、累计充值或 D4/D3 分录。
 
-所有金额字段同时返回结构化数字和单位；业务时间统一按 `Asia/Shanghai(+08:00)` 生成和比较，数据库连接会话固定同一时区，外部签名时间戳使用 Unix epoch。列表分别返回提交、确认、入账时间。`topupId` 等业务 ID 由 server mint；D1 成功响应必须通过字段、类型、枚举与单位校验；「无差异」的 `diff=null` 是合法空语义，页面规范化为空展示值，其他错误类型仍失败关闭。500 或畸形 200 时页面清空旧权威数据、禁用写动作并提供重试，不得以默认零值伪装成功。
+**PC 代理已不再转发**:`/topup/psp/primary`、`/topup/card-risk/:key`、`/topup/bin-locks/**`、`/topup/chargebacks/:caseNo/refund`、`/topup/channels/:channel/min-amount`、`/vietqr/accounts/**`、`/vietqr/receipts`、`/vietqr/reconciliations/:id/actions/*`。`/openapi/v1/topups/card/*` 属于后端接入面,不经 PC,随后端卡业务退役处理。
+
+所有金额字段同时返回结构化数字和单位；业务时间统一按 `Asia/Shanghai(+08:00)` 生成和比较，数据库连接会话固定同一时区，外部签名时间戳使用 Unix epoch。列表分别返回提交、确认、入账时间。充值单号等业务 ID 由 server mint；D1 成功响应必须通过字段、类型、枚举与单位校验；「无差异」的 `diff=null` 是合法空语义，页面规范化为空展示值，其他错误类型仍失败关闭。500 或畸形 200 时页面清空旧权威数据、禁用写动作并提供重试，不得以默认零值伪装成功。
 
 **⑥ 权限 & 审计**
 
 | 动作 | 超管 | 财务 | 风控 | 增长 | 客服 | 只读审计 |
 |---|---|---|---|---|---|---|
-| 查看充值流水 / 对账 / fee_buffer | ✅ | ✅ | ✅ | — | — | ✅ |
-| 渠道启停 | ✅ | ✅(lead) | — | — | — | — |
-| 主备 PSP 切换 | ✅ | — | — | — | — | — |
-| BIN / IP / 设备锁定 / 解锁 | ✅ | ✅(lead) | ✅ | — | — | — |
-| chargeback 退款 | ✅ | ✅(lead) | — | — | — | — |
+| 查看付款记录 / 充值流水 / 对账 | ✅ | ✅ | ✅ | — | — | ✅ |
+| 渠道启停 / 费率 | ✅ | ✅(lead) | — | — | — | — |
+| 单笔上限 | ✅ | ✅(lead) | — | — | — | — |
+| HDPay 人工确认入账 | ✅ | ✅(lead) | — | — | — | — |
 | 对账差异核销 | ✅ | ✅(lead) | — | — | — | — |
 
-审计记录字段:`操作者 / 角色 / 动作 / 对象(channel|psp|bin|chargeback|reconcile) / 前值 / 后值 / 原因 / 时间(ms) / Idempotency-Key`。只读审计角色可全量追溯渠道启停 / PSP 切换 / 退款 / 核销历史。
+审计记录字段:`操作者 / 角色 / 动作 / 对象(channel|config|order|reconcile) / 前值 / 后值 / 原因 / 时间(ms) / Idempotency-Key`。只读审计角色可全量追溯渠道启停 / 参数 / 人工入账 / 核销历史。
 
 **⑦ 风控 & 联动**
-- **PSP webhook → server 入账(server-canonical)**:充值入账以**服务端处理 PSP webhook / 链上确认**为唯一真相源(§9.11c.1 Deposit write path:`POST /api/wallet/topup`,PSP webhook → server tx 写 bill + 更 `cumulativeDepositUsdt`)。客户端 `creditBalance` 仅 UI 渲染,**不作为入账权威**;`Bills 客户端 push 无 server 二次入账 = 伪造账单`(§9.11d.2),故入账与账单一律 server 记。
-- **Card 单事务闭环**:签名 settlement 在一个数据库事务内完成 admission 消费、支付记录、钱包余额、D4 入账分录、`cumulativeDepositUsdt`、D3 储备、`fee_buffer` 与必达审计/Outbox；任一环节失败整体回滚。同一事件和相同载荷只回放原结果，不得重复加钱。
-- **更新 `user.cumulativeDepositUsdt`(trade-in 资格源)**:每笔已确认充值由 server 经 `recordDeposit` 路径累加 `cumulativeDepositUsdt`(§9.11c.1;前端 `lib/store/index.ts` 该字段仅由 `recordDeposit` 写入,终身已确认 USDT 入金累计),该值是 E 域 trade-in 资格门槛源(§9.11c.1)。chargeback 退款须同步核减(核减须与 chargeback refund bill 在同一 server 事务内原子完成,§9.11e transaction boundary;`Idempotency-Key` 覆盖整笔事务,防止退款成功但 cumulative 未核减的半状态),避免拒付后仍保留 trade-in 资格。
-- **终态重试仍幂等**:chargeback 追回必须先按 `Idempotency-Key + 请求哈希` 查询已完成结果，再判断当前案件终态；因此网络超时后的相同请求即使案件已经成为 `CHARGEBACK_RECOVERED`，仍返回第一次成功结果且不重复写钱包、D4、D3、费率缓冲或恢复记录。不同载荷复用同键仍返回冲突。
-- **历史迁移只认可证明来源**:`cumulativeDepositUsdt`、D3 和 `fee_buffer` 的回填只使用能与原始 D4 `CARD_TOPUP`/链上充值分录精确绑定的支付记录；状态相似、EARNING/ADJUSTMENT 等错误业务类型或缺少分录证据的记录进入异常表，不猜测补账。历史 `$10`、`3.5%`、`1 USDT 固定` 等展示格式配置先规范为数值与固定单位；迁移连续执行结果必须一致。
-- **入账喂 D3 储备**:已确认充值额是 D3 真实储备账本的流入来源(§3.14:储备底层账本权威归 D3),D1 不另立储备账本,只产生 `wallet.topup_confirmed` 供 D3 聚合。
-- **BIN attack 防御**:支付失败按 BIN / IP / 设备指纹三个维度独立聚合;达到阈值后调度器写 `nx_topup_risk_lock` 并设置服务端到期时间,手动锁同样写真实锁表。server 侧 enforce 重试与锁状态(client 校验仅 UI);锁定证据喂 K 域反作弊。
-- **PCI 边界**:卡号 / CVV 经 Checkout.com Frames 直送 acquirer,Nexion 后端永不持有 PAN(§9.2.4 / §9.2.3 E);后台对账面**只见 PSP token / 末四位 / BIN 段**,绝不展示完整卡号。
+- **服务端入账(server-canonical)**:充值入账以**服务端处理支付回调 / 链上确认**为唯一真相源(§9.11c.1 Deposit write path)。客户端 `creditBalance` 仅 UI 渲染,**不作为入账权威**;`Bills 客户端 push 无 server 二次入账 = 伪造账单`(§9.11d.2),故入账与账单一律 server 记。
+- **更新 `user.cumulativeDepositUsdt`(trade-in 资格源)**:每笔已确认充值由 server 累加 `cumulativeDepositUsdt`(§9.11c.1),该值是 E 域 trade-in 资格门槛源。
+- **入账喂 D3 储备**:已确认充值额是 D3 真实储备账本的流入来源(§3.14:储备底层账本权威归 D3),D1 不另立储备账本,只产生 `wallet.topup_confirmed` 供 D3 聚合。`OPEN` 且 `received_vnd > 0` 的回单仍按待核实入金计入 D3。
+- **HDPay 对账投影**:HDPay 新单继续写 `APP-{intentNo}` 在途投影(`nx_vietqr_reconciliation`),这不是到账或待核实资金。
+- **fee_buffer 账本**:`nx_topup_fee_buffer_*` 继续承接 G2 兑换费用分配,不能随卡业务删除。
 
 **⑧ 埋点(事件)**
 对齐 A4(Ch2 §2.4),**消费**充值事件做对账、**产生** admin 对账与渠道审计事件:
 
-- **消费(§2.4.5 ③ money,`is_server_authoritative=true`)**:`wallet.topup_initiated`(发起，含 channel)、`wallet.topup_confirmed`(入账确认，属性 `amount / currency / channel / topupId / psp`)。对账差异由 `topup_confirmed` 事件流与 PSP/链上报表比对得出。
+- **消费(§2.4.5 ③ money,`is_server_authoritative=true`)**:`wallet.topup_initiated`(发起，含 channel)、`wallet.topup_confirmed`(入账确认，属性 `amount / currency / channel / topupId`)。对账差异由 `topup_confirmed` 事件流与支付商/链上账单比对得出。
 - **产生**(格式遵循 §2.4.3 `domain.object_action`):
   - `admin.topup_channel_toggled` — 触发点:渠道启停确认执行;属性:`channel / action(enable|disable) / operator / reason`。
-  - `admin.topup_psp_switched` — 触发点:主备 PSP 切换确认执行;属性:`from_psp / to_psp / operator / reason`。
-  - `admin.topup_bin_locked` / `admin.topup_bin_unlocked` — 触发点:BIN 锁卡 / 解锁;属性:`bin / fingerprint / reason / operator`。
-  - `admin.topup_chargeback_refunded` — 触发点:chargeback 退款确认执行;属性:`topupId / amount / chargebackCode / operator / reason`。
   - `admin.deposit_reconciled` — 触发点:对账差异核销确认执行;属性:`channel / diffAmountUsdt / method / operator / reason`;喂 L3 财务报表 + L5 监管报告。
-- **喂给**:D3 资金池(储备流入)、B2 资金池水位(科目 1 可提余额来源之一)、K1 反多账户(支付工具维度)、L3 财务报表。
+- **喂给**:D3 资金池(储备流入)、B2 资金池水位(科目 1 可提余额来源之一)、L3 财务报表。
 
 ---
 

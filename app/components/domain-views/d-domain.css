@@ -39,9 +39,7 @@
 .ddom .l-card .l-h .sub { font-size: 12px; color: var(--ink-4); }
 .ddom .l-card .l-h .r { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .ddom .l-card .l-b { padding: 16px 20px 20px; }
-.ddom .l-card.cregis-status-embedded { margin-bottom: 0; border-radius: 0; background: transparent; }
-.ddom .cregis-status-embedded .l-h { border-top: 1px solid var(--border); }
-.ddom .cregis-status .l-b, .ddom .cregis-status-embedded .l-b { display: grid; gap: 16px; }
+.ddom .cregis-status .l-b { display: grid; gap: 16px; }
 .ddom .cregis-intro { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--ink-3); }
 .ddom .cregis-intro strong { color: var(--ink-2); margin-right: 12px; }
 .ddom .cregis-overview { margin: 0; gap: 10px; }

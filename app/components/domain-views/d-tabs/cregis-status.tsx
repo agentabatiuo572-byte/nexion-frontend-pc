@@ -223,8 +223,8 @@ function CregisDepositHistory() {
 
 export type D1CregisActivity = { pendingCommands: number; needsAttention: boolean; proposalUnknown: number; proposalPending: number };
 
-export function CregisStatus({ canManage = false, openActionConfirm, embedded = false, onActivityChange }: {
-  canManage?: boolean; openActionConfirm: DCtx["openActionConfirm"]; embedded?: boolean;
+export function CregisStatus({ canManage = false, openActionConfirm, onActivityChange }: {
+  canManage?: boolean; openActionConfirm: DCtx["openActionConfirm"];
   onActivityChange?: (activity: D1CregisActivity) => void;
 }) {
   const [data, setData] = useState<CregisExceptions | null>(null);
@@ -328,7 +328,7 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
   const count = data ? QUEUES.reduce((sum, [key]) => sum + data[key].length, 0) : 0;
   const alerts = [...(data?.riskAlerts ?? []), ...extraAlerts];
   const reviewCases = [...(data?.reviewCases ?? []), ...extraReviewCases];
-  return <section className={embedded ? "l-card cregis-status-embedded cregis-workspace" : "l-card cregis-status cregis-workspace"} style={embedded ? undefined : { marginBottom: 12 }}>
+  return <section className="l-card cregis-status cregis-workspace" style={{ marginBottom: 12 }}>
     <div className="l-h">
       <span className="ttl">USDT 资金状态（BEP20 / ERC20）</span>
       <span className="sub">Cregis · 地址、入账、出款与链上异常</span>

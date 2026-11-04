@@ -1940,82 +1940,6 @@ export async function loadD1VietQrOverview(
   ));
 }
 
-export async function reconcileD1VietQr(
-  id: number,
-  action: "match-credit" | "write-off" | "return",
-  input: {
-    expectedVersion: number;
-    userId?: number;
-    intentNo?: string;
-    evidenceRef: string;
-    reason: string;
-    operator: string;
-  },
-) {
-  return apiRequest<Record<string, unknown>>(
-    "finance", `/vietqr/reconciliations/${id}/actions/${action}`, {
-      method: "POST",
-      body: JSON.stringify(input),
-      idempotencyPrefix: "d1-vietqr-reconcile",
-    },
-  );
-}
-
-export async function registerD1VietQrReceipt(input: {
-  bankAccountId: number;
-  paymentReference: string;
-  memoCode?: string;
-  receivedVnd: number;
-  receivedAt: string;
-  evidenceRef?: string;
-  reason: string;
-  operator: string;
-}) {
-  return apiRequest<Record<string, unknown>>("finance", "/vietqr/receipts", {
-    method: "POST",
-    body: JSON.stringify(input),
-    idempotencyPrefix: "d1-vietqr-receipt-register",
-  });
-}
-
-export async function createD1VietQrAccount(input: {
-  bankCode: string;
-  bankName: string;
-  accountHolder: string;
-  accountNumber: string;
-  dailyCapVnd: number;
-  reason: string;
-  operator: string;
-}) {
-  return apiRequest<Record<string, unknown>>("finance", "/vietqr/accounts", {
-    method: "POST",
-    body: JSON.stringify(input),
-    idempotencyPrefix: "d1-vietqr-account-create",
-  });
-}
-
-export async function updateD1VietQrAccount(
-  id: number,
-  input: {
-    action: "ENABLE" | "DISABLE" | "RECOVER" | "UPDATE_CAP" | "REPROVISION";
-    dailyCapVnd?: number;
-    /** REPROVISION 专用:重新录入的收款信息。账号只提交给后端加密,列表与审计均不回显全号。 */
-    bankCode?: string;
-    bankName?: string;
-    accountHolder?: string;
-    accountNumber?: string;
-    expectedVersion: number;
-    reason: string;
-    operator: string;
-  },
-) {
-  return apiRequest<Record<string, unknown>>("finance", `/vietqr/accounts/${id}`, {
-    method: "PATCH",
-    body: JSON.stringify(input),
-    idempotencyPrefix: "d1-vietqr-account-update",
-  });
-}
-
 export async function updateD1VietQrConfig(
   config: Omit<D1VietQrConfig, "id">,
   reason: string,
@@ -2044,59 +1968,11 @@ export async function updateD1TopupChannelFee(channelCode: string, numericValue:
   }));
 }
 
-export async function updateD1TopupChannelMin(channelCode: string, numericValue: number, expectedValue: number, reason: string, operator: string) {
-  return requireD1Overview(await apiRequest<Record<string, unknown>>("finance", `/topup/channels/${encodeURIComponent(channelCode)}/min-amount`, {
-    method: "PATCH",
-    body: JSON.stringify({ numericValue, unit: "USD", expectedValue: String(expectedValue), reason, operator }),
-    idempotencyPrefix: "d1-channel-min",
-  }));
-}
-
-export async function switchD1Psp(value: string, expectedValue: string, reason: string, operator: string) {
-  return requireD1Overview(await apiRequest<Record<string, unknown>>("finance", "/topup/psp/primary", {
-    method: "PATCH",
-    body: JSON.stringify({ value, expectedValue, reason, operator }),
-    idempotencyPrefix: "d1-psp",
-  }));
-}
-
-export async function updateD1CardRisk(key: string, numericValue: number, unit: D1CardParam["unit"], expectedValue: number, reason: string, operator: string) {
-  return requireD1Overview(await apiRequest<Record<string, unknown>>("finance", `/topup/card-risk/${encodeURIComponent(key)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ numericValue, unit, expectedValue: String(expectedValue), reason, operator }),
-    idempotencyPrefix: "d1-card-risk",
-  }));
-}
-
 export async function writeoffD1Reconciliation(channelCode: string, method: "CONFIRM_EXCEPTION", evidenceRef: string, reason: string, operator: string) {
   return requireD1Overview(await apiRequest<Record<string, unknown>>("finance", `/topup/reconciliation/${encodeURIComponent(channelCode)}/writeoff`, {
     method: "POST",
     body: JSON.stringify({ method, evidenceRef, reason, operator }),
     idempotencyPrefix: "d1-reconcile",
-  }));
-}
-
-export async function createD1BinLock(segment: string, reason: string, operator: string) {
-  return requireD1Overview(await apiRequest<Record<string, unknown>>("finance", "/topup/bin-locks", {
-    method: "POST",
-    body: JSON.stringify({ value: segment, reason, operator }),
-    idempotencyPrefix: "d1-bin-create",
-  }));
-}
-
-export async function setD1BinLock(segment: string, enabled: boolean, reason: string, operator: string) {
-  return requireD1Overview(await apiRequest<Record<string, unknown>>("finance", `/topup/bin-locks/${encodeURIComponent(segment)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ enabled, reason, operator }),
-    idempotencyPrefix: "d1-bin-state",
-  }));
-}
-
-export async function refundD1Chargeback(caseNo: string, evidenceRef: string, reason: string, operator: string) {
-  return requireD1Overview(await apiRequest<Record<string, unknown>>("finance", `/topup/chargebacks/${encodeURIComponent(caseNo)}/refund`, {
-    method: "POST",
-    body: JSON.stringify({ evidenceConfirmed: true, evidenceRef, reason, operator }),
-    idempotencyPrefix: "d1-chargeback",
   }));
 }
 

@@ -159,7 +159,7 @@
 | C3 | 余额 & 资产调整 | 人工增减 USDT/NEX/积分(确认弹窗 + 理由必填,USDT/NEX 入 D4) | C 用户 | V1·Ch5 | §9.7 / §12.1 / §12.12 |
 | C5 | 安全 & 会话 | 2FA / session / 密码重置 / 锁定解除 | C 用户 | V1·Ch5 | §4.5 / §4.6 / §4.2.3 |
 | C6 | 注册/登录风控配置 | OTP / 登录锁定 / CAPTCHA(与 K1 去重互补) | C 用户 | V1·Ch5 | §4.1 / §4.2 / §4.6.2 |
-| D1 | 充值对账中心 | 流水确认 / PSP 差异核销 / 备付金 / 卡渠道反欺诈 | D 资金 | V1·Ch6 | §9.2 / §9.2.4 / §9.11c.1 |
+| D1 | 充值对账中心 | 订单付款 / 银行卡支付与 USDT 充值 / 充值流水与差异核销 | D 资金 | V1·Ch6 | §9.2 / §9.2.4 / §9.11c.1 |
 | D2 | 提现审核队列 | 逐笔/批量审核提现,server 状态机放行/拒绝/延迟/冻结 | D 资金 | V1·Ch6 | §9.3 / §9.3.6 / §9.11f |
 | D3 | 资金池水位仪表盘 | 储备/负债/到期底层账本权威(储备明细+8科目+净敞口) | D 资金 | V1·Ch6 | §9.6 / §9.6.3 / §9.2 / §10 |
 | D4 | 账本 / 账单审计 | server 唯一账本审计面:账单流水/Running Balance/对账导出 | D 资金 | V1·Ch6 | §9.7 / §12 |
@@ -424,12 +424,13 @@
 | Endpoint | Method | 用途 | 确认 | 模块 |
 |---|---|---|---|---|
 | `/api/admin/finance/topup/overview` · `/topup/flows` | GET | 独立源对账概览 / 服务端分页充值流水 | — | D1 |
-| `/api/admin/finance/topup/channels/:channel/{enabled\|fee\|min-amount}` · `/topup/psp/primary` · `/topup/card-risk/:key` | PATCH | 渠道结构化参数 / 主备 PSP / Card 风控配置(PSP 切换执行=仅超管) | D1-MD1/MD2 | D1 |
-| `/api/admin/finance/topup/chargebacks/:caseNo/refund` · `/topup/reconciliation/:channel/writeoff` · `/topup/bin-locks/**` | POST/PATCH | chargeback 原子追回 / 差异凭证挂账 / 真实定时风控锁(均携 Key) | D1-MD3/MD4 | D1 |
-| `/openapi/v1/topups/card/{admission\|settlements\|failures\|chargebacks}` · `/openapi/v1/topups/provider-statements` | POST | 原始请求体 HMAC-SHA256 签名的 Card 生命周期 / 独立 PSP 或链上账单接入；5 分钟防重放窗口，渠道-provider 白名单 | — | D1 |
-| `/api/admin/finance/vietqr/overview?view=&pageNum=&pageSize=` | GET | 银行流水、实时到账、人工匹配、异常复核、手动退款五视图；无数据返回真实空态，不生成演示行 | — | D1 |
-| `/api/admin/finance/vietqr/reconciliations/:id/actions/{match\|writeoff\|return}` | POST | match/writeoff/return 对账处置；携 Key、CAS、理由与证据，前两者原子联动钱包、累计入金、D4、D3，return 不入钱包 | 是 | D1 |
-| `/api/admin/finance/vietqr/accounts` · `/vietqr/accounts/:id` · `/vietqr/config` | POST/PATCH | 银行账户池新增/轮转/熔断与额度参数；账号密文落库、前端只见尾号；携 Key + CAS | 是 | D1 |
+| `/api/admin/finance/topup/channels/:channel/{enabled\|fee\|max-amount}` | PATCH | 渠道启停与结构化参数 | D1-MD1 | D1 |
+| `/api/admin/finance/topup/reconciliation/:channel/writeoff` | POST | 差异凭证挂账(携 Key) | D1-MD4 | D1 |
+| `/openapi/v1/topups/provider-statements` | POST | 原始请求体 HMAC-SHA256 签名的独立支付商或链上账单接入；5 分钟防重放窗口，渠道-provider 白名单 | — | D1 |
+| `/api/admin/finance/vietqr/overview?view=inflight&pageNum=1&pageSize=20` | GET | 页面取单笔上限所在的 `config` 和 `asOf`；账户和队列字段暂按契约保留，不再展示 | — | D1 |
+| `/api/admin/finance/vietqr/orders?paymentRail=HDPAY&status=&keyword=&pageNum=&pageSize=` | GET | 银行卡支付（HDPay）充值订单列表 | — | D1 |
+| `/api/admin/finance/vietqr/orders/:intentNo/manual-credit` · `/vietqr/receipt-evidence` | POST | HDPay 人工确认入账及回单图片上传；携 Key、CAS、理由与证据 | 是 | D1 |
+| `/api/admin/finance/vietqr/config` | PATCH | 单笔上限；后端要求整组配置提交，其他字段按读回值原样提交；携 Key + CAS | 是 | D1 |
 | `/api/admin/withdrawals?status=&cursor=` · `/withdrawals/:id` | GET | 提现队列 / 单笔详情 | — | D2 |
 | `/api/admin/withdrawals/:id/{approve\|reject\|delay\|freeze\|unfreeze\|refund}` | POST | 单笔状态推进(单一 URL 覆盖所有金额,server 按金额校验执行资质——大额 ≥$1,000 放行=财务 lead/超管;非法 409;携 Key) | D2-MD1~MD6 | D2 |
 | `/api/admin/withdrawals/batch` | POST | 批量(含大额单自动分拣转人工逐笔确认,不整体失败) | D2-MD7 | D2 |
@@ -444,10 +445,12 @@
 | `/api/admin/finance/fx-quote` | GET / PATCH | VND/USDT 基础汇率、点差、锁价时长、服务端派生报价与不可变历史；PATCH 携 Key + expectedVersion | 是 | D6 |
 
 **D1 落地约束**：
-- settlement 的支付记录、钱包、D4、`cumulativeDepositUsdt`、D3、`fee_buffer`、审计和 Outbox 必须在同一事务；chargeback 追回同样原子反向写入。持久幂等查询必须先于终态校验，使超时后的相同恢复请求可回放第一次成功且不产生第二组分录。
+- 旧充值通道已退役（2026-11-04）：人工银行转账回单、国际卡（含 PSP 主备、卡风控参数、BIN/IP/设备锁、拒付追回）和收款账户池已从 PC 删除。PC 代理不再转发 `/topup/psp/primary`、`/topup/card-risk/:key`、`/topup/bin-locks/**`、`/topup/chargebacks/:caseNo/refund`、`/topup/channels/:channel/min-amount`、`/vietqr/accounts/**`、`/vietqr/receipts`、`/vietqr/reconciliations/:id/actions/*`。后端接口和 `/openapi/v1/topups/card/*` 的关闭由后端单独处理；`topup/overview`、`vietqr/overview` 的响应字段暂保持不变，PC 仍做严格校验。
+- `nx_topup_fee_buffer_*` 继续承接 G2 兑换费用分配，`nx_vietqr_reconciliation` 继续承接 HDPay 在途投影和 D3 待核实入金，都不能随旧通道删除。
+- 入账的支付记录、钱包、D4、`cumulativeDepositUsdt`、D3、审计和 Outbox 必须在同一事务。持久幂等查询必须先于终态校验，使超时后的相同恢复请求可回放第一次成功且不产生第二组分录。
 - provider statement 是独立事实表，只参与对账，不允许通过接入接口直接改钱包。无差异聚合允许 `diff=null`；PC 只把 null 规范化为空文案，其他缺字段、错误类型、未知单位或畸形成功响应继续 fail-closed。
 - MyBatis 注解动态 SQL 必须由启动解析测试逐条解析，禁止原始 `<` / `<=` 破坏 XML language driver；生产连接创建时执行 `SET time_zone='+08:00'`，与业务 `Asia/Shanghai` 时间比较一致。
-- D1 增量迁移先把历史展示格式配置规范成数值+单位，再仅按精确 D4 业务类型和业务号回填累计充值、D3 与费率缓冲；不确定来源写异常表。迁移必须可连续执行且第二次不新增、不重复、不改余额。
+- D1 增量迁移先把历史展示格式配置规范成数值+单位，再仅按精确 D4 业务类型和业务号回填累计充值、D3 与费率缓冲；不确定来源写异常表。迁移必须可连续执行且第二次不新增、不重复、不改余额。`topup/overview` 仍用异常表数量提示历史未核对完。
 
 ### 域 E — 设备商城
 
@@ -704,11 +707,9 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 
 | 参数(key) | 默认值 | 范围 | 生效时机 | 权威源 | 模块 |
 |---|---|---|---|---|---|
-| 充值费 TRC20/ERC20/BTC·ETH/Card | 1 USDT / 5 USDT / 0.5% / 3.5%(进 fee_buffer) | ≥0 / 0–10% | 仅新对象 | D1 | D1 |
-| 3DS 强制阈值 | $50 | $0–$500 | 实时 | D1 | D1 |
-| Card 同卡 24h 重试/锁卡 | 5 次→锁 24h | 3–10 次 / 1–72h | 实时 | D1 | D1 |
-| 最小充值额 | TRC20/ERC20 $10·BTC/ETH $20·Card $10 | per-channel ≥0 | 仅新对象 | D1 | D1 |
-| 主备 PSP | Checkout.com(主)+ Stripe(备) | 主/备切换 | 实时 | D1 | D1 |
+| 银行卡支付费率 | 0% | 百分比 0–10%;固定费 0–100 USDT | 仅新对象 | D1 | D1 |
+| 银行卡支付单笔上限 | $5,000 | $100–$10,000 整数 | 仅新对象 | D1 | D1 |
+| Card 充值费、3DS 阈值、同卡重试/锁卡、按渠道最小充值额、主备 PSP | 已退役(2026-11-04) | — | — | — | D1 |
 | 大额人工审核阈值(D2 后台) | $1,000(≥强制人工+MC) | $0–$5,000 | 实时 | D2(独立于 K3) | D2 |
 | review SLA / 整体到账 SLA | ≤2 工作日 / 48h | 1–5 工作日 / 24–72h | 实时 | D2 | D2 |
 | 提现日限额(次数) | 1 次/日 | 1–10 次/日 | 实时(新申请) | D5 | D5 |
@@ -1068,8 +1069,8 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | **geo-block 国家级屏蔽** | ✅ | ✅ | —(财务不参与) | — | — | — | 是(理由必填) | A3→J2 |
 | 覆盖率红黄线 / 挤兑阈值 | ✅ | ✅(lead,挤兑阈值) | ✅(lead,覆盖率阈值) | — | — | — | 是(理由必填;放松方向警示) | B1/B5 |
 | 储备注入 / 对账核销 | ✅ | — | ✅(lead) | — | — | — | 是(理由必填+Idempotency-Key) | B1/D3/D1 |
-| **充值 PSP 退款 / chargeback / 渠道启停** | ✅ | — | ✅(lead) | — | — | — | 是(理由必填) | D1 |
-| **VietQR 银行账户池/参数/人工匹配核销** | ✅ | — | ✅(lead) | — | — | 读(仅尾号) | 是(理由+证据+Key+CAS；账号密文不回传) | D1 |
+| **充值渠道启停 / 费率** | ✅ | — | ✅(lead) | — | — | — | 是(理由必填) | D1 |
+| **银行卡支付单笔上限 / HDPay 人工确认入账** | ✅ | — | ✅(lead) | — | — | 读 | 是(理由+证据+Key+CAS) | D1 |
 | **提现放行(小额 <$1,000)** | ✅ | — | ✅ | — | 读(受限) | 读 | 是(D2-MD1,理由必填+B1 红线预检) | D2 |
 | **提现放行(大额 ≥$1,000)** | ✅ | — | ✅(lead) | — | — | — | 是(D2-MD1+大额确认勾选;超阈不可批量自动放行) | D2 |
 | 提现 reject / delay | ✅ | ✅ | ✅ | — | — | — | 是(理由必填) | D2 |
@@ -1216,8 +1217,8 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | 弹窗 ID | 标题 | B1 红线预检 | 细则 |
 |---|---|---|---|
 | D1-MD1 | 充值渠道启停确认 | — | v1 D1④a |
-| D1-MD2 | 主备 PSP 切换确认 | — | v1 D1④a |
-| D1-MD3 | chargeback 退款确认 | — | v1 D1④a |
+| D1-MD2 | 主备 PSP 切换确认(已退役) | — | v1 D1④a |
+| D1-MD3 | chargeback 退款确认(已退役) | — | v1 D1④a |
 | D1-MD4 | 对账差异核销确认 | — | v1 D1④a |
 | D2-MD1 | 提现放行确认 | 是 | v1 D2④a |
 | D2-MD2 | 提现拒绝确认 | — | v1 D2④a |
