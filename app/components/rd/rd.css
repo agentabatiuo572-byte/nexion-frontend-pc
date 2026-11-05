@@ -350,6 +350,8 @@
 .rd-modal.rd-confirm .field:has(> input[type="checkbox"]) > span { grid-column: 2; }
 .rd-modal.rd-confirm .field:has(> input[type="checkbox"]) > span:first-of-type { color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
 .rd-toast { position: fixed; top: calc(var(--admin-topbar-h) + 32px); left: 50%; z-index: var(--admin-z-toast); width: min(420px, calc(100vw - 40px)); padding: 12px 20px; border: 1px solid var(--rd-line-strong); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); color: var(--rd-text); font-family: var(--rd-font); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); text-align: center; transform: translateX(-50%); }
+/* 框里内容超过一屏时，理由框留在底部看得到，上面的内容在它后面滚。 */
+.rd-modal .rd-reason-field { position: sticky; bottom: calc(-1 * var(--rd-space-4)); z-index: 1; margin-top: calc(-1 * var(--rd-space-2)); margin-bottom: calc(-1 * var(--rd-space-4)); padding-top: var(--rd-space-2); padding-bottom: var(--rd-space-4); background: var(--rd-panel); }
 .rd-reason-box { position: relative; }
 .rd-reason-box textarea { display: block; width: 100%; padding-bottom: 24px; }
 .rd-reason-count { position: absolute; right: 10px; bottom: 6px; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; pointer-events: none; }
@@ -884,6 +886,10 @@ td .rd-flow { margin-bottom: 0; }
 .rd-impact { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--rd-space-2); min-width: 0; }
 .rd-impact[data-surface] { padding: var(--rd-panel-pad-y) var(--rd-panel-pad-x); border-radius: var(--rd-radius-panel); background: var(--rd-panel); }
 .rd-impact p { margin: 0; }
+.rd-impact .rd-table-scroll, .rd-impact .rd-table th { background: none; }  /* 放在浅底上，不要面板色的表头和滚动影子 */
+.rd-impact .rd-table :is(th, td) { padding-block: var(--rd-space-1); }
+.rd-impact .rd-table :is(th, td):first-child { padding-left: 0; }
+.rd-impact .rd-table :is(th, td):last-child { padding-right: 0; }
 .rd-impact-title { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; color: var(--rd-text); }
 .rd-impact-title .rd-explain { margin-left: 4px; }
 .rd-impact-list { display: grid; gap: var(--rd-space-3); margin: 0; padding: 0; list-style: none; }

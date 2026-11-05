@@ -43,7 +43,7 @@
  *
  * 框里直接放的 Facts 自动带关键信息区的底。解除待确认全站一个样子，用 ReleaseModal，页面只传原操作的名字和核对说明。
  */
-import { isValidElement, useEffect, useRef, type ComponentProps, type ReactNode, type CSSProperties } from "react";
+import { Children, Fragment, isValidElement, useEffect, useRef, type ComponentProps, type ReactNode, type CSSProperties } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronDown, ChevronUp, ShieldCheck, X, type LucideIcon } from "lucide-react";
 import { Button, IconButton } from "./button";
@@ -165,9 +165,12 @@ export function Drawer({ open, onClose, title, sub, explain, icon, tone = "role-
  * note 只写现在能不能做、为什么不能（阻断原因常显，DP-03）；按下去会怎样、要不要审批这类后果说明传 explain，
  * 收进提示图标（DP-06）：有 note 时跟在 note 后面，没有时放在按钮行最左。
  */
+/** 传了片段但里面的按钮都没渲染时，算没传。 */
+const filled = (node: ReactNode) => Children.toArray(isValidElement<{ children?: ReactNode }>(node) && node.type === Fragment ? node.props.children : node).length > 0;
+
 export function Decision({ note, explain, danger, others, primary }: { note?: ReactNode; explain?: ReactNode; danger?: ReactNode; others?: ReactNode; primary?: ReactNode }) {
   const mark = explain && <Explain label="这些操作会怎样" content={explain} side="top" />;
-  const paired = Boolean(others || primary);
+  const paired = filled(others) || filled(primary);
   return (
     <>
       {note && <p className="rd-decision-note">{note}{mark}</p>}

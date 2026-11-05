@@ -148,7 +148,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
           )}
         </div>
       )}
-      <div className={surface ? "field" : "k-confirm-field"}>
+      <div className={surface ? "field rd-reason-field" : "k-confirm-field"}>
         {surface ? (
           // 字段名强，下限跟在后面，上限在框角的字数里，各写一处（VS-104、VS-105）。
           <label htmlFor={`${fieldId}-reason`}>

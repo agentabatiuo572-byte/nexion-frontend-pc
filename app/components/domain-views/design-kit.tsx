@@ -3791,7 +3791,6 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       {!surface && !approval && coverageNotice}
       {!surface && !approval && completionCopy && <div className="tint tiny" style={{ marginBottom: 14 }}>{completionCopy}</div>}
       {facts && <div className="rd-confirm-facts">{facts}</div>}
-      {surface && content}
       {activeBusinessForm && (
         <fieldset disabled={formLocked} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         {inlineApproval?.renderForm ? inlineApproval.renderForm(businessValue, setBusinessValue, formLocked, !!approval) : (
@@ -3885,8 +3884,9 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
           )}
         </div>
       )}
+      {surface && content}
       {surface && !approval && coverageNotice}
-      <div className="field">
+      <div className={surface ? "field rd-reason-field" : "field"}>
         {surface
           ? <label htmlFor={reasonFieldId}>{approval ? "变更理由" : "操作理由"}<span className="rd-form-required" aria-hidden="true">*</span><span className="rd-form-hint">至少 {reasonMin} 字</span></label>
           : <label htmlFor={reasonFieldId}>{approval ? "变更理由" : "操作理由"}{(compareEdit || approval?.heading) && <span aria-hidden="true" style={{ color: "var(--danger)" }}> *</span>}（必填，{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）</label>}

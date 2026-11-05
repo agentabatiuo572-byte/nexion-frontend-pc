@@ -192,6 +192,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 - `title`：框上写的短标题，只写动作和对象。不传就用 `action`；`action` 照旧是记进操作记录的名字，不要为了缩短标题去改它，长单号放 `facts`。
 - `confirmLabel`：确认按钮写动作，比如 `确认放行`，默认 `确认提交`。
 - `statedBrief`：这个操作自己的 `{ impact, check }`，传了摘要就不按文字猜（OP-51）。
+- `content`：比 `facts` 更长的影响块，比如促销奖励影响，放在要填的字段下面、覆盖率上面。块用 `.rd-impact`，标题 `.rd-impact-title`，里面的 `Table` 不带面板底色，行距收紧。框里内容超过一屏时理由框留在底部，这样必填项不会被它挡住。
 - `blockedReason`：这次不能再提交的原因，写在框里，确认按钮禁用。比如提交时发现单据已被别人处理：再调一次 `openActionConfirm`，传最新内容和这个字段，框不关，已填的理由留着。
 
 - `reasonPlaceholder`：理由框的占位，按场景写（TX-11），默认「例如：工单号、处理依据」。
