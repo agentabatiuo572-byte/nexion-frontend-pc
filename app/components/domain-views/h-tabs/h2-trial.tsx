@@ -11,7 +11,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { BellOff, Ban, Coins, History, Lock, RefreshCw, Settings2, SlidersHorizontal, Ticket, TrendingUp, Users } from "lucide-react";
+import { Bell, BellOff, Ban, Coins, History, Lock, RefreshCw, Settings2, SlidersHorizontal, Ticket, TrendingUp, Users } from "lucide-react";
 import { BlockState, Button, Cell, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, JudgmentPoints, Modal, Notice, PageHeader, Pager, Panel, SectionNav, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useSectionNav, type SectionNavItem, type StateTone } from "@/app/components/rd";
 import {
   fetchH2Trials,
@@ -144,6 +144,11 @@ function sessionTime(value: string | undefined) {
   return value ? `${formatBusinessTimeFull(value, "—")}（${businessZone().label}）` : "—";
 }
 
+/** 接口给「USDT 数 + UVT 数 UVT」，前一个数补上单位。 */
+function shadowText(value: string) {
+  return operatorCopyText(text(value)).replace(/^([\d.,]+) \+ /, "$1 USDT + ");
+}
+
 function stateTone(state: TrialState | undefined): StateTone {
   if (state?.key === "active") return "progress";
   if (state?.key === "idle") return "neutral";
@@ -154,6 +159,12 @@ function paramName(param: TrialParam) {
   return TRIAL_PARAM_HELP[param.key]?.label ?? operatorCopyText(param.name);
 }
 
+/** 页面上的值。接口存的单位和页面不同时按 scale 换算，比如毫秒写成秒。 */
+function paramInput(param: TrialParam) {
+  const scale = TRIAL_PARAM_HELP[param.key]?.scale;
+  return scale ? String(Number(param.cur) / scale) : text(param.cur, "");
+}
+
 function paramValue(param: TrialParam, product: TrialProduct | undefined) {
   const unit = TRIAL_PARAM_HELP[param.key]?.input?.unit;
   if (param.key === "trialOffsetCapUSD" && text(param.cur, "") === "") return "不设上限";
@@ -161,7 +172,7 @@ function paramValue(param: TrialParam, product: TrialProduct | undefined) {
   if (param.key === "trialPriceUSD") return `${text(param.cur)} USDT`;
   if (param.serverOnly) return operatorCopyText(text(param.cur));
   if (unit === "%") return `${text(param.cur)}%`;
-  return unit ? `${text(param.cur)} ${unit}` : text(param.cur);
+  return unit ? `${paramInput(param)} ${unit}` : text(param.cur);
 }
 
 function ParamRow({ ctx, param, trialProducts, onChanged, reach, blocked }: {
@@ -177,7 +188,7 @@ function ParamRow({ ctx, param, trialProducts, onChanged, reach, blocked }: {
   const name = paramName(param);
   const isOffsetCap = param.key === "trialOffsetCapUSD";
   const isProduct = param.key === "trialProductId";
-  const current = text(param.cur, "");
+  const current = paramInput(param);
   const currentProduct = isProduct ? trialProducts.find((product) => product.productNo === current) : undefined;
   const displayCurrent = paramValue(param, currentProduct);
   const when = help?.when ?? (param.section === "newonly" ? "立即生效，只影响新开始的试用" : "立即生效");
@@ -185,7 +196,7 @@ function ParamRow({ ctx, param, trialProducts, onChanged, reach, blocked }: {
 
   const submit = async (reason: string, value?: string) => {
     const normalizedValue = (value ?? "").trim();
-    await updateH2TrialParam(param.key, normalizedValue, reason);
+    await updateH2TrialParam(param.key, help?.scale ? String(Math.round(Number(normalizedValue) * help.scale)) : normalizedValue, reason);
     await onChanged();
     toast(`${name} 已更新`);
   };
@@ -198,7 +209,7 @@ function ParamRow({ ctx, param, trialProducts, onChanged, reach, blocked }: {
       options: trialProducts.map((product) => product.productNo),
       optionLabels: Object.fromEntries(trialProducts.map((product) => [
         product.productNo,
-        `${product.name} · ${product.productNo} · 库存 ${product.stock ?? 0} · ${text(product.priceUsdt)} USDT${product.selectable ? "" : ` · 不可选：${trialProductReason(product.unavailableReason)}`}`,
+        `${product.name} · 商品编号 ${product.productNo} · 库存 ${product.stock ?? 0} · ${text(product.priceUsdt)} USDT${product.selectable ? "" : ` · 不可选：${trialProductReason(product.unavailableReason)}`}`,
       ])),
       disabledOptions: trialProducts.filter((product) => !product.selectable).map((product) => product.productNo),
       hint: help?.how,
@@ -227,7 +238,7 @@ function ParamRow({ ctx, param, trialProducts, onChanged, reach, blocked }: {
       amplifies: false,
       edit,
       effect: <StatusTag tone="progress" filled>{when}</StatusTag>,
-      confirmLabel: "确认修改",
+      confirmLabel: "确认修改，立即生效",
       statedBrief: { impact: `${help?.what ?? operatorCopyText(param.sub ?? "")}。${when}。`, check: "核对新值和生效范围，理由写清调整原因和依据。" },
       run: submit,
     });
@@ -240,7 +251,7 @@ function ParamRow({ ctx, param, trialProducts, onChanged, reach, blocked }: {
       when={when}
       where={help?.where}
       value={displayCurrent}
-      sub={currentProduct ? `${currentProduct.productNo} · 库存 ${currentProduct.stock ?? 0}` : undefined}
+      sub={currentProduct ? `商品编号 ${currentProduct.productNo} · 库存 ${currentProduct.stock ?? 0}` : undefined}
       action={ctx.can("growth_h2_write") ? (describedBy) => <Button size="sm" aria-label={`调整 ${name}`} aria-describedby={describedBy} disabledReason={blocked} onClick={open}>调整</Button> : undefined}
     />
   );
@@ -411,35 +422,33 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   };
 
   const openSessionCancel = (session: TrialSession) => {
-    const label = `强制取消试用 · ${session.sid}`;
     openActionConfirm({
-      action: label,
+      action: `强制取消试用 · ${session.sid}`,
       detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。这次试用会结束并标记为 <b>已取消</b>，重复提交不会重复处理。</>,
       amplifies: false,
       effect: <StatusTag tone="progress" filled>提交审批，批准后生效</StatusTag>,
-      confirmLabel: "提交审批",
+      confirmLabel: "提交审批，批准后生效",
       statedBrief: {
         impact: "超级管理员批准后，这次试用结束，用户要等冷却期过去才能再试用。批准前试用状态不变。",
         check: "核对用户和试用记录编号，理由写清依据或工单号。",
       },
-      run: (reason) => sendProposal({ kind: "cancel", sid: session.sid, owner: trialOwnerLabel(session), before: session.state, reason, label }),
+      run: (reason) => sendProposal({ kind: "cancel", sid: session.sid, owner: trialOwnerLabel(session), before: session.state, reason, label: `强制取消试用 · ${session.sid}` }),
     });
   };
 
   const openSessionCharge = (session: TrialSession) => {
-    const label = `强制触发扣款 · ${session.sid}`;
     openActionConfirm({
-      action: label,
+      action: `强制触发扣款 · ${session.sid}`,
       detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。按当前试用规则重新计算并扣款，重复提交不会重复扣。会直接动用户的 USDT，需要有权限的管理员在「操作记录与审批」批准。</>,
       amplifies: true,
       coverageLead: "这项操作会直接扣用户的 USDT",
       effect: <StatusTag tone="progress" filled>提交审批，批准后生效</StatusTag>,
-      confirmLabel: "提交审批",
+      confirmLabel: "提交审批，批准后生效",
       statedBrief: {
-        impact: "超级管理员批准后，按当前试用规则算金额，从用户 USDT 余额扣款并转成购买；余额不足时不扣款也不发货。批准前不动用户的钱。",
+        impact: "超级管理员批准后才执行，批准前不动用户的钱。金额批准时按当前规则算，后端可能拒绝，结果到「操作记录与审批」看。",
         check: "核对用户和试用记录编号，理由写清依据或工单号。",
       },
-      run: (reason) => sendProposal({ kind: "charge", sid: session.sid, owner: trialOwnerLabel(session), before: session.state, reason, label }),
+      run: (reason) => sendProposal({ kind: "charge", sid: session.sid, owner: trialOwnerLabel(session), before: session.state, reason, label: `强制触发扣款 · ${session.sid}` }),
     });
   };
 
@@ -451,7 +460,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       reason: true,
       reasonPlaceholder: "写清调整原因和依据",
       statedBrief: { impact: "立即停止自动弹出试用邀请，用户点试用卡领取不受影响。关闭后这页不能重新打开，这次操作记入操作记录。", check: "确认要关闭，理由写清原因和依据。" },
-      okLabel: "确认关闭",
+      okLabel: "确认关闭，立即生效",
       run: async (reason) => {
         await killH2AutoPush(reason);
         await reload();
@@ -463,9 +472,15 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const guideExtra = model && (
     <>
       <section className="rd-guide-section">
-        <h3>开始试用前的四项检查</h3>
-        <p>全部通过才能开始试用。</p>
-        {model.gates.length === 0 ? <p>未配置检查项</p> : (
+        <h3>开始试用前系统检查什么</h3>
+        <p>都通过才能开始试用，这些是系统固定的检查，这页改不了：</p>
+        <ol>
+          <li>紧急停用开关和当前运营阶段都开着</li>
+          <li>用户没有被风控判定为循环试用</li>
+          <li>用户没有进行中的试用、没买过，也过了冷却期</li>
+          <li>目标商品可用，今天还有名额，用户的设备位够</li>
+        </ol>
+        {model.gates.length === 0 ? <p>后台配置的检查项：未配置检查项</p> : (
           <dl>{model.gates.map((gate) => <div key={gate.gate}><dt>{gate.gate}：</dt><dd>已启用{gate.note ? `，${gate.note}` : ""}</dd></div>)}</dl>
         )}
       </section>
@@ -552,7 +567,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
 
   return (
     <>
-      {header(loading ? <StatusTag tone="progress">{READING}</StatusTag> : issues.length === 0 && pending.length === 0 ? <StatusTag tone="ok">试用正常开放，没有要处理的事</StatusTag> : undefined)}
+      {header(loading ? <StatusTag tone="progress">{READING}</StatusTag> : issues.length === 0 && pending.length === 0 ? <StatusTag tone="ok">{Number(stats.activeSessions) > 0 ? "试用正常开放，进行中的试用由系统自动结束，没有要处理的事" : "试用正常开放，没有要处理的事"}</StatusTag> : undefined)}
 
       {pendingNotices}
 
@@ -563,8 +578,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           sub={`试用中 ${text(stats.inTrial)} · 宽限 ${text(stats.inGrace)} · 延长 ${text(stats.inExtended)}`}
           explain="试用中、宽限中和已延长的账号数，每个账号只算最近一次试用，不受下方分页影响。" />
         <Stat tone="role-4" icon={TrendingUp} label="试用转购买率" value={text(stats.trialBuyRate)}
-          sub={`提前购 ${text(stats.earlyBuyRate)}`}
-          explain={<>已购买账号 ÷ 全部已开始试用的账号，每个账号只算最近一次。提前购是其中在试用期内提前买的。没有分母时显示「—」，表示不可计算，不是 0。绑卡转化 {text(stats.bindCardRate)}：绑卡环节已退役，不再计算。</>} />
+          sub={`提前购买 ${text(stats.earlyBuyRate)}（占已开始试用）`}
+          explain={<>已购买账号 ÷ 全部已开始试用的账号，每个账号只算最近一次。提前购买 = 试用期内买、按提前购买规则结算的账号 ÷ 全部已开始试用的账号。没有分母时显示「—」，表示不可计算，不是 0。绑卡转化 {text(stats.bindCardRate)}：绑卡环节已退役，不再计算。</>} />
         <Stat tone="role-2" icon={Ticket} label="今日实际剩余免费名额" value={seatsKnown ? text(seats?.cur) : "—"} unit={seatsKnown ? "张" : undefined}
           sub={seats?.businessDate && seats.businessDate !== "UNKNOWN" ? `日期 ${seats.businessDate}` : undefined}
           explain="按试用业务日实时读取，和 App 用同一个名额计数。「每日免费名额上限」是配置，这个是领取后的实际剩余。" />
@@ -575,10 +590,10 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       <div className="rd-config-layout">
         <div className="rd-config-grid">
           <div className="rd-config-rail">
-            <Panel title="试用邀请弹窗" icon={BellOff} tone={killed ? "warn" : pushOff ? "done" : "ok"} headingLevel={2}>
+            <Panel title="试用邀请弹窗" icon={killed || pushOff ? BellOff : Bell} tone={killed ? "warn" : pushOff ? "done" : "ok"} headingLevel={2}>
               <div className="rd-push-state">
                 <StatusTag tone={killed ? "warn" : pushOff ? "done" : "ok"}>{killed ? "试用邀请弹窗已关闭" : pushOff ? "自动推送已关" : "开启中"}</StatusTag>
-                <p>{killed ? "已紧急关闭，这页不能重新打开。" : "出问题时先关掉它，立即生效。用户点试用卡领取不受影响。"}</p>
+                <p>{killed ? "已紧急关闭，这页不能重新打开。" : "出问题时先关掉它，立即生效。关闭后这页不能重新打开。用户点试用卡领取不受影响。"}</p>
                 {canWrite && !killed && <Button variant="danger-outline" disabledReason={loading ? READING : undefined} onClick={openPushKill}>紧急关闭试用邀请弹窗</Button>}
               </div>
             </Panel>
@@ -591,6 +606,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                 <ConfigList>
                   {commonParams.map((param) => <ParamRow key={param.key} ctx={ctx} param={param} trialProducts={trialProducts} onChanged={reload} reach={reach} blocked={loading ? READING : undefined} />)}
                 </ConfigList>
+                <p className="rd-config-note">三种优惠可以叠加：实付 = 售价 − 购买折扣 − 试用收益抵扣 − 提前购买立减，最低 0。提前购买立减只在试用期内有，在高级设置里改。</p>
               </Panel>
             </div>
 
@@ -622,7 +638,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
             </div>
 
             <div id={nav.anchor("records")}>
-              <Fold title="试用记录" icon={History} tone="role-3" summary={canHandle ? `共 ${total} 条，可以强制取消或扣款` : `共 ${total} 条`} open={!!folds.records} onOpenChange={(open) => setFolds((state) => ({ ...state, records: open }))}>
+              <Fold title="试用记录" icon={History} tone="role-3" summary={`共 ${total} 条，平时不用处理`} open={!!folds.records} onOpenChange={(open) => setFolds((state) => ({ ...state, records: open }))}>
+                <p className="rd-config-note">宽限中是正常状态：到期系统自动结束，不扣款，不用处理。{canHandle && "强制取消用于怀疑刷试用等风控介入，强制扣款用于应急结算，平时不用点，都要提交审批。"}</p>
                 <Table label="试用记录">
                   <thead>
                     <tr>
@@ -639,7 +656,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                         <Tr key={row.session.sid} selected={row.session.sid === currentSid} onOpen={loading ? undefined : () => setCurrentSid(row.session.sid)}>
                           <Td><Cell main={trialOwnerLabel(row.session)} sub={<span data-mono="">{row.session.sid}</span>} title={row.session.sid} full /></Td>
                           <Td><StatusTag tone={row.tone} explain={TRIAL_STATE_HELP[row.session.state]}>{row.label}</StatusTag></Td>
-                          <Td align="right"><Cell num main={operatorCopyText(text(row.session.shadow))} /></Td>
+                          <Td align="right"><Cell num main={shadowText(row.session.shadow)} /></Td>
                           {canHandle && <Td>{row.terminal ? "—" : <span className="rd-row-actions">{buttons.cancel}{buttons.charge}</span>}</Td>}
                         </Tr>
                       );
@@ -661,15 +678,15 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       <Drawer open={!!currentRow} onClose={() => setCurrentSid(null)} title="试用记录" sub={currentRow?.session.sid} icon={History} tone="role-3"
         nav={{ hasPrev: !loading && currentIndex > 0, hasNext: !loading && currentIndex >= 0 && currentIndex < sessions.length - 1, onPrev: () => setCurrentSid(sessions[currentIndex - 1].sid), onNext: () => setCurrentSid(sessions[currentIndex + 1].sid) }}
         footer={currentRow && !currentRow.terminal && canHandle ? (
-          <Decision note="两个操作都要提交审批，超级管理员批准后才执行。" danger={sessionButtons(currentRow, "drawer").charge} others={sessionButtons(currentRow, "drawer").cancel} />
+          <Decision note="强制取消用于怀疑刷试用等风控介入，强制扣款用于应急结算。两个都要提交审批，超级管理员批准后才执行。" danger={sessionButtons(currentRow, "drawer").charge} others={sessionButtons(currentRow, "drawer").cancel} />
         ) : undefined}>
         {currentRow && (
           <>
             <JudgmentPoints rows={[
               { label: "状态", value: <StatusTag tone={currentRow.tone}>{currentRow.label}</StatusTag>, reason: TRIAL_STATE_HELP[currentRow.session.state] },
               { label: "账户", value: trialOwnerLabel(currentRow.session), state: currentRow.owner ? undefined : "warn" },
-              { label: "累计收益", value: operatorCopyText(text(currentRow.session.shadow)) },
-              { label: "能不能处理", value: currentRow.terminal ? "已结束，不能再取消或扣款" : lockedSids.has(currentRow.session.sid) ? "有结果未确认的操作，先处理页面上方的待确认" : !currentRow.owner ? "没有用户归属，不能取消或扣款" : canHandle ? "可以提交强制取消或强制扣款" : "这个账号只能查看" },
+              { label: "累计收益", value: shadowText(currentRow.session.shadow) },
+              { label: "能不能处理", value: currentRow.terminal ? "已结束，不能再取消或扣款" : lockedSids.has(currentRow.session.sid) ? "有结果未确认的操作，先处理页面上方的待确认" : !currentRow.owner ? "没有用户归属，不能取消或扣款" : canHandle ? "平时不用处理，确要干预才提交下面的操作" : "这个账号只能查看" },
             ]} />
             <Facts>
               <Fact k="试用记录编号"><span data-mono="">{currentRow.session.sid}</span></Fact>
