@@ -7,6 +7,7 @@
  */
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useId, useState } from "react";
+import { useRdSurface } from "@/app/components/rd/surface";
 import { Modal, Btn, Chip, OperatorBriefBlock } from "../design-kit";
 import type { ConfirmReq } from "./types";
 
@@ -16,6 +17,8 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fieldId = useId();
+  // 改版页面里和 OperationConfirmModal 同一个样子；旧页面不变。
+  const surface = useRdSurface();
   const reasonMin = 8;
   const reasonMax = 200;
   const reasonLength = reason.trim().length;
@@ -27,6 +30,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
     <Modal
       title={req.action}
       icon="check"
+      className={surface ? "rd-confirm" : undefined}
       onClose={() => { if (!submitting) onClose(); }}
       footer={
         <>
@@ -55,8 +59,9 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
         </>
       }
     >
+      {surface && req.effect && <div className="rd-effect">{req.effect}</div>}
       {error && <div role="alert" className="tint danger">{error}</div>}
-      <OperatorBriefBlock action={req.action} detail={req.detail} hasEdit={!!req.input} />
+      <OperatorBriefBlock action={req.action} detail={req.detail} hasEdit={!!req.input} stated={req.statedBrief} />
       {req.chips && req.chips.length > 0 && (
         <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 12 }}>
           {req.chips.map(([t, tone]) => (
@@ -101,8 +106,8 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
           )}
         </div>
       )}
-      <div style={{ marginTop: 13 }}>
-        <label htmlFor={`${fieldId}-reason`} style={{ display: "block", fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>
+      <div className={surface ? "field" : undefined} style={surface ? undefined : { marginTop: 13 }}>
+        <label htmlFor={`${fieldId}-reason`} style={surface ? undefined : { display: "block", fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>
           {req.reason ? "操作理由（必填，8–200 字）" : "备注（可选，最多 200 字）"}
         </label>
         <textarea
@@ -111,8 +116,8 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
           onChange={(e) => setReason(e.target.value)}
           rows={2}
           maxLength={200}
-          placeholder={req.reason ? "写清场景和依据，例如：合租办公网络、已知合作账户、客服举报线索" : "可以补充处理依据"}
-          style={{
+          placeholder={req.reasonPlaceholder ?? (req.reason ? "写清场景和依据，例如：合租办公网络、已知合作账户、客服举报线索" : "可以补充处理依据")}
+          style={surface ? undefined : {
             width: "100%", background: "var(--surface-2)", border: "1px solid var(--border-strong)", borderRadius: 8,
             padding: "8px 12px", color: "var(--ink)", fontSize: 12.5, outline: "none", resize: "vertical", fontFamily: "inherit",
           }}
