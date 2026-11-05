@@ -5,7 +5,8 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { supportClient, readFirstAssignmentCommand, readSupportPoolCustomer, type SupportAgentCandidate, type SupportBindingPoolItem } from "@/lib/admin/m-support-client";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useSupportManagementCommand, type SupportIntent } from "@/lib/admin/use-support-management-command";
-import { Button, Explain, Fact, Facts, Field, Notice, Textarea } from "@/app/components/rd";
+import { Button, Fact, Facts, Field, Notice, Textarea } from "@/app/components/rd";
+import { useReasonRule } from "@/lib/admin/use-reason-rule";
 import { Modal } from "../design-kit";
 import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
 
@@ -57,7 +58,8 @@ export function AssignAdvisorDialog({ adminId, customerId, customerName, canWrit
   }, [customerId, retry, pending, canWrite]);
 
   const chosen = agents?.find((agent) => agent.adminId === target);
-  const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
+  const rule = useReasonRule(canWrite && !pending);
+  const reasonOk = rule.ok(reason);
 
   function assign() {
     if (!item || !chosen || !reasonOk || saving || !canWrite) return;
@@ -99,7 +101,7 @@ export function AssignAdvisorDialog({ adminId, customerId, customerName, canWrit
             <span className="m3-assign-load">绑定客户 {agent.assignedUserCount}{agent.currentActiveSessions !== undefined ? ` · 进行中会话 ${agent.currentActiveSessions}` : ""}</span>
           </label>)}
         </div>}
-      {Boolean(agents?.length) && <Field label={<>分配原因（已预填，可修改） <Explain label="分配后会怎样" content="分配立即生效，这位客户归所选专属客服。之后要换人走「正式转绑客户」。" /></>} error={reasonOk ? undefined : "原因需 8–200 字。"}><Textarea value={reason} maxLength={200} disabled={saving} onChange={(event) => setReason(event.target.value)} /></Field>}
+      {Boolean(agents?.length) && <Field label="分配原因（已预填，可修改）" explain="分配立即生效，这位客户归所选专属客服。之后要换人走「正式转绑客户」。" error={reasonOk || !(rule.ready || rule.error) ? undefined : rule.error || `原因需 ${rule.min}–${rule.max} 字。`}><Textarea value={reason} maxLength={200} disabled={saving} onChange={(event) => setReason(event.target.value)} /></Field>}
       {error && <Notice tone="danger">{error}</Notice>}
     </div>
   </Modal>;

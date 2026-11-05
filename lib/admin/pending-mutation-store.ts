@@ -28,6 +28,9 @@
  */
 
 export const PENDING_MUTATION_TTL_MS = 24 * 60 * 60 * 1000;
+/** OP-96：过了接口的重试时限，原号不能再用，记录不删。解除只在后端明确拒绝后才有。 */
+export const RETRY_EXPIRED_TEXT = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
+export const isRetryExpired = (record: { expiresAt: number }) => Date.now() >= record.expiresAt;
 
 export interface PendingMutationRecord {
   fingerprint: string;

@@ -7,7 +7,8 @@
  *  - QuickActionModal: 历史会话 / 关联工单 / 重置密码 / 账户操作 / 客户备注(不写审计,交 C/D 域复核)
  * 均渲染于 design-kit Modal;合规(运营可读中文 · 数字不自曝)。
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useReasonRule } from "@/lib/admin/use-reason-rule";
 import { Explain } from "@/app/components/rd";
 import { Icon, Modal } from "../design-kit";
 import {
@@ -73,6 +74,9 @@ export function IdlePolicyModal({
   const [reason, setReason] = useState(initialInput?.reason??"");
   const [confirm, setConfirm] = useState(false);
   useEffect(() => { setConfirm(false); }, [policy.version, error, pending, conflict, canSave]);
+  // 换到最新版本后要按新版本重新写理由（OP-97）。待确认的原操作不动。
+  const shownVersion = useRef(policy.version);
+  useEffect(() => { if (shownVersion.current !== policy.version) { shownVersion.current = policy.version; if (!pending) setReason(""); } }, [policy.version, pending]);
   useEffect(() => {
     if (!canSave) { setWarn(String(policy.warnMinutes)); setClose(String(policy.closeMinutes)); setEnd(String(policy.sessionEndMinutes ?? "")); setReason(""); }
   }, [canSave, policy.warnMinutes, policy.closeMinutes, policy.sessionEndMinutes]);
@@ -83,7 +87,8 @@ export function IdlePolicyModal({
   const closeOk = Number.isInteger(closeN) && closeN >= 2 && closeN <= 120;
   const endOk = !endAvailable || Number.isInteger(endN) && endN >= 2 && endN <= 120;
   const orderOk = warnOk && closeOk && closeN > warnN && endOk;
-  const reasonOk = reason.trim().length >= 6 && reason.trim().length <= 200;
+  const rule = useReasonRule(canSave);
+  const reasonOk = rule.ok(reason);
   const unchanged = warnN === policy.warnMinutes && closeN === policy.closeMinutes && (!endAvailable || endN === policy.sessionEndMinutes);
   const blocked = saving || pending || conflict;
   const sessionEndMinutes = endAvailable ? endN : undefined;
@@ -154,7 +159,7 @@ export function IdlePolicyModal({
         </div>
       )}
     >
-      {!canSave && <p className="m3-policy-readonly" role="status">只读 <Explain label="谁能修改" content="仅获准总管理员可修改。要调整请联系总管理员。" /></p>}
+      {!canSave && <p className="m3-policy-readonly" role="status">只读 <Explain label="谁能修改" content="仅获准超级管理员可修改。要调整请联系超级管理员。" /></p>}
       {numField("待回复提醒时长（分钟）", "客户消息等待回复达到该时长，标记待处理。1–30", warn, setWarn, 1, 30)}
       {numField("严重超时时长（分钟）", "超过该时长仍未回复，标记严重超时。2–120，须大于提醒时长", close, setClose, 2, 120)}
       {numField("无人发言自动结束会话（分钟）", endAvailable ? "后台人员最后一次发消息后，超过该时长没人再发，会话自动结束，其他人就可以发起。2–120" : "暂不可用：自动结束时长还不能在这里设置，其他两项照常保存。", end, setEnd, 2, 120, endAvailable)}
@@ -171,10 +176,10 @@ export function IdlePolicyModal({
           disabled={!canSave || blocked || confirm}
           maxLength={200}
           onChange={(event) => { setConfirm(false); setReason(event.target.value); }}
-          placeholder="请说明调整的原因（至少 6 个字）"
+          placeholder={`请说明调整的原因（至少 ${rule.min} 个字）`}
         />
       </label>}
-      {canSave && !blocked && !unchanged && orderOk && !reasonOk && <div className="m3-policy-invalid">写明变更理由（至少 6 个字）才能预览变更。</div>}
+      {canSave && !blocked && !unchanged && orderOk && !reasonOk && <div className="m3-policy-invalid">{rule.ready || rule.error ? rule.hint(reason) : "正在读取理由规则…"}</div>}
       {error && !conflict && (
         <div className="itint" role="alert" style={{ color: "var(--danger)", padding: "10px 12px", marginTop: 12 }}>
           {error}

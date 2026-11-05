@@ -28,11 +28,14 @@
 .m3s-rows { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: var(--rd-space-1) var(--rd-space-2); display: flex; flex-direction: column; gap: 2px; }
 .m3s-row-wrap { display: flex; align-items: center; gap: var(--rd-space-1); min-width: 0; flex: none; }
 .m3s-row-check { display: grid; place-items: center; width: 28px; height: 40px; flex: none; cursor: pointer; }
-.m3s-row { position: relative; flex: 1; min-width: 0; display: flex; gap: 10px; padding: 10px var(--rd-space-2); border: 0; border-radius: var(--rd-radius-control); background: transparent; color: var(--rd-text); font: inherit; text-align: left; cursor: pointer; }
+.m3s-row { position: relative; flex: 1; min-width: 0; display: flex; gap: 10px; padding: 10px var(--rd-space-2); border-radius: var(--rd-radius-control); color: var(--rd-text); }
+/* 整行可点，状态的提示图标浮在上面，按钮里不套按钮。 */
+.m3s-row-hit { position: absolute; inset: 0; padding: 0; border: 0; border-radius: inherit; background: none; cursor: pointer; }
+.m3s-row .rd-explain { position: relative; z-index: 1; }
 .m3s-row[data-on] { background: var(--rd-selected); }
 .m3s-row[data-on]::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 0 3px 3px 0; background: var(--rd-brand-ink, var(--rd-focus)); }
 @media (hover: hover) and (pointer: fine) { .m3s-row:not([data-on]):hover { background: var(--rd-hover); } }
-.m3s-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: -2px; }
+.m3s-row-hit:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: -2px; }
 .m3s-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .m3s-row-top { display: flex; align-items: baseline; gap: var(--rd-space-2); min-width: 0; }
 .m3s-row-top strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-medium); }
@@ -224,7 +227,6 @@
 .rd-modal .support-content-field .fld { min-height: 36px; padding: 0 var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-control); color: var(--rd-text); }
 .rd-modal .support-content-result.l-btn { padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); font-size: var(--rd-text-body); }
 
-.m3s-intent { display: flex; align-items: center; gap: var(--rd-space-1); }
 .m3s-assign { display: flex; flex-direction: column; gap: var(--rd-space-3); }
 .rd-modal .m3-policy-label { display: inline-flex; align-items: center; gap: var(--rd-space-1); }
 .rd-modal .m3-policy-label strong { display: inline; }
