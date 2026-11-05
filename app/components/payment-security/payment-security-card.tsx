@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { formatBusinessTime } from "@/lib/admin/business-time";
+import { useReasonRule } from "@/lib/admin/use-reason-rule";
 import { pendingPaymentRelease, queryPaymentRelease, submitPaymentRelease, PaymentPasswordApiError, type PaymentSecurityPort } from "@/lib/admin/payment-password-client";
 import type { PaymentSecurityRecord, PaymentSecurityDetail as Detail, PaymentSecuritySummary, PaymentReleaseReceipt } from "@/lib/admin/payment-password-contract";
 import { Modal, DataListPager } from "../domain-views/design-kit";
@@ -36,15 +37,17 @@ export function PaymentSecurityCard({ port, userLabel, compact = false }: { port
   useEffect(() => { if (owner) void load(); const refresh = () => { void load(); }; window.addEventListener("nexion-payment-security-updated", refresh); return () => { generation.current++; window.removeEventListener("nexion-payment-security-updated", refresh); }; }, [load, owner]);
   if (!session) return null;
   const record = summary?.record;
-  return <section className={`payment-security ps-card ${compact ? "ps-compact" : ""}`} aria-label="支付安全">
+  // 侧栏里没有异常时一行带过（DP-05）。有异常、读取失败、有待确认的解除都照常全展开。
+  const quiet = compact && Boolean(summary) && !record && !pending;
+  return <section className={`payment-security ps-card ${compact ? "ps-compact" : ""}`} data-quiet={quiet ? "" : undefined} aria-label="支付安全">
     <header className="ps-header"><h3 className="ps-payment">支付安全</h3>{record && <PaymentSecurityState record={record} />}</header>
-    <p className="ps-description">支付密码仅用于钱包余额付款。HDPay 银行直付和 USDT-BSC / ERC20 链上直付无需支付密码，不受此锁定影响。</p>
+    {!quiet && <p className="ps-description">支付密码仅用于钱包余额付款。HDPay 银行直付和 USDT-BSC / ERC20 链上直付无需支付密码，不受此锁定影响。</p>}
     {loading && <div className="ps-skeleton" role="status" aria-label="正在读取支付安全信息"><span /><span /></div>}
     {error && <p className="ps-reason" role="alert">{error}</p>}
     {record && <><Facts record={record} /><p className="ps-description">仅处理本条支付密码异常，登录状态不受影响。</p><div className="ps-actions"><button className="ps-button" onClick={() => setSelected({ id: record.id, release: false })}>查看详情</button>{record.state === "ACTIVE" && <button className="ps-button ps-primary" disabled={!record.capabilities.releaseAllowed || pending} onClick={() => setSelected({ id: record.id, release: true })}>{actionText(record)}</button>}</div>{record.state === "ACTIVE" && !record.capabilities.releaseAllowed && <p className="ps-secondary">{record.capabilities.disabledReason}</p>}</>}
     {summary && !record && <p>当前没有支付密码异常。历史处置记录仍保留。</p>}
     {pending && <p className="ps-secondary">有一笔解除结果等待确认。<button className="ps-link" onClick={() => { const row = pendingPaymentRelease(owner, port.userId); if (row) setSelected({ id: row.recordId, release: false }); }}>查询原操作</button></p>}
-    <div className="ps-card-footer"><span className="ps-secondary">{summary ? `查询时间：${time(summary.observedAt)}` : "信息尚未确认"}</span><button className="ps-link" disabled={loading} onClick={() => void load()}>{loading ? "读取中…" : error ? "重试查询" : "重新加载"}</button></div>
+    <div className="ps-card-footer">{!quiet && <span className="ps-secondary">{summary ? `查询时间：${time(summary.observedAt)}` : "信息尚未确认"}</span>}<button className="ps-link" disabled={loading} onClick={() => void load()}>{loading ? "读取中…" : error ? "重试查询" : "重新加载"}</button></div>
     {selected && <PaymentSecurityDetail key={`${port.key}:${owner}:${epoch}:${selected.id}`} port={port} recordId={selected.id} userLabel={userLabel} initialAction={selected.release} onClose={() => setSelected(null)} />}
   </section>;
 }
@@ -53,6 +56,7 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
   const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch), owner = session?.adminId ?? 0;
   const [detail, setDetail] = useState<Detail | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
   const [reviewing, setReviewing] = useState(false), [reason, setReason] = useState(""), [confirmed, setConfirmed] = useState(false), [busy, setBusy] = useState(false);
+  const reasonRule = useReasonRule(reviewing);
   const [tab, setTab] = useState("info"), [receipt, setReceipt] = useState<PaymentReleaseReceipt | null>(null);
   const [pending, setPending] = useState(() => pendingPaymentRelease(owner, port.userId));
   const generation = useRef(0), live = useRef(true), mutation = useRef(false), started = useRef(false);
@@ -72,7 +76,7 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
   const record = detail?.record;
   const canRelease = !!record?.capabilities.releaseAllowed && !pending && owner > 0;
   async function execute(queryOnly: boolean) {
-    if (mutation.current || !queryOnly && (!record || !canRelease || reason.trim().length < 8 || reason.trim().length > 200 || !confirmed)) return;
+    if (mutation.current || !queryOnly && (!record || !canRelease || !reasonRule.ok(reason) || !confirmed)) return;
     mutation.current = true; setBusy(true); setError("");
     try {
       const next = queryOnly ? await queryPaymentRelease(owner, port) : await submitPaymentRelease(owner, port, record!, reason.trim());
@@ -93,7 +97,7 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
     finally { if (live.current && id === generation.current) setLoading(false); }
   }
   if (!session) return null;
-  return <div className="payment-security"><Modal title={reviewing && record ? `解除支付密码${record.type === "PAYMENT_PASSWORD_EXCEPTION" ? "异常标记" : "锁定"}` : "支付密码异常详情"} onClose={onClose} busy={busy} wide footer={<><button className="ps-button" disabled={busy} onClick={() => reviewing ? setReviewing(false) : onClose()}>{reviewing ? "返回详情" : "关闭"}</button>{reviewing ? <button className="ps-button ps-primary" disabled={busy || !canRelease || reason.trim().length < 8 || reason.trim().length > 200 || !confirmed} onClick={() => void execute(false)}>{busy ? "正在提交…" : "确认解除"}</button> : record?.state === "ACTIVE" && <button className="ps-button ps-primary" disabled={busy || loading || !canRelease} onClick={() => { setReviewing(true); setConfirmed(false); }}>{actionText(record)}</button>}</>}>
+  return <div className="payment-security"><Modal title={reviewing && record ? `解除支付密码${record.type === "PAYMENT_PASSWORD_EXCEPTION" ? "异常标记" : "锁定"}` : "支付密码异常详情"} onClose={onClose} busy={busy} wide footer={<><button className="ps-button" disabled={busy} onClick={() => reviewing ? setReviewing(false) : onClose()}>{reviewing ? "返回详情" : "关闭"}</button>{reviewing ? <button className="ps-button ps-primary" disabled={busy || !canRelease || !reasonRule.ok(reason) || !confirmed} onClick={() => void execute(false)}>{busy ? "正在提交…" : "确认解除"}</button> : record?.state === "ACTIVE" && <button className="ps-button ps-primary" disabled={busy || loading || !canRelease} onClick={() => { setReviewing(true); setConfirmed(false); }}>{actionText(record)}</button>}</>}>
     <div ref={contentRef} className="ps-modal-content">
       {loading && <div className="ps-skeleton" role="status" aria-label="正在读取异常详情"><span /><span /><span /></div>}
       {error && <p className="ps-reason" role="alert">{error} {!busy && <button className="ps-link" onClick={() => void load()}>重新加载详情</button>}</p>}
@@ -103,7 +107,7 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
       {(receipt?.status === "PENDING" || receipt?.status === "NOT_FOUND") && <p className="ps-secondary">处理结果尚未确认，请继续查询本次操作。</p>}
       {record && <>
         <dl className="ps-facts"><div><dt>操作对象</dt><dd className="ps-user">{userLabel} · {port.userId}</dd></div><div><dt>当前状态</dt><dd><PaymentSecurityState record={record} /></dd></div><div><dt>{reviewing ? "本次解除范围" : "凭证类型"}</dt><dd>{reviewing ? "仅本条" : ""}<span className="ps-payment">支付密码</span>{reviewing ? record.type === "PAYMENT_PASSWORD_EXCEPTION" ? "异常标记" : "锁定" : ""}</dd></div><div><dt>原锁定至</dt><dd>{time(record.lockedUntil)}</dd></div></dl>
-        {reviewing ? <><p className="ps-description">{record.capabilities.effectDescription} 仅影响钱包余额付款的支付密码验证；HDPay 银行直付和 USDT-BSC / ERC20 链上直付不受此锁定影响。本次操作不改变登录状态，不修改支付密码，也不会自动完成付款。</p><label className="ps-field"><span>解除原因 <span className="ps-reason">*</span></span><textarea value={reason} onChange={event => setReason(event.target.value)} minLength={8} maxLength={200} rows={3} placeholder="请输入已核查的事实和解除依据，至少8个字" /><span className="ps-secondary">{reason.trim().length} / 200 字</span></label><label className="ps-check"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />我已核对操作对象、异常信息和解除影响，确认执行本次解除。</label></> : <>
+        {reviewing ? <><p className="ps-description">{record.capabilities.effectDescription} 仅影响钱包余额付款的支付密码验证；HDPay 银行直付和 USDT-BSC / ERC20 链上直付不受此锁定影响。本次操作不改变登录状态，不修改支付密码，也不会自动完成付款。</p><label className="ps-field"><span>解除原因 <span className="ps-reason">*</span></span><textarea disabled={busy} value={reason} onChange={event => setReason(event.target.value)} minLength={8} maxLength={200} rows={3} placeholder="请输入已核查的事实和解除依据，至少8个字" /><span className="ps-secondary">{reasonRule.hint(reason) || `${reason.trim().length} / ${reasonRule.max} 字`}</span></label><label className="ps-check"><input disabled={busy} type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />我已核对操作对象、异常信息和解除影响，确认执行本次解除。</label></> : <>
           <div className="ps-tabs">{[["info", "异常信息"], ["attempts", "近期验证记录"], ["audit", "处置审计"]].map(([value, label]) => <button key={value} className="ps-tab" aria-pressed={tab === value} onClick={() => setTab(value)}>{label}</button>)}</div>
           {tab === "info" && <><Facts record={record} /><dl className="ps-facts"><div><dt>开始时间</dt><dd>{time(record.startedAt)}</dd></div><div><dt>累计输错</dt><dd>{record.failedAttempts ?? "未确认"} 次 / {record.windowMinutes ?? "未确认"} 分钟</dd></div></dl><p className="ps-description">登录安全与支付安全分别处理；解除后原异常与审计记录继续保留。</p>{!canRelease && <p className="ps-secondary">{pending ? "请先查询上一笔解除结果。" : record.capabilities.disabledReason}</p>}</>}
           {tab === "attempts" && <><div className="ps-table-scroll"><table className="ps-table"><thead><tr><th>时间</th><th>用途</th><th>结果</th><th>来源</th></tr></thead><tbody>{detail.attempts.records.map(row => <tr key={row.id}><td>{time(row.occurredAt)}</td><td>{row.purpose === "PAYMENT" ? "购买或置换" : "修改支付密码"}</td><td className={row.result === "INCORRECT" ? "ps-reason" : ""}>{{ SUCCEEDED: "验证通过", INCORRECT: "密码不正确", LOCKED: "暂时锁定", BUSINESS_REJECTED: "交易条件不满足" }[row.result]}</td><td>{row.channel}</td></tr>)}{!detail.attempts.records.length && <tr><td colSpan={4}>暂无相关验证记录</td></tr>}</tbody></table></div><DataListPager label="异常关联验证记录" page={detail.attempts.pageNum} pageSize={10} total={detail.attempts.total} onPageChange={next => void attemptPage(next)} onPageSizeChange={() => void attemptPage(1)} pageSizeOptions={[10]} /></>}

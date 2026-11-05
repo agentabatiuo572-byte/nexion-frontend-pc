@@ -39,6 +39,11 @@ export function businessClock(timestamp: number): string {
   return new Intl.DateTimeFormat("zh-CN", { timeZone: current.zoneId, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(timestamp);
 }
 
+/** 业务时区的「2026-11-05 14:30」（TX-26），传时间戳。时区由调用方写一次。 */
+export function businessStamp(timestamp: number): string {
+  return `${new Intl.DateTimeFormat("en-CA", { timeZone: current.zoneId, year: "numeric", month: "2-digit", day: "2-digit" }).format(timestamp)} ${businessClock(timestamp)}`;
+}
+
 /** Backend LocalDateTime has no offset and uses the Asia/Shanghai storage clock. */
 export function parseBusinessTime(value: string): number {
   const unzoned = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?)$/.exec(value);

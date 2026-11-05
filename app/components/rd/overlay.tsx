@@ -41,7 +41,7 @@
  *
  * <Modal title="调整同一 IP 注册上限" icon={SlidersHorizontal} sub={<StatusTag tone="progress" filled>立即生效</StatusTag>} …>
  */
-import { isValidElement, useEffect, useRef, type ComponentProps, type KeyboardEvent, type ReactNode } from "react";
+import { isValidElement, useEffect, useRef, type ComponentProps, type KeyboardEvent, type ReactNode, type CSSProperties } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronDown, ChevronUp, X, type LucideIcon } from "lucide-react";
 import { IconButton } from "./button";
@@ -199,7 +199,7 @@ export function Decision({ note, explain, danger, others, primary }: { note?: Re
   );
 }
 
-export function Modal({ title, sub, icon, tone = "neutral", onClose, children, footer, wide = false, busy = false, dirty = false, className }: {
+export function Modal({ title, sub, icon, tone = "neutral", onClose, children, footer, wide = false, busy = false, dirty = false, className, style }: {
   title: ReactNode;
   /** 标题下面一行：生效方式、能不能撤销这类后果标签，或对象编号。 */
   sub?: ReactNode;
@@ -214,6 +214,8 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
   busy?: boolean;
   dirty?: boolean;
   className?: string;
+  /** 贴着触发器定位时传位置变量，比如会话页的快捷内容选择层。 */
+  style?: CSSProperties;
 }) {
   const surface = useRdSurface();
   const focus = useFocusHandoff(true);
@@ -225,6 +227,7 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
         <Dialog.Overlay className="rd-scrim" data-modal="" onClick={() => { if (!dirty && !typed.current) close(); }} />
         <Dialog.Content
           ref={focus.ref}
+          style={style}
           className={className ? `rd-modal ${className}` : "rd-modal"}
           data-wide={wide ? "" : undefined}
           aria-modal="true"

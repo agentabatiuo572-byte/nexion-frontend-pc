@@ -7,7 +7,7 @@
  * 跨域跳转用 next/navigation。导航/外壳仍沿用本项目 shell。
  */
 import { businessZone } from "@/lib/admin/business-time";
-import { Fragment, isValidElement, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, isValidElement, useEffect, useId, useMemo, useRef, useState, type ReactNode, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { announcePermissionDenied, isPermissionDenied, operationConfirmErrorMessage, PERMISSION_DENIED_EVENT } from "@/lib/admin/operation-confirm-error";
@@ -344,7 +344,7 @@ export const KV = ({ k, v }: { k: ReactNode; v: ReactNode }) => (
 );
 
 /* Modal — 补 ESC 关闭 + 打开聚焦(a11y 铁律) */
-type ModalProps = { title: ReactNode; icon?: IconName; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; busy?: boolean; dirty?: boolean; className?: string;
+type ModalProps = { title: ReactNode; icon?: IconName; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; busy?: boolean; dirty?: boolean; className?: string; style?: CSSProperties;
   /** 只在改版页面起作用：标题下的后果标签，和标题前图标底的颜色（VS-101、VS-106）。 */
   sub?: ReactNode; tone?: "danger" | "neutral" };
 

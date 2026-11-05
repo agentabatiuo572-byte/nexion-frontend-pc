@@ -25,7 +25,7 @@ import {
   type MContentData,
   type MLoadConfigWrite,
 } from "@/lib/admin/m-client";
-import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { RETRY_EXPIRED_TEXT, createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { MDomainLoadCoordinator } from "@/lib/admin/m-content-load-coordinator";
 import { shouldStartM3ConversationRecovery } from "@/lib/admin/m-conversation-recovery-gate";
 import { failClosedSupportAgentsAfterReload, preserveVerifiedSupportAgentsDuringReload } from "@/lib/admin/m-progressive-support-state";
@@ -38,6 +38,7 @@ import { supportUnboundPolicyClient } from "@/lib/admin/m-support-client";
 import { STANDBY_POOL_LABEL, type AdvisorScript, type SessionConvo, type SessionMsg, type SessionReplyTpl, type SessionType, type SupportFaq, type SupportSla, type SupportTicket, type SupportTicketCategory, type SupportTicketPriority } from "./m-tabs/data";
 import { MAvatar, ownerLabel } from "./m-tabs/hd-ui";
 import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
+import { Button, Notice, PageHeader, RdPage } from "@/app/components/rd";
 import { containsConversationMessage } from "./m-sse-dedup";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
 import { supportClient, SupportClientError, isIndeterminateSupportError, agentSwitchText, type SupportMessageInput } from "@/lib/admin/m-support-client";
@@ -67,6 +68,7 @@ interface MCommandRecord extends PendingMutationRecord {
 }
 const mCommands = createPendingMutationStore<MCommandRecord>({
   storageKey: "nexion-admin-m-content-commands-v1",
+  retainExpiredRecords: true,
   isValidRecord: (record) => (record.value === undefined || typeof record.value === "string")
     && (record.paramFingerprint === undefined || typeof record.paramFingerprint === "string")
     && (record.clientMessageId === undefined || typeof record.clientMessageId === "string")
@@ -75,7 +77,7 @@ const mCommands = createPendingMutationStore<MCommandRecord>({
 interface DockCommandRecord extends PendingMutationRecord { payload: string; conversationNo: string; customerId?: string; readOnlyRecovery?: boolean }
 const dockCommands = createPendingMutationStore<DockCommandRecord>({
   storageKey: "nexion-admin-m-dock-pending-v1",
-  ttlMs: Number.MAX_SAFE_INTEGER - Date.now(),
+  retainExpiredRecords: true,
   isValidRecord: (record) => typeof record.payload === "string" && typeof record.conversationNo === "string"
     && (record.customerId === undefined || typeof record.customerId === "string")
     && (record.readOnlyRecovery === undefined || typeof record.readOnlyRecovery === "boolean"),
@@ -133,6 +135,15 @@ const FOLD: Record<string, string> = {
 function templateStatus(value: string | undefined): AdvisorScript["status"] {
   return value === "published" ? "published" : value === "archived" ? "archived" : "draft";
 }
+
+/** 后台读了请求并拒绝：写入没有发生。其余（网络、5xx、幂等未决）都不能算没发生。 */
+const refusedWrite = (error: unknown) => {
+  if (!(error instanceof MContentReadError)) return false;
+  const code = error.status === 200 ? error.apiCode : error.status;
+  return [400, 403, 404, 409, 422].includes(code ?? 0) && !(error.backendMessage ?? "").startsWith("IDEMPOTENCY_");
+};
+
+const M3_SUMMARY = "和客户对话：先回待回复的，客户资料在右边。";
 
 export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
@@ -420,7 +431,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     && (superOperator || !session?.authorities?.includes("service_m1_read") || safeMData?.supportAgentsAvailable)) };
 
   const runMWrite = useCallback(
-    async (key: string, value: string, meta?: { action?: string; reason?: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void }): Promise<boolean> => {
+    async (key: string, value: string, meta?: { action?: string; reason?: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void; onFailure?: (message: string) => void }): Promise<boolean> => {
       if (isMUiKey(key)) {
         setUiParams((prev) => {
           const next = { ...prev, [key]: value };
@@ -448,6 +459,10 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         ?? meta?.idempotencyKey
         ?? records.find((record) => record.paramFingerprint === fingerprint)?.commandKey
         ?? `m-${Date.now()}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+      if (attempt && isRetryExpired(attempt)) {
+        if (meta?.onFailure) meta.onFailure(RETRY_EXPIRED_TEXT); else setToast(RETRY_EXPIRED_TEXT);
+        return false;
+      }
       const stableValue = attempt?.value ?? value;
       // Legacy paramFingerprint can contain a later retry's input, not the original wire reason.
       const closeReason = attempt ? attempt.closeReason : meta?.reason;
@@ -495,7 +510,8 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         const message = displayAdminError(error);
         // client 已接咽喉,英文网络错误不再到达;按原压制意图改判「咽喉网络中文」,命中仍不附加 detail。
         const detail = message.includes("网络连接失败或系统暂时连不上") ? "" : ` · ${message}`;
-        setToast(rejected ? `后台明确拒绝原会话结束操作，请核对当前会话后重新确认${detail}` : `写入失败或结果未知,请保留当前输入并重试${detail}`);
+        const failure = rejected ? `后台明确拒绝原会话结束操作，请核对当前会话后重新确认${detail}` : refusedWrite(error) ? `后台拒绝了这次操作${detail}` : `结果未确认${detail.replace(/。$/, "")}。再点确认会按原操作重试`;
+        if (meta?.onFailure) meta.onFailure(failure); else setToast(failure);
         return false;
       }
     },
@@ -507,12 +523,17 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     write: (idempotencyKey: string, originalValue?: string) => Promise<unknown>,
     failureMessage: string,
     value?: string,
+    onFailure?: (message: string) => void,
   ): Promise<boolean> => {
     if (currentAuthEpoch.current !== authEpoch) return false;
     const slot = directWriteSlot(fingerprint);
     const original = mCommands.list().find((record) => record.fingerprint === slot);
     const idempotencyKey = original?.commandKey
       ?? `m3-${Date.now()}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+    if (original && isRetryExpired(original)) {
+      if (onFailure) onFailure(RETRY_EXPIRED_TEXT); else setToast(RETRY_EXPIRED_TEXT);
+      return false;
+    }
     const originalValue = original ? original.value : value;
     mCommands.remember(slot, idempotencyKey, { value: originalValue });
     const usingOriginalReason = Boolean(original && value !== undefined && value !== originalValue);
@@ -534,7 +555,8 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       return true;
     } catch (error) {
       if (currentAuthEpoch.current !== authEpoch) return false;
-      setToast(`${failureMessage}或结果未知,请重试 · ${displayAdminError(error)}${usingOriginalReason ? " · 继续使用原提交理由核对结果" : ""}`);
+      const failure = refusedWrite(error) ? `${failureMessage}：${displayAdminError(error)}` : `${failureMessage}或结果未知 · ${displayAdminError(error)}${usingOriginalReason ? " · 继续使用原提交理由核对结果" : ""}`;
+      if (onFailure) onFailure(failure); else setToast(failure);
       return false;
     }
   }, [authEpoch, reconcileConversationSnapshot, invalidateScope, setToast]);
@@ -562,13 +584,14 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       "客户备注保存失败",
     );
   }, [runM3DirectWrite]);
-  const removeCustomerNote = useCallback(async (convoId: string, noteId: string, reason = "客服删除客户备注"): Promise<boolean> => {
+  const removeCustomerNote = useCallback(async (convoId: string, noteId: string, reason = "客服删除客户备注", onFailure?: (message: string) => void): Promise<boolean> => {
     return runM3DirectWrite(
       `m3:remove-note:${convoId}:${noteId}`,
       // Pending records from before reason persistence used this fixed reason on their original wire.
       (idempotencyKey, originalReason) => mContentActions.removeCustomerNote(convoId, noteId, originalReason ?? "客服删除客户备注", idempotencyKey),
       "客户备注删除失败",
       reason,
+      onFailure,
     );
   }, [runM3DirectWrite]);
   const ctx: MCtx = {
@@ -590,6 +613,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     refreshKnowledge,
     loadConversationDetail,
     invalidateScope,
+    commandExpired: (part: string) => mCommands.list().some((record) => record.fingerprint.includes(part) && isRetryExpired(record)),
     addCustomerTag,
     removeCustomerTag,
     addCustomerNote,
@@ -624,12 +648,20 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   }, [tab, mergedParams]);
   // M-44: only a live figure earns header space; the fixed descriptive tags repeated the page summary.
   const right = liveCount ? <span className="f-live"><span className="dot" />{liveCount}</span> : null;
+  const backToCustomers = fromCustomers ? <Link className="m-back-link" href="/service/overview?view=customers&restore=customers">‹ 返回负责组客户</Link> : undefined;
+  // 这三条提醒说的是整页的数据，放在专属会话的页头下面。
+  const m3Banner = tab === "M3" && (mError || permissionUnknown || reconnectExhausted) ? <>
+    {mError && <Notice tone="danger" action={<Button size="sm" onClick={() => void reloadMContent()}>重试</Button>}>客服中心暂时无法同步数据,请稍后重试。</Notice>}
+    {permissionUnknown && <Notice tone="warn" action={<Button size="sm" onClick={() => void reloadMContent()}>重试核对</Button>}>坐席身份暂时无法核对，对客操作和管理入口已暂缓显示。</Notice>}
+    {reconnectExhausted && <Notice tone="danger" action={<Button size="sm" onClick={retryConversationStream}>重新连接</Button>}>会话更新已暂停，当前信息可能不是最新状态。请点击“重新连接”或刷新页面。</Notice>}
+  </> : null;
 
-  return (
-    <div className="dkpage mdom">
-      <DomainHeader {...meta} right={right} back={fromCustomers ? <Link className="m-back-link" href="/service/overview?view=customers&restore=customers">‹ 返回负责组客户</Link> : undefined} />
+  const page = (
+    <>
+      {tab !== "M3" && <DomainHeader {...meta} right={right} back={backToCustomers} />}
+      {tab === "M3" && !safeMData && <PageHeader pageId="M3" title="专属会话" summary={M3_SUMMARY} back={backToCustomers} />}
 
-      {mError && (
+      {tab !== "M3" && mError && (
         <div className="card card-pad" style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Icon name="bell" size={16} />
           <span className="dim" style={{ fontSize: 13 }}>客服中心暂时无法同步数据,请稍后重试。</span>
@@ -640,20 +672,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
           </button>
         </div>
       )}
-      {(permissionUnknown && (tab === "M1" || tab === "M2" || tab === "M3" || tab === "M5") || tab === "M2" && safeMData && !safeMData.supportAgentsAvailable) && <div className="card card-pad" role="status">坐席身份暂时无法核对，对客操作和管理入口已暂缓显示。<button type="button" className="btn btn-sec btn-sm" onClick={() => void reloadMContent()}>重试核对</button></div>}
+      {(permissionUnknown && (tab === "M1" || tab === "M2" || tab === "M5") || tab === "M2" && safeMData && !safeMData.supportAgentsAvailable) && <div className="card card-pad" role="status">坐席身份暂时无法核对，对客操作和管理入口已暂缓显示。<button type="button" className="btn btn-sec btn-sm" onClick={() => void reloadMContent()}>重试核对</button></div>}
 
-      {tab === "M3" && reconnectExhausted && (
-        <div className="card card-pad" role="alert" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Icon name="bell" size={16} />
-          <span className="dim" style={{ fontSize: 13 }}>
-            会话更新已暂停，当前信息可能不是最新状态。请点击“重新连接”或刷新页面。
-          </span>
-          <span className="sp" />
-          <button type="button" className="btn btn-sec btn-sm" onClick={retryConversationStream}>重新连接</button>
-        </div>
-      )}
+      {tab === "M3" && !safeMData && m3Banner}
       {tab === "M3" && !reconnectExhausted && safeMData?.conversationsAvailable && (
-        <span className="sr-only" aria-live="polite">{conversationStreamReady ? "实时会话已连接" : "实时会话正在重连"}</span>
+        <span className="sr-only" aria-live="polite">{conversationStreamReady ? "实时会话已连接" : "连接已断开，正在重连；下面是最近一次的数据"}</span>
       )}
 
       {tab === "M1" && <M1AnalyticsWorkbench key={authEpoch} permission={permission} ctx={ctx} />}
@@ -668,7 +691,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       ) : safeMData && (
         <>
           {tab === "M2" && <p>工单服务已下线，请通过客户会话继续联系。</p>}
-          {tab === "M3" && <M3DedicatedChat ctx={ctx} />}
+          {tab === "M3" && <M3DedicatedChat ctx={ctx} back={backToCustomers} summary={M3_SUMMARY} banner={m3Banner} streamReady={conversationStreamReady} reconnectExhausted={reconnectExhausted} />}
           {tab === "M4" && <M4KbSla ctx={ctx} />}
           {tab === "M5" && effectiveM5Pane === "templates" && <M5Scripts ctx={ctx} showSeatOperations={false} showSeatProfiles={permission !== "agent"} />}
         </>
@@ -684,6 +707,13 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
           briefKind={mc.briefKind}
+          effect={mc.effect}
+          confirmLabel={mc.confirmLabel}
+          confirmTone={mc.confirmTone}
+          blockedReason={mc.blockedReason}
+          facts={mc.facts}
+          statedBrief={mc.statedBrief}
+          reasonPlaceholder={mc.reasonPlaceholder}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {
             const confirming = mc;
@@ -700,8 +730,9 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
       {safeMData && <SessionDock ctx={ctx} hidden={tab === "M3"} onScopeInvalidated={invalidateScope} />}
       {toastNode}
-    </div>
+    </>
   );
+  return tab === "M3" ? <RdPage className="mdom">{page}</RdPage> : <div className="dkpage mdom">{page}</div>;
 }
 
 /* ============ MP2 持续接待 dock —— 切页不挂断(M3 自身是全屏对话台,故 M3 不显)============ */
@@ -1006,7 +1037,7 @@ async function applyMBackendWrite(
   value: string,
   legacyParams: Record<string, string>,
   data: MContentData | null,
-  meta?: { action?: string; reason?: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void },
+  meta?: { action?: string; reason?: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void; onFailure?: (message: string) => void },
 ) {
   const reason = reasonOf(meta);
   const idempotencyKey = meta?.idempotencyKey;
@@ -1264,10 +1295,10 @@ async function applyMBackendWrite(
 }
 function dockRelWhen(ts: number): string {
   const diff = Date.now() - ts;
-  if (diff < 60_000) return "just now";
-  if (diff < 3_600_000) return `${Math.max(1, Math.floor(diff / 60_000))}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  return `${Math.floor(diff / 86_400_000)}d ago`;
+  if (diff < 60_000) return "刚刚";
+  if (diff < 3_600_000) return `${Math.max(1, Math.floor(diff / 60_000))} 分钟前`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
+  return `${Math.floor(diff / 86_400_000)} 天前`;
 }
 
 function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: boolean; onScopeInvalidated: (conversationNo?: string, customerId?: string) => void }) {
@@ -1344,7 +1375,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
 
   const loadConversationDetail = ctx.loadConversationDetail;
   useEffect(() => {
-    if (hidden || !open || !conv || conv.detailReady || !conversationsAvailable || detailError) return;
+    if (hidden && !pendingForAdmin || !open || !conv || conv.detailReady || !conversationsAvailable || detailError) return;
     const controller = new AbortController();
     void loadConversationDetail(conv.id, controller.signal).catch((cause: unknown) => {
       if (!controller.signal.aborted) {
@@ -1353,7 +1384,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       }
     });
     return () => controller.abort();
-  }, [hidden, open, conv?.id, conv?.version, conv?.detailReady, conversationsAvailable, authEpoch, detailRetry, detailError, loadConversationDetail, onScopeInvalidated]);
+  }, [hidden, Boolean(pendingForAdmin), open, conv?.id, conv?.version, conv?.detailReady, conversationsAvailable, authEpoch, detailRetry, detailError, loadConversationDetail, onScopeInvalidated]);
   useEffect(() => { setDetailError(""); }, [conv?.id, authEpoch]);
 
   // M3 在台 / 无活跃会话 / 已被关闭(且仍是同一会话)→ 不显
@@ -1439,6 +1470,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
         if (result && result.status !== "SUCCEEDED" && result.status !== "FAILED") { setSendError("发送结果仍在确认，请稍后查询。"); return; }
         if (result?.status === "FAILED") { setCanAbandon(true); setSendError("消息发送失败。请复制原文并清除待确认记录。"); return; }
         if (!result) {
+          if (isRetryExpired(pendingDock)) { setSendError(RETRY_EXPIRED_TEXT); return; }
           if (!canWrite) { setCanAbandon(true); setSendError("原命令未找到，当前会话不可发送。可复制原文后放弃查询。"); return; }
           if (!dockCommands.isDurablyStored(dockSlot, key)) { setSendError("浏览器无法保存原消息编号，本次尚未发送。恢复存储后重试；请勿刷新或关闭页面。"); return; }
           submitted = true;
@@ -1472,6 +1504,8 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
 
   const customer = conv.customer ?? conv.agentName;
 
+  // 专属会话页的发送按钮在右下，待确认恢复卡改挂右上，不盖住它。
+  const dockAnchor = hidden ? { top: 68 } : { bottom: 22 };
   if (!open) {
     return (
       <button
@@ -1479,7 +1513,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
         data-proof="session-dock-pill"
         onClick={() => setOpen(true)}
         className="card"
-        style={{ position: "fixed", right: 22, bottom: 22, zIndex: 30, display: "flex", alignItems: "center", gap: 9, padding: "8px 12px 8px 9px", borderRadius: 999, boxShadow: "var(--m-sh-pop)", cursor: "pointer", color: "var(--ink)" }}
+        style={{ position: "fixed", right: 22, ...dockAnchor, zIndex: 30, display: "flex", alignItems: "center", gap: 9, padding: "8px 12px 8px 9px", borderRadius: 999, boxShadow: "var(--m-sh-pop)", cursor: "pointer", color: "var(--ink)" }}
         title="持续接待 · 切页不挂断"
       >
         <MAvatar name={customer} size="sm" />
@@ -1510,7 +1544,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
     <div
       data-proof="session-dock-panel"
       className="card"
-      style={{ position: "fixed", right: 22, bottom: 22, zIndex: 30, width: "min(372px, calc(100vw - 24px))", maxHeight: "min(72vh, 540px)", boxShadow: "var(--m-sh-pop)", overflow: "hidden", display: "flex", flexDirection: "column" }}
+      style={{ position: "fixed", right: 22, ...dockAnchor, zIndex: 30, width: "min(372px, calc(100vw - 24px))", maxHeight: "min(72vh, 540px)", boxShadow: "var(--m-sh-pop)", overflow: "hidden", display: "flex", flexDirection: "column" }}
     >
       <div style={{ padding: "9px 12px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8, background: "var(--m-bg-2)" }}>
         <span style={{ display: "inline-flex", width: 8, height: 8, borderRadius: "50%", background: "var(--m-hd)", animation: "m-hd-pulse-blue 1.8s ease-out infinite" }} />
@@ -1534,6 +1568,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
         {conv.detailReady ? <MessageThread messages={threadMessages} relWhen={dockRelWhen} resetKey={conv.id} /> : <div role={detailError ? "alert" : "status"} className="itint">{detailError ? `会话详情加载失败：${detailError}` : "正在加载会话消息…"} {detailError && <button type="button" className="btn btn-sec btn-sm" onClick={() => { setDetailError(""); setDetailRetry((value) => value + 1); }}>重新加载详情</button>}</div>}
       </div>
       {sendError && <div role="alert" style={{ padding: "8px 11px", color: "var(--danger)", fontSize: 12 }}>{sendError}{sendError.startsWith("消息已发送") && <button type="button" className="btn btn-ghost btn-sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</button>}</div>}
+      {pendingDock && isRetryExpired(pendingDock) && <div role="status" style={{ padding: "8px 11px", color: "var(--warning)", fontSize: 12 }}>{RETRY_EXPIRED_TEXT}</div>}
       {pendingDock && canAbandon && <div><button type="button" className="btn btn-sec btn-sm" disabled={sending} onClick={() => void copyOriginal(draft)}>复制原文</button><button type="button" className="btn btn-sec btn-sm" disabled={sending} onClick={() => abandonQuery(pendingDock)}>放弃查询</button></div>}
       {!canWriteM3 && <div role="status" style={{ padding: "8px 11px", fontSize: 12 }}>你只能查看会话，发消息需要会话操作权限。</div>}
       <div style={{ padding: "9px 11px", borderTop: "1px solid var(--border)", display: "flex", gap: 8, alignItems: "flex-end" }}>

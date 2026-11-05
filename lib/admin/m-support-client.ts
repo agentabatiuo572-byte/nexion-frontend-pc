@@ -134,7 +134,7 @@ export type SupportMessageResult = { conversationNo: string };
 export type SupportSessionRole = "ADVISOR" | "SUPERVISOR" | "ADMIN";
 export type SupportSessionHolder = { adminId: number; name: string; role: SupportSessionRole };
 export type SupportSessionHold = { state: "FREE" | "MINE" | "OTHER"; holder: SupportSessionHolder | null; lastSentAt: string | null; autoEndAt: string | null; endMinutes: number | null };
-export const SUPPORT_SESSION_ROLE_LABEL: Record<SupportSessionRole, string> = { ADVISOR: "专属客服", SUPERVISOR: "客服主管", ADMIN: "总管理员" };
+export const SUPPORT_SESSION_ROLE_LABEL: Record<SupportSessionRole, string> = { ADVISOR: "专属客服", SUPERVISOR: "客服主管", ADMIN: "超级管理员" };
 /** Operator wording of an AGENT_SWITCH row; App/H5 show the name only. */
 export function agentSwitchText(name: string | undefined, role: SupportSessionRole | undefined): string {
   return name ? `客服已切换为 ${name}${role ? `（${SUPPORT_SESSION_ROLE_LABEL[role]}）` : ""}` : "客服已切换";

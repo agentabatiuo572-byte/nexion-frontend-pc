@@ -11,7 +11,7 @@ export type { ActionConfirmReq, ConfirmReq, ConfirmChip } from "../k-tabs/types"
 export type MCtx = {
   pget: (k: string) => string | undefined;
   params: Record<string, string>;
-  setParam: (k: string, v: string, meta: { action: string; reason: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void }) => Promise<boolean>;
+  setParam: (k: string, v: string, meta: { action: string; reason: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void; /** 传了就把失败原因交给调用方，写在确认框里，不弹 toast。 */ onFailure?: (message: string) => void }) => Promise<boolean>;
   refreshConversations: () => Promise<void>;
   refreshContent: () => Promise<void>;
   /** A full content load is running; availability flags are not final yet. */
@@ -20,10 +20,12 @@ export type MCtx = {
   refreshKnowledge: () => Promise<void>;
   loadConversationDetail: (no: string, signal?: AbortSignal, includeCustomerProfile?: boolean) => Promise<void>;
   invalidateScope: (conversationNo?: string, customerId?: string) => void;
+  /** 这类操作有没有过了 24 小时重试时限的待确认记录（OP-96）。 */
+  commandExpired: (part: string) => boolean;
   addCustomerTag: (convoId: string, tag: string) => Promise<boolean>;
   removeCustomerTag: (convoId: string, tag: string) => Promise<boolean>;
   addCustomerNote: (convoId: string, text: string) => Promise<boolean>;
-  removeCustomerNote: (convoId: string, noteId: string, reason?: string) => Promise<boolean>;
+  removeCustomerNote: (convoId: string, noteId: string, reason?: string, onFailure?: (message: string) => void) => Promise<boolean>;
   toast: (s: string) => void;
   /** M5 未绑定策略的「等待分配提醒」分钟数；未读到时按 5 分钟。 */
   unboundAlertMinutes?: number;

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "./error-messages";
 import { SupportClientError } from "./m-support-client";
-import { PENDING_MUTATION_TTL_MS, type PendingMutationRecord, type PendingMutationStore } from "./pending-mutation-store";
+import { PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord, type PendingMutationStore } from "./pending-mutation-store";
 import { canReplayGroupCommand } from "./support-group-client";
 
 export type SupportIntent<T> = PendingMutationRecord & { payload: T; denied?: boolean };
@@ -112,7 +112,7 @@ export function useSupportManagementCommand<T, R>(options: {
     }
   }
 
-  const notice = expired ? `${message}原操作已超过 24 小时，只能继续查询。`
+  const notice = expired ? `${message}${RETRY_EXPIRED_TEXT}。`
     : canReplay ? `${message}可稍后再查或按原操作重试。` : message;
   return { pending, busy, message: notice, canReplay, denied, run };
 }
