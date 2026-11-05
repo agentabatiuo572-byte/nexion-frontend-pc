@@ -66,9 +66,9 @@ const OPTIONS: readonly { value: Theme; label: string; icon: typeof Sun }[] = [
 export function ThemeToggle({ adminId, floating }: { adminId?: number; floating?: boolean }) {
   const theme = useTheme();
   return (
-    <div className="rd-theme" role="radiogroup" aria-label="界面主题" data-floating={floating ? "" : undefined}>
+    <div className="rd-theme" role="group" aria-label="界面主题" data-floating={floating ? "" : undefined}>
       {OPTIONS.map(({ value, label, icon: Icon }) => (
-        <button key={value} type="button" role="radio" aria-checked={theme === value} data-on={theme === value ? "" : undefined} title={`${label}主题`} onClick={() => applyTheme(value, adminId)}>
+        <button key={value} type="button" aria-pressed={theme === value} data-on={theme === value ? "" : undefined} title={`${label}主题`} onClick={() => applyTheme(value, adminId)}>
           <Icon size={14} aria-hidden />
           <span className="rd-theme-label">{label}</span>
         </button>
