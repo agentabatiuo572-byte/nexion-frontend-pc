@@ -140,6 +140,10 @@ function trialProductReason(reason: string | undefined) {
   return formatAdminApiError(reason, "请到「商品管理与上架条件」核对商品状态");
 }
 
+function sessionTime(value: string | undefined) {
+  return value ? `${formatBusinessTimeFull(value, "—")}（${businessZone().label}）` : "—";
+}
+
 function stateTone(state: TrialState | undefined): StateTone {
   if (state?.key === "active") return "progress";
   if (state?.key === "idle") return "neutral";
@@ -154,7 +158,7 @@ function paramValue(param: TrialParam, product: TrialProduct | undefined) {
   const unit = TRIAL_PARAM_HELP[param.key]?.input?.unit;
   if (param.key === "trialOffsetCapUSD" && text(param.cur, "") === "") return "不设上限";
   if (param.key === "trialProductId") return product?.name ?? text(param.cur);
-  if (param.key === "trialPriceUSD") return `${text(param.cur)} USD`;
+  if (param.key === "trialPriceUSD") return `${text(param.cur)} USDT`;
   if (param.serverOnly) return operatorCopyText(text(param.cur));
   if (unit === "%") return `${text(param.cur)}%`;
   return unit ? `${text(param.cur)} ${unit}` : text(param.cur);
@@ -190,18 +194,20 @@ function ParamRow({ ctx, param, trialProducts, onChanged, reach, blocked }: {
     const edit: EditSpec = isProduct ? {
       kind: "select",
       current,
+      disallowCurrent: true,
       options: trialProducts.map((product) => product.productNo),
       optionLabels: Object.fromEntries(trialProducts.map((product) => [
         product.productNo,
-        `${product.name} · ${product.productNo} · 库存 ${product.stock ?? 0} · $${text(product.priceUsdt)}${product.selectable ? "" : ` · 不可选：${trialProductReason(product.unavailableReason)}`}`,
+        `${product.name} · ${product.productNo} · 库存 ${product.stock ?? 0} · ${text(product.priceUsdt)} USDT${product.selectable ? "" : ` · 不可选：${trialProductReason(product.unavailableReason)}`}`,
       ])),
       disabledOptions: trialProducts.filter((product) => !product.selectable).map((product) => product.productNo),
       hint: help?.how,
     } : param.key === "autoPushEnabled" ? {
-      kind: "select", current, options: ["开", "关"],
+      kind: "select", current, disallowCurrent: true, options: ["开", "关"],
     } : {
       kind: help?.input ? "number" : "text",
       current: isOffsetCap && !current ? "不设上限" : current,
+      disallowCurrent: true,
       ...help?.input,
       emptyOption: isOffsetCap && current ? "不设上限" : undefined,
       hint: help?.how,
@@ -525,7 +531,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   if (productBlocked) issues.push({ key: "product", tone: "danger", title: "当前目标商品不可用", body: <>库存 {product?.stock ?? 0} · {trialProductReason(product?.unavailableReason)}</> });
   if (phaseClosed) issues.push({ key: "phase", tone: "warn", title: "当前运营阶段不开放试用", body: <>用户现在不能开始试用。{reach(phaseHref) && <Link className="rd-link" href={phaseHref} prefetch={false}>去运营阶段设置</Link>}</> });
   if (!seatsKnown) issues.push({ key: "seats", tone: "warn", title: "今日实际剩余名额读不到", body: operatorCopyText(seats?.sub ?? "名额计数暂不可用，请稍后刷新；不能作为领取依据") });
-  else if (Number(seats?.cur) === 0) issues.push({ key: "seats", tone: "warn", title: "今日免费名额已用完", body: "用户今天不能开始试用，次日恢复。要今天多放名额，调高「每日免费名额上限」。" });
+  else if (Number(seats?.cur) === 0 && Number(paramOf("seatsLeftToday")?.cur) === 0) issues.push({ key: "seats", tone: "warn", title: "每日免费名额上限是 0", body: `用户不能开始试用，次日也不会恢复。${canWrite ? "要开放试用，调高「每日免费名额上限」。" : ""}` });
+  else if (Number(seats?.cur) === 0) issues.push({ key: "seats", tone: "warn", title: "今日免费名额已用完", body: `用户今天不能开始试用，次日恢复。${canWrite ? "要今天多放名额，调高「每日免费名额上限」。" : ""}` });
 
   const lockedSids = new Set(pending.map((record) => record.sid));
   const rows = sessions.map((session) => {
@@ -615,7 +622,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
             </div>
 
             <div id={nav.anchor("records")}>
-              <Fold title="试用记录" icon={History} tone="role-3" summary={`共 ${total} 条，${text(stats.activeSessions)} 条进行中`} open={!!folds.records} onOpenChange={(open) => setFolds((state) => ({ ...state, records: open }))}>
+              <Fold title="试用记录" icon={History} tone="role-3" summary={canHandle ? `共 ${total} 条，可以强制取消或扣款` : `共 ${total} 条`} open={!!folds.records} onOpenChange={(open) => setFolds((state) => ({ ...state, records: open }))}>
                 <Table label="试用记录">
                   <thead>
                     <tr>
@@ -666,8 +673,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
             ]} />
             <Facts>
               <Fact k="试用记录编号"><span data-mono="">{currentRow.session.sid}</span></Fact>
-              <Fact k="开始时间">{text(currentRow.session.claimedAt)}</Fact>
-              <Fact k="到期时间">{text(currentRow.session.expiresAt)}</Fact>
+              <Fact k="开始时间">{sessionTime(currentRow.session.claimedAt)}</Fact>
+              <Fact k="到期时间">{sessionTime(currentRow.session.expiresAt)}</Fact>
             </Facts>
           </>
         )}
