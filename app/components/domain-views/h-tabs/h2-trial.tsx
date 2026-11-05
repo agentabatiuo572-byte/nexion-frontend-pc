@@ -201,6 +201,9 @@ function ParamRow({ ctx, param, trialProducts, onChanged, reach, blocked }: {
     toast(`${name} 已更新`);
   };
 
+  // 只有当前这一个可选时没什么好改，弹窗里只能看到一个选项。写清楚要换得先去开启别的商品。
+  const noOtherProduct = isProduct && !trialProducts.some((product) => product.selectable && product.productNo !== current);
+
   const open = () => {
     const edit: EditSpec = isProduct ? {
       kind: "select",
@@ -251,8 +254,8 @@ function ParamRow({ ctx, param, trialProducts, onChanged, reach, blocked }: {
       when={when}
       where={help?.where}
       value={displayCurrent}
-      sub={currentProduct ? `商品编号 ${currentProduct.productNo} · 库存 ${currentProduct.stock ?? 0}` : undefined}
-      action={ctx.can("growth_h2_write") ? (describedBy) => <Button size="sm" aria-label={`调整 ${name}`} aria-describedby={describedBy} disabledReason={blocked} onClick={open}>调整</Button> : undefined}
+      sub={currentProduct ? `商品编号 ${currentProduct.productNo} · 库存 ${currentProduct.stock ?? 0}${noOtherProduct ? " · 现在只有这一个可选" : ""}` : undefined}
+      action={ctx.can("growth_h2_write") ? (describedBy) => <Button size="sm" aria-label={`调整 ${name}`} aria-describedby={describedBy} disabledReason={blocked ?? (noOtherProduct ? "没有别的可选商品。要换商品，先到「商品管理与上架条件」给别的在售商品开启「允许试用」" : undefined)} onClick={open}>调整</Button> : undefined}
     />
   );
 }
@@ -425,6 +428,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const openSessionCancel = (session: TrialSession) => {
     openActionConfirm({ briefKind: "record",
       action: `强制取消试用 · ${session.sid}`,
+      facts: <Facts><Fact k="用户">{trialOwnerLabel(session)}</Fact><Fact k="试用">{session.sid}</Fact></Facts>,
       detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。这次试用会结束并标记为 <b>已取消</b>，重复提交不会重复处理。</>,
       amplifies: false,
       effect: <StatusTag tone="progress" filled>提交审批，批准后生效</StatusTag>,
@@ -440,6 +444,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const openSessionCharge = (session: TrialSession) => {
     openActionConfirm({ briefKind: "funds",
       action: `强制触发扣款 · ${session.sid}`,
+      facts: <Facts><Fact k="用户">{trialOwnerLabel(session)}</Fact><Fact k="试用">{session.sid}</Fact></Facts>,
       detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。按当前试用规则重新计算并扣款，重复提交不会重复扣。会直接动用户的 USDT，需要有权限的管理员在「操作记录与审批」批准。</>,
       amplifies: true,
       coverageLead: "这项操作会直接扣用户的 USDT",

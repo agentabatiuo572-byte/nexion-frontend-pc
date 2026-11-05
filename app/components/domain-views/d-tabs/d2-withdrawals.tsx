@@ -756,17 +756,16 @@ function riskBreakdownText(value?: string) {
 }
 
 /** 放行前要核对的收款事实，常显在确认框里（F01）。 */
-function recipientFacts(row: D2Withdrawal, bank: D2BankPayout | null) {
-  if (row.chain === "BANK-VND") return (
-    <Facts>
-      <Fact k="收款网络">越南银行卡 · HDPay</Fact>
-      <Fact k="收款账号"><span data-mono>{bank ? `${bank.bankName} ${bank.maskedAccount}` : "读取中，请在详情里核对"}</span></Fact>
-    </Facts>
-  );
+/** 确认框常显的对象和金额，执行摘要收起后不能只写在摘要里（DP-03、OP-48）。放行再加收款信息。 */
+function reviewFacts(row: D2Withdrawal, action: D2ReviewAction, bank: D2BankPayout | null) {
+  const bankRow = row.chain === "BANK-VND";
   return (
     <Facts>
-      <Fact k="收款网络">{chainText(row)}</Fact>
-      <Fact k="收款地址"><span data-mono>{row.targetAddress}</span></Fact>
+      <Fact k="用户">{row.userNo}</Fact>
+      <Fact k="金额">{amountText(row.amount)} {row.asset}</Fact>
+      {action === "APPROVE" && <Fact k="收款网络">{bankRow ? "越南银行卡 · HDPay" : chainText(row)}</Fact>}
+      {action === "APPROVE" && bankRow && <Fact k="收款账号"><span data-mono>{bank ? `${bank.bankName} ${bank.maskedAccount}` : "读取中，请在详情里核对"}</span></Fact>}
+      {action === "APPROVE" && !bankRow && <Fact k="收款地址"><span data-mono>{row.targetAddress}</span></Fact>}
     </Facts>
   );
 }
@@ -1073,7 +1072,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       coverage: d5 ? { coverageRatio: d5.coverageRatio, redlinePct: d5.redlinePct } : undefined,
       coverageLead: action === "APPROVE" ? "放行后这笔钱会打给用户" : undefined,
       businessForm: actionBusinessForm(action, addressVerificationRequired),
-      facts: action === "APPROVE" ? recipientFacts(row, bankDetail?.withdrawalNo === row.withdrawalNo ? bankDetail : null) : undefined,
+      facts: reviewFacts(row, action, bankDetail?.withdrawalNo === row.withdrawalNo ? bankDetail : null),
       reasonMin: 8,
       reasonMax: 200,
       completionCopy: brief.impact,
@@ -1279,7 +1278,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       businessForm: actionBusinessForm(action),
       facts: action === "APPROVE" ? <ul className="rd-recipients" tabIndex={0} aria-label="这次放行的收款信息">
         {submittableRows.map((row) => <li key={row.withdrawalNo}><span data-mono>{row.withdrawalNo}</span> · {amountText(row.amount)} {row.asset} · {chainText(row)} · <span data-mono>{row.targetAddress}</span></li>)}
-      </ul> : undefined,
+      </ul> : <Facts><Fact k="笔数">{ids.length} 笔</Fact></Facts>,
       reasonMin: 8,
       reasonMax: 200,
       completionCopy: batchImpact,

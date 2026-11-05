@@ -124,7 +124,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 ## 写操作确认
 
-逻辑全在 `OperationConfirmModal` 里（理由规则、覆盖率拦截、提交中锁定、失败留表单），新旧页面用同一份。放进 `RdPage` 后自动变成：Radix 弹窗、新外观、执行摘要常显、覆盖率提示排在理由上面。新加两个可选属性，旧页面不传就和原来一样：
+逻辑全在 `OperationConfirmModal` 里（理由规则、覆盖率拦截、提交中锁定、失败留表单），新旧页面用同一份。放进 `RdPage` 后自动变成：Radix 弹窗、新外观、执行摘要默认收起（标题行写影响）、覆盖率提示排在理由上面。金额、对象、前后值不能只写在 `detail` 里，要传 `facts` 或 `edit`，它们常显。新加两个可选属性，旧页面不传就和原来一样：
 
 - `effect`：生效标签，比如 `<StatusTag tone="progress" filled>立即生效</StatusTag>`，只在 `RdPage` 里显示。
 - `confirmLabel`：确认按钮写动作，比如 `确认放行`，默认 `确认提交`。

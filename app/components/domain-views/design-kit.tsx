@@ -821,8 +821,19 @@ export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, complet
       )}
     </div>
   );
-  // 改版页面的确认框摘要常显(OP-48);旧页面保持默认收起。
-  if (surface) return <div className="operator-brief" style={{ marginBottom: 16 }}><p className="rd-brief-title">执行摘要</p>{rows}</div>;
+  // 改版页面的摘要也默认收起，标题行写影响（OP-48）。金额、对象、前后值放在框里常显的地方，不靠摘要。
+  if (surface) {
+    const impact = brief.find((row) => row.label === "影响")?.text;
+    return (
+      <details className="operator-brief rd-brief">
+        <summary>
+          <span className="rd-brief-head"><b>执行摘要</b>{impact && <span>{impact}</span>}</span>
+          <span className="rd-brief-toggle"><span className="brief-closed">查看详情</span><span className="brief-open">收起</span></span>
+        </summary>
+        {rows}
+      </details>
+    );
+  }
   return (
     <details className="tint brand operator-brief" style={{ marginBottom: 16, border: 0 }}>
       <summary

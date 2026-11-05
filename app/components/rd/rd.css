@@ -296,7 +296,11 @@
 :root[data-theme="light"] :is(.rd-page, .rd-modal) :is(input[type="date"], input[type="datetime-local"]) { color-scheme: light; }
 .rd-modal.rd-confirm .operator-brief .mono { color: var(--rd-text-3) !important; font-family: inherit; font-size: var(--rd-text-aux) !important; }
 .rd-modal.rd-confirm .operator-brief .tiny { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text) !important; }
-.rd-modal.rd-confirm .rd-brief-title { margin: 0 0 8px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-modal.rd-confirm .rd-brief > summary { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.rd-modal.rd-confirm .rd-brief-head { display: flex; flex-wrap: wrap; gap: 2px 8px; min-width: 0; }
+.rd-modal.rd-confirm .rd-brief-head b { font-weight: 500; color: var(--rd-text-3); }
+.rd-modal.rd-confirm .rd-brief-toggle { flex: none; color: var(--rd-text-3); }
+.rd-modal.rd-confirm .chip.tab.sel { background: var(--rd-brand); color: var(--rd-text-on-brand); border-color: var(--rd-brand); }
 .rd-modal.rd-confirm .field label, .rd-modal.rd-confirm .field .bf-legend { font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
 .rd-modal.rd-confirm .field textarea, .rd-modal.rd-confirm .field input:not([type="checkbox"]):not([type="radio"]), .rd-modal.rd-confirm .fld { border: 0; border-radius: var(--rd-radius-control); background: var(--rd-control); color: var(--rd-text); font-size: var(--rd-text-body); }
 .rd-modal.rd-confirm .alertbar { border: 0; border-radius: var(--rd-radius-control); }
