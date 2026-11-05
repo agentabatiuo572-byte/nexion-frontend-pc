@@ -67,6 +67,7 @@ export function G3MarketConfirm({ session, epoch, requested, onClose, onDone }: 
     completionCopy={change.action === "current-price" ? "降低后立即发布新价格，下次自动切换仍按计划执行。" : timing}
     inlineApproval={{
       dialogClassName: `g3-market-confirm${schedule ? " g3-schedule-confirm" : ""}`,
+      fieldLayout: "compact",
       pending: pending?.request.kind === "approval",
       expired: !!pending && g3MarketCommandExpired(pending),
       disabledReason: pending && pending.request.kind === "direct" && g3MarketCommandExpired(pending)
