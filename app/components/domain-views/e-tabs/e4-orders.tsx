@@ -2,7 +2,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, ClipboardList, Coins, Copy, History, Package, Receipt, RefreshCw, Route, Server, User, Workflow } from "lucide-react";
 import {
-  BlockState, Button, Cell, ColumnPicker, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input,
+  BlockState, Button, Cell, ColumnPicker, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input,
   JudgmentPoints, Modal, Notice, PageHeader, Pager, Panel, Segments, Select, Stat, StatBand, StatusTag, Steps, Table, TableLoading, TableMessage, Td, Th, Tr,
   useTableColumns, type JudgmentRow, type SegmentItem, type TableColumn,
 } from "@/app/components/rd";
@@ -21,9 +21,9 @@ const FAILED_STATES = ["payment_failed", "provisioning_failed", "chargeback"];
 const STATE_TEXT: Record<string, string> = {
   placed: "用户已下单，还没付款。付款记录确认到账后才算已支付，后台不能手动标记。",
   paid: "用户已付款。款项结算、设备和数据中心都到位后，才能推进到开通中。",
-  provisioning: "正在分配数据中心和开通设备。设备激活后，才能推进到已激活。",
+  provisioning: "设备放在平台机房托管，不发实物，所以开通时要分配数据中心。设备激活后，才能推进到已激活。",
   activated: "设备已激活，订单已交付。",
-  inventory: "设备已入库，订单已交付。",
+  inventory: "设备已进用户的设备仓库，还没激活。这也算已交付。",
   payment_failed: "下单后未成功扣款",
   expired: "订单超时未支付",
   provisioning_failed: "开通没有完成，订单已终止",
@@ -36,14 +36,16 @@ const STATE_NEXT: Record<string, string> = { placed: "等用户付款", paid: "�
 
 const ORDER_COLUMNS: readonly TableColumn[] = [
   { key: "order", label: "订单号", locked: "第一列不能关" },
+  { key: "state", label: "状态", locked: "状态要一直看得到" },
   { key: "user", label: "用户" },
   { key: "sku", label: "商品" },
   { key: "amount", label: "金额" },
   { key: "dc", label: "数据中心", extra: true },
-  { key: "state", label: "状态", locked: "状态要一直看得到" },
   { key: "age", label: "下单至今" },
 ];
 
+/** 列表里中间省略，状态才不被挤走；全值在悬停、读屏和抽屉里（ST-04）。 */
+const shortNo = (value: string) => value.length > 24 ? `${value.slice(0, 12)}…${value.slice(-6)}` : value;
 const statusOption = (state: string) => ({ value: state, label: stateLabel(state) });
 
 export function E4Orders({ ctx }: { ctx: EViewCtx }) {
@@ -59,6 +61,8 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
   ];
   const countOf = (states: readonly string[]) => counts ? states.reduce((sum, state) => sum + (counts[state] ?? 0), 0) : undefined;
   const flowCount = countOf(FLOW_STATES);
+  const waitCount = countOf(["paid", "provisioning"]);
+  const searchNote = query.keyword ? "按当前搜索词算。" : "";
   const failedCount = countOf(FAILED_STATES);
   const countSub = (text: string) => ctx.e4CountsFailed ? "数量暂时读不到" : counts ? text : "读取中";
   const activated = orders.filter((order) => ctx.orderState(order) === "activated");
@@ -90,13 +94,19 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
       </Notice>
     ))}
 
+    {ctx.e4CountsFailed
+      ? <Conclusion state="unknown" action={<Button size="sm" onClick={() => void ctx.refreshE4()}>重试</Button>}>订单数量读不到，还不知道有没有要处理的</Conclusion>
+      : waitCount === undefined ? <Conclusion state="unknown">正在读取有没有要处理的订单…</Conclusion>
+        : waitCount > 0
+          ? <Conclusion state="warn" lead hint={`点一行看差什么，设备分配和激活在「设备运行管理」做。${searchNote}`}
+              action={<Button size="sm" onClick={() => ctx.updateE4Query({ group: "flow", state: "" })}>看进行中的订单</Button>}>有 <b>{waitCount}</b> 单等开通或激活</Conclusion>
+          : <Conclusion state="ok" lead hint={`${counts?.placed ? `${counts.placed} 单在等用户付款，不用操作。` : ""}${searchNote}` || undefined}>没有要处理的订单</Conclusion>}
+
     <StatBand label="订单汇总">
-      <Stat lead tone="role-2" icon={Workflow} label="流转中订单" value={flowCount ?? "—"} unit={flowCount === undefined ? undefined : "单"}
+      <Stat tone="role-2" icon={Workflow} label="进行中订单" value={flowCount ?? "—"} unit={flowCount === undefined ? undefined : "单"}
         sub={countSub("已下单 / 已支付 / 开通中")} explain="全部订单里这三个状态的单数，跟着搜索词变，不随下方状态筛选变。" />
       <Stat icon={AlertTriangle} iconTone={failedCount ? "danger" : undefined} tone={failedCount ? "danger" : undefined} label="失败订单" value={failedCount ?? "—"} unit={failedCount === undefined ? undefined : "单"}
         sub={countSub("支付失败 / 开通失败 / 拒付")} explain="全部订单里这三个状态的单数，跟着搜索词变，不随下方状态筛选变。" />
-      <Stat tone="role-1" icon={Coins} label="本页已激活金额" value={error || loading ? "—" : Math.round(activeAmount).toLocaleString("en-US")} unit={error || loading ? undefined : "USDT"}
-        sub={error ? "加载失败" : loading ? "加载中" : `当前页 ${activated.length} 笔已激活 · 取整`} explain={`只算当前页显示的已激活订单，不是全部。翻页和筛选都会变。这里取整显示${error || loading ? "" : `，完整金额 ${orderMoney(activeAmount)}`}。`} />
     </StatBand>
 
     <FilterBar
@@ -117,12 +127,12 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
     <Panel flush icon={ClipboardList} tone="role-2" title={currentGroup ? `${currentGroup.label}的订单` : "全部订单"} sub="点一行看到哪一步、下一步做什么" actions={<ColumnPicker columns={columns} />}>
       <Table label="订单列表" aria-busy={loading}>
         <thead><tr>
-          <Th sticky="start">订单号</Th>
+          <Th sticky="start"><Explain label="订单号开头是什么意思" content="ORD 是普通购买，BND 是组合购买，TRC 是试用转购买。其他开头看详情里的订单类型。">订单号</Explain></Th>
+          <Th><Explain label="状态怎么分组" content="进行中：已下单、已支付、开通中。已交付：已激活、已入库，已入库是设备进了用户的设备仓库但还没激活。失败：支付失败、开通失败、拒付。已结束：已过期、已退款、已取消。">状态</Explain></Th>
           {columns.isVisible("user") && <Th icon={User} tone="users">用户</Th>}
           {columns.isVisible("sku") && <Th icon={Package} tone="devices">商品</Th>}
           {columns.isVisible("amount") && <Th align="right" icon={Coins} tone="money">金额（USDT）</Th>}
           {columns.isVisible("dc") && <Th icon={Server} tone="devices">数据中心</Th>}
-          <Th>状态</Th>
           {columns.isVisible("age") && <Th align="right">下单至今</Th>}
         </tr></thead>
         <tbody>
@@ -135,19 +145,20 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
                   const state = ctx.orderState(order);
                   return (
                     <Tr key={order.id} selected={ctx.selOrder?.id === order.id} onOpen={() => ctx.openOrder(order)}>
-                      <Td sticky="start"><Cell mono full main={<button type="button" className="rd-cell-link" data-e4-order-trigger aria-label={`查看订单 ${order.id}`} aria-haspopup="dialog" onClick={() => ctx.openOrder(order)}>{order.id}</button>} /></Td>
+                      <Td sticky="start"><Cell mono full main={<button type="button" className="rd-cell-link" data-e4-order-trigger title={order.id} aria-label={`查看订单 ${order.id}`} aria-haspopup="dialog" onClick={() => ctx.openOrder(order)}>{shortNo(order.id)}</button>} /></Td>
+                      <Td><Cell main={<StatusTag tone={ORDER_STATE_TONE[state] ?? "neutral"}>{stateLabel(state)}</StatusTag>} sub={STATE_NEXT[state]} /></Td>
                       {columns.isVisible("user") && <Td><Cell mono main={order.user} /></Td>}
                       {columns.isVisible("sku") && <Td><Cell main={order.sku} title={order.sku} /></Td>}
                       {columns.isVisible("amount") && <Td align="right"><Cell num main={orderAmount(order.amt, amountDigits)} /></Td>}
                       {columns.isVisible("dc") && <Td><Cell main={order.dc} title={order.dc} /></Td>}
-                      <Td><Cell main={<StatusTag tone={ORDER_STATE_TONE[state] ?? "neutral"}>{stateLabel(state)}</StatusTag>} sub={STATE_NEXT[state]} /></Td>
-                      {columns.isVisible("age") && <Td align="right"><Cell num main={order.age} /></Td>}
+                      {columns.isVisible("age") && <Td align="right"><Cell num main={ORDER_FINAL_STATES.includes(state) ? "—" : order.age} /></Td>}
                     </Tr>
                   );
                 })}
         </tbody>
       </Table>
       {!error && ctx.e4Total > 0 && <Pager label="订单列表" total={ctx.e4Total} page={query.page} pageSize={query.pageSize} sizes={E4_PAGE_SIZES} loading={loading}
+        note={!loading && activated.length > 0 ? `本页已激活 ${activated.length} 笔，合计 ${orderMoney(activeAmount)}，只算这一页` : undefined}
         onPage={(page) => ctx.updateE4Query({ page })} onPageSize={(pageSize) => ctx.updateE4Query({ pageSize })} />}
     </Panel>
 
@@ -170,7 +181,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           ))}
         </tbody>
       </Table>
-      <p className="rd-toolbar-note">只有已支付、开通中、已激活或已入库的订单能退款，提交时会检查平台资金是否够退。「标记失败结果」不会退款。</p>
+      <p className="rd-toolbar-note">设备放在平台机房托管，不发实物，所以开通时要分配数据中心。只有已支付、开通中、已激活或已入库的订单能退款，提交时会检查平台资金是否够退。「标记失败结果」不会退款。</p>
     </Fold>
 
     <E4OrderDrawer ctx={ctx} />
