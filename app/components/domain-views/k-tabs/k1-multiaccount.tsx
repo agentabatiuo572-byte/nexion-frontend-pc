@@ -997,7 +997,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const frozenCount = Number(stats.frozenClusters ?? 0);
   const highCount = Number(stats.highClusters ?? 0);
   const openCount = activeCount - frozenCount;
-  const conclusion = openCount > 0
+  const conclusion = !statKnown("activeClusters") || !statKnown("frozenClusters")
+    ? <Conclusion state="unknown" hint="统计没有读到，先看下面的列表。">账户组数量暂时读不到</Conclusion>
+    : openCount > 0
     ? <Conclusion state="warn" hint="点下面一行看证据，再决定标记、冻结或判定为正常。">有 <b>{openCount}</b> 组账户等判定{highCount > 0 ? `，${highCount} 组达到建议冻结线` : ""}</Conclusion>
     : frozenCount > 0
       ? <Conclusion state="neutral" hint="已冻结的组核实是误判后可以解除。">没有等判定的账户组，{frozenCount} 组已冻结</Conclusion>
