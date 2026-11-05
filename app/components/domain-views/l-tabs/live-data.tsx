@@ -64,10 +64,10 @@ export function kpiState(kpi: KpiRow, offset: number): "g" | "y" | "r" {
   }
   if (kpi.dir === "lte") {
     const yellow = kpi.target * (1 + offset / 100);
-    return kpi.value <= kpi.target ? "g" : kpi.value <= yellow ? "y" : "r";
+    return kpi.value < kpi.target ? "g" : kpi.value <= yellow ? "y" : "r";
   }
   const yellow = kpi.target * (1 - offset / 100);
-  return kpi.value >= kpi.target ? "g" : kpi.value >= yellow ? "y" : "r";
+  return kpi.value > kpi.target ? "g" : kpi.value >= yellow ? "y" : "r";
 }
 
 export function dataState(ctx: LCtx, label: string) {

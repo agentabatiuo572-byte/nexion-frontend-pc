@@ -74,7 +74,7 @@ function kpiTargetLabel(kpi: Record<string, unknown>) {
   if (dir !== "lte" && dir !== "gte") return null;
   const target = finiteRawNum(kpi.target);
   if (target == null) return null;
-  const sign = dir === "lte" ? "<=" : ">=";
+  const sign = dir === "lte" ? "<" : ">";
   return `${sign}${target}${unit}`;
 }
 
@@ -90,7 +90,7 @@ function kpiPass(kpi: Record<string, unknown>) {
   if (dir !== "lte" && dir !== "gte") return null;
   const target = finiteRawNum(kpi.target);
   if (target == null) return null;
-  return dir === "lte" ? value <= target : value >= target;
+  return dir === "lte" ? value < target : value > target;
 }
 
 function normalizeDashboardKpis(data: LBiData | null): DashboardKpi[] {

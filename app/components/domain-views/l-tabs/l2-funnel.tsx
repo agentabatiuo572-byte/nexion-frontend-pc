@@ -159,7 +159,7 @@ export function L2HeaderActions({ ctx }: { ctx: LCtx }) {
   const complete = isStrictL2Dashboard(ctx.biData?.l2);
   const detailedAttempt = hasDetailedL2(ctx.biData?.l2);
   const liveStages = detailedAttempt ? [] : readL2LiveStages(ctx.biData?.l2);
-  const exportable = (complete && ctx.l2SliceExportable !== false) || liveStages.length > 0;
+  const exportable = ctx.l2SliceExportable !== false && (complete || liveStages.length > 0);
   const exportFunnel = async () => {
     const ok = await confirm({
       title: complete ? "导出用户转化与留存数据" : "导出用户各阶段人数",
@@ -229,6 +229,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
   const [draftRef, setDraftRef] = useState(ctx.l2Query?.ref ?? "");
   const [queryData, setQueryData] = useState<Record<string, unknown> | null>(null);
   const [queryLoading, setQueryLoading] = useState(false);
+  const [sliceLoading, setSliceLoading] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
   const [crossOverride, setCrossOverride] = useState<Record<string, unknown> | null>(null);
   const queryGeneration = useRef(0);
@@ -238,6 +239,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
   const cancelQuery = () => {
     queryGeneration.current += 1;
     setQueryLoading(false);
+    setSliceLoading(false);
   };
 
   useEffect(() => {
@@ -303,6 +305,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
     const query: L2FunnelQuery = { stage, cohort, phase: draftPhase, locale, ref };
     const generation = ++queryGeneration.current;
     setQueryLoading(true);
+    setSliceLoading(true);
     setQueryError(null);
     setQueryData({});
     setCrossOverride(null);
@@ -313,7 +316,9 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       if (response.available === false) {
         setQueryData(response);
         ctx.setL2Query?.({ cohort, phase: draftPhase, locale, ref });
-        setQueryError(str(response.message, "当前筛选条件下没有可计算的注册用户分组"));
+        if (response.reason !== "NO_REGISTRATION_COHORT") {
+          setQueryError(str(response.message, "当前筛选条件下没有可计算的注册用户分组"));
+        }
         return;
       }
       if (!isStrictL2Dashboard(response)) {
@@ -326,7 +331,10 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
     } catch (error) {
       if (generation === queryGeneration.current) setQueryError(error instanceof Error ? displayAdminError(error) : "查询失败");
     } finally {
-      if (generation === queryGeneration.current) setQueryLoading(false);
+      if (generation === queryGeneration.current) {
+        setQueryLoading(false);
+        setSliceLoading(false);
+      }
     }
   };
 
@@ -345,20 +353,57 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
   const STAGE_EV = strings(data?.stageEvents);
   const day7 = (data?.day7Kpi ?? {}) as Partial<KpiRow>;
   const liveStages = detailedAttempt ? [] : readL2LiveStages(data);
-  if (queryError) return (
-    <section className="l-card">
-      <div className="l-b">
-        <div className="ltint warn" role="alert"><b>查询失败</b> · {queryError}。为避免数据混乱，暂时不能导出这次筛选的结果。</div>
-        <button className="l-btn sm" style={{ marginTop: 12 }} onClick={() => {
-          cancelQuery();
-          setQueryData(null);
-          setQueryError(null);
-          setCrossOverride(null);
-          ctx.setL2Query?.({});
-          ctx.setL2SliceExportable?.(true);
-        }}>返回全部数据</button>
-      </div>
-    </section>
+  const sliceFilters = (
+    <div className="chips" aria-label="筛选条件"><span className="lb">筛选数据</span>
+      <input aria-label="注册时间分组条件" value={draftCohort} placeholder="YYYY-Www / YYYY-MM" onChange={(event) => setDraftCohort(event.target.value)} style={{ width: 150 }} />
+      <select aria-label="运营阶段" value={draftPhase} onChange={(event) => setDraftPhase(event.target.value as L2FunnelQuery["phase"])}>
+        <option value="">全部阶段</option>
+        {["P1", "P2", "P3", "P4", "P5", "P6"].map((phase) => <option key={phase} value={phase}>{phase}</option>)}
+      </select>
+      <input aria-label="语言地区" value={draftLocale} placeholder="语言地区，如 vi" onChange={(event) => setDraftLocale(event.target.value)} style={{ width: 110 }} />
+      <input aria-label="推广渠道" value={draftRef} placeholder="推广渠道" onChange={(event) => setDraftRef(event.target.value)} style={{ width: 130 }} />
+      <button className="l-btn sm" disabled={queryLoading} onClick={() => void applySlice()}>
+        {queryLoading ? "查询中…" : "查看筛选结果"}
+      </button>
+      <button className="l-btn sm" disabled={queryLoading} onClick={() => {
+        cancelQuery();
+        setDraftCohort("");
+        setDraftPhase("");
+        setDraftLocale("");
+        setDraftRef("");
+        setQueryData(null);
+        setQueryError(null);
+        setCrossOverride(null);
+        ctx.setL2Query?.({});
+        ctx.setL2SliceExportable?.(true);
+        ctx.toast("已恢复全部数据");
+      }}>清空</button>
+    </div>
+  );
+  const emptyCohort = queryData?.available === false && queryData.reason === "NO_REGISTRATION_COHORT";
+  if (sliceLoading || queryError || emptyCohort) return (
+    <div>
+      <div className="view-bar">{sliceFilters}</div>
+      <section className="l-card">
+        <div className="l-b">
+          <div className="ltint warn" role={queryError ? "alert" : "status"}>
+            <b>{sliceLoading ? "查询中…" : queryError ? "查询失败" : "当前筛选条件下没有注册用户"}</b> · {sliceLoading
+              ? "请稍候，查询完成后会自动显示结果。"
+              : queryError
+                ? `${queryError} · 暂时不能导出这次筛选的结果，请重试。`
+                : "无法计算同批用户的逐级转化率或留存率，也不能导出。请调整筛选条件后重新查询。"}
+          </div>
+          {queryError && <button className="l-btn sm" style={{ marginTop: 12 }} onClick={() => {
+            cancelQuery();
+            setQueryData(null);
+            setQueryError(null);
+            setCrossOverride(null);
+            ctx.setL2Query?.({});
+            ctx.setL2SliceExportable?.(true);
+          }}>返回全部数据</button>}
+        </div>
+      </section>
+    </div>
   );
   if (!detailedAttempt && liveStages.length) return <L2LiveStages stages={liveStages} />;
   if (detailedAttempt && !strictDetailed) return (
@@ -491,7 +536,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
     <div>
       {/* stat strip */}
       <div className="f-stats">
-        <div className="f-stat cyan"><div className="k">本{cohortKind}注册用户</div><div className="v">{COHORTS[COHORTS.length - 1].w}</div><div className="sub">{COHORTS[COHORTS.length - 1].size.toLocaleString("en-US")} 人新注册 · 按注册{cohortKind}分组</div></div>
+        <div className="f-stat cyan"><div className="k">{COHORTS[COHORTS.length - 1].w} 注册用户</div><div className="v">{COHORTS[COHORTS.length - 1].w}</div><div className="sub">{COHORTS[COHORTS.length - 1].size.toLocaleString("en-US")} 人新注册 · 按注册{cohortKind}分组</div></div>
         <div className="f-stat"><div className="k">注册到提现的转化率</div><div className="v">{fullCvr}%</div><div className="sub">同批注册用户中最终发起提现的比例</div></div>
         <div className="f-stat warn"><div className="k">最近可统计的一批用户 · 第 7 天留存</div><div className="v">{day7.value == null ? "—" : `${day7.value}%`}</div><div className="sub">目标 &gt; {day7.target ?? 60}% · 注册未满 7 天的不推算</div></div>
         <div className="f-stat ok"><div className="k">试用后购买比例</div><div className="v">{trialBuy == null ? "—" : `${trialBuy}%`}</div><div className="sub">单独统计试用到购买的转化</div></div>
@@ -499,30 +544,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
 
       {/* view slice bar */}
       <div className="view-bar">
-        <div className="chips" aria-label="筛选条件"><span className="lb">筛选数据</span>
-          <input aria-label="注册时间分组条件" value={draftCohort} placeholder="YYYY-Www / YYYY-MM" onChange={(event) => setDraftCohort(event.target.value)} style={{ width: 150 }} />
-          <select aria-label="运营阶段" value={draftPhase} onChange={(event) => setDraftPhase(event.target.value as L2FunnelQuery["phase"])}>
-            <option value="">全部阶段</option>
-            {["P1", "P2", "P3", "P4", "P5", "P6"].map((phase) => <option key={phase} value={phase}>{phase}</option>)}
-          </select>
-          <input aria-label="语言地区" value={draftLocale} placeholder="语言地区，如 vi" onChange={(event) => setDraftLocale(event.target.value)} style={{ width: 110 }} />
-          <input aria-label="推广渠道" value={draftRef} placeholder="推广渠道" onChange={(event) => setDraftRef(event.target.value)} style={{ width: 130 }} />
-          <button className="l-btn sm" disabled={queryLoading} onClick={() => void applySlice()}>
-            {queryLoading ? "查询中…" : "查看筛选结果"}
-          </button>
-          <button className="l-btn sm" disabled={queryLoading} onClick={() => {
-            cancelQuery();
-            setDraftCohort("");
-            setDraftPhase("");
-            setDraftLocale("");
-            setDraftRef("");
-            setQueryData(null);
-            setCrossOverride(null);
-            ctx.setL2Query?.({});
-            ctx.setL2SliceExportable?.(true);
-            ctx.toast("已恢复全部数据");
-          }}>清空</button>
-        </div>
+        {sliceFilters}
         <div className="sep" />
         <TabGroup
           className="chips"
@@ -579,7 +601,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
                   <span className="ev" title={STAGE_EV[i] ?? f.ev ?? ""}><AutoGloss>{ex.plain}</AutoGloss></span>
                 </div>
                 <div className="barzone"><div className="bar" style={{ width: `${w}%`, background: f.color }}><span>{f.users.toLocaleString("en-US")}</span></div></div>
-                <div className="cvr">{f.cvr != null ? <><span className="pc">{f.cvr}%</span><span className="tg">{ex.tg ? `目标 ${ex.tg}` : "上一步转化"}</span></> : <span className="tg">漏斗顶</span>}</div>
+                <div className="cvr">{f.cvr != null ? <><span className="pc">{f.cvr}%</span><span className="tg">{ex.tg ? `目标 ${ex.tg}` : "上一步转化"}</span></> : <span className="tg">{i === 0 ? "漏斗顶" : FUNNEL[i - 1].users === 0 ? "上一步人数为 0，转化率不可计算" : "转化率不可计算"}</span>}</div>
               </>
             );
           }}</TabGroup>
