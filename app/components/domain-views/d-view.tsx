@@ -50,6 +50,8 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
           coverage={mc.coverage}
           edit={mc.edit}
           businessForm={mc.businessForm}
+          getPendingReason={mc.getPendingReason}
+          getPendingBusinessValue={mc.getPendingBusinessValue}
           completionCopy={mc.completionCopy}
           approval={mc.approval && {
             ...mc.approval,

@@ -3463,7 +3463,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const recoverApproval = inlineApproval ? (reason: string) => inlineApproval.recover(reason, businessValue, newVal) : approval?.recover;
   const retryApproval = approvalRecovery === "retry" ? inlineApproval?.retry : undefined;
   const approvalOnlyLookup = approvalRecovery === "lookup" || !!(approvalRecovery && inlineApproval?.expired);
-  const formLocked = submitting || !!approvalRecovery;
+  const formLocked = submitting || !!approvalRecovery || pendingReason !== undefined;
   // 配置型调整:仅当调用方显式传 edit 才提供「目标新值」编辑控件并要求 newVal;纯动作 / 处置(放行 / 冻结 / 驳回 / pause)不传 edit → 仅确认。
   // 去除按动作名猜测的启发式正则(原 isAdjust/select 正则):既防 dispose 名含「调整 / 规则 / 启停…」误弹字段,也防 adjust 名不含触发词漏判;改为 by edit 显式契约。全域调用点已逐一显式传 edit(2026-06 跨域硬化)。
   const spec: EditSpec | null = edit ?? null;
@@ -3512,7 +3512,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
     : businessNewValue(activeBusinessForm, businessValue) ?? newVal;
   const editValueOk = isEditValueValid(spec, newVal);
   const uploadBlocked = Object.values(uploadStates).some(Boolean);
-  const canConfirm = retryApproval ? !submitting && !approvalOnlyLookup
+  const canConfirm = retryApproval || pendingReason !== undefined ? !submitting && !approvalOnlyLookup && !inlineApproval?.disabledReason
     : reasonPolicyReady && !covBlocked && !approval?.disabledReason && !inlineApproval?.disabledReason && !businessSelectionLoading && !submitting && reasonOk && editValueOk && businessMissing.length === 0 && !uploadBlocked
       && (!inlineApproval || !approvalRecovery || !!approval);
   useEffect(() => {

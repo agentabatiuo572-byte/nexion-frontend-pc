@@ -56,7 +56,8 @@ const ACTION_AUTHORITY: Record<D2ReviewAction, string> = {
 const BATCH_ACTIONS = ["APPROVE", "REJECT", "DELAY", "FREEZE"] as const;
 type D2BatchAction = (typeof BATCH_ACTIONS)[number];
 type D2UncertainBatch = { action: D2BatchAction; ids: string[]; reason: string; businessValue?: BusinessFormValue };
-type D2PendingCommand = PendingMutationRecord & { batch?: D2UncertainBatch };
+type D2UncertainReview = { withdrawalNo: string; action: D2ReviewAction; reason: string; businessValue?: BusinessFormValue; operator: string };
+type D2PendingCommand = PendingMutationRecord & { batch?: D2UncertainBatch; review?: D2UncertainReview };
 const BATCH_UNKNOWN_COPY = "批量操作结果尚未确认，可能已有部分生效。请在下方重试原操作，不要另建包含相同提现单的批次。";
 const MOVED_STATE_CODES = ["INVALID_STATE_TRANSITION", "WITHDRAWAL_STATE_CONFLICT", "CREGIS_PAYOUT_ALREADY_DISPATCHED",
   "BANK_PAYOUT_ALREADY_DISPATCHED", "BANK_PAYOUT_RECOVERY_STALE"];
@@ -462,6 +463,14 @@ function operationKey(scope: string) {
 const pendingKeys = createPendingMutationStore<D2PendingCommand>({
   storageKey: "nexion-admin-d2-withdrawal-commands-v1",
   isValidRecord: (record) => {
+    if (record.review !== undefined) {
+      const review = record.review;
+      return !!review && typeof review === "object" && typeof review.withdrawalNo === "string"
+        && Object.hasOwn(ACTION_AUTHORITY, review.action) && typeof review.reason === "string" && typeof review.operator === "string"
+        && (review.businessValue === undefined || !!review.businessValue && typeof review.businessValue === "object"
+          && !Array.isArray(review.businessValue) && Object.values(review.businessValue).every((value) => typeof value === "string"))
+        && record.fingerprint === reviewScope(review.withdrawalNo, review.action);
+    }
     if (record.batch === undefined) return true;
     const batch = record.batch;
     return !!batch && typeof batch === "object"
@@ -654,12 +663,19 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   const runReview = async (row: D2Withdrawal, action: D2ReviewAction, reason: string, form?: BusinessFormValue) => {
     const scope = reviewScope(row.withdrawalNo, action);
-    const previousKey = pendingKeys.get(scope);
+    const previous = pendingKeys.list().find((record) => record.fingerprint === scope);
+    const previousKey = previous?.commandKey;
+    if (previousKey && !previous.review) throw new Error("原操作内容未保存，尚不能安全重试。请先到操作记录核对，原操作编号已保留。");
     const key = previousKey ?? operationKey(scope);
-    pendingKeys.remember(scope, key);
+    const original = previous?.review ?? { withdrawalNo: row.withdrawalNo, action, reason, businessValue: form, operator: OPERATOR() };
+    pendingKeys.remember(scope, key, { review: original });
+    if (!pendingKeys.isDurablyStored(scope, key)) {
+      if (!previous) pendingKeys.forget(scope, key);
+      throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后重试。");
+    }
     setSubmitting(scope);
     try {
-      const updated = await reviewD2Withdrawal(row.withdrawalNo, action, { ...businessInput(form), reason }, OPERATOR(), key);
+      const updated = await reviewD2Withdrawal(original.withdrawalNo, original.action, { ...businessInput(original.businessValue), reason: original.reason }, original.operator, key);
       pendingKeys.forget(scope);
       toast(`${row.withdrawalNo} 已${actionLabel(action)} · ${statusLabel(updated.status)}`);
       setDetail(updated);
@@ -670,7 +686,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       //   这张单子的这个动作 24h 内做不了,界面还没有清除入口。
       //   结果未知则必须保号 —— 丢了重试就是铸新号 = 重复出金。
       // 已有编号的登录／权限拦截没有查到原操作结果，也必须保号。
-      if (!isDOutcomeUnknownError(cause) && !retryBlockedByAccess(cause, previousKey)) pendingKeys.forget(scope);
+      if (!isDOutcomeUnknownError(cause) && !retryBlockedByAccess(cause, previousKey)
+        && !(previousKey && cause instanceof DRequestError && cause.reasonCode === "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH")) pendingKeys.forget(scope);
       return await handleWriteFailure(cause);
     } finally {
       setSubmitting("");
@@ -679,12 +696,17 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   const confirmReview = async (row: D2Withdrawal, action: D2ReviewAction) => {
     const seq = ++reviewConfirmSeq.current;
-    if (action === "APPROVE" && routingUnavailable(row)) {
+    const pending = pendingKeys.list().find((record) => record.review?.withdrawalNo === row.withdrawalNo);
+    if (pending?.review && pending.review.action !== action) {
+      toast("这笔提现的原操作结果尚未确认，请先重试原操作。");
+      return;
+    }
+    if (!pending && action === "APPROVE" && routingUnavailable(row)) {
       toast("风险分暂时算不出来，暂不能放行");
       return;
     }
-    let addressVerificationRequired = false;
-    if (action === "APPROVE") {
+    let addressVerificationRequired = !!pending?.review?.businessValue?.addressVerified;
+    if (action === "APPROVE" && !pending) {
       const listSeq = requestSeq.current;
       const detailSeq = detailRequestSeq.current;
       const latest = await fetchD2WithdrawalDetail(row.withdrawalNo).catch(() => null);
@@ -702,6 +724,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       amplifies: action === "APPROVE",
       coverage: d5 ? { coverageRatio: d5.coverageRatio, redlinePct: d5.redlinePct } : undefined,
       businessForm: actionBusinessForm(action, addressVerificationRequired),
+      getPendingReason: () => pendingKeys.list().find((record) => record.fingerprint === reviewScope(row.withdrawalNo, action))?.review?.reason,
+      getPendingBusinessValue: () => pendingKeys.list().find((record) => record.fingerprint === reviewScope(row.withdrawalNo, action))?.review?.businessValue,
       reasonMin: 8,
       reasonMax: 200,
       completionCopy: `${label}完成`,
@@ -910,7 +934,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     // 只提交「当前筛选结果里真正可执行」的行；弹窗里报的笔数与下面 run 提交的是同一个 ids。
     const ids = submittableRows.map((row) => row.withdrawalNo).sort();
     if (ids.length === 0) { toast("当前没有可以执行这个操作的提现单"); return; }
-    if (uncertainBatches.some((batch) => ids.some((id) => batch.ids.includes(id)))) {
+    if (uncertainBatches.some((batch) => ids.some((id) => batch.ids.includes(id)))
+      || pendingKeys.list().some((record) => record.review && ids.includes(record.review.withdrawalNo))) {
       toast("所选提现单包含尚未确认的原操作，请到页面上方提示中点击「重试原操作」。");
       return;
     }
@@ -930,6 +955,10 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   return <>
     {error && <div className="dtint warn" style={{ marginBottom: 12 }}>加载失败 · {error} · 已暂停所有操作，请重试。 <button className="l-btn sm" onClick={() => void load(1)}>重试</button></div>}
+    {pendingKeys.list().flatMap((record) => record.review ? [record.review] : []).map((review) => <div key={reviewScope(review.withdrawalNo, review.action)} className="dtint warn" role="status" data-d2-review-unknown style={{ marginBottom: 12 }}>
+      {review.withdrawalNo} · {actionLabel(review.action)}结果尚未确认，请继续原操作。
+      <button className="l-btn sm" disabled={!writesEnabled || !!submitting || !hasAuthority(ACTION_AUTHORITY[review.action])} onClick={() => void fetchD2WithdrawalDetail(review.withdrawalNo).then((latest) => confirmReview(latest, review.action)).catch((cause) => toast(displayAdminError(cause)))}>重试原操作</button>
+    </div>)}
     {uncertainBatches.map((batch) => <div key={batchScope(batch.action, batch.ids)} className="dtint warn" role="status" data-d2-batch-unknown style={{ marginBottom: 12 }}>
       {BATCH_UNKNOWN_COPY} {actionLabel(batch.action)} · {batch.ids.join("、")}。
       <button className="l-btn sm" disabled={!writesEnabled || !!submitting} onClick={() => void runBatch(batch.action, batch.ids, batch.reason, batch.businessValue, batch.commandKey).catch((cause) => toast(displayAdminError(cause)))}>重试原操作</button>
