@@ -22,13 +22,12 @@ import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { fetchB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import { fetchB2Reserve } from "@/lib/admin/b2-client";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
-import { requiredReadAuthority } from "@/lib/admin/cross-domain-authority";
 import { fetchD2Withdrawals } from "@/lib/admin/d-client";
 import { supportClient } from "@/lib/admin/m-support-client";
 import { opsAlertHref, refreshJ1DutyAlerts, useJ1DutyAlerts } from "@/lib/admin/ops-dashboard-client";
 import { isRiskConclusion, riskFeedTitle } from "@/lib/admin/risk-feed";
 import { fmtAmount, fmtNum } from "@/lib/format";
-import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
+import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { FlowFold, FundFold, FunnelFold, KpiFold, pressureLevel, RiskFold, useFoldChoices } from "./command-center/folds";
 import { PendingPanel, type PendingFailure, type PendingRow } from "./command-center/pending";
@@ -64,13 +63,7 @@ function approvalDetail(row: A2OperationRow) {
 export default function CommandCenter() {
   const session = useAdminAuth((state) => state.session);
   const blocks = useMemo(() => b0Blocks(session?.authorities ?? []), [session?.authorities]);
-  const domains = useMemo(() => (session ? resolveVisibleDomains(session) : []), [session]);
-  /** 目标页可达并有读权限才给入口（X03、ST-58）。 */
-  const reach = useCallback((href: string) => {
-    const path = href.split(/[?#]/, 1)[0];
-    const read = requiredReadAuthority(path);
-    return canAccessResolvedPath(domains, path) && (read === null || Boolean(session?.authorities.includes(read)));
-  }, [domains, session?.authorities]);
+  const reach = useReach();
 
   const [refreshKey, setRefreshKey] = useState(0);
   const bDomain = useBDomainDashboard(blocks.fund);

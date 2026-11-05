@@ -1,5 +1,6 @@
 "use client";
 
+import { useReach } from "@/lib/nav/use-reach";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -26,6 +27,7 @@ function timeText(value: string) {
 }
 
 export function D6Fx({ ctx }: { ctx: DCtx }) {
+  const reach = useReach();
   const { toast, openActionConfirm } = ctx;
   const session = useAdminAuth((state) => state.session);
   const operator = session?.operator || session?.username || "";
@@ -111,9 +113,9 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
         <div className="l-h"><span className="ttl">相关页面</span></div>
         <div className="l-b">
           <div className="chips">
-            <Link className="chip" href="/finance/recon">充值对账</Link>
-            <Link className="chip" href="/platform/audit">操作记录</Link>
-            <Link className="chip" href="/platform/events">用户行为事件</Link>
+            {reach("/finance/recon", "finance_d1_read") && <Link className="chip" href="/finance/recon">充值对账</Link>}
+            {reach("/platform/audit", "platform_a2_read") && <Link className="chip" href="/platform/audit">操作记录</Link>}
+            {reach("/platform/events") && <Link className="chip" href="/platform/events">用户行为事件</Link>}
           </div>
         </div>
       </section>

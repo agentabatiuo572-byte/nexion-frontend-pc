@@ -13,7 +13,6 @@ import { Download, Landmark, RefreshCw } from "lucide-react";
 import { OperationConfirmModal, useToast, type OperatorBriefKind } from "../design-kit";
 import { BlockState, Button, Conclusion, Decision, DiffList, Drawer, Field, Input, KeyValues, Modal, Notice, PageHeader, PageTabs, RdPage, Select, StatusTag } from "@/app/components/rd";
 import { useB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
-import { canAccessCrossDomainPath } from "@/lib/admin/cross-domain-authority";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import {
   createD3Injection,
@@ -31,7 +30,7 @@ import {
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { createPendingMutationStore, createSlotAttemptStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
+import { useReach } from "@/lib/nav/use-reach";
 import { DueTab, FORECAST_90D_BLOCK, FlowTab, FundConclusion, OverviewTab, SettingsTab, categoryText, effectiveText, forecastDiffRows, money, timeText, type CrossLink, type ForecastValues, type Loadable } from "./d3-treasury-views";
 
 const OPERATOR = currentAdminOperator;
@@ -109,6 +108,7 @@ const errorText = (error: unknown, fallback: string) => (error instanceof Error 
 
 export function D3Treasury() {
   const [toastNode, toast] = useToast();
+  const reach = useReach();
   const session = useAdminAuth((state) => state.session);
   const authorities = useMemo(() => session?.authorities ?? [], [session?.authorities]);
   const has = (code: string) => authorities.includes(code);
@@ -387,7 +387,7 @@ export function D3Treasury() {
   const crossLink = (href: string, label: string): CrossLink => ({
     href,
     label,
-    reachable: Boolean(session) && canAccessCrossDomainPath(href, session?.role, authorities) && canAccessResolvedPath(resolveVisibleDomains(session!), href),
+    reachable: reach(href),
   });
 
   const dataBlocked = !main ? "资金数据没读到，刷新后再试" : loading ? "正在刷新，稍等" : undefined;

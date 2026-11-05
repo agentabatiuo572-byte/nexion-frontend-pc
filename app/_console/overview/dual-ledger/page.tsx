@@ -1,4 +1,5 @@
 "use client";
+import { useReach } from "@/lib/nav/use-reach";
 import { PageHeader } from "@/app/components/rd/page-header";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
@@ -65,6 +66,7 @@ export default function DualLedgerPage() {
   const session = useAdminAuth((s) => s.session);
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
   const authorities = useAdminAuth((s) => s.session?.authorities ?? []);
+  const reach = useReach();
   const canConfigureThresholds = authorities.includes("overview_b1_redline_write");
   const canInjectReserve = authorities.includes("finance_d3_injection_create");
   const canExport = authorities.includes("finance_d3_export");
@@ -395,9 +397,9 @@ export default function DualLedgerPage() {
                   </span>
                 ) : (
                   <>
-                    <Link href="/finance/withdrawals" prefetch={false} className="btn primary">
+                    {reach("/finance/withdrawals") && <Link href="/finance/withdrawals" prefetch={false} className="btn primary">
                       去确认提现 <ArrowRight size={15} />
-                    </Link>
+                    </Link>}
                     {canAcknowledge && (
                       <button type="button" className="btn" onClick={() => setActionConfirm(command("ack"))}>
                         <CheckCircle2 size={15} /> 标记已处理
@@ -501,11 +503,11 @@ export default function DualLedgerPage() {
 
           <div className="dec-block">
             <div className="dec-lbl">紧急处理</div>
-            <div className="fuse-row">
+            {reach("/emergency/kill-switch") && <div className="fuse-row">
               <Link href="/emergency/kill-switch" prefetch={false} className="btn ghost">
                 前往紧急停用开关 <ArrowRight size={14} />
               </Link>
-            </div>
+            </div>}
             <div className="muted tiny" style={{ marginTop: 11 }}>
               这页只给出提醒和建议，不会自动收紧提现或暂停业务。
             </div>
@@ -533,8 +535,8 @@ export default function DualLedgerPage() {
           </div>
 
           <div className="radar-grid">
-            {radar.map((c) => (
-              <Link key={c.label} href={c.href} prefetch={false} className="rt">
+            {radar.map((c) => {
+              const card = <>
                 <div className="rk">{c.label}</div>
                 <div className="rt-foot">
                   <div className="rv" style={{ color: c.valColor }}>
@@ -545,8 +547,9 @@ export default function DualLedgerPage() {
                     <span className="ext">{c.ext}</span>
                   </div>
                 </div>
-              </Link>
-            ))}
+              </>;
+              return reach(c.href) ? <Link key={c.label} href={c.href} prefetch={false} className="rt">{card}</Link> : <div key={c.label} className="rt">{card}</div>;
+            })}
           </div>
 
           <div className="alertbar" style={{ marginTop: 14 }}>

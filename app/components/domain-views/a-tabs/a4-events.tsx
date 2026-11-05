@@ -1,5 +1,6 @@
 "use client";
 const redriveStatusText = (value: string) => ({PENDING:"待发送",CLAIMED:"处理中",PROCESSING:"处理中",SENT:"已发送",DELIVERED:"已送达",DEAD:"已终止",FAILED:"失败待重试",RETRY_REQUESTED:"已请求重试"} as Record<string,string>)[value] ?? "状态未知";
+import { useReach } from "@/lib/nav/use-reach";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import { A4OutboxDiagnostics } from "./a4-outbox-diagnostics";
@@ -88,6 +89,7 @@ const H3_DEAD_REDRIVABLE_EVENT_TYPES = [
 const lifecycleText = (value: string) => ({ new: "新建", pending_publish: "待发布", gray: "分批开放", full: "全面开放", disabled: "已停用" } as Record<string,string>)[value] ?? "未知状态";
 
 export function A4Events({ ctx }: { ctx: ACtx }) {
+  const reach = useReach();
   const canReadOutbox = useAdminAuth((state) => state.session?.authorities.includes("platform_a4_read") ?? false);
   const { toast, openActionConfirm } = ctx;
   const canWrite = useAdminAuth((state) => state.session?.authorities.includes("platform_a4_write") ?? false);
@@ -866,7 +868,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           <div className="l-h">
             <span className="ttl">八项关键指标怎么算</span>
             <div className="r">
-              <Link className="l-btn sm" href="/analytics/kpi">查看关键指标 →</Link>
+              {reach("/analytics/kpi", "bi_l1_read") && <Link className="l-btn sm" href="/analytics/kpi">查看关键指标 →</Link>}
             </div>
           </div>
           <div style={{ overflowX: "auto" }}>

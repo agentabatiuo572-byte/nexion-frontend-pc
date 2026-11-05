@@ -1,5 +1,6 @@
 "use client";
 
+import { useReach } from "@/lib/nav/use-reach";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import Link from "next/link";
@@ -80,6 +81,7 @@ function confirmFeeValid(value: number) {
 }
 
 export function D5Params({ ctx }: { ctx: DCtx }) {
+  const reach = useReach();
   const { toast, openActionConfirm } = ctx;
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
@@ -316,7 +318,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
           {/* FEAT-WD02:「提现惩罚费率」行已删 —— 费用模型换为按网络固定确认费(上方 D5 自有可写),
               H1 旋钮同步下线;历史审计记录不删账。 */}
           <div className="p-row"><div className="txt"><div className="k">加强合规审查</div><div className="s">由运营阶段决定</div></div><span className={`bdg ${params.complianceHoldEnabled ? "warn" : "ok"}`}>{params.complianceHoldEnabled ? "开启" : "关闭"}</span></div>
-          {authorities.includes("growth_h1_read") && <Link href="/growth/phase" className="l-btn">去运营阶段设置 →</Link>}
+          {reach("/growth/phase") && <Link href="/growth/phase" className="l-btn">去运营阶段设置 →</Link>}
         </div>
       </section>
     </div>
@@ -324,10 +326,10 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     <section className="l-card" style={{ marginTop: 12 }}>
       <div className="l-h"><span className="ttl">相关页面</span></div>
       <div className="l-b" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {authorities.includes("overview_b1_read") && <Link className="l-btn" href="/overview/dual-ledger">资金与应付款总览</Link>}
-        {authorities.includes("finance_d2_read") && <Link className="l-btn" href="/finance/withdrawals">提现审核</Link>}
-        {authorities.includes("platform_a2_read") && <Link className="l-btn" href="/platform/audit">操作记录</Link>}
-        {authorities.includes("platform_a4_read") && <Link className="l-btn" href="/platform/events">用户行为事件</Link>}
+        {reach("/overview/dual-ledger") && <Link className="l-btn" href="/overview/dual-ledger">资金与应付款总览</Link>}
+        {reach("/finance/withdrawals") && <Link className="l-btn" href="/finance/withdrawals">提现审核</Link>}
+        {reach("/platform/audit", "platform_a2_read") && <Link className="l-btn" href="/platform/audit">操作记录</Link>}
+        {reach("/platform/events") && <Link className="l-btn" href="/platform/events">用户行为事件</Link>}
       </div>
     </section>
   </>;

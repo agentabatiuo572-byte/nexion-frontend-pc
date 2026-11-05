@@ -1,4 +1,5 @@
 "use client";
+import { useReach } from "@/lib/nav/use-reach";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
@@ -22,7 +23,7 @@ import { validateL1Dashboard, validateL1Drilldown, validateL1Trend } from "./l1-
 import { resolveL1ExportMode, resolveL1ExportUnavailableReason, submitL1Export, type L1ExportSource } from "./l1-export-contract";
 import { loadL1LocalView, saveL1LocalView, type L1Window } from "./l1-local-view";
 import { createL1ReadController } from "./l1-request-generation";
-import { assertL1AttributionLinks } from "./l-attribution-routes";
+import { ATTRIBUTION_ROUTE_READ, assertL1AttributionLinks } from "./l-attribution-routes";
 
 type Kpi = KpiRow & {
   available?: boolean;
@@ -111,6 +112,7 @@ function renderFx(fx: string, bold: string[]) {
 }
 
 export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (source: L1ExportSource) => void }) {
+  const reach = useReach();
   const [selKpi, setSelKpi] = useState(1); // index → #2(最弱预警项)
   const [ylOffset, setYlOffset] = useState(10);
   const [phaseOn, setPhaseOn] = useState(true);
@@ -587,7 +589,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
             </div>
             <div className="ltint" style={{ fontSize: 12 }}><b>解读</b> · <AutoGloss>{ext.note}</AutoGloss></div>
             <div className="jump">
-              {attributionLinks.map((j) => (
+              {attributionLinks.filter((j) => reach(j.href, ATTRIBUTION_ROUTE_READ[j.href])).map((j) => (
                 <Link key={j.label} className="l-btn sm" href={j.href}>{j.label} →</Link>
               ))}
             </div>

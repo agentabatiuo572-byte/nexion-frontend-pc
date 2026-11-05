@@ -1,5 +1,6 @@
 "use client";
 
+import { useReach } from "@/lib/nav/use-reach";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { PaginationExemptionList } from "../design-kit";
@@ -195,6 +196,7 @@ function K2ParamValue({ param }: { param: KRiskParam }) {
 }
 
 export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
+  const reach = useReach();
   const propose = usePropose();
   const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
   const hasAuthority = (authority: string) => authorities.includes(authority);
@@ -447,12 +449,16 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
           <span className="ttl">检测阈值</span>
           <span className="sub">· 升级置换的抵扣比例在「设备使用与升级置换」设置</span>
           <div className="r">
-            <Link className="kcode lock" href="/devices/trade-in" title="升级置换抵扣比例在「设备使用与升级置换」设置">🔒 升级置换首档抵扣 {ladderReference.status === "loading" ? "加载中" : ladderReference.status === "error" ? "加载失败" : ladderReference.value === null ? "未提供" : `${ladderReference.value}%`}</Link>
+            {reach("/devices/trade-in", "device_e3_read")
+              ? <Link className="kcode lock" href="/devices/trade-in" title="升级置换抵扣比例在「设备使用与升级置换」设置">🔒 升级置换首档抵扣 {ladderReference.status === "loading" ? "加载中" : ladderReference.status === "error" ? "加载失败" : ladderReference.value === null ? "未提供" : `${ladderReference.value}%`}</Link>
+              : <span className="kcode lock" title="升级置换抵扣比例在「设备使用与升级置换」设置">🔒 升级置换首档抵扣 {ladderReference.status === "loading" ? "加载中" : ladderReference.status === "error" ? "加载失败" : ladderReference.value === null ? "未提供" : `${ladderReference.value}%`}</span>}
             {ladderReference.status === "error" && <>
               <span className="note" role="alert">抵扣比例加载失败 · {ladderReference.message}</span>
               <button className="l-btn sm" aria-label="重试加载升级置换首档抵扣" onClick={() => setLadderReferenceAttempt((attempt) => attempt + 1)}>重试</button>
             </>}
-            <Link className="kcode lock" href="/growth/referral-rewards" title="新人礼与邀请奖励在「新人礼与邀请奖励」设置">🔒 新人礼 / 邀请奖励设置</Link>
+            {reach("/growth/referral-rewards", "growth_h8_read")
+              ? <Link className="kcode lock" href="/growth/referral-rewards" title="新人礼与邀请奖励在「新人礼与邀请奖励」设置">🔒 新人礼 / 邀请奖励设置</Link>
+              : <span className="kcode lock" title="新人礼与邀请奖励在「新人礼与邀请奖励」设置">🔒 新人礼 / 邀请奖励设置</span>}
           </div>
         </div>
         <div className="l-b">

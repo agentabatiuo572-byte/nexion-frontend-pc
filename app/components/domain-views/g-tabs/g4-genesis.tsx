@@ -1,4 +1,5 @@
 "use client";
+import { useReach } from "@/lib/nav/use-reach";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 
@@ -80,6 +81,7 @@ function catalogBlockText(reason: string) {
 }
 
 export function G4Genesis({ ctx }: { ctx: GCtx }) {
+  const reach = useReach();
   const { toast, openActionConfirm } = ctx;
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
@@ -565,8 +567,8 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
               )}
               {marketOn && allowed("finprod_g4_market_toggle")
                 ? <button className="l-btn mc" disabled={busy} onClick={runMarketSwitch}>紧急暂停</button>
-                : !marketOn ? <Link href="/emergency/kill-switch" className="l-btn">去「紧急停用开关」恢复</Link> : null}
-              <Link href="/emergency/geo-block" className="l-btn">地区访问限制 →</Link>
+                : !marketOn && reach("/emergency/kill-switch") ? <Link href="/emergency/kill-switch" className="l-btn">去「紧急停用开关」恢复</Link> : null}
+              {reach("/emergency/geo-block", "emergency_j2_read") && <Link href="/emergency/geo-block" className="l-btn">地区访问限制 →</Link>}
             </div>
           </div>
           <div className="l-b">

@@ -1,4 +1,5 @@
 "use client";
+import { useReach } from "@/lib/nav/use-reach";
 import { formatD4Subtype } from "@/lib/admin/d4-ledger-display";
 import { formatBusinessTime } from "@/lib/admin/business-time";
 import { platformSessionDeviceText, userNicknameText, nexGridBrandText, operatorNicknameText, datacenterNameText } from "@/lib/admin/brand-copy";
@@ -36,7 +37,7 @@ import { TabGroup } from "@/app/components/kit/tab-group";
 import { StatusPill, type PillTone } from "@/app/components/kit/status-pill";
 import { AuditTimeline, type AuditEntry } from "@/app/components/kit/audit-timeline";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
-import { canAccessResolvedPath, resolveVisibleDomains, type AdminRole } from "@/lib/nav/console-nav";
+import type { AdminRole } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
@@ -341,16 +342,15 @@ export default function UserDetailPage() {
   const canCorrectNotificationTime = canReadNotificationEvidence && canWriteC1
     && (session?.role === "superadmin" || !!session?.authorities.includes("platform_a4_write"));
   const canWriteC2 = !supportScope && (session?.role === "superadmin" || !!session?.authorities.includes("user_c2_write"));
-  const canReadC2 = !!session
-    && (session.role === "superadmin" || session.authorities.includes("user_c2_read"))
-    && canAccessResolvedPath(resolveVisibleDomains(session), "/users/actions");
-  const canReadC3 = session?.role === "superadmin" || !!session?.authorities.includes("user_c3_read");
-  const canReadC5 = session?.role === "superadmin" || !!session?.authorities.includes("user_c5_read");
-  const canReadC6 = session?.role === "superadmin" || !!session?.authorities.includes("user_c6_read");
-  const canReadD2 = session?.role === "superadmin" || !!session?.authorities.includes("finance_d2_read");
-  const canReadD4 = session?.role === "superadmin" || !!session?.authorities.includes("finance_d4_read");
-  const canReadK4 = session?.role === "superadmin" || !!session?.authorities.includes("risk_k4_read");
-  const canReadA2 = session?.role === "superadmin" || !!session?.authorities.includes("platform_a2_read");
+  const reach = useReach();
+  const canReadC2 = reach("/users/actions", "user_c2_read");
+  const canReadC3 = reach("/users/assets", "user_c3_read");
+  const canReadC5 = reach("/users/security", "user_c5_read");
+  const canReadC6 = reach("/users/reg-risk", "user_c6_read");
+  const canReadD2 = reach("/finance/withdrawals");
+  const canReadD4 = reach("/finance/ledger", "finance_d4_read");
+  const canReadK4 = reach("/risk/scoring");
+  const canReadA2 = reach("/platform/audit", "platform_a2_read");
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const userKey = params?.id?.trim() ?? "";

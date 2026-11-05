@@ -1,3 +1,4 @@
+import { useReach } from "@/lib/nav/use-reach";
 import Link from "next/link";
 import { e3ConfigAmplifies } from "@/lib/admin/e3-outflow";
 import { CodeTag } from "../design-kit";
@@ -82,6 +83,7 @@ const countText = (value: number) => new Intl.NumberFormat("zh-CN").format(Math.
 const moneyText = (value: number) => `$${new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.max(0, value))}`;
 
 export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
+  const reach = useReach();
   const { pE, e3Loading, e3Error, e3Ready, e3Stats, e3Operations } = ctx;
   const hasRequiredConfig = REQUIRED_E3_KEYS.every((key) => pE(key) !== "—");
   if (!e3Ready || !hasRequiredConfig) {
@@ -304,8 +306,10 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           <span><b>要么全成功，要么全撤回</b> · 任何一步失败都会恢复原状</span>
           <span className="sep">·</span>
           <span>设备换机关系由系统自动记录，运营人员无需手工维护</span>
-          <span className="sep">·</span>
-          <span>失败样本 → <Link href="/finance/ledger?keyword=tradein&status=FAILED" style={{ color: "var(--cyan)", cursor: "pointer" }}>查看相关账单</Link></span>
+          {reach("/finance/ledger", "finance_d4_read") && <>
+            <span className="sep">·</span>
+            <span>失败样本 → <Link href="/finance/ledger?keyword=tradein&status=FAILED" style={{ color: "var(--cyan)", cursor: "pointer" }}>查看相关账单</Link></span>
+          </>}
         </div>
       </section>
       <p className="f-foot">产能下降节奏和升级置换抵扣<b>一起决定用户多快升级</b>：后期产能降得快，用户会考虑换新；抵扣越多，换新越有吸引力。修改会影响换新销量、平台让利和套利风险，提交审批，由另一位超级管理员<b>批准后生效</b>。换新提交时重新计算报价，已完成交易不回溯。</p>

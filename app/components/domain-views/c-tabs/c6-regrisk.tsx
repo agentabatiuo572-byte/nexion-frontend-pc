@@ -1,4 +1,5 @@
 "use client";
+import { useReach } from "@/lib/nav/use-reach";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
@@ -102,6 +103,7 @@ function guardKey(guard: UserRegistrationRiskK1Guard) {
 }
 
 export function C6Regrisk({ ctx }: { ctx: CCtx }) {
+  const reach = useReach();
   const router = useRouter();
   const { toast, openActionConfirm, openConfirm } = ctx;
   const role = useAdminAuth((state) => state.session?.role ?? state.role);
@@ -258,7 +260,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         <div className="s">{operatorCopyText(text(param.sub, text(param.note)))}。这里只显示当前值，修改请到「异常套利与刷量排查」。</div>
       </div>
       <span className="v">{text(param.value)}</span>
-      <Link className="l-btn sm" href="/risk/abuse">去修改</Link>
+      {reach("/risk/abuse") && <Link className="l-btn sm" href="/risk/abuse">去修改</Link>}
     </div>
   );
 
@@ -408,7 +410,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
                 <div className="k">{operatorCopyText(text(guard.name))} <span className="bdg dim">在别处设置</span></div>
                 <div className="s">请到「多账户风险排查」修改</div>
               </div>
-              <button className="l-btn sm" onClick={() => k1Confirm(guard)}>去修改</button>
+              {reach(text(guard.suggestedPath, k1Path)) && <button className="l-btn sm" onClick={() => k1Confirm(guard)}>去修改</button>}
             </div>
           ))}
           {k1Guards.length === 0 && <div className="ctint" style={{ marginTop: 10 }}>暂无</div>}

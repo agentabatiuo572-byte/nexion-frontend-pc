@@ -16,7 +16,7 @@ import {
 import { businessClock, businessOffsetMinutes, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
 import { fetchWithdrawalGateOpen } from "@/lib/admin/ops-dashboard-client";
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
-import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
+import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { bankEvidenceLabels, bankEvidenceTime } from "@/lib/admin/bank-payout-evidence";
 import {
@@ -862,9 +862,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   };
 
   const hasAuthority = (authority: string) => authorities.includes(authority);
-  const domains = useMemo(() => (session ? resolveVisibleDomains(session) : []), [session]);
   /** 跨页入口按目标页可不可达显示（X03）。 */
-  const reach = (path: string, read: string) => canAccessResolvedPath(domains, path) && hasAuthority(read);
+  const reach = useReach();
   // Q-16：没有 D5 读权时列表照常，额度写无权限，用到额度的决定禁用。读取失败不算这种情况，仍然全部暂停。
   const canReadD5 = hasAuthority("finance_d5_read");
   const canBatch = hasAuthority("finance_d2_withdrawal_batch");

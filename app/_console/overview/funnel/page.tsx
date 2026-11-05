@@ -21,7 +21,7 @@ import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { normalizeB3RefOptions } from "@/lib/admin/b3-ref-display";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { B3RestoredInsights } from "@/app/components/dashboard/restored-b-insights";
-import { canAccessCrossDomainPath } from "@/lib/admin/cross-domain-authority";
+import { useReach } from "@/lib/nav/use-reach";
 
 /** B3 保存视图只有一个槽位:视图名 / 筛选条件没变就复用命令号,变了铸新号并丢弃旧号。
  *  落 sessionStorage,刷新后「结果未知」的重试仍是同一命令号,后端才能去重。 */
@@ -48,7 +48,7 @@ export default function FunnelPage() {
   const superAdmin = auth?.role === "superadmin";
   const canSave = superAdmin || authorities.includes("overview_b3_view_write");
   const canExport = superAdmin || authorities.includes("overview_b3_export");
-  const canCross = (path: string) => canAccessCrossDomainPath(path, auth?.role, authorities);
+  const canCross = useReach();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

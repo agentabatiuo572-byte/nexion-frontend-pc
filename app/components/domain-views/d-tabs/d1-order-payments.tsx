@@ -1,5 +1,6 @@
 "use client";
 
+import { useReach } from "@/lib/nav/use-reach";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -31,6 +32,7 @@ export function D1OrderPayments({ ctx, onActivityChange }: { ctx: DCtx; onActivi
 }
 
 function Workspace({ ctx, owner, epoch, onActivityChange }: { ctx: DCtx; owner: number; epoch: number; onActivityChange: (activity: D1PaymentActivity) => void }) {
+  const reach = useReach();
   const [policy, setPolicy] = useState<PurchasePaymentPolicy | null>(null), [draft, setDraft] = useState<PurchasePaymentChannel[]>([]);
   const [feeGroup, setFeeGroup] = useState<"bank" | "usdt">("bank"), [feeNetwork, setFeeNetwork] = useState<"CREGIS_USDT_BSC" | "CREGIS_USDT_ERC20">("CREGIS_USDT_BSC");
   const [records, setRecords] = useState<PurchasePaymentPage | null>(null), [status, setStatus] = useState(""), [method, setMethod] = useState(""), [page, setPage] = useState(1);
@@ -107,9 +109,9 @@ function Workspace({ ctx, owner, epoch, onActivityChange }: { ctx: DCtx; owner: 
     <div className="l-b">
       <p className="dtint"><strong>钱包余额</strong> · 不收手续费，需要输入支付密码。银行卡和 USDT 付款不需要支付密码。</p>
       {operationError && <p className="dtint warn" role="alert">{operationError}</p>}{notice && <p className="dtint" role="status">{notice}</p>}
-      {pending.length > 0 && <div className="dtint warn" role="alert" aria-label="还没确认结果的操作"><strong>有 {pending.length} 次操作还没确认结果</strong>{pending.map(row => <div className="p-row" key={row.commandKey}><div className="txt"><div className="k">{row.scope === "policy" ? "修改付款手续费" : `付款 ${row.scope}`}</div><div className="s">请求号 {row.commandKey}</div></div><button className="l-btn sm" disabled={busy} onClick={() => void recover(row, false)}>查看最新结果</button>{canRetryPurchasePayment(row) ? <button className="l-btn sm" disabled={busy || !allowed(row.scope === "policy" ? "finance_d1_fx_manage" : "finance_d1_bank_reconcile")} onClick={() => void recover(row, true)}>再提交一次（不会重复执行）</button> : <span>已超过可重试时间，请到「操作记录」核对。</span>}</div>)}<div className="d1-payment-actions"><Link className="l-btn sm" href="/platform/audit?domain=D">到「操作记录」查看</Link></div></div>}
+      {pending.length > 0 && <div className="dtint warn" role="alert" aria-label="还没确认结果的操作"><strong>有 {pending.length} 次操作还没确认结果</strong>{pending.map(row => <div className="p-row" key={row.commandKey}><div className="txt"><div className="k">{row.scope === "policy" ? "修改付款手续费" : `付款 ${row.scope}`}</div><div className="s">请求号 {row.commandKey}</div></div><button className="l-btn sm" disabled={busy} onClick={() => void recover(row, false)}>查看最新结果</button>{canRetryPurchasePayment(row) ? <button className="l-btn sm" disabled={busy || !allowed(row.scope === "policy" ? "finance_d1_fx_manage" : "finance_d1_bank_reconcile")} onClick={() => void recover(row, true)}>再提交一次（不会重复执行）</button> : <span>已超过可重试时间，请到「操作记录」核对。</span>}</div>)}<div className="d1-payment-actions">{reach("/platform/audit", "platform_a2_read") && <Link className="l-btn sm" href="/platform/audit?domain=D">到「操作记录」查看</Link>}</div></div>}
       <div className="d1-payment-config" aria-label="付款手续费">
-        <div className="d1-payment-head"><h3>付款手续费</h3><div className="d1-payment-actions"><Link className="l-btn sm" href="/platform/audit?domain=D">修改历史</Link><button className="l-btn sm" disabled={busy || policyLoading} onClick={() => void loadPolicy()}>刷新</button></div></div>
+        <div className="d1-payment-head"><h3>付款手续费</h3><div className="d1-payment-actions">{reach("/platform/audit", "platform_a2_read") && <Link className="l-btn sm" href="/platform/audit?domain=D">修改历史</Link>}<button className="l-btn sm" disabled={busy || policyLoading} onClick={() => void loadPolicy()}>刷新</button></div></div>
         <div className="d1-payment-tabs"><TabGroup label="手续费付款方式" value={feeGroup} items={["bank", "usdt"] as const} onSelect={setFeeGroup} className="chips" itemClassName={(_value, selected) => `chip${selected ? " sel" : ""}`}>
           {value => value === "bank" ? "银行卡" : "USDT"}
         </TabGroup>{feeGroup === "usdt" && <TabGroup label="手续费 USDT 网络" value={activeFeeNetwork} items={configuredMethods.filter((value): value is typeof feeNetwork => value !== "HDPAY_BANK")} onSelect={setFeeNetwork} className="chips" itemClassName={(_value, selected) => `chip${selected ? " sel" : ""}`}>
@@ -143,6 +145,7 @@ function Workspace({ ctx, owner, epoch, onActivityChange }: { ctx: DCtx; owner: 
 }
 
 function PaymentDetail({ intentNo, owner, owns, ctx, pending, onChanged, onClose }: { intentNo: string; owner: number; owns: () => boolean; ctx: DCtx; pending: boolean; onChanged: () => void; onClose: () => void }) {
+  const reach = useReach();
   const [record, setRecord] = useState<PurchasePaymentRecord | null>(null), [error, setError] = useState(""), [busy, setBusy] = useState(false), [notice, setNotice] = useState("");
   const live = useRef(true), sequence = useRef(0), mutation = useRef(false);
   const load = useCallback(async () => {
@@ -176,7 +179,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, pending, onChanged, onClose
         <h3>基本信息</h3>{facts([["用户", record.userId], ["用途", kindText[record.kind] ?? "用途待确认"], ["付款方式", methodText[record.paymentMethod]], ["状态", stateText[record.status]], ["是否已完成", purchaseWasDelivered(record) ? "已完成" : record.receipt ? "已有回执，待确认" : "还没完成"], ["支付商单号", record.providerReference || "尚未提供"], ["创建 / 更新时间", `${time(record.createdAt)} / ${time(record.updatedAt)}（${businessZoneText()}）`], ["异常说明", record.reason || "无"]])}
         <h3>金额（USDT）</h3>{facts([["订单金额", record.businessAmountUsdt == null ? "尚未提供" : record.businessAmountUsdt], ["收款金额", purchaseMoney(record.subtotalUsdt)], ["取整差额", record.roundingAdjustmentUsdt == null ? "尚未提供" : record.roundingAdjustmentUsdt], ["手续费", purchaseMoney(record.channelFeeUsdt)], ["网络费", purchaseMoney(record.networkConfirmFeeUsdt)], ["用户实付", purchaseMoney(record.totalUsdt)], ["通道实际成本", record.providerActualFeeUsdt == null ? "尚未提供" : purchaseMoney(record.providerActualFeeUsdt)]])}
         {record.paymentMethod === "HDPAY_BANK" ? facts([["锁定汇率", record.fxRateVndPerUsdt ? `1 USDT = ${record.fxRateVndPerUsdt} VND` : "尚未提供"], ["应付越南盾", record.amountVnd ? `${BigInt(record.amountVnd).toLocaleString("zh-CN")} VND` : "尚未提供"]]) : <p className="sub">用户在自己钱包里另付的 {record.paymentMethod === "CREGIS_USDT_ERC20" ? "ETH" : "BNB"} 矿工费不算在内。</p>}
-        {record.arrivals && <><h3>链上到账</h3><div className="d1-payment-scroll"><table className="l-tbl" aria-label="链上到账"><thead><tr><th>交易号</th><th>到账金额（USDT）</th><th>区块 / 确认数</th><th>核对结果</th></tr></thead><tbody>{record.arrivals.map(row => <tr key={`${row.txid}:${row.log_index}`}><td>{row.txid}<div className="sub">日志 {row.log_index}</div></td><td>{row.amount}</td><td>{row.block_number} / {row.confirmations}<div className="sub">{row.block_hash}</div></td><td>{row.status === "CONFIRMED" ? "已核对" : row.status === "MANUAL_REVIEW" ? "需人工处理" : "待确认"}</td></tr>)}{record.arrivals.length === 0 && <tr><td colSpan={4}>还没有链上到账记录。</td></tr>}</tbody></table></div></>}<div className="d1-payment-actions"><Link className="l-btn sm" href="/platform/audit?domain=D">到「操作记录」查看处理过程</Link></div></>}
+        {record.arrivals && <><h3>链上到账</h3><div className="d1-payment-scroll"><table className="l-tbl" aria-label="链上到账"><thead><tr><th>交易号</th><th>到账金额（USDT）</th><th>区块 / 确认数</th><th>核对结果</th></tr></thead><tbody>{record.arrivals.map(row => <tr key={`${row.txid}:${row.log_index}`}><td>{row.txid}<div className="sub">日志 {row.log_index}</div></td><td>{row.amount}</td><td>{row.block_number} / {row.confirmations}<div className="sub">{row.block_hash}</div></td><td>{row.status === "CONFIRMED" ? "已核对" : row.status === "MANUAL_REVIEW" ? "需人工处理" : "待确认"}</td></tr>)}{record.arrivals.length === 0 && <tr><td colSpan={4}>还没有链上到账记录。</td></tr>}</tbody></table></div></>}<div className="d1-payment-actions">{reach("/platform/audit", "platform_a2_read") && <Link className="l-btn sm" href="/platform/audit?domain=D">到「操作记录」查看处理过程</Link>}</div></>}
     </div>
   </Modal>;
 }

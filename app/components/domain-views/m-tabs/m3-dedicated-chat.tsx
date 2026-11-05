@@ -1,11 +1,11 @@
 "use client";
 
+import { useReach } from "@/lib/nav/use-reach";
 import { customerConversations, replyTimeout } from "@/lib/admin/customer-conversations";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { subscribeAdminRealtime, getAdminRealtimeSnapshot, watchAdminConversation, sendAdminTyping } from "@/lib/admin/admin-conversation-realtime";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { userNicknameText } from "@/lib/admin/brand-copy";
 import { supportClient, SupportClientError, isIndeterminateSupportError, supportAttachmentUnavailableText, supportSessionBusy, agentSwitchText, SUPPORT_SESSION_ROLE_LABEL, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode, type SupportSessionHold } from "@/lib/admin/m-support-client";
@@ -113,9 +113,8 @@ function PrivateImage({ id, onRevoked }: { id: string; onRevoked: () => void }) 
 }
 
 function SupportMessage({message,previous,customerId,customerAvatarRef,customerName,onRevoked,newlyArrived}:{message:SessionMsg;previous?:SessionMsg;customerId:string;customerAvatarRef?:string|null;customerName:string;onRevoked:()=>void;newlyArrived?:boolean}) {
-  const session=useAdminAuth(state=>state.session);
-  const domains=session?resolveVisibleDomains(session):[];
-  const canCheckSku=Boolean(session?.authorities.includes("device_e1_read")&&canAccessResolvedPath(domains,"/devices/pricing"));
+  const reach=useReach();
+  const canCheckSku=reach("/devices/pricing","device_e1_read");
   const system=message.sourceSenderType==="SYSTEM"||message.sourceSenderType==="INTERNAL";
   const name=system?"系统":message.sender==="agent"?message.agentName||"历史专属客服":customerName;
   // B16: a welcome without an author is the system's (agentName 「系统」 from the adapter); its author is not "unconfirmed".
@@ -123,7 +122,7 @@ function SupportMessage({message,previous,customerId,customerAvatarRef,customerN
   const grouped=!system&&previous?.sourceSenderType===message.sourceSenderType&&previous?.sender===message.sender&&message.authorConfidence==="VERIFIED"&&previous.authorConfidence==="VERIFIED"&&previous.senderId===message.senderId&&previous.origin===message.origin&&message.ts-previous.ts<300000;
   const path=message.authorConfidence==="VERIFIED"&&message.senderId?(message.sender==="agent"?message.senderAvatar?advisorAvatarPath(message.senderId,customerId):undefined:String(message.senderId)===customerId?customerAvatarRef??undefined:undefined):undefined;
   const safeLegacy=message.kind==="TEXT"||!message.kind?legacySupportDestination(message.text):undefined;
-  const canCheckLegacy=Boolean(safeLegacy&&canAccessResolvedPath(domains,safeLegacy)&&(safeLegacy!=="/devices/pricing"||canCheckSku));
+  const canCheckLegacy=Boolean(safeLegacy&&reach(safeLegacy)&&(safeLegacy!=="/devices/pricing"||canCheckSku));
   const imageCaption=message.kind==="IMAGE"?message.text.trim():"";
   // B15 「客服已切换」: a centred divider naming the new handler and their role.
   if(message.kind==="AGENT_SWITCH")return <div className="m3-switch-note" role="note"><span>{agentSwitchText(message.agentName,message.senderRole)} · <time>{messageTime(message.ts)}</time></span></div>;

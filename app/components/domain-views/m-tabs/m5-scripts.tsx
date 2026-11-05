@@ -6,6 +6,7 @@
  * I.session.* 为 M 容器传入的视图适配键。
  * ai(Nova)类别推送/模板归 I2,本页只渲染只读「I2 管」。高敏配置:变更走确认 + 理由。
  */
+import { useReach } from "@/lib/nav/use-reach";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { compactSupportBoardValue } from "./support-leaderboard";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -141,6 +142,7 @@ function Pager({
 }
 
 export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = false }: { ctx: MCtx; showSeatOperations?: boolean; showSeatProfiles?: boolean }) {
+  const reach = useReach();
   const { pget, setParam, toast, openActionConfirm } = ctx;
   const currentRole = useAdminAuth((s) => s.session?.role ?? s.role);
   const currentAdminId = useAdminAuth((s) => s.session?.adminId ?? 0);
@@ -705,9 +707,9 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 }}>{a.text}</div>
-                  <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {reach("/content/i18n", "content_i6_read") && <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis" }}>
                     <a href="/content/i18n" style={{ color: "var(--m-hd-2)" }}>维护翻译</a>
-                  </div>
+                  </div>}
                 </div>
                 <span className="dim" style={{ fontSize: 12 }}>{scriptAudience(a.id)}</span>
                 <span style={{ fontSize: 12, color: a.ctaHref !== "—" ? "var(--m-hd-2)" : "var(--ink-4)" }}>{a.ctaHref}</span>
@@ -759,9 +761,9 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
                 <span className="chip" style={{ height: 20, border: "none" }}>{t.type === "advisor" ? "专属客服" : "专属客服"}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="dim" style={{ fontSize: 12.5 }}>{t.text}</div>
-                  <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {reach("/content/i18n", "content_i6_read") && <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis" }}>
                     <a href="/content/i18n" style={{ color: "var(--m-hd-2)" }}>维护翻译</a>
-                  </div>
+                  </div>}
                 </div>
                 <span className="dim2" style={{ fontSize: 11 }}>{archived ? "已归档" : published ? "已发布" : "草稿"}</span>
                 {canManageM5Content ? (

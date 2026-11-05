@@ -1,4 +1,5 @@
 "use client";
+import { useReach } from "@/lib/nav/use-reach";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
@@ -32,7 +33,7 @@ import {
   validateL2LifecycleContract,
 } from "./l2-stage-events-contract";
 import type { LCtx } from "./types";
-import { L2_ATTRIBUTION_LINKS } from "./l-attribution-routes";
+import { ATTRIBUTION_ROUTE_READ, L2_ATTRIBUTION_LINKS } from "./l-attribution-routes";
 
 type FunnelRow = { stage: string; ev?: string; users: number; cvr?: number | null; lc: string; color: string; target?: string | null };
 type FunnelExt = {
@@ -217,6 +218,7 @@ function formatL2CrossRowLabel(value: unknown): string {
 }
 
 export function L2Funnel({ ctx }: { ctx: LCtx }) {
+  const reach = useReach();
   const [selStage, setSelStage] = useState(2);
   const [selCohort, setSelCohort] = useState(4);
   const [cmp, setCmp] = useState<string>("none");
@@ -724,7 +726,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
           </div>
           <div className="xd-foot">
             <span className="ltint warn" style={{ flex: 1, minWidth: 260 }}><b>{operatorCopyText(xd.msg.pre.split("·")[0].trim())}</b> · <AutoGloss>{xd.msg.pre.split("·").slice(1).join("·")}</AutoGloss><b>{xd.msg.bold}</b><AutoGloss>{xd.msg.post}</AutoGloss></span>
-            {L2_ATTRIBUTION_LINKS.map(({ label, href }) => (
+            {L2_ATTRIBUTION_LINKS.filter(({ href }) => reach(href, ATTRIBUTION_ROUTE_READ[href])).map(({ label, href }) => (
               <Link key={label} className="l-btn sm" href={href}>{label}</Link>
             ))}
           </div>

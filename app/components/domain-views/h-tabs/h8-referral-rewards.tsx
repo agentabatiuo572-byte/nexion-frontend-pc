@@ -1,4 +1,5 @@
 "use client";
+import { useReach } from "@/lib/nav/use-reach";
 import { businessZone } from "@/lib/admin/business-time";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
@@ -41,6 +42,7 @@ const ENABLED_VALUES: Record<string, string> = { 已停用: "false", 已启用: 
 type H8Param = (typeof PARAMS)[number] | typeof ENABLED_PARAM;
 
 export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
+  const reach = useReach();
   const session = useAdminAuth((state) => state.session);
   const isSuperadmin = session?.role === "superadmin";
   const canWrite = isSuperadmin || !!session?.authorities.includes("growth_h8_write");
@@ -231,8 +233,10 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         <div className="l-b" style={{ paddingTop: 10 }}>
           {error && <div role="alert" className="tint danger" style={{ marginBottom: 10 }}>更早记录加载失败，已加载的记录仍保留，列表尚未加载完整。{error} 请重试加载更早记录。</div>}
           {data?.settlementHasMore && <button className="l-btn sm" disabled={loadingMore} onClick={() => void load(data.settlementNextCursor, true)}>{loadingMore ? "加载中…" : error ? "重试加载更早记录" : "加载更早记录"}</button>}{" "}
-          <span className="f-foot">结算后可以去核对：</span>{" "}
-          <><Link href="/platform/audit" className="l-btn sm">操作记录与审批</Link>{" "}<Link href="/platform/events" className="l-btn sm">用户行为事件</Link>{" "}<Link href="/finance/ledger" className="l-btn sm">账本与账单核对</Link></>
+          {(reach("/platform/audit", "platform_a2_read") || reach("/platform/events") || reach("/finance/ledger", "finance_d4_read")) && <span className="f-foot">结算后可以去核对：</span>}{" "}
+          {reach("/platform/audit", "platform_a2_read") && <Link href="/platform/audit" className="l-btn sm">操作记录与审批</Link>}{" "}
+          {reach("/platform/events") && <Link href="/platform/events" className="l-btn sm">用户行为事件</Link>}{" "}
+          {reach("/finance/ledger", "finance_d4_read") && <Link href="/finance/ledger" className="l-btn sm">账本与账单核对</Link>}
         </div>
       </section>
       <p className="f-foot"><b>发奖流程</b>：App 显示奖励 → 建立邀请关系 → 审批 → 结算（每位新人只结算一次）→ 新人和邀请人钱包到账 → 记入资金账本。</p>

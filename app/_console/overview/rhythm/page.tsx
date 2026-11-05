@@ -16,7 +16,7 @@ import {
 } from "@/lib/admin/b4-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { B4RestoredInsights } from "@/app/components/dashboard/restored-b-insights";
-import { canAccessCrossDomainPath } from "@/lib/admin/cross-domain-authority";
+import { useReach } from "@/lib/nav/use-reach";
 
 const ALL = "ALL";
 const B4_REASON_MESSAGES: Record<string, string> = {
@@ -42,7 +42,7 @@ export default function RhythmPage() {
   const authorities = session?.authorities ?? [];
   const superAdmin = session?.role === "superadmin";
   const canExport = superAdmin || authorities.includes("overview_b4_export");
-  const canCross = (path: string) => canAccessCrossDomainPath(path, session?.role, authorities);
+  const canCross = useReach();
   const canJump = (superAdmin || authorities.includes("overview_b4_jump")) && canCross("/growth/phase");
   const maxUsers = useMemo(
     () => Math.max(1, ...(data?.distribution.map((row) => row.userCount) ?? [1])),

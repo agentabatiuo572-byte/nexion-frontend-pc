@@ -11,6 +11,7 @@
  * 真写落点:E1 SKU/上架门、E2 用户任务管理、E3 生命周期&Trade-in、E4 订单进度、E5 设备运行管理走后端 API。
  * 操作确认 显式 edit 契约:调参(param / task-price)传 edit{kind,current,unit};处置/纯动作(sku-status / param-fixed / order-* / ops-pause)不传 edit。
  */
+import { useReach } from "@/lib/nav/use-reach";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Icon, Btn, Chip, Drawer, KV, Badge, OperationConfirmModal, useToast } from "./design-kit";
@@ -260,6 +261,7 @@ function SkuFld({ label, value, onChange, placeholder, type = "text", hint, list
 const SKU_BADGE_PRESETS: readonly string[] = [];
 
 export function EDomainView({ meta }: { meta: DomainViewMeta }) {
+  const reach = useReach();
   const [toastNode, setToast] = useToast();
   const [tab] = useState(FOLD[meta.l2Id] ?? "E1");
   const [mc, setActionConfirm] = useState<Mc>(null);
@@ -1274,13 +1276,13 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             {e4Detail && <><div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 8px", color: "var(--ink)" }}>资金记录</div>
               {e4Detail.funding.length === 0 ? <div className="muted tiny">暂无付款或账单记录</div> : e4Detail.funding.map((item, index) => {
                 const ledgerHref = e4FundingLedgerHref(item);
-                return <KV key={`${item.source}-${item.bizNo}-${index}`} k={operatorOrderFact("source", item.source)} v={<span>{`${operatorOrderFact("direction", item.direction)} ${item.amount.toLocaleString()} USDT · ${operatorOrderFact("fundingStatus", item.status)} · ${item.bizNo}`}{ledgerHref && <> · <Link href={ledgerHref}>查看 D4 流水</Link></>}</span>} />;
+                return <KV key={`${item.source}-${item.bizNo}-${index}`} k={operatorOrderFact("source", item.source)} v={<span>{`${operatorOrderFact("direction", item.direction)} ${item.amount.toLocaleString()} USDT · ${operatorOrderFact("fundingStatus", item.status)} · ${item.bizNo}`}{ledgerHref && reach(ledgerHref, "finance_d4_read") && <> · <Link href={ledgerHref}>查看 D4 流水</Link></>}</span>} />;
               })}
             </>}
             <div className="chips" style={{ marginTop: 14 }}>
-              <Link className="chip" href={`/platform/audit?domain=E&object=${encodeURIComponent(o.id)}`}>操作记录</Link>
-              <Link className="chip" href="/platform/events">用户行为事件</Link>
-              {!e4Detail?.funding.some((item) => e4FundingLedgerHref(item)) && <Link className="chip" href={`/finance/ledger?bizNo=${encodeURIComponent(o.id)}`}>按订单号查账单</Link>}
+              {reach("/platform/audit", "platform_a2_read") && <Link className="chip" href={`/platform/audit?domain=E&object=${encodeURIComponent(o.id)}`}>操作记录</Link>}
+              {reach("/platform/events") && <Link className="chip" href="/platform/events">用户行为事件</Link>}
+              {!e4Detail?.funding.some((item) => e4FundingLedgerHref(item)) && reach("/finance/ledger", "finance_d4_read") && <Link className="chip" href={`/finance/ledger?bizNo=${encodeURIComponent(o.id)}`}>按订单号查账单</Link>}
             </div>
           </Drawer>
         );

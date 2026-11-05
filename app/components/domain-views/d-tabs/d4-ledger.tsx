@@ -1,4 +1,5 @@
 "use client";
+import { useReach } from "@/lib/nav/use-reach";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
@@ -100,6 +101,7 @@ function appliedConditions(applied: { userId?: number; keyword: string; status: 
 }
 
 export function D4Ledger({ ctx }: { ctx: DCtx }) {
+  const reach = useReach();
   const searchParams = useSearchParams();
   const deepBizNo = searchParams?.get("bizNo")?.trim() ?? "";
   const deepKeyword = searchParams?.get("keyword")?.trim() ?? "";
@@ -362,7 +364,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
 
       <section className="l-card">
         <div className="l-h"><span className="ttl">导出账单</span><span className="sub">· 按上方当前筛选导出</span><div className="r"><button className="l-btn primary" disabled={!canExport || loading || Boolean(error || filterProblem)} title={error ? "账单加载失败，暂不能导出" : filterProblem ? "查询条件有误，改好后再导出" : undefined} onClick={requestExport}>{canExport ? "导出 CSV" : "无导出权限"}</button></div></div>
-        <div className="l-b"><div className="dtint">导出时会隐藏昵称等个人信息，用户编码只保留首尾。需要调余额请到「余额与资产调整」。</div><div className="chips" style={{ marginTop: 10 }}><Link className="chip" href="/users/assets" prefetch={false}>余额与资产调整</Link><Link className="chip" href="/finance/recon" prefetch={false}>充值对账</Link><Link className="chip" href="/finance/withdrawals" prefetch={false}>提现审核</Link><Link className="chip" href="/finance/pool" prefetch={false}>资金储备</Link><Link className="chip" href="/platform/audit" prefetch={false}>操作记录</Link><Link className="chip" href="/platform/events" prefetch={false}>用户行为事件</Link><Link className="chip" href="/analytics/export" prefetch={false}>数据导出</Link></div></div>
+        <div className="l-b"><div className="dtint">导出时会隐藏昵称等个人信息，用户编码只保留首尾。需要调余额请到「余额与资产调整」。</div><div className="chips" style={{ marginTop: 10 }}>{reach("/users/assets", "user_c3_read") && <Link className="chip" href="/users/assets" prefetch={false}>余额与资产调整</Link>}{reach("/finance/recon", "finance_d1_read") && <Link className="chip" href="/finance/recon" prefetch={false}>充值对账</Link>}{reach("/finance/withdrawals") && <Link className="chip" href="/finance/withdrawals" prefetch={false}>提现审核</Link>}{reach("/finance/pool") && <Link className="chip" href="/finance/pool" prefetch={false}>资金储备</Link>}{reach("/platform/audit", "platform_a2_read") && <Link className="chip" href="/platform/audit" prefetch={false}>操作记录</Link>}{reach("/platform/events") && <Link className="chip" href="/platform/events" prefetch={false}>用户行为事件</Link>}{reach("/analytics/export", "bi_l5_read") && <Link className="chip" href="/analytics/export" prefetch={false}>数据导出</Link>}</div></div>
       </section>
     </>
   );

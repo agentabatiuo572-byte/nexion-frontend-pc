@@ -1,4 +1,5 @@
 "use client";
+import { useReach } from "@/lib/nav/use-reach";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
@@ -57,11 +58,12 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const canRelease = ctx.can("network_f5_commission_release");
   const canReverse = ctx.can("network_f5_commission_reverse");
   const canReissue = ctx.can("network_f5_commission_reissue");
-  const canReadD4 = ctx.can("finance_d4_read");
-  const canReadB1 = ctx.can("overview_b1_read");
-  const canReadL4 = ctx.can("bi_l4_read");
-  const canReadA2 = ctx.can("platform_a2_read");
-  const canReadA4 = ctx.can("platform_a4_read");
+  const reach = useReach();
+  const canReadD4 = reach("/finance/ledger", "finance_d4_read");
+  const canReadB1 = reach("/overview/dual-ledger");
+  const canReadL4 = reach("/analytics/operations", "bi_l4_read");
+  const canReadA2 = reach("/platform/audit", "platform_a2_read");
+  const canReadA4 = reach("/platform/events");
   const [kind, setKind] = useState("");
   const [currency, setCurrency] = useState("");
   const [userId, setUserId] = useState("");

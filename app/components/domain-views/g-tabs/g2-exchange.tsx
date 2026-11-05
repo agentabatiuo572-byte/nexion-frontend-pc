@@ -1,4 +1,5 @@
 "use client";
+import { useReach } from "@/lib/nav/use-reach";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
@@ -63,6 +64,7 @@ function toneClass(tone: string) {
 }
 
 export function G2Exchange({ ctx }: { ctx: GCtx }) {
+  const reach = useReach();
   const { toast, openActionConfirm } = ctx;
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
@@ -342,8 +344,8 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
           <span className="sub">· 出现监管或合规事件时使用</span>
           <div className="r">
             {swap.enabled && allowed("finprod_g2_swap_toggle") && <button className="l-btn mc" disabled={busy} onClick={toggleSwap}>紧急暂停全部兑换</button>}
-            {!swap.enabled && <Link href="/emergency/kill-switch" className="l-btn mc">去「紧急停用开关」恢复 →</Link>}
-            <Link href="/emergency/geo-block" className="l-btn">地区访问限制 →</Link>
+            {!swap.enabled && reach("/emergency/kill-switch") && <Link href="/emergency/kill-switch" className="l-btn mc">去「紧急停用开关」恢复 →</Link>}
+            {reach("/emergency/geo-block", "emergency_j2_read") && <Link href="/emergency/geo-block" className="l-btn">地区访问限制 →</Link>}
           </div>
         </div>
         <div className="l-b">

@@ -17,7 +17,7 @@ import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { B2RestoredInsights } from "@/app/components/dashboard/restored-b-insights";
-import { canAccessCrossDomainPath } from "@/lib/admin/cross-domain-authority";
+import { useReach } from "@/lib/nav/use-reach";
 
 /** B2 预测配置只有一个槽位:草稿 / 期望版本 / 理由没变就复用命令号,变了铸新号并丢弃旧号。
  *  落 sessionStorage,刷新后「结果未知」的重试仍是同一命令号,后端才能去重。 */
@@ -76,7 +76,7 @@ function activeConfig(config: B2ForecastConfig): B2ForecastValues {
 export default function LiquidityPage() {
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
-  const canCross = (path: string) => canAccessCrossDomainPath(path, session?.role, authorities);
+  const canCross = useReach();
   const canConfig = authorities.includes("overview_b2_write") || authorities.includes("finance_d3_write");
   const canExport = authorities.includes("overview_b2_export") || authorities.includes("finance_d3_export");
   const [data, setData] = useState<B2Dashboard | null>(null);

@@ -27,13 +27,3 @@ export function requiredReadAuthority(path: string): string | null {
   const pathname = path.split(/[?#]/, 1)[0];
   return READ_AUTHORITY_BY_PATH[pathname as keyof typeof READ_AUTHORITY_BY_PATH] ?? null;
 }
-
-export function canAccessCrossDomainPath(
-  path: string,
-  role: string | null | undefined,
-  authorities: readonly string[],
-): boolean {
-  const required = requiredReadAuthority(path);
-  if (!required) return false;
-  return role === "superadmin" || role === "super" || authorities.includes(required);
-}

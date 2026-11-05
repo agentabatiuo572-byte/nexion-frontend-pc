@@ -30,7 +30,7 @@ import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { pendingConfigApproval, submitConfigApproval } from "@/lib/admin/withdrawal-config-approval";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { B5RestoredInsights } from "@/app/components/dashboard/restored-b-insights";
-import { canAccessCrossDomainPath } from "@/lib/admin/cross-domain-authority";
+import { useReach } from "@/lib/nav/use-reach";
 import { ThresholdComparison } from "../threshold-comparison";
 
 /** B5 阈值 / 订阅 / 分类处理共用一张表,槽位分命名空间(分类处理槽位带维度 = 目标对象)。
@@ -78,7 +78,7 @@ export default function RiskRadarPage() {
   const canThreshold = authorities.includes("overview_b5_threshold_write");
   const canSubscribe = authorities.includes("overview_b5_subscribe");
   const canTriage = authorities.includes("overview_b5_triage");
-  const canCross = (path: string) => canAccessCrossDomainPath(path, role, authorities);
+  const canCross = useReach();
   const [toastNode, setToast] = useToast();
   const [threshold, setThreshold] = useState<Pick<B5Radar["bankrun"], "yellowPct" | "redPct" | "version"> | null>(null);
   const [yellowInput, setYellowInput] = useState("");

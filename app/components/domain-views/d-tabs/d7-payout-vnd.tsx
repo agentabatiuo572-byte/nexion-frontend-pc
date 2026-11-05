@@ -1,5 +1,6 @@
 "use client";
 
+import { useReach } from "@/lib/nav/use-reach";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -69,6 +70,7 @@ function amplification(before: PayoutVndConfig, after: PayoutVndValues) {
 }
 
 export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
+  const reach = useReach();
   const { toast, openActionConfirm, openConfirm } = ctx;
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
@@ -230,10 +232,10 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     <section className="l-card" style={{ marginBottom: 12 }}>
       <div className="l-h"><span className="ttl">相关页面</span><span className="sub">· 版本 v{config.version} · {config.effectiveAt.replace("T", " ").replace("Z", " UTC")}</span><div className="r"><button className="l-btn sm" disabled={busy} onClick={() => void reload()}>刷新</button></div></div>
       <div className="l-b"><div className="chips">
-        {authorities.includes("finance_d6_read") && <Link className="chip" href="/finance/fx-rate">汇率设置</Link>}
-        {authorities.includes("finance_d2_read") && <Link className="chip" href="/finance/withdrawals">提现审核</Link>}
-        {authorities.includes("finance_d5_read") && <Link className="chip" href="/finance/params">USDT 提现参数</Link>}
-        {authorities.includes("platform_a2_read") && <Link className="chip" href="/platform/audit">操作记录</Link>}
+        {reach("/finance/fx-rate", "finance_d6_read") && <Link className="chip" href="/finance/fx-rate">汇率设置</Link>}
+        {reach("/finance/withdrawals") && <Link className="chip" href="/finance/withdrawals">提现审核</Link>}
+        {reach("/finance/params", "finance_d5_read") && <Link className="chip" href="/finance/params">USDT 提现参数</Link>}
+        {reach("/platform/audit", "platform_a2_read") && <Link className="chip" href="/platform/audit">操作记录</Link>}
       </div><div className="s" style={{ marginTop: 8 }}>最近操作者：{config.lastUpdatedBy}</div></div>
     </section>
 
