@@ -12,12 +12,13 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Download, Landmark, RefreshCw } from "lucide-react";
 import { OperationConfirmModal, useToast, type OperatorBriefKind } from "../design-kit";
-import { BlockState, Button, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Input, KeyValues, Modal, Notice, PageHeader, PageTabs, RdPage, Select, StatusTag } from "@/app/components/rd";
+import { BlockState, Button, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, Fold, Input, KeyValues, Modal, Notice, PageHeader, PageTabs, RdPage, Select, StatusTag } from "@/app/components/rd";
 import { useB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import { businessClock } from "@/lib/admin/business-time";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import {
   createD3Injection,
+  DRequestError,
   downloadD3Csv,
   fetchD3Main,
   fetchD3Maturity,
@@ -45,14 +46,19 @@ type D3PendingRecord = PendingMutationRecord & { amount?: string; voucherNo?: st
  *  结果未知时要能原样重试(OP-94),所以连内容、理由和操作人一起存。导出同一张表。 */
 const pendingKeys = createPendingMutationStore<D3PendingRecord>({
   storageKey: "nexion-admin-d3-treasury-commands-v1",
+  // 过期后不能再用原号重试，记录和锁都留着（OP-96）。
+  retainExpiredRecords: true,
 });
 const injectionScope = (voucherNo: string, amount: string) => `injection|${voucherNo}|${amount}`;
 const exportScope = (kind: ExportKind) => `sensitive-export|${kind}`;
 const EXPORT_LABEL: Record<ExportKind, string> = { reconciliation: "对账 CSV", liabilities: "应付款明细 CSV" };
+const EXPORT_TITLE: Record<ExportKind, string> = { reconciliation: "导出对账 CSV", liabilities: "导出应付款 CSV" };
+const EXPORT_RANGE: Record<ExportKind, string> = { reconciliation: "储备、应付款、净差额三行", liabilities: "全部 9 类的当前数据，不随页面窗口变" };
+const RETRY_EXPIRED = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
 
 /** 预测保存只有一个槽位:草稿 / 期望版本 / 理由 / 操作人没变就复用命令号。和旧「可用资金与应付款」共用这张表,
  *  那边留下的未决记录在这里接着恢复(B2-H02)。 */
-const forecastCommand = createSlotAttemptStore({ storageKey: "nexion-admin-b2-liquidity-commands-v1" });
+const forecastCommand = createSlotAttemptStore({ storageKey: "nexion-admin-b2-liquidity-commands-v1", retainExpiredRecords: true });
 const FORECAST_SLOT = "forecast-config";
 
 type TabValue = "overview" | "due" | "flow" | "settings";
@@ -78,6 +84,12 @@ interface ConfirmRequest {
   reasonMax?: number;
   effect?: string;
   confirmLabel: string;
+  /** 不能撤销的操作传 danger。 */
+  confirmTone?: "primary" | "danger";
+  /** 这次不能提交的原因，写在框里，确认按钮禁用。 */
+  blocked?: ReactNode;
+  /** 变了就重开确认框，理由清空（OP-97）。 */
+  revision?: number;
   run: (reason: string) => Promise<void>;
 }
 
@@ -87,6 +99,9 @@ interface PendingItem {
   tone: "danger" | "warn";
   title: string;
   body: ReactNode;
+  /** 还能重试时写在 body 后面；过期后换成 RETRY_EXPIRED。 */
+  hint: string;
+  expiresAt: number;
   auditHref: string;
   retryTitle: string;
   rows: Array<{ key: string; label: string; value: string }>;
@@ -119,6 +134,22 @@ function forecastValues(config: D3ForecastConfig): ForecastValues {
     includeFarLiabilities: source.includeFarLiabilities,
     stakingInterestMode: source.stakingInterestMode,
     trialStressEnabled: source.trialStressEnabled,
+  };
+}
+
+/** 读取最新后合并：自己改过的字段留着，其余取最新（OP-97）。 */
+function mergeForecast(base: ForecastValues, mine: ForecastValues, latest: ForecastValues): ForecastValues {
+  const pick = <K extends keyof ForecastValues>(key: K) => (mine[key] !== base[key] ? mine[key] : latest[key]);
+  const pickAll = (from: Record<string, boolean>, to: Record<string, boolean>, theirs: Record<string, boolean>) =>
+    Object.fromEntries(Object.keys(theirs).map((key) => [key, to[key] !== from[key] ? to[key] : theirs[key]]));
+  return {
+    reserveCategories: pickAll(base.reserveCategories, mine.reserveCategories, latest.reserveCategories),
+    liabilityCategories: pickAll(base.liabilityCategories, mine.liabilityCategories, latest.liabilityCategories),
+    forecastWindow: pick("forecastWindow"),
+    genesisIncluded: pick("genesisIncluded"),
+    includeFarLiabilities: pick("includeFarLiabilities"),
+    stakingInterestMode: pick("stakingInterestMode"),
+    trialStressEnabled: pick("trialStressEnabled"),
   };
 }
 
@@ -287,7 +318,7 @@ export function D3Treasury() {
     done: () => Promise<void>;
   }) => {
     if (!stored()) {
-      forget();
+      if (!retained) forget();
       throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
     }
     try {
@@ -345,11 +376,13 @@ export function D3Treasury() {
     const reasonPrefix = `凭证类型：${typeLabel}。`;
     setConfirm({
       action: "储备注入登记",
-      detail: `登记 ${money(Number(nextAmount))}，${typeLabel}，凭证号 ${nextVoucher}。凭证号不可重复。登记后计入可用储备。凭证类型会写在理由前面，留在操作记录里。`,
-      facts: <Facts><Fact k="金额">{money(Number(nextAmount))}</Fact><Fact k="凭证类型">{typeLabel}</Fact><Fact k="凭证号"><span data-mono>{nextVoucher}</span></Fact></Facts>,
+      detail: `登记 ${money(Number(nextAmount))}，${typeLabel}，凭证号 ${nextVoucher}。凭证号不可重复。凭证类型会写在理由前面，留在操作记录里。`,
+      facts: <Facts><Fact k="金额">{money(Number(nextAmount))}</Fact><Fact k="凭证类型">{typeLabel}</Fact><Fact k="凭证号"><span data-mono>{nextVoucher}</span></Fact><Fact k="能否撤销">登记后不能撤销</Fact></Facts>,
       briefKind: "funds",
+      statedBrief: { impact: "登记后计入可用储备，不能撤销。", check: "核对金额和凭证号，理由写清到账依据或工单号。" },
       effect: "立即生效",
       confirmLabel: "确认登记",
+      confirmTone: "danger",
       reasonMax: 200 - reasonPrefix.length,
       run: (reason) => submitInjection(nextAmount, nextVoucher, `${reasonPrefix}${reason}`),
     });
@@ -361,36 +394,86 @@ export function D3Treasury() {
     forget: () => forecastCommand.forget(FORECAST_SLOT),
     send: () => updateD3ForecastConfig(values, version, reason, operator, commandKey),
     done: async () => {
-      toast("已保存，次日 UTC 00:00 起生效");
+      toast(`已保存，${effectiveText()}`);
       await load();
     },
   });
 
-  const saveConfig = () => {
-    if (!main || !draft || !baseValues) return;
-    const values = draft;
-    const version = main.config.version;
-    const dropped = main.liabilities.breakdown.filter((row) => baseValues.liabilityCategories[row.category] && !values.liabilityCategories[row.category]);
-    setConfirm({
-      action: "调整应付款预测设置",
+  /** 别人先保存了：框内读最新，显示别人改了什么，留下自己改的字段，理由清空，在最新版本上重新核对（OP-97）。 */
+  const forecastConflict = (read: () => void, busy = false, failed = "") => (
+    <span className="rd-toolbar">
+      <span>这项刚被别人改过。{failed}</span>
+      <Button size="sm" loading={busy} onClick={read}>读取最新</Button>
+    </span>
+  );
+
+  const readLatestForecast = async (sent: D3Main, values: ForecastValues, revision: number) => {
+    const read = () => void readLatestForecast(sent, values, revision);
+    setConfirm((current) => current && { ...current, blocked: forecastConflict(read, true) });
+    let latest: D3Main;
+    try {
+      latest = await fetchD3Main();
+    } catch (err) {
+      setConfirm((current) => current && { ...current, blocked: forecastConflict(read, false, errorText(err, "读取失败，请重试。")) });
+      return;
+    }
+    const before = forecastValues(sent.config);
+    const after = forecastValues(latest.config);
+    const merged = mergeForecast(before, values, after);
+    setMain(latest);
+    setDraft(merged);
+    if (JSON.stringify(merged) === JSON.stringify(after)) {
+      setConfirm(null);
+      toast("你改的内容和最新设置一样，不用再保存。");
+      return;
+    }
+    setConfirm(forecastRequest(latest, merged, forecastDiffRows(before, after).filter((row) => row.before !== row.after), revision + 1));
+  };
+
+  const forecastRequest = (latest: D3Main, values: ForecastValues, others: ReturnType<typeof forecastDiffRows> = [], revision = 0): ConfirmRequest => {
+    const base = forecastValues(latest.config);
+    const version = latest.config.version;
+    const dropped = latest.liabilities.breakdown.filter((row) => base.liabilityCategories[row.category] && !values.liabilityCategories[row.category]);
+    const rows = forecastDiffRows(base, values);
+    const changed = rows.filter((row) => row.before !== row.after);
+    const same = rows.filter((row) => row.before === row.after);
+    return {
+      action: "保存预测设置",
+      revision,
       detail: `预测 ${values.forecastWindow.replace("d", " 天")}，创世节点收益${values.genesisIncluded ? "计入" : "不计入"}。${effectiveText()}，不影响历史。`,
       facts: (
-        <>
+        <div className="rd-stack">
           {!values.reserveCategories.usdt && <Notice tone="danger">不计入 USDT 储备后，资金安全等级会按储备 0 算。</Notice>}
           {dropped.map((row) => <Notice key={row.category} tone="warn">不再计入「{categoryText(row.category)}」，这类现在是 {money(row.amountUsdt)}。</Notice>)}
-          <DiffList rows={forecastDiffRows(baseValues, values)} emptyNote="这次没有改动任何设置，保存只会多一个版本。" />
-        </>
+          {others.length > 0 && <Notice tone="warn" title="别人改了这些，已按最新读取">{others.map((row) => <div key={row.key}>{row.label}：{row.before} → {row.after}</div>)}</Notice>}
+          <Facts>{changed.map((row) => <Fact key={row.key} k={row.label}>{row.before} → {row.after}</Fact>)}</Facts>
+          <Fold inset title="其余设置" summary={`${same.length} 项不变`}>
+            <Facts>{same.map((row) => <Fact key={row.key} k={row.label}>{row.after}</Fact>)}</Facts>
+          </Fold>
+        </div>
       ),
       briefKind: "config",
+      statedBrief: { impact: "影响这页的到期、差额、资金安全等级和今日概览的可覆盖天数，用户看不到。", check: "核对改动项和生效时间，理由写清依据或工单号。" },
       effect: effectiveText(),
-      confirmLabel: "保存配置",
-      run: (reason) => {
+      confirmLabel: "确认保存，次日生效",
+      run: async (reason) => {
         const operator = OPERATOR();
         const fingerprint = JSON.stringify({ draft: values, expectedVersion: version, reason, operator });
         const commandKey = forecastCommand.resolve(FORECAST_SLOT, fingerprint, () => `b2-forecast-config-${crypto.randomUUID()}`);
-        return submitForecast(values, version, reason, operator, commandKey, fingerprint, false);
+        try {
+          await submitForecast(values, version, reason, operator, commandKey, fingerprint, false);
+        } catch (err) {
+          if (err instanceof DRequestError && err.reasonCode === "D3_FORECAST_CONFIG_VERSION_CONFLICT") {
+            setConfirm((current) => current && { ...current, blocked: forecastConflict(() => void readLatestForecast(latest, values, revision)) });
+          }
+          throw err;
+        }
       },
-    });
+    };
+  };
+
+  const saveConfig = () => {
+    if (main && draft) setConfirm(forecastRequest(main, draft));
   };
 
   const submitExport = async (kind: ExportKind, reason: string, operator = OPERATOR()) => {
@@ -408,10 +491,11 @@ export function D3Treasury() {
 
   const exportCsv = (kind: ExportKind) => {
     setConfirm({
-      action: "导出",
-      detail: kind === "reconciliation" ? "导出储备与应付款对账数据：储备、应付款、净差额三行。" : "导出应付款明细：全部 9 类的当前数据，不随页面窗口变。",
+      action: EXPORT_TITLE[kind],
+      detail: "不生成任务，没有下载链接。",
+      facts: <Facts><Fact k="范围">{EXPORT_RANGE[kind]}</Fact><Fact k="去向">浏览器直接下载</Fact></Facts>,
       briefKind: "export",
-      statedBrief: { impact: "确认后浏览器直接下载这份 CSV，不生成任务，没有下载链接。这次导出记入操作记录。", check: "核对导出内容，理由写明导出依据或工单号。" },
+      statedBrief: { impact: "浏览器直接下载，这次导出记入操作记录。", check: "核对导出内容，理由写明导出依据或工单号。" },
       confirmLabel: "确认导出",
       run: (reason) => submitExport(kind, reason),
     });
@@ -432,13 +516,11 @@ export function D3Treasury() {
   /** 按原操作重试：同命令号、同内容、同理由、同操作人，不接受新输入（OP-94）。只有成功才解除待确认。 */
   const runRetry = async () => {
     if (!retry) return;
-    // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
-    if (!retry.stored()) {
-      retry.forget();
-      setUnknownTick((tick) => tick + 1);
+    // 过期和查不到记录都不发送，也不解除：解除只在后端明确拒绝之后（OP-96、OP-153）。
+    const stale = retry.expiresAt <= Date.now() ? RETRY_EXPIRED : !retry.stored() ? "浏览器里查不到这条记录，本次没有发送。待确认继续保留，请到操作记录与审批核对。" : "";
+    if (stale) {
+      setPendingNotes((current) => ({ ...current, [retry.commandKey]: `${businessClock(Date.now())} ${stale}` }));
       setRetry(null);
-      reloadAll();
-      toast("原操作已结束或过期，本次未再次发送。请先核对列表，再决定如何处理。");
       return;
     }
     setRetrying(true);
@@ -454,7 +536,7 @@ export function D3Treasury() {
     }
   };
 
-  /** 重试被拒后，人核实过原操作的结果才解除。只放开本页的锁，不发请求。 */
+  /** 重试被拒后，人核实过原操作的结果才解除。不发请求。 */
   const releasePending = (item: PendingItem) => {
     item.forget();
     setUnknownTick((tick) => tick + 1);
@@ -508,12 +590,17 @@ export function D3Treasury() {
 
   const forecastRecord = unknownCommands.forecast;
   const savedForecast = forecastRecord && JSON.parse(forecastRecord.inputFingerprint) as { draft: ForecastValues; expectedVersion: number; reason: string; operator: string };
+  const savedChanges = savedForecast && baseValues
+    ? forecastDiffRows(baseValues, savedForecast.draft).filter((row) => row.before !== row.after).map((row) => ({ key: row.key, label: row.label, value: `${row.before} → ${row.after}` }))
+    : [];
   const pendingItems: PendingItem[] = [
     ...unknownCommands.injections.map((record): PendingItem => ({
       commandKey: record.commandKey,
       tone: "danger",
       title: "储备注入登记结果未知，可能已经入账",
-      body: <>{money(Number(record.amount))}，凭证号 {record.voucherNo}，{timeText(new Date(record.createdAt).toISOString())} 提交。先看累计注入有没有变；重试用同一个请求号，不会重复登记。</>,
+      body: <>{money(Number(record.amount))}，凭证号 {record.voucherNo}，{timeText(new Date(record.createdAt).toISOString())} 提交。</>,
+      hint: "先看累计注入有没有变；重试不会重复登记。",
+      expiresAt: record.expiresAt,
       auditHref: `/platform/audit?domain=D&object=${encodeURIComponent(record.voucherNo)}`,
       retryTitle: "按原操作重试储备注入",
       rows: [
@@ -529,12 +616,14 @@ export function D3Treasury() {
       commandKey: forecastRecord.commandKey,
       tone: "danger" as const,
       title: "预测设置保存结果未知，可能已经保存",
-      body: <>{timeText(new Date(forecastRecord.createdAt).toISOString())} 提交。先看「预测设置」的版本有没有变；重试用同一个请求号，不会重复保存。</>,
+      body: <>{timeText(new Date(forecastRecord.createdAt).toISOString())} 提交。</>,
+      hint: "先看「预测设置」的版本有没有变；重试不会重复保存。",
+      expiresAt: forecastRecord.expiresAt,
       auditHref: "/platform/audit?domain=D",
       retryTitle: "按原操作重试保存预测设置",
       rows: [
         { key: "version", label: "基于版本", value: `v${savedForecast.expectedVersion}` },
-        { key: "window", label: "默认预测天数", value: savedForecast.draft.forecastWindow.replace("d", " 天") },
+        ...(savedChanges.length ? savedChanges : [{ key: "changes", label: "这次改动", value: baseValues ? "和现在的设置一样，可能已经保存" : "现在的设置没读到，比不出改动" }]),
         { key: "reason", label: "理由", value: savedForecast.reason },
       ],
       stored: () => forecastCommand.isDurablyStored(FORECAST_SLOT, forecastRecord.inputFingerprint, forecastRecord.commandKey),
@@ -545,7 +634,9 @@ export function D3Treasury() {
       commandKey: record.commandKey,
       tone: "warn",
       title: `${EXPORT_LABEL[record.exportKind]} 导出结果未知`,
-      body: <>{timeText(new Date(record.createdAt).toISOString())} 提交。文件可能没有下载下来，操作记录里可能已经有这次导出；重试用同一个请求号，不会多记一次。</>,
+      body: <>{timeText(new Date(record.createdAt).toISOString())} 提交。</>,
+      hint: "文件可能没有下载下来，操作记录里可能已经有这次导出；重试不会多记一次。",
+      expiresAt: record.expiresAt,
       auditHref: "/platform/audit?domain=D",
       retryTitle: "按原操作重试导出",
       rows: [
@@ -574,12 +665,12 @@ export function D3Treasury() {
           action={(
             <>
               <Button size="sm" onClick={refresh}>刷新核对</Button>
-              <Button size="sm" onClick={() => setRetry(item)}>按原操作重试</Button>
+              <Button size="sm" disabledReason={item.expiresAt <= Date.now() ? RETRY_EXPIRED : undefined} onClick={() => setRetry(item)}>按原操作重试</Button>
               {retryRejected.includes(item.commandKey) && <Button size="sm" onClick={() => setReleasing(item)}>解除待确认</Button>}
             </>
           )}
         >
-          {item.body}
+          {item.body}{item.expiresAt <= Date.now() ? `${RETRY_EXPIRED}。` : item.hint}
           {reach(item.auditHref, "platform_a2_read") && <> <Link className="rd-link" href={item.auditHref}>到操作记录核查</Link></>}
           <Explain label="技术信息" content={`命令号 ${item.commandKey}`} />
           {pendingNotes[item.commandKey] && <div>{pendingNotes[item.commandKey]}</div>}
@@ -631,7 +722,7 @@ export function D3Treasury() {
           canConfig={canConfig}
           dirty={dirty}
           lockedNote={forecastRecord ? "上次保存结果未知，先在页面上方核对。核对完之前这里只能查看。" : undefined}
-          busyReason={loading ? "正在刷新，稍等" : draft?.forecastWindow === "90d" ? FORECAST_90D_BLOCK : undefined}
+          busyReason={loading ? "正在刷新，稍等" : draft?.forecastWindow === "90d" ? FORECAST_90D_BLOCK : dirty ? undefined : "还没有修改"}
           onChange={setDraft}
           onDiscard={() => { if (baseValues) setDraft(baseValues); }}
           onSave={saveConfig}
@@ -647,20 +738,20 @@ export function D3Treasury() {
         tone="role-1"
         footer={<Decision explain="凭证号重复时不会登记。下一步核对金额和凭证，再写理由。" others={<Button variant="ghost" onClick={() => setInjectOpen(false)}>取消</Button>} primary={<Button variant="primary" disabledReason={dataBlocked} onClick={saveInjection}>下一步：确认</Button>} />}
       >
-        <Field label="注入金额" required help="单位 USDT，最多两位小数。" error={injectErrors.amount}>
+        <Field label="注入金额" required explain="单位 USDT，最多两位小数。" error={injectErrors.amount}>
           {(control) => <Input {...control} value={amount} onChange={(event) => { setAmount(event.target.value); setInjectErrors((current) => ({ ...current, amount: undefined })); }} inputMode="decimal" placeholder="注入金额 USDT" aria-label="注入金额（USDT，最多两位小数）" />}
         </Field>
-        <Field label="凭证类型" required help="到账凭证是链上交易还是银行流水。会写进理由，不进凭证号。">
+        <Field label="凭证类型" required explain="到账凭证是链上交易还是银行流水。会写进理由，不进凭证号。">
           <Select aria-label="凭证类型" value={voucherType} options={VOUCHER_TYPES} onChange={setVoucherType} />
         </Field>
-        <Field label="凭证编号 / 哈希" required help="填原始编号，至少 6 位，须能查到。" error={injectErrors.voucher}>
+        <Field label="凭证编号 / 哈希" required explain="填原始编号，至少 6 位，须能查到。" error={injectErrors.voucher}>
           {(control) => <Input {...control} value={voucherNo} onChange={(event) => { setVoucherNo(event.target.value); setInjectErrors((current) => ({ ...current, voucher: undefined })); }} placeholder="凭证号（不能重复）" aria-label="凭证号（必填，不能重复）" />}
         </Field>
       </Drawer>
 
       {confirm && (
         <OperationConfirmModal
-          key={confirm.action}
+          key={`${confirm.action}:${confirm.revision ?? 0}`}
           action={confirm.action}
           detail={confirm.detail}
           briefKind={confirm.briefKind}
@@ -668,6 +759,8 @@ export function D3Treasury() {
           facts={confirm.facts}
           effect={confirm.effect ? <StatusTag tone="progress" filled>{confirm.effect}</StatusTag> : undefined}
           confirmLabel={confirm.confirmLabel}
+          confirmTone={confirm.confirmTone}
+          blockedReason={confirm.blocked}
           reasonMin={8}
           reasonMax={confirm.reasonMax ?? 200}
           onClose={() => setConfirm(null)}
@@ -686,7 +779,7 @@ export function D3Treasury() {
           footer={<><Button disabled={retrying} onClick={() => setRetry(null)}>取消</Button><Button variant="primary" loading={retrying} loadingText="提交中…" onClick={() => void runRetry()}>按原操作重试</Button></>}
         >
           <div className="rd-stack">
-            <p className="rd-note">用同一个请求号重发原来的内容，已经成功的不会重复执行。</p>
+            <p className="rd-note">重发原内容，已成功的不会重复执行。</p>
             <KeyValues rows={retry.rows} />
           </div>
         </Modal>
@@ -700,8 +793,7 @@ export function D3Treasury() {
         >
           <div className="rd-stack">
             <p><b>{releasing.title}</b></p>
-            <p>重试被拒说明不了原操作的结果。先到操作记录确认原操作有没有生效，再解除。</p>
-            <p>解除后可以重新提交，原操作不再重试。这一步只放开本页的锁，不发请求，不写操作记录。</p>
+            <p>确认这次操作没有生效后再解除。解除后可以重新操作，这一步不发请求，不写操作记录。<Explain label="解除待确认的说明" content="重试被拒说明不了原操作的结果，先到操作记录确认。解除后原操作不再重试。" /></p>
           </div>
         </Modal>
       )}

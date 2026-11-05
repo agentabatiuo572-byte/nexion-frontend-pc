@@ -385,8 +385,7 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
               { label: "金额", value: money(current.amountUsdt) },
               { label: "占比", value: `${(current.share * 100).toFixed(2)}%` },
               { label: "计入预测", value: main.config.liabilityCategories[current.category] ? "计入" : "不计入", reason: "按当前生效的预测设置" },
-              { label: "数据来源", value: treasurySourceLabel(current.source) },
-              { label: "类型编号", value: current.category },
+              { label: "数据来源", value: treasurySourceLabel(current.source), reason: <Explain label="技术信息" content={`类型编号 ${current.category}`} /> },
             ]} />
           </>
         )}

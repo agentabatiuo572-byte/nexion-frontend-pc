@@ -195,3 +195,7 @@
    本块从 h-domain.css:158 复制换前缀(模块位置清单第 4 条),focus 色用全局 brand。
    注:13px 沿用 H 域现值保持横向一致;9 档对齐(13→13.5)留全局硬化单统一处理。 */
 .ddom .l-inp:focus { border-color: var(--brand); }
+
+/* 确认框里没有小标题、校验通过时不留空块 */
+.rd-confirm [data-business-form="multi-field"] > .bf-legend:empty,
+.rd-confirm [data-business-form="multi-field"] > .tint:empty { display: none; }
