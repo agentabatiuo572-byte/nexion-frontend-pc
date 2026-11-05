@@ -38,6 +38,7 @@ import { supportUnboundPolicyClient } from "@/lib/admin/m-support-client";
 import { STANDBY_POOL_LABEL, type AdvisorScript, type SessionConvo, type SessionMsg, type SessionReplyTpl, type SessionType, type SupportFaq, type SupportSla, type SupportTicket, type SupportTicketCategory, type SupportTicketPriority } from "./m-tabs/data";
 import { MAvatar, ownerLabel } from "./m-tabs/hd-ui";
 import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
+import { Button, Notice, PageHeader, RdPage } from "@/app/components/rd";
 import { containsConversationMessage } from "./m-sse-dedup";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
 import { supportClient, SupportClientError, isIndeterminateSupportError, agentSwitchText, type SupportMessageInput } from "@/lib/admin/m-support-client";
@@ -133,6 +134,8 @@ const FOLD: Record<string, string> = {
 function templateStatus(value: string | undefined): AdvisorScript["status"] {
   return value === "published" ? "published" : value === "archived" ? "archived" : "draft";
 }
+
+const M3_SUMMARY = "和客户对话：先回待回复的，客户资料在右边。";
 
 export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
@@ -624,12 +627,20 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   }, [tab, mergedParams]);
   // M-44: only a live figure earns header space; the fixed descriptive tags repeated the page summary.
   const right = liveCount ? <span className="f-live"><span className="dot" />{liveCount}</span> : null;
+  const backToCustomers = fromCustomers ? <Link className="m-back-link" href="/service/overview?view=customers&restore=customers">‹ 返回负责组客户</Link> : undefined;
+  // 这三条提醒说的是整页的数据，放在专属会话的页头下面。
+  const m3Banner = tab === "M3" && (mError || permissionUnknown || reconnectExhausted) ? <>
+    {mError && <Notice tone="danger" action={<Button size="sm" onClick={() => void reloadMContent()}>重试</Button>}>客服中心暂时无法同步数据,请稍后重试。</Notice>}
+    {permissionUnknown && <Notice tone="warn" action={<Button size="sm" onClick={() => void reloadMContent()}>重试核对</Button>}>坐席身份暂时无法核对，对客操作和管理入口已暂缓显示。</Notice>}
+    {reconnectExhausted && <Notice tone="danger" action={<Button size="sm" onClick={retryConversationStream}>重新连接</Button>}>会话更新已暂停，当前信息可能不是最新状态。请点击“重新连接”或刷新页面。</Notice>}
+  </> : null;
 
-  return (
-    <div className="dkpage mdom">
-      <DomainHeader {...meta} right={right} back={fromCustomers ? <Link className="m-back-link" href="/service/overview?view=customers&restore=customers">‹ 返回负责组客户</Link> : undefined} />
+  const page = (
+    <>
+      {tab !== "M3" && <DomainHeader {...meta} right={right} back={backToCustomers} />}
+      {tab === "M3" && !safeMData && <PageHeader pageId="M3" title="专属会话" summary={M3_SUMMARY} back={backToCustomers} />}
 
-      {mError && (
+      {tab !== "M3" && mError && (
         <div className="card card-pad" style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Icon name="bell" size={16} />
           <span className="dim" style={{ fontSize: 13 }}>客服中心暂时无法同步数据,请稍后重试。</span>
@@ -640,20 +651,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
           </button>
         </div>
       )}
-      {(permissionUnknown && (tab === "M1" || tab === "M2" || tab === "M3" || tab === "M5") || tab === "M2" && safeMData && !safeMData.supportAgentsAvailable) && <div className="card card-pad" role="status">坐席身份暂时无法核对，对客操作和管理入口已暂缓显示。<button type="button" className="btn btn-sec btn-sm" onClick={() => void reloadMContent()}>重试核对</button></div>}
+      {(permissionUnknown && (tab === "M1" || tab === "M2" || tab === "M5") || tab === "M2" && safeMData && !safeMData.supportAgentsAvailable) && <div className="card card-pad" role="status">坐席身份暂时无法核对，对客操作和管理入口已暂缓显示。<button type="button" className="btn btn-sec btn-sm" onClick={() => void reloadMContent()}>重试核对</button></div>}
 
-      {tab === "M3" && reconnectExhausted && (
-        <div className="card card-pad" role="alert" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Icon name="bell" size={16} />
-          <span className="dim" style={{ fontSize: 13 }}>
-            会话更新已暂停，当前信息可能不是最新状态。请点击“重新连接”或刷新页面。
-          </span>
-          <span className="sp" />
-          <button type="button" className="btn btn-sec btn-sm" onClick={retryConversationStream}>重新连接</button>
-        </div>
-      )}
+      {tab === "M3" && !safeMData && m3Banner}
       {tab === "M3" && !reconnectExhausted && safeMData?.conversationsAvailable && (
-        <span className="sr-only" aria-live="polite">{conversationStreamReady ? "实时会话已连接" : "实时会话正在重连"}</span>
+        <span className="sr-only" aria-live="polite">{conversationStreamReady ? "实时会话已连接" : "连接已断开，正在重连；下面是最近一次的数据"}</span>
       )}
 
       {tab === "M1" && <M1AnalyticsWorkbench key={authEpoch} permission={permission} ctx={ctx} />}
@@ -668,7 +670,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       ) : safeMData && (
         <>
           {tab === "M2" && <p>工单服务已下线，请通过客户会话继续联系。</p>}
-          {tab === "M3" && <M3DedicatedChat ctx={ctx} />}
+          {tab === "M3" && <M3DedicatedChat ctx={ctx} back={backToCustomers} summary={M3_SUMMARY} banner={m3Banner} streamReady={conversationStreamReady} reconnectExhausted={reconnectExhausted} />}
           {tab === "M4" && <M4KbSla ctx={ctx} />}
           {tab === "M5" && effectiveM5Pane === "templates" && <M5Scripts ctx={ctx} showSeatOperations={false} showSeatProfiles={permission !== "agent"} />}
         </>
@@ -684,6 +686,12 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
           briefKind={mc.briefKind}
+          effect={mc.effect}
+          confirmLabel={mc.confirmLabel}
+          confirmTone={mc.confirmTone}
+          facts={mc.facts}
+          statedBrief={mc.statedBrief}
+          reasonPlaceholder={mc.reasonPlaceholder}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {
             const confirming = mc;
@@ -700,8 +708,9 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
       {safeMData && <SessionDock ctx={ctx} hidden={tab === "M3"} onScopeInvalidated={invalidateScope} />}
       {toastNode}
-    </div>
+    </>
   );
+  return tab === "M3" ? <RdPage className="mdom">{page}</RdPage> : <div className="dkpage mdom">{page}</div>;
 }
 
 /* ============ MP2 持续接待 dock —— 切页不挂断(M3 自身是全屏对话台,故 M3 不显)============ */

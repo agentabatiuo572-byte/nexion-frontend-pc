@@ -36,15 +36,17 @@ export function PaymentSecurityCard({ port, userLabel, compact = false }: { port
   useEffect(() => { if (owner) void load(); const refresh = () => { void load(); }; window.addEventListener("nexion-payment-security-updated", refresh); return () => { generation.current++; window.removeEventListener("nexion-payment-security-updated", refresh); }; }, [load, owner]);
   if (!session) return null;
   const record = summary?.record;
-  return <section className={`payment-security ps-card ${compact ? "ps-compact" : ""}`} aria-label="支付安全">
+  // 侧栏里没有异常时一行带过（DP-05）。有异常、读取失败、有待确认的解除都照常全展开。
+  const quiet = compact && Boolean(summary) && !record && !pending;
+  return <section className={`payment-security ps-card ${compact ? "ps-compact" : ""}`} data-quiet={quiet ? "" : undefined} aria-label="支付安全">
     <header className="ps-header"><h3 className="ps-payment">支付安全</h3>{record && <PaymentSecurityState record={record} />}</header>
-    <p className="ps-description">支付密码仅用于钱包余额付款。HDPay 银行直付和 USDT-BSC / ERC20 链上直付无需支付密码，不受此锁定影响。</p>
+    {!quiet && <p className="ps-description">支付密码仅用于钱包余额付款。HDPay 银行直付和 USDT-BSC / ERC20 链上直付无需支付密码，不受此锁定影响。</p>}
     {loading && <div className="ps-skeleton" role="status" aria-label="正在读取支付安全信息"><span /><span /></div>}
     {error && <p className="ps-reason" role="alert">{error}</p>}
     {record && <><Facts record={record} /><p className="ps-description">仅处理本条支付密码异常，登录状态不受影响。</p><div className="ps-actions"><button className="ps-button" onClick={() => setSelected({ id: record.id, release: false })}>查看详情</button>{record.state === "ACTIVE" && <button className="ps-button ps-primary" disabled={!record.capabilities.releaseAllowed || pending} onClick={() => setSelected({ id: record.id, release: true })}>{actionText(record)}</button>}</div>{record.state === "ACTIVE" && !record.capabilities.releaseAllowed && <p className="ps-secondary">{record.capabilities.disabledReason}</p>}</>}
     {summary && !record && <p>当前没有支付密码异常。历史处置记录仍保留。</p>}
     {pending && <p className="ps-secondary">有一笔解除结果等待确认。<button className="ps-link" onClick={() => { const row = pendingPaymentRelease(owner, port.userId); if (row) setSelected({ id: row.recordId, release: false }); }}>查询原操作</button></p>}
-    <div className="ps-card-footer"><span className="ps-secondary">{summary ? `查询时间：${time(summary.observedAt)}` : "信息尚未确认"}</span><button className="ps-link" disabled={loading} onClick={() => void load()}>{loading ? "读取中…" : error ? "重试查询" : "重新加载"}</button></div>
+    <div className="ps-card-footer">{!quiet && <span className="ps-secondary">{summary ? `查询时间：${time(summary.observedAt)}` : "信息尚未确认"}</span>}<button className="ps-link" disabled={loading} onClick={() => void load()}>{loading ? "读取中…" : error ? "重试查询" : "重新加载"}</button></div>
     {selected && <PaymentSecurityDetail key={`${port.key}:${owner}:${epoch}:${selected.id}`} port={port} recordId={selected.id} userLabel={userLabel} initialAction={selected.release} onClose={() => setSelected(null)} />}
   </section>;
 }

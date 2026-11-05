@@ -30,7 +30,7 @@
  *
  * Modal 用法同旧 Modal。RdPage 里的旧 Modal、OperationConfirmModal 会自动走这个组件，不用改调用。
  */
-import { useEffect, useRef, type ComponentProps, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, type ComponentProps, type KeyboardEvent, type ReactNode, type CSSProperties } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronDown, ChevronUp, X, type LucideIcon } from "lucide-react";
 import { IconButton } from "./button";
@@ -175,7 +175,7 @@ export function Decision({ note, danger, others, primary }: { note?: ReactNode; 
   );
 }
 
-export function Modal({ title, icon, onClose, children, footer, wide = false, busy = false, className }: {
+export function Modal({ title, icon, onClose, children, footer, wide = false, busy = false, className, style }: {
   title: ReactNode;
   icon?: ReactNode;
   onClose: () => void;
@@ -184,6 +184,8 @@ export function Modal({ title, icon, onClose, children, footer, wide = false, bu
   wide?: boolean;
   busy?: boolean;
   className?: string;
+  /** 贴着触发器定位时传位置变量，比如会话页的快捷内容选择层。 */
+  style?: CSSProperties;
 }) {
   const surface = useRdSurface();
   const focus = useFocusHandoff(true);
@@ -194,6 +196,7 @@ export function Modal({ title, icon, onClose, children, footer, wide = false, bu
         <Dialog.Overlay className="rd-scrim" data-modal="" onClick={close} />
         <Dialog.Content
           ref={focus.ref}
+          style={style}
           className={className ? `rd-modal ${className}` : "rd-modal"}
           data-wide={wide ? "" : undefined}
           aria-modal="true"
