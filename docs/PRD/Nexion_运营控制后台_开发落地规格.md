@@ -574,9 +574,9 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 |---|---|---|---|---|
 | `/api/admin/emergency/kill-switches` | GET | 5 功能闸矩阵(server-canonical,client 仅读灯) | — | J1 |
 | `/api/admin/emergency/kill-switches/alerts` | GET | 已登录运营账号可读的五闸最小状态/待补录快照，不泄露阈值、配置与控制能力 | — | J1 |
-| `/api/admin/emergency/kill-switches/:key` | PUT | 单闸熔断/恢复(熔断=风控/财务/超管单人确认+持久广播事件;恢复=仅超管,前置 B1 闸 `coverageRatio ≥ recoverGate` 未达 422 `COVERAGE_BELOW_REDLINE`;携 Key) | J1-MD1/MD2 | J1 |
+| `/api/admin/emergency/kill-switches/:key` | PUT | 单闸熔断/恢复(熔断按 `emergency_j1_gate_kill` 权限码单人确认+持久广播事件;恢复按 `emergency_j1_gate_resume` 权限码,确认后立即生效,前置 B1 闸 `coverageRatio ≥ recoverGate` 未达 422 `COVERAGE_BELOW_REDLINE`;携 Key。恢复改提交审批等 BE-08) | J1-MD1/MD2 | J1 |
 | `/api/admin/emergency/kill-switches/emergency-disable` | POST | 批量应急熔断(可多闸;触发事由空 422 / reason 空 400;风控/超管单人确认;全量预校验后同事务原子关停+持久广播事件;携 Key) | J1-MD3 | J1 |
-| 服务端定时任务（无外部 endpoint） | — | R1/R2 自动熔断评估命中后走 J1 原子写边界(`trigger=auto`,30min 内值班补录 J1-MD5) | 自动+J1-MD5 补录 | J1 |
+| 服务端定时任务（无外部 endpoint） | — | R1/R2 自动熔断评估命中后走 J1 原子写边界(`trigger=auto`,补录时限默认 30 分钟,J1 可调 10–120 分钟,值班补录 J1-MD5;补录不恢复业务) | 自动+J1-MD5 补录 | J1 |
 | `/api/admin/killswitch/geo` | GET / PUT | geo-block 配置(server-canonical)/ 黑名单+受限名单(limitedCountries)+per-endpoint(拒绝财务执行 403;携 Key) | J2-MD1~MD3(PUT) | J2 |
 | `/api/admin/killswitch/geo/emergency` | POST | geo 应急即时封锁(仅加封锁,移除 403;事由空 422;单人确认即时生效+广播;携 Key) | 是(④a) | J2 |
 | `/api/admin/tamper/{overview,paths,accounts}?window=` | GET | 篡改拦截总览/路径分布/账户告警(window∈{24h,7d,30d} 非法 400) | — | J3 |
@@ -585,6 +585,16 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | `/api/admin/emergency/playbooks/:name/drill` | POST | 剧本演练(沙箱走查动作序列,不下发生产;通过更新 lastDrill→演练就绪;携 Key) | J4-MD2 | J4 |
 | `/api/admin/emergency/playbooks/:name/execute` | POST | 执行剧本(逐步推进,各止血步由该步目标域授权角色经该域确认弹窗单人确认执行,J4 不绕过各域确认门;前向只进不回滚;携 Key+执行锁;编排 J1/J2/I5/C2/K1/I3) | J4-MD3(各步各域确认门) | J4 |
 | `/api/admin/emergency/executions?filter=` | GET | 历史执行追溯(合规取证;partial 终态不回写) | — | J4 |
+
+**J1 紧急停用开关页面行为（2026-11-05 改版）：**
+
+- 第一层：一句话结论、统计、五张业务卡、批量关停。业务卡是控制区，关停、恢复、补录入口不收进折叠组。待补录有内容时展开在批量关停下面，逾期的排前面，结论条写逾期项和截止时间，最多 3 条。
+- 折叠组：备付金检查（有业务已关停或覆盖率低于红线时展开）、功能开关总表、应急处置参数、应急判定与自动关停规则。没有待补录时收成一行「当前没有待补录事项」。
+- 关停和批量关停写「立即生效」，确认按钮红色。规则服务读不到时用默认 8–200 字继续（Q-06），恢复和补录不走这条例外。
+- 恢复写「立即生效」，这是后端现在的真实路径。BE-08 交付后才改写「批准后生效」。
+- 补录写「业务继续关停」。没补录的业务不能恢复。
+- 写操作先在浏览器存原操作再发。结果未知（含 `IDEMPOTENCY_REQUEST_IN_PROGRESS`、`IDEMPOTENCY_RESULT_UNKNOWN`）时关框，转成页面上方的待确认条，这项的入口锁住，只能原样重试。重试被后端明确拒绝后才能解除，解除只放开本页的锁，不发请求，不写操作记录。读取失败时待确认条仍显示。
+- 刷新中所有写入口禁用并写原因。读取失败时控制项全部隐藏。页面打开和点「刷新」时读取，不自动更新，页头写数据时间。
 
 ### 域 K — 风控
 
