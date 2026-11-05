@@ -57,7 +57,7 @@ const BATCH_ACTIONS = ["APPROVE", "REJECT", "DELAY", "FREEZE"] as const;
 type D2BatchAction = (typeof BATCH_ACTIONS)[number];
 type D2UncertainBatch = { action: D2BatchAction; ids: string[]; reason: string; businessValue?: BusinessFormValue };
 type D2PendingCommand = PendingMutationRecord & { batch?: D2UncertainBatch };
-const BATCH_UNKNOWN_COPY = "批量操作结果尚未确认，可能已有部分生效。请勿改变勾选或新建批次；核对后重试原操作。";
+const BATCH_UNKNOWN_COPY = "批量操作结果尚未确认，可能已有部分生效。请在下方重试原操作，不要另建包含相同提现单的批次。";
 
 function money(value: number) {
   return `$${Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
@@ -633,7 +633,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   }, [visibleRows, authorities]);
   const pages = Math.max(1, Math.ceil(rows.total / Math.max(1, rows.pageSize)));
 
-  const handleWriteFailure = async (cause: unknown, batch = false) => {
+  const handleWriteFailure = async (cause: unknown) => {
     await load();
     if (detail) await openDetail(detail);
     const stateConflict = cause instanceof DRequestError && (cause.status === 409 || cause.code === 409)
@@ -642,11 +642,6 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     if (stateConflict) {
       toast("提现已被他人或系统处理，已刷新列表，请核对最新状态。");
       return;
-    }
-    if (batch && isDOutcomeUnknownError(cause)) {
-      const message = `${BATCH_UNKNOWN_COPY}原操作编号：${cause.commandKey}`;
-      toast(message);
-      throw new Error(message);
     }
     const message = cause instanceof Error ? displayAdminError(cause) : "提交失败，请重试";
     toast(message);
@@ -860,7 +855,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     pendingKeys.remember(scope, key, { batch: originalBatch });
     setSubmitting(scope);
     try {
-      const result: D2BatchResult = await reviewD2WithdrawalsBatch(action, ids, { ...businessInput(businessValue), reason }, OPERATOR(), key);
+      const result: D2BatchResult = await reviewD2WithdrawalsBatch(originalBatch.action, originalBatch.ids,
+        { ...businessInput(originalBatch.businessValue), reason: originalBatch.reason }, OPERATOR(), key);
       pendingKeys.forget(scope);
       setUncertainBatches((current) => current.filter((batch) => batchScope(batch.action, batch.ids) !== scope));
       toast(`批次 ${result.batchId}：成功 ${result.accepted.length} 笔 / 大额转人工 ${result.rejected.length} 笔 / 状态已变化 ${result.conflicts.length} 笔`);
@@ -871,11 +867,15 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           ...current.filter((batch) => batchScope(batch.action, batch.ids) !== scope),
           originalBatch,
         ]);
+        await load();
+        if (detail) await openDetail(detail);
+        toast(BATCH_UNKNOWN_COPY);
+        return;
       } else {
         pendingKeys.forget(scope);
         setUncertainBatches((current) => current.filter((batch) => batchScope(batch.action, batch.ids) !== scope));
       }
-      return await handleWriteFailure(cause, true);
+      return await handleWriteFailure(cause);
     } finally { setSubmitting(""); }
   };
 
@@ -885,6 +885,10 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     // 只提交「当前筛选结果里真正可执行」的行；弹窗里报的笔数与下面 run 提交的是同一个 ids。
     const ids = submittableRows.map((row) => row.withdrawalNo).sort();
     if (ids.length === 0) { toast("当前没有可以执行这个操作的提现单"); return; }
+    if (uncertainBatches.some((batch) => ids.some((id) => batch.ids.includes(id)))) {
+      toast("所选提现单包含尚未确认的原操作，请到页面上方提示中点击「重试原操作」。");
+      return;
+    }
     openActionConfirm({
       action: `批量执行 · ${actionLabel(action)}`,
       detail: `将对 ${ids.length} 笔提现执行${actionLabel(action)}（不符合条件的已自动排除）。${action === "REJECT" ? "拒绝后立即退回用户余额，完成后为已退款。" : "批量放行时，小额直接放行，大额转为单笔人工审核。"}`,
