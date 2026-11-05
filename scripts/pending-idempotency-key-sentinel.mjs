@@ -85,6 +85,7 @@ const MIGRATED = [
   "app/components/domain-views/c-tabs/c5-security.tsx",
   "app/components/domain-views/c-tabs/c6-regrisk.tsx",
   "app/components/domain-views/d-tabs/d2-withdrawals.tsx",
+  "app/components/domain-views/l-tabs/l1-kpi.tsx",
   "app/components/domain-views/d-tabs/d3-treasury.tsx",
   "app/components/domain-views/f-view.tsx",
   // F2 lifecycle retains the complete original proposal for explicit unknown-result recovery.

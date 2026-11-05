@@ -12,7 +12,7 @@ import "./l-domain.css";
 import { RdPage } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
-import { L1HeaderActions, L1Kpi } from "./l-tabs/l1-kpi";
+import { L1Kpi } from "./l-tabs/l1-kpi";
 import type { L1ExportSource } from "./l-tabs/l1-export-contract";
 import { L2HeaderActions, L2Funnel } from "./l-tabs/l2-funnel";
 import { L3HeaderActions, L3Finance } from "./l-tabs/l3-finance";
@@ -120,7 +120,7 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
   };
 
   const right =
-    tab === "L1" ? <L1HeaderActions ctx={ctx} source={l1ExportSource?.parentData === biData?.l1 ? l1ExportSource : undefined} />
+    tab === "L1" ? null
     : tab === "L2" ? <L2HeaderActions ctx={ctx} />
     : tab === "L3" ? <L3HeaderActions ctx={ctx} />
     : tab === "L4" ? <L4HeaderActions ctx={ctx} />
@@ -131,7 +131,7 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
     <>
       {tab !== "L1" && <DomainHeader {...meta} right={right} />}
 
-      {tab === "L1" && <L1Kpi key={session ? `${session.adminId}:${session.username}` : "anonymous"} ctx={ctx} onExportSource={setL1ExportSource} title={meta.l2Name} summary={meta.summary} actions={right} />}
+      {tab === "L1" && <L1Kpi key={session ? `${session.adminId}:${session.username}` : "anonymous"} ctx={ctx} onExportSource={setL1ExportSource} source={l1ExportSource?.parentData === biData?.l1 ? l1ExportSource : undefined} title={meta.l2Name} summary={meta.summary} />}
       {tab === "L2" && <L2Funnel ctx={ctx} />}
       {tab === "L3" && <L3Finance ctx={ctx} />}
       {tab === "L4" && <L4Ops ctx={ctx} />}
@@ -150,6 +150,8 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
           completionCopy={mc.completionCopy}
           confirmLabel={mc.confirmLabel}
           statedBrief={mc.statedBrief}
+          facts={mc.facts}
+          getPendingReason={mc.getPendingReason}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {
             try {

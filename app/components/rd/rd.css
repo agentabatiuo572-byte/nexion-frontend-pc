@@ -399,6 +399,8 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 /* 报表页的主表和所选明细并排，点一行右边就换；窗口窄时上下排（PG-42）。 */
 .rd-split { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: var(--rd-section-gap); align-items: start; }
 .rd-split .rd-table[data-tight] .rd-cell { max-width: 200px; }
+.rd-split .rd-panel-head { flex-wrap: wrap; }
+.rd-split .rd-panel-title { white-space: nowrap; }
 @media (max-width: 1240px) { .rd-split { grid-template-columns: minmax(0, 1fr); } }
 .rd-panel-foot { padding: 12px 20px 16px; }
 .rd-note { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }

@@ -37,6 +37,7 @@ export function operatorCopyText(value: string): string {
     .replace(/commission\.paid/g, "奖励发放")
     .replace(/market\.curve_advanced/g, "行情曲线推进")
     .replace(/\bOG\b/g, "早期持有人")
+    .replace(/已成熟注册 cohort/g, "注册满 7 天的人数")
     .replace(/\bcohort\b/gi, "同批用户")
     .replace(/\bPII\b/g, "个人敏感信息")
     .replace(/\bBI\b/g, "数据分析")
