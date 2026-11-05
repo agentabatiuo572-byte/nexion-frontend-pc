@@ -10,8 +10,10 @@ export interface TrialParamHelp {
   what: string;
   /** 什么时候生效。 */
   when: string;
-  /** 怎么填，放修改框。 */
+  /** 怎么填，放修改框：单位和范围。 */
   how?: string;
+  /** 怎么填的其余说明，收进修改框里的提示图标（DP-06）。 */
+  howMore?: string;
   /** 显示位置，只写核对过的。 */
   where?: string;
   /** 修改框的输入类型和范围，范围和后端一致。 */
@@ -31,7 +33,7 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
   trialProductId: {
     what: "用户免费试用的是哪台设备",
     when: NEW_TRIAL,
-    how: "只能选「商品管理与上架条件」里开启了「允许试用」的在售实物商品；试用价格就是该商品的当前售价。",
+    howMore: "只能选「商品管理与上架条件」里开启了「允许试用」的在售实物商品；试用价格就是该商品的当前售价。",
     where: "App 首页「我的福利」的试用卡、领取弹窗「试用设备」",
   },
   trialDays: {
@@ -53,7 +55,8 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
   discountRate: {
     what: "试用转购买时，售价减掉的比例",
     when: AT_PURCHASE,
-    how: "填百分比，0–100，15 就是减 15%。实际减的钱不超过「购买折扣上限」，和试用收益抵扣、提前购买立减叠加。",
+    how: "填百分比，0–100，15 就是减 15%。",
+    howMore: "实际减的钱不超过「购买折扣上限」，和试用收益抵扣、提前购买立减叠加。",
     where: "App 结算页「试用折扣」这一行",
     input: { unit: "%", min: 0, max: 100 },
     whatIf: (value) => `改成 ${value}：用户购买时售价减 ${value}%，不超过购买折扣上限。`,
@@ -70,7 +73,8 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
   trialOffsetCapUSD: {
     what: "试用收益最多能抵多少购机款",
     when: "立即生效，按领取时的设置算",
-    how: "0–1,000,000 USDT。要清空点「不设上限」；0 表示上限为 0。只管试用收益能抵多少，和购买折扣、提前购买立减叠加。",
+    how: "0–1,000,000 USDT，0 表示上限为 0。",
+    howMore: "只管试用收益能抵多少，和购买折扣、提前购买立减叠加。",
     where: "App 领取弹窗「最高」金额、我的 › 试用页规则",
     input: USDT_RANGE,
     whatIf: (value) => (value.trim() === "" ? "不设上限：之后领取的试用，试用收益抵扣不封顶。" : `改成 ${value}：之后领取的试用，试用收益最多抵 ${value} USDT。`),
@@ -81,14 +85,15 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
     how: "整数，0–30 天。",
     where: "App 我的 › 试用页「抵扣剩余时间」",
     input: { unit: "天", min: 0, max: 30, step: 1 },
-    whatIf: (value) => `改成 ${value}：试用到期后 ${value} 天内还能用抵扣金购买。`,
+    whatIf: (value) => (Number(value) === 0 ? "改成 0：试用到期后不能再用抵扣金购买。" : `改成 ${value}：试用到期后 ${value} 天内还能用抵扣金购买。`),
   },
   extensionDays: {
     what: "用户接受延长时多给的天数",
     when: "立即生效，之后接受延长的用新天数",
-    how: "整数，0–30 天。填 0 时系统按 1 天算。",
-    input: { unit: "天", min: 0, max: 30, step: 1 },
-    whatIf: (value) => `改成 ${value}：之后接受延长的试用多给 ${value === "0" ? "1" : value} 天。`,
+    how: "整数，1–30 天。",
+    // 后端存得下 0，但用的时候按 1 天算（positiveInt），这里不让填 0，改后的值才是真实天数。
+    input: { unit: "天", min: 1, max: 30, step: 1 },
+    whatIf: (value) => `改成 ${value}：之后接受延长的试用多给 ${value} 天。`,
   },
   highQualityThresholdUSD: {
     what: "累计试用收益到这个数算高质量，才能延长",
@@ -101,10 +106,11 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
   cooldownDays: {
     what: "取消试用后多少天内不能再试用",
     when: "立即生效，只影响之后新取消的试用",
-    how: "整数，0–365 天。填 0 时系统按 1 天算。",
+    how: "整数，1–365 天。",
     where: "App 我的 › 试用页「再次领取的等待期尚未结束」",
-    input: { unit: "天", min: 0, max: 365, step: 1 },
-    whatIf: (value) => `改成 ${value}：之后取消的试用要等 ${value === "0" ? "1" : value} 天才能再领。`,
+    // 同延长天数：0 按 1 天算（positiveInt）。
+    input: { unit: "天", min: 1, max: 365, step: 1 },
+    whatIf: (value) => `改成 ${value}：之后取消的试用要等 ${value} 天才能再领。`,
   },
   earlyPurchaseDiscountUSD: {
     what: "试用期内购买再减的固定金额",
@@ -129,8 +135,9 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
     input: { unit: "UVT", min: 0, max: 1_000_000 },
     whatIf: (value) => `改成 ${value}：商品没配日收益时，之后开始的试用每天按 ${value} UVT 累积。`,
   },
-  autoPushEnabled: { what: "要不要自动弹出试用邀请", when: PUSH_WHEN },
+  autoPushEnabled: { label: "试用邀请弹窗开关", what: "要不要自动弹出试用邀请", when: PUSH_WHEN },
   autoPushDelayMs: {
+    label: "试用邀请弹窗延迟",
     what: "满足条件后等多久弹出",
     when: PUSH_WHEN,
     how: "0–86,400 秒，1.5 就是 1.5 秒。",
@@ -138,13 +145,15 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
     scale: 1000,
   },
   autoPushCooldownHours: {
+    label: "试用邀请弹窗冷却时间",
     what: "用户关掉弹窗后多久才再弹",
     when: PUSH_WHEN,
     how: "不小于 0 的整数，单位小时。",
     input: { unit: "小时", min: 0, max: 86_400_000, step: 1 },
   },
   autoPushMaxPerSession: {
-    what: "一次打开最多弹几次",
+    label: "一次打开最多弹几次",
+    what: "试用邀请弹窗一次打开最多弹几次",
     when: PUSH_WHEN,
     how: "不小于 0 的整数。",
     input: { unit: "次", min: 0, max: 86_400_000, step: 1 },
@@ -161,7 +170,7 @@ export const COMMON_TRIAL_PARAMS = ["trialProductId", "trialDays", "seatsLeftTod
 export const ADVANCED_TRIAL_GROUPS = [
   { title: "试用周期", keys: ["graceDays", "extensionDays", "highQualityThresholdUSD", "cooldownDays"] },
   { title: "收益与立减", keys: ["earlyPurchaseDiscountUSD", "shadowDailyUSD", "shadowDailyNEX"] },
-  { title: "邀请弹窗", keys: ["autoPushEnabled", "autoPushDelayMs", "autoPushCooldownHours", "autoPushMaxPerSession"] },
+  { title: "试用邀请弹窗", keys: ["autoPushEnabled", "autoPushDelayMs", "autoPushCooldownHours", "autoPushMaxPerSession"] },
 ] as const;
 
 /** 试用记录七种状态的白话解释（DP-35）。 */

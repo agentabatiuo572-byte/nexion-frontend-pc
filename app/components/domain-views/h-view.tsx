@@ -96,7 +96,8 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
               await mc.run(reason, newValue, businessValue);
               setActionConfirm(null);
             } catch (error) {
-              setToast(error instanceof Error ? displayAdminError(error) : "操作失败");
+              // 免费试用设置的错误只写在框里，不再弹同一句（S01）。
+              if (tab !== "H2") setToast(error instanceof Error ? displayAdminError(error) : "操作失败");
               throw error;
             }
           }}
