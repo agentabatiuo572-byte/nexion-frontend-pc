@@ -19,7 +19,7 @@ export interface K1ParamHelp {
 
 const NEXT_CHECK = "保存后立即生效，系统约每分钟检查一次，下次检查按新值算";
 const LATER_EARNINGS = "保存后立即生效，之后的新增收益按新值处理，历史记录不改";
-const NOT_IN_USE = "保存后立即生效，但现在不影响收益";
+const NOT_IN_USE = "保存后立即生效";
 const MANUAL_ONLY = "现在收益只能人工放行，这项不改变收益的处理。";
 
 export const K1_PARAM_HELP: Record<string, K1ParamHelp> = {

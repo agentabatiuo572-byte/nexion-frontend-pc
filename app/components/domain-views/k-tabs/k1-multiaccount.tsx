@@ -1064,7 +1064,6 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     return (
       <Panel title={`账户组 ${c.id}`} sub={`${c.layerLabel} · ${c.n} 个账户`} icon={Users} tone="role-3" actions={<StatusTag tone={statusTone} explain={statusExplain}>{statusLabel}</StatusTag>}>
         <div className="rd-stack">
-          <JudgmentPoints rows={rows} />
           {(actions.length > 0 || canWrite) && (
             <Decision
               note={actions.length > 0 ? "处置要提交审批，超级管理员批准后才生效，批准前这组不变。" : undefined}
@@ -1073,6 +1072,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               primary={primary && <Button variant="primary" disabledReason={primary.blocked} onClick={primary.run}>{primary.label}</Button>}
             />
           )}
+          <JudgmentPoints rows={rows} />
           <div>
             <Fold inset icon={Network} tone="risk" title="关系图" summary={c.edges.length ? `${shown} 个账户，${c.edges.length} 条关联${hidden ? `，${hidden} 个未画出` : ""}` : "暂无可展示关联边"}>
               <ClusterGraph c={c} />
@@ -1175,9 +1175,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               { value: "all", label: "全部" }, { value: "ip", label: "IP" }, { value: "device", label: "设备指纹" }, { value: "payment", label: "支付工具" },
             ]} />}
             onClear={clearFilters} canClear={filtered}
-            sort={<FilterField label="排序"><Select aria-label="关联账户组排序" value={clusterSort} onChange={(value) => { setClusterSort(value as K1ClusterSort); setClusterPage(1); }} options={[
+            sort={<FilterField><span className="rd-toolbar"><span className="rd-toolbar-note">排序</span><Select aria-label="关联账户组排序" value={clusterSort} onChange={(value) => { setClusterSort(value as K1ClusterSort); setClusterPage(1); }} options={[
               { value: "strength_desc", label: "关联程度" }, { value: "account_desc", label: "关联账户数" },
-            ]} /></FilterField>}>
+            ]} /></span></FilterField>}>
             <FilterField><Select aria-label="关联账户组状态" value={clusterStatus} onChange={(value) => { setClusterStatusFilter(value as K1ClusterStatusFilter); setClusterPage(1); }} options={[
               { value: "all", label: "全部状态" }, { value: "detected", label: "待判定" }, { value: "flagged", label: "可疑" }, { value: "frozen", label: "已冻结" }, { value: "released", label: "已解除" }, { value: "cleared", label: "正常" },
             ]} /></FilterField>
