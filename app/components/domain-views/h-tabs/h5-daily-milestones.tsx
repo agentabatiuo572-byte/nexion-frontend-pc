@@ -109,7 +109,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         before: current,
         after: String(nextValue),
         type: "param",
-        amplifies: false,
+        amplifies: isProbability && Number(nextValue) > Number(currentNumber),
         gate: { roles: [] },
         gateLabel: def.gateLabel,
         reason,
@@ -124,10 +124,10 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       openActionConfirm({
         action: `签到规则 · ${operatorCopyText(rule.name)}`,
         detail: <>每档概率必须在 0–100%，两档合计不能超过 100%。另一档当前为 {otherProbability}%。批准后生效。</>,
-        amplifies: true,
         businessForm: {
           kind: "multi-field",
           title: "幸运概率",
+          amplifies: (values) => Number(values[rule.key]) > Number(currentNumber),
           fields: [{ key: rule.key, label: `${operatorCopyText(rule.name)}（%）`, inputKind: "number", current: currentNumber, min: 0, max: 100 }],
           feedback: (values) => {
             const raw = values[rule.key].trim();

@@ -958,6 +958,7 @@
 - **签到规则配置面**(§9.8.1):baseline 积分 / 7 天连续 bonus / Lucky 15% → 1.5× / Lucky 5% → 2× / 断签阈值(>48h)/ Streak Saver 恢复上限(30 天)。
 - **30 天里程碑配置面**(§9.8.2,7 阶梯):`Day 阈值 / 奖励 / 类型(points/usdt/nex/spin/badge)`——Day3 +5 积分 / Day7 +15 积分 / Day14 +1 USDT / Day21 +100 NEX / Day30 🎰 Lucky Spin 票(转盘治理归 H4)/ Day60 +10 USDT / Day100 ⭐ Streak Master Badge(NFT)。
 - **签到规则生效口径（T02）**：签到规则提交「操作记录与审批」，另一位超级管理员批准后生效；提交成功不表示规则已更新。连签、成长和收益里程碑的既有直接保存路径不变。
+- **幸运概率资金方向（BUG-258 Follow-up 1，T11）**：与当前同一档概率比较，只有拟改值更大才提示多付钱并标记放大方向；下调和原值不提示。提案中的放大标记与确认框使用相同方向，系统执行时继续按当前值复验覆盖率。
 - **幸运概率反馈（BUG-258）**：调整任一档时实时显示两档合计；每档须在 0–100%，合计不超过 100%，否则说明原因并禁用确认。合法概率提交到「操作记录与审批」，批准后生效；提交失败保留输入。系统执行时仍复验概率与覆盖率。
 - **成长奖励备注（BUG-253）**：运营备注明确标为可选，允许清空并保存空字符串；触发天数和版本校验保持不变。
 - **Streak Power-Ups 配置面**(§9.8.6,4 档,`streak-powerups.ts:32-69`):`streak 阈值 / 增益名 / 转化路径 / badge`——7 天 Royalty Boost(→ F2 unilevel,href `/team/unilevel/how-it-works`)/ 14 天 Premium 7-day free trial(→ G5,href `/me/wallet/premium`)/ 30 天 +2% APY on next stake(→ G1,href `/staking`)/ 60 天 Genesis whitelist priority(→ G4 Genesis,href `/genesis`)。
