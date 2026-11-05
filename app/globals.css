@@ -7,7 +7,8 @@
    后台只有一套配色:黑曜石 + 柠檬绿(brand #9EDC1D),全部取值在 :root。
    ============================================================================ */
 
-:root {
+:root,
+.rd-legacy {
   /* 表面阶梯 — 真黑微提升底 #0A0A0A + tone 分层(对齐设计稿 V5 Dark) */
   --v5-bg: #0A0A0A;
   --v5-surface: #121214;
@@ -295,7 +296,8 @@ select option:disabled { color: var(--v5-ink-3); }
    token 经别名映射到本项目 --v5-*。作用域化避免与 Tailwind 工具类冲突。
    仅用于「内容页」复刻设计稿富布局;导航/外壳沿用本项目 shell。
    ============================================================================ */
-:root {
+:root,
+.rd-legacy {
   --brand: var(--v5-brand);
   --brand-deep: var(--v5-brand-deep);
   --brand-soft: var(--v5-brand-soft);

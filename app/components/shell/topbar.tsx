@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 顶栏 — 面包屑 + UTC 时钟 + 当前登录账号菜单。
+ * 顶栏 — 面包屑 + UTC 时钟 + 主题开关 + 当前登录账号菜单。
  */
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Gauge, Headset, LogOut, Search, UserRound } from "lucide-react";
@@ -21,6 +21,7 @@ import { B_DASHBOARD_READ_AUTHORITIES, M_CONTENT_READ_AUTHORITIES } from "@/lib/
 import { requestAdminLogout } from "@/lib/admin/logout-request";
 import { currentAdminSession } from "@/lib/admin/auth-client";
 import { supportIdentityLabel } from "@/lib/admin/session-role";
+import { ThemeToggle } from "@/app/components/rd/theme-switch";
 import "./topbar.css";
 
 function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string }) {
@@ -219,6 +220,7 @@ export function TopBar({
   servicePending: number;
 }) {
   const supportOnly = role === "support";
+  const adminId = useAdminAuth((s) => s.session?.adminId);
   const canReadBDomain = B_DASHBOARD_READ_AUTHORITIES.every((authority) => authorities.includes(authority));
   const canReadMContent = M_CONTENT_READ_AUTHORITIES.every((authority) => authorities.includes(authority));
   return (
@@ -233,6 +235,7 @@ export function TopBar({
       <div className="admin-topbar-actions flex shrink-0 items-center gap-2 whitespace-nowrap">
         {!supportOnly && canReadBDomain && <CoveragePill enabled />}
         <span className="admin-topbar-clock hidden xl:block"><UtcClock /></span>
+        <ThemeToggle adminId={adminId} />
         {canReadMContent && <SupportInboxPill pending={servicePending} />}
         {!supportOnly && <NotificationBell />}
         <RoleSwitcher role={role} operator={operator} />

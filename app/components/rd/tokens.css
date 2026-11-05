@@ -158,12 +158,12 @@
   --rd-brand-ink: #4F7100;
   --rd-brand-soft: #ECF8D2;
 
-  /* 状态色：文字加深；图标底改为实色底配白图标 */
-  --rd-ok: #007646;            --rd-ok-bg: #E0EFE9;      --rd-ok-tile: #009962;      --rd-ok-tile-ink: #FFFFFF;      --rd-ok-pill: #E0EFE9;
-  --rd-warn: #B24400;          --rd-warn-bg: #F6E9E0;    --rd-warn-tile: #D1601F;    --rd-warn-tile-ink: #FFFFFF;    --rd-warn-pill: #F6E9E0;
-  --rd-danger: #B61537;        --rd-danger-bg: #F6E3E7;  --rd-danger-tile: #D3384E;  --rd-danger-tile-ink: #FFFFFF;  --rd-danger-pill: #F6E3E7;
-  --rd-danger-bg-strong: #F2D5DB;
-  --rd-progress: #145EC1;      --rd-progress-bg: #E3ECF8; --rd-progress-tile: #3177DC; --rd-progress-tile-ink: #FFFFFF; --rd-progress-pill: #E3ECF8;
+  /* 状态色：文字加深；图标底改为实色底配白图标；横幅底很浅，状态靠左侧竖条和图标（VS-94） */
+  --rd-ok: #007646;            --rd-ok-bg: #E6F3EC;      --rd-ok-tile: #009962;      --rd-ok-tile-ink: #FFFFFF;      --rd-ok-pill: #E0EFE9;
+  --rd-warn: #B24400;          --rd-warn-bg: #FBF1E4;    --rd-warn-tile: #D1601F;    --rd-warn-tile-ink: #FFFFFF;    --rd-warn-pill: #F6E9E0;
+  --rd-danger: #B61537;        --rd-danger-bg: #FBE9EC;  --rd-danger-tile: #D3384E;  --rd-danger-tile-ink: #FFFFFF;  --rd-danger-pill: #F6E3E7;
+  --rd-danger-bg-strong: #F6DADF;
+  --rd-progress: #145EC1;      --rd-progress-bg: #E8EFFA; --rd-progress-tile: #3177DC; --rd-progress-tile-ink: #FFFFFF; --rd-progress-pill: #E3ECF8;
   --rd-done: #5B616B;          --rd-done-bg: #F3F4F7;    --rd-done-tile: #E8EAEF;    --rd-done-tile-ink: #5B616B;    --rd-done-pill: #E8EAEF;
   --rd-danger-button: #DC2626; --rd-danger-button-hover: #C21F1F;
 

@@ -95,6 +95,9 @@
   .admin-topbar-operator {
     max-width: 88px;
   }
+  .rd-theme-label {
+    display: none;
+  }
   .admin-topbar-crumb-ancestor,
   .admin-topbar-clock {
     display: none;

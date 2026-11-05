@@ -126,9 +126,13 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 
 `Cell` 最宽 280，长文本省略，`title` 给全文，只有鼠标能看到。要让键盘也能看，把这段文字放进可聚焦的按钮或链接里（ST-04）。单号这类不能截短的传 `full`（TX-28）。
 
-## 深浅切换（临时）
+## 深浅两套主题
 
-网址加 `?theme=light` 或 `?theme=dark`，选择记在浏览器里，默认深色。选定后删掉 `theme-switch.tsx`、`app/layout.tsx` 里的引用、`tokens.css` 里落选的那一套、`rd.css` 里 `:root[data-theme="light"]` 这个选择器，以及 `shell.css` 里落选的 Logo 规则和对应的图（`public/uvel-mark-dark.png` 或 `public/uvel-lockup-on-light.png`、`public/uvel-symbol.png`）。旧页面浅色下靠 `rd.css` 的变量映射保持可读，写死颜色的地方不会跟着变。
+深色默认，浅色挂 `data-theme="light"`，两套都正式保留。`theme-switch.tsx` 管三件事：`<ThemeScript />` 在 `app/layout.tsx` 的 `<head>` 里同步执行，首屏按记住的选择设属性，不闪屏；`<ThemeToggle adminId={…} />` 是顶栏和登录页的开关（太阳「浅色」、月亮「深色」）；`useAdminTheme(adminId)` 登录后按账号记住的选择切换。记忆在本机：`nexion-admin-rd-theme` 是最近一次的选择（登录前也用它），`nexion-admin-rd-theme:<adminId>` 是每个账号的选择。网址参数 `?theme=light|dark` 只给截图和验收脚本用，不是入口。
+
+两套主题的差别只在 `tokens.css` 和 `rd.css` 里：浅色数字用正文色、身份靠实色图标底和图表色（VS-14）；白面板加 1px 边、横幅改左侧 3px 状态色竖条加很浅的底（VS-94）；Logo 换横版 on-light（`shell.css`）。页面不写这些。
+
+还没迁移的页面，`console-shell.tsx` 给内容区 `<main>` 挂 `data-theme="dark"` 和 `.rd-legacy`，里面仍是旧的深色取值，侧栏和顶栏跟主题走（VS-95）。迁完一页就把它的路径加进 `lib/nav/console-nav.ts` 的 `REDESIGNED_PATHS`。
 
 ## 依赖
 

@@ -575,3 +575,20 @@ td .rd-flow { margin-bottom: 0; }
 .rd-tiers-bounds span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
 .rd-tiers-bounds span[data-edge="start"] { transform: none; }
 .rd-tiers-bounds span[data-edge="end"] { transform: translateX(-100%); }
+
+/* 主题开关（顶栏、登录页）：太阳浅色、月亮深色，选中的一格亮底。 */
+.rd-theme { display: inline-flex; align-items: center; flex: none; padding: 2px; border-radius: 8px; background: var(--rd-panel-inner); }
+.rd-theme button { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--rd-text-3); font: inherit; font-size: 12px; line-height: 18px; white-space: nowrap; cursor: pointer; }
+.rd-theme button[data-on] { background: var(--rd-panel); color: var(--rd-text); box-shadow: 0 0 0 1px var(--rd-line-strong); }
+.rd-theme button:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) { .rd-theme button:not([data-on]):hover { color: var(--rd-text); } }
+.rd-theme[data-floating] { position: fixed; top: 16px; right: 16px; z-index: 1; }
+
+/* 浅色主题（VS-94）：白面板在浅灰页面上加 1px 边；横幅改左侧 3px 状态色竖条加很浅的底。都用内阴影，不改尺寸。 */
+:root[data-theme="light"] :is(.rd-panel:not([data-plain]), .rd-stats, .rd-fold:not([data-inset]), .rd-conclusion, .rd-notice) { box-shadow: inset 0 0 0 1px var(--rd-line); }
+:root[data-theme="light"] :is(.rd-conclusion[data-alarm], .rd-notice) { box-shadow: inset 3px 0 0 var(--tone), inset 0 0 0 1px var(--rd-line); }
+:root[data-theme="light"] .rd-panel > .rd-conclusion { box-shadow: none; }
+:root[data-theme="light"] .rd-panel > .rd-conclusion[data-alarm] { box-shadow: inset 3px 0 0 var(--tone); }
+
+/* 还没迁移的页面：内容区挂 data-theme="dark" 和 .rd-legacy，里面仍是旧的深色取值；浅色主题的原生控件配色在这里面改回深色。 */
+:root[data-theme="light"] .rd-legacy :is(select, input[type="date"], input[type="datetime-local"]) { color-scheme: dark; }

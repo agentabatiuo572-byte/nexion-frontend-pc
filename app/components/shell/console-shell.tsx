@@ -16,7 +16,8 @@ import { installAdminAuthFetchLifecycle } from "@/lib/admin/auth-lifecycle";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { requestAdminLogout } from "@/lib/admin/logout-request";
 import { b0Blocks, b0HasAnyBlock } from "@/lib/admin/b0-access";
-import { canAccessResolvedPath, defaultConsolePath, resolveVisibleDomains } from "@/lib/nav/console-nav";
+import { canAccessResolvedPath, defaultConsolePath, isRedesignedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
+import { useAdminTheme } from "@/app/components/rd/theme-switch";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { DEFAULT_EXPANDED_GROUPS, useAdminUi } from "@/lib/store/admin-ui";
 import { Sidebar } from "./sidebar";
@@ -115,6 +116,10 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const canReadA3 = authorities.includes("platform_a3_read");
   const canReadMContent = authorities.includes("service_m1_read") || authRole === "superadmin" || authRole === "super";
   const sessionKey = adminShellSessionKey(session, authEpoch);
+  // 登录后按这个账号记住的主题切换；登录前用本机最近一次的选择。
+  useAdminTheme(session?.adminId);
+  // 还没迁移的页面内容区保持深色，侧栏和顶栏跟主题走（06 VS-95）。
+  const legacyPage = !isRedesignedPath(pathname);
   const servicePending = useServicePendingCount(canReadMContent, sessionKey);
   const observedAuthEpochRef = useRef(authEpoch);
   const [justLoggedIn, setJustLoggedIn] = useState(false);
@@ -384,6 +389,8 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
         />
       </div>
       <main
+        className={legacyPage ? "rd-legacy" : undefined}
+        data-theme={legacyPage ? "dark" : undefined}
         style={{
           gridColumn: 2,
           gridRow: 2,

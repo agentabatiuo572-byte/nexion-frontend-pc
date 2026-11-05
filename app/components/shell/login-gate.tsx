@@ -7,6 +7,7 @@ import type { FormEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { Loader2, LockKeyhole, LogIn, ShieldCheck, UserRound } from "lucide-react";
+import { ThemeToggle } from "@/app/components/rd/theme-switch";
 import { changeAdminPassword, currentAdminSession, loginAdmin, verifyAdminMfa, type AdminMfaChallenge, type LoginResult } from "@/lib/admin/auth-client";
 import { completeInteractiveLogin } from "@/lib/admin/login-completion";
 import { createTotpEnrollmentQrDataUrl } from "@/lib/admin/mfa-enrollment-qr";
@@ -203,6 +204,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
       className="flex h-screen w-screen items-center justify-center p-6"
       style={{ background: "var(--rd-bg)" }}
     >
+      <ThemeToggle floating />
       <form
         onSubmit={changingPassword ? handlePasswordChange : verifyingMfa ? handleMfaSubmit : handleSubmit}
         className="w-full max-w-sm rounded-[var(--admin-radius)] p-7"

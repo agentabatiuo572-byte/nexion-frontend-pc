@@ -76,3 +76,7 @@ a.cc-amount:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 
 .cc-gates { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; padding: 0; list-style: none; }
 .cc-gates li { display: inline-flex; align-items: center; gap: 8px; color: var(--rd-text); }
 
+/* 浅色主题：「今天」面板本身有边，头部的结论句不再套一圈，告警时只留左侧竖条。 */
+:root[data-theme="light"] .cc-brief > .rd-conclusion { box-shadow: none; }
+:root[data-theme="light"] .cc-brief > .rd-conclusion[data-alarm] { box-shadow: inset 3px 0 0 var(--tone); }
+:root[data-theme="light"] .cc-fundline[data-tone="warn"] { box-shadow: inset 3px 0 0 var(--tone); }
