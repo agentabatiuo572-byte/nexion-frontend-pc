@@ -309,6 +309,8 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   WITHDRAWAL_ROLE_NOT_ALLOWED: "当前账号无权执行这项提现操作，请联系有权限的管理员处理。",
   WITHDRAWAL_FREEZE_LIFECYCLE_REQUIRED: "冻结信息不符合要求。请填写责任人并核对复查时间：固定期限允许相差一天；长期冻结须在未来 1–365 天内复查。",
   WITHDRAWAL_DELAY_LIFECYCLE_REQUIRED: "延迟信息不符合要求。请填写责任人、1–45 天的等待天数，并将未来复查日设在所选期限前后一天内。",
+  WITHDRAWAL_ADDRESS_CONFIRMATION_REQUIRED: "请先勾选「我已核对地址与风险信息」，再提交大额放行。",
+  WITHDRAWAL_FUNDS_CONFIRMATION_REQUIRED: "请先勾选「我已核实钱没有打出去」，再提交手动退款。",
   WITHDRAWAL_DISCLOSURE_REACK_REQUIRED: "提现风险告知应急拦截仍开启，本次未放行；请核对「风险披露」告知范围和应急控制中的提现告知开关。",
   TOPUP_CHANNEL_AMOUNT_RANGE_INVALID: "单笔上限不得低于最低充值额；本次未保存，请重新输入。",
   TOPUP_CHANNEL_MAX_NOT_SUPPORTED: "该通道没有独立的单笔上限；VietQR 上限请在银行轨参数区调整。",

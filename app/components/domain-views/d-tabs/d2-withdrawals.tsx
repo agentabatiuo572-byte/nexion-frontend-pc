@@ -421,7 +421,7 @@ function actionBusinessForm(action: D2ReviewAction, addressVerificationRequired 
   }
   if (action === "REFUND") return {
     kind: "multi-field", title: "退款前核实", fields: [
-      { key: "fundsVerified", label: "钱没有打出去", inputKind: "checkbox", required: true, current: "" },
+      { key: "fundsVerified", label: "我已核实钱没有打出去", inputKind: "checkbox", required: true, current: "" },
     ],
   };
   if (action === "APPROVE" && addressVerificationRequired) return {
