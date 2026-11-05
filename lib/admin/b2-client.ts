@@ -109,6 +109,31 @@ export const B2_LIABILITY_KEYS = [
 const B2_RESERVE_KEYS = ["usdt", "otherLiquid"] as const;
 const B2_WATER_TIERS = ["NORMAL", "WATCH", "WARNING", "DANGER"] as const;
 
+export class B2RequestError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = "B2RequestError";
+  }
+}
+
+export interface ForecastConfigPreview {
+  version: number;
+  effectiveAt: string;
+  forecastDeltaPreview: Record<
+    "before7dUsdt" | "after7dUsdt" | "delta7dUsdt" | "before30dUsdt" | "after30dUsdt" | "delta30dUsdt"
+    | "beforeReserveUsdt" | "afterReserveUsdt" | "reserveDeltaUsdt"
+    | "beforeLiabilitiesUsdt" | "afterLiabilitiesUsdt" | "liabilitiesDeltaUsdt"
+    | "beforeNetExposureUsdt" | "afterNetExposureUsdt" | "netExposureDeltaUsdt"
+    | "beforeDailyGenesisUsdt" | "afterDailyGenesisUsdt" | "dailyDeltaUsdt", number> & {
+      beforeCoveragePct: number | null;
+      afterCoveragePct: number | null;
+      coverageDeltaPct: number | null;
+      beforeCoverageStatus: "AVAILABLE" | "NO_LIABILITIES" | "VALUATION_UNAVAILABLE";
+      afterCoverageStatus: "AVAILABLE" | "NO_LIABILITIES" | "VALUATION_UNAVAILABLE";
+      removedLiabilityCategories: string[];
+    };
+}
+
 export class B2OutcomeUnknownError extends Error {
   constructor(public readonly commandKey: string) {
     super(`本次配置保存结果未知，可能已经生效。请先刷新核对；如需按原输入重试，将继续使用同一请求号：${commandKey}`);
@@ -391,7 +416,7 @@ async function request<T>(path: string, init?: RequestInit) {
       || outcomeStaysUnknown(response.status, result?.code))) {
       throw new B2OutcomeUnknownError(commandKey);
     }
-    throw new Error(formatAdminApiError(result?.message, `B2_REQUEST_FAILED_${response.status}`));
+    throw new B2RequestError(formatAdminApiError(result?.message, `B2_REQUEST_FAILED_${response.status}`), response.status);
   }
   return result.data;
 }
@@ -409,6 +434,38 @@ export async function fetchB2Dashboard(window: B2MaturityWindow): Promise<B2Dash
     maturity: normalizeMaturity(maturity),
     config: normalizeConfig(config),
   };
+}
+
+export async function previewB2ForecastConfig(values: B2ForecastValues, expectedVersion: number): Promise<ForecastConfigPreview> {
+  const raw = object(await request<unknown>("/forecast-config/preview", {
+    method: "POST",
+    body: JSON.stringify({ ...values, expectedVersion }),
+  }), "preview");
+  const delta = object(raw.forecastDeltaPreview, "forecastDeltaPreview");
+  const amounts = Object.fromEntries([
+    "before7dUsdt", "after7dUsdt", "delta7dUsdt", "before30dUsdt", "after30dUsdt", "delta30dUsdt",
+    "beforeReserveUsdt", "afterReserveUsdt", "reserveDeltaUsdt", "beforeLiabilitiesUsdt", "afterLiabilitiesUsdt", "liabilitiesDeltaUsdt",
+    "beforeNetExposureUsdt", "afterNetExposureUsdt", "netExposureDeltaUsdt", "beforeDailyGenesisUsdt", "afterDailyGenesisUsdt", "dailyDeltaUsdt",
+  ].map((key) => [key, number(delta[key], `preview.${key}`)])) as Pick<ForecastConfigPreview["forecastDeltaPreview"],
+    "before7dUsdt" | "after7dUsdt" | "delta7dUsdt" | "before30dUsdt" | "after30dUsdt" | "delta30dUsdt"
+    | "beforeReserveUsdt" | "afterReserveUsdt" | "reserveDeltaUsdt" | "beforeLiabilitiesUsdt" | "afterLiabilitiesUsdt" | "liabilitiesDeltaUsdt"
+    | "beforeNetExposureUsdt" | "afterNetExposureUsdt" | "netExposureDeltaUsdt" | "beforeDailyGenesisUsdt" | "afterDailyGenesisUsdt" | "dailyDeltaUsdt">;
+  const statuses = ["AVAILABLE", "NO_LIABILITIES", "VALUATION_UNAVAILABLE"];
+  if (!statuses.includes(String(delta.beforeCoverageStatus)) || !statuses.includes(String(delta.afterCoverageStatus))) invalid("preview.coverageStatus");
+  const beforeCoverageStatus = delta.beforeCoverageStatus as ForecastConfigPreview["forecastDeltaPreview"]["beforeCoverageStatus"];
+  const afterCoverageStatus = delta.afterCoverageStatus as ForecastConfigPreview["forecastDeltaPreview"]["afterCoverageStatus"];
+  const beforeCoveragePct = delta.beforeCoveragePct === null ? null : number(delta.beforeCoveragePct, "preview.beforeCoveragePct");
+  const afterCoveragePct = delta.afterCoveragePct === null ? null : number(delta.afterCoveragePct, "preview.afterCoveragePct");
+  const coverageDeltaPct = delta.coverageDeltaPct === null ? null : number(delta.coverageDeltaPct, "preview.coverageDeltaPct");
+  if ((beforeCoverageStatus === "AVAILABLE") !== (beforeCoveragePct !== null)
+    || (afterCoverageStatus === "AVAILABLE") !== (afterCoveragePct !== null)
+    || (beforeCoveragePct === null || afterCoveragePct === null) && coverageDeltaPct !== null) invalid("preview.coverage");
+  const version = number(raw.version, "preview.version");
+  if (version !== expectedVersion) invalid("preview.version");
+  return { version, effectiveAt: string(raw.effectiveAt, "preview.effectiveAt"), forecastDeltaPreview: {
+    ...amounts, beforeCoverageStatus, afterCoverageStatus, beforeCoveragePct, afterCoveragePct, coverageDeltaPct,
+    removedLiabilityCategories: stringArray(delta.removedLiabilityCategories, "preview.removedLiabilityCategories"),
+  } };
 }
 
 export async function updateB2ForecastConfig(

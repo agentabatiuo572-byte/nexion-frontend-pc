@@ -1,4 +1,6 @@
 "use client";
+import { ForecastConfigImpact } from "@/app/components/forecast-config-preview";
+import { B2RequestError, previewB2ForecastConfig, type ForecastConfigPreview, type B2ForecastValues } from "@/lib/admin/b2-client";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -9,6 +11,7 @@ import {
   downloadD3Csv,
   fetchD3Dashboard,
   updateD3ForecastConfig,
+  DRequestError,
   type D3Dashboard,
   type D3ForecastConfig,
   type D3WaterLevel,
@@ -89,6 +92,21 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
   const [voucherNo, setVoucherNo] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [configError, setConfigError] = useState("");
+  const [preview, setPreview] = useState<{ key: string; value: ForecastConfigPreview } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const previewGeneration = useRef(0);
+  const values: B2ForecastValues | null = draft && {
+    reserveCategories: draft.reserveCategories,
+    liabilityCategories: draft.liabilityCategories,
+    forecastWindow: draft.forecastWindow,
+    genesisIncluded: draft.genesisIncluded,
+    includeFarLiabilities: draft.includeFarLiabilities,
+    stakingInterestMode: draft.stakingInterestMode,
+    trialStressEnabled: draft.trialStressEnabled,
+  };
+  const previewKey = JSON.stringify([values, draft?.version]);
+  const currentPreview = preview?.key === previewKey ? preview.value : null;
   // merge 2026-08-06:pendingKeys 用分支侧 store 化版本(稳定命令号,声明在下方);
   // loadGeneration 是 main 侧独立功能(请求代际防过期响应),消费在 load() 内,保留。
   const loadGeneration = useRef(0);
@@ -104,6 +122,8 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
 
   const load = async (nextMaturity?: "7d" | "30d", nextExposure?: "7d" | "30d" | "90d") => {
     const generation = ++loadGeneration.current;
+    ++previewGeneration.current;
+    setPreview(null);
     setLoading(true);
     setError("");
     try {
@@ -128,6 +148,12 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
     // The window controls explicitly invoke load with their selected value.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    setPreview(null);
+    ++previewGeneration.current;
+    return () => { ++previewGeneration.current; };
+  }, [previewKey, canConfig]);
 
   const exposureMax = useMemo(
     () => Math.max(1, ...(data?.exposure.series.map((row) => Math.abs(row.netExposureUsdt)) ?? [1])),
@@ -181,25 +207,45 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
     });
   };
 
-  const saveConfig = () => {
-    if (!draft) return;
+  const saveConfig = async () => {
+    if (!values || !draft || !canConfig || loading || previewLoading || draft.forecastWindow === "90d") return;
+    const generation = ++previewGeneration.current;
+    const expectedVersion = draft.version;
+    setPreviewLoading(true);
+    setPreview(null);
+    setConfigError("");
+    let impact: ForecastConfigPreview;
+    try {
+      impact = await previewB2ForecastConfig(values, expectedVersion);
+    } catch (caught) {
+      if (generation !== previewGeneration.current) return;
+      setConfigError(displayAdminError(caught));
+      if (caught instanceof B2RequestError && caught.status === 409) await load();
+      return;
+    } finally {
+      setPreviewLoading(false);
+    }
+    if (generation !== previewGeneration.current) return;
+    if (impact.forecastDeltaPreview.afterCoverageStatus === "VALUATION_UNAVAILABLE") {
+      setPreview({ key: previewKey, value: impact });
+      return;
+    }
     openConfirm({ briefKind: "config",
       action: "调整应付款预测设置",
-      detail: `预测 ${draft.forecastWindow.replace("d", " 天")}，创世节点收益${draft.genesisIncluded ? "计入" : "不计入"}。次日 UTC 00:00 起生效，不影响历史。`,
+      detail: `预测 ${values.forecastWindow.replace("d", " 天")}，创世节点收益${values.genesisIncluded ? "计入" : "不计入"}。次日 UTC 00:00 起生效，不影响历史。`,
       reason: true,
       okLabel: "保存配置",
+      content: <ForecastConfigImpact preview={impact} categoryLabel={categoryText} />,
       run: async (reason) => {
         if (!reasonValid(reason, toast)) return false;
-        const values = {
-          reserveCategories: draft.reserveCategories,
-          liabilityCategories: draft.liabilityCategories,
-          forecastWindow: draft.forecastWindow,
-          genesisIncluded: draft.genesisIncluded,
-          includeFarLiabilities: draft.includeFarLiabilities,
-          stakingInterestMode: draft.stakingInterestMode,
-          trialStressEnabled: draft.trialStressEnabled,
-        };
-        await updateD3ForecastConfig(values, draft.version, reason.trim(), OPERATOR());
+        try {
+          await updateD3ForecastConfig(values, expectedVersion, reason.trim(), OPERATOR());
+        } catch (caught) {
+          if (!(caught instanceof DRequestError && caught.status === 409)) throw caught;
+          setConfigError(displayAdminError(caught));
+          await load();
+          return true;
+        }
         toast("已保存，次日 UTC 00:00 起生效");
         await load();
         return true;
@@ -334,7 +380,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
         <div className="l-b">
           {draft && <>
             <div className="ui-form-grid" style={{ marginBottom: 12 }}>
-              <label>默认预测天数 <select className="ui-control" disabled={!canConfig} value={draft.forecastWindow} onChange={(event) => setDraft({ ...draft, forecastWindow: event.target.value as D3ForecastConfig["forecastWindow"] })}><option value="7d">7 天</option><option value="30d">30 天</option><option value="90d">90 天</option></select></label>
+              <label>默认预测天数 <select className="ui-control" disabled={!canConfig} value={draft.forecastWindow} onChange={(event) => setDraft({ ...draft, forecastWindow: event.target.value as D3ForecastConfig["forecastWindow"] })}><option value="7d">7 天</option><option value="30d">30 天</option>{draft.forecastWindow === "90d" && <option value="90d" disabled>90 天（旧配置，请选择 7 或 30 天）</option>}</select></label>
               <label>质押奖励预测 <select className="ui-control" disabled={!canConfig} value={draft.stakingInterestMode} onChange={(event) => setDraft({ ...draft, stakingInterestMode: event.target.value as D3ForecastConfig["stakingInterestMode"] })}><option value="LINEAR">按日线性</option><option value="AT_MATURITY">到期确认</option></select></label>
             </div>
             <div className="ui-form-grid" style={{ marginBottom: 12 }}>
@@ -352,7 +398,9 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
             </div>
             <div className="dtint" style={{ marginBottom: 12 }}>当前版本 v{draft.version}（已生效 v{draft.effectiveVersion}）；储备 {Object.values(draft.reserveCategories).filter(Boolean).length}/{Object.keys(draft.reserveCategories).length} 开启；负债科目 {Object.values(draft.liabilityCategories).filter(Boolean).length}/{Object.keys(draft.liabilityCategories).length} 开启。</div>
             {draft.pendingConfig && <div className="dtint warn" style={{ marginBottom: 12 }}>待生效 v{draft.pendingVersion}：窗口 {draft.pendingConfig.forecastWindow.replace("d", " 天")}，储备科目 {Object.values(draft.pendingConfig.reserveCategories).filter(Boolean).length}/{Object.keys(draft.pendingConfig.reserveCategories).length}，负债科目 {Object.values(draft.pendingConfig.liabilityCategories).filter(Boolean).length}/{Object.keys(draft.pendingConfig.liabilityCategories).length}，创世节点 {draft.pendingConfig.genesisIncluded ? "纳入" : "不纳入"}，生效时间 {draft.pendingEffectiveAt}。</div>}
-            {canConfig ? <button className="l-btn primary" onClick={saveConfig}>保存预测设置</button> : <div className="dtint">你只能查看；调整预测设置需财务负责人。</div>}
+            {configError && <p role="alert">{configError}</p>}
+            {currentPreview && <ForecastConfigImpact preview={currentPreview} categoryLabel={categoryText} />}
+            {canConfig ? <button className="l-btn primary" disabled={loading || previewLoading || draft.forecastWindow === "90d"} onClick={() => void saveConfig()}>{previewLoading ? "正在加载配置影响预览…" : "保存预测设置"}</button> : <div className="dtint">你只能查看；调整预测设置需财务负责人。</div>}
           </>}
         </div>
       </section>
