@@ -2874,7 +2874,7 @@ submitted ─风控评分─▶ review-pending ─approve─▶ review-passed �
   1. **信息区**:withdrawalNo / userId(链 C1)/ 金额(USDT)/ 目标地址 + 链 / K4 风险评分(含分档)/ KYC 态(C4)/ 命中规则(K3)/ 24h 第几笔 / 当前状态。
   2. **影响预览区**:显示当前兑付覆盖率和红线,写明提交时系统会再查一次。没有放行后试算的接口,不显示试算值。当前值低于红线时升级为**阻断**(确认钮置灰,文案写「低于红线,提交会被拒绝」)。
   3. **收款信息**:常显实际收款网络和完整地址(银行单写银行和脱敏账号),放在核实项上面。
-  4. **输入区**:reason(多行文本,必填,8–200 字;server 空值 400 `REASON_REQUIRED`);达到大额门槛时加「大额放行核实 · 地址与风险信息」,默认不选,人选了「已核对」才能提交。要不要核实以后端单笔详情的 `addressVerificationRequired` 为准,打开确认框前现读;读不到时不打开,提示重试。
+  4. **输入区**:reason(多行文本,必填,8–200 字;server 空值 400 `REASON_REQUIRED`);达到大额门槛时加「大额放行核实」复选框「我已核对地址与风险信息」,默认不勾,勾选才能提交。要不要核实以后端单笔详情的 `addressVerificationRequired` 为准,打开确认框前现读;读不到时不打开,提示重试。
   5. **按钮区**:`[取消]` · `[确认放行]`(必填未过 / 覆盖率阻断 / 大额未选核实 / 提现开关已关时置灰;loading 防双击;携 `Idempotency-Key`)。
 - **错误态**:422 `COVERAGE_BELOW_REDLINE`(含 server 回传当前覆盖率,弹窗不关、内联展示)/ 409 状态机非法(已被他人处理:弹窗不关,内容刷新成最新状态,写清这笔现在是什么状态,确认按钮禁用,页面不显示读取失败的红条)/ 422 K5 复审未过(提示转 K5)/ 403(大额执行资质不足)。
 - **成功反馈**:弹窗关闭;行内状态更新 `review-passed`;toast「已放行 · 已记审计」;事件 `withdraw.approved` + admin 审计(operator / amount / reason);实时告警超管 / 财务 lead(大额)。
@@ -2905,7 +2905,7 @@ submitted ─风控评分─▶ review-pending ─approve─▶ review-passed �
 
 ##### [D2-MD6] 手动退款覆盖确认
 - **功能**:对异常态(`review-rejected` / `address-invalid` / `tx-failed` / `tx-orphaned`)提现单手动执行 refund(转 `refunded`,退回用户可提余额并记 refund bill),确认即生效。
-- **布局结构**:1. **信息区**:withdrawalNo / userId / 金额 / 当前异常态与异常原因 / 链上 txHash(如有)。2. **影响预览区**:提示行「退回额将计入用户可提余额并记 refund bill;链上态单 server 预检无在途重复出金后方可退回」。3. **输入区**:reason(必填,8–200 字)+「退款前核实 · 钱没有打出去」,默认不选,人选了「已核实」才能提交。ERC20 打款异常不显示手动退款。4. **按钮区**:`[取消]` · `[确认退款]`(警示色;置灰条件 / loading;携 `Idempotency-Key`)。
+- **布局结构**:1. **信息区**:withdrawalNo / userId / 金额 / 当前异常态与异常原因 / 链上 txHash(如有)。2. **影响预览区**:提示行「退回额将计入用户可提余额并记 refund bill;链上态单 server 预检无在途重复出金后方可退回」。3. **输入区**:reason(必填,8–200 字)+「退款前核实」复选框「我已核实钱没有打出去」,默认不勾,勾选才能提交。ERC20 打款异常不显示手动退款。4. **按钮区**:`[取消]` · `[确认退款]`(警示色;置灰条件 / loading;携 `Idempotency-Key`)。
 - **错误态**:409(已 refunded / 状态机非法)/ 422(server 预检发现链上在途出金,阻断)/ 400 `REASON_REQUIRED` / 403。
 - **成功反馈**:关窗;行内状态更新 `refunded`;toast「已退回 · 已记账 · 已记审计」;refund bill + admin 审计;实时告警财务 lead。
 
