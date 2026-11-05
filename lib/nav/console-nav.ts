@@ -166,7 +166,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     roles: ["finance", "growth"],
     l2: [
       { id: "G1", name: "质押产品配置", path: "/finance-products/staking", prdAnchor: "G1", batch: "V3", status: "flagship" },
-      { id: "G2", name: "兑换风险规则", path: "/finance-products/exchange", prdAnchor: "G2", batch: "V3", status: "flagship" },
+      { id: "G2", name: "兑换额度与规则", path: "/finance-products/exchange", prdAnchor: "G2", batch: "V3", status: "flagship" },
       { id: "G3", name: "UVT价格管理", path: "/finance-products/market", prdAnchor: "G3", batch: "V3", status: "flagship" },
       { id: "G4", name: "创世节点销售与收益", path: "/finance-products/genesis", prdAnchor: "G4", batch: "V3", status: "flagship" },
       { id: "G7", name: "锁定计划", path: "/finance-products/repurchase", prdAnchor: "G7", batch: "V3", status: "flagship" },
@@ -203,7 +203,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "I2", name: "Nova 消息推送", path: "/content/nova", prdAnchor: "I2", batch: "V4", status: "flagship" },
       { id: "I3", name: "通知活动", path: "/content/notifications", prdAnchor: "I3", batch: "V4", status: "flagship" },
       { id: "I4", name: "信任中心", path: "/content/trust", prdAnchor: "I4", batch: "V4", status: "flagship" },
-      { id: "I5", name: "风险披露", path: "/content/disclosures", prdAnchor: "I5", batch: "V4", status: "flagship" },
+      { id: "I5", name: "法律条款与风险披露", path: "/content/disclosures", prdAnchor: "I5", batch: "V4", status: "flagship" },
       { id: "I6", name: "多语言文案", path: "/content/i18n", prdAnchor: "I6", batch: "V4", status: "flagship" },
     ],
   },
@@ -340,7 +340,7 @@ const LEGACY_MENU_NAMES: Record<string, string> = {
   "M4": "知识库与 SLA",
 };
 const STOCK_MENU_ALIASES: Record<string, string[]> = {
-  M1: ["客服总览"], M3: ["即时会话台"], M5: ["话术与模板配置"], C3: ["余额 & 资产调整"], C5: ["安全 & 会话"], F2: ["网络版税费率"], G7: ["复投激励"], H3: ["Quest 引擎"], H4: ["活动中心 CMS"], I4: ["信任中心 CMS"], I6: ["i18n 文案与教程", "i18n 文案与课程"]
+  M1: ["客服总览"], M3: ["即时会话台"], M5: ["话术与模板配置"], C3: ["余额 & 资产调整"], C5: ["安全 & 会话"], F2: ["网络版税费率"], G7: ["复投激励"], H3: ["Quest 引擎"], H4: ["活动中心 CMS"], I4: ["信任中心 CMS"], I5: ["风险披露版本"], I6: ["i18n 文案与教程", "i18n 文案与课程"]
 };
 const LEGACY_DOMAIN_NAMES: Record<string, string> = {
   B: "总览驾驶舱",
