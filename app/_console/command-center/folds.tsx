@@ -259,6 +259,7 @@ export function FlowFold({ blocks, history, historyError, historyRetrying, onRet
   const moved = history?.flowWindows.some((item) => item.inflowWan > 0 || item.outflowWan > 0);
   return (
     <Fold title="资金进出" summary={summary} icon={ArrowLeftRight} tone="role-2" open={open} onOpenChange={onOpenChange}
+      explain={blocks.netFlow ? "这里只算到账的充值、财务注资和已打款的提现。用余额买设备、还没打款的提现申请不算。" : undefined}
       actions={blocks.netFlow ? <FoldLink reach={reach} href="/overview/liquidity">查看资金流</FoldLink> : undefined}>
       <div className="cc-fold-stack">
         <div className="cc-cols">
@@ -269,7 +270,6 @@ export function FlowFold({ blocks, history, historyError, historyRetrying, onRet
                   : moved
                     ? <Bars label="近 8 天每天流入和流出" series={[{ name: "流入", slot: 2 }, { name: "流出", slot: 4 }]} rows={history.flowWindows.map((item) => ({ label: item.label, values: [item.inflowWan * 10_000, item.outflowWan * 10_000] }))} format={usdt} height={96} />
                     : <p className="cc-line">近 8 天储备账没有进出</p>}
-              <p className="cc-line" data-muted="">这里只算到账的充值、财务注资和已打款的提现。用余额买设备、还没打款的提现申请不算。</p>
             </section>
           )}
           <div className="cc-fold-stack">

@@ -28,13 +28,13 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 页面根 | `RdPage` | `surface.tsx` |
 | 页头：标题、一句说明、「这页怎么用」、动作、数据时间 | `PageHeader` | `page-header.tsx` |
 | 这页怎么用 | `PageGuide`，`PageHeader` 自动带 | `page-guide.tsx` |
-| 看板第一句话 | `Conclusion`；正常态不放大，`lead` 只在异常或带关键数字时放大 | `conclusion.tsx` |
-| 一排关键数字，最多 4 个 | `StatBand`、`Stat`；整张可点传 `href` 或 `onOpen`；值是 0 或「—」时自动弱化（字色弱、图标底灰、`lead` 不放大） | `stat.tsx` |
-| 一块内容 | `Panel`；已经在一个面板里的分区传 `plain`，不套底 | `panel.tsx` |
+| 看板第一句话 | `Conclusion`；正常态不放大，`lead` 只在异常或带关键数字时放大；`hint` 只写建议和该做什么，怎么算传 `explain` 进句尾的提示图标 | `conclusion.tsx` |
+| 一排关键数字，最多 4 个 | `StatBand`、`Stat`；整张可点传 `href` 或 `onOpen`；值是 0 或「—」时自动弱化（字色弱、图标底灰、`lead` 不放大）；口径传 `explain` 进名称旁的提示图标，`sub` 只放数据 | `stat.tsx` |
+| 一块内容 | `Panel`；已经在一个面板里的分区传 `plain`，不套底；`sub` 只放数据（范围、单位、数量、时间），解释传 `explain` 进标题旁的提示图标 | `panel.tsx` |
 | 区块标题、统计数字前的图标 | `IconTile`，`Panel`、`Stat` 传 `icon` 就有 | `icon-tile.tsx` |
 | 切不同内容 | `PageTabs` | `tabs.tsx` |
 | 筛同一张表、切时间窗 | `Segments` | `tabs.tsx` |
-| 次要内容收起来 | `Fold`，`summary` 必填；区块的「查看…」传 `actions` 放标题行右侧，每块最多一个 | `fold.tsx` |
+| 次要内容收起来 | `Fold`，`summary` 必填；区块的「查看…」传 `actions` 放标题行右侧，每块最多一个；这组怎么算传 `explain`，不在折叠里铺长段落 | `fold.tsx` |
 | 看板里要处理的事 | `TodoList`、`TodoItem`，读不到用 `TodoFailed` | `todo-list.tsx` |
 | 一块内容读取中、失败、空 | `BlockState`，折叠摘要里的失败传 `compact` 一行写完；一个数字或一行读不到用 `InlineRetry` | `block-state.tsx` |
 | 按天的柱图 | `Bars`，全是 0 别画，写一句话 | `bars.tsx` |
@@ -42,7 +42,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 显示更多列 | `useTableColumns`、`ColumnPicker` | `table.tsx` |
 | 表格加载、空、失败 | `TableLoading`、`TableMessage` | `table.tsx` |
 | 表格分页 | `Pager`，有数据才渲染 | `pager.tsx` |
-| 勾选后的批量操作 | `BatchBar`，勾选框用 `Checkbox`，勾选列的表头传 `Th control` | `batch-bar.tsx`、`checkbox.tsx` |
+| 勾选后的批量操作 | `BatchBar`，勾选框用 `Checkbox`，勾选列的表头传 `Th control`；`hint` 收进已勾选数旁的提示图标 | `batch-bar.tsx`、`checkbox.tsx` |
 | 行操作放不下 | `MoreMenu` | `menu.tsx` |
 | 查询区 | `FilterBar`、`FilterField`、`Input` | `filter-bar.tsx` |
 | 多行输入 | `Textarea`，放进 `Field` | `filter-bar.tsx` |
@@ -55,7 +55,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 写操作确认 | 继续用 `OperationConfirmModal` | 见下 |
 | 按钮 | `Button`、`IconButton`；和主按钮并排的危险入口用 `danger-outline`，实心 `danger` 只给最终确认 | `button.tsx` |
 | 状态 | `StatusTag`；列表筛成只有一种状态时，这个默认状态传 `neutral`（灰字加图标） | `status-tag.tsx` |
-| 点开看口径或解释 | `Explain`，`Stat`、`StatusTag` 传 `explain` 就有；把要解释的词写成 children，词带虚线下划线，不加问号 | `explain.tsx` |
+| 提示图标和气泡：这是什么、显示位置、生效时间、口径、后果 | `Explain`，悬停、点击、键盘都能开；`content` 自由内容（多段用 `<p>`），`rows` 分行写；`Panel`、`Fold`、`Conclusion`、`Stat`、`ConfigRow`、`Field`、`Check`、`CheckGroup`、`KeyValues`、`Decision`、`Drawer`、`StatusTag` 传 `explain` 就自带。正文里的词写成 children 就是虚线下划线，不加图标 | `explain.tsx` |
 | 一个整体分几份 | `Donut` 环图，中间写总额，图例写数；旁边有表格时传 `legend={false}`，表格第一列放色点当图例；两类都有钱才画 | `chart.tsx` |
 | 图和数据放一起 | `Figure`，图在左（`width` 是上限）、数据在右，名字和数字挨着；容器窄时上下排，尺和条这类宽图传 `stack="wide"` | `chart.tsx` |
 | 几类比大小 | `BarList` 排序条，一个颜色，数字在条右边；`value` 传 `null` 写「样本过小」 | `chart.tsx` |
@@ -67,13 +67,13 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 几条线比走势，或要画目标线、事件线 | `TrendLines`，目标线传 `marks`，事件线传 `event` | `chart.tsx` |
 | 表格里看走向 | `Sparkline`，至少两个点才传，数值要在别处读到 | `chart.tsx` |
 | 报表主表配所选明细 | `.rd-split` 放两个 `Panel`，点一行右边换明细；1366 以下上下排，给明细面板 `id`，点行后 `scrollIntoView` | `rd.css` |
-| 表单字段、勾选 | `Field`、`Check`、`CheckGroup` | `field.tsx` |
-| 名称和值成对 | `KeyValues` | `key-values.tsx` |
+| 表单字段、勾选 | `Field`、`Check`、`CheckGroup`；页面上常驻表单的说明传 `explain`（标签旁的提示图标），修改框和抽屉里填写时要看的「怎么填」传 `help` | `field.tsx` |
+| 名称和值成对 | `KeyValues`；名称的解释传 `explain`，`sub` 只放数据 | `key-values.tsx` |
 | 一块内容的加载、空、失败、无权限 | `BlockState` | `block-state.tsx` |
 | 页内提示：待生效、结果未知、只读说明 | `Notice` | `block-state.tsx` |
 | 确认框里的前后值 | `DiffList` | `diff-list.tsx` |
 | 一列固定的等级 | `LevelList` | `level-list.tsx` |
-| 配置项：名称、这是什么、什么时候生效、显示位置、当前值、动作 | `ConfigList`（`label` 给这组起名）、`ConfigRow`；一项两行：名称后面跟显示位置，下面一行「这是什么 · 什么时候生效」；说明表放 `lib/admin/config-help/`，按参数键取 | `config-list.tsx` |
+| 配置项：名称、提示图标、当前值、动作 | `ConfigList`（`label` 给这组起名）、`ConfigRow`；一项一行，这是什么、显示位置、生效时间、改了会怎样（`what`、`where`、`when`、`effect`）都在提示图标的气泡里；说明表放 `lib/admin/config-help/`，按参数键取 | `config-list.tsx` |
 | 配置页三组以上的分组导航 | `SectionNav`、`useSectionNav`；定位写进网址 `section`，目标在折叠组里先展开 | `section-nav.tsx` |
 | 数字输入，单位写在框里 | `NumberInput`；`OperationConfirmModal` 的 `edit.kind: "number"` 在 `RdPage` 里自动用它 | `number-input.tsx` |
 
@@ -87,9 +87,13 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 
 图表的颜色同理：系列传槽位 `slot`（1 金、2 青、3 紫、4 品红、other 灰），只有表示好坏的条才传状态 `tone`（VS-43）。图里的文字和数字永远是文字色。一个数字先问状态，再问角色。深色主题数字用角色色字，浅色主题数字用正文色、身份靠实色图标底（VS-14），这条在 `rd.css` 里，页面不用管。值是 0 或「—」时 `Stat` 自动弱化：字色弱、图标底灰、`lead` 也不放大。链接不用品牌色，`rd-link` 是正文色加下划线（VS-06）。数字用 Inter，等宽只给单号、哈希、地址（VS-52）。页面自己的样式也只写 `var(--rd-*)`，变量表在 `tokens.css`。
 
+## 说明只进提示图标（DP-06）
+
+页面上只留数据（数量、时间、状态）、要处理的事和一句话结论。解释性文字一律收进紧挨着被解释的东西的提示图标：区块副标题里的解释、配置项的这是什么和显示位置、生效时间、操作后果、数字口径、折叠里的长段落、筛选旁的提示。`Panel`、`Fold`、`Drawer` 的 `sub` 只放数据（范围、单位、数量、时间），解释传 `explain`。`Conclusion` 的 `hint` 只写建议和该做什么。`Decision` 的 `note` 只写现在能不能做、为什么不能，按下去会怎样传 `explain`。有疑问先收起来。
+
 ## 配置页的排法
 
-样板是 H2 免费试用设置：汇总带下面左边是分组、右边是窄栏，窄栏先放分组导航、再放紧急关闭和当前状态（红按钮不抢首屏），滚动时钉住；窄宽时窄栏排到分组上方，导航收成一行，紧急关闭的状态、说明和按钮排成一行。
+样板是 H2 免费试用设置：汇总带下面左边是分组、右边是窄栏，窄栏先放分组导航、再放紧急关闭和当前状态（红按钮不抢首屏），滚动时钉住；窄宽时窄栏排到分组上方，导航收成一行，紧急关闭的状态和按钮排成一行，卡的说明在标题旁的提示图标里。
 
 ```tsx
 const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold(id) });
@@ -146,6 +150,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 ## 已经由组件保证的事
 
+- `Explain`：鼠标悬停 120ms 打开、移开关闭，不抢焦点；点击或 Enter、Space 打开并钉住，焦点进气泡，再点一下、Esc 或点外面关闭，焦点回到图标；触屏点一下就开。图标 14px、弱文字色，全站一个样子。
 - `Button`：`type` 默认 `button`，属性全部透传，`loading` 时点击无效、宽度不变；`disabledReason` 时不可点但能聚焦，悬停和聚焦都看得到原因。浅色主题次按钮浅底描边、深色填底（VS-94）。
 - `Panel`：标题行放不下时动作换到下一行，标题不拆字。
 - `Table`：放不下时横向滚动，两侧影子提示还有内容；右对齐列的格子贴右边；悬停不盖选中色。

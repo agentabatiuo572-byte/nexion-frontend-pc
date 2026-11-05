@@ -240,6 +240,7 @@ export default function CommandCenter() {
           lead
           icon={sentence.state === "neutral" ? ListChecks : sentence.aboutFund ? ShieldAlert : undefined}
           hint={sentence.hint}
+          explain={sentence.explain}
           action={briefAction}
         >
           {sentence.text}

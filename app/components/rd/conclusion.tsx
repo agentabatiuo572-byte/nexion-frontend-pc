@@ -9,6 +9,7 @@
  * <Conclusion state="unknown">资金状态：暂时无法判断</Conclusion>
  * <Conclusion state="neutral" icon={ListChecks}>有 3 件事要处理</Conclusion>   有日常待办但没有异常，不上色
  *
+ * - hint 只写有没有事、该做什么（建议、点哪里）；这句话怎么算、口径、为什么，传 explain 收进句尾的提示图标（DP-06）。
  * - 组件不算结论。状态来自现有阈值和比较方式，页面传进来，不新增算法。
  * - 正常时安静，只有 warn、danger 才上色底（DP-05）。danger 走 role=alert。
  * - state="unknown" 用于读取中、读取失败、没有数据：不下结论，绝不写「正常」（T09、DP-65）。
@@ -16,6 +17,7 @@
  */
 import type { ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, CircleHelp, ShieldAlert, type LucideIcon } from "lucide-react";
+import { Explain } from "./explain";
 import { IconTile } from "./icon-tile";
 import type { StateTone } from "./tone";
 
@@ -27,13 +29,14 @@ const STATE: Record<"ok" | "neutral" | "warn" | "danger" | "unknown", { tone: St
   unknown: { tone: "done", icon: CircleHelp },
 };
 
-export function Conclusion({ state, icon, lead, strong, hint, action, children }: { state: keyof typeof STATE; icon?: LucideIcon; lead?: boolean; strong?: boolean; hint?: ReactNode; action?: ReactNode; children: ReactNode }) {
+export function Conclusion({ state, icon, lead, strong, hint, explain, action, children }: { state: keyof typeof STATE; icon?: LucideIcon; lead?: boolean; strong?: boolean; hint?: ReactNode; explain?: ReactNode; action?: ReactNode; children: ReactNode }) {
   const { tone, icon: fallback } = STATE[state];
   return (
     <div className="rd-conclusion" role={state === "danger" ? "alert" : "status"} data-tone={tone} data-lead={lead ? "" : undefined} data-alarm={state === "warn" || state === "danger" ? "" : undefined} data-strong={strong && state === "danger" ? "" : undefined}>
       <IconTile tone={tone} icon={icon ?? fallback} size={36} />
       <div className="rd-conclusion-text">
         {children}
+        {explain && <Explain label="这句话怎么算" content={explain} />}
         {hint && <div className="rd-conclusion-hint">{hint}</div>}
       </div>
       {action && <div className="rd-conclusion-action">{action}</div>}

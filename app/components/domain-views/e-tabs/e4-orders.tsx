@@ -68,9 +68,11 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
   const searchNote = query.keyword ? "按当前搜索词算。" : "";
   const waitTitle = flowWait && refundWait ? <>有 <b>{waitCount}</b> 单要处理</>
     : refundWait ? <>有 <b>{refundWait}</b> 单开通失败待退款</> : <>有 <b>{flowWait}</b> 单等开通或激活</>;
-  const waitHint = `${flowWait && refundWait ? `${flowWait} 单等开通或激活，${refundWait} 单开通失败待退款。` : ""}${flowWait ? "点一行看差什么，设备分配和激活在「设备运行管理」做。" : "点一行核对付款和覆盖率，再提交退款。"}${searchNote}`;
+  const waitHint = `${flowWait && refundWait ? `${flowWait} 单等开通或激活，${refundWait} 单开通失败待退款。` : ""}${flowWait ? "点一行看差什么。" : "点一行核对付款和覆盖率，再提交退款。"}`;
+  // 怎么算、去哪做收进结论旁的提示图标（DP-06）。
+  const waitExplain = `${flowWait ? "设备分配和激活在「设备运行管理」做。" : ""}${searchNote}` || undefined;
   const failedCount = countOf(FAILED_STATES);
-  const countSub = (text: string) => ctx.e4CountsFailed ? "数量暂时读不到" : counts ? text : "读取中";
+  const countState = ctx.e4CountsFailed ? "数量暂时读不到" : counts ? undefined : "读取中";
   const activated = orders.filter((order) => ctx.orderState(order) === "activated");
   const hasConditions = query.group !== "all" || query.state !== "" || ctx.e4KeywordInput !== "";
   // 同一列按这一页最多的小数位补零，小数点对齐（ST-02）。
@@ -105,18 +107,18 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
       ? <Conclusion state="unknown" action={<Button size="sm" onClick={() => void ctx.refreshE4()}>重试</Button>}>订单数量读不到，还不知道有没有要处理的</Conclusion>
       : waitCount === undefined ? <Conclusion state="unknown">正在读取有没有要处理的订单…</Conclusion>
         : waitCount > 0
-          ? <Conclusion state="warn" lead hint={waitHint}
+          ? <Conclusion state="warn" lead hint={waitHint} explain={waitExplain}
               action={<>
                 {!!flowWait && <Button size="sm" onClick={() => ctx.updateE4Query({ group: "flow", state: "" })}>看进行中的订单</Button>}
                 {refundWait > 0 && <Button size="sm" onClick={() => ctx.updateE4Query({ group: "failed", state: "provisioning_failed" })}>看开通失败的订单</Button>}
               </>}>{waitTitle}</Conclusion>
-          : <Conclusion state="ok" hint={`${counts?.placed ? `${counts.placed} 单在等用户付款，不用操作。` : ""}${searchNote}` || undefined}>没有要处理的订单</Conclusion>}
+          : <Conclusion state="ok" hint={counts?.placed ? `${counts.placed} 单在等用户付款，不用操作。` : undefined} explain={searchNote || undefined}>没有要处理的订单</Conclusion>}
 
     <StatBand label="订单汇总">
       <Stat tone="role-2" icon={Workflow} label="进行中订单" value={flowCount ?? "—"} unit={flowCount === undefined ? undefined : "单"}
-        sub={countSub("已下单 / 已支付 / 开通中")} explain="全部订单里这三个状态的单数，跟着搜索词变，不随下方状态筛选变。" />
+        sub={countState} explain="已下单 / 已支付 / 开通中三个状态的单数，算全部订单，跟着搜索词变，不随下方状态筛选变。" />
       <Stat icon={AlertTriangle} iconTone={failedCount ? "danger" : undefined} tone={failedCount ? "danger" : undefined} label="失败订单" value={failedCount ?? "—"} unit={failedCount === undefined ? undefined : "单"}
-        sub={countSub("支付失败 / 开通失败 / 拒付")} explain="全部订单里这三个状态的单数，跟着搜索词变，不随下方状态筛选变。" />
+        sub={countState} explain="支付失败 / 开通失败 / 拒付三个状态的单数，算全部订单，跟着搜索词变，不随下方状态筛选变。" />
     </StatBand>
 
     <FilterBar
@@ -134,7 +136,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
       <FilterField grow><Input aria-label="搜索订单" placeholder="订单号 / 用户编号 / 商品" value={ctx.e4KeywordInput} onChange={(event) => ctx.setE4KeywordInput(event.target.value)} /></FilterField>
     </FilterBar>
 
-    <Panel flush icon={ClipboardList} tone="role-2" title={currentGroup ? `${currentGroup.label}的订单` : "全部订单"} sub="点一行看到哪一步、下一步做什么" actions={<ColumnPicker columns={columns} />}>
+    <Panel flush icon={ClipboardList} tone="role-2" title={currentGroup ? `${currentGroup.label}的订单` : "全部订单"} explain="点一行看到哪一步、下一步做什么" actions={<ColumnPicker columns={columns} />}>
       <Table label="订单列表" aria-busy={loading}>
         <thead><tr>
           <Th sticky="start"><Explain label="订单号开头是什么意思" content="ORD 是普通购买，BND 是组合购买，TRC 是试用转购买。其他开头看详情里的订单类型。">订单号</Explain></Th>
@@ -172,7 +174,8 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
         onPage={(page) => ctx.updateE4Query({ page })} onPageSize={(pageSize) => ctx.updateE4Query({ pageSize })} />}
     </Panel>
 
-    <Fold title="订单状态怎么流转" summary={`主流程 4 步，另有 ${ORDER_FINAL_STATES.length} 种异常或结束`} icon={Route}>
+    <Fold title="订单状态怎么流转" summary={`主流程 4 步，另有 ${ORDER_FINAL_STATES.length} 种异常或结束`} icon={Route}
+      explain="设备放在平台机房托管，不发实物，所以开通时要分配数据中心。只有已支付、开通中、已激活、已入库或已付款的开通失败订单能退款，提交时会检查平台资金是否够退。「标记失败结果」不会退款。">
       <Steps label="订单处理流程" items={[
         { label: "已下单", state: "todo", sub: countText("placed") },
         { label: "已支付", state: "todo", sub: countText("paid") },
@@ -191,7 +194,6 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           ))}
         </tbody>
       </Table>
-      <p className="rd-toolbar-note">设备放在平台机房托管，不发实物，所以开通时要分配数据中心。只有已支付、开通中、已激活、已入库或已付款的开通失败订单能退款，提交时会检查平台资金是否够退。「标记失败结果」不会退款。</p>
     </Fold>
 
     <E4OrderDrawer ctx={ctx} />
@@ -298,12 +300,14 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   ];
 
   const hasAction = !!nextState || canCancel || (canWriteE4 && terminalOptions.length > 0) || (canRefundE4 && refundableState);
+  // 常显的只有现在能不能做；按下去会怎样收进按钮旁的提示图标（DP-06）。
   const note = !canWriteE4 && !canRefundE4 ? "你只能查看这单。"
     : !hasAction ? "这单现在没有人工操作。"
-    : waitReason ? `${waitReason}。`
-      : canRefundE4 && refundableState ? `退款不可撤销。批准后钱退回用户钱包${hasDevice ? "，这单的设备停用" : ""}。${terminalOptions.length > 0 ? "「标记失败结果」不会退款。" : ""}`
-        : canCancel ? "提交后要批准才生效。用户还没付款，取消和标记失败都不涉及退款。"
-          : "提交后要批准才生效。";
+    : waitReason ? `${waitReason}。` : undefined;
+  const consequence = (!canWriteE4 && !canRefundE4) || !hasAction ? undefined
+    : canRefundE4 && refundableState ? `退款不可撤销。批准后钱退回用户钱包${hasDevice ? "，这单的设备停用" : ""}。${terminalOptions.length > 0 ? "「标记失败结果」不会退款。" : ""}`
+      : canCancel ? "提交后要批准才生效。用户还没付款，取消和标记失败都不涉及退款。"
+        : "提交后要批准才生效。";
   const copyNo = () => {
     void navigator.clipboard?.writeText(o.id).then(() => toast("已复制订单号"), () => toast("复制失败，请手动选择订单号"));
   };
@@ -312,7 +316,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
     <Drawer open onClose={ctx.closeOrder} title="订单详情" icon={ClipboardList} tone="role-2"
       sub={<>{o.id} <IconButton aria-label="复制订单号" data-size="sm" onClick={copyNo}><Copy size={13} aria-hidden /></IconButton><StatusTag tone={ORDER_STATE_TONE[eff] ?? "neutral"} explain={STATE_TEXT[eff]}>{stateLabel(eff)}</StatusTag></>}
       nav={{ hasPrev: Boolean(prev), hasNext: Boolean(next), onPrev: () => { if (prev) ctx.openOrder(prev); }, onNext: () => { if (next) ctx.openOrder(next); } }}
-      footer={<Decision note={note}
+      footer={<Decision note={note} explain={consequence}
         danger={canRefundE4 && refundableState && <Button variant="danger-outline" disabledReason={waitReason ?? (refundReady ? undefined : refundBlockText)} onClick={() => {
           if (!e4Detail || !refundReady || orderPending) return;
           const channels = e4Detail.refundChannels.length ? e4Detail.refundChannels : ["WALLET"];
