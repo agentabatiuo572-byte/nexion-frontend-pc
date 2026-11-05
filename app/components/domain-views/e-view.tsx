@@ -507,14 +507,18 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       if (seq === e4ListSeq.current) setE4Loading(false);
     }
   }, [e4Query]);
-  /** 分段和汇总的数量。接口没有按组计数，全部和 11 个状态各取总数，跟着搜索词走，读不到写「—」，不挡列表和操作。 */
-  const readE4Counts = useCallback(async () => {
+  /** 汇总和流程表的数量。接口没有按组计数，11 个状态各取总数，跟着搜索词走，读不到写「—」，不挡列表和操作。
+   *  换条件时先清掉旧数，新数读齐前不能当当前范围显示；切回页面的后台重读范围没变，读齐再换。 */
+  const readE4Counts = useCallback(async (silent = false) => {
     const seq = ++e4CountSeq.current;
+    if (!silent) {
+      setE4Counts(null);
+      setE4CountsFailed(false);
+    }
     try {
-      const states = ["", ...ORDER_STATES];
-      const pages = await Promise.all(states.map((state) => fetchE4OrderPage({ state, keyword: e4Query.keyword, pageNum: 1, pageSize: 1 })));
+      const pages = await Promise.all(ORDER_STATES.map((state) => fetchE4OrderPage({ state, keyword: e4Query.keyword, pageNum: 1, pageSize: 1 })));
       if (seq !== e4CountSeq.current) return;
-      setE4Counts(Object.fromEntries(states.map((state, index) => [state, pages[index].total])));
+      setE4Counts(Object.fromEntries(ORDER_STATES.map((state, index) => [state, pages[index].total])));
       setE4CountsFailed(false);
     } catch {
       if (seq !== e4CountSeq.current) return;
@@ -530,7 +534,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     const refreshOnReturn = () => {
       if (document.visibilityState !== "visible") return;
       void readE4List(true);
-      void readE4Counts();
+      void readE4Counts(true);
     };
     window.addEventListener("focus", refreshOnReturn);
     document.addEventListener("visibilitychange", refreshOnReturn);

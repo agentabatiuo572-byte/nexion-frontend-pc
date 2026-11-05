@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, ClipboardList, Coins, Copy, History, Package, Receipt, RefreshCw, Route, Server, User, Workflow } from "lucide-react";
 import {
@@ -50,16 +50,15 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
   const { orders, e4Query: query, e4Counts: counts, e4Loading: loading, e4Error: error } = ctx;
   const columns = useTableColumns("e4-orders", ORDER_COLUMNS);
   const currentGroup = ORDER_STATE_GROUPS.find((group) => group.value === query.group);
-  const segments = useMemo<SegmentItem<E4Query["group"]>[]>(() => [
-    { value: "all", label: "全部", count: counts?.[""] },
-    ...ORDER_STATE_GROUPS.map((group) => ({
-      value: group.value, label: group.label, tone: group.tone,
-      count: counts ? group.states.reduce((sum, state) => sum + (counts[state] ?? 0), 0) : undefined,
-    })),
-  ], [counts]);
+  // 数量只写在汇总和流程表里，分段不再带数（DP-61）。
+  const segments: SegmentItem<E4Query["group"]>[] = [
+    { value: "all", label: "全部" },
+    ...ORDER_STATE_GROUPS.map((group) => ({ value: group.value, label: group.label, tone: group.tone })),
+  ];
   const countOf = (states: readonly string[]) => counts ? states.reduce((sum, state) => sum + (counts[state] ?? 0), 0) : undefined;
   const flowCount = countOf(FLOW_STATES);
   const failedCount = countOf(FAILED_STATES);
+  const countSub = (text: string) => ctx.e4CountsFailed ? "数量暂时读不到" : counts ? text : "读取中";
   const activated = orders.filter((order) => ctx.orderState(order) === "activated");
   const activeAmount = activated.reduce((sum, order) => sum + order.amt, 0);
   const hasConditions = query.group !== "all" || query.state !== "" || ctx.e4KeywordInput !== "";
@@ -78,7 +77,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
 
     <StatBand label="订单汇总">
       <Stat lead tone="role-2" icon={Workflow} label="流转中订单" value={flowCount ?? "—"} unit={flowCount === undefined ? undefined : "单"}
-        sub={ctx.e4CountsFailed ? "数量暂时读不到" : "已下单 / 已支付 / 开通中"} explain="全部订单里这三个状态的单数，跟着搜索词变，不随下方状态筛选变。" />
+        sub={countSub("已下单 / 已支付 / 开通中")} explain="全部订单里这三个状态的单数，跟着搜索词变，不随下方状态筛选变。" />
       <Stat icon={AlertTriangle} iconTone={failedCount ? "danger" : undefined} tone={failedCount ? "danger" : undefined} label="失败订单" value={failedCount ?? "—"} unit={failedCount === undefined ? undefined : "单"}
         sub={countSub("支付失败 / 开通失败 / 拒付")} explain="全部订单里这三个状态的单数，跟着搜索词变，不随下方状态筛选变。" />
       <Stat tone="role-1" icon={Coins} label="本页已激活金额" value={error || loading ? "—" : Math.round(activeAmount).toLocaleString("en-US")} unit={error || loading ? undefined : "USDT"}
@@ -96,7 +95,6 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
       </>}
       onClear={ctx.clearE4Filters}
       canClear={hasConditions}
-      result={hasConditions && !error && !loading ? `当前筛选 ${ctx.e4Total} 单` : undefined}
     >
       <FilterField grow><Input aria-label="搜索订单" placeholder="订单号 / 用户编号 / 商品" value={ctx.e4KeywordInput} onChange={(event) => ctx.setE4KeywordInput(event.target.value)} /></FilterField>
     </FilterBar>
