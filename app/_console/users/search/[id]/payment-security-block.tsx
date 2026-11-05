@@ -24,11 +24,13 @@ function stateTag(record: PaymentSecurityRecord) {
   return <StatusTag tone={record.state === "RELEASED" ? "ok" : "done"}>{paymentSecurityStateText[record.state]}</StatusTag>;
 }
 
-export function PaymentSecurityBlock({ port, userLabel, reloadKey, onState }: {
+export function PaymentSecurityBlock({ port, userLabel, reloadKey, canRelease, onState }: {
   port: PaymentSecurityPort;
   userLabel: string;
   /** 页面刷新时变，这一块跟着重读。 */
   reloadKey: number;
+  /** 有独立解除权限才给入口（OP-124）。能不能解除这一条还看后端 capability。 */
+  canRelease: boolean;
   onState: (state: PaymentSecurityState, pending: boolean) => void;
 }) {
   const session = useAdminAuth((state) => state.session), epoch = useAdminAuth((state) => state.authEpoch);
@@ -58,7 +60,8 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey, onState }: {
     return () => { generation.current++; window.removeEventListener("nexion-payment-security-updated", refresh); };
   }, [load, owner, reloadKey]);
   const record = summary?.record;
-  const state: PaymentSecurityState = loading ? "loading" : error ? "failed" : record?.state === "ACTIVE" ? "exception" : "clear";
+  // 状态未确认的记录不算没事。
+  const state: PaymentSecurityState = loading ? "loading" : error || record?.state === "UNKNOWN" ? "failed" : record?.state === "ACTIVE" ? "exception" : "clear";
   useEffect(() => { onState(state, pending); }, [onState, state, pending]);
   if (!session) return null;
   return (
@@ -77,9 +80,10 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey, onState }: {
           </Facts>
           <div className="rd-toolbar">
             <Button size="sm" onClick={() => setSelected({ id: record.id, release: false })}>查看详情</Button>
-            {record.state === "ACTIVE" && <Button size="sm" variant="primary"
+            {record.state === "ACTIVE" && canRelease && <Button size="sm" variant="primary"
               disabledReason={pending ? "有一笔解除结果等待确认，先查询原操作" : record.capabilities.releaseAllowed ? undefined : record.capabilities.disabledReason || "现在不能解除"}
               onClick={() => setSelected({ id: record.id, release: true })}>{actionText(record)}</Button>}
+            {record.state === "ACTIVE" && canRelease && !pending && !record.capabilities.releaseAllowed && <span className="rd-toolbar-note">{record.capabilities.disabledReason || "现在不能解除"}</span>}
           </div>
         </>}
         {summary && !record && <p className="rd-detail-empty">当前没有支付密码异常。历史处置记录仍保留。</p>}
