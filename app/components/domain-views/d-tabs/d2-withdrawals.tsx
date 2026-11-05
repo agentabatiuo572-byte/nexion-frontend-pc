@@ -377,7 +377,7 @@ function batchTargets(visible: D2Withdrawal[], selectedIds: Set<string>, action:
   return visible.filter((row) => selectedIds.has(row.withdrawalNo) && batchSelectable(row, action, allowedActions));
 }
 
-function actionBusinessForm(action: D2ReviewAction, row?: D2Withdrawal): BusinessFormSpec | undefined {
+function actionBusinessForm(action: D2ReviewAction, addressVerificationRequired = false): BusinessFormSpec | undefined {
   if (action === "REJECT") return {
     kind: "multi-field", title: "拒绝原因", fields: [
       { key: "reasonCode", label: "拒绝原因", inputKind: "select", required: true, options: ["RISK_HIT", "ADDRESS_RISK", "DATA_MISMATCH", "USER_CANCELLED", "OTHER"], optionLabels: { RISK_HIT: "触发风控规则", ADDRESS_RISK: "地址风险", DATA_MISMATCH: "资料不符", USER_CANCELLED: "用户申诉撤回", OTHER: "其他" } },
@@ -402,7 +402,7 @@ function actionBusinessForm(action: D2ReviewAction, row?: D2Withdrawal): Busines
       { key: "fundsVerified", label: "钱没有打出去", inputKind: "select", required: true, options: ["true"], optionLabels: { true: "已核实" } },
     ],
   };
-  if (action === "APPROVE" && (row?.amount ?? 0) >= 1000) return {
+  if (action === "APPROVE" && addressVerificationRequired) return {
     kind: "multi-field", title: "大额放行核实", fields: [
       { key: "addressVerified", label: "地址与风险信息", inputKind: "select", required: true, options: ["true"], optionLabels: { true: "已核对" } },
     ],
@@ -449,7 +449,7 @@ function developmentSimulationEligible(row: D2Withdrawal) {
 }
 
 export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
-  const { toast, openActionConfirm } = ctx;
+  const { toast } = ctx;
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
   const [rows, setRows] = useState<PageResult<D2Withdrawal>>({ total: 0, pageNum: 1, pageSize: 10, records: [] });
@@ -487,6 +487,11 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const requestSeq = useRef(0);
   /** 详情抽屉同样只接受最后一次请求；关闭抽屉会主动让在途响应失效。 */
   const detailRequestSeq = useRef(0);
+  const reviewConfirmSeq = useRef(0);
+  const openActionConfirm: DCtx["openActionConfirm"] = (request) => {
+    reviewConfirmSeq.current += 1;
+    ctx.openActionConfirm(request);
+  };
 
   const hasAuthority = (authority: string) => authorities.includes(authority);
   const availableBatchActions = BATCH_ACTIONS.filter((action) => hasAuthority(ACTION_AUTHORITY[action]));
@@ -609,10 +614,23 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     }
   };
 
-  const confirmReview = (row: D2Withdrawal, action: D2ReviewAction) => {
+  const confirmReview = async (row: D2Withdrawal, action: D2ReviewAction) => {
+    const seq = ++reviewConfirmSeq.current;
     if (action === "APPROVE" && routingUnavailable(row)) {
       toast("风险分暂时算不出来，暂不能放行");
       return;
+    }
+    let addressVerificationRequired = false;
+    if (action === "APPROVE") {
+      const listSeq = requestSeq.current;
+      const detailSeq = detailRequestSeq.current;
+      const latest = await fetchD2WithdrawalDetail(row.withdrawalNo).catch(() => null);
+      if (seq !== reviewConfirmSeq.current || listSeq !== requestSeq.current || detailSeq !== detailRequestSeq.current) return;
+      if (latest?.addressVerificationRequired == null) {
+        toast("大额放行核实要求暂不可用，暂不能放行，请重试。");
+        return;
+      }
+      addressVerificationRequired = latest.addressVerificationRequired;
     }
     const label = actionLabel(action);
     openActionConfirm({
@@ -620,7 +638,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       detail: `${row.userNo} / ${money(row.amount)} ${row.asset}；当前 ${statusLabel(row.status)}；${k4RiskText(row)}；触发规则 ${ruleSummary(row.hitRules)}；账户 ${userStatusLabel(row.userStatus)}。${action === "APPROVE" ? `当前兑付覆盖率 ${d5?.coverageRatio ?? "—"}%，红线 ${d5?.redlinePct ?? "—"}%。确认后立即放行，钱从储备中扣除。` : "确认后立即生效。"}`,
       amplifies: action === "APPROVE",
       coverage: d5 ? { coverageRatio: d5.coverageRatio, redlinePct: d5.redlinePct } : undefined,
-      businessForm: actionBusinessForm(action, row),
+      businessForm: actionBusinessForm(action, addressVerificationRequired),
       reasonMin: 8,
       reasonMax: 200,
       completionCopy: `${label}完成`,
@@ -884,7 +902,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
             <td>{timeText(row.createdAt)}</td>
             <td style={{ textAlign: "right" }}><div style={{ display: "flex", flexWrap: "wrap", gap: 5, justifyContent: "flex-end" }}>
               <button className="l-btn sm" onClick={() => void openDetail(row)}>单笔详情</button>
-              {actionCandidates(row).filter((action) => hasAuthority(ACTION_AUTHORITY[action])).map((action) => <button key={action} className="l-btn sm" disabled={!writesEnabled || !!submitting || (action === "APPROVE" && routingUnavailable(row))} onClick={() => confirmReview(row, action)}>{actionLabel(action)}</button>)}
+              {actionCandidates(row).filter((action) => hasAuthority(ACTION_AUTHORITY[action])).map((action) => <button key={action} className="l-btn sm" disabled={!writesEnabled || !!submitting || (action === "APPROVE" && routingUnavailable(row))} onClick={() => void confirmReview(row, action)}>{actionLabel(action)}</button>)}
             </div></td>
           </tr>;
         })}</tbody>
@@ -905,7 +923,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         && hasAuthority("finance_d2_withdrawal_approve")
         && developmentSimulationEligible(detail)
         && <button className="l-btn primary" disabled={!writesEnabled || !!submitting || detailLoading || !!detailError} onClick={() => confirmDevelopmentSimulation(detail)}>模拟冷却到期</button>}
-      {actionCandidates(detail, cregisDetail).filter((action) => hasAuthority(ACTION_AUTHORITY[action])).map((action) => <button key={action} className="l-btn primary" disabled={!writesEnabled || !!submitting || detailLoading || !!detailError || (action === "APPROVE" && (routingUnavailable(detail) || (detail.chain === "BANK-VND" && bankDetail?.beneficiaryEligibility?.canWithdraw !== true)))} onClick={() => confirmReview(detail, action)}>{actionLabel(action)}</button>)}
+      {actionCandidates(detail, cregisDetail).filter((action) => hasAuthority(ACTION_AUTHORITY[action])).map((action) => <button key={action} className="l-btn primary" disabled={!writesEnabled || !!submitting || detailLoading || !!detailError || (action === "APPROVE" && (routingUnavailable(detail) || (detail.chain === "BANK-VND" && bankDetail?.beneficiaryEligibility?.canWithdraw !== true)))} onClick={() => void confirmReview(detail, action)}>{actionLabel(action)}</button>)}
     </>}>
       {detailLoading && <div className="dtint">正在加载…</div>}
       {detailError && <div className="dtint warn">详情加载失败 · {detailError} · 为避免按旧数据操作，已暂停处理，请关闭后重试。</div>}

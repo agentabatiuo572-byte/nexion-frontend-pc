@@ -285,6 +285,7 @@ export interface D2Withdrawal {
   asset: string;
   chain: string;
   amount: number;
+  addressVerificationRequired: boolean | null;
   fee: number;
   targetAddress: string;
   riskDecisionId?: number | null;
@@ -1282,6 +1283,7 @@ function normalizeWithdrawal(value: unknown): D2Withdrawal {
     id,
     userId,
     amount,
+    addressVerificationRequired: typeof row.addressVerificationRequired === "boolean" ? row.addressVerificationRequired : null,
     fee,
     withdrawalNo: d2String(row.withdrawalNo, "withdrawal.withdrawalNo"),
     asset: d2String(row.asset, "withdrawal.asset"),
