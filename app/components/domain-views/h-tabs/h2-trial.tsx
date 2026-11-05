@@ -119,6 +119,8 @@ const pendingCommands = createPendingMutationStore<PendingCommand>({
 
 const commandScope = (item: TrialCommand) => item.kind === "param" ? `param|${item.paramKey}` : item.kind === "kill" ? "kill" : `${item.kind}|${item.sid}`;
 const isProposal = (item: TrialCommand): item is TrialProposal => item.kind === "cancel" || item.kind === "charge";
+/** label 是进后端提案的 action，不改；页面上统一叫「强制扣款」。 */
+const commandTitle = (item: TrialCommand) => (item.kind === "charge" ? `强制扣款 · ${item.sid}` : item.label);
 
 function proposalSpec(item: TrialProposal): ProposeSpec {
   const charge = item.kind === "charge";
@@ -257,7 +259,7 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, killed }: {
       preview: help?.whatIf,
     };
     openActionConfirm({ briefKind: "config",
-      action: `调整试用参数 · ${name}`,
+      action: `调整试用参数 · ${operatorCopyText(param.name)}`,
       title: `调整${name}`,
       detail: (
         <>
@@ -487,7 +489,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   };
 
   const openSessionCharge = (session: TrialSession, stateLabel: string) => {
-    const label = `强制扣款 · ${session.sid}`;
+    const label = `强制触发扣款 · ${session.sid}`;
     openActionConfirm({ briefKind: "funds",
       action: label,
       title: "强制扣款",
@@ -568,7 +570,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     const expired = record.expiresAt <= Date.now();
     const object = proposal ? record.sid : record.kind === "param" ? record.paramKey : "autoPushKilled";
     return (
-      <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未确认`} action={<>
+      <Notice key={record.fingerprint} tone="warn" title={`${commandTitle(record)} · 结果未确认`} action={<>
         {proposal && canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void checkPending(record)}>查询原提案</Button>}
         <Button size="sm" disabled={!!recovering || expired} onClick={() => void retryPending(record)}>按原操作重试</Button>
         {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除待确认</Button>}
@@ -585,7 +587,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     );
   });
   const releaseModal = releasing && (
-    <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
+    <ReleaseModal label={commandTitle(releasing)} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
       explain="重试被拒说明不了原操作的结果，先到操作记录确认它有没有生效。解除后原操作不再重试，系统仍按现在的状态校验。" />
   );
 

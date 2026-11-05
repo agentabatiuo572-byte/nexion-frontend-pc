@@ -77,7 +77,9 @@ const TABS: readonly { value: TabValue; label: string }[] = [
 const VOUCHER_TYPES = [{ value: "CHAIN", label: "链上交易哈希" }, { value: "BANK", label: "银行流水号" }];
 
 interface ConfirmRequest {
+  /** 进操作记录的名字，不改。框上写的短标题传 title。 */
   action: string;
+  title?: string;
   detail: ReactNode;
   briefKind: OperatorBriefKind;
   /** 这个操作自己的影响说明，和这类操作的通用说明不一样时才传。 */
@@ -475,7 +477,8 @@ export function D3Treasury() {
     const notes: Record<string, { tone: "warn" | "danger"; note: string }> = Object.fromEntries(dropped.map((row) => [`liability-${row.category}`, { tone: "warn", note: `这类现在是 ${money(row.amountUsdt)}。` }]));
     if (base.reserveCategories.usdt && !values.reserveCategories.usdt) notes["reserve-usdt"] = { tone: "danger", note: "资金安全等级会按储备 0 算。" };
     return {
-      action: "保存预测设置",
+      action: "调整应付款预测设置",
+      title: "保存预测设置",
       revision,
       detail: `预测 ${values.forecastWindow.replace("d", " 天")}，创世节点收益${values.genesisIncluded ? "计入" : "不计入"}。${effectiveText()}，不影响历史。`,
       facts: (
@@ -557,7 +560,8 @@ export function D3Treasury() {
 
   const exportCsv = (kind: ExportKind) => {
     setConfirm({
-      action: EXPORT_TITLE[kind],
+      action: "导出",
+      title: EXPORT_TITLE[kind],
       detail: "不生成任务，没有下载链接。",
       facts: <Facts><Fact k="范围">{EXPORT_RANGE[kind]}</Fact><Fact k="去向">浏览器直接下载</Fact></Facts>,
       briefKind: "export",
@@ -840,6 +844,7 @@ export function D3Treasury() {
         <OperationConfirmModal
           key={`${confirm.action}:${confirm.revision ?? 0}`}
           action={confirm.action}
+          title={confirm.title}
           detail={confirm.detail}
           briefKind={confirm.briefKind}
           statedBrief={confirm.statedBrief}

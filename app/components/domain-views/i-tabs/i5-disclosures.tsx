@@ -354,7 +354,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
       affected: current ? current.affected : undefined,
     };
     openActionConfirm({ briefKind: "config", ...approvalProps,
-      action: <>{current ? "调整" : "新增"}适用地区 × 版本映射{current ? ` · ${current.code}` : ""}</>,
+      action: <>{current ? "编辑" : "新增"}适用地区 × 版本映射</>,
       title: `${current ? "调整" : "新增"}版本映射`,
       detail: <>这里仅维护启用适用地区的适用国家/地区与已发布版本映射。映射批准后生效；版本或适用国家变化时，新旧国家的用户须重新确认。</>,
       completionCopy: "批准后生效：更新该地区映射；版本或适用国家变化时，新旧国家的用户须重新确认并收到通知。提交本身不会切换版本。",
@@ -457,7 +457,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
       ...(editing ? { expectedRevision: editing.revision, expectedContentHash: editing.contentHash } : {}),
     };
     openActionConfirm(withConflict(ctx, { briefKind: "config",
-      action: <>{editing ? "编辑披露草稿" : "新建披露版本"} · {jurisdiction} {version}</>,
+      action: <>{editing ? "编辑披露草稿" : "新建披露版本"} · 风控提交</>,
       title: editing ? "编辑披露草稿" : "新建披露版本",
       detail: <>保存后只改草稿，App 内容不变。发布和生效版本映射要分别批准。</>,
       amplifies: false,
@@ -501,7 +501,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
     const affected = row.affected ?? j?.affected ?? 0;
     const pendingAck = row.pendingAck ?? j?.pendingAck ?? Math.max(0, Math.round(affected * (100 - (j?.ackProgress ?? 0)) / 100));
     openActionConfirm({ briefKind: "config", ...approvalProps,
-      action: <>发布已存披露草稿 · {row.jurisdiction} {row.version}</>,
+      action: <>发布已存披露草稿 · {row.jurisdiction}</>,
       title: "发布披露草稿",
       detail: <>发布的是已保存的草稿，批准后 7 章内容固定不能改，App 当前版本不变。之后另行提交生效版本映射，批准切换后才要求用户重新确认。</>,
       completionCopy: "批准后生效：仅封存已保存草稿，App 当前版本不变，也不触发重新确认；生效版本映射须另行提交审批。",

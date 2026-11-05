@@ -1131,7 +1131,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     const brief = REVIEW_BRIEF[action];
     return {
       briefKind: "funds",
-      action: `${label}提现`,
+      action: `${label}提现 · ${row.withdrawalNo}`,
+      title: `${label}提现`,
       detail: `当前 ${statusLabel(row.status)}；账户 ${userStatusLabel(row.userStatus)}。${action === "APPROVE" ? (row.chain === "BANK-VND" ? "确认后立即放行，由 HDPay 打款，付款成功才算完成。" : "确认后立即放行，钱从储备中扣除。") : action === "REJECT" ? "确认后立即拒绝，并退回用户余额；完成后为已退款。" : "确认后立即生效。"}`,
       businessForm: actionBusinessForm(action, addressVerificationRequired),
       facts: reviewFacts(row, action, bankDetail?.withdrawalNo === row.withdrawalNo ? bankDetail : null, coverageFacts),
@@ -1195,7 +1196,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     if (!cregis.canRecover || cregis.source !== "provider" || cregis.withdrawalNo !== row.withdrawalNo
         || !hasAuthority("finance_d2_read") || !hasAuthority("finance_d2_withdrawal_approve")) return;
     openActionConfirm({ briefKind: "record",
-      action: "核对 Cregis 打款单",
+      action: `核对 Cregis 打款单 · ${row.withdrawalNo}`,
+      title: "核对 Cregis 打款单",
       facts: <Facts><Fact k="金额" lead tone="role-1" unit={row.asset}>{amountText(row.amount)}</Fact><Fact k="提现单"><span data-mono>{row.withdrawalNo}</span></Fact></Facts>,
       detail: "到 Cregis 查到这笔提现的打款单号（CID）填在下面。系统会核对收款地址和金额，然后继续跟进这笔提现，不会重新打款。",
       businessForm: { kind: "multi-field", title: "", fields: [
@@ -1223,7 +1225,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   const confirmBankRequery = (row: D2Withdrawal, bank: D2BankPayout) => {
     openActionConfirm({ briefKind: "funds",
-      action: "查询银行打款结果",
+      action: `查询银行打款结果 · ${row.withdrawalNo}`,
+      title: "查询银行打款结果",
       facts: <Facts><Fact k="金额" lead tone="role-1" unit={row.asset}>{amountText(row.amount)}</Fact><Fact k="提现单"><span data-mono>{row.withdrawalNo}</span></Fact></Facts>,
       detail: "向 HDPay 查询这笔打款的结果，不会重新打款。结果明确就自动完成或退回；有疑问的继续人工核对。原因里不要写完整银行卡号。",
       reasonMin: 10, reasonMax: 300, completionCopy: "向 HDPay 查询原单，不会重新打款。",
@@ -1246,7 +1249,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   const confirmDevelopmentSimulation = (row: D2Withdrawal) => {
     openActionConfirm({ briefKind: "funds",
-      action: "模拟冷却到期",
+      action: `模拟冷却到期 · ${row.withdrawalNo}`,
+      title: "模拟冷却到期",
       facts: <Facts><Fact k="提现单"><span data-mono>{row.withdrawalNo}</span></Fact></Facts>,
       detail: "仅测试环境可用。把这笔测试提现的冷却时间提前到现在，然后按正常流程重新检查风险规则、风险分、覆盖率和提现开关。",
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
@@ -1338,7 +1342,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     const manualText = !approve ? undefined : threshold === null ? "大额会转单笔人工审核，不会批量放行" : manual.length ? `其中 ${manual.length} 笔达到 ${amountText(threshold)} USDT，转单笔人工审核，不会批量放行` : undefined;
     const batchImpact = REVIEW_BRIEF[action].impact.replace("这笔提现", "这些提现").replace("这笔", "这些单");
     openActionConfirm({ briefKind: "funds",
-      action: `批量${actionLabel(action)}提现`,
+      action: `批量执行 · ${actionLabel(action)}`,
+      title: `批量${actionLabel(action)}提现`,
       detail: `将对 ${ids.length} 笔提现执行${actionLabel(action)}（不符合条件的已自动排除）。${action === "REJECT" ? "拒绝后立即退回用户余额，完成后为已退款。" : ""}提交后看批量结果。`,
       businessForm: actionBusinessForm(action),
       facts: <>
