@@ -1,4 +1,4 @@
-import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { isIdempotencyOutcomeOpen, OutcomeUnknownError, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { parseIOverview } from "@/lib/admin/i-overview-contract";
@@ -45,23 +45,37 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   } catch (error) {
     // Preserve the fingerprint/key pair. The next identical operator retry is
     // a durable idempotent replay, never a fresh mutation.
+    if (isWrite) throw new OutcomeUnknownError(error instanceof Error ? error.message : String(error));
     throw error;
   }
-  const text = await res.text();
-  const payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
+  let payload: ApiResult<T>;
+  try {
+    const text = await res.text();
+    payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
+  } catch (error) {
+    if (isWrite) throw new OutcomeUnknownError(formatAdminApiError(undefined, `CONTENT_API_${res.status}`));
+    throw error;
+  }
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
     // 本域早就是目标口径(只在确定性拒绝时弃号),2026-08-06 改接共享谓词统一来源:
     // 判据只此一处,别处再改口径时不会落下这一面。
-    if (isWrite && !outcomeStaysUnknown(res.status, payload.code)) {
+    const unknown = outcomeStaysUnknown(res.status, payload.code) || isIdempotencyOutcomeOpen(payload.message);
+    if (isWrite && !unknown) {
       uncertainCommandKeys.forget(commandFingerprint);
     }
     const message = payload.message === "DISCLOSURE_JURISDICTION_CODE_EXISTS"
       ? "该适用地区代码已存在，请更换代码；如需改名，请编辑已有地区。"
       : payload.message;
-    throw new Error(formatAdminApiError(message, `CONTENT_API_${res.status}`));
+    const formatted = formatAdminApiError(message, `CONTENT_API_${res.status}`);
+    throw isWrite && unknown ? new OutcomeUnknownError(formatted) : new Error(formatted);
   }
   if (isWrite) uncertainCommandKeys.forget(commandFingerprint);
   return payload.data as T;
+}
+
+/** 页面自己存着原操作时传命令号；不传就走上面的指纹存储。 */
+function commandHeaders(commandKey?: string): Record<string, string> | undefined {
+  return commandKey ? { "Idempotency-Key": commandKey } : undefined;
 }
 
 function withReason<T extends Record<string, unknown>>(body: T, reason: string) {
@@ -639,11 +653,11 @@ export type IContentActions = {
   archiveI5Matrix: (jurisdiction: string, reason: string) => Promise<void>;
   updateI5GateScope: (scope: string, reason: string) => Promise<void>;
   fetchI5DisclosureVersion: (jurisdiction: string, version: string) => Promise<DisclosureVersionItemView>;
-  createI5DisclosureVersion: (jurisdiction: string, body: Record<string, unknown>, reason: string) => Promise<void>;
-  updateI5DisclosureVersion: (jurisdiction: string, version: string, body: Record<string, unknown>, reason: string) => Promise<void>;
-  deleteI5DisclosureVersion: (jurisdiction: string, version: string, expectedRevision: number, expectedContentHash: string, reason: string) => Promise<void>;
-  createI5Jurisdiction: (body: { code: string; name: string }, reason: string) => Promise<void>;
-  updateI5Jurisdiction: (code: string, body: { name: string; expectedRevision: number }, reason: string) => Promise<void>;
+  createI5DisclosureVersion: (jurisdiction: string, body: Record<string, unknown>, reason: string, commandKey?: string) => Promise<void>;
+  updateI5DisclosureVersion: (jurisdiction: string, version: string, body: Record<string, unknown>, reason: string, commandKey?: string) => Promise<void>;
+  deleteI5DisclosureVersion: (jurisdiction: string, version: string, expectedRevision: number, expectedContentHash: string, reason: string, commandKey?: string) => Promise<void>;
+  createI5Jurisdiction: (body: { code: string; name: string }, reason: string, commandKey?: string) => Promise<void>;
+  updateI5Jurisdiction: (code: string, body: { name: string; expectedRevision: number }, reason: string, commandKey?: string) => Promise<void>;
   enableI5Jurisdiction: (code: string, expectedRevision: number, reason: string) => Promise<void>;
   disableI5Jurisdiction: (code: string, expectedRevision: number, reason: string) => Promise<void>;
   archiveI5Jurisdiction: (code: string, expectedRevision: number, reason: string) => Promise<void>;
@@ -760,11 +774,11 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   archiveI5Matrix: (jurisdiction, reason) => apiRequest(`/trust-disclosure/disclosures/matrix/${encodeURIComponent(jurisdiction)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   updateI5GateScope: (scope, reason) => apiRequest("/trust-disclosure/disclosures/gated-actions", { method: "PATCH", body: JSON.stringify(withReason({ scope }, reason)) }).then(() => undefined),
   fetchI5DisclosureVersion: (jurisdiction, version) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions/${encodeURIComponent(version)}`),
-  createI5DisclosureVersion: (jurisdiction, body, reason) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  updateI5DisclosureVersion: (jurisdiction, version, body, reason) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions/${encodeURIComponent(version)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  deleteI5DisclosureVersion: (jurisdiction, version, expectedRevision, expectedContentHash, reason) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedRevision, expectedContentHash }, reason)) }).then(() => undefined),
-  createI5Jurisdiction: (body, reason) => apiRequest("/trust-disclosure/disclosures/jurisdictions", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  updateI5Jurisdiction: (code, body, reason) => apiRequest(`/trust-disclosure/disclosures/jurisdictions/${encodeURIComponent(code)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  createI5DisclosureVersion: (jurisdiction, body, reason, commandKey) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions`, { method: "POST", headers: commandHeaders(commandKey), body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  updateI5DisclosureVersion: (jurisdiction, version, body, reason, commandKey) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions/${encodeURIComponent(version)}`, { method: "PATCH", headers: commandHeaders(commandKey), body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  deleteI5DisclosureVersion: (jurisdiction, version, expectedRevision, expectedContentHash, reason, commandKey) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", headers: commandHeaders(commandKey), body: JSON.stringify(withReason({ expectedRevision, expectedContentHash }, reason)) }).then(() => undefined),
+  createI5Jurisdiction: (body, reason, commandKey) => apiRequest("/trust-disclosure/disclosures/jurisdictions", { method: "POST", headers: commandHeaders(commandKey), body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  updateI5Jurisdiction: (code, body, reason, commandKey) => apiRequest(`/trust-disclosure/disclosures/jurisdictions/${encodeURIComponent(code)}`, { method: "PATCH", headers: commandHeaders(commandKey), body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   enableI5Jurisdiction: (code, expectedRevision, reason) => apiRequest(`/trust-disclosure/disclosures/jurisdictions/${encodeURIComponent(code)}/enable`, { method: "POST", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
   disableI5Jurisdiction: (code, expectedRevision, reason) => apiRequest(`/trust-disclosure/disclosures/jurisdictions/${encodeURIComponent(code)}/disable`, { method: "POST", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
   archiveI5Jurisdiction: (code, expectedRevision, reason) => apiRequest(`/trust-disclosure/disclosures/jurisdictions/${encodeURIComponent(code)}/archive`, { method: "POST", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),

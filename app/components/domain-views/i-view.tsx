@@ -19,9 +19,11 @@ import { I1CopyAb } from "./i-tabs/i1-copy-ab";
 import { I2Nova } from "./i-tabs/i2-nova";
 import { I3Campaign } from "./i-tabs/i3-campaign";
 import { I4Trust } from "./i-tabs/i4-trust";
+import { I5Disclosures } from "./i-tabs/i5-disclosures";
 import { I6I18n } from "./i-tabs/i6-i18n";
 import type { ConfirmReq, ICtx, ActionConfirmReq } from "./i-tabs/types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { RdPage } from "@/app/components/rd";
 
 const FOLD: Record<string, string> = {
   I1: "I1",
@@ -190,6 +192,7 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
   const ctx: ICtx = {
     toast: setToast,
     openActionConfirm: setActionConfirm,
+    closeActionConfirm: () => setActionConfirm(null),
     openConfirm: setCf,
     content,
     actions,
@@ -199,6 +202,48 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const live = liveFromBackend(tab, content, contentLoading, contentError);
   const right = live ? <span className="f-live"><span className="dot" />{live}</span> : null;
+
+  const overlays = (
+    <>
+      {mc && (
+        <OperationConfirmModal briefKind={mc.briefKind}
+          action={mc.action}
+          detail={mc.detail}
+          amplifies={mc.amplifies}
+          edit={mc.edit}
+          businessForm={mc.businessForm}
+          completionCopy={mc.completionCopy}
+          facts={mc.facts}
+          effect={mc.effect}
+          confirmLabel={mc.confirmLabel}
+          confirmTone={mc.confirmTone}
+          statedBrief={mc.statedBrief}
+          coverageLead={mc.coverageLead}
+          blockedReason={mc.blockedReason}
+          reasonPlaceholder={mc.reasonPlaceholder}
+          reasonMin={mc.reasonMin}
+          reasonMax={mc.reasonMax}
+          onBusinessSelectionChange={mc.onBusinessSelectionChange}
+          onClose={() => setActionConfirm(null)}
+          onConfirm={async (reason, newValue, businessValue) => {
+            const succeeded = await mc.run(reason, newValue, businessValue);
+            if (succeeded !== false) setActionConfirm(null);
+          }}
+        />
+      )}
+      {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
+      {toastNode}
+    </>
+  );
+
+  if (tab === "I5") {
+    return (
+      <RdPage className="idom">
+        <I5Disclosures ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
+        {overlays}
+      </RdPage>
+    );
+  }
 
   return (
     <div className="dkpage idom">
@@ -222,30 +267,10 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
       {(!contentError || contentReadable) && tab === "I1" && <I1CopyAb ctx={ctx} />}
       {(!contentError || contentReadable) && tab === "I2" && <I2Nova ctx={ctx} />}
       {(!contentError || contentReadable) && tab === "I3" && <I3Campaign ctx={ctx} />}
-      {(!contentError || contentReadable) && tab === "I4" && <I4Trust ctx={ctx} view="trust" />}
-      {(!contentError || contentReadable) && tab === "I5" && <I4Trust ctx={ctx} view="disclosures" />}
+      {(!contentError || contentReadable) && tab === "I4" && <I4Trust ctx={ctx} />}
       {(!contentError || contentReadable) && tab === "I6" && <I6I18n ctx={ctx} />}
 
-      {mc && (
-        <OperationConfirmModal briefKind={mc.briefKind}
-          action={mc.action}
-          detail={mc.detail}
-          amplifies={mc.amplifies}
-          edit={mc.edit}
-          businessForm={mc.businessForm}
-          completionCopy={mc.completionCopy}
-          reasonMin={mc.reasonMin}
-          reasonMax={mc.reasonMax}
-          onBusinessSelectionChange={mc.onBusinessSelectionChange}
-          onClose={() => setActionConfirm(null)}
-          onConfirm={async (reason, newValue, businessValue) => {
-            const succeeded = await mc.run(reason, newValue, businessValue);
-            if (succeeded !== false) setActionConfirm(null);
-          }}
-        />
-      )}
-      {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
-      {toastNode}
+      {overlays}
     </div>
   );
 }

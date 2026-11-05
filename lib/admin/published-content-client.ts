@@ -1,13 +1,18 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { isIdempotencyOutcomeOpen, OutcomeUnknownError, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 
 export interface PublishedContentDocument { version: string; status: "PUBLISHED" | "DRAFT" | "UNPUBLISHED"; locales: Record<string, Record<string, unknown>>; revision: number; hasPublishedVersion?: boolean; source?: string; configKey?: string }
 export interface PublishedHowContentDocument { version: string; status: "PUBLISHED" | "DRAFT" | "UNPUBLISHED"; contents: Record<string, Record<string, unknown>>; revision: number; hasPublishedVersion?: boolean; source?: string; configKey?: string }
 interface ApiResult<T> { code: number; message?: string; data?: T }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await guardedFetch(path, { ...init, cache: "no-store" });
+  const isWrite = !!init?.method && init.method !== "GET";
+  const response = await guardedFetch(path, { ...init, cache: "no-store" }).catch((error: Error) => { throw isWrite ? new OutcomeUnknownError(error.message) : error; });
   const body = await response.json().catch(() => null) as ApiResult<T> | null;
-  if (!response.ok || !body || body.code !== 0 || body.data == null) throw new Error(formatAdminApiError(body?.message, `PUBLISHED_CONTENT_REQUEST_FAILED_${response.status}`));
+  if (!response.ok || !body || body.code !== 0 || body.data == null) {
+    const message = formatAdminApiError(body?.message, `PUBLISHED_CONTENT_REQUEST_FAILED_${response.status}`);
+    throw isWrite && (outcomeStaysUnknown(response.status, body?.code) || isIdempotencyOutcomeOpen(body?.message)) ? new OutcomeUnknownError(message) : new Error(message);
+  }
   return body.data;
 }
 

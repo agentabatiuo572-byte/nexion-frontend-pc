@@ -1,10 +1,20 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { normalizeLegalTermsDateTime } from "@/lib/admin/legal-terms-contract";
+import { isIdempotencyOutcomeOpen, OutcomeUnknownError, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 
 export type LegalTermsSection = { key: string; title: string; body: string; sortOrder: number };
 export type LegalTermsVersion = { id: number; locale: string; jurisdiction: string; version: string; effectiveAt: string; status: "DRAFT" | "PUBLISHED" | "SUPERSEDED" | "REVOKED"; title: string; summary: string; sections: LegalTermsSection[]; revision: number; publishedAt: string | null; revokedAt: string | null };
 type Result<T> = { code: number; message?: string; data?: T };
-async function request<T>(path: string, init?: RequestInit): Promise<T> { const response = await guardedFetch(path, { ...init, cache: "no-store" }); const body = await response.json().catch(() => null) as Result<T> | null; if (!response.ok || !body || body.code !== 0 || body.data == null) throw new Error(formatAdminApiError(body?.message, `LEGAL_TERMS_REQUEST_FAILED_${response.status}`)); return body.data; }
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const isWrite = !!init?.method && init.method !== "GET";
+  const response = await guardedFetch(path, { ...init, cache: "no-store" }).catch((error: Error) => { throw isWrite ? new OutcomeUnknownError(error.message) : error; });
+  const body = await response.json().catch(() => null) as Result<T> | null;
+  if (!response.ok || !body || body.code !== 0 || body.data == null) {
+    const message = formatAdminApiError(body?.message, `LEGAL_TERMS_REQUEST_FAILED_${response.status}`);
+    throw isWrite && (outcomeStaysUnknown(response.status, body?.code) || isIdempotencyOutcomeOpen(body?.message)) ? new OutcomeUnknownError(message) : new Error(message);
+  }
+  return body.data;
+}
 function versions(value: unknown): LegalTermsVersion[] { if (!Array.isArray(value)) throw new Error("LEGAL_TERMS_RESPONSE_INVALID"); return value as LegalTermsVersion[]; }
 export async function fetchLegalTermsAdmin(locale: string, jurisdiction: string) { return versions(await request<unknown>(`/api/admin/legal-terms/list?locale=${encodeURIComponent(locale)}&jurisdiction=${encodeURIComponent(jurisdiction)}`)); }
 export async function saveLegalTermsDraft(requestBody: { locale: string; jurisdiction: string; version: string; effectiveAt: string; title: string; summary: string; sections: LegalTermsSection[]; expectedRevision: number; reason: string }) { return request<LegalTermsVersion>("/api/admin/legal-terms/draft", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...requestBody, effectiveAt: normalizeLegalTermsDateTime(requestBody.effectiveAt) }) }); }

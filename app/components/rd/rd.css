@@ -817,3 +817,23 @@ td .rd-flow { margin-bottom: 0; }
 
 /* 还没迁移的页面：内容区挂 data-theme="dark" 和 .rd-legacy，里面仍是旧的深色取值；浅色主题的原生控件配色在这里面改回深色。 */
 :root[data-theme="light"] .rd-legacy :is(select, input[type="date"], input[type="datetime-local"]) { color-scheme: dark; }
+
+/* 版本发布页（I5）：页签内容、范围选择、整篇文字、抽屉表单分组 */
+.rd-tab-pane[hidden] { display: none; }
+.rd-tab-pane, .rd-tab-stack { display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; }
+.rd-scope-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; }
+.rd-scope-bar > [data-cp="filter"] { width: 200px; }
+.rd-panel-line { padding: 12px var(--rd-panel-pad-x); }
+.rd-fold-tools { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+.rd-doc { display: flex; flex-direction: column; gap: 14px; color: var(--rd-text); }
+.rd-doc h3 { font-size: var(--rd-text-body); font-weight: 600; margin: 0 0 4px; }
+.rd-doc p { margin: 0; color: var(--rd-text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.rd-form-stack { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.rd-form-static { display: flex; align-items: center; gap: 6px; min-height: 36px; color: var(--rd-text); }
+.rd-form-group-title { margin: 8px 0 0; font-size: var(--rd-text-body); font-weight: 600; color: var(--rd-text); }
+.rd-inline-form { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rd-inline-form > .rd-input, .rd-inline-form > input { flex: 1; min-width: 0; }
+.rd-inline-form-between { justify-content: space-between; flex-wrap: wrap; }
+.rd-json { margin: 0; max-height: 280px; overflow: auto; font-family: var(--rd-font-mono, monospace); font-size: var(--rd-text-aux); color: var(--rd-text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.rd-weak, .rd-doc p.rd-weak { color: var(--rd-text-3); }
+.rd-modal .rd-check-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

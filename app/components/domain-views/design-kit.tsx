@@ -18,6 +18,8 @@ import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/med
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
 import { isL5KpiExport, l5KpiRange, L5_KPI_WINDOWS, l5BusinessToday } from "./l-tabs/l5-kpi-range";
+import { Check as RdCheck, CheckGroup as RdCheckGroup } from "@/app/components/rd/field";
+import { Fold as RdFold } from "@/app/components/rd/fold";
 import { Button as RdButton } from "@/app/components/rd/button";
 import { DiffField } from "@/app/components/rd/diff-list";
 import { Explain } from "@/app/components/rd/explain";
@@ -704,7 +706,7 @@ export type BusinessFormSpec =
   | { kind: "phase-config"; mode: "create" | "edit"; label?: string; meta?: string; skus?: string; sortOrder?: number; status?: string }
   | { kind: "disclosure-jurisdiction"; mode: "create" | "edit"; code?: string; name?: string; revision?: number }
   | { kind: "version-authoring"; mode?: "create" | "edit"; version?: string; jurisdiction?: string; zh?: string; vi?: string; en?: string; chapters?: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; languageScope?: string; languageScopes?: string[]; jurisdictionOptions?: { value: string; label: string }[]; effectiveDate?: string; requiresReack?: boolean; versionReadonly?: boolean; jurisdictionReadonly?: boolean }
-  | { kind: "disclosure-matrix"; mode: "create" | "edit"; jurisdictionCode?: string; jurisdictionName?: string; jurisdictionOptions?: { value: string; label: string }[]; countryCodes?: string[]; countryOptions?: { value: string; label: string }[]; version?: string; publishedVersionsByJurisdiction?: Record<string, string[]> }
+  | { kind: "disclosure-matrix"; mode: "create" | "edit"; jurisdictionCode?: string; jurisdictionName?: string; jurisdictionOptions?: { value: string; label: string }[]; countryCodes?: string[]; countryOptions?: { value: string; label: string }[]; version?: string; publishedVersionsByJurisdiction?: Record<string, string[]>; unchanged?: { version: string; countryCodes: string[] }; affected?: number }
   | { kind: "disclosure-publish-review"; jurisdiction: string; currentVersion: string; targetVersion: string; affected: number; pendingAck: number; blocked: number; gatedActions: string[]; currentChapters: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; targetChapters: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[] }
   | { kind: "trust-section-authoring"; mode: "create" | "edit"; sectionKey: string; version?: string; description?: string; structure?: string; revision?: number;
       fields?: { key: string; label: string; value: string }[] }
@@ -1428,6 +1430,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
   } else if (spec.kind === "disclosure-jurisdiction") {
     needs("code", "适用地区代码");
     needs("name", "适用地区名称");
+    if (spec.mode === "edit" && state.name?.trim() === spec.name) missing.push("名称没有改动");
     if (!/^[A-Z][A-Z0-9_-]{1,15}$/.test((state.code ?? "").trim().toUpperCase())) missing.push("适用地区代码格式（2-16 位大写字母、数字、下划线或短横线）");
   } else if (spec.kind === "disclosure-publish-review") {
     if (spec.targetChapters.length !== 7) missing.push("完整 7 章节");
@@ -1435,7 +1438,10 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (state.jurisdictionConfirmed !== "true") missing.push("受众适用地区确认");
     if (state.bilingualConfirmed !== "true") missing.push("七章中越英内容核对");
   } else if (spec.kind === "disclosure-matrix") {
-    ["jurisdictionCode", "jurisdictionName", "countryCodes", "version"].forEach((key) => needs(key, key));
+    needs("jurisdictionCode", "适用地区");
+    needs("version", "已发布版本");
+    needs("countryCodes", "适用国家/地区");
+    if (spec.unchanged && state.version === spec.unchanged.version && (state.countryCodes ?? "") === [...spec.unchanged.countryCodes].sort().join(",")) missing.push("版本或适用国家没有改动");
   } else if (spec.kind === "trust-section-authoring") {
     ["version", "description", "structure"].forEach((key) => needs(key, key));
     if (!/^v[1-9][0-9]{0,8}$/.test(state.version ?? "")) missing.push("版本号格式（如 v6）");
@@ -2469,41 +2475,38 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   }
 
   if (spec.kind === "disclosure-publish-review") {
-    const changed = spec.targetChapters.filter((target) => {
-      const current = spec.currentChapters.find((chapter) => chapter.no === target.no);
-      return !current || current.zh !== target.zh || current.vi !== target.vi || current.en !== target.en || current.zhBody !== target.zhBody || current.viBody !== target.viBody || current.enBody !== target.enBody;
-    });
+    const LANGUAGES = [["zh", "中文"], ["vi", "越南语"], ["en", "英语"]] as const;
+    const currentOf = (no: string) => spec.currentChapters.find((chapter) => chapter.no === no);
+    const fieldChanged = (target: typeof spec.targetChapters[number], lang: "zh" | "vi" | "en") => {
+      const current = currentOf(target.no);
+      return !current || current[lang] !== target[lang] || current[`${lang}Body`] !== target[`${lang}Body`];
+    };
+    const isChanged = (target: typeof spec.targetChapters[number]) => LANGUAGES.some(([lang]) => fieldChanged(target, lang));
+    const changed = spec.targetChapters.filter(isChanged);
+    // 改过的章排前面并展开，没改的收起（CP-48）。
+    const ordered = [...changed, ...spec.targetChapters.filter((target) => !isChanged(target))];
     return (
       <div className="field" data-business-form="disclosure-publish-review">
         <span className="bf-legend">发布前合规核对</span>
-        <div className="itint danger">
-          <b>{spec.jurisdiction} · {spec.currentVersion || "无生效版"} → {spec.targetVersion}</b>
-          <div style={{ marginTop: 6 }}>涉及用户 {spec.affected.toLocaleString("zh-CN")} 人 · 待重新确认 {spec.pendingAck.toLocaleString("zh-CN")} 人 · 已拦截 {spec.blocked.toLocaleString("zh-CN")} 次</div>
-          <div style={{ marginTop: 4 }}>本次只审批版本内容，App 上暂不变化。该版本正式用于地区后，用户须重新确认，期间受限的操作：{spec.gatedActions.join("、") || "无"}</div>
+        <div className="rd-form-help">{spec.affected > 0 && spec.affected < 5 ? "涉及用户样本过小" : `涉及用户 ${spec.affected.toLocaleString("zh-CN")} 人 · 待重新确认 ${spec.pendingAck.toLocaleString("zh-CN")} 人`} · 已拦截 {spec.blocked.toLocaleString("zh-CN")} 次 <Explain label="这次审批会怎样" content={`本次只审批版本内容，App 上暂不变化。该版本正式用于地区后，用户须重新确认，期间受限的操作：${spec.gatedActions.join("、") || "无"}`} /></div>
+        <div className="rd-form-group-title">版本差异 · 共 {changed.length} / 7 章发生变化</div>
+        {ordered.map((target) => {
+          const current = currentOf(target.no);
+          const open = isChanged(target);
+          return <RdFold key={target.no} inset defaultOpen={open} title={`第 ${target.no} 章 · ${open ? "有修改" : "无变化"}`} summary={target.zh}>
+            <div className="rd-doc">
+              {LANGUAGES.map(([lang, name]) => <section key={lang}>
+                <h3>{name}{open && fieldChanged(target, lang) ? " · 已改" : ""} · {target[lang] || "未提供英语标题"}</h3>
+                <p>{target[`${lang}Body`] || "未提供英语正文"}</p>
+                {current && fieldChanged(target, lang) && <p className="rd-weak">现在：{current[lang]} {current[`${lang}Body`]}</p>}
+              </section>)}
+            </div>
+          </RdFold>;
+        })}
+        <div className="rd-form-stack" style={{ marginTop: 12 }}>
+          <RdCheck label={`确认发布适用地区为 ${spec.jurisdiction}`} checked={value.jurisdictionConfirmed === "true"} onChange={(event) => set("jurisdictionConfirmed", String(event.target.checked))} />
+          <RdCheck label="已核对七章中文、越南语和英语内容，与监管要求一致" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} />
         </div>
-        <div className="itint" style={{ marginTop: 10 }}>
-          <b>版本差异</b> · 共 {changed.length} / 7 章发生变化
-        </div>
-        <div style={{ maxHeight: 300, overflowY: "auto", marginTop: 8 }}>
-          {spec.targetChapters.map((target) => {
-            const current = spec.currentChapters.find((chapter) => chapter.no === target.no);
-            const isChanged = !current || current.zh !== target.zh || current.vi !== target.vi || current.en !== target.en || current.zhBody !== target.zhBody || current.viBody !== target.viBody || current.enBody !== target.enBody;
-            return <div className="card" key={target.no} style={{ padding: 10, marginTop: 8, borderColor: isChanged ? "var(--warning)" : undefined }}>
-              <b>第 {target.no} 章 · {isChanged ? "有修改" : "无变化"}</b>
-              <div className="grid g-3" style={{ gap: 8, marginTop: 6 }}>
-                <div><span className="tiny">中文</span><div>{target.zh}</div><div className="tiny">{target.zhBody}</div></div>
-                <div><span className="tiny">越南语</span><div>{target.vi}</div><div className="tiny">{target.viBody}</div></div>
-                <div><span className="tiny">英语</span><div>{target.en || "未提供英语标题"}</div><div className="tiny">{target.enBody || "未提供英语正文"}</div></div>
-              </div>
-            </div>;
-          })}
-        </div>
-        <label className="field" style={{ marginTop: 12 }}>
-          <span><input type="checkbox" checked={value.jurisdictionConfirmed === "true"} onChange={(event) => set("jurisdictionConfirmed", String(event.target.checked))} /> 确认发布适用地区为 {spec.jurisdiction}</span>
-        </label>
-        <label className="field" style={{ marginTop: 6 }}>
-          <span><input type="checkbox" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} /> 已核对七章中文、越南语和英语内容，与监管要求一致</span>
-        </label>
       </div>
     );
   }
@@ -2520,7 +2523,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
       <div className="field" data-business-form="disclosure-matrix">
         <span className="bf-legend">{spec.mode === "create" ? "为地区指定披露版本" : "修改地区的披露版本"}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {select("jurisdictionCode", "适用地区", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels, undefined, (next) => {
+          {spec.mode === "create" && select("jurisdictionCode", "适用地区", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels, undefined, (next) => {
             const selected = spec.jurisdictionOptions?.find((item) => item.value === next);
             const nextVersions = spec.publishedVersionsByJurisdiction?.[next] ?? [];
             onChange({
@@ -2533,18 +2536,12 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {select("version", "已发布版本", spec.publishedVersionsByJurisdiction?.[value.jurisdictionCode ?? ""] ?? [])}
         </div>
         <div style={{ marginTop: 10 }}>
-          <span className="bf-legend">适用国家/地区（可多选）</span>
-          <div className="seg-chips" style={{ marginTop: 6 }}>
-            {(spec.countryOptions ?? []).map((option) => <button
-              type="button"
-              key={option.value}
-              className={`seg-chip ${selectedCountries.has(option.value) ? "on" : ""}`}
-              onClick={() => toggleCountry(option.value)}
-            >{option.label}</button>)}
-          </div>
+          <RdCheckGroup legend="适用国家/地区（可多选）" summary={`已选 ${selectedCountries.size} 个`}>
+            {(spec.countryOptions ?? []).map((option) => <RdCheck key={option.value} label={option.label} checked={selectedCountries.has(option.value)} onChange={() => toggleCountry(option.value)} />)}
+          </RdCheckGroup>
           {(spec.countryOptions ?? []).length === 0 && <div className="tint tiny">暂无可选国家/地区</div>}
         </div>
-          <div className="tint tiny" style={{ marginTop: 10 }}>提交后需审批，批准前当前生效的版本不变。</div>
+          {spec.unchanged && (value.version !== spec.unchanged.version || (value.countryCodes ?? "") !== [...spec.unchanged.countryCodes].sort().join(",")) && <div className="tint tiny" style={{ marginTop: 10 }}>{value.version !== spec.unchanged.version ? `版本 ${spec.unchanged.version} → ${value.version}。` : "适用国家有变化。"}批准后新旧国家的用户要重新确认，并收到通知{spec.affected && spec.affected >= 5 ? `，这个地区现有 ${spec.affected.toLocaleString("en-US")} 位用户` : ""}。</div>}
       </div>
     );
   }
