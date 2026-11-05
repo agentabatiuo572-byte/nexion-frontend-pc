@@ -126,7 +126,8 @@
 .hdom .param-grid .p .s { font-size: 11px; color: var(--ink-4); margin-top: 4px; line-height: 1.45; }
 
 /* ===== 免费试用设置：目标商品选项，一行一个商品，原因另起一行不被切掉 ===== */
-.rd-modal.rd-confirm .chip:has(> .h2-product-option) { display: block; width: 100%; height: auto; padding: 8px 12px; white-space: normal; text-align: left; }
+.rd-modal.rd-confirm .chip:has(> .h2-product-option) { display: block; width: 100%; height: auto; padding: 8px 12px; border-radius: var(--rd-radius-control); white-space: normal; text-align: left; }
+.rd-modal.rd-confirm .chip:disabled .h2-product-name { color: var(--rd-text-3); }
 .h2-product-option { display: grid; gap: 2px; min-width: 0; }
 .h2-product-name { display: flex; align-items: baseline; gap: 8px; font-size: var(--rd-text-body); }
 .h2-product-name small { font-size: var(--rd-text-aux); color: var(--rd-text-3); }

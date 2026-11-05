@@ -7,7 +7,7 @@ import {
   useTableColumns, type JudgmentRow, type SegmentItem, type TableColumn,
 } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { E4_CLOSE_REASONS, E4_CLOSE_REASON_LABELS, E4_REFUND_REASONS, E4_REFUND_REASON_LABELS, e4FundingLedgerHref } from "@/lib/admin/e4-client";
 import { operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
 import { useReach } from "@/lib/nav/use-reach";
@@ -106,7 +106,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying || expired} onClick={() => void ctx.retryE4Pending(record)}>按原操作重试</Button>
           {ctx.e4RetryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除待确认</Button>}
         </>}>
-        {businessClock(record.createdAt)}（{businessZone().label}）发出，可能已经提交。{expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : "重发原内容，已成功的不会重复执行。"}这单在有结论前不能再操作。
+        {formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，可能已经提交。{expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : "重发原内容，已成功的不会重复执行。"}这单在有结论前不能再操作。
         {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=E&object=${encodeURIComponent(record.orderNo)}`}>到操作记录核查</Link></>}
         <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 理由 ${record.spec.reason}`} />
         {ctx.e4PendingNotes[record.fingerprint] && <div>{ctx.e4PendingNotes[record.fingerprint]}</div>}
@@ -290,7 +290,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const refundDeviceLine = hasDevice ? "设备停用，已到账的收益不扣回"
     : eff === "provisioning_failed" ? "没有开通成功，没有设备要停用" : "还没有设备，退款后不再开通";
   // 后端不收回设备收益。例外：按全期结算转购买的试用奖励，退款后收回钱包里没花掉的部分；活动奖励走活动规则。
-  const refundDeviceDetail = `${hasDevice ? "这单的设备不再归用户，不再派任务，不再产生新收益。活动赠品的设备按活动规则处理。" : ""}${e4Detail?.orderType === "TRIAL_CONVERT" ? "转购买时发的试用奖励按当时的规则处理，最多收回钱包里没花掉的部分。" : ""}活动奖励按活动规则处理。`;
+  const refundDeviceDetail = `退款后用户钱包多这笔钱，平台的应付款跟着增加。${hasDevice ? "这单的设备不再归用户，不再派任务，不再产生新收益。活动赠品的设备按活动规则处理。" : ""}${e4Detail?.orderType === "TRIAL_CONVERT" ? "转购买时发的试用奖励按当时的规则处理，最多收回钱包里没花掉的部分。" : ""}活动奖励按活动规则处理。`;
 
   // 具体原因只从状态轨迹取，状态本身证明不了原因。
   const closeRecord = e4Detail?.history.findLast((item) => item.toState === eff);
@@ -345,7 +345,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
           openActionConfirm({
             briefKind: "funds", name: "退款 · " + o.id, op: "order-refund", orderId: o.id, amplify: true, fixedVal: channel,
             effect: approvalTag, confirmLabel: "提交审批", confirmTone: "danger", reasonPlaceholder: reasonHint,
-            coverageLead: <>覆盖率 {coverageText}<Explain label="为什么看覆盖率" content="退款后用户钱包多这笔钱，平台的应付款跟着增加。低于红线时不能退款。" /></>,
+            coverageLead: `覆盖率 ${coverageText}`,
             statedBrief: { impact: `钱退回用户钱包${hasDevice ? "，这单设备停用" : ""}`, check: "核对用户、金额和退款原因，理由写清依据或工单号。" },
             facts: orderFacts(<>
               {channel && <Fact k="退款去向">{REFUND_CHANNEL_LABELS[channel] ?? channel}</Fact>}
@@ -360,7 +360,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
               ] },
             detail: `退款 ${orderMoney(o.amt)}。钱退回用户的 USDT 钱包，付款记录标为已退款，补一条退款账单，用户的累计充值减去这笔金额。`,
           });
-        }}>{e4DetailLoading ? "正在检查退款条件…" : e4Detail?.refundAllowed === false ? refundBlockText : "退款"}</Button>}
+        }}>{e4DetailLoading ? "正在检查…" : e4Detail?.refundAllowed === false ? "暂不能退款" : "退款"}</Button>}
         others={<>
           {canCancel && <Button disabledReason={waitReason} onClick={() => openActionConfirm({ briefKind: "record", name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, effect: approvalTag, confirmLabel: "提交审批", reasonPlaceholder: reasonHint,
             statedBrief: { impact: "订单终止，占用的库存放回。用户没付款，不涉及退款", check: "核对订单和取消原因，理由写清依据或工单号。" },
