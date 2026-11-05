@@ -1,11 +1,16 @@
 /**
  * DiffList 差异对比（CP-48、OP-49）。确认框里所有字段都写前后值，改了的排前面并写「已改」，不靠颜色区分。
+ * 只有一行时不画表，写一句「现在 7 天 → 改后 30 天」。
  *
  * <DiffList rows={[{ key: "window", label: "默认预测天数", before: "7 天", after: "30 天" }]} />
  */
 import type { ReactNode } from "react";
 
 export function DiffList({ rows, emptyNote }: { rows: readonly { key: string; label: ReactNode; before: string; after: string }[]; emptyNote?: ReactNode }) {
+  if (rows.length === 1) {
+    const [{ before, after }] = rows;
+    return <p className="rd-diff-one">现在 <b>{before}</b>{before === after ? <> · {emptyNote ?? "没有改动"}</> : <> → 改后 <b>{after}</b></>}</p>;
+  }
   const changed = rows.filter((row) => row.before !== row.after);
   const same = rows.filter((row) => row.before === row.after);
   return (

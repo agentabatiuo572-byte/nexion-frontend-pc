@@ -29,6 +29,7 @@
  * - 抽屉上最多再叠一层弹窗，弹窗上不再叠弹窗（PG-38）；错误写在最上层。
  *
  * Modal 用法同旧 Modal。RdPage 里的旧 Modal、OperationConfirmModal 会自动走这个组件，不用改调用。
+ * 框里打过字后点空白不关，免得填的内容丢了；只靠点选的表单传 dirty。×、取消、Esc 照常关。
  */
 import { useEffect, useRef, type ComponentProps, type KeyboardEvent, type ReactNode } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -188,7 +189,7 @@ export function Decision({ note, explain, danger, others, primary }: { note?: Re
   );
 }
 
-export function Modal({ title, icon, onClose, children, footer, wide = false, busy = false, className }: {
+export function Modal({ title, icon, onClose, children, footer, wide = false, busy = false, dirty = false, className }: {
   title: ReactNode;
   icon?: ReactNode;
   onClose: () => void;
@@ -196,15 +197,17 @@ export function Modal({ title, icon, onClose, children, footer, wide = false, bu
   footer?: ReactNode;
   wide?: boolean;
   busy?: boolean;
+  dirty?: boolean;
   className?: string;
 }) {
   const surface = useRdSurface();
   const focus = useFocusHandoff(true);
+  const typed = useRef(false);
   const close = () => { if (!busy) onClose(); };
   return (
     <Dialog.Root open onOpenChange={(next) => { if (!next) close(); }}>
       <Dialog.Portal container={surface?.container ?? undefined}>
-        <Dialog.Overlay className="rd-scrim" data-modal="" onClick={close} />
+        <Dialog.Overlay className="rd-scrim" data-modal="" onClick={() => { if (!dirty && !typed.current) close(); }} />
         <Dialog.Content
           ref={focus.ref}
           className={className ? `rd-modal ${className}` : "rd-modal"}
@@ -212,6 +215,7 @@ export function Modal({ title, icon, onClose, children, footer, wide = false, bu
           aria-modal="true"
           aria-busy={busy}
           aria-describedby={undefined}
+          onInput={() => { typed.current = true; }}
           onOpenAutoFocus={focus.onOpenAutoFocus}
           onCloseAutoFocus={focus.onCloseAutoFocus}
           onPointerDownOutside={(event) => event.preventDefault()}
