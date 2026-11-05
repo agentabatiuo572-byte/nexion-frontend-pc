@@ -1,11 +1,11 @@
 "use client";
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { H4SampleAccountSelect } from './h4-sample-account-select';
 import { promotionRead, promotionVersions } from '@/lib/admin/promotion-client';
 import type { AdminSimulation, Catalog, CommandReceipt, Item, Promotion, Version, VersionPage } from '@/lib/admin/promotion-types';
 import { limitText } from '@/lib/admin/promotion-form';
 import { PromotionBannerPreview } from './h4-promotion-banner';
-import { Button, Card, ConfirmCommand, Dialog, Field, Notice, ReadError, Stats, Summary, Table, Tag, formatTime, labelState, rewardText, promotionAssetText, text, useRead } from './h4-promotion-ui';
+import { Button, Card, ConfirmCommand, Dialog, Field, Notice, ReadError, Stats, Summary, Table, Tag, formatTime, labelState, rewardText, promotionAssetText, text } from './h4-promotion-ui';
 const ACTIONS: Record<string, {
     label: string;
     operation: string;
@@ -39,7 +39,25 @@ export default function PromotionReview({ activity, catalog, can, onRefresh, onR
     onBack: () => void;
     review?: boolean;
 }) {
-    const versions = useRead(() => promotionVersions(activity.activityId), [activity.activityId, activity.revision, activity.current?.revision]);
+    const [history, setHistory] = useState<{data: VersionPage | null; error: unknown; loading: boolean}>({data: null, error: null, loading: true});
+    const historyScope = `${activity.activityId}:${activity.revision}:${activity.current?.revision}`;
+    const requestedHistoryScope = useRef('');
+    const readVersions = async (target = activity) => {
+        const scope = `${target.activityId}:${target.revision}:${target.current?.revision}`;
+        requestedHistoryScope.current = scope;
+        setHistory(previous => ({...previous, error: null, loading: true}));
+        try {
+            const data = await promotionVersions(target.activityId);
+            if (requestedHistoryScope.current === scope) setHistory({data, error: null, loading: false});
+        } catch (error) {
+            if (requestedHistoryScope.current === scope) setHistory(previous => ({...previous, error, loading: false}));
+            throw error;
+        }
+    };
+    useEffect(() => {
+        if (requestedHistoryScope.current !== historyScope) void readVersions().catch(() => undefined);
+    }, [historyScope]);
+    const versions = {...history, reload: () => { void readVersions().catch(() => undefined); }};
     const [action, setAction] = useState<string | null>(null), [simulation, setSimulation] = useState<AdminSimulation | null>(null), [simOpen, setSimOpen] = useState(false), [reservations, setReservations] = useState(false);
     const current = activity.current, active = versions.data?.items.find(v => v.version === activity.activeVersion), candidate = versions.data?.items.find(v => v.version === activity.draftVersion) || current;
     const blockers = candidate?.policyResolutionErrors || [], impact = activity.impact;
@@ -56,8 +74,8 @@ export default function PromotionReview({ activity, catalog, can, onRefresh, onR
             ['未支付订单', activity.impact.unpaidOrders, latest.impact.unpaidOrders],
             ['未完成奖励', activity.impact.unfulfilledRewards, latest.impact.unfulfilledRewards],
         ].filter(([, before, after]) => before !== after).map(([label, before, after]) => `${label}：${before} → ${after}`);
+        await readVersions(latest);
         onReload(latest);
-        versions.reload();
         return `已加载最新活动资料。${changes.length ? changes.join('；') : '以上活动信息与在途数量未变化'}。活动记录版本：${activity.revision} → ${latest.revision}。请核对后再次确认。`;
     };
     const button = (key: string, disabled = false) => { const a = ACTIONS[key], allowed = can(`growth_promotion_${a.authority}`); return <Button key={key} kind={['publish', 'approve', 'submit', 'resume'].includes(key) ? 'primary' : key === 'end' || key === 'reject' ? 'danger' : ''} disabled={!allowed || disabled} title={!allowed ? '当前账户没有此操作权限' : undefined} onClick={() => setAction(key)}>{a.label}</Button>; };
