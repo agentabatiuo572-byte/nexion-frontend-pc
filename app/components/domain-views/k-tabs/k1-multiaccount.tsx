@@ -8,7 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Coins, Gift, ListChecks, Network, RefreshCw, ShieldAlert, Snowflake, Users } from "lucide-react";
 import {
   BlockState, Button, Cell, ChartLegend, ConfigList, ConfigRow, Decision, DiffList, Explain, Fact, Facts, Field, Figure, FilterBar, FilterField, Fold, InlineMeter, Input, JudgmentPoints, KeyValues,
-  Modal, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, SectionNav, Segments, Select, Stat, StatBand, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr, useSectionNav,
+  Modal, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, SectionNav, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useSectionNav,
   type JudgmentRow, type SectionNavItem,
 } from "@/app/components/rd";
 import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1RequestError, K1_RELEASE_MODE_VALUES, K1_RELEASE_PARAM_LIMITS, newK1CommandKey } from "@/lib/admin/k-client";
@@ -388,6 +388,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const [whitelistPageSize, setWhitelistPageSize] = useState(() => pageSizeOf(searchParams?.get("whitelistPageSize"), WHITELIST_PAGE_SIZE_OPTIONS));
   const [selId, setSelId] = useState<string | null>(null);
   const [readAt, setReadAt] = useState("");
+  const [earningsReadAt, setEarningsReadAt] = useState("");
+  const [loadedKey, setLoadedKey] = useState("");
   const [pending, setPending] = useState<K1PendingCommand[]>([]);
   const [retrying, setRetrying] = useState("");
   const [retryRejected, setRetryRejected] = useState<string[]>([]);
@@ -414,6 +416,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     try {
       setProtectedEntries(await ctx.actions.fetchK1ProtectedEntries());
       setProtectedEntriesError(null);
+      setEarningsReadAt(clockText(Date.now()));
     } catch (error) {
       setProtectedEntries([]);
       setProtectedEntriesError(errorText(error));
@@ -446,6 +449,10 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     whitelistPageSize,
   }), [clusterPage, clusterPageSize, layer, clusterStatus, clusterSort, whitelistPage, whitelistPageSize]);
   const focusBlocksSelection = Boolean(focusClusterId) && focusLookupState !== "found";
+  const focusSettled = focusLookupState === "not-found" || focusLookupState === "error";
+  const queryKey = `${layer}|${clusterStatus}|${clusterSort}|${clusterPage}|${clusterPageSize}`;
+  // 换了条件、新结果还没回来时，旧行不能再操作（ST-35）。
+  const rowsStale = Boolean(overview) && loadedKey !== queryKey;
   const cur = focusBlocksSelection ? undefined : clusters.find((cluster) => cluster.id === selId) ?? clusters[0];
   const isHot = (c: K1Cluster) => c.strength >= freezeSuggestThreshold && c.status !== "frozen" && c.status !== "cleared" && c.status !== "released";
 
@@ -462,7 +469,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   useEffect(() => {
     if (focusPageLoad.current) return;
     void ctx.reloadKRisk({ multiAccount: pageQuery }).catch(() => undefined);
-  }, [ctx.reloadKRisk, pageQuery]);
+  }, [ctx.reloadKRisk, pageQuery, focusSettled]);
 
   useEffect(() => {
     setSelId(null);
@@ -487,8 +494,19 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   }, [tab, layer, clusterStatus, clusterSort, clusterPage, clusterPageSize, whitelistPage, whitelistPageSize]);
 
   useEffect(() => {
-    if (overview) setReadAt(clockText(Date.now()));
+    if (!overview) return;
+    setReadAt(clockText(Date.now()));
+    setLoadedKey(queryKey);
   }, [overview]);
+
+  // 读取成功后，网址里的页码超出实际范围就校正，失败和加载中不动（ST-26）。
+  useEffect(() => {
+    if (!overview || ctx.contentLoading || ctx.contentError || focusClusterId || rowsStale) return;
+    const lastCluster = Math.max(1, Math.ceil(overview.clusters.total / clusterPageSize));
+    const lastWhitelist = Math.max(1, Math.ceil(overview.whitelist.total / whitelistPageSize));
+    if (clusterPage > lastCluster) setClusterPage(lastCluster);
+    if (whitelistPage > lastWhitelist) setWhitelistPage(lastWhitelist);
+  }, [overview, ctx.contentLoading, ctx.contentError, focusClusterId, rowsStale, clusterPage, clusterPageSize, whitelistPage, whitelistPageSize]);
 
   useEffect(() => { setPending(pendingCommands.list()); }, []);
 
@@ -706,7 +724,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
   const pendingBlocks = new Set(pending.map((record) => `${PENDING_GROUP[record.kind]}:${record.target}`));
   /** 现在不能动的原因，写给人看（OP-126）。依赖最新数据的动作在读取时也等一下（ST-32）。 */
-  const blockedBy = (group: string, target: string, loading = false) =>
+  const blockedBy = (group: string, target: string, loading = ctx.contentLoading) =>
     pendingBlocks.has(`${group}:${target}`) ? "有结果未确认的操作，先到页面上方处理" : loading ? "正在读取最新数据" : undefined;
 
   const accountIssues = (c: K1Cluster) => c.nodes
@@ -1079,7 +1097,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     <>
       <PageHeader pageId="K1" title="多账户风险排查" summary="找出可能是同一人的账户，判断后处置。"
         meta={<span className="rd-toolbar">
-          <span>{readAt ? `${readAt} 读取（${businessZone().label}），` : ""}不自动刷新</span>
+          <span>{readAt ? `账户组和规则 ${readAt} 读取（${businessZone().label}），` : ""}不自动刷新</span>
           <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={ctx.contentLoading || protectedEntriesLoading} onClick={() => { reloadOverview(); void refreshProtectedEntries(); }}>刷新</Button>
         </span>}
         readOnly={anyWrite ? undefined : "你只能查看；处置和调整需要风控权限"} />
@@ -1109,7 +1127,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       ))}
 
       {tab !== "earnings" && pendingEntries.length > 0 && (
-        <Notice tone="warn" title={`${pendingEntries.length} 笔收益等人工审核`} action={<Button size="sm" onClick={() => setTab("earnings")}>{canRelease ? "去处理" : "去查看"}</Button>}>
+        <Notice tone="warn" title={entriesAtLimit ? `已读到的 ${PROTECTED_ENTRY_LIMIT} 条里有 ${pendingEntries.length} 笔等人工审核，实际可能更多` : `${pendingEntries.length} 笔收益等人工审核`} action={<Button size="sm" onClick={() => setTab("earnings")}>{canRelease ? "去处理" : "去查看"}</Button>}>
           这些收益审核通过才能提现，不会到期自动放行。
         </Notice>
       )}
@@ -1120,8 +1138,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         { value: "rules", label: "规则与名单" },
       ]} />
 
-      {tab === "accounts" && (overviewReady ? (
+      {tab === "accounts" && (
         <>
+          {overviewReady && (
           <StatBand label="关联账户组概况">
             <Stat lead tone="role-3" icon={Users} label="监控中的关联账户组" value={statText("activeClusters")} unit="组" sub={`涉及 ${statText("flaggedAccounts")} 个账户`}
               explain="全部账户组里，还没判定为正常、也没解除的组。不随下面的筛选变。" />
@@ -1130,6 +1149,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             <Stat tone="role-2" icon={Snowflake} label="已冻结账户组" value={statText("frozenClusters")} unit="组" sub={`共 ${statText("frozenAccounts")} 个账户`} />
             <Stat tone="role-1" icon={Gift} label="新人礼拦截" value={statKnown("giftBlockedUsd") ? `$${statText("giftBlockedUsd")}` : "—"} sub={statKnown("giftBlockedCnt") ? `${statText("giftBlockedCnt")} 笔重复领取被拦下` : "数据尚未接入，不能判定为 0"} />
           </StatBand>
+          )}
 
           <FilterBar
             scope={<Segments label="关联依据筛选" value={layer} onChange={(value) => { setLayer(value); setClusterPage(1); }} items={[
@@ -1144,7 +1164,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             ]} /></FilterField>
           </FilterBar>
 
-          <div className={clusters.length ? "rd-split" : undefined}>
+          {overviewReady ? <div className={clusters.length ? "rd-split" : undefined}>
             <Panel title="可能属于同一人的账户" sub="点一行看证据和处置" icon={Network} tone="role-3" flush>
               <Table label="关联账户组列表">
                 <thead>
@@ -1157,7 +1177,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {clusters.map((c) => {
+                  {rowsStale && <TableLoading columns={5} rows={3} />}
+                  {!rowsStale && clusters.map((c) => {
                     const [statusLabel, statusTone, statusExplain] = CLUSTER_ST[c.status];
                     const [first, ...rest] = clusterActions(c);
                     return (
@@ -1177,20 +1198,20 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                       </Tr>
                     );
                   })}
-                  {!clusters.length && <TableMessage columns={5} role="status">当前条件下没有关联账户组。可调整筛选条件后重试。</TableMessage>}
+                  {!rowsStale && !clusters.length && <TableMessage columns={5} role="status">当前条件下没有关联账户组。可调整筛选条件后重试。</TableMessage>}
                 </tbody>
               </Table>
               {clusterPageData.total > 0 && <Pager label="关联账户组列表" total={clusterPageData.total} page={clusterPage} pageSize={clusterPageSize} sizes={CLUSTER_PAGE_SIZE_OPTIONS} loading={ctx.contentLoading}
                 onPage={setClusterPage} onPageSize={(next) => { setClusterPageSize(next); setClusterPage(1); }} />}
             </Panel>
-            {cur ? selectedPanel(cur) : clusters.length > 0 && <BlockState state="loading" title="定位完成后显示这组的详情" />}
-          </div>
+            {cur && !rowsStale ? selectedPanel(cur) : clusters.length > 0 && <BlockState state="loading" title={rowsStale ? "正在读取这些条件下的账户组" : "定位完成后显示这组的详情"} />}
+          </div> : overviewState}
         </>
-      ) : overviewState)}
+      )}
 
       {tab === "earnings" && (
         <Panel data-proof="k1-protected-earnings" title="待审核或已锁定的收益" icon={Coins} tone="role-1" flush
-          sub={protectedEntries.length ? `待审核 ${pendingEntries.length} 笔 · 已锁定 ${lockedEntries} 笔${entriesAtLimit ? ` · 最多显示 ${PROTECTED_ENTRY_LIMIT} 条` : ""}` : "人工放行需要相应权限、操作理由，并留下操作记录"}
+          sub={`${protectedEntries.length ? `待审核 ${pendingEntries.length} 笔 · 已锁定 ${lockedEntries} 笔${entriesAtLimit ? ` · 最多显示 ${PROTECTED_ENTRY_LIMIT} 条` : ""}` : "人工放行需要相应权限、操作理由，并留下操作记录"}${earningsReadAt ? ` · ${earningsReadAt} 读取` : ""}`}
           actions={<Button size="sm" disabled={protectedEntriesLoading} onClick={() => void refreshProtectedEntries()}>刷新收益记录</Button>}>
           {protectedEntriesError ? (
             <BlockState state="error" title={protectedEntriesError} detail="当前不提供人工放行入口。" onRetry={() => void refreshProtectedEntries()} retrying={protectedEntriesLoading} />
