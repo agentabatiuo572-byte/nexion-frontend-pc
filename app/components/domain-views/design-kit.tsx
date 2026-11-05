@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
-import { fetchA2ReasonPolicy, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { fetchA2ReasonPolicy, isA2OutcomeUncertainError, visibleReasonLength } from "@/lib/admin/a2-client";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
@@ -3521,9 +3521,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   // Mirror the server's Unicode policy for immediate UX feedback. The backend remains
   // authoritative; whitespace, controls, zero-width formatting and standalone marks
   // cannot be used to pad an operation reason to the configured minimum.
-  const reasonLength = Array.from(reason.normalize("NFC")).filter((char) =>
-    !/[\s\p{Cc}\p{Cf}\p{Mn}\p{Mc}\p{Me}]/u.test(char),
-  ).length;
+  const reasonLength = visibleReasonLength(reason);
   const reasonOk = reasonLength >= reasonMin && (reasonMax === undefined || reasonLength <= reasonMax);
   const businessMissing = missingBusinessFields(activeBusinessForm, businessValue);
   const submittedValue = spec?.submitEditValue
@@ -3741,7 +3739,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       {surface && !approval && coverageNotice}
       <div className="field">
         <label htmlFor={reasonFieldId}>{approval ? "变更理由" : "操作理由"}{(compareEdit || approval?.heading) && <span aria-hidden="true" style={{ color: "var(--danger)" }}> *</span>}（必填，{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）</label>
-        <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} aria-required={compareEdit || inlineApproval?.dialogClassName ? true : undefined} aria-describedby={inlineApproval?.dialogClassName && ((!reasonOk && !retryApproval) || (reasonOk && reasonMax)) ? `${reasonFieldId}-length` : undefined} disabled={inlineApproval ? formLocked : !!approval ? submitting || !!approvalRecovery : !!getPendingReason && (submitting || pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} placeholder={reasonPlaceholder} />
+        <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} aria-required={compareEdit || inlineApproval?.dialogClassName ? true : undefined} aria-describedby={inlineApproval?.dialogClassName && ((!reasonOk && !retryApproval) || (reasonOk && reasonMax)) ? `${reasonFieldId}-length` : undefined} disabled={inlineApproval ? formLocked : !!approval ? submitting || !!approvalRecovery : submitting || (!!getPendingReason && pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} placeholder={reasonPlaceholder} />
         {pendingReason !== undefined && <div className="tiny" style={{ marginTop: 7 }}>原操作结果尚未确认，理由已锁定。重试将继续原操作，不会重复执行。</div>}
         {!reasonOk && !retryApproval && (
           <div id={`${reasonFieldId}-length`} className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
