@@ -65,6 +65,8 @@ const SLICE_NAME = { cohort: "注册周", phase: "运营阶段", locale: "语言
 const URL_KEYS = ["window", "from", "to", ...SLICES] as const;
 const COHORT_FORMAT = /^\d{4}-W\d{2}$/;
 const RELATED = ["/analytics/funnel-cohort", "/analytics/financial", "/analytics/operations"] as const;
+/** 全是 0 不是走势，不画图，写一句话（DP-62）。 */
+const hasTrend = (values: readonly number[]) => values.length >= 2 && values.some((value) => value !== 0);
 const hasSlice = (query: L1KpiQuery) => SLICES.some((key) => Boolean(query[key]));
 
 function deltaText(k: Kpi) {
@@ -515,18 +517,22 @@ export function L1Kpi({ ctx, onExportSource, title, summary, actions }: { ctx: L
     const goalMarks: { key: string; text: string; value: number; tone: StateTone }[] = k.dir === "band"
       ? [{ key: "low", text: `下限 ${k.band?.[0]}${unitText(k)}`, value: k.band?.[0] ?? 0, tone: "ok" }, { key: "high", text: `上限 ${k.band?.[1]}${unitText(k)}`, value: k.band?.[1] ?? 0, tone: "ok" }]
       : [{ key: "target", text: `目标 ${target}${unitText(k)}`, value: target, tone: "ok" }, { key: "yellow", text: `黄线 ${pct(yellowLine)}`, value: yellowLine, tone: "warn" }];
-    const trendReady = k.spark.length >= 2;
-    const showTrendColumn = KPIS.some((item) => item.spark.length >= 2);
+    const showTrendColumn = KPIS.some((item) => hasTrend(item.spark));
     const phaseEvent = phaseOn && PHASE_SWITCH_IDX >= 0 ? { index: PHASE_SWITCH_IDX, text: "运营阶段切换" } : undefined;
 
-    const compared = ovlSel.map((index, position) => {
-      const item = KPIS[index];
-      const goal = tgtValue(item);
-      const values = item.spark.map((value) => (item.dir === "lte" ? (goal / value) * 100 : (value / goal) * 100));
-      return { index, item, values, slot: (position < 4 ? position + 1 : "other") as ChartSlot };
-    });
-    const drawable = compared.filter(({ item, values }) => item.available !== false && values.length >= 2 && values.every(Number.isFinite));
-    const skipped = compared.filter((entry) => !drawable.includes(entry));
+    // 指数只对单侧目标成立：越高越好算实际 ÷ 目标，越低越好算目标 ÷ 实际，高于 100 都是好于目标。
+    // 健康带没有单一目标，不换算，按真实值和上下限单独画（DP-63）。
+    const picks = ovlSel.map((index) => KPIS[index]);
+    const bandPicks = picks.filter((item) => item.dir === "band");
+    const compared = picks.filter((item) => item.dir !== "band").map((item, position) => ({
+      item,
+      slot: (position < 4 ? position + 1 : "other") as ChartSlot,
+      values: item.spark.map((value) => (item.dir === "lte" ? (item.target / value) * 100 : (value / item.target) * 100)),
+    }));
+    const drawable = compared.filter(({ item, values }) => item.available !== false && hasTrend(values) && values.every(Number.isFinite));
+    const bandDrawable = bandPicks.filter((item) => item.available !== false && hasTrend(item.spark));
+    const skipped = [...compared.filter((entry) => !drawable.includes(entry)).map(({ item }) => item), ...bandPicks.filter((item) => !bandDrawable.includes(item))];
+    const drawnCount = drawable.length + bandDrawable.length;
 
     return (
       <>
@@ -568,16 +574,20 @@ export function L1Kpi({ ctx, onExportSource, title, summary, actions }: { ctx: L
                       <Td><Cell main={<AutoGloss>{operatorCopyText(item.name)}</AutoGloss>} sub={plain} title={plain} /></Td>
                       <Td align="right"><Cell num main={valueText(item)} sub={item.momDelta == null ? undefined : deltaText(item)} /></Td>
                       <Td align="right"><Cell num main={tgtShort(item)} /></Td>
-                      {showTrendColumn && <Td>{item.spark.length >= 2
+                      {showTrendColumn && <Td>{hasTrend(item.spark)
                         ? <Sparkline label={`${operatorCopyText(item.name)}的走势`} values={item.spark} />
-                        : <span className="rd-note" data-proof="l1-kpi-trend-unavailable">趋势数据不足</span>}</Td>}
+                        : item.spark.length >= 2
+                          ? <span className="rd-note">每段都是 0</span>
+                          : <span className="rd-note" data-proof="l1-kpi-trend-unavailable">趋势数据不足</span>}</Td>}
                       <Td><StatusTag tone={STATE_TONE[state]}>{stateText(state, item)}</StatusTag></Td>
                     </Tr>
                   );
                 })}
               </tbody>
             </Table>
-            {!showTrendColumn && <p className="rd-note rd-panel-foot" data-proof="l1-kpi-trend-unavailable">这个范围的趋势数据不足，走势暂时画不出来，不会用 0 补齐。</p>}
+            {!showTrendColumn && (KPIS.some((item) => item.spark.length >= 2)
+              ? <p className="rd-note rd-panel-foot">这个范围有趋势的指标每段都是 0，没有走势可画。</p>
+              : <p className="rd-note rd-panel-foot" data-proof="l1-kpi-trend-unavailable">这个范围的趋势数据不足，走势暂时画不出来，不会用 0 补齐。</p>)}
           </Panel>
 
           <Panel
@@ -608,7 +618,7 @@ export function L1Kpi({ ctx, onExportSource, title, summary, actions }: { ctx: L
               </Facts>
               {drillError
                 ? <BlockState state="error" title="明细和趋势暂时加载不出来" detail={`其他内容不受影响。${drillError}`} onRetry={() => void selectKpi(safeSelKpi)} />
-                : trendReady
+                : hasTrend(k.spark)
                   ? <Panel plain headingLevel={3} title="最近在变好还是变坏" sub="所选时间范围等分六段">
                       <TrendLines
                         label={`${operatorCopyText(k.name)}的走势`}
@@ -619,7 +629,7 @@ export function L1Kpi({ ctx, onExportSource, title, summary, actions }: { ctx: L
                         event={phaseEvent}
                       />
                     </Panel>
-                  : <p className="rd-note">当前筛选范围没有可绘制的趋势点；不会用 0 补齐缺失周。</p>}
+                  : <p className="rd-note">{k.spark.length >= 2 ? "这段时间每段都是 0，没有走势可画。" : "当前筛选范围没有可绘制的趋势点；不会用 0 补齐缺失周。"}</p>}
               <Fold inset title="这项指标怎么算" summary={`统计规则编号 #${k.n}`}>
                 <div className="rd-stack">
                   <p className="rd-note"><AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss></p>
@@ -632,7 +642,7 @@ export function L1Kpi({ ctx, onExportSource, title, summary, actions }: { ctx: L
           </Panel>
         </div>
 
-        <Fold title="几项指标一起看，谁离目标远" icon={Activity} tone="role-2" summary={drawable.length ? `已选 ${ovlSel.length} 项，画出 ${drawable.length} 项` : `已选 ${ovlSel.length} 项，趋势数据不足`}>
+        <Fold title="这几项相对目标在变好还是变坏" icon={Activity} tone="role-2" summary={drawnCount ? `已选 ${ovlSel.length} 项，画出 ${drawnCount} 项` : `已选 ${ovlSel.length} 项，没有走势可画`}>
           <div className="rd-stack">
             <div role="group" aria-label="要比的指标" className="rd-filter-more-row">
               {KPIS.map((item, index) => {
@@ -641,18 +651,33 @@ export function L1Kpi({ ctx, onExportSource, title, summary, actions }: { ctx: L
               })}
             </div>
             <p className="rd-note">至少留一项。对比多个指标的趋势，观察运营阶段切换后的变化；原因可到「运营阶段状态」或「运营阶段设置」查看。按行为记录中的运营阶段统计。</p>
-            {drawable.length
-              ? <TrendLines
+            {drawable.length > 0 && (
+              <>
+                <TrendLines
                   label="多个关键指标的对比趋势"
                   ticks={WEEKS}
                   format={(value) => value.toFixed(0)}
                   series={drawable.map(({ item, slot, values }) => ({ key: String(item.n), label: `#${item.n} ${operatorCopyText(item.name)}`, slot, values }))}
-                  marks={[{ key: "target", text: "目标线 = 各自目标值(指数 100)", value: 100, tone: "ok" }]}
+                  marks={[{ key: "target", text: "各自目标 = 100", value: 100, tone: "ok" }]}
                   event={phaseEvent}
                 />
-              : <p className="rd-note">当前所选指标没有足够的趋势数据，暂时无法画出对比曲线。</p>}
-            {drawable.length > 0 && <p className="rd-note">纵轴 = 实际值 ÷ 目标值(目标线 100)</p>}
-            {drawable.length > 0 && skipped.length > 0 && <p className="rd-note">没有画：{skipped.map(({ item }) => `#${item.n}`).join(" ")}，趋势数据不足。</p>}
+                <p className="rd-note">高于 100 是好于目标。越高越好的指标算实际值 ÷ 目标值，越低越好的算目标值 ÷ 实际值，只看各自的走向，不比谁离目标远。</p>
+              </>
+            )}
+            {bandDrawable.map((item) => (
+              <Panel key={item.n} plain headingLevel={3} title={`${operatorCopyText(item.name)}有没有在健康带里`} sub={`健康带 ${tgtShort(item)}，没有单一目标，按真实值画`}>
+                <TrendLines
+                  label={`${operatorCopyText(item.name)}和健康带`}
+                  ticks={WEEKS}
+                  format={(value) => `${Number(value.toFixed(1))}${unitText(item)}`}
+                  series={[{ key: String(item.n), label: operatorCopyText(item.name), slot: 2, values: item.spark }]}
+                  marks={[{ key: "low", text: `下限 ${item.band?.[0]}${unitText(item)}`, value: item.band?.[0] ?? 0, tone: "ok" }, { key: "high", text: `上限 ${item.band?.[1]}${unitText(item)}`, value: item.band?.[1] ?? 0, tone: "ok" }]}
+                  event={phaseEvent}
+                />
+              </Panel>
+            ))}
+            {drawnCount === 0 && <p className="rd-note">当前所选指标没有足够的趋势数据，暂时无法画出对比曲线。</p>}
+            {drawnCount > 0 && skipped.length > 0 && <p className="rd-note">没有画：{skipped.map((item) => `#${item.n}`).join(" ")}，趋势数据不足或每段都是 0。</p>}
           </div>
         </Fold>
 
