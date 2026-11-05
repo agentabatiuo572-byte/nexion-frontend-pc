@@ -496,7 +496,7 @@ const REVIEW_BRIEF: Record<D2ReviewAction, { impact: string; check: string }> = 
 const REVIEW_UNDO: Record<D2ReviewAction, string> = {
   APPROVE: "打款前可以冻结，打款后不能撤销",
   DELAY: "到复查时间前不能改，到时间自动回到待审核",
-  FREEZE: "财务负责人可以解冻，解冻后回到待审核",
+  FREEZE: "财务负责人或风控主管可以解冻，解冻后回到待审核",
   UNFREEZE: "回到待审核后可以重新决定",
   REJECT: "不能撤销",
   REFUND: "不能撤销",
@@ -511,10 +511,10 @@ const REVIEW_TIME_EXPLAIN: Partial<Record<D2ReviewAction, string>> = {
 /** 谁能处理：按角色权限种子和后端的角色校验写（B9）。 */
 const ACTION_ROLE: Record<D2ReviewAction, string> = {
   APPROVE: "财务或财务负责人",
-  DELAY: "财务、财务负责人或风控",
-  REJECT: "财务、财务负责人或风控",
-  FREEZE: "财务负责人",
-  UNFREEZE: "财务负责人",
+  DELAY: "财务、财务负责人、风控或风控主管",
+  REJECT: "财务、财务负责人、风控或风控主管",
+  FREEZE: "财务负责人或风控主管",
+  UNFREEZE: "财务负责人或风控主管",
   REFUND: "财务负责人",
 };
 
