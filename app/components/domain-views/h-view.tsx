@@ -10,7 +10,7 @@
  * amplifies 仅放大流出方向(放松 dial / 升奖励 / 升概率 / 升 NEX 奖励 / 降门槛 / 真实奖)。
  * 统一来源:后端 /api/admin/growth/* 读模型。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import "./h-domain.css";
 import { OperationConfirmModal, useToast } from "./design-kit";
@@ -25,7 +25,7 @@ import H8ReferralRewards from "./h-tabs/h8-referral-rewards";
 import H9PublicStats from "./h-tabs/h9-public-stats";
 import H4Promotions from "./h-tabs/h4-promotions";
 import type { ConfirmReq, HCtx, ActionConfirmReq } from "./h-tabs/types";
-import { fetchH1Rhythm, describeH1Schedule, type H1RhythmOverview } from "@/lib/admin/h-client";
+import { describeH1Schedule, type H1RhythmOverview } from "@/lib/admin/h-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
@@ -54,19 +54,6 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
     can,
   };
 
-  useEffect(() => {
-    if (tab !== "H1") return;
-    let cancelled = false;
-    fetchH1Rhythm()
-      .then((next) => {
-        if (!cancelled) setRhythm(next);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [tab]);
-
   const right = tab === "H1" && rhythm
     ? <span className="f-live"><span className="dot" />{`${rhythm.currentPhase} · 第 ${rhythm.currentMonth}/${rhythm.totalMonths} 月 · ${describeH1Schedule(rhythm.schedule)}`}</span>
     : null;
@@ -75,7 +62,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
     <div className={tab === "H4" ? "hdom" : "dkpage hdom"}>
       {tab !== "H4" && <DomainHeader {...meta} right={right} />}
 
-      {tab === "H1" && <H1Phase ctx={ctx} />}
+      {tab === "H1" && <H1Phase ctx={ctx} onRhythmChange={setRhythm} />}
       {tab === "H2" && <H2Trial ctx={ctx} />}
       {tab === "H3" && <H3QuestEvents ctx={ctx} />}
       {tab === "H4" && <H4Promotions ctx={ctx} legacy={<><DomainHeader {...meta} right={right} /><H4ActivityCenter ctx={ctx} /></>} />}

@@ -285,6 +285,7 @@ export interface D2Withdrawal {
   asset: string;
   chain: string;
   amount: number;
+  addressVerificationRequired: boolean | null;
   fee: number;
   targetAddress: string;
   riskDecisionId?: number | null;
@@ -1282,6 +1283,7 @@ function normalizeWithdrawal(value: unknown): D2Withdrawal {
     id,
     userId,
     amount,
+    addressVerificationRequired: typeof row.addressVerificationRequired === "boolean" ? row.addressVerificationRequired : null,
     fee,
     withdrawalNo: d2String(row.withdrawalNo, "withdrawal.withdrawalNo"),
     asset: d2String(row.asset, "withdrawal.asset"),
@@ -2307,7 +2309,7 @@ export async function updateD6FxQuote(
 
 /** Legacy name retained for B1 callers; the authority and endpoint are owned by B1. */
 export async function updateD3Thresholds(
-  values: { redlinePct?: string; healthyPct?: string; runRiskPct?: string },
+  values: { redlinePct?: string; healthyPct?: string; runRiskPct?: string; expectedVersion?: number },
   reason: string,
   operator: string,
   idempotencyKey?: string,
@@ -2485,17 +2487,18 @@ export type D5OwnedChanges = Partial<Pick<D5Params,
   "dailyLimitCount" | "maxBalanceRatio" | "networkConfirmFeeUsd" | "networkEnabled" | "nexFeeOffsetRate"
   | "smallAmountThresholdUsd" | "payoutSlaHours">>;
 
+export function d5WithdrawalLimitsValues(changes: D5OwnedChanges, expectedVersion: number) {
+  const { maxBalanceRatio, ...values } = changes;
+  return { ...values, balanceMaxRatio: maxBalanceRatio, expectedVersion };
+}
+
 export async function updateD5WithdrawalLimits(
   changes: D5OwnedChanges,
   expectedVersion: number,
   reason: string,
   operator: string,
 ) {
-  const payload: Record<string, unknown> = { ...changes, expectedVersion, reason, operator };
-  if (Object.prototype.hasOwnProperty.call(payload, "maxBalanceRatio")) {
-    payload.balanceMaxRatio = payload.maxBalanceRatio;
-    delete payload.maxBalanceRatio;
-  }
+  const payload = { ...d5WithdrawalLimitsValues(changes, expectedVersion), reason, operator };
   return normalizeD5Params(await apiRequest<Record<string, unknown>>("withdraw", "/limits", {
     method: "PUT",
     body: JSON.stringify(payload),

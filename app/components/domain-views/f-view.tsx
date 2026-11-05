@@ -509,6 +509,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f1ConfigValues: f1Overview?.configValues ?? {},
     promotionRecords: f1Promotions.items,
     promotionTotal: f1Promotions.total,
+    monthlyPromotionCount: f1Overview?.monthlyPromotionCount ?? null,
     promotionNextCursor: f1Promotions.nextCursor,
     payoutRecords: f1Payouts.items,
     payoutTotal: f1Payouts.total,

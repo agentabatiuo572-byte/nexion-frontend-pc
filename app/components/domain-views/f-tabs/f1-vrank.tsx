@@ -217,7 +217,8 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     try {
       const parsedTitles = JSON.parse(titlesRaw);
       for (const r of rows) {
-        if (typeof parsedTitles[r.v] === "string") titlesByLevel[r.v] = parsedTitles[r.v];
+        const title = parsedTitles?.[r.v];
+        if (typeof title === "string" && title.trim()) titlesByLevel[r.v] = title.trim();
       }
     } catch { /* schema 异常留空,提交时后端 validateVrankTitles 兜底 */ }
   }
@@ -302,7 +303,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       <div className="f-stats">
         <div className="f-stat"><div className="k">总会员</div><div className="v">{totalMembers.toLocaleString()}</div><div className="sub">含 V0 {v0Pop.toLocaleString()}</div></div>
         <div className="f-stat ok"><div className="k">V3+ 高价值</div><div className="v">{v3plus}</div><div className="sub">约占 {v3plusPct}%</div></div>
-        <div className="f-stat cyan"><div className="k">本月晋升</div><div className="v">{ctx.promotionTotal.toLocaleString()}</div><div className="sub">本月晋升人次</div></div>
+        <div className="f-stat cyan"><div className="k">本月晋升</div><div className="v">{ctx.monthlyPromotionCount?.toLocaleString() ?? "—"}</div><div className="sub">本月晋升人次</div></div>
         <div className="f-stat cyan"><div className="k">已配奖励等级</div><div className="v">{configuredLevels}</div><div className="sub">共 {rows.length} 级</div></div>
       </div>
 

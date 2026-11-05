@@ -1,7 +1,7 @@
 "use client";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { PaginationExemptionList } from "../design-kit";
 import {
@@ -76,7 +76,10 @@ function dialAmplifies(key: string, before: string, after: string) {
   return next > current;
 }
 
-export default function H1Phase({ ctx }: { ctx: HCtx }) {
+export default function H1Phase({ ctx, onRhythmChange }: {
+  ctx: HCtx;
+  onRhythmChange: (rhythm: H1RhythmOverview) => void;
+}) {
   const { toast, openActionConfirm, openConfirm } = ctx;
   const canWrite = ctx.can("growth_h1_write");
   const canControlWrite = ctx.can("growth_h1_control_pin_write");
@@ -86,17 +89,33 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deepLink, setDeepLink] = useState<{ phase: string; dial: string } | null>(null);
+  const loadSequence = useRef(0);
+
+  const applyPhaseResponse = (next: Record<string, unknown>) => {
+    const updated = next as H1Model;
+    setModel(updated);
+    onRhythmChange(updated.rhythm);
+  };
+
+  const applyRhythm = (next: H1RhythmOverview) => {
+    loadSequence.current += 1;
+    setModel((current) => current && { ...current, rhythm: next });
+    onRhythmChange(next);
+    setLoading(false);
+  };
 
   const reload = async () => {
+    const seq = ++loadSequence.current;
     setLoading(true);
     try {
       const next = await fetchH1Phases();
-      setModel(next as H1Model);
+      if (seq !== loadSequence.current) return;
+      applyPhaseResponse(next);
       setError(null);
     } catch (err) {
-      setError(displayAdminError(err));
+      if (seq === loadSequence.current) setError(displayAdminError(err));
     } finally {
-      setLoading(false);
+      if (seq === loadSequence.current) setLoading(false);
     }
   };
 
@@ -143,10 +162,6 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
     };
   }, [currentMonth, monthlyRows]);
 
-  const applyPhaseResponse = (next: Record<string, unknown>) => {
-    setModel(next as H1Model);
-  };
-
   const openTotalMonths = () => {
     if (!rhythm) return;
     openActionConfirm({
@@ -157,8 +172,8 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
       run: async (reason, value) => {
         if (!value) return;
         const next = await updateH1RhythmParam("totalMonths", value, reason, currentAdminOperator());
-        const phases = await fetchH1Phases();
-        setModel({ ...(phases as H1Model), rhythm: next });
+        applyRhythm(next);
+        applyPhaseResponse(await fetchH1Phases());
         toast(`运营总月数已改为 ${next.totalMonths} 个月`);
       },
     });
@@ -197,15 +212,13 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
         if (!currentMonthChanged && !progressChanged) {
           throw new Error("进度没有变化，本次没有提交");
         }
-        let overview = rhythm;
         if (currentMonthChanged) {
-          overview = await updateH1RhythmParam("currentMonth", form.currentMonth, reason, currentAdminOperator());
+          applyRhythm(await updateH1RhythmParam("currentMonth", form.currentMonth, reason, currentAdminOperator()));
         }
         if (progressChanged) {
-          overview = await updateH1RhythmParam("phaseProgressPct", form.phaseProgressPct, reason, currentAdminOperator());
+          applyRhythm(await updateH1RhythmParam("phaseProgressPct", form.phaseProgressPct, reason, currentAdminOperator()));
         }
-        const phases = await fetchH1Phases();
-        setModel({ ...(phases as H1Model), rhythm: overview });
+        applyPhaseResponse(await fetchH1Phases());
         toast("当前进度已更新");
       },
     });

@@ -275,18 +275,25 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
             <span className="sub">· 每日签到奖励和幸运倍率</span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
-            {model.rules.map((rule) => (
-              <div className="p-row" key={rule.key}>
-                <div className="k">
-                  {operatorCopyText(rule.name)}
-                  {rule.sub && <small>{operatorCopyText(rule.sub)}</small>}
+            {model.rules.map((rule) => {
+              const fixedLuckyCap = rule.key === "luckyMultiplierMax";
+              return (
+                <div className="p-row" key={rule.key}>
+                  <div className="k">
+                    {operatorCopyText(rule.name)}
+                    {rule.sub && <small>{operatorCopyText(rule.sub)}</small>}
+                  </div>
+                  <span className="v">{fixedLuckyCap ? "2×" : text(rule.cur)}</span>
+                  {fixedLuckyCap ? (
+                    <span className="bdg dim">只读</span>
+                  ) : (
+                    <button className={`l-btn sm${rule.hot ? " mc" : ""}`} aria-label={`调整 ${operatorCopyText(rule.name)}`} onClick={() => openRule(rule)} disabled={!canRuleWrite}>
+                      调整
+                    </button>
+                  )}
                 </div>
-                <span className="v">{text(rule.cur)}</span>
-                <button className={`l-btn sm${rule.hot ? " mc" : ""}`} aria-label={`调整 ${operatorCopyText(rule.name)}`} onClick={() => openRule(rule)} disabled={!canRuleWrite}>
-                  调整
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 

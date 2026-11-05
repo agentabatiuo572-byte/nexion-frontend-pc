@@ -10,6 +10,7 @@ import { BPageHeader } from "../b-page-header";
 import { BDomainDataState } from "@/app/components/dashboard/b-domain-state";
 import { useToast } from "@/app/components/domain-views/design-kit";
 import {
+  fetchB5Radar,
   acknowledgeB5Inbox,
   fetchB5Inbox,
   fetchB5Subscription,
@@ -25,9 +26,12 @@ import {
 } from "@/lib/admin/b5-client";
 import { formatB5RiskLight, formatB5WithdrawalState } from "@/lib/admin/b5-display-labels";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { pendingConfigApproval, submitConfigApproval } from "@/lib/admin/withdrawal-config-approval";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { B5RestoredInsights } from "@/app/components/dashboard/restored-b-insights";
 import { canAccessCrossDomainPath } from "@/lib/admin/cross-domain-authority";
+import { ThresholdComparison } from "../threshold-comparison";
 
 /** B5 阈值 / 订阅 / 分类处理共用一张表,槽位分命名空间(分类处理槽位带维度 = 目标对象)。
  *  阈值与订阅额外把提交值 + 版本当输入指纹:改了值必须换新命令号,否则后端按旧号去重,
@@ -76,12 +80,14 @@ export default function RiskRadarPage() {
   const canTriage = authorities.includes("overview_b5_triage");
   const canCross = (path: string) => canAccessCrossDomainPath(path, role, authorities);
   const [toastNode, setToast] = useToast();
-  const [thresholdOpen, setThresholdOpen] = useState(false);
+  const [threshold, setThreshold] = useState<Pick<B5Radar["bankrun"], "yellowPct" | "redPct" | "version"> | null>(null);
   const [yellowInput, setYellowInput] = useState("");
   const [redInput, setRedInput] = useState("");
   const [reason, setReason] = useState("");
-  const [preview, setPreview] = useState<{ light: string } | null>(null);
+  const [preview, setPreview] = useState<{ light: string; key: string } | null>(null);
   const [previewError, setPreviewError] = useState("");
+  const [thresholdError, setThresholdError] = useState("");
+  const [approvalRecovery, setApprovalRecovery] = useState<"lookup" | "retry" | null>(null);
   const [savingThreshold, setSavingThreshold] = useState(false);
   const [subscription, setSubscription] = useState({ inApp: true, email: false, webhook: false, webhookUrl: "" });
   const [savedSubscription, setSavedSubscription] = useState(subscription);
@@ -137,19 +143,34 @@ export default function RiskRadarPage() {
   const thresholdValid = Number.isFinite(yellowPct) && yellowPct >= 5 && yellowPct <= 50
     && Number.isFinite(redPct) && redPct >= 10 && redPct <= 80 && redPct > yellowPct;
   const reasonValid = reason.trim().length >= 8 && reason.trim().length <= 200;
+  const requiresApproval = !!threshold && redPct > threshold.redPct;
+  const staleThreshold = !!threshold && radar.data?.bankrun.version !== threshold.version;
+  const thresholdVersion = threshold?.version;
+  const ratio24h = radar.data?.bankrun.ratio24h;
+  const withdraw24hUsdt = radar.data?.bankrun.withdraw24hUsdt;
+  const previewKey = thresholdValid && !staleThreshold && thresholdVersion !== undefined
+    ? JSON.stringify([yellowPct, redPct, thresholdVersion])
+    : "";
+  const previewReady = !!preview && preview.key === previewKey && !previewError;
+  const pendingApproval = session && pendingConfigApproval("B5", session.adminId);
+  const lookupOnly = approvalRecovery === "lookup" || !!(pendingApproval && pendingApproval.expiresAt <= Date.now());
+  const thresholdLocked = savingThreshold || lookupOnly;
+  const canSubmitThreshold = canThreshold && !!session && reasonValid && previewReady && !thresholdLocked
+    && (!approvalRecovery || requiresApproval);
 
   useEffect(() => {
-    if (!thresholdOpen || !radar.data || !thresholdValid) {
+    if (!previewKey || thresholdVersion === undefined) {
       setPreview(null);
+      setPreviewError("");
       return;
     }
     let alive = true;
     setPreview(null);
     setPreviewError("");
     const timer = window.setTimeout(() => {
-      previewB5Thresholds(yellowPct, redPct, radar.data!.bankrun.version)
+      previewB5Thresholds(yellowPct, redPct, thresholdVersion)
         .then((value) => {
-          if (alive) setPreview({ light: value.light });
+          if (alive && value.expectedVersion === thresholdVersion) setPreview({ light: value.light, key: previewKey });
         })
         .catch((cause) => {
           if (alive) setPreviewError(displayAdminError(cause));
@@ -159,7 +180,7 @@ export default function RiskRadarPage() {
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [thresholdOpen, thresholdValid, yellowPct, redPct, radar.data]);
+  }, [previewKey, thresholdVersion, yellowPct, redPct, ratio24h, withdraw24hUsdt]);
 
   const subscriptionChanged = useMemo(
     () => JSON.stringify(subscription) !== JSON.stringify(savedSubscription),
@@ -253,28 +274,50 @@ export default function RiskRadarPage() {
     setReason("");
     setPreview(null);
     setPreviewError("");
-    setThresholdOpen(true);
+    setThresholdError("");
+    setApprovalRecovery(pendingApproval ? "lookup" : null);
+    setThreshold(data.bankrun);
   };
-  const submitThreshold = async () => {
-    if (!thresholdValid || !reasonValid || !preview) return;
+  const submitThreshold = async (recover = false) => {
+    if (!session || !threshold || !canThreshold || savingThreshold || (!recover && !canSubmitThreshold)) return;
     setSavingThreshold(true);
-    setPreviewError("");
-    const commandKey = b5Commands.resolve(
-      THRESHOLD_SLOT,
-      JSON.stringify([yellowPct, redPct, data.bankrun.version, reason.trim()]),
-      () => `b5-threshold-${crypto.randomUUID()}`,
-    );
+    setThresholdError("");
+    const approving = requiresApproval || recover;
     try {
-      const next = await updateB5Thresholds(
-        yellowPct, redPct, data.bankrun.version, reason.trim(), operator, commandKey,
-      );
-      b5Commands.forget(THRESHOLD_SLOT);
-      radar.setData(next);
-      setThresholdOpen(false);
-      setToast("提现压力红线已更新");
+      if (approving) {
+        const result = await submitConfigApproval("B5", session, {
+          expectedVersion: threshold.version, yellowPct, redPct,
+        }, reason.trim(), fetchB5Radar, recover);
+        if (!result) {
+          setApprovalRecovery("retry");
+          setThresholdError("暂未查到原审批单，可稍后再查，或按原配置和理由重试。");
+          return;
+        }
+        radar.setData(result.active);
+        setToast(result.acknowledgement);
+      } else {
+        const commandKey = b5Commands.resolve(
+          THRESHOLD_SLOT,
+          JSON.stringify([yellowPct, redPct, threshold.version, reason.trim()]),
+          () => `b5-threshold-${crypto.randomUUID()}`,
+        );
+        const next = await updateB5Thresholds(
+          yellowPct, redPct, threshold.version, reason.trim(), operator, commandKey,
+        );
+        b5Commands.forget(THRESHOLD_SLOT);
+        radar.setData(next);
+        setToast("提现压力阈值已更新");
+      }
+      setThreshold(null);
     } catch (cause) {
-      if (!(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(THRESHOLD_SLOT);
-      setPreviewError(displayAdminError(cause));
+      if (isA2OutcomeUncertainError(cause)) {
+        setApprovalRecovery("lookup");
+        setThresholdError(`${cause.message} 命令号：${cause.commandKey}`);
+      } else {
+        if (!approving && !(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(THRESHOLD_SLOT);
+        if (approving && !pendingConfigApproval("B5", session.adminId)) setApprovalRecovery(null);
+        setThresholdError(displayAdminError(cause));
+      }
     } finally {
       setSavingThreshold(false);
     }
@@ -478,27 +521,38 @@ export default function RiskRadarPage() {
         这页只用来查看风险，处理请到对应页面。提现压力超过红线会自动暂停提现，事后请补记处理结论。
       </p>
 
-      {thresholdOpen && (
-        <div className="b5-modal-mask" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setThresholdOpen(false)}>
-          <div className="b5-modal" role="dialog" aria-modal="true" aria-labelledby="b5-threshold-title">
+      {threshold && (
+        <div className="b5-modal-mask" role="presentation" onMouseDown={(event) => !savingThreshold && event.target === event.currentTarget && setThreshold(null)}>
+          <div className="b5-modal" role="dialog" aria-modal="true" aria-busy={savingThreshold} aria-labelledby="b5-threshold-title">
             <h2 id="b5-threshold-title">调整提现压力黄线 / 红线</h2>
+            {requiresApproval && <div className="alertbar warn b5-approval-notice">
+              <AlertTriangle size={16} aria-hidden="true" />
+              <div><b>放宽配置 · 批准后生效</b>
+                <div>调高红线后，自动暂停提现会更晚触发。另一位超管批准前，当前红线仍为 {threshold.redPct}%。</div>
+              </div>
+            </div>}
             <p>提现压力 = 24 小时提现 ÷ 可用储备。超过红线会触发最高级告警并自动暂停提现。当前提现压力 {pct(data.bankrun.ratio24h)}；提现与充值比率 {pct(data.bankrun.pressureRatio)}（{data.bankrun.pressureCalculable ? `红线 ${pct(data.bankrun.pressureRedLine)}，只提醒，不在这里调整` : "近 24 小时没有充值，暂无法计算"}）</p>
-            <div className="b5-threshold-fields">
-              <label>黄线（5%–50%）<input value={yellowInput} onChange={(event) => setYellowInput(event.target.value)} inputMode="decimal" /></label>
-              <label>红线（10%–80%）<input value={redInput} onChange={(event) => setRedInput(event.target.value)} inputMode="decimal" /></label>
-            </div>
+            <ThresholdComparison approval={requiresApproval} fields={[
+              { label: "黄线（5%–50%）", current: threshold.yellowPct, input: <input className="w-full" aria-label="黄线（5%–50%）" value={yellowInput} disabled={thresholdLocked} onChange={(event) => setYellowInput(event.target.value)} inputMode="decimal" /> },
+              { label: "红线（10%–80%）", current: threshold.redPct, input: <input className="w-full" aria-label="红线（10%–80%）" value={redInput} disabled={thresholdLocked} onChange={(event) => setRedInput(event.target.value)} inputMode="decimal" /> },
+            ]} />
             {!thresholdValid && <div className="b5-error">红线须高于黄线，且都在允许范围内。</div>}
-            <label className="b5-reason">调整理由（8–200 字）<textarea value={reason} maxLength={200} onChange={(event) => setReason(event.target.value)} /></label>
             <div className="b5-preview">
-                  {preview ? <>按新的黄线 / 红线，当前状态为 <b>{formatB5RiskLight(preview.light)}</b></> : "正在计算…"}
-              {redPct > data.bankrun.redPct && <p>注意：调高红线后，自动暂停提现会更晚触发。</p>}
+              {previewReady ? <>按新的黄线 / 红线，当前状态为 <b>{formatB5RiskLight(preview.light)}</b></> : previewKey && !previewError ? "正在计算…" : "暂无法预览拟调整阈值。"}
             </div>
-            {previewError && <div className="b5-error">{previewError}</div>}
+            <label className="b5-reason">调整理由（8–200 字）<textarea value={reason} disabled={thresholdLocked} maxLength={200} onChange={(event) => setReason(event.target.value)} /></label>
+            {staleThreshold && <div className="b5-error" role="alert">当前阈值已更新，请关闭弹窗后重新调整。</div>}
+            {previewError && <div className="b5-error" role="alert">{previewError}</div>}
+            {thresholdError && <div className="b5-error" role="alert">{thresholdError}</div>}
+            {approvalRecovery === "lookup" && !thresholdError && <p role="status">上一次审批结果待确认，请查询原操作。</p>}
             <div className="b5-modal-actions">
-              <button className="secondary" onClick={() => setThresholdOpen(false)}>取消</button>
-              <button disabled={!thresholdValid || !reasonValid || !preview || savingThreshold} onClick={() => void submitThreshold()}>
-                {savingThreshold ? "提交中…" : "确认调整"}
-              </button>
+              <button className="secondary" disabled={savingThreshold} onClick={() => setThreshold(null)}>取消</button>
+              {approvalRecovery && <button className={lookupOnly ? "b5-approval-submit" : "secondary"} disabled={savingThreshold || !canThreshold} onClick={() => void submitThreshold(true)}>
+                {savingThreshold ? "查询中…" : "查询原操作"}
+              </button>}
+              {!lookupOnly && <button className={requiresApproval ? "b5-approval-submit" : undefined} disabled={!canSubmitThreshold} onClick={() => void submitThreshold()}>
+                {savingThreshold ? "提交中…" : approvalRecovery ? "按原操作重试" : requiresApproval ? "提交审批" : "确认调整"}
+              </button>}
             </div>
           </div>
         </div>

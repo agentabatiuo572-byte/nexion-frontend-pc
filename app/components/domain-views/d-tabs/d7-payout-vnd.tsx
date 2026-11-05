@@ -13,8 +13,10 @@ import {
   type PayoutVndValues,
   type PayoutVndWritableField,
 } from "@/lib/admin/payout-vnd-contract";
+import { submitWithdrawalConfigApproval, withdrawalApprovalDisabledReason } from "@/lib/admin/withdrawal-config-approval";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { KV } from "../design-kit";
 import type { DCtx } from "./types";
 
 type Drafts = Record<PayoutVndWritableField, string>;
@@ -107,8 +109,9 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const liveRates = derivePayoutVndRates(config);
   const draftRates = derivePayoutVndRates({ ...config, sellSpreadPct: parsed.values.sellSpreadPct });
   const inverted = Number.isFinite(draftRates.sell) && draftRates.sell >= draftRates.buy;
-  const changed = (Object.keys(PAYOUT_VND_FIELDS) as PayoutVndWritableField[])
-    .some((key) => parsed.values[key] !== config[key]);
+  const changedFields = (Object.keys(PAYOUT_VND_FIELDS) as PayoutVndWritableField[])
+    .filter((key) => parsed.values[key] !== config[key]);
+  const changed = changedFields.length > 0;
   const invalid = Object.keys(parsed.errors).length > 0 || parsed.cross.length > 0;
   const amplifies = !invalid && amplification(config, parsed.values);
 
@@ -119,25 +122,59 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   };
 
   const submit = (forceInverted = false) => {
+    if (!session) return;
+    const submitApproval = async (reason: string, lookupOnly = false) => {
+      const result = await submitWithdrawalConfigApproval(
+        "D7", session, { ...parsed.values, expectedVersion: config.version, forceInverted }, reason, loadPayoutVndConfig, lookupOnly,
+      );
+      if (!result) return false;
+      applySnapshot(result.active);
+      toast(result.acknowledgement);
+      return true;
+    };
     openActionConfirm({
-      action: forceInverted ? "强制保存越南盾提现参数（价格倒挂）" : "调整越南盾提现参数",
+      action: forceInverted && !amplifies ? "强制保存越南盾提现参数（价格倒挂）" : "调整越南盾提现参数",
       detail: <>
-        <div>所有参数一起保存（版本 v{config.version} → v{config.version + 1}）。</div>
+        <div>{amplifies ? `批准后所有参数一起生效（当前版本 v${config.version}）。` : `所有参数一起保存（版本 v${config.version} → v${config.version + 1}）。`}</div>
         <div>预览：买入价 {formatVnd(draftRates.buy)} / 卖出价 {formatVnd(draftRates.sell)}。</div>
         <div>只影响之后的报价；用户还没提交的旧报价需要重新报价，已提交的订单金额不变。</div>
-        <div>{amplifies ? "这是放宽：平台会多付钱，提交时检查兑付覆盖率。" : "这是收紧，或不影响付款金额。"}</div>
+        <div>{amplifies ? "放宽配置须由另一位超管批准。" : "这是收紧，或不影响付款金额。"}</div>
         {forceInverted && <div><b>风险：卖出价不低于买入价，用户可能来回兑换套利。</b></div>}
       </>,
       amplifies,
+      approval: amplifies ? {
+        comparison: <>
+          {changedFields.map((key) => {
+            const { label, unit } = PAYOUT_VND_FIELDS[key];
+            const format = (value: number) => unit === "%" ? `${value.toFixed(2)}%` : `${value} ${unit}`;
+            return <KV key={key} k={<span style={{ color: "var(--ink-3)" }}>{label}</span>} v={<span style={{ fontSize: 14 }}>当前 {format(config[key])} → 拟改 {format(parsed.values[key])}</span>} />;
+          })}
+          {forceInverted && <div className="tiny" style={{ color: "var(--warning)" }}>风险：卖出价不低于买入价，用户可能来回兑换套利。</div>}
+        </>,
+        disabledReason: withdrawalApprovalDisabledReason(authorities),
+        recover: authorities.includes("platform_a2_read") ? (reason) => submitApproval(reason, true) : undefined,
+      } : undefined,
       reasonMin: 8,
       reasonMax: 200,
-      completionCopy: "提交后立即生效。",
+      completionCopy: amplifies
+        ? "另一位超管批准前，当前配置保持不变。批准后新报价使用新参数，未提交的旧报价需重新报价，已提交订单金额不变。"
+        : "提交后立即生效。",
       run: async (reason) => {
         setBusy(true);
         try {
+          if (amplifies) {
+            await submitApproval(reason);
+            return;
+          }
           applySnapshot(await updatePayoutVndConfig(parsed.values, config.version, reason, forceInverted));
           toast("越南盾提现参数已生效");
         } catch (caught) {
+          if (amplifies) {
+            if (caught instanceof Error && "backendMessage" in caught && caught.backendMessage === "D7_CONFIG_VERSION_CONFLICT") {
+              throw new Error("法币提现参数已被其他人员更新，当前输入已保留。请刷新并核对最新配置后重新提交。");
+            }
+            throw caught;
+          }
           const message = displayAdminError(caught);
           await reload();
           setError(message);

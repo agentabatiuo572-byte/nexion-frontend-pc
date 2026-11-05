@@ -765,7 +765,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     const regionLabel = dcForm.regionLabel.trim();
     const location = dcForm.location.trim();
     const displayName = dcForm.displayName.trim();
-    const sortOrder = Number(dcForm.sortOrder);
+    const sortOrder = Number(dcForm.sortOrder.trim() || "100");
     if (!editDcLocation && !dcLocation) { setToast("请填写数据中心编号"); return; }
     if (!regionLabel || !location || !displayName) { setToast("请填写区域、所在地和展示名称"); return; }
     if (!Number.isFinite(sortOrder) || sortOrder < 0) { setToast("请填写有效排序值"); return; }
@@ -1973,7 +1973,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 dcLocation: mc.dcForm.dcLocation.trim(), regionLabel: mc.dcForm.regionLabel.trim(),
                 oldDcLocation: mc.dc ?? mc.dcForm.dcLocation.trim(),
                 location: mc.dcForm.location.trim(), displayName: mc.dcForm.displayName.trim(),
-                status: mc.dcForm.status, sortOrder: Number(mc.dcForm.sortOrder) || 100,
+                status: mc.dcForm.status, sortOrder: Number(mc.dcForm.sortOrder),
               };
               const def = findHighOp(mc.isNew ? "e5_datacenter_create" : "e5_datacenter_update")!;
               await propose(ctx.toast, {

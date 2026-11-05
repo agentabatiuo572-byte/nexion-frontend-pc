@@ -25,8 +25,9 @@ import {
   SlidersHorizontal,
   TrendingDown,
 } from "lucide-react";
-import { acknowledgeBDomainAlert, useBDomainDashboard } from "@/lib/admin/b-client";
+import { acknowledgeBDomainAlert, fetchBDomainDashboard, useBDomainDashboard, type BLedger } from "@/lib/admin/b-client";
 import { createD3Injection, downloadD3Csv, updateD3Thresholds } from "@/lib/admin/d-client";
+import { pendingConfigApproval, submitConfigApproval } from "@/lib/admin/withdrawal-config-approval";
 import { displayAdminError, guardedFetch } from "@/lib/admin/error-messages";
 import { fmtUsd, fmtUsdCompact, fmtPct, fmtNum } from "@/lib/format";
 import { Sparkline as MiniSparkline } from "@/app/components/kit/kpi-stat-card";
@@ -39,6 +40,7 @@ import {
 } from "@/app/components/domain-views/design-kit";
 import { BDomainDataState, BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { ThresholdComparison } from "../threshold-comparison";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -46,17 +48,20 @@ const ALERT_ID = "coverage-redline"; // 当前唯一 P0:覆盖率跌破/逼近�
 const SCALE_MAX = 120; // 仪表标尺上限
 
 // 驾驶舱决策动作(高敏,均走操作确认)。
-type Mc = { kind: "threshold" | "injection" | "ack" | "export"; idempotencyKey: string };
+type Mc =
+  | { kind: "threshold"; idempotencyKey: string; baseline: Pick<BLedger, "redlinePct" | "healthyPct" | "thresholdVersion"> }
+  | { kind: "injection" | "ack" | "export"; idempotencyKey: string };
 
 type ExposurePoint = { date: string; netExposureUsdt: number };
 
-function command(kind: Mc["kind"]): Mc {
+function command(kind: Exclude<Mc["kind"], "threshold">): Mc {
   return { kind, idempotencyKey: `b1-${kind}-${crypto.randomUUID()}` };
 }
 
 export default function DualLedgerPage() {
   const bDomain = useBDomainDashboard();
   const { ledger: LEDGER, riskRadar, alerts } = bDomain;
+  const session = useAdminAuth((s) => s.session);
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
   const authorities = useAdminAuth((s) => s.session?.authorities ?? []);
   const canConfigureThresholds = authorities.includes("overview_b1_redline_write");
@@ -248,18 +253,42 @@ export default function DualLedgerPage() {
   // 应付负债科目(占比派生)
   const liabRows = accounts.map((a) => ({ ...a, pct: liabilitiesUsd > 0 ? round2((a.amount / liabilitiesUsd) * 100) : 0 }));
 
+  const thresholdBaseline = mc?.kind === "threshold" ? mc.baseline : null;
+  const pendingApproval = session && pendingConfigApproval("B1", session.adminId);
+  const submitThresholdApproval = async (reason: string, values: BusinessFormValue, lookupOnly = false) => {
+    if (!session || !thresholdBaseline) return false;
+    const result = await submitConfigApproval("B1", session, {
+      expectedVersion: thresholdBaseline.thresholdVersion ?? 0,
+      redlinePct: round2(Number(values.redlinePct)),
+      healthyPct: round2(Number(values.healthyPct)),
+    }, reason, fetchBDomainDashboard, lookupOnly);
+    if (!result) return false;
+    setToast(result.acknowledgement);
+    setActionConfirm(null);
+    return true;
+  };
+
   const onMcConfirm = async (reason: string, _newValue?: string, businessValue?: BusinessFormValue) => {
     if (!mc) return;
     const current = mc;
     try {
       if (current.kind === "threshold") {
+        if (!canConfigureThresholds || !session) throw new Error("当前账号缺少设置兑付覆盖率阈值的权限。");
         const redline = round2(Number(businessValue?.redlinePct));
         const healthy = round2(Number(businessValue?.healthyPct));
         if (!Number.isFinite(redline) || redline < 80 || redline > 150) throw new Error("红线必须在 80%–150%");
         if (!Number.isFinite(healthy) || healthy < 100 || healthy > 200) throw new Error("健康线必须在 100%–200%");
         if (healthy <= redline) throw new Error("健康线必须高于红线");
+        if (current.baseline.thresholdVersion !== LEDGER.thresholdVersion) {
+          throw new Error("当前阈值已更新，请关闭弹窗后重新调整。");
+        }
+        if (redline < current.baseline.redlinePct) {
+          if (current.baseline.thresholdVersion === null) throw new Error("暂未取得当前阈值版本，请刷新后重试。");
+          await submitThresholdApproval(reason, businessValue!);
+          return;
+        }
         await updateD3Thresholds(
-          { redlinePct: String(redline), healthyPct: String(healthy) },
+          { redlinePct: String(redline), healthyPct: String(healthy), expectedVersion: current.baseline.thresholdVersion ?? undefined },
           reason,
           operator,
           current.idempotencyKey,
@@ -483,7 +512,11 @@ export default function DualLedgerPage() {
                 <button
                   type="button"
                   className="thr"
-                  onClick={() => setActionConfirm(command("threshold"))}
+                  onClick={() => setActionConfirm({
+                    kind: "threshold",
+                    idempotencyKey: `b1-threshold-${crypto.randomUUID()}`,
+                    baseline: { redlinePct, healthyPct, thresholdVersion: LEDGER.thresholdVersion },
+                  })}
                   title="调整兑付覆盖率的红线和健康线，健康线须高于红线"
                 >
                   <span className="ic"><SlidersHorizontal size={14} /></span>
@@ -691,7 +724,31 @@ export default function DualLedgerPage() {
                 ? "填写实际到账金额和链上交易哈希或银行流水号，提交后储备和覆盖率会随之更新。"
                 : mc.kind === "export" ? "导出当前的对账明细。" : "确认已跟进当前的覆盖率告警。覆盖率已恢复健康时无需标记。"
           }
-          amplifies={mc.kind === "threshold"}
+          inlineApproval={thresholdBaseline ? {
+            pending: !!pendingApproval,
+            expired: !!pendingApproval && pendingApproval.expiresAt <= Date.now(),
+            disabledReason: thresholdBaseline.thresholdVersion !== LEDGER.thresholdVersion
+              ? "当前阈值已更新，请关闭弹窗后重新调整。"
+              : undefined,
+            resolve: (value) => value.redlinePct?.trim() && round2(Number(value.redlinePct)) < thresholdBaseline.redlinePct ? {
+              coverageCheckCopy: "降低红线会放宽资金操作的覆盖率门槛。提交和批准时按拟调整红线校验覆盖率。",
+              completionCopy: `另一位超管批准前，当前红线仍为 ${thresholdBaseline.redlinePct}%。`,
+              disabledReason: thresholdBaseline.thresholdVersion === null ? "暂未取得当前阈值版本，请刷新后重试。" : undefined,
+            } : undefined,
+            renderForm: (value, onChange, locked, approval) => (<>
+              <ThresholdComparison approval={approval} fields={[
+                { key: "redlinePct", label: "红线 (%)", current: thresholdBaseline.redlinePct, min: 80, max: 150 },
+                { key: "healthyPct", label: "健康线 (%)", current: thresholdBaseline.healthyPct, min: 100, max: 200 },
+              ].map(({ key, label, current, min, max }) => ({
+                label,
+                current,
+                input: <input className="fld w-full" aria-label={label} type="number" min={min} max={max} step={0.1} required
+                  disabled={locked} value={value[key]} onChange={(event) => onChange({ ...value, [key]: event.target.value })} />,
+              }))} />
+              <p style={{ color: "var(--ink-3)", fontSize: 14 }}>红线可设 80%–150%，健康线可设 100%–200%，健康线须高于红线。</p>
+            </>),
+            recover: (reason, value) => submitThresholdApproval(reason, value, true),
+          } : undefined}
           businessForm={
             mc.kind === "threshold"
               ? {
@@ -700,8 +757,8 @@ export default function DualLedgerPage() {
                   hint: "红线可设 80%–150%，健康线可设 100%–200%，健康线须高于红线。",
                   requireAnyChange: true,
                   fields: [
-                    { key: "redlinePct", label: "红线 (%)", current: String(effRedline), inputKind: "number", min: 80, max: 150, step: 0.1, required: true, showDiff: true },
-                    { key: "healthyPct", label: "健康线 (%)", current: String(healthyPct), inputKind: "number", min: 100, max: 200, step: 0.1, required: true, showDiff: true },
+                    { key: "redlinePct", label: "红线 (%)", current: String(mc.baseline.redlinePct), inputKind: "number", min: 80, max: 150, step: 0.1, required: true, showDiff: true },
+                    { key: "healthyPct", label: "健康线 (%)", current: String(mc.baseline.healthyPct), inputKind: "number", min: 100, max: 200, step: 0.1, required: true, showDiff: true },
                   ],
                 }
               : mc.kind === "injection"

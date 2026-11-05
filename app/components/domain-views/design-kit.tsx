@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
-import { fetchA2ReasonPolicy } from "@/lib/admin/a2-client";
+import { fetchA2ReasonPolicy, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
@@ -3410,7 +3410,22 @@ export type CoverageSnapshot = {
 };
 
 /* 操作确认弹窗 — 高敏动作确认 + 理由必填 + 可编辑「目标新值」(配置型调整);纯动作(放行/退款/封禁/pause)仅确认。 */
-export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; auditSink?: "a2" | "local-history"; briefKind?: OperatorBriefKind; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export type OperationApproval = {
+  comparison?: ReactNode;
+  disabledReason?: string;
+  recover?: (reason: string) => Promise<boolean>;
+  coverageCheckCopy?: string;
+  completionCopy?: string;
+};
+
+export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: {
+  resolve: (value: BusinessFormValue) => OperationApproval | undefined;
+  renderForm: (value: BusinessFormValue, onChange: (value: BusinessFormValue) => void, locked: boolean, approval: boolean) => ReactNode;
+  recover: (reason: string, value: BusinessFormValue) => Promise<boolean>;
+  pending?: boolean;
+  expired?: boolean;
+  disabledReason?: string;
+}; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; auditSink?: "a2" | "local-history"; briefKind?: OperatorBriefKind; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
   const [draftReason, setReason] = useState(pendingReason ?? "");
   const reason = pendingReason ?? draftReason;
@@ -3421,11 +3436,17 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const [businessSelectionLoading, setBusinessSelectionLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [approvalRecovery, setApprovalRecovery] = useState<"lookup" | "retry" | null>(inlineApproval?.pending ? "lookup" : null);
   const [authoritativeReasonMin, setAuthoritativeReasonMin] = useState<number | null>(null);
   const [authoritativeReasonMax, setAuthoritativeReasonMax] = useState<number | null>(null);
   const [reasonPolicyError, setReasonPolicyError] = useState<string | null>(null);
   const reasonFieldId = useId();
   const selectionRequestRef = useRef(0);
+  const approval = approvalSpec ?? inlineApproval?.resolve(businessValue);
+  const completionCopy = approval?.completionCopy ?? directCompletionCopy;
+  const recoverApproval = inlineApproval ? (reason: string) => inlineApproval.recover(reason, businessValue) : approval?.recover;
+  const approvalOnlyLookup = approvalRecovery === "lookup" || !!(approvalRecovery && inlineApproval?.expired);
+  const formLocked = submitting || approvalOnlyLookup;
   // 配置型调整:仅当调用方显式传 edit 才提供「目标新值」编辑控件并要求 newVal;纯动作 / 处置(放行 / 冻结 / 驳回 / pause)不传 edit → 仅确认。
   // 去除按动作名猜测的启发式正则(原 isAdjust/select 正则):既防 dispose 名含「调整 / 规则 / 启停…」误弹字段,也防 adjust 名不含触发词漏判;改为 by edit 显式契约。全域调用点已逐一显式传 edit(2026-06 跨域硬化)。
   const spec: EditSpec | null = edit ?? null;
@@ -3471,7 +3492,8 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
     : businessNewValue(activeBusinessForm, businessValue) ?? newVal;
   const editValueOk = isEditValueValid(spec, newVal);
   const uploadBlocked = Object.values(uploadStates).some(Boolean);
-  const canConfirm = reasonPolicyReady && !covBlocked && !businessSelectionLoading && !submitting && reasonOk && editValueOk && businessMissing.length === 0 && !uploadBlocked;
+  const canConfirm = reasonPolicyReady && !covBlocked && !approval?.disabledReason && !inlineApproval?.disabledReason && !businessSelectionLoading && !submitting && reasonOk && editValueOk && businessMissing.length === 0 && !uploadBlocked
+    && (!inlineApproval || !approvalRecovery || !!approval);
   useEffect(() => {
     let active = true;
     setAuthoritativeReasonMin(null);
@@ -3496,9 +3518,29 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
     } catch (error) {
       // The domain callback owns the detailed toast. Keep the form open and
       // consume the rejection so a rejected A2/K2 request never escapes as pageerror.
-      setSubmitError(operationConfirmErrorMessage(error));
+      if (approval && isA2OutcomeUncertainError(error)) {
+        setApprovalRecovery(recoverApproval ? "lookup" : "retry");
+        setSubmitError(inlineApproval ? `${error.message} 命令号：${error.commandKey}` : `提交结果暂未确认，可能已生成审批单。请查询原操作，或按原配置和理由重试。命令号：${error.commandKey}`);
+      } else {
+        setApprovalRecovery(null);
+        setSubmitError(operationConfirmErrorMessage(error));
+      }
     } finally {
       setPendingReason(getPendingReason?.());
+      setSubmitting(false);
+    }
+  };
+  const handleApprovalLookup = async () => {
+    if (!recoverApproval || submitting) return;
+    setSubmitting(true);
+    try {
+      if (!await recoverApproval(reason.trim())) {
+        setApprovalRecovery("retry");
+        setSubmitError("暂未查到原审批单，可稍后再查，或按原配置和理由重试。");
+      }
+    } catch (error) {
+      setSubmitError(isA2OutcomeUncertainError(error) ? error.message : operationConfirmErrorMessage(error));
+    } finally {
       setSubmitting(false);
     }
   };
@@ -3524,21 +3566,46 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
     }
   };
   return (
-    <Modal title={action} icon="shield" onClose={handleClose}
+    <Modal title={action} icon="shield" onClose={handleClose} busy={!!(approval || inlineApproval) && submitting}
       footer={<>
         <Btn disabled={submitting} onClick={handleClose}>取消</Btn>
-        <Btn variant="primary" disabled={!canConfirm} onClick={() => void handleConfirm()}>
-          <Icon name="check" size={15} /> {submitting ? "提交中…" : pendingReason !== undefined ? "重试原操作" : "确认提交"}
-        </Btn>
+        {approvalRecovery && recoverApproval && (
+          <Btn variant={approvalRecovery === "lookup" ? "primary" : undefined} disabled={submitting} onClick={() => void handleApprovalLookup()}>
+            {submitting ? "查询中…" : "查询原操作"}
+          </Btn>
+        )}
+        {!approvalOnlyLookup && (
+          <Btn variant="primary" disabled={!canConfirm} onClick={() => void handleConfirm()}>
+            <Icon name="check" size={15} /> {submitting ? "提交中…" : pendingReason !== undefined ? "重试原操作" : approvalRecovery === "retry" ? "按原操作重试" : approval ? "提交审批" : "确认提交"}
+          </Btn>
+        )}
       </>}>
-      <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={briefKind} />
+      {!approval && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={briefKind} />}
       {submitError && <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{submitError}</div>}
+      {inlineApproval?.disabledReason && <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>{inlineApproval.disabledReason}</div>}
+      {inlineApproval?.pending && approvalRecovery === "lookup" && !submitError && (
+        <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>上一次审批结果待确认，请查询原操作。</div>
+      )}
       {!reasonPolicyReady && (
         <div className="alertbar warn" role="alert" data-policy-state="fail-closed" style={{ marginBottom: 16 }}>
           {reasonPolicyError ?? "正在加载，稍候即可提交。"}
         </div>
       )}
-      {effectiveAmplifies && (
+      {approval && <>
+        {approval.comparison && <div className="tint" style={{ marginBottom: 14 }}>{approval.comparison}</div>}
+        <div className="alertbar warn" style={{ marginBottom: 14 }}>
+          <span className="ico" style={{ color: "var(--warning)" }}><Icon name="alert" size={16} /></span>
+          <div style={{ fontSize: 14, lineHeight: 1.5 }}>
+            <b style={{ color: "var(--warning)" }}>放宽配置 · 批准后生效</b>
+            <div>{completionCopy}</div>
+            <div>{approval.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。"}{covBlocked && "当前覆盖率低于红线，暂时无法提交。"}</div>
+            {coverage && <div>当前覆盖率 <b className="mono">{coverage.coverageRatio}%</b> · 红线 <span className="mono">{coverage.redlinePct}%</span></div>}
+            {approval.disabledReason && <div role="status">{approval.disabledReason}</div>}
+          </div>
+        </div>
+        <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} completionCopy={completionCopy} auditSink={auditSink} kind={briefKind} />
+      </>}
+      {effectiveAmplifies && !approval && (
         <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
           <span className="ico"><Icon name="alert" size={16} /></span>
           <div className="tiny">
@@ -3560,9 +3627,11 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
           </div>
         </div>
       )}
-      {completionCopy && <div className="tint tiny" style={{ marginBottom: 14 }}>{completionCopy}</div>}
+      {completionCopy && !approval && <div className="tint tiny" style={{ marginBottom: 14 }}>{completionCopy}</div>}
       {activeBusinessForm && (
-        <BusinessFormBlock spec={activeBusinessForm} value={businessValue} onChange={setBusinessValue} onSelectionChange={(next) => void handleBusinessSelectionChange(next)} onUploadStateChange={(key, state) => setUploadStates((current) => ({ ...current, [key]: state }))} />
+        inlineApproval ? inlineApproval.renderForm(businessValue, setBusinessValue, formLocked, !!approval) : (
+          <BusinessFormBlock spec={activeBusinessForm} value={businessValue} onChange={setBusinessValue} onSelectionChange={(next) => void handleBusinessSelectionChange(next)} onUploadStateChange={(key, state) => setUploadStates((current) => ({ ...current, [key]: state }))} />
+        )
       )}
       {uploadBlocked && <div role="alert" className="itint" style={{ marginTop: 8 }}>
         {Object.values(uploadStates).includes("uploading") ? "图片正在上传，请完成后再提交。" : "图片上传失败，请重新上传或明确清除图片后再提交。"}
@@ -3605,8 +3674,8 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         </div>
       )}
       <div className="field">
-        <label htmlFor={reasonFieldId}>操作理由（必填，{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）</label>
-        <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} disabled={!!getPendingReason && (submitting || pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} placeholder="例如：工单号、处理依据" />
+        <label htmlFor={reasonFieldId}>{approval ? "变更理由" : "操作理由"}（必填，{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）</label>
+        <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} disabled={inlineApproval ? formLocked : !!approval ? submitting || !!approvalRecovery : !!getPendingReason && (submitting || pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} placeholder="例如：工单号、处理依据" />
         {pendingReason !== undefined && <div className="tiny" style={{ marginTop: 7 }}>原操作结果尚未确认，理由已锁定。重试将继续原操作，不会重复执行。</div>}
         {!reasonOk && (
           <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
@@ -3615,7 +3684,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
               : `操作理由不能超过 ${reasonMax} 字。`}
           </div>
         )}
-        {reasonMax && reasonOk && <div className="tiny" style={{ marginTop: 7, color: "var(--ink-4)" }}>已填写 {reasonLength}/{reasonMax} 字</div>}
+        {reasonMax && reasonOk && <div className="tiny" style={{ marginTop: 7, color: approval ? "var(--ink-3)" : "var(--ink-4)" }}>已填写 {reasonLength}/{reasonMax} 字</div>}
         {businessMissing.length > 0 && (
           <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
             请检查以下内容： {businessMissing.slice(0, 4).join(" / ")}{businessMissing.length > 4 ? "…" : ""}。

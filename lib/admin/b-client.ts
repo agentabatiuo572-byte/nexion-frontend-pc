@@ -27,6 +27,7 @@ export interface BLedger {
   coverageRatio: number;
   redlinePct: number;
   healthyPct: number;
+  thresholdVersion: number | null;
   runRiskPct: number;
   pressureRatio: number;
   netFlow24hUsd: number;
@@ -132,6 +133,7 @@ const EMPTY_LEDGER: BLedger = {
   liabilitiesUsd: 0,
   coverageRatio: 0,
   redlinePct: 0,
+  thresholdVersion: null,
   healthyPct: 0,
   runRiskPct: 0,
   pressureRatio: 0,
@@ -279,6 +281,12 @@ function nextId(prefix: string) {
 
 function normalizeLedger(raw: Record<string, unknown>): BLedger {
   const snapshot = requiredRow(raw.snapshot, "dualLedger.snapshot");
+  const thresholdVersion = snapshot.thresholdVersion == null
+    ? null
+    : requiredNum(snapshot.thresholdVersion, "dualLedger.snapshot.thresholdVersion");
+  if (thresholdVersion !== null && (!Number.isSafeInteger(thresholdVersion) || thresholdVersion < 0)) {
+    throw new Error("B_DOMAIN_FIELD_REQUIRED:dualLedger.snapshot.thresholdVersion");
+  }
   const reserveUsd = requiredNum(snapshot.reserveUsd, "dualLedger.snapshot.reserveUsd");
   const liabilitiesUsd = requiredNum(snapshot.liabilitiesUsd, "dualLedger.snapshot.liabilitiesUsd");
   const queueBacklogUsd = requiredNum(snapshot.queueBacklogUsd, "dualLedger.snapshot.queueBacklogUsd");
@@ -302,6 +310,7 @@ function normalizeLedger(raw: Record<string, unknown>): BLedger {
     coverageRatio: requiredNum(snapshot.coverageRatio, "dualLedger.snapshot.coverageRatio"),
     redlinePct: requiredNum(snapshot.redlinePct, "dualLedger.snapshot.redlinePct"),
     healthyPct: requiredNum(snapshot.healthyPct, "dualLedger.snapshot.healthyPct"),
+    thresholdVersion,
     runRiskPct: requiredNum(snapshot.runRiskPct, "dualLedger.snapshot.runRiskPct"),
     pressureRatio: reserveUsd > 0 ? queueBacklogUsd / reserveUsd : 0,
     netFlow24hUsd: requiredNum(snapshot.netFlow24hUsd, "dualLedger.snapshot.netFlow24hUsd"),

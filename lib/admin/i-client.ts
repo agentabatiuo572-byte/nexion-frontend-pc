@@ -510,7 +510,7 @@ export type I18nLearningStats = {
   weeklyNexPayout: string;
 };
 export type I18nNamespaceView = { ns: string; keys: number; coverage: number; variants: string; lastChange: string };
-export type I18nIntegrityIssueView = { code: string; kind: string; cnt: number; samples: string[]; status: string };
+export type I18nIntegrityIssueView = { code: string; kind: string; cnt: number; samples: string[]; status: string; repairedCount?: number };
 export type I18nHardcodedFindingView = { location: string; rawCopy: string; suggestedKey: string; status: string };
 export type I18nMessagePairView = {
   messageKey: string;
@@ -654,7 +654,7 @@ export type IContentActions = {
   archiveI6LocalizedMessage: (messageKey: string, expectedVersion: string, reason: string) => Promise<void>;
   fetchI6MessageVersions: (messageKey: string) => Promise<I18nMessagePairView[]>;
   rollbackI6LocalizedMessage: (messageKey: string, targetVersion: string, expectedVersion: string, reason: string) => Promise<void>;
-  fixI6Integrity: (issueCode: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  fixI6Integrity: (issueCode: string, body: Record<string, unknown>, reason: string) => Promise<I18nIntegrityIssueView>;
   createI6Course: (courseId: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   updateI7CourseDraft: (courseId: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   fetchI7CourseVersions: (courseId: string) => Promise<LearningCourseVersionView[]>;
@@ -775,7 +775,7 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   archiveI6LocalizedMessage: (messageKey, expectedVersion, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),
   fetchI6MessageVersions: (messageKey) => apiRequest<I18nMessagePairView[]>(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/versions`),
   rollbackI6LocalizedMessage: (messageKey, targetVersion, expectedVersion, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/versions/${encodeURIComponent(targetVersion)}/rollback`, { method: "POST", body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),
-  fixI6Integrity: (issueCode, body, reason) => apiRequest(`/i18n-learning/integrity/${encodeURIComponent(issueCode)}/fix`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  fixI6Integrity: (issueCode, body, reason) => apiRequest<I18nIntegrityIssueView>(`/i18n-learning/integrity/${encodeURIComponent(issueCode)}/fix`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }),
   createI6Course: (courseId, body, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   updateI7CourseDraft: (courseId, body, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   fetchI7CourseVersions: (courseId) => apiRequest<LearningCourseVersionView[]>(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions`),
