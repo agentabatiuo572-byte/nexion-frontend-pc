@@ -90,6 +90,12 @@ export default function LiquidityPage() {
   const [reasonError, setReasonError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [pendingTick, setPendingTick] = useState(0);
+  const [pendingNote, setPendingNote] = useState("");
+  /** 重试被后端明确拒绝的命令号，只有它能人工解除。 */
+  const [rejectedKey, setRejectedKey] = useState("");
+  const [retrying, setRetrying] = useState(false);
+  const [releaseOpen, setReleaseOpen] = useState(false);
 
   const load = useCallback(async (nextWindow: B2MaturityWindow) => {
     setLoading(true);
@@ -112,6 +118,14 @@ export default function LiquidityPage() {
     void load("7d");
   }, [load]);
 
+  /** 结果未知的预测保存，和资金储备页是同一条记录。没有资金储备菜单的账号在这里恢复，规则相同。 */
+  const pending = useMemo(() => {
+    void pendingTick;
+    const record = forecastConfigCommandKey.list().find((item) => item.fingerprint === FORECAST_CONFIG_SLOT);
+    if (!record) return null;
+    return { commandKey: record.commandKey, inputFingerprint: record.inputFingerprint, saved: JSON.parse(record.inputFingerprint) as { draft: B2ForecastValues; expectedVersion: number; reason: string; operator: string } };
+  }, [pendingTick]);
+
   const sourceText = useMemo(
     () => Array.from(new Set([...(data?.reserve.sources ?? []), ...(data?.liabilities.sources ?? [])])).join(" / "),
     [data],
@@ -130,7 +144,7 @@ export default function LiquidityPage() {
   };
 
   const openConfig = () => {
-    if (!data || !canConfig) return;
+    if (!data || !canConfig || pending) return;
     setDraft(activeConfig(data.config));
     setReason("");
     setReasonError("");
@@ -141,11 +155,6 @@ export default function LiquidityPage() {
   const proceedToConfirm = () => {
     if (draft?.forecastWindow === "90d") {
       setReasonError("90 天不再提供，改成 7 天或 30 天才能保存。");
-      return;
-    }
-    // 这条记录和资金储备页共用。结果未知时在那边核对，这里换内容会把原命令冲掉。
-    if (forecastConfigCommandKey.list().some((record) => record.fingerprint === FORECAST_CONFIG_SLOT)) {
-      setReasonError("上次保存结果未知，先到「资金储备与应付款」页面上方核对。");
       return;
     }
     const length = reason.trim().length;
@@ -181,7 +190,7 @@ export default function LiquidityPage() {
       .catch((caught) => {
         if (caught instanceof B2OutcomeUnknownError) {
           setDialogStep("closed");
-          setNotice("保存结果未知，可能已经保存。到「资金储备与应付款」页面上方核对或按原操作重试。");
+          setPendingTick((tick) => tick + 1);
           return;
         }
         forecastConfigCommandKey.forget(FORECAST_CONFIG_SLOT);
@@ -189,6 +198,47 @@ export default function LiquidityPage() {
         setSaveError(caught instanceof Error ? displayAdminError(caught) : "保存失败，请重试");
       })
       .finally(() => setSaving(false));
+  };
+
+  /** 按原操作重试：同命令号、同内容、同理由、同操作人。只有成功才解除，明确拒绝也证明不了原操作的结果。 */
+  const retryPending = async () => {
+    if (!pending) return;
+    // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
+    if (!forecastConfigCommandKey.isDurablyStored(FORECAST_CONFIG_SLOT, pending.inputFingerprint, pending.commandKey)) {
+      forecastConfigCommandKey.forget(FORECAST_CONFIG_SLOT);
+      setPendingTick((tick) => tick + 1);
+      setNotice("原操作已结束或过期，本次未再次发送。请先核对配置，再决定如何处理。");
+      return;
+    }
+    const { draft: values, expectedVersion, reason: savedReason, operator } = pending.saved;
+    setRetrying(true);
+    setRejectedKey("");
+    setPendingNote("");
+    try {
+      await updateB2ForecastConfig(values, expectedVersion, savedReason, operator, pending.commandKey);
+      forecastConfigCommandKey.forget(FORECAST_CONFIG_SLOT);
+      setPendingTick((tick) => tick + 1);
+      setNotice("已保存，次日 UTC 00:00 起生效");
+      await load(window);
+    } catch (caught) {
+      if (caught instanceof B2OutcomeUnknownError) {
+        setPendingNote("结果还是未知，不要重复操作，可以稍后再按原操作重试。");
+        return;
+      }
+      setPendingNote(`重试没有成功：${caught instanceof Error ? displayAdminError(caught) : "原因未知"} 这说明不了原操作的结果，原命令继续保留。`);
+      setRejectedKey(pending.commandKey);
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  /** 只放开本页的锁，不发请求，不写操作记录。 */
+  const releasePending = () => {
+    forecastConfigCommandKey.forget(FORECAST_CONFIG_SLOT);
+    setPendingTick((tick) => tick + 1);
+    setPendingNote("");
+    setReleaseOpen(false);
+    setNotice("已解除待确认，可以重新提交");
   };
 
   if (loading && !data) {
@@ -275,7 +325,7 @@ export default function LiquidityPage() {
           <span className="b2-readonly">你没有导出权限</span>
         )}
         {canConfig ? (
-          <button type="button" className="b2-button primary" onClick={openConfig}>
+          <button type="button" className="b2-button primary" disabled={!!pending} title={pending ? "上次保存结果未知，先在页面上方核对" : undefined} onClick={openConfig}>
             <Settings2 size={14} />调整预测配置
           </button>
         ) : (
@@ -285,6 +335,17 @@ export default function LiquidityPage() {
 
       {error && <div className="b2-alert error" role="alert">加载失败 · {error}</div>}
       {notice && <div className="b2-alert success" role="status">{notice}</div>}
+      {pending && canConfig && (
+        <div className="b2-alert error" role="alert">
+          <b>预测设置保存结果未知，可能已经保存</b>
+          <div>基于版本 v{pending.saved.expectedVersion}，默认预测窗口 {pending.saved.draft.forecastWindow}，理由：{pending.saved.reason}。先看配置版本有没有变；重试用同一个请求号和原内容，不会重复保存，内容不能改。</div>
+          {pendingNote && <div>{pendingNote}</div>}
+          <div className="b2-dialog-actions">
+            <button type="button" className="b2-button" disabled={retrying} onClick={() => void retryPending()}>{retrying ? "提交中…" : "按原操作重试"}</button>
+            {rejectedKey === pending.commandKey && <button type="button" className="b2-button" disabled={retrying} onClick={() => setReleaseOpen(true)}>解除待确认</button>}
+          </div>
+        </div>
+      )}
 
       <section className="b2-kpis" aria-label="可用资金与应付款摘要">
         <article className="card b2-kpi">
@@ -418,6 +479,25 @@ export default function LiquidityPage() {
       </section>
 
       <B2RestoredInsights data={data} />
+
+      {releaseOpen && (
+        <div className="b2-dialog-backdrop" role="presentation">
+          <section className="b2-dialog" role="dialog" aria-modal="true" aria-labelledby="b2-release-title">
+            <header>
+              <div><b id="b2-release-title">解除待确认</b></div>
+              <button type="button" aria-label="关闭解除待确认弹窗" onClick={() => setReleaseOpen(false)}>×</button>
+            </header>
+            <div className="b2-confirm">
+              <p>重试被拒说明不了原操作的结果。先到操作记录确认原操作有没有生效，再解除。</p>
+              <p>解除后可以重新提交，原操作不再重试。这一步只放开本页的锁，不发请求，不写操作记录。</p>
+            </div>
+            <div className="b2-dialog-actions">
+              <button type="button" className="b2-button" onClick={() => setReleaseOpen(false)}>取消</button>
+              <button type="button" className="b2-button primary" onClick={releasePending}>确认解除</button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {dialogStep !== "closed" && draft && (
         <div className="b2-dialog-backdrop" role="presentation">

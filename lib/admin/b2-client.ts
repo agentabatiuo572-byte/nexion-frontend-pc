@@ -387,7 +387,9 @@ async function request<T>(path: string, init?: RequestInit) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
     const commandKey = headers.get("Idempotency-Key");
     // unknown 头只是**增强信号**,不再是唯一保险丝:5xx / 响应不可读同样归结果未知。
-    if (commandKey && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
+    if (commandKey && (result?.message === "IDEMPOTENCY_REQUEST_IN_PROGRESS"
+      || result?.message === "IDEMPOTENCY_RESULT_UNKNOWN"
+      || response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
       || outcomeStaysUnknown(response.status, result?.code))) {
       throw new B2OutcomeUnknownError(commandKey);
     }
