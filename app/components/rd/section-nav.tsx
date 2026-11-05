@@ -11,6 +11,7 @@
  * - 目标在折叠组里时 onReveal 先展开，再定位，焦点落到组标题：折叠组的 summary，或带 data-section-focus 的元素。
  * - 组内有异常时 item.alert 为 true，导航项上标出来（DP-03）。
  * - 每项是真实链接，当前组 aria-current。窄宽时收成一行，由 CSS 管。
+ * - 详情页的分区导航传 row：横排一行，放在折叠组上方（PG-50），外面包 .rd-detail-nav 滚动时钉住。
  */
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 
@@ -76,14 +77,14 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
   return { active, select, anchor: (id: string) => `section-${id}` };
 }
 
-export function SectionNav({ label, items, nav }: { label: string; items: readonly SectionNavItem[]; nav: ReturnType<typeof useSectionNav> }) {
+export function SectionNav({ label, items, nav, row }: { label: string; items: readonly SectionNavItem[]; nav: ReturnType<typeof useSectionNav>; row?: boolean }) {
   const open = (event: MouseEvent<HTMLAnchorElement>, id: string) => {
     if (event.metaKey || event.ctrlKey || event.shiftKey) return;
     event.preventDefault();
     nav.select(id);
   };
   return (
-    <nav className="rd-section-nav" aria-label={label}>
+    <nav className="rd-section-nav" data-row={row ? "" : undefined} aria-label={label}>
       {items.map((item) => (
         <a key={item.id} href={`?${PARAM}=${item.id}`} aria-current={nav.active === item.id ? "true" : undefined} data-alert={item.alert ? "" : undefined} onClick={(event) => open(event, item.id)}>
           {item.label}

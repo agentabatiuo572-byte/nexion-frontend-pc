@@ -1,18 +1,14 @@
 "use client";
-import { useReach } from "@/lib/nav/use-reach";
-import { formatD4Subtype } from "@/lib/admin/d4-ledger-display";
-import { formatBusinessTime } from "@/lib/admin/business-time";
-import { platformSessionDeviceText, userNicknameText, nexGridBrandText, operatorNicknameText, datacenterNameText } from "@/lib/admin/brand-copy";
 
 /**
- * C1 用户详情(L3 · 画像全景)。页面只消费后端聚合的 360 画像和操作接口。
+ * 用户详情（PG-50，详情页样板）。/users/search/{用户编码} 和客服的 /service/customers/{id} 共用这一页，
+ * 读取范围分开：客服走 support-workbench，隐藏处理入口和写动作，支付安全解除是唯一例外（W05）。
+ * 页面只消费后端聚合的 360 画像和操作接口，缺的区块不显示，权限裁剪不靠前端补造（C1-P10）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import "./customer-panorama.css";
-import { NotificationTimeEvidenceDrawer } from "./notification-time-evidence";
 import Link from "next/link";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
-import { ArrowLeft, Bell, CreditCard, RefreshCcw, ShieldAlert, Snowflake, UserCog } from "lucide-react";
+import { ArrowLeft, Coins, Cpu, FileClock, Network, RefreshCcw, ShieldAlert, ShieldCheck, UserCog, UsersRound, Wallet } from "lucide-react";
 import {
   fetchUser360,
   fetchSupportCustomerFullProfile,
@@ -22,26 +18,34 @@ import {
   resetUserNickname,
   unbindUserPaymentMethod,
   UsersOutcomeUnknownError,
+  UsersRequestError,
   type JsonRecord,
+  type UserPaymentMethod,
   type UserPaymentMethodPage,
   type User360Detail,
   type User360Profile,
   type User360Section,
   type User360Summary,
 } from "@/lib/admin/user360-client";
-import { DataListPager, OperationConfirmModal, useDataListPager } from "@/app/components/domain-views/design-kit";
-import { fmtNum, fmtUsd } from "@/lib/format";
-import { toast } from "@/lib/store/ui";
-import { KpiStatCard } from "@/app/components/kit/kpi-stat-card";
-import { TabGroup } from "@/app/components/kit/tab-group";
-import { StatusPill, type PillTone } from "@/app/components/kit/status-pill";
+import { OperationConfirmModal, type OperatorBriefKind } from "@/app/components/domain-views/design-kit";
 import { AuditTimeline, type AuditEntry } from "@/app/components/kit/audit-timeline";
-import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import {
+  BlockState, Button, Cell, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Fold, Modal, Notice, PageHeader, Pager, Panel,
+  RdPage, SectionNav, Segments, Stat, StatBand, StatusTag, Table, Td, Th, Tr, useSectionNav, type SectionNavItem,
+} from "@/app/components/rd";
+import { useReach } from "@/lib/nav/use-reach";
+import { formatD4Subtype } from "@/lib/admin/d4-ledger-display";
+import { businessClock, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { platformSessionDeviceText, userNicknameText, nexGridBrandText, operatorNicknameText, datacenterNameText } from "@/lib/admin/brand-copy";
+import { fmtNum } from "@/lib/format";
+import { toast } from "@/lib/store/ui";
+import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import type { AdminRole } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
-import { PaymentSecurityCard } from "@/app/components/payment-security/payment-security-card";
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { paymentSecurityPorts } from "@/lib/admin/payment-password-client";
 import {
   formatC1DeviceStatus,
@@ -52,24 +56,61 @@ import {
   formatC1RuntimeStatus,
   formatC1SessionStatus,
 } from "@/lib/admin/c1-detail-display";
+import { NotificationTimeEvidenceDrawer } from "./notification-time-evidence";
+import { PaymentSecurityBlock, type PaymentSecurityState } from "./payment-security-block";
 
 /**
- * C1 用户详情三类写动作(昵称重置 / 支付方式解绑 / 换绑通知)共用一张表,槽位分命名空间。
- * 槽位必须带用户 ID 与支付方式 ID —— 命令号一旦跨刷新存活,不带目标 id 就会在切到下一个用户 /
- * 下一张卡时复用上一个目标的号,让后端把这次操作当成重复提交吞掉。
+ * C1 用户详情的写动作（昵称重置、支付方式解绑、换绑通知、设备置换和回收）共用一张表，槽位分命名空间。
+ * 槽位带用户 ID 和目标 ID：命令号跨刷新存活，不带目标就会在切到下一个用户时复用上一个目标的号。
+ * 原操作内容一起存，结果未知时只能原样重试（OP-94）。
  */
-const c1UserCommands = createSlotAttemptStore({
+type C1CommandKind = "nickname" | "unbind" | "rebind" | "replace" | "recycle";
+type C1Command = PendingMutationRecord & {
+  kind: C1CommandKind;
+  label: string;
+  adminKey: string;
+  userId: string;
+  reason: string;
+  operator: string;
+  nickname?: string;
+  methodId?: number;
+  version?: number;
+  deviceId?: number;
+  deviceStatus?: string;
+};
+type C1CommandInput = PendingMutationExtra<C1Command>;
+const c1UserCommands = createPendingMutationStore<C1Command>({
   storageKey: "nexion-admin-c1-user-detail-commands-v1",
+  isValidRecord: (record) => typeof record.kind === "string" && typeof record.userId === "string" && typeof record.reason === "string" && record.reason.length > 0,
 });
 const nicknameSlot = (userId: string | number) => `nickname-reset|${userId}`;
 const paymentSlot = (action: "unbind" | "rebind", userId: string | number, methodId: number) =>
   `payment-${action}|${userId}|${methodId}`;
 const deviceSlot = (action: "replace" | "recycle", userId: string | number, deviceId: number) =>
   `device-${action}|${userId}|${deviceId}`;
+const commandSlot = (command: C1CommandInput) => command.kind === "nickname"
+  ? nicknameSlot(command.userId)
+  : command.kind === "unbind" || command.kind === "rebind"
+    ? paymentSlot(command.kind, command.userId, command.methodId ?? 0)
+    : deviceSlot(command.kind, command.userId, command.deviceId ?? 0);
+const COMMAND_PREFIX: Record<C1CommandKind, string> = {
+  nickname: "c1-nickname-reset",
+  unbind: "c1-payment-unbind",
+  rebind: "c1-payment-rebind",
+  replace: "c2-device",
+  recycle: "c2-device",
+};
+const COMMAND_FAILURE: Record<C1CommandKind, string> = {
+  nickname: "昵称重置失败",
+  unbind: "支付方式解绑失败",
+  rebind: "换绑通知失败",
+  replace: "设备操作失败",
+  recycle: "设备操作失败",
+};
+const outcomeUnknown = (cause: unknown) => cause instanceof UsersOutcomeUnknownError || cause instanceof UsersRequestError && cause.code === "IDEMPOTENCY_RESULT_UNKNOWN";
 
-/** C1 画像「安全 & 会话」默认每页条数:后端下发最近最多50条会话,首屏只渲染最近一页。 */
+/** C1 画像「登录安全」默认每页条数：后端下发最近最多 50 条会话，首屏只渲染最近一页。 */
 const C1_SESSION_PAGE_SIZE = 5;
-/** 会话状态筛选的取值域 —— 组件的泛型参数与常量表共用同一份声明。 */
 type SessionStatusFilter = "ALL" | "ACTIVE" | "REVOKED" | "EXPIRED";
 const C1_SESSION_STATUS_FILTERS: ReadonlyArray<readonly [SessionStatusFilter, string]> = [
   ["ALL", "全部"],
@@ -77,13 +118,7 @@ const C1_SESSION_STATUS_FILTERS: ReadonlyArray<readonly [SessionStatusFilter, st
   ["REVOKED", "已撤销"],
   ["EXPIRED", "已过期"],
 ];
-
-type Column = {
-  key: string;
-  label: string;
-  numeric?: boolean;
-  render?: (value: unknown, row: JsonRecord) => ReactNode;
-};
+const FINAL_DEVICE_STATUS = ["RECYCLED", "DEACTIVATED", "INACTIVE", "RETIRED"];
 
 const STATUS_LABEL: Record<string, string> = {
   ACTIVE: "正常",
@@ -92,7 +127,20 @@ const STATUS_LABEL: Record<string, string> = {
   RESTRICTED: "受限",
 };
 
-function asText(value: unknown, fallback = "-") {
+const WITHDRAWAL_STATUS: Record<string, readonly [string, "ok" | "warn" | "danger" | "progress" | "done"]> = {
+  SUBMITTED: ["已提交", "progress"], REVIEW_PENDING: ["待审核", "warn"], EXTENDED_HOLD: ["等待复查", "warn"], DELAYED: ["延迟复查", "warn"], FROZEN: ["已冻结", "warn"],
+  REVIEW_PASSED: ["已放行", "progress"], PENDING_CHAIN: ["已放行", "progress"], CHAIN_SUBMITTED: ["已发出", "progress"], CONFIRMED: ["已确认到账", "ok"],
+  REVIEW_REJECTED: ["审核拒绝", "danger"], ADDRESS_INVALID: ["地址无效", "danger"], TX_FAILED: ["处理失败", "danger"], TX_ORPHANED: ["交易异常待核查", "danger"], DEAD: ["交易异常待核查", "danger"],
+  PENDING: ["待审核", "warn"], REVIEWING: ["审核中", "warn"], APPROVED: ["已批准", "progress"], PROCESSING: ["处理中", "progress"], SENT: ["已发出", "progress"],
+  COMPLETED: ["已到账", "ok"], SUCCESS: ["已到账", "ok"], REJECTED: ["已拒绝", "danger"], FAILED: ["失败", "danger"], REFUNDED: ["已退款", "done"], CANCELLED: ["已取消", "done"],
+};
+const ORDER_STATE: Record<string, readonly [string, "ok" | "warn" | "danger" | "progress" | "done"]> = {
+  placed: ["待付款", "warn"], paid: ["已付款", "progress"], provisioning: ["设备开通中", "progress"], activated: ["已开通", "ok"], payment_failed: ["付款失败", "danger"],
+  expired: ["已过期", "done"], provisioning_failed: ["开通失败", "danger"], cancelled: ["已取消", "done"], refunded: ["已退款", "done"], chargeback: ["已拒付", "danger"],
+};
+const DIRECTION: Record<string, string> = { IN: "收入", OUT: "支出" };
+
+function asText(value: unknown, fallback = "—") {
   if (typeof value === "string" && value.trim()) return value.trim();
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
   if (typeof value === "boolean") return value ? "是" : "否";
@@ -114,65 +162,48 @@ function asArray<T extends JsonRecord = JsonRecord>(value: unknown): T[] {
     : [];
 }
 
-function asList(value: unknown) {
-  return Array.isArray(value) ? value : [];
-}
-
-function rows(section: User360Section | null | undefined) {
-  return asArray(section?.records);
-}
-
-function money(value: unknown, digits = 2) {
-  const amount = asNumber(value, NaN);
-  return Number.isFinite(amount) ? fmtUsd(amount, digits) : "-";
-}
-
 function numberLabel(value: unknown) {
   const number = asNumber(value, NaN);
-  return Number.isFinite(number) ? fmtNum(number) : "-";
+  return Number.isFinite(number) ? fmtNum(number) : "—";
+}
+
+/** 金额按接口原值显示，至少两位小数，不舍入，非零不会变成 0（TX-20）。读不到写「—」，不当成 0。 */
+function amountValue(value: unknown) {
+  const raw = typeof value === "number" && Number.isFinite(value)
+    ? value.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: 20 })
+    : typeof value === "string" ? value.trim() : "";
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(raw);
+  if (!match) return raw || "—";
+  return `${match[1]}${match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${(match[3] ?? "").padEnd(2, "0")}`;
+}
+
+function assetText(value: unknown) {
+  const asset = nexGridBrandText(asText(value, ""));
+  return asset === "NEX" ? "UVT" : asset;
+}
+
+function amountText(value: unknown, asset: unknown = "USDT") {
+  const amount = amountValue(value);
+  const unit = assetText(asset);
+  return amount === "—" || !unit ? amount : `${amount} ${unit}`;
 }
 
 function statusLabel(value: unknown) {
   const key = asText(value).toUpperCase();
-  return STATUS_LABEL[key] ?? key;
+  return STATUS_LABEL[key] ?? "状态未知";
 }
 
-function statusTone(value: unknown): PillTone {
+function statusTone(value: unknown) {
   const key = asText(value).toUpperCase();
-  if (key === "ACTIVE") return "success";
-  if (key === "FROZEN" || key === "RESTRICTED") return "warning";
-  if (key === "BANNED") return "danger";
-  return "neutral";
+  if (key === "ACTIVE") return "ok" as const;
+  if (key === "FROZEN" || key === "RESTRICTED") return "warn" as const;
+  if (key === "BANNED") return "danger" as const;
+  return "done" as const;
 }
 
-function riskTone(score: number): PillTone {
-  return score >= 70 ? "danger" : score >= 40 ? "warning" : "success";
-}
-
-function riskColor(score: number) {
-  return score >= 70 ? "var(--v5-danger)" : score >= 40 ? "var(--v5-warning)" : "var(--v5-success)";
-}
-
-function formatDate(value: unknown) {
-  return formatBusinessTime(value, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
-
-function displayValue(value: unknown) {
-  if (value == null || value === "") return "-";
-  if (typeof value === "boolean") return value ? "是" : "否";
-  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "-";
-  if (typeof value === "string") {
-    if (/^\d{4}-\d{2}-\d{2}T/.test(value)) return formatDate(value);
-    return value;
-  }
-  if (Array.isArray(value)) return value.length ? `${value.length} 条` : "-";
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value);
-}
-
-function errorMessage(error: unknown) {
-  return displayAdminError(error);
-}
+const shortTime = (value: unknown) => formatBusinessTimeCompact(value, "—");
+const fullTime = (value: unknown) => formatBusinessTimeFull(value, "—");
+const yesNo = (value: unknown, on = "是", off = "否") => value == null ? "—" : value ? on : off;
 
 function sectionFailed(section: User360Section | null | undefined) {
   return ["ERROR", "UNKNOWN", "UNAVAILABLE"].includes(asText(section?.sourceStatus, "READY").toUpperCase());
@@ -216,125 +247,210 @@ function toAuditEntries(rowsValue: unknown): AuditEntry[] {
     role: auditRole(row),
     action: asText(row.action, "UNKNOWN"),
     detail: auditDetail(row),
-    at: formatDate(row.createdAt),
-    ip: asText(row.clientIp, "-"),
+    at: `${shortTime(row.createdAt)}（${businessZone().label}）`,
+    ip: asText(row.clientIp, "—"),
   }));
 }
 
-function Section({ title, tag, children }: { title: string; tag?: string; children: ReactNode }) {
+/** 风险标记后端给的是码。账户状态在身份行、案件数在风险案件，这里不重复，有别的标记才写。 */
+function riskFlags(flags: unknown, showsCases: boolean) {
+  return (Array.isArray(flags) ? flags : []).map((flag) => {
+    const text = asText(flag, "");
+    const cases = /^OPEN_RISK_CASES:(\d+)$/.exec(text);
+    if (cases) return showsCases ? "" : `${cases[1]} 个风险案件未关闭`;
+    return text in STATUS_LABEL ? "" : text;
+  }).filter(Boolean).join(" · ") || "无";
+}
+
+const revokeUnfinished = (method: UserPaymentMethod) => method.status !== "BOUND" && !!method.pspRevokeStatus && !/^(revoked|success|succeeded|done|completed)$/i.test(method.pspRevokeStatus);
+
+interface Column { label: string; align?: "right"; end?: boolean; cell: (row: JsonRecord) => ReactNode }
+
+const statusCell = (table: Record<string, readonly [string, "ok" | "warn" | "danger" | "progress" | "done"]>, value: string, unknown: string) => {
+  const hit = table[value];
+  return hit ? <StatusTag tone={hit[1]}>{hit[0]}</StatusTag> : unknown;
+};
+const withdrawalStatus = (row: JsonRecord) => statusCell(WITHDRAWAL_STATUS, asText(row.status, "").toUpperCase(), "状态待核实");
+const orderStatus = (row: JsonRecord) => statusCell(ORDER_STATE, asText(row.state, ""), "订单状态待核实");
+const deviceTag = (row: JsonRecord) => {
+  const status = asText(row.status, "").toUpperCase();
+  const tone = status === "FAULT" ? "danger" : FINAL_DEVICE_STATUS.includes(status) ? "done" : ["ONLINE", "RUNNING", "ACTIVE"].includes(status) ? "ok" : "neutral";
+  return <StatusTag tone={tone}>{formatC1DeviceStatus(status)}</StatusTag>;
+};
+const pushText = (row: JsonRecord) => asText(row.pushStatus, "").toUpperCase() === "FAILED"
+  ? <StatusTag tone="danger">{formatC1PushStatus(row.pushStatus)}</StatusTag>
+  : formatC1PushStatus(row.pushStatus);
+
+const SESSION_COLUMNS: Column[] = [
+  { label: "设备", cell: (row) => <Cell main={platformSessionDeviceText(asText(row.deviceName))} /> },
+  { label: "IP", cell: (row) => <Cell mono main={asText(row.clientIpMasked)} /> },
+  { label: "状态", cell: (row) => <StatusTag tone={asText(row.status, "").toUpperCase() === "ACTIVE" ? "ok" : "done"}>{formatC1SessionStatus(row.status)}</StatusTag> },
+  { label: "登录时间", cell: (row) => <Cell num main={shortTime(row.issuedAt)} /> },
+  { label: "过期时间", cell: (row) => <Cell num main={shortTime(row.expiresAt)} /> },
+];
+const DEPOSIT_COLUMNS: Column[] = [
+  { label: "充值单号", cell: (row) => <Cell mono full main={asText(row.depositNo)} /> },
+  { label: "渠道", cell: (row) => <Cell main={asText(row.channel)} /> },
+  { label: "金额", align: "right", cell: (row) => <Cell num main={amountText(row.amount, row.asset)} /> },
+  { label: "状态", cell: (row) => <Cell main={asText(row.statusLabel)} /> },
+  { label: "确认时间", cell: (row) => <Cell num main={shortTime(row.confirmedAt)} /> },
+];
+const WITHDRAWAL_COLUMNS: Column[] = [
+  { label: "提现单号", cell: (row) => <Cell mono full main={asText(row.withdrawalNo)} /> },
+  { label: "金额 · 链", align: "right", cell: (row) => <Cell num main={amountText(row.amount, row.asset)} sub={asText(row.chain)} /> },
+  { label: "状态", cell: withdrawalStatus },
+  { label: "风险分", align: "right", cell: (row) => <Cell num main={asText(row.riskScore)} /> },
+  { label: "创建时间", cell: (row) => <Cell num main={shortTime(row.createdAt)} /> },
+];
+const EARNING_COLUMNS: Column[] = [
+  { label: "业务单号", cell: (row) => <Cell mono full main={asText(row.bizNo)} /> },
+  { label: "类型", cell: (row) => <Cell main={formatD4Subtype(row.bizType)} /> },
+  { label: "方向", cell: (row) => DIRECTION[asText(row.direction, "").toUpperCase()] ?? "—" },
+  { label: "金额", align: "right", cell: (row) => <Cell num main={amountText(row.amount, row.asset)} /> },
+  { label: "余额", align: "right", cell: (row) => <Cell num main={amountText(row.balanceAfter, row.asset)} /> },
+  { label: "时间", cell: (row) => <Cell num main={shortTime(row.createdAt)} /> },
+];
+const MEMBER_COLUMNS: Column[] = [
+  { label: "成员编码", cell: (row) => <Cell mono main={asText(row.memberNo)} /> },
+  { label: "昵称", cell: (row) => <Cell main={operatorNicknameText(asText(row.nickname))} /> },
+  { label: "团队等级", cell: (row) => asText(row.vRank) },
+  { label: "相隔邀请次数", align: "right", cell: (row) => <Cell num main={asText(row.level)} /> },
+  { label: "贡献额", align: "right", cell: (row) => <Cell num main={amountText(row.volume)} /> },
+  { label: "加入时间", cell: (row) => <Cell num main={shortTime(row.createdAt)} /> },
+];
+const ENGAGEMENT_COLUMNS: Column[] = [
+  { label: "项目", cell: (row) => <Cell main={asText(row.name)} /> },
+  { label: "状态", cell: (row) => asText(row.status) },
+  { label: "进度", cell: (row) => asText(row.progress) },
+  { label: "更新时间", cell: (row) => <Cell num main={shortTime(row.updatedAt)} /> },
+];
+const EXCHANGE_COLUMNS: Column[] = [
+  { label: "业务单号", cell: (row) => <Cell mono full main={asText(row.bizNo)} /> },
+  { label: "类型", cell: (row) => <Cell main={formatD4Subtype(row.bizType)} /> },
+  { label: "方向", cell: (row) => DIRECTION[asText(row.direction, "").toUpperCase()] ?? "—" },
+  { label: "金额", align: "right", cell: (row) => <Cell num main={amountText(row.amount, row.asset)} /> },
+  { label: "时间", cell: (row) => <Cell num main={shortTime(row.createdAt)} /> },
+];
+const ORDER_COLUMNS: Column[] = [
+  { label: "订单号", cell: (row) => <Cell mono full main={asText(row.orderNo)} /> },
+  { label: "商品", cell: (row) => <Cell main={asText(row.skuName)} /> },
+  { label: "金额", align: "right", cell: (row) => <Cell num main={amountText(row.amount)} /> },
+  { label: "状态", cell: orderStatus },
+  { label: "机房", cell: (row) => <Cell main={datacenterNameText(asText(row.dcLocation))} /> },
+  { label: "下单时间", cell: (row) => <Cell num main={shortTime(row.orderedAt)} /> },
+];
+
+/** 单条记录抽屉：表格放不下或要查证的字段都在这里（PG-50）。 */
+type RecordKind = "session" | "payment" | "deposit" | "withdrawal" | "device" | "earning" | "member" | "engagement" | "exchange" | "notification" | "order";
+const RECORD: Record<RecordKind, { title: string; sub: (row: JsonRecord) => string; facts: (row: JsonRecord) => readonly (readonly [string, ReactNode])[] }> = {
+  session: { title: "登录记录", sub: (row) => platformSessionDeviceText(asText(row.deviceName)), facts: (row) => [
+    ["设备", platformSessionDeviceText(asText(row.deviceName))], ["IP", asText(row.clientIpMasked)], ["状态", formatC1SessionStatus(row.status)],
+    ["登录时间", fullTime(row.issuedAt)], ["过期时间", fullTime(row.expiresAt)],
+  ] },
+  payment: { title: "支付方式", sub: (row) => `${asText(row.brand)} ···· ${asText(row.last4)}`, facts: (row) => [
+    ["卡", `${asText(row.brand)} ···· ${asText(row.last4)}`], ["提供商", asText(row.provider)], ["有效期", asText(row.expiryLabel, "无到期信息")],
+    ["状态", row.status === "BOUND" ? (row.isDefault ? "已绑定 · 默认" : "已绑定") : "已解绑"],
+    ["试用保护", row.trialGuard ? `正在用于试用扣款 · ${asText(row.trialRefId, "关联试用")}` : "否"],
+    ["解绑时间", shortTime(row.unboundAt)], ["支付商撤销状态", asText(row.pspRevokeStatus)], ["撤销命令号", asText(row.revokeCommandNo)],
+    ["重试次数", asText(row.revokeAttempts)], ["撤销时限", shortTime(row.revokeDeadlineAt)], ["最近错误", asText(row.revokeLastError)],
+  ] },
+  deposit: { title: "充值记录", sub: (row) => asText(row.depositNo), facts: (row) => [
+    ["充值单号", <span key="no" data-mono>{asText(row.depositNo)}</span>], ["渠道", asText(row.channel)], ["币种", assetText(row.asset) || "—"],
+    ["金额", amountText(row.amount, row.asset)], ["状态", asText(row.statusLabel)], ["确认时间", fullTime(row.confirmedAt)],
+  ] },
+  withdrawal: { title: "提现记录", sub: (row) => asText(row.withdrawalNo), facts: (row) => [
+    ["提现单号", <span key="no" data-mono>{asText(row.withdrawalNo)}</span>], ["币种", assetText(row.asset) || "—"], ["链", asText(row.chain)],
+    ["金额", amountText(row.amount, row.asset)], ["状态", withdrawalStatus(row)], ["风险分", asText(row.riskScore)], ["创建时间", fullTime(row.createdAt)],
+  ] },
+  device: { title: "设备明细", sub: (row) => asText(row.instanceNo), facts: (row) => [
+    ["实例", <span key="no" data-mono>{asText(row.instanceNo)}</span>], ["名称", asText(row.name)], ["规格", formatC1DeviceTier(row.productTier)],
+    ["状态", formatC1DeviceStatus(row.status)], ["运行状态", formatC1RuntimeStatus(row.runtimeStatus)],
+    ["设定日收益 USDT", amountText(row.dailyUsdt)], ["设定日收益 UVT", amountText(row.dailyNex, "UVT")],
+  ] },
+  earning: { title: "收益明细", sub: (row) => asText(row.bizNo), facts: (row) => [
+    ["业务单号", <span key="no" data-mono>{asText(row.bizNo)}</span>], ["类型", formatD4Subtype(row.bizType)], ["币种", assetText(row.asset) || "—"],
+    ["方向", DIRECTION[asText(row.direction, "").toUpperCase()] ?? "—"], ["金额", amountText(row.amount, row.asset)], ["余额", amountText(row.balanceAfter, row.asset)], ["时间", fullTime(row.createdAt)],
+  ] },
+  member: { title: "推荐团队成员", sub: (row) => asText(row.memberNo), facts: (row) => [
+    ["成员编码", asText(row.memberNo)], ["昵称", operatorNicknameText(asText(row.nickname))], ["团队等级", asText(row.vRank)],
+    ["相隔邀请次数", asText(row.level)], ["贡献额", amountText(row.volume)], ["加入时间", fullTime(row.createdAt)],
+  ] },
+  engagement: { title: "互动与参与", sub: (row) => asText(row.name), facts: (row) => [
+    ["项目", asText(row.name)], ["状态", asText(row.status)], ["进度", asText(row.progress)], ["更新时间", fullTime(row.updatedAt)],
+  ] },
+  exchange: { title: "兑换记录", sub: (row) => asText(row.bizNo), facts: (row) => [
+    ["业务单号", <span key="no" data-mono>{asText(row.bizNo)}</span>], ["类型", formatD4Subtype(row.bizType)], ["币种", assetText(row.asset) || "—"],
+    ["方向", DIRECTION[asText(row.direction, "").toUpperCase()] ?? "—"], ["金额", amountText(row.amount, row.asset)], ["时间", fullTime(row.createdAt)],
+  ] },
+  notification: { title: "通知", sub: (row) => asText(row.notificationId), facts: (row) => [
+    ["通知编号", asText(row.notificationId)], ["标题", nexGridBrandText(asText(row.title))], ["类型", formatC1NotificationType(row.type)],
+    ["推送", formatC1PushStatus(row.pushStatus)], ["已读", formatC1ReadFlag(row.readFlag)], ["创建时间", fullTime(row.createdAt)],
+  ] },
+  order: { title: "商城订单", sub: (row) => asText(row.orderNo), facts: (row) => [
+    ["订单号", <span key="no" data-mono>{asText(row.orderNo)}</span>], ["商品", asText(row.skuName)], ["金额", amountText(row.amount)], ["状态", orderStatus(row)],
+    ["机房", datacenterNameText(asText(row.dcLocation))], ["下单时间", fullTime(row.orderedAt)],
+  ] },
+};
+
+function RecordTable({ label, rows, columns, empty = "暂无记录", selected, onOpen }: {
+  label: string;
+  rows: JsonRecord[];
+  columns: readonly Column[];
+  empty?: string;
+  selected?: number;
+  onOpen: (index: number) => void;
+}) {
+  if (rows.length === 0) return <p className="rd-detail-empty">{empty}</p>;
   return (
-    <section className="customer-panorama-section min-w-0 rounded-[12px] p-4" style={{ background: "var(--v5-surface)" }}>
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h2 className="font-display text-[18px]" style={{ color: "var(--v5-ink)" }}>{title}</h2>
-        {tag && <span className="text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>{tag}</span>}
-      </div>
-      {children}
-    </section>
+    <Table label={label}>
+      <thead><tr>{columns.map((column) => <Th key={column.label} align={column.align} sticky={column.end ? "end" : undefined}>{column.label}</Th>)}</tr></thead>
+      <tbody>
+        {rows.map((row, index) => (
+          <Tr key={`${asText(row.id ?? row.bizNo ?? row.orderNo ?? row.depositNo ?? row.withdrawalNo ?? row.instanceNo, "row")}-${index}`} selected={selected === index} onOpen={() => onOpen(index)}>
+            {columns.map((column) => <Td key={column.label} align={column.align} sticky={column.end ? "end" : undefined}>{column.cell(row)}</Td>)}
+          </Tr>
+        ))}
+      </tbody>
+    </Table>
   );
 }
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="customer-panorama-row flex min-w-0 items-center justify-between gap-3 py-1.5" style={{ borderBottom: "1px solid var(--v5-border)", overflowWrap: "anywhere" }}>
-      <span className="text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>{label}</span>
-      <span className="min-w-0 text-right text-[14px]" style={{ color: "var(--v5-ink)" }}>{children}</span>
-    </div>
-  );
-}
-
-function DataTable({ rows, columns, emptyText = "暂无记录" }: { rows: JsonRecord[]; columns: Column[]; emptyText?: string }) {
-  if (rows.length === 0) {
-    return <p className="rounded-[8px] px-3 py-3 text-[12px]" style={{ background: "var(--v5-surface-2)", color: "var(--v5-ink-4)" }}>{emptyText}</p>;
-  }
-  return (
-    <div style={{ overflowX: "auto", maxWidth: "100%" }}>
-      <table className="w-full text-left text-[12px]" style={{ minWidth: 760, borderCollapse: "separate", borderSpacing: 0 }}>
-        <thead>
-          <tr>
-            {columns.map((column) => (
-              <th key={column.key} className={column.numeric ? "text-right" : ""} style={{ color: "var(--v5-ink-4)", borderBottom: "1px solid var(--v5-border)", padding: "8px 10px", fontWeight: 500 }}>{column.label}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={`${asText(row.id ?? row.bizNo ?? row.orderNo ?? row.depositNo ?? row.withdrawalNo ?? row.instanceNo, "row")}-${index}`}>
-              {columns.map((column) => (
-                <td key={column.key} className={column.numeric ? "text-right font-mono-tabular" : ""} style={{ color: "var(--v5-ink-2)", borderBottom: "1px solid var(--v5-border)", padding: "8px 10px", maxWidth: 220 }}>
-                  <span className="line-clamp-2">{column.render ? column.render(row[column.key], row) : displayValue(row[column.key])}</span>
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function HubSection({
-  id,
-  title,
-  section,
-  columns,
-  children,
-  emptyText,
-}: {
+/** 折叠组里的一小块：缺的不显示，读取失败只替换这一块（C1-V02、C1-S04）。 */
+function Block({ id, title, sub, explain, section, actions, failure, children }: {
   id?: string;
   title: string;
-  section?: User360Section | null;
-  columns?: Column[];
-  children?: ReactNode;
-  emptyText?: string;
+  sub?: ReactNode;
+  explain?: ReactNode;
+  section: User360Section | null | undefined;
+  actions?: ReactNode;
+  /** 这块单独读取、读失败有自己的原因时传，不走整页刷新。 */
+  failure?: ReactNode;
+  children: ReactNode;
 }) {
   if (!section) return null;
-  const dataRows = rows(section);
   return (
-    <div id={id} style={{ scrollMarginTop: 76 }}>
-      <Section title={title}>
-        {sectionFailed(section) && (
-          <div className="ctint warn mb-3 flex flex-wrap items-center justify-between gap-2">
-            <span>这部分资料加载失败，请刷新重试。</span>
-            <button className="btn btn-sec btn-sm" onClick={() => window.location.reload()}>刷新页面重试</button>
-          </div>
-        )}
-        {!sectionFailed(section) && children && <div className="customer-panorama-summary">{children}</div>}
-        {!sectionFailed(section) && columns && (
-          <div className={children ? "mt-3" : ""}>
-            <DataTable rows={dataRows} columns={columns} emptyText={emptyText} />
-          </div>
-        )}
-      </Section>
+    <div id={id} className="rd-detail-block">
+      <Panel plain headingLevel={3} title={title} sub={sub} explain={explain} actions={actions}>
+        {failure
+          ? <BlockState state="error" compact title={failure} />
+          : sectionFailed(section)
+            ? <BlockState state="error" compact title="这部分资料加载失败，请刷新重试。" retryLabel="刷新页面重试" onRetry={() => window.location.reload()} />
+            : <div className="rd-detail-block">{children}</div>}
+      </Panel>
     </div>
   );
 }
 
-function ActionButton({
-  children,
-  onClick,
-  disabled,
-}: {
-  children: ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px] transition-colors hover:bg-[var(--v5-surface-2)] disabled:cursor-not-allowed disabled:opacity-55"
-      style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}
-    >
-      {children}
-    </button>
-  );
+/** 一块里成对的小汇总：名字和数字挨着，不拉到面板右端（VS-49）。 */
+function Values({ rows }: { rows: readonly (readonly [ReactNode, ReactNode])[] }) {
+  return <dl className="rd-detail-values">{rows.map(([label, value], index) => <div key={index}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
 }
 
 export default function UserDetailPage() {
   const session = useAdminAuth((state) => state.session);
   const authEpoch = useAdminAuth((state) => state.authEpoch);
-  const supportScope = usePathname()?.startsWith("/service/customers/") === true;
+  const pathname = usePathname();
+  const supportScope = pathname?.startsWith("/service/customers/") === true;
   const canReadNotificationEvidence = !supportScope && (session?.role === "superadmin"
     || (!!session?.authorities.includes("user_c1hub_read") && !!session?.authorities.includes("platform_a4_read")));
   const [notificationEvidence, setNotificationEvidence] = useState<{ userKey: string; authEpoch: number; id: number } | null>(null);
@@ -360,35 +476,48 @@ export default function UserDetailPage() {
     ? requestedReturnTo
     : "/users/search";
   const returnLabel = supportScope ? conversationNo ? "返回原会话" : "返回工作台" : "返回用户列表";
+  // 去处理的页面从这里来，要回到这一页（SPM-03）：带上本页地址，本页的返回地址跟着。
+  const selfHref = `${pathname ?? ""}?returnTo=${encodeURIComponent(returnTo)}`;
   const readKey = `${adminShellSessionKey(session, authEpoch)}|${supportScope}|${userKey}`;
-  const currentReadKey = useRef(readKey), requestGeneration = useRef(0);
+  const currentReadKey = useRef(readKey), requestGeneration = useRef(0), loadedKey = useRef("");
   currentReadKey.current = readKey;
   const [detailKey, setDetailKey] = useState("");
   const [detail, setDetail] = useState<User360Detail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [denied, setDenied] = useState(false);
+  const [readAt, setReadAt] = useState("");
+  const [reloadTick, setReloadTick] = useState(0);
   const [actionPending, setActionPending] = useState<string | null>(null);
   const [paymentMethods, setPaymentMethods] = useState<UserPaymentMethodPage | null>(null);
+  const [paymentLoading, setPaymentLoading] = useState(false);
   const [includeUnbound, setIncludeUnbound] = useState(false);
   const [paymentPage, setPaymentPage] = useState(1);
   const [sessionPage, setSessionPage] = useState(1);
-  const [sessionStatusFilter, setSessionStatusFilter] = useState<"ALL" | "ACTIVE" | "REVOKED" | "EXPIRED">("ALL");
+  const [sessionStatusFilter, setSessionStatusFilter] = useState<SessionStatusFilter>("ALL");
+  const [earningsPage, setEarningsPage] = useState(1);
+  const [earningsPageSize, setEarningsPageSize] = useState(20);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [paymentSecurity, setPaymentSecurity] = useState<{ state: PaymentSecurityState; pending: boolean }>({ state: "loading", pending: false });
+  const [openFolds, setOpenFolds] = useState<Record<string, boolean>>({});
+  const [record, setRecord] = useState<{ kind: RecordKind; index: number } | null>(null);
+  const [pendingCommands, setPendingCommands] = useState<C1Command[]>([]);
+  const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
+  const [retryRejected, setRetryRejected] = useState<string[]>([]);
+  const [releasing, setReleasing] = useState<C1Command | null>(null);
   const [actionConfirm, setActionConfirm] = useState<null | {
-    briefKind: import("@/app/components/domain-views/design-kit").OperatorBriefKind;
+    briefKind: OperatorBriefKind;
     action: string;
     detail: string;
     amplifies?: boolean;
-    run: (reason: string) => Promise<boolean | void> | boolean | void;
+    facts: ReactNode;
+    confirmLabel: string;
+    confirmTone?: "danger";
+    statedBrief: { impact: string; check: string };
+    run: (reason: string) => Promise<void>;
   }>(null);
-  // c1hub 无 CCtx:就近挂载本地 OperationConfirmModal,简化签名(只取 action/detail/amplifies/run)
-  const openActionConfirmReq = (req: {
-    briefKind: import("@/app/components/domain-views/design-kit").OperatorBriefKind;
-    action: string;
-    detail: string;
-    amplifies?: boolean;
-    run: (reason: string) => Promise<boolean | void> | boolean | void;
-  }) => setActionConfirm(req);
+
+  const onPaymentSecurity = useCallback((state: PaymentSecurityState, pending: boolean) => setPaymentSecurity({ state, pending }), []);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     if (currentReadKey.current !== readKey) return;
@@ -396,7 +525,11 @@ export default function UserDetailPage() {
     const active = () => generation === requestGeneration.current && currentReadKey.current === readKey && !signal?.aborted;
     setLoading(true);
     setError(null);
-    setDetail(null); setPaymentMethods(null); setActionConfirm(null); setNotificationEvidence(null); setDetailKey(readKey);
+    setDenied(false);
+    setActionConfirm(null); setNotificationEvidence(null); setRecord(null);
+    // 换用户、换账号时先清旧资料（C1-H02）。同一个用户刷新时旧资料留在屏幕上，写入口禁用，读失败再清。
+    if (loadedKey.current !== readKey) { setDetail(null); setPaymentMethods(null); setOpenFolds({}); }
+    setDetailKey(readKey);
     if (!userKey) {
       setDetail(null);
       setError("用户标识缺失，已停止加载");
@@ -405,9 +538,20 @@ export default function UserDetailPage() {
     }
     try {
       const next = supportScope ? await fetchSupportCustomerFullProfile(userKey, signal) : await fetchUser360(userKey);
-      if (active()) setDetail(next);
+      if (active()) {
+        loadedKey.current = readKey;
+        setDetail(next);
+        setReadAt(businessClock(Date.now()));
+        setReloadTick((tick) => tick + 1);
+      }
     } catch (err) {
-      if (active()) setError(errorMessage(err));
+      if (active()) {
+        loadedKey.current = "";
+        setDetail(null);
+        setPaymentMethods(null);
+        setDenied(err instanceof UsersRequestError && err.status === 403);
+        setError(displayAdminError(err));
+      }
     } finally {
       if (active()) setLoading(false);
     }
@@ -424,7 +568,7 @@ export default function UserDetailPage() {
     const revoke = (event: Event) => {
       const detail = (event as CustomEvent<{ customerId?: string; conversationNo?: string }>).detail ?? {};
       if (detail.customerId && detail.customerId !== userKey || !detail.customerId && detail.conversationNo && detail.conversationNo !== conversationNo) return;
-      requestGeneration.current++; setDetail(null); setPaymentMethods(null); setLoading(false);
+      requestGeneration.current++; loadedKey.current = ""; setDetail(null); setPaymentMethods(null); setLoading(false);
       setError("客户资料加载失败，请重试或返回列表。");
     };
     window.addEventListener("support-scope-invalidated", revoke);
@@ -435,7 +579,7 @@ export default function UserDetailPage() {
   const summary: User360Summary = detail?.summary ?? {};
   const userId = profile?.id ?? summary.userId;
   const c3UserId = typeof userId === "string" || (typeof userId === "number" && Number.isSafeInteger(userId)) ? String(userId) : "";
-  const userNo = asText(profile?.userNo ?? summary.userNo, "-");
+  const userNo = asText(profile?.userNo ?? summary.userNo);
   const nickname = asText(profile?.nickname, "用户详情");
   const displayNickname = userNicknameText(nickname, profile?.phoneMasked);
   const paymentSecurityPort = useMemo(() => {
@@ -450,33 +594,35 @@ export default function UserDetailPage() {
   const riskBand = riskAuthorityReady
     ? asText(detail?.risk?.bandLabel, hasRiskScore ? (riskScore >= 70 ? "高风险" : riskScore >= 40 ? "中风险" : "低风险") : "暂无风险分")
     : "暂无风险分";
+  // 风险档以后端的档为准，档位线可配置，前端不用分数重算。
+  const riskTone = riskBand.includes("高") ? "danger" as const : riskBand.includes("中") ? "warn" as const : riskBand.includes("低") ? "ok" as const : "done" as const;
   const nonActive = status !== "ACTIVE" && status !== "UNKNOWN";
-  const actionDisabled = !!actionPending || !userId;
+  const adminKey = String(session?.adminId ?? "");
+
+  const syncPending = useCallback(() => {
+    const live = c3UserId ? c1UserCommands.list().filter((command) => command.userId === c3UserId && command.adminKey === adminKey) : [];
+    setPendingCommands(live);
+  }, [c3UserId, adminKey]);
+  useEffect(() => { syncPending(); }, [syncPending]);
 
   const loadPaymentMethods = useCallback(async () => {
     if (supportScope || !userId) return;
+    setPaymentLoading(true);
     try {
       setPaymentMethods(await fetchUserPaymentMethods(userId, includeUnbound, paymentPage, 10));
       setPaymentError(null);
     } catch (err) {
-      setPaymentError(errorMessage(err));
+      setPaymentError(displayAdminError(err));
+    } finally {
+      setPaymentLoading(false);
     }
   }, [includeUnbound, paymentPage, userId, supportScope]);
 
-  useEffect(() => { void loadPaymentMethods(); }, [loadPaymentMethods]);
+  useEffect(() => { void loadPaymentMethods(); }, [loadPaymentMethods, reloadTick]);
   useEffect(() => { setPaymentPage(1); }, [userId]);
 
-  useEffect(() => {
-    if (!detail || typeof window === "undefined" || window.location.hash !== "#hub-payment-methods") return;
-    const frame = window.requestAnimationFrame(() => {
-      document.getElementById("hub-payment-methods")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [detail, paymentMethods]);
-
   const sessions = useMemo(() => asArray(detail?.sessions), [detail?.sessions]);
-  // 后端下发最近最多50条会话样本(含 REVOKED)。默认只渲染最近一页,
-  // 并提供状态筛选;筛选或换页时回到第 1 页。
+  // 后端下发最近最多 50 条会话样本（含 REVOKED）。默认只渲染最近一页，筛选或换用户回第 1 页。
   const filteredSessions = useMemo(() => {
     if (sessionStatusFilter === "ALL") return sessions;
     return sessions.filter((row) => asText(row.status, "").toUpperCase() === sessionStatusFilter);
@@ -488,526 +634,643 @@ export default function UserDetailPage() {
   );
   useEffect(() => { setSessionPage(1); }, [sessionStatusFilter, userKey]);
   const earningsRecords = useMemo(() => asArray(detail?.earnings?.records), [detail?.earnings?.records]);
-  const earningsPager = useDataListPager(earningsRecords, { initialPageSize: 20, resetKey: userKey });
+  const visibleEarnings = useMemo(() => earningsRecords.slice((earningsPage - 1) * earningsPageSize, earningsPage * earningsPageSize), [earningsRecords, earningsPage, earningsPageSize]);
+  useEffect(() => { setEarningsPage(1); }, [userKey]);
   const auditEntries = useMemo(() => toAuditEntries(detail?.audit), [detail?.audit]);
+  const methods = useMemo(() => paymentMethods?.items ?? [], [paymentMethods]);
+  const unfinishedRevokes = methods.filter(revokeUnfinished);
+  const devices = useMemo(() => asArray(detail?.devices?.records), [detail?.devices?.records]);
+  const deposits = useMemo(() => asArray(detail?.deposits?.records), [detail?.deposits?.records]);
+  const withdrawals = useMemo(() => asArray(detail?.withdrawals?.records), [detail?.withdrawals?.records]);
+  const members = useMemo(() => asArray(detail?.referral?.members), [detail?.referral?.members]);
+  const engagement = useMemo(() => asArray(detail?.engagement?.records), [detail?.engagement?.records]);
+  const exchanges = useMemo(() => asArray(detail?.financial?.exchangeRows), [detail?.financial?.exchangeRows]);
+  const notifications = useMemo(() => asArray(detail?.notifications?.records), [detail?.notifications?.records]);
+  const orders = useMemo(() => asArray(detail?.commerce?.orders), [detail?.commerce?.orders]);
+  const recordRows: Record<RecordKind, JsonRecord[]> = {
+    session: visibleSessions, payment: methods, deposit: deposits, withdrawal: withdrawals, device: devices, earning: visibleEarnings,
+    member: members, engagement, exchange: exchanges, notification: notifications, order: orders,
+  };
 
-  function scrollToHub(id: string) {
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
+  /** 结果未知时转成页面上方的待确认条，这个对象在确认前不能再操作（OP-93）。做法同提现审核的 sendCommand。 */
+  const execute = async (command: C1CommandInput) => {
+    const slot = commandSlot(command);
+    const retained = c1UserCommands.get(slot);
+    const commandKey = retained ?? `${COMMAND_PREFIX[command.kind]}-${crypto.randomUUID()}`;
+    c1UserCommands.remember(slot, commandKey, command);
+    if (!c1UserCommands.isDurablyStored(slot, commandKey)) {
+      if (!retained) c1UserCommands.forget(slot, commandKey);
+      throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
+    }
+    setActionPending(command.label);
+    try {
+      let nextNickname = "";
+      try {
+        if (command.kind === "nickname") nextNickname = (await resetUserNickname(command.userId, command.nickname ?? "", command.reason, command.operator, commandKey)).nickname;
+        if (command.kind === "unbind") await unbindUserPaymentMethod(command.userId, command.methodId ?? 0, command.version ?? 0, command.reason, command.operator, commandKey);
+        if (command.kind === "rebind") await notifyUserPaymentMethodRebind(command.userId, command.methodId ?? 0, command.version ?? 0, command.reason, command.operator, commandKey);
+        if (command.kind === "replace" || command.kind === "recycle") await executeUserDeviceTradein(command.userId, command.deviceId ?? 0, command.kind, command.reason, command.operator, commandKey);
+      } catch (cause) {
+        const unknown = outcomeUnknown(cause);
+        // 新号被明确拒绝才丢号。结果未知必须保号；重试的是原命令时，明确失败也证明不了原命令的结果，继续保留。
+        if (!unknown && !retained) c1UserCommands.forget(slot);
+        syncPending();
+        if (unknown) {
+          toast.error("结果未确认，不要重复操作", "到页面上方读回核对或按原操作重试。");
+          return;
+        }
+        if (isPermissionDenied(cause)) throw cause;
+        throw new Error(`${COMMAND_FAILURE[command.kind]}：${displayAdminError(cause)}`);
+      }
+      c1UserCommands.forget(slot);
+      syncPending();
+      if (command.kind === "nickname") {
+        toast.success(`昵称已重置为 ${userNicknameText(nextNickname, profile?.phoneMasked)}`);
+        await load();
+      } else if (command.kind === "unbind") {
+        toast.success("支付方式已从 UVEL 账户解绑");
+        if (!includeUnbound) { setIncludeUnbound(true); setPaymentPage(1); } else await loadPaymentMethods();
+      } else if (command.kind === "rebind") {
+        toast.success("换绑通知已进入推送队列");
+        await loadPaymentMethods();
+      } else {
+        toast.success(command.kind === "replace" ? "设备置换已执行" : "设备回收已执行");
+        await load();
+      }
+    } finally {
+      setActionPending(null);
+    }
+  };
 
-  const kpis = [
-    detail?.financial && { label: "可提余额", value: money(summary.walletUsdt ?? profile?.walletUsdt), accent: "var(--admin-domain-d)", anchor: "hub-deposit" },
-    detail?.deposits && { label: "累计充值", value: money(summary.depositedUsd), accent: "var(--admin-domain-c)", anchor: "hub-deposit" },
-    detail?.withdrawals && { label: "累计提现", value: money(summary.withdrawnUsd), accent: "var(--v5-warning)", anchor: "hub-withdrawal" },
-    detail?.referral && { label: "团队规模", value: `${numberLabel(summary.teamSize)} 人`, accent: "var(--admin-domain-f)", anchor: "hub-referral" },
-    detail?.devices && { label: "设备数", value: `${numberLabel(summary.deviceCount)} 台`, accent: "var(--admin-domain-e)", anchor: "hub-devices" },
-  ].filter((value): value is { label: string; value: string; accent: string; anchor: string } => Boolean(value));
+  /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有成功才解除待确认。 */
+  const retryPending = async (command: C1Command) => {
+    // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
+    if (!c1UserCommands.isDurablyStored(command.fingerprint, command.commandKey)) {
+      c1UserCommands.forget(command.fingerprint, command.commandKey);
+      syncPending();
+      toast.error("原操作已结束或过期", "本次未再次发送。请先核对这页，再决定如何处理。");
+      return;
+    }
+    setRetryRejected((current) => current.filter((key) => key !== command.commandKey));
+    try {
+      await execute(command);
+    } catch (cause) {
+      setPendingNotes((current) => ({ ...current, [command.fingerprint]: `重试没有成功：${cause instanceof Error ? cause.message : "原因未知"} 这说明不了原操作的结果，原命令继续保留。` }));
+      setRetryRejected((current) => [...current, command.commandKey]);
+    }
+  };
+
+  /** 重试被拒后，人核实过原操作的结果才解除。只放开这个对象的本地锁，不发请求，后端仍按现在的状态校验。 */
+  const releasePending = (command: C1Command) => {
+    c1UserCommands.forget(command.fingerprint, command.commandKey);
+    syncPending();
+    setReleasing(null);
+    toast.success("已解除待确认，这个对象可以重新处理");
+  };
+
+  /** 读回只给现在的事实，变了也可能是别人改的，不能当成原命令的回执，待确认保留（OP-93、OP-95）。 */
+  const verifyPending = async (command: C1Command) => {
+    await load();
+    setPendingNotes((current) => ({ ...current, [command.fingerprint]: "已重新读取这页，核对上面的内容。现在的状态可能是别人改的，待确认继续保留。" }));
+  };
+
+  const busyReason = loading ? "正在重新读取，读完再操作" : actionPending ? `正在执行：${actionPending}` : undefined;
+  const nicknameBlock = pendingCommands.some((command) => command.kind === "nickname") ? "重置昵称的结果未确认，先到页面上方核对" : busyReason;
+  const methodBlock = (method: UserPaymentMethod) => pendingCommands.some((command) => command.methodId === method.id)
+    ? "这张卡有结果未确认的操作，先到页面上方核对"
+    : paymentLoading ? "正在读取支付方式，读完再操作" : busyReason;
+  const deviceBlock = (deviceId: number) => pendingCommands.some((command) => command.deviceId === deviceId) ? "这台设备有结果未确认的操作，先到页面上方核对" : busyReason;
+
+  const openNicknameReset = () => setActionConfirm({ briefKind: "record",
+    action: `重置昵称 · ${displayNickname}`,
+    detail: "系统会生成一个不含手机号等个人信息的新昵称，替换当前昵称。",
+    amplifies: false,
+    facts: <Facts><Fact k="操作对象">{userNo}</Fact><Fact k="现在的昵称">{displayNickname}</Fact><Fact k="改后">系统生成的新昵称，提交后才知道</Fact></Facts>,
+    confirmLabel: "确认重置，立即生效",
+    statedBrief: { impact: "立即替换这个用户的昵称，结果会记录在操作记录中。", check: "核对操作对象，理由写清依据或工单号。" },
+    run: (reason) => execute({ kind: "nickname", label: `重置昵称 · ${displayNickname}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), nickname }),
+  });
+  const openUnbind = (method: UserPaymentMethod) => setActionConfirm({ briefKind: "record",
+    action: `解绑支付方式 · 尾号 ${method.last4}`,
+    detail: "解绑后立即停止作为默认支付方式；若它是默认卡，服务器会选取其他已绑定方式作为默认。",
+    amplifies: false,
+    facts: <Facts><Fact k="操作对象">{displayNickname} · {userNo}</Fact><Fact k="支付方式">{method.brand} ···· {method.last4} · {method.provider}</Fact><Fact k="默认卡">{method.isDefault ? "是，服务器会选取其他已绑定方式作为默认" : "否"}</Fact></Facts>,
+    confirmLabel: "确认解绑，立即生效",
+    confirmTone: "danger",
+    statedBrief: { impact: "立即解绑，这张卡要用户自己重新绑定。支付商那边的撤销另外处理，完成前这张卡仍可能被扣款。", check: "核对卡的尾号和用户，理由写清依据或工单号。" },
+    run: (reason) => execute({ kind: "unbind", label: `解绑支付方式 · 尾号 ${method.last4}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), methodId: method.id, version: method.version }),
+  });
+  const openRebind = (method: UserPaymentMethod) => setActionConfirm({ briefKind: "content",
+    action: `发送换绑通知 · 尾号 ${method.last4}`,
+    detail: "向该用户发送真实站内通知与推送，引导先换绑试用扣款支付方式。",
+    amplifies: false,
+    facts: <Facts><Fact k="操作对象">{displayNickname} · {userNo}</Fact><Fact k="支付方式">{method.brand} ···· {method.last4}</Fact><Fact k="关联试用">{method.trialRefId || "关联试用"}</Fact></Facts>,
+    confirmLabel: "确认发送，立即进入推送队列",
+    statedBrief: { impact: "向这个用户发一条真实站内通知和推送，发出后不能撤回。", check: "核对卡的尾号和关联试用，理由写清依据或工单号。" },
+    run: (reason) => execute({ kind: "rebind", label: `发送换绑通知 · 尾号 ${method.last4}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), methodId: method.id, version: method.version }),
+  });
+  const openDeviceAction = (device: JsonRecord, operation: "replace" | "recycle") => {
+    const deviceId = asNumber(device.id);
+    const instance = asText(device.instanceNo);
+    setActionConfirm({ briefKind: "record",
+      action: operation === "replace" ? `设备置换 · ${asText(device.instanceNo)}` : `设备回收 · ${asText(device.instanceNo)}`,
+      detail: "会更改该用户这台设备的状态。",
+      amplifies: false,
+      facts: <Facts>
+        <Fact k="操作对象">{displayNickname} · {userNo}</Fact>
+        <Fact k="设备">{instance} · {asText(device.name)}</Fact>
+        <Fact k="状态">{formatC1DeviceStatus(device.status)} → 已回收，离线</Fact>
+        {operation === "replace" && <Fact k="另外">生成一张置换单</Fact>}
+      </Facts>,
+      confirmLabel: operation === "replace" ? "确认置换，立即生效" : "确认回收，立即生效",
+      confirmTone: "danger",
+      statedBrief: { impact: operation === "replace" ? "这台设备立即变成已回收并离线，同时生成一张置换单。这里不能撤销。" : "这台设备立即变成已回收并离线。这里不能撤销。", check: "核对设备实例号和用户，理由写清依据或工单号。" },
+      run: (reason) => execute({ kind: operation, label: `${operation === "replace" ? "设备置换" : "设备回收"} · ${instance}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), deviceId, deviceStatus: asText(device.status) }),
+    });
+  };
+
+  const showFold = (group: string) => setOpenFolds((current) => ({ ...current, [group]: true }));
+  const locate = useCallback((group: string, anchor?: string) => {
+    setOpenFolds((current) => ({ ...current, [group]: true }));
+    window.requestAnimationFrame(() => document.getElementById(anchor ?? `section-${group}`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, []);
+
+  // 从客服和工单带锚点进来时先展开所在的组，再定位（C1-L07）。等支付方式读完，不然上面的内容撑开会把目标顶走。
+  const layoutReady = !!detail && (supportScope || !!paymentMethods || !!paymentError);
+  const hashDone = useRef("");
+  useEffect(() => {
+    if (!detail) return;
+    const hash = window.location.hash.slice(1);
+    const group = ({ "hub-payment-methods": "security", "hub-deposit": "funds", "hub-withdrawal": "funds", "hub-devices": "devices", "hub-referral": "team", "hub-engagement": "team" } as Record<string, string>)[hash];
+    if (!group || !layoutReady || hashDone.current === `${readKey}#${hash}`) return;
+    hashDone.current = `${readKey}#${hash}`;
+    locate(group, hash);
+  }, [detail, layoutReady, readKey, locate]);
+
+  const securityPresent = !!detail?.sessions || !!paymentSecurityPort || !supportScope;
+  const fundsPresent = !!(detail?.deposits || detail?.withdrawals || detail?.account || detail?.financial);
+  const devicesPresent = !!(detail?.devices || detail?.earnings);
+  const teamPresent = !!(detail?.referral || detail?.engagement || detail?.vrank);
+  const recordsPresent = !!(detail?.notifications || detail?.commerce || detail?.audit);
+  const failedSection = (...sections: (User360Section | null | undefined)[]) => sections.some(sectionFailed);
+  const securityAlert = paymentSecurity.state === "exception" || paymentSecurity.pending || summary.locked === true || unfinishedRevokes.length > 0;
+  const securityFailed = paymentSecurity.state === "failed" || !!paymentError;
+  const fundsFailed = failedSection(detail?.deposits, detail?.withdrawals, detail?.financial, detail?.account);
+  const devicesFailed = failedSection(detail?.devices, detail?.earnings);
+  const teamFailed = failedSection(detail?.referral, detail?.engagement, detail?.vrank);
+  const recordsFailed = failedSection(detail?.notifications, detail?.commerce);
+  const failedPushCount = asNumber(detail?.notifications?.failedPushCount);
+  const recordsAlert = failedPushCount > 0;
+  const sections: SectionNavItem[] = [
+    securityPresent && { id: "security", label: "安全", alert: securityAlert || securityFailed },
+    fundsPresent && { id: "funds", label: "资金", alert: fundsFailed },
+    devicesPresent && { id: "devices", label: "设备与收益", alert: devicesFailed },
+    teamPresent && { id: "team", label: "团队与互动", alert: teamFailed },
+    recordsPresent && { id: "records", label: "记录", alert: recordsAlert || recordsFailed },
+  ].filter((item) => item !== false);
+  const nav = useSectionNav(sections, { ready: layoutReady, onReveal: showFold });
+  const foldProps = (group: string, alert: boolean) => ({
+    alert,
+    open: openFolds[group] ?? alert,
+    onOpenChange: (next: boolean) => setOpenFolds((current) => ({ ...current, [group]: next })),
+  });
 
   if (detailKey !== readKey || loading && !detail) {
     return (
-      <div className="w-full">
-        <Link href={returnTo} prefetch={false} className="inline-flex items-center gap-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
-          <ArrowLeft size={14} /> {returnLabel}
-        </Link>
-        <p className="mt-6 text-[14px]" style={{ color: "var(--v5-ink-3)" }}>正在加载…</p>
-      </div>
+      <RdPage>
+        <PageHeader title="用户详情" back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>} />
+        <BlockState state="loading" title="正在加载…" />
+      </RdPage>
     );
   }
 
   if (error && !detail) {
     return (
-      <div className="w-full">
-        <Link href={returnTo} prefetch={false} className="inline-flex items-center gap-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
-          <ArrowLeft size={14} /> {returnLabel}
-        </Link>
-        <div className="mt-6 rounded-[12px] p-4" style={{ background: "var(--v5-surface)" }}>
-          <p className="text-[14px]" style={{ color: "var(--v5-danger)" }}>用户详情加载失败：{error}</p>
-          <button type="button" onClick={() => void load()} className="mt-3 inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px]" style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}>
-            <RefreshCcw size={14} /> 重试
-          </button>
-        </div>
-      </div>
+      <RdPage>
+        <PageHeader title="用户详情" back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>} />
+        {denied
+          ? <BlockState state="denied" title="无权限访问" detail={error} />
+          : <BlockState state="error" title={`用户详情加载失败：${error}`} onRetry={() => void load()} />}
+      </RdPage>
     );
   }
 
   if (!profile || !detail) {
     return (
-      <div className="w-full">
-        <Link href={returnTo} prefetch={false} className="inline-flex items-center gap-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
-          <ArrowLeft size={14} /> {returnLabel}
-        </Link>
-        <p className="mt-6 text-[14px]" style={{ color: "var(--v5-ink-3)" }}>客户资料加载失败，请重新加载。</p>
-      </div>
+      <RdPage>
+        <PageHeader title="用户详情" back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>} />
+        <BlockState state="error" title="客户资料加载失败，请重新加载。" onRetry={() => void load()} />
+      </RdPage>
     );
   }
 
+  const kpis = [
+    detail.financial && { label: "可提余额", value: amountValue(summary.walletUsdt ?? profile.walletUsdt), unit: "USDT", tone: "role-1" as const, icon: Wallet, group: "funds", anchor: "hub-deposit" },
+    detail.deposits && { label: "累计充值", value: amountValue(summary.depositedUsd), unit: "USDT", tone: "role-2" as const, icon: Coins, group: "funds", anchor: "hub-deposit", explain: "全部已确认充值的合计，不是下面列出的那些相加。" },
+    detail.withdrawals && { label: "累计提现", value: amountValue(summary.withdrawnUsd), unit: "USDT", tone: "role-4" as const, icon: Coins, group: "funds", anchor: "hub-withdrawal", explain: "全部成功提现的本金合计，不是下面列出的那些相加。" },
+    detail.devices && { label: "设备数", value: numberLabel(summary.deviceCount), unit: "台", tone: "role-2" as const, icon: Cpu, group: "devices", anchor: "hub-devices" },
+    detail.referral && { label: "团队规模", value: numberLabel(summary.teamSize), unit: "人", tone: "role-3" as const, icon: UsersRound, group: "team", anchor: "hub-referral" },
+  ].filter((value) => !!value).slice(0, 4);
+
+  const openCases = asNumber(detail.risk?.openCaseCount);
+  const riskHigh = hasRiskScore && riskTone === "danger";
+  const issues: { key: string; text: string; go?: () => void }[] = [
+    pendingCommands.length > 0 && { key: "pending", text: `${pendingCommands.length} 个操作结果未确认` },
+    summary.locked === true && { key: "locked", text: "账号已锁定", go: () => locate("security") },
+    paymentSecurity.state === "exception" && { key: "payment", text: "支付密码有异常", go: () => locate("security") },
+    paymentSecurity.pending && { key: "release", text: "有一笔解除结果等待确认", go: () => locate("security") },
+    unfinishedRevokes.length > 0 && { key: "revoke", text: `${unfinishedRevokes.length} 张已解绑的卡仍可能被扣款`, go: () => locate("security", "hub-payment-methods") },
+    riskHigh && { key: "risk", text: `风险分 ${riskScore}，${riskBand}` },
+    openCases > 0 && { key: "cases", text: `${openCases} 个风险案件未关闭` },
+    recordsAlert && { key: "push", text: `${failedPushCount} 条通知推送失败`, go: () => locate("records") },
+  ].filter((value) => !!value);
+  const unreadable = [
+    paymentSecurity.state === "failed" && "支付安全",
+    paymentError && "支付方式",
+    fundsFailed && "资金",
+    devicesFailed && "设备与收益",
+    teamFailed && "团队与互动",
+    recordsFailed && "记录",
+    detail.risk && !riskAuthorityReady && !supportScope && "风险分",
+  ].filter((value): value is string => !!value);
+  const checked = [
+    "账户状态",
+    detail.risk && "风险分和风险案件",
+    summary.locked != null && "账号锁定",
+    paymentSecurityPort && "支付安全",
+    !supportScope && "支付方式的撤销状态",
+    detail.notifications && "通知推送失败",
+  ].filter((value): value is string => !!value);
+  const checking = paymentSecurity.state === "loading" || !supportScope && !paymentMethods && !paymentError;
+  const firstGo = issues.find((issue) => issue.go)?.go;
+  const c2Link = canReadC2 && !supportScope
+    ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={{ pathname: "/users/actions", query: { userCode: userNo, source: "C1", returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">去账户操作</span></Link>
+    : undefined;
+  const issueText = [...issues.map((issue) => issue.text), unreadable.length > 0 && `${unreadable.join("、")}读取失败`].filter(Boolean).join("，");
+  const conclusion = nonActive
+    ? <Conclusion state={status === "BANNED" ? "danger" : "warn"} lead icon={ShieldAlert} hint={issueText || undefined} action={c2Link}>账户状态：{statusLabel(status)}，提现和交易可能受限。</Conclusion>
+    : issues.length > 0
+      ? <Conclusion state={riskHigh ? "danger" : "warn"} hint={issueText} action={firstGo && <Button onClick={firstGo}>去看看</Button>}>有 <b>{issues.length}</b> 件事要处理</Conclusion>
+      : status === "UNKNOWN"
+        ? <Conclusion state="unknown" hint={unreadable.length ? `${unreadable.join("、")}读取失败` : undefined}>账户状态未确认，暂时无法判断</Conclusion>
+        : unreadable.length > 0
+          ? <Conclusion state="unknown" hint={`${unreadable.join("、")}读取失败，这部分没有判断。`}>账户正常，部分资料暂时无法判断</Conclusion>
+          : checking
+            ? <Conclusion state="unknown">账户正常，正在核对其余项目…</Conclusion>
+            : <Conclusion state="ok" icon={ShieldCheck} explain={`核对了：${checked.join("、")}。这个账号看不到的区块不在内。`}>账户正常，暂无要处理的事</Conclusion>;
+
+  const hasEntries = !supportScope;
+  const crossLinks = [
+    canReadC6 && ["注册与登录风险", "/users/reg-risk"],
+    canReadD2 && ["提现审核", "/finance/withdrawals"],
+    canReadD4 && ["资金账单", "/finance/ledger"],
+    canReadK4 && ["风险评分规则", "/risk/scoring"],
+    canReadA2 && ["操作记录", "/platform/audit"],
+  ].filter((item): item is [string, string] => Array.isArray(item));
+
+  const pendingNotices = pendingCommands.map((command) => (
+    <Notice key={command.fingerprint} tone="warn" title={`${command.label} · 结果未确认`}
+      action={<>
+        <Button size="sm" disabled={!!busyReason} onClick={() => void verifyPending(command)}>读回核对</Button>
+        <Button size="sm" disabled={!!busyReason} onClick={() => void retryPending(command)}>按原操作重试</Button>
+        {retryRejected.includes(command.commandKey) && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除待确认</Button>}
+      </>}>
+      {shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效，不要重复操作。按原操作重试用同一个命令号，不会重复执行。
+      {canReadA2 && <> <Link className="rd-link" href={{ pathname: "/platform/audit", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}>到操作记录核查</Link></>}
+      <Explain label="技术信息" content={`命令号 ${command.commandKey} ｜ 操作人 ${command.operator} ｜ 理由 ${command.reason}`} />
+      {pendingNotes[command.fingerprint] && <div>{pendingNotes[command.fingerprint]}</div>}
+    </Notice>
+  ));
+
+  const current = record && recordRows[record.kind][record.index];
+  const currentDevice = record?.kind === "device" && current ? current : null;
+  const currentDeviceWritable = !!currentDevice && canWriteC2 && asNumber(currentDevice.id) > 0 && !FINAL_DEVICE_STATUS.includes(asText(currentDevice.status, "").toUpperCase());
+  const currentNotificationId = record?.kind === "notification" && current ? Number(current.notificationId) : 0;
+  const recordProps = (kind: RecordKind) => ({ selected: record?.kind === kind ? record.index : undefined, onOpen: (index: number) => setRecord({ kind, index }) });
+  const deviceColumns: Column[] = [
+    { label: "实例 · 名称", cell: (row) => <Cell mono main={asText(row.instanceNo)} sub={asText(row.name)} title={asText(row.instanceNo)} /> },
+    { label: "规格", cell: (row) => formatC1DeviceTier(row.productTier) },
+    { label: "状态", cell: (row) => <Cell main={deviceTag(row)} sub={formatC1RuntimeStatus(row.runtimeStatus)} /> },
+    { label: "设定日收益", align: "right", cell: (row) => <Cell num main={amountText(row.dailyUsdt)} sub={amountText(row.dailyNex, "UVT")} /> },
+    ...(canWriteC2 ? [{ label: "操作", end: true, cell: (row: JsonRecord) => {
+      const deviceId = asNumber(row.id);
+      if (!deviceId || FINAL_DEVICE_STATUS.includes(asText(row.status, "").toUpperCase())) return "—";
+      return <span className="rd-toolbar">
+        <Button size="sm" disabledReason={deviceBlock(deviceId)} onClick={() => openDeviceAction(row, "replace")}>设备置换</Button>
+        <Button size="sm" disabledReason={deviceBlock(deviceId)} onClick={() => openDeviceAction(row, "recycle")}>设备回收</Button>
+      </span>;
+    } }] : []),
+  ];
+  const notificationColumns: Column[] = [
+    { label: "通知编号", cell: (row) => {
+      const id = Number(row.notificationId);
+      return canReadNotificationEvidence && Number.isSafeInteger(id) && id > 0
+        ? <button type="button" className="rd-link rd-link-button" onClick={() => setNotificationEvidence({ userKey, authEpoch, id })}>查看详情 · {id}</button>
+        : asText(row.notificationId);
+    } },
+    { label: "标题", cell: (row) => <Cell main={nexGridBrandText(asText(row.title))} title={asText(row.title)} /> },
+    { label: "类型", cell: (row) => formatC1NotificationType(row.type) },
+    { label: "推送 · 已读", cell: (row) => <Cell main={pushText(row)} sub={formatC1ReadFlag(row.readFlag)} /> },
+    { label: "创建时间", cell: (row) => <Cell num main={shortTime(row.createdAt)} /> },
+  ];
+  const paymentColumns: Column[] = [
+    { label: "支付方式", cell: (row) => <Cell main={`${asText(row.brand)} ···· ${asText(row.last4)}`} sub={`${asText(row.provider)} · ${asText(row.expiryLabel, "无到期信息")}`} /> },
+    { label: "状态", cell: (row) => <Cell full
+      main={<StatusTag tone={row.status === "BOUND" ? "ok" : "done"}>{row.status === "BOUND" ? (row.isDefault ? "已绑定 · 默认" : "已绑定") : "已解绑"}</StatusTag>}
+      sub={row.trialGuard ? `正在用于试用扣款 · ${asText(row.trialRefId, "关联试用")}，暂不能解绑` : row.status !== "BOUND" && row.unboundAt ? `解绑时间：${shortTime(row.unboundAt)}` : undefined} /> },
+    ...(canWriteC1 ? [{ label: "操作", end: true, cell: (row: JsonRecord) => {
+      const method = row as UserPaymentMethod;
+      if (method.status !== "BOUND") return "—";
+      return method.trialGuard
+        ? <Button size="sm" disabledReason={methodBlock(method)} onClick={() => openRebind(method)}>发送换绑通知</Button>
+        : <Button size="sm" disabledReason={methodBlock(method)} onClick={() => openUnbind(method)}>解绑</Button>;
+    } }] : []),
+  ];
+
+  const paymentCount = paymentError ? null : paymentMethods?.total ?? null;
+  const securitySummary = securityFailed
+    ? [paymentSecurity.state === "failed" && "支付安全读取失败", paymentError && "支付方式读取失败"].filter(Boolean).join(" · ")
+    : securityAlert
+      ? [
+        summary.locked === true && "账号已锁定",
+        paymentSecurity.state === "exception" && "支付密码有异常",
+        paymentSecurity.pending && "解除结果等待确认",
+        unfinishedRevokes.length > 0 && `${unfinishedRevokes.length} 张卡仍可能被扣款`,
+      ].filter(Boolean).join(" · ")
+      : [
+        detail.sessions && `在线设备 ${numberLabel(summary.activeSessionCount)}`,
+        detail.sessions && `两步验证${summary.twoFactorEnabled == null ? "未知" : summary.twoFactorEnabled ? "开启" : "关闭"}`,
+        paymentSecurity.state === "clear" && "支付密码无异常",
+        !supportScope && paymentCount !== null && `支付方式 ${paymentCount} 张`,
+      ].filter(Boolean).join(" · ");
+  const fundsSummary = fundsFailed ? "有区块读取失败" : [
+    detail.deposits && `充值 ${numberLabel(detail.deposits.total)} 笔`,
+    detail.withdrawals && `提现 ${numberLabel(detail.withdrawals.total)} 笔`,
+    detail.financial && `兑换 ${numberLabel(exchanges.length)} 笔`,
+    !detail.deposits && !detail.withdrawals && !detail.financial && `账户${statusLabel(status)}`,
+  ].filter(Boolean).join(" · ");
+  const devicesSummary = devicesFailed ? "有区块读取失败" : [
+    detail.devices && `在线 ${numberLabel(detail.devices.onlineCount)} / 活跃 ${numberLabel(detail.devices.activeCount)}`,
+    detail.earnings && `收益合计 ${amountText(detail.earnings.totalUsdt)}`,
+  ].filter(Boolean).join(" · ");
+  const teamSummary = teamFailed ? "有区块读取失败" : [
+    detail.referral && `团队 ${numberLabel(detail.referral.teamSize)} 人`,
+    detail.referral && `直接邀请 ${numberLabel(detail.referral.directCount)} 人`,
+    detail.vrank && `等级 ${asText(detail.vrank.currentRank)}`,
+  ].filter(Boolean).join(" · ");
+  const recordsSummary = recordsFailed ? "有区块读取失败" : recordsAlert ? `${failedPushCount} 条通知推送失败` : [
+    detail.notifications && `未读 ${numberLabel(detail.notifications.unreadCount)} 条`,
+    detail.commerce && `订单 ${numberLabel(detail.commerce.total)} 单`,
+    detail.audit && `操作记录 ${auditEntries.length} 条`,
+  ].filter(Boolean).join(" · ");
+  const hiddenNote = [
+    !detail.sessions && !supportScope && "登录安全",
+    !fundsPresent && "资金",
+    !devicesPresent && "设备与收益",
+    !teamPresent && "团队与互动",
+    !recordsPresent && "记录",
+    !detail.risk && "风险",
+  ].filter(Boolean).join("、");
+  const wallet = detail.financial?.wallet as JsonRecord | undefined;
+
   return (
-    <div className="customer-panorama mx-auto w-full min-w-0 max-w-[1100px]" style={{ overflowWrap: "anywhere" }}>
-      <Link href={returnTo} prefetch={false} className="inline-flex items-center gap-1 text-[12.5px] transition-colors hover:opacity-80" style={{ color: "var(--v5-ink-3)" }}>
-        <ArrowLeft size={14} /> {returnLabel}
-      </Link>
+    <RdPage>
+      <PageHeader pageId={supportScope ? undefined : "C1D"} title={displayNickname}
+        summary="这个用户的资料、资金、设备和记录。"
+        back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>}
+        actions={<Button icon={<RefreshCcw size={14} aria-hidden />} loading={loading} loadingText="读取中…" onClick={() => void load()}>刷新</Button>}
+        identity={<>
+          <span data-mono>用户编码 {userNo}</span>
+          <StatusTag tone={statusTone(status)} filled>{statusLabel(status)}</StatusTag>
+          <span>分层 {asText(profile.userLevel)} · {asText(profile.vRank)}</span>
+          <span>{asText(profile.phoneMasked)}</span>
+        </>}
+        meta={`注册 ${shortTime(profile.registeredAt)} · 最近登录 ${shortTime(profile.lastLoginAt)} · ${readAt} 读取（${businessZone().label}），打开和点「刷新」时读取`}
+        readOnly={!supportScope && !canWriteC1 && !canWriteC2 ? "当前账号在这页只能查看" : undefined}
+        guideExtra={hiddenNote ? <p>这个账号看不到的区块不显示：{hiddenNote}。</p> : undefined} />
 
-      <header className="mt-3 flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="customer-panorama-name font-display text-[26px]" title={displayNickname} style={{ color: "var(--v5-ink)" }}>{displayNickname}</h1>
-            <span className="font-mono-tabular text-[12px]" style={{ color: "var(--v5-ink-4)" }}>用户编码 {userNo}</span>
-          </div>
-          <p className="mt-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
-            {asText(profile.phoneMasked)} · 注册 {formatDate(profile.registeredAt)} · 最近登录 {formatDate(profile.lastLoginAt)}
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <StatusPill label={statusLabel(status)} tone={statusTone(status)} size="sm" />
-            {(detail.risk || profile.riskBand) && <StatusPill label={`${riskBand}${hasRiskScore ? ` ${riskScore}` : ""}`} tone={hasRiskScore ? riskTone(riskScore) : "neutral"} size="sm" />}
-            <span className="font-mono-tabular rounded-full px-2 py-0.5 text-[10.5px]" style={{ background: "var(--v5-surface-2)", color: "var(--v5-ink-3)" }}>
-              分层 {asText(profile.userLevel)} · {asText(profile.vRank)}
-            </span>
-            {asList(detail.risk?.flags).map((flag, index) => (
-              <span key={`${displayValue(flag)}-${index}`} className="rounded-full px-2 py-0.5 text-[10.5px]" style={{ background: "color-mix(in srgb, var(--v5-danger) 14%, transparent)", color: "var(--v5-danger)" }}>
-                {displayValue(flag)}
-              </span>
-            ))}
-          </div>
-        </div>
-        <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px] disabled:opacity-60" style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}>
-          <RefreshCcw size={14} /> 刷新
-        </button>
-      </header>
+      {conclusion}
+      {pendingNotices}
 
-      {nonActive && (
-        <div className="mt-3 flex items-center gap-2 rounded-[10px] px-3 py-2 text-[12.5px]" style={{ background: "color-mix(in srgb, var(--v5-danger) 12%, transparent)", color: "var(--v5-danger)" }}>
-          <Snowflake size={14} /> 账户状态：{statusLabel(status)}，提现和交易可能受限。
-        </div>
-      )}
-
-      <div className="customer-panorama-kpis mt-4">
-        {kpis.map((kpi) => (
-          <button key={kpi.label} type="button" onClick={() => scrollToHub(kpi.anchor)} title={`查看${kpi.label}明细`} className="block w-full text-left transition-transform hover:-translate-y-0.5">
-            <KpiStatCard label={kpi.label} value={kpi.value} accent={kpi.accent} />
-          </button>
+      {kpis.length > 0 && <StatBand label="关键数字">
+        {kpis.map((kpi, index) => (
+          <Stat key={kpi.label} lead={index === 0} icon={kpi.icon} tone={kpi.tone} label={kpi.label} value={kpi.value} unit={kpi.value === "—" ? undefined : kpi.unit}
+            explain={kpi.explain} openLabel={`查看${kpi.label}明细`} onOpen={() => locate(kpi.group, kpi.anchor)} />
         ))}
-      </div>
+      </StatBand>}
 
-      <div className={`mt-4 grid gap-4 ${!supportScope || detail.sessions || paymentSecurityPort ? "lg:grid-cols-2" : ""}`}>
-        <div className={supportScope && !detail.sessions && !paymentSecurityPort ? "customer-panorama-primary" : "flex flex-col gap-4"}>
-          {detail.risk && <Section title="风险评估" tag={supportScope ? undefined : "来自风险评分规则"}>
-            <div className="flex items-center gap-4">
-              <div>
-                {hasRiskScore && <p className="font-mono-tabular text-[32px] leading-none" style={{ color: riskColor(riskScore) }}>{riskScore}</p>}
-                <p className={hasRiskScore ? "mt-2 text-[12.5px]" : "text-[18px]"} style={{ color: "var(--v5-ink-3)" }}>{riskBand}</p>
-              </div>
-              <div className="flex-1">
-                {detail.risk?.flags !== undefined && <Row label="风险标记">{asList(detail.risk.flags).map(displayValue).join(" · ") || "无"}</Row>}
-                {detail.risk?.cases !== undefined && <Row label="风险案件">{numberLabel(detail.risk?.openCaseCount)} 个未关闭</Row>}
-              </div>
-            </div>
-          </Section>}
-
-          {detail.financial && <Section title="资产 & 账户" tag={supportScope ? undefined : "USDT / UVT"}>
-            <Row label="可提余额 · USDT"><span className="font-mono-tabular">{money(summary.walletUsdt ?? profile.walletUsdt)}</span></Row>
-            <Row label="UVT 余额"><span className="font-mono-tabular">{numberLabel(summary.walletNex ?? profile.walletNex)} UVT</span></Row>
-            <Row label="累计充值"><span className="font-mono-tabular">{money(summary.depositedUsd)}</span></Row>
-            <Row label="累计提现"><span className="font-mono-tabular">{money(summary.withdrawnUsd)}</span></Row>
-            <Row label="提现申请额"><span className="font-mono-tabular">{money(summary.withdrawRequestedUsd)}</span></Row>
-          </Section>}
+      {hasEntries && <Panel title="处理入口" icon={UserCog} tone="role-3" explain={<><p>账户和资金操作到对应页面办，办完回到这页点「刷新」。</p><p>{[canWriteC1 && "重置昵称、处理支付方式", canWriteC2 && "置换和回收设备"].filter(Boolean).join("，") ? `这个账号在这页能${[canWriteC1 && "重置昵称、处理支付方式", canWriteC2 && "置换和回收设备"].filter(Boolean).join("，")}。` : "这个账号在这页不能改任何内容。"}</p></>}>
+        <div className="rd-detail-entries">
+          <div className="rd-toolbar">
+            {canReadC2 && <Link className="rd-btn" data-variant="secondary" data-size="sm" href={{ pathname: "/users/actions", query: { userCode: userNo, source: "C1", returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">冻结 / 解冻账户</span></Link>}
+            {canReadC3 && /^[1-9]\d*$/.test(c3UserId) && <Link className="rd-btn" data-variant="secondary" data-size="sm" href={{ pathname: "/users/assets", query: { userCode: userNo, userId: c3UserId, returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">调整余额</span></Link>}
+            {canReadC5 && <Link className="rd-btn" data-variant="secondary" data-size="sm" href={{ pathname: "/users/security", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">安全与登录设备</span></Link>}
+            {canWriteC1 && <Button size="sm" disabledReason={!c3UserId ? "读不到用户号，刷新后再试" : nicknameBlock} onClick={openNicknameReset}>重置昵称</Button>}
+          </div>
+          {crossLinks.length > 0 && <div className="rd-links">
+            <span>去查</span>
+            {crossLinks.map(([label, target]) => <Link key={target} className="rd-link" href={{ pathname: target, query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}>{label}</Link>)}
+          </div>}
         </div>
+      </Panel>}
 
-        {(!supportScope || detail.sessions || paymentSecurityPort) && <div className="flex flex-col gap-4">
-          {!supportScope && <Section title="去处理" tag="账户、登录及资金操作入口">
-            <div className="flex flex-wrap gap-2">
-              {canReadC2 && (
-                <Link
-                  href={{ pathname: "/users/actions", query: { userCode: userNo, source: "C1", returnTo } }}
-                  className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px]"
-                  style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}
-                >
-                  <Snowflake size={14} style={{ color: "var(--v5-danger)" }} /> 冻结 / 解冻账户
-                </Link>
-              )}
-              {canReadC5 && (
-                <Link
-                  href={{ pathname: "/users/security", query: { userCode: userNo, returnTo } }}
-                  className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px]"
-                  style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}
-                >
-                  <ShieldAlert size={14} style={{ color: "var(--v5-warning)" }} /> 安全与登录设备
-                </Link>
-              )}
-              {[
-                canReadC3 && /^[1-9]\d*$/.test(c3UserId) && ["调整余额", "/users/assets"],
-                canReadC6 && ["注册与登录风险", "/users/reg-risk"],
-                canReadD2 && ["提现审核", "/finance/withdrawals"],
-                canReadD4 && ["资金账单", "/finance/ledger"],
-                canReadK4 && ["风险评分规则", "/risk/scoring"],
-                canReadA2 && ["操作记录", "/platform/audit"],
-              ].filter((item): item is [string, string] => Array.isArray(item)).map(([label, pathname]) => (
-                <Link
-                  key={pathname}
-                  href={{ pathname, query: { userCode: userNo, ...(pathname === "/users/assets" ? { userId: c3UserId } : {}), returnTo } }}
-                  className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px]"
-                  style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}
-                >
-                  {label}
-                </Link>
+      {(detail.risk || detail.financial) && <Panel title={detail.risk && detail.financial ? "风险与资产" : detail.risk ? "风险" : "资产"} icon={detail.risk ? ShieldAlert : Wallet} tone={detail.risk ? (hasRiskScore ? riskTone : "role-other") : "role-1"}
+        explain={detail.risk && !supportScope ? "风险分来自风险评分规则，这页只显示，不重算。" : undefined}>
+        <Values rows={[
+          ...(detail.risk ? [["风险分", hasRiskScore ? <StatusTag key="score" tone={riskTone}>{riskScore} · {riskBand}</StatusTag> : riskBand] as const] : []),
+          ...(detail.risk?.flags !== undefined ? [["风险标记", riskFlags(detail.risk.flags, detail.risk.cases !== undefined)] as const] : []),
+          ...(detail.risk?.cases !== undefined ? [[<>风险案件<Explain label="风险案件的口径" content="按最近 20 条案件算。" /></>, `${numberLabel(detail.risk.openCaseCount)} 个未关闭`] as const] : []),
+          ...(detail.financial ? [
+            ["UVT 余额", amountText(summary.walletNex ?? profile.walletNex, "UVT")] as const,
+            [<>提现申请额<Explain label="提现申请额的口径" content="申请额含处理中的提现，不是已到账的钱。" /></>, amountText(summary.withdrawRequestedUsd)] as const,
+          ] : []),
+        ]} />
+      </Panel>}
+
+      {sections.length > 0 && <div className="rd-detail-nav"><SectionNav row label="本页分区" items={sections} nav={nav} /></div>}
+
+      <div className="rd-detail-groups">
+        {securityPresent && <div id={nav.anchor("security")}>
+          <Fold title="安全" icon={ShieldCheck} tone="role-3" summary={securitySummary || "正在读取…"} alertTone={securityFailed ? "danger" : "warn"} {...foldProps("security", securityAlert || securityFailed)}>
+            {detail.sessions && <Block title="登录安全" section={{ sourceStatus: "READY" }} sub={`最近 50 条登录记录 · 筛选后 ${filteredSessions.length} 条`} explain="这是最近最多 50 条样本，不是全部历史。">
+              <Values rows={[
+                ["在线设备", numberLabel(summary.activeSessionCount)],
+                ["两步验证", yesNo(summary.twoFactorEnabled, "开启", "关闭")],
+                ["锁定", summary.locked ? <StatusTag tone="warn">是</StatusTag> : yesNo(summary.locked)],
+              ]} />
+              <Segments<SessionStatusFilter> label="登录状态筛选" value={sessionStatusFilter} onChange={setSessionStatusFilter} items={C1_SESSION_STATUS_FILTERS.map(([value, label]) => ({ value, label }))} />
+              <RecordTable label="登录记录" rows={visibleSessions} columns={SESSION_COLUMNS} empty={sessionStatusFilter === "ALL" ? "暂无登录记录" : "当前筛选下没有登录记录"} {...recordProps("session")} />
+              {filteredSessions.length > C1_SESSION_PAGE_SIZE && <Pager label="登录记录" total={filteredSessions.length} page={sessionPage} pageSize={C1_SESSION_PAGE_SIZE} sizes={[C1_SESSION_PAGE_SIZE]} onPage={(page) => { setRecord(null); setSessionPage(Math.min(sessionPageCount, Math.max(1, page))); }} onPageSize={() => undefined} />}
+            </Block>}
+            {paymentSecurityPort && <div className="rd-detail-block">
+              <PaymentSecurityBlock key={`${readKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={`${displayNickname} · ${userNo}`} reloadKey={reloadTick}
+                onState={onPaymentSecurity} />
+            </div>}
+            {!supportScope && <Block id="hub-payment-methods" title="支付方式" section={{ sourceStatus: "READY" }} failure={paymentError && `支付方式加载失败：${paymentError}`}
+              sub={paymentMethods && paymentMethods.total > 0 ? `${paymentMethods.total} 条` : undefined}
+              actions={<Button size="sm" icon={<RefreshCcw size={13} aria-hidden />} loading={paymentLoading} onClick={() => void loadPaymentMethods()}>刷新支付方式</Button>}>
+              <Check label="显示已解绑" checked={includeUnbound} onChange={(event) => { setIncludeUnbound(event.target.checked); setPaymentPage(1); setRecord(null); }} />
+              {unfinishedRevokes.map((method) => (
+                <Notice key={method.id} tone={method.revokeDeadlineAt && new Date(method.revokeDeadlineAt).getTime() < Date.now() ? "danger" : "warn"} title={`${method.brand} ···· ${method.last4}`}>
+                  我们这边已解绑，但支付商那边{method.pspRevokeStatus === "FAILED" ? "撤销失败" : "还在处理"}，这张卡仍可能被扣款，还不算彻底解绑。
+                  {method.revokeDeadlineAt && new Date(method.revokeDeadlineAt).getTime() < Date.now() ? " 已超时，请立即联系主管。" : ""}
+                  <Explain label="撤销详情" content={[method.revokeCommandNo && `命令 ${method.revokeCommandNo}`, method.revokeAttempts && `已重试 ${method.revokeAttempts} 次`, method.revokeLastError].filter(Boolean).join(" · ") || "暂无更多信息"} />
+                </Notice>
               ))}
-              {canWriteC1 && <ActionButton
-                onClick={() => openActionConfirmReq({ briefKind: "record",
-                  action: `重置昵称 · ${displayNickname}`,
-                  detail: "系统会生成一个不含手机号等个人信息的新昵称，替换当前昵称。",
-                  amplifies: false,
-                  run: async (reason) => {
-                    if (!userId) return;
-                    const commandKey = c1UserCommands.resolve(
-                      nicknameSlot(userId),
-                      JSON.stringify([nickname, reason]),
-                      () => `c1-nickname-reset-${crypto.randomUUID()}`,
-                    );
-                    setActionPending("重置昵称");
-                    try {
-                      const result = await resetUserNickname(userId, nickname, reason, undefined, commandKey);
-                      c1UserCommands.forget(nicknameSlot(userId));
-                      toast.success(`昵称已重置为 ${userNicknameText(result.nickname, profile?.phoneMasked)}`);
-                      await load();
-                    } catch (err) {
-                      if (!(err instanceof UsersOutcomeUnknownError)) c1UserCommands.forget(nicknameSlot(userId));
-                      toast.error("昵称重置失败", errorMessage(err));
-                      return false;
-                    } finally {
-                      setActionPending(null);
-                    }
-                  },
-                })}
-                disabled={actionDisabled}
-              >
-                <UserCog size={14} style={{ color: "var(--v5-tech-cyan)" }} /> 重置昵称
-              </ActionButton>}
-            </div>
-            <p className="mt-2.5 flex items-center gap-1 text-[11px]" style={{ color: "var(--v5-ink-4)" }}>
-              <ShieldAlert size={12} /> 昵称与支付方式可在本页处理；支付密码异常请见下方「支付安全」，账户或登录操作请进入对应页面。{actionPending ? ` 正在执行：${actionPending}` : ""}
-            </p>
-          </Section>}
+              <RecordTable label="支付方式" rows={methods} columns={paymentColumns} empty={paymentLoading ? "正在读取支付方式…" : "该用户暂无支付方式"} {...recordProps("payment")} />
+              {!!paymentMethods?.total && <Pager label="支付方式" total={paymentMethods.total} page={paymentMethods.page} pageSize={paymentMethods.pageSize} sizes={[paymentMethods.pageSize]} loading={paymentLoading} onPage={(page) => { setRecord(null); setPaymentPage(page); }} onPageSize={() => undefined} />}
+            </Block>}
+          </Fold>
+        </div>}
 
-          {detail.sessions && <Section title="安全与登录设备" tag={supportScope ? undefined : "登录和设备"}>
-            <div className="customer-panorama-security-kpis mb-2 grid grid-cols-3 gap-2">
-              <KpiStatCard label="在线设备" value={numberLabel(summary.activeSessionCount)} accent="var(--admin-domain-c)" />
-              <KpiStatCard label="两步验证" value={summary.twoFactorEnabled == null ? "-" : summary.twoFactorEnabled ? "开启" : "关闭"} accent="var(--admin-domain-e)" />
-              <KpiStatCard label="锁定" value={summary.locked == null ? "-" : summary.locked ? "是" : "否"} accent="var(--v5-warning)" />
-            </div>
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <TabGroup<SessionStatusFilter>
-                label="登录状态筛选"
-                value={sessionStatusFilter}
-                items={C1_SESSION_STATUS_FILTERS.map(([value]) => value)}
-                onSelect={setSessionStatusFilter}
-                itemClassName={(value, selected) => "rounded-[8px] px-2.5 py-1 text-[11.5px]" + (selected ? " font-semibold" : "")}
-                itemStyle={(value, selected) => ({
-                  border: "1px solid var(--v5-border)",
-                  background: selected ? "var(--v5-surface-2)" : "transparent",
-                  color: selected ? "var(--v5-ink)" : "var(--v5-ink-3)",
-                  fontWeight: selected ? 600 : 400,
-                })}
-              >{(value) => C1_SESSION_STATUS_FILTERS.find(([v]) => v === value)?.[1] ?? value}</TabGroup>
-              <span className="text-[11.5px]" style={{ color: "var(--v5-ink-4)" }}>
-                最近 50 条登录记录 · 筛选后 {filteredSessions.length} 条 · 第 {sessionPage}/{sessionPageCount} 页
-              </span>
-            </div>
-            <DataTable
-              rows={visibleSessions}
-              columns={[
-                { key: "deviceName", label: "设备", render: (value) => platformSessionDeviceText(displayValue(value)) },
-                { key: "clientIpMasked", label: "IP" },
-                { key: "status", label: "状态", render: (value) => <StatusPill label={formatC1SessionStatus(value)} tone={asText(value).toUpperCase() === "ACTIVE" ? "success" : "neutral"} size="sm" /> },
-                { key: "issuedAt", label: "登录时间", render: formatDate },
-                { key: "expiresAt", label: "过期时间", render: formatDate },
-              ]}
-              emptyText={sessionStatusFilter === "ALL" ? "暂无登录记录" : "当前筛选下没有登录记录"}
-            />
-            {sessionPageCount > 1 && (
-              <div className="mt-2 flex items-center justify-end gap-2">
-                <button type="button" className="rounded-[8px] px-2.5 py-1.5 text-[12px] disabled:opacity-40" style={{ border: "1px solid var(--v5-border)" }} disabled={sessionPage <= 1} onClick={() => setSessionPage((value) => Math.max(1, value - 1))}>上一页</button>
-                <button type="button" className="rounded-[8px] px-2.5 py-1.5 text-[12px] disabled:opacity-40" style={{ border: "1px solid var(--v5-border)" }} disabled={sessionPage >= sessionPageCount} onClick={() => setSessionPage((value) => Math.min(sessionPageCount, value + 1))}>下一页</button>
-              </div>
-            )}
-          </Section>}
-          {paymentSecurityPort && <PaymentSecurityCard key={`${readKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={`${displayNickname} · ${userNo}`} />}
+        {fundsPresent && <div id={nav.anchor("funds")}>
+          <Fold title="资金" icon={Wallet} tone="role-1" summary={fundsSummary} alertTone="danger" {...foldProps("funds", fundsFailed)}>
+            <Block id="hub-deposit" title="充值记录" section={detail.deposits} sub={`最多 30 条 · 共 ${numberLabel(detail.deposits?.total)} 笔`}
+              explain={`这里只列已确认的充值，最多 30 条。确认总额 ${amountText(detail.deposits?.confirmedUsd)} 是全部已确认充值的合计，不是这些行相加。`}>
+              <RecordTable label="充值记录" rows={deposits} columns={DEPOSIT_COLUMNS} {...recordProps("deposit")} />
+            </Block>
+            <Block id="hub-withdrawal" title="提现记录" section={detail.withdrawals} sub={`最多 30 条 · 共 ${numberLabel(detail.withdrawals?.total)} 笔`}
+              explain={<><p>这里最多列 30 条，不是近 30 天。</p><p>完成总额 {amountText(detail.withdrawals?.completedUsd)}：全部成功提现的本金。申请总额 {amountText(detail.withdrawals?.requestedUsd)}：含处理中的提现。</p></>}>
+              <RecordTable label="提现记录" rows={withdrawals} columns={WITHDRAWAL_COLUMNS} {...recordProps("withdrawal")} />
+            </Block>
+            <Block title="账户状态" section={detail.account}>
+              <Values rows={[
+                ["用户编码", userNo],
+                ["账户状态", <StatusTag key="status" tone={statusTone(status)}>{statusLabel(status)}</StatusTag>],
+                ["两步验证", yesNo(summary.twoFactorEnabled, "已开启", "未开启")],
+                ["需重置密码", yesNo(summary.passwordResetRequired)],
+              ]} />
+            </Block>
+            <Block title="兑换记录" section={detail.financial} sub={Array.isArray(detail.financial?.stakingLedgerRows) ? `质押记录 ${numberLabel(detail.financial.stakingLedgerRows.length)} 条` : undefined}
+              explain={`钱包 USDT ${amountText(wallet?.usdt)}，钱包 UVT ${amountText(wallet?.nex, "UVT")}。`}>
+              <RecordTable label="兑换记录" rows={exchanges} columns={EXCHANGE_COLUMNS} empty="暂无兑换记录" {...recordProps("exchange")} />
+            </Block>
+          </Fold>
+        </div>}
+
+        {devicesPresent && <div id={nav.anchor("devices")}>
+          <Fold title="设备与收益" icon={Cpu} tone="role-2" summary={devicesSummary} alertTone="danger" {...foldProps("devices", devicesFailed)}>
+            <Block id="hub-devices" title="设备明细" section={detail.devices} sub={`最多 200 台 · 共 ${numberLabel(detail.devices?.total)} 台`}
+              explain={<><p>这是设定值，不是今天实际到账的收益。合计含已停用设备。</p><p>在线、活跃和合计都按这里列出的设备算。</p></>}>
+              <Values rows={[
+                ["在线 / 活跃", `${numberLabel(detail.devices?.onlineCount)} / ${numberLabel(detail.devices?.activeCount)}`],
+                ["设定日收益合计（含已停用设备）", `${amountText(detail.devices?.dailyUsdt)} · ${amountText(detail.devices?.dailyNex, "UVT")}`],
+              ]} />
+              <RecordTable label="设备明细" rows={devices} columns={deviceColumns} {...recordProps("device")} />
+            </Block>
+            <Block title="收益明细" section={detail.earnings ? { sourceStatus: asText(detail.earnings.sourceStatus, "READY") } : undefined} sub={`共 ${numberLabel(detail.earnings?.total)} 条`}
+              explain="收益合计按这次读到的账单流水算，不承诺是全部历史。">
+              <Values rows={[
+                ["收益合计", `${amountText(detail.earnings?.totalUsdt)} · ${amountText(detail.earnings?.totalNex, "UVT")}`],
+                ...(detail.devices ? [] : [["设定日收益合计（含已停用设备）", `${amountText(detail.earnings?.deviceDailyUsdt)} · ${amountText(detail.earnings?.deviceDailyNex, "UVT")}`] as const]),
+              ]} />
+              <RecordTable label="收益明细" rows={visibleEarnings} columns={EARNING_COLUMNS} {...recordProps("earning")} />
+              {earningsRecords.length > 0 && <Pager label="收益明细" total={earningsRecords.length} page={earningsPage} pageSize={earningsPageSize} sizes={[10, 20, 50]} onPage={(page) => { setRecord(null); setEarningsPage(page); }} onPageSize={(size) => { setRecord(null); setEarningsPageSize(size); setEarningsPage(1); }} />}
+            </Block>
+          </Fold>
+        </div>}
+
+        {teamPresent && <div id={nav.anchor("team")}>
+          <Fold title="团队与互动" icon={Network} tone="role-3" summary={teamSummary} alertTone="danger" {...foldProps("team", teamFailed)}>
+            <Block id="hub-referral" title="推荐团队" section={detail.referral ? { sourceStatus: asText(detail.referral.sourceStatus, "READY") } : undefined} sub="最多 20 条"
+              explain="成员最多列 20 条，不是完整名单。团队规模、直接邀请和团队订单额是另外算的总数，不是这些行相加。">
+              <Values rows={[
+                ["团队规模", `${numberLabel(detail.referral?.teamSize)} 人`],
+                ["直接邀请", `${numberLabel(detail.referral?.directCount)} 人`],
+                ["团队订单额", amountText(detail.referral?.teamVolumeUsd)],
+              ]} />
+              <RecordTable label="推荐团队" rows={members} columns={MEMBER_COLUMNS} {...recordProps("member")} />
+            </Block>
+            <Block id="hub-engagement" title="互动与参与" section={detail.engagement ? { sourceStatus: asText(detail.engagement.sourceStatus, "READY") } : undefined}>
+              <RecordTable label="互动与参与" rows={engagement} columns={ENGAGEMENT_COLUMNS} {...recordProps("engagement")} />
+            </Block>
+            <Block title="团队等级" section={detail.vrank}>
+              <Values rows={[
+                ["当前等级", asText(detail.vrank?.currentRank)],
+                ["用户级别", asText(detail.vrank?.userLevel)],
+                ...(detail.referral ? [] : [
+                  ["团队规模", `${numberLabel(detail.vrank?.teamSize)} 人`] as const,
+                  ["直接邀请", `${numberLabel(detail.vrank?.directCount)} 人`] as const,
+                  ["团队订单额", amountText(detail.vrank?.teamVolumeUsd)] as const,
+                ]),
+              ]} />
+            </Block>
+          </Fold>
+        </div>}
+
+        {recordsPresent && <div id={nav.anchor("records")}>
+          <Fold title="记录" icon={FileClock} tone="role-other" summary={recordsSummary} alertTone={recordsFailed ? "danger" : "warn"} {...foldProps("records", recordsAlert || recordsFailed)}>
+            <Block title="参与与通知" section={detail.notifications} sub="最多 20 条" explain="未读、待推送和失败是另外算的总数，不是这些行相加。点通知编号看时间证据。">
+              <Values rows={[
+                ["未读", `${numberLabel(detail.notifications?.unreadCount)} 条`],
+                ["待推送", `${numberLabel(detail.notifications?.pendingPushCount)} 条`],
+                ["失败", failedPushCount > 0 ? <StatusTag key="failed" tone="danger">{numberLabel(failedPushCount)} 条</StatusTag> : `${numberLabel(detail.notifications?.failedPushCount)} 条`],
+              ]} />
+              <RecordTable label="参与与通知" rows={notifications} columns={notificationColumns} {...recordProps("notification")} />
+            </Block>
+            <Block title="商城订单" section={detail.commerce ? { sourceStatus: asText(detail.commerce.sourceStatus, "READY") } : undefined} sub="最多 50 单" explain="订单总数和活跃订单按这里列出的订单算。">
+              <Values rows={[
+                ["订单总数", `${numberLabel(detail.commerce?.total)} 单`],
+                ["活跃订单", `${numberLabel(detail.commerce?.activeOrderCount)} 单`],
+              ]} />
+              <RecordTable label="商城订单" rows={orders} columns={ORDER_COLUMNS} {...recordProps("order")} />
+            </Block>
+            {detail.audit && <div className="rd-detail-block">
+              <Fold inset title="后台操作记录" summary={`最多 20 条 · 这里有 ${auditEntries.length} 条`}><AuditTimeline entries={auditEntries} /></Fold>
+            </div>}
+          </Fold>
         </div>}
       </div>
 
-      <div className="mt-4 flex flex-col gap-4">
-        {!supportScope && <HubSection id="hub-payment-methods" title="支付方式" section={{ sourceStatus: paymentError ? "ERROR" : "READY" }}>
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <label className="inline-flex items-center gap-2 text-[12px]" style={{ color: "var(--v5-ink-3)" }}>
-              <input type="checkbox" checked={includeUnbound} onChange={(event) => { setIncludeUnbound(event.target.checked); setPaymentPage(1); }} /> 显示已解绑
-            </label>
-            <button type="button" className="inline-flex items-center gap-1 rounded-[8px] px-2.5 py-1.5 text-[12px]" style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-3)" }} onClick={() => void loadPaymentMethods()}><RefreshCcw size={13} /> 刷新支付方式</button>
-          </div>
-          {paymentError && <p className="mb-3 rounded-[8px] px-3 py-2 text-[12px]" style={{ color: "var(--v5-danger)", background: "color-mix(in srgb, var(--v5-danger) 10%, transparent)" }}>支付方式加载失败：{paymentError}</p>}
-          <div className="grid gap-3 md:grid-cols-2">
-            {(paymentMethods?.items ?? []).map((method) => (
-              <div key={method.id} className="rounded-[10px] p-3" style={{ background: method.status === "BOUND" ? "var(--v5-surface-2)" : "color-mix(in srgb, var(--v5-surface-2) 70%, var(--v5-ink-4) 30%)", opacity: method.status === "BOUND" ? 1 : 0.68, filter: method.status === "BOUND" ? "none" : "grayscale(0.85)" }}>
-                <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-2"><CreditCard size={17} /><div><p className="text-[13px]" style={{ color: "var(--v5-ink)" }}>{method.brand} ···· {method.last4}</p><p className="text-[11px]" style={{ color: "var(--v5-ink-4)" }}>{method.provider} · {method.expiryLabel || "无到期信息"}</p></div></div><StatusPill label={method.status === "BOUND" ? (method.isDefault ? "已绑定 · 默认" : "已绑定") : "已解绑"} tone={method.status === "BOUND" ? "success" : "neutral"} size="sm" dot={false} /></div>
-                {method.trialGuard && <p className="mt-2 text-[11px]" style={{ color: "var(--v5-warning)" }}>正在用于试用扣款 · {method.trialRefId || "关联试用"}，暂不能解绑</p>}
-                {method.status !== "BOUND" && method.unboundAt && <p className="mt-2 text-[11px]" style={{ color: "var(--v5-ink-4)" }}>解绑时间：{formatDate(method.unboundAt)}</p>}
-                {/* 🔴 业务态已解绑 ≠ 支付商那边真的注销了(2026-08-06 原型对齐 P0):后端返回该状态但此前无渲染点,
-                    运营会把「待重试/排队中」误读成彻底解绑,而支付商侧 token 仍有效、仍可能被扣款。
-                    只在**未确认注销成功**时显眼提示;已成功(revoked/success/done)不占版面。 */}
-                {method.status !== "BOUND" && !!method.pspRevokeStatus && !/^(revoked|success|succeeded|done|completed)$/i.test(method.pspRevokeStatus) && (
-                  <p className="mt-2 rounded-[6px] px-2 py-1 text-[11px]" style={{ color: "var(--v5-warning)", background: "color-mix(in srgb, var(--v5-warning) 12%, transparent)" }}>
-                    我们这边已解绑，但支付商那边{method.pspRevokeStatus === "FAILED" ? "撤销失败" : "还在处理"}，这张卡仍可能被扣款，还不算彻底解绑。
-                    {method.revokeCommandNo ? ` 命令 ${method.revokeCommandNo}` : ""}{method.revokeAttempts ? ` · 已重试 ${method.revokeAttempts} 次` : ""}
-                    {method.revokeDeadlineAt && new Date(method.revokeDeadlineAt).getTime() < Date.now() ? " · 已超时，请立即联系主管" : ""}
-                    {method.revokeLastError ? ` · ${method.revokeLastError}` : ""}
-                  </p>
-                )}
-                {canWriteC1 && method.status === "BOUND" && <div className="mt-3 flex gap-2">{method.trialGuard ? <ActionButton disabled={!!actionPending} onClick={() => openActionConfirmReq({ briefKind: "content", action: `发送换绑通知 · 尾号 ${method.last4}`, detail: "向该用户发送真实站内通知与推送，引导先换绑试用扣款支付方式。", amplifies: false, run: async (reason) => { if (!userId) return; const slot = paymentSlot("rebind", userId, method.id); const commandKey = c1UserCommands.resolve(slot, String(method.version), () => `c1-payment-rebind-${crypto.randomUUID()}`); setActionPending(`换绑通知 ${method.id}`); try { await notifyUserPaymentMethodRebind(userId, method.id, method.version, reason, undefined, commandKey); c1UserCommands.forget(slot); toast.success("换绑通知已进入推送队列"); await loadPaymentMethods(); } catch (err) { if (!(err instanceof UsersOutcomeUnknownError)) c1UserCommands.forget(slot); toast.error("换绑通知失败", errorMessage(err)); return false; } finally { setActionPending(null); } } })}><Bell size={13} /> 发送换绑通知</ActionButton> : <ActionButton disabled={!!actionPending} onClick={() => openActionConfirmReq({ briefKind: "record", action: `解绑支付方式 · 尾号 ${method.last4}`, detail: "解绑后立即停止作为默认支付方式；若它是默认卡，服务器会选取其他已绑定方式作为默认。", amplifies: false, run: async (reason) => { if (!userId) return; const slot = paymentSlot("unbind", userId, method.id); const commandKey = c1UserCommands.resolve(slot, String(method.version), () => `c1-payment-unbind-${crypto.randomUUID()}`); setActionPending(`解绑 ${method.id}`); try { await unbindUserPaymentMethod(userId, method.id, method.version, reason, undefined, commandKey); c1UserCommands.forget(slot); toast.success("支付方式已从 UVEL 账户解绑"); if (!includeUnbound) { setIncludeUnbound(true); setPaymentPage(1); } else { await loadPaymentMethods(); } } catch (err) { if (!(err instanceof UsersOutcomeUnknownError)) c1UserCommands.forget(slot); toast.error("支付方式解绑失败", errorMessage(err)); return false; } finally { setActionPending(null); } } })}>解绑</ActionButton>}</div>}
-              </div>
-            ))}
-          </div>
-          {!paymentError && !(paymentMethods?.items ?? []).length && <p className="rounded-[8px] px-3 py-3 text-[12px]" style={{ background: "var(--v5-surface-2)", color: "var(--v5-ink-4)" }}>该用户暂无支付方式</p>}
-          {!!paymentMethods?.total && <div className="mt-3 flex items-center justify-between gap-3 text-[12px]" style={{ color: "var(--v5-ink-4)" }}><span>共 {paymentMethods.total} 条 · 第 {paymentMethods.page}/{Math.max(1, Math.ceil(paymentMethods.total / paymentMethods.pageSize))} 页</span><div className="flex gap-2"><button type="button" className="rounded-[8px] px-2.5 py-1.5 disabled:opacity-40" style={{ border: "1px solid var(--v5-border)" }} disabled={paymentPage <= 1} onClick={() => setPaymentPage((page) => Math.max(1, page - 1))}>上一页</button><button type="button" className="rounded-[8px] px-2.5 py-1.5 disabled:opacity-40" style={{ border: "1px solid var(--v5-border)" }} disabled={paymentPage >= Math.ceil(paymentMethods.total / paymentMethods.pageSize)} onClick={() => setPaymentPage((page) => page + 1)}>下一页</button></div></div>}
-        </HubSection>}
-
-        <HubSection
-          id="hub-deposit"
-          title="充值记录"
-          section={detail.deposits}
-          columns={[
-            { key: "depositNo", label: "充值单号" },
-            { key: "channel", label: "渠道" },
-            { key: "asset", label: "币种", render: (value) => nexGridBrandText(asText(value)) },
-            { key: "amount", label: "金额", numeric: true },
-            { key: "statusLabel", label: "状态" },
-            { key: "confirmedAt", label: "确认时间", render: formatDate },
-          ]}
-        >
-          <Row label="确认总额">{money(detail.deposits?.confirmedUsd)}</Row>
-        </HubSection>
-
-        <HubSection
-          id="hub-withdrawal"
-          title="提现记录"
-          section={detail.withdrawals}
-          columns={[
-            { key: "withdrawalNo", label: "提现单号" },
-            { key: "asset", label: "币种", render: (value) => nexGridBrandText(asText(value)) },
-            { key: "chain", label: "链" },
-            { key: "amount", label: "金额", numeric: true },
-            { key: "status", label: "状态", render: (value) => ({SUBMITTED:"已提交",REVIEW_PENDING:"待审核",EXTENDED_HOLD:"等待复查",DELAYED:"延迟复查",FROZEN:"已冻结",REVIEW_PASSED:"已放行",PENDING_CHAIN:"已放行",CHAIN_SUBMITTED:"已发出",CONFIRMED:"已确认到账",REVIEW_REJECTED:"审核拒绝",ADDRESS_INVALID:"地址无效",TX_FAILED:"处理失败",TX_ORPHANED:"交易异常待核查",DEAD:"交易异常待核查",PENDING:"待审核",REVIEWING:"审核中",APPROVED:"已批准",PROCESSING:"处理中",SENT:"已发出",COMPLETED:"已到账",SUCCESS:"已到账",REJECTED:"已拒绝",FAILED:"失败",REFUNDED:"已退款",CANCELLED:"已取消"} as Record<string,string>)[asText(value).toUpperCase()] ?? "状态待核实" },
-            { key: "riskScore", label: "风险分", numeric: true },
-            { key: "createdAt", label: "创建时间", render: formatDate },
-          ]}
-        >
-          <Row label="完成总额">{money(detail.withdrawals?.completedUsd)}</Row>
-          <Row label="申请总额">{money(detail.withdrawals?.requestedUsd)}</Row>
-        </HubSection>
-
-        <HubSection
-          id="hub-devices"
-          title="设备明细"
-          section={detail.devices}
-          columns={[
-            { key: "instanceNo", label: "实例" },
-            { key: "name", label: "名称", render: (value, row) => (displayValue(value)) },
-            { key: "productTier", label: "规格", render: formatC1DeviceTier },
-            { key: "status", label: "状态", render: formatC1DeviceStatus },
-            { key: "runtimeStatus", label: "运行状态", render: formatC1RuntimeStatus },
-            { key: "dailyUsdt", label: "设定日收益 USDT", numeric: true },
-            { key: "dailyNex", label: "设定日收益 UVT", numeric: true },
-          ]}
-        >
-          <Row label="在线 / 活跃">{numberLabel(detail.devices?.onlineCount)} / {numberLabel(detail.devices?.activeCount)}</Row>
-          <Row label="设定日收益合计（含已停用设备）">{money(detail.devices?.dailyUsdt)} · {numberLabel(detail.devices?.dailyNex)} UVT</Row>
-          <p className="mt-2 text-[12px]" style={{ color: "var(--v5-ink-4)" }}>这是设定值，不是今天实际到账的收益</p>
-          {canWriteC2 && asArray(detail.devices?.records).map((device) => {
-            const deviceId = asNumber(device.id);
-            const deviceStatus = asText(device.status).toUpperCase();
-            if (!deviceId || ["RECYCLED", "DEACTIVATED", "INACTIVE", "RETIRED"].includes(deviceStatus)) return null;
-            const execute = (operation: "replace" | "recycle") => openActionConfirmReq({ briefKind: "record",
-              action: operation === "replace" ? `设备置换 · ${asText(device.instanceNo)}` : `设备回收 · ${asText(device.instanceNo)}`,
-              detail: "会更改该用户这台设备的状态。",
-              amplifies: false,
-              run: async (reason) => {
-                if (!userId) return false;
-                const slot = deviceSlot(operation, userId, deviceId);
-                const commandKey = c1UserCommands.resolve(slot, `${deviceStatus}|${asText(device.instanceNo)}`, () => `c2-device-${crypto.randomUUID()}`);
-                setActionPending(`${operation} ${deviceId}`);
-                try {
-                  await executeUserDeviceTradein(userId, deviceId, operation, reason, undefined, commandKey);
-                  c1UserCommands.forget(slot);
-                  toast.success(operation === "replace" ? "设备置换已执行" : "设备回收已执行");
-                  await load();
-                  return true;
-                } catch (err) {
-                  if (!(err instanceof UsersOutcomeUnknownError)) c1UserCommands.forget(slot);
-                  toast.error("设备操作失败", errorMessage(err));
-                  return false;
-                } finally {
-                  setActionPending(null);
-                }
-              },
-            });
-            return <div key={`device-actions-${deviceId}`} className="mt-2 flex items-center justify-between gap-3 rounded-[8px] px-3 py-2" style={{ background: "var(--v5-surface-2)" }}><span className="text-[12px]" style={{ color: "var(--v5-ink-3)" }}>{asText(device.instanceNo)} · {formatC1DeviceStatus(deviceStatus)}</span><span className="flex gap-2"><ActionButton disabled={!!actionPending} onClick={() => execute("replace")}>设备置换</ActionButton><ActionButton disabled={!!actionPending} onClick={() => execute("recycle")}>设备回收</ActionButton></span></div>;
-          })}
-        </HubSection>
-
-        <HubSection
-          title="收益明细"
-          section={detail.earnings ? { records: earningsPager.pageRows, sourceStatus: asText(detail.earnings.sourceStatus, "READY") } : undefined}
-          columns={[
-            { key: "bizNo", label: "业务单号" },
-            { key: "bizType", label: "类型", render: formatD4Subtype },
-            { key: "asset", label: "币种", render: (value) => nexGridBrandText(asText(value)) },
-            { key: "direction", label: "方向", render: (value) => ({IN:"收入",OUT:"支出"} as Record<string,string>)[asText(value).toUpperCase()] ?? "—" },
-            { key: "amount", label: "金额", numeric: true },
-            { key: "balanceAfter", label: "余额", numeric: true },
-            { key: "createdAt", label: "时间", render: formatDate },
-          ]}
-        >
-          <Row label="收益合计">{money(detail.earnings?.totalUsdt)} · {numberLabel(detail.earnings?.totalNex)} UVT</Row>
-          <Row label="设定日收益合计（含已停用设备）">{money(detail.earnings?.deviceDailyUsdt)} · {numberLabel(detail.earnings?.deviceDailyNex)} UVT</Row>
-          <p className="mt-2 text-[12px]" style={{ color: "var(--v5-ink-4)" }}>这是设定值，不是今天实际到账的收益</p>
-          <DataListPager label="收益明细" page={earningsPager.page} pageSize={earningsPager.pageSize} total={earningsPager.total} onPageChange={earningsPager.setPage} onPageSizeChange={earningsPager.setPageSize} />
-        </HubSection>
-
-        <HubSection
-          id="hub-referral"
-          title="推荐团队"
-          section={detail.referral ? { records: asArray(detail.referral.members), sourceStatus: asText(detail.referral.sourceStatus, "READY") } : undefined}
-          columns={[
-            { key: "memberNo", label: "成员编码" },
-            { key: "nickname", label: "昵称", render: (value) => operatorNicknameText(asText(value)) },
-            { key: "vRank", label: "团队等级" },
-            { key: "level", label: "相隔邀请次数", numeric: true },
-            { key: "volume", label: "贡献额", numeric: true },
-            { key: "createdAt", label: "加入时间", render: formatDate },
-          ]}
-        >
-          <Row label="团队规模">{numberLabel(detail.referral?.teamSize)} 人</Row>
-          <Row label="直接邀请">{numberLabel(detail.referral?.directCount)} 人</Row>
-          <Row label="团队订单额">{money(detail.referral?.teamVolumeUsd)}</Row>
-        </HubSection>
-
-        {/* 互动/参与明细表(2026-08-06 原型对比 C-6)。只渲染 User360Section 声明过的
-            records / sourceStatus —— 2026-08-07 复核撤掉了此处原先那四行标量
-            (连续签到 / 进行中任务 / 抽奖剩余 / 里程碑进度):那四个字段名全仓只在这里
-            出现过,没有契约、没有 fixture,而 JsonRecord 的索引签名让 tsc 抓不出错名 ——
-            名字一旦对不上就是四个永远的「—」,且没有任何东西会报错。
-            要加回标量,先让后端把字段写进 User360Section 的显式声明。
-            汇总口径归「参与与通知」区(cgm-coverage 的 hub 锚 engagement→notifications)。 */}
-        {detail.engagement && (
-          <HubSection
-            id="hub-engagement"
-            title="互动与参与"
-            section={{ records: asArray(detail.engagement.records), sourceStatus: asText(detail.engagement.sourceStatus, "READY") }}
-            columns={[
-              { key: "name", label: "项目" },
-              { key: "status", label: "状态" },
-              { key: "progress", label: "进度" },
-              { key: "updatedAt", label: "更新时间", render: formatDate },
-            ]}
-          />
-        )}
-
-        <div className="customer-panorama-primary">
-          {detail.vrank && <Section title="团队等级">
-            <Row label="当前等级">{asText(detail.vrank?.currentRank)}</Row>
-            <Row label="用户级别">{asText(detail.vrank?.userLevel)}</Row>
-            <Row label="团队规模">{numberLabel(detail.vrank?.teamSize)} 人</Row>
-            <Row label="直接邀请">{numberLabel(detail.vrank?.directCount)} 人</Row>
-            <Row label="团队订单额">{money(detail.vrank?.teamVolumeUsd)}</Row>
-          </Section>}
-
-          {detail.account && <Section title="账户状态">
-            <Row label="用户编码">{userNo}</Row>
-            <Row label="账户状态"><StatusPill label={statusLabel(status)} tone={statusTone(status)} size="sm" /></Row>
-            <Row label="两步验证">{summary.twoFactorEnabled == null ? "-" : summary.twoFactorEnabled ? "已开启" : "未开启"}</Row>
-            <Row label="需重置密码">{summary.passwordResetRequired == null ? "-" : summary.passwordResetRequired ? "是" : "否"}</Row>
-          </Section>}
-        </div>
-
-        <HubSection
-          title="兑换记录"
-          section={detail.financial ? { records: asArray(detail.financial.exchangeRows), sourceStatus: asText(detail.financial.sourceStatus, "READY") } : undefined}
-          columns={[
-            { key: "bizNo", label: "业务单号" },
-            { key: "bizType", label: "类型", render: formatD4Subtype },
-            { key: "asset", label: "币种", render: (value) => nexGridBrandText(asText(value)) },
-            { key: "direction", label: "方向", render: (value) => ({IN:"收入",OUT:"支出"} as Record<string,string>)[asText(value).toUpperCase()] ?? "—" },
-            { key: "amount", label: "金额", numeric: true },
-            { key: "createdAt", label: "时间", render: formatDate },
-          ]}
-          emptyText="暂无兑换记录"
-        >
-          <Row label="钱包 USDT">{money((detail.financial?.wallet as JsonRecord | undefined)?.usdt)}</Row>
-          <Row label="钱包 UVT">{numberLabel((detail.financial?.wallet as JsonRecord | undefined)?.nex)} UVT</Row>
-          <Row label="质押记录">{Array.isArray(detail.financial?.stakingLedgerRows) ? numberLabel(detail.financial.stakingLedgerRows.length) : "-"} 条</Row>
-        </HubSection>
-
-        <HubSection
-          title="参与与通知"
-          section={detail.notifications}
-          columns={[
-            { key: "notificationId", label: "通知编号", render: value => {
-              const id = Number(value);
-              return canReadNotificationEvidence && Number.isSafeInteger(id) && id > 0
-                ? <button type="button" onClick={() => setNotificationEvidence({ userKey, authEpoch, id })}>查看详情 · {id}</button>
-                : displayValue(value);
-            } },
-            { key: "title", label: "标题", render: (value) => nexGridBrandText(displayValue(value)) },
-            { key: "type", label: "类型", render: formatC1NotificationType },
-            { key: "pushStatus", label: "推送", render: formatC1PushStatus },
-            { key: "readFlag", label: "已读", render: formatC1ReadFlag },
-            { key: "createdAt", label: "创建时间", render: formatDate },
-          ]}
-        >
-          <Row label="未读">{numberLabel(detail.notifications?.unreadCount)} 条</Row>
-          <Row label="待推送">{numberLabel(detail.notifications?.pendingPushCount)} 条</Row>
-          <Row label="失败">{numberLabel(detail.notifications?.failedPushCount)} 条</Row>
-        </HubSection>
-
-        <HubSection
-          title="商城订单"
-          section={detail.commerce ? { records: asArray(detail.commerce.orders), sourceStatus: asText(detail.commerce.sourceStatus, "READY") } : undefined}
-          columns={[
-            { key: "orderNo", label: "订单号" },
-            { key: "skuName", label: "商品", render: (value, row) => (displayValue(value)) },
-            { key: "amount", label: "金额", numeric: true },
-            { key: "state", label: "状态", render: (value) => ({ placed: "待付款", paid: "已付款", provisioning: "设备开通中", activated: "已开通", payment_failed: "付款失败", expired: "已过期", provisioning_failed: "开通失败", cancelled: "已取消", refunded: "已退款", chargeback: "已拒付" } as Record<string,string>)[asText(value)] ?? "订单状态待核实" },
-            { key: "dcLocation", label: "机房", render: (value) => datacenterNameText(asText(value)) },
-            { key: "orderedAt", label: "下单时间", render: formatDate },
-          ]}
-        >
-          <Row label="订单总数">{numberLabel(detail.commerce?.total)} 单</Row>
-          <Row label="活跃订单">{numberLabel(detail.commerce?.activeOrderCount)} 单</Row>
-        </HubSection>
-      </div>
-
-      {detail.audit && <div className="mt-4">
-        <Section title="后台操作记录">
-          <AuditTimeline entries={auditEntries} />
-        </Section>
-      </div>}
+      <Drawer open={!!current && !!record} onClose={() => setRecord(null)} title={record ? RECORD[record.kind].title : ""} sub={record && current ? RECORD[record.kind].sub(current) : undefined}
+        nav={record ? {
+          hasPrev: record.index > 0,
+          hasNext: record.index < recordRows[record.kind].length - 1,
+          onPrev: () => setRecord({ ...record, index: record.index - 1 }),
+          onNext: () => setRecord({ ...record, index: record.index + 1 }),
+        } : undefined}
+        footer={currentDevice && currentDeviceWritable
+          ? <Decision note={deviceBlock(asNumber(currentDevice.id))}
+              danger={<Button variant="danger-outline" disabledReason={deviceBlock(asNumber(currentDevice.id))} onClick={() => openDeviceAction(currentDevice, "recycle")}>设备回收</Button>}
+              others={<Button variant="danger-outline" disabledReason={deviceBlock(asNumber(currentDevice.id))} onClick={() => openDeviceAction(currentDevice, "replace")}>设备置换</Button>} />
+          : canReadNotificationEvidence && Number.isSafeInteger(currentNotificationId) && currentNotificationId > 0
+            ? <Decision primary={<Button onClick={() => { setRecord(null); setNotificationEvidence({ userKey, authEpoch, id: currentNotificationId }); }}>查看时间证据</Button>} />
+            : undefined}>
+        {record && current && <Facts>{RECORD[record.kind].facts(current).map(([label, value]) => <Fact key={label} k={label}>{value}</Fact>)}</Facts>}
+      </Drawer>
 
       {actionConfirm && (
         <OperationConfirmModal briefKind={actionConfirm.briefKind}
           action={actionConfirm.action}
           detail={actionConfirm.detail}
           amplifies={actionConfirm.amplifies ?? false}
+          facts={actionConfirm.facts}
+          effect={<StatusTag tone="progress" filled>立即生效</StatusTag>}
+          confirmLabel={actionConfirm.confirmLabel}
+          confirmTone={actionConfirm.confirmTone}
+          statedBrief={actionConfirm.statedBrief}
           reasonMax={200}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason) => {
-            const fn = actionConfirm.run;
-            const succeeded = await fn(reason);
-            if (succeeded !== false) setActionConfirm(null);
+            await actionConfirm.run(reason);
+            setActionConfirm(null);
           }}
         />
       )}
+      {releasing && <Modal title="解除待确认" onClose={() => setReleasing(null)} footer={<>
+        <Button onClick={() => setReleasing(null)}>取消</Button>
+        <Button variant="primary" onClick={() => releasePending(releasing)}>确认解除</Button>
+      </>}>
+        <p><b>{releasing.label}</b></p>
+        <p>重试被拒说明不了原操作的结果。先到操作记录确认原操作有没有生效，再解除。</p>
+        <p>解除后这个对象可以重新处理，原操作不再重试，系统仍按现在的状态校验。这一步只放开本页的锁，不发请求，不写操作记录。</p>
+      </Modal>}
       {notificationEvidence && canReadNotificationEvidence
         && notificationEvidence.userKey === userKey && notificationEvidence.authEpoch === authEpoch && (
         <NotificationTimeEvidenceDrawer key={`${userKey}:${authEpoch}:${notificationEvidence.id}`}
           userKey={userKey} notificationId={notificationEvidence.id} actorKey={session?.adminId == null ? undefined : String(session.adminId)}
           canCorrect={canCorrectNotificationTime} onCorrected={() => { void load(); }} onClose={() => setNotificationEvidence(null)} />
       )}
-    </div>
+    </RdPage>
   );
 }

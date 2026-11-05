@@ -393,6 +393,9 @@
 .rd-head-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; max-width: 100%; min-width: 0; }
 .rd-head-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-head-readonly { margin-left: auto; color: var(--rd-text-2); }
+.rd-head-back a { display: inline-flex; align-items: center; gap: 4px; color: inherit; text-decoration: none; }
+@media (hover: hover) and (pointer: fine) { .rd-head-back a:hover { color: var(--rd-text); } }
+.rd-head-identity { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 8px; color: var(--rd-text-2); }
 
 /* ── 这页怎么用 ── */
 .rd-guide-entry { display: inline-flex; align-items: center; gap: 4px; height: var(--rd-control-h-sm); padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--rd-text-2); font: inherit; font-size: 13px; cursor: pointer; }
@@ -763,6 +766,8 @@ td .rd-flow { margin-bottom: 0; }
 .rd-section-nav a[aria-current] { background: var(--rd-selected); color: var(--rd-text); font-weight: 500; }
 .rd-section-nav a:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: -2px; }
 @media (hover: hover) and (pointer: fine) { .rd-section-nav a:not([aria-current]):hover { background: var(--rd-hover); color: var(--rd-text); } }
+.rd-section-nav[data-row] { display: flex; flex-wrap: wrap; }
+.rd-section-nav[data-row] a { min-height: 32px; }
 .rd-section-nav-alert { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-warn); }
 @container (max-width: 860px) {
   .rd-config-grid { grid-template-columns: minmax(0, 1fr); }
@@ -837,3 +842,23 @@ td .rd-flow { margin-bottom: 0; }
 .rd-json { margin: 0; max-height: 280px; overflow: auto; font-family: var(--rd-font-mono, monospace); font-size: var(--rd-text-aux); color: var(--rd-text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
 .rd-weak, .rd-doc p.rd-weak { color: var(--rd-text-3); }
 .rd-modal .rd-check-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* 详情页（PG-50）：分区导航钉在折叠组上方，折叠组里的小块靠留白分开。 */
+.rd-detail-nav { position: sticky; top: calc(-1 * var(--admin-gutter, 0px)); z-index: 4; margin: -8px 0; padding: 8px 0; background: var(--rd-bg); }
+.rd-detail-groups { display: grid; gap: 12px; min-width: 0; }
+.rd-detail-groups [id] { scroll-margin-top: 56px; }
+.rd-detail-groups .rd-fold-body { padding: 8px 16px 20px; }
+.rd-detail-groups > div > .rd-fold > summary .rd-fold-title { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; }
+.rd-detail-groups .rd-panel[data-plain] .rd-panel-title { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; }
+.rd-detail-groups .rd-cell[data-mono] .rd-cell-sub { font-family: var(--rd-font); }
+.rd-detail-block { display: grid; gap: 12px; min-width: 0; }
+.rd-detail-block + .rd-detail-block { margin-top: 24px; }
+.rd-detail-entries { display: grid; gap: 12px; }
+.rd-detail-values { display: flex; flex-wrap: wrap; gap: 8px 32px; margin: 0; }
+.rd-detail-values > div { min-width: 0; }
+.rd-detail-values dt { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-detail-values dd { margin: 0; color: var(--rd-text); font-weight: 500; font-variant-numeric: tabular-nums; }
+.rd-detail-empty { margin: 0; color: var(--rd-text-3); }
+.rd-link-button { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; white-space: nowrap; }
+/* 支付安全的旧详情弹窗放进改版页：颜色接到状态色和角色色，两套主题都用这一组。 */
+.rd-modal.payment-security { --ps-user: var(--rd-text); --ps-payment: var(--rd-role-3); --ps-locked: var(--rd-warn); --ps-reason: var(--rd-danger); --ps-released: var(--rd-ok); --ps-history: var(--rd-done); }
