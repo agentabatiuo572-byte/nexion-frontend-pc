@@ -283,6 +283,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
 
   const markArb = (r: K2Row) =>
     ctx.openConfirm({
+      errorHandled: true,
       action: `标记套利账户 · ${r.cells[0]}`,
       detail: "标记为套利并附上证据，不冻结、不动钱。标记会计入风险分和风险提醒。",
       chips: [["只标记，附证据", "done"], ["记入操作记录", "ready"]],
@@ -297,6 +298,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
 
   const blockGift = (r: K2Row) =>
     ctx.openConfirm({
+      errorHandled: true,
       action: `拦截新人礼 · ${r.cells[0]}`,
       detail: "以后不再给这个账户发新人礼，已到账的不动。",
       chips: [["提前拦截", "done"], ["记入操作记录", "ready"]],
@@ -311,6 +313,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
 
   const boardFlag = (r: K2Row) =>
     ctx.openConfirm({
+      errorHandled: true,
       action: `标记刷榜账户 · ${r.cells[0]}`,
       detail: "标记为刷榜，会通知排行榜和风险提醒；取消排行榜资格要去「奖励池、名额与排行榜」操作。",
       chips: [["只标记", "done"], ["记入操作记录", "ready"]],

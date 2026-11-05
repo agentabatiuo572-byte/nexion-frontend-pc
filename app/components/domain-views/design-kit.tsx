@@ -543,7 +543,7 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 }
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
-export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; step?: number; disallowCurrent?: boolean; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string }; submitEditValue?: boolean };
+export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; step?: number; disallowCurrent?: boolean; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
@@ -674,7 +674,7 @@ export type BusinessFormSpec =
   // 通用多字段配置:一个「调整」按钮 → 一个弹窗里编辑 N 个带标签的值(各值独立 backend-replaceable,
   // 配合 EOp "param-multi" + McSpec.paramKeys 把每字段写到自己的 param key)。
   // ascending=true 时校验 number 字段严格递增(如 分段月界 早末<中末<总月数)。
-  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; onFieldChange?: (key: string, next: BusinessFormValue) => BusinessFormValue; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "datetime-local" | "asset-upload" | "checkbox"; options?: string[]; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; warning?: (value: BusinessFormValue) => string | undefined; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
+  | { kind: "multi-field"; title?: string; hint?: string; feedback?: (value: BusinessFormValue) => { message: string; invalid: boolean }; amplifies?: (value: BusinessFormValue) => boolean; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; onFieldChange?: (key: string, next: BusinessFormValue) => BusinessFormValue; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "datetime-local" | "asset-upload" | "checkbox"; options?: string[]; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; warning?: (value: BusinessFormValue) => string | undefined; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentIssuanceLimit?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentPopupCadenceEnabled?: string; currentPopupDelayMs?: string; currentPopupCooldownHours?: string; currentPopupMaxPerSession?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
@@ -1470,6 +1470,8 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (![a, g, e].every((n) => Number.isFinite(n) && n >= 0)) missing.push("三档须为非负数");
     else if (a < g || g < e) missing.push("须满额 ≥ 宽限 ≥ 过期");
   } else if (spec.kind === "multi-field") {
+    const feedback = spec.feedback?.(state);
+    if (feedback?.invalid) missing.push(feedback.message);
     const isVisible = (field: (typeof spec.fields)[number]) =>
       !field.visibleWhen || (state[field.visibleWhen.key] ?? "") === field.visibleWhen.equals;
     spec.fields.filter((f) => isVisible(f) && f.required !== false).forEach((f) => needs(f.key, f.label));
@@ -1873,6 +1875,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             </label>
           ))}
         </div>
+        {spec.feedback && <div role="status" className={`tint ${spec.feedback(value).invalid ? "danger" : ""}`} style={{ marginTop: 10 }}>{spec.feedback(value).message}</div>}
         {spec.hint && <div className="tint tiny" style={{ marginTop: 10 }}>{spec.hint}</div>}
       </div>
     );
@@ -3471,12 +3474,14 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const opts = spec?.options ?? (kind === "select" || kind === "toggle" ? ["开启", "关闭"] : []);
   const currentNumber = spec?.current?.trim() ? Number(spec.current) : Number.NaN;
   const newNumber = Number(newVal);
-  const directionalAmplifies = typeof spec?.amplifiesWhen === "object"
+  const directionalAmplifies = typeof spec?.amplifiesWhen === "function"
+    ? spec.amplifiesWhen(newVal)
+    : typeof spec?.amplifiesWhen === "object"
     ? spec.current === spec.amplifiesWhen.from && newVal === spec.amplifiesWhen.to
     : spec?.amplifiesWhen && newVal.trim() !== "" && Number.isFinite(currentNumber) && Number.isFinite(newNumber)
     ? spec.amplifiesWhen === "increase" ? newNumber > currentNumber : newNumber < currentNumber
     : undefined;
-  const effectiveAmplifies = directionalAmplifies ?? Boolean(amplifies);
+  const effectiveAmplifies = (activeBusinessForm?.kind === "multi-field" ? activeBusinessForm.amplifies?.(businessValue) : undefined) ?? directionalAmplifies ?? Boolean(amplifies);
   // B1 红线禁放行:只有调用方传入真实后端覆盖率时才做前端镜像拦截;后端仍是最终裁决。
   const covBlocked = Boolean(effectiveAmplifies && coverage && coverage.coverageRatio < coverage.redlinePct);
   const requestedMinimum = Number.isFinite(requestedReasonMin)
@@ -3644,9 +3649,9 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
                       ? `，正好在红线 ${coverage.redlinePct}%，请谨慎提交`
                       : `，低于红线 ${coverage.redlinePct}%，提交会被拒绝`}
               </>
-            ) : (
-              <>{auditSink === "local-history" ? "本页暂不自动检查覆盖率，请自行确认资金影响。" : "提交时会实时检查覆盖率。"}</>
-            )}
+            ) : auditSink === "local-history" ? (
+              <>本页暂不自动检查覆盖率，请自行确认资金影响。</>
+            ) : null}
           </div>
         </div>
       )}
@@ -3719,7 +3724,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         {reasonMax && reasonOk && <div id={`${reasonFieldId}-length`} className="tiny" style={{ marginTop: 7, color: approval || inlineApproval?.dialogClassName ? "var(--ink-3)" : "var(--ink-4)" }}>已填写 {reasonLength}/{reasonMax} 字</div>}
         {businessMissing.length > 0 && (
           <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
-            请检查以下内容： {businessMissing.slice(0, 4).join(" / ")}{businessMissing.length > 4 ? "…" : ""}。
+            请检查以下内容： {businessMissing.slice(0, 4).map((message) => message.replace(/。+$/, "")).join(" / ")}{businessMissing.length > 4 ? "…" : ""}。
           </div>
         )}
       </div>

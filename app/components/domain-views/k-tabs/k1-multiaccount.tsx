@@ -473,6 +473,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
   const flagCluster = (c: K1Cluster) =>
     ctx.openConfirm({
+      errorHandled: true,
       action: `标记可疑账户组 · ${c.id}`,
       detail: "只标记为可疑，不冻结资产。风险评分和风险提醒会同步更新，并保留操作记录。",
       chips: [["只标记，不动资产", "done"], ["记入操作记录", "ready"]],
@@ -574,6 +575,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const reviewNote = (c: K1Cluster) => {
     const commandKey = newK1CommandKey();
     ctx.openConfirm({
+      errorHandled: true,
       action: `人工复审备注 · ${c.id}`,
       detail: "记录复审备注并保持当前状态不变。",
       chips: [["只写备注，不改状态", "done"], ["记入操作记录", "ready"]],
@@ -752,6 +754,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
   const rmWl = (cidr: string) =>
     ctx.openConfirm({
+      errorHandled: true,
       action: `移出允许名单 · ${cidr}`,
       detail: "移除后该网段恢复同 IP 多账户检测。",
       chips: [["恢复按 IP 检测", "ready"]],

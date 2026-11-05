@@ -1138,6 +1138,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
                   return;
                 }
                 openConfirm({
+                  errorHandled: true,
                   action: `锁定卡段 · ${segment}`,
                   detail: "用这个卡段的银行卡将无法支付，到期自动解锁。",
                   reason: true,
@@ -1155,6 +1156,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
                 <span style={{ flex: 1 }}>{bin.meta} · 24h 失败 {bin.fails24h} 次 · {bin.note}</span>
                 <span className={`bdg ${bin.locked ? "bad" : "ok"}`}>{bin.locked ? "锁定" : "放行"}</span>
                 {((bin.locked && canUnlockBin) || (!bin.locked && canLockBin)) && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => openConfirm({
+                  errorHandled: true,
                   action: `${bin.locked ? "解锁" : "锁定"}${targetLabel} · ${targetValue}`,
                   detail: `${targetLabel}：${targetValue}。`,
                   reason: true,

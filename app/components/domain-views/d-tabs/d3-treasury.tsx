@@ -175,7 +175,6 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
           // 确定性拒绝必须丢号(同 D2:留着旧号会让运营改完输入重提时撞载荷不符,
           // 这笔注资 24h 内做不了);结果未知必须保号,丢了重试就是第二笔注资。
           if (!isDOutcomeUnknownError(err)) pendingKeys.forget(scope);
-          setError(err instanceof Error ? displayAdminError(err) : "储备注入失败");
           throw err;
         }
       },
@@ -200,15 +199,10 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
           stakingInterestMode: draft.stakingInterestMode,
           trialStressEnabled: draft.trialStressEnabled,
         };
-        try {
-          await updateD3ForecastConfig(values, draft.version, reason.trim(), OPERATOR());
-          toast("已保存，次日 UTC 00:00 起生效");
-          await load();
-          return true;
-        } catch (err) {
-          setError(err instanceof Error ? displayAdminError(err) : "预测配置保存失败");
-          throw err;
-        }
+        await updateD3ForecastConfig(values, draft.version, reason.trim(), OPERATOR());
+        toast("已保存，次日 UTC 00:00 起生效");
+        await load();
+        return true;
       },
     });
   };
@@ -231,8 +225,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
           return true;
         } catch (err) {
           if (!pendingKeyBeforeRequest && !isDOutcomeUnknownError(err)) pendingKeys.forget(scope);
-          setError(err instanceof Error ? displayAdminError(err) : "CSV 导出失败");
-          return false;
+          throw err;
         }
       },
     });
