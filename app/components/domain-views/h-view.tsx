@@ -86,6 +86,8 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
           confirmTone={mc.confirmTone}
           statedBrief={mc.statedBrief}
           coverageLead={mc.coverageLead}
+          reasonPlaceholder={mc.reasonPlaceholder}
+          reasonPolicyOptional={mc.reasonPolicyOptional}
           inlineApproval={mc.inlineApproval}
           reasonMin={mc.inlineApproval ? mc.reasonMin : undefined}
           reasonMax={mc.inlineApproval ? mc.reasonMax : undefined}

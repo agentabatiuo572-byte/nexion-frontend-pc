@@ -7,7 +7,8 @@ import type { RewardAdmin, RewardAdminPage } from "@/lib/admin/promotion-types";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { Button, Explain, Notice } from "@/app/components/rd";
 
-export function PromotionRefundImpact({ orderNo }: { orderNo: string }) {
+/** compact：放进事实区一行，明细进提示图标，退款框才不被撑过一屏（N01）。 */
+export function PromotionRefundImpact({ orderNo, compact = false }: { orderNo: string; compact?: boolean }) {
   const canRead = useAdminAuth(s => s.session?.authorities.includes("growth_promotion_reward_read") ?? false);
   const [retry, setRetry] = useState(0);
   const [result, setResult] = useState<{ items: RewardAdmin[]; total: number; status: "loading" | "ready" | "forbidden" | "failed" }>({ items: [], total: 0, status: "loading" });
@@ -34,16 +35,17 @@ export function PromotionRefundImpact({ orderNo }: { orderNo: string }) {
   }, [orderNo, canRead, retry]);
 
   const forbidden = !canRead || result.status === "forbidden";
-  return <section className="rd-confirm-facts rd-impact" aria-label="促销奖励影响">
+  const rewards = <ul className="rd-impact-list">
+        {result.items.map(r => <li key={r.obligationId}>
     <h4 className="rd-impact-title">促销奖励影响<Explain label="退款后奖励怎么处理" content="退款须由另一位超级管理员批准，系统按售后规则执行；实际追回与损失以执行后「活动中心 → 奖励台账」及活动效果为准。" /></h4>
     <p className="rd-note">原订单 {orderNo}</p>
     {forbidden ? <p role="status">无权查看奖励影响。</p> : <>
       {result.status === "loading" && <p role="status">{result.items.length ? `已加载 ${result.items.length} / ${result.total} 项，还有奖励，正在继续加载…` : "正在加载奖励影响…"}</p>}
       {result.status === "failed" && <Notice tone="warn" action={<Button size="sm" onClick={() => setRetry(v => v + 1)}>重试加载奖励影响</Button>}>奖励影响加载失败，尚不能确认完整影响。</Notice>}
       {result.status === "ready" && <p role="status">{result.items.length ? `共 ${result.total} 项奖励，已全部加载。` : "此订单没有促销奖励。"}</p>}
-      <ul className="rd-impact-list">
-        {result.items.map(r => <li key={r.obligationId}>
-          <b>{r.beneficiaryRole === "BUYER" ? "购买者" : "直接邀请人"} · {r.beneficiaryId} · {r.reward.type === "DEVICE" ? `${r.disclosure.deviceName || "赠品设备"} × ${r.reward.quantity} 台` : `${r.reward.amount} ${nexGridBrandText(r.reward.type === "DISCOUNT_USDT" ? "USDT" : r.reward.type)}`}</b>
+      {rewards}
+    </>}
+    {(forbidden || result.status === "failed") && <p>仍可提交或批准退款。</p>}          <b>{r.beneficiaryRole === "BUYER" ? "购买者" : "直接邀请人"} · {r.beneficiaryId} · {r.reward.type === "DEVICE" ? `${r.disclosure.deviceName || "赠品设备"} × ${r.reward.quantity} 台` : `${r.reward.amount} ${nexGridBrandText(r.reward.type === "DISCOUNT_USDT" ? "USDT" : r.reward.type)}`}</b>
           <div className="rd-note">奖励项 {r.obligationId}</div>
           <div>{["CANCELLED", "REVERSED"].includes(r.state) ? "原奖励已取消或已冲正，本次不重复发放或追回。"
             : ["PENDING", "READY", "RETRYABLE_FAILED"].includes(r.state) && !r.assetReceipt ? "退款申请先暂停发奖；退款确认执行后，取消未发放的奖励。"
@@ -52,8 +54,14 @@ export function PromotionRefundImpact({ orderNo }: { orderNo: string }) {
               : r.reward.type === "DISCOUNT_USDT" ? "订单立减已计入原订单金额，按整单退款金额处理。"
               : `退款确认执行后，${r.reward.type} 奖励按执行时余额在同币种内追回，最多追回原奖励；不足部分由平台承担，记为未追回损失后结案，不扣其他币种或设备。`}</>}</div>
         </li>)}
-      </ul>
-    </>}
-    {(forbidden || result.status === "failed") && <p>仍可提交或批准退款。</p>}
+      </ul>;
+  if (compact) {
+    if (forbidden) return <>无权查看，仍可提交退款</>;
+    if (result.status === "failed") return <>读取失败，还不能确认影响，仍可提交退款 <Button size="sm" onClick={() => setRetry(v => v + 1)}>重试</Button></>;
+    if (result.status === "loading") return <>正在加载…</>;
+    if (!result.items.length) return <>这单没有促销奖励</>;
+    return <>{result.total} 项奖励，退款后按售后规则处理<Explain label="退款后奖励怎么处理" content={rewards} /></>;
+  }
+  return <section className="rd-confirm-facts rd-impact" aria-label="促销奖励影响">
   </section>;
 }

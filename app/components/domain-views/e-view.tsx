@@ -622,6 +622,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [e4PendingNotes, setE4PendingNotes] = useState<Record<string, string>>({});
   const [e4RetryRejected, setE4RetryRejected] = useState<string[]>([]);
   const [e4Retrying, setE4Retrying] = useState("");
+  const [e4QueryMissing, setE4QueryMissing] = useState<string[]>([]);
   const syncE4Pending = useCallback(() => setE4Pending(e4PendingCommands.list()), []);
   useEffect(() => { if (tab === "E4") syncE4Pending(); }, [tab, syncE4Pending]);
   /**
@@ -648,7 +649,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }
     e4PendingCommands.forget(scope);
     syncE4Pending();
-    setToast("已提交审批，等超级管理员批准。进度到「操作记录与审批」看。");
+    setToast("已提交，等待审批后执行。等超级管理员批准，进度到「操作记录与审批」看。");
     return true;
   };
   const noteE4Pending = (record: E4PendingCommand, note: string) => setE4PendingNotes((current) => ({ ...current, [record.fingerprint]: note }));
@@ -667,9 +668,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     setE4RetryRejected((current) => current.filter((key) => key !== record.commandKey));
     try {
       if (await sendE4Proposal(record.spec, record)) await refreshE4();
-      else noteE4Pending(record, "这次也没有确认结果，原命令继续保留。");
+      else noteE4Pending(record, "这次也没有确认结果，原操作继续保留。");
     } catch (error) {
-      noteE4Pending(record, `重试没有成功：${displayAdminError(error)} 这说明不了原操作的结果，原命令继续保留。`);
+      noteE4Pending(record, `重试没有成功：${displayAdminError(error)} 这说明不了原操作的结果，原操作继续保留。`);
       setE4RetryRejected((current) => [...current, record.commandKey]);
     } finally {
       setE4Retrying("");
@@ -681,7 +682,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     try {
       const original = await fetchA2ProposalByKey(record.commandKey);
       if (!original) {
-        noteE4Pending(record, "暂未查到原提案，结果仍待核实。原命令继续保留，不会重新提交。");
+        setE4QueryMissing((current) => [...current, record.commandKey]);
+        noteE4Pending(record, "暂未查到原提案，结果仍待核实。原操作继续保留，不会重新提交。");
         return;
       }
       e4PendingCommands.forget(record.fingerprint, record.commandKey);
@@ -689,7 +691,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       await refreshE4();
       setToast(`查到原提案，${E4_PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`);
     } catch (error) {
-      noteE4Pending(record, `查询没有成功：${displayAdminError(error)} 原命令继续保留。`);
+      noteE4Pending(record, `查询没有成功：${displayAdminError(error)} 原操作继续保留。`);
     } finally {
       setE4Retrying("");
     }
@@ -1258,7 +1260,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     canWriteE2, tasks, phoneTiers, yieldComparisons, e2Pricing, e2Loading, e2Error, e2TaskCatalogReady, refreshE2, openAddTask, openEditTask, delTask,
     canWriteE3, e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
     canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4ReadBlock, e4Total, e4Query, e4KeywordInput, e4Counts, e4CountsFailed, e4ReadAt, updateE4Query, setE4KeywordInput, clearE4Filters, refreshE4,
-    orderState, e4Pending, e4PendingNotes, e4RetryRejected, e4Retrying, retryE4Pending, checkE4Pending, canQueryE4, releaseE4Pending, selOrder, e4Detail, e4DetailLoading, e4DetailError, openOrder, closeOrder,
+    orderState, e4Pending, e4PendingNotes, e4RetryRejected, e4Retrying, retryE4Pending, checkE4Pending, canQueryE4, e4QueryMissing, releaseE4Pending, selOrder, e4Detail, e4DetailLoading, e4DetailError, openOrder, closeOrder,
     canWriteE5, canForceActivateE5, canUnbindE5, canPauseDcE5,
     runE5DeviceAction, runE5UserBatch,
     e5Devices, e5Overview, e5Datacenters, e5Loading, e5DeviceError, e5OverviewError, e5DatacenterError, e5Page, e5PageSize, e5Total,

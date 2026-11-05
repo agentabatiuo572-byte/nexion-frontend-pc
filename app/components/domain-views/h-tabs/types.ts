@@ -17,7 +17,7 @@ import type { InlineOperationApproval } from "../design-kit";
 
 export type { ConfirmReq, ConfirmChip } from "../k-tabs/types";
 
-export type ActionConfirmReq = BaseActionConfirmReq & { inlineApproval?: InlineOperationApproval };
+export type ActionConfirmReq = BaseActionConfirmReq & { inlineApproval?: InlineOperationApproval; reasonPolicyOptional?: boolean };
 
 export type HCtx = Omit<DCtx, "openActionConfirm"> & {
   openActionConfirm: (req: ActionConfirmReq | null) => void;
