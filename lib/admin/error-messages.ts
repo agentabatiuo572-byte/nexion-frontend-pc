@@ -490,6 +490,8 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   AMOUNT_POSITIVE_REQUIRED: "调整金额必须大于 0。",
   C2_ACTION_FORBIDDEN: "当前账号没有执行这个账户操作的权限；权限可能刚变过，请刷新后重试。",
   C2_REASON_LENGTH_INVALID: "操作理由要填 8–200 个字。",
+  SESSION_REVOKE_REASON_REJECTED: "登出理由请填写纯文本，不能包含链接或结构化内容。",
+  NO_ACTIVE_SESSION: "该用户当前没有在线设备，本次无需强制登出。",
   C2_FREEZE_REASON_CODE_REQUIRED: "请选择冻结原因分类后再提交。",
   C2_IMPERSONATION_REASON_CODE_REQUIRED: "请选择模拟登录授权分类后再提交。",
   C2_REASON_CODE_UNSUPPORTED: "原因分类已失效，请刷新页面后重新选择。",
