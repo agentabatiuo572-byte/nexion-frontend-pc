@@ -55,6 +55,8 @@ const ACTION_AUTHORITY: Record<D2ReviewAction, string> = {
 /** 批量操作面支持的动作(与 reviewD2WithdrawalsBatch 服务端签名同集合)。"" = 运营尚未显式选择。 */
 const BATCH_ACTIONS = ["APPROVE", "REJECT", "DELAY", "FREEZE"] as const;
 type D2BatchAction = (typeof BATCH_ACTIONS)[number];
+type D2UncertainBatch = { action: D2BatchAction; ids: string[]; reason: string; businessValue?: BusinessFormValue };
+const BATCH_UNKNOWN_COPY = "批量操作结果尚未确认，可能已有部分生效。请勿改变勾选或新建批次；核对后重试原操作。";
 
 function money(value: number) {
   return `$${Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
@@ -500,6 +502,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // 无默认动作：必须由运营显式选择后才可提交；但允许先勾选，再选动作。
   const [batchAction, setBatchAction] = useState<D2BatchAction | "">("");
+  const [uncertainBatches, setUncertainBatches] = useState<D2UncertainBatch[]>([]);
   const [detail, setDetail] = useState<D2Withdrawal | null>(null);
   const [bankDetail, setBankDetail] = useState<D2BankPayout | null>(null);
   const [cregisDetail, setCregisDetail] = useState<D2CregisPayout | null>(null);
@@ -613,16 +616,19 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     await load();
     if (detail) await openDetail(detail);
     const stateConflict = cause instanceof DRequestError && (cause.status === 409 || cause.code === 409)
-      && ["INVALID_STATE_TRANSITION", "WITHDRAWAL_STATE_CONFLICT", "WITHDRAWAL_FROZEN_BY_C2_USER_STATUS",
-        "CREGIS_PAYOUT_ALREADY_DISPATCHED", "BANK_PAYOUT_ALREADY_DISPATCHED", "BANK_PAYOUT_RECOVERY_STALE",
-        "CREGIS_PAYOUT_RECOVERY_STATE_CONFLICT", "D2_DEVELOPMENT_SIMULATION_STATE_INVALID",
-        "D2_DEVELOPMENT_SIMULATION_CONFLICT", "D2_COOLDOWN_ALREADY_DUE"].includes(cause.reasonCode ?? "");
+      && ["INVALID_STATE_TRANSITION", "WITHDRAWAL_STATE_CONFLICT", "CREGIS_PAYOUT_ALREADY_DISPATCHED",
+        "BANK_PAYOUT_ALREADY_DISPATCHED", "BANK_PAYOUT_RECOVERY_STALE"].includes(cause.reasonCode ?? "");
     if (stateConflict) {
       toast("提现已被他人或系统处理，已刷新列表，请核对最新状态。");
       return;
     }
+    if (batch && isDOutcomeUnknownError(cause)) {
+      const message = `${BATCH_UNKNOWN_COPY}原操作编号：${cause.commandKey}`;
+      toast(message);
+      throw new Error(message);
+    }
     const message = cause instanceof Error ? displayAdminError(cause) : "提交失败，请重试";
-    toast(batch && isDOutcomeUnknownError(cause) ? `${message}｜请不要改变勾选，请按原操作重试` : message);
+    toast(message);
     // Only load() owns the page-load banner. Other refusals and unknown outcomes
     // reject into the existing dialog, keeping its inputs and original command.
     throw cause;
@@ -823,6 +829,31 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     });
   };
 
+  const runBatch = async (action: D2BatchAction, ids: string[], reason: string, businessValue?: BusinessFormValue) => {
+    const scope = batchScope(action, ids);
+    const key = pendingKeys.get(scope) ?? operationKey(scope);
+    pendingKeys.remember(scope, key);
+    setSubmitting(scope);
+    try {
+      const result: D2BatchResult = await reviewD2WithdrawalsBatch(action, ids, { ...businessInput(businessValue), reason }, OPERATOR(), key);
+      pendingKeys.forget(scope);
+      setUncertainBatches((current) => current.filter((batch) => batchScope(batch.action, batch.ids) !== scope));
+      toast(`批次 ${result.batchId}：成功 ${result.accepted.length} 笔 / 大额转人工 ${result.rejected.length} 笔 / 状态已变化 ${result.conflicts.length} 笔`);
+      await load();
+    } catch (cause) {
+      if (isDOutcomeUnknownError(cause)) {
+        setUncertainBatches((current) => [
+          ...current.filter((batch) => batchScope(batch.action, batch.ids) !== scope),
+          { action, ids, reason, businessValue },
+        ]);
+      } else {
+        pendingKeys.forget(scope);
+        setUncertainBatches((current) => current.filter((batch) => batchScope(batch.action, batch.ids) !== scope));
+      }
+      return await handleWriteFailure(cause, true);
+    } finally { setSubmitting(""); }
+  };
+
   const confirmBatch = () => {
     const action = batchAction;
     if (!action) { toast("请先选择批量操作，再勾选提现单"); return; }
@@ -837,24 +868,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       businessForm: actionBusinessForm(action),
       reasonMin: 8,
       reasonMax: 200,
-      run: async (reason, _newValue, businessValue) => {
-        const scope = batchScope(action, ids);
-        const key = pendingKeys.get(scope) ?? operationKey(scope);
-        pendingKeys.remember(scope, key);
-        setSubmitting(scope);
-        try {
-          const result: D2BatchResult = await reviewD2WithdrawalsBatch(action, ids, { ...businessInput(businessValue), reason }, OPERATOR(), key);
-          pendingKeys.forget(scope);
-          toast(`批次 ${result.batchId}：成功 ${result.accepted.length} 笔 / 大额转人工 ${result.rejected.length} 笔 / 状态已变化 ${result.conflicts.length} 笔`);
-          await load();
-        } catch (cause) {
-          // 批量原本只有 try/finally:失败时既不丢号也**不回读列表** —— 运营看不出哪几笔已出金,
-          //   而批量指纹含 ids 集合,改一下勾选就是新号,重叠的那部分会被重复放行。
-          //   回读让已生效的行先亮出来,再配合下面的提示劝阻「改选重来」。
-          if (!isDOutcomeUnknownError(cause)) pendingKeys.forget(scope);
-          return await handleWriteFailure(cause, true);
-        } finally { setSubmitting(""); }
-      },
+      run: (reason, _newValue, businessValue) => runBatch(action, ids, reason, businessValue),
     });
   };
 
@@ -862,6 +876,10 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   return <>
     {error && <div className="dtint warn" style={{ marginBottom: 12 }}>加载失败 · {error} · 已暂停所有操作，请重试。 <button className="l-btn sm" onClick={() => void load(1)}>重试</button></div>}
+    {uncertainBatches.map((batch) => <div key={batchScope(batch.action, batch.ids)} className="dtint warn" role="status" data-d2-batch-unknown style={{ marginBottom: 12 }}>
+      {BATCH_UNKNOWN_COPY} {actionLabel(batch.action)} · {batch.ids.join("、")}。
+      <button className="l-btn sm" disabled={!writesEnabled || !!submitting} onClick={() => void runBatch(batch.action, batch.ids, batch.reason, batch.businessValue).catch((cause) => toast(displayAdminError(cause)))}>重试原操作</button>
+    </div>)}
     <div className="dtint" style={{ marginBottom: 12 }}>当前到账时限：{resultsUnavailable || d5?.payoutSlaHours == null ? "—" : `${d5.payoutSlaHours} 小时`} · 已提交的提现按提交时的时限</div>
     <div className="f-stats">
       {/* 服务端分页总数：rows.total 由服务端分页返回 */}
