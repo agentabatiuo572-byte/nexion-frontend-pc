@@ -1,8 +1,10 @@
-import type { EditSpec, BusinessFormSpec, BusinessFormValue } from "../design-kit";
+import type { EditSpec, BusinessFormSpec, BusinessFormValue, InlineOperationApproval } from "../design-kit";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import type { DirectReferralPolicy, DirectReferralUpdate } from "@/lib/admin/direct-referral-policy";
 import type { A2OperationRow } from "@/lib/admin/a2-client";
 import type { VRankBootstrapRow } from "@/lib/admin/vrank-bootstrap";
+import type { TeamFundApprovalValues } from "@/lib/admin/withdrawal-config-approval";
+import type { AdminSession } from "@/lib/store/admin-auth";
 import type {
   F1Leadership,
   F1PayoutFilters,
@@ -18,10 +20,10 @@ import type {
   F3DailyCap,
   F3Formula,
   F3Metric,
-  F3SettlementExecution,
   F3Settlement,
   F4LeadershipPoolOverview,
   F4AmbassadorPolicy,
+  F4AmbassadorPolicyUpdate,
   F5CommissionAuditOverview,
   F5CommissionQuery,
 } from "@/lib/admin/f1-client";
@@ -47,8 +49,9 @@ export interface McSpec {
   detail?: string;
   completionCopy?: string;       // 明确保存后的生效时点，避免统一“立即生效”文案误导周期性配置
   expectedVersion?: number;
+  teamApproval?: Pick<InlineOperationApproval, "resolve" | "renderForm"> & { source: keyof TeamFundApprovalValues };
 }
-export type Mc = McSpec | null;
+export type Mc = (McSpec & { teamApprovalOwner?: AdminSession["adminId"] }) | null;
 
 /** 子视图上下文:打开 操作确认 / 跨域跳转 / toast。全部由 shell 注入,子视图无自有 store。 */
 export interface FViewCtx {
@@ -57,6 +60,8 @@ export interface FViewCtx {
   toast: (msg: string) => void;
   /** UI convenience only; backend authorization remains the final boundary. */
   can: (authority: string) => boolean;
+  canSubmitTeamApproval: (source: keyof TeamFundApprovalValues) => boolean;
+  submitTeamApproval: <S extends keyof TeamFundApprovalValues>(source: S, values: TeamFundApprovalValues[S], reason: string) => Promise<boolean>;
   // ── V-Rank 等级奖励(F1)· 读 + CRUD(写经 run 回调,内部 logAudit)+ 代金券/SKU 下拉选项 ──
   vrankRows: F1VRankRow[];
   leadership: F1Leadership | null;
@@ -134,11 +139,6 @@ export interface FViewCtx {
   f3Error: string | null;
   refreshF3: () => Promise<void>;
   updateF3Config: (key: string, value: string, reason: string, amplifies?: boolean) => Promise<void>;
-  executeF3Settlement: (
-    ownerUserId: number,
-    settlementDate: string,
-    reason: string,
-  ) => Promise<F3SettlementExecution>;
   // -- 领导奖池/硬件配额/大使/榜单(F4)· 读 + 配置写入 --
   f4Overview: F4LeadershipPoolOverview | null;
   f4AmbassadorPolicy: F4AmbassadorPolicy | null;
@@ -146,7 +146,7 @@ export interface FViewCtx {
   f4Error: string | null;
   refreshF4: () => Promise<void>;
   updateF4Config: (key: string, value: string, reason: string, expectedVersion?: number) => Promise<void>;
-  updateF4AmbassadorPolicy: (policy: Omit<F4AmbassadorPolicy, "serverCanonical">, reason: string) => Promise<void>;
+  updateF4AmbassadorPolicy: (policy: F4AmbassadorPolicyUpdate, reason: string) => Promise<void>;
   proposeF4Settlement: (reason: string) => Promise<void>;
   proposeF4LeaderboardPayout: (period: "today" | "week" | "month" | "allTime", reason: string) => Promise<void>;
   // -- 佣金事件审计(F5)· 读 + 处置状态写入 --

@@ -3415,6 +3415,7 @@ export type CoverageSnapshot = {
 
 /* 操作确认弹窗 — 高敏动作确认 + 理由必填 + 可编辑「目标新值」(配置型调整);纯动作(放行/退款/封禁/pause)仅确认。 */
 export type OperationApproval = {
+  heading?: string;
   comparison?: ReactNode;
   disabledReason?: string;
   recover?: (reason: string) => Promise<boolean>;
@@ -3422,7 +3423,7 @@ export type OperationApproval = {
   completionCopy?: string;
 };
 
-export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: {
+export type InlineOperationApproval = {
   resolve: (value: BusinessFormValue, editValue: string) => OperationApproval | undefined;
   renderForm?: (value: BusinessFormValue, onChange: (value: BusinessFormValue) => void, locked: boolean, approval: boolean) => ReactNode;
   recover: (reason: string, value: BusinessFormValue, editValue: string) => Promise<boolean>;
@@ -3431,7 +3432,10 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   expired?: boolean;
   disabledReason?: string;
   compareEdit?: { rangeLabel?: string };
-}; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; auditSink?: "a2" | "local-history"; briefKind?: OperatorBriefKind; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+  dialogClassName?: string;
+};
+
+export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; auditSink?: "a2" | "local-history"; briefKind?: OperatorBriefKind; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
   const [draftReason, setReason] = useState(pendingReason ?? "");
   const reason = pendingReason ?? draftReason;
@@ -3579,7 +3583,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
     }
   };
   return (
-    <Modal title={action} icon="shield" onClose={handleClose} busy={!!(approval || inlineApproval) && submitting}
+    <Modal title={action} icon="shield" className={inlineApproval?.dialogClassName} onClose={handleClose} busy={!!(approval || inlineApproval) && submitting}
       footer={<>
         <Btn disabled={submitting} onClick={handleClose}>取消</Btn>
         {approvalRecovery && recoverApproval && (
@@ -3605,18 +3609,24 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         </div>
       )}
       {approval && <>
-        {approval.comparison && <div className="tint" style={{ marginBottom: 14 }}>{approval.comparison}</div>}
+        {!approval.heading && approval.comparison && <div className="tint" style={{ marginBottom: 14 }}>{approval.comparison}</div>}
         <div className="alertbar warn" style={{ marginBottom: 14 }}>
-          <span className="ico" style={{ color: "var(--warning)" }}><Icon name="alert" size={16} /></span>
+          <span className="ico" style={{ color: "var(--operation-approval-icon, var(--warning))" }}><Icon name="alert" size={16} /></span>
           <div style={{ fontSize: 14, lineHeight: 1.5 }}>
-            <b style={{ color: "var(--warning)" }}>放宽配置 · 批准后生效</b>
-            <div>{completionCopy}</div>
-            <div>{approval.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。"}{covBlocked && "当前覆盖率低于红线，暂时无法提交。"}</div>
-            {coverage && <div>当前覆盖率 <b className="mono">{coverage.coverageRatio}%</b> · 红线 <span className="mono">{coverage.redlinePct}%</span></div>}
+            <b style={{ color: "var(--warning)" }}>{approval.heading ?? "放宽配置 · 批准后生效"}</b>
+            {!approval.heading && <>
+              <div>{completionCopy}</div>
+              <div>{approval.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。"}{covBlocked && "当前覆盖率低于红线，暂时无法提交。"}</div>
+              {coverage && <div>当前覆盖率 <b className="mono">{coverage.coverageRatio}%</b> · 红线 <span className="mono">{coverage.redlinePct}%</span></div>}
+            </>}
             {approval.disabledReason && <div role="status">{approval.disabledReason}</div>}
           </div>
         </div>
-        {!compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} completionCopy={completionCopy} auditSink={auditSink} kind={briefKind} />}
+        {approval.heading ? <>
+          <p style={{ margin: "0 0 14px", lineHeight: 1.5 }}>{completionCopy}</p>
+          {coverage && <p className="operation-approval-coverage">当前覆盖率 <b>{coverage.coverageRatio}%</b> · 红线 <b>{coverage.redlinePct}%</b></p>}
+          {approval.comparison}
+        </> : !compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} completionCopy={completionCopy} auditSink={auditSink} kind={briefKind} />}
       </>}
       {effectiveAmplifies && !approval && (
         <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
@@ -3696,17 +3706,17 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         </div>
       )}
       <div className="field">
-        <label htmlFor={reasonFieldId}>{approval ? "变更理由" : "操作理由"}{compareEdit && <span aria-hidden="true" style={{ color: "var(--danger)" }}> *</span>}（必填，{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）</label>
-        <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} aria-required={compareEdit ? true : undefined} disabled={inlineApproval ? formLocked : !!approval ? submitting || !!approvalRecovery : !!getPendingReason && (submitting || pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} placeholder="例如：工单号、处理依据" />
+        <label htmlFor={reasonFieldId}>{approval ? "变更理由" : "操作理由"}{(compareEdit || approval?.heading) && <span aria-hidden="true" style={{ color: "var(--danger)" }}> *</span>}（必填，{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）</label>
+        <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} aria-required={compareEdit || inlineApproval?.dialogClassName ? true : undefined} aria-describedby={inlineApproval?.dialogClassName && ((!reasonOk && !retryApproval) || (reasonOk && reasonMax)) ? `${reasonFieldId}-length` : undefined} disabled={inlineApproval ? formLocked : !!approval ? submitting || !!approvalRecovery : !!getPendingReason && (submitting || pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} placeholder="例如：工单号、处理依据" />
         {pendingReason !== undefined && <div className="tiny" style={{ marginTop: 7 }}>原操作结果尚未确认，理由已锁定。重试将继续原操作，不会重复执行。</div>}
         {!reasonOk && !retryApproval && (
-          <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
+          <div id={`${reasonFieldId}-length`} className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
             {reasonLength < reasonMin
               ? `还差 ${reasonMin - reasonLength} 字`
               : `操作理由不能超过 ${reasonMax} 字。`}
           </div>
         )}
-        {reasonMax && reasonOk && <div className="tiny" style={{ marginTop: 7, color: approval ? "var(--ink-3)" : "var(--ink-4)" }}>已填写 {reasonLength}/{reasonMax} 字</div>}
+        {reasonMax && reasonOk && <div id={`${reasonFieldId}-length`} className="tiny" style={{ marginTop: 7, color: approval || inlineApproval?.dialogClassName ? "var(--ink-3)" : "var(--ink-4)" }}>已填写 {reasonLength}/{reasonMax} 字</div>}
         {businessMissing.length > 0 && (
           <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
             请检查以下内容： {businessMissing.slice(0, 4).join(" / ")}{businessMissing.length > 4 ? "…" : ""}。

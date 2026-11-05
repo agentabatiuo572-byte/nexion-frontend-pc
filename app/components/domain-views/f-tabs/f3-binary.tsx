@@ -41,7 +41,7 @@ function matchRatePercent(raw: string): string | null {
 }
 
 export function F3Binary({ ctx }: { ctx: FViewCtx }) {
-  const canSettle = ctx.can("network_f3_write");
+  const canSettle = ctx.canSubmitTeamApproval("F3");
   const canConfigure = ctx.can("network_f3_match_rate");
   const canPause = ctx.can("network_f3_engine_pause");
   const [lookupText, setLookupText] = useState("");
@@ -109,6 +109,43 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     setSelectedUser("");
     setLookupText("");
     setLookupOpen(false);
+  };
+  const openSettlement = () => {
+    const fields = [
+      { key: "ownerUserId", label: "用户编号", inputKind: "number", min: 1, step: 1, pattern: "^[0-9]+$" },
+      { key: "settlementDate", label: "结算日（越南时间）", inputKind: "text", pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", patternMessage: "结算日格式应为 YYYY-MM-DD", placeholder: "YYYY-MM-DD" },
+    ] as const;
+    ctx.openActionConfirm({
+      name: "手动结算团队平衡奖励",
+      businessForm: { kind: "multi-field", fields: [...fields] },
+      teamApproval: {
+        source: "F3",
+        resolve: () => ({
+          heading: "另一位超管批准后执行",
+          completionCopy: "待审期间不入账。批准时将本笔实际应付计入兑付覆盖率复核。已结算过的记录会查回。",
+        }),
+        renderForm: (value, change, locked) => <>
+          {fields.map(({ key, label, inputKind, ...input }) => <div className="field" key={key}>
+            <label htmlFor={key}>{label}</label>
+            <input className="fld" id={key} name={key} type={inputKind} disabled={locked} required value={value[key] ?? ""}
+              aria-describedby={key === "settlementDate" ? "f3-settlement-calendar" : undefined}
+              onChange={(event) => change({ ...value, [key]: event.target.value })}
+              {...("min" in input ? { min: input.min, step: input.step } : { placeholder: input.placeholder, pattern: input.pattern })} />
+          </div>)}
+          <p id="f3-settlement-calendar" className="f3-settlement-calendar">结算日按越南时间（UTC+7）划分。2026-10-19 之前按旧时区（UTC+8），不重算。</p>
+        </>,
+      },
+      run: async (reason, value) => {
+        const ownerUserId = Number(value?.ownerUserId);
+        const settlementDate = value?.settlementDate?.trim() ?? "";
+        if (!Number.isSafeInteger(ownerUserId) || ownerUserId <= 0) throw new Error("请输入有效用户编号");
+        const utcDate = new Date(`${settlementDate}T00:00:00Z`);
+        if (!Number.isFinite(utcDate.valueOf()) || utcDate.toISOString().slice(0, 10) !== settlementDate) {
+          throw new Error("请输入有效的结算日");
+        }
+        await ctx.submitTeamApproval("F3", { ownerUserId, settlementDate }, reason);
+      },
+    });
   };
 
   if (ctx.f3Loading && rows.length === 0) {
@@ -185,33 +222,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <span className="ph-sub">结算日按越南时间（UTC+7）划分</span>
           <span className="ph-r" style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             <Link className="fbtn" href="/network/commissions">去补发 / 冲正</Link>
-            {canSettle && <button className="fbtn primary" onClick={() => ctx.openActionConfirm({
-              name: "手动结算团队平衡奖励",
-              businessForm: {
-                kind: "multi-field",
-                title: "用户和结算日",
-                hint: "结算日按越南时间（UTC+7）划分；2026-10-19 之前按旧时区（UTC+8），不重算。系统会自动检查是否满足结算条件、是否已经结算过。",
-                fields: [
-                  { key: "ownerUserId", label: "用户编号", inputKind: "number", min: 1, required: true },
-                  { key: "settlementDate", label: "结算日（YYYY-MM-DD）", inputKind: "text", placeholder: "例如 2026-10-19", required: true },
-                ],
-              },
-              detail: "结算后奖励进入冷却期，并记入资金流水和操作记录。同一用户同一天重复提交不会重复发放。",
-              run: async (reason, businessValue) => {
-                const ownerUserId = Number(businessValue?.ownerUserId);
-                const settlementDate = String(businessValue?.settlementDate ?? "").trim();
-                if (!Number.isSafeInteger(ownerUserId) || ownerUserId <= 0) throw new Error("请输入有效用户编号");
-                if (!/^\d{4}-\d{2}-\d{2}$/.test(settlementDate)) throw new Error("结算日格式应为 YYYY-MM-DD");
-                const result = await ctx.executeF3Settlement(ownerUserId, settlementDate, reason);
-                if (result.status === "BLOCKED") {
-                  ctx.toast(`没有结算 · ${result.reason || "未满足结算条件"} · 没有资金变动`);
-                  return;
-                }
-                ctx.toast(result.replayed
-                  ? `这天已经结算过，没有重复发放 · 奖励记录 ${result.commissionEventId ?? "—"}`
-                  : `已结算 · ${usd(result.amountUsdt)} 进入冷却期`);
-              },
-            })}>手动结算</button>}
+            {canSettle && <button className="fbtn primary" onClick={openSettlement}>手动结算</button>}
           </span>
         </div>
         <div className="bin-search">
