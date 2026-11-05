@@ -884,6 +884,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   C1_RAW_PHONE_SEARCH_FORBIDDEN: "为保护用户隐私，不支持按原始手机号检索；请使用脱敏手机号或手机号哈希",
   // ---- 2026-08-06 main 合流补账:合流后哨兵扫出的 17 个无文案机器码,逐条补运营中文 ----
   E2_TASK_PRICING_PROTOCOL_INVALID: "任务定价服务返回的数据不完整或不一致，页面已停止展示；请重试加载或联系值班人员。",
+  E2_TASK_PRICING_STALE: "任务定价已更新，本次变更未生效。请刷新页面，核对当前配置后重新操作。",
   G4_INVITE_STORAGE_UNAVAILABLE: "邀请码存储暂时不可用，本次操作未生效；请稍后重试，持续失败请联系值班人员。",
   G4_INVITE_STORAGE_WRITE_FAILED: "邀请码写入失败，本次操作未生效；请重试，持续失败请联系值班人员。",
   G4_INVITE_CODE_SPACE_EXHAUSTED: "可用邀请码额度已用尽，请减少生成数量或回收未使用的邀请码后再试。",

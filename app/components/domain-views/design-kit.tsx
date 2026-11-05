@@ -3419,12 +3419,14 @@ export type OperationApproval = {
 };
 
 export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: {
-  resolve: (value: BusinessFormValue) => OperationApproval | undefined;
-  renderForm: (value: BusinessFormValue, onChange: (value: BusinessFormValue) => void, locked: boolean, approval: boolean) => ReactNode;
-  recover: (reason: string, value: BusinessFormValue) => Promise<boolean>;
+  resolve: (value: BusinessFormValue, editValue: string) => OperationApproval | undefined;
+  renderForm?: (value: BusinessFormValue, onChange: (value: BusinessFormValue) => void, locked: boolean, approval: boolean) => ReactNode;
+  recover: (reason: string, value: BusinessFormValue, editValue: string) => Promise<boolean>;
+  retry?: () => Promise<void>;
   pending?: boolean;
   expired?: boolean;
   disabledReason?: string;
+  compareEdit?: { rangeLabel?: string };
 }; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; auditSink?: "a2" | "local-history"; briefKind?: OperatorBriefKind; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
   const [draftReason, setReason] = useState(pendingReason ?? "");
@@ -3441,15 +3443,20 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const [authoritativeReasonMax, setAuthoritativeReasonMax] = useState<number | null>(null);
   const [reasonPolicyError, setReasonPolicyError] = useState<string | null>(null);
   const reasonFieldId = useId();
+  const comparisonValueId = useId();
+  const comparisonUnitId = useId();
   const selectionRequestRef = useRef(0);
-  const approval = approvalSpec ?? inlineApproval?.resolve(businessValue);
+  const approval = approvalSpec ?? inlineApproval?.resolve(businessValue, newVal);
+  const compareEdit = approval ? inlineApproval?.compareEdit : undefined;
   const completionCopy = approval?.completionCopy ?? directCompletionCopy;
-  const recoverApproval = inlineApproval ? (reason: string) => inlineApproval.recover(reason, businessValue) : approval?.recover;
+  const recoverApproval = inlineApproval ? (reason: string) => inlineApproval.recover(reason, businessValue, newVal) : approval?.recover;
+  const retryApproval = approvalRecovery === "retry" ? inlineApproval?.retry : undefined;
   const approvalOnlyLookup = approvalRecovery === "lookup" || !!(approvalRecovery && inlineApproval?.expired);
-  const formLocked = submitting || approvalOnlyLookup;
+  const formLocked = submitting || approvalOnlyLookup || !!retryApproval;
   // 配置型调整:仅当调用方显式传 edit 才提供「目标新值」编辑控件并要求 newVal;纯动作 / 处置(放行 / 冻结 / 驳回 / pause)不传 edit → 仅确认。
   // 去除按动作名猜测的启发式正则(原 isAdjust/select 正则):既防 dispose 名含「调整 / 规则 / 启停…」误弹字段,也防 adjust 名不含触发词漏判;改为 by edit 显式契约。全域调用点已逐一显式传 edit(2026-06 跨域硬化)。
   const spec: EditSpec | null = edit ?? null;
+  const comparisonUnit = compareEdit?.rangeLabel ?? spec?.unit;
   const actionText = typeof action === "string" ? action : "";
   const isJ4Command = businessForm?.kind === "sop-authoring" || /应急剧本|应急预案|启动演练|回滚剧本|回滚预案/.test(actionText);
   const kind = spec?.kind ?? "text";
@@ -3492,8 +3499,9 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
     : businessNewValue(activeBusinessForm, businessValue) ?? newVal;
   const editValueOk = isEditValueValid(spec, newVal);
   const uploadBlocked = Object.values(uploadStates).some(Boolean);
-  const canConfirm = reasonPolicyReady && !covBlocked && !approval?.disabledReason && !inlineApproval?.disabledReason && !businessSelectionLoading && !submitting && reasonOk && editValueOk && businessMissing.length === 0 && !uploadBlocked
-    && (!inlineApproval || !approvalRecovery || !!approval);
+  const canConfirm = retryApproval ? !submitting && !approvalOnlyLookup
+    : reasonPolicyReady && !covBlocked && !approval?.disabledReason && !inlineApproval?.disabledReason && !businessSelectionLoading && !submitting && reasonOk && editValueOk && businessMissing.length === 0 && !uploadBlocked
+      && (!inlineApproval || !approvalRecovery || !!approval);
   useEffect(() => {
     let active = true;
     setAuthoritativeReasonMin(null);
@@ -3514,11 +3522,12 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
     setSubmitting(true);
     setSubmitError(null);
     try {
-      await onConfirm(reason.trim(), submittedValue || undefined, activeBusinessForm ? businessValue : undefined);
+      if (retryApproval) await retryApproval();
+      else await onConfirm(reason.trim(), submittedValue || undefined, activeBusinessForm ? businessValue : undefined);
     } catch (error) {
       // The domain callback owns the detailed toast. Keep the form open and
       // consume the rejection so a rejected A2/K2 request never escapes as pageerror.
-      if (approval && isA2OutcomeUncertainError(error)) {
+      if ((approval || retryApproval) && isA2OutcomeUncertainError(error)) {
         setApprovalRecovery(recoverApproval ? "lookup" : "retry");
         setSubmitError(inlineApproval ? `${error.message} 命令号：${error.commandKey}` : `提交结果暂未确认，可能已生成审批单。请查询原操作，或按原配置和理由重试。命令号：${error.commandKey}`);
       } else {
@@ -3586,7 +3595,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       {inlineApproval?.pending && approvalRecovery === "lookup" && !submitError && (
         <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>上一次审批结果待确认，请查询原操作。</div>
       )}
-      {!reasonPolicyReady && (
+      {!reasonPolicyReady && !retryApproval && (
         <div className="alertbar warn" role="alert" data-policy-state="fail-closed" style={{ marginBottom: 16 }}>
           {reasonPolicyError ?? "正在加载，稍候即可提交。"}
         </div>
@@ -3603,7 +3612,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
             {approval.disabledReason && <div role="status">{approval.disabledReason}</div>}
           </div>
         </div>
-        <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} completionCopy={completionCopy} auditSink={auditSink} kind={briefKind} />
+        {!compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} completionCopy={completionCopy} auditSink={auditSink} kind={briefKind} />}
       </>}
       {effectiveAmplifies && !approval && (
         <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
@@ -3629,7 +3638,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       )}
       {completionCopy && !approval && <div className="tint tiny" style={{ marginBottom: 14 }}>{completionCopy}</div>}
       {activeBusinessForm && (
-        inlineApproval ? inlineApproval.renderForm(businessValue, setBusinessValue, formLocked, !!approval) : (
+        inlineApproval?.renderForm ? inlineApproval.renderForm(businessValue, setBusinessValue, formLocked, !!approval) : (
           <BusinessFormBlock spec={activeBusinessForm} value={businessValue} onChange={setBusinessValue} onSelectionChange={(next) => void handleBusinessSelectionChange(next)} onUploadStateChange={(key, state) => setUploadStates((current) => ({ ...current, [key]: state }))} />
         )
       )}
@@ -3638,35 +3647,44 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       </div>}
       {businessSelectionLoading && <div className="itint" style={{ marginTop: 8 }}>正在加载该地区的版本内容…</div>}
       {spec && (
-        <div className="field">
-          <span className="bf-legend">新值{spec.current ? <> · 当前 <span className="mono">{spec.optionLabels?.[spec.current] ?? spec.current}</span></> : null}</span>
+        <div className={compareEdit ? "field tint" : "field"}>
+          {!compareEdit && <span className="bf-legend">新值{spec.current ? <> · 当前 <span className="mono">{spec.optionLabels?.[spec.current] ?? spec.current}</span></> : null}</span>}
           {kind === "select" || kind === "toggle" ? (
             <div className="row wrap" style={{ gap: 8 }}>
               {opts.map((o) => <Chip key={o} tab sel={newVal === o} disabled={spec.disabledOptions?.includes(o)} onClick={() => setNewVal(o)}>{spec.optionLabels?.[o] ?? o}</Chip>)}
             </div>
           ) : (
-            <div className="row" style={{ gap: 8, alignItems: "center" }}>
+            <div className={compareEdit ? "row wrap" : "row"} style={{ gap: 8, alignItems: "center" }}>
+              {compareEdit && <span id={comparisonValueId} className="muted">当前{" "}
+                <strong className="tnum" style={{ color: "var(--ink)", fontSize: 14 }}>
+                  {spec.current}{compareEdit.rangeLabel ? "" : ` ${spec.unit ?? ""}`}
+                </strong>
+              </span>}
+              {compareEdit && <span aria-hidden>→</span>}
+              {compareEdit && <span className="muted">拟调整</span>}
               <input
                 className="fld"
                 aria-label="目标新值"
+                aria-describedby={compareEdit ? [comparisonValueId, comparisonUnit && comparisonUnitId].filter(Boolean).join(" ") : undefined}
                 type={kind === "number" ? "number" : "text"}
                 min={kind === "number" ? spec.min : undefined}
                 max={kind === "number" ? spec.max : undefined}
                 step={kind === "number" ? spec.step : undefined}
+                disabled={!!inlineApproval?.compareEdit && formLocked}
                 value={newVal}
                 onChange={(e) => setNewVal(e.target.value)}
                 placeholder={spec.current ? `输入新值（当前 ${spec.current}）` : "输入新值"}
-                style={{ maxWidth: 240 }}
+                style={{ maxWidth: compareEdit ? 140 : 240 }}
               />
-              {spec.unit && <span className="muted tiny">{spec.unit}</span>}
+              {comparisonUnit && <span className="muted tiny" id={compareEdit ? comparisonUnitId : undefined}>{comparisonUnit}</span>}
             </div>
           )}
-          {!editValueOk && kind === "number" && newVal && (
+          {!editValueOk && !retryApproval && kind === "number" && newVal && (
             <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
               请输入 {spec.min ?? "允许范围"}～{spec.max ?? "允许上限"} 的有效数字{spec.step ? `（步长 ${spec.step}）` : ""}。
             </div>
           )}
-          {newVal && spec.current && (
+          {!compareEdit && newVal && spec.current && (
             <div className="tiny" style={{ marginTop: 8, color: "var(--ink-3)" }}>
               当前 <span className="mono">{spec.optionLabels?.[spec.current] ?? spec.current}</span> → 新 <span className="mono" style={{ color: "var(--brand)" }}>{spec.optionLabels?.[newVal] ?? newVal}{spec.unit ? ` ${spec.unit}` : ""}</span>
             </div>
@@ -3674,10 +3692,10 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         </div>
       )}
       <div className="field">
-        <label htmlFor={reasonFieldId}>{approval ? "变更理由" : "操作理由"}（必填，{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）</label>
-        <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} disabled={inlineApproval ? formLocked : !!approval ? submitting || !!approvalRecovery : !!getPendingReason && (submitting || pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} placeholder="例如：工单号、处理依据" />
+        <label htmlFor={reasonFieldId}>{approval ? "变更理由" : "操作理由"}{compareEdit && <span aria-hidden="true" style={{ color: "var(--danger)" }}> *</span>}（必填，{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）</label>
+        <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} aria-required={compareEdit ? true : undefined} disabled={inlineApproval ? formLocked : !!approval ? submitting || !!approvalRecovery : !!getPendingReason && (submitting || pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} placeholder="例如：工单号、处理依据" />
         {pendingReason !== undefined && <div className="tiny" style={{ marginTop: 7 }}>原操作结果尚未确认，理由已锁定。重试将继续原操作，不会重复执行。</div>}
-        {!reasonOk && (
+        {!reasonOk && !retryApproval && (
           <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
             {reasonLength < reasonMin
               ? `还差 ${reasonMin - reasonLength} 字`

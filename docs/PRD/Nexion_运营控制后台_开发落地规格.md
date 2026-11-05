@@ -790,8 +790,9 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | `stock` | 现状,<50 橙告警 | 0–2147483647 整数 | 实时；0 仅售罄，不自动下架 | E1 |
 | `trialEligible`(允许试用) | false | 显式开关；仅 `DEVICE/SERVER + FINITE` 可用于 H2，默认关闭 | 实时；H2 只列出已开启商品，领取仍复验在售/正价/库存 | E1 |
 | 套餐折扣 ladder | 4 件 12% / 3 件 8% / 2 件 5% | 各 0–30% | 仅新结算 | E1 |
-| 6 类任务 minReward/maxReward | IG $0.0001–0.045 / VG $0.45–1.80 / LL $0.00005–0.85 / FT $0.06–0.42 / EM $0.00001–0.09 / SP $0.00005–0.072 | ≥0,min≤max | 实时(仅新派发) | E2 |
-| `QUEUE_SATURATION` | 0.35 | 0–1 | 实时 | E2 |
+| 6 类任务 minReward/maxReward | IG $0.0001–0.045 / VG $0.45–1.80 / LL $0.00005–0.85 / FT $0.06–0.42 / EM $0.00001–0.09 / SP $0.00005–0.072 | ≥0，min≤max，最多六位小数 | 上调经 A2 批准，降低即时，仅新派发 | E2 |
+| 6 类任务 minVRAM | 各类现行值 | 0–9999 GB，整数 | 降低经 A2 批准，提高即时 | E2 |
+| `QUEUE_SATURATION` | 0.35 | 0–1 | 提高经 A2 批准，降低即时 | E2 |
 | `GENERATION_RELEASES.releaseMonth` | Pro v2 月5 / Rack P2 月10(绝对月) | 月1–12 | 仅新对象(月龄门) | E1 |
 | `tradeinDiscount` | Pro v2 $300 / Rack P2 $800 | ≥ 0 | 仅新置换单 | E1 |
 | `capacityBand1/2/3DeltaPct` | −3% / −6% / −23.7% /月 | −100%–100%；按月复利 | 新投影即时生效 | **E3** |
