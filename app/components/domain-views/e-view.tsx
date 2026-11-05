@@ -16,6 +16,7 @@ import { useSearchParams } from "next/navigation";
 import { Icon, Btn, Chip, Drawer, KV, OperationConfirmModal, useToast } from "./design-kit";
 import { RdPage } from "@/app/components/rd";
 import { businessClock } from "@/lib/admin/business-time";
+import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
@@ -56,7 +57,7 @@ import {
   E4_DEFAULT_QUERY, FOLD, ORDER_STATES, e4GroupStates, e4QueryFromUrl, writeE4QueryToUrl, type E4Query,
   EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, validateSkuSpecs, skuNum, stateLabel,
 } from "./e-tabs/data";
-import type { DatacenterForm, Mc, EOp, EViewCtx, EOrder } from "./e-tabs/types";
+import type { DatacenterForm, E4PendingCommand, Mc, EOp, EViewCtx, EOrder } from "./e-tabs/types";
 import { TaskClassChoices, PhoneTaskPolicy } from "./e-tabs/task-type-policy";
 import { E1Catalog } from "./e-tabs/e1-catalog";
 import { E2Tasks } from "./e-tabs/e2-tasks";
@@ -70,6 +71,13 @@ import "./e-domain.css";
 /** E 域 A2 提交稳定命令号:槽位=动作 op|目标对象,指纹=终值+结构化命令+目标锁(**不含 reason**)。
  *  落 sessionStorage,结果未知后哪怕刷新页面,同弹窗同业务输入重试仍复用同一命令号被后端去重。 */
 const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-e-domain-commands-v1" });
+/** E4 四个提案走这张表：一单一条，结果未知时原内容、理由和命令号留到有结论（OP-92～OP-95）。坏记录不能当原操作重发。 */
+const e4PendingCommands = createPendingMutationStore<E4PendingCommand>({
+  storageKey: "nexion-admin-e4-order-commands-v1",
+  isValidRecord: (record) => typeof record.orderNo === "string" && typeof record.label === "string"
+    && record.fingerprint === `order|${record.orderNo}`
+    && record.spec?.obj === record.orderNo && typeof record.spec.reason === "string" && !!record.spec.command,
+});
 
 
 type SkuMediaKind = "image" | "video";
@@ -567,12 +575,72 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   }, []);
   const orderById = useMemo(() => new Map(orders.map((order) => [order.id, order])), [orders]);
   const orderState = useCallback((order: EOrder): string => orderById.get(order.id)?.state ?? order.state, [orderById]);
-  const isRefunded = useCallback((id: string): boolean => orderById.get(id)?.state === "refunded", [orderById]);
-  const isCancelled = useCallback((id: string): boolean => orderById.get(id)?.state === "cancelled", [orderById]);
-  const terminalOf = useCallback((id: string): string | undefined => {
-    const state = orderById.get(id)?.state;
-    return state && (TERMINAL_STATES as readonly string[]).includes(state) ? state : undefined;
-  }, [orderById]);
+  // ── E4 结果未确认：做法同提现审核的 sendCommand、retryPending、releasePending ──
+  const [e4Pending, setE4Pending] = useState<E4PendingCommand[]>([]);
+  const [e4PendingNotes, setE4PendingNotes] = useState<Record<string, string>>({});
+  const [e4RetryRejected, setE4RetryRejected] = useState<string[]>([]);
+  const [e4Retrying, setE4Retrying] = useState("");
+  const syncE4Pending = useCallback(() => setE4Pending(e4PendingCommands.list()), []);
+  useEffect(() => { if (tab === "E4") syncE4Pending(); }, [tab, syncE4Pending]);
+  /**
+   * 先把原操作存好再发。确定失败丢号，留在确认框；结果未知保号，关框，转成页面上方的待确认条，这单在有结论前不能再操作。
+   * 重试的是保留下来的原命令时，确定失败也证明不了原命令的结果，继续保留。只有成功才解除。返回 true 表示已提交。
+   */
+  const sendE4Proposal = async (spec: ProposeSpec, retained?: E4PendingCommand) => {
+    const scope = `order|${spec.obj}`;
+    const key = retained?.commandKey ?? createA2CommandKey("e-domain-action");
+    e4PendingCommands.remember(scope, key, { label: spec.action, orderNo: spec.obj, spec });
+    if (!e4PendingCommands.isDurablyStored(scope, key)) {
+      e4PendingCommands.forget(scope, key);
+      throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
+    }
+    try {
+      await rawPropose(() => undefined, { ...spec, commandKey: key });
+    } catch (error) {
+      const unknown = isA2OutcomeUncertainError(error);
+      if (!unknown && !retained) e4PendingCommands.forget(scope);
+      syncE4Pending();
+      if (!unknown) {
+        setToast(`提交失败：${displayAdminError(error)}`);
+        throw error;
+      }
+      setToast("结果未确认，不要重复操作。到页面上方按原操作重试，或到操作记录核查。");
+      return false;
+    }
+    e4PendingCommands.forget(scope);
+    syncE4Pending();
+    setToast("已提交，等待审批后执行");
+    return true;
+  };
+  const noteE4Pending = (record: E4PendingCommand, note: string) => setE4PendingNotes((current) => ({ ...current, [record.fingerprint]: note }));
+  /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有后端明确拒绝才给解除入口。 */
+  const retryE4Pending = async (record: E4PendingCommand) => {
+    // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
+    if (!e4PendingCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
+      e4PendingCommands.forget(record.fingerprint, record.commandKey);
+      syncE4Pending();
+      await refreshE4();
+      setToast("原操作已结束或过期，本次未再次发送。请先核对列表，再决定如何处理。");
+      return;
+    }
+    setE4Retrying(record.fingerprint);
+    setE4RetryRejected((current) => current.filter((key) => key !== record.commandKey));
+    try {
+      if (await sendE4Proposal(record.spec, record)) await refreshE4();
+      else noteE4Pending(record, "这次也没有确认结果，原命令继续保留。");
+    } catch (error) {
+      noteE4Pending(record, `重试没有成功：${displayAdminError(error)} 这说明不了原操作的结果，原命令继续保留。`);
+      setE4RetryRejected((current) => [...current, record.commandKey]);
+    } finally {
+      setE4Retrying("");
+    }
+  };
+  /** 重试被拒后，人核实过原操作的结果才解除。只放开本页的锁，不发请求，不写操作记录。 */
+  const releaseE4Pending = (record: E4PendingCommand) => {
+    e4PendingCommands.forget(record.fingerprint, record.commandKey);
+    syncE4Pending();
+    setToast("已解除待确认，这单可以重新处理");
+  };
 
   // ── E5 设备运行管理:服务端 fleet / overview 为单一来源 ──
   const [e5Devices, setE5Devices] = useState<E5Device[]>([]);
@@ -1131,7 +1199,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     canWriteE2, tasks, phoneTiers, yieldComparisons, e2Pricing, e2Loading, e2Error, e2TaskCatalogReady, refreshE2, openAddTask, openEditTask, delTask,
     canWriteE3, e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
     canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4Total, e4Query, e4KeywordInput, e4Counts, e4CountsFailed, e4ReadAt, updateE4Query, setE4KeywordInput, clearE4Filters, refreshE4,
-    orderState, isCancelled, isRefunded, terminalOf, selOrder, e4Detail, e4DetailLoading, e4DetailError, openOrder, closeOrder,
+    orderState, e4Pending, e4PendingNotes, e4RetryRejected, e4Retrying, retryE4Pending, releaseE4Pending, selOrder, e4Detail, e4DetailLoading, e4DetailError, openOrder, closeOrder,
     canWriteE5, canForceActivateE5, canUnbindE5, canPauseDcE5,
     runE5DeviceAction, runE5UserBatch,
     e5Devices, e5Overview, e5Datacenters, e5Loading, e5DeviceError, e5OverviewError, e5DatacenterError, e5Page, e5PageSize, e5Total,
@@ -1837,37 +1905,34 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               });
             } else if (mc.op === "order-state" && mc.orderId && mc.fixedVal) {
               const def = findHighOp("e4_order_state")!;
-              await propose(ctx.toast, {
+              if (await sendE4Proposal({
                 action: mc.name, obj: mc.orderId, before: stateLabel(effOrderState(mc.orderId)), after: stateLabel(mc.fixedVal), type: def.type, amplifies: false,
                 gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
                 command: def.buildCommand({ orderNo: mc.orderId, state: mc.fixedVal }),
                 target: def.buildTarget({ orderNo: mc.orderId }),
-              });
-              setSelOrder(null);
+              })) setSelOrder(null);
             } else if (mc.op === "order-refund" && mc.orderId) {
               const refundChannel = (businessValue?.refundChannel ?? "").trim();
               if (!refundChannel) { throw new Error("请选择退款渠道"); }
               const refundReasonCode = (businessValue?.refundReasonCode ?? "").trim();
               if (!(E4_REFUND_REASONS as readonly string[]).includes(refundReasonCode)) { throw new Error("请选择退款原因"); }
               const def = findHighOp("e4_order_refund")!;
-              await propose(ctx.toast, {
+              if (await sendE4Proposal({
                 action: mc.name, obj: mc.orderId, before: effOrderState(mc.orderId), after: "已退款", type: def.type, amplifies: true,
                 gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
                 command: def.buildCommand({ orderNo: mc.orderId, refundChannel, refundReasonCode }),
                 target: def.buildTarget({ orderNo: mc.orderId }),
-              });
-              setSelOrder(null);
+              })) setSelOrder(null);
             } else if (mc.op === "order-cancel" && mc.orderId) {
               const closeReasonCode = (businessValue?.closeReasonCode ?? "").trim();
               if (!E4_CLOSE_REASONS.cancelled.includes(closeReasonCode)) { throw new Error("请选择取消原因"); }
               const def = findHighOp("e4_order_cancel")!;
-              await propose(ctx.toast, {
+              if (await sendE4Proposal({
                 action: mc.name, obj: mc.orderId, before: effOrderState(mc.orderId), after: "已取消", type: def.type, amplifies: false,
                 gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
                 command: def.buildCommand({ orderNo: mc.orderId, closeReasonCode }),
                 target: def.buildTarget({ orderNo: mc.orderId }),
-              });
-              setSelOrder(null);
+              })) setSelOrder(null);
             } else if (mc.op === "order-terminal" && mc.orderId) {
               const v = (businessValue?.terminalState ?? "").trim();
               if (!v) { throw new Error("请选择失败结果"); }
@@ -1875,13 +1940,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               const closeReasonCode = choices ? (businessValue?.closeReasonCode ?? "").trim() : "";
               if (choices && !choices.includes(closeReasonCode)) { throw new Error("请选择原因"); }
               const def = findHighOp("e4_order_terminal")!;
-              await propose(ctx.toast, {
+              if (await sendE4Proposal({
                 action: mc.name, obj: mc.orderId, before: effOrderState(mc.orderId), after: stateLabel(v), type: def.type, amplifies: false,
                 gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
                 command: def.buildCommand({ orderNo: mc.orderId, terminalState: v, closeReasonCode }),
                 target: def.buildTarget({ orderNo: mc.orderId }),
-              });
-              setSelOrder(null);
+              })) setSelOrder(null);
             } else if (mc.op === "device-activate" && mc.deviceId) {
               const highOp = mc.deviceAction === "force-activate" ? "e5_device_force_activate" : "e5_device_activate";
               const def = findHighOp(highOp)!;

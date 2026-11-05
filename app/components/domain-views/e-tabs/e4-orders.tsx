@@ -2,17 +2,17 @@ import { useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, ClipboardList, Coins, Copy, History, Package, Receipt, RefreshCw, Route, Server, User, Workflow } from "lucide-react";
 import {
-  BlockState, Button, Cell, ColumnPicker, Decision, Drawer, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input,
-  JudgmentPoints, PageHeader, Pager, Panel, Segments, Select, Stat, StatBand, StatusTag, Steps, Table, TableLoading, TableMessage, Td, Th, Tr,
+  BlockState, Button, Cell, ColumnPicker, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input,
+  JudgmentPoints, Modal, Notice, PageHeader, Pager, Panel, Segments, Select, Stat, StatBand, StatusTag, Steps, Table, TableLoading, TableMessage, Td, Th, Tr,
   useTableColumns, type JudgmentRow, type SegmentItem, type TableColumn,
 } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { businessZone } from "@/lib/admin/business-time";
+import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { E4_CLOSE_REASONS, E4_CLOSE_REASON_LABELS, E4_REFUND_REASONS, E4_REFUND_REASON_LABELS, e4FundingLedgerHref } from "@/lib/admin/e4-client";
 import { operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
 import { useReach } from "@/lib/nav/use-reach";
-import type { EViewCtx } from "./types";
-import { E4_PAGE_SIZES, ORDER_FLOW, ORDER_STATE_GROUPS, ORDER_STATE_TONE, stateLabel, type E4Query } from "./data";
+import type { E4PendingCommand, EViewCtx } from "./types";
+import { E4_PAGE_SIZES, ORDER_FINAL_STATES, ORDER_FLOW, ORDER_STATE_GROUPS, ORDER_STATE_TONE, orderAmount, orderMoney, stateLabel, type E4Query } from "./data";
 
 const FLOW_STATES = ["placed", "paid", "provisioning"];
 const FAILED_STATES = ["payment_failed", "provisioning_failed", "chargeback"];
@@ -48,6 +48,8 @@ const statusOption = (state: string) => ({ value: state, label: stateLabel(state
 
 export function E4Orders({ ctx }: { ctx: EViewCtx }) {
   const { orders, e4Query: query, e4Counts: counts, e4Loading: loading, e4Error: error } = ctx;
+  const reach = useReach();
+  const [releasing, setReleasing] = useState<E4PendingCommand | null>(null);
   const columns = useTableColumns("e4-orders", ORDER_COLUMNS);
   const currentGroup = ORDER_STATE_GROUPS.find((group) => group.value === query.group);
   // 数量只写在汇总和流程表里，分段不再带数（DP-61）。
@@ -74,6 +76,19 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
         <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => void ctx.refreshE4()}>刷新</Button>
       </span>}
       readOnly={ctx.canWriteE4 || ctx.canRefundE4 ? undefined : "你只能查看；处理订单需要对应的修改权限"} />
+
+    {ctx.e4Pending.map((record) => (
+      <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未确认`}
+        action={<>
+          <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} onClick={() => void ctx.retryE4Pending(record)}>按原操作重试</Button>
+          {ctx.e4RetryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除待确认</Button>}
+        </>}>
+        {businessClock(record.createdAt)}（{businessZone().label}）发出，可能已经提交。重试用同一命令号、同样的内容和理由，不会多提交一份。这单在有结论前不能再操作。
+        {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=E&object=${encodeURIComponent(record.orderNo)}`}>到操作记录核查</Link></>}
+        <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 理由 ${record.spec.reason}`} />
+        {ctx.e4PendingNotes[record.fingerprint] && <div>{ctx.e4PendingNotes[record.fingerprint]}</div>}
+      </Notice>
+    ))}
 
     <StatBand label="订单汇总">
       <Stat lead tone="role-2" icon={Workflow} label="流转中订单" value={flowCount ?? "—"} unit={flowCount === undefined ? undefined : "单"}
@@ -159,6 +174,15 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
     </Fold>
 
     <E4OrderDrawer ctx={ctx} />
+
+    {releasing && <Modal title="解除待确认" onClose={() => setReleasing(null)} footer={<>
+      <Button onClick={() => setReleasing(null)}>取消</Button>
+      <Button variant="primary" onClick={() => { ctx.releaseE4Pending(releasing); setReleasing(null); }}>确认解除</Button>
+    </>}>
+      <p><b>{releasing.label}</b></p>
+      <p>重试被拒说明不了原操作的结果。先到操作记录确认原操作有没有提交，再解除。</p>
+      <p>解除后这单可以重新处理，原操作不再重试，系统仍按这单现在的状态校验。这一步只放开本页的锁，不发请求，不写操作记录。</p>
+    </Modal>}
   </>;
 }
 
@@ -215,7 +239,8 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const next = index >= 0 ? orders[index + 1] : undefined;
   const pendingFact = e4DetailError ? { value: "读取失败", state: "danger" as const } : { value: "正在读取…" };
   // 读完详情才能做决定（OP-150）：下一步、退款条件都靠详情里的事实。
-  const waitReason = e4DetailError ? "订单详情读取失败，重试成功后才能操作" : e4DetailLoading || !e4Detail ? "正在读取订单事实" : undefined;
+  const orderPending = ctx.e4Pending.some((record) => record.orderNo === o.id);
+  const waitReason = orderPending ? "这单有结果未确认的操作，先到页面上方处理" : e4DetailError ? "订单详情读取失败，重试成功后才能操作" : e4DetailLoading || !e4Detail ? "正在读取订单事实" : undefined;
   const approvalTag = <StatusTag tone="progress" filled>批准后生效</StatusTag>;
 
   // 具体原因只从状态轨迹取，状态本身证明不了原因。
@@ -256,8 +281,8 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
       sub={<>{o.id} <IconButton aria-label="复制订单号" data-size="sm" onClick={copyNo}><Copy size={13} aria-hidden /></IconButton> · <StatusTag tone={ORDER_STATE_TONE[eff] ?? "neutral"} explain={STATE_TEXT[eff]}>{stateLabel(eff)}</StatusTag></>}
       nav={{ hasPrev: Boolean(prev), hasNext: Boolean(next), onPrev: () => { if (prev) ctx.openOrder(prev); }, onNext: () => { if (next) ctx.openOrder(next); } }}
       footer={<Decision note={note}
-        danger={canRefundE4 && refundableState && <Button variant="danger-outline" disabledReason={refundReady ? undefined : waitReason ?? "平台资金低于安全线，暂不能退款"} onClick={() => {
-          if (!e4Detail || !refundReady) return;
+        danger={canRefundE4 && refundableState && <Button variant="danger-outline" disabledReason={waitReason ?? (refundReady ? undefined : refundBlockText)} onClick={() => {
+          if (!e4Detail || !refundReady || orderPending) return;
           const channels = e4Detail.refundChannels.length ? e4Detail.refundChannels : ["WALLET"];
           openActionConfirm({
             name: "退款 · " + o.id, op: "order-refund", orderId: o.id, amplify: true,
@@ -285,6 +310,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
         primary={nextState && <Button variant="primary" disabledReason={waitReason} onClick={() => openActionConfirm({ name: `推进订单 · ${o.id} → ${stateLabel(nextState)}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, effect: approvalTag, confirmLabel: "提交审批", detail: `手动推进 ${o.id}：${stateLabel(eff)} → ${stateLabel(nextState)}` })}>推进到下一步</Button>}
       />}>
       {!finalized && <Steps label="订单进度" items={orderFlow.map((state, position) => ({ label: stateLabel(state), state: position < idx ? "done" as const : position === idx ? "current" as const : "todo" as const }))} />}
+      {orderPending && <Notice tone="warn">这单有结果未确认的操作，不要重复处理。状态变了也不算确认。到页面上方按原操作重试，或看操作记录核查。</Notice>}
       {e4DetailError && <BlockState state="error" title="详情加载失败" detail={`${e4DetailError} · 为避免按旧数据操作，已暂停处理。`} onRetry={() => ctx.openOrder(o)} />}
       <JudgmentPoints rows={rows} />
       <Fold inset title="订单信息" icon={Package} tone="devices" summary={`${o.dc === "—" ? "未分配数据中心" : o.dc} · 下单 ${o.age} 前`}>
