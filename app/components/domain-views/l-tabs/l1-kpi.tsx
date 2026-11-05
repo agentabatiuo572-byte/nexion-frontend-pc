@@ -77,7 +77,7 @@ const REASON_TEXT: Record<string, string> = {
 };
 const SMALL_SAMPLE_NOTE = "这个范围人数不到 5，比例没有参考意义，不算达标也不算未达标。换个更长的时间范围再看。";
 /** 「V1 实时」是 PRD 的上线批次（§1.6 后台可见性），不是刷新方式。 */
-const batchText = (vis = "") => vis.replace(/^V(\d+).*$/, "第 $1 批上线");
+const batchText = (vis = "") => vis.replace(/^V(\d+).*$/, "第 $1 批");
 const WINDOW_NAME: Record<Exclude<L1Window, "custom">, string> = { "1d": "近 24 小时", "7d": "近 7 天", "30d": "近 30 天" };
 const SLICES = ["cohort", "phase", "locale", "ref"] as const;
 const SLICE_NAME = { cohort: "注册周", phase: "运营阶段", locale: "语言", ref: "渠道" } as const;
@@ -253,7 +253,6 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
     button: ctx.canExport ? (<>
       <span className="rd-note">要填理由，生成下载任务，留操作记录</span>
       <Button
-        variant="primary"
         icon={<Download size={14} aria-hidden />}
         disabledReason={pending ? "上一次导出结果未确认，先处理页面上方的待确认" : exportMode === null || ctx.biLoading ? exportUnavailableReason : undefined}
         onClick={() => { if (exportMode) { setFinished(null); openConfirm(exportMode); } }}
@@ -787,7 +786,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                 <div className="rd-stack">
                   <p className="rd-note"><AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss></p>
                   <div>{renderFx(ext.fx, ext.fxBold)}</div>
-                  <p className="rd-note">统计规则编号 #{k.n} · {batchText(k.vis)}</p>
+                  <p className="rd-note">统计规则编号 #{k.n} · 上线批次：{batchText(k.vis)}</p>
                 </div>
               </Fold>
             </div>
@@ -837,7 +836,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
           <div className="rd-stack">
             <p className="rd-note"><AutoGloss>每项关键指标怎么算一目了然 · 要改算法须走事件统计规则管理 + 操作确认,本页改不了</AutoGloss></p>
             <Table label="关键指标的计算方式">
-              <thead><tr><Th>#</Th><Th>指标</Th><Th>计算方式</Th><Th align="right">目标</Th><Th>启用批次</Th><Th>状态</Th></tr></thead>
+              <thead><tr><Th>#</Th><Th>指标</Th><Th>计算方式</Th><Th align="right">目标</Th><Th>上线批次</Th><Th>状态</Th></tr></thead>
               <tbody>
                 {KPIS.map((item, index) => (
                   <Tr key={item.n}>
