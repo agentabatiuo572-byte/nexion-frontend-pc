@@ -3,7 +3,7 @@
 /**
  * 视图参数弹窗 — L 域普通确认批原语(与 OperationConfirmModal 形成对照):
  * 仅调整看板呈现参数(黄灯偏移 / 承接率告警线),实时生效、不落 操作确认、不写业务口径。
- * 数字输入 + 范围校验;会话级生效(不持久,刷新回默认 —— 视图参数语义)。
+ * 整数输入 + 范围校验;未保存的调整刷新后回默认,保存为本机视图后恢复。
  */
 import { useState } from "react";
 import { Modal, Btn, Icon } from "../design-kit";
@@ -20,8 +20,8 @@ export type ViewParamReq = {
 
 export function ViewParamModal({ req, onClose }: { req: ViewParamReq; onClose: () => void }) {
   const [val, setVal] = useState("");
-  const n = parseFloat(val);
-  const valid = !isNaN(n) && n >= req.min && n <= req.max;
+  const n = Number(val);
+  const valid = val.trim() !== "" && Number.isInteger(n) && n >= req.min && n <= req.max;
   return (
     <Modal
       title={req.title}
@@ -43,11 +43,11 @@ export function ViewParamModal({ req, onClose }: { req: ViewParamReq; onClose: (
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10 }}>
             <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>影响</span>
-            <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.65 }}>只影响你当前看到的图表阈值,不改业务规则、不改报表统计规则,刷新后回到默认值。</span>
+            <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.65 }}>只影响你当前看到的图表阈值，不改业务规则或统计方式。未保存的调整在刷新后回到默认值；点「保存为视图」后，刷新会恢复已保存的设置。</span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10 }}>
             <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>提交前</span>
-            <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.65 }}>输入 {req.min}–{req.max}{req.unit} 之间的数字。这里只改显示方式，不影响业务规则。</span>
+            <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.65 }}>输入 {req.min}–{req.max}{req.unit} 之间的整数。这里只改显示方式，不影响业务规则。</span>
           </div>
         </div>
         <details style={{ marginTop: 12 }}>
@@ -59,9 +59,9 @@ export function ViewParamModal({ req, onClose }: { req: ViewParamReq; onClose: (
         <b>仅视图参数</b> · 实时生效 · 不走敏感操作确认,不改任何业务统计规则。
       </div>
       <div className="field">
-        <span className="bf-legend">新值 *(当前 {req.current}{req.unit} · 范围 {req.min}–{req.max}{req.unit})</span>
+        <span className="bf-legend">新值 *(当前 {req.current}{req.unit} · 范围 {req.min}–{req.max}{req.unit}，仅限整数)</span>
         <div className="row" style={{ gap: 8, alignItems: "center" }}>
-          <input className="fld" type="number" min={req.min} max={req.max} value={val} placeholder={String(req.current)}
+          <input className="fld" type="number" min={req.min} max={req.max} step={1} value={val} placeholder={String(req.current)}
             onChange={(e) => setVal(e.target.value)} style={{ maxWidth: 200 }} />
           <span className="muted tiny">{req.unit}</span>
         </div>
