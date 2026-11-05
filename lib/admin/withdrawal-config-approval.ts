@@ -24,6 +24,7 @@ const commands = {
   E2: { domain: "E", op: "e2_task_pricing_change", type: "e2_task_pricing", action: "放宽任务定价配置" },
   F3: { domain: "F", op: "f3_binary_settle", type: "binary_settlement", action: "手动结算团队平衡奖励" },
   F4: { domain: "F", op: "f4_ambassador_policy_change", type: "ambassador_policy", action: "提高区域大使申请预算" },
+  H8: { domain: "H", op: "h8_reward_param_change", type: "h8_reward_policy", action: "放宽新人礼与邀请奖励" },
 } as const;
 
 export const teamFundApprovalAuthority = { F3: "network_f3_write", F4: "network_f4_pool_fund" } as const;
@@ -35,6 +36,7 @@ type ApprovalSource = keyof typeof commands;
 type ApprovalValues = TeamFundApprovalValues[keyof TeamFundApprovalValues]
   | (Record<string, unknown> & ({ expectedVersion: number } | { expectedRevision: string }));
 type ApprovalScope = { objectId: string; field: string };
+export type H8ConfigApprovalInput = [{ key: string; value: string; expectedVersion: number }, string];
 
 function approvalSlot(sourceDomain: keyof typeof commands, adminId: string | number, scope?: ApprovalScope) {
   return scope ? `${adminId}:${sourceDomain}:${scope.objectId}:${scope.field}` : `${adminId}:${sourceDomain}`;
@@ -68,6 +70,21 @@ export function pendingThresholdConfigApproval<T extends keyof ThresholdApproval
   return { ...record, values: input[0] as ThresholdApprovalValues[T], reason: input[1] };
 }
 
+export function configApprovalOriginalInput(sourceDomain: "H8", input: string): H8ConfigApprovalInput;
+export function configApprovalOriginalInput(sourceDomain: ApprovalSource, input: string): [ApprovalValues, string];
+export function configApprovalOriginalInput(sourceDomain: ApprovalSource, input: string): [ApprovalValues, string] {
+  const original: unknown = JSON.parse(input);
+  if (!Array.isArray(original) || typeof original[1] !== "string"
+    || (sourceDomain === "F3" ? !Number.isSafeInteger(original[0]?.ownerUserId) || typeof original[0]?.settlementDate !== "string"
+      : sourceDomain === "F4" ? !Number.isSafeInteger(original[0]?.expectedRevision)
+      : sourceDomain === "H8" ? !Number.isSafeInteger(original[0]?.expectedVersion)
+        || typeof original[0]?.key !== "string" || typeof original[0]?.value !== "string"
+      : typeof original[0]?.expectedRevision !== "string")) {
+    throw new Error("原审批命令不完整，请到操作记录核对。");
+  }
+  return original as [ApprovalValues, string];
+}
+
 export async function submitConfigApproval<T>(
   sourceDomain: ApprovalSource,
   session: AdminSession,
@@ -84,13 +101,7 @@ export async function submitConfigApproval<T>(
   if (lookupOnly && !previous) return null;
   if (mode === "retry-original") {
     if (!previous) throw new Error("原审批命令已处理，请刷新页面后重新操作。");
-    const original: unknown = JSON.parse(previous.input);
-    if (!Array.isArray(original) || typeof original[1] !== "string"
-      || (sourceDomain === "F3" ? !Number.isSafeInteger(original[0]?.ownerUserId) || typeof original[0]?.settlementDate !== "string"
-        : sourceDomain === "F4" ? !Number.isSafeInteger(original[0]?.expectedRevision) : typeof original[0]?.expectedRevision !== "string")) {
-      throw new Error("原审批命令不完整，请到操作记录核对。");
-    }
-    [values, reason] = original;
+    [values, reason] = configApprovalOriginalInput(sourceDomain, previous.input);
   }
   const input = JSON.stringify([values, reason]);
   const key = previous?.commandKey ?? createA2CommandKey(op);
@@ -105,7 +116,7 @@ export async function submitConfigApproval<T>(
   let ticket;
   let canClearOnRejection = !previous;
   try {
-    if (previous && (domain === "B" || domain === "F" || sourceDomain === "E2" || session.authorities.includes("platform_a2_read"))) {
+    if (previous && (domain === "B" || domain === "F" || sourceDomain === "E2" || sourceDomain === "H8" || session.authorities.includes("platform_a2_read"))) {
       try {
         ticket = await fetchA2ProposalByKey(key);
       } catch {

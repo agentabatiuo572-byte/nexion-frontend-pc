@@ -3,6 +3,7 @@ import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { validateH1DialValue } from "@/lib/admin/h1-dial-validation";
+import { depositPolicyUnits } from "@/lib/admin/cregis-deposit-policy";
 
 interface ApiResult<T> {
   code: number;
@@ -513,6 +514,38 @@ export interface H8SettlementRow {
   inviterNex?: number | string;
   status?: string;
   createdAt?: string;
+}
+
+export type H8RewardParamKey = "newcomer.usdt" | "newcomer.nex" | "inviter.nex" | "newcomer.lockMode" | "enabled";
+
+const H8_AMOUNT_MAX = {
+  "newcomer.usdt": "50",
+  "newcomer.nex": "500",
+  "inviter.nex": "249999999.75",
+} as const;
+
+export function h8RewardParamValid(key: H8RewardParamKey, value: string): boolean {
+  if (key === "enabled") return value === "true" || value === "false";
+  if (key === "newcomer.lockMode") return value === "risk_bucket" || value === "direct";
+  const units = depositPolicyUnits(value);
+  return units !== null && units <= depositPolicyUnits(H8_AMOUNT_MAX[key])!;
+}
+
+export function h8RewardParamAmplifies(key: H8RewardParamKey, before: string, after: string): boolean {
+  if (!h8RewardParamValid(key, before) || !h8RewardParamValid(key, after)) return false;
+  if (key === "enabled") return before === "false" && after === "true";
+  if (key === "newcomer.lockMode") return before === "risk_bucket" && after === "direct";
+  return depositPolicyUnits(after)! > depositPolicyUnits(before)!;
+}
+
+/** H1 is a proposal-time reference; the server recalculates it at approval. */
+export function h8EffectiveRewardReference(base: string, multiplier: string | number): string | null {
+  const amount = depositPolicyUnits(base), factor = depositPolicyUnits(String(multiplier));
+  if (amount === null || factor === null) return null;
+  const scale = BigInt(1000000);
+  const effective = (amount * factor + scale / BigInt(2)) / scale;
+  if (effective > depositPolicyUnits("999999999")!) return null;
+  return `${effective / scale}.${String(effective % scale).padStart(6, "0")}`;
 }
 
 export interface H8ReferralRewardOverview {

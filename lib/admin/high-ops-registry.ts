@@ -1610,6 +1610,19 @@ export const HIGH_OPS: HighOpDef[] = [
     buildTarget: (ctx) => ({ domain: "H", type: "checkin_rule", id: String(ctx.ruleKey) }),
   },
   {
+    op: "h8_reward_param_change",
+    domain: "H",
+    action: "放宽新人礼与邀请奖励",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "另一位具备 A2 审批权限的超管",
+    targetType: "h8_reward_policy",
+    buildCommand: (ctx) => ({ domain: "H", op: "h8_reward_param_change", params: { values: {
+      key: String(ctx.key), value: String(ctx.value), expectedVersion: ctx.expectedVersion,
+    } } }),
+    buildTarget: () => ({ domain: "H", type: "h8_reward_policy", id: "current" }),
+  },
+  {
     op: "h8_referral_settlement",
     domain: "H",
     action: "执行邀请奖励真实结算",
