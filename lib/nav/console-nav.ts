@@ -79,25 +79,6 @@ export interface NavDomain {
 
 export const CONSOLE_NAV: NavDomain[] = [
   {
-    code: "A",
-    name: "平台基础",
-    slug: "platform",
-    icon: Settings,
-    accentVar: "--admin-domain-a",
-    roles: ["config"],
-    l2: [
-      { id: "A1", name: "运营账号与权限", path: "/platform/rbac", prdAnchor: "A1", batch: "V1", status: "flagship" },
-      { id: "A2", name: "操作记录与审批", path: "/platform/audit", prdAnchor: "A2", batch: "V1", status: "flagship" },
-      { id: "A3", name: "系统配置", path: "/platform/config", prdAnchor: "A3", batch: "V1", status: "flagship" },
-      { id: "A4", name: "用户行为事件", path: "/platform/events", prdAnchor: "A4", batch: "V1", status: "flagship" },
-      { id: "A5", name: "平台参数管理", path: "/platform/params-registry", prdAnchor: "A5", batch: "V1", status: "flagship" },
-      { id: "A6", name: "角色管理", path: "/platform/roles", prdAnchor: "A6", batch: "V1", status: "flagship" },
-      { id: "A7", name: "菜单管理", path: "/platform/menus", prdAnchor: "A7", batch: "V1", status: "flagship" },
-      { id: "A8", name: "权限清单", path: "/platform/permissions", prdAnchor: "A8", batch: "V1", status: "flagship" },
-      { id: "A9", name: "开发者访问审批", path: "/platform/developer-access", prdAnchor: "A9", batch: "V1", status: "flagship" },
-    ],
-  },
-  {
     code: "B",
     name: "运营总览",
     slug: "overview",
@@ -283,6 +264,25 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "M6", name: "业绩榜", path: "/service/leaderboard", prdAnchor: "M6", batch: "V4", status: "flagship" },
       { id: "M4", name: "知识库", path: "/service/kb-sla", prdAnchor: "M4", batch: "V4", status: "flagship" },
       { id: "M5", name: "服务规则与话术", path: "/service/scripts", prdAnchor: "M5", batch: "V4", status: "flagship" },
+    ],
+  },
+  {
+    code: "A",
+    name: "平台基础",
+    slug: "platform",
+    icon: Settings,
+    accentVar: "--admin-domain-a",
+    roles: ["config"],
+    l2: [
+      { id: "A1", name: "运营账号与权限", path: "/platform/rbac", prdAnchor: "A1", batch: "V1", status: "flagship" },
+      { id: "A2", name: "操作记录与审批", path: "/platform/audit", prdAnchor: "A2", batch: "V1", status: "flagship" },
+      { id: "A3", name: "系统配置", path: "/platform/config", prdAnchor: "A3", batch: "V1", status: "flagship" },
+      { id: "A4", name: "用户行为事件", path: "/platform/events", prdAnchor: "A4", batch: "V1", status: "flagship" },
+      { id: "A5", name: "平台参数管理", path: "/platform/params-registry", prdAnchor: "A5", batch: "V1", status: "flagship" },
+      { id: "A6", name: "角色管理", path: "/platform/roles", prdAnchor: "A6", batch: "V1", status: "flagship" },
+      { id: "A7", name: "菜单管理", path: "/platform/menus", prdAnchor: "A7", batch: "V1", status: "flagship" },
+      { id: "A8", name: "权限清单", path: "/platform/permissions", prdAnchor: "A8", batch: "V1", status: "flagship" },
+      { id: "A9", name: "开发者访问审批", path: "/platform/developer-access", prdAnchor: "A9", batch: "V1", status: "flagship" },
     ],
   },
 ];
