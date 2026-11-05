@@ -140,13 +140,13 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
   autoPushCooldownHours: {
     what: "用户关掉弹窗后多久才再弹",
     when: PUSH_WHEN,
-    how: "整数，0–86,400,000 小时。",
+    how: "不小于 0 的整数，单位小时。",
     input: { unit: "小时", min: 0, max: 86_400_000, step: 1 },
   },
   autoPushMaxPerSession: {
     what: "一次打开最多弹几次",
     when: PUSH_WHEN,
-    how: "整数，0–86,400,000 次。",
+    how: "不小于 0 的整数。",
     input: { unit: "次", min: 0, max: 86_400_000, step: 1 },
   },
   phaseOpen: { what: "这个运营阶段开不开放试用", when: "跟随「运营阶段设置」" },

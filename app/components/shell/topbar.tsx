@@ -22,6 +22,7 @@ import { requestAdminLogout } from "@/lib/admin/logout-request";
 import { currentAdminSession } from "@/lib/admin/auth-client";
 import { supportIdentityLabel } from "@/lib/admin/session-role";
 import { ThemeToggle } from "@/app/components/rd/theme-switch";
+import { b0Blocks, b0HasAnyBlock } from "@/lib/admin/b0-access";
 import "./topbar.css";
 
 function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string }) {
@@ -31,6 +32,7 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
   const [open, setOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const logoutAttemptRef = useRef(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const logoutError = useAdminAuth((s) => s.logoutError);
   const beginLogout = useAdminAuth((s) => s.beginLogout);
   const cancelLogout = useAdminAuth((s) => s.cancelLogout);
@@ -68,11 +70,18 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
   }
 
   return (
-    <div className="relative">
+    <div
+      className="relative"
+      onKeyDown={(e) => {
+        if (e.key !== "Escape" || !open) return;
+        setOpen(false);
+        triggerRef.current?.focus();
+      }}
+    >
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`当前登录账号 ${operator}，打开账号菜单`}
@@ -88,9 +97,8 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
 
       {open && (
         <>
-          <button
-            type="button"
-            aria-label="关闭菜单"
+          <div
+            aria-hidden
             className="fixed inset-0 cursor-default"
             style={{ zIndex: "var(--admin-z-topbar)" }}
             onClick={() => setOpen(false)}
@@ -154,7 +162,7 @@ function CoveragePill({ enabled }: { enabled: boolean }) {
 
 // 全局命令面板触发器(设计稿顶栏签名元素)。点击或 ⌘K/Ctrl+K 打开 shadcn(cmdk)命令面板,
 // 跳转到任意运营模块(消费 IA 统一来源 visibleDomains)。真实可再接 A4 事件流 / userId 检索。
-function SearchBox({ domains }: { domains: NavDomain[] }) {
+function SearchBox({ domains, showHome }: { domains: NavDomain[]; showHome: boolean }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -181,7 +189,7 @@ function SearchBox({ domains }: { domains: NavDomain[] }) {
         </span>
         <kbd className="admin-topbar-search-shortcut font-mono-tabular">⌘K</kbd>
       </button>
-      <CommandPalette domains={domains} open={open} onOpenChange={setOpen} />
+      <CommandPalette domains={domains} showHome={showHome} open={open} onOpenChange={setOpen} />
     </>
   );
 }
@@ -230,7 +238,7 @@ export function TopBar({
     >
       <div className="admin-topbar-location flex min-w-0 flex-1 items-center gap-4">
         <Breadcrumb />
-        <SearchBox domains={domains} />
+        <SearchBox domains={domains} showHome={b0HasAnyBlock(b0Blocks(authorities))} />
       </div>
       <div className="admin-topbar-actions flex shrink-0 items-center gap-2 whitespace-nowrap">
         {!supportOnly && canReadBDomain && <CoveragePill enabled />}
