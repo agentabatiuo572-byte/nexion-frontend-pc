@@ -274,9 +274,10 @@ const D2_BRANCHES: { from: string[]; trigger: string; to: string[]; note: string
   { from: ["EXTENDED_HOLD"], trigger: "等到复查时间", to: ["REVIEW_PENDING"], note: "到时间系统自动送回待审核，不用操作" },
   { from: ["REVIEW_PENDING", "REVIEW_PASSED", "PROCESSING"], trigger: "点「冻结」", to: ["FROZEN"], note: "打款前都可以冻结" },
   { from: ["FROZEN"], trigger: "点「解冻」", to: ["REVIEW_PENDING"], note: "回到待审核重新决定" },
-  { from: ["REVIEW_PENDING"], trigger: "点「拒绝并退款」", to: ["REVIEW_REJECTED"], note: "要填拒绝原因码" },
+  { from: ["REVIEW_PENDING"], trigger: "点「拒绝并退款」", to: ["REFUNDED"], note: "填写拒绝原因，立即退回用户余额" },
   { from: ["SENT"], trigger: "打款结果返回", to: ["ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], note: "按银行或链上返回的结果处理，结果不明时继续核对" },
-  { from: ["REVIEW_REJECTED", "ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], trigger: "手动退款", to: ["REFUNDED"], note: "提交前先确认钱没有打出去" },
+  { from: ["REVIEW_REJECTED"], trigger: "手动退款", to: ["REFUNDED"], note: "仅历史遗留记录；提交前先确认钱没有打出去" },
+  { from: ["ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], trigger: "手动退款", to: ["REFUNDED"], note: "提交前先确认钱没有打出去" },
 ];
 
 function StatusFlowChip({ code }: { code: string }) {
@@ -671,7 +672,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     const label = actionLabel(action);
     openActionConfirm({
       action: `${label}提现 · ${row.withdrawalNo}`,
-      detail: `${row.userNo} / ${money(row.amount)} ${row.asset}；当前 ${statusLabel(row.status)}；${k4RiskText(row)}；触发规则 ${ruleSummary(row.hitRules)}；账户 ${userStatusLabel(row.userStatus)}。${action === "APPROVE" ? `当前兑付覆盖率 ${d5?.coverageRatio ?? "—"}%，红线 ${d5?.redlinePct ?? "—"}%。确认后立即放行，钱从储备中扣除。` : "确认后立即生效。"}`,
+      detail: `${row.userNo} / ${money(row.amount)} ${row.asset}；当前 ${statusLabel(row.status)}；${k4RiskText(row)}；触发规则 ${ruleSummary(row.hitRules)}；账户 ${userStatusLabel(row.userStatus)}。${action === "APPROVE" ? `当前兑付覆盖率 ${d5?.coverageRatio ?? "—"}%，红线 ${d5?.redlinePct ?? "—"}%。确认后立即放行，钱从储备中扣除。` : action === "REJECT" ? "确认后立即拒绝，并退回用户余额；完成后为已退款。" : "确认后立即生效。"}`,
       amplifies: action === "APPROVE",
       coverage: d5 ? { coverageRatio: d5.coverageRatio, redlinePct: d5.redlinePct } : undefined,
       businessForm: actionBusinessForm(action, addressVerificationRequired),
@@ -830,7 +831,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     if (ids.length === 0) { toast("当前没有可以执行这个操作的提现单"); return; }
     openActionConfirm({
       action: `批量执行 · ${actionLabel(action)}`,
-      detail: `将对 ${ids.length} 笔提现执行${actionLabel(action)}（不符合条件的已自动排除）。批量放行时，小额直接放行，大额转为单笔人工审核。`,
+      detail: `将对 ${ids.length} 笔提现执行${actionLabel(action)}（不符合条件的已自动排除）。${action === "REJECT" ? "拒绝后立即退回用户余额，完成后为已退款。" : "批量放行时，小额直接放行，大额转为单笔人工审核。"}`,
       amplifies: batchAction === "APPROVE",
       coverage: d5 ? { coverageRatio: d5.coverageRatio, redlinePct: d5.redlinePct } : undefined,
       businessForm: actionBusinessForm(action),
