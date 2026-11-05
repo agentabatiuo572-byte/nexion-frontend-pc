@@ -533,12 +533,12 @@ function actionBusinessForm(action: D2ReviewAction, addressVerificationRequired 
   }
   if (action === "REFUND") return {
     kind: "multi-field", title: "退款前核实", fields: [
-      { key: "fundsVerified", label: "我已核实钱没有打出去", inputKind: "checkbox", required: true, current: "", help: "到打款方和账单确认这笔钱没有打出去，再勾选。" },
+      { key: "fundsVerified", label: "我已核实钱没有打出去", inputKind: "checkbox", required: true, wide: true, current: "", help: "到打款方和账单确认这笔钱没有打出去，再勾选。" },
     ],
   };
   if (action === "APPROVE" && addressVerificationRequired) return {
     kind: "multi-field", title: "大额放行核实", fields: [
-      { key: "addressVerified", label: "我已核对地址与风险信息", inputKind: "checkbox", required: true, current: "", help: "核对上面的收款网络、地址和命中的风险规则，再勾选。" },
+      { key: "addressVerified", label: "我已核对地址与风险信息", inputKind: "checkbox", required: true, wide: true, current: "", help: "核对上面的收款网络、地址和命中的风险规则，再勾选。" },
     ],
   };
   return undefined;

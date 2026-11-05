@@ -283,6 +283,11 @@
 .rd-modal.rd-confirm .alertbar.danger { background: var(--rd-danger-bg); }
 .rd-modal.rd-confirm .alertbar.calm { background: var(--rd-panel-inner); }
 .rd-modal.rd-confirm .alertbar.calm .ico { background: var(--rd-control); color: var(--rd-text-2); }
+/* 核实勾选：框在前，这句话是操作人的声明，比普通字段名醒目。 */
+.rd-modal.rd-confirm .field:has(> input[type="checkbox"]) { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; align-items: start; cursor: pointer; }
+.rd-modal.rd-confirm .field:has(> input[type="checkbox"]) > input { grid-column: 1; grid-row: 1; width: 16px; height: 16px; margin: 3px 0 0; accent-color: var(--rd-brand); }
+.rd-modal.rd-confirm .field:has(> input[type="checkbox"]) > span { grid-column: 2; }
+.rd-modal.rd-confirm .field:has(> input[type="checkbox"]) > span:first-of-type { color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
 .rd-confirm-facts { margin-bottom: 16px; padding: 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
 .rd-recipients { display: grid; gap: 8px; max-height: 200px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
 .rd-modal.rd-confirm .alertbar .ico { background: var(--rd-danger-tile); color: var(--rd-danger-tile-ink); }
