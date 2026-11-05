@@ -32,6 +32,10 @@
   --v5-on-brand-soft: rgba(10, 10, 10, 0.74);
   --v5-on-brand-mute: rgba(10, 10, 10, 0.18);
 
+  --admin-confirm-brand: #9EDC1D;
+  --admin-confirm-brand-hover: #8BC30F;
+  --admin-confirm-on-brand: #0A0A0A;
+
   /* 品牌2 · 橙红(漏斗钩子 / FOMO / 破坏性,对齐设计稿 #FF6B35,实底配白字) */
   --v5-brand-2: #FF6B35;
   --v5-brand-2-soft: rgba(255, 107, 53, 0.13);
@@ -42,6 +46,8 @@
   --v5-success: #29D27F;
   --v5-success-soft: rgba(41, 210, 127, 0.13);
   --v5-warning: #FFBE3D;
+  --admin-confirm-focus: var(--admin-confirm-brand);
+  --admin-confirm-warning: var(--v5-warning);
   --v5-warning-soft: rgba(255, 190, 61, 0.13);
   --v5-danger: #FF6B35;
   --v5-danger-soft: rgba(255, 107, 53, 0.13);

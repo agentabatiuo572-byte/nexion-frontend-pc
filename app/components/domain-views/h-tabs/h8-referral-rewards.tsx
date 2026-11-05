@@ -229,7 +229,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           {!data?.recentSettlements?.length && <tr><td colSpan={6} style={{ textAlign: "center", padding: 24 }}>{Number(data?.pending ?? 0) > 0 ? "还没有结算记录，可以点上方按钮结算" : "暂无结算记录，也没有待结算的邀请"}</td></tr>}
         </tbody></table></div>
         <div className="l-b" style={{ paddingTop: 10 }}>
-          {data?.settlementHasMore && <button className="l-btn sm" disabled={loadingMore} onClick={() => void load(data.settlementNextCursor, true)}>{loadingMore ? "加载中…" : "加载更早记录"}</button>}{" "}
+          {error && <div role="alert" className="tint danger" style={{ marginBottom: 10 }}>更早记录加载失败，已加载的记录仍保留，列表尚未加载完整。{error} 请重试加载更早记录。</div>}
+          {data?.settlementHasMore && <button className="l-btn sm" disabled={loadingMore} onClick={() => void load(data.settlementNextCursor, true)}>{loadingMore ? "加载中…" : error ? "重试加载更早记录" : "加载更早记录"}</button>}{" "}
           <span className="f-foot">结算后可以去核对：</span>{" "}
           <><Link href="/platform/audit" className="l-btn sm">操作记录与审批</Link>{" "}<Link href="/platform/events" className="l-btn sm">用户行为事件</Link>{" "}<Link href="/finance/ledger" className="l-btn sm">账本与账单核对</Link></>
         </div>

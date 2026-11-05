@@ -46,9 +46,9 @@ function FoldLink({ href, reach, children }: { href: string; reach: Reach; child
   return reach(href) ? <Link href={href} prefetch={false}>{children}</Link> : null;
 }
 
-/** 后端的目标写成 >=95%，页面上写 ≥ 95%。 */
+/** 目标写成 >95%，页面上写 > 95%。 */
 function targetText(value: string) {
-  return operatorCopyText(value).replace(/>=\s*/g, "≥ ").replace(/<=\s*/g, "≤ ");
+  return operatorCopyText(value).replace(/^([<>])\s*/, "$1 ");
 }
 
 function Amount({ label, value, tone, note, href, reach }: { label: string; value: number; tone?: "role-1" | "role-2"; note?: string; href: string; reach: Reach }) {

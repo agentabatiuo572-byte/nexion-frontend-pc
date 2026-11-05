@@ -122,6 +122,7 @@ function ParamRow({
 }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
   const canWrite = ctx.can("growth_h2_write");
+  const isOffsetCap = param.key === "trialOffsetCapUSD";
   const current = text(param.cur);
   const isDay = isTrialDayParam(param.key);
   const isInteger = isTrialIntegerParam(param.key);
@@ -129,7 +130,7 @@ function ParamRow({
   const isActualQuota = param.key === "actualSeatsLeftToday";
   const isProduct = param.key === "trialProductId";
   const currentProduct = isProduct ? trialProducts.find((product) => product.productNo === current) : undefined;
-  const displayCurrent = isDay ? `${current} 天`
+  const displayCurrent = isOffsetCap && (param.cur == null || String(param.cur).trim() === "") ? "不设上限" : isDay ? `${current} 天`
     : isQuota || isActualQuota ? (current === "UNKNOWN" ? "-" : `${current} 张`)
       : currentProduct ? `${(currentProduct.name)} · ${current}` : param.serverOnly ? operatorCopyText(current) : current;
   const readOnly = !!param.readOnly || isActualQuota || ["phaseOpen", "trialPriceUSD"].includes(param.key);
@@ -162,7 +163,7 @@ function ParamRow({
 
   const submit = async (reason: string, value?: string) => {
     if (readOnly || !canWrite || param.key === "autoChargeAtEnd") return;
-    if (!value || value.trim().length === 0) return;
+    if (value === undefined || (!isOffsetCap && value.trim().length === 0)) return;
     const normalizedValue = value.trim();
     if (isInteger && !/^\d+$/.test(normalizedValue)) {
       toast(`${operatorCopyText(param.name)} 请输入整数`);
@@ -218,7 +219,7 @@ function ParamRow({
             detail,
             chips: [["记入操作记录", "done"]],
             reason: true,
-            input: { label: "新值", placeholder: `当前 ${displayCurrent}`, options },
+            input: { label: isOffsetCap ? "新值（可选，留空即不设上限）" : "新值", placeholder: isOffsetCap ? "留空即不设上限；0 表示上限为 0" : `当前 ${displayCurrent}`, options, required: !isOffsetCap },
             okLabel: "确认修改",
             run: submit,
           });

@@ -224,6 +224,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   })();
   const rescan = () =>
     openConfirm({
+      errorHandled: true,
       action: <>全量重扫 {I6_STATS.managedKeys} 词条</>,
       detail: <>检查缺少翻译、变量不一致、占位文字、旧品牌名、写死的文字和禁用词。只检查不修改，结果会刷新到下表。</>,
       chips: [["只读扫描 · 普通确认", "done"]],

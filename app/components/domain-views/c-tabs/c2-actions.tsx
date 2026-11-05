@@ -18,7 +18,7 @@ import {
   UsersRequestError,
   UsersOutcomeUnknownError,
   removeUserAccountList,
-  revokeUserSessions,
+  revokeUserAccountActionSessions,
   startUserImpersonation,
   terminateUserImpersonation,
   updateUserStatus,
@@ -573,7 +573,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       setBusy(true);
       try {
         try {
-          await revokeUserSessions(id, reason, OPERATOR());
+          await revokeUserAccountActionSessions(id, reason, OPERATOR());
         } catch (error) {
           if (error instanceof UsersOutcomeUnknownError) {
             throw new Error("原操作结果尚未确认，请重试原操作。系统会使用原理由，不会重复执行。");

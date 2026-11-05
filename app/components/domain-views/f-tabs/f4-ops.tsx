@@ -5,7 +5,9 @@ import { operatorNicknameText } from "@/lib/admin/brand-copy";
 /** F4 · 池/配额/大使/榜 —— 数据源为后端 /api/admin/teams/leadership-pool。 */
 import { useState } from "react";
 import { formatF4AmbassadorBucketRule, formatF4AmbassadorBucketTitle } from "@/lib/admin/f4-ambassador-display";
+import type { F4AmbassadorPolicy, F4AmbassadorPolicyUpdate } from "@/lib/admin/f1-client";
 import type { FViewCtx } from "./types";
+import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
 import { validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
 import { formatBusinessTime } from "@/lib/admin/business-time";
 
@@ -53,6 +55,114 @@ function quotaPrerequisites(row: { directRefs: number; monthComputePointsText: s
 
 // 领导奖池参与门槛枚举(V0 为新人,无奖池资格 → 从 V1 起)。
 const POOL_UNLOCK_OPTIONS = ["V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8"];
+
+function openAmbassadorPolicy(ctx: FViewCtx, policy: F4AmbassadorPolicy) {
+  type Field = Extract<BusinessFormSpec, { kind: "multi-field" }>["fields"][number];
+  const budget = { inputKind: "number", min: 100, max: 10_000, pattern: "^[0-9]+(?:\\.[0-9]+)?$", patternMessage: "预算须填写十进制金额" } as const;
+  const mainFields: Field[] = [
+    { key: "policyVersion", label: "规则版本", current: policy.policyVersion, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$" },
+    { key: "defaultBudgetUsdt", label: "默认预算(USDT)", current: String(policy.defaultBudgetUsdt), ...budget },
+  ];
+  const bucketRows = policy.buckets.map((bucket) => {
+    const name = formatF4AmbassadorBucketTitle(bucket.id, bucket.title);
+    const fields: Field[] = [
+      { key: `${bucket.id}.title`, label: `${name} 名称`, current: bucket.title, maxLength: 80 },
+      { key: `${bucket.id}.rule`, label: `${name} 申请条件`, current: bucket.rule, maxLength: 500 },
+      { key: `${bucket.id}.range`, label: `${name} 显示的金额范围`, current: bucket.range, maxLength: 80 },
+      { key: `${bucket.id}.min`, label: `${name} 最低预算`, current: String(bucket.minBudgetUsdt), ...budget },
+      { key: `${bucket.id}.max`, label: `${name} 最高预算`, current: String(bucket.maxBudgetUsdt), ...budget },
+    ];
+    return { bucket, name, fields };
+  });
+  const limits = [
+    { key: "defaultBudgetUsdt", label: "默认预算", before: policy.defaultBudgetUsdt },
+    ...bucketRows.map(({ bucket, name }) => ({ key: `${bucket.id}.max`, label: `${name} · 最高预算`, before: bucket.maxBudgetUsdt })),
+  ];
+  const changedLimits = (values: BusinessFormValue) => limits.flatMap((limit) => {
+    const after = values[limit.key]?.trim();
+    return after && Number.isFinite(Number(after)) && Number(after) !== limit.before ? [{ ...limit, after }] : [];
+  });
+  const requiresApproval = (changes: ReturnType<typeof changedLimits>) => changes.some(({ before, after }) => Number(after) > before);
+  const formatAmount = (value: string | number) => `${String(value).replace(/^\d+/, (whole) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ","))} USDT`;
+
+  ctx.openActionConfirm({
+    name: "调整区域大使申请规则",
+    businessForm: { kind: "multi-field", fields: [...mainFields, ...bucketRows.flatMap(({ fields }) => fields)] },
+    detail: "这里就是 App 上区域大使申请时实际使用的规则。",
+    completionCopy: "填写理由后即时保存。用户下次打开或刷新申请页就会看到新规则。",
+    teamApproval: {
+      source: "F4",
+      resolve: (values) => {
+        const changes = changedLimits(values);
+        if (!requiresApproval(changes)) return undefined;
+        return {
+          heading: "提高预算 · 批准后生效",
+          completionCopy: "另一位超管批准前，App 继续使用当前规则。提交和批准时都会检查兑付覆盖率。",
+          comparison: <div className="tbl-wrap f4-policy-table f4-policy-review">
+            <table className="tbl" aria-label="预算变更对比">
+              <thead><tr><th scope="col">预算</th><th scope="col" className="num">当前</th><th scope="col" className="num">拟调整</th></tr></thead>
+              <tbody>{changes.map(({ key, label, before, after }) => <tr key={key}>
+                <td>{label}</td><td className="num">{formatAmount(before)}</td><td className="num"><span aria-hidden="true">→ </span>{formatAmount(after)}</td>
+              </tr>)}</tbody>
+            </table>
+          </div>,
+        };
+      },
+      renderForm: (values, change, locked) => {
+        const input = (field: Field) => <input className="fld" id={`f4-policy-${field.key}`} name={field.key}
+          aria-label={field.label} type={field.inputKind ?? "text"} min={field.min} max={field.max}
+          step={field.inputKind === "number" ? "any" : undefined} maxLength={field.maxLength}
+          title={field.inputKind !== "number" ? values[field.key] : undefined}
+          value={values[field.key] ?? ""} disabled={locked} required
+          onChange={(event) => change({ ...values, [field.key]: event.target.value })} />;
+        return <>
+          <div className="f4-policy-fields">
+            {mainFields.map((field) => <div key={field.key} className="field">
+              <label htmlFor={`f4-policy-${field.key}`}>{field.label}</label>{input(field)}
+            </div>)}
+          </div>
+          <div className="tbl-wrap f4-policy-table field">
+            <table className="tbl f4-policy-buckets" aria-label="申请分类规则">
+              <thead><tr>{["分类名称", "申请条件", "显示金额范围", "最低预算（USDT）", "最高预算（USDT）"].map((label) => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+              <tbody>{bucketRows.map(({ bucket, fields }) => <tr key={bucket.id}>
+                {fields.map((field) => <td key={field.key}>{input(field)}</td>)}
+              </tr>)}</tbody>
+            </table>
+          </div>
+        </>;
+      },
+    },
+    run: async (reason, values) => {
+      if (!values) throw new Error("请填写完整");
+      const payload: F4AmbassadorPolicyUpdate = {
+        policyVersion: values.policyVersion.trim(),
+        expectedRevision: policy.revision,
+        defaultBudgetUsdt: values.defaultBudgetUsdt.trim(),
+        buckets: policy.buckets.map(({ id }) => ({
+          id,
+          title: values[`${id}.title`].trim(),
+          rule: values[`${id}.rule`].trim(),
+          range: values[`${id}.range`].trim(),
+          minBudgetUsdt: values[`${id}.min`].trim(),
+          maxBudgetUsdt: values[`${id}.max`].trim(),
+        })),
+      };
+      const requestedDefault = Number(payload.defaultBudgetUsdt);
+      if (payload.buckets.some(({ minBudgetUsdt, maxBudgetUsdt }) => Number(minBudgetUsdt) > Number(maxBudgetUsdt))) {
+        throw new Error("最低预算不能高于最高预算");
+      }
+      if (!payload.buckets.some(({ minBudgetUsdt, maxBudgetUsdt }) => requestedDefault >= Number(minBudgetUsdt) && requestedDefault <= Number(maxBudgetUsdt))) {
+        throw new Error("默认预算须落在至少一个分类的预算范围内");
+      }
+      if (requiresApproval(changedLimits(values))) {
+        await ctx.submitTeamApproval("F4", payload, reason);
+      } else {
+        await ctx.updateF4AmbassadorPolicy(payload, reason);
+        ctx.toast("区域大使申请规则已更新");
+      }
+    },
+  });
+}
 
 export function F4Ops({ ctx }: { ctx: FViewCtx }) {
   const [leaderboardPeriod, setLeaderboardPeriod] = useState<"today" | "week" | "month" | "all">("week");
@@ -276,53 +386,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
                 <div className="ct">{formatF4AmbassadorBucketRule(bucket.id, bucket.rule)}</div>
               </div>)}
             </div>
-            {canFund && <div className="sect-foot"><button className="primary amp" onClick={() => ctx.openActionConfirm({
-              name: "调整区域大使申请规则",
-              amplify: true,
-              businessForm: {
-                kind: "multi-field",
-                title: "区域大使申请规则",
-                hint: `当前版本 ${ambassadorPolicy.revision}。提高预算前先看兑付覆盖率，低于红线时无法保存。`,
-                fields: [
-                  { key: "policyVersion", label: "规则版本", current: ambassadorPolicy.policyVersion, inputKind: "text" },
-                  { key: "defaultBudgetUsdt", label: "默认预算(USDT)", current: String(ambassadorPolicy.defaultBudgetUsdt), inputKind: "number", min: 100 },
-                  ...ambassadorPolicy.buckets.flatMap((bucket) => [
-                    { key: `${bucket.id}.title`, label: `${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)} 名称`, current: bucket.title, inputKind: "text" as const },
-                    { key: `${bucket.id}.range`, label: `${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)} 显示的金额范围`, current: bucket.range, inputKind: "text" as const },
-                    { key: `${bucket.id}.rule`, label: `${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)} 申请条件`, current: bucket.rule, inputKind: "text" as const },
-                    { key: `${bucket.id}.min`, label: `${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)} 最低预算`, current: String(bucket.minBudgetUsdt), inputKind: "number" as const, min: 100 },
-                    { key: `${bucket.id}.max`, label: `${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)} 最高预算`, current: String(bucket.maxBudgetUsdt), inputKind: "number" as const, min: 100 },
-                  ]),
-                ],
-              },
-              detail: "这里就是 App 上区域大使申请时实际使用的规则。",
-              completionCopy: "保存后，用户下次打开或刷新申请页就会看到新规则。",
-              run: async (reason, values) => {
-                if (!values) throw new Error("请填写完整");
-                const defaultBudgetUsdt = Number(values.defaultBudgetUsdt);
-                const buckets = ambassadorPolicy.buckets.map((bucket) => ({
-                  id: bucket.id,
-                  title: String(values[`${bucket.id}.title`] ?? "").trim(),
-                  range: String(values[`${bucket.id}.range`] ?? "").trim(),
-                  rule: String(values[`${bucket.id}.rule`] ?? "").trim(),
-                  minBudgetUsdt: Number(values[`${bucket.id}.min`]),
-                  maxBudgetUsdt: Number(values[`${bucket.id}.max`]),
-                }));
-                if (!String(values.policyVersion ?? "").trim() || !Number.isFinite(defaultBudgetUsdt)
-                  || buckets.some((bucket) => !bucket.title || !bucket.range || !bucket.rule
-                    || !Number.isFinite(bucket.minBudgetUsdt) || !Number.isFinite(bucket.maxBudgetUsdt)
-                    || bucket.minBudgetUsdt < 100 || bucket.maxBudgetUsdt < bucket.minBudgetUsdt || bucket.maxBudgetUsdt > 10_000)) {
-                  throw new Error("有内容没填，或预算范围不对（最低不能高于最高）");
-                }
-                await ctx.updateF4AmbassadorPolicy({
-                  policyVersion: String(values.policyVersion).trim(),
-                  revision: ambassadorPolicy.revision,
-                  defaultBudgetUsdt,
-                  buckets,
-                }, reason);
-                ctx.toast("区域大使申请规则已更新");
-              },
-            })}>调整申请规则</button></div>}
+            {ctx.canSubmitTeamApproval("F4") && <div className="sect-foot"><button className="primary amp" onClick={() => openAmbassadorPolicy(ctx, ambassadorPolicy)}>调整申请规则</button></div>}
           </>}
         </section>
 
@@ -409,13 +473,13 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
           {data.voteWeights.map((row) => {
             const paramKey = row.configKey || `F.pool.votes.${row.v}`;
             return (
-              <button key={row.v} type="button" className="vote-cell" disabled={!canFund} aria-label={`调整 ${row.v} 票数，当前 ${row.votes} 票`} onClick={canFund ? () => ctx.openActionConfirm({ name: `调整 ${row.v} 票数`, amplify: true, op: "param", paramKey, edit: { kind: "number", current: String(row.votes), unit: "票" }, detail: `${row.v} 当前 ${row.votes} 票 · 票数越多，分到的团队激励池越多。` }) : undefined}>
+              <button key={row.v} type="button" className="vote-cell" disabled={!canFund} aria-label={`调整 ${row.v} 票数，当前 ${row.votes} 票`} onClick={canFund ? () => ctx.openActionConfirm({ name: `调整 ${row.v} 票数`, amplify: true, op: "param", paramKey, edit: { kind: "number", current: String(row.votes), unit: "票", min: 0, step: 1, amplifiesWhen: "increase" }, detail: `${row.v} 当前 ${row.votes} 票 · 票数越多，分到的团队激励池越多。` }) : undefined}>
                 <span className="vlb" style={{ display: "block" }}>{row.v}</span><span className="vct" style={{ display: "block" }}>{row.votes} 票</span>
               </button>
             );
           })}
         </div>
-        <div className="f4-warn"><b>票数决定分多少</b> · 调高高等级的票数，奖池会更集中到少数人（{voteSummary}）。<b>改票数前先看兑付覆盖率。</b></div>
+        <div className="f4-warn"><b>票数决定分多少</b> · 调高高等级的票数，奖池会更集中到少数人（{voteSummary}）。<b>调高票数时检查兑付覆盖率；调低或不变不作多付钱提示。</b></div>
       </section>
 
       <p className="f-foot">团队激励池 <b>{settlementEff}</b>。按已付款订单金额、每月上限、参与等级和会员等级票数计算发放，同一周不会重复发放；提前结算需要审批。补发、冲正、冻结请到「奖励记录核对」处理。硬件配额、区域大使、排行榜各自独立生效；会多发钱的调整先看兑付覆盖率。</p>

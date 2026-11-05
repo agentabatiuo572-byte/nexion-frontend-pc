@@ -7,7 +7,9 @@ import type { OpsTask } from "@/lib/admin/platform-types";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { EStats } from "./stats";
 import { PhoneCalibrationPanel } from "./phone-calibration-panel";
-import { updateE2TaskPricing, type E2TaskPricingClass } from "@/lib/admin/e2-client";
+import { fetchE2TaskPricing, updateE2TaskPricing, type E2TaskPricingClass } from "@/lib/admin/e2-client";
+import { pendingConfigApproval, submitConfigApproval } from "@/lib/admin/withdrawal-config-approval";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 /* ── 任务类型 → 图标 kind(单一真源:taskClass 权威枚举 ↔ 图标)── */
 type Kind = "llm" | "img" | "vid" | "ft" | "em" | "speech" | "unknown";
@@ -58,17 +60,20 @@ function amount(value: number) {
 
 const LIST_PAGE_SIZE = 6;   // 任务列表每页行数
 
+type PricingAction =
+  | { row: E2TaskPricingClass; field: "minReward" | "maxReward" | "minVRAM" }
+  | { row: E2TaskPricingClass; field: "enabled"; nextEnabled: boolean }
+  | { field: "queueSaturation"; current: number; revision?: string };
+
+const PRICING_FIELD_LABEL = { minReward: "最低奖励", maxReward: "最高奖励", minVRAM: "最低显存", queueSaturation: "队列饱和度" };
+
 export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
+  const session = useAdminAuth((state) => state.session);
   const tasks = useMemo(() => ctx.tasks.filter((task) => task.simulation), [ctx.tasks]);
   const canMutate = ctx.canWriteE2 && !ctx.e2Loading && !ctx.e2Error && !!ctx.e2Pricing;
   const canMutateTasks = ctx.canWriteE2 && !ctx.e2Loading && ctx.e2TaskCatalogReady;
   const [teaserDevice, setTeaserDevice] = useState("phone");
-  const [pricingAction, setPricingAction] = useState<{
-    row?: E2TaskPricingClass;
-    field: "minReward" | "maxReward" | "minVRAM" | "enabled" | "queueSaturation";
-    current: number | boolean;
-    nextEnabled?: boolean;
-  } | null>(null);
+  const [pricingAction, setPricingAction] = useState<PricingAction | null>(null);
   useEffect(() => {
     if (!canMutate) setPricingAction(null);
   }, [canMutate]);
@@ -89,6 +94,34 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const donutOffset = avgSat == null ? 464.96 : 464.96 * (1 - avgSat / 100);
   const pricingRows = ctx.e2Pricing?.taskClasses ?? [];
   const selectedTeaser = ctx.e2Pricing?.teaser.find((row) => row.deviceClass === teaserDevice);
+
+  const pricingCurrent = pricingAction?.field === "queueSaturation" ? pricingAction.current : pricingAction?.row[pricingAction.field];
+  const pricingRevision = pricingAction?.field === "queueSaturation" ? pricingAction.revision : pricingAction?.row.pricingRevision;
+  const pricingTaskClass = pricingAction && pricingAction.field !== "queueSaturation" ? pricingAction.row.taskClass : undefined;
+  const approvalScope = pricingAction && pricingAction.field !== "enabled" ? {
+    objectId: pricingAction.field === "queueSaturation" ? "queue_saturation" : pricingAction.row.taskId,
+    field: pricingAction.field,
+  } : null;
+  const pendingApproval = session && approvalScope && pendingConfigApproval("E2", session.adminId, approvalScope);
+  const requiresPricingApproval = (newValue?: string) => {
+    const next = Number(newValue);
+    return !!approvalScope && typeof pricingCurrent === "number" && !!newValue?.trim() && Number.isFinite(next)
+      && (approvalScope.field === "minVRAM" ? next < pricingCurrent : next > pricingCurrent);
+  };
+  const submitPricingApproval = async (reason: string, newValue?: string, mode: boolean | "retry-original" = false) => {
+    if (!canMutate || !session || !approvalScope) throw new Error("当前账号缺少调整任务定价的权限。");
+    if (!pricingRevision && mode === false) throw new Error("暂未取得任务定价版本，请刷新页面后重试。");
+    const { field } = approvalScope;
+    const change = field === "queueSaturation" ? { queueSaturation: newValue }
+      : { taskClass: pricingTaskClass, [field === "minVRAM" ? "minVram" : field]: field === "minVRAM" ? Number(newValue) : newValue };
+    const result = await submitConfigApproval("E2", session, { ...change, expectedRevision: pricingRevision ?? "" },
+      reason, fetchE2TaskPricing, mode, approvalScope);
+    if (!result) return false;
+    ctx.toast(result.acknowledgement);
+    setPricingAction(null);
+    await ctx.refreshE2();
+    return true;
+  };
 
   const filtered = filterKind === "all" ? tasks : tasks.filter((t) => kindMap.get(t.id) === filterKind);
   const totalPages = Math.max(1, Math.ceil(filtered.length / LIST_PAGE_SIZE));
@@ -133,10 +166,10 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
               <td className="tnum">{row.minVRAM} GB</td><td><CodeTag tone={row.enabled ? "electric" : "warn"}>{row.enabled ? "派发中" : "已停止派发"}</CodeTag></td>
               <td><div className="row" style={{ gap: 5 }}>
                 {canMutate && <>
-                  <Btn sm onClick={() => setPricingAction({ row, field: "minReward", current: row.minReward })}>调最低奖励</Btn>
-                  <Btn sm onClick={() => setPricingAction({ row, field: "maxReward", current: row.maxReward })}>调最高奖励</Btn>
-                  <Btn sm onClick={() => setPricingAction({ row, field: "minVRAM", current: row.minVRAM })}>调最低显存</Btn>
-                  <Btn sm variant={row.enabled ? "danger" : "primary"} onClick={() => setPricingAction({ row, field: "enabled", current: row.enabled, nextEnabled: !row.enabled })}>{row.enabled ? "停止派发" : "恢复"}</Btn>
+                  <Btn sm onClick={() => setPricingAction({ row, field: "minReward" })}>调最低奖励</Btn>
+                  <Btn sm onClick={() => setPricingAction({ row, field: "maxReward" })}>调最高奖励</Btn>
+                  <Btn sm onClick={() => setPricingAction({ row, field: "minVRAM" })}>调最低显存</Btn>
+                  <Btn sm variant={row.enabled ? "danger" : "primary"} onClick={() => setPricingAction({ row, field: "enabled", nextEnabled: !row.enabled })}>{row.enabled ? "停止派发" : "恢复"}</Btn>
                 </>}
               </div></td>
             </tr>)}</tbody>
@@ -151,7 +184,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           <div style={{ padding: 16 }}>
             <div className="tnum" style={{ fontSize: 30, fontWeight: 700 }}>{ctx.e2Pricing ? `${Math.round(ctx.e2Pricing.queueSaturation * 100)}%` : "—"}</div>
             <div className="tint tiny" style={{ margin: "10px 0" }}>每日潜在收益 =（一天的秒数 ÷ 平均处理秒数）× 饱和度 × 平均奖励。</div>
-            {canMutate && <Btn variant="primary" onClick={() => setPricingAction({ field: "queueSaturation", current: ctx.e2Pricing!.queueSaturation })}>调整全局队列饱和度</Btn>}
+            {canMutate && <Btn variant="primary" onClick={() => setPricingAction({ field: "queueSaturation", current: ctx.e2Pricing!.queueSaturation, revision: ctx.e2Pricing!.queueSaturationRevision })}>调整全局队列饱和度</Btn>}
           </div>
         </section>
         <section className="pane" data-testid="e2-locked-teaser">
@@ -347,18 +380,29 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       </div>
       <p className="f-foot">当前最高单价任务{maxPriceTask ? `「${nexGridBrandText(maxPriceTask.n)}」` : "暂无"}、最高负载任务{peakTask ? `「${nexGridBrandText(peakTask.n)}」` : "暂无"}会影响任务池的展示。改单价<b>只对新派的任务生效</b>，已派出的按原价完成。</p>
       {pricingAction && <OperationConfirmModal
-        action={pricingAction.field === "enabled" ? `${pricingAction.nextEnabled ? "恢复派发" : "紧急停止派发"} · ${pricingAction.row?.taskClass}` : pricingAction.field === "queueSaturation" ? "调整队列饱和度" : `调整 ${pricingAction.row?.taskClass} · ${({minReward:"最低奖励",maxReward:"最高奖励",minVRAM:"最低显存",queueSaturation:"队列饱和度",enabled:"派发开关"})[pricingAction.field]}`}
+        action={pricingAction.field === "enabled" ? `${pricingAction.nextEnabled ? "恢复派发" : "紧急停止派发"} · ${pricingTaskClass}` : pricingAction.field === "queueSaturation" ? "调整队列饱和度" : `调整 ${pricingTaskClass} · ${PRICING_FIELD_LABEL[pricingAction.field]}`}
         detail={pricingAction.field === "enabled" && !pricingAction.nextEnabled ? "立即停止派发这类任务；已派出的按原价结算。" : "确认后立即生效，只影响之后新派的任务。"}
         amplifies={pricingAction.field !== "enabled" || !!pricingAction.nextEnabled}
         edit={pricingAction.field === "enabled" ? undefined : {
           kind: "number",
-          current: String(pricingAction.current),
+          current: String(pricingCurrent),
           unit: pricingAction.field === "minVRAM" ? "GB" : pricingAction.field === "queueSaturation" ? "0–1" : "USDT",
           min: 0,
           max: pricingAction.field === "queueSaturation" ? 1 : undefined,
           step: pricingAction.field === "minVRAM" ? 1 : pricingAction.field === "queueSaturation" ? 0.01 : 0.00001,
           disallowCurrent: true,
         }}
+        inlineApproval={approvalScope ? {
+          compareEdit: { rangeLabel: approvalScope.field === "queueSaturation" ? "取值范围 0–1" : undefined },
+          pending: !!pendingApproval,
+          expired: !!pendingApproval && pendingApproval.expiresAt <= Date.now(),
+          resolve: (_, value) => requiresPricingApproval(value) ? {
+            completionCopy: `另一位超管批准前，当前${PRICING_FIELD_LABEL[approvalScope.field]}保持不变。批准后只影响新派任务，已派任务按原价结算。`,
+            disabledReason: pricingRevision ? undefined : "暂未取得任务定价版本，请刷新页面后重试。",
+          } : undefined,
+          recover: (reason, _, value) => submitPricingApproval(reason, value || undefined, true),
+          retry: async () => { await submitPricingApproval("", undefined, "retry-original"); },
+        } : undefined}
         reasonMin={8}
         reasonMax={200}
         onClose={() => setPricingAction(null)}
@@ -371,10 +415,14 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           const action = pricingAction;
           const value = action.field === "enabled" ? action.nextEnabled : Number(newValue);
           if (action.field !== "enabled" && !Number.isFinite(value)) throw new Error("请输入有效数字");
+          if (requiresPricingApproval(newValue)) {
+            await submitPricingApproval(reason, newValue);
+            return;
+          }
           const patch = action.field === "queueSaturation"
             ? { queueSaturation: value as number }
-            : { taskClass: action.row!.taskClass, [action.field]: value };
-          await updateE2TaskPricing(patch, reason, "admin-console");
+            : { taskClass: action.row.taskClass, [action.field]: value };
+          await updateE2TaskPricing({ ...patch, expectedRevision: action.field === "enabled" ? undefined : pricingRevision }, reason, "admin-console");
           await ctx.refreshE2();
           ctx.toast("已生效");
           setPricingAction(null);

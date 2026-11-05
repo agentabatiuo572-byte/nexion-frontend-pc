@@ -1328,7 +1328,7 @@ export async function updateUserStatus(userId: number | string, status: UserStat
 }
 
 export function getPendingUserSessionRevocation(userId: number | string) {
-  const prefix = `POST|/profiles/${encodeURIComponent(String(userId))}/security/sessions/revoke-all|`;
+  const prefix = `POST|/profiles/${encodeURIComponent(String(userId))}/sessions/revoke-all|`;
   const pending = pendingUserMutations.list().find((record) => record.fingerprint.startsWith(prefix));
   if (!pending) return undefined;
   // The existing fingerprint already holds the original payload; recover it by target,
@@ -1341,11 +1341,19 @@ export function getPendingUserSessionRevocation(userId: number | string) {
   return { body, reason: payload.reason, commandKey: pending.commandKey };
 }
 
-export async function revokeUserSessions(userId: number | string, reason: string, operator: string, commandKey?: string) {
-  const pending = commandKey ? undefined : getPendingUserSessionRevocation(userId);
-  return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/security/sessions/revoke-all`, {
+export async function revokeUserAccountActionSessions(userId: number | string, reason: string, operator: string) {
+  const pending = getPendingUserSessionRevocation(userId);
+  return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/sessions/revoke-all`, {
     method: "POST",
     body: pending?.body ?? JSON.stringify({ reason, operator }),
+    idempotencyPrefix: "c2-user-revoke-sessions",
+  });
+}
+
+export async function revokeUserSessions(userId: number | string, reason: string, operator: string, commandKey?: string) {
+  return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/security/sessions/revoke-all`, {
+    method: "POST",
+    body: JSON.stringify({ reason, operator }),
     ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "c5-user-revoke-sessions" }),
   });
 }

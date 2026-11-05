@@ -5,6 +5,7 @@
  * 标记类 / 拦截未发放新人礼(预防性阻断) / 手动补触发 / 白名单 —— 不动已入账资产,
  * 强制留痕(业务服务必达审计);reason=true 时原因必填,input 为可选输入框。
  */
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { useId, useState } from "react";
 import { Modal, Btn, Chip, OperatorBriefBlock } from "../design-kit";
 import type { ConfirmReq } from "./types";
@@ -13,13 +14,14 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   const [reason, setReason] = useState("");
   const [value, setValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const fieldId = useId();
   const reasonMin = 8;
   const reasonMax = 200;
   const reasonLength = reason.trim().length;
   const reasonOk = !req.reason || (reasonLength >= reasonMin && reasonLength <= reasonMax);
   // chips 模式:所选项即非空,用精确判空(防空串 option 误配后按钮静默禁用);文本模式:仍要求 trim 后非空(拒纯空白)。
-  const inputOk = !req.input || (req.input.options ? value !== "" : value.trim().length >= 1);
+  const inputOk = !req.input || req.input.required === false || (req.input.options ? value !== "" : value.trim().length >= 1);
   const can = reasonOk && inputOk;
   return (
     <Modal
@@ -36,11 +38,13 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
             onClick={async () => {
               if (!can || submitting) return;
               setSubmitting(true);
+              setError(null);
               try {
                 const succeeded = await req.run(reason.trim(), req.input ? value.trim() : undefined);
                 if (succeeded !== false) onClose();
-              } catch {
-                // 请求实现负责展示面向用户的错误；弹窗只需保留输入并消费已处理的拒绝。
+              } catch (cause) {
+                const handled = typeof req.errorHandled === "function" ? req.errorHandled(cause) : req.errorHandled;
+                if (!handled) setError(displayAdminError(cause));
               } finally {
                 setSubmitting(false);
               }
@@ -51,6 +55,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
         </>
       }
     >
+      {error && <div role="alert" className="tint danger">{error}</div>}
       <OperatorBriefBlock action={req.action} detail={req.detail} hasEdit={!!req.input} />
       {req.chips && req.chips.length > 0 && (
         <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 12 }}>

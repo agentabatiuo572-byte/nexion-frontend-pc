@@ -361,34 +361,31 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 
 | 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
 |---|---|---|---|---|
-| `minReward / maxReward`(IG〔Image Gen〕,USDT) | **现状值(前端 §6.3)**:$0.0001 – $0.045 | ≥ 0,min ≤ max | 实时(热更,仅新派发任务) | §6.3 任务中心收益 / §6.5 Price Index |
-| `minReward / maxReward`(VG〔Video Gen〕,USDT) | **现状值**:$0.45 – $1.80 | ≥ 0 | 实时 | 同上 / locked teaser(高价类) |
-| `minReward / maxReward`(LL〔LLM〕,USDT) | **现状值**:$0.00005 – $0.85 | ≥ 0 | 实时 | 同上 |
-| `minReward / maxReward`(FT〔Fine-tune〕,USDT) | **现状值**:$0.06 – $0.42 | ≥ 0 | 实时 | 同上 |
-| `minReward / maxReward`(EM〔Embedding〕,USDT) | **现状值**:$0.00001 – $0.09 | ≥ 0 | 实时 | 同上 |
-| `minReward / maxReward`(SP〔Speech〕,USDT) | **现状值**:$0.00005 – $0.072 | ≥ 0 | 实时 | 同上 |
-| `QUEUE_SATURATION` | **现状值**:0.35(**规格参考值 spec reference figure,§9.11c.1;普通业务配置参数,经确认弹窗 + 理由必填热更**) | 0–1 | 实时(影响 teaser 估算) | §6.3 locked teaser `dailyPotential = (86400/avgSec) × QUEUE_SATURATION × avgReward` |
-| `minVRAM`(各类路由门槛,GB) | 现状值(各类按模型显存需求,VG/FT/LL 70B 需 Pro/Rack 级) | ≥ 0 | 实时(仅新路由判定) | §6.3 「Upgrade Unlocks」哪些任务对哪些设备锁定 |
+| `minReward / maxReward`(IG〔Image Gen〕,USDT) | **现状值(前端 §6.3)**:$0.0001 – $0.045 | ≥ 0，min ≤ max，最多六位小数 | 上调须批准，降低即时。用于新派发 | §6.3 任务中心收益 / §6.5 Price Index |
+| `minReward / maxReward`(VG〔Video Gen〕,USDT) | **现状值**:$0.45 – $1.80 | 同 IG | 同 IG | 同上 / locked teaser(高价类) |
+| `minReward / maxReward`(LL〔LLM〕,USDT) | **现状值**:$0.00005 – $0.85 | 同 IG | 同 IG | 同上 |
+| `minReward / maxReward`(FT〔Fine-tune〕,USDT) | **现状值**:$0.06 – $0.42 | 同 IG | 同 IG | 同上 |
+| `minReward / maxReward`(EM〔Embedding〕,USDT) | **现状值**:$0.00001 – $0.09 | 同 IG | 同 IG | 同上 |
+| `minReward / maxReward`(SP〔Speech〕,USDT) | **现状值**:$0.00005 – $0.072 | 同 IG | 同 IG | 同上 |
+| `QUEUE_SATURATION` | **现状值**:0.35（规格参考值，§9.11c.1） | 0–1 | 提高须批准，降低即时（影响 teaser 估算） | §6.3 locked teaser `dailyPotential = (86400/avgSec) × QUEUE_SATURATION × avgReward` |
+| `minVRAM`(各类路由门槛,GB) | 现状值(各类按模型显存需求,VG/FT/LL 70B 需 Pro/Rack 级) | 0–9999，整数 | 降低须批准，提高即时。用于新路由 | §6.3 「Upgrade Unlocks」哪些任务对哪些设备锁定 |
 | 任务类 kill 开关 | 全开(6 类可承接) | per 类布尔 | 实时(kill 立即停派该类) | §6.3 任务可承接性 |
 | 手机算力档位日产(USDT,Tier 1–5) | **现状值**:T1 $0.04 / T2 $0.05 / T3 $0.06 / T4 $0.08 / T5 $0.095 | > 0,档间单调非降 | 实时(对下一结算周期生效) | §6.10 手机算力显示 / 手机卡片日产 |
 | 手机算力档位日产(NEX,Tier 1–5) | **现状值**:T1 6 / T2 8 / T3 10 / T4 13 / T5 16 | > 0,档间单调非降 | 实时(对下一结算周期生效) | §6.10 手机卡片 NEX |
 
-> **默认值口径声明**:任务定价 6 类 min/maxReward **12 月节奏表 §6 未覆盖**,上表取前端 §6.3 现状值为参考并标注「现状值」。`QUEUE_SATURATION=0.35` 为前端 §9.11c.1 **规格参考值(§9.11c.1 普通业务配置参数)**,变更走常规确认弹窗 + 理由必填热更(见 ④);**该值不在 §9.11d.3 A/B 实验值表(仅 chargeFailRate / Unilevel rates multiplier / Sign-in lucky multiplier / PHASES 全表 / NEX 价格曲线 5 项),故不强制经 A3 feature flag 管道**。如 PM 希望将其纳入 A/B 管道,须先在 §9.11d.3 补登并在 A3 注册对应 flag slot 后方可引用。**双币产出的 NEX 侧由 E1 `baseRate` / `baseRateNEX` 决定**(设备日产基准),E2 管任务侧 USDT 定价与路由,不重复定义双币基准。**任务锁定累计的月度损失阈值($40 / $140 / $450)权威归 12 月节奏表 §6.5,由 E3 落地**(设备生命周期 banner 的损失叙事),E2 仅持单任务定价与路由门槛。
+> **默认值口径声明**：任务定价 6 类 min/maxReward **12 月节奏表 §6 未覆盖**，上表取前端 §6.3 现状值为参考。`QUEUE_SATURATION=0.35` 为 §9.11c.1 **规格参考值**，按 E2 的变更方向管理（见 ④）。若纳入 A/B 实验，先在 §9.11d.3 补登并在 A3 注册对应 flag slot。**双币设备日产基准的 NEX 侧由 E1 `baseRate` / `baseRateNEX` 决定**。E2 管任务侧 USDT 定价与路由。**任务锁定累计的月度损失阈值（$40 / $140 / $450）权威归 12 月节奏表 §6.5，由 E3 落地**。
 
 **④ 操作动作**
 
 | 动作 | 执行权 | 确认弹窗 | 审计点 |
 |---|---|---|---|
-| 热更任务定价(某类 min/maxReward) | 商品运营(lead)/ 收益运营(lead)(任一可独立执行) | E2-MD1(理由必填)(改全站任务产出叙事,影响应付负债与留存) | `admin.task_pricing_changed`(任务类 / 字段 / before-after / operator / reason) |
-| 调 `QUEUE_SATURATION` | 收益运营(lead) | E2-MD2(理由必填)(影响全站 locked teaser 估算口径;**普通业务配置参数,经常规确认弹窗 + 理由必填热更,不强制经 A3 feature flag 管道**) | `admin.task_pricing_changed`(field=QUEUE_SATURATION / before-after / operator / reason) |
-| 调 `minVRAM` 路由门槛 | 收益运营(lead) | E2-MD3(理由必填)(改变设备↔任务可承接映射,联动升级叙事) | `admin.task_pricing_changed`(任务类 / field=minVRAM / before-after / operator / reason) |
+| 调整任务定价（某类 min/maxReward） | `device_e2_write` 发起 | E2-MD1，理由必填。上调提交审批，降低即时生效 | `admin.task_pricing_changed`(任务类 / 字段 / before-after / operator / reason) |
+| 调 `QUEUE_SATURATION` | `device_e2_write` 发起 | E2-MD2，理由必填。提高提交审批，降低即时生效 | `admin.task_pricing_changed`(field=QUEUE_SATURATION / before-after / operator / reason) |
+| 调 `minVRAM` 路由门槛 | `device_e2_write` 发起 | E2-MD3，理由必填。降低提交审批，提高即时生效 | `admin.task_pricing_changed`(任务类 / field=minVRAM / before-after / operator / reason) |
 | 紧急下架某类任务(kill,监管) | 收益运营(lead)/ 超管 | E2-MD4(理由必填)(紧急停派,监管点名某类 AI workload) | `admin.task_pricing_changed`(任务类 / field=enabled / after=false / operator / reason) |
 | 调手机算力档位日产(某档 USDT / NEX) | 收益运营(lead) | 确认弹窗(目标新值 + 理由必填 + **B1 覆盖率护栏**,同 E 域放大类动作) | A2 审计(action=手机算力档位日产调整 · tier / 币种 / before-after / operator / reason) |
 
-> **E2 定价类执行权说明(与 E1 区分 + 双角色执行口径,2026-06 操作确认决议)**:
-> - **执行门槛分级**:E 域「定价类」高敏动作的执行门槛按风险分级——E1 改 SKU 价 / baseRate 影响全站回本叙事,风险更高,执行权就高 = 商品运营(lead)/ 超管;E2 任务单价较低、热更频率高,执行权为对应角色 **lead 层级**(原复核层级商品主管转为执行门槛,member 不可执行)。仅「紧急下架某类任务(kill)」属监管应急,执行权就高 = 收益运营(lead)/ 超管。
-> - **「热更任务定价」双角色执行口径**:商品运营 lead 与收益运营 lead **任一均可独立执行**(单人确认,非两者联署);⑥ 权限表同行据此标注「任一可独立执行」。
-> - 所有确认弹窗动作经理由必填(server 强制非空 400 `REASON_REQUIRED`)即时生效,落 A2 审计并实时告警超管 / 对应域 lead。调升任务定价放大应付负债叙事,但不构成即时资金流出(同 E1a⑦ 口径),不前置 B1 红线预检。
+> E2-A07～A09、E2-A12 的放宽按 T02 经 A2 双人审批。确认框显示现值和拟改值，另一位具备 `platform_a2_operation_approve` 的在职超管批准后生效。发起与批准时均校验 B1 实际覆盖率。收紧和停止、恢复派发走直接确认，恢复派发仍校验 B1。
 
 **④a 交互与弹窗规格**
 
@@ -405,7 +402,7 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 **(2) 弹窗规格(逐弹窗)**
 
 ##### [E2-MD1] 热更任务定价确认
-- **功能**:更新某任务类的 minReward / maxReward,确认即生效,仅新派发任务生效。
+- **功能**：更新某任务类的 minReward / maxReward。上调经审批，降低直接生效。新值用于后续派发，已派任务沿用奖励快照。
 - **布局结构**:1. **信息区**:任务类(缩写 + 全称)/ 代表模型 / 当前 minReward / maxReward / minVRAM / enabled。2. **影响预览区(必有)**:before→after 区间并排展示;**locked teaser `dailyPotential` 重算预览**(server 预检按 86400/avgSec × QUEUE_SATURATION × avgReward 下发);提示行「改全站任务产出叙事,影响应付负债与留存;已派发任务按派发时定价结算」。3. **输入区**:见下表。4. **按钮区**。
 - **输入与选择控件**:
 
@@ -415,12 +412,12 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 | 目标 maxReward(USDT) | 数字输入 | 否(至少改一项) | ≥ 0 且 ≥ minReward(③) | 当前值 |
 | reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
 
-- **按钮区**:`[取消]` · `[确认热更定价]`(主按钮;两字段均未变更 / 区间失序 / reason 未达标时置灰;loading 防双击)。
+- **按钮区**：放宽显示「提交审批」，收紧显示「确认提交」。必填理由或输入无效时禁止提交。
 - **错误态**:400(越界或 min > max,server 回传违规字段,弹窗不关内联警示)/ 400 `REASON_REQUIRED` / 409(该类定价已被他人变更,提示刷新当前值)/ 403。
-- **成功反馈**:弹窗关闭;定价表行就地更新;toast「任务定价已热更 · 仅新派发任务生效 · 已记审计」;事件 `admin.task_pricing_changed` 落 A2;实时告警超管 / 商品运营 lead / 收益运营 lead。
+- **成功反馈**：提案登记后提示审批单号并继续显示现值。收紧或 A2 批准后回读生效值，产生 `admin.task_pricing_changed`。
 
 ##### [E2-MD2] 调 QUEUE_SATURATION 确认
-- **功能**:更新全局饱和因子,确认即生效,影响全站 locked teaser `dailyPotential` 估算口径。
+- **功能**：更新全局饱和因子，提高经审批，降低直接生效。生效值用于 locked teaser 的 `dailyPotential` 估算。
 - **布局结构**:1. **信息区**:当前 QUEUE_SATURATION / 现状参考值 0.35。2. **影响预览区**:before→after 并排展示 + 按当前 6 类定价重算的 teaser `dailyPotential` 样例(server 预检下发);提示行「与真实 GPU 池水位严重背离会使升级叙事失真(⑦)」。3. **输入区**:见下表。4. **按钮区**。
 - **输入与选择控件**:
 
@@ -429,23 +426,23 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 | 目标 QUEUE_SATURATION | 数字输入(步进 0.01) | 是 | 0–1(③ 范围);不得与当前值相同 | 当前值 |
 | reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
 
-- **按钮区**:`[取消]` · `[确认调饱和因子]`(主按钮;未变更 / 越界 / reason 未达标时置灰;loading 防双击)。
+- **按钮区**：提高显示「提交审批」，降低显示「确认提交」。
 - **错误态**:400(越界,内联警示)/ 400 `REASON_REQUIRED` / 409(提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;配置面就地更新;toast「QUEUE_SATURATION 已更新 · 已记审计」;事件 `admin.task_pricing_changed`(field=QUEUE_SATURATION)落 A2;实时告警超管 / 收益运营 lead。
+- **成功反馈**：待审时显示现值。收紧或 A2 批准后回读饱和度和 teaser，产生 `admin.task_pricing_changed`。
 
 ##### [E2-MD3] 调 minVRAM 路由门槛确认
-- **功能**:更新某任务类的 minVRAM 路由门槛,确认即生效,仅新路由判定生效。
+- **功能**：更新某任务类的 minVRAM 路由门槛。降低经审批，提高直接生效。后续路由使用生效值。
 - **布局结构**:1. **信息区**:任务类 / 当前 minVRAM / 代表模型显存需求。2. **影响预览区**:before→after 门槛并排展示 + **设备↔任务可承接映射变化预览**(按 VRAM 档 phone 8 / S1 96 / Pro 192 / Rack 640 / cloud-share 0 列出哪些档从可承接变锁定或反之);提示行「改变 Upgrade Unlocks 升级叙事面(§6.3)」。3. **输入区**:见下表。4. **按钮区**。
 - **输入与选择控件**:
 
 | 字段 | 控件类型 | 必填 | 校验 | 默认值 |
 |---|---|---|---|---|
-| 目标 minVRAM(GB) | 数字输入 | 是 | 0–9999 的无前导零整数；服务端持久化/兼容输入只接受 `N` 或 `NGB` 紧邻格式，不接受小数、空格或重复单位；不得与当前值相同 | 当前值 |
+| 目标 minVRAM(GB) | 数字输入 | 是 | E2 定价请求的 `minVram` 取 0–9999 的 JSON 整数，数据库使用 `NGB` 格式，目标值须有变化 | 当前值 |
 | reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
 
-- **按钮区**:`[取消]` · `[确认调门槛]`(主按钮;未变更 / 越界 / reason 未达标时置灰;loading 防双击)。
+- **按钮区**：降低显示「提交审批」，提高显示「确认提交」。
 - **错误态**:400(越界或 `TASK_MIN_VRAM_INVALID`,内联警示)/ 400 `REASON_REQUIRED` / 409(提示刷新)/ 403。若历史启用行存在非法 `minVRAM`，新任务派发整体失败关闭并告警，运营修复前不得跳过坏行继续派发。
-- **成功反馈**:弹窗关闭;路由门槛行就地更新;toast「路由门槛已更新 · 仅新路由判定生效 · 已记审计」;事件 `admin.task_pricing_changed`(field=minVRAM)落 A2;实时告警超管 / 收益运营 lead。
+- **成功反馈**：待审时显示现值。收紧或 A2 批准后回读显存门槛，产生 `admin.task_pricing_changed`。
 
 ##### [E2-MD4] 紧急下架 / 恢复任务类确认
 - **功能**:对某任务类一键 kill(立即停派)或恢复派发,确认即生效。
@@ -461,8 +458,9 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 - **成功反馈**:弹窗关闭;定价表行 enabled 态就地更新;toast「任务类已停派 / 已恢复 · 已记审计」;事件 `admin.task_pricing_changed`(field=enabled)落 A2;实时告警超管 / 收益运营 lead。
 
 **⑤ 接口**
-- `GET /api/admin/config/task-pricing` — 返回 6 类任务定价表 `[{ taskClass, models[], minReward, maxReward, minVRAM, enabled }]` + `QUEUE_SATURATION`;**server-canonical**,前端 `GET /api/config/task-pricing`(§9.11c.1 收敛 `lib/mock/tasks.ts`)消费只读投影。
-- `PUT /api/admin/config/task-pricing` — 热更任务定价 / QUEUE_SATURATION / minVRAM / kill;经确认弹窗提交(E2-MD1–E2-MD4,body 携 reason,server 校验非空 400 `REASON_REQUIRED`)即时生效;响应回 `{ effectiveAt }`,仅对新派发任务生效(已派发任务奖励按派发时定价结算)。
+- `GET /api/admin/config/task-pricing` 返回 6 类现行定价、行级 `pricingRevision`、全局 `queueSaturation` 和 `queueSaturationRevision`。App 读取 `GET /api/config/task-pricing` 的业务值。
+- `PUT /api/admin/config/task-pricing` 受理收紧与派发启停，需要理由和幂等键，可随数值编辑提供 `expectedRevision`。四类放宽直写返回 409 `A2_CONFIRMATION_REQUIRED`。
+- `POST /api/admin/platform/audit/operations` 接收 E2 命令 `E/e2_task_pricing_change`，锁定实际任务或全局饱和度。审批以发起时的 `expectedRevision` 校验现值，变更冲突返回 409。提交结果未知时按原幂等键查询本人提案或重试原操作。
 - `GET /api/tasks/assignments` — 当前账号逐设备返回 `currentTask + recentTasks + serverNow`;运行中任务不受账号级全局分页挤出，`recentTasks` 每台设备最多返回最近 10 条完成记录，5173 明示为“今日最近完成”，完整历史进入收据页查看。5173 以此计算运行进度和剩余时间，并在发现任务完成后联动刷新设备与首页收益投影；只读接口不产生收益。
 - `GET /api/tasks/receipts[/{receiptNo}]` — 返回已结算 Proof-of-Compute 收据列表/详情；今日收益只汇总其中处于已结算态且完成时间落在当前业务日的记录。
 - `GET /api/admin/config/phone-tiers` — 返回手机算力 5 档日产 `[{ tier, baseRateUsdt, baseRateNex }]`;**server-canonical**,前端 `GET /api/config/phone-tiers`(收敛 `mock/phone-tiers.ts`)消费只读投影,与前端 §6.10 同口径。
@@ -473,7 +471,7 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 | 动作 | 收益运营 | 商品运营 | 超管 | 只读审计 |
 |---|---|---|---|---|
 | 查看任务定价 | ✅ | ✅ | ✅ | ✅ |
-| 热更任务定价 | ✅(lead,任一可独立执行) | ✅(lead,任一可独立执行) | ✅ | — |
+| 调整任务定价 | ✅(具备 E2 写权) | ✅(具备 E2 写权) | ✅ | — |
 | 调 QUEUE_SATURATION / minVRAM | ✅(lead) | — | ✅ | — |
 | 紧急下架某类任务 | ✅(lead) | — | ✅ | — |
 
@@ -1496,6 +1494,8 @@ flowchart LR
 ---
 #### [F3] 团队平衡奖励
 
+**F3-A01 手动结算（2026-11-05，BUG-286）**。有 `network_f3_write` 的管理员填写用户编号、已结束的越南结算日和理由，提交 `F/f3_binary_settle` 审批。待审期间没有入账。另一位有 A2 审批权的超管批准时，服务端按实付订单、当前结算规则和 H1 封顶算出实际应付，并将该笔待付奖励计入兑付覆盖率复核。满足条件时生成一笔奖励及资金流水，A2 回显金额和奖励记录。未达到条件时返回原因，保留待审工单。已结算的同一用户和结算日返回原奖励记录。旧结算接口仅用于读回已结算结果。
+
 **配置输入与结算单位（BUG-192、T14）**：门槛必须大于 0、上限 5000 USDT，最多 6 位小数（结算金额精度）；比例按百分比填写，必须大于 0、上限 20%，最多 10 位小数（对应结算比率 12 位小数）。空值与 0 分开拒绝，非数字、越界和超精度明确拒绝，不自动取整或四舍五入。输入比例 `1` 提交 `1%`，结算使用 `0.01`；`0.5` 提交 `0.5%`，结算使用 `0.005`。旧裸值 ≤1 按结算的比率口径转换成百分比展示；无法准确展示的旧值标记「比例尚未确认」并保留原文。提交只创建审批申请，批准后后续结算使用新设置，批准前展示原配置。上线前须核查存量；服务端写入、批准执行与结算仍须统一范围及精度，前端校验不能代替服务端保护。
 
 门槛和比例提交按当前已确认值显式标记资金方向：降低门槛或提高比例才标记放大；提高门槛、降低比例或原值不标记放大。无法解析的当前比例仍显示「比例尚未确认」，空当前值不转换为 0、不参与方向比较，不因虚假的上调误触发低覆盖率拦截。当前比例无法确认或门槛为空时，不显式指定资金方向，提案沿配置键既有资金分类处理，不声明为收紧；不扩展旧值格式解析，系统仍须按实际生效值复核。
@@ -2003,6 +2003,8 @@ flowchart TD
 ---
 
 #### [F4c] 区域大使审批
+
+**F4-A12 调整申请规则（2026-11-05，BUG-286）**。有 `network_f4_pool_fund` 的管理员提高默认预算或任一分类最高预算时，确认框显示当前和拟调整金额，提交 `F/f4_ambassador_policy_change` 审批。提交与批准都核对当前兑付覆盖率，批准需另一位有 A2 审批权的超管。若当前版本已变动，旧提案不能写入。待审时 PC 与 App 使用现行规则，批准后新申请按新版本校验。降低预算或修改说明等非放大动作按现有版本即时保存。历史申请保留提交时的金额。
 
 **① 目的 & 对齐**: 区域大使(V5+ 申请)4 类预算申请的审批工作流,是「头部用户 → 区域线下 / KOL 推广预算」的运营审批面。对齐前端 §8.10(区域大使 `/team/agent`,V5+ 开放)。服务的业务目标:用区域预算激励 V5+ 头部用户做线下 / KOL 拉新、用审批工作流控制预算流出与 ROI;预算审批经确认弹窗(F4c-MD1,理由必填)+ 发票 / 签到达标核验,审批通过(放款决策)前置 B1 覆盖率红线预检(2026-06 操作确认决议)。
 

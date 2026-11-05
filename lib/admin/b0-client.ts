@@ -82,10 +82,10 @@ function kpiTarget(row: Row): string | null {
   }
   const target = finiteDashboardNumber(row.target);
   if (target == null || (row.dir !== "lte" && row.dir !== "gte")) return null;
-  return `${row.dir === "lte" ? "<=" : ">="}${target}${unit}`;
+  return `${row.dir === "lte" ? "<" : ">"}${target}${unit}`;
 }
 
-/** 区间是闭区间，lte、gte 含相等；值缺失是暂无法计算，不是未达标（B0-C02）。 */
+/** 区间是闭区间，lte、gte 严格比较，等于目标不算达标；值缺失是暂无法计算，不是未达标（B0-C02）。 */
 function kpiPass(row: Row): boolean | null {
   const value = finiteDashboardNumber(row.value);
   if (value == null) return null;
@@ -95,7 +95,7 @@ function kpiPass(row: Row): boolean | null {
   }
   const target = finiteDashboardNumber(row.target);
   if (target == null) return null;
-  return row.dir === "lte" ? value <= target : row.dir === "gte" ? value >= target : null;
+  return row.dir === "lte" ? value < target : row.dir === "gte" ? value > target : null;
 }
 
 /** 关键指标。名称或目标不合法的行丢掉，数量不强凑 8 项（B0-V14）。 */

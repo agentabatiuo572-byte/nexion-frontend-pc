@@ -312,6 +312,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
 
   const openOverride = (user: K4User) => {
     ctx.openConfirm({
+      errorHandled: true,
       action: `手动改分 · ${user.userNo}`,
       detail: `把这个用户的风险分从 ${user.effectiveScore} 改成指定分数，马上生效，并记入操作记录。`,
       chips: [["只改这一个用户", "ready"], ["之后可恢复成系统算的分", "done"]],
@@ -338,6 +339,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
 
   const openRecompute = (user: K4User) => {
     ctx.openConfirm({
+      errorHandled: true,
       action: `恢复系统评分 · ${user.userNo}`,
       detail: `取消人工改的分，按当前评分规则重新计算。当前分 ${user.effectiveScore}，系统算的分 ${user.modelScore}。`,
       chips: [["恢复系统评分", "done"], ["记入操作记录", "ready"]],

@@ -1816,7 +1816,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             } else if (mc.op === "param" && mc.paramKey) {
               const v = (newValue ?? "").trim();
               const before = typeof mc.edit?.current === "string" ? mc.edit.current : "—";
-              await proposeParam(mc.paramKey, v, before, reason, mc.name, !!mc.amplify);
+              await proposeParam(mc.paramKey, v, before, reason, mc.name, typeof mc.edit?.amplifiesWhen === "function" ? mc.edit.amplifiesWhen(v) : !!mc.amplify);
             } else if (mc.op === "early-access" && businessValue) {
               const enabled = businessValue.enabled === "开" || businessValue.enabled === "true";
               const leadDays = Number(businessValue.leadDays);
@@ -1836,7 +1836,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               ]));
               await propose(ctx.toast, {
                 action: mc.name, obj: mc.paramKeys.map(({ paramKey }) => paramKey).sort().join(","), before: "批量配置变更前", after: "批量配置待审批", type: def.type,
-                amplifies: !!mc.amplify, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: isE6Batch ? "E6" : "E3",
+                amplifies: (mc.businessForm?.kind === "multi-field" ? mc.businessForm.amplifies?.(businessValue) : undefined) ?? !!mc.amplify, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: isE6Batch ? "E6" : "E3",
                 command: def.buildCommand({ values }), targets: def.buildTargets?.({ values }),
               });
             } else if (mc.op === "param-fixed" && mc.paramKey && mc.fixedVal != null) {

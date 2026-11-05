@@ -13,7 +13,7 @@ import {
   JudgmentPoints, Modal, MoreMenu, Notice, PageHeader, Pager, Panel, Segments, Select, Stat, StatBand, StatusTag, Table,
   TableLoading, TableMessage, Td, Th, Tr, useTableColumns, type JudgmentRow, type SegmentItem, type StateTone, type TableColumn,
 } from "@/app/components/rd";
-import { businessClock, businessOffsetMinutes, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { businessClock, businessOffsetMinutes, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
 import { fetchWithdrawalGateOpen } from "@/lib/admin/ops-dashboard-client";
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
@@ -41,6 +41,7 @@ import {
   type D5Params,
   type PageResult,
   isDOutcomeUnknownError,
+  DRequestError,
 } from "@/lib/admin/d-client";
 import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
 import type { ActionConfirmReq, DCtx } from "./types";
@@ -63,6 +64,8 @@ const ACTION_AUTHORITY: Record<D2ReviewAction, string> = {
 /** 批量操作面支持的动作(与 reviewD2WithdrawalsBatch 服务端签名同集合)。"" = 运营尚未显式选择。 */
 const BATCH_ACTIONS = ["APPROVE", "REJECT", "DELAY", "FREEZE"] as const;
 type D2BatchAction = (typeof BATCH_ACTIONS)[number];
+const MOVED_STATE_CODES = ["INVALID_STATE_TRANSITION", "WITHDRAWAL_STATE_CONFLICT", "CREGIS_PAYOUT_ALREADY_DISPATCHED",
+  "BANK_PAYOUT_ALREADY_DISPATCHED", "BANK_PAYOUT_RECOVERY_STALE"];
 
 /** 明细按接口精度显示，至少 2 位（TX-20）。币种写在列头时只用这个。 */
 function amountText(value: number) {
@@ -387,7 +390,8 @@ const D2_BRANCHES: { from: string[]; trigger: string; to: string[]; note: string
   { from: ["FROZEN"], trigger: "点「解冻」", to: ["REVIEW_PENDING"], note: "回到待审核重新决定" },
   { from: ["REVIEW_PENDING"], trigger: "点「拒绝并退款」", to: ["REFUNDED"], note: "要填拒绝原因，钱当场退回用户余额" },
   { from: ["SENT"], trigger: "打款结果返回", to: ["ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], note: "按银行或链上返回的结果处理，结果不明时继续核对" },
-  { from: ["REVIEW_REJECTED", "ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], trigger: "手动退款", to: ["REFUNDED"], note: "提交前先确认钱没有打出去。新的拒绝不会停在审核拒绝，这里是旧单和打款没成功的单。ERC20 打款异常不能手动退款" },
+  { from: ["REVIEW_REJECTED"], trigger: "手动退款", to: ["REFUNDED"], note: "仅历史遗留记录；提交前先确认钱没有打出去" },
+  { from: ["ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], trigger: "手动退款", to: ["REFUNDED"], note: "提交前先确认钱没有打出去。ERC20 打款异常不能手动退款" },
 ];
 
 function StatusFlowChip({ code }: { code: string }) {
@@ -488,40 +492,53 @@ const REVIEW_BRIEF: Record<D2ReviewAction, { impact: string; check: string }> = 
   REFUND: { impact: "钱退回用户余额，这笔结束，不能撤销。", check: "先到打款方和账单确认钱没有打出去，理由写清依据或工单号。" },
 };
 
-const FREEZE_DAYS: Record<string, number> = { "7d": 7, "14d": 14, "30d": 30, "45d": 45 };
-
 function actionBusinessForm(action: D2ReviewAction, addressVerificationRequired = false): BusinessFormSpec | undefined {
   if (action === "REJECT") return {
     kind: "multi-field", title: "拒绝原因", fields: [
       { key: "reasonCode", label: "拒绝原因", inputKind: "select", required: true, options: ["RISK_HIT", "ADDRESS_RISK", "DATA_MISMATCH", "USER_CANCELLED", "OTHER"], mustChoose: true, optionLabels: REJECT_REASON_LABELS, help: "按这笔的实际情况选，这个操作不能撤销。" },
     ],
   };
-  if (action === "DELAY") return {
-    kind: "multi-field", title: "延迟这笔提现，到期后自动回到待审核",
-    derive: (key, next) => key === "holdDays" && Number(next.holdDays) >= 1 ? { ...next, reviewAt: reviewAtAfter(Number(next.holdDays)) } : next,
-    fields: [
-      { key: "holdDays", label: "等待天数", inputKind: "number", required: true, min: 1, max: 45, current: "7" },
-      { key: "owner", label: "责任人", required: true, current: OPERATOR() },
-      { key: "reviewAt", label: `复查时间（${businessZone().label}）`, inputKind: "datetime-local", required: true, current: reviewAtAfter(7) },
-    ],
-  };
-  if (action === "FREEZE") return {
-    kind: "multi-field", title: "冻结期限",
-    derive: (key, next) => key === "period" && FREEZE_DAYS[next.period] ? { ...next, reviewAt: reviewAtAfter(FREEZE_DAYS[next.period]) } : next,
-    fields: [
-      { key: "period", label: "冻结期限", inputKind: "select", required: true, options: ["7d", "14d", "30d", "45d", "LONG_TERM"], optionLabels: { "7d": "7 天", "14d": "14 天", "30d": "30 天", "45d": "45 天", LONG_TERM: "长期，需复查" } },
-      { key: "owner", label: "责任人", required: true, current: OPERATOR() },
-      { key: "reviewAt", label: `复查时间（${businessZone().label}）`, inputKind: "datetime-local", required: true, current: reviewAtAfter(7) },
-    ],
-  };
+  if (action === "DELAY" || action === "FREEZE") {
+    let reviewAtEdited = false;
+    return {
+      kind: "multi-field", title: action === "DELAY" ? "延迟这笔提现，到期后自动回到待审核" : "冻结期限",
+      onFieldChange: (key, next) => {
+        if (key === "reviewAt") reviewAtEdited = true;
+        if (!reviewAtEdited && (key === "holdDays" || key === "period")) {
+          const days = action === "DELAY" ? Number(next.holdDays) : next.period === "LONG_TERM" ? 7 : Number.parseInt(next.period, 10);
+          if (Number.isInteger(days) && days >= 1 && days <= 45) return { ...next, reviewAt: reviewAtAfter(days) };
+        }
+        return next;
+      },
+      fields: [
+        ...(action === "DELAY"
+          ? [{ key: "holdDays", label: "等待天数", inputKind: "number" as const, required: true, min: 1, max: 45, current: "7" }]
+          : [{ key: "period", label: "冻结期限", inputKind: "select" as const, required: true, options: ["7d", "14d", "30d", "45d", "LONG_TERM"], optionLabels: { "7d": "7 天", "14d": "14 天", "30d": "30 天", "45d": "45 天", LONG_TERM: "长期，需复查" } }]),
+        { key: "owner", label: "责任人", required: true, current: OPERATOR() },
+        { key: "reviewAt", label: `复查时间（${businessZone().label}）`, inputKind: "datetime-local", required: true, current: reviewAtAfter(7),
+          help: "随期限自动更新；手动修改后保留。固定期限允许相差一天；长期冻结须在未来 1–365 天内复查，默认 7 天后。",
+          warning: (value) => {
+            if (!value.reviewAt) return;
+            const reviewAt = parseBusinessTime(value.reviewAt.length === 16 ? `${value.reviewAt}:00` : value.reviewAt);
+            if (!Number.isFinite(reviewAt) || reviewAt <= Date.now()) return "复查时间须在未来，请调整后提交。";
+            const date = new Intl.DateTimeFormat("en-CA", { timeZone: businessZone().zoneId, year: "numeric", month: "2-digit", day: "2-digit" });
+            const days = (Date.parse(date.format(reviewAt)) - Date.parse(date.format(Date.now()))) / 86_400_000;
+            if (value.period === "LONG_TERM") return days >= 1 && days <= 365 ? undefined : "长期冻结须在未来 1–365 天内复查，请调整复查时间。";
+            const expectedDays = action === "DELAY" ? Number(value.holdDays) : Number.parseInt(value.period, 10);
+            if (Math.abs(days - expectedDays) > 1) return "复查时间与所选期限相差超过一天；已保留手动时间，请调整后提交。";
+          },
+        },
+      ],
+    };
+  }
   if (action === "REFUND") return {
     kind: "multi-field", title: "退款前核实", fields: [
-      { key: "fundsVerified", label: "钱没有打出去", inputKind: "select", required: true, mustChoose: true, options: ["true"], optionLabels: { true: "已核实" }, help: "到打款方和账单确认这笔钱没有打出去，再选「已核实」。" },
+      { key: "fundsVerified", label: "我已核实钱没有打出去", inputKind: "checkbox", required: true, current: "", help: "到打款方和账单确认这笔钱没有打出去，再勾选。" },
     ],
   };
   if (action === "APPROVE" && addressVerificationRequired) return {
     kind: "multi-field", title: "大额放行核实", fields: [
-      { key: "addressVerified", label: "地址与风险信息", inputKind: "select", required: true, mustChoose: true, options: ["true"], optionLabels: { true: "已核对" }, help: "核对上面的收款网络、地址和命中的风险规则，再选「已核对」。" },
+      { key: "addressVerified", label: "我已核对地址与风险信息", inputKind: "checkbox", required: true, current: "", help: "核对上面的收款网络、地址和命中的风险规则，再勾选。" },
     ],
   };
   return undefined;
@@ -569,12 +586,31 @@ type D2PendingExtra = PendingMutationExtra<D2PendingCommand>;
  *  避免运营在「结果未知」后重铸命令号导致重复放行 / 重复退款。原操作内容一起存，重试只能原样（OP-94）。 */
 const pendingKeys = createPendingMutationStore<D2PendingCommand>({
   storageKey: "nexion-admin-d2-withdrawal-commands-v1",
+  // 批量重试直接用记录里的单号和内容，坏记录不能当原操作重发。
+  isValidRecord: (record) => {
+    if (record.kind !== "batch") return true;
+    const action = record.action as D2BatchAction;
+    return BATCH_ACTIONS.includes(action)
+      && Array.isArray(record.nos) && record.nos.length > 0
+      && record.nos.every((id) => typeof id === "string" && id.length > 0)
+      && typeof record.reason === "string"
+      && (record.form === undefined || !!record.form && typeof record.form === "object"
+        && !Array.isArray(record.form) && Object.values(record.form).every((value) => typeof value === "string"))
+      && record.fingerprint === batchScope(action, record.nos);
+  },
 });
 /** 目标对象 id = 提现单号;动作类型 = APPROVE/REJECT/… —— 两者都进指纹,不同单不同动作不撞 key。 */
 const reviewScope = (withdrawalNo: string, action: D2ReviewAction) => `review|${withdrawalNo}|${action}`;
 /** 批量的目标对象 = 本次提交的提现单号集合(排序后),动作类型同上。 */
 const batchScope = (action: D2BatchAction, ids: string[]) => `batch|${action}|${[...ids].sort().join(",")}`;
 const developmentSimulationScope = (withdrawalNo: string) => `simulate-due|${withdrawalNo}`;
+
+/** 批量里没执行的单，按原因分组写清楚。 */
+function batchConflictText(result: D2BatchResult) {
+  const groups = new Map<string, string[]>();
+  for (const conflict of result.conflicts) groups.set(conflict.reason, [...(groups.get(conflict.reason) ?? []), conflict.withdrawalId]);
+  return [...groups].map(([reason, ids]) => `${ids.length} 笔（${ids.join("、")}）：${MOVED_STATE_CODES.includes(reason) ? "状态已变化 · " : ""}${displayAdminError(new Error(reason))}`).join("；");
+}
 
 function developmentSimulationEligible(row: D2Withdrawal) {
   return row.status.toUpperCase() === "EXTENDED_HOLD"
@@ -968,14 +1004,16 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         result = await send(key);
       } catch (cause) {
         const unknown = isDOutcomeUnknownError(cause);
+        const moved = cause instanceof DRequestError && (cause.status === 409 || cause.code === 409) && MOVED_STATE_CODES.includes(cause.reasonCode ?? "");
         if (!unknown && !retained) pendingKeys.forget(scope);
         syncPending();
         await refresh();
         const open = detailRef.current;
         if (open && extra.nos.includes(open.withdrawalNo)) await openDetail(open);
-        toast(unknown ? "结果未确认，不要重复操作。到页面上方读回核对或按原操作重试。" : cause instanceof Error ? displayAdminError(cause) : failureText);
-        if (!unknown) throw cause;
-        return;
+        toast(unknown ? "结果未确认，不要重复操作。到页面上方读回核对或按原操作重试。" : moved ? "提现已被他人或系统处理，已刷新列表，请核对最新状态。" : cause instanceof Error ? displayAdminError(cause) : failureText);
+        // 状态被别人改了：单笔审核的框留着，刷新成最新状态（D2-C89）；其余操作关框，列表已是最新（BUG-291）。重试的原命令继续走待确认。
+        if (unknown || (moved && !retained && extra.kind !== "review")) return;
+        throw cause;
       }
       pendingKeys.forget(scope);
       syncPending();
@@ -1030,7 +1068,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     const brief = gateClosed ? GATE_CLOSED_BRIEF : REVIEW_BRIEF[action];
     return {
       action: `${label}提现 · ${row.withdrawalNo}`,
-      detail: `${row.userNo} / ${amountText(row.amount)} ${row.asset}；当前 ${statusLabel(row.status)}；${k4RiskText(row)}；触发规则 ${hitRulesText(row)}；账户 ${userStatusLabel(row.userStatus)}。${action === "APPROVE" ? `当前兑付覆盖率 ${d5?.coverageRatio ?? "—"}%，红线 ${d5?.redlinePct ?? "—"}%，提交时系统会再查一次。${approveTail}` : "确认后立即生效。"}`,
+      detail: `${row.userNo} / ${amountText(row.amount)} ${row.asset}；当前 ${statusLabel(row.status)}；${k4RiskText(row)}；触发规则 ${hitRulesText(row)}；账户 ${userStatusLabel(row.userStatus)}。${action === "APPROVE" ? `当前兑付覆盖率 ${d5?.coverageRatio ?? "—"}%，红线 ${d5?.redlinePct ?? "—"}%，提交时系统会再查一次。${approveTail}` : action === "REJECT" ? "确认后立即拒绝，并退回用户余额；完成后为已退款。" : "确认后立即生效。"}`,
       amplifies: action === "APPROVE",
       coverage: d5 ? { coverageRatio: d5.coverageRatio, redlinePct: d5.redlinePct } : undefined,
       coverageLead: action === "APPROVE" ? "放行后这笔钱会打给用户" : undefined,
@@ -1209,14 +1247,17 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     });
   };
 
-  const runBatch = (action: D2BatchAction, ids: string[], reason: string, form: BusinessFormValue | undefined, operator = OPERATOR()) => sendCommand(
+  const runBatch = (action: D2BatchAction, ids: string[], reason: string, form: BusinessFormValue | undefined, operator = OPERATOR(), retry = false) => sendCommand(
     batchScope(action, ids),
     { kind: "batch", label: `批量${actionLabel(action)} · ${ids.length} 笔`, nos: ids, reason, operator, action, form },
     (key) => reviewD2WithdrawalsBatch(action, ids, { ...businessInput(form), reason }, operator, key),
     async (result: D2BatchResult) => {
-      toast(`批次 ${result.batchId}：成功 ${result.accepted.length} 笔 / 大额转人工 ${result.rejected.length} 笔 / 状态已变化 ${result.conflicts.length} 笔`);
-      setBatchResult({ action, result });
+      const summary = `批次 ${result.batchId}：成功 ${result.accepted.length} 笔 / 大额转人工 ${result.rejected.length} 笔 / 未执行 ${result.conflicts.length} 笔${result.conflicts.length ? `；${batchConflictText(result)}` : ""}`;
       await refresh();
+      // 一笔也没执行、又不是状态变了：留在确认框改了再提交，不当成功收尾（BUG-291）。重试没有确认框，看结果窗。
+      if (!retry && result.accepted.length === 0 && result.rejected.length === 0 && result.conflicts.some((conflict) => !MOVED_STATE_CODES.includes(conflict.reason))) throw new Error(summary);
+      toast(summary);
+      setBatchResult({ action, result });
     },
     "批量审核失败",
   );
@@ -1231,7 +1272,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     const batchImpact = gateClosed ? "提现已关停，这次不会放行：系统会拒绝，这些单留在待审核，钱不动。" : `${REVIEW_BRIEF[action].impact.replace("这笔提现", "这些提现").replace("这笔", "这些单")}逐笔处理，可能部分成功。`;
     openActionConfirm({
       action: `批量执行 · ${actionLabel(action)}`,
-      detail: `将对 ${ids.length} 笔提现执行${actionLabel(action)}（不符合条件的已自动排除）。${action === "APPROVE" ? `批量放行时，小额直接放行，大额转为单笔人工审核。当前兑付覆盖率 ${d5?.coverageRatio ?? "—"}%，红线 ${d5?.redlinePct ?? "—"}%，提交时系统会再查一次。${withdrawGate === "unknown" ? "提现开关状态读不到，提交时系统会再查，已关停时不会放行。" : ""}` : ""}${gateClosed ? "" : "提交后看批量结果。"}`,
+      detail: `将对 ${ids.length} 笔提现执行${actionLabel(action)}（不符合条件的已自动排除）。${action === "APPROVE" ? `批量放行时，小额直接放行，大额转为单笔人工审核。当前兑付覆盖率 ${d5?.coverageRatio ?? "—"}%，红线 ${d5?.redlinePct ?? "—"}%，提交时系统会再查一次。${withdrawGate === "unknown" ? "提现开关状态读不到，提交时系统会再查，已关停时不会放行。" : ""}` : action === "REJECT" ? "拒绝后立即退回用户余额，完成后为已退款。" : ""}${gateClosed ? "" : "提交后看批量结果。"}`,
       amplifies: batchAction === "APPROVE",
       coverage: d5 ? { coverageRatio: d5.coverageRatio, redlinePct: d5.redlinePct } : undefined,
       coverageLead: action === "APPROVE" ? "放行后这些钱会打给用户" : undefined,
@@ -1255,11 +1296,19 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有成功才解除待确认。 */
   const retryPending = async (record: D2PendingCommand) => {
+    // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
+    if (!pendingKeys.isDurablyStored(record.fingerprint, record.commandKey)) {
+      pendingKeys.forget(record.fingerprint, record.commandKey);
+      syncPending();
+      await refresh();
+      toast("原操作已结束或过期，本次未再次发送。请先核对列表，再决定如何处理。");
+      return;
+    }
     setRetryRejected((current) => current.filter((key) => key !== record.commandKey));
     const [no] = record.nos;
     try {
       if (record.kind === "review" && record.action) await runReview(no, record.action, record.reason, record.form, record.fromStatus ?? "", record.operator);
-      if (record.kind === "batch" && record.action) await runBatch(record.action as D2BatchAction, record.nos, record.reason, record.form, record.operator);
+      if (record.kind === "batch" && record.action) await runBatch(record.action as D2BatchAction, record.nos, record.reason, record.form, record.operator, true);
       if (record.kind === "cregis") await runCregisRecovery({ withdrawalNo: no }, record.providerCid ?? "", record.reason, record.operator);
       if (record.kind === "bank") await runBankRequery({ withdrawalNo: no }, { version: record.version ?? 0 }, record.reason, record.operator);
       if (record.kind === "simulate") await runDevelopmentSimulation(no, record.reason, record.operator);
@@ -1656,7 +1705,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         <Fact k="批次">{batchResult.result.batchId}</Fact>
         <Fact k={`成功 ${batchResult.result.accepted.length} 笔`}>{batchResult.result.accepted.join("、") || "—"}</Fact>
         <Fact k={`大额转人工 ${batchResult.result.rejected.length} 笔`}>{batchResult.result.rejected.join("、") || "—"}</Fact>
-        <Fact k={`状态已变化 ${batchResult.result.conflicts.length} 笔`}>{batchResult.result.conflicts.map((item) => `${item.withdrawalId}：${displayAdminError(new Error(item.reason))}`).join("；") || "—"}</Fact>
+        <Fact k={`未执行 ${batchResult.result.conflicts.length} 笔`}>{batchConflictText(batchResult.result) || "—"}</Fact>
       </Facts>
     </Modal>}
   </>;
