@@ -376,7 +376,7 @@ const slotStores = new Map<string, SlotAttemptStore>();
  * 为什么不直接把输入指纹拼进 fingerprint:那样旧尝试会留到 TTL 到期。运营改了值再改回来时会
  * 复用那个可能已被后端消费掉的命令号,让一次真实的新操作被当成重复提交静默吞掉。
  */
-export function createSlotAttemptStore(options: { storageKey: string; ttlMs?: number }): SlotAttemptStore {
+export function createSlotAttemptStore(options: { storageKey: string; ttlMs?: number; retainExpiredRecords?: boolean }): SlotAttemptStore {
   const existing = slotStores.get(options.storageKey);
   if (existing) return existing;
   const store = createPendingMutationStore<SlotAttemptRecord>({
