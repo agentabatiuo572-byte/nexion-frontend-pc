@@ -2,6 +2,7 @@
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { businessZone, parseBusinessTime } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TabGroup } from "@/app/components/kit/tab-group";
@@ -383,28 +384,47 @@ function actionBusinessForm(action: D2ReviewAction, addressVerificationRequired 
       { key: "reasonCode", label: "拒绝原因", inputKind: "select", required: true, options: ["RISK_HIT", "ADDRESS_RISK", "DATA_MISMATCH", "USER_CANCELLED", "OTHER"], optionLabels: { RISK_HIT: "触发风控规则", ADDRESS_RISK: "地址风险", DATA_MISMATCH: "资料不符", USER_CANCELLED: "用户申诉撤回", OTHER: "其他" } },
     ],
   };
-  if (action === "DELAY") return {
-    kind: "multi-field", title: "延迟这笔提现，到期后自动回到待审核", fields: [
-      { key: "holdDays", label: "等待天数", inputKind: "number", required: true, min: 1, max: 45, current: "7" },
-      { key: "owner", label: "责任人", required: true, current: OPERATOR() },
-      { key: "reviewAt", label: "复查时间", inputKind: "datetime-local", required: true, current: reviewAtAfter(7) },
-    ],
-  };
-  if (action === "FREEZE") return {
-    kind: "multi-field", title: "冻结期限", fields: [
-      { key: "period", label: "冻结期限", inputKind: "select", required: true, options: ["7d", "14d", "30d", "45d", "LONG_TERM"], optionLabels: { "7d": "7 天", "14d": "14 天", "30d": "30 天", "45d": "45 天", LONG_TERM: "长期，需复查" } },
-      { key: "owner", label: "责任人", required: true, current: OPERATOR() },
-      { key: "reviewAt", label: "复查时间", inputKind: "datetime-local", required: true, current: reviewAtAfter(7) },
-    ],
-  };
+  if (action === "DELAY" || action === "FREEZE") {
+    let reviewAtEdited = false;
+    return {
+      kind: "multi-field", title: action === "DELAY" ? "延迟这笔提现，到期后自动回到待审核" : "冻结期限",
+      onFieldChange: (key, next) => {
+        if (key === "reviewAt") reviewAtEdited = true;
+        if (!reviewAtEdited && (key === "holdDays" || key === "period")) {
+          const days = action === "DELAY" ? Number(next.holdDays) : next.period === "LONG_TERM" ? 7 : Number.parseInt(next.period, 10);
+          if (Number.isInteger(days) && days >= 1 && days <= 45) return { ...next, reviewAt: reviewAtAfter(days) };
+        }
+        return next;
+      },
+      fields: [
+        ...(action === "DELAY"
+          ? [{ key: "holdDays", label: "等待天数", inputKind: "number" as const, required: true, min: 1, max: 45, current: "7" }]
+          : [{ key: "period", label: "冻结期限", inputKind: "select" as const, required: true, options: ["7d", "14d", "30d", "45d", "LONG_TERM"], optionLabels: { "7d": "7 天", "14d": "14 天", "30d": "30 天", "45d": "45 天", LONG_TERM: "长期，需复查" } }]),
+        { key: "owner", label: "责任人", required: true, current: OPERATOR() },
+        { key: "reviewAt", label: "复查时间", inputKind: "datetime-local", required: true, current: reviewAtAfter(7),
+          help: "随期限自动更新；手动修改后保留。固定期限允许相差一天；长期冻结须在未来 1–365 天内复查，默认 7 天后。",
+          warning: (value) => {
+            if (!value.reviewAt) return;
+            const reviewAt = parseBusinessTime(value.reviewAt.length === 16 ? `${value.reviewAt}:00` : value.reviewAt);
+            if (!Number.isFinite(reviewAt) || reviewAt <= Date.now()) return "复查时间须在未来，请调整后提交。";
+            const date = new Intl.DateTimeFormat("en-CA", { timeZone: businessZone().zoneId, year: "numeric", month: "2-digit", day: "2-digit" });
+            const days = (Date.parse(date.format(reviewAt)) - Date.parse(date.format(Date.now()))) / 86_400_000;
+            if (value.period === "LONG_TERM") return days >= 1 && days <= 365 ? undefined : "长期冻结须在未来 1–365 天内复查，请调整复查时间。";
+            const expectedDays = action === "DELAY" ? Number(value.holdDays) : Number.parseInt(value.period, 10);
+            if (Math.abs(days - expectedDays) > 1) return "复查时间与所选期限相差超过一天；已保留手动时间，请调整后提交。";
+          },
+        },
+      ],
+    };
+  }
   if (action === "REFUND") return {
     kind: "multi-field", title: "退款前核实", fields: [
-      { key: "fundsVerified", label: "钱没有打出去", inputKind: "select", required: true, options: ["true"], optionLabels: { true: "已核实" } },
+      { key: "fundsVerified", label: "钱没有打出去", inputKind: "checkbox", required: true, current: "" },
     ],
   };
   if (action === "APPROVE" && addressVerificationRequired) return {
     kind: "multi-field", title: "大额放行核实", fields: [
-      { key: "addressVerified", label: "地址与风险信息", inputKind: "select", required: true, options: ["true"], optionLabels: { true: "已核对" } },
+      { key: "addressVerified", label: "我已核对地址与风险信息", inputKind: "checkbox", required: true, current: "" },
     ],
   };
   return undefined;
