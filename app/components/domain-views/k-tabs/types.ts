@@ -15,6 +15,7 @@ export type ActionConfirmReq = {
   reasonMax?: number;
   /** 未确认的原操作理由；提交后重新查询，终态返回 undefined 解除锁定。 */
   getPendingReason?: () => string | undefined;
+  getPendingBusinessValue?: () => BusinessFormValue | undefined;
   completionCopy?: string;
   approval?: OperationApproval;
   /** 这项操作实际是什么；传了就不再按文字猜摘要。客服中心（M）的调用必须传。 */

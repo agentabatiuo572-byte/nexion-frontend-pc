@@ -290,7 +290,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     action: "紧急关闭人机验证",
     detail: <><b>关闭后，同一手机号频繁发验证码将不再被拦截</b>。只在人机验证服务出故障时使用，须选择恢复时间，到时自动开回。</>,
     amplifies: false,
-    edit: { kind: "select", current: CAPTCHA_RECOVERY_OPTIONS[0], options: CAPTCHA_RECOVERY_OPTIONS },
+    edit: { kind: "select", current: "开启", initialValue: CAPTCHA_RECOVERY_OPTIONS[0], options: CAPTCHA_RECOVERY_OPTIONS },
     run: (reason, nextValue) => {
       const value = (nextValue ?? "").trim();
       if (!CAPTCHA_RECOVERY_OPTIONS.includes(value)) {
