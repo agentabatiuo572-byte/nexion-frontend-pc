@@ -690,21 +690,15 @@ td .rd-flow { margin-bottom: 0; }
 .rd-config-note { margin: 12px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
 .rd-fold-body > .rd-config-note:first-child { margin: 0 0 8px; }
 .rd-config-link { margin-left: 8px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; }
-/* 应急页业务卡（control-card.tsx）：状态一眼看到，动作和后果在卡片底部。 */
+/* 应急页业务卡（control-card.tsx）：名称、状态、动作，说明在气泡里（DP-06）。 */
 .rd-control-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(188px, 1fr)); gap: 12px; }
 .rd-control-card { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 16px; border-radius: var(--rd-radius-panel); background: var(--rd-panel); }
 .rd-control-card[data-attention] { background: var(--tone-bg); }
 .rd-control-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .rd-control-title { flex: 1; min-width: 0; margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; color: var(--rd-text); }
 .rd-control-status { display: flex; flex-wrap: wrap; gap: 4px 8px; }
-.rd-control-text { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
-.rd-control-meta { display: grid; gap: 2px; margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
-.rd-control-meta div { display: flex; justify-content: space-between; gap: 8px; }
-.rd-control-meta dt { flex: none; color: var(--rd-text-3); }
-.rd-control-meta dd { margin: 0; min-width: 0; text-align: right; color: var(--rd-text-2); font-variant-numeric: tabular-nums; }
 .rd-control-foot { display: grid; gap: 8px; margin-top: auto; padding-top: 4px; }
 .rd-control-foot .rd-btn { width: 100%; }
-.rd-control-note { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-control-batch { border-radius: var(--rd-radius-panel); overflow: hidden; }
 .rd-control-batch .rd-batch { background: var(--rd-panel); }
 .rd-push-state { display: grid; justify-items: start; gap: 8px; }

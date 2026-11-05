@@ -71,7 +71,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 名称和值成对 | `KeyValues` | `key-values.tsx` |
 | 一块内容的加载、空、失败、无权限 | `BlockState` | `block-state.tsx` |
 | 页内提示：待生效、结果未知、只读说明 | `Notice` | `block-state.tsx` |
-| 应急页的业务卡：当前状态、勾选、后果、动作 | `ControlGrid`、`ControlCard`；动作不收进折叠组，后果写在 `note`，紧挨按钮 | `control-card.tsx` |
+| 应急页的业务卡：名称、状态、勾选、动作 | `ControlGrid`、`ControlCard`；动作不收进折叠组，说明和后果放 `help` 气泡 | `control-card.tsx` |
 | 确认框里的前后值 | `DiffList` | `diff-list.tsx` |
 | 一列固定的等级 | `LevelList` | `level-list.tsx` |
 | 配置项：名称、这是什么、什么时候生效、显示位置、当前值、动作 | `ConfigList`（`label` 给这组起名）、`ConfigRow`；一项两行：名称后面跟显示位置，下面一行「这是什么 · 什么时候生效」；说明表放 `lib/admin/config-help/`，按参数键取 | `config-list.tsx` |
