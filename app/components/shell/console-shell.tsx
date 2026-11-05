@@ -8,7 +8,9 @@
  * 服务端会话确认前只渲染校验壳,避免登录框或默认角色后台闪现。
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { ShieldOff } from "lucide-react";
 import { currentAdminSession, recordAdminActivity, AdminActivityIdentityChangedError } from "@/lib/admin/auth-client";
 import { createAdminActivityTracker } from "@/lib/admin/admin-activity";
 import { fetchA3RuntimeFlags } from "@/lib/admin/a3-client";
@@ -16,7 +18,7 @@ import { installAdminAuthFetchLifecycle } from "@/lib/admin/auth-lifecycle";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { requestAdminLogout } from "@/lib/admin/logout-request";
 import { b0Blocks, b0HasAnyBlock } from "@/lib/admin/b0-access";
-import { canAccessResolvedPath, defaultConsolePath, isRedesignedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
+import { ALL_L2, canAccessResolvedPath, defaultConsolePath, isRedesignedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { useAdminTheme } from "@/app/components/rd/theme-switch";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { DEFAULT_EXPANDED_GROUPS, useAdminUi } from "@/lib/store/admin-ui";
@@ -26,6 +28,7 @@ import { PageTransition } from "./page-transition";
 import { LoginGate } from "./login-gate";
 import { useServicePendingCount } from "./use-service-badges";
 import { Button } from "@/app/components/rd/button";
+import { RdPage } from "@/app/components/rd/surface";
 import { fetchBusinessCalendar } from "@/lib/admin/business-calendar-client";
 import { businessZone, subscribeBusinessZone } from "@/lib/admin/business-time";
 
@@ -78,6 +81,23 @@ function AdminSessionRecoveryGate({ onRetry, onLogout, noAccess = false, error }
       <Button variant="primary" onClick={onRetry}>{noAccess ? "重新读取权限" : "重新校验"}</Button>
       {onLogout && <Button variant="ghost" onClick={onLogout}>退出登录</Button>}
     </div>
+  );
+}
+
+/** 直接打开无权页面时主区显示这个，外壳和菜单都还在（PG-22、CP-73）。业务内容不挂载，也就不发请求。 */
+function AdminNoAccessPage({ pathname, landingPath }: { pathname: string; landingPath: string }) {
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => titleRef.current?.focus(), [pathname]);
+  const page = ALL_L2.find((item) => pathname === item.path || pathname.startsWith(`${item.path}/`));
+  return (
+    <RdPage>
+      <div className="rd-no-access">
+        <span className="rd-no-access-icon"><ShieldOff size={20} aria-hidden /></span>
+        <h1 ref={titleRef} tabIndex={-1}>没有这个页面的查看权限</h1>
+        <p>你的账号没有开通{page ? `「${page.name}」` : "这个页面"}，要用这页请联系超级管理员。</p>
+        <Link className="rd-btn" data-variant="primary" data-size="md" href={landingPath} prefetch={false}><span className="rd-btn-face">返回有权限的页面</span></Link>
+      </div>
+    </RdPage>
   );
 }
 
@@ -327,12 +347,12 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   // 落地规则只在登录后用一次（Q-20）。刷新、书签直达、点侧栏都留在 /，一块都看不到的账号除外（PG-22）。
   const canStayHome = !justLoggedIn && b0HasAnyBlock(b0Blocks(authorities));
   const shouldRedirectHome = pathname === "/" && landingPath !== null && landingPath !== "/" && !canStayHome;
-  const shouldRedirectForbidden = !canAccessResolvedPath(domains, pathname);
-  const redirecting = isAuthenticated && landingPath !== null && (shouldRedirectHome || shouldRedirectForbidden);
+  const denied = !canAccessResolvedPath(domains, pathname);
+  const redirecting = isAuthenticated && landingPath !== null && shouldRedirectHome;
 
   useEffect(() => {
     if (!mounted || bootstrapState !== "authenticated" || !isAuthenticated || landingPath === null) return;
-    if (shouldRedirectHome || shouldRedirectForbidden) router.replace(landingPath);
+    if (shouldRedirectHome) router.replace(landingPath);
     else setJustLoggedIn(false);
   }, [
     isAuthenticated,
@@ -341,7 +361,6 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
     domains,
     landingPath,
     router,
-    shouldRedirectForbidden,
     shouldRedirectHome,
   ]);
 
@@ -389,8 +408,8 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
         />
       </div>
       <main
-        className={legacyPage ? "rd-legacy" : undefined}
-        data-theme={legacyPage ? "dark" : undefined}
+        className={legacyPage && !denied ? "rd-legacy" : undefined}
+        data-theme={legacyPage && !denied ? "dark" : undefined}
         style={{
           gridColumn: 2,
           gridRow: 2,
@@ -405,7 +424,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
               <b>平台维护提示已开启</b> · 当前后台可能正在进行维护操作，请谨慎提交高风险变更。
             </div>
           )}
-          <PageTransition><Fragment key={zoneKey}>{children}</Fragment></PageTransition>
+          <PageTransition><Fragment key={zoneKey}>{denied ? <AdminNoAccessPage pathname={pathname} landingPath={landingPath} /> : children}</Fragment></PageTransition>
         </div>
       </main>
     </div>

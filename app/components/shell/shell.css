@@ -7,6 +7,12 @@
 .rd-gate { display: flex; align-items: center; justify-content: center; width: 100vw; height: 100vh; background: var(--rd-bg); color: var(--rd-text-3); font-size: 14px; }
 .rd-gate-recovery { flex-direction: column; gap: 14px; }
 .rd-gate-recovery strong { color: var(--rd-text); font-size: 16px; font-weight: 600; }
+/* 无权限页：外壳里的状态页，内容跟主题走（PG-22、CP-73）。 */
+.rd-no-access { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 96px 20px; text-align: center; }
+.rd-no-access h1 { color: var(--rd-text); font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; outline: none; }
+.rd-no-access p { max-width: 460px; margin: 0 0 8px; color: var(--rd-text-2); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
+.rd-no-access-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--rd-control); color: var(--rd-text-3); }
+
 .rd-maintenance { margin-bottom: 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-warn-bg); color: var(--rd-text); font-size: 14px; line-height: 22px; }
 
 /* 浅色 Logo：横版 on-light；侧栏折叠放不下，用透明符号图。主题选定后删掉落选的一套。 */
