@@ -502,7 +502,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
             </div>
 
             <div id={nav.anchor("readonly")}>
-              <Fold title="只读项" icon={Lock} tone="role-other" summary={phaseClosed ? "当前阶段不开放试用" : `${readOnlyParams.length} 项，由别处决定`} alert={phaseClosed} open={folds.readonly || phaseClosed} onOpenChange={(open) => setFolds((state) => ({ ...state, readonly: open }))}>
+              <Fold title="只读项" icon={Lock} tone="role-other" summary={phaseClosed ? "当前阶段不开放试用" : `${readOnlyParams.length} 项，由别处决定`} alert={phaseClosed} open={folds.readonly ?? phaseClosed} onOpenChange={(open) => setFolds((state) => ({ ...state, readonly: open }))}>
                 <ConfigList>
                   {readOnlyParams.map((param) => (
                     <ReadOnlyRow key={param.key} param={param} action={
