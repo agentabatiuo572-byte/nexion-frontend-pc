@@ -117,7 +117,8 @@ export function IdlePolicyModal({
     min: number,
     max: number,
     available = true,
-  ) => (
+    fieldError?: string,
+  ) => (<>
     <label className="m3-policy-field">
       <span className="m3-policy-label">
         <strong>{label}</strong>
@@ -136,16 +137,18 @@ export function IdlePolicyModal({
         onChange={(event) => { setConfirm(false); setValue(event.target.value); }}
         onBlur={() => setNumbersLeft(true)}
         aria-label={label}
+        aria-invalid={numbersLeft && !!fieldError || undefined}
       />
     </label>
-  );
+    {numbersLeft && fieldError && <div className="rd-form-error" role="alert">{fieldError}</div>}
+  </>);
 
   return (
     <Modal
       className="m3-policy-modal"
       title={canSave ? "调整会话超时策略" : "会话超时策略"}
       icon="clock"
-      sub={<>{canSave && <StatusTag tone="progress" filled>立即生效</StatusTag>}<span>版本 {policy.version}</span></>}
+      sub={canSave ? <StatusTag tone="progress" filled>立即生效</StatusTag> : undefined}
       busy={saving}
       onClose={onClose}
       footer={(
@@ -168,14 +171,9 @@ export function IdlePolicyModal({
       )}
     >
       {!canSave && <p className="m3-policy-readonly" role="status">只读 <Explain label="谁能修改" content="仅获准超级管理员可修改。要调整请联系超级管理员。" /></p>}
-      {numField("待回复提醒时长（分钟）", "客户消息等待回复达到该时长，标记待处理。", warn, setWarn, 1, 30)}
-      {numField("严重超时时长（分钟）", "超过该时长仍未回复，标记严重超时。须大于提醒时长。", close, setClose, 2, 120)}
-      {numField("无人发言自动结束会话（分钟）", endAvailable ? "后台人员最后一次发消息后，超过该时长没人再发，会话自动结束，其他人就可以发起。" : "暂不可用：自动结束时长还不能在这里设置，其他两项照常保存。", end, setEnd, 2, 120, endAvailable)}
-      {!orderOk && numbersLeft && (
-        <div className="rd-form-error" role="alert">
-          {!warnOk || !closeOk || !endOk ? "请输入整数分钟并满足允许范围。" : "严重超时时长必须大于提醒时长。"}
-        </div>
-      )}
+      {numField("待回复提醒时长（分钟）", "客户消息等待回复达到该时长，标记待处理。", warn, setWarn, 1, 30, true, warnOk ? undefined : "填 1 到 30 的整数分钟")}
+      {numField("严重超时时长（分钟）", "超过该时长仍未回复，标记严重超时。须大于提醒时长。", close, setClose, 2, 120, true, !closeOk ? "填 2 到 120 的整数分钟" : warnOk && closeN <= warnN ? "要大于待回复提醒时长" : undefined)}
+      {numField("无人发言自动结束会话（分钟）", endAvailable ? "后台人员最后一次发消息后，超过该时长没人再发，会话自动结束，其他人就可以发起。" : "暂不可用：自动结束时长还不能在这里设置，其他两项照常保存。", end, setEnd, 2, 120, endAvailable, endOk ? undefined : "填 2 到 120 的整数分钟")}
       {confirm && <div className="rd-confirm-facts m3-policy-preview" role="status">
         <p className="rd-form-group-title">确认下列变更</p>
         <DiffList rows={[
@@ -190,7 +188,7 @@ export function IdlePolicyModal({
           onChange={(event) => { setConfirm(false); setReason(event.target.value); }} onBlur={() => setReasonLeft(true)} placeholder="请说明调整的原因" />}
       </RdField>}
       {error && !conflict && !pending && <Notice tone="danger">{error}</Notice>}
-      {pending && <Notice tone="warn" title={error || undefined} action={canSave && onCheckPending ? <button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => void onCheckPending()}>查询原操作结果</button> : undefined}>原操作结果待确认，输入已锁定。原提交基于版本 {policy.version}。{latest && <p>当前策略为版本 {latest.version}：待回复提醒 {latest.warnMinutes} 分钟，严重超时 {latest.closeMinutes} 分钟{latest.sessionEndMinutes !== null && `，无人发言自动结束 ${latest.sessionEndMinutes} 分钟`}；尚不能据此认定原操作成功。</p>}</Notice>}
+      {pending && <Notice tone="warn" title={error || undefined} action={canSave && onCheckPending ? <button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => void onCheckPending()}>查询原操作结果</button> : undefined}>原操作结果待确认，输入已锁定。{latest && <p>现在的策略：待回复提醒 {latest.warnMinutes} 分钟，严重超时 {latest.closeMinutes} 分钟{latest.sessionEndMinutes !== null && `，无人发言自动结束 ${latest.sessionEndMinutes} 分钟`}；尚不能据此认定原操作成功。</p>}</Notice>}
       {conflict && <Notice tone="warn" action={latest
         ? <button type="button" className="btn btn-sec btn-sm" disabled={saving || !canSave} onClick={onReviewLatest}>以最新策略重新确认</button>
         : <button type="button" className="btn btn-sec btn-sm" disabled={saving || !canSave} onClick={() => void onRefreshLatest?.()}>读取最新策略</button>}>设置刚被别人改过，你填写的内容还在。{latest && <p>待回复提醒：原 {policy.warnMinutes} 分钟 → 最新 {latest.warnMinutes} 分钟；严重超时：原 {policy.closeMinutes} 分钟 → 最新 {latest.closeMinutes} 分钟{endAvailable && latest.sessionEndMinutes !== null && `；无人发言自动结束：原 ${policy.sessionEndMinutes} 分钟 → 最新 ${latest.sessionEndMinutes} 分钟`}。</p>}</Notice>}

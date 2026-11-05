@@ -1497,7 +1497,8 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
         dockCommands.forget(dockSlot, key);
         setSendError(`本次发送已被拒绝：${displayAdminError(error)} 原文已保留，可修改后重发。`);
       } else setSendError(`发送失败或结果待确认：${displayAdminError(error)} 请查询结果并重试。`);
-      if (error instanceof SupportClientError && [403, 404].includes(error.status)) onScopeInvalidated(conv.id, conv.customerId);
+      // 权限失效后小窗会收起，框里的提示跟着没了，这里再提示一次（OP-132）。
+      if (error instanceof SupportClientError && [403, 404].includes(error.status)) { ctx.toast(rejected ? "消息没有发出：这个会话的权限变了，请到专属会话核对。" : "发送结果待确认：这个会话的权限变了，请到专属会话核对，不要重发。"); onScopeInvalidated(conv.id, conv.customerId); }
     } finally {
       if (generation === identityGeneration.current) { sendInFlight.current = false; setSending(false); }
     }
@@ -1513,7 +1514,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
         onClick={() => setOpen(true)}
         className="card m-dock-pill"
         data-top={hidden ? "" : undefined}
-        title="持续接待 · 切页不挂断"
+        title="持续接待：换页后还能继续回复"
       >
         <MAvatar name={customer} size="sm" />
         <span style={{ fontSize: 12.5, fontWeight: 500, maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{customer}</span>
@@ -1534,7 +1535,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       role: isAgent ? (conv.type === "advisor" ? "advisor" : "support") : "user",
       agentName: m.agentName,
       senderName: isAgent ? m.agentName : customer,
-      body: m.kind === "AGENT_SWITCH" ? agentSwitchText(m.agentName, m.senderRole) : m.kind === "IMAGE" ? "[图片]" : m.text,
+      body: m.kind === "AGENT_SWITCH" ? agentSwitchText(m.agentName, m.senderRole) : m.kind === "IMAGE" ? "[图片] 到专属会话查看" : m.text,
       ctaHref: m.ctaHref,
     } as ThreadMessage;
   });
@@ -1548,7 +1549,6 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       <div style={{ padding: "9px 12px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8, background: "var(--m-bg-2)" }}>
         <span style={{ display: "inline-flex", width: 8, height: 8, borderRadius: "50%", background: "var(--m-hd)", animation: "m-hd-pulse-blue 1.8s ease-out infinite" }} />
         <span style={{ fontSize: 12, color: "var(--m-hd-2)", fontWeight: 500 }}>持续接待</span>
-        <span className="dim2" style={{ fontSize: 11 }}>切页不挂断</span>
         <span style={{ flex: 1 }} />
         <button type="button" className="btn btn-ghost btn-icon btn-sm" onClick={() => setOpen(false)} title="收起"><Icon name="chevron" size={15} /></button>
         <button type="button" className="btn btn-ghost btn-icon btn-sm" onClick={closeDock} title="关闭"><Icon name="x" size={15} /></button>
@@ -1560,7 +1560,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
             <b style={{ fontSize: 13, fontWeight: 500 }}>{customer}</b>
             <span className="chip" style={{ height: 18, fontSize: 11 }}>{conv.type === "advisor" ? "专属客服" : "专属客服"}</span>
           </div>
-          <div className="dim2" style={{ fontSize: 11, marginTop: 2 }}>接待 {ownerLabel(conv.owner)} · <span className="mono">{conv.id}</span> · {dockRelWhen(conv.lastTs)}</div>
+          <div className="dim2" style={{ fontSize: 11, marginTop: 2 }} title={`会话编号 ${conv.id}`}>接待 {ownerLabel(conv.owner)} · {dockRelWhen(conv.lastTs)}</div>
         </div>
       </div>
       <div className="ChatBody" style={{ flex: 1, minHeight: 0 }}>
@@ -1586,7 +1586,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
             e.preventDefault();
             void send();
           }}
-          placeholder="边处理边回复… · 回车发送 · Shift+回车 换行"
+          placeholder="回车发送，Shift+回车换行"
           style={{ maxHeight: 80 }}
         />
         <button type="button" className="btn btn-pri btn-sm" aria-label={pendingDock ? "查询结果并重试会话回复" : "发送会话回复"} disabled={(!canWrite && !pendingDock) || !draft.trim() || sending} onClick={() => void send()}><Icon name="arrow" size={16} /></button>
