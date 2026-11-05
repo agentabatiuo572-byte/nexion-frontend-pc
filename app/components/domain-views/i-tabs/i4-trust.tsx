@@ -650,7 +650,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         </>
       ),
       amplifies: false,
-      completionCopy: "批准后生效：切换该地区生效版本；适用用户须重新确认。提交本身不会切换版本。",
+      completionCopy: "批准后生效：更新该地区映射；仅生效版本实际变化时，适用用户须重新确认。提交本身不会切换版本。",
       businessForm: {
         kind: "disclosure-matrix",
         mode: current ? "edit" : "create",
