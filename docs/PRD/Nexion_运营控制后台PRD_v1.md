@@ -3722,8 +3722,8 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | `graceDays` | 7 | 仅影响新 trial | — | 宽限期天数 |
 | `extensionDays` | 3 | 仅影响新 trial | — | 延长天数 |
 | `discountRate` | 0.15 | 实时 | 0–1 | 提前购买折扣率 |
-| `discountCapUSD` | 20 | 实时 | — | 早购促销折扣金额上限 USDT;与 `discountRate` 同步实时生效,每次 claim sheet 渲染读取最新值(§9.11b) |
-| `trialOffsetCapUSD` | 按当前系统配置显示 | 实时 | 可清空为不设上限；0 与正数分别保存（BUG-255） | **试用收益抵扣购机款上限 USDT**(§9.11b 新增);Model A:购前试用收益只能抵扣购机款、不可提现、不可当现金;购后经 `computeTrialOffset` 拆分,`offsetUSD = min(shadowUSD, cap)` 抵实付价、仅超出 cap 的 `remainderUSD` 入余额(见 ⑥ Model A)。实时生效,每次 redeem / charge / claim sheet 渲染读最新值 |
+| `discountCapUSD` | 20 | 实时 | — | 购买折扣金额上限 USDT;和 `discountRate` 一样不锁定,购买时按最新值算,进行中的试用也用新值 |
+| `trialOffsetCapUSD` | 按当前系统配置显示 | 仅影响新 trial | 可清空为不设上限；0 与正数分别保存（BUG-255） | **试用收益抵扣购机款上限 USDT**(§9.11b 新增);Model A:购前试用收益只能抵扣购机款、不可提现、不可当现金;购后经 `computeTrialOffset` 拆分,`offsetUSD = min(shadowUSD, cap)` 抵实付价、仅超出 cap 的 `remainderUSD` 入余额(见 ⑥ Model A)。领取时存进试用记录,之后改只影响新试用;进行中的试用购买时按领取时的上限算,空表示不设上限 |
 | `autoChargeAtEnd` | true | 待 PM 确认(暂按仅影响新 trial) | 是 / 否 | 期末是否自动扣款。§9.11b「字段实时性」两类清单均未列入该字段,分类无文本依据;需 PM 确认实时性后纳入 ⑤① 操作路径(见下方实时性分区说明) |
 | `highQualityThresholdUSD` | 100 | 实时 | — | 高质量延长触发阈值 USDT |
 | `chargeFailRate` | 0.01 | 实时 | 0–1 | **server-only,前端永不可知(§9.11d.3)**;扣款失败概率(0–1 浮点,server-only,前端永不可知) |
@@ -3739,7 +3739,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | `autoPushMaxPerSession` | 1 | 实时 | — | 单会话 auto-push 最大次数 |
 | `seatsLeftToday` | 47 | 实时 | 普通十进制 0–1000000 整数 | H2 配置每日免费名额上限；Java 在 `nx_growth_trial_daily_quota` 按服务端自然日保存上限与已领取数，`GET /api/trial/state` 响应的 `config.seatsLeftToday` 下发当天剩余。APP 只展示不自行递减；领取由 Java 在数据库事务内原子计数，0 名额隐藏并拒绝领取 |
 
-> **实时性分区(§9.11b)**:`discountRate` / `discountCapUSD` / `trialOffsetCapUSD` / `highQualityThresholdUSD` / `chargeFailRate` / `cooldownDays` / `phaseOpen` / `autoPush*` / `seatsLeftToday` 为**实时生效**;`trialDays` / `graceDays` / `extensionDays` / `trialProductId` / `trialPriceUSD` / `shadowDaily*` 为**仅影响新 trial**(存量进行中会话保持其开始时锁定的参数及商品快照)。**`autoChargeAtEnd` 在 §9.11b 两类清单中均未列出,实时性未确认——状态为「待 PM 确认(暂按仅影响新 trial)」**,须 PM 确认后再纳入 ⑤ 生效说明。界面分区与生效说明须与本表一致(含 `autoChargeAtEnd` 的未确认状态单列)。
+> **实时性分区(§9.11b)**:`discountRate` / `discountCapUSD` / `highQualityThresholdUSD` / `chargeFailRate` / `cooldownDays` / `phaseOpen` / `autoPush*` / `seatsLeftToday` 为**实时生效**;`trialDays` / `graceDays` / `extensionDays` / `trialProductId` / `trialPriceUSD` / `trialOffsetCapUSD` / `shadowDaily*` 为**仅影响新 trial**(存量进行中会话保持其开始时锁定的参数及商品快照)。**`autoChargeAtEnd` 在 §9.11b 两类清单中均未列出,实时性未确认——状态为「待 PM 确认(暂按仅影响新 trial)」**,须 PM 确认后再纳入 ⑤ 生效说明。界面分区与生效说明须与本表一致(含 `autoChargeAtEnd` 的未确认状态单列)。
 >
 > **与 12 月节奏表 §6.4 关系**:12 月节奏表 §6.4 未覆盖 trial 具体数值,无冲突;§9.11b 默认值即作现状权威。`phaseOpen` 是 trial 与 H1 的耦合点——试用开放与否随当前 Phase。
 
@@ -3788,7 +3788,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 ##### [H2-MD3] 强制触发扣款确认
 - **功能**:对单会话提交强制扣款(测试扣款链路 / 应急结算),超级管理员批准后由后端执行。现行后端的 `charge` 固定返回 410 `TRIAL_EXPLICIT_PURCHASE_REQUIRED`,批准后不会扣款,待产品决定这个入口的去留;页面只写「后端可能拒绝」。
-- **布局结构**:1. **信息区**:userId / 当前态(`grace`/`extended`)/ shadow 累计(USD + NEX)/ 绑定卡 token(脱敏)。2. **影响预览区**:server 重算的结算拆解预览——「全价 `trialPriceUSD` − 收益抵扣 `min(shadowUSD, trialOffsetCapUSD)` = 实付金额;`remainderUSD` 购后入余额」(⑥ Model A,不接受 client 传入价格);提示行「扣款经 PSP,结果以 `trial.charge_attempted.result` 为准」。3. **输入区**:reason(多行文本,必填,8–200 字)。4. **按钮区**:`[取消]` · `[确认扣款]`(警示色;置灰条件 / loading;**必携 `Idempotency-Key`**,防重复扣款)。
+- **布局结构**:1. **信息区**:userId / 当前态(`grace`/`extended`)/ shadow 累计(USD + NEX)/ 绑定卡 token(脱敏)。2. **影响预览区**:server 重算的结算拆解预览——「全价 `trialPriceUSD` − 收益抵扣 `min(shadowUSD, 领取时锁定的 trialOffsetCapUSD)` = 实付金额;`remainderUSD` 购后入余额」(⑥ Model A,不接受 client 传入价格);提示行「扣款经 PSP,结果以 `trial.charge_attempted.result` 为准」。3. **输入区**:reason(多行文本,必填,8–200 字)。4. **按钮区**:`[取消]` · `[确认扣款]`(警示色;置灰条件 / loading;**必携 `Idempotency-Key`**,防重复扣款)。
 - **错误态**:409(会话状态不允许扣款 / 已被他人处理,提示刷新)/ 400 `REASON_REQUIRED` / 403(非风控 lead/超管)。
 - **成功反馈**:弹窗关闭;会话状态按扣款结果就地更新(`redeemed` / `failed`);toast「扣款已发起 · 已记审计」;事件 `trial.charge_attempted`(trigger=forced)+ A2 审计;实时告警超管与风控 lead。
 
@@ -3804,6 +3804,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
    - 用于测试扣款链路 / 应急结算;扣款须带 `Idempotency-Key` 保证幂等;经确认弹窗 H2-MD3 + 理由必填提交 A2 审批,超级管理员批准后执行;产 `trial.charge_attempted`。
 4. **auto-push kill switch**
    - 单独记一个紧急关闭标记,用户读到的 `autoPushEnabled` 变成关(实时项);用于异常时快速止血,填操作理由后立即生效。PC 没有重新打开的入口。
+   - App 和 H5 现在不自动弹试用邀请,`autoPush*` 四项和这个关闭暂不影响用户,功能留着。卡片、紧急关闭确认框和高级设置「邀请弹窗」这几项都写明。
 
 ##### ⑥ 风控与边界
 
@@ -3814,6 +3815,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 - **PSP 扣款幂等**:所有扣款(含强制触发)经 PSP 须带 `Idempotency-Key`,防重复扣款。
 - **shadow 兑现 Model A — 购前抵扣封顶 / 购后剩余入余额(§9.11.4,server 事务 + server 重算)**:`active/grace/extended` 态 `shadow` 仅 UI display,**不写** earnings/wallet/commission/lifetime/network/V 级;**购前试用收益只能抵扣购机款、不可提现、不可当现金**(对齐 [[feedback-trial-earnings-offset-only]])。进入 `redeemed` 终态(redeem-early 主动 + auto-charge 自动两路径)时,server 用纯函数 `computeTrialOffset(config, shadowUSD)` 把累计 shadow 拆为 `{ offsetUSD, remainderUSD }`:`offsetUSD = min(shadowUSD, trialOffsetCapUSD)` **抵扣购机款(已反映在实付金额,不入余额、非应付负债——是购机款折扣)**;**仅 `remainderUSD`(超出 cap 部分)购后 `creditBalance` 入账户余额(成为应付)**;NEX 不抵 USDT 标价,购后全额 `creditNex` 入 NEX 余额。两路径共用同一 helper,各写 `type:"bonus"` bill;snapshot 在改 status 之前;**全程 server 事务(§9.11e)+ server 重算(防 client 伪造 shadow/offset/discountRate,§9.11a.4 `computeTrialOffset`),不在客户端结算**。`failed/cancelled` 终态 shadow 归零不入账。该拆分口径直接驱动 B2/D3 trial shadow 负债科目(见 Ch4 B2 / Ch6 D3 科目 #6)。
 - **冷却期边界守卫(§9.11.4)**:claim sheet 可被多入口唤起且不预检资格,`onClaim` 前置 server `canStart()` 判断——冷却期内 / `phaseOpen=false` 则提示且**不跳转绑卡(避免白绑卡)**;若用户已带 `trial=1` 回跳标记到 `/me/trial` 但 `canStart()` 为假,**清除 URL 标记 + toast 提示原因,不静默无开通**。`canStart()` server-canonical,客户端不得绕过。该守卫与 K2 循环养号阻断(`risk.trial_cycle_detected`)同为 trial 开通前置闸。
+- **开始试用的检查(现行代码,按顺序,任一项不过就拒绝)**:紧急开关开着(`TRIAL_KILL_SWITCH_DISABLED`)→ 运营阶段开放(`TRIAL_PHASE_CLOSED`)→ 没有循环试用风险信号(`TRIAL_CYCLE_RISK_BLOCKED`)→ 传了支付方式时这个方式可用(`TRIAL_PAYMENT_METHOD_UNAVAILABLE`,不传不查,不要求绑卡)→ 没有进行中的试用(`TRIAL_ALREADY_ACTIVE`)→ 没有转过购买(`TRIAL_ALREADY_REDEEMED`)→ 旧记录是可重开的状态(`TRIAL_STATE_UNKNOWN`)→ 不在冷却期(`TRIAL_COOLDOWN_ACTIVE`)→ 配了目标商品(`TRIAL_PRODUCT_CONFIG_INVALID`)→ 商品可用:实体库存型设备或服务器,价格大于 0,库存大于 0(`TRIAL_PRODUCT_NOT_AVAILABLE`)→ 商品已发布(`TRIAL_PRODUCT_NOT_RELEASED`)→ 设备槽位放得下,在用加预留加这一台不超上限(`TRIAL_CAPACITY_FULL`)→ 今日有剩余名额,扣减成功(`TRIAL_QUOTA_EXHAUSTED`)。开始时把天数、日收益、抵扣上限和价格存进试用记录。
 
 ##### ⑦ 接口与依赖
 

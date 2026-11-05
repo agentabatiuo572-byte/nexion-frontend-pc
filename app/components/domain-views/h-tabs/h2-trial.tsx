@@ -457,11 +457,11 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const openPushKill = () => {
     openConfirm({
       action: "紧急关闭试用邀请弹窗",
-      detail: <>马上停止给用户自动弹出试用邀请。</>,
+      detail: <>记下紧急关闭，这页不能重新打开。App 和 H5 现在不自动弹试用邀请，这次关闭暂不影响用户。</>,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       reason: true,
       reasonPlaceholder: "写清调整原因和依据",
-      statedBrief: { impact: "立即停止自动弹出试用邀请，用户点试用卡领取不受影响。关闭后这页不能重新打开，这次操作记入操作记录。", check: "确认要关闭，理由写清原因和依据。" },
+      statedBrief: { impact: "邀请开关立即变成关。App 和 H5 现在不自动弹，暂不影响用户，点试用卡领取也不受影响。关闭后这页不能重新打开，这次操作记入操作记录。", check: "确认要关闭，理由写清原因和依据。" },
       confirmTone: "danger",
       okLabel: "确认关闭，立即生效",
       run: async (reason) => {
@@ -603,6 +603,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
               <div className="rd-push-state">
                 <StatusTag tone={killed ? "warn" : pushOff ? "done" : "ok"}>{killed ? "试用邀请弹窗已关闭" : pushOff ? "自动推送已关" : "开启中"}</StatusTag>
                 <p>{killed ? "已紧急关闭，这页不能重新打开。" : "出问题时先关掉它，立即生效。关闭后这页不能重新打开。用户点试用卡领取不受影响。"}</p>
+                <p>App 和 H5 现在不自动弹这个邀请，这里的开关和高级设置「邀请弹窗」这几项暂不影响用户。</p>
                 {canWrite && !killed && <Button variant="danger-outline" disabledReason={loading ? READING : undefined} onClick={openPushKill}>紧急关闭试用邀请弹窗</Button>}
               </div>
             </Panel>

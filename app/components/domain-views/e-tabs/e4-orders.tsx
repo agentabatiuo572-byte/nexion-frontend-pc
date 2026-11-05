@@ -26,7 +26,7 @@ const STATE_TEXT: Record<string, string> = {
   inventory: "设备已进用户的设备仓库，还没激活。这也算已交付。",
   payment_failed: "下单后未成功扣款",
   expired: "订单超时未支付",
-  provisioning_failed: "开通没有完成，订单已终止",
+  provisioning_failed: "开通没有完成，订单已终止。已付款的单可以退款",
   refunded: "人工退款，钱已退回，相关记录已冲回",
   chargeback: "支付渠道拒付 / 争议",
   cancelled: "仅未支付订单可取消。用户未付款，订单已终止",
@@ -182,7 +182,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           ))}
         </tbody>
       </Table>
-      <p className="rd-toolbar-note">设备放在平台机房托管，不发实物，所以开通时要分配数据中心。只有已支付、开通中、已激活或已入库的订单能退款，提交时会检查平台资金是否够退。「标记失败结果」不会退款。</p>
+      <p className="rd-toolbar-note">设备放在平台机房托管，不发实物，所以开通时要分配数据中心。只有已支付、开通中、已激活、已入库或已付款的开通失败订单能退款，提交时会检查平台资金是否够退。「标记失败结果」不会退款。</p>
     </Fold>
 
     <E4OrderDrawer ctx={ctx} />
@@ -237,7 +237,9 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
       : eff === "provisioning" && !e4Detail?.deviceActivatedAt
         ? { code: "ORDER_DEVICE_ACTIVATION_REQUIRED", title: "等设备激活", text: "要先在「设备运行管理」激活设备，订单才能完成。" }
         : null;
-  const refundableState = ["paid", "provisioning", "activated", "inventory"].includes(eff);
+  // 开通失败要读完详情才知道付没付款，没读完时先当能退，动作由读取锁挡着。
+  const refundableState = ["paid", "provisioning", "activated", "inventory"].includes(eff)
+    || (eff === "provisioning_failed" && (!e4Detail || e4Detail.paymentStatus.toUpperCase() === "PAID"));
   const refundReady = canRefundE4 && refundableState && e4Detail?.refundAllowed === true;
   // 三个数缺一个就算不出能不能退，和资金不足是两回事，阻断相同（后端 refundCoverageBlocked）。
   const coverageKnown = e4Detail?.coverageCurrent != null && e4Detail.coverageProjected != null && e4Detail.coverageRedline != null;
@@ -257,7 +259,10 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const briefOf = (check: string) => ({ impact: "批准后生效：提交后请另一位超级管理员在「操作记录与审批」中批准。", check });
   // 批准后后端把这单的设备改成已退款、停用（rollbackOrderDevices），赠品设备不在内，由活动规则收回。
   const hasDevice = !!e4Detail?.deviceId || !!e4Detail?.deviceInstanceNo;
-  const refundDeviceText = hasDevice ? "这单的设备停用，不再归用户，不再派任务，不再产生新收益。活动赠品的设备按活动规则处理。" : "这单还没有设备，退款后不再开通。";
+  const refundDeviceText = hasDevice ? "这单的设备停用，不再归用户，不再派任务，不再产生新收益。活动赠品的设备按活动规则处理。"
+    : eff === "provisioning_failed" ? "这单没有开通成功，没有设备要停用。" : "这单还没有设备，退款后不再开通。";
+  // 后端不收回设备收益。例外：按全期结算转购买的试用奖励，退款后收回钱包里没花掉的部分；活动奖励走活动规则。
+  const refundEarningsText = `这单设备已到账的收益不扣回。${e4Detail?.orderType === "TRIAL_CONVERT" ? "转购买时发的试用奖励按当时的规则处理，最多收回钱包里没花掉的部分。" : ""}活动奖励按活动规则处理。`;
 
   // 具体原因只从状态轨迹取，状态本身证明不了原因。
   const closeRecord = e4Detail?.history.findLast((item) => item.toState === eff);
@@ -268,8 +273,8 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
         : progressBlock ? { label: "下一步", value: progressBlock.title, reason: <span title={progressBlock.code}>{progressBlock.text}</span>, state: eff === "placed" ? undefined : "warn" }
           : { label: "下一步", value: "暂无可推进步骤", reason: "订单已交付，不用处理。" };
   const coverageReason = <><Explain label="覆盖率是什么" content="平台储备除以应付款，越高越安全。退款后低于红线时不能退款。">覆盖率</Explain> {coverageText}</>;
-  const refundRow: JudgmentRow | null = finalized ? null
-    : !refundableState ? { label: "退款", value: "不能退款", reason: "用户还没付款。只有已支付、开通中、已激活或已入库的订单能退款。" }
+  const refundRow: JudgmentRow | null = finalized && !refundableState ? null
+    : !refundableState ? { label: "退款", value: "不能退款", reason: "用户还没付款。只有已支付、开通中、已激活、已入库或已付款的开通失败订单能退款。" }
       : !e4Detail ? { label: "退款", ...pendingFact }
         : e4Detail.refundAllowed ? { label: "退款", value: canRefundE4 ? "可以退款" : "符合退款条件，这个账号不能退款", reason: coverageReason }
           : { label: "退款", value: refundBlockText, reason: coverageKnown ? coverageReason : "要先读到资金覆盖率才能退款。过一会儿重新打开这单。", state: coverageKnown ? "danger" : "warn" };
@@ -306,7 +311,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
             name: "退款 · " + o.id, op: "order-refund", orderId: o.id, amplify: true,
             effect: approvalTag, confirmLabel: "提交审批", confirmTone: "danger", coverageLead: "退款后用户钱包多这笔钱，平台的应付款跟着增加",
             statedBrief: briefOf("核对用户、金额和退款原因，理由写清依据或工单号。"),
-            facts: <Facts><Fact k="用户">{o.user}</Fact><Fact k="商品">{o.sku}</Fact><Fact k="设备">{refundDeviceText}</Fact><Fact k="能否撤销">不可撤销</Fact></Facts>,
+            facts: <Facts><Fact k="用户">{o.user}</Fact><Fact k="商品">{o.sku}</Fact><Fact k="设备">{refundDeviceText}</Fact><Fact k="已到账的收益">{refundEarningsText}</Fact><Fact k="能否撤销">不可撤销</Fact></Facts>,
             businessForm: { kind: "multi-field", title: "退款渠道与原因", hint: `覆盖率 ${coverageText}`, fields: [
               { key: "refundChannel", label: "退款渠道", current: channels[0], inputKind: "select", options: channels, optionLabels: { WALLET: "退回 USDT 钱包", ORIGINAL_PAYMENT: "原支付渠道" }, required: true, showDiff: true },
               { key: "refundReasonCode", label: "退款原因（用户可见）", current: "", inputKind: "select", options: ["", ...E4_REFUND_REASONS], optionLabels: { "": "请选择退款原因", ...E4_REFUND_REASON_LABELS }, required: true, help: "这个原因会显示在用户的订单详情里；下方备注只记在操作记录里，用户看不到。" },

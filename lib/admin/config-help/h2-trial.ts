@@ -24,6 +24,7 @@ export interface TrialParamHelp {
 
 const NEW_TRIAL = "立即生效，只影响新试用";
 const AT_PURCHASE = "立即生效，购买时按新值算";
+const PUSH_WHEN = "立即生效；App 和 H5 现在不自动弹，暂不影响用户";
 const USDT_RANGE = { unit: "USDT", min: 0, max: 1_000_000 };
 
 export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
@@ -128,23 +129,23 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
     input: { unit: "UVT", min: 0, max: 1_000_000 },
     whatIf: (value) => `改成 ${value}：商品没配日收益时，之后开始的试用每天按 ${value} UVT 累积。`,
   },
-  autoPushEnabled: { what: "要不要自动弹出试用邀请", when: "立即生效" },
+  autoPushEnabled: { what: "要不要自动弹出试用邀请", when: PUSH_WHEN },
   autoPushDelayMs: {
     what: "满足条件后等多久弹出",
-    when: "立即生效",
+    when: PUSH_WHEN,
     how: "0–86,400 秒，1.5 就是 1.5 秒。",
     input: { unit: "秒", min: 0, max: 86_400, step: 0.001 },
     scale: 1000,
   },
   autoPushCooldownHours: {
     what: "用户关掉弹窗后多久才再弹",
-    when: "立即生效",
+    when: PUSH_WHEN,
     how: "整数，0–86,400,000 小时。",
     input: { unit: "小时", min: 0, max: 86_400_000, step: 1 },
   },
   autoPushMaxPerSession: {
     what: "一次打开最多弹几次",
-    when: "立即生效",
+    when: PUSH_WHEN,
     how: "整数，0–86,400,000 次。",
     input: { unit: "次", min: 0, max: 86_400_000, step: 1 },
   },
