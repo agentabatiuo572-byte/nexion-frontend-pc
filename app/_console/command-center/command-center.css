@@ -1,4 +1,4 @@
-/* 指挥台版面。颜色、字号、圆角只用 --rd-*，组件样式在 rd.css。 */
+/* 今日概览版面。颜色、字号、圆角只用 --rd-*，组件样式在 rd.css。 */
 .cc-meta { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .cc-meta a { color: var(--rd-text-2); }
 .cc-meta-item { display: inline-flex; align-items: center; gap: 4px; }
@@ -76,8 +76,3 @@ a.cc-amount:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 
 .cc-gates { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; padding: 0; list-style: none; }
 .cc-gates li { display: inline-flex; align-items: center; gap: 8px; color: var(--rd-text); }
 
-.cc-funnel { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.cc-funnel li { display: grid; grid-template-columns: 96px minmax(0, 1fr) 96px; align-items: center; gap: 12px; color: var(--rd-text-2); }
-.cc-funnel li .cc-num { text-align: right; }
-.cc-funnel-track { display: block; height: 8px; }
-.cc-funnel-bar { display: block; height: 8px; border-top-right-radius: var(--rd-radius-bar); border-bottom-right-radius: var(--rd-radius-bar); background: var(--rd-chart-3); }

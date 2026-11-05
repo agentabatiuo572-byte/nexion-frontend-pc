@@ -4,7 +4,7 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { AlarmClock, ArrowDownUp, CalendarClock, Coins, Gauge, Landmark, PieChart, ReceiptText, Scale, ShieldCheck, Wallet } from "lucide-react";
-import { BlockState, Button, Check, CheckGroup, Cell, ColumnChart, Conclusion, Field, Fold, JudgmentPoints, KeyValues, LevelList, Notice, Panel, SegmentBar, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Th, Tr, TrendLine, Drawer, type ChartSlot } from "@/app/components/rd";
+import { BlockState, Button, Check, CheckGroup, Cell, ColumnChart, Conclusion, Donut, Field, Fold, JudgmentPoints, KeyValues, LevelList, Notice, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Th, TierBand, Tr, TrendLine, Drawer, type ChartSlot } from "@/app/components/rd";
 import { businessOffsetMinutes, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { D3ForecastConfig, D3Main, D3MaturityForecast, D3NetExposure, D3WaterLevel } from "@/lib/admin/d-client";
 import { LIABILITY_EXPLANATIONS, liabilityDisplayName } from "@/lib/admin/liability-labels";
@@ -32,6 +32,8 @@ export const timeText = (value: string | undefined) => `${formatBusinessTimeComp
 
 const WATER_LABEL: Record<D3WaterLevel["tier"], string> = { NORMAL: "正常", WATCH: "关注", WARNING: "预警", DANGER: "危险" };
 const WATER_TONE = { NORMAL: "ok", WATCH: "warn", WARNING: "warn", DANGER: "danger" } as const;
+/** 档位带最后一档的显示上限：够付一年以上天数就没有判断价值（coverDaysText 同一口径）。 */
+const COVER_CAP_DAYS = 365;
 
 /** 后端给的是 >=30d、15-30d、<7d 这种写法，这里换成运营能读的话。 */
 function thresholdText(condition: string) {
@@ -41,6 +43,16 @@ function thresholdText(condition: string) {
   if (below) return `不足 ${below[1]} 天`;
   const range = /^(\d+)-(\d+)d$/.exec(condition);
   return range ? `${range[1]}–${range[2]} 天` : condition;
+}
+
+/** 同一种写法换成档位带要的上下界；认不出的写法返回 null，页面退回等级表。 */
+function thresholdBounds(condition: string): { from: number; to: number } | null {
+  const atLeast = /^>=(\d+)d$/.exec(condition);
+  if (atLeast) return { from: Number(atLeast[1]), to: COVER_CAP_DAYS };
+  const below = /^<(\d+)d$/.exec(condition);
+  if (below) return { from: 0, to: Number(below[1]) };
+  const range = /^(\d+)-(\d+)d$/.exec(condition);
+  return range ? { from: Number(range[1]), to: Number(range[2]) } : null;
 }
 
 /** 次日 UTC 00:00 是真实的切换时点，这里补上业务时区里是几点（T08 第 4 条）。 */
@@ -114,31 +126,42 @@ export function OverviewTab({ main, links }: { main: D3Main; links: readonly Cro
   const quiet = water.tier === "NORMAL";
   const sources = Array.from(new Set([...reserve.sources, ...liabilities.sources].map(treasurySourceLabel)));
   const reserveParts = [
-    { key: "usdt", name: "USDT 储备", value: reserve.usdtReserveUsdt, slot: 1 as ChartSlot },
-    { key: "other", name: "其他高流动资产", value: reserve.otherLiquidUsdt, slot: "other" as ChartSlot },
+    { key: "usdt", name: "USDT 储备", sub: "基础可动用储备", value: reserve.usdtReserveUsdt, slot: 1 as ChartSlot },
+    { key: "other", name: "其他高流动资产", sub: "已计入储备", value: reserve.otherLiquidUsdt, slot: "other" as ChartSlot },
   ];
   const liveParts = reserveParts.filter((part) => part.value > 0);
+  const share = (value: number) => (reserve.reserveTotalUsdt > 0 ? `${(value / reserve.reserveTotalUsdt * 100).toFixed(1)}%` : "—");
+  // 两类都有钱才画环，中间写总额，图例写每类的数；只有一类时一句话加数字（DP-62）。
   const composition = (
     <Panel title="储备组成" icon={PieChart} tone="role-1">
       <div className="rd-stack">
         {liveParts.length > 1
-          ? <SegmentBar label="储备组成" segments={reserveParts.map((part) => ({ key: part.key, label: part.name, value: part.value, slot: part.slot, text: `${part.name} ${(part.value / reserve.reserveTotalUsdt * 100).toFixed(2)}%` }))} />
-          : <p className="rd-note">{liveParts.length ? `全部是 ${liveParts[0].name}` : "目前没有可用储备"}</p>}
-        <KeyValues rows={[
-          { key: "usdt", label: "USDT 储备", sub: "基础可动用储备", value: money(reserve.usdtReserveUsdt), mono: true },
-          { key: "other", label: "其他高流动资产", sub: "已计入储备", value: money(reserve.otherLiquidUsdt), mono: true },
-          { key: "locked", label: "已扣除质押锁定金额", sub: "锁定中，不能动用", value: money(-reserve.lockedStakingPrincipalDeductedUsdt || 0), mono: true },
-        ]} />
+          ? <Donut label="储备组成" center={amountText(reserve.reserveTotalUsdt)} centerLabel="USDT" segments={reserveParts.map((part) => ({ key: part.key, label: part.name, sub: part.sub, value: part.value, slot: part.slot, text: money(part.value), share: share(part.value) }))} />
+          : (
+            <>
+              <p className="rd-note">{liveParts.length ? `全部是 ${liveParts[0].name}` : "目前没有可用储备"}</p>
+              <KeyValues rows={reserveParts.map((part) => ({ key: part.key, label: part.name, sub: part.sub, value: money(part.value), mono: true }))} />
+            </>
+          )}
+        <KeyValues rows={[{ key: "locked", label: "已扣除质押锁定金额", sub: "锁定中，不能动用", value: money(-reserve.lockedStakingPrincipalDeductedUsdt || 0), mono: true }]} />
         <Fold title="累计注入与口径" summary={`累计注入 ${money(reserve.injectedCumulativeUsdt)}`} inset>
           <p className="rd-note">累计注入按登记的凭证汇总，不是当前余额。可用储备已扣除质押锁定金额。</p>
         </Fold>
       </div>
     </Panel>
   );
+  // 档位带：四档等宽、边界写在下面、标记落在当前档里；阈值写法认不出时退回等级表。没有到期时天数是占位值，只标当前档，不画标记。
+  const bounds = water.thresholds.map((row) => ({ row, bound: thresholdBounds(row.condition) }));
+  const tiers = bounds.every((item) => item.bound)
+    ? bounds.map(({ row, bound }) => ({ key: row.tier, label: WATER_LABEL[row.tier], tone: WATER_TONE[row.tier], from: bound!.from, to: bound!.to })).sort((a, b) => a.from - b.from)
+    : null;
+  const noDue = maturity7.cumulativeUsdt === 0;
   const levels = (
     <Panel title="资金安全等级" icon={ShieldCheck} tone={quiet ? "role-other" : tone}>
       <div className="rd-stack">
-        <LevelList label="资金安全等级" rows={water.thresholds.map((row) => ({ key: row.tier, label: WATER_LABEL[row.tier], note: thresholdText(row.condition), tone: WATER_TONE[row.tier], current: row.tier === water.tier }))} />
+        {tiers
+          ? <TierBand label="资金安全等级" tiers={tiers} current={water.tier} value={noDue ? null : water.reserveCoverDays} valueText={formatReserveCoverDays(maturity7.cumulativeUsdt, water.reserveCoverDays)} boundText={(value) => (value === COVER_CAP_DAYS ? "1 年" : value === 0 ? "0" : `${value} 天`)} />
+          : <LevelList label="资金安全等级" rows={water.thresholds.map((row) => ({ key: row.tier, label: WATER_LABEL[row.tier], note: thresholdText(row.condition), tone: WATER_TONE[row.tier], current: row.tier === water.tier }))} />}
         <p className="rd-note">按未来 7 天到期的应付款判断，不随页面选的窗口变。{quiet ? ` 这一档的通知方式：${water.notification}。平均每天到期 ${money(water.dailyAverageDueUsdt)}。` : ""}</p>
       </div>
     </Panel>
@@ -219,18 +242,19 @@ function MaturityPanel({ maturity, loading, error, onRetry }: { maturity: D3Matu
   );
 }
 
-/** 这个页签里紫已经是「到期」，构成条只画前两类加其他（金、青、灰），一屏一色一义（06 审查 7）。 */
+/** 这个页签里紫已经是「到期」，环只画前两类加其他（金、青、灰），一屏一色一义（06 审查 7）。中间写合计，图例写每类的数和占比，九类全表在下面。 */
 function LiabilityComposition({ rows, total }: { rows: D3Main["liabilities"]["breakdown"]; total: number }) {
   const ranked = rows.filter((row) => row.amountUsdt > 0).sort((a, b) => b.amountUsdt - a.amountUsdt);
   if (!ranked.length) return <BlockState state="empty" title="目前没有应付款。" />;
   if (ranked.length === 1) return <p className="rd-note">全部是 {categoryText(ranked[0].category)}。</p>;
   const shown = ranked.slice(0, 2);
-  const rest = ranked.slice(2).reduce((sum, row) => sum + row.amountUsdt, 0);
+  const rest = ranked.slice(2);
+  const restSum = rest.reduce((sum, row) => sum + row.amountUsdt, 0);
   const parts = [
-    ...shown.map((row, index) => ({ key: row.category, name: categoryText(row.category), value: row.amountUsdt, slot: (index + 1) as ChartSlot })),
-    ...(rest > 0 ? [{ key: "rest", name: "其他", value: rest, slot: "other" as ChartSlot }] : []),
+    ...shown.map((row, index) => ({ key: row.category, label: categoryText(row.category), value: row.amountUsdt, slot: (index + 1) as ChartSlot })),
+    ...(restSum > 0 ? [{ key: "rest", label: `其他 ${rest.length} 类`, value: restSum, slot: "other" as ChartSlot }] : []),
   ];
-  return <SegmentBar label="应付款构成" segments={parts.map((part) => ({ ...part, label: part.name, text: `${part.name} ${(part.value / total * 100).toFixed(1)}%` }))} />;
+  return <Donut label="应付款构成" center={amountText(total)} centerLabel="USDT" segments={parts.map((part) => ({ ...part, text: money(part.value), share: `${(part.value / total * 100).toFixed(1)}%` }))} />;
 }
 
 export function DueTab({ main, mainState, windowValue, onWindow, maturity, exposure, onExposureRetry, onMaturityRetry, canReadExposure, canExport, exportBlocked, onExport, selected, onSelect }: {
@@ -282,7 +306,7 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
           <Panel
             flush
             title="应付款 · 9 类"
-            sub={`${breakdown.filter((row) => row.amountUsdt > 0).length} 类有金额 · 合计 ${money(main.liabilities.totalUsdt)}`}
+            sub={`${breakdown.filter((row) => row.amountUsdt > 0).length} 类有金额`}
             icon={ReceiptText}
             tone="role-2"
             actions={canExport ? <Button size="sm" disabledReason={exportBlocked} onClick={onExport}>导出应付款 CSV</Button> : undefined}
@@ -479,7 +503,7 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, busyReas
               <CheckGroup legend="计入哪些应付款" summary={`${enabledCount(draft.liabilityCategories)} 开启`} help="不勾的类不进到期预测和差额，页面上的九类金额不变。">
                 {Object.entries(draft.liabilityCategories).map(([key, enabled]) => <Check key={key} label={categoryText(key)} checked={enabled} onChange={(event) => onChange({ ...draft, liabilityCategories: { ...draft.liabilityCategories, [key]: event.target.checked } })} />)}
               </CheckGroup>
-              <p className="rd-note">用户看不到这些设置。它们影响这页的到期、差额和资金安全等级，也影响指挥台的可覆盖天数。</p>
+              <p className="rd-note">用户看不到这些设置。它们影响这页的到期、差额和资金安全等级，也影响今日概览的可覆盖天数。</p>
             </div>
           </Panel>
           <div className="rd-toolbar">

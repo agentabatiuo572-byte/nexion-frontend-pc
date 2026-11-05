@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowLeftRight, ShieldAlert, Target, Users, Wallet, XCircle } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { AreaChart } from "@/app/components/kit/charts/area-chart";
-import { Bars, BlockState, Button, Explain, Fact, Facts, Fold, Modal, StatusTag } from "@/app/components/rd";
+import { BarList, Bars, BlockState, Button, Explain, Fact, Facts, Fold, Modal, StatusTag, ThresholdMeter } from "@/app/components/rd";
 import { fetchB0Kpis, fetchB0Redemption, type B0Kpi } from "@/lib/admin/b0-client";
 import type { B0Blocks } from "@/lib/admin/b0-access";
 import type { B2LiquidityHistory } from "@/lib/admin/b-restoration-client";
@@ -86,7 +86,8 @@ export function FundFold({ ledger, liquidity, error, retrying, onRetry, alert, l
   const accounts = (ledger?.accounts ?? []).filter((item) => item.amount > 0).sort((a, b) => b.amount - a.amount);
   const others = accounts.slice(3).reduce((sum, item) => sum + item.amount, 0);
   const dueRows = (liquidity?.runway ?? []).map((item) => ({ label: item.day.slice(5), values: [item.valueWan * 10_000] }));
-  const gap = ledger ? ledger.coverageRatio - ledger.redlinePct : 0;
+  // 覆盖率条的颜色只看覆盖率和两条线，和首屏的「跌破红线」「警戒」同一个比较（严格小于）。
+  const coverTone = !ledger ? "ok" : ledger.coverageRatio < ledger.redlinePct ? "danger" : ledger.coverageRatio < ledger.healthyPct ? "warn" : "ok";
   return (
     <Fold title="资金明细" summary={fundFoldSummary(ledger, liquidity, error, level)} icon={Wallet} tone="role-1" alert={alert} alertTone={level === "danger" ? "danger" : "warn"} open={open} onOpenChange={onOpenChange}
       actions={<FoldLink reach={reach} href="/overview/dual-ledger">查看资金总览</FoldLink>}>
@@ -99,15 +100,22 @@ export function FundFold({ ledger, liquidity, error, retrying, onRetry, alert, l
                 <Amount label="应付款" value={ledger.liabilitiesUsd} tone="role-2" href="/overview/dual-ledger" reach={reach} />
                 <Amount label="差额（储备 − 应付款）" value={net} note={net > 0 ? "有富余" : net === 0 ? "刚好够" : "不够付"} href="/overview/dual-ledger" reach={reach} />
               </div>
-              <p className="cc-line"><AutoGloss>{`红线 ${fmtPct(ledger.redlinePct, 0)} · 健康线 ${fmtPct(ledger.healthyPct, 0)} · 覆盖率${gap >= 0 ? "比红线高" : "比红线低"} ${Math.abs(gap).toFixed(1)} 个点`}</AutoGloss></p>
+              <ThresholdMeter
+                label="覆盖率和红线、健康线"
+                rows={[{ key: "coverage", label: "覆盖率（储备 ÷ 应付款）", value: ledger.coverageRatio, text: fmtPct(ledger.coverageRatio), tone: coverTone }]}
+                marks={[
+                  { key: "redline", text: `红线 ${fmtPct(ledger.redlinePct, 0)}`, value: ledger.redlinePct, tone: "danger" },
+                  { key: "healthy", text: `健康线 ${fmtPct(ledger.healthyPct, 0)}`, value: ledger.healthyPct, tone: "ok" },
+                ]}
+              />
               <div className="cc-cols">
               <section aria-label="应付款">
                 <h3 className="cc-sub">应付款最多的几类<FoldLink reach={reach} href="/overview/liquidity">查看全部 9 类</FoldLink></h3>
                 {accounts.length === 0 ? <p className="cc-line">目前没有应付款</p> : (
-                  <ul className="cc-list">
-                    {accounts.slice(0, 3).map((item) => <li key={item.key}><span>{liabilityDisplayName(item.key, operatorCopyText(item.label))}</span><span className="cc-num">{usdt(item.amount)}</span></li>)}
-                    {others > 0 && <li><span>其他 {accounts.length - 3} 类</span><span className="cc-num">{usdt(others)}</span></li>}
-                  </ul>
+                  <BarList label="应付款最多的几类" slot={2} rows={[
+                    ...accounts.slice(0, 3).map((item) => ({ key: item.key, label: liabilityDisplayName(item.key, operatorCopyText(item.label)), value: item.amount, text: usdt(item.amount) })),
+                    ...(others > 0 ? [{ key: "others", label: `其他 ${accounts.length - 3} 类`, value: others, text: usdt(others) }] : []),
+                  ]} />
                 )}
               </section>
               <section aria-label="未来 7 天到期">
@@ -187,15 +195,18 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                 )}
               </section>
               )}
+              <ThresholdMeter
+                label="提现压力和黄线、红线"
+                rows={[
+                  { key: "flow", label: "近 24 小时提现申请占储备", value: risk.bankRunRatio, text: fmtPct(risk.bankRunRatio), tone: pressure.flow },
+                  { key: "backlog", label: "待提现总额占储备", value: ledger.pressureRatio * 100, text: fmtPct(ledger.pressureRatio * 100), tone: pressure.backlog },
+                ]}
+                marks={[
+                  { key: "yellow", text: `黄线 ${fmtPct(risk.bankRunYellowPct, 0)}`, value: risk.bankRunYellowPct, tone: "warn" },
+                  { key: "red", text: `红线 ${fmtPct(risk.bankRunRedlinePct, 0)}`, value: risk.bankRunRedlinePct, tone: "danger" },
+                ]}
+              />
               <ul className="cc-list" data-cols="">
-                <li>
-                  <span>近 24 小时提现申请占储备</span>
-                  <span className="cc-num" data-tone={pressure.flow === "ok" ? undefined : pressure.flow}>{fmtPct(risk.bankRunRatio)}</span>
-                </li>
-                <li>
-                  <span>待提现总额占储备</span>
-                  <span className="cc-num" data-tone={pressure.backlog === "ok" ? undefined : pressure.backlog}>{fmtPct(ledger.pressureRatio * 100)}</span>
-                </li>
                 <li>
                   <span>
                     <Explain label="异常账户怎么算" content="风控按当前评分规则标记的账户数。等待重新评分的账户不算在内，它们在待处理里。">异常账户</Explain>
@@ -313,18 +324,10 @@ function FunnelBody({ onSummary }: { onSummary: (text: string) => void }) {
     <div className="cc-fold-stack">
       {tooFew ? <p className="cc-line">注册不足 5 人，样本过小</p> : (
         <>
-          <ul className="cc-funnel">
-            {stages.map((stage) => {
-              const shown = stage.distinctUsers >= SMALL_SAMPLE;
-              return (
-                <li key={stage.key}>
-                  <span>{stage.stage}</span>
-                  <span className="cc-funnel-track">{shown && <span className="cc-funnel-bar" style={{ width: `${(stage.distinctUsers / first) * 100}%` }} />}</span>
-                  <span className="cc-num">{shown ? `${fmtNum(stage.distinctUsers)} 人` : "样本过小"}</span>
-                </li>
-              );
-            })}
-          </ul>
+          <BarList label="注册到提现各步人数" slot={3} max={first} rows={stages.map((stage) => {
+            const shown = stage.distinctUsers >= SMALL_SAMPLE;
+            return { key: stage.key, label: stage.stage, value: shown ? stage.distinctUsers : null, text: shown ? `${fmtNum(stage.distinctUsers)} 人` : "样本过小" };
+          })} />
           {worst && <p className="cc-line">流失最多的一步是{worst.from}到{worst.to}，只有 {worst.cvr}% 走到下一步</p>}
         </>
       )}

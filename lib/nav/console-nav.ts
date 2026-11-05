@@ -506,7 +506,7 @@ export function canAccessResolvedPath(domains: NavDomain[], pathname: string | n
   return grantedDomain?.l2.some((item) => path === item.path || path.startsWith(`${item.path}/`)) ?? false;
 }
 
-/** 登录后落在哪（Q-20）：看得到待处理或经营数的落指挥台，客服落客服工作台，其余落第一个有权限的页。 */
+/** 登录后落在哪（Q-20）：看得到待处理或经营数的落今日概览，客服落客服工作台，其余落第一个有权限的页。 */
 export function defaultConsolePath(role: AdminRole, domains: NavDomain[], authorities: readonly string[] = []): string | null {
   const first = domains.find(domain => domain.l2.length > 0)?.l2[0]?.path;
   if (!first) return null;

@@ -2,7 +2,7 @@
 
 /**
  * 面包屑 — usePathname() → nav 查表 → 「UVEL 运营控制台 / 域 / L2」。
- * 根路径 / 显示「指挥台」。未匹配路径回退展示原始 segment。域字母和页面编号不显示(DP-30)。
+ * 根路径 / 显示「今日概览」。未匹配路径回退展示原始 segment。域字母和页面编号不显示(DP-30)。
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -14,7 +14,7 @@ export function Breadcrumb() {
   const crumbs: { label: string }[] = [{ label: "UVEL 运营控制台" }];
 
   if (pathname === "/" || pathname === "") {
-    crumbs.push({ label: "指挥台" });
+    crumbs.push({ label: "今日概览" });
   } else if (/^\/service\/customers\/[1-9]\d*\/?$/.test(pathname)) {
     const parent = findByPath("/service/overview");
     if (parent) crumbs.push({ label: parent.domain.name });

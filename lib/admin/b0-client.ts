@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 指挥台自己的读取。只读现有接口，字段都在这里校验一次，页面拿到的是类型化的值。
+ * 今日概览自己的读取。只读现有接口，字段都在这里校验一次，页面拿到的是类型化的值。
  * 其余数据用各自的 client：b-domain、reserve、flowWindows、A2、提现、客服待办、J1、转化。
  */
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";

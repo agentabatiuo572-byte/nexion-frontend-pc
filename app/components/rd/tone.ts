@@ -10,7 +10,7 @@ export type RoleTone = "role-1" | "role-2" | "role-3" | "role-4" | "role-other";
 export type DomainTone = "money" | "users" | "devices" | "risk" | "system";
 export type Tone = StateTone | RoleTone | DomainTone;
 
-/** 侧栏的业务归属。指挥台、运营总览、内容、数据、平台基础归系统灰。 */
+/** 侧栏的业务归属。今日概览、运营总览、内容、数据、平台基础归系统灰。 */
 export const DOMAIN_TONE: Record<string, DomainTone> = {
   A: "system",
   B: "system",

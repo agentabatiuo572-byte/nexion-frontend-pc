@@ -11,9 +11,14 @@
  *   两个系列成对画，两个系列以上自动带图例。
  * 走势：<TrendLine label="累计到期" data={[{ key, tick, value }]} format={money} slot={3} />
  *   纵轴总是包住 0。只画真实历史或明确标为预测的序列，当前值倒推的不画（DP-63）。
+ * 环图：<Donut label="储备组成" center="2,000,000.00" centerLabel="USDT"
+ *   segments={[{ key, label, value, slot, text: "2,000,000.00 USDT", share: "97.6%" }]} />
+ *   一个整体分几份、中间写总额。段间 2px 留底色，图例直接写每份的数和占比（VS-47）。最多前 3 类加「其他」（DP-64）。
+ * 排序条：<BarList label="应付款最多的几类" slot={2} rows={[{ key, label, value, text: "250,000.00 USDT" }]} />
+ *   几类比大小，按大小排，一个颜色（同一角色就用它的槽位），数字写在条右边。value 传 null 是样本过小，不画条。
  *
  * 全是 0、数据不足或只有一类时不要用这些组件，页面写一句话（DP-62）。
- * 图是 role="img"，数值要能在图外读到：结论、表格或明细（ST-63）。
+ * 图是 role="img"，数值要能在图外读到：结论、表格、图例或明细（ST-63）。刻度尺和档位带在 meter.tsx。
  */
 import { useState, type MouseEvent, type ReactNode } from "react";
 
@@ -22,7 +27,7 @@ export type ChartSlot = 1 | 2 | 3 | 4 | "other";
 const STEPS = [1, 2, 2.5, 5, 10];
 
 /** 取包住 value 的整齐刻度。 */
-function niceCeil(value: number) {
+export function niceCeil(value: number) {
   if (value <= 0) return 0;
   const power = 10 ** Math.floor(Math.log10(value));
   return (STEPS.find((step) => step * power >= value) ?? 10) * power;
@@ -163,5 +168,78 @@ export function TrendLine({ label, data, format, axisFormat = format, slot = 1, 
         </div>
       </div>
     </div>
+  );
+}
+
+/** 环图。r 取 15.9155 让周长正好是 100，dasharray 直接用百分比；段间留 2px 底色（VS-46）。 */
+const RING_R = 15.9155;
+const RING_GAP = 0.7;
+
+export function Donut({ label, segments, center, centerLabel }: {
+  label: string;
+  segments: readonly { key: string; label: ReactNode; value: number; slot: ChartSlot; text: string; share: string; sub?: ReactNode }[];
+  center: ReactNode;
+  centerLabel?: ReactNode;
+}) {
+  const drawn = segments.filter((segment) => segment.value > 0);
+  const total = drawn.reduce((sum, segment) => sum + segment.value, 0);
+  const gap = drawn.length > 1 ? RING_GAP : 0;
+  let start = 0;
+  const arcs = drawn.map((segment) => {
+    const length = total > 0 ? (segment.value / total) * 100 : 0;
+    const arc = { ...segment, length: Math.max(0, length - gap), offset: start + gap / 2 };
+    start += length;
+    return arc;
+  });
+  const sentence = `${label}：${drawn.map((segment) => `${typeof segment.label === "string" ? segment.label : ""} ${segment.text}，占 ${segment.share}`).join("；")}`;
+  return (
+    <div className="rd-donut-wrap">
+      <div className="rd-donut" role="img" aria-label={sentence}>
+        <svg viewBox="0 0 42 42" aria-hidden>
+          <circle className="rd-donut-track" cx="21" cy="21" r={RING_R} />
+          {arcs.map((arc) => (
+            <circle key={arc.key} className="rd-donut-arc" data-slot={arc.slot} cx="21" cy="21" r={RING_R} strokeDasharray={`${arc.length} ${100 - arc.length}`} strokeDashoffset={25 - arc.offset}>
+              <title>{`${typeof arc.label === "string" ? arc.label : ""} ${arc.text}（${arc.share}）`}</title>
+            </circle>
+          ))}
+        </svg>
+        <div className="rd-donut-center">
+          <b>{center}</b>
+          {centerLabel && <span>{centerLabel}</span>}
+        </div>
+      </div>
+      <ul className="rd-chart-legend" data-list="">
+        {segments.map((segment) => (
+          <li key={segment.key} data-zero={segment.value > 0 ? undefined : ""}>
+            <span className="rd-chart-swatch" data-slot={segment.slot} aria-hidden />
+            <span className="rd-legend-name">{segment.label}{segment.sub && <small>{segment.sub}</small>}</span>
+            <span className="rd-legend-value">{segment.text}<small>{segment.share}</small></span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** 排序条。条本身 aria-hidden，名字和数字是正文，读屏按列表读。 */
+export function BarList({ label, rows, slot = 1, max }: {
+  label: string;
+  rows: readonly { key: string; label: ReactNode; value: number | null; text: ReactNode }[];
+  slot?: ChartSlot;
+  max?: number;
+}) {
+  const top = max ?? Math.max(0, ...rows.map((row) => row.value ?? 0));
+  return (
+    <ul className="rd-barlist" aria-label={label}>
+      {rows.map((row) => (
+        <li key={row.key}>
+          <span className="rd-barlist-label">{row.label}</span>
+          <span className="rd-barlist-track" aria-hidden>
+            {row.value !== null && row.value > 0 && top > 0 && <span className="rd-barlist-bar" data-slot={slot} style={{ width: `${(row.value / top) * 100}%` }} />}
+          </span>
+          <span className="rd-barlist-text">{row.text}</span>
+        </li>
+      ))}
+    </ul>
   );
 }

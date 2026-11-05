@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 侧边栏 — 品牌标 + 指挥台 + 授权域分组导航 + 计数和折叠开关。
+ * 侧边栏 — 品牌标 + 今日概览 + 授权域分组导航 + 计数和折叠开关。
  * 折叠/展开、分组展开态由 ConsoleShell 经 props 下传(mounted 门控,避免 hydration 抖动)。
  */
 import { useEffect, useRef } from "react";
@@ -134,7 +134,7 @@ export function Sidebar({
         onTouchMove={persistSidebarScroll}
         className={`rd-side-nav flex-1 overflow-y-auto ${collapsed ? "px-2" : "px-2.5"} flex flex-col gap-0.5`}
       >
-        {/* 指挥台入口(首页) */}
+        {/* 今日概览入口(首页) */}
         {showHomeEntry && (() => {
           const homeActive = pathname === "/";
           if (collapsed) {
@@ -143,8 +143,8 @@ export function Sidebar({
                 href="/"
                 prefetch={false}
                 onClick={() => setExpanded([])}
-                title="指挥台"
-                aria-label="指挥台"
+                title="今日概览"
+                aria-label="今日概览"
                 className="rd-nav-rail"
                 data-active={homeActive ? "" : undefined}
               >
@@ -162,7 +162,7 @@ export function Sidebar({
               data-active={homeActive ? "" : undefined}
             >
               <IconTile tone="system" icon={LayoutGrid} size={22} />
-              <span className="flex-1">指挥台</span>
+              <span className="flex-1">今日概览</span>
               {homeActive && <span className="rd-nav-dot" data-current="" aria-hidden />}
             </Link>
           );
