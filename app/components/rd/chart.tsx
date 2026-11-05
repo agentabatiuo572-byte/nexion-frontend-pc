@@ -11,6 +11,11 @@
  *   两个系列成对画，两个系列以上自动带图例。
  * 走势：<TrendLine label="累计到期" data={[{ key, tick, value }]} format={money} slot={3} />
  *   纵轴总是包住 0。只画真实历史或明确标为预测的序列，当前值倒推的不画（DP-63）。
+ * 走势带线：<TrendLines label="这项指标的走势" ticks={["10-11", …]} format={pct}
+ *   series={[{ key: "kpi", label: "首笔收益到账", slot: 2, values: [12, 18, …] }]}
+ *   marks={[{ key: "target", text: "目标 95%", value: 95, tone: "ok" }]} event={{ index: 3, text: "运营阶段切换" }} />
+ *   多条线比走势，或要画目标线、事件线时用它。纵轴从 0 到包住全部值和线，两个系列以上自动带图例（VS-47）。
+ * 迷你线：<Sparkline label="近六段走势" values={[…]} />  表格里看走向，不带轴，至少两个点才传（ST-64）。
  * 环图：<Donut label="储备组成" center="2,000,000.00" centerLabel="USDT"
  *   segments={[{ key, label, value, slot, text: "2,000,000.00 USDT", share: "97.6%" }]} />
  *   一个整体分几份、中间写总额。段间 2px 留底色，图例直接写每份的数和占比，名字和数字挨着（VS-47）。最多前 3 类加「其他」（DP-64）。
@@ -25,6 +30,7 @@
  * 图是 role="img"，数值要能在图外读到：结论、表格、图例或明细（ST-63）。刻度尺和档位带在 meter.tsx。
  */
 import { useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import type { StateTone } from "./tone";
 
 export type ChartSlot = 1 | 2 | 3 | 4 | "other";
 
@@ -187,6 +193,67 @@ export function TrendLine({ label, data, format, axisFormat = format, slot = 1, 
       </div>
     </div>
   );
+}
+
+/** 几条线放一根纵轴比走势，也画目标线和事件线。线的颜色是槽位，目标线的颜色是状态（VS-43）。 */
+export function TrendLines({ label, ticks, series, format, axisFormat = format, marks = [], event, height = 180 }: {
+  label: string;
+  ticks: readonly string[];
+  series: readonly { key: string; label: string; slot: ChartSlot; values: readonly number[] }[];
+  format: (value: number) => string;
+  axisFormat?: (value: number) => string;
+  marks?: readonly { key: string; text: string; value: number; tone: StateTone }[];
+  event?: { index: number; text: string };
+  height?: number;
+}) {
+  const [active, setActive] = useState<number | null>(null);
+  const top = niceCeil(Math.max(0, ...series.flatMap((item) => item.values), ...marks.map((mark) => mark.value))) || 1;
+  const xRatio = (index: number) => ticks.length > 1 ? index / (ticks.length - 1) : 0.5;
+  const every = tickEvery(ticks.length);
+  const hover = (mouse: MouseEvent<HTMLDivElement>) => {
+    const box = mouse.currentTarget.getBoundingClientRect();
+    setActive(Math.min(ticks.length - 1, Math.max(0, Math.round((mouse.clientX - box.left) / box.width * (ticks.length - 1)))));
+  };
+  return (
+    <div className="rd-chart" style={{ maxWidth: AXIS_W + ticks.length * SLOT_W }}>
+      {series.length > 1 && <ChartLegend items={series.map((item) => ({ key: item.key, label: item.label, slot: item.slot }))} />}
+      <div className="rd-chart-frame" role="img" aria-label={label}>
+        <div className="rd-chart-plot" style={{ height }} onMouseMove={hover} onMouseLeave={() => setActive(null)}>
+          <Ticks ticks={[{ value: 0, ratio: 0 }, { value: top / 2, ratio: 0.5 }, { value: top, ratio: 1 }]} format={axisFormat} />
+          {marks.map((mark, index) => <div key={mark.key} className="rd-chart-ref" data-tone={mark.tone} data-below={index % 2 ? "" : undefined} style={{ bottom: `${mark.value / top * 100}%` }}><span>{mark.text}</span></div>)}
+          {event && <div className="rd-chart-event" style={{ left: `${xRatio(event.index) * 100}%` }}><span data-edge={xRatio(event.index) > 0.7 ? "end" : undefined}>{event.text}</span></div>}
+          <svg className="rd-chart-line" viewBox="0 0 1000 200" preserveAspectRatio="none" aria-hidden>
+            {series.map((item) => (
+              <path key={item.key} data-slot={item.slot} vectorEffect="non-scaling-stroke"
+                d={item.values.map((value, index) => `${index ? "L" : "M"}${(xRatio(index) * 1000).toFixed(1)} ${((1 - value / top) * 200).toFixed(1)}`).join(" ")} />
+            ))}
+          </svg>
+          {active !== null && <span className="rd-chart-cross" style={{ left: `${xRatio(active) * 100}%` }} />}
+          {series.map((item) => {
+            const at = Math.min(active ?? item.values.length - 1, item.values.length - 1);
+            return <span key={item.key} className="rd-chart-dot" data-slot={item.slot} style={{ left: `${xRatio(at) * 100}%`, bottom: `${item.values[at] / top * 100}%` }} />;
+          })}
+          {active !== null && (
+            <Tip index={active} count={ticks.length}>
+              <b>{ticks[active]}</b>
+              {series.map((item) => <span key={item.key}>{series.length > 1 ? `${item.label} ` : ""}{format(item.values[active])}</span>)}
+            </Tip>
+          )}
+        </div>
+        <div className="rd-chart-x" data-spread="">
+          {ticks.map((tick, index) => (index % every === 0 || index === ticks.length - 1) && <span key={tick} data-edge={index === 0 ? "start" : index === ticks.length - 1 ? "end" : undefined} style={{ left: `${xRatio(index) * 100}%` }}>{tick}</span>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 迷你走势线，放在表格格子里。不是数据的来源，数值要在别处读到。 */
+export function Sparkline({ label, values, slot = "other" }: { label: string; values: readonly number[]; slot?: ChartSlot }) {
+  const low = Math.min(...values);
+  const span = Math.max(...values) - low || 1;
+  const path = values.map((value, index) => `${index ? "L" : "M"}${(index / (values.length - 1) * 100).toFixed(1)} ${(22 - (value - low) / span * 20).toFixed(1)}`).join(" ");
+  return <svg className="rd-spark" viewBox="0 0 100 24" preserveAspectRatio="none" role="img" aria-label={label}><path d={path} data-slot={slot} vectorEffect="non-scaling-stroke" /></svg>;
 }
 
 /** 环图。r 取 15.9155 让周长正好是 100，dasharray 直接用百分比；段间留 2px 底色（VS-46）。 */

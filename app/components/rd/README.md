@@ -62,6 +62,9 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 一个值落在固定几档里 | `TierBand` 档位带，`current` 由页面传，组件不算档 | `meter.tsx` |
 | 柱图、走势线 | `ColumnChart`、`TrendLine`，传槽位 `slot`；趋势只画真实历史 | `chart.tsx` |
 | 只读的流程进度：走到哪一步 | `Steps`，当前步从现有状态字段取 | `steps.tsx` |
+| 几条线比走势，或要画目标线、事件线 | `TrendLines`，目标线传 `marks`，事件线传 `event` | `chart.tsx` |
+| 表格里看走向 | `Sparkline`，至少两个点才传，数值要在别处读到 | `chart.tsx` |
+| 报表主表配所选明细 | `.rd-split` 放两个 `Panel`，点一行右边换明细，窗口窄时上下排 | `rd.css` |
 | 表单字段、勾选 | `Field`、`Check`、`CheckGroup` | `field.tsx` |
 | 名称和值成对 | `KeyValues` | `key-values.tsx` |
 | 一块内容的加载、空、失败、无权限 | `BlockState` | `block-state.tsx` |
@@ -143,7 +146,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 - `Drawer`、`Modal`：Tab 圈在里面，Esc 只关最上层，打开时聚焦容器，关闭后焦点回到当前高亮行或原来的按钮，`busy` 时全部锁住。
 - `PageTabs`、`Segments`：方向键、Home、End 移动并立即选中，禁用项跳过。页签的网址读写在页面做。
 - `Select`：方向键环绕，Tab 和 Esc 收起，选后焦点回到触发器，禁用时收起且恢复后不自动展开。`required` 时空串算没选，表单提交被拦下，空值选项不进列表；不必填时空值选项是能选中的「全部」，表单值是空串。
-- `FilterBar`：Enter 等于查询；查询中只禁「查询」，条件照常能改；更多筛选收起不丢值。
+- `FilterBar`：Enter 等于查询；查询中只禁「查询」，条件照常能改；更多筛选收起不丢值。`submitLabel` 换按钮名，自定义日期这类第二行放进 `.rd-filter-line`。
 - 列选择按账号和表格记在本地，记忆损坏时回到默认列，不影响导出和请求。
 
 ## 组件不管的事
