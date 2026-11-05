@@ -130,8 +130,8 @@ const RISK_PARAM_NAME: Record<string, string> = {
 const riskParamName = (p: KRiskParam) => RISK_PARAM_NAME[p.key] ?? p.name;
 const RELEASE_PARAM_NAME: Record<string, string> = {
   freePhoneSlotsPerCluster: "同组正常放行的手机号数",
-  duplicateAccountPendingFrom: "第几个关联账号起审核收益",
-  duplicateAccountFreezeFrom: "第几个关联账号起建议冻结",
+  duplicateAccountPendingFrom: "同组账号数达到多少起审核收益",
+  duplicateAccountFreezeFrom: "同组账号数达到多少起锁定收益",
   pendingReleaseHours: "批量放行统计时间范围",
   releaseMode: "收益放行方式",
   freeSlotRequiresBinding: "正常名额是否需要绑定手机号",
@@ -147,6 +147,10 @@ const clockText = (time: number) => new Date(time).toLocaleTimeString("zh-CN", {
 function formatThreshold(value: number) {
   return Number.isFinite(value) ? value.toFixed(2) : "未配置";
 }
+
+/** 建议线全页写两位小数，其余参数写接口原值。 */
+const riskValueText = (key: string, value: string, unit = "") =>
+  `${key === "clusterFreezeSuggestThreshold" ? formatThreshold(Number(value)) : value}${unit ? ` ${unit}` : ""}`;
 
 function strengthTone(v: number, threshold: number) {
   if (!Number.isFinite(threshold)) return "neutral" as const;
@@ -857,7 +861,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       statedBrief: { impact: "这笔收益立即转为可提现，占用平台储备，记入操作记录。", check: "核对用户、金额和所属账户组。提交时会先检查兑付覆盖率。" },
       coverageLead: "这笔收益放行后可以提现",
       effect: IMMEDIATE_EFFECT,
-      confirmLabel: "确认放行",
+      confirmLabel: "立即放行",
       reasonPlaceholder: RISK_REASON_PLACEHOLDER,
       facts: <Facts>
         <Fact k="收益记录">{entry.entryNo}</Fact>
@@ -941,7 +945,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       detail: "移除后该网段恢复同 IP 多账户检测。",
       statedBrief: { impact: "这个网段恢复按 IP 检测，已有账户不会自动冻结。", check: "确认网段和授权来源，理由写清工单号和处理依据。" },
       effect: IMMEDIATE_EFFECT,
-      confirmLabel: "确认移除",
+      confirmLabel: "立即移除",
       reasonPlaceholder: "写清调整原因和依据",
       reasonMax: 200,
       run: (reason) => runRecord({ kind: "whitelist-remove", target: cidr, label: `移出允许名单 · ${cidr}`, operator, reason }),
@@ -1247,23 +1251,25 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       )}
 
       {tab === "rules" && (overviewReady ? (
+        <>
+        <Notice tone="neutral" title="这页的修改保存后立即生效，不走审批">参数和允许名单一保存就影响用户。只有账户组的四种处置要超级管理员批准。</Notice>
         <div className="rd-config-layout">
           <div className="rd-config-grid">
             <div className="rd-config-rail">
               <SectionNav label="本页分组" items={sections} nav={nav} />
             </div>
             <div className="rd-config-groups">
-              <Panel id={nav.anchor("risk")} title="风险判断标准" sub="按同一 IP、设备或支付工具找出可能是同一人的账户" icon={ShieldAlert} tone="role-4">
+              <Panel id={nav.anchor("risk")} title="风险判断标准" sub="决定哪些账户算同一组，调整后立即生效" icon={ShieldAlert} tone="role-4">
                 <ConfigList>
                   {params.map((p) => (
-                    <ConfigRow key={p.key} name={riskParamName(p)} what={K1_PARAM_HELP[p.key]?.what ?? p.sub} when={K1_PARAM_HELP[p.key]?.when} value={`${p.value}${p.unit ? ` ${p.unit}` : ""}`}
+                    <ConfigRow key={p.key} name={riskParamName(p)} what={K1_PARAM_HELP[p.key]?.what ?? p.sub} when={K1_PARAM_HELP[p.key]?.when} value={riskValueText(p.key, p.value, p.unit)}
                       action={canWrite ? paramAction(riskParamName(p), blockedBy("param", p.key), () => adjParam(p)) : undefined} />
                   ))}
                 </ConfigList>
               </Panel>
 
               {/* 收益释放参数(SPEC-7 搬回,合并底账 §二#5):与整簇冻结分开的放行细调。 */}
-              <Panel id={nav.anchor("earnings")} title="关联账户的收益审核规则" sub="同组账户超过正常名额后，新增收益须审核" icon={Coins} tone="role-1">
+              <Panel id={nav.anchor("earnings")} title="关联账户的收益审核规则" sub="决定新增收益能不能提现，调整后立即生效" icon={Coins} tone="role-1">
                 {overviewReady.releaseParams.length > 0 ? (
                   <div className="rd-stack" data-proof="k1-risk-release-params">
                     <ConfigList>
@@ -1272,8 +1278,16 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                           action={canRelease && p.adjustable !== false ? paramAction(releaseParamName(p), blockedBy("param", p.key), () => adjReleaseParam(p)) : undefined} />
                       ))}
                     </ConfigList>
-                    <Fold inset title="处理规则" summary="账户组状态和账号数决定新增收益怎么处理">
-                      <p className="rd-note">账户组处于「待判定」「可疑」或「已冻结」，或同组账号数达到「第几个关联账号起建议冻结」时，新增收益直接记为锁定奖励，无需先人工冻结账户组。其余情况下，账号数达到审核起点时，新增收益须先审核；未达到时记为可提现收益。收益锁定与账户冻结是两种处理。待审核收益<b>不会因等待时间到期自动放行</b>，只能经人工审核后放行。放宽规则可能增加资金支出，请写明依据。</p>
+                    <Fold inset title="处理规则" summary="从上往下判断，满足哪条就按哪条">
+                      <div className="rd-stack">
+                        <KeyValues rows={[
+                          { key: "status", label: "1. 账户组待判定、可疑或已冻结", value: "锁定奖励" },
+                          { key: "freeze", label: `2. 同组账号数达到 ${overviewReady.releaseParams.find((p) => p.key === "duplicateAccountFreezeFrom")?.value ?? "—"}`, value: "锁定奖励" },
+                          { key: "pending", label: `3. 同组账号数达到 ${overviewReady.releaseParams.find((p) => p.key === "duplicateAccountPendingFrom")?.value ?? "—"}`, value: "须审核" },
+                          { key: "else", label: "4. 其余情况", value: "可提现" },
+                        ]} />
+                        <p className="rd-note">收益锁定不用先冻结账户组，和账户冻结是两种处理。待审核收益<b>不会因等待时间到期自动放行</b>，只能人工放行。放宽规则可能增加资金支出，请写明依据。</p>
+                      </div>
                     </Fold>
                   </div>
                 ) : (
@@ -1281,7 +1295,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 )}
               </Panel>
 
-              <Panel id={nav.anchor("whitelist")} title="IP 允许名单" sub="只是不按 IP 检测，设备和支付工具仍照常检测" icon={ListChecks} tone="role-2" flush
+              <Panel id={nav.anchor("whitelist")} title="IP 允许名单" sub="名单内的网段不再按 IP 检测，设备和支付工具照常，加入后立即生效" icon={ListChecks} tone="role-2" flush
                 actions={canWrite && <Button size="sm" onClick={addWl}>+ 添加允许名单</Button>}>
                 <Table label="IP 允许名单">
                   <thead><tr><Th>IP / 网段</Th><Th>备注</Th><Th>添加人</Th><Th>失效时间</Th><Th align="right">操作</Th></tr></thead>
@@ -1304,6 +1318,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             </div>
           </div>
         </div>
+        </>
       ) : overviewState)}
 
       {paramDraft && (() => {
@@ -1317,16 +1332,18 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const changed = valueOk && numeric !== Number(param.value);
         const update = (patch: Partial<ParamDraft>) => setParamDraft((current) => current ? { ...current, ...patch } : current);
         const busy = draftSubmitting === "param";
-        const unit = param.unit ? ` ${param.unit}` : "";
         return (
-          <DraftModal title={`调整风险判断标准 · ${riskParamName(param)}`} busy={busy} saveLabel="确认保存" blocked={!typed ? "填写新值" : !valueOk ? "新值不在范围内" : !changed ? "和当前值一样，没有改动" : undefined}
+          <DraftModal title={`调整风险判断标准 · ${riskParamName(param)}`} busy={busy} saveLabel="保存并立即生效" blocked={!typed ? "填写新值" : !valueOk ? "新值不在范围内" : !changed ? "和当前值一样，没有改动" : undefined}
             reason={reason} placeholder="写清调整原因和依据" policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => update({ reason: next })} onClose={() => setParamDraft(null)} onSave={saveParamDraft}>
-            <DiffList rows={[{ key: "value", label: "当前值和新值", before: `${param.value}${unit}`, after: typed ? `${value}${unit}` : `${param.value}${unit}` }]} emptyNote="还没改动" />
-            <Field label={`新值（${limits.min}–${limits.max}）`} help={`${help?.how ?? ""}${help?.when ?? "保存后，下次检查生效"}。`} error={typed && !valueOk ? (limits.integer ? "必须填写范围内的整数" : "必须填写范围内的数字") : undefined}>
+            <DiffList rows={[{ key: "value", label: "这一项", before: riskValueText(param.key, param.value, param.unit), after: typed ? riskValueText(param.key, value, param.unit) : riskValueText(param.key, param.value, param.unit) }]} emptyNote="还没改动" />
+            <Field label={`新值（${limits.min}–${limits.max}）`} help={`${help?.how ?? ""}${help?.when ?? ""}。`} error={typed && !valueOk ? (limits.integer ? "必须填写范围内的整数" : "必须填写范围内的数字") : undefined}>
               {(control) => <Input {...control} type="number" min={limits.min} max={limits.max} step={limits.step} disabled={busy} placeholder={`当前 ${param.value}`} value={value} onChange={(event) => update({ value: event.target.value })} />}
             </Field>
-            <Notice tone="neutral">{changed && help?.whatIf ? help.whatIf(value) : help?.what ?? param.sub}</Notice>
+            <Notice tone="neutral">
+              {changed && help?.whatIf ? help.whatIf(riskValueText(param.key, value)) : help?.what ?? param.sub}
+              {help?.direction && <div>{help.direction}</div>}
+            </Notice>
           </DraftModal>
         );
       })()}
@@ -1352,10 +1369,10 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const valueText = (text: string) => isBool ? RELEASE_BOOL_LABELS[text] ?? text : isMode ? RELEASE_MODE_LABELS[text] ?? text : `${text}${unit}`;
         const loosening = changed && isLooseningRelease(key, param.value, value);
         return (
-          <DraftModal title={`调整收益审核规则 · ${releaseParamName(param)}`} busy={busy} saveLabel="确认保存" blocked={!typed ? "填写新值" : !valueOk ? "新值不在范围内" : !changed ? "和当前值一样，没有改动" : undefined}
+          <DraftModal title={`调整收益审核规则 · ${releaseParamName(param)}`} busy={busy} saveLabel="保存并立即生效" blocked={!typed ? "填写新值" : !valueOk ? "新值不在范围内" : !changed ? "和当前值一样，没有改动" : undefined}
             reason={reason} placeholder="写清调整原因和依据" policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => update({ reason: next })} onReadLatest={() => void readLatestReleaseParam()} onClose={() => setReleaseDraft(null)} onSave={saveReleaseDraft}>
-            <DiffList rows={[{ key: "value", label: "当前值和新值", before: valueText(param.value), after: valueText(typed ? value : param.value) }]} emptyNote="还没改动" />
+            <DiffList rows={[{ key: "value", label: "这一项", before: valueText(param.value), after: valueText(typed ? value : param.value) }]} emptyNote="还没改动" />
             {limits ? (
               <Field label={`新值（${limits.min}–${limits.max}${param.unit ? ` · ${param.unit}` : ""}）`} help={`${help?.how ?? ""}${help?.when ?? ""}。`} error={typed && !valueOk ? "必须填写范围内的整数" : undefined}>
                 {(control) => <Input {...control} type="number" min={limits.min} max={limits.max} step={limits.step} disabled={busy} placeholder={`当前 ${param.value}`} value={value} onChange={(event) => update({ value: event.target.value })} />}
@@ -1367,7 +1384,10 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                   options={(isMode ? [...K1_RELEASE_MODE_VALUES] : ["true", "false"]).map((option) => ({ value: option, label: isMode ? RELEASE_MODE_LABELS[option] : RELEASE_BOOL_LABELS[option] }))} />
               </Field>
             )}
-            <Notice tone="neutral">{changed && help?.whatIf ? `${help.whatIf(value)}${loosening ? "" : "这是收紧方向。"}` : help?.what ?? param.sub}</Notice>
+            <Notice tone="neutral">
+              {changed && help?.whatIf ? help.whatIf(value) : help?.what ?? param.sub}
+              {help?.direction && <div>{help.direction}</div>}
+            </Notice>
             {/* 只有填对且真的放宽才提示:输入框清空时 Number("") = 0,对「调小才是放宽」族会被误判成放宽。
                 放大资金流出方向的告知:真正的拦截在服务端,本页没有覆盖率数据,不做客户端预检。 */}
             {loosening && (
@@ -1387,7 +1407,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const update = (patch: Partial<WhitelistDraft>) => setWhitelistDraft((current) => current ? { ...current, ...patch } : current);
         const busy = draftSubmitting === "whitelist";
         return (
-          <DraftModal title="添加 IP 允许名单" busy={busy} busyLabel="提交中…" saveLabel="确认加入"
+          <DraftModal title="添加 IP 允许名单" busy={busy} busyLabel="提交中…" saveLabel="加入并立即生效"
             blocked={!cidrOk ? "填写合法的 IP / CIDR 网段" : !noteOk ? "备注要 2–200 字" : !expiryOk ? "失效日期要晚于今天" : pendingBlocks.has(`cidr:${cidr}`) ? "这个网段有结果未确认的操作，先到页面上方处理" : undefined}
             reason={whitelistDraft.reason} placeholder="写清调整原因和依据" policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => update({ reason: next })} onClose={() => setWhitelistDraft(null)} onSave={saveWhitelistDraft}>
@@ -1419,11 +1439,11 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const busy = draftSubmitting === "weight";
         const help = K1_PARAM_HELP.linkWeight;
         return (
-          <DraftModal title={`调整关联权重 · ${riskParamName(weightDraft.param)}`} wide busy={busy} saveLabel="确认保存"
+          <DraftModal title={`调整关联权重 · ${riskParamName(weightDraft.param)}`} wide busy={busy} saveLabel="保存并立即生效"
             blocked={!validNumbers ? "每项必须在 0 到 1 之间" : !totalOk ? "三项合计必须等于 1.00" : !changed ? "和当前值一样，没有改动" : undefined}
             reason={weightDraft.reason} placeholder="例如：误判多来自同一网络，降低 IP 权重、提高设备指纹权重" policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => updateDraft({ reason: next })} onClose={() => setWeightDraft(null)} onSave={saveWeightDraft}>
-            <Notice tone="neutral">关联强度 = 设备指纹命中 × 设备权重 + 支付工具命中 × 支付权重 + IP 命中 × IP 权重。每项单独填写，三项加起来要等于 1.00。{help.when}。</Notice>
+            <Notice tone="neutral">关联程度 = 设备指纹命中 × 设备权重 + 支付工具命中 × 支付权重 + IP 命中 × IP 权重。每项单独填写，三项加起来要等于 1.00。{help.when}。</Notice>
             <div className="rd-split" data-even="">
               {[
                 ["device", "设备指纹权重", "设备指纹 / 浏览器指纹 / 应用实例"] as const,
