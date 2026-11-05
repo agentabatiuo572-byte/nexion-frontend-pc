@@ -68,8 +68,12 @@ export function canAccessBiReportType(
   role: string | undefined,
   authorities: readonly string[],
   reportType: string,
+  containsPii = false,
 ): boolean {
   const normalized = reportType.trim().toUpperCase();
+  if (normalized === "FINANCE_AGG" && containsPii) {
+    return role?.toLowerCase() === "superadmin" || authorities.includes("bi_l3_export_detail");
+  }
   if (normalized === "REGULATORY") {
     return role?.toLowerCase() === "superadmin" || authorities.includes("bi_l5_regulatory_generate");
   }

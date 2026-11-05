@@ -161,8 +161,9 @@ export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
   return (
     <>
 
-      {!ctx.canExport && <span className="f-ro">当前角色仅可查看 · 导出需报表管理权限</span>}
-      <button
+      {!ctx.canExport && !ctx.canExportFinanceDetail && <span className="f-ro">当前角色仅可查看 · 没有财务报表导出权限</span>}
+      {!ctx.canExport && ctx.canExportFinanceDetail && <span className="f-ro">当前角色可申请导出脱敏资金明细 · 没有汇总导出权限</span>}
+      {ctx.canExport && <button
         className="f-cta"
         onClick={exportAgg}
         disabled={exporting || !ctx.canExport || !exportable || ctx.biLoading || Boolean(ctx.biError)}
@@ -170,7 +171,7 @@ export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
         title={!ctx.canExport ? "当前角色没有报表导出权限" : !exportable ? "暂无可导出的财务数据" : ctx.biError ? "数据加载失败，暂时不能导出" : undefined}
       >
         {exporting ? "正在生成…" : "导出财务汇总（CSV）"}
-      </button>
+      </button>}
       {ctx.canExportFinanceDetail ? (
         <button
           className="f-cta"
@@ -182,7 +183,7 @@ export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
           {detailExporting ? "正在提交…" : "申请导出资金明细（已隐藏隐私）"}
         </button>
       ) : (
-        <span className="f-ro">当前角色仅可导出聚合报表 · 明细需财务明细权限</span>
+        ctx.canExport && <span className="f-ro">当前角色仅可导出汇总报表 · 明细需财务明细权限</span>
       )}
     </>
   );

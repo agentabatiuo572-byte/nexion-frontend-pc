@@ -96,6 +96,9 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
     canExport: canExportBiReports(session?.role, session?.authorities ?? [], tab),
     canExportFinanceDetail: session?.role?.toLowerCase() === "superadmin"
       || (session?.authorities ?? []).includes("bi_l3_export_detail"),
+    canExportLedger: session?.role?.toLowerCase() === "superadmin"
+      || ((session?.authorities ?? []).includes("finance_d4_export")
+        && (session?.authorities ?? []).some((code) => code === "finance_d4_read" || code === "finance_d4_user_read")),
     canApproveExportTasks: session?.role?.toLowerCase() === "superadmin"
       || (session?.authorities ?? []).includes("bi_l5_task_approve"),
     canExportNetworkTree: session?.role?.toLowerCase() === "superadmin"
@@ -103,7 +106,7 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
     canGenerateRegulatory: session?.role?.toLowerCase() === "superadmin"
       || (session?.authorities ?? []).includes("bi_l5_regulatory_generate"),
     availableAggregateExportTypes: aggregateExportOptions.map((option) => option.label),
-    canAccessReportType: (reportType) => canAccessBiReportType(session?.role, session?.authorities ?? [], reportType),
+    canAccessReportType: (reportType, containsPii) => canAccessBiReportType(session?.role, session?.authorities ?? [], reportType, containsPii),
     l2Query,
     setL2Query,
     l2SliceExportable,

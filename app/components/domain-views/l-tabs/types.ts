@@ -29,11 +29,12 @@ export type LCtx = {
   biActions?: LBiActions;
   canExport?: boolean;
   canExportFinanceDetail?: boolean;
+  canExportLedger?: boolean;
   canApproveExportTasks?: boolean;
   canExportNetworkTree?: boolean;
   canGenerateRegulatory?: boolean;
   availableAggregateExportTypes?: readonly string[];
-  canAccessReportType?: (reportType: string) => boolean;
+  canAccessReportType?: (reportType: string, containsPii?: boolean) => boolean;
   l2Query?: L2FunnelQuery;
   setL2Query?: (query: L2FunnelQuery) => void;
   l2SliceExportable?: boolean;
