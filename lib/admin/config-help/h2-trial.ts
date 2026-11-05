@@ -67,10 +67,10 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
   trialOffsetCapUSD: {
     what: "试用收益最多能抵多少购机款",
     when: "立即生效，按用户领取时的设置算",
-    how: "0–1,000,000 USD。留空即不设上限；0 表示上限为 0。",
+    how: "0–1,000,000 USDT。要清空点「不设上限」；0 表示上限为 0。",
     where: "App 领取弹窗「最高」金额、我的 › 试用页规则",
     input: USD_RANGE,
-    whatIf: (value) => (value.trim() === "" ? "留空：之后领取的试用不设抵扣上限。" : `改成 ${value}：之后领取的试用，试用收益最多抵 ${value} USD。`),
+    whatIf: (value) => (value.trim() === "" ? "不设上限：之后领取的试用，试用收益抵扣不封顶。" : `改成 ${value}：之后领取的试用，试用收益最多抵 ${value} USD。`),
   },
   graceDays: {
     what: "试用到期后还能用抵扣金购买的天数",

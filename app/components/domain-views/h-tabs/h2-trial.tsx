@@ -171,7 +171,7 @@ function ParamRow({ ctx, param, trialProducts, onChanged, reach }: {
       kind: help?.input ? "number" : "text",
       current: isOffsetCap && !current ? "不设上限" : current,
       ...help?.input,
-      allowEmpty: isOffsetCap,
+      emptyOption: isOffsetCap && current ? "不设上限" : undefined,
       hint: help?.how,
       preview: help?.whatIf,
     };

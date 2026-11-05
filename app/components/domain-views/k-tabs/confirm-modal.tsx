@@ -6,9 +6,10 @@
  * 强制留痕(业务服务必达审计);reason=true 时原因必填,input 为可选输入框。
  */
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { useId, useState } from "react";
+import { fetchA2ReasonPolicy } from "@/lib/admin/a2-client";
+import { useEffect, useId, useState } from "react";
 import { useRdSurface } from "@/app/components/rd/surface";
-import { Modal, Btn, Chip, OperatorBriefBlock } from "../design-kit";
+import { Modal, Btn, Chip, OperatorBriefBlock, reasonVisibleLength } from "../design-kit";
 import type { ConfirmReq } from "./types";
 
 export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () => void }) {
@@ -19,9 +20,17 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   const fieldId = useId();
   // 改版页面里和 OperationConfirmModal 同一个样子；旧页面不变。
   const surface = useRdSurface();
-  const reasonMin = 8;
-  const reasonMax = 200;
-  const reasonLength = reason.trim().length;
+  // 理由规则读得到就按它，读不到按默认 8–200 继续，紧急关停不能被规则服务挡住（Q-06）。
+  const [policy, setPolicy] = useState<{ minChars: number; maxChars: number } | null>(null);
+  useEffect(() => {
+    if (!req.reason) return;
+    let active = true;
+    void fetchA2ReasonPolicy().then((next) => { if (active) setPolicy(next); }, () => { if (active) setPolicy(null); });
+    return () => { active = false; };
+  }, [req.reason]);
+  const reasonMin = policy?.minChars ?? 8;
+  const reasonMax = policy?.maxChars ?? 200;
+  const reasonLength = reasonVisibleLength(reason);
   const reasonOk = !req.reason || (reasonLength >= reasonMin && reasonLength <= reasonMax);
   // chips 模式:所选项即非空,用精确判空(防空串 option 误配后按钮静默禁用);文本模式:仍要求 trim 后非空(拒纯空白)。
   const inputOk = !req.input || req.input.required === false || (req.input.options ? value !== "" : value.trim().length >= 1);
@@ -59,6 +68,8 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
         </>
       }
     >
+      {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
+      <fieldset disabled={submitting} style={{ display: "contents" }}>
       {surface && req.effect && <div className="rd-effect">{req.effect}</div>}
       {error && <div role="alert" className="tint danger">{error}</div>}
       <OperatorBriefBlock action={req.action} detail={req.detail} hasEdit={!!req.input} stated={req.statedBrief} />
@@ -108,21 +119,27 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       )}
       <div className={surface ? "field" : undefined} style={surface ? undefined : { marginTop: 13 }}>
         <label htmlFor={`${fieldId}-reason`} style={surface ? undefined : { display: "block", fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>
-          {req.reason ? "操作理由（必填，8–200 字）" : "备注（可选，最多 200 字）"}
+          {req.reason ? `操作理由（必填，${reasonMin}–${reasonMax} 字）` : "备注（可选，最多 200 字）"}
         </label>
         <textarea
           id={`${fieldId}-reason`}
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           rows={2}
-          maxLength={200}
+          maxLength={req.reason ? reasonMax : 200}
           placeholder={req.reasonPlaceholder ?? (req.reason ? "写清场景和依据，例如：合租办公网络、已知合作账户、客服举报线索" : "可以补充处理依据")}
           style={surface ? undefined : {
             width: "100%", background: "var(--surface-2)", border: "1px solid var(--border-strong)", borderRadius: 8,
             padding: "8px 12px", color: "var(--ink)", fontSize: 12.5, outline: "none", resize: "vertical", fontFamily: "inherit",
           }}
         />
+        {req.reason && (
+          <div className="tiny" style={{ marginTop: 7, color: reasonOk ? "var(--ink-3)" : "var(--warning)" }}>
+            {reasonLength < reasonMin ? `还差 ${reasonMin - reasonLength} 字` : `已填写 ${reasonLength}/${reasonMax} 字`}
+          </div>
+        )}
       </div>
+      </fieldset>
     </Modal>
   );
 }

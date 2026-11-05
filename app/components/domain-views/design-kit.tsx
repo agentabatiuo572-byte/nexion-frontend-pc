@@ -556,7 +556,7 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 }
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
-export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; step?: number; disallowCurrent?: boolean; /** 留空也是合法的新值，比如「不设上限」。 */ allowEmpty?: boolean; /** 怎么填，只在 RdPage 里显示（CP-87）。 */ hint?: ReactNode; /** 改了会怎样，随输入变化，只在 RdPage 里显示。 */ preview?: (value: string) => ReactNode; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
+export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; step?: number; disallowCurrent?: boolean; /** 清空也是合法的新值时写这个选项的名字，比如「不设上限」。要人点它才算清空，框里什么都没填或填坏了都不算。 */ emptyOption?: string; /** 怎么填，只在 RdPage 里显示（CP-87）。 */ hint?: ReactNode; /** 改了会怎样，随输入变化，只在 RdPage 里显示。 */ preview?: (value: string) => ReactNode; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
@@ -613,7 +613,7 @@ function isDecimalStepAligned(value: string, base: number, step: number): boolea
 
 function isEditValueValid(spec: EditSpec | null, value: string): boolean {
   if (!spec) return true;
-  if (!value.trim()) return !!spec.allowEmpty;
+  if (!value.trim()) return false;
   if (spec.disabledOptions?.includes(value.trim())) return false;
   if (spec.disallowCurrent && value.trim() === (spec.current ?? "").trim()) return false;
   if ((spec.kind ?? "text") !== "number") return true;
@@ -627,6 +627,11 @@ function isEditValueValid(spec: EditSpec | null, value: string): boolean {
   if (spec.step !== undefined && spec.step > 0
     && !isDecimalStepAligned(normalized, spec.min ?? 0, spec.step)) return false;
   return true;
+}
+
+/** 理由按可见字符数，空白、控制符、零宽字符和组合符不算（OP-21），确认框共用这一种算法。 */
+export function reasonVisibleLength(reason: string): number {
+  return Array.from(reason.normalize("NFC")).filter((char) => !/[\s\p{Cc}\p{Cf}\p{Mn}\p{Mc}\p{Me}]/u.test(char)).length;
 }
 
 export type BusinessFormSpec =
@@ -3462,6 +3467,9 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const [draftReason, setReason] = useState(pendingReason ?? "");
   const reason = pendingReason ?? draftReason;
   const [newVal, setNewVal] = useState(() => initEditValue(edit));
+  // 原生数字框填坏时 value 是空串，只有 validity 分得清；有意清空是另一个状态（CP-54）。
+  const [numberBad, setNumberBad] = useState(false);
+  const [emptyChosen, setEmptyChosen] = useState(false);
   const [activeBusinessForm, setActiveBusinessForm] = useState<BusinessFormSpec | undefined>(businessForm);
   const [businessValue, setBusinessValue] = useState<BusinessFormValue>(() => initBusinessForm(businessForm));
   const [uploadStates, setUploadStates] = useState<Record<string, "uploading" | "failed" | undefined>>({});
@@ -3521,15 +3529,14 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   // Mirror the server's Unicode policy for immediate UX feedback. The backend remains
   // authoritative; whitespace, controls, zero-width formatting and standalone marks
   // cannot be used to pad an operation reason to the configured minimum.
-  const reasonLength = Array.from(reason.normalize("NFC")).filter((char) =>
-    !/[\s\p{Cc}\p{Cf}\p{Mn}\p{Mc}\p{Me}]/u.test(char),
-  ).length;
+  const reasonLength = reasonVisibleLength(reason);
   const reasonOk = reasonLength >= reasonMin && (reasonMax === undefined || reasonLength <= reasonMax);
   const businessMissing = missingBusinessFields(activeBusinessForm, businessValue);
   const submittedValue = spec?.submitEditValue
     ? newVal
     : businessNewValue(activeBusinessForm, businessValue) ?? newVal;
-  const editValueOk = isEditValueValid(spec, newVal);
+  const editValueOk = emptyChosen || (!numberBad && isEditValueValid(spec, newVal));
+  const sameAsCurrent = !!spec?.disallowCurrent && !!newVal.trim() && (newVal.trim() === spec.current?.trim() || (kind === "number" && Number(newVal) === Number(spec.current)));
   const uploadBlocked = Object.values(uploadStates).some(Boolean);
   const canConfirm = !blockedReason && (retryApproval ? !submitting && !approvalOnlyLookup
     : reasonPolicyReady && !covBlocked && !approval?.disabledReason && !inlineApproval?.disabledReason && !businessSelectionLoading && !submitting && reasonOk && editValueOk && businessMissing.length === 0 && !uploadBlocked
@@ -3643,6 +3650,8 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
           </Btn>
         )}
       </>}>
+      {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
+      <fieldset disabled={submitting} style={{ display: "contents" }}>
       {surface && effect && <div className="rd-effect">{effect}</div>}
       {!approval && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={briefKind} stated={statedBrief} />}
       {blockedReason
@@ -3706,7 +3715,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
               {compareEdit && <span aria-hidden>→</span>}
               {compareEdit && <span className="muted">拟调整</span>}
               {surface && kind === "number" && !compareEdit ? (
-                <RdNumberInput aria-label="目标新值" unit={spec.unit} min={spec.min} max={spec.max} step={spec.step} value={newVal} aria-invalid={!editValueOk && !!newVal ? true : undefined} onChange={(e) => setNewVal(e.target.value)} placeholder={spec.current ? `当前 ${spec.current}` : "输入新值"} />
+                <RdNumberInput key={emptyChosen ? "empty" : "value"} aria-label="目标新值" unit={spec.unit} min={spec.min} max={spec.max} step={spec.step} value={newVal} disabled={emptyChosen} aria-invalid={!editValueOk && (!!newVal || numberBad) ? true : undefined} onChange={(e) => setNewVal(e.target.value)} onInput={(e) => setNumberBad(e.currentTarget.validity.badInput)} placeholder={spec.current ? `当前 ${spec.current}` : "输入新值"} />
               ) : <input
                 className="fld"
                 aria-label="目标新值"
@@ -3718,22 +3727,25 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
                 disabled={!!inlineApproval?.compareEdit && formLocked}
                 value={newVal}
                 onChange={(e) => setNewVal(e.target.value)}
+                onInput={(e) => setNumberBad(e.currentTarget.validity.badInput)}
                 placeholder={spec.current ? `输入新值（当前 ${spec.current}）` : "输入新值"}
                 style={{ maxWidth: compareEdit ? 140 : 240 }}
               />}
               {comparisonUnit && !(surface && kind === "number" && !compareEdit) && <span className="muted tiny" id={compareEdit ? comparisonUnitId : undefined}>{comparisonUnit}</span>}
+              {spec.emptyOption && <Chip tab sel={emptyChosen} onClick={() => { setEmptyChosen(!emptyChosen); setNewVal(""); setNumberBad(false); }}>{spec.emptyOption}</Chip>}
             </div>
           )}
-          {!editValueOk && !retryApproval && kind === "number" && newVal && (
+          {!editValueOk && !retryApproval && kind === "number" && (newVal || numberBad) && !(surface && sameAsCurrent) && (
             <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
               请输入 {spec.min ?? "允许范围"}～{spec.max ?? "允许上限"} 的有效数字{spec.step ? `（步长 ${spec.step}）` : ""}。
             </div>
           )}
+          {surface && sameAsCurrent && <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>新值和当前值一样，改了才能保存。</div>}
           {surface && spec.hint && <div className="rd-form-help">{spec.hint}</div>}
-          {surface && spec.preview && editValueOk && (newVal || spec.allowEmpty) && <div className="rd-confirm-preview">{spec.preview(newVal)}</div>}
-          {!compareEdit && newVal && spec.current && (
+          {surface && spec.preview && editValueOk && <div className="rd-confirm-preview">{spec.preview(newVal)}</div>}
+          {!compareEdit && (newVal || emptyChosen) && spec.current && !sameAsCurrent && (
             <div className="tiny" style={{ marginTop: 8, color: "var(--ink-3)" }}>
-              当前 <span className="mono">{spec.optionLabels?.[spec.current] ?? spec.current}</span> → 新 <span className="mono" style={{ color: "var(--brand)" }}>{spec.optionLabels?.[newVal] ?? newVal}{spec.unit ? ` ${spec.unit}` : ""}</span>
+              当前 <span className="mono">{spec.optionLabels?.[spec.current] ?? spec.current}</span> → 新 <span className="mono" style={{ color: "var(--brand)" }}>{emptyChosen ? spec.emptyOption : <>{spec.optionLabels?.[newVal] ?? newVal}{spec.unit ? ` ${spec.unit}` : ""}</>}</span>
             </div>
           )}
         </div>
@@ -3757,6 +3769,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
           </div>
         )}
       </div>
+      </fieldset>
     </Modal>
   );
 }
