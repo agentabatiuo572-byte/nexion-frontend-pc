@@ -86,6 +86,7 @@ export interface McSpec {
   confirmTone?: "primary" | "danger";
   coverageLead?: ReactNode;
   facts?: ReactNode;
+  statedBrief?: { impact: string; check: string };
   deviceId?: number;        // E5 后端设备主键
   deviceNo?: string;        // E5 展示编号(instanceNo)
   deviceAction?: "activate" | "force-activate" | "deactivate" | "unbind";

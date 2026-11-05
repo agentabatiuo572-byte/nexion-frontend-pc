@@ -253,6 +253,10 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const orderPending = ctx.e4Pending.some((record) => record.orderNo === o.id);
   const waitReason = orderPending ? "这单有结果未确认的操作，先到页面上方处理" : e4DetailError ? "订单详情读取失败，重试成功后才能操作" : e4DetailLoading || !e4Detail ? "正在读取订单事实" : undefined;
   const approvalTag = <StatusTag tone="progress" filled>批准后生效</StatusTag>;
+  const briefOf = (check: string) => ({ impact: "批准后生效：提交后请另一位超级管理员在「操作记录与审批」中批准。", check });
+  // 批准后后端把这单的设备改成已退款、停用（rollbackOrderDevices），赠品设备不在内，由活动规则收回。
+  const hasDevice = !!e4Detail?.deviceId || !!e4Detail?.deviceInstanceNo;
+  const refundDeviceText = hasDevice ? "这单的设备停用，不再归用户，不再派任务，不再产生新收益。活动赠品的设备按活动规则处理。" : "这单还没有设备，退款后不再开通。";
 
   // 具体原因只从状态轨迹取，状态本身证明不了原因。
   const closeRecord = e4Detail?.history.findLast((item) => item.toState === eff);
@@ -262,11 +266,12 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
       : nextStep ? { label: "下一步", value: `可以推进到「${stateLabel(nextStep)}」`, reason: canWriteE4 ? "条件都满足了，点下面「推进到下一步」提交审批。" : "条件都满足了，要有修改权限的账号提交。", state: "progress" }
         : progressBlock ? { label: "下一步", value: progressBlock.title, reason: <span title={progressBlock.code}>{progressBlock.text}</span>, state: eff === "placed" ? undefined : "warn" }
           : { label: "下一步", value: "暂无可推进步骤", reason: "订单已交付，不用处理。" };
+  const coverageReason = <><Explain label="覆盖率是什么" content="平台储备除以应付款，越高越安全。退款后低于红线时不能退款。">覆盖率</Explain> {coverageText}</>;
   const refundRow: JudgmentRow | null = finalized ? null
     : !refundableState ? { label: "退款", value: "不能退款", reason: "用户还没付款。只有已支付、开通中、已激活或已入库的订单能退款。" }
       : !e4Detail ? { label: "退款", ...pendingFact }
-        : e4Detail.refundAllowed ? { label: "退款", value: canRefundE4 ? "可以退款" : "符合退款条件，这个账号不能退款", reason: <>覆盖率 {coverageText}</> }
-          : { label: "退款", value: refundBlockText, reason: coverageKnown ? <>覆盖率 {coverageText}</> : "要先读到资金覆盖率才能退款。过一会儿重新打开这单。", state: coverageKnown ? "danger" : "warn" };
+        : e4Detail.refundAllowed ? { label: "退款", value: canRefundE4 ? "可以退款" : "符合退款条件，这个账号不能退款", reason: coverageReason }
+          : { label: "退款", value: refundBlockText, reason: coverageKnown ? coverageReason : "要先读到资金覆盖率才能退款。过一会儿重新打开这单。", state: coverageKnown ? "danger" : "warn" };
   const rows: JudgmentRow[] = [
     nextRow,
     { label: "对象", icon: User, tone: "users", value: o.user, reason: o.sku },
@@ -281,8 +286,9 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const note = !canWriteE4 && !canRefundE4 ? "你只能查看这单。"
     : !hasAction ? "这单现在没有人工操作。"
     : waitReason ? `${waitReason}。`
-      : canRefundE4 && refundableState ? `退款不可撤销，批准后才执行。${terminalOptions.length > 0 ? "「标记失败结果」不会退款。" : ""}`
-        : "提交后要批准才生效。";
+      : canRefundE4 && refundableState ? `退款不可撤销。批准后钱退回用户钱包${hasDevice ? "，这单的设备停用" : ""}。${terminalOptions.length > 0 ? "「标记失败结果」不会退款。" : ""}`
+        : canCancel ? "提交后要批准才生效。用户还没付款，取消和标记失败都不涉及退款。"
+          : "提交后要批准才生效。";
   const copyNo = () => {
     void navigator.clipboard?.writeText(o.id).then(() => toast("已复制订单号"), () => toast("复制失败，请手动选择订单号"));
   };
@@ -297,21 +303,22 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
           const channels = e4Detail.refundChannels.length ? e4Detail.refundChannels : ["WALLET"];
           openActionConfirm({
             name: "退款 · " + o.id, op: "order-refund", orderId: o.id, amplify: true,
-            effect: approvalTag, confirmLabel: "提交审批", confirmTone: "danger", coverageLead: "退款会让平台多付钱",
-            facts: <Facts><Fact k="用户">{o.user}</Fact><Fact k="商品">{o.sku}</Fact><Fact k="能否撤销">不可撤销</Fact></Facts>,
-            businessForm: { kind: "multi-field", title: "退款渠道与原因", hint: coverageText, fields: [
+            effect: approvalTag, confirmLabel: "提交审批", confirmTone: "danger", coverageLead: "退款后用户钱包多这笔钱，平台的应付款跟着增加",
+            statedBrief: briefOf("核对用户、金额和退款原因，理由写清依据或工单号。"),
+            facts: <Facts><Fact k="用户">{o.user}</Fact><Fact k="商品">{o.sku}</Fact><Fact k="设备">{refundDeviceText}</Fact><Fact k="能否撤销">不可撤销</Fact></Facts>,
+            businessForm: { kind: "multi-field", title: "退款渠道与原因", hint: `覆盖率 ${coverageText}`, fields: [
               { key: "refundChannel", label: "退款渠道", current: channels[0], inputKind: "select", options: channels, optionLabels: { WALLET: "退回 USDT 钱包", ORIGINAL_PAYMENT: "原支付渠道" }, required: true, showDiff: true },
               { key: "refundReasonCode", label: "退款原因（用户可见）", current: "", inputKind: "select", options: ["", ...E4_REFUND_REASONS], optionLabels: { "": "请选择退款原因", ...E4_REFUND_REASON_LABELS }, required: true, help: "这个原因会显示在用户的订单详情里；下方备注只记在操作记录里，用户看不到。" },
             ] },
-            detail: `退款 ${o.id} · ${orderMoney(o.amt)} · ${coverageText}。钱会退回用户，充值记录、账单和累计充值一起冲回，不可撤销。`,
+            detail: `退款 ${orderMoney(o.amt)}。钱退回用户的 USDT 钱包，付款记录标为已退款，补一条退款账单，用户的累计充值减去这笔金额。`,
           });
         }}><AutoGloss>{e4DetailLoading ? "正在检查退款条件…" : e4Detail?.refundAllowed === false ? refundBlockText : "退款"}</AutoGloss></Button>}
         others={<>
-          {canCancel && <Button disabledReason={waitReason} onClick={() => openActionConfirm({ name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, effect: approvalTag, confirmLabel: "提交审批", detail: `取消 ${o.id}（${stateLabel(eff)}）。用户还没付款，取消后订单终止。`,
+          {canCancel && <Button disabledReason={waitReason} onClick={() => openActionConfirm({ name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, effect: approvalTag, confirmLabel: "提交审批", statedBrief: briefOf("核对订单和取消原因，理由写清依据或工单号。"), detail: `取消 ${o.id}（${stateLabel(eff)}）。用户还没付款，取消后订单终止。`,
             businessForm: { kind: "multi-field", title: "取消原因", fields: [
               { key: "closeReasonCode", label: "取消原因（用户可见）", current: "", inputKind: "select", options: ["", ...E4_CLOSE_REASONS.cancelled], optionLabels: { "": "请选择取消原因", ...E4_CLOSE_REASON_LABELS }, required: true, help: "这个原因会显示在用户的订单详情里；下方备注只记在操作记录里，用户看不到。" },
             ] } })}>取消订单</Button>}
-          {canWriteE4 && terminalOptions.length > 0 && <Button disabledReason={waitReason} onClick={() => openActionConfirm({ name: "标记失败结果 · " + o.id, op: "order-terminal", orderId: o.id, amplify: false, effect: approvalTag, confirmLabel: "提交审批", detail: `当前状态：${stateLabel(eff)}，选择一个失败结果。退款请用「退款」按钮。`,
+          {canWriteE4 && terminalOptions.length > 0 && <Button disabledReason={waitReason} onClick={() => openActionConfirm({ name: "标记失败结果 · " + o.id, op: "order-terminal", orderId: o.id, amplify: false, effect: approvalTag, confirmLabel: "提交审批", statedBrief: briefOf("核对失败结果和原因，理由写清依据或工单号。"), detail: `当前状态：${stateLabel(eff)}，选择一个失败结果。退款请用「退款」按钮。`,
             businessForm: { kind: "multi-field", title: "失败结果与原因", hint: "过期、拒付的原因会自动记录；支付失败、开通失败需要选择原因。", fields: [
               { key: "terminalState", label: "失败结果", current: "", inputKind: "select", options: ["", ...terminalOptions], optionLabels: { "": "请选择失败结果", ...Object.fromEntries(terminalOptions.map((s) => [s, stateLabel(s)])) }, required: true },
               ...terminalOptions.filter((s) => E4_CLOSE_REASONS[s]).map((s) => (

@@ -1627,6 +1627,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         confirmTone={mc.confirmTone}
         coverageLead={mc.coverageLead}
         facts={mc.facts}
+        statedBrief={mc.statedBrief}
         onClose={() => setActionConfirm(null)}
         onConfirm={async (reason, newValue, businessValue) => {
           if (!mc) return;
