@@ -3175,7 +3175,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | 非 Phase 参数配置(日限额 / 余额上限 / 网络费 / NEX 抵扣率) | 财务(lead)/ 超管 | D5-MD1(理由必填+B1 红线预检(放大流出方向)) | `admin.withdraw_limit_changed`(field / before / after / operator / reason) |
 | Phase 参数(cooldown / 惩罚费率 / complianceHoldEnabled)展示 + 跳 H1 | 财务 / 风控 / 增长 | 否(只读展示 + 跳转;实际调整的确认弹窗在 H1) | 跳转 admin 审计事件(D5 仅记跳转,实际 dial 改动由 H1 记 `phase.dial_changed`) |
 
-> **非 Phase 参数配置 = 高敏动作**(§1.8 原则二.4,2026-06 操作确认决议):日限额 / 余额上限 / 网络费 / NEX 抵扣率直接调节资金流出摩擦,**执行权 = 财务(lead)/ 超管**(原复核层级转为执行门槛),经确认弹窗 D5-MD1 + 理由必填(server 强制非空 400 `REASON_REQUIRED`,8–200 字)即时生效,落 A2 审计并实时告警超管 / 财务 lead;**放大流出方向(上调日限额 / 上调余额上限 / 下调网络费 / 上调 NEX 抵扣率)前置 B1 兑付覆盖率红线核验**(低于红线 server 拒绝 422 `COVERAGE_BELOW_REDLINE`),弹窗必有影响预览区;收紧方向不受此约束。（注:上调 `nexFeeOffsetRate` 使每 NEX 抵扣更多手续费 → 平台实收手续费减少 = 放大流出方向。）
+> 非 Phase 参数配置属于高敏动作。经 D5-MD1 填写变更理由后，收紧立即执行，放宽进入 A2 待审。放宽须通过 B1 兑付覆盖率核验，并由另一位超管批准后生效。
 >
 > **Phase 参数只读展示 + 跳 H1 调整(避免与 H1 双源)**:D5 **不独立设 cooldown / 惩罚费率 / complianceHoldEnabled**——这三个是 Phase 派发 dial(权威 H1,§3.14),D5 只读展示 Phase 现值 + 提供"在 H1 调整 →"跳转;运营调这三项一律去 H1 调度器经 H1 的确认弹窗(理由必填)改 dial。**D5 owns 日限 / 上限 / fee / NEX 抵扣率** 四个非 Phase 参数的写入。这是"提现摩擦 = Phase 派发参数(H1)+ D 域固定参数(D5)"分工的落地。
 
@@ -3191,20 +3191,19 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 **(2) 弹窗规格**
 
-##### [D5-MD1] 提现参数变更确认(日限额 / 余额上限 / 网络费 / NEX 抵扣率)
-- **功能**:变更 D5 owns 的非 Phase 提现参数(`dailyLimitCount` / `balanceMaxRatio` / `networkConfirmFeeUsd` / `nexFeeOffsetRate`),确认即时生效(网络确认费按 ③ 表"仅新对象",在途不变;NEX 抵扣率"实时全量")。
-- **布局结构**:1. **信息区**:本次变更字段(field / 当前值 → 目标新值)/ 方向判定标签(**放大流出** / 收紧流出)/ 当前 Phase 与 cooldown / 惩罚费率派发现值(供联动研判,只读)。2. **影响预览区**(放大流出方向必有):server 预检「拟生效后兑付覆盖率」;低于黄线警示条(当前值 + 黄/红线);低于红线升级为阻断(确认钮置灰,文案含「覆盖率低于红线,server 将拒绝(422)」);收紧方向展示提示行「收紧流出,不受红线约束,正常生效」。3. **输入区**:目标新值控件(日限额 = 数字输入 1–10 次/日;余额上限 = 数字输入 50%–100%;网络费 = 比例 0%–5% + min/max 数字输入;NEX 抵扣率 = 数字输入 > 0,单位 $/NEX;范围引 ③ 表)+ reason(多行文本,必填,8–200 字;server 空值 400 `REASON_REQUIRED`)。4. **按钮区**:`[取消]` · `[确认变更]`(必填未过 / 超 ③ 表范围 / 覆盖率阻断置灰;loading 防双击)。
-- **网络确认费**:三网合法域 [0, 25],步进 0.5(FEAT-WD02)。输入时实时提示,不合法时「预览并提交」不可用;0、0.5、25 等合法值照常提交,后端保留同样的校验。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(放大流出方向,含 server 回传当前覆盖率,弹窗不关)/ 422 `PHASE_PARAM_READONLY`(误携 Phase 参数字段,提示跳 H1)/ 400 `REASON_REQUIRED` / 400(超 ③ 表范围)/ 409(参数已被他人变更,提示刷新)/ 403。
-- **成功反馈**:关窗;参数表现值就地更新;toast「已生效 · 已记审计」;事件 `admin.withdraw_limit_changed`;实时告警超管 / 财务 lead;联动 D2 队列按新参数判定。
+##### [D5-MD1] 提现参数变更确认
+- 提高每日提现次数、小额免审线、余额可提上限或 UVT 抵扣率，缩短到账时效，开启任一提现网络，或降低任一网络确认费，均须提交 A2 审批。恢复默认导致任一网络费降低时也须审批。网络开关和网络确认费分别按三网整组提交。
+- 放宽弹窗展示当前值、拟改值和「放宽配置 · 批准后生效」，理由必填，操作为「提交审批」。沿用对应 D5 动作权限，并要求 `platform_a2_proposal_create` 或 `platform_a2_write`。服务端在提交和批准时检查版本及兑付覆盖率，由另一位具备审批权限的超管批准。
+- 提交成功展示审批单号并回读当前配置。待审期间现值和版本保持不变。提交前保存原命令号、配置值和理由。结果待核实且有 A2 读取权限时，可先查询原操作，未查到时可用原命令号和原输入重试。收紧沿用确认保存，成功后立即生效并回读；在途对象仍按已锁定的参数处理。
+- 网络确认费范围为 0–25 USD，步进 0.5，三网均合法才可提交。误携 Phase 字段、版本冲突或权限不足沿用各自拒绝结果。
 
 **⑤ 接口**
 - `GET /api/admin/withdraw/limits` — 返回提现参数现值 `{ dailyLimitCount, balanceMaxRatio, networkConfirmFeeUsd: { trc20, bep20, erc20 }, nexFeeOffsetRate(来自 D5,可写,source:'d5'), penaltyFeeRate(来自 H1 Phase 派发,只读,source:'phase-h1'), cooldownDays(来自 H1 Phase 派发,只读,source:'phase-h1'), complianceHoldEnabled(来自 H1,只读,source:'phase-h1'), currentPhase }`;日限 / 上限 / fee / NEX 抵扣率标注 `source:'d5'`(可写)。对齐前端 §9.11c.1 `GET /api/config/wallet/withdraw-limits`。
-- `PUT /api/admin/withdraw/limits`(**仅非 Phase 参数**:`dailyLimitCount / balanceMaxRatio / networkConfirmFeeUsd / nexFeeOffsetRate`,确认弹窗 D5-MD1:body 必携 `{reason}`,空值 400 `REASON_REQUIRED`,确认即生效;**请求体含 cooldownDays / penaltyFeeRate / complianceHoldEnabled 时 server 返回 422 Unprocessable Entity** + error body `{code:'PHASE_PARAM_READONLY', message:'cooldownDays/penaltyFeeRate/complianceHoldEnabled 为 Phase 派发参数，请经 H1 调整', redirect:'/admin/phase/h1'}` —— 这些参数只能经 H1 `PUT /api/admin/phase/dials` 修改,D5 不接受其写入)。
+- `PUT /api/admin/withdraw/limits` 直接执行收紧变更，携带 `expectedVersion`、`reason` 与 `Idempotency-Key`。放宽直写返回 409 `D5_WITHDRAWAL_LIMITS_APPROVAL_REQUIRED`，通过 `POST /api/admin/platform/audit/operations` 创建 `D/d5_withdrawal_limits` 审批单，命令值携带 `expectedVersion`。
 
 > **D5 PUT 拒绝 Phase 参数写入(防双源)**:`PUT /api/admin/withdraw/limits` 服务端**仅接受非 Phase 参数**;若请求体携带 `cooldownDays` / `penaltyFeeRate` / `complianceHoldEnabled`,server 返回 **422 Unprocessable Entity** + error body `{code:'PHASE_PARAM_READONLY', message:'cooldownDays/penaltyFeeRate/complianceHoldEnabled 为 Phase 派发参数，请经 H1 调整', redirect:'/admin/phase/h1'}`。这从接口层 enforce "D5 不是这些参数的权威源"(§3.14)。
 >
-> **PUT 放大流出方向为覆盖率红线强约束(§1.8 原则一)**:server 在执行确认时,若操作朝**放大流出**方向(上调 `dailyLimitCount`、上调 `balanceMaxRatio`、下调任一网络的 `networkConfirmFeeUsd`、上调 `nexFeeOffsetRate`),且 B1 兑付覆盖率**低于红线(100%)**,server **拒绝**(返回 422 `COVERAGE_BELOW_REDLINE` + 当前覆盖率值;拒绝码全卷统一 422,PM 2026-06-02),而非仅附快照建议;**收紧方向**(降日限、降余额上限、升网络费、降 NEX 抵扣率)**不受此约束**,正常生效。这与 §1.8 原则一(放大流出前置强约束)一致;弹窗影响预览区的「拟生效后兑付覆盖率」预检与本约束同口径(D5-MD1)。
+> **放宽方向覆盖率强约束**。审批发起和批准时，覆盖率不可用或低于 B1 兑付红线均由服务端拒绝。收紧继续直接执行。
 
 金额 / 比例字段明示口径,时间戳 ms epoch 服务端权威。
 
@@ -3257,13 +3256,13 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 报价绑定 D5/D7 版本与收款账户版本；未提交报价遇配置变化须重新确认，已提交订单不得被新参数改写。
 
 **④ 操作动作**
-保存参数、启停通道均先展示前后值与业务影响，再填写理由确认，携版本和幂等键提交；重复命令恢复原结果。失败保留输入并给重试或重新加载入口，不显示成功。扩大流出或开启通道须通过服务端储备覆盖率检查；倒挂配置另需强制倒挂权限，不能由普通保存绕过。
+参数变更先展示前后值和业务影响，再填写理由确认。降低卖出点差、延长报价有效期、提高重报价容差、降低任一手续费参数、降低单笔下限或提高单笔上限，均为放宽。放宽弹窗显示「放宽配置 · 批准后生效」，提交后展示审批单号并回读生效配置。另一位超管批准后，新报价使用新参数，未提交的旧报价需重新报价，已提交订单金额保持不变。提交和批准时服务端检查兑付覆盖率及版本。提交结果待核实时沿用 D5-MD1 的原操作查询和重试流程。收紧沿用确认保存并立即生效。倒挂配置仍须具备专用权限并完成二次确认。
 
 **⑤ 接口**
-`GET /api/admin/finance/payout-vnd/config` 读取现值；`PATCH /api/admin/finance/payout-vnd/config` 提交参数、`expectedVersion/reason/forceInverted`；`PATCH /api/admin/finance/payout-vnd/channel` 提交 `enabled/expectedVersion/reason`。写入携 `Idempotency-Key`，版本冲突重新读取后确认。
+`GET /api/admin/finance/payout-vnd/config` 读取现值。`PATCH /api/admin/finance/payout-vnd/config` 携带参数和 `expectedVersion/reason/forceInverted` 直接保存收紧变更。放宽直写返回 409 `D7_PAYOUT_VND_CONFIG_APPROVAL_REQUIRED`，通过 `POST /api/admin/platform/audit/operations` 创建 `D/d7_payout_vnd_config` 审批单，命令值携带 `expectedVersion/forceInverted`。配置变更携带 `Idempotency-Key`，遇版本冲突需重新读取和确认。
 
 **⑥ 权限 & 审计**
-读取要求 `finance_d7_read`；参数保存要求 `finance_d7_manage`；强制倒挂另需 `finance_d7_force_inverted`；通道启停要求 `finance_d7_channel_toggle`。服务端记录操作者、前后版本/参数、理由及成功或拒绝结果，幂等重放不重复执行业务写入。
+读取要求 `finance_d7_read`，参数保存要求 `finance_d7_manage`，发起放宽审批另需 `platform_a2_proposal_create` 或 `platform_a2_write`，由另一位具备审批权限的超管批准。强制倒挂继续校验 `finance_d7_force_inverted`。服务端记录操作者、前后版本和参数、理由及结果，幂等重放不重复执行业务写入。
 
 **⑦ 风控 & 联动**
 开启通道必须同时满足真实服务商配置及运行环境就绪、状态读取可用、储备覆盖率健康；外部账户真实性与本人归属核验已不作为开启前提。App 依据服务端 `enabled` 与 `unresolvedIntent` 决定新单入口，账户与报价编号/版本仍须一致。读取失败和旧请求都不能被当作可重复提交的新单。供应商契约及授权实盘验收未完成前真实代付继续 HOLD；该边界不由撤销外部核验门自动解除。
@@ -4522,7 +4521,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | D4 | `/api/admin/bills/:id/adjust` | POST | 手动 refund / 调整账单(server 账本唯一合法写入路径) | Ch6 D4 | 是 | 是 |
 | D4 | `/api/admin/bills/export?type=&userId=` | GET | 脱敏账单 CSV 导出 | Ch6 D4 | — | — |
 | D5 | `/api/admin/withdraw/limits` | GET | 提现参数现值(日限/上限/fee/NEX 抵扣率 可写 `source:'d5'`;cooldown/惩罚费率/complianceHold 只读 `source:'phase-h1'`) | Ch6 D5 | — | — |
-| D5 | `/api/admin/withdraw/limits` | PUT | 非 Phase 提现参数配置(携 Phase 参数时返回 422 `PHASE_PARAM_READONLY`) | Ch6 D5 | 是 | — |
+| D5 | `/api/admin/withdraw/limits` | PUT | 收紧非 Phase 提现参数。放宽走 A2 审批。携 Phase 参数时返回 422 `PHASE_PARAM_READONLY` | Ch6 D5 | 是 | — |
 | H1 | `/api/admin/phase/dials` | GET / PUT | 逐月 8 dial 矩阵读取 / 改动 + 定时切换配置(全 dial 读写唯一路径) | Ch7 H1 | 是(PUT) | 是(PUT) |
 | H1 | `/api/admin/platform/phase-config/cohort-overrides` | GET / POST | cohort 月偏移 override 列出 / 新增 | Ch7 H1 | 是(POST) | — |
 | H1 | `/api/admin/platform/phase-config/cohort-overrides/:cohortId` | DELETE | 撤销某 cohort override | Ch7 H1 | 是 | — |

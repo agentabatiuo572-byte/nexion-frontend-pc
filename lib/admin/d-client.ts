@@ -2487,17 +2487,18 @@ export type D5OwnedChanges = Partial<Pick<D5Params,
   "dailyLimitCount" | "maxBalanceRatio" | "networkConfirmFeeUsd" | "networkEnabled" | "nexFeeOffsetRate"
   | "smallAmountThresholdUsd" | "payoutSlaHours">>;
 
+export function d5WithdrawalLimitsValues(changes: D5OwnedChanges, expectedVersion: number) {
+  const { maxBalanceRatio, ...values } = changes;
+  return { ...values, balanceMaxRatio: maxBalanceRatio, expectedVersion };
+}
+
 export async function updateD5WithdrawalLimits(
   changes: D5OwnedChanges,
   expectedVersion: number,
   reason: string,
   operator: string,
 ) {
-  const payload: Record<string, unknown> = { ...changes, expectedVersion, reason, operator };
-  if (Object.prototype.hasOwnProperty.call(payload, "maxBalanceRatio")) {
-    payload.balanceMaxRatio = payload.maxBalanceRatio;
-    delete payload.maxBalanceRatio;
-  }
+  const payload = { ...d5WithdrawalLimitsValues(changes, expectedVersion), reason, operator };
   return normalizeD5Params(await apiRequest<Record<string, unknown>>("withdraw", "/limits", {
     method: "PUT",
     body: JSON.stringify(payload),

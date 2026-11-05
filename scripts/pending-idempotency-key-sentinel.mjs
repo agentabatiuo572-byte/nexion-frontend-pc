@@ -63,6 +63,7 @@ const MIGRATED = [
   "app/_console/users/search/[id]/notification-time-evidence.tsx",
   "lib/admin/a4-redrive-command.ts",
   "lib/admin/d-client.ts",
+  "lib/admin/withdrawal-config-approval.ts",
   "lib/admin/user360-client.ts",
   "lib/admin/i-client.ts",
   "lib/admin/stable-mutation.ts",
