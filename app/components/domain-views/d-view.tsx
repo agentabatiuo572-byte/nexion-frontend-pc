@@ -23,6 +23,7 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "D2", [meta.l2Id]);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
+  const recoverApproval = mc?.approval?.recover;
 
   const ctx = {
     toast: setToast,
@@ -52,6 +53,14 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
           edit={mc.edit}
           businessForm={mc.businessForm}
           completionCopy={mc.completionCopy}
+          approval={mc.approval && {
+            ...mc.approval,
+            recover: recoverApproval && (async (reason) => {
+              const found = await recoverApproval(reason);
+              if (found) setActionConfirm(null);
+              return found;
+            }),
+          }}
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
           auditSink={mc.auditSink}

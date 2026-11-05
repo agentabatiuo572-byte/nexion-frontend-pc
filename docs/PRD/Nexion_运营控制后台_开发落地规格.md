@@ -557,8 +557,9 @@
 | `/api/notifications?cursor=&priority=` · `/:id/read` · `/stream`(SSE) | GET/POST/SSE | (用户)分页拉取 / 标读 / 推优先级升级 | — | I3 |
 | `/api/admin/trust/sections` · `/:sectionKey/versions` · `/:sectionKey` | GET/PUT | 信任 section 列表 / 历史 / 发布回滚(携 Key;财务数字/NEX 叙事类执行=风控 lead/超管) | I4-MD1~MD3(PUT) | I4 |
 | `/api/legal/risk-disclosure/current?jurisdiction=` | GET | (用户)当前 IP 辖区披露版本(server 权威判辖区) | — | I5 |
-| `/api/admin/legal/risk-disclosure` | PUT | 发布披露新版(per jurisdiction×locale;携 Key;发布标 ack stale 触发 re-ack;执行=风控 lead/超管) | I5-MD1~MD3 | I5 |
+| `/api/admin/content/trust-disclosure/disclosures/{jurisdiction}/publish` · `/api/admin/content/trust-disclosure/disclosures/matrix/{jurisdiction}` | POST / PUT | 发布批准后仅封存 / 生效版本映射另行批准切换后标 ack stale(携 Key;执行=风控 lead/超管) | I5-MD1~MD3 | I5 |
 | `/api/admin/i18n/namespaces` · `/:namespace/keys` · `/:namespace` · `/i18n/integrity` | GET/PUT | namespace 矩阵 / key 列表 / 发布(校验镜像+占位符;携 Key)/ 完整性扫描 | I6-MD1~MD3(发布) | I6 |
+| `/api/admin/content/i18n-learning/integrity/{issueCode}/fix` | POST | 保存选中词条的三语草稿，重扫返回该类剩余数和本次实际修复数。仍在发布版上的问题继续计入剩余。 | I6 完整性修复 | I6 |
 | `/api/admin/learn/courses` · `/:slug/versions` · `/:slug` | GET/PUT | 课程列表 / 历史 / 发布回滚+改奖励(改奖励核 B1;携 Key) | I7-MD1~MD4(PUT) | I7 |
 
 ### 域 J — 紧急合规(J1/J2 V4 接管 A3 写路径,读保留别名)
@@ -908,7 +909,7 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | phase-keyed cadence | tradein 15min/P3-4 60min/P5-6 24h;task-lock 30min/P1-2 30d/P3-4 7d/P5-6 3.5d | 随 Phase | 随 Phase 切换 | I2(H1 联动) |
 | `CAP_{CRITICAL,HIGH,NORMAL,LOW}` | ∞(不可降)/ 50 / 200 / 30 | 运营设定 | 实时 | I3 |
 | campaign 优先级 | 按 NotifKind(system/监管→critical/high) | critical/high/normal/low | 下发时锁定 | I3 |
-| 披露 `acceptedVersion` 模型 | 前端现状纯布尔→升级为 version×jurisdiction 矩阵(见第8章 #11) | 单调递增 | 发布即生效+re-ack | I5 |
+| 披露 `acceptedVersion` 模型 | version×jurisdiction 矩阵 | 单调递增 | 发布批准后仅封存；生效版本映射另行批准切换后要求重新确认 | I5 |
 | jurisdiction 判定来源 | user IP(server 边缘判) | — | 实时 | I5 |
 | 双 gate 阅读约束 | scroll-to-bottom + checkbox | 不可弱化 | 配置即生效 | I5 |
 | i18n 镜像/占位符强制 | 强制(缺镜像/不匹配→发布拦截) | — | 发布时校验 | I6 |
@@ -1037,10 +1038,10 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 ### 5.12 I 内容 / J 应急(Ch14 / Ch15)
 - **I1 文案 A/B**:版本 `draft → published(MC)→ archived`(回滚=重发历史版,MC);实验 `scheduled → running → concluded(adopted|discarded)`。分组 assignment server 权威,已分组 sticky。
-- **I5 风险披露**:版本 `draft → published(per jurisdiction,MC,改版强制 re-ack)→ superseded`;用户 ack `not_acked → acked → stale`(发布新版/jurisdiction 变更触发)。client 检测 acceptedVersion 落后或 jurisdiction 变 → 强制 re-prompt,不可本地置 accepted。
+- **I5 风险披露**:版本 `draft → published(per jurisdiction,批准后封存)→ superseded`；发布不切换 App 当前版本。生效版本映射另行批准切换；用户 ack `not_acked → acked → stale` 在生效映射改变时触发，不能在客户端直接置 accepted。提现、质押不再前置拦截，也不支持重新纳入。
 - **I2 Nova**:channel `enabled ⇄ disabled`(kill);模板 `draft → published → archived`(MC)。
-- **I3 通知 campaign**:`draft → scheduled → sending → sent`;仅 `scheduled → cancelled`;`cancelled` 不能编辑或重新排期,只能删除,要改就新建;`draft` 和 `cancelled` 可删,`sent` 不可删;调度下发=MC;优先级 in-place 升级 server emit canonical。
-- **I4 信任 / I6 i18n / I7 课程**:内容版本 `draft → published → archived`(I4 财务/NEX 叙事须合规审查,发布经确认弹窗;I6 发布前镜像+占位符 gate;I7 featured set⇄unset 单位互斥)。
+- **I3 通知 campaign**:`draft → scheduled → sending → sent`;仅 `scheduled → cancelled`;紧急取消另核紧急执行权;`cancelled` 不能编辑或重新排期,只能删除,要改就新建;`draft` 和 `cancelled` 可删,`sent` 不可删;调度下发=MC;优先级 in-place 升级 server emit canonical。
+- **I4 信任 / I6 i18n / I7 课程**:内容与课程 `draft → published → archived`；I7 课程版本 `DRAFT → PUBLISHED → SUPERSEDED`，回滚重新选定历史版本为当前版。I4 财务/NEX 叙事须合规审查，I6 发布前镜像+占位符 gate；I7 初次发布、版本发布和回滚均须课程写与奖励调整双权限，featured set⇄unset 单位互斥。
 - **J1 功能闸**:闸 `enabled ⇄ disabled`;提案 `pending_approval → approved|rejected`;应急 `pending_approval[emergency] → escalating`(N min 未放行自动升级,工单维持 pending 不自动放行)`→ approved|rejected`,升级耗尽 → `escalation_exhausted`(终态,永不自动放行);恢复(前置 B1 闸)未达覆盖率 → `blocked_by_coverage`(409+快照)。批量熔断逐闸独立生效(非原子),返 status[]。
 - **J3 篡改告警**:`normal → flagged`(超频次)→ `escalated`(喂 K4+B5);纯只读监控,处置跳 K 域。
 
@@ -1142,8 +1143,8 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | 7 | 前端文档编号/计数瑕疵簇 | §14 误编 §15.x;§11.3「14 section」vs 13 行;§11.0A 缺 wrapped 行 | 后台按逻辑号/正确计数落地(I2/I4/I6 已对齐) | I2/I4/I6 | v1 附录 A.1 #6 |
 | 8 | Pro 设备旧 salvage 基价冲突 | 历史原型曾用 `DEVICE_PRICE_USDT["stellarbox-pro"]=2639` | **已随 salvage 模型退役关闭**；当前换新按旧机真实实付价 + 累计已结算产出计算，目标商品价仍以 E1 权威价为准 | E3 / E1 | FEAT-DEV02 |
 | 9 | SKU 数量口径 | V1 §3.2 E1「6 SKU」 | **7 个管理对象**(补 Pro v2 / Genesis 目录位) | E1 | v2 §E1① |
-| 10 | 风险披露 ack 数据模型 | 前端纯布尔 `{accepted,acceptedAt}` | version × jurisdiction 双维矩阵,发布触发 re-ack | I5 | v4 §I5③ |
-| 11 | 披露页 gated action 拦截范围 | /me/wallet/withdraw 已实装;staking/nex-v2-lock 为规划集成点 | 三类 gated action 全部前置守卫接线 | I5 / G1 / G6 | v4 §I5③ |
+| 10 | 风险披露 ack 数据模型 | version × jurisdiction 双维矩阵 | 发布批准后仅封存；生效映射另行批准切换后要求重新确认 | I5 | v4 §I5③ |
+| 11 | 披露页 gated action 拦截范围 | 提现与质押已移出 | 不恢复退役前置门槛；范围为空与历史拦截分开说明 | I5 / G1 / G6 | v4 §I5③ |
 | 12 | 低优先级通知 `CAP_LOW` | 前端保留 30 条 | 真后台对接后改 24–48h TTL 自动淘汰 | I3 | v4 §I3 |
 | 13 | B1 兑付覆盖率红线拒绝码 | V1 卷 B1 原用 **403** | **✅ 全卷统一 422**(PM 2026-06-02;auth/authz 类 403 保持) | B1 / 全 G 域写 | v1 附录 A.2 #11 |
 | 14 | `binaryDailyCap` 技术字段名 | §6.4/前端 = `binaryDailyCap`(无后缀) | admin 引用写 `binaryDailyCapUSD`(指同一 dial,不另立) | F3 / H1 | v1 §6.4 字段名注 |
@@ -1361,6 +1362,12 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | H6-MD2 | watcher tick 间隔变更 | 是 | v3 H6④a |
 
 ### 9.9 I 内容与合规 CMS
+
+**通知取消与课程发布权限（2026-11-04，BUG-189、BUG-190）**：通知排期的取消与实际执行路由一致，普通通知须 `content_i3_write`，紧急通知还须 `content_i3_critical_send`；缺少紧急执行权时不显示取消入口，并说明没有发送或取消紧急通知的权限。无写权限只读。课程初次发布、版本草稿发布和历史版本回滚，均须同时具备 `content_i7_write` 与 `content_i7_course_reward_adjust`；单权限和只读账号不显示这些入口。读取课程仍只需真实合并路由允许的任一读权并有菜单，不额外要求词条读取权。原状态、测验、理由、版本和兑付覆盖率门不变。超级管理员沿用系统全权身份。
+
+**Nova 模板状态入口（2026-11-04，BUG-187）**：具有 `content_i2_write` 的账号仅可发布草稿、归档已发布模板；已归档模板不提供再次发布，草稿不提供归档。只读账号不显示这些写入口。菜单与读取权仍按实际路由要求，确认理由及系统的三语、变量和内容质量检查保持有效。
+
+**披露发布核对与生效（2026-11-04，BUG-180、BUG-182）**：发布前按七章的中文、越南语、英语标题和正文比较差异，英语单独变化也计入对应章节；核对框预览三语内容，缺少的英语译文明确显示未提供，勾选确认覆盖三语。核对内容仍来自已保存草稿，提案绑定同一 revision / contentHash，原审批门不变。草稿保存立即生效于草稿；发布提交审批，批准后仅封存七章，不改变 App 当前版本、不触发重新确认。生效版本映射另行提交审批，批准切换后才要求用户重新确认。提现和质押已移出前置确认范围，只读说明不再纳入，不提供恢复纳入入口；受限范围为空时明确告知，历史拦截记录继续保留。
 
 **信任中心回滚对照（2026-11-04，BUG-186）**：确认框的当前版始终取所选版块真实版本，历史候选只作为目标版。切换目标不改变当前版说明及当前→目标对比的起点。回滚仍提交至「操作记录与审批」，审批执行时按真实当前版本、状态及所选目标核对后生效；确认提交不代表立即回滚。
 

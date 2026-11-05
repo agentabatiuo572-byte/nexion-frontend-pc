@@ -490,7 +490,7 @@ const REVIEW_BRIEF: Record<D2ReviewAction, { impact: string; check: string }> = 
 
 const FREEZE_DAYS: Record<string, number> = { "7d": 7, "14d": 14, "30d": 30, "45d": 45 };
 
-function actionBusinessForm(action: D2ReviewAction, row?: D2Withdrawal): BusinessFormSpec | undefined {
+function actionBusinessForm(action: D2ReviewAction, addressVerificationRequired = false): BusinessFormSpec | undefined {
   if (action === "REJECT") return {
     kind: "multi-field", title: "拒绝原因", fields: [
       { key: "reasonCode", label: "拒绝原因", inputKind: "select", required: true, options: ["RISK_HIT", "ADDRESS_RISK", "DATA_MISMATCH", "USER_CANCELLED", "OTHER"], mustChoose: true, optionLabels: REJECT_REASON_LABELS, help: "按这笔的实际情况选，这个操作不能撤销。" },
@@ -519,7 +519,7 @@ function actionBusinessForm(action: D2ReviewAction, row?: D2Withdrawal): Busines
       { key: "fundsVerified", label: "钱没有打出去", inputKind: "select", required: true, mustChoose: true, options: ["true"], optionLabels: { true: "已核实" }, help: "到打款方和账单确认这笔钱没有打出去，再选「已核实」。" },
     ],
   };
-  if (action === "APPROVE" && (row?.amount ?? 0) >= 1000) return {
+  if (action === "APPROVE" && addressVerificationRequired) return {
     kind: "multi-field", title: "大额放行核实", fields: [
       { key: "addressVerified", label: "地址与风险信息", inputKind: "select", required: true, mustChoose: true, options: ["true"], optionLabels: { true: "已核对" }, help: "核对上面的收款网络、地址和命中的风险规则，再选「已核对」。" },
     ],
@@ -766,7 +766,7 @@ function countEntries(value: string | undefined, separator: string) {
 }
 
 export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
-  const { toast, openActionConfirm } = ctx;
+  const { toast } = ctx;
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
   const searchParams = useSearchParams();
@@ -816,6 +816,11 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const drawerRow = useRef(detail);
   if (detail) drawerRow.current = detail;
   const lastDetailIndex = useRef(0);
+  const reviewConfirmSeq = useRef(0);
+  const openActionConfirm: DCtx["openActionConfirm"] = (request) => {
+    reviewConfirmSeq.current += 1;
+    ctx.openActionConfirm(request);
+  };
 
   const hasAuthority = (authority: string) => authorities.includes(authority);
   const domains = useMemo(() => (session ? resolveVisibleDomains(session) : []), [session]);
@@ -988,7 +993,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     "审核失败",
   );
 
-  const confirmReview = (row: D2Withdrawal, action: D2ReviewAction) => {
+  const confirmReview = async (row: D2Withdrawal, action: D2ReviewAction) => {
+    const seq = ++reviewConfirmSeq.current;
     const blocked = blockedReason(row, action);
     if (blocked) { toast(blocked); return; }
     // 银行单放行要看收款账户资格，列表里没有这项，先进详情（D2-C62）。
@@ -997,10 +1003,22 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       toast("银行提现要先确认收款账户，请在详情里放行");
       return;
     }
-    openActionConfirm(reviewRequest(row, action));
+    let addressVerificationRequired = false;
+    if (action === "APPROVE") {
+      const listSeq = requestSeq.current;
+      const detailSeq = detailRequestSeq.current;
+      const latest = await fetchD2WithdrawalDetail(row.withdrawalNo).catch(() => null);
+      if (seq !== reviewConfirmSeq.current || listSeq !== requestSeq.current || detailSeq !== detailRequestSeq.current) return;
+      if (latest?.addressVerificationRequired == null) {
+        toast("大额放行核实要求暂不可用，暂不能放行，请重试。");
+        return;
+      }
+      addressVerificationRequired = latest.addressVerificationRequired;
+    }
+    openActionConfirm(reviewRequest(row, action, addressVerificationRequired));
   };
 
-  const reviewRequest = (row: D2Withdrawal, action: D2ReviewAction): ActionConfirmReq => {
+  const reviewRequest = (row: D2Withdrawal, action: D2ReviewAction, addressVerificationRequired = false): ActionConfirmReq => {
     const label = actionLabel(action);
     const bankApprove = action === "APPROVE" && row.chain === "BANK-VND";
     const gateClosed = action === "APPROVE" && withdrawGate === "closed";
@@ -1013,7 +1031,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       amplifies: action === "APPROVE",
       coverage: d5 ? { coverageRatio: d5.coverageRatio, redlinePct: d5.redlinePct } : undefined,
       coverageLead: action === "APPROVE" ? "放行后这笔钱会打给用户" : undefined,
-      businessForm: actionBusinessForm(action, row),
+      businessForm: actionBusinessForm(action, addressVerificationRequired),
       facts: action === "APPROVE" ? recipientFacts(row, bankDetail?.withdrawalNo === row.withdrawalNo ? bankDetail : null) : undefined,
       reasonMin: 8,
       reasonMax: 200,
@@ -1030,7 +1048,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           // 状态已被别人改了：框里刷新成最新状态，确认按钮禁用，写清现在是什么状态（S05 实测）。
           const latest = await fetchD2WithdrawalDetail(row.withdrawalNo).catch(() => null);
           if (latest && latest.status.toUpperCase() !== row.status.toUpperCase()) {
-            openActionConfirm({ ...reviewRequest(latest, action), blockedReason: `这笔现在是「${statusLabel(latest.status)}」，这次${label}没有执行。关闭后按最新状态处理。` });
+            openActionConfirm({ ...reviewRequest(latest, action, addressVerificationRequired), blockedReason: `这笔现在是「${statusLabel(latest.status)}」，这次${label}没有执行。关闭后按最新状态处理。` });
           }
           throw cause;
         }
@@ -1318,7 +1336,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   // 抽屉里只有「放行」一个实心；拒绝是描边红，最终确认框里才是实心红（VS-25）。
   const decisionButton = (row: D2Withdrawal, action: D2ReviewAction) => (
     <Button key={action} variant={action === "REJECT" ? "danger-outline" : action === "DELAY" || action === "FREEZE" ? "ghost" : "primary"}
-      disabled={!!submitting} disabledReason={detailBlockedReason(row, action)} onClick={() => confirmReview(row, action)}>{actionLabel(action)}</Button>
+      disabled={!!submitting} disabledReason={detailBlockedReason(row, action)} onClick={() => void confirmReview(row, action)}>{actionLabel(action)}</Button>
   );
 
   const detailActions = shown ? allowedActions(shown, cregisDetail) : [];
@@ -1495,9 +1513,9 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
                       {columns.isVisible("lifecycle") && <Td><Cell main={lifecycleSummary(row)} sub={holdsForReview(row) ? `复查时间：${timeText(row.holdUntil)}` : undefined} title={lifecycleSummary(row)} /></Td>}
                       <Td sticky="end"><span className="rd-row-actions">
                         {mainAction
-                          ? <Button size="sm" disabled={!!submitting} disabledReason={blockedReason(row, mainAction)} onClick={() => confirmReview(row, mainAction)}>{actionLabel(mainAction)}</Button>
+                          ? <Button size="sm" disabled={!!submitting} disabledReason={blockedReason(row, mainAction)} onClick={() => void confirmReview(row, mainAction)}>{actionLabel(mainAction)}</Button>
                           : <Button size="sm" variant="ghost" onClick={() => void openDetail(row)}>单笔详情</Button>}
-                        {moreActions.length > 0 && <MoreMenu disabled={!!submitting} items={moreActions.map((action) => ({ key: action, label: actionLabel(action), danger: action === "REJECT", disabledReason: blockedReason(row, action), onSelect: () => confirmReview(row, action) }))} />}
+                        {moreActions.length > 0 && <MoreMenu disabled={!!submitting} items={moreActions.map((action) => ({ key: action, label: actionLabel(action), danger: action === "REJECT", disabledReason: blockedReason(row, action), onSelect: () => void confirmReview(row, action) }))} />}
                       </span></Td>
                     </Tr>;
                   })}

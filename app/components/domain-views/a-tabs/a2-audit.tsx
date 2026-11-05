@@ -628,6 +628,17 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   /* ────────────────── 渲染 ────────────────── */
 
+  if (loading || loadError || !overview) {
+    return (
+      <div className={`atint${loadError ? " warn" : ""}`} data-module-health-state={loadError ? "error" : undefined} role="status" style={{ margin: "12px 0" }}>
+        {loadError ? <>
+          操作记录与审批加载失败，暂时无法显示待确认操作、操作记录和处理历史：{loadError}
+          <button className="l-btn sm" style={{ marginLeft: 10 }} onClick={() => void refreshOverview().catch(() => undefined)}>重试</button>
+        </> : "正在加载操作记录与审批…"}
+      </div>
+    );
+  }
+
   return (
     <>
       {/* ───── 4 f-stat ───── */}
@@ -652,17 +663,6 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           <div className="sub">另有 {stats.weeklyExpired} 件过期 · {stats.weeklyWithdrawn} 件撤回</div>
         </div>
       </div>
-
-      {(loading || loadError) && (
-        <div className={`atint${loadError ? " warn" : ""}`} data-module-health-state={loadError ? "error" : undefined} style={{ margin: "12px 0" }}>
-          {loadError ? (
-            <>
-              操作记录加载失败，旧数据已清空，所有操作已暂停：{loadError}
-              <button className="l-btn sm" style={{ marginLeft: 10 }} onClick={() => void refreshOverview().catch(() => undefined)}>重新读取</button>
-            </>
-          ) : "正在加载…"}
-        </div>
-      )}
 
       {/* ───── (b) 高敏操作动态 ───── */}
       <section className="l-card">

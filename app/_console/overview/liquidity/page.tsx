@@ -88,6 +88,7 @@ export default function LiquidityPage() {
   const [dialogStep, setDialogStep] = useState<"closed" | "edit" | "confirm">("closed");
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState("");
+  const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async (nextWindow: B2MaturityWindow) => {
@@ -133,6 +134,7 @@ export default function LiquidityPage() {
     setDraft(activeConfig(data.config));
     setReason("");
     setReasonError("");
+    setSaveError("");
     setDialogStep("edit");
   };
 
@@ -159,7 +161,7 @@ export default function LiquidityPage() {
       FORECAST_CONFIG_SLOT, fingerprint, () => `b2-forecast-config-${crypto.randomUUID()}`,
     );
     setSaving(true);
-    setError("");
+    setSaveError("");
     void updateB2ForecastConfig(draft, data.config.version, reason.trim(), operator, commandKey)
       .then(async () => {
         forecastConfigCommandKey.forget(FORECAST_CONFIG_SLOT);
@@ -170,7 +172,7 @@ export default function LiquidityPage() {
       .catch((caught) => {
         if (!(caught instanceof B2OutcomeUnknownError)) forecastConfigCommandKey.forget(FORECAST_CONFIG_SLOT);
         setDialogStep(caught instanceof B2OutcomeUnknownError ? "confirm" : "edit");
-        setError(caught instanceof Error ? displayAdminError(caught) : "保存失败，请重试");
+        setSaveError(caught instanceof Error ? displayAdminError(caught) : "保存失败，请重试");
       })
       .finally(() => setSaving(false));
   };
@@ -414,6 +416,7 @@ export default function LiquidityPage() {
               <button type="button" aria-label="关闭配置弹窗" onClick={() => setDialogStep("closed")}>×</button>
             </header>
 
+            {saveError && <div className="b2-alert error" role="alert">{saveError}</div>}
             {dialogStep === "edit" ? (
               <>
                 <div className="b2-form-grid">

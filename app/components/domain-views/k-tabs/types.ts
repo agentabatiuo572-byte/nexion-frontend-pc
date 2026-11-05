@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { K4PaginationQuery, KRiskActions, KRiskData, KRiskOverviewQuery, MultiAccountOverview, ScoringOverview } from "@/lib/admin/k-client";
-import type { BusinessFormSpec, BusinessFormValue, CoverageSnapshot, EditSpec, OperatorBriefKind } from "../design-kit";
+import type { BusinessFormSpec, BusinessFormValue, CoverageSnapshot, EditSpec, OperationApproval, OperatorBriefKind } from "../design-kit";
 
 export type ActionConfirmReq = {
   action: ReactNode;
@@ -13,7 +13,10 @@ export type ActionConfirmReq = {
   /** 与服务端理由长度约束保持一致；未指定时沿用共享弹窗的领域默认值。 */
   reasonMin?: number;
   reasonMax?: number;
+  /** 未确认的原操作理由；提交后重新查询，终态返回 undefined 解除锁定。 */
+  getPendingReason?: () => string | undefined;
   completionCopy?: string;
+  approval?: OperationApproval;
   /** 生效标签，只在 RdPage 里显示。 */
   effect?: ReactNode;
   /** 确认按钮写动作，比如「确认放行」，默认「确认提交」。 */
