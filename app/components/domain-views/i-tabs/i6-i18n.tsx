@@ -180,8 +180,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   ];
   useEffect(() => {
     const messageKey = selectedMessage?.messageKey;
-    if (!messageKey) {
+    if (view !== "i18n" || !messageKey) {
       setMessageVersions([]);
+      setMessageVersionsLoading(false);
       return;
     }
     let active = true;
@@ -196,7 +197,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       })
       .finally(() => { if (active) setMessageVersionsLoading(false); });
     return () => { active = false; };
-  }, [actions, toast, selectedMessage?.messageKey, content.i18nLearning]);
+  }, [actions, toast, selectedMessage?.messageKey, content.i18nLearning, view]);
   const filteredMessages = MESSAGES.filter((message) => {
     const query = messageSearch.trim().toLowerCase();
     return !query || message.messageKey.toLowerCase().includes(query) || message.namespace.toLowerCase().includes(query);
