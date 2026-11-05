@@ -3,7 +3,7 @@
 /**
  * 视图参数弹窗 — L 域普通确认批原语(与 OperationConfirmModal 形成对照):
  * 仅调整看板呈现参数(黄灯偏移 / 承接率告警线),实时生效、不落 操作确认、不写业务口径。
- * 整数输入 + 范围校验;未保存的调整刷新后回默认,保存为本机视图后恢复。
+ * 整数输入 + 范围校验;刷新恢复最后保存的设置,没有保存视图时回默认。
  */
 import { useState } from "react";
 import { Modal, Btn, Icon } from "../design-kit";
@@ -43,7 +43,7 @@ export function ViewParamModal({ req, onClose }: { req: ViewParamReq; onClose: (
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10 }}>
             <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>影响</span>
-            <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.65 }}>只影响你当前看到的图表阈值，不改业务规则或统计方式。未保存的调整在刷新后回到默认值；点「保存为视图」后，刷新会恢复已保存的设置。</span>
+            <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.65 }}>只影响你当前看到的图表阈值，不改业务规则或统计方式。刷新会恢复最后保存的设置；没有保存视图时回到默认值。新的调整要点「保存为视图」，刷新后才会保留。</span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10 }}>
             <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>提交前</span>
