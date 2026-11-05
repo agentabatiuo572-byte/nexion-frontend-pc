@@ -257,7 +257,7 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
 
   return {
     button: ctx.canExport ? (<>
-      <span className="rd-note">要填理由，生成下载任务，留操作记录</span>
+      <Explain label="导出的说明" content="要填理由，生成下载任务，留操作记录。" />
       <Button
         icon={<Download size={14} aria-hidden />}
         disabledReason={pending ? "上一次导出结果未确认，先处理页面上方的待确认" : exportMode === null || ctx.biLoading ? exportUnavailableReason : undefined}
@@ -568,7 +568,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
             items={[{ value: "week", label: "注册周（如2026-W42）" }, { value: "month", label: "注册月" }]}
             onChange={(next) => { setGran(next); ctx.toast(`已选${next === "week" ? "注册周" : "注册月"} · 只影响保存视图，不改数据`); }}
           />
-          <span className="rd-note">只影响保存视图</span>
+          <Explain label="分组方式的说明" content="只影响保存视图，不改数据。" />
           <Check label="显示运营阶段切换" checked={phaseOn} onChange={() => { setPhaseOn(!phaseOn); ctx.toast(`运营阶段切换标记已${!phaseOn ? "开启" : "关闭"}`); }} />
         </div>
       </>}
@@ -579,9 +579,8 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
       onClear={() => { clearDrafts(); reloadKpi(appliedTime); }}
       canClear={!refreshing && (hasSlice(applied) || draftChanged)}
       sort={<div className="rd-filter-end">
-        <span className="rd-note">只存在这台电脑的浏览器里</span>
         <Button onClick={saveView}>保存为视图</Button>
-        <Explain label="保存为视图存什么" content="统计规则与目标值只读。这里只把时间范围、切片和显示方式存在这台电脑的浏览器里，不保存数据、权限或业务状态，也不用确认。" />
+        <Explain label="保存为视图存什么" content="只存在这台电脑的浏览器里。统计规则与目标值只读，这里只把时间范围、切片和显示方式存下来，不保存数据、权限或业务状态，也不用确认。" />
       </div>}
       result={draftChanged ? "条件未应用" : undefined}
       applied={SLICES.filter((key) => applied[key]).map((key) => ({ key, label: `${SLICE_NAME[key]} ${applied[key]}`, onRemove: () => removeSlice(key) }))}
@@ -594,7 +593,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
           <label className="rd-note" htmlFor="l1-custom-to">止</label>
           <Input id="l1-custom-to" type="date" value={customTo} onChange={(event) => setCustomTo(event.target.value)} />
           <Button disabled={!customReady || refreshing} onClick={() => reloadKpi({ window: "custom", from: customFrom, to: customTo, ...appliedSlices })}>应用自定义</Button>
-          <span className="rd-note">{businessZone().label}，含结束日，最长 400 天</span>
+          <Explain label="自定义范围的说明" content={`${businessZone().label}，含结束日，最长 400 天。`} />
         </div>
       )}
     </FilterBar>
@@ -694,25 +693,25 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     return (
       <>
         {red > 0
-          ? <Conclusion state="danger" lead hint="未达标的排在下面最前面，点一行看原因。">关键指标：<b>{red}</b> 项未达标</Conclusion>
+          ? <Conclusion state="danger" lead hint="点一行看原因。" explain="未达标的排在下面最前面。">关键指标：<b>{red}</b> 项未达标</Conclusion>
           : unavailable === KPIS.length
             ? <Conclusion state="unknown" hint="这个范围人数太少或缺数据，换个更长的时间范围再看。">关键指标：暂时无法判断</Conclusion>
             : green === KPIS.length
               ? <Conclusion state="ok" hint="这页无需处理。">关键指标：全部达标</Conclusion>
-              : <Conclusion state="neutral" hint={unavailable > 0 ? "有的项人数太少或缺数据，不算达标。" : "接近目标的排在下面最前面。"}>关键指标：没有未达标的项</Conclusion>}
+              : <Conclusion state="neutral" explain={unavailable > 0 ? "有的项人数太少或缺数据，不算达标。" : "接近目标的排在下面最前面。"}>关键指标：没有未达标的项</Conclusion>}
 
         <StatBand label="指标概览">
-          <Stat label="已达标指标" value={green} unit={`/ ${KPIS.length}`} tone={green > 0 ? "ok" : undefined} icon={CheckCircle2} iconTone="ok" sub="满足对应指标的目标" />
+          <Stat label="已达标指标" value={green} unit={`/ ${KPIS.length}`} tone={green > 0 ? "ok" : undefined} icon={CheckCircle2} iconTone="ok" explain="满足对应指标的目标。" />
           <Stat label="接近目标的指标" value={yellow} tone={yellow > 0 ? "warn" : undefined} icon={Gauge} iconTone="warn"
-            sub={<>距目标 {ylOffset}% 以内 · <button type="button" className="rd-link" onClick={() => setEditingOffset(true)}>调整接近范围</button>（只改显示）</>}
+            sub={<>距目标 {ylOffset}% 以内 · <button type="button" className="rd-link" onClick={() => setEditingOffset(true)}>调整接近范围</button></>}
             explain={`没达标，但离目标不超过 ${ylOffset}%；购买转化在健康带外也算这里。调整只改你看到的状态，不改业务规则。`} />
-          <Stat label="暂无法计算" value={unavailable} tone={unavailable > 0 ? "done" : undefined} icon={CircleHelp} iconTone="done" sub="缺数据或样本过小，不按 0% 算" />
+          <Stat label="暂无法计算" value={unavailable} tone={unavailable > 0 ? "done" : undefined} icon={CircleHelp} iconTone="done" explain="缺数据或样本过小，不按 0% 算。" />
           <Stat label="当前运营阶段" value={phaseKnown ? String(phase.code) : "未返回"} unit={phaseKnown ? `· ${String(phase.name ?? "")} · 第 ${num(phase.month, 0)} 月` : undefined} tone="role-2" icon={Flag}
-            sub={PHASE_SWITCH_IDX >= 0 ? "趋势图已标出运营阶段切换时间" : "当前时间范围内没有阶段切换记录"} />
+            explain={PHASE_SWITCH_IDX >= 0 ? "趋势图已标出运营阶段切换时间。" : "当前时间范围内没有阶段切换记录。"} />
         </StatBand>
 
         <div className="rd-split">
-          <Panel title="八项指标" sub="未达标的排在前面 · 点一行看明细" icon={ListChecks} tone="role-2" flush>
+          <Panel title="八项指标" explain="未达标的排在前面，点一行看明细。" icon={ListChecks} tone="role-2" flush>
             <Table label="选择要查看的关键指标" rowFocus data-tight={showTrendColumn ? "" : undefined}>
               <thead><tr>
                 <Th>指标</Th>
@@ -781,7 +780,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                 : kState === "small"
                   ? null
                   : hasTrend(k.spark)
-                  ? <Panel plain headingLevel={3} title="最近在变好还是变坏" sub="所选时间范围等分六段">
+                  ? <Panel plain headingLevel={3} title="最近在变好还是变坏" explain="所选时间范围等分六段。">
                       <TrendLines
                         label={`${operatorCopyText(k.name)}的走势`}
                         ticks={WEEKS}
@@ -792,9 +791,8 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                       />
                     </Panel>
                   : <p className="rd-note">{k.spark.length >= 2 ? "这段时间每段都是 0，没有走势可画。" : "这个范围的数据不够，画不出走势。"}</p>}
-              <Fold inset title="这项指标怎么算" summary={`统计规则编号 #${k.n}`}>
+              <Fold inset title="这项指标怎么算" summary={`统计规则编号 #${k.n}`} explain={<AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss>}>
                 <div className="rd-stack">
-                  <p className="rd-note"><AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss></p>
                   <div>{renderFx(ext.fx, ext.fxBold)}</div>
                   <p className="rd-note">统计规则编号 #{k.n} · 上线批次：{batchText(k.vis)}</p>
                 </div>
@@ -803,7 +801,11 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
           </Panel>
         </div>
 
-        {showTrendColumn && <Fold title="这几项相对目标在变好还是变坏" icon={Activity} tone="role-2" summary={drawnCount ? `已选 ${ovlSel.length} 项，画出 ${drawnCount} 项` : `已选 ${ovlSel.length} 项，没有走势可画`}>
+        {showTrendColumn && <Fold title="这几项相对目标在变好还是变坏" icon={Activity} tone="role-2" summary={drawnCount ? `已选 ${ovlSel.length} 项，画出 ${drawnCount} 项` : `已选 ${ovlSel.length} 项，没有走势可画`}
+          explain={<>
+            <p>至少留一项。对比多个指标的趋势，观察运营阶段切换后的变化；原因可到「运营阶段状态」或「运营阶段设置」查看。按行为记录中的运营阶段统计。</p>
+            <p>高于 100 是好于目标。越高越好的指标算实际值 ÷ 目标值，越低越好的算目标值 ÷ 实际值，只看各自的走向，不比谁离目标远。</p>
+          </>}>
           <div className="rd-stack">
             <div role="group" aria-label="要比的指标" className="rd-filter-more-row">
               {KPIS.map((item, index) => {
@@ -811,7 +813,6 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                 return <Check key={item.n} label={`#${item.n} ${operatorCopyText(item.name)}`} checked={on} disabled={on && ovlSel.length === 1} onChange={() => setOvlSel((current) => (on ? current.filter((value) => value !== index) : [...current, index]))} />;
               })}
             </div>
-            <p className="rd-note">至少留一项。对比多个指标的趋势，观察运营阶段切换后的变化；原因可到「运营阶段状态」或「运营阶段设置」查看。按行为记录中的运营阶段统计。</p>
             {drawable.length > 0 && (
               <>
                 <TrendLines
@@ -822,11 +823,10 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                   marks={[{ key: "target", text: "各自目标 = 100", value: 100, tone: "ok" }]}
                   event={phaseEvent}
                 />
-                <p className="rd-note">高于 100 是好于目标。越高越好的指标算实际值 ÷ 目标值，越低越好的算目标值 ÷ 实际值，只看各自的走向，不比谁离目标远。</p>
               </>
             )}
             {bandDrawable.map((item) => (
-              <Panel key={item.n} plain headingLevel={3} title={`${operatorCopyText(item.name)}有没有在健康带里`} sub={`健康带 ${tgtShort(item)}，没有单一目标，按真实值画`}>
+              <Panel key={item.n} plain headingLevel={3} title={`${operatorCopyText(item.name)}有没有在健康带里`} sub={`健康带 ${tgtShort(item)}`} explain="没有单一目标，按真实值画。">
                 <TrendLines
                   label={`${operatorCopyText(item.name)}和健康带`}
                   ticks={WEEKS}
@@ -842,9 +842,12 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
           </div>
         </Fold>}
 
-        <Fold title="指标规则表" icon={Lock} summary={`${KPIS.length} 项 · 算法和目标已锁定`}>
+        <Fold title="指标规则表" icon={Lock} summary={`${KPIS.length} 项 · 算法和目标已锁定`}
+          explain={<>
+            <p><AutoGloss>每项关键指标怎么算一目了然 · 要改算法须走事件统计规则管理 + 操作确认,本页改不了</AutoGloss></p>
+            <p><AutoGloss>推广率表示发出过邀请的设备持有者占比；各项指标的可用性和统计范围以当前返回数据为准。</AutoGloss></p>
+          </>}>
           <div className="rd-stack">
-            <p className="rd-note"><AutoGloss>每项关键指标怎么算一目了然 · 要改算法须走事件统计规则管理 + 操作确认,本页改不了</AutoGloss></p>
             <Table label="关键指标的计算方式">
               <thead><tr><Th>#</Th><Th>指标</Th><Th>计算方式</Th><Th align="right">目标</Th><Th>上线批次</Th><Th>状态</Th></tr></thead>
               <tbody>
@@ -860,7 +863,6 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                 ))}
               </tbody>
             </Table>
-            <p className="rd-note"><AutoGloss>推广率表示发出过邀请的设备持有者占比；各项指标的可用性和统计范围以当前返回数据为准。</AutoGloss></p>
             <PaginationExemptionList items={[{ label: "关键指标 统计规则锁定表", kind: "reference-catalog", maxRows: 8, reason: "八项关键指标 为固定验收统计规则,需要同屏锁定算式和状态" }]} />
           </div>
         </Fold>

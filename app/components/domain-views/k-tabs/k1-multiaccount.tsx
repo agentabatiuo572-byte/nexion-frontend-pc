@@ -1013,7 +1013,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     ? <Conclusion state="warn" hint="点下面一行看证据，再决定标记、冻结或判定为正常。">有 <b>{openCount}</b> 组账户等判定{highCount > 0 ? `，${highCount} 组达到建议冻结线` : ""}</Conclusion>
     : frozenCount > 0
       ? <Conclusion state="neutral" hint="已冻结的组核实是误判后可以解除。">没有等判定的账户组，{frozenCount} 组已冻结</Conclusion>
-      : <Conclusion state="ok" hint="这是系统检查的结果，不是读取失败。系统约每分钟检查一次，目前没有检出。">现在没有风险账户组，不用处理</Conclusion>;
+      : <Conclusion state="ok" explain="这是系统检查的结果，不是读取失败。系统约每分钟检查一次，目前没有检出。">现在没有风险账户组，不用处理</Conclusion>;
 
   const overviewState = (
     overviewFailed
@@ -1076,7 +1076,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         <div className="rd-stack">
           {(actions.length > 0 || canWrite) && (
             <Decision
-              note={actions.length > 0 ? "处置要提交审批，超级管理员批准后才生效，批准前这组不变。" : undefined}
+              explain={actions.length > 0 ? "处置要提交审批，超级管理员批准后才生效，批准前这组不变。" : undefined}
               others={<>
                 {/* 「判定为正常」「解除误判」是判断不是止损，用次按钮：红描边只给不可撤销或直接动钱的入口（VS-25），放宽的资金风险在确认框里按覆盖率提示。 */}
                 {loosen && <Button disabledReason={loosen.blocked} onClick={loosen.run}>{loosen.label}</Button>}
@@ -1120,7 +1120,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     );
   };
 
-  const paramAction = (name: string, blocked: string | undefined, onClick: () => void) => (describedBy: string) =>
+  const paramAction = (name: string, blocked: string | undefined, onClick: () => void) => (describedBy: string | undefined) =>
     <Button size="sm" aria-label={`调整${name}`} aria-describedby={describedBy} disabledReason={blocked} onClick={onClick}>调整</Button>;
 
   return (
@@ -1197,7 +1197,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           </FilterBar>
 
           {overviewReady ? <div className={clusters.length ? "rd-split" : undefined}>
-            <Panel title="可能属于同一人的账户" sub={clusters.length ? "点一行看证据和处置" : undefined} icon={Network} tone="role-3" flush>
+            <Panel title="可能属于同一人的账户" explain={clusters.length ? "点一行看证据和处置" : undefined} icon={Network} tone="role-3" flush>
               <Table label="关联账户组列表">
                 <thead>
                   <tr>
@@ -1243,7 +1243,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
       {tab === "earnings" && (
         <Panel data-proof="k1-protected-earnings" title="待审核或已锁定的收益" icon={Coins} tone="role-1" flush
-          sub={`${protectedEntries.length ? `待审核 ${pendingEntries.length} 笔 · 已锁定 ${lockedEntries} 笔${entriesAtLimit ? ` · 最多显示 ${PROTECTED_ENTRY_LIMIT} 条` : ""}` : "人工放行需要相应权限、操作理由，并留下操作记录"}${earningsReadAt ? ` · ${earningsReadAt} 读取` : ""}`}
+          sub={[protectedEntries.length ? `待审核 ${pendingEntries.length} 笔 · 已锁定 ${lockedEntries} 笔${entriesAtLimit ? ` · 最多显示 ${PROTECTED_ENTRY_LIMIT} 条` : ""}` : "", earningsReadAt ? `${earningsReadAt} 读取` : ""].filter(Boolean).join(" · ") || undefined}
+          explain="人工放行需要相应权限、操作理由，并留下操作记录。"
           actions={<Button size="sm" disabled={protectedEntriesLoading} onClick={() => void refreshProtectedEntries()}>刷新收益记录</Button>}>
           {protectedEntriesError ? (
             <BlockState state="error" title={protectedEntriesError} detail="当前不提供人工放行入口。" onRetry={() => void refreshProtectedEntries()} retrying={protectedEntriesLoading} />
@@ -1280,42 +1281,40 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
       {tab === "rules" && (overviewReady ? (
         <>
-        <Notice tone="neutral" title="这页的修改保存后立即生效，不走审批">参数和允许名单一保存就影响用户。只有账户组的四种处置要超级管理员批准。</Notice>
         <div className="rd-config-layout">
           <div className="rd-config-grid">
             <div className="rd-config-rail">
               <SectionNav label="本页分组" items={sections} nav={nav} />
             </div>
             <div className="rd-config-groups">
-              <Panel id={nav.anchor("risk")} title="风险判断标准" sub="决定哪些账户算同一组，调整后立即生效" icon={ShieldAlert} tone="role-4">
+              <Panel id={nav.anchor("risk")} title="风险判断标准" icon={ShieldAlert} tone="role-4"
+                explain="决定哪些账户算同一组。这页的修改保存后立即生效，不走审批，参数和允许名单一保存就影响用户；只有账户组的四种处置要超级管理员批准。">
                 <ConfigList>
                   {params.map((p) => (
-                    <ConfigRow key={p.key} name={riskParamName(p)} what={K1_PARAM_HELP[p.key]?.what ?? p.sub} when={K1_PARAM_HELP[p.key]?.when} value={riskValueText(p.key, p.value, p.unit)}
+                    <ConfigRow key={p.key} name={riskParamName(p)} what={K1_PARAM_HELP[p.key]?.what ?? p.sub} when={K1_PARAM_HELP[p.key]?.when} effect={K1_PARAM_HELP[p.key]?.direction} value={riskValueText(p.key, p.value, p.unit)}
                       action={canWrite ? paramAction(riskParamName(p), blockedBy("param", p.key), () => adjParam(p)) : undefined} />
                   ))}
                 </ConfigList>
               </Panel>
 
               {/* 收益释放参数(SPEC-7 搬回,合并底账 §二#5):与整簇冻结分开的放行细调。 */}
-              <Panel id={nav.anchor("earnings")} title="关联账户的收益审核规则" sub="决定新增收益能不能提现，调整后立即生效" icon={Coins} tone="role-1">
+              <Panel id={nav.anchor("earnings")} title="关联账户的收益审核规则" icon={Coins} tone="role-1" explain="决定新增收益能不能提现。保存后立即生效，不走审批，一保存就影响用户。">
                 {overviewReady.releaseParams.length > 0 ? (
                   <div className="rd-stack" data-proof="k1-risk-release-params">
                     <ConfigList>
                       {overviewReady.releaseParams.map((p) => (
-                        <ConfigRow key={p.key} name={releaseParamName(p)} what={K1_PARAM_HELP[p.key]?.what ?? p.sub} when={K1_PARAM_HELP[p.key]?.when} value={`${releaseParamDisplay(p)}${p.unit && K1_RELEASE_PARAM_LIMITS[p.key] ? ` ${p.unit}` : ""}`}
+                        <ConfigRow key={p.key} name={releaseParamName(p)} what={K1_PARAM_HELP[p.key]?.what ?? p.sub} when={K1_PARAM_HELP[p.key]?.when} effect={K1_PARAM_HELP[p.key]?.direction} value={`${releaseParamDisplay(p)}${p.unit && K1_RELEASE_PARAM_LIMITS[p.key] ? ` ${p.unit}` : ""}`}
                           action={canRelease && p.adjustable !== false ? paramAction(releaseParamName(p), blockedBy("param", p.key), () => adjReleaseParam(p)) : undefined} />
                       ))}
                     </ConfigList>
-                    <Fold inset title="处理规则" summary="从上往下判断，满足哪条就按哪条">
-                      <div className="rd-stack">
-                        <KeyValues rows={[
-                          { key: "status", label: "1. 账户组待判定、可疑或已冻结", value: "锁定奖励" },
-                          { key: "freeze", label: `2. 同组账号数达到 ${overviewReady.releaseParams.find((p) => p.key === "duplicateAccountFreezeFrom")?.value ?? "—"}`, value: "锁定奖励" },
-                          { key: "pending", label: `3. 同组账号数达到 ${overviewReady.releaseParams.find((p) => p.key === "duplicateAccountPendingFrom")?.value ?? "—"}`, value: "须审核" },
-                          { key: "else", label: "4. 其余情况", value: "可提现" },
-                        ]} />
-                        <p className="rd-note">收益锁定不用先冻结账户组，和账户冻结是两种处理。待审核收益<b>不会因等待时间到期自动放行</b>，只能人工放行。放宽规则可能增加资金支出，请写明依据。</p>
-                      </div>
+                    <Fold inset title="处理规则" summary="从上往下判断，满足哪条就按哪条"
+                      explain={<>收益锁定不用先冻结账户组，和账户冻结是两种处理。待审核收益<b>不会因等待时间到期自动放行</b>，只能人工放行。放宽规则可能增加资金支出，请写明依据。</>}>
+                      <KeyValues rows={[
+                        { key: "status", label: "1. 账户组待判定、可疑或已冻结", value: "锁定奖励" },
+                        { key: "freeze", label: `2. 同组账号数达到 ${overviewReady.releaseParams.find((p) => p.key === "duplicateAccountFreezeFrom")?.value ?? "—"}`, value: "锁定奖励" },
+                        { key: "pending", label: `3. 同组账号数达到 ${overviewReady.releaseParams.find((p) => p.key === "duplicateAccountPendingFrom")?.value ?? "—"}`, value: "须审核" },
+                        { key: "else", label: "4. 其余情况", value: "可提现" },
+                      ]} />
                     </Fold>
                   </div>
                 ) : (
@@ -1323,7 +1322,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 )}
               </Panel>
 
-              <Panel id={nav.anchor("whitelist")} title="IP 允许名单" sub="名单内的网段不再按 IP 检测，设备和支付工具照常，加入后立即生效" icon={ListChecks} tone="role-2" flush
+              <Panel id={nav.anchor("whitelist")} title="IP 允许名单" explain="名单内的网段不再按 IP 检测，设备和支付工具照常。加入后立即生效，不走审批。" icon={ListChecks} tone="role-2" flush
                 actions={canWrite && <Button size="sm" onClick={addWl}>+ 添加允许名单</Button>}>
                 <Table label="IP 允许名单">
                   <thead><tr><Th>IP / 网段</Th><Th>备注</Th><Th>添加人</Th><Th>失效时间</Th><Th>操作</Th></tr></thead>

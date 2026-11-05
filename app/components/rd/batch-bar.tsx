@@ -5,15 +5,17 @@
  *   <Button variant="primary" onClick={…}>批量执行</Button>
  * </BatchBar>
  *
- * summary 写已选和可执行两个数（OP-102），aria-live 读得到变化。选择范围、提交和逐项结果都由页面做。
+ * summary 写已选和可执行两个数（OP-102），aria-live 读得到变化。hint 是说明，收进数字旁的提示图标（DP-06）。
+ * 选择范围、提交和逐项结果都由页面做。
  */
 import type { ReactNode } from "react";
+import { Explain } from "./explain";
 
 export function BatchBar({ summary, hint, children }: { summary: ReactNode; hint?: ReactNode; children?: ReactNode }) {
   return (
     <div className="rd-batch">
       <span className="rd-batch-count" role="status" aria-live="polite">{summary}</span>
-      {hint && <span className="rd-batch-hint">{hint}</span>}
+      {hint && <Explain label="批量操作的说明" content={hint} />}
       {children && <span className="rd-batch-actions">{children}</span>}
     </div>
   );

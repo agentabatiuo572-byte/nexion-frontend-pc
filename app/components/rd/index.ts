@@ -9,7 +9,7 @@ export { Conclusion } from "./conclusion";
 export { ControlCard, ControlGrid } from "./control-card";
 export { ConfigList, ConfigRow } from "./config-list";
 export { DiffList } from "./diff-list";
-export { Explain } from "./explain";
+export { Explain, type ExplainRow } from "./explain";
 export { Check, CheckGroup, Field, type FieldControlProps } from "./field";
 export { Fact, Facts } from "./facts";
 export { FilterBar, FilterField, Input, Textarea } from "./filter-bar";

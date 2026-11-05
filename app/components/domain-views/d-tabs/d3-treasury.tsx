@@ -642,10 +642,10 @@ export function D3Treasury() {
         open={injectOpen}
         onClose={() => setInjectOpen(false)}
         title="储备注入登记"
-        sub="须填写到账凭证号"
+        explain="须填写到账凭证号"
         icon={Landmark}
         tone="role-1"
-        footer={<Decision note="凭证号重复时不会登记。下一步核对金额和凭证，再写理由。" others={<Button variant="ghost" onClick={() => setInjectOpen(false)}>取消</Button>} primary={<Button variant="primary" disabledReason={dataBlocked} onClick={saveInjection}>下一步：确认</Button>} />}
+        footer={<Decision explain="凭证号重复时不会登记。下一步核对金额和凭证，再写理由。" others={<Button variant="ghost" onClick={() => setInjectOpen(false)}>取消</Button>} primary={<Button variant="primary" disabledReason={dataBlocked} onClick={saveInjection}>下一步：确认</Button>} />}
       >
         <Field label="注入金额" required help="单位 USDT，最多两位小数。" error={injectErrors.amount}>
           {(control) => <Input {...control} value={amount} onChange={(event) => { setAmount(event.target.value); setInjectErrors((current) => ({ ...current, amount: undefined })); }} inputMode="decimal" placeholder="注入金额 USDT" aria-label="注入金额（USDT，最多两位小数）" />}
