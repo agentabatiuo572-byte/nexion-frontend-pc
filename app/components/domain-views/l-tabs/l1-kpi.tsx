@@ -4,7 +4,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
  * L1 · 关键指标（报表页样板）。查询条 → 结论 → 四张概览卡 → 八项指标 ┬ 所选指标明细 → 折叠组 → 相关页面。
- * 灯色只用 kpiState 的现有比较；口径与目标只读锁定，页面没有修改入口。
+ * 状态只用 kpiState 的现有比较，分母少于 5 算样本过小（T10、今日概览决定 8）；口径与目标只读锁定，页面没有修改入口。
  * 查询状态写网址（ST-23），优先于本机保存的视图；导出由操作者填理由（OP-115），文件到 L5 下载。
  */
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
@@ -52,14 +52,32 @@ const tgtLabel = (k: Kpi) => {
 };
 const tgtValue = (k: Kpi) => (k.dir === "band" ? (k.band?.[0] ?? k.target) : k.target);
 
-type KpiState = "g" | "y" | "r" | "na";
+type KpiState = "g" | "y" | "r" | "na" | "small";
+const SMALL_SAMPLE = 5;
 const unitText = (k: Kpi) => (k.unit === "d" ? "天" : k.unit);
 const tgtShort = (k: Kpi) => tgtLabel(k).replace("目标 ", "").replace("健康带 ", "");
-const valueText = (k: Kpi) => (k.available === false || k.value == null ? "不可计算" : `${k.value}${unitText(k)}`);
-const STATE_TONE: Record<KpiState, StateTone> = { g: "ok", y: "warn", r: "danger", na: "done" };
-const stateText = (state: KpiState, k: Kpi) => ({ g: "达标", y: k.dir === "band" ? "在健康带外" : "接近目标", r: "未达标", na: "不可计算" })[state];
-/** 未达标排最前，其次接近目标、不可计算，达标的放最后；同一档按指标编号。 */
-const STATE_RANK: Record<KpiState, number> = { r: 0, y: 1, na: 2, g: 3 };
+const kpiStatus = (k: Kpi, offset: number): KpiState => {
+  if (k.available === false || k.value == null) return "na";
+  return k.denominator != null && k.denominator < SMALL_SAMPLE ? "small" : kpiState(k, offset);
+};
+const STATE_TONE: Record<KpiState, StateTone> = { g: "ok", y: "warn", r: "danger", na: "done", small: "done" };
+const stateText = (state: KpiState, k: Kpi) => ({ g: "达标", y: k.dir === "band" ? "在健康带外" : "接近目标", r: "未达标", na: "暂无法计算", small: "样本过小" })[state];
+/** 未达标排最前，其次接近目标、暂无法计算和样本过小，达标的放最后；同一档按指标编号。 */
+const STATE_RANK: Record<KpiState, number> = { r: 0, y: 1, na: 2, small: 2, g: 3 };
+/** 后端的不可用原因写成人话，事实来自 L1KpiAnalytics 的分母。 */
+const REASON_TEXT: Record<string, string> = {
+  NO_REGISTRATION_DENOMINATOR: "这个范围没有注册完成的用户，所以暂无法计算，不按 0% 算。",
+  NO_STORE_VIEW_DENOMINATOR: "这个范围没有看过商城的用户，所以暂无法计算，不按 0% 算。",
+  NO_DEVICE_HOLDER_DENOMINATOR: "这个范围没有设备持有者，所以暂无法计算，不按 0% 算。",
+  NO_PUSH_SENT_DENOMINATOR: "这个范围没有收到推送的用户，所以暂无法计算，不按 0% 算。",
+  NO_DIRECT_REFERRAL_DENOMINATOR: "这个范围没有直接邀请的好友，所以暂无法计算，不按 0% 算。",
+  NO_MATURE_DAY7_COHORT: "这个范围还没有注册满 7 天的用户，所以暂无法计算，不按 0% 算。",
+  NO_GENESIS_PURCHASES: "这个范围没有创世节点购买记录，还没售罄，售罄天数暂无法计算。",
+  GENESIS_NOT_SOLD_OUT: "创世节点还没累计售出 1,000，售罄天数暂无法计算。",
+};
+const SMALL_SAMPLE_NOTE = "这个范围人数不到 5，比例没有参考意义，不算达标也不算未达标。换个更长的时间范围再看。";
+/** 「V1 实时」是 PRD 的上线批次（§1.6 后台可见性），不是刷新方式。 */
+const batchText = (vis = "") => vis.replace(/^V(\d+).*$/, "第 $1 批上线");
 const WINDOW_NAME: Record<Exclude<L1Window, "custom">, string> = { "1d": "近 24 小时", "7d": "近 7 天", "30d": "近 30 天" };
 const SLICES = ["cohort", "phase", "locale", "ref"] as const;
 const SLICE_NAME = { cohort: "注册周", phase: "运营阶段", locale: "语言", ref: "渠道" } as const;
@@ -232,7 +250,8 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
   };
 
   return {
-    button: ctx.canExport ? (
+    button: ctx.canExport ? (<>
+      <span className="rd-note">要填理由，生成下载任务，留操作记录</span>
       <Button
         variant="primary"
         icon={<Download size={14} aria-hidden />}
@@ -241,7 +260,7 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
       >
         {exportMode === "series" ? "导出关键指标序列 CSV" : "导出关键指标当前汇总 CSV"}
       </Button>
-    ) : null,
+    </>) : null,
     notices: <>
       {pending && (
         <Notice tone="warn" title={`${pending.label} · 结果未确认`} action={<>
@@ -291,19 +310,19 @@ function renderFx(fx: string, bold: string[]) {
   return fx.split(re).map((part, i) => (bold.includes(part) ? <b key={i}>{part}</b> : <span key={i}>{part}</span>));
 }
 
-/** 黄灯偏移只改本机显示，不写后端，所以是本地小窗，不走确认（L1-A02）。 */
+/** 接近目标的范围（黄灯偏移）只改本机显示，不写后端，所以是本地小窗，不走确认（L1-A02）。 */
 function OffsetModal({ current, onApply, onClose }: { current: number; onApply: (next: number) => void; onClose: () => void }) {
   const [draft, setDraft] = useState("");
   const next = Number(draft);
   const valid = draft.trim() !== "" && Number.isInteger(next) && next >= 5 && next <= 20;
   return (
-    <Modal title="黄灯预警偏移" onClose={onClose} footer={<><Button onClick={onClose}>取消</Button><Button variant="primary" disabled={!valid} onClick={() => { onApply(next); onClose(); }}>应用 · 实时生效</Button></>}>
+    <Modal title="接近目标的范围" onClose={onClose} footer={<><Button onClick={onClose}>取消</Button><Button variant="primary" disabled={!valid} onClick={() => { onApply(next); onClose(); }}>应用 · 实时生效</Button></>}>
       <div className="rd-stack">
-        <Field label={`新值（当前 ${current}% · 范围 5–20%，仅限整数）`} required help="只改你看到的灯色和黄线，不改业务规则或统计方式。刷新会恢复最后保存的设置，没有保存视图时回到默认值。要保留请点「保存为视图」。">
+        <Field label={`新值（当前 ${current}% · 范围 5–20%，仅限整数）`} required help="只改你看到的状态和接近线，不改业务规则或统计方式。刷新会恢复最后保存的设置，没有保存视图时回到默认值。要保留请点「保存为视图」。">
           {(control) => <Input {...control} type="number" min={5} max={20} step={1} value={draft} placeholder={String(current)} onChange={(event) => setDraft(event.target.value)} />}
         </Field>
-        <Fold inset title="查看业务规则详情" summary="灯色怎么判定">
-          <p className="rd-note">单侧指标须严格高于或低于目标值才达标；等于目标时为黄灯。数值越高越好的指标，黄线为目标值 × (1 − N%)；数值越低越好的指标，黄线为目标值 × (1 + N%)。未达标且在黄线以内（含黄线）为黄灯，超出为红灯。购买转化健康带包含两端，带外仍为黄灯。只影响显示，不改指标值。</p>
+        <Fold inset title="查看业务规则详情" summary="状态怎么判定">
+          <p className="rd-note">单侧指标须严格高于或低于目标值才达标；等于目标时算接近目标。数值越高越好的指标，接近线为目标值 × (1 − N%)；数值越低越好的指标，接近线为目标值 × (1 + N%)。没达标但在接近线以内（含接近线）算接近目标，超出算未达标。购买转化健康带包含两端，带外也归接近目标。只影响显示，不改指标值。</p>
         </Fold>
       </div>
     </Modal>
@@ -532,7 +551,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
         <FilterField label="运营阶段"><Select aria-label="运营阶段筛选" value={phaseFilter} onChange={setPhaseFilter} options={[{ value: "", label: "全部阶段" }, ...["P1", "P2", "P3", "P4", "P5", "P6"].map((value) => ({ value, label: value }))]} /></FilterField>
         <FilterField label="语言"><Input aria-label="语言筛选" placeholder="语言" value={localeFilter} onChange={(event) => setLocaleFilter(event.target.value)} /></FilterField>
         <FilterField label="渠道"><Input aria-label="渠道筛选" placeholder="推荐来源" value={refFilter} onChange={(event) => setRefFilter(event.target.value)} /></FilterField>
-        <div className="rd-filter-more-row"><Button type="submit" disabled={refreshing}>应用切片</Button></div>
+        <div className="rd-filter-more-row"><Button type="submit" disabled={refreshing}>应用筛选</Button></div>
         <div className="rd-filter-more-row">
           <span className="rd-note">显示设置</span>
           <Segments
@@ -552,6 +571,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
       onClear={() => { clearDrafts(); reloadKpi(appliedTime); }}
       canClear={!refreshing && (hasSlice(applied) || draftChanged)}
       sort={<div className="rd-filter-end">
+        <span className="rd-note">只存在这台电脑的浏览器里</span>
         <Button onClick={saveView}>保存为视图</Button>
         <Explain label="保存为视图存什么" content="统计规则与目标值只读。这里只把时间范围、切片和显示方式存在这台电脑的浏览器里，不保存数据、权限或业务状态，也不用确认。" />
       </div>}
@@ -581,12 +601,12 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     const PHASE_SWITCH_IDX = num(data?.phaseSwitchIndex, -1);
     const KPI_PLAIN = rec<string>(data?.kpiPlain);
     const KPI_EXT = rec<KpiExt>(data?.kpiExt);
-    const states: KpiState[] = KPIS.map((item) => item.available === false || item.value == null ? "na" : kpiState(item, ylOffset));
+    const states = KPIS.map((item) => kpiStatus(item, ylOffset));
     const count = (state: KpiState) => states.filter((item) => item === state).length;
     const green = count("g");
     const yellow = count("y");
     const red = count("r");
-    const unavailable = count("na");
+    const unavailable = count("na") + count("small");
     const order = KPIS.map((_, index) => index).sort((a, b) => STATE_RANK[states[a]] - STATE_RANK[states[b]] || KPIS[a].n - KPIS[b].n);
     const safeSelKpi = Math.min(picked ?? order[0], KPIS.length - 1);
     const baseKpi = KPIS[safeSelKpi];
@@ -598,13 +618,9 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
       ...baseExt,
       num: k.numerator == null ? baseExt.num : String(k.numerator),
       den: k.denominator == null ? baseExt.den : String(k.denominator),
-      note: k.unavailableReason === "NO_GENESIS_PURCHASES"
-        ? "当前筛选范围没有创世节点购买记录，尚未售罄，售罄天数不可计算。"
-        : k.unavailableReason === "GENESIS_NOT_SOLD_OUT"
-          ? "创世节点尚未累计售出 1,000，售罄天数不可计算。"
-          : baseExt.note,
+      note: REASON_TEXT[k.unavailableReason ?? ""] ?? (k.available === false ? "这个范围缺数据，暂无法计算，不按 0% 算。" : baseExt.note),
     };
-    const kState: KpiState = k.available === false || k.value == null ? "na" : kpiState(k, ylOffset);
+    const kState = kpiStatus(k, ylOffset);
     const phase = rec(data?.currentPhase);
     const phaseKnown = typeof phase.code === "string" && phase.code.length > 0;
     const attributionLinks = assertL1AttributionLinks(ext.jump);
@@ -648,13 +664,14 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     const yellowLine = k.dir === "lte" ? k.target * (1 + ylOffset / 100) : target * (1 - ylOffset / 100);
     const goalMarks: { key: string; text: string; value: number; tone: StateTone }[] = k.dir === "band"
       ? [{ key: "low", text: `下限 ${k.band?.[0]}${unitText(k)}`, value: k.band?.[0] ?? 0, tone: "ok" }, { key: "high", text: `上限 ${k.band?.[1]}${unitText(k)}`, value: k.band?.[1] ?? 0, tone: "ok" }]
-      : [{ key: "target", text: `目标 ${target}${unitText(k)}`, value: target, tone: "ok" }, { key: "yellow", text: `黄线 ${pct(yellowLine)}`, value: yellowLine, tone: "warn" }];
-    const showTrendColumn = KPIS.some((item) => hasTrend(item.spark));
+      : [{ key: "target", text: `目标 ${target}${unitText(k)}`, value: target, tone: "ok" }, { key: "yellow", text: `接近线 ${pct(yellowLine)}`, value: yellowLine, tone: "warn" }];
+    const trendOf = (index: number) => (states[index] === "small" ? [] : KPIS[index].spark); // 样本过小的比例不画
+    const showTrendColumn = KPIS.some((_, index) => hasTrend(trendOf(index)));
     const phaseEvent = phaseOn && PHASE_SWITCH_IDX >= 0 ? { index: PHASE_SWITCH_IDX, text: "运营阶段切换" } : undefined;
 
     // 指数只对单侧目标成立：越高越好算实际 ÷ 目标，越低越好算目标 ÷ 实际，高于 100 都是好于目标。
     // 健康带没有单一目标，不换算，按真实值和上下限单独画（DP-63）。
-    const picks = ovlSel.map((index) => KPIS[index]);
+    const picks = ovlSel.map((index) => ({ ...KPIS[index], spark: trendOf(index) }));
     const bandPicks = picks.filter((item) => item.dir === "band");
     const compared = picks.filter((item) => item.dir !== "band").map((item, position) => ({
       item,
@@ -671,18 +688,18 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
         {red > 0
           ? <Conclusion state="warn" lead hint="未达标的排在下面最前面，点一行看原因。">关键指标：<b>{red}</b> 项未达标</Conclusion>
           : unavailable === KPIS.length
-            ? <Conclusion state="unknown" hint="这个范围里每一项都缺数据，换个时间范围再看。">关键指标：暂时无法判断</Conclusion>
+            ? <Conclusion state="unknown" hint="这个范围人数太少或缺数据，换个更长的时间范围再看。">关键指标：暂时无法判断</Conclusion>
             : green === KPIS.length
               ? <Conclusion state="ok" hint="这页无需处理。">关键指标：全部达标</Conclusion>
-              : <Conclusion state="neutral" hint={unavailable > 0 ? "有的项缺数据算不出来，不算达标。" : "接近目标的排在下面最前面。"}>关键指标：没有未达标的项</Conclusion>}
+              : <Conclusion state="neutral" hint={unavailable > 0 ? "有的项人数太少或缺数据，不算达标。" : "接近目标的排在下面最前面。"}>关键指标：没有未达标的项</Conclusion>}
 
         <StatBand label="指标概览">
-          <Stat label="已达标指标" value={green} unit={`/ ${KPIS.length}`} tone={green > 0 ? "ok" : undefined} icon={CheckCircle2} iconTone="ok" sub="绿灯 · 满足对应指标的目标" />
+          <Stat label="已达标指标" value={green} unit={`/ ${KPIS.length}`} tone={green > 0 ? "ok" : undefined} icon={CheckCircle2} iconTone="ok" sub="满足对应指标的目标" />
           <Stat label="接近目标的指标" value={yellow} tone={yellow > 0 ? "warn" : undefined} icon={Gauge} iconTone="warn"
-            sub={<>黄灯 · 距目标 {ylOffset}% 以内 · <button type="button" className="rd-link" onClick={() => setEditingOffset(true)}>调整</button></>}
-            explain={`单侧指标距目标不超过 ${ylOffset}%；购买转化在健康带外也算这里。调整只改你看到的灯色，不改业务规则。`} />
-          <Stat label="暂无法计算" value={unavailable} tone={unavailable > 0 ? "done" : undefined} icon={CircleHelp} iconTone="done" sub="缺数据，不按 0% 算" />
-          <Stat label="当前运营阶段" value={phaseKnown ? String(phase.code) : "未返回"} unit={phaseKnown ? `· 月 ${num(phase.month, 0)}` : undefined} tone="role-2" icon={Flag}
+            sub={<>距目标 {ylOffset}% 以内 · <button type="button" className="rd-link" onClick={() => setEditingOffset(true)}>调整接近范围</button>（只改显示）</>}
+            explain={`没达标，但离目标不超过 ${ylOffset}%；购买转化在健康带外也算这里。调整只改你看到的状态，不改业务规则。`} />
+          <Stat label="暂无法计算" value={unavailable} tone={unavailable > 0 ? "done" : undefined} icon={CircleHelp} iconTone="done" sub="缺数据或样本过小，不按 0% 算" />
+          <Stat label="当前运营阶段" value={phaseKnown ? String(phase.code) : "未返回"} unit={phaseKnown ? `· ${String(phase.name ?? "")} · 第 ${num(phase.month, 0)} 月` : undefined} tone="role-2" icon={Flag}
             sub={PHASE_SWITCH_IDX >= 0 ? "趋势图已标出运营阶段切换时间" : "当前时间范围内没有阶段切换记录"} />
         </StatBand>
 
@@ -700,13 +717,14 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                 {order.map((index) => {
                   const item = KPIS[index];
                   const state = states[index];
-                  const plain = operatorCopyText(KPI_PLAIN[item.n] ?? "");
                   return (
                     <Tr key={item.n} selected={index === safeSelKpi} tabIndex={index === safeSelKpi ? 0 : -1} onOpen={() => void selectKpi(index)} onKeyDown={moveRow} title="点击查看明细">
-                      <Td><Cell main={<AutoGloss>{operatorCopyText(item.name)}</AutoGloss>} sub={plain} title={plain} /></Td>
-                      <Td align="right"><Cell num main={valueText(item)} sub={item.momDelta == null ? undefined : deltaText(item)} /></Td>
+                      <Td><Cell main={<AutoGloss>{operatorCopyText(item.name)}</AutoGloss>} /></Td>
+                      <Td align="right"><Cell num main={state === "na" || state === "small" ? "—" : `${item.value}${unitText(item)}`} sub={state === "na" || state === "small" || item.momDelta == null ? undefined : deltaText(item)} /></Td>
                       <Td align="right"><Cell num main={tgtShort(item)} /></Td>
-                      {showTrendColumn && <Td>{hasTrend(item.spark)
+                      {showTrendColumn && <Td>{state === "small"
+                        ? <span className="rd-note">—</span>
+                        : hasTrend(item.spark)
                         ? <Sparkline label={`${operatorCopyText(item.name)}的走势`} values={item.spark} />
                         : item.spark.length >= 2
                           ? <span className="rd-note">每段都是 0</span>
@@ -717,9 +735,9 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                 })}
               </tbody>
             </Table>
-            {!showTrendColumn && (KPIS.some((item) => item.spark.length >= 2)
+            {!showTrendColumn && (KPIS.some((_, index) => trendOf(index).length >= 2)
               ? <p className="rd-note rd-panel-foot">这个范围有趋势的指标每段都是 0，没有走势可画。</p>
-              : <p className="rd-note rd-panel-foot" data-proof="l1-kpi-trend-unavailable">这个范围的趋势数据不足，走势暂时画不出来，不会用 0 补齐。</p>)}
+              : <p className="rd-note rd-panel-foot" data-proof="l1-kpi-trend-unavailable">这个范围的数据不够，画不出走势。</p>)}
           </Panel>
 
           <Panel
@@ -732,25 +750,28 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
             ))}
           >
             <div className="rd-stack">
-              {kState !== "na" && (
+              {kState !== "na" && kState !== "small" && (
                 <ThresholdMeter
                   label="当前值和目标"
-                  rows={[{ key: "now", label: "当前", value: k.value, text: valueText(k), tone: STATE_TONE[kState] }]}
+                  rows={[{ key: "now", label: "当前", value: k.value, text: `${k.value}${unitText(k)}`, tone: STATE_TONE[kState] }]}
                   marks={goalMarks}
                 />
               )}
               <Facts>
-                {kState === "na" && <Fact k="当前值">不可计算</Fact>}
-                {kState === "na" && <Fact k="目标值">{tgtShort(k)}</Fact>}
-                <Fact k="分子">{ext.num}</Fact>
-                <Fact k="分母">{ext.den}</Fact>
-                <Fact k="较上期">{deltaText(k)}</Fact>
+                {(kState === "na" || kState === "small") && <Fact k="当前值">{stateText(kState, k)}</Fact>}
+                {(kState === "na" || kState === "small") && <Fact k="目标值">{tgtShort(k)}</Fact>}
+                <Fact k="怎么算"><AutoGloss>{operatorCopyText(KPI_PLAIN[k.n] ?? "")}</AutoGloss></Fact>
+                {kState !== "small" && <Fact k="分子">{ext.num}</Fact>}
+                {kState !== "small" && <Fact k="分母">{ext.den}</Fact>}
+                {kState !== "small" && <Fact k="较上期">{deltaText(k)}</Fact>}
                 <Fact k="统计范围">{queryScope(applied)}</Fact>
-                <Fact k="解读"><AutoGloss>{operatorCopyText(ext.note)}</AutoGloss></Fact>
+                <Fact k="解读"><AutoGloss>{operatorCopyText(kState === "small" ? SMALL_SAMPLE_NOTE : ext.note)}</AutoGloss></Fact>
               </Facts>
               {drillError
                 ? <BlockState state="error" title="明细和趋势暂时加载不出来" detail={`其他内容不受影响。${drillError}`} onRetry={() => void selectKpi(safeSelKpi)} />
-                : hasTrend(k.spark)
+                : kState === "small"
+                  ? null
+                  : hasTrend(k.spark)
                   ? <Panel plain headingLevel={3} title="最近在变好还是变坏" sub="所选时间范围等分六段">
                       <TrendLines
                         label={`${operatorCopyText(k.name)}的走势`}
@@ -761,20 +782,19 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                         event={phaseEvent}
                       />
                     </Panel>
-                  : <p className="rd-note">{k.spark.length >= 2 ? "这段时间每段都是 0，没有走势可画。" : "当前筛选范围没有可绘制的趋势点；不会用 0 补齐缺失周。"}</p>}
+                  : <p className="rd-note">{k.spark.length >= 2 ? "这段时间每段都是 0，没有走势可画。" : "这个范围的数据不够，画不出走势。"}</p>}
               <Fold inset title="这项指标怎么算" summary={`统计规则编号 #${k.n}`}>
                 <div className="rd-stack">
                   <p className="rd-note"><AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss></p>
-                  <div><AutoGloss>{operatorCopyText(KPI_PLAIN[k.n] ?? "")}</AutoGloss></div>
                   <div>{renderFx(ext.fx, ext.fxBold)}</div>
-                  <p className="rd-note">统计规则编号 #{k.n} · 数据批次 {k.vis}</p>
+                  <p className="rd-note">统计规则编号 #{k.n} · {batchText(k.vis)}</p>
                 </div>
               </Fold>
             </div>
           </Panel>
         </div>
 
-        <Fold title="这几项相对目标在变好还是变坏" icon={Activity} tone="role-2" summary={drawnCount ? `已选 ${ovlSel.length} 项，画出 ${drawnCount} 项` : `已选 ${ovlSel.length} 项，没有走势可画`}>
+        {showTrendColumn && <Fold title="这几项相对目标在变好还是变坏" icon={Activity} tone="role-2" summary={drawnCount ? `已选 ${ovlSel.length} 项，画出 ${drawnCount} 项` : `已选 ${ovlSel.length} 项，没有走势可画`}>
           <div className="rd-stack">
             <div role="group" aria-label="要比的指标" className="rd-filter-more-row">
               {KPIS.map((item, index) => {
@@ -811,7 +831,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
             {drawnCount === 0 && <p className="rd-note">当前所选指标没有足够的趋势数据，暂时无法画出对比曲线。</p>}
             {drawnCount > 0 && skipped.length > 0 && <p className="rd-note">没有画：{skipped.map((item) => `#${item.n}`).join(" ")}，趋势数据不足或每段都是 0。</p>}
           </div>
-        </Fold>
+        </Fold>}
 
         <Fold title="指标规则表" icon={Lock} summary={`${KPIS.length} 项 · 算法和目标已锁定`}>
           <div className="rd-stack">
@@ -825,7 +845,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                     <Td><Cell main={<AutoGloss>{operatorCopyText(item.name)}</AutoGloss>} /></Td>
                     <Td><Cell main={<AutoGloss>{operatorCopyText(KPI_PLAIN[item.n] ?? "")}</AutoGloss>} sub={renderFx(KPI_EXT[item.n].fx, KPI_EXT[item.n].fxBold)} /></Td>
                     <Td align="right"><Cell num main={tgtShort(item)} /></Td>
-                    <Td><Cell main={item.vis} /></Td>
+                    <Td><Cell main={batchText(item.vis)} /></Td>
                     <Td><StatusTag tone={STATE_TONE[states[index]]}>{stateText(states[index], item)}</StatusTag></Td>
                   </Tr>
                 ))}
@@ -865,7 +885,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
         summary={<AutoGloss>{summary}</AutoGloss>}
         actions={exporting.button}
         meta={readAt ? `${readAt} 读取（${businessZone().label}）· 打开时读取，不自动刷新` : "打开时读取，不自动刷新"}
-        readOnly={ctx.canExport ? undefined : "当前角色仅可查看 · 导出需报表管理权限"}
+        readOnly={ctx.canExport ? "这页只能查看，不会改任何数据" : "这页只能查看，不会改任何数据 · 导出需报表管理权限"}
       />
       {exporting.notices}
       {queryBar}
@@ -875,7 +895,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
         </Notice>
       )}
       {body}
-      {editingOffset && <OffsetModal current={ylOffset} onClose={() => setEditingOffset(false)} onApply={(next) => { setYlOffset(next); ctx.toast(`黄灯预警偏移 → 距目标 ${next}% · 仅视图参数`); }} />}
+      {editingOffset && <OffsetModal current={ylOffset} onClose={() => setEditingOffset(false)} onApply={(next) => { setYlOffset(next); ctx.toast(`接近目标的范围 → 距目标 ${next}% · 只改显示`); }} />}
     </>
   );
 }
