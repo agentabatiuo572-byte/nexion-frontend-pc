@@ -721,6 +721,27 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   };
 
   const createAccount = (form: A1CreateAccountInput & { reason: string }) => {
+    if (governanceFrozen && !creationPending) {
+      const definition = findHighOp("a1_account_create")!;
+      const commandKey = crypto.randomUUID();
+      openActionConfirm({ briefKind: "security",
+        action: `提交新建账号审批 · ${form.displayName}`,
+        detail: <><b>{form.displayName}</b> · 登录名 <span className="acode">{form.username}</span> · 角色 <b>{roleName(roles, form.role)}</b>。这里只提交提案，须另一位超级管理员批准后才创建账号。</>,
+        completionCopy: "另一位超级管理员批准后创建账号；请随后在账号列表点「重置密码」，把临时密码交给账号持有人。",
+        amplifies: false,
+        run: async (reason) => {
+          await propose(toast, {
+            action: definition.action, obj: form.username, before: "账号尚未创建",
+            after: `${form.displayName} · ${roleName(roles, form.role)}`, type: definition.type,
+            amplifies: false, gate: { roles: [] }, gateLabel: definition.gateLabel,
+            reason: `${form.reason}；${reason}`, sourceDomain: "A1", commandKey,
+            command: definition.buildCommand({ ...form }), target: definition.buildTarget({ ...form }),
+          });
+          setNaOpen(false);
+        },
+      });
+      return;
+    }
     openActionConfirm({ briefKind: "security",
       action: `新建运营账号 · ${form.displayName}`,
       detail: (
@@ -827,7 +848,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       )}
       {governanceFrozen && (
         <div className="atint danger" style={{ marginBottom: 12 }}>
-          <b>账号操作已暂停</b> · 已启用且绑定两步验证的超级管理员不足 2 个。现在只能新建或提升超级管理员、启用已绑定两步验证的超级管理员、完成两步验证或撤销会话；提升和启用仍需批准，补足后自动恢复。
+          <b>可用超级管理员不足 2 人</b> · 仅可新建或提升超管、启用已绑定两步验证的超管、完成两步验证及撤销会话；新建、提升、启用都需另一位超管批准。没有第二位可用超管时，请运维执行服务器恢复。
         </div>
       )}
 
@@ -1151,7 +1172,7 @@ function NewAccountDrawer({
             <button
               className="l-btn primary"
               disabled={!canSubmit}
-              title={canSubmit ? "确认创建账号" : `不能创建:${submitBlockers.join("、")}`}
+              title={canSubmit ? recoveryMode ? "提交创建审批" : "确认创建账号" : `不能创建:${submitBlockers.join("、")}`}
               style={{ flex: 2, justifyContent: "center", opacity: canSubmit ? 1 : 0.5, cursor: canSubmit ? "pointer" : "not-allowed" }}
               onClick={() => canSubmit && onSubmit({
                 username: username.trim().toLowerCase(),
@@ -1161,7 +1182,7 @@ function NewAccountDrawer({
                 ...(useDefaultAvatar ? { useDefaultAvatar: true, avatarGender: avatarGenderValue } : { avatarAssetId, ...(role === "support" ? { useDefaultAvatar: false, avatarGender: avatarGenderValue } : {}) }),
                 reason: reason.trim(),
               })}
-            >确认创建账号</button>
+            >{recoveryMode ? "提交创建审批" : "确认创建账号"}</button>
           </div>
         </div>
       }
@@ -1257,7 +1278,7 @@ function NewAccountDrawer({
       {role === "support" && <p className="account-profile-note">仅服务本人绑定客户，主管资格需另行授予。</p>}
       <h3 className="account-profile-section-title"><span className="account-profile-step-number" aria-hidden="true">3</span>首次登录</h3>
       <div className="atint" style={{ marginBottom: 10, fontSize: 13, lineHeight: 1.5 }}>
-        创建后将显示一次 20 位临时密码，请妥善交给账号持有人。
+        {recoveryMode ? "这里只提交提案，另一位超级管理员批准后创建账号；请随后在账号列表点「重置密码」，把临时密码交给账号持有人。" : "创建后将显示一次 20 位临时密码，请妥善交给账号持有人。"}
       </div>
 
       <div className="atint" style={{ marginBottom: 14, fontSize: 13, lineHeight: 1.5 }}>

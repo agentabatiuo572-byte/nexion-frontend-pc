@@ -1677,6 +1677,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         action={mc.name}
         title={mc.title}
         detail={mc.detail ?? "从下一次结算或新派任务开始生效，已累计的收益不变。"}
+        content={mc.content}
         amplifies={!!mc.amplify}
         edit={mc.edit}
         businessForm={mc.businessForm}

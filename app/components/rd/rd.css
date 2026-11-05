@@ -880,6 +880,15 @@ td .rd-flow { margin-bottom: 0; }
 /* 支付安全的旧详情弹窗放进改版页：颜色接到状态色和角色色，两套主题都用这一组。 */
 .rd-modal.payment-security { --ps-user: var(--rd-text); --ps-payment: var(--rd-role-3); --ps-locked: var(--rd-warn); --ps-reason: var(--rd-danger); --ps-released: var(--rd-ok); --ps-history: var(--rd-done); }
 
+/* 确认框里的影响块：配置影响预览、促销奖励影响 */
+.rd-impact { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--rd-space-2); min-width: 0; }
+.rd-impact[data-surface] { padding: var(--rd-panel-pad-y) var(--rd-panel-pad-x); border-radius: var(--rd-radius-panel); background: var(--rd-panel); }
+.rd-impact p { margin: 0; }
+.rd-impact-title { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; color: var(--rd-text); }
+.rd-impact-title .rd-explain { margin-left: 4px; }
+.rd-impact-list { display: grid; gap: var(--rd-space-3); margin: 0; padding: 0; list-style: none; }
+.rd-impact-list li { display: grid; gap: var(--rd-space-1); }
+
 /* 小工具类 */
 .rd-contents { display: contents; }
 .rd-pre { white-space: pre-wrap; overflow-wrap: anywhere; }

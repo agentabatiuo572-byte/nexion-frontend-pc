@@ -7,6 +7,7 @@ export type ActionConfirmReq = {
   /** 框上写的短标题，只写动作和对象；action 照旧是记进操作记录的名字（VS-101）。 */
   title?: ReactNode;
   detail: ReactNode;
+  content?: ReactNode;
   /** 放大资金流出方向才挂(B1 覆盖率预检):解除误判 / 复审通过解冻 / 调阈值放宽 / 停用规则;冻结 / 驳回 / 确认违规不挂。 */
   amplifies?: boolean;
   coverage?: CoverageSnapshot;
@@ -57,6 +58,7 @@ export type ConfirmReq = {
   /** 框上写的短标题，不传就用 action（VS-101）。 */
   title?: ReactNode;
   detail: ReactNode;
+  content?: ReactNode;
   chips?: ConfirmChip[];
   /** 这个操作自己声明的影响和提交前检查，传了就不按文字猜摘要（OP-51）。 */
   statedBrief?: { impact: string; check: string };

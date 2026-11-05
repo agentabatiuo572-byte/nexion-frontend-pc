@@ -1,6 +1,7 @@
 "use client";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { a2ActionText, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
+import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 
 /**
@@ -376,6 +377,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const commandKey = createA2CommandKey(`a2-approve-${w.id}`);
     openActionConfirm({ briefKind: w.type === "fund" ? "funds" : w.type === "acct" ? "security" : w.type === "sos" ? "emergency" : "config",
       completionCopy: g3PolicyExecutionTiming(w),
+      content: w.action === `退款 · ${w.obj}` ? <PromotionRefundImpact orderNo={w.obj} /> : undefined,
       action: <>确认执行 · {w.id}({a2ActionText(w.action)})</>,
       detail: (
         <>
@@ -1104,7 +1106,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           >
 
             <div className="l-b" style={{ padding: 0 }}>
-              <div className="kv"><span className="k">操作者 / 角色</span><span className="v">{l.actor} · {l.role}</span></div>
+              <div className="kv"><span className="k">{l.action === "A1_SUPER_ADMIN_BREAK_GLASS_RECOVERED" ? "执行人 / 角色" : "操作者 / 角色"}</span><span className="v">{l.actor} · {l.role}</span></div>
               <div className="kv"><span className="k">时间</span><span className="v mono">{l.ts}</span></div>
               <div className="kv"><span className="k">对象</span><span className="v">{l.obj}</span></div>
               <div className="kv"><span className="k">前值 → 后值</span><span className="v mono">{l.delta}</span></div>

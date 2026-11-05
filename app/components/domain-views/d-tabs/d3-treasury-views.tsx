@@ -462,7 +462,7 @@ function enabledCount(record: Record<string, boolean>) {
   return `${Object.values(record).filter(Boolean).length}/${Object.keys(record).length}`;
 }
 
-export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNote, busyReason, onChange, onDiscard, onSave }: {
+export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNote, busyReason, saving, note, impact, onChange, onDiscard, onSave }: {
   main: D3Main | null;
   draft: ForecastValues | null;
   mainState: ReactNode;
@@ -471,6 +471,12 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNo
   /** 结果未知核对完之前只读，设置和理由都不能再改（OP-93）。 */
   lockedNote?: string;
   busyReason?: string;
+  /** 正在读保存前的影响。 */
+  saving: boolean;
+  /** 影响读取失败或被别人改了，写在按钮旁，再点保存重试。 */
+  note: { tone: "warn" | "danger"; text: string } | null;
+  /** 改后无法估值时不开确认框，影响放在按钮旁，可以直接改草稿。 */
+  impact: ReactNode;
   onChange: (next: ForecastValues) => void;
   onDiscard: () => void;
   onSave: () => void;
@@ -481,7 +487,7 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNo
   const windowOptions = [
     { value: "7d", label: "7 天" },
     { value: "30d", label: "30 天" },
-    ...(draft.forecastWindow === "90d" ? [{ value: "90d", label: "90 天（不再提供）", disabled: true }] : []),
+    ...(draft.forecastWindow === "90d" ? [{ value: "90d", label: "90 天（旧配置，请选择 7 或 30 天）", disabled: true }] : []),
   ];
   return (
     <>
@@ -520,11 +526,13 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNo
               </CheckGroup>
             </div>
           </Panel>
+          {impact}
+          {note && <Notice tone={note.tone}>{note.text}</Notice>}
           <div className="rd-toolbar" data-end="">
             {dirty && <span className="rd-toolbar-note">有未保存的修改</span>}
             <Explain label="保存预测设置的说明" content="有未保存的修改时，切页签和切窗口不会丢。改错了可以把选项改回去再保存，生效前再保存会覆盖待生效版本。" />
             {dirty && <Button variant="ghost" onClick={onDiscard}>放弃修改</Button>}
-            <Button variant="primary" disabledReason={busyReason} onClick={onSave}>保存预测设置</Button>
+            <Button variant="primary" loading={saving} loadingText="正在加载配置影响预览…" disabledReason={busyReason} onClick={onSave}>保存预测设置</Button>
           </div>
         </>
       ) : (

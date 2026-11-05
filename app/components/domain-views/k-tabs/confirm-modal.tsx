@@ -106,6 +106,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
         ? <div className="rd-confirm-alert"><Notice tone="danger">{error}</Notice></div>
         : <div role="alert" className="tint danger">{error}</div>)}
       <OperatorBriefBlock kind={req.briefKind} action={req.action} detail={req.detail} hasEdit={!!req.input} stated={req.statedBrief} />
+      {req.content}
       {req.chips && req.chips.length > 0 && (
         <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 12 }}>
           {req.chips.map(([t, tone]) => (

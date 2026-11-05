@@ -12,7 +12,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Download, Landmark, RefreshCw, ShieldCheck } from "lucide-react";
 import { OperationConfirmModal, useToast, type OperatorBriefKind } from "../design-kit";
+import { ForecastConfigImpact } from "@/app/components/forecast-config-preview";
 import { BlockState, Button, Change, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Input, IrreversibleTag, Modal, Notice, PageHeader, PageTabs, RdPage, ReleaseModal, Select, StatusTag, useTabIds } from "@/app/components/rd";
+import { B2RequestError, previewB2ForecastConfig, type ForecastConfigPreview } from "@/lib/admin/b2-client";
 import { useB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import { businessClock } from "@/lib/admin/business-time";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
@@ -35,7 +37,7 @@ import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operat
 import { createPendingMutationStore, createSlotAttemptStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
-import { DueTab, FORECAST_90D_BLOCK, FlowTab, FundConclusion, OverviewTab, SettingsTab, amountText, effectiveText, forecastDiffRows, money, timeText, type CrossLink, type ForecastValues, type Loadable } from "./d3-treasury-views";
+import { DueTab, FORECAST_90D_BLOCK, FlowTab, FundConclusion, OverviewTab, SettingsTab, amountText, categoryText, effectiveText, forecastDiffRows, money, timeText, type CrossLink, type ForecastValues, type Loadable } from "./d3-treasury-views";
 
 const OPERATOR = currentAdminOperator;
 
@@ -206,6 +208,11 @@ export function D3Treasury() {
   /** 刚打开不报错：失焦或点过下一步才显示这个字段的错（DP-06）。 */
   const [injectShown, setInjectShown] = useState<{ amount?: boolean; voucher?: boolean }>({});
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
+  /** 保存前的影响预览。只对这份草稿和这个版本有效，草稿或版本变了就作废（D3-MD1）。 */
+  const [preview, setPreview] = useState<{ key: string; value: ForecastConfigPreview } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [configNote, setConfigNote] = useState<{ tone: "warn" | "danger"; text: string } | null>(null);
+  const previewGeneration = useRef(0);
   const [retry, setRetry] = useState<PendingItem | null>(null);
   const [retrying, setRetrying] = useState(false);
   /** 待确认条上最近一次重试的结果，只是当下的事实，不影响待确认本身。 */
@@ -288,6 +295,14 @@ export function D3Treasury() {
 
   const baseValues = useMemo(() => (main ? forecastValues(main.config) : null), [main]);
   const dirty = Boolean(draft && baseValues && JSON.stringify(draft) !== JSON.stringify(baseValues));
+  const previewKey = JSON.stringify([draft, main?.config.version]);
+  const currentPreview = preview?.key === previewKey ? preview.value : null;
+
+  useEffect(() => {
+    setPreview(null);
+    ++previewGeneration.current;
+    return () => { ++previewGeneration.current; };
+  }, [previewKey, canConfig]);
 
   // 预测保存结果未知时草稿留着，解除待确认后可以接着改了重新提交。
   const reloadAll = () => {
@@ -436,10 +451,23 @@ export function D3Treasury() {
       toast("你改的内容和最新设置一样，不用再保存。");
       return;
     }
-    setConfirm(forecastRequest(latest, merged, forecastDiffRows(before, after).filter((row) => row.before !== row.after), revision + 1));
+    // 版本变了，原来的影响作废，要看到最新版本的影响才能确认。
+    let impact: ForecastConfigPreview;
+    try {
+      impact = await previewB2ForecastConfig(merged, latest.config.version);
+    } catch (err) {
+      setConfirm((current) => current && { ...current, blocked: forecastConflict(read, false, errorText(err, "影响预览读取失败，请重试。")) });
+      return;
+    }
+    if (impact.forecastDeltaPreview.afterCoverageStatus === "VALUATION_UNAVAILABLE") {
+      setConfirm(null);
+      setPreview({ key: JSON.stringify([merged, latest.config.version]), value: impact });
+      return;
+    }
+    setConfirm(forecastRequest(latest, merged, impact, forecastDiffRows(before, after).filter((row) => row.before !== row.after), revision + 1));
   };
 
-  const forecastRequest = (latest: D3Main, values: ForecastValues, others: ReturnType<typeof forecastDiffRows> = [], revision = 0): ConfirmRequest => {
+  const forecastRequest = (latest: D3Main, values: ForecastValues, impact: ForecastConfigPreview, others: ReturnType<typeof forecastDiffRows> = [], revision = 0): ConfirmRequest => {
     const base = forecastValues(latest.config);
     const version = latest.config.version;
     const dropped = latest.liabilities.breakdown.filter((row) => base.liabilityCategories[row.category] && !values.liabilityCategories[row.category]);
@@ -456,6 +484,7 @@ export function D3Treasury() {
           {!base.reserveCategories.usdt && !values.reserveCategories.usdt && <Notice tone="danger">不计入 USDT 储备后，资金安全等级会按储备 0 算。</Notice>}
           {others.length > 0 && <Notice tone="warn" title="别人改了这些，已按最新读取">{others.map((row) => <div key={row.key}>{row.label}：{row.before} → {row.after}</div>)}</Notice>}
           <DiffList rows={forecastDiffRows(base, values).map((row) => ({ ...row, ...notes[row.key] }))} />
+          <ForecastConfigImpact preview={impact} categoryLabel={categoryText} />
         </div>
       ),
       briefKind: "config",
@@ -478,8 +507,39 @@ export function D3Treasury() {
     };
   };
 
-  const saveConfig = () => {
-    if (main && draft) setConfirm(forecastRequest(main, draft));
+  /** 保存前先看系统算的影响：失败和改后无法估值都不开确认框，写在按钮旁，再点重试（D3-MD1）。 */
+  const saveConfig = async () => {
+    if (!main || !draft || !canConfig || loading || previewLoading || draft.forecastWindow === "90d") return;
+    const generation = ++previewGeneration.current;
+    const sent = main;
+    const values = draft;
+    setPreviewLoading(true);
+    setPreview(null);
+    setConfigNote(null);
+    let impact: ForecastConfigPreview;
+    try {
+      impact = await previewB2ForecastConfig(values, sent.config.version);
+    } catch (caught) {
+      if (generation !== previewGeneration.current) return;
+      if (isPermissionDenied(caught)) { announcePermissionDenied(); return; }
+      const conflict = caught instanceof B2RequestError && caught.status === 409;
+      setConfigNote({ tone: conflict ? "warn" : "danger", text: errorText(caught, "影响预览读取失败，请重试。") });
+      if (conflict) {
+        // 别人先保存了：读最新，自己改的字段留着，再点保存时看新版本的影响（OP-97）。
+        const latest = await fetchD3Main();
+        setMain(latest);
+        setDraft(mergeForecast(forecastValues(sent.config), values, forecastValues(latest.config)));
+      }
+      return;
+    } finally {
+      setPreviewLoading(false);
+    }
+    if (generation !== previewGeneration.current) return;
+    if (impact.forecastDeltaPreview.afterCoverageStatus === "VALUATION_UNAVAILABLE") {
+      setPreview({ key: previewKey, value: impact });
+      return;
+    }
+    setConfirm(forecastRequest(sent, values, impact));
   };
 
   const submitExport = async (kind: ExportKind, reason: string, operator = OPERATOR()) => {
@@ -741,9 +801,12 @@ export function D3Treasury() {
           dirty={dirty}
           lockedNote={forecastRecord ? "上次保存结果未知，先在页面上方核对。核对完之前这里只能查看。" : undefined}
           busyReason={loading ? "正在刷新，稍等" : draft?.forecastWindow === "90d" ? FORECAST_90D_BLOCK : dirty ? undefined : "还没有修改"}
+          saving={previewLoading}
+          note={configNote}
+          impact={currentPreview && <ForecastConfigImpact surface preview={currentPreview} categoryLabel={categoryText} />}
           onChange={setDraft}
           onDiscard={() => { if (baseValues) setDraft(baseValues); }}
-          onSave={saveConfig}
+          onSave={() => void saveConfig()}
         />
       )}
       </div>

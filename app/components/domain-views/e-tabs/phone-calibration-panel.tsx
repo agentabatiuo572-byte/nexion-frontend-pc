@@ -8,7 +8,7 @@ import { usePropose } from "@/lib/admin/use-propose";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { fetchPhoneCalibration, previewPhoneCalibration, phoneProposalError,
+import { fetchPhoneCalibration, fetchPhoneCalibrationDirection, previewPhoneCalibration, phoneProposalError,
   type PhoneCalibrationOverview, type PhonePolicyProposal, type PhoneHardware, type PhonePreview, type PhoneTrialFacts } from "@/lib/admin/phone-calibration-client";
 import { NO_REMOVALS, type AndroidPresetRemovals, type AndroidSocRule } from "@/lib/admin/android-soc-rules";
 import { AndroidSocTiersSection } from "./android-soc-tiers-section";
@@ -55,8 +55,8 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false }: { ctx: EV
   const [facts, setFacts] = useState(emptyFacts);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [preview, setPreview] = useState<{ key: string; result: PhonePreview } | null>(null);
-  const [confirm, setConfirm] = useState<{ proposal: PhonePolicyProposal; commandKey: string } | null>(null);
+  const [preview, setPreview] = useState<{ key: string; result: PhonePreview; amplifies: boolean } | null>(null);
+  const [confirm, setConfirm] = useState<{ proposal: PhonePolicyProposal; commandKey: string; amplifies: boolean } | null>(null);
   const generation = useRef(0);
   const live = useRef(true);
   const editing = ctx.canWriteE6 && !!snapshot && !snapshot.policy.scheduled && !busy && !confirm;
@@ -77,6 +77,7 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false }: { ctx: EV
   const draftKey = JSON.stringify({ proposal, hardware: trialHardware, facts: trialFacts });
   const validation = phoneProposalError(proposal);
   const previewCurrent = preview?.key === draftKey;
+  useEffect(() => { setPreview(null); }, [draftKey]);
 
   async function refresh() {
     const request = ++generation.current;
@@ -100,8 +101,10 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false }: { ctx: EV
     const request = generation.current;
     setBusy(true); setError(""); setPreview(null);
     try {
-      const result = await previewPhoneCalibration(proposal, trialHardware, trialFacts);
-      if (live.current && request === generation.current) setPreview({ key: draftKey, result });
+      const [result, amplifies] = await Promise.all([
+        previewPhoneCalibration(proposal, trialHardware, trialFacts), fetchPhoneCalibrationDirection(proposal),
+      ]);
+      if (live.current && request === generation.current) setPreview({ key: draftKey, result, amplifies });
     } catch (failure) {
       if (live.current && request === generation.current) setError(displayAdminError(failure));
     } finally { if (live.current && request === generation.current) setBusy(false); }
@@ -158,18 +161,18 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false }: { ctx: EV
       {previewCurrent && preview && <div role="status"><p>{trialText(preview.result)}</p>
         {trialFacts && preview.result.match.status === "MATCHED" && <p>{riskText(preview.result)}</p>}
         <p>历史采样预览：匹配 {preview.result.impact.matched}，数值或档位变化 {preview.result.impact.changed}，待核验 {preview.result.impact.pending}。审批生效后用于后续校准，不修改历史结算。</p></div>}
-      <Btn disabled={!editing || !!validation || !previewCurrent} onClick={() => setConfirm({ proposal, commandKey: createA2CommandKey("phone-policy") })}>提交审批</Btn>
+      <Btn disabled={!editing || !!validation || !previewCurrent} onClick={() => preview && setConfirm({ proposal, commandKey: createA2CommandKey("phone-policy"), amplifies: preview.amplifies })}>提交审批</Btn>
       <p><Link href="/platform/audit?domain=E&object=phone-calibration">查看审批记录</Link></p>
     </>}
     {/* Its own endpoint: stays usable when the calibration rules cannot be read, e.g. to stop an enforcing check. */}
     {!thresholdsOnly && <PhoneRiskSection canWrite={ctx.canWriteE6} toast={ctx.toast} />}
-    {confirm && <OperationConfirmModal briefKind={"config"} action="发布手机校准规则" amplifies detail="整份 Android 芯片档、iPhone 机型规则与档位分界将一起发布，须另一位超级管理员批准后生效。预约发布还须到达所选时间；若批准时已过预约时间，则批准后生效。这里只创建提案，不代表已经生效。" reasonMin={8} reasonMax={200}
+    {confirm && <OperationConfirmModal briefKind={"config"} action="发布手机校准规则" amplifies={confirm.amplifies} detail="整份 Android 芯片档、iPhone 机型规则与档位分界将一起发布，须另一位超级管理员批准后生效。预约发布还须到达所选时间；若批准时已过预约时间，则批准后生效。这里只创建提案，不代表已经生效。" reasonMin={8} reasonMax={200}
       completionCopy="批准后生效；预约发布还须到达所选时间。"
       onClose={() => setConfirm(null)} onConfirm={async reason => {
         if (!ctx.canWriteE6) throw new Error("你没有修改设备配置的权限");
         const definition = findHighOp("e6_phone_calibration")!;
         await propose(ctx.toast,{action:definition.action,obj:"phone-calibration",before:`v${confirm.proposal.expectedRevision}`,
-          after:`v${confirm.proposal.expectedRevision+1} · Android ${confirm.proposal.androidSocRules.length} 档 · iPhone ${confirm.proposal.iosModelRules.length} 个`,type:"param",amplifies:true,
+          after:`v${confirm.proposal.expectedRevision+1} · Android ${confirm.proposal.androidSocRules.length} 档 · iPhone ${confirm.proposal.iosModelRules.length} 个`,type:"param",amplifies:confirm.amplifies,
           gate:{roles:[]},gateLabel:definition.gateLabel,reason,sourceDomain:"E6",commandKey:confirm.commandKey,
           command:definition.buildCommand({...confirm.proposal}),target:definition.buildTarget({})});
         if (live.current) { setConfirm(null); setPreview(null); await refresh(); }

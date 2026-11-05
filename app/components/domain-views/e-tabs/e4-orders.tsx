@@ -12,6 +12,7 @@ import { E4_CLOSE_REASONS, E4_CLOSE_REASON_LABELS, E4_REFUND_REASONS, E4_REFUND_
 import { operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
 import { fmtPct } from "@/lib/format";
 import { useReach } from "@/lib/nav/use-reach";
+import { PromotionRefundImpact } from "../promotion-refund-impact";
 import type { E4PendingCommand, EViewCtx } from "./types";
 import { E4_PAGE_SIZES, ORDER_FINAL_STATES, ORDER_FLOW, ORDER_STATE_GROUPS, ORDER_STATE_TONE, orderAmount, orderAmountDigits, orderMoney, stateLabel, type E4Query } from "./data";
 
@@ -352,6 +353,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
               {channel && <Fact k="退款去向">{REFUND_CHANNEL_LABELS[channel] ?? channel}</Fact>}
               <Fact k="退款后">{refundDeviceLine}<Explain label="退款后设备和收益怎么处理" content={refundDeviceDetail} /></Fact>
             </>, "退款金额", true),
+            content: <PromotionRefundImpact orderNo={o.id} />,
             businessForm: channel
               ? { kind: "multi-field", title: "用户可见的原因", fields: [reasonField] }
               : { kind: "multi-field", title: "退款渠道与原因", fields: [

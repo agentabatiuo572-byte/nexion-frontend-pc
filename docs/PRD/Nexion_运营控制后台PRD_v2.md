@@ -1506,7 +1506,7 @@ flowchart LR
 
 **F3-A01 手动结算（2026-11-05，BUG-286）**。有 `network_f3_write` 的管理员填写用户编号、已结束的越南结算日和理由，提交 `F/f3_binary_settle` 审批。待审期间没有入账。另一位有 A2 审批权的超管批准时，服务端按实付订单、当前结算规则和 H1 封顶算出实际应付，并将该笔待付奖励计入兑付覆盖率复核。满足条件时生成一笔奖励及资金流水，A2 回显金额和奖励记录。未达到条件时返回原因，保留待审工单。已结算的同一用户和结算日返回原奖励记录。旧结算接口仅用于读回已结算结果。
 
-**配置输入与结算单位（BUG-192、T14）**：门槛必须大于 0、上限 5000 USDT，最多 6 位小数（结算金额精度）；比例按百分比填写，必须大于 0、上限 20%，最多 10 位小数（对应结算比率 12 位小数）。空值与 0 分开拒绝，非数字、越界和超精度明确拒绝，不自动取整或四舍五入。输入比例 `1` 提交 `1%`，结算使用 `0.01`；`0.5` 提交 `0.5%`，结算使用 `0.005`。旧裸值 ≤1 按结算的比率口径转换成百分比展示；无法准确展示的旧值标记「比例尚未确认」并保留原文。提交只创建审批申请，批准后后续结算使用新设置，批准前展示原配置。上线前须核查存量；服务端写入、批准执行与结算仍须统一范围及精度，前端校验不能代替服务端保护。
+**配置输入与结算单位（BUG-192、T14）**：门槛必须大于 0、上限 5000 USDT，最多 6 位小数（结算金额精度）；比例按百分比填写，必须大于 0、上限 20%，最多 10 位小数（对应结算比率 12 位小数）。空值与 0 分开拒绝，非数字、越界和超精度明确拒绝，不自动取整或四舍五入。输入比例 `1` 提交 `1%`，结算使用 `0.01`；`0.5` 提交 `0.5%`，结算使用 `0.005`。存量裸值与带 `%` 值均按百分数展示，裸 `1` 为 `1%`，裸 `0.13` 为 `0.13%`；与系统 `normalizeMatchRate` 规则一致，非正、超过 20 或小数精度超过 10 位等拒绝值显示「比例尚未确认」并保留原文。提交只创建审批申请，批准后后续结算使用新设置，批准前展示原配置。系统写入、审批创建、批准执行、结算与公共佣金指引共用精确数值规则；非法配置直接返回 422，前端校验不能代替系统保护。
 
 门槛和比例提交按当前已确认值显式标记资金方向：降低门槛或提高比例才标记放大；提高门槛、降低比例或原值不标记放大。无法解析的当前比例仍显示「比例尚未确认」，空当前值不转换为 0、不参与方向比较，不因虚假的上调误触发低覆盖率拦截。当前比例无法确认或门槛为空时，不显式指定资金方向，提案沿配置键既有资金分类处理，不声明为收紧；不扩展旧值格式解析，系统仍须按实际生效值复核。
 
@@ -1585,7 +1585,7 @@ flowchart LR
 | reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
 
 - **按钮区**:`[取消]` · `[确认提交]`；空、非数字、越界、B1 阻断（调高方向）或理由未达标时禁用，超精度在提交前明确报错并保留输入，不发送申请。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(上调方向 B1 阻断,回传当前覆盖率)/ 400(越界)/ 400 `REASON_REQUIRED` / 409(提示刷新当前值)/ 403。
+- **错误态**：422 `F3_MATCH_RATE_INVALID` 显示比例范围、精度及百分比单位，提示回「团队平衡奖励」修改；空值 `TEAM_CONFIG_VALUE_REQUIRED` 提示补全新值。覆盖率阻断（上调方向）、理由不合格、409 或 403 按实际原因提示。
 - **成功反馈**:弹窗关闭，提示「匹配比例已提交，批准后生效；批准前仍按原设置执行」，当前比例不提前更新。申请进度到「操作记录与审批」核对。
 
 ##### [F3-MD2] 补发 / 纠错 Balance Match 确认
@@ -1615,7 +1615,7 @@ flowchart LR
 | reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
 
 - **按钮区**:`[取消]` · `[确认提交]`；空、非数字、越界、B1 阻断（降门槛方向）或理由未达标时禁用，超精度在提交前明确报错并保留输入，不发送申请。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(降门槛方向 B1 阻断)/ 400(越界)/ 400 `REASON_REQUIRED` / 409(提示刷新)/ 403。
+- **错误态**：422 `F3_THRESHOLD_INVALID` 显示门槛范围和精度，提示回「团队平衡奖励」修改；覆盖率阻断（降门槛方向）、理由不合格、409 或 403 按实际原因提示。
 - **成功反馈**:弹窗关闭，门槛提示「已提交，批准后生效；批准前仍按原设置执行」，当前门槛不提前更新。自动分组保持审批提交路径。
 
 ##### [F3-MD4] 暂停 / 恢复双轨结算确认
@@ -1647,8 +1647,9 @@ flowchart LR
 - **成功反馈**:弹窗关闭;结算周期 & 沉淀面就地更新;toast「结算周期 / 沉淀处置已更新 · 下一结算周期生效 · 已记审计」;事件 `admin.binary_config_changed`(field=settlePeriod|residualPolicy,携 `coverage_checked`)落 A2;实时告警超管 / 增长运营 lead。
 
 **⑤ 接口**:
-- `GET /api/admin/config/binary` — 返回 `{ balanceMatchRate, binaryTrackMinUsd, spillover:{ enabled, saturationThreshold }, settlePeriod, residualPolicy, gvResetCron, dailyCap:{ value, phase, asOf } }`,**server-canonical**;`dailyCap` 字段为 H1 Phase 现值只读投影(F3 不写 cap)。前端经平台配置接口读取 `settlePeriod` / `residualPolicy` 后联动渲染(§8.4.1.2;前端以 `lib/binary-settlement.ts` 单源承接,backend-replaceable)。
-- `PUT /api/admin/config/binary` — 更新匹配比例 / 两轨门槛 / 自动分配规则 / 结算周期 / 沉淀处置;经确认弹窗提交(F3-MD1 / F3-MD3 / F3-MD5,body 携 reason,server 校验非空 400 `REASON_REQUIRED`)即时生效;**上调匹配比例 / 降两轨门槛 / 沉淀改向「转结」前置 B1 覆盖率红线校验(低于红线返回 422 `COVERAGE_BELOW_REDLINE`)**;`settlePeriod` / `residualPolicy` 改后仅对下一结算周期生效,不回溯已结算。**`binaryDailyCapUSD` 不在本 endpoint 可写**(写入返回 `422` + `suggestedPath: "/api/admin/phase/dials"`,advisory-only;H1 是 cap 唯一配置入口,与 D5↔H1 体例一致;该 422 + suggestedPath 响应体格式待前端 PRD §9.11 接口约定章节补充标准化定义后对齐,本端点不先行硬定通用错误体格式)。`residualPolicy`(原冻结字段 `unmatchedSurplusDisposition`)已 PM 裁定解冻,接受 `每月清零 | 每次对碰清零 | 转结` 枚举写入校验;`settlePeriod` 接受 `每日 | 每周 | 每月` 枚举写入校验。
+- `GET /api/admin/teams/binary` — 页面配置、公式和结算读模型；`configValues` / `config` 保留百分数字符串，每日封顶为「运营阶段设置」只读投影。公共 `GET /api/config/commission/guide?schemaVersion=2` 返回 ratio：`12.5% → 0.125`。
+- `PATCH /api/admin/teams/commissions/config/{key}` — `{value, reason}` 及 `Idempotency-Key`；门槛、比例非法返回 422，空值拒绝。F3 页的资金参数提交 `POST /api/admin/platform/audit/operations` 创建审批，再由另一位有权超管调用 `POST /api/admin/platform/audit/operations/{id}/approve`，批准后生效；创建和批准均检查数字及真实资金方向，自批拒绝。后续结算使用新值，历史不重算。
+- 「手动结算团队平衡奖励」在 F3 填用户编号与已结束的结算日（越南时间），创建审批，另一位超管在「操作记录与审批」批准执行。系统以两组真实已付订单额较小值 × ratio 计算，受门槛、周期、上限及兑付覆盖率约束；成功关联一笔结算、一笔奖励事件及一笔待解锁 USDT 流水，重复请求返回原结果。
 - `POST /api/admin/team/binary/:userId/adjust` — 补发 / 纠错单用户 Balance Match;payload `{ amount, direction(reissue|reverse), reason }`(经确认弹窗 F3-MD2,reason server 校验非空 400 `REASON_REQUIRED`;**reissue 方向前置 B1 红线预检,低于红线 422 `COVERAGE_BELOW_REDLINE`**);**`Idempotency-Key` 必带**(资产写入防重复);确认即时生效,server 原子写余额 + D4 bill。
 - **server-side 结算(非 admin)**:Balance Match 由 server 按 §8.4.1 / §8.4.1.2 公式、依 `settlePeriod` 结算(`min(leftVolumeMonth, rightVolumeMonth) × rate` 折算到结算周期,受 `binaryDailyCapUSD` 封顶 + 两轨门槛 gating);两轨门槛未达 → 该周期匹配归零,较大侧未匹配体量按 `residualPolicy`(每月清零 / 每次对碰清零 / 转结)处置(均 PM 已裁定,§8.4.1.2);F3 后台提供 `settlePeriod` / `residualPolicy` 规则配置,**结算 server-canonical**。
 

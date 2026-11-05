@@ -112,6 +112,13 @@ async function request(path: string, body?: unknown): Promise<unknown> {
 export async function fetchPhoneCalibration(): Promise<PhoneCalibrationOverview> {
   return parsePhoneCalibrationOverview(await request(""));
 }
+export async function fetchPhoneCalibrationDirection(proposal: PhonePolicyProposal): Promise<boolean> {
+  const value = await request("/direction", proposal);
+  if (!object(value) || value.expectedRevision !== proposal.expectedRevision
+      || !Number.isSafeInteger(value.baselineVersion) || !Number.isSafeInteger(value.effectiveAt)
+      || typeof value.amplifies !== "boolean") return invalid();
+  return value.amplifies;
+}
 export async function previewPhoneCalibration(proposal: PhonePolicyProposal, hardware: PhoneHardware,
                                               facts: PhoneTrialFacts | null = null): Promise<PhonePreview> {
   const error = phoneProposalError(proposal);
