@@ -25,6 +25,7 @@ export { Panel } from "./panel";
 export { Select, type SelectOption } from "./select";
 export { Stat, StatBand } from "./stat";
 export { StatusTag } from "./status-tag";
+export { Steps } from "./steps";
 export { RdPage, useRdSurface } from "./surface";
 export { TodoFailed, TodoItem, TodoList } from "./todo-list";
 export { Cell, ColumnPicker, Table, TableLoading, TableMessage, Td, Th, Tr, useTableColumns, type TableColumn, type TableColumns } from "./table";

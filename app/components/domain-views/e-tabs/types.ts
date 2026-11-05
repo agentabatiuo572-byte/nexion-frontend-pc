@@ -1,7 +1,10 @@
+import type { ReactNode } from "react";
 import type { BusinessFormSpec, EditSpec } from "../design-kit";
+import type { E4Query } from "./data";
 import type { E1BundleDiscount, E1GenerationGateData, E1GenerationGateInput, E1InvalidSku } from "@/lib/admin/e1-client";
 import type { E2PhoneTier, E2TaskPricingSnapshot, E2YieldComparison } from "@/lib/admin/e2-client";
 import type { E3OperationMetric, E3Stats } from "@/lib/admin/e3-client";
+import type { E4OrderDetail } from "@/lib/admin/e4-client";
 import type { E5Datacenter, E5DatacenterStatus, E5Device, E5Overview } from "@/lib/admin/e5-client";
 import type { E6ComputeConfigView } from "@/lib/admin/e6-client";
 import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
@@ -76,6 +79,11 @@ export interface McSpec {
   generationGateId?: string;
   generationGate?: E1GenerationGateInput;
   orderId?: string;         // 退款 / 取消 / 补建终态目标订单
+  effect?: ReactNode;       // E4 确认框：生效标签、确认按钮文字、要核对的事实
+  confirmLabel?: string;
+  confirmTone?: "primary" | "danger";
+  coverageLead?: ReactNode;
+  facts?: ReactNode;
   deviceId?: number;        // E5 后端设备主键
   deviceNo?: string;        // E5 展示编号(instanceNo)
   deviceAction?: "activate" | "force-activate" | "deactivate" | "unbind";
@@ -94,6 +102,7 @@ export interface EOrder {
   state: string;
   dc: string;
   age: string;
+  orderedAt?: string;
 }
 
 /** 子视图上下文:派生读 + 打开抽屉/操作确认 + toast。全部由 shell 注入,子视图无自有 store。 */
@@ -141,21 +150,26 @@ export interface EViewCtx {
   orders: EOrder[];
   e4Loading: boolean;
   e4Error: string | null;
-  e4Page: number;
-  e4PageSize: number;
   e4Total: number;
-  e4Filter: string;
-  e4Keyword: string;
-  setE4Page: (page: number) => void;
-  setE4PageSize: (pageSize: number) => void;
-  setE4Filter: (filter: string) => void;
-  setE4Keyword: (keyword: string) => void;
-  refreshE4: () => Promise<void>;
+  e4Query: E4Query;
+  e4KeywordInput: string;
+  e4Counts: Record<string, number> | null;
+  e4CountsFailed: boolean;
+  e4ReadAt: string;
+  updateE4Query: (patch: Partial<Omit<E4Query, "keyword">>) => void;
+  setE4KeywordInput: (keyword: string) => void;
+  clearE4Filters: () => void;
+  refreshE4: () => Promise<unknown>;
   orderState: (o: EOrder) => string;
   isCancelled: (id: string) => boolean;
   isRefunded: (id: string) => boolean;
   terminalOf: (id: string) => string | undefined;
+  selOrder: EOrder | null;
+  e4Detail: E4OrderDetail | null;
+  e4DetailLoading: boolean;
+  e4DetailError: string | null;
   openOrder: (o: EOrder) => void;
+  closeOrder: () => void;
   // E5 设备运维(设备列表/激活/解绑/DC pause 均走后端 API)
   canWriteE5: boolean;
   canForceActivateE5: boolean;

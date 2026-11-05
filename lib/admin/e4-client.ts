@@ -10,6 +10,7 @@ export interface E4Order {
   state: string;
   dc: string;
   age: string;
+  orderedAt: string;
 }
 
 interface ApiResult<T> {
@@ -196,6 +197,7 @@ function fromOrder(order: BackendOrder): E4Order {
     state: normalizeState(order.state),
     dc: order.dcLocation?.trim() || "—",
     age: order.ageText?.trim() || "—",
+    orderedAt: order.orderedAt ?? "",
   };
 }
 
@@ -208,6 +210,26 @@ export async function fetchE4OrderPage(query: E4OrderQuery = {}): Promise<E4Orde
     pageNum: toNumber(page.pageNum, query.pageNum ?? 1),
     pageSize: toNumber(page.pageSize, query.pageSize ?? 10),
     records: (page.records ?? []).map(fromOrder),
+  };
+}
+
+/** 接口的 state 只收一个值。看整组时按状态分别取到当前页为止，按下单时间合并后切出这一页，总数相加（ST-68）。 */
+export async function fetchE4OrderGroupPage(states: readonly string[], query: Required<Pick<E4OrderQuery, "pageNum" | "pageSize">> & { keyword: string }): Promise<E4OrderPage> {
+  const needed = query.pageNum * query.pageSize;
+  const parts = await Promise.all(states.map(async (state) => {
+    const records: E4Order[] = [];
+    for (let pageNum = 1; ; pageNum += 1) {
+      const result = await fetchE4OrderPage({ state, keyword: query.keyword, pageNum, pageSize: Math.min(needed, 100) });
+      records.push(...result.records);
+      if (result.records.length === 0 || records.length >= Math.min(needed, result.total)) return { total: result.total, records };
+    }
+  }));
+  const merged = parts.flatMap((part) => part.records).sort((left, right) => right.orderedAt.localeCompare(left.orderedAt));
+  return {
+    total: parts.reduce((sum, part) => sum + part.total, 0),
+    pageNum: query.pageNum,
+    pageSize: query.pageSize,
+    records: merged.slice(needed - query.pageSize, needed),
   };
 }
 

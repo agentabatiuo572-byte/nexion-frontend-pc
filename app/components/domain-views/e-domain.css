@@ -14,7 +14,6 @@
 .edom .f-cta.manual { border-color: var(--border-strong); background: var(--surface-2); color: var(--ink-2); font-weight: 500; }
 @media (hover: hover) and (pointer: fine) { .edom .f-cta.manual:hover { background: var(--surface-3); color: var(--ink); border-color: var(--ink-4); } }
 
-
 /* ===== 列表/表格行内动作按钮 .l-btn(E 域 port 时漏建,补齐 · 与 A–M 各域同款)=====
    E5「设备库存 & 激活」动作列(激活/强制激活/取消激活/解绑)用 .l-btn;此前 .edom 无定义 →
    fallthrough 到全局 .dkpage .mc(chip 样式)→ 按钮无边框误成 chip。按钮类必须保留 border。 */
@@ -409,85 +408,11 @@
 .edom .tx-foot b { color: var(--ink-2); font-weight: 600; }
 .edom .tx-foot .sep { color: var(--ink-4); }
 
-/* ##################### E4 订单状态机 ##################### */
-.edom .sm-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 22px 24px 24px; margin-bottom: 16px; position: relative; overflow: hidden; }
-.edom .sm-h { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
-.edom .sm-h .ttl { font-size: 14.5px; font-weight: 600; }
-.edom .sm-h .sub { font-size: 12px; color: var(--ink-3); }
-.edom .sm-h .r { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-.edom .sm-diagram { position: relative; padding: 12px 0 8px; }
-.edom .sm-path-main { display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-bottom: 32px; padding: 0 6px; }
-.edom .sm-connect { flex: 1; display: flex; align-items: center; gap: 0; min-width: 60px; }
-.edom .sm-connect .ln { flex: 1; height: 2px; }
-.edom .sm-connect .ln.a { background: var(--success); }
-.edom .sm-connect .ln.b { background: linear-gradient(90deg, var(--success), #4FBE45); }
-.edom .sm-connect .ln.c { background: linear-gradient(90deg, #4FBE45, var(--brand)); }
-.edom .sm-connect .arr { color: var(--brand); display: inline-flex; align-items: center; margin-left: -1px; }
-.edom .sm-connect.start .arr { color: #4FBE45; }
-.edom .sm-connect.mid .arr { color: #6FCE2C; }
-.edom .sm-node { display: flex; flex-direction: column; align-items: center; gap: 8px; flex-shrink: 0; }
-.edom .sm-node .box { background: var(--surface-2); border: 2px solid var(--border-strong); border-radius: 11px; padding: 12px 16px; min-width: 130px; text-align: center; }
-.edom .sm-node .box .nm { font-family: var(--mono); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
-.edom .sm-node .box .ct { font-family: var(--mono); font-size: 11px; color: var(--ink-4); margin-top: 3px; }
-.edom .sm-node.start .box { background: var(--surface-3); border-color: var(--border-strong); }
-.edom .sm-node.start .nm { color: var(--ink-2); }
-.edom .sm-node.start .ct { color: var(--ink-3); }
-.edom .sm-node.flow .box { background: var(--cyan-soft); border-color: var(--cyan-border); }
-.edom .sm-node.flow .nm { color: var(--cyan); }
-.edom .sm-node.flow .ct { color: var(--cyan); }
-.edom .sm-node.end .box { background: var(--success-soft); border-color: var(--success-border); box-shadow: 0 0 16px rgba(41,210,127,.15); }
-.edom .sm-node.end .nm { color: var(--success); }
-.edom .sm-node.end .ct { color: var(--success); }
-.edom .sm-branches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; padding-top: 10px; border-top: 1px dashed var(--border); }
-@media (max-width: 980px) { .edom .sm-branches { grid-template-columns: repeat(3, 1fr); } }
-.edom .sm-branches > .lbl { grid-column: 1 / -1; font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
-.edom .sm-branches > .lbl::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-.edom .sm-branch { background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 9px; padding: 11px 13px; text-align: center; position: relative; }
-.edom .sm-branch .nm { font-family: var(--mono); font-size: 11.5px; font-weight: 700; letter-spacing: .04em; }
-.edom .sm-branch .ct { font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); margin-top: 3px; }
-.edom .sm-branch .desc { font-size: 10.5px; color: var(--ink-3); margin-top: 4px; line-height: 1.4; }
-.edom .sm-branch.err     { border-color: var(--danger-border); background: var(--danger-soft); }
-.edom .sm-branch.err .nm { color: var(--danger); }
-.edom .sm-branch.warn    { border-color: var(--warning-border); background: var(--warning-soft); }
-.edom .sm-branch.warn .nm { color: var(--warning); }
-.edom .sm-branch.neutral .nm { color: var(--ink-2); }
-
-/* ===== Order queue table ===== */
-.edom .q-card { min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); }
-.edom .q-h { padding: 16px 18px 12px; display: flex; align-items: center; gap: 10px; }
-.edom .q-h .ttl { font-size: 14.5px; font-weight: 600; }
-.edom .q-h .sub { font-size: 12px; color: var(--ink-3); }
-.edom .q-h .r { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .edom .filter-bar { padding: 0 18px 12px; display: flex; gap: 6px; flex-wrap: wrap; }
 .edom .fchip { font-family: var(--mono); font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 7px; background: var(--surface-2); border: 1px solid var(--border); color: var(--ink-3); cursor: pointer; user-select: none; }
 @media (hover: hover) and (pointer: fine) { .edom .fchip:hover { background: var(--surface-3); color: var(--ink); } }
 .edom .fchip.on { background: var(--brand); color: #0A0A0A; border-color: var(--brand); font-weight: 600; }
 .edom .filter-bar .fdiv { width: 1px; align-self: stretch; min-height: 18px; background: var(--border); margin: 0 5px; }
-.edom .q-scroll { overflow-x: auto; overscroll-behavior-inline: contain; }
-.edom .q-row { display: grid; grid-template-columns: 110px 110px minmax(160px, 1fr) 110px 130px 110px 70px 60px; min-width: 984px; align-items: center; gap: 12px; padding: 13px 20px; border-top: 1px solid var(--border); font-size: 13px; cursor: pointer; transition: background .12s; }
-.edom .q-row.head { padding: 11px 20px; background: var(--surface-2); border-top: 0; cursor: default; font-size: 10.5px; font-weight: 600; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
-@media (hover: hover) and (pointer: fine) { .edom .q-row:hover:not(.head) { background: var(--surface-2); } }
-.edom .q-row .oid { font-family: var(--mono); font-size: 12.5px; font-weight: 600; }
-.edom .q-row .uid { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
-.edom .q-row .oid, .edom .q-row .uid { overflow-wrap: anywhere; }
-.edom .q-row .sku { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.edom .q-row .amt { font-family: var(--mono); font-size: 14px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
-.edom .q-row .dc { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
-.edom .q-row .age { font-family: var(--mono); font-size: 11px; color: var(--ink-4); text-align: right; }
-.edom .q-row .chev { color: var(--ink-4); text-align: right; display: flex; justify-content: flex-end; }
-.edom .q-empty { padding: 26px; text-align: center; color: var(--ink-4); font-size: 12.5px; border-top: 1px solid var(--border); }
-
-/* 订单详情抽屉内的状态轨迹(走仓库 <Drawer>,故用 .edrawer 全局类,不挂 .edom) */
-.edrawer-trail { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
-.edrawer-trail .it { display: flex; align-items: center; gap: 10px; font-size: 12.5px; }
-.edrawer-trail .it .d { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-.edrawer-trail .it .d.done { background: var(--success); }
-.edrawer-trail .it .d.grey { background: var(--ink-4); }
-.edrawer-trail .it .d.red  { background: var(--danger); }
-.edrawer-trail .it .d.warn { background: var(--warning); }
-.edrawer-trail .it.grey .nm { color: var(--ink-4); }
-.edrawer-trail .it.red .nm  { color: var(--danger); font-weight: 600; }
-.edrawer-trail .it.warn .nm { color: var(--warning); font-weight: 600; }
 
 /* ##################### E5 设备运维 ##################### */
 .edom .heartbeat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 18px 22px; margin-bottom: 16px; display: grid; grid-template-columns: 1fr 1fr 220px; align-items: center; gap: 22px; }
