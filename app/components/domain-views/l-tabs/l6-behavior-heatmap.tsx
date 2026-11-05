@@ -66,8 +66,8 @@ function activityCell(v: number, max: number): React.CSSProperties {
 }
 /** 跳出率警示色阶(绝对阈值:>50% 红 · 35–50% 橙 · 低=淡橙):高=问题,不是「热」。 */
 function bounceCell(rate: number): React.CSSProperties {
-  const hot = rate >= 0.5 ? "var(--danger)" : "var(--warning)";
-  const a = rate >= 0.5 ? 58 : rate >= 0.35 ? 40 : rate >= 0.22 ? 22 : 10;
+  const hot = rate > 0.5 ? "var(--danger)" : "var(--warning)";
+  const a = rate > 0.5 ? 58 : rate >= 0.35 ? 40 : rate >= 0.22 ? 22 : 10;
   return { background: `color-mix(in srgb, ${hot} ${a}%, transparent)`, color: a >= 55 ? "#0A0A0A" : "var(--ink-2)" };
 }
 
