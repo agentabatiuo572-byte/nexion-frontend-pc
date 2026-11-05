@@ -85,7 +85,7 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: 
   if (!doc) return <BlockState state="error" title="公开内容状态尚未确认，请刷新重试。" detail={error ?? undefined} onRetry={() => void refresh()} retryLabel="刷新" />;
 
   const conclusion = doc.status === "PUBLISHED"
-    ? <Conclusion state="ok" icon={FileCheck2} explain="注册页和邀请页公开阅读。App 上的显示位置待核对。">隐私政策：已发布，正文版本 {doc.version}</Conclusion>
+    ? <Conclusion state="ok" icon={FileCheck2} explain="注册页和邀请页公开阅读。">隐私政策：已发布，正文版本 {doc.version}</Conclusion>
     : doc.status === "UNPUBLISHED"
       ? <Conclusion state="warn">隐私政策：已撤下公开版本，用户读不到</Conclusion>
       : doc.hasPublishedVersion
