@@ -293,6 +293,8 @@ export interface D2Withdrawal {
   chain: string;
   amount: number;
   addressVerificationRequired: boolean | null;
+  /** 大额门槛（后端配置），列表和详情都带；读不到时是 null。 */
+  strongReviewThresholdUsdt: number | null;
   fee: number;
   targetAddress: string;
   riskDecisionId?: number | null;
@@ -1293,6 +1295,7 @@ function normalizeWithdrawal(value: unknown): D2Withdrawal {
     userId,
     amount,
     addressVerificationRequired: typeof row.addressVerificationRequired === "boolean" ? row.addressVerificationRequired : null,
+    strongReviewThresholdUsdt: Number(row.strongReviewThresholdUsdt) > 0 ? Number(row.strongReviewThresholdUsdt) : null,
     fee,
     withdrawalNo: d2String(row.withdrawalNo, "withdrawal.withdrawalNo"),
     asset: d2String(row.asset, "withdrawal.asset"),

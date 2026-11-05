@@ -97,6 +97,7 @@ export function operatorCopyText(value: string): string {
     .replace(/\bDiamond\b/g, "钻石档")
     .replace(/\bstaking\b/gi, "质押")
     .replace(/\bGenesis\b/g, "创世节点")
+    .replace(/创世节点 售罄速度/g, "创世节点售罄速度")
     .replace(/\bTrial\b/g, "试用业务")
     .replace(/\bqueue\b/gi, "待处理队列")
     .replace(/\bKPI\b/g, "关键指标")

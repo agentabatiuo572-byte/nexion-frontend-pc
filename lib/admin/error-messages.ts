@@ -769,7 +769,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   ACCOUNT_DELETE_SELF_FORBIDDEN: "不能删除自己的当前账号。",
   ACCOUNT_NOT_FOUND: "账号不存在或已删除,请刷新后重试。",
   DISPLAY_NAME_REQUIRED: "请填写显示名。",
-  INVALID_STATE_TRANSITION: "当前状态不允许执行该操作,请刷新后查看最新状态。",
+  INVALID_STATE_TRANSITION: "当前状态不允许执行该操作，请刷新后查看最新状态。",
   BI_REPORT_STATE_CHANGED: "报表状态已变化，可能已被处理。请重新加载任务列表核对最新状态。",
   ORDER_PAYMENT_CONFIRMATION_REQUIRED: "要等支付结果确认并入账；后台不能手动把未支付订单改成已支付。",
   ORDER_PROVISIONING_EVIDENCE_REQUIRED: "缺少已到账的资金记录，或还没分配设备/数据中心，暂时不能进入开通中。",
