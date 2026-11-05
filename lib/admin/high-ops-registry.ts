@@ -1989,6 +1989,17 @@ export const HIGH_OPS: HighOpDef[] = [
     buildTarget: () => ({ domain: "F", type: "vrank_bootstrap", id: "current" }),
   },
   {
+    op: "f1_rank_policy_change",
+    domain: "F",
+    action: "放宽晋升条件或增加资金奖励",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "超管",
+    targetType: "vrank_policy",
+    buildCommand: (ctx) => ({ domain: "F", op: "f1_rank_policy_change", params: { values: ctx.values } }),
+    buildTarget: (ctx) => ({ domain: "F", type: "vrank_policy", id: String(ctx.rank) }),
+  },
+  {
     op: "f_vrank_override",
     domain: "F",
     action: "V-Rank 手动晋升/降级",

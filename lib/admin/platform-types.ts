@@ -132,6 +132,8 @@ export interface OpsVRankRewardItem {
   id: string;
   type: VRankRewardType;
   amount?: number;
+  /** Exact server amount used by the F1 reward editor and policy comparison. */
+  amountText?: string;
   voucherId?: string;
   skuId?: string;
   custom?: string;
