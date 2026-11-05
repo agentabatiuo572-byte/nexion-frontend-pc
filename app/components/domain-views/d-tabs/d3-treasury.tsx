@@ -34,30 +34,23 @@ import {
 } from "@/lib/admin/d-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
-import { createPendingMutationStore, createSlotAttemptStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import { exportScope, treasuryCommandKey, treasuryCommands, type TreasuryExportKind } from "@/lib/admin/treasury-commands";
+import { LeaveDialog, useLeaveGuard } from "../i-tabs/i5-writes";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import { DueTab, FORECAST_90D_BLOCK, FlowTab, FundConclusion, OverviewTab, SettingsTab, amountText, categoryText, effectiveText, forecastDiffRows, money, timeText, type CrossLink, type ForecastValues, type Loadable } from "./d3-treasury-views";
 
 const OPERATOR = currentAdminOperator;
 
-type ExportKind = "reconciliation" | "liabilities";
-type D3PendingRecord = PendingMutationRecord & { amount?: string; voucherNo?: string; reason?: string; operator?: string; exportKind?: ExportKind };
-
-/** 储备注入命令号跨刷新存活:注资是真金白银入账,重铸命令号 = 后端无法去重 = 重复入账。
- *  fingerprint 已编码动作类型(injection)与目标对象(凭证号,后端唯一去重位)+ 金额。
- *  结果未知时要能原样重试(OP-94),所以连内容、理由和操作人一起存。导出同一张表。 */
-const pendingKeys = createPendingMutationStore<D3PendingRecord>({
-  storageKey: "nexion-admin-d3-treasury-commands-v1",
-  // 过期后不能再用原号重试，记录和锁都留着（OP-96）。
-  retainExpiredRecords: true,
-});
+type ExportKind = TreasuryExportKind;
+const pendingKeys = treasuryCommands;
 const injectionScope = (voucherNo: string, amount: string) => `injection|${voucherNo}|${amount}`;
-const exportScope = (kind: ExportKind) => `sensitive-export|${kind}`;
 const EXPORT_LABEL: Record<ExportKind, string> = { reconciliation: "对账 CSV", liabilities: "应付款明细 CSV" };
 const EXPORT_TITLE: Record<ExportKind, string> = { reconciliation: "导出对账 CSV", liabilities: "导出应付款 CSV" };
 const EXPORT_RANGE: Record<ExportKind, string> = { reconciliation: "储备、应付款、净差额三行", liabilities: "全部 9 类的当前数据，不随页面窗口变" };
 const RETRY_EXPIRED = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
+const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不能重试，请到操作记录与审批核对";
 
 /** 预测保存只有一个槽位:草稿 / 期望版本 / 理由 / 操作人没变就复用命令号。和旧「可用资金与应付款」共用这张表,
  *  那边留下的未决记录在这里接着恢复(B2-H02)。 */
@@ -108,6 +101,8 @@ interface PendingItem {
   /** 还能重试时写在 body 后面；过期后换成 RETRY_EXPIRED。 */
   hint: string;
   expiresAt: number;
+  /** 这个账号现在还有没有这项写权限，重试和原入口一样判断（OP-124）。 */
+  allowed: boolean;
   auditHref: string;
   retryTitle: string;
   /** 重试框标题下的生效方式，和原操作一样。 */
@@ -306,6 +301,9 @@ export function D3Treasury() {
     return () => { ++previewGeneration.current; };
   }, [previewKey, canConfig]);
 
+  // 配置改了没保存时，离开这页先问（OP-29）。结果未知时设置已锁，草稿等核对完再说，不拦。
+  const leave = useLeaveGuard(dirty && !forecastCommand.list().some((record) => record.fingerprint === FORECAST_SLOT), () => { if (baseValues) setDraft(baseValues); });
+
   // 预测保存结果未知时草稿留着，解除待确认后可以接着改了重新提交。
   const reloadAll = () => {
     if (canReadMain) void load({ keepDraft: Boolean(unknownCommands.forecast) });
@@ -316,15 +314,6 @@ export function D3Treasury() {
   const refresh = () => {
     if (dirty && !unknownCommands.forecast) setRefreshAsk(true);
     else reloadAll();
-  };
-
-  const operationKey = (scope: string, extra: PendingMutationExtra<D3PendingRecord>) => {
-    const existing = pendingKeys.get(scope);
-    if (existing) return existing;
-    const uuid = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
-    const key = `d3-${scope.replace(/[^A-Za-z0-9_-]/g, "-")}-${uuid.replaceAll("-", "").replace(".", "").slice(0, 18)}`;
-    pendingKeys.remember(scope, key, extra);
-    return key;
   };
 
   /**
@@ -364,7 +353,7 @@ export function D3Treasury() {
   const submitInjection = async (nextAmount: string, nextVoucher: string, reason: string, operator = OPERATOR()) => {
     const scope = injectionScope(nextVoucher, nextAmount);
     const retained = Boolean(pendingKeys.get(scope));
-    const key = operationKey(scope, { amount: nextAmount, voucherNo: nextVoucher, reason, operator });
+    const key = treasuryCommandKey(scope, { amount: nextAmount, voucherNo: nextVoucher, reason, operator });
     const clearForm = () => {
       setAmount("");
       setVoucherNo("");
@@ -422,6 +411,7 @@ export function D3Treasury() {
     done: async () => {
       toast(`已保存，${effectiveText()}`);
       await load();
+      leave.saved();
     },
   });
 
@@ -491,7 +481,7 @@ export function D3Treasury() {
         </div>
       ),
       briefKind: "config",
-      statedBrief: { impact: "影响这页的到期、差额、资金安全等级和今日概览的可覆盖天数，用户看不到。", check: "核对改动项和生效时间，理由写清依据或工单号。" },
+      statedBrief: { impact: "影响这页的到期、差额、资金安全等级和今日概览的可覆盖天数，用户看不到。不改全部应付款算的兑付覆盖率。", check: "核对改动项和生效时间，理由写清依据或工单号。" },
       effect: effectiveText(),
       confirmLabel: "确认保存，次日生效",
       run: async (reason) => {
@@ -548,7 +538,7 @@ export function D3Treasury() {
   const submitExport = async (kind: ExportKind, reason: string, operator = OPERATOR()) => {
     const scope = exportScope(kind);
     const retained = Boolean(pendingKeys.get(scope));
-    const key = operationKey(scope, { exportKind: kind, reason, operator });
+    const key = treasuryCommandKey(scope, { exportKind: kind, reason, operator });
     await sendCommand({
       retained,
       stored: () => pendingKeys.isDurablyStored(scope, key),
@@ -596,7 +586,7 @@ export function D3Treasury() {
   const runRetry = async () => {
     if (!retry) return;
     // 过期和查不到记录都不发送，也不解除：解除只在后端明确拒绝之后（OP-96、OP-153）。
-    const stale = retry.expiresAt <= Date.now() ? RETRY_EXPIRED : !retry.stored() ? "浏览器里查不到这条记录，本次没有发送。待确认继续保留，请到操作记录与审批核对。" : "";
+    const stale = retry.expiresAt <= Date.now() ? RETRY_EXPIRED : !retry.allowed ? RETRY_NO_PERMISSION : !retry.stored() ? "浏览器里查不到这条记录，本次没有发送。待确认继续保留，请到操作记录与审批核对。" : "";
     if (stale) {
       setPendingNotes((current) => ({ ...current, [retry.commandKey]: `${businessClock(Date.now())} ${stale}` }));
       setRetry(null);
@@ -649,7 +639,7 @@ export function D3Treasury() {
       title="资金储备与应付款"
       summary="看平台的钱够不够付，要不要补储备。"
       meta={tab ? <>{asOf ? `统计时间：${timeText(asOf)} · ` : ""}打开时读取 <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={refresh}>刷新</Button></> : undefined}
-      readOnly={canInject || !tab ? undefined : "你只能查看；登记储备注入需财务主管。"}
+      readOnly={canInject || canConfig || canExportLiabilities || !tab ? undefined : "你只能查看；登记储备注入需财务主管。"}
       actions={(
         <>
           {canExportReconciliation && <Button icon={<Download size={14} aria-hidden />} disabledReason={exportBlocked("reconciliation")} onClick={() => exportCsv("reconciliation")}>导出对账 CSV</Button>}
@@ -680,6 +670,7 @@ export function D3Treasury() {
       body: <>{money(Number(record.amount))}，凭证号 {record.voucherNo}，{timeText(new Date(record.createdAt).toISOString())} 提交。</>,
       hint: "先看累计注入有没有变；重试不会重复登记。",
       expiresAt: record.expiresAt,
+      allowed: canInject,
       auditHref: `/platform/audit?domain=D&object=${encodeURIComponent(record.voucherNo)}`,
       retryTitle: "按原操作重试储备注入",
       retryEffect: "立即生效",
@@ -698,6 +689,7 @@ export function D3Treasury() {
       body: <>{timeText(new Date(forecastRecord.createdAt).toISOString())} 提交。</>,
       hint: "先看「预测设置」的版本有没有变；重试不会重复保存。",
       expiresAt: forecastRecord.expiresAt,
+      allowed: canConfig,
       auditHref: "/platform/audit?domain=D",
       retryTitle: "按原操作重试保存预测设置",
       retryEffect: effectiveText(),
@@ -716,6 +708,7 @@ export function D3Treasury() {
       body: <>{timeText(new Date(record.createdAt).toISOString())} 提交。</>,
       hint: "文件可能没有下载下来，操作记录里可能已经有这次导出；重试不会多记一次。",
       expiresAt: record.expiresAt,
+      allowed: record.exportKind === "liabilities" ? canExportLiabilities : canExportReconciliation,
       auditHref: "/platform/audit?domain=D",
       retryTitle: "按原操作重试导出",
       retryEffect: "立即生效",
@@ -745,7 +738,7 @@ export function D3Treasury() {
           action={(
             <>
               <Button size="sm" onClick={refresh}>刷新核对</Button>
-              <Button size="sm" disabledReason={item.expiresAt <= Date.now() ? RETRY_EXPIRED : undefined} onClick={() => setRetry(item)}>按原操作重试</Button>
+              <Button size="sm" disabledReason={item.expiresAt <= Date.now() ? RETRY_EXPIRED : item.allowed ? undefined : RETRY_NO_PERMISSION} onClick={() => setRetry(item)}>按原操作重试</Button>
               {retryRejected.includes(item.commandKey) && <Button size="sm" onClick={() => setReleasing(item)}>解除待确认</Button>}
             </>
           )}
@@ -880,6 +873,8 @@ export function D3Treasury() {
       )}
 
       {releasing && <ReleaseModal label={releasing.title} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)} explain="重试被拒说明不了原操作的结果，先到操作记录确认。解除后原操作不再重试。" />}
+
+      <LeaveDialog guard={leave} saveLabel="保存预测设置" saveBlocked={loading ? "正在刷新，稍等" : draft?.forecastWindow === "90d" ? FORECAST_90D_BLOCK : undefined} onSave={() => void saveConfig()} />
 
       {refreshAsk && (
         <Modal

@@ -4,7 +4,7 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { AlarmClock, ArrowDownUp, CalendarClock, Coins, Gauge, Landmark, PieChart, ReceiptText, Scale, ShieldCheck, Wallet } from "lucide-react";
-import { BlockState, Button, Check, CheckGroup, Cell, ColumnChart, Conclusion, Donut, Explain, Field, Figure, Fold, JudgmentPoints, KeyValues, LevelList, Notice, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Th, TierBand, Tr, TrendLine, Drawer, type ChartSlot } from "@/app/components/rd";
+import { BlockState, Button, Check, CheckGroup, Cell, ColumnChart, Conclusion, DiffList, Donut, Explain, Field, Figure, Fold, JudgmentPoints, KeyValues, LevelList, Notice, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Th, TierBand, Tr, TrendLine, Drawer, type ChartSlot } from "@/app/components/rd";
 import { businessOffsetMinutes, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { D3ForecastConfig, D3Main, D3MaturityForecast, D3NetExposure, D3WaterLevel } from "@/lib/admin/d-client";
 import { LIABILITY_EXPLANATIONS, liabilityDisplayName } from "@/lib/admin/liability-labels";
@@ -13,6 +13,8 @@ import { coverDaysText, formatReserveCoverDays } from "@/lib/admin/treasury-cove
 
 /** 90 天不再提供。已有的 90 天草稿还看得到，但不能连别的改动一起保存（PCN-38）。 */
 export const FORECAST_90D_BLOCK = "90 天不再提供，改成 7 天或 30 天才能保存。";
+/** 后端读不到价格时把 UVT 按 0 算，接口没有标记，页面分不出真 0 和缺价，先写明。 */
+const UVT_VALUATION_NOTE = "UVT 按最新价格折算，查不到价格时按 0 算，这时差额会偏高。";
 
 export type ForecastValues = Pick<D3ForecastConfig, "reserveCategories" | "liabilityCategories" | "forecastWindow" | "genesisIncluded" | "includeFarLiabilities" | "stakingInterestMode" | "trialStressEnabled">;
 export interface Loadable<T> { data: T | null; loading: boolean; error: string }
@@ -63,6 +65,28 @@ export function effectiveText() {
   const minutes = ((businessOffsetMinutes() % 1440) + 1440) % 1440;
   const clock = `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
   return `次日 UTC 00:00（${businessZone().label} ${clock}）起生效`;
+}
+
+/** 到期预测只算这三类。其余类只进差额，勾不勾都不进到期（后端 maturityForecast）。 */
+const DUE_CATEGORIES = ["withdrawal_queue", "staking_interest", "genesis_daily_emission"];
+
+/** 这一类现在算不算：科目要勾着，创世和远期还要各自的总开关开着（后端 configuredLiabilityIncluded）。 */
+function liabilityOffReason(category: string, config: ForecastValues) {
+  if (!config.liabilityCategories[category]) return "这类没有勾选";
+  if (category === "genesis_daily_emission" && !config.genesisIncluded) return "「计入创世节点收益」关着";
+  if (category === "nex_v2_future" && !config.includeFarLiabilities) return "「计入远期应付款」关着";
+  return undefined;
+}
+
+/** 到期金额现在由哪几项组成，跟着当前生效的设置走。 */
+function dueParts(config: ForecastValues, trial: boolean | undefined) {
+  const parts = [
+    !liabilityOffReason("withdrawal_queue", config) && "提现",
+    !liabilityOffReason("staking_interest", config) && "质押奖励",
+    !liabilityOffReason("genesis_daily_emission", config) && "创世节点收益",
+    trial && "试用业务（压力测试）",
+  ].filter(Boolean);
+  return parts.length ? parts.join(" + ") : "现在的预测设置没有计入到期项";
 }
 
 const TREASURY_SOURCE_LABELS: Record<string, string> = {
@@ -174,7 +198,7 @@ export function OverviewTab({ main, links }: { main: D3Main; links: readonly Cro
       <StatBand label="资金概况">
         <Stat tone="role-1" icon={Wallet} label="可用储备" value={amountText(reserve.reserveTotalUsdt)} unit="USDT" explain="USDT 和其他可随时动用的资产，已扣除质押锁定金额。" />
         <Stat tone="role-2" icon={ReceiptText} label="应付款" value={amountText(liabilities.totalUsdt)} unit="USDT" explain="共 9 类，待核实的银行充值算在第 9 类。明细在「应付款与到期」。" />
-        <Stat tone={water.tier === "DANGER" ? "danger" : water.tier === "WARNING" ? "warn" : "role-3"} icon={CalendarClock} label="7 天到期应付款" value={amountText(maturity7.cumulativeUsdt)} unit="USDT" explain={`提现 + 质押奖励 + 创世节点收益${maturity7.trialStressIncluded ? " + 试用业务（压力测试）" : ""}。固定看未来 7 天。`} />
+        <Stat tone={water.tier === "DANGER" ? "danger" : water.tier === "WARNING" ? "warn" : "role-3"} icon={CalendarClock} label="7 天到期应付款" value={amountText(maturity7.cumulativeUsdt)} unit="USDT" explain={`${dueParts(main.config, maturity7.trialStressIncluded)}。固定看未来 7 天。`} />
       </StatBand>
       {/* 面板位置固定，危险态只换颜色和内容，眼睛靠位置找东西（06 审查 6）。 */}
       <div className="rd-split">
@@ -329,9 +353,9 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
             <Explain label="到期预测窗口的说明" content="窗口只影响这一页签的到期数字。资金安全等级固定按未来 7 天算。" />
           </div>
           <StatBand label="到期和覆盖">
-            <Stat tone="role-3" icon={AlarmClock} label={`未来 ${windowDays(windowValue)}累计到期`} value={shown ? amountText(shown.cumulativeUsdt) : "—"} unit="USDT" explain={`提现 + 质押奖励 + 创世节点收益${shown?.trialStressIncluded ? " + 试用业务（压力测试）" : ""}。提现按冷却到期日排，窗口之外的不算在这里，所以可能比待处理提现少。`} />
+            <Stat tone="role-3" icon={AlarmClock} label={`未来 ${windowDays(windowValue)}累计到期`} value={shown ? amountText(shown.cumulativeUsdt) : "—"} unit="USDT" explain={`${dueParts(main.config, shown?.trialStressIncluded)}。提现按冷却到期日排，窗口之外的不算在这里，所以可能比待处理提现少。`} />
             {/* 能付多久是状态，和资金概况那句话同一个颜色；覆盖率是和红线比的数，角色四（VS-12）。 */}
-            <Stat tone={WATER_TONE[water.tier]} icon={Gauge} label="能付多久" value={formatReserveCoverDays(main.maturity7.cumulativeUsdt, water.reserveCoverDays)} explain={`按未来 7 天每天平均到期额算，储备够付多少天。精确值 ${Number(water.reserveCoverDays).toLocaleString("en-US")} 天。`} />
+            <Stat tone={WATER_TONE[water.tier]} icon={Gauge} label="能付多久" value={formatReserveCoverDays(main.maturity7.cumulativeUsdt, water.reserveCoverDays)} explain={main.maturity7.cumulativeUsdt === 0 ? "未来 7 天没有到期，算不出能付多少天。" : `按未来 7 天每天平均到期额算，储备够付多少天。精确值 ${Number(water.reserveCoverDays).toLocaleString("en-US")} 天。`} />
             <Stat tone="role-4" icon={Landmark} label="兑付覆盖率" value={coverage === null ? "无应付款" : `${coverage.toFixed(1)}%`} explain="可用储备 ÷ 应付款总额，看全部应付款够不够付。可覆盖天数看按最近到期速度能撑多久，两个都要看，哪个差就先处理哪个。" />
           </StatBand>
           {shown && <p className="rd-note">{noDue ? "这段时间没有到期款项，无需安排资金。" : `峰值日 ${peak?.date} 到期 ${money(peak?.totalDueUsdt ?? 0)}；${adviceText(water)}。`}</p>}
@@ -354,7 +378,7 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
         </>
       )}
       {canReadExposure && (
-        <Panel title="储备和应付款的差额" icon={Scale} tone="role-1" explain="按当前预测设置计入的储备和应付款算。过去每天的应付款没有记录，算不出真实的历史差额，所以这里不画走势。">
+        <Panel title="储备和应付款的差额" icon={Scale} tone="role-1" explain={`按当前预测设置计入的储备和应付款算。过去每天的应付款没有记录，算不出真实的历史差额，所以这里不画走势。${main?.config.includeFarLiabilities ? UVT_VALUATION_NOTE : ""}`}>
           {latest ? (
             <div className="rd-stack">
               <KeyValues rows={[{
@@ -384,7 +408,9 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
               { label: "这是什么", value: LIABILITY_EXPLANATIONS[current.category] },
               { label: "金额", value: money(current.amountUsdt) },
               { label: "占比", value: `${(current.share * 100).toFixed(1)}%` },
-              { label: "计入预测", value: main.config.liabilityCategories[current.category] ? "计入" : "不计入", reason: "按当前生效的预测设置" },
+              { label: "计入差额", value: includedText(!liabilityOffReason(current.category, main.config)), reason: liabilityOffReason(current.category, main.config) ?? "按当前生效的预测设置" },
+              { label: "计入到期预测", value: DUE_CATEGORIES.includes(current.category) ? includedText(!liabilityOffReason(current.category, main.config)) : "这类不进到期预测", reason: DUE_CATEGORIES.includes(current.category) ? liabilityOffReason(current.category, main.config) : "到期预测只算提现、质押奖励和创世节点收益" },
+              ...(current.category === "nex_v2_future" ? [{ label: "估值", value: UVT_VALUATION_NOTE }] : []),
               { label: "数据来源", value: treasurySourceLabel(current.source), reason: <Explain label="技术信息" content={`类型编号 ${current.category}`} /> },
             ]} />
           </>
@@ -489,12 +515,19 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNo
     { value: "30d", label: "30 天" },
     ...(draft.forecastWindow === "90d" ? [{ value: "90d", label: "90 天（旧配置，请选择 7 或 30 天）", disabled: true }] : []),
   ];
+  const pendingRows = pending ? forecastDiffRows(config, pending) : [];
+  const changedCount = pendingRows.filter((row) => row.before !== row.after).length;
   return (
     <>
       {pending && (
         <Notice tone="progress" title={`待生效 v${config.pendingVersion}`}>
           窗口 {windowDays(pending.forecastWindow)}，储备科目 {enabledCount(pending.reserveCategories)}，负债科目 {enabledCount(pending.liabilityCategories)}，创世节点 {pending.genesisIncluded ? "纳入" : "不纳入"}，生效时间 {timeText(config.pendingEffectiveAt)}。
         </Notice>
+      )}
+      {pending && (
+        <Fold inset title="待生效版本和现在的差别" summary={`${changedCount} 项不同`} defaultOpen={!canConfig || Boolean(lockedNote)}>
+          <DiffList rows={pendingRows} />
+        </Fold>
       )}
       {!canConfig && <Notice tone="done">你只能查看；调整预测设置需财务主管。</Notice>}
       {canConfig && lockedNote && <Notice tone="warn">{lockedNote}</Notice>}
@@ -503,7 +536,7 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNo
         <>
           <Panel title="预测窗口和算法" icon={CalendarClock} tone="role-3">
             <div className="rd-form-grid">
-              <Field label="默认预测天数" explain="打开这页时先看几天的到期和差额。资金安全等级固定按 7 天算，不受这项影响。" error={draft.forecastWindow === "90d" ? FORECAST_90D_BLOCK : undefined}>
+              <Field label="默认预测天数" explain="打开这页时先看几天的到期。差额不随这项变，资金安全等级固定按 7 天算。" error={draft.forecastWindow === "90d" ? FORECAST_90D_BLOCK : undefined}>
                 <Select aria-label="默认预测天数" value={draft.forecastWindow} options={windowOptions} onChange={(value) => onChange({ ...draft, forecastWindow: value as ForecastValues["forecastWindow"] })} />
               </Field>
               <Field label="质押奖励预测" explain="按日线性：奖励按质押天数每天算一份，到期图比较平。到期确认：奖励全算在到期那天，那天会冒高。">
@@ -514,14 +547,14 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNo
           <Panel title="计入哪些金额" icon={ReceiptText} tone="role-2" explain="用户看不到这些设置。它们影响这页的到期、差额和资金安全等级，也影响今日概览的可覆盖天数。">
             <div className="rd-stack">
               <CheckGroup legend="其他口径">
-                <Check label="计入创世节点收益" explain="到期金额里算创世节点每日收益。" checked={draft.genesisIncluded} onChange={(event) => onChange({ ...draft, genesisIncluded: event.target.checked })} />
-                <Check label="计入远期应付款" explain="差额里算 UVT 锁仓到期应付。" checked={draft.includeFarLiabilities} onChange={(event) => onChange({ ...draft, includeFarLiabilities: event.target.checked })} />
-                <Check label="试用业务压力测试" explain="每天多算一笔试用业务压力值。" checked={draft.trialStressEnabled} onChange={(event) => onChange({ ...draft, trialStressEnabled: event.target.checked })} />
+                <Check label="计入创世节点收益" explain="到期和差额都算创世节点收益。下面「计入哪些应付款」也要勾着这一类。" checked={draft.genesisIncluded} onChange={(event) => onChange({ ...draft, genesisIncluded: event.target.checked })} />
+                <Check label="计入远期应付款" explain="差额里算 UVT 锁仓到期应付，不进到期预测。下面「计入哪些应付款」也要勾着这一类。" checked={draft.includeFarLiabilities} onChange={(event) => onChange({ ...draft, includeFarLiabilities: event.target.checked })} />
+                <Check label="试用业务压力测试" explain="到期预测和资金安全等级每天多算一笔试用业务压力值，差额不算。" checked={draft.trialStressEnabled} onChange={(event) => onChange({ ...draft, trialStressEnabled: event.target.checked })} />
               </CheckGroup>
-              <CheckGroup legend="计入哪些储备" summary={`${enabledCount(draft.reserveCategories)} 开启`} explain="不计入 USDT 储备时，资金安全等级按储备 0 算。">
+              <CheckGroup legend="计入哪些储备" summary={`${enabledCount(draft.reserveCategories)} 开启`} explain="不计入 USDT 储备时，资金安全等级和差额按储备 0 算。其他可用资产现在不参与计算。">
                 {Object.entries(draft.reserveCategories).map(([key, enabled]) => <Check key={key} label={categoryText(key)} checked={enabled} onChange={(event) => onChange({ ...draft, reserveCategories: { ...draft.reserveCategories, [key]: event.target.checked } })} />)}
               </CheckGroup>
-              <CheckGroup legend="计入哪些应付款" summary={`${enabledCount(draft.liabilityCategories)} 开启`} explain="不勾的类不进到期预测和差额，页面上的九类金额不变。">
+              <CheckGroup legend="计入哪些应付款" summary={`${enabledCount(draft.liabilityCategories)} 开启`} explain="差额只算勾选的类。到期预测只看提现、质押奖励和创世节点收益这三类。页面上的九类金额不变。">
                 {Object.entries(draft.liabilityCategories).map(([key, enabled]) => <Check key={key} label={categoryText(key)} checked={enabled} onChange={(event) => onChange({ ...draft, liabilityCategories: { ...draft.liabilityCategories, [key]: event.target.checked } })} />)}
               </CheckGroup>
             </div>

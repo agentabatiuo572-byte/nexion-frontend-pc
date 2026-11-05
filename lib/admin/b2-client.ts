@@ -1,3 +1,4 @@
+import { downloadD3Csv } from "@/lib/admin/d-client";
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
@@ -490,20 +491,7 @@ export async function updateB2ForecastConfig(
   });
 }
 
-export async function downloadB2LiabilitiesCsv() {
-  const response = await guardedFetch("/api/admin/treasury/b2/liabilities/export", { cache: "no-store" });
-  if (!response.ok) {
-    const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
-    if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
-    throw new Error(formatAdminApiError(result?.message, `B2_EXPORT_FAILED_${response.status}`));
-  }
-  const blob = await response.blob();
-  const disposition = response.headers.get("Content-Disposition") || "";
-  const fileName = disposition.match(/filename="?([^";]+)"?/i)?.[1] || "b2-liabilities.csv";
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
+/** 旧的无理由 GET 已退役（后端回 410）。走带理由、幂等和操作记录的 POST，B2 或 D3 导出权限都认。 */
+export function downloadB2LiabilitiesCsv(reason: string, operator: string, idempotencyKey: string) {
+  return downloadD3Csv("liabilities", reason, operator, idempotencyKey);
 }
