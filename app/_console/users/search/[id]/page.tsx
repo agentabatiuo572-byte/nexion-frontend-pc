@@ -634,7 +634,7 @@ export default function UserDetailPage() {
               {[
                 canReadC3 && /^[1-9]\d*$/.test(c3UserId) && ["调整余额", "/users/assets"],
                 canReadC6 && ["注册与登录风险", "/users/reg-risk"],
-                canReadD2 && ["待审核提现", "/finance/withdrawals"],
+                canReadD2 && ["提现审核", "/finance/withdrawals"],
                 canReadD4 && ["资金账单", "/finance/ledger"],
                 canReadK4 && ["风险评分规则", "/risk/scoring"],
                 canReadA2 && ["操作记录", "/platform/audit"],

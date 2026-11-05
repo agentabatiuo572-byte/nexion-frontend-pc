@@ -453,7 +453,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
             </div>
             <div className="ltint" style={{ fontSize: 12, marginBottom: 8 }}><b>比率与余额不可混用</b> · <AutoGloss>兑付率衡量本期申请完成比例；在途余额衡量尚未完成的应付款。两者同源但含义不同。</AutoGloss></div>
             <div className="ltint" style={{ fontSize: 12, marginBottom: 8 }}><b>怎么算</b> · <AutoGloss>已兑付、已驳回是最终结果；延迟、冻结是中间状态，一笔提现可能先被延迟或冻结、后来又兑付了，所以这几项加起来不等于申请总数。兑付率 = 已兑付 ÷ 本期申请总数。</AutoGloss></div>
-            <div className="ltint warn" style={{ fontSize: 12 }}><b>告警归属</b> · <AutoGloss>兑付率用于周期核账；急性提现安全信号以覆盖率和挤兑比率越线记录为准。需要处置时请进入待审核提现。</AutoGloss></div>
+            <div className="ltint warn" style={{ fontSize: 12 }}><b>告警归属</b> · <AutoGloss>兑付率用于周期核账；急性提现安全信号以覆盖率和挤兑比率越线记录为准。需要处置时请进入提现审核。</AutoGloss></div>
           </div>
         </section>
       </div>
