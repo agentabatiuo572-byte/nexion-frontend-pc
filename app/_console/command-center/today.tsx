@@ -91,7 +91,7 @@ export function TodayPanel({ blocks, sales, newUsers, flows, devices, clock, net
             value={value(devices, (data) => fmtNum(data.abnormal))}
             unit="台"
             sub={devices.error ? failed(devices) : devices.data ? (devices.data.online === 0 && abnormal > 0 ? "现在没有设备有心跳" : `10 分钟内有心跳 ${fmtNum(devices.data.online)} 台`) : undefined}
-            explain={<>离线或异常的设备，已包含离线。上报在线且 10 分钟内有心跳才算有心跳。这个数没有告警线，不进待处理，橙色只提醒有设备不在线。要看是哪些设备、为什么不在线，去设备运行管理。设备没有历史，不和昨天比。{dataTime}</>}
+            explain={<>离线或异常的设备，已包含离线。上报在线且 10 分钟内有心跳才算有心跳。这个数没有告警线。全部设备都没有心跳时进待处理，其余时候橙色只提醒有设备不在线。要看是哪些设备、为什么不在线，去设备运行管理。设备没有历史，不和昨天比。{dataTime}</>}
             href={devices.data && reach("/devices/ops") ? "/devices/ops" : undefined}
             openLabel="查看设备运行管理"
           />

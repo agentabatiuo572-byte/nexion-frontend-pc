@@ -791,6 +791,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const [pendingCommands, setPendingCommands] = useState<D2PendingCommand[]>([]);
   /** 待确认条上最近一次读回或重试的结果，只是当下的事实，不影响待确认本身。 */
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
+  /** 这次打开页面后重试被拒的待确认，只有它们才能人工解除。 */
+  const [retryRejected, setRetryRejected] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // 无默认动作：必须由运营显式选择后才可提交；但允许先勾选，再选动作。
   const [batchAction, setBatchAction] = useState<D2BatchAction | "">("");
@@ -1261,8 +1263,21 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       if (record.kind === "simulate") await runDevelopmentSimulation(no, record.reason, record.operator);
     } catch (cause) {
       notePending(record, `重试没有成功：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，原命令继续保留。`);
+      setRetryRejected((current) => [...current, record.fingerprint]);
     }
   };
+
+  /** 重试被拒后，人核实过原操作的结果才解除。只放开这笔的本地锁，不发请求，后端仍按这笔现在的状态校验。 */
+  const confirmReleasePending = (record: D2PendingCommand) => ctx.openConfirm({
+    action: `解除待确认 · ${record.label}`,
+    detail: "重试被拒说明不了原操作的结果。先到操作记录或打款方确认原操作有没有生效，再解除。解除后这笔可以重新处理，原操作不再重试，系统仍按这笔现在的状态校验。",
+    okLabel: "确认解除",
+    run: () => {
+      pendingKeys.forget(record.fingerprint, record.commandKey);
+      syncPending();
+      toast("已解除待确认，这笔可以重新处理");
+    },
+  });
 
   /** 读回这笔单，只给现在的事实。状态变了可能是别人改的，不能当成原命令的回执，待确认和原命令都保留（OP-93、OP-95）。 */
   const verifyPending = async (record: D2PendingCommand) => {
@@ -1379,6 +1394,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       action={<>
         {record.kind !== "batch" && <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>读回核对</Button>}
         <Button size="sm" disabled={!!submitting} onClick={() => void retryPending(record)}>按原操作重试</Button>
+        {retryRejected.includes(record.fingerprint) && <Button size="sm" disabled={!!submitting} onClick={() => confirmReleasePending(record)}>解除待确认</Button>}
       </>}>
       {timeText(new Date(record.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效。{RECOVERY_HINT[record.kind]}
       {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=D&object=${encodeURIComponent(record.nos[0])}`}>到操作记录核查</Link></>}

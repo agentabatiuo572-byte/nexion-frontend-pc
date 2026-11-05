@@ -122,6 +122,9 @@ export default function CommandCenter() {
   risks.forEach((item, index) => rows.push({ key: `risk-${index}`, title: riskFeedTitle(item.t), sub: item.m, owner: "风控", href: item.href, tone: item.sev === "p0" ? "danger" : undefined }));
   if (orphaned.error) rows.push({ key: "orphaned", name: "打款异常", onRetry: orphaned.reload });
   else if (orphaned.data) rows.push({ key: "orphaned", title: `打款异常 ${orphaned.data} 单`, sub: "需要人工核对", owner: "财务", href: "/finance/withdrawals", tone: "warn" });
+  if (devices.data && devices.data.online === 0 && devices.data.abnormal > 0 && reach("/devices/ops")) {
+    rows.push({ key: "devices", title: `设备全部没有心跳 ${devices.data.abnormal} 台`, sub: "到设备运行管理看是哪些设备、为什么不在线", owner: "其他", href: "/devices/ops", tone: "warn" });
+  }
   if (approvals.error) rows.push({ key: "a2", name: "待审批操作", onRetry: approvals.reload });
   else if (approvals.data?.stats.pendingTickets) {
     const queue = approvals.data.operationQueue.filter((row) => row.status === "pending").sort((a, b) => a.ts.localeCompare(b.ts));
