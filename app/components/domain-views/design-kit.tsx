@@ -3435,7 +3435,7 @@ export type InlineOperationApproval = {
   dialogClassName?: string;
 };
 
-export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, detail, content, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
   const [draftReason, setReason] = useState(pendingReason ?? "");
   const reason = pendingReason ?? draftReason;
@@ -3601,6 +3601,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         )}
       </>}>
       {!approval && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={effectiveBriefKind} />}
+      {content}
       {submitError && <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{submitError}</div>}
       {inlineApproval?.disabledReason && <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>{inlineApproval.disabledReason}</div>}
       {inlineApproval?.pending && approvalRecovery === "lookup" && !submitError && (

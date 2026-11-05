@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { PromotionRefundImpact } from "./promotion-refund-impact";
 import { Icon, Btn, Chip, Drawer, KV, Badge, OperationConfirmModal, useToast } from "./design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -1236,6 +1237,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                     const channels = e4Detail.refundChannels.length ? e4Detail.refundChannels : ["WALLET"];
                     openActionConfirm({ briefKind: "funds",
                       name: "退款 · " + o.id, op: "order-refund", orderId: o.id, amplify: true,
+                      content: <PromotionRefundImpact orderNo={o.id} />,
                       businessForm: { kind: "multi-field", title: "退款渠道与原因", hint: coverageText, fields: [
                         { key: "refundChannel", label: "退款渠道", current: channels[0], inputKind: "select", options: channels, optionLabels: { WALLET: "退回 USDT 钱包", ORIGINAL_PAYMENT: "原支付渠道" }, required: true, showDiff: true },
                         { key: "refundReasonCode", label: "退款原因（用户可见）", current: "", inputKind: "select", options: ["", ...E4_REFUND_REASONS], optionLabels: { "": "请选择退款原因", ...E4_REFUND_REASON_LABELS }, required: true, help: "这个原因会显示在用户的订单详情里；下方备注只记在操作记录里，用户看不到。" },
@@ -1612,6 +1614,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       {mc && <OperationConfirmModal briefKind={mc.briefKind}
         action={mc.name}
         detail={mc.detail ?? "从下一次结算或新派任务开始生效，已累计的收益不变。"}
+        content={mc.content}
         amplifies={!!mc.amplify}
         edit={mc.edit}
         businessForm={mc.businessForm}

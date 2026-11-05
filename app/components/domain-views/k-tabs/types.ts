@@ -5,6 +5,7 @@ import type { BusinessFormSpec, BusinessFormValue, CoverageSnapshot, EditSpec, O
 export type ActionConfirmReq = {
   action: ReactNode;
   detail: ReactNode;
+  content?: ReactNode;
   /** 放大资金流出方向才挂(B1 覆盖率预检):解除误判 / 复审通过解冻 / 调阈值放宽 / 停用规则;冻结 / 驳回 / 确认违规不挂。 */
   amplifies?: boolean;
   coverage?: CoverageSnapshot;

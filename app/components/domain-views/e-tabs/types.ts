@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { OperatorBriefKind, BusinessFormSpec, EditSpec } from "../design-kit";
 import type { E1BundleDiscount, E1GenerationGateData, E1GenerationGateInput, E1InvalidSku } from "@/lib/admin/e1-client";
 import type { E2PhoneTier, E2TaskPricingSnapshot, E2YieldComparison } from "@/lib/admin/e2-client";
@@ -58,6 +59,7 @@ export interface McSpec {
   name: string;             // 确认弹窗标题(动作名)
   op: EOp;
   detail?: string;          // 副文案(覆盖默认)
+  content?: ReactNode;
   amplify?: boolean;        // 放大资金流出 → OperationConfirmModal amplifies={true} → B1 覆盖率护栏
   edit?: EditSpec;          // 显式 edit 契约:仅自由值/select 调参传
   businessForm?: BusinessFormSpec;

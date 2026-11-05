@@ -1,6 +1,7 @@
 "use client";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { a2ActionText, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
+import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 
 /**
@@ -376,6 +377,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const commandKey = createA2CommandKey(`a2-approve-${w.id}`);
     openActionConfirm({ briefKind: w.type === "fund" ? "funds" : w.type === "acct" ? "security" : w.type === "sos" ? "emergency" : "config",
       completionCopy: g3PolicyExecutionTiming(w),
+      content: w.action === `退款 · ${w.obj}` ? <PromotionRefundImpact orderNo={w.obj} /> : undefined,
       action: <>确认执行 · {w.id}({a2ActionText(w.action)})</>,
       detail: (
         <>

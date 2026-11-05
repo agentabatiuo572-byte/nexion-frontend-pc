@@ -106,6 +106,7 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
           completionCopy={actionConfirmReq.completionCopy}
           action={actionConfirmReq.action}
           detail={actionConfirmReq.detail}
+          content={actionConfirmReq.content}
           amplifies={actionConfirmReq.amplifies}
           edit={actionConfirmReq.edit}
           businessForm={actionConfirmReq.businessForm}
