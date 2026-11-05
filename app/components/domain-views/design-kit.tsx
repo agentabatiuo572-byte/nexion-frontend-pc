@@ -3497,7 +3497,7 @@ export type InlineOperationApproval = {
   dialogClassName?: string;
 };
 
-export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", reasonPlaceholder = "例如：工单号、处理依据" }: { reasonPlaceholder?: string; effect?: ReactNode; confirmLabel?: string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string }; facts?: ReactNode; confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, title, detail, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", reasonPlaceholder = "例如：工单号、处理依据" }: { /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; effect?: ReactNode; confirmLabel?: string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string }; facts?: ReactNode; confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const surface = useRdSurface();
   const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
   const [draftReason, setReason] = useState(pendingReason ?? "");
@@ -3686,6 +3686,9 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
           覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b>，红线 <b>{coverage.redlinePct}%</b>
           <Explain label="这项操作对资金的影响" content={<><p>{coverageLead}</p><p>提交时会先检查兑付覆盖率{coverage.healthyPct !== undefined ? `，健康线 ${coverage.healthyPct}%` : ""}。</p></>} />
         </div>
+      ) : surface && !covBlocked && !coverage && auditSink !== "local-history" ? (
+        // 页面自己把覆盖率写进 coverageLead 时也只留这一句，检查说明进提示图标（DP-06）。
+        <div className="tiny"><b>{coverageLead}</b><Explain label="提交时怎么检查" content="提交时会先检查兑付覆盖率。" /></div>
       ) : <div className="tiny">
         <b>{coverageLead}</b> · 提交时会先检查兑付覆盖率。
         {coverage ? (
@@ -3706,7 +3709,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
     </div>
   );
   return (
-    <Modal title={action} icon={confirmTone === "danger" ? "alert" : spec ? "sliders" : "shield"} tone={confirmTone === "danger" ? "danger" : "neutral"} sub={effect} onClose={handleClose} className={["rd-confirm", inlineApproval?.dialogClassName].filter(Boolean).join(" ")} busy={submitting} dirty={JSON.stringify([newVal, businessValue]) !== openedForm}
+    <Modal title={title ?? action} icon={confirmTone === "danger" ? "alert" : spec ? "sliders" : "shield"} tone={confirmTone === "danger" ? "danger" : "neutral"} sub={effect} onClose={handleClose} className={["rd-confirm", inlineApproval?.dialogClassName].filter(Boolean).join(" ")} busy={submitting} dirty={JSON.stringify([newVal, businessValue]) !== openedForm}
       footer={<>
         <Btn disabled={submitting} onClick={handleClose}>取消</Btn>
         {approvalRecovery && recoverApproval && (
@@ -3823,9 +3826,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
               </span>}
               {compareEdit && <span aria-hidden>→</span>}
               {compareEdit && <span className="muted">拟调整</span>}
-              {surface && kind === "number" && !compareEdit ? (
-                <RdNumberInput key={emptyChosen ? "empty" : "value"} aria-label="目标新值" unit={spec.unit} min={spec.min} max={spec.max} step={spec.step} value={newVal} disabled={emptyChosen} aria-invalid={showEditError && !editValueOk && (!!newVal || numberBad) ? true : undefined} onChange={(e) => setNewVal(e.target.value)} onInput={(e) => setNumberBad(e.currentTarget.validity.badInput)} onBlur={() => setEditLeft(true)} placeholder={spec.current ? `当前 ${spec.current}` : "输入新值"} />
-              ) : <input
+              <input
                 className="fld"
                 aria-label="目标新值"
                 aria-describedby={compareEdit ? [comparisonValueId, comparisonUnit && comparisonUnitId].filter(Boolean).join(" ") : undefined}
@@ -3840,8 +3841,8 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
                 onBlur={() => setEditLeft(true)}
                 placeholder={spec.current ? `输入新值（当前 ${spec.current}）` : "输入新值"}
                 style={{ maxWidth: compareEdit ? 140 : 240 }}
-              />}
-              {comparisonUnit && !(surface && kind === "number" && !compareEdit) && <span className="muted tiny" id={compareEdit ? comparisonUnitId : undefined}>{comparisonUnit}</span>}
+              />
+              {comparisonUnit && <span className="muted tiny" id={compareEdit ? comparisonUnitId : undefined}>{comparisonUnit}</span>}
               {spec.emptyOption && <Chip tab sel={emptyChosen} onClick={() => { setEmptyChosen(!emptyChosen); setNewVal(""); setNumberBad(false); }}>{spec.emptyOption}</Chip>}
             </div>
           )}

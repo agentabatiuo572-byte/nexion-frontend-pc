@@ -32,8 +32,9 @@
  * 框里打过字后点空白不关，免得填的内容丢了；只靠点选的表单传 dirty。×、取消、Esc 照常关。
  *
  * 弹窗里的文字分四层（VS-100～VS-108）：
- * - 这是什么操作：title 只写动作和对象，页面分组不进标题。icon 给标题前的图标底，tone 默认灰；
- *   不能撤销或直接动钱的最终确认传 tone="danger"，其他不用红。
+ * - 这是什么操作：title 只写动作和对象，页面分组和长单号不进标题。icon 给标题前的图标底，默认灰；
+ *   不能撤销或直接动钱的最终确认传 tone="danger"。图标底不带业务色：业务归属页面已经说过，
+ *   弹窗里的颜色只说这次操作的事，红留给危险确认。
  * - 后果：生效方式、能不能撤销写成状态标签，传 sub，紧跟在标题下面，不写成灰字。
  * - 关键信息：对象、金额、前后值放 Facts、DiffList、DiffField，框里最大最亮。
  * - 要填的用 Field，字段名比只读标签强；范围、字数、说明最弱，能进提示图标就进。
@@ -204,8 +205,8 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
   sub?: ReactNode;
   /** 标题前的图标底。传 lucide 图标；旧页面传来的图标元素也接。 */
   icon?: LucideIcon | ReactNode;
-  /** 图标底的颜色。不能撤销或直接动钱的最终确认传 danger，其他默认灰。 */
-  tone?: RoleTone | StateTone;
+  /** 图标底的颜色。不能撤销或直接动钱的最终确认传 danger，其他都是灰，不带业务色（VS-101）。 */
+  tone?: "neutral" | "danger";
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;

@@ -18,7 +18,8 @@
  *   {(control) => <NumberInput {...control} unit="个" min={1} max={10} value={value} onChange={…} />}
  * </DiffField>
  *
- * - size="key"（默认）给数字：现在值和输入框都用弹窗关键数字那一档，单位小一档。size="body" 给选项和短词。
+ * - size="key"（默认）给数字：现在值和输入框都用弹窗关键数字那一档，单位小一档；现在值是「不设上限」这类文字时自动降一档。
+ *   size="body" 给选项和短词。
  * - stack 给长文字：现在值和输入上下排，不放大。
  * - 填错时 error 顶替 hint，所以 error 要把范围写全（「要填 1–10 的整数」），不要两行说同一件事。
  */
@@ -109,7 +110,7 @@ export function DiffField({ before, unit, beforeLabel = "现在", label = "改�
       {before !== undefined && before !== null && before !== "" && (
         <div className="rd-change-side">
           <span className="rd-change-k">{beforeLabel}</span>
-          <span className="rd-change-now"><span>{before}{unit && <span className="rd-change-unit">{unit}</span>}</span><ArrowRight className="rd-change-arrow" size={18} aria-hidden /></span>
+          <span className="rd-change-now" data-words={typeof before === "string" && !/\d/.test(before) ? "" : undefined}><span>{before}{unit && <span className="rd-change-unit">{unit}</span>}</span><ArrowRight className="rd-change-arrow" size={18} aria-hidden /></span>
         </div>
       )}
       <div className="rd-change-side" data-next="">

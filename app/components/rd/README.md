@@ -45,16 +45,16 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 勾选后的批量操作 | `BatchBar`，勾选框用 `Checkbox`，勾选列的表头传 `Th control`；`hint` 收进已勾选数旁的提示图标 | `batch-bar.tsx`、`checkbox.tsx` |
 | 行操作放不下 | `MoreMenu` | `menu.tsx` |
 | 查询区 | `FilterBar`、`FilterField`、`Input` | `filter-bar.tsx` |
-| 多行输入 | `Textarea`，放进 `Field` | `filter-bar.tsx` |
+| 多行输入 | `Textarea`，放进 `Field`；字数传 `count`，写在框的右下角 | `filter-bar.tsx` |
 | 下拉、排序 | `Select` | `select.tsx` |
 | 单条详情、长表单 | `Drawer`，底部用 `Decision` | `overlay.tsx` |
 | 详情开头 3～5 行 | `JudgmentPoints` | `judgment.tsx` |
-| 详情里成对的名称和值 | `Facts`、`Fact` | `facts.tsx` |
+| 详情、确认框里成对的名称和值 | `Facts`、`Fact`；确认框的关键数字传 `lead`（每框最多一个，放第一行），带含义的值传 `tone` | `facts.tsx` |
 | 要人看到的提醒、错误、待确认条 | `Notice` | `notice.tsx` |
-| 短任务弹窗 | `Modal` | `overlay.tsx` |
+| 短任务弹窗 | `Modal`；`icon` 是标题前的图标底，`sub` 放标题下的后果标签，危险确认传 `tone="danger"` | `overlay.tsx` |
 | 写操作确认 | 继续用 `OperationConfirmModal` | 见下 |
 | 按钮 | `Button`、`IconButton`；和主按钮并排的危险入口用 `danger-outline`，实心 `danger` 只给最终确认 | `button.tsx` |
-| 状态 | `StatusTag`；列表筛成只有一种状态时，这个默认状态传 `neutral`（灰字加图标） | `status-tag.tsx` |
+| 状态 | `StatusTag`；列表筛成只有一种状态时，这个默认状态传 `neutral`（灰字加图标）；弹窗标题下「不能撤销」用 `IrreversibleTag` | `status-tag.tsx` |
 | 提示图标和气泡：这是什么、显示位置、生效时间、口径、后果 | `Explain`，悬停、点击、键盘都能开；`content` 自由内容（多段用 `<p>`），`rows` 分行写；`Panel`、`Fold`、`Conclusion`、`Stat`、`ConfigRow`、`Field`、`Check`、`CheckGroup`、`KeyValues`、`Decision`、`Drawer`、`StatusTag` 传 `explain` 就自带。正文里的词写成 children 就是虚线下划线，不加图标 | `explain.tsx` |
 | 一个整体分几份 | `Donut` 环图，中间写总额，图例写数；旁边有表格时传 `legend={false}`，表格第一列放色点当图例；两类都有钱才画 | `chart.tsx` |
 | 图和数据放一起 | `Figure`，图在左（`width` 是上限）、数据在右，名字和数字挨着；容器窄时上下排，尺和条这类宽图传 `stack="wide"` | `chart.tsx` |
@@ -67,11 +67,12 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 几条线比走势，或要画目标线、事件线 | `TrendLines`，目标线传 `marks`，事件线传 `event` | `chart.tsx` |
 | 表格里看走向 | `Sparkline`，至少两个点才传，数值要在别处读到 | `chart.tsx` |
 | 报表主表配所选明细 | `.rd-split` 放两个 `Panel`，点一行右边换明细；1366 以下上下排，给明细面板 `id`，点行后 `scrollIntoView` | `rd.css` |
-| 表单字段、勾选 | `Field`、`Check`、`CheckGroup`；页面上常驻表单的说明传 `explain`（标签旁的提示图标），修改框和抽屉里填写时要看的「怎么填」传 `help` | `field.tsx` |
+| 表单字段、勾选 | `Field`、`Check`、`CheckGroup`；页面上常驻表单的说明传 `explain`（标签旁的提示图标），修改框和抽屉里填写时要看的「怎么填」传 `help`；范围、字数传 `hint`，跟在字段名后面 | `field.tsx` |
 | 名称和值成对 | `KeyValues`；名称的解释传 `explain`，`sub` 只放数据 | `key-values.tsx` |
 | 一块内容的加载、空、失败、无权限 | `BlockState` | `block-state.tsx` |
 | 页内提示：待生效、结果未知、只读说明 | `Notice` | `block-state.tsx` |
-| 确认框里的前后值 | `DiffList`；只有一行时写一句「现在 → 改后」，不画表 | `diff-list.tsx` |
+| 确认框里多项修改的前后值 | `DiffList`；只列改了的项，其余收进折叠，某一项的风险传这一行的 `note`；只有一行时写一句「现在 → 改后」 | `diff-list.tsx` |
+| 改一个值：现在值、新值输入、方向 | `DiffField`；范围只写 `hint`，方向传 `state`，改了会怎样传 `note` | `diff-list.tsx` |
 | 一列固定的等级 | `LevelList` | `level-list.tsx` |
 | 配置项：名称、提示图标、当前值、动作 | `ConfigList`（`label` 给这组起名）、`ConfigRow`；一项一行，这是什么、显示位置、生效时间、改了会怎样（`what`、`where`、`when`、`effect`）都在提示图标的气泡里；说明表放 `lib/admin/config-help/`，按参数键取 | `config-list.tsx` |
 | 配置页三组以上的分组导航 | `SectionNav`、`useSectionNav`；定位写进网址 `section`，目标在折叠组里先展开 | `section-nav.tsx` |
@@ -126,25 +127,52 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 风险、阻断原因放 `JudgmentPoints`，不能放进 `Fold`。有未保存内容时在 `onPrev`、`onNext`、`onClose` 和行的 `onOpen` 里先拦；切条时让旧请求失效，这两件都是页面的事。
 
+## 弹窗里的四层
+
+弹窗、确认框、抽屉里的文字不能一个颜色。打开一个框要一眼分清四件事，规则在规范 06 第十节（VS-100～VS-108），都做在组件里，页面不调字号和颜色：
+
+| 层 | 页面怎么给 | 组件给的样子 |
+|---|---|---|
+| 这是什么操作 | `title` 只写动作和对象，页面分组和长单号不进标题 | 16px、600，前面 28px 图标底：默认灰，危险确认红，不带业务色 |
+| 关键信息 | 金额用 `<Fact lead tone="role-1" unit="USDT">`；前后值用 `DiffList`、`DiffField`；风险等级用 `StatusTag`；部分能撤销用 `<Fact tone="warn">` | 关键数字 24px、600，金额金色（浅色是正文色）；值 14px、500；改后的值进行中蓝 |
+| 要填的 | `Field`，必填传 `required` | 字段名 14px、500、主文字；输入内容亮，占位弱 |
+| 辅助 | 范围、字数传 `hint`、`count`；说明传 `explain` | 13px 弱文字；能进提示图标就进 |
+
+后果不写成灰字：生效方式是标题下的蓝色标签（`<StatusTag tone="progress" filled>立即生效</StatusTag>`），收不回来的操作再加 `<IrreversibleTag />`。红只给危险确认、失败和真危险的后果；填错了用橙黄。同一件事只写一处：范围不在标签、占位、说明里各写一遍，没改时不写「还没改动」，确认按钮禁用并写原因就够。
+
+```tsx
+<Modal title="调整同一 IP 每天最多注册多少个账号" icon={SlidersHorizontal} sub={<StatusTag tone="progress" filled>立即生效</StatusTag>} …>
+  <DiffField before="3" unit="个" hint="1–10 的整数" error={problem}
+    state={changed && <StatusTag tone="warn" icon={LockOpen}>放宽</StatusTag>}
+    note={changed && "改成 5：同一 IP 24 小时内注册到 5 个后，新用户注册被拒绝。"}>
+    {(control) => <NumberInput {...control} unit="个" min={1} max={10} value={value} onChange={…} />}
+  </DiffField>
+  <Field label="操作理由" required hint="至少 8 字">
+    {(control) => <Textarea {...control} value={reason} count={`${length}/200`} onChange={…} />}
+  </Field>
+</Modal>
+```
+
 ## 写操作确认
 
 逻辑全在 `OperationConfirmModal` 里（理由规则、覆盖率拦截、提交中锁定、失败留表单），新旧页面用同一份。放进 `RdPage` 后自动变成：Radix 弹窗、新外观、执行摘要默认收起（标题行写影响）、覆盖率提示排在理由上面。金额、对象、前后值不能只写在 `detail` 里，要传 `facts` 或 `edit`，它们常显。新加两个可选属性，旧页面不传就和原来一样：
 
-- `effect`：生效标签，比如 `<StatusTag tone="progress" filled>立即生效</StatusTag>`，只在 `RdPage` 里显示。
+- `effect`：生效标签，比如 `<StatusTag tone="progress" filled>立即生效</StatusTag>`，只在 `RdPage` 里显示，位置在标题下面。收不回来的操作在里面再加 `<IrreversibleTag />`，`facts` 里不用再写一行「能否撤销」。
+- `title`：框上写的短标题，只写动作和对象。不传就用 `action`；`action` 照旧是记进操作记录的名字，不要为了缩短标题去改它，长单号放 `facts`。
 - `confirmLabel`：确认按钮写动作，比如 `确认放行`，默认 `确认提交`。
 - `statedBrief`：这个操作自己的 `{ impact, check }`，传了摘要就不按文字猜（OP-51）。
 - `blockedReason`：这次不能再提交的原因，写在框里，确认按钮禁用。比如提交时发现单据已被别人处理：再调一次 `openActionConfirm`，传最新内容和这个字段，框不关，已填的理由留着。
 
 - `reasonPlaceholder`：理由框的占位，按场景写（TX-11），默认「例如：工单号、处理依据」。
-- `facts`：做决定要核对的事实，常显在业务字段上面，比如收款网络和完整地址。人要在看得到它的地方选核验项。
-- `confirmTone`：不能撤销或直接动钱的操作传 `danger`，确认按钮用危险色、标题换警告图标（退款、拒绝、紧急关闭、强制扣款）。能解除的处置和放宽类判断不传。`KConfirmModal` 的 `ConfirmReq` 认同一个字段。
-- `coverageLead`：放大方向提示的开头，默认「这项操作会让平台多付钱」，页面可以换成这个操作的白话。读到覆盖率且不低于红线时，提示是安静的一行「覆盖率 753.8%，红线 100%」，这句开头和检查说明进提示图标；低于红线才红，写全文。
+- `facts`：做决定要核对的事实，常显在业务字段上面，比如收款网络和完整地址。人要在看得到它的地方选核验项。金额放第一行传 `lead`，它是这个框最大最亮的字。
+- `confirmTone`：不能撤销或直接动钱的操作传 `danger`，确认按钮用危险色、标题前是红底警告图标（退款、拒绝、紧急关闭、强制扣款）。能解除的处置和放宽类判断不传。`KConfirmModal` 的 `ConfirmReq` 认同一个字段。
+- `coverageLead`：放大方向提示的开头，默认「这项操作会让平台多付钱」，页面可以换成这个操作的白话。读到覆盖率且不低于红线时，提示是安静的一行「覆盖率 753.8%，红线 100%」，这句开头和检查说明进提示图标；低于红线才红，写全文。页面自己把覆盖率写进 `coverageLead` 时也只留这一句，检查说明进提示图标。
 
-改一个值的确认框（`edit`）再给三个可选项：`hint` 写怎么填，`preview(value)` 写改了会怎样、随输入变化，这两项只在 `RdPage` 里显示（CP-87）；`emptyOption` 写清空选项的名字，比如「不设上限」，要人点它才算清空，框里没填或填坏了都不算。`disallowCurrent` 时没改动不能保存，框里写原因（OP-18）。
+改一个值的确认框（`edit`）在 `RdPage` 里自动用 `DiffField`：现在值在左、新值输入在右，数字放大，不再有「新值 · 当前 X」的标签和「当前 X」的占位。再给三个可选项：`hint` 写怎么填（范围只写这里），`preview(value)` 写改了会怎样、随输入变化，这两项只在 `RdPage` 里显示（CP-87）；`emptyOption` 写清空选项的名字，比如「不设上限」，要人点它才算清空，框里没填或填坏了都不算。`disallowCurrent` 时没改动不能保存，框里写原因（OP-18）。
 
 确认框提交中锁住里面全部输入、选项、取消和 ×，失败后恢复（OP-33）。数字框填坏（`badInput`）不算空，不能提交。
 
-字数写在理由框角落。缺什么写在灰按钮的提示里，刚打开不报错，字段失焦或点过提交才在字段下用警告色写原因。框里填过内容后点空白不关，×、取消、Esc 照常关。
+理由字段写「操作理由 * 至少 8 字」，上限在理由框角落的字数里。缺什么写在灰按钮的提示里，刚打开不报错，字段失焦或点过提交才在字段下用警告色写原因。框里填过内容后点空白不关，×、取消、Esc 照常关。
 
 收到权限层的 403（`ADMIN_PERMISSION_DENIED`、`ACCESS_DENIED`）时共用层提示「这个账号没有这项权限」，关框，外壳重读权限，页面上的按钮随之收起。业务规则的 403 有自己的说明，按普通失败留在框里。页面自己的表单（不走 `OperationConfirmModal`、`KConfirmModal`）在 catch 里用 `isPermissionDenied(error)` 判断，调 `announcePermissionDenied()` 后自己关框。
 

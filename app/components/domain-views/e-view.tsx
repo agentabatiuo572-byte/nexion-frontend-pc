@@ -1675,6 +1675,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       {/* 操作确认(唯一动作出口)*/}
       {mc && <OperationConfirmModal briefKind={mc.briefKind}
         action={mc.name}
+        title={mc.title}
         detail={mc.detail ?? "从下一次结算或新派任务开始生效，已累计的收益不变。"}
         amplifies={!!mc.amplify}
         edit={mc.edit}
