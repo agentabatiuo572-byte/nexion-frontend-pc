@@ -159,7 +159,7 @@ export function L2HeaderActions({ ctx }: { ctx: LCtx }) {
   const complete = isStrictL2Dashboard(ctx.biData?.l2);
   const detailedAttempt = hasDetailedL2(ctx.biData?.l2);
   const liveStages = detailedAttempt ? [] : readL2LiveStages(ctx.biData?.l2);
-  const exportable = (complete && ctx.l2SliceExportable !== false) || liveStages.length > 0;
+  const exportable = ctx.l2SliceExportable !== false && (complete || liveStages.length > 0);
   const exportFunnel = async () => {
     const ok = await confirm({
       title: complete ? "导出用户转化与留存数据" : "导出用户各阶段人数",
@@ -374,7 +374,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       }}>清空</button>
     </div>
   );
-  const emptyCohort = data?.available === false && data.reason === "NO_REGISTRATION_COHORT";
+  const emptyCohort = queryData?.available === false && queryData.reason === "NO_REGISTRATION_COHORT";
   if (queryLoading || queryError || emptyCohort) return (
     <div>
       <div className="view-bar">{sliceFilters}</div>
