@@ -201,7 +201,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
   const EXPORT_TASKS = taskPage?.records ?? [];
   const MASK_RULES = rows<MaskRule>(data.maskRules);
   const EXPORT_PARAMS = rows<ExportParam>(data.exportParams);
-  const AUDIT_ROWS = auditRows.length > 0 ? auditRows : rows<LExportAuditRow>(data.auditRows);
+  const AUDIT_ROWS = auditLoading || auditError ? [] : auditRows;
   const CROSS_MODULE_BLOCKERS = rows<{ code: string; label: string; status: string; reason: string }>(data.crossModuleBlockers);
   const STATUS_FALLBACK: Record<string, string> = {
     PENDING: "待处理",
@@ -508,14 +508,14 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
                   </tr>
                 ))}
                 {AUDIT_ROWS.length === 0 && (
-                  <tr><td colSpan={8} style={{ textAlign: "center", padding: 22, color: "var(--ink-4)" }}>{auditLoading ? "导出记录加载中…" : "没有符合条件的导出记录"}</td></tr>
+                  <tr><td colSpan={8} style={{ textAlign: "center", padding: 22, color: "var(--ink-4)" }}>{auditLoading ? "导出记录加载中…" : auditError ? "导出记录加载失败，请重新加载" : "没有符合条件的导出记录"}</td></tr>
                 )}
               </tbody>
             </table>
           </div>
           <div className="l-b" style={{ paddingTop: 10 }}>
             {auditError
-              ? <div className="ltint warn" style={{ fontSize: 11.5 }}><b>失败关闭</b> · {auditError}</div>
+              ? <div className="ltint warn" style={{ fontSize: 11.5 }}><b>导出记录加载失败</b> · {auditError} <button className="l-btn sm" onClick={() => void ctx.reloadBi?.()}>重新加载</button></div>
               : <div className="ltint" style={{ fontSize: 11.5 }}><b>说明</b> · <AutoGloss>这里显示的是系统记下的每一次导出，和「操作记录与审批」一致。</AutoGloss></div>}
           </div>
         </section>
