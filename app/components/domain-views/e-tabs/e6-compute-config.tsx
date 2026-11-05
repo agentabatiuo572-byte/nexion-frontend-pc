@@ -26,7 +26,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
   const ready = !!e6Config; // 后端聚合视图已加载
 
   const editCoefficient = (c: (typeof coefficients)[number]) => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       name: `调整${operatorCopyText(c.label)}`,
       op: "param",
       paramKey: e6CoeffKey(c.key),
@@ -41,7 +41,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
 
   // 收益估算系数调整 → param(number edit)。
   const editYield = (p: (typeof yields)[number]) => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       name: `调整${operatorCopyText(p.label)}`,
       op: "param",
       paramKey: e6YieldKey(p.key),

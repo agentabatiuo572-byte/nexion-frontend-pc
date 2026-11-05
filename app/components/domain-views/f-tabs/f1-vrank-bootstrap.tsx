@@ -25,7 +25,7 @@ export function F1VrankBootstrap({ ctx }: { ctx: FViewCtx }) {
   const review = () => {
     try {
       const ranks = buildVRankBootstrap(drafts);
-      ctx.openActionConfirm({ name: "首次配置会员等级", amplify: true,
+      ctx.openActionConfirm({ briefKind: "config", name: "首次配置会员等级", amplify: true,
         detail: "将创建完整的 V0–V8 晋升条件、团队购买奖励范围、同级奖比例和票数。另一位管理员审核后生效；晋升奖励请在等级建立后单独配置。",
         completionCopy: "首次配置需另一位管理员审核后生效。",
         run: async (reason) => {

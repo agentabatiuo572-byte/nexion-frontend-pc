@@ -165,7 +165,7 @@ export default function H1Phase({ ctx, onRhythmChange }: {
 
   const openTotalMonths = () => {
     if (!rhythm) return;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "调整运营总月数",
       detail: <>当前一共 <b>{rhythm.totalMonths} 个月</b>。修改后，下方每月参数表的行数会跟着变。</>,
       amplifies: false,
@@ -182,7 +182,7 @@ export default function H1Phase({ ctx, onRhythmChange }: {
 
   const openCurrentPosition = () => {
     if (!rhythm) return;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "调整当前进度",
       detail: <>现在是 <b>第 {rhythm.currentMonth}/{rhythm.totalMonths} 个月 · {phaseName(rhythm.currentPhase)}</b>，可以手动校准当前月份和阶段进度。</>,
       amplifies: false,
@@ -231,7 +231,7 @@ export default function H1Phase({ ctx, onRhythmChange }: {
     const amplifiesWhen: "decrease" | "increase" = key === "withdrawCooldownDays"
       ? "decrease"
       : "increase";
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `调整第 ${row.month} 个月 · ${label}`,
       detail: <>当前值 <b>{current}</b>。保存后马上生效。</>,
       amplifies: isComplianceToggle && current === "是",
@@ -267,7 +267,7 @@ export default function H1Phase({ ctx, onRhythmChange }: {
 
   const openControl = (control: H1Model["controls"][number]) => {
     const current = text(control.value, control.key === "pin" ? "未钉住" : "");
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `阶段切换设置 · ${control.label}`,
       detail: <>{controlDescription(control) || "修改会记入操作记录。"} 当前值 <b>{control.key === "pin" && current === "未钉住" ? "自动切换阶段" : current || "未设置"}</b>。</>,
       amplifies: false,
@@ -296,7 +296,7 @@ export default function H1Phase({ ctx, onRhythmChange }: {
   };
 
   const openOverrideRemove = (override: H1Model["overrides"][number]) => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `撤销该批用户的单独设置 · ${override.cohort}`,
       detail: <>{override.description || "撤销后，这批用户会重新按全局运营阶段安排处理。"} 撤销会记入操作记录。</>,
       amplifies: false,
@@ -321,7 +321,7 @@ export default function H1Phase({ ctx, onRhythmChange }: {
   };
 
   const refreshPreview = () => {
-    openConfirm({
+    openConfirm({ briefKind: "record",
       action: "刷新数据",
       detail: <>重新加载本页数据，不会改任何设置。</>,
       chips: [["只读", "ready"]],

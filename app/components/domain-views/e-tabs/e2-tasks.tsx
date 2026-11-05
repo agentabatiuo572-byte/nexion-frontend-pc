@@ -218,12 +218,12 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
                   <div className="tnum" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{n} UVT/天</div>
                 </div>
                 {canMutate && <div className="row" style={{ gap: 6 }}>
-                  <Btn sm variant="primary" onClick={() => ctx.openActionConfirm({
+                  <Btn sm variant="primary" onClick={() => ctx.openActionConfirm({ briefKind: "config",
                     name: `调整手机 T${t.tier} 每日收益（USDT）`, op: "phone-tier", phoneTier: t.tier, phoneField: "dailyUsdt", amplify: true,
                     edit: { kind: "number", current: u, unit: "USDT/天", min: 0.00001, step: 0.00001, disallowCurrent: true },
                     detail: `手机 T${t.tier}（${operatorCopyText(t.name)}）当前每日 $${u}。调高会让平台多付钱，提交时检查兑付覆盖率；从下个结算周期生效，已发的收益不变。`,
                   })}>调 USDT</Btn>
-                  <Btn sm onClick={() => ctx.openActionConfirm({
+                  <Btn sm onClick={() => ctx.openActionConfirm({ briefKind: "config",
                     name: `调整手机 T${t.tier} 每日收益（UVT）`, op: "phone-tier", phoneTier: t.tier, phoneField: "dailyNex", amplify: true,
                     edit: { kind: "number", current: n, unit: "UVT/天", min: 0.00001, step: 0.00001, disallowCurrent: true },
                     detail: `手机 T${t.tier}（${operatorCopyText(t.name)}）当前每日 ${n} UVT。调高会让平台多发 UVT，提交时检查兑付覆盖率；从下个结算周期生效。`,
@@ -379,7 +379,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         </div>
       </div>
       <p className="f-foot">当前最高单价任务{maxPriceTask ? `「${nexGridBrandText(maxPriceTask.n)}」` : "暂无"}、最高负载任务{peakTask ? `「${nexGridBrandText(peakTask.n)}」` : "暂无"}会影响任务池的展示。改单价<b>只对新派的任务生效</b>，已派出的按原价完成。</p>
-      {pricingAction && <OperationConfirmModal
+      {pricingAction && <OperationConfirmModal briefKind={pricingAction.field === "enabled" ? "record" : "config"}
         action={pricingAction.field === "enabled" ? `${pricingAction.nextEnabled ? "恢复派发" : "紧急停止派发"} · ${pricingTaskClass}` : pricingAction.field === "queueSaturation" ? "调整队列饱和度" : `调整 ${pricingTaskClass} · ${PRICING_FIELD_LABEL[pricingAction.field]}`}
         detail={pricingAction.field === "enabled" && !pricingAction.nextEnabled ? "立即停止派发这类任务；已派出的按原价结算。" : "确认后立即生效，只影响之后新派的任务。"}
         amplifies={pricingAction.field !== "enabled" || !!pricingAction.nextEnabled}

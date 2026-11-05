@@ -47,7 +47,7 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "C6" && <C6Regrisk ctx={ctx} />}
 
       {mc && (
-        <OperationConfirmModal
+        <OperationConfirmModal briefKind={mc.briefKind}
           action={mc.action}
           detail={mc.detail}
           amplifies={mc.amplifies}

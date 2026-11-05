@@ -163,7 +163,7 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false }: { ctx: EV
     </>}
     {/* Its own endpoint: stays usable when the calibration rules cannot be read, e.g. to stop an enforcing check. */}
     {!thresholdsOnly && <PhoneRiskSection canWrite={ctx.canWriteE6} toast={ctx.toast} />}
-    {confirm && <OperationConfirmModal action="发布手机校准规则" amplifies detail="整份 Android 芯片档、iPhone 机型规则与档位分界将一起发布，须另一位超级管理员批准后生效。预约发布还须到达所选时间；若批准时已过预约时间，则批准后生效。这里只创建提案，不代表已经生效。" reasonMin={8} reasonMax={200}
+    {confirm && <OperationConfirmModal briefKind={"config"} action="发布手机校准规则" amplifies detail="整份 Android 芯片档、iPhone 机型规则与档位分界将一起发布，须另一位超级管理员批准后生效。预约发布还须到达所选时间；若批准时已过预约时间，则批准后生效。这里只创建提案，不代表已经生效。" reasonMin={8} reasonMax={200}
       completionCopy="批准后生效；预约发布还须到达所选时间。"
       onClose={() => setConfirm(null)} onConfirm={async reason => {
         if (!ctx.canWriteE6) throw new Error("你没有修改设备配置的权限");

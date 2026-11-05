@@ -217,7 +217,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     setNewOpen(true);
   };
 
-  const deleteDraft = (c: CampaignRow) => openConfirm({
+  const deleteDraft = (c: CampaignRow) => openConfirm({ briefKind: "record",
     action: <>删除通知草稿 · {c.id}</>,
     detail: <>只有草稿或已取消的可以删除；已发送的不能删除。</>,
     reason: true,
@@ -225,7 +225,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     run: (reason) => runBackend(actions.deleteI3Campaign(c.id, c.revision, reason), `${c.id} 已删除`),
   });
 
-  const sendNow = (c: CampaignRow) => openActionConfirm({
+  const sendNow = (c: CampaignRow) => openActionConfirm({ briefKind: "content",
     action: <>立即发送 · {c.name}</>,
     detail: (
       <>
@@ -239,7 +239,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     },
   });
 
-  const cancelScheduled = (c: CampaignRow) => openConfirm({
+  const cancelScheduled = (c: CampaignRow) => openConfirm({ briefKind: "record",
     action: <>取消排期 · {c.id}</>,
     detail: (
       <>
@@ -253,7 +253,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     },
   });
 
-  const adjustCap = (tier: TierK, cap: string) => openActionConfirm({
+  const adjustCap = (tier: TierK, cap: string) => openActionConfirm({ briefKind: "config",
     action: <>调整通知保留数量 · {I3_TIER_STATE[tier]?.[0] ?? "未知"}</>,
     detail: (
       <>

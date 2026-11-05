@@ -745,7 +745,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       addressVerificationRequired = latest.addressVerificationRequired;
     }
     const label = actionLabel(action);
-    openActionConfirm({
+    openActionConfirm({ briefKind: "funds",
       action: `${label}提现 · ${row.withdrawalNo}`,
       detail: `${row.userNo} / ${money(row.amount)} ${row.asset}；当前 ${statusLabel(row.status)}；${k4RiskText(row)}；触发规则 ${ruleSummary(row.hitRules)}；账户 ${userStatusLabel(row.userStatus)}。${action === "APPROVE" ? `当前兑付覆盖率 ${d5?.coverageRatio ?? "—"}%，红线 ${d5?.redlinePct ?? "—"}%。确认后立即放行，钱从储备中扣除。` : action === "REJECT" ? "确认后立即拒绝，并退回用户余额；完成后为已退款。" : "确认后立即生效。"}`,
       amplifies: action === "APPROVE",
@@ -791,7 +791,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const confirmCregisRecovery = (row: D2Withdrawal, cregis: D2CregisPayout) => {
     if (!cregis.canRecover || cregis.source !== "provider" || cregis.withdrawalNo !== row.withdrawalNo
         || !hasAuthority("finance_d2_read") || !hasAuthority("finance_d2_withdrawal_approve")) return;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: `核对 Cregis 打款单 · ${row.withdrawalNo}`,
       detail: "到 Cregis 查到这笔提现的打款单号（CID）填在下面。系统会核对收款地址和金额，然后继续跟进这笔提现，不会重新打款。",
       businessForm: { kind: "multi-field", title: "Cregis 打款单", fields: [
@@ -819,7 +819,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   };
 
   const confirmBankRequery = (row: D2Withdrawal, bank: D2BankPayout) => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: `查询银行打款结果 · ${row.withdrawalNo}`,
       detail: "向 HDPay 查询这笔打款的结果，不会重新打款。结果明确就自动完成或退回；有疑问的继续人工核对。原因里不要写完整银行卡号。",
       reasonMin: 10, reasonMax: 300, completionCopy: "查询完成",
@@ -861,7 +861,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   };
 
   const confirmDevelopmentSimulation = (row: D2Withdrawal) => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: `模拟冷却到期 · ${row.withdrawalNo}`,
       detail: "仅测试环境可用。把这笔测试提现的冷却时间提前到现在，然后按正常流程重新检查风险规则、风险分、覆盖率和提现开关。",
       amplifies: true,
@@ -972,7 +972,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       toast("所选提现单包含尚未确认的原操作，请到页面上方提示中点击「重试原操作」。");
       return;
     }
-    openActionConfirm({
+    openActionConfirm({ briefKind: "funds",
       action: `批量执行 · ${actionLabel(action)}`,
       detail: `将对 ${ids.length} 笔提现执行${actionLabel(action)}（不符合条件的已自动排除）。${action === "REJECT" ? "拒绝后立即退回用户余额，完成后为已退款。" : "批量放行时，小额直接放行，大额转为单笔人工审核。"}`,
       amplifies: batchAction === "APPROVE",

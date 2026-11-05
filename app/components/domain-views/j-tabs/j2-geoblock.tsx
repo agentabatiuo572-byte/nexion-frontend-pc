@@ -132,7 +132,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     const availableOptions = target === "limited" ? limitedCandidates : countryOptions;
     const impactUsers = current.reduce((sum, country) => sum + country.activeUsers, 0);
     const impactWallet = current.reduce((sum, country) => sum + country.walletUsdt, 0);
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
     action: target === "blocked" ? "编辑全局封禁名单" : "编辑受限名单",
     detail: target === "blocked"
       ? <>提交的是<b>完整封禁名单</b>，页面会展示新增和移除差异。新增国家会立即停止其注册、登录和资金操作；<b>解除全局封禁不会清除功能入口的单独封锁，最终可用能力以入口策略及其他业务开关为准。</b></>
@@ -177,7 +177,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
 
   const editEndpoint = (entry: GeoEndpoint) => {
     const commandKey = createJ2CommandKey(`endpoint-${entry.key}`);
-    return openActionConfirm({
+    return openActionConfirm({ briefKind: "config",
     action: `调整功能入口封锁范围 · ${entry.label}`,
     detail: <><b>{entry.label}</b>当前采用“{entry.sourceLabel}”。选择“继承全局”时自动跟随全局封禁名单；选择“单独设定”时，只对勾选的国家生效。</>,
     businessForm: {
@@ -232,7 +232,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
 
   const switchJudge = () => {
     const commandKey = createJ2CommandKey("edge-source");
-    return openActionConfirm({
+    return openActionConfirm({ briefKind: "config",
     action: "切换地区识别来源",
     detail: <>当前使用“{currentEdgeSourceLabel}”，健康状态为“{health}”。只能选最近 5 分钟内至少有 20 次可靠识别记录的来源；{edgeFallbackAvailable
       ? "切换后旧来源继续备用 5 分钟，请留意识别是否正常。"
@@ -247,7 +247,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
 
   const emergencyBlock = () => {
     const commandKey = createJ2CommandKey("emergency-block");
-    return openActionConfirm({
+    return openActionConfirm({ briefKind: "config",
     action: "应急即时封锁 · 批量加入全局封禁名单",
     detail: <><b>仅加封锁，不在这里解除。</b>选择一个或多个国家和触发依据后，所有目标会先统一校验；有任何冲突时整批不执行，避免只成功一部分。</>,
     businessForm: {

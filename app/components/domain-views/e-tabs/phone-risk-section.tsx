@@ -101,7 +101,7 @@ export function PhoneRiskSection({ canWrite, toast }: { canWrite: boolean; toast
         <p className="f-foot">被拦下的正常用户（例如从备份恢复到新手机）由客服在「用户 · 手机绑定与换机特批」中解除机型锁。</p>
       </details>}
     </>}
-    {confirming && draft && overview && <OperationConfirmModal action="保存机型风控设置"
+    {confirming && draft && overview && <OperationConfirmModal briefKind={"config"} action="保存机型风控设置"
       detail={<>{summary.map(line => <span key={line}>{line}<br /></span>)}保存后立即用于之后的校准，不走审批；已激活的手机和历史结算不受影响。</>}
       completionCopy="立即生效：保存后用于之后的校准，已激活的手机和历史结算不受影响。"
       reasonMin={8} reasonMax={200} onClose={() => setConfirming(null)} onConfirm={async reason => {

@@ -58,7 +58,7 @@ export function H9GlobeDisplay({ ctx, data, refreshing, onSaved, onRefresh }: {
   const save = () => {
     if (locked || conflict || !next || !dirty) return;
     const { registeredUsersAnchorAt: _anchor, ...current } = data.values;
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       action: "保存全球网络展示", reasonMin: 8, reasonMax: 200,
       completionCopy: "保存后生效，并记入操作记录。",
       detail: <>

@@ -87,13 +87,13 @@ function OwnedPreparation({ canManage, openActionConfirm, owner, ownerEpoch }: P
       assertOwner(true); const body = payload();
       if (!reference.trim() || reference.length > 100 || /[\u0000-\u001f\u007f]/.test(reference)) throw new Error("请填写不超过 100 字的业务参考号");
       const snapshot = { ...body, businessReference: reference.trim() };
-      openActionConfirm({ action: "创建资金准备单", detail: `${kindLabel(kind)} · ${body.amountUsdt} USDT · 来源 ${body.sourceAddress} · 接收 ${kind === "COLLECTION" ? config!.platformAddress : config!.counterpartyAddress} · 业务参考 ${snapshot.businessReference}。仅保存准备记录，不发送资金。`,
+      openActionConfirm({ briefKind: "record", action: "创建资金准备单", detail: `${kindLabel(kind)} · ${body.amountUsdt} USDT · 来源 ${body.sourceAddress} · 接收 ${kind === "COLLECTION" ? config!.platformAddress : config!.counterpartyAddress} · 业务参考 ${snapshot.businessReference}。仅保存准备记录，不发送资金。`,
         reasonMin: 10, reasonMax: 300, completionCopy: "准备单已保存，尚未转账", run: reason => command("/plans", { ...snapshot, reason }) });
     } catch (failure) { setError((failure as Error).message); }
   };
   const decide = (row: ExceptionRecord, decision: "REVIEW" | "CANCEL") => {
     assertOwner(true);
-    openActionConfirm({ action: decision === "REVIEW" ? "复核准备单" : "取消准备单",
+    openActionConfirm({ briefKind: "record", action: decision === "REVIEW" ? "复核准备单" : "取消准备单",
       detail: `${kindLabel(row.kind)} · ${row.amountUsdt} USDT · ${row.sourceAddress} → ${row.targetAddress} · ${row.businessReference}。复核只确认准备信息，不授权或执行转账。`,
       reasonMin: 10, reasonMax: 300, completionCopy: decision === "REVIEW" ? "准备信息已复核，尚未转账" : "准备单已取消",
       run: reason => command(`/plans/${row.planNo}/decision`, { expectedVersion: row.version, decision, reason }) });

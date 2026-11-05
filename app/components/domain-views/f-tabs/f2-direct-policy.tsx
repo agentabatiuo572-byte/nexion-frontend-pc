@@ -30,7 +30,7 @@ export function F2DirectPolicy({ ctx }: { ctx: FViewCtx }) {
   const submit = () => {
     if (disabled || !draft || !policy || invalid || !changed) return;
     const value = structuredClone(draft), ref = policy.sevenLayerReference;
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       name: "好友奖励设置整组调整", amplify: directReferralAmplifies(policy, value),
       detail: `修改前：${directReferralSummary(policy)}。修改后：${directReferralSummary(value)}。L1 奖励比例 ${ref.baseRatePct ?? "未配置"}%，购买冷却 ${ref.coolingDays ?? "未配置"} 天，旧 UVT 系数 ${ref.legacyNexPerUsd ?? "未配置"} UVT/USDT。关闭拆分后好友购买奖励改回全额 USDT，USDT 占比增加 ${policy.purchaseSplit.enabled && !value.purchaseSplit.enabled ? 100 - policy.purchaseSplit.usdtSharePct : 0} 个百分点。设备成员自己的收益不减少。（设置版本 ${policy.policyVersion}）`,
       completionCopy: "提交后需在「操作记录与审批」批准，两项设置一起生效。",

@@ -286,7 +286,7 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
   };
 
   const confirmCommand = (action: string, detail: string, path: string,
-                          body?: Record<string, unknown>) => openActionConfirm({
+                          body?: Record<string, unknown>) => openActionConfirm({ briefKind: "record",
     action, detail, reasonMin: 10, reasonMax: 255,
     completionCopy: path === "/cregis/switch-cases" ? "提交后需另一位管理员复核才生效。" : "提交后立即执行。",
     run: (reason) => command(path, { ...body, reason }),

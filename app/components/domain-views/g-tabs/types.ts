@@ -1,7 +1,8 @@
 import type { Dispatch, ReactNode, SetStateAction } from "react";
-import type { BusinessFormSpec, BusinessFormValue, EditSpec } from "../design-kit";
+import type { OperatorBriefKind, BusinessFormSpec, BusinessFormValue, EditSpec } from "../design-kit";
 
 export type ActionConfirmReq = {
+  briefKind: OperatorBriefKind;
   action: ReactNode;
   detail: ReactNode;
   amplifies?: boolean;
@@ -14,6 +15,7 @@ export type ActionConfirmReq = {
 };
 
 export type ConfirmReq = {
+  briefKind: OperatorBriefKind;
   action: ReactNode;
   detail: ReactNode;
   chips?: [text: string, tone: "done" | "ready"][];

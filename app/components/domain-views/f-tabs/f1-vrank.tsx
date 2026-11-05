@@ -148,7 +148,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const editField = (r: VRow, f: VField) => {
     const fund = hasFundReward(r.v);
     const cur = f.cur;
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       name: `调整 ${r.v} 晋升条件 · ${f.label}`, amplify: fund, op: "param", paramKey: `F.vrank.${r.v}.${f.k}`,
       completionCopy: "确认后更新本级晋升条件，下一轮评估使用新值。",
       edit: f.options ? { kind: "select", current: cur, options: f.options, optionLabels: { NONE: "不要求" } } : { kind: f.kind, current: cur },
@@ -164,7 +164,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const openAddReward = (r: VRow) => {
     // 新增是「配置奖励模板」,非即时发放资金;类型在表单内选,资金提示由表单内 per-type tint 给出,
     // 真正 B1 备付金硬闸发生在发放结算侧。故入口不整弹窗 amplify(避免对 代金券/SKU/自定义 误挂资金流出警告 + 覆盖率压力档误阻断)。
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       name: `${r.v} · 新增奖励`, amplify: false,
       businessForm: { kind: "vrank-reward-edit", ...rewardFormBase(r) },
       detail: `为 ${r.v} 新增一项晋升奖励。USDT / UVT 奖励发放时会检查兑付覆盖率；代金券、商品和自定义奖励不计入资金账。`,
@@ -177,7 +177,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     });
   };
   const openEditReward = (r: VRow, item: OpsVRankRewardItem) => {
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       name: `${r.v} · 编辑奖励`, amplify: isFund(item.type),
       businessForm: {
         kind: "vrank-reward-edit", ...rewardFormBase(r),
@@ -196,7 +196,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     });
   };
   const openRemoveReward = (r: VRow, item: OpsVRankRewardItem) => {
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "record",
       name: `${r.v} · 移除奖励`,
       detail: `移除 ${r.v} 的奖励「${rewardLabel(item, ctx.voucherLabels, ctx.skuLabels)}」，之后不再发放，已发的不收回。`,
       run: async (reason) => {
@@ -263,7 +263,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     return record.voucherId || record.skuId || safeCustomLabel(record.customLabel, record.rewardType || "—") || record.rewardType || "—";
   };
   const openManualOverride = () => {
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       name: "手动调整会员等级",
       amplify: true,
       businessForm: {
@@ -289,7 +289,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     });
   };
   const openPayoutAction = (payoutId: string, action: "reissue" | "reverse") => {
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "funds",
       name: `${action === "reissue" ? "重新发放" : "冲正"}奖励`,
       amplify: action === "reissue",
       detail: `${action === "reissue" ? "只有已冲正的奖励可以重新发放，平台会多付钱。" : "只有已发放、已重发或待发放的奖励可以冲正。"}提交后需确认才生效。`,
@@ -400,7 +400,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
               <div className="it">不降级保护 · 当前 <b>{permanentOn ? "已开启" : "已关闭"}</b></div>
               <div className="it" style={{ marginTop: 4 }}>{permanentOn ? "已晋升的用户下一轮没达标，也保持现有等级。" : "下一轮没达标的用户会降级，团队激励池票数也会减少。"}</div>
             </div>
-            {canProtect && <button type="button" className="f-cta" style={{ marginTop: 8, ...(permanentOn ? { borderColor: "var(--danger)", color: "var(--danger)" } : null) }} onClick={() => ctx.openActionConfirm({
+            {canProtect && <button type="button" className="f-cta" style={{ marginTop: 8, ...(permanentOn ? { borderColor: "var(--danger)", color: "var(--danger)" } : null) }} onClick={() => ctx.openActionConfirm({ briefKind: "record",
               name: permanentOn ? "关闭不降级保护" : "开启不降级保护",
               op: "dispose", paramKey: "F.vrank.permanent", fixedVal: permanentOn ? "off" : "on",
               detail: permanentOn
@@ -415,7 +415,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
               <div className="it">会员等级奖品名 · 当前 <b>{prizeName || "未配置"}</b></div>
               <div className="it" style={{ marginTop: 4 }}>只用于显示，不影响奖励和晋升。</div>
             </div>
-            {canWrite && <button type="button" className="f-cta" style={{ marginTop: 8 }} onClick={() => ctx.openActionConfirm({
+            {canWrite && <button type="button" className="f-cta" style={{ marginTop: 8 }} onClick={() => ctx.openActionConfirm({ briefKind: "config",
               name: prizeName ? "修改全局奖品名" : "配置全局奖品名",
               op: "param",
               paramKey: "F.prize.name",
@@ -430,7 +430,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
               <div className="it">V0–{highestRank} 各级显示的头衔 · 已设置 <b>{Object.keys(titlesByLevel).length}</b>/{rows.length} 级</div>
               <div className="it" style={{ marginTop: 4 }}>只用于显示，不影响奖励和晋升。</div>
             </div>
-            {canWrite && <button type="button" className="f-cta" style={{ marginTop: 8 }} onClick={() => ctx.openActionConfirm({
+            {canWrite && <button type="button" className="f-cta" style={{ marginTop: 8 }} onClick={() => ctx.openActionConfirm({ briefKind: "config",
               name: "设置各级头衔",
               completionCopy: "提交到「操作记录与审批」，由另一位管理员批准后生效。",
               businessForm: {

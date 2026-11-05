@@ -271,7 +271,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       toast("请先在文案版本列表中新增或启用一个未被该文案使用的版本");
       return;
     }
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: <>{forceNew ? "新增版本" : "编辑文案"} · {c.key}</>,
       detail: <>基于 <b>{editableVersion?.v || c.version}</b> 编辑。{editingExistingDraft ? "保存会更新这个草稿。" : "请从启用的文案版本配置中选择一个尚未被该文案使用的版本。"}只有明确选择“发布生效”才会对用户生效。</>,
       amplifies: false,
@@ -327,7 +327,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       toast("请先在文案版本列表中新增或启用文案版本");
       return;
     }
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
     action: <>新增文案</>,
     detail: <>在文案池中新建一条受管文案。文案版本必须从上方“文案版本列表”的启用项中选择，文案标识必须全局唯一。</>,
     amplifies: false,
@@ -364,7 +364,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     });
   };
 
-  const createCopyVersionOption = () => openActionConfirm({
+  const createCopyVersionOption = () => openActionConfirm({ briefKind: "config",
     action: <>新增文案版本</>,
     detail: <>新增后会出现在“新增文案”和“新增内容版本”的版本下拉框中；只有启用状态可被选择。</>,
     amplifies: false,
@@ -378,7 +378,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     }, reason), `文案版本 ${form?.versionKey} 已新增`),
   });
 
-  const editCopyVersionOption = (option: VersionOptionRow) => openActionConfirm({
+  const editCopyVersionOption = (option: VersionOptionRow) => openActionConfirm({ briefKind: "config",
     action: <>编辑文案版本 · {option.versionKey}</>,
     detail: <>版本标识创建后不可修改；可调整名称、说明、排序和启停状态。停用后不会再出现在新建文案的下拉框中。</>,
     amplifies: false,
@@ -401,14 +401,14 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     }, reason), `文案版本 ${option.versionKey} 已更新`),
   });
 
-  const deleteCopyVersionOption = (option: VersionOptionRow) => openActionConfirm({
+  const deleteCopyVersionOption = (option: VersionOptionRow) => openActionConfirm({ briefKind: "record",
     action: <>删除文案版本 · {option.versionKey}</>,
     detail: <>只有从没被任何文案用过的版本可以删除；用过的必须保留，以免发布历史对不上。</>,
     amplifies: false,
     run: (reason) => runBackend(actions.deleteI1CopyVersionOption(option.versionKey, option.revision, reason), `文案版本 ${option.versionKey} 已删除`),
   });
 
-  const createCopyPosition = () => openActionConfirm({
+  const createCopyPosition = () => openActionConfirm({ briefKind: "config",
     action: <>新增文案位置</>,
     detail: <>新增可复用的文案位置。位置标识全局唯一，并固定绑定一个 App 顶级模块。</>,
     amplifies: false,
@@ -424,14 +424,14 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     },
   });
 
-  const deleteCopyPosition = (positionKey: string) => openActionConfirm({
+  const deleteCopyPosition = (positionKey: string) => openActionConfirm({ briefKind: "config",
     action: <>删除文案位置 · {positionKey}</>,
     detail: <>只有没被任何文案用过的位置可以删除。</>,
     amplifies: false,
     run: (reason) => runBackend(actions.deleteI1CopyPosition(positionKey, reason), `文案位置 ${positionKey} 已删除`),
   });
 
-  const rollbackTo = (copy: CopyRow, v: string) => openActionConfirm({
+  const rollbackTo = (copy: CopyRow, v: string) => openActionConfirm({ briefKind: "content",
     action: <>回滚 · {copy.key} → 重新发布 {v}</>,
     detail: <>回滚 = 把历史版 <b>{v}</b> 重新发布,效果和发新版完全一样(对符合该版本受众和投放位置的用户生效),所以同样走操作确认。仅完整满足中英越、受众和投放位置要求的归档版允许恢复。</>,
     amplifies: false,
@@ -444,7 +444,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     },
   });
 
-  const archiveCurrentVersion = (copy: CopyRow, version: string) => openActionConfirm({
+  const archiveCurrentVersion = (copy: CopyRow, version: string) => openActionConfirm({ briefKind: "content",
     action: <>下架当前发布版 · {copy.key} {version}</>,
     detail: <>下架后该文案位<b>没有生效版本</b>,App 端会退回内置备用文案——一般只在文案出合规问题时才这么做;常规换版直接发新版即可。下架立即生效。</>,
     amplifies: false,
@@ -457,7 +457,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     },
   });
 
-  const deleteDraftVersion = (copyKey: string, version: string, revision: number) => openActionConfirm({
+  const deleteDraftVersion = (copyKey: string, version: string, revision: number) => openActionConfirm({ briefKind: "record",
     action: <>删除草稿 · {copyKey} {version}</>,
     detail: <>只有草稿可以删除，删除后不能恢复，操作记录会保留。已发布或已归档的版本不能删除。</>,
     amplifies: false,
@@ -477,7 +477,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     },
   });
 
-  const adjustFramework = (key: string, name: string, cur: string) => openConfirm({
+  const adjustFramework = (key: string, name: string, cur: string) => openConfirm({ briefKind: "config",
     action: <>实验框架参数 · {name}</>,
     detail: <>当前默认:<b>{cur}</b> · 只影响<b>之后新建</b>的实验的默认值;已启动的实验按启动时的设置继续跑，不受影响。</>,
     chips: [["记入操作记录", "done"]],
@@ -495,7 +495,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       toast(`暂无可创建实验的文案：${experimentUnavailableReason}`);
       return;
     }
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: <>创建 A/B 实验</>,
       detail: <>选择同一文案下至少两个已有内容版本并配置分流。受众直接继承所选文案版本，只读展示，不在实验中重复编辑。</>,
       amplifies: false,
@@ -526,7 +526,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     });
   };
 
-  const startExp = (id: string) => openActionConfirm({
+  const startExp = (id: string) => openActionConfirm({ briefKind: "config",
     action: <>启动实验 · {id}</>,
     detail: <>启动后，版本、分流比例和受众就固定下来，不能再改。请先完成确认勾选，并填写 8–200 字操作理由。</>,
     amplifies: false,
@@ -534,7 +534,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     run: (reason) => runBackend(actions.startI1Experiment(id, reason), `${id} 已启动`),
   });
 
-  const discardExp = (id: string) => openActionConfirm({
+  const discardExp = (id: string) => openActionConfirm({ briefKind: "config",
     action: <>弃用实验 · {id}</>,
     detail: <>只有待启动或已结束的实验可以弃用。弃用后不能再启动或采纳，已有数据和操作记录仍保留。</>,
     amplifies: false,
@@ -542,7 +542,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     run: (reason) => runBackend(actions.discardI1Experiment(id, reason), `${id} 已弃用`),
   });
 
-  const stopExp = (id: string) => openActionConfirm({
+  const stopExp = (id: string) => openActionConfirm({ briefKind: "content",
     action: <>停止实验 · {id}</>,
     detail: <>停止后<b>全部用户回到当前发布版</b>,实验转已结(可再选择采纳或弃用)。停止会改变用户所见文案分布,所以要操作确认。已收集的曝光/转化数据保留,结算页可查。</>,
     amplifies: false,
@@ -551,7 +551,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     },
   });
 
-  const adoptExp = (id: string) => openActionConfirm({
+  const adoptExp = (id: string) => openActionConfirm({ briefKind: "content",
     action: <>采纳获胜变体 · {id}</>,
     detail: <>把获胜的版本<b>正式发布到这个文案位</b>，等同于一次正式发布（对符合受众和位置的用户生效）。采纳前请确认：数据量够、提升明显。</>,
     amplifies: false,

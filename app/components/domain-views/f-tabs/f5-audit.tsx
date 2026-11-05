@@ -109,11 +109,11 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       unlock: { name: `奖励提前解锁 ${row.id}`, amplify: true, fixedVal: "unlocked", detail: `提前解锁 ${row.id} · ${amount} · 跳过剩余冷却期，马上可以提现。会让钱提前流出，先看兑付覆盖率。` },
       unfreeze: { name: `解冻奖励 ${row.id}`, amplify: false, fixedVal: "cooling", detail: `解冻 ${row.id} · ${amount} · 回到冻结前的冷却期，剩下的冷却天数照常计算。` },
     }[kind];
-    ctx.openActionConfirm({ name: map.name, amplify: map.amplify, op: "dispose", paramKey: row.auditKey, fixedVal: map.fixedVal, expectedVersion: row.version, detail: map.detail });
+    ctx.openActionConfirm({ briefKind: "funds", name: map.name, amplify: map.amplify, op: "dispose", paramKey: row.auditKey, fixedVal: map.fixedVal, expectedVersion: row.version, detail: map.detail });
   };
 
   const reverse = (row: F5CommissionEvent) => {
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "record",
       name: `冲正奖励 ${row.id}`,
       detail: `冲正 ${row.id} · ${amountLabel(row)}。把这笔奖励收回，需要填写退款单、发放单或工单编号。用户余额不够时会标记为「待追回」，钱还没真正收回。`,
       businessForm: {
@@ -142,7 +142,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       ctx.toast("请先勾选要补发的已撤销奖励");
       return;
     }
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "funds",
       name: `批量补发 ${selectedRows.length} 笔奖励`,
       amplify: true,
       detail: `只补发已撤销或已拒绝的记录：${selectedRows.map((row) => row.id).join("、")}。兑付覆盖率低于红线时整批不能提交。`,
@@ -155,7 +155,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   };
 
   const suspend = (row: F5CommissionEvent) => {
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "record",
       name: `暂停用户 ${row.userId} 的奖励`,
       detail: "暂停后，这位用户所选类型的奖励马上冻结，以后也不再产生。恢复只会让以后的奖励照常产生，已冻结的不会自动解冻。",
       businessForm: {
@@ -186,7 +186,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const editThreshold = () => {
     const sigma = data?.configValues.commissionAnomalySigma ?? "3";
     const ratio = data?.configValues.layerRatioAnomalyPct ?? "20";
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       name: "调整异常预警标准",
       detail: "金额偏离可设 2–5 倍标准差（σ），每次加减 0.5；L1–L7 比例偏离可设 10%–50%。数字越小，预警越多。马上生效。",
       businessForm: {
@@ -208,7 +208,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
 
   const exportAllFiltered = () => {
     const filters = query();
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "export",
       name: "导出当前筛选的全部奖励",
       detail: "按当前筛选条件导出全部记录，不只是这一页。敏感信息已隐藏。",
       run: async (reason) => {
@@ -411,7 +411,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                 {data.activeSuspensions.map((item) => <tr key={`${item.userId}:${item.kind}`}>
                   <td>{item.userId}</td><td>{KIND_LABELS[item.kind] ?? item.kind}</td>
                   <td>{item.reason} / {item.operator}</td><td>{item.updatedAt}</td>
-                  <td>{canSuspend && <button className="fbtn primary" onClick={() => ctx.openActionConfirm({
+                  <td>{canSuspend && <button className="fbtn primary" onClick={() => ctx.openActionConfirm({ briefKind: "record",
                     name: `恢复奖励 · ${item.userId} / ${KIND_LABELS[item.kind] ?? "所选奖励"}`,
                     detail: "需要审批。批准后这类奖励以后照常产生，已冻结的不会自动解冻。",
                     run: async (reason) => {

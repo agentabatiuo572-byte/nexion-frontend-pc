@@ -131,7 +131,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       : isEnabled
         ? "批准前奖励保持关闭。另一位超管批准后启用，按当前月份倍率计算新注册奖励；历史已发和已冻结奖励不重算。"
         : "批准前沿用当前模式。原有资格校验及 H5 首笔实付后解冻规则继续生效，不会提前发放冻结礼包。";
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       action: isEnabled ? enabling ? "启用新人礼与邀请奖励" : "停用新人礼与邀请奖励" : `调整邀请奖励 · ${param.label}`,
       detail: isEnabled
         ? enabling
@@ -228,7 +228,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
 
   const settle = (invitedUserId?: number) => {
     const targeted = invitedUserId != null;
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "funds",
     action: targeted ? "给指定新人结算邀请奖励" : "结算邀请奖励",
     detail: `${targeted ? `只结算新人 ${invitedUserId} 的邀请奖励；不符合资格或已结算过就不发。` : "按邀请关系找出还没结算的记录；"}按当前第 ${data?.rhythmMonth ?? "—"} 个月的倍率计算后，每组结算为新人 ${data?.effectiveRewards?.["newcomer.usdt"] ?? "—"} USDT + ${data?.effectiveRewards?.["newcomer.nex"] ?? "—"} UVT、邀请人 ${data?.effectiveRewards?.["inviter.nex"] ?? "—"} UVT。奖励直接进用户钱包，同一新人只结算一次。`,
     amplifies: true,

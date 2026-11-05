@@ -29,7 +29,7 @@ export function CregisPoolPolicy({canManage,openActionConfirm}:{canManage:boolea
   const save=()=>{
     if(!draft || !saved || busy || !canManage || !owns())return;
     let selected:Policy;try{selected=parsePoolPolicy({...draft,version:saved.version});}catch(e){setError((e as Error).message);return;}
-    openActionConfirm({action:"保存地址池补充配置",detail:`备用目标 ${selected.target}，低于 ${selected.lowWatermark} 触发补充，每批 ${selected.batchSize}，建址并发 ${selected.concurrency}；自动补充${selected.enabled?"开启":"关闭"}。`,
+    openActionConfirm({ briefKind: "config",action:"保存地址池补充配置",detail:`备用目标 ${selected.target}，低于 ${selected.lowWatermark} 触发补充，每批 ${selected.batchSize}，建址并发 ${selected.concurrency}；自动补充${selected.enabled?"开启":"关闭"}。`,
       reasonMin:10,reasonMax:255,completionCopy:"保存后按新配置补充地址，已有用户地址保持绑定",run:async(reason)=>{
         if(!owns() || !useAdminAuth.getState().session?.authorities.includes("finance_d1_channel_manage"))throw new Error("登录身份或权限已变化，请重新打开页面");
         setBusy(true);setError("");setNotice("");

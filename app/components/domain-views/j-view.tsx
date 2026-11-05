@@ -126,7 +126,7 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
       {!contentError && tab === "J4" && <J4Sop ctx={ctx} />}
 
       {mc && (
-        <OperationConfirmModal
+        <OperationConfirmModal briefKind={mc.briefKind}
           action={mc.action}
           detail={mc.detail}
           amplifies={mc.amplifies}

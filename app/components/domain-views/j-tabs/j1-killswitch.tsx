@@ -99,7 +99,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   const killGate = (g: Gate) => {
     const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({
+    openActionConfirm({ briefKind: "emergency",
     action: `关停业务开关 · ${operatorCopyText(g.name)}`,
     detail: (
       <><b>{operatorCopyText(g.name)}</b>控制{operatorCopyText(g.cap)}。确认后这项业务马上停止，并记入操作记录。关停不会多付钱，不需要先检查备付金。</>
@@ -125,7 +125,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   const resumeGate = (g: Gate) => {
     const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({
+    openActionConfirm({ briefKind: "emergency",
     action: `恢复业务开关 · ${operatorCopyText(g.name)}`,
     amplifies: g.amplifies,
     coverage: g.coveragePrecheckRequired && coverageReady
@@ -147,7 +147,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     const targets = gates.filter((g) => sel[g.key] && effOn(g));
     if (!targets.length) { toast("请先在上方业务开关卡片勾选要批量关停的在线功能开关(至少一个)"); return; }
     const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({
+    openActionConfirm({ briefKind: "emergency",
       action: "应急批量停用 · 监管点名场景",
       detail: (
         <>一次性立即关停<b>已选 {targets.length} 项业务</b>，用于监管点名、法务事件等重大场景。确认后全部马上关停，每一项都记入操作记录。<b>已选业务开关：{targets.map((g) => operatorCopyText(g.name)).join(" / ")}</b>。</>
@@ -180,7 +180,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const adjEmer = (row: EmergencySlaRow) => {
     const cur = effSla(row);
     const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `应急参数调整 · ${row.k}`,
       detail: <><b>{row.k}</b> · {operatorCopyText(row.d)}。自动关停马上生效；补录只是补写处理结论，不会自动恢复业务。</>,
       edit: { kind: row.kind, current: cur, unit: row.unit, min: row.id === "autoConfirmMins" ? 10 : undefined, max: row.id === "autoConfirmMins" ? 120 : undefined, step: 1, disallowCurrent: true },
@@ -193,7 +193,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const adjRule = (r: AutoRuleRow) => {
     const cur = effThr(r);
     const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `自动触发规则调整 · ${r.nm}`,
       detail: <><b>{r.nm}</b>当前阈值为 {cur} {r.unit}。保存后系统会定时检查实际数据，超过阈值就自动关停对应业务，并记入操作记录。</>,
       edit: { kind: "number", current: cur, unit: r.unit, min: 1, max: 1_000_000_000, step: 1, disallowCurrent: true },
@@ -205,7 +205,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   const confirmAutoTrigger = (row: AutoConfirmationRow) => {
     const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
     action: `补录自动关停结论 · ${operatorCopyText(row.name)}`,
     detail: <><b>{operatorCopyText(row.name)}</b>由 {autoRuleDisplayName(row.ruleId)} 自动关停，触发值 {row.signalValue}，阈值 {row.threshold}。本操作只补全处置结论，不会自动恢复业务；如建议恢复，仍需超级管理员单独发起恢复并通过备付金检查。</>,
     businessForm: {

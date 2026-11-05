@@ -310,7 +310,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     }
     const preview = retentionPreview;
     const commandKey = createA2CommandKey("a2-retention-run");
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: <>归档并清理已到期操作记录</>,
       detail: (
         <>
@@ -362,7 +362,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const approveWo = (w: A2OperationRow) => {
     if (w.phoneCalibrationError) { toast(w.phoneCalibrationError); return; }
     const commandKey = createA2CommandKey(`a2-approve-${w.id}`);
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: <>确认执行 · {w.id}({a2ActionText(w.action)})</>,
       detail: (
         <>
@@ -396,7 +396,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   const rejectWo = (w: A2OperationRow) => {
     const commandKey = createA2CommandKey(`a2-reject-${w.id}`);
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: <>取消执行 · {w.id} · {a2ActionText(w.action)}</>,
       detail: (
         <>
@@ -425,7 +425,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const withdrawWo = (w: A2OperationRow) => {
     if (!canWithdraw) { toast("你没有撤回申请的权限"); return; }
     const commandKey = createA2CommandKey(`a2-withdraw-${w.id}`);
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: <>撤回我的申请 · {w.id}</>,
       detail: <>撤回后原操作不会执行。只有申请人本人能撤回。</>,
       amplifies: false,
@@ -451,7 +451,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const exportAudit = () => {
     if (!canExport || filteredLogRows.length === 0) return;
     const commandKey = createA2CommandKey("a2-audit-export");
-    openActionConfirm({
+    openActionConfirm({ briefKind: "export",
       action: "导出操作记录",
       detail: (
         <>
@@ -479,7 +479,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const adjReasonMin = () => {
     const cur = mechanismParams.find((p) => p.key === "ttl")?.value ?? "8 字";
     const commandKey = createA2CommandKey("a2-mechanism-ttl");
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "操作理由最短长度",
       detail: (
         <>
@@ -513,7 +513,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const adjRet = () => {
     const cur = mechanismParams.find((p) => p.key === "retention")?.value ?? "13 个月";
     const commandKey = createA2CommandKey("a2-mechanism-retention");
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "操作记录保留期",
       detail: (
         <>
@@ -547,7 +547,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const adjSchema = () => {
     const cur = parseA2SchemaVersion(mechanismParams.find((p) => p.key === "schema")?.value) || "v3";
     const commandKey = createA2CommandKey("a2-mechanism-schema");
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "升级记录字段版本",
       detail: (
         <>

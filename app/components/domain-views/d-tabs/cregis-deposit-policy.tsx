@@ -47,7 +47,7 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
     if (!policy || pending || busy || !canManage || !owns() || !/^[1-9]\d*$/.test(min) || !valid(min, fee, Number(confirmations)) || !/^\d+$/.test(confirmations)) return;
     const before = `最低 ${policy.minDepositUsdt} USDT；手续费 ${policy.feeUsdt} USDT；确认数 ${policy.confirmations}；版本 ${policy.version}`;
     const after = `最低 ${min} USDT；手续费 ${fee} USDT；确认数 ${confirmations}`;
-    openActionConfirm({ action: "提交 USDT BEP20 / ERC20 共同充值规则", detail: `当前：${before}。目标：${after}。提交后需另一位管理员审批，批准前不生效。`,
+    openActionConfirm({ briefKind: "config", action: "提交 USDT BEP20 / ERC20 共同充值规则", detail: `当前：${before}。目标：${after}。提交后需另一位管理员审批，批准前不生效。`,
       reasonMin: 10, reasonMax: 200, completionCopy: "提交审批后，请在操作记录与审批中查看处理结果。",
       run: async reason => {
         const auth = useAdminAuth.getState().session;

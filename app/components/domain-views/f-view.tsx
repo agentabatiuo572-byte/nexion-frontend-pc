@@ -814,7 +814,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "F4" && <F4Ops ctx={ctx} />}
       {tab === "F5" && <F5Audit ctx={ctx} />}
 
-      {mc && <OperationConfirmModal
+      {mc && <OperationConfirmModal briefKind={mc.briefKind}
         action={mc.name}
         detail={mc.detail ?? "从下一笔结算开始生效，已经算好的不变。"}
         amplifies={!!mc.amplify}

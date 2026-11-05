@@ -380,7 +380,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
       FUSED: "已暂停（只能核对历史回单）",
       DISABLED: "已停用（只能核对历史回单）",
     };
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: source ? `登记这笔付款的银行回单 · ${source.intentNo}` : "登记银行回单",
       detail: source
         ? `已自动带入附言、应收金额和收款账户，请逐项对照银行回单核对。交易参考号要照抄回单，不是付款单号。`
@@ -461,7 +461,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
     if (!canBankReconcile || !order.manualCreditAllowed || order.paymentRail !== "HDPAY"
         || order.creditedUsdt > 0 || providerVersion === null) return;
     const authEpoch = adminAuthLifecycleEpoch();
-    openActionConfirm({
+    openActionConfirm({ briefKind: "funds",
       action: `人工确认入账 · ${order.intentNo}`,
       detail: `用户 ${order.userId} · ${orderStatusText(order.status)} → 人工入账。请先核实已实际到账 ${vnd(order.payableVnd)}，确认后按下单时的金额入账 ${order.requestedUsdt} USDT。已入账的订单不会重复入账。`,
       businessForm: { kind: "multi-field", fields: [
@@ -500,7 +500,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
       return;
     }
     const unitLabel = kind === "fee" ? (channel.feeUnit === "PERCENT" ? "%" : "USDT 固定手续费") : "USD";
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: kind === "fee"
         ? `充值费率调整 · ${depositChannelText(channel.code) ?? channel.id}`
         : kind === "min"
@@ -558,7 +558,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
   ) => {
     if (!vietQr) return;
     const current = vietQr.config[key];
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `调整银行转账参数 · ${label}`,
       detail: `${label}当前为 ${current} ${unit}，可设 ${min.toLocaleString("en-US")}–${max.toLocaleString("en-US")}。只对之后的新回单和新付款单生效。`,
       edit: { kind: "number", current: String(current), unit, min, max, step: 1 },
@@ -692,7 +692,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
                 {canManageChannels && !["vietqr", "hdpay"].includes(channel.code) && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => updateChannelNumber(channel, "min")}>最小额</button>}
                 {canManageChannels && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => updateChannelNumber(channel, "fee")}>费率</button>}
                 {canManageChannels && channel.maxAmountValue !== null && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => updateChannelNumber(channel, "max")}>单笔上限</button>}
-                {canManageChannels && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => openActionConfirm({
+                {canManageChannels && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => openActionConfirm({ briefKind: "record",
                   action: `${channel.enabled ? "停用" : "启用"}充值渠道 · ${depositChannelText(channel.code) ?? channel.id}`,
                   detail: "只影响之后的新交易。",
                   run: (reason) => applyOverview(
@@ -704,7 +704,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
             ))}
             {LEGACY_CHANNELS_VISIBLE && <div className="dtint" style={{ marginTop: 12 }}>
               当前主要支付商: <b>{overview?.primaryPsp ?? "—"}</b> · 备用: {overview?.backupPsp ?? "—"}
-              {canSwitchPsp && <button className="l-btn sm mc" disabled={loading || busy} style={{ marginLeft: 10 }} onClick={() => openActionConfirm({
+              {canSwitchPsp && <button className="l-btn sm mc" disabled={loading || busy} style={{ marginLeft: 10 }} onClick={() => openActionConfirm({ briefKind: "record",
                 action: "切换主要与备用支付商",
                 detail: `切换到 ${overview?.backupPsp ?? "备用支付商"}，之后的新交易走新的主要支付商。`,
                 run: (reason) => applyOverview(
@@ -726,7 +726,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
               <div className="p-row" key={param.key}>
                 <div className="txt"><div className="k">{param.name}</div><div className="s">{param.note}</div></div>
                 <span className="v">{param.value}</span>
-                {canManageConfig && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => openActionConfirm({
+                {canManageConfig && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => openActionConfirm({ briefKind: "config",
                   action: `调整刷卡风控 · ${param.name}`,
                   detail: "修改立即生效。",
                   edit: { kind: "number", current: String(param.numericValue), unit: param.unit === "USD" ? "USD" : param.unit === "COUNT" ? "次" : "小时", min: param.minValue, max: param.maxValue, step: param.unit === "USD" ? 0.01 : 1 },
@@ -817,7 +817,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
                         <button className="l-btn sm mc" disabled={busy} onClick={() => openReceiptRegistration(row)}>登记这笔回单</button>
                       )}
                       {canWriteBankRow && row.status === "OPEN" && row.viewType === "ORPHAN" && (
-                        <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
+                        <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({ briefKind: "funds",
                           action: `手动匹配入账 · ${row.reconciliationNo}`,
                           detail: `实收 ${vnd(row.receivedVnd)} 按这张回单的锁定汇率入账给对应用户。入账用户由付款单决定，不能手动指定。`,
                           businessForm: { kind: "multi-field", fields: [
@@ -835,7 +835,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
                         })}>手动匹配入账</button>
                       )}
                       {canWriteBankRow && row.status === "OPEN" && row.viewType === "MATCHED" && (
-                        <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
+                        <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({ briefKind: "funds",
                           action: `确认匹配入账 · ${row.reconciliationNo}`,
                           detail: "系统会再核对一次用户、收款账户和汇率，然后入账。已到账的钱不会因账户日收上限被拒。",
                           businessForm: { kind: "multi-field", fields: [
@@ -848,7 +848,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
                         })}>确认入账</button>
                       )}
                       {canWriteBankRow && row.status === "OPEN" && row.viewType === "MISMATCH" && row.mismatchReason === "AMOUNT" && (
-                        <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
+                        <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({ briefKind: "funds",
                           action: `按实收核销 · ${row.reconciliationNo}`,
                           detail: `按实际收到的 ${vnd(row.receivedVnd)} 折算入账，而不是付款单上的应付金额。`,
                           businessForm: { kind: "multi-field", fields: [
@@ -867,7 +867,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
                         </span>
                       )}
                       {canWriteBankRow && row.status === "OPEN" && ["ORPHAN", "MISMATCH", "LATE"].includes(row.viewType) && (
-                        <button className="l-btn sm mc" style={{ marginLeft: 6 }} disabled={busy} onClick={() => openActionConfirm({
+                        <button className="l-btn sm mc" style={{ marginLeft: 6 }} disabled={busy} onClick={() => openActionConfirm({ briefKind: "funds",
                           action: `登记退回 · ${row.reconciliationNo}`,
                           detail: row.viewType === "LATE"
                             ? "逾期或重复的回单不能按原付款单入账，只能登记退回；已处理的回单不能再处理。"
@@ -910,7 +910,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
           <div className="l-h">
             <span className="ttl">收款账户池</span>
             <span className="sub">· 只显示账号后四位</span>
-            {canManageBankAccounts && <div className="r"><button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
+            {canManageBankAccounts && <div className="r"><button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({ briefKind: "config",
               action: "新增 VietQR 收款账户",
               detail: "完整账号会加密保存，之后只显示后四位。",
               businessForm: { kind: "multi-field", fields: [
@@ -944,7 +944,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
               <div className="p-row" key={account.id}>
                 <div className="txt"><div className="k">{account.bankName} · 尾号 {account.accountLast4}</div><div className="s">{account.holderMasked} · 今日 {vnd(account.receivedTodayVnd)} / 上限 {vnd(account.dailyCapVnd)}{fuseReason.label ? ` · ${fuseReason.label}` : ""}</div></div>
                 <span className={`bdg ${account.status === "ACTIVE" ? "ok" : account.status === "FUSED" ? "bad" : "dim"}`}>{account.status === "ACTIVE" ? "启用" : account.status === "FUSED" ? "已暂停收款" : "停用"}</span>
-                {canManageBankAccounts && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
+                {canManageBankAccounts && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({ briefKind: "config",
                   action: `调整日收上限 · ${account.bankName} 尾号 ${account.accountLast4}`,
                   detail: "只影响之后的新付款单，已收到的款不受影响。",
                   edit: { kind: "number", current: String(account.dailyCapVnd), unit: "VND", min: 1_000_000, max: 10_000_000_000, step: 1 },
@@ -952,7 +952,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
                     action: "UPDATE_CAP", dailyCapVnd: Number(value), expectedVersion: account.version, reason, operator,
                   }), "账户日收上限已更新"),
                 })}>调上限</button>}
-                {canManageBankAccounts && needsReprovision && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
+                {canManageBankAccounts && needsReprovision && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({ briefKind: "config",
                   action: `重新配置收款信息 · ${account.bankName} 尾号 ${account.accountLast4}`,
                   detail: "这个账户保存的账号无法读取，需要重新填写银行代码、名称、户名和完整账号。保存后账户会恢复启用。",
                   businessForm: { kind: "multi-field", fields: [
@@ -975,7 +975,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
                     }), "收款账户已重新配置");
                   },
                 })}>重新配置收款信息</button>}
-                {canManageBankAccounts && <button className="l-btn sm mc" disabled={busy || needsReprovision} title={needsReprovision ? "账号无法读取，请先重新配置收款信息" : undefined} onClick={() => openActionConfirm({
+                {canManageBankAccounts && <button className="l-btn sm mc" disabled={busy || needsReprovision} title={needsReprovision ? "账号无法读取，请先重新配置收款信息" : undefined} onClick={() => openActionConfirm({ briefKind: "config",
                   action: `${account.status === "ACTIVE" ? "停用" : account.status === "FUSED" ? "恢复" : "启用"}收款账户 · ${account.bankName} 尾号 ${account.accountLast4}`,
                   detail: "已暂停收款的账户需点「恢复」重新启用。",
                   run: (reason) => applyBankWrite(() => updateD1VietQrAccount(account.id, {
@@ -1009,7 +1009,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
             {LEGACY_CHANNELS_VISIBLE && vietQr && <div className="p-row">
               <div className="txt"><div className="k">账户轮换策略</div><div className="s">新付款单按这个规则分配收款账户</div></div>
               <span className="v">{vietQr.config.rotationStrategy === "ROUND_ROBIN" ? "轮询均匀派发" : "剩余额度优先"}</span>
-              {canManageBankConfig && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
+              {canManageBankConfig && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({ briefKind: "config",
                 action: "调整收款账户分配规则",
                 detail: "只影响之后的新付款单。",
                 run: (reason) => applyBankWrite(() => updateD1VietQrConfig(
@@ -1097,7 +1097,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
                 <span style={{ flex: 1 }}>支付商 {row.providerCount} 笔 / {money(row.providerAmount)} · 平台 {row.ledgerCount} 笔 / {money(row.ledgerAmount)}</span>
                 <span className={`bdg ${row.reconciled || !row.diff ? "ok" : "warn"}`}>{row.reconciled ? "已核销" : row.diff || "金额与笔数一致"}</span>
                 {canReconcile && !row.reconciled && Boolean(row.diff) && (
-                  <button className="l-btn sm mc" disabled={loading || busy} onClick={() => openActionConfirm({
+                  <button className="l-btn sm mc" disabled={loading || busy} onClick={() => openActionConfirm({ briefKind: "record",
                     action: `核销对账差异 · ${depositChannelText(row.channel)}`,
                     detail: `差异金额 ${money(row.diffAmount)}。只能标记为异常并挂账，须填写支付商账单或工单号。`,
                     businessForm: { kind: "multi-field", fields: [
@@ -1137,7 +1137,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
                   toast("请输入 6 至 8 位数字 BIN");
                   return;
                 }
-                openConfirm({
+                openConfirm({ briefKind: "record",
                   errorHandled: true,
                   action: `锁定卡段 · ${segment}`,
                   detail: "用这个卡段的银行卡将无法支付，到期自动解锁。",
@@ -1155,7 +1155,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
                 <span className="mono" style={{ fontWeight: 700 }}>{bin.segment}</span>
                 <span style={{ flex: 1 }}>{bin.meta} · 24h 失败 {bin.fails24h} 次 · {bin.note}</span>
                 <span className={`bdg ${bin.locked ? "bad" : "ok"}`}>{bin.locked ? "锁定" : "放行"}</span>
-                {((bin.locked && canUnlockBin) || (!bin.locked && canLockBin)) && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => openConfirm({
+                {((bin.locked && canUnlockBin) || (!bin.locked && canLockBin)) && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => openConfirm({ briefKind: "record",
                   errorHandled: true,
                   action: `${bin.locked ? "解锁" : "锁定"}${targetLabel} · ${targetValue}`,
                   detail: `${targetLabel}：${targetValue}。`,
@@ -1194,7 +1194,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
                   <td className="mono">{timeText(row.createdAt)}</td>
                   <td style={{ textAlign: "right" }}>
                     {canRecoverChargeback && !["CHARGEBACK_RECOVERED", "CHARGEBACK_PARTIAL"].includes(row.status) && (
-                      <button className="l-btn sm mc" disabled={loading || busy} onClick={() => openActionConfirm({
+                      <button className="l-btn sm mc" disabled={loading || busy} onClick={() => openActionConfirm({ briefKind: "funds",
                         action: `拒付追回 · ${row.caseNo}`,
                         detail: `追回 ${money(row.amount)}：从用户余额中扣回并减少累计充值。余额不够扣时会自动生成风险提醒。`,
                         businessForm: { kind: "multi-field", fields: [

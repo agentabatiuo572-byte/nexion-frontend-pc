@@ -134,7 +134,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       toast(result.acknowledgement);
       return true;
     };
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `调整提现参数 · ${label}`,
       detail: <>
         <div>{before} → {after}</div>

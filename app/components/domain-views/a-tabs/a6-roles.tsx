@@ -16,7 +16,7 @@ import { DomainHeader } from "../domain-header";
 import { buildRoleMetadataPayload } from "@/lib/admin/platform-contracts";
 import { displayAdminError } from "@/lib/admin/error-messages";
 
-type ConfirmReq = { action: React.ReactNode; detail: React.ReactNode; completionCopy?: string; run: (reason: string) => Promise<unknown> };
+type ConfirmReq = { briefKind: import("../design-kit").OperatorBriefKind; action: React.ReactNode; detail: React.ReactNode; completionCopy?: string; run: (reason: string) => Promise<unknown> };
 
 /** 域代号 → 域色 var(用于菜单树节点圆点)。 */
 const DOMAIN_ACCENT: Record<string, string> = Object.fromEntries(CONSOLE_NAV.map((d) => [d.code, `var(${d.accentVar})`]));
@@ -197,7 +197,7 @@ export default function A6Roles() {
                   const nextStatus = detail.status === 1 ? 0 : 1;
                   const actionLabel = nextStatus === 1 ? "启用" : "停用";
                   const stableKey = newA6IdempotencyKey("a6-role-status");
-                  setConfirmReq({
+                  setConfirmReq({ briefKind: "security",
                     action: `${actionLabel}角色 · ${detail.roleName}`,
                     completionCopy: "提交到「操作记录与审批」，由另一位管理员批准后生效。",
                     detail: <>{actionLabel}角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）。确认生效后，该角色下账号的权限随之{actionLabel === "停用" ? "失效" : "恢复"}。</>,
@@ -223,7 +223,7 @@ export default function A6Roles() {
                 {canWrite && <Btn sm onClick={() => {
                   if (detail.builtin) { setToast("内置角色不可删除"); return; }
                   const stableKey = newA6IdempotencyKey("a6-role-delete");
-                  setConfirmReq({
+                  setConfirmReq({ briefKind: "security",
                     action: `删除角色 · ${detail.roleName}`,
                     completionCopy: "提交到「操作记录与审批」，由另一位管理员批准后生效。",
                     detail: <>删除角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）。确认生效后，该角色下 {roles.find((x) => x.id === detail.id)?.adminCount ?? 0} 个账号会失去这个角色和对应的权限。</>,
@@ -250,7 +250,7 @@ export default function A6Roles() {
           onSubmit={(payload, action, detailNode) => {
             setFormMode(null);
             const stableKey = newA6IdempotencyKey(formMode.kind === "create" ? "a6-role-create" : "a6-role-update");
-            setConfirmReq({
+            setConfirmReq({ briefKind: "config",
               action, detail: detailNode,
               completionCopy: "填写理由并确认后立即生效，保留操作记录。",
               run: async (reason) => {
@@ -283,7 +283,7 @@ export default function A6Roles() {
           onSubmit={(payload, permBefore, menuBefore) => {
             setGrantsOpen(false);
             const stableKey = newA6IdempotencyKey("a6-role-grants");
-            setConfirmReq({
+            setConfirmReq({ briefKind: "security",
                action: `改角色授权 · ${detail.roleName}`,
                completionCopy: "由另一位管理员批准后生效，生效后该角色下的账号按新权限使用。",
                detail: <>改角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）的权限/菜单绑定。权限 {permBefore}→{payload.permissionCodes.length} · 菜单 {menuBefore}→{payload.menuIds.length}。提交到「操作记录与审批」，由另一位管理员批准后生效。</>,
@@ -302,7 +302,7 @@ export default function A6Roles() {
       )}
 
       {confirmReq && (
-        <OperationConfirmModal
+        <OperationConfirmModal briefKind={confirmReq.briefKind}
           action={confirmReq.action} detail={confirmReq.detail} completionCopy={confirmReq.completionCopy}
           onClose={() => setConfirmReq(null)}
           onConfirm={async (reason) => { await confirmReq.run(reason); setConfirmReq(null); }} />

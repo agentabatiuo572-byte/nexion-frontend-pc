@@ -47,7 +47,7 @@ export function GDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "G7" && <G7Repurchase ctx={ctx} />}
 
       {mc && (
-        <OperationConfirmModal
+        <OperationConfirmModal briefKind={mc.briefKind}
           action={mc.action}
           detail={mc.detail}
           amplifies={mc.amplifies}

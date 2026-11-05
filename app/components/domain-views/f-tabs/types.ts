@@ -1,4 +1,4 @@
-import type { EditSpec, BusinessFormSpec, BusinessFormValue, InlineOperationApproval } from "../design-kit";
+import type { OperatorBriefKind, EditSpec, BusinessFormSpec, BusinessFormValue, InlineOperationApproval } from "../design-kit";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import type { DirectReferralPolicy, DirectReferralUpdate } from "@/lib/admin/direct-referral-policy";
 import type { A2OperationRow } from "@/lib/admin/a2-client";
@@ -35,6 +35,7 @@ import type {
  * businessForm + run:复杂业务表单(如 V-Rank 奖励编辑)走 businessForm 渲染 + run 回调真写(对齐 H 域 voucher-config 范式)。
  */
 export interface McSpec {
+  briefKind: OperatorBriefKind;
   name: string;
   commandKey?: string;
   amplify?: boolean;             // 放大资金流出 → OperationConfirmModal amplifies={true} → B1 覆盖率护栏
