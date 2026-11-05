@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import "./j-domain.css";
+import { RdPage } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { fetchJEmergencyOverviews, jEmergencyActions, type JEmergencyData } from "@/lib/admin/j-client";
@@ -103,6 +104,37 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
     contentError,
   };
 
+  const confirmModal = mc && (
+    <OperationConfirmModal briefKind={mc.briefKind}
+      action={mc.action}
+      detail={mc.detail}
+      amplifies={mc.amplifies}
+      coverage={mc.coverage}
+      edit={mc.edit}
+      businessForm={mc.businessForm}
+      effect={mc.effect}
+      confirmLabel={mc.confirmLabel}
+      confirmTone={mc.confirmTone}
+      statedBrief={mc.statedBrief}
+      facts={mc.facts}
+      reasonPlaceholder={mc.reasonPlaceholder}
+      reasonPolicyOptional={mc.reasonPolicyOptional}
+      onClose={() => setActionConfirm(null)}
+      onConfirm={async (reason, newValue, businessValue) => {
+        try {
+          await mc.run(reason, newValue, businessValue);
+          setActionConfirm(null);
+        } catch (error) {
+          // 操作失败时保留确认弹窗，便于修正条件或重试。
+          throw error;
+        }
+      }}
+    />
+  );
+
+  // J1 自己写页头和读取失败：待确认条在读取失败时也要留着（OP-93）。
+  if (tab === "J1") return <RdPage className="jdom"><J1KillSwitch ctx={ctx} />{confirmModal}{toastNode}</RdPage>;
+
   return (
     <div className="dkpage jdom">
       <DomainHeader
@@ -120,31 +152,11 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
         </section>
       )}
 
-      {!contentError && tab === "J1" && <J1KillSwitch ctx={ctx} />}
       {!contentError && tab === "J2" && <J2GeoBlock ctx={ctx} />}
       {!contentError && tab === "J3" && <J3Tamper ctx={ctx} />}
       {!contentError && tab === "J4" && <J4Sop ctx={ctx} />}
 
-      {mc && (
-        <OperationConfirmModal briefKind={mc.briefKind}
-          action={mc.action}
-          detail={mc.detail}
-          amplifies={mc.amplifies}
-          coverage={mc.coverage}
-          edit={mc.edit}
-          businessForm={mc.businessForm}
-          onClose={() => setActionConfirm(null)}
-          onConfirm={async (reason, newValue, businessValue) => {
-            try {
-              await mc.run(reason, newValue, businessValue);
-              setActionConfirm(null);
-            } catch (error) {
-              // 操作失败时保留确认弹窗，便于修正条件或重试。
-              throw error;
-            }
-          }}
-        />
-      )}
+      {confirmModal}
       {toastNode}
     </div>
   );

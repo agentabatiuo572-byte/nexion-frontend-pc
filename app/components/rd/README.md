@@ -71,6 +71,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 名称和值成对 | `KeyValues` | `key-values.tsx` |
 | 一块内容的加载、空、失败、无权限 | `BlockState` | `block-state.tsx` |
 | 页内提示：待生效、结果未知、只读说明 | `Notice` | `block-state.tsx` |
+| 应急页的业务卡：当前状态、勾选、后果、动作 | `ControlGrid`、`ControlCard`；动作不收进折叠组，后果写在 `note`，紧挨按钮 | `control-card.tsx` |
 | 确认框里的前后值 | `DiffList` | `diff-list.tsx` |
 | 一列固定的等级 | `LevelList` | `level-list.tsx` |
 | 配置项：名称、这是什么、什么时候生效、显示位置、当前值、动作 | `ConfigList`（`label` 给这组起名）、`ConfigRow`；一项两行：名称后面跟显示位置，下面一行「这是什么 · 什么时候生效」；说明表放 `lib/admin/config-help/`，按参数键取 | `config-list.tsx` |
@@ -134,6 +135,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 - `reasonPlaceholder`：理由框的占位，按场景写（TX-11），默认「例如：工单号、处理依据」。
 - `facts`：做决定要核对的事实，常显在业务字段上面，比如收款网络和完整地址。人要在看得到它的地方选核验项。
 - `confirmTone`：不能撤销或直接动钱的操作传 `danger`，确认按钮用危险色、标题换警告图标（退款、拒绝、紧急关闭、强制扣款）。能解除的处置和放宽类判断不传。`KConfirmModal` 的 `ConfirmReq` 认同一个字段。
+- `reasonPolicyOptional`：理由规则读不到时按默认 8–200 继续。只给紧急关停（Q-06），放大资金流出的操作不传。
 - `coverageLead`：放大方向提示的开头，默认「这项操作会让平台多付钱」，页面可以换成这个操作的白话。覆盖率高于红线时提示是安静的，低于红线才红。
 
 改一个值的确认框（`edit`）再给三个可选项：`hint` 写怎么填，`preview(value)` 写改了会怎样、随输入变化，这两项只在 `RdPage` 里显示（CP-87）；`emptyOption` 写清空选项的名字，比如「不设上限」，要人点它才算清空，框里没填或填坏了都不算。`disallowCurrent` 时没改动不能保存，框里写原因（OP-18）。

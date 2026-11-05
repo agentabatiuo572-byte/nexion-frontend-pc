@@ -48,6 +48,7 @@ const MIGRATED = [
   "lib/admin/event-rules-client.ts",
   "lib/admin/genesis-raffle-client.ts",
   "app/components/domain-views/d-tabs/cregis-deposit-policy.tsx",
+  "app/components/domain-views/j-tabs/j1-killswitch.tsx",
   // Phone operations retain original payload/key after expiry for GET-only recovery.
   "lib/admin/phone-replacement-client.ts",
   // E6 policy proposals recover their original A2 ticket by exact key, including archived evidence.

@@ -1,4 +1,4 @@
-import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
@@ -101,7 +101,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     ? payload.code !== 0
     : payload.code !== undefined && payload.code >= 400);
   if (isWrite && (res.headers.get("X-Nexion-Upstream-Outcome") === "unknown"
-    || (requestFailed && outcomeStaysUnknown(res.status, payload.code)))) {
+    || (requestFailed && (outcomeStaysUnknown(res.status, payload.code) || isIdempotencyOutcomeOpen(payload.message))))) {
     // unknown 头只是增强信号,不再是唯一保险丝:5xx 同样归结果未知,让调用方看到「结果未确认」
     // 而不是「失败」——冠失败会诱导运营换渠道重做,而应急止血动作(kill-switch / 地域封锁)
     // 重复执行的代价极高。
