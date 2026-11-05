@@ -60,7 +60,7 @@ function numericInput(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-const NUMERIC_RULE_KEYS = new Set(["baseline", "bonus7", "p15", "p2", "broken"]);
+const NUMERIC_RULE_KEYS = new Set(["baseline", "bonus7", "broken"]);
 
 function numericText(value: unknown, fallback = "") {
   const match = String(value ?? "").match(/-?\d+(?:\.\d+)?/);
@@ -96,7 +96,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
 
   const openRule = (rule: CheckInRule) => {
     const current = text(rule.cur);
-    const currentNumber = numericText(current);
+    const isProbability = rule.key === "p15" || rule.key === "p2";
+    const currentNumber = isProbability ? current : numericText(current);
     const submit = async (reason: string, value?: string) => {
       if (!value) return;
       const nextValue = NUMERIC_RULE_KEYS.has(rule.key) ? numericText(value, currentNumber) : value;
@@ -117,9 +118,9 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         target: def.buildTarget({ ruleKey: rule.key }),
       });
     };
-    if (rule.key === "p15" || rule.key === "p2") {
+    if (isProbability) {
       const other = model!.rules.find((item) => item.key === (rule.key === "p15" ? "p2" : "p15"))!;
-      const otherProbability = Number(numericText(other.cur));
+      const otherProbability = Number(other.cur);
       openActionConfirm({
         action: `签到规则 · ${operatorCopyText(rule.name)}`,
         detail: <>每档概率必须在 0–100%，两档合计不能超过 100%。另一档当前为 {otherProbability}%。批准后生效。</>,
@@ -129,10 +130,12 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           title: "幸运概率",
           fields: [{ key: rule.key, label: `${operatorCopyText(rule.name)}（%）`, inputKind: "number", current: currentNumber, min: 0, max: 100 }],
           feedback: (values) => {
-            const probability = Number(values[rule.key]);
+            const raw = values[rule.key].trim();
+            const decimal = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(raw);
+            const probability = Number(raw);
             const total = probability + otherProbability;
-            const invalid = probability < 0 || probability > 100 || total > 100;
-            return { message: `两档概率合计 ${Number(total.toFixed(4))}%；${probability < 0 || probability > 100 ? "单项概率必须在 0–100%" : total > 100 ? "两档合计不能超过 100%" : "符合单项范围和合计要求"}。`, invalid };
+            const invalid = !decimal || probability < 0 || probability > 100 || total > 100;
+            return { message: `两档概率合计 ${Number(total.toFixed(4))}%；${!decimal ? "概率请填写普通十进制数字，不支持科学计数法" : probability < 0 || probability > 100 ? "单项概率必须在 0–100%" : total > 100 ? "两档合计不能超过 100%" : "符合单项范围和合计要求"}。`, invalid };
           },
         },
         run: (reason, _value, values) => submit(reason, values?.[rule.key]),

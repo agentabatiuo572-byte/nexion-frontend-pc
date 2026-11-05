@@ -1116,9 +1116,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         kind: "multi-field",
         title: "转盘奖项概率",
         feedback: (values) => {
+          const decimal = tiers.every((tier) => /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(values[text(tier.tier)].trim()));
           const total = tiers.reduce((sum, tier) => sum + Math.round(Number(values[text(tier.tier)]) * 10000), 0) / 10000;
-          const invalid = total !== 100;
-          return { message: `概率合计 ${Number(total.toFixed(4))}%；${invalid ? "所有奖项的概率加起来必须等于 100%" : "合计符合 100% 要求"}。`, invalid };
+          const invalid = !decimal || total !== 100;
+          return { message: `概率合计 ${Number(total.toFixed(4))}%；${!decimal ? "概率请填写普通十进制数字，不支持科学计数法" : invalid ? "所有奖项的概率加起来必须等于 100%" : "合计符合 100% 要求"}。`, invalid };
         },
         hint: "所有奖项一起提交，加起来要等于 100%。",
         requireAnyChange: true,
