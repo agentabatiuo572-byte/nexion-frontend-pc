@@ -229,6 +229,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
   const [draftRef, setDraftRef] = useState(ctx.l2Query?.ref ?? "");
   const [queryData, setQueryData] = useState<Record<string, unknown> | null>(null);
   const [queryLoading, setQueryLoading] = useState(false);
+  const [sliceLoading, setSliceLoading] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
   const [crossOverride, setCrossOverride] = useState<Record<string, unknown> | null>(null);
   const queryGeneration = useRef(0);
@@ -238,6 +239,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
   const cancelQuery = () => {
     queryGeneration.current += 1;
     setQueryLoading(false);
+    setSliceLoading(false);
   };
 
   useEffect(() => {
@@ -303,6 +305,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
     const query: L2FunnelQuery = { stage, cohort, phase: draftPhase, locale, ref };
     const generation = ++queryGeneration.current;
     setQueryLoading(true);
+    setSliceLoading(true);
     setQueryError(null);
     setQueryData({});
     setCrossOverride(null);
@@ -328,7 +331,10 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
     } catch (error) {
       if (generation === queryGeneration.current) setQueryError(error instanceof Error ? displayAdminError(error) : "查询失败");
     } finally {
-      if (generation === queryGeneration.current) setQueryLoading(false);
+      if (generation === queryGeneration.current) {
+        setQueryLoading(false);
+        setSliceLoading(false);
+      }
     }
   };
 
@@ -375,13 +381,13 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
     </div>
   );
   const emptyCohort = queryData?.available === false && queryData.reason === "NO_REGISTRATION_COHORT";
-  if (queryLoading || queryError || emptyCohort) return (
+  if (sliceLoading || queryError || emptyCohort) return (
     <div>
       <div className="view-bar">{sliceFilters}</div>
       <section className="l-card">
         <div className="l-b">
           <div className="ltint warn" role={queryError ? "alert" : "status"}>
-            <b>{queryLoading ? "查询中…" : queryError ? "查询失败" : "当前筛选条件下没有注册用户"}</b> · {queryLoading
+            <b>{sliceLoading ? "查询中…" : queryError ? "查询失败" : "当前筛选条件下没有注册用户"}</b> · {sliceLoading
               ? "请稍候，查询完成后会自动显示结果。"
               : queryError
                 ? `${queryError} · 暂时不能导出这次筛选的结果，请重试。`
