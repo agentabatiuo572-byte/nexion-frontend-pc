@@ -45,6 +45,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 勾选后的批量操作 | `BatchBar`，勾选框用 `Checkbox`，勾选列的表头传 `Th control` | `batch-bar.tsx`、`checkbox.tsx` |
 | 行操作放不下 | `MoreMenu` | `menu.tsx` |
 | 查询区 | `FilterBar`、`FilterField`、`Input` | `filter-bar.tsx` |
+| 多行输入 | `Textarea`，放进 `Field` | `filter-bar.tsx` |
 | 下拉、排序 | `Select` | `select.tsx` |
 | 单条详情、长表单 | `Drawer`，底部用 `Decision` | `overlay.tsx` |
 | 详情开头 3～5 行 | `JudgmentPoints` | `judgment.tsx` |
@@ -58,6 +59,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 一个整体分几份 | `Donut` 环图，中间写总额，图例写数；旁边有表格时传 `legend={false}`，表格第一列放色点当图例；两类都有钱才画 | `chart.tsx` |
 | 图和数据放一起 | `Figure`，图在左（`width` 是上限）、数据在右，名字和数字挨着；容器窄时上下排，尺和条这类宽图传 `stack="wide"` | `chart.tsx` |
 | 几类比大小 | `BarList` 排序条，一个颜色，数字在条右边；`value` 传 `null` 写「样本过小」 | `chart.tsx` |
+| 表格一格里的 0～1 读数 | `InlineMeter`，`tone` 由页面按现有阈值传 | `meter.tsx` |
 | 一个读数和红线、健康线比 | `ThresholdMeter` 阈值尺，刻度包住当前值，条的 `tone` 由页面按现有比较传 | `meter.tsx` |
 | 一个值落在固定几档里 | `TierBand` 档位带，`current` 由页面传，组件不算档 | `meter.tsx` |
 | 柱图、走势线 | `ColumnChart`、`TrendLine`，传槽位 `slot`；趋势只画真实历史 | `chart.tsx` |
@@ -129,6 +131,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 - `statedBrief`：这个操作自己的 `{ impact, check }`，传了摘要就不按文字猜（OP-51）。
 - `blockedReason`：这次不能再提交的原因，写在框里，确认按钮禁用。比如提交时发现单据已被别人处理：再调一次 `openActionConfirm`，传最新内容和这个字段，框不关，已填的理由留着。
 
+- `reasonPlaceholder`：理由框的占位，按场景写（TX-11），默认「例如：工单号、处理依据」。
 - `facts`：做决定要核对的事实，常显在业务字段上面，比如收款网络和完整地址。人要在看得到它的地方选核验项。
 - `confirmTone`：不能撤销的操作传 `danger`，确认按钮用危险色。
 - `coverageLead`：放大方向提示的开头，默认「这项操作会让平台多付钱」，页面可以换成这个操作的白话。覆盖率高于红线时提示是安静的，低于红线才红。

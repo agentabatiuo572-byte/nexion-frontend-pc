@@ -31,6 +31,8 @@ export type ActionConfirmReq = {
   confirmTone?: "primary" | "danger";
   /** 放大方向提示的开头，默认「这项操作会让平台多付钱」。 */
   coverageLead?: ReactNode;
+  /** 理由框的占位，按场景写（TX-11）。 */
+  reasonPlaceholder?: string;
   /** 这项操作实际是什么；传了就不再按文字猜摘要。客服中心（M）的调用必须传。 */
   briefKind?: OperatorBriefKind;
   /**

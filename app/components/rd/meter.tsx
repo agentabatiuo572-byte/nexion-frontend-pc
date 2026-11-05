@@ -12,11 +12,23 @@
  *   tiers={[{ key: "DANGER", label: "危险", tone: "danger", from: 0, to: 7 }, …, { key: "NORMAL", label: "正常", tone: "ok", from: 30, to: 365 }]} />
  *   每档等宽，档的边界写在下面，所以不是线性尺；当前档实色，其他档淡底。标记在当前档里按比例放，超过最后一档上限就贴右端。
  *
+ * 行内小尺：表格一格里的 0～1 读数，比如关联程度。条和字用同一个状态色，tone 由页面按现有阈值传。
+ * <InlineMeter value={0.82} text="0.82" tone="danger" />
+ *
  * 值读不到、全是 0 或没有到期时不要画，页面写一句话（DP-62）。
  */
 import type { ReactNode } from "react";
 import { niceCeil } from "./chart";
 import type { StateTone } from "./tone";
+
+export function InlineMeter({ value, text, tone }: { value: number; text: string; tone: StateTone }) {
+  return (
+    <span className="rd-inline-meter" data-tone={tone}>
+      <span className="rd-inline-meter-track" aria-hidden><span style={{ width: `${Math.min(100, Math.max(0, value * 100))}%` }} /></span>
+      <span className="rd-inline-meter-text">{text}</span>
+    </span>
+  );
+}
 
 export function ThresholdMeter({ label, rows, marks }: {
   label: string;
