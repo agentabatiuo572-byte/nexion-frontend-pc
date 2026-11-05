@@ -473,13 +473,13 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
           {data.voteWeights.map((row) => {
             const paramKey = row.configKey || `F.pool.votes.${row.v}`;
             return (
-              <button key={row.v} type="button" className="vote-cell" disabled={!canFund} aria-label={`调整 ${row.v} 票数，当前 ${row.votes} 票`} onClick={canFund ? () => ctx.openActionConfirm({ name: `调整 ${row.v} 票数`, amplify: true, op: "param", paramKey, edit: { kind: "number", current: String(row.votes), unit: "票" }, detail: `${row.v} 当前 ${row.votes} 票 · 票数越多，分到的团队激励池越多。` }) : undefined}>
+              <button key={row.v} type="button" className="vote-cell" disabled={!canFund} aria-label={`调整 ${row.v} 票数，当前 ${row.votes} 票`} onClick={canFund ? () => ctx.openActionConfirm({ name: `调整 ${row.v} 票数`, amplify: true, op: "param", paramKey, edit: { kind: "number", current: String(row.votes), unit: "票", min: 0, step: 1, amplifiesWhen: "increase" }, detail: `${row.v} 当前 ${row.votes} 票 · 票数越多，分到的团队激励池越多。` }) : undefined}>
                 <span className="vlb" style={{ display: "block" }}>{row.v}</span><span className="vct" style={{ display: "block" }}>{row.votes} 票</span>
               </button>
             );
           })}
         </div>
-        <div className="f4-warn"><b>票数决定分多少</b> · 调高高等级的票数，奖池会更集中到少数人（{voteSummary}）。<b>改票数前先看兑付覆盖率。</b></div>
+        <div className="f4-warn"><b>票数决定分多少</b> · 调高高等级的票数，奖池会更集中到少数人（{voteSummary}）。<b>调高票数时检查兑付覆盖率；调低或不变不作多付钱提示。</b></div>
       </section>
 
       <p className="f-foot">团队激励池 <b>{settlementEff}</b>。按已付款订单金额、每月上限、参与等级和会员等级票数计算发放，同一周不会重复发放；提前结算需要审批。补发、冲正、冻结请到「奖励记录核对」处理。硬件配额、区域大使、排行榜各自独立生效；会多发钱的调整先看兑付覆盖率。</p>

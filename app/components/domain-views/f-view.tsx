@@ -678,7 +678,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f4Error,
     refreshF4,
     updateF4Config: async (key, value, reason, expectedVersion) => {
-      await proposeFConfig("F4", key, value, reason, expectedVersion);
+      const vote = f4Overview?.voteWeights.find((row) => (row.configKey || `F.pool.votes.${row.v}`) === key);
+      await proposeFConfig("F4", key, value, reason, expectedVersion, vote ? Number(value) > vote.votes : undefined);
     },
     updateF4AmbassadorPolicy: async (policy, reason) => {
       requireTeamApprovalSession("F4");
