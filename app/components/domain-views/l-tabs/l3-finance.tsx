@@ -149,8 +149,6 @@ export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
           detailIntentRef.current = null;
           await ctx.reloadBi?.();
           ctx.toast("资金明细申请已提交，请在「数据导出与监管报告」审批后下载");
-        } catch (error) {
-          ctx.toast(error instanceof Error ? `脱敏资金明细申请失败 · ${displayAdminError(error)}` : "脱敏资金明细申请失败 · 请稍后重试");
         } finally {
           detailExportingRef.current = false;
           setDetailExporting(false);
@@ -195,8 +193,51 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
   const [customFrom, setCustomFrom] = useState(ctx.l3Query?.from ?? defaultCustomRange.from);
   const [customTo, setCustomTo] = useState(ctx.l3Query?.to ?? defaultCustomRange.to);
 
+  const selectPeriod = (period: "day" | "week" | "month" | "quarter" | "custom") => {
+    if (!ctx.setL3Query) return;
+    ctx.setL3Query(period === "custom"
+      ? { ...ctx.l3Query, period, from: customFrom, to: customTo }
+      : { period, cohort: ctx.l3Query?.cohort });
+  };
+  const periodBar = (
+      <div className="view-bar">
+        <span className="lb">报表周期</span>
+        <div className="chips">
+          {([[
+            "day", "日",
+          ], ["week", "周"], ["month", "月"], ["quarter", "季"], ["custom", "自定义"]] as const).map(([value, label]) => (
+            <button
+              key={value}
+              className={`chip${(ctx.l3Query?.period ?? "month") === value ? " sel" : ""}`}
+              disabled={ctx.biLoading}
+              onClick={() => selectPeriod(value)}
+            >{label}</button>
+          ))}
+        </div>
+        {(ctx.l3Query?.period ?? "month") === "custom" && (
+          <>
+            <input aria-label="自定义开始日期" type="date" value={customFrom} max={customTo} onChange={(event) => setCustomFrom(event.target.value)} />
+            <span>至</span>
+            <input aria-label="自定义结束日期" type="date" value={customTo} min={customFrom} onChange={(event) => setCustomTo(event.target.value)} />
+            <button className="chip" disabled={!customFrom || !customTo || customFrom > customTo || ctx.biLoading} onClick={() => selectPeriod("custom")}>应用日期</button>
+          </>
+        )}
+        <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+          <span className="lb">用户批次</span>
+          <input
+            aria-label="用户批次"
+            type="month"
+            value={ctx.l3Query?.cohort ?? ""}
+            onChange={(event) => ctx.setL3Query?.({ ...(ctx.l3Query ?? { period: "month" }), cohort: event.target.value || undefined })}
+          />
+        </label>
+        <span className="lcode electric">{String(ctx.biData?.l3?.periodLabel ?? "当前周期")}</span>
+        <span className="lcode lock" style={{ marginLeft: "auto" }} title="财务数字由系统统一计算，这里只显示">🔒 数字由系统统一计算</span>
+      </div>
+  );
+
   const data = ctx.biData?.l3;
-  if (!data) return <LDataState ctx={ctx} label="L3" />;
+  if (!data) return <>{periodBar}<LDataState ctx={ctx} label="L3" /></>;
   const liveFacts = readL3LiveFacts(data);
   const financeSnapshot = readL3FinanceSnapshot(data);
   const ledgerRaw = rec(data.ledger);
@@ -277,17 +318,11 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
     && Object.prototype.hasOwnProperty.call(data, "reserveCoverDays")
     && Number.isFinite(Number(data.reserveCoverDays));
   if (!fullContractReady) {
-    return liveFacts.length > 0 || financeSnapshot ? <L3LiveFacts facts={liveFacts} snapshot={financeSnapshot} /> : <LDataState ctx={ctx} label="L3" />;
+    return <>{periodBar}{liveFacts.length > 0 || financeSnapshot ? <L3LiveFacts facts={liveFacts} snapshot={financeSnapshot} /> : <LDataState ctx={ctx} label="L3" />}</>;
   }
   const revenueDivisor = revTotal > 0 ? revTotal : 1;
   const maxLiability = Math.max(...LIABILITIES.map((row) => row.amount));
   const liabilityDivisor = maxLiability > 0 ? maxLiability : 1;
-  const selectPeriod = (period: "day" | "week" | "month" | "quarter" | "custom") => {
-    if (!ctx.setL3Query) return;
-    ctx.setL3Query(period === "custom"
-      ? { ...ctx.l3Query, period, from: customFrom, to: customTo }
-      : { period, cohort: ctx.l3Query?.cohort });
-  };
 
   /* ---- 净敞口 / 覆盖率走势(12 周 + 红黄线 LEDGER 持有 + breach 事件标注) ---- */
   const expChart = () => {
@@ -373,41 +408,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
         <div className="f-stat cyan"><div className="k">储备可覆盖到期</div><div className="v">{reserveCoverDaysValue}</div><div className="sub">{reserveCoverDaysCopy} · 来自可用资金与应付款</div></div>
       </div>
 
-      {/* period context */}
-      <div className="view-bar">
-        <span className="lb">报表周期</span>
-        <div className="chips">
-          {([[
-            "day", "日",
-          ], ["week", "周"], ["month", "月"], ["quarter", "季"], ["custom", "自定义"]] as const).map(([value, label]) => (
-            <button
-              key={value}
-              className={`chip${(ctx.l3Query?.period ?? "month") === value ? " sel" : ""}`}
-              disabled={ctx.biLoading}
-              onClick={() => selectPeriod(value)}
-            >{label}</button>
-          ))}
-        </div>
-        {(ctx.l3Query?.period ?? "month") === "custom" && (
-          <>
-            <input aria-label="自定义开始日期" type="date" value={customFrom} max={customTo} onChange={(event) => setCustomFrom(event.target.value)} />
-            <span>至</span>
-            <input aria-label="自定义结束日期" type="date" value={customTo} min={customFrom} onChange={(event) => setCustomTo(event.target.value)} />
-            <button className="chip" disabled={!customFrom || !customTo || customFrom > customTo || ctx.biLoading} onClick={() => selectPeriod("custom")}>应用日期</button>
-          </>
-        )}
-        <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-          <span className="lb">用户批次</span>
-          <input
-            aria-label="用户批次"
-            type="month"
-            value={ctx.l3Query?.cohort ?? ""}
-            onChange={(event) => ctx.setL3Query?.({ ...(ctx.l3Query ?? { period: "month" }), cohort: event.target.value || undefined })}
-          />
-        </label>
-        <span className="lcode electric">{String(data.periodLabel ?? "当前周期")}</span>
-        <span className="lcode lock" style={{ marginLeft: "auto" }} title="财务数字由系统统一计算，这里只显示">🔒 数字由系统统一计算</span>
-      </div>
+      {periodBar}
 
       <div className="two-col">
         {/* (a) 收入结构 */}

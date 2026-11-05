@@ -147,12 +147,9 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
           businessForm={mc.businessForm}
           completionCopy={mc.completionCopy}
           onClose={() => setActionConfirm(null)}
-          onConfirm={(reason, newValue, businessValue) => {
-            const req = mc;
+          onConfirm={async (reason, newValue, businessValue) => {
+            await mc.run(reason, newValue, businessValue);
             setActionConfirm(null);
-            void Promise.resolve(req.run(reason, newValue, businessValue)).catch((error) => {
-              setToast(error instanceof Error ? displayAdminError(error) : "操作失败");
-            });
           }}
         />
       )}

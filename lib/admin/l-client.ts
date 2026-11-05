@@ -155,8 +155,8 @@ function idempotencyKey() {
 
 function networkFailure(isReportCreation: boolean) {
   return new Error(isReportCreation
-    ? "网络连接已中断，未收到任务创建成功确认；请恢复网络后重试，同一请求会自动防重。"
-    : "网络连接已中断，请恢复网络后重试；本次操作没有成功确认。");
+    ? "提交结果尚未确认，可能已生成任务。请先到操作记录核对原操作，再决定是否重试。"
+    : "网络连接已中断，本次操作结果尚未确认。请先核对原操作，再决定是否重试。");
 }
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -181,7 +181,8 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   }
   // The BFF converts an upstream lost response into 503. Retrying this one
   // operation with the unchanged durable key replays the committed result.
-  if (isReportCreation && res.status === 503) res = await execute();
+  if (isReportCreation && res.status === 503) res = await execute().catch(() => { throw networkFailure(true); });
+  if (isReportCreation && res.status >= 500) throw networkFailure(true);
   const text = await res.text();
   const payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
@@ -685,7 +686,8 @@ async function regulatoryRequest<T>(path: string, init?: RequestInit): Promise<T
     if (path !== "/report" || init?.method !== "POST") throw networkFailure(false);
     response = await execute().catch(() => { throw networkFailure(true); });
   }
-  if (path === "/report" && init?.method === "POST" && response.status === 503) response = await execute();
+  if (path === "/report" && init?.method === "POST" && response.status === 503) response = await execute().catch(() => { throw networkFailure(true); });
+  if (path === "/report" && init?.method === "POST" && response.status >= 500) throw networkFailure(true);
   const text = await response.text();
   const payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
   if (!response.ok || (payload.code !== undefined && payload.code >= 400)) {
