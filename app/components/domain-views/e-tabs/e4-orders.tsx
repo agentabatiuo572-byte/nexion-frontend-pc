@@ -27,14 +27,13 @@ const STATE_TEXT: Record<string, string> = {
   inventory: "设备已入库，订单已交付。",
   payment_failed: "下单后未成功扣款",
   expired: "订单超时未支付",
-  provisioning_failed: "分配数据中心超时",
+  provisioning_failed: "开通没有完成，订单已终止",
   refunded: "人工退款，钱已退回，相关记录已冲回",
   chargeback: "支付渠道拒付 / 争议",
   cancelled: "仅未支付订单可取消。用户未付款，订单已终止",
 };
 // 列表第二行：只写状态本身确定的下一步，事实够不够要进详情才知道。
 const STATE_NEXT: Record<string, string> = { placed: "等用户付款", paid: "待开通设备", provisioning: "待激活设备" };
-const BRANCH_STATES = ["payment_failed", "expired", "provisioning_failed", "refunded", "chargeback", "cancelled"];
 
 const ORDER_COLUMNS: readonly TableColumn[] = [
   { key: "order", label: "订单号", locked: "第一列不能关" },
@@ -142,7 +141,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
         onPage={(page) => ctx.updateE4Query({ page })} onPageSize={(pageSize) => ctx.updateE4Query({ pageSize })} />}
     </Panel>
 
-    <Fold title="订单状态怎么流转" summary={`主流程 4 步，另有 ${BRANCH_STATES.length} 种异常或结束`} icon={Route}>
+    <Fold title="订单状态怎么流转" summary={`主流程 4 步，另有 ${ORDER_FINAL_STATES.length} 种异常或结束`} icon={Route}>
       <Steps label="订单处理流程" items={[
         { label: "已下单", state: "todo", sub: countText("placed") },
         { label: "已支付", state: "todo", sub: countText("paid") },
@@ -150,9 +149,9 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
         { label: "已交付", state: "todo", sub: `${counts?.activated ?? "—"} 单已激活 · ${counts?.inventory ?? "—"} 单已入库` },
       ]} />
       <Table label="异常或结束的订单">
-        <thead><tr><Th>异常或结束的订单 · {BRANCH_STATES.length} 种</Th><Th align="right">单数</Th><Th>说明</Th></tr></thead>
+        <thead><tr><Th>异常或结束的订单 · {ORDER_FINAL_STATES.length} 种</Th><Th align="right">单数</Th><Th>说明</Th></tr></thead>
         <tbody>
-          {BRANCH_STATES.map((state) => (
+          {ORDER_FINAL_STATES.map((state) => (
             <Tr key={state}>
               <Td><StatusTag tone={ORDER_STATE_TONE[state]}>{stateLabel(state)}</StatusTag></Td>
               <Td align="right"><Cell num main={counts?.[state] ?? "—"} /></Td>
@@ -175,7 +174,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   if (!o) return <Drawer open={false} onClose={ctx.closeOrder} title="订单详情">{null}</Drawer>;
 
   const eff = ctx.orderState(o);
-  const finalized = ctx.isCancelled(o.id) || ctx.isRefunded(o.id) || !!ctx.terminalOf(o.id);
+  const finalized = ORDER_FINAL_STATES.includes(eff);
   const canCancel = canWriteE4 && eff === "placed";
   const terminalOptions = eff === "placed" ? ["payment_failed", "expired"]
     : eff === "paid" ? ["chargeback"]
@@ -209,9 +208,12 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
         : null;
   const refundableState = ["paid", "provisioning", "activated", "inventory"].includes(eff);
   const refundReady = canRefundE4 && refundableState && e4Detail?.refundAllowed === true;
-  const coverageText = e4Detail?.coverageCurrent == null
-    ? "暂无数据"
-    : `当前 ${e4Detail.coverageCurrent.toFixed(2)}% → 执行后 ${(e4Detail.coverageProjected ?? e4Detail.coverageCurrent).toFixed(2)}% · 红线 ${(e4Detail.coverageRedline ?? 0).toFixed(2)}%`;
+  // 三个数缺一个就算不出能不能退，和资金不足是两回事，阻断相同（后端 refundCoverageBlocked）。
+  const coverageKnown = e4Detail?.coverageCurrent != null && e4Detail.coverageProjected != null && e4Detail.coverageRedline != null;
+  const coverageText = coverageKnown
+    ? `当前 ${e4Detail.coverageCurrent!.toFixed(2)}% → 执行后 ${e4Detail.coverageProjected!.toFixed(2)}% · 红线 ${e4Detail.coverageRedline!.toFixed(2)}%`
+    : "暂无数据";
+  const refundBlockText = coverageKnown ? "平台资金低于安全线，暂不能退款" : "资金覆盖率暂时读不到，暂不能退款";
 
   const index = orders.findIndex((order) => order.id === o.id);
   const prev = index > 0 ? orders[index - 1] : undefined;
@@ -221,8 +223,10 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const waitReason = e4DetailError ? "订单详情读取失败，重试成功后才能操作" : e4DetailLoading || !e4Detail ? "正在读取订单事实" : undefined;
   const approvalTag = <StatusTag tone="progress" filled>批准后生效</StatusTag>;
 
+  // 具体原因只从状态轨迹取，状态本身证明不了原因。
+  const closeRecord = e4Detail?.history.findLast((item) => item.toState === eff);
   const nextRow: JudgmentRow = finalized
-    ? { label: "结果", value: stateLabel(eff), reason: STATE_TEXT[eff], state: ORDER_STATE_TONE[eff] === "danger" ? "danger" : undefined }
+    ? { label: "结果", value: stateLabel(eff), reason: <>{STATE_TEXT[eff]}{closeRecord && e4Detail && <> · 记录的原因：{operatorOrderHistoryReason(closeRecord.reason, e4Detail.paymentMethod)}</>}</>, state: ORDER_STATE_TONE[eff] === "danger" ? "danger" : undefined }
     : !e4Detail ? { label: "下一步", ...pendingFact }
       : nextStep ? { label: "下一步", value: `可以推进到「${stateLabel(nextStep)}」`, reason: canWriteE4 ? "条件都满足了，点下面「推进到下一步」提交审批。" : "条件都满足了，要有修改权限的账号提交。", state: "progress" }
         : progressBlock ? { label: "下一步", value: progressBlock.title, reason: <span title={progressBlock.code}>{progressBlock.text}</span>, state: eff === "placed" ? undefined : "warn" }
@@ -231,7 +235,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
     : !refundableState ? { label: "退款", value: "不能退款", reason: "用户还没付款。只有已支付、开通中、已激活或已入库的订单能退款。" }
       : !e4Detail ? { label: "退款", ...pendingFact }
         : e4Detail.refundAllowed ? { label: "退款", value: canRefundE4 ? "可以退款" : "符合退款条件，这个账号不能退款", reason: <>覆盖率 {coverageText}</> }
-          : { label: "退款", value: "平台资金低于安全线，暂不能退款", reason: <>覆盖率 {coverageText}</>, state: "danger" };
+          : { label: "退款", value: refundBlockText, reason: coverageKnown ? <>覆盖率 {coverageText}</> : "要先读到资金覆盖率才能退款。过一会儿重新打开这单。", state: coverageKnown ? "danger" : "warn" };
   const rows: JudgmentRow[] = [
     nextRow,
     { label: "对象", icon: User, tone: "users", value: o.user, reason: o.sku },
@@ -268,9 +272,9 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
               { key: "refundChannel", label: "退款渠道", current: channels[0], inputKind: "select", options: channels, optionLabels: { WALLET: "退回 USDT 钱包", ORIGINAL_PAYMENT: "原支付渠道" }, required: true, showDiff: true },
               { key: "refundReasonCode", label: "退款原因（用户可见）", current: "", inputKind: "select", options: ["", ...E4_REFUND_REASONS], optionLabels: { "": "请选择退款原因", ...E4_REFUND_REASON_LABELS }, required: true, help: "这个原因会显示在用户的订单详情里；下方备注只记在操作记录里，用户看不到。" },
             ] },
-            detail: `退款 ${o.id} · $${o.amt.toLocaleString()} · ${coverageText}。钱会退回用户，充值记录、账单和累计充值一起冲回，不可撤销。`,
+            detail: `退款 ${o.id} · ${orderMoney(o.amt)} · ${coverageText}。钱会退回用户，充值记录、账单和累计充值一起冲回，不可撤销。`,
           });
-        }}><AutoGloss>{e4DetailLoading ? "正在检查退款条件…" : e4Detail?.refundAllowed === false ? "平台资金低于安全线，暂不能退款" : "退款"}</AutoGloss></Button>}
+        }}><AutoGloss>{e4DetailLoading ? "正在检查退款条件…" : e4Detail?.refundAllowed === false ? refundBlockText : "退款"}</AutoGloss></Button>}
         others={<>
           {canCancel && <Button disabledReason={waitReason} onClick={() => openActionConfirm({ name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, effect: approvalTag, confirmLabel: "提交审批", detail: `取消 ${o.id}（${stateLabel(eff)}）。用户还没付款，取消后订单终止。`,
             businessForm: { kind: "multi-field", title: "取消原因", fields: [
@@ -318,7 +322,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
         <span>相关页面</span>
         {reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href={`/platform/audit?domain=E&object=${encodeURIComponent(o.id)}`}>操作记录</Link>}
         {reach("/platform/events") && <Link className="rd-link" href="/platform/events">用户行为事件</Link>}
-        {e4Detail && !e4Detail.funding.some((item) => e4FundingLedgerHref(item)) && reach("/finance/ledger", "finance_d4_read") && <Link className="rd-link" href={`/finance/ledger?bizNo=${encodeURIComponent(o.id)}`}>按订单号查账单</Link>}
+        {!e4Detail?.funding.some((item) => e4FundingLedgerHref(item)) && reach("/finance/ledger", "finance_d4_read") && <Link className="rd-link" href={`/finance/ledger?bizNo=${encodeURIComponent(o.id)}`}>按订单号查账单</Link>}
       </nav>
     </Drawer>
   );

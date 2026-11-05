@@ -53,7 +53,7 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { summarizeSkuCreation, summarizeSkuProposal } from "@/lib/admin/e1-a2-proposal-summary";
 import { refreshAdminMediaPreviewUrl, uploadAdminMedia } from "@/lib/admin/media-client";
 import {
-  E4_DEFAULT_QUERY, FOLD, ORDER_STATES, TERMINAL_STATES, e4GroupStates, e4QueryFromUrl, writeE4QueryToUrl, type E4Query,
+  E4_DEFAULT_QUERY, FOLD, ORDER_STATES, e4GroupStates, e4QueryFromUrl, writeE4QueryToUrl, type E4Query,
   EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, validateSkuSpecs, skuNum, stateLabel,
 } from "./e-tabs/data";
 import type { DatacenterForm, Mc, EOp, EViewCtx, EOrder } from "./e-tabs/types";
@@ -1138,7 +1138,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
   // ── 批6 A2 propose 辅助(壳集中回调,被 onConfirm 复用)──
   // 取订单当前 live 态(基于 orderById),用于 propose 的 before 描述。
-  const effOrderState = (orderId: string): string => orderState({ id: orderId } as EOrder);
+  const effOrderState = (orderId: string): string => orderState({ id: orderId, state: selOrder?.state } as EOrder);
   const canonicalE3Value = (paramKey: string, value: string) => {
     if (paramKey.includes("capacity.applyTo.")) {
       if (value === "参与递减") return "true";
