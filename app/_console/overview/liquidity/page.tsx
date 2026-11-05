@@ -143,6 +143,11 @@ export default function LiquidityPage() {
       setReasonError("90 天不再提供，改成 7 天或 30 天才能保存。");
       return;
     }
+    // 这条记录和资金储备页共用。结果未知时在那边核对，这里换内容会把原命令冲掉。
+    if (forecastConfigCommandKey.list().some((record) => record.fingerprint === FORECAST_CONFIG_SLOT)) {
+      setReasonError("上次保存结果未知，先到「资金储备与应付款」页面上方核对。");
+      return;
+    }
     const length = reason.trim().length;
     if (length < 8 || length > 200) {
       setReasonError("操作原因需为 8–200 个字");
@@ -174,8 +179,13 @@ export default function LiquidityPage() {
         await load(window);
       })
       .catch((caught) => {
-        if (!(caught instanceof B2OutcomeUnknownError)) forecastConfigCommandKey.forget(FORECAST_CONFIG_SLOT);
-        setDialogStep(caught instanceof B2OutcomeUnknownError ? "confirm" : "edit");
+        if (caught instanceof B2OutcomeUnknownError) {
+          setDialogStep("closed");
+          setNotice("保存结果未知，可能已经保存。到「资金储备与应付款」页面上方核对或按原操作重试。");
+          return;
+        }
+        forecastConfigCommandKey.forget(FORECAST_CONFIG_SLOT);
+        setDialogStep("edit");
         setSaveError(caught instanceof Error ? displayAdminError(caught) : "保存失败，请重试");
       })
       .finally(() => setSaving(false));

@@ -467,12 +467,14 @@ function enabledCount(record: Record<string, boolean>) {
   return `${Object.values(record).filter(Boolean).length}/${Object.keys(record).length}`;
 }
 
-export function SettingsTab({ main, draft, mainState, canConfig, dirty, busyReason, onChange, onDiscard, onSave }: {
+export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNote, busyReason, onChange, onDiscard, onSave }: {
   main: D3Main | null;
   draft: ForecastValues | null;
   mainState: ReactNode;
   canConfig: boolean;
   dirty: boolean;
+  /** 结果未知核对完之前只读，设置和理由都不能再改（OP-93）。 */
+  lockedNote?: string;
   busyReason?: string;
   onChange: (next: ForecastValues) => void;
   onDiscard: () => void;
@@ -494,8 +496,9 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, busyReas
         </Notice>
       )}
       {!canConfig && <Notice tone="done">你只能查看；调整预测设置需财务负责人。</Notice>}
+      {canConfig && lockedNote && <Notice tone="warn">{lockedNote}</Notice>}
       <p className="rd-note">当前版本 v{config.version}（已生效 v{config.effectiveVersion}）；储备 {enabledCount(draft.reserveCategories)} 开启；负债科目 {enabledCount(draft.liabilityCategories)} 开启。{effectiveText()}，不影响历史。</p>
-      {canConfig ? (
+      {canConfig && !lockedNote ? (
         <>
           <Panel title="预测窗口和算法" icon={CalendarClock} tone="role-3">
             <div className="rd-form-grid">
