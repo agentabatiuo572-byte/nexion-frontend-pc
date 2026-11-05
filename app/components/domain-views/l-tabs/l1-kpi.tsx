@@ -60,7 +60,7 @@ export function L1HeaderActions({ ctx, source }: { ctx: LCtx; source?: L1ExportS
   const exportMode = resolveL1ExportMode(exportData, sourceUnavailable);
   const exportable = exportMode !== null;
   const exportUnavailableReason = resolveL1ExportUnavailableReason(
-    exportData, ctx.biLoading || source?.status === "loading" ? "loading" : ctx.biError || source?.status === "error" ? "error" : "ready",
+    exportData, ctx.biLoading ? "loading" : ctx.biError ? "error" : source?.status ?? "ready",
   );
   const complete = exportMode === "series";
   const exportKpi = async () => {
@@ -264,6 +264,11 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
     ...baseExt,
     num: k.numerator == null ? baseExt.num : String(k.numerator),
     den: k.denominator == null ? baseExt.den : String(k.denominator),
+    note: k.unavailableReason === "NO_GENESIS_PURCHASES"
+      ? "当前筛选范围没有创世节点购买记录，尚未售罄，售罄天数不可计算。"
+      : k.unavailableReason === "GENESIS_NOT_SOLD_OUT"
+        ? "创世节点尚未累计售出 1,000，售罄天数不可计算。"
+        : baseExt.note,
   };
   const phase = rec(data?.currentPhase);
   const phaseKnown = typeof phase.code === "string" && phase.code.length > 0;
