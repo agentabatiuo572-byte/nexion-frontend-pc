@@ -56,7 +56,7 @@ import {
   formatC1RuntimeStatus,
   formatC1SessionStatus,
 } from "@/lib/admin/c1-detail-display";
-import { NotificationTimeEvidenceDrawer } from "./notification-time-evidence";
+import { NotificationTimeEvidenceDrawer, pendingCorrections, type PendingCorrection } from "./notification-time-evidence";
 import { PaymentSecurityBlock, type PaymentSecurityState } from "./payment-security-block";
 
 /**
@@ -77,10 +77,14 @@ type C1Command = PendingMutationRecord & {
   version?: number;
   deviceId?: number;
   deviceStatus?: string;
+  /** 重试被后端明确拒绝过，只有这时才给「解除待确认」（OP-93 第 8 条）。存在记录里，刷新和过期后还在。 */
+  retryRejected?: boolean;
 };
 type C1CommandInput = PendingMutationExtra<C1Command>;
 const c1UserCommands = createPendingMutationStore<C1Command>({
   storageKey: "nexion-admin-c1-user-detail-commands-v1",
+  // 过期不能重试，记录也不删（OP-96）：到期不等于原操作没生效，对象继续锁着。
+  retainExpiredRecords: true,
   isValidRecord: (record) => typeof record.kind === "string" && typeof record.userId === "string" && typeof record.reason === "string" && record.reason.length > 0,
 });
 const nicknameSlot = (userId: string | number) => `nickname-reset|${userId}`;
@@ -139,6 +143,10 @@ const ORDER_STATE: Record<string, readonly [string, "ok" | "warn" | "danger" | "
   expired: ["已过期", "done"], provisioning_failed: ["开通失败", "danger"], cancelled: ["已取消", "done"], refunded: ["已退款", "done"], chargeback: ["已拒付", "danger"],
 };
 const DIRECTION: Record<string, string> = { IN: "收入", OUT: "支出" };
+const EXPIRED_TEXT = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
+const withdrawalTone = (row: JsonRecord) => WITHDRAWAL_STATUS[asText(row.status, "").toUpperCase()]?.[1];
+const orderTone = (row: JsonRecord) => ORDER_STATE[asText(row.state, "").toLowerCase()]?.[1];
+const deviceAbnormal = (row: JsonRecord) => asText(row.status, "").toUpperCase() === "FAULT" || asText(row.runtimeStatus, "").toUpperCase() === "ERROR";
 
 function asText(value: unknown, fallback = "—") {
   if (typeof value === "string" && value.trim()) return value.trim();
@@ -271,10 +279,10 @@ const statusCell = (table: Record<string, readonly [string, "ok" | "warn" | "dan
   return hit ? <StatusTag tone={hit[1]}>{hit[0]}</StatusTag> : unknown;
 };
 const withdrawalStatus = (row: JsonRecord) => statusCell(WITHDRAWAL_STATUS, asText(row.status, "").toUpperCase(), "状态待核实");
-const orderStatus = (row: JsonRecord) => statusCell(ORDER_STATE, asText(row.state, ""), "订单状态待核实");
+const orderStatus = (row: JsonRecord) => statusCell(ORDER_STATE, asText(row.state, "").toLowerCase(), "订单状态待核实");
 const deviceTag = (row: JsonRecord) => {
   const status = asText(row.status, "").toUpperCase();
-  const tone = status === "FAULT" ? "danger" : FINAL_DEVICE_STATUS.includes(status) ? "done" : ["ONLINE", "RUNNING", "ACTIVE"].includes(status) ? "ok" : "neutral";
+  const tone = deviceAbnormal(row) ? "danger" : FINAL_DEVICE_STATUS.includes(status) ? "done" : ["ONLINE", "RUNNING", "ACTIVE"].includes(status) ? "ok" : "neutral";
   return <StatusTag tone={tone}>{formatC1DeviceStatus(status)}</StatusTag>;
 };
 const pushText = (row: JsonRecord) => asText(row.pushStatus, "").toUpperCase() === "FAILED"
@@ -458,6 +466,7 @@ export default function UserDetailPage() {
   const canCorrectNotificationTime = canReadNotificationEvidence && canWriteC1
     && (session?.role === "superadmin" || !!session?.authorities.includes("platform_a4_write"));
   const canWriteC2 = !supportScope && (session?.role === "superadmin" || !!session?.authorities.includes("user_c2_write"));
+  const canReleasePayment = session?.role === "superadmin" || !!session?.authorities.includes("user_c5_payment_password_release");
   const reach = useReach();
   const canReadC2 = reach("/users/actions", "user_c2_read");
   const canReadC3 = reach("/users/assets", "user_c3_read");
@@ -476,6 +485,7 @@ export default function UserDetailPage() {
     ? requestedReturnTo
     : "/users/search";
   const returnLabel = supportScope ? conversationNo ? "返回原会话" : "返回工作台" : "返回用户列表";
+  const pageName = supportScope ? "完整客户档案" : "用户详情";
   // 去处理的页面从这里来，要回到这一页（SPM-03）：带上本页地址，本页的返回地址跟着。
   const selfHref = `${pathname ?? ""}?returnTo=${encodeURIComponent(returnTo)}`;
   const readKey = `${adminShellSessionKey(session, authEpoch)}|${supportScope}|${userKey}`;
@@ -498,12 +508,15 @@ export default function UserDetailPage() {
   const [earningsPage, setEarningsPage] = useState(1);
   const [earningsPageSize, setEarningsPageSize] = useState(20);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  // 撤销告警按全部支付方式算（含已解绑、含别的页），不跟着列表的筛选和翻页走。
+  const [revokeScan, setRevokeScan] = useState<UserPaymentMethod[] | null>(null);
+  const [revokeScanFailed, setRevokeScanFailed] = useState(false);
   const [paymentSecurity, setPaymentSecurity] = useState<{ state: PaymentSecurityState; pending: boolean }>({ state: "loading", pending: false });
   const [openFolds, setOpenFolds] = useState<Record<string, boolean>>({});
   const [record, setRecord] = useState<{ kind: RecordKind; index: number } | null>(null);
   const [pendingCommands, setPendingCommands] = useState<C1Command[]>([]);
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
-  const [retryRejected, setRetryRejected] = useState<string[]>([]);
+  const [corrections, setCorrections] = useState<PendingCorrection[]>([]);
   const [releasing, setReleasing] = useState<C1Command | null>(null);
   const [actionConfirm, setActionConfirm] = useState<null | {
     briefKind: OperatorBriefKind;
@@ -532,7 +545,7 @@ export default function UserDetailPage() {
     setDenied(false);
     setActionConfirm(null); setNotificationEvidence(null); setRecord(null);
     // 换用户、换账号时先清旧资料（C1-H02）。同一个用户刷新时旧资料留在屏幕上，写入口禁用，读失败再清。
-    if (loadedKey.current !== readKey) { setDetail(null); setPaymentMethods(null); setOpenFolds({}); }
+    if (loadedKey.current !== readKey) { setDetail(null); setPaymentMethods(null); setRevokeScan(null); setRevokeScanFailed(false); setOpenFolds({}); }
     setDetailKey(readKey);
     if (!userKey) {
       setDetail(null);
@@ -606,20 +619,26 @@ export default function UserDetailPage() {
   const syncPending = useCallback(() => {
     const live = c3UserId ? c1UserCommands.list().filter((command) => command.userId === c3UserId && command.adminKey === adminKey) : [];
     setPendingCommands(live);
-  }, [c3UserId, adminKey]);
+    setCorrections(adminKey ? pendingCorrections(adminKey, [userKey, c3UserId, profile?.userNo ?? ""]) : []);
+  }, [c3UserId, adminKey, userKey, profile?.userNo]);
   useEffect(() => { syncPending(); }, [syncPending]);
 
   const loadPaymentMethods = useCallback(async () => {
     if (supportScope || !userId) return;
     setPaymentLoading(true);
-    try {
-      setPaymentMethods(await fetchUserPaymentMethods(userId, includeUnbound, paymentPage, 10));
-      setPaymentError(null);
-    } catch (err) {
-      setPaymentError(displayAdminError(err));
-    } finally {
-      setPaymentLoading(false);
-    }
+    const scan = async () => {
+      const all: UserPaymentMethod[] = [];
+      for (let page = 1; ; page += 1) {
+        const next = await fetchUserPaymentMethods(userId, true, page, 50);
+        all.push(...next.items);
+        if (next.items.length === 0 || all.length >= next.total) return all;
+      }
+    };
+    const [listed, scanned] = await Promise.allSettled([fetchUserPaymentMethods(userId, includeUnbound, paymentPage, 10), scan()]);
+    if (listed.status === "fulfilled") { setPaymentMethods(listed.value); setPaymentError(null); } else setPaymentError(displayAdminError(listed.reason));
+    setRevokeScan(scanned.status === "fulfilled" ? scanned.value : null);
+    setRevokeScanFailed(scanned.status === "rejected");
+    setPaymentLoading(false);
   }, [includeUnbound, paymentPage, userId, supportScope]);
 
   useEffect(() => { void loadPaymentMethods(); }, [loadPaymentMethods, reloadTick]);
@@ -642,7 +661,7 @@ export default function UserDetailPage() {
   useEffect(() => { setEarningsPage(1); }, [userKey]);
   const auditEntries = useMemo(() => toAuditEntries(detail?.audit), [detail?.audit]);
   const methods = useMemo(() => paymentMethods?.items ?? [], [paymentMethods]);
-  const unfinishedRevokes = methods.filter(revokeUnfinished);
+  const unfinishedRevokes = useMemo(() => (revokeScan ?? []).filter(revokeUnfinished), [revokeScan]);
   const devices = useMemo(() => asArray(detail?.devices?.records), [detail?.devices?.records]);
   const deposits = useMemo(() => asArray(detail?.deposits?.records), [detail?.deposits?.records]);
   const withdrawals = useMemo(() => asArray(detail?.withdrawals?.records), [detail?.withdrawals?.records]);
@@ -661,7 +680,7 @@ export default function UserDetailPage() {
     const slot = commandSlot(command);
     const retained = c1UserCommands.get(slot);
     const commandKey = retained ?? `${COMMAND_PREFIX[command.kind]}-${crypto.randomUUID()}`;
-    c1UserCommands.remember(slot, commandKey, command);
+    c1UserCommands.remember(slot, commandKey, { ...command, retryRejected: false });
     if (!c1UserCommands.isDurablyStored(slot, commandKey)) {
       if (!retained) c1UserCommands.forget(slot, commandKey);
       throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
@@ -706,21 +725,19 @@ export default function UserDetailPage() {
     }
   };
 
-  /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有成功才解除待确认。 */
+  /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有成功才解除待确认。过期和查不到都不解除（OP-96、OP-153）。 */
   const retryPending = async (command: C1Command) => {
-    // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
+    if (command.expiresAt <= Date.now()) return;
     if (!c1UserCommands.isDurablyStored(command.fingerprint, command.commandKey)) {
-      c1UserCommands.forget(command.fingerprint, command.commandKey);
-      syncPending();
-      toast.error("原操作已结束或过期", "本次未再次发送。请先核对这页，再决定如何处理。");
+      setPendingNotes((current) => ({ ...current, [command.fingerprint]: "本机存储里查不到原操作，这次没有发送。到操作记录与审批核对，待确认继续保留。" }));
       return;
     }
-    setRetryRejected((current) => current.filter((key) => key !== command.commandKey));
     try {
       await execute(command);
     } catch (cause) {
       setPendingNotes((current) => ({ ...current, [command.fingerprint]: `重试没有成功：${cause instanceof Error ? cause.message : "原因未知"} 这说明不了原操作的结果，原命令继续保留。` }));
-      setRetryRejected((current) => [...current, command.commandKey]);
+      c1UserCommands.remember(command.fingerprint, command.commandKey, { ...command, retryRejected: true });
+      syncPending();
     }
   };
 
@@ -807,6 +824,11 @@ export default function UserDetailPage() {
 
   // 从客服和工单带锚点进来时先展开所在的组，再定位（C1-L07）。等支付方式读完，不然上面的内容撑开会把目标顶走。
   const layoutReady = !!detail && (supportScope || !!paymentMethods || !!paymentError);
+  const ledgerUnread = !!detail?.financial && !Array.isArray((detail.ledger as JsonRecord | null | undefined)?.rows);
+  const withdrawalExceptions = withdrawals.filter((row) => withdrawalTone(row) === "danger").length;
+  const withdrawalsWaiting = withdrawals.filter((row) => withdrawalTone(row) === "warn").length;
+  const orderExceptions = orders.filter((row) => orderTone(row) === "danger").length;
+  const deviceExceptions = devices.filter(deviceAbnormal).length;
   const hashDone = useRef("");
   useEffect(() => {
     if (!detail) return;
@@ -824,17 +846,19 @@ export default function UserDetailPage() {
   const recordsPresent = !!(detail?.notifications || detail?.commerce || detail?.audit);
   const failedSection = (...sections: (User360Section | null | undefined)[]) => sections.some(sectionFailed);
   const securityAlert = paymentSecurity.state === "exception" || paymentSecurity.pending || summary.locked === true || unfinishedRevokes.length > 0;
-  const securityFailed = paymentSecurity.state === "failed" || !!paymentError;
-  const fundsFailed = failedSection(detail?.deposits, detail?.withdrawals, detail?.financial, detail?.account);
-  const devicesFailed = failedSection(detail?.devices, detail?.earnings);
+  const securityFailed = paymentSecurity.state === "failed" || !!paymentError || revokeScanFailed;
+  const fundsFailed = failedSection(detail?.deposits, detail?.withdrawals, detail?.financial, detail?.account) || ledgerUnread;
+  const fundsAlert = withdrawalExceptions + withdrawalsWaiting > 0;
+  const devicesFailed = failedSection(detail?.devices, detail?.earnings) || ledgerUnread && !!detail?.earnings;
+  const devicesAlert = deviceExceptions > 0;
   const teamFailed = failedSection(detail?.referral, detail?.engagement, detail?.vrank);
   const recordsFailed = failedSection(detail?.notifications, detail?.commerce);
   const failedPushCount = asNumber(detail?.notifications?.failedPushCount);
-  const recordsAlert = failedPushCount > 0;
+  const recordsAlert = failedPushCount > 0 || orderExceptions > 0 || corrections.length > 0;
   const sections: SectionNavItem[] = [
     securityPresent && { id: "security", label: "安全", alert: securityAlert || securityFailed },
-    fundsPresent && { id: "funds", label: "资金", alert: fundsFailed },
-    devicesPresent && { id: "devices", label: "设备与收益", alert: devicesFailed },
+    fundsPresent && { id: "funds", label: "资金", alert: fundsFailed || fundsAlert },
+    devicesPresent && { id: "devices", label: "设备与收益", alert: devicesFailed || devicesAlert },
     teamPresent && { id: "team", label: "团队与互动", alert: teamFailed },
     recordsPresent && { id: "records", label: "记录", alert: recordsAlert || recordsFailed },
   ].filter((item) => item !== false);
@@ -848,7 +872,7 @@ export default function UserDetailPage() {
   if (detailKey !== readKey || loading && !detail) {
     return (
       <RdPage>
-        <PageHeader title="用户详情" back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>} />
+        <PageHeader title={pageName} back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>} />
         <BlockState state="loading" title="正在加载…" />
       </RdPage>
     );
@@ -857,10 +881,10 @@ export default function UserDetailPage() {
   if (error && !detail) {
     return (
       <RdPage>
-        <PageHeader title="用户详情" back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>} />
+        <PageHeader title={pageName} back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>} />
         {denied
           ? <BlockState state="denied" title="无权限访问" detail={error} />
-          : <BlockState state="error" title={`用户详情加载失败：${error}`} onRetry={() => void load()} />}
+          : <BlockState state="error" title={`${supportScope ? "客户资料" : "用户详情"}加载失败：${error}`} onRetry={() => void load()} />}
       </RdPage>
     );
   }
@@ -868,68 +892,88 @@ export default function UserDetailPage() {
   if (!profile || !detail) {
     return (
       <RdPage>
-        <PageHeader title="用户详情" back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>} />
+        <PageHeader title={pageName} back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>} />
         <BlockState state="error" title="客户资料加载失败，请重新加载。" onRetry={() => void load()} />
       </RdPage>
     );
   }
 
+  /** 汇总是后端能核对到的小计，不保证覆盖全部历史（后端 fieldStatuses 写 PARTIAL）。 */
+  const usdtTotals = asArray(detail.financial?.byCurrency).find((row) => row.currency === "USDT")?.fieldStatuses as JsonRecord | undefined;
+  const subtotal = (field: string) => usdtTotals?.[field] === "PARTIAL" ? "已核对小计" : undefined;
   const kpis = [
     detail.financial && { label: "可提余额", value: amountValue(summary.walletUsdt ?? profile.walletUsdt), unit: "USDT", tone: "role-1" as const, icon: Wallet, group: "funds", anchor: "hub-deposit" },
-    detail.deposits && { label: "累计充值", value: amountValue(summary.depositedUsd), unit: "USDT", tone: "role-2" as const, icon: Coins, group: "funds", anchor: "hub-deposit", explain: "全部已确认充值的合计，不是下面列出的那些相加。" },
-    detail.withdrawals && { label: "累计提现", value: amountValue(summary.withdrawnUsd), unit: "USDT", tone: "role-4" as const, icon: Coins, group: "funds", anchor: "hub-withdrawal", explain: "全部成功提现的本金合计，不是下面列出的那些相加。" },
+    detail.deposits && { label: "累计充值", value: amountValue(summary.depositedUsd), unit: "USDT", tone: "role-2" as const, icon: Coins, group: "funds", anchor: "hub-deposit", sub: subtotal("creditedDepositTotal"), explain: "能核对到的已确认充值小计，不保证覆盖这个用户的全部历史，也不是下面列出的那些相加。读不到时写「—」，不算 0。" },
+    detail.withdrawals && { label: "累计提现", value: amountValue(summary.withdrawnUsd), unit: "USDT", tone: "role-4" as const, icon: Coins, group: "funds", anchor: "hub-withdrawal", sub: subtotal("successfulWithdrawalPrincipalTotal"), explain: "能核对到的成功提现本金小计，不保证覆盖这个用户的全部历史，也不是下面列出的那些相加。读不到时写「—」，不算 0。" },
     detail.devices && { label: "设备数", value: numberLabel(summary.deviceCount), unit: "台", tone: "role-2" as const, icon: Cpu, group: "devices", anchor: "hub-devices" },
     detail.referral && { label: "团队规模", value: numberLabel(summary.teamSize), unit: "人", tone: "role-3" as const, icon: UsersRound, group: "team", anchor: "hub-referral" },
-  ].filter((value) => !!value).slice(0, 4);
+  ].filter((value) => !!value).slice(0, 4) as { label: string; value: string; unit: string; tone: "role-1" | "role-2" | "role-3" | "role-4"; icon: typeof Wallet; group: string; anchor: string; explain?: string; sub?: string }[];
 
   const openCases = asNumber(detail.risk?.openCaseCount);
-  const riskHigh = hasRiskScore && riskTone === "danger";
-  const issues: { key: string; text: string; go?: () => void }[] = [
-    pendingCommands.length > 0 && { key: "pending", text: `${pendingCommands.length} 个操作结果未确认` },
+  // 风险档以后端的档为准：客服只拿到档、没有分数，也要算（R04）。
+  const riskHigh = riskAuthorityReady && riskTone === "danger";
+  // 数字在下面的区块里，这里只写有什么事，不重复（DP-61）。
+  const issues: { key: string; text: string; danger?: boolean; go?: () => void }[] = [
+    pendingCommands.length + corrections.length > 0 && { key: "pending", text: `${pendingCommands.length + corrections.length} 个操作结果未确认` },
     summary.locked === true && { key: "locked", text: "账号已锁定", go: () => locate("security") },
     paymentSecurity.state === "exception" && { key: "payment", text: "支付密码有异常", go: () => locate("security") },
     paymentSecurity.pending && { key: "release", text: "有一笔解除结果等待确认", go: () => locate("security") },
-    unfinishedRevokes.length > 0 && { key: "revoke", text: `${unfinishedRevokes.length} 张已解绑的卡仍可能被扣款`, go: () => locate("security", "hub-payment-methods") },
-    riskHigh && { key: "risk", text: `风险分 ${riskScore}，${riskBand}` },
-    openCases > 0 && { key: "cases", text: `${openCases} 个风险案件未关闭` },
-    recordsAlert && { key: "push", text: `${failedPushCount} 条通知推送失败`, go: () => locate("records") },
+    unfinishedRevokes.length > 0 && { key: "revoke", text: "有已解绑的卡仍可能被扣款", danger: true, go: () => locate("security", "hub-payment-methods") },
+    riskHigh && { key: "risk", text: "风险档是高风险", danger: true },
+    openCases > 0 && { key: "cases", text: "有未关闭的风险案件" },
+    withdrawalExceptions > 0 && { key: "withdrawal", text: "有提现异常", danger: true, go: () => locate("funds", "hub-withdrawal") },
+    withdrawalsWaiting > 0 && { key: "waiting", text: "有提现等待处理", go: () => locate("funds", "hub-withdrawal") },
+    deviceExceptions > 0 && { key: "device", text: "有设备异常", go: () => locate("devices", "hub-devices") },
+    orderExceptions > 0 && { key: "order", text: "有订单异常", go: () => locate("records", "hub-orders") },
+    failedPushCount > 0 && { key: "push", text: "有通知推送失败", go: () => locate("records") },
   ].filter((value) => !!value);
   const unreadable = [
     paymentSecurity.state === "failed" && "支付安全",
     paymentError && "支付方式",
-    fundsFailed && "资金",
-    devicesFailed && "设备与收益",
+    !paymentError && revokeScanFailed && "支付方式的撤销状态",
+    ledgerUnread && "账单流水",
+    failedSection(detail.deposits, detail.withdrawals, detail.financial, detail.account) && "资金",
+    failedSection(detail.devices, detail.earnings) && "设备与收益",
     teamFailed && "团队与互动",
     recordsFailed && "记录",
+    detail.financial?.totalsStatus === "ERROR" && "累计金额",
     detail.risk && !riskAuthorityReady && !supportScope && "风险分",
   ].filter((value): value is string => !!value);
   const checked = [
     "账户状态",
-    detail.risk && "风险分和风险案件",
+    detail.risk && "风险档和最近 20 条风险案件",
     summary.locked != null && "账号锁定",
     paymentSecurityPort && "支付安全",
-    !supportScope && "支付方式的撤销状态",
+    !supportScope && "全部支付方式的撤销状态",
+    detail.withdrawals && "最近 30 条提现",
+    detail.devices && "设备状态",
+    detail.commerce && "最近 50 单订单",
     detail.notifications && "通知推送失败",
   ].filter((value): value is string => !!value);
-  const checking = paymentSecurity.state === "loading" || !supportScope && !paymentMethods && !paymentError;
+  const checking = paymentSecurity.state === "loading" || !supportScope && (!paymentMethods && !paymentError || !revokeScan && !revokeScanFailed);
   const firstGo = issues.find((issue) => issue.go)?.go;
   const c2Link = canReadC2 && !supportScope
     ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={{ pathname: "/users/actions", query: { userCode: userNo, source: "C1", returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">去账户操作</span></Link>
     : undefined;
-  const issueText = [...issues.map((issue) => issue.text), unreadable.length > 0 && `${unreadable.join("、")}读取失败`].filter(Boolean).join("，");
+  const k4Link = canReadK4 && !supportScope
+    ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={{ pathname: "/risk/scoring", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">去风险评分规则</span></Link>
+    : undefined;
+  const unreadText = unreadable.length > 0 ? `${unreadable.join("、")}暂时无法确认` : "";
+  const issueText = [...issues.map((issue) => issue.text), unreadText].filter(Boolean).join("，");
   const conclusion = nonActive
     ? <Conclusion state={status === "BANNED" ? "danger" : "warn"} lead icon={ShieldAlert} hint={issueText || undefined} action={c2Link}>账户状态：{statusLabel(status)}，提现和交易可能受限。</Conclusion>
     : issues.length > 0
-      ? <Conclusion state={riskHigh ? "danger" : "warn"} hint={issueText} action={firstGo && <Button onClick={firstGo}>去看看</Button>}>有 <b>{issues.length}</b> 件事要处理</Conclusion>
+      ? <Conclusion state={issues.some((issue) => issue.danger) ? "danger" : "warn"} hint={issueText} action={firstGo ? <Button onClick={firstGo}>去看看</Button> : (riskHigh || openCases > 0) ? k4Link : undefined}>有 <b>{issues.length}</b> 件事要处理</Conclusion>
       : status === "UNKNOWN"
-        ? <Conclusion state="unknown" hint={unreadable.length ? `${unreadable.join("、")}读取失败` : undefined}>账户状态未确认，暂时无法判断</Conclusion>
+        ? <Conclusion state="unknown" hint={unreadText || undefined}>账户状态未确认，暂时无法判断</Conclusion>
         : unreadable.length > 0
-          ? <Conclusion state="unknown" hint={`${unreadable.join("、")}读取失败，这部分没有判断。`}>账户正常，部分资料暂时无法判断</Conclusion>
+          ? <Conclusion state="unknown" hint={`${unreadText}，这部分没有判断。`}>账户正常，部分资料暂时无法判断</Conclusion>
           : checking
             ? <Conclusion state="unknown">账户正常，正在核对其余项目…</Conclusion>
-            : <Conclusion state="ok" icon={ShieldCheck} explain={`核对了：${checked.join("、")}。这个账号看不到的区块不在内。`}>账户正常，暂无要处理的事</Conclusion>;
+            : <Conclusion state="ok" icon={ShieldCheck} explain={<><p>核对了：{checked.join("、")}。</p><p>这只说明这些项目没发现问题，不代表全部没事：这个账号看不到的区块不在内，风险案件读取失败时后端也返回 0。</p></>}>账户正常，已核对的项目没发现问题</Conclusion>;
 
   const hasEntries = !supportScope;
+  const inPageWrites = [canWriteC1 && "重置昵称、处理支付方式", canWriteC2 && "置换和回收设备", canReleasePayment && "解除支付密码异常"].filter(Boolean).join("，");
   const crossLinks = [
     canReadC6 && ["注册与登录风险", "/users/reg-risk"],
     canReadD2 && ["提现审核", "/finance/withdrawals"],
@@ -938,19 +982,31 @@ export default function UserDetailPage() {
     canReadA2 && ["操作记录", "/platform/audit"],
   ].filter((item): item is [string, string] => Array.isArray(item));
 
-  const pendingNotices = pendingCommands.map((command) => (
-    <Notice key={command.fingerprint} tone="warn" title={`${command.label} · 结果未确认`}
+  const auditLink = canReadA2 && <> <Link className="rd-link" href={{ pathname: "/platform/audit", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}>到操作记录核查</Link></>;
+  const pendingNotices = pendingCommands.map((command) => {
+    const expired = command.expiresAt <= Date.now();
+    return <Notice key={command.fingerprint} tone="warn" title={`${command.label} · 结果未确认`}
       action={<>
         <Button size="sm" disabled={!!busyReason} onClick={() => void verifyPending(command)}>读回核对</Button>
-        <Button size="sm" disabled={!!busyReason} onClick={() => void retryPending(command)}>按原操作重试</Button>
-        {retryRejected.includes(command.commandKey) && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除待确认</Button>}
+        <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason} onClick={() => void retryPending(command)}>按原操作重试</Button>
+        {command.retryRejected && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除待确认</Button>}
       </>}>
-      {shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效，不要重复操作。按原操作重试用同一个命令号，不会重复执行。
-      {canReadA2 && <> <Link className="rd-link" href={{ pathname: "/platform/audit", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}>到操作记录核查</Link></>}
+      {shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效，不要重复操作。{expired ? `${EXPIRED_TEXT}。` : "按原操作重试用同一个命令号，不会重复执行。"}
+      {auditLink}
       <Explain label="技术信息" content={`命令号 ${command.commandKey} ｜ 操作人 ${command.operator} ｜ 理由 ${command.reason}`} />
       {pendingNotes[command.fingerprint] && <div>{pendingNotes[command.fingerprint]}</div>}
-    </Notice>
-  ));
+    </Notice>;
+  });
+  const correctionNotices = corrections.map((command) => {
+    const expired = command.expiresAt <= Date.now();
+    const id = command.preview.notificationId;
+    return <Notice key={command.fingerprint} tone="warn" title={`校正通知 ${id} 的时间 · 结果未确认`}
+      action={canReadNotificationEvidence && <Button size="sm" onClick={() => setNotificationEvidence({ userKey, authEpoch, id })}>打开时间证据</Button>}>
+      {shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效，不要重复操作。{expired ? `${EXPIRED_TEXT}。` : "在时间证据里按原校正重试。"}
+      {auditLink}
+      <Explain label="技术信息" content={`请求号 ${command.commandKey} ｜ 理由 ${command.reason}`} />
+    </Notice>;
+  });
 
   const current = record && recordRows[record.kind][record.index];
   const currentDevice = record?.kind === "device" && current ? current : null;
@@ -965,10 +1021,10 @@ export default function UserDetailPage() {
     ...(canWriteC2 ? [{ label: "操作", align: "right" as const, end: true, cell: (row: JsonRecord) => {
       const deviceId = asNumber(row.id);
       if (!deviceId || FINAL_DEVICE_STATUS.includes(asText(row.status, "").toUpperCase())) return "—";
-      return <span className="rd-row-actions">
+      return <Cell full main={<span className="rd-row-actions">
         <Button size="sm" disabledReason={deviceBlock(deviceId)} onClick={() => openDeviceAction(row, "replace")}>设备置换</Button>
         <Button size="sm" disabledReason={deviceBlock(deviceId)} onClick={() => openDeviceAction(row, "recycle")}>设备回收</Button>
-      </span>;
+      </span>} sub={deviceBlock(deviceId)} />;
     } }] : []),
   ];
   const notificationColumns: Column[] = [
@@ -991,48 +1047,58 @@ export default function UserDetailPage() {
     ...(canWriteC1 ? [{ label: "操作", align: "right" as const, end: true, cell: (row: JsonRecord) => {
       const method = row as UserPaymentMethod;
       if (method.status !== "BOUND") return "—";
-      return method.trialGuard
+      return <Cell full sub={methodBlock(method)} main={method.trialGuard
         ? <Button size="sm" disabledReason={methodBlock(method)} onClick={() => openRebind(method)}>发送换绑通知</Button>
-        : <Button size="sm" disabledReason={methodBlock(method)} onClick={() => openUnbind(method)}>解绑</Button>;
+        : <Button size="sm" disabledReason={methodBlock(method)} onClick={() => openUnbind(method)}>解绑</Button>} />;
     } }] : []),
   ];
 
   const paymentCount = paymentError ? null : paymentMethods?.total ?? null;
-  const securitySummary = securityFailed
-    ? [paymentSecurity.state === "failed" && "支付安全读取失败", paymentError && "支付方式读取失败"].filter(Boolean).join(" · ")
+  const joined = (items: unknown[]) => items.filter(Boolean).join(" · ");
+  // 摘要只给收起时看，展开后下面有同样的数（DP-61）。有异常时只写异常。
+  const foldSummary = (group: string, alert: boolean, text: string) => (openFolds[group] ?? alert) ? "" : text;
+  const securityText = securityFailed
+    ? joined([paymentSecurity.state === "failed" && "支付安全暂时无法确认", paymentError && "支付方式读取失败", !paymentError && revokeScanFailed && "撤销状态读取失败"])
     : securityAlert
-      ? [
-        summary.locked === true && "账号已锁定",
-        paymentSecurity.state === "exception" && "支付密码有异常",
-        paymentSecurity.pending && "解除结果等待确认",
-        unfinishedRevokes.length > 0 && `${unfinishedRevokes.length} 张卡仍可能被扣款`,
-      ].filter(Boolean).join(" · ")
-      : [
+      ? joined([summary.locked === true && "账号已锁定", paymentSecurity.state === "exception" && "支付密码有异常", paymentSecurity.pending && "解除结果等待确认", unfinishedRevokes.length > 0 && `${unfinishedRevokes.length} 张卡仍可能被扣款`])
+      : joined([
         detail.sessions && `在线设备 ${numberLabel(summary.activeSessionCount)}`,
         detail.sessions && `两步验证${summary.twoFactorEnabled == null ? "未知" : summary.twoFactorEnabled ? "开启" : "关闭"}`,
-        paymentSecurity.state === "clear" && "支付密码无异常",
+        paymentSecurity.state === "clear" ? "支付密码无异常" : paymentSecurity.state === "loading" && "正在读取…",
         !supportScope && paymentCount !== null && `支付方式 ${paymentCount} 张`,
-      ].filter(Boolean).join(" · ");
-  const fundsSummary = fundsFailed ? "有区块读取失败" : [
-    detail.deposits && `充值 ${numberLabel(detail.deposits.total)} 笔`,
-    detail.withdrawals && `提现 ${numberLabel(detail.withdrawals.total)} 笔`,
-    detail.financial && `兑换 ${numberLabel(exchanges.length)} 笔`,
-    !detail.deposits && !detail.withdrawals && !detail.financial && `账户${statusLabel(status)}`,
-  ].filter(Boolean).join(" · ");
-  const devicesSummary = devicesFailed ? "有区块读取失败" : [
-    detail.devices && `在线 ${numberLabel(detail.devices.onlineCount)} / 活跃 ${numberLabel(detail.devices.activeCount)}`,
-    detail.earnings && `收益合计 ${amountText(detail.earnings.totalUsdt)}`,
-  ].filter(Boolean).join(" · ");
-  const teamSummary = teamFailed ? "有区块读取失败" : [
-    detail.referral && `团队 ${numberLabel(detail.referral.teamSize)} 人`,
+      ]);
+  const fundsText = fundsFailed
+    ? ledgerUnread ? "账单流水读不到" : "有区块读取失败"
+    : fundsAlert
+      ? joined([withdrawalExceptions > 0 && `${withdrawalExceptions} 笔提现异常`, withdrawalsWaiting > 0 && `${withdrawalsWaiting} 笔提现等待处理`])
+      : joined([
+        detail.deposits && `充值 ${numberLabel(detail.deposits.total)} 笔`,
+        detail.withdrawals && `提现 ${numberLabel(detail.withdrawals.total)} 笔`,
+        detail.financial && `兑换 ${numberLabel(exchanges.length)} 笔`,
+        !detail.deposits && !detail.withdrawals && !detail.financial && `账户${statusLabel(status)}`,
+      ]);
+  const devicesText = devicesFailed
+    ? ledgerUnread ? "账单流水读不到，收益不可用" : "有区块读取失败"
+    : devicesAlert
+      ? `${deviceExceptions} 台设备异常`
+      : joined([
+        detail.devices && `在线 ${numberLabel(detail.devices.onlineCount)} / 活跃 ${numberLabel(detail.devices.activeCount)}`,
+        detail.earnings && `收益合计 ${amountText(detail.earnings.totalUsdt)}`,
+      ]);
+  const teamText = teamFailed ? "有区块读取失败" : joined([
+    detail.referral && !kpis.some((kpi) => kpi.label === "团队规模") && `团队 ${numberLabel(detail.referral.teamSize)} 人`,
     detail.referral && `直接邀请 ${numberLabel(detail.referral.directCount)} 人`,
     detail.vrank && `等级 ${asText(detail.vrank.currentRank)}`,
-  ].filter(Boolean).join(" · ");
-  const recordsSummary = recordsFailed ? "有区块读取失败" : recordsAlert ? `${failedPushCount} 条通知推送失败` : [
-    detail.notifications && `未读 ${numberLabel(detail.notifications.unreadCount)} 条`,
-    detail.commerce && `订单 ${numberLabel(detail.commerce.total)} 单`,
-    detail.audit && `操作记录 ${auditEntries.length} 条`,
-  ].filter(Boolean).join(" · ");
+  ]);
+  const recordsText = recordsFailed
+    ? "有区块读取失败"
+    : recordsAlert
+      ? joined([failedPushCount > 0 && `${failedPushCount} 条通知推送失败`, orderExceptions > 0 && `${orderExceptions} 单订单异常`, corrections.length > 0 && "通知校正结果未确认"])
+      : joined([
+        detail.notifications && `未读 ${numberLabel(detail.notifications.unreadCount)} 条`,
+        detail.commerce && `订单 ${numberLabel(detail.commerce.total)} 单`,
+        detail.audit && `操作记录 ${auditEntries.length} 条`,
+      ]);
   const hiddenNote = [
     !detail.sessions && !supportScope && "登录安全",
     !fundsPresent && "资金",
@@ -1045,8 +1111,8 @@ export default function UserDetailPage() {
 
   return (
     <RdPage>
-      <PageHeader pageId={supportScope ? undefined : "C1D"} title={displayNickname}
-        summary="这个用户的资料、资金、设备和记录。"
+      <PageHeader pageId={supportScope ? "C1S" : "C1D"} title={displayNickname}
+        summary={supportScope ? "这个客户的资料、资金、设备和记录。" : "这个用户的资料、资金、设备和记录。"}
         back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>}
         actions={<Button icon={<RefreshCcw size={14} aria-hidden />} loading={loading} loadingText="读取中…" onClick={() => void load()}>刷新</Button>}
         identity={<>
@@ -1056,26 +1122,28 @@ export default function UserDetailPage() {
           <span>{asText(profile.phoneMasked)}</span>
         </>}
         meta={`注册 ${shortTime(profile.registeredAt)} · 最近登录 ${shortTime(profile.lastLoginAt)} · ${readAt} 读取（${businessZone().label}），打开和点「刷新」时读取`}
-        readOnly={!supportScope && !canWriteC1 && !canWriteC2 ? "当前账号在这页只能查看" : undefined}
+        readOnly={!supportScope && !canWriteC1 && !canWriteC2 && !canReleasePayment ? "当前账号在这页只能查看" : undefined}
         guideExtra={hiddenNote ? <p>这个账号看不到的区块不显示：{hiddenNote}。</p> : undefined} />
 
       {conclusion}
       {pendingNotices}
+      {correctionNotices}
 
       {kpis.length > 0 && <StatBand label="关键数字">
         {kpis.map((kpi, index) => (
           <Stat key={kpi.label} lead={index === 0} icon={kpi.icon} tone={kpi.tone} label={kpi.label} value={kpi.value} unit={kpi.value === "—" ? undefined : kpi.unit}
-            explain={kpi.explain} openLabel={`查看${kpi.label}明细`} onOpen={() => locate(kpi.group, kpi.anchor)} />
+            sub={kpi.sub} explain={kpi.explain} openLabel={`查看${kpi.label}明细`} onOpen={() => locate(kpi.group, kpi.anchor)} />
         ))}
       </StatBand>}
 
-      {hasEntries && <Panel title="处理入口" icon={UserCog} tone="role-3" explain={<><p>账户和资金操作到对应页面办，办完回到这页点「刷新」。</p><p>{[canWriteC1 && "重置昵称、处理支付方式", canWriteC2 && "置换和回收设备"].filter(Boolean).join("，") ? `这个账号在这页能${[canWriteC1 && "重置昵称、处理支付方式", canWriteC2 && "置换和回收设备"].filter(Boolean).join("，")}。` : "这个账号在这页不能改任何内容。"}</p></>}>
+      {hasEntries && <Panel title="处理入口" icon={UserCog} tone="role-3" explain={<><p>账户和资金操作到对应页面办，办完回到这页点「刷新」。</p><p>{inPageWrites ? `这个账号在这页能${inPageWrites}。` : "这个账号在这页不能改任何内容。"}</p></>}>
         <div className="rd-detail-entries">
           <div className="rd-toolbar">
             {canReadC2 && <Link className="rd-btn" data-variant="secondary" data-size="sm" href={{ pathname: "/users/actions", query: { userCode: userNo, source: "C1", returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">冻结 / 解冻账户</span></Link>}
             {canReadC3 && /^[1-9]\d*$/.test(c3UserId) && <Link className="rd-btn" data-variant="secondary" data-size="sm" href={{ pathname: "/users/assets", query: { userCode: userNo, userId: c3UserId, returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">调整余额</span></Link>}
             {canReadC5 && <Link className="rd-btn" data-variant="secondary" data-size="sm" href={{ pathname: "/users/security", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">安全与登录设备</span></Link>}
             {canWriteC1 && <Button size="sm" disabledReason={!c3UserId ? "读不到用户号，刷新后再试" : nicknameBlock} onClick={openNicknameReset}>重置昵称</Button>}
+            {canWriteC1 && nicknameBlock && <span className="rd-toolbar-note">{nicknameBlock}</span>}
           </div>
           {crossLinks.length > 0 && <div className="rd-links">
             <span>去查</span>
@@ -1089,10 +1157,10 @@ export default function UserDetailPage() {
         <Values rows={[
           ...(detail.risk ? [["风险分", hasRiskScore ? <StatusTag key="score" tone={riskTone}>{riskScore} · {riskBand}</StatusTag> : riskBand] as const] : []),
           ...(detail.risk?.flags !== undefined ? [["风险标记", riskFlags(detail.risk.flags, detail.risk.cases !== undefined)] as const] : []),
-          ...(detail.risk?.cases !== undefined ? [[<>风险案件<Explain label="风险案件的口径" content="按最近 20 条案件算。" /></>, `${numberLabel(detail.risk.openCaseCount)} 个未关闭`] as const] : []),
+          ...(detail.risk?.cases !== undefined ? [[<>风险案件<Explain label="风险案件的口径" content="按最近 20 条案件算。案件读取失败时后端也返回 0，这个数不能证明没有案件。" /></>, `${numberLabel(detail.risk.openCaseCount)} 个未关闭`] as const] : []),
           ...(detail.financial ? [
             ["UVT 余额", amountText(summary.walletNex ?? profile.walletNex, "UVT")] as const,
-            [<>提现申请额<Explain label="提现申请额的口径" content="申请额含处理中的提现，不是已到账的钱。" /></>, amountText(summary.withdrawRequestedUsd)] as const,
+            [<>提现申请额<Explain label="提现申请额的口径" content="能核对到的处理中提现本金小计，不是已到账的钱，也不保证覆盖全部历史。" /></>, amountText(summary.withdrawRequestedUsd)] as const,
           ] : []),
         ]} />
       </Panel>}
@@ -1101,8 +1169,8 @@ export default function UserDetailPage() {
 
       <div className="rd-detail-groups">
         {securityPresent && <div id={nav.anchor("security")}>
-          <Fold title="安全" icon={ShieldCheck} tone="role-3" summary={securitySummary || "正在读取…"} alertTone={securityFailed ? "danger" : "warn"} {...foldProps("security", securityAlert || securityFailed)}>
-            {detail.sessions && <Block title="登录安全" section={{ sourceStatus: "READY" }} sub={`最近 50 条登录记录 · 筛选后 ${filteredSessions.length} 条`} explain="这是最近最多 50 条样本，不是全部历史。">
+          <Fold title="安全" icon={ShieldCheck} tone="role-3" summary={foldSummary("security", securityAlert || securityFailed, securityText)} alertTone={securityFailed ? "danger" : "warn"} {...foldProps("security", securityAlert || securityFailed)}>
+            {detail.sessions && <Block title="登录安全" section={{ sourceStatus: "READY" }} sub={filteredSessions.length > C1_SESSION_PAGE_SIZE ? "最近 50 条登录记录" : `最近 50 条登录记录 · 筛选后 ${filteredSessions.length} 条`} explain="这是最近最多 50 条样本，不是全部历史。">
               <Values rows={[
                 ["在线设备", numberLabel(summary.activeSessionCount)],
                 ["两步验证", yesNo(summary.twoFactorEnabled, "开启", "关闭")],
@@ -1113,13 +1181,14 @@ export default function UserDetailPage() {
               {filteredSessions.length > C1_SESSION_PAGE_SIZE && <Pager label="登录记录" total={filteredSessions.length} page={sessionPage} pageSize={C1_SESSION_PAGE_SIZE} sizes={[C1_SESSION_PAGE_SIZE]} onPage={(page) => { setRecord(null); setSessionPage(Math.min(sessionPageCount, Math.max(1, page))); }} onPageSize={() => undefined} />}
             </Block>}
             {paymentSecurityPort && <div className="rd-detail-block">
-              <PaymentSecurityBlock key={`${readKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={`${displayNickname} · ${userNo}`} reloadKey={reloadTick}
+              <PaymentSecurityBlock key={`${readKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={`${displayNickname} · ${userNo}`} reloadKey={reloadTick} canRelease={canReleasePayment}
                 onState={onPaymentSecurity} />
             </div>}
             {!supportScope && <Block id="hub-payment-methods" title="支付方式" section={{ sourceStatus: "READY" }} failure={paymentError && `支付方式加载失败：${paymentError}`}
               sub={paymentMethods && paymentMethods.total > 0 ? `${paymentMethods.total} 条` : undefined}
               actions={<Button size="sm" icon={<RefreshCcw size={13} aria-hidden />} loading={paymentLoading} onClick={() => void loadPaymentMethods()}>刷新支付方式</Button>}>
               <Check label="显示已解绑" checked={includeUnbound} onChange={(event) => { setIncludeUnbound(event.target.checked); setPaymentPage(1); setRecord(null); }} />
+              {revokeScanFailed && <Notice tone="warn">撤销状态读取失败：已解绑的卡有没有撤销完暂时无法确认，点「刷新支付方式」重读。</Notice>}
               {unfinishedRevokes.map((method) => (
                 <Notice key={method.id} tone={method.revokeDeadlineAt && new Date(method.revokeDeadlineAt).getTime() < Date.now() ? "danger" : "warn"} title={`${method.brand} ···· ${method.last4}`}>
                   我们这边已解绑，但支付商那边{method.pspRevokeStatus === "FAILED" ? "撤销失败" : "还在处理"}，这张卡仍可能被扣款，还不算彻底解绑。
@@ -1134,13 +1203,13 @@ export default function UserDetailPage() {
         </div>}
 
         {fundsPresent && <div id={nav.anchor("funds")}>
-          <Fold title="资金" icon={Wallet} tone="role-1" summary={fundsSummary} alertTone="danger" {...foldProps("funds", fundsFailed)}>
+          <Fold title="资金" icon={Wallet} tone="role-1" summary={foldSummary("funds", fundsFailed || fundsAlert, fundsText)} alertTone={fundsFailed || withdrawalExceptions > 0 ? "danger" : "warn"} {...foldProps("funds", fundsFailed || fundsAlert)}>
             <Block id="hub-deposit" title="充值记录" section={detail.deposits} sub={`最多 30 条 · 共 ${numberLabel(detail.deposits?.total)} 笔`}
-              explain={`这里只列已确认的充值，最多 30 条。确认总额 ${amountText(detail.deposits?.confirmedUsd)} 是全部已确认充值的合计，不是这些行相加。`}>
+              explain={`这里只列已确认的充值，最多 30 条。确认总额 ${amountText(detail.deposits?.confirmedUsd)} 是能核对到的小计，不保证覆盖全部历史，也不是这些行相加。`}>
               <RecordTable label="充值记录" rows={deposits} columns={DEPOSIT_COLUMNS} {...recordProps("deposit")} />
             </Block>
             <Block id="hub-withdrawal" title="提现记录" section={detail.withdrawals} sub={`最多 30 条 · 共 ${numberLabel(detail.withdrawals?.total)} 笔`}
-              explain={<><p>这里最多列 30 条，不是近 30 天。</p><p>完成总额 {amountText(detail.withdrawals?.completedUsd)}：全部成功提现的本金。申请总额 {amountText(detail.withdrawals?.requestedUsd)}：含处理中的提现。</p></>}>
+              explain={<><p>这里最多列 30 条，不是近 30 天。</p><p>完成总额 {amountText(detail.withdrawals?.completedUsd)}：能核对到的成功提现本金小计。申请总额 {amountText(detail.withdrawals?.requestedUsd)}：能核对到的处理中提现本金小计。都不保证覆盖全部历史。</p></>}>
               <RecordTable label="提现记录" rows={withdrawals} columns={WITHDRAWAL_COLUMNS} {...recordProps("withdrawal")} />
             </Block>
             <Block title="账户状态" section={detail.account}>
@@ -1151,7 +1220,7 @@ export default function UserDetailPage() {
                 ["需重置密码", yesNo(summary.passwordResetRequired)],
               ]} />
             </Block>
-            <Block title="兑换记录" section={detail.financial} sub={Array.isArray(detail.financial?.stakingLedgerRows) ? `质押记录 ${numberLabel(detail.financial.stakingLedgerRows.length)} 条` : undefined}
+            <Block title="兑换记录" section={detail.financial} failure={ledgerUnread && "账单流水读不到，兑换记录暂时无法确认，不是没有记录。"} sub={Array.isArray(detail.financial?.stakingLedgerRows) ? `质押记录 ${numberLabel(detail.financial.stakingLedgerRows.length)} 条` : undefined}
               explain={`钱包 USDT ${amountText(wallet?.usdt)}，钱包 UVT ${amountText(wallet?.nex, "UVT")}。`}>
               <RecordTable label="兑换记录" rows={exchanges} columns={EXCHANGE_COLUMNS} empty="暂无兑换记录" {...recordProps("exchange")} />
             </Block>
@@ -1159,7 +1228,7 @@ export default function UserDetailPage() {
         </div>}
 
         {devicesPresent && <div id={nav.anchor("devices")}>
-          <Fold title="设备与收益" icon={Cpu} tone="role-2" summary={devicesSummary} alertTone="danger" {...foldProps("devices", devicesFailed)}>
+          <Fold title="设备与收益" icon={Cpu} tone="role-2" summary={foldSummary("devices", devicesFailed || devicesAlert, devicesText)} alertTone="danger" {...foldProps("devices", devicesFailed || devicesAlert)}>
             <Block id="hub-devices" title="设备明细" section={detail.devices} sub={`最多 200 台 · 共 ${numberLabel(detail.devices?.total)} 台`}
               explain={<><p>这是设定值，不是今天实际到账的收益。合计含已停用设备。</p><p>在线、活跃和合计都按这里列出的设备算。</p></>}>
               <Values rows={[
@@ -1168,7 +1237,7 @@ export default function UserDetailPage() {
               ]} />
               <RecordTable label="设备明细" rows={devices} columns={deviceColumns} {...recordProps("device")} />
             </Block>
-            <Block title="收益明细" section={detail.earnings ? { sourceStatus: asText(detail.earnings.sourceStatus, "READY") } : undefined} sub={`共 ${numberLabel(detail.earnings?.total)} 条`}
+            <Block title="收益明细" section={detail.earnings ? { sourceStatus: asText(detail.earnings.sourceStatus, "READY") } : undefined} failure={ledgerUnread && "账单流水读不到，收益暂时无法确认，不是没有收益。"} sub={`共 ${numberLabel(detail.earnings?.total)} 条`}
               explain="收益合计按这次读到的账单流水算，不承诺是全部历史。">
               <Values rows={[
                 ["收益合计", `${amountText(detail.earnings?.totalUsdt)} · ${amountText(detail.earnings?.totalNex, "UVT")}`],
@@ -1181,7 +1250,7 @@ export default function UserDetailPage() {
         </div>}
 
         {teamPresent && <div id={nav.anchor("team")}>
-          <Fold title="团队与互动" icon={Network} tone="role-3" summary={teamSummary} alertTone="danger" {...foldProps("team", teamFailed)}>
+          <Fold title="团队与互动" icon={Network} tone="role-3" summary={foldSummary("team", teamFailed, teamText)} alertTone="danger" {...foldProps("team", teamFailed)}>
             <Block id="hub-referral" title="推荐团队" section={detail.referral ? { sourceStatus: asText(detail.referral.sourceStatus, "READY") } : undefined} sub="最多 20 条"
               explain="成员最多列 20 条，不是完整名单。团队规模、直接邀请和团队订单额是另外算的总数，不是这些行相加。">
               <Values rows={[
@@ -1209,7 +1278,7 @@ export default function UserDetailPage() {
         </div>}
 
         {recordsPresent && <div id={nav.anchor("records")}>
-          <Fold title="记录" icon={FileClock} tone="role-other" summary={recordsSummary} alertTone={recordsFailed ? "danger" : "warn"} {...foldProps("records", recordsAlert || recordsFailed)}>
+          <Fold title="记录" icon={FileClock} tone="role-other" summary={foldSummary("records", recordsAlert || recordsFailed, recordsText)} alertTone={recordsFailed ? "danger" : "warn"} {...foldProps("records", recordsAlert || recordsFailed)}>
             <Block title="参与与通知" section={detail.notifications} sub="最多 20 条" explain="未读、待推送和失败是另外算的总数，不是这些行相加。点通知编号看时间证据。">
               <Values rows={[
                 ["未读", `${numberLabel(detail.notifications?.unreadCount)} 条`],
@@ -1218,7 +1287,7 @@ export default function UserDetailPage() {
               ]} />
               <RecordTable label="参与与通知" rows={notifications} columns={notificationColumns} {...recordProps("notification")} />
             </Block>
-            <Block title="商城订单" section={detail.commerce ? { sourceStatus: asText(detail.commerce.sourceStatus, "READY") } : undefined} sub="最多 50 单" explain="订单总数和活跃订单按这里列出的订单算。">
+            <Block id="hub-orders" title="商城订单" section={detail.commerce ? { sourceStatus: asText(detail.commerce.sourceStatus, "READY") } : undefined} sub="最多 50 单" explain="订单总数和活跃订单按这里列出的订单算。">
               <Values rows={[
                 ["订单总数", `${numberLabel(detail.commerce?.total)} 单`],
                 ["活跃订单", `${numberLabel(detail.commerce?.activeOrderCount)} 单`],
@@ -1274,7 +1343,7 @@ export default function UserDetailPage() {
         && notificationEvidence.userKey === userKey && notificationEvidence.authEpoch === authEpoch && (
         <NotificationTimeEvidenceDrawer key={`${userKey}:${authEpoch}:${notificationEvidence.id}`}
           userKey={userKey} notificationId={notificationEvidence.id} actorKey={session?.adminId == null ? undefined : String(session.adminId)}
-          canCorrect={canCorrectNotificationTime} onCorrected={() => { void load(); }} onClose={() => setNotificationEvidence(null)} />
+          canCorrect={canCorrectNotificationTime} onPendingChange={syncPending} onCorrected={() => { void load(); }} onClose={() => { setNotificationEvidence(null); syncPending(); }} />
       )}
     </RdPage>
   );

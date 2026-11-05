@@ -399,6 +399,9 @@ export interface User360Section {
   effectiveScore?: number | string | null;
   bandLabel?: string | null;
   exchangeRows?: JsonRecord[] | null;
+  // financial 分区：汇总按币种的取值和每个字段的完整性（OpsUser360Service financialSection）
+  byCurrency?: JsonRecord[] | null;
+  totalsStatus?: string | null;
   failedPushCount?: number | string | null;
   flags?: JsonRecord[] | null;
   members?: JsonRecord[] | null;
