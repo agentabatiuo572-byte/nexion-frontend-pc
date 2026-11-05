@@ -213,8 +213,8 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
       reasonPlaceholder: "写这份数据给谁、做什么用，例如：给增长组做周会复盘",
       facts: (
         <Facts>
-          <Fact k="文件内容">{mode === "series" ? "8 项指标的当前值、目标和六段趋势" : mode === "snapshot" ? "8 项指标的当前值、目标和可用性" : "当前累计数"}</Fact>
-          <Fact k="范围">{queryScope(query)}</Fact>
+          <Fact k="文件内容">{mode === "series" ? "8 项指标的当前值、目标、分子分母和六段趋势" : mode === "snapshot" ? "8 项指标的当前值、目标、分子分母和可用性" : "当前累计数"}</Fact>
+          <Fact k="范围">{mode === "totals" ? "当前累计" : queryScope(query)}</Fact>
           <Fact k="接收人">{L1_EXPORT_RECIPIENT}</Fact>
           <Fact k="文件行数">{rows}，另有表头</Fact>
         </Facts>
@@ -280,7 +280,7 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
           <Button size="sm" loading={retrying} disabledReason={expired ? "已超过 24 小时，不能再重试" : undefined} onClick={() => void retry(pending)}>按原操作重试</Button>
           {retryRejected && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除待确认</Button>}
         </>}>
-          {expired ? formatBusinessTimeFull(new Date(pending.createdAt).toISOString(), "—") : businessClock(pending.createdAt)}（{businessZone().label}）发出，任务可能已经生成，不要重新导出。{expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : "重发原内容，已成功的不会重复执行。"}{exportPage(`到「${pageName}」核对`)}
+          {formatBusinessTimeFull(new Date(pending.createdAt).toISOString(), "—")}（{businessZone().label}）发出，任务可能已经生成，不要重新导出。{expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : "重发原内容，已成功的不会重复执行。"}{exportPage(`到「${pageName}」核对`)}
           <Explain label="技术信息" content={`命令号 ${pending.commandKey} ｜ 理由 ${pending.reason}`} />
           {retryNote && <div>{retryNote}</div>}
         </Notice>

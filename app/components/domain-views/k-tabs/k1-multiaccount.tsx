@@ -75,11 +75,14 @@ const CLUSTER_OPS: Record<K1ClusterAction, { def: () => NonNullable<ReturnType<t
   clear: { def: () => findHighOp("k1_cluster_cleared")!, from: ["detected"], after: "cleared", amplifies: true },
 };
 const PROPOSAL_STATUS: Record<string, string> = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
-const APPROVAL_EFFECT = <StatusTag tone="progress" filled>批准后生效</StatusTag>;
+/** 谁批、批准前怎样每次都一样，收进生效标签的提示图标，不占事实行（VS-105）。 */
+const APPROVAL_EFFECT = <StatusTag tone="progress" filled explain="超级管理员批准后才生效，超管发起的由另一位超管批准。批准前这组的状态和账户都不变。">批准后生效</StatusTag>;
 const IMMEDIATE_EFFECT = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 const RISK_REASON_PLACEHOLDER = "写清场景和依据，例如：合租办公网络、已知合作账户、客服举报线索";
 const CONFLICT_TEXT = "这项刚被别人改过。";
 const EXPIRED_TEXT = "已超过 24 小时，不能再重试，请到操作记录与审批核对。";
+/** 后端 K1 处置的审批执行链没有覆盖率门槛（OpsRiskService 的状态转换不读覆盖率），不能写成已检查。 */
+const NO_COVERAGE_GATE = "可提现的钱可能变多。批准时系统不检查兑付覆盖率，提交前先看页面顶部的覆盖率。";
 const CLUSTER_PAGE_SIZE_OPTIONS = [5, 10, 20];
 const WHITELIST_PAGE_SIZE_OPTIONS = [5, 10, 20];
 const MAX_FOCUS_RELOCATIONS = 3;
@@ -121,11 +124,11 @@ const PARAM_LIMITS: Record<string, { min: number; max: number; step: number; int
 };
 
 const CLUSTER_ST: Record<ClusterStatus, [string, "warn" | "danger" | "done" | "ok", string]> = {
-  detected: ["待判定", "warn", "系统发现的账户组，还没人判定。新增收益先锁定。下一步：标记为可疑，或判定为正常。"],
-  flagged: ["可疑", "warn", "已标记可疑，账户没有冻结。新增收益先锁定。下一步：批量冻结，或解除误判。"],
-  frozen: ["已冻结", "warn", "这组账户已冻结。新增收益先锁定。核实是误判后解除误判。"], // 冻结全站橙黄（VS-20）
-  released: ["已解除", "done", "已判定是误判。新增收益仍按同组账号数决定要不要审核。"],
-  cleared: ["正常", "ok", "已判定为正常，退出风险监控。新增收益仍按同组账号数决定要不要审核。"],
+  detected: ["待判定", "warn", "系统发现的账户组，还没人判定。这组账户不能提现，新增收益先锁定。下一步：标记为可疑，或判定为正常。"],
+  flagged: ["可疑", "warn", "已标记可疑，账户没有冻结。这组账户不能提现，新增收益先锁定。下一步：批量冻结，或解除误判。"],
+  frozen: ["已冻结", "warn", "这组账户已冻结，不能提现，新增收益先锁定。核实是误判后解除误判。"], // 冻结全站橙黄（VS-20）
+  released: ["已解除", "done", "已判定是误判。提现和新增收益改按同组账号数判断，人数达到锁定起点时仍不能提现。有新证据时系统另开一组。"],
+  cleared: ["正常", "ok", "已判定为正常，不再算监控中。提现和新增收益改按同组账号数判断，人数达到锁定起点时仍不能提现。有新证据时系统另开一组。"],
 };
 
 // ── 收益释放参数(SPEC-7 搬回,合并底账 §二#5)──────────────────────────
@@ -364,7 +367,7 @@ function reasonProblem(reason: string, policy: ReasonPolicy, policyFailed: boole
 
 /** 修改框的外壳：错误留在框里，提交中全部锁定（OP-18、OP-33、OP-82）。说明进标题旁的提示图标，节奏和确认框共用层一样：
  *  字数写在框角，缺什么写在灰按钮的提示里，刚打开不报错，失焦或点过提交才在字段下用警告色写原因（DP-06）。 */
-function DraftModal({ title, icon, effect, explain, wide, busy, busyLabel = "保存中…", saveLabel, blocked, dirty, attempted, onAttempt, reasonLabel = "操作理由", reason, placeholder, policy, policyFailed, error, onReason, onReadLatest, onClose, onSave, children }: {
+function DraftModal({ title, icon, effect, explain, wide, busy, reading, busyLabel = "保存中…", saveLabel, blocked, dirty, attempted, onAttempt, reasonLabel = "操作理由", reason, placeholder, policy, policyFailed, error, onReason, onReadLatest, onClose, onSave, children }: {
   title: string;
   /** 标题前的图标底和标题下的生效标签（VS-101、VS-106）。 */
   icon?: LucideIcon;
@@ -372,6 +375,8 @@ function DraftModal({ title, icon, effect, explain, wide, busy, busyLabel = "保
   explain?: readonly ExplainRow[];
   wide?: boolean;
   busy: boolean;
+  /** 正在读取最新。没读到之前旧版本不能再提交（OP-97）。 */
+  reading?: boolean;
   busyLabel?: string;
   saveLabel: string;
   blocked?: string;
@@ -394,14 +399,14 @@ function DraftModal({ title, icon, effect, explain, wide, busy, busyLabel = "保
   const [reasonLeft, setReasonLeft] = useState(false);
   const problem = reasonProblem(reason, policy, policyFailed);
   const length = visibleReasonLength(reason);
-  const missing = [blocked, problem && `${reasonLabel}${problem}`].filter(Boolean).join("；");
+  const missing = error?.conflict ? (reading ? "正在读取最新" : "这项刚被别人改过，先读取最新") : [blocked, problem && `${reasonLabel}${problem}`].filter(Boolean).join("；");
   return (
     <Modal title={<>{title}{explain && <Explain label={`${title}的说明`} rows={explain} />}</>} icon={icon} sub={effect} wide={wide} busy={busy} dirty={dirty} onClose={onClose} footer={<>
       <Button disabled={busy} onClick={onClose}>取消</Button>
       <Button variant="primary" disabled={busy} disabledReason={busy ? undefined : missing || undefined} onBlockedClick={onAttempt} onClick={onSave}>{busy ? busyLabel : saveLabel}</Button>
     </>}>
       <div className="rd-stack">
-        {error && <Notice tone={error.conflict ? "warn" : "danger"} action={error.conflict && onReadLatest ? <Button size="sm" disabled={busy} onClick={onReadLatest}>读取最新</Button> : undefined}>{error.text}</Notice>}
+        {error && <Notice tone={error.conflict ? "warn" : "danger"} action={error.conflict && onReadLatest ? <Button size="sm" disabled={busy} loading={reading} onClick={onReadLatest}>读取最新</Button> : undefined}>{error.text}</Notice>}
         {children}
         <Field label={reasonLabel} required hint={`至少 ${policy?.min ?? 8} 字`} error={policyFailed || attempted || reasonLeft ? problem : undefined}>
           {(control) => <Textarea {...control} rows={3} maxLength={200} disabled={busy} placeholder={placeholder} value={reason} count={`${length}/${policy?.max ?? 200}`} onChange={(event) => onReason(event.target.value)} onBlur={() => setReasonLeft(true)} />}
@@ -473,6 +478,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const [pending, setPending] = useState<K1PendingCommand[]>([]);
   const [retrying, setRetrying] = useState("");
   const [checking, setChecking] = useState("");
+  const [proposalNotFound, setProposalNotFound] = useState<string[]>([]);
   const [retryRejected, setRetryRejected] = useState<string[]>([]);
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
   const [releasing, setReleasing] = useState<K1PendingCommand | null>(null);
@@ -488,6 +494,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const [protectedEntriesLoading, setProtectedEntriesLoading] = useState(true);
   const [protectedEntriesError, setProtectedEntriesError] = useState<string | null>(null);
   const [whitelistDraft, setWhitelistDraft] = useState<WhitelistDraft | null>(null);
+  const [readingLatest, setReadingLatest] = useState(false);
   const [draftSubmitting, setDraftSubmitting] = useState<"param" | "weight" | "whitelist" | "release" | "note" | null>(null);
   const draftSubmitLock = useRef(false);
   const [focusLookupState, setFocusLookupState] = useState<"idle" | "loading" | "positioning" | "found" | "not-found" | "error">("idle");
@@ -597,7 +604,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const touch = (field: string) => setTouched((current) => current[field] ? current : { ...current, [field]: true });
   /** 字段下的原因：失焦且填过，或点过提交，才写（OP-15）。 */
   const fieldError = (problem: string | undefined, filled: boolean, field: string) => touched.submit || (touched[field] && filled) ? problem : undefined;
-  const draftAttempt = { attempted: Boolean(touched.submit), onAttempt: () => touch("submit") };
+  const draftAttempt = { attempted: Boolean(touched.submit), onAttempt: () => touch("submit"), reading: readingLatest };
   useEffect(() => {
     setTouched({});
     if (!drafting) return;
@@ -770,7 +777,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       case "entry":
         return sendCommand(record, (key) => ctx.actions.manualReleaseK1Entry(target, reason, key), async () => {
           await refreshProtectedEntries();
-          ctx.toast(`${target} 已放行，可以提现`);
+          ctx.toast(`${target} 已放行。能否提现还看账户组和其他提现条件。`);
         });
       case "whitelist-add":
         return sendCommand(record, (key) => ctx.actions.upsertK1Whitelist(target, record.note!, reason, record.expireText!, key),
@@ -784,7 +791,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   /** 按原操作重试：同命令号、同内容、同理由。只有成功才解除，被明确拒绝后才给「解除待确认」。 */
   const retryPending = async (record: K1PendingCommand) => {
     // 到期和读不到记录都不是结果，不解除，也不重发（OP-96）。解除只在重试被后端明确拒绝之后。
-    if (record.expiresAt <= Date.now()) {
+    if (retryBlocked(record)) {
       syncPending();
       return;
     }
@@ -806,6 +813,17 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     }
   };
 
+  const canQueryProposal = reach("/platform/audit", "platform_a2_read");
+  /** 重试要的权限和正常入口一样，不能比入口宽（OP-93、OP-123）。 */
+  const mayRetry = (record: K1PendingCommand) => record.kind === "cluster"
+    ? { flag: canFlag, freeze: canFreeze, release: canRelease, clear: canClear }[record.clusterAction!]
+    : record.kind === "release-param" || record.kind === "entry" ? canRelease : canWrite;
+  /** 现在不能重试的原因。处置查得到回执，明确查不到才能重发；查询失败不算查不到（OP-95 甲档）。其他写入没有查询接口，走乙档。 */
+  const retryBlocked = (record: K1PendingCommand) => record.expiresAt <= Date.now() ? EXPIRED_TEXT
+    : !mayRetry(record) ? "这个账号没有这项权限，不能重试，请有权限的同事核对。"
+      : record.kind === "cluster" && canQueryProposal && !proposalNotFound.includes(record.commandKey) ? "先查询原提案，明确查不到才能重试。"
+        : undefined;
+
   /** 处置走审批单，按命令号查得到。查到就有了结果，可以解除；查不到说明不了没提交，继续保留（OP-93、OP-95）。 */
   const checkPending = async (record: K1PendingCommand) => {
     setChecking(record.fingerprint);
@@ -813,7 +831,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     try {
       const original = await fetchA2ProposalByKey(record.commandKey);
       if (!original) {
-        setPendingNotes((current) => ({ ...current, [record.fingerprint]: "暂未查到原提案，结果仍待核实。原操作继续保留，不会重新提交。" }));
+        setProposalNotFound((current) => [...current, record.commandKey]);
+        setPendingNotes((current) => ({ ...current, [record.fingerprint]: "暂未查到原提案，结果仍待核实。" }));
         return;
       }
       pendingCommands.forget(record.fingerprint, record.commandKey);
@@ -839,27 +858,28 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const blockedBy = (group: string, target: string, loading = ctx.contentLoading) =>
     pendingBlocks.has(`${group}:${target}`) ? "有结果未确认的操作，先到页面上方处理" : loading ? "正在读取最新数据" : undefined;
 
-  const accountIssues = (c: K1Cluster) => c.nodes
-    .filter((n) => isRestrictedStatus(n[5]) || isUnknownStatus(n[5]))
-    .map((n) => `${n[0]} ${accountStatusLabel(n[5])}`)
-    .join("、");
+  /** 已冻结组里账户是冻结状态是应该的，不算异常。 */
+  const expectedFrozen = (c: K1Cluster, n: K1Cluster["nodes"][number]) => c.status === "frozen" && /FROZEN/i.test(n[5]);
+  const nodeList = (nodes: K1Cluster["nodes"]) => nodes.map((n) => `${n[0]} ${accountStatusLabel(n[5])}`).join("、");
+  const accountIssues = (c: K1Cluster) => nodeList(c.nodes.filter((n) => (isRestrictedStatus(n[5]) || isUnknownStatus(n[5])) && !expectedFrozen(c, n)));
 
-  const clusterFacts = (c: K1Cluster, { scope, approval = true, changed, unfreeze }: { scope?: ReactNode; approval?: boolean; changed?: string; unfreeze?: boolean } = {}) => {
-    const issues = accountIssues(c);
+  const clusterFacts = (c: K1Cluster, { scope, changed, accounts, restores, money }: { scope?: ReactNode; changed?: string; accounts?: ReactNode; restores?: boolean; money?: ReactNode } = {}) => {
+    // 解除只恢复因这组冻结的账户，封禁、受限的不动（restoreUsersFrozenBySource）。
+    const notRestored = restores ? nodeList(c.nodes.filter((n) => isRestrictedStatus(n[5]) && !expectedFrozen(c, n))) : "";
+    const issues = restores ? nodeList(c.nodes.filter((n) => isUnknownStatus(n[5]))) : accountIssues(c);
     return (
       <Facts>
         {/* 这次真的会动到账户时，账户数是这个框的关键数字（VS-102）。 */}
         {scope && <Fact k="涉及账户" lead unit="个">{c.n}</Fact>}
         <Fact k="账户组">{c.id}</Fact>
         {changed && <Fact k="别人改了">{changed}</Fact>}
-        <Fact k="关联依据">{c.layerLabel} · {c.key}</Fact>
-        <Fact k="关联程度">{c.strength.toFixed(2)}</Fact>
+        <Fact k="依据">{c.layerLabel} · {c.key} · 关联程度 {c.strength.toFixed(2)}</Fact>
         <Fact k="当前状态">{CLUSTER_ST[c.status][0]}</Fact>
         {scope ? <Fact k="账户清单">{scope}</Fact> : <Fact k="涉及账户">{c.n} 个</Fact>}
-        {unfreeze && <Fact k="账户冻结">批准后这 {c.n} 个账户解除冻结 <Explain label="解除冻结的范围" content="只解除因这组被冻结的账户和它们暂停的提现，因别的原因冻结的账户不动。" /></Fact>}
+        {accounts && <Fact k="账户冻结">{accounts}</Fact>}
+        {notRestored && <Fact k="不会恢复">{notRestored}</Fact>}
         {issues && <Fact k="账户状态异常">{issues}</Fact>}
-        {approval && <Fact k="谁来批准">超级管理员。超管发起的，由另一位超管批准。</Fact>}
-        {approval && <Fact k="批准前">这组的状态和账户都不变。</Fact>}
+        {money && <Fact k="资金影响" tone="warn">{money}</Fact>}
       </Facts>
     );
   };
@@ -880,37 +900,38 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     if (action === "flag") {
       const label = `标记可疑账户组 · ${c.id}`;
       return { ...common, label, action: label, title: "标记可疑账户组", briefKind: "judgment",
-        detail: "只标记为可疑，不冻结资产。风险评分和风险提醒会同步更新，并保留操作记录。",
-        statedBrief: { impact: "批准后这组变成可疑，不动资产；风险评分和风险提醒同步更新。", check: "确认对象、证据和结论，理由写清依据或工单号。" },
+        detail: "只标记为可疑，账户不冻结，提现限制和新增收益的处理都不变，保留操作记录。",
+        statedBrief: { impact: "批准后这组变成可疑，账户不冻结，提现限制和新增收益的处理都不变。", check: "确认对象、证据和结论，理由写清依据或工单号。" },
         facts: clusterFacts(c, { changed }) };
     }
     if (action === "freeze") {
       const label = `批量冻结关联账户 · ${c.id}`;
       const missing = c.n - c.nodes.length;
       return { ...common, label, action: label, title: "批量冻结关联账户", briefKind: "security",
-        detail: `冻结这组里的 ${c.n} 个账户。请填写原因，会记入操作记录。`,
+        detail: `冻结这组里状态正常的账户。请填写原因，会记入操作记录。`,
         statedBrief: {
-          impact: `批准后冻结这组的全部 ${c.n} 个账户，不只是当前这一个。`,
+          impact: "批准后这组里状态正常的账户全部冻结，退出登录，待处理的提现暂停。",
           check: missing > 0 ? `这里读不到其中 ${missing} 个账户，核对不全。核对已读到的账户和证据，理由写清依据或工单号。` : "核对账户清单和证据，理由写清依据或工单号。",
         },
-        facts: clusterFacts(c, { changed, scope: scopeText(c, "冻结") }) };
+        facts: clusterFacts(c, { changed, scope: scopeText(c, "冻结"), accounts: "批准后状态正常的账户冻结并退出登录，待处理的提现暂停。" }) };
     }
     if (action === "release") {
       const label = `解除误判 · ${c.id}`;
       const frozen = c.status === "frozen";
-      return { ...common, label, action: label, title: "解除误判", briefKind: "funds", amplifies: true, coverageLead: "这项操作可能让平台多付钱",
+      return { ...common, label, action: label, title: "解除误判", briefKind: "funds",
         detail: "解除后，这些账户可能有更多收益可以提现。请核对影响并写明原因。",
         statedBrief: {
-          impact: `批准后${frozen ? `这 ${c.n} 个账户解除冻结，` : ""}这组不再按风险组锁定新增收益，改按同组账号数处理，可提现的钱可能变多。`,
-          check: "核对账户、证据和触发的风险规则。提交时会先检查兑付覆盖率。",
+          impact: `批准后${frozen ? "解除因这组冻结的账户，" : ""}这组不再按风险状态限制提现和新增收益，改按同组账号数判断。`,
+          check: "核对账户、证据和触发的风险规则。",
         },
-        facts: clusterFacts(c, { changed, unfreeze: frozen, scope: frozen ? scopeText(c, "解除冻结") : undefined }) };
+        facts: clusterFacts(c, { changed, scope: scopeText(c, frozen ? "解除冻结" : "解除限制"), money: NO_COVERAGE_GATE, restores: frozen,
+          accounts: frozen ? "批准后解除因这组冻结的账户，恢复它们因此暂停的提现。因别的原因冻结的不动。" : undefined }) };
     }
     const label = `判定为正常 · ${c.id}`;
-    return { ...common, label, action: label, title: "判定为正常", briefKind: "judgment", amplifies: true, coverageLead: "这项操作可能让平台多付钱",
-      detail: "这组账户将退出风险监控，后续风险评分也会受影响。请填写判定依据。",
-      statedBrief: { impact: "批准后这组退出风险监控，新增收益改按同组账号数处理，可提现的钱可能变多。", check: "核对账户和证据。提交时会先检查兑付覆盖率。" },
-      facts: clusterFacts(c, { changed }) };
+    return { ...common, label, action: label, title: "判定为正常", briefKind: "judgment",
+      detail: "这组不再算监控中，后续风险评分也会受影响。请填写判定依据。",
+      statedBrief: { impact: "批准后这组不再算监控中，提现和新增收益改按同组账号数判断。", check: "核对账户和证据。" },
+      facts: clusterFacts(c, { changed, money: NO_COVERAGE_GATE }) };
   };
 
   const clusterChange = (before: K1Cluster, latest: K1Cluster) => [
@@ -964,11 +985,11 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     ctx.openActionConfirm({ briefKind: "funds",
       action: `人工放行收益 · ${entry.entryNo}`,
       title: "人工放行收益",
-      detail: `这笔收益现在是「${entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}」，放行后用户可以提现。`,
+      detail: `这笔收益现在是「${entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}」，放行后解除这笔的待审或锁定状态。`,
       amplifies: true,
       confirmTone: "danger",
-      statedBrief: { impact: "这笔收益立即转为可提现，占用平台储备，记入操作记录。", check: "核对用户、金额和所属账户组。提交时会先检查兑付覆盖率。" },
-      coverageLead: "这笔收益放行后可以提现",
+      statedBrief: { impact: "立即解除这笔收益的待审或锁定状态，记入操作记录。", check: "核对用户、金额和所属账户组。提交时会先检查兑付覆盖率。" },
+      coverageLead: "这笔钱放行后不再锁住",
       effect: <>{IMMEDIATE_EFFECT}<IrreversibleTag /></>,
       confirmLabel: "立即放行",
       reasonPlaceholder: RISK_REASON_PLACEHOLDER,
@@ -977,7 +998,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         <Fact k="收益记录">{entry.entryNo}</Fact>
         <Fact k="用户">U{entry.userId}</Fact>
         <Fact k="账户组">{entry.clusterId}</Fact>
-        <Fact k="前后状态"><Change from={entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"} to="可提现" /></Fact>
+        <Fact k="前后状态"><Change from={entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"} to="已放行" /></Fact>
+        <Fact k="提现">放行不解除账户组限制。账户组待判定、可疑、已冻结或人数达到锁定起点时仍不能提现。</Fact>
       </Facts>,
       reasonMin: 8,
       reasonMax: 200,
@@ -1034,15 +1056,22 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     void submitDraft("release", { kind: "release-param", target: releaseDraft.param.key, label: `调整收益审核规则 · ${name}`, name, operator, reason: releaseDraft.reason.trim(), value: releaseDraft.value, version: releaseDraft.param.version }, () => setReleaseDraft(null));
   };
 
-  /** 别人改过：读最新值，新值留着，理由清空，在最新版本上重新核对（OP-97）。 */
+  /** 别人改过：读最新值，新值留着，理由清空，在最新版本上重新核对（OP-97）。读到之前冲突一直留着，保存不可用。 */
   const readLatestReleaseParam = async () => {
     if (!releaseDraft) return;
+    setReadingLatest(true);
     try {
       const latest = (await ctx.reloadKRisk({ multiAccount: pageQuery }))?.releaseParams.find((p) => p.key === releaseDraft.param.key);
-      if (latest) setReleaseDraft((current) => current ? { ...current, param: latest, reason: "" } : current);
+      if (!latest) {
+        setDraftError({ text: "读取最新失败，稍后再试。已填写的内容还在。", conflict: true });
+        return;
+      }
+      setReleaseDraft((current) => current ? { ...current, param: latest, reason: "" } : current);
       setDraftError(null);
     } catch {
       setDraftError({ text: "读取最新失败，稍后再试。已填写的内容还在。", conflict: true });
+    } finally {
+      setReadingLatest(false);
     }
   };
 
@@ -1055,16 +1084,19 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   /** 备注是自己写的内容，留着；其余换成最新，在最新版本上再保存（OP-97）。 */
   const readLatestNote = async () => {
     if (!noteDraft) return;
+    setReadingLatest(true);
     try {
       const latest = (await ctx.reloadKRisk({ multiAccount: pageQuery }))?.clusters.records.find((cluster) => cluster.id === noteDraft.cluster.id);
       if (!latest) {
-        setDraftError({ text: noLongerAllowed(latest), conflict: false });
+        setDraftError({ text: noLongerAllowed(latest), conflict: true });
         return;
       }
       setNoteDraft((current) => current ? { ...current, cluster: latest, changed: clusterChange(current.cluster, latest) } : current);
       setDraftError(null);
     } catch {
       setDraftError({ text: "读取最新失败，稍后再试。已填写的内容还在。", conflict: true });
+    } finally {
+      setReadingLatest(false);
     }
   };
 
@@ -1085,7 +1117,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       title: "移出允许名单",
       facts: <Facts><Fact k="网段"><span data-mono="">{cidr}</span></Fact></Facts>,
       detail: "移除后该网段恢复同 IP 多账户检测。",
-      statedBrief: { impact: "这个网段恢复按 IP 检测，已有账户不会自动冻结。", check: "确认网段和授权来源，理由写清工单号和处理依据。" },
+      statedBrief: { impact: "这个网段恢复按 IP 检测。下次检查可能重新成组，新组不能提现、新增收益锁定；账户不会自动冻结。", check: "确认网段和授权来源，理由写清工单号和处理依据。" },
       effect: IMMEDIATE_EFFECT,
       confirmLabel: "立即移除",
       reasonPlaceholder: "写清调整原因和依据",
@@ -1163,18 +1195,18 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     const freezeFrom = releaseValue("duplicateAccountFreezeFrom");
     let impact: { label: string; tone: "danger" | "warn" | "ok" | "neutral"; desc: string } = { label: "尚未确认", tone: "neutral", desc: "收益审核规则暂时加载不出来，新增收益的处理方式尚未确认。" };
     if (["detected", "flagged", "frozen"].includes(c.status)) {
-      impact = { label: "锁定奖励", tone: "danger", desc: "账户组处于待判定、可疑或已冻结，新增收益直接记为锁定奖励；收益锁定与账户冻结是两种处理。" };
+      impact = { label: "锁定奖励", tone: "danger", desc: "账户组处于待判定、可疑或已冻结：这组账户不能提现，新增收益直接记为锁定奖励。收益锁定与账户冻结是两种处理。" };
     } else if (pendingFrom && freezeFrom) {
       impact = c.n >= Number(freezeFrom)
-        ? { label: "锁定奖励", tone: "danger", desc: `同组 ${c.n} 个账号已达到收益锁定起点 ${freezeFrom}，新增收益直接记为锁定奖励。` }
+        ? { label: "锁定奖励", tone: "danger", desc: `同组 ${c.n} 个账号已达到收益锁定起点 ${freezeFrom}：这组账户不能提现，新增收益直接记为锁定奖励。` }
         : c.n >= Number(pendingFrom)
           ? { label: "须审核收益", tone: "warn", desc: `同组 ${c.n} 个账号已达到收益审核起点 ${pendingFrom}，新增收益须先人工审核。` }
           : { label: "可提现收益", tone: "ok", desc: "同组账号数未达到收益审核起点，新增收益记为可提现收益。" };
     }
     const ruleText = slots && pendingFrom && freezeFrom
-      ? `当前规则：正常手机号名额为 ${slots} 个。账户组待判定、可疑、已冻结，或同组账号数达到 ${freezeFrom} 时，新增收益锁定；其余情况下，账号数达到 ${pendingFrom} 时须审核，未达到时可提现。`
+      ? `当前规则：正常手机号名额为 ${slots} 个。账户组待判定、可疑、已冻结，或同组账号数达到 ${freezeFrom} 时，这组账户不能提现，新增收益锁定；其余情况下，账号数达到 ${pendingFrom} 时须审核，未达到时可提现。`
       : "收益审核规则暂时加载不出来。";
-    const restricted = c.nodes.filter((n) => isRestrictedStatus(n[5])).length;
+    const restricted = c.nodes.filter((n) => isRestrictedStatus(n[5]) && !expectedFrozen(c, n)).length;
     const unknown = c.nodes.filter((n) => isUnknownStatus(n[5])).length;
     const shown = Math.min(c.nodes.length, 8);
     const hidden = Math.max(c.n - shown, 0);
@@ -1277,14 +1309,14 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       )}
 
       {pending.map((record) => {
-        const expired = record.expiresAt <= Date.now();
+        const blocked = retryBlocked(record);
         return (
         <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未确认`} action={<>
-          {record.kind === "cluster" && reach("/platform/audit", "platform_a2_read") && <Button size="sm" loading={checking === record.fingerprint} disabled={Boolean(retrying || checking)} onClick={() => void checkPending(record)}>查询原提案</Button>}
-          <Button size="sm" loading={retrying === record.fingerprint} disabled={Boolean(retrying || checking)} disabledReason={expired ? "已超过 24 小时，不能再重试" : undefined} onClick={() => void retryPending(record)}>按原操作重试</Button>
+          {record.kind === "cluster" && canQueryProposal && <Button size="sm" loading={checking === record.fingerprint} disabled={Boolean(retrying || checking)} onClick={() => void checkPending(record)}>查询原提案</Button>}
+          <Button size="sm" loading={retrying === record.fingerprint} disabled={Boolean(retrying || checking)} disabledReason={blocked} onClick={() => void retryPending(record)}>按原操作重试</Button>
           {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={Boolean(retrying || checking)} onClick={() => setReleasing(record)}>解除待确认</Button>}
         </>}>
-          {expired ? formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—") : clockText(record.createdAt)}（{businessZone().label}）发出，{RECOVERY_HINT[record.kind]}{expired ? EXPIRED_TEXT : "重发原内容，已成功的不会重复执行。"}
+          {formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，{RECOVERY_HINT[record.kind]}{blocked ?? "重发原内容，已成功的不会重复执行。"}
           {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=K&object=${encodeURIComponent(record.target)}`}>到操作记录核查</Link></>}
           {" "}<Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 操作人 ${record.operator} ｜ 理由 ${record.reason}`} />
           {pendingNotes[record.fingerprint] && <div>{pendingNotes[record.fingerprint]}</div>}
@@ -1294,7 +1326,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
       {tab !== "earnings" && pendingEntries.length > 0 && (
         <Notice tone="warn" title={entriesAtLimit ? `已读到的 ${PROTECTED_ENTRY_LIMIT} 条里有 ${pendingEntries.length} 笔等人工审核，实际可能更多` : `${pendingEntries.length} 笔收益等人工审核`} action={<Button size="sm" onClick={() => setTab("earnings")}>{canRelease ? "去处理" : "去查看"}</Button>}>
-          这些收益审核通过才能提现，不会到期自动放行。
+          这些收益要人工放行，不会到期自动放行。
         </Notice>
       )}
 
@@ -1425,7 +1457,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             </div>
             <div className="rd-config-groups">
               <Panel id={nav.anchor("risk")} title="风险判断标准" icon={ShieldAlert} tone="role-4"
-                explain="决定哪些账户算同一组。这页的修改保存后立即生效，不走审批，参数和允许名单一保存就影响用户；只有账户组的四种处置要超级管理员批准。">
+                explain="决定哪些账户算同一组。成组后这组账户不能提现、新增收益锁定。这页的修改保存后立即生效，不走审批，参数和允许名单一保存就影响用户；只有账户组的四种处置要超级管理员批准。">
                 <ConfigList>
                   {params.map((p) => (
                     <ConfigRow key={p.key} name={riskParamName(p)} what={K1_PARAM_HELP[p.key]?.what ?? p.sub} when={K1_PARAM_HELP[p.key]?.when} effect={K1_PARAM_HELP[p.key]?.direction} value={riskValueText(p.key, p.value, p.unit)}
@@ -1435,7 +1467,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               </Panel>
 
               {/* 收益释放参数(SPEC-7 搬回,合并底账 §二#5):与整簇冻结分开的放行细调。 */}
-              <Panel id={nav.anchor("earnings")} title="关联账户的收益审核规则" icon={Coins} tone="role-1" explain="决定新增收益能不能提现。保存后立即生效，不走审批，一保存就影响用户。">
+              <Panel id={nav.anchor("earnings")} title="关联账户的收益审核规则" icon={Coins} tone="role-1" explain="决定新增收益怎么处理；人数达到锁定起点的组也不能提现。保存后立即生效，不走审批，一保存就影响用户。">
                 {overviewReady.releaseParams.length > 0 ? (
                   <div className="rd-stack" data-proof="k1-risk-release-params">
                     <ConfigList>
@@ -1452,7 +1484,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                       })}
                     </ConfigList>
                     <Fold inset title="处理规则" summary="从上往下判断，满足哪条就按哪条"
-                      explain={<>收益锁定不用先冻结账户组，和账户冻结是两种处理。待审核收益<b>不会因等待时间到期自动放行</b>，只能人工放行。放宽审核起点、锁定起点可能增加资金支出，请写明依据。</>}>
+                      explain={<>收益锁定不用先冻结账户组，和账户冻结是两种处理。待审核收益<b>不会因等待时间到期自动放行</b>，只能人工放行。前两条同时让这组账户不能提现。放宽审核起点、锁定起点可能增加资金支出，请写明依据。</>}>
                       <KeyValues rows={[
                         { key: "status", label: "1. 账户组待判定、可疑或已冻结", value: "锁定奖励" },
                         { key: "freeze", label: `2. 同组账号数达到 ${overviewReady.releaseParams.find((p) => p.key === "duplicateAccountFreezeFrom")?.value ?? "—"}`, value: "锁定奖励" },
@@ -1466,7 +1498,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 )}
               </Panel>
 
-              <Panel id={nav.anchor("whitelist")} title="IP 允许名单" explain="名单内的网段不再按 IP 检测，设备和支付工具照常。加入后立即生效，不走审批。" icon={ListChecks} tone="role-2" flush
+              <Panel id={nav.anchor("whitelist")} title="IP 允许名单" explain="名单内的网段不再按 IP 检测，设备和支付工具照常。只靠这个网段成组的待判定组，下次检查时系统自动判为正常。加入后立即生效，不走审批。" icon={ListChecks} tone="role-2" flush
                 actions={canWrite && <Button size="sm" onClick={addWl}>+ 添加允许名单</Button>}>
                 <Table label="IP 允许名单">
                   <thead><tr><Th>IP / 网段</Th><Th>备注</Th><Th>添加人</Th><Th>失效时间</Th><Th align="right">操作</Th></tr></thead>
@@ -1549,8 +1581,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               state={direction}
               note={!problem && <>
                 {help?.whatIf?.(value)}
+                {loosening && !RELEASE_AFFECTS_EARNINGS.has(key) && "保存时仍检查覆盖率。"}
                 {/* 放大资金流出方向的告知:真正的拦截在服务端,本页没有覆盖率数据,不做客户端预检。不影响收益的几项写在上一句。 */}
-                {loosening && RELEASE_AFFECTS_EARNINGS.has(key) && <span className="rd-diff-note" data-tone="warn" data-proof="k1-release-loosen-warning"><AlertTriangle size={14} strokeWidth={1.9} aria-hidden /><span>这项调整可能增加可提现收益。保存时检查兑付覆盖率，低于红线不能保存。</span></span>}
+                {loosening && RELEASE_AFFECTS_EARNINGS.has(key) && <span className="rd-diff-note" data-tone="warn" data-proof="k1-release-loosen-warning"><AlertTriangle size={14} strokeWidth={1.9} aria-hidden /><span>{key === "duplicateAccountFreezeFrom" ? "已有余额可能恢复提现，新增收益也可能不再锁定。" : "这项调整可能增加可提现收益。"}保存时检查兑付覆盖率，低于红线不能保存。</span></span>}
               </>}
               error={limits ? fieldError(problem, typed, "value") : undefined}>
               {limits && range
@@ -1569,7 +1602,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           <DraftModal title="人工复审备注" icon={ShieldCheck} effect={IMMEDIATE_EFFECT} explain={[{ k: "影响", v: "只写备注，不改状态，会显示在账户组上，记入操作记录。" }]} busy={busy} saveLabel="保存备注" reasonLabel="复审备注"
             reason={noteDraft.reason} placeholder="写复审结论和依据，例如：合租办公网络，已电话核实不是同一人" {...draftAttempt} policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => setNoteDraft((current) => current ? { ...current, reason: next } : current)} onReadLatest={() => void readLatestNote()} onClose={() => setNoteDraft(null)} onSave={saveNoteDraft}>
-            {clusterFacts(noteDraft.cluster, { approval: false, changed: noteDraft.changed })}
+            {clusterFacts(noteDraft.cluster, { changed: noteDraft.changed })}
           </DraftModal>
         );
       })()}
@@ -1583,10 +1616,11 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const update = (patch: Partial<WhitelistDraft>) => setWhitelistDraft((current) => current ? { ...current, ...patch } : current);
         const busy = draftSubmitting === "whitelist";
         return (
-          <DraftModal title="添加 IP 允许名单" icon={ShieldCheck} effect={IMMEDIATE_EFFECT} explain={[{ k: "影响", v: "只是不再按 IP 检测；设备和支付工具仍照常检测，已冻结的账户不会自动解冻。" }, { k: "生效时间", v: "保存后立即生效，到失效日期后恢复检测。" }]} busy={busy} busyLabel="提交中…" saveLabel="加入并立即生效"
+          <DraftModal title="添加 IP 允许名单" icon={ShieldCheck} effect={IMMEDIATE_EFFECT} explain={[{ k: "影响", v: "不再按 IP 检测；设备和支付工具仍照常检测。可疑、已冻结的组和已冻结的账户不变。" }, { k: "生效时间", v: "保存后立即生效，系统约每分钟检查一次，到失效日期后恢复检测。" }]} busy={busy} busyLabel="提交中…" saveLabel="加入并立即生效"
             blocked={cidrProblem ?? noteProblem ?? expiryProblem ?? (pendingBlocks.has(`cidr:${cidr}`) ? "这个网段有结果未确认的操作，先到页面上方处理" : undefined)}
             reason={whitelistDraft.reason} placeholder="写清调整原因和依据" {...draftAttempt} policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => update({ reason: next })} onClose={() => setWhitelistDraft(null)} onSave={saveWhitelistDraft}>
+            <Notice tone="warn">只靠这个网段成组的待判定组，下次检查时系统自动判为正常，提现限制解除。</Notice>
             <Field label="IP / CIDR 网段" required error={fieldError(cidrProblem, Boolean(whitelistDraft.cidr), "cidr")}>
               {(control) => <Input {...control} disabled={busy} value={whitelistDraft.cidr} onChange={(event) => update({ cidr: event.target.value })} onBlur={() => touch("cidr")} placeholder="198.51.100.0/24" />}
             </Field>
@@ -1624,7 +1658,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const help = K1_PARAM_HELP.linkWeight;
         return (
           <DraftModal title={`调整${riskParamName(weightDraft.param)}`} icon={SlidersHorizontal} effect={IMMEDIATE_EFFECT} wide busy={busy} saveLabel="保存并立即生效"
-            explain={[{ k: "怎么算", v: "关联程度 = 设备指纹命中 × 设备权重 + 支付工具命中 × 支付权重 + IP 命中 × IP 权重。" }, { k: "怎么填", v: help.how }, { k: "生效时间", v: help.when }]}
+            explain={[{ k: "怎么算", v: "每种依据按同用账户数给分，乘权重后相加，取组里关联最强的一对账户。只影响建议冻结的提示，不改账户组状态。" }, { k: "怎么填", v: help.how }, { k: "生效时间", v: help.when }]}
             blocked={firstProblem ?? (!totalOk ? "三项合计必须等于 1.00" : !changed ? "保存值和当前值一样，没有改动" : undefined)}
             reason={weightDraft.reason} placeholder="例如：误判多来自同一网络，降低 IP 权重、提高设备指纹权重" {...draftAttempt} policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => updateDraft({ reason: next })} onClose={() => setWeightDraft(null)} onSave={saveWeightDraft}>
