@@ -88,7 +88,7 @@
 .rd-alert-note { display: block; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .rd-alert-empty { padding: 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); color: var(--rd-text-3); font-size: 13px; }
 .rd-alert:focus-visible, .rd-alert-cta:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
-@media (hover: hover) and (pointer: fine) { .rd-alert:hover { background: var(--rd-control); } }
+@media (hover: hover) and (pointer: fine) { a.rd-alert:hover { background: var(--rd-control); } }
 .rd-alert-cta { display: grid; width: 100%; }
 
 /* 未迁移页面的内容区保持旧的深色（06 VS-95）；侧栏和顶栏跟主题走。 */

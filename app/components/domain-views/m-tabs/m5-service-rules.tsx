@@ -1,5 +1,6 @@
 "use client";
 
+import { useReach } from "@/lib/nav/use-reach";
 import { M5UnboundPolicy } from "./m5-unbound-policy";
 import { M5WelcomeMessage } from "./m5-welcome-message";
 import { useEffect, useMemo, useState } from "react";
@@ -74,6 +75,7 @@ function errorText(error: unknown): string {
 }
 
 export function M5ServiceRules({ permission }: { permission: MSupportPermission }) {
+  const reach = useReach();
   const adminId = useAdminAuth((state) => state.session?.adminId);
   const [current, setCurrent] = useState<SupportRules | null>(null);
   const [draft, setDraft] = useState<RuleDraft | null>(null);
@@ -234,7 +236,7 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
       <M5UnboundPolicy permission={permission} />
       <aside className="m-admin-panel m5-impact-preview">
         <h2>影响预览</h2>
-        <a className="btn btn-sec btn-sm" href="/service/overview?view=pool">核对历史池并明确分配</a>
+        {reach("/service/overview", "service_m1_read") && <a className="btn btn-sec btn-sm" href="/service/overview?view=pool">核对历史池并明确分配</a>}
         <div className="m-admin-muted">已配置的能力按新规则计算；未配置的能力保持不可用。</div>
         <div className="m-admin-stats"><div className="m-admin-stat">沉睡判定<strong>{parsed?.dormantDays == null ? "未配置" : "可用"}</strong></div><div className="m-admin-stat">维护待办<strong>{parsed?.maintenanceDays == null ? "未配置" : "可用"}</strong></div><div className="m-admin-stat">活跃统计<strong>{parsed?.activityWindowDays == null ? "未配置" : "可用"}</strong></div></div>
         <div className="m-admin-muted">继承规则只影响之后的新注册；现有客户归属和待绑定池不会自动重排。变更天数只重算对应标签，不生成维护执行或成功记录。</div>

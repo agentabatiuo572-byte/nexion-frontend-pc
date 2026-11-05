@@ -1,5 +1,6 @@
 "use client";
 
+import { useReach } from "@/lib/nav/use-reach";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -16,6 +17,7 @@ import { PublishedHowContentEditor } from "@/app/components/domain-views/publish
 
 export function PlatformExperienceConfig() {
   const session = useAdminAuth((state) => state.session);
+  const reach = useReach();
   const canRead = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_read") === true;
   const canWrite = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_write") === true;
   const [config, setConfig] = useState<PlatformExperienceConfig | null>(null);
@@ -62,8 +64,8 @@ export function PlatformExperienceConfig() {
       {error && !config && <div role="alert" className="atint warn" style={{ marginBottom: 10 }}>{error}</div>}
       {loading && !config ? <div className="tiny">正在加载…</div> : !config ? <div className="atint warn">应用体验配置加载失败，暂时只能查看。</div> : <>
         <div className="two-col" style={{ marginBottom: 12 }}>
-          <div className="atint"><b>首页新手任务</b><br />{config.homeNewcomerTasksEnabled ? "已开启" : "已关闭"}<br /><Link href="/growth/quest">去「用户任务管理」修改 →</Link></div>
-          <div className="atint"><b>首页周促销</b><br />{config.homeWeeklyPromoEnabled ? "已开启" : "已关闭"}<br /><Link href="/growth/quest">去「用户任务管理」修改 →</Link></div>
+          <div className="atint"><b>首页新手任务</b><br />{config.homeNewcomerTasksEnabled ? "已开启" : "已关闭"}{reach("/growth/quest", "growth_h3_read") && <><br /><Link href="/growth/quest">去「用户任务管理」修改 →</Link></>}</div>
+          <div className="atint"><b>首页周促销</b><br />{config.homeWeeklyPromoEnabled ? "已开启" : "已关闭"}{reach("/growth/quest", "growth_h3_read") && <><br /><Link href="/growth/quest">去「用户任务管理」修改 →</Link></>}</div>
         </div>
         <nav className="a3-experience-nav" aria-label="应用体验配置分区"><a href="#a3-sharing" onClick={(event) => { event.preventDefault(); document.getElementById("a3-sharing")?.scrollIntoView({ block: "start" }); }}>分享渠道</a><a href="#a3-installer" onClick={(event) => { event.preventDefault(); document.getElementById("a3-installer")?.scrollIntoView({ block: "start" }); }}>官方应用安装</a><a href="#a3-languages" onClick={(event) => { event.preventDefault(); document.getElementById("a3-languages")?.scrollIntoView({ block: "start" }); }}>界面语言</a></nav>
         <h3 id="a3-sharing" className="a3-experience-heading">分享渠道与文案</h3>

@@ -6,7 +6,8 @@
  * 告警取 B 域与 J 域真实接口;A2 待办取审计待确认队列。
  * 只放要处理的事(DP-65):覆盖率正常、风险结论行这类正常状态不进列表。铃铛数字 = 列表里的告警 + 待确认,两边一致。
  */
-import { useEffect, useState } from "react";
+import { useReach } from "@/lib/nav/use-reach";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Bell, AlertTriangle, ChevronRight } from "lucide-react";
 import { Drawer } from "@/app/components/rd/overlay";
@@ -57,6 +58,13 @@ function roleForA2Operation(row: A2OperationRow): AdminRole | null {
 function operationDetail(row: A2OperationRow) {
   const delta = row.before !== "—" || row.after !== "—" ? `${row.before} → ${row.after}` : row.reason;
   return `${row.obj} · ${delta}`;
+}
+
+/** 告警不能隐藏（DP-03）：目标页进不去时这一行照样显示，只是不能点（X03）。 */
+function AlertRow({ href, tone, onClose, children }: { href?: string; tone?: string; onClose: () => void; children: ReactNode }) {
+  return href
+    ? <Link href={href} prefetch={false} onClick={onClose} className="rd-alert" data-tone={tone}>{children}</Link>
+    : <div className="rd-alert" data-tone={tone}>{children}</div>;
 }
 
 export function NotificationBell() {
@@ -193,6 +201,8 @@ function NotificationDrawer({
   a2Error: string | null;
   onClose: () => void;
 }) {
+  const reach = useReach();
+  const canOpenAudit = reach("/platform/audit", "platform_a2_read");
   return (
     <Drawer
       open={open}
@@ -200,11 +210,11 @@ function NotificationDrawer({
       title="告警和待确认操作"
       sub={`${alerts.length} 条告警 · ${pendingOperations.length} 项待确认`}
       aria-label="告警和待确认操作"
-      footer={
+      footer={canOpenAudit ? (
         <Link href="/platform/audit" prefetch={false} onClick={onClose} className="rd-btn rd-alert-cta" data-variant="primary">
           <span className="rd-btn-face">查看全部操作记录 <ChevronRight size={14} aria-hidden /></span>
         </Link>
-      }
+      ) : undefined}
     >
       {/* 风险与应急告警 */}
       <h3 className="rd-alert-heading">风险与应急告警</h3>
@@ -213,14 +223,14 @@ function NotificationDrawer({
         {alerts.map((a) => {
           const lv = LEVEL[a.level];
           return (
-            <Link key={a.id} href={a.href} prefetch={false} onClick={onClose} className="rd-alert" data-tone={lv.tone}>
+            <AlertRow key={a.id} href={reach(a.href) ? a.href : undefined} tone={lv.tone} onClose={onClose}>
               <AlertTriangle className="rd-alert-icon" size={14} aria-hidden />
               <span className="min-w-0 flex-1">
                 <span className="rd-alert-text">{a.text}</span>
                 <span className="rd-alert-level">{lv.label}</span>
               </span>
-              <ChevronRight className="rd-alert-go" size={14} aria-hidden />
-            </Link>
+              {reach(a.href) && <ChevronRight className="rd-alert-go" size={14} aria-hidden />}
+            </AlertRow>
           );
         })}
       </div>
@@ -229,24 +239,24 @@ function NotificationDrawer({
       <h3 className="rd-alert-heading">待确认的操作</h3>
       <div className="rd-alert-list">
         {a2Error && (
-          <Link href="/platform/audit" prefetch={false} onClick={onClose} className="rd-alert" data-tone="danger">
+          <AlertRow href={canOpenAudit ? "/platform/audit" : undefined} tone="danger" onClose={onClose}>
             <span className="min-w-0 flex-1">
               <span className="rd-alert-text">待确认操作加载失败</span>
               <span className="rd-alert-note">{a2Error}</span>
             </span>
-          </Link>
+          </AlertRow>
         )}
         {!a2Error && pendingOperations.length === 0 && <div className="rd-alert-empty">暂无待确认的操作。</div>}
         {pendingOperations.map((a) => {
           const operationRole = roleForA2Operation(a);
           return (
-            <Link key={a.id} href="/platform/audit" prefetch={false} onClick={onClose} className="rd-alert">
+            <AlertRow key={a.id} href={canOpenAudit ? "/platform/audit" : undefined} onClose={onClose}>
               <span className="min-w-0 flex-1">
                 <span className="rd-alert-text">{a2ActionText(a.action)}</span>
                 <span className="rd-alert-note">{operationDetail(a)}</span>
               </span>
               {operationRole && <span className="rd-role">{roleLabel(operationRole)}</span>}
-            </Link>
+            </AlertRow>
           );
         })}
       </div>

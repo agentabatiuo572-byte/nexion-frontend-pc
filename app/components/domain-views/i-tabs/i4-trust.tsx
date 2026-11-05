@@ -1,4 +1,5 @@
 "use client";
+import { useReach } from "@/lib/nav/use-reach";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
@@ -74,6 +75,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   const { toast, openActionConfirm, actions, content, contentLoading } = ctx;
   const propose = usePropose();
   const session = useAdminAuth((state) => state.session);
+  const reach = useReach();
   const isSuperadmin = session?.role === "superadmin";
   const canDraftTrust = isSuperadmin || !!session?.authorities.includes("content_i4_write");
   const canPublishStandard = isSuperadmin || !!session?.authorities.includes("content_i4_publish_standard");
@@ -888,7 +890,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           <div className="r">
             {pendingTrustSectionKeys.size > 0 && <span className="bdg warn">待审批 {pendingTrustSectionKeys.size}</span>}
             <button className="l-btn sm" onClick={() => void actions.reloadIContent()}>刷新状态</button>
-            {(isSuperadmin || session?.authorities.includes("platform_a2_read")) && <Link className="l-btn sm" href={pendingA2Href}>查看审批</Link>}
+            {reach(pendingA2Href, "platform_a2_read") && <Link className="l-btn sm" href={pendingA2Href}>查看审批</Link>}
             <span className="icode danger">敏感合规</span>
           </div>
         </div>

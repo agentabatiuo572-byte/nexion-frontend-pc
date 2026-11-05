@@ -19,6 +19,7 @@
  *
  * 设计稿元素省略:f-bar/f-nav/f-title/f-desc 已由 DomainHeader 承担,本组件从 .f-stats 开始。
  */
+import { useReach } from "@/lib/nav/use-reach";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PaginationExemptionList } from "../design-kit";
@@ -56,6 +57,7 @@ function healthToneLabel(tone: A3SystemHealth["tone"]) {
 }
 
 export function A3Config({ ctx }: { ctx: ACtx }) {
+  const reach = useReach();
   const { toast, openActionConfirm } = ctx;
   const router = useRouter();
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
@@ -274,13 +276,13 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
             <span className="ttl">紧急开关状态</span>
             <span className="sub">· 只能查看，操作请到右侧入口</span>
             <div className="r">
-              <button className="l-btn sm" onClick={() => router.push("/emergency/kill-switch")}>
+              {reach("/emergency/kill-switch") && <button className="l-btn sm" onClick={() => router.push("/emergency/kill-switch")}>
 
                 去紧急停用开关 →
-              </button>
-              <button className="l-btn sm" onClick={() => router.push("/emergency/geo-block")}>
+              </button>}
+              {reach("/emergency/geo-block", "emergency_j2_read") && <button className="l-btn sm" onClick={() => router.push("/emergency/geo-block")}>
                 去地区访问限制 →
-              </button>
+              </button>}
             </div>
           </div>
           <div style={{ overflowX: "auto" }}>

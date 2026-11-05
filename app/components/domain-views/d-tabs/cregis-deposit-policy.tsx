@@ -1,5 +1,6 @@
 "use client";
 
+import { useReach } from "@/lib/nav/use-reach";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
@@ -25,6 +26,7 @@ export function CregisDepositPolicy({ canManage, openActionConfirm, onActivityCh
 }
 
 function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivityChange }: { owner: number; epoch: number; operator: string; canManage: boolean; openActionConfirm: DCtx["openActionConfirm"]; onActivityChange?: (activity: DepositProposalActivity) => void }) {
+  const reach = useReach();
   const [policy, setPolicy] = useState<Policy | null>(null), [min, setMin] = useState(""), [fee, setFee] = useState(""), [confirmations, setConfirmations] = useState("");
   const [pending, setPending] = useState<Pending | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState(""), [message, setMessage] = useState("");
   const live = useRef(true), sequence = useRef(0), mutation = useRef(false);
@@ -137,6 +139,6 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
         ? <button className="l-btn sm" disabled={busy} onClick={() => void retry()}>使用原请求重试</button>
         : <p>原请求已超过重试时间或本机时间异常，请通过操作记录继续核实。</p>)}{" "}
       {pending.terminal && <button className="l-btn sm" disabled={busy} onClick={() => { proposals.forget(pending.fingerprint, pending.commandKey); syncPending(); void refresh(); }}>核对完成，准备新变更</button>}{" "}
-      <Link href="/platform/audit?domain=D">查看操作记录与审批</Link></div>}
+      {reach("/platform/audit", "platform_a2_read") && <Link href="/platform/audit?domain=D">查看操作记录与审批</Link>}</div>}
   </div>;
 }
