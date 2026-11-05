@@ -8,9 +8,12 @@
  * <StatusTag tone="neutral">待审核</StatusTag>  列表被筛成只有一种状态时，这个默认状态用 neutral：灰字加图标，颜色留给例外行。
  *
  * 表格里第二行说明用 Cell：<Cell main={<StatusTag …/>} sub="需人工审核" />。
+ *
+ * 弹窗标题下的后果标签（VS-106）：生效方式用 <StatusTag tone="progress" filled>立即生效</StatusTag>，
+ * 真的收不回来的操作再加 <IrreversibleTag />。只有这两种，不拿它写别的提醒。
  */
 import type { ReactNode } from "react";
-import { CheckCircle2, CircleDashed, CircleDot, Clock3, XCircle, type LucideIcon } from "lucide-react";
+import { Ban, CheckCircle2, CircleDashed, CircleDot, Clock3, XCircle, type LucideIcon } from "lucide-react";
 import { Explain } from "./explain";
 import type { StateTone } from "./tone";
 
@@ -25,4 +28,9 @@ export function StatusTag({ tone, icon, filled, explain, children }: { tone: Sta
     </span>
   );
   return explain ? <Explain label={`${typeof children === "string" ? children : "状态"}是什么意思`} content={explain}>{tag}</Explain> : tag;
+}
+
+/** 不能撤销：只给提交后收不回来的操作（退款、拒绝、强制扣款），和生效方式并排在弹窗标题下面。 */
+export function IrreversibleTag({ children = "不能撤销" }: { children?: ReactNode }) {
+  return <StatusTag tone="danger" filled icon={Ban}>{children}</StatusTag>;
 }

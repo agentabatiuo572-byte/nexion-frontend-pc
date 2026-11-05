@@ -31,8 +31,10 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   return <input ref={ref} {...rest} className={className ? `rd-input ${className}` : "rd-input"} />;
 });
 
-export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function Textarea({ className, ...rest }, ref) {
-  return <textarea ref={ref} {...rest} className={className ? `rd-input rd-textarea ${className}` : "rd-input rd-textarea"} />;
+/** count 是写在框角的字数，比如「12/200」：字数只写这一处，不再在字段下面重复（VS-105）。 */
+export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement> & { count?: ReactNode }>(function Textarea({ className, count, ...rest }, ref) {
+  const area = <textarea ref={ref} {...rest} className={className ? `rd-input rd-textarea ${className}` : "rd-input rd-textarea"} />;
+  return count === undefined ? area : <div className="rd-reason-box">{area}<span className="rd-reason-count">{count}</span></div>;
 });
 
 export function FilterField({ label, grow, children }: { label?: ReactNode; grow?: boolean; children: ReactNode }) {

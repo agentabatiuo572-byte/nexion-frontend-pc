@@ -501,6 +501,9 @@ const REVIEW_UNDO: Record<D2ReviewAction, string> = {
   REFUND: "不能撤销",
 };
 
+/** 「能否撤销」这一行的颜色（VS-106）：收不回来用红，打款后才收不回来用橙黄，能改回来的不上色。 */
+const REVIEW_UNDO_TONE: Partial<Record<D2ReviewAction, StateTone>> = { APPROVE: "warn", REJECT: "danger", REFUND: "danger" };
+
 /** 复查时间怎么定，收进「能否撤销」旁的提示图标（DP-06）。 */
 const REVIEW_TIME_EXPLAIN: Partial<Record<D2ReviewAction, string>> = {
   DELAY: "复查时间跟着等待天数走。手动改过就保留，和等待天数最多差一天。",
@@ -803,15 +806,16 @@ function reviewFacts(row: D2Withdrawal, action: D2ReviewAction, bank: D2BankPayo
   const timeExplain = REVIEW_TIME_EXPLAIN[action];
   return (
     <Facts>
+      {/* 金额是这个框的关键数字，放第一行（VS-102）。 */}
+      <Fact k="金额" lead tone="role-1" unit={row.asset}>{amountText(row.amount)}</Fact>
       <Fact k="提现单"><span data-mono>{row.withdrawalNo}</span></Fact>
       <Fact k="用户">{row.userNo}</Fact>
-      <Fact k="金额">{amountText(row.amount)} {row.asset}</Fact>
       {action !== "REFUND" && <Fact k="风险">{riskFact(row)}</Fact>}
       {action === "APPROVE" && <Fact k="收款网络">{bankRow ? "越南银行卡 · HDPay" : chainText(row)}</Fact>}
       {action === "APPROVE" && bankRow && <Fact k="收款账号"><span data-mono>{bank ? `${bank.bankName} ${bank.maskedAccount}` : "读取中，请在详情里核对"}</span></Fact>}
       {action === "APPROVE" && !bankRow && <Fact k="收款地址"><span data-mono>{row.targetAddress}</span></Fact>}
       {action === "APPROVE" && coverage}
-      <Fact k="能否撤销">{REVIEW_UNDO[action]}{timeExplain && <Explain label="复查时间怎么定" content={timeExplain} />}</Fact>
+      <Fact k="能否撤销" tone={REVIEW_UNDO_TONE[action]}>{REVIEW_UNDO[action]}{timeExplain && <Explain label="复查时间怎么定" content={timeExplain} />}</Fact>
     </Facts>
   );
 }

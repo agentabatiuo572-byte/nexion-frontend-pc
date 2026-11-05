@@ -30,8 +30,17 @@
  *
  * Modal 用法同旧 Modal。RdPage 里的旧 Modal、OperationConfirmModal 会自动走这个组件，不用改调用。
  * 框里打过字后点空白不关，免得填的内容丢了；只靠点选的表单传 dirty。×、取消、Esc 照常关。
+ *
+ * 弹窗里的文字分四层（VS-100～VS-108）：
+ * - 这是什么操作：title 只写动作和对象，页面分组不进标题。icon 给标题前的图标底，tone 默认灰；
+ *   不能撤销或直接动钱的最终确认传 tone="danger"，其他不用红。
+ * - 后果：生效方式、能不能撤销写成状态标签，传 sub，紧跟在标题下面，不写成灰字。
+ * - 关键信息：对象、金额、前后值放 Facts、DiffList、DiffField，框里最大最亮。
+ * - 要填的用 Field，字段名比只读标签强；范围、字数、说明最弱，能进提示图标就进。
+ *
+ * <Modal title="调整同一 IP 注册上限" icon={SlidersHorizontal} sub={<StatusTag tone="progress" filled>立即生效</StatusTag>} …>
  */
-import { useEffect, useRef, type ComponentProps, type KeyboardEvent, type ReactNode } from "react";
+import { isValidElement, useEffect, useRef, type ComponentProps, type KeyboardEvent, type ReactNode } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronDown, ChevronUp, X, type LucideIcon } from "lucide-react";
 import { IconButton } from "./button";
@@ -189,9 +198,14 @@ export function Decision({ note, explain, danger, others, primary }: { note?: Re
   );
 }
 
-export function Modal({ title, icon, onClose, children, footer, wide = false, busy = false, dirty = false, className }: {
+export function Modal({ title, sub, icon, tone = "neutral", onClose, children, footer, wide = false, busy = false, dirty = false, className }: {
   title: ReactNode;
-  icon?: ReactNode;
+  /** 标题下面一行：生效方式、能不能撤销这类后果标签，或对象编号。 */
+  sub?: ReactNode;
+  /** 标题前的图标底。传 lucide 图标；旧页面传来的图标元素也接。 */
+  icon?: LucideIcon | ReactNode;
+  /** 图标底的颜色。不能撤销或直接动钱的最终确认传 danger，其他默认灰。 */
+  tone?: RoleTone | StateTone;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
@@ -222,8 +236,13 @@ export function Modal({ title, icon, onClose, children, footer, wide = false, bu
           onInteractOutside={(event) => event.preventDefault()}
         >
           <div className="rd-modal-head">
-            {icon}
-            <Dialog.Title className="rd-modal-title">{title}</Dialog.Title>
+            {icon && (isValidElement(icon)
+              ? <span className="rd-tile" data-tone={tone} data-size={28} aria-hidden>{icon}</span>
+              : <IconTile tone={tone} icon={icon as LucideIcon} size={28} />)}
+            <div className="rd-modal-heading">
+              <Dialog.Title className="rd-modal-title">{title}</Dialog.Title>
+              {sub && <div className="rd-modal-sub">{sub}</div>}
+            </div>
             <IconButton aria-label="关闭" disabled={busy} onClick={close}><X size={16} aria-hidden /></IconButton>
           </div>
           <div className="rd-modal-body">{children}</div>
