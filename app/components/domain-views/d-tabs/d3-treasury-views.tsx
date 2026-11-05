@@ -490,7 +490,7 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNo
           窗口 {windowDays(pending.forecastWindow)}，储备科目 {enabledCount(pending.reserveCategories)}，负债科目 {enabledCount(pending.liabilityCategories)}，创世节点 {pending.genesisIncluded ? "纳入" : "不纳入"}，生效时间 {timeText(config.pendingEffectiveAt)}。
         </Notice>
       )}
-      {!canConfig && <Notice tone="done">你只能查看；调整预测设置需财务负责人。</Notice>}
+      {!canConfig && <Notice tone="done">你只能查看；调整预测设置需财务主管。</Notice>}
       {canConfig && lockedNote && <Notice tone="warn">{lockedNote}</Notice>}
       <p className="rd-note">当前版本 v{config.version}（已生效 v{config.effectiveVersion}）· 储备 {enabledCount(draft.reserveCategories)} 开启 · 负债科目 {enabledCount(draft.liabilityCategories)} 开启<Explain label="预测设置什么时候生效" content={`${effectiveText()}，不影响历史。`} /></p>
       {canConfig && !lockedNote ? (

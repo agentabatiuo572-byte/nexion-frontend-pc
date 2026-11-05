@@ -293,7 +293,7 @@ export interface D2Withdrawal {
   chain: string;
   amount: number;
   addressVerificationRequired: boolean | null;
-  /** 大额门槛，只有单笔详情带；列表里是 null。 */
+  /** 大额门槛（后端配置），列表和详情都带；读不到时是 null。 */
   strongReviewThresholdUsdt: number | null;
   fee: number;
   targetAddress: string;

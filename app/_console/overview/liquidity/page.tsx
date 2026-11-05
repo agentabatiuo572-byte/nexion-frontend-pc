@@ -23,8 +23,11 @@ import { useReach } from "@/lib/nav/use-reach";
  *  落 sessionStorage,刷新后「结果未知」的重试仍是同一命令号,后端才能去重。 */
 const forecastConfigCommandKey = createSlotAttemptStore({
   storageKey: "nexion-admin-b2-liquidity-commands-v1",
+  // 和资金储备页同一条记录，过期后不能再用原号重试，记录和锁都留着（OP-96）。
+  retainExpiredRecords: true,
 });
 const FORECAST_CONFIG_SLOT = "forecast-config";
+const RETRY_EXPIRED = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
 import {
   B2_LIABILITY_KEYS,
   B2OutcomeUnknownError,
@@ -123,7 +126,7 @@ export default function LiquidityPage() {
     void pendingTick;
     const record = forecastConfigCommandKey.list().find((item) => item.fingerprint === FORECAST_CONFIG_SLOT);
     if (!record) return null;
-    return { commandKey: record.commandKey, inputFingerprint: record.inputFingerprint, saved: JSON.parse(record.inputFingerprint) as { draft: B2ForecastValues; expectedVersion: number; reason: string; operator: string } };
+    return { commandKey: record.commandKey, expiresAt: record.expiresAt, inputFingerprint: record.inputFingerprint, saved: JSON.parse(record.inputFingerprint) as { draft: B2ForecastValues; expectedVersion: number; reason: string; operator: string } };
   }, [pendingTick]);
 
   const sourceText = useMemo(
@@ -203,11 +206,10 @@ export default function LiquidityPage() {
   /** 按原操作重试：同命令号、同内容、同理由、同操作人。只有成功才解除，明确拒绝也证明不了原操作的结果。 */
   const retryPending = async () => {
     if (!pending) return;
-    // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
+    // 过期和查不到记录都不发送，也不解除：解除只在后端明确拒绝之后（OP-96、OP-153）。
+    if (pending.expiresAt <= Date.now()) { setPendingNote(RETRY_EXPIRED); return; }
     if (!forecastConfigCommandKey.isDurablyStored(FORECAST_CONFIG_SLOT, pending.inputFingerprint, pending.commandKey)) {
-      forecastConfigCommandKey.forget(FORECAST_CONFIG_SLOT);
-      setPendingTick((tick) => tick + 1);
-      setNotice("原操作已结束或过期，本次未再次发送。请先核对配置，再决定如何处理。");
+      setPendingNote("浏览器里查不到这条记录，本次没有发送。待确认继续保留，请到操作记录与审批核对。");
       return;
     }
     const { draft: values, expectedVersion, reason: savedReason, operator } = pending.saved;
@@ -338,10 +340,10 @@ export default function LiquidityPage() {
       {pending && canConfig && (
         <div className="b2-alert error" role="alert">
           <b>预测设置保存结果未知，可能已经保存</b>
-          <div>基于版本 v{pending.saved.expectedVersion}，默认预测窗口 {pending.saved.draft.forecastWindow}，理由：{pending.saved.reason}。先看配置版本有没有变；重试用同一个请求号和原内容，不会重复保存，内容不能改。</div>
+          <div>基于版本 v{pending.saved.expectedVersion}，默认预测窗口 {pending.saved.draft.forecastWindow}，理由：{pending.saved.reason}。{pending.expiresAt <= Date.now() ? `${RETRY_EXPIRED}。` : "先看配置版本有没有变；重试不会重复保存，内容不能改。"}</div>
           {pendingNote && <div>{pendingNote}</div>}
           <div className="b2-dialog-actions">
-            <button type="button" className="b2-button" disabled={retrying} onClick={() => void retryPending()}>{retrying ? "提交中…" : "按原操作重试"}</button>
+            <button type="button" className="b2-button" disabled={retrying || pending.expiresAt <= Date.now()} title={pending.expiresAt <= Date.now() ? RETRY_EXPIRED : undefined} onClick={() => void retryPending()}>{retrying ? "提交中…" : "按原操作重试"}</button>
             {rejectedKey === pending.commandKey && <button type="button" className="b2-button" disabled={retrying} onClick={() => setReleaseOpen(true)}>解除待确认</button>}
           </div>
         </div>
