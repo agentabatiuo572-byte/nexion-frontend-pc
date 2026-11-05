@@ -734,7 +734,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   };
   const delSku = (skuId: string, rawDisplayName: string) => {
     const displayName = (rawDisplayName);
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       name: "删除商品 · " + displayName,
       op: "sku-delete",
       target: skuId,
@@ -778,7 +778,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       sortOrder: String(Math.floor(sortOrder)),
     };
     const statusLabel = DC_STATUS_OPTIONS.find((item) => item.value === normalized.status)?.label ?? normalized.status;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       name: (editDcLocation ? "编辑数据中心 · " : "新增数据中心 · ") + normalized.dcLocation,
       op: "dc-save",
       dc: editDcLocation ?? normalized.dcLocation,
@@ -789,7 +789,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     setDcDrawer(false);
   };
   const deleteDatacenter = (dc: E5Datacenter) => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       name: "删除数据中心 · " + dc.dcLocation,
       op: "dc-delete",
       dc: dc.dcLocation,
@@ -857,7 +857,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!canMutateE2Tasks) return rejectE2Mutation();
     const err = validateTaskForm();
     if (err) { setToast(err); return; }
-    openActionConfirm({ name: "新增任务 · " + taskForm.n.trim(), op: "task-create", detail: `新增任务「${taskForm.n.trim()}」。批准后，对之后新派的任务生效。` });
+    openActionConfirm({ briefKind: "config", name: "新增任务 · " + taskForm.n.trim(), op: "task-create", detail: `新增任务「${taskForm.n.trim()}」。批准后，对之后新派的任务生效。` });
     setTaskDrawer(false);
   };
   // 编辑提交:校验后走操作确认(高敏 · 改单价/门槛/taskClass server-canonical)→ onConfirm 真写 updateTask。
@@ -865,7 +865,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!canMutateE2Tasks) return rejectE2Mutation();
     const err = validateTaskForm();
     if (err) { setToast(err); return; }
-    openActionConfirm({ name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", detail: `修改任务「${taskForm.n.trim()}」。只对之后新派的任务生效，已派出的按原设置完成。` });
+    openActionConfirm({ briefKind: "config", name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", detail: `修改任务「${taskForm.n.trim()}」。只对之后新派的任务生效，已派出的按原设置完成。` });
     setTaskDrawer(false);
   };
   const skuLabelsUsingTask = (taskId: string, taskName: string) => skus
@@ -884,7 +884,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setToast(`无法下架：${t.n} 正被这些商品使用：${refSkus.join("、")}。请先在「商品管理与上架条件」修改它们的解锁算力池。`);
       return;
     }
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       name: "下架任务 · " + t.n,
       op: "task-down",
       taskId: t.id,
@@ -1075,7 +1075,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setToast("没有任何修改，无需提交");
       return;
     }
-    openActionConfirm({ name: (editSkuId ? "编辑商品 · " : "新增商品 · ") + (form.name || "未命名"), op: "sku-save", isNew: !editSkuId, hasImg: !!skuMedia });
+    openActionConfirm({ briefKind: "config", name: (editSkuId ? "编辑商品 · " : "新增商品 · ") + (form.name || "未命名"), op: "sku-save", isNew: !editSkuId, hasImg: !!skuMedia });
     setSkuDrawer(false);
   };
 
@@ -1220,12 +1220,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         return (
           <Drawer title={o.id} sub={`${o.sku} · ${o.user}`} onClose={closeOrder}
             footer={<>
-                  {nextState && <Btn onClick={() => openActionConfirm({ name: `推进订单 · ${o.id} → ${stateLabel(nextState)}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, detail: `手动推进 ${o.id}：${stateLabel(eff)} → ${stateLabel(nextState)}` })}>推进到下一步</Btn>}
-                  {canCancel && <Btn onClick={() => openActionConfirm({ name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, detail: `取消 ${o.id}（${stateLabel(eff)}）。用户还没付款，取消后订单终止。`,
+                  {nextState && <Btn onClick={() => openActionConfirm({ briefKind: "record", name: `推进订单 · ${o.id} → ${stateLabel(nextState)}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, detail: `手动推进 ${o.id}：${stateLabel(eff)} → ${stateLabel(nextState)}` })}>推进到下一步</Btn>}
+                  {canCancel && <Btn onClick={() => openActionConfirm({ briefKind: "record", name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, detail: `取消 ${o.id}（${stateLabel(eff)}）。用户还没付款，取消后订单终止。`,
                     businessForm: { kind: "multi-field", title: "取消原因", fields: [
                       { key: "closeReasonCode", label: "取消原因（用户可见）", current: "", inputKind: "select", options: ["", ...E4_CLOSE_REASONS.cancelled], optionLabels: { "": "请选择取消原因", ...E4_CLOSE_REASON_LABELS }, required: true, help: "这个原因会显示在用户的订单详情里；下方备注只记在操作记录里，用户看不到。" },
                     ] } })}>取消订单</Btn>}
-                  {canWriteE4 && terminalOptions.length > 0 && <Btn onClick={() => openActionConfirm({ name: "标记失败结果 · " + o.id, op: "order-terminal", orderId: o.id, amplify: false, detail: `当前状态：${stateLabel(eff)}，选择一个失败结果。退款请用「退款」按钮。`,
+                  {canWriteE4 && terminalOptions.length > 0 && <Btn onClick={() => openActionConfirm({ briefKind: "record", name: "标记失败结果 · " + o.id, op: "order-terminal", orderId: o.id, amplify: false, detail: `当前状态：${stateLabel(eff)}，选择一个失败结果。退款请用「退款」按钮。`,
                     businessForm: { kind: "multi-field", title: "失败结果与原因", hint: "过期、拒付的原因会自动记录；支付失败、开通失败需要选择原因。", fields: [
                       { key: "terminalState", label: "失败结果", current: "", inputKind: "select", options: ["", ...terminalOptions], optionLabels: { "": "请选择失败结果", ...Object.fromEntries(terminalOptions.map((s) => [s, stateLabel(s)])) }, required: true },
                       ...terminalOptions.filter((s) => E4_CLOSE_REASONS[s]).map((s) => (
@@ -1234,7 +1234,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                   {canRefundE4 && refundableState && <Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!refundReady} onClick={() => {
                     if (!e4Detail || !refundReady) return;
                     const channels = e4Detail.refundChannels.length ? e4Detail.refundChannels : ["WALLET"];
-                    openActionConfirm({
+                    openActionConfirm({ briefKind: "funds",
                       name: "退款 · " + o.id, op: "order-refund", orderId: o.id, amplify: true,
                       businessForm: { kind: "multi-field", title: "退款渠道与原因", hint: coverageText, fields: [
                         { key: "refundChannel", label: "退款渠道", current: channels[0], inputKind: "select", options: channels, optionLabels: { WALLET: "退回 USDT 钱包", ORIGINAL_PAYMENT: "原支付渠道" }, required: true, showDiff: true },
@@ -1609,7 +1609,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       </Drawer>}
 
       {/* 操作确认(唯一动作出口)*/}
-      {mc && <OperationConfirmModal
+      {mc && <OperationConfirmModal briefKind={mc.briefKind}
         action={mc.name}
         detail={mc.detail ?? "从下一次结算或新派任务开始生效，已累计的收益不变。"}
         amplifies={!!mc.amplify}

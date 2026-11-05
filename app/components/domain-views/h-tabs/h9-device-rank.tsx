@@ -37,7 +37,7 @@ export function H9DeviceRank({ ctx }: { ctx: HCtx }) {
   const save = () => {
     if (locked || !data || validation || !dirty) return;
     const submitted = { version: data.version, enabled, tiers };
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       action: "保存设备预估排名", reasonMin: 8, reasonMax: 200,
       completionCopy: "保存后马上生效，并记入操作记录。",
       detail: <>

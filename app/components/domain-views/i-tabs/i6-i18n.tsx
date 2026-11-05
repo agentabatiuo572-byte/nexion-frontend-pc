@@ -224,7 +224,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     return remain.map((r) => `${r.kind.split(" ")[0]} ${r.cnt}`).join(" · ");
   })();
   const rescan = () =>
-    openConfirm({
+    openConfirm({ briefKind: "record",
       errorHandled: true,
       action: <>全量重扫 {I6_STATS.managedKeys} 词条</>,
       detail: <>检查缺少翻译、变量不一致、占位文字、旧品牌名、写死的文字和禁用词。只检查不修改，结果会刷新到下表。</>,
@@ -234,7 +234,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     });
 
   const editKeyDraft = () => selectedMessage &&
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: <>编辑词条草稿 · {selectedMessage.messageKey}</>,
       detail: (
         <>
@@ -264,7 +264,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     });
 
   const pubKey = () =>
-    openActionConfirm({
+    openActionConfirm({ briefKind: "content",
       action: <>发布词条 · {selectedMessage?.messageKey ?? "未选择"} {selectedMessage?.version ?? ""}</>,
       detail: (
         <>
@@ -286,7 +286,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       },
     });
 
-  const archiveKey = () => selectedMessage && openActionConfirm({
+  const archiveKey = () => selectedMessage && openActionConfirm({ briefKind: "record",
     action: <>归档词条 · {selectedMessage.messageKey}</>,
     detail: <>归档后不再显示，历史版本和操作记录仍保留。</>,
     amplifies: false,
@@ -298,7 +298,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   });
 
   const rollbackMessageVersion = (target: I18nMessagePairView) =>
-    selectedMessage && openActionConfirm({
+    selectedMessage && openActionConfirm({ briefKind: "content",
       action: <>回滚词条 · {selectedMessage.messageKey} → {target.version}</>,
       detail: <>
         把这个旧版本的三语内容复制成一个新版本发布，旧记录不会被改动。
@@ -314,7 +314,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     });
 
   const fixIntegrity = (issue: IntegrityIssue) =>
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: <>修复完整性问题 · {issue.kind}</>,
       detail: (
         <>
@@ -349,7 +349,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   /* ============ tutorial actions ============ */
   const pubCrs = (c: Course) =>
-    openActionConfirm({
+    openActionConfirm({ briefKind: "content",
       action: <>发布课程新版 · {nexGridBrandText(c.title)}</>,
       detail: (
         <>
@@ -364,7 +364,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   // 唯一 amplifies = 课程奖励调整。
   const adjRwd = (c: Course) =>
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: <>课程奖励调整 · {nexGridBrandText(c.title)}</>,
       detail: (
         <>
@@ -395,7 +395,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     });
 
   const archiveCrs = (c: Course) =>
-    openActionConfirm({
+    openActionConfirm({ briefKind: "content",
       action: <>下架课程 · {nexGridBrandText(c.title)}</>,
       detail: (
         <>
@@ -447,7 +447,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   };
 
   const newCrs = () =>
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: <>新建课程(存为草稿)</>,
       detail: (
         <>
@@ -470,7 +470,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       },
     });
 
-  const editCrs = (c: Course) => openActionConfirm({
+  const editCrs = (c: Course) => openActionConfirm({ briefKind: "config",
     action: <>编辑课程草稿 · {nexGridBrandText(c.title)}</>,
     detail: <>只有草稿可以编辑；测验按题目和选项填写。</>,
     amplifies: false,
@@ -492,7 +492,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     run: (reason, _slug, form) => runBackend(actions.updateI7CourseDraft(c.id, coursePayload(form, c.revision), reason), `${nexGridBrandText(c.title)} 草稿已更新`),
   });
 
-  const deleteCrs = (c: Course) => openActionConfirm({
+  const deleteCrs = (c: Course) => openActionConfirm({ briefKind: "record",
     action: <>删除课程草稿 · {nexGridBrandText(c.title)}</>,
     detail: <>只能删除还没发布的草稿；已发布或已归档的课程不能删除。</>,
     amplifies: false,
@@ -518,7 +518,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const newCourseVersion = (c: Course) => {
     const maxVersion = Math.max(Number(c.v.replace(/^v/i, "")) || 0,
       ...courseVersions.map((row) => Number(row.version.replace(/^v/i, "")) || 0));
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: <>新建课程版本草稿 · {nexGridBrandText(c.title)}</>,
       detail: <>当前发布版继续服务用户；新版本在独立草稿中编辑，发布后才原子替换当前版。</>,
       amplifies: false,
@@ -532,7 +532,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     });
   };
 
-  const editCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({
+  const editCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({ briefKind: "config",
     action: <>编辑课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
     detail: <>三语正文和三语测验都要填完整。如果别人刚改过，需要刷新后重改。</>,
     amplifies: false,
@@ -545,21 +545,21 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       actions.updateI7CourseVersion(c.id, row.version, coursePayload(form, row.revision), reason), `${nexGridBrandText(c.title)} ${row.version} 草稿已更新`),
   });
 
-  const deleteCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({
+  const deleteCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({ briefKind: "record",
     action: <>删除课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
     detail: <>只能删除草稿；已发布和历史版本不能删除，以免影响用户进度和奖励。</>,
     amplifies: false,
     run: (reason) => runBackend(actions.deleteI7CourseVersion(c.id, row.version, reason), `${row.version} 草稿已删除`),
   });
 
-  const publishCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({
+  const publishCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({ briefKind: "content",
     action: <>发布课程版本 · {nexGridBrandText(c.title)} {row.version}</>,
     detail: <>发布前会检查三语测验、兑付覆盖率和权限；发布后旧版本变为历史版本。</>,
     amplifies: true,
     run: (reason) => runBackend(actions.publishI7CourseVersion(c.id, row.version, reason), `${row.version} 已发布`),
   });
 
-  const rollbackCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({
+  const rollbackCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({ briefKind: "content",
     action: <>回滚课程版本 · {nexGridBrandText(c.title)} → {row.version}</>,
     detail: <>回滚后课程内容、测验和奖励设置一起恢复成这个版本；已领过奖励的用户不会重复领取。</>,
     amplifies: true,
@@ -570,7 +570,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const cur = liveFeatured();
     const publishedCourseOptions = COURSES.filter((course) => liveStatus(course) === "published").map((course) => course.id);
     const publishedCourseLabels = Object.fromEntries(COURSES.filter((course) => liveStatus(course) === "published").map((course) => [course.id, `${nexGridBrandText(course.title)}（${course.id}）`]));
-    openActionConfirm({
+    openActionConfirm({ briefKind: "content",
       action: <>更换推荐位课程</>,
       detail: (
         <>

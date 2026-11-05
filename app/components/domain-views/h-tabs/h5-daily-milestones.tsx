@@ -121,7 +121,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     if (isProbability) {
       const other = model!.rules.find((item) => item.key === (rule.key === "p15" ? "p2" : "p15"))!;
       const otherProbability = Number(other.cur);
-      openActionConfirm({
+      openActionConfirm({ briefKind: "config",
         action: `签到规则 · ${operatorCopyText(rule.name)}`,
         detail: <>每档概率必须在 0–100%，两档合计不能超过 100%。另一档当前为 {otherProbability}%。批准后生效。</>,
         businessForm: {
@@ -143,7 +143,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       return;
     }
     if (rule.hot) {
-      openActionConfirm({
+      openActionConfirm({ briefKind: "config",
         action: `签到规则 · ${operatorCopyText(rule.name)}`,
         detail: <>当前 <b>{current}</b>。批准后生效。</>,
         amplifies: true,
@@ -152,7 +152,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       });
       return;
     }
-    openConfirm({
+    openConfirm({ briefKind: "config",
       errorHandled: true,
       action: `签到规则 · ${operatorCopyText(rule.name)}`,
       detail: <>当前 <b>{current}</b>。批准后生效。</>,
@@ -165,7 +165,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   };
 
   const openStreak = (milestone: StreakMilestone) => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `连签里程碑 · ${milestone.day}`,
       detail: <>当前奖励 <b>{operatorCopyText(milestone.reward)}</b>。调高奖励时，覆盖率低于红线无法保存。</>,
       amplifies: true,
@@ -179,7 +179,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   };
 
   const openPowerUp = (powerUp: PowerUp) => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `连续签到成长奖励 · ${operatorCopyText(powerUp.label)}`,
       detail: <>当前连续签到 <b>{powerUp.day}</b> 天触发。可以顺便改运营备注。</>,
       amplifies: false,
@@ -209,7 +209,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   };
 
   const openEarn = (milestone: EarnMilestone) => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `收益里程碑 · $${milestone.threshold}`,
       detail: <>当前门槛 <b>${milestone.threshold}</b>，奖励 <b>{milestone.nex} UVT</b>。门槛要从小到大排列。</>,
       amplifies: true,
@@ -234,7 +234,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const openTick = () => {
     const current = text(model?.tickInterval?.seconds ?? model?.tickInterval?.value, "4");
     const currentSeconds = String(model?.tickInterval?.seconds ?? numericText(model?.tickInterval?.value, "4"));
-    openConfirm({
+    openConfirm({ briefKind: "config",
       action: "收益里程碑触发检查间隔",
       detail: <>当前 <b>{text(model?.tickInterval?.value, current)}</b>。系统每隔这么多秒检查一次谁达到了收益里程碑。</>,
       chips: [["记入操作记录", "done"]],

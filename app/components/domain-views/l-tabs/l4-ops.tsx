@@ -298,7 +298,7 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
       intentKeyRef.current = "";
       lastSuccessAtRef.current = 0;
     }
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "export",
       action: "导出团队明细",
       detail: (
         <div>

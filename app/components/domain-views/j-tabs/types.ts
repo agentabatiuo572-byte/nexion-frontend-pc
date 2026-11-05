@@ -3,10 +3,11 @@
  * shell 只负责渲染 OperationConfirmModal 并回调 run(真写落点仍集中于各视图内的 ctx.setParam)。
  */
 import type { ReactNode } from "react";
-import type { EditSpec, BusinessFormSpec, BusinessFormValue, CoverageSnapshot } from "../design-kit";
+import type { OperatorBriefKind, EditSpec, BusinessFormSpec, BusinessFormValue, CoverageSnapshot } from "../design-kit";
 import type { JEmergencyActions, JEmergencyData } from "@/lib/admin/j-client";
 
 export type ActionConfirmReq = {
+  briefKind: OperatorBriefKind;
   action: ReactNode;
   detail: ReactNode;
   amplifies?: boolean;

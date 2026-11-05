@@ -115,7 +115,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       { key: "ownerUserId", label: "用户编号", inputKind: "number", min: 1, step: 1, pattern: "^[0-9]+$" },
       { key: "settlementDate", label: "结算日（越南时间）", inputKind: "text", pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", patternMessage: "结算日格式应为 YYYY-MM-DD", placeholder: "YYYY-MM-DD" },
     ] as const;
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "funds",
       name: "手动结算团队平衡奖励",
       businessForm: { kind: "multi-field", fields: [...fields] },
       teamApproval: {
@@ -323,7 +323,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="ckv"><span className="k">当前门槛</span><span className="v">{text(thEff)}</span></div>
           <div className="ckv"><span className="k">未达门槛的订单额</span><span className="v">{text(cfg?.residualPool)}</span></div>
           <div className="ckv"><span className="k">未匹配订单额处理</span><span className="v" style={{ color: "var(--ink-3)" }}>{text(residualEff)}</span></div>
-          {canConfigure && <div className="cfg-foot"><button className="fbtn primary" onClick={() => ctx.openActionConfirm({
+          {canConfigure && <div className="cfg-foot"><button className="fbtn primary" onClick={() => ctx.openActionConfirm({ briefKind: "config",
             name: "调整每组订单额门槛",
             edit: { kind: "number", current: thresholdCurrent, unit: "USDT", min: 0.000001, max: 5000, amplifiesWhen: "decrease" },
             detail: `每组订单额门槛 · 当前 ${text(thEff)}。须大于 0、不超过 5000，最多 6 位小数；降低门槛会增加奖励流出，需检查兑付覆盖率。`,
@@ -343,7 +343,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="ckv"><span className="k">当前比例</span><span className="v" style={{ color: "var(--brand)" }}>{text(rateEff)}</span></div>
           <div className="ckv"><span className="k">今日匹配总额</span><span className="v">{usd(ctx.f3DailyMatchUsd)}</span></div>
           <div className="ckv"><span className="k">月累计匹配</span><span className="v">{usd(ctx.f3MonthlyMatchedUsd)}</span></div>
-          {canConfigure && <div className="cfg-foot"><button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({
+          {canConfigure && <div className="cfg-foot"><button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({ briefKind: "config",
             name: "调整匹配比例",
             edit: { kind: "number", current: ratePercent ?? "", unit: "%", min: 0.0000000001, max: 20, amplifiesWhen: "increase" },
             detail: `较小一组订单额 × 这个比例 = 奖励 · 当前 ${rateEff}。按百分比填写，填 1 就是 1%；须大于 0、不超过 20，最多 10 位小数。调高会多发奖励，需检查兑付覆盖率。`,
@@ -365,8 +365,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="ckv"><span className="k">已存归零说明</span><span className="v" style={{ fontSize: 11 }}>{text(resetEff)}</span></div>
           <div className="cs">这段说明不决定归零时点；旧 UTC 文字不改变实际业务日历。</div>
           {canConfigure && <div className="cfg-foot">
-            <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "调整自动分组", op: "param", paramKey: "F.binary.spillover", edit: { kind: "select", current: spillOn ? "已启用" : "已关闭", options: ["已启用", "已关闭"] }, detail: "关闭后，新成员需要手动分到 A 组或 B 组。" })}>自动分组</button>
-            <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "更新归零说明", op: "param", paramKey: F3_GV_RESET_PARAM_KEY, edit: { kind: "select", current: resetEff, options: ["每月 1 日 00:00 Asia/Ho_Chi_Minh"], optionLabels: { "每月 1 日 00:00 Asia/Ho_Chi_Minh": "每月 1 日 00:00 越南时间 UTC+7" } }, detail: `当前已存说明：${text(resetEff)}。本操作只更新说明；实际归零仍按系统业务日历，历史周期不重算。`, completionCopy: "说明批准后生效，不改变业务日历或历史结算。" })}>更新归零说明</button>
+            <button className="fbtn" onClick={() => ctx.openActionConfirm({ briefKind: "config", name: "调整自动分组", op: "param", paramKey: "F.binary.spillover", edit: { kind: "select", current: spillOn ? "已启用" : "已关闭", options: ["已启用", "已关闭"] }, detail: "关闭后，新成员需要手动分到 A 组或 B 组。" })}>自动分组</button>
+            <button className="fbtn" onClick={() => ctx.openActionConfirm({ briefKind: "config", name: "更新归零说明", op: "param", paramKey: F3_GV_RESET_PARAM_KEY, edit: { kind: "select", current: resetEff, options: ["每月 1 日 00:00 Asia/Ho_Chi_Minh"], optionLabels: { "每月 1 日 00:00 Asia/Ho_Chi_Minh": "每月 1 日 00:00 越南时间 UTC+7" } }, detail: `当前已存说明：${text(resetEff)}。本操作只更新说明；实际归零仍按系统业务日历，历史周期不重算。`, completionCopy: "说明批准后生效，不改变业务日历或历史结算。" })}>更新归零说明</button>
           </div>}
         </div>
 
@@ -375,7 +375,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="cs">多久结算一次、没匹配上的订单额怎么处理 · 下一期生效</div>
           <div className="ckv"><span className="k">结算周期</span><span className="v" style={{ color: "var(--brand)" }}>{text(periodEff)}</span></div>
           <div className="ckv"><span className="k">未匹配订单额处理</span><span className="v">{text(residualEff)}</span></div>
-          {canConfigure && <div className="cfg-foot"><button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({
+          {canConfigure && <div className="cfg-foot"><button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({ briefKind: "config",
             name: "结算周期与未匹配订单额处理调整",
             op: "param-multi",
             amplify: true,
@@ -402,7 +402,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="cs">⚡ 紧急情况下暂停全平台发放</div>
           <div className="ckv"><span className="k">状态</span><span className="v" style={{ color: binaryPaused ? "var(--danger)" : "var(--success)" }}>{binaryPaused ? "已暂停" : "运行中"}</span></div>
           <div className="ckv"><span className="k">影响范围</span><span className="v" style={{ color: "var(--ink-3)" }}>{binaryPaused ? "全平台暂停发放" : "按周期正常发放"}</span></div>
-          {canPause && <div className="cfg-foot"><button className={`fbtn${binaryPaused ? " primary" : " danger"}`} onClick={() => ctx.openActionConfirm({
+          {canPause && <div className="cfg-foot"><button className={`fbtn${binaryPaused ? " primary" : " danger"}`} onClick={() => ctx.openActionConfirm({ briefKind: binaryPaused ? "config" : "record",
             name: binaryPaused ? "恢复团队平衡奖励发放" : "暂停团队平衡奖励发放",
             op: "dispose", paramKey: "F.binary.paused", fixedVal: binaryPaused ? "off" : "on",
             detail: binaryPaused

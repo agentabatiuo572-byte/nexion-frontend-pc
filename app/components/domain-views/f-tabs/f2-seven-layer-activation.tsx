@@ -30,7 +30,7 @@ export function F2SevenLayerActivation({ ctx }: { ctx: FViewCtx }) {
   function submit() {
     if (!allowed || blocked || !policy) return;
     const revision = policy.sevenLayerRevision, policyVersion = policy.policyVersion;
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: action === "RESUME" ? "funds" : "config",
       name: label, amplify: action !== "PAUSE",
       detail: action === "ACTIVATE"
         ? "按现在设置好的 L1–L7 比例启用新版结算，另一位管理员批准时生效。之前的订单仍按旧规则，不补发；好友购买奖励拆分需要另外开启。比例和冷却设置不变。"

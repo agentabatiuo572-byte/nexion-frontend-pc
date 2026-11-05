@@ -472,7 +472,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   };
 
   const flagCluster = (c: K1Cluster) =>
-    ctx.openConfirm({
+    ctx.openConfirm({ briefKind: "judgment",
       errorHandled: true,
       action: `标记可疑账户组 · ${c.id}`,
       detail: "只标记为可疑，不冻结资产。风险评分和风险提醒会同步更新，并保留操作记录。",
@@ -499,7 +499,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     });
 
   const freezeCluster = (c: K1Cluster) =>
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "security",
       action: `批量冻结关联账户 · ${c.id}`,
       detail: `冻结这组里的 ${c.n} 个账户。请填写原因，会记入操作记录。`,
       reasonMax: 200,
@@ -523,7 +523,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     });
 
   const releaseCluster = (c: K1Cluster) =>
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "funds",
       action: `解除误判 · ${c.id}`,
       detail: "解除后，这些账户可能有更多收益可以提现。请核对影响并写明原因。",
       amplifies: true,
@@ -548,7 +548,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     });
 
   const clearCluster = (c: K1Cluster) =>
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "judgment",
       action: `判定为正常 · ${c.id}`,
       detail: "这组账户将退出风险监控，后续风险评分也会受影响。请填写判定依据。",
       amplifies: true,
@@ -574,7 +574,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
   const reviewNote = (c: K1Cluster) => {
     const commandKey = newK1CommandKey();
-    ctx.openConfirm({
+    ctx.openConfirm({ briefKind: "note",
       errorHandled: true,
       action: `人工复审备注 · ${c.id}`,
       detail: "记录复审备注并保持当前状态不变。",
@@ -607,7 +607,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   };
 
   const releaseProtectedEntry = (entry: K1ProtectedEntry) => {
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "funds",
       action: `人工放行收益 · ${entry.entryNo}`,
       detail: `${entry.userId} · ${entry.clusterId} · ${entry.amount} ${nexGridBrandText(entry.asset)} · ${entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}`,
       amplifies: true,
@@ -753,7 +753,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const addWl = () => setWhitelistDraft({ cidr: "", note: "", expireText: "", reason: "", commandKey: newK1CommandKey() });
 
   const rmWl = (cidr: string) =>
-    ctx.openConfirm({
+    ctx.openConfirm({ briefKind: "config",
       errorHandled: true,
       action: `移出允许名单 · ${cidr}`,
       detail: "移除后该网段恢复同 IP 多账户检测。",

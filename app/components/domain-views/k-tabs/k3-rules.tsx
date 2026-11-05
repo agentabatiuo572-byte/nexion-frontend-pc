@@ -213,7 +213,7 @@ export function K3HeaderActions({ ctx, onResult }: { ctx: KCtx; onResult: (resul
   const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
   const [dryRunError, setDryRunError] = useState<string | null>(null);
   const canDryRun = authorities.includes("risk_k3_write") && !ctx.contentLoading && !ctx.contentError;
-  const dryRun = () => ctx.openConfirm({
+  const dryRun = () => ctx.openConfirm({ briefKind: "record",
     errorHandled: true,
     action: "模拟运行（用历史数据试跑）",
     detail: "用最近 30 天的提现记录按当前规则试跑一遍，只看结果，不影响线上。",
@@ -297,12 +297,12 @@ export function K3Rules({ ctx, dryRunResult }: { ctx: KCtx; dryRunResult: K3DryR
     ctx.toast(ok);
   };
 
-  const toggleRule = (rule: K3Rule, state: "active" | "paused") => ctx.openActionConfirm({
+  const toggleRule = (rule: K3Rule, state: "active" | "paused") => ctx.openActionConfirm({ briefKind: "config",
     action: `${state === "active" ? "启用" : "停用"}规则 · ${rule.ruleId}`,
     detail: `当前版本 v${rule.version}；从下一笔提现开始生效。`, amplifies: state === "paused",
     run: (reason) => runAction(`state:${rule.ruleId}:${state}:${rule.version}`, (key) => ctx.actions.updateK3RuleState(rule.ruleId, state, rule.version, reason, key), `${rule.ruleId} 已${state === "active" ? "启用" : "停用"}`),
   });
-  const archiveRule = (rule: K3Rule) => ctx.openConfirm({
+  const archiveRule = (rule: K3Rule) => ctx.openConfirm({ briefKind: "record",
     errorHandled: true,
     action: `归档规则 · ${rule.ruleId}`, detail: "归档后不能再启用。", chips: [["不能撤回", "done"]], reason: true, okLabel: "确认归档",
     run: (reason) => runAction(`archive:${rule.ruleId}:${rule.version}`, (key) => ctx.actions.archiveK3Rule(rule.ruleId, rule.version, reason, key), `${rule.ruleId} 已归档`),
@@ -311,7 +311,7 @@ export function K3Rules({ ctx, dryRunResult }: { ctx: KCtx; dryRunResult: K3DryR
     const kind = k3KindFromDimension(rule.dimension);
     const businessForm = rule.action === "pass" ? null : k3RuleBusinessForm(kind, rule.conditionText, rule.action, rule.priority);
     if (!businessForm) { ctx.toast("这条规则的条件格式无法在页面编辑"); return; }
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       action: `编辑规则 · ${rule.ruleId}`, detail: `条件、命中后怎么处理、优先级一起保存。如果别人刚改过，需要刷新后重改。`, businessForm,
       run: (reason, _value, businessValue) => {
         const conditionText = buildK3Condition(kind, businessValue);
@@ -322,7 +322,7 @@ export function K3Rules({ ctx, dryRunResult }: { ctx: KCtx; dryRunResult: K3DryR
       },
     });
   };
-  const newRule = () => ctx.openActionConfirm({
+  const newRule = () => ctx.openActionConfirm({ briefKind: "config",
     action: "新建提现风控规则", detail: "新规则会自动编号，先保存为草稿。", businessForm: newK3RuleBusinessForm(),
     run: (reason, _value, businessValue) => {
       const dimension = dimensionFromForm(businessValue?.dimension);

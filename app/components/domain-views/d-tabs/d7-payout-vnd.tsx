@@ -132,7 +132,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       toast(result.acknowledgement);
       return true;
     };
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: forceInverted && !amplifies ? "强制保存越南盾提现参数（价格倒挂）" : "调整越南盾提现参数",
       detail: <>
         <div>{amplifies ? `批准后所有参数一起生效（当前版本 v${config.version}）。` : `所有参数一起保存（版本 v${config.version} → v${config.version + 1}）。`}</div>
@@ -187,7 +187,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   };
 
   const startForcedSave = () => {
-    openConfirm({
+    openConfirm({ briefKind: "config",
       action: "确认保存倒挂的价格",
       detail: <div>卖出价不低于买入价，系统默认不允许保存。请输入「{FORCE_PHRASE}」后再填写理由。</div>,
       input: { label: `输入“${FORCE_PHRASE}”`, placeholder: FORCE_PHRASE, kind: "text" },

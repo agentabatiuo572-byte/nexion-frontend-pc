@@ -107,7 +107,7 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
           && <button type="button" onClick={() => setConfirmation(data)}>按投递事实校正时间</button>}
       </>}
     </div>
-    {confirmation && canCorrect && actorKey && <OperationConfirmModal action={`校正通知 ${notificationId} 的时间`}
+    {confirmation && canCorrect && actorKey && <OperationConfirmModal briefKind={"content"} action={`校正通知 ${notificationId} 的时间`}
       detail={`仅此通知：${confirmation.storedCreatedAt} → ${confirmation.deliveryFactTime}（北京时间）。根据实际投递事实校正展示时间，不会重新发送通知或改变已读状态。`}
       reasonMax={500} onClose={() => { if (!busy.current) setConfirmation(null); }} onConfirm={submit} />}
   </Drawer>;

@@ -93,7 +93,7 @@ export function J4HeaderActions({ ctx }: { ctx: JCtx }) {
   };
   const newPb = () => {
     const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
     action: "新增应急预案",
     detail: <><b>设置应急预案</b>：名称、触发场景、负责角色、响应时限、是否走应急通道、执行动作、通知、回滚方案和演练要求。保存后进入预案库。</>,
     businessForm: {
@@ -196,7 +196,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const editPb = (p: Playbook) => {
     if (!p.version) return;
     const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
     action: `编辑应急预案 · ${p.code} ${p.name}`,
     detail: <><b>编辑预案</b>：调整 {p.name} 的执行步骤（当前 {p.seq.length} 步）、触发场景、负责角色、响应时限、是否走应急通道、通知和回滚方案。保存后会保留修改记录。</>,
     businessForm: {
@@ -233,7 +233,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       return;
     }
     const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
     action: `启动演练 · ${p.code} ${p.name}`,
     detail: <><b>演练</b>（不是真的执行）：逐步检查这 {p.seq.length} 步能不能执行、通知能不能发出，不会影响线上。全部通过后，预案变为「演练就绪」。</>,
     run: (reason) => {
@@ -246,7 +246,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   // 覆盖率低于红线时恰恰最需要执行(SOP-02 对账缺口/SOP-03 挤兑),不可被 B1 禁放行锁死(对齐 J1「熔断方向不前置 B1」)。
   const execPb = (p: Playbook, isEmer: boolean) => {
     const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({
+    openActionConfirm({ briefKind: "emergency",
     action: `执行应急预案 · ${p.code}${isEmer ? "（应急通道）" : "（常规通道）"}`,
     detail: (
       <>
@@ -323,7 +323,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   // 回滚单次剧本执行:跨域写入(配置恢复 / 通知停发)· 恒走常规轨 · 不可应急加速。
   const rollbackPb = (exec: { executionId: string; code: string; name?: string }) => {
     const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({
+    openActionConfirm({ briefKind: "emergency",
       action: `回滚预案执行 · ${exec.executionId}`,
       detail: (
         <><b>{exec.code}</b>(<span className="mono">{exec.executionId}</span>)会把这次执行中关停的业务开关逐个恢复。已发出的通知撤不回，需要更正请另发通知。</>
@@ -336,7 +336,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
 
   const cancelExecution = (exec: { executionId: string; code: string }) => {
     const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: `取消执行 · ${exec.executionId}`,
       detail: <>当前这一步做完后才会停下：已完成的步骤保持生效，还没开始的步骤跳过，这次执行记为「部分完成」。正在执行的那一步不会被中断。</>,
       run: (reason) => runBackend(
@@ -348,7 +348,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
 
   const resumeExecution = (exec: { executionId: string; code: string }) => {
     const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: `恢复核对 · ${exec.executionId}`,
       detail: <>只对超时后仍卡在「待执行 / 执行中」的记录有效。系统会逐步核对：确认做成的记成功，无法确认的记失败并停止后续步骤，不会重复执行。</>,
       run: (reason) => runBackend(

@@ -244,7 +244,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   const popupN = data.stats?.popup ?? list.filter((v) => v.popupEnabled && v.popupCadenceEnabled && v.status === "active").length;
 
   const openAdd = () => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "新增代金券",
       detail: (
         <>
@@ -281,7 +281,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   };
 
   const openEdit = (v: OpsVoucher) => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `编辑代金券 · ${v.name}`,
       detail: (
         <>
@@ -328,7 +328,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   const openToggle = (v: OpsVoucher) => {
     const next = v.status === "active" ? "paused" : "active";
     const label = next === "active" ? "投放" : "暂停";
-    openActionConfirm({
+    openActionConfirm({ briefKind: "content",
       action: `${label}代金券 · ${v.name}`,
       detail: (
         <>
@@ -344,7 +344,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   };
 
   const openDelete = (v: OpsVoucher) => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: `删除代金券 · ${v.name}`,
       detail: (
         <>
@@ -359,7 +359,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   };
 
   const openRevoke = (v: OpsVoucher) => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: `作废未使用的代金券 · ${v.name}`,
       detail: (
         <>

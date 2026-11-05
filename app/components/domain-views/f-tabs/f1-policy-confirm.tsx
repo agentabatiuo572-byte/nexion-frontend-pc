@@ -102,6 +102,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose }: { editor: F
     voucherId: values.voucherId, skuId: values.skuId, custom: values.custom,
   }, ctx);
   return <OperationConfirmModal
+    briefKind="config"
     action={title}
     detail={isCondition ? `当前${fieldLabel}为 ${currentLabel}。修改只影响后续晋升评估，已晋升的记录保留。`
       : remove ? `移除奖励「${currentLabel}」后停止后续发放，已发奖励与账本记录保留。`

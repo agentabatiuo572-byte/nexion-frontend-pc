@@ -113,14 +113,14 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
               <div role="rowheader" className="casc-level" title={direct ? "直接邀请的好友购买" : "团队其他成员购买"}><span className={`lchip${direct ? "" : " ext"}`}>{level}</span></div>
               <div role="cell" className="casc-rate"><span className="casc-mobile-label">USDT 奖励比例</span><strong>{rate ? `${currentRate}%` : "未配置"}</strong>{rate && <div className="rate-bar" aria-hidden="true"><div className={`f${direct ? "" : " ext"}`} style={{ width: `${Math.max(0, Math.min(100, rate.usdt))}%` }} /></div>}</div>
               <div role="cell" className="casc-nex"><span className="casc-mobile-label">UVT 奖励系数</span>
-              {canRoyaltyRate && (!direct || !l1NexReadonly) ? <button className="nex-val" title={`调整 ${level} UVT 奖励系数`} style={{ background: "none", border: 0, padding: 0, cursor: "pointer" }} onClick={() => ctx.openActionConfirm({
+              {canRoyaltyRate && (!direct || !l1NexReadonly) ? <button className="nex-val" title={`调整 ${level} UVT 奖励系数`} style={{ background: "none", border: 0, padding: 0, cursor: "pointer" }} onClick={() => ctx.openActionConfirm({ briefKind: "config",
                 name: `调整 ${level} UVT 奖励系数`, amplify: true, op: "param", paramKey: `F.unilevel.nex.${level}`,
                 edit: { kind: "number", current: currentNex, min: 0, unit: "UVT / 每 1 USDT 奖励", amplifiesWhen: "increase" },
                 detail: `${level} 每发 1 USDT 奖励，额外发多少 UVT · 当前 ${currentNex || "未配置"}。调高前先看兑付覆盖率；只影响之后的结算。`,
               })}>{currentNex || "未配置"}<small>UVT / 每 1 USDT 奖励</small></button> : <span className="nex-val">{currentNex || "未配置"}<small>{direct && l1NexReadonly ? l1NexStatus : "UVT / 每 1 USDT 奖励"}</small></span>}
               </div>
               <div role="cell" className="casc-status"><span className="casc-mobile-label">发放状态</span><span className="f2-status" data-state={paused}>{paused === "on" ? "已暂停" : paused === "off" ? "未暂停" : paused ? "配置无效" : "未配置"}</span></div>
-              <div role="cell" className="casc-action">{direct ? <span className="casc-fixed">{rate ? "L1 费率固定" : "L1 待配置"}<small>{rate ? "不能手动修改" : "不可手动调整"}</small></span> : canRoyaltyRate ? <button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({
+              <div role="cell" className="casc-action">{direct ? <span className="casc-fixed">{rate ? "L1 费率固定" : "L1 待配置"}<small>{rate ? "不能手动修改" : "不可手动调整"}</small></span> : canRoyaltyRate ? <button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({ briefKind: "config",
                 name: `调整 ${level} USDT 奖励比例`, amplify: true, op: "param", paramKey: `F.unilevel.${level}`,
                 edit: { kind: "number", current: currentRate, min: 0, unit: "%", amplifiesWhen: "increase" },
                 detail: `${level} USDT 奖励比例 · 当前 ${rate ? `${currentRate}%` : "未配置"}。调高前先看兑付覆盖率；只影响之后的结算。`,
@@ -130,7 +130,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
         </div>
         <div className="casc-foot">
           <span>{ctx.f2Unilevel.length > 0 ? `L1–L7 合计 ${ctx.f2Unilevel.reduce((sum, rate) => sum + rate.usdt, 0)}% · ` : ""}L1–L7 的门槛、暂停和上限分别设置</span>
-          {canPolicyAmplify && <button className="fbtn" style={{ marginLeft: "auto" }} onClick={() => ctx.openActionConfirm({
+          {canPolicyAmplify && <button className="fbtn" style={{ marginLeft: "auto" }} onClick={() => ctx.openActionConfirm({ briefKind: "config",
             name: "按 L1–L7 分别暂停",
             businessForm: {
               kind: "multi-field", title: "按 L1–L7 分别暂停", hint: "L1–L7 每项都要选择暂停或恢复。暂停期间没发的奖励不会补发。",
@@ -170,7 +170,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
               <div className="pk">{name}</div>
               <div className={`pv${param?.vcls ? " " + param.vcls : ""}`}>{parsed && !parsed.legal ? `${value}（配置无效）` : value || "未配置"}</div>
               {parsed && !parsed.legal && <div className="psub" role="alert" style={{ color: "var(--danger)" }}>{enumSpec?.illegalCopy}</div>}
-              {allowed && <button className={`fbtn primary${promo ? " amp" : ""}`} onClick={() => ctx.openActionConfirm({
+              {allowed && <button className={`fbtn primary${promo ? " amp" : ""}`} onClick={() => ctx.openActionConfirm({ briefKind: "config",
                 name: `${name}调整`, amplify: promo, op: "param", paramKey: key,
                 edit: enumSpec ? { kind: "select", current: parsed?.normalized ?? value, options: enumSpec.options, unit: enumSpec.unit }
                   : { kind: "number", current: value, ...(promo ? { min: 1, max: 3, unit: "倍", amplifiesWhen: "increase" as const } : merge ? { min: 0, max: 100, unit: "%" } : {}) },
@@ -211,7 +211,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
           </div>}
           <div className="casc-foot">
             <span>{partnerConfigured ? "4 档门槛已设置" : partnerState} · 只影响权益</span>
-            {canPolicyAmplify && <button className="fbtn primary" style={{ marginLeft: "auto" }} onClick={() => ctx.openActionConfirm({
+            {canPolicyAmplify && <button className="fbtn primary" style={{ marginLeft: "auto" }} onClick={() => ctx.openActionConfirm({ briefKind: "config",
               name: "调整合作伙伴权益门槛", amplify: false,
               businessForm: {
                 kind: "multi-field",
@@ -252,7 +252,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
         </div>
         <div key={coolingParam?.id ?? "cool"} className="casc-foot">
           <span>购买冷却可设 0–90 天；设备冷却在上方设置。</span>
-          {canPolicyAmplify && <button className={`fbtn primary${coolingParam?.vamp ? " amp" : ""}`} onClick={() => ctx.openActionConfirm({
+          {canPolicyAmplify && <button className={`fbtn primary${coolingParam?.vamp ? " amp" : ""}`} onClick={() => ctx.openActionConfirm({ briefKind: "config",
             name: "购买与其他奖励冷却期调整", amplify: true, op: "param", paramKey: "F.cooldown",
             edit: { kind: "number", current: coolingDays, unit: "天", min: 0, max: 90, step: 1,
               ...(coolingDays !== "" ? { amplifiesWhen: "decrease" as const } : {}) },

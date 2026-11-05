@@ -43,7 +43,7 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "D7" && <D7PayoutVnd ctx={ctx} />}
 
       {mc && (
-        <OperationConfirmModal
+        <OperationConfirmModal briefKind={mc.briefKind}
           action={mc.action}
           detail={mc.detail}
           amplifies={mc.amplifies}

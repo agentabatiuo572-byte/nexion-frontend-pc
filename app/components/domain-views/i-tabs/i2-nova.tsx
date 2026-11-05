@@ -167,7 +167,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   };
 
   // ── 单通道 停推 / 恢复:走操作确认(操作确认 不传 edit) ──
-  const toggleNova = (n: OpsNova) => openActionConfirm({
+  const toggleNova = (n: OpsNova) => openActionConfirm({ briefKind: "config",
     action: <>{n.on ? "停推" : "恢复"} 消息频道 · {n.name}</>,
     detail: n.on
       ? <>停推该频道。<b>操作确认防误杀</b> · 监管点名要快速止血时也走这条路径(内容/风控都能发起)。</>
@@ -184,7 +184,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   });
 
   // ── 删除通道:走普通确认(原因必填 + 留痕) ──
-  const removeNova = (n: OpsNova) => openConfirm({
+  const removeNova = (n: OpsNova) => openConfirm({ briefKind: "content",
     errorHandled: true,
     action: <>删除推送通道 · {n.name}</>,
     detail: <>删除这个推送频道，并停止推送。</>,
@@ -204,7 +204,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     return <span className="bdg dim">{st}</span>;
   };
 
-  const publishTpl = (ch: string, name: string) => openActionConfirm({
+  const publishTpl = (ch: string, name: string) => openActionConfirm({ briefKind: "content",
     action: <>发布模板 · {name}</>,
     detail: <>频道 <b>{ch}</b>。发布后，这个频道的下一条推送就用新内容。中文和越南语必须填写完整、变量一致（英文可选），否则不能发布。</>,
     amplifies: false,
@@ -213,7 +213,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       return runBackend(actions.updateI2TemplateStatus(ch, "PUBLISHED", reason), `${name} 已发布`);
     },
   });
-  const archiveTpl = (ch: string, name: string) => openActionConfirm({
+  const archiveTpl = (ch: string, name: string) => openActionConfirm({ briefKind: "content",
     action: <>归档模板 · {name}</>,
     detail: <>归档后该模板从频道可选池移除,已在投递队列里的不撤回。</>,
     amplifies: false,
@@ -240,7 +240,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     setTplDrawer(true);
   };
   const closeTplDrawer = () => { setTplDrawer(false); setEditTplChannel(null); setTplForm(EMPTY_TEMPLATE); };
-  const submitTpl = () => openConfirm({
+  const submitTpl = () => openConfirm({ briefKind: "config",
     errorHandled: true,
     action: <>{editTplChannel ? "编辑" : "新增"}推送模板 · {tplForm.name}</>,
     detail: <>保存后是草稿；发布前会再次检查中文、越南语是否完整、变量是否一致。</>,
@@ -254,7 +254,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       `模板 ${tplForm.name} 已保存为草稿`, closeTplDrawer);
     },
   });
-  const removeTpl = (t: (typeof NOVA_TPLS)[number]) => openConfirm({
+  const removeTpl = (t: (typeof NOVA_TPLS)[number]) => openConfirm({ briefKind: "content",
     errorHandled: true,
     action: <>删除推送模板 · {t.name}</>,
     detail: <>已发布模板不能直接删除，请先归档。删除后对应通道无法启用。</>,
@@ -277,7 +277,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       return Number.isFinite(value) && Number.isInteger(value) && value >= 0 && value <= 100;
     })
     && distDraftTotal === 100;
-  const submitDistribution = () => openConfirm({
+  const submitDistribution = () => openConfirm({ briefKind: "config",
     errorHandled: true,
     action: <>保存 业务动态事件概率分布</>,
     detail: <>本次会整体替换 5 类真实事件权重；合计必须为 100%，不会自动改动任何其他类别。</>,
@@ -351,7 +351,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN", { hour12: false });
   };
   const canRestoreEvent = (expiresAt: string) => new Date(expiresAt).getTime() > Date.now();
-  const syncSocialEvents = () => openConfirm({
+  const syncSocialEvents = () => openConfirm({ briefKind: "record",
     errorHandled: true,
     action: <>同步真实业务事件</>,
     detail: <>仅从提现、V 等级、创世节点 成交和整点新增用户等受信业务表采集；重复来源会防重复提交跳过，AI 客户消费在真实计费源接入前保持不可用。</>,
@@ -379,7 +379,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       .catch((error) => toast(`抽样失败:${displayAdminError(error)}`))
       .finally(() => setEventBusy(null));
   };
-  const changeSocialEventStatus = (event: (typeof SOCIAL_EVENTS)[number], status: "ACTIVE" | "DISABLED" | "EXPIRED") => openConfirm({
+  const changeSocialEventStatus = (event: (typeof SOCIAL_EVENTS)[number], status: "ACTIVE" | "DISABLED" | "EXPIRED") => openConfirm({ briefKind: "content",
     errorHandled: true,
     action: <>{status === "ACTIVE" ? "恢复" : status === "DISABLED" ? "停用" : "立即过期"}真实事件 · #{event.id}</>,
     detail: <>只能控制这条事件是否推送，不能改来源、人物、金额和时间。</>,
@@ -392,7 +392,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         .finally(() => setEventBusy(null));
     },
   });
-  const deleteSocialEvent = (event: (typeof SOCIAL_EVENTS)[number]) => openConfirm({
+  const deleteSocialEvent = (event: (typeof SOCIAL_EVENTS)[number]) => openConfirm({ briefKind: "record",
     errorHandled: true,
     action: <>删除真实事件 · #{event.id}</>,
     detail: <>删除后不再推送；已推送的记录仍保留。</>,

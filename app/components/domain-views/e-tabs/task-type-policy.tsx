@@ -59,7 +59,7 @@ export function PhoneTaskPolicy({ canWrite, toast }: { canWrite: boolean; toast:
       <p className="muted tiny">手机从已选大类的启用任务中随机接单。同类新任务启用后自动加入。</p>
       {canWrite && <Btn sm variant="primary" disabled={!data || !!error || !selected.length || taskClassNames(selected) === taskClassNames(data.policy.allowedTaskClasses)} onClick={() => setConfirmation({ classes: [...selected], version: data!.policy.productTaskPolicyVersion, key: createA2CommandKey("e1-phone-policy") })}>提交发布</Btn>}
     </footer>
-    {confirmation && <OperationConfirmModal action="发布手机可跑任务" detail={`发布 ${taskClassNames(confirmation.classes)}，同类新任务启用后自动可派。`} onClose={() => setConfirmation(null)} onConfirm={async (reason) => {
+    {confirmation && <OperationConfirmModal briefKind={"content"} action="发布手机可跑任务" detail={`发布 ${taskClassNames(confirmation.classes)}，同类新任务启用后自动可派。`} onClose={() => setConfirmation(null)} onConfirm={async (reason) => {
       const def = findHighOp("e1_phone_task_policy")!;
       await propose(toast, { action: def.action, obj: "phone", before: taskClassNames(data!.policy.allowedTaskClasses), after: taskClassNames(confirmation.classes), type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1", command: def.buildCommand({ allowedTaskClasses: confirmation.classes, expectedVersion: confirmation.version }), target: def.buildTarget({}), commandKey: confirmation.key });
       setConfirmation(null);

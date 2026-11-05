@@ -119,7 +119,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
         : `${observability.telemetry.dispatchLatencyP95Ms.toFixed(0)}ms`;
   const filteredDevices = devices;
   const devAct = (d: E5Device, op: "device-activate" | "device-deactivate", action: NonNullable<import("./types").McSpec["deviceAction"]>, name: string, detail: string, amplify = false) =>
-    ctx.openActionConfirm({ name: `${name} · ${operatorDeviceIdentifier(d.serial)}`, op, deviceAction: action, deviceId: d.deviceId, deviceNo: d.serial, amplify, detail });
+    ctx.openActionConfirm({ briefKind: "record", name: `${name} · ${operatorDeviceIdentifier(d.serial)}`, op, deviceAction: action, deviceId: d.deviceId, deviceNo: d.serial, amplify, detail });
   const reasonReady = actionReason.trim().length >= 8 && actionReason.trim().length <= 200;
   const runDirect = async (work: () => Promise<void>) => {
     if (!reasonReady || actionBusy) return;
@@ -153,7 +153,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
 
   const toggle = (dcId: string) => {
     const paused = ctx.isDcPaused(dcId);
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "record",
       name: paused ? `恢复派单 · ${dcId}` : `暂停派单 · ${dcId}`,
       op: "ops-pause", dc: dcId, fixedVal: paused ? "false" : "true", amplify: false,
       detail: paused

@@ -689,10 +689,9 @@ export type BusinessFormSpec =
 type BriefRow = { label: string; text: string };
 
 /**
- * What the action really is, stated by the caller. A stated kind turns word matching off, so a note or an FAQ question
- * that happens to contain 提现 or 会话 cannot change the summary. Domains that state nothing still fall back to word matching.
+ * What the action really is, stated by the caller. Every caller supplies a kind, so words in a note, title or FAQ question cannot change the summary.
  */
-export type OperatorBriefKind = "config" | "content" | "record" | "self-avatar" | "conversation" | "note-delete" | "faq-delete" | "session-category";
+export type OperatorBriefKind = "export" | "funds" | "security" | "emergency" | "note" | "judgment" | "config" | "content" | "record" | "self-avatar" | "conversation" | "note-delete" | "faq-delete" | "session-category";
 const STATED_BRIEF: Partial<Record<OperatorBriefKind, { impact: string; check: string }>> = {
   "self-avatar": { impact: "只更换本人头像，账号、角色和接待资格不变。", check: "确认这张图片可以作为本人头像，理由写清依据或工单号。" },
   conversation: { impact: "只改变客户对话的处理状态或列表位置，不改变账号、资金和专属客服归属。", check: "核对客户和会话，理由写清依据或工单号。" },
@@ -713,18 +712,15 @@ function compactText(s: string): string {
   return s.replace(/\s+/g, " ").replace(/\s+([,，.。:：;；])/g, "$1").trim();
 }
 
-function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boolean, hasEdit: boolean, localHistory?: boolean, kind?: OperatorBriefKind): BriefRow[] {
+function buildOperatorBrief(action: ReactNode, amplifies: boolean, hasEdit: boolean, localHistory: boolean, kind: OperatorBriefKind): BriefRow[] {
   const actionText = compactText(plainText(action));
-  const detailText = compactText(plainText(detail));
-  const all = `${actionText} ${detailText}`;
-  const includes = (terms: string[]) => !kind && terms.some((term) => all.includes(term));
-  const stated = kind && STATED_BRIEF[kind];
+  const stated = STATED_BRIEF[kind];
   if (stated) return [{ label: "要做什么", text: actionText }, { label: "影响", text: stated.impact }, { label: "提交前", text: stated.check }];
   const defaultCheck = hasEdit
     ? "核对新值和影响范围，理由写清依据或工单号。"
     : "核对操作对象和凭证，理由写清依据或工单号。";
 
-  if (includes(["解密导出", "数据出境", "导出", "报表", "report_exported", "PII"])) {
+  if (kind === "export") {
     return [
       { label: "要做什么", text: actionText || "生成一份导出文件。" },
       { label: "影响", text: "按所选范围生成下载文件，用户明细会隐藏敏感信息，下载链接 24 小时内有效。" },
@@ -732,7 +728,7 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
     ];
   }
 
-  if (kind === "config" || !kind && hasEdit || includes(["调整", "配置", "改值", "改旋钮", "参数", "阈值", "权重", "比例", "排程", "新增", "创建", "设置"])) {
+  if (kind === "config") {
     return [
       { label: "要做什么", text: actionText || "修改后台参数或规则。" },
       { label: "影响", text: "按页面说明生效，可能影响之后的订单、风控、报表或用户看到的内容。" },
@@ -740,7 +736,7 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
     ];
   }
 
-  if (includes(["提现", "放行", "退款", "退回", "解冻", "冻结资金", "余额", "资金", "兑付", "储备", "账本"])) {
+  if (kind === "funds") {
     return [
       { label: "要做什么", text: actionText || "处理一笔资金或提现。" },
       { label: "影响", text: "会改变用户资金、提现单或平台账目。放行、解冻和提额都会占用平台储备。" },
@@ -748,7 +744,7 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
     ];
   }
 
-  if (includes(["账号", "权限", "2FA", "两步", "会话", "密码", "登录", "名单", "模拟登录", "RBAC"])) {
+  if (kind === "security") {
     return [
       { label: "要做什么", text: actionText || "处理账号、安全或权限。" },
       { label: "影响", text: "会影响后台账号、用户登录、权限或风控名单，部分操作会让对方立即下线或降低账号安全。" },
@@ -756,7 +752,7 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
     ];
   }
 
-  if (includes(["熔断", "恢复", "Kill-Switch", "封锁", "geo", "国家", "黑名单", "应急"])) {
+  if (kind === "emergency") {
     return [
       { label: "要做什么", text: actionText || "切换紧急开关或地区限制。" },
       { label: "影响", text: "立即影响对应业务、地区访问或资金功能；恢复会重新放开用户操作。" },
@@ -764,7 +760,7 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
     ];
   }
 
-  if (kind === "content" || includes(["发布", "下架", "回滚", "披露", "文案", "模板", "通知", "课程", "CMS", "重确认"])) {
+  if (kind === "content") {
     return [
       { label: "要做什么", text: actionText || "发布、回滚或下架内容。" },
       { label: "影响", text: "用户看到的内容、通知或披露会随之变化，披露更新可能要求用户重新确认。" },
@@ -772,10 +768,10 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
     ];
   }
 
-  if (includes(["备注", "标记", "判正常", "解除误判"])) {
+  if (kind === "note" || kind === "judgment") {
     return [
       { label: "要做什么", text: actionText || "记录或更新一条人工判定。" },
-      { label: "影响", text: includes(["备注"]) ? "只添加备注，不改变账户状态或风险结论。" : "会更新风控判定，影响之后是否继续拦截、冻结或放行。" },
+      { label: "影响", text: kind === "note" ? "只添加备注，不改变账户状态或风险结论。" : "会更新风控判定，影响之后是否继续拦截、冻结或放行。" },
       { label: "提交前", text: "确认对象、证据和结论，理由写清依据或工单号。" },
     ];
   }
@@ -787,8 +783,8 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
   ];
 }
 
-export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, completionCopy, auditSink, kind }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean; completionCopy?: string; auditSink?: "a2" | "local-history"; kind?: OperatorBriefKind }) {
-  const brief = buildOperatorBrief(action, detail, !!amplifies, !!hasEdit, auditSink === "local-history", kind)
+export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, completionCopy, auditSink, kind }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean; completionCopy?: string; auditSink?: "a2" | "local-history"; kind: OperatorBriefKind }) {
+  const brief = buildOperatorBrief(action, !!amplifies, !!hasEdit, auditSink === "local-history", kind)
     .map((row) => row.label === "影响" && completionCopy ? { ...row, text: completionCopy } : row);
   const detailText = compactText(plainText(detail));
   return (
@@ -3439,7 +3435,7 @@ export type InlineOperationApproval = {
   dialogClassName?: string;
 };
 
-export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind?: OperatorBriefKind; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
   const [draftReason, setReason] = useState(pendingReason ?? "");
   const reason = pendingReason ?? draftReason;
@@ -3458,6 +3454,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const comparisonValueId = useId();
   const comparisonUnitId = useId();
   const selectionRequestRef = useRef(0);
+  const effectiveBriefKind = typeof briefKind === "function" ? briefKind(businessValue) : briefKind;
   const approval = approvalSpec ?? inlineApproval?.resolve(businessValue, newVal);
   const compareEdit = approval ? inlineApproval?.compareEdit : undefined;
   const completionCopy = approval?.completionCopy ?? directCompletionCopy;
@@ -3603,7 +3600,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
           </Btn>
         )}
       </>}>
-      {!approval && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={briefKind} />}
+      {!approval && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={effectiveBriefKind} />}
       {submitError && <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{submitError}</div>}
       {inlineApproval?.disabledReason && <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>{inlineApproval.disabledReason}</div>}
       {inlineApproval?.pending && approvalRecovery === "lookup" && !submitError && (
@@ -3632,7 +3629,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
           <p style={{ margin: "0 0 14px", lineHeight: 1.5 }}>{completionCopy}</p>
           {coverage && <p className="operation-approval-coverage">当前覆盖率 <b>{coverage.coverageRatio}%</b> · 红线 <b>{coverage.redlinePct}%</b></p>}
           {approval.comparison}
-        </> : !compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} completionCopy={completionCopy} auditSink={auditSink} kind={briefKind} />}
+        </> : !compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} completionCopy={completionCopy} auditSink={auditSink} kind={effectiveBriefKind} />}
       </>}
       {effectiveAmplifies && !approval && (
         <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>

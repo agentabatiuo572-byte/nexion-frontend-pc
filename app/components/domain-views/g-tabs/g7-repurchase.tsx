@@ -221,7 +221,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
 
   const adjustParam = (param: G7Param) => {
     const label = paramName(param);
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `调整锁定计划参数 · ${label}`,
       detail: (
         <>

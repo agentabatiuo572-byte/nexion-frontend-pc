@@ -67,7 +67,7 @@ export function PhoneModelLockSection({ userId, rights }: { userId: string; righ
           })}</tbody>
         </table></div>}
     </div>
-    {target && <OperationConfirmModal action="解除手机机型锁"
+    {target && <OperationConfirmModal briefKind={"record"} action="解除手机机型锁"
       detail={<>{platformLabel(target.lock.platform)} · 锁定机型 {target.lock.lockedModel ?? "—"}{target.lock.reportedModel && target.lock.reportedModel !== target.lock.lockedModel ? `，最近上报 ${target.lock.reportedModel}` : ""}。
         <br />解除后，用户在这台手机上重新校准即锁定新机型，并按新机型分配算力。只在核实用户确实更换了手机后操作。</>}
       reasonMin={8} reasonMax={200} onClose={() => setTarget(null)} onConfirm={async reason => {

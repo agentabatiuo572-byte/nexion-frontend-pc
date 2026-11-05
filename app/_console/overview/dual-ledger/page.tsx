@@ -711,7 +711,7 @@ export default function DualLedgerPage() {
       </section>
 
       {mc && (
-        <OperationConfirmModal
+        <OperationConfirmModal briefKind={mc.kind === "export" ? "export" : mc.kind === "threshold" ? "config" : mc.kind === "injection" ? "funds" : "record"}
           action={
             mc.kind === "threshold"
               ? "设置兑付覆盖率红线和健康线"

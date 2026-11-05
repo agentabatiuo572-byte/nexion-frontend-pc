@@ -55,7 +55,7 @@ export default function G4AdminOperations({ ctx }: { ctx: GCtx }) {
     // damaged/pre-migration database recoverable from G4 instead of turning the
     // display fallback "false" into an unavoidable first-write conflict.
     const expectedValue = configured == null ? "" : String(configured);
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       action: `修改创世认购设置 · ${definition.label}`,
       detail: `${definition.label} 当前 ${configValueText(definition.kind, configured)}。只改设置，不会产生用户资产或成交。时间请按 UTC 填写（例如 2026-08-01T00:00:00Z），开始时间要早于结束时间。`,
       amplifies: false,
@@ -95,7 +95,7 @@ export default function G4AdminOperations({ ctx }: { ctx: GCtx }) {
     });
   };
 
-  const createSimulation = () => ctx.openActionConfirm({
+  const createSimulation = () => ctx.openActionConfirm({ briefKind: "record",
     action: "创建模拟成交",
     detail: `创建 ${sideText(side)} ${quantity} × ${unitPrice} 的模拟记录。只用于后台演练，不影响钱包、账本、真实成交和市场统计，用户也看不到。`,
     amplifies: false,
@@ -106,7 +106,7 @@ export default function G4AdminOperations({ ctx }: { ctx: GCtx }) {
     },
   });
 
-  const archive = (id: number, no: string) => ctx.openActionConfirm({
+  const archive = (id: number, no: string) => ctx.openActionConfirm({ briefKind: "record",
     action: `归档模拟成交 · ${no}`,
     detail: "只归档这条模拟记录，不影响真实市场、资产和统计。",
     amplifies: false,

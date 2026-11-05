@@ -357,7 +357,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     const displayName = operatorDisplayName(op);
     const displayLabel = operatorDisplayLabel(op);
     const allowedRoles = governanceFrozen ? roleOptions.filter((role) => role.key === op.role || role.key === "super") : roleOptions;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "security",
       action: `变更角色 · ${displayName}`,
       detail: (
         <>
@@ -407,7 +407,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     });
   };
 
-  const reset2fa = (op: A1Operator) => openActionConfirm({
+  const reset2fa = (op: A1Operator) => openActionConfirm({ briefKind: "security",
     action: `重置两步验证 · ${operatorDisplayName(op)}`,
     detail: (
       <>
@@ -449,7 +449,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     },
   });
 
-  const resetPassword = (op: A1Operator) => openActionConfirm({
+  const resetPassword = (op: A1Operator) => openActionConfirm({ briefKind: "security",
     action: `重置密码 · ${operatorDisplayName(op)}`,
     detail: (
       <>
@@ -484,7 +484,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   });
 
   const editAccount = (op: A1Operator, form: A1UpdateAccountInput & { reason: string }) => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "security",
       action: `编辑账号 · ${operatorDisplayName(op)}`,
       detail: (
         <>
@@ -531,7 +531,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       return;
     }
     const displayName = operatorDisplayName(op);
-    openActionConfirm({
+    openActionConfirm({ briefKind: "security",
       action: `禁用账号 · ${displayName}`,
       detail: (
         <>
@@ -570,7 +570,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const enableAcct = (op: A1Operator) => {
     const blocked = enableAccountBlockReason(op);
     if (blocked) { toast(blocked); return; }
-    openActionConfirm({
+    openActionConfirm({ briefKind: "security",
     action: `启用账号 · ${operatorDisplayName(op)}`,
     detail: (
       <>
@@ -605,7 +605,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       toast(`${displayName}: ${blocked}`);
       return;
     }
-    openActionConfirm({
+    openActionConfirm({ briefKind: "security",
       action: `强制登出 · ${displayName}`,
       detail: (
         <>
@@ -666,7 +666,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       toast("没有获取到当前值，请刷新后重试");
       return;
     }
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `调整 · ${baseline.name}`,
       detail: (
         <>
@@ -721,7 +721,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   };
 
   const createAccount = (form: A1CreateAccountInput & { reason: string }) => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "security",
       action: `新建运营账号 · ${form.displayName}`,
       detail: (
         <>
@@ -768,7 +768,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
 
   const submitPermissionRegistration = () => {
     if (governanceFrozen || !canRegisterPermission || !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim()) return;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `登记动作权限 · ${permissionDraft.code.trim()}`,
       detail: <>把新操作加入权限清单，<b>不会自动分给任何角色</b>。需要时到「角色管理」授权。</>,
       amplifies: permissionDraft.amplifies,
@@ -1029,7 +1029,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           }}
           onRevokeSession={(sessionId) => {
             const target = detailAccount;
-            openActionConfirm({
+            openActionConfirm({ briefKind: "security",
               action: `让单台设备下线 · ${operatorDisplayName(target)}`,
               detail: <>只让这台设备（<span className="acode">{sessionId}</span>）下线，不影响该账号的其他设备。</>,
               amplifies: false,

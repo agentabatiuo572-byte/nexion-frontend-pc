@@ -332,7 +332,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     });
   };
 
-  const deleteSectionDraft = (draft: TrustSectionVersion) => openActionConfirm({
+  const deleteSectionDraft = (draft: TrustSectionVersion) => openActionConfirm({ briefKind: "record",
     action: <>删除信任版块草稿 · {draft.sectionKey} {draft.version}</>,
     detail: <>只删除还没发布的草稿；线上版本和历史版本不受影响。</>,
     amplifies: false,
@@ -342,7 +342,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   });
 
   const pubSection = (s: TrustSection, draft: TrustSectionVersion) =>
-    openActionConfirm({
+    openActionConfirm({ briefKind: "content",
       action: <>发布信任版块 · {s.key} {draft.version}</>,
       detail: (
         <>
@@ -401,7 +401,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     });
 
   const rollbackSection = (s: TrustSection) =>
-    openActionConfirm({
+    openActionConfirm({ briefKind: "content",
       action: <>回滚信任版块 · {s.key}</>,
       detail: (
         <>
@@ -438,7 +438,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     });
 
   const archiveSection = (s: TrustSection) =>
-    openActionConfirm({
+    openActionConfirm({ briefKind: "content",
       action: <>下架信任版块 · {s.key}</>,
       detail: (
         <>
@@ -484,7 +484,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       return;
     }
     const base = editing ?? I5_VERSION_ROWS.find((row) => row.jurisdiction === initialJurisdiction && row.status.toLowerCase() === "published");
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: <>{editing ? "编辑披露草稿" : "新建披露版本"} · 风控提交</>,
       detail: (
         <>
@@ -538,7 +538,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     });
   };
 
-  const deleteDisclosureDraft = (row: DisclosureVersionItemView) => openActionConfirm({
+  const deleteDisclosureDraft = (row: DisclosureVersionItemView) => openActionConfirm({ briefKind: "record",
     action: <>删除披露草稿 · {row.jurisdiction} {row.version}</>,
     detail: <>只删除还没发布的草稿；已发布和旧版本不能删除。</>,
     amplifies: false,
@@ -551,7 +551,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     },
   });
 
-  const editJurisdiction = (current?: DisclosureJurisdictionOption) => openActionConfirm({
+  const editJurisdiction = (current?: DisclosureJurisdictionOption) => openActionConfirm({ briefKind: "config",
     action: <>{current ? "编辑" : "新增"}披露适用地区</>,
     detail: <>适用地区代码创建后不可修改；名称与生命周期由适用地区配置统一维护，版本和国家映射在下方独立管理。</>,
     amplifies: false,
@@ -576,7 +576,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   const changeJurisdictionLifecycle = (item: DisclosureJurisdictionOption, action: "enable" | "disable" | "archive") => {
     const labels = { enable: "启用", disable: "停用", archive: "归档" } as const;
     const statuses = { enable: "ACTIVE", disable: "DISABLED", archive: "ARCHIVED" } as const;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "content",
       action: <>{labels[action]}适用地区 · {item.code}</>,
       detail: action === "disable"
         ? <>停用后不能再为这个地区新建披露版本或绑定版本，历史版本和操作记录仍保留。</>
@@ -613,7 +613,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     });
   };
 
-  const deleteJurisdiction = (item: DisclosureJurisdictionOption) => openActionConfirm({
+  const deleteJurisdiction = (item: DisclosureJurisdictionOption) => openActionConfirm({ briefKind: "config",
     action: <>删除未使用适用地区 · {item.code}</>,
     detail: <>只有已归档、且没有任何披露版本用到的地区可以删除；删除后这个地区代码不能再次使用。</>,
     amplifies: false,
@@ -642,7 +642,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   });
 
   const configMatrix = (current?: Jurisdiction) =>
-    activeJurisdictionOptions.length === 0 ? toast("暂无启用适用地区，请先维护适用地区配置") : openActionConfirm({
+    activeJurisdictionOptions.length === 0 ? toast("暂无启用适用地区，请先维护适用地区配置") : openActionConfirm({ briefKind: "config",
       action: <>{current ? "编辑" : "新增"}适用地区 × 版本映射</>,
       detail: (
         <>
@@ -702,7 +702,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       },
     });
 
-  const archiveMatrix = (j: Jurisdiction) => openActionConfirm({
+  const archiveMatrix = (j: Jurisdiction) => openActionConfirm({ briefKind: "record",
     action: <>归档适用地区版本映射 · {j.code}</>,
     detail: <>归档后不再作为生效版本，历史版本和操作记录仍保留。</>,
     amplifies: false,
@@ -740,7 +740,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     const affected = row.affected ?? j?.affected ?? 0;
     const pendingAck = row.pendingAck ?? j?.pendingAck ?? Math.max(0, Math.round(affected * (100 - (j?.ackProgress ?? 0)) / 100));
     const blocked = row.blocked ?? j?.blocked ?? 0;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: <>发布已存披露草稿 · {row.jurisdiction}</>,
       detail: (
         <>
@@ -795,7 +795,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
 
   const toggleGate = (g: GateAction) => {
     const on = gateOn(g.key);
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: <>{on ? "移出" : "纳入"}受限动作 · {g.name}</>,
       detail: (
         <>

@@ -198,7 +198,7 @@ function ParamRow({
         onClick={() => {
           if (readOnly || !canWrite) return;
           if (param.hot || isInteger || isProduct) {
-            openActionConfirm({
+            openActionConfirm({ briefKind: "config",
               action: `调整试用参数 · ${operatorCopyText(param.name)}`,
               detail,
               amplifies: false,
@@ -214,7 +214,7 @@ function ParamRow({
             });
             return;
           }
-          openConfirm({
+          openConfirm({ briefKind: "config",
             action: `调整试用参数 · ${operatorCopyText(param.name)}`,
             detail,
             chips: [["记入操作记录", "done"]],
@@ -271,7 +271,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
 
   const openSessionCancel = (session: TrialSession) => {
     if (!canCancel || !knownTrialOwner(session)) return;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: `强制取消试用 · ${session.sid}`,
       detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。这次试用会结束并标记为 <b>已取消</b>，重复提交不会重复处理。</>,
       amplifies: false,
@@ -297,7 +297,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
 
   const openSessionCharge = (session: TrialSession) => {
     if (!canCharge || !knownTrialOwner(session)) return;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "funds",
       action: `强制触发扣款 · ${session.sid}`,
       detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。按当前试用规则重新计算并扣款，重复提交不会重复扣。会直接动用户的 USDT，需要有权限的管理员在「操作记录与审批」批准。</>,
       amplifies: true,
@@ -322,7 +322,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   };
 
   const openPushKill = () => {
-    openConfirm({
+    openConfirm({ briefKind: "record",
       action: "紧急关闭试用邀请弹窗",
       detail: <>马上停止给用户自动弹出试用邀请。</>,
       chips: [["马上生效", "ready"], ["记入操作记录", "done"]],

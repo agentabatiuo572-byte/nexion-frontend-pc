@@ -177,7 +177,7 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
       if ([401,403].includes(errorStatus(cause))) { revoke(); setError(errorText(cause)); return; }
       // No record on the server (or no answer): the request may never have arrived, so a same-key retry is offered inside the replay window.
       setInviteUnresolved(keys => keys.includes(record.commandKey) ? keys : [...keys, record.commandKey]);
-      setInviteError((errorStatus(cause) === 404 ? "服务端没有这条原操作的记录，请求可能没有送达。" : "暂时无法查询原操作。") + (canReplayGroupCommand(record) ? "可以用原命令重试原操作；原因和原操作保持冻结。" : expiredText()));
+      setInviteError((errorStatus(cause) === 404 ? "系统没有这条原操作的记录，请求可能没有送达。" : "暂时无法查询原操作。") + (canReplayGroupCommand(record) ? "可以用原命令重试原操作；原因和原操作保持冻结。" : expiredText()));
     } finally { if (live()) setInviteBusy(false); }
   };
   const replayInviteRevoke = async (record: InviteRevokeRecord) => {

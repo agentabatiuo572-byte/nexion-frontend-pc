@@ -83,7 +83,7 @@ function Workspace({ ctx, owner, epoch, onActivityChange }: { ctx: DCtx; owner: 
   function savePolicy() {
     if (!policy || !valid || !changed || policyPending || busy || !allowed("finance_d1_fx_manage")) return;
     const currentPolicy = policy, channels = changedChannels.filter(row => validPurchaseChannel(row, policy.constraints)).map(({ configured: _configured, ...row }) => row);
-    ctx.openActionConfirm({ action: "修改付款手续费", reasonMin: 10, reasonMax: 300,
+    ctx.openActionConfirm({ briefKind: "config", action: "修改付款手续费", reasonMin: 10, reasonMax: 300,
       detail: <><p>新手续费只用于之后发起的付款，已下单的按原费用。</p><table className="l-tbl"><thead><tr><th>付款方式</th><th>修改前</th><th>修改后</th></tr></thead><tbody>{channels.map(row => { const before = currentPolicy.channels.find(item => item.paymentMethod === row.paymentMethod)!; const label = (item: typeof row) => `${item.channelFeeRatePct}% + ${purchaseMoney(item.channelFeeFixed)} USDT${item.paymentMethod === "HDPAY_BANK" ? `，最低充值 ${purchaseMoney(item.minTopupPrincipal)} USDT` : `，网络费 ${purchaseMoney(item.networkConfirmFeeUsdt)} USDT`}`; return <tr key={row.paymentMethod}><td>{methodText[row.paymentMethod]}</td><td>{before.configured && validPurchaseChannel(before) ? label(before) : "未设置"}</td><td>{label(row)}</td></tr>; })}</tbody></table>{channels.some(row => !currentPolicy.channels.find(item => item.paymentMethod === row.paymentMethod)!.configured) && <p>保存后费用配置生效；能否付款仍取决于通道及收款地址是否可用。</p>}</>,
       completionCopy: "只修改手续费，不会收款、退款或改动用户余额。",
       run: async reason => {
@@ -155,7 +155,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, pending, onChanged, onClose
   function revalidate() {
     if (!record || purchaseWasDelivered(record) || record.receipt || busy || pending || !allowed("finance_d1_bank_reconcile")) return;
     const current = record;
-    ctx.openActionConfirm({ action: `重新核对到账 · ${intentNo}`, reasonMin: 10, reasonMax: 300,
+    ctx.openActionConfirm({ briefKind: "funds", action: `重新核对到账 · ${intentNo}`, reasonMin: 10, reasonMax: 300,
       detail: `用户 ${current.userId}，当前${stateText[current.status]}，用户实付 ${purchaseMoney(current.totalUsdt)} USDT。会再查一次支付商或链上记录，并重新检查库存、资格和设备位。金额不对、到账太晚或核对不通过的，仍然留给人工处理。`,
       completionCopy: "不会重新收款、强制完成、退款，也不会转进钱包余额。",
       run: async reason => {
