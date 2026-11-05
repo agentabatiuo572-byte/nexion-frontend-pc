@@ -320,7 +320,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
             briefKind: "funds", name: "退款 · " + o.id, op: "order-refund", orderId: o.id, amplify: true,
             effect: approvalTag, confirmLabel: "提交审批", confirmTone: "danger", coverageLead: "退款后用户钱包多这笔钱，平台的应付款跟着增加",
             statedBrief: briefOf("核对用户、金额和退款原因，理由写清依据或工单号。"),
-            facts: <Facts><Fact k="用户">{o.user}</Fact><Fact k="商品">{o.sku}</Fact><Fact k="设备">{refundDeviceText}</Fact><Fact k="已到账的收益">{refundEarningsText}</Fact><Fact k="能否撤销">不可撤销</Fact></Facts>,
+            facts: <Facts><Fact k="退款金额">{orderMoney(o.amt)}</Fact><Fact k="用户">{o.user}</Fact><Fact k="商品">{o.sku}</Fact><Fact k="设备">{refundDeviceText}</Fact><Fact k="已到账的收益">{refundEarningsText}</Fact><Fact k="能否撤销">不可撤销</Fact></Facts>,
             businessForm: { kind: "multi-field", title: "退款渠道与原因", hint: `覆盖率 ${coverageText}`, fields: [
               { key: "refundChannel", label: "退款渠道", current: channels[0], inputKind: "select", options: channels, optionLabels: { WALLET: "退回 USDT 钱包", ORIGINAL_PAYMENT: "原支付渠道" }, required: true, showDiff: true },
               { key: "refundReasonCode", label: "退款原因（用户可见）", current: "", inputKind: "select", options: ["", ...E4_REFUND_REASONS], optionLabels: { "": "请选择退款原因", ...E4_REFUND_REASON_LABELS }, required: true, help: "这个原因会显示在用户的订单详情里；下方备注只记在操作记录里，用户看不到。" },
