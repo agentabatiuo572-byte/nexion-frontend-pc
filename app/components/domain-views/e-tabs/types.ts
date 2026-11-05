@@ -88,6 +88,7 @@ export interface McSpec {
   coverageLead?: ReactNode;
   facts?: ReactNode;
   statedBrief?: { impact: string; check: string };
+  reasonPlaceholder?: string;
   deviceId?: number;        // E5 后端设备主键
   deviceNo?: string;        // E5 展示编号(instanceNo)
   deviceAction?: "activate" | "force-activate" | "deactivate" | "unbind";
@@ -174,6 +175,8 @@ export interface EViewCtx {
   e4RetryRejected: string[];
   e4Retrying: string;
   retryE4Pending: (record: E4PendingCommand) => Promise<void>;
+  checkE4Pending: (record: E4PendingCommand) => Promise<void>;
+  canQueryE4: boolean;
   releaseE4Pending: (record: E4PendingCommand) => void;
   selOrder: EOrder | null;
   e4Detail: E4OrderDetail | null;
