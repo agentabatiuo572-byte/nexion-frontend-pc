@@ -570,7 +570,7 @@ function actionBusinessForm(action: D2ReviewAction, addressVerificationRequired 
       },
       fields: [
         ...(action === "DELAY"
-          ? [{ key: "holdDays", label: "等待天数", inputKind: "number" as const, required: true, wide: true, current: "7", help: "1–45 天", pattern: HOLD_DAYS.source, patternMessage: HOLD_DAYS_ISSUE,
+          ? [{ key: "holdDays", label: "等待天数（1–45 天）", inputKind: "number" as const, required: true, wide: true, current: "7", pattern: HOLD_DAYS.source, patternMessage: HOLD_DAYS_ISSUE,
               warning: (value: BusinessFormValue) => (value.holdDays && !HOLD_DAYS.test(value.holdDays) ? HOLD_DAYS_ISSUE : undefined) }]
           : [{ key: "period", label: "冻结期限", inputKind: "select" as const, required: true, wide: true, options: ["7d", "14d", "30d", "45d", "LONG_TERM"], optionLabels: { "7d": "7 天", "14d": "14 天", "30d": "30 天", "45d": "45 天", LONG_TERM: "长期，需复查" } }]),
         { key: "owner", label: "责任人", required: true, current: OPERATOR() },
