@@ -29,8 +29,9 @@ export function Bars({ label, series, rows, format, height = 120 }: {
   height?: number;
 }) {
   const max = Math.max(...rows.flatMap((row) => row.values));
+  // 每天最多占 100px，图不随面板横向拉满（VS-49）。
   return (
-    <div className="rd-bars">
+    <div className="rd-bars" style={{ maxWidth: rows.length * 100 }}>
       {series.length > 1 && (
         <div className="rd-bars-legend" aria-hidden>
           {series.map((item) => <span key={item.name} className="rd-bars-key"><span className="rd-bars-swatch" style={barColor(item.slot)} />{item.name}</span>)}

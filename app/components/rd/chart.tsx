@@ -13,16 +13,34 @@
  *   纵轴总是包住 0。只画真实历史或明确标为预测的序列，当前值倒推的不画（DP-63）。
  * 环图：<Donut label="储备组成" center="2,000,000.00" centerLabel="USDT"
  *   segments={[{ key, label, value, slot, text: "2,000,000.00 USDT", share: "97.6%" }]} />
- *   一个整体分几份、中间写总额。段间 2px 留底色，图例直接写每份的数和占比（VS-47）。最多前 3 类加「其他」（DP-64）。
+ *   一个整体分几份、中间写总额。段间 2px 留底色，图例直接写每份的数和占比，名字和数字挨着（VS-47）。最多前 3 类加「其他」（DP-64）。
+ *   旁边已经有表格时传 legend={false}，只画环，表格第一列放 <span className="rd-chart-swatch" data-slot={…} /> 当图例，数字不写两遍（DP-61）。
  * 排序条：<BarList label="应付款最多的几类" slot={2} rows={[{ key, label, value, text: "250,000.00 USDT" }]} />
- *   几类比大小，按大小排，一个颜色（同一角色就用它的槽位），数字写在条右边。value 传 null 是样本过小，不画条。
+ *   几类比大小，按大小排，一个颜色（同一角色就用它的槽位），数字紧跟在条右边。value 传 null 是样本过小，不画条。
+ * 分区：<Figure graphic={<ThresholdMeter … />} width={560} stack="wide"><ul>…数字…</ul></Figure>
+ *   图在左、宽度有上限（width），数据在右、名字和数字挨着；容器窄时上下排：默认 560px 以下，stack="wide" 是 800px 以下（VS-49）。
+ *   图自己也有上限：环 148px，条和尺 320～420px，柱图每根占位最宽 96px，所以不传 Figure 也不会横向拉满。
  *
  * 全是 0、数据不足或只有一类时不要用这些组件，页面写一句话（DP-62）。
  * 图是 role="img"，数值要能在图外读到：结论、表格、图例或明细（ST-63）。刻度尺和档位带在 meter.tsx。
  */
-import { useState, type MouseEvent, type ReactNode } from "react";
+import { useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 
 export type ChartSlot = 1 | 2 | 3 | 4 | "other";
+
+/** 每根柱（含两根成对的）最多占 96px，纵轴刻度占 72px：图不随面板横向拉满。 */
+const SLOT_W = 96;
+const AXIS_W = 72;
+
+/** 图和数据左右分区。左边图、宽度到 width 为止，右边数据；容器窄时上下排。 */
+export function Figure({ graphic, width = 480, stack, children }: { graphic: ReactNode; width?: number; stack?: "wide"; children: ReactNode }) {
+  return (
+    <div className="rd-figure" data-stack={stack} style={{ "--rd-figure-w": `${width}px` } as CSSProperties}>
+      <div className="rd-figure-graphic">{graphic}</div>
+      <div className="rd-figure-data">{children}</div>
+    </div>
+  );
+}
 
 const STEPS = [1, 2, 2.5, 5, 10];
 
@@ -87,7 +105,7 @@ export function ColumnChart({ label, data, series, format, axisFormat = format, 
   const every = tickEvery(data.length);
   const current = active === null ? null : data[active];
   return (
-    <div className="rd-chart">
+    <div className="rd-chart" style={{ maxWidth: AXIS_W + data.length * SLOT_W }}>
       {series.length > 1 && <ChartLegend items={series.map((item) => ({ key: item.label, label: item.label, slot: item.slot }))} />}
       <div className="rd-chart-frame" role="img" aria-label={label}>
         <div className="rd-chart-plot" style={{ height }} onMouseLeave={() => setActive(null)}>
@@ -142,7 +160,7 @@ export function TrendLine({ label, data, format, axisFormat = format, slot = 1, 
   const marker = active ?? data.length - 1;
   const current = active === null ? null : data[active];
   return (
-    <div className="rd-chart">
+    <div className="rd-chart" style={{ maxWidth: AXIS_W + data.length * SLOT_W }}>
       <div className="rd-chart-frame" role="img" aria-label={label}>
         <div className="rd-chart-plot" style={{ height }} onMouseMove={hover} onMouseLeave={() => setActive(null)}>
           <Ticks ticks={ticks} format={axisFormat} />
@@ -175,11 +193,13 @@ export function TrendLine({ label, data, format, axisFormat = format, slot = 1, 
 const RING_R = 15.9155;
 const RING_GAP = 0.7;
 
-export function Donut({ label, segments, center, centerLabel }: {
+export function Donut({ label, segments, center, centerLabel, legend = true }: {
   label: string;
   segments: readonly { key: string; label: ReactNode; value: number; slot: ChartSlot; text: string; share: string; sub?: ReactNode }[];
   center: ReactNode;
   centerLabel?: ReactNode;
+  /** 旁边已经有表格或列表给数时传 false，只画环。 */
+  legend?: boolean;
 }) {
   const drawn = segments.filter((segment) => segment.value > 0);
   const total = drawn.reduce((sum, segment) => sum + segment.value, 0);
@@ -192,8 +212,7 @@ export function Donut({ label, segments, center, centerLabel }: {
     return arc;
   });
   const sentence = `${label}：${drawn.map((segment) => `${typeof segment.label === "string" ? segment.label : ""} ${segment.text}，占 ${segment.share}`).join("；")}`;
-  return (
-    <div className="rd-donut-wrap">
+  const ring = (
       <div className="rd-donut" role="img" aria-label={sentence}>
         <svg viewBox="0 0 42 42" aria-hidden>
           <circle className="rd-donut-track" cx="21" cy="21" r={RING_R} />
@@ -208,6 +227,10 @@ export function Donut({ label, segments, center, centerLabel }: {
           {centerLabel && <span>{centerLabel}</span>}
         </div>
       </div>
+  );
+  if (!legend) return ring;
+  return (
+    <Figure graphic={ring} width={200}>
       <ul className="rd-chart-legend" data-list="">
         {segments.map((segment) => (
           <li key={segment.key} data-zero={segment.value > 0 ? undefined : ""}>
@@ -217,7 +240,7 @@ export function Donut({ label, segments, center, centerLabel }: {
           </li>
         ))}
       </ul>
-    </div>
+    </Figure>
   );
 }
 
