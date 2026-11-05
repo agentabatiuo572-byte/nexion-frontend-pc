@@ -27,7 +27,7 @@ import {
 import { formatB5RiskLight, formatB5WithdrawalState } from "@/lib/admin/b5-display-labels";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
-import { pendingConfigApproval, submitConfigApproval } from "@/lib/admin/withdrawal-config-approval";
+import { pendingConfigApproval, pendingThresholdConfigApproval, submitConfigApproval } from "@/lib/admin/withdrawal-config-approval";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { B5RestoredInsights } from "@/app/components/dashboard/restored-b-insights";
 import { useReach } from "@/lib/nav/use-reach";
@@ -143,7 +143,8 @@ export default function RiskRadarPage() {
   const thresholdValid = Number.isFinite(yellowPct) && yellowPct >= 5 && yellowPct <= 50
     && Number.isFinite(redPct) && redPct >= 10 && redPct <= 80 && redPct > yellowPct;
   const reasonValid = reason.trim().length >= 8 && reason.trim().length <= 200;
-  const requiresApproval = !!threshold && redPct > threshold.redPct;
+  const pendingApproval = session && pendingThresholdConfigApproval("B5", session.adminId);
+  const requiresApproval = !!pendingApproval || !!threshold && redPct > threshold.redPct;
   const staleThreshold = !!threshold && radar.data?.bankrun.version !== threshold.version;
   const thresholdVersion = threshold?.version;
   const ratio24h = radar.data?.bankrun.ratio24h;
@@ -152,10 +153,9 @@ export default function RiskRadarPage() {
     ? JSON.stringify([yellowPct, redPct, thresholdVersion])
     : "";
   const previewReady = !!preview && preview.key === previewKey && !previewError;
-  const pendingApproval = session && pendingConfigApproval("B5", session.adminId);
   const lookupOnly = approvalRecovery === "lookup" || !!(pendingApproval && pendingApproval.expiresAt <= Date.now());
-  const thresholdLocked = savingThreshold || lookupOnly;
-  const canSubmitThreshold = canThreshold && !!session && reasonValid && previewReady && !thresholdLocked
+  const thresholdLocked = savingThreshold || !!approvalRecovery || lookupOnly;
+  const canSubmitThreshold = canThreshold && !!session && (approvalRecovery === "retry" || reasonValid && previewReady) && !savingThreshold && !lookupOnly
     && (!approvalRecovery || requiresApproval);
 
   useEffect(() => {
@@ -269,9 +269,9 @@ export default function RiskRadarPage() {
     }
   };
   const openThreshold = () => {
-    setYellowInput(String(data.bankrun.yellowPct));
-    setRedInput(String(data.bankrun.redPct));
-    setReason("");
+    setYellowInput(String(pendingApproval ? pendingApproval.values.yellowPct : data.bankrun.yellowPct));
+    setRedInput(String(pendingApproval ? pendingApproval.values.redPct : data.bankrun.redPct));
+    setReason(pendingApproval ? pendingApproval.reason : "");
     setPreview(null);
     setPreviewError("");
     setThresholdError("");
@@ -285,9 +285,9 @@ export default function RiskRadarPage() {
     const approving = requiresApproval || recover;
     try {
       if (approving) {
-        const result = await submitConfigApproval("B5", session, {
+        const result = await submitConfigApproval("B5", session, pendingApproval ? pendingApproval.values : {
           expectedVersion: threshold.version, yellowPct, redPct,
-        }, reason.trim(), fetchB5Radar, recover);
+        }, pendingApproval ? pendingApproval.reason : reason.trim(), fetchB5Radar, recover);
         if (!result) {
           setApprovalRecovery("retry");
           setThresholdError("暂未查到原审批单，可稍后再查，或按原配置和理由重试。");
@@ -551,7 +551,7 @@ export default function RiskRadarPage() {
                 {savingThreshold ? "查询中…" : "查询原操作"}
               </button>}
               {!lookupOnly && <button className={requiresApproval ? "b5-approval-submit" : undefined} disabled={!canSubmitThreshold} onClick={() => void submitThreshold()}>
-                {savingThreshold ? "提交中…" : approvalRecovery ? "按原操作重试" : requiresApproval ? "提交审批" : "确认调整"}
+                {savingThreshold ? "提交中…" : approvalRecovery ? "重试原操作" : requiresApproval ? "提交审批" : "确认调整"}
               </button>}
             </div>
           </div>

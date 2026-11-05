@@ -204,7 +204,7 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
 
   const openConfirm = (mode: L1ExportMode) => {
     const rows = mode === "totals" ? `${readL1LiveTotals(exportData).length} 行，一个累计数一行` : "8 行，一项指标一行";
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "export",
       action: "导出关键指标",
       detail: `聚合数据，不含用户隐私。提交后生成任务，文件到「${pageName}」下载。`,
       statedBrief: { impact: "生成一个导出任务，不改任何数据，操作记录里留痕。", check: "看时间范围对不对，理由写这份数据给谁、做什么用。" },

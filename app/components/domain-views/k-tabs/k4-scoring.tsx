@@ -311,7 +311,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
   };
 
   const openOverride = (user: K4User) => {
-    ctx.openConfirm({
+    ctx.openConfirm({ briefKind: "judgment",
       errorHandled: true,
       action: `手动改分 · ${user.userNo}`,
       detail: `把这个用户的风险分从 ${user.effectiveScore} 改成指定分数，马上生效，并记入操作记录。`,
@@ -338,7 +338,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
   };
 
   const openRecompute = (user: K4User) => {
-    ctx.openConfirm({
+    ctx.openConfirm({ briefKind: "judgment",
       errorHandled: true,
       action: `恢复系统评分 · ${user.userNo}`,
       detail: `取消人工改的分，按当前评分规则重新计算。当前分 ${user.effectiveScore}，系统算的分 ${user.modelScore}。`,
@@ -461,7 +461,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
       ctx.toast("没有待保存的模型修改");
       return;
     }
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       action: "保存评分规则草稿",
       detail: `在当前${overview.draft ? "草稿" : "生效规则"}的基础上保存。保存后不影响线上评分，需要超级管理员另外发布。`,
       run: (reason) => {
@@ -486,7 +486,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
       ctx.toast("请先保存当前修改，再发布最新草稿");
       return;
     }
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "judgment",
       action: "发布评分规则草稿",
       detail: `生效模型 v${overview.model.version} → 草稿 v${draft.version}。变更：${modelPublishDiff(overview.model, draft, overview.dimensions)}。发布后会分批（每批 200 人）重新计算所有用户的风险分，进度会显示在页面上；提现审核、风险提醒和用户资料里的风险分都会跟着变。旧版本自动归档。`,
       run: (reason) => {
@@ -647,7 +647,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
             <div className="ktint" key={`${model.version}-${model.state}`} style={{ marginBottom: 8 }}>
               <span className="tx"><b>v{model.version}</b> · {({ active: "生效中", draft: "草稿", archived: "已归档" } as Record<string, string>)[model.state] ?? "状态未知"} · {model.createdBy} · {model.createdAt} · {model.reason}</span>
               {canModelWrite && model.state === "archived" && (
-                <button className="l-btn" disabled={modelDirty} onClick={() => ctx.openActionConfirm({
+                <button className="l-btn" disabled={modelDirty} onClick={() => ctx.openActionConfirm({ briefKind: "config",
                   action: `把旧版本 v${model.version} 恢复为草稿`,
                   detail: `用 v${model.version} 覆盖当前草稿，线上的 v${overview.model.version} 不变；恢复后还要核对并发布才会生效。`,
                   run: (reason) => runAction(
@@ -665,7 +665,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
 
       <section className="l-card">
         <div className="l-h"><span className="ttl">分档与全平台分布</span><span className="sub">· 按当前生效的评分规则统计</span>
-          {canRecompute && <div className="r"><button className="l-btn" disabled={overview.totalUsers > 1000} onClick={() => ctx.openActionConfirm({
+          {canRecompute && <div className="r"><button className="l-btn" disabled={overview.totalUsers > 1000} onClick={() => ctx.openActionConfirm({ briefKind: "judgment",
             action: "重新计算所有用户的风险分",
             detail: `按当前评分规则 v${overview.model.version} 重新计算 ${overview.totalUsers} 个用户的风险分，人工改过的分会被清除。手动一次最多 1000 人；更多用户请通过发布评分规则自动分批计算。`,
             run: (reason) => runAction(

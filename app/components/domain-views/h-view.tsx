@@ -73,7 +73,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "H9" && <H9PublicStats ctx={ctx} />}
 
       {mc && (
-        <OperationConfirmModal
+        <OperationConfirmModal briefKind={mc.briefKind}
           action={mc.action}
           detail={mc.detail}
           amplifies={mc.amplifies}
@@ -84,6 +84,11 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
           confirmTone={mc.confirmTone}
           statedBrief={mc.statedBrief}
           coverageLead={mc.coverageLead}
+          inlineApproval={mc.inlineApproval}
+          reasonMin={mc.inlineApproval ? mc.reasonMin : undefined}
+          reasonMax={mc.inlineApproval ? mc.reasonMax : undefined}
+          getPendingReason={mc.inlineApproval ? mc.getPendingReason : undefined}
+          completionCopy={mc.inlineApproval ? mc.completionCopy : undefined}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {
             try {

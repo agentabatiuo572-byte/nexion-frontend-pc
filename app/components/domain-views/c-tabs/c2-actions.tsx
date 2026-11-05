@@ -485,7 +485,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     ? "提交后需在「操作记录与审批」确认才生效。"
     : "确认后立即生效。";
 
-  const freeze = (account: User360Profile) => openActionConfirm({
+  const freeze = (account: User360Profile) => openActionConfirm({ briefKind: "security",
     action: `冻结账户 · ${displayAccount(account)}`,
     detail: freezeProposalOnly
       ? "提交后需确认才生效。生效后账户被冻结、所有设备下线，待处理的提现也会被冻结。"
@@ -524,7 +524,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     },
   });
 
-  const unfreeze = (account: User360Profile) => openActionConfirm({
+  const unfreeze = (account: User360Profile) => openActionConfirm({ briefKind: "security",
     action: `恢复账户 · ${displayAccount(account)}`,
     detail: freezeProposalOnly
       ? "提交后需确认才生效，确认前账户和提现仍保持冻结。"
@@ -560,7 +560,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       toast("该用户当前没有在线设备");
       return;
     }
-    openActionConfirm({
+    openActionConfirm({ briefKind: "security",
     action: `强制登出 · ${displayAccount(account)}`,
     detail: pending ? "继续确认该用户的原登出操作，使用原理由，不会重复执行。" : `确认后该用户在 ${activeCount} 台设备上立即下线。`,
     amplifies: false,
@@ -593,7 +593,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     });
   };
 
-  const startImp = () => openActionConfirm({
+  const startImp = () => openActionConfirm({ briefKind: "security",
     action: "以用户身份只读查看",
     detail: "确认后打开该用户看到的 App 页面，只能看不能改，到时间自动关闭。",
     amplifies: false,
@@ -633,7 +633,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     },
   });
 
-  const endImp = (session: UserImpersonationSession) => openActionConfirm({
+  const endImp = (session: UserImpersonationSession) => openActionConfirm({ briefKind: "security",
     action: `结束只读查看 · ${text(session.sessionNo)}`,
     detail: "确认后立即结束这次只读查看。",
     amplifies: false,
@@ -653,7 +653,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const exitMirror = () => {
     const sessionNo = text(mirror?.sessionNo, "");
     if (!sessionNo) return toast("找不到这次查看的编号，请在列表中结束。");
-    openActionConfirm({
+    openActionConfirm({ briefKind: "security",
       action: `退出并结束只读查看 · ${sessionNo}`,
       detail: "确认后立即结束这次只读查看并关闭窗口。",
       amplifies: false,
@@ -671,7 +671,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     });
   };
 
-  const addList = (kind: "ALLOW" | "BLOCK") => openActionConfirm({
+  const addList = (kind: "ALLOW" | "BLOCK") => openActionConfirm({ briefKind: "security",
     action: kind === "ALLOW" ? "加入信任名单" : "加入禁入名单",
     detail: "确认后立即生效，到了失效日期自动失效。",
     amplifies: false,
@@ -706,7 +706,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     },
   });
 
-  const rmList = (entry: UserAccountListEntry) => openActionConfirm({
+  const rmList = (entry: UserAccountListEntry) => openActionConfirm({ briefKind: "security",
     action: `移出名单 · ${displayAccount(entry)}`,
     detail: "确认后该用户按正常风控规则判断，名单历史会保留。",
     amplifies: false,

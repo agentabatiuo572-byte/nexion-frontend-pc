@@ -289,7 +289,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
     if (!canBankReconcile || !order.manualCreditAllowed || order.paymentRail !== "HDPAY"
         || order.creditedUsdt > 0 || providerVersion === null) return;
     const authEpoch = adminAuthLifecycleEpoch();
-    openActionConfirm({
+    openActionConfirm({ briefKind: "funds",
       action: `人工确认入账 · ${order.intentNo}`,
       detail: `用户 ${order.userId} · ${orderStatusText(order.status)} → 人工入账。请先核实已实际到账 ${vnd(order.payableVnd)}，确认后按下单时的金额入账 ${order.requestedUsdt} USDT。已入账的订单不会重复入账。`,
       businessForm: { kind: "multi-field", fields: [
@@ -324,7 +324,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
       return;
     }
     const unitLabel = kind === "fee" ? (channel.feeUnit === "PERCENT" ? "%" : "USDT 固定手续费") : "USD";
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: kind === "fee"
         ? `充值费率调整 · ${depositChannelText(channel.code) ?? channel.id}`
         : `单笔上限调整 · ${depositChannelText(channel.code) ?? channel.id}`,
@@ -356,7 +356,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
   const editPerTxLimit = () => {
     if (!vietQr) return;
     const current = vietQr.config.perTxLimitUsd;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "调整银行卡支付参数 · 单笔上限",
       detail: `单笔上限当前为 ${current} USD，可设 100–10,000。只对之后的新付款单生效。`,
       edit: { kind: "number", current: String(current), unit: "USD", min: 100, max: 10_000, step: 1 },
@@ -483,7 +483,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
                 <span className={`bdg ${channel.enabled ? "ok" : "bad"}`}>{channel.enabled ? "启用" : "停用"}</span>
                 {canManageChannels && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => updateChannelNumber(channel, "fee")}>费率</button>}
                 {canManageChannels && channel.maxAmountValue !== null && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => updateChannelNumber(channel, "max")}>单笔上限</button>}
-                {canManageChannels && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => openActionConfirm({
+                {canManageChannels && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => openActionConfirm({ briefKind: "record",
                   action: `${channel.enabled ? "停用" : "启用"}充值渠道 · ${depositChannelText(channel.code) ?? channel.id}`,
                   detail: "只影响之后的新交易。",
                   run: (reason) => applyOverview(
@@ -589,7 +589,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
                 <span style={{ flex: 1 }}>支付商 {row.providerCount} 笔 / {money(row.providerAmount)} · 平台 {row.ledgerCount} 笔 / {money(row.ledgerAmount)}</span>
                 <span className={`bdg ${row.reconciled || !row.diff ? "ok" : "warn"}`}>{row.reconciled ? "已核销" : row.diff || "金额与笔数一致"}</span>
                 {canReconcile && !row.reconciled && Boolean(row.diff) && (
-                  <button className="l-btn sm mc" disabled={loading || busy} onClick={() => openActionConfirm({
+                  <button className="l-btn sm mc" disabled={loading || busy} onClick={() => openActionConfirm({ briefKind: "record",
                     action: `核销对账差异 · ${depositChannelText(row.channel)}`,
                     detail: `差异金额 ${money(row.diffAmount)}。只能标记为异常并挂账，须填写支付商账单或工单号。`,
                     businessForm: { kind: "multi-field", fields: [

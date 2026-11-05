@@ -227,7 +227,7 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
       {(!contentError || contentReadable) && tab === "I6" && <I6I18n ctx={ctx} />}
 
       {mc && (
-        <OperationConfirmModal
+        <OperationConfirmModal briefKind={mc.briefKind}
           action={mc.action}
           detail={mc.detail}
           amplifies={mc.amplifies}

@@ -102,7 +102,8 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "A9" && <A9DeveloperAccess />}
 
       {actionConfirmReq && (
-        <OperationConfirmModal
+        <OperationConfirmModal briefKind={actionConfirmReq.briefKind}
+          completionCopy={tab === "A2" ? actionConfirmReq.completionCopy : undefined}
           action={actionConfirmReq.action}
           detail={actionConfirmReq.detail}
           amplifies={actionConfirmReq.amplifies}

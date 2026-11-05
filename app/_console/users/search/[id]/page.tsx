@@ -375,6 +375,7 @@ export default function UserDetailPage() {
   const [sessionStatusFilter, setSessionStatusFilter] = useState<"ALL" | "ACTIVE" | "REVOKED" | "EXPIRED">("ALL");
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [actionConfirm, setActionConfirm] = useState<null | {
+    briefKind: import("@/app/components/domain-views/design-kit").OperatorBriefKind;
     action: string;
     detail: string;
     amplifies?: boolean;
@@ -382,6 +383,7 @@ export default function UserDetailPage() {
   }>(null);
   // c1hub 无 CCtx:就近挂载本地 OperationConfirmModal,简化签名(只取 action/detail/amplifies/run)
   const openActionConfirmReq = (req: {
+    briefKind: import("@/app/components/domain-views/design-kit").OperatorBriefKind;
     action: string;
     detail: string;
     amplifies?: boolean;
@@ -649,7 +651,7 @@ export default function UserDetailPage() {
                 </Link>
               ))}
               {canWriteC1 && <ActionButton
-                onClick={() => openActionConfirmReq({
+                onClick={() => openActionConfirmReq({ briefKind: "record",
                   action: `重置昵称 · ${displayNickname}`,
                   detail: "系统会生成一个不含手机号等个人信息的新昵称，替换当前昵称。",
                   amplifies: false,
@@ -757,7 +759,7 @@ export default function UserDetailPage() {
                     {method.revokeLastError ? ` · ${method.revokeLastError}` : ""}
                   </p>
                 )}
-                {canWriteC1 && method.status === "BOUND" && <div className="mt-3 flex gap-2">{method.trialGuard ? <ActionButton disabled={!!actionPending} onClick={() => openActionConfirmReq({ action: `发送换绑通知 · 尾号 ${method.last4}`, detail: "向该用户发送真实站内通知与推送，引导先换绑试用扣款支付方式。", amplifies: false, run: async (reason) => { if (!userId) return; const slot = paymentSlot("rebind", userId, method.id); const commandKey = c1UserCommands.resolve(slot, String(method.version), () => `c1-payment-rebind-${crypto.randomUUID()}`); setActionPending(`换绑通知 ${method.id}`); try { await notifyUserPaymentMethodRebind(userId, method.id, method.version, reason, undefined, commandKey); c1UserCommands.forget(slot); toast.success("换绑通知已进入推送队列"); await loadPaymentMethods(); } catch (err) { if (!(err instanceof UsersOutcomeUnknownError)) c1UserCommands.forget(slot); toast.error("换绑通知失败", errorMessage(err)); return false; } finally { setActionPending(null); } } })}><Bell size={13} /> 发送换绑通知</ActionButton> : <ActionButton disabled={!!actionPending} onClick={() => openActionConfirmReq({ action: `解绑支付方式 · 尾号 ${method.last4}`, detail: "解绑后立即停止作为默认支付方式；若它是默认卡，服务器会选取其他已绑定方式作为默认。", amplifies: false, run: async (reason) => { if (!userId) return; const slot = paymentSlot("unbind", userId, method.id); const commandKey = c1UserCommands.resolve(slot, String(method.version), () => `c1-payment-unbind-${crypto.randomUUID()}`); setActionPending(`解绑 ${method.id}`); try { await unbindUserPaymentMethod(userId, method.id, method.version, reason, undefined, commandKey); c1UserCommands.forget(slot); toast.success("支付方式已从 UVEL 账户解绑"); if (!includeUnbound) { setIncludeUnbound(true); setPaymentPage(1); } else { await loadPaymentMethods(); } } catch (err) { if (!(err instanceof UsersOutcomeUnknownError)) c1UserCommands.forget(slot); toast.error("支付方式解绑失败", errorMessage(err)); return false; } finally { setActionPending(null); } } })}>解绑</ActionButton>}</div>}
+                {canWriteC1 && method.status === "BOUND" && <div className="mt-3 flex gap-2">{method.trialGuard ? <ActionButton disabled={!!actionPending} onClick={() => openActionConfirmReq({ briefKind: "content", action: `发送换绑通知 · 尾号 ${method.last4}`, detail: "向该用户发送真实站内通知与推送，引导先换绑试用扣款支付方式。", amplifies: false, run: async (reason) => { if (!userId) return; const slot = paymentSlot("rebind", userId, method.id); const commandKey = c1UserCommands.resolve(slot, String(method.version), () => `c1-payment-rebind-${crypto.randomUUID()}`); setActionPending(`换绑通知 ${method.id}`); try { await notifyUserPaymentMethodRebind(userId, method.id, method.version, reason, undefined, commandKey); c1UserCommands.forget(slot); toast.success("换绑通知已进入推送队列"); await loadPaymentMethods(); } catch (err) { if (!(err instanceof UsersOutcomeUnknownError)) c1UserCommands.forget(slot); toast.error("换绑通知失败", errorMessage(err)); return false; } finally { setActionPending(null); } } })}><Bell size={13} /> 发送换绑通知</ActionButton> : <ActionButton disabled={!!actionPending} onClick={() => openActionConfirmReq({ briefKind: "record", action: `解绑支付方式 · 尾号 ${method.last4}`, detail: "解绑后立即停止作为默认支付方式；若它是默认卡，服务器会选取其他已绑定方式作为默认。", amplifies: false, run: async (reason) => { if (!userId) return; const slot = paymentSlot("unbind", userId, method.id); const commandKey = c1UserCommands.resolve(slot, String(method.version), () => `c1-payment-unbind-${crypto.randomUUID()}`); setActionPending(`解绑 ${method.id}`); try { await unbindUserPaymentMethod(userId, method.id, method.version, reason, undefined, commandKey); c1UserCommands.forget(slot); toast.success("支付方式已从 UVEL 账户解绑"); if (!includeUnbound) { setIncludeUnbound(true); setPaymentPage(1); } else { await loadPaymentMethods(); } } catch (err) { if (!(err instanceof UsersOutcomeUnknownError)) c1UserCommands.forget(slot); toast.error("支付方式解绑失败", errorMessage(err)); return false; } finally { setActionPending(null); } } })}>解绑</ActionButton>}</div>}
               </div>
             ))}
           </div>
@@ -820,7 +822,7 @@ export default function UserDetailPage() {
             const deviceId = asNumber(device.id);
             const deviceStatus = asText(device.status).toUpperCase();
             if (!deviceId || ["RECYCLED", "DEACTIVATED", "INACTIVE", "RETIRED"].includes(deviceStatus)) return null;
-            const execute = (operation: "replace" | "recycle") => openActionConfirmReq({
+            const execute = (operation: "replace" | "recycle") => openActionConfirmReq({ briefKind: "record",
               action: operation === "replace" ? `设备置换 · ${asText(device.instanceNo)}` : `设备回收 · ${asText(device.instanceNo)}`,
               detail: "会更改该用户这台设备的状态。",
               amplifies: false,
@@ -987,7 +989,7 @@ export default function UserDetailPage() {
       </div>}
 
       {actionConfirm && (
-        <OperationConfirmModal
+        <OperationConfirmModal briefKind={actionConfirm.briefKind}
           action={actionConfirm.action}
           detail={actionConfirm.detail}
           amplifies={actionConfirm.amplifies ?? false}

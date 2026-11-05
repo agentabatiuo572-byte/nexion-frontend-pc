@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { BusinessFormSpec, EditSpec } from "../design-kit";
+import type { OperatorBriefKind, BusinessFormSpec, EditSpec } from "../design-kit";
 import type { E4Query } from "./data";
 import type { E1BundleDiscount, E1GenerationGateData, E1GenerationGateInput, E1InvalidSku } from "@/lib/admin/e1-client";
 import type { E2PhoneTier, E2TaskPricingSnapshot, E2YieldComparison } from "@/lib/admin/e2-client";
@@ -59,6 +59,7 @@ export interface DatacenterForm {
 }
 
 export interface McSpec {
+  briefKind: OperatorBriefKind;
   name: string;             // 确认弹窗标题(动作名)
   op: EOp;
   detail?: string;          // 副文案(覆盖默认)

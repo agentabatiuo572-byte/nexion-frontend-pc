@@ -39,7 +39,7 @@ export default function H4EventRules({ ctx }: { ctx: HCtx }) {
     try { if (selected.kind === "regional") next.rules.regions = parseEventRegions(regions); }
     catch (cause) { setError(displayAdminError(cause)); return; }
     const base = selected;
-    ctx.openActionConfirm({ action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`,
+    ctx.openActionConfirm({ briefKind: "config", action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`,
       detail: <>更新本活动的参与条件、奖励及有效期。{next.enabled ? "启用后符合条件的用户可参与；保存时会检查配置与奖励预算。" : "保存后活动保持关闭，不发放新奖励。"}</>,
       amplifies: next.enabled,
       run: async reason => {

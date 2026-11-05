@@ -59,7 +59,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   const editParam = (param: (typeof PARAMS)[number]) => {
     if (!data) return;
     const current = data[param.key];
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `调整汇率 · ${param.label}`,
       detail: `${param.label}当前为 ${current} ${param.unit}，可设 ${param.min.toLocaleString("en-US")}–${param.max.toLocaleString("en-US")}。只影响新付款单，已下单的按下单时的汇率。`,
       edit: { kind: "number", current: String(current), unit: param.unit, min: param.min, max: param.max, step: param.step },

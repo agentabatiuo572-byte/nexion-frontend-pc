@@ -372,7 +372,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   };
 
   const revokeOne = (id: string) =>
-    openConfirm({
+    openConfirm({ briefKind: "security",
       action: `退出该设备 · ${maskSessionId(id)}`,
       detail: "确认后用户在这台设备上立即下线。",
       chips: [["立即下线", "ready"]],
@@ -388,7 +388,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
 
   const revokeAll = () => {
     if (!selectedUserId) return;
-    openConfirm({
+    openConfirm({ briefKind: "security",
       action: `退出全部设备 · ${userLabel(selectedUser)}`,
       detail: "确认后用户在所有设备上立即下线，常用于怀疑账号被盗时。",
       chips: [["全部设备立即下线", "ready"]],
@@ -406,7 +406,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
 
   const disable2fa = () => {
     if (!selectedUserId) return;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "security",
       action: `关闭两步验证 · ${userLabel(selectedUser)}`,
       detail: <>用于用户丢了验证器设备时帮他恢复登录。请先核实是本人。</>,
       amplifies: false,
@@ -433,7 +433,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
 
   const passwordReset = () => {
     if (!selectedUserId) return;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "security",
       action: `密码重置 · ${userLabel(selectedUser)}`,
       detail: <>后台看不到用户密码。确认后用户在所有设备上下线，下次登录必须先改密码。</>,
       amplifies: false,
@@ -463,7 +463,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     if (!userId) return;
     const longLock = row.lockKind === "LONG";
     const lockKind = longLock ? "LONG" : "SHORT";
-    openActionConfirm({
+    openActionConfirm({ briefKind: "security",
       action: `解除${longLock ? "长" : "短"}锁 · ${userLabel(row)}`,
       detail: longLock
         ? "长时锁定只有超级管理员或风控能解除，解除后用户可立即重新登录。"
@@ -491,7 +491,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
 
   const updateParam = (param: UserCredentialParam) => {
     if (!param.key || param.readOnly || !canWriteConfig) return;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `调整账户安全规则 · ${text(param.name)}`,
       detail: <><b>{text(param.name)}</b> · 当前 {text(param.value)} · {text(param.note)}。
         {param.key === "phoneChangeWindowDays" || param.key === "phoneChangeMaxCount"

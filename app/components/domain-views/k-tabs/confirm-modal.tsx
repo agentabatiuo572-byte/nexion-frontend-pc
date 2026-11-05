@@ -73,7 +73,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       <fieldset disabled={submitting} style={{ display: "contents" }}>
       {surface && req.effect && <div className="rd-effect">{req.effect}</div>}
       {error && <div role="alert" className="tint danger">{error}</div>}
-      <OperatorBriefBlock action={req.action} detail={req.detail} hasEdit={!!req.input} stated={req.statedBrief} />
+      <OperatorBriefBlock kind={req.briefKind} action={req.action} detail={req.detail} hasEdit={!!req.input} stated={req.statedBrief} />
       {req.chips && req.chips.length > 0 && (
         <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 12 }}>
           {req.chips.map(([t, tone]) => (

@@ -16,7 +16,7 @@ export class PromotionApiError extends Error {
   status: number;
   apiCode: number | undefined;
   fieldErrors: Array<{field: string; reason: string}>;
-  constructor(message: string, status = 0, apiCode?: number, fieldErrors: Array<{field: string; reason: string}> = []) {
+  constructor(message: string, status = 0, apiCode?: number, fieldErrors: Array<{field: string; reason: string}> = [], public readonly reasonCode?: string) {
     super(message); this.name = 'PromotionApiError'; this.status = status; this.apiCode = apiCode; this.fieldErrors = fieldErrors;
   }
 }
@@ -37,6 +37,7 @@ export function promotionErrorMessage(code: string | undefined, status = 0): str
   if (key?.includes('CONCURRENT_CHANGE')) return '内容已被其他操作修改，请读取最新版本并核对差异后再确认。';
   if (key?.includes('TIME_WINDOW')) return '结束时间必须晚于开始时间，请返回时间设置调整。';
   if (key?.includes('TIMEZONE')) return '请先选择活动显示时区，再设置开始和结束时间。';
+  if (key === 'PROMOTION_POLICY_EVIDENCE_UNAVAILABLE') return '政策证据不可用：普通操作记录必须属于当前批准人，或引用已批准的增长域审批记录。第二位批准人请先取得本人名下的有效记录，再请发起人重新创建引用该记录的政策草稿。';
   if (key?.includes('POLICY') || key?.includes('CONTRACT')) return '引用政策或原合同当前不可执行，请核对批准状态和适用范围。';
   if (key?.includes('BUDGET') || key?.includes('INVENTORY')) return '当前预算或设备额度不足，请刷新占用情况后调整。';
   return formatAdminApiError(key, `PROMOTION_REQUEST_FAILED_${status}`);
@@ -53,7 +54,7 @@ export async function promotionRead<T>(path: string, query?: Record<string,strin
   const body = await response.json().catch(() => null) as {code?:number;message?:string;data?:T & {fieldErrors?:Array<{field:string;reason:string}>}} | null;
   if (!response.ok || body?.code !== 0 || body.data == null) {
     // Unreadable responses cannot prove whether a write committed.
-    throw new PromotionApiError(promotionErrorMessage(body?.message,response.status), body ? response.status : 0, body?.code, body?.data?.fieldErrors);
+    throw new PromotionApiError(promotionErrorMessage(body?.message,response.status), body ? response.status : 0, body?.code, body?.data?.fieldErrors, body?.message);
   }
   return body.data;
 }

@@ -7,7 +7,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { LDataState } from "./live-data";
 import { readL4Operations, type L4DistRow, type L4OperationsData } from "./l4-live-data";
 import type { LCtx } from "./types";
-import type { L4OperationsQuery } from "@/lib/admin/l-client";
+import { isLOutcomeUnknownError, type L4OperationsQuery } from "@/lib/admin/l-client";
 
 type ReportTab = "device" | "tasks" | "network" | "phase";
 
@@ -298,7 +298,7 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
       intentKeyRef.current = "";
       lastSuccessAtRef.current = 0;
     }
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "export",
       action: "导出团队明细",
       detail: (
         <div>
@@ -333,7 +333,10 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
             { period: query.period as "day" | "week" | "month", depth },
             reason,
             intentKeyRef.current,
-          );
+          ).catch((cause) => {
+            if (!isLOutcomeUnknownError(cause)) intentKeyRef.current = "";
+            throw cause;
+          });
           const file = await ctx.biActions.downloadReport(result.reportId);
           downloadBlob(file.blob, file.fileName);
           lastSuccessAtRef.current = Date.now();

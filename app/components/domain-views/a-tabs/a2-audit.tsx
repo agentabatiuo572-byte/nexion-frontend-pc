@@ -151,6 +151,18 @@ function isCurrentOperator(w: A2OperationRow, principal: AuthPrincipal) {
   return w.mine || (!!current && current === normalizeOperatorIdentity(w.operator));
 }
 
+function g3PolicyExecutionTiming(w: A2OperationRow) {
+  const g3 = w.obj === "weekly" && /^提高周价格计划·D[1-7]·(?:目标价（USDT\/UVT）|上涨概率)$/.test(w.action)
+    || w.obj === "currentPrice" && w.action === "提高当前UVT价格"
+    || w.obj === "schedule" && w.action === "首次配置UVT自动推进";
+  if (!g3) return undefined;
+  try {
+    const review = JSON.parse(w.after) as Record<string, unknown>;
+    if (review && typeof review["生效时间"] === "string") return review["生效时间"];
+  } catch { /* Historical incomplete review text retains the G3 timing reminder. */ }
+  return "批准后按完整变更内容注明的时点生效，请先核对";
+}
+
 /* ────────────────── 主组件 ────────────────── */
 
 /** 详情与执行确认均完整展示已持久化的前后值。 */
@@ -310,7 +322,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     }
     const preview = retentionPreview;
     const commandKey = createA2CommandKey("a2-retention-run");
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: <>归档并清理已到期操作记录</>,
       detail: (
         <>
@@ -362,13 +374,14 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const approveWo = (w: A2OperationRow) => {
     if (w.phoneCalibrationError) { toast(w.phoneCalibrationError); return; }
     const commandKey = createA2CommandKey(`a2-approve-${w.id}`);
-    openActionConfirm({
+    openActionConfirm({ briefKind: w.type === "fund" ? "funds" : w.type === "acct" ? "security" : w.type === "sos" ? "emergency" : "config",
+      completionCopy: g3PolicyExecutionTiming(w),
       action: <>确认执行 · {w.id}({a2ActionText(w.action)})</>,
       detail: (
         <>
           对象 <b>{w.obj}</b> · 发起人 {w.operator}。
           <A2ChangeReview before={w.before} after={w.after} />
-          确认后立即执行
+          {g3PolicyExecutionTiming(w) ?? "确认后立即执行"}
           {w.sos ? (<>，<b>并通知应急值班人员</b></>) : null}。<br />
           谁能执行：<b>{w.roleGate}</b>
           {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
@@ -396,7 +409,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   const rejectWo = (w: A2OperationRow) => {
     const commandKey = createA2CommandKey(`a2-reject-${w.id}`);
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: <>取消执行 · {w.id} · {a2ActionText(w.action)}</>,
       detail: (
         <>
@@ -425,7 +438,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const withdrawWo = (w: A2OperationRow) => {
     if (!canWithdraw) { toast("你没有撤回申请的权限"); return; }
     const commandKey = createA2CommandKey(`a2-withdraw-${w.id}`);
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: <>撤回我的申请 · {w.id}</>,
       detail: <>撤回后原操作不会执行。只有申请人本人能撤回。</>,
       amplifies: false,
@@ -451,7 +464,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const exportAudit = () => {
     if (!canExport || filteredLogRows.length === 0) return;
     const commandKey = createA2CommandKey("a2-audit-export");
-    openActionConfirm({
+    openActionConfirm({ briefKind: "export",
       action: "导出操作记录",
       detail: (
         <>
@@ -479,7 +492,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const adjReasonMin = () => {
     const cur = mechanismParams.find((p) => p.key === "ttl")?.value ?? "8 字";
     const commandKey = createA2CommandKey("a2-mechanism-ttl");
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "操作理由最短长度",
       detail: (
         <>
@@ -513,7 +526,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const adjRet = () => {
     const cur = mechanismParams.find((p) => p.key === "retention")?.value ?? "13 个月";
     const commandKey = createA2CommandKey("a2-mechanism-retention");
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "操作记录保留期",
       detail: (
         <>
@@ -547,7 +560,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const adjSchema = () => {
     const cur = parseA2SchemaVersion(mechanismParams.find((p) => p.key === "schema")?.value) || "v3";
     const commandKey = createA2CommandKey("a2-mechanism-schema");
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "升级记录字段版本",
       detail: (
         <>
@@ -996,7 +1009,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       </div>
 
       <p className="f-foot">
-        <b>谁能执行</b>：资金类由财务执行，风控和账户类由风控执行，内容类由内容运营执行，账号和系统设置只有超级管理员能执行；超级管理员可执行全部。应急操作排在最前，超时会提醒超级管理员。
+        <b>谁能批准</b>：需审批的操作由有批准权限的超级管理员处理；发起人不能批准自己的操作，超级管理员发起的也须由另一位超级管理员批准。应急操作排在最前，超时会提醒超级管理员。
       </p>
 
       {/* ───── 高敏动作详情 Drawer ───── */}

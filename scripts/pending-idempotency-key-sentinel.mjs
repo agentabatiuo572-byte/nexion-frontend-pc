@@ -72,6 +72,8 @@ const MIGRATED = [
   "lib/admin/e5-stable-device-command.ts",
   "lib/admin/g2-client.ts",
   "lib/admin/g3-client.ts",
+  "lib/admin/g3-market-command.ts",
+  "lib/admin/f1-policy-change.ts",
   "lib/admin/g4-client.ts",
   "lib/admin/g7-client.ts",
   // H9:失败横幅向运营承诺「原样重试用的是同一个幂等键」,而旧实现每点一次保存都现铸一个新键

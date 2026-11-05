@@ -12,10 +12,15 @@
  * 三道护栏(H4 转盘):概率合计 = 100、档位 ∈ [2,12]、真实奖过 B1 红线 → 422。
  */
 import type { DCtx } from "../d-tabs/types";
+import type { ActionConfirmReq as BaseActionConfirmReq } from "../k-tabs/types";
+import type { InlineOperationApproval } from "../design-kit";
 
-export type { ActionConfirmReq, ConfirmReq, ConfirmChip } from "../k-tabs/types";
+export type { ConfirmReq, ConfirmChip } from "../k-tabs/types";
 
-export type HCtx = DCtx & {
+export type ActionConfirmReq = BaseActionConfirmReq & { inlineApproval?: InlineOperationApproval };
+
+export type HCtx = Omit<DCtx, "openActionConfirm"> & {
+  openActionConfirm: (req: ActionConfirmReq | null) => void;
   /** UI convenience only; the backend remains the final authority boundary. */
   can: (authority: string) => boolean;
 };

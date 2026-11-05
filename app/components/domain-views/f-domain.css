@@ -498,3 +498,17 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .fdom .f4-policy-buckets th:nth-child(2) { width: 31%; }
 .fdom .f4-policy-buckets th:nth-child(3) { width: 21%; }
 .fdom .f4-policy-buckets th:nth-child(n+4) { width: 14%; }
+
+.fdom .modal.f1-policy-confirm { max-width: 680px; }
+.fdom .f1-policy-comparison { margin-bottom: 18px; border: 1px solid var(--border-strong); border-radius: 9px; overflow: hidden; }
+.fdom .f1-policy-comparison .tbl { table-layout: fixed; }
+.fdom .f1-policy-comparison .tbl :is(th, td) { padding: 12px 14px; white-space: normal; overflow-wrap: anywhere; font-size: 14px; }
+.fdom .f1-policy-comparison .tbl td { color: var(--ink); font-variant-numeric: tabular-nums; }
+.fdom .f1-policy-comparison p { padding: 0 14px; line-height: 1.6; color: var(--ink-2); }
+.fdom .f1-policy-confirm .field label { display: block; margin-bottom: 8px; font-size: 14px; font-weight: 600; }
+.fdom .f1-policy-confirm .field .fld { width: 100%; }
+.fdom .f1-policy-note { margin: 0 0 16px; color: var(--ink-2); line-height: 1.6; font-size: 14px; }
+.fdom .f1-removal-recovery { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; padding: 10px; font-size: 12px; }
+.fdom .f1-removal-recovery > span { flex: 1; }
+.fdom .f1-removal-recovery > svg, .fdom .f1-removal-confirm-note > svg { flex-shrink: 0; color: var(--warning); }
+.fdom .f1-removal-confirm-note { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }

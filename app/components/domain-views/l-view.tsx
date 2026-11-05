@@ -139,7 +139,7 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "L6" && <L6BehaviorHeatmap ctx={ctx} />}
 
       {mc && (
-        <OperationConfirmModal
+        <OperationConfirmModal briefKind={mc.briefKind}
           action={mc.action}
           detail={mc.detail}
           amplifies={mc.amplifies}

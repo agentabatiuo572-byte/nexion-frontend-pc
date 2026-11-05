@@ -284,7 +284,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   };
 
   const markArb = (r: K2Row) =>
-    ctx.openConfirm({
+    ctx.openConfirm({ briefKind: "judgment",
       errorHandled: true,
       action: `标记套利账户 · ${r.cells[0]}`,
       detail: "标记为套利并附上证据，不冻结、不动钱。标记会计入风险分和风险提醒。",
@@ -299,7 +299,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
     });
 
   const blockGift = (r: K2Row) =>
-    ctx.openConfirm({
+    ctx.openConfirm({ briefKind: "record",
       errorHandled: true,
       action: `拦截新人礼 · ${r.cells[0]}`,
       detail: "以后不再给这个账户发新人礼，已到账的不动。",
@@ -314,7 +314,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
     });
 
   const boardFlag = (r: K2Row) =>
-    ctx.openConfirm({
+    ctx.openConfirm({ briefKind: "judgment",
       errorHandled: true,
       action: `标记刷榜账户 · ${r.cells[0]}`,
       detail: "标记为刷榜，会通知排行榜和风险提醒；取消排行榜资格要去「奖励池、名额与排行榜」操作。",
@@ -329,7 +329,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
     });
 
   const linkFreeze = (r: K2Row) =>
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "security",
       action: `冻结关联账户 · ${r.cells[0]}`,
       detail: `冻结 ${r.cluster || r.rowId} 这组关联账户，套利证据会一起记入操作记录。`,
       reasonMax: 200,
@@ -342,7 +342,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       ctx.toast(`${p.name} 暂时不能在这里修改`);
       return;
     }
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       action: `调整检测阈值 · ${p.name}`,
       detail: `${p.name} · 当前 ${boardBaselineText(p.value)}。${K2_PARAM_HELP[p.key] ?? p.note}`,
       amplifies: true,
@@ -369,7 +369,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       ctx.toast(`${definition.label} 加载失败，请刷新后重试`);
       return;
     }
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       action: `调整验证码设置 · ${definition.label}`,
       detail: `${definition.label} · 当前 ${param.value} ${definition.unit}。${param.sub}。只影响之后的判断。`,
       amplifies: false,

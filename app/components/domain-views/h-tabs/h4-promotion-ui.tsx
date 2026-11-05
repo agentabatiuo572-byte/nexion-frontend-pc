@@ -117,13 +117,15 @@ export function Dialog({ title, children, onClose, footer, wide = false }: {
     return <dialog ref={ref} className={wide ? 'wide-dialog' : ''} aria-labelledby={id} onCancel={e => { e.preventDefault(); onClose(); }}><div className="dialog-head"><h2 id={id}>{title}</h2><button className="close" aria-label="关闭弹窗" onClick={onClose}>×</button></div><div className="dialog-body">{children}</div><div className="dialog-foot">{footer || <Button onClick={onClose}>返回</Button>}</div></dialog>;
 }
 export const PROMOTION_COMMAND_PERMISSIONS: Record<string, string> = {createPromotion: 'edit', saveDraft: 'edit', copyPromotion: 'edit', createDraftVersion: 'edit', submitPromotion: 'submit', withdrawPromotion: 'submit', approvePromotion: 'approve', rejectPromotion: 'approve', publishPromotion: 'publish', pausePromotion: 'pause', resumePromotion: 'pause', endPromotion: 'end', archivePromotion: 'archive', deletePromotion: 'archive', retryReward: 'reward_retry', reconcileReward: 'reward_reconcile', cancelReward: 'reward_cancel', reverseReward: 'reward_reverse', resolveReward: 'reward_resolve', createExport: 'metrics_export', createPolicy: 'policy_write', approvePolicy: 'policy_approve', revokePolicy: 'policy_approve'};
-export function ConfirmCommand({ title, intent, body, children, onClose, onSuccess, writeAllowed, evidenceOptions = [], requireEvidence = false, evidenceMode = 'upload' }: {
+export function ConfirmCommand({ title, intent, body, children, onClose, onSuccess, onReload, onVersionConflict, writeAllowed, evidenceOptions = [], requireEvidence = false, evidenceMode = 'upload' }: {
     title: string;
     intent: Omit<PromotionCommandIntent, 'body'>;
     body: Record<string, unknown>;
     children?: ReactNode;
     onClose: () => void;
     onSuccess: (result: CommandReceipt) => void | Promise<void>;
+    onReload?: () => Promise<string>;
+    onVersionConflict?: () => void;
     writeAllowed: boolean;
     evidenceOptions?: Array<{
         value: string;
@@ -135,19 +137,37 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
     const initial = pendingPromotionCommands().find(p => p.operation === intent.operation && p.targetId === intent.targetId)?.body as Record<string, unknown> | undefined;
     const policy = useRead(fetchA2ReasonPolicy, []), [reason, setReason] = useState(String(initial?.reason || '')), [evidence, setEvidence] = useState<string[]>(Array.isArray(initial?.evidenceRefs) ? initial.evidenceRefs : []), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [note, setNote] = useState(''), [version, setVersion] = useState(0), [upload, setUpload] = useState<Record<string, string>>({}), [uploadState, setUploadState] = useState<string>();
     const record = pendingPromotionCommands().find(p => p.operation === intent.operation && p.targetId === intent.targetId);
+    const [reloadNeeded, setReloadNeeded] = useState(false);
     const payload = { ...body, reason, ...('evidenceRefs' in body ? { evidenceRefs: evidence } : {}) };
-    const submit = async (retry = false) => { if (!writeAllowed) return; setBusy(true); setError(null); try {
+    const submit = async (retry = false) => { if (!writeAllowed || reloadNeeded) return; setBusy(true); setError(null); try {
         const result = record?.receipt || await promotionCommand(record && retry ? record : { ...intent, body: payload }, retry);
         await onSuccess(result);
         acknowledgePromotionCommand(result);
     }
     catch (e) {
         setError(e);
+        if (e instanceof PromotionApiError && /REVISION|VERSION_CONFLICT|CONCURRENT_CHANGE|VERSION_NOT_CURRENT|VERSION_STATE_INVALID/.test(e.reasonCode || '')) {
+            if (onVersionConflict) onVersionConflict();
+            else if (onReload) setReloadNeeded(true);
+        }
     }
     finally {
         setBusy(false);
         setVersion(v => v + 1);
     } };
+    const reload = async () => {
+        if (!onReload || busy || record) return;
+        setBusy(true);
+        try {
+            setNote(await onReload());
+            setError(null);
+            setReloadNeeded(false);
+        } catch (e) {
+            setError(e);
+        } finally {
+            setBusy(false);
+        }
+    };
     const recover = async () => { if (!record)
         return; setBusy(true); setError(null); try {
         const result = record.receipt || await recoverPromotionCommand(record);
@@ -166,7 +186,7 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
         setVersion(v => v + 1);
     } };
     const invalid = !policy.data || policy.loading || !!policy.error || reason.trim().length < policy.data.minChars || reason.trim().length > policy.data.maxChars || (requireEvidence && !evidence.length) || !!uploadState;
-    return <Dialog title={title} onClose={onClose} wide={requireEvidence} footer={<><Button onClick={onClose} disabled={busy}>取消</Button>{record ? <><Button onClick={recover} disabled={busy}>{record.receipt ? '读取已成功的结果' : '核查原操作'}</Button>{record.recoveryState === 'NOT_FOUND' && <Button kind="primary" onClick={() => submit(true)} disabled={busy || !writeAllowed || policy.loading || !!policy.error}>原样重试</Button>}</> : <Button kind="primary" onClick={() => submit()} disabled={busy || invalid || !writeAllowed}>{busy ? '正在提交…' : '确认操作'}</Button>}</>}>
+    return <Dialog title={title} onClose={onClose} wide={requireEvidence} footer={<><Button onClick={onClose} disabled={busy}>取消</Button>{reloadNeeded && onReload && <Button onClick={reload} disabled={busy || !!record}>{busy ? "正在加载…" : "重新加载并核对"}</Button>}{record ? <><Button onClick={recover} disabled={busy}>{record.receipt ? '读取已成功的结果' : '核查原操作'}</Button>{record.recoveryState === 'NOT_FOUND' && <Button kind="primary" onClick={() => submit(true)} disabled={busy || !writeAllowed || policy.loading || !!policy.error}>原样重试</Button>}</> : <Button kind="primary" onClick={() => submit()} disabled={busy || reloadNeeded || invalid || !writeAllowed}>{busy ? '正在提交…' : '确认操作'}</Button>}</>}>
     <fieldset disabled={busy || !!record || !writeAllowed}>{children}</fieldset><fieldset disabled={busy || !!record || !writeAllowed}><Field label="操作理由 *" hint={policy.data ? `至少 ${policy.data.minChars} 字，最多 ${policy.data.maxChars} 字；与操作一起留痕。` : '正在读取理由要求'}><textarea value={reason} onChange={e => setReason(e.target.value)} maxLength={policy.data?.maxChars}/></Field>{evidenceOptions.length > 0 && <fieldset className="form-section"><legend>关联证据{requireEvidence ? ' *' : ''}</legend>{evidenceOptions.map(option => <label className="evidence-choice" key={option.value}><input type="checkbox" checked={evidence.includes(option.value)} onChange={e => setEvidence(e.target.checked ? [...evidence, option.value] : evidence.filter(x => x !== option.value))}/>{option.label}</label>)}</fieldset>}</fieldset>
     {requireEvidence && evidenceMode === 'upload' && <fieldset disabled={busy || !!record || !writeAllowed}><BusinessFormBlock spec={{ kind: 'multi-field', title: '上传处置证据', fields: [{ key: 'evidenceAssetId', label: '关联证据图片', inputKind: 'asset-upload', required: true, wide: true, uploadDomain: 'growth', uploadUsage: 'promotion-evidence', help: '上传可核验的关联凭据，上传成功后才允许提交。' }] }} value={upload} onChange={v => { setUpload(v); setEvidence(v.evidenceAssetId ? [v.evidenceAssetId] : []); }} onUploadStateChange={(_, state) => setUploadState(state)}/></fieldset>}
     {!writeAllowed && <Notice title="当前操作已停用" kind="warn">授权或依赖数据当前无法支持此操作。原输入与操作记录继续保留，可读取核查原结果。</Notice>}{!!policy.error && <ReadError target="操作理由要求" error={policy.error} retry={policy.reload}/>}{!!error && <Notice title="操作尚未完成" kind="bad">{displayAdminError(error)}{error instanceof PromotionApiError&&error.fieldErrors.map((f,i)=><p key={i} className="input-error">{promotionFieldLabel(f.field)}：未填写完整或不符合当前约束。</p>)}</Notice>}{record && <Notice title="原操作待核实" kind="warn">{record.receipt ? '原操作已经成功，当前只重读结果；不会再次提交。' : '原参数已锁定；核查前不会创建第二次操作。关闭后仍可在活动中心恢复。'}</Notice>}{note && <Notice title="核查结果">{note}</Notice>}<span hidden>{version}</span>

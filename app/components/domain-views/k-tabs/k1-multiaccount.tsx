@@ -766,7 +766,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     ({ kind: "cluster", target: c.id, label, operator, reason, clusterAction, clusterStatus: c.status, version: c.version });
 
   const flagCluster = (c: K1Cluster) => {
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "judgment",
       action: `标记可疑账户组 · ${c.id}`,
       detail: "只标记为可疑，不冻结资产。风险评分和风险提醒会同步更新，并保留操作记录。",
       statedBrief: { impact: "批准后这组变成可疑，不动资产；风险评分和风险提醒同步更新。", check: "确认对象、证据和结论，理由写清依据或工单号。" },
@@ -782,7 +782,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const freezeCluster = (c: K1Cluster) => {
     const codes = c.nodes.map((node) => node[0]).join("、");
     const missing = c.n - c.nodes.length;
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "security",
       action: `批量冻结关联账户 · ${c.id}`,
       detail: `冻结这组里的 ${c.n} 个账户。请填写原因，会记入操作记录。`,
       statedBrief: {
@@ -799,7 +799,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   };
 
   const releaseCluster = (c: K1Cluster) => {
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "funds",
       action: `解除误判 · ${c.id}`,
       detail: "解除后，这些账户可能有更多收益可以提现。请核对影响并写明原因。",
       amplifies: true,
@@ -815,7 +815,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   };
 
   const clearCluster = (c: K1Cluster) => {
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "judgment",
       action: `判定为正常 · ${c.id}`,
       detail: "这组账户将退出风险监控，后续风险评分也会受影响。请填写判定依据。",
       amplifies: true,
@@ -831,7 +831,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   };
 
   const reviewNote = (c: K1Cluster) => {
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "note",
       action: `人工复审备注 · ${c.id}`,
       detail: "记录复审备注并保持当前状态不变。",
       statedBrief: { impact: "只写备注，不改状态，记入操作记录。", check: "确认对象、证据和结论，理由写清依据或工单号。" },
@@ -864,7 +864,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   };
 
   const releaseProtectedEntry = (entry: K1ProtectedEntry) => {
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "funds",
       action: `人工放行收益 · ${entry.entryNo}`,
       detail: `这笔收益现在是「${entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}」，放行后用户可以提现。`,
       amplifies: true,
@@ -950,7 +950,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   };
 
   const rmWl = (cidr: string) => {
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       action: `移出允许名单 · ${cidr}`,
       detail: "移除后该网段恢复同 IP 多账户检测。",
       statedBrief: { impact: "这个网段恢复按 IP 检测，已有账户不会自动冻结。", check: "确认网段和授权来源，理由写清工单号和处理依据。" },

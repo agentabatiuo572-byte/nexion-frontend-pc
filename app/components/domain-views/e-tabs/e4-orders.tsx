@@ -308,7 +308,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
           if (!e4Detail || !refundReady || orderPending) return;
           const channels = e4Detail.refundChannels.length ? e4Detail.refundChannels : ["WALLET"];
           openActionConfirm({
-            name: "退款 · " + o.id, op: "order-refund", orderId: o.id, amplify: true,
+            briefKind: "funds", name: "退款 · " + o.id, op: "order-refund", orderId: o.id, amplify: true,
             effect: approvalTag, confirmLabel: "提交审批", confirmTone: "danger", coverageLead: "退款后用户钱包多这笔钱，平台的应付款跟着增加",
             statedBrief: briefOf("核对用户、金额和退款原因，理由写清依据或工单号。"),
             facts: <Facts><Fact k="用户">{o.user}</Fact><Fact k="商品">{o.sku}</Fact><Fact k="设备">{refundDeviceText}</Fact><Fact k="已到账的收益">{refundEarningsText}</Fact><Fact k="能否撤销">不可撤销</Fact></Facts>,
@@ -320,18 +320,18 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
           });
         }}><AutoGloss>{e4DetailLoading ? "正在检查退款条件…" : e4Detail?.refundAllowed === false ? refundBlockText : "退款"}</AutoGloss></Button>}
         others={<>
-          {canCancel && <Button disabledReason={waitReason} onClick={() => openActionConfirm({ name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, effect: approvalTag, confirmLabel: "提交审批", statedBrief: briefOf("核对订单和取消原因，理由写清依据或工单号。"), detail: `取消 ${o.id}（${stateLabel(eff)}）。用户还没付款，取消后订单终止。`,
+          {canCancel && <Button disabledReason={waitReason} onClick={() => openActionConfirm({ briefKind: "record", name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, effect: approvalTag, confirmLabel: "提交审批", statedBrief: briefOf("核对订单和取消原因，理由写清依据或工单号。"), detail: `取消 ${o.id}（${stateLabel(eff)}）。用户还没付款，取消后订单终止。`,
             businessForm: { kind: "multi-field", title: "取消原因", fields: [
               { key: "closeReasonCode", label: "取消原因（用户可见）", current: "", inputKind: "select", options: ["", ...E4_CLOSE_REASONS.cancelled], optionLabels: { "": "请选择取消原因", ...E4_CLOSE_REASON_LABELS }, required: true, help: "这个原因会显示在用户的订单详情里；下方备注只记在操作记录里，用户看不到。" },
             ] } })}>取消订单</Button>}
-          {canWriteE4 && terminalOptions.length > 0 && <Button disabledReason={waitReason} onClick={() => openActionConfirm({ name: "标记失败结果 · " + o.id, op: "order-terminal", orderId: o.id, amplify: false, effect: approvalTag, confirmLabel: "提交审批", statedBrief: briefOf("核对失败结果和原因，理由写清依据或工单号。"), detail: `当前状态：${stateLabel(eff)}，选择一个失败结果。退款请用「退款」按钮。`,
+          {canWriteE4 && terminalOptions.length > 0 && <Button disabledReason={waitReason} onClick={() => openActionConfirm({ briefKind: "record", name: "标记失败结果 · " + o.id, op: "order-terminal", orderId: o.id, amplify: false, effect: approvalTag, confirmLabel: "提交审批", statedBrief: briefOf("核对失败结果和原因，理由写清依据或工单号。"), detail: `当前状态：${stateLabel(eff)}，选择一个失败结果。退款请用「退款」按钮。`,
             businessForm: { kind: "multi-field", title: "失败结果与原因", hint: "过期、拒付的原因会自动记录；支付失败、开通失败需要选择原因。", fields: [
               { key: "terminalState", label: "失败结果", current: "", inputKind: "select", options: ["", ...terminalOptions], optionLabels: { "": "请选择失败结果", ...Object.fromEntries(terminalOptions.map((s) => [s, stateLabel(s)])) }, required: true },
               ...terminalOptions.filter((s) => E4_CLOSE_REASONS[s]).map((s) => (
                 { key: "closeReasonCode", label: "原因（用户可见）", current: "", inputKind: "select" as const, options: ["", ...E4_CLOSE_REASONS[s]], optionLabels: { "": "请选择原因", ...E4_CLOSE_REASON_LABELS }, required: true, visibleWhen: { key: "terminalState", equals: s }, help: "这个原因会显示在用户的订单详情里；下方备注只记在操作记录里，用户看不到。" })),
             ] } })}>标记失败结果</Button>}
         </>}
-        primary={nextState && <Button variant="primary" disabledReason={waitReason} onClick={() => openActionConfirm({ name: `推进订单 · ${o.id} → ${stateLabel(nextState)}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, effect: approvalTag, confirmLabel: "提交审批", detail: `手动推进 ${o.id}：${stateLabel(eff)} → ${stateLabel(nextState)}` })}>推进到下一步</Button>}
+        primary={nextState && <Button variant="primary" disabledReason={waitReason} onClick={() => openActionConfirm({ briefKind: "record", name: `推进订单 · ${o.id} → ${stateLabel(nextState)}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, effect: approvalTag, confirmLabel: "提交审批", detail: `手动推进 ${o.id}：${stateLabel(eff)} → ${stateLabel(nextState)}` })}>推进到下一步</Button>}
       />}>
       {!finalized && <Steps label="订单进度" items={orderFlow.map((state, position) => ({ label: stateLabel(state), state: position < idx ? "done" as const : position === idx ? "current" as const : "todo" as const }))} />}
       {orderPending && <Notice tone="warn">这单有结果未确认的操作，不要重复处理。状态变了也不算确认。到页面上方按原操作重试，或看操作记录核查。</Notice>}

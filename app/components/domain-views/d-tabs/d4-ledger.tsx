@@ -239,7 +239,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
     );
     ctx.toast("账单 CSV 已下载");
   };
-  const requestExport = () => ctx.openActionConfirm({
+  const requestExport = () => ctx.openActionConfirm({ briefKind: "export",
     action: "导出账单明细",
     detail: <>按当前筛选导出，用户编码会隐藏部分字符，最多 10 万行。</>,
     reasonMin: 8,

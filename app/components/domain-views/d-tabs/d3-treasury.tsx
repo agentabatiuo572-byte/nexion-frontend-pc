@@ -342,7 +342,7 @@ export function D3Treasury() {
     setConfirm({
       action: "储备注入登记",
       detail: `登记 ${money(Number(nextAmount))}，${typeLabel}，凭证号 ${nextVoucher}。凭证号不可重复。登记后计入可用储备。凭证类型会写在理由前面，留在操作记录里。`,
-      briefKind: "record",
+      briefKind: "funds",
       effect: "立即生效",
       confirmLabel: "确认登记",
       reasonMax: 200 - reasonPrefix.length,
@@ -405,7 +405,7 @@ export function D3Treasury() {
     setConfirm({
       action: "导出",
       detail: kind === "reconciliation" ? "导出储备与应付款对账数据：储备、应付款、净差额三行。" : "导出应付款明细：全部 9 类的当前数据，不随页面窗口变。",
-      briefKind: "record",
+      briefKind: "export",
       confirmLabel: "确认导出",
       run: (reason) => submitExport(kind, reason),
     });

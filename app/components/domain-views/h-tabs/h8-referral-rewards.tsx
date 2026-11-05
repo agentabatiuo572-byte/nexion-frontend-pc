@@ -8,6 +8,9 @@ import Link from "next/link";
 import {
   createH8CommandKey,
   fetchH8ReferralRewards,
+  h8EffectiveRewardReference,
+  h8RewardParamAmplifies,
+  h8RewardParamValid,
   isH8OutcomeUncertainError,
   updateH8ReferralRewardParam,
   type H8ReferralRewardOverview,
@@ -19,6 +22,8 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { configApprovalOriginalInput, pendingConfigApproval, submitConfigApproval, type H8ConfigApprovalInput } from "@/lib/admin/withdrawal-config-approval";
+import type { BusinessFormValue } from "../design-kit";
 
 /** H8 发奖参数与结算的稳定命令号:槽位=动作|参数键,指纹带 expectedVersion(旧快照重提自动换号)。
  *  落 sessionStorage,结果未知后刷新页面原样重试仍复用同号被后端去重。 */
@@ -35,10 +40,8 @@ const LOCK_MODE_LABELS: Record<string, string> = {
   risk_bucket: "先过风险检查再发",
   direct: "符合资格就直接发",
 };
-const LOCK_MODE_VALUES: Record<string, string> = Object.fromEntries(Object.entries(LOCK_MODE_LABELS).map(([key, value]) => [value, key]));
 const ENABLED_PARAM = { key: "enabled", label: "邀请奖励", unit: "", kind: "select", options: ["已停用", "已启用"] } as const;
 const ENABLED_LABELS: Record<string, string> = { false: "已停用", true: "已启用" };
-const ENABLED_VALUES: Record<string, string> = { 已停用: "false", 已启用: "true" };
 type H8Param = (typeof PARAMS)[number] | typeof ENABLED_PARAM;
 
 export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
@@ -85,43 +88,134 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   }, [load]);
 
   const editParam = (param: H8Param, fixedValue?: string) => {
-    if (!data) return;
+    if (!data || !session) return;
     const isEnabled = param.key === "enabled";
-    const rawCurrent = String(data?.params?.[param.key] ?? (isEnabled ? "false" : param.kind === "select" ? "risk_bucket" : "0"));
+    const numeric = param.kind === "number";
+    const rawCurrent = String(data.params[param.key]);
     const current = isEnabled
       ? ENABLED_LABELS[rawCurrent] ?? ENABLED_LABELS.false
       : param.kind === "select" ? LOCK_MODE_LABELS[rawCurrent] ?? LOCK_MODE_LABELS.risk_bucket : rawCurrent;
-    const enabling = isEnabled && (fixedValue ?? rawCurrent) === "true";
-    ctx.openActionConfirm({
-      action: isEnabled ? enabling ? "启用邀请奖励" : "停用邀请奖励" : `调整邀请奖励 · ${param.label}`,
+    const approvalScope = { objectId: "current", field: param.key };
+    const pending = pendingConfigApproval("H8", session.adminId, approvalScope);
+    let original: H8ConfigApprovalInput | undefined;
+    try {
+      original = pending ? configApprovalOriginalInput("H8", pending.input) : undefined;
+      if (original && original[0].key !== param.key) throw new Error("原审批命令不完整，请到操作记录核对。");
+    } catch (cause) {
+      ctx.toast(displayAdminError(cause));
+      return;
+    }
+    const expectedVersion = original?.[0].expectedVersion ?? data.version;
+    const enabling = isEnabled && (original?.[0].value ?? fixedValue ?? rawCurrent) === "true";
+    const multiplier = param.key === "inviter.nex" ? data.inviterMultiplier : data.newcomerMultiplier;
+    const storedValue = (value: BusinessFormValue) => (original?.[0].value ?? fixedValue ?? value.value ?? "").trim();
+    const showValue = (value: string) => isEnabled ? ENABLED_LABELS[value] ?? "—"
+      : numeric ? value || "—" : LOCK_MODE_LABELS[value] ?? "—";
+    const ensureSession = () => {
+      if (useAdminAuth.getState().session?.adminId !== session.adminId) {
+        throw new Error("登录账号已变化，请关闭弹窗后重新操作。");
+      }
+    };
+    const submitApproval = async (reason: string, value?: string, mode: boolean | "retry-original" = false) => {
+      ensureSession();
+      const result = await submitConfigApproval("H8", session,
+        value === undefined ? null : { key: param.key, value, expectedVersion },
+        reason, fetchH8ReferralRewards, mode, approvalScope);
+      if (!result) return false;
+      setData(result.active);
+      setError(null);
+      ctx.toast(result.acknowledgement);
+      ctx.openActionConfirm(null);
+      return true;
+    };
+    const approvalCopy = numeric
+      ? "待审期间仍按原配置。批准时按当月倍率重新核对，新注册用户适用新配置。历史结算和冻结金额保持原值。"
+      : isEnabled
+        ? "批准前奖励保持关闭。另一位超管批准后启用，按当前月份倍率计算新注册奖励；历史已发和已冻结奖励不重算。"
+        : "批准前沿用当前模式。原有资格校验及 H5 首笔实付后解冻规则继续生效，不会提前发放冻结礼包。";
+    ctx.openActionConfirm({ briefKind: "config",
+      action: isEnabled ? enabling ? "启用新人礼与邀请奖励" : "停用新人礼与邀请奖励" : `调整邀请奖励 · ${param.label}`,
       detail: isEnabled
         ? enabling
-          ? "启用后，只给启用之后产生、且符合资格和风险检查的邀请发奖励；App 会显示当前奖励。"
+          ? "启用须提交审批；批准前仍保持停用，不显示或发放新的新人礼和邀请人奖励。"
           : "停用后，App 仍能分享邀请码，但不再显示新人礼和邀请人奖励，也不再发新的奖励。"
-        : `${param.label} 当前 ${current} ${nexGridBrandText(param.unit)}。只影响之后发放的奖励，已到账的不变。调高金额或改为直接发放时，覆盖率低于红线无法保存。`,
-      amplifies: isEnabled ? enabling : true,
-      edit: fixedValue != null ? undefined : param.kind === "select"
-        ? { kind: "select", current, options: Object.values(LOCK_MODE_LABELS) }
-        : { kind: "number", current, unit: nexGridBrandText(param.unit), min: 0, max: param.max, step: param.step },
-      run: async (reason, value) => {
-        if (value == null && fixedValue == null) return;
-        const slot = `param|${param.key}`;
-        const submittedValue = fixedValue ?? value;
-        if (submittedValue == null || submittedValue === "") return;
-        const storedValue = isEnabled
-          ? ENABLED_VALUES[submittedValue] ?? submittedValue
-          : param.kind === "select" ? LOCK_MODE_VALUES[submittedValue] ?? submittedValue : submittedValue;
-        // 指纹 = 新值 + 版本号(CAS),**不含 reason**:理由是审计元数据不是意图,进指纹会让
-        // 「结果未知后补一句理由再点」换新号 → 重复发奖。版本号进指纹是必须的:基于旧快照的
-        // 同值重提是新意图,不是重试。
+        : numeric ? `${param.label} 当前基础额 ${current} ${param.unit}。调高须提交审批，降低直接保存。`
+          : "改为符合资格直接发须提交审批；切回风险检查模式直接保存。两种模式都保留首购冻结规则。",
+      amplifies: false,
+      reasonMin: 8,
+      reasonMax: 200,
+      getPendingReason: () => original?.[1],
+      completionCopy: isEnabled
+        ? "停用立即生效，历史已发和已冻结奖励不重算。"
+        : numeric ? "金额降低立即生效；历史结算和已冻结金额保持原值。"
+          : "切回风险检查模式立即生效，历史结算和已冻结礼包沿用原规则。",
+      businessForm: { kind: "multi-field", fields: fixedValue !== undefined ? [] : [{
+        key: "value", label: numeric ? `${param.label}基础额` : "发放模式", required: true,
+        current: original?.[0].value ?? (numeric ? "" : rawCurrent), inputKind: numeric ? "text" : "select",
+        ...(numeric ? { pattern: "^(?:0|[1-9]\\d{0,11})(?:\\.\\d{1,6})?$", patternMessage: "请输入非负金额，最多六位小数。" }
+          : { options: ["risk_bucket", "direct"], optionLabels: LOCK_MODE_LABELS }),
+      }] },
+      inlineApproval: {
+        dialogClassName: "h8-reward-param-confirm",
+        pending: !!pending,
+        expired: !!pending && pending.expiresAt <= Date.now(),
+        resolve: (form) => {
+          const value = storedValue(form);
+          if (!value) return undefined;
+          if (!h8RewardParamValid(param.key, value)) return {
+            heading: "请核对拟改值", disabledReason: numeric ? `请输入 0–${param.max} 的基础额，最多六位小数。` : "请选择有效的发放模式。",
+            completionCopy: "本次尚未提交，请核对允许范围后再继续。",
+          };
+          if (!pending && !h8RewardParamAmplifies(param.key, rawCurrent, value)) return undefined;
+          return {
+            heading: "需另一位超管批准后生效",
+            completionCopy: approvalCopy,
+            disabledReason: numeric && h8EffectiveRewardReference(value, multiplier) === null
+              ? "拟有效额超出允许范围，请核对基础额与当前倍率。" : undefined,
+          };
+        },
+        renderForm: (form, onChange, locked) => {
+          const value = storedValue(form);
+          const reference = numeric && h8RewardParamValid(param.key, value) ? h8EffectiveRewardReference(value, multiplier) : null;
+          return <>
+            <div className="tint" style={{ marginBottom: 16 }}>当前{numeric ? "基础额" : ""} <b className="mono">{current}</b>
+              {" → "}拟改 <b className="mono">{showValue(value)}</b>{numeric ? ` ${param.unit}` : ""}</div>
+            {fixedValue === undefined && <div className="field">
+              <label htmlFor="h8-reward-param-value">{numeric ? `${param.key === "inviter.nex" ? "每位邀请人" : "每人"}基础额（${param.unit}）` : "发放模式"}</label>
+              {numeric ? <input id="h8-reward-param-value" className="fld" inputMode="decimal" type="text"
+                aria-label={`${param.label}基础额`} aria-describedby="h8-reward-reference" disabled={locked}
+                value={form.value ?? ""} onChange={(event) => onChange({ ...form, value: event.target.value })}
+                placeholder={`0–${param.max}，最多六位小数`} style={{ width: "100%" }} />
+                : <select id="h8-reward-param-value" className="fld" aria-label="新人礼发放模式" disabled={locked}
+                  value={form.value ?? rawCurrent} onChange={(event) => onChange({ ...form, value: event.target.value })} style={{ width: "100%" }}>
+                  {Object.entries(LOCK_MODE_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </select>}
+            </div>}
+            {numeric && <p id="h8-reward-reference" className="tiny" style={{ margin: "0 0 14px", fontSize: 13, color: "var(--ink-2)", lineHeight: 1.6 }}>
+              当前第 {data.rhythmMonth} 月份倍率 {String(multiplier)}×；拟有效额 {reference ?? "—"} {param.unit}（提案时参考）
+            </p>}
+          </>;
+        },
+        recover: (reason, form) => submitApproval(reason, storedValue(form), true),
+        retry: async () => { await submitApproval("", undefined, "retry-original"); },
+      },
+      run: async (reason, _, form) => {
+        ensureSession();
+        const value = storedValue(form ?? {});
+        if (!h8RewardParamValid(param.key, value)) throw new Error("请填写允许范围内的基础额或选择有效模式。");
+        if (pending || h8RewardParamAmplifies(param.key, rawCurrent, value)) {
+          await submitApproval(reason, value);
+          return;
+        }
+        const slot = `${session.adminId}|param|${param.key}`;
         let mintedFresh = false;
         const commandKey = commandAttempts.resolve(
           slot,
-          JSON.stringify([storedValue, data.version]),
+          JSON.stringify([value, data.version]),
           () => { mintedFresh = true; return createH8CommandKey("h8-param"); },
         );
         try {
-          await updateH8ReferralRewardParam(param.key, storedValue, reason, data.version, commandKey);
+          await updateH8ReferralRewardParam(param.key, value, reason, data.version, commandKey);
           commandAttempts.forget(slot);
         } catch (error) {
           // 只有全新尝试才在确定性失败时弃号:复用来的号说明上次结果未知,这次的 4xx 证明不了那次没落地。
@@ -129,14 +223,14 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           throw error;
         }
         await load();
-        ctx.toast(isEnabled ? enabling ? "邀请奖励已启用" : "邀请奖励已停用" : `${param.label} 已更新为 ${submittedValue} ${nexGridBrandText(param.unit)}`);
+        ctx.toast(isEnabled ? "邀请奖励已停用" : `${param.label} 已更新为 ${showValue(value)} ${nexGridBrandText(param.unit)}`);
       },
     });
   };
 
   const settle = (invitedUserId?: number) => {
     const targeted = invitedUserId != null;
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "funds",
     action: targeted ? "给指定新人结算邀请奖励" : "结算邀请奖励",
     detail: `${targeted ? `只结算新人 ${invitedUserId} 的邀请奖励；不符合资格或已结算过就不发。` : "按邀请关系找出还没结算的记录；"}按当前第 ${data?.rhythmMonth ?? "—"} 个月的倍率计算后，每组结算为新人 ${data?.effectiveRewards?.["newcomer.usdt"] ?? "—"} USDT + ${data?.effectiveRewards?.["newcomer.nex"] ?? "—"} UVT、邀请人 ${data?.effectiveRewards?.["inviter.nex"] ?? "—"} UVT。奖励直接进用户钱包，同一新人只结算一次。`,
     amplifies: true,

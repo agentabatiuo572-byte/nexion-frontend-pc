@@ -62,7 +62,7 @@ export function LegacyUnknownResolutionAction({ device, canWrite, toast }: { dev
     {candidate?.resolution && <div className="tiny" style={{ whiteSpace: "normal" }}>已取消 · 不计收益 · A2 {candidate.resolution.a2OperationId}</div>}
     {ticketId && <div className="tiny" role="status" style={{ whiteSpace: "normal" }}>A2 {ticketId} 已提交，等待另一管理员复核。</div>}
     {candidate?.eligible && !ticketId && <button className="l-btn sm dgr" type="button" disabled={checking} onClick={() => void open()}>结束未确认任务（不计收益）</button>}
-    {selected && read?.key === key && <OperationConfirmModal action="结束未确认任务（不计收益）"
+    {selected && read?.key === key && <OperationConfirmModal briefKind={"record"} action="结束未确认任务（不计收益）"
       amplifies={false} reasonMin={8} reasonMax={200}
       completionCopy="仅提交 A2 提案，由另一管理员复核后执行；此处不会完成任务或发放收益。"
       detail={<div style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>

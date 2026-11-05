@@ -502,6 +502,14 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f1Loading,
     f1Error,
     refreshF1,
+    f1RewardValuation: f1Overview?.rewardValuationUsdtPerUvt ?? null,
+    f1Coverage: f1Overview?.coverage,
+    acceptF1PolicyOverview: (overview) => {
+      f1Generation.current += 1;
+      setF1Overview(overview);
+      setF1Loading(false);
+      setF1Error(null);
+    },
     updateVRankThreshold: async (rank, field, value, reason) => {
       setF1Overview(await updateF1VRankThreshold(rank, field, value, reason, ADMIN_OPERATOR()));
       setF1Error(null);
@@ -814,7 +822,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "F4" && <F4Ops ctx={ctx} />}
       {tab === "F5" && <F5Audit ctx={ctx} />}
 
-      {mc && <OperationConfirmModal
+      {mc && <OperationConfirmModal briefKind={mc.briefKind}
         action={mc.name}
         detail={mc.detail ?? "从下一笔结算开始生效，已经算好的不变。"}
         amplifies={!!mc.amplify}

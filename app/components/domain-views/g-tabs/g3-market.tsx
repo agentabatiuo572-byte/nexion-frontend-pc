@@ -14,6 +14,8 @@ import {
   updateG3Control,
   updateG3CurveFrame,
   updateG3Override,
+  g3NumberText,
+  serializeG3Frames,
   type G3CurveField,
   type G3HistoryPoint,
   type G3Overview,
@@ -21,6 +23,8 @@ import {
 } from "@/lib/admin/g3-client";
 import type { GCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import type { G3MarketChange } from "@/lib/admin/g3-market-command";
+import { G3MarketConfirm } from "./g3-market-confirm";
 
 const OPERATOR = currentAdminOperator;
 const CURVE_FIELDS: G3CurveField[] = ["targetPrice", "pumpProbability", "volatilityPct"];
@@ -28,10 +32,6 @@ const CURVE_LABELS: Record<G3CurveField, { name: string; unit: string }> = {
   targetPrice: { name: "目标价", unit: "$" },
   pumpProbability: { name: "上涨概率", unit: "0-1" },
   volatilityPct: { name: "波动幅度", unit: "+/-%" },
-};
-const CURVE_LOOSEN_DIR: Partial<Record<G3CurveField, "increase">> = {
-  targetPrice: "increase",
-  pumpProbability: "increase",
 };
 
 function messageOf(error: unknown) {
@@ -109,8 +109,16 @@ export function deriveG3RuntimeStatus(paused: boolean, pinValue: string) {
 }
 
 export function G3Market({ ctx }: { ctx: GCtx }) {
+  const session = useAdminAuth((state) => state.session);
+  const epoch = useAdminAuth((state) => state.authEpoch);
+  return <G3MarketEditor key={`${session?.adminId}:${epoch}`} ctx={ctx} />;
+}
+
+function G3MarketEditor({ ctx }: { ctx: GCtx }) {
   const { toast, openActionConfirm } = ctx;
   const session = useAdminAuth((state) => state.session);
+  const epoch = useAdminAuth((state) => state.authEpoch);
+  const [marketConfirm, setMarketConfirm] = useState<G3MarketChange | null>(null);
   const authorities = session?.authorities ?? [];
   const isSuper = session?.role === "super" || session?.role === "superadmin";
   const allowed = (authority: string) => isSuper || authorities.includes(authority);
@@ -269,24 +277,21 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
     if (!frame) return;
     const label = CURVE_LABELS[field];
     const current = frameValue(frame, field);
-    const amp = !!CURVE_LOOSEN_DIR[field];
-    openActionConfirm({
+    if (field === "targetPrice" || field === "pumpProbability") {
+      setMarketConfirm({ action: "curve-cell", dayIndex, field, current: g3NumberText(current, field === "pumpProbability" ? 6 : 8),
+        expectedRevision: overview.curveRevision ?? "", expectedFrames: serializeG3Frames(overview.frames) });
+      return;
+    }
+    openActionConfirm({ briefKind: "config",
       action: `修改一周价格计划 · D${dayIndex + 1} · ${label.name}`,
       detail: <>
         <b>D{dayIndex + 1} {label.name}</b> · 当前 {fmtCurveVal(field, current)}({label.unit})。
-        {amp
-          ? <><b>会让平台多付钱</b>：系统会按本周最高价 {fmtPrice(peak)} 重新计算 UVT 应付款，覆盖率低于红线时无法保存（当前 {cov}%，红线 {redline}%）。</>
-          : "波动幅度不会直接让平台多付钱。"}
+        波动幅度不会直接让平台多付钱。
         这里只改计划，不改当前价格；到了那一天才会生效。
         需要财务主管或超级管理员操作。
       </>,
-      amplifies: amp,
-      coverage: amp ? coverageSnapshot : undefined,
-      edit: field === "pumpProbability"
-        ? { kind: "number", current: rawValue(current), min: 0, max: 1, step: 0.01, disallowCurrent: true, amplifiesWhen: "increase" }
-        : field === "volatilityPct"
-          ? { kind: "number", current: rawValue(current), min: 0, max: 20, step: 0.01, disallowCurrent: true }
-          : { kind: "number", current: rawValue(current), min: 0.00000001, max: 1000000, step: 0.00000001, disallowCurrent: true, amplifiesWhen: "increase" },
+      amplifies: false,
+      edit: { kind: "number", current: rawValue(current), min: 0, max: 20, step: 0.01, disallowCurrent: true },
       run: async (reason, value) => {
         if (!value) return;
         await mutate(`curve:${dayIndex}:${field}`, () => updateG3CurveFrame(
@@ -299,7 +304,11 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
   const openCurveCtlMc = (key: string, name: string, current: string) => {
     const isSchedule = key === "schedule";
     const editCurrent = isSchedule ? (scheduleControl?.rawValue ?? (scheduleMissing ? "" : current)) : current;
-    openActionConfirm({
+    if (isSchedule) {
+      setMarketConfirm({ action: "schedule", current: editCurrent, expectedRevision: overview.scheduleRevision ?? "" });
+      return;
+    }
+    openActionConfirm({ briefKind: "config",
       action: `调整价格计划运行方式 · ${name}`,
       detail: <><b>{name}</b> · 当前:{current}。{isSchedule ? <>填写每天几点切换，例如 <span className="mono">每日 08:30 Asia/Shanghai 自动推进</span>（北京时间 08:30）。时区名称须紧随时刻；未填时区按 UTC。当前设置：{scheduleMeta}。</> : <>固定某一天或暂停切换，都不会改动已设好的计划。</>} 需要财务主管或超级管理员操作。</>,
       amplifies: false,
@@ -314,7 +323,11 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
   };
 
   const adj = (overrideKey: G3OverrideKey, label: string, current: string, note: string, amp?: boolean) => {
-    openActionConfirm({
+    if (overrideKey === "currentPrice") {
+      setMarketConfirm({ action: "current-price", current: g3NumberText(overview.currentPrice), expectedRevision: overview.priceRevision ?? "" });
+      return;
+    }
+    openActionConfirm({ briefKind: "config",
       action: `手动设置 · ${label}`,
       detail: <><b>{label}</b> · 当前 {current} · {note}。{amp && <><b>会让平台多付钱</b>：系统会按本周最高价 {fmtPrice(peak)} 重新计算 UVT 应付款，覆盖率低于红线时无法保存（当前 {cov}%，红线 {redline}%）。</>}{overrideKey === "deviationPct" || overrideKey === "costBasis" ? "保存后立即生效，之后的价格计划切换不会覆盖此设置，直到再次修改。" : "手动设置只是临时的，下次自动切换时会被计划里的值替换。"}</>,
       amplifies: !!amp,
@@ -331,7 +344,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
     });
   };
 
-  const pauseEngine = () => openActionConfirm({
+  const pauseEngine = () => openActionConfirm({ briefKind: "emergency",
     action: paused ? "恢复价格自动变化" : "暂停价格自动变化",
     detail: paused
       ? <>恢复后价格继续按计划变化。价格上涨会让平台多付钱，覆盖率低于红线时无法恢复（当前 {cov}%，红线 {redline}%）。</>
@@ -360,6 +373,14 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
 
   return (
     <>
+      {marketConfirm && session && <G3MarketConfirm session={session} epoch={epoch} requested={marketConfirm}
+        onClose={() => setMarketConfirm(null)}
+        onDone={(result) => {
+          setMarketConfirm(null);
+          if (result.active) setOverview(result.active);
+          toast(result.acknowledgement);
+          void reload(true);
+        }} />}
       {error && <div className="gtint" style={{ marginBottom: 12 }}>操作提示 · {error}</div>}
       <div className="f-stats">
         <div className="f-stat ok"><div className="k">UVT 现价</div><div className="v">{price}</div><div className="sub">{change == null ? "24 小时涨跌暂无" : `24 小时 ${change >= 0 ? "+" : ""}${change.toFixed(2)}%`} · 今天用 D{curDay}</div></div>
@@ -417,7 +438,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
             <div className="p-row" key={control.key}>
               <div className="txt"><div className="k">{operatorCopyText(control.name)}</div><div className="s">{operatorCopyText(control.description)}</div></div>
               <span className="v">{operatorCopyText(ctlVals[control.key] || control.value)}</span>
-              {allowed("finprod_g3_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => openCurveCtlMc(control.key, operatorCopyText(control.name), ctlVals[control.key] || control.value)}>调整(立即执行)</button>}
+              {allowed("finprod_g3_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => openCurveCtlMc(control.key, operatorCopyText(control.name), ctlVals[control.key] || control.value)}>{control.key === "schedule" && scheduleMissing ? "首次配置（审批后生效）" : "调整(立即执行)"}</button>}
             </div>
           ))}
           <div className="gtint" style={{ marginTop: 10 }}><b>怎么生效</b> · {scheduleMissing ? <>自动推进尚未配置，请用上方「自动按日推进」的调整入口补充配置。价格查看、修改和暂停仍可使用。</> : <>按 <span className="mono">{schedV}</span> 自动把当天的 <b>目标价</b> 设为全站 UVT 价格，兑换和锁定计划马上跟着变。当前设置：<span className="mono">{scheduleMeta}</span>。</>}「固定某天」用于演示或应急，固定后不再自动切换。调高 <b>目标价 / 上涨概率</b> 会让平台多付钱，覆盖率低于红线时无法保存。</div>
@@ -465,7 +486,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
           <div className="l-b" style={{ paddingTop: 4 }}>
             <div className="p-row"><div className="txt"><div className="k">直接改当前价格（应急）</div><div className="s">临时改价，要求覆盖率不低于红线</div></div><span className="v">{price}</span>{allowed("finprod_g3_override_price_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => adj("currentPrice", "当前价格", rawValue(overview.currentPrice), "临时改价，下次自动切换时恢复计划值", true)}>调整</button>}</div>
             <div className="p-row"><div className="txt"><div className="k">波动幅度</div><div className="s">每次更新价格最多波动多少（计划里没设时使用）</div></div><span className="v">{volatility}</span>{allowed("finprod_g3_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => adj("volatilityPct", "波动幅度", rawValue(overview.overrides.volatilityPct), "可设 0–20%")}>调整</button>}</div>
-            <div className="p-row"><div className="txt"><div className="k">价格来源</div><div className="s">内部定价或外部价格来源</div></div><span className="v">{oracle === "内部做市" ? "内部定价" : oracle === "外部喂价" ? "外部价格来源" : "价格来源未知"}</span>{isSuper && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
+            <div className="p-row"><div className="txt"><div className="k">价格来源</div><div className="s">内部定价或外部价格来源</div></div><span className="v">{oracle === "内部做市" ? "内部定价" : oracle === "外部喂价" ? "外部价格来源" : "价格来源未知"}</span>{isSuper && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({ briefKind: "config",
               action: "切换价格来源",
               detail: <>在内部定价和外部价格来源之间切换。只有超级管理员可以操作。</>,
               edit: { kind: "select", current: oracle, options: ["内部做市", "外部喂价"], optionLabels: { "内部做市": "内部定价", "外部喂价": "外部价格来源" }, disallowCurrent: true },

@@ -360,7 +360,7 @@ export function H3WeeklyRegionPolicyPanel({ ctx }: { ctx: HCtx }) {
     if (!policy || !draftBase || !draft || invalid || loading || error || reviewError || pending || staleDraft || !canWrite) return;
     const params = h3WeeklyRegionPolicyParams(draftBase, draft);
     const def = findHighOp("h3_weekly_region_policy")!;
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       action: def.action,
       detail: <><p>当前：{describe(draftBase.mappings)}</p><p>调整为：{describe(draft)}</p>
         <p>没设置的区号一律用越南时间。本周已开始的不变，批准后从用户的下一周开始生效。</p>
@@ -519,7 +519,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   };
 
   const openSimpleConfig = (key: string, label: string, current: string, amplifies = false) => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: label,
       detail: <>当前值 <b>{current}</b>。保存后马上生效。</>,
       amplifies,
@@ -532,7 +532,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   };
 
   const openTaskReward = (key: string, label: string, current: string) => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `调整奖励 · ${label}`,
       detail: <>当前奖励 <b>{current}</b>。调高奖励会多发钱，覆盖率低于红线时无法保存。</>,
       edit: {
@@ -553,7 +553,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
   const openEventReward = (event: QuestEvent) => {
     const current = text(event.reward);
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `活动奖励 · ${event.name}`,
       detail: <>当前奖励 <b>{current}</b>。确认后更新活动奖励。</>,
       amplifies: true,
@@ -567,7 +567,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   };
 
   const openEventStatus = (event: QuestEvent) => {
-    openConfirm({
+    openConfirm({ briefKind: "config",
       action: `活动状态 · ${event.name}`,
       detail: <>当前状态 <b>{EVENT_LABEL[event.state]?.[0] ?? "状态未知"}</b>，请选择新状态。</>,
       chips: [["记入操作记录", "done"]],
@@ -583,7 +583,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   };
 
   const openEventFeatured = (event: QuestEvent) => {
-    openConfirm({
+    openConfirm({ briefKind: "record",
       action: `${event.featured ? "取消主推" : "设为主推"} · ${event.name}`,
       detail: <>同时只能有一个进行中的主推活动。</>,
       chips: [["只能有一个主推", "ready"], ["记入操作记录", "done"]],
@@ -597,7 +597,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   };
 
   const openCreateMission = (missionType: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2", subject: string) => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `新建任务 · ${subject}`,
       detail: <>新建一条{subject}，新建后先是停用状态。请先在下方「任务完成条件」里绑定完成条件，再启用。</>,
       amplifies: true,
@@ -621,7 +621,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   };
 
   const openCreateMonthlyMission = () => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "新建月度挑战",
       detail: <>新建一个月度挑战主题，按用户注册时长分配。奖励大于 0 时，覆盖率低于红线无法保存。</>,
       amplifies: true,
@@ -657,7 +657,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     field: "name" | "description" | "rewardName", locale: "en" | "zh" | "vi", source: string,
   ) => {
     const current = localizedValue(entity, code, field, locale);
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `编辑 ${locale.toUpperCase()} 内容 · ${source}`,
       detail: <>这里填写 {locale.toUpperCase()} 文案；不填时 App 显示原文，不会自动翻译。</>,
       edit: { kind: "text", current },
@@ -680,7 +680,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openMissionEdit = (task: QuestTask, label: string, monthly = false) => {
     const { taskCode, taskKind, status } = taskIdentity(task, monthly);
     if (status === "archived") return;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `编辑任务 · ${label}`,
       detail: <>只改任务名称；奖励用「改奖励」单独修改。</>,
       edit: { kind: "text", current: label, disallowCurrent: true },
@@ -697,7 +697,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     if (status === "archived") return;
     const currentCategory = text(task.category, "explore").toLowerCase();
     const currentActionRoute = text(task.href, "/pages/missions/missions");
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `配置任务类别与去完成页面 · ${label}`,
       detail: <>保存后 App 马上按这里的设置显示类别、跳转页面。</>,
       businessForm: {
@@ -746,7 +746,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const { taskCode, taskKind, status } = taskIdentity(task, monthly);
     if (status === "archived") return;
     const targetStatus = status === "active" ? "paused" : "active";
-    openConfirm({
+    openConfirm({ briefKind: "config",
       errorHandled: (error) => isH3MissionOutcomeUncertainError(error) && !!error.readback,
       action: `${targetStatus === "active" ? "启用" : "停用"}任务 · ${label}`,
       detail: <>只能在启用和停用之间切换；已归档的任务不能恢复。</>,
@@ -763,7 +763,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openMissionArchive = (task: QuestTask, label: string, monthly = false) => {
     const { taskCode, taskKind, status } = taskIdentity(task, monthly);
     if (status === "archived") return;
-    openConfirm({
+    openConfirm({ briefKind: "record",
       errorHandled: (error) => isH3MissionOutcomeUncertainError(error) && !!error.readback,
       action: `归档任务 · ${label}`,
       detail: <>归档后不能再启用或编辑。要删除任务，需先归档。</>,
@@ -780,7 +780,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openMissionDelete = (task: QuestTask, label: string, monthly = false) => {
     const { taskCode, taskKind, status } = taskIdentity(task, monthly);
     if (status !== "archived") return;
-    openConfirm({
+    openConfirm({ briefKind: "record",
       errorHandled: (error) => isH3MissionOutcomeUncertainError(error) && !!error.readback,
       action: `删除已归档任务 · ${label}`,
       detail: <>只能删除已归档的任务。删除后操作记录仍保留。</>,
@@ -796,7 +796,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
   const openBindingStatus = (binding: H3QuestEventBinding) => {
     const enabled = Number(binding.status) === 1;
-    openConfirm({
+    openConfirm({ briefKind: "record",
       errorHandled: (error) => isH3BindingOutcomeUncertainError(error) && !!error.readback,
       action: `${enabled ? "停用" : "启用"}完成条件 · ${binding.bindingCode}`,
       detail: <>对应的任务要处于待启用或已启用状态。</>,
@@ -888,7 +888,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       toast("没有可以绑定的任务，请先新建任务，绑定完成条件后再启用");
       return;
     }
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "新增任务完成条件",
       detail: <>选择「用户做了什么」和对应的任务。用户做了这件事，任务就算完成。新任务要先绑定再启用。</>,
       businessForm: {
@@ -918,7 +918,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   };
 
   const openBindingEdit = (binding: H3QuestEventBinding) => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `修改完成条件 · ${binding.bindingCode}`,
       detail: <>可以改「用户做了什么」、对应任务或「算谁完成」。如果别人刚改过，需要刷新后重改。</>,
       businessForm: {
@@ -955,7 +955,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
   const openBindingDelete = (binding: H3QuestEventBinding) => {
     const enabled = Number(binding.status) === 1;
-    openConfirm({
+    openConfirm({ briefKind: "record",
       errorHandled: (error) => isH3BindingOutcomeUncertainError(error) && !!error.readback,
       action: `删除完成条件 · ${binding.bindingCode}`,
       detail: <>删除后，用户做这件事不再算完成任务。操作记录会保留。</>,
@@ -999,7 +999,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   };
   const openEventDelete = (event: QuestEvent) => {
     if (!canModuleWrite || loading || error || !isDeletableQuestEvent(event)) return;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: `删除活动 · ${event.name}`,
       detail: <>删除后活动从活动中心消失，已有的参与、奖励和操作记录仍保留。只能删除草稿或已结束的活动。</>,
       run: reason => runEventDelete(event.id, event.deleteVersion!, reason),
@@ -1007,7 +1007,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   };
 
   const openCreateEvent = () => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "新建活动",
       detail: <>新建一个活动。活动 ID 用英文且不能重复；主推活动必须在进行中，且同时只能有一个。</>,
       amplifies: true,
@@ -1037,7 +1037,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   };
 
   const openCreateWheelTier = () => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "新建转盘奖项",
       detail: <>新建一个转盘奖项。概率填 0–100，所有奖项加起来要等于 100%。发真钱的奖项，覆盖率低于红线时无法保存。</>,
       amplifies: true,
@@ -1062,7 +1062,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   };
 
   const openCreateWheelGuard = () => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "新建转盘安全限制",
       detail: <>新建一条转盘安全限制。标识只能用小写英文字母，不能重复。</>,
       businessForm: { kind: "wheel-guard-config", subject: "新安全限制" },
@@ -1093,7 +1093,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   };
   const openWheelGuard = (guard: { key: string; label: string; value: string }) => {
     const current = text(guard.value);
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `转盘安全限制 · ${({ budget: "每日实际奖励预算（美元）", cap: "各奖档每日库存", kill: "实际奖品发放开关" } as Record<string,string>)[guard.key] ?? operatorCopyText(guard.label)}`,
       detail: <>当前值 <b>{guard.key === "cap" ? "按各奖档每日库存" : ({on:"启用",off:"停用"} as Record<string,string>)[current] ?? operatorCopyText(current)}</b>。如果别人刚改过，需要刷新后再改。</>,
       amplifies: guard.key !== "kill",
@@ -1108,7 +1108,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
   const openWheelProbabilities = () => {
     const tiers = model?.wheelTiers ?? [];
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "调整转盘奖项概率",
       detail: <>一次设置所有奖项，加起来要等于 100%。调高发钱奖项的概率时，覆盖率低于红线无法保存。</>,
       amplifies: true,
@@ -1165,7 +1165,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     amplifiesWhen?: "increase" | "decrease",
   ) => {
     const expected = String(numericValue(current));
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: label,
       detail: <>当前值 <b>{current}</b>。如果别人刚改过，需要刷新后再改。</>,
       edit: { kind: "number", current: expected, min, max, step, disallowCurrent: true, amplifiesWhen },
@@ -1179,7 +1179,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openPromoStatus = () => {
     const current = text(model?.promoBanner?.status, "paused").toLowerCase();
     const next = current === "active" ? "paused" : "active";
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: next === "active" ? "启用首页备用促销卡" : "暂停首页备用促销卡",
       detail: <>当前 <b>{current === "active" ? "已启用" : "已暂停"}</b>。只控制「没有未领取的周任务时，显示跳转商城」的备用卡，不影响周任务卡本身。</>,
       amplifies: next === "active",
@@ -1191,7 +1191,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
   const openEditWheelTier = (tier: Record<string, any>) => {
     const tierName = text(tier.tier);
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `编辑转盘奖项 · ${tierName}`,
       detail: <>编辑奖项名称、奖励类型、是否发真钱。概率请在「改奖池 / 概率」里统一调，保证加起来是 100%。</>,
       amplifies: true,
@@ -1228,7 +1228,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openDeleteWheelTier = (tier: Record<string, any>) => {
     const tierName = text(tier.tier);
     const probability = numericValue(tier.prob);
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: `删除转盘奖项 · ${tierName}`,
       detail: probability === 0
         ? <>删除后至少还要保留 2 个奖项。</>
@@ -1847,7 +1847,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         <>
       {pendingH4EventDeletes().map(record => <div className="l-card" key={record.commandKey} role="status">
         删除「{record.eventId}」的结果暂未确认；填写的理由：{record.reason}。
-        <button className="l-btn sm" disabled={!canModuleWrite} onClick={() => openActionConfirm({
+        <button className="l-btn sm" disabled={!canModuleWrite} onClick={() => openActionConfirm({ briefKind: "record",
           action: `查看删除结果 · ${record.eventId}`,
           detail: <>查看上次删除是否成功，不会重复删除。</>,
           run: () => runEventDelete(record.eventId, record.expectedVersion, record.reason),

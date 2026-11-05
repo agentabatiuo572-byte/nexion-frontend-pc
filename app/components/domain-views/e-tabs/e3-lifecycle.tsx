@@ -133,7 +133,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     return { min: 0, max: 1000000, step: 1 };
   };
   const adj = (label: string, key: string, unit: string, amplify: boolean, editKind: "number" | "text" | "select" = "number", detail?: string, options?: string[]) =>
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       name: `${label} 调整`, op: "param", paramKey: key, amplify,
       edit: { kind: editKind, current: pE(key), unit, options, disallowCurrent: true, amplifiesWhen: (value) => e3ConfigAmplifies(currentPolicy, { [key]: value }), ...(editKind === "number" ? numericBounds(key) : {}) },
       detail: `批准后生效。${detail ?? `${label}：影响所有设备的产能和升级置换估价，换新提交时重新计算报价，已完成交易不回溯。`}`,
@@ -148,7 +148,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   // (各值独立 backend-replaceable,不挤一个框)。current 实时从 pE(paramKey) 预填。
   type MFField = { key: string; paramKey: string; label: string; placeholder?: string; inputKind?: "number" | "text" | "select"; options?: string[]; min?: number; max?: number; step?: number; wide?: boolean; warnAbove?: number; warnText?: string };
   const adjMulti = (title: string, fields: MFField[], opts: { ascending?: boolean; hint?: string; amplify?: boolean; detail?: string } = {}) =>
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       name: `${title} 调整`, op: "param-multi", amplify: opts.amplify,
       businessForm: {
         kind: "multi-field", title, amplifies: (values) => e3ConfigAmplifies(currentPolicy, Object.fromEntries(fields.map((field) => [field.paramKey, values[field.key]]))), ascending: opts.ascending, hint: opts.hint, requireAnyChange: true,

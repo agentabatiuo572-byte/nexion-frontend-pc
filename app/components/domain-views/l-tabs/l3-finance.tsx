@@ -82,7 +82,7 @@ export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
   const openDetailExport = () => {
     if (!ctx.canExportFinanceDetail || !detailExportable || detailExportingRef.current) return;
     const allFields = FINANCE_DETAIL_FIELDS.join(",");
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "export",
       action: "申请导出脱敏资金明细",
       detail: (
         <div>

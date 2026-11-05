@@ -99,7 +99,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
   } as Record<string,string>)[value] ?? value;
   const flagChg = (f: A3FeatureFlag) => {
     const cur = f.status;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `切换功能开关 · ${f.name}`,
       detail: (
         <>
@@ -143,7 +143,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
     });
   };
 
-  const paramChg = (param: typeof platformParams[number]) => openActionConfirm({
+  const paramChg = (param: typeof platformParams[number]) => openActionConfirm({ briefKind: "config",
     action: `调整平台参数 · ${param.name}`,
     detail: <>{param.desc} · 影响 <b>{consumerLabel(param.consumer)}</b>。</>,
     amplifies: false, reasonMin: 8, reasonMax: 200,

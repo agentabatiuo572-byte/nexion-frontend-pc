@@ -61,7 +61,7 @@ function exportTypeText(value: string) { return value.replace(/^KPI/, "关键指
 
 export function L5HeaderActions({ ctx }: { ctx: LCtx }) {
   const exportTypes = ctx.availableAggregateExportTypes ?? [];
-  const newExport = () => ctx.openActionConfirm({
+  const newExport = () => ctx.openActionConfirm({ briefKind: "export",
     action: "导出汇总数据",
     detail: <>你可以导出：{exportTypes.map(exportTypeText).join("、")}。导出的是汇总数据，不含用户明细和隐私信息，确认后就能下载。</>,
     reasonMin: 8,
@@ -229,7 +229,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
     await ctx.reloadBi?.();
     toast(`${t.id} 已重新发起${t.pii ? "（含隐私数据，需要重新确认）" : ""}`);
   };
-  const requestApproveTask = (t: LExportTask) => ctx.openActionConfirm({
+  const requestApproveTask = (t: LExportTask) => ctx.openActionConfirm({ briefKind: "record",
     action: "审批脱敏资金明细",
     detail: <>任务 <span className="mono">{t.id}</span> 的数据会保持隐藏隐私，审批不会解密任何字段。批准后就能下载，下载链接 24 小时有效。</>,
     reasonMin: 8,
@@ -255,7 +255,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
       setLedgerExporting(false);
     }
   };
-  const requestLedgerDownload = () => ctx.openActionConfirm({
+  const requestLedgerDownload = () => ctx.openActionConfirm({ briefKind: "export",
     action: "导出八类账单脱敏明细",
     detail: <>导出 8 类账单；用户编号会隐藏部分字符，最多 10 万行，导出原因和范围都有记录。</>,
     reasonMin: 8,
@@ -270,7 +270,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
       return;
     }
     const disclosureValues = disclosures.map((item) => `${item.jurisdictionCode}|${item.disclosureVersion}`);
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "export",
       action: "生成监管报告",
       detail: <>会检查所选地区当前生效的披露版本是否 7 章齐全，再汇总财务、运营、账单、操作记录和应急处理数据生成报告。报告不含用户明细和隐私信息。</>,
       reasonMin: 8,

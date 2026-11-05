@@ -136,7 +136,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "K4" && <K4Scoring ctx={ctx} />}
 
       {mc && (
-        <OperationConfirmModal
+        <OperationConfirmModal briefKind={mc.briefKind}
           action={mc.action}
           detail={mc.detail}
           amplifies={mc.amplifies}

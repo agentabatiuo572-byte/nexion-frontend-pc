@@ -199,7 +199,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
 
   const adjCap = (cap: G2Cap) => {
     const isQueueMode = cap.key === "queueMode";
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `调整兑换${isQueueMode ? "超额处理方式" : "参数"} · ${operatorCopyText(cap.name)}`,
       detail: <>
         <b>{operatorCopyText(cap.name)}</b> · 当前 {cap.displayValue} · {operatorCopyText(cap.sub)}。
@@ -228,7 +228,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
 
   const toggleSwap = () => {
     if (!swap.enabled) return;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "emergency",
       action: "紧急暂停全部兑换",
       detail: <>马上停止全平台所有 UVT↔USDT 兑换，并同步到「紧急停用开关」。恢复要去「紧急停用开关」页面操作。</>,
       amplifies: false,
@@ -247,7 +247,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
 
   const cancelQueue = (order: G2ExchangeOrder) => {
     setQueueDrawer(null);
-    openActionConfirm({
+    openActionConfirm({ briefKind: "funds",
       action: `取消排队中的兑换 · ${order.exchangeNo}`,
       detail: <>取消这笔排队中的兑换（{order.exchangeAmountDisplay}），立即生效，之后不会再成交。有资金预占记录的，退回已预占的来源币种金额并记退款账本；无预占记录的历史订单，只取消订单，不扣款也不退款。</>,
       run: async (reason) => {
@@ -306,7 +306,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
             </div>
             <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span>排队到明天的兑换</span>
-              {allowed("finprod_g2_write") && <button className="l-btn sm mc" disabled={busy || queue.length === 0} onClick={() => openActionConfirm({
+              {allowed("finprod_g2_write") && <button className="l-btn sm mc" disabled={busy || queue.length === 0} onClick={() => openActionConfirm({ briefKind: "funds",
                 action: "处理今天的排队兑换",
                 detail: <>按当前 UVT 价格、每日额度、地区封锁和用户余额逐单检查，符合条件的马上成交。</>,
                 edit: { kind: "number", current: String(Math.min(queue.length, 50)), min: 1, max: 100, step: 1 },

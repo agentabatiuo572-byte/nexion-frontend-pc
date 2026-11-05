@@ -15,6 +15,7 @@ export type ActionConfirmReq = {
   reasonMax?: number;
   /** 未确认的原操作理由；提交后重新查询，终态返回 undefined 解除锁定。 */
   getPendingReason?: () => string | undefined;
+  getPendingBusinessValue?: () => BusinessFormValue | undefined;
   completionCopy?: string;
   approval?: OperationApproval;
   /** 生效标签，只在 RdPage 里显示。 */
@@ -33,8 +34,8 @@ export type ActionConfirmReq = {
   coverageLead?: ReactNode;
   /** 理由框的占位，按场景写（TX-11）。 */
   reasonPlaceholder?: string;
-  /** 这项操作实际是什么；传了就不再按文字猜摘要。客服中心（M）的调用必须传。 */
-  briefKind?: OperatorBriefKind;
+  /** 这项操作实际是什么；每个调用都必须声明，不按文字猜摘要。 */
+  briefKind: OperatorBriefKind;
   /**
    * 审计落点口径(缺省 "a2" = 既有文案不变)。"local-history" 供本地假数据面(如 D7)使用:
    * 弹窗上「写入 A2 审计」「后端实时校验覆盖率」类承诺会替换成如实的本地口径,不许假承诺。
@@ -47,6 +48,7 @@ export type ActionConfirmReq = {
 export type ConfirmChip = [text: string, tone: "done" | "ready"];
 
 export type ConfirmReq = {
+  briefKind: OperatorBriefKind;
   action: ReactNode;
   detail: ReactNode;
   chips?: ConfirmChip[];

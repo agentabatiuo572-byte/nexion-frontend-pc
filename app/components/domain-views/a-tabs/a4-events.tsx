@@ -228,7 +228,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     if (!canWrite) { toast("你只有查看权限，不能修改统计参数"); return; }
     const cur = liveDay0;
     const stableKey = createA4IdempotencyKey("a4-param-day0");
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "统计参数 · 首笔收益到账时限",
       detail: (
         <>
@@ -251,7 +251,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     if (!canWrite) { toast("你只有查看权限，不能修改统计参数"); return; }
     const cur = liveEventRetention;
     const stableKey = createA4IdempotencyKey("a4-param-retention");
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "统计参数 · 事件留存期",
       detail: (
         <>
@@ -274,7 +274,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     if (!canWrite) { toast("你只有查看权限，不能修改统计参数"); return; }
     const cur = liveSampling;
     const stableKey = createA4IdempotencyKey("a4-param-sampling");
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "统计参数 · 采样率",
       detail: (
         <>
@@ -305,7 +305,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
   const registerSchema = () => {
     if (!canWrite) { toast("你只有查看权限，不能登记事件"); return; }
     const stableKey = createA4IdempotencyKey("a4-schema");
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "登记新事件或字段",
       detail: (
         <>
@@ -381,7 +381,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       return;
     }
     const stableKey = createA4IdempotencyKey(`a4-schema-property-${schemaSnapshot.eventName}`);
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `给已有事件新增字段 · ${schemaSnapshot.eventName}`,
       detail: <>
         事件版本 <b>{schemaSnapshot.version}</b> · 目录版本 <b>{registryVersion}</b> · 发送方 <span className="acode">{schemaSnapshot.producer}</span> ·
@@ -495,7 +495,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
   const runRetention = () => {
     if (!canRunRetention) { toast("你没有清理事件的权限"); return; }
     const commandKey = createA4IdempotencyKey("a4-retention-run");
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: <>清理过期事件</>,
       detail: <>只清理超过保留期、已经处理完的事件。还在等待发送或发送失败的事件，以及资金账目都不受影响。</>,
       amplifies: false,
@@ -571,7 +571,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     }
     // The command key is selected in the confirmation callback, when the full
     // normalized request (including the audit reason) is available.
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: "重新发送任务事件",
       detail: (
         <>
@@ -622,7 +622,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     const next = ({ new: "pending_publish", pending_publish: "gray", gray: "full", full: "disabled" } as const)[schema.lifecycleState as "new" | "pending_publish" | "gray" | "full"];
     if (!next || !canWrite) return;
     const stableKey = createA4IdempotencyKey(`a4-lifecycle-${schema.eventName}`);
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: `更新事件状态 · ${schema.eventName}`,
       detail: <>从 <b>{lifecycleText(schema.lifecycleState)}</b> 改为 <b>{lifecycleText(next)}</b>。</>,
       amplifies: false,
@@ -1166,7 +1166,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                   if (!batchFormValid) { toast("请填写模块名、事件名（动作用过去式）、发送方和使用方"); return; }
                   const stableKey = createA4IdempotencyKey("a4-domain-extension");
                   setNaBatch(false);
-                  openActionConfirm({
+                  openActionConfirm({ briefKind: "record",
                     action: `登记新模块 · ${domain}`,
                     detail: (<><b>{domain}</b> · 事件 <span className="acode">{event}</span> · 发送方 {producer || "—"} → 使用方 {consumer || "—"}。</>),
                     amplifies: false,

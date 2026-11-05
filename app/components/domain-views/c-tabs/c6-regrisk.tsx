@@ -214,7 +214,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
           className="l-btn sm mc"
           title={canWrite ? undefined : "你只有查看权限"}
           disabled={!canWrite || busy || !key || !!param.readOnly}
-          onClick={() => openActionConfirm({
+          onClick={() => openActionConfirm({ briefKind: "config",
             action: `调整登录锁定 · ${operatorCopyText(text(param.name))}`,
             detail: <><b>{operatorCopyText(text(param.name))}</b> · 当前 {text(param.value)} · 次数可设 {attemptMin}–{attemptMax}，时长可设 {durationMin}–{durationMax} {durationUnit}。长时锁定的次数须大于短时锁定。</>,
             amplifies: false,
@@ -269,7 +269,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       toast("你只有查看权限，不能恢复人机验证");
       return;
     }
-    openConfirm({
+    openConfirm({ briefKind: "record",
     action: "恢复人机验证",
     detail: "人机验证立即恢复拦截。",
     reason: true,
@@ -288,11 +288,11 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       toast("你只有查看权限，不能关闭人机验证");
       return;
     }
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
     action: "紧急关闭人机验证",
     detail: <><b>关闭后，同一手机号频繁发验证码将不再被拦截</b>。只在人机验证服务出故障时使用，须选择恢复时间，到时自动开回。</>,
     amplifies: false,
-    edit: { kind: "select", current: CAPTCHA_RECOVERY_OPTIONS[0], options: CAPTCHA_RECOVERY_OPTIONS },
+    edit: { kind: "select", current: "开启", initialValue: CAPTCHA_RECOVERY_OPTIONS[0], options: CAPTCHA_RECOVERY_OPTIONS },
     run: (reason, nextValue) => {
       const value = (nextValue ?? "").trim();
       if (!CAPTCHA_RECOVERY_OPTIONS.includes(value)) {
@@ -307,7 +307,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     });
   };
 
-  const k1Confirm = (guard: UserRegistrationRiskK1Guard) => openConfirm({
+  const k1Confirm = (guard: UserRegistrationRiskK1Guard) => openConfirm({ briefKind: "record",
     action: `422 · ${text(guard.rejectCode, k1RejectCode)}`,
     detail: <><b>{operatorCopyText(text(guard.name))}</b> 只能在「多账户风险排查」修改。</>,
     chips: [["在多账户风险排查修改", "done"]],

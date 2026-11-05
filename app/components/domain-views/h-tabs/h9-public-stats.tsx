@@ -252,7 +252,7 @@ function H9DisplayStats({ ctx, module }: { ctx: HCtx; module: H9Module }) {
     const virtualZero = nextValues.virtualUserCount === 0 && data.values.virtualUserCount !== 0;
     const nextDaily = nextValues.fleetDevices * data.publishedDailyUsdPerDevice;
 
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       action: `保存${MODULES.find(item => item.id === module)!.label}`,
       detail: <>
         <div>本次改动（{diffs.length} 项）：</div>

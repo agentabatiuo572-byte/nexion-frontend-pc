@@ -226,7 +226,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   const phaseLine = `linear-gradient(90deg, var(--success) 0%, var(--success) ${doneEnd}%, var(--brand) ${doneEnd}%, var(--brand) ${curEnd}%, var(--surface-3) ${curEnd}%)`;
 
   const genShift = (g: E1GenerationRelease, offset: number, delta: number) =>
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       name: `开放时间${delta < 0 ? "提前" : "推迟"} ${Math.abs(delta)} 个月 · ${(g.name)}`,
       op: "param", paramKey: `E.gen.${g.id}.phaseOffset`,
       edit: { kind: "number", current: String(offset), unit: "个月" },
@@ -239,7 +239,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
     if (state.phaseConflict) { ctx.toast(`不能开放：${(g.name)} 的开放阶段是${phaseLabel(state.declaredPhase)}，和上架条件里的${phaseLabel(g.phase)}不一致，请先改成一致`); return; }
     if (!state.eligibilityReady) { ctx.toast(`不能开放：${(g.name)} 还没补设备资格`); return; }
     if (!state.phaseReached) { ctx.toast(`不能开放：${(g.name)} 要到 ${phaseLabel(g.phase)} 才能开放`); return; }
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "record",
       name: `强制提前开放 · ${(g.name)}`,
       op: "generation-gate-force",
       generationGateId: g.id,
@@ -249,7 +249,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
     });
   };
   const genForceLock = (g: E1GenerationRelease) =>
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "record",
       name: `撤销强制提前开放 · ${(g.name)}`,
       op: "generation-gate-force",
       generationGateId: g.id,
@@ -259,7 +259,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
     });
   const openPhaseEditor = (ph?: E1Phase) => {
     const nextSort = phases.reduce((max, item) => Math.max(max, item.sortOrder ?? 0), 0) + 10;
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       name: ph ? `编辑阶段 · ${phaseLabel(ph.p)}` : "新增阶段",
       op: "phase-save",
       phaseId: ph?.p,
@@ -279,7 +279,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
     });
   };
   const archivePhase = (ph: E1Phase) =>
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       name: `删除阶段 · ${phaseLabel(ph.p)}`,
       op: "phase-archive",
       phaseId: ph.p,
@@ -295,7 +295,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   const earlyEnabled = ctx.pE("E.release.earlyAccess.enabled");
   const earlyLead = ctx.pE("E.release.earlyAccess.leadDays");
   const adjEarlyAccess = () =>
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       name: "调整升级置换抢先购", op: "early-access", amplify: false,
       businessForm: {
         kind: "multi-field", title: "升级置换抢先购",
@@ -323,7 +323,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
     }
     const gatePhaseOptions = g?.phase && !phaseOptions.includes(g.phase) ? [g.phase, ...phaseOptions] : phaseOptions;
     const gatePhaseLabels = Object.fromEntries(gatePhaseOptions.map((phaseId) => [phaseId, phaseLabel(phaseId)]));
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       name: g ? `编辑上架条件 · ${(g.name)}` : "新增上架条件",
       op: "generation-gate-save",
       generationGateId: g?.id,
@@ -348,7 +348,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
     });
   };
   const archiveGate = (g: E1GenerationRelease) =>
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       name: `移除上架条件 · ${(g.name)}`,
       op: "generation-gate-archive",
       generationGateId: g.id,
@@ -363,7 +363,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       ctx.toast("组合优惠设置加载失败，请刷新后重试");
       return;
     }
-    ctx.openActionConfirm({
+    ctx.openActionConfirm({ briefKind: "config",
       name: "调整 App 组合购阶梯折扣",
       op: "bundle-discount",
       businessForm: {
@@ -698,7 +698,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                 <div className="acts">
                   {canWrite ? <button className="primary" aria-label={`改价 / 编辑 ${(s.name)}`} onClick={() => ctx.openSku(s.id)}>改价 / 编辑</button> : null}
                   {canWrite && st === "on" && (unlimitedInventory || Number(s.stock) > 0) && !open && !releaseGate && hasPhaseConfig ? <button className="brand" aria-label={`按当前阶段上架 ${(s.name)}`} onClick={() => ctx.openSku(s.id, phaseCur)}>按当前阶段上架</button> : null}
-                  {canWrite ? <button disabled={listingBlocked || s.publishBlocked === true} title={s.publishBlocked === true ? `未满足上架条件 · ${publishBlockLabel} · App 上看不到` : s.publishBlocked === undefined ? "服务端未返回上架条件结论，上架是否生效未确认" : listingBlocked ? listingBlocker : undefined} aria-label={`${st === "on" ? "下架" : "上架"} ${(s.name)}`} onClick={() => ctx.openActionConfirm({ name: st === "on" ? `下架商品· ${(s.name)}` : `上架商品· ${(s.name)}`, op: "sku-status", target: s.id, status: st === "on" ? "off" : "on", detail: st === "on" ? "下架后从商城隐藏,不影响已售设备结算" : "上架后对用户可见", amplify: false })}>{st === "on" ? "下架" : "上架"}</button> : null}
+                  {canWrite ? <button disabled={listingBlocked || s.publishBlocked === true} title={s.publishBlocked === true ? `未满足上架条件 · ${publishBlockLabel} · App 上看不到` : s.publishBlocked === undefined ? "服务端未返回上架条件结论，上架是否生效未确认" : listingBlocked ? listingBlocker : undefined} aria-label={`${st === "on" ? "下架" : "上架"} ${(s.name)}`} onClick={() => ctx.openActionConfirm({ briefKind: "content", name: st === "on" ? `下架商品· ${(s.name)}` : `上架商品· ${(s.name)}`, op: "sku-status", target: s.id, status: st === "on" ? "off" : "on", detail: st === "on" ? "下架后从商城隐藏,不影响已售设备结算" : "上架后对用户可见", amplify: false })}>{st === "on" ? "下架" : "上架"}</button> : null}
                   {canWrite ? <button className="danger" aria-label={`删除 ${(s.name)}`} onClick={() => ctx.delSku(s.id, s.name ?? s.id)}>删除</button> : null}
                 </div>
               </div>

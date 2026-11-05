@@ -25,7 +25,7 @@ export default function H4GenesisRaffle({ ctx }: { ctx: HCtx }) {
     if (!draft || !write || saving || (base && (base.status === "PROCESSING" || base.status === "DRAWN" || (base.status === "OPEN" && base.totalEntries > 0)))) return;
     const invalid = raffleDraftError(draft); if (invalid) { setError(invalid); return; }
     const savedDraft = draft, previous = base, nextEnabled = !!base && enabled;
-    ctx.openActionConfirm({ action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${draft.titleZh}`, amplifies: nextEnabled,
+    ctx.openActionConfirm({ briefKind: "config", action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${draft.titleZh}`, amplifies: nextEnabled,
       detail: <>本期共 {draft.prizes.reduce((sum, prize) => sum + prize.quantity, 0)} 个中奖名额。{nextEnabled ? "开启后用户可按公布时段使用抽奖券报名；开奖时发放配置的奖品。奖项和时间在开启后固定。" : "新建轮次保存为草稿，不会对用户开放。"}</>,
       run: async reason => {
         if (operator !== currentAdminOperator() || !ctx.can("growth_h4_write")) throw new Error("登录身份或权限已变化，请重新打开配置。");

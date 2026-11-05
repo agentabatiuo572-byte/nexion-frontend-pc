@@ -993,7 +993,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     const key = retained ?? operationKey(scope);
     pendingKeys.remember(scope, key, extra);
     if (!pendingKeys.isDurablyStored(scope, key)) {
-      pendingKeys.forget(scope, key);
+      if (!retained) pendingKeys.forget(scope, key);
       throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
     }
     setSubmitting(scope);
@@ -1066,6 +1066,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       : `${withdrawGate === "unknown" ? "提现开关状态读不到，提交时系统会再查，已关停时不会放行。" : ""}${bankApprove ? "确认后立即放行，由 HDPay 打款，付款成功才算完成。" : "确认后立即放行，钱从储备中扣除。"}`;
     const brief = gateClosed ? GATE_CLOSED_BRIEF : REVIEW_BRIEF[action];
     return {
+      briefKind: "funds",
       action: `${label}提现 · ${row.withdrawalNo}`,
       detail: `${row.userNo} / ${amountText(row.amount)} ${row.asset}；当前 ${statusLabel(row.status)}；${k4RiskText(row)}；触发规则 ${hitRulesText(row)}；账户 ${userStatusLabel(row.userStatus)}。${action === "APPROVE" ? `当前兑付覆盖率 ${d5?.coverageRatio ?? "—"}%，红线 ${d5?.redlinePct ?? "—"}%，提交时系统会再查一次。${approveTail}` : action === "REJECT" ? "确认后立即拒绝，并退回用户余额；完成后为已退款。" : "确认后立即生效。"}`,
       amplifies: action === "APPROVE",
@@ -1134,7 +1135,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const confirmCregisRecovery = (row: D2Withdrawal, cregis: D2CregisPayout) => {
     if (!cregis.canRecover || cregis.source !== "provider" || cregis.withdrawalNo !== row.withdrawalNo
         || !hasAuthority("finance_d2_read") || !hasAuthority("finance_d2_withdrawal_approve")) return;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: `核对 Cregis 打款单 · ${row.withdrawalNo}`,
       detail: "到 Cregis 查到这笔提现的打款单号（CID）填在下面。系统会核对收款地址和金额，然后继续跟进这笔提现，不会重新打款。",
       businessForm: { kind: "multi-field", title: "Cregis 打款单", fields: [
@@ -1162,7 +1163,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   );
 
   const confirmBankRequery = (row: D2Withdrawal, bank: D2BankPayout) => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "funds",
       action: `查询银行打款结果 · ${row.withdrawalNo}`,
       detail: "向 HDPay 查询这笔打款的结果，不会重新打款。结果明确就自动完成或退回；有疑问的继续人工核对。原因里不要写完整银行卡号。",
       reasonMin: 10, reasonMax: 300, completionCopy: "向 HDPay 查询原单，不会重新打款。",
@@ -1185,7 +1186,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   );
 
   const confirmDevelopmentSimulation = (row: D2Withdrawal) => {
-    openActionConfirm({
+    openActionConfirm({ briefKind: "funds",
       action: `模拟冷却到期 · ${row.withdrawalNo}`,
       detail: "仅测试环境可用。把这笔测试提现的冷却时间提前到现在，然后按正常流程重新检查风险规则、风险分、覆盖率和提现开关。",
       amplifies: true,
@@ -1269,7 +1270,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     if (ids.length === 0) { toast("当前没有可以执行这个操作的提现单"); return; }
     const gateClosed = action === "APPROVE" && withdrawGate === "closed";
     const batchImpact = gateClosed ? "提现已关停，这次不会放行：系统会拒绝，这些单留在待审核，钱不动。" : `${REVIEW_BRIEF[action].impact.replace("这笔提现", "这些提现").replace("这笔", "这些单")}逐笔处理，可能部分成功。`;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "funds",
       action: `批量执行 · ${actionLabel(action)}`,
       detail: `将对 ${ids.length} 笔提现执行${actionLabel(action)}（不符合条件的已自动排除）。${action === "APPROVE" ? `批量放行时，小额直接放行，大额转为单笔人工审核。当前兑付覆盖率 ${d5?.coverageRatio ?? "—"}%，红线 ${d5?.redlinePct ?? "—"}%，提交时系统会再查一次。${withdrawGate === "unknown" ? "提现开关状态读不到，提交时系统会再查，已关停时不会放行。" : ""}` : action === "REJECT" ? "拒绝后立即退回用户余额，完成后为已退款。" : ""}${gateClosed ? "" : "提交后看批量结果。"}`,
       amplifies: batchAction === "APPROVE",

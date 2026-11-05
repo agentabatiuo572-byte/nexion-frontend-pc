@@ -19,7 +19,7 @@ import { PlatformMutationReadbackError } from "@/lib/admin/platform-contracts";
 import { displayAdminError } from "@/lib/admin/error-messages";
 
 type FormMode = { kind: "create"; parent?: A7MenuTreeNode } | { kind: "update"; node: A7MenuTreeNode } | null;
-type ConfirmReq = { action: React.ReactNode; detail: React.ReactNode; run: (reason: string) => Promise<void> };
+type ConfirmReq = { briefKind: import("../design-kit").OperatorBriefKind; action: React.ReactNode; detail: React.ReactNode; run: (reason: string) => Promise<void> };
 
 /** A7 菜单管理（手写树 + 节点 CRUD drawer + OperationConfirmModal reason 闭环）。 */
 export default function A7Menus() {
@@ -82,7 +82,7 @@ export default function A7Menus() {
                 onCreate={(parent) => setMode({ kind: "create", parent })} onEdit={(n) => setMode({ kind: "update", node: n })}
                 onDelete={(n) => {
                   const stableKey = newA7IdempotencyKey("a7-menu-delete");
-                  setConfirmReq({
+                  setConfirmReq({ briefKind: "config",
                     action: `删除菜单 · ${n.menuNameZh || n.menuName}`,
                     detail: <>删除菜单 <b>{n.menuNameZh || n.menuName}</b>（<span className="mono">{n.menuCode}</span>）。{n.children.length ? <b>该节点仍有子菜单，请先迁移或删除子菜单。</b> : "如果还有权限挂在这个菜单下，或有角色能看到它，将无法删除；请先移走相关权限，并在「角色管理」里取消勾选。"}。</>,
                     run: async (reason) => {
@@ -114,7 +114,7 @@ export default function A7Menus() {
           onSubmit={(payload, action, detail) => {
             const submittedMode = mode;
             const stableKey = newA7IdempotencyKey(submittedMode.kind === "create" ? "a7-menu-create" : "a7-menu-update");
-            setConfirmReq({
+            setConfirmReq({ briefKind: "config",
               action,
               detail,
               run: async (reason) => {
@@ -138,7 +138,7 @@ export default function A7Menus() {
       )}
 
       {confirmReq && (
-        <OperationConfirmModal
+        <OperationConfirmModal briefKind={confirmReq.briefKind}
           action={confirmReq.action}
           detail={confirmReq.detail}
           onClose={() => setConfirmReq(null)}

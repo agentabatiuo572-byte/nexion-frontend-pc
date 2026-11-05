@@ -237,7 +237,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
             : param.key === "airdropLockDays" ? { min: 0, max: 3650, step: 1 }
               : { min: 0, max: 5, step: 0.001 };
     const needsDecision = ["dividend", "divBase", "airdropPct", "emissionCurve"].includes(param.key);
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `修改创世节点参数 · ${operatorCopyText(param.name)}`,
       detail: <><b>{operatorCopyText(param.name)}</b> · 当前 {operatorCopyText(param.displayValue)} · {operatorCopyText(param.note)}<br />当前兑付覆盖率 {cov}%，会多付钱的修改在覆盖率不足时无法保存。</>,
       amplifies: param.b1RedlineTriggered,
@@ -260,7 +260,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
 
   const runMarketSwitch = () => {
     if (!marketOn || !allowed("finprod_g4_market_toggle")) return;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "emergency",
       action: "紧急暂停创世节点买卖",
       detail: <>马上停止认购、挂售和用户之间的转让。恢复要去「紧急停用开关」页面操作。</>,
       amplifies: false,
@@ -284,7 +284,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     if (!allowed("finprod_g4_market_toggle")) return;
     const next: "open" | "closed" = marketClosed ? "open" : "closed";
     if (next === "open" && !overview.catalogAvailable) return;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: next === "closed" ? "创世市场设为「暂未开放」" : "恢复创世市场开放",
       detail: next === "closed"
         // JSX 文本里的 ** 会原样渲染成星号(这是 React 不是 Markdown),要加粗用 <b>。
@@ -331,7 +331,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
 
   const initializeSeries = () => {
     if (!overview.seriesInitializationAvailable || !allowed("finprod_g4_write")) return;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: "发布创世节点系列",
       detail: <>总量和起始价格按价格档位自动计算。转让手续费、每日收益比例和收益公式先设为 0，之后再单独修改（需要决策编号）。发布后市场仍是「暂未开放」，核对无误后再手动开放。</>,
       // Initializing the catalog does not start sales or create a payout. The
@@ -357,7 +357,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
 
   const runRerunBatch = () => {
     if (!allowed("finprod_g4_write")) return;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "funds",
       action: `重新发放今日收益 ${dividend.batchNo}`,
       detail: "只补发失败的，已经发成功的不会重复发。",
       businessForm: { kind: "multi-field", title: "决策依据", fields: [
@@ -389,7 +389,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const editTier = (tier: G4Tier, index: number) => {
     if (!canPriceTiers || !tiers) return;
     const nextTier = tiers[index + 1];
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `修改价格档位 · ${tier.id}`,
       detail: <><b>{tier.id}</b> 档 · 当前区间 [{fmtInt(tier.from)}, {fmtInt(tier.to)}) · 单价 ${fmtInt(tier.priceUSDT)}。起点等于上一档的截止，不能单独改；改截止时{nextTier ? <>下一档 <b>{nextTier.id}</b> 的起点</> : "总供应量"}会跟着调整，最后一档总量不能少于已售的 {fmtNumber(stats.sold, 0)} 张。只影响以后的销售，已下单的按下单时价格结算。</>,
       businessForm: { kind: "multi-field", title: `档位 ${tier.id}`, hint: "截止 = 卖到第几张换下一档；单价 = 这一档每张多少钱。都填整数。", fields: [
@@ -408,7 +408,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     const firstTier = tiers.length === 0;
     const lastTier = firstTier ? null : tiers[tiers.length - 1];
     const rangeFrom = lastTier?.to ?? 0;
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: firstTier ? "创建第一个价格档位" : "新增价格档位",
       detail: firstTier
         ? <>创建第一档（从 0 到截止）及价格，用来确定节点总量和起始价格。不会发布系列、不会开放市场。已有用户持仓时不能创建。</>
@@ -429,7 +429,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     if (!canPriceTiers || !tiers || tiers.length <= 1) return;
     const prevTier = tiers[index - 1];
     const nextTier = tiers[index + 1];
-    openActionConfirm({
+    openActionConfirm({ briefKind: "config",
       action: `删除价格档位 · ${tier.id}`,
       detail: <>删除 <b>{tier.id}</b> 档（{fmtInt(tier.from)}–{fmtInt(tier.to)}）。空出来的区间会自动补上（{prevTier ? <>上一档 <b>{prevTier.id}</b> 的截止延长到 {fmtInt(tier.to)}</> : nextTier ? <>下一档 <b>{nextTier.id}</b> 的起点提前到 {fmtInt(tier.from)}</> : "只剩一档时不能删"}），至少保留一档。已下单的按下单时价格结算。</>,
       run: async (reason) => {
@@ -460,7 +460,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const toggleShowcase = () => {
     if (!showcaseEnabledParam || !allowed(paramAuthority(showcaseEnabledParam.key))) return;
     const next = showcaseEnabledParam.value !== "true";
-    openActionConfirm({
+    openActionConfirm({ briefKind: "record",
       action: next ? "显示创世节点商城入口" : "隐藏创世节点商城入口",
       detail: <>只控制 App 商城里是否显示入口，不影响持仓、收益、市场状态、紧急暂停和购买资格。</>,
       run: async (reason) => {
