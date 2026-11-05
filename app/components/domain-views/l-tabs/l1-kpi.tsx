@@ -13,7 +13,7 @@ import { Activity, CheckCircle2, CircleHelp, Download, Flag, Gauge, ListChecks, 
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
 import { BlockState, Button, Cell, Check, Conclusion, Explain, Fact, Facts, Field, FilterBar, FilterField, Fold, Input, Modal, Notice, PageHeader, Panel, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
-import { displayAdminReadError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { businessClock, businessDay, businessZone } from "@/lib/admin/business-time";
 import { findByPath } from "@/lib/nav/console-nav";
 import { PaginationExemptionList } from "../design-kit";
@@ -21,9 +21,10 @@ import { kpiState, num, rec, rows, strings, type KpiRow } from "./live-data";
 import { readL1LiveTotals } from "./l1-l2-live-data";
 import { L1LiveTotals } from "./l1-l2-live-fallback";
 import type { LCtx } from "./types";
-import { fetchL1Kpi, fetchL1KpiDrilldown, fetchL1KpiTrend, type L1KpiQuery } from "@/lib/admin/l-client";
+import { fetchL1Kpi, fetchL1KpiDrilldown, fetchL1KpiTrend, isLOutcomeUnknownError, type L1KpiQuery, type LReportCreateInput } from "@/lib/admin/l-client";
+import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { validateL1Dashboard, validateL1Drilldown, validateL1Trend } from "./l1-kpi-contract";
-import { resolveL1ExportMode, resolveL1ExportUnavailableReason, submitL1Export, type L1ExportSource } from "./l1-export-contract";
+import { L1_EXPORT_RECIPIENT, l1ReportInput, resolveL1ExportMode, resolveL1ExportUnavailableReason, type L1ExportMode, type L1ExportSource } from "./l1-export-contract";
 import { loadL1LocalView, saveL1LocalView, type L1Window } from "./l1-local-view";
 import { createL1ReadController } from "./l1-request-generation";
 import { ATTRIBUTION_ROUTE_READ, assertL1AttributionLinks } from "./l-attribution-routes";
@@ -112,7 +113,30 @@ function queryScope(query: L1KpiQuery) {
   return [time, ...SLICES.filter((key) => query[key]).map((key) => `${SLICE_NAME[key]} ${query[key]}`)].join("，");
 }
 
-export function L1HeaderActions({ ctx, source }: { ctx: LCtx; source?: L1ExportSource | null }) {
+type L1PendingExport = PendingMutationRecord & { label: string; mode: L1ExportMode; input: LReportCreateInput; reason: string };
+
+const EXPORT_SCOPE = "l1-export";
+const EXPORT_PAGE = "/analytics/export";
+/** 结果未知时原内容、理由和命令号都留着，刷新后还能原样重试，不铸新号（OP-93、OP-94）。 */
+const pendingExports = createPendingMutationStore<L1PendingExport>({
+  storageKey: "nexion-admin-l1-export-commands-v1",
+  isValidRecord: (record) => typeof record.label === "string" && typeof record.reason === "string" && record.reason.length > 0
+    && (record.mode === "series" || record.mode === "snapshot" || record.mode === "totals")
+    && !!record.input && typeof record.input === "object",
+});
+
+/** 导出的全部状态：按钮、确认框、待确认条、成功条。写法同提现审核的 sendCommand、retryPending、releasePending。 */
+function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
+  const reach = useReach();
+  const [pending, setPending] = useState<L1PendingExport | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [retryRejected, setRetryRejected] = useState(false);
+  const [retryNote, setRetryNote] = useState("");
+  const [releasing, setReleasing] = useState(false);
+  const [finished, setFinished] = useState<L1ExportMode | null>(null);
+  const syncPending = () => setPending(pendingExports.list()[0] ?? null);
+  useEffect(syncPending, []);
+
   const sourceUnavailable = Boolean(ctx.biError || ctx.biLoading || (source && source.status !== "ready"));
   const exportData = source ? source.data : ctx.biData?.l1;
   const exportMode = resolveL1ExportMode(exportData, sourceUnavailable);
@@ -120,27 +144,134 @@ export function L1HeaderActions({ ctx, source }: { ctx: LCtx; source?: L1ExportS
     exportData, ctx.biLoading ? "loading" : ctx.biError ? "error" : source?.status ?? "ready",
   );
   const query = source?.query ?? { window: "7d" as const };
-  const fileText = exportMode === "series" ? "8 项指标的当前值、目标和六段趋势" : exportMode === "snapshot" ? "8 项指标的当前值、目标和可用性" : "当前累计数";
-  const exportKpi = () => ctx.openActionConfirm({
-    action: "导出关键指标",
-    detail: `导出 ${fileText}，范围：${queryScope(query)}。聚合数据，不含用户隐私。提交后生成任务，文件到「数据导出与监管报告」下载。`,
-    statedBrief: { impact: "生成一个导出任务，不改任何数据，操作记录里留痕。", check: "看时间范围对不对，理由写这份数据给谁、做什么用。" },
-    confirmLabel: "确认导出",
-    reasonMin: 8,
-    reasonMax: 200,
-    run: async (reason) => {
-      const submittedMode = await submitL1Export(exportData, sourceUnavailable, ctx.biActions?.createReport, query, reason);
-      if (!submittedMode) throw new Error("关键指标暂时不能导出，请刷新后再试");
-      await ctx.reloadBi?.();
-      ctx.toast(`${submittedMode === "series" ? "关键指标趋势已导出" : "关键指标当前汇总已导出"}，到「数据导出与监管报告」下载`);
-    },
-  });
-  if (!ctx.canExport) return null;
-  return (
-    <Button variant="primary" icon={<Download size={14} aria-hidden />} disabledReason={exportMode === null || ctx.biLoading ? exportUnavailableReason : undefined} onClick={exportKpi}>
-      {exportMode === "series" ? "导出关键指标序列 CSV" : "导出关键指标当前汇总 CSV"}
-    </Button>
-  );
+  const pageName = findByPath(EXPORT_PAGE)?.l2.name ?? "数据导出与监管报告";
+  const exportPage = (text: string) => (reach(EXPORT_PAGE)
+    ? <Link className="rd-link" href={EXPORT_PAGE}>{text}</Link>
+    : `你没有「${pageName}」的权限，请找有权限的同事处理。`);
+
+  const send = async (mode: L1ExportMode, input: LReportCreateInput, reason: string, label: string) => {
+    const createReport = ctx.biActions?.createReport;
+    if (!createReport) throw new Error("关键指标暂时不能导出，请刷新后再试");
+    const retained = pendingExports.get(EXPORT_SCOPE);
+    const key = retained ?? `l1-export-${crypto.randomUUID()}`;
+    pendingExports.remember(EXPORT_SCOPE, key, { label, mode, input, reason });
+    if (!pendingExports.isDurablyStored(EXPORT_SCOPE, key)) {
+      pendingExports.forget(EXPORT_SCOPE, key);
+      throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
+    }
+    try {
+      await createReport(input, reason, key);
+    } catch (cause) {
+      const unknown = isLOutcomeUnknownError(cause);
+      if (!unknown && !retained) pendingExports.forget(EXPORT_SCOPE);
+      syncPending();
+      if (!unknown) throw cause;
+      ctx.toast("结果未确认，不要重复导出。到页面上方按原操作重试。");
+      return;
+    }
+    pendingExports.forget(EXPORT_SCOPE);
+    syncPending();
+    setRetryRejected(false);
+    setRetryNote("");
+    setFinished(mode);
+    await ctx.reloadBi?.();
+    ctx.toast(`${mode === "series" ? "关键指标趋势已导出" : "关键指标当前汇总已导出"}，到「${pageName}」下载`);
+  };
+
+  const openConfirm = (mode: L1ExportMode) => {
+    const rows = mode === "totals" ? `${readL1LiveTotals(exportData).length} 行，一个累计数一行` : "8 行，一项指标一行";
+    ctx.openActionConfirm({
+      action: "导出关键指标",
+      detail: `聚合数据，不含用户隐私。提交后生成任务，文件到「${pageName}」下载。`,
+      statedBrief: { impact: "生成一个导出任务，不改任何数据，操作记录里留痕。", check: "看时间范围对不对，理由写这份数据给谁、做什么用。" },
+      facts: (
+        <Facts>
+          <Fact k="文件内容">{mode === "series" ? "8 项指标的当前值、目标和六段趋势" : mode === "snapshot" ? "8 项指标的当前值、目标和可用性" : "当前累计数"}</Fact>
+          <Fact k="范围">{queryScope(query)}</Fact>
+          <Fact k="接收人">{L1_EXPORT_RECIPIENT}</Fact>
+          <Fact k="文件行数">{rows}，另有表头</Fact>
+        </Facts>
+      ),
+      confirmLabel: "确认导出",
+      reasonMin: 8,
+      reasonMax: 200,
+      getPendingReason: () => undefined,
+      run: (reason) => send(mode, l1ReportInput(mode, query), reason, mode === "series" ? "导出关键指标序列" : "导出关键指标当前汇总"),
+    });
+  };
+
+  /** 按原操作重试：同命令号、同内容、同理由，不接受新输入。后端明确拒绝才给解除。 */
+  const retry = async (record: L1PendingExport) => {
+    if (!pendingExports.isDurablyStored(record.fingerprint, record.commandKey)) {
+      pendingExports.forget(record.fingerprint, record.commandKey);
+      syncPending();
+      ctx.toast(`原操作已结束或过期，本次未再次发送。先到「${pageName}」核对，再决定要不要重新导出。`);
+      return;
+    }
+    setRetrying(true);
+    setRetryRejected(false);
+    setRetryNote("");
+    try {
+      await send(record.mode, record.input, record.reason, record.label);
+    } catch (cause) {
+      setRetryNote(`重试被拒绝：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，原命令继续保留。`);
+      setRetryRejected(true);
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  /** 只放开这页的锁，不发请求，不写操作记录。 */
+  const release = (record: L1PendingExport) => {
+    pendingExports.forget(record.fingerprint, record.commandKey);
+    syncPending();
+    setRetryRejected(false);
+    setRetryNote("");
+    setReleasing(false);
+    ctx.toast("已解除待确认，可以重新导出");
+  };
+
+  return {
+    button: ctx.canExport ? (
+      <Button
+        variant="primary"
+        icon={<Download size={14} aria-hidden />}
+        disabledReason={pending ? "上一次导出结果未确认，先处理页面上方的待确认" : exportMode === null || ctx.biLoading ? exportUnavailableReason : undefined}
+        onClick={() => { if (exportMode) { setFinished(null); openConfirm(exportMode); } }}
+      >
+        {exportMode === "series" ? "导出关键指标序列 CSV" : "导出关键指标当前汇总 CSV"}
+      </Button>
+    ) : null,
+    notices: <>
+      {pending && (
+        <Notice tone="warn" title={`${pending.label} · 结果未确认`} action={<>
+          <Button size="sm" loading={retrying} onClick={() => void retry(pending)}>按原操作重试</Button>
+          {retryRejected && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除待确认</Button>}
+        </>}>
+          {businessClock(pending.createdAt)}（{businessZone().label}）发出，任务可能已经生成，不要重新导出。{exportPage(`到「${pageName}」核对`)}
+          <Explain label="技术信息" content={`命令号 ${pending.commandKey} ｜ 理由 ${pending.reason}`} />
+          {retryNote && <div>{retryNote}</div>}
+        </Notice>
+      )}
+      {finished && !pending && (
+        <Notice tone="ok" title={finished === "series" ? "关键指标趋势已提交导出" : "关键指标当前汇总已提交导出"} action={<Button size="sm" onClick={() => setFinished(null)}>知道了</Button>}>
+          任务生成后才能下载。{exportPage(`到「${pageName}」下载`)}
+        </Notice>
+      )}
+      {releasing && pending && (
+        <Modal title="解除待确认" onClose={() => setReleasing(false)} footer={<>
+          <Button onClick={() => setReleasing(false)}>取消</Button>
+          <Button variant="primary" onClick={() => release(pending)}>确认解除</Button>
+        </>}>
+          <div className="rd-stack">
+            <p><b>{pending.label}</b></p>
+            <p>重试被拒绝说明不了原操作的结果。先到「{pageName}」确认任务有没有生成，再解除。</p>
+            <p>解除后可以重新导出，原操作不再重试。这一步只放开本页的锁，不发请求，不写操作记录。</p>
+          </div>
+        </Modal>
+      )}
+    </>,
+  };
 }
 
 /** fx 公式渲染:fxBold 词高亮(cyan b),其余纯文本。 */
@@ -179,8 +310,9 @@ function OffsetModal({ current, onApply, onClose }: { current: number; onApply: 
   );
 }
 
-export function L1Kpi({ ctx, onExportSource, title, summary, actions }: { ctx: LCtx; onExportSource?: (source: L1ExportSource) => void; title: ReactNode; summary: string; actions: ReactNode }) {
+export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LCtx; onExportSource?: (source: L1ExportSource) => void; source?: L1ExportSource | null; title: ReactNode; summary: string }) {
   const reach = useReach();
+  const exporting = useL1Export(ctx, source);
   const [picked, setPicked] = useState<number | null>(null); // 没点过时跟着排在最前的那一项
   const [ylOffset, setYlOffset] = useState(10);
   const [phaseOn, setPhaseOn] = useState(true);
@@ -731,10 +863,11 @@ export function L1Kpi({ ctx, onExportSource, title, summary, actions }: { ctx: L
         pageId="L1"
         title={title}
         summary={<AutoGloss>{summary}</AutoGloss>}
-        actions={actions}
+        actions={exporting.button}
         meta={readAt ? `${readAt} 读取（${businessZone().label}）· 打开时读取，不自动刷新` : "打开时读取，不自动刷新"}
         readOnly={ctx.canExport ? undefined : "当前角色仅可查看 · 导出需报表管理权限"}
       />
+      {exporting.notices}
       {queryBar}
       {refreshError && rawKpis.length > 0 && (
         <Notice tone="warn" title="关键指标刷新失败" action={<Button size="sm" onClick={retryLast}>重试</Button>}>

@@ -18,6 +18,10 @@ export type ActionConfirmReq = {
   completionCopy?: string;
   confirmLabel?: string;
   statedBrief?: { impact: string; check: string };
+  /** 做决定要核对的事实，常显在理由上面。 */
+  facts?: ReactNode;
+  /** 传了以后提交中锁住理由，保证显示的就是提交的。 */
+  getPendingReason?: () => string | undefined;
   run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void>;
 };
 
