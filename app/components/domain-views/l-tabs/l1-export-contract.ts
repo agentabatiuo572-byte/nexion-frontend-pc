@@ -66,7 +66,8 @@ export async function submitL1Export(
   raw: unknown,
   sourceUnavailable: boolean,
   createReport: CreateReport | undefined,
-  query: L1KpiQuery = { window: "7d" },
+  query: L1KpiQuery,
+  reason: string,
 ): Promise<L1ExportMode | null> {
   const mode = resolveL1ExportMode(raw, sourceUnavailable);
   if (!mode || !createReport) return null;
@@ -91,10 +92,6 @@ export async function submitL1Export(
     maskPolicy: "NONE",
     recipient: "BI 管理员",
     ticket: "L1-KPI",
-  }, complete
-    ? "导出关键指标聚合序列用于经营复盘"
-    : detailedSnapshot
-      ? "趋势数据不足，导出当前关键指标用于经营核对"
-      : "导出当前累计数用于经营核对");
+  }, reason);
   return mode;
 }

@@ -16,6 +16,8 @@ export type ActionConfirmReq = {
   edit?: EditSpec;
   businessForm?: BusinessFormSpec;
   completionCopy?: string;
+  confirmLabel?: string;
+  statedBrief?: { impact: string; check: string };
   run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void>;
 };
 

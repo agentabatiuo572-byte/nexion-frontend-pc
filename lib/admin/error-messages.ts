@@ -144,6 +144,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   NOTIFICATION_TIME_SNAPSHOT_CHANGED: "通知记录已变化，本次未校正；请核对重新加载的证据。",
   NOTIFICATION_TIME_EVIDENCE_CHANGED: "关联证据缺失或已变化，本次未校正；请重新核验。",
   NOTIFICATION_TIME_ALREADY_CORRECT: "当前通知时间已与投递事实一致，无需再次校正。",
+  L1_CUSTOM_WINDOW_INVALID: "自定义时间最长 400 天，且不能包含未来日期。",
   L1_EXPORT_NO_AVAILABLE_KPI: "当前筛选范围没有可用关键指标，未生成报表；请重新加载数据或调整筛选后再导出。",
   L1_EXPORT_WINDOW_REQUIRED: "请选择 关键指标 时间范围或有效的起止日期后再导出；仅填写月份或周次不能确定导出范围。",
   L1_EXPORT_DATA_INVALID: "关键指标 数据格式异常，未生成报表；请重新加载，持续失败时联系值班人员。",
@@ -1006,18 +1007,18 @@ export function formatAdminApiError(message: string | null | undefined, fallback
   // 判据按「机器码以 _5xx 结尾」而非某个命名前缀——曾只认 _REQUEST_FAILED_5xx,换个命名
   // (BI_API_503 / TREASURY_API_502)就绕过分层,5xx 落到「请检查输入内容」冤枉运营。
   if (/(BACKEND|SERVICE)_UNAVAILABLE|service unavailable/i.test(raw) || /^[A-Z][A-Z0-9_]*_503$/.test(raw)) {
-    return "服务暂时不可用，结果尚未确认；请先核对原操作是否已生效，不要重复提交。一直无法确认请联系值班人员。";
+    return SERVICE_DOWN_WRITE;
   }
   // 502/504 是网关侧失败,后端可能已处理完请求——只说「结果尚未确认」,不得断言未生效
   if (/^[A-Z][A-Z0-9_]*_(502|504)$/.test(raw)) {
-    return "服务连接异常，结果尚未确认；请保留已填内容，刷新核对后再决定是否重试。";
+    return GATEWAY_FAILED_WRITE;
   }
   if (/^[A-Z][A-Z0-9_]*_5\d\d$/.test(raw)) {
     return ADMIN_ERROR_MESSAGES.INTERNAL_SERVER_ERROR;
   }
   // fetch 网络异常目前多数 client 未接线进本函数(断网直接冒泡英文);此分支兜显式传入的场景,生效性未知不断言
   if (/failed to fetch|network ?error|load failed|network request failed/i.test(raw)) {
-    return "网络连接失败或系统暂时连不上；请检查网络后重试，提交类操作请先刷新，确认是否已生效。";
+    return NETWORK_FAILED_WRITE;
   }
 
   if (MACHINE_CODE_RE.test(raw)) {
@@ -1032,6 +1033,9 @@ export function formatAdminApiError(message: string | null | undefined, fallback
 }
 
 const NEUTRAL_DISPLAY_FALLBACK = "操作失败，请稍后重试。";
+const SERVICE_DOWN_WRITE = "服务暂时不可用，结果尚未确认；请先核对原操作是否已生效，不要重复提交。一直无法确认请联系值班人员。";
+const GATEWAY_FAILED_WRITE = "服务连接异常，结果尚未确认；请保留已填内容，刷新核对后再决定是否重试。";
+const NETWORK_FAILED_WRITE = ADMIN_ERROR_MESSAGES.NETWORK_FAILURE;
 const HAS_CJK_RE = /[一-鿿]/;
 
 // 展示边界统一入口:页面层拿到 unknown 错误后,唯一允许的「→ 屏幕文案」通道。
@@ -1043,6 +1047,13 @@ const HAS_CJK_RE = /[一-鿿]/;
 // response.json() 撞网关 HTML 错误页抛的英文 SyntaxError、AbortSignal 的英文 DOMException。
 // 逐族补正则是打地鼠;改判「没有中文就落中性兜底」后,没被想到的新形态也拦得住。
 // 兜底取中性文案(不说「检查输入」):到这里的多是环境/协议类失败,不该归因运营输入。
+/** 读取失败用这个：不说「结果尚未确认」「不要重复提交」，这些话只给写操作（TX-14）。 */
+export function displayAdminReadError(error: unknown): string {
+  const shown = displayAdminError(error);
+  if (shown === SERVICE_DOWN_WRITE || shown === GATEWAY_FAILED_WRITE) return "服务暂时不可用，请稍后重试；持续失败请联系值班人员。";
+  return shown === NETWORK_FAILED_WRITE ? "网络连接失败，请检查网络后重试。" : shown;
+}
+
 export function displayAdminError(error: unknown): string {
   if (!(error instanceof Error) && typeof error !== "string") return NEUTRAL_DISPLAY_FALLBACK;
   if (error instanceof Error && "backendMessage" in error && typeof error.backendMessage === "string") {

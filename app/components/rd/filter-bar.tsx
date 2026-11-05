@@ -6,6 +6,7 @@
  * <FilterBar
  *   scope={<Segments … />}                        范围控件，选中立即查询，不等「查询」
  *   onSubmit={query} querying={loading}           Enter 等于查询；查询中只禁「查询」，条件照常能改
+ *   submitLabel="刷新指标"                         按钮名，报表页的重读可以换字，默认「查询」
  *   onClear={clearAll} canClear={hasFilters}      没有条件时禁用
  *   more={<>…更多筛选里的字段…</>} moreCount={2}    数量只算已应用的条件
  *   onClearMore={clearMore}                       局部清除，只有 D2 这类页面传
@@ -38,7 +39,7 @@ export function FilterField({ label, grow, children }: { label?: ReactNode; grow
   );
 }
 
-export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, onSubmit, querying = false, onClear, canClear = false, clearLabel = "清除筛选", sort, result, applied, notice }: {
+export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, onSubmit, querying = false, onClear, canClear = false, clearLabel = "清除筛选", submitLabel = "查询", sort, result, applied, notice }: {
   scope?: ReactNode;
   children?: ReactNode;
   more?: ReactNode;
@@ -49,6 +50,7 @@ export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, o
   onClear?: () => void;
   canClear?: boolean;
   clearLabel?: string;
+  submitLabel?: ReactNode;
   sort?: ReactNode;
   result?: ReactNode;
   applied?: readonly { key: string; label: ReactNode; onRemove: () => void }[];
@@ -70,7 +72,7 @@ export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, o
             {moreCount > 0 ? `更多筛选 · ${moreCount}` : "更多筛选"}
           </Button>
         )}
-        {onSubmit && <Button type="submit" disabled={querying}>查询</Button>}
+        {onSubmit && <Button type="submit" disabled={querying}>{submitLabel}</Button>}
         {onClear && <Button variant="ghost" disabled={!canClear} onClick={onClear}>{clearLabel}</Button>}
         {sort}
       </div>

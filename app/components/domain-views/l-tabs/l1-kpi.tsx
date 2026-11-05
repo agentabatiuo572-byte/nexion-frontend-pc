@@ -3,20 +3,22 @@ import { useReach } from "@/lib/nav/use-reach";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
- * L1 · 关键指标 — 8 KPI 卡矩阵 + 单 KPI 查看明细 + 趋势/阈值叠加 + 口径锁定表。
- * 数值/目标/spark 全部 join 自 KPIS(B 域同口径单一源);口径与目标只读锁定,页面无修改入口。
- * 视图参数(时间窗/粒度/Phase 叠加/黄灯偏移)实时生效;聚合 CSV 无 PII,免确认并落审计。
+ * L1 · 关键指标（报表页样板）。查询条 → 结论 → 四张概览卡 → 八项指标 ┬ 所选指标明细 → 折叠组 → 相关页面。
+ * 灯色只用 kpiState 的现有比较；口径与目标只读锁定，页面没有修改入口。
+ * 查询状态写网址（ST-23），优先于本机保存的视图；导出由操作者填理由（OP-115），文件到 L5 下载。
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import Link from "next/link";
+import { Activity, CheckCircle2, CircleHelp, Download, Flag, Gauge, ListChecks, Lock, Target } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { TabGroup } from "@/app/components/kit/tab-group";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { BlockState, Button, Cell, Check, Conclusion, Explain, Fact, Facts, Field, FilterBar, FilterField, Fold, Input, Modal, Notice, PageHeader, Panel, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
+import { businessClock, businessDay, businessZone } from "@/lib/admin/business-time";
+import { findByPath } from "@/lib/nav/console-nav";
 import { PaginationExemptionList } from "../design-kit";
-import { LDataState, kpiState, num, rec, rows, strings, type KpiRow } from "./live-data";
+import { kpiState, num, rec, rows, strings, type KpiRow } from "./live-data";
 import { readL1LiveTotals } from "./l1-l2-live-data";
 import { L1LiveTotals } from "./l1-l2-live-fallback";
-import { ViewParamModal, type ViewParamReq } from "./view-param-modal";
 import type { LCtx } from "./types";
 import { fetchL1Kpi, fetchL1KpiDrilldown, fetchL1KpiTrend, type L1KpiQuery } from "@/lib/admin/l-client";
 import { validateL1Dashboard, validateL1Drilldown, validateL1Trend } from "./l1-kpi-contract";
@@ -42,55 +44,99 @@ type KpiExt = {
   note: string;
   jump: { label: string; href?: string }[];
 };
-const LED_COLOR = { g: "var(--success)", y: "var(--warning)", r: "var(--danger)" } as const;
-
-function sparkPath(series: readonly number[], w: number, h: number): string {
-  if (series.length < 2) return "";
-  const min = Math.min(...series), max = Math.max(...series), rng = max - min || 1;
-  return series.map((v, i) => `${i ? "L" : "M"}${((i / (series.length - 1)) * w).toFixed(1)} ${(h - 3 - ((v - min) / rng) * (h - 6)).toFixed(1)}`).join(" ");
-}
 const tgtLabel = (k: Kpi) => {
   const [low = 0, high = 0] = k.band ?? [];
   return k.dir === "band" ? `健康带 ${low}–${high}${k.unit === "d" ? "天" : k.unit}` : `目标 ${k.dir === "lte" ? "< " : "> "}${k.target}${k.unit === "d" ? "天" : k.unit}`;
 };
 const tgtValue = (k: Kpi) => (k.dir === "band" ? (k.band?.[0] ?? k.target) : k.target);
 
+type KpiState = "g" | "y" | "r" | "na";
+const unitText = (k: Kpi) => (k.unit === "d" ? "天" : k.unit);
+const tgtShort = (k: Kpi) => tgtLabel(k).replace("目标 ", "").replace("健康带 ", "");
+const valueText = (k: Kpi) => (k.available === false || k.value == null ? "不可计算" : `${k.value}${unitText(k)}`);
+const STATE_TONE: Record<KpiState, StateTone> = { g: "ok", y: "warn", r: "danger", na: "done" };
+const stateText = (state: KpiState, k: Kpi) => ({ g: "达标", y: k.dir === "band" ? "在健康带外" : "接近目标", r: "未达标", na: "不可计算" })[state];
+/** 未达标排最前，其次接近目标、不可计算，达标的放最后；同一档按指标编号。 */
+const STATE_RANK: Record<KpiState, number> = { r: 0, y: 1, na: 2, g: 3 };
+const WINDOW_NAME: Record<Exclude<L1Window, "custom">, string> = { "1d": "近 24 小时", "7d": "近 7 天", "30d": "近 30 天" };
+const SLICES = ["cohort", "phase", "locale", "ref"] as const;
+const SLICE_NAME = { cohort: "注册周", phase: "运营阶段", locale: "语言", ref: "渠道" } as const;
+const URL_KEYS = ["window", "from", "to", ...SLICES] as const;
+const COHORT_FORMAT = /^\d{4}-W\d{2}$/;
+const RELATED = ["/analytics/funnel-cohort", "/analytics/financial", "/analytics/operations"] as const;
+const hasSlice = (query: L1KpiQuery) => SLICES.some((key) => Boolean(query[key]));
+
+function deltaText(k: Kpi) {
+  if (k.momDelta == null) return "无可比数据";
+  if (k.momDelta === 0) return "较上期持平";
+  return `较上期 ${k.momDelta > 0 ? "+" : ""}${k.momDelta} ${k.unit === "%" ? "个百分点" : unitText(k)}`;
+}
+
+/** 后端才知道的范围先在这里查（ST-19）：起止差不超过 400 天，不含未来日期。 */
+function customRangeProblem(from: string, to: string) {
+  const days = (Date.parse(to) - Date.parse(from)) / 86_400_000;
+  return days > 400 || to > businessDay() ? "自定义时间最长 400 天，且不能包含未来日期。" : "";
+}
+
+function queryFromUrl(search: string): L1KpiQuery | null {
+  const params = new URLSearchParams(search);
+  if (!URL_KEYS.some((key) => params.has(key))) return null;
+  const from = params.get("from") ?? "";
+  const to = params.get("to") ?? "";
+  const raw = params.get("window");
+  const custom = raw === "custom" && from && to && from <= to && !customRangeProblem(from, to);
+  const phase = params.get("phase") ?? "";
+  const cohort = params.get("cohort") ?? "";
+  return {
+    ...(custom ? { window: "custom" as const, from, to } : { window: raw === "1d" || raw === "30d" ? raw : "7d" as const }),
+    cohort: COHORT_FORMAT.test(cohort) ? cohort : undefined,
+    phase: /^P[1-6]$/.test(phase) ? phase : undefined,
+    locale: params.get("locale") || undefined,
+    ref: params.get("ref") || undefined,
+  };
+}
+
+function writeQueryToUrl(query: L1KpiQuery) {
+  const url = new URL(window.location.href);
+  URL_KEYS.forEach((key) => url.searchParams.delete(key));
+  if (query.window && query.window !== "7d") url.searchParams.set("window", query.window);
+  (["from", "to", ...SLICES] as const).forEach((key) => { if (query[key]) url.searchParams.set(key, String(query[key])); });
+  window.history.replaceState(window.history.state, "", url);
+}
+
+function queryScope(query: L1KpiQuery) {
+  const time = query.window === "custom" ? `${query.from} 至 ${query.to}` : WINDOW_NAME[query.window ?? "7d"];
+  return [time, ...SLICES.filter((key) => query[key]).map((key) => `${SLICE_NAME[key]} ${query[key]}`)].join("，");
+}
+
 export function L1HeaderActions({ ctx, source }: { ctx: LCtx; source?: L1ExportSource | null }) {
   const sourceUnavailable = Boolean(ctx.biError || ctx.biLoading || (source && source.status !== "ready"));
   const exportData = source ? source.data : ctx.biData?.l1;
   const exportMode = resolveL1ExportMode(exportData, sourceUnavailable);
-  const exportable = exportMode !== null;
   const exportUnavailableReason = resolveL1ExportUnavailableReason(
     exportData, ctx.biLoading ? "loading" : ctx.biError ? "error" : source?.status ?? "ready",
   );
-  const complete = exportMode === "series";
-  const exportKpi = async () => {
-    if (!ctx.canExport) return;
-    try {
-      const submittedMode = await submitL1Export(
-        exportData,
-        sourceUnavailable,
-        ctx.biActions?.createReport,
-        source?.query ?? { window: "7d" },
-      );
-      if (!submittedMode) {
-        ctx.toast("关键指标暂时不能导出，请刷新后再试");
-        return;
-      }
+  const query = source?.query ?? { window: "7d" as const };
+  const fileText = exportMode === "series" ? "8 项指标的当前值、目标和六段趋势" : exportMode === "snapshot" ? "8 项指标的当前值、目标和可用性" : "当前累计数";
+  const exportKpi = () => ctx.openActionConfirm({
+    action: "导出关键指标",
+    detail: `导出 ${fileText}，范围：${queryScope(query)}。聚合数据，不含用户隐私。提交后生成任务，文件到「数据导出与监管报告」下载。`,
+    statedBrief: { impact: "生成一个导出任务，不改任何数据，操作记录里留痕。", check: "看时间范围对不对，理由写这份数据给谁、做什么用。" },
+    confirmLabel: "确认导出",
+    reasonMin: 8,
+    reasonMax: 200,
+    run: async (reason) => {
+      const submittedMode = await submitL1Export(exportData, sourceUnavailable, ctx.biActions?.createReport, query, reason);
+      if (!submittedMode) throw new Error("关键指标暂时不能导出，请刷新后再试");
       await ctx.reloadBi?.();
-      ctx.toast(submittedMode === "series" ? "关键指标趋势已导出" : "关键指标当前汇总已导出");
-    } catch (error) {
-      ctx.toast(error instanceof Error ? `导出任务提交失败 · ${displayAdminError(error)}` : "导出任务提交失败 · 请稍后重试");
-    }
-  };
+      ctx.toast(`${submittedMode === "series" ? "关键指标趋势已导出" : "关键指标当前汇总已导出"}，到「数据导出与监管报告」下载`);
+    },
+  });
+  if (!ctx.canExport) return null;
   return (
-    <>
-      <span className="f-ro"><span className="d" />只读报表域 · 不改任何业务规则</span>
-      {!ctx.canExport && <span className="f-ro">当前角色仅可查看 · 导出需报表管理权限</span>}
-      <button className="f-cta" onClick={exportKpi} disabled={!ctx.canExport || !exportable || ctx.biLoading} title={!ctx.canExport ? "当前角色没有报表导出权限" : exportUnavailableReason}>
-        {complete ? "导出关键指标序列 CSV" : "导出关键指标当前汇总 CSV"}
-      </button>
-    </>
+    <Button variant="primary" icon={<Download size={14} aria-hidden />} disabledReason={exportMode === null || ctx.biLoading ? exportUnavailableReason : undefined} onClick={exportKpi}>
+      {exportMode === "series" ? "导出关键指标序列 CSV" : "导出关键指标当前汇总 CSV"}
+    </Button>
   );
 }
 
@@ -111,13 +157,32 @@ function renderFx(fx: string, bold: string[]) {
   return fx.split(re).map((part, i) => (bold.includes(part) ? <b key={i}>{part}</b> : <span key={i}>{part}</span>));
 }
 
-export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (source: L1ExportSource) => void }) {
+/** 黄灯偏移只改本机显示，不写后端，所以是本地小窗，不走确认（L1-A02）。 */
+function OffsetModal({ current, onApply, onClose }: { current: number; onApply: (next: number) => void; onClose: () => void }) {
+  const [draft, setDraft] = useState("");
+  const next = Number(draft);
+  const valid = draft.trim() !== "" && Number.isInteger(next) && next >= 5 && next <= 20;
+  return (
+    <Modal title="黄灯预警偏移" onClose={onClose} footer={<><Button onClick={onClose}>取消</Button><Button variant="primary" disabled={!valid} onClick={() => { onApply(next); onClose(); }}>应用 · 实时生效</Button></>}>
+      <div className="rd-stack">
+        <Field label={`新值（当前 ${current}% · 范围 5–20%，仅限整数）`} required help="只改你看到的灯色和黄线，不改业务规则或统计方式。刷新会恢复最后保存的设置，没有保存视图时回到默认值。要保留请点「保存为视图」。">
+          {(control) => <Input {...control} type="number" min={5} max={20} step={1} value={draft} placeholder={String(current)} onChange={(event) => setDraft(event.target.value)} />}
+        </Field>
+        <Fold inset title="查看业务规则详情" summary="灯色怎么判定">
+          <p className="rd-note">单侧指标须严格高于或低于目标值才达标；等于目标时为黄灯。数值越高越好的指标，黄线为目标值 × (1 − N%)；数值越低越好的指标，黄线为目标值 × (1 + N%)。未达标且在黄线以内（含黄线）为黄灯，超出为红灯。购买转化健康带包含两端，带外仍为黄灯。只影响显示，不改指标值。</p>
+        </Fold>
+      </div>
+    </Modal>
+  );
+}
+
+export function L1Kpi({ ctx, onExportSource, title, summary, actions }: { ctx: LCtx; onExportSource?: (source: L1ExportSource) => void; title: ReactNode; summary: string; actions: ReactNode }) {
   const reach = useReach();
-  const [selKpi, setSelKpi] = useState(1); // index → #2(最弱预警项)
+  const [picked, setPicked] = useState<number | null>(null); // 没点过时跟着排在最前的那一项
   const [ylOffset, setYlOffset] = useState(10);
   const [phaseOn, setPhaseOn] = useState(true);
   const [ovlSel, setOvlSel] = useState<number[]>([1, 2, 3]);
-  const [vp, setVp] = useState<ViewParamReq | null>(null);
+  const [editingOffset, setEditingOffset] = useState(false);
   const [win, setWin] = useState<L1Window>("7d");
   const [customOpen, setCustomOpen] = useState(false);
   const [customFrom, setCustomFrom] = useState("");
@@ -127,17 +192,22 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
   const [phaseFilter, setPhaseFilter] = useState("");
   const [localeFilter, setLocaleFilter] = useState("");
   const [refFilter, setRefFilter] = useState("");
+  const [applied, setApplied] = useState<L1KpiQuery>({ window: "7d" }); // 屏幕上这份数据的条件（ST-18）
+  const [queryNotice, setQueryNotice] = useState("");
   const [localData, setLocalData] = useState<Record<string, unknown> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
+  const [readAt, setReadAt] = useState("");
   const [drillKpi, setDrillKpi] = useState<Kpi | null>(null);
   const [drillTrend, setDrillTrend] = useState<number[] | null>(null);
   const [drillError, setDrillError] = useState("");
   const l1Requests = useRef(createL1ReadController());
   const selectedQuery = useRef<L1KpiQuery>({ window: "7d" });
+  const drillRead = useRef(0);
 
   useEffect(() => {
     l1Requests.current.invalidate();
+    drillRead.current += 1;
     setDrillKpi(null);
     setDrillTrend(null);
     setDrillError("");
@@ -155,10 +225,11 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
           validateL1Dashboard(next);
           setLocalData(next);
           setWin(query.window ?? "7d");
+          setApplied(query);
           onExportSource?.({ parentData, data: next, query, status: "ready" });
         },
         error => {
-          setRefreshError(displayAdminError(error));
+          setRefreshError(displayAdminReadError(error));
           onExportSource?.({ parentData, data: parentData, query, status: "error" });
         },
         () => setRefreshing(false),
@@ -172,43 +243,47 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
   useEffect(() => () => l1Requests.current.invalidate(), []);
 
   useEffect(() => {
-    let saved: ReturnType<typeof loadL1LocalView>;
+    let saved: ReturnType<typeof loadL1LocalView> = null;
     try {
       saved = loadL1LocalView(window.localStorage);
     } catch {
-      return;
+      saved = null;
     }
-    if (!saved) return;
-    setWin(saved.window);
-    setCustomFrom(saved.customFrom);
-    setCustomTo(saved.customTo);
-    setGran(saved.gran);
-    setPhaseOn(saved.phaseOn);
-    setYlOffset(saved.ylOffset);
-    setOvlSel(saved.ovlSel);
-    setCohortFilter(saved.cohortFilter);
-    setPhaseFilter(saved.phaseFilter);
-    setLocaleFilter(saved.localeFilter);
-    setRefFilter(saved.refFilter);
-    const savedQuery: L1KpiQuery = {
-        ...(saved.window === "custom" ? { window: "custom", from: saved.customFrom, to: saved.customTo } : { window: saved.window }),
-        cohort: saved.cohortFilter || undefined, phase: saved.phaseFilter || undefined,
-        locale: saved.localeFilter || undefined, ref: saved.refFilter || undefined,
+    const fromUrl = queryFromUrl(window.location.search);
+    if (!saved && !fromUrl) return;
+    if (saved) {
+      setGran(saved.gran);
+      setPhaseOn(saved.phaseOn);
+      setYlOffset(saved.ylOffset);
+      setOvlSel(saved.ovlSel);
+    }
+    const restored: L1KpiQuery = fromUrl ?? {
+      ...(saved?.window === "custom" ? { window: "custom", from: saved.customFrom, to: saved.customTo } : { window: saved?.window }),
+      cohort: saved?.cohortFilter || undefined, phase: saved?.phaseFilter || undefined,
+      locale: saved?.localeFilter || undefined, ref: saved?.refFilter || undefined,
     };
-    selectedQuery.current = savedQuery;
+    setWin(restored.window ?? "7d");
+    setCustomFrom(restored.from ?? saved?.customFrom ?? "");
+    setCustomTo(restored.to ?? saved?.customTo ?? "");
+    setCohortFilter(restored.cohort ?? "");
+    setPhaseFilter(restored.phase ?? "");
+    setLocaleFilter(restored.locale ?? "");
+    setRefFilter(restored.ref ?? "");
+    selectedQuery.current = restored;
     setRefreshing(true);
-    onExportSource?.({ parentData: ctx.biData?.l1, data: ctx.biData?.l1, query: savedQuery, status: "loading" });
+    onExportSource?.({ parentData: ctx.biData?.l1, data: ctx.biData?.l1, query: restored, status: "loading" });
     l1Requests.current.run(
-      () => fetchL1Kpi(savedQuery),
+      () => fetchL1Kpi(restored),
       (next) => {
         validateL1Dashboard(next);
         setLocalData(next);
+        setApplied(restored);
         setRefreshError("");
-        onExportSource?.({ parentData: ctx.biData?.l1, data: next, query: savedQuery, status: "ready" });
+        onExportSource?.({ parentData: ctx.biData?.l1, data: next, query: restored, status: "ready" });
       },
       (error) => {
-        setRefreshError(displayAdminError(error));
-        onExportSource?.({ parentData: ctx.biData?.l1, data: ctx.biData?.l1, query: savedQuery, status: "error" });
+        setRefreshError(displayAdminReadError(error));
+        onExportSource?.({ parentData: ctx.biData?.l1, data: ctx.biData?.l1, query: restored, status: "error" });
       },
       () => setRefreshing(false),
     );
@@ -218,466 +293,431 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
   const query = selectedQuery.current;
   const selectedReadRequired = query.window !== "7d" || Boolean(query.from || query.to || query.cohort || query.phase || query.locale || query.ref);
   const data = localData ?? (selectedReadRequired ? undefined : ctx.biData?.l1);
+  useEffect(() => { if (data) setReadAt(businessClock(Date.now())); }, [data]);
   const rawKpis = rows<Kpi>(data?.kpis);
   const liveTotals = readL1LiveTotals(data);
-  let protocolError = "";
+  let protocolBroken = false;
   if (rawKpis.length) {
     try {
       validateL1Dashboard(data);
-    } catch (error) {
-      protocolError = displayAdminError(error);
+    } catch {
+      protocolBroken = true;
     }
   }
-  if (!rawKpis.length && liveTotals.length) return <L1LiveTotals metrics={liveTotals} />;
-  if (!rawKpis.length) return <LDataState ctx={{ ...ctx, biLoading: refreshing || ctx.biLoading, biError: refreshError || ctx.biError }} label="L1" />;
-  if (protocolError) {
-    return (
-      <section className="l-card">
-        <div className="l-b">
-          <div className="ltint warn" data-module-health-state="error" style={{ fontSize: 12 }}>
-            <b>关键指标数据加载失败</b> · 收到的数据有误，为避免误导已停止显示。
-            {ctx.reloadBi && <button className="l-btn sm" style={{ marginLeft: 10 }} onClick={() => void ctx.reloadBi?.()}>重新加载</button>}
-            <span className="lcode" style={{ marginLeft: 8 }}>{protocolError}</span>
-          </div>
-        </div>
-      </section>
-    );
-  }
-  const KPIS = rawKpis;
-  const WEEKS = strings(data?.weeks);
-  const PHASE_SWITCH_IDX = num(data?.phaseSwitchIndex, -1);
-  const KPI_COLORS = strings(data?.kpiColors);
-  const KPI_PLAIN = rec<string>(data?.kpiPlain);
-  const KPI_EXT = rec<KpiExt>(data?.kpiExt);
-  const safeSelKpi = Math.min(selKpi, KPIS.length - 1);
-  const states = KPIS.map((item) => item.available === false || item.value == null ? "na" : kpiState(item, ylOffset));
-  const green = states.filter((s) => s === "g").length;
-  const yellow = states.filter((s) => s === "y").length;
-  const red = states.filter((s) => s === "r").length;
-  const unavailable = states.filter((s) => s === "na").length;
-  const attention = red + unavailable;
-  const redNames = KPIS.filter((_, i) => states[i] === "r").map((k) => `#${k.n}`).join(" ");
-  const baseKpi = KPIS[safeSelKpi];
-  const k = drillKpi?.n === baseKpi.n
-    ? { ...baseKpi, ...drillKpi, spark: drillTrend ?? drillKpi.spark ?? baseKpi.spark }
-    : baseKpi;
-  const baseExt = KPI_EXT[String(k.n)] ?? { fx: k.name, fxBold: [], num: "—", den: "—", delta: "0", note: "暂未返回该关键指标解释", jump: [] };
-  const ext = {
-    ...baseExt,
-    num: k.numerator == null ? baseExt.num : String(k.numerator),
-    den: k.denominator == null ? baseExt.den : String(k.denominator),
-    note: k.unavailableReason === "NO_GENESIS_PURCHASES"
-      ? "当前筛选范围没有创世节点购买记录，尚未售罄，售罄天数不可计算。"
-      : k.unavailableReason === "GENESIS_NOT_SOLD_OUT"
-        ? "创世节点尚未累计售出 1,000，售罄天数不可计算。"
-        : baseExt.note,
-  };
-  const phase = rec(data?.currentPhase);
-  const phaseKnown = typeof phase.code === "string" && phase.code.length > 0;
-  const rs = { currentPhase: phaseKnown ? String(phase.code) : "未返回", currentMonth: phaseKnown ? num(phase.month, 0) : "—" };
 
-  const activeQuery = (
-    nextWindow: L1Window = win,
-    filters: Partial<L1KpiQuery> = {},
-  ): L1KpiQuery => ({
-    ...(nextWindow === "custom"
-      ? { window: "custom", from: customFrom, to: customTo }
-      : { window: nextWindow }),
-    cohort: cohortFilter || undefined,
-    phase: phaseFilter || undefined,
-    locale: localeFilter || undefined,
-    ref: refFilter || undefined,
-    ...filters,
-  });
+  const draftSlices = { cohort: cohortFilter || undefined, phase: phaseFilter || undefined, locale: localeFilter || undefined, ref: refFilter || undefined };
+  const appliedSlices = { cohort: applied.cohort, phase: applied.phase, locale: applied.locale, ref: applied.ref };
 
-  const reloadKpi = (
-    nextWindow: L1Window = win,
-    filters: Partial<L1KpiQuery> = {},
-  ) => {
+  const reloadKpi = (nextWindow: L1Window, slices: Partial<L1KpiQuery>) => {
+    setQueryNotice("");
     setRefreshing(true);
     setLocalData(data ?? null);
-    const query = activeQuery(nextWindow, filters);
-    selectedQuery.current = query;
-    onExportSource?.({ parentData: ctx.biData?.l1, data, query, status: "loading" });
+    const next: L1KpiQuery = {
+      ...(nextWindow === "custom" ? { window: "custom", from: customFrom, to: customTo } : { window: nextWindow }),
+      ...slices,
+    };
+    selectedQuery.current = next;
+    onExportSource?.({ parentData: ctx.biData?.l1, data, query: next, status: "loading" });
     l1Requests.current.run(
-      () => fetchL1Kpi(query),
-      (next) => {
-        validateL1Dashboard(next);
-        setLocalData(next);
-        onExportSource?.({ parentData: ctx.biData?.l1, data: next, query, status: "ready" });
+      () => fetchL1Kpi(next),
+      (result) => {
+        validateL1Dashboard(result);
+        setLocalData(result);
+        onExportSource?.({ parentData: ctx.biData?.l1, data: result, query: next, status: "ready" });
+        drillRead.current += 1;
         setDrillKpi(null);
         setDrillTrend(null);
         setDrillError("");
         setRefreshError("");
         setWin(nextWindow);
-        setCustomOpen(false);
-        ctx.toast(`关键指标 已按${nextWindow === "custom" ? `${customFrom} 至 ${customTo}` : nextWindow === "30d" ? "滚动 30 天" : nextWindow === "1d" ? "当日" : "滚动 7 天"}重新加载`);
+        setApplied(next);
+        writeQueryToUrl(next);
+        ctx.toast(`关键指标 已按${nextWindow === "custom" ? `${customFrom} 至 ${customTo}` : WINDOW_NAME[nextWindow]}重新加载`);
       },
       (error) => {
-        const message = displayAdminError(error);
+        const message = displayAdminReadError(error);
         setRefreshError(message);
-        onExportSource?.({ parentData: ctx.biData?.l1, data, query, status: "error" });
+        onExportSource?.({ parentData: ctx.biData?.l1, data, query: next, status: "error" });
         ctx.toast(`关键指标 刷新失败 · ${message}`);
       },
       () => setRefreshing(false),
     );
   };
-  const attributionLinks = assertL1AttributionLinks(ext.jump);
 
-  const selectKpi = async (index: number) => {
-    setSelKpi(index);
-    const kpiId = KPIS[index]?.n;
-    if (!kpiId) return;
-    setDrillKpi(null);
-    setDrillTrend(null);
-    setDrillError("");
-    const query = activeQuery();
-    try {
-      const [drilldown, trend] = await Promise.all([
-        fetchL1KpiDrilldown(kpiId, query),
-        fetchL1KpiTrend(kpiId, query),
-      ]);
-      const checkedDrilldown = validateL1Drilldown(drilldown, kpiId);
-      const checkedTrend = validateL1Trend(trend, kpiId);
-      setDrillKpi(checkedDrilldown.selected as Kpi);
-      setDrillTrend(checkedTrend.values as number[]);
-    } catch (error) {
-      const message = displayAdminError(error);
-      setDrillError(message);
-      ctx.toast(`明细加载失败 · ${message}`);
+  const customPicking = customOpen || win === "custom";
+  const customRangeNotice = customPicking && customFrom && customTo && customFrom <= customTo ? customRangeProblem(customFrom, customTo) : "";
+  const submitQuery = () => {
+    if (cohortFilter && !COHORT_FORMAT.test(cohortFilter)) {
+      setQueryNotice("注册周要写成年份和周数，比如 2026-W42。这次没有查询。");
+      return;
     }
+    if (win === "custom" && customRangeNotice) return;
+    reloadKpi(win, draftSlices);
   };
-
-  const toggleOvl = (i: number) => setOvlSel((p) => (p.includes(i) ? (p.length > 1 ? p.filter((x) => x !== i) : p) : [...p, i]));
-
-  /* ---- 查看明细图(cohort 周序列 + 目标线 + 黄线 + Phase 标记;固定 viewBox 等比缩放) ---- */
-  const drillChart = () => {
-    const W = 860, H = 260, P = 36;
-    const s = [...k.spark];
-    if (s.length < 2) return <div className="empty">当前筛选范围没有可绘制的趋势点；不会用 0 补齐缺失周。</div>;
-    const tgt = tgtValue(k);
-    const yl = k.dir === "lte" ? k.target * (1 + ylOffset / 100) : tgt * (1 - ylOffset / 100);
-    const all = [...s, tgt, yl];
-    const min = Math.min(...all) * 0.97, max = Math.max(...all) * 1.03, rng = max - min || 1;
-    const X = (i: number) => P + (i / (s.length - 1)) * (W - 2 * P);
-    const Y = (v: number) => H - 26 - ((v - min) / rng) * (H - 56);
-    const path = s.map((v, i) => `${i ? "L" : "M"}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(" ");
-    return (
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`KPI #${k.n} 同批用户 周序列趋势`}>
-        {s.map((_, i) => (
-          <g key={i}>
-            <line x1={X(i)} y1={18} x2={X(i)} y2={H - 26} stroke="var(--border)" strokeWidth={1} />
-            <text x={X(i)} y={H - 8} fontSize={11} fill="var(--ink-4)" textAnchor="middle">{WEEKS[i]}</text>
-          </g>
-        ))}
-        {phaseOn && PHASE_SWITCH_IDX >= 0 && (
-          <g>
-            <rect x={X(PHASE_SWITCH_IDX) - 1} y={18} width={2} height={H - 44} fill="var(--cyan)" opacity={0.45} />
-            <text x={X(PHASE_SWITCH_IDX) + 5} y={30} fontSize={11} fill="var(--cyan)">运营阶段 切换</text>
-          </g>
-        )}
-        <line x1={P} y1={Y(tgt)} x2={W - P} y2={Y(tgt)} stroke="var(--success)" strokeWidth={1.4} strokeDasharray="5 4" />
-        <text x={W - P} y={Y(tgt) - 5} fontSize={11} fill="var(--success)" textAnchor="end">目标 {tgt}{k.unit === "d" ? "天" : k.unit}</text>
-        <line x1={P} y1={Y(yl)} x2={W - P} y2={Y(yl)} stroke="var(--warning)" strokeWidth={1.2} strokeDasharray="3 4" />
-        <text x={W - P} y={Y(yl) + 13} fontSize={11} fill="var(--warning)" textAnchor="end">黄灯 {yl.toFixed(1)}{k.unit === "d" ? "天" : k.unit}</text>
-        <path d={`${path} L${X(s.length - 1)} ${H - 26} L${X(0)} ${H - 26} Z`} fill="var(--cyan)" opacity={0.07} />
-        <path d={path} fill="none" stroke="var(--cyan)" strokeWidth={2.2} />
-        {s.map((v, i) => (
-          <g key={i}>
-            <circle cx={X(i)} cy={Y(v)} r={3.4} fill="#0A0A0A" stroke="var(--cyan)" strokeWidth={2} />
-            <text x={X(i)} y={Y(v) - 9} fontSize={11} fill="var(--ink-3)" textAnchor="middle">{v}</text>
-          </g>
-        ))}
-      </svg>
-    );
+  const clearDrafts = () => {
+    setCohortFilter("");
+    setPhaseFilter("");
+    setLocaleFilter("");
+    setRefFilter("");
   };
-
-  /* ---- 趋势叠加(指数化:实际 ÷ 目标 → 目标线 100) ---- */
-  const ovlChart = () => {
-    const drawable = ovlSel.filter((index) => KPIS[index]?.available !== false && (KPIS[index]?.spark?.length ?? 0) >= 2);
-    if (!drawable.length) return <div className="empty">当前所选指标没有足够的趋势数据，暂时无法画出对比曲线。</div>;
-    const W = 1240, H = 230, P = 40, min = 80, max = 125;
-    const X = (i: number) => P + (i / (WEEKS.length - 1)) * (W - 2 * P);
-    const y100 = H - 24 - ((100 - min) / (max - min)) * (H - 44);
-    return (
-      <svg className="ovl-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="多个关键指标的对比趋势">
-        {WEEKS.map((w, i) => (
-          <g key={w}>
-            <line x1={X(i)} y1={14} x2={X(i)} y2={H - 24} stroke="var(--border)" />
-            <text x={X(i)} y={H - 6} fontSize={11} fill="var(--ink-4)" textAnchor="middle">{w}</text>
-          </g>
-        ))}
-        {phaseOn && PHASE_SWITCH_IDX >= 0 && (
-          <g>
-            <rect x={X(PHASE_SWITCH_IDX) - 1} y={14} width={2} height={H - 38} fill="var(--cyan)" opacity={0.45} />
-            <text x={X(PHASE_SWITCH_IDX) + 5} y={26} fontSize={11} fill="var(--cyan)">运营阶段切换</text>
-          </g>
-        )}
-        {drawable.map((i) => {
-          const kk = KPIS[i];
-          const tgt = tgtValue(kk);
-          const idx = kk.spark.map((v) => (kk.dir === "lte" ? (tgt / v) * 100 : (v / tgt) * 100));
-          const path = idx.map((v, j) => {
-            const y = H - 24 - ((Math.min(Math.max(v, min), max) - min) / (max - min)) * (H - 44);
-            return `${j ? "L" : "M"}${X(j).toFixed(1)} ${y.toFixed(1)}`;
-          }).join(" ");
-          return <path key={i} d={path} fill="none" stroke={KPI_COLORS[i]} strokeWidth={2} />;
-        })}
-        <line x1={P} y1={y100} x2={W - P} y2={y100} stroke="var(--success)" strokeWidth={1.4} strokeDasharray="5 4" />
-        <text x={W - P} y={y100 - 5} fontSize={11} fill="var(--success)" textAnchor="end">目标线 = 各自目标值(指数 100)</text>
-      </svg>
-    );
+  const removeSlice = (key: typeof SLICES[number]) => {
+    ({ cohort: setCohortFilter, phase: setPhaseFilter, locale: setLocaleFilter, ref: setRefFilter })[key]("");
+    reloadKpi(win, { ...appliedSlices, [key]: undefined });
   };
+  const saveView = () => {
+    let saved: ReturnType<typeof saveL1LocalView> = null;
+    try {
+      saved = saveL1LocalView(window.localStorage, { window: win, customFrom, customTo, gran, phaseOn, ylOffset, ovlSel, cohortFilter, phaseFilter, localeFilter, refFilter });
+    } catch {
+      saved = null;
+    }
+    ctx.toast(saved ? "视图已保存在这台电脑的浏览器里，刷新后仍按这个视图显示" : "视图设置有误或浏览器不能保存，没有保存");
+  };
+  const draftChanged = SLICES.some((key) => (draftSlices[key] ?? "") !== (applied[key] ?? ""));
 
-  return (
-    <div>
-      {refreshError && (
-        <div className="ltint warn" data-module-health-state="error" style={{ fontSize: 12, marginBottom: 10 }}>
-          <b>关键指标刷新失败</b> · 当前仍显示上一次核对过的数据，时间范围未切换。{refreshError}
+  const queryBar = (
+    <FilterBar
+      scope={<Segments<L1Window>
+        label="时间范围"
+        value={customPicking ? "custom" : win}
+        items={[{ value: "1d", label: "近 24 小时" }, { value: "7d", label: "近 7 天" }, { value: "30d", label: "近 30 天" }, { value: "custom", label: "自定义" }]}
+        onChange={(next) => {
+          if (next === "custom") {
+            setCustomOpen(true);
+            return;
+          }
+          setCustomOpen(false);
+          reloadKpi(next, appliedSlices);
+        }}
+      />}
+      more={<>
+        <FilterField label="注册周"><Input aria-label="注册周筛选" placeholder="年份与周数，如 2026-W42" value={cohortFilter} onChange={(event) => { setCohortFilter(event.target.value); setQueryNotice(""); }} /></FilterField>
+        <FilterField label="运营阶段"><Select aria-label="运营阶段筛选" value={phaseFilter} onChange={setPhaseFilter} options={[{ value: "", label: "全部阶段" }, ...["P1", "P2", "P3", "P4", "P5", "P6"].map((value) => ({ value, label: value }))]} /></FilterField>
+        <FilterField label="语言"><Input aria-label="语言筛选" placeholder="语言" value={localeFilter} onChange={(event) => setLocaleFilter(event.target.value)} /></FilterField>
+        <FilterField label="渠道"><Input aria-label="渠道筛选" placeholder="推荐来源" value={refFilter} onChange={(event) => setRefFilter(event.target.value)} /></FilterField>
+        <div className="rd-filter-more-row"><Button type="submit" disabled={refreshing}>应用切片</Button></div>
+        <div className="rd-filter-more-row">
+          <span className="rd-note">显示设置</span>
+          <Segments
+            label="按注册周或月分组"
+            value={gran}
+            items={[{ value: "week", label: "注册周（如2026-W42）" }, { value: "month", label: "注册月" }]}
+            onChange={(next) => { setGran(next); ctx.toast(`已选${next === "week" ? "注册周" : "注册月"} · 只影响保存视图，不改数据`); }}
+          />
+          <span className="rd-note">只影响保存视图</span>
+          <Check label="显示运营阶段切换" checked={phaseOn} onChange={() => { setPhaseOn(!phaseOn); ctx.toast(`运营阶段切换标记已${!phaseOn ? "开启" : "关闭"}`); }} />
+        </div>
+      </>}
+      moreCount={SLICES.filter((key) => applied[key]).length}
+      onSubmit={submitQuery}
+      querying={refreshing}
+      submitLabel={refreshing ? "刷新中…" : "刷新指标"}
+      onClear={() => { clearDrafts(); reloadKpi(win, { cohort: undefined, phase: undefined, locale: undefined, ref: undefined }); }}
+      canClear={!refreshing && (hasSlice(applied) || draftChanged)}
+      sort={<div className="rd-filter-end">
+        <Button onClick={saveView}>保存为视图</Button>
+        <Explain label="保存为视图存什么" content="统计规则与目标值只读。这里只把时间范围、切片和显示方式存在这台电脑的浏览器里，不保存数据、权限或业务状态，也不用确认。" />
+      </div>}
+      result={draftChanged ? "条件未应用" : undefined}
+      applied={SLICES.filter((key) => applied[key]).map((key) => ({ key, label: `${SLICE_NAME[key]} ${applied[key]}`, onRemove: () => removeSlice(key) }))}
+      notice={customRangeNotice ? `${customRangeNotice}这次没有查询。` : queryNotice || undefined}
+    >
+      {customPicking && (
+        <div className="rd-filter-line">
+          <label className="rd-note" htmlFor="l1-custom-from">起</label>
+          <Input id="l1-custom-from" type="date" value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} />
+          <label className="rd-note" htmlFor="l1-custom-to">止</label>
+          <Input id="l1-custom-to" type="date" value={customTo} onChange={(event) => setCustomTo(event.target.value)} />
+          <Button disabled={!customFrom || !customTo || customFrom > customTo || refreshing || Boolean(customRangeNotice)} onClick={() => reloadKpi("custom", appliedSlices)}>应用自定义</Button>
+          <span className="rd-note">{businessZone().label}，含结束日，最长 400 天</span>
         </div>
       )}
-      {/* stat strip */}
-      <div className="f-stats">
-        <div className="f-stat ok"><div className="k">已达标指标</div><div className="v">{green} / {KPIS.length}</div><div className="sub">绿灯 · 满足对应指标的目标</div></div>
-        <div className="f-stat warn"><div className="k">接近目标的指标</div><div className="v">{yellow}</div><div className="sub">黄灯 · 单侧指标距目标不超过 {ylOffset}%；购买转化在健康带外</div></div>
-        <div className="f-stat danger"><div className="k">未达标 + 暂无法计算</div><div className="v">{attention} / {KPIS.length}</div><div className="sub">未达 {red} 项{redNames ? ` (${redNames})` : ""} · 暂无法计算 {unavailable} 项（缺数据时不按 0% 算）</div></div>
-        <div className="f-stat cyan"><div className="k">当前运营阶段</div><div className="v">{rs.currentPhase}{phaseKnown ? ` · 月 ${rs.currentMonth}` : ""}</div><div className="sub">{PHASE_SWITCH_IDX >= 0 ? "趋势图已标出运营阶段切换时间" : "当前时间范围内没有阶段切换记录"}</div></div>
-      </div>
+    </FilterBar>
+  );
 
-      {/* view params bar(全部仅视图 · 实时生效 · 普通确认批) */}
-      <div className="view-bar">
-        <TabGroup<L1Window>
-          className="chips"
-          label="时间范围"
-          labelClassName="lb"
-          value={win}
-          items={["1d", "7d", "30d", "custom"] as const}
-          onSelect={(v) => {
-            if (v === "custom") {
-              setCustomOpen(true);
-              return;
-            }
-            void reloadKpi(v);
-          }}
-          itemClassName={(_v, selected) => `chip${selected ? " sel" : ""}`}
-        >{(v) => ({ "1d": "当日", "7d": "滚动 7 天", "30d": "滚动 30 天", custom: "自定义" })[v]}</TabGroup>
-        {customOpen && (
-          <div className="chips">
-            <label className="lb" htmlFor="l1-custom-from">起</label>
-            <input id="l1-custom-from" type="date" value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} />
-            <label className="lb" htmlFor="l1-custom-to">止</label>
-            <input id="l1-custom-to" type="date" value={customTo} onChange={(event) => setCustomTo(event.target.value)} />
-            <button className="l-btn sm" disabled={!customFrom || !customTo || customFrom > customTo || refreshing} onClick={() => void reloadKpi("custom")}>应用自定义</button>
-          </div>
-        )}
-        <div className="sep" />
-        <TabGroup
-          className="chips"
-          label="按注册周或月分组"
-          labelClassName="lb"
-          value={gran}
-          items={["week", "month"] as const}
-          onSelect={(v) => { setGran(v); ctx.toast(`视图已切换:${v === "week" ? "注册周（如2026-W42）" : "注册月"} · 仅视图参数,实时生效`); }}
-          itemClassName={(_v, selected) => `chip${selected ? " sel" : ""}`}
-        >{(v) => (v === "week" ? "注册周（如2026-W42）" : "注册月")}</TabGroup>
-        <div className="sep" />
-        <button className={"toggle" + (phaseOn ? " on" : "")} onClick={() => { setPhaseOn(!phaseOn); ctx.toast(`运营阶段切换标记已${!phaseOn ? "开启" : "关闭"}`); }}>
-          <span className="tk" />显示运营阶段切换
-        </button>
-        <div className="sep" />
-        <div className="chips"><span className="lb">黄灯预警偏移</span>
-          <span className="lcode">距目标 {ylOffset}%</span>
-          <button className="l-btn sm" onClick={() => setVp({
-            title: "黄灯预警偏移",
-            detail: "单侧指标须严格高于或低于目标值才达标；等于目标时为黄灯。数值越高越好的指标，黄线为目标值 × (1 − N%)；数值越低越好的指标，黄线为目标值 × (1 + N%)。未达标且在黄线以内（含黄线）为黄灯，超出为红灯。购买转化健康带包含两端，带外仍为黄灯。只影响显示，不改指标值。",
-            current: ylOffset, unit: "%", min: 5, max: 20,
-            onApply: (n) => { setYlOffset(n); ctx.toast(`黄灯预警偏移 → 距目标 ${n}% · 仅视图参数`); },
-          })}>调整</button>
-        </div>
-        <button className="l-btn sm" onClick={() => void reloadKpi()} disabled={refreshing}>{refreshing ? "刷新中…" : "刷新指标"}</button>
-        <button className="l-btn sm" style={{ marginLeft: "auto" }} onClick={() => {
-          let saved: ReturnType<typeof saveL1LocalView> = null;
-          try {
-            saved = saveL1LocalView(window.localStorage, { window: win, customFrom, customTo, gran, phaseOn, ylOffset, ovlSel, cohortFilter, phaseFilter, localeFilter, refFilter });
-          } catch {
-            saved = null;
-          }
-          ctx.toast(saved ? "视图已保存在这台电脑的浏览器里，刷新后仍按这个视图显示" : "视图设置有误或浏览器不能保存，没有保存");
-        }}>保存为视图</button>
-        <span className="lcode lock" title="统计规则与目标值只读；仅保存本机浏览器视图参数，不保存数据、权限或业务状态">视图参数 · 本机浏览器保存 · 实时生效 · 不落确认</span>
-      </div>
+  const retryLast = () => {
+    const last = selectedQuery.current;
+    reloadKpi(last.window ?? "7d", { cohort: last.cohort, phase: last.phase, locale: last.locale, ref: last.ref });
+  };
+  const retryFirstRead = () => { if (selectedReadRequired) retryLast(); else void ctx.reloadBi?.(); };
 
-      {/* (a) 8-KPI matrix */}
-      {/* 🔴 互斥查看明细必须暴露「唯一选中项」(zentao #209):此前每张卡是 button + aria-pressed,
-          浏览器把它当 toggle button、读屏按复选框朗读(Value=1/0),而点 #1 会自动把 #2 置 0 ——
-          运营无从判断这组是单选。改用与时间窗同款 TabGroup(role=tablist + aria-selected +
-          roving tabindex + 方向键)。下方「多 KPI 趋势叠加」是可同时开启的多选组,保留 aria-pressed。 */}
-      <TabGroup<number>
-        className="kpi-grid"
-        label="选择要查看的关键指标"
-        value={selKpi}
-        items={KPIS.map((_kk, i) => i)}
-        onSelect={(index) => void selectKpi(index)}
-        itemClassName={(_index, selected) => "kpi-card" + (selected ? " sel" : "")}
-        itemTitle={() => "点击查看明细"}
-      >
-        {(i) => {
-          const kk = KPIS[i];
-          const st = states[i];
-          const ex = KPI_EXT[kk.n];
-          const dUp = !ex.delta.startsWith("-");
-          const goodUp = kk.dir !== "lte";
-          return (
-            <>
-              <div className="top"><span className="n">#{kk.n}</span><span className="nm"><AutoGloss>{operatorCopyText(kk.name)}</AutoGloss></span><span className={"led " + st} /></div>
-              <div className="vrow">
-                <span className="v">{kk.available === false || kk.value == null ? "不可计算" : kk.value}<span className="u">{kk.available === false || kk.value == null ? "" : kk.unit === "d" ? "天" : kk.unit}</span></span>
-                <span className="tgt">{tgtLabel(kk)}</span>
-                <span className={"delta " + (dUp === goodUp ? "up" : "dn")}>{ex.delta === "—" ? "环比 —" : `${dUp ? "▲" : "▼"} ${ex.delta.replace("-", "")}`}</span>
-              </div>
-              {kk.spark.length === 0 ? (
-                <span className="spark-empty" data-proof="l1-kpi-trend-unavailable">趋势数据不足</span>
-              ) : (
-                <svg className="spark" viewBox="0 0 150 30" preserveAspectRatio="none" aria-hidden>
-                  <path d={sparkPath(kk.spark, 150, 30)} fill="none" stroke={st === "na" ? "var(--ink-4)" : LED_COLOR[st]} strokeWidth={1.8} />
-                </svg>
+  const report = () => {
+    const KPIS = rawKpis;
+    const WEEKS = strings(data?.weeks);
+    const PHASE_SWITCH_IDX = num(data?.phaseSwitchIndex, -1);
+    const KPI_PLAIN = rec<string>(data?.kpiPlain);
+    const KPI_EXT = rec<KpiExt>(data?.kpiExt);
+    const states: KpiState[] = KPIS.map((item) => item.available === false || item.value == null ? "na" : kpiState(item, ylOffset));
+    const count = (state: KpiState) => states.filter((item) => item === state).length;
+    const green = count("g");
+    const yellow = count("y");
+    const red = count("r");
+    const unavailable = count("na");
+    const order = KPIS.map((_, index) => index).sort((a, b) => STATE_RANK[states[a]] - STATE_RANK[states[b]] || KPIS[a].n - KPIS[b].n);
+    const safeSelKpi = Math.min(picked ?? order[0], KPIS.length - 1);
+    const baseKpi = KPIS[safeSelKpi];
+    const k = drillKpi?.n === baseKpi.n
+      ? { ...baseKpi, ...drillKpi, spark: drillTrend ?? drillKpi.spark ?? baseKpi.spark }
+      : baseKpi;
+    const baseExt = KPI_EXT[String(k.n)] ?? { fx: k.name, fxBold: [], num: "—", den: "—", delta: "0", note: "暂未返回该关键指标解释", jump: [] };
+    const ext = {
+      ...baseExt,
+      num: k.numerator == null ? baseExt.num : String(k.numerator),
+      den: k.denominator == null ? baseExt.den : String(k.denominator),
+      note: k.unavailableReason === "NO_GENESIS_PURCHASES"
+        ? "当前筛选范围没有创世节点购买记录，尚未售罄，售罄天数不可计算。"
+        : k.unavailableReason === "GENESIS_NOT_SOLD_OUT"
+          ? "创世节点尚未累计售出 1,000，售罄天数不可计算。"
+          : baseExt.note,
+    };
+    const kState: KpiState = k.available === false || k.value == null ? "na" : kpiState(k, ylOffset);
+    const phase = rec(data?.currentPhase);
+    const phaseKnown = typeof phase.code === "string" && phase.code.length > 0;
+    const attributionLinks = assertL1AttributionLinks(ext.jump);
+
+    const selectKpi = async (index: number) => {
+      setPicked(index);
+      const kpiId = KPIS[index]?.n;
+      if (!kpiId) return;
+      const read = ++drillRead.current;
+      setDrillKpi(null);
+      setDrillTrend(null);
+      setDrillError("");
+      try {
+        const [drilldown, trend] = await Promise.all([
+          fetchL1KpiDrilldown(kpiId, applied),
+          fetchL1KpiTrend(kpiId, applied),
+        ]);
+        const checkedDrilldown = validateL1Drilldown(drilldown, kpiId);
+        const checkedTrend = validateL1Trend(trend, kpiId);
+        if (read !== drillRead.current) return;
+        setDrillKpi(checkedDrilldown.selected as Kpi);
+        setDrillTrend(checkedTrend.values as number[]);
+      } catch (error) {
+        if (read !== drillRead.current) return;
+        const message = displayAdminReadError(error);
+        setDrillError(message);
+        ctx.toast(`明细加载失败 · ${message}`);
+      }
+    };
+    const moveRow = (event: KeyboardEvent<HTMLTableRowElement>, at: number) => {
+      const next = event.key === "ArrowDown" ? order[at + 1] : event.key === "ArrowUp" ? order[at - 1] : undefined;
+      if (next === undefined) return;
+      event.preventDefault();
+      const row = event.currentTarget;
+      ((event.key === "ArrowDown" ? row.nextElementSibling : row.previousElementSibling) as HTMLElement | null)?.focus();
+      void selectKpi(next);
+    };
+
+    const pct = (value: number) => `${Number(value.toFixed(1))}${unitText(k)}`;
+    const target = tgtValue(k);
+    const yellowLine = k.dir === "lte" ? k.target * (1 + ylOffset / 100) : target * (1 - ylOffset / 100);
+    const goalMarks: { key: string; text: string; value: number; tone: StateTone }[] = k.dir === "band"
+      ? [{ key: "low", text: `下限 ${k.band?.[0]}${unitText(k)}`, value: k.band?.[0] ?? 0, tone: "ok" }, { key: "high", text: `上限 ${k.band?.[1]}${unitText(k)}`, value: k.band?.[1] ?? 0, tone: "ok" }]
+      : [{ key: "target", text: `目标 ${target}${unitText(k)}`, value: target, tone: "ok" }, { key: "yellow", text: `黄线 ${pct(yellowLine)}`, value: yellowLine, tone: "warn" }];
+    const trendReady = k.spark.length >= 2;
+    const showTrendColumn = KPIS.some((item) => item.spark.length >= 2);
+    const phaseEvent = phaseOn && PHASE_SWITCH_IDX >= 0 ? { index: PHASE_SWITCH_IDX, text: "运营阶段切换" } : undefined;
+
+    const compared = ovlSel.map((index, position) => {
+      const item = KPIS[index];
+      const goal = tgtValue(item);
+      const values = item.spark.map((value) => (item.dir === "lte" ? (goal / value) * 100 : (value / goal) * 100));
+      return { index, item, values, slot: (position < 4 ? position + 1 : "other") as ChartSlot };
+    });
+    const drawable = compared.filter(({ item, values }) => item.available !== false && values.length >= 2 && values.every(Number.isFinite));
+    const skipped = compared.filter((entry) => !drawable.includes(entry));
+
+    return (
+      <>
+        {red > 0
+          ? <Conclusion state="warn" lead hint="未达标的排在下面最前面，点一行看原因。">关键指标：<b>{red}</b> 项未达标</Conclusion>
+          : unavailable === KPIS.length
+            ? <Conclusion state="unknown" hint="这个范围里每一项都缺数据，换个时间范围再看。">关键指标：暂时无法判断</Conclusion>
+            : green === KPIS.length
+              ? <Conclusion state="ok" hint="这页无需处理。">关键指标：全部达标</Conclusion>
+              : <Conclusion state="neutral" hint={unavailable > 0 ? "有的项缺数据算不出来，不算达标。" : "接近目标的排在下面最前面。"}>关键指标：没有未达标的项</Conclusion>}
+
+        <StatBand label="指标概览">
+          <Stat label="已达标指标" value={green} unit={`/ ${KPIS.length}`} tone={green > 0 ? "ok" : undefined} icon={CheckCircle2} iconTone="ok" sub="绿灯 · 满足对应指标的目标" />
+          <Stat label="接近目标的指标" value={yellow} tone={yellow > 0 ? "warn" : undefined} icon={Gauge} iconTone="warn"
+            sub={<>黄灯 · 距目标 {ylOffset}% 以内 · <button type="button" className="rd-link" onClick={() => setEditingOffset(true)}>调整</button></>}
+            explain={`单侧指标距目标不超过 ${ylOffset}%；购买转化在健康带外也算这里。调整只改你看到的灯色，不改业务规则。`} />
+          <Stat label="暂无法计算" value={unavailable} tone={unavailable > 0 ? "done" : undefined} icon={CircleHelp} iconTone="done" sub="缺数据，不按 0% 算" />
+          <Stat label="当前运营阶段" value={phaseKnown ? String(phase.code) : "未返回"} unit={phaseKnown ? `· 月 ${num(phase.month, 0)}` : undefined} tone="role-2" icon={Flag}
+            sub={PHASE_SWITCH_IDX >= 0 ? "趋势图已标出运营阶段切换时间" : "当前时间范围内没有阶段切换记录"} />
+        </StatBand>
+
+        <div className="rd-split">
+          <Panel title="八项指标" sub="未达标的排在前面 · 点一行看明细" icon={ListChecks} tone="role-2" flush>
+            <Table label="选择要查看的关键指标" data-tight={showTrendColumn ? "" : undefined}>
+              <thead><tr>
+                <Th>指标</Th>
+                <Th align="right">当前值</Th>
+                <Th align="right">目标</Th>
+                {showTrendColumn && <Th>趋势</Th>}
+                <Th>状态</Th>
+              </tr></thead>
+              <tbody>
+                {order.map((index, at) => {
+                  const item = KPIS[index];
+                  const state = states[index];
+                  const plain = operatorCopyText(KPI_PLAIN[item.n] ?? "");
+                  return (
+                    <Tr key={item.n} selected={index === safeSelKpi} onOpen={() => void selectKpi(index)} onKeyDown={(event) => moveRow(event, at)} title="点击查看明细">
+                      <Td><Cell main={<AutoGloss>{operatorCopyText(item.name)}</AutoGloss>} sub={plain} title={plain} /></Td>
+                      <Td align="right"><Cell num main={valueText(item)} sub={item.momDelta == null ? undefined : deltaText(item)} /></Td>
+                      <Td align="right"><Cell num main={tgtShort(item)} /></Td>
+                      {showTrendColumn && <Td>{item.spark.length >= 2
+                        ? <Sparkline label={`${operatorCopyText(item.name)}的走势`} values={item.spark} />
+                        : <span className="rd-note" data-proof="l1-kpi-trend-unavailable">趋势数据不足</span>}</Td>}
+                      <Td><StatusTag tone={STATE_TONE[state]}>{stateText(state, item)}</StatusTag></Td>
+                    </Tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+            {!showTrendColumn && <p className="rd-note rd-panel-foot" data-proof="l1-kpi-trend-unavailable">这个范围的趋势数据不足，走势暂时画不出来，不会用 0 补齐。</p>}
+          </Panel>
+
+          <Panel
+            title={<AutoGloss>{operatorCopyText(k.name)}</AutoGloss>}
+            sub={<StatusTag tone={STATE_TONE[kState]}>{stateText(kState, k)}</StatusTag>}
+            icon={Target}
+            tone={STATE_TONE[kState]}
+            actions={attributionLinks.filter((j) => reach(j.href, ATTRIBUTION_ROUTE_READ[j.href])).map((j) => (
+              <Link key={j.label} className="rd-link" href={j.href}>去「{findByPath(j.href)?.l2.name ?? j.label}」查原因</Link>
+            ))}
+          >
+            <div className="rd-stack">
+              {kState !== "na" && (
+                <ThresholdMeter
+                  label="当前值和目标"
+                  rows={[{ key: "now", label: "当前", value: k.value, text: valueText(k), tone: STATE_TONE[kState] }]}
+                  marks={goalMarks}
+                />
               )}
-              <div className="ft"><span className="ev" title={ex.fx}><AutoGloss>{KPI_PLAIN[kk.n]}</AutoGloss></span><span className="ph">{rs.currentPhase}</span><span className="lat">约2分钟</span></div>
-            </>
-          );
-        }}
-      </TabGroup>
+              <Facts>
+                {kState === "na" && <Fact k="当前值">不可计算</Fact>}
+                {kState === "na" && <Fact k="目标值">{tgtShort(k)}</Fact>}
+                <Fact k="分子">{ext.num}</Fact>
+                <Fact k="分母">{ext.den}</Fact>
+                <Fact k="较上期">{deltaText(k)}</Fact>
+                <Fact k="统计范围">{queryScope(applied)}</Fact>
+                <Fact k="解读"><AutoGloss>{operatorCopyText(ext.note)}</AutoGloss></Fact>
+              </Facts>
+              {drillError
+                ? <BlockState state="error" title="明细和趋势暂时加载不出来" detail={`其他内容不受影响。${drillError}`} onRetry={() => void selectKpi(safeSelKpi)} />
+                : trendReady
+                  ? <Panel plain headingLevel={3} title="最近在变好还是变坏" sub="所选时间范围等分六段">
+                      <TrendLines
+                        label={`${operatorCopyText(k.name)}的走势`}
+                        ticks={WEEKS}
+                        format={pct}
+                        series={[{ key: "kpi", label: operatorCopyText(k.name), slot: 2, values: k.spark }]}
+                        marks={goalMarks}
+                        event={phaseEvent}
+                      />
+                    </Panel>
+                  : <p className="rd-note">当前筛选范围没有可绘制的趋势点；不会用 0 补齐缺失周。</p>}
+              <Fold inset title="这项指标怎么算" summary={`统计规则编号 #${k.n}`}>
+                <div className="rd-stack">
+                  <p className="rd-note"><AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss></p>
+                  <div><AutoGloss>{operatorCopyText(KPI_PLAIN[k.n] ?? "")}</AutoGloss></div>
+                  <div>{renderFx(ext.fx, ext.fxBold)}</div>
+                  <p className="rd-note">统计规则编号 #{k.n} · 数据批次 {k.vis}</p>
+                </div>
+              </Fold>
+            </div>
+          </Panel>
+        </div>
 
-      {/* (b) 单 KPI 查看明细 */}
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">关键指标详情 · #{k.n} {operatorCopyText(k.name)}</span>
-          <span className="sub">· 计算公式、分子分母、按维度拆分、趋势</span>
-          <div className="r">
-            <div className="chips"><span className="lb">按维度拆分</span>
-              <input aria-label="注册周筛选" placeholder="年份与周数，如 2026-W42" value={cohortFilter} onChange={(event) => setCohortFilter(event.target.value)} />
-              <select aria-label="运营阶段筛选" value={phaseFilter} onChange={(event) => setPhaseFilter(event.target.value)}>
-                <option value="">全部阶段</option>
-                {["P1", "P2", "P3", "P4", "P5", "P6"].map((value) => <option key={value} value={value}>{value}</option>)}
-              </select>
-              <input aria-label="语言筛选" placeholder="语言" value={localeFilter} onChange={(event) => setLocaleFilter(event.target.value)} />
-              <input aria-label="渠道筛选" placeholder="推荐来源" value={refFilter} onChange={(event) => setRefFilter(event.target.value)} />
-              <button className="l-btn sm" disabled={refreshing} onClick={() => void reloadKpi()}>应用切片</button>
-              <button className="l-btn sm" disabled={refreshing} onClick={() => {
-                setCohortFilter("");
-                setPhaseFilter("");
-                setLocaleFilter("");
-                setRefFilter("");
-                void reloadKpi(win, { cohort: "", phase: "", locale: "", ref: "" });
-              }}>清除切片</button>
-            </div>
-          </div>
-        </div>
-        <div className="drill">
-          <div className="meta">
-            <div className="formula">
-              <div className="lb" title="指标统计规则已锁定"><AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss></div>
-              <div className="plain"><AutoGloss>{KPI_PLAIN[k.n]}</AutoGloss></div>
-              <div className="fx">{renderFx(ext.fx, ext.fxBold)}</div>
-              <div className="anchor">统计规则编号 #{k.n} · 数据批次 {k.vis}</div>
-            </div>
-            <div className="nd">
-              <div className="it"><div className="k">分子(实时)</div><div className="v" style={{ color: "var(--cyan)" }}>{ext.num}</div></div>
-              <div className="it"><div className="k">分母(实时)</div><div className="v">{ext.den}</div></div>
-              <div className="it"><div className="k">当前值</div><div className="v" style={{ color: k.available === false || k.value == null ? "var(--ink-4)" : "var(--success)" }}>{k.available === false || k.value == null ? "不可计算" : `${k.value}${k.unit === "d" ? "天" : k.unit}`}</div></div>
-              <div className="it"><div className="k">目标值</div><div className="v" style={{ color: "var(--ink-3)" }}>{tgtLabel(k).replace("目标 ", "").replace("健康带 ", "")}</div></div>
-            </div>
-            <div className="ltint" style={{ fontSize: 12 }}><b>解读</b> · <AutoGloss>{ext.note}</AutoGloss></div>
-            <div className="jump">
-              {attributionLinks.filter((j) => reach(j.href, ATTRIBUTION_ROUTE_READ[j.href])).map((j) => (
-                <Link key={j.label} className="l-btn sm" href={j.href}>{j.label} →</Link>
-              ))}
-            </div>
-          </div>
-          <div className="chart-pane">
-            {drillError && (
-              <div className="ltint warn" style={{ fontSize: 12, marginBottom: 10 }}>
-                <b>明细和趋势暂时加载不出来</b> · 上方概览不受影响。{drillError}
-              </div>
-            )}
-            {drillChart()}
-            <div className="legend">
-              <span className="it"><span className="lsw" style={{ background: "var(--cyan)" }} />按注册周统计的趋势</span>
-              <span className="it" style={{ color: "var(--success)" }}><span className="lsw dash" />目标线</span>
-              <span className="it" style={{ color: "var(--warning)" }}><span className="lsw dash" />黄灯预警线(距目标 {ylOffset}%)</span>
-              <span className="it" style={{ color: "var(--ink-4)" }}><span className="lsw" style={{ width: 8, height: 10 }} />运营阶段切换时间</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* (c) 趋势 & 阈值叠加 */}
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">趋势 &amp; 阈值视图</span>
-          <span className="sub">· <AutoGloss>对比多个指标按注册周统计的趋势，观察运营阶段切换后的变化；原因可到「运营阶段状态」或「运营阶段设置」查看</AutoGloss></span>
-          <div className="r"><span className="lcode electric" title="按每条业务事件携带的阶段标记统计">按行为记录中的运营阶段统计</span></div>
-        </div>
-        <div className="l-b">
-          <div className="ovl-picks">
-            {KPIS.map((kk, i) => {
-              const on = ovlSel.includes(i);
-              return <button key={kk.n} className={"chip" + (on ? " sel" : "")} aria-pressed={on} style={on ? { background: KPI_COLORS[i], color: "#0A0A0A" } : undefined} onClick={() => toggleOvl(i)}>#{kk.n} {operatorCopyText(kk.name)}</button>;
-            })}
-          </div>
-          {ovlChart()}
-          <div className="legend">
-            {ovlSel.map((i) => <span key={i} className="it"><span className="lsw" style={{ background: KPI_COLORS[i] }} />#{KPIS[i].n} {operatorCopyText(KPIS[i].name)}</span>)}
-            <span className="it" style={{ color: "var(--ink-4)" }}>纵轴 = 实际值 ÷ 目标值(目标线 100)</span>
-          </div>
-        </div>
-      </section>
-
-      {/* 口径锁定表 */}
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">关键指标的计算方式</span>
-          <span className="sub">· <AutoGloss>每项关键指标怎么算一目了然 · 要改算法须走事件统计规则管理 + 操作确认,本页改不了</AutoGloss></span>
-          <div className="r"><span className="lcode lock" title="指标统计规则已锁定">🔒 算法锁定</span><span className="lcode lock" title="经营目标已锁定">🔒 目标锁定</span></div>
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 900 }}>
-            <thead><tr><th>#</th><th>指标</th><th>计算方式</th><th className="num">目标</th><th>启用批次</th><th>状态</th></tr></thead>
-            <tbody>
-              {KPIS.map((kk, i) => {
-                const st = states[i];
-                return (
-                  <tr key={kk.n}>
-                    <td className="mono">{kk.n}</td>
-                    <td style={{ fontWeight: 600, color: "var(--ink)" }}><AutoGloss>{operatorCopyText(kk.name)}</AutoGloss></td>
-                    <td><div style={{ color: "var(--ink-2)" }}><AutoGloss>{KPI_PLAIN[kk.n]}</AutoGloss></div><div className="mono fx" style={{ color: "var(--ink-4)", fontSize: 11.5, marginTop: 3 }}>{renderFx(KPI_EXT[kk.n].fx, KPI_EXT[kk.n].fxBold)}</div></td>
-                    <td className="num mono" style={{ color: "var(--ink)" }}>{tgtLabel(kk).replace("目标 ", "").replace("健康带 ", "")}</td>
-                    <td><span className="lcode">{kk.vis}</span></td>
-                    <td>{st === "g" ? <span className="bdg ok">达标</span> : st === "y" ? <span className="bdg warn">预警</span> : st === "na" ? <span className="bdg">不可计算</span> : <span className="bdg bad">未达</span>}</td>
-                  </tr>
-                );
+        <Fold title="几项指标一起看，谁离目标远" icon={Activity} tone="role-2" summary={drawable.length ? `已选 ${ovlSel.length} 项，画出 ${drawable.length} 项` : `已选 ${ovlSel.length} 项，趋势数据不足`}>
+          <div className="rd-stack">
+            <div role="group" aria-label="要比的指标" className="rd-filter-more-row">
+              {KPIS.map((item, index) => {
+                const on = ovlSel.includes(index);
+                return <Check key={item.n} label={`#${item.n} ${operatorCopyText(item.name)}`} checked={on} disabled={on && ovlSel.length === 1} onChange={() => setOvlSel((current) => (on ? current.filter((value) => value !== index) : [...current, index]))} />;
               })}
-            </tbody>
-          </table>
-        </div>
-        <div className="l-b" style={{ paddingTop: 12 }}>
-          <div className="ltint" style={{ fontSize: 12 }}><b>三点说明</b> · <AutoGloss>推广率表示发出过邀请的设备持有者占比；各项指标的可用性和统计范围以当前返回数据为准。</AutoGloss></div>
-        </div>
-      </section>
+            </div>
+            <p className="rd-note">至少留一项。对比多个指标的趋势，观察运营阶段切换后的变化；原因可到「运营阶段状态」或「运营阶段设置」查看。按行为记录中的运营阶段统计。</p>
+            {drawable.length
+              ? <TrendLines
+                  label="多个关键指标的对比趋势"
+                  ticks={WEEKS}
+                  format={(value) => value.toFixed(0)}
+                  series={drawable.map(({ item, slot, values }) => ({ key: String(item.n), label: `#${item.n} ${operatorCopyText(item.name)}`, slot, values }))}
+                  marks={[{ key: "target", text: "目标线 = 各自目标值(指数 100)", value: 100, tone: "ok" }]}
+                  event={phaseEvent}
+                />
+              : <p className="rd-note">当前所选指标没有足够的趋势数据，暂时无法画出对比曲线。</p>}
+            {drawable.length > 0 && <p className="rd-note">纵轴 = 实际值 ÷ 目标值(目标线 100)</p>}
+            {drawable.length > 0 && skipped.length > 0 && <p className="rd-note">没有画：{skipped.map(({ item }) => `#${item.n}`).join(" ")}，趋势数据不足。</p>}
+          </div>
+        </Fold>
 
-      <p className="f-foot"><b>这页只能查看，不会改任何数据</b>：<AutoGloss>可以看明细、调整显示方式、导出 8 项关键指标的汇总。</AutoGloss><b>导出不含任何用户隐私</b>，<AutoGloss>每次导出都有记录。指标异常时：转化类（#1–#4）去「用户转化与留存」，财务类（#8、提现兑付）去「财务报表」，团队类（#5、#7）去「设备/任务/网络报表」。</AutoGloss></p>
-      <PaginationExemptionList
-        items={[
-          {
-            label: "关键指标 统计规则锁定表",
-            kind: "reference-catalog",
-            maxRows: 8,
-            reason: "八项关键指标 为固定验收统计规则,需要同屏锁定算式和状态",
-          },
-        ]}
+        <Fold title="指标规则表" icon={Lock} summary={`${KPIS.length} 项 · 算法和目标已锁定`}>
+          <div className="rd-stack">
+            <p className="rd-note"><AutoGloss>每项关键指标怎么算一目了然 · 要改算法须走事件统计规则管理 + 操作确认,本页改不了</AutoGloss></p>
+            <Table label="关键指标的计算方式">
+              <thead><tr><Th>#</Th><Th>指标</Th><Th>计算方式</Th><Th align="right">目标</Th><Th>启用批次</Th><Th>状态</Th></tr></thead>
+              <tbody>
+                {KPIS.map((item, index) => (
+                  <Tr key={item.n}>
+                    <Td><Cell num main={item.n} /></Td>
+                    <Td><Cell main={<AutoGloss>{operatorCopyText(item.name)}</AutoGloss>} /></Td>
+                    <Td><Cell main={<AutoGloss>{operatorCopyText(KPI_PLAIN[item.n] ?? "")}</AutoGloss>} sub={renderFx(KPI_EXT[item.n].fx, KPI_EXT[item.n].fxBold)} /></Td>
+                    <Td align="right"><Cell num main={tgtShort(item)} /></Td>
+                    <Td><Cell main={item.vis} /></Td>
+                    <Td><StatusTag tone={STATE_TONE[states[index]]}>{stateText(states[index], item)}</StatusTag></Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+            <p className="rd-note"><AutoGloss>推广率表示发出过邀请的设备持有者占比；各项指标的可用性和统计范围以当前返回数据为准。</AutoGloss></p>
+            <PaginationExemptionList items={[{ label: "关键指标 统计规则锁定表", kind: "reference-catalog", maxRows: 8, reason: "八项关键指标 为固定验收统计规则,需要同屏锁定算式和状态" }]} />
+          </div>
+        </Fold>
+
+        <div className="rd-links">
+          <span>相关页面</span>
+          {RELATED.filter((href) => reach(href, ATTRIBUTION_ROUTE_READ[href])).map((href) => <Link key={href} className="rd-link" href={href}>{findByPath(href)?.l2.name}</Link>)}
+        </div>
+      </>
+    );
+  };
+
+  const firstError = refreshError || ctx.biError;
+  const body = rawKpis.length
+    ? protocolBroken
+      ? <BlockState state="error" title="关键指标加载失败" detail="收到的数据不完整，已停止显示。" onRetry={retryFirstRead} retryLabel="重新加载" />
+      : report()
+    : liveTotals.length
+      ? <L1LiveTotals metrics={liveTotals} />
+      : refreshing || ctx.biLoading
+        ? <BlockState state="loading" title="正在加载…" />
+        : firstError
+          ? <BlockState state="error" title="关键指标加载失败" detail={firstError} onRetry={retryFirstRead} retryLabel="重新加载" />
+          : <BlockState state="empty" title="这个范围还没有指标数据" detail="请先刷新；仍然为空，说明还没有产生数据。" onRetry={retryFirstRead} retryLabel="重新加载" />;
+
+  return (
+    <>
+      <PageHeader
+        pageId="L1"
+        title={title}
+        summary={<AutoGloss>{summary}</AutoGloss>}
+        actions={actions}
+        meta={readAt ? `${readAt} 读取（${businessZone().label}）· 打开时读取，不自动刷新` : "打开时读取，不自动刷新"}
+        readOnly={ctx.canExport ? undefined : "当前角色仅可查看 · 导出需报表管理权限"}
       />
-
-      {vp && <ViewParamModal req={vp} onClose={() => setVp(null)} />}
-    </div>
+      {queryBar}
+      {refreshError && rawKpis.length > 0 && (
+        <Notice tone="warn" title="关键指标刷新失败" action={<Button size="sm" onClick={retryLast}>重试</Button>}>
+          以下是 {readAt} 的数据，时间范围未切换。{refreshError}
+        </Notice>
+      )}
+      {body}
+      {editingOffset && <OffsetModal current={ylOffset} onClose={() => setEditingOffset(false)} onApply={(next) => { setYlOffset(next); ctx.toast(`黄灯预警偏移 → 距目标 ${next}% · 仅视图参数`); }} />}
+    </>
   );
 }
