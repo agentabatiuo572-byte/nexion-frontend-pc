@@ -224,6 +224,7 @@
 .rd-cell { display: block; min-width: 0; max-width: 280px; }
 .rd-cell[data-full] { max-width: none; }
 .rd-table td[data-align="right"] > .rd-cell { margin-left: auto; }  /* 右对齐列里的格子贴右边，表头和数值才对得齐 */
+.rd-table td[data-align="right"] .rd-row-actions > .rd-iconbtn:last-child { margin-right: -8px; }  /* 三个点贴到和表头一样的右边，图标按钮自带的留白不算 */
 .rd-cell-main { display: block; color: var(--rd-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rd-cell-sub { display: block; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rd-cell[data-mono] .rd-cell-main, .rd-cell[data-mono] .rd-cell-sub { font-family: var(--rd-font-mono); }

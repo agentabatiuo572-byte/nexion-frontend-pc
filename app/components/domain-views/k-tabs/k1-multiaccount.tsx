@@ -1336,7 +1336,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                     <Th align="right" icon={Users} tone="users">账户数</Th>
                     <Th icon={ShieldAlert} tone="risk">关联程度</Th>
                     <Th>状态</Th>
-                    <Th>操作</Th>
+                    <Th align="right">操作</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1350,7 +1350,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                         <Td align="right"><Cell num main={c.n} /></Td>
                         <Td><Cell main={<InlineMeter value={c.strength} text={c.strength.toFixed(2)} tone={strengthTone(c.strength, freezeSuggestThreshold)} />} sub={isHot(c) ? <StatusTag tone="danger" icon={ShieldAlert}>建议冻结</StatusTag> : undefined} /></Td>
                         <Td><StatusTag tone={statusTone} explain={statusExplain}>{statusLabel}</StatusTag></Td>
-                        <Td>
+                        <Td align="right">
                           {first && (
                             <span className="rd-row-actions">
                               <Button size="sm" disabledReason={first.blocked} onClick={first.run}>{first.label}</Button>
@@ -1388,7 +1388,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                   <Th>来源</Th>
                   <Th align="right" icon={Coins} tone="money">金额</Th>
                   <Th>处理状态</Th>
-                  <Th>操作</Th>
+                  <Th align="right">操作</Th>
                 </tr>
               </thead>
               <tbody>
@@ -1399,7 +1399,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                     <Td><Cell main={({ TRIAL: "试用收益", DEVICE: "设备收益", TASK: "任务奖励", COMMISSION: "团队奖励", REFERRAL: "邀请奖励", WELCOME: "新人奖励" } as Record<string, string>)[entry.sourceType.toUpperCase()] ?? "来源未知"} sub={<span data-mono>{entry.sourceRef}</span>} /></Td>
                     <Td align="right"><Cell num full main={`${amountText(entry.amount)} ${nexGridBrandText(entry.asset)}`} /></Td>
                     <Td><StatusTag tone={entry.bucket === "bonus_locked" ? "danger" : "warn"} explain={entry.bucket === "bonus_locked" ? "这笔收益被锁定，不能提现。账户组解除后不会自动放行，要人工放行。" : "这笔收益等人工审核，不会到期自动放行。"}>{entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}</StatusTag></Td>
-                    <Td>{canRelease && <Button size="sm" disabledReason={blockedBy("entry", entry.entryNo, protectedEntriesLoading) ?? (overviewFailed ? "风险数据读取失败，恢复后才能放行" : undefined)} onClick={() => releaseProtectedEntry(entry)}>人工放行</Button>}</Td>
+                    <Td align="right">{canRelease && <Button size="sm" disabledReason={blockedBy("entry", entry.entryNo, protectedEntriesLoading) ?? (overviewFailed ? "风险数据读取失败，恢复后才能放行" : undefined)} onClick={() => releaseProtectedEntry(entry)}>人工放行</Button>}</Td>
                   </Tr>
                 ))}
                 {!protectedEntriesLoading && protectedEntries.length === 0 && <TableMessage columns={6} role="status">当前没有待审核或已锁定的收益。</TableMessage>}
@@ -1463,7 +1463,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               <Panel id={nav.anchor("whitelist")} title="IP 允许名单" explain="名单内的网段不再按 IP 检测，设备和支付工具照常。加入后立即生效，不走审批。" icon={ListChecks} tone="role-2" flush
                 actions={canWrite && <Button size="sm" onClick={addWl}>+ 添加允许名单</Button>}>
                 <Table label="IP 允许名单">
-                  <thead><tr><Th>IP / 网段</Th><Th>备注</Th><Th>添加人</Th><Th>失效时间</Th><Th>操作</Th></tr></thead>
+                  <thead><tr><Th>IP / 网段</Th><Th>备注</Th><Th>添加人</Th><Th>失效时间</Th><Th align="right">操作</Th></tr></thead>
                   <tbody>
                     {whitelist.map((w) => (
                       <Tr key={w.cidr}>
@@ -1471,7 +1471,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                         <Td><Cell main={w.note} title={w.note} /></Td>
                         <Td><Cell main={w.operator} /></Td>
                         <Td><Cell num main={w.expireText} /></Td>
-                        <Td>{canWrite && <Button size="sm" disabledReason={blockedBy("cidr", w.cidr)} onClick={() => rmWl(w.cidr)}>移除</Button>}</Td>
+                        <Td align="right">{canWrite && <Button size="sm" disabledReason={blockedBy("cidr", w.cidr)} onClick={() => rmWl(w.cidr)}>移除</Button>}</Td>
                       </Tr>
                     ))}
                     {!whitelist.length && <TableMessage columns={5} role="status">暂无允许名单</TableMessage>}
