@@ -13,6 +13,7 @@ import {
 } from "@/app/components/rd";
 import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1_RELEASE_MODE_VALUES, K1_RELEASE_PARAM_LIMITS, newK1CommandKey } from "@/lib/admin/k-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { A2OutcomeUncertainError, fetchA2ProposalByKey, fetchA2ReasonPolicy, visibleReasonLength } from "@/lib/admin/a2-client";
 import { K1_PARAM_HELP, type K1ParamHelp } from "@/lib/admin/config-help/k1-multiaccount";
@@ -219,10 +220,6 @@ function isVersionConflict(error: unknown) {
   return status === 409 && backendMessage !== "OBJECT_LOCKED_BY_A2" && backendMessage !== "OBJECT_ALREADY_PENDING";
 }
 
-/** 字段下写原因：刚打开不报错，输入时是普通字，失焦后才用警告色（OP-15）。 */
-const fieldNote = (problem: string | undefined, filled: boolean, touched: boolean | undefined) =>
-  touched ? { error: problem } : { help: filled ? problem : undefined };
-
 const paramHelpRows = (help: K1ParamHelp | undefined, fallback: string): ExplainRow[] => [
   { k: "这是什么", v: help?.what ?? fallback },
   { k: "怎么填", v: help?.how },
@@ -365,8 +362,9 @@ function reasonProblem(reason: string, policy: ReasonPolicy, policyFailed: boole
   return length > policy.max ? `超过 ${length - policy.max} 字` : undefined;
 }
 
-/** 修改框的外壳：错误留在框里，提交中全部锁定，不能提交时写原因（OP-18、OP-33、OP-82）。说明进标题旁的提示图标（DP-06）。 */
-function DraftModal({ title, explain, wide, busy, busyLabel = "保存中…", saveLabel, blocked, reasonLabel = "操作理由", reason, placeholder, policy, policyFailed, error, onReason, onReadLatest, onClose, onSave, children }: {
+/** 修改框的外壳：错误留在框里，提交中全部锁定（OP-18、OP-33、OP-82）。说明进标题旁的提示图标，节奏和确认框共用层一样：
+ *  字数写在框角，缺什么写在灰按钮的提示里，刚打开不报错，失焦或点过提交才在字段下用警告色写原因（DP-06）。 */
+function DraftModal({ title, explain, wide, busy, busyLabel = "保存中…", saveLabel, blocked, dirty, attempted, onAttempt, reasonLabel = "操作理由", reason, placeholder, policy, policyFailed, error, onReason, onReadLatest, onClose, onSave, children }: {
   title: string;
   explain?: readonly ExplainRow[];
   wide?: boolean;
@@ -374,6 +372,10 @@ function DraftModal({ title, explain, wide, busy, busyLabel = "保存中…", sa
   busyLabel?: string;
   saveLabel: string;
   blocked?: string;
+  /** 只靠点选的表单：改过就传 true，点空白不关。 */
+  dirty?: boolean;
+  attempted: boolean;
+  onAttempt: () => void;
   reasonLabel?: string;
   reason: string;
   placeholder: string;
@@ -386,18 +388,23 @@ function DraftModal({ title, explain, wide, busy, busyLabel = "保存中…", sa
   onSave: () => void;
   children: ReactNode;
 }) {
+  const [reasonLeft, setReasonLeft] = useState(false);
   const problem = reasonProblem(reason, policy, policyFailed);
   const length = visibleReasonLength(reason);
+  const missing = [blocked, problem && `${reasonLabel}${problem}`].filter(Boolean).join("；");
   return (
-    <Modal title={<>{title}{explain && <> <Explain label={`${title}的说明`} rows={explain} /></>}</>} wide={wide} busy={busy} onClose={onClose} footer={<>
+    <Modal title={<>{title}{explain && <> <Explain label={`${title}的说明`} rows={explain} /></>}</>} wide={wide} busy={busy} dirty={dirty} onClose={onClose} footer={<>
       <Button disabled={busy} onClick={onClose}>取消</Button>
-      <Button variant="primary" disabled={busy} disabledReason={busy ? undefined : blocked ?? problem} onClick={onSave}>{busy ? busyLabel : saveLabel}</Button>
+      <Button variant="primary" disabled={busy} disabledReason={busy ? undefined : missing || undefined} onBlockedClick={onAttempt} onClick={onSave}>{busy ? busyLabel : saveLabel}</Button>
     </>}>
       <div className="rd-stack">
         {error && <Notice tone="danger" action={error.conflict && onReadLatest ? <Button size="sm" disabled={busy} onClick={onReadLatest}>读取最新</Button> : undefined}>{error.text}</Notice>}
         {children}
-        <Field label={`${reasonLabel}（必填，${policy?.min ?? 8}–${policy?.max ?? 200} 字）`} help={problem ?? `已填写 ${length}/${policy?.max ?? 200} 字`}>
-          {(control) => <Textarea {...control} rows={3} maxLength={200} disabled={busy} placeholder={placeholder} value={reason} onChange={(event) => onReason(event.target.value)} />}
+        <Field label={`${reasonLabel}（必填，${policy?.min ?? 8}–${policy?.max ?? 200} 字）`} error={policyFailed || attempted || reasonLeft ? problem : undefined}>
+          {(control) => <div className="rd-reason-box">
+            <Textarea {...control} rows={3} maxLength={200} disabled={busy} placeholder={placeholder} value={reason} onChange={(event) => onReason(event.target.value)} onBlur={() => setReasonLeft(true)} />
+            <span className="rd-reason-count">{length}/{policy?.max ?? 200}</span>
+          </div>}
         </Field>
       </div>
     </Modal>
@@ -587,6 +594,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
   const drafting = Boolean(paramDraft || releaseDraft || whitelistDraft || weightDraft || noteDraft);
   const touch = (field: string) => setTouched((current) => current[field] ? current : { ...current, [field]: true });
+  /** 字段下的原因：失焦且填过，或点过提交，才写（OP-15）。 */
+  const fieldError = (problem: string | undefined, filled: boolean, field: string) => touched.submit || (touched[field] && filled) ? problem : undefined;
+  const draftAttempt = { attempted: Boolean(touched.submit), onAttempt: () => touch("submit") };
   useEffect(() => {
     setTouched({});
     if (!drafting) return;
@@ -988,6 +998,12 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       await runRecord(record);
       close();
     } catch (error) {
+      // 没权限再填也没用：提示、关框、重读权限（OP-81、OP-132）。
+      if (isPermissionDenied(error)) {
+        announcePermissionDenied();
+        close();
+        return;
+      }
       // 只有带版本号的写入才会被别人改过（附录 D）。
       const conflict = (kind === "release" || kind === "note") && isVersionConflict(error);
       setDraftError({ text: conflict ? CONFLICT_TEXT : confirmedK1FailureText(error), conflict });
@@ -1482,10 +1498,10 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const busy = draftSubmitting === "param";
         return (
           <DraftModal title={`调整风险判断标准 · ${riskParamName(param)}`} explain={paramHelpRows(help, param.sub)} busy={busy} saveLabel="保存并立即生效" blocked={problem}
-            reason={reason} placeholder="写清调整原因和依据" policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
+            reason={reason} placeholder="写清调整原因和依据" {...draftAttempt} policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => update({ reason: next })} onClose={() => setParamDraft(null)} onSave={saveParamDraft}>
-            <DiffList rows={[{ key: "value", label: "这一项", before: riskValueText(param.key, param.value, param.unit), after: typed ? riskValueText(param.key, value, param.unit) : riskValueText(param.key, param.value, param.unit) }]} emptyNote="还没改动" />
-            <Field label={`新值（${limits.min}–${limits.max}）`} {...fieldNote(problem, typed, touched.value)}>
+            <DiffList rows={[{ key: "value", label: "这一项", before: riskValueText(param.key, param.value, param.unit), after: riskValueText(param.key, problem ? param.value : value, param.unit) }]} emptyNote="还没改动" />
+            <Field label={`新值（${limits.min}–${limits.max}）`} error={fieldError(problem, typed, "value")}>
               {(control) => <Input {...control} type="number" min={limits.min} max={limits.max} step={limits.step} disabled={busy} placeholder={`当前 ${param.value}`} value={value} onChange={(event) => update({ value: event.target.value })} onBlur={() => touch("value")} />}
             </Field>
             {!problem && help?.whatIf && <Notice tone="neutral">{help.whatIf(riskValueText(param.key, value))}{numeric > Number(param.value) ? "这次是放宽。" : "这次是收紧。"}</Notice>}
@@ -1516,12 +1532,12 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const valueText = (text: string) => isBool ? RELEASE_BOOL_LABELS[text] ?? text : isMode ? RELEASE_MODE_LABELS[text] ?? text : `${text}${unit}`;
         const loosening = !problem && isLooseningRelease(key, param.value, value);
         return (
-          <DraftModal title={`调整收益审核规则 · ${releaseParamName(param)}`} explain={paramHelpRows(help, param.sub)} busy={busy} saveLabel="保存并立即生效" blocked={problem}
-            reason={reason} placeholder="写清调整原因和依据" policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
+          <DraftModal title={`调整收益审核规则 · ${releaseParamName(param)}`} explain={paramHelpRows(help, param.sub)} busy={busy} saveLabel="保存并立即生效" blocked={problem} dirty={value !== param.value}
+            reason={reason} placeholder="写清调整原因和依据" {...draftAttempt} policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => update({ reason: next })} onReadLatest={() => void readLatestReleaseParam()} onClose={() => setReleaseDraft(null)} onSave={saveReleaseDraft}>
-            <DiffList rows={[{ key: "value", label: "这一项", before: valueText(param.value), after: valueText(typed ? value : param.value) }]} emptyNote="还没改动" />
+            <DiffList rows={[{ key: "value", label: "这一项", before: valueText(param.value), after: valueText(problem ? param.value : value) }]} emptyNote="还没改动" />
             {limits && range ? (
-              <Field label={`新值（${range.min}–${range.max}${unit}）`} {...fieldNote(problem, typed, touched.value)}>
+              <Field label={`新值（${range.min}–${range.max}${unit}）`} error={fieldError(problem, typed, "value")}>
                 {(control) => <Input {...control} type="number" min={range.min} max={range.max} step={limits.step} disabled={busy} placeholder={`当前 ${param.value}`} value={value} onChange={(event) => update({ value: event.target.value })} onBlur={() => touch("value")} />}
               </Field>
             ) : (
@@ -1546,7 +1562,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const busy = draftSubmitting === "note";
         return (
           <DraftModal title={`人工复审备注 · ${noteDraft.cluster.id}`} explain={[{ k: "影响", v: "只写备注，不改状态，会显示在账户组上，记入操作记录。" }]} busy={busy} saveLabel="保存备注" reasonLabel="复审备注"
-            reason={noteDraft.reason} placeholder="写复审结论和依据，例如：合租办公网络，已电话核实不是同一人" policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
+            reason={noteDraft.reason} placeholder="写复审结论和依据，例如：合租办公网络，已电话核实不是同一人" {...draftAttempt} policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => setNoteDraft((current) => current ? { ...current, reason: next } : current)} onReadLatest={() => void readLatestNote()} onClose={() => setNoteDraft(null)} onSave={saveNoteDraft}>
             <div>{IMMEDIATE_EFFECT}</div>
             {clusterFacts(noteDraft.cluster, { approval: false, changed: noteDraft.changed })}
@@ -1565,15 +1581,15 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         return (
           <DraftModal title="添加 IP 允许名单" explain={[{ k: "影响", v: "只是不再按 IP 检测；设备和支付工具仍照常检测，已冻结的账户不会自动解冻。" }, { k: "生效时间", v: "保存后立即生效，到失效日期后恢复检测。" }]} busy={busy} busyLabel="提交中…" saveLabel="加入并立即生效"
             blocked={cidrProblem ?? noteProblem ?? expiryProblem ?? (pendingBlocks.has(`cidr:${cidr}`) ? "这个网段有结果未确认的操作，先到页面上方处理" : undefined)}
-            reason={whitelistDraft.reason} placeholder="写清调整原因和依据" policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
+            reason={whitelistDraft.reason} placeholder="写清调整原因和依据" {...draftAttempt} policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => update({ reason: next })} onClose={() => setWhitelistDraft(null)} onSave={saveWhitelistDraft}>
-            <Field label="IP / CIDR 网段" {...fieldNote(cidrProblem, Boolean(whitelistDraft.cidr), touched.cidr)}>
+            <Field label="IP / CIDR 网段" error={fieldError(cidrProblem, Boolean(whitelistDraft.cidr), "cidr")}>
               {(control) => <Input {...control} disabled={busy} value={whitelistDraft.cidr} onChange={(event) => update({ cidr: event.target.value })} onBlur={() => touch("cidr")} placeholder="198.51.100.0/24" />}
             </Field>
-            <Field label="备注" {...fieldNote(noteProblem, Boolean(whitelistDraft.note), touched.note)}>
+            <Field label="备注" error={fieldError(noteProblem, Boolean(whitelistDraft.note), "note")}>
               {(control) => <Input {...control} disabled={busy} maxLength={200} value={whitelistDraft.note} onChange={(event) => update({ note: event.target.value })} onBlur={() => touch("note")} placeholder="例如：已核验的办公出口网段" />}
             </Field>
-            <Field label="失效日期" {...fieldNote(expiryProblem, Boolean(whitelistDraft.expireText), touched.expire)}>
+            <Field label="失效日期" error={fieldError(expiryProblem, Boolean(whitelistDraft.expireText), "expire")}>
               {(control) => <Input {...control} disabled={busy} type="date" value={whitelistDraft.expireText} onChange={(event) => update({ expireText: event.target.value })} onBlur={() => touch("expire")} />}
             </Field>
           </DraftModal>
@@ -1606,11 +1622,11 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           <DraftModal title={`调整关联权重 · ${riskParamName(weightDraft.param)}`} wide busy={busy} saveLabel="保存并立即生效"
             explain={[{ k: "怎么算", v: "关联程度 = 设备指纹命中 × 设备权重 + 支付工具命中 × 支付权重 + IP 命中 × IP 权重。" }, { k: "怎么填", v: help.how }, { k: "生效时间", v: help.when }]}
             blocked={firstProblem ?? (!totalOk ? "三项合计必须等于 1.00" : !changed ? "保存值和当前值一样，没有改动" : undefined)}
-            reason={weightDraft.reason} placeholder="例如：误判多来自同一网络，降低 IP 权重、提高设备指纹权重" policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
+            reason={weightDraft.reason} placeholder="例如：误判多来自同一网络，降低 IP 权重、提高设备指纹权重" {...draftAttempt} policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => updateDraft({ reason: next })} onClose={() => setWeightDraft(null)} onSave={saveWeightDraft}>
             <div className="rd-split" data-even="">
               {fields.map(([key, label, fieldHelp]) => (
-                <Field key={key} label={label} explain={fieldHelp} {...fieldNote(fieldProblem(key), true, touched[key])}>
+                <Field key={key} label={label} explain={fieldHelp} error={fieldError(fieldProblem(key), true, key)}>
                   {(control) => <Input {...control} type="number" min={0} max={1} step={0.05} disabled={busy} value={weightDraft[key]} onChange={(event) => updateDraft({ [key]: event.target.value } as Partial<WeightDraft>)}
                     onInput={(event) => { const { badInput } = event.currentTarget.validity; setWeightDraft((draft) => draft && { ...draft, bad: { ...draft.bad, [key]: badInput } }); }} onBlur={() => touch(key)} placeholder="0.00 - 1.00" />}
                 </Field>

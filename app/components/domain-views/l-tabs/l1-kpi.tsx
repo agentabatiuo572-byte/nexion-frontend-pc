@@ -325,16 +325,17 @@ function renderFx(fx: string, bold: string[]) {
 /** 接近目标的范围（黄灯偏移）只改本机显示，不写后端，所以是本地小窗，不走确认（L1-A02）。 */
 function OffsetModal({ current, onApply, onClose }: { current: number; onApply: (next: number) => void; onClose: () => void }) {
   const [draft, setDraft] = useState("");
-  const [touched, setTouched] = useState(false);
+  const [left, setLeft] = useState(false);
+  const [attempted, setAttempted] = useState(false);
   const next = Number(draft);
   const typed = draft.trim() !== "";
   const problem = !typed ? "填写新值" : !(Number.isInteger(next) && next >= 5 && next <= 20) ? "要填 5–20 的整数" : next === current ? "和当前值一样，没有改动" : undefined;
   return (
-    <Modal title={<>接近目标的范围 <Explain label="接近目标的范围的说明" content="只改你看到的状态和接近线，不改业务规则或统计方式。刷新会恢复最后保存的设置，没有保存视图时回到默认值。要保留请点「保存为视图」。" /></>} onClose={onClose} footer={<><Button onClick={onClose}>取消</Button><Button variant="primary" disabledReason={problem} onClick={() => { onApply(next); onClose(); }}>应用 · 实时生效</Button></>}>
+    <Modal title={<>接近目标的范围 <Explain label="接近目标的范围的说明" content="只改你看到的状态和接近线，不改业务规则或统计方式。刷新会恢复最后保存的设置，没有保存视图时回到默认值。要保留请点「保存为视图」。" /></>} onClose={onClose} footer={<><Button onClick={onClose}>取消</Button><Button variant="primary" disabledReason={problem} onBlockedClick={() => setAttempted(true)} onClick={() => { onApply(next); onClose(); }}>应用 · 实时生效</Button></>}>
       <div className="rd-stack">
-        {/* 刚打开不报错，输入时是普通字，失焦后才用警告色（OP-15）。 */}
-        <Field label="新值（5–20 的整数）" required {...(touched ? { error: problem } : { help: typed ? problem : undefined })}>
-          {(control) => <NumberInput {...control} unit="%" min={5} max={20} step={1} value={draft} placeholder={`当前 ${current}`} onChange={(event) => setDraft(event.target.value)} onBlur={() => setTouched(true)} />}
+        {/* 刚打开不报错，失焦且填过或点过提交才用警告色（OP-15）。 */}
+        <Field label="新值（5–20 的整数）" required error={attempted || (left && typed) ? problem : undefined}>
+          {(control) => <NumberInput {...control} unit="%" min={5} max={20} step={1} value={draft} placeholder={`当前 ${current}`} onChange={(event) => setDraft(event.target.value)} onBlur={() => setLeft(true)} />}
         </Field>
         <Fold inset title="查看业务规则详情" summary="状态怎么判定">
           <p className="rd-note">单侧指标须严格高于或低于目标值才达标；等于目标时算接近目标。数值越高越好的指标，接近线为目标值 × (1 − N%)；数值越低越好的指标，接近线为目标值 × (1 + N%)。没达标但在接近线以内（含接近线）算接近目标，超出算未达标。购买转化健康带包含两端，带外也归接近目标。只影响显示，不改指标值。</p>
