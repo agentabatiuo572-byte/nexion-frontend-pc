@@ -153,10 +153,22 @@ function idempotencyKey() {
   return `l-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+export class LOutcomeUnknownError extends Error {
+  constructor() {
+    super("提交结果尚未确认，任务可能已创建。请先到「数据导出与监管报告」核对原操作，再决定是否重新提交。");
+    this.name = "LOutcomeUnknownError";
+  }
+}
+
+export function isLOutcomeUnknownError(error: unknown): error is LOutcomeUnknownError {
+  return error instanceof LOutcomeUnknownError
+    || (error instanceof Error && error.name === "LOutcomeUnknownError");
+}
+
 function networkFailure(isReportCreation: boolean) {
-  return new Error(isReportCreation
-    ? "提交结果尚未确认，可能已生成任务。请先到操作记录核对原操作，再决定是否重试。"
-    : "网络连接已中断，本次操作结果尚未确认。请先核对原操作，再决定是否重试。");
+  return isReportCreation
+    ? new LOutcomeUnknownError()
+    : new Error("网络连接已中断，本次操作结果尚未确认。请先核对原操作，再决定是否重试。");
 }
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {

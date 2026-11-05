@@ -21,7 +21,7 @@ import { L5HeaderActions, L5Export } from "./l-tabs/l5-export";
 import { L6HeaderActions, L6BehaviorHeatmap } from "./l-tabs/l6-behavior-heatmap";
 import type { LCtx, ActionConfirmReq } from "./l-tabs/types";
 import { allowedAggregateExportOptions, canAccessBiReportType, canExportBiReports } from "./l-tabs/l1-l2-live-data";
-import { fetchLBiOverview, lBiActions, type L2FunnelQuery, type L3FinanceQuery, type L4OperationsQuery, type LBiData, type LModuleCode } from "@/lib/admin/l-client";
+import { fetchLBiOverview, isLOutcomeUnknownError, lBiActions, type L2FunnelQuery, type L3FinanceQuery, type L4OperationsQuery, type LBiData, type LModuleCode } from "@/lib/admin/l-client";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
@@ -148,7 +148,15 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
           completionCopy={mc.completionCopy}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {
-            await mc.run(reason, newValue, businessValue);
+            try {
+              await mc.run(reason, newValue, businessValue);
+            } catch (error) {
+              if (!isLOutcomeUnknownError(error)) throw error;
+              setActionConfirm(null);
+              await reloadBi();
+              setToast(displayAdminError(error));
+              return;
+            }
             setActionConfirm(null);
           }}
         />
