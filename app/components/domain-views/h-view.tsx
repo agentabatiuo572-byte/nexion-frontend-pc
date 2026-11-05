@@ -81,6 +81,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
           businessForm={mc.businessForm}
           effect={mc.effect}
           confirmLabel={mc.confirmLabel}
+          confirmTone={mc.confirmTone}
           statedBrief={mc.statedBrief}
           coverageLead={mc.coverageLead}
           onClose={() => setActionConfirm(null)}

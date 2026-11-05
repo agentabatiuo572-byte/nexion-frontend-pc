@@ -859,6 +859,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   J4_GATE_OWNERSHIP_MISSING: "这次历史执行缺少安全回滚凭证，系统没有改动当前的业务开关。请到「紧急停用开关」核对状态后人工处理。",
   J4_GATE_OWNERSHIP_LOST: "这个业务开关在本次执行后已被其他操作改过，旧执行不能自动回滚，以免误开启。",
   IDEMPOTENCY_REQUEST_IN_PROGRESS: "相同操作正在执行，请稍后刷新确认结果。",
+  IDEMPOTENCY_RESULT_UNKNOWN: "原操作的结果还没有确认，请先到操作记录核对，不要重复提交。",
   REGULATORY_CONTEXT_REQUIRED: "请填写监管事由或文号。",
   DISPOSITION_PLAN_REQUIRED: "质押或 Genesis 关停必须填写存量权益处置方案。",
   EMERGENCY_SLA_READONLY: "该门槛引用其他业务域的设置，本页不能修改。",

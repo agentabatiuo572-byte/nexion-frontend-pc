@@ -36,8 +36,24 @@ export interface E4Query {
 export const E4_PAGE_SIZES = [10, 20, 50, 100] as const;
 /** 已结束的状态：抽屉的终态判断和流程表共用，和标题同一个状态来源。 */
 export const ORDER_FINAL_STATES: readonly string[] = ["payment_failed", "expired", "provisioning_failed", "refunded", "chargeback", "cancelled"];
-/** 订单金额明细写接口的全部小数，至少 2 位，币种是 USDT（TX-19、TX-20）。列表、抽屉、确认框都用这个。 */
-export const orderAmount = (value: number, digits = 2) => value.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: 8 });
+/** 把金额展开成整数和小数两段，科学计数（1.5e-7）也展开，收到几位小数就留几位。 */
+function amountParts(value: number) {
+  const [digits, exponent = "0"] = String(Math.abs(value)).split("e");
+  const [whole, fraction = ""] = digits.split(".");
+  const shift = Number(exponent);
+  if (shift < 0) return { whole: "0", fraction: "0".repeat(-shift - 1) + whole + fraction };
+  if (shift > 0) return { whole: (whole + fraction).padEnd(whole.length + shift, "0"), fraction: "" };
+  return { whole, fraction };
+}
+export const orderAmountDigits = (value: number) => amountParts(value).fraction.length;
+/**
+ * 订单金额明细写接口的全部小数，至少 digits 位，币种是 USDT（TX-19、TX-20）。列表、抽屉、确认框都用这个。
+ * 不用 toLocaleString：它的小数位有上限，位数超了不是舍入成别的数，就是抛错。
+ */
+export const orderAmount = (value: number, digits = 2) => {
+  const { whole, fraction } = amountParts(value);
+  return `${value < 0 ? "-" : ""}${whole.replace(/\B(?=(\d{3})+$)/g, ",")}.${fraction.padEnd(digits, "0")}`;
+};
 export const orderMoney = (value: number) => `${orderAmount(value)} USDT`;
 export const E4_DEFAULT_QUERY: E4Query = { group: "all", state: "", keyword: "", page: 1, pageSize: 10 };
 export const e4GroupStates = (group: E4Query["group"]): readonly string[] => ORDER_STATE_GROUPS.find((item) => item.value === group)?.states ?? [];

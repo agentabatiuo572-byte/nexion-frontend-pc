@@ -1,5 +1,5 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { parsePhoneProposalView, type PhoneProposalView } from "@/lib/admin/phone-calibration-client";
 import {
   buildA2FilterQuery,
@@ -405,7 +405,8 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
 
   const upstreamOutcomeUnknown =
     response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown"
-    || result?.message?.trim().toUpperCase().includes("UPSTREAM_OUTCOME_UNKNOWN") === true;
+    || result?.message?.trim().toUpperCase().includes("UPSTREAM_OUTCOME_UNKNOWN") === true
+    || isIdempotencyOutcomeOpen(result?.message);
   if (init?.commandKey && upstreamOutcomeUnknown) {
     throw new A2OutcomeUncertainError(
       formatAdminApiError(result?.message, "A2_REQUEST_OUTCOME_UNKNOWN"), init.commandKey);

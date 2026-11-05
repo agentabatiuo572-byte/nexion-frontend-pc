@@ -465,6 +465,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   // ── E4 订单进度:服务端数据为单一来源 ──
   const [orders, setOrders] = useState<EOrder[]>([]);
   const [e4Loading, setE4Loading] = useState(false);
+  // 切回页面的后台重读不换骨架屏，所以和 e4Loading 分开记。写操作的锁看这个。
+  const [e4Reading, setE4Reading] = useState(false);
   const [e4Error, setE4Error] = useState<string | null>(null);
   const [e4Total, setE4Total] = useState(0);
   const [e4Query, setE4Query] = useState<E4Query>(() => e4QueryFromUrl(searchParams));
@@ -492,6 +494,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   // silent 是切回页面时的后台重读：不换成骨架屏，抽屉和高亮行不动。失败照样清掉旧数据（E4-S02）。
   const readE4List = useCallback(async (silent = false) => {
     const seq = ++e4ListSeq.current;
+    setE4Reading(true);
     if (!silent) setE4Loading(true);
     try {
       const states = e4Query.state ? [e4Query.state] : e4GroupStates(e4Query.group);
@@ -512,9 +515,14 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setOrders([]);
       setE4Total(0);
     } finally {
-      if (seq === e4ListSeq.current) setE4Loading(false);
+      if (seq === e4ListSeq.current) {
+        setE4Loading(false);
+        setE4Reading(false);
+      }
     }
   }, [e4Query]);
+  /** 列表在读或读失败时事实不是最新的，抽屉和确认框都不能提交（OP-150）。 */
+  const e4ReadBlock = e4Reading ? "正在读取最新订单状态，读完才能操作" : e4Error ? "订单列表读取失败，重试成功后才能操作" : undefined;
   /** 汇总和流程表的数量。接口没有按组计数，11 个状态各取总数，跟着搜索词走，读不到写「—」，不挡列表和操作。
    *  换条件时先清掉旧数，新数读齐前不能当当前范围显示；切回页面的后台重读范围没变，读齐再换。 */
   const readE4Counts = useCallback(async (silent = false) => {
@@ -1198,7 +1206,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     canWriteE1: canUseE1Writes, skus, e1InvalidSkus, e1Loading, e1Error, e1Gates, e1BundleDiscount, phaseCur, refreshE1, openSku, delSku,
     canWriteE2, tasks, phoneTiers, yieldComparisons, e2Pricing, e2Loading, e2Error, e2TaskCatalogReady, refreshE2, openAddTask, openEditTask, delTask,
     canWriteE3, e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
-    canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4Total, e4Query, e4KeywordInput, e4Counts, e4CountsFailed, e4ReadAt, updateE4Query, setE4KeywordInput, clearE4Filters, refreshE4,
+    canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4ReadBlock, e4Total, e4Query, e4KeywordInput, e4Counts, e4CountsFailed, e4ReadAt, updateE4Query, setE4KeywordInput, clearE4Filters, refreshE4,
     orderState, e4Pending, e4PendingNotes, e4RetryRejected, e4Retrying, retryE4Pending, releaseE4Pending, selOrder, e4Detail, e4DetailLoading, e4DetailError, openOrder, closeOrder,
     canWriteE5, canForceActivateE5, canUnbindE5, canPauseDcE5,
     runE5DeviceAction, runE5UserBatch,
@@ -1628,6 +1636,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         coverageLead={mc.coverageLead}
         facts={mc.facts}
         statedBrief={mc.statedBrief}
+        blockedReason={mc.orderId ? e4ReadBlock : undefined}
         onClose={() => setActionConfirm(null)}
         onConfirm={async (reason, newValue, businessValue) => {
           if (!mc) return;

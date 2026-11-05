@@ -1,5 +1,6 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { isIdempotencyOutcomeOpen } from "@/lib/admin/outcome-classification";
 import {
   l6UnavailableStateFromError,
   l6UnavailableStateFromFailures,
@@ -195,8 +196,20 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   // operation with the unchanged durable key replays the committed result.
   if (isReportCreation && res.status === 503) res = await execute().catch(() => { throw networkFailure(true); });
   if (isReportCreation && res.status >= 500) throw networkFailure(true);
-  const text = await res.text();
-  const payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
+  let payload: ApiResult<T> = {};
+  try {
+    const text = await res.text();
+    if (text) payload = (JSON.parse(text) ?? {}) as ApiResult<T>;
+  } catch (cause) {
+    if (!isReportCreation) throw cause;
+    if (res.ok) throw new LOutcomeUnknownError();
+  }
+  // 创建任务时，回复读不出来、业务码 5xx、幂等层没有结论，都说明不了任务建没建成。
+  // 统一按结果未知，调用方留住原号和原请求（OP-93）。4xx 和 2xx 里的业务 4xx 才算明确拒绝。
+  const rejected = payload.code !== undefined && payload.code >= 400 && payload.code < 500;
+  if (isReportCreation && (isIdempotencyOutcomeOpen(payload.message) || (res.ok && payload.code !== 0 && !rejected))) {
+    throw new LOutcomeUnknownError();
+  }
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
     const error = new Error(formatAdminApiError(payload.message, `BI_API_${res.status}`)) as Error & { code?: string };
     error.code = payload.message;

@@ -100,7 +100,9 @@ const pageSizeOf = (value: string | null | undefined, sizes: readonly number[]) 
 const EMPTY_CLUSTER_PAGE: AdminPage<K1Cluster> = { total: 0, pageNum: 1, pageSize: 5, records: [] };
 const EMPTY_WHITELIST_PAGE: AdminPage<K1WhitelistRow> = { total: 0, pageNum: 1, pageSize: 5, records: [] };
 // ctx.contentError 时两个读总览的页签只显示重试，不留旧数据和操作按钮；收益审核另有接口，列表还在，人工放行禁用。
-type WeightDraft = { param: KRiskParam; device: string; payment: string; ip: string; reason: string };
+type WeightKey = "device" | "payment" | "ip";
+/** bad 记数字框填坏的项：填坏时 value 是空串，只有 validity 分得清（CP-54）。 */
+type WeightDraft = { param: KRiskParam; device: string; payment: string; ip: string; reason: string; bad: Partial<Record<WeightKey, boolean>> };
 type ParamDraft = { param: KRiskParam; value: string; reason: string };
 type WhitelistDraft = { cidr: string; note: string; expireText: string; reason: string };
 type ReasonPolicy = { min: number; max: number } | null;
@@ -202,7 +204,7 @@ function parseNamedWeight(value: string, label: string, fallback: string) {
   return match?.[0] ?? fallback;
 }
 
-function parseLinkWeight(value: string): Pick<WeightDraft, "device" | "payment" | "ip"> {
+function parseLinkWeight(value: string): Pick<WeightDraft, WeightKey> {
   return {
     device: parseNamedWeight(value, "设备", "0.50"),
     payment: parseNamedWeight(value, "支付", "0.40"),
@@ -210,8 +212,9 @@ function parseLinkWeight(value: string): Pick<WeightDraft, "device" | "payment" 
   };
 }
 
+/** 空不是 0：Number("") 是 0，清空的框不能当 0 算。 */
 function numberValue(value: string) {
-  const parsed = Number(value);
+  const parsed = value.trim() ? Number(value) : Number.NaN;
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
@@ -714,6 +717,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     }
     setRetrying(record.fingerprint);
     setRetryRejected((current) => current.filter((key) => key !== record.commandKey));
+    setPendingNotes((current) => ({ ...current, [record.fingerprint]: "" }));
     try {
       await runRecord(record);
     } catch (cause) {
@@ -843,7 +847,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const adjParam = (p: KRiskParam) => {
     setDraftError(null);
     if (p.key === "linkWeight") {
-      setWeightDraft({ param: p, ...parseLinkWeight(p.value), reason: "" });
+      setWeightDraft({ param: p, ...parseLinkWeight(p.value), reason: "", bad: {} });
       return;
     }
     if (!PARAM_LIMITS[p.key]) {
@@ -1450,38 +1454,43 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       })()}
 
       {weightDraft && (() => {
-        const device = numberValue(weightDraft.device);
-        const payment = numberValue(weightDraft.payment);
-        const ip = numberValue(weightDraft.ip);
-        const weights = [device, payment, ip];
-        const validNumbers = weights.every((value) => Number.isFinite(value) && value >= 0 && value <= 1);
-        const total = weights.reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
+        const fields = [
+          ["device", "设备指纹权重", "设备指纹 / 浏览器指纹 / 应用实例"],
+          ["payment", "支付工具权重", "银行卡 / 钱包 / 收款工具"],
+          ["ip", "IP 权重", "同出口 IP / 网段"],
+        ] as const;
+        const fieldProblem = (key: WeightKey) => {
+          if (weightDraft.bad[key]) return "不是有效数字";
+          if (!weightDraft[key].trim()) return "没有填，不填不算 0";
+          const value = numberValue(weightDraft[key]);
+          return value >= 0 && value <= 1 ? undefined : "要在 0 到 1 之间";
+        };
+        const firstProblem = fields.flatMap(([key, label]) => { const problem = fieldProblem(key); return problem ? [`${label}${problem}`] : []; })[0];
+        // 合计和有没有改动都按实际发送的两位小数算，不按框里的原始数字。
+        const sent = fields.map(([key]) => Number(numberValue(weightDraft[key]).toFixed(2)));
+        const total = sent.reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
         const totalOk = Math.abs(total - 1) <= 0.001;
         const current = parseLinkWeight(weightDraft.param.value);
-        const changed = device !== Number(current.device) || payment !== Number(current.payment) || ip !== Number(current.ip);
+        const changed = fields.some(([key], index) => sent[index] !== Number(current[key]));
         const updateDraft = (patch: Partial<WeightDraft>) => setWeightDraft((draft) => draft ? { ...draft, ...patch } : draft);
         const busy = draftSubmitting === "weight";
         const help = K1_PARAM_HELP.linkWeight;
         return (
           <DraftModal title={`调整关联权重 · ${riskParamName(weightDraft.param)}`} wide busy={busy} saveLabel="保存并立即生效"
-            blocked={!validNumbers ? "每项必须在 0 到 1 之间" : !totalOk ? "三项合计必须等于 1.00" : !changed ? "和当前值一样，没有改动" : undefined}
+            blocked={firstProblem ?? (!totalOk ? "三项合计必须等于 1.00" : !changed ? "保存值和当前值一样，没有改动" : undefined)}
             reason={weightDraft.reason} placeholder="例如：误判多来自同一网络，降低 IP 权重、提高设备指纹权重" policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => updateDraft({ reason: next })} onClose={() => setWeightDraft(null)} onSave={saveWeightDraft}>
             <Notice tone="neutral">关联程度 = 设备指纹命中 × 设备权重 + 支付工具命中 × 支付权重 + IP 命中 × IP 权重。每项单独填写，三项加起来要等于 1.00。{help.when}。</Notice>
             <div className="rd-split" data-even="">
-              {[
-                ["device", "设备指纹权重", "设备指纹 / 浏览器指纹 / 应用实例"] as const,
-                ["payment", "支付工具权重", "银行卡 / 钱包 / 收款工具"] as const,
-                ["ip", "IP 权重", "同出口 IP / 网段"] as const,
-              ].map(([key, label, fieldHelp]) => (
-                <Field key={key} label={label} help={fieldHelp}>
-                  {(control) => <Input {...control} type="number" min={0} max={1} step={0.05} disabled={busy} value={weightDraft[key]} onChange={(event) => updateDraft({ [key]: event.target.value } as Partial<WeightDraft>)} placeholder="0.00 - 1.00" />}
+              {fields.map(([key, label, fieldHelp]) => (
+                <Field key={key} label={label} help={fieldHelp} error={fieldProblem(key)}>
+                  {(control) => <Input {...control} type="number" min={0} max={1} step={0.05} disabled={busy} value={weightDraft[key]} onChange={(event) => updateDraft({ [key]: event.target.value } as Partial<WeightDraft>)}
+                    onInput={(event) => { const { badInput } = event.currentTarget.validity; setWeightDraft((draft) => draft && { ...draft, bad: { ...draft.bad, [key]: badInput } }); }} placeholder="0.00 - 1.00" />}
                 </Field>
               ))}
             </div>
-            <Notice tone={validNumbers && totalOk ? "neutral" : "danger"}>
-              当前合计 {total.toFixed(2)}
-              {!validNumbers ? " · 每项必须在 0 到 1 之间" : !totalOk ? " · 三项合计必须等于 1.00" : ` · 保存值 ${linkWeightValue(weightDraft)}`}
+            <Notice tone={!firstProblem && totalOk ? "neutral" : "danger"}>
+              {firstProblem ?? <>当前合计 {total.toFixed(2)}{!totalOk ? " · 三项合计必须等于 1.00" : ` · 保存值 ${linkWeightValue(weightDraft)}`}</>}
             </Notice>
           </DraftModal>
         );

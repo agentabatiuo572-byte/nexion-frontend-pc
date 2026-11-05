@@ -12,7 +12,7 @@ import { E4_CLOSE_REASONS, E4_CLOSE_REASON_LABELS, E4_REFUND_REASONS, E4_REFUND_
 import { operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
 import { useReach } from "@/lib/nav/use-reach";
 import type { E4PendingCommand, EViewCtx } from "./types";
-import { E4_PAGE_SIZES, ORDER_FINAL_STATES, ORDER_FLOW, ORDER_STATE_GROUPS, ORDER_STATE_TONE, orderAmount, orderMoney, stateLabel, type E4Query } from "./data";
+import { E4_PAGE_SIZES, ORDER_FINAL_STATES, ORDER_FLOW, ORDER_STATE_GROUPS, ORDER_STATE_TONE, orderAmount, orderAmountDigits, orderMoney, stateLabel, type E4Query } from "./data";
 
 const FLOW_STATES = ["placed", "paid", "provisioning"];
 const FAILED_STATES = ["payment_failed", "provisioning_failed", "chargeback"];
@@ -66,10 +66,11 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
   const failedCount = countOf(FAILED_STATES);
   const countSub = (text: string) => ctx.e4CountsFailed ? "数量暂时读不到" : counts ? text : "读取中";
   const activated = orders.filter((order) => ctx.orderState(order) === "activated");
-  const activeAmount = activated.reduce((sum, order) => sum + order.amt, 0);
   const hasConditions = query.group !== "all" || query.state !== "" || ctx.e4KeywordInput !== "";
   // 同一列按这一页最多的小数位补零，小数点对齐（ST-02）。
-  const amountDigits = Math.max(2, ...orders.map((order) => String(order.amt).split(".")[1]?.length ?? 0));
+  const amountDigits = Math.max(2, ...orders.map((order) => orderAmountDigits(order.amt)));
+  // 小数相加有浮点尾巴（0.1 + 0.2），收回到原始金额的位数再显示。toFixed 最多 100 位。
+  const activeAmount = Number(activated.reduce((sum, order) => sum + order.amt, 0).toFixed(Math.min(amountDigits, 100)));
   const tableColumns = ORDER_COLUMNS.filter((column) => columns.isVisible(column.key)).length;
   const countText = (state: string) => `${counts?.[state] ?? "—"} 单`;
 
@@ -251,7 +252,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const pendingFact = e4DetailError ? { value: "读取失败", state: "danger" as const } : { value: "正在读取…" };
   // 读完详情才能做决定（OP-150）：下一步、退款条件都靠详情里的事实。
   const orderPending = ctx.e4Pending.some((record) => record.orderNo === o.id);
-  const waitReason = orderPending ? "这单有结果未确认的操作，先到页面上方处理" : e4DetailError ? "订单详情读取失败，重试成功后才能操作" : e4DetailLoading || !e4Detail ? "正在读取订单事实" : undefined;
+  const waitReason = orderPending ? "这单有结果未确认的操作，先到页面上方处理" : e4DetailError ? "订单详情读取失败，重试成功后才能操作" : e4DetailLoading || !e4Detail ? "正在读取订单事实" : ctx.e4ReadBlock;
   const approvalTag = <StatusTag tone="progress" filled>批准后生效</StatusTag>;
   const briefOf = (check: string) => ({ impact: "批准后生效：提交后请另一位超级管理员在「操作记录与审批」中批准。", check });
   // 批准后后端把这单的设备改成已退款、停用（rollbackOrderDevices），赠品设备不在内，由活动规则收回。

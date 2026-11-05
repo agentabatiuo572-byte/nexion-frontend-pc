@@ -1,4 +1,4 @@
-import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { isK1LocalIsoDateTime } from "@/lib/admin/k1-date-contract";
@@ -97,7 +97,7 @@ async function apiRequest<T>(path: string, init?: RiskRequestInit): Promise<T> {
     }
     throw error;
   }
-  if (isWrite && res.headers.get("X-Nexion-Upstream-Outcome") === "unknown") {
+  if (isWrite && (res.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(payload.message))) {
     throw new K1OutcomeUncertainError(formatAdminApiError(payload.message, "RISK_REQUEST_OUTCOME_UNKNOWN"), commandKey);
   }
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {

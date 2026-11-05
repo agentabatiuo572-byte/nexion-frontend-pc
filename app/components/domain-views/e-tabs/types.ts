@@ -156,6 +156,7 @@ export interface EViewCtx {
   orders: EOrder[];
   e4Loading: boolean;
   e4Error: string | null;
+  e4ReadBlock?: string;
   e4Total: number;
   e4Query: E4Query;
   e4KeywordInput: string;

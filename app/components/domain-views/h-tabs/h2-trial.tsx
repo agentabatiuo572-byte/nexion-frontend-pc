@@ -383,6 +383,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       return;
     }
     setRetryRejected((current) => current.filter((key) => key !== record.commandKey));
+    notePending(record, "");
     setRecovering(record.commandKey);
     try {
       await sendProposal({ kind: record.kind, sid: record.sid, owner: record.owner, before: record.before, reason: record.reason, label: record.label });

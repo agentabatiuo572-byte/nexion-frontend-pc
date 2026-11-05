@@ -42,6 +42,14 @@ export function isDeterministicRejection(status: number, apiCode?: number | null
 }
 
 /**
+ * 幂等层回「这个号还在处理」或「这个号的结果查不清」。HTTP 上是 409,但后端没说不做,
+ * 不算确定性拒绝:命令号要留着,页面不能开放解除。
+ */
+export function isIdempotencyOutcomeOpen(message?: string | null): boolean {
+  return message === "IDEMPOTENCY_REQUEST_IN_PROGRESS" || message === "IDEMPOTENCY_RESULT_UNKNOWN";
+}
+
+/**
  * 这次 HTTP 失败之后,在途命令号必须保留吗?(= `!isDeterministicRejection`)
  *
  * 单独给一个名字是因为调用点读起来就是这个语义(「要不要 forget」),
