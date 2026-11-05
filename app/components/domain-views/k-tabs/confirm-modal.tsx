@@ -65,7 +65,9 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   return (
     <Modal
       title={req.action}
-      icon={req.confirmTone === "danger" ? "alert" : "check"}
+      icon={req.confirmTone === "danger" ? "alert" : surface ? "shield" : "check"}
+      tone={req.confirmTone === "danger" ? "danger" : "neutral"}
+      sub={req.effect}
       className={surface ? "rd-confirm" : undefined}
       busy={submitting}
       dirty={value !== ""}
@@ -99,7 +101,6 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
     >
       {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
       <fieldset disabled={submitting} style={{ display: "contents" }}>
-      {surface && req.effect && <div className="rd-effect">{req.effect}</div>}
       {error && <div role="alert" className="tint danger">{error}</div>}
       <OperatorBriefBlock kind={req.briefKind} action={req.action} detail={req.detail} hasEdit={!!req.input} stated={req.statedBrief} />
       {req.chips && req.chips.length > 0 && (
@@ -119,8 +120,8 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
         </div>
       )}
       {req.input && (
-        <div style={{ marginTop: 13 }}>
-          <label htmlFor={`${fieldId}-value`} style={{ display: "block", fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>{req.input.label}</label>
+        <div className={surface ? "field" : undefined} style={surface ? undefined : { marginTop: 13 }}>
+          <label htmlFor={`${fieldId}-value`} style={surface ? undefined : { display: "block", fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>{req.input.label}</label>
           {req.input.options && req.input.options.length > 0 ? (
             // 枚举值:勾选 chips 不让手输(能勾选的不要手输铁律);value=所选项,inputOk 同文本框(选中即非空、确认按钮才启用)。
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -138,7 +139,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
               value={value}
               onChange={(e) => setValue(e.target.value)}
               placeholder={req.input.placeholder}
-              style={{
+              style={surface ? undefined : {
                 width: "100%", background: "var(--surface-2)", border: "1px solid var(--border-strong)", borderRadius: 8,
                 padding: "8px 12px", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 13, outline: "none",
               }}
@@ -147,9 +148,16 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
         </div>
       )}
       <div className={surface ? "field" : undefined} style={surface ? undefined : { marginTop: 13 }}>
-        <label htmlFor={`${fieldId}-reason`} style={surface ? undefined : { display: "block", fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>
-          {req.reason ? `操作理由（必填，${reasonMin}–${reasonMax} 字）` : "备注（可选，最多 200 字）"}
-        </label>
+        {surface ? (
+          // 字段名强，下限跟在后面，上限在框角的字数里，各写一处（VS-104、VS-105）。
+          <label htmlFor={`${fieldId}-reason`}>
+            {req.reason ? <>操作理由<span className="rd-form-required" aria-hidden="true">*</span><span className="rd-form-hint">至少 {reasonMin} 字</span></> : <>备注<span className="rd-form-hint">选填，最多 200 字</span></>}
+          </label>
+        ) : (
+          <label htmlFor={`${fieldId}-reason`} style={{ display: "block", fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>
+            {req.reason ? `操作理由（必填，${reasonMin}–${reasonMax} 字）` : "备注（可选，最多 200 字）"}
+          </label>
+        )}
         <div className={surface ? "rd-reason-box" : undefined}>
           <textarea
             id={`${fieldId}-reason`}

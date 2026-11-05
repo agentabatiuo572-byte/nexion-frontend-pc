@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { AlertTriangle, ClipboardList, Coins, Copy, History, Package, Receipt, RefreshCw, Route, Server, User, Workflow } from "lucide-react";
 import {
-  BlockState, Button, Cell, ColumnPicker, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input,
+  BlockState, Button, Cell, ColumnPicker, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input, IrreversibleTag,
   JudgmentPoints, Modal, Notice, PageHeader, Pager, Panel, Segments, Select, Stat, StatBand, StatusTag, Steps, Table, TableLoading, TableMessage, Td, Th, Tr,
   useTableColumns, type JudgmentRow, type SegmentItem, type TableColumn,
 } from "@/app/components/rd";
@@ -277,8 +277,10 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const waitReason = orderPending ? "这单有结果未确认的操作，先到页面上方处理" : e4DetailError ? "订单详情读取失败，重试成功后才能操作" : e4DetailLoading || !e4Detail ? "正在读取订单事实" : ctx.e4ReadBlock;
   const approvalTag = <StatusTag tone="progress" filled>批准后生效</StatusTag>;
   // 对象、金额、审批人常显在框里（OP-48）；rows 放这个操作自己要核对的事实。
-  const orderFacts = (rows: ReactNode, amountLabel = "金额") => <Facts>
-    <Fact k={amountLabel}>{orderMoney(o.amt)}</Fact>
+  // 金额是确认框的关键数字，放第一行（VS-102）。
+  const orderFacts = (rows: ReactNode, amountLabel = "金额", orderRow = false) => <Facts>
+    <Fact k={amountLabel} lead tone="role-1" unit="USDT">{orderAmount(o.amt)}</Fact>
+    {orderRow && <Fact k="订单"><span data-mono>{o.id}</span></Fact>}
     <Fact k="用户">{o.user}</Fact>
     <Fact k="商品">{o.sku}</Fact>
     {rows}
@@ -343,15 +345,15 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
           const channel = channels.length === 1 ? channels[0] : undefined;
           const reasonField = { key: "refundReasonCode", label: channel ? "退款原因" : "退款原因（用户可见）", current: "", inputKind: "select" as const, options: ["", ...E4_REFUND_REASONS], optionLabels: { "": "请选择退款原因", ...E4_REFUND_REASON_LABELS }, required: true, wide: !!channel };
           openActionConfirm({
-            briefKind: "funds", name: "退款 · " + o.id, op: "order-refund", orderId: o.id, amplify: true, fixedVal: channel,
-            effect: approvalTag, confirmLabel: "提交审批", confirmTone: "danger", reasonPlaceholder: reasonHint,
+            // 标题只写动作，单号进事实区；name 照旧记进操作记录（VS-101）。
+            briefKind: "funds", name: "退款 · " + o.id, title: "退款", op: "order-refund", orderId: o.id, amplify: true, fixedVal: channel,
+            effect: <>{approvalTag}<IrreversibleTag /></>, confirmLabel: "提交审批", confirmTone: "danger", reasonPlaceholder: reasonHint,
             coverageLead: `覆盖率 ${coverageText}`,
             statedBrief: { impact: `钱退回用户钱包${hasDevice ? "，这单设备停用" : ""}`, check: "核对用户、金额和退款原因，理由写清依据或工单号。" },
             facts: orderFacts(<>
               {channel && <Fact k="退款去向">{REFUND_CHANNEL_LABELS[channel] ?? channel}</Fact>}
               <Fact k="退款后">{refundDeviceLine}<Explain label="退款后设备和收益怎么处理" content={refundDeviceDetail} /></Fact>
-              <Fact k="能否撤销">不可撤销</Fact>
-            </>, "退款金额"),
+            </>, "退款金额", true),
             businessForm: channel
               ? { kind: "multi-field", title: "用户可见的原因", fields: [reasonField] }
               : { kind: "multi-field", title: "退款渠道与原因", fields: [

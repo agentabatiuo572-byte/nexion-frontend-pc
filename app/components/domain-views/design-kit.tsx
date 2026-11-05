@@ -19,6 +19,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
 import { isL5KpiExport, l5KpiRange, L5_KPI_WINDOWS, l5BusinessToday } from "./l-tabs/l5-kpi-range";
 import { Button as RdButton } from "@/app/components/rd/button";
+import { DiffField } from "@/app/components/rd/diff-list";
 import { Explain } from "@/app/components/rd/explain";
 import { Modal as RdModal } from "@/app/components/rd/overlay";
 import { NumberInput as RdNumberInput } from "@/app/components/rd/number-input";
@@ -37,7 +38,7 @@ export type IconName =
   | "gauge" | "shield" | "users" | "wallet" | "radar" | "rhythm" | "box" | "tree"
   | "coin" | "doc" | "power" | "chart" | "search" | "bell" | "menu" | "chevron"
   | "check" | "x" | "alert" | "download" | "plus" | "filter" | "eye" | "lock"
-  | "arrow" | "flame" | "geo" | "clock" | "image";
+  | "arrow" | "flame" | "geo" | "clock" | "image" | "sliders";
 
 export function Icon({ name, size = 18, sw = 1.7 }: { name: IconName; size?: number; sw?: number }) {
   const paths: Record<IconName, ReactNode> = {
@@ -70,6 +71,7 @@ export function Icon({ name, size = 18, sw = 1.7 }: { name: IconName; size?: num
     geo: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" /></>,
     clock: <><circle cx="12" cy="12" r="8.5" /><path d="M12 7v5l3 2" /></>,
     image: <><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="8.5" cy="10" r="1.6" /><path d="M21 16l-5-5-7 7" /></>,
+    sliders: <><path d="M21 5h-7M10 5H3M21 12h-9M8 12H3M21 19h-5M12 19H3" /><path d="M14 3v4M8 10v4M16 17v4" /></>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -342,17 +344,21 @@ export const KV = ({ k, v }: { k: ReactNode; v: ReactNode }) => (
 );
 
 /* Modal — 补 ESC 关闭 + 打开聚焦(a11y 铁律) */
-type ModalProps = { title: ReactNode; icon?: IconName; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; busy?: boolean; dirty?: boolean; className?: string };
+type ModalProps = { title: ReactNode; icon?: IconName; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; busy?: boolean; dirty?: boolean; className?: string;
+  /** 只在改版页面起作用：标题下的后果标签，和标题前图标底的颜色（VS-101、VS-106）。 */
+  sub?: ReactNode; tone?: "danger" | "neutral" };
+
+const legacy = ({ sub: _sub, tone: _tone, ...rest }: Omit<ModalProps, "icon">) => rest;
 
 /* 改版页面(RdPage 里)走 Radix 弹窗和新外观,能叠在新抽屉上;旧页面走原来的实现,行为不变。 */
 export function Modal({ icon, ...props }: ModalProps) {
   const surface = useRdSurface();
   return surface
     ? <RdModal {...props} icon={icon && <Icon name={icon} size={16} />} />
-    : <LegacyModal {...props} icon={icon} />;
+    : <LegacyModal {...legacy(props)} icon={icon} />;
 }
 
-function LegacyModal({ title, icon, onClose, children, footer, wide, busy = false, className }: ModalProps) {
+function LegacyModal({ title, icon, onClose, children, footer, wide, busy = false, className }: Omit<ModalProps, "sub" | "tone">) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useEffect(() => {
@@ -630,6 +636,16 @@ function isEditValueValid(spec: EditSpec | null, value: string): boolean {
   if (spec.step !== undefined && spec.step > 0
     && !isDecimalStepAligned(normalized, spec.min ?? 0, spec.step)) return false;
   return true;
+}
+
+/** 修改框里「现在」的值：选项写名字，数字加千分位；是数字时才带单位（「不设上限」后面不跟 USDT）。 */
+function editCurrent(spec: EditSpec, kind: string): { text: ReactNode; unit?: string } {
+  const current = spec.current ?? "";
+  const label = spec.optionLabels?.[current];
+  if (label !== undefined) return { text: label };
+  if (kind !== "number" || !/^-?\d+(\.\d+)?$/.test(current.trim())) return { text: current };
+  const [whole, fraction] = current.trim().split(".");
+  return { text: `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${fraction ? `.${fraction}` : ""}`, unit: spec.unit };
 }
 
 /** 数字框填错时写什么。范围全站写「1–90」「0–1,000,000」，不写开发词（TX-05）。 */
@@ -1684,6 +1700,8 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
 }
 
 export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, onUploadStateChange }: { spec: BusinessFormSpec; value: BusinessFormValue; onChange: (next: BusinessFormValue) => void; onSelectionChange?: (next: BusinessFormValue) => void; onUploadStateChange: (key: string, state: "uploading" | "failed" | undefined) => void }) {
+  // 改版页面里必填写星号（CP-52），不写红色的「· 必填」。
+  const surface = useRdSurface();
   const [multiSelectSearch, setMultiSelectSearch] = useState<Record<string, string>>({});
   const [assetUploading, setAssetUploading] = useState<Record<string, boolean>>({});
   const [assetNames, setAssetNames] = useState<Record<string, string>>({});
@@ -1828,7 +1846,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             </div>
           ) : f.inputKind === "asset-upload" ? (
             <label className="field" style={{ marginBottom: 0, ...(f.wide ? { gridColumn: "1 / -1" } : {}) }} key={f.key}>
-              <span>{f.label} {f.required !== false && <b style={{ color: "var(--v5-danger)" }}>· 必填</b>}</span>
+              <span>{f.label} {f.required !== false && (surface ? <span className="rd-form-required" aria-hidden="true">*</span> : <b style={{ color: "var(--v5-danger)" }}>· 必填</b>)}</span>
               <input
                 className="fld"
                 type="file"
@@ -1893,7 +1911,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             </label>
           ) : (
             <label className="field" style={{ marginBottom: 0, ...(f.wide ? { gridColumn: "1 / -1" } : {}) }} key={f.key}>
-              <span>{f.label} {f.required !== false && <b style={{ color: "var(--v5-danger)" }}>· 必填</b>}</span>
+              <span>{f.label} {f.required !== false && (surface ? <span className="rd-form-required" aria-hidden="true">*</span> : <b style={{ color: "var(--v5-danger)" }}>· 必填</b>)}</span>
               {f.inputKind === "select" ? (
                 // 能枚举的值用下拉,不让运营手输(最高设计铁律:能勾选的不要输入)
                 <select className="fld" required={f.required !== false} aria-required={f.required !== false} value={value[f.key] ?? (f.mustChoose ? "" : f.options?.[0]) ?? ""} onChange={(e) => set(f.key, e.target.value)}>
@@ -3479,7 +3497,7 @@ export type InlineOperationApproval = {
   dialogClassName?: string;
 };
 
-export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", reasonPlaceholder = "例如：工单号、处理依据" }: { reasonPlaceholder?: string; effect?: ReactNode; confirmLabel?: string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string }; facts?: ReactNode; confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, title, detail, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", reasonPlaceholder = "例如：工单号、处理依据" }: { /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; effect?: ReactNode; confirmLabel?: string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string }; facts?: ReactNode; confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const surface = useRdSurface();
   const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
   const [draftReason, setReason] = useState(pendingReason ?? "");
@@ -3668,6 +3686,9 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
           覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b>，红线 <b>{coverage.redlinePct}%</b>
           <Explain label="这项操作对资金的影响" content={<><p>{coverageLead}</p><p>提交时会先检查兑付覆盖率{coverage.healthyPct !== undefined ? `，健康线 ${coverage.healthyPct}%` : ""}。</p></>} />
         </div>
+      ) : surface && !covBlocked && !coverage && auditSink !== "local-history" ? (
+        // 页面自己把覆盖率写进 coverageLead 时也只留这一句，检查说明进提示图标（DP-06）。
+        <div className="tiny"><b>{coverageLead}</b><Explain label="提交时怎么检查" content="提交时会先检查兑付覆盖率。" /></div>
       ) : <div className="tiny">
         <b>{coverageLead}</b> · 提交时会先检查兑付覆盖率。
         {coverage ? (
@@ -3688,7 +3709,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
     </div>
   );
   return (
-    <Modal title={action} icon={confirmTone === "danger" ? "alert" : "shield"} onClose={handleClose} className={["rd-confirm", inlineApproval?.dialogClassName].filter(Boolean).join(" ")} busy={submitting} dirty={JSON.stringify([newVal, businessValue]) !== openedForm}
+    <Modal title={title ?? action} icon={confirmTone === "danger" ? "alert" : spec ? "sliders" : "shield"} tone={confirmTone === "danger" ? "danger" : "neutral"} sub={effect} onClose={handleClose} className={["rd-confirm", inlineApproval?.dialogClassName].filter(Boolean).join(" ")} busy={submitting} dirty={JSON.stringify([newVal, businessValue]) !== openedForm}
       footer={<>
         <Btn disabled={submitting} onClick={handleClose}>取消</Btn>
         {approvalRecovery && recoverApproval && (
@@ -3710,7 +3731,6 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       </>}>
       {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
       <fieldset disabled={submitting} style={{ display: "contents" }}>
-      {surface && effect && <div className="rd-effect">{effect}</div>}
       {!approval && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={effectiveBriefKind} stated={statedBrief} />}
       {blockedReason
         ? <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{blockedReason}</div>
@@ -3758,7 +3778,39 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         {Object.values(uploadStates).includes("uploading") ? "图片正在上传，请完成后再提交。" : "图片上传失败，请重新上传或明确清除图片后再提交。"}
       </div>}
       {businessSelectionLoading && <div className="itint" style={{ marginTop: 8 }}>正在加载该地区的版本内容…</div>}
-      {spec && (
+      {spec && surface && !compareEdit && (
+        // 现在值、新值输入合成一块（VS-103）：范围只写在 hint，没改时不多写一句，确认按钮禁用并写原因。
+        <div className="rd-confirm-edit">
+          <DiffField
+            before={spec.current ? editCurrent(spec, kind).text : undefined}
+            unit={editCurrent(spec, kind).unit}
+            label={spec.label ?? "改后"}
+            size={kind === "number" ? "key" : "body"}
+            stack={kind === "text" ? (spec.current?.length ?? 0) > 14 : kind !== "number" && opts.some((o) => { const text = spec.optionLabels?.[o] ?? o; return typeof text !== "string" || text.length > 10; })}
+            hint={spec.hint}
+            note={spec.preview && editValueOk ? spec.preview(newVal) : undefined}
+            error={retryApproval ? undefined
+              : showEditError && sameAsCurrent ? "新值和当前值一样，改了才能保存。"
+              : showEditError && !editValueOk && kind === "number" && (newVal || numberBad) ? `${editNumberError(spec)}。`
+              : attempted && !editValueOk && !newVal.trim() && !numberBad ? `填写${spec.label ?? "新值"}。`
+              : undefined}
+          >
+            {(control) => kind === "select" || kind === "toggle" ? (
+              <div id={control.id} className="row wrap" role="group" aria-label="目标新值" aria-describedby={control["aria-describedby"]} style={{ gap: 8 }}>
+                {opts.map((o) => <Chip key={o} tab sel={newVal === o} disabled={formLocked || spec.disabledOptions?.includes(o)} onClick={() => setNewVal(o)}>{spec.optionLabels?.[o] ?? o}</Chip>)}
+              </div>
+            ) : <>
+              {kind === "number" ? (
+                <RdNumberInput {...control} key={emptyChosen ? "empty" : "value"} aria-label="目标新值" unit={spec.unit} min={spec.min} max={spec.max} step={spec.step} value={newVal} disabled={emptyChosen} aria-invalid={showEditError && !editValueOk && (!!newVal || numberBad) ? true : undefined} onChange={(e) => setNewVal(e.target.value)} onInput={(e) => setNumberBad(e.currentTarget.validity.badInput)} onBlur={() => setEditLeft(true)} />
+              ) : (
+                <input {...control} className="rd-input" aria-label="目标新值" type="text" disabled={formLocked} value={newVal} onChange={(e) => setNewVal(e.target.value)} onBlur={() => setEditLeft(true)} placeholder="输入新值" />
+              )}
+              {spec.emptyOption && <Chip tab sel={emptyChosen} onClick={() => { setEmptyChosen(!emptyChosen); setNewVal(""); setNumberBad(false); }}>{spec.emptyOption}</Chip>}
+            </>}
+          </DiffField>
+        </div>
+      )}
+      {spec && !(surface && !compareEdit) && (
         <div className={compareEdit ? "field tint" : "field"}>
           {!compareEdit && <span className="bf-legend">{spec.label ?? "新值"}{spec.current ? <> · 当前 <span className="mono">{spec.optionLabels?.[spec.current] ?? spec.current}</span></> : null}</span>}
           {kind === "select" || kind === "toggle" ? (
@@ -3774,9 +3826,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
               </span>}
               {compareEdit && <span aria-hidden>→</span>}
               {compareEdit && <span className="muted">拟调整</span>}
-              {surface && kind === "number" && !compareEdit ? (
-                <RdNumberInput key={emptyChosen ? "empty" : "value"} aria-label="目标新值" unit={spec.unit} min={spec.min} max={spec.max} step={spec.step} value={newVal} disabled={emptyChosen} aria-invalid={showEditError && !editValueOk && (!!newVal || numberBad) ? true : undefined} onChange={(e) => setNewVal(e.target.value)} onInput={(e) => setNumberBad(e.currentTarget.validity.badInput)} onBlur={() => setEditLeft(true)} placeholder={spec.current ? `当前 ${spec.current}` : "输入新值"} />
-              ) : <input
+              <input
                 className="fld"
                 aria-label="目标新值"
                 aria-describedby={compareEdit ? [comparisonValueId, comparisonUnit && comparisonUnitId].filter(Boolean).join(" ") : undefined}
@@ -3791,8 +3841,8 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
                 onBlur={() => setEditLeft(true)}
                 placeholder={spec.current ? `输入新值（当前 ${spec.current}）` : "输入新值"}
                 style={{ maxWidth: compareEdit ? 140 : 240 }}
-              />}
-              {comparisonUnit && !(surface && kind === "number" && !compareEdit) && <span className="muted tiny" id={compareEdit ? comparisonUnitId : undefined}>{comparisonUnit}</span>}
+              />
+              {comparisonUnit && <span className="muted tiny" id={compareEdit ? comparisonUnitId : undefined}>{comparisonUnit}</span>}
               {spec.emptyOption && <Chip tab sel={emptyChosen} onClick={() => { setEmptyChosen(!emptyChosen); setNewVal(""); setNumberBad(false); }}>{spec.emptyOption}</Chip>}
             </div>
           )}
@@ -3812,11 +3862,13 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       )}
       {surface && !approval && coverageNotice}
       <div className="field">
-        <label htmlFor={reasonFieldId}>{approval ? "变更理由" : "操作理由"}{(compareEdit || approval?.heading) && <span aria-hidden="true" style={{ color: "var(--danger)" }}> *</span>}（必填，{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）</label>
+        {surface
+          ? <label htmlFor={reasonFieldId}>{approval ? "变更理由" : "操作理由"}<span className="rd-form-required" aria-hidden="true">*</span><span className="rd-form-hint">至少 {reasonMin} 字</span></label>
+          : <label htmlFor={reasonFieldId}>{approval ? "变更理由" : "操作理由"}{(compareEdit || approval?.heading) && <span aria-hidden="true" style={{ color: "var(--danger)" }}> *</span>}（必填，{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）</label>}
         {/* 字数写在框内角落，够不够看按钮的提示，失焦或点过提交才用警告色（DP-06）。 */}
         <div className={surface ? "rd-reason-box" : undefined}>
           <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} aria-required={compareEdit || inlineApproval?.dialogClassName ? true : undefined} aria-describedby={inlineApproval?.dialogClassName && ((!reasonOk && !retryApproval) || (reasonOk && reasonMax)) ? `${reasonFieldId}-length` : undefined} disabled={inlineApproval ? formLocked : !!approval ? submitting || !!approvalRecovery : submitting || (!!getPendingReason && pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} onBlur={() => setReasonLeft(true)} placeholder={reasonPlaceholder} />
-          {surface && <span className="rd-reason-count">{reasonLength}/{reasonMax ?? `至少 ${reasonMin}`}</span>}
+          {surface && <span className="rd-reason-count">{reasonMax ? `${reasonLength}/${reasonMax}` : `${reasonLength} 字`}</span>}
         </div>
         {pendingReason !== undefined && <div className="tiny" style={{ marginTop: 7 }}>{surface ? "重发原内容，已成功的不会重复执行。" : "原操作结果尚未确认，理由已锁定。重试将继续原操作，不会重复执行。"}</div>}
         {showReasonError && (

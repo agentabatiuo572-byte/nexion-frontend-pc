@@ -82,6 +82,7 @@ export interface McSpec {
   generationGateId?: string;
   generationGate?: E1GenerationGateInput;
   orderId?: string;         // 退款 / 取消 / 补建终态目标订单
+  title?: ReactNode;        // 框上的短标题；name 照旧记进操作记录
   effect?: ReactNode;       // E4 确认框：生效标签、确认按钮文字、要核对的事实
   confirmLabel?: string;
   confirmTone?: "primary" | "danger";

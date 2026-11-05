@@ -1,8 +1,11 @@
 /**
- * 表单字段（CP-52、CP-59）。标签弱、控件强，错误写在字段下方。
+ * 表单字段（CP-52、CP-59）。错误写在字段下方。
+ * 弹窗和抽屉里，要填的字段名比只读标签强一档（正文字号、500、主文字色），因为人要在这里动手；
+ * 范围、字数传 hint，跟在字段名后面，最弱，只写这一处；输入内容亮，占位弱（VS-104、VS-105）。
  * 说明分两种放法：修改框和抽屉里填写时要看的「怎么填」传 help，写在控件下面；页面上常驻表单的「这是什么、改了会怎样」
  * 传 explain，收进标签旁的提示图标（DP-06）。
  *
+ * <Field label="操作理由" required hint="至少 8 字" error={reasonError}>…</Field>
  * <Field label="注入金额" required help="单位 USDT，最多两位小数" error={amountError}>
  *   {(control) => <Input {...control} value={amount} onChange={…} />}
  * </Field>
@@ -22,8 +25,10 @@ export interface FieldControlProps {
   "aria-invalid"?: true;
 }
 
-export function Field({ label, help, explain, error, required, children }: {
+export function Field({ label, hint, help, explain, error, required, children }: {
   label: ReactNode;
+  /** 范围、字数这类约束，跟在字段名后面，只写这一处。 */
+  hint?: ReactNode;
   help?: ReactNode;
   explain?: ReactNode;
   error?: ReactNode;
@@ -34,7 +39,7 @@ export function Field({ label, help, explain, error, required, children }: {
   const described = [help || explain ? `${id}-help` : "", error ? `${id}-error` : ""].filter(Boolean).join(" ") || undefined;
   return (
     <div className="rd-form-field">
-      <label className="rd-form-label" htmlFor={id}>{label}{required && <span className="rd-form-required" aria-hidden>*</span>}{explain && <Explain label={`${typeof label === "string" ? label : "这一项"}的说明`} content={explain} />}</label>
+      <label className="rd-form-label" htmlFor={id}>{label}{required && <span className="rd-form-required" aria-hidden>*</span>}{explain && <Explain label={`${typeof label === "string" ? label : "这一项"}的说明`} content={explain} />}{hint && <span className="rd-form-hint">{hint}</span>}</label>
       {typeof children === "function" ? children({ id, "aria-describedby": described, "aria-invalid": error ? true : undefined }) : children}
       {help ? <div id={`${id}-help`} className="rd-form-help">{help}</div> : explain && <span id={`${id}-help`} className="rd-sr-only">{explain}</span>}
       {error && <div id={`${id}-error`} className="rd-form-error" role="alert">{error}</div>}

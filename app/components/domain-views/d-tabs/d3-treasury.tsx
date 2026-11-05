@@ -12,7 +12,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Download, Landmark, RefreshCw } from "lucide-react";
 import { OperationConfirmModal, useToast, type OperatorBriefKind } from "../design-kit";
-import { BlockState, Button, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, Fold, Input, KeyValues, Modal, Notice, PageHeader, PageTabs, RdPage, Select, StatusTag } from "@/app/components/rd";
+import { BlockState, Button, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Input, KeyValues, Modal, Notice, PageHeader, PageTabs, RdPage, Select, StatusTag } from "@/app/components/rd";
 import { useB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import { businessClock } from "@/lib/admin/business-time";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
@@ -35,7 +35,7 @@ import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operat
 import { createPendingMutationStore, createSlotAttemptStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
-import { DueTab, FORECAST_90D_BLOCK, FlowTab, FundConclusion, OverviewTab, SettingsTab, categoryText, effectiveText, forecastDiffRows, money, timeText, type CrossLink, type ForecastValues, type Loadable } from "./d3-treasury-views";
+import { DueTab, FORECAST_90D_BLOCK, FlowTab, FundConclusion, OverviewTab, SettingsTab, effectiveText, forecastDiffRows, money, timeText, type CrossLink, type ForecastValues, type Loadable } from "./d3-treasury-views";
 
 const OPERATOR = currentAdminOperator;
 
@@ -437,22 +437,19 @@ export function D3Treasury() {
     const base = forecastValues(latest.config);
     const version = latest.config.version;
     const dropped = latest.liabilities.breakdown.filter((row) => base.liabilityCategories[row.category] && !values.liabilityCategories[row.category]);
-    const rows = forecastDiffRows(base, values);
-    const changed = rows.filter((row) => row.before !== row.after);
-    const same = rows.filter((row) => row.before === row.after);
+    // 某一项改了有风险，写在这一行下面，不另铺横幅（VS-103）。
+    const notes: Record<string, { tone: "warn" | "danger"; note: string }> = Object.fromEntries(dropped.map((row) => [`liability-${row.category}`, { tone: "warn", note: `这类现在是 ${money(row.amountUsdt)}。` }]));
+    if (base.reserveCategories.usdt && !values.reserveCategories.usdt) notes["reserve-usdt"] = { tone: "danger", note: "资金安全等级会按储备 0 算。" };
     return {
       action: "保存预测设置",
       revision,
       detail: `预测 ${values.forecastWindow.replace("d", " 天")}，创世节点收益${values.genesisIncluded ? "计入" : "不计入"}。${effectiveText()}，不影响历史。`,
       facts: (
         <div className="rd-stack">
-          {!values.reserveCategories.usdt && <Notice tone="danger">不计入 USDT 储备后，资金安全等级会按储备 0 算。</Notice>}
-          {dropped.map((row) => <Notice key={row.category} tone="warn">不再计入「{categoryText(row.category)}」，这类现在是 {money(row.amountUsdt)}。</Notice>)}
+          {/* 这次没动、但 USDT 储备本来就不计入时，照旧提醒一句。 */}
+          {!base.reserveCategories.usdt && !values.reserveCategories.usdt && <Notice tone="danger">不计入 USDT 储备后，资金安全等级会按储备 0 算。</Notice>}
           {others.length > 0 && <Notice tone="warn" title="别人改了这些，已按最新读取">{others.map((row) => <div key={row.key}>{row.label}：{row.before} → {row.after}</div>)}</Notice>}
-          <Facts>{changed.map((row) => <Fact key={row.key} k={row.label}>{row.before} → {row.after}</Fact>)}</Facts>
-          <Fold inset title="其余设置" summary={`${same.length} 项不变`}>
-            <Facts>{same.map((row) => <Fact key={row.key} k={row.label}>{row.after}</Fact>)}</Facts>
-          </Fold>
+          <DiffList rows={forecastDiffRows(base, values).map((row) => ({ ...row, ...notes[row.key] }))} />
         </div>
       ),
       briefKind: "config",

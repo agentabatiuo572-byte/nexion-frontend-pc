@@ -5,10 +5,10 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Coins, Gift, ListChecks, Network, RefreshCw, ShieldAlert, Snowflake, Users } from "lucide-react";
+import { Coins, Gift, ListChecks, Lock, LockOpen, Network, RefreshCw, ShieldAlert, SlidersHorizontal, Snowflake, Users, type LucideIcon } from "lucide-react";
 import {
-  BlockState, Button, Cell, ChartLegend, Conclusion, ConfigList, ConfigRow, Decision, DiffList, Explain, Fact, Facts, Field, Figure, FilterBar, FilterField, Fold, InlineMeter, Input, JudgmentPoints, KeyValues,
-  Modal, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, SectionNav, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useSectionNav,
+  BlockState, Button, Cell, ChartLegend, Conclusion, ConfigList, ConfigRow, Decision, DiffField, DiffList, Explain, Fact, Facts, Field, Figure, FilterBar, FilterField, Fold, InlineMeter, Input, JudgmentPoints, KeyValues,
+  Modal, MoreMenu, Notice, NumberInput, PageHeader, PageTabs, Pager, Panel, SectionNav, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useSectionNav,
   type ExplainRow, type JudgmentRow, type SectionNavItem,
 } from "@/app/components/rd";
 import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1_RELEASE_MODE_VALUES, K1_RELEASE_PARAM_LIMITS, newK1CommandKey } from "@/lib/admin/k-client";
@@ -364,8 +364,11 @@ function reasonProblem(reason: string, policy: ReasonPolicy, policyFailed: boole
 
 /** 修改框的外壳：错误留在框里，提交中全部锁定（OP-18、OP-33、OP-82）。说明进标题旁的提示图标，节奏和确认框共用层一样：
  *  字数写在框角，缺什么写在灰按钮的提示里，刚打开不报错，失焦或点过提交才在字段下用警告色写原因（DP-06）。 */
-function DraftModal({ title, explain, wide, busy, busyLabel = "保存中…", saveLabel, blocked, dirty, attempted, onAttempt, reasonLabel = "操作理由", reason, placeholder, policy, policyFailed, error, onReason, onReadLatest, onClose, onSave, children }: {
+function DraftModal({ title, icon, effect, explain, wide, busy, busyLabel = "保存中…", saveLabel, blocked, dirty, attempted, onAttempt, reasonLabel = "操作理由", reason, placeholder, policy, policyFailed, error, onReason, onReadLatest, onClose, onSave, children }: {
   title: string;
+  /** 标题前的图标底和标题下的生效标签（VS-101、VS-106）。 */
+  icon?: LucideIcon;
+  effect?: ReactNode;
   explain?: readonly ExplainRow[];
   wide?: boolean;
   busy: boolean;
@@ -393,18 +396,15 @@ function DraftModal({ title, explain, wide, busy, busyLabel = "保存中…", sa
   const length = visibleReasonLength(reason);
   const missing = [blocked, problem && `${reasonLabel}${problem}`].filter(Boolean).join("；");
   return (
-    <Modal title={<>{title}{explain && <> <Explain label={`${title}的说明`} rows={explain} /></>}</>} wide={wide} busy={busy} dirty={dirty} onClose={onClose} footer={<>
+    <Modal title={<>{title}{explain && <Explain label={`${title}的说明`} rows={explain} />}</>} icon={icon} sub={effect} wide={wide} busy={busy} dirty={dirty} onClose={onClose} footer={<>
       <Button disabled={busy} onClick={onClose}>取消</Button>
       <Button variant="primary" disabled={busy} disabledReason={busy ? undefined : missing || undefined} onBlockedClick={onAttempt} onClick={onSave}>{busy ? busyLabel : saveLabel}</Button>
     </>}>
       <div className="rd-stack">
         {error && <Notice tone="danger" action={error.conflict && onReadLatest ? <Button size="sm" disabled={busy} onClick={onReadLatest}>读取最新</Button> : undefined}>{error.text}</Notice>}
         {children}
-        <Field label={`${reasonLabel}（必填，${policy?.min ?? 8}–${policy?.max ?? 200} 字）`} error={policyFailed || attempted || reasonLeft ? problem : undefined}>
-          {(control) => <div className="rd-reason-box">
-            <Textarea {...control} rows={3} maxLength={200} disabled={busy} placeholder={placeholder} value={reason} onChange={(event) => onReason(event.target.value)} onBlur={() => setReasonLeft(true)} />
-            <span className="rd-reason-count">{length}/{policy?.max ?? 200}</span>
-          </div>}
+        <Field label={reasonLabel} required hint={`至少 ${policy?.min ?? 8} 字`} error={policyFailed || attempted || reasonLeft ? problem : undefined}>
+          {(control) => <Textarea {...control} rows={3} maxLength={200} disabled={busy} placeholder={placeholder} value={reason} count={`${length}/${policy?.max ?? 200}`} onChange={(event) => onReason(event.target.value)} onBlur={() => setReasonLeft(true)} />}
         </Field>
       </div>
     </Modal>
@@ -1497,14 +1497,16 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const update = (patch: Partial<ParamDraft>) => setParamDraft((current) => current ? { ...current, ...patch } : current);
         const busy = draftSubmitting === "param";
         return (
-          <DraftModal title={`调整风险判断标准 · ${riskParamName(param)}`} explain={paramHelpRows(help, param.sub)} busy={busy} saveLabel="保存并立即生效" blocked={problem}
+          <DraftModal title={`调整${riskParamName(param)}`} icon={SlidersHorizontal} effect={IMMEDIATE_EFFECT} explain={paramHelpRows(help, param.sub).filter((row) => row.k !== "怎么填")} busy={busy} saveLabel="保存并立即生效" blocked={problem}
             reason={reason} placeholder="写清调整原因和依据" {...draftAttempt} policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => update({ reason: next })} onClose={() => setParamDraft(null)} onSave={saveParamDraft}>
-            <DiffList rows={[{ key: "value", label: "这一项", before: riskValueText(param.key, param.value, param.unit), after: riskValueText(param.key, problem ? param.value : value, param.unit) }]} emptyNote="还没改动" />
-            <Field label={`新值（${limits.min}–${limits.max}）`} error={fieldError(problem, typed, "value")}>
-              {(control) => <Input {...control} type="number" min={limits.min} max={limits.max} step={limits.step} disabled={busy} placeholder={`当前 ${param.value}`} value={value} onChange={(event) => update({ value: event.target.value })} onBlur={() => touch("value")} />}
-            </Field>
-            {!problem && help?.whatIf && <Notice tone="neutral">{help.whatIf(riskValueText(param.key, value))}{numeric > Number(param.value) ? "这次是放宽。" : "这次是收紧。"}</Notice>}
+            {/* 现在值、新值输入、方向合成一块；范围只写在 hint。这四项都是改大放宽、改小收紧。 */}
+            <DiffField before={riskValueText(param.key, param.value)} unit={param.unit} hint={`${limits.min}–${limits.max} 的${limits.integer ? "整数" : "数字"}`}
+              state={problem ? undefined : numeric > Number(param.value) ? <StatusTag tone="warn" icon={LockOpen}>放宽</StatusTag> : <StatusTag tone="neutral" icon={Lock}>收紧</StatusTag>}
+              note={!problem && help?.whatIf ? help.whatIf(riskValueText(param.key, value)) : undefined}
+              error={fieldError(problem, typed, "value")}>
+              {(control) => <NumberInput {...control} unit={param.unit} min={limits.min} max={limits.max} step={limits.step} disabled={busy} value={value} onChange={(event) => update({ value: event.target.value })} onBlur={() => touch("value")} />}
+            </DiffField>
           </DraftModal>
         );
       })()}

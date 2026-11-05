@@ -288,7 +288,7 @@
 .rd-drawer-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 20px 20px; display: flex; flex-direction: column; gap: 12px; }
 .rd-drawer-foot { flex: none; padding: 12px 20px; background: var(--rd-panel-inner); }
 .rd-decision { display: flex; align-items: center; gap: 8px; }
-.rd-decision-note { margin: 0 0 8px; color: var(--rd-text-2); }
+.rd-decision-note { margin: 0 0 8px; color: var(--rd-text); }  /* 现在不能做的原因是给人看的结论，不是辅助文字（DP-03、VS-108） */
 .rd-decision-note .rd-explain { margin-left: 4px; }
 .rd-decision-spacer { flex: 1; }
 @keyframes rd-drawer-in { from { transform: translateX(100%); } to { transform: none; } }
@@ -299,28 +299,44 @@
 .rd-modal { position: fixed; top: 50%; left: 50%; z-index: calc(var(--rd-z-modal) + 1); display: flex; flex-direction: column; width: min(520px, calc(100vw - 48px)); max-height: 88vh; transform: translate(-50%, -50%); border-radius: var(--rd-radius-panel); background: var(--rd-panel); color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); outline: none; }
 .rd-modal[data-wide] { width: min(680px, calc(100vw - 48px)); }
 .rd-modal[data-state="open"] { animation: rd-fade-in .14s ease-out; }
-.rd-modal-head { flex: none; display: flex; align-items: center; gap: 10px; padding: 16px 16px 12px 20px; }
-.rd-modal-title { flex: 1; min-width: 0; font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; }
+/* 弹窗的信息分级（VS-100～VS-108）。四层：这是什么操作（标题）、关键信息（对象和数字，框里最大最亮，颜色带含义）、
+   要填的（字段名强、输入亮、占位弱）、辅助（范围、字数、说明，最弱）。后果（生效方式、能不能撤销）是状态标签，跟在标题下面。 */
+.rd-modal-head { flex: none; display: flex; align-items: flex-start; gap: 10px; padding: 16px 16px 12px 20px; }
+.rd-modal-head > .rd-iconbtn { flex: none; margin-top: -2px; }
+.rd-modal-heading { flex: 1; min-width: 0; padding-top: 2px; }
+.rd-modal-title { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; color: var(--rd-text); }
+.rd-modal-title .rd-explain { margin-left: 6px; }
+.rd-modal-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 20px 16px; }
 .rd-modal-foot { flex: none; display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; background: var(--rd-panel-inner); border-radius: 0 0 var(--rd-radius-panel) var(--rd-radius-panel); }
 
 /* 确认框外观：OperationConfirmModal 的旧内容块在新框里的样子，逻辑都在旧组件里没动。 */
-.rd-modal.rd-confirm .operator-brief { padding: 0 0 12px; margin-bottom: 4px; border-bottom: 1px solid var(--rd-line); }
+.rd-modal.rd-confirm .operator-brief { padding: 0; margin-bottom: 12px; }
 .rd-page input[type="date"], .rd-page input[type="datetime-local"], .rd-modal input[type="date"], .rd-modal input[type="datetime-local"] { color-scheme: dark; }
 :root[data-theme="light"] :is(.rd-page, .rd-modal) :is(input[type="date"], input[type="datetime-local"]) { color-scheme: light; }
 .rd-modal.rd-confirm .operator-brief .mono { color: var(--rd-text-3) !important; font-family: inherit; font-size: var(--rd-text-aux) !important; }
-.rd-modal.rd-confirm .operator-brief .tiny { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text) !important; }
-.rd-modal.rd-confirm .rd-brief > summary { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
-.rd-modal.rd-confirm .rd-brief-head { display: flex; flex-wrap: wrap; gap: 2px 8px; min-width: 0; }
-.rd-modal.rd-confirm .rd-brief-head b { font-weight: 500; color: var(--rd-text-3); }
-.rd-modal.rd-confirm .rd-brief-toggle { flex: none; color: var(--rd-text-3); }
+.rd-modal.rd-confirm .operator-brief .tiny { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2) !important; }
+/* 影响一句是给人读的句子，用正文字号；「执行摘要」和「查看详情」是辅助。 */
+.rd-modal.rd-confirm .rd-brief > summary { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); }
+.rd-modal.rd-confirm .rd-brief-head { min-width: 0; }
+.rd-modal.rd-confirm .rd-brief-head b { margin-right: 8px; font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
+.rd-modal.rd-confirm .rd-brief-toggle { flex: none; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.rd-modal.rd-confirm .rd-brief[open] .rd-brief-head > span { display: none; }  /* 展开后「影响」在下面那一行，标题行不重复 */
 .rd-modal.rd-confirm .chip.tab.sel { background: var(--rd-brand); color: var(--rd-text-on-brand); border-color: var(--rd-brand); }
-.rd-modal.rd-confirm .field label, .rd-modal.rd-confirm .field .bf-legend { font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
+/* 要填的：字段名用正文字号、500、主文字色，比只读标签强一档；分组小标题、范围、字数是辅助。 */
+.rd-modal.rd-confirm .field label { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; color: var(--rd-text); }
+.rd-modal.rd-confirm .field .bf-legend { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-3); }
+.rd-modal.rd-confirm .field :is(textarea, input, select, .fld) { font-weight: 400; }
+.rd-modal.rd-confirm .field :is(textarea, input, .fld)::placeholder { color: var(--rd-text-3); opacity: 1; }
+.rd-modal.rd-confirm select.fld:has(option[value=""]:checked) { color: var(--rd-text-3); }
 .rd-modal.rd-confirm .field textarea, .rd-modal.rd-confirm .field input:not([type="checkbox"]):not([type="radio"]), .rd-modal.rd-confirm .fld { border: 0; border-radius: var(--rd-radius-control); background: var(--rd-control); color: var(--rd-text); font-size: var(--rd-text-body); }
 .rd-modal.rd-confirm .alertbar { border: 0; border-radius: var(--rd-radius-control); }
 .rd-modal.rd-confirm .alertbar.danger { background: var(--rd-danger-bg); }
-.rd-modal.rd-confirm .alertbar.calm { background: var(--rd-panel-inner); }
-.rd-modal.rd-confirm .alertbar.calm .ico { background: var(--rd-control); color: var(--rd-text-2); }
+/* 覆盖率够得上红线时是安静的一行：数字强、其余弱，不带警告图标（DP-05）。 */
+.rd-modal.rd-confirm .alertbar.calm { padding: 10px 16px; background: var(--rd-panel-inner); }
+.rd-modal.rd-confirm .alertbar.calm .ico { display: none; }
+.rd-modal.rd-confirm .alertbar.calm .tiny { color: var(--rd-text-2); }
+.rd-modal.rd-confirm .alertbar.calm .tiny b { font-weight: 500; color: var(--rd-text); font-variant-numeric: tabular-nums; }
 /* 核实勾选：框在前，这句话是操作人的声明，比普通字段名醒目。 */
 .rd-modal.rd-confirm .field:has(> input[type="checkbox"]) { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; align-items: start; cursor: pointer; }
 .rd-modal.rd-confirm .field:has(> input[type="checkbox"]) > input { grid-column: 1; grid-row: 1; width: 16px; height: 16px; margin: 3px 0 0; accent-color: var(--rd-brand); }
@@ -330,12 +346,13 @@
 .rd-reason-box { position: relative; }
 .rd-reason-box textarea { display: block; width: 100%; padding-bottom: 26px; }
 .rd-reason-count { position: absolute; right: 10px; bottom: 6px; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; pointer-events: none; }
-.rd-confirm-facts { margin-bottom: 16px; padding: 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.rd-confirm-facts { margin-bottom: 16px; padding: 14px 16px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.rd-confirm-edit { margin-bottom: 16px; }
+.rd-confirm-edit .chip.tab { min-height: var(--rd-control-h-sm); padding: 0 12px; font-size: var(--rd-text-body); }
 .rd-recipients { display: grid; gap: 8px; max-height: 200px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
 .rd-modal.rd-confirm .alertbar .ico { background: var(--rd-danger-tile); color: var(--rd-danger-tile-ink); }
 .rd-modal.rd-confirm .alertbar .tiny { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text); }
 .rd-modal.rd-confirm .tiny { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
-.rd-modal.rd-confirm .rd-effect { display: block; margin: -4px 0 8px; }
 .rd-modal .btn { height: var(--rd-control-h); border: 0; border-radius: var(--rd-radius-control); background: var(--rd-control); color: var(--rd-text); font-size: var(--rd-text-body); font-weight: 500; }
 .rd-modal .btn.primary { background: var(--rd-brand); color: var(--rd-text-on-brand); }
 .rd-modal .btn.danger { background: var(--rd-danger-button); color: var(--rd-text-on-danger); }
@@ -472,10 +489,16 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-form-label { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
 .rd-form-label .rd-explain, .rd-check-item label .rd-explain, .rd-kv dt .rd-explain { margin-left: 4px; }
 .rd-form-required { margin-left: 2px; color: var(--rd-danger); }
+/* 弹窗和抽屉里要填的字段名强一档（VS-104）；范围、字数跟在后面，最弱。 */
+:is(.rd-modal, .rd-drawer) .rd-form-label { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; color: var(--rd-text); }
+.rd-form-hint { margin-left: 8px; font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
 .rd-form-help { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-form-error { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-danger); }
 .rd-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 20px; }
 .rd-input[aria-invalid="true"] { outline: 1px solid var(--rd-danger); }
+/* 弹窗和抽屉里填错了是「要你处理」，用橙黄；红只给失败和不能撤销（VS-107）。 */
+:is(.rd-modal, .rd-drawer) .rd-form-error { color: var(--rd-warn); }
+:is(.rd-modal, .rd-drawer) .rd-input[aria-invalid="true"] { outline-color: var(--rd-warn); }
 .rd-check-item { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 2px 8px; align-items: start; }
 .rd-check-item .rd-check { margin-top: 3px; }
 .rd-check-item label { color: var(--rd-text); cursor: pointer; }
@@ -486,15 +509,52 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-check-group > .rd-form-help { margin-top: 4px; }
 .rd-check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px 20px; margin-top: 12px; }
 
-/* ── 差异对比 ── */
-.rd-diff-one { margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
-.rd-diff-one b { color: var(--rd-text); font-weight: 500; font-variant-numeric: tabular-nums; }
-.rd-diff-count { margin: 0 0 8px; color: var(--rd-text); font-weight: 500; }
-.rd-diff table { width: 100%; border-collapse: collapse; }
-.rd-diff :is(th, td) { padding: 4px 8px 4px 0; border-top: 1px solid var(--rd-line); text-align: left; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-3); vertical-align: top; }
-.rd-diff thead th { border-top: 0; }
-.rd-diff tr[data-changed] :is(th, td) { color: var(--rd-text); font-weight: 500; }
-.rd-diff-tag { display: inline-block; margin-left: 6px; padding: 0 4px; border-radius: var(--rd-radius-bar); background: var(--rd-warn-pill); color: var(--rd-warn); font-weight: 400; }
+/* ── 差异对比（CP-48、VS-103）：现在值弱一档，改后的值用进行中蓝（还没生效），后果用状态色 ── */
+.rd-diff { display: grid; gap: 4px; min-width: 0; }
+.rd-diff-rows { display: grid; grid-template-columns: minmax(96px, 1fr) minmax(0, max-content) 14px minmax(0, max-content); column-gap: 8px; margin: 0; padding: 0; list-style: none; }
+.rd-diff-row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: baseline; padding: 5px 0; }
+.rd-diff-name { min-width: 0; padding-right: 8px; color: var(--rd-text); overflow-wrap: anywhere; }
+.rd-diff-before { color: var(--rd-text-3); text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.rd-diff-arrow { display: inline-flex; align-self: center; color: var(--rd-text-3); }
+.rd-diff-after { color: var(--rd-progress); font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.rd-diff-note { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: 6px; margin-top: 2px; color: var(--tone); }
+.rd-diff-note svg { flex: none; margin-top: 4px; }
+.rd-diff-empty { margin: 0; color: var(--rd-text-2); }
+.rd-diff-rest { display: grid; gap: 4px; margin: 0; }
+.rd-diff-rest > div { display: flex; justify-content: space-between; gap: 16px; }
+.rd-diff-rest dt { min-width: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); color: var(--rd-text-3); }
+.rd-diff-rest dd { margin: 0; color: var(--rd-text-2); text-align: right; }
+.rd-diff .rd-fold[data-inset] > summary { min-height: 36px; padding-top: 4px; padding-bottom: 4px; }
+.rd-diff .rd-fold-title { font-weight: 400; color: var(--rd-text-2); }
+.rd-diff .rd-fold[data-inset] > .rd-fold-body { padding-bottom: 4px; }
+.rd-diff-one { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-section); }
+.rd-diff-one b { color: var(--rd-text-2); font-size: var(--rd-text-section); font-weight: 600; font-variant-numeric: tabular-nums; }
+.rd-diff-one b[data-after] { color: var(--rd-progress); }
+.rd-diff-one .rd-diff-arrow { align-self: center; }
+
+/* 单项修改（DiffField）：现在值、新值输入、方向合成一块。新值是这个框的关键数字，输入框按关键数字那一档放大。 */
+.rd-change { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; padding: 14px 16px 16px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.rd-change-side { display: grid; gap: 4px; min-width: 0; }
+.rd-change-side[data-next] { flex: 1 1 220px; }
+.rd-change-k { display: flex; align-items: center; gap: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); color: var(--rd-text-3); }
+.rd-change-k[data-fill] { font-size: var(--rd-text-body); font-weight: 500; color: var(--rd-text); }
+.rd-change-now { display: flex; align-items: center; gap: 12px; min-height: 44px; font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; color: var(--rd-text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rd-change-unit { margin-left: 4px; font-size: var(--rd-text-body); font-weight: 400; color: var(--rd-text-3); }
+.rd-change-arrow { flex: none; color: var(--rd-text-3); }
+.rd-change-entry { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 44px; }
+.rd-change-entry > :is(.rd-number, .rd-input) { flex: 0 1 200px; width: auto; max-width: 200px; }
+.rd-change[data-size="key"] .rd-change-entry .rd-input { height: 44px; font-size: var(--rd-text-title); font-weight: 600; font-variant-numeric: tabular-nums; }
+.rd-change[data-size="key"] .rd-change-entry .rd-number-unit { height: 44px; }
+.rd-change[data-size="body"] :is(.rd-change-now, .rd-change-entry) { min-height: var(--rd-control-h); }
+.rd-change[data-size="body"] .rd-change-now, .rd-change-now[data-words] { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); }
+.rd-change-hint { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-change-note { flex-basis: 100%; color: var(--rd-text-2); }
+.rd-change[data-stack] { flex-direction: column; align-items: stretch; gap: 12px; }
+.rd-change[data-stack] .rd-change-side[data-next] { flex: none; }
+.rd-change[data-stack] .rd-change-now { min-height: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; white-space: normal; overflow-wrap: anywhere; }
+.rd-change[data-stack] .rd-change-arrow { display: none; }
+.rd-change[data-stack] .rd-change-entry { min-height: 0; }
+.rd-change[data-stack] .rd-change-entry > :is(.rd-number, .rd-input) { flex: 1 1 100%; max-width: none; }
 
 /* ── 等级表 ── */
 .rd-levels { margin: 0; padding: 0; list-style: none; }
@@ -581,7 +641,15 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-facts { display: grid; gap: 6px; margin: 0; }
 .rd-fact { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; }
 .rd-fact dt { font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); color: var(--rd-text-3); }
-.rd-fact dd { margin: 0; color: var(--rd-text); overflow-wrap: anywhere; }
+.rd-fact dd { margin: 0; color: var(--rd-text); font-weight: 500; overflow-wrap: anywhere; }
+.rd-fact[data-tone] dd { color: var(--tone); }
+/* 这次操作的关键数字（VS-102）：弹窗里最大最亮，每个框最多一个。字号借页面标题那一档，不加新字号。 */
+.rd-fact[data-lead] { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.rd-fact[data-lead] + .rd-fact { margin-top: 6px; }
+.rd-fact[data-lead] dt { line-height: var(--rd-lh-aux); }
+.rd-fact[data-lead] dd { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; font-variant-numeric: tabular-nums; }
+:root[data-theme="light"] .rd-fact[data-lead][data-tone^="role-"] dd { color: var(--rd-text); }
+.rd-fact-unit { margin-left: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-3); }
 :is(.rd-fact, .rd-point-reason, .rd-recipients) [data-mono] { font-family: var(--rd-font-mono); overflow-wrap: anywhere; }
 
 /* ── 流程示意 ── */
