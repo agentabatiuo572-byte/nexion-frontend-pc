@@ -718,7 +718,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   TRUST_DOCUMENT_UPLOAD_INTERRUPTED: "上传中断，请检查网络后重新上传。",
   TICK_INTERVAL_OUT_OF_RANGE: "检查间隔必须为 1–60 秒，请修改秒数后重试。",
   H3_MISSION_STALE: "任务状态已被其他操作更新，本次未生效。请刷新「用户任务管理」，核对最新状态后重试。",
-  GENESIS_SUPPLY_REQUIRES_TIER_UPDATE: "拟设总量会越过最后一个销售档位的起点。请先在「创世节点销售与收益」调整销售档位，再修改总量。",
+  GENESIS_SUPPLY_REQUIRES_TIER_UPDATE: "节点总量必须大于最后一个销售档位的起点。请在「创世节点销售与收益」核对档位，调高总量或先调整最后一档。",
   GENESIS_TIER_BELOW_SOLD: "销售档位的总量不能小于已售数量。请在「创世节点销售与收益」核对已售数量后，调高最后一档上限。",
   GENESIS_TIER_INVALID: "销售档位边界、价格或总量不符合规则。请在「创世节点销售与收益」填写大于起点的档位上限、正整数价格，并核对总量范围后重试。",
   GENESIS_SUPPLY_CONFLICT: "总量保存时配置已变化，本次未完成。请刷新「创世节点销售与收益」，核对最新总量和销售档位后重试。",
