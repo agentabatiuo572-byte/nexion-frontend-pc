@@ -390,7 +390,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
     );
   };
 
-  /* ---- 趋势叠加(指数化:实际 ÷ 目标 → 达标线 100) ---- */
+  /* ---- 趋势叠加(指数化:实际 ÷ 目标 → 目标线 100) ---- */
   const ovlChart = () => {
     const drawable = ovlSel.filter((index) => KPIS[index]?.available !== false && (KPIS[index]?.spark?.length ?? 0) >= 2);
     if (!drawable.length) return <div className="empty">当前所选指标没有足够的趋势数据，暂时无法画出对比曲线。</div>;
@@ -422,7 +422,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
           return <path key={i} d={path} fill="none" stroke={KPI_COLORS[i]} strokeWidth={2} />;
         })}
         <line x1={P} y1={y100} x2={W - P} y2={y100} stroke="var(--success)" strokeWidth={1.4} strokeDasharray="5 4" />
-        <text x={W - P} y={y100 - 5} fontSize={11} fill="var(--success)" textAnchor="end">达标线 = 各自目标值(指数 100)</text>
+        <text x={W - P} y={y100 - 5} fontSize={11} fill="var(--success)" textAnchor="end">目标线 = 各自目标值(指数 100)</text>
       </svg>
     );
   };
@@ -436,8 +436,8 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
       )}
       {/* stat strip */}
       <div className="f-stats">
-        <div className="f-stat ok"><div className="k">已达标指标</div><div className="v">{green} / {KPIS.length}</div><div className="sub">绿灯 · 高于目标值</div></div>
-        <div className="f-stat warn"><div className="k">接近目标的指标</div><div className="v">{yellow}</div><div className="sub">黄灯 · 距目标值差不超过 {ylOffset}%</div></div>
+        <div className="f-stat ok"><div className="k">已达标指标</div><div className="v">{green} / {KPIS.length}</div><div className="sub">绿灯 · 满足对应指标的目标</div></div>
+        <div className="f-stat warn"><div className="k">接近目标的指标</div><div className="v">{yellow}</div><div className="sub">黄灯 · 单侧指标距目标不超过 {ylOffset}%；购买转化在健康带外</div></div>
         <div className="f-stat danger"><div className="k">未达标 + 暂无法计算</div><div className="v">{attention} / {KPIS.length}</div><div className="sub">未达 {red} 项{redNames ? ` (${redNames})` : ""} · 暂无法计算 {unavailable} 项（缺数据时不按 0% 算）</div></div>
         <div className="f-stat cyan"><div className="k">当前运营阶段</div><div className="v">{rs.currentPhase}{phaseKnown ? ` · 月 ${rs.currentMonth}` : ""}</div><div className="sub">{PHASE_SWITCH_IDX >= 0 ? "趋势图已标出运营阶段切换时间" : "当前时间范围内没有阶段切换记录"}</div></div>
       </div>
@@ -484,12 +484,12 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
         </button>
         <div className="sep" />
         <div className="chips"><span className="lb">黄灯预警偏移</span>
-          <span className="lcode">目标 −{ylOffset}%</span>
+          <span className="lcode">距目标 {ylOffset}%</span>
           <button className="l-btn sm" onClick={() => setVp({
             title: "黄灯预警偏移",
-            detail: "状态灯黄线 = 目标值 − N%。落在「目标 − N%」与目标之间的关键指标标黄灯(预警),低于黄线标红灯(未达)。只影响看板状态灯与图上黄线位置。",
+            detail: "单侧指标须严格高于或低于目标值才达标；等于目标时为黄灯。数值越高越好的指标，黄线为目标值 × (1 − N%)；数值越低越好的指标，黄线为目标值 × (1 + N%)。未达标且在黄线以内（含黄线）为黄灯，超出为红灯。购买转化健康带包含两端，带外仍为黄灯。只影响显示，不改指标值。",
             current: ylOffset, unit: "%", min: 5, max: 20,
-            onApply: (n) => { setYlOffset(n); ctx.toast(`黄灯预警偏移 → 目标 −${n}% · 仅视图参数`); },
+            onApply: (n) => { setYlOffset(n); ctx.toast(`黄灯预警偏移 → 距目标 ${n}% · 仅视图参数`); },
           })}>调整</button>
         </div>
         <button className="l-btn sm" onClick={() => void reloadKpi()} disabled={refreshing}>{refreshing ? "刷新中…" : "刷新指标"}</button>
@@ -602,7 +602,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
             <div className="legend">
               <span className="it"><span className="lsw" style={{ background: "var(--cyan)" }} />按注册周统计的趋势</span>
               <span className="it" style={{ color: "var(--success)" }}><span className="lsw dash" />目标线</span>
-              <span className="it" style={{ color: "var(--warning)" }}><span className="lsw dash" />黄灯预警线(目标 −{ylOffset}%)</span>
+              <span className="it" style={{ color: "var(--warning)" }}><span className="lsw dash" />黄灯预警线(距目标 {ylOffset}%)</span>
               <span className="it" style={{ color: "var(--ink-4)" }}><span className="lsw" style={{ width: 8, height: 10 }} />运营阶段切换时间</span>
             </div>
           </div>
@@ -626,7 +626,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
           {ovlChart()}
           <div className="legend">
             {ovlSel.map((i) => <span key={i} className="it"><span className="lsw" style={{ background: KPI_COLORS[i] }} />#{KPIS[i].n} {operatorCopyText(KPIS[i].name)}</span>)}
-            <span className="it" style={{ color: "var(--ink-4)" }}>纵轴 = 实际值 ÷ 目标值(达标线 100)</span>
+            <span className="it" style={{ color: "var(--ink-4)" }}>纵轴 = 实际值 ÷ 目标值(目标线 100)</span>
           </div>
         </div>
       </section>
