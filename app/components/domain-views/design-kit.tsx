@@ -18,6 +18,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
 import { isL5KpiExport, l5KpiRange, L5_KPI_WINDOWS, l5BusinessToday } from "./l-tabs/l5-kpi-range";
 import { Modal as RdModal } from "@/app/components/rd/overlay";
+import { NumberInput as RdNumberInput } from "@/app/components/rd/number-input";
 import { useRdSurface } from "@/app/components/rd/surface";
 
 /* ---------------- 域 → 落地路由(ctx.navigate 跨域跳转) ---------------- */
@@ -555,7 +556,7 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 }
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
-export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; step?: number; disallowCurrent?: boolean; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
+export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; step?: number; disallowCurrent?: boolean; /** 留空也是合法的新值，比如「不设上限」。 */ allowEmpty?: boolean; /** 怎么填，只在 RdPage 里显示（CP-87）。 */ hint?: ReactNode; /** 改了会怎样，随输入变化，只在 RdPage 里显示。 */ preview?: (value: string) => ReactNode; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
@@ -612,7 +613,7 @@ function isDecimalStepAligned(value: string, base: number, step: number): boolea
 
 function isEditValueValid(spec: EditSpec | null, value: string): boolean {
   if (!spec) return true;
-  if (!value.trim()) return false;
+  if (!value.trim()) return !!spec.allowEmpty;
   if (spec.disabledOptions?.includes(value.trim())) return false;
   if (spec.disallowCurrent && value.trim() === (spec.current ?? "").trim()) return false;
   if ((spec.kind ?? "text") !== "number") return true;
@@ -3704,7 +3705,9 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
               </span>}
               {compareEdit && <span aria-hidden>→</span>}
               {compareEdit && <span className="muted">拟调整</span>}
-              <input
+              {surface && kind === "number" && !compareEdit ? (
+                <RdNumberInput aria-label="目标新值" unit={spec.unit} min={spec.min} max={spec.max} step={spec.step} value={newVal} aria-invalid={!editValueOk && !!newVal ? true : undefined} onChange={(e) => setNewVal(e.target.value)} placeholder={spec.current ? `当前 ${spec.current}` : "输入新值"} />
+              ) : <input
                 className="fld"
                 aria-label="目标新值"
                 aria-describedby={compareEdit ? [comparisonValueId, comparisonUnit && comparisonUnitId].filter(Boolean).join(" ") : undefined}
@@ -3717,8 +3720,8 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
                 onChange={(e) => setNewVal(e.target.value)}
                 placeholder={spec.current ? `输入新值（当前 ${spec.current}）` : "输入新值"}
                 style={{ maxWidth: compareEdit ? 140 : 240 }}
-              />
-              {comparisonUnit && <span className="muted tiny" id={compareEdit ? comparisonUnitId : undefined}>{comparisonUnit}</span>}
+              />}
+              {comparisonUnit && !(surface && kind === "number" && !compareEdit) && <span className="muted tiny" id={compareEdit ? comparisonUnitId : undefined}>{comparisonUnit}</span>}
             </div>
           )}
           {!editValueOk && !retryApproval && kind === "number" && newVal && (
@@ -3726,6 +3729,8 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
               请输入 {spec.min ?? "允许范围"}～{spec.max ?? "允许上限"} 的有效数字{spec.step ? `（步长 ${spec.step}）` : ""}。
             </div>
           )}
+          {surface && spec.hint && <div className="rd-form-help">{spec.hint}</div>}
+          {surface && spec.preview && editValueOk && (newVal || spec.allowEmpty) && <div className="rd-confirm-preview">{spec.preview(newVal)}</div>}
           {!compareEdit && newVal && spec.current && (
             <div className="tiny" style={{ marginTop: 8, color: "var(--ink-3)" }}>
               当前 <span className="mono">{spec.optionLabels?.[spec.current] ?? spec.current}</span> → 新 <span className="mono" style={{ color: "var(--brand)" }}>{spec.optionLabels?.[newVal] ?? newVal}{spec.unit ? ` ${spec.unit}` : ""}</span>

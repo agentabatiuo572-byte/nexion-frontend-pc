@@ -599,6 +599,51 @@ td .rd-flow { margin-bottom: 0; }
 .rd-tiers-bounds span[data-edge="start"] { transform: none; }
 .rd-tiers-bounds span[data-edge="end"] { transform: translateX(-100%); }
 
+/* 配置页（CP-87、CP-88、CP-91、CP-54）：配置项一行一项，名称和说明在左，当前值和动作在右；分组导航和页级状态放在内容旁边。 */
+.rd-config { display: grid; }
+.rd-config-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(112px, max-content) 88px; align-items: center; gap: 4px 20px; padding: 10px 0; border-top: 1px solid var(--rd-line); }
+.rd-config-row:first-child { border-top: 0; padding-top: 4px; }
+.rd-config-row:last-child { padding-bottom: 0; }
+.rd-config-name { color: var(--rd-text); font-weight: 500; }
+.rd-config-help { margin-top: 2px; display: grid; gap: 2px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-config-where { color: var(--rd-text-3); }
+.rd-config-value { display: grid; justify-items: end; gap: 4px; min-width: 0; text-align: right; color: var(--rd-text); font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.rd-config-value small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-3); }
+.rd-config-action { display: flex; justify-content: flex-end; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-config-group { display: grid; gap: 4px; }
+.rd-config-group + .rd-config-group { margin-top: 20px; }
+.rd-config-group-title { margin: 0 0 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 500; color: var(--rd-text-2); }
+.rd-config-layout { container-type: inline-size; }
+.rd-config-grid { display: grid; grid-template-columns: minmax(0, 1fr) 248px; gap: var(--rd-section-gap); align-items: start; }
+.rd-config-groups { display: grid; gap: var(--rd-section-gap); min-width: 0; }
+.rd-config-groups > * { scroll-margin-top: 16px; }
+.rd-config-rail { position: sticky; top: 0; display: grid; gap: 12px; order: 2; }
+.rd-section-nav { display: grid; gap: 4px; }
+.rd-section-nav a { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: var(--rd-radius-control); color: var(--rd-text-2); text-decoration: none; }
+.rd-section-nav a[aria-current] { background: var(--rd-selected); color: var(--rd-text); font-weight: 500; }
+.rd-section-nav a:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) { .rd-section-nav a:not([aria-current]):hover { background: var(--rd-hover); color: var(--rd-text); } }
+.rd-section-nav-alert { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-warn); }
+@container (max-width: 860px) {
+  .rd-config-grid { grid-template-columns: minmax(0, 1fr); }
+  .rd-config-rail { position: static; order: 0; }
+  .rd-section-nav { display: flex; flex-wrap: wrap; }
+}
+@container (max-width: 560px) {
+  .rd-config-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .rd-config-main { grid-column: 1 / -1; }
+  .rd-config-value { justify-items: start; text-align: left; }
+}
+.rd-config-link { margin-left: 8px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; }
+.rd-push-state { display: grid; justify-items: start; gap: 8px; }
+.rd-push-state p { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-row-actions { display: inline-flex; gap: 8px; }
+.rd-number { position: relative; display: block; width: 100%; max-width: 240px; }
+.rd-number .rd-input { padding-right: 56px; font-variant-numeric: tabular-nums; appearance: textfield; }
+.rd-number .rd-input::-webkit-inner-spin-button, .rd-number .rd-input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.rd-number-unit { position: absolute; z-index: 1; top: 0; right: 12px; height: var(--rd-control-h); display: inline-flex; align-items: center; color: var(--rd-text-3); pointer-events: none; }
+.rd-confirm-preview { margin-top: 8px; color: var(--rd-text); }
+
 /* 主题开关（顶栏、登录页）：太阳浅色、月亮深色，选中的一格亮底。 */
 .rd-theme { display: inline-flex; align-items: center; flex: none; padding: 2px; border-radius: 8px; background: var(--rd-panel-inner); }
 .rd-theme button { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--rd-text-3); font: inherit; font-size: 12px; line-height: 18px; white-space: nowrap; cursor: pointer; }

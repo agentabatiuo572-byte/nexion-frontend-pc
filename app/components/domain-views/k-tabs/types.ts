@@ -50,6 +50,12 @@ export type ConfirmReq = {
   action: ReactNode;
   detail: ReactNode;
   chips?: ConfirmChip[];
+  /** 这个操作自己声明的影响和提交前检查，传了就不按文字猜摘要（OP-51）。 */
+  statedBrief?: { impact: string; check: string };
+  /** 理由框的占位，按场景写（TX-11）；不传时用风控排查的那句。 */
+  reasonPlaceholder?: string;
+  /** 生效标签，只在 RdPage 里显示。 */
+  effect?: ReactNode;
   /** true = 原因必填(标记类 / 白名单 / 手动补触发)。 */
   reason?: boolean;
   /** 可选输入框:传 options 时渲染 chips 勾选(枚举值不让手输,能勾选的不要手输铁律);不传则文本框(开放值如白名单网段 / 补触发 userId / 覆盖分)。 */

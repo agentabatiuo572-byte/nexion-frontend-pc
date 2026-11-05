@@ -10,11 +10,12 @@
  * - actions 放右侧：次按钮在前，主按钮最后，主按钮最多一个；危险操作不紧挨主按钮（PG-15）。
  * - meta 是数据时间和刷新方式，全页读同一份数据时才放这里（PG-16）。readOnly 写法见 OP-125。
  * - back 只在带来源进入时传（PG-17）。
+ * - guideExtra 是「这页怎么用」里随数据变的内容，比如接口返回的检查项，写在技术信息前面。
  */
 import type { ReactNode } from "react";
 import { PageGuide } from "./page-guide";
 
-export function PageHeader({ title, summary, pageId, actions, meta, readOnly, back }: {
+export function PageHeader({ title, summary, pageId, actions, meta, readOnly, back, guideExtra }: {
   title: ReactNode;
   summary?: ReactNode;
   pageId?: string;
@@ -22,6 +23,7 @@ export function PageHeader({ title, summary, pageId, actions, meta, readOnly, ba
   meta?: ReactNode;
   readOnly?: ReactNode;
   back?: ReactNode;
+  guideExtra?: ReactNode;
 }) {
   return (
     <header className="rd-head">
@@ -30,7 +32,7 @@ export function PageHeader({ title, summary, pageId, actions, meta, readOnly, ba
         <div className="rd-head-titles">
           <div className="rd-head-row">
             <h1 className="rd-head-title">{title}</h1>
-            {pageId && <PageGuide pageId={pageId} />}
+            {pageId && <PageGuide pageId={pageId} extra={guideExtra} />}
           </div>
           {summary && <p className="rd-head-summary">{summary}</p>}
         </div>

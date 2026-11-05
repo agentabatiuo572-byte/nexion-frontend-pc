@@ -7,7 +7,7 @@
  * 首次打开时入口旁显示一行提示，不抢焦点、不自动打开、不盖住内容；关掉后按账号和页面记住，
  * 读不到记忆时当已看过，不反复打扰。
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { CircleHelp, X } from "lucide-react";
 import { getPageGuide } from "@/lib/admin/page-guides";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -17,7 +17,7 @@ function seenKey(adminId: number | undefined, pageId: string) {
   return `nexion-admin-page-guide-seen-v1:${adminId ?? "anonymous"}:${pageId}`;
 }
 
-export function PageGuide({ pageId }: { pageId: string }) {
+export function PageGuide({ pageId, extra }: { pageId: string; extra?: ReactNode }) {
   const guide = getPageGuide(pageId);
   const adminId = useAdminAuth((state) => state.session?.adminId);
   const [open, setOpen] = useState(false);
@@ -64,6 +64,7 @@ export function PageGuide({ pageId }: { pageId: string }) {
             <dl>{guide.terms.map((term) => <div key={term.name}><dt>{term.name}：</dt><dd>{term.text}</dd></div>)}</dl>
           </section>
         )}
+        {extra}
         <section className="rd-guide-tech">
           <h3>技术信息</h3>
           <div>页面编号 {pageId}</div>

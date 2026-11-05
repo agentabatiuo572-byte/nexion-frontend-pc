@@ -13,6 +13,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import "./h-domain.css";
+import { RdPage } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
@@ -58,9 +59,9 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
     ? <span className="f-live"><span className="dot" />{`${rhythm.currentPhase} · 第 ${rhythm.currentMonth}/${rhythm.totalMonths} 月 · ${describeH1Schedule(rhythm.schedule)}`}</span>
     : null;
 
-  return (
-    <div className={tab === "H4" ? "hdom" : "dkpage hdom"}>
-      {tab !== "H4" && <DomainHeader {...meta} right={right} />}
+  const page = (
+    <>
+      {tab !== "H4" && tab !== "H2" && <DomainHeader {...meta} right={right} />}
 
       {tab === "H1" && <H1Phase ctx={ctx} onRhythmChange={setRhythm} />}
       {tab === "H2" && <H2Trial ctx={ctx} />}
@@ -78,6 +79,10 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
           amplifies={mc.amplifies}
           edit={mc.edit}
           businessForm={mc.businessForm}
+          effect={mc.effect}
+          confirmLabel={mc.confirmLabel}
+          statedBrief={mc.statedBrief}
+          coverageLead={mc.coverageLead}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {
             try {
@@ -92,6 +97,8 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
       )}
       {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
       {toastNode}
-    </div>
+    </>
   );
+  if (tab === "H2") return <RdPage className="hdom">{page}</RdPage>;
+  return <div className={tab === "H4" ? "hdom" : "dkpage hdom"}>{page}</div>;
 }
