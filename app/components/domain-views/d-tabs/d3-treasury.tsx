@@ -12,7 +12,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Download, Landmark, RefreshCw } from "lucide-react";
 import { OperationConfirmModal, useToast, type OperatorBriefKind } from "../design-kit";
-import { BlockState, Button, Conclusion, Decision, DiffList, Drawer, Explain, Field, Input, KeyValues, Modal, Notice, PageHeader, PageTabs, RdPage, Select, StatusTag } from "@/app/components/rd";
+import { BlockState, Button, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Input, KeyValues, Modal, Notice, PageHeader, PageTabs, RdPage, Select, StatusTag } from "@/app/components/rd";
 import { useB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import { businessClock } from "@/lib/admin/business-time";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
@@ -73,6 +73,8 @@ interface ConfirmRequest {
   briefKind: OperatorBriefKind;
   /** 这个操作自己的影响说明，和这类操作的通用说明不一样时才传。 */
   statedBrief?: { impact: string; check: string };
+  /** 金额、对象、前后值，常显。执行摘要默认收起，这些不能只写在 detail 里（OP-48）。 */
+  facts?: ReactNode;
   reasonMax?: number;
   effect?: string;
   confirmLabel: string;
@@ -344,6 +346,7 @@ export function D3Treasury() {
     setConfirm({
       action: "储备注入登记",
       detail: `登记 ${money(Number(nextAmount))}，${typeLabel}，凭证号 ${nextVoucher}。凭证号不可重复。登记后计入可用储备。凭证类型会写在理由前面，留在操作记录里。`,
+      facts: <Facts><Fact k="金额">{money(Number(nextAmount))}</Fact><Fact k="凭证类型">{typeLabel}</Fact><Fact k="凭证号"><span data-mono>{nextVoucher}</span></Fact></Facts>,
       briefKind: "funds",
       effect: "立即生效",
       confirmLabel: "确认登记",
@@ -370,9 +373,9 @@ export function D3Treasury() {
     const dropped = main.liabilities.breakdown.filter((row) => baseValues.liabilityCategories[row.category] && !values.liabilityCategories[row.category]);
     setConfirm({
       action: "调整应付款预测设置",
-      detail: (
+      detail: `预测 ${values.forecastWindow.replace("d", " 天")}，创世节点收益${values.genesisIncluded ? "计入" : "不计入"}。${effectiveText()}，不影响历史。`,
+      facts: (
         <>
-          预测 {values.forecastWindow.replace("d", " 天")}，创世节点收益{values.genesisIncluded ? "计入" : "不计入"}。{effectiveText()}，不影响历史。
           {!values.reserveCategories.usdt && <Notice tone="danger">不计入 USDT 储备后，资金安全等级会按储备 0 算。</Notice>}
           {dropped.map((row) => <Notice key={row.category} tone="warn">不再计入「{categoryText(row.category)}」，这类现在是 {money(row.amountUsdt)}。</Notice>)}
           <DiffList rows={forecastDiffRows(baseValues, values)} emptyNote="这次没有改动任何设置，保存只会多一个版本。" />
@@ -662,6 +665,7 @@ export function D3Treasury() {
           detail={confirm.detail}
           briefKind={confirm.briefKind}
           statedBrief={confirm.statedBrief}
+          facts={confirm.facts}
           effect={confirm.effect ? <StatusTag tone="progress" filled>{confirm.effect}</StatusTag> : undefined}
           confirmLabel={confirm.confirmLabel}
           reasonMin={8}
