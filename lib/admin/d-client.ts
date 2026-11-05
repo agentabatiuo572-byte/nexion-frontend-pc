@@ -13,6 +13,13 @@ interface ApiResult<T> {
   data?: T;
 }
 
+export class DRequestError extends Error {
+  constructor(message: string, public readonly status: number, public readonly code: number | undefined, public readonly reasonCode: string | undefined) {
+    super(message);
+    this.name = "DRequestError";
+  }
+}
+
 /**
  * D 域「结果未知」错误(2026-08-06 收尾审计:两个独立镜头同时点名)。
  *
@@ -700,7 +707,7 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
       && !outcomeStaysUnknown(response.status, result?.code)) {
       pendingMutations.forget(mutationFingerprint);
     }
-    throw new Error(formatAdminApiError(result?.message, `D_REQUEST_FAILED_${response.status}`));
+    throw new DRequestError(formatAdminApiError(result?.message, `D_REQUEST_FAILED_${response.status}`), response.status, result?.code, result?.message);
   }
   if (mutationFingerprint && !init?.retainOnSuccess) pendingMutations.forget(mutationFingerprint);
   return result.data as T;

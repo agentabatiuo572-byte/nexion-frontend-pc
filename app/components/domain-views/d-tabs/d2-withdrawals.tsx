@@ -31,6 +31,7 @@ import {
   type D5Params,
   type PageResult,
   isDOutcomeUnknownError,
+  DRequestError,
 } from "@/lib/admin/d-client";
 import { Drawer, KV, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import type { DCtx } from "./types";
@@ -607,6 +608,25 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   }, [visibleRows, authorities]);
   const pages = Math.max(1, Math.ceil(rows.total / Math.max(1, rows.pageSize)));
 
+  const handleWriteFailure = async (cause: unknown, batch = false) => {
+    await load();
+    if (detail) await openDetail(detail);
+    const stateConflict = cause instanceof DRequestError && (cause.status === 409 || cause.code === 409)
+      && ["INVALID_STATE_TRANSITION", "WITHDRAWAL_STATE_CONFLICT", "WITHDRAWAL_FROZEN_BY_C2_USER_STATUS",
+        "CREGIS_PAYOUT_ALREADY_DISPATCHED", "BANK_PAYOUT_ALREADY_DISPATCHED", "BANK_PAYOUT_RECOVERY_STALE",
+        "CREGIS_PAYOUT_RECOVERY_STATE_CONFLICT", "D2_DEVELOPMENT_SIMULATION_STATE_INVALID",
+        "D2_DEVELOPMENT_SIMULATION_CONFLICT", "D2_COOLDOWN_ALREADY_DUE"].includes(cause.reasonCode ?? "");
+    if (stateConflict) {
+      toast("提现已被他人或系统处理，已刷新列表，请核对最新状态。");
+      return;
+    }
+    const message = cause instanceof Error ? displayAdminError(cause) : "提交失败，请重试";
+    toast(batch && isDOutcomeUnknownError(cause) ? `${message}｜请不要改变勾选，请按原操作重试` : message);
+    // Only load() owns the page-load banner. Other refusals and unknown outcomes
+    // reject into the existing dialog, keeping its inputs and original command.
+    throw cause;
+  };
+
   const runReview = async (row: D2Withdrawal, action: D2ReviewAction, reason: string, form?: BusinessFormValue) => {
     const scope = reviewScope(row.withdrawalNo, action);
     const key = pendingKeys.get(scope) ?? operationKey(scope);
@@ -624,11 +644,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       //   这张单子的这个动作 24h 内做不了,界面还没有清除入口。
       //   结果未知则必须保号 —— 丢了重试就是铸新号 = 重复出金。
       if (!isDOutcomeUnknownError(cause)) pendingKeys.forget(scope);
-      const message = cause instanceof Error ? displayAdminError(cause) : "审核失败";
-      await load();
-      setError(message);
-      toast(message);
-      throw cause;
+      return await handleWriteFailure(cause);
     } finally {
       setSubmitting("");
     }
@@ -712,9 +728,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           await load(); await openDetail(row);
         } catch (cause) {
           if (!isDOutcomeUnknownError(cause)) pendingKeys.forget(scope);
-          await load(); await openDetail(row);
-          toast(cause instanceof Error ? displayAdminError(cause) : "核对失败，请检查 CID 后重试");
-          throw cause;
+          return await handleWriteFailure(cause);
         } finally { setSubmitting(""); }
       },
     });
@@ -737,9 +751,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           await openDetail(row);
         } catch (cause) {
           if (!isDOutcomeUnknownError(cause)) pendingKeys.forget(scope);
-          await load(); await openDetail(row);
-          toast(cause instanceof Error ? displayAdminError(cause) : "查询失败，没有重新打款");
-          throw cause;
+          return await handleWriteFailure(cause);
         } finally { setSubmitting(""); }
       },
     });
@@ -758,11 +770,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       await load();
     } catch (cause) {
       if (!isDOutcomeUnknownError(cause)) pendingKeys.forget(scope);
-      const message = cause instanceof Error ? displayAdminError(cause) : "模拟冷却到期失败";
-      await load();
-      setError(message);
-      toast(message);
-      throw cause;
+      return await handleWriteFailure(cause);
     } finally {
       setSubmitting("");
     }
@@ -843,12 +851,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           //   而批量指纹含 ids 集合,改一下勾选就是新号,重叠的那部分会被重复放行。
           //   回读让已生效的行先亮出来,再配合下面的提示劝阻「改选重来」。
           if (!isDOutcomeUnknownError(cause)) pendingKeys.forget(scope);
-          await load();
-          const message = cause instanceof Error ? cause.message : "批量审核失败";
-          setError(isDOutcomeUnknownError(cause)
-            ? `${message}｜请不要改变勾选直接重试，否则已放行的部分可能被重复放行`
-            : message);
-          throw cause;
+          return await handleWriteFailure(cause, true);
         } finally { setSubmitting(""); }
       },
     });
