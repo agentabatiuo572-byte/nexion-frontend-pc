@@ -35,6 +35,7 @@ export type ConfirmReq = {
   briefKind: OperatorBriefKind;
   action: ReactNode;
   detail: ReactNode;
+  content?: ReactNode;
   chips?: ConfirmChip[];
   /** true = 原因必填(标记类 / 白名单 / 手动补触发)。 */
   reason?: boolean;

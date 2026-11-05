@@ -1,5 +1,6 @@
 "use client";
 
+import { ForecastConfigImpact } from "@/app/components/forecast-config-preview";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -28,6 +29,9 @@ const FORECAST_CONFIG_SLOT = "forecast-config";
 import {
   B2_LIABILITY_KEYS,
   B2OutcomeUnknownError,
+  B2RequestError,
+  previewB2ForecastConfig,
+  type ForecastConfigPreview,
   downloadB2LiabilitiesCsv,
   fetchB2Dashboard,
   updateB2ForecastConfig,
@@ -90,6 +94,12 @@ export default function LiquidityPage() {
   const [reasonError, setReasonError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [preview, setPreview] = useState<{ key: string; value: ForecastConfigPreview } | null>(null);
+  const [previewError, setPreviewError] = useState("");
+  const [previewRetry, setPreviewRetry] = useState(0);
+  const previewKey = JSON.stringify([draft, data?.config.version]);
+  const currentPreview = preview?.key === previewKey ? preview.value : null;
+  const previewReady = currentPreview !== null && currentPreview.forecastDeltaPreview.afterCoverageStatus !== "VALUATION_UNAVAILABLE";
 
   const load = useCallback(async (nextWindow: B2MaturityWindow) => {
     setLoading(true);
@@ -111,6 +121,26 @@ export default function LiquidityPage() {
   useEffect(() => {
     void load("7d");
   }, [load]);
+
+  useEffect(() => {
+    setPreview(null);
+    setPreviewError("");
+    if (dialogStep !== "confirm" || !draft || !data || !canConfig) return;
+    let cancelled = false;
+    void previewB2ForecastConfig(draft, data.config.version).then((value) => {
+      if (!cancelled) setPreview({ key: previewKey, value });
+    }).catch(async (caught) => {
+      if (cancelled) return;
+      if (caught instanceof B2RequestError && caught.status === 409) {
+        setDialogStep("edit");
+        setSaveError(displayAdminError(caught));
+        await load(window);
+      } else setPreviewError(displayAdminError(caught));
+    });
+    return () => { cancelled = true; };
+    // The key contains the exact business draft and saved version.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dialogStep, previewKey, previewRetry, canConfig]);
 
   const sourceText = useMemo(
     () => Array.from(new Set([...(data?.reserve.sources ?? []), ...(data?.liabilities.sources ?? [])])).join(" / "),
@@ -140,16 +170,18 @@ export default function LiquidityPage() {
 
   const proceedToConfirm = () => {
     const length = reason.trim().length;
+    if (draft?.forecastWindow === "90d") return;
     if (length < 8 || length > 200) {
       setReasonError("操作原因需为 8–200 个字");
       return;
     }
     setReasonError("");
+    setPreview(null);
     setDialogStep("confirm");
   };
 
   const saveConfig = () => {
-    if (!data || !draft || saving) return;
+    if (!data || !draft || saving || !previewReady || !canConfig) return;
     const operator = currentAdminOperator();
     const fingerprint = JSON.stringify({
       draft,
@@ -169,10 +201,11 @@ export default function LiquidityPage() {
         setNotice("已保存，次日 UTC 00:00 起生效");
         await load(window);
       })
-      .catch((caught) => {
+      .catch(async (caught) => {
         if (!(caught instanceof B2OutcomeUnknownError)) forecastConfigCommandKey.forget(FORECAST_CONFIG_SLOT);
         setDialogStep(caught instanceof B2OutcomeUnknownError ? "confirm" : "edit");
         setSaveError(caught instanceof Error ? displayAdminError(caught) : "保存失败，请重试");
+        if (caught instanceof B2RequestError && caught.status === 409) await load(window);
       })
       .finally(() => setSaving(false));
   };
@@ -428,7 +461,7 @@ export default function LiquidityPage() {
                     >
                       <option value="7d">7 天</option>
                       <option value="30d">30 天</option>
-                      <option value="90d">90 天</option>
+                      {draft.forecastWindow === "90d" && <option value="90d" disabled>90 天（旧配置，请选择 7 或 30 天）</option>}
                     </select>
                   </label>
                   <label>
@@ -480,7 +513,7 @@ export default function LiquidityPage() {
                 {reasonError && <div id="b2-reason-error" className="b2-alert error" role="alert">{reasonError}</div>}
                 <div className="b2-dialog-actions">
                   <button type="button" className="b2-button" onClick={() => setDialogStep("closed")}>取消</button>
-                  <button type="button" className="b2-button primary" onClick={proceedToConfirm}>下一步：确认</button>
+                  <button type="button" className="b2-button primary" disabled={draft.forecastWindow === "90d"} onClick={proceedToConfirm}>下一步：确认</button>
                 </div>
               </>
             ) : (
@@ -493,9 +526,12 @@ export default function LiquidityPage() {
                   <p>原因：{reason.trim()}</p>
                   <p>次日 UTC 00:00 起生效，不影响历史数据。</p>
                 </div>
+                {currentPreview ? <ForecastConfigImpact preview={currentPreview} categoryLabel={(key) => LIABILITY_LABELS[key as keyof typeof LIABILITY_LABELS] ?? "其他应付款"} />
+                  : previewError ? <div role="alert">{previewError}<button type="button" className="b2-button" onClick={() => setPreviewRetry((value) => value + 1)}>重试预览</button></div>
+                  : <p role="status">正在加载配置影响预览…</p>}
                 <div className="b2-dialog-actions">
                   <button type="button" className="b2-button" disabled={saving} onClick={() => setDialogStep("edit")}>返回修改</button>
-                  <button type="button" className="b2-button primary" disabled={saving} onClick={saveConfig}>
+                  <button type="button" className="b2-button primary" disabled={saving || !previewReady} onClick={saveConfig}>
                     {saving ? "提交中…" : "确认提交"}
                   </button>
                 </div>

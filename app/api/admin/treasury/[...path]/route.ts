@@ -18,6 +18,9 @@ function isText(value: string | undefined) {
 }
 
 function backendPath(parts: string[], method: string) {
+  if (method === "POST" && parts.join("/") === "forecast-config/preview") {
+    return "/api/admin/treasury/forecast-config/preview";
+  }
   if (parts.length === 1 && [
     "overview",
     "dual-ledger",
