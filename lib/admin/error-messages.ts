@@ -81,6 +81,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   SUPPORT_ROUTE_RECOVERY_FACTS_CHANGED: "客户当前组范围与原调整资料不一致，结果尚未完成核对；请保留原命令，重新加载当前获准组资料后继续查询。",
   MANAGEMENT_SCOPE_REQUIRED: "当前账号没有客服组管理范围；请返回本人工作台，或联系总管理员核对主管资格及负责组。",
   ADMIN_GOVERNANCE_RECOVERY_ONLY: "当前有效超级管理员少于 2 名，只能先创建或恢复超级管理员账号。请先补足第 2 名超级管理员，再创建其他账号或重置密码。",
+  ADMIN_GOVERNANCE_RECOVERY_REQUIRES_APPROVAL: "可用超级管理员不足 2 人，本次恢复操作未执行。请刷新后提交审批，由另一位超管批准；没有第二位可用超管时，请运维执行服务器恢复。",
   SUPPORT_SERVICE_TYPE_INVALID: "服务类型无效，只能是「普通客服」或「专属客服」。",
   SUPPORT_UNBOUND_POLICY_RANGE_INVALID: "提醒时长须为 1–120 分钟，兜底时长须大于提醒时长且不超过 1440 分钟。",
   SUPPORT_UNBOUND_POLICY_VERSION_CONFLICT: "待分配设置已被他人修改，请重新加载后再保存。",
