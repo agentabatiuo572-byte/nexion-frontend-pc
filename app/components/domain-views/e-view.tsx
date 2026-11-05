@@ -467,6 +467,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [e4Loading, setE4Loading] = useState(false);
   // 切回页面的后台重读不换骨架屏，所以和 e4Loading 分开记。写操作的锁看这个。
   const [e4Reading, setE4Reading] = useState(false);
+  // 切回页面时重读开着的详情。旧详情留在屏幕上不闪，写操作等它读完。
+  const [e4DetailReading, setE4DetailReading] = useState(false);
   const [e4Error, setE4Error] = useState<string | null>(null);
   const [e4Total, setE4Total] = useState(0);
   const [e4Query, setE4Query] = useState<E4Query>(() => e4QueryFromUrl(searchParams));
@@ -521,8 +523,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       }
     }
   }, [e4Query]);
-  /** 列表在读或读失败时事实不是最新的，抽屉和确认框都不能提交（OP-150）。 */
-  const e4ReadBlock = e4Reading ? "正在读取最新订单状态，读完才能操作" : e4Error ? "订单列表读取失败，重试成功后才能操作" : undefined;
+  /** 列表或开着的详情在读、读失败时事实不是最新的，抽屉和确认框都不能提交（OP-150）。 */
+  const e4ReadBlock = e4Reading || e4DetailReading ? "正在读取最新订单状态，读完才能操作"
+    : e4Error ? "订单列表读取失败，重试成功后才能操作"
+      : e4DetailError ? "订单详情读取失败，重试成功后才能操作" : undefined;
   /** 汇总和流程表的数量。接口没有按组计数，11 个状态各取总数，跟着搜索词走，读不到写「—」，不挡列表和操作。
    *  换条件时先清掉旧数，新数读齐前不能当当前范围显示；切回页面的后台重读范围没变，读齐再换。 */
   const readE4Counts = useCallback(async (silent = false) => {
@@ -545,12 +549,35 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const refreshE4 = useCallback(() => Promise.all([readE4List(), readE4Counts()]), [readE4List, readE4Counts]);
   useEffect(() => { if (tab === "E4") void readE4List(); }, [tab, readE4List]);
   useEffect(() => { if (tab === "E4") void readE4Counts(); }, [tab, readE4Counts]);
+  /** 不清屏重读开着的详情。读失败要清掉旧详情，不能再按它操作。 */
+  const rereadE4Detail = useCallback(async (orderId: string) => {
+    const seq = ++e4DetailSeq.current;
+    setE4DetailReading(true);
+    try {
+      const detail = await fetchE4OrderDetail(orderId);
+      if (seq !== e4DetailSeq.current) return;
+      setE4Detail(detail);
+      setE4DetailError(null);
+    } catch (error) {
+      if (seq !== e4DetailSeq.current) return;
+      setE4Detail(null);
+      setE4DetailError(displayAdminError(error));
+    } finally {
+      // 序号已经顶掉还在读的 openOrder，它的加载状态由这里收。
+      if (seq === e4DetailSeq.current) {
+        setE4DetailReading(false);
+        setE4DetailLoading(false);
+      }
+    }
+  }, []);
+  const openOrderId = selOrder?.id;
   useEffect(() => {
     if (tab !== "E4") return;
     const refreshOnReturn = () => {
       if (document.visibilityState !== "visible") return;
       void readE4List(true);
       void readE4Counts(true);
+      if (openOrderId) void rereadE4Detail(openOrderId);
     };
     window.addEventListener("focus", refreshOnReturn);
     document.addEventListener("visibilitychange", refreshOnReturn);
@@ -558,9 +585,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       window.removeEventListener("focus", refreshOnReturn);
       document.removeEventListener("visibilitychange", refreshOnReturn);
     };
-  }, [tab, readE4List, readE4Counts]);
+  }, [tab, readE4List, readE4Counts, rereadE4Detail, openOrderId]);
   const openOrder = useCallback(async (order: EOrder) => {
     const seq = ++e4DetailSeq.current;
+    setE4DetailReading(false);
     setSelOrder(order);
     setE4Detail(null);
     setE4DetailError(null);
@@ -576,6 +604,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   }, []);
   const closeOrder = useCallback(() => {
     e4DetailSeq.current += 1;
+    setE4DetailReading(false);
     setSelOrder(null);
     setE4Detail(null);
     setE4DetailError(null);

@@ -61,8 +61,14 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
   ];
   const countOf = (states: readonly string[]) => counts ? states.reduce((sum, state) => sum + (counts[state] ?? 0), 0) : undefined;
   const flowCount = countOf(FLOW_STATES);
-  const waitCount = countOf(["paid", "provisioning"]);
+  // 要人工的单：等开通或激活的，加开通失败等退款的（后端把开通失败都记成已付款）。
+  const flowWait = countOf(["paid", "provisioning"]);
+  const refundWait = counts?.provisioning_failed ?? 0;
+  const waitCount = flowWait === undefined ? undefined : flowWait + refundWait;
   const searchNote = query.keyword ? "按当前搜索词算。" : "";
+  const waitTitle = flowWait && refundWait ? <>有 <b>{waitCount}</b> 单要处理</>
+    : refundWait ? <>有 <b>{refundWait}</b> 单开通失败待退款</> : <>有 <b>{flowWait}</b> 单等开通或激活</>;
+  const waitHint = `${flowWait && refundWait ? `${flowWait} 单等开通或激活，${refundWait} 单开通失败待退款。` : ""}${flowWait ? "点一行看差什么，设备分配和激活在「设备运行管理」做。" : "点一行核对付款和覆盖率，再提交退款。"}${searchNote}`;
   const failedCount = countOf(FAILED_STATES);
   const countSub = (text: string) => ctx.e4CountsFailed ? "数量暂时读不到" : counts ? text : "读取中";
   const activated = orders.filter((order) => ctx.orderState(order) === "activated");
@@ -99,8 +105,11 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
       ? <Conclusion state="unknown" action={<Button size="sm" onClick={() => void ctx.refreshE4()}>重试</Button>}>订单数量读不到，还不知道有没有要处理的</Conclusion>
       : waitCount === undefined ? <Conclusion state="unknown">正在读取有没有要处理的订单…</Conclusion>
         : waitCount > 0
-          ? <Conclusion state="warn" lead hint={`点一行看差什么，设备分配和激活在「设备运行管理」做。${searchNote}`}
-              action={<Button size="sm" onClick={() => ctx.updateE4Query({ group: "flow", state: "" })}>看进行中的订单</Button>}>有 <b>{waitCount}</b> 单等开通或激活</Conclusion>
+          ? <Conclusion state="warn" lead hint={waitHint}
+              action={<>
+                {!!flowWait && <Button size="sm" onClick={() => ctx.updateE4Query({ group: "flow", state: "" })}>看进行中的订单</Button>}
+                {refundWait > 0 && <Button size="sm" onClick={() => ctx.updateE4Query({ group: "failed", state: "provisioning_failed" })}>看开通失败的订单</Button>}
+              </>}>{waitTitle}</Conclusion>
           : <Conclusion state="ok" hint={`${counts?.placed ? `${counts.placed} 单在等用户付款，不用操作。` : ""}${searchNote}` || undefined}>没有要处理的订单</Conclusion>}
 
     <StatBand label="订单汇总">

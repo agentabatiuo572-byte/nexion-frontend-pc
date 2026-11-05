@@ -71,6 +71,8 @@ interface ConfirmRequest {
   action: string;
   detail: ReactNode;
   briefKind: OperatorBriefKind;
+  /** 这个操作自己的影响说明，和这类操作的通用说明不一样时才传。 */
+  statedBrief?: { impact: string; check: string };
   reasonMax?: number;
   effect?: string;
   confirmLabel: string;
@@ -406,6 +408,7 @@ export function D3Treasury() {
       action: "导出",
       detail: kind === "reconciliation" ? "导出储备与应付款对账数据：储备、应付款、净差额三行。" : "导出应付款明细：全部 9 类的当前数据，不随页面窗口变。",
       briefKind: "export",
+      statedBrief: { impact: "确认后浏览器直接下载这份 CSV，不生成任务，没有下载链接。这次导出记入操作记录。", check: "核对导出内容，理由写明导出依据或工单号。" },
       confirmLabel: "确认导出",
       run: (reason) => submitExport(kind, reason),
     });
@@ -658,6 +661,7 @@ export function D3Treasury() {
           action={confirm.action}
           detail={confirm.detail}
           briefKind={confirm.briefKind}
+          statedBrief={confirm.statedBrief}
           effect={confirm.effect ? <StatusTag tone="progress" filled>{confirm.effect}</StatusTag> : undefined}
           confirmLabel={confirm.confirmLabel}
           reasonMin={8}
