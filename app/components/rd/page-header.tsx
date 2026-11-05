@@ -11,11 +11,12 @@
  * - meta 是数据时间和刷新方式，全页读同一份数据时才放这里（PG-16）。readOnly 写法见 OP-125。
  * - back 只在带来源进入时传（PG-17）。
  * - guideExtra 是「这页怎么用」里随数据变的内容，比如接口返回的检查项，写在技术信息前面。
+ * - identity 是详情页的身份行：编码、状态、等级（PG-50）。详情页的 title 写对象的名字，这一行紧跟说明。
  */
 import type { ReactNode } from "react";
 import { PageGuide } from "./page-guide";
 
-export function PageHeader({ title, summary, pageId, actions, meta, readOnly, back, guideExtra }: {
+export function PageHeader({ title, summary, pageId, actions, meta, readOnly, back, guideExtra, identity }: {
   title: ReactNode;
   summary?: ReactNode;
   pageId?: string;
@@ -24,6 +25,7 @@ export function PageHeader({ title, summary, pageId, actions, meta, readOnly, ba
   readOnly?: ReactNode;
   back?: ReactNode;
   guideExtra?: ReactNode;
+  identity?: ReactNode;
 }) {
   return (
     <header className="rd-head">
@@ -35,6 +37,7 @@ export function PageHeader({ title, summary, pageId, actions, meta, readOnly, ba
             {pageId && <PageGuide pageId={pageId} extra={guideExtra} />}
           </div>
           {summary && <p className="rd-head-summary">{summary}</p>}
+          {identity && <div className="rd-head-identity">{identity}</div>}
         </div>
         {actions && <div className="rd-head-actions">{actions}</div>}
       </div>

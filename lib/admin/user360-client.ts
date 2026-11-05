@@ -1310,7 +1310,8 @@ export async function executeUserDeviceTradein(
   const result = (await response.json().catch(() => null)) as ApiResult<JsonRecord> | null;
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
-    if (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
+    if (result?.message === "IDEMPOTENCY_REQUEST_IN_PROGRESS" || result?.message === "IDEMPOTENCY_RESULT_UNKNOWN"
+      || response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
       || outcomeStaysUnknown(response.status, result?.code)) {
       throw new UsersOutcomeUnknownError(commandKey);
     }

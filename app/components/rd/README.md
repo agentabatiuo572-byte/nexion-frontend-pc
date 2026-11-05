@@ -26,7 +26,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 要做什么 | 用 | 文件 |
 |---|---|---|
 | 页面根 | `RdPage` | `surface.tsx` |
-| 页头：标题、一句说明、「这页怎么用」、动作、数据时间 | `PageHeader` | `page-header.tsx` |
+| 页头：标题、一句说明、「这页怎么用」、动作、数据时间；详情页的身份行传 `identity` | `PageHeader` | `page-header.tsx` |
 | 这页怎么用 | `PageGuide`，`PageHeader` 自动带 | `page-guide.tsx` |
 | 看板第一句话 | `Conclusion`；正常态不放大，`lead` 只在异常或带关键数字时放大；`hint` 只写建议和该做什么，怎么算传 `explain` 进句尾的提示图标 | `conclusion.tsx` |
 | 一排关键数字，最多 4 个 | `StatBand`、`Stat`；整张可点传 `href` 或 `onOpen`；值是 0 或「—」时自动弱化（字色弱、图标底灰、`lead` 不放大）；口径传 `explain` 进名称旁的提示图标，`sub` 只放数据 | `stat.tsx` |
@@ -74,7 +74,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 确认框里的前后值 | `DiffList`；只有一行时写一句「现在 → 改后」，不画表 | `diff-list.tsx` |
 | 一列固定的等级 | `LevelList` | `level-list.tsx` |
 | 配置项：名称、提示图标、当前值、动作 | `ConfigList`（`label` 给这组起名）、`ConfigRow`；一项一行，这是什么、显示位置、生效时间、改了会怎样（`what`、`where`、`when`、`effect`）都在提示图标的气泡里；说明表放 `lib/admin/config-help/`，按参数键取 | `config-list.tsx` |
-| 配置页三组以上的分组导航 | `SectionNav`、`useSectionNav`；定位写进网址 `section`，目标在折叠组里先展开 | `section-nav.tsx` |
+| 配置页三组以上的分组导航，详情页的分区导航（传 `row` 横排） | `SectionNav`、`useSectionNav`；定位写进网址 `section`，目标在折叠组里先展开 | `section-nav.tsx` |
 | 数字输入，单位写在框里 | `NumberInput`；`OperationConfirmModal` 的 `edit.kind: "number"` 在 `RdPage` 里自动用它 | `number-input.tsx` |
 
 ## 颜色：只传 tone，不写色值
@@ -107,6 +107,32 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 ```
 
 一切正常时用 `Conclusion` 一句话（16px，不放大），和看板、报表、工作台一个样子；有异常才用 `Notice`。每项自己保存，页头不放全局保存。没有修改权限时 `ConfigRow` 不传 `action`。`PageHeader` 的 `guideExtra` 放「这页怎么用」里随数据变的内容。
+
+## 详情页的排法
+
+样板是用户详情（`app/_console/users/search/[id]/page.tsx`），完整客户档案、促销活动详情照它做。从上到下：
+
+```tsx
+<RdPage>
+  <PageHeader pageId="C1D" title={对象名字} summary="…" back={<Link …>返回用户列表</Link>} actions={<Button>刷新</Button>}
+    identity={<>编码、状态、等级</>} meta="注册、最近登录、读取时间" readOnly={整页没有写权限时写一句} />
+  <Conclusion …>一句话：有没有要处理的事</Conclusion>   账户受限时这句就是页级提示，一屏只有一条
+  {待确认条}
+  <StatBand>最多 4 个，点数字定位并展开</StatBand>
+  <Panel title="处理入口">次按钮一行，跨页查询用 .rd-links 一行</Panel>
+  <Panel title="风险与资产">第一层要看的成对数值，一行排开</Panel>
+  <div className="rd-detail-nav"><SectionNav row label="本页分区" items={sections} nav={nav} /></div>
+  <div className="rd-detail-groups">
+    <div id={nav.anchor("security")}><Fold title="安全" summary="…" alert={…} open={…} onOpenChange={…}>…</Fold></div>
+  </div>
+</RdPage>
+```
+
+- 分区的 `alert` 和折叠组的 `alert` 用同一个值，有异常时默认展开，摘要只写异常。
+- 折叠组里的一小块用 `Panel plain headingLevel={3}`，外面包 `.rd-detail-block`；成对的小汇总用 `.rd-detail-values`（`dl`），名字和数字挨着，不拉到面板右端。
+- 块里的单条记录点行开 `Drawer`，上一条下一条在当前页的行里切。
+- 缺的区块不显示，读取失败只替换这一块，结论句写「X 读取失败，这部分没有判断」。
+- 带锚点或 `section` 进来时，等上面的内容读完再定位，不然内容撑开会把目标顶走。
 
 ## 单条详情的抽屉
 
@@ -178,7 +204,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 两套主题的差别只在 `tokens.css` 和 `rd.css` 里：浅色数字用正文色、身份靠实色图标底和图表色（VS-14）；白面板加 1px 边、横幅改左侧 3px 状态色竖条加很浅的底（VS-94）；Logo 换横版 on-light（`shell.css`）。页面不写这些。
 
-还没迁移的页面，`console-shell.tsx` 给内容区 `<main>` 挂 `data-theme="dark"` 和 `.rd-legacy`，里面仍是旧的深色取值，侧栏和顶栏跟主题走（VS-95）。迁完一页就把它的路径加进 `lib/nav/console-nav.ts` 的 `REDESIGNED_PATHS`。
+还没迁移的页面，`console-shell.tsx` 给内容区 `<main>` 挂 `data-theme="dark"` 和 `.rd-legacy`，里面仍是旧的深色取值，侧栏和顶栏跟主题走（VS-95）。迁完一页就把它的路径加进 `lib/nav/console-nav.ts` 的 `REDESIGNED_PATHS`；路径带对象编号的详情页加进 `REDESIGNED_DETAIL_PREFIXES`。
 
 ## 依赖
 
