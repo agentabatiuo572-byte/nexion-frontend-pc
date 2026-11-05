@@ -24,6 +24,8 @@ export type ActionConfirmReq = {
   confirmLabel?: string;
   /** 这次不能再提交的原因：写在框里，确认按钮禁用。比如提交时发现单据已被别人处理。 */
   blockedReason?: ReactNode;
+  /** 换了这个值，框按新内容重开，已填的理由清空（OP-97）。 */
+  formKey?: number;
   /** 这个操作自己声明的影响和提交前检查，传了就不按文字猜摘要（OP-51）。 */
   statedBrief?: { impact: string; check: string };
   /** 做决定要核对的事实，常显在业务字段上面，比如收款网络和完整地址。 */

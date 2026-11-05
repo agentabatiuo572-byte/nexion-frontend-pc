@@ -18,6 +18,10 @@ export type ActionConfirmReq = {
   businessForm?: BusinessFormSpec;
   completionCopy?: string;
   confirmLabel?: string;
+  /** 生效标签，只在 RdPage 里显示。 */
+  effect?: ReactNode;
+  /** 理由框的占位，按场景写（TX-11）。 */
+  reasonPlaceholder?: string;
   statedBrief?: { impact: string; check: string };
   /** 做决定要核对的事实，常显在理由上面。 */
   facts?: ReactNode;

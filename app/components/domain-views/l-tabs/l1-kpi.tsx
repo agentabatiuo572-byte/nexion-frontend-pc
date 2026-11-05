@@ -12,9 +12,9 @@ import Link from "next/link";
 import { Activity, CheckCircle2, CircleHelp, Download, Flag, Gauge, ListChecks, Lock, Target } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
-import { BlockState, Button, Cell, Check, Conclusion, Explain, Fact, Facts, Field, FilterBar, FilterField, Fold, Input, Modal, Notice, PageHeader, Panel, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Cell, Check, Conclusion, Explain, Fact, Facts, Field, FilterBar, FilterField, Fold, Input, Modal, Notice, NumberInput, PageHeader, Panel, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
-import { businessClock, businessDay, businessZone } from "@/lib/admin/business-time";
+import { businessClock, businessDay, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { findByPath } from "@/lib/nav/console-nav";
 import { PaginationExemptionList } from "../design-kit";
 import { kpiState, num, rec, rows, strings, type KpiRow } from "./live-data";
@@ -144,6 +144,7 @@ const EXPORT_PAGE = "/analytics/export";
 /** 结果未知时原内容、理由和命令号都留着，刷新后还能原样重试，不铸新号（OP-93、OP-94）。 */
 const pendingExports = createPendingMutationStore<L1PendingExport>({
   storageKey: "nexion-admin-l1-export-commands-v1",
+  retainExpiredRecords: true, // 过期不能重试，但记录和导出锁都留着（OP-96）
   isValidRecord: (record) => typeof record.label === "string" && typeof record.reason === "string" && record.reason.length > 0
     && (record.mode === "series" || record.mode === "snapshot" || record.mode === "totals")
     && !!record.input && typeof record.input === "object",
@@ -199,7 +200,7 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
     setRetryNote("");
     setFinished(mode);
     await ctx.reloadBi?.();
-    ctx.toast(`${mode === "series" ? "关键指标趋势已导出" : "关键指标当前汇总已导出"}，到「${pageName}」下载`);
+    ctx.toast(reach(EXPORT_PAGE, "bi_l5_read") ? `已提交导出，生成后到「${pageName}」下载` : "已提交导出，文件生成后才能下载");
   };
 
   const openConfirm = (mode: L1ExportMode) => {
@@ -208,6 +209,8 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
       action: "导出关键指标",
       detail: `聚合数据，不含用户隐私。提交后生成任务，文件到「${pageName}」下载。`,
       statedBrief: { impact: "生成一个导出任务，不改任何数据，操作记录里留痕。", check: "看时间范围对不对，理由写这份数据给谁、做什么用。" },
+      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
+      reasonPlaceholder: "写这份数据给谁、做什么用，例如：给增长组做周会复盘",
       facts: (
         <Facts>
           <Fact k="文件内容">{mode === "series" ? "8 项指标的当前值、目标和六段趋势" : mode === "snapshot" ? "8 项指标的当前值、目标和可用性" : "当前累计数"}</Fact>
@@ -226,10 +229,13 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
 
   /** 按原操作重试：同命令号、同内容、同理由，不接受新输入。后端明确拒绝才给解除。 */
   const retry = async (record: L1PendingExport) => {
-    if (!pendingExports.isDurablyStored(record.fingerprint, record.commandKey)) {
-      pendingExports.forget(record.fingerprint, record.commandKey);
+    // 到期和读不到记录都不是结果，不解除，也不重发（OP-96）。解除只在重试被后端明确拒绝之后。
+    if (record.expiresAt <= Date.now()) {
       syncPending();
-      ctx.toast(`原操作已结束或过期，本次未再次发送。先到「${pageName}」核对，再决定要不要重新导出。`);
+      return;
+    }
+    if (!pendingExports.isDurablyStored(record.fingerprint, record.commandKey)) {
+      setRetryNote("浏览器里读不到这条记录，这次没有重发。请到操作记录与审批核对。");
       return;
     }
     setRetrying(true);
@@ -238,7 +244,7 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
     try {
       await send(record.mode, record.input, record.reason, record.label);
     } catch (cause) {
-      setRetryNote(`重试被拒绝：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，原命令继续保留。`);
+      setRetryNote(`重试被拒绝：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，原操作继续保留。`);
       setRetryRejected(true);
     } finally {
       setRetrying(false);
@@ -255,6 +261,8 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
     ctx.toast("已解除待确认，可以重新导出");
   };
 
+  const expired = pending ? pending.expiresAt <= Date.now() : false;
+
   return {
     button: ctx.canExport ? (<>
       <Explain label="导出的说明" content="要填理由，生成下载任务，留操作记录。" />
@@ -269,10 +277,10 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
     notices: <>
       {pending && (
         <Notice tone="warn" title={`${pending.label} · 结果未确认`} action={<>
-          <Button size="sm" loading={retrying} onClick={() => void retry(pending)}>按原操作重试</Button>
+          <Button size="sm" loading={retrying} disabledReason={expired ? "已超过 24 小时，不能再重试" : undefined} onClick={() => void retry(pending)}>按原操作重试</Button>
           {retryRejected && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除待确认</Button>}
         </>}>
-          {businessClock(pending.createdAt)}（{businessZone().label}）发出，任务可能已经生成，不要重新导出。{exportPage(`到「${pageName}」核对`)}
+          {expired ? formatBusinessTimeFull(new Date(pending.createdAt).toISOString(), "—") : businessClock(pending.createdAt)}（{businessZone().label}）发出，任务可能已经生成，不要重新导出。{expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : "重发原内容，已成功的不会重复执行。"}{exportPage(`到「${pageName}」核对`)}
           <Explain label="技术信息" content={`命令号 ${pending.commandKey} ｜ 理由 ${pending.reason}`} />
           {retryNote && <div>{retryNote}</div>}
         </Notice>
@@ -289,8 +297,7 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
         </>}>
           <div className="rd-stack">
             <p><b>{pending.label}</b></p>
-            <p>重试被拒绝说明不了原操作的结果。先到「{pageName}」确认任务有没有生成，再解除。</p>
-            <p>解除后可以重新导出，原操作不再重试。这一步只放开本页的锁，不发请求，不写操作记录。</p>
+            <p>确认这次操作没有生效后再解除。解除后可以重新操作，这一步不发请求，不写操作记录。 <Explain label="解除待确认的说明" content={`重试被拒说明不了原操作的结果，先到「${pageName}」确认任务有没有生成。解除后原操作不再重试。`} /></p>
           </div>
         </Modal>
       )}
@@ -318,13 +325,16 @@ function renderFx(fx: string, bold: string[]) {
 /** 接近目标的范围（黄灯偏移）只改本机显示，不写后端，所以是本地小窗，不走确认（L1-A02）。 */
 function OffsetModal({ current, onApply, onClose }: { current: number; onApply: (next: number) => void; onClose: () => void }) {
   const [draft, setDraft] = useState("");
+  const [touched, setTouched] = useState(false);
   const next = Number(draft);
-  const valid = draft.trim() !== "" && Number.isInteger(next) && next >= 5 && next <= 20;
+  const typed = draft.trim() !== "";
+  const problem = !typed ? "填写新值" : !(Number.isInteger(next) && next >= 5 && next <= 20) ? "要填 5–20 的整数" : next === current ? "和当前值一样，没有改动" : undefined;
   return (
-    <Modal title="接近目标的范围" onClose={onClose} footer={<><Button onClick={onClose}>取消</Button><Button variant="primary" disabled={!valid} onClick={() => { onApply(next); onClose(); }}>应用 · 实时生效</Button></>}>
+    <Modal title={<>接近目标的范围 <Explain label="接近目标的范围的说明" content="只改你看到的状态和接近线，不改业务规则或统计方式。刷新会恢复最后保存的设置，没有保存视图时回到默认值。要保留请点「保存为视图」。" /></>} onClose={onClose} footer={<><Button onClick={onClose}>取消</Button><Button variant="primary" disabledReason={problem} onClick={() => { onApply(next); onClose(); }}>应用 · 实时生效</Button></>}>
       <div className="rd-stack">
-        <Field label={`新值（当前 ${current}% · 范围 5–20%，仅限整数）`} required help="只改你看到的状态和接近线，不改业务规则或统计方式。刷新会恢复最后保存的设置，没有保存视图时回到默认值。要保留请点「保存为视图」。">
-          {(control) => <Input {...control} type="number" min={5} max={20} step={1} value={draft} placeholder={String(current)} onChange={(event) => setDraft(event.target.value)} />}
+        {/* 刚打开不报错，输入时是普通字，失焦后才用警告色（OP-15）。 */}
+        <Field label="新值（5–20 的整数）" required {...(touched ? { error: problem } : { help: typed ? problem : undefined })}>
+          {(control) => <NumberInput {...control} unit="%" min={5} max={20} step={1} value={draft} placeholder={`当前 ${current}`} onChange={(event) => setDraft(event.target.value)} onBlur={() => setTouched(true)} />}
         </Field>
         <Fold inset title="查看业务规则详情" summary="状态怎么判定">
           <p className="rd-note">单侧指标须严格高于或低于目标值才达标；等于目标时算接近目标。数值越高越好的指标，接近线为目标值 × (1 − N%)；数值越低越好的指标，接近线为目标值 × (1 + N%)。没达标但在接近线以内（含接近线）算接近目标，超出算未达标。购买转化健康带包含两端，带外也归接近目标。只影响显示，不改指标值。</p>
@@ -505,8 +515,9 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
   };
 
   const customPicking = customOpen || win === "custom";
-  const customRangeNotice = customPicking && customFrom && customTo && customFrom <= customTo ? customRangeProblem(customFrom, customTo) : "";
-  const customReady = Boolean(customFrom && customTo && customFrom <= customTo && !customRangeNotice);
+  const customRangeNotice = !customPicking || !customFrom || !customTo ? ""
+    : customFrom > customTo ? "开始日期不能晚于结束日期。" : customRangeProblem(customFrom, customTo);
+  const customBlocked = !customFrom || !customTo ? "先选开始和结束日期" : customRangeNotice || undefined;
   const applySlices = () => {
     if (cohortFilter && !COHORT_FORMAT.test(cohortFilter)) {
       setQueryNotice("注册周要写成年份和周数，比如 2026-W42。这次没有查询。");
@@ -592,7 +603,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
           <Input id="l1-custom-from" type="date" value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} />
           <label className="rd-note" htmlFor="l1-custom-to">止</label>
           <Input id="l1-custom-to" type="date" value={customTo} onChange={(event) => setCustomTo(event.target.value)} />
-          <Button disabled={!customReady || refreshing} onClick={() => reloadKpi({ window: "custom", from: customFrom, to: customTo, ...appliedSlices })}>应用自定义</Button>
+          <Button disabled={refreshing} disabledReason={customBlocked} onClick={() => reloadKpi({ window: "custom", from: customFrom, to: customTo, ...appliedSlices })}>应用自定义</Button>
           <Explain label="自定义范围的说明" content={`${businessZone().label}，含结束日，最长 400 天。`} />
         </div>
       )}
