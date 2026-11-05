@@ -667,6 +667,8 @@ td .rd-flow { margin-bottom: 0; }
   .rd-config-main { grid-column: 1 / -1; }
   .rd-config-value { justify-items: start; text-align: left; }
 }
+.rd-config-note { margin: 12px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.rd-fold-body > .rd-config-note:first-child { margin: 0 0 8px; }
 .rd-config-link { margin-left: 8px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; }
 .rd-push-state { display: grid; justify-items: start; gap: 8px; }
 .rd-push-state p { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }

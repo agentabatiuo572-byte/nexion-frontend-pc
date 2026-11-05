@@ -136,9 +136,11 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 - `confirmTone`：不能撤销的操作传 `danger`，确认按钮用危险色。
 - `coverageLead`：放大方向提示的开头，默认「这项操作会让平台多付钱」，页面可以换成这个操作的白话。覆盖率高于红线时提示是安静的，低于红线才红。
 
-改一个值的确认框（`edit`）再给三个可选项：`hint` 写怎么填，`preview(value)` 写改了会怎样、随输入变化，这两项只在 `RdPage` 里显示（CP-87）；`allowEmpty` 让留空也算合法新值，比如「不设上限」。
+改一个值的确认框（`edit`）再给三个可选项：`hint` 写怎么填，`preview(value)` 写改了会怎样、随输入变化，这两项只在 `RdPage` 里显示（CP-87）；`emptyOption` 写清空选项的名字，比如「不设上限」，要人点它才算清空，框里没填或填坏了都不算。`disallowCurrent` 时没改动不能保存，框里写原因（OP-18）。
 
-旧的 `KConfirmModal` 放进 `RdPage` 后同样换新外观；`statedBrief`、`effect`、`reasonPlaceholder` 用法同上。紧急关闭这类理由规则读不到也要能提交的操作继续用它（Q-06）。
+确认框提交中锁住里面全部输入和选项，失败后恢复（OP-33）。数字框填坏（`badInput`）不算空，不能提交。
+
+旧的 `KConfirmModal` 放进 `RdPage` 后同样换新外观；`statedBrief`、`effect`、`reasonPlaceholder` 用法同上。它按 A2 理由规则和可见字符计数，规则读不到时按默认 8–200 继续，紧急关闭这类操作继续用它（Q-06）。
 
 业务表单的字段传 `mustChoose: true` 时不给默认值，下拉多一项「请选择」，必须人选了才能提交。核验类字段（大额放行的「地址与风险信息」、手动退款的「已核实」）和不能撤销的操作的原因都要这样，不能取第一项当默认值。多字段表单传 `derive(key, next)` 时，一个字段变了可以带着别的字段变，比如改等待天数时复查时间跟着变。
 
