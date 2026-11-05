@@ -360,7 +360,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     c3Commands.remember(fingerprint, key);
     const supportRequest = supportLargeRequest;
     const selectionGeneration = contextGeneration.current;
-    openConfirm({ briefKind: "record",
+    openConfirm({ briefKind: "funds",
       action: supportRequest
         ? `提交大额调整请求 · ${formatNumber(amount)} ${nexGridBrandText(asset)}`
         : `提交${direction === "CREDIT" ? "增加" : "扣减"}调整申请 · ${formatNumber(amount)} ${nexGridBrandText(asset)}`,
@@ -409,7 +409,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const reviewLargeRequest = (row: UserAssetAdjustment, approved: boolean) => {
     const adjustmentNo = text(row.adjustmentNo, "");
     if (!adjustmentNo) return toast("缺少申请编号");
-    openActionConfirm({ briefKind: "record",
+    openActionConfirm({ briefKind: approved ? "funds" : "record",
       action: `${approved ? "批准" : "驳回"}调整申请 · ${adjustmentNo}`,
       detail: `${displayRowUser(row)} · ${text(row.direction) === "CREDIT" ? "+" : "−"}${formatNumber(row.amount)} ${nexGridBrandText(text(row.asset))} · ${text(row.reason)}`,
       amplifies: approved && text(row.direction).toUpperCase() === "CREDIT",
@@ -473,7 +473,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const reverseAdjustment = (row: UserAssetAdjustment) => {
     const adjustmentNo = text(row.adjustmentNo, "");
     if (!adjustmentNo) return toast("缺少调整单号");
-    openActionConfirm({ briefKind: "record",
+    openActionConfirm({ briefKind: "funds",
       action: `冲正调整 · ${adjustmentNo}`,
       detail: `生成一笔金额相同、方向相反的调整，把原来那笔抵消掉。原记录保留，每笔只能冲正一次。`,
       amplifies: text(row.direction).toUpperCase() === "DEBIT",

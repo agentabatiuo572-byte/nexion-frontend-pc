@@ -155,7 +155,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, pending, onChanged, onClose
   function revalidate() {
     if (!record || purchaseWasDelivered(record) || record.receipt || busy || pending || !allowed("finance_d1_bank_reconcile")) return;
     const current = record;
-    ctx.openActionConfirm({ briefKind: "record", action: `重新核对到账 · ${intentNo}`, reasonMin: 10, reasonMax: 300,
+    ctx.openActionConfirm({ briefKind: "funds", action: `重新核对到账 · ${intentNo}`, reasonMin: 10, reasonMax: 300,
       detail: `用户 ${current.userId}，当前${stateText[current.status]}，用户实付 ${purchaseMoney(current.totalUsdt)} USDT。会再查一次支付商或链上记录，并重新检查库存、资格和设备位。金额不对、到账太晚或核对不通过的，仍然留给人工处理。`,
       completionCopy: "不会重新收款、强制完成、退款，也不会转进钱包余额。",
       run: async reason => {

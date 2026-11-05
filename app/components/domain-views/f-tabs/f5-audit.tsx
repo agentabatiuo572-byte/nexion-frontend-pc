@@ -113,7 +113,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   };
 
   const reverse = (row: F5CommissionEvent) => {
-    ctx.openActionConfirm({ briefKind: "record",
+    ctx.openActionConfirm({ briefKind: "funds",
       name: `冲正奖励 ${row.id}`,
       detail: `冲正 ${row.id} · ${amountLabel(row)}。把这笔奖励收回，需要填写退款单、发放单或工单编号。用户余额不够时会标记为「待追回」，钱还没真正收回。`,
       businessForm: {
@@ -155,9 +155,9 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   };
 
   const suspend = (row: F5CommissionEvent) => {
-    ctx.openActionConfirm({ briefKind: "record",
+    ctx.openActionConfirm({ briefKind: "funds",
       name: `暂停用户 ${row.userId} 的奖励`,
-      detail: "暂停后，这位用户所选类型的奖励马上冻结，以后也不再产生。恢复只会让以后的奖励照常产生，已冻结的不会自动解冻。",
+      detail: "暂停后，这位用户所选类型的奖励马上冻结，以后也不再产生。",
       businessForm: {
         kind: "multi-field",
         title: "用户奖励暂停",
@@ -403,7 +403,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           </div>
 
           <section className="pane">
-            <div className="pane-h"><span className="ph-ttl">已暂停的奖励</span><span className="ph-sub">恢复后只影响以后的奖励，已冻结的不会自动解冻</span></div>
+            <div className="pane-h"><span className="ph-ttl">已暂停的奖励</span><span className="ph-sub">恢复须审批；好友奖励按其他冻结条件恢复，其他奖励已冻结的部分不自动解冻</span></div>
             <table className="ctbl">
               <thead><tr><th>用户</th><th>奖励类型</th><th>原因 / 操作人</th><th>更新时间</th><th>动作</th></tr></thead>
               <tbody>
@@ -411,9 +411,11 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                 {data.activeSuspensions.map((item) => <tr key={`${item.userId}:${item.kind}`}>
                   <td>{item.userId}</td><td>{KIND_LABELS[item.kind] ?? item.kind}</td>
                   <td>{item.reason} / {item.operator}</td><td>{item.updatedAt}</td>
-                  <td>{canSuspend && <button className="fbtn primary" onClick={() => ctx.openActionConfirm({ briefKind: "record",
+                  <td>{canSuspend && <button className="fbtn primary" onClick={() => ctx.openActionConfirm({ briefKind: item.kind === "direct_purchase" || item.kind === "direct_device_earning" ? "funds" : "record",
                     name: `恢复奖励 · ${item.userId} / ${KIND_LABELS[item.kind] ?? "所选奖励"}`,
-                    detail: "需要审批。批准后这类奖励以后照常产生，已冻结的不会自动解冻。",
+                    detail: item.kind === "direct_purchase" || item.kind === "direct_device_earning"
+                      ? "需要审批。批准后这类奖励以后照常产生；没有其他冻结条件的好友奖励会回到冷却期，仍有其他冻结条件的继续冻结。"
+                      : "需要审批。批准后这类奖励以后照常产生，已冻结的不会自动解冻。",
                     run: async (reason) => {
                       const numericUserId = Number(String(item.userId).replace(/\D/g, ""));
                       if (!Number.isSafeInteger(numericUserId) || numericUserId <= 0) throw new Error("无效用户编号");

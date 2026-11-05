@@ -362,7 +362,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const approveWo = (w: A2OperationRow) => {
     if (w.phoneCalibrationError) { toast(w.phoneCalibrationError); return; }
     const commandKey = createA2CommandKey(`a2-approve-${w.id}`);
-    openActionConfirm({ briefKind: "record",
+    openActionConfirm({ briefKind: w.type === "fund" ? "funds" : w.type === "acct" ? "security" : w.type === "sos" ? "emergency" : "config",
       action: <>确认执行 · {w.id}({a2ActionText(w.action)})</>,
       detail: (
         <>

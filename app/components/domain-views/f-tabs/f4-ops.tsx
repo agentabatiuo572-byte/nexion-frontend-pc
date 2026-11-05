@@ -367,7 +367,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
                 <div className="nm">#{application.id} · {operatorNicknameText(application.applicantName)} · {application.region}{application.city ? `/${application.city}` : ""}</div>
                 <div className="ct">{application.currentRank} · ${application.requestedBudgetUsd.toLocaleString("en-US")} · {({PENDING:"待审核",APPROVED:"已通过",REJECTED:"已驳回",pending:"待审核",approved:"已通过",rejected:"已驳回"} as Record<string,string>)[application.status] ?? "状态未知"}</div>
                 {canApproveAmbassador && application.status.toUpperCase() === "PENDING" && <>
-                  <button className="primary amp" onClick={() => ctx.openActionConfirm({ briefKind: "record", name: `批准大使申请 #${application.id}`, amplify: true, op: "dispose", paramKey: `F.ambassador.${application.id}.status`, fixedVal: "approved", detail: "批准这一份申请，同时发放推广、活动、差旅、宣传四类预算。" })}>批准</button>
+                  <button className="primary amp" onClick={() => ctx.openActionConfirm({ briefKind: "funds", name: `批准大使申请 #${application.id}`, amplify: true, op: "dispose", paramKey: `F.ambassador.${application.id}.status`, fixedVal: "approved", detail: "批准这一份申请，同时发放推广、活动、差旅、宣传四类预算。" })}>批准</button>
                   <button className="danger" onClick={() => ctx.openActionConfirm({ briefKind: "record", name: `驳回大使申请 #${application.id}`, op: "dispose", paramKey: `F.ambassador.${application.id}.status`, fixedVal: "rejected", detail: "驳回这一份申请。" })}>驳回</button>
                 </>}
               </div>

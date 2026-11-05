@@ -53,7 +53,7 @@ function Owned({canManage,openActionConfirm,owner,epoch}:Props&{owner:number;epo
   const recover=(row:ExceptionRecord,retry:boolean)=>{
     try{assertOwner(true);const id=exceptionId(row.id),cid=retry?"":exceptionId((cids[id]??"").trim());
       const snapshot={expectedVersion:exceptionVersion(row.version),stage:String(row.state).startsWith("COLLECTION")?"COLLECTION":"PAYMENT",cid,retry};
-      openActionConfirm({ briefKind: "record",action:retry?"申请重试明确拒绝的自动任务":"核对自动任务原 CID",detail:retry?`任务 ${id} · 仅限没有 CID 的明确创建拒绝；未知请求不能重试。发送仍受全部开关和证据约束。`:`任务 ${id} · 原 CID ${cid}。仅绑定供应商核实的原单，不创建新转账。`,
+      openActionConfirm({ briefKind: retry ? "funds" : "record",action:retry?"申请重试明确拒绝的自动任务":"核对自动任务原 CID",detail:retry?`任务 ${id} · 仅限没有 CID 的明确创建拒绝；未知请求不能重试。发送仍受全部开关和证据约束。`:`任务 ${id} · 原 CID ${cid}。仅绑定供应商核实的原单，不创建新转账。`,
         reasonMin:10,reasonMax:300,completionCopy:"任务恢复记录已保存，请刷新核对",run:reason=>command(`/tasks/${id}/recover`,{...snapshot,reason})});
     }catch(failure){setError((failure as Error).message);}
   };

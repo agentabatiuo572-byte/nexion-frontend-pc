@@ -3435,7 +3435,7 @@ export type InlineOperationApproval = {
   dialogClassName?: string;
 };
 
-export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
   const [draftReason, setReason] = useState(pendingReason ?? "");
   const reason = pendingReason ?? draftReason;
@@ -3454,6 +3454,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const comparisonValueId = useId();
   const comparisonUnitId = useId();
   const selectionRequestRef = useRef(0);
+  const effectiveBriefKind = typeof briefKind === "function" ? briefKind(businessValue) : briefKind;
   const approval = approvalSpec ?? inlineApproval?.resolve(businessValue, newVal);
   const compareEdit = approval ? inlineApproval?.compareEdit : undefined;
   const completionCopy = approval?.completionCopy ?? directCompletionCopy;
@@ -3599,7 +3600,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
           </Btn>
         )}
       </>}>
-      {!approval && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={briefKind} />}
+      {!approval && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={effectiveBriefKind} />}
       {submitError && <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{submitError}</div>}
       {inlineApproval?.disabledReason && <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>{inlineApproval.disabledReason}</div>}
       {inlineApproval?.pending && approvalRecovery === "lookup" && !submitError && (
@@ -3628,7 +3629,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
           <p style={{ margin: "0 0 14px", lineHeight: 1.5 }}>{completionCopy}</p>
           {coverage && <p className="operation-approval-coverage">当前覆盖率 <b>{coverage.coverageRatio}%</b> · 红线 <b>{coverage.redlinePct}%</b></p>}
           {approval.comparison}
-        </> : !compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} completionCopy={completionCopy} auditSink={auditSink} kind={briefKind} />}
+        </> : !compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} completionCopy={completionCopy} auditSink={auditSink} kind={effectiveBriefKind} />}
       </>}
       {effectiveAmplifies && !approval && (
         <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>

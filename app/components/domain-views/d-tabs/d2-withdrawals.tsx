@@ -819,7 +819,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   };
 
   const confirmBankRequery = (row: D2Withdrawal, bank: D2BankPayout) => {
-    openActionConfirm({ briefKind: "record",
+    openActionConfirm({ briefKind: "funds",
       action: `查询银行打款结果 · ${row.withdrawalNo}`,
       detail: "向 HDPay 查询这笔打款的结果，不会重新打款。结果明确就自动完成或退回；有疑问的继续人工核对。原因里不要写完整银行卡号。",
       reasonMin: 10, reasonMax: 300, completionCopy: "查询完成",
@@ -861,7 +861,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   };
 
   const confirmDevelopmentSimulation = (row: D2Withdrawal) => {
-    openActionConfirm({ briefKind: "record",
+    openActionConfirm({ briefKind: "funds",
       action: `模拟冷却到期 · ${row.withdrawalNo}`,
       detail: "仅测试环境可用。把这笔测试提现的冷却时间提前到现在，然后按正常流程重新检查风险规则、风险分、覆盖率和提现开关。",
       amplifies: true,

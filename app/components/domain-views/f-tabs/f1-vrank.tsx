@@ -263,7 +263,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     return record.voucherId || record.skuId || safeCustomLabel(record.customLabel, record.rewardType || "—") || record.rewardType || "—";
   };
   const openManualOverride = () => {
-    ctx.openActionConfirm({ briefKind: "config",
+    ctx.openActionConfirm({ briefKind: (value) => value.direction !== "rollback" && (ctx.rewards[value.targetV] ?? []).some((reward) => isFund(reward.type)) ? "funds" : "config",
       name: "手动调整会员等级",
       amplify: true,
       businessForm: {
