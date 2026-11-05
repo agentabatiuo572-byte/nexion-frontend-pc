@@ -102,6 +102,8 @@
 
 普通确认的确定失败在原弹窗内显示原因，保留输入且不报成功；成功后关闭并更新页面。已由调用方展示的错误不重复提示，结果尚未确认的既有提示与原操作核对路径保留（BUG-257）。
 
+确认框汇总校验原因时，统一处理每项末尾句号，列表末尾只显示一个句号；字段旁完整反馈不改写。没有覆盖率数值时，放大方向只保留一句提交时检查覆盖率的说明，不重复宣称实时检查（BUG-258 Follow-up 1）。
+
 ### 2.2a 业务弹窗契约
 
 弹窗内容必须匹配触发按钮的业务语义。改角色必须有角色选择;改授权必须有权限 diff;编辑文案必须有 en/zh 或对应业务字段;创建课程必须有 title/body/category/duration;提现处置必须有 approve/reject/delay/freeze 业务选项。只有 reason textarea 的 edit/create/repair/role/permission/action 弹窗视为 business-incomplete-modal。纯展示弹窗必须显式 readonly,不得出现可执行主按钮。

@@ -3649,9 +3649,9 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
                       ? `，正好在红线 ${coverage.redlinePct}%，请谨慎提交`
                       : `，低于红线 ${coverage.redlinePct}%，提交会被拒绝`}
               </>
-            ) : (
-              <>{auditSink === "local-history" ? "本页暂不自动检查覆盖率，请自行确认资金影响。" : "提交时会实时检查覆盖率。"}</>
-            )}
+            ) : auditSink === "local-history" ? (
+              <>本页暂不自动检查覆盖率，请自行确认资金影响。</>
+            ) : null}
           </div>
         </div>
       )}
@@ -3724,7 +3724,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         {reasonMax && reasonOk && <div id={`${reasonFieldId}-length`} className="tiny" style={{ marginTop: 7, color: approval || inlineApproval?.dialogClassName ? "var(--ink-3)" : "var(--ink-4)" }}>已填写 {reasonLength}/{reasonMax} 字</div>}
         {businessMissing.length > 0 && (
           <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
-            请检查以下内容： {businessMissing.slice(0, 4).join(" / ")}{businessMissing.length > 4 ? "…" : ""}。
+            请检查以下内容： {businessMissing.slice(0, 4).map((message) => message.replace(/。+$/, "")).join(" / ")}{businessMissing.length > 4 ? "…" : ""}。
           </div>
         )}
       </div>
