@@ -557,8 +557,9 @@ td .rd-flow { margin-bottom: 0; }
 .rd-barlist-bar { display: block; height: 8px; border-radius: 0 var(--rd-radius-bar) var(--rd-radius-bar) 0; background: var(--slot); }
 .rd-barlist-text { color: var(--rd-text); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
-.rd-meter { display: grid; gap: 6px; min-width: 0; }
-.rd-meter-row { display: grid; grid-template-columns: minmax(0, max-content) minmax(160px, var(--rd-track-w, 420px)) max-content; justify-content: start; align-items: center; gap: 12px; }
+/* 所有行共用一套列：标题宽度不同时，尺和线的文字仍对齐同一把刻度。 */
+.rd-meter { display: grid; grid-template-columns: minmax(0, max-content) minmax(160px, var(--rd-track-w, 420px)) max-content; justify-content: start; gap: 6px 12px; min-width: 0; }
+.rd-meter-row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; }
 .rd-meter-label { min-width: 0; color: var(--rd-text-2); }
 .rd-meter-track { position: relative; display: block; height: 8px; border-radius: var(--rd-radius-bar); background: var(--rd-panel-inner); }
 .rd-meter-bar { position: absolute; top: 0; bottom: 0; left: 0; border-radius: var(--rd-radius-bar); background: var(--tone); }

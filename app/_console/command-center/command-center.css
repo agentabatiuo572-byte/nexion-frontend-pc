@@ -65,6 +65,9 @@ a.cc-amount:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 
 .cc-list[data-cols] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 40px; }
 @media (max-width: 1100px) { .cc-list[data-cols] { grid-template-columns: minmax(0, 1fr); } }
 .cc-list li > span:first-child { display: inline-flex; align-items: center; gap: 4px; color: var(--rd-text-2); }
+/* 放在图旁边时，名字列按最长的名字，数字紧跟（VS-49）。 */
+.rd-figure-data .cc-list { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; }
+.rd-figure-data .cc-list li { grid-column: 1 / -1; grid-template-columns: subgrid; gap: 0 16px; }
 /* 没达标的指标：一行一条，线分隔，不做卡片。 */
 .cc-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 40px; margin: 0; padding: 0; list-style: none; }
 @media (max-width: 1100px) { .cc-kpis { grid-template-columns: minmax(0, 1fr); } }
