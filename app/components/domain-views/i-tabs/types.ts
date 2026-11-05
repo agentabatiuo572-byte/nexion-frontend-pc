@@ -17,4 +17,5 @@ export type ICtx = DCtx & {
   actions: IContentActions;
   contentLoading: boolean;
   contentError: string | null;
+  closeActionConfirm: () => void;
 };

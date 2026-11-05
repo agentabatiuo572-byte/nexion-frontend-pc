@@ -7,12 +7,12 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FileCheck2, FilePen, FileText, History, RefreshCw, Scale } from "lucide-react";
-import { BlockState, Button, Cell, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterField, Fold, Input, Modal, Notice, Panel, Select, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Cell, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterField, Fold, Input, Notice, Panel, Select, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr, type StateTone } from "@/app/components/rd";
+import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { fetchLegalTermsAdmin, type LegalTermsSection, type LegalTermsVersion } from "@/lib/admin/legal-terms-client";
 import { currentLegalTermsDateTime, normalizeLegalTermsDateTime } from "@/lib/admin/legal-terms-contract";
-import { useUnsavedGuard } from "./i5-disclosures";
-import { WRITE_LOCKED, type I5Writes } from "./i5-writes";
+import { LeaveDialog, mergeEdits, useLeaveGuard, withConflict, WRITE_LOCKED, type I5Writes } from "./i5-writes";
 import type { ICtx } from "./types";
 
 const LOCALE_OPTIONS = [{ value: "en", label: "英文" }, { value: "zh", label: "中文" }, { value: "vi", label: "越南语" }];
@@ -24,6 +24,7 @@ const STATUS: Record<string, { text: string; tone: StateTone }> = {
   REVOKED: { text: "已撤回", tone: "warn" },
 };
 const statusOf = (row: LegalTermsVersion) => STATUS[row.status] ?? { text: "版本状态待核实", tone: "warn" as StateTone };
+const timeText = (value: string) => formatBusinessTimeFull(value, value);
 const validTime = (value: string) => { try { normalizeLegalTermsDateTime(value); return true; } catch { return false; } };
 
 function scopeProblem(jurisdiction: string) {
@@ -36,12 +37,17 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: IC
   const [locale, setLocale] = useState("en");
   const [jurisdictionInput, setJurisdictionInput] = useState("GLOBAL");
   const [jurisdiction, setJurisdiction] = useState("GLOBAL");
-  const scopeError = scopeProblem(jurisdictionInput.trim().toUpperCase());
+  const typedScope = jurisdictionInput.trim().toUpperCase();
+  const scopeError = scopeProblem(typedScope);
+  // 框里的地区和已读取的不一致时，下面不显示旧地区的内容和写入口（I5-Q02、ST-27）。
+  const scopePending = !scopeError && typedScope !== jurisdiction;
+  const scopeReady = !scopeError && !scopePending;
   const [rows, setRows] = useState<LegalTermsVersion[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(true);
   const [viewing, setViewing] = useState<number | null>(null);
   const [editing, setEditing] = useState<LegalTermsVersion | null>(null);
+  const [latest, setLatest] = useState<LegalTermsVersion | null>(null);
   const requestSequence = useRef(0);
   const target = `legal:${locale}:${jurisdiction}`;
 
@@ -54,6 +60,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: IC
     try {
       const value = await fetchLegalTermsAdmin(locale, jurisdiction);
       if (sequence === requestSequence.current) setRows(value);
+      return value;
     } catch (cause) {
       if (sequence === requestSequence.current) setError(displayAdminError(cause));
     } finally {
@@ -76,7 +83,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: IC
   const history = rows.filter((row) => row.status !== "PUBLISHED" && row.status !== "DRAFT");
   const shown = viewing === null ? null : rows.find((row) => row.id === viewing) ?? null;
   const scopeText = `${localeName(locale)} · ${jurisdiction}`;
-  const writeBlocked = busy ? "正在读取最新数据，读完再操作" : error ? "当前范围的条款尚未确认，请刷新重试。" : writes.isLocked(target) ? WRITE_LOCKED : undefined;
+  const writeBlocked = !scopeReady ? "适用法律地区还没读取，先完成地区" : busy ? "正在读取最新数据，读完再操作" : error ? "当前范围的条款尚未确认，请刷新重试。" : writes.isLocked(target) ? WRITE_LOCKED : undefined;
 
   const newDraft = () => {
     const next = rows.reduce((max, row) => Math.max(max, Number(/^v(\d+)/.exec(row.version)?.[1] ?? 0)), 0) + 1;
@@ -84,7 +91,9 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: IC
     setEditing({ id: 0, locale, jurisdiction, version: `v${next}`, effectiveAt: currentLegalTermsDateTime(), status: "DRAFT", title: "", summary: "", sections: [{ key: "general", title: "", body: "", sortOrder: 10 }], revision: 0, publishedAt: null, revokedAt: null });
   };
 
-  const saveDraft = (form: LegalTermsVersion) => openActionConfirm({ briefKind: "content",
+  const readLatest = (version?: string) => { void refresh().then((value) => { if (version) setLatest(value?.find((row) => row.version === version) ?? null); }); };
+
+  const saveDraft = (form: LegalTermsVersion, after?: () => void) => openActionConfirm(withConflict(ctx, { briefKind: "content",
     action: <>保存法律条款草稿 · {form.version}</>,
     detail: <>只保存草稿，用户看到的条款不变。</>,
     amplifies: false,
@@ -98,13 +107,13 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: IC
         locale: form.locale, jurisdiction: form.jurisdiction, version: form.version, effectiveAt: form.effectiveAt, title: form.title, summary: form.summary, sections: form.sections, expectedRevision: form.revision, reason,
       } } });
       setEditing(null);
-      if (result === "done") toast("草稿已保存，用户看到的条款不变");
+      if (result === "done") { toast("草稿已保存，用户看到的条款不变"); after?.(); }
     },
-  });
+  }, () => readLatest(form.version)));
 
   const publish = (row: LegalTermsVersion) => {
     const fewer = published && row.sections.length < published.sections.length;
-    openActionConfirm({ briefKind: "content",
+    openActionConfirm(withConflict(ctx, { briefKind: "content",
       action: <>发布法律条款 · {row.version}</>,
       detail: <>发布已保存的草稿，填完理由立即生效，不走审批。</>,
       amplifies: false,
@@ -113,7 +122,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: IC
       confirmLabel: "确认发布，立即生效",
       statedBrief: { impact: `这个版本立即替换 ${scopeText} 的公开条款，旧发布版转为历史版本。发布后不能再改。`, check: "核对版本、节数和生效时间，理由写清发布依据。" },
       facts: <>
-        <Facts><Fact k="范围">{scopeText}</Fact><Fact k="版本">{published ? `${published.version}（${published.sections.length} 节）` : "无已发布版本"} → {row.version}（{row.sections.length} 节）</Fact><Fact k="生效时间">{row.effectiveAt}</Fact></Facts>
+        <Facts><Fact k="范围">{scopeText}</Fact><Fact k="版本">{published ? `${published.version}（${published.sections.length} 节）` : "无已发布版本"} → {row.version}（{row.sections.length} 节）</Fact><Fact k="生效时间">{timeText(row.effectiveAt)}（{businessZone().label}）</Fact></Facts>
         {fewer && <Notice tone="warn" title={`节数变少：${published.sections.length} 节 → ${row.sections.length} 节`}>单节草稿不能替换完整条款。发布前核对节数，系统不会拦。</Notice>}
       </>,
       reasonPlaceholder: "例如：法务审定稿，工单号",
@@ -123,10 +132,10 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: IC
         setViewing(null);
         if (result === "done") toast("条款已发布，请核对公开版本");
       },
-    });
+    }, () => readLatest()));
   };
 
-  const revoke = (row: LegalTermsVersion) => openActionConfirm({ briefKind: "content",
+  const revoke = (row: LegalTermsVersion) => openActionConfirm(withConflict(ctx, { briefKind: "content",
     action: <>撤回法律条款 · {row.version}</>,
     detail: <>撤回当前发布版本，填完理由立即生效，不走审批。</>,
     amplifies: false,
@@ -141,14 +150,16 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: IC
       setViewing(null);
       if (result === "done") toast("条款已撤回");
     },
-  });
+  }, () => readLatest()));
 
-  const conclusion = busy ? <Conclusion state="unknown">正在加载条款…</Conclusion>
-    : error ? null
-      : !rows.length ? <Conclusion state="warn">当前适用地区暂无条款版本。</Conclusion>
-        : !published ? <Conclusion state="warn">{scopeText}：没有已发布版本，应用暂不提供该内容</Conclusion>
-          : drafts.length ? <Conclusion state="neutral" icon={FilePen}>{scopeText}：{published.version} 生效中，有 {drafts.length} 个草稿待发布</Conclusion>
-            : <Conclusion state="ok" icon={FileCheck2}>{scopeText}：{published.version} 生效中，没有草稿</Conclusion>;
+  const fallbackHint = "这里只看这个语言和地区。App 没有读到时会回退到英文或 GLOBAL 的已发布版本。";
+  const conclusion = !scopeReady ? null
+    : busy ? <Conclusion state="unknown">正在加载条款…</Conclusion>
+      : error ? null
+        : !rows.length ? <Conclusion state="warn" explain={fallbackHint}>当前适用地区暂无条款版本。</Conclusion>
+          : !published ? <Conclusion state="warn" explain={fallbackHint}>{scopeText}：没有已发布版本</Conclusion>
+            : drafts.length ? <Conclusion state="neutral" icon={FilePen}>{scopeText}：{published.version} 生效中，有 {drafts.length} 个草稿待发布</Conclusion>
+              : <Conclusion state="ok" icon={FileCheck2}>{scopeText}：{published.version} 生效中，没有草稿</Conclusion>;
 
   const openRow = (row: LegalTermsVersion) => {
     if (row.status === "DRAFT" && canWrite) { setViewing(null); setEditing(row); }
@@ -161,34 +172,35 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: IC
       <FilterField label={<span>适用法律地区 <Explain label="适用法律地区是什么" content="按这个代码读条款，大写字母开头，默认 GLOBAL。回车或离开输入框后读取。" /></span>}>
         <Input aria-label="适用法律地区" value={jurisdictionInput} maxLength={32} aria-invalid={!!scopeError} disabled={!!editing} onChange={(event) => setJurisdictionInput(event.target.value)} onBlur={applyScope} onKeyDown={(event) => { if (event.key === "Enter") applyScope(); }} />
       </FilterField>
-      <Button variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={busy} disabled={!!scopeError || !!editing} onClick={() => void refresh()}>刷新</Button>
+      <Button variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={busy} disabled={!scopeReady || !!editing} onClick={() => void refresh()}>刷新</Button>
     </div>
     {scopeError && <Notice tone="warn" title="请先完成适用法律地区，再加载条款。">{scopeError}</Notice>}
+    {scopePending && <BlockState state="empty" compact title={`回车或离开输入框后读取 ${typedScope} 的条款`} />}
     {conclusion}
-    {error && !busy && <BlockState state="error" title="当前范围的条款尚未确认，请刷新重试。" detail={error} onRetry={() => void refresh()} retryLabel="刷新" />}
+    {scopeReady && error && !busy && <BlockState state="error" title="当前范围的条款尚未确认，请刷新重试。" detail={error} onRetry={() => void refresh()} retryLabel="刷新" />}
 
-    {!error && !busy && <>
+    {scopeReady && !error && !busy && <>
       <Panel title="当前生效版本" icon={Scale} tone="role-2" actions={published ? <>
         <Button size="sm" onClick={() => setViewing(published.id)}>查看全文</Button>
         {canPublish && <Button size="sm" variant="danger-outline" disabledReason={writeBlocked} onClick={() => revoke(published)}>撤回</Button>}
       </> : undefined}>
         {published ? <Facts>
           <Fact k="版本">{published.version} · {published.sections.length} 节</Fact>
-          <Fact k="生效时间">{published.effectiveAt}</Fact>
+          <Fact k="生效时间">{timeText(published.effectiveAt)}（{businessZone().label}）</Fact>
           <Fact k="标题">{published.title}</Fact>
-        </Facts> : <BlockState state="empty" compact title="当前适用地区暂无有效条款版本，应用暂不提供该内容。" />}
+        </Facts> : <BlockState state="empty" compact title="当前范围没有已发布版本" />}
       </Panel>
 
       <Panel title="草稿" icon={FilePen} tone="role-1" flush={drafts.length > 0} actions={canWrite ? <Button variant="primary" size="sm" disabledReason={writeBlocked} onClick={newDraft}>新建草稿</Button> : undefined}>
         {drafts.length ? (
           <Table label="法律条款草稿">
-            <thead><tr><Th>版本</Th><Th>标题</Th><Th>生效时间</Th><Th>操作</Th></tr></thead>
+            <thead><tr><Th>版本</Th><Th>标题</Th><Th>生效时间（{businessZone().label}）</Th><Th>操作</Th></tr></thead>
             <tbody>
               {drafts.map((row) => (
                 <Tr key={row.id} onOpen={() => openRow(row)}>
                   <Td><Cell main={row.version} sub={`${row.sections.length} 节`} /></Td>
                   <Td><Cell main={row.title || "未填写"} /></Td>
-                  <Td><Cell num main={row.effectiveAt} /></Td>
+                  <Td><Cell num main={timeText(row.effectiveAt)} /></Td>
                   <Td><span className="rd-row-actions">
                     {canWrite && <Button size="sm" disabledReason={writeBlocked} onClick={() => openRow(row)}>编辑</Button>}
                     {canPublish && <Button size="sm" disabledReason={writeBlocked} onClick={() => publish(row)}>发布</Button>}
@@ -202,14 +214,14 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: IC
 
       <Fold title="版本历史" icon={History} tone="role-3" summary={history.length ? `${history.length} 个历史或已撤回版本` : "没有历史版本"}>
         <Table label="法律条款版本历史">
-          <thead><tr><Th>版本</Th><Th>状态</Th><Th>标题</Th><Th>生效时间</Th></tr></thead>
+          <thead><tr><Th>版本</Th><Th>状态</Th><Th>标题</Th><Th>生效时间（{businessZone().label}）</Th></tr></thead>
           <tbody>
             {history.map((row) => (
               <Tr key={row.id} selected={row.id === viewing} onOpen={() => setViewing(row.id)}>
                 <Td><Cell main={row.version} sub={`${row.sections.length} 节`} /></Td>
                 <Td><StatusTag tone={statusOf(row).tone}>{statusOf(row).text}</StatusTag></Td>
                 <Td><Cell main={row.title} /></Td>
-                <Td><Cell num main={row.effectiveAt} /></Td>
+                <Td><Cell num main={timeText(row.effectiveAt)} /></Td>
               </Tr>
             ))}
             {!history.length && <TableMessage columns={4}>这个范围没有历史版本。</TableMessage>}
@@ -224,7 +236,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: IC
       {shown && <>
         <Facts>
           <Fact k="状态">{statusOf(shown).text}</Fact>
-          <Fact k="生效时间">{shown.effectiveAt}</Fact>
+          <Fact k="生效时间">{timeText(shown.effectiveAt)}（{businessZone().label}）</Fact>
           <Fact k="节数">{shown.sections.length} 节</Fact>
         </Facts>
         <div className="rd-doc">
@@ -238,24 +250,33 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: IC
       </>}
     </Drawer>
 
-    {editing && <LegalEditor key={`${editing.id}|${editing.version}`} initial={editing} published={published} canPublish={canPublish} blockedReason={writeBlocked} onSave={saveDraft} onPublish={publish} onClose={() => setEditing(null)} />}
+    {editing && <LegalEditor key={`${editing.id}|${editing.version}`} initial={editing} latest={latest} published={published} canPublish={canPublish} blockedReason={writeBlocked} onSave={saveDraft} onPublish={publish} onClose={() => { setEditing(null); setLatest(null); }} />}
   </div>;
 }
 
-function LegalEditor({ initial, published, canPublish, blockedReason, onSave, onPublish, onClose }: {
+function LegalEditor({ initial, latest, published, canPublish, blockedReason, onSave, onPublish, onClose }: {
   initial: LegalTermsVersion;
+  /** 「读取最新」读到的这个版本，自己改过的字段留着，其余换成它（OP-97）。 */
+  latest: LegalTermsVersion | null;
   published: LegalTermsVersion | null;
   canPublish: boolean;
   blockedReason?: string;
-  onSave: (form: LegalTermsVersion) => void;
+  onSave: (form: LegalTermsVersion, after?: () => void) => void;
   onPublish: (form: LegalTermsVersion) => void;
   onClose: () => void;
 }) {
   const [form, setForm] = useState(initial);
-  const [leaving, setLeaving] = useState(false);
-  const dirty = JSON.stringify(form) !== JSON.stringify(initial);
-  const isNew = initial.id === 0;
-  useUnsavedGuard(dirty);
+  const [baseline, setBaseline] = useState(initial);
+  const dirty = JSON.stringify(form) !== JSON.stringify(baseline);
+  const isNew = baseline.id === 0;
+  const guard = useLeaveGuard(dirty, onClose);
+  useEffect(() => {
+    if (!latest) return;
+    setForm((current) => mergeEdits(baseline, current, latest));
+    setBaseline(latest);
+    // 只在「读取最新」时合并一次。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [latest]);
   const update = (patch: Partial<LegalTermsVersion>) => setForm((current) => ({ ...current, ...patch }));
   const updateSection = (index: number, patch: Partial<LegalTermsSection>) => setForm((current) => ({ ...current, sections: current.sections.map((section, itemIndex) => itemIndex === index ? { ...section, ...patch } : section) }));
   const missing = [
@@ -266,10 +287,10 @@ function LegalEditor({ initial, published, canPublish, blockedReason, onSave, on
   ].filter(Boolean);
   const saveBlocked = blockedReason ?? (missing.length ? `还缺：${missing.join("、")}` : !dirty && !isNew ? "没有改动" : undefined);
   const publishBlocked = blockedReason ?? (isNew || dirty ? "先保存草稿，发布只发已保存的内容" : undefined);
-  const close = () => { if (dirty) setLeaving(true); else onClose(); };
+  const close = guard.askClose;
   return <>
     <Drawer open wide onClose={close} title={`法律条款草稿 · ${form.version}`} sub={`${localeName(form.locale)} · ${form.jurisdiction}`} icon={FilePen} tone="role-1"
-      footer={<Decision note="保存草稿不改变用户看到的条款。" others={<>
+      footer={<Decision explain="保存草稿不改变用户看到的条款。发布立即生效，不走审批。" others={<>
         <Button onClick={close}>取消</Button>
         <Button variant={canPublish ? "secondary" : "primary"} disabledReason={saveBlocked} onClick={() => onSave(form)}>保存草稿</Button>
       </>} primary={canPublish ? <Button variant="primary" disabledReason={publishBlocked} onClick={() => onPublish(form)}>发布</Button> : undefined} />}>
@@ -290,12 +311,6 @@ function LegalEditor({ initial, published, canPublish, blockedReason, onSave, on
         ))}
       </div>
     </Drawer>
-    {leaving && (
-      <Modal title="有未保存的修改" onClose={() => setLeaving(false)} footer={<>
-        <Button onClick={() => setLeaving(false)}>继续编辑</Button>
-        <Button variant="danger-outline" onClick={onClose}>放弃改动</Button>
-        <Button variant="primary" disabledReason={saveBlocked} onClick={() => { setLeaving(false); onSave(form); }}>保存草稿后继续</Button>
-      </>}><p>关闭后这次的修改不会保留。</p></Modal>
-    )}
+    <LeaveDialog guard={guard} saveLabel="保存草稿" saveBlocked={saveBlocked} onSave={() => onSave(form, guard.saved)} />
   </>;
 }

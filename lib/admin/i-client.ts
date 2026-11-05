@@ -48,9 +48,9 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     if (isWrite) throw new OutcomeUnknownError(error instanceof Error ? error.message : String(error));
     throw error;
   }
-  const text = await res.text();
   let payload: ApiResult<T>;
   try {
+    const text = await res.text();
     payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
   } catch (error) {
     if (isWrite) throw new OutcomeUnknownError(formatAdminApiError(undefined, `CONTENT_API_${res.status}`));

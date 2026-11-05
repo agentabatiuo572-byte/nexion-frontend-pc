@@ -7,7 +7,7 @@
  * 披露和条款的读取权限独立：页签按权限给，一边读不到不影响另一边。
  * 内容账号没有提交审批的权限（EX-17），审批类入口按真实权限隐藏，不留一点就 403 的按钮。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Ban, Check as CheckIcon, CheckCircle2, FilePen, FileText, Globe2, History, ListChecks, MapPinned, Plus, RefreshCw, ShieldAlert, ShieldCheck, Users } from "lucide-react";
 import { BlockState, Button, Cell, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, Fold, Input, InlineMeter, InlineRetry, JudgmentPoints, LocaleTabs, Modal, MoreMenu, Notice, PageHeader, PageTabs, Panel, Select, Stat, StatBand, StatusTag, Steps, Table, TableMessage, Td, Textarea, Th, Tr, type JudgmentRow } from "@/app/components/rd";
@@ -22,7 +22,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import type { BusinessFormSpec } from "../design-kit";
 import { LegalTab } from "./i5-legal";
 import { PrivacyTab } from "./i5-privacy";
-import { useI5Writes, WRITE_LOCKED, type I5Writes } from "./i5-writes";
+import { LeaveDialog, mergeEdits, useI5Writes, useLeaveGuard, withConflict, WRITE_LOCKED, type I5Writes } from "./i5-writes";
 import type { ICtx } from "./types";
 
 type TabKey = "disclosure" | "legal" | "privacy";
@@ -38,6 +38,8 @@ type Editor = {
   vi: string;
   en: string;
   chapters: Pick<DisclosureChapterView, "no" | "zh" | "vi" | "en" | "zhBody" | "viBody" | "enBody">[];
+  /** 「读取最新」后的最新内容，编辑器把没改过的字段换成它（OP-97）。 */
+  rebase?: Editor;
 };
 
 const TAB_LABEL: Record<TabKey, string> = { disclosure: "风险披露", legal: "法律条款", privacy: "隐私政策" };
@@ -56,6 +58,12 @@ const languageText = (scope?: string) => {
   return names.length > 3 ? `${names.slice(0, 3).join(" / ")} 等 ${names.length} 种语言` : names.join(" / ");
 };
 const count = (value: number) => value.toLocaleString("en-US");
+/** 少于 5 人不显示人数和比例（ST-44）。 */
+const SMALL_SAMPLE = "样本过小";
+const isSmall = (value: number) => value > 0 && value < 5;
+const people = (value: number) => isSmall(value) ? SMALL_SAMPLE : `${count(value)} 人`;
+/** 列表时间按业务时区（TX-26）；只有日期的（2026-11-04、11-04）不换算。 */
+const timeText = (value?: string) => !value ? "—" : /^\d{4}-\d{2}-\d{2}[T ]\d/.test(value) ? formatBusinessTimeCompact(value, value) : value;
 const pendingAckOf = (j: DisclosureJurisdictionView) => j.pendingAck ?? Math.max(0, Math.round(j.affected * (100 - j.ackProgress) / 100));
 const ackedOf = (j: DisclosureJurisdictionView) => j.acked ?? Math.max(0, j.affected - pendingAckOf(j));
 const operatorText = (value?: string) => !value ? "—" : value.startsWith("migration:") ? "系统迁移" : value;
@@ -141,7 +149,7 @@ export function I5Disclosures({ ctx, errorText }: { ctx: ICtx; errorText: string
     : tab && !legalWrite && !legalPublish ? "你只能查看；改条款和隐私政策要有修改权限。" : undefined;
 
   return <>
-    <DisclosureHeader ctx={ctx} tab={tab} readOnly={readOnly} />
+    <DisclosureHeader ctx={ctx} tab={tab} readOnly={readOnly} guideExtra={readOnly ? <p>{readOnly}</p> : undefined} />
     {writes.notices}
     {tabs.length > 1 && tab && <PageTabs label="法律条款与风险披露内容" value={tab} onChange={choose} items={tabs.map((value) => ({ value, label: TAB_LABEL[value] }))} />}
     {visited.includes("disclosure") && <div hidden={tab !== "disclosure"} className="rd-tab-pane"><DisclosureTab ctx={ctx} errorText={errorText} writes={writes} has={has} queueNonce={queueNonce} /></div>}
@@ -151,12 +159,12 @@ export function I5Disclosures({ ctx, errorText }: { ctx: ICtx; errorText: string
   </>;
 }
 
-function DisclosureHeader({ ctx, tab, readOnly }: { ctx: ICtx; tab: TabKey | null; readOnly?: string }) {
+function DisclosureHeader({ ctx, tab, readOnly, guideExtra }: { ctx: ICtx; tab: TabKey | null; readOnly?: string; guideExtra?: ReactNode }) {
   const data = ctx.content.trustDisclosure;
   const [readAt, setReadAt] = useState("");
   useEffect(() => { if (data) setReadAt(businessClock(Date.now())); }, [data]);
   return (
-    <PageHeader pageId="I5" title="法律条款与风险披露" summary="管风险披露、法律条款和隐私政策的版本。" readOnly={readOnly}
+    <PageHeader pageId="I5" title="法律条款与风险披露" summary="管风险披露、法律条款和隐私政策的版本。" readOnly={readOnly} guideExtra={guideExtra}
       meta={tab === "disclosure" && readAt ? `${readAt} 读取（${businessZone().label}）· 每 10 秒更新` : undefined} />
   );
 }
@@ -178,6 +186,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
   const [detailKey, setDetailKey] = useState<string | null>(null);
   const [detailLang, setDetailLang] = useState<Lang>("zh");
   const [editor, setEditor] = useState<Editor | null>(null);
+  const [rebaseWanted, setRebaseWanted] = useState(false);
 
   const loadQueue = useCallback(async () => {
     if (!canQueue) return;
@@ -186,6 +195,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
       setQueue(overview.operationQueue.filter((row) => row.status === "pending" && /披露|受限动作/.test(row.action)));
       setQueueFailed(false);
     } catch {
+      setQueue([]);
       setQueueFailed(true);
     }
   }, [canQueue]);
@@ -193,10 +203,12 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void actions.reloadIContent();
+      if (document.visibilityState !== "visible") return;
+      void actions.reloadIContent();
+      void loadQueue();
     }, 10_000);
     return () => window.clearInterval(timer);
-  }, [actions]);
+  }, [actions, loadQueue]);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -233,6 +245,8 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
     return !!mapping && mapping.status.toLowerCase() !== "archived" && mapping.version !== row.version;
   });
   const unmapped = activeCatalog.filter((item) => !item.hasActiveMapping);
+  // 归档的映射只是历史记录，不算在生效。
+  const effectiveCount = jurisdictions.filter((j) => j.status.toLowerCase() === "published").length;
   const inApproval = (code: string) => queue.some((row) => row.obj === code);
   const gateInApproval = queue.some((row) => row.action.includes("受限动作"));
 
@@ -258,7 +272,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
     confirmLabel: current ? "保存名称" : "确认新增",
     statedBrief: current
       ? { impact: "地区名称立即更新，只影响后台显示和可选列表，已生效的披露版本不变。", check: "核对新名称，理由写清依据或工单号。" }
-      : { impact: "新地区立即出现在目录里，要新建版本、发布并配置生效版本后，用户才看得到。代码创建后不能改。", check: "核对地区代码和名称，理由写清依据或工单号。" },
+      : { impact: "新地区立即出现在目录里，状态是已停用。启用后才能新建版本，配置生效版本后用户才看得到。代码创建后不能改。", check: "核对地区代码和名称，理由写清依据或工单号。" },
     businessForm: { kind: "disclosure-jurisdiction", mode: current ? "edit" : "create", code: current?.code, name: current?.name, revision: current?.revision },
     run: async (reason, _value, form) => {
       const code = form?.code?.trim().toUpperCase() || "";
@@ -330,13 +344,13 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
       jurisdictionOptions: current ? activeCatalog.filter((item) => item.code === current.code).map(regionOption) : mappableOptions,
       publishedVersionsByJurisdiction,
       unchanged: current ? { version: current.version, countryCodes: current.countryCodes } : undefined,
-      affected: current ? { version: current.version, users: current.affected } : undefined,
+      affected: current ? current.affected : undefined,
     };
     openActionConfirm({ briefKind: "config", ...approvalProps,
       action: <>{current ? "调整" : "新增"}适用地区 × 版本映射{current ? ` · ${current.code}` : ""}</>,
-      detail: <>这里仅维护启用适用地区的适用国家/地区与已发布版本映射。映射批准后生效；切换生效条款后，适用用户须重新确认。</>,
-      completionCopy: "批准后生效：更新该地区映射；仅生效版本实际变化时，适用用户须重新确认。提交本身不会切换版本。",
-      statedBrief: { impact: `批准后这个地区按这里的版本和国家生效；版本变了，适用用户要重新确认。由${APPROVER}，批准前当前生效版本不变。`, check: "核对地区、版本和适用国家，理由写清版本依据。" },
+      detail: <>这里仅维护启用适用地区的适用国家/地区与已发布版本映射。映射批准后生效；版本或适用国家变化时，新旧国家的用户须重新确认。</>,
+      completionCopy: "批准后生效：更新该地区映射；版本或适用国家变化时，新旧国家的用户须重新确认并收到通知。提交本身不会切换版本。",
+      statedBrief: { impact: `批准后这个地区按这里的版本和国家生效；版本或适用国家变了，新旧国家的用户都要重新确认，并收到通知。由${APPROVER}，批准前当前生效版本不变。`, check: "核对地区、版本和适用国家，理由写清版本依据。" },
       facts: current && <Facts><Fact k="地区">{current.code} · {nameOf(current.code, current.name)}</Fact><Fact k="当前">{current.version} · {current.countryCodes.join("、") || "未配置国家"}</Fact></Facts>,
       businessForm: spec,
       run: async (reason, _value, form) => {
@@ -369,7 +383,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
     detail: <>归档后不再作为生效版本，历史版本和操作记录仍保留。</>,
     confirmTone: "danger",
     statedBrief: { impact: `批准后这个地区不再有生效版本，归档的映射不能恢复，要用时重新新增。由${APPROVER}，批准前不变。`, check: "核对地区和版本，理由写清依据或工单号。" },
-    facts: <Facts><Fact k="地区">{j.code} · {nameOf(j.code, j.name)}</Fact><Fact k="生效版本">{j.version} → 无</Fact><Fact k="涉及用户">{count(j.affected)} 人</Fact></Facts>,
+    facts: <Facts><Fact k="地区">{j.code} · {nameOf(j.code, j.name)}</Fact><Fact k="生效版本">{j.version} → 无</Fact><Fact k="涉及用户">{people(j.affected)}</Fact></Facts>,
     run: async (reason) => {
       const def = findHighOp("i5_matrix_archive")!;
       await submit(`jur:${j.code}`, {
@@ -411,7 +425,17 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
     return editorFrom(snapshot, jurisdiction, nextVersionFor(jurisdiction), "create");
   };
 
-  const saveEditor = (form: Editor) => {
+  /** 「读取最新」：重读后把最新内容交给编辑器，自己改过的字段留着（OP-97）。 */
+  const readLatest = () => { void refresh().then(() => setRebaseWanted(true)); };
+  useEffect(() => {
+    if (!rebaseWanted) return;
+    setRebaseWanted(false);
+    setEditor((current) => {
+      const row = current?.editing && versions.find((item) => versionKey(item) === versionKey(current.editing!));
+      return current && row ? { ...current, rebase: { ...editorFrom(row, row.jurisdiction, row.version, "edit", row) } } : current;
+    });
+  });
+  const saveEditor = (form: Editor, after?: () => void) => {
     const { editing, jurisdiction, version } = form;
     const payload = {
       jurisdiction,
@@ -422,7 +446,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
       chapters: form.chapters.map(({ no, zh, vi, en, zhBody, viBody, enBody }) => ({ no, zhTitle: zh, viTitle: vi, enTitle: en, zhBody, viBody, enBody })),
       ...(editing ? { expectedRevision: editing.revision, expectedContentHash: editing.contentHash } : {}),
     };
-    openActionConfirm({ briefKind: "config",
+    openActionConfirm(withConflict(ctx, { briefKind: "config",
       action: <>{editing ? "编辑披露草稿" : "新建披露版本"} · {jurisdiction} {version}</>,
       detail: <>保存后只改草稿，App 内容不变。发布和生效版本映射要分别批准。</>,
       amplifies: false,
@@ -437,9 +461,9 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
           ? { target: `jur:${jurisdiction}`, label: `编辑披露草稿 · ${jurisdiction} ${version}`, op: { kind: "content", call: { fn: "updateI5DisclosureVersion", args: [jurisdiction, version, payload, reason] } } }
           : { target: `jur:${jurisdiction}`, label: `新建披露版本 · ${jurisdiction} ${version}`, op: { kind: "content", call: { fn: "createI5DisclosureVersion", args: [jurisdiction, payload, reason] } } });
         setEditor(null);
-        if (result === "done") toast("草稿已保存，App 内容不变");
+        if (result === "done") { toast("草稿已保存，App 内容不变"); after?.(); }
       },
-    });
+    }, readLatest));
   };
 
   const deleteDraft = (row: DisclosureVersionItemView) => openActionConfirm({ briefKind: "record",
@@ -470,7 +494,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
       completionCopy: "批准后生效：仅封存已保存草稿，App 当前版本不变，也不触发重新确认；生效版本映射须另行提交审批。",
       confirmTone: "danger",
       statedBrief: { impact: `批准后这个版本封存，不能再改也不能删除。App 还是当前版本，不要求用户重新确认，要另外切换生效版本。由${APPROVER}，批准前不变。`, check: "逐章核对中文、越南语和英语内容，理由写清版本依据。" },
-      facts: <Facts><Fact k="地区">{row.jurisdiction} · {nameOf(row.jurisdiction)}</Fact><Fact k="版本">{current?.version ?? j?.version ?? "无生效版"} → {row.version}</Fact><Fact k="语言">{languageText(row.languageScope)}</Fact><Fact k="切换生效后要确认的用户">{count(affected)} 人</Fact></Facts>,
+      facts: <Facts><Fact k="地区">{row.jurisdiction} · {nameOf(row.jurisdiction)}</Fact><Fact k="版本">{current?.version ?? j?.version ?? "无生效版"} → {row.version}</Fact><Fact k="语言">{languageText(row.languageScope)}</Fact><Fact k="切换生效后要确认的用户">{people(affected)}</Fact></Facts>,
       businessForm: {
         kind: "disclosure-publish-review",
         jurisdiction: row.jurisdiction,
@@ -539,13 +563,18 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
     {canDraft && <Button variant="primary" icon={<Plus size={15} aria-hidden />} disabledReason={newVersionBlocked} onClick={openNewVersion}>新建版本</Button>}
   </>;
   const todoHint = [drafts.length && `${drafts.length} 个草稿待发布`, unswitched.length && `${unswitched.length} 个版本已发布未切换`, queue.length && `${queue.length} 个操作待审批`].filter(Boolean).join(" · ") || undefined;
+  // 审批看不到或没读到时只说能确定的，不把未知当成没有（T09）。
+  const queueUnknown = !canQueue || queueFailed;
+  const queueLimit = queueUnknown ? (canQueue ? "待审批没读到" : "这个账号看不到待审批") : undefined;
   const conclusion = issues.size
     ? <Conclusion state="danger" icon={ShieldAlert} action={headActions} hint={todoHint}><b>{issues.size}</b> 个地区的披露引用异常，App 可能读不到</Conclusion>
     : unmapped.length
       ? <Conclusion state="warn" action={headActions} hint={todoHint}><b>{unmapped.length}</b> 个启用地区还没有生效版本：{unmapped.map((item) => item.code).join("、")}</Conclusion>
       : todoCount
-        ? <Conclusion state="neutral" icon={ListChecks} action={headActions} hint={todoHint}>有 {todoCount} 件事要处理</Conclusion>
-        : <Conclusion state="ok" icon={ShieldCheck} action={headActions}>{jurisdictions.length ? `${jurisdictions.length} 个地区都有生效版本，没有要处理的版本` : "还没有地区配置生效版本"}</Conclusion>;
+        ? <Conclusion state="neutral" icon={ListChecks} action={headActions} hint={[todoHint, queueLimit].filter(Boolean).join(" · ")}>有 {todoCount} 件事要处理</Conclusion>
+        : effectiveCount === 0
+          ? <Conclusion state="neutral" action={headActions}>还没有地区配置生效版本</Conclusion>
+          : <Conclusion state={queueUnknown ? "neutral" : "ok"} icon={ShieldCheck} action={headActions} hint={queueLimit}>{queueUnknown ? "启用的地区都有生效版本，没有草稿" : "启用的地区都有生效版本，没有要处理的版本"}</Conclusion>;
 
   const hasToken = (row: DisclosureVersionItemView) => row.revision != null && Boolean(row.contentHash);
   const publishBlocked = (row: DisclosureVersionItemView) => regionBlocked(row.jurisdiction)
@@ -569,8 +598,8 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
     {errorText && <Notice tone="warn" title="数据没有读到最新" action={<Button size="sm" loading={refreshing} onClick={() => void refresh()}>重新加载</Button>}>内容数据加载失败 · {errorText} 下面是上次读到的内容，写入口已禁用。</Notice>}
     {conclusion}
     <StatBand label="风险披露关键数字">
-      <Stat tone="role-3" icon={Users} label="当前版本待确认用户" value={count(stats.staleAckUsers)} unit="人" explain={`切换生效版本后，还没重新确认的用户。${gates.find((gate) => gate.key === "withdraw")?.active ? "提现受限内 · 未确认时拦截" : "提现已移出受限动作范围"}。`} />
-      <Stat tone="role-2" icon={Globe2} label="披露适用地区" value={stats.jurisdictions} unit="个" explain="有生效版本的地区数。每个地区的版本单独管理。" />
+      <Stat tone="role-3" icon={Users} label="当前版本待确认用户" value={count(stats.staleAckUsers)} unit="人" explain={`切换生效版本或改适用国家后，还没重新确认的用户。${gates.find((gate) => gate.key === "withdraw")?.active ? "提现受限内 · 未确认时拦截" : "提现已移出受限动作范围"}。`} />
+      <Stat tone="role-2" icon={Globe2} label="生效地区" value={effectiveCount} unit="个" explain="已发布、正在生效的地区数，已归档的不算。" />
       <Stat tone="role-4" icon={Ban} label="未确认被拦截（近 7 天）" value={stats.weeklyGateBlocked} unit="次" explain="全部受限动作的历史事件，不代表当前提现状态。" />
     </StatBand>
 
@@ -589,7 +618,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
             ))}
             {drafts.map((row) => (
               <Tr key={versionKey(row)} selected={detail === row} onOpen={() => openVersion(row)}>
-                <Td><Cell main={`${row.jurisdiction} ${row.version}`} sub={`${languageText(row.languageScope)} · ${row.updatedAt || row.effectiveDate || "—"}`} /></Td>
+                <Td><Cell main={`${row.jurisdiction} ${row.version}`} sub={`${languageText(row.languageScope)} · ${timeText(row.updatedAt || row.effectiveDate)}`} /></Td>
                 <Td><StatusTag tone="neutral" explain="只有后台能看到，用户看不到。">草稿</StatusTag></Td>
                 <Td>{canPublish ? "核对七章后发布" : "等有审批提交权限的同事发布"}</Td>
                 <Td>{draftActions(row)}</Td>
@@ -623,7 +652,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
       </div>
     )}
 
-    <Panel title="各地区生效版本" icon={MapPinned} tone="role-2" flush actions={canPublish ? <Button size="sm" disabledReason={newMappingBlocked} onClick={() => configMatrix()}>新增映射</Button> : undefined}>
+    <Panel title="各地区生效版本" icon={MapPinned} tone="role-2" flush explain="用户现在看的版本。覆盖人数按账号地区算，确认进度按当前版本算。拦截数是历史记录，可能包含已经确认过的用户。" actions={canPublish ? <Button size="sm" disabledReason={newMappingBlocked} onClick={() => configMatrix()}>新增映射</Button> : undefined}>
       {[...issues].map(([code, issue]) => (
         <div className="rd-panel-line" key={code} data-proof="disclosure-publication-issue"><Notice tone="danger" title={`${code} 引用异常`}>{issue}</Notice></div>
       ))}
@@ -636,11 +665,10 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
             return (
               <Tr key={j.code} selected={j.code === jurCode} onOpen={() => openRegion(j.code)}>
                 <Td><Cell main={`${j.code} · ${nameOf(j.code, j.name)}`} sub={`适用 ${j.countryCodes?.join("、") || "未配置"}`} /></Td>
-                <Td><Cell num main={j.version} sub={j.publishedAt || "—"} /></Td>
+                <Td><Cell num main={j.version} sub={timeText(j.publishedAt)} /></Td>
                 <Td>{issues.has(j.code) ? <StatusTag tone="danger">引用异常</StatusTag> : <StatusTag tone={archived ? "done" : "neutral"} icon={archived ? undefined : CheckCircle2}>{statusZh(j.status)}</StatusTag>}</Td>
-                <Td>{j.affected > 0
-                  ? <Cell main={<InlineMeter value={j.ackProgress / 100} text={`${j.ackProgress}%`} tone={pendingAck > 0 ? "progress" : "ok"} />} sub={`待确认 ${count(pendingAck)} · 共 ${count(j.affected)} 人`} />
-                  : <Cell main="无覆盖用户" />}</Td>
+                <Td>{j.affected === 0 ? <Cell main="无覆盖用户" /> : isSmall(j.affected) ? <Cell main={SMALL_SAMPLE} />
+                  : <Cell main={<InlineMeter value={j.ackProgress / 100} text={`${j.ackProgress}%`} tone={pendingAck > 0 ? "progress" : "ok"} />} sub={`待确认 ${count(pendingAck)} · 共 ${count(j.affected)} 人`} />}</Td>
                 <Td align="right"><Cell num main={j.blocked ? count(j.blocked) : <span className="rd-weak">0</span>} /></Td>
                 {canPublish && <Td>{archived ? "—" : <span className="rd-row-actions">
                   <Button size="sm" disabledReason={switchBlocked(j.code)} onClick={() => configMatrix(j)}>调整映射</Button>
@@ -654,9 +682,9 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
       </Table>
     </Panel>
 
-    <Fold title="披露版本列表" icon={History} tone="role-3" summary={`${versions.length} 个版本${drafts.length ? ` · ${drafts.length} 个草稿` : ""}`}>
+    <Fold title="披露版本列表" icon={History} tone="role-3" summary={`${versions.length} 个版本`}>
       <Table label="披露版本列表">
-        <thead><tr><Th>版本</Th><Th>状态</Th><Th>语言</Th><Th>生效/更新</Th><Th sticky="end">操作</Th></tr></thead>
+        <thead><tr><Th>版本</Th><Th>状态</Th><Th>语言</Th><Th>生效/更新（{businessZone().label}）</Th><Th sticky="end">操作</Th></tr></thead>
         <tbody>
           {versions.map((row) => {
             const isDraft = row.status.toLowerCase() === "draft";
@@ -665,7 +693,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
                 <Td><Cell main={`${row.jurisdiction} ${row.version}`} sub={`${row.chapters.length} / 7 章`} /></Td>
                 <Td><StatusTag tone={isDraft ? "neutral" : row.status.toLowerCase() === "published" ? "ok" : "done"}>{statusZh(row.status)}</StatusTag></Td>
                 <Td>{languageText(row.languageScope)}</Td>
-                <Td><Cell num main={row.publishedAt || row.updatedAt || row.effectiveDate || "—"} sub={row.operator ? operatorText(row.operator) : undefined} /></Td>
+                <Td><Cell num main={timeText(row.publishedAt || row.updatedAt || row.effectiveDate)} sub={row.operator ? operatorText(row.operator) : undefined} /></Td>
                 <Td sticky="end"><span className="rd-row-actions"><Button size="sm" onClick={() => openVersion(row)}>查看七章</Button>{isDraft && draftActions(row)}</span></Td>
               </Tr>
             );
@@ -709,14 +737,14 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
       </Table>
     </Fold>
 
-    <Fold title="需要先确认的操作" icon={ShieldCheck} tone="role-4" summary={gates.some((gate) => gate.active) ? `${gates.filter((gate) => gate.active).length} 项受限，未确认的用户会被拦下` : "当前没有纳入风险披露前置确认范围的操作。"}>
+    <Fold title="需要先确认的操作" icon={ShieldCheck} tone="role-4" explain={<><p>{gates.some((gate) => gate.active) ? "还没重新确认的用户，做这里受限的操作时会被拦下并跳到披露页。" : "当前没有受限的操作，用户不会被拦。"}</p><p>重新确认相当于让用户重新签一次条款，不是紧急开关。监管要求停业务，去「紧急停用开关」。</p></>} summary={gates.some((gate) => gate.active) ? `${gates.filter((gate) => gate.active).length} 项受限，未确认的用户会被拦下` : "当前没有纳入风险披露前置确认范围的操作。"}>
       <Table label="需要先确认的操作">
         <thead><tr><Th>操作</Th><Th>状态</Th>{canAdjustGate && <Th sticky="end">动作</Th>}</tr></thead>
         <tbody>
           {gates.map((gate) => (
             <Tr key={gate.key}>
-              <Td><Cell main={gate.name} sub={gate.retired ? "已移出风险披露前置确认范围，不支持重新纳入。" : gate.sub} /></Td>
-              <Td>{gate.retired ? <StatusTag tone="done">不再纳入</StatusTag> : <StatusTag tone={gate.active ? "ok" : "done"}>{gate.active ? "受限内" : "已移出"}</StatusTag>}</Td>
+              <Td><Cell main={gate.name} /></Td>
+              <Td>{gate.retired ? <StatusTag tone="done" explain="已移出风险披露前置确认范围，不支持重新纳入。">不再纳入</StatusTag> : <StatusTag tone={gate.active ? "ok" : "done"} explain={gate.sub}>{gate.active ? "受限内" : "已移出"}</StatusTag>}</Td>
               {canAdjustGate && <Td sticky="end">{gate.retired ? "—" : <Button size="sm" disabledReason={blocked("gate", gateInApproval)} onClick={() => toggleGate(gate)}>{gate.active ? "移出" : "纳入"}</Button>}</Td>}
             </Tr>
           ))}
@@ -732,7 +760,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
       {auditReachable && <Link className="rd-link" href={auditHref} prefetch={false}>操作记录与审批</Link>}
     </nav>
 
-    <Drawer open={!!jur} onClose={() => setJurCode(null)} title={jur ? `适用地区 · ${jur.code}（${nameOf(jur.code, jur.name)}）` : ""} icon={MapPinned} tone="role-2"
+    <Drawer open={!!jur} onClose={() => setJurCode(null)} title={jur ? `适用地区 · ${jur.code}（${nameOf(jur.code, jur.name)}）` : ""} icon={MapPinned} tone="role-2" explain="按用户账号国家/地区代码和这里的适用国家匹配。"
       nav={{ hasPrev: jurIndex > 0, hasNext: jurIndex >= 0 && jurIndex < jurisdictions.length - 1, onPrev: () => setJurCode(jurisdictions[jurIndex - 1].code), onNext: () => setJurCode(jurisdictions[jurIndex + 1].code) }}
       footer={jur && canPublish && jur.status.toLowerCase() !== "archived" ? <Decision
         danger={<Button variant="danger-outline" disabledReason={regionBlocked(jur.code)} onClick={() => archiveMatrix(jur)}>归档</Button>}
@@ -741,9 +769,8 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
         <JudgmentPoints rows={regionPoints(jur, issues.get(jur.code))} />
         <Facts>
           <Fact k="适用国家/地区">{jur.countryCodes?.join("、") || "未配置"}</Fact>
-          <Fact k="已确认">{count(ackedOf(jur))} 人</Fact>
+          <Fact k="已确认">{isSmall(jur.affected) ? SMALL_SAMPLE : `${count(ackedOf(jur))} 人`}</Fact>
           <Fact k="历史拦截（近 7 天）">{count(jur.blocked)} 次</Fact>
-          <Fact k="适用地区判定输入">按用户账号国家/地区代码与本适用地区配置匹配</Fact>
         </Facts>
         <Fold inset title="版本历史" summary={`${regionHistory.length} 个版本`}>
           <Table label="这个地区的版本">
@@ -794,7 +821,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
       </>}
     </Drawer>
 
-    {editor && <VersionEditor key={`${editor.mode}|${editor.editing ? versionKey(editor.editing) : ""}`} initial={editor} regions={editor.mode === "edit" ? catalog.filter((item) => item.code === editor.jurisdiction).map(regionOption) : activeCatalog.map(regionOption)} languageScopes={data.languageScopes?.length ? data.languageScopes : DEFAULT_LANGUAGE_SCOPES} loadRegionBase={loadRegionBase} onSave={saveEditor} onClose={() => setEditor(null)} blockedReason={blocked(`jur:${editor.jurisdiction}`)} />}
+    {editor && <VersionEditor key={`${editor.mode}|${editor.editing ? versionKey(editor.editing) : ""}`} initial={editor} regions={editor.mode === "edit" ? catalog.filter((item) => item.code === editor.jurisdiction).map(regionOption) : activeCatalog.map(regionOption)} languageScopes={data.languageScopes?.length ? data.languageScopes : DEFAULT_LANGUAGE_SCOPES} loadRegionBase={loadRegionBase} onSave={saveEditor} onClose={() => setEditor(null)} blockedFor={(code) => regionBlocked(code)} />}
   </>;
 }
 
@@ -802,8 +829,8 @@ function regionPoints(jur: DisclosureJurisdictionView, issue: string | undefined
   const pendingAck = pendingAckOf(jur);
   return [
     { label: "生效版本", value: `${jur.version} · ${jur.publishedAt || "—"} 起`, state: issue ? "danger" : undefined, reason: issue },
-    { label: "用户", value: jur.affected > 0 ? `共 ${count(jur.affected)} 人，已确认 ${jur.ackProgress}%` : "无覆盖用户" },
-    { label: "要不要处理", value: pendingAck > 0 ? `${count(pendingAck)} 人待确认，用户下次做受限操作前会确认` : "没有待确认的用户" },
+    { label: "用户", value: jur.affected === 0 ? "无覆盖用户" : isSmall(jur.affected) ? SMALL_SAMPLE : `共 ${count(jur.affected)} 人，已确认 ${jur.ackProgress}%` },
+    { label: "要不要处理", value: isSmall(jur.affected) ? "用户下次做受限操作前会确认" : pendingAck > 0 ? `${count(pendingAck)} 人待确认，用户下次做受限操作前会确认` : "没有待确认的用户" },
   ];
 }
 
@@ -815,24 +842,32 @@ function versionSteps(row: DisclosureVersionItemView, live: string | undefined):
 }
 
 /** 新建和编辑披露版本：抽屉里按语言切换，切语言不动别的语言（CP-64）。理由在保存时的确认框里填（OP-24）。 */
-function VersionEditor({ initial, regions, languageScopes, loadRegionBase, onSave, onClose, blockedReason }: {
+function VersionEditor({ initial, regions, languageScopes, loadRegionBase, onSave, onClose, blockedFor }: {
   initial: Editor;
   regions: readonly { value: string; label: string }[];
   languageScopes: readonly string[];
   loadRegionBase: (jurisdiction: string) => Promise<Editor>;
-  onSave: (form: Editor) => void;
+  onSave: (form: Editor, after?: () => void) => void;
   onClose: () => void;
-  blockedReason?: string;
+  /** 按表单当前的地区判断，换地区后跟着变。 */
+  blockedFor: (jurisdiction: string) => string | undefined;
 }) {
   const [form, setForm] = useState(initial);
   const [baseline, setBaseline] = useState(initial);
   const [lang, setLang] = useState<Lang>("zh");
   const [loadingRegion, setLoadingRegion] = useState(false);
   const [pendingRegion, setPendingRegion] = useState<string | null>(null);
-  const [leaving, setLeaving] = useState(false);
   const dirty = JSON.stringify(form) !== JSON.stringify(baseline);
   const needEn = form.languageScope.split("+").includes("en");
-  useUnsavedGuard(dirty);
+  const guard = useLeaveGuard(dirty, onClose);
+  useEffect(() => {
+    if (!initial.rebase) return;
+    const latest = initial.rebase;
+    setForm((current) => mergeEdits(baseline, current, latest));
+    setBaseline(latest);
+    // 只在「读取最新」时合并一次。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial.rebase]);
 
   const langMissing = (code: Lang) => !form[code].trim() || form.chapters.some((chapter) => !chapter[code].trim() || !chapter[`${code}Body`].trim());
   const missing = [
@@ -841,7 +876,7 @@ function VersionEditor({ initial, regions, languageScopes, loadRegionBase, onSav
     langMissing("vi") && "越南语内容",
     needEn && langMissing("en") && "英语内容",
   ].filter(Boolean);
-  const saveBlocked = blockedReason ?? (loadingRegion ? "正在加载该地区的版本内容" : missing.length ? `还缺：${missing.join("、")}` : form.mode === "edit" && !dirty ? "没有改动" : undefined);
+  const saveBlocked = blockedFor(form.jurisdiction) ?? (loadingRegion ? "正在加载该地区的版本内容" : missing.length ? `还缺：${missing.join("、")}` : form.mode === "edit" && !dirty ? "没有改动" : undefined);
   const setChapter = (index: number, patch: Partial<Editor["chapters"][number]>) => setForm((current) => ({ ...current, chapters: current.chapters.map((chapter, itemIndex) => itemIndex === index ? { ...chapter, ...patch } : chapter) }));
   const switchRegion = async (jurisdiction: string) => {
     setPendingRegion(null);
@@ -851,12 +886,12 @@ function VersionEditor({ initial, regions, languageScopes, loadRegionBase, onSav
     setBaseline(next);
     setLoadingRegion(false);
   };
-  const close = () => { if (dirty) setLeaving(true); else onClose(); };
+  const close = guard.askClose;
   const langName = LANGUAGE_NAME[lang];
 
   return <>
-    <Drawer open wide onClose={close} title={initial.mode === "edit" ? `编辑披露草稿 · ${form.jurisdiction} ${form.version}` : "新建披露版本"} sub={initial.mode === "create" ? "内容已带入这个地区当前的已发布版本" : undefined} icon={FilePen} tone="role-1"
-      footer={<Decision note="保存草稿不改变 App 内容。" others={<Button onClick={close}>取消</Button>} primary={<Button variant="primary" icon={<CheckIcon size={15} aria-hidden />} disabledReason={saveBlocked} onClick={() => onSave(form)}>保存草稿</Button>} />}>
+    <Drawer open wide onClose={close} title={initial.mode === "edit" ? `编辑披露草稿 · ${form.jurisdiction} ${form.version}` : "新建披露版本"} explain={initial.mode === "create" ? "内容已带入这个地区当前的已发布版本，切换生效版本后用户须重新确认。" : undefined} icon={FilePen} tone="role-1"
+      footer={<Decision explain="保存草稿不改变 App 内容。" others={<Button onClick={close}>取消</Button>} primary={<Button variant="primary" icon={<CheckIcon size={15} aria-hidden />} disabledReason={saveBlocked} onClick={() => onSave(form)}>保存草稿</Button>} />}>
       <div data-business-form="version-authoring" className="rd-form-stack">
         <div className="rd-form-grid">
           <Field label="披露版本"><div className="rd-form-static">{form.version}<Explain label="版本号怎么来的" content="系统自动编号，不能手填。" /></div></Field>
@@ -886,23 +921,6 @@ function VersionEditor({ initial, regions, languageScopes, loadRegionBase, onSav
         <Button variant="primary" onClick={() => void switchRegion(pendingRegion)}>换地区，放弃已填内容</Button>
       </>}><p>换成 {pendingRegion} 后，表单改成这个地区当前已发布版本的内容，已填内容不会保留。</p></Modal>
     )}
-    {leaving && (
-      <Modal title="有未保存的修改" onClose={() => setLeaving(false)} footer={<>
-        <Button onClick={() => setLeaving(false)}>继续编辑</Button>
-        <Button variant="danger-outline" onClick={onClose}>放弃改动</Button>
-        <Button variant="primary" disabledReason={saveBlocked} onClick={() => { setLeaving(false); onSave(form); }}>保存草稿后继续</Button>
-      </>}><p>关闭后这次的修改不会保留。</p></Modal>
-    )}
+    <LeaveDialog guard={guard} saveLabel="保存草稿" saveBlocked={saveBlocked} onSave={() => onSave(form, guard.saved)} />
   </>;
 }
-
-/** 有未保存内容时，关窗口走浏览器提示（OP-29）。 */
-export function useUnsavedGuard(dirty: boolean) {
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
-}
-

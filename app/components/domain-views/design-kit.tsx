@@ -690,7 +690,7 @@ export type BusinessFormSpec =
   | { kind: "phase-config"; mode: "create" | "edit"; label?: string; meta?: string; skus?: string; sortOrder?: number; status?: string }
   | { kind: "disclosure-jurisdiction"; mode: "create" | "edit"; code?: string; name?: string; revision?: number }
   | { kind: "version-authoring"; mode?: "create" | "edit"; version?: string; jurisdiction?: string; zh?: string; vi?: string; en?: string; chapters?: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; languageScope?: string; languageScopes?: string[]; jurisdictionOptions?: { value: string; label: string }[]; effectiveDate?: string; requiresReack?: boolean; versionReadonly?: boolean; jurisdictionReadonly?: boolean }
-  | { kind: "disclosure-matrix"; mode: "create" | "edit"; jurisdictionCode?: string; jurisdictionName?: string; jurisdictionOptions?: { value: string; label: string }[]; countryCodes?: string[]; countryOptions?: { value: string; label: string }[]; version?: string; publishedVersionsByJurisdiction?: Record<string, string[]>; unchanged?: { version: string; countryCodes: string[] }; affected?: { version: string; users: number } }
+  | { kind: "disclosure-matrix"; mode: "create" | "edit"; jurisdictionCode?: string; jurisdictionName?: string; jurisdictionOptions?: { value: string; label: string }[]; countryCodes?: string[]; countryOptions?: { value: string; label: string }[]; version?: string; publishedVersionsByJurisdiction?: Record<string, string[]>; unchanged?: { version: string; countryCodes: string[] }; affected?: number }
   | { kind: "disclosure-publish-review"; jurisdiction: string; currentVersion: string; targetVersion: string; affected: number; pendingAck: number; blocked: number; gatedActions: string[]; currentChapters: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; targetChapters: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[] }
   | { kind: "trust-section-authoring"; mode: "create" | "edit"; sectionKey: string; version?: string; description?: string; structure?: string; revision?: number;
       fields?: { key: string; label: string; value: string }[] }
@@ -2470,7 +2470,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     return (
       <div className="field" data-business-form="disclosure-publish-review">
         <span className="bf-legend">发布前合规核对</span>
-        <div className="rd-form-help">涉及用户 {spec.affected.toLocaleString("zh-CN")} 人 · 待重新确认 {spec.pendingAck.toLocaleString("zh-CN")} 人 · 已拦截 {spec.blocked.toLocaleString("zh-CN")} 次。本次只审批版本内容，App 上暂不变化。该版本正式用于地区后，用户须重新确认，期间受限的操作：{spec.gatedActions.join("、") || "无"}</div>
+        <div className="rd-form-help">{spec.affected > 0 && spec.affected < 5 ? "涉及用户样本过小" : `涉及用户 ${spec.affected.toLocaleString("zh-CN")} 人 · 待重新确认 ${spec.pendingAck.toLocaleString("zh-CN")} 人`} · 已拦截 {spec.blocked.toLocaleString("zh-CN")} 次 <Explain label="这次审批会怎样" content={`本次只审批版本内容，App 上暂不变化。该版本正式用于地区后，用户须重新确认，期间受限的操作：${spec.gatedActions.join("、") || "无"}`} /></div>
         <div className="rd-form-group-title">版本差异 · 共 {changed.length} / 7 章发生变化</div>
         {ordered.map((target) => {
           const current = currentOf(target.no);
@@ -2523,8 +2523,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           </RdCheckGroup>
           {(spec.countryOptions ?? []).length === 0 && <div className="tint tiny">暂无可选国家/地区</div>}
         </div>
-          {spec.affected && value.version !== spec.affected.version && <div className="tint tiny" style={{ marginTop: 10 }}>版本 {spec.affected.version} → {value.version}：{spec.affected.users > 0 ? `批准后这个地区 ${spec.affected.users.toLocaleString("en-US")} 位用户要重新确认。` : "这个地区现在没有覆盖用户。"}</div>}
-          <div className="tint tiny" style={{ marginTop: 10 }}>提交后需审批，批准前当前生效的版本不变。</div>
+          {spec.unchanged && (value.version !== spec.unchanged.version || (value.countryCodes ?? "") !== [...spec.unchanged.countryCodes].sort().join(",")) && <div className="tint tiny" style={{ marginTop: 10 }}>{value.version !== spec.unchanged.version ? `版本 ${spec.unchanged.version} → ${value.version}。` : "适用国家有变化。"}批准后新旧国家的用户要重新确认，并收到通知{spec.affected && spec.affected >= 5 ? `，这个地区现有 ${spec.affected.toLocaleString("en-US")} 位用户` : ""}。</div>}
       </div>
     );
   }

@@ -6,11 +6,10 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileCheck2, FilePen, FileText, Languages, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { BlockState, Button, Cell, Conclusion, Decision, DiffList, Drawer, Fact, Facts, Field, Fold, Input, Modal, Notice, NumberInput, Panel, Segments, Select, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr } from "@/app/components/rd";
+import { BlockState, Button, Cell, Conclusion, Decision, DiffList, Drawer, Fact, Facts, Field, Fold, Input, Notice, NumberInput, Panel, Segments, Select, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr } from "@/app/components/rd";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { fetchPrivacyPolicyAdmin, type PublishedContentDocument } from "@/lib/admin/published-content-client";
-import { useUnsavedGuard } from "./i5-disclosures";
-import { WRITE_LOCKED, type I5Writes } from "./i5-writes";
+import { LeaveDialog, mergeEdits, useLeaveGuard, withConflict, WRITE_LOCKED, type I5Writes } from "./i5-writes";
 import type { ICtx } from "./types";
 
 type Section = { id: string; title: string; body: string; order: number };
@@ -50,11 +49,11 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: 
   const locales = doc ? Object.keys(doc.locales) : [];
   const writeBlocked = loading ? "正在读取最新数据，读完再操作" : writes.isLocked("privacy") ? WRITE_LOCKED : undefined;
 
-  const save = (form: Doc) => {
+  const save = (form: Doc, after?: () => void) => {
     const baseline = doc!;
     const changedLocales = [...new Set([...Object.keys(form.locales), ...Object.keys(baseline.locales)])].filter((key) => JSON.stringify(form.locales[key]) !== JSON.stringify(baseline.locales[key]));
     const live = form.status !== "DRAFT";
-    openActionConfirm({ briefKind: "content",
+    openActionConfirm(withConflict(ctx, { briefKind: "content",
       action: <>{form.status === "PUBLISHED" ? "发布隐私政策" : form.status === "UNPUBLISHED" ? "撤下隐私政策公开版本" : "保存隐私政策草稿"} · {form.version}</>,
       detail: <>{live ? "填完理由立即生效，不走审批。" : "只保存草稿，公开版本不变。"}</>,
       amplifies: false,
@@ -77,16 +76,16 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: 
         const { version, status, locales: nextLocales, revision } = form;
         const result = await writes.send({ target: "privacy", label: `保存隐私政策 · ${version}`, op: { kind: "privacy", document: { version, status, locales: nextLocales, revision }, reason } });
         setEditing(false);
-        if (result === "done") toast(live ? "隐私政策已更新，请核对公开页" : "草稿已保存，公开版本不变");
+        if (result === "done") { toast(live ? "隐私政策已更新，请核对公开页" : "草稿已保存，公开版本不变"); after?.(); }
       },
-    });
+    }, () => void refresh()));
   };
 
   if (loading && !doc) return <Conclusion state="unknown">正在加载发布内容…</Conclusion>;
   if (!doc) return <BlockState state="error" title="公开内容状态尚未确认，请刷新重试。" detail={error ?? undefined} onRetry={() => void refresh()} retryLabel="刷新" />;
 
   const conclusion = doc.status === "PUBLISHED"
-    ? <Conclusion state="ok" icon={FileCheck2}>隐私政策：已发布，正文版本 {doc.version}</Conclusion>
+    ? <Conclusion state="ok" icon={FileCheck2} explain="注册页和邀请页公开阅读。App 上的显示位置待核对。">隐私政策：已发布，正文版本 {doc.version}</Conclusion>
     : doc.status === "UNPUBLISHED"
       ? <Conclusion state="warn">隐私政策：已撤下公开版本，用户读不到</Conclusion>
       : doc.hasPublishedVersion
@@ -125,21 +124,34 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: 
         <p>{contentOf(doc, viewing).hero}</p>
         {[...contentOf(doc, viewing).sections].sort((a, b) => a.order - b.order).map((section) => <section key={section.id}><h3>{section.title}</h3><p>{section.body}</p></section>)}
       </div>}
+      {viewing && <Fold inset title="段落结构" summary={`${contentOf(doc, viewing).sections.length} 段`}>
+        <Table label="段落结构">
+          <thead><tr><Th>ID</Th><Th align="right">顺序</Th><Th>标题</Th></tr></thead>
+          <tbody>{contentOf(doc, viewing).sections.map((section) => <Tr key={section.id}><Td><Cell mono main={section.id} /></Td><Td align="right"><Cell num main={section.order} /></Td><Td><Cell main={section.title} /></Td></Tr>)}</tbody>
+        </Table>
+      </Fold>}
+      {viewing && <Fold inset title="变更预览（只读）" summary={`${localeName(viewing)}的结构化内容`}><pre className="rd-json">{JSON.stringify(doc.locales[viewing], null, 2)}</pre></Fold>}
     </Drawer>
 
     {editing && <PrivacyEditor initial={doc} canPublish={canPublish} blockedReason={writeBlocked} onSave={save} onClose={() => setEditing(false)} />}
   </div>;
 }
 
-function PrivacyEditor({ initial, canPublish, blockedReason, onSave, onClose }: { initial: Doc; canPublish: boolean; blockedReason?: string; onSave: (form: Doc) => void; onClose: () => void }) {
+function PrivacyEditor({ initial, canPublish, blockedReason, onSave, onClose }: { initial: Doc; canPublish: boolean; blockedReason?: string; onSave: (form: Doc, after?: () => void) => void; onClose: () => void }) {
   const [form, setForm] = useState(initial);
+  const [baseline, setBaseline] = useState(initial);
   const [locale, setLocale] = useState(Object.keys(initial.locales)[0] ?? "en");
   const [newLocale, setNewLocale] = useState("");
   const [localeError, setLocaleError] = useState<string | null>(null);
-  const [leaving, setLeaving] = useState(false);
-  const dirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(initial), [form, initial]);
-  const contentChanged = JSON.stringify(form.locales) !== JSON.stringify(initial.locales);
-  useUnsavedGuard(dirty);
+  const dirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(baseline), [form, baseline]);
+  const contentChanged = JSON.stringify(form.locales) !== JSON.stringify(baseline.locales);
+  const guard = useLeaveGuard(dirty, onClose);
+  // 「读取最新」后 doc 换成新修订：自己改过的字段留着，其余取最新（OP-97）。
+  useEffect(() => {
+    if (initial.revision === baseline.revision) return;
+    setForm((current) => mergeEdits(baseline, current, initial));
+    setBaseline(initial);
+  }, [initial, baseline]);
   const localeKeys = Object.keys(form.locales);
   const current = contentOf(form, locale);
   const setContent = (next: Content) => setForm((doc) => ({ ...doc, locales: { ...doc.locales, [locale]: next } }));
@@ -176,7 +188,7 @@ function PrivacyEditor({ initial, canPublish, blockedReason, onSave, onClose }: 
     return null;
   };
   const problems = localeKeys.flatMap((key) => { const problem = localeProblem(key); return problem ? [`${localeName(key)}的${problem}`] : []; });
-  const needNewVersion = form.status === "PUBLISHED" && initial.status === "PUBLISHED" && contentChanged && form.version.trim() === initial.version;
+  const needNewVersion = form.status === "PUBLISHED" && baseline.status === "PUBLISHED" && contentChanged && form.version.trim() === baseline.version;
   const saveBlocked = blockedReason
     ?? (!dirty ? "内容没有变化，无需提交。"
       : form.status !== "DRAFT" && !canPublish ? "发布或撤下隐私政策需要发布权限，请先改为草稿。"
@@ -186,10 +198,10 @@ function PrivacyEditor({ initial, canPublish, blockedReason, onSave, onClose }: 
               : needNewVersion ? "发布修改后的隐私政策需要新的版本号，请修改版本号后再发布。"
                 : problems.length ? `还缺：${problems.slice(0, 3).join("、")}` : undefined);
   const saveLabel = form.status === "PUBLISHED" ? "保存并发布" : form.status === "UNPUBLISHED" ? "保存并撤下" : "保存草稿";
-  const close = () => { if (dirty) setLeaving(true); else onClose(); };
+  const close = guard.askClose;
   return <>
-    <Drawer open wide onClose={close} title="编辑隐私政策" sub={`修订号 ${initial.revision}`} icon={FilePen} tone="role-1"
-      footer={<Decision note={form.status === "DRAFT" ? "草稿保留当前公开版本。" : "保存后立即生效，请仅发布已审核正文。"} others={<Button onClick={close}>取消</Button>} primary={<Button variant="primary" disabledReason={saveBlocked} onClick={() => onSave(form)}>{saveLabel}</Button>} />}>
+    <Drawer open wide onClose={close} title="编辑隐私政策" sub={`修订号 ${baseline.revision}`} icon={FilePen} tone="role-1"
+      footer={<Decision explain={form.status === "DRAFT" ? "草稿保留当前公开版本。" : "保存后立即生效，请仅发布已审核正文。"} others={<Button onClick={close}>取消</Button>} primary={<Button variant="primary" disabledReason={saveBlocked} onClick={() => onSave(form)}>{saveLabel}</Button>} />}>
       <div className="rd-form-stack">
         <div className="rd-form-grid">
           <Field label="正文版本" required error={needNewVersion ? "发布修改后的隐私政策需要新的版本号，请修改版本号后再发布。" : undefined}>{(control) => <Input {...control} maxLength={64} value={form.version} onChange={(event) => setForm((doc) => ({ ...doc, version: event.target.value }))} />}</Field>
@@ -228,12 +240,6 @@ function PrivacyEditor({ initial, canPublish, blockedReason, onSave, onClose }: 
         {!localeKeys.length && <Notice tone="warn" title="还没有语言">先在上面新增一种语言。</Notice>}
       </div>
     </Drawer>
-    {leaving && (
-      <Modal title="有未保存的修改" onClose={() => setLeaving(false)} footer={<>
-        <Button onClick={() => setLeaving(false)}>继续编辑</Button>
-        <Button variant="danger-outline" onClick={onClose}>放弃改动</Button>
-        <Button variant="primary" disabledReason={saveBlocked} onClick={() => { setLeaving(false); onSave(form); }}>{saveLabel}</Button>
-      </>}><p>关闭后这次的修改不会保留。</p></Modal>
-    )}
+    <LeaveDialog guard={guard} saveLabel={saveLabel} saveBlocked={saveBlocked} onSave={() => onSave(form, guard.saved)} />
   </>;
 }
