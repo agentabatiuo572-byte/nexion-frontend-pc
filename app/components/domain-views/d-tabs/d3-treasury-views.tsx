@@ -4,7 +4,7 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { AlarmClock, ArrowDownUp, CalendarClock, Coins, Gauge, Landmark, PieChart, ReceiptText, Scale, ShieldCheck, Wallet } from "lucide-react";
-import { BlockState, Button, Check, CheckGroup, Cell, ColumnChart, Conclusion, Donut, Field, Fold, JudgmentPoints, KeyValues, LevelList, Notice, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Th, TierBand, Tr, TrendLine, Drawer, type ChartSlot } from "@/app/components/rd";
+import { BlockState, Button, Check, CheckGroup, Cell, ColumnChart, Conclusion, Donut, Field, Figure, Fold, JudgmentPoints, KeyValues, LevelList, Notice, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Th, TierBand, Tr, TrendLine, Drawer, type ChartSlot } from "@/app/components/rd";
 import { businessOffsetMinutes, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { D3ForecastConfig, D3Main, D3MaturityForecast, D3NetExposure, D3WaterLevel } from "@/lib/admin/d-client";
 import { LIABILITY_EXPLANATIONS, liabilityDisplayName } from "@/lib/admin/liability-labels";
@@ -242,19 +242,25 @@ function MaturityPanel({ maturity, loading, error, onRetry }: { maturity: D3Matu
   );
 }
 
-/** 这个页签里紫已经是「到期」，环只画前两类加其他（金、青、灰），一屏一色一义（06 审查 7）。中间写合计，图例写每类的数和占比，九类全表在下面。 */
-function LiabilityComposition({ rows, total }: { rows: D3Main["liabilities"]["breakdown"]; total: number }) {
+/**
+ * 应付款构成：环在左、九类表在右，表格第一列的色点就是图例，金额和占比只在表里写一遍（DP-61）。
+ * 这个页签里紫已经是「到期」，环只画前两类加其他（金、青、灰），一屏一色一义（06 审查 7）。两类以下不画环，写一句话（DP-62）。
+ */
+function liabilityRing(rows: D3Main["liabilities"]["breakdown"], total: number) {
   const ranked = rows.filter((row) => row.amountUsdt > 0).sort((a, b) => b.amountUsdt - a.amountUsdt);
-  if (!ranked.length) return <BlockState state="empty" title="目前没有应付款。" />;
-  if (ranked.length === 1) return <p className="rd-note">全部是 {categoryText(ranked[0].category)}。</p>;
-  const shown = ranked.slice(0, 2);
+  const slots = new Map<string, ChartSlot>(ranked.map((row, index) => [row.category, index < 2 ? ((index + 1) as ChartSlot) : "other"]));
+  if (ranked.length < 2) {
+    const note = ranked.length ? <p className="rd-note">全部是 {categoryText(ranked[0].category)}。</p> : <BlockState state="empty" title="目前没有应付款。" />;
+    return { ring: null, slots: new Map<string, ChartSlot>(), note };
+  }
   const rest = ranked.slice(2);
   const restSum = rest.reduce((sum, row) => sum + row.amountUsdt, 0);
   const parts = [
-    ...shown.map((row, index) => ({ key: row.category, label: categoryText(row.category), value: row.amountUsdt, slot: (index + 1) as ChartSlot })),
+    ...ranked.slice(0, 2).map((row, index) => ({ key: row.category, label: categoryText(row.category), value: row.amountUsdt, slot: (index + 1) as ChartSlot })),
     ...(restSum > 0 ? [{ key: "rest", label: `其他 ${rest.length} 类`, value: restSum, slot: "other" as ChartSlot }] : []),
   ];
-  return <Donut label="应付款构成" center={amountText(total)} centerLabel="USDT" segments={parts.map((part) => ({ ...part, text: money(part.value), share: `${(part.value / total * 100).toFixed(1)}%` }))} />;
+  const ring = <Donut legend={false} label="应付款构成" center={amountText(total)} centerLabel="USDT" segments={parts.map((part) => ({ ...part, text: money(part.value), share: `${(part.value / total * 100).toFixed(1)}%` }))} />;
+  return { ring, slots, note: null };
 }
 
 export function DueTab({ main, mainState, windowValue, onWindow, maturity, exposure, onExposureRetry, onMaturityRetry, canReadExposure, canExport, exportBlocked, onExport, selected, onSelect }: {
@@ -286,6 +292,31 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
   const peak = shown?.daily.reduce((best, row) => (row.totalDueUsdt > best.totalDueUsdt ? row : best), shown.daily[0]);
   const coverage = main && main.liabilities.totalUsdt > 0 ? (main.reserve.reserveTotalUsdt / main.liabilities.totalUsdt) * 100 : null;
   const latest = exposure.data?.series.at(-1);
+  const composition = liabilityRing(breakdown, main?.liabilities.totalUsdt ?? 0);
+  const liabilityTable = (
+    <Table label="九类应付款">
+      <thead><tr><Th>类型</Th><Th>说明</Th><Th align="right">金额（USDT）</Th><Th align="right">占比</Th><Th>数据来源</Th></tr></thead>
+      <tbody>
+        {listed.map((row) => {
+          const slot = composition.slots.get(row.category);
+          return (
+            <Tr key={row.category} selected={row.category === selected} onOpen={() => onSelect(row.category)}>
+              <Td><Cell main={<>{slot && <span className="rd-chart-swatch" data-slot={slot} aria-hidden />}{categoryText(row.category)}</>} /></Td>
+              <Td><Cell main={LIABILITY_EXPLANATIONS[row.category]} /></Td>
+              <Td align="right"><Cell num main={amountText(row.amountUsdt)} /></Td>
+              <Td align="right"><Cell num main={`${(row.share * 100).toFixed(2)}%`} /></Td>
+              <Td><Cell main={treasurySourceLabel(row.source)} /></Td>
+            </Tr>
+          );
+        })}
+        {zeroRows.length > 0 && !showZero && (
+          <Tr>
+            <Td colSpan={5}><button type="button" className="rd-link" onClick={() => setShowZero(true)}>另有 {zeroRows.length} 类现在是 0，展开看</button></Td>
+          </Tr>
+        )}
+      </tbody>
+    </Table>
+  );
   return (
     <>
       {mainState}
@@ -312,27 +343,10 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
             actions={canExport ? <Button size="sm" disabledReason={exportBlocked} onClick={onExport}>导出应付款 CSV</Button> : undefined}
           >
             <div className="rd-panel-inset" data-testid="b2-liability-distribution">
-              <LiabilityComposition rows={breakdown} total={main.liabilities.totalUsdt} />
+              {composition.ring
+                ? <Figure graphic={composition.ring} width={200} stack="wide">{liabilityTable}</Figure>
+                : <div className="rd-stack">{composition.note}{liabilityTable}</div>}
             </div>
-            <Table label="九类应付款">
-              <thead><tr><Th>类型</Th><Th>说明</Th><Th align="right">金额（USDT）</Th><Th align="right">占比</Th><Th>数据来源</Th></tr></thead>
-              <tbody>
-                {listed.map((row) => (
-                  <Tr key={row.category} selected={row.category === selected} onOpen={() => onSelect(row.category)}>
-                    <Td><Cell main={categoryText(row.category)} /></Td>
-                    <Td><Cell main={LIABILITY_EXPLANATIONS[row.category]} /></Td>
-                    <Td align="right"><Cell num main={amountText(row.amountUsdt)} /></Td>
-                    <Td align="right"><Cell num main={`${(row.share * 100).toFixed(2)}%`} /></Td>
-                    <Td><Cell main={treasurySourceLabel(row.source)} /></Td>
-                  </Tr>
-                ))}
-                {zeroRows.length > 0 && !showZero && (
-                  <Tr>
-                    <Td colSpan={5}><button type="button" className="rd-link" onClick={() => setShowZero(true)}>另有 {zeroRows.length} 类现在是 0，展开看</button></Td>
-                  </Tr>
-                )}
-              </tbody>
-            </Table>
             <div className="rd-panel-inset">
               <p className="rd-note">九类里统计了 {main.liabilities.hardLiabilityCategoryCount} 类。试用业务只做压力测试，{main.liabilities.trialShadowIncluded ? "这里已显示" : "不算必须付的钱"}。</p>
             </div>

@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowLeftRight, ShieldAlert, Target, Users, Wallet, XCircle } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { AreaChart } from "@/app/components/kit/charts/area-chart";
-import { BarList, Bars, BlockState, Button, Explain, Fact, Facts, Fold, Modal, StatusTag, ThresholdMeter } from "@/app/components/rd";
+import { BarList, Bars, BlockState, Button, Explain, Fact, Facts, Figure, Fold, Modal, StatusTag, ThresholdMeter } from "@/app/components/rd";
 import { fetchB0Kpis, fetchB0Redemption, type B0Kpi } from "@/lib/admin/b0-client";
 import type { B0Blocks } from "@/lib/admin/b0-access";
 import type { B2LiquidityHistory } from "@/lib/admin/b-restoration-client";
@@ -111,7 +111,7 @@ export function FundFold({ ledger, liquidity, error, retrying, onRetry, alert, l
               <div className="cc-cols">
               <section aria-label="应付款">
                 <h3 className="cc-sub">应付款最多的几类<FoldLink reach={reach} href="/overview/liquidity">查看全部 9 类</FoldLink></h3>
-                {accounts.length === 0 ? <p className="cc-line">目前没有应付款</p> : (
+                {accounts.length === 0 ? <p className="cc-line">目前没有应付款</p> : accounts.length === 1 ? <p className="cc-line">全部是{liabilityDisplayName(accounts[0].key, operatorCopyText(accounts[0].label))}，{usdt(accounts[0].amount)}</p> : (
                   <BarList label="应付款最多的几类" slot={2} rows={[
                     ...accounts.slice(0, 3).map((item) => ({ key: item.key, label: liabilityDisplayName(item.key, operatorCopyText(item.label)), value: item.amount, text: usdt(item.amount) })),
                     ...(others > 0 ? [{ key: "others", label: `其他 ${accounts.length - 3} 类`, value: others, text: usdt(others) }] : []),
@@ -195,18 +195,21 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                 )}
               </section>
               )}
-              <ThresholdMeter
-                label="提现压力和黄线、红线"
-                rows={[
-                  { key: "flow", label: "近 24 小时提现申请占储备", value: risk.bankRunRatio, text: fmtPct(risk.bankRunRatio), tone: pressure.flow },
-                  { key: "backlog", label: "待提现总额占储备", value: ledger.pressureRatio * 100, text: fmtPct(ledger.pressureRatio * 100), tone: pressure.backlog },
-                ]}
-                marks={[
-                  { key: "yellow", text: `黄线 ${fmtPct(risk.bankRunYellowPct, 0)}`, value: risk.bankRunYellowPct, tone: "warn" },
-                  { key: "red", text: `红线 ${fmtPct(risk.bankRunRedlinePct, 0)}`, value: risk.bankRunRedlinePct, tone: "danger" },
-                ]}
-              />
-              <ul className="cc-list" data-cols="">
+              {/* 尺在左、其余数字在右（VS-49）；两条比率都是 0 时不画尺，一句话写完（DP-62）。 */}
+              <Figure width={560} stack="wide" graphic={risk.bankRunRatio === 0 && ledger.pressureRatio === 0
+                ? <p className="cc-line">近 24 小时提现申请占储备 {fmtPct(risk.bankRunRatio)}，待提现总额占储备 {fmtPct(ledger.pressureRatio * 100)}；黄线 {fmtPct(risk.bankRunYellowPct, 0)}、红线 {fmtPct(risk.bankRunRedlinePct, 0)}</p>
+                : <ThresholdMeter
+                    label="提现压力和黄线、红线"
+                    rows={[
+                      { key: "flow", label: "近 24 小时提现申请占储备", value: risk.bankRunRatio, text: fmtPct(risk.bankRunRatio), tone: pressure.flow },
+                      { key: "backlog", label: "待提现总额占储备", value: ledger.pressureRatio * 100, text: fmtPct(ledger.pressureRatio * 100), tone: pressure.backlog },
+                    ]}
+                    marks={[
+                      { key: "yellow", text: `黄线 ${fmtPct(risk.bankRunYellowPct, 0)}`, value: risk.bankRunYellowPct, tone: "warn" },
+                      { key: "red", text: `红线 ${fmtPct(risk.bankRunRedlinePct, 0)}`, value: risk.bankRunRedlinePct, tone: "danger" },
+                    ]}
+                  />}>
+              <ul className="cc-list">
                 <li>
                   <span>
                     <Explain label="异常账户怎么算" content="风控按当前评分规则标记的账户数。等待重新评分的账户不算在内，它们在待处理里。">异常账户</Explain>
@@ -226,6 +229,7 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                   <span className="cc-num">{ledger.avgRiskScore}</span>
                 </li>
               </ul>
+              </Figure>
             </div>
           )}
     </Fold>

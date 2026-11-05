@@ -1,7 +1,7 @@
 export { Bars, type BarSeries } from "./bars";
 export { BlockState, InlineRetry, Notice } from "./block-state";
 export { Button, IconButton, type ButtonVariant } from "./button";
-export { BarList, ChartLegend, ColumnChart, Donut, SegmentBar, TrendLine, type ChartSlot } from "./chart";
+export { BarList, ChartLegend, ColumnChart, Donut, Figure, SegmentBar, TrendLine, type ChartSlot } from "./chart";
 export { ThresholdMeter, TierBand } from "./meter";
 export { BatchBar } from "./batch-bar";
 export { Checkbox } from "./checkbox";
