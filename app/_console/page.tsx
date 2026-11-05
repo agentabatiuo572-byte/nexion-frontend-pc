@@ -140,7 +140,7 @@ export default function CommandCenter() {
   const urgentRows = risks.filter((item) => item.sev === "p0").length + (!j1.error && backfill?.level === "high" ? 1 : 0);
   const firstLoad = (block: Block<unknown>) => block.loading && block.data === null;
   const pendingLoading = [approvals, reviewPending, orphaned, supportTodo].some(firstLoad) || (canReadJ1 && !j1.settled);
-  const hasPendingSource = blocks.fund || blocks.j1 || blocks.withdrawals || blocks.approvals || blocks.support;
+  const hasPendingSource = blocks.fund || blocks.j1 || blocks.withdrawals || blocks.approvals || blocks.support || blocks.devices;
   const showPending = hasPendingSource && (rows.length > 0 || pendingLoading);
 
   const firstScreenLoading = bDomain.loading || reserve.loading || flows.loading || sales.loading || newUsers.loading || devices.loading || pendingLoading;

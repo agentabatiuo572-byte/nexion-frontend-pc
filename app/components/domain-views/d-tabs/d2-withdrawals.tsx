@@ -791,7 +791,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const [pendingCommands, setPendingCommands] = useState<D2PendingCommand[]>([]);
   /** 待确认条上最近一次读回或重试的结果，只是当下的事实，不影响待确认本身。 */
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
-  /** 这次打开页面后重试被拒的待确认，只有它们才能人工解除。 */
+  /** 最近一次重试被后端明确拒绝的命令号，只有它们才能人工解除。按命令号记，解除后重新处理的新命令不沿用。 */
   const [retryRejected, setRetryRejected] = useState<string[]>([]);
   const [releasing, setReleasing] = useState<D2PendingCommand | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -1255,6 +1255,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有成功才解除待确认。 */
   const retryPending = async (record: D2PendingCommand) => {
+    setRetryRejected((current) => current.filter((key) => key !== record.commandKey));
     const [no] = record.nos;
     try {
       if (record.kind === "review" && record.action) await runReview(no, record.action, record.reason, record.form, record.fromStatus ?? "", record.operator);
@@ -1264,7 +1265,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       if (record.kind === "simulate") await runDevelopmentSimulation(no, record.reason, record.operator);
     } catch (cause) {
       notePending(record, `重试没有成功：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，原命令继续保留。`);
-      setRetryRejected((current) => [...current, record.fingerprint]);
+      setRetryRejected((current) => [...current, record.commandKey]);
     }
   };
 
@@ -1391,7 +1392,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       action={<>
         {record.kind !== "batch" && <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>读回核对</Button>}
         <Button size="sm" disabled={!!submitting} onClick={() => void retryPending(record)}>按原操作重试</Button>
-        {retryRejected.includes(record.fingerprint) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除待确认</Button>}
+        {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除待确认</Button>}
       </>}>
       {timeText(new Date(record.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效。{RECOVERY_HINT[record.kind]}
       {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=D&object=${encodeURIComponent(record.nos[0])}`}>到操作记录核查</Link></>}
@@ -1647,7 +1648,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     </>}>
       <p><b>{releasing.label}</b></p>
       <p>重试被拒说明不了原操作的结果。先到操作记录或打款方确认原操作有没有生效，再解除。</p>
-      <p>解除后这笔可以重新处理，原操作不再重试，系统仍按这笔现在的状态校验。这一步只放开本页的锁，不写操作记录。</p>
+      <p>解除后这笔可以重新处理，原操作不再重试，系统仍按这笔现在的状态校验。这一步只放开本页的锁，不发请求，不写操作记录。</p>
     </Modal>}
 
     {batchResult && <Modal title={`批量结果 · ${actionLabel(batchResult.action)}`} onClose={() => setBatchResult(null)} footer={<Button variant="primary" onClick={() => setBatchResult(null)}>知道了</Button>}>
