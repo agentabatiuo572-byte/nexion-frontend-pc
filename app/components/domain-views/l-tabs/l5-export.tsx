@@ -201,7 +201,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
   const EXPORT_TASKS = taskPage?.records ?? [];
   const MASK_RULES = rows<MaskRule>(data.maskRules);
   const EXPORT_PARAMS = rows<ExportParam>(data.exportParams);
-  const AUDIT_ROWS = auditRows.length > 0 ? auditRows : rows<LExportAuditRow>(data.auditRows);
+  const AUDIT_ROWS = auditLoading || auditError ? [] : auditRows;
   const CROSS_MODULE_BLOCKERS = rows<{ code: string; label: string; status: string; reason: string }>(data.crossModuleBlockers);
   const STATUS_FALLBACK: Record<string, string> = {
     PENDING: "待处理",
@@ -368,7 +368,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
                     ? ["旧任务无文件", "warn"]
                     : statusLabel(effSt(t));
                 const acts = effActs(t);
-                const canAccessTask = ctx.canAccessReportType?.(t.reportType) ?? false;
+                const canAccessTask = ctx.canAccessReportType?.(t.reportType, t.pii) ?? false;
                 return (
                   <tr key={t.id}>
                     <td className="mono" style={{ color: "var(--ink)" }}>{t.id}</td>
@@ -457,9 +457,9 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
           <div className="rev-row ui-export-row" style={{ gridTemplateColumns: "minmax(220px, 1fr) minmax(320px, 2fr) auto" }}>
             <span className="nm">兑换 / 充值 / 提现 / 收益 / 团队奖励 / 退款 / 奖励 / 购买</span>
             <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>用户编号只保留首尾字符，不导出昵称、备注等隐私。</span>
-            <button className="l-btn sm" disabled={ledgerExporting} onClick={requestLedgerDownload}>
+            {ctx.canExportLedger ? <button className="l-btn sm" disabled={ledgerExporting} onClick={requestLedgerDownload}>
               {ledgerExporting ? "正在导出…" : "导出 8 类账单明细"}
-            </button>
+            </button> : <span className="f-ro">当前角色没有账单明细导出权限</span>}
           </div>
         </div>
       </section>
@@ -508,14 +508,14 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
                   </tr>
                 ))}
                 {AUDIT_ROWS.length === 0 && (
-                  <tr><td colSpan={8} style={{ textAlign: "center", padding: 22, color: "var(--ink-4)" }}>{auditLoading ? "导出记录加载中…" : "没有符合条件的导出记录"}</td></tr>
+                  <tr><td colSpan={8} style={{ textAlign: "center", padding: 22, color: "var(--ink-4)" }}>{auditLoading ? "导出记录加载中…" : auditError ? "导出记录加载失败，请重新加载" : "没有符合条件的导出记录"}</td></tr>
                 )}
               </tbody>
             </table>
           </div>
           <div className="l-b" style={{ paddingTop: 10 }}>
             {auditError
-              ? <div className="ltint warn" style={{ fontSize: 11.5 }}><b>失败关闭</b> · {auditError}</div>
+              ? <div className="ltint warn" style={{ fontSize: 11.5 }}><b>导出记录加载失败</b> · {auditError} <button className="l-btn sm" onClick={() => void ctx.reloadBi?.()}>重新加载</button></div>
               : <div className="ltint" style={{ fontSize: 11.5 }}><b>说明</b> · <AutoGloss>这里显示的是系统记下的每一次导出，和「操作记录与审批」一致。</AutoGloss></div>}
           </div>
         </section>

@@ -338,8 +338,6 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
           downloadBlob(file.blob, file.fileName);
           lastSuccessAtRef.current = Date.now();
           ctx.toast(`团队明细已安全下载 · ${result.rowCount} 行 · 用户编码部分隐藏 · 24 小时令牌`);
-        } catch (error) {
-          ctx.toast(error instanceof Error ? `团队明细导出失败 · ${displayAdminError(error)}` : "团队明细导出失败 · 请稍后重试");
         } finally {
           exportingRef.current = false;
           setExporting(false);

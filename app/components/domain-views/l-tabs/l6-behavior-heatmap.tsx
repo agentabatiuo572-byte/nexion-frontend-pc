@@ -66,22 +66,26 @@ function activityCell(v: number, max: number): React.CSSProperties {
 }
 /** 跳出率警示色阶(绝对阈值:>50% 红 · 35–50% 橙 · 低=淡橙):高=问题,不是「热」。 */
 function bounceCell(rate: number): React.CSSProperties {
-  const hot = rate >= 0.5 ? "var(--danger)" : "var(--warning)";
-  const a = rate >= 0.5 ? 58 : rate >= 0.35 ? 40 : rate >= 0.22 ? 22 : 10;
+  const hot = rate > 0.5 ? "var(--danger)" : "var(--warning)";
+  const a = rate > 0.5 ? 58 : rate >= 0.35 ? 40 : rate >= 0.22 ? 22 : 10;
   return { background: `color-mix(in srgb, ${hot} ${a}%, transparent)`, color: a >= 55 ? "#0A0A0A" : "var(--ink-2)" };
 }
 
 export function L6HeaderActions({ ctx }: { ctx: LCtx }) {
   let available = false;
+  let invalid = false;
   try {
     const normalized = normalizeL6BehaviorHeatmap(ctx.biData?.l6 ?? null);
     available = normalized.available && activityForWindow(normalized, "7d").length > 0;
+    invalid = !normalized.available && normalized.status !== "LOADING";
   } catch {
-    available = false;
+    invalid = true;
   }
+  const loading = Boolean(ctx.biLoading);
+  const failed = Boolean(ctx.biError) || invalid || (!loading && !ctx.biData?.l6);
   const [exporting, setExporting] = useState(false);
   const exportCsv = async () => {
-    if (!available || !ctx.canExport || exporting) return;
+    if (loading || failed || !available || !ctx.canExport || exporting) return;
     setExporting(true);
     try {
       const file = await downloadL6Behavior({ window: "7d", device: "ALL", locale: "ALL" });
@@ -104,9 +108,9 @@ export function L6HeaderActions({ ctx }: { ctx: LCtx }) {
         <span className="d" />
         只读报表域 · 不改任何业务规则
       </span>
-      <button className="f-cta" onClick={() => void exportCsv()} disabled={!available || !ctx.canExport || exporting}
-        title={!ctx.canExport ? "当前角色只有查看权限" : !available ? "行为采集已接通，当前没有可导出的生产事件" : undefined}>
-        {exporting ? "导出中…" : available ? "导出近 7 天全端" : "当前暂无生产事件"}
+      <button className="f-cta" onClick={() => void exportCsv()} disabled={loading || failed || !available || !ctx.canExport || exporting}
+        title={!ctx.canExport ? "当前角色只有查看权限" : loading ? "行为数据加载中，暂时不能导出" : failed ? "行为数据加载失败，暂时不能导出" : !available ? "当前结果没有可导出的生产事件" : undefined}>
+        {exporting ? "导出中…" : loading ? "行为数据加载中…" : failed ? "行为数据加载失败" : available ? "导出近 7 天全端" : "当前暂无生产事件"}
       </button>
     </>
   );

@@ -21,7 +21,7 @@ import { L5HeaderActions, L5Export } from "./l-tabs/l5-export";
 import { L6HeaderActions, L6BehaviorHeatmap } from "./l-tabs/l6-behavior-heatmap";
 import type { LCtx, ActionConfirmReq } from "./l-tabs/types";
 import { allowedAggregateExportOptions, canAccessBiReportType, canExportBiReports } from "./l-tabs/l1-l2-live-data";
-import { fetchLBiOverview, lBiActions, type L2FunnelQuery, type L3FinanceQuery, type L4OperationsQuery, type LBiData, type LModuleCode } from "@/lib/admin/l-client";
+import { fetchLBiOverview, isLOutcomeUnknownError, lBiActions, type L2FunnelQuery, type L3FinanceQuery, type L4OperationsQuery, type LBiData, type LModuleCode } from "@/lib/admin/l-client";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
@@ -96,6 +96,9 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
     canExport: canExportBiReports(session?.role, session?.authorities ?? [], tab),
     canExportFinanceDetail: session?.role?.toLowerCase() === "superadmin"
       || (session?.authorities ?? []).includes("bi_l3_export_detail"),
+    canExportLedger: session?.role?.toLowerCase() === "superadmin"
+      || ((session?.authorities ?? []).includes("finance_d4_export")
+        && (session?.authorities ?? []).some((code) => code === "finance_d4_read" || code === "finance_d4_user_read")),
     canApproveExportTasks: session?.role?.toLowerCase() === "superadmin"
       || (session?.authorities ?? []).includes("bi_l5_task_approve"),
     canExportNetworkTree: session?.role?.toLowerCase() === "superadmin"
@@ -103,7 +106,7 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
     canGenerateRegulatory: session?.role?.toLowerCase() === "superadmin"
       || (session?.authorities ?? []).includes("bi_l5_regulatory_generate"),
     availableAggregateExportTypes: aggregateExportOptions.map((option) => option.label),
-    canAccessReportType: (reportType) => canAccessBiReportType(session?.role, session?.authorities ?? [], reportType),
+    canAccessReportType: (reportType, containsPii) => canAccessBiReportType(session?.role, session?.authorities ?? [], reportType, containsPii),
     l2Query,
     setL2Query,
     l2SliceExportable,
@@ -144,12 +147,17 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
           businessForm={mc.businessForm}
           completionCopy={mc.completionCopy}
           onClose={() => setActionConfirm(null)}
-          onConfirm={(reason, newValue, businessValue) => {
-            const req = mc;
+          onConfirm={async (reason, newValue, businessValue) => {
+            try {
+              await mc.run(reason, newValue, businessValue);
+            } catch (error) {
+              if (!isLOutcomeUnknownError(error)) throw error;
+              setActionConfirm(null);
+              await reloadBi();
+              setToast(displayAdminError(error));
+              return;
+            }
             setActionConfirm(null);
-            void Promise.resolve(req.run(reason, newValue, businessValue)).catch((error) => {
-              setToast(error instanceof Error ? displayAdminError(error) : "操作失败");
-            });
           }}
         />
       )}
