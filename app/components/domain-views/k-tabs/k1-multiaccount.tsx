@@ -138,6 +138,9 @@ const RELEASE_PARAM_NAME: Record<string, string> = {
 };
 const releaseParamName = (p: KRiskParam) => RELEASE_PARAM_NAME[p.key] ?? p.name;
 
+/** 收益金额按接口给的精度写全，非零不能显示成 0（TX-20）。 */
+const amountText = (amount: number) => amount.toLocaleString("en-US", { maximumFractionDigits: 20 });
+
 /** 时刻按业务时区写，和页头一致。 */
 const clockText = (time: number) => new Date(time).toLocaleTimeString("zh-CN", { timeZone: businessZone().zoneId, hour: "2-digit", minute: "2-digit", hour12: false });
 
@@ -706,15 +709,26 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const blockedBy = (group: string, target: string, loading = false) =>
     pendingBlocks.has(`${group}:${target}`) ? "有结果未确认的操作，先到页面上方处理" : loading ? "正在读取最新数据" : undefined;
 
-  const clusterFacts = (c: K1Cluster, scope?: ReactNode) => (
-    <Facts>
-      <Fact k="账户组">{c.id}</Fact>
-      <Fact k="关联依据">{c.layerLabel} · {c.key}</Fact>
-      <Fact k="关联程度">{c.strength.toFixed(2)}</Fact>
-      <Fact k="当前状态">{CLUSTER_ST[c.status][0]}</Fact>
-      <Fact k="涉及账户">{scope ?? `${c.n} 个`}</Fact>
-    </Facts>
-  );
+  const accountIssues = (c: K1Cluster) => c.nodes
+    .filter((n) => isRestrictedStatus(n[5]) || isUnknownStatus(n[5]))
+    .map((n) => `${n[0]} ${accountStatusLabel(n[5])}`)
+    .join("、");
+
+  const clusterFacts = (c: K1Cluster, { scope, approval = true }: { scope?: ReactNode; approval?: boolean } = {}) => {
+    const issues = accountIssues(c);
+    return (
+      <Facts>
+        <Fact k="账户组">{c.id}</Fact>
+        <Fact k="关联依据">{c.layerLabel} · {c.key}</Fact>
+        <Fact k="关联程度">{c.strength.toFixed(2)}</Fact>
+        <Fact k="当前状态">{CLUSTER_ST[c.status][0]}</Fact>
+        <Fact k="涉及账户">{scope ?? `${c.n} 个`}</Fact>
+        {issues && <Fact k="账户状态异常">{issues}</Fact>}
+        {approval && <Fact k="谁来批准">超级管理员。超管发起的，由另一位超管批准。</Fact>}
+        {approval && <Fact k="批准前">这组的状态和账户都不变。</Fact>}
+      </Facts>
+    );
+  };
 
   const clusterRecord = (c: K1Cluster, clusterAction: K1ClusterAction, label: string, reason: string): K1PendingExtra =>
     ({ kind: "cluster", target: c.id, label, operator, reason, clusterAction, clusterStatus: c.status, version: c.version });
@@ -734,14 +748,19 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   };
 
   const freezeCluster = (c: K1Cluster) => {
+    const codes = c.nodes.map((node) => node[0]).join("、");
+    const missing = c.n - c.nodes.length;
     ctx.openActionConfirm({
       action: `批量冻结关联账户 · ${c.id}`,
       detail: `冻结这组里的 ${c.n} 个账户。请填写原因，会记入操作记录。`,
-      statedBrief: { impact: `批准后冻结这组的全部 ${c.n} 个账户，不只是当前这一个。`, check: "核对账户清单和证据，理由写清依据或工单号。" },
+      statedBrief: {
+        impact: `批准后冻结这组的全部 ${c.n} 个账户，不只是当前这一个。`,
+        check: missing > 0 ? `这里读不到其中 ${missing} 个账户，核对不全。核对已读到的账户和证据，理由写清依据或工单号。` : "核对账户清单和证据，理由写清依据或工单号。",
+      },
       effect: APPROVAL_EFFECT,
       confirmLabel: "提交审批",
       reasonPlaceholder: RISK_REASON_PLACEHOLDER,
-      facts: clusterFacts(c, `全部 ${c.n} 个：${c.nodes.slice(0, 8).map((node) => node[0]).join("、")}${c.n > 8 ? " 等" : ""}`),
+      facts: clusterFacts(c, { scope: missing > 0 ? `全部 ${c.n} 个。已读到 ${c.nodes.length} 个：${codes}。还有 ${missing} 个读不到，批准后也会一起冻结。` : `全部 ${c.n} 个：${codes}` }),
       reasonMax: 200,
       run: (reason) => runRecord(clusterRecord(c, "freeze", `批量冻结关联账户 · ${c.id}`, reason)),
     });
@@ -787,7 +806,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       effect: IMMEDIATE_EFFECT,
       confirmLabel: "保存备注",
       reasonPlaceholder: RISK_REASON_PLACEHOLDER,
-      facts: clusterFacts(c),
+      facts: clusterFacts(c, { approval: false }),
       reasonMax: 200,
       run: (reason) => runRecord({ kind: "note", target: c.id, label: `人工复审备注 · ${c.id}`, operator, reason, version: c.version }),
     });
@@ -826,7 +845,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         <Fact k="收益记录">{entry.entryNo}</Fact>
         <Fact k="用户">U{entry.userId}</Fact>
         <Fact k="账户组">{entry.clusterId}</Fact>
-        <Fact k="金额">{entry.amount.toLocaleString("en-US")} {nexGridBrandText(entry.asset)}</Fact>
+        <Fact k="金额">{amountText(entry.amount)} {nexGridBrandText(entry.asset)}</Fact>
       </Facts>,
       reasonMin: 8,
       reasonMax: 200,
@@ -983,6 +1002,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     const shown = Math.min(c.nodes.length, 8);
     const hidden = Math.max(c.n - shown, 0);
     const openGifts = c.gifts.filter((g) => !giftHandled(g[2])).length;
+    const issues = accountIssues(c);
+    const missing = c.n - c.nodes.length;
     const actions = clusterActions(c);
     const primary = actions.find((action) => !action.loosen);
     const loosen = actions.find((action) => action.loosen);
@@ -1003,6 +1024,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         reason: impact.desc,
       },
     ];
+    if (issues) rows.push({ label: "账户状态", value: [restricted && `${restricted} 个已受限`, unknown && `${unknown} 个状态未知`].filter(Boolean).join("，"), state: restricted ? "danger" : "warn", reason: issues });
     if (c.reviewNote) rows.push({ label: "复审备注", value: c.reviewNote });
     return (
       <Panel title={`账户组 ${c.id}`} sub={`${c.layerLabel} · ${c.n} 个账户`} icon={Users} tone="role-3" actions={<StatusTag tone={statusTone} explain={statusExplain}>{statusLabel}</StatusTag>}>
@@ -1010,7 +1032,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           <JudgmentPoints rows={rows} />
           {(actions.length > 0 || canWrite) && (
             <Decision
-              note={actions.length > 0 ? "处置都要提交审批，批准后才生效。" : undefined}
+              note={actions.length > 0 ? "处置要提交审批，超级管理员批准后才生效，批准前这组不变。" : undefined}
               danger={loosen && <Button variant="danger-outline" disabledReason={loosen.blocked} onClick={loosen.run}>{loosen.label}</Button>}
               others={canWrite && <Button disabledReason={blockedBy("cluster", c.id)} onClick={() => reviewNote(c)}>人工复审备注</Button>}
               primary={primary && <Button variant="primary" disabledReason={primary.blocked} onClick={primary.run}>{primary.label}</Button>}
@@ -1021,8 +1043,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               <ClusterGraph c={c} />
             </Fold>
             <Fold inset icon={Users} tone="users" title="账户明细"
-              alert={unknown > 0}
-              summary={`${c.nodes.length} 个账户${restricted ? `，${restricted} 个已受限` : ""}${unknown ? `，${unknown} 个状态未知` : ""}`}>
+              alert={restricted > 0 || unknown > 0}
+              alertTone={restricted ? "danger" : "warn"}
+              summary={`${c.nodes.length} 个账户${restricted ? `，${restricted} 个已受限` : ""}${unknown ? `，${unknown} 个状态未知` : ""}${missing > 0 ? `，${missing} 个读不到` : ""}`}>
               <Table label={`关联账户组 ${c.id} 的账户`}>
                 <thead><tr><Th>账户 · 注册时间</Th><Th>邀请人 · 新人礼</Th><Th align="right">累计入金 · 状态</Th></tr></thead>
                 <tbody>
@@ -1189,7 +1212,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                     <Td><Cell mono full main={entry.entryNo} sub={entry.createdAt} /></Td>
                     <Td><Cell mono main={`U${entry.userId}`} sub={entry.clusterId} /></Td>
                     <Td><Cell main={({ TRIAL: "试用收益", DEVICE: "设备收益", TASK: "任务奖励", COMMISSION: "团队奖励", REFERRAL: "邀请奖励", WELCOME: "新人奖励" } as Record<string, string>)[entry.sourceType.toUpperCase()] ?? "来源未知"} sub={<span data-mono>{entry.sourceRef}</span>} /></Td>
-                    <Td align="right"><Cell num main={`${entry.amount.toLocaleString("en-US")} ${nexGridBrandText(entry.asset)}`} /></Td>
+                    <Td align="right"><Cell num full main={`${amountText(entry.amount)} ${nexGridBrandText(entry.asset)}`} /></Td>
                     <Td><StatusTag tone={entry.bucket === "bonus_locked" ? "danger" : "warn"} explain={entry.bucket === "bonus_locked" ? "这笔收益被锁定，不能提现。账户组解除后不会自动放行，要人工放行。" : "这笔收益等人工审核，不会到期自动放行。"}>{entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}</StatusTag></Td>
                     <Td align="right">{canRelease && <Button size="sm" disabledReason={blockedBy("entry", entry.entryNo, protectedEntriesLoading) ?? (overviewFailed ? "风险数据读取失败，恢复后才能放行" : undefined)} onClick={() => releaseProtectedEntry(entry)}>人工放行</Button>}</Td>
                   </Tr>
