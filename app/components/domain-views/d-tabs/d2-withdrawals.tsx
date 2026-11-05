@@ -3,6 +3,7 @@ import { operatorNicknameText } from "@/lib/admin/brand-copy";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -1329,8 +1330,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       threshold = sample?.strongReviewThresholdUsdt ?? null;
     }
     const manual = threshold === null ? [] : targets.filter((row) => row.amount >= (threshold as number));
-    const manualText = threshold === null ? "大额会转单笔人工审核，不会批量放行" : manual.length ? `其中 ${manual.length} 笔达到 ${amountText(threshold)} USDT，转单笔人工审核，不会批量放行` : undefined;
-    const batchImpact = `${REVIEW_BRIEF[action].impact.replace("这笔提现", "这些提现").replace("这笔", "这些单")}逐笔处理，可能部分成功。`;
+    const manualText = !approve ? undefined : threshold === null ? "大额会转单笔人工审核，不会批量放行" : manual.length ? `其中 ${manual.length} 笔达到 ${amountText(threshold)} USDT，转单笔人工审核，不会批量放行` : undefined;
+    const batchImpact = REVIEW_BRIEF[action].impact.replace("这笔提现", "这些提现").replace("这笔", "这些单");
     openActionConfirm({ briefKind: "funds",
       action: `批量${actionLabel(action)}提现`,
       detail: `将对 ${ids.length} 笔提现执行${actionLabel(action)}（不符合条件的已自动排除）。${action === "REJECT" ? "拒绝后立即退回用户余额，完成后为已退款。" : ""}提交后看批量结果。`,
@@ -1378,6 +1379,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       if (record.kind === "bank") await runBankRequery({ withdrawalNo: no }, { version: record.version ?? 0 }, record.reason, record.operator);
       if (record.kind === "simulate") await runDevelopmentSimulation(no, record.reason, record.operator);
     } catch (cause) {
+      if (isPermissionDenied(cause)) announcePermissionDenied();
       notePending(record, `重试没有成功：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，原命令继续保留。`);
       setRetryRejected((current) => [...current, record.commandKey]);
     }

@@ -31,6 +31,7 @@ import {
   type D3NetExposure,
 } from "@/lib/admin/d-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createPendingMutationStore, createSlotAttemptStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
@@ -197,7 +198,8 @@ export function D3Treasury() {
   const [amount, setAmount] = useState("");
   const [voucherType, setVoucherType] = useState("CHAIN");
   const [voucherNo, setVoucherNo] = useState("");
-  const [injectErrors, setInjectErrors] = useState<{ amount?: string; voucher?: string }>({});
+  /** 刚打开不报错：失焦或点过下一步才显示这个字段的错（DP-06）。 */
+  const [injectShown, setInjectShown] = useState<{ amount?: boolean; voucher?: boolean }>({});
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [retry, setRetry] = useState<PendingItem | null>(null);
   const [retrying, setRetrying] = useState(false);
@@ -344,6 +346,7 @@ export function D3Treasury() {
     const clearForm = () => {
       setAmount("");
       setVoucherNo("");
+      setInjectShown({});
       setInjectOpen(false);
     };
     await sendCommand({
@@ -363,14 +366,6 @@ export function D3Treasury() {
   const saveInjection = () => {
     const nextAmount = amount.trim();
     const nextVoucher = voucherNo.trim();
-    const errors: { amount?: string; voucher?: string } = {};
-    if (!nextAmount || !Number.isFinite(Number(nextAmount)) || Number(nextAmount) <= 0) errors.amount = "请输入有效的注入金额";
-    else if (!/^\d+(\.\d{1,2})?$/.test(nextAmount)) errors.amount = "最多两位小数，不会自动四舍五入";
-    if (!nextVoucher) errors.voucher = "请输入到账凭证号";
-    else if (!/^[A-Za-z0-9][A-Za-z0-9:_./-]{5,95}$/.test(nextVoucher)) errors.voucher = "6–96 位，字母或数字开头，只能用字母、数字和 : _ . / -";
-    else if (unknownCommands.injections.some((record) => record.voucherNo === nextVoucher)) errors.voucher = "这个凭证号的登记结果未知，先在页面上方核对";
-    setInjectErrors(errors);
-    if (errors.amount || errors.voucher) return;
     // 凭证号原样提交，后端按原值判重。类型只有说明作用，写进理由，理由随注入记录和操作记录保存。
     const typeLabel = VOUCHER_TYPES.find((item) => item.value === voucherType)?.label;
     const reasonPrefix = `凭证类型：${typeLabel}。`;
@@ -384,7 +379,15 @@ export function D3Treasury() {
       confirmLabel: "确认登记",
       confirmTone: "danger",
       reasonMax: 200 - reasonPrefix.length,
-      run: (reason) => submitInjection(nextAmount, nextVoucher, `${reasonPrefix}${reason}`),
+      run: async (reason) => {
+        try {
+          await submitInjection(nextAmount, nextVoucher, `${reasonPrefix}${reason}`);
+        } catch (err) {
+          // 确认框由共用层提示并关掉，下面的抽屉这里关，草稿留着。
+          if (isPermissionDenied(err)) setInjectOpen(false);
+          throw err;
+        }
+      },
     });
   };
 
@@ -513,6 +516,14 @@ export function D3Treasury() {
     };
   }, [unknownTick]);
 
+  const injectAmount = amount.trim();
+  const injectVoucher = voucherNo.trim();
+  const amountIssue = !injectAmount || !Number.isFinite(Number(injectAmount)) || Number(injectAmount) <= 0 ? "请输入有效的注入金额"
+    : !/^\d+(\.\d{1,2})?$/.test(injectAmount) ? "最多两位小数，不会自动四舍五入" : undefined;
+  const voucherIssue = !injectVoucher ? "请输入到账凭证号"
+    : !/^[A-Za-z0-9][A-Za-z0-9:_./-]{5,95}$/.test(injectVoucher) ? "6–96 位，字母或数字开头，只能用字母、数字和 : _ . / -"
+      : unknownCommands.injections.some((record) => record.voucherNo === injectVoucher) ? "这个凭证号的登记结果未知，先在页面上方核对" : undefined;
+
   /** 按原操作重试：同命令号、同内容、同理由、同操作人，不接受新输入（OP-94）。只有成功才解除待确认。 */
   const runRetry = async () => {
     if (!retry) return;
@@ -528,6 +539,7 @@ export function D3Treasury() {
     try {
       await retry.resend();
     } catch (err) {
+      if (isPermissionDenied(err)) announcePermissionDenied();
       setPendingNotes((current) => ({ ...current, [retry.commandKey]: `${businessClock(Date.now())} 重试没有成功：${errorText(err, "原因未知")} 这说明不了原操作的结果，原命令继续保留。` }));
       setRetryRejected((current) => [...current, retry.commandKey]);
     } finally {
@@ -736,16 +748,21 @@ export function D3Treasury() {
         explain="须填写到账凭证号"
         icon={Landmark}
         tone="role-1"
-        footer={<Decision explain="凭证号重复时不会登记。下一步核对金额和凭证，再写理由。" others={<Button variant="ghost" onClick={() => setInjectOpen(false)}>取消</Button>} primary={<Button variant="primary" disabledReason={dataBlocked} onClick={saveInjection}>下一步：确认</Button>} />}
+        footer={<Decision explain="凭证号重复时不会登记。下一步核对金额和凭证，再写理由。" others={<Button variant="ghost" onClick={() => setInjectOpen(false)}>取消</Button>} primary={<Button variant="primary" disabledReason={dataBlocked ?? ([amountIssue, voucherIssue].filter(Boolean).join("；") || undefined)} onBlockedClick={() => setInjectShown({ amount: true, voucher: true })} onClick={saveInjection}>下一步：确认</Button>} />}
       >
-        <Field label="注入金额" required explain="单位 USDT，最多两位小数。" error={injectErrors.amount}>
-          {(control) => <Input {...control} value={amount} onChange={(event) => { setAmount(event.target.value); setInjectErrors((current) => ({ ...current, amount: undefined })); }} inputMode="decimal" placeholder="注入金额 USDT" aria-label="注入金额（USDT，最多两位小数）" />}
+        <Field label="注入金额" required explain="单位 USDT，最多两位小数。" error={injectShown.amount ? amountIssue : undefined}>
+          {(control) => <Input {...control} value={amount} onChange={(event) => setAmount(event.target.value)} onBlur={() => setInjectShown((current) => ({ ...current, amount: true }))} inputMode="decimal" placeholder="注入金额 USDT" aria-label="注入金额（USDT，最多两位小数）" />}
         </Field>
         <Field label="凭证类型" required explain="到账凭证是链上交易还是银行流水。会写进理由，不进凭证号。">
           <Select aria-label="凭证类型" value={voucherType} options={VOUCHER_TYPES} onChange={setVoucherType} />
         </Field>
-        <Field label="凭证编号 / 哈希" required explain="填原始编号，至少 6 位，须能查到。" error={injectErrors.voucher}>
-          {(control) => <Input {...control} value={voucherNo} onChange={(event) => { setVoucherNo(event.target.value); setInjectErrors((current) => ({ ...current, voucher: undefined })); }} placeholder="凭证号（不能重复）" aria-label="凭证号（必填，不能重复）" />}
+        <Field label="凭证编号 / 哈希" required explain="填原始编号，至少 6 位，须能查到。" error={injectShown.voucher ? voucherIssue : undefined}>
+          {(control) => (
+            <div className="rd-reason-box">
+              <Input {...control} style={{ paddingRight: 64 }} maxLength={96} value={voucherNo} onChange={(event) => setVoucherNo(event.target.value)} onBlur={() => setInjectShown((current) => ({ ...current, voucher: true }))} placeholder="凭证号（不能重复）" aria-label="凭证号（必填，不能重复）" />
+              <span className="rd-reason-count">{injectVoucher.length}/96</span>
+            </div>
+          )}
         </Field>
       </Drawer>
 

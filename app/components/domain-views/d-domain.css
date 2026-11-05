@@ -199,3 +199,4 @@
 /* 确认框里没有小标题、校验通过时不留空块 */
 .rd-confirm [data-business-form="multi-field"] > .bf-legend:empty,
 .rd-confirm [data-business-form="multi-field"] > .tint:empty { display: none; }
+.rd-confirm-facts .rd-facts + .rd-recipients { margin-top: 12px; }
