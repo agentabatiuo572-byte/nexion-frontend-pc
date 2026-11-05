@@ -532,6 +532,11 @@ export async function fetchA2RetentionPreview(): Promise<RetentionPreview> {
   return normalizeRetentionPreview(await a2Request<RetentionPreview>("/retention-preview"));
 }
 
+/** 理由的可见字符数（OP-21）：去掉空白、控制符、格式符和组合符号后再数，和后端一致。 */
+export function visibleReasonLength(reason: string) {
+  return Array.from(reason.normalize("NFC")).filter((char) => !/[\s\p{Cc}\p{Cf}\p{Mn}\p{Mc}\p{Me}]/u.test(char)).length;
+}
+
 export async function fetchA2ReasonPolicy(): Promise<A2ReasonPolicy> {
   const policy = await a2Request<BackendA2ReasonPolicy>("/reason-policy");
   const minChars = Number(policy?.minChars);
