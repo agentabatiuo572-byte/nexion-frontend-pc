@@ -139,6 +139,10 @@ export default function LiquidityPage() {
   };
 
   const proceedToConfirm = () => {
+    if (draft?.forecastWindow === "90d") {
+      setReasonError("90 天不再提供，改成 7 天或 30 天才能保存。");
+      return;
+    }
     const length = reason.trim().length;
     if (length < 8 || length > 200) {
       setReasonError("操作原因需为 8–200 个字");
@@ -428,7 +432,7 @@ export default function LiquidityPage() {
                     >
                       <option value="7d">7 天</option>
                       <option value="30d">30 天</option>
-                      <option value="90d">90 天</option>
+                      {draft.forecastWindow === "90d" && <option value="90d" disabled>90 天（不再提供）</option>}
                     </select>
                   </label>
                   <label>

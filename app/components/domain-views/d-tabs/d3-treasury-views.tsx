@@ -11,6 +11,9 @@ import { LIABILITY_EXPLANATIONS, liabilityDisplayName } from "@/lib/admin/liabil
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { coverDaysText, formatReserveCoverDays } from "@/lib/admin/treasury-cover-days";
 
+/** 90 天不再提供。已有的 90 天草稿还看得到，但不能连别的改动一起保存（PCN-38）。 */
+export const FORECAST_90D_BLOCK = "90 天不再提供，改成 7 天或 30 天才能保存。";
+
 export type ForecastValues = Pick<D3ForecastConfig, "reserveCategories" | "liabilityCategories" | "forecastWindow" | "genesisIncluded" | "includeFarLiabilities" | "stakingInterestMode" | "trialStressEnabled">;
 export interface Loadable<T> { data: T | null; loading: boolean; error: string }
 export interface CrossLink { href: string; label: string; reachable: boolean }
@@ -496,7 +499,7 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, busyReas
         <>
           <Panel title="预测窗口和算法" icon={CalendarClock} tone="role-3">
             <div className="rd-form-grid">
-              <Field label="默认预测天数" help="打开这页时先看几天的到期和差额。资金安全等级固定按 7 天算，不受这项影响。">
+              <Field label="默认预测天数" help="打开这页时先看几天的到期和差额。资金安全等级固定按 7 天算，不受这项影响。" error={draft.forecastWindow === "90d" ? FORECAST_90D_BLOCK : undefined}>
                 <Select aria-label="默认预测天数" value={draft.forecastWindow} options={windowOptions} onChange={(value) => onChange({ ...draft, forecastWindow: value as ForecastValues["forecastWindow"] })} />
               </Field>
               <Field label="质押奖励预测" help="按日线性：奖励按质押天数每天算一份，到期图比较平。到期确认：奖励全算在到期那天，那天会冒高。">

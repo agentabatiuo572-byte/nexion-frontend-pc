@@ -32,7 +32,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { createPendingMutationStore, createSlotAttemptStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
-import { DueTab, FlowTab, FundConclusion, OverviewTab, SettingsTab, categoryText, effectiveText, forecastDiffRows, money, timeText, type CrossLink, type ForecastValues, type Loadable } from "./d3-treasury-views";
+import { DueTab, FORECAST_90D_BLOCK, FlowTab, FundConclusion, OverviewTab, SettingsTab, categoryText, effectiveText, forecastDiffRows, money, timeText, type CrossLink, type ForecastValues, type Loadable } from "./d3-treasury-views";
 
 const OPERATOR = currentAdminOperator;
 
@@ -530,7 +530,7 @@ export function D3Treasury() {
           mainState={mainState}
           canConfig={canConfig}
           dirty={dirty}
-          busyReason={forecastUnknown ? "上次保存结果未知，先在页面上方核对" : loading ? "正在刷新，稍等" : undefined}
+          busyReason={forecastUnknown ? "上次保存结果未知，先在页面上方核对" : loading ? "正在刷新，稍等" : draft?.forecastWindow === "90d" ? FORECAST_90D_BLOCK : undefined}
           onChange={setDraft}
           onDiscard={() => { if (baseValues) setDraft(baseValues); }}
           onSave={saveConfig}
