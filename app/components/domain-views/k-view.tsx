@@ -138,6 +138,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
       {mc && (
         <OperationConfirmModal key={mc.formKey} briefKind={mc.briefKind}
           action={mc.action}
+          title={mc.title}
           detail={mc.detail}
           amplifies={mc.amplifies}
           coverage={mc.coverage}

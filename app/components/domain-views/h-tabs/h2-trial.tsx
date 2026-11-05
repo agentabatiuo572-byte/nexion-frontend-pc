@@ -12,7 +12,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Bell, BellOff, Ban, Coins, History, Lock, RefreshCw, Settings2, SlidersHorizontal, Ticket, TrendingUp, Users } from "lucide-react";
-import { BlockState, Button, Cell, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, JudgmentPoints, Modal, Notice, PageHeader, Pager, Panel, SectionNav, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useSectionNav, type SectionNavItem, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Cell, Conclusion, ConfigList, ConfigRow, Decision, DiffList, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, JudgmentPoints, Notice, PageHeader, Pager, Panel, ReleaseModal, SectionNav, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useSectionNav, type SectionNavItem, type StateTone } from "@/app/components/rd";
 import {
   createH2CommandKey,
   fetchH2Trials,
@@ -258,6 +258,7 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, killed }: {
     };
     openActionConfirm({ briefKind: "config",
       action: `调整试用参数 · ${name}`,
+      title: `调整${name}`,
       detail: (
         <>
           <b>{name}</b> · 当前 <span className="mono">{displayCurrent}</span>。
@@ -270,7 +271,7 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, killed }: {
       amplifies: false,
       edit,
       // 开关只有另一个值可选，直接写前后值，不给选择（OP-126）。
-      facts: isPushSwitch ? <Facts><Fact k="改成">{current} → {pushTarget}</Fact></Facts> : undefined,
+      facts: isPushSwitch ? <DiffList rows={[{ key: "push", before: current, after: pushTarget }]} /> : undefined,
       effect: <StatusTag tone="progress" filled>{when}</StatusTag>,
       confirmLabel: "确认修改，立即生效",
       // 生效时间已经在生效标签上，摘要写别的。
@@ -471,10 +472,11 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const openSessionCancel = (session: TrialSession) => {
     openActionConfirm({ briefKind: "record",
       action: `强制取消试用 · ${session.sid}`,
-      facts: <Facts><Fact k="用户">{trialOwnerLabel(session)}</Fact><Fact k="试用">{session.sid}</Fact></Facts>,
+      title: "强制取消试用",
+      facts: <Facts><Fact k="用户">{trialOwnerLabel(session)}</Fact><Fact k="试用"><span data-mono="">{session.sid}</span></Fact></Facts>,
       detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。这次试用会结束并标记为 <b>已取消</b>，重复提交不会重复处理。</>,
       amplifies: false,
-      effect: <StatusTag tone="progress" filled>提交审批，批准后生效</StatusTag>,
+      effect: <StatusTag tone="progress" filled>批准后生效</StatusTag>,
       confirmLabel: "提交审批，批准后生效",
       statedBrief: {
         impact: "超级管理员批准后，这次试用结束，用户要等冷却期过去才能再试用。批准前试用状态不变。",
@@ -488,19 +490,19 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     const label = `强制扣款 · ${session.sid}`;
     openActionConfirm({ briefKind: "funds",
       action: label,
+      title: "强制扣款",
       facts: <Facts>
         <Fact k="用户">{trialOwnerLabel(session)}</Fact>
-        <Fact k="试用">{session.sid}</Fact>
+        <Fact k="试用"><span data-mono="">{session.sid}</span></Fact>
         <Fact k="当前状态">{stateLabel}</Fact>
         <Fact k="累计收益">{shadowText(session.shadow)}</Fact>
         <Fact k="扣款金额">批准时按规则计算</Fact>
-        <Fact k="能否撤销">不可撤销</Fact>
       </Facts>,
       detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。按当前试用规则重新计算并扣款，重复提交不会重复扣。会直接动用户的 USDT，需要有权限的管理员在「操作记录与审批」批准。</>,
       amplifies: true,
       coverageLead: "这项操作会直接扣用户的 USDT",
       confirmTone: "danger",
-      effect: <StatusTag tone="progress" filled>提交审批，批准后生效</StatusTag>,
+      effect: <><StatusTag tone="progress" filled>批准后生效</StatusTag><IrreversibleTag /></>,
       confirmLabel: "提交审批，批准后生效",
       statedBrief: {
         impact: "超级管理员批准后才扣钱，批准前不动用户的钱。可能不通过，结果到「操作记录与审批」看。",
@@ -583,13 +585,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     );
   });
   const releaseModal = releasing && (
-    <Modal title="解除待确认" onClose={() => setReleasing(null)} footer={<>
-      <Button onClick={() => setReleasing(null)}>取消</Button>
-      <Button variant="primary" onClick={() => releasePending(releasing)}>确认解除</Button>
-    </>}>
-      <p><b>{releasing.label}</b></p>
-      <p>确认这次操作没有生效后再解除。解除后可以重新操作，这一步不发请求，不写操作记录。<Explain label="解除前核对什么" content="重试被拒说明不了原操作的结果，先到操作记录确认它有没有生效。解除后原操作不再重试，系统仍按现在的状态校验。" /></p>
-    </Modal>
+    <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
+      explain="重试被拒说明不了原操作的结果，先到操作记录确认它有没有生效。解除后原操作不再重试，系统仍按现在的状态校验。" />
   );
 
   if (loading && !model) {

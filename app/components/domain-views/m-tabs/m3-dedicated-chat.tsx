@@ -5,7 +5,7 @@ import { customerConversations, replyTimeout } from "@/lib/admin/customer-conver
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Bell, BellOff, Check as CheckIcon, Clock3, Image as ImageIcon, Lock, Megaphone, Plus, SendHorizontal, Square } from "lucide-react";
-import { BlockState, Button, Check, Checkbox, Conclusion, Explain, Fact, Facts, IconButton, Input, Modal as RdModal, MoreMenu, Notice, PageHeader, Segments, Select, StatusTag, Textarea, type MoreMenuItem, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Check, Checkbox, Conclusion, Explain, Fact, Facts, Field, IconButton, Input, Modal as RdModal, MoreMenu, Notice, PageHeader, Segments, Select, StatusTag, Textarea, type MoreMenuItem, type StateTone } from "@/app/components/rd";
 import { subscribeAdminRealtime, getAdminRealtimeSnapshot, watchAdminConversation, sendAdminTyping } from "@/lib/admin/admin-conversation-realtime";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -124,7 +124,7 @@ function PrivateImage({ id, onRevoked }: { id: string; onRevoked: () => void }) 
   if (!url) return <span>图片加载中…</span>;
   return <>
     <button type="button" className="m3s-image" aria-label="放大查看图片" onClick={() => setZoomed(true)}><img src={url} alt="会话图片" /></button>
-    {zoomed && <RdModal wide title="查看图片" onClose={() => setZoomed(false)}><img className="m3s-image-full" src={url} alt="会话图片" /></RdModal>}
+    {zoomed && <RdModal wide title="查看图片" icon={ImageIcon} onClose={() => setZoomed(false)}><img className="m3s-image-full" src={url} alt="会话图片" /></RdModal>}
   </>;
 }
 
@@ -187,7 +187,7 @@ function SupportContactPicker({onClose,onSelect}:{onClose:()=>void;onSelect:(id:
   const pages=Math.max(1,Math.ceil((rows?.total??0)/10));
   return <Modal title="主动联系本人客户" icon="users" onClose={onClose} footer={<Button onClick={onClose}>取消</Button>}>
     <div className="m3s-picker">
-      <div className="rd-field"><span>搜索客户 <Explain label="能联系哪些客户" content="只可选择当前本人客户；不再维护客户可在原求助会话中继续普通服务回复。选择后只打开客户，不会发送。"/></span><Input aria-label="搜索客户" placeholder="昵称、手机号或用户编号" maxLength={200} value={keyword} onChange={e=>{setKeyword(e.target.value);setPage(1);}}/></div>
+      <Field label="搜索客户" explain="只可选择当前本人客户；不再维护客户可在原求助会话中继续普通服务回复。选择后只打开客户，不会发送。">{control=><Input {...control} aria-label="搜索客户" placeholder="昵称、手机号或用户编号" maxLength={200} value={keyword} onChange={e=>{setKeyword(e.target.value);setPage(1);}}/>}</Field>
       {error?<Notice tone="danger" action={<Button size="sm" onClick={()=>setRetry(n=>n+1)}>重试客户列表</Button>}>{error}</Notice>:!rows?<BlockState state="loading" title="正在加载客户…"/>:<>
         <p className="m3s-aux" role="status">共 {rows.total} 位客户 · 每页 10 条</p>
         {!rows.records.length?<BlockState state="empty" title="暂无匹配的客户。"/>:<ul className="m3s-picker-list" aria-label="可联系客户">
@@ -1221,9 +1221,10 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     const requestStamp=identityRef.current;
     ctx.openActionConfirm({
       action: `结束服务会话 ${conversation.id}`,
+      title: "标记已解决",
       briefKind: "conversation",
       detail: "将这段服务会话标记为已解决，不改变客户的专属客服。客户再次发消息时，会继续当前对话。",
-      facts: <Facts><Fact k="客户">{title}</Fact><Fact k="会话编号">{conversation.id}</Fact></Facts>,
+      facts: <Facts><Fact k="客户">{title}</Fact><Fact k="会话编号"><span data-mono="">{conversation.id}</span></Fact></Facts>,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>, confirmLabel: "确认标记已解决",
       blockedReason: ctx.commandExpired(`m3:close:${conversation.id}:`) ? RETRY_EXPIRED_TEXT : undefined,
       reasonMin: 8, reasonMax: 200,
@@ -1286,7 +1287,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       return;
     }
     const requestStamp=identityRef.current;
-    ctx.openActionConfirm({action:conversation.archived?"撤销归档":"归档会话",briefKind:"conversation",detail:`会话 ${conversation.id}；只是从列表里归档，会话、消息和归属都不变。`,facts:<Facts><Fact k="客户">{title}</Fact><Fact k="会话编号">{conversation.id}</Fact></Facts>,effect:<StatusTag tone="progress" filled>立即生效</StatusTag>,confirmLabel:conversation.archived?"确认撤销归档":"确认归档",blockedReason:ctx.commandExpired(`m3:archive:${conversation.id}:`)?RETRY_EXPIRED_TEXT:undefined,reasonMin:8,reasonMax:200,run:reason=>confirmWrite(CONVO_KEY,JSON.stringify(all.map(c=>c.id===conversation.id?{...c,archived:!conversation.archived}:c)),{action:"修改会话归档",reason,commandKey:`m3:archive:${conversation.id}:${conversation.version}:${!conversation.archived}`},requestStamp)});
+    ctx.openActionConfirm({action:conversation.archived?"撤销归档":"归档会话",briefKind:"conversation",detail:`会话 ${conversation.id}；只是从列表里归档，会话、消息和归属都不变。`,facts:<Facts><Fact k="客户">{title}</Fact><Fact k="会话编号"><span data-mono="">{conversation.id}</span></Fact></Facts>,effect:<StatusTag tone="progress" filled>立即生效</StatusTag>,confirmLabel:conversation.archived?"确认撤销归档":"确认归档",blockedReason:ctx.commandExpired(`m3:archive:${conversation.id}:`)?RETRY_EXPIRED_TEXT:undefined,reasonMin:8,reasonMax:200,run:reason=>confirmWrite(CONVO_KEY,JSON.stringify(all.map(c=>c.id===conversation.id?{...c,archived:!conversation.archived}:c)),{action:"修改会话归档",reason,commandKey:`m3:archive:${conversation.id}:${conversation.version}:${!conversation.archived}`},requestStamp)});
   };
   const archiveBatch = async () => {
     if(!archiveIds.size||actionChecking||pending||firstPending)return;
@@ -1662,7 +1663,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       {bulkOpen && <SupportBulkComposer ctx={ctx} createBlocked={noOwnCustomers} onClose={() => setBulkOpen(false)} />}
       {contactOpen && <SupportContactPicker onClose={() => setContactOpen(false)} onSelect={customerId => { setRequestedCustomerId(customerId); setScreen("chat"); setContactOpen(false); const url = new URL(window.location.href); url.searchParams.delete("conversationNo"); url.searchParams.set("customerId", customerId); window.history.replaceState(null, "", url); }} />}
       {timeoutOpen && timeoutPolicy && <IdlePolicyModal policy={timeoutPolicy} initialInput={timeoutInput} canSave={canTimeout} saving={timeoutSaving} error={timeoutError} pending={Boolean(timeoutPending)} conflict={timeoutConflict} latest={timeoutLatest} onDraftChange={setTimeoutInput} onCheckPending={checkTimeoutPending} onRefreshLatest={refreshTimeoutLatest} onReviewLatest={() => { if (timeoutLatest) { setTimeoutPolicy(timeoutLatest); setTimeoutLatest(null); setTimeoutConflict(false); setTimeoutError(""); setTimeoutInput(input => input && { ...input, reason: "" }); } }} onClose={() => { if (!timeoutSaving) setTimeoutOpen(false); }} onSave={saveTimeout} />}
-      {timeoutOpen && !timeoutPolicy && <Modal title="会话超时策略" icon="clock" onClose={() => setTimeoutOpen(false)}><p role={timeoutError ? "alert" : "status"}>{timeoutError || "正在加载…"}</p>{timeoutError && <Button size="sm" onClick={() => void openTimeout()}>重新加载</Button>}</Modal>}
+      {timeoutOpen && !timeoutPolicy && <Modal title="会话超时策略" icon="clock" footer={<Button onClick={() => setTimeoutOpen(false)}>关闭</Button>} onClose={() => setTimeoutOpen(false)}><p role={timeoutError ? "alert" : "status"}>{timeoutError || "正在加载…"}</p>{timeoutError && <Button size="sm" onClick={() => void openTimeout()}>重新加载</Button>}</Modal>}
     </section>
   </>;
 }

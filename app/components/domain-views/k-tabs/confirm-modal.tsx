@@ -9,6 +9,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { fetchA2ReasonPolicy } from "@/lib/admin/a2-client";
 import { useEffect, useId, useState } from "react";
+import { Notice } from "@/app/components/rd/block-state";
 import { Button as RdButton } from "@/app/components/rd/button";
 import { useRdSurface } from "@/app/components/rd/surface";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
@@ -64,7 +65,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   };
   return (
     <Modal
-      title={req.action}
+      title={req.title ?? req.action}
       icon={req.confirmTone === "danger" ? "alert" : surface ? "shield" : "check"}
       tone={req.confirmTone === "danger" ? "danger" : "neutral"}
       sub={req.effect}
@@ -101,7 +102,9 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
     >
       {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
       <fieldset disabled={submitting} style={{ display: "contents" }}>
-      {error && <div role="alert" className="tint danger">{error}</div>}
+      {error && (surface
+        ? <div className="rd-confirm-alert"><Notice tone="danger">{error}</Notice></div>
+        : <div role="alert" className="tint danger">{error}</div>)}
       <OperatorBriefBlock kind={req.briefKind} action={req.action} detail={req.detail} hasEdit={!!req.input} stated={req.statedBrief} />
       {req.chips && req.chips.length > 0 && (
         <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 12 }}>

@@ -30,8 +30,8 @@ import {
 import { OperationConfirmModal, type OperatorBriefKind } from "@/app/components/domain-views/design-kit";
 import { AuditTimeline, type AuditEntry } from "@/app/components/kit/audit-timeline";
 import {
-  BlockState, Button, Cell, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Fold, Modal, Notice, PageHeader, Pager, Panel,
-  RdPage, SectionNav, Segments, Stat, StatBand, StatusTag, Table, Td, Th, Tr, useSectionNav, type SectionNavItem,
+  BlockState, Button, Cell, Change, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, Notice, PageHeader, Pager, Panel,
+  RdPage, ReleaseModal, SectionNav, Segments, Stat, StatBand, StatusTag, Table, Td, Th, Tr, useSectionNav, type SectionNavItem,
 } from "@/app/components/rd";
 import { useReach } from "@/lib/nav/use-reach";
 import { formatD4Subtype } from "@/lib/admin/d4-ledger-display";
@@ -508,11 +508,15 @@ export default function UserDetailPage() {
   const [actionConfirm, setActionConfirm] = useState<null | {
     briefKind: OperatorBriefKind;
     action: string;
+    /** 框上的短标题，对象写在 facts 里；action 照旧记进操作记录（VS-101）。 */
+    title: string;
     detail: string;
     amplifies?: boolean;
     facts: ReactNode;
     confirmLabel: string;
     confirmTone?: "danger";
+    /** 提交后这里收不回来：标题下再加「不能撤销」（VS-106）。 */
+    irreversible?: boolean;
     statedBrief: { impact: string; check: string };
     run: (reason: string) => Promise<void>;
   }>(null);
@@ -743,25 +747,29 @@ export default function UserDetailPage() {
 
   const openNicknameReset = () => setActionConfirm({ briefKind: "record",
     action: `重置昵称 · ${displayNickname}`,
+    title: "重置昵称",
     detail: "系统会生成一个不含手机号等个人信息的新昵称，替换当前昵称。",
     amplifies: false,
-    facts: <Facts><Fact k="操作对象">{userNo}</Fact><Fact k="现在的昵称">{displayNickname}</Fact><Fact k="改后">系统生成的新昵称，提交后才知道</Fact></Facts>,
+    facts: <Facts><Fact k="操作对象">{userNo}</Fact><Fact k="昵称"><Change from={displayNickname} to="系统生成的新昵称，提交后才知道" /></Fact></Facts>,
     confirmLabel: "确认重置，立即生效",
     statedBrief: { impact: "立即替换这个用户的昵称，结果会记录在操作记录中。", check: "核对操作对象，理由写清依据或工单号。" },
     run: (reason) => execute({ kind: "nickname", label: `重置昵称 · ${displayNickname}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), nickname }),
   });
   const openUnbind = (method: UserPaymentMethod) => setActionConfirm({ briefKind: "record",
     action: `解绑支付方式 · 尾号 ${method.last4}`,
+    title: "解绑支付方式",
     detail: "解绑后立即停止作为默认支付方式；若它是默认卡，服务器会选取其他已绑定方式作为默认。",
     amplifies: false,
     facts: <Facts><Fact k="操作对象">{displayNickname} · {userNo}</Fact><Fact k="支付方式">{method.brand} ···· {method.last4} · {method.provider}</Fact><Fact k="默认卡">{method.isDefault ? "是，服务器会选取其他已绑定方式作为默认" : "否"}</Fact></Facts>,
     confirmLabel: "确认解绑，立即生效",
     confirmTone: "danger",
+    irreversible: true,
     statedBrief: { impact: "立即解绑，这张卡要用户自己重新绑定。支付商那边的撤销另外处理，完成前这张卡仍可能被扣款。", check: "核对卡的尾号和用户，理由写清依据或工单号。" },
     run: (reason) => execute({ kind: "unbind", label: `解绑支付方式 · 尾号 ${method.last4}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), methodId: method.id, version: method.version }),
   });
   const openRebind = (method: UserPaymentMethod) => setActionConfirm({ briefKind: "content",
     action: `发送换绑通知 · 尾号 ${method.last4}`,
+    title: "发送换绑通知",
     detail: "向该用户发送真实站内通知与推送，引导先换绑试用扣款支付方式。",
     amplifies: false,
     facts: <Facts><Fact k="操作对象">{displayNickname} · {userNo}</Fact><Fact k="支付方式">{method.brand} ···· {method.last4}</Fact><Fact k="关联试用">{method.trialRefId || "关联试用"}</Fact></Facts>,
@@ -774,17 +782,19 @@ export default function UserDetailPage() {
     const instance = asText(device.instanceNo);
     setActionConfirm({ briefKind: "record",
       action: operation === "replace" ? `设备置换 · ${asText(device.instanceNo)}` : `设备回收 · ${asText(device.instanceNo)}`,
+      title: operation === "replace" ? "设备置换" : "设备回收",
       detail: "会更改该用户这台设备的状态。",
       amplifies: false,
       facts: <Facts>
         <Fact k="操作对象">{displayNickname} · {userNo}</Fact>
         <Fact k="设备">{instance} · {asText(device.name)}</Fact>
-        <Fact k="状态">{formatC1DeviceStatus(device.status)} → 已回收，离线</Fact>
+        <Fact k="状态"><Change from={formatC1DeviceStatus(device.status)} to="已回收，离线" /></Fact>
         {operation === "replace" && <Fact k="另外">生成一张置换单</Fact>}
       </Facts>,
       confirmLabel: operation === "replace" ? "确认置换，立即生效" : "确认回收，立即生效",
       confirmTone: "danger",
-      statedBrief: { impact: operation === "replace" ? "这台设备立即变成已回收并离线，同时生成一张置换单。这里不能撤销。" : "这台设备立即变成已回收并离线。这里不能撤销。", check: "核对设备实例号和用户，理由写清依据或工单号。" },
+      irreversible: true,
+      statedBrief: { impact: operation === "replace" ? "这台设备立即变成已回收并离线，同时生成一张置换单。" : "这台设备立即变成已回收并离线。", check: "核对设备实例号和用户，理由写清依据或工单号。" },
       run: (reason) => execute({ kind: operation, label: `${operation === "replace" ? "设备置换" : "设备回收"} · ${instance}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), deviceId, deviceStatus: asText(device.status) }),
     });
   };
@@ -952,10 +962,10 @@ export default function UserDetailPage() {
     { label: "规格", cell: (row) => formatC1DeviceTier(row.productTier) },
     { label: "状态", cell: (row) => <Cell main={deviceTag(row)} sub={formatC1RuntimeStatus(row.runtimeStatus)} /> },
     { label: "设定日收益", align: "right", cell: (row) => <Cell num main={amountText(row.dailyUsdt)} sub={amountText(row.dailyNex, "UVT")} /> },
-    ...(canWriteC2 ? [{ label: "操作", end: true, cell: (row: JsonRecord) => {
+    ...(canWriteC2 ? [{ label: "操作", align: "right" as const, end: true, cell: (row: JsonRecord) => {
       const deviceId = asNumber(row.id);
       if (!deviceId || FINAL_DEVICE_STATUS.includes(asText(row.status, "").toUpperCase())) return "—";
-      return <span className="rd-toolbar">
+      return <span className="rd-row-actions">
         <Button size="sm" disabledReason={deviceBlock(deviceId)} onClick={() => openDeviceAction(row, "replace")}>设备置换</Button>
         <Button size="sm" disabledReason={deviceBlock(deviceId)} onClick={() => openDeviceAction(row, "recycle")}>设备回收</Button>
       </span>;
@@ -978,7 +988,7 @@ export default function UserDetailPage() {
     { label: "状态", cell: (row) => <Cell full
       main={<StatusTag tone={row.status === "BOUND" ? "ok" : "done"}>{row.status === "BOUND" ? (row.isDefault ? "已绑定 · 默认" : "已绑定") : "已解绑"}</StatusTag>}
       sub={row.trialGuard ? `正在用于试用扣款 · ${asText(row.trialRefId, "关联试用")}，暂不能解绑` : row.status !== "BOUND" && row.unboundAt ? `解绑时间：${shortTime(row.unboundAt)}` : undefined} /> },
-    ...(canWriteC1 ? [{ label: "操作", end: true, cell: (row: JsonRecord) => {
+    ...(canWriteC1 ? [{ label: "操作", align: "right" as const, end: true, cell: (row: JsonRecord) => {
       const method = row as UserPaymentMethod;
       if (method.status !== "BOUND") return "—";
       return method.trialGuard
@@ -1242,10 +1252,11 @@ export default function UserDetailPage() {
       {actionConfirm && (
         <OperationConfirmModal briefKind={actionConfirm.briefKind}
           action={actionConfirm.action}
+          title={actionConfirm.title}
           detail={actionConfirm.detail}
           amplifies={actionConfirm.amplifies ?? false}
           facts={actionConfirm.facts}
-          effect={<StatusTag tone="progress" filled>立即生效</StatusTag>}
+          effect={<><StatusTag tone="progress" filled>立即生效</StatusTag>{actionConfirm.irreversible && <IrreversibleTag />}</>}
           confirmLabel={actionConfirm.confirmLabel}
           confirmTone={actionConfirm.confirmTone}
           statedBrief={actionConfirm.statedBrief}
@@ -1257,14 +1268,8 @@ export default function UserDetailPage() {
           }}
         />
       )}
-      {releasing && <Modal title="解除待确认" onClose={() => setReleasing(null)} footer={<>
-        <Button onClick={() => setReleasing(null)}>取消</Button>
-        <Button variant="primary" onClick={() => releasePending(releasing)}>确认解除</Button>
-      </>}>
-        <p><b>{releasing.label}</b></p>
-        <p>重试被拒说明不了原操作的结果。先到操作记录确认原操作有没有生效，再解除。</p>
-        <p>解除后这个对象可以重新处理，原操作不再重试，系统仍按现在的状态校验。这一步只放开本页的锁，不发请求，不写操作记录。</p>
-      </Modal>}
+      {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
+        explain="重试被拒说明不了原操作的结果，先到操作记录确认原操作有没有生效。解除后原操作不再重试，系统仍按现在的状态校验。" />}
       {notificationEvidence && canReadNotificationEvidence
         && notificationEvidence.userKey === userKey && notificationEvidence.authEpoch === authEpoch && (
         <NotificationTimeEvidenceDrawer key={`${userKey}:${authEpoch}:${notificationEvidence.id}`}

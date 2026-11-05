@@ -9,7 +9,8 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useReasonRule } from "@/lib/admin/use-reason-rule";
-import { Explain } from "@/app/components/rd";
+import { DiffList, Explain, Field as RdField, Notice, StatusTag, Textarea } from "@/app/components/rd";
+import { visibleReasonLength } from "@/lib/admin/a2-client";
 import { Icon, Modal } from "../design-kit";
 import {
   STANDBY_POOL_LABEL,
@@ -73,6 +74,9 @@ export function IdlePolicyModal({
   const [end, setEnd] = useState(String(initialInput?.sessionEndMinutes??policy.sessionEndMinutes??""));
   const [reason, setReason] = useState(initialInput?.reason??"");
   const [confirm, setConfirm] = useState(false);
+  // 刚打开不报错，失焦才用橙黄写原因（VS-107）。
+  const [numbersLeft, setNumbersLeft] = useState(false);
+  const [reasonLeft, setReasonLeft] = useState(false);
   useEffect(() => { setConfirm(false); }, [policy.version, error, pending, conflict, canSave]);
   // 换到最新版本后要按新版本重新写理由（OP-97）。待确认的原操作不动。
   const shownVersion = useRef(policy.version);
@@ -118,6 +122,7 @@ export function IdlePolicyModal({
       <span className="m3-policy-label">
         <strong>{label}</strong>
         <Explain label={`${label}是什么`} content={hint} />
+        {available && canSave && <span className="rd-form-hint">{min}–{max}</span>}
       </span>
       <input
         className="m3-policy-num"
@@ -129,6 +134,7 @@ export function IdlePolicyModal({
         placeholder={available ? undefined : "-"}
         disabled={!available || !canSave || blocked || confirm}
         onChange={(event) => { setConfirm(false); setValue(event.target.value); }}
+        onBlur={() => setNumbersLeft(true)}
         aria-label={label}
       />
     </label>
@@ -137,7 +143,9 @@ export function IdlePolicyModal({
   return (
     <Modal
       className="m3-policy-modal"
-      title={<><span className="m3-policy-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg></span>会话超时策略<span className="m3-policy-version">版本 {policy.version}</span></>}
+      title={canSave ? "调整会话超时策略" : "会话超时策略"}
+      icon="clock"
+      sub={<>{canSave && <StatusTag tone="progress" filled>立即生效</StatusTag>}<span>版本 {policy.version}</span></>}
       busy={saving}
       onClose={onClose}
       footer={(
@@ -160,33 +168,32 @@ export function IdlePolicyModal({
       )}
     >
       {!canSave && <p className="m3-policy-readonly" role="status">只读 <Explain label="谁能修改" content="仅获准超级管理员可修改。要调整请联系超级管理员。" /></p>}
-      {numField("待回复提醒时长（分钟）", "客户消息等待回复达到该时长，标记待处理。1–30", warn, setWarn, 1, 30)}
-      {numField("严重超时时长（分钟）", "超过该时长仍未回复，标记严重超时。2–120，须大于提醒时长", close, setClose, 2, 120)}
-      {numField("无人发言自动结束会话（分钟）", endAvailable ? "后台人员最后一次发消息后，超过该时长没人再发，会话自动结束，其他人就可以发起。2–120" : "暂不可用：自动结束时长还不能在这里设置，其他两项照常保存。", end, setEnd, 2, 120, endAvailable)}
-      {!orderOk && (
-        <div className="m3-policy-invalid">
+      {numField("待回复提醒时长（分钟）", "客户消息等待回复达到该时长，标记待处理。", warn, setWarn, 1, 30)}
+      {numField("严重超时时长（分钟）", "超过该时长仍未回复，标记严重超时。须大于提醒时长。", close, setClose, 2, 120)}
+      {numField("无人发言自动结束会话（分钟）", endAvailable ? "后台人员最后一次发消息后，超过该时长没人再发，会话自动结束，其他人就可以发起。" : "暂不可用：自动结束时长还不能在这里设置，其他两项照常保存。", end, setEnd, 2, 120, endAvailable)}
+      {!orderOk && numbersLeft && (
+        <div className="rd-form-error" role="alert">
           {!warnOk || !closeOk || !endOk ? "请输入整数分钟并满足允许范围。" : "严重超时时长必须大于提醒时长。"}
         </div>
       )}
-      {confirm && <div className="itint m3-policy-preview" role="status"><strong>确认下列变更</strong><p>待回复提醒：{policy.warnMinutes} 分钟 → {warnN} 分钟</p><p>严重超时：{policy.closeMinutes} 分钟 → {closeN} 分钟</p>{endAvailable && <p>无人发言自动结束：{policy.sessionEndMinutes} 分钟 → {endN} 分钟</p>}<p>修改理由：{reason.trim()}</p></div>}
-      {canSave && <label className="m3-policy-reason">
-        <span>变更理由 <b>*</b> <Explain label="改了会怎样" content="待回复提醒和严重超时只做标记。自动结束只让出接待：不结束对话、不改专属客服，客户的待回复照常保留。保存后立即生效。" /></span>
-        <textarea
-          value={reason}
-          disabled={!canSave || blocked || confirm}
-          maxLength={200}
-          onChange={(event) => { setConfirm(false); setReason(event.target.value); }}
-          placeholder={`请说明调整的原因（至少 ${rule.min} 个字）`}
-        />
-      </label>}
-      {canSave && !blocked && !unchanged && orderOk && !reasonOk && <div className="m3-policy-invalid">{rule.ready || rule.error ? rule.hint(reason) : "正在读取理由规则…"}</div>}
-      {error && !conflict && (
-        <div className="itint" role="alert" style={{ color: "var(--danger)", padding: "10px 12px", marginTop: 12 }}>
-          {error}
-        </div>
-      )}
-      {pending && <div role="status" className="m3-policy-state">原操作结果待确认，输入已锁定。原提交基于版本 {policy.version}。{latest && <p>当前策略为版本 {latest.version}：待回复提醒 {latest.warnMinutes} 分钟，严重超时 {latest.closeMinutes} 分钟{latest.sessionEndMinutes !== null && `，无人发言自动结束 ${latest.sessionEndMinutes} 分钟`}；尚不能据此认定原操作成功。</p>}{canSave && onCheckPending && <button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => void onCheckPending()}>查询原操作结果</button>}</div>}
-      {conflict && <div role="alert" className="m3-policy-state">设置刚被别人改过，你填写的内容还在。{latest ? <><p>待回复提醒：原 {policy.warnMinutes} 分钟 → 最新 {latest.warnMinutes} 分钟；严重超时：原 {policy.closeMinutes} 分钟 → 最新 {latest.closeMinutes} 分钟{endAvailable && latest.sessionEndMinutes !== null && `；无人发言自动结束：原 ${policy.sessionEndMinutes} 分钟 → 最新 ${latest.sessionEndMinutes} 分钟`}。</p><button type="button" className="btn btn-sec btn-sm" disabled={saving || !canSave} onClick={onReviewLatest}>以最新策略重新确认</button></> : <button type="button" className="btn btn-sec btn-sm" disabled={saving || !canSave} onClick={() => void onRefreshLatest?.()}>读取最新策略</button>}</div>}
+      {confirm && <div className="rd-confirm-facts m3-policy-preview" role="status">
+        <p className="rd-form-group-title">确认下列变更</p>
+        <DiffList rows={[
+          { key: "warn", label: "待回复提醒", before: `${policy.warnMinutes} 分钟`, after: `${warnN} 分钟` },
+          { key: "close", label: "严重超时", before: `${policy.closeMinutes} 分钟`, after: `${closeN} 分钟` },
+          ...(endAvailable ? [{ key: "end", label: "无人发言自动结束", before: `${policy.sessionEndMinutes} 分钟`, after: `${endN} 分钟` }] : []),
+        ]} />
+      </div>}
+      {canSave && <RdField label="变更理由" required hint={`至少 ${rule.min} 字`} explain="待回复提醒和严重超时只做标记。自动结束只让出接待：不结束对话、不改专属客服，客户的待回复照常保留。保存后立即生效。"
+        error={blocked || unchanged || !orderOk || reasonOk || !reasonLeft ? undefined : rule.ready || rule.error ? rule.hint(reason) : "正在读取理由规则…"}>
+        {(control) => <Textarea {...control} rows={3} value={reason} disabled={!canSave || blocked || confirm} maxLength={200} count={`${visibleReasonLength(reason)}/${rule.max}`}
+          onChange={(event) => { setConfirm(false); setReason(event.target.value); }} onBlur={() => setReasonLeft(true)} placeholder="请说明调整的原因" />}
+      </RdField>}
+      {error && !conflict && !pending && <Notice tone="danger">{error}</Notice>}
+      {pending && <Notice tone="warn" title={error || undefined} action={canSave && onCheckPending ? <button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => void onCheckPending()}>查询原操作结果</button> : undefined}>原操作结果待确认，输入已锁定。原提交基于版本 {policy.version}。{latest && <p>当前策略为版本 {latest.version}：待回复提醒 {latest.warnMinutes} 分钟，严重超时 {latest.closeMinutes} 分钟{latest.sessionEndMinutes !== null && `，无人发言自动结束 ${latest.sessionEndMinutes} 分钟`}；尚不能据此认定原操作成功。</p>}</Notice>}
+      {conflict && <Notice tone="warn" action={latest
+        ? <button type="button" className="btn btn-sec btn-sm" disabled={saving || !canSave} onClick={onReviewLatest}>以最新策略重新确认</button>
+        : <button type="button" className="btn btn-sec btn-sm" disabled={saving || !canSave} onClick={() => void onRefreshLatest?.()}>读取最新策略</button>}>设置刚被别人改过，你填写的内容还在。{latest && <p>待回复提醒：原 {policy.warnMinutes} 分钟 → 最新 {latest.warnMinutes} 分钟；严重超时：原 {policy.closeMinutes} 分钟 → 最新 {latest.closeMinutes} 分钟{endAvailable && latest.sessionEndMinutes !== null && `；无人发言自动结束：原 ${policy.sessionEndMinutes} 分钟 → 最新 ${latest.sessionEndMinutes} 分钟`}。</p>}</Notice>}
     </Modal>
   );
 }

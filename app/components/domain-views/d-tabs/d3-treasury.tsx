@@ -10,9 +10,9 @@
  */
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Download, Landmark, RefreshCw } from "lucide-react";
+import { Download, Landmark, RefreshCw, ShieldCheck } from "lucide-react";
 import { OperationConfirmModal, useToast, type OperatorBriefKind } from "../design-kit";
-import { BlockState, Button, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Input, KeyValues, Modal, Notice, PageHeader, PageTabs, RdPage, Select, StatusTag } from "@/app/components/rd";
+import { BlockState, Button, Change, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Input, IrreversibleTag, Modal, Notice, PageHeader, PageTabs, RdPage, ReleaseModal, Select, StatusTag } from "@/app/components/rd";
 import { useB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import { businessClock } from "@/lib/admin/business-time";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
@@ -35,7 +35,7 @@ import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operat
 import { createPendingMutationStore, createSlotAttemptStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
-import { DueTab, FORECAST_90D_BLOCK, FlowTab, FundConclusion, OverviewTab, SettingsTab, effectiveText, forecastDiffRows, money, timeText, type CrossLink, type ForecastValues, type Loadable } from "./d3-treasury-views";
+import { DueTab, FORECAST_90D_BLOCK, FlowTab, FundConclusion, OverviewTab, SettingsTab, amountText, effectiveText, forecastDiffRows, money, timeText, type CrossLink, type ForecastValues, type Loadable } from "./d3-treasury-views";
 
 const OPERATOR = currentAdminOperator;
 
@@ -84,6 +84,8 @@ interface ConfirmRequest {
   facts?: ReactNode;
   reasonMax?: number;
   effect?: string;
+  /** 提交后收不回来：标题下再加「不能撤销」（VS-106）。 */
+  irreversible?: boolean;
   confirmLabel: string;
   /** 不能撤销的操作传 danger。 */
   confirmTone?: "primary" | "danger";
@@ -105,7 +107,10 @@ interface PendingItem {
   expiresAt: number;
   auditHref: string;
   retryTitle: string;
-  rows: Array<{ key: string; label: string; value: string }>;
+  /** 重试框标题下的生效方式，和原操作一样。 */
+  retryEffect: string;
+  /** lead 是这次的关键数字，放第一行，单位传 unit（VS-102）。 */
+  rows: Array<{ key: string; label: string; value: ReactNode; lead?: boolean; unit?: string }>;
   stored: () => boolean;
   resend: () => Promise<void>;
   forget: () => void;
@@ -372,10 +377,11 @@ export function D3Treasury() {
     setConfirm({
       action: "储备注入登记",
       detail: `登记 ${money(Number(nextAmount))}，${typeLabel}，凭证号 ${nextVoucher}。凭证号不可重复。凭证类型会写在理由前面，留在操作记录里。`,
-      facts: <Facts><Fact k="金额">{money(Number(nextAmount))}</Fact><Fact k="凭证类型">{typeLabel}</Fact><Fact k="凭证号"><span data-mono>{nextVoucher}</span></Fact><Fact k="能否撤销">登记后不能撤销</Fact></Facts>,
+      facts: <Facts><Fact k="注入金额" lead tone="role-1" unit="USDT">{amountText(Number(nextAmount))}</Fact><Fact k="凭证类型">{typeLabel}</Fact><Fact k="凭证号"><span data-mono>{nextVoucher}</span></Fact></Facts>,
       briefKind: "funds",
-      statedBrief: { impact: "登记后计入可用储备，不能撤销。", check: "核对金额和凭证号，理由写清到账依据或工单号。" },
+      statedBrief: { impact: "登记后计入可用储备。", check: "核对金额和凭证号，理由写清到账依据或工单号。" },
       effect: "立即生效",
+      irreversible: true,
       confirmLabel: "确认登记",
       confirmTone: "danger",
       reasonMax: 200 - reasonPrefix.length,
@@ -496,6 +502,7 @@ export function D3Treasury() {
       facts: <Facts><Fact k="范围">{EXPORT_RANGE[kind]}</Fact><Fact k="去向">浏览器直接下载</Fact></Facts>,
       briefKind: "export",
       statedBrief: { impact: "浏览器直接下载，这次导出记入操作记录。", check: "核对导出内容，理由写明导出依据或工单号。" },
+      effect: "立即生效",
       confirmLabel: "确认导出",
       run: (reason) => submitExport(kind, reason),
     });
@@ -600,7 +607,7 @@ export function D3Treasury() {
   const forecastRecord = unknownCommands.forecast;
   const savedForecast = forecastRecord && JSON.parse(forecastRecord.inputFingerprint) as { draft: ForecastValues; expectedVersion: number; reason: string; operator: string };
   const savedChanges = savedForecast && baseValues
-    ? forecastDiffRows(baseValues, savedForecast.draft).filter((row) => row.before !== row.after).map((row) => ({ key: row.key, label: row.label, value: `${row.before} → ${row.after}` }))
+    ? forecastDiffRows(baseValues, savedForecast.draft).filter((row) => row.before !== row.after).map((row) => ({ key: row.key, label: row.label, value: <Change from={row.before} to={row.after} /> }))
     : [];
   const pendingItems: PendingItem[] = [
     ...unknownCommands.injections.map((record): PendingItem => ({
@@ -612,8 +619,9 @@ export function D3Treasury() {
       expiresAt: record.expiresAt,
       auditHref: `/platform/audit?domain=D&object=${encodeURIComponent(record.voucherNo)}`,
       retryTitle: "按原操作重试储备注入",
+      retryEffect: "立即生效",
       rows: [
-        { key: "amount", label: "金额", value: money(Number(record.amount)) },
+        { key: "amount", label: "金额", value: amountText(Number(record.amount)), lead: true, unit: "USDT" },
         { key: "voucher", label: "凭证号", value: record.voucherNo },
         { key: "reason", label: "理由", value: record.reason },
       ],
@@ -630,6 +638,7 @@ export function D3Treasury() {
       expiresAt: forecastRecord.expiresAt,
       auditHref: "/platform/audit?domain=D",
       retryTitle: "按原操作重试保存预测设置",
+      retryEffect: effectiveText(),
       rows: [
         { key: "version", label: "基于版本", value: `v${savedForecast.expectedVersion}` },
         ...(savedChanges.length ? savedChanges : [{ key: "changes", label: "这次改动", value: baseValues ? "和现在的设置一样，可能已经保存" : "现在的设置没读到，比不出改动" }]),
@@ -648,6 +657,7 @@ export function D3Treasury() {
       expiresAt: record.expiresAt,
       auditHref: "/platform/audit?domain=D",
       retryTitle: "按原操作重试导出",
+      retryEffect: "立即生效",
       rows: [
         { key: "kind", label: "内容", value: EXPORT_LABEL[record.exportKind] },
         { key: "reason", label: "理由", value: record.reason },
@@ -771,7 +781,7 @@ export function D3Treasury() {
           briefKind={confirm.briefKind}
           statedBrief={confirm.statedBrief}
           facts={confirm.facts}
-          effect={confirm.effect ? <StatusTag tone="progress" filled>{confirm.effect}</StatusTag> : undefined}
+          effect={confirm.effect ? <><StatusTag tone="progress" filled>{confirm.effect}</StatusTag>{confirm.irreversible && <IrreversibleTag />}</> : undefined}
           confirmLabel={confirm.confirmLabel}
           confirmTone={confirm.confirmTone}
           blockedReason={confirm.blocked}
@@ -788,37 +798,29 @@ export function D3Treasury() {
       {retry && (
         <Modal
           title={retry.retryTitle}
+          icon={ShieldCheck}
+          sub={<StatusTag tone="progress" filled>{retry.retryEffect}</StatusTag>}
           busy={retrying}
           onClose={() => setRetry(null)}
           footer={<><Button disabled={retrying} onClick={() => setRetry(null)}>取消</Button><Button variant="primary" loading={retrying} loadingText="提交中…" onClick={() => void runRetry()}>按原操作重试</Button></>}
         >
           <div className="rd-stack">
+            <Facts>{retry.rows.map((row) => <Fact key={row.key} k={row.label} lead={row.lead} tone={row.lead ? "role-1" : undefined} unit={row.unit}>{row.value}</Fact>)}</Facts>
             <p className="rd-note">重发原内容，已成功的不会重复执行。</p>
-            <KeyValues rows={retry.rows} />
           </div>
         </Modal>
       )}
 
-      {releasing && (
-        <Modal
-          title="解除待确认"
-          onClose={() => setReleasing(null)}
-          footer={<><Button onClick={() => setReleasing(null)}>取消</Button><Button variant="primary" onClick={() => releasePending(releasing)}>确认解除</Button></>}
-        >
-          <div className="rd-stack">
-            <p><b>{releasing.title}</b></p>
-            <p>确认这次操作没有生效后再解除。解除后可以重新操作，这一步不发请求，不写操作记录。<Explain label="解除待确认的说明" content="重试被拒说明不了原操作的结果，先到操作记录确认。解除后原操作不再重试。" /></p>
-          </div>
-        </Modal>
-      )}
+      {releasing && <ReleaseModal label={releasing.title} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)} explain="重试被拒说明不了原操作的结果，先到操作记录确认。解除后原操作不再重试。" />}
 
       {refreshAsk && (
         <Modal
           title="有未保存的修改，刷新后会丢失"
+          icon={ShieldCheck}
           onClose={() => setRefreshAsk(false)}
           footer={<><Button onClick={() => setRefreshAsk(false)}>继续编辑</Button><Button onClick={() => { setRefreshAsk(false); reloadAll(); }}>放弃修改并刷新</Button></>}
         >
-          <p className="rd-note">「预测设置」里的修改还没保存。</p>
+          <p>「预测设置」里的修改还没保存。</p>
         </Modal>
       )}
       {toastNode}

@@ -9,10 +9,10 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
  */
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import Link from "next/link";
-import { Activity, CheckCircle2, CircleHelp, Download, Flag, Gauge, ListChecks, Lock, Target } from "lucide-react";
+import { Activity, CheckCircle2, CircleHelp, Download, Flag, Gauge, ListChecks, Lock, SlidersHorizontal, Target } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
-import { BlockState, Button, Cell, Check, Conclusion, Explain, Fact, Facts, Field, FilterBar, FilterField, Fold, Input, Modal, Notice, NumberInput, PageHeader, Panel, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Cell, Check, Conclusion, DiffField, Explain, Fact, Facts, FilterBar, FilterField, Fold, Input, Modal, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { businessClock, businessDay, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { findByPath } from "@/lib/nav/console-nav";
@@ -290,17 +290,7 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
           任务生成后才能下载。{exportPage(`到「${pageName}」下载`)}
         </Notice>
       )}
-      {releasing && pending && (
-        <Modal title="解除待确认" onClose={() => setReleasing(false)} footer={<>
-          <Button onClick={() => setReleasing(false)}>取消</Button>
-          <Button variant="primary" onClick={() => release(pending)}>确认解除</Button>
-        </>}>
-          <div className="rd-stack">
-            <p><b>{pending.label}</b></p>
-            <p>确认这次操作没有生效后再解除。解除后可以重新操作，这一步不发请求，不写操作记录。 <Explain label="解除待确认的说明" content={`重试被拒说明不了原操作的结果，先到「${pageName}」确认任务有没有生成。解除后原操作不再重试。`} /></p>
-          </div>
-        </Modal>
-      )}
+      {releasing && pending && <ReleaseModal label={pending.label} onCancel={() => setReleasing(false)} onConfirm={() => release(pending)} explain={`重试被拒说明不了原操作的结果，先到「${pageName}」确认任务有没有生成。解除后原操作不再重试。`} />}
     </>,
   };
 }
@@ -331,12 +321,14 @@ function OffsetModal({ current, onApply, onClose }: { current: number; onApply: 
   const typed = draft.trim() !== "";
   const problem = !typed ? "填写新值" : !(Number.isInteger(next) && next >= 5 && next <= 20) ? "要填 5–20 的整数" : next === current ? "和当前值一样，没有改动" : undefined;
   return (
-    <Modal title={<>接近目标的范围 <Explain label="接近目标的范围的说明" content="只改你看到的状态和接近线，不改业务规则或统计方式。刷新会恢复最后保存的设置，没有保存视图时回到默认值。要保留请点「保存为视图」。" /></>} onClose={onClose} footer={<><Button onClick={onClose}>取消</Button><Button variant="primary" disabledReason={problem} onBlockedClick={() => setAttempted(true)} onClick={() => { onApply(next); onClose(); }}>应用 · 实时生效</Button></>}>
+    <Modal title={<>调整接近目标的范围<Explain label="接近目标的范围的说明" content="只改你看到的状态和接近线，不改业务规则或统计方式。刷新会恢复最后保存的设置，没有保存视图时回到默认值。要保留请点「保存为视图」。" /></>} icon={SlidersHorizontal}
+      sub={<StatusTag tone="neutral" filled>只改你看到的显示</StatusTag>} onClose={onClose}
+      footer={<><Button onClick={onClose}>取消</Button><Button variant="primary" disabledReason={problem} onBlockedClick={() => setAttempted(true)} onClick={() => { onApply(next); onClose(); }}>应用 · 实时生效</Button></>}>
       <div className="rd-stack">
-        {/* 刚打开不报错，失焦且填过或点过提交才用警告色（OP-15）。 */}
-        <Field label="新值（5–20 的整数）" required error={attempted || (left && typed) ? problem : undefined}>
-          {(control) => <NumberInput {...control} unit="%" min={5} max={20} step={1} value={draft} placeholder={`当前 ${current}`} onChange={(event) => setDraft(event.target.value)} onBlur={() => setLeft(true)} />}
-        </Field>
+        {/* 现在值、新值输入合成一块（VS-103）。刚打开不报错，失焦且填过或点过提交才用警告色（OP-15）。 */}
+        <DiffField before={String(current)} unit="%" hint="5–20 的整数" error={attempted || (left && typed) ? problem : undefined}>
+          {(control) => <NumberInput {...control} unit="%" min={5} max={20} step={1} value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={() => setLeft(true)} />}
+        </DiffField>
         <Fold inset title="查看业务规则详情" summary="状态怎么判定">
           <p className="rd-note">单侧指标须严格高于或低于目标值才达标；等于目标时算接近目标。数值越高越好的指标，接近线为目标值 × (1 − N%)；数值越低越好的指标，接近线为目标值 × (1 + N%)。没达标但在接近线以内（含接近线）算接近目标，超出算未达标。购买转化健康带包含两端，带外也归接近目标。只影响显示，不改指标值。</p>
         </Fold>

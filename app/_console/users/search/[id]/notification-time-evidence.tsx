@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Clock3 } from "lucide-react";
 import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
-import { BlockState, Button, Decision, Drawer, Explain, Fact, Facts, JudgmentPoints, Modal, Notice, StatusTag } from "@/app/components/rd";
+import { BlockState, Button, Change, Decision, Drawer, Explain, Fact, Facts, JudgmentPoints, Notice, ReleaseModal, StatusTag } from "@/app/components/rd";
 import { correctNotificationTime, fetchNotificationTimeEvidence, UsersOutcomeUnknownError, UsersRequestError, type NotificationTimeEvidence } from "@/lib/admin/user360-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
@@ -115,7 +115,7 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
       ? "当前记录时间与投递事实时间一致，无需校正。"
       : "关联证据一致；记录时间与投递事实时间不一致，尚未校正。"
     : data.reason);
-  return <Drawer open onClose={onClose} busy={submitting} icon={Clock3} tone="role-3" title={`通知时间证据 · ${notificationId}`}
+  return <Drawer open onClose={onClose} busy={submitting} icon={Clock3} tone="role-3" title="通知时间证据" sub={`通知 ${notificationId}`}
     explain={<><p>读取证据不会修改通知。校正时间需要单独确认，已读状态保持不变。</p><p>此处展示当前回读证据；是否曾执行校正请查审计记录。</p></>}
     footer={correctable ? <Decision primary={<Button variant="primary" onClick={() => setConfirmation(data)}>按投递事实校正时间</Button>} /> : undefined}>
     {notice && <Notice tone="progress">{notice}</Notice>}
@@ -139,22 +139,16 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
         <span data-mono>事件编号：{fact.eventId}</span><br />UTC：{new Date(fact.timestampMillis).toISOString()}
       </Fact>)}</Facts>}
     </>}
-    {confirmation && canCorrect && actorKey && <OperationConfirmModal briefKind={"content"} action={`校正通知 ${notificationId} 的时间`}
+    {confirmation && canCorrect && actorKey && <OperationConfirmModal briefKind={"content"} action={`校正通知 ${notificationId} 的时间`} title="校正通知时间"
       detail={`仅此通知：${confirmation.storedCreatedAt} → ${confirmation.deliveryFactTime}（北京时间）。根据实际投递事实校正展示时间，不会重新发送通知或改变已读状态。`}
       facts={<Facts>
         <Fact k="通知编号">{notificationId}</Fact>
-        <Fact k="展示时间（北京时间）">{confirmation.storedCreatedAt} → {confirmation.deliveryFactTime}</Fact>
+        <Fact k="展示时间（北京时间）"><Change from={confirmation.storedCreatedAt} to={confirmation.deliveryFactTime} /></Fact>
       </Facts>}
       effect={<StatusTag tone="progress" filled>立即生效</StatusTag>} confirmLabel="确认校正，立即生效"
       statedBrief={{ impact: "只改这条通知显示的时间，不重新发送，已读状态不变。", check: "核对当前记录时间和投递事实时间，理由写明依据。" }}
       reasonMax={500} onClose={() => { if (!busy.current) setConfirmation(null); }} onConfirm={submit} />}
-    {releasing && pending && <Modal title="解除待确认" onClose={() => setReleasing(false)} footer={<>
-      <Button onClick={() => setReleasing(false)}>取消</Button>
-      <Button variant="primary" onClick={release}>确认解除</Button>
-    </>}>
-      <p><b>校正通知 {notificationId} 的时间</b></p>
-      <p>重试被拒说明不了原校正的结果。先到操作记录确认原操作有没有生效，再解除。</p>
-      <p>解除后这条通知可以重新校正，原操作不再重试。这一步只放开本页的锁，不发请求，不写操作记录。</p>
-    </Modal>}
+    {releasing && pending && <ReleaseModal label={`校正通知 ${notificationId} 的时间`} onCancel={() => setReleasing(false)} onConfirm={release}
+      explain="重试被拒说明不了原校正的结果，先到操作记录确认原操作有没有生效。解除后原操作不再重试。" />}
   </Drawer>;
 }

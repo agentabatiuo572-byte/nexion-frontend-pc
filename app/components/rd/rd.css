@@ -308,6 +308,9 @@
 .rd-modal-title .rd-explain { margin-left: 6px; }
 .rd-modal-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 20px 16px; }
+/* 框里的句子是给人读的，次文字；关键信息区的底框里自动带，确认框和折叠里的不再套（VS-100、VS-105）。 */
+:where(.rd-modal-body) p { margin: 0; color: var(--rd-text-2); }
+.rd-modal-body .rd-facts:not(.rd-confirm-facts *, .rd-fold *) { padding: 14px 16px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
 .rd-modal-foot { flex: none; display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; background: var(--rd-panel-inner); border-radius: 0 0 var(--rd-radius-panel) var(--rd-radius-panel); }
 
 /* 确认框外观：OperationConfirmModal 的旧内容块在新框里的样子，逻辑都在旧组件里没动。 */
@@ -347,6 +350,9 @@
 .rd-reason-box textarea { display: block; width: 100%; padding-bottom: 26px; }
 .rd-reason-count { position: absolute; right: 10px; bottom: 6px; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; pointer-events: none; }
 .rd-confirm-facts { margin-bottom: 16px; padding: 14px 16px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.rd-confirm-facts .rd-facts + .rd-notice { margin-top: 12px; }
+.rd-confirm-alert { margin-bottom: 16px; }
+.rd-confirm-alert .rd-notice { padding: 10px 16px; border-radius: var(--rd-radius-control); }
 .rd-confirm-edit { margin-bottom: 16px; }
 .rd-confirm-edit .chip.tab { min-height: var(--rd-control-h-sm); padding: 0 12px; font-size: var(--rd-text-body); }
 .rd-recipients { display: grid; gap: 8px; max-height: 200px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
@@ -474,6 +480,8 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-kv dt small { display: block; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-kv dd { margin: 0; min-width: 0; color: var(--rd-text); font-weight: 500; text-align: right; overflow-wrap: anywhere; }
 .rd-kv dd[data-mono] { font-variant-numeric: tabular-nums; }
+/* 弹窗和抽屉里只读标签弱、值强，和 Facts 同一档（VS-100、VS-108）。 */
+:is(.rd-modal, .rd-drawer) .rd-kv dt { font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); color: var(--rd-text-3); }
 
 /* ── 区块状态和页内提示 ── */
 .rd-block-state { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 28px 20px; color: var(--rd-text-2); text-align: center; }
@@ -498,6 +506,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-form-help { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-form-error { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-danger); }
 .rd-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 20px; }
+.rd-form-grid[data-cols="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .rd-input[aria-invalid="true"] { outline: 1px solid var(--rd-danger); }
 /* 弹窗和抽屉里填错了是「要你处理」，用橙黄；红只给失败和不能撤销（VS-107）。 */
 :is(.rd-modal, .rd-drawer) .rd-form-error { color: var(--rd-warn); }
@@ -552,6 +561,8 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-change[data-size="body"] .rd-change-now, .rd-change-now[data-words] { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); }
 .rd-change-hint { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-change-note { flex-basis: 100%; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-change-note .rd-diff-note { margin-top: 6px; }
+.rd-change-note .rd-diff-note svg { margin-top: 2px; }
 .rd-change[data-stack] { flex-direction: column; align-items: stretch; gap: 12px; }
 .rd-change[data-stack] .rd-change-side[data-next] { flex: none; }
 .rd-change[data-stack] .rd-change-now { min-height: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; white-space: normal; overflow-wrap: anywhere; }
@@ -646,6 +657,9 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-fact dt { font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); color: var(--rd-text-3); }
 .rd-fact dd { margin: 0; color: var(--rd-text); font-weight: 500; overflow-wrap: anywhere; }
 .rd-fact[data-tone] dd { color: var(--tone); }
+.rd-fact-change { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; color: var(--rd-text-3); font-weight: 400; }
+.rd-fact-change > svg { flex: none; }
+.rd-fact-change [data-after] { color: var(--rd-progress); font-weight: 500; }
 /* 这次操作的关键数字（VS-102）：弹窗里最大最亮，每个框最多一个。字号借页面标题那一档，不加新字号。 */
 .rd-fact[data-lead] { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 .rd-fact[data-lead] + .rd-fact { margin-top: 6px; }
@@ -836,6 +850,8 @@ td .rd-flow { margin-bottom: 0; }
 .rd-form-stack { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .rd-form-static { display: flex; align-items: center; gap: 6px; min-height: 36px; color: var(--rd-text); }
 .rd-form-group-title { margin: 8px 0 0; font-size: var(--rd-text-body); font-weight: 600; color: var(--rd-text); }
+/* 弹窗和抽屉里分组小标题是辅助，字段名才强（VS-104）。 */
+:is(.rd-modal, .rd-drawer) .rd-form-group-title { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-3); }
 .rd-inline-form { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .rd-inline-form > .rd-input, .rd-inline-form > input { flex: 1; min-width: 0; }
 .rd-inline-form-between { justify-content: space-between; flex-wrap: wrap; }

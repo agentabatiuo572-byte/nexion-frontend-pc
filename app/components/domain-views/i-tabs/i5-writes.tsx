@@ -12,7 +12,8 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button, Explain, Modal, Notice } from "@/app/components/rd";
+import { ShieldCheck } from "lucide-react";
+import { Button, Explain, Modal, Notice, ReleaseModal } from "@/app/components/rd";
 import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -157,7 +158,7 @@ export function useLeaveGuard(dirty: boolean, close: () => void) {
 export function LeaveDialog({ guard, saveLabel, saveBlocked, onSave }: { guard: ReturnType<typeof useLeaveGuard>; saveLabel: string; saveBlocked?: string; onSave: () => void }) {
   if (!guard.asking) return null;
   return (
-    <Modal title="有未保存的修改" onClose={guard.stay} footer={<>
+    <Modal title="有未保存的修改" icon={ShieldCheck} onClose={guard.stay} footer={<>
       <Button onClick={guard.stay}>继续编辑</Button>
       <Button variant="danger-outline" onClick={guard.discard}>放弃改动</Button>
       <Button variant="primary" disabledReason={saveBlocked} onClick={() => { guard.hide(); onSave(); }}>{saveLabel}后继续</Button>
@@ -281,13 +282,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
   });
 
   const releaseModal = releasing && (
-    <Modal title="解除待确认" onClose={() => setReleasing(null)} footer={<>
-      <Button onClick={() => setReleasing(null)}>取消</Button>
-      <Button variant="primary" onClick={() => release(releasing)}>确认解除</Button>
-    </>}>
-      <p><b>{releasing.label}</b></p>
-      <p>确认这次操作没有生效后再解除。解除后可以重新操作，这一步不发请求，不写操作记录。</p>
-    </Modal>
+    <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => release(releasing)} />
   );
 
   const lockedTargets = new Set(pending.map((record) => record.target));

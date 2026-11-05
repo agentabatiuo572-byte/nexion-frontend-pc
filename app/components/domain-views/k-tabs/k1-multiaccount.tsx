@@ -5,10 +5,10 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Coins, Gift, ListChecks, Lock, LockOpen, Network, RefreshCw, ShieldAlert, SlidersHorizontal, Snowflake, Users, type LucideIcon } from "lucide-react";
+import { AlertTriangle, Coins, Gift, ListChecks, Lock, LockOpen, Network, RefreshCw, ShieldAlert, ShieldCheck, SlidersHorizontal, Snowflake, Users, type LucideIcon } from "lucide-react";
 import {
-  BlockState, Button, Cell, ChartLegend, Conclusion, ConfigList, ConfigRow, Decision, DiffField, DiffList, Explain, Fact, Facts, Field, Figure, FilterBar, FilterField, Fold, InlineMeter, Input, JudgmentPoints, KeyValues,
-  Modal, MoreMenu, Notice, NumberInput, PageHeader, PageTabs, Pager, Panel, SectionNav, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useSectionNav,
+  BlockState, Button, Cell, Change, ChartLegend, Conclusion, ConfigList, ConfigRow, Decision, DiffField, Explain, Fact, Facts, Field, Figure, FilterBar, FilterField, Fold, InlineMeter, Input, IrreversibleTag, JudgmentPoints, KeyValues,
+  Modal, MoreMenu, Notice, NumberInput, PageHeader, PageTabs, Pager, Panel, ReleaseModal, SectionNav, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useSectionNav,
   type ExplainRow, type JudgmentRow, type SectionNavItem,
 } from "@/app/components/rd";
 import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1_RELEASE_MODE_VALUES, K1_RELEASE_PARAM_LIMITS, newK1CommandKey } from "@/lib/admin/k-client";
@@ -401,7 +401,7 @@ function DraftModal({ title, icon, effect, explain, wide, busy, busyLabel = "保
       <Button variant="primary" disabled={busy} disabledReason={busy ? undefined : missing || undefined} onBlockedClick={onAttempt} onClick={onSave}>{busy ? busyLabel : saveLabel}</Button>
     </>}>
       <div className="rd-stack">
-        {error && <Notice tone="danger" action={error.conflict && onReadLatest ? <Button size="sm" disabled={busy} onClick={onReadLatest}>读取最新</Button> : undefined}>{error.text}</Notice>}
+        {error && <Notice tone={error.conflict ? "warn" : "danger"} action={error.conflict && onReadLatest ? <Button size="sm" disabled={busy} onClick={onReadLatest}>读取最新</Button> : undefined}>{error.text}</Notice>}
         {children}
         <Field label={reasonLabel} required hint={`至少 ${policy?.min ?? 8} 字`} error={policyFailed || attempted || reasonLeft ? problem : undefined}>
           {(control) => <Textarea {...control} rows={3} maxLength={200} disabled={busy} placeholder={placeholder} value={reason} count={`${length}/${policy?.max ?? 200}`} onChange={(event) => onReason(event.target.value)} onBlur={() => setReasonLeft(true)} />}
@@ -847,12 +847,14 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     const issues = accountIssues(c);
     return (
       <Facts>
+        {/* 这次真的会动到账户时，账户数是这个框的关键数字（VS-102）。 */}
+        {scope && <Fact k="涉及账户" lead unit="个">{c.n}</Fact>}
         <Fact k="账户组">{c.id}</Fact>
         {changed && <Fact k="别人改了">{changed}</Fact>}
         <Fact k="关联依据">{c.layerLabel} · {c.key}</Fact>
         <Fact k="关联程度">{c.strength.toFixed(2)}</Fact>
         <Fact k="当前状态">{CLUSTER_ST[c.status][0]}</Fact>
-        <Fact k="涉及账户">{scope ?? `${c.n} 个`}</Fact>
+        {scope ? <Fact k="账户清单">{scope}</Fact> : <Fact k="涉及账户">{c.n} 个</Fact>}
         {unfreeze && <Fact k="账户冻结">批准后这 {c.n} 个账户解除冻结 <Explain label="解除冻结的范围" content="只解除因这组被冻结的账户和它们暂停的提现，因别的原因冻结的账户不动。" /></Fact>}
         {issues && <Fact k="账户状态异常">{issues}</Fact>}
         {approval && <Fact k="谁来批准">超级管理员。超管发起的，由另一位超管批准。</Fact>}
@@ -868,7 +870,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const scopeText = (c: K1Cluster, verb: string) => {
     const codes = c.nodes.map((node) => node[0]).join("、");
     const missing = c.n - c.nodes.length;
-    return missing > 0 ? `全部 ${c.n} 个。已读到 ${c.nodes.length} 个：${codes}。还有 ${missing} 个读不到，批准后也会一起${verb}。` : `全部 ${c.n} 个：${codes}`;
+    return missing > 0 ? `已读到 ${c.nodes.length} 个：${codes}。还有 ${missing} 个读不到，批准后也会一起${verb}。` : codes;
   };
 
   /** 四种处置的确认框内容，changed 是读取最新后别人改了什么。 */
@@ -876,7 +878,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     const common = { effect: APPROVAL_EFFECT, confirmLabel: "提交审批", reasonPlaceholder: RISK_REASON_PLACEHOLDER, reasonMax: 200 };
     if (action === "flag") {
       const label = `标记可疑账户组 · ${c.id}`;
-      return { ...common, label, action: label, briefKind: "judgment",
+      return { ...common, label, action: label, title: "标记可疑账户组", briefKind: "judgment",
         detail: "只标记为可疑，不冻结资产。风险评分和风险提醒会同步更新，并保留操作记录。",
         statedBrief: { impact: "批准后这组变成可疑，不动资产；风险评分和风险提醒同步更新。", check: "确认对象、证据和结论，理由写清依据或工单号。" },
         facts: clusterFacts(c, { changed }) };
@@ -884,7 +886,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     if (action === "freeze") {
       const label = `批量冻结关联账户 · ${c.id}`;
       const missing = c.n - c.nodes.length;
-      return { ...common, label, action: label, briefKind: "security",
+      return { ...common, label, action: label, title: "批量冻结关联账户", briefKind: "security",
         detail: `冻结这组里的 ${c.n} 个账户。请填写原因，会记入操作记录。`,
         statedBrief: {
           impact: `批准后冻结这组的全部 ${c.n} 个账户，不只是当前这一个。`,
@@ -895,7 +897,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     if (action === "release") {
       const label = `解除误判 · ${c.id}`;
       const frozen = c.status === "frozen";
-      return { ...common, label, action: label, briefKind: "funds", amplifies: true, coverageLead: "这项操作可能让平台多付钱",
+      return { ...common, label, action: label, title: "解除误判", briefKind: "funds", amplifies: true, coverageLead: "这项操作可能让平台多付钱",
         detail: "解除后，这些账户可能有更多收益可以提现。请核对影响并写明原因。",
         statedBrief: {
           impact: `批准后${frozen ? `这 ${c.n} 个账户解除冻结，` : ""}这组不再按风险组锁定新增收益，改按同组账号数处理，可提现的钱可能变多。`,
@@ -904,7 +906,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         facts: clusterFacts(c, { changed, unfreeze: frozen, scope: frozen ? scopeText(c, "解除冻结") : undefined }) };
     }
     const label = `判定为正常 · ${c.id}`;
-    return { ...common, label, action: label, briefKind: "judgment", amplifies: true, coverageLead: "这项操作可能让平台多付钱",
+    return { ...common, label, action: label, title: "判定为正常", briefKind: "judgment", amplifies: true, coverageLead: "这项操作可能让平台多付钱",
       detail: "这组账户将退出风险监控，后续风险评分也会受影响。请填写判定依据。",
       statedBrief: { impact: "批准后这组退出风险监控，新增收益改按同组账号数处理，可提现的钱可能变多。", check: "核对账户和证据。提交时会先检查兑付覆盖率。" },
       facts: clusterFacts(c, { changed }) };
@@ -960,21 +962,21 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const releaseProtectedEntry = (entry: K1ProtectedEntry) => {
     ctx.openActionConfirm({ briefKind: "funds",
       action: `人工放行收益 · ${entry.entryNo}`,
+      title: "人工放行收益",
       detail: `这笔收益现在是「${entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}」，放行后用户可以提现。`,
       amplifies: true,
       confirmTone: "danger",
       statedBrief: { impact: "这笔收益立即转为可提现，占用平台储备，记入操作记录。", check: "核对用户、金额和所属账户组。提交时会先检查兑付覆盖率。" },
       coverageLead: "这笔收益放行后可以提现",
-      effect: IMMEDIATE_EFFECT,
+      effect: <>{IMMEDIATE_EFFECT}<IrreversibleTag /></>,
       confirmLabel: "立即放行",
       reasonPlaceholder: RISK_REASON_PLACEHOLDER,
       facts: <Facts>
+        <Fact k="金额" lead tone="role-1" unit={nexGridBrandText(entry.asset)}>{amountText(entry.amount)}</Fact>
         <Fact k="收益记录">{entry.entryNo}</Fact>
         <Fact k="用户">U{entry.userId}</Fact>
         <Fact k="账户组">{entry.clusterId}</Fact>
-        <Fact k="金额">{amountText(entry.amount)} {nexGridBrandText(entry.asset)}</Fact>
-        <Fact k="前后状态">{entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"} → 可提现</Fact>
-        <Fact k="能否撤销">放行后不能撤销</Fact>
+        <Fact k="前后状态"><Change from={entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"} to="可提现" /></Fact>
       </Facts>,
       reasonMin: 8,
       reasonMax: 200,
@@ -1079,6 +1081,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const rmWl = (cidr: string) => {
     ctx.openActionConfirm({ briefKind: "config",
       action: `移出允许名单 · ${cidr}`,
+      title: "移出允许名单",
+      facts: <Facts><Fact k="网段"><span data-mono="">{cidr}</span></Fact></Facts>,
       detail: "移除后该网段恢复同 IP 多账户检测。",
       statedBrief: { impact: "这个网段恢复按 IP 检测，已有账户不会自动冻结。", check: "确认网段和授权来源，理由写清工单号和处理依据。" },
       effect: IMMEDIATE_EFFECT,
@@ -1530,32 +1534,28 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             : value === param.value ? "和当前值一样，没有改动" : undefined;
         const update = (patch: Partial<ParamDraft>) => setReleaseDraft((current) => current ? { ...current, ...patch } : current);
         const busy = draftSubmitting === "release";
-        const unit = limits && param.unit ? ` ${param.unit}` : "";
-        const valueText = (text: string) => isBool ? RELEASE_BOOL_LABELS[text] ?? text : isMode ? RELEASE_MODE_LABELS[text] ?? text : `${text}${unit}`;
+        const valueText = (text: string) => isBool ? RELEASE_BOOL_LABELS[text] ?? text : isMode ? RELEASE_MODE_LABELS[text] ?? text : text;
         const loosening = !problem && isLooseningRelease(key, param.value, value);
+        const direction = problem || isMode ? undefined : loosening ? <StatusTag tone="warn" icon={LockOpen}>放宽</StatusTag> : <StatusTag tone="neutral" icon={Lock}>收紧</StatusTag>;
         return (
-          <DraftModal title={`调整收益审核规则 · ${releaseParamName(param)}`} explain={paramHelpRows(help, param.sub)} busy={busy} saveLabel="保存并立即生效" blocked={problem} dirty={value !== param.value}
+          <DraftModal title={`调整${releaseParamName(param)}`} icon={SlidersHorizontal} effect={IMMEDIATE_EFFECT} explain={paramHelpRows(help, param.sub).filter((row) => row.k !== "怎么填")} busy={busy} saveLabel="保存并立即生效" blocked={problem} dirty={value !== param.value}
             reason={reason} placeholder="写清调整原因和依据" {...draftAttempt} policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => update({ reason: next })} onReadLatest={() => void readLatestReleaseParam()} onClose={() => setReleaseDraft(null)} onSave={saveReleaseDraft}>
-            <DiffList rows={[{ key: "value", label: "这一项", before: valueText(param.value), after: valueText(problem ? param.value : value) }]} emptyNote="还没改动" />
-            {limits && range ? (
-              <Field label={`新值（${range.min}–${range.max}${unit}）`} error={fieldError(problem, typed, "value")}>
-                {(control) => <Input {...control} type="number" min={range.min} max={range.max} step={limits.step} disabled={busy} placeholder={`当前 ${param.value}`} value={value} onChange={(event) => update({ value: event.target.value })} onBlur={() => touch("value")} />}
-              </Field>
-            ) : (
-              // 可枚举值走下拉不手输(释放模式 / 开关);选项集合与 k-client 校验白名单同源。
-              <Field label="新值（从下拉选择）">
-                <Select aria-label="新值（从下拉选择）" disabled={busy} value={value} onChange={(next) => update({ value: next })}
-                  options={(isMode ? [...K1_RELEASE_MODE_VALUES] : ["true", "false"]).map((option) => ({ value: option, label: isMode ? RELEASE_MODE_LABELS[option] : RELEASE_BOOL_LABELS[option] }))} />
-              </Field>
-            )}
-            {!problem && help?.whatIf && <Notice tone="neutral">{help.whatIf(value)}{loosening ? "这次是放宽。" : "这次是收紧。"}</Notice>}
-            {/* 放大资金流出方向的告知:真正的拦截在服务端,本页没有覆盖率数据,不做客户端预检。不影响收益的几项写在上一句。 */}
-            {loosening && RELEASE_AFFECTS_EARNINGS.has(key) && (
-              <div data-proof="k1-release-loosen-warning">
-                <Notice tone="warn" title="这项调整可能增加可提现收益">保存时检查兑付覆盖率，低于红线不能保存。</Notice>
-              </div>
-            )}
+            {/* 现在值、新值输入、方向合成一块；数字用关键数字那一档，选项用 16 那一档（VS-103）。 */}
+            <DiffField before={limits ? param.value : valueText(param.value)} unit={limits ? param.unit : undefined} size={limits ? "key" : "body"} hint={range && `${range.min}–${range.max} 的整数`}
+              state={direction}
+              note={!problem && <>
+                {help?.whatIf?.(value)}
+                {/* 放大资金流出方向的告知:真正的拦截在服务端,本页没有覆盖率数据,不做客户端预检。不影响收益的几项写在上一句。 */}
+                {loosening && RELEASE_AFFECTS_EARNINGS.has(key) && <span className="rd-diff-note" data-tone="warn" data-proof="k1-release-loosen-warning"><AlertTriangle size={14} strokeWidth={1.9} aria-hidden /><span>这项调整可能增加可提现收益。保存时检查兑付覆盖率，低于红线不能保存。</span></span>}
+              </>}
+              error={limits ? fieldError(problem, typed, "value") : undefined}>
+              {limits && range
+                ? (control) => <NumberInput {...control} unit={param.unit} min={range.min} max={range.max} step={limits.step} disabled={busy} value={value} onChange={(event) => update({ value: event.target.value })} onBlur={() => touch("value")} />
+                // 可枚举值走下拉不手输(释放模式 / 开关);选项集合与 k-client 校验白名单同源。
+                : <Select aria-label="新值（从下拉选择）" disabled={busy} value={value} onChange={(next) => update({ value: next })}
+                  options={(isMode ? [...K1_RELEASE_MODE_VALUES] : ["true", "false"]).map((option) => ({ value: option, label: isMode ? RELEASE_MODE_LABELS[option] : RELEASE_BOOL_LABELS[option] }))} />}
+            </DiffField>
           </DraftModal>
         );
       })()}
@@ -1563,10 +1563,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       {noteDraft && (() => {
         const busy = draftSubmitting === "note";
         return (
-          <DraftModal title={`人工复审备注 · ${noteDraft.cluster.id}`} explain={[{ k: "影响", v: "只写备注，不改状态，会显示在账户组上，记入操作记录。" }]} busy={busy} saveLabel="保存备注" reasonLabel="复审备注"
+          <DraftModal title="人工复审备注" icon={ShieldCheck} effect={IMMEDIATE_EFFECT} explain={[{ k: "影响", v: "只写备注，不改状态，会显示在账户组上，记入操作记录。" }]} busy={busy} saveLabel="保存备注" reasonLabel="复审备注"
             reason={noteDraft.reason} placeholder="写复审结论和依据，例如：合租办公网络，已电话核实不是同一人" {...draftAttempt} policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => setNoteDraft((current) => current ? { ...current, reason: next } : current)} onReadLatest={() => void readLatestNote()} onClose={() => setNoteDraft(null)} onSave={saveNoteDraft}>
-            <div>{IMMEDIATE_EFFECT}</div>
             {clusterFacts(noteDraft.cluster, { approval: false, changed: noteDraft.changed })}
           </DraftModal>
         );
@@ -1581,17 +1580,17 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const update = (patch: Partial<WhitelistDraft>) => setWhitelistDraft((current) => current ? { ...current, ...patch } : current);
         const busy = draftSubmitting === "whitelist";
         return (
-          <DraftModal title="添加 IP 允许名单" explain={[{ k: "影响", v: "只是不再按 IP 检测；设备和支付工具仍照常检测，已冻结的账户不会自动解冻。" }, { k: "生效时间", v: "保存后立即生效，到失效日期后恢复检测。" }]} busy={busy} busyLabel="提交中…" saveLabel="加入并立即生效"
+          <DraftModal title="添加 IP 允许名单" icon={ShieldCheck} effect={IMMEDIATE_EFFECT} explain={[{ k: "影响", v: "只是不再按 IP 检测；设备和支付工具仍照常检测，已冻结的账户不会自动解冻。" }, { k: "生效时间", v: "保存后立即生效，到失效日期后恢复检测。" }]} busy={busy} busyLabel="提交中…" saveLabel="加入并立即生效"
             blocked={cidrProblem ?? noteProblem ?? expiryProblem ?? (pendingBlocks.has(`cidr:${cidr}`) ? "这个网段有结果未确认的操作，先到页面上方处理" : undefined)}
             reason={whitelistDraft.reason} placeholder="写清调整原因和依据" {...draftAttempt} policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => update({ reason: next })} onClose={() => setWhitelistDraft(null)} onSave={saveWhitelistDraft}>
-            <Field label="IP / CIDR 网段" error={fieldError(cidrProblem, Boolean(whitelistDraft.cidr), "cidr")}>
+            <Field label="IP / CIDR 网段" required error={fieldError(cidrProblem, Boolean(whitelistDraft.cidr), "cidr")}>
               {(control) => <Input {...control} disabled={busy} value={whitelistDraft.cidr} onChange={(event) => update({ cidr: event.target.value })} onBlur={() => touch("cidr")} placeholder="198.51.100.0/24" />}
             </Field>
-            <Field label="备注" error={fieldError(noteProblem, Boolean(whitelistDraft.note), "note")}>
+            <Field label="备注" required error={fieldError(noteProblem, Boolean(whitelistDraft.note), "note")}>
               {(control) => <Input {...control} disabled={busy} maxLength={200} value={whitelistDraft.note} onChange={(event) => update({ note: event.target.value })} onBlur={() => touch("note")} placeholder="例如：已核验的办公出口网段" />}
             </Field>
-            <Field label="失效日期" error={fieldError(expiryProblem, Boolean(whitelistDraft.expireText), "expire")}>
+            <Field label="失效日期" required error={fieldError(expiryProblem, Boolean(whitelistDraft.expireText), "expire")}>
               {(control) => <Input {...control} disabled={busy} type="date" value={whitelistDraft.expireText} onChange={(event) => update({ expireText: event.target.value })} onBlur={() => touch("expire")} />}
             </Field>
           </DraftModal>
@@ -1621,35 +1620,26 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const busy = draftSubmitting === "weight";
         const help = K1_PARAM_HELP.linkWeight;
         return (
-          <DraftModal title={`调整关联权重 · ${riskParamName(weightDraft.param)}`} wide busy={busy} saveLabel="保存并立即生效"
+          <DraftModal title={`调整${riskParamName(weightDraft.param)}`} icon={SlidersHorizontal} effect={IMMEDIATE_EFFECT} wide busy={busy} saveLabel="保存并立即生效"
             explain={[{ k: "怎么算", v: "关联程度 = 设备指纹命中 × 设备权重 + 支付工具命中 × 支付权重 + IP 命中 × IP 权重。" }, { k: "怎么填", v: help.how }, { k: "生效时间", v: help.when }]}
             blocked={firstProblem ?? (!totalOk ? "三项合计必须等于 1.00" : !changed ? "保存值和当前值一样，没有改动" : undefined)}
             reason={weightDraft.reason} placeholder="例如：误判多来自同一网络，降低 IP 权重、提高设备指纹权重" {...draftAttempt} policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => updateDraft({ reason: next })} onClose={() => setWeightDraft(null)} onSave={saveWeightDraft}>
-            <div className="rd-split" data-even="">
+            {/* 三个值都要填，现在值跟在字段名后面，输入框里是正在填的内容（VS-103）。 */}
+            <div className="rd-form-grid" data-cols="3">
               {fields.map(([key, label, fieldHelp]) => (
-                <Field key={key} label={label} explain={fieldHelp} error={fieldError(fieldProblem(key), true, key)}>
+                <Field key={key} label={label} explain={fieldHelp} hint={`现在 ${current[key]}`} error={fieldError(fieldProblem(key), true, key)}>
                   {(control) => <Input {...control} type="number" min={0} max={1} step={0.05} disabled={busy} value={weightDraft[key]} onChange={(event) => updateDraft({ [key]: event.target.value } as Partial<WeightDraft>)}
-                    onInput={(event) => { const { badInput } = event.currentTarget.validity; setWeightDraft((draft) => draft && { ...draft, bad: { ...draft.bad, [key]: badInput } }); }} onBlur={() => touch(key)} placeholder="0.00 - 1.00" />}
+                    onInput={(event) => { const { badInput } = event.currentTarget.validity; setWeightDraft((draft) => draft && { ...draft, bad: { ...draft.bad, [key]: badInput } }); }} onBlur={() => { touch(key); touch("total"); }} placeholder="0.00 - 1.00" />}
                 </Field>
               ))}
             </div>
-            {!firstProblem && <Notice tone={totalOk ? "neutral" : "danger"}>合计 {total.toFixed(2)}{!totalOk && "，三项合计必须等于 1.00"}</Notice>}
+            {!firstProblem && <p className={!totalOk && (touched.submit || touched.total) ? "rd-form-error" : "rd-note"}>合计 {total.toFixed(2)}{!totalOk && "，三项合计必须等于 1.00"}</p>}
           </DraftModal>
         );
       })()}
 
-      {releasing && (
-        <Modal title="解除待确认" onClose={() => setReleasing(null)} footer={<>
-          <Button onClick={() => setReleasing(null)}>取消</Button>
-          <Button variant="primary" onClick={() => releasePending(releasing)}>确认解除</Button>
-        </>}>
-          <div className="rd-stack">
-            <p><b>{releasing.label}</b></p>
-            <p>确认这次操作没有生效后再解除。解除后可以重新操作，这一步不发请求，不写操作记录。 <Explain label="解除待确认的说明" content="重试被拒说明不了原操作的结果，先到操作记录确认。解除后原操作不再重试，系统仍按这个对象现在的状态校验。" /></p>
-          </div>
-        </Modal>
-      )}
+      {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)} explain="重试被拒说明不了原操作的结果，先到操作记录确认。解除后原操作不再重试，系统仍按这个对象现在的状态校验。" />}
     </>
   );
 }

@@ -7,6 +7,8 @@ import type { OperatorBriefKind, EditSpec, BusinessFormSpec, BusinessFormValue, 
 import type { JEmergencyActions, JEmergencyData } from "@/lib/admin/j-client";
 
 export type ActionConfirmReq = {
+  /** 框上写的短标题，只写动作和对象；action 照旧是记进操作记录的名字（VS-101）。 */
+  title?: ReactNode;
   briefKind: OperatorBriefKind;
   action: ReactNode;
   detail: ReactNode;

@@ -50,10 +50,11 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 下拉、排序 | `Select` | `select.tsx` |
 | 单条详情、长表单 | `Drawer`，底部用 `Decision` | `overlay.tsx` |
 | 详情开头 3～5 行 | `JudgmentPoints` | `judgment.tsx` |
-| 详情、确认框里成对的名称和值 | `Facts`、`Fact`；确认框的关键数字传 `lead`（每框最多一个，放第一行），带含义的值传 `tone` | `facts.tsx` |
+| 详情、确认框里成对的名称和值 | `Facts`、`Fact`；确认框的关键数字传 `lead`（每框最多一个，放第一行），带含义的值传 `tone`；状态变化写 `Change`（改后蓝）。放在 `Modal` 里自动带浅底 | `facts.tsx` |
 | 要人看到的提醒、错误、待确认条 | `Notice` | `notice.tsx` |
 | 短任务弹窗 | `Modal`；`icon` 是标题前的图标底，`sub` 放标题下的后果标签，危险确认传 `tone="danger"` | `overlay.tsx` |
 | 写操作确认 | 继续用 `OperationConfirmModal` | 见下 |
+| 解除待确认 | `ReleaseModal`；`label` 写原操作，统一的一句话在组件里，页面特有的说明传 `explain` | `overlay.tsx` |
 | 按钮 | `Button`、`IconButton`；和主按钮并排的危险入口用 `danger-outline`，实心 `danger` 只给最终确认 | `button.tsx` |
 | 状态 | `StatusTag`；列表筛成只有一种状态时，这个默认状态传 `neutral`（灰字加图标）；弹窗标题下「不能撤销」用 `IrreversibleTag` | `status-tag.tsx` |
 | 提示图标和气泡：这是什么、显示位置、生效时间、口径、后果 | `Explain`，悬停、点击、键盘都能开；`content` 自由内容（多段用 `<p>`），`rows` 分行写；`Panel`、`Fold`、`Conclusion`、`Stat`、`ConfigRow`、`Field`、`Check`、`CheckGroup`、`KeyValues`、`Decision`、`Drawer`、`StatusTag` 传 `explain` 就自带。正文里的词写成 children 就是虚线下划线，不加图标 | `explain.tsx` |
@@ -166,7 +167,9 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 | 要填的 | `Field`，必填传 `required` | 字段名 14px、500、主文字；输入内容亮，占位弱 |
 | 辅助 | 范围、字数传 `hint`、`count`；说明传 `explain` | 13px 弱文字；能进提示图标就进 |
 
-后果不写成灰字：生效方式是标题下的蓝色标签（`<StatusTag tone="progress" filled>立即生效</StatusTag>`），收不回来的操作再加 `<IrreversibleTag />`。红只给危险确认、失败和真危险的后果；填错了用橙黄。同一件事只写一处：范围不在标签、占位、说明里各写一遍，没改时不写「还没改动」，确认按钮禁用并写原因就够。
+后果不写成灰字：生效方式是标题下的蓝色标签（`<StatusTag tone="progress" filled>立即生效</StatusTag>`），收不回来的操作再加 `<IrreversibleTag />`；不改线上的写操作（保存草稿、业务继续关停、只改你看到的显示）用灰底标签。红只给危险确认、提交失败和真危险的后果；填错、结果未知、被别人改了用橙黄。同一件事只写一处：范围不在标签、占位、说明里各写一遍，没改时不写「还没改动」，确认按钮禁用并写原因就够。
+
+页面只传内容：`title`、`facts`、`Fact` 的 `lead`、`sub` 或 `effect`。`openActionConfirm`、`openConfirm` 和 `KConfirmModal` 都能传 `title`，`action` 照旧进操作记录，不要动。框里的状态变化写 `<Fact k="状态"><Change from="冻结" to="待审核" /></Fact>`。三个并排的字段放 `<div className="rd-form-grid" data-cols="3">`。
 
 ```tsx
 <Modal title="调整同一 IP 每天最多注册多少个账号" icon={SlidersHorizontal} sub={<StatusTag tone="progress" filled>立即生效</StatusTag>} …>
@@ -196,6 +199,8 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 - `confirmTone`：不能撤销或直接动钱的操作传 `danger`，确认按钮用危险色、标题前是红底警告图标（退款、拒绝、紧急关闭、强制扣款）。能解除的处置和放宽类判断不传。`KConfirmModal` 的 `ConfirmReq` 认同一个字段。
 - `reasonPolicyOptional`：理由规则读不到时按默认 8–200 继续。只给紧急关停（Q-06），放大资金流出的操作不传。
 - `coverageLead`：放大方向提示的开头，默认「这项操作会让平台多付钱」，页面可以换成这个操作的白话。读到覆盖率且不低于红线时，提示是安静的一行「覆盖率 753.8%，红线 100%」，这句开头和检查说明进提示图标；低于红线才红，写全文。页面自己把覆盖率写进 `coverageLead` 时也只留这一句，检查说明进提示图标。
+
+业务表单（`businessForm` 的 `multi-field`）的字段传 `explain` 时，字段名旁出现提示图标；校验不过的提示失焦或点过提交才出现，用橙黄。
 
 改一个值的确认框（`edit`）在 `RdPage` 里自动用 `DiffField`：现在值在左、新值输入在右，数字放大，不再有「新值 · 当前 X」的标签和「当前 X」的占位。再给三个可选项：`hint` 写怎么填（范围只写这里），`preview(value)` 写改了会怎样、随输入变化，这两项只在 `RdPage` 里显示（CP-87）；`emptyOption` 写清空选项的名字，比如「不设上限」，要人点它才算清空，框里没填或填坏了都不算。`disallowCurrent` 时没改动不能保存，框里写原因（OP-18）。
 

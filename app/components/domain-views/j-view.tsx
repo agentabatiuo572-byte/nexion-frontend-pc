@@ -107,6 +107,7 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
   const confirmModal = mc && (
     <OperationConfirmModal briefKind={mc.briefKind}
       action={mc.action}
+      title={mc.title}
       detail={mc.detail}
       amplifies={mc.amplifies}
       coverage={mc.coverage}

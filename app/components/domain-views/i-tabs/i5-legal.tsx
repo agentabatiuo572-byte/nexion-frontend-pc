@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FileCheck2, FilePen, FileText, History, RefreshCw, Scale } from "lucide-react";
-import { BlockState, Button, Cell, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterField, Fold, Input, Notice, Panel, Select, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterField, Fold, Input, IrreversibleTag, Notice, Panel, Select, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr, type StateTone } from "@/app/components/rd";
 import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { fetchLegalTermsAdmin, type LegalTermsSection, type LegalTermsVersion } from "@/lib/admin/legal-terms-client";
@@ -95,6 +95,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: IC
 
   const saveDraft = (form: LegalTermsVersion, after?: () => void) => openActionConfirm(withConflict(ctx, { briefKind: "content",
     action: <>保存法律条款草稿 · {form.version}</>,
+    title: "保存法律条款草稿",
     detail: <>只保存草稿，用户看到的条款不变。</>,
     amplifies: false,
     effect: <StatusTag tone="neutral" filled>保存草稿，线上不变</StatusTag>,
@@ -115,6 +116,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: IC
     const fewer = published && row.sections.length < published.sections.length;
     openActionConfirm(withConflict(ctx, { briefKind: "content",
       action: <>发布法律条款 · {row.version}</>,
+      title: "发布法律条款",
       detail: <>发布已保存的草稿，填完理由立即生效，不走审批。</>,
       amplifies: false,
       confirmTone: "danger",
@@ -122,7 +124,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: IC
       confirmLabel: "确认发布，立即生效",
       statedBrief: { impact: `这个版本立即替换 ${scopeText} 的公开条款，旧发布版转为历史版本。发布后不能再改。`, check: "核对版本、节数和生效时间，理由写清发布依据。" },
       facts: <>
-        <Facts><Fact k="范围">{scopeText}</Fact><Fact k="版本">{published ? `${published.version}（${published.sections.length} 节）` : "无已发布版本"} → {row.version}（{row.sections.length} 节）</Fact><Fact k="生效时间">{timeText(row.effectiveAt)}（{businessZone().label}）</Fact></Facts>
+        <Facts><Fact k="范围">{scopeText}</Fact><Fact k="版本"><Change from={published ? `${published.version}（${published.sections.length} 节）` : "无已发布版本"} to={`${row.version}（${row.sections.length} 节）`} /></Fact><Fact k="生效时间">{timeText(row.effectiveAt)}（{businessZone().label}）</Fact></Facts>
         {fewer && <Notice tone="warn" title={`节数变少：${published.sections.length} 节 → ${row.sections.length} 节`}>单节草稿不能替换完整条款。发布前核对节数，系统不会拦。</Notice>}
       </>,
       reasonPlaceholder: "例如：法务审定稿，工单号",
@@ -137,13 +139,14 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: IC
 
   const revoke = (row: LegalTermsVersion) => openActionConfirm(withConflict(ctx, { briefKind: "content",
     action: <>撤回法律条款 · {row.version}</>,
+    title: "撤回法律条款",
     detail: <>撤回当前发布版本，填完理由立即生效，不走审批。</>,
     amplifies: false,
     confirmTone: "danger",
-    effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
+    effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag /></>,
     confirmLabel: "确认撤回，立即生效",
     statedBrief: { impact: `${scopeText} 的公开条款立即下架，不能恢复这个版本。${locale === "en" && jurisdiction === "GLOBAL" ? "这是最后的回退范围，撤回后用户读不到英文条款，其他语言回退到这里的也读不到。" : "App 改读英文或 GLOBAL 的已发布版本，都没有时用户读不到条款。"}`, check: "确认要下架线上条款，理由写清依据。" },
-    facts: <Facts><Fact k="范围">{scopeText}</Fact><Fact k="版本">{row.version} · {row.title}</Fact><Fact k="状态">已发布 → 已撤回</Fact></Facts>,
+    facts: <Facts><Fact k="范围">{scopeText}</Fact><Fact k="版本">{row.version} · {row.title}</Fact><Fact k="状态"><Change from="已发布" to="已撤回" /></Fact></Facts>,
     reasonPlaceholder: "例如：条款有误，法务要求下架",
     run: async (reason) => {
       const result = await writes.send({ target, label: `撤回法律条款 · ${scopeText} ${row.version}`, op: { kind: "legal-transition", action: "revoke", row, reason } });
@@ -194,14 +197,14 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: IC
       <Panel title="草稿" icon={FilePen} tone="role-1" flush={drafts.length > 0} actions={canWrite ? <Button variant="primary" size="sm" disabledReason={writeBlocked} onClick={newDraft}>新建草稿</Button> : undefined}>
         {drafts.length ? (
           <Table label="法律条款草稿">
-            <thead><tr><Th>版本</Th><Th>标题</Th><Th>生效时间（{businessZone().label}）</Th><Th>操作</Th></tr></thead>
+            <thead><tr><Th>版本</Th><Th>标题</Th><Th>生效时间（{businessZone().label}）</Th><Th align="right">操作</Th></tr></thead>
             <tbody>
               {drafts.map((row) => (
                 <Tr key={row.id} onOpen={() => openRow(row)}>
                   <Td><Cell main={row.version} sub={`${row.sections.length} 节`} /></Td>
                   <Td><Cell main={row.title || "未填写"} /></Td>
                   <Td><Cell num main={timeText(row.effectiveAt)} /></Td>
-                  <Td><span className="rd-row-actions">
+                  <Td align="right"><span className="rd-row-actions">
                     {canWrite && <Button size="sm" disabledReason={writeBlocked} onClick={() => openRow(row)}>编辑</Button>}
                     {canPublish && <Button size="sm" disabledReason={writeBlocked} onClick={() => publish(row)}>发布</Button>}
                   </span></Td>
@@ -230,7 +233,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: IC
       </Fold>
     </>}
 
-    <Drawer open={!!shown} onClose={() => setViewing(null)} title={shown ? `法律条款 · ${shown.version}` : ""} sub={shown ? scopeText : undefined} icon={FileText} tone="role-3"
+    <Drawer open={!!shown} onClose={() => setViewing(null)} title="法律条款" sub={shown ? `${shown.version} · ${scopeText}` : undefined} icon={FileText} tone="role-3"
       footer={shown?.status === "PUBLISHED" && canPublish ? <Decision danger={<Button variant="danger-outline" disabledReason={writeBlocked} onClick={() => revoke(shown)}>撤回</Button>} />
         : shown?.status === "DRAFT" && canPublish ? <Decision primary={<Button variant="primary" disabledReason={writeBlocked} onClick={() => publish(shown)}>发布</Button>} /> : undefined}>
       {shown && <>
@@ -289,7 +292,7 @@ function LegalEditor({ initial, latest, published, canPublish, blockedReason, on
   const publishBlocked = blockedReason ?? (isNew || dirty ? "先保存草稿，发布只发已保存的内容" : undefined);
   const close = guard.askClose;
   return <>
-    <Drawer open wide onClose={close} title={`法律条款草稿 · ${form.version}`} sub={`${localeName(form.locale)} · ${form.jurisdiction}`} icon={FilePen} tone="role-1"
+    <Drawer open wide onClose={close} title="法律条款草稿" sub={`${form.version} · ${localeName(form.locale)} · ${form.jurisdiction}`} icon={FilePen} tone="role-1"
       footer={<Decision explain="保存草稿不改变用户看到的条款。发布立即生效，不走审批。" others={<>
         <Button onClick={close}>取消</Button>
         <Button variant={canPublish ? "secondary" : "primary"} disabledReason={saveBlocked} onClick={() => onSave(form)}>保存草稿</Button>

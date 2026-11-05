@@ -700,6 +700,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       {mc && (
         <OperationConfirmModal
           action={mc.action}
+          title={mc.title}
           detail={mc.detail}
           amplifies={mc.amplifies}
           edit={mc.edit}

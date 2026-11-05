@@ -13,8 +13,6 @@
 .m3-policy-modal .modal-h { padding: 18px 20px 6px; border-bottom: 0; }
 .m3-policy-modal .modal-h .ttl { flex: 1; display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 700; }
 .m3-policy-modal .modal-h > .spacer, .m3-policy-modal .modal-h > button[aria-label="关闭"] { display: none; }
-.m3-policy-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 9px; background: color-mix(in srgb, var(--admin-blue) 14%, transparent); color: var(--admin-blue); }
-.m3-policy-version { margin-left: auto; font-family: var(--font-jet-mono), ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 400; color: var(--v5-ink-3); }
 .m3-policy-modal .modal-b { display: flex; flex-direction: column; padding: 6px 20px 16px; }
 .m3-policy-field { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-top: 1px solid var(--v5-border); }
 .m3-policy-readonly + .m3-policy-field, .m3-policy-modal .modal-b > .m3-policy-field:first-child { border-top: 0; }
@@ -26,15 +24,7 @@
 .dkpage .m3-policy-modal .m3-policy-num:focus, .dkpage .m3-policy-modal .m3-policy-num:focus-visible { outline: none; border-color: color-mix(in srgb, var(--v5-brand) 55%, transparent); }
 .m3-policy-num:disabled { color: var(--v5-ink-3); }
 .m3-policy-readonly { margin: 0 0 4px; font-size: 12.5px; color: var(--v5-ink-3); }
-.m3-policy-invalid { margin: 0 0 8px; font-size: 12px; color: var(--v5-danger); }
-.m3-policy-note { margin: 6px 0 14px; padding: 10px 12px; border-radius: 9px; background: var(--v5-surface); font-size: 12.5px; line-height: 1.6; color: var(--v5-ink-2); }
 .m3-policy-preview { margin: 0 0 14px; padding: 11px 13px; }
-.m3-policy-reason { display: flex; flex-direction: column; gap: 8px; }
-.m3-policy-reason > span { font-size: 13px; font-weight: 600; color: var(--v5-ink); }
-.m3-policy-reason b { color: var(--v5-danger); }
-.m3-policy-reason textarea { box-sizing: border-box; height: 76px; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--v5-border-strong); background: color-mix(in srgb, var(--v5-bg) 50%, var(--v5-surface)); color: var(--v5-ink); font: inherit; font-size: 13.5px; resize: none; outline: none; }
-.dkpage .m3-policy-modal .m3-policy-reason textarea:focus, .dkpage .m3-policy-modal .m3-policy-reason textarea:focus-visible { outline: none; border-color: color-mix(in srgb, var(--v5-brand) 55%, transparent); }
-.m3-policy-state { margin-top: 12px; font-size: 13px; }
 .m3-policy-modal .modal-f { padding: 14px 20px 18px; border-top: 1px solid var(--v5-border); background: transparent; }
 .m3-policy-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; }
 .m3-policy-foot > span { font-size: 12px; color: var(--v5-ink-3); }

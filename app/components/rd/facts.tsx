@@ -12,8 +12,10 @@
  * - tone 给值上色，规则和页面上的数字一样，先问状态再问角色（VS-11）：风险等级、不能撤销这类传状态色；
  *   金额传 role-1。角色色只在深色主题上字，浅色主题是正文色（VS-14）。不传就是正文色。
  * - k 过 AutoGloss，命中词典的术语带解释。
+ * - 一行里的前后变化写成 <Change from="在线" to="已关停" />：现在值弱，改后的值进行中蓝（VS-103），不要写成「在线 → 已关停」一串。
  */
 import type { ReactNode } from "react";
+import { ArrowRight } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { RoleTone, StateTone } from "./tone";
 
@@ -27,5 +29,17 @@ export function Fact({ k, children, tone, lead, unit }: { k: string; children: R
       <dt><AutoGloss>{k}</AutoGloss></dt>
       <dd>{children}{unit && <span className="rd-fact-unit">{unit}</span>}</dd>
     </div>
+  );
+}
+
+/** 事实一行里的前后变化。前后靠位置和箭头分，不只靠颜色；读屏读「改为」。 */
+export function Change({ from, to }: { from: ReactNode; to: ReactNode }) {
+  return (
+    <span className="rd-fact-change">
+      <span>{from}</span>
+      <ArrowRight size={14} aria-hidden />
+      <span className="rd-sr-only">改为</span>
+      <span data-after="">{to}</span>
+    </span>
   );
 }

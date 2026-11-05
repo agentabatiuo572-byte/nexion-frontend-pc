@@ -10,11 +10,12 @@ import { useSearchParams } from "next/navigation";
 import { AlertTriangle, ClipboardList, Coins, Copy, FileText, Flag, Gauge, History, Inbox, Landmark, Link2, Lock, Receipt, RefreshCw, Route, Shield, ShieldAlert, User, Wallet, type LucideIcon } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import {
-  BatchBar, Button, Cell, Checkbox, ColumnPicker, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input,
-  JudgmentPoints, Modal, MoreMenu, Notice, PageHeader, Pager, Panel, Segments, Select, Stat, StatBand, StatusTag, Table,
+  BatchBar, Button, Cell, Checkbox, ColumnPicker, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input, IrreversibleTag,
+  JudgmentPoints, Modal, MoreMenu, Notice, PageHeader, Pager, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table,
   TableLoading, TableMessage, Td, Th, Tr, useTableColumns, type JudgmentRow, type SegmentItem, type StateTone, type TableColumn,
 } from "@/app/components/rd";
 import { businessClock, businessOffsetMinutes, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
+import { fmtPct } from "@/lib/format";
 import { fetchWithdrawalGateOpen } from "@/lib/admin/ops-dashboard-client";
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useReach } from "@/lib/nav/use-reach";
@@ -488,24 +489,27 @@ const REVIEW_BRIEF: Record<D2ReviewAction, { impact: string; check: string }> = 
   DELAY: { impact: "这笔进入冷却，到复查时间自动回到待审核。", check: "复查时间跟着等待天数走，手动改过要核对，理由写清依据或工单号。" },
   FREEZE: { impact: "这笔暂停处理，解冻前不会打款。", check: "核对冻结期限、责任人和复查时间，理由写清依据或工单号。" },
   UNFREEZE: { impact: "这笔回到待审核重新决定，不会直接打款。", check: "确认冻结的原因已经核实，理由写清依据或工单号。" },
-  REJECT: { impact: "这笔被拒绝，钱当场退回用户余额，不能撤销。", check: "核对用户和拒绝原因，理由写清依据或工单号。" },
-  REFUND: { impact: "钱退回用户余额，这笔结束，不能撤销。", check: "先到打款方和账单确认钱没有打出去，理由写清依据或工单号。" },
+  REJECT: { impact: "这笔被拒绝，钱当场退回用户余额。", check: "核对用户和拒绝原因，理由写清依据或工单号。" },
+  REFUND: { impact: "钱退回用户余额，这笔结束。", check: "先到打款方和账单确认钱没有打出去，理由写清依据或工单号。" },
 };
 
-/** 确认框常显的「能否撤销」（OP-47）。 */
-const REVIEW_UNDO: Record<D2ReviewAction, string> = {
+/** 确认框常显的「能否撤销」（OP-47）。拒绝和退款收不回来，写成标题下的「不能撤销」标签，不写这一行（VS-106）。 */
+const REVIEW_UNDO: Partial<Record<D2ReviewAction, string>> = {
   APPROVE: "打款前可以冻结，打款后不能撤销",
   DELAY: "到复查时间前不能改，到时间自动回到待审核",
   FREEZE: "财务主管或风控主管可以解冻，解冻后回到待审核",
   UNFREEZE: "回到待审核后可以重新决定",
-  REJECT: "不能撤销",
-  REFUND: "不能撤销",
 };
 
-/** 「能否撤销」这一行的颜色（VS-106）：收不回来用红，打款后才收不回来用橙黄，能改回来的不上色。 */
-const REVIEW_UNDO_TONE: Partial<Record<D2ReviewAction, StateTone>> = { APPROVE: "warn", REJECT: "danger", REFUND: "danger" };
+/** 「能否撤销」这一行的颜色（VS-106）：打款后才收不回来用橙黄，能改回来的不上色。 */
+const REVIEW_UNDO_TONE: Partial<Record<D2ReviewAction, StateTone>> = { APPROVE: "warn" };
 
-/** 复查时间怎么定，收进「能否撤销」旁的提示图标（DP-06）。 */
+/** 生效方式写在标题下面，收不回来的再加「不能撤销」（VS-106）。 */
+function reviewEffect(action: D2ReviewAction) {
+  return <><StatusTag tone="progress" filled>立即生效</StatusTag>{(action === "REJECT" || action === "REFUND") && <IrreversibleTag />}</>;
+}
+
+/** 复查时间怎么定，收进字段名旁的提示图标（DP-06）。 */
 const REVIEW_TIME_EXPLAIN: Partial<Record<D2ReviewAction, string>> = {
   DELAY: "复查时间跟着等待天数走。手动改过就保留，和等待天数最多差一天。",
   FREEZE: "复查时间跟着冻结期限走。手动改过就保留，和期限最多差一天。长期冻结要在未来 1–365 天内复查，默认 7 天后。",
@@ -562,7 +566,7 @@ function actionBusinessForm(action: D2ReviewAction, addressVerificationRequired 
           ? [{ key: "holdDays", label: "等待天数", inputKind: "number" as const, required: true, min: 1, max: 45, current: "7" }]
           : [{ key: "period", label: "冻结期限", inputKind: "select" as const, required: true, options: ["7d", "14d", "30d", "45d", "LONG_TERM"], optionLabels: { "7d": "7 天", "14d": "14 天", "30d": "30 天", "45d": "45 天", LONG_TERM: "长期，需复查" } }]),
         { key: "owner", label: "责任人", required: true, current: OPERATOR() },
-        { key: "reviewAt", label: `复查时间（${businessZone().label}）`, inputKind: "datetime-local", required: true, current: reviewAtAfter(7) },
+        { key: "reviewAt", label: `复查时间（${businessZone().label}）`, inputKind: "datetime-local", required: true, current: reviewAtAfter(7), explain: REVIEW_TIME_EXPLAIN[action] },
       ],
     };
   }
@@ -804,7 +808,6 @@ function riskFact(row: D2Withdrawal) {
 /** 确认框常显的对象、金额、风险和能否撤销，执行摘要收起后不能只写在摘要里（OP-48）。放行再加收款信息和覆盖率（F01、OP-42）。 */
 function reviewFacts(row: D2Withdrawal, action: D2ReviewAction, bank: D2BankPayout | null, coverage: ReactNode) {
   const bankRow = row.chain === "BANK-VND";
-  const timeExplain = REVIEW_TIME_EXPLAIN[action];
   return (
     <Facts>
       {/* 金额是这个框的关键数字，放第一行（VS-102）。 */}
@@ -816,7 +819,7 @@ function reviewFacts(row: D2Withdrawal, action: D2ReviewAction, bank: D2BankPayo
       {action === "APPROVE" && bankRow && <Fact k="收款账号"><span data-mono>{bank ? `${bank.bankName} ${bank.maskedAccount}` : "读取中，请在详情里核对"}</span></Fact>}
       {action === "APPROVE" && !bankRow && <Fact k="收款地址"><span data-mono>{row.targetAddress}</span></Fact>}
       {action === "APPROVE" && coverage}
-      <Fact k="能否撤销" tone={REVIEW_UNDO_TONE[action]}>{REVIEW_UNDO[action]}{timeExplain && <Explain label="复查时间怎么定" content={timeExplain} />}</Fact>
+      {REVIEW_UNDO[action] && <Fact k="能否撤销" tone={REVIEW_UNDO_TONE[action]}>{REVIEW_UNDO[action]}</Fact>}
     </Facts>
   );
 }
@@ -1041,7 +1044,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
    *    结果未知则必须保号 —— 丢了重试就是铸新号 = 重复出金。
    *    重试的是保留下来的原命令时，确定失败也证明不了原命令的结果，继续保留（CP-33）。只有成功才解除。
    */
-  const sendCommand = async <T,>(scope: string, extra: D2PendingExtra, send: (key: string) => Promise<T>, done: (result: T) => Promise<unknown>, failureText: string) => {
+  const sendCommand = async <T,>(scope: string, extra: D2PendingExtra, send: (key: string) => Promise<T>, done: (result: T) => Promise<unknown>) => {
     const retained = pendingKeys.get(scope);
     const key = retained ?? operationKey(scope);
     pendingKeys.remember(scope, key, extra);
@@ -1062,9 +1065,12 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         await refresh();
         const open = detailRef.current;
         if (open && extra.nos.includes(open.withdrawalNo)) await openDetail(open);
-        toast(unknown ? "结果未确认，不要重复操作。到页面上方读回核对或按原操作重试。" : moved ? "提现已被他人或系统处理，已刷新列表，请核对最新状态。" : cause instanceof Error ? displayAdminError(cause) : failureText);
         // 状态被别人改了：单笔审核的框留着，刷新成最新状态（D2-C89）；其余操作关框，列表已是最新（BUG-291）。重试的原命令继续走待确认。
-        if (unknown || (moved && !retained && extra.kind !== "review")) return;
+        // 框留着时原因写在框里，不再弹同一句盖住标题；框关了才提示。
+        if (unknown || (moved && !retained && extra.kind !== "review")) {
+          toast(unknown ? "结果未确认，不要重复操作。到页面上方读回核对或按原操作重试。" : "提现已被他人或系统处理，已刷新列表，请核对最新状态。");
+          return;
+        }
         throw cause;
       }
       pendingKeys.forget(scope);
@@ -1085,7 +1091,6 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       // 从列表发起的处理完留在列表（DP-50），只有抽屉开着这一笔时才刷新抽屉。
       await Promise.all([detailRef.current?.withdrawalNo === withdrawalNo ? openDetail(updated) : null, refresh()]);
     },
-    "审核失败",
   );
 
   const confirmReview = async (row: D2Withdrawal, action: D2ReviewAction) => {
@@ -1117,7 +1122,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   /** 覆盖率和开关排在勾选项前面（OP-42）。低于红线、已关停时入口已禁用，到这里的都是能放行的。 */
   const coverageFacts = <>
-    {d5 && <Fact k="覆盖率">{d5.coverageRatio}%，红线 {d5.redlinePct}%<Explain label="覆盖率说明" content="放行后这笔钱会打给用户。提交时系统会再查一次覆盖率，低于红线不会放行。" /></Fact>}
+    {d5 && <Fact k="覆盖率">{fmtPct(d5.coverageRatio)}，红线 {d5.redlinePct}%<Explain label="覆盖率说明" content="放行后这笔钱会打给用户。提交时系统会再查一次覆盖率，低于红线不会放行。" /></Fact>}
     {withdrawGate === "unknown" && <Fact k="提现开关">读不到，提交时系统会再查，已关停时不会放行</Fact>}
   </>;
 
@@ -1134,7 +1139,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       reasonMax: 200,
       completionCopy: brief.impact,
       statedBrief: brief,
-      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
+      effect: reviewEffect(action),
       confirmLabel: `确认${label}`,
       confirmTone: action === "REJECT" || action === "REFUND" ? "danger" : undefined,
       run: async (reason, _newValue, businessValue) => {
@@ -1184,7 +1189,6 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       toast("已核对，系统会继续跟进这笔提现，没有重新打款");
       await Promise.all([refresh(), reopenDetail()]);
     },
-    "核对失败，请检查 CID 后重试",
   );
 
   const confirmCregisRecovery = (row: D2Withdrawal, cregis: D2CregisPayout) => {
@@ -1192,7 +1196,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         || !hasAuthority("finance_d2_read") || !hasAuthority("finance_d2_withdrawal_approve")) return;
     openActionConfirm({ briefKind: "record",
       action: "核对 Cregis 打款单",
-      facts: <Facts><Fact k="提现单"><span data-mono>{row.withdrawalNo}</span></Fact><Fact k="金额">{amountText(row.amount)} {row.asset}</Fact></Facts>,
+      facts: <Facts><Fact k="金额" lead tone="role-1" unit={row.asset}>{amountText(row.amount)}</Fact><Fact k="提现单"><span data-mono>{row.withdrawalNo}</span></Fact></Facts>,
       detail: "到 Cregis 查到这笔提现的打款单号（CID）填在下面。系统会核对收款地址和金额，然后继续跟进这笔提现，不会重新打款。",
       businessForm: { kind: "multi-field", title: "", fields: [
         { key: "providerCid", label: "Cregis 打款单号（CID）", inputKind: "text", required: true,
@@ -1215,13 +1219,12 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       toast(state === "MANUAL_REVIEW" ? "结果还不明确，继续人工核对；没有重复打款" : "已按 HDPay 的结果处理完成");
       await Promise.all([refresh(), reopenDetail()]);
     },
-    "查询失败，没有重新打款",
   );
 
   const confirmBankRequery = (row: D2Withdrawal, bank: D2BankPayout) => {
     openActionConfirm({ briefKind: "funds",
       action: "查询银行打款结果",
-      facts: <Facts><Fact k="提现单"><span data-mono>{row.withdrawalNo}</span></Fact><Fact k="金额">{amountText(row.amount)} {row.asset}</Fact></Facts>,
+      facts: <Facts><Fact k="金额" lead tone="role-1" unit={row.asset}>{amountText(row.amount)}</Fact><Fact k="提现单"><span data-mono>{row.withdrawalNo}</span></Fact></Facts>,
       detail: "向 HDPay 查询这笔打款的结果，不会重新打款。结果明确就自动完成或退回；有疑问的继续人工核对。原因里不要写完整银行卡号。",
       reasonMin: 10, reasonMax: 300, completionCopy: "向 HDPay 查询原单，不会重新打款。",
       statedBrief: { impact: "向 HDPay 查询原单，不会重新打款。", check: "理由写清依据或工单号，不要写完整银行卡号。" },
@@ -1239,7 +1242,6 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       toast(`${withdrawalNo} 已模拟冷却到期 · 结果：${statusLabel(updated.status)}`);
       await Promise.all([openDetail(updated), refresh()]);
     },
-    "模拟冷却到期失败",
   );
 
   const confirmDevelopmentSimulation = (row: D2Withdrawal) => {
@@ -1247,6 +1249,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       action: "模拟冷却到期",
       facts: <Facts><Fact k="提现单"><span data-mono>{row.withdrawalNo}</span></Fact></Facts>,
       detail: "仅测试环境可用。把这笔测试提现的冷却时间提前到现在，然后按正常流程重新检查风险规则、风险分、覆盖率和提现开关。",
+      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       amplifies: true,
       coverage: d5 ? { coverageRatio: d5.coverageRatio, redlinePct: d5.redlinePct } : undefined,
       reasonMin: 8,
@@ -1318,7 +1321,6 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       toast(summary);
       setBatchResult({ action, result });
     },
-    "批量审核失败",
   );
 
   const confirmBatch = () => {
@@ -1341,11 +1343,11 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       businessForm: actionBusinessForm(action),
       facts: <>
         <Facts>
+          <Fact k="合计金额" lead tone="role-1" unit="USDT">{amountText(targets.reduce((sum, row) => sum + row.amount, 0))}</Fact>
           <Fact k="笔数">{ids.length} 笔{excluded > 0 ? `，另有 ${excluded} 笔不适用，不会提交` : ""}</Fact>
-          <Fact k="合计金额">{money(targets.reduce((sum, row) => sum + row.amount, 0))}</Fact>
           {manualText && <Fact k="转人工">{manualText}</Fact>}
           {approve && coverageFacts}
-          <Fact k="能否撤销">{REVIEW_UNDO[action]}{REVIEW_TIME_EXPLAIN[action] && <Explain label="复查时间怎么定" content={REVIEW_TIME_EXPLAIN[action]} />}</Fact>
+          {REVIEW_UNDO[action] && <Fact k="能否撤销" tone={REVIEW_UNDO_TONE[action]}>{REVIEW_UNDO[action]}</Fact>}
           <Fact k="处理方式">逐笔处理，可能部分成功</Fact>
         </Facts>
         <ul className="rd-recipients" tabIndex={0} aria-label="这次处理的提现单">
@@ -1356,7 +1358,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       reasonMax: 200,
       completionCopy: batchImpact,
       statedBrief: { impact: batchImpact, check: REVIEW_BRIEF[action].check },
-      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
+      effect: reviewEffect(action),
       confirmLabel: `确认批量${actionLabel(action)}`,
       confirmTone: action === "REJECT" ? "danger" : undefined,
       run: (reason, _newValue, businessValue) => runBatch(action, ids, reason, formForBackend(businessValue)),
@@ -1411,7 +1413,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   /** 这两种状态放行一定不生效，入口禁用，不开框（DP-42）。提现开关读不到时照旧开框，后端再查。 */
   const approveGateReason = withdrawGate === "closed"
     ? "提现已关停，现在放行不会生效。到「紧急停用开关」恢复提现后再放行。"
-    : coverageBelow ? `兑付覆盖率 ${d5?.coverageRatio}%，低于红线 ${d5?.redlinePct}%，现在不能放行。到「资金储备与应付款」补足储备后再放行。` : undefined;
+    : coverageBelow && d5 ? `兑付覆盖率 ${fmtPct(d5.coverageRatio)}，低于红线 ${d5.redlinePct}%，现在不能放行。到「资金储备与应付款」补足储备后再放行。` : undefined;
 
   const allowedActions = (row: D2Withdrawal, cregis?: D2CregisPayout | null) =>
     actionCandidates(row, cregis).filter((action) => hasAuthority(ACTION_AUTHORITY[action]));
@@ -1503,7 +1505,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     { label: "收款", value: shown.chain === "BANK-VND" ? "越南银行卡 · HDPay" : chainText(shown), reason: shown.chain === "BANK-VND" ? bankDetail?.maskedAccount ?? "账户信息见下方" : <span data-mono>{shown.targetAddress}</span> },
     { label: "风险", icon: Shield, tone: "risk", state: riskTone, value: `${routingPriorityLabel(shown)}，${k4RiskText(shown)}`, reason: `风险规则：${routeLabel(shown.k3RiskRoute)} · ${hitRulesText(shown)}` },
     detailActions.includes("APPROVE")
-      ? { label: "覆盖率", state: !canReadD5 || !d5 ? "warn" : coverageBelow ? "danger" : undefined, value: !canReadD5 ? "无权限" : d5 ? `${d5.coverageRatio}%，红线 ${d5.redlinePct}%` : "读取失败" }
+      ? { label: "覆盖率", state: !canReadD5 || !d5 ? "warn" : coverageBelow ? "danger" : undefined, value: !canReadD5 ? "无权限" : d5 ? `${fmtPct(d5.coverageRatio)}，红线 ${d5.redlinePct}%` : "读取失败" }
       : { label: "说明", value: detailProvider ? "按 Cregis 的打款结果结算，不会重新打款。" : shown.chain === "BANK-VND" && ["SENT", "TX_ORPHANED"].includes(shown.status.toUpperCase()) ? "已派发后以 HDPay 查单结果结算；结果不明不重发、不手工退款。" : lifecycleSummary(shown), reason: holdsForReview(shown) ? `复查时间：${timeText(shown.holdUntil)}` : undefined },
     ...(gateClosedHere ? [{ label: "提现开关", state: "warn" as const, value: "已关停" }] : []),
   ] : [];
@@ -1773,15 +1775,10 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       </>}
     </Drawer>
 
-    {releasing && <Modal title="解除待确认" onClose={() => setReleasing(null)} footer={<>
-      <Button onClick={() => setReleasing(null)}>取消</Button>
-      <Button variant="primary" onClick={() => releasePending(releasing)}>确认解除</Button>
-    </>}>
-      <p><b>{releasing.label}</b></p>
-      <p>确认这次操作没有生效后再解除。解除后可以重新操作，这一步不发请求，不写操作记录。<Explain label="解除待确认的说明" content="重试被拒说明不了原操作的结果，先到操作记录或打款方确认。解除后原操作不再重试，系统仍按这笔现在的状态校验。" /></p>
-    </Modal>}
+    {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
+      explain="重试被拒说明不了原操作的结果，先到操作记录或打款方确认。解除后原操作不再重试，系统仍按这笔现在的状态校验。" />}
 
-    {batchResult && <Modal title={`批量结果 · ${actionLabel(batchResult.action)}`} onClose={() => setBatchResult(null)} footer={<Button variant="primary" onClick={() => setBatchResult(null)}>知道了</Button>}>
+    {batchResult && <Modal title={`批量${actionLabel(batchResult.action)}结果`} icon={ClipboardList} onClose={() => setBatchResult(null)} footer={<Button variant="primary" onClick={() => setBatchResult(null)}>知道了</Button>}>
       <Facts>
         <Fact k="批次">{batchResult.result.batchId}</Fact>
         <Fact k={`成功 ${batchResult.result.accepted.length} 笔`}>{batchResult.result.accepted.join("、") || "—"}</Fact>

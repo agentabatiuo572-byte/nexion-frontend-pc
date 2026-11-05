@@ -141,6 +141,7 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
       {mc && (
         <OperationConfirmModal briefKind={mc.briefKind}
           action={mc.action}
+          title={mc.title}
           detail={mc.detail}
           amplifies={mc.amplifies}
           reasonMin={mc.reasonMin}

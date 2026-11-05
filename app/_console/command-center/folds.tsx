@@ -365,21 +365,17 @@ export function FunnelFold({ blocks, refreshKey, reach, open, onOpenChange }: Fo
 function KpiDetail({ kpi, reach, onClose }: { kpi: B0Kpi; reach: Reach; onClose: () => void }) {
   const pass = kpi.smallSample ? null : kpi.pass;
   return (
-    <Modal title={<>关键指标 #{kpi.n} · {operatorCopyText(kpi.label)}</>} onClose={onClose} footer={<Button onClick={onClose}>关闭</Button>}>
+    <Modal title={operatorCopyText(kpi.label)} icon={Target} onClose={onClose} footer={<Button onClick={onClose}>关闭</Button>}
+      sub={<>{pass === null ? <StatusTag tone="done">{kpi.smallSample ? "样本过小" : "暂无法计算"}</StatusTag>
+        : pass ? <StatusTag tone="ok">达标</StatusTag> : <StatusTag tone="warn">未达标</StatusTag>}<span>关键指标 #{kpi.n}</span></>}>
       <div className="cc-fold-stack">
-        <p className="cc-line">
-          {pass === null ? <StatusTag tone="done">{kpi.smallSample ? "样本过小" : "暂无法计算"}</StatusTag>
-            : pass ? <StatusTag tone="ok">达标</StatusTag> : <StatusTag tone="warn">未达标</StatusTag>}
-        </p>
-        <div className="cc-amounts" data-two="">
-          <div className="cc-amount"><span className="cc-amount-label">当前值</span><span className="cc-amount-value">{kpi.smallSample ? "—" : kpi.value}</span></div>
-          <div className="cc-amount"><span className="cc-amount-label">目标</span><span className="cc-amount-value">{targetText(kpi.target)}</span></div>
-        </div>
-        {kpi.series.length >= 2 ? <AreaChart data={kpi.series} color="var(--rd-chart-2)" height={70} /> : <p className="cc-line" data-muted="">趋势数据不足，暂时不画</p>}
         <Facts>
+          <Fact k="当前值" lead>{kpi.smallSample ? "—" : kpi.value}</Fact>
+          <Fact k="目标">{targetText(kpi.target)}</Fact>
           <Fact k="怎么算">{operatorCopyText(kpi.hint) || "—"}</Fact>
           <Fact k="数据来源">用户行为事件</Fact>
         </Facts>
+        {kpi.series.length >= 2 ? <AreaChart data={kpi.series} color="var(--rd-chart-2)" height={70} /> : <p className="cc-line" data-muted="">趋势数据不足，暂时不画</p>}
         <p className="cc-line"><FoldLink reach={reach} href="/analytics/kpi">查看关键指标</FoldLink></p>
       </div>
     </Modal>

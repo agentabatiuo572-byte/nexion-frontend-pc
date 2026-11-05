@@ -40,12 +40,15 @@
  * - 要填的用 Field，字段名比只读标签强；范围、字数、说明最弱，能进提示图标就进。
  *
  * <Modal title="调整同一 IP 注册上限" icon={SlidersHorizontal} sub={<StatusTag tone="progress" filled>立即生效</StatusTag>} …>
+ *
+ * 框里直接放的 Facts 自动带关键信息区的底。解除待确认全站一个样子，用 ReleaseModal，页面只传原操作的名字和核对说明。
  */
 import { isValidElement, useEffect, useRef, type ComponentProps, type KeyboardEvent, type ReactNode, type CSSProperties } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { ChevronDown, ChevronUp, X, type LucideIcon } from "lucide-react";
-import { IconButton } from "./button";
+import { ChevronDown, ChevronUp, ShieldCheck, X, type LucideIcon } from "lucide-react";
+import { Button, IconButton } from "./button";
 import { Explain } from "./explain";
+import { Fact, Facts } from "./facts";
 import { IconTile } from "./icon-tile";
 import { useRdSurface } from "./surface";
 import type { RoleTone, StateTone } from "./tone";
@@ -254,5 +257,23 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+/**
+ * 解除待确认（OP-96）：重试被后端拒绝后，人核实过才放开本页的锁。不发请求，不写操作记录，没有生效方式和关键数字。
+ * 那句话全站同一句，不要改。explain 写这一页先到哪里核对。
+ */
+export function ReleaseModal({ label, explain, onCancel, onConfirm }: { label: ReactNode; explain?: ReactNode; onCancel: () => void; onConfirm: () => void }) {
+  return (
+    <Modal title="解除待确认" icon={ShieldCheck} onClose={onCancel} footer={<>
+      <Button onClick={onCancel}>取消</Button>
+      <Button variant="primary" onClick={onConfirm}>确认解除</Button>
+    </>}>
+      <div className="rd-stack">
+        <Facts><Fact k="原操作">{label}</Fact></Facts>
+        <p>确认这次操作没有生效后再解除。解除后可以重新操作，这一步不发请求，不写操作记录。{explain && <Explain label="解除待确认的说明" content={explain} />}</p>
+      </div>
+    </Modal>
   );
 }

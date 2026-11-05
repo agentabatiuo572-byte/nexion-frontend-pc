@@ -55,6 +55,7 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: 
     const live = form.status !== "DRAFT";
     openActionConfirm(withConflict(ctx, { briefKind: "content",
       action: <>{form.status === "PUBLISHED" ? "发布隐私政策" : form.status === "UNPUBLISHED" ? "撤下隐私政策公开版本" : "保存隐私政策草稿"} · {form.version}</>,
+      title: form.status === "PUBLISHED" ? "发布隐私政策" : form.status === "UNPUBLISHED" ? "撤下隐私政策公开版本" : "保存隐私政策草稿",
       detail: <>{live ? "填完理由立即生效，不走审批。" : "只保存草稿，公开版本不变。"}</>,
       amplifies: false,
       confirmTone: live ? "danger" : "primary",
@@ -119,7 +120,7 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: 
       <Facts><Fact k="状态">{STATUS_NAME[doc.status] ?? "状态待核实"}</Fact><Fact k="公开版本">{doc.hasPublishedVersion ? "已有公开版" : "暂无公开版"}</Fact></Facts>
     </Fold>
 
-    <Drawer open={!!viewing} onClose={() => setViewing(null)} title={viewing ? `隐私政策 · ${localeName(viewing)}` : ""} sub={doc.version} icon={FileText} tone="role-3">
+    <Drawer open={!!viewing} onClose={() => setViewing(null)} title="隐私政策" sub={viewing ? `${localeName(viewing)} · ${doc.version}` : undefined} icon={FileText} tone="role-3">
       {viewing && <div className="rd-doc">
         <p>{contentOf(doc, viewing).hero}</p>
         {[...contentOf(doc, viewing).sections].sort((a, b) => a.order - b.order).map((section) => <section key={section.id}><h3>{section.title}</h3><p>{section.body}</p></section>)}
