@@ -1,6 +1,7 @@
 "use client";
 
 /** ConfirmDialog — 模态确认框,在 root layout 挂载一次。用 confirm({...}) 调用并 await 结果。 */
+import { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useUI } from "@/lib/store/ui";
 
@@ -8,6 +9,37 @@ export function ConfirmDialog() {
   const queue = useUI((s) => s.confirmQueue);
   const resolve = useUI((s) => s.resolveConfirm);
   const top = queue[0];
+  const dialog = useRef<HTMLDivElement>(null);
+  const confirmButton = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!top) return;
+    const opener = document.activeElement as HTMLElement | null;
+    confirmButton.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !top.hideCancel) {
+        event.preventDefault();
+        event.stopPropagation();
+        resolve(top.id, false);
+      }
+      if (event.key !== "Tab") return;
+      const controls = dialog.current?.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+      );
+      const focusable = Array.from(controls ?? []).filter((element) => element.tabIndex >= 0 && element.getClientRects().length > 0);
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey ? document.activeElement === first : document.activeElement === last) {
+        event.preventDefault();
+        (event.shiftKey ? last : first)?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      if (opener?.isConnected) opener.focus();
+    };
+  }, [top, resolve]);
 
   return (
     <AnimatePresence>
@@ -21,12 +53,10 @@ export function ConfirmDialog() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
           onClick={() => !top.hideCancel && resolve(top.id, false)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape" && !top.hideCancel) resolve(top.id, false);
-          }}
         >
           <motion.div
             className="w-full max-w-[400px] rounded-[14px] p-5"
+            ref={dialog}
             role="dialog"
             aria-modal="true"
             aria-labelledby={`${top.id}-title`}
@@ -65,7 +95,7 @@ export function ConfirmDialog() {
               )}
               <button
                 type="button"
-                autoFocus
+                ref={confirmButton}
                 onClick={() => resolve(top.id, true)}
                 className="rounded-[9px] px-4 py-2 text-[13px] font-medium transition-opacity hover:opacity-90 active:opacity-80"
                 style={{
