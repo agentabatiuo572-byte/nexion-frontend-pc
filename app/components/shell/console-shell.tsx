@@ -16,6 +16,7 @@ import { createAdminActivityTracker } from "@/lib/admin/admin-activity";
 import { fetchA3RuntimeFlags } from "@/lib/admin/a3-client";
 import { installAdminAuthFetchLifecycle } from "@/lib/admin/auth-lifecycle";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
+import { PERMISSION_DENIED_EVENT, PERMISSION_DENIED_TEXT } from "@/lib/admin/operation-confirm-error";
 import { requestAdminLogout } from "@/lib/admin/logout-request";
 import { b0Blocks, b0HasAnyBlock } from "@/lib/admin/b0-access";
 import { ALL_L2, canAccessResolvedPath, defaultConsolePath, isRedesignedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
@@ -99,6 +100,22 @@ function AdminNoAccessPage({ pathname, landingPath }: { pathname: string; landin
       </div>
     </RdPage>
   );
+}
+
+/** 确认框收到 403 后框已关，权限读回一变外壳里面还会重挂，所以提示单独放（OP-81、OP-132）。 */
+function PermissionDeniedToast() {
+  const [shownAt, setShownAt] = useState(0);
+  useEffect(() => {
+    const onDenied = () => setShownAt(Date.now());
+    window.addEventListener(PERMISSION_DENIED_EVENT, onDenied);
+    return () => window.removeEventListener(PERMISSION_DENIED_EVENT, onDenied);
+  }, []);
+  useEffect(() => {
+    if (!shownAt) return;
+    const timer = window.setTimeout(() => setShownAt(0), 4000);
+    return () => window.clearTimeout(timer);
+  }, [shownAt]);
+  return shownAt ? <div className="rd-toast" role="status">{PERMISSION_DENIED_TEXT}</div> : null;
 }
 
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
@@ -265,10 +282,12 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
     };
     const onFocus = () => void refreshSession();
     window.addEventListener("focus", onFocus);
+    window.addEventListener(PERMISSION_DENIED_EVENT, onFocus);
     const timer = window.setInterval(() => void refreshSession(), SESSION_REFRESH_MS);
     return () => {
       disposed = true;
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener(PERMISSION_DENIED_EVENT, onFocus);
       window.clearInterval(timer);
     };
   }, [bootstrapState, isAuthenticated, mounted, signIn, signOut]);
@@ -375,6 +394,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   if (redirecting) return <AdminRouteRedirectGate />;
 
   return (
+    <>
     <div
       key={sessionKey}
       className="grid h-screen w-screen overflow-clip"
@@ -428,5 +448,8 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
         </div>
       </main>
     </div>
+    {/* 放在 key 外面：权限一变上面整棵重挂，提示要留着。 */}
+    <PermissionDeniedToast />
+    </>
   );
 }

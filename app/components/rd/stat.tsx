@@ -9,7 +9,7 @@
  *   <Stat tone="role-4" icon={Gauge} label="每日提现次数上限" value="2" unit="次" />
  * </StatBand>
  *
- * 读取失败传 value="—"，不写 0（CP-42）。explain 是口径说明，字段名带虚线下划线，点开看（DP-36）。
+ * 读取失败传 value="—"，不写 0（CP-42）。explain 是口径说明，收进名称旁的提示图标（DP-06、DP-36）；sub 只放数据（昨天全天多少、涉及几个账户），说明不写在 sub 里。
  * 深色主题数字用角色色字，浅色主题数字用正文色、身份靠实色图标底（VS-14），这条写在 rd.css 里。
  * 值是 0、0.00、$0、0% 或「—」时弱化：字色弱、图标底灰、lead 不放大，最大的字不给 0（novice-2、visual-1 第 7 条）。
  * 带 data-cp="stat"，首屏检查按它数。
@@ -53,7 +53,8 @@ export function Stat({ label, value, unit, sub, tone, icon, iconTone, lead, expl
       {icon && <IconTile tone={zero ? "role-other" : iconTone ?? tone ?? "role-other"} icon={icon} size={big ? 40 : 28} />}
       <div>
         <div className="rd-stat-label">
-          {explain ? <Explain label={typeof label === "string" ? `${label}的口径` : "数字口径"} content={explain}>{label}</Explain> : label}
+          {label}
+          {explain && <Explain label={typeof label === "string" ? `${label}的口径` : "数字口径"} content={explain} />}
         </div>
         <div className="rd-stat-value" data-tone={tone} data-zero={zero ? "" : undefined}>{value}{unit && <span className="rd-stat-unit">{unit}</span>}</div>
         {sub && <div className="rd-stat-sub">{sub}</div>}

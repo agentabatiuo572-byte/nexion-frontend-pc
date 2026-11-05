@@ -18,7 +18,10 @@ export type StatusSentence = {
   state: "ok" | "neutral" | "warn" | "danger" | "unknown";
   strong?: boolean;
   text: string;
+  /** 第二行：建议、该做什么。 */
   hint?: string;
+  /** 这句话怎么算、为什么：收进句尾的提示图标（DP-06）。 */
+  explain?: string;
   /** 这句话说的是业务开关，页面给去开关页的入口。 */
   aboutSwitch?: boolean;
   /** 这句话说的是资金，页面给去资金总览的入口。 */
@@ -61,16 +64,16 @@ export function statusSentence(input: {
   // 上面三句是告警，读到就说。下面的要等这一屏读完，不说半句，也不先说没事（F07）。
   if (input.loading) return { state: "unknown", text: "正在读取今天的状况…" };
   if (input.fundFailed) return { state: "warn", text: `资金数据读取失败，状态不确定${also(pendingRows)}` };
-  if (input.pressure === "danger") return { state: "danger", aboutRisk: true, text: "提现压力到红线，先看风险与开关", hint: "近 24 小时提现申请或待提现总额占储备的比例到了红线。" };
+  if (input.pressure === "danger") return { state: "danger", aboutRisk: true, text: "提现压力到红线，先看风险与开关", explain: "近 24 小时提现申请或待提现总额占储备的比例到了红线。" };
   if (input.withdrawClosed) {
     const notMoney = input.fundSafe ? "这是业务开关没开，不是钱不够。" : "";
     return input.withdrawUnset
-      ? { state: "warn", aboutSwitch: true, text: `提现开关未设置，用户现在不能提现${also(pendingRows - input.withdrawRows)}`, hint: `这个开关还没人设置过，系统按关闭处理。${notMoney}` }
-      : { state: "warn", aboutSwitch: true, text: `提现已关停${also(pendingRows - input.withdrawRows)}`, hint: `用户现在不能提现。${notMoney}` };
+      ? { state: "warn", aboutSwitch: true, text: `提现开关未设置，用户现在不能提现${also(pendingRows - input.withdrawRows)}`, explain: `这个开关还没人设置过，系统按关闭处理。${notMoney}` }
+      : { state: "warn", aboutSwitch: true, text: `提现已关停${also(pendingRows - input.withdrawRows)}`, hint: "用户现在不能提现。", explain: notMoney || undefined };
   }
   if (input.belowHealthy) return { state: "warn", aboutFund: true, text: withDays("资金需要注意：覆盖率低于健康线"), hint: advice ?? undefined };
   if (input.tier === "WARNING") return { state: "warn", aboutFund: true, text: days ? `资金需要注意：储备只够付${days.replace("可覆盖 ", "")}` : "资金需要注意", hint: advice ?? undefined };
-  if (input.pressure === "warn") return { state: "warn", aboutRisk: true, text: "提现压力到黄线，看一下风险与开关", hint: "近 24 小时提现申请或待提现总额占储备的比例到了黄线。" };
+  if (input.pressure === "warn") return { state: "warn", aboutRisk: true, text: "提现压力到黄线，看一下风险与开关", explain: "近 24 小时提现申请或待提现总额占储备的比例到了黄线。" };
   if (pendingRows > 0) return { state: "neutral", text: `有 ${pendingRows} 件事要处理${input.fundSafe ? "，资金安全" : ""}` };
   if (input.failed.length === 1) return { state: "unknown", text: `${input.failed[0]}读取失败，状态不确定` };
   if (input.failed.length > 1) return { state: "unknown", text: "部分数据读取失败，状态不确定" };

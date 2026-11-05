@@ -29,11 +29,13 @@
  * - 抽屉上最多再叠一层弹窗，弹窗上不再叠弹窗（PG-38）；错误写在最上层。
  *
  * Modal 用法同旧 Modal。RdPage 里的旧 Modal、OperationConfirmModal 会自动走这个组件，不用改调用。
+ * 框里打过字后点空白不关，免得填的内容丢了；只靠点选的表单传 dirty。×、取消、Esc 照常关。
  */
 import { useEffect, useRef, type ComponentProps, type KeyboardEvent, type ReactNode } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronDown, ChevronUp, X, type LucideIcon } from "lucide-react";
 import { IconButton } from "./button";
+import { Explain } from "./explain";
 import { IconTile } from "./icon-tile";
 import { useRdSurface } from "./surface";
 import type { RoleTone, StateTone } from "./tone";
@@ -90,11 +92,14 @@ export interface DrawerNav {
   hasNext: boolean;
 }
 
-export function Drawer({ open, onClose, title, sub, icon, tone = "role-other", nav, footer, busy = false, wide = false, children, ...rest }: Omit<ComponentProps<typeof Dialog.Content>, "title"> & {
+export function Drawer({ open, onClose, title, sub, explain, icon, tone = "role-other", nav, footer, busy = false, wide = false, children, ...rest }: Omit<ComponentProps<typeof Dialog.Content>, "title"> & {
   open: boolean;
   onClose: () => void;
   title: ReactNode;
+  /** 数据型副标题：单号、编号、状态。 */
   sub?: ReactNode;
+  /** 这个抽屉是什么、要注意什么：收进标题旁的提示图标（DP-06）。 */
+  explain?: ReactNode;
   icon?: LucideIcon;
   tone?: RoleTone | StateTone;
   nav?: DrawerNav;
@@ -139,7 +144,10 @@ export function Drawer({ open, onClose, title, sub, icon, tone = "role-other", n
           <div className="rd-drawer-head">
             {icon && <IconTile tone={tone} icon={icon} size={28} />}
             <div className="rd-drawer-heading" aria-live="polite">
-              <Dialog.Title className="rd-drawer-title">{title}</Dialog.Title>
+              <div className="rd-drawer-title-row">
+                <Dialog.Title className="rd-drawer-title">{title}</Dialog.Title>
+                {explain && <Explain label={`${typeof title === "string" ? title : "这个抽屉"}的说明`} content={explain} />}
+              </div>
               {sub && <div className="rd-drawer-sub">{sub}</div>}
             </div>
             <div className="rd-drawer-tools">
@@ -160,12 +168,18 @@ export function Drawer({ open, onClose, title, sub, icon, tone = "role-other", n
   );
 }
 
-/** 抽屉底部的决定区。危险决定在左，主决定在右，分开放（DP-40）。 */
-export function Decision({ note, danger, others, primary }: { note?: ReactNode; danger?: ReactNode; others?: ReactNode; primary?: ReactNode }) {
+/**
+ * 抽屉底部的决定区。危险决定在左，主决定在右，分开放（DP-40）。
+ * note 只写现在能不能做、为什么不能（阻断原因常显，DP-03）；按下去会怎样、要不要审批这类后果说明传 explain，
+ * 收进提示图标（DP-06）：有 note 时跟在 note 后面，没有时放在按钮行最左。
+ */
+export function Decision({ note, explain, danger, others, primary }: { note?: ReactNode; explain?: ReactNode; danger?: ReactNode; others?: ReactNode; primary?: ReactNode }) {
+  const mark = explain && <Explain label="这些操作会怎样" content={explain} side="top" />;
   return (
     <>
-      {note && <p className="rd-decision-note">{note}</p>}
+      {note && <p className="rd-decision-note">{note}{mark}</p>}
       <div className="rd-decision">
+        {!note && mark}
         {danger}
         <span className="rd-decision-spacer" />
         {others}
@@ -175,7 +189,7 @@ export function Decision({ note, danger, others, primary }: { note?: ReactNode; 
   );
 }
 
-export function Modal({ title, icon, onClose, children, footer, wide = false, busy = false, className }: {
+export function Modal({ title, icon, onClose, children, footer, wide = false, busy = false, dirty = false, className }: {
   title: ReactNode;
   icon?: ReactNode;
   onClose: () => void;
@@ -183,15 +197,17 @@ export function Modal({ title, icon, onClose, children, footer, wide = false, bu
   footer?: ReactNode;
   wide?: boolean;
   busy?: boolean;
+  dirty?: boolean;
   className?: string;
 }) {
   const surface = useRdSurface();
   const focus = useFocusHandoff(true);
+  const typed = useRef(false);
   const close = () => { if (!busy) onClose(); };
   return (
     <Dialog.Root open onOpenChange={(next) => { if (!next) close(); }}>
       <Dialog.Portal container={surface?.container ?? undefined}>
-        <Dialog.Overlay className="rd-scrim" data-modal="" onClick={close} />
+        <Dialog.Overlay className="rd-scrim" data-modal="" onClick={() => { if (!dirty && !typed.current) close(); }} />
         <Dialog.Content
           ref={focus.ref}
           className={className ? `rd-modal ${className}` : "rd-modal"}
@@ -199,6 +215,7 @@ export function Modal({ title, icon, onClose, children, footer, wide = false, bu
           aria-modal="true"
           aria-busy={busy}
           aria-describedby={undefined}
+          onInput={() => { typed.current = true; }}
           onOpenAutoFocus={focus.onOpenAutoFocus}
           onCloseAutoFocus={focus.onCloseAutoFocus}
           onPointerDownOutside={(event) => event.preventDefault()}

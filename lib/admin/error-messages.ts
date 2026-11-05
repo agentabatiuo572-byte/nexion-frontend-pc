@@ -1,4 +1,4 @@
-const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   SIMULATED_DURATION_MINUTES_INVALID: "固定时长须为 1–1440 的整数分钟。",
   SIMULATED_FIXED_REWARD_INVALID: "固定奖励须为非负数，最多 12 位整数、6 位小数。",
   SIMULATED_ASSET_INVALID: "请选择 USDT 或 UVT 奖励资产。",
@@ -235,6 +235,8 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   K2_CLUSTER_EXPECTED_VERSION_REQUIRED: "缺少关联账户组的版本，请刷新页面后重试。",
   K1_CLUSTER_CONCURRENT_UPDATE: "关联账户组已变化，请刷新后重新确认。",
   K1_CLUSTER_FLAG_REQUIRED: "这组账户要先在「多账户风险排查」标记为可疑，才能提交冻结。",
+  K1_RELEASE_PARAM_RELATION_INVALID: "要满足：同组手机号数 < 审核起点 ≤ 锁定起点。",
+  K1_RELEASE_VERSION_CONFLICT: "这项刚被别人改过。",
   K3_RULE_CONCURRENT_UPDATE: "该提现规则已被其他操作员修改，请刷新后基于最新版本重试。",
   K3_RULE_EXPECTED_VERSION_REQUIRED: "缺少提现规则版本，请刷新页面后重试。",
   K3_RULE_PRIORITY_INVALID: "优先级须为 1-100 的整数。",

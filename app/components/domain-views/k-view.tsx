@@ -136,7 +136,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "K4" && <K4Scoring ctx={ctx} />}
 
       {mc && (
-        <OperationConfirmModal briefKind={mc.briefKind}
+        <OperationConfirmModal key={mc.formKey} briefKind={mc.briefKind}
           action={mc.action}
           detail={mc.detail}
           amplifies={mc.amplifies}
@@ -147,6 +147,8 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
           reasonMax={mc.reasonMax}
           effect={mc.effect}
           confirmLabel={mc.confirmLabel}
+          confirmTone={mc.confirmTone}
+          blockedReason={mc.blockedReason}
           statedBrief={mc.statedBrief}
           facts={mc.facts}
           coverageLead={mc.coverageLead}

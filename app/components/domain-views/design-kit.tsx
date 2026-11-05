@@ -10,7 +10,8 @@ import { businessZone } from "@/lib/admin/business-time";
 import { Fragment, isValidElement, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
+import { announcePermissionDenied, isPermissionDenied, operationConfirmErrorMessage, PERMISSION_DENIED_EVENT } from "@/lib/admin/operation-confirm-error";
+import { fmtPct } from "@/lib/format";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
 import { fetchA2ReasonPolicy, isA2OutcomeUncertainError, visibleReasonLength } from "@/lib/admin/a2-client";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
@@ -19,6 +20,8 @@ import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "
 import { isL5KpiExport, l5KpiRange, L5_KPI_WINDOWS, l5BusinessToday } from "./l-tabs/l5-kpi-range";
 import { Check as RdCheck, CheckGroup as RdCheckGroup } from "@/app/components/rd/field";
 import { Fold as RdFold } from "@/app/components/rd/fold";
+import { Button as RdButton } from "@/app/components/rd/button";
+import { Explain } from "@/app/components/rd/explain";
 import { Modal as RdModal } from "@/app/components/rd/overlay";
 import { NumberInput as RdNumberInput } from "@/app/components/rd/number-input";
 import { useRdSurface } from "@/app/components/rd/surface";
@@ -341,7 +344,7 @@ export const KV = ({ k, v }: { k: ReactNode; v: ReactNode }) => (
 );
 
 /* Modal — 补 ESC 关闭 + 打开聚焦(a11y 铁律) */
-type ModalProps = { title: ReactNode; icon?: IconName; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; busy?: boolean; className?: string };
+type ModalProps = { title: ReactNode; icon?: IconName; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; busy?: boolean; dirty?: boolean; className?: string };
 
 /* 改版页面(RdPage 里)走 Radix 弹窗和新外观,能叠在新抽屉上;旧页面走原来的实现,行为不变。 */
 export function Modal({ icon, ...props }: ModalProps) {
@@ -629,6 +632,18 @@ function isEditValueValid(spec: EditSpec | null, value: string): boolean {
   if (spec.step !== undefined && spec.step > 0
     && !isDecimalStepAligned(normalized, spec.min ?? 0, spec.step)) return false;
   return true;
+}
+
+/** 数字框填错时写什么。范围全站写「1–90」「0–1,000,000」，不写开发词（TX-05）。 */
+function editNumberError(spec: EditSpec): string {
+  const num = (value: number) => value.toLocaleString("en-US", { maximumFractionDigits: 20 });
+  const { min, max, step } = spec;
+  const range = min !== undefined && max !== undefined ? ` ${num(min)}–${num(max)} 的`
+    : min !== undefined ? `不小于 ${num(min)} 的`
+    : max !== undefined ? `不大于 ${num(max)} 的`
+    : "有效的";
+  const decimals = step !== undefined && step < 1 ? `，最多 ${String(step).split(".")[1]?.length} 位小数` : "";
+  return `请输入${range}${step === 1 ? "整数" : "数字"}${decimals}`;
 }
 
 export type BusinessFormSpec =
@@ -3477,6 +3492,11 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const [businessSelectionLoading, setBusinessSelectionLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // 刚打开不报错：字段错误等失焦或点过提交才显示（DP-06）。
+  const [attempted, setAttempted] = useState(false);
+  const [reasonLeft, setReasonLeft] = useState(false);
+  const [editLeft, setEditLeft] = useState(false);
+  const [openedForm] = useState(() => JSON.stringify([newVal, businessValue]));
   const [approvalRecovery, setApprovalRecovery] = useState<"lookup" | "retry" | null>(inlineApproval?.pending ? "lookup" : null);
   const [authoritativeReasonMin, setAuthoritativeReasonMin] = useState<number | null>(null);
   const [authoritativeReasonMax, setAuthoritativeReasonMax] = useState<number | null>(null);
@@ -3543,6 +3563,21 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const canConfirm = !blockedReason && (retryApproval || pendingReason !== undefined ? !submitting && !approvalOnlyLookup && !inlineApproval?.disabledReason
     : reasonPolicyReady && !covBlocked && !approval?.disabledReason && !inlineApproval?.disabledReason && !businessSelectionLoading && !submitting && reasonOk && editValueOk && businessMissing.length === 0 && !uploadBlocked
       && (!inlineApproval || !approvalRecovery || !!approval));
+  const showReasonError = !reasonOk && !retryApproval && (!surface || attempted || reasonLeft);
+  const showEditError = !surface || attempted || editLeft;
+  const reasonShort = reasonLength < reasonMin ? `还差 ${reasonMin - reasonLength} 字` : `操作理由不能超过 ${reasonMax} 字。`;
+  // 按钮灰着时缺什么写在按钮的提示里（OP-126）。
+  const missing: ReactNode[] = canConfirm || submitting ? [] : blockedReason ? [blockedReason] : [
+    !reasonPolicyReady && (reasonPolicyError ?? "正在加载"),
+    covBlocked && "当前覆盖率低于红线，暂时无法提交",
+    approval?.disabledReason,
+    inlineApproval?.disabledReason,
+    businessSelectionLoading && "正在加载",
+    uploadBlocked && "图片还没上传好",
+    !editValueOk && (sameAsCurrent ? "和当前值一样，没有改动" : kind === "number" && (newVal.trim() || numberBad) ? editNumberError(spec!) : `填写${spec?.label ?? "新值"}`),
+    ...businessMissing.map((message) => message.replace(/。+$/, "")),
+    !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : reasonShort.replace(/。$/, "")),
+  ].filter(Boolean);
   useEffect(() => {
     let active = true;
     setAuthoritativeReasonMin(null);
@@ -3566,6 +3601,12 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       if (retryApproval) await retryApproval();
       else await onConfirm(reason.trim(), submittedValue || undefined, activeBusinessForm ? businessValue : undefined);
     } catch (error) {
+      // 没权限再填也没用：提示、关框、重读权限（OP-81、OP-132）。
+      if (isPermissionDenied(error)) {
+        announcePermissionDenied();
+        onClose();
+        return;
+      }
       // The domain callback owns the detailed toast. Keep the form open and
       // consume the rejection so a rejected A2/K2 request never escapes as pageerror.
       if ((approval || retryApproval) && isA2OutcomeUncertainError(error)) {
@@ -3615,14 +3656,21 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       if (selectionRequestRef.current === requestId) setBusinessSelectionLoading(false);
     }
   };
+  const submitLabel = pendingReason !== undefined ? "重试原操作" : approvalRecovery === "retry" ? "按原操作重试" : approval ? "提交审批" : confirmLabel;
   const coverageNotice = effectiveAmplifies && (
     <div className={surface && !covBlocked ? "alertbar calm" : "alertbar danger"} style={{ marginBottom: 16, border: 0 }}>
       <span className="ico"><Icon name="alert" size={16} /></span>
-      <div className="tiny">
+      {surface && coverage && !covBlocked ? (
+        // 够得上红线时只留数字，后果和检查说明进提示图标（DP-06）。
+        <div className="tiny">
+          覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b>，红线 <b>{coverage.redlinePct}%</b>
+          <Explain label="这项操作对资金的影响" content={<><p>{coverageLead}</p><p>提交时会先检查兑付覆盖率{coverage.healthyPct !== undefined ? `，健康线 ${coverage.healthyPct}%` : ""}。</p></>} />
+        </div>
+      ) : <div className="tiny">
         <b>{coverageLead}</b> · 提交时会先检查兑付覆盖率。
         {coverage ? (
           <>
-            当前覆盖率 <b className="mono">{coverage.coverageRatio}%</b>
+            当前覆盖率 <b className="mono">{fmtPct(coverage.coverageRatio)}</b>
             {coverage.healthyPct !== undefined && coverage.coverageRatio >= coverage.healthyPct
               ? `，高于健康线 ${coverage.healthyPct}%`
               : coverage.coverageRatio > coverage.redlinePct
@@ -3634,11 +3682,11 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         ) : auditSink === "local-history" ? (
           <>本页暂不自动检查覆盖率，请自行确认资金影响。</>
         ) : null}
-      </div>
+      </div>}
     </div>
   );
   return (
-    <Modal title={action} icon={confirmTone === "danger" ? "alert" : "shield"} onClose={handleClose} className={["rd-confirm", inlineApproval?.dialogClassName].filter(Boolean).join(" ")} busy={!!(approval || inlineApproval) && submitting}
+    <Modal title={action} icon={confirmTone === "danger" ? "alert" : "shield"} onClose={handleClose} className={["rd-confirm", inlineApproval?.dialogClassName].filter(Boolean).join(" ")} busy={submitting} dirty={JSON.stringify([newVal, businessValue]) !== openedForm}
       footer={<>
         <Btn disabled={submitting} onClick={handleClose}>取消</Btn>
         {approvalRecovery && recoverApproval && (
@@ -3646,11 +3694,17 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
             {submitting ? "查询中…" : "查询原操作"}
           </Btn>
         )}
-        {!approvalOnlyLookup && (
+        {!approvalOnlyLookup && (surface ? (
+          <RdButton variant={confirmTone} icon={<Icon name="check" size={15} />} loading={submitting} loadingText="提交中…"
+            disabledReason={canConfirm || submitting ? undefined : missing.length ? missing.map((item, index) => <Fragment key={index}>{index > 0 && "；"}{item}</Fragment>) : "暂时无法提交"}
+            onBlockedClick={() => setAttempted(true)} onClick={() => void handleConfirm()}>
+            {submitLabel}
+          </RdButton>
+        ) : (
           <Btn variant={confirmTone} disabled={!canConfirm} onClick={() => void handleConfirm()}>
-            <Icon name="check" size={15} /> {submitting ? "提交中…" : pendingReason !== undefined ? "重试原操作" : approvalRecovery === "retry" ? "按原操作重试" : approval ? "提交审批" : confirmLabel}
+            <Icon name="check" size={15} /> {submitting ? "提交中…" : submitLabel}
           </Btn>
-        )}
+        ))}
       </>}>
       {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
       <fieldset disabled={submitting} style={{ display: "contents" }}>
@@ -3663,7 +3717,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       {inlineApproval?.pending && approvalRecovery === "lookup" && !submitError && (
         <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>上一次审批结果待确认，请查询原操作。</div>
       )}
-      {!reasonPolicyReady && !retryApproval && (
+      {!reasonPolicyReady && !retryApproval && (!surface || reasonPolicyError) && (
         <div className="alertbar warn" role="alert" data-policy-state="fail-closed" style={{ marginBottom: 16 }}>
           {reasonPolicyError ?? "正在加载，稍候即可提交。"}
         </div>
@@ -3677,14 +3731,14 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
             {!approval.heading && <>
               <div>{completionCopy}</div>
               <div>{approval.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。"}{covBlocked && "当前覆盖率低于红线，暂时无法提交。"}</div>
-              {coverage && <div>当前覆盖率 <b className="mono">{coverage.coverageRatio}%</b> · 红线 <span className="mono">{coverage.redlinePct}%</span></div>}
+              {coverage && <div>当前覆盖率 <b className="mono">{fmtPct(coverage.coverageRatio)}</b> · 红线 <span className="mono">{coverage.redlinePct}%</span></div>}
             </>}
             {approval.disabledReason && <div role="status">{approval.disabledReason}</div>}
           </div>
         </div>
         {approval.heading ? <>
           <p style={{ margin: "0 0 14px", lineHeight: 1.5 }}>{completionCopy}</p>
-          {coverage && <p className="operation-approval-coverage">当前覆盖率 <b>{coverage.coverageRatio}%</b> · 红线 <b>{coverage.redlinePct}%</b></p>}
+          {coverage && <p className="operation-approval-coverage">当前覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b> · 红线 <b>{coverage.redlinePct}%</b></p>}
           {approval.comparison}
         </> : !compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} completionCopy={completionCopy} auditSink={auditSink} kind={effectiveBriefKind} />}
       </>}
@@ -3719,7 +3773,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
               {compareEdit && <span aria-hidden>→</span>}
               {compareEdit && <span className="muted">拟调整</span>}
               {surface && kind === "number" && !compareEdit ? (
-                <RdNumberInput key={emptyChosen ? "empty" : "value"} aria-label="目标新值" unit={spec.unit} min={spec.min} max={spec.max} step={spec.step} value={newVal} disabled={emptyChosen} aria-invalid={!editValueOk && (!!newVal || numberBad) ? true : undefined} onChange={(e) => setNewVal(e.target.value)} onInput={(e) => setNumberBad(e.currentTarget.validity.badInput)} placeholder={spec.current ? `当前 ${spec.current}` : "输入新值"} />
+                <RdNumberInput key={emptyChosen ? "empty" : "value"} aria-label="目标新值" unit={spec.unit} min={spec.min} max={spec.max} step={spec.step} value={newVal} disabled={emptyChosen} aria-invalid={showEditError && !editValueOk && (!!newVal || numberBad) ? true : undefined} onChange={(e) => setNewVal(e.target.value)} onInput={(e) => setNumberBad(e.currentTarget.validity.badInput)} onBlur={() => setEditLeft(true)} placeholder={spec.current ? `当前 ${spec.current}` : "输入新值"} />
               ) : <input
                 className="fld"
                 aria-label="目标新值"
@@ -3732,6 +3786,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
                 value={newVal}
                 onChange={(e) => setNewVal(e.target.value)}
                 onInput={(e) => setNumberBad(e.currentTarget.validity.badInput)}
+                onBlur={() => setEditLeft(true)}
                 placeholder={spec.current ? `输入新值（当前 ${spec.current}）` : "输入新值"}
                 style={{ maxWidth: compareEdit ? 140 : 240 }}
               />}
@@ -3739,17 +3794,16 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
               {spec.emptyOption && <Chip tab sel={emptyChosen} onClick={() => { setEmptyChosen(!emptyChosen); setNewVal(""); setNumberBad(false); }}>{spec.emptyOption}</Chip>}
             </div>
           )}
-          {!editValueOk && !retryApproval && kind === "number" && (newVal || numberBad) && !(surface && sameAsCurrent) && (
-            <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
-              请输入 {spec.min ?? "允许范围"}～{spec.max ?? "允许上限"} 的有效数字{spec.step ? `（步长 ${spec.step}）` : ""}。
-            </div>
+          {showEditError && !editValueOk && !retryApproval && kind === "number" && (newVal || numberBad) && !(surface && sameAsCurrent) && (
+            <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>{editNumberError(spec)}。</div>
           )}
-          {surface && sameAsCurrent && <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>新值和当前值一样，改了才能保存。</div>}
+          {surface && attempted && !editValueOk && !newVal.trim() && !numberBad && <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>填写{spec.label ?? "新值"}。</div>}
+          {surface && showEditError && sameAsCurrent && <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>新值和当前值一样，改了才能保存。</div>}
           {surface && spec.hint && <div className="rd-form-help">{spec.hint}</div>}
           {surface && spec.preview && editValueOk && <div className="rd-confirm-preview">{spec.preview(newVal)}</div>}
-          {!compareEdit && (newVal || emptyChosen) && spec.current && !sameAsCurrent && (
+          {!compareEdit && (newVal || emptyChosen) && spec.current && !sameAsCurrent && (!surface || editValueOk) && (
             <div className="tiny" style={{ marginTop: 8, color: "var(--ink-3)" }}>
-              当前 <span className="mono">{spec.optionLabels?.[spec.current] ?? spec.current}</span> → 新 <span className="mono" style={{ color: "var(--brand)" }}>{emptyChosen ? spec.emptyOption : <>{spec.optionLabels?.[newVal] ?? newVal}{spec.unit ? ` ${spec.unit}` : ""}</>}</span>
+              {surface ? "现在" : "当前"} <span className="mono">{spec.optionLabels?.[spec.current] ?? spec.current}</span> → {surface ? "改后" : "新"} <span className="mono" style={{ color: "var(--brand)" }}>{emptyChosen ? spec.emptyOption : <>{spec.optionLabels?.[newVal] ?? newVal}{spec.unit ? ` ${spec.unit}` : ""}</>}</span>
             </div>
           )}
         </div>
@@ -3757,17 +3811,17 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       {surface && !approval && coverageNotice}
       <div className="field">
         <label htmlFor={reasonFieldId}>{approval ? "变更理由" : "操作理由"}{(compareEdit || approval?.heading) && <span aria-hidden="true" style={{ color: "var(--danger)" }}> *</span>}（必填，{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）</label>
-        <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} aria-required={compareEdit || inlineApproval?.dialogClassName ? true : undefined} aria-describedby={inlineApproval?.dialogClassName && ((!reasonOk && !retryApproval) || (reasonOk && reasonMax)) ? `${reasonFieldId}-length` : undefined} disabled={inlineApproval ? formLocked : !!approval ? submitting || !!approvalRecovery : submitting || (!!getPendingReason && pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} placeholder={reasonPlaceholder} />
-        {pendingReason !== undefined && <div className="tiny" style={{ marginTop: 7 }}>原操作结果尚未确认，理由已锁定。重试将继续原操作，不会重复执行。</div>}
-        {!reasonOk && !retryApproval && (
-          <div id={`${reasonFieldId}-length`} className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
-            {reasonLength < reasonMin
-              ? `还差 ${reasonMin - reasonLength} 字`
-              : `操作理由不能超过 ${reasonMax} 字。`}
-          </div>
+        {/* 字数写在框内角落，够不够看按钮的提示，失焦或点过提交才用警告色（DP-06）。 */}
+        <div className={surface ? "rd-reason-box" : undefined}>
+          <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} aria-required={compareEdit || inlineApproval?.dialogClassName ? true : undefined} aria-describedby={inlineApproval?.dialogClassName && ((!reasonOk && !retryApproval) || (reasonOk && reasonMax)) ? `${reasonFieldId}-length` : undefined} disabled={inlineApproval ? formLocked : !!approval ? submitting || !!approvalRecovery : submitting || (!!getPendingReason && pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} onBlur={() => setReasonLeft(true)} placeholder={reasonPlaceholder} />
+          {surface && <span className="rd-reason-count">{reasonLength}/{reasonMax ?? `至少 ${reasonMin}`}</span>}
+        </div>
+        {pendingReason !== undefined && <div className="tiny" style={{ marginTop: 7 }}>{surface ? "重发原内容，已成功的不会重复执行。" : "原操作结果尚未确认，理由已锁定。重试将继续原操作，不会重复执行。"}</div>}
+        {showReasonError && (
+          <div id={`${reasonFieldId}-length`} className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>{reasonShort}</div>
         )}
-        {reasonMax && reasonOk && <div id={`${reasonFieldId}-length`} className="tiny" style={{ marginTop: 7, color: approval || inlineApproval?.dialogClassName ? "var(--ink-3)" : "var(--ink-4)" }}>已填写 {reasonLength}/{reasonMax} 字</div>}
-        {businessMissing.length > 0 && (
+        {!surface && reasonMax && reasonOk && <div id={`${reasonFieldId}-length`} className="tiny" style={{ marginTop: 7, color: approval || inlineApproval?.dialogClassName ? "var(--ink-3)" : "var(--ink-4)" }}>已填写 {reasonLength}/{reasonMax} 字</div>}
+        {businessMissing.length > 0 && (!surface || attempted) && (
           <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
             请检查以下内容： {businessMissing.slice(0, 4).map((message) => message.replace(/。+$/, "")).join(" / ")}{businessMissing.length > 4 ? "…" : ""}。
           </div>
@@ -3787,6 +3841,12 @@ export function useToast(): [ReactNode, (s: string) => void] {
     timerRef.current = setTimeout(() => setToast(null), 2800);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [toast]);
+  // 没权限的提示由外壳写（权限一变页面会重挂），这里清掉页面刚写的通用失败提示。
+  useEffect(() => {
+    const onDenied = () => setToast(null);
+    window.addEventListener(PERMISSION_DENIED_EVENT, onDenied);
+    return () => window.removeEventListener(PERMISSION_DENIED_EVENT, onDenied);
+  }, []);
   const node = toast ? (
     <div
       onMouseEnter={() => { if (timerRef.current) clearTimeout(timerRef.current); }}

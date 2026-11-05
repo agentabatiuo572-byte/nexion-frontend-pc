@@ -10,7 +10,7 @@
  * - type 默认 button；id、aria-*、data-*、ref、事件全部透传到 <button>，文字原样渲染。
  * - loading 期间点击无效、aria-busy、宽度不变（CP-06）。
  * - disabledReason 让按钮不可点但仍可聚焦，悬停和聚焦都能看到原因，读屏也读得到（DP-42）。
- *   没有原因的场景才用原生 disabled。
+ *   没有原因的场景才用原生 disabled。onBlockedClick 是这时点一下要做的事，比如把字段错误亮出来。
  */
 import { forwardRef, useId, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
@@ -22,6 +22,7 @@ export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "dang
 interface CommonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   loading?: boolean;
   disabledReason?: ReactNode;
+  onBlockedClick?: () => void;
 }
 
 function WithReason({ reason, id, children }: { reason: ReactNode; id: string; children: ReactNode }) {
@@ -38,7 +39,7 @@ function WithReason({ reason, id, children }: { reason: ReactNode; id: string; c
 }
 
 function blockedProps(props: CommonProps, reasonId: string) {
-  const { loading, disabledReason, onClick, disabled, ...rest } = props;
+  const { loading, disabledReason, onBlockedClick, onClick, disabled, ...rest } = props;
   const blocked = Boolean(loading || disabledReason);
   return {
     ...rest,
@@ -47,7 +48,7 @@ function blockedProps(props: CommonProps, reasonId: string) {
     "aria-busy": loading || undefined,
     "aria-disabled": blocked || undefined,
     "aria-describedby": disabledReason ? reasonId : rest["aria-describedby"],
-    onClick: blocked ? (event: React.MouseEvent<HTMLButtonElement>) => event.preventDefault() : onClick,
+    onClick: blocked ? (event: React.MouseEvent<HTMLButtonElement>) => { event.preventDefault(); onBlockedClick?.(); } : onClick,
   };
 }
 
