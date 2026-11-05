@@ -77,6 +77,7 @@ export interface E2TaskPricingClass {
   minReward: number;
   maxReward: number;
   minVRAM: number;
+  pricingRevision?: string;
   enabled: boolean;
   activeAssignments: number;
   avgSec: number;
@@ -93,6 +94,7 @@ export interface E2TeaserRow {
 export interface E2TaskPricingSnapshot {
   taskClasses: E2TaskPricingClass[];
   queueSaturation: number;
+  queueSaturationRevision?: string;
   teaser: E2TeaserRow[];
   effectiveAt?: string;
 }
@@ -129,12 +131,17 @@ function finiteValue(value: unknown): number | null {
   return isFiniteValue(value) ? Number(value) : null;
 }
 
+function isOptionalPricingRevision(value: unknown): boolean {
+  return value === undefined || (typeof value === "string" && /^[a-f0-9]{64}$/i.test(value));
+}
+
 function assertE2TaskPricingSnapshot(raw: unknown): asserts raw is E2TaskPricingSnapshot {
   pricingProtocol(isRecord(raw), "taskPricing protocol requires a data object");
   pricingProtocol(Array.isArray(raw.taskClasses), "taskClasses must be an array");
   pricingProtocol(Array.isArray(raw.teaser), "teaser must be an array");
   const queueSaturation = finiteValue(raw.queueSaturation);
   pricingProtocol(queueSaturation != null && queueSaturation >= 0 && queueSaturation <= 1, "queueSaturation must be between 0 and 1");
+  pricingProtocol(isOptionalPricingRevision(raw.queueSaturationRevision), "queueSaturationRevision must be a pricing revision");
   pricingProtocol(raw.taskClasses.length === E2_TASK_CLASSES.length, "taskClasses must contain the exact six canonical classes");
   pricingProtocol(raw.teaser.length >= 2 && raw.teaser.length <= E2_TEASER_DEVICE_CLASSES.length, "teaser must contain available device classes");
 
@@ -146,6 +153,7 @@ function assertE2TaskPricingSnapshot(raw: unknown): asserts raw is E2TaskPricing
     pricingProtocol(typeof row.taskName === "string" && row.taskName.trim() !== "", "taskClasses row requires taskName");
     pricingProtocol(Array.isArray(row.models) && row.models.every((model) => typeof model === "string"), "taskClasses row requires models");
     pricingProtocol(typeof row.enabled === "boolean", "taskClasses row requires enabled");
+    pricingProtocol(isOptionalPricingRevision(row.pricingRevision), "pricingRevision must be a pricing revision");
     for (const field of ["minReward", "maxReward", "minVRAM", "activeAssignments", "avgSec", "dailyPotential"]) {
       pricingProtocol(isFiniteValue(row[field]), `taskClasses row requires finite ${field}`);
     }
@@ -253,7 +261,7 @@ export async function fetchE2TaskPricing(): Promise<E2TaskPricingSnapshot> {
 }
 
 export async function updateE2TaskPricing(
-  patch: Partial<Pick<E2TaskPricingClass, "taskClass" | "minReward" | "maxReward" | "minVRAM" | "enabled">> & { queueSaturation?: number },
+  patch: Partial<Pick<E2TaskPricingClass, "taskClass" | "minReward" | "maxReward" | "minVRAM" | "enabled">> & { queueSaturation?: number; expectedRevision?: string },
   reason: string,
   operator: string,
 ) {

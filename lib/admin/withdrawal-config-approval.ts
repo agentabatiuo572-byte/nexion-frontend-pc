@@ -20,7 +20,14 @@ const commands = {
   D7: { domain: "D", op: "d7_payout_vnd_config", type: "payout_vnd_config", action: "放宽越南盾提现参数" },
   B1: { domain: "B", op: "b1_coverage_thresholds", type: "coverage_thresholds", action: "降低兑付覆盖率红线" },
   B5: { domain: "B", op: "b5_bankrun_thresholds", type: "bankrun_thresholds", action: "提高提现压力红线" },
+  E2: { domain: "E", op: "e2_task_pricing_change", type: "e2_task_pricing", action: "放宽任务定价配置" },
 } as const;
+
+type ApprovalScope = { objectId: string; field: string };
+
+function approvalSlot(sourceDomain: keyof typeof commands, adminId: string | number, scope?: ApprovalScope) {
+  return scope ? `${adminId}:${sourceDomain}:${scope.objectId}:${scope.field}` : `${adminId}:${sourceDomain}`;
+}
 
 export function withdrawalApprovalDisabledReason(authorities: readonly string[]) {
   if (!authorities.includes("platform_a2_proposal_create") && !authorities.includes("platform_a2_write")) {
@@ -28,23 +35,35 @@ export function withdrawalApprovalDisabledReason(authorities: readonly string[])
   }
 }
 
-export function pendingConfigApproval(sourceDomain: keyof typeof commands, adminId: string | number) {
-  return attempts.list().find((record) => record.fingerprint === `${adminId}:${sourceDomain}`);
+export function pendingConfigApproval(sourceDomain: keyof typeof commands, adminId: string | number, scope?: ApprovalScope) {
+  const slot = approvalSlot(sourceDomain, adminId, scope);
+  return attempts.list().find((record) => record.fingerprint === slot);
 }
 
 export async function submitConfigApproval<T>(
   sourceDomain: keyof typeof commands,
   session: AdminSession,
-  values: Record<string, unknown> & { expectedVersion: number },
+  values: Record<string, unknown> & ({ expectedVersion: number } | { expectedRevision: string }),
   reason: string,
   readActive: () => Promise<T>,
-  lookupOnly = false,
+  mode: boolean | "retry-original" = false,
+  scope?: ApprovalScope,
 ) {
   const { domain, action, op, type } = commands[sourceDomain];
-  const slot = `${session.adminId}:${sourceDomain}`;
-  const input = JSON.stringify([values, reason]);
-  const previous = pendingConfigApproval(sourceDomain, session.adminId);
+  const slot = approvalSlot(sourceDomain, session.adminId, scope);
+  const objectId = scope?.objectId ?? "current";
+  const lookupOnly = mode === true;
+  const previous = pendingConfigApproval(sourceDomain, session.adminId, scope);
   if (lookupOnly && !previous) return null;
+  if (mode === "retry-original") {
+    if (!previous) throw new Error("原审批命令已处理，请刷新页面后重新操作。");
+    const original: unknown = JSON.parse(previous.input);
+    if (!Array.isArray(original) || typeof original[0]?.expectedRevision !== "string" || typeof original[1] !== "string") {
+      throw new Error("原审批命令不完整，请到操作记录核对。");
+    }
+    [values, reason] = original;
+  }
+  const input = JSON.stringify([values, reason]);
   const key = previous?.commandKey ?? createA2CommandKey(op);
   if (!previous) {
     attempts.remember(slot, key, { input });
@@ -57,7 +76,7 @@ export async function submitConfigApproval<T>(
   let ticket;
   let canClearOnRejection = !previous;
   try {
-    if (previous && (domain === "B" || session.authorities.includes("platform_a2_read"))) {
+    if (previous && (domain === "B" || sourceDomain === "E2" || session.authorities.includes("platform_a2_read"))) {
       try {
         ticket = await fetchA2ProposalByKey(key);
       } catch {
@@ -74,7 +93,7 @@ export async function submitConfigApproval<T>(
     }
     ticket ??= await createA2OperationProposal({
       action,
-      obj: "current",
+      obj: objectId,
       beforeValue: "—",
       afterValue: "—",
       operator: session.operator || session.username,
@@ -86,7 +105,7 @@ export async function submitConfigApproval<T>(
       reason,
       sourceDomain,
       command: { domain, op, params: { values } },
-      target: { domain, type, id: "current" },
+      target: { domain, type, id: objectId },
     }, key, true);
   } catch (error) {
     if (error instanceof Error && "backendMessage" in error
