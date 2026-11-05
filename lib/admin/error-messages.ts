@@ -307,6 +307,8 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   RISK_DISCLOSURE_ACK_REQUIRED: "用户尚未确认当前版本的风险告知，本次操作未执行；请用户在 APP 阅读并确认后重试。",
   WITHDRAWAL_KILL_SWITCH_DISABLED: "「紧急停用开关」提现总开关已关闭，本次未放行；请在「紧急停用开关」核对关停原因，完成必要确认并恢复提现后重试。",
   WITHDRAWAL_ROLE_NOT_ALLOWED: "当前账号无权执行这项提现操作，请联系有权限的管理员处理。",
+  WITHDRAWAL_FREEZE_LIFECYCLE_REQUIRED: "冻结信息不符合要求。请填写责任人并核对复查时间：固定期限允许相差一天；长期冻结须在未来 1–365 天内复查。",
+  WITHDRAWAL_DELAY_LIFECYCLE_REQUIRED: "延迟信息不符合要求。请填写责任人、1–45 天的等待天数，并将未来复查日设在所选期限前后一天内。",
   WITHDRAWAL_DISCLOSURE_REACK_REQUIRED: "提现风险告知应急拦截仍开启，本次未放行；请核对「风险披露」告知范围和应急控制中的提现告知开关。",
   TOPUP_CHANNEL_AMOUNT_RANGE_INVALID: "单笔上限不得低于最低充值额；本次未保存，请重新输入。",
   TOPUP_CHANNEL_MAX_NOT_SUPPORTED: "该通道没有独立的单笔上限；VietQR 上限请在银行轨参数区调整。",
