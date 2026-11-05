@@ -28,7 +28,7 @@ export const DOMAIN_L: ModuleEntry[] = [
   },
   {
     path: "/analytics/export",
-    summary: "导出关键指标、用户转化、财务、运营四类汇总数据。账单明细和监管报告暂未开放。",
+    summary: "按授权导出关键指标、用户转化、财务、运营四类汇总数据、八类账单脱敏明细和当前披露报告。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

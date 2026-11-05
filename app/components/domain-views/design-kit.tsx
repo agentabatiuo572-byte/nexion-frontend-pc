@@ -1447,7 +1447,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     ["exportType", "fields", "piiLevel", "maskPolicy", "recipient", "ticket"].forEach((k) => needs(k, k));
     if (spec.kpiStructuredRange && isL5KpiExport(state.exportType ?? "")) {
       try { l5KpiRange(state); } catch (error) { missing.push((error as Error).message); }
-    } else needs("timeRange", "timeRange");
+    } else needs("timeRange", "时间范围");
   } else if (spec.kind === "task-edit") {
     needs("name", "任务名称");
     needs("path", "跳转路径");
