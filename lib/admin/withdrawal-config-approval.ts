@@ -16,8 +16,10 @@ const attempts = createPendingMutationStore<PendingMutationRecord & { input: str
 });
 
 const commands = {
-  D5: { op: "d5_withdrawal_limits", type: "withdrawal_limits", action: "放宽提现参数" },
-  D7: { op: "d7_payout_vnd_config", type: "payout_vnd_config", action: "放宽越南盾提现参数" },
+  D5: { domain: "D", op: "d5_withdrawal_limits", type: "withdrawal_limits", action: "放宽提现参数" },
+  D7: { domain: "D", op: "d7_payout_vnd_config", type: "payout_vnd_config", action: "放宽越南盾提现参数" },
+  B1: { domain: "B", op: "b1_coverage_thresholds", type: "coverage_thresholds", action: "降低兑付覆盖率红线" },
+  B5: { domain: "B", op: "b5_bankrun_thresholds", type: "bankrun_thresholds", action: "提高提现压力红线" },
 } as const;
 
 export function withdrawalApprovalDisabledReason(authorities: readonly string[]) {
@@ -26,7 +28,11 @@ export function withdrawalApprovalDisabledReason(authorities: readonly string[])
   }
 }
 
-export async function submitWithdrawalConfigApproval<T>(
+export function pendingConfigApproval(sourceDomain: keyof typeof commands, adminId: string | number) {
+  return attempts.list().find((record) => record.fingerprint === `${adminId}:${sourceDomain}`);
+}
+
+export async function submitConfigApproval<T>(
   sourceDomain: keyof typeof commands,
   session: AdminSession,
   values: Record<string, unknown> & { expectedVersion: number },
@@ -34,10 +40,10 @@ export async function submitWithdrawalConfigApproval<T>(
   readActive: () => Promise<T>,
   lookupOnly = false,
 ) {
-  const { action, op, type } = commands[sourceDomain];
+  const { domain, action, op, type } = commands[sourceDomain];
   const slot = `${session.adminId}:${sourceDomain}`;
   const input = JSON.stringify([values, reason]);
-  const previous = attempts.list().find((record) => record.fingerprint === slot);
+  const previous = pendingConfigApproval(sourceDomain, session.adminId);
   if (lookupOnly && !previous) return null;
   const key = previous?.commandKey ?? createA2CommandKey(op);
   if (!previous) {
@@ -51,7 +57,7 @@ export async function submitWithdrawalConfigApproval<T>(
   let ticket;
   let canClearOnRejection = !previous;
   try {
-    if (previous && session.authorities.includes("platform_a2_read")) {
+    if (previous && (domain === "B" || session.authorities.includes("platform_a2_read"))) {
       try {
         ticket = await fetchA2ProposalByKey(key);
       } catch {
@@ -79,8 +85,8 @@ export async function submitWithdrawalConfigApproval<T>(
       roleGate: "超管",
       reason,
       sourceDomain,
-      command: { domain: "D", op, params: { values } },
-      target: { domain: "D", type, id: "current" },
+      command: { domain, op, params: { values } },
+      target: { domain, type, id: "current" },
     }, key, true);
   } catch (error) {
     if (error instanceof Error && "backendMessage" in error
@@ -107,3 +113,5 @@ export async function submitWithdrawalConfigApproval<T>(
         : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果`,
   };
 }
+
+export const submitWithdrawalConfigApproval = submitConfigApproval;

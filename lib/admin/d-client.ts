@@ -2309,7 +2309,7 @@ export async function updateD6FxQuote(
 
 /** Legacy name retained for B1 callers; the authority and endpoint are owned by B1. */
 export async function updateD3Thresholds(
-  values: { redlinePct?: string; healthyPct?: string; runRiskPct?: string },
+  values: { redlinePct?: string; healthyPct?: string; runRiskPct?: string; expectedVersion?: number },
   reason: string,
   operator: string,
   idempotencyKey?: string,

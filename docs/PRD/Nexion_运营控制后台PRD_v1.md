@@ -1056,8 +1056,8 @@ Nexion 运营控制后台
 **(2) 弹窗规格(逐弹窗)**
 
 ##### [B1-MD1] 兑付覆盖率阈值配置
-- **功能**:修改兑付覆盖率红线 / 黄线或储备科目纳入范围,确认即生效(科目纳入按 ③ 在下一对账周期生效)。
-- **布局结构**:1. **信息区**(只读):当前红线 / 当前黄线 / 当前覆盖率与灯色 / 储备科目纳入清单。2. **影响预览区**:server 预检返回「新阈值下的灯色重判结果」(如 `118.6%` 在新红黄线下的灯色);若新红线高于当前覆盖率,渲染红线警示条「保存后覆盖率将立即低于红线,触发置顶告警与 B5 联动」(警示不阻断——本动作为收紧方向,server 不拒绝)。3. **输入区**:见下表。4. **按钮区**:取消 + 确认。
+- 降低兑付覆盖率红线须提交 A2 审批。当前值与拟改值并列，填写理由后点「提交审批」，待审期间当前值及版本保持原样。另一位有效超管批准后生效。提交和批准均按拟改红线校验实际覆盖率。
+- 提高红线或单改健康线，按现有入口直接确认。已有阈值写权限的角色仍可发起对应提案和查询自己的回执。未知结果可先查询原操作，再按原输入与命令号重试。配置过期时关闭弹窗并重新读取。
 - **输入与选择控件**:
 
 | 字段 | 控件类型 | 必填 | 校验(client + server) | 默认值 |
@@ -1067,9 +1067,9 @@ Nexion 运营控制后台
 | 储备科目纳入 | 科目级开关组 | 否 | 科目枚举须与 D3 口径一致(server 校验,违反 422) | 当前纳入态 |
 | reason(调整理由) | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
 
-- **按钮区**:`[取消]` · `[确认调整阈值]`(reason 未达标或互锁校验未过时置灰;提交 loading 防双击)。
+- **按钮区**提供「取消」及对应方向的「提交审批」或「确认提交」。理由、输入或版本校验失败时保留错误信息。
 - **错误态**:400(`REASON_REQUIRED` / 互锁 `coverageYellowLine > coverageRedLine` 违反,弹窗不关、字段内联错误并回传 server 当前值)/ 422(科目口径与 D3 不一致,内联警示)/ 409(阈值已被他人修改,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;hero 区灯色与告警条就地重判;toast「阈值已更新 · 已记审计」;事件 `admin.treasury_threshold_changed` 落 A2(④ 审计点);实时告警超管 / 财务 lead。
+- 提案成功提示审批单号并读取当前配置。直接保存或批准后按生效阈值读取灯色和告警，配置变更进入既有审计。
 
 ##### [B1-MD2] 手动储备注入登记
 - **功能**:登记一笔平台向储备账本的注入事实(纯内部账本写入,不触发用户侧资金动作),确认即入账。
@@ -1090,7 +1090,7 @@ Nexion 运营控制后台
 **⑤ 接口**
 - `GET /api/admin/treasury/coverage` — 返回 `{ reserveTotalUsdt, liabilityTotalUsdt, coverageRatio, netExposureUsdt, redLine, yellowLine, lightStatus, asOf }`,**server-canonical**(由 A4 事件流聚合,非客户端可算)。其中 `reserveTotalUsdt` 引用 D3 聚合结果(§3.14:D3 是资金池水位权威),B1 不独立计算储备总额。
 - `GET /api/admin/treasury/ledger` — 双账本明细 + 净敞口时间序列(`?window=7d|30d|90d`)。
-- `PUT /api/admin/treasury/thresholds`(阈值配置,确认弹窗 B1-MD1:body 必携 `{reason}`,空值返 400 `REASON_REQUIRED`,确认即生效;**服务端强制校验 `coverageYellowLine > coverageRedLine`,违反返回 400**)。
+- `PATCH /api/admin/treasury/dual-ledger/thresholds` 直接保存收紧或健康线，提交 `reason`、`operator` 和读取时的 `expectedVersion`。降低红线走 `POST /api/admin/platform/audit/operations` 的 `B/b1_coverage_thresholds`。
 - `POST /api/admin/treasury/reserve-injection`(储备注入登记,确认弹窗 B1-MD2:body 携 reason,`Idempotency-Key` 必带,防重复登记同一笔注入)。
 - `GET /api/admin/treasury/reconciliation/export`(对账导出)。
 
@@ -1553,8 +1553,8 @@ GET 与实时推送共用 `generatedAt`，表示服务器生成快照的 UTC 时
 **(2) 弹窗规格(逐弹窗)**
 
 ##### [B5-MD1] 挤兑阈值配置
-- **功能**:修改挤兑比率黄线(`bankrunYellow`)/ 红线(`bankrunRed`),确认即生效(实时重判挤兑灯色;`bankrunRed` 同时是 V4 J1 R1 提现闸自动熔断引用线)。
-- **布局结构**:1. **信息区**(只读):当前黄线 / 当前红线 / 当前 24h 挤兑比率与灯色 / 出金压力比 e(t) 现值(红线 0.7 固定,模型锚定不可改,仅展示)。2. **影响预览区**:server 预检返回「新阈值下挤兑灯色重判结果」(当前比率在新黄红线下的灯色);若为放松方向(上调黄线 / 红线,降低预警灵敏度)渲染警示条「上调红线将同步推迟 V4 J1 R1 提现闸自动熔断触发点,请确认依据」(警示不阻断,本动作非资金流出,无 B1 红线阻断);预览未加载完成前确认钮置灰。3. **输入区**:见下表。4. **按钮区**:取消 + 确认。
+- 提高自动停提红线须提交 A2 审批。弹窗并列展示当前及拟改阈值、保留拟改值对应的实况灯色预览，并说明自动停提将更晚触发。另一位有效超管批准后生效，已有停提事件继续按 J1 处理。
+- 降低红线或单改告警黄线直接保存。已有阈值写权限的角色仍可发起对应提案并查询自己的回执。未知结果先查询原操作，仍可重试时按原输入和命令号提交。B5 保留原压力预览规则。
 - **输入与选择控件**:
 
 | 字段 | 控件类型 | 必填 | 校验(client + server) | 默认值 |
@@ -1563,15 +1563,15 @@ GET 与实时推送共用 `generatedAt`，表示服务器生成快照的 UTC 时
 | 红线(`bankrunRed`) | 数值输入(%) | 是(改红线时) | 10%–80%;同上互锁,违反 400 | 当前值 |
 | reason(调整理由) | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
 
-- **按钮区**:`[取消]` · `[确认调整阈值]`(reason 未达标、互锁校验未过或影响预览未加载时置灰;提交 loading 防双击)。
+- **按钮区**提供「取消」及对应方向的「提交审批」或「确认调整」。填写理由并取得当前版本的有效预览后才能提交。
 - **错误态**:400(`REASON_REQUIRED` / 互锁 `bankrunRed > bankrunYellow` 违反,弹窗不关、字段内联错误并回传 server 当前值)/ 409(阈值已被他人修改,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;②(1) 挤兑预警区灯色就地重判;toast「挤兑阈值已更新 · 已记审计」;admin 审计事件(前后值 + 原因,④ 审计点)落 A2;实时告警超管 / 风控 lead;V4 J1 R1 自动熔断引用线随之更新(J1 引用不另持,§15 J1④)。
+- 提案成功提示审批单号并读取生效配置。直接保存或批准后，B5 及 J1 R1 使用同一生效阈值并记录审计。
 
 **⑤ 接口**
 - `GET /api/admin/risk/radar` — 返回五维风险态势 `{ bankrun:{ ratio24h, light, withdraw24hUsdt, reserveUsdt, pressureRatio }, abnormalAccounts:{ count, byCategory }, withdrawBacklog:{ byState:[{state, count, amountUsdt}] }, killSwitches:[{ key, enabled }], coverage:{ ratio, light } }`(`pressureRatio` = 出金压力比 e(t),模型 §5.3,红线 0.7 固定);各维度数据**引用单一源**——挤兑分母储备来自 B1/D3、覆盖率来自 B1、kill-switch(**5 功能闸**:§9.11d.1 的 4 个二元功能闸 + 后台应急新增 withdraw)来自服务端 config store(V4 归 J1)、异常账户来自 K、队列来自 D2。**geo-block 闸不在本雷达 `killSwitches[]` 内,其状态归 J2 地域屏蔽面(见 ②)**。
 - **SSE 实时**:`GET /api/admin/risk/radar/stream`(Server-Sent Events)推送风险维度实时变化(挤兑比率 / kill-switch 状态 / 覆盖率灯),保证雷达实时性。
 - GET 和 SSE 使用同一份 B1 快照中的 `coverage.redlinePct` 和 `coverage.healthyPct`。红线可设 80%–150%，健康线可独立设为 100%–200% 且须高于红线。覆盖率低于红线为红灯，达到红线且低于健康线为黄灯，达到健康线为绿灯。B5 校验服务端返回的覆盖率与灯色。无应付款时覆盖率为空、灯态不可用，覆盖率来源不可靠时读取失败。分步部署先更新 PC。PC 仅对旧 Java 回包中缺失的健康线使用旧校验规则。
-- `PUT /api/admin/risk/bankrun-thresholds`(挤兑阈值配置,确认弹窗 B5-MD1:body 必携 `{reason}`,空值返 400 `REASON_REQUIRED`,确认即生效;**服务端强制校验 `bankrunRed > bankrunYellow`,违反返回 400**)。
+- `PUT /api/admin/risk/bankrun-thresholds` 直接保存收紧或黄线，携 `reason` 与 `expectedVersion`。提高红线走 `POST /api/admin/platform/audit/operations` 的 `B/b5_bankrun_thresholds`。
 - `PUT /api/admin/risk/alert-subscription`(告警订阅)。
 
 server-canonical;比率与金额均服务端权威实时计算。
