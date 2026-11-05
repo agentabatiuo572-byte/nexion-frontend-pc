@@ -186,7 +186,7 @@ function SupportContactPicker({onClose,onSelect}:{onClose:()=>void;onSelect:(id:
   const pages=Math.max(1,Math.ceil((rows?.total??0)/10));
   return <Modal title="主动联系本人客户" icon="users" onClose={onClose} footer={<Button onClick={onClose}>取消</Button>}>
     <div className="m3s-picker">
-      <Field label="搜索客户" explain="只可选择当前本人客户；不再维护客户可在原求助会话中继续普通服务回复。选择后只打开客户，不会发送。">{control=><Input {...control} aria-label="搜索客户" placeholder="昵称、手机号或用户编号" maxLength={200} value={keyword} onChange={e=>{setKeyword(e.target.value);setPage(1);}}/>}</Field>
+      <Field label="搜索客户" explain="只可选择当前本人客户；不再维护客户可在原求助会话中继续普通服务回复。选择后只打开客户，不会发送。">{control=><Input {...control} data-search aria-label="搜索客户" placeholder="昵称、手机号或用户编号" maxLength={200} value={keyword} onChange={e=>{setKeyword(e.target.value);setPage(1);}}/>}</Field>
       {error?<Notice tone="danger" action={<Button size="sm" onClick={()=>setRetry(n=>n+1)}>重试客户列表</Button>}>{error}</Notice>:!rows?<BlockState state="loading" title="正在加载客户…"/>:<>
         <p className="m3s-aux" role="status">共 {rows.total} 位客户 · 每页 10 条</p>
         {!rows.records.length?<BlockState state="empty" title="暂无匹配的客户。"/>:<ul className="m3s-picker-list" aria-label="可联系客户">
@@ -1513,7 +1513,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
             <Segments label="收件箱范围" value={reviewing ? "team" : "mine"} onChange={value => { changeScope(value, value === "team" ? agentFilter : 0); if (value === "mine" && listTab === "unassigned") changeTab("pending"); }} items={[{ value: "mine", label: "我的客户" }, { value: "team", label: "组内审阅" }]} />
             {reviewing && teamAgents.length > 0 && <Select aria-label="按专属客服筛选" value={agentFilter ? String(agentFilter) : ""} onChange={value => changeScope("team", Number(value))} options={[{ value: "", label: "全部专属客服" }, ...teamAgents.map(([id, name]) => ({ value: String(id), label: name }))]} />}
           </div>}
-          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索客户或会话编号" aria-label="搜索客户或会话编号" />
+          <Input data-search value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索客户或会话编号" aria-label="搜索客户或会话编号" />
           <div className="m3s-tabs">
             <Segments label="会话状态筛选" value={listTab} onChange={changeTab} items={[...tabs].sort(([a], [b]) => TAB_ORDER.indexOf(a) - TAB_ORDER.indexOf(b)).map(([value, label]) => {
               const count = customerRows.filter(row => tabMatch(row, value, adminId)).length;

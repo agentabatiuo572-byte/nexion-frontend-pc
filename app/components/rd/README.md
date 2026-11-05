@@ -56,7 +56,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 写操作确认 | 继续用 `OperationConfirmModal` | 见下 |
 | 解除待确认 | `ReleaseModal`；`label` 写原操作，统一的一句话在组件里，页面特有的说明传 `explain` | `overlay.tsx` |
 | 按钮 | `Button`、`IconButton`；和主按钮并排的危险入口用 `danger-outline`，实心 `danger` 只给最终确认。高度读 `--rd-control-h`（32）、`-sm`（24）、`-lg`（40），页面不写高度 | `button.tsx` |
-| 状态 | `StatusTag`；列表筛成只有一种状态时，这个默认状态传 `neutral`（灰字加图标）；弹窗标题下「不能撤销」用 `IrreversibleTag` | `status-tag.tsx` |
+| 状态 | `StatusTag`；列表筛成只有一种状态时，这个默认状态传 `neutral`（灰字加图标）；弹窗标题下「不能撤销」用 `IrreversibleTag`，走审批用 `ApprovalTag`（谁来批、批准前什么不变在它的提示图标里，不再写事实行） | `status-tag.tsx` |
 | 提示图标和气泡：这是什么、显示位置、生效时间、口径、后果 | `Explain`，悬停、点击、键盘都能开；`content` 自由内容（多段用 `<p>`），`rows` 分行写；`Panel`、`Fold`、`Conclusion`、`Stat`、`ConfigRow`、`Field`、`Check`、`CheckGroup`、`KeyValues`、`Decision`、`Drawer`、`StatusTag` 传 `explain` 就自带。正文里的词写成 children 就是虚线下划线，不加图标 | `explain.tsx` |
 | 一个整体分几份 | `Donut` 环图，中间写总额，图例写数；旁边有表格时传 `legend={false}`，表格第一列放色点当图例；两类都有钱才画 | `chart.tsx` |
 | 图和数据放一起 | `Figure`，图在左（`width` 是上限）、数据在右，名字和数字挨着；容器窄时上下排，尺和条这类宽图传 `stack="wide"` | `chart.tsx` |
@@ -192,7 +192,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 - `title`：框上写的短标题，只写动作和对象。不传就用 `action`；`action` 照旧是记进操作记录的名字，不要为了缩短标题去改它，长单号放 `facts`。
 - `confirmLabel`：确认按钮写动作，比如 `确认放行`，默认 `确认提交`。
 - `statedBrief`：这个操作自己的 `{ impact, check }`，传了摘要就不按文字猜（OP-51）。
-- `content`：比 `facts` 更长的影响块，比如促销奖励影响，放在要填的字段下面、覆盖率上面。块用 `.rd-impact`，标题 `.rd-impact-title`，里面的 `Table` 不带面板底色，行距收紧。框里内容超过一屏时理由框留在底部，这样必填项不会被它挡住。
+- `content`：比 `facts` 更长的影响块，比如促销奖励影响，放在事实区下面、要填的字段上面，平时收成一行或折叠。资金信息都排在要填的字段前：框里内容超过一屏时理由框固定在底部，排在字段下面的内容会滚到它后面。块用 `.rd-impact`，标题 `.rd-impact-title`，里面的 `Table` 不带面板底色，行距收紧。
 - `blockedReason`：这次不能再提交的原因，写在框里，确认按钮禁用。比如提交时发现单据已被别人处理：再调一次 `openActionConfirm`，传最新内容和这个字段，框不关，已填的理由留着。
 
 - `reasonPlaceholder`：理由框的占位，按场景写（TX-11），默认「例如：工单号、处理依据」。
@@ -207,7 +207,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 确认框提交中锁住里面全部输入、选项、取消和 ×，失败后恢复（OP-33）。数字框填坏（`badInput`）不算空，不能提交。
 
-理由字段写「操作理由 * 至少 8 字」，上限在理由框角落的字数里。缺什么写在灰按钮的提示里，刚打开不报错，字段失焦或点过提交才在字段下用警告色写原因。框里填过内容后点空白不关，×、取消、Esc 照常关。
+理由字段写「操作理由 * 至少 8 字」，上限在理由框角落的字数里。缺什么写在灰按钮的提示里，刚打开不报错，字段失焦或点过提交才在字段下用警告色写原因。框里填过内容后点空白和 Esc 都不关，×、取消照常关，搜索框里打字不算填内容（`data-search`）。多字段表单里，每个字段的范围、格式错写在这个字段下；跨字段的 `feedback` 传 `field` 就写在那一项下面，不传写在表单最后。
 
 收到权限层的 403（`ADMIN_PERMISSION_DENIED`、`ACCESS_DENIED`）时共用层提示「这个账号没有这项权限」，关框，外壳重读权限，页面上的按钮随之收起。业务规则的 403 有自己的说明，按普通失败留在框里。页面自己的表单（不走 `OperationConfirmModal`、`KConfirmModal`）在 catch 里用 `isPermissionDenied(error)` 判断，调 `announcePermissionDenied()` 后自己关框。
 

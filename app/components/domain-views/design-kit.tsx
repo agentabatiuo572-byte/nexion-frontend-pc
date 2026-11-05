@@ -21,6 +21,7 @@ import { isL5KpiExport, l5KpiRange, L5_KPI_WINDOWS, l5BusinessToday } from "./l-
 import { Check as RdCheck, CheckGroup as RdCheckGroup } from "@/app/components/rd/field";
 import { Fold as RdFold } from "@/app/components/rd/fold";
 import { Button as RdButton } from "@/app/components/rd/button";
+import { Select as RdSelect } from "@/app/components/rd/select";
 import { DiffField } from "@/app/components/rd/diff-list";
 import { Explain } from "@/app/components/rd/explain";
 import { Notice as RdNotice } from "@/app/components/rd/block-state";
@@ -652,15 +653,45 @@ function editCurrent(spec: EditSpec, kind: string): { text: ReactNode; unit?: st
 }
 
 /** 数字框填错时写什么。范围全站写「1–90」「0–1,000,000」，不写开发词（TX-05）。 */
-function editNumberError(spec: EditSpec): string {
+function numberRangeText({ min, max, step }: { min?: number; max?: number; step?: number }): string {
   const num = (value: number) => value.toLocaleString("en-US", { maximumFractionDigits: 20 });
-  const { min, max, step } = spec;
-  const range = min !== undefined && max !== undefined ? ` ${num(min)}–${num(max)} 的`
-    : min !== undefined ? `不小于 ${num(min)} 的`
-    : max !== undefined ? `不大于 ${num(max)} 的`
+  const range = min != null && max != null ? `${num(min)}–${num(max)} 的`
+    : min != null ? `不小于 ${num(min)} 的`
+    : max != null ? `不大于 ${num(max)} 的`
     : "有效的";
-  const decimals = step !== undefined && step < 1 ? `，最多 ${String(step).split(".")[1]?.length} 位小数` : "";
-  return `请输入${range}${step === 1 ? "整数" : "数字"}${decimals}`;
+  const decimals = step != null && step < 1 ? `，最多 ${String(step).split(".")[1]?.length} 位小数` : "";
+  return `${range}${step === 1 ? "整数" : "数字"}${decimals}`;
+}
+
+function editNumberError(spec: EditSpec): string {
+  return `请输入 ${numberRangeText(spec)}`.replace("请输入 不", "请输入不").replace("请输入 有效", "请输入有效");
+}
+
+type MultiFieldSpec = Extract<BusinessFormSpec, { kind: "multi-field" }>;
+
+/** 每个字段自己填得对不对，字段下和灰按钮的提示用同一句（VS-107）。跨字段的 feedback 已报错时不再报范围，同一件事只写一处（VS-105）。 */
+function multiFieldIssues(spec: MultiFieldSpec, state: BusinessFormValue): Record<string, string> {
+  const issues: Record<string, string> = {};
+  const feedback = spec.feedback?.(state);
+  spec.fields.filter((f) => !f.visibleWhen || (state[f.visibleWhen.key] ?? "") === f.visibleWhen.equals).forEach((f) => {
+    const raw = (state[f.key] ?? "").trim();
+    if (raw && f.minLength != null && raw.length < f.minLength) issues[f.key] = `${f.label}至少 ${f.minLength} 位`;
+    else if (raw && f.maxLength != null && raw.length > f.maxLength) issues[f.key] = `${f.label}最多 ${f.maxLength} 位`;
+    else if (raw && f.pattern) {
+      try {
+        if (!new RegExp(f.pattern).test(raw)) issues[f.key] = f.patternMessage ?? `${f.label}格式不对`;
+      } catch {
+        issues[f.key] = `${f.label}校验规则不可用`;
+      }
+    } else if (f.inputKind === "number" && !feedback?.invalid && (raw || f.required === false)) {
+      const n = Number(state[f.key]);
+      const off = !Number.isFinite(n) ? false
+        : (f.min != null && n < f.min) || (f.max != null && n > f.max)
+          || (f.step != null && f.step > 0 && f.min != null && !isDecimalStepAligned(String(state[f.key]).trim(), f.min, f.step));
+      if (off) issues[f.key] = `${f.label}要填 ${numberRangeText(f)}`;
+    }
+  });
+  return issues;
 }
 
 export type BusinessFormSpec =
@@ -721,7 +752,7 @@ export type BusinessFormSpec =
   // 通用多字段配置:一个「调整」按钮 → 一个弹窗里编辑 N 个带标签的值(各值独立 backend-replaceable,
   // 配合 EOp "param-multi" + McSpec.paramKeys 把每字段写到自己的 param key)。
   // ascending=true 时校验 number 字段严格递增(如 分段月界 早末<中末<总月数)。
-  | { kind: "multi-field"; title?: string; hint?: string; feedback?: (value: BusinessFormValue) => { message: string; invalid: boolean }; amplifies?: (value: BusinessFormValue) => boolean; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; onFieldChange?: (key: string, next: BusinessFormValue) => BusinessFormValue; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "datetime-local" | "asset-upload" | "checkbox"; options?: string[]; mustChoose?: boolean; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; /** 这一项是什么、怎么填：收进字段名旁的提示图标（DP-06），只在 RdPage 里显示。 */ explain?: ReactNode; warning?: (value: BusinessFormValue) => string | undefined; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
+  | { kind: "multi-field"; title?: string; hint?: string; /** 跨字段校验。传 field 时写在那一项下面，不传写在表单最后。 */ feedback?: (value: BusinessFormValue) => { message: string; invalid: boolean; field?: string }; amplifies?: (value: BusinessFormValue) => boolean; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; onFieldChange?: (key: string, next: BusinessFormValue) => BusinessFormValue; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "datetime-local" | "asset-upload" | "checkbox"; options?: string[]; mustChoose?: boolean; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; /** 这一项是什么、怎么填：收进字段名旁的提示图标（DP-06），只在 RdPage 里显示。 */ explain?: ReactNode; warning?: (value: BusinessFormValue) => string | undefined; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentIssuanceLimit?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentPopupCadenceEnabled?: string; currentPopupDelayMs?: string; currentPopupCooldownHours?: string; currentPopupMaxPerSession?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
@@ -1537,19 +1568,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     const isVisible = (field: (typeof spec.fields)[number]) =>
       !field.visibleWhen || (state[field.visibleWhen.key] ?? "") === field.visibleWhen.equals;
     spec.fields.filter((f) => isVisible(f) && f.required !== false).forEach((f) => needs(f.key, f.label));
-    spec.fields.filter(isVisible).forEach((field) => {
-      const raw = (state[field.key] ?? "").trim();
-      if (!raw) return;
-      if (field.minLength != null && raw.length < field.minLength) missing.push(`${field.label} 至少 ${field.minLength} 位`);
-      if (field.maxLength != null && raw.length > field.maxLength) missing.push(`${field.label} 最多 ${field.maxLength} 位`);
-      if (field.pattern) {
-        try {
-          if (!new RegExp(field.pattern).test(raw)) missing.push(field.patternMessage ?? `${field.label} 格式不正确`);
-        } catch {
-          missing.push(`${field.label} 校验规则不可用`);
-        }
-      }
-    });
+    missing.push(...Object.values(multiFieldIssues(spec, state)));
     spec.fields.filter((f) => f.requiredWhenAddedTo).forEach((f) => {
       const target = spec.fields.find((candidate) => candidate.key === f.requiredWhenAddedTo);
       if (!target) return;
@@ -1569,17 +1588,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     }
     const nums = spec.fields.filter((f) => isVisible(f) && f.inputKind === "number").map((f) => ({ f, n: Number(state[f.key]) }));
     const hasInvalidNumber = nums.some(({ n }) => !Number.isFinite(n));
-    if (hasInvalidNumber) {
-      missing.push("数值字段须为有效数字");
-    } else {
-      nums.forEach(({ f, n }) => {
-        if (f.min != null && n < f.min) missing.push(`${f.label} 须 ≥ ${f.min}`);
-        if (f.max != null && n > f.max) missing.push(`${f.label} 须 ≤ ${f.max}`);
-        if (f.step != null && f.step > 0 && f.min != null) {
-          if (!isDecimalStepAligned(String(state[f.key]).trim(), f.min, f.step)) missing.push(`${f.label} 须按 ${f.step} 递增`);
-        }
-      });
-    }
+    if (hasInvalidNumber) missing.push("数值字段须为有效数字");
     if (!hasInvalidNumber && spec.ascending) {
       for (let i = 1; i < nums.length; i++) {
         if (nums[i].n <= nums[i - 1].n) { missing.push(`${nums[i].f.label} 须大于 ${nums[i - 1].f.label}`); break; }
@@ -1711,6 +1720,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
   const surface = useRdSurface();
   const formId = useId();
   const [formLeft, setFormLeft] = useState(false);
+  const [leftFields, setLeftFields] = useState<Record<string, boolean>>({});
   const [multiSelectSearch, setMultiSelectSearch] = useState<Record<string, string>>({});
   const [assetUploading, setAssetUploading] = useState<Record<string, boolean>>({});
   const [assetNames, setAssetNames] = useState<Record<string, string>>({});
@@ -1847,6 +1857,8 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
     });
     const legend = spec.title ?? "填写设置";
     const feedback = spec.feedback?.(value);
+    const issues = surface ? multiFieldIssues(spec, value) : {};
+    const fieldError = (key: string) => (attempted || leftFields[key] ? issues[key] : undefined) ?? (feedback?.invalid && feedback.field === key && (attempted || formLeft) ? feedback.message : undefined);
     // 只有一项时占满一行，不留半边空。
     const alone = surface && visibleFields.length === 1;
     const fieldName = (f: (typeof spec.fields)[number]) => <>
@@ -1854,7 +1866,11 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
       {surface && f.explain && <Explain label={`${f.label}的说明`} content={f.explain} />}
     </>;
     return (
-      <div className="field" data-business-form="multi-field" onBlur={() => setFormLeft(true)}>
+      <div className="field" data-business-form="multi-field" onBlur={(event) => {
+        setFormLeft(true);
+        const key = event.target.id.startsWith(`${formId}-`) ? event.target.id.slice(formId.length + 1) : "";
+        if (key) setLeftFields((current) => current[key] ? current : { ...current, [key]: true });
+      }}>
         {legend && <span className="bf-legend">{legend}</span>}
         <div className="grid g-2" style={{ gap: 10 }}>
           {visibleFields.map((f) => f.inputKind === "multi-select" ? (
@@ -1930,7 +1946,11 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
             // htmlFor 写明：字段名里的提示图标也是按钮，不写的话 label 会连到它而不是输入框。
             <label className="field" htmlFor={`${formId}-${f.key}`} style={{ marginBottom: 0, ...(f.wide || alone ? { gridColumn: "1 / -1" } : {}) }} key={f.key}>
               <span>{fieldName(f)}</span>
-              {f.inputKind === "select" ? (
+              {f.inputKind === "select" && surface ? (
+                <RdSelect id={`${formId}-${f.key}`} aria-label={f.label} required={f.required !== false} aria-invalid={fieldError(f.key) ? true : undefined} placeholder={f.mustChoose ? "请选择" : undefined}
+                  value={value[f.key] ?? (f.mustChoose ? "" : f.options?.[0]) ?? ""} onChange={(next) => set(f.key, next)}
+                  options={(f.options ?? []).map((o) => ({ value: o, label: f.optionLabels?.[o] ?? o }))} />
+              ) : f.inputKind === "select" ? (
                 // 能枚举的值用下拉,不让运营手输(最高设计铁律:能勾选的不要输入)
                 <select id={`${formId}-${f.key}`} className="fld" required={f.required !== false} aria-required={f.required !== false} value={value[f.key] ?? (f.mustChoose ? "" : f.options?.[0]) ?? ""} onChange={(e) => set(f.key, e.target.value)}>
                   {f.mustChoose && <option value="" disabled>请选择</option>}
@@ -1942,6 +1962,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
                 <input id={`${formId}-${f.key}`} className="fld" type={f.inputKind === "number" ? "number" : f.inputKind === "datetime-local" ? "datetime-local" : "text"} min={f.min} max={f.max} step={f.step} minLength={f.minLength} maxLength={f.maxLength} required={f.required !== false} aria-required={f.required !== false} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
               )}
               {f.help && <span className="tiny muted">{f.help}</span>}
+              {surface && fieldError(f.key) && <span role="alert" className="rd-form-error">{fieldError(f.key)}</span>}
               {f.warning?.(value) && <span role="status" className="tiny" style={{ color: "var(--v5-warning)" }}>{f.warning(value)}</span>}
               {f.warnAbove != null && Number(value[f.key]) > f.warnAbove && (
                 <span className="tiny" style={{ display: "block", marginTop: 4, color: "var(--v5-warning)", fontWeight: 600 }}>
@@ -1956,7 +1977,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
           : !feedback.invalid
             ? <div role="status" className="rd-form-help" style={{ marginTop: 8 }}>{feedback.message}</div>
             // 填错是「要你处理」：橙黄，刚打开不报，失焦或点过提交才报（VS-107）。
-            : (attempted || formLeft) && <div role="alert" className="rd-form-error" style={{ marginTop: 8 }}>{feedback.message}</div>)}
+            : !feedback.field && (attempted || formLeft) && <div role="alert" className="rd-form-error" style={{ marginTop: 8 }}>{feedback.message}</div>)}
         {spec.hint && <div className={surface ? "rd-form-help" : "tint tiny"} style={{ marginTop: surface ? 8 : 10 }}>{spec.hint}</div>}
       </div>
     );
@@ -3587,7 +3608,9 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const businessMissing = missingBusinessFields(activeBusinessForm, businessValue);
   // 表单自己写了校验提示的，理由下面的清单不再写一遍（VS-105）。
   const formFeedback = surface && activeBusinessForm?.kind === "multi-field" ? activeBusinessForm.feedback?.(businessValue) : undefined;
-  const listedMissing = formFeedback?.invalid ? businessMissing.filter((message) => message !== formFeedback.message) : businessMissing;
+  // 已经写在字段下的不再列一遍。
+  const shownInFields = surface && activeBusinessForm?.kind === "multi-field" ? [...Object.values(multiFieldIssues(activeBusinessForm, businessValue)), ...(formFeedback?.invalid ? [formFeedback.message] : [])] : [];
+  const listedMissing = businessMissing.filter((message) => !shownInFields.includes(message));
   const submittedValue = spec?.submitEditValue
     ? newVal
     : businessNewValue(activeBusinessForm, businessValue) ?? newVal;
@@ -3697,8 +3720,11 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     }
   };
   const submitLabel = pendingReason !== undefined ? "重试原操作" : approvalRecovery === "retry" ? "按原操作重试" : approval ? "提交审批" : confirmLabel;
+  // 资金信息排在要填的字段前，理由框固定在底部时不会把它盖住（OP-47）。改一个值的框方向随输入变，放在输入框下面，不然打字时输入框会跳。
+  const coverageFirst = surface && !approval && !spec;
+  const coverageInFacts = coverageFirst && !!facts;
   const coverageNotice = effectiveAmplifies && (
-    <div className={surface && !covBlocked ? "alertbar calm" : "alertbar danger"} style={{ marginBottom: 16, border: 0 }}>
+    <div className={surface && !covBlocked ? "alertbar calm" : "alertbar danger"} style={{ marginBottom: coverageInFacts ? 0 : 16, border: 0 }}>
       <span className="ico"><Icon name="alert" size={16} /></span>
       {surface && coverage && !covBlocked ? (
         // 够得上红线时只留数字，后果和检查说明进提示图标（DP-06）。
@@ -3790,7 +3816,9 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       </>}
       {!surface && !approval && coverageNotice}
       {!surface && !approval && completionCopy && <div className="tint tiny" style={{ marginBottom: 14 }}>{completionCopy}</div>}
-      {facts && <div className="rd-confirm-facts">{facts}</div>}
+      {facts && <div className="rd-confirm-facts">{facts}{coverageInFacts && coverageNotice}</div>}
+      {coverageFirst && !facts && coverageNotice}
+      {surface && content}
       {activeBusinessForm && (
         <fieldset disabled={formLocked} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         {inlineApproval?.renderForm ? inlineApproval.renderForm(businessValue, setBusinessValue, formLocked, !!approval) : (
@@ -3884,8 +3912,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
           )}
         </div>
       )}
-      {surface && content}
-      {surface && !approval && coverageNotice}
+      {surface && !approval && !coverageFirst && coverageNotice}
       <div className={surface ? "field rd-reason-field" : "field"}>
         {surface
           ? <label htmlFor={reasonFieldId}>{approval ? "变更理由" : "操作理由"}<span className="rd-form-required" aria-hidden="true">*</span><span className="rd-form-hint">至少 {reasonMin} 字</span></label>

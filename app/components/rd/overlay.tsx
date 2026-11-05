@@ -29,7 +29,7 @@
  * - 抽屉上最多再叠一层弹窗，弹窗上不再叠弹窗（PG-38）；错误写在最上层。
  *
  * Modal 用法同旧 Modal。RdPage 里的旧 Modal、OperationConfirmModal 会自动走这个组件，不用改调用。
- * 框里打过字后点空白不关，免得填的内容丢了；只靠点选的表单传 dirty。×、取消、Esc 照常关。
+ * 框里打过字后点空白和 Esc 都不关，免得填的内容丢了，要走就点取消或 ×；只靠点选的表单传 dirty，搜索框不算填内容。
  *
  * 弹窗里的文字分四层（VS-100～VS-108）：
  * - 这是什么操作：title 只写动作和对象，页面分组和长单号不进标题。icon 给标题前的图标底，默认灰；
@@ -50,6 +50,7 @@ import { Button, IconButton } from "./button";
 import { Explain } from "./explain";
 import { Fact, Facts } from "./facts";
 import { IconTile } from "./icon-tile";
+import { EffectSlot } from "./status-tag";
 import { useRdSurface } from "./surface";
 import type { RoleTone, StateTone } from "./tone";
 
@@ -186,6 +187,9 @@ export function Decision({ note, explain, danger, others, primary }: { note?: Re
   );
 }
 
+/** 搜索框不算填内容，打了字照样能关。 */
+const SEARCH_INPUT = 'input[type="search"], [role="searchbox"], [data-search]';
+
 export function Modal({ title, sub, icon, tone = "neutral", onClose, children, footer, wide = false, busy = false, dirty = false, className, style }: {
   title: ReactNode;
   /** 标题下面一行：生效方式、能不能撤销这类后果标签，或对象编号。 */
@@ -220,7 +224,8 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
           aria-modal="true"
           aria-busy={busy}
           aria-describedby={undefined}
-          onInput={() => { typed.current = true; }}
+          onInput={(event) => { if (!(event.target instanceof Element && event.target.matches(SEARCH_INPUT))) typed.current = true; }}
+          onEscapeKeyDown={(event) => { if (dirty || typed.current) event.preventDefault(); }}
           onOpenAutoFocus={focus.onOpenAutoFocus}
           onCloseAutoFocus={focus.onCloseAutoFocus}
           onPointerDownOutside={(event) => event.preventDefault()}
@@ -232,7 +237,7 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
               : <IconTile tone={tone} icon={icon as LucideIcon} size={28} />)}
             <div className="rd-modal-heading">
               <Dialog.Title className="rd-modal-title">{title}</Dialog.Title>
-              {sub && <div className="rd-modal-sub">{sub}</div>}
+              {sub && <div className="rd-modal-sub"><EffectSlot>{sub}</EffectSlot></div>}
             </div>
             <IconButton aria-label="关闭" disabled={busy} onClick={close}><X size={16} aria-hidden /></IconButton>
           </div>
@@ -246,7 +251,7 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
 
 /**
  * 解除待确认（OP-96）：重试被后端拒绝后，人核实过才放开本页的锁。不发请求，不写操作记录，没有生效方式和关键数字。
- * 那句话全站同一句，不要改。explain 写这一页先到哪里核对。
+ * 那句话全站同一句，不要改。重试被拒不等于原操作没生效，所以写「确认结果」，不写「确认没有生效」。explain 写这一页先到哪里核对。
  */
 export function ReleaseModal({ label, explain, onCancel, onConfirm }: { label: ReactNode; explain?: ReactNode; onCancel: () => void; onConfirm: () => void }) {
   return (
@@ -256,7 +261,7 @@ export function ReleaseModal({ label, explain, onCancel, onConfirm }: { label: R
     </>}>
       <div className="rd-stack">
         <Facts><Fact k="原操作">{label}</Fact></Facts>
-        <p>确认这次操作没有生效后再解除。解除后可以重新操作，这一步不发请求，不写操作记录。{explain && <Explain label="解除待确认的说明" content={explain} />}</p>
+        <p>确认原操作的结果后再解除。解除后可以重新操作，这一步不发请求，不写操作记录。{explain && <Explain label="解除待确认的说明" content={explain} />}</p>
       </div>
     </Modal>
   );

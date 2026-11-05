@@ -300,7 +300,7 @@
 @keyframes rd-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes rd-fade-out { from { opacity: 1; } to { opacity: 0; } }
 
-.rd-modal { position: fixed; top: 50%; left: 50%; z-index: calc(var(--rd-z-modal) + 1); display: flex; flex-direction: column; width: min(520px, calc(100vw - 48px)); max-height: 88vh; transform: translate(-50%, -50%); border-radius: var(--rd-radius-panel); background: var(--rd-panel); color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); outline: none; }
+.rd-modal { position: fixed; top: 50%; left: 50%; z-index: calc(var(--rd-z-modal) + 1); display: flex; flex-direction: column; width: min(520px, calc(100vw - 48px)); max-height: calc(100vh - 48px); transform: translate(-50%, -50%); border-radius: var(--rd-radius-panel); background: var(--rd-panel); color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); outline: none; }
 .rd-modal[data-wide] { width: min(680px, calc(100vw - 48px)); }
 .rd-modal[data-state="open"] { animation: rd-fade-in .14s ease-out; }
 /* 弹窗的信息分级（VS-100～VS-108）。四层：这是什么操作（标题）、关键信息（对象和数字，框里最大最亮，颜色带含义）、
@@ -352,11 +352,18 @@
 .rd-toast { position: fixed; top: calc(var(--admin-topbar-h) + 32px); left: 50%; z-index: var(--admin-z-toast); width: min(420px, calc(100vw - 40px)); padding: 12px 20px; border: 1px solid var(--rd-line-strong); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); color: var(--rd-text); font-family: var(--rd-font); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); text-align: center; transform: translateX(-50%); }
 /* 框里内容超过一屏时，理由框留在底部看得到，上面的内容在它后面滚。 */
 .rd-modal .rd-reason-field { position: sticky; bottom: calc(-1 * var(--rd-space-4)); z-index: 1; margin-top: calc(-1 * var(--rd-space-2)); margin-bottom: calc(-1 * var(--rd-space-4)); padding-top: var(--rd-space-2); padding-bottom: var(--rd-space-4); background: var(--rd-panel); }
+/* 上面有内容滚在它后面时，边上渐隐一截，看得出还有内容。没内容时渐隐落在空白上，看不见。 */
+.rd-modal .rd-reason-field::before { content: ""; position: absolute; inset: calc(-1 * var(--rd-space-4)) 0 auto; height: var(--rd-space-4); background: linear-gradient(to top, var(--rd-panel), transparent); pointer-events: none; }
 .rd-reason-box { position: relative; }
 .rd-reason-box textarea { display: block; width: 100%; padding-bottom: 24px; }
 .rd-reason-count { position: absolute; right: 10px; bottom: 6px; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; pointer-events: none; }
 .rd-confirm-facts { margin-bottom: 16px; padding: 12px 16px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
 .rd-confirm-facts .rd-facts + .rd-notice { margin-top: 12px; }
+/* 覆盖率跟在事实后面，是这一块的最后一行：资金信息排在要填的字段前，不会滚到理由框后面。 */
+.rd-modal.rd-confirm .rd-confirm-facts > .alertbar { margin-top: 8px; }
+.rd-modal.rd-confirm .rd-confirm-facts > .alertbar.calm { padding: 0; background: none; }
+/* 只有一句「现在 → 改后」时不用底块，内容太短，底块右边全是空的。 */
+.rd-confirm-facts:has(> .rd-diff-one:only-child) { padding: 0; background: none; }
 .rd-confirm-alert { margin-bottom: 16px; }
 .rd-confirm-alert .rd-notice { padding: 8px 16px; border-radius: var(--rd-radius-control); }
 .rd-confirm-edit { margin-bottom: 16px; }
@@ -516,6 +523,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 /* 弹窗和抽屉里填错了是「要你处理」，用橙黄；红只给失败和不能撤销（VS-107）。 */
 :is(.rd-modal, .rd-drawer) .rd-form-error { color: var(--rd-warn); }
 :is(.rd-modal, .rd-drawer) :is(.rd-input, .rd-select)[aria-invalid="true"] { outline-color: var(--rd-warn); }
+.rd-modal.rd-confirm .fld[aria-invalid="true"] { outline: 1px solid var(--rd-warn); }
 .rd-check-item { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 2px 8px; align-items: start; }
 .rd-check-item .rd-check { margin-top: 3px; }
 .rd-check-item label { color: var(--rd-text); cursor: pointer; }
@@ -559,10 +567,12 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-change-unit { margin-left: 4px; font-size: var(--rd-text-body); font-weight: 400; color: var(--rd-text-3); }
 .rd-change-arrow { flex: none; color: var(--rd-text-3); }
 .rd-change-entry { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: var(--rd-control-h-lg); }
-.rd-change-entry > :is(.rd-number, .rd-input) { flex: 0 1 200px; width: auto; max-width: 200px; }
+.rd-change-entry > :is(.rd-number, .rd-input) { flex: 1 1 160px; width: auto; min-width: 0; }
 .rd-change[data-size="key"] .rd-change-entry .rd-input { height: var(--rd-control-h-lg); font-size: var(--rd-text-title); font-weight: 600; font-variant-numeric: tabular-nums; }
 .rd-change[data-size="key"] .rd-change-entry .rd-number-unit { height: var(--rd-control-h-lg); }
 .rd-change[data-size="body"] :is(.rd-change-now, .rd-change-entry) { min-height: var(--rd-control-h); }
+/* 短词和开关内容窄，用底块右边全是空的；长文字（stack）还是一块。 */
+.rd-change[data-size="body"]:not([data-stack]) { padding: 0; background: none; }
 .rd-change[data-size="body"] .rd-change-now, .rd-change-now[data-words] { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); }
 .rd-change-hint { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-change-note { flex-basis: 100%; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
@@ -890,6 +900,9 @@ td .rd-flow { margin-bottom: 0; }
 .rd-impact .rd-table :is(th, td) { padding-block: var(--rd-space-1); }
 .rd-impact .rd-table :is(th, td):first-child { padding-left: 0; }
 .rd-impact .rd-table :is(th, td):last-child { padding-right: 0; }
+.rd-impact-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0 0 16px; color: var(--rd-text-2); }
+.rd-impact-line b { font-weight: 400; color: var(--rd-text-3); }
+.rd-impact-fold { margin-bottom: 16px; }
 .rd-impact-title { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; color: var(--rd-text); }
 .rd-impact-title .rd-explain { margin-left: 4px; }
 .rd-impact-list { display: grid; gap: var(--rd-space-3); margin: 0; padding: 0; list-style: none; }
