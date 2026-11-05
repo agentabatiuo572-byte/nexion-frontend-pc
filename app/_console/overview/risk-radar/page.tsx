@@ -92,6 +92,9 @@ export default function RiskRadarPage() {
   const [subscription, setSubscription] = useState({ inApp: true, email: false, webhook: false, webhookUrl: "" });
   const [savedSubscription, setSavedSubscription] = useState(subscription);
   const [savingSubscription, setSavingSubscription] = useState(false);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
+  const [subscriptionError, setSubscriptionError] = useState("");
+  const [subscriptionReload, setSubscriptionReload] = useState(0);
   const [subscriptionVersion, setSubscriptionVersion] = useState(0);
   const [webhookMode, setWebhookMode] = useState("disabled");
   const [updatingSignal, setUpdatingSignal] = useState("");
@@ -115,6 +118,8 @@ export default function RiskRadarPage() {
   useEffect(() => {
     if (!canSubscribe) return;
     let alive = true;
+    setSubscriptionLoading(true);
+    setSubscriptionError("");
     fetchB5Subscription()
       .then((next) => {
         if (!alive) return;
@@ -125,12 +130,13 @@ export default function RiskRadarPage() {
         setWebhookMode(next.webhookMode);
       })
       .catch((cause) => {
-        if (alive) setToast(displayAdminError(cause));
-      });
+        if (alive) setSubscriptionError(displayAdminError(cause));
+      })
+      .finally(() => { if (alive) setSubscriptionLoading(false); });
     return () => {
       alive = false;
     };
-  }, [canSubscribe, setToast]);
+  }, [canSubscribe, subscriptionReload]);
 
   const yellowPct = Number(yellowInput);
   const redPct = Number(redInput);
@@ -317,7 +323,7 @@ export default function RiskRadarPage() {
     }
   };
   const saveSubscription = async () => {
-    if (!subscriptionChanged || !subscriptionValid) return;
+    if (!canSubscribe || subscriptionLoading || subscriptionError || savingSubscription || !subscriptionChanged || !subscriptionValid) return;
     setSavingSubscription(true);
     const commandKey = b5Commands.resolve(
       SUBSCRIPTION_SLOT,
@@ -461,7 +467,10 @@ export default function RiskRadarPage() {
           <div><BellRing size={18} /><b>告警订阅配置</b></div>
           <span>与「资金与应付款总览」共用</span>
         </div>
-        <div className="b5-channel-row">
+        {subscriptionLoading || subscriptionError ? <>
+          <BDomainDataState title="告警订阅配置" loading={subscriptionLoading} error={subscriptionError} onRetry={() => setSubscriptionReload((value) => value + 1)} />
+          <button disabled>保存订阅</button>
+        </> : <div className="b5-channel-row">
           <label><input type="checkbox" name="inApp" checked={subscription.inApp} disabled={!canSubscribe} onChange={(event) => setSubscription((value) => ({ ...value, inApp: event.target.checked }))} />站内</label>
           <label title="邮件服务未设置，暂不能发送"><input type="checkbox" name="email" checked={false} disabled />邮件（暂不可用）</label>
           <label title={webhookMode === "controlled-proxy" ? "通过外部接口发送" : "外部接口未设置，暂不能发送"}><input type="checkbox" name="webhook" checked={subscription.webhook} disabled={!canSubscribe || (webhookMode !== "controlled-proxy" && !subscription.webhook)} onChange={(event) => setSubscription((value) => ({ ...value, webhook: event.target.checked }))} />外部消息通知（{webhookMode === "controlled-proxy" ? "已配置受控代理" : "未配置"}）</label>
@@ -477,7 +486,7 @@ export default function RiskRadarPage() {
           <button disabled={!subscriptionChanged || !subscriptionValid || savingSubscription} onClick={() => void saveSubscription()}>
             {savingSubscription ? "保存中…" : "保存订阅"}
           </button>
-        </div>
+        </div>}
       </section>}
 
       <section className="b5-subscription" data-capability="b5-subscriber-inbox">

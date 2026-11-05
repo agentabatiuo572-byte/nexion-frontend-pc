@@ -661,7 +661,7 @@ export type BusinessFormSpec =
   | { kind: "disclosure-jurisdiction"; mode: "create" | "edit"; code?: string; name?: string; revision?: number }
   | { kind: "version-authoring"; mode?: "create" | "edit"; version?: string; jurisdiction?: string; zh?: string; vi?: string; en?: string; chapters?: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; languageScope?: string; languageScopes?: string[]; jurisdictionOptions?: { value: string; label: string }[]; effectiveDate?: string; requiresReack?: boolean; versionReadonly?: boolean; jurisdictionReadonly?: boolean }
   | { kind: "disclosure-matrix"; mode: "create" | "edit"; jurisdictionCode?: string; jurisdictionName?: string; jurisdictionOptions?: { value: string; label: string }[]; countryCodes?: string[]; countryOptions?: { value: string; label: string }[]; version?: string; publishedVersionsByJurisdiction?: Record<string, string[]> }
-  | { kind: "disclosure-publish-review"; jurisdiction: string; currentVersion: string; targetVersion: string; affected: number; pendingAck: number; blocked: number; gatedActions: string[]; currentChapters: { no: string; zh: string; vi: string; zhBody: string; viBody: string }[]; targetChapters: { no: string; zh: string; vi: string; zhBody: string; viBody: string }[] }
+  | { kind: "disclosure-publish-review"; jurisdiction: string; currentVersion: string; targetVersion: string; affected: number; pendingAck: number; blocked: number; gatedActions: string[]; currentChapters: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; targetChapters: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[] }
   | { kind: "trust-section-authoring"; mode: "create" | "edit"; sectionKey: string; version?: string; description?: string; structure?: string; revision?: number;
       fields?: { key: string; label: string; value: string }[] }
   | { kind: "trust-section-publish"; currentVersion: string; targetVersion: string; requireDataSource?: boolean;
@@ -1040,7 +1040,7 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       jurisdiction: spec.jurisdiction ?? "",
       languageScope: spec.languageScope ?? spec.languageScopes?.[0] ?? DEFAULT_LANGUAGE_SCOPES[0],
       effectiveDate: spec.effectiveDate ?? "",
-      // I5 新版本发布必定触发重新确认；旧草稿即使曾保存 false，编辑时也强制纠正。
+      // I5 切换生效版本时要求重新确认；发布只封存内容。旧草稿也统一保存该要求。
       requiresReack: "true",
       zh: spec.zh ?? "",
       vi: spec.vi ?? "",
@@ -1378,7 +1378,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (spec.targetChapters.length !== 7) missing.push("完整 7 章节");
     if (spec.targetChapters.some((chapter) => !chapter.zh.trim() || !chapter.vi.trim() || !chapter.zhBody.trim() || !chapter.viBody.trim())) missing.push("七章中越双语完整内容");
     if (state.jurisdictionConfirmed !== "true") missing.push("受众适用地区确认");
-    if (state.bilingualConfirmed !== "true") missing.push("七章中越双语核对");
+    if (state.bilingualConfirmed !== "true") missing.push("七章中越英内容核对");
   } else if (spec.kind === "disclosure-matrix") {
     ["jurisdictionCode", "jurisdictionName", "countryCodes", "version"].forEach((key) => needs(key, key));
   } else if (spec.kind === "trust-section-authoring") {
@@ -2351,7 +2351,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           })}
           {select("languageScope", "语言范围", spec.languageScopes ?? DEFAULT_LANGUAGE_SCOPES, { "zh+vi": "中文 + 越南语", "zh+vi+en": "中文 + 越南语 + 英语" })}
           {input("effectiveDate", "生效日期", "YYYY-MM-DD", "date")}
-          {select("requiresReack", "是否要求重新确认", ["true"], { true: "是（发布后用户须重新确认）" })}
+          {select("requiresReack", "是否要求重新确认", ["true"], { true: "是（切换生效版本后用户须重新确认）" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
           {textArea("zh", "中文版本正文", "填写中文条款/披露正文", 4)}
@@ -2405,7 +2405,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "disclosure-publish-review") {
     const changed = spec.targetChapters.filter((target) => {
       const current = spec.currentChapters.find((chapter) => chapter.no === target.no);
-      return !current || current.zh !== target.zh || current.vi !== target.vi || current.zhBody !== target.zhBody || current.viBody !== target.viBody;
+      return !current || current.zh !== target.zh || current.vi !== target.vi || current.en !== target.en || current.zhBody !== target.zhBody || current.viBody !== target.viBody || current.enBody !== target.enBody;
     });
     return (
       <div className="field" data-business-form="disclosure-publish-review">
@@ -2421,12 +2421,13 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <div style={{ maxHeight: 300, overflowY: "auto", marginTop: 8 }}>
           {spec.targetChapters.map((target) => {
             const current = spec.currentChapters.find((chapter) => chapter.no === target.no);
-            const isChanged = !current || current.zh !== target.zh || current.vi !== target.vi || current.zhBody !== target.zhBody || current.viBody !== target.viBody;
+            const isChanged = !current || current.zh !== target.zh || current.vi !== target.vi || current.en !== target.en || current.zhBody !== target.zhBody || current.viBody !== target.viBody || current.enBody !== target.enBody;
             return <div className="card" key={target.no} style={{ padding: 10, marginTop: 8, borderColor: isChanged ? "var(--warning)" : undefined }}>
               <b>第 {target.no} 章 · {isChanged ? "有修改" : "无变化"}</b>
-              <div className="grid g-2" style={{ gap: 8, marginTop: 6 }}>
+              <div className="grid g-3" style={{ gap: 8, marginTop: 6 }}>
                 <div><span className="tiny">中文</span><div>{target.zh}</div><div className="tiny">{target.zhBody}</div></div>
                 <div><span className="tiny">越南语</span><div>{target.vi}</div><div className="tiny">{target.viBody}</div></div>
+                <div><span className="tiny">英语</span><div>{target.en || "未提供英语标题"}</div><div className="tiny">{target.enBody || "未提供英语正文"}</div></div>
               </div>
             </div>;
           })}
@@ -2435,7 +2436,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           <span><input type="checkbox" checked={value.jurisdictionConfirmed === "true"} onChange={(event) => set("jurisdictionConfirmed", String(event.target.checked))} /> 确认发布适用地区为 {spec.jurisdiction}</span>
         </label>
         <label className="field" style={{ marginTop: 6 }}>
-          <span><input type="checkbox" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} /> 已核对七章中越双语内容，与监管要求一致</span>
+          <span><input type="checkbox" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} /> 已核对七章中文、越南语和英语内容，与监管要求一致</span>
         </label>
       </div>
     );
@@ -3417,15 +3418,17 @@ export type OperationApproval = {
   completionCopy?: string;
 };
 
-export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: {
+export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: {
   resolve: (value: BusinessFormValue) => OperationApproval | undefined;
   renderForm: (value: BusinessFormValue, onChange: (value: BusinessFormValue) => void, locked: boolean, approval: boolean) => ReactNode;
   recover: (reason: string, value: BusinessFormValue) => Promise<boolean>;
   pending?: boolean;
   expired?: boolean;
   disabledReason?: string;
-}; reasonMin?: number; reasonMax?: number; auditSink?: "a2" | "local-history"; briefKind?: OperatorBriefKind; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
-  const [reason, setReason] = useState("");
+}; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; auditSink?: "a2" | "local-history"; briefKind?: OperatorBriefKind; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+  const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
+  const [draftReason, setReason] = useState(pendingReason ?? "");
+  const reason = pendingReason ?? draftReason;
   const [newVal, setNewVal] = useState(() => initEditValue(edit));
   const [activeBusinessForm, setActiveBusinessForm] = useState<BusinessFormSpec | undefined>(businessForm);
   const [businessValue, setBusinessValue] = useState<BusinessFormValue>(() => initBusinessForm(businessForm));
@@ -3523,6 +3526,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         setSubmitError(operationConfirmErrorMessage(error));
       }
     } finally {
+      setPendingReason(getPendingReason?.());
       setSubmitting(false);
     }
   };
@@ -3572,7 +3576,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         )}
         {!approvalOnlyLookup && (
           <Btn variant="primary" disabled={!canConfirm} onClick={() => void handleConfirm()}>
-            <Icon name="check" size={15} /> {submitting ? "提交中…" : approvalRecovery === "retry" ? "按原操作重试" : approval ? "提交审批" : "确认提交"}
+            <Icon name="check" size={15} /> {submitting ? "提交中…" : pendingReason !== undefined ? "重试原操作" : approvalRecovery === "retry" ? "按原操作重试" : approval ? "提交审批" : "确认提交"}
           </Btn>
         )}
       </>}>
@@ -3671,7 +3675,8 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       )}
       <div className="field">
         <label htmlFor={reasonFieldId}>{approval ? "变更理由" : "操作理由"}（必填，{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）</label>
-        <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} disabled={inlineApproval ? formLocked : !!approval && (submitting || !!approvalRecovery)} onChange={(e) => setReason(e.target.value)} placeholder="例如：工单号、处理依据" />
+        <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} disabled={inlineApproval ? formLocked : !!approval ? submitting || !!approvalRecovery : !!getPendingReason && (submitting || pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} placeholder="例如：工单号、处理依据" />
+        {pendingReason !== undefined && <div className="tiny" style={{ marginTop: 7 }}>原操作结果尚未确认，理由已锁定。重试将继续原操作，不会重复执行。</div>}
         {!reasonOk && (
           <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
             {reasonLength < reasonMin

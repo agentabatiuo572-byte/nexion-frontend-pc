@@ -384,9 +384,8 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       return (
         <>
           {canSendCampaign(c)
-            ? <><button className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); sendNow(c); }}>立即发送</button>{" "}</>
-            : <><span className="tiny">没有发送紧急通知的权限</span>{" "}</>}
-          <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); cancelScheduled(c); }}>取消</button>
+            ? <><button className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); sendNow(c); }}>立即发送</button>{" "}<button className="l-btn sm" onClick={(e) => { e.stopPropagation(); cancelScheduled(c); }}>取消</button></>
+            : <span className="tiny">没有发送或取消紧急通知的权限</span>}
         </>
       );
     }

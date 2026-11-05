@@ -599,8 +599,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
               <tbody>
                 {templatePager.pageRows.map((t) => {
                   const st = tplStatus(t.ch);
-                  const canPublish = st !== "published";
-                  const canArchive = st !== "archived";
+                  const canPublish = st === "draft";
+                  const canArchive = st === "published";
                   return (
                     <tr key={t.ch}>
                       <td className="mono" style={{ fontSize: 11.5 }}>{t.ch}</td>

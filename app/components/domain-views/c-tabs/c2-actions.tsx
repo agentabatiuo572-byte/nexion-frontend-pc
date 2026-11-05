@@ -13,8 +13,10 @@ import {
   fetchUserAccountActionAccount,
   fetchUserAccountActionContext,
   fetchUserAccountActionOverview,
+  getPendingUserSessionRevocation,
   isUsersRequestNotFound,
   UsersRequestError,
+  UsersOutcomeUnknownError,
   removeUserAccountList,
   revokeUserSessions,
   startUserImpersonation,
@@ -551,25 +553,42 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   });
 
   const logoutAll = (account: User360Profile) => {
-    const activeCount = sessionCounts.get(accountId(account)) ?? 0;
-    if (activeCount <= 0) {
+    const id = accountId(account);
+    const pending = getPendingUserSessionRevocation(id);
+    const activeCount = sessionCounts.get(id) ?? 0;
+    if (!pending && activeCount <= 0) {
       toast("该用户当前没有在线设备");
       return;
     }
     openActionConfirm({
     action: `强制登出 · ${displayAccount(account)}`,
-    detail: `确认后该用户在 ${activeCount} 台设备上立即下线。`,
+    detail: pending ? "继续确认该用户的原登出操作，使用原理由，不会重复执行。" : `确认后该用户在 ${activeCount} 台设备上立即下线。`,
     amplifies: false,
     completionCopy: "确认后立即生效。",
     reasonMin: 8,
     reasonMax: 200,
-    run: (reason) => {
-      const id = accountId(account);
-      if (!id) return toast("该账户没有系统编号");
-      void perform(
-        () => revokeUserSessions(id, reason, OPERATOR()).then(() => `${displayAccount(account)} 已强制登出`),
-        "已强制下线",
-      );
+    getPendingReason: () => getPendingUserSessionRevocation(id)?.reason,
+    run: async (reason) => {
+      if (!id) throw new Error("该账户没有系统编号");
+      setBusy(true);
+      try {
+        try {
+          await revokeUserSessions(id, reason, OPERATOR());
+        } catch (error) {
+          if (error instanceof UsersOutcomeUnknownError) {
+            throw new Error("原操作结果尚未确认，请重试原操作。系统会使用原理由，不会重复执行。");
+          }
+          throw error;
+        }
+        // A confirmed write stays successful even if the following reads fail.
+        await loadOverview(true);
+        if (acct) await refreshAccountContext(accountId(acct)).catch((error: unknown) => {
+          setAccountContextError(errorMessage(error));
+        });
+        toast(`${displayAccount(account)} 已强制登出`);
+      } finally {
+        setBusy(false);
+      }
     },
     });
   };
@@ -805,7 +824,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         {status === "ACTIVE" && canFreeze && <button disabled={busy} className="l-btn sm mc" aria-label={`冻结 ${displayAccount(account)}`} onClick={(e) => { e.stopPropagation(); freeze(account); }}>冻结</button>}
                         {status === "FROZEN" && canUnfreeze && <button disabled={busy} className="l-btn sm mc" aria-label={`恢复 ${displayAccount(account)}`} onClick={(e) => { e.stopPropagation(); unfreeze(account); }}>恢复</button>}
-                        {canLogout && <button disabled={busy || (sessionCounts.get(accountId(account)) ?? 0) <= 0} className="l-btn sm" aria-label={`强制登出 ${displayAccount(account)}`} style={{ marginLeft: 6 }} onClick={(e) => { e.stopPropagation(); logoutAll(account); }}>强制登出</button>}
+                        {canLogout && <button disabled={busy || !!error || (!getPendingUserSessionRevocation(accountId(account)) && (sessionCounts.get(accountId(account)) ?? 0) <= 0)} className="l-btn sm" aria-label={`强制登出 ${displayAccount(account)}`} style={{ marginLeft: 6 }} onClick={(e) => { e.stopPropagation(); logoutAll(account); }}>强制登出</button>}
                         {!canFreeze && !canUnfreeze && !canLogout && <span className="tiny">只读</span>}
                       </td>
                     </tr>
@@ -924,7 +943,12 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           >
             <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{displayAccount(selectedAccount)} · <span className={`bdg ${statusTone}`}>{statusLabel}</span></div>
             
-            {accountContextError && <div className="ctint bad" role="alert" style={{ marginBottom: 12 }}>账户详情加载失败：{accountContextError}。为避免误操作已暂停处理，请重新打开后再试。</div>}
+            {accountContextError && <div className="ctint bad" role="alert" style={{ marginBottom: 12 }}>
+              账户详情加载失败：{accountContextError}。已暂停处理，请重新加载。
+              <button className="l-btn sm" disabled={busy} onClick={() => void refreshAccountContext(accountId(selectedAccount)).catch((detailError: unknown) => {
+                setAccountContextError(errorMessage(detailError));
+              })}>重新加载</button>
+            </div>}
 
             <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 4px" }}>账户概览</div>
             <div className="kv"><span className="k">用户编码</span><span className="v">{text(selectedAccount.userNo)}</span></div>
@@ -968,7 +992,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
             <div className="row wrap" style={{ gap: 8 }}>
               {status === "ACTIVE" && canFreeze && <button disabled={busy || !!accountContextError} className="l-btn sm mc" aria-label={`冻结 ${displayAccount(selectedAccount)}`} onClick={() => freeze(selectedAccount)}>冻结</button>}
               {status === "FROZEN" && canUnfreeze && <button disabled={busy || !!accountContextError} className="l-btn sm mc" aria-label={`恢复 ${displayAccount(selectedAccount)}`} onClick={() => unfreeze(selectedAccount)}>恢复</button>}
-              {canLogout && <button disabled={busy || !!accountContextError || (accountContext?.account && accountId(accountContext.account) === accountId(selectedAccount) ? asNumber(accountContext.activeSessions) : accountSessions.filter(activeSession).length) <= 0} className="l-btn sm" aria-label={`强制登出 ${displayAccount(selectedAccount)}`} onClick={() => logoutAll(selectedAccount)}>强制登出</button>}
+              {canLogout && <button disabled={busy || !!error || !!accountContextError || (!getPendingUserSessionRevocation(accountId(selectedAccount)) && (accountContext?.account && accountId(accountContext.account) === accountId(selectedAccount) ? asNumber(accountContext.activeSessions) : accountSessions.filter(activeSession).length) <= 0)} className="l-btn sm" aria-label={`强制登出 ${displayAccount(selectedAccount)}`} onClick={() => logoutAll(selectedAccount)}>强制登出</button>}
             </div>
           </Drawer>
         );

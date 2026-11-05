@@ -40,7 +40,7 @@ export function ExposureCard() {
       </div>
       <div className="font-mono-tabular mt-1.5" style={{ fontSize: 26, fontWeight: 600, letterSpacing: "-0.02em", color: tone }}>{fmtUsdCompact(net)}</div>
       <p className="mb-2.5 mt-0.5 text-[12px]" style={{ color: deficit ? "var(--v5-warning)" : "var(--v5-success)" }}>
-        <AutoGloss>{deficit ? "储备少于应付款，不够付" : "储备多于应付款，运行正常"}</AutoGloss>
+        <AutoGloss>{deficit ? "储备少于应付款，不够付" : net === 0 ? "储备等于应付款，刚好够付" : "储备多于应付款，运行正常"}</AutoGloss>
       </p>
       <AreaChart data={netSeries} color={tone} height={96} />
       <div className="mt-2 flex items-center justify-between font-mono-tabular text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>

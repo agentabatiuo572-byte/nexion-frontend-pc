@@ -488,10 +488,11 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       action: <>{editing ? "编辑披露草稿" : "新建披露版本"} · 风控提交</>,
       detail: (
         <>
-          披露正文按中文、越南语必填，英语可选维护(占位符一致)。草稿不生效;发布走「执行门槛:风控/超级管理员」操作确认。发布后还须切换生效版本映射；切换时按规则触发用户重新确认。
+          中文、越南语必填；选择包含英语的语言范围时，英语也须填写完整，三语占位符一致。保存草稿立即生效，但不改变 App 内容；发布提交到「操作记录与审批」，批准后生效，仅封存七章内容。随后还须另行提交生效版本映射，批准切换后才要求用户重新确认。
         </>
       ),
       amplifies: false,
+      completionCopy: "草稿保存立即生效于草稿，App 内容不变；发布与生效版本映射须分别批准后生效。",
       businessForm: disclosureFormSpec(base, initialJurisdiction, version, editing ? "edit" : "create"),
       onBusinessSelectionChange: async (form) => {
         if (editing) return disclosureFormSpec(editing, editing.jurisdiction, editing.version, "edit");
@@ -645,10 +646,11 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       action: <>{current ? "编辑" : "新增"}适用地区 × 版本映射</>,
       detail: (
         <>
-          这里仅维护启用适用地区的适用国家/地区与已发布版本映射。改映射等同给该适用地区换生效条款,会触发重确认;<b>发起人限风控,执行门槛 = 风控 / 超级管理员</b>。
+          这里仅维护启用适用地区的适用国家/地区与已发布版本映射。映射批准后生效；切换生效条款后，适用用户须重新确认。<b>需要风控或超级管理员操作</b>。
         </>
       ),
       amplifies: false,
+      completionCopy: "批准后生效：切换该地区生效版本；适用用户须重新确认。提交本身不会切换版本。",
       businessForm: {
         kind: "disclosure-matrix",
         mode: current ? "edit" : "create",
@@ -742,10 +744,11 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       action: <>发布已存披露草稿 · {row.jurisdiction}</>,
       detail: (
         <>
-          <b>合规关键操作</b>：发布的是已保存的草稿，发布后 7 章内容固定不能改；发布本身不会改变 App 上正在显示的版本，也不会要求用户重新确认。只有切换生效版本时，才会要求用户重新确认。<b>需要风控或超级管理员操作</b>。
+          <b>合规关键操作</b>：发布的是已保存的草稿，发布后 7 章内容固定不能改；发布本身不会改变 App 上正在显示的版本，也不会要求用户重新确认。发布须批准后生效，仅封存内容；之后另行提交生效版本映射，批准切换后才要求用户重新确认。<b>需要风控或超级管理员操作</b>。
         </>
       ),
       amplifies: false,
+      completionCopy: "批准后生效：仅封存已保存草稿，App 当前版本不变，也不触发重新确认；生效版本映射须另行提交审批。",
       businessForm: {
         kind: "disclosure-publish-review",
         jurisdiction: row.jurisdiction,
@@ -1220,7 +1223,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         </div>
         <div className="l-b" style={{ paddingTop: 8 }}>
           <div className="itint">
-            <b>没确认会怎样</b> · 还没重新确认的用户，做受限操作时会被拦下并跳到披露页。拦截数可能包含已经确认过的用户。要提醒还没确认的用户，可以在「通知活动」页用紧急级通知。
+            <b>没确认会怎样</b> · {GATED_ACTIONS.some((action) => action.active) ? "还没重新确认的用户，做当前纳入范围的操作时会被拦下并跳到披露页。" : "当前没有纳入风险披露前置确认范围的操作。"} 拦截数是历史记录，可能包含已经确认过的用户。要提醒还没确认的用户，可以在「通知活动」页用紧急级通知。
           </div>
         </div>
       </section>
@@ -1229,19 +1232,20 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">需要先确认的操作</span>
-          <span className="sub">· 确认状态过期时,哪些动作会被拦 · 逐项启停(不再手打整串)</span>
+          <span className="sub">· 仅当前纳入范围的操作需要先确认</span>
         </div>
         <div className="l-b" style={{ paddingTop: 4 }}>
           {GATED_ACTIONS.map((g) => {
             const on = gateOn(g.key);
+            const retiredGate = g.key === "staking" || g.key === "withdraw";
             return (
               <div className="tr-vrow" key={g.key}>
                 <span className="nm">
                   <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{g.name}</span>
-                  <small style={{ color: "var(--ink-4)" }}>{g.sub}</small>
+                  <small style={{ color: "var(--ink-4)" }}>{retiredGate ? "已移出风险披露前置确认范围，不支持重新纳入。" : g.sub}</small>
                 </span>
                 <span className={`bdg ${g.tone}`}>{g.st}</span>
-                {canAdjustGate ? <button className="l-btn sm mc" style={{ opacity: on ? 1 : 0.5 }} onClick={() => toggleGate(g)}>{on ? "受限内 · 移出" : "已移出 · 纳入"}</button> : <span className="tiny">只读</span>}
+                {retiredGate ? <span className="tiny">不再纳入</span> : canAdjustGate ? <button className="l-btn sm mc" style={{ opacity: on ? 1 : 0.5 }} onClick={() => toggleGate(g)}>{on ? "受限内 · 移出" : "已移出 · 纳入"}</button> : <span className="tiny">只读</span>}
               </div>
             );
           })}

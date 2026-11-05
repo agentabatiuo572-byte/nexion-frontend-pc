@@ -324,7 +324,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const changeRoleBlockReason = (op: A1Operator) => {
     if (!canChangeRole) return "你没有变更账号角色的权限";
     if (!permissionDiffReady) return permissionDiffError ?? "权限变化预览加载失败，暂时不能改角色";
-    if (governanceFrozen) return "可用的超级管理员不足 2 个，账号操作已暂停。请先新建一个超级管理员并绑定两步验证";
+    if (governanceFrozen && op.role === "super") return "恢复期间只能把其他账号提升为超级管理员";
     if (protectsEffectiveSuperFloor(op)) return "操作后可用的超级管理员会少于 2 个";
     return null;
   };
@@ -349,32 +349,34 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   }, [page, totalPages]);
 
   const changeRole = (op: A1Operator) => {
-    if (!permissionDiffReady) {
-      toast(permissionDiffError ?? "权限变化预览加载失败，暂时不能改角色");
+    const blocked = changeRoleBlockReason(op);
+    if (blocked) {
+      toast(blocked);
       return;
     }
     const displayName = operatorDisplayName(op);
     const displayLabel = operatorDisplayLabel(op);
+    const allowedRoles = governanceFrozen ? roleOptions.filter((role) => role.key === op.role || role.key === "super") : roleOptions;
     openActionConfirm({
       action: `变更角色 · ${displayName}`,
       detail: (
         <>
           <b>{displayLabel}</b> · 当前 <b>{roleName(roles, op.role)}</b>。
-          选择新角色，下方会显示权限的变化。可用的超级管理员不能少于 2 个。
+          {governanceFrozen ? "恢复期间只能提升为超级管理员，批准后生效；启用并完成两步验证后计入可用人数。" : "选择新角色，下方会显示权限的变化，批准后生效。可用的超级管理员不能少于 2 个。"}
         </>
       ),
       amplifies: false,
       businessForm: {
         kind: "role-select",
         currentRole: op.role,
-        roles: roleOptions.map((r) => ({ key: r.key, label: r.name, scope: r.scope })),
+        roles: allowedRoles.map((r) => ({ key: r.key, label: r.name, scope: r.scope })),
         actions: permissionActions,
         grantsByRole: { unassigned: permissionActions.map(() => "-"), ...grantsByRole },
         guardHint: `当前可用超级管理员 ${effectiveSupers} 个，至少保留 2 个`,
       },
-      run: (reason, value) => {
+      run: async (reason, value) => {
         const roleStr = (value || "").trim();
-        if (!roleOptions.some((r) => r.key === roleStr)) {
+        if (!allowedRoles.some((r) => r.key === roleStr)) {
           toast(`无法保存：角色无效（${roleStr}）`);
           return;
         }
@@ -387,7 +389,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           return;
         }
         const def = findHighOp("a1_account_change_role")!;
-        void propose(toast, {
+        await propose(toast, {
           action: `变更角色 · ${displayName} → ${roleName(roles, roleStr)}`,
           obj: String(op.id),
           before: roleName(roles, op.role),
@@ -559,17 +561,26 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     });
   };
 
-  const enableAcct = (op: A1Operator) => openActionConfirm({
+  const enableAccountBlockReason = (op: A1Operator) => {
+    if (!canChangeStatus) return "你没有启停账号的权限";
+    if (governanceFrozen && (op.role !== "super" || !op.tfa)) return "恢复期间只能启用已绑定两步验证的超级管理员";
+    return null;
+  };
+
+  const enableAcct = (op: A1Operator) => {
+    const blocked = enableAccountBlockReason(op);
+    if (blocked) { toast(blocked); return; }
+    openActionConfirm({
     action: `启用账号 · ${operatorDisplayName(op)}`,
     detail: (
       <>
-        <b>{operatorDisplayLabel(op)}</b> · 启用后可重新登录，角色仍为 <b>{roleName(roles, op.role)}</b>，登录时需通过两步验证。
+        <b>{operatorDisplayLabel(op)}</b> · 批准后生效。启用后可重新登录，角色仍为 <b>{roleName(roles, op.role)}</b>，登录时需通过两步验证。
       </>
     ),
     amplifies: false,
-    run: (reason) => {
+    run: async (reason) => {
       const def = findHighOp("a1_account_status_update")!;
-      void propose(toast, {
+      await propose(toast, {
         action: `启用账号 · ${operatorDisplayName(op)}`,
         obj: String(op.id),
         before: "禁用",
@@ -584,7 +595,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         target: def.buildTarget({ accountId: op.id }),
       });
     },
-  });
+    });
+  };
 
   const kickAllSessions = (op: A1Operator) => {
     const displayName = operatorDisplayName(op);
@@ -755,7 +767,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   };
 
   const submitPermissionRegistration = () => {
-    if (!canRegisterPermission || !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim()) return;
+    if (governanceFrozen || !canRegisterPermission || !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim()) return;
     openActionConfirm({
       action: `登记动作权限 · ${permissionDraft.code.trim()}`,
       detail: <>把新操作加入权限清单，<b>不会自动分给任何角色</b>。需要时到「角色管理」授权。</>,
@@ -815,7 +827,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       )}
       {governanceFrozen && (
         <div className="atint danger" style={{ marginBottom: 12 }}>
-          <b>账号操作已暂停</b> · 已启用且绑定两步验证的超级管理员不足 2 个。现在只能新建超级管理员账号或强制下线，补足后自动恢复。
+          <b>账号操作已暂停</b> · 已启用且绑定两步验证的超级管理员不足 2 个。现在只能新建或提升超级管理员、启用已绑定两步验证的超级管理员、完成两步验证或撤销会话；提升和启用仍需批准，补足后自动恢复。
         </div>
       )}
 
@@ -903,7 +915,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                     <td style={{ textAlign: "right" }}>
                       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
                         <button className="l-btn sm" aria-label={`编辑 ${operatorDisplayLabel(op)}`} title={profileEditBlockReason ?? undefined} onClick={(event) => stopRowAction(event, () => setEditAccountTarget(op))} disabled={!!profileEditBlockReason}>编辑</button>
-                        {canManageQualifications && <><button className="l-btn sm" aria-label={`管理 ${operatorDisplayLabel(op)} 的专属客服资格`} onClick={event => stopRowAction(event, () => setQualificationTarget({ id: op.id, kind: "SERVICE" }))} disabled={!!mutatingAction}>专属客服资格</button><button className="l-btn sm" aria-label={`管理 ${operatorDisplayLabel(op)} 的主管资格`} onClick={event => stopRowAction(event, () => setQualificationTarget({ id: op.id, kind: "SUPERVISOR" }))} disabled={!!mutatingAction}>主管资格</button></>}
+                        {canManageQualifications && <><button className="l-btn sm" aria-label={`管理 ${operatorDisplayLabel(op)} 的专属客服资格`} onClick={event => stopRowAction(event, () => setQualificationTarget({ id: op.id, kind: "SERVICE" }))} disabled={!!mutatingAction || governanceFrozen}>专属客服资格</button><button className="l-btn sm" aria-label={`管理 ${operatorDisplayLabel(op)} 的主管资格`} onClick={event => stopRowAction(event, () => setQualificationTarget({ id: op.id, kind: "SUPERVISOR" }))} disabled={!!mutatingAction || governanceFrozen}>主管资格</button></>}
                         <button className="l-btn sm" aria-label={`修改 ${operatorDisplayLabel(op)} 的角色`} title={changeRoleBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => changeRole(op))} disabled={!!mutatingAction || !roles.length || !!changeRoleBlockReason(op)}>改角色</button>
                         <button className="l-btn sm" aria-label={`重置 ${operatorDisplayLabel(op)} 的两步验证`} title={reset2faBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => reset2fa(op))} disabled={!!mutatingAction || !!reset2faBlockReason(op)}>重置 两步验证</button>
                         <button className="l-btn sm" aria-label={`重置 ${operatorDisplayLabel(op)} 的密码`} onClick={(event) => stopRowAction(event, () => resetPassword(op))} disabled={!canResetPassword || !!mutatingAction || governanceFrozen}>重置密码</button>
@@ -921,7 +933,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                         {op.status === "enabled" ? (
                           <button className="l-btn sm dgr" aria-label={`禁用 ${operatorDisplayLabel(op)}`} title={disableAccountBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => disableAcct(op))} disabled={!!mutatingAction || !!disableAccountBlockReason(op)}>禁用</button>
                         ) : (
-                          <button className="l-btn sm mc" aria-label={`启用 ${operatorDisplayLabel(op)}`} onClick={(event) => stopRowAction(event, () => enableAcct(op))} disabled={!canChangeStatus || !!mutatingAction || governanceFrozen}>启用</button>
+                          <button className="l-btn sm mc" aria-label={`启用 ${operatorDisplayLabel(op)}`} title={enableAccountBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => enableAcct(op))} disabled={!!mutatingAction || !!enableAccountBlockReason(op)}>启用</button>
                         )}
                       </div>
                     </td>
@@ -960,7 +972,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           <label>资源路径<input aria-label="资源路径" placeholder="/api/admin/..." value={permissionDraft.path} onChange={(e) => setPermissionDraft((v) => ({ ...v, path: e.target.value }))} /></label>
           <label>权限类型<select aria-label="权限类型" value={permissionDraft.type} onChange={(e) => setPermissionDraft((v) => ({ ...v, type: e.target.value as "READ" | "WRITE" }))}><option value="READ">查询</option><option value="WRITE">修改</option></select></label>
           <label><input type="checkbox" checked={permissionDraft.amplifies} onChange={(e) => setPermissionDraft((v) => ({ ...v, amplifies: e.target.checked }))} />会让平台多付钱</label>
-          <button className="l-btn sm mc" disabled={!canRegisterPermission || !!mutatingAction || !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim()} onClick={submitPermissionRegistration}>登记权限</button>
+          <button className="l-btn sm mc" disabled={governanceFrozen || !canRegisterPermission || !!mutatingAction || !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim()} onClick={submitPermissionRegistration}>登记权限</button>
         </div>
       </section>
 
@@ -977,7 +989,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                   {baselineDisplay(baseline)}
                 </span>
                 {!baseline.locked && (
-                  <button className="l-btn sm mc" onClick={() => adjustBaseline(baseline)} disabled={!!mutatingAction}>调整</button>
+                  <button className="l-btn sm mc" onClick={() => adjustBaseline(baseline)} disabled={!!mutatingAction || governanceFrozen}>调整</button>
                 )}
               </div>
             ))}

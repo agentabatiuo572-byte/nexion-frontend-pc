@@ -442,7 +442,7 @@ export interface User360Detail extends JsonRecord {
 }
 
 let requestSeq = 0;
-/** 命令号跨刷新存活:五类高敏动作(状态变更 / 两种 impersonate / 两种账户清单)共用本表,
+/** 命令号跨刷新存活:账户状态、全设备登出、两种 impersonate 与两种账户清单动作共用本表,
  *  靠 fingerprint = `${method}|${path}|${body}` 分命名空间 —— path 或 body 必带目标 id。 */
 const pendingUserMutations = createPendingMutationStore({
   storageKey: "nexion-admin-users-uncertain-commands-v1",
@@ -657,24 +657,24 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
-    if (isAdminAuthFailure(response.status, result?.message)) {
+    const authFailure = isAdminAuthFailure(response.status, result?.message);
+    if (authFailure) {
       resetAdminSession();
     }
     const commandKey = headers.get("Idempotency-Key");
     // 话术与命令号去留同口径:5xx 保住了号,提示也必须说「结果未知」而不是「失败」,
     // 否则运营会换个入口重做一遍(第三轮验收 P1-6)。
-    if (commandKey && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
+    if (commandKey && (result?.message === "IDEMPOTENCY_REQUEST_IN_PROGRESS"
+      || response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
       || outcomeStaysUnknown(response.status, result?.code))) {
       throw new UsersOutcomeUnknownError(commandKey);
     }
-    // A deterministic error can close a brand-new attempt, but it cannot prove that an earlier
-    // unknown attempt reached a terminal state. Keep the command capsule so auth failures and
-    // in-progress replies never force the operator to mint a second command key.(与 d-client 同口径)
-    // 🔴 2026-08-06 补:同 d-client —— 这道保护只覆盖重试链,**首次**撞 5xx 仍会弃号。
-    if (mutationFingerprint && !pendingKeyBeforeRequest
-      && !outcomeStaysUnknown(response.status, result?.code)) {
-      pendingUserMutations.forget(mutationFingerprint);
-    }
+    // A retry can be denied by the proxy before reaching the original command.
+    // Keep its key through login/permission recovery; a cached business refusal settles it.
+    const retryBlockedByAccess = pendingKeyBeforeRequest && (
+      authFailure || response.status === 403 || result?.code === 401 || result?.code === 403
+    );
+    if (mutationFingerprint && !retryBlockedByAccess) pendingUserMutations.forget(mutationFingerprint);
     // classification-ok:这里的 5xx 判定只挑**错误文案**(不把后端原始消息透给运营),
     // 不参与「命令号要不要丢」的归类 —— 归类在上面一条,走共享谓词。
     const serverMessage = response.status >= 500 ? "INTERNAL_SERVER_ERROR" : result?.message;
@@ -1327,11 +1327,26 @@ export async function updateUserStatus(userId: number | string, status: UserStat
   });
 }
 
+export function getPendingUserSessionRevocation(userId: number | string) {
+  const prefix = `POST|/profiles/${encodeURIComponent(String(userId))}/security/sessions/revoke-all|`;
+  const pending = pendingUserMutations.list().find((record) => record.fingerprint.startsWith(prefix));
+  if (!pending) return undefined;
+  // The existing fingerprint already holds the original payload; recover it by target,
+  // so editing a reason cannot turn an unresolved logout into a second operation.
+  const body = pending.fingerprint.slice(prefix.length);
+  const payload: unknown = JSON.parse(body);
+  if (!isJsonRecord(payload) || typeof payload.reason !== "string" || typeof payload.operator !== "string") {
+    throw new Error("原操作信息不完整，请先到操作记录核对结果。");
+  }
+  return { body, reason: payload.reason, commandKey: pending.commandKey };
+}
+
 export async function revokeUserSessions(userId: number | string, reason: string, operator: string, commandKey?: string) {
+  const pending = commandKey ? undefined : getPendingUserSessionRevocation(userId);
   return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/security/sessions/revoke-all`, {
     method: "POST",
-    body: JSON.stringify({ reason, operator }),
-    idempotencyKey: commandKey ?? idempotencyKey("c5-user-revoke-sessions"),
+    body: pending?.body ?? JSON.stringify({ reason, operator }),
+    ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "c5-user-revoke-sessions" }),
   });
 }
 
