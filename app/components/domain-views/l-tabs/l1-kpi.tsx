@@ -11,6 +11,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import Link from "next/link";
 import { Activity, CheckCircle2, CircleHelp, Download, Flag, Gauge, ListChecks, Lock, Target } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
+import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
 import { BlockState, Button, Cell, Check, Conclusion, Explain, Fact, Facts, Field, FilterBar, FilterField, Fold, Input, Modal, Notice, PageHeader, Panel, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
 import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { businessClock, businessDay, businessZone } from "@/lib/admin/business-time";
@@ -499,12 +500,12 @@ export function L1Kpi({ ctx, onExportSource, title, summary, actions }: { ctx: L
         ctx.toast(`明细加载失败 · ${message}`);
       }
     };
-    const moveRow = (event: KeyboardEvent<HTMLTableRowElement>, at: number) => {
-      const next = event.key === "ArrowDown" ? order[at + 1] : event.key === "ArrowUp" ? order[at - 1] : undefined;
-      if (next === undefined) return;
+    /** 八项是一组单选：方向键、Home、End 移动并立即选中，Tab 只停在当前行（ST-56）。 */
+    const moveRow = (event: KeyboardEvent<HTMLTableRowElement>) => {
+      const next = nextTabValue(order, safeSelKpi, event.key);
+      if (next === null) return;
       event.preventDefault();
-      const row = event.currentTarget;
-      ((event.key === "ArrowDown" ? row.nextElementSibling : row.previousElementSibling) as HTMLElement | null)?.focus();
+      (event.currentTarget.parentElement?.children[order.indexOf(next)] as HTMLElement | undefined)?.focus();
       void selectKpi(next);
     };
 
@@ -549,7 +550,7 @@ export function L1Kpi({ ctx, onExportSource, title, summary, actions }: { ctx: L
 
         <div className="rd-split">
           <Panel title="八项指标" sub="未达标的排在前面 · 点一行看明细" icon={ListChecks} tone="role-2" flush>
-            <Table label="选择要查看的关键指标" data-tight={showTrendColumn ? "" : undefined}>
+            <Table label="选择要查看的关键指标" rowFocus data-tight={showTrendColumn ? "" : undefined}>
               <thead><tr>
                 <Th>指标</Th>
                 <Th align="right">当前值</Th>
@@ -558,12 +559,12 @@ export function L1Kpi({ ctx, onExportSource, title, summary, actions }: { ctx: L
                 <Th>状态</Th>
               </tr></thead>
               <tbody>
-                {order.map((index, at) => {
+                {order.map((index) => {
                   const item = KPIS[index];
                   const state = states[index];
                   const plain = operatorCopyText(KPI_PLAIN[item.n] ?? "");
                   return (
-                    <Tr key={item.n} selected={index === safeSelKpi} onOpen={() => void selectKpi(index)} onKeyDown={(event) => moveRow(event, at)} title="点击查看明细">
+                    <Tr key={item.n} selected={index === safeSelKpi} tabIndex={index === safeSelKpi ? 0 : -1} onOpen={() => void selectKpi(index)} onKeyDown={moveRow} title="点击查看明细">
                       <Td><Cell main={<AutoGloss>{operatorCopyText(item.name)}</AutoGloss>} sub={plain} title={plain} /></Td>
                       <Td align="right"><Cell num main={valueText(item)} sub={item.momDelta == null ? undefined : deltaText(item)} /></Td>
                       <Td align="right"><Cell num main={tgtShort(item)} /></Td>

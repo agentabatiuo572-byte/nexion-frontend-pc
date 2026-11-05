@@ -51,9 +51,10 @@ import type { DomainTone } from "./tone";
 
 const INTERACTIVE = "a, button, input, select, textarea, label, summary, [role='button'], [role='checkbox'], [role='menuitem'], [role='combobox']";
 
-export function Table({ label, children, className, ...rest }: HTMLAttributes<HTMLTableElement> & { label: string }) {
+/** rowFocus：行本身是一组单选，Tab 只停在当前行，滚动区不再占一个停靠点。 */
+export function Table({ label, rowFocus, children, className, ...rest }: HTMLAttributes<HTMLTableElement> & { label: string; rowFocus?: boolean }) {
   return (
-    <div className="rd-table-scroll" role="region" aria-label={label} tabIndex={0}>
+    <div className="rd-table-scroll" role="region" aria-label={label} tabIndex={rowFocus ? undefined : 0}>
       <table {...rest} className={className ? `rd-table ${className}` : "rd-table"}>{children}</table>
     </div>
   );
@@ -86,7 +87,7 @@ export function Tr({ selected, onOpen, children, onClick, onKeyDown, ...rest }: 
     <tr
       {...rest}
       ref={rowRef}
-      tabIndex={onOpen ? 0 : rest.tabIndex}
+      tabIndex={rest.tabIndex ?? (onOpen ? 0 : undefined)}
       aria-current={selected ? "true" : undefined}
       data-selected={selected ? "" : undefined}
       data-clickable={onOpen ? "" : undefined}
