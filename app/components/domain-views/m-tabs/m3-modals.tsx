@@ -8,6 +8,7 @@
  * 均渲染于 design-kit Modal;合规(运营可读中文 · 数字不自曝)。
  */
 import { useEffect, useState, type ReactNode } from "react";
+import { Explain } from "@/app/components/rd";
 import { Icon, Modal } from "../design-kit";
 import {
   STANDBY_POOL_LABEL,
@@ -109,9 +110,9 @@ export function IdlePolicyModal({
     available = true,
   ) => (
     <label className="m3-policy-field">
-      <span>
+      <span className="m3-policy-label">
         <strong>{label}</strong>
-        <small>{hint}</small>
+        <Explain label={`${label}是什么`} content={hint} />
       </span>
       <input
         className="m3-policy-num"
@@ -136,24 +137,24 @@ export function IdlePolicyModal({
       onClose={onClose}
       footer={(
         <div className="m3-policy-foot">
-          <span>仅总管理员可修改</span>
+          <span />
           <div>
-            <button type="button" className="btn btn-sec btn-sm" onClick={onClose} disabled={saving}>取消</button>
+            <button type="button" className="btn btn-sec btn-sm" onClick={onClose} disabled={saving}>{canSave ? "取消" : "关闭"}</button>
             {confirm && <button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => setConfirm(false)}>返回修改</button>}
-            <button
+            {canSave && <button
               type="button"
               data-proof="session-idle-policy-save"
               className="btn btn-pri btn-sm"
               onClick={() => { if (confirm) void save(); else setConfirm(true); }}
               disabled={!canSave || blocked || !reasonOk || !orderOk || unchanged}
             >
-              {saving ? "保存中…" : !canSave ? "仅供查看" : unchanged ? "策略未变更" : confirm ? "确认并保存" : "预览变更"}
-            </button>
+              {saving ? "保存中…" : unchanged ? "策略未变更" : confirm ? "确认并保存" : "预览变更"}
+            </button>}
           </div>
         </div>
       )}
     >
-      {!canSave && <p className="m3-policy-readonly" role="status">仅获准总管理员可修改，当前为只读。</p>}
+      {!canSave && <p className="m3-policy-readonly" role="status">只读 <Explain label="谁能修改" content="仅获准总管理员可修改。要调整请联系总管理员。" /></p>}
       {numField("待回复提醒时长（分钟）", "客户消息等待回复达到该时长，标记待处理。1–30", warn, setWarn, 1, 30)}
       {numField("严重超时时长（分钟）", "超过该时长仍未回复，标记严重超时。2–120，须大于提醒时长", close, setClose, 2, 120)}
       {numField("无人发言自动结束会话（分钟）", endAvailable ? "后台人员最后一次发消息后，超过该时长没人再发，会话自动结束，其他人就可以发起。2–120" : "暂不可用：自动结束时长还不能在这里设置，其他两项照常保存。", end, setEnd, 2, 120, endAvailable)}
@@ -162,10 +163,9 @@ export function IdlePolicyModal({
           {!warnOk || !closeOk || !endOk ? "请输入整数分钟并满足允许范围。" : "严重超时时长必须大于提醒时长。"}
         </div>
       )}
-      <p className="m3-policy-note">待回复提醒和严重超时只做标记。自动结束只让出接待：不结束对话、不改专属客服，客户的待回复照常保留。保存后立即生效。</p>
       {confirm && <div className="itint m3-policy-preview" role="status"><strong>确认下列变更</strong><p>待回复提醒：{policy.warnMinutes} 分钟 → {warnN} 分钟</p><p>严重超时：{policy.closeMinutes} 分钟 → {closeN} 分钟</p>{endAvailable && <p>无人发言自动结束：{policy.sessionEndMinutes} 分钟 → {endN} 分钟</p>}<p>修改理由：{reason.trim()}</p></div>}
-      <label className="m3-policy-reason">
-        <span>变更理由 <b>*</b></span>
+      {canSave && <label className="m3-policy-reason">
+        <span>变更理由 <b>*</b> <Explain label="改了会怎样" content="待回复提醒和严重超时只做标记。自动结束只让出接待：不结束对话、不改专属客服，客户的待回复照常保留。保存后立即生效。" /></span>
         <textarea
           value={reason}
           disabled={!canSave || blocked || confirm}
@@ -173,8 +173,9 @@ export function IdlePolicyModal({
           onChange={(event) => { setConfirm(false); setReason(event.target.value); }}
           placeholder="请说明调整的原因（至少 6 个字）"
         />
-      </label>
-      {error && (
+      </label>}
+      {canSave && !blocked && !unchanged && orderOk && !reasonOk && <div className="m3-policy-invalid">写明变更理由（至少 6 个字）才能预览变更。</div>}
+      {error && !conflict && (
         <div className="itint" role="alert" style={{ color: "var(--danger)", padding: "10px 12px", marginTop: 12 }}>
           {error}
         </div>

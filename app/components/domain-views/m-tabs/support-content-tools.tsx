@@ -10,7 +10,7 @@ import { Icon, Modal } from "../design-kit";
 import { HDSelect } from "./hd-ui";
 import "./support-content-tools.css";
 export type SelectedSupportContent = { kind: "SKU"; skuId: string; name: string } | { kind: "LINK"; linkTarget: SupportLink; name: string };
-export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover = false }: { ctx: MCtx; disabled: boolean; onInsert: (text: string) => void; onSelect: (content: SelectedSupportContent) => void; popover?: boolean }) {
+export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover = false, textOnly = false }: { ctx: MCtx; disabled: boolean; onInsert: (text: string) => void; onSelect: (content: SelectedSupportContent) => void; popover?: boolean; textOnly?: boolean }) {
   const triggerRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<CSSProperties>();
   const [templateType, setTemplateType] = useState("reply"), [keyword, setKeyword] = useState(""), [group, setGroup] = useState("");
@@ -72,8 +72,8 @@ export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover
   return <div className="support-content-tools" ref={triggerRef}>
     <button type="button" className="support-content-trigger" aria-label="回复模板与专属客服话术" aria-expanded={picker==="template"} disabled={disabled} onClick={()=>setPicker("template")}><span>{popover?"快捷回复":"回复模板与专属客服话术"}</span><Icon name="doc" size={16}/></button>
     <button type="button" className="support-content-trigger" aria-label="查找知识库答案" aria-expanded={picker==="faq"} disabled={disabled} onClick={()=>setPicker("faq")}><span>知识库</span><Icon name="search" size={16}/></button>
-    <button type="button" className="support-content-trigger" aria-label="推荐在售商品" aria-expanded={picker==="sku"} disabled={disabled} onClick={()=>setPicker("sku")}><span>{popover?"推荐商品":"推荐在售商品"}</span><Icon name="box" size={16}/></button>
-    <button type="button" className="support-content-trigger" aria-label="发送页面链接" aria-expanded={picker==="link"} disabled={disabled} onClick={()=>setPicker("link")}><span>{popover?"页面链接":"发送页面链接"}</span><Icon name="arrow" size={16}/></button>
+    <button type="button" className="support-content-trigger" aria-label="推荐在售商品" aria-expanded={picker==="sku"} disabled={disabled||textOnly} title={textOnly?"首次联系只能发文字，发送后再推荐商品":undefined} onClick={()=>setPicker("sku")}><span>{popover?"推荐商品":"推荐在售商品"}</span><Icon name="box" size={16}/></button>
+    <button type="button" className="support-content-trigger" aria-label="发送页面链接" aria-expanded={picker==="link"} disabled={disabled||textOnly} title={textOnly?"首次联系只能发文字，发送后再发页面链接":undefined} onClick={()=>setPicker("link")}><span>{popover?"页面链接":"发送页面链接"}</span><Icon name="arrow" size={16}/></button>
     {disabled&&<p className="support-content-state" role="status">当前暂不能选择发送内容：当前状态不可发送，或操作尚未结束。请恢复可用后再试。</p>}
     {/* Portal keeps the bulk composer dialog from also handling the picker Escape key. */}
     {picker && createPortal(<div className={popover && position ? "support-composer-popover" : undefined} style={position}><Modal className={popover&&position?"m3s-pop":undefined} style={position} title={picker==="template"?"回复模板与专属客服话术":picker==="faq"?"知识库":picker==="sku"?"推荐在售商品":"发送页面链接"} onClose={()=>setPicker(null)} footer={<button type="button" className="l-btn" onClick={()=>setPicker(null)}>取消</button>}>

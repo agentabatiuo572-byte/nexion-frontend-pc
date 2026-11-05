@@ -423,7 +423,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     && (superOperator || !session?.authorities?.includes("service_m1_read") || safeMData?.supportAgentsAvailable)) };
 
   const runMWrite = useCallback(
-    async (key: string, value: string, meta?: { action?: string; reason?: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void }): Promise<boolean> => {
+    async (key: string, value: string, meta?: { action?: string; reason?: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void; onFailure?: (message: string) => void }): Promise<boolean> => {
       if (isMUiKey(key)) {
         setUiParams((prev) => {
           const next = { ...prev, [key]: value };
@@ -498,7 +498,8 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         const message = displayAdminError(error);
         // client 已接咽喉,英文网络错误不再到达;按原压制意图改判「咽喉网络中文」,命中仍不附加 detail。
         const detail = message.includes("网络连接失败或系统暂时连不上") ? "" : ` · ${message}`;
-        setToast(rejected ? `后台明确拒绝原会话结束操作，请核对当前会话后重新确认${detail}` : `写入失败或结果未知,请保留当前输入并重试${detail}`);
+        const failure = rejected ? `后台明确拒绝原会话结束操作，请核对当前会话后重新确认${detail}` : `写入失败或结果未知,请保留当前输入并重试${detail}`;
+        if (meta?.onFailure) meta.onFailure(failure); else setToast(failure);
         return false;
       }
     },
@@ -1015,7 +1016,7 @@ async function applyMBackendWrite(
   value: string,
   legacyParams: Record<string, string>,
   data: MContentData | null,
-  meta?: { action?: string; reason?: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void },
+  meta?: { action?: string; reason?: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void; onFailure?: (message: string) => void },
 ) {
   const reason = reasonOf(meta);
   const idempotencyKey = meta?.idempotencyKey;

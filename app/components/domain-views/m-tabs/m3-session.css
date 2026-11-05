@@ -52,7 +52,7 @@
 .m3s-chat-head { flex: none; display: flex; align-items: center; gap: 10px; min-height: 64px; padding: var(--rd-space-3) var(--rd-space-4); border-bottom: 1px solid var(--rd-line); }
 .m3s-chat-id { flex: 1; min-width: 0; }
 .m3s-chat-id h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); }
-.m3s-chat-id p { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.m3s-chat-sub { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .m3s-chat-actions { flex: none; display: flex; align-items: center; gap: var(--rd-space-2); }
 .m3s-hold[data-hold="mine"] { color: var(--rd-progress); }
 .m3s-hold[data-hold="other"] { color: var(--rd-warn); }
@@ -223,3 +223,13 @@
 .rd-modal .support-content-field { color: var(--rd-text-2); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); }
 .rd-modal .support-content-field .fld { min-height: 36px; padding: 0 var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-control); color: var(--rd-text); }
 .rd-modal .support-content-result.l-btn { padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); font-size: var(--rd-text-body); }
+
+.m3s-intent { display: flex; align-items: center; gap: var(--rd-space-1); }
+.m3s-assign { display: flex; flex-direction: column; gap: var(--rd-space-3); }
+.rd-modal .m3-policy-label { display: inline-flex; align-items: center; gap: var(--rd-space-1); }
+.rd-modal .m3-policy-label strong { display: inline; }
+.rd-modal .m3-policy-version { margin-left: var(--rd-space-2); }
+.rd-modal .m3-policy-readonly { margin: 0 0 var(--rd-space-1); color: var(--rd-text-3); font-size: var(--rd-text-aux); }
+.rd-modal .m3-policy-num:disabled { border-color: transparent; background: none; color: var(--rd-text); }
+.rd-modal .m-bulk-head { margin: 0; color: var(--rd-text-2); }
+.rd-page .m3-service-profile .m3-profile-group > summary .rd-explain { vertical-align: -2px; }

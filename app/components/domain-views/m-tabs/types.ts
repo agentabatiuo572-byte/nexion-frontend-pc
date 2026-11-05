@@ -11,7 +11,7 @@ export type { ActionConfirmReq, ConfirmReq, ConfirmChip } from "../k-tabs/types"
 export type MCtx = {
   pget: (k: string) => string | undefined;
   params: Record<string, string>;
-  setParam: (k: string, v: string, meta: { action: string; reason: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void }) => Promise<boolean>;
+  setParam: (k: string, v: string, meta: { action: string; reason: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void; /** 传了就把失败原因交给调用方，写在确认框里，不弹 toast。 */ onFailure?: (message: string) => void }) => Promise<boolean>;
   refreshConversations: () => Promise<void>;
   refreshContent: () => Promise<void>;
   /** A full content load is running; availability flags are not final yet. */
