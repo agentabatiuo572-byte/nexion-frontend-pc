@@ -19,7 +19,6 @@ import { OperationConfirmModal, useToast, useDomainNav } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import {
   addF1VRankReward,
-  executeF3Settlement,
   fetchF3BinaryOverview,
   fetchF4LeadershipPoolOverview,
   fetchF4AmbassadorPolicy,
@@ -52,6 +51,7 @@ import { usePropose } from "@/lib/admin/use-propose";
 import { createA2CommandKey, fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { pendingF2Activation, submitF2Activation } from "@/lib/admin/f2-activation-attempt";
+import { pendingConfigApproval, submitConfigApproval, teamFundApprovalAuthority, type TeamFundApprovalValues } from "@/lib/admin/withdrawal-config-approval";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { findHighOp, isFFundAmplifyingKey } from "@/lib/admin/high-ops-registry";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -130,6 +130,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     setActionConfirm({
       ...spec,
       commandKey: spec.commandKey ?? createA2CommandKey("f-domain-action"),
+      teamApprovalOwner: spec.teamApproval ? session?.adminId : undefined,
     });
   const [f1Overview, setF1Overview] = useState<F1VRankOverview | null>(null);
   const [f1Loading, setF1Loading] = useState(tab === "F1");
@@ -464,7 +465,34 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     }
   };
 
+  const teamApproval = mc?.teamApproval;
+  const canSubmitTeamApproval = (source: keyof TeamFundApprovalValues) =>
+    session?.authorities.includes(teamFundApprovalAuthority[source]) ?? false;
+  const pendingTeamApproval = teamApproval && session && mc.teamApprovalOwner === session.adminId
+    ? pendingConfigApproval(teamApproval.source, session.adminId)
+    : undefined;
+  const requireTeamApprovalSession = (source: keyof TeamFundApprovalValues, owner = session?.adminId) => {
+    const current = useAdminAuth.getState().session;
+    if (!current || current.adminId !== owner || !current.authorities.includes(teamFundApprovalAuthority[source])) {
+      throw new Error("当前账号没有这项操作的权限，请关闭弹窗后重新核对。");
+    }
+    return current;
+  };
+  const submitTeamApproval = async <S extends keyof TeamFundApprovalValues>(
+    source: S, values: TeamFundApprovalValues[S] | null, reason: string,
+    mode: boolean | "retry-original" = false, owner = session?.adminId,
+  ) => {
+    const current = requireTeamApprovalSession(source, owner);
+    const result = await submitConfigApproval(source, current, values, reason, source === "F3" ? refreshF3 : refreshF4, mode);
+    if (!result) return false;
+    setToast(result.acknowledgement);
+    setActionConfirm(null);
+    return true;
+  };
+
   const ctx: FViewCtx = {
+    canSubmitTeamApproval,
+    submitTeamApproval,
     openActionConfirm: (m) => openActionConfirm(m),
     nav,
     toast: (msg) => setToast(msg),
@@ -644,11 +672,6 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     updateF3Config: async (key, value, reason, amplifies) => {
       await proposeFConfig("F3", key, value, reason, undefined, amplifies);
     },
-    executeF3Settlement: async (ownerUserId, settlementDate, reason) => {
-      const result = await executeF3Settlement(ownerUserId, settlementDate, reason);
-      await refreshF3();
-      return result;
-    },
     f4Overview,
     f4AmbassadorPolicy,
     f4Loading,
@@ -658,6 +681,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       await proposeFConfig("F4", key, value, reason, expectedVersion);
     },
     updateF4AmbassadorPolicy: async (policy, reason) => {
+      requireTeamApprovalSession("F4");
       await updateF4AmbassadorPolicy(policy, reason, ADMIN_OPERATOR());
       await refreshF4();
     },
@@ -803,6 +827,16 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           : undefined) as { coverageRatio: number; redlinePct: number } | undefined}
         edit={mc.edit}
         businessForm={mc.businessForm}
+        inlineApproval={teamApproval ? {
+          ...teamApproval,
+          dialogClassName: teamApproval.source === "F4" ? "team-fund-confirm f4-policy-confirm" : "team-fund-confirm",
+          pending: !!pendingTeamApproval,
+          expired: !!pendingTeamApproval && pendingTeamApproval.expiresAt <= Date.now(),
+          disabledReason: mc.teamApprovalOwner === session?.adminId && canSubmitTeamApproval(teamApproval.source)
+            ? undefined : "当前账号没有这项操作的权限，请关闭弹窗后重新核对。",
+          recover: () => submitTeamApproval(teamApproval.source, null, "", true, mc.teamApprovalOwner),
+          retry: async () => { await submitTeamApproval(teamApproval.source, null, "", "retry-original", mc.teamApprovalOwner); },
+        } : undefined}
         completionCopy={mc.completionCopy ?? (
           mc.op === "param" || mc.op === "param-multi" || mc.op === "dispose"
             ? "提交后需在「操作记录与审批」确认才生效。"

@@ -747,6 +747,16 @@ export interface F4AmbassadorPolicy {
   serverCanonical: true;
 }
 
+export interface F4AmbassadorPolicyUpdate {
+  policyVersion: string;
+  expectedRevision: number;
+  defaultBudgetUsdt: string;
+  buckets: (Omit<F4AmbassadorPolicyBucket, "minBudgetUsdt" | "maxBudgetUsdt"> & {
+    minBudgetUsdt: string;
+    maxBudgetUsdt: string;
+  })[];
+}
+
 export interface F4VoteWeight {
   v: string;
   votes: number;
@@ -987,20 +997,6 @@ function toNumber(value: unknown, fallback = 0) {
 
 function asText(value: unknown, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
-
-export interface F3SettlementExecution {
-  ownerUserId: number;
-  settlementDate: string;
-  status: string;
-  reason: string;
-  leftVolume: number;
-  rightVolume: number;
-  matchedVolume: number;
-  amountUsdt: number;
-  dailyCapUsdt: number;
-  commissionEventId: number | null;
-  replayed: boolean;
 }
 
 function asScalarText(value: unknown, fallback = "") {
@@ -1799,7 +1795,7 @@ export async function fetchF4AmbassadorPolicy() {
 }
 
 export async function updateF4AmbassadorPolicy(
-  policy: Omit<F4AmbassadorPolicy, "serverCanonical">,
+  policy: F4AmbassadorPolicyUpdate,
   reason: string,
   operator: string,
 ) {
@@ -1809,14 +1805,7 @@ export async function updateF4AmbassadorPolicy(
       method: "PUT",
       stableIdempotencyKey: commandKey,
       expectsData: true,
-      body: JSON.stringify({
-        policyVersion: policy.policyVersion,
-        defaultBudgetUsdt: policy.defaultBudgetUsdt,
-        buckets: policy.buckets,
-        expectedRevision: policy.revision,
-        reason,
-        operator,
-      }),
+      body: JSON.stringify({ ...policy, reason, operator }),
     })));
 }
 
@@ -1980,34 +1969,6 @@ export async function updateF5AnomalyConfig(
       body: JSON.stringify({ commissionAnomalySigma, layerRatioAnomalyPct, reason, operator }),
       stableIdempotencyKey: commandKey,
     }));
-}
-
-export async function executeF3Settlement(
-  ownerUserId: number,
-  settlementDate: string,
-  reason: string,
-) {
-  // 指纹恒定:同一 owner + 结算日就是同一次意图,理由措辞不改变要执行的动作。
-  const data = await f1StableWrite(`f3-settle|${ownerUserId}|${settlementDate}`, "settlement",
-    (commandKey) => f1Request<Record<string, unknown>>("/binary/settlements", {
-      method: "POST",
-      body: JSON.stringify({ ownerUserId, settlementDate, reason }),
-      stableIdempotencyKey: commandKey,
-      expectsData: true,
-    }));
-  return {
-    ownerUserId: toNumber(data.ownerUserId),
-    settlementDate: asText(data.settlementDate, settlementDate),
-    status: asText(data.status, ""),
-    reason: asText(data.reason, ""),
-    leftVolume: toNumber(data.leftVolume),
-    rightVolume: toNumber(data.rightVolume),
-    matchedVolume: toNumber(data.matchedVolume),
-    amountUsdt: toNumber(data.amountUsdt),
-    dailyCapUsdt: toNumber(data.dailyCapUsdt),
-    commissionEventId: data.commissionEventId == null ? null : toNumber(data.commissionEventId),
-    replayed: toBoolean(data.replayed),
-  } satisfies F3SettlementExecution;
 }
 
 export async function updateF1VRankThreshold(rank: string, field: string, value: string, reason: string, operator: string) {

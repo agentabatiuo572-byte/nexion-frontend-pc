@@ -467,3 +467,42 @@
 .fdom .f1-state.st-pending_grant { border-color: var(--warning-border); background: var(--warning-soft); color: var(--warning); }
 .fdom .f1-chain-note { margin-top: 16px; padding: 12px 14px; border: 1px solid var(--cyan-border); border-radius: 10px; background: var(--cyan-soft); color: var(--ink-2); font-size: 11.5px; line-height: 1.65; }
 .fdom .f1-chain-note b { color: var(--cyan); }
+
+.fdom .team-fund-confirm {
+  --brand: var(--admin-confirm-focus);
+  --brand-soft: color-mix(in srgb, var(--admin-confirm-brand) 14%, var(--surface));
+  --warning: var(--admin-confirm-warning);
+}
+.fdom .team-fund-confirm .modal-f .btn.primary {
+  background: var(--admin-confirm-brand);
+  border-color: var(--admin-confirm-brand);
+  color: var(--admin-confirm-on-brand);
+}
+@media (hover: hover) and (pointer: fine) {
+  .fdom .team-fund-confirm .modal-f .btn.primary:hover { background: var(--admin-confirm-brand-hover); }
+}
+.fdom .team-fund-confirm .field :is(input, textarea) { font-size: 14px; }
+.fdom .team-fund-confirm .field :is(input, textarea):focus-visible,
+.fdom .team-fund-confirm button:focus-visible { outline: 2px solid var(--admin-confirm-focus); outline-offset: 2px; }
+html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn { border-inline-start: 3px solid var(--warning); }
+html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
+  --operation-approval-icon: var(--surface);
+  background: var(--warning);
+}
+.fdom .team-fund-confirm :is(.operation-approval-coverage, .f3-settlement-calendar) {
+  margin: 0 0 14px;
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.fdom .modal.f4-policy-confirm { max-width: 900px; }
+.fdom .f4-policy-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.fdom .f4-policy-table { border: 1px solid var(--border); border-radius: 9px; margin-bottom: 14px; }
+.fdom .f4-policy-table .tbl :is(th, td) { padding: 7px 9px; }
+.fdom .f4-policy-review .tbl { table-layout: fixed; }
+.fdom .f4-policy-review td.num { font-size: 14px; font-weight: 600; color: var(--ink); }
+.fdom .f4-policy-buckets { table-layout: fixed; min-width: 800px; }
+.fdom .f4-policy-buckets th:nth-child(1) { width: 20%; }
+.fdom .f4-policy-buckets th:nth-child(2) { width: 31%; }
+.fdom .f4-policy-buckets th:nth-child(3) { width: 21%; }
+.fdom .f4-policy-buckets th:nth-child(n+4) { width: 14%; }

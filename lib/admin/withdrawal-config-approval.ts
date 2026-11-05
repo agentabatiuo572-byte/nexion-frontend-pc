@@ -8,6 +8,7 @@ import {
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
+import type { F4AmbassadorPolicyUpdate } from "./f1-client";
 
 const attempts = createPendingMutationStore<PendingMutationRecord & { input: string }>({
   storageKey: "nexion-admin-withdrawal-config-proposals",
@@ -21,8 +22,18 @@ const commands = {
   B1: { domain: "B", op: "b1_coverage_thresholds", type: "coverage_thresholds", action: "降低兑付覆盖率红线" },
   B5: { domain: "B", op: "b5_bankrun_thresholds", type: "bankrun_thresholds", action: "提高提现压力红线" },
   E2: { domain: "E", op: "e2_task_pricing_change", type: "e2_task_pricing", action: "放宽任务定价配置" },
+  F3: { domain: "F", op: "f3_binary_settle", type: "binary_settlement", action: "手动结算团队平衡奖励" },
+  F4: { domain: "F", op: "f4_ambassador_policy_change", type: "ambassador_policy", action: "提高区域大使申请预算" },
 } as const;
 
+export const teamFundApprovalAuthority = { F3: "network_f3_write", F4: "network_f4_pool_fund" } as const;
+export type TeamFundApprovalValues = {
+  F3: { ownerUserId: number; settlementDate: string };
+  F4: F4AmbassadorPolicyUpdate;
+};
+type ApprovalSource = keyof typeof commands;
+type ApprovalValues = TeamFundApprovalValues[keyof TeamFundApprovalValues]
+  | (Record<string, unknown> & ({ expectedVersion: number } | { expectedRevision: string }));
 type ApprovalScope = { objectId: string; field: string };
 
 function approvalSlot(sourceDomain: keyof typeof commands, adminId: string | number, scope?: ApprovalScope) {
@@ -41,9 +52,9 @@ export function pendingConfigApproval(sourceDomain: keyof typeof commands, admin
 }
 
 export async function submitConfigApproval<T>(
-  sourceDomain: keyof typeof commands,
+  sourceDomain: ApprovalSource,
   session: AdminSession,
-  values: Record<string, unknown> & ({ expectedVersion: number } | { expectedRevision: string }),
+  values: ApprovalValues | null,
   reason: string,
   readActive: () => Promise<T>,
   mode: boolean | "retry-original" = false,
@@ -51,14 +62,15 @@ export async function submitConfigApproval<T>(
 ) {
   const { domain, action, op, type } = commands[sourceDomain];
   const slot = approvalSlot(sourceDomain, session.adminId, scope);
-  const objectId = scope?.objectId ?? "current";
   const lookupOnly = mode === true;
   const previous = pendingConfigApproval(sourceDomain, session.adminId, scope);
   if (lookupOnly && !previous) return null;
   if (mode === "retry-original") {
     if (!previous) throw new Error("原审批命令已处理，请刷新页面后重新操作。");
     const original: unknown = JSON.parse(previous.input);
-    if (!Array.isArray(original) || typeof original[0]?.expectedRevision !== "string" || typeof original[1] !== "string") {
+    if (!Array.isArray(original) || typeof original[1] !== "string"
+      || (sourceDomain === "F3" ? !Number.isSafeInteger(original[0]?.ownerUserId) || typeof original[0]?.settlementDate !== "string"
+        : sourceDomain === "F4" ? !Number.isSafeInteger(original[0]?.expectedRevision) : typeof original[0]?.expectedRevision !== "string")) {
       throw new Error("原审批命令不完整，请到操作记录核对。");
     }
     [values, reason] = original;
@@ -76,7 +88,7 @@ export async function submitConfigApproval<T>(
   let ticket;
   let canClearOnRejection = !previous;
   try {
-    if (previous && (domain === "B" || sourceDomain === "E2" || session.authorities.includes("platform_a2_read"))) {
+    if (previous && (domain === "B" || domain === "F" || sourceDomain === "E2" || session.authorities.includes("platform_a2_read"))) {
       try {
         ticket = await fetchA2ProposalByKey(key);
       } catch {
@@ -91,22 +103,28 @@ export async function submitConfigApproval<T>(
     if (previous && previous.input !== input && !ticket) {
       throw new A2OutcomeUncertainError("请用原配置和原理由核对该命令，或在操作记录中查询。", key);
     }
-    ticket ??= await createA2OperationProposal({
-      action,
-      obj: objectId,
-      beforeValue: "—",
-      afterValue: "—",
-      operator: session.operator || session.username,
-      operatorRole: roleLabel(session.role),
-      type: "fund",
-      amplifies: true,
-      sos: false,
-      roleGate: "超管",
-      reason,
-      sourceDomain,
-      command: { domain, op, params: { values } },
-      target: { domain, type, id: objectId },
-    }, key, true);
+    if (!ticket) {
+      if (!values) throw new Error("请填写完整后提交。");
+      const objectId = sourceDomain === "F3" && "ownerUserId" in values && "settlementDate" in values
+        ? `${values.ownerUserId}:${values.settlementDate}`
+        : sourceDomain === "F4" ? "default" : scope?.objectId ?? "current";
+      ticket = await createA2OperationProposal({
+        action,
+        obj: objectId,
+        beforeValue: "—",
+        afterValue: "—",
+        operator: session.operator || session.username,
+        operatorRole: roleLabel(session.role),
+        type: "fund",
+        amplifies: true,
+        sos: false,
+        roleGate: "超管",
+        reason,
+        sourceDomain,
+        command: { domain, op, params: { values } },
+        target: { domain, type, id: objectId },
+      }, key, true);
+    }
   } catch (error) {
     if (error instanceof Error && "backendMessage" in error
         && ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(String(error.backendMessage))) {
@@ -125,7 +143,9 @@ export async function submitConfigApproval<T>(
   attempts.forget(slot, key);
   return {
     active,
-    acknowledgement: previous && previous.input !== input
+    acknowledgement: previous && lookupOnly && domain === "F"
+      ? `已找到原审批单 ${ticket.id}${ticket.status === "pending" ? " · 等待另一位超管批准" : " · 请在操作记录查看处理结果"}`
+      : previous && previous.input !== input
       ? `已找到原审批单 ${ticket.id}，本次输入未提交。请核对当前配置后重新操作。`
       : ticket.status === "pending"
         ? `已提交审批 · 审批单 ${ticket.id} · 等待另一位超管批准`

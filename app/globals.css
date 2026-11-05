@@ -33,6 +33,12 @@
   --v5-on-brand-soft: rgba(255, 255, 255, 0.78);
   --v5-on-brand-mute: rgba(255, 255, 255, 0.22);
 
+  --admin-confirm-brand: #9EDC1D;
+  --admin-confirm-brand-hover: #8BC30F;
+  --admin-confirm-on-brand: #0A0A0A;
+  --admin-confirm-focus: #4F7100;
+  --admin-confirm-warning: #B24400;
+
   --v5-brand-2: #FF5A1F;
   --v5-brand-2-soft: #FFEEDC;
   --v5-brand-2-border: #FFD0A8;
@@ -165,6 +171,8 @@ html[data-theme="dark"] {
   --v5-success: #29D27F;
   --v5-success-soft: rgba(41, 210, 127, 0.13);
   --v5-warning: #FFBE3D;
+  --admin-confirm-focus: var(--admin-confirm-brand);
+  --admin-confirm-warning: var(--v5-warning);
   --v5-warning-soft: rgba(255, 190, 61, 0.13);
   --v5-danger: #FF6B35;
   --v5-danger-soft: rgba(255, 107, 53, 0.13);
