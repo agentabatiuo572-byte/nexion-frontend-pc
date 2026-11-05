@@ -522,10 +522,10 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // 无默认动作：必须由运营显式选择后才可提交；但允许先勾选，再选动作。
   const [batchAction, setBatchAction] = useState<D2BatchAction | "">("");
-  const [uncertainBatches, setUncertainBatches] = useState<D2UncertainBatch[]>([]);
+  const [uncertainBatches, setUncertainBatches] = useState<(D2UncertainBatch & { commandKey: string })[]>([]);
   const [lastBatchResult, setLastBatchResult] = useState("");
   useEffect(() => {
-    setUncertainBatches(pendingKeys.list().flatMap((record) => record.batch ? [record.batch] : []));
+    setUncertainBatches(pendingKeys.list().flatMap((record) => record.batch ? [{ ...record.batch, commandKey: record.commandKey }] : []));
   }, []);
   const [detail, setDetail] = useState<D2Withdrawal | null>(null);
   const [bankDetail, setBankDetail] = useState<D2BankPayout | null>(null);
@@ -849,10 +849,18 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     });
   };
 
-  const runBatch = async (action: D2BatchAction, ids: string[], reason: string, businessValue?: BusinessFormValue) => {
+  const runBatch = async (action: D2BatchAction, ids: string[], reason: string, businessValue?: BusinessFormValue, retryKey?: string) => {
     const scope = batchScope(action, ids);
+    // Check persistence before list() can restore a deleted record from its memory mirror.
+    if (retryKey !== undefined && !pendingKeys.isDurablyStored(scope, retryKey)) {
+      pendingKeys.forget(scope, retryKey);
+      setUncertainBatches((current) => current.filter((batch) => batchScope(batch.action, batch.ids) !== scope));
+      await load();
+      toast("原操作已结束或过期，本次未再次发送。请先核对列表，再决定如何处理。");
+      return;
+    }
     const previous = pendingKeys.list().find((record) => record.fingerprint === scope);
-    const key = previous?.commandKey ?? operationKey(scope);
+    const key = retryKey ?? previous?.commandKey ?? operationKey(scope);
     const originalBatch = previous?.batch ?? { action, ids, reason, businessValue };
     pendingKeys.remember(scope, key, { batch: originalBatch });
     setSubmitting(scope);
@@ -882,7 +890,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       if (isDOutcomeUnknownError(cause) || retryBlockedByAccess(cause, previous?.commandKey)) {
         setUncertainBatches((current) => [
           ...current.filter((batch) => batchScope(batch.action, batch.ids) !== scope),
-          originalBatch,
+          { ...originalBatch, commandKey: key },
         ]);
         await load();
         if (detail) await openDetail(detail);
@@ -924,7 +932,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     {error && <div className="dtint warn" style={{ marginBottom: 12 }}>加载失败 · {error} · 已暂停所有操作，请重试。 <button className="l-btn sm" onClick={() => void load(1)}>重试</button></div>}
     {uncertainBatches.map((batch) => <div key={batchScope(batch.action, batch.ids)} className="dtint warn" role="status" data-d2-batch-unknown style={{ marginBottom: 12 }}>
       {BATCH_UNKNOWN_COPY} {actionLabel(batch.action)} · {batch.ids.join("、")}。
-      <button className="l-btn sm" disabled={!writesEnabled || !!submitting} onClick={() => void runBatch(batch.action, batch.ids, batch.reason, batch.businessValue).catch((cause) => toast(displayAdminError(cause)))}>重试原操作</button>
+      <button className="l-btn sm" disabled={!writesEnabled || !!submitting} onClick={() => void runBatch(batch.action, batch.ids, batch.reason, batch.businessValue, batch.commandKey).catch((cause) => toast(displayAdminError(cause)))}>重试原操作</button>
     </div>)}
     {lastBatchResult && <div className="dtint" role="status" data-d2-batch-result style={{ marginBottom: 12 }}>{lastBatchResult}</div>}
     <div className="dtint" style={{ marginBottom: 12 }}>当前到账时限：{resultsUnavailable || d5?.payoutSlaHours == null ? "—" : `${d5.payoutSlaHours} 小时`} · 已提交的提现按提交时的时限</div>
