@@ -58,6 +58,8 @@ type D2BatchAction = (typeof BATCH_ACTIONS)[number];
 type D2UncertainBatch = { action: D2BatchAction; ids: string[]; reason: string; businessValue?: BusinessFormValue };
 type D2PendingCommand = PendingMutationRecord & { batch?: D2UncertainBatch };
 const BATCH_UNKNOWN_COPY = "批量操作结果尚未确认，可能已有部分生效。请在下方重试原操作，不要另建包含相同提现单的批次。";
+const MOVED_STATE_CODES = ["INVALID_STATE_TRANSITION", "WITHDRAWAL_STATE_CONFLICT", "CREGIS_PAYOUT_ALREADY_DISPATCHED",
+  "BANK_PAYOUT_ALREADY_DISPATCHED", "BANK_PAYOUT_RECOVERY_STALE"];
 
 function money(value: number) {
   return `$${Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
@@ -521,6 +523,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   // 无默认动作：必须由运营显式选择后才可提交；但允许先勾选，再选动作。
   const [batchAction, setBatchAction] = useState<D2BatchAction | "">("");
   const [uncertainBatches, setUncertainBatches] = useState<D2UncertainBatch[]>([]);
+  const [lastBatchResult, setLastBatchResult] = useState("");
   useEffect(() => {
     setUncertainBatches(pendingKeys.list().flatMap((record) => record.batch ? [record.batch] : []));
   }, []);
@@ -637,8 +640,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     await load();
     if (detail) await openDetail(detail);
     const stateConflict = cause instanceof DRequestError && (cause.status === 409 || cause.code === 409)
-      && ["INVALID_STATE_TRANSITION", "WITHDRAWAL_STATE_CONFLICT", "CREGIS_PAYOUT_ALREADY_DISPATCHED",
-        "BANK_PAYOUT_ALREADY_DISPATCHED", "BANK_PAYOUT_RECOVERY_STALE"].includes(cause.reasonCode ?? "");
+      && MOVED_STATE_CODES.includes(cause.reasonCode ?? "");
     if (stateConflict) {
       toast("提现已被他人或系统处理，已刷新列表，请核对最新状态。");
       return;
@@ -854,12 +856,27 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     const originalBatch = previous?.batch ?? { action, ids, reason, businessValue };
     pendingKeys.remember(scope, key, { batch: originalBatch });
     setSubmitting(scope);
+    setLastBatchResult("");
     try {
       const result: D2BatchResult = await reviewD2WithdrawalsBatch(originalBatch.action, originalBatch.ids,
         { ...businessInput(originalBatch.businessValue), reason: originalBatch.reason }, OPERATOR(), key);
       pendingKeys.forget(scope);
       setUncertainBatches((current) => current.filter((batch) => batchScope(batch.action, batch.ids) !== scope));
-      toast(`批次 ${result.batchId}：成功 ${result.accepted.length} 笔 / 大额转人工 ${result.rejected.length} 笔 / 状态已变化 ${result.conflicts.length} 笔`);
+      const groups = new Map<string, string[]>();
+      for (const conflict of result.conflicts) {
+        const group = groups.get(conflict.reason) ?? [];
+        group.push(conflict.withdrawalId);
+        groups.set(conflict.reason, group);
+      }
+      const reasons = [...groups].map(([reason, rows]) =>
+        `${rows.length} 笔（${rows.join("、")}）：${MOVED_STATE_CODES.includes(reason) ? "状态已变化 · " : ""}${displayAdminError(new Error(reason))}`).join("；");
+      const summary = `批次 ${result.batchId}：成功 ${result.accepted.length} 笔 / 大额转人工 ${result.rejected.length} 笔 / 未执行 ${result.conflicts.length} 笔${reasons ? `；${reasons}` : ""}`;
+      setLastBatchResult(summary);
+      if (result.accepted.length === 0 && result.rejected.length === 0
+          && result.conflicts.some((conflict) => !MOVED_STATE_CODES.includes(conflict.reason))) {
+        throw new Error(summary);
+      }
+      toast(summary);
       await load();
     } catch (cause) {
       if (isDOutcomeUnknownError(cause) || retryBlockedByAccess(cause, previous?.commandKey)) {
@@ -909,6 +926,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       {BATCH_UNKNOWN_COPY} {actionLabel(batch.action)} · {batch.ids.join("、")}。
       <button className="l-btn sm" disabled={!writesEnabled || !!submitting} onClick={() => void runBatch(batch.action, batch.ids, batch.reason, batch.businessValue).catch((cause) => toast(displayAdminError(cause)))}>重试原操作</button>
     </div>)}
+    {lastBatchResult && <div className="dtint" role="status" data-d2-batch-result style={{ marginBottom: 12 }}>{lastBatchResult}</div>}
     <div className="dtint" style={{ marginBottom: 12 }}>当前到账时限：{resultsUnavailable || d5?.payoutSlaHours == null ? "—" : `${d5.payoutSlaHours} 小时`} · 已提交的提现按提交时的时限</div>
     <div className="f-stats">
       {/* 服务端分页总数：rows.total 由服务端分页返回 */}
