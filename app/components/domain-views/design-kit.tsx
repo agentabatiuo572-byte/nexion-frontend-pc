@@ -19,6 +19,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
 import { isL5KpiExport, l5KpiRange, L5_KPI_WINDOWS, l5BusinessToday } from "./l-tabs/l5-kpi-range";
 import { Button as RdButton } from "@/app/components/rd/button";
+import { Explain } from "@/app/components/rd/explain";
 import { Modal as RdModal } from "@/app/components/rd/overlay";
 import { NumberInput as RdNumberInput } from "@/app/components/rd/number-input";
 import { useRdSurface } from "@/app/components/rd/surface";
@@ -3661,7 +3662,13 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const coverageNotice = effectiveAmplifies && (
     <div className={surface && !covBlocked ? "alertbar calm" : "alertbar danger"} style={{ marginBottom: 16, border: 0 }}>
       <span className="ico"><Icon name="alert" size={16} /></span>
-      <div className="tiny">
+      {surface && coverage && !covBlocked ? (
+        // 够得上红线时只留数字，后果和检查说明进提示图标（DP-06）。
+        <div className="tiny">
+          覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b>，红线 <b>{coverage.redlinePct}%</b>
+          <Explain label="这项操作对资金的影响" content={<><p>{coverageLead}</p><p>提交时会先检查兑付覆盖率{coverage.healthyPct !== undefined ? `，健康线 ${coverage.healthyPct}%` : ""}。</p></>} />
+        </div>
+      ) : <div className="tiny">
         <b>{coverageLead}</b> · 提交时会先检查兑付覆盖率。
         {coverage ? (
           <>
@@ -3677,7 +3684,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         ) : auditSink === "local-history" ? (
           <>本页暂不自动检查覆盖率，请自行确认资金影响。</>
         ) : null}
-      </div>
+      </div>}
     </div>
   );
   return (
