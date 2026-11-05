@@ -151,6 +151,18 @@ function isCurrentOperator(w: A2OperationRow, principal: AuthPrincipal) {
   return w.mine || (!!current && current === normalizeOperatorIdentity(w.operator));
 }
 
+function g3PolicyExecutionTiming(w: A2OperationRow) {
+  const g3 = w.obj === "weekly" && /^提高周价格计划·D[1-7]·(?:目标价（USDT\/UVT）|上涨概率)$/.test(w.action)
+    || w.obj === "currentPrice" && w.action === "提高当前UVT价格"
+    || w.obj === "schedule" && w.action === "首次配置UVT自动推进";
+  if (!g3) return undefined;
+  try {
+    const review = JSON.parse(w.after) as Record<string, unknown>;
+    if (review && typeof review["生效时间"] === "string") return review["生效时间"];
+  } catch { /* Historical incomplete review text retains the G3 timing reminder. */ }
+  return "批准后按完整变更内容注明的时点生效，请先核对";
+}
+
 /* ────────────────── 主组件 ────────────────── */
 
 /** 详情与执行确认均完整展示已持久化的前后值。 */
@@ -368,7 +380,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         <>
           对象 <b>{w.obj}</b> · 发起人 {w.operator}。
           <A2ChangeReview before={w.before} after={w.after} />
-          确认后立即执行
+          {g3PolicyExecutionTiming(w) ?? "确认后立即执行"}
           {w.sos ? (<>，<b>并通知应急值班人员</b></>) : null}。<br />
           谁能执行：<b>{w.roleGate}</b>
           {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}

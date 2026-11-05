@@ -1,6 +1,6 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { createStableMutationExecutor, stableMutationFingerprint, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
+import { createStableMutationExecutor, StableMutationFailure, stableMutationFingerprint, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
 
 interface ApiResult<T> {
   code: number;
@@ -55,6 +55,9 @@ interface BackendOverview {
   coverage?: BackendCoverage | null;
   serverCanonical?: boolean | null;
   sources?: string[] | null;
+  curveRevision?: string;
+  priceRevision?: string;
+  scheduleRevision?: string;
 }
 
 interface BackendHistoryPoint {
@@ -118,6 +121,9 @@ export interface G3Overview {
   coverage: G3Coverage;
   serverCanonical: boolean;
   sources: string[];
+  curveRevision?: string;
+  priceRevision?: string;
+  scheduleRevision?: string;
 }
 
 export interface G3HistoryPoint {
@@ -233,6 +239,9 @@ function normalizeOverview(data: BackendOverview | null | undefined): G3Overview
     },
     serverCanonical: data?.serverCanonical === true,
     sources: data?.sources ?? [],
+    curveRevision: data.curveRevision,
+    priceRevision: data.priceRevision,
+    scheduleRevision: data.scheduleRevision,
   };
 }
 
@@ -250,7 +259,7 @@ function normalizeHistory(data: BackendHistory | null | undefined): G3History {
   };
 }
 
-async function g3Request<T>(path: string, init?: RequestInit) {
+async function g3Request<T>(path: string, init?: RequestInit, strictOutcome = false) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -262,15 +271,20 @@ async function g3Request<T>(path: string, init?: RequestInit) {
   });
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
+  if (strictOutcome && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
+      || !result || !Number.isInteger(result.code) || result.code >= 500 || result.code !== 0 && result.code < 400)) {
+    throw new StableMutationFailure("outcome-unknown", "提交结果暂未确认，请保留原操作后重试核对。");
+  }
+
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw stableMutationHttpFailure(
+    throw Object.assign(stableMutationHttpFailure(
       formatAdminApiError(result?.message, `G3_REQUEST_FAILED_${response.status}`),
       response.status,
       result?.code,
-    );
+    ), { backendMessage: result?.message });
   }
 
   return result.data as T;
@@ -295,12 +309,16 @@ function g3OverviewMutation(
   );
 }
 
-function serializeFrames(frames: G3CurveFrame[]) {
+export function g3NumberText(value: number, scale = 8) {
+  return value.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: scale });
+}
+
+export function serializeG3Frames(frames: G3CurveFrame[]) {
   return frames.map((frame) => ({
     dayIndex: frame.dayIndex,
-    targetPrice: String(frame.targetPrice),
-    pumpProbability: String(frame.pumpProbability),
-    volatilityPct: String(frame.volatilityPct),
+    targetPrice: g3NumberText(frame.targetPrice),
+    pumpProbability: g3NumberText(frame.pumpProbability, 6),
+    volatilityPct: g3NumberText(frame.volatilityPct),
   }));
 }
 
@@ -320,7 +338,7 @@ export async function updateG3CurveFrame(
   reason: string,
   operator: string,
 ) {
-  const expectedFrames = serializeFrames(overview.frames);
+  const expectedFrames = serializeG3Frames(overview.frames);
   const frames = expectedFrames.map((frame) => ({ ...frame }));
   const target = frames.find((frame) => frame.dayIndex === dayIndex);
   if (!target) throw new Error("这一天的价格计划不存在，请刷新页面后重试。");
@@ -331,6 +349,15 @@ export async function updateG3CurveFrame(
     { frames, expectedFrames, reason, operator },
     `g3-curve-d${dayIndex + 1}-${field}`,
   );
+}
+
+/** The four G3 confirmations persist this exact request before sending it. */
+export async function submitG3MarketCommand(path: string, method: "PUT" | "PATCH", body: string, commandKey: string) {
+  return normalizeOverview(await g3Request<BackendOverview>(path, {
+    method,
+    headers: { "Idempotency-Key": commandKey },
+    body,
+  }, true));
 }
 
 export async function updateG3Control(
