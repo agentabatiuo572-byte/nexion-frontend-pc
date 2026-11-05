@@ -99,7 +99,7 @@ function queryFromUrl(search: string): L1KpiQuery | null {
 function writeQueryToUrl(query: L1KpiQuery) {
   const url = new URL(window.location.href);
   URL_KEYS.forEach((key) => url.searchParams.delete(key));
-  if (query.window && query.window !== "7d") url.searchParams.set("window", query.window);
+  url.searchParams.set("window", query.window ?? "7d"); // 默认范围也写，否则刷新会被本机视图盖掉
   (["from", "to", ...SLICES] as const).forEach((key) => { if (query[key]) url.searchParams.set(key, String(query[key])); });
   window.history.replaceState(window.history.state, "", url);
 }
@@ -307,15 +307,13 @@ export function L1Kpi({ ctx, onExportSource, title, summary, actions }: { ctx: L
 
   const draftSlices = { cohort: cohortFilter || undefined, phase: phaseFilter || undefined, locale: localeFilter || undefined, ref: refFilter || undefined };
   const appliedSlices = { cohort: applied.cohort, phase: applied.phase, locale: applied.locale, ref: applied.ref };
+  const appliedTime = { window: applied.window, from: applied.from, to: applied.to };
 
-  const reloadKpi = (nextWindow: L1Window, slices: Partial<L1KpiQuery>) => {
+  /** 读取入口只收完整的查询对象。草稿只有显式应用时才拼进来，刷新、移除条件、重试都不碰（ST-18）。 */
+  const reloadKpi = (next: L1KpiQuery) => {
     setQueryNotice("");
     setRefreshing(true);
     setLocalData(data ?? null);
-    const next: L1KpiQuery = {
-      ...(nextWindow === "custom" ? { window: "custom", from: customFrom, to: customTo } : { window: nextWindow }),
-      ...slices,
-    };
     selectedQuery.current = next;
     onExportSource?.({ parentData: ctx.biData?.l1, data, query: next, status: "loading" });
     l1Requests.current.run(
@@ -329,10 +327,10 @@ export function L1Kpi({ ctx, onExportSource, title, summary, actions }: { ctx: L
         setDrillTrend(null);
         setDrillError("");
         setRefreshError("");
-        setWin(nextWindow);
+        setWin(next.window ?? "7d");
         setApplied(next);
         writeQueryToUrl(next);
-        ctx.toast(`关键指标 已按${nextWindow === "custom" ? `${customFrom} 至 ${customTo}` : WINDOW_NAME[nextWindow]}重新加载`);
+        ctx.toast(`关键指标 已按${next.window === "custom" ? `${next.from} 至 ${next.to}` : WINDOW_NAME[next.window ?? "7d"]}重新加载`);
       },
       (error) => {
         const message = displayAdminReadError(error);
@@ -346,13 +344,13 @@ export function L1Kpi({ ctx, onExportSource, title, summary, actions }: { ctx: L
 
   const customPicking = customOpen || win === "custom";
   const customRangeNotice = customPicking && customFrom && customTo && customFrom <= customTo ? customRangeProblem(customFrom, customTo) : "";
-  const submitQuery = () => {
+  const customReady = Boolean(customFrom && customTo && customFrom <= customTo && !customRangeNotice);
+  const applySlices = () => {
     if (cohortFilter && !COHORT_FORMAT.test(cohortFilter)) {
       setQueryNotice("注册周要写成年份和周数，比如 2026-W42。这次没有查询。");
       return;
     }
-    if (win === "custom" && customRangeNotice) return;
-    reloadKpi(win, draftSlices);
+    reloadKpi({ ...appliedTime, ...draftSlices });
   };
   const clearDrafts = () => {
     setCohortFilter("");
@@ -362,12 +360,16 @@ export function L1Kpi({ ctx, onExportSource, title, summary, actions }: { ctx: L
   };
   const removeSlice = (key: typeof SLICES[number]) => {
     ({ cohort: setCohortFilter, phase: setPhaseFilter, locale: setLocaleFilter, ref: setRefFilter })[key]("");
-    reloadKpi(win, { ...appliedSlices, [key]: undefined });
+    reloadKpi({ ...applied, [key]: undefined });
   };
   const saveView = () => {
     let saved: ReturnType<typeof saveL1LocalView> = null;
     try {
-      saved = saveL1LocalView(window.localStorage, { window: win, customFrom, customTo, gran, phaseOn, ylOffset, ovlSel, cohortFilter, phaseFilter, localeFilter, refFilter });
+      // 存屏幕上这份，不存没应用的输入：它和网址一致，刷新才真的还是这个视图。
+      saved = saveL1LocalView(window.localStorage, {
+        window: applied.window ?? "7d", customFrom: applied.from ?? "", customTo: applied.to ?? "", gran, phaseOn, ylOffset, ovlSel,
+        cohortFilter: applied.cohort ?? "", phaseFilter: applied.phase ?? "", localeFilter: applied.locale ?? "", refFilter: applied.ref ?? "",
+      });
     } catch {
       saved = null;
     }
@@ -387,7 +389,7 @@ export function L1Kpi({ ctx, onExportSource, title, summary, actions }: { ctx: L
             return;
           }
           setCustomOpen(false);
-          reloadKpi(next, appliedSlices);
+          reloadKpi({ window: next, ...appliedSlices });
         }}
       />}
       more={<>
@@ -409,10 +411,10 @@ export function L1Kpi({ ctx, onExportSource, title, summary, actions }: { ctx: L
         </div>
       </>}
       moreCount={SLICES.filter((key) => applied[key]).length}
-      onSubmit={submitQuery}
+      onSubmit={applySlices}
       querying={refreshing}
-      submitLabel={refreshing ? "刷新中…" : "刷新指标"}
-      onClear={() => { clearDrafts(); reloadKpi(win, { cohort: undefined, phase: undefined, locale: undefined, ref: undefined }); }}
+      action={<Button disabled={refreshing} onClick={() => reloadKpi(applied)}>{refreshing ? "刷新中…" : "刷新指标"}</Button>}
+      onClear={() => { clearDrafts(); reloadKpi(appliedTime); }}
       canClear={!refreshing && (hasSlice(applied) || draftChanged)}
       sort={<div className="rd-filter-end">
         <Button onClick={saveView}>保存为视图</Button>
@@ -428,17 +430,14 @@ export function L1Kpi({ ctx, onExportSource, title, summary, actions }: { ctx: L
           <Input id="l1-custom-from" type="date" value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} />
           <label className="rd-note" htmlFor="l1-custom-to">止</label>
           <Input id="l1-custom-to" type="date" value={customTo} onChange={(event) => setCustomTo(event.target.value)} />
-          <Button disabled={!customFrom || !customTo || customFrom > customTo || refreshing || Boolean(customRangeNotice)} onClick={() => reloadKpi("custom", appliedSlices)}>应用自定义</Button>
+          <Button disabled={!customReady || refreshing} onClick={() => reloadKpi({ window: "custom", from: customFrom, to: customTo, ...appliedSlices })}>应用自定义</Button>
           <span className="rd-note">{businessZone().label}，含结束日，最长 400 天</span>
         </div>
       )}
     </FilterBar>
   );
 
-  const retryLast = () => {
-    const last = selectedQuery.current;
-    reloadKpi(last.window ?? "7d", { cohort: last.cohort, phase: last.phase, locale: last.locale, ref: last.ref });
-  };
+  const retryLast = () => reloadKpi(selectedQuery.current);
   const retryFirstRead = () => { if (selectedReadRequired) retryLast(); else void ctx.reloadBi?.(); };
 
   const report = () => {
