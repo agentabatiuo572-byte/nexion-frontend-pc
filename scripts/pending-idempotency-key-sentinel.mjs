@@ -137,6 +137,7 @@ const KNOWN = {
   "app/components/domain-views/m-tabs/m1-overview.tsx#pendingCommandRef": { verdict: "not-idempotency", reason: "弹窗冻结输入与逻辑槽标识；实际 HTTP 键由 m-view 的共享 mCommands 按含版本的 value/reason 跨刷新恢复，真实 writer/sink 回归覆盖同输入保号与版本变更换号" },
   "app/components/domain-views/a-tabs/a4-events.tsx#redriveCommandRef": { verdict: "not-idempotency", reason: "确认框回显缓存；实际 HTTP 命令号由 a4-redrive-command 的共享持久槽位解析，真实模块刷新回归验证同号重试" },
   // ---- not-idempotency:不是命令号容器 ----
+  "lib/admin/pending-mutation-store.ts#slotStores": { verdict: "not-idempotency", reason: "按 storageKey 复用槽位存储实例,不存命令号;命令号仍在 sessionStorage,刷新后实例重建" },
   "app/components/domain-views/m-view.tsx#pendingMCommandMetadata": { verdict: "not-idempotency", reason: "只缓存弹窗回显的动作名/理由文案,丢了不会重复入账" },
   "app/components/domain-views/m-view.tsx#pendingMCommandBaselines": { verdict: "not-idempotency", reason: "只缓存调参前基线用于 diff 展示,丢了只是少一段回显" },
   "app/components/domain-views/m-tabs/m5-scripts.tsx#pendingReplyTemplateDraftIds": { verdict: "not-idempotency", reason: "话术草稿的本地临时 id,非 Idempotency-Key,不入后端去重" },

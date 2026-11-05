@@ -362,6 +362,12 @@ export interface SlotAttemptStore {
 }
 
 /**
+ * 同一个 storageKey 只有一个实例。内存副本是实例级的：两页各建一份时，一边删了，
+ * 另一边的 list() 会用内存副本把记录写回 sessionStorage（资金储备和旧可用资金页共用预测记录）。
+ */
+const slotStores = new Map<string, SlotAttemptStore>();
+
+/**
  * 「一个槽位同时只有一次在途尝试」的命令号存储。
  *
  * 适用形态:`Map<槽位, { fingerprint, commandKey }>` —— 槽位是目标对象(用户号 / 档位 / 版块…),
@@ -371,11 +377,13 @@ export interface SlotAttemptStore {
  * 复用那个可能已被后端消费掉的命令号,让一次真实的新操作被当成重复提交静默吞掉。
  */
 export function createSlotAttemptStore(options: { storageKey: string; ttlMs?: number }): SlotAttemptStore {
+  const existing = slotStores.get(options.storageKey);
+  if (existing) return existing;
   const store = createPendingMutationStore<SlotAttemptRecord>({
     ...options,
     isValidRecord: (record) => typeof record.inputFingerprint === "string" && record.inputFingerprint.length > 0,
   });
-  return {
+  const slotStore: SlotAttemptStore = {
     resolve(slot, inputFingerprint, mint) {
       const saved = store.list().find((record) => record.fingerprint === slot);
       if (saved?.inputFingerprint === inputFingerprint) {
@@ -406,4 +414,6 @@ export function createSlotAttemptStore(options: { storageKey: string; ttlMs?: nu
     forget: store.forget,
     list: store.list,
   };
+  slotStores.set(options.storageKey, slotStore);
+  return slotStore;
 }

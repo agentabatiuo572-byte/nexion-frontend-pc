@@ -2232,7 +2232,8 @@ export async function downloadD3Csv(
   if (!response.ok || contentType !== "text/csv" || outcomeUnknown) {
     const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
     if (isAdminAuthFailure(result?.code === 401 ? 401 : response.status, result?.message)) resetAdminSession();
-    if (outcomeUnknown || outcomeStaysUnknown(response.status, result?.code)) {
+    if (outcomeUnknown || result?.message === "IDEMPOTENCY_REQUEST_IN_PROGRESS" || result?.message === "IDEMPOTENCY_RESULT_UNKNOWN"
+      || outcomeStaysUnknown(response.status, result?.code)) {
       throw new DOutcomeUnknownError(idempotencyKey);
     }
     throw new Error(formatAdminApiError(result?.message, `D3_EXPORT_FAILED_${response.status}`));
