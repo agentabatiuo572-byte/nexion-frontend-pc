@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Coins, Gift, ListChecks, Network, RefreshCw, ShieldAlert, Snowflake, Users } from "lucide-react";
 import {
-  BlockState, Button, Cell, ChartLegend, ConfigList, ConfigRow, Decision, DiffList, Explain, Fact, Facts, Field, Figure, FilterBar, FilterField, Fold, InlineMeter, Input, JudgmentPoints, KeyValues,
+  BlockState, Button, Cell, ChartLegend, Conclusion, ConfigList, ConfigRow, Decision, DiffList, Explain, Fact, Facts, Field, Figure, FilterBar, FilterField, Fold, InlineMeter, Input, JudgmentPoints, KeyValues,
   Modal, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, SectionNav, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useSectionNav,
   type JudgmentRow, type SectionNavItem,
 } from "@/app/components/rd";
@@ -992,6 +992,17 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       : code;
   };
 
+  // 结论只用接口的统计：监控中减去已冻结，就是待判定和可疑的组（DP-11）。
+  const activeCount = Number(stats.activeClusters ?? 0);
+  const frozenCount = Number(stats.frozenClusters ?? 0);
+  const highCount = Number(stats.highClusters ?? 0);
+  const openCount = activeCount - frozenCount;
+  const conclusion = openCount > 0
+    ? <Conclusion state="warn" hint="点下面一行看证据，再决定标记、冻结或判定为正常。">有 <b>{openCount}</b> 组账户等判定{highCount > 0 ? `，${highCount} 组达到建议冻结线` : ""}</Conclusion>
+    : frozenCount > 0
+      ? <Conclusion state="neutral" hint="已冻结的组核实是误判后可以解除。">没有等判定的账户组，{frozenCount} 组已冻结</Conclusion>
+      : <Conclusion state="ok" hint="这是系统检查的结果，不是读取失败。系统约每分钟检查一次，目前没有检出。">现在没有风险账户组，不用处理</Conclusion>;
+
   const overviewState = (
     overviewFailed
       ? <BlockState state="error" title="多账户风险数据加载失败" detail={`${errorText(ctx.contentError)} · 为避免误操作，已隐藏数据和操作按钮`} onRetry={reloadOverview} retrying={ctx.contentLoading} retryLabel="重新加载" />
@@ -1144,14 +1155,16 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
       {tab === "accounts" && (
         <>
+          {overviewReady && conclusion}
           {overviewReady && (
           <StatBand label="关联账户组概况">
-            <Stat lead tone="role-3" icon={Users} label="监控中的关联账户组" value={statText("activeClusters")} unit="组" sub={`涉及 ${statText("flaggedAccounts")} 个账户`}
+            <Stat tone="role-3" icon={Users} label="监控中的关联账户组" value={statText("activeClusters")} unit="组" sub={`涉及 ${statText("flaggedAccounts")} 个账户`}
               explain="全部账户组里，还没判定为正常、也没解除的组。不随下面的筛选变。" />
-            <Stat icon={ShieldAlert} iconTone={Number(stats.highClusters) > 0 ? "warn" : "role-other"} label="高风险账户组" value={statText("highClusters")} unit="组" sub={`建议冻结的关联强度 ${formatThreshold(freezeSuggestThreshold)}`}
+            <Stat icon={ShieldAlert} iconTone={Number(stats.highClusters) > 0 ? "warn" : "role-other"} label="高风险账户组" value={statText("highClusters")} unit="组" sub={`建议冻结线 ${formatThreshold(freezeSuggestThreshold)}`}
               explain="待判定或可疑、关联程度达到建议冻结线的组。这只是建议，不会自动冻结。" />
             <Stat tone="role-2" icon={Snowflake} label="已冻结账户组" value={statText("frozenClusters")} unit="组" sub={`共 ${statText("frozenAccounts")} 个账户`} />
-            <Stat tone="role-1" icon={Gift} label="新人礼拦截" value={statKnown("giftBlockedUsd") ? `$${statText("giftBlockedUsd")}` : "—"} sub={statKnown("giftBlockedCnt") ? `${statText("giftBlockedCnt")} 笔重复领取被拦下` : "数据尚未接入，不能判定为 0"} />
+            <Stat tone="role-1" icon={Gift} label="新人礼拦截" value={statKnown("giftBlockedUsd") ? `$${statText("giftBlockedUsd")}` : "—"} sub={statKnown("giftBlockedCnt") ? `${statText("giftBlockedCnt")} 笔重复领取被拦下` : "数据尚未接入，不能判定为 0"}
+              explain={statKnown("giftBlockedUsd") ? undefined : "后端还没有提供这项统计。其他三个数字是真实读取的，不受影响。"} />
           </StatBand>
           )}
 
@@ -1160,8 +1173,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               { value: "all", label: "全部" }, { value: "ip", label: "IP" }, { value: "device", label: "设备指纹" }, { value: "payment", label: "支付工具" },
             ]} />}
             onClear={clearFilters} canClear={filtered}
-            sort={<FilterField><Select aria-label="关联账户组排序" value={clusterSort} onChange={(value) => { setClusterSort(value as K1ClusterSort); setClusterPage(1); }} options={[
-              { value: "strength_desc", label: "关联强度" }, { value: "account_desc", label: "关联账户数" },
+            sort={<FilterField label="排序"><Select aria-label="关联账户组排序" value={clusterSort} onChange={(value) => { setClusterSort(value as K1ClusterSort); setClusterPage(1); }} options={[
+              { value: "strength_desc", label: "关联程度" }, { value: "account_desc", label: "关联账户数" },
             ]} /></FilterField>}>
             <FilterField><Select aria-label="关联账户组状态" value={clusterStatus} onChange={(value) => { setClusterStatusFilter(value as K1ClusterStatusFilter); setClusterPage(1); }} options={[
               { value: "all", label: "全部状态" }, { value: "detected", label: "待判定" }, { value: "flagged", label: "可疑" }, { value: "frozen", label: "已冻结" }, { value: "released", label: "已解除" }, { value: "cleared", label: "正常" },
@@ -1169,7 +1182,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           </FilterBar>
 
           {overviewReady ? <div className={clusters.length ? "rd-split" : undefined}>
-            <Panel title="可能属于同一人的账户" sub="点一行看证据和处置" icon={Network} tone="role-3" flush>
+            <Panel title="可能属于同一人的账户" sub={clusters.length ? "点一行看证据和处置" : undefined} icon={Network} tone="role-3" flush>
               <Table label="关联账户组列表">
                 <thead>
                   <tr>
@@ -1202,7 +1215,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                       </Tr>
                     );
                   })}
-                  {!rowsStale && !clusters.length && <TableMessage columns={5} role="status">当前条件下没有关联账户组。可调整筛选条件后重试。</TableMessage>}
+                  {!rowsStale && !clusters.length && <TableMessage columns={5} role="status">{layer !== "all" || clusterStatus !== "all" ? "当前条件下没有关联账户组。可调整筛选条件后重试。" : "现在没有风险账户组。同一 IP、设备或支付工具下的账户超过上限时，系统会列在这里。"}</TableMessage>}
                 </tbody>
               </Table>
               {clusterPageData.total > 0 && <Pager label="关联账户组列表" total={clusterPageData.total} page={clusterPage} pageSize={clusterPageSize} sizes={CLUSTER_PAGE_SIZE_OPTIONS} loading={ctx.contentLoading}
