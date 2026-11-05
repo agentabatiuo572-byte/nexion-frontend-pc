@@ -22,12 +22,16 @@
  * - 更多筛选收起时内容留在页面上，已填的值不丢；条件条在收起时也看得到。
  * - 网址读写由页面做（ST-23），组件不碰。
  */
-import { forwardRef, useId, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from "react";
+import { forwardRef, useId, useState, type FormEvent, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react";
 import { Filter, X } from "lucide-react";
 import { Button } from "./button";
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input({ className, ...rest }, ref) {
   return <input ref={ref} {...rest} className={className ? `rd-input ${className}` : "rd-input"} />;
+});
+
+export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function Textarea({ className, ...rest }, ref) {
+  return <textarea ref={ref} {...rest} className={className ? `rd-input rd-textarea ${className}` : "rd-input rd-textarea"} />;
 });
 
 export function FilterField({ label, grow, children }: { label?: ReactNode; grow?: boolean; children: ReactNode }) {

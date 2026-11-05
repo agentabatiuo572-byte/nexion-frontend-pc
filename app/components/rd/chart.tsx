@@ -25,6 +25,7 @@
  * 图是 role="img"，数值要能在图外读到：结论、表格、图例或明细（ST-63）。刻度尺和档位带在 meter.tsx。
  */
 import { useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import type { StateTone } from "./tone";
 
 export type ChartSlot = 1 | 2 | 3 | 4 | "other";
 
@@ -55,10 +56,11 @@ function tickEvery(count: number) {
   return count <= 8 ? 1 : count <= 16 ? 2 : Math.ceil(count / 8);
 }
 
-export function ChartLegend({ items }: { items: readonly { key: string; label: ReactNode; slot: ChartSlot }[] }) {
+/** slot 是系列色；tone 是表示好坏的图例（VS-43），比如账户状态；两个都不传时只写字。 */
+export function ChartLegend({ items }: { items: readonly { key: string; label: ReactNode; slot?: ChartSlot; tone?: StateTone }[] }) {
   return (
     <ul className="rd-chart-legend">
-      {items.map((item) => <li key={item.key}><span className="rd-chart-swatch" data-slot={item.slot} aria-hidden />{item.label}</li>)}
+      {items.map((item) => <li key={item.key}>{(item.slot !== undefined || item.tone) && <span className="rd-chart-swatch" data-slot={item.slot} data-tone={item.tone} aria-hidden />}{item.label}</li>)}
     </ul>
   );
 }

@@ -6,12 +6,13 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./k-domain.css";
+import { RdPage } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { fetchK1MultiAccountOverview, fetchK2ArbitrageOverview, fetchK3WithdrawRuleOverview, fetchK4ScoringOverview, fetchKRiskOverviews, kRiskActions, type K3DryRunResult, type KRiskActions, type KRiskData, type KRiskOverviewQuery } from "@/lib/admin/k-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
-import { K1HeaderActions, K1MultiAccount } from "./k-tabs/k1-multiaccount";
+import { K1MultiAccount } from "./k-tabs/k1-multiaccount";
 import { K2HeaderActions, K2Arbitrage } from "./k-tabs/k2-arbitrage";
 import { K3HeaderActions, K3Rules } from "./k-tabs/k3-rules";
 import { K4HeaderActions, K4Scoring } from "./k-tabs/k4-scoring";
@@ -110,15 +111,14 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
   };
 
   const right =
-    tab === "K1" ? <K1HeaderActions />
-    : tab === "K2" ? <K2HeaderActions />
+    tab === "K2" ? <K2HeaderActions />
     : tab === "K3" ? <K3HeaderActions ctx={ctx} onResult={setK3DryRunResult} />
     : tab === "K4" ? <K4HeaderActions />
     : <span className="f-ro"><span className="d" />设备上报态与后台期望态分离 · 所有操作可追溯</span>;
 
-  return (
-    <div className="dkpage kdom">
-      <DomainHeader {...meta} right={right} />
+  const page = (
+    <>
+      {tab !== "K1" && <DomainHeader {...meta} right={right} />}
 
       {tab !== "K1" && tab !== "K2" && tab !== "K3" && tab !== "K4" && contentError && (
         <section className="l-card">
@@ -143,13 +143,22 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
           coverage={mc.coverage}
           edit={mc.edit}
           businessForm={mc.businessForm}
+          reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
+          effect={mc.effect}
+          confirmLabel={mc.confirmLabel}
+          statedBrief={mc.statedBrief}
+          facts={mc.facts}
+          coverageLead={mc.coverageLead}
+          reasonPlaceholder={mc.reasonPlaceholder}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => { await mc.run(reason, newValue, businessValue); setActionConfirm(null); }}
         />
       )}
       {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
       {toastNode}
-    </div>
+    </>
   );
+
+  return tab === "K1" ? <RdPage className="kdom">{page}</RdPage> : <div className="dkpage kdom">{page}</div>;
 }
