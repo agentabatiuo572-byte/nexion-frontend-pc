@@ -69,8 +69,7 @@ function isBaseRecord(value: unknown, commandKey: string, now: number, retainExp
     && Number.isFinite(record.createdAt)
     && Number.isFinite(record.expiresAt)
     && (retainExpiredRecords
-      ? Number.isSafeInteger(record.createdAt) && record.createdAt >= 0
-        && Number.isSafeInteger(record.expiresAt) && record.expiresAt > record.createdAt
+      ? Number.isSafeInteger(record.createdAt) && record.createdAt >= 0 && record.expiresAt > record.createdAt
       : record.expiresAt > now);
 }
 
@@ -255,6 +254,11 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
     return isBaseRecord(value, commandKey, now, retainExpiredRecords) && (!isValidRecord || isValidRecord(value as T));
   }
 
+  /** 旧版本这几张表不限期，到期时间超出安全整数。记录要留着核对，重试时限收回到首次尝试 + TTL（OP-96）。 */
+  function capped(record: T): T {
+    return retainExpiredRecords && record.expiresAt > record.createdAt + ttlMs ? { ...record, expiresAt: record.createdAt + ttlMs } : record;
+  }
+
   function syncMemory(value: Record<string, T>) {
     memory.clear();
     for (const [commandKey, record] of Object.entries(value)) memory.set(commandKey, record);
@@ -275,7 +279,7 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
         if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
           persistedCount = Object.keys(parsed).length;
           for (const [commandKey, record] of Object.entries(parsed)) {
-            if (usable(record, commandKey, now)) current[commandKey] = record;
+            if (usable(record, commandKey, now)) current[commandKey] = capped(record);
           }
         } else {
           persistedCount = 0;

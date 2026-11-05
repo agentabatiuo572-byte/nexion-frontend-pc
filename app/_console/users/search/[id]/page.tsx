@@ -79,14 +79,37 @@ type C1Command = PendingMutationRecord & {
   deviceStatus?: string;
   /** 重试被后端明确拒绝过，只有这时才给「解除待确认」（OP-93 第 8 条）。存在记录里，刷新和过期后还在。 */
   retryRejected?: boolean;
+  /** 改版前留下的记录：只有命令号和目标，没存理由，不能原样重试（OP-94），但原操作可能已经生效，要留着核对。 */
+  legacy?: boolean;
+  inputFingerprint?: string;
 };
 type C1CommandInput = PendingMutationExtra<C1Command>;
+const LEGACY_SLOT = /^(nickname-reset|payment-unbind|payment-rebind|device-replace|device-recycle)\|([^|]+)(?:\|(\d+))?$/;
+const LEGACY_COMMAND: Record<string, readonly [C1CommandKind, string]> = {
+  "nickname-reset": ["nickname", "重置昵称"],
+  "payment-unbind": ["unbind", "解绑支付方式"],
+  "payment-rebind": ["rebind", "发送换绑通知"],
+  "device-replace": ["replace", "设备置换"],
+  "device-recycle": ["recycle", "设备回收"],
+};
 const c1UserCommands = createPendingMutationStore<C1Command>({
   storageKey: "nexion-admin-c1-user-detail-commands-v1",
   // 过期不能重试，记录也不删（OP-96）：到期不等于原操作没生效，对象继续锁着。
   retainExpiredRecords: true,
-  isValidRecord: (record) => typeof record.kind === "string" && typeof record.userId === "string" && typeof record.reason === "string" && record.reason.length > 0,
+  isValidRecord: (record) => typeof record.kind === "string" && typeof record.userId === "string" && typeof record.reason === "string" && record.reason.length > 0
+    || typeof record.inputFingerprint === "string" && LEGACY_SLOT.test(record.fingerprint),
 });
+/** 旧记录读出来补上目标，缺的理由不补（C1-H04）。 */
+const c1Command = (record: C1Command): C1Command => {
+  if (record.kind) return record;
+  const [, action, userId, target] = LEGACY_SLOT.exec(record.fingerprint) ?? [];
+  const [kind, name] = LEGACY_COMMAND[action];
+  const targetId = Number(target);
+  return { ...record, kind, legacy: true, userId, adminKey: "", reason: "", operator: "",
+    label: kind === "nickname" ? name : `${name} · 编号 ${target}`,
+    methodId: kind === "unbind" || kind === "rebind" ? targetId : undefined,
+    deviceId: kind === "replace" || kind === "recycle" ? targetId : undefined };
+};
 const nicknameSlot = (userId: string | number) => `nickname-reset|${userId}`;
 const paymentSlot = (action: "unbind" | "rebind", userId: string | number, methodId: number) =>
   `payment-${action}|${userId}|${methodId}`;
@@ -462,10 +485,12 @@ export default function UserDetailPage() {
   const canReadNotificationEvidence = !supportScope && (session?.role === "superadmin"
     || (!!session?.authorities.includes("user_c1hub_read") && !!session?.authorities.includes("platform_a4_read")));
   const [notificationEvidence, setNotificationEvidence] = useState<{ userKey: string; authEpoch: number; id: number } | null>(null);
-  const canWriteC1 = !supportScope && (session?.role === "superadmin" || !!session?.authorities.includes("user_c1hub_write"));
+  const hasC1Write = session?.role === "superadmin" || !!session?.authorities.includes("user_c1hub_write");
+  const hasC2Write = session?.role === "superadmin" || !!session?.authorities.includes("user_c2_write");
+  const canWriteC1 = !supportScope && hasC1Write;
   const canCorrectNotificationTime = canReadNotificationEvidence && canWriteC1
     && (session?.role === "superadmin" || !!session?.authorities.includes("platform_a4_write"));
-  const canWriteC2 = !supportScope && (session?.role === "superadmin" || !!session?.authorities.includes("user_c2_write"));
+  const canWriteC2 = !supportScope && hasC2Write;
   const canReleasePayment = session?.role === "superadmin" || !!session?.authorities.includes("user_c5_payment_password_release");
   const reach = useReach();
   const canReadC2 = reach("/users/actions", "user_c2_read");
@@ -617,7 +642,8 @@ export default function UserDetailPage() {
   const adminKey = String(session?.adminId ?? "");
 
   const syncPending = useCallback(() => {
-    const live = c3UserId ? c1UserCommands.list().filter((command) => command.userId === c3UserId && command.adminKey === adminKey) : [];
+    // 换人时这张表整张清掉（claimPendingCommandOwner），留下的旧记录就是当前账号的。
+    const live = c3UserId ? c1UserCommands.list().map(c1Command).filter((command) => command.userId === c3UserId && (command.legacy || command.adminKey === adminKey)) : [];
     setPendingCommands(live);
     setCorrections(adminKey ? pendingCorrections(adminKey, [userKey, c3UserId, profile?.userNo ?? ""]) : []);
   }, [c3UserId, adminKey, userKey, profile?.userNo]);
@@ -767,7 +793,7 @@ export default function UserDetailPage() {
     title: "重置昵称",
     detail: "系统会生成一个不含手机号等个人信息的新昵称，替换当前昵称。",
     amplifies: false,
-    facts: <Facts><Fact k="操作对象">{userNo}</Fact><Fact k="昵称"><Change from={displayNickname} to="系统生成的新昵称，提交后才知道" /></Fact></Facts>,
+    facts: <Facts><Fact k="操作对象">{displayNickname} · {userNo}</Fact><Fact k="昵称"><Change from={displayNickname} to="系统生成的新昵称，提交后才知道" /></Fact></Facts>,
     confirmLabel: "确认重置，立即生效",
     statedBrief: { impact: "立即替换这个用户的昵称，结果会记录在操作记录中。", check: "核对操作对象，理由写清依据或工单号。" },
     run: (reason) => execute({ kind: "nickname", label: `重置昵称 · ${displayNickname}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), nickname }),
@@ -800,18 +826,23 @@ export default function UserDetailPage() {
     setActionConfirm({ briefKind: "record",
       action: operation === "replace" ? `设备置换 · ${asText(device.instanceNo)}` : `设备回收 · ${asText(device.instanceNo)}`,
       title: operation === "replace" ? "设备置换" : "设备回收",
-      detail: "会更改该用户这台设备的状态。",
+      detail: operation === "replace"
+        ? "这台设备回收并离线，同时记一张已完成的置换单。不发新设备，不退钱，也不给用户发通知。"
+        : "这台设备回收并离线，不留置换单。不退钱，也不给用户发通知。",
       amplifies: false,
       facts: <Facts>
         <Fact k="操作对象">{displayNickname} · {userNo}</Fact>
         <Fact k="设备">{instance} · {asText(device.name)}</Fact>
         <Fact k="状态"><Change from={formatC1DeviceStatus(device.status)} to="已回收，离线" /></Fact>
-        {operation === "replace" && <Fact k="另外">生成一张置换单</Fact>}
+        {operation === "replace" && <Fact k="置换单">新增一张，状态已完成，只作记录，后面没有人要办</Fact>}
+        <Fact k="收益">停止派新任务，不再产生新收益；已到账的收益不扣回</Fact>
+        <Fact k="资金和新设备">不退款，不发新设备</Fact>
+        <Fact k="用户通知">不发通知</Fact>
       </Facts>,
       confirmLabel: operation === "replace" ? "确认置换，立即生效" : "确认回收，立即生效",
       confirmTone: "danger",
       irreversible: true,
-      statedBrief: { impact: operation === "replace" ? "这台设备立即变成已回收并离线，同时生成一张置换单。" : "这台设备立即变成已回收并离线。", check: "核对设备实例号和用户，理由写清依据或工单号。" },
+      statedBrief: { impact: operation === "replace" ? "和设备回收的差别只有一点：多记一张已完成的置换单，留下这次置换的记录。设备有任务在跑时后端会拒绝。" : "和设备置换的差别只有一点：不留置换单。设备有任务在跑时后端会拒绝。", check: "核对设备实例号和用户，理由写清依据或工单号。" },
       run: (reason) => execute({ kind: operation, label: `${operation === "replace" ? "设备置换" : "设备回收"} · ${instance}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), deviceId, deviceStatus: asText(device.status) }),
     });
   };
@@ -845,8 +876,10 @@ export default function UserDetailPage() {
   const teamPresent = !!(detail?.referral || detail?.engagement || detail?.vrank);
   const recordsPresent = !!(detail?.notifications || detail?.commerce || detail?.audit);
   const failedSection = (...sections: (User360Section | null | undefined)[]) => sections.some(sectionFailed);
+  // 能看登录安全的角色 sessions 总在，这时 security 是空就是这一项读失败了，后端把它写成 false，不能当没问题（DP-65）。
+  const securityUnread = !!detail?.sessions && detail.security == null;
   const securityAlert = paymentSecurity.state === "exception" || paymentSecurity.pending || summary.locked === true || unfinishedRevokes.length > 0;
-  const securityFailed = paymentSecurity.state === "failed" || !!paymentError || revokeScanFailed;
+  const securityFailed = paymentSecurity.state === "failed" || !!paymentError || revokeScanFailed || securityUnread;
   const fundsFailed = failedSection(detail?.deposits, detail?.withdrawals, detail?.financial, detail?.account) || ledgerUnread;
   const fundsAlert = withdrawalExceptions + withdrawalsWaiting > 0;
   const devicesFailed = failedSection(detail?.devices, detail?.earnings) || ledgerUnread && !!detail?.earnings;
@@ -905,10 +938,11 @@ export default function UserDetailPage() {
     detail.financial && { label: "可提余额", value: amountValue(summary.walletUsdt ?? profile.walletUsdt), unit: "USDT", tone: "role-1" as const, icon: Wallet, group: "funds", anchor: "hub-deposit" },
     detail.deposits && { label: "累计充值", value: amountValue(summary.depositedUsd), unit: "USDT", tone: "role-2" as const, icon: Coins, group: "funds", anchor: "hub-deposit", sub: subtotal("creditedDepositTotal"), explain: "能核对到的已确认充值小计，不保证覆盖这个用户的全部历史，也不是下面列出的那些相加。读不到时写「—」，不算 0。" },
     detail.withdrawals && { label: "累计提现", value: amountValue(summary.withdrawnUsd), unit: "USDT", tone: "role-4" as const, icon: Coins, group: "funds", anchor: "hub-withdrawal", sub: subtotal("successfulWithdrawalPrincipalTotal"), explain: "能核对到的成功提现本金小计，不保证覆盖这个用户的全部历史，也不是下面列出的那些相加。读不到时写「—」，不算 0。" },
-    detail.devices && { label: "设备数", value: numberLabel(summary.deviceCount), unit: "台", tone: "role-2" as const, icon: Cpu, group: "devices", anchor: "hub-devices" },
+    detail.devices && { label: "设备数", value: numberLabel(summary.deviceCount), unit: "台", tone: "role-2" as const, icon: Cpu, group: "devices", anchor: "hub-devices", explain: "这个用户的全部设备记录，含已回收和已停用的，最多读 200 台。现在还能运行的看下面的活跃数。" },
     detail.referral && { label: "团队规模", value: numberLabel(summary.teamSize), unit: "人", tone: "role-3" as const, icon: UsersRound, group: "team", anchor: "hub-referral" },
   ].filter((value) => !!value).slice(0, 4) as { label: string; value: string; unit: string; tone: "role-1" | "role-2" | "role-3" | "role-4"; icon: typeof Wallet; group: string; anchor: string; explain?: string; sub?: string }[];
 
+  const inKpi = (label: string) => kpis.some((kpi) => kpi.label === label);
   const openCases = asNumber(detail.risk?.openCaseCount);
   // 风险档以后端的档为准：客服只拿到档、没有分数，也要算（R04）。
   const riskHigh = riskAuthorityReady && riskTone === "danger";
@@ -928,6 +962,7 @@ export default function UserDetailPage() {
     failedPushCount > 0 && { key: "push", text: "有通知推送失败", go: () => locate("records") },
   ].filter((value) => !!value);
   const unreadable = [
+    securityUnread && "账号锁定和两步验证",
     paymentSecurity.state === "failed" && "支付安全",
     paymentError && "支付方式",
     !paymentError && revokeScanFailed && "支付方式的撤销状态",
@@ -941,8 +976,8 @@ export default function UserDetailPage() {
   ].filter((value): value is string => !!value);
   const checked = [
     "账户状态",
-    detail.risk && "风险档和最近 20 条风险案件",
-    summary.locked != null && "账号锁定",
+    detail.risk && (detail.risk.cases !== undefined ? "风险档和最近 20 条风险案件" : "风险档"),
+    detail.sessions && !securityUnread && "账号锁定",
     paymentSecurityPort && "支付安全",
     !supportScope && "全部支付方式的撤销状态",
     detail.withdrawals && "最近 30 条提现",
@@ -970,7 +1005,7 @@ export default function UserDetailPage() {
           ? <Conclusion state="unknown" hint={`${unreadText}，这部分没有判断。`}>账户正常，部分资料暂时无法判断</Conclusion>
           : checking
             ? <Conclusion state="unknown">账户正常，正在核对其余项目…</Conclusion>
-            : <Conclusion state="ok" icon={ShieldCheck} explain={<><p>核对了：{checked.join("、")}。</p><p>这只说明这些项目没发现问题，不代表全部没事：这个账号看不到的区块不在内，风险案件读取失败时后端也返回 0。</p></>}>账户正常，已核对的项目没发现问题</Conclusion>;
+            : <Conclusion state="ok" icon={ShieldCheck} explain={<><p>核对了：{checked.join("、")}。</p><p>这只说明这些项目没发现问题，不代表全部没事：这个账号看不到的区块不在内{detail.risk?.cases !== undefined ? "，风险案件读取失败时后端也返回 0" : ""}。</p></>}>账户正常，已核对的项目没发现问题</Conclusion>;
 
   const hasEntries = !supportScope;
   const inPageWrites = [canWriteC1 && "重置昵称、处理支付方式", canWriteC2 && "置换和回收设备", canReleasePayment && "解除支付密码异常"].filter(Boolean).join("，");
@@ -985,15 +1020,25 @@ export default function UserDetailPage() {
   const auditLink = canReadA2 && <> <Link className="rd-link" href={{ pathname: "/platform/audit", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}>到操作记录核查</Link></>;
   const pendingNotices = pendingCommands.map((command) => {
     const expired = command.expiresAt <= Date.now();
+    // 重试和普通入口一样看现在的入口和权限（OP-123）。没权限只留核对，提示和记录都留着。
+    const device = command.kind === "replace" || command.kind === "recycle";
+    const writable = device ? canWriteC2 : canWriteC1;
+    const hasWrite = device ? hasC2Write : hasC1Write;
+    const nextStep = command.legacy
+      ? "这是升级前发出的操作，没有存下原理由，不能重试，先核对原操作有没有生效。"
+      : !writable
+        ? hasWrite ? "客服入口不能重试，到用户详情处理。" : "这个账号现在没有这项操作的权限，不能重试，请有权限的同事处理。"
+        : expired ? `${EXPIRED_TEXT}。` : "按原操作重试用同一个命令号，不会重复执行。";
     return <Notice key={command.fingerprint} tone="warn" title={`${command.label} · 结果未确认`}
       action={<>
         <Button size="sm" disabled={!!busyReason} onClick={() => void verifyPending(command)}>读回核对</Button>
-        <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason} onClick={() => void retryPending(command)}>按原操作重试</Button>
-        {command.retryRejected && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除待确认</Button>}
+        {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason} onClick={() => void retryPending(command)}>按原操作重试</Button>}
+        {writable && (command.retryRejected || command.legacy) && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除待确认</Button>}
       </>}>
-      {shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效，不要重复操作。{expired ? `${EXPIRED_TEXT}。` : "按原操作重试用同一个命令号，不会重复执行。"}
+      {shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效，不要重复操作。{nextStep}
+      {supportScope && hasWrite && <> <Link className="rd-link" href={`/users/search/${encodeURIComponent(userNo)}`} prefetch={false}>到用户详情</Link></>}
       {auditLink}
-      <Explain label="技术信息" content={`命令号 ${command.commandKey} ｜ 操作人 ${command.operator} ｜ 理由 ${command.reason}`} />
+      <Explain label="技术信息" content={command.legacy ? `命令号 ${command.commandKey} ｜ 升级前的记录，没有存操作人和理由` : `命令号 ${command.commandKey} ｜ 操作人 ${command.operator} ｜ 理由 ${command.reason}`} />
       {pendingNotes[command.fingerprint] && <div>{pendingNotes[command.fingerprint]}</div>}
     </Notice>;
   });
@@ -1058,12 +1103,12 @@ export default function UserDetailPage() {
   // 摘要只给收起时看，展开后下面有同样的数（DP-61）。有异常时只写异常。
   const foldSummary = (group: string, alert: boolean, text: string) => (openFolds[group] ?? alert) ? "" : text;
   const securityText = securityFailed
-    ? joined([paymentSecurity.state === "failed" && "支付安全暂时无法确认", paymentError && "支付方式读取失败", !paymentError && revokeScanFailed && "撤销状态读取失败"])
+    ? joined([securityUnread && "账号锁定和两步验证暂时无法确认", paymentSecurity.state === "failed" && "支付安全暂时无法确认", paymentError && "支付方式读取失败", !paymentError && revokeScanFailed && "撤销状态读取失败"])
     : securityAlert
       ? joined([summary.locked === true && "账号已锁定", paymentSecurity.state === "exception" && "支付密码有异常", paymentSecurity.pending && "解除结果等待确认", unfinishedRevokes.length > 0 && `${unfinishedRevokes.length} 张卡仍可能被扣款`])
       : joined([
         detail.sessions && `在线设备 ${numberLabel(summary.activeSessionCount)}`,
-        detail.sessions && `两步验证${summary.twoFactorEnabled == null ? "未知" : summary.twoFactorEnabled ? "开启" : "关闭"}`,
+        detail.sessions && `两步验证${summary.twoFactorEnabled ? "开启" : "关闭"}`,
         paymentSecurity.state === "clear" ? "支付密码无异常" : paymentSecurity.state === "loading" && "正在读取…",
         !supportScope && paymentCount !== null && `支付方式 ${paymentCount} 张`,
       ]);
@@ -1086,7 +1131,7 @@ export default function UserDetailPage() {
         detail.earnings && `收益合计 ${amountText(detail.earnings.totalUsdt)}`,
       ]);
   const teamText = teamFailed ? "有区块读取失败" : joined([
-    detail.referral && !kpis.some((kpi) => kpi.label === "团队规模") && `团队 ${numberLabel(detail.referral.teamSize)} 人`,
+    detail.referral && !inKpi("团队规模") && `团队 ${numberLabel(detail.referral.teamSize)} 人`,
     detail.referral && `直接邀请 ${numberLabel(detail.referral.directCount)} 人`,
     detail.vrank && `等级 ${asText(detail.vrank.currentRank)}`,
   ]);
@@ -1108,6 +1153,7 @@ export default function UserDetailPage() {
     !detail.risk && "风险",
   ].filter(Boolean).join("、");
   const wallet = detail.financial?.wallet as JsonRecord | undefined;
+  const securityValue = (value: unknown, on = "是", off = "否") => securityUnread ? "暂时无法确认" : yesNo(value, on, off);
 
   return (
     <RdPage>
@@ -1154,7 +1200,7 @@ export default function UserDetailPage() {
       {(detail.risk || detail.financial) && <Panel title={detail.risk && detail.financial ? "风险与资产" : detail.risk ? "风险" : "资产"} icon={detail.risk ? ShieldAlert : Wallet} tone={detail.risk ? (hasRiskScore ? riskTone : "role-other") : "role-1"}
         explain={detail.risk && !supportScope ? "风险分来自风险评分规则，这页只显示，不重算。" : undefined}>
         <Values rows={[
-          ...(detail.risk ? [["风险分", hasRiskScore ? <StatusTag key="score" tone={riskTone}>{riskScore} · {riskBand}</StatusTag> : riskBand] as const] : []),
+          ...(detail.risk ? [[hasRiskScore || !riskAuthorityReady ? "风险分" : "风险档", hasRiskScore ? <StatusTag key="score" tone={riskTone}>{riskScore} · {riskBand}</StatusTag> : riskBand] as const] : []),
           ...(detail.risk?.flags !== undefined ? [["风险标记", riskFlags(detail.risk.flags, detail.risk.cases !== undefined)] as const] : []),
           ...(detail.risk?.cases !== undefined ? [[<>风险案件<Explain label="风险案件的口径" content="按最近 20 条案件算。案件读取失败时后端也返回 0，这个数不能证明没有案件。" /></>, `${numberLabel(detail.risk.openCaseCount)} 个未关闭`] as const] : []),
           ...(detail.financial ? [
@@ -1169,12 +1215,13 @@ export default function UserDetailPage() {
       <div className="rd-detail-groups">
         {securityPresent && <div id={nav.anchor("security")}>
           <Fold title="安全" icon={ShieldCheck} tone="role-3" summary={foldSummary("security", securityAlert || securityFailed, securityText)} alertTone={securityFailed ? "danger" : "warn"} {...foldProps("security", securityAlert || securityFailed)}>
-            {detail.sessions && <Block title="登录安全" section={{ sourceStatus: "READY" }} sub={filteredSessions.length > C1_SESSION_PAGE_SIZE ? "最近 50 条登录记录" : `最近 50 条登录记录 · 筛选后 ${filteredSessions.length} 条`} explain="这是最近最多 50 条样本，不是全部历史。">
+            {detail.sessions && <Block title="登录安全" section={{ sourceStatus: "READY" }} sub={filteredSessions.length > C1_SESSION_PAGE_SIZE ? "最近 50 条登录记录" : `最近 50 条登录记录 · 筛选后 ${filteredSessions.length} 条`} explain="这是最近最多 50 条样本，不是全部历史。登录记录读取失败时后端也返回空，写 0 或没有记录不能证明没登录过。">
               <Values rows={[
                 ["在线设备", numberLabel(summary.activeSessionCount)],
-                ["两步验证", yesNo(summary.twoFactorEnabled, "开启", "关闭")],
-                ["锁定", summary.locked ? <StatusTag tone="warn">是</StatusTag> : yesNo(summary.locked)],
+                ["两步验证", securityValue(summary.twoFactorEnabled, "开启", "关闭")],
+                ["锁定", summary.locked ? <StatusTag tone="warn">是</StatusTag> : securityValue(summary.locked)],
               ]} />
+              {securityUnread && <Notice tone="warn">账号锁定、两步验证和需重置密码这次没读到，不是没有问题。点页面右上角「刷新」重读。</Notice>}
               <Segments<SessionStatusFilter> label="登录状态筛选" value={sessionStatusFilter} onChange={setSessionStatusFilter} items={C1_SESSION_STATUS_FILTERS.map(([value, label]) => ({ value, label }))} />
               <RecordTable label="登录记录" rows={visibleSessions} columns={SESSION_COLUMNS} empty={sessionStatusFilter === "ALL" ? "暂无登录记录" : "当前筛选下没有登录记录"} {...recordProps("session")} />
               {filteredSessions.length > C1_SESSION_PAGE_SIZE && <Pager label="登录记录" total={filteredSessions.length} page={sessionPage} pageSize={C1_SESSION_PAGE_SIZE} sizes={[C1_SESSION_PAGE_SIZE]} onPage={(page) => { setRecord(null); setSessionPage(Math.min(sessionPageCount, Math.max(1, page))); }} onPageSize={() => undefined} />}
@@ -1215,8 +1262,8 @@ export default function UserDetailPage() {
               <Values rows={[
                 ["用户编码", userNo],
                 ["账户状态", <StatusTag key="status" tone={statusTone(status)}>{statusLabel(status)}</StatusTag>],
-                ["两步验证", yesNo(summary.twoFactorEnabled, "已开启", "未开启")],
-                ["需重置密码", yesNo(summary.passwordResetRequired)],
+                ["两步验证", securityValue(summary.twoFactorEnabled, "已开启", "未开启")],
+                ["需重置密码", securityValue(summary.passwordResetRequired)],
               ]} />
             </Block>
             <Block title="兑换记录" section={detail.financial} failure={ledgerUnread && "账单流水读不到，兑换记录暂时无法确认，不是没有记录。"} sub={Array.isArray(detail.financial?.stakingLedgerRows) ? `质押记录 ${numberLabel(detail.financial.stakingLedgerRows.length)} 条` : undefined}
@@ -1228,7 +1275,7 @@ export default function UserDetailPage() {
 
         {devicesPresent && <div id={nav.anchor("devices")}>
           <Fold title="设备与收益" icon={Cpu} tone="role-2" summary={foldSummary("devices", devicesFailed || devicesAlert, devicesText)} alertTone="danger" {...foldProps("devices", devicesFailed || devicesAlert)}>
-            <Block id="hub-devices" title="设备明细" section={detail.devices} sub={`最多 200 台 · 共 ${numberLabel(detail.devices?.total)} 台`}
+            <Block id="hub-devices" title="设备明细" section={detail.devices} sub={inKpi("设备数") ? "最多 200 台" : `最多 200 台 · 共 ${numberLabel(detail.devices?.total)} 台`}
               explain={<><p>这是设定值，不是今天实际到账的收益。合计含已停用设备。</p><p>在线、活跃和合计都按这里列出的设备算。</p></>}>
               <Values rows={[
                 ["在线 / 活跃", `${numberLabel(detail.devices?.onlineCount)} / ${numberLabel(detail.devices?.activeCount)}`],
@@ -1253,7 +1300,7 @@ export default function UserDetailPage() {
             <Block id="hub-referral" title="推荐团队" section={detail.referral ? { sourceStatus: asText(detail.referral.sourceStatus, "READY") } : undefined} sub="最多 20 条"
               explain="成员最多列 20 条，不是完整名单。团队规模、直接邀请和团队订单额是另外算的总数，不是这些行相加。">
               <Values rows={[
-                ["团队规模", `${numberLabel(detail.referral?.teamSize)} 人`],
+                ...(inKpi("团队规模") ? [] : [["团队规模", `${numberLabel(detail.referral?.teamSize)} 人`] as const]),
                 ["直接邀请", `${numberLabel(detail.referral?.directCount)} 人`],
                 ["团队订单额", amountText(detail.referral?.teamVolumeUsd)],
               ]} />
@@ -1309,8 +1356,9 @@ export default function UserDetailPage() {
         } : undefined}
         footer={currentDevice && currentDeviceWritable
           ? <Decision note={deviceBlock(asNumber(currentDevice.id))}
+              explain="两个操作都让设备回收并离线，不能撤销，不退钱，不发新设备。设备置换多记一张已完成的置换单，设备回收不留单。"
               danger={<Button variant="danger-outline" disabledReason={deviceBlock(asNumber(currentDevice.id))} onClick={() => openDeviceAction(currentDevice, "recycle")}>设备回收</Button>}
-              others={<Button variant="danger-outline" disabledReason={deviceBlock(asNumber(currentDevice.id))} onClick={() => openDeviceAction(currentDevice, "replace")}>设备置换</Button>} />
+              others={<Button disabledReason={deviceBlock(asNumber(currentDevice.id))} onClick={() => openDeviceAction(currentDevice, "replace")}>设备置换</Button>} />
           : canReadNotificationEvidence && Number.isSafeInteger(currentNotificationId) && currentNotificationId > 0
             ? <Decision primary={<Button onClick={() => { setRecord(null); setNotificationEvidence({ userKey, authEpoch, id: currentNotificationId }); }}>查看时间证据</Button>} />
             : undefined}>
@@ -1337,7 +1385,7 @@ export default function UserDetailPage() {
         />
       )}
       {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-        explain="重试被拒说明不了原操作的结果，先到操作记录确认原操作有没有生效。解除后原操作不再重试，系统仍按现在的状态校验。" />}
+        explain={`${releasing.legacy ? "这条记录是升级前留下的，不能重试" : "重试被拒说明不了原操作的结果"}，先到操作记录确认原操作有没有生效。解除后原操作不再重试，系统仍按现在的状态校验。`} />}
       {notificationEvidence && canReadNotificationEvidence
         && notificationEvidence.userKey === userKey && notificationEvidence.authEpoch === authEpoch && (
         <NotificationTimeEvidenceDrawer key={`${userKey}:${authEpoch}:${notificationEvidence.id}`}
