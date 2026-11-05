@@ -163,7 +163,7 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
   );
   const query = source?.query ?? { window: "7d" as const };
   const pageName = findByPath(EXPORT_PAGE)?.l2.name ?? "数据导出与监管报告";
-  const exportPage = (text: string) => (reach(EXPORT_PAGE)
+  const exportPage = (text: string) => (reach(EXPORT_PAGE, "bi_l5_read")
     ? <Link className="rd-link" href={EXPORT_PAGE}>{text}</Link>
     : `你没有「${pageName}」的权限，请找有权限的同事处理。`);
 
@@ -356,6 +356,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
   const [drillError, setDrillError] = useState("");
   const l1Requests = useRef(createL1ReadController());
   const selectedQuery = useRef<L1KpiQuery>({ window: "7d" });
+  const urlPending = useRef<L1KpiQuery | null>(null); // 用户发起、结果还没写进网址的那次查询
   const drillRead = useRef(0);
 
   useEffect(() => {
@@ -379,6 +380,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
           setLocalData(next);
           setWin(query.window ?? "7d");
           setApplied(query);
+          if (urlPending.current === query) writeQueryToUrl(query); // 父级读取抢掉了原请求时由这里补写
           onExportSource?.({ parentData, data: next, query, status: "ready" });
         },
         error => {
@@ -468,6 +470,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     setRefreshing(true);
     setLocalData(data ?? null);
     selectedQuery.current = next;
+    urlPending.current = next;
     onExportSource?.({ parentData: ctx.biData?.l1, data, query: next, status: "loading" });
     l1Requests.current.run(
       () => fetchL1Kpi(next),
@@ -762,7 +765,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                 <Fact k="怎么算"><AutoGloss>{operatorCopyText(KPI_PLAIN[k.n] ?? "")}</AutoGloss></Fact>
                 {kState !== "small" && <Fact k="分子">{ext.num}</Fact>}
                 {kState !== "small" && <Fact k="分母">{ext.den}</Fact>}
-                {kState !== "small" && <Fact k="较上期">{deltaText(k)}</Fact>}
+                {kState !== "small" && <Fact k="较上期">{deltaText(k).replace(/^较上期 ?/, "")}</Fact>}
                 <Fact k="统计范围">{queryScope(applied)}</Fact>
                 <Fact k="解读"><AutoGloss>{operatorCopyText(kState === "small" ? SMALL_SAMPLE_NOTE : ext.note)}</AutoGloss></Fact>
               </Facts>
