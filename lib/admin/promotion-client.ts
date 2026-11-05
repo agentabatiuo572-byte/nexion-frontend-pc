@@ -16,7 +16,7 @@ export class PromotionApiError extends Error {
   status: number;
   apiCode: number | undefined;
   fieldErrors: Array<{field: string; reason: string}>;
-  constructor(message: string, status = 0, apiCode?: number, fieldErrors: Array<{field: string; reason: string}> = []) {
+  constructor(message: string, status = 0, apiCode?: number, fieldErrors: Array<{field: string; reason: string}> = [], public readonly reasonCode?: string) {
     super(message); this.name = 'PromotionApiError'; this.status = status; this.apiCode = apiCode; this.fieldErrors = fieldErrors;
   }
 }
@@ -53,7 +53,7 @@ export async function promotionRead<T>(path: string, query?: Record<string,strin
   const body = await response.json().catch(() => null) as {code?:number;message?:string;data?:T & {fieldErrors?:Array<{field:string;reason:string}>}} | null;
   if (!response.ok || body?.code !== 0 || body.data == null) {
     // Unreadable responses cannot prove whether a write committed.
-    throw new PromotionApiError(promotionErrorMessage(body?.message,response.status), body ? response.status : 0, body?.code, body?.data?.fieldErrors);
+    throw new PromotionApiError(promotionErrorMessage(body?.message,response.status), body ? response.status : 0, body?.code, body?.data?.fieldErrors, body?.message);
   }
   return body.data;
 }
