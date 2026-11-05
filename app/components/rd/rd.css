@@ -527,6 +527,20 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 td .rd-flow { margin-bottom: 0; }
 .rd-flow-step { display: inline-flex; align-items: center; gap: 8px; }
 
+/* Steps 流程进度（CP-47） */
+.rd-steps { display: flex; margin: 0; padding: 0; list-style: none; }
+.rd-step { position: relative; flex: 1 1 0; min-width: 0; display: grid; justify-items: center; gap: 4px; text-align: center; }
+.rd-step + .rd-step::before { content: ""; position: absolute; top: 11px; right: calc(50% + 16px); left: calc(-50% + 16px); height: 2px; background: var(--rd-line); }
+.rd-step:is([data-state="done"], [data-state="current"]) + .rd-step:is([data-state="done"], [data-state="current"])::before { background: var(--rd-brand); }
+.rd-step-mark { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--rd-panel-inner); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: 1; font-variant-numeric: tabular-nums; }
+.rd-step[data-state="done"] .rd-step-mark { background: var(--rd-brand-soft); color: var(--rd-brand-ink); }
+.rd-step[data-state="current"] .rd-step-mark { background: var(--rd-brand); color: var(--rd-text-on-brand); font-weight: 600; }
+.rd-step-label { color: var(--rd-text-2); }
+.rd-step[data-state="todo"] .rd-step-label { color: var(--rd-text-3); }
+.rd-step[data-state="current"] .rd-step-label { color: var(--rd-text); font-weight: 500; }
+.rd-step-sub { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-fold-body > .rd-steps { margin-bottom: 16px; }
+
 /* 图和数据左右分区（VS-49）：左边图、宽到 --rd-figure-w 为止，右边数据；容器窄时上下排（默认 560px 以下，data-stack="wide" 是 800px 以下）。 */
 .rd-figure { container-type: inline-size; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px 32px; min-width: 0; }
 .rd-figure-graphic { flex: 0 1 var(--rd-figure-w, 480px); min-width: 0; max-width: 100%; }

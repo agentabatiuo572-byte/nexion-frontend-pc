@@ -11,14 +11,14 @@
  * 真写落点:E1 SKU/上架门、E2 用户任务管理、E3 生命周期&Trade-in、E4 订单进度、E5 设备运行管理走后端 API。
  * 操作确认 显式 edit 契约:调参(param / task-price)传 edit{kind,current,unit};处置/纯动作(sku-status / param-fixed / order-* / ops-pause)不传 edit。
  */
-import { useReach } from "@/lib/nav/use-reach";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import Link from "next/link";
-import { Icon, Btn, Chip, Drawer, KV, Badge, OperationConfirmModal, useToast } from "./design-kit";
+import { useSearchParams } from "next/navigation";
+import { Icon, Btn, Chip, Drawer, KV, OperationConfirmModal, useToast } from "./design-kit";
+import { RdPage } from "@/app/components/rd";
+import { businessClock } from "@/lib/admin/business-time";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import { operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
@@ -32,7 +32,7 @@ import {
 } from "@/lib/admin/e1-client";
 import { fetchE2PhoneTiers, fetchE2TaskPricing, fetchE2Tasks, type E2PhoneTier, type E2TaskPricingSnapshot, type E2YieldComparison } from "@/lib/admin/e2-client";
 import { fetchE3Snapshot, type E3OperationMetric, type E3Stats } from "@/lib/admin/e3-client";
-import { E4_CLOSE_REASONS, E4_CLOSE_REASON_LABELS, E4_REFUND_REASONS, E4_REFUND_REASON_LABELS, e4FundingLedgerHref, fetchE4OrderDetail, fetchE4OrderPage, type E4OrderDetail } from "@/lib/admin/e4-client";
+import { E4_CLOSE_REASONS, E4_REFUND_REASONS, fetchE4OrderDetail, fetchE4OrderGroupPage, fetchE4OrderPage, type E4OrderDetail } from "@/lib/admin/e4-client";
 import {
   fetchE5Datacenters,
   fetchE5Devices,
@@ -53,8 +53,8 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { summarizeSkuCreation, summarizeSkuProposal } from "@/lib/admin/e1-a2-proposal-summary";
 import { refreshAdminMediaPreviewUrl, uploadAdminMedia } from "@/lib/admin/media-client";
 import {
-  FOLD, ORDER_FLOW, TERMINAL_STATES,
-  EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, validateSkuSpecs, skuNum, stateLabel, ostate,
+  E4_DEFAULT_QUERY, FOLD, ORDER_STATES, TERMINAL_STATES, e4GroupStates, e4QueryFromUrl, writeE4QueryToUrl, type E4Query,
+  EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, validateSkuSpecs, skuNum, stateLabel,
 } from "./e-tabs/data";
 import type { DatacenterForm, Mc, EOp, EViewCtx, EOrder } from "./e-tabs/types";
 import { TaskClassChoices, PhoneTaskPolicy } from "./e-tabs/task-type-policy";
@@ -261,9 +261,9 @@ function SkuFld({ label, value, onChange, placeholder, type = "text", hint, list
 const SKU_BADGE_PRESETS: readonly string[] = [];
 
 export function EDomainView({ meta }: { meta: DomainViewMeta }) {
-  const reach = useReach();
   const [toastNode, setToast] = useToast();
   const [tab] = useState(FOLD[meta.l2Id] ?? "E1");
+  const searchParams = useSearchParams();
   const [mc, setActionConfirm] = useState<Mc>(null);
   const [selOrder, setSelOrder] = useState<EOrder | null>(null);
   const [e4Detail, setE4Detail] = useState<E4OrderDetail | null>(null);
@@ -458,68 +458,108 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [orders, setOrders] = useState<EOrder[]>([]);
   const [e4Loading, setE4Loading] = useState(false);
   const [e4Error, setE4Error] = useState<string | null>(null);
-  const [e4Page, setE4Page] = useState(1);
-  const [e4PageSize, setE4PageSizeState] = useState(10);
   const [e4Total, setE4Total] = useState(0);
-  const [e4Filter, setE4FilterState] = useState("all");
-  const [e4Keyword, setE4KeywordState] = useState("");
-  const setE4PageSize = useCallback((pageSize: number) => {
-    setE4PageSizeState(pageSize);
-    setE4Page(1);
+  const [e4Query, setE4Query] = useState<E4Query>(() => e4QueryFromUrl(searchParams));
+  const [e4KeywordInput, setE4KeywordInput] = useState(e4Query.keyword);
+  const [e4Counts, setE4Counts] = useState<Record<string, number> | null>(null);
+  const [e4CountsFailed, setE4CountsFailed] = useState(false);
+  const [e4ReadAt, setE4ReadAt] = useState("");
+  const e4ListSeq = useRef(0);
+  const e4CountSeq = useRef(0);
+  const e4DetailSeq = useRef(0);
+  const updateE4Query = useCallback((patch: Partial<Omit<E4Query, "keyword">>) => {
+    setE4Query((current) => ({ ...current, ...patch, page: patch.page ?? 1 }));
   }, []);
-  const setE4Filter = useCallback((filter: string) => {
-    setE4FilterState(filter);
-    setE4Page(1);
+  const clearE4Filters = useCallback(() => {
+    setE4KeywordInput("");
+    setE4Query((current) => ({ ...E4_DEFAULT_QUERY, pageSize: current.pageSize }));
   }, []);
-  const setE4Keyword = useCallback((keyword: string) => {
-    setE4KeywordState(keyword);
-    setE4Page(1);
-  }, []);
-  const refreshE4 = useCallback(async () => {
-    setE4Loading(true);
-    setE4Error(null);
+  // 只有一个搜索框，停止输入 300 毫秒后查询（ST-17）。
+  useEffect(() => {
+    if (tab !== "E4" || e4KeywordInput.trim() === e4Query.keyword) return;
+    const timer = setTimeout(() => setE4Query((current) => ({ ...current, keyword: e4KeywordInput.trim(), page: 1 })), 300);
+    return () => clearTimeout(timer);
+  }, [tab, e4KeywordInput, e4Query.keyword]);
+  useEffect(() => { if (tab === "E4") writeE4QueryToUrl(e4Query); }, [tab, e4Query]);
+  // silent 是切回页面时的后台重读：不换成骨架屏，抽屉和高亮行不动。失败照样清掉旧数据（E4-S02）。
+  const readE4List = useCallback(async (silent = false) => {
+    const seq = ++e4ListSeq.current;
+    if (!silent) setE4Loading(true);
     try {
-      const nextPage = await fetchE4OrderPage({
-        state: e4Filter === "all" ? undefined : e4Filter,
-        keyword: e4Keyword,
-        pageNum: e4Page,
-        pageSize: e4PageSize,
-      });
+      const states = e4Query.state ? [e4Query.state] : e4GroupStates(e4Query.group);
+      const nextPage = states.length > 1
+        ? await fetchE4OrderGroupPage(states, { keyword: e4Query.keyword, pageNum: e4Query.page, pageSize: e4Query.pageSize })
+        : await fetchE4OrderPage({ state: states[0], keyword: e4Query.keyword, pageNum: e4Query.page, pageSize: e4Query.pageSize });
+      if (seq !== e4ListSeq.current) return;
       setOrders(nextPage.records);
       setE4Total(nextPage.total);
-      setE4Page(nextPage.pageNum);
-      setE4PageSizeState(nextPage.pageSize);
+      setE4Error(null);
+      setE4ReadAt(businessClock(Date.now()));
+      // 数据变少时收回到最后一页，只在读取成功后收回（ST-13）。
+      const lastPage = Math.max(1, Math.ceil(nextPage.total / e4Query.pageSize));
+      if (e4Query.page > lastPage) setE4Query((current) => ({ ...current, page: lastPage }));
     } catch (error) {
+      if (seq !== e4ListSeq.current) return;
       setE4Error(displayAdminError(error));
       setOrders([]);
       setE4Total(0);
     } finally {
-      setE4Loading(false);
+      if (seq === e4ListSeq.current) setE4Loading(false);
     }
-  }, [e4Filter, e4Keyword, e4Page, e4PageSize]);
-  useEffect(() => { if (tab === "E4") void refreshE4(); }, [tab, refreshE4]);
+  }, [e4Query]);
+  /** 分段和汇总的数量。接口没有按组计数，全部和 11 个状态各取总数，跟着搜索词走，读不到写「—」，不挡列表和操作。 */
+  const readE4Counts = useCallback(async () => {
+    const seq = ++e4CountSeq.current;
+    try {
+      const states = ["", ...ORDER_STATES];
+      const pages = await Promise.all(states.map((state) => fetchE4OrderPage({ state, keyword: e4Query.keyword, pageNum: 1, pageSize: 1 })));
+      if (seq !== e4CountSeq.current) return;
+      setE4Counts(Object.fromEntries(states.map((state, index) => [state, pages[index].total])));
+      setE4CountsFailed(false);
+    } catch {
+      if (seq !== e4CountSeq.current) return;
+      setE4Counts(null);
+      setE4CountsFailed(true);
+    }
+  }, [e4Query.keyword]);
+  const refreshE4 = useCallback(() => Promise.all([readE4List(), readE4Counts()]), [readE4List, readE4Counts]);
+  useEffect(() => { if (tab === "E4") void readE4List(); }, [tab, readE4List]);
+  useEffect(() => { if (tab === "E4") void readE4Counts(); }, [tab, readE4Counts]);
   useEffect(() => {
     if (tab !== "E4") return;
-    const refreshOnReturn = () => { if (document.visibilityState === "visible") void refreshE4(); };
+    const refreshOnReturn = () => {
+      if (document.visibilityState !== "visible") return;
+      void readE4List(true);
+      void readE4Counts();
+    };
     window.addEventListener("focus", refreshOnReturn);
     document.addEventListener("visibilitychange", refreshOnReturn);
     return () => {
       window.removeEventListener("focus", refreshOnReturn);
       document.removeEventListener("visibilitychange", refreshOnReturn);
     };
-  }, [tab, refreshE4]);
+  }, [tab, readE4List, readE4Counts]);
   const openOrder = useCallback(async (order: EOrder) => {
+    const seq = ++e4DetailSeq.current;
     setSelOrder(order);
     setE4Detail(null);
     setE4DetailError(null);
     setE4DetailLoading(true);
     try {
-      setE4Detail(await fetchE4OrderDetail(order.id));
+      const detail = await fetchE4OrderDetail(order.id);
+      if (seq === e4DetailSeq.current) setE4Detail(detail);
     } catch (error) {
-      setE4DetailError(displayAdminError(error));
+      if (seq === e4DetailSeq.current) setE4DetailError(displayAdminError(error));
     } finally {
-      setE4DetailLoading(false);
+      if (seq === e4DetailSeq.current) setE4DetailLoading(false);
     }
+  }, []);
+  const closeOrder = useCallback(() => {
+    e4DetailSeq.current += 1;
+    setSelOrder(null);
+    setE4Detail(null);
+    setE4DetailError(null);
+    setE4DetailLoading(false);
   }, []);
   const orderById = useMemo(() => new Map(orders.map((order) => [order.id, order])), [orders]);
   const orderState = useCallback((order: EOrder): string => orderById.get(order.id)?.state ?? order.state, [orderById]);
@@ -1086,7 +1126,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     canWriteE1: canUseE1Writes, skus, e1InvalidSkus, e1Loading, e1Error, e1Gates, e1BundleDiscount, phaseCur, refreshE1, openSku, delSku,
     canWriteE2, tasks, phoneTiers, yieldComparisons, e2Pricing, e2Loading, e2Error, e2TaskCatalogReady, refreshE2, openAddTask, openEditTask, delTask,
     canWriteE3, e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
-    canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4Page, e4PageSize, e4Total, e4Filter, e4Keyword, setE4Page, setE4PageSize, setE4Filter, setE4Keyword, refreshE4, orderState, isCancelled, isRefunded, terminalOf, openOrder,
+    canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4Total, e4Query, e4KeywordInput, e4Counts, e4CountsFailed, e4ReadAt, updateE4Query, setE4KeywordInput, clearE4Filters, refreshE4,
+    orderState, isCancelled, isRefunded, terminalOf, selOrder, e4Detail, e4DetailLoading, e4DetailError, openOrder, closeOrder,
     canWriteE5, canForceActivateE5, canUnbindE5, canPauseDcE5,
     runE5DeviceAction, runE5UserBatch,
     e5Devices, e5Overview, e5Datacenters, e5Loading, e5DeviceError, e5OverviewError, e5DatacenterError, e5Page, e5PageSize, e5Total,
@@ -1164,9 +1205,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         : tab === "E3" ? <button className="f-cta manual" onClick={() => setManualOpen(true)}><Icon name="doc" size={15} /> 操作说明手册</button>
           : undefined;
 
-  return (
-    <div className="dkpage edom">
-      <DomainHeader {...meta} right={headerRight} />
+  const page = (
+    <>
+      {tab !== "E4" && <DomainHeader {...meta} right={headerRight} />}
 
       {tab === "E1" && <><PhoneTaskPolicy canWrite={canUseE1Writes} toast={setToast} /><E1Catalog ctx={ctx} /></>}
       {tab === "E2" && <E2Tasks ctx={ctx} />}
@@ -1177,116 +1218,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
       {/* E3 操作说明手册弹窗(右上角按钮触发) */}
       {tab === "E3" && manualOpen && <E3Manual ctx={ctx} onClose={() => setManualOpen(false)} />}
-
-      {/* 订单详情抽屉 */}
-      {selOrder && (() => {
-        const o = orderById.get(selOrder.id) ?? selOrder;
-        const eff = orderState(o);
-        const finalized = isCancelled(o.id) || isRefunded(o.id) || !!terminalOf(o.id);
-        const canCancel = canWriteE4 && eff === "placed";
-        const terminalOptions = eff === "placed" ? ["payment_failed", "expired"]
-          : eff === "paid" ? ["chargeback"]
-            : eff === "provisioning" ? ["provisioning_failed"] : [];
-        const orderFlow = eff === "inventory" ? ["placed", "paid", "provisioning", "inventory"] : ORDER_FLOW;
-        const idx = orderFlow.indexOf(eff);
-        const hasSettledFunding = e4Detail?.funding.some((item) => {
-          const source = item.source.toUpperCase();
-          const status = item.status.toUpperCase();
-          return ["PAID", "SUCCESS", "POSTED", "COMPLETED"].includes(status)
-            && (source === "D1_PAYMENT"
-              || ((source === "D4_LEDGER" || source === "D4_BILL") && item.direction.toUpperCase() === "OUT"));
-        }) === true;
-        const hasAllocatedDevice = !!e4Detail?.deviceId
-          && !!e4Detail.deviceInstanceNo
-          && !!o.dc && o.dc !== "—";
-        const nextState = canWriteE4 && !finalized
-          ? eff === "paid" && hasSettledFunding && hasAllocatedDevice
-            ? "provisioning"
-            : eff === "provisioning" && !!e4Detail?.deviceActivatedAt
-              ? "activated"
-              : undefined
-          : undefined;
-        const progressBlock = eff === "placed"
-          ? { code: "ORDER_PAYMENT_CONFIRMATION_REQUIRED", text: "要等付款记录确认用户真的付了款，后台不能手动标记已付款。" }
-          : eff === "paid" && (!hasSettledFunding || !hasAllocatedDevice)
-            ? { code: "ORDER_PROVISIONING_EVIDENCE_REQUIRED", text: "要先确认款项已结算，并在「设备运行管理」分配好设备和数据中心。" }
-            : eff === "provisioning" && !e4Detail?.deviceActivatedAt
-              ? { code: "ORDER_DEVICE_ACTIVATION_REQUIRED", text: "要先在「设备运行管理」激活设备，订单才能完成。" }
-              : null;
-        const refundableState = ["paid", "provisioning", "activated", "inventory"].includes(eff);
-        const refundReady = canRefundE4 && refundableState && e4Detail?.refundAllowed === true;
-        const closeOrder = () => { setSelOrder(null); setE4Detail(null); setE4DetailError(null); };
-        const coverageText = e4Detail?.coverageCurrent == null
-          ? "暂无数据"
-          : `当前 ${e4Detail.coverageCurrent.toFixed(2)}% → 执行后 ${(e4Detail.coverageProjected ?? e4Detail.coverageCurrent).toFixed(2)}% · 红线 ${(e4Detail.coverageRedline ?? 0).toFixed(2)}%`;
-        return (
-          <Drawer title={o.id} sub={`${o.sku} · ${o.user}`} onClose={closeOrder}
-            footer={<>
-                  {nextState && <Btn onClick={() => openActionConfirm({ name: `推进订单 · ${o.id} → ${stateLabel(nextState)}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, detail: `手动推进 ${o.id}：${stateLabel(eff)} → ${stateLabel(nextState)}` })}>推进到下一步</Btn>}
-                  {canCancel && <Btn onClick={() => openActionConfirm({ name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, detail: `取消 ${o.id}（${stateLabel(eff)}）。用户还没付款，取消后订单终止。`,
-                    businessForm: { kind: "multi-field", title: "取消原因", fields: [
-                      { key: "closeReasonCode", label: "取消原因（用户可见）", current: "", inputKind: "select", options: ["", ...E4_CLOSE_REASONS.cancelled], optionLabels: { "": "请选择取消原因", ...E4_CLOSE_REASON_LABELS }, required: true, help: "这个原因会显示在用户的订单详情里；下方备注只记在操作记录里，用户看不到。" },
-                    ] } })}>取消订单</Btn>}
-                  {canWriteE4 && terminalOptions.length > 0 && <Btn onClick={() => openActionConfirm({ name: "标记失败结果 · " + o.id, op: "order-terminal", orderId: o.id, amplify: false, detail: `当前状态：${stateLabel(eff)}，选择一个失败结果。退款请用「退款」按钮。`,
-                    businessForm: { kind: "multi-field", title: "失败结果与原因", hint: "过期、拒付的原因会自动记录；支付失败、开通失败需要选择原因。", fields: [
-                      { key: "terminalState", label: "失败结果", current: "", inputKind: "select", options: ["", ...terminalOptions], optionLabels: { "": "请选择失败结果", ...Object.fromEntries(terminalOptions.map((s) => [s, stateLabel(s)])) }, required: true },
-                      ...terminalOptions.filter((s) => E4_CLOSE_REASONS[s]).map((s) => (
-                        { key: "closeReasonCode", label: "原因（用户可见）", current: "", inputKind: "select" as const, options: ["", ...E4_CLOSE_REASONS[s]], optionLabels: { "": "请选择原因", ...E4_CLOSE_REASON_LABELS }, required: true, visibleWhen: { key: "terminalState", equals: s }, help: "这个原因会显示在用户的订单详情里；下方备注只记在操作记录里，用户看不到。" })),
-                    ] } })}>标记失败结果</Btn>}
-                  {canRefundE4 && refundableState && <Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!refundReady} onClick={() => {
-                    if (!e4Detail || !refundReady) return;
-                    const channels = e4Detail.refundChannels.length ? e4Detail.refundChannels : ["WALLET"];
-                    openActionConfirm({
-                      name: "退款 · " + o.id, op: "order-refund", orderId: o.id, amplify: true,
-                      businessForm: { kind: "multi-field", title: "退款渠道与原因", hint: coverageText, fields: [
-                        { key: "refundChannel", label: "退款渠道", current: channels[0], inputKind: "select", options: channels, optionLabels: { WALLET: "退回 USDT 钱包", ORIGINAL_PAYMENT: "原支付渠道" }, required: true, showDiff: true },
-                        { key: "refundReasonCode", label: "退款原因（用户可见）", current: "", inputKind: "select", options: ["", ...E4_REFUND_REASONS], optionLabels: { "": "请选择退款原因", ...E4_REFUND_REASON_LABELS }, required: true, help: "这个原因会显示在用户的订单详情里；下方备注只记在操作记录里，用户看不到。" },
-                      ] },
-                      detail: `退款 ${o.id} · $${o.amt.toLocaleString()} · ${coverageText}。钱会退回用户，充值记录、账单和累计充值一起冲回，不可撤销。`,
-                    });
-                  }}><AutoGloss>{e4DetailLoading ? "正在检查退款条件…" : e4Detail?.refundAllowed === false ? "平台资金低于安全线，暂不能退款" : "退款"}</AutoGloss></Btn>}
-                  <Btn style={{ flex: 1, justifyContent: "center" }} onClick={closeOrder}>关闭</Btn>
-                </>}>
-            <div className="tint" style={{ marginBottom: 14, textAlign: "center" }}><div className="muted tiny">订单金额</div><div style={{ fontSize: 30, fontWeight: 600, color: "var(--ink)" }} className="tnum">${o.amt.toLocaleString()}</div></div>
-            <KV k="状态" v={<Badge tone={ostate[eff] ?? "neutral"}>{stateLabel(eff)}</Badge>} />
-            {!finalized && <KV k="下一处理步骤" v={nextState ? stateLabel(nextState) : <span style={{ color: "var(--ink-4)" }}>暂无可推进步骤</span>} />}
-            {progressBlock && <div className="tint warn tiny" style={{ marginBottom: 10 }} title={progressBlock.code}>{progressBlock.text}</div>}
-            <KV k="数据中心" v={o.dc} />
-            <KV k="用户" v={o.user} />
-            <KV k="下单时间" v={o.age + " 前"} />
-            {e4DetailLoading && <div className="tint tiny">正在加载…</div>}
-            {e4DetailError && <div className="tint warn tiny" data-module-health-state="error">详情加载失败:{e4DetailError} <button className="fchip" onClick={() => void openOrder(o)}>重试</button></div>}
-            {e4Detail && <>
-              <KV k="数量 / 类型" v={`${e4Detail.quantity} · ${operatorOrderFact("type", e4Detail.orderType)}`} />
-              <KV k="支付" v={`${operatorOrderFact("payment", e4Detail.paymentMethod)} · ${operatorOrderFact("paymentStatus", e4Detail.paymentStatus)}${e4Detail.paymentNo ? ` · ${e4Detail.paymentNo}` : ""}`} />
-              <KV k="设备实例" v={e4Detail.deviceInstanceNo ?? "尚未生成"} />
-              <KV k="平台资金覆盖率" v={<span style={{ color: e4Detail.refundAllowed ? "var(--ok)" : "var(--danger)" }}>{coverageText}</span>} />
-            </>}
-            {isCancelled(o.id) && <KV k="取消" v={<span style={{ color: "var(--ink-3)" }}>已取消 · 用户未付款，订单已终止</span>} />}
-            {isRefunded(o.id) && <KV k="退款" v={<span style={{ color: "var(--warning)" }}>已退款 · 钱已退回，相关记录已冲回</span>} />}
-            {!isCancelled(o.id) && !isRefunded(o.id) && terminalOf(o.id) && <KV k="失败结果" v={<span style={{ color: "var(--warning)" }}>{stateLabel(terminalOf(o.id)!)} · 人工标记</span>} />}
-            <div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 8px", color: "var(--ink)" }}>状态轨迹</div>
-            <div className="edrawer-trail">
-              {orderFlow.map((s) => { const done = orderFlow.indexOf(s) <= idx; return <div key={s} className={`it ${done ? "done" : "grey"}`}><span className={`d ${done ? "done" : "grey"}`} /><span className="nm">{stateLabel(s)}</span></div>; })}
-              {e4Detail?.history.map((item, index) => <div className="it" key={`${item.createdAt}-${index}`}><span className="d done" /><span className="nm">{stateLabel(item.fromState)} → {stateLabel(item.toState)} · {operatorOrderHistoryActor(item.operator)} · {operatorOrderHistoryReason(item.reason, e4Detail.paymentMethod)}</span></div>)}
-              {isCancelled(o.id) && <div className="it grey"><span className="d grey" /><span className="nm">已取消 · 人工取消</span></div>}
-              {!isCancelled(o.id) && !isRefunded(o.id) && terminalOf(o.id) && <div className="it red"><span className="d red" /><span className="nm">{stateLabel(terminalOf(o.id)!)} · 人工标记</span></div>}
-              {isRefunded(o.id) && <div className="it warn"><span className="d warn" /><span className="nm">已退款 · 人工退款</span></div>}
-            </div>
-            {e4Detail && <><div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 8px", color: "var(--ink)" }}>资金记录</div>
-              {e4Detail.funding.length === 0 ? <div className="muted tiny">暂无付款或账单记录</div> : e4Detail.funding.map((item, index) => {
-                const ledgerHref = e4FundingLedgerHref(item);
-                return <KV key={`${item.source}-${item.bizNo}-${index}`} k={operatorOrderFact("source", item.source)} v={<span>{`${operatorOrderFact("direction", item.direction)} ${item.amount.toLocaleString()} USDT · ${operatorOrderFact("fundingStatus", item.status)} · ${item.bizNo}`}{ledgerHref && reach(ledgerHref, "finance_d4_read") && <> · <Link href={ledgerHref}>查看 D4 流水</Link></>}</span>} />;
-              })}
-            </>}
-            <div className="chips" style={{ marginTop: 14 }}>
-              {reach("/platform/audit", "platform_a2_read") && <Link className="chip" href={`/platform/audit?domain=E&object=${encodeURIComponent(o.id)}`}>操作记录</Link>}
-              {reach("/platform/events") && <Link className="chip" href="/platform/events">用户行为事件</Link>}
-              {!e4Detail?.funding.some((item) => e4FundingLedgerHref(item)) && reach("/finance/ledger", "finance_d4_read") && <Link className="chip" href={`/finance/ledger?bizNo=${encodeURIComponent(o.id)}`}>按订单号查账单</Link>}
-            </div>
-          </Drawer>
-        );
-      })()}
 
       {/* SKU 新增 / 编辑 抽屉 */}
       {skuDrawer && <Drawer title={editSkuId ? "编辑商品" : "新增商品"} sub={<AutoGloss>{editSkuId ? "改价、库存、每日收益、开放阶段等，提交后需确认" : "填写商品信息，提交后需确认"}</AutoGloss>} onClose={() => { setSkuDrawer(false); setEditSkuId(null); resetSkuMedia(null); }}
@@ -1619,6 +1550,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         businessForm={mc.businessForm}
         reasonMax={200}
         completionCopy="批准后生效：提交后请另一位超级管理员在「操作记录与审批」中批准。"
+        effect={mc.effect}
+        confirmLabel={mc.confirmLabel}
+        confirmTone={mc.confirmTone}
+        coverageLead={mc.coverageLead}
+        facts={mc.facts}
         onClose={() => setActionConfirm(null)}
         onConfirm={async (reason, newValue, businessValue) => {
           if (!mc) return;
@@ -2013,6 +1949,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           setActionConfirm(null);
         }} />}
       {toastNode}
-    </div>
+    </>
   );
+  return tab === "E4" ? <RdPage>{page}</RdPage> : <div className="dkpage edom">{page}</div>;
 }
