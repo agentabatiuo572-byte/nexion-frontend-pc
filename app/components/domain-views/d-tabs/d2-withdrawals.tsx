@@ -1615,7 +1615,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           {columns.isVisible("account") && <Th>账户状态</Th>}
           <Th>状态</Th>
           {columns.isVisible("lifecycle") && <Th>生命周期 / 异常</Th>}
-          <Th sticky="end">操作</Th>
+          <Th sticky="end" align="right">操作</Th>
         </tr></thead>
         <tbody>
           {loading ? <TableLoading columns={tableColumnCount} rows={Math.min(query.pageSize, 10)} />
@@ -1658,7 +1658,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
                       {columns.isVisible("account") && <Td><Cell main={`账户 ${userStatusLabel(row.userStatus)}`} sub={`近 24h ${row.withdrawalCount24h} 笔 · 每日上限 ${canReadD5 ? `${dailyLimit || "—"} 笔` : "无权限"}`} /></Td>}
                       <Td><Cell main={<StatusTag tone={statusTone(row.status)} icon={STATUS_ICON[row.status.toUpperCase()]}>{bankStatusLabel(row)}</StatusTag>} sub={pendingRow ? "有操作结果未确认" : isReviewPending(row.status) ? undefined : lifecycleSummary(row)} title={lifecycleSummary(row)} /></Td>
                       {columns.isVisible("lifecycle") && <Td><Cell main={lifecycleSummary(row)} sub={holdsForReview(row) ? `复查时间：${timeText(row.holdUntil)}` : undefined} title={lifecycleSummary(row)} /></Td>}
-                      <Td sticky="end"><span className="rd-row-actions">
+                      <Td sticky="end" align="right"><span className="rd-row-actions">
                         {mainAction
                           ? <Button size="sm" disabled={!!submitting} disabledReason={blockedReason(row, mainAction)} onClick={() => void confirmReview(row, mainAction)}>{actionLabel(mainAction)}</Button>
                           : <Button size="sm" variant="ghost" onClick={() => void openDetail(row)}>单笔详情</Button>}

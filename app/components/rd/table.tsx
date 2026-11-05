@@ -20,7 +20,7 @@
  *       <Th icon={User} tone="users">用户</Th>
  *       <Th align="right" icon={Coins} tone="money">金额（USDT）</Th>
  *       {columns.isVisible("chain") && <Th>收款链</Th>}
- *       <Th sticky="end">操作</Th>
+ *       <Th sticky="end" align="right">操作</Th>
  *     </tr></thead>
  *     <tbody>
  *       {rows.map((row) => (
@@ -37,7 +37,7 @@
  * - 可点的行传 onOpen：Tab 能到，Enter、Space 打开，行内按钮、链接、输入不触发（ST-06、OP-06）。
  * - 详情开着时给当前行传 selected：抽屉浮在列表上，这一行保持高亮，抽屉关上才取消（PG-63）。
  *   上一条下一条切到视口外的行时自动滚过去。默认列按列表占满宽度定，不给抽屉留宽度。
- * - 对齐按 ST-02：文字、状态、操作左对齐，金额、数量、百分比 align="right"。空值写「—」。
+ * - 对齐按 ST-02：文字、状态左对齐，金额、数量、百分比、操作列 align="right"，操作贴表格右边。空值写「—」。
  * - 加载用 <TableLoading columns={n} />；空和失败用 <TableMessage columns={n}>…</TableMessage> 放表体，
  *   失败不写「暂无数据」（T09）。
  * - 列选择只影响显示，不影响导出列和读取请求（ST-03）。按账号和表格记在 localStorage。

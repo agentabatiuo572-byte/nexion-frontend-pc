@@ -719,7 +719,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                       <Th icon={Users} tone="users">账户 · 试用记录编号</Th>
                       <Th>状态</Th>
                       <Th align="right" icon={Coins} tone="money">试用期累计收益</Th>
-                      {canHandle && <Th>操作</Th>}
+                      {canHandle && <Th align="right">操作</Th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -730,7 +730,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                           <Td><Cell main={trialOwnerLabel(row.session)} sub={<span data-mono="">{row.session.sid}</span>} title={row.session.sid} full /></Td>
                           <Td><StatusTag tone={row.tone} explain={TRIAL_STATE_HELP[row.session.state]}>{row.label}</StatusTag></Td>
                           <Td align="right"><Cell num main={shadowText(row.session.shadow)} /></Td>
-                          {canHandle && <Td>{row.terminal ? "—" : <span className="rd-row-actions">{buttons.cancel}{buttons.charge}</span>}</Td>}
+                          {canHandle && <Td align="right">{row.terminal ? "—" : <span className="rd-row-actions">{buttons.cancel}{buttons.charge}</span>}</Td>}
                         </Tr>
                       );
                     })}
