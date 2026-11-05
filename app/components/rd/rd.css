@@ -775,6 +775,17 @@ td .rd-flow { margin-bottom: 0; }
   .rd-config-value { justify-content: flex-start; text-align: left; }
 }
 .rd-config-link { margin-left: 8px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; }
+/* 应急页业务卡（control-card.tsx）：名称、状态、动作，说明在气泡里（DP-06）。 */
+.rd-control-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(188px, 1fr)); gap: 12px; }
+.rd-control-card { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 16px; border-radius: var(--rd-radius-panel); background: var(--rd-panel); }
+.rd-control-card[data-attention] { background: var(--tone-bg); }
+.rd-control-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rd-control-title { flex: 1; min-width: 0; margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; color: var(--rd-text); }
+.rd-control-status { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.rd-control-foot { display: grid; gap: 8px; margin-top: auto; padding-top: 4px; }
+.rd-control-foot .rd-btn { width: 100%; }
+.rd-control-batch { border-radius: var(--rd-radius-panel); overflow: hidden; }
+.rd-control-batch .rd-batch { background: var(--rd-panel); }
 .rd-push-state { display: grid; justify-items: start; gap: 8px; }
 @container (max-width: 860px) { .rd-config-rail .rd-push-state { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; } }  /* 窄栏上移时状态、说明、按钮排一行，不把参数挤出首屏 */
 .rd-row-actions { display: inline-flex; gap: 8px; }
@@ -793,7 +804,7 @@ td .rd-flow { margin-bottom: 0; }
 .rd-theme[data-floating] { position: fixed; top: 16px; right: 16px; z-index: 1; }
 
 /* 浅色主题（VS-94）：白面板在浅灰页面上加 1px 边；横幅改左侧 3px 状态色竖条加很浅的底。都用内阴影，不改尺寸。 */
-:root[data-theme="light"] :is(.rd-panel:not([data-plain]), .rd-stats, .rd-fold:not([data-inset]), .rd-conclusion, .rd-notice) { box-shadow: inset 0 0 0 1px var(--rd-line); }
+:root[data-theme="light"] :is(.rd-panel:not([data-plain]), .rd-stats, .rd-fold:not([data-inset]), .rd-conclusion, .rd-notice, .rd-control-card, .rd-control-batch) { box-shadow: inset 0 0 0 1px var(--rd-line); }
 :root[data-theme="light"] :is(.rd-conclusion[data-alarm], .rd-notice) { box-shadow: inset 3px 0 0 var(--tone), inset 0 0 0 1px var(--rd-line); }
 :root[data-theme="light"] .rd-panel > .rd-conclusion { box-shadow: none; }
 :root[data-theme="light"] .rd-panel > .rd-conclusion[data-alarm] { box-shadow: inset 3px 0 0 var(--tone); }

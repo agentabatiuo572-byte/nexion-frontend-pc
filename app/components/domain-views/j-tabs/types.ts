@@ -14,6 +14,13 @@ export type ActionConfirmReq = {
   coverage?: CoverageSnapshot;
   edit?: EditSpec;
   businessForm?: BusinessFormSpec;
+  effect?: ReactNode;
+  confirmLabel?: string;
+  confirmTone?: "primary" | "danger";
+  statedBrief?: { impact: string; check: string };
+  facts?: ReactNode;
+  reasonPlaceholder?: string;
+  reasonPolicyOptional?: boolean;
   run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void>;
 };
 
