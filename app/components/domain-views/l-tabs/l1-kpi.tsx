@@ -356,7 +356,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
   const [drillError, setDrillError] = useState("");
   const l1Requests = useRef(createL1ReadController());
   const selectedQuery = useRef<L1KpiQuery>({ window: "7d" });
-  const urlPending = useRef<L1KpiQuery | null>(null); // 用户发起、结果还没写进网址的那次查询
+  const urlToWrite = useRef<L1KpiQuery | null>(null); // 用户发起、结果还没写进网址的那次查询
   const drillRead = useRef(0);
 
   useEffect(() => {
@@ -380,7 +380,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
           setLocalData(next);
           setWin(query.window ?? "7d");
           setApplied(query);
-          if (urlPending.current === query) writeQueryToUrl(query); // 父级读取抢掉了原请求时由这里补写
+          if (urlToWrite.current === query) writeQueryToUrl(query); // 父级读取抢掉了原请求时由这里补写
           onExportSource?.({ parentData, data: next, query, status: "ready" });
         },
         error => {
@@ -470,7 +470,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     setRefreshing(true);
     setLocalData(data ?? null);
     selectedQuery.current = next;
-    urlPending.current = next;
+    urlToWrite.current = next;
     onExportSource?.({ parentData: ctx.biData?.l1, data, query: next, status: "loading" });
     l1Requests.current.run(
       () => fetchL1Kpi(next),
