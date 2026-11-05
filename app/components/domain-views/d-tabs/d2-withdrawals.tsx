@@ -60,6 +60,7 @@ type D2UncertainReview = { withdrawalNo: string; action: D2ReviewAction; reason:
 type D2PendingCommand = PendingMutationRecord & { batch?: D2UncertainBatch; review?: D2UncertainReview };
 const BATCH_UNKNOWN_COPY = "批量操作结果尚未确认，可能已有部分生效。请在下方重试原操作，不要另建包含相同提现单的批次。";
 const REVIEW_OVERLAP_COPY = "这笔提现包含尚未确认的原操作，请到页面上方提示中点击「重试原操作」。";
+const REVIEW_ENDED_COPY = "原操作已结束或过期，本次未再次发送。请先核对列表，再决定如何处理。";
 const MOVED_STATE_CODES = ["INVALID_STATE_TRANSITION", "WITHDRAWAL_STATE_CONFLICT", "CREGIS_PAYOUT_ALREADY_DISPATCHED",
   "BANK_PAYOUT_ALREADY_DISPATCHED", "BANK_PAYOUT_RECOVERY_STALE"];
 
@@ -662,8 +663,15 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     throw cause;
   };
 
-  const runReview = async (row: D2Withdrawal, action: D2ReviewAction, reason: string, form?: BusinessFormValue) => {
+  const runReview = async (row: D2Withdrawal, action: D2ReviewAction, reason: string, form?: BusinessFormValue, retryKey?: string) => {
     const scope = reviewScope(row.withdrawalNo, action);
+    // Check the captured retry key before list() can restore a removed record from memory.
+    if (retryKey !== undefined && !pendingKeys.isDurablyStored(scope, retryKey)) {
+      pendingKeys.forget(scope, retryKey);
+      await load();
+      toast(REVIEW_ENDED_COPY);
+      return;
+    }
     const records = pendingKeys.list();
     if (records.some((record) => record.batch?.ids.includes(row.withdrawalNo)
       || record.review?.withdrawalNo === row.withdrawalNo && record.review.action !== action)) {
@@ -700,8 +708,15 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     }
   };
 
-  const confirmReview = async (row: D2Withdrawal, action: D2ReviewAction) => {
+  const confirmReview = async (row: D2Withdrawal, action: D2ReviewAction, retryKey?: string) => {
     const seq = ++reviewConfirmSeq.current;
+    const scope = reviewScope(row.withdrawalNo, action);
+    if (retryKey !== undefined && !pendingKeys.isDurablyStored(scope, retryKey)) {
+      pendingKeys.forget(scope, retryKey);
+      await load();
+      toast(REVIEW_ENDED_COPY);
+      return;
+    }
     const records = pendingKeys.list();
     if (records.some((record) => record.batch?.ids.includes(row.withdrawalNo))) {
       toast(REVIEW_OVERLAP_COPY);
@@ -712,6 +727,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       toast(REVIEW_OVERLAP_COPY);
       return;
     }
+    let originalKey = retryKey ?? pending?.commandKey;
     if (!pending && action === "APPROVE" && routingUnavailable(row)) {
       toast("风险分暂时算不出来，暂不能放行");
       return;
@@ -740,7 +756,13 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       reasonMin: 8,
       reasonMax: 200,
       completionCopy: `${label}完成`,
-      run: (reason, _newValue, businessValue) => runReview(row, action, reason, businessValue),
+      run: async (reason, _newValue, businessValue) => {
+        try {
+          await runReview(row, action, reason, businessValue, originalKey);
+        } finally {
+          originalKey = pendingKeys.get(scope);
+        }
+      },
     });
   };
 
@@ -966,9 +988,9 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   return <>
     {error && <div className="dtint warn" style={{ marginBottom: 12 }}>加载失败 · {error} · 已暂停所有操作，请重试。 <button className="l-btn sm" onClick={() => void load(1)}>重试</button></div>}
-    {pendingKeys.list().flatMap((record) => record.review ? [record.review] : []).map((review) => <div key={reviewScope(review.withdrawalNo, review.action)} className="dtint warn" role="status" data-d2-review-unknown style={{ marginBottom: 12 }}>
+    {pendingKeys.list().flatMap((record) => record.review ? [{ ...record.review, commandKey: record.commandKey }] : []).map((review) => <div key={reviewScope(review.withdrawalNo, review.action)} className="dtint warn" role="status" data-d2-review-unknown style={{ marginBottom: 12 }}>
       {review.withdrawalNo} · {actionLabel(review.action)}结果尚未确认，请继续原操作。
-      <button className="l-btn sm" disabled={!writesEnabled || !!submitting || !hasAuthority(ACTION_AUTHORITY[review.action])} onClick={() => void fetchD2WithdrawalDetail(review.withdrawalNo).then((latest) => confirmReview(latest, review.action)).catch((cause) => toast(displayAdminError(cause)))}>重试原操作</button>
+      <button className="l-btn sm" disabled={!writesEnabled || !!submitting || !hasAuthority(ACTION_AUTHORITY[review.action])} onClick={() => void fetchD2WithdrawalDetail(review.withdrawalNo).then((latest) => confirmReview(latest, review.action, review.commandKey)).catch((cause) => toast(displayAdminError(cause)))}>重试原操作</button>
     </div>)}
     {uncertainBatches.map((batch) => <div key={batchScope(batch.action, batch.ids)} className="dtint warn" role="status" data-d2-batch-unknown style={{ marginBottom: 12 }}>
       {BATCH_UNKNOWN_COPY} {actionLabel(batch.action)} · {batch.ids.join("、")}。
