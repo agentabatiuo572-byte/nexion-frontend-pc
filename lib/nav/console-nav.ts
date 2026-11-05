@@ -507,7 +507,7 @@ export function canAccessResolvedPath(domains: NavDomain[], pathname: string | n
 }
 
 /** 已按改版规范迁移的页面。浅色主题只对这些页的内容区生效，其余页的内容区保持深色，等迁移批次（06 VS-95）。 */
-export const REDESIGNED_PATHS: readonly string[] = ["/", "/finance/withdrawals", "/finance/pool", "/devices/orders"];
+export const REDESIGNED_PATHS: readonly string[] = ["/", "/finance/withdrawals", "/finance/pool", "/devices/orders", "/growth/trial"];
 export const isRedesignedPath = (pathname: string) => REDESIGNED_PATHS.includes(pathname.split(/[?#]/, 1)[0]);
 
 /** 登录后落在哪（Q-20）：看得到待处理或经营数的落今日概览，客服落客服工作台，其余落第一个有权限的页。 */

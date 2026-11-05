@@ -68,6 +68,9 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 页内提示：待生效、结果未知、只读说明 | `Notice` | `block-state.tsx` |
 | 确认框里的前后值 | `DiffList` | `diff-list.tsx` |
 | 一列固定的等级 | `LevelList` | `level-list.tsx` |
+| 配置项：名称、这是什么、什么时候生效、显示位置、当前值、动作 | `ConfigList`、`ConfigRow`；说明表放 `lib/admin/config-help/`，按参数键取 | `config-list.tsx` |
+| 配置页三组以上的分组导航 | `SectionNav`、`useSectionNav`；定位写进网址 `section`，目标在折叠组里先展开 | `section-nav.tsx` |
+| 数字输入，单位写在框里 | `NumberInput`；`OperationConfirmModal` 的 `edit.kind: "number"` 在 `RdPage` 里自动用它 | `number-input.tsx` |
 
 ## 颜色：只传 tone，不写色值
 
@@ -78,6 +81,23 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 - 域色 `money`、`users`、`devices`、`risk`、`system`：只用在侧栏和表头小图标（`Th` 的 `tone`）。内容区的数字和图标底不用它。
 
 图表的颜色同理：系列传槽位 `slot`（1 金、2 青、3 紫、4 品红、other 灰），只有表示好坏的条才传状态 `tone`（VS-43）。图里的文字和数字永远是文字色。一个数字先问状态，再问角色。深色主题数字用角色色字，浅色主题数字用正文色、身份靠实色图标底（VS-14），这条在 `rd.css` 里，页面不用管。链接不用品牌色，`rd-link` 是正文色加下划线（VS-06）。数字用 Inter，等宽只给单号、哈希、地址（VS-52）。页面自己的样式也只写 `var(--rd-*)`，变量表在 `tokens.css`。
+
+## 配置页的排法
+
+样板是 H2 免费试用设置：汇总带下面左边是分组、右边是窄栏，窄栏放紧急关闭和当前状态、分组导航，滚动时钉住；窄宽时窄栏排到分组上方，导航收成一行。
+
+```tsx
+const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold(id) });
+<div className="rd-config-layout"><div className="rd-config-grid">
+  <div className="rd-config-rail"><Panel …>紧急关闭</Panel><SectionNav label="本页分组" items={SECTIONS} nav={nav} /></div>
+  <div className="rd-config-groups">
+    <div id={nav.anchor("common")}><Panel title={<span tabIndex={-1} data-section-focus="">常改参数</span>}><ConfigList>…</ConfigList></Panel></div>
+    <div id={nav.anchor("advanced")}><Fold title="高级设置" summary="11 项：…" open={…} onOpenChange={…}>…</Fold></div>
+  </div>
+</div></div>
+```
+
+一切正常时状态写在 `PageHeader` 的 `meta` 里一行带过；有异常才用 `Notice`。每项自己保存，页头不放全局保存。没有修改权限时 `ConfigRow` 不传 `action`。`PageHeader` 的 `guideExtra` 放「这页怎么用」里随数据变的内容。
 
 ## 单条详情的抽屉
 
@@ -109,6 +129,10 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 - `facts`：做决定要核对的事实，常显在业务字段上面，比如收款网络和完整地址。人要在看得到它的地方选核验项。
 - `confirmTone`：不能撤销的操作传 `danger`，确认按钮用危险色。
 - `coverageLead`：放大方向提示的开头，默认「这项操作会让平台多付钱」，页面可以换成这个操作的白话。覆盖率高于红线时提示是安静的，低于红线才红。
+
+改一个值的确认框（`edit`）再给三个可选项：`hint` 写怎么填，`preview(value)` 写改了会怎样、随输入变化，这两项只在 `RdPage` 里显示（CP-87）；`allowEmpty` 让留空也算合法新值，比如「不设上限」。
+
+旧的 `KConfirmModal` 放进 `RdPage` 后同样换新外观；`statedBrief`、`effect`、`reasonPlaceholder` 用法同上。紧急关闭这类理由规则读不到也要能提交的操作继续用它（Q-06）。
 
 业务表单的字段传 `mustChoose: true` 时不给默认值，下拉多一项「请选择」，必须人选了才能提交。核验类字段（大额放行的「地址与风险信息」、手动退款的「已核实」）和不能撤销的操作的原因都要这样，不能取第一项当默认值。多字段表单传 `derive(key, next)` 时，一个字段变了可以带着别的字段变，比如改等待天数时复查时间跟着变。
 

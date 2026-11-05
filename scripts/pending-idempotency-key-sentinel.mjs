@@ -102,6 +102,7 @@ const MIGRATED = [
   "lib/admin/account-deletion-client.ts",
   // A3 structured experience config keeps the same key for uncertain CAS updates.
   "lib/admin/platform-experience-client.ts",
+  "app/components/domain-views/h-tabs/h2-trial.tsx",
   "app/components/domain-views/h-tabs/h8-referral-rewards.tsx",
   "app/components/domain-views/m-view.tsx",
   // S5a maintenance, pool assignment and rule CAS retain command keys across retries.
