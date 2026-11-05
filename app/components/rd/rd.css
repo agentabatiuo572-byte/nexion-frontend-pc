@@ -326,6 +326,10 @@
 .rd-modal.rd-confirm .field:has(> input[type="checkbox"]) > input { grid-column: 1; grid-row: 1; width: 16px; height: 16px; margin: 3px 0 0; accent-color: var(--rd-brand); }
 .rd-modal.rd-confirm .field:has(> input[type="checkbox"]) > span { grid-column: 2; }
 .rd-modal.rd-confirm .field:has(> input[type="checkbox"]) > span:first-of-type { color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
+.rd-toast { position: fixed; top: calc(var(--admin-topbar-h) + 32px); left: 50%; z-index: var(--admin-z-toast); width: min(420px, calc(100vw - 40px)); padding: 12px 20px; border: 1px solid var(--rd-line-strong); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); color: var(--rd-text); font-family: var(--rd-font); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); text-align: center; transform: translateX(-50%); box-shadow: 0 12px 36px rgba(0, 0, 0, .4); }
+.rd-reason-box { position: relative; }
+.rd-reason-box textarea { display: block; width: 100%; padding-bottom: 26px; }
+.rd-reason-count { position: absolute; right: 10px; bottom: 6px; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; pointer-events: none; }
 .rd-confirm-facts { margin-bottom: 16px; padding: 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
 .rd-recipients { display: grid; gap: 8px; max-height: 200px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
 .rd-modal.rd-confirm .alertbar .ico { background: var(--rd-danger-tile); color: var(--rd-danger-tile-ink); }
@@ -483,6 +487,8 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px 20px; margin-top: 12px; }
 
 /* ── 差异对比 ── */
+.rd-diff-one { margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
+.rd-diff-one b { color: var(--rd-text); font-weight: 500; font-variant-numeric: tabular-nums; }
 .rd-diff-count { margin: 0 0 8px; color: var(--rd-text); font-weight: 500; }
 .rd-diff table { width: 100%; border-collapse: collapse; }
 .rd-diff :is(th, td) { padding: 4px 8px 4px 0; border-top: 1px solid var(--rd-line); text-align: left; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-3); vertical-align: top; }

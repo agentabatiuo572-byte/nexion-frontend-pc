@@ -149,6 +149,8 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
           businessForm={mc.businessForm}
           completionCopy={mc.completionCopy}
           confirmLabel={mc.confirmLabel}
+          effect={mc.effect}
+          reasonPlaceholder={mc.reasonPlaceholder}
           statedBrief={mc.statedBrief}
           facts={mc.facts}
           getPendingReason={mc.getPendingReason}

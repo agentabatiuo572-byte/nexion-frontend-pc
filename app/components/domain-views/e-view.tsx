@@ -47,7 +47,7 @@ import {
 } from "@/lib/admin/e5-client";
 import { fetchE6ComputeConfig, isE6ParamKey, type E6ComputeConfigView } from "@/lib/admin/e6-client";
 import { usePropose } from "@/lib/admin/use-propose";
-import { createA2CommandKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
@@ -71,9 +71,13 @@ import "./e-domain.css";
 /** E 域 A2 提交稳定命令号:槽位=动作 op|目标对象,指纹=终值+结构化命令+目标锁(**不含 reason**)。
  *  落 sessionStorage,结果未知后哪怕刷新页面,同弹窗同业务输入重试仍复用同一命令号被后端去重。 */
 const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-e-domain-commands-v1" });
+const E4_PROPOSAL_STATUS: Record<string, string> = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
+
 /** E4 四个提案走这张表：一单一条，结果未知时原内容、理由和命令号留到有结论（OP-92～OP-95）。坏记录不能当原操作重发。 */
 const e4PendingCommands = createPendingMutationStore<E4PendingCommand>({
   storageKey: "nexion-admin-e4-order-commands-v1",
+  // 过了 24 小时不能再用原号重试，但记录和这单的锁都留着，到操作记录核对（OP-96）。
+  retainExpiredRecords: true,
   isValidRecord: (record) => typeof record.orderNo === "string" && typeof record.label === "string"
     && record.fingerprint === `order|${record.orderNo}`
     && record.spec?.obj === record.orderNo && typeof record.spec.reason === "string" && !!record.spec.command,
@@ -284,6 +288,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const canWriteE3 = useAdminAuth((s) => s.session?.authorities.includes("device_e3_write") ?? false);
   const canWriteE4 = useAdminAuth((s) => s.session?.authorities.includes("device_e4_write") ?? false);
   const canRefundE4 = useAdminAuth((s) => s.session?.authorities.includes("device_e4_order_refund") ?? false);
+  const canQueryE4 = useAdminAuth((s) => s.session?.authorities.includes("platform_a2_read") ?? false);
   const canWriteE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_write") ?? false);
   const hasForceActivateE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_device_force_activate") ?? false);
   const hasUnbindE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_device_unbind") ?? false);
@@ -637,21 +642,19 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       const unknown = isA2OutcomeUncertainError(error);
       if (!unknown && !retained) e4PendingCommands.forget(scope);
       syncE4Pending();
-      if (!unknown) {
-        setToast(`提交失败：${displayAdminError(error)}`);
-        throw error;
-      }
+      if (!unknown) throw error;
       setToast("结果未确认，不要重复操作。到页面上方按原操作重试，或到操作记录核查。");
       return false;
     }
     e4PendingCommands.forget(scope);
     syncE4Pending();
-    setToast("已提交，等待审批后执行");
+    setToast("已提交审批，等超级管理员批准。进度到「操作记录与审批」看。");
     return true;
   };
   const noteE4Pending = (record: E4PendingCommand, note: string) => setE4PendingNotes((current) => ({ ...current, [record.fingerprint]: note }));
   /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有后端明确拒绝才给解除入口。 */
   const retryE4Pending = async (record: E4PendingCommand) => {
+    if (record.expiresAt <= Date.now()) { syncE4Pending(); return; }
     // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
     if (!e4PendingCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
       e4PendingCommands.forget(record.fingerprint, record.commandKey);
@@ -672,7 +675,26 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE4Retrying("");
     }
   };
-  /** 重试被拒后，人核实过原操作的结果才解除。只放开本页的锁，不发请求，不写操作记录。 */
+  /** 按命令号查原提案。查到就有了结果，可以解除；查不到说明不了没提交，继续保留（OP-93）。 */
+  const checkE4Pending = async (record: E4PendingCommand) => {
+    setE4Retrying(record.fingerprint);
+    try {
+      const original = await fetchA2ProposalByKey(record.commandKey);
+      if (!original) {
+        noteE4Pending(record, "暂未查到原提案，结果仍待核实。原命令继续保留，不会重新提交。");
+        return;
+      }
+      e4PendingCommands.forget(record.fingerprint, record.commandKey);
+      syncE4Pending();
+      await refreshE4();
+      setToast(`查到原提案，${E4_PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`);
+    } catch (error) {
+      noteE4Pending(record, `查询没有成功：${displayAdminError(error)} 原命令继续保留。`);
+    } finally {
+      setE4Retrying("");
+    }
+  };
+  /** 重试被拒后，人核实过原操作的结果才解除。不发请求，不写操作记录。 */
   const releaseE4Pending = (record: E4PendingCommand) => {
     e4PendingCommands.forget(record.fingerprint, record.commandKey);
     syncE4Pending();
@@ -1236,7 +1258,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     canWriteE2, tasks, phoneTiers, yieldComparisons, e2Pricing, e2Loading, e2Error, e2TaskCatalogReady, refreshE2, openAddTask, openEditTask, delTask,
     canWriteE3, e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
     canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4ReadBlock, e4Total, e4Query, e4KeywordInput, e4Counts, e4CountsFailed, e4ReadAt, updateE4Query, setE4KeywordInput, clearE4Filters, refreshE4,
-    orderState, e4Pending, e4PendingNotes, e4RetryRejected, e4Retrying, retryE4Pending, releaseE4Pending, selOrder, e4Detail, e4DetailLoading, e4DetailError, openOrder, closeOrder,
+    orderState, e4Pending, e4PendingNotes, e4RetryRejected, e4Retrying, retryE4Pending, checkE4Pending, canQueryE4, releaseE4Pending, selOrder, e4Detail, e4DetailLoading, e4DetailError, openOrder, closeOrder,
     canWriteE5, canForceActivateE5, canUnbindE5, canPauseDcE5,
     runE5DeviceAction, runE5UserBatch,
     e5Devices, e5Overview, e5Datacenters, e5Loading, e5DeviceError, e5OverviewError, e5DatacenterError, e5Page, e5PageSize, e5Total,
@@ -1658,13 +1680,14 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         edit={mc.edit}
         businessForm={mc.businessForm}
         reasonMax={200}
-        completionCopy="批准后生效：提交后请另一位超级管理员在「操作记录与审批」中批准。"
+        completionCopy={mc.orderId ? undefined : "批准后生效：提交后请另一位超级管理员在「操作记录与审批」中批准。"}
         effect={mc.effect}
         confirmLabel={mc.confirmLabel}
         confirmTone={mc.confirmTone}
         coverageLead={mc.coverageLead}
         facts={mc.facts}
         statedBrief={mc.statedBrief}
+        reasonPlaceholder={mc.reasonPlaceholder}
         blockedReason={mc.orderId ? e4ReadBlock : undefined}
         onClose={() => setActionConfirm(null)}
         onConfirm={async (reason, newValue, businessValue) => {
@@ -1951,7 +1974,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 target: def.buildTarget({ orderNo: mc.orderId }),
               })) setSelOrder(null);
             } else if (mc.op === "order-refund" && mc.orderId) {
-              const refundChannel = (businessValue?.refundChannel ?? "").trim();
+              const refundChannel = (businessValue?.refundChannel ?? mc.fixedVal ?? "").trim();
               if (!refundChannel) { throw new Error("请选择退款渠道"); }
               const refundReasonCode = (businessValue?.refundReasonCode ?? "").trim();
               if (!(E4_REFUND_REASONS as readonly string[]).includes(refundReasonCode)) { throw new Error("请选择退款原因"); }
@@ -1973,7 +1996,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 target: def.buildTarget({ orderNo: mc.orderId }),
               })) setSelOrder(null);
             } else if (mc.op === "order-terminal" && mc.orderId) {
-              const v = (businessValue?.terminalState ?? "").trim();
+              const v = (businessValue?.terminalState ?? mc.fixedVal ?? "").trim();
               if (!v) { throw new Error("请选择失败结果"); }
               const choices = E4_CLOSE_REASONS[v];
               const closeReasonCode = choices ? (businessValue?.closeReasonCode ?? "").trim() : "";
