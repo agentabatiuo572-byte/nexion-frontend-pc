@@ -172,6 +172,7 @@
 
 审计字段(A2):`action / field / before / after / coverageAtSubmit / reason / geo_block / operator / ts`。
 
+
 **⑦ 风控 & 联动**:
 - **server-canonical(§9.11d.2)**:gate 决策(三类拦截)server 权威;`useWalletPairing.walletPaired` 客户端可篡改,KYC 触发线命中后真值在 server `GET /api/kyc/status`,兑换 endpoint 二次 enforce(client 跳过无效)。
 - **跨模块联动**:`KYC_LIFETIME_THRESHOLD` 命中 → **K5 KYC 复审**(累计兑换 KYC 阈值**分阶段归属**:**V1 阶段权威在 K5(C4 / G2 只读引用),V3 G2 落地后移交 G2**——§3.14:`K5(V1)/ G2(V3)`;C4 消费 / 兑换日 cap 三阈值另归 G2;V1 K5 §⑦ 已声明「兑换触发阈值由 G2 配置」);`exchange.swapped` → D4 swap bill + 影响 D3 资金池(NEX→USDT 减 USDT 储备)。
@@ -780,6 +781,9 @@
 
 #### [H4] 活动中心 CMS
 
+- **概率提交前反馈（BUG-258）**：转盘弹窗实时显示所有奖项概率合计；单项超出 0–100% 或合计不等于 100% 时禁用确认，合法配置沿用原保存及系统校验。
+- **转盘奖项可选字段（BUG-253）**：代金券 ID 只在奖励类型为代金券时显示并必填；UVT、USDT 等非券奖项无需填写，保存为空。其他数量、库存和版本校验沿用原规则。
+
 > **2026-11-04 产品决定**：移除持币活动（`holding`，原 NEX Holders Share），后端同步删除该类型及钱包余额变化触发。PC 不再提供创建选项、专属标签、规则字段或奖池说明；旧记录按未知类型显示“其他活动”，玩法区标为“其他活动（已停用）”且不可选择。不增加兼容玩法，其他活动沿用现有配置及服务端结果。
 
 **① 目的 & 对齐**: 配置限时活动(campaign / 活动位)的上下架、featured、奖励、追踪逻辑与 7 种 EventKind,作为周期性流量回访点的活动运营面。对齐前端 **§11.10**(`/events`:§11.10.3 7 种 EventKind / §11.10.2 页面结构 / §11.10.6 参与条件与奖励)+ **§9.11c.2**(`GET /api/events?status=ongoing&region=`「季度活动滚动」)。服务业务目标:用限时折扣 / 邀请挑战 / 抽奖 / 区域 PK 等活动卡形成「周期性回访 + 独立 conversion hook」;活动卡内的任务 CTA 引导用户产生 `store.viewed` / `checkout.completed` 这些 B3 漏斗级事件(行为驱动),并通过回访→`app.dau` 路径间接提升 Day7 活跃(KPI #2 口径为 `app.dau ÷ register cohort`,§2.4.6;本机制经回访间接贡献,非 KPI 直接口径);活动进度、参与及奖励结果均由服务端按真实业务状态返回，客户端不本地评估或发奖。
@@ -946,12 +950,15 @@
 
 **H4 2026-10-25 TEST 验收记录**：#635 整单零应付和超过优惠后商品行均拒绝；单行零、整单 1234.05 USDT 报价建单成功。未付取消及重复取消恢复 18.905 USDT 预算和有限库存，钱包、完整账单、设备与销量不变，临时活动正常结束。#636/#647 正常 E1→A2 双人审批完成 Pro 库存 292→0→292；库存 0 时 readiness 不足且已开启配置再保存被页面拒绝，恢复后 readiness 恢复，冻结规则/revision/原奖励权益保留。新键重复退款、已办退款票重复批准、新期赠机并发、首次耗尽领取及 stock=1/giftQuantity=2 未实跑。证据：`D:/workspace/output/events-boundaries-20261025/635-BC-actual-acceptance.md`、`636-647-stock-actual-acceptance.md`；E1 全字段保留另见[专项验收](specs/E1-SKU-EDIT-PRESERVATION-20261025.md)。
 
-#### [H5] 签到 & 积分
+#### [H5] 签到与UVT奖励
 **① 目的 & 对齐**: 配置每日签到的积分规则、Lucky 概率倍率、30 天里程碑路线图、Streak Saver 断签复活卡、Streak Power-Ups 连胜增益,作为留存节奏的签到引擎。对齐前端 **§9.8**(`/daily`:§9.8.1 签到规则 + Lucky multiplier / §9.8.2 30 天里程碑 / §9.8.3 Streak Saver / §9.8.6 Streak Power-Ups)+ **§9.11c.1**(`POST /api/points/sign-in` 返 multiplier「A/B 实验值」)+ **§9.11d.3**(Lucky multiplier「必须 server-driven」,锚 `lib/v3/points.ts:87-88`)。服务业务目标:用每日签到 + 连胜里程碑形成留存激励的回访节奏(§9.8.2:累计连胜越久,里程碑路线图越临近),通过回访→`app.dau` 路径**间接**提升 Day7 活跃(KPI #2 口径为 `app.dau ÷ register cohort`,§2.4.6;本机制经回访间接贡献,非 KPI 直接口径)。**Lucky 概率是概率型奖励,必须 server-canonical RNG**(跨域事实 1);Day-30 里程碑发放一张转盘票(spin 票),转盘奖项池 / 概率 / 派奖治理归 H4(`wheel` EventKind);Streak Power-Ups 含跨域奖励(F2/G5/G1/G4),H5 是触发面。
 
 **② 后台界面**:
 - **签到规则配置面**(§9.8.1):baseline 积分 / 7 天连续 bonus / Lucky 15% → 1.5× / Lucky 5% → 2× / 断签阈值(>48h)/ Streak Saver 恢复上限(30 天)。
 - **30 天里程碑配置面**(§9.8.2,7 阶梯):`Day 阈值 / 奖励 / 类型(points/usdt/nex/spin/badge)`——Day3 +5 积分 / Day7 +15 积分 / Day14 +1 USDT / Day21 +100 NEX / Day30 🎰 Lucky Spin 票(转盘治理归 H4)/ Day60 +10 USDT / Day100 ⭐ Streak Master Badge(NFT)。
+- **签到规则生效口径（T02）**：签到规则提交「操作记录与审批」，另一位超级管理员批准后生效；提交成功不表示规则已更新。连签、成长和收益里程碑的既有直接保存路径不变。
+- **幸运概率反馈（BUG-258）**：调整任一档时实时显示两档合计；每档须在 0–100%，合计不超过 100%，否则说明原因并禁用确认。合法概率提交到「操作记录与审批」，批准后生效；提交失败保留输入。系统执行时仍复验概率与覆盖率。
+- **成长奖励备注（BUG-253）**：运营备注明确标为可选，允许清空并保存空字符串；触发天数和版本校验保持不变。
 - **Streak Power-Ups 配置面**(§9.8.6,4 档,`streak-powerups.ts:32-69`):`streak 阈值 / 增益名 / 转化路径 / badge`——7 天 Royalty Boost(→ F2 unilevel,href `/team/unilevel/how-it-works`)/ 14 天 Premium 7-day free trial(→ G5,href `/me/wallet/premium`)/ 30 天 +2% APY on next stake(→ G1,href `/staking`)/ 60 天 Genesis whitelist priority(→ G4 Genesis,href `/genesis`)。
 - **签到监控**(只读,server-canonical):签到率 / streak 分布(7/14/30/60/100 天分段人数)/ Lucky 触发分布(1.5× / 2× 命中率实测 vs 配置)/ Streak Saver 消耗量 / 各里程碑 claim 分布。
 - **状态机**(签到 streak,server-canonical):`signed_today → (次日)pending → signed`;断签旁路:`signed → broken(>48h 未签·streak 归 0)→ restored(消耗 1 Streak Saver·恢复至 min(longestStreak,30))`。里程碑:`locked(Xd to unlock)→ claimable(streak ≥ 阈值派生态)→ claimed`。
@@ -1094,7 +1101,7 @@
 | earn-5000 阈值 / 奖励 | **现状值(§11.3a / `milestones.ts:32`)**:$5,000 / +1,500 NEX | 同上,保序 | 仅新 fire | overlay `$5,000+` |
 | earn-10000 阈值 / 奖励 | **现状值(§11.3a / `milestones.ts:33`)**:$10,000 / +3,000 NEX | 同上,保序 | 仅新 fire | overlay `$10,000+` |
 | 里程碑文案 key | **现状值(§11.3a)**:`milestones.*` 5 阈值业务文案 + `genericBody` fallback | i18n key(通用 copy 归 V4 I 域) | 实时 | overlay 标题 + 阈值专属文案 |
-| watcher tick 间隔 | **现状值(§11.3a / `milestone-watcher.tsx:25` POLL_MS)**:4s | ≥ 1s(过密增 server 负载) | 实时 | overlay fire 检测延迟 |
+| watcher tick 间隔 | 按当前系统配置显示，不设前端默认值 | 1–60 秒，越界在原确认框说明原因并保留输入（BUG-257） | 实时 | overlay fire 检测延迟 |
 
 > **默认值口径**:5 档阈值 / NEX 奖励 / tick 取前端现状值(标注「现状值」);12 月 §6 未覆盖里程碑参数。**升里程碑 NEX 奖励 / 降阈值 = 放大 NEX 流出**,受跨域事实 2 的 B1 红线前置约束。阈值须保序(高档阈值 > 低档),由 ⑤ `PUT` server 校验(违反返 422)。
 

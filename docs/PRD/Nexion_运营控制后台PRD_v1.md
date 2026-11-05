@@ -3284,6 +3284,8 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 #### [H1] 12 月节奏 Phase 调度器
 
+**刷新反馈（BUG-259）**：「刷新数据」仅在本页数据成功加载后显示「已刷新」。加载失败在原确认框说明原因，页面保留「重试」，不报告成功。
+
 ##### ① 模块定位与目标
 
 12 月运营节奏的唯一操作面,同时是全平台 Phase 模型(后台管理共 8 项 dial)的权威源与值定义源。对齐前端 §13.4(useProductPhase 引擎)、12 月节奏表 §6.4(`ProductPhase` 定义,12 月权威分月值)、§9.11c.1 / §9.11d.3(phase-config endpoint 与 server-canonical 决策)。
@@ -3593,7 +3595,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | `extensionDays` | 3 | 仅影响新 trial | — | 延长天数 |
 | `discountRate` | 0.15 | 实时 | 0–1 | 提前购买折扣率 |
 | `discountCapUSD` | 20 | 实时 | — | 早购促销折扣金额上限 USD;与 `discountRate` 同步实时生效,每次 claim sheet 渲染读取最新值(§9.11b) |
-| `trialOffsetCapUSD` | 50 | 实时 | — | **试用收益抵扣购机款上限 USD**(§9.11b 新增);Model A:购前试用收益只能抵扣购机款、不可提现、不可当现金;购后经 `computeTrialOffset` 拆分,`offsetUSD = min(shadowUSD, cap)` 抵实付价、仅超出 cap 的 `remainderUSD` 入余额(见 ⑥ Model A)。实时生效,每次 redeem / charge / claim sheet 渲染读最新值 |
+| `trialOffsetCapUSD` | 按当前系统配置显示 | 实时 | 可清空为不设上限；0 与正数分别保存（BUG-255） | **试用收益抵扣购机款上限 USD**(§9.11b 新增);Model A:购前试用收益只能抵扣购机款、不可提现、不可当现金;购后经 `computeTrialOffset` 拆分,`offsetUSD = min(shadowUSD, cap)` 抵实付价、仅超出 cap 的 `remainderUSD` 入余额(见 ⑥ Model A)。实时生效,每次 redeem / charge / claim sheet 渲染读最新值 |
 | `autoChargeAtEnd` | true | 待 PM 确认(暂按仅影响新 trial) | 是 / 否 | 期末是否自动扣款。§9.11b「字段实时性」两类清单均未列入该字段,分类无文本依据;需 PM 确认实时性后纳入 ⑤① 操作路径(见下方实时性分区说明) |
 | `highQualityThresholdUSD` | 100 | 实时 | — | 高质量延长触发阈值 USD |
 | `chargeFailRate` | 0.01 | 实时 | 0–1 | **server-only,前端永不可知(§9.11d.3)**;扣款失败概率(0–1 浮点,server-only,前端永不可知) |

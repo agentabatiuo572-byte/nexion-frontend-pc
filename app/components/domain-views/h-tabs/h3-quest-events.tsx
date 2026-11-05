@@ -747,6 +747,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     if (status === "archived") return;
     const targetStatus = status === "active" ? "paused" : "active";
     openConfirm({
+      errorHandled: (error) => isH3MissionOutcomeUncertainError(error) && !!error.readback,
       action: `${targetStatus === "active" ? "启用" : "停用"}任务 · ${label}`,
       detail: <>只能在启用和停用之间切换；已归档的任务不能恢复。</>,
       chips: [["记入操作记录", "done"]],
@@ -763,6 +764,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const { taskCode, taskKind, status } = taskIdentity(task, monthly);
     if (status === "archived") return;
     openConfirm({
+      errorHandled: (error) => isH3MissionOutcomeUncertainError(error) && !!error.readback,
       action: `归档任务 · ${label}`,
       detail: <>归档后不能再启用或编辑。要删除任务，需先归档。</>,
       chips: [["不能撤回", "ready"], ["记入操作记录", "done"]],
@@ -779,6 +781,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const { taskCode, taskKind, status } = taskIdentity(task, monthly);
     if (status !== "archived") return;
     openConfirm({
+      errorHandled: (error) => isH3MissionOutcomeUncertainError(error) && !!error.readback,
       action: `删除已归档任务 · ${label}`,
       detail: <>只能删除已归档的任务。删除后操作记录仍保留。</>,
       chips: [["仅限已归档", "ready"], ["保留操作记录", "done"]],
@@ -794,6 +797,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openBindingStatus = (binding: H3QuestEventBinding) => {
     const enabled = Number(binding.status) === 1;
     openConfirm({
+      errorHandled: (error) => isH3BindingOutcomeUncertainError(error) && !!error.readback,
       action: `${enabled ? "停用" : "启用"}完成条件 · ${binding.bindingCode}`,
       detail: <>对应的任务要处于待启用或已启用状态。</>,
       chips: [["记入操作记录", "done"]],
@@ -952,6 +956,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openBindingDelete = (binding: H3QuestEventBinding) => {
     const enabled = Number(binding.status) === 1;
     openConfirm({
+      errorHandled: (error) => isH3BindingOutcomeUncertainError(error) && !!error.readback,
       action: `删除完成条件 · ${binding.bindingCode}`,
       detail: <>删除后，用户做这件事不再算完成任务。操作记录会保留。</>,
       chips: [["保留操作记录", "done"]],
@@ -1110,6 +1115,11 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       businessForm: {
         kind: "multi-field",
         title: "转盘奖项概率",
+        feedback: (values) => {
+          const total = tiers.reduce((sum, tier) => sum + Math.round(Number(values[text(tier.tier)]) * 10000), 0) / 10000;
+          const invalid = total !== 100;
+          return { message: `概率合计 ${Number(total.toFixed(4))}%；${invalid ? "所有奖项的概率加起来必须等于 100%" : "合计符合 100% 要求"}。`, invalid };
+        },
         hint: "所有奖项一起提交，加起来要等于 100%。",
         requireAnyChange: true,
         fields: tiers.map((tier) => ({
@@ -1131,7 +1141,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           Number(businessValue[text(tier.tier)]),
         ]));
         const total = Object.values(probabilities).reduce((sum, value) => sum + value, 0);
-        if (Math.abs(total - 100) > 0.0001) {
+        if (Math.round(total * 10000) !== 1000000) {
           throw new Error("所有奖项的概率加起来要等于 100%");
         }
         apply(await updateH4WheelProbabilities(
@@ -1193,7 +1203,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           { key: "rewardKind", label: "奖励类型", current: text(tier.kind, "uvt"), inputKind: "select", options: ["uvt", "points", "usdt", "coupon"], optionLabels: { uvt: "UVT", points: "积分", usdt: "USDT", coupon: "代金券" }, required: true, showDiff: true },
           { key: "realOutflow", label: "是否发真钱", current: boolValue(tier.real) ? "1" : "0", inputKind: "select", options: ["0", "1"], optionLabels: { "0": "否", "1": "是" }, required: true, showDiff: true },
           { key: "rewardAmount", label: "每次发放数量", current: String(numericValue(tier.amount)), inputKind: "number", min: 0.000001, max: 1000000, step: 0.000001, required: true, showDiff: true },
-          { key: "voucherId", label: "代金券 ID", current: text(tier.voucherId, ""), inputKind: "text", showDiff: true },
+          { key: "voucherId", label: "代金券 ID", current: text(tier.voucherId, ""), inputKind: "text", required: true, visibleWhen: { key: "rewardKind", equals: "coupon" }, showDiff: true },
           { key: "dailyStock", label: "每日库存（0 = 不限）", current: String(numericValue(tier.dailyStock)), inputKind: "number", min: 0, max: 1000000, step: 1, required: true, showDiff: true },
         ],
       },
@@ -1206,7 +1216,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           realOutflow: bv.realOutflow === "1" ? 1 : 0,
           rewardKind: bv.rewardKind || "uvt",
           rewardAmount: Number(bv.rewardAmount),
-          voucherId: String(bv.voucherId || "").trim() || null,
+          voucherId: bv.rewardKind === "coupon" ? String(bv.voucherId || "").trim() || null : null,
           dailyStock: Math.max(0, Number(bv.dailyStock) || 0),
         }, text(model?.wheelSignature, "__EMPTY__"), reason));
         toast(`奖项「${tierName}」已更新`);

@@ -716,6 +716,8 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   TRUST_DOCUMENT_RESPONSE_INVALID: "资料文件信息不完整，请刷新后重试。",
   TRUST_DOCUMENT_FORBIDDEN: "公司登记资料需要信任中心管理权限才能更换。",
   TRUST_DOCUMENT_UPLOAD_INTERRUPTED: "上传中断，请检查网络后重新上传。",
+  TICK_INTERVAL_OUT_OF_RANGE: "检查间隔必须为 1–60 秒，请修改秒数后重试。",
+  H3_MISSION_STALE: "任务状态已被其他操作更新，本次未生效。请刷新「用户任务管理」，核对最新状态后重试。",
   OPERATOR_REQUIRED: "缺少操作人信息,请重新登录后再试。",
   FORCE_LOGOUT_SELF_FORBIDDEN: "不能强制登出自己的当前账号。",
   FORCE_LOGOUT_ROLE_FORBIDDEN: "只有超级管理员可以强制登出运营账号。",

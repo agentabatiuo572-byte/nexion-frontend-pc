@@ -214,6 +214,7 @@ export function K3HeaderActions({ ctx, onResult }: { ctx: KCtx; onResult: (resul
   const [dryRunError, setDryRunError] = useState<string | null>(null);
   const canDryRun = authorities.includes("risk_k3_write") && !ctx.contentLoading && !ctx.contentError;
   const dryRun = () => ctx.openConfirm({
+    errorHandled: true,
     action: "模拟运行（用历史数据试跑）",
     detail: "用最近 30 天的提现记录按当前规则试跑一遍，只看结果，不影响线上。",
     chips: [["只看结果，不影响线上", "done"]], reason: true, okLabel: "开始模拟",
@@ -302,6 +303,7 @@ export function K3Rules({ ctx, dryRunResult }: { ctx: KCtx; dryRunResult: K3DryR
     run: (reason) => runAction(`state:${rule.ruleId}:${state}:${rule.version}`, (key) => ctx.actions.updateK3RuleState(rule.ruleId, state, rule.version, reason, key), `${rule.ruleId} 已${state === "active" ? "启用" : "停用"}`),
   });
   const archiveRule = (rule: K3Rule) => ctx.openConfirm({
+    errorHandled: true,
     action: `归档规则 · ${rule.ruleId}`, detail: "归档后不能再启用。", chips: [["不能撤回", "done"]], reason: true, okLabel: "确认归档",
     run: (reason) => runAction(`archive:${rule.ruleId}:${rule.version}`, (key) => ctx.actions.archiveK3Rule(rule.ruleId, rule.version, reason, key), `${rule.ruleId} 已归档`),
   });

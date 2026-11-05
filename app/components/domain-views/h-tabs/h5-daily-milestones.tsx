@@ -97,12 +97,12 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const openRule = (rule: CheckInRule) => {
     const current = text(rule.cur);
     const currentNumber = numericText(current);
-    const submit = (reason: string, value?: string) => {
+    const submit = async (reason: string, value?: string) => {
       if (!value) return;
       const nextValue = NUMERIC_RULE_KEYS.has(rule.key) ? numericText(value, currentNumber) : value;
       if (!nextValue) return;
       const def = findHighOp("h5_checkin_rule")!;
-      void propose(ctx.toast, {
+      await propose(ctx.toast, {
         action: `签到规则 · ${operatorCopyText(rule.name)}`,
         obj: rule.key,
         before: current,
@@ -117,10 +117,32 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         target: def.buildTarget({ ruleKey: rule.key }),
       });
     };
+    if (rule.key === "p15" || rule.key === "p2") {
+      const other = model!.rules.find((item) => item.key === (rule.key === "p15" ? "p2" : "p15"))!;
+      const otherProbability = Number(numericText(other.cur));
+      openActionConfirm({
+        action: `签到规则 · ${operatorCopyText(rule.name)}`,
+        detail: <>每档概率必须在 0–100%，两档合计不能超过 100%。另一档当前为 {otherProbability}%。批准后生效。</>,
+        amplifies: true,
+        businessForm: {
+          kind: "multi-field",
+          title: "幸运概率",
+          fields: [{ key: rule.key, label: `${operatorCopyText(rule.name)}（%）`, inputKind: "number", current: currentNumber, min: 0, max: 100 }],
+          feedback: (values) => {
+            const probability = Number(values[rule.key]);
+            const total = probability + otherProbability;
+            const invalid = probability < 0 || probability > 100 || total > 100;
+            return { message: `两档概率合计 ${Number(total.toFixed(4))}%；${probability < 0 || probability > 100 ? "单项概率必须在 0–100%" : total > 100 ? "两档合计不能超过 100%" : "符合单项范围和合计要求"}。`, invalid };
+          },
+        },
+        run: (reason, _value, values) => submit(reason, values?.[rule.key]),
+      });
+      return;
+    }
     if (rule.hot) {
       openActionConfirm({
         action: `签到规则 · ${operatorCopyText(rule.name)}`,
-        detail: <>当前 <b>{current}</b>。两档幸运概率加起来不能超过 100%。</>,
+        detail: <>当前 <b>{current}</b>。批准后生效。</>,
         amplifies: true,
         edit: { kind: "number", current: currentNumber || current },
         run: submit,
@@ -128,8 +150,9 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       return;
     }
     openConfirm({
+      errorHandled: true,
       action: `签到规则 · ${operatorCopyText(rule.name)}`,
-      detail: <>当前 <b>{current}</b>。保存后马上生效。</>,
+      detail: <>当前 <b>{current}</b>。批准后生效。</>,
       chips: [["记入操作记录", "done"]],
       reason: true,
       input: { label: "新值", placeholder: `当前 ${currentNumber || current}` },
@@ -162,7 +185,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         title: "连续签到成长奖励设置",
         fields: [
           { key: "day", label: "触发天数", inputKind: "number", current: String(powerUp.day), placeholder: "例如 30" },
-          { key: "note", label: "运营备注", inputKind: "text", current: text(powerUp.note, ""), placeholder: "可留空" },
+          { key: "note", label: "运营备注（可选）", inputKind: "text", current: text(powerUp.note, ""), placeholder: "可留空", required: false },
         ],
       },
       run: async (reason, _value, form) => {

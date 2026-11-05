@@ -104,7 +104,7 @@ export default function H1Phase({ ctx, onRhythmChange }: {
     setLoading(false);
   };
 
-  const reload = async () => {
+  const reload = async (showConfirmError = false) => {
     const seq = ++loadSequence.current;
     setLoading(true);
     try {
@@ -114,6 +114,7 @@ export default function H1Phase({ ctx, onRhythmChange }: {
       setError(null);
     } catch (err) {
       if (seq === loadSequence.current) setError(displayAdminError(err));
+      if (showConfirmError) throw err;
     } finally {
       if (seq === loadSequence.current) setLoading(false);
     }
@@ -326,7 +327,7 @@ export default function H1Phase({ ctx, onRhythmChange }: {
       chips: [["只读", "ready"]],
       okLabel: "刷新",
       run: async () => {
-        await reload();
+        await reload(true);
         toast("已刷新");
       },
     });

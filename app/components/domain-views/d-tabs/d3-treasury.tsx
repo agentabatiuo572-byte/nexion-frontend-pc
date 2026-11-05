@@ -156,6 +156,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
       return;
     }
     openConfirm({
+      errorHandled: true,
       action: "储备注入登记",
       detail: `登记 ${money(Number(nextAmount))}，凭证号 ${nextVoucher}。凭证号不可重复。`,
       reason: true,
@@ -185,6 +186,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
   const saveConfig = () => {
     if (!draft) return;
     openConfirm({
+      errorHandled: true,
       action: "调整应付款预测设置",
       detail: `预测 ${draft.forecastWindow.replace("d", " 天")}，创世节点收益${draft.genesisIncluded ? "计入" : "不计入"}。次日 UTC 00:00 起生效，不影响历史。`,
       reason: true,
@@ -215,6 +217,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
 
   const exportCsv = (kind: "reconciliation" | "liabilities") => {
     openConfirm({
+      errorHandled: true,
       action: "导出",
       detail: kind === "reconciliation" ? "导出储备与应付款对账数据。" : "导出应付款明细。",
       reason: true,

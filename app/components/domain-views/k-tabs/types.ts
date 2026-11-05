@@ -40,12 +40,15 @@ export type ConfirmReq = {
   input?: {
     label: string;
     placeholder?: string;
+    required?: boolean;
     options?: string[];
     kind?: "text" | "number";
     min?: number;
     max?: number;
     step?: number;
   };
+  /** 调用方已展示错误时，共享确认不重复提示。 */
+  errorHandled?: boolean | ((error: unknown) => boolean);
   okLabel?: string;
   run: (reason: string, value?: string) => unknown | Promise<unknown>;
 };

@@ -185,6 +185,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
 
   // ── 删除通道:走普通确认(原因必填 + 留痕) ──
   const removeNova = (n: OpsNova) => openConfirm({
+    errorHandled: true,
     action: <>删除推送通道 · {n.name}</>,
     detail: <>删除这个推送频道，并停止推送。</>,
     reason: true,
@@ -240,6 +241,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   };
   const closeTplDrawer = () => { setTplDrawer(false); setEditTplChannel(null); setTplForm(EMPTY_TEMPLATE); };
   const submitTpl = () => openConfirm({
+    errorHandled: true,
     action: <>{editTplChannel ? "编辑" : "新增"}推送模板 · {tplForm.name}</>,
     detail: <>保存后是草稿；发布前会再次检查中文、越南语是否完整、变量是否一致。</>,
     reason: true,
@@ -253,6 +255,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     },
   });
   const removeTpl = (t: (typeof NOVA_TPLS)[number]) => openConfirm({
+    errorHandled: true,
     action: <>删除推送模板 · {t.name}</>,
     detail: <>已发布模板不能直接删除，请先归档。删除后对应通道无法启用。</>,
     reason: true,
@@ -275,6 +278,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     })
     && distDraftTotal === 100;
   const submitDistribution = () => openConfirm({
+    errorHandled: true,
     action: <>保存 业务动态事件概率分布</>,
     detail: <>本次会整体替换 5 类真实事件权重；合计必须为 100%，不会自动改动任何其他类别。</>,
     reason: true,
@@ -348,6 +352,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   };
   const canRestoreEvent = (expiresAt: string) => new Date(expiresAt).getTime() > Date.now();
   const syncSocialEvents = () => openConfirm({
+    errorHandled: true,
     action: <>同步真实业务事件</>,
     detail: <>仅从提现、V 等级、创世节点 成交和整点新增用户等受信业务表采集；重复来源会防重复提交跳过，AI 客户消费在真实计费源接入前保持不可用。</>,
     reason: true,
@@ -375,6 +380,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       .finally(() => setEventBusy(null));
   };
   const changeSocialEventStatus = (event: (typeof SOCIAL_EVENTS)[number], status: "ACTIVE" | "DISABLED" | "EXPIRED") => openConfirm({
+    errorHandled: true,
     action: <>{status === "ACTIVE" ? "恢复" : status === "DISABLED" ? "停用" : "立即过期"}真实事件 · #{event.id}</>,
     detail: <>只能控制这条事件是否推送，不能改来源、人物、金额和时间。</>,
     reason: true,
@@ -387,6 +393,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     },
   });
   const deleteSocialEvent = (event: (typeof SOCIAL_EVENTS)[number]) => openConfirm({
+    errorHandled: true,
     action: <>删除真实事件 · #{event.id}</>,
     detail: <>删除后不再推送；已推送的记录仍保留。</>,
     reason: true,

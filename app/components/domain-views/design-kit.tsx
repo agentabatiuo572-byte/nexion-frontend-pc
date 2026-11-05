@@ -674,7 +674,7 @@ export type BusinessFormSpec =
   // 通用多字段配置:一个「调整」按钮 → 一个弹窗里编辑 N 个带标签的值(各值独立 backend-replaceable,
   // 配合 EOp "param-multi" + McSpec.paramKeys 把每字段写到自己的 param key)。
   // ascending=true 时校验 number 字段严格递增(如 分段月界 早末<中末<总月数)。
-  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; onFieldChange?: (key: string, next: BusinessFormValue) => BusinessFormValue; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "datetime-local" | "asset-upload" | "checkbox"; options?: string[]; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; warning?: (value: BusinessFormValue) => string | undefined; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
+  | { kind: "multi-field"; title?: string; hint?: string; feedback?: (value: BusinessFormValue) => { message: string; invalid: boolean }; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; onFieldChange?: (key: string, next: BusinessFormValue) => BusinessFormValue; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "datetime-local" | "asset-upload" | "checkbox"; options?: string[]; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; warning?: (value: BusinessFormValue) => string | undefined; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentIssuanceLimit?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentPopupCadenceEnabled?: string; currentPopupDelayMs?: string; currentPopupCooldownHours?: string; currentPopupMaxPerSession?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
@@ -1470,6 +1470,8 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (![a, g, e].every((n) => Number.isFinite(n) && n >= 0)) missing.push("三档须为非负数");
     else if (a < g || g < e) missing.push("须满额 ≥ 宽限 ≥ 过期");
   } else if (spec.kind === "multi-field") {
+    const feedback = spec.feedback?.(state);
+    if (feedback?.invalid) missing.push(feedback.message);
     const isVisible = (field: (typeof spec.fields)[number]) =>
       !field.visibleWhen || (state[field.visibleWhen.key] ?? "") === field.visibleWhen.equals;
     spec.fields.filter((f) => isVisible(f) && f.required !== false).forEach((f) => needs(f.key, f.label));
@@ -1873,6 +1875,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             </label>
           ))}
         </div>
+        {spec.feedback && <div role="status" className={`tint ${spec.feedback(value).invalid ? "danger" : ""}`} style={{ marginTop: 10 }}>{spec.feedback(value).message}</div>}
         {spec.hint && <div className="tint tiny" style={{ marginTop: 10 }}>{spec.hint}</div>}
       </div>
     );

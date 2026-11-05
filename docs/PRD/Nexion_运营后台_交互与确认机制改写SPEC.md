@@ -100,6 +100,8 @@
 - **成功反馈**:弹窗关闭 + 列表/详情就地更新 + toast 文案要点 + 审计落 A2(引用④审计点)。
 ```
 
+普通确认的确定失败在原弹窗内显示原因，保留输入且不报成功；成功后关闭并更新页面。已由调用方展示的错误不重复提示，结果尚未确认的既有提示与原操作核对路径保留（BUG-257）。
+
 ### 2.2a 业务弹窗契约
 
 弹窗内容必须匹配触发按钮的业务语义。改角色必须有角色选择;改授权必须有权限 diff;编辑文案必须有 en/zh 或对应业务字段;创建课程必须有 title/body/category/duration;提现处置必须有 approve/reject/delay/freeze 业务选项。只有 reason textarea 的 edit/create/repair/role/permission/action 弹窗视为 business-incomplete-modal。纯展示弹窗必须显式 readonly,不得出现可执行主按钮。
