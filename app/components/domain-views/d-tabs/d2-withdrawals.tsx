@@ -59,6 +59,7 @@ type D2UncertainBatch = { action: D2BatchAction; ids: string[]; reason: string; 
 type D2UncertainReview = { withdrawalNo: string; action: D2ReviewAction; reason: string; businessValue?: BusinessFormValue; operator: string };
 type D2PendingCommand = PendingMutationRecord & { batch?: D2UncertainBatch; review?: D2UncertainReview };
 const BATCH_UNKNOWN_COPY = "批量操作结果尚未确认，可能已有部分生效。请在下方重试原操作，不要另建包含相同提现单的批次。";
+const REVIEW_OVERLAP_COPY = "这笔提现包含尚未确认的原操作，请到页面上方提示中点击「重试原操作」。";
 const MOVED_STATE_CODES = ["INVALID_STATE_TRANSITION", "WITHDRAWAL_STATE_CONFLICT", "CREGIS_PAYOUT_ALREADY_DISPATCHED",
   "BANK_PAYOUT_ALREADY_DISPATCHED", "BANK_PAYOUT_RECOVERY_STALE"];
 
@@ -663,7 +664,12 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   const runReview = async (row: D2Withdrawal, action: D2ReviewAction, reason: string, form?: BusinessFormValue) => {
     const scope = reviewScope(row.withdrawalNo, action);
-    const previous = pendingKeys.list().find((record) => record.fingerprint === scope);
+    const records = pendingKeys.list();
+    if (records.some((record) => record.batch?.ids.includes(row.withdrawalNo)
+      || record.review?.withdrawalNo === row.withdrawalNo && record.review.action !== action)) {
+      throw new Error(REVIEW_OVERLAP_COPY);
+    }
+    const previous = records.find((record) => record.fingerprint === scope);
     const previousKey = previous?.commandKey;
     if (previousKey && !previous.review) throw new Error("原操作内容未保存，尚不能安全重试。请先到操作记录核对，原操作编号已保留。");
     const key = previousKey ?? operationKey(scope);
@@ -696,9 +702,14 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   const confirmReview = async (row: D2Withdrawal, action: D2ReviewAction) => {
     const seq = ++reviewConfirmSeq.current;
-    const pending = pendingKeys.list().find((record) => record.review?.withdrawalNo === row.withdrawalNo);
+    const records = pendingKeys.list();
+    if (records.some((record) => record.batch?.ids.includes(row.withdrawalNo))) {
+      toast(REVIEW_OVERLAP_COPY);
+      return;
+    }
+    const pending = records.find((record) => record.review?.withdrawalNo === row.withdrawalNo);
     if (pending?.review && pending.review.action !== action) {
-      toast("这笔提现的原操作结果尚未确认，请先重试原操作。");
+      toast(REVIEW_OVERLAP_COPY);
       return;
     }
     if (!pending && action === "APPROVE" && routingUnavailable(row)) {
