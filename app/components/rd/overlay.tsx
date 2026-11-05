@@ -34,6 +34,7 @@ import { useEffect, useRef, type ComponentProps, type KeyboardEvent, type ReactN
 import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronDown, ChevronUp, X, type LucideIcon } from "lucide-react";
 import { IconButton } from "./button";
+import { Explain } from "./explain";
 import { IconTile } from "./icon-tile";
 import { useRdSurface } from "./surface";
 import type { RoleTone, StateTone } from "./tone";
@@ -90,11 +91,14 @@ export interface DrawerNav {
   hasNext: boolean;
 }
 
-export function Drawer({ open, onClose, title, sub, icon, tone = "role-other", nav, footer, busy = false, wide = false, children, ...rest }: Omit<ComponentProps<typeof Dialog.Content>, "title"> & {
+export function Drawer({ open, onClose, title, sub, explain, icon, tone = "role-other", nav, footer, busy = false, wide = false, children, ...rest }: Omit<ComponentProps<typeof Dialog.Content>, "title"> & {
   open: boolean;
   onClose: () => void;
   title: ReactNode;
+  /** 数据型副标题：单号、编号、状态。 */
   sub?: ReactNode;
+  /** 这个抽屉是什么、要注意什么：收进标题旁的提示图标（DP-06）。 */
+  explain?: ReactNode;
   icon?: LucideIcon;
   tone?: RoleTone | StateTone;
   nav?: DrawerNav;
@@ -139,7 +143,10 @@ export function Drawer({ open, onClose, title, sub, icon, tone = "role-other", n
           <div className="rd-drawer-head">
             {icon && <IconTile tone={tone} icon={icon} size={28} />}
             <div className="rd-drawer-heading" aria-live="polite">
-              <Dialog.Title className="rd-drawer-title">{title}</Dialog.Title>
+              <div className="rd-drawer-title-row">
+                <Dialog.Title className="rd-drawer-title">{title}</Dialog.Title>
+                {explain && <Explain label={`${typeof title === "string" ? title : "这个抽屉"}的说明`} content={explain} />}
+              </div>
               {sub && <div className="rd-drawer-sub">{sub}</div>}
             </div>
             <div className="rd-drawer-tools">
@@ -160,12 +167,18 @@ export function Drawer({ open, onClose, title, sub, icon, tone = "role-other", n
   );
 }
 
-/** 抽屉底部的决定区。危险决定在左，主决定在右，分开放（DP-40）。 */
-export function Decision({ note, danger, others, primary }: { note?: ReactNode; danger?: ReactNode; others?: ReactNode; primary?: ReactNode }) {
+/**
+ * 抽屉底部的决定区。危险决定在左，主决定在右，分开放（DP-40）。
+ * note 只写现在能不能做、为什么不能（阻断原因常显，DP-03）；按下去会怎样、要不要审批这类后果说明传 explain，
+ * 收进提示图标（DP-06）：有 note 时跟在 note 后面，没有时放在按钮行最左。
+ */
+export function Decision({ note, explain, danger, others, primary }: { note?: ReactNode; explain?: ReactNode; danger?: ReactNode; others?: ReactNode; primary?: ReactNode }) {
+  const mark = explain && <Explain label="这些操作会怎样" content={explain} side="top" />;
   return (
     <>
-      {note && <p className="rd-decision-note">{note}</p>}
+      {note && <p className="rd-decision-note">{note}{mark}</p>}
       <div className="rd-decision">
+        {!note && mark}
         {danger}
         <span className="rd-decision-spacer" />
         {others}

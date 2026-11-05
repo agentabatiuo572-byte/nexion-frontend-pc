@@ -1409,10 +1409,13 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     && hasAuthority("finance_d2_withdrawal_approve") && developmentSimulationEligible(shown);
   const approveBlocked = shown && detailActions.includes("APPROVE") ? detailBlockedReason(shown, "APPROVE") : undefined;
   const gateClosedHere = detailActions.includes("APPROVE") && withdrawGate === "closed";
-  const decisionNote = shown && (detailBlockedReason(shown) ?? approveBlocked ?? (gateClosedHere ? "提现已关停，现在放行不会生效。" : detailActions.includes("APPROVE")
-    ? shown.chain === "BANK-VND" ? "点「放行」并确认后立即生效，由 HDPay 打款，付款成功才算完成。" : "点「放行」并确认后立即生效，钱从储备中扣除。"
+  // 常显的只有现在能不能做、为什么不能；放行会怎样收进按钮旁的提示图标（DP-06）。
+  const decisionNote = shown && (detailBlockedReason(shown) ?? approveBlocked ?? (gateClosedHere ? "提现已关停，现在放行不会生效。"
     : detailActions.length || bankRecovery || cregisRecovery ? undefined
       : actionCandidates(shown, cregisDetail).length ? "你没有处理这笔的权限，只能查看。" : "这笔现在没有人工操作。"));
+  const decisionExplain = shown && detailActions.includes("APPROVE") && !gateClosedHere
+    ? shown.chain === "BANK-VND" ? "点「放行」并确认后立即生效，由 HDPay 打款，付款成功才算完成。" : "点「放行」并确认后立即生效，钱从储备中扣除。"
+    : undefined;
 
   const riskTone = shown ? routingPriorityTone(shown) : undefined;
   const coverageBelow = d5 ? d5.coverageRatio < d5.redlinePct : false;
@@ -1470,12 +1473,13 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     <StatBand label="提现汇总">
       <Stat lead tone="role-2" icon={Inbox} label="要处理" value={todoCount ?? "—"} unit={todoCount === undefined ? undefined : "笔"} sub={countsFailed ? "数量暂时读不到" : undefined}
         explain="待审核、冻结、审核拒绝、地址无效、打款失败、打款异常的全部笔数，不随下方筛选变。" />
-      <Stat icon={Flag} iconTone="warn" label="高优先队列" value={resultsUnavailable ? "—" : visibleRows.filter((row) => ["HIGH", "ESCALATED"].includes(routingPriority(row))).length} unit={resultsUnavailable ? undefined : "笔"} sub="本页 · 按风险分自动分配"
-        explain="只算当前页里风险列是「高优先」或「加强审核」的笔数，和金额大小无关。" />
+      <Stat icon={Flag} iconTone="warn" label="高优先队列" value={resultsUnavailable ? "—" : visibleRows.filter((row) => ["HIGH", "ESCALATED"].includes(routingPriority(row))).length} unit={resultsUnavailable ? undefined : "笔"}
+        explain="只算当前页里风险列是「高优先」或「加强审核」的笔数，按风险分自动分配，和金额大小无关。" />
       <Stat tone="role-1" icon={Coins} label="本页金额" value={resultsUnavailable ? "—" : amountText(visibleRows.reduce((sum, row) => sum + row.amount, 0))} unit={resultsUnavailable ? undefined : "USDT"} sub={resultsUnavailable ? undefined : `${visibleRows.length} 笔`}
         explain="只算当前页显示的提现单，不是全部；页里有已退款的单也算在内。" />
       <Stat tone={canReadD5 ? "role-4" : undefined} icon={Gauge} label="每日提现次数上限" value={!canReadD5 ? "无权限" : resultsUnavailable ? "—" : dailyLimit || "—"} unit={canReadD5 && !resultsUnavailable ? "次" : undefined}
-        sub={!canReadD5 ? "用到额度的放行已禁用" : reach("/finance/params", "finance_d5_read") ? <>在<Link className="rd-link" href="/finance/params">「USDT 提现参数」</Link>设置</> : "在「USDT 提现参数」设置"} />
+        sub={!canReadD5 ? "用到额度的放行已禁用" : undefined}
+        explain={!canReadD5 ? undefined : reach("/finance/params", "finance_d5_read") ? <>在<Link className="rd-link" href="/finance/params">「USDT 提现参数」</Link>设置。</> : "在「USDT 提现参数」设置。"} />
     </StatBand>
 
     <FilterBar
@@ -1509,7 +1513,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       <FilterField grow><Input aria-label="提现单 / 用户" placeholder="输入提现单号、用户编号或昵称" value={draft.keyword} onChange={(event) => setDraft({ ...draft, keyword: event.target.value })} /></FilterField>
     </FilterBar>
 
-    <Panel flush icon={FileText} tone="role-1" title={currentGroup ? `${currentGroup.label}的提现` : "全部提现"} sub={canWriteAny && (query.group === "todo" || query.group === "all") ? "可单笔或批量处理" : undefined}
+    <Panel flush icon={FileText} tone="role-1" title={currentGroup ? `${currentGroup.label}的提现` : "全部提现"} explain={canWriteAny && (query.group === "todo" || query.group === "all") ? "可单笔或批量处理" : undefined}
       actions={<>
         {showSelection && <Select aria-label="批量操作" value={batchAction} onChange={(value) => setBatchAction(value as D2BatchAction | "")} placeholder="选择批量操作"
           options={[{ value: "", label: "选择批量操作" }, ...BATCH_ACTIONS.filter((action) => hasAuthority(ACTION_AUTHORITY[action])).map((action) => ({ value: action, label: action === "APPROVE" && !canReadD5 ? `${actionLabel(action)}（无额度权限）` : actionLabel(action), disabled: !availableBatchActions.includes(action) }))]} />}
@@ -1593,7 +1597,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     <Drawer open={Boolean(detail)} onClose={closeDetail} title="单笔详情" icon={Wallet} tone="role-1" busy={!!submitting}
       sub={shown && <>{shown.withdrawalNo} <IconButton aria-label="复制提现单号" data-size="sm" onClick={() => copyNo(shown.withdrawalNo)}><Copy size={13} aria-hidden /></IconButton><StatusTag tone={statusTone(shown.status)} icon={STATUS_ICON[shown.status.toUpperCase()]} explain={STATUS_EXPLAIN[shown.status.toUpperCase()]}>{detailProvider ? cregisStatusLabel(cregisDetail?.state ?? shown.status) : bankStatusLabel(shown)}</StatusTag></>}
       nav={{ hasPrev: Boolean(prevRow), hasNext: Boolean(nextRow), onPrev: () => { if (prevRow) void openDetail(prevRow); }, onNext: () => { if (nextRow) void openDetail(nextRow); } }}
-      footer={shown && <Decision note={decisionNote}
+      footer={shown && <Decision note={decisionNote} explain={decisionExplain}
         danger={detailActions.includes("REJECT") ? decisionButton(shown, "REJECT") : undefined}
         others={<>{(["DELAY", "FREEZE"] as const).filter((action) => detailActions.includes(action)).map((action) => decisionButton(shown, action))}</>}
         primary={<>

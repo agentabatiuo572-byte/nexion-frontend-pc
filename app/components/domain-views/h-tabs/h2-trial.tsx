@@ -250,11 +250,13 @@ function ParamRow({ ctx, param, trialProducts, onChanged, reach, blocked }: {
   return (
     <ConfigRow
       name={<>{name}{isProduct && reach(productHref) && <> <Link className="rd-link rd-config-link" href={productHref} prefetch={false}>去商品管理查看</Link></>}</>}
+      explainLabel={name}
       what={help?.what ?? operatorCopyText(param.sub ?? "")}
       when={when}
       where={help?.where}
+      note={noOtherProduct ? "现在只有这一个可选。要换商品，先到「商品管理与上架条件」给别的在售商品开启「允许试用」" : undefined}
       value={displayCurrent}
-      sub={currentProduct ? `商品编号 ${currentProduct.productNo} · 库存 ${currentProduct.stock ?? 0}${noOtherProduct ? " · 现在只有这一个可选" : ""}` : undefined}
+      sub={currentProduct ? `商品编号 ${currentProduct.productNo} · 库存 ${currentProduct.stock ?? 0}` : undefined}
       action={ctx.can("growth_h2_write") ? (describedBy) => <Button size="sm" aria-label={`调整 ${name}`} aria-describedby={describedBy} disabledReason={blocked ?? (noOtherProduct ? "没有别的可选商品。要换商品，先到「商品管理与上架条件」给别的在售商品开启「允许试用」" : undefined)} onClick={open}>调整</Button> : undefined}
     />
   );
@@ -591,24 +593,26 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           sub={`试用中 ${text(stats.inTrial)} · 宽限 ${text(stats.inGrace)} · 延长 ${text(stats.inExtended)}`}
           explain="试用中、宽限中和已延长的账号数，每个账号只算最近一次试用，不受下方分页影响。" />
         <Stat tone="role-4" icon={TrendingUp} label="试用转购买率" value={text(stats.trialBuyRate)}
-          sub={`提前购买 ${text(stats.earlyBuyRate)}（占已开始试用）`}
+          sub={`提前购买 ${text(stats.earlyBuyRate)}`}
           explain={<>已购买账号 ÷ 全部已开始试用的账号，每个账号只算最近一次。提前购买 = 试用期内买、按提前购买规则结算的账号 ÷ 全部已开始试用的账号。没有分母时显示「—」，表示不可计算，不是 0。绑卡转化 {text(stats.bindCardRate)}：绑卡环节已退役，不再计算。</>} />
         <Stat tone="role-2" icon={Ticket} label="今日实际剩余免费名额" value={seatsKnown ? text(seats?.cur) : "—"} unit={seatsKnown ? "张" : undefined}
           sub={seats?.businessDate && seats.businessDate !== "UNKNOWN" ? `日期 ${seats.businessDate}` : undefined}
           explain="按试用业务日实时读取，和 App 用同一个名额计数。「每日免费名额上限」是配置，这个是领取后的实际剩余。" />
-        <Stat tone="role-other" icon={Ban} label="拦截反复薅试用" value={text(stats.k2Blocked)} unit="人" sub="这些用户已不能再试用"
-          explain="被风控判定为循环试用的用户去重人数。" />
+        <Stat tone="role-other" icon={Ban} label="拦截反复薅试用" value={text(stats.k2Blocked)} unit="人"
+          explain="被风控判定为循环试用的用户去重人数，这些用户已不能再试用。" />
       </StatBand>
 
       <div className="rd-config-layout">
         <div className="rd-config-grid">
           <div className="rd-config-rail">
             <SectionNav label="本页分组" items={sections} nav={nav} />
-            <Panel title="试用邀请弹窗" icon={killed || pushOff ? BellOff : Bell} tone={killed ? "warn" : pushOff ? "done" : "ok"} headingLevel={2}>
-              <div className="rd-push-state">
-                <StatusTag tone={killed ? "warn" : pushOff ? "done" : "ok"}>{killed ? "试用邀请弹窗已关闭" : pushOff ? "自动推送已关" : "开启中"}</StatusTag>
+            <Panel title="试用邀请弹窗" icon={killed || pushOff ? BellOff : Bell} tone={killed ? "warn" : pushOff ? "done" : "ok"} headingLevel={2}
+              explain={<>
                 <p>{killed ? "已紧急关闭，这页不能重新打开。" : "出问题时先关掉它，立即生效。关闭后这页不能重新打开。用户点试用卡领取不受影响。"}</p>
                 <p>App 和 H5 现在不自动弹这个邀请，这里的开关和高级设置「邀请弹窗」这几项暂不影响用户。</p>
+              </>}>
+              <div className="rd-push-state">
+                <StatusTag tone={killed ? "warn" : pushOff ? "done" : "ok"}>{killed ? "试用邀请弹窗已关闭" : pushOff ? "自动推送已关" : "开启中"}</StatusTag>
                 {canWrite && !killed && <Button variant="danger-outline" disabledReason={loading ? READING : undefined} onClick={openPushKill}>紧急关闭试用邀请弹窗</Button>}
               </div>
             </Panel>
@@ -616,11 +620,14 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
 
           <div className="rd-config-groups">
             <div id={nav.anchor("common")}>
-              <Panel title={<span tabIndex={-1} data-section-focus="">常改参数</span>} icon={SlidersHorizontal} tone="role-4" sub="每项写明什么时候生效，改一项存一项">
+              <Panel title={<span tabIndex={-1} data-section-focus="">常改参数</span>} explainLabel="常改参数" icon={SlidersHorizontal} tone="role-4"
+                explain={<>
+                  <p>每项是什么、显示在哪、什么时候生效，看名称旁的提示；改一项存一项。</p>
+                  <p>三种优惠可以叠加：实付 = 售价 − 购买折扣 − 试用收益抵扣 − 提前购买立减，最低 0。提前购买立减只在试用期内有，在高级设置里改。</p>
+                </>}>
                 <ConfigList>
                   {commonParams.map((param) => <ParamRow key={param.key} ctx={ctx} param={param} trialProducts={trialProducts} onChanged={reload} reach={reach} blocked={loading ? READING : undefined} />)}
                 </ConfigList>
-                <p className="rd-config-note">三种优惠可以叠加：实付 = 售价 − 购买折扣 − 试用收益抵扣 − 提前购买立减，最低 0。提前购买立减只在试用期内有，在高级设置里改。</p>
               </Panel>
             </div>
 
@@ -652,8 +659,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
             </div>
 
             <div id={nav.anchor("records")}>
-              <Fold title="试用记录" icon={History} tone="role-3" summary={`共 ${total} 条，平时不用处理`} open={!!folds.records} onOpenChange={(open) => setFolds((state) => ({ ...state, records: open }))}>
-                <p className="rd-config-note">宽限中是正常状态：到期系统自动结束，不扣款，不用处理。{canHandle && "强制取消用于怀疑刷试用等风控介入，强制扣款用于应急结算，平时不用点，都要提交审批。"}</p>
+              <Fold title="试用记录" icon={History} tone="role-3" summary={`共 ${total} 条，平时不用处理`} open={!!folds.records} onOpenChange={(open) => setFolds((state) => ({ ...state, records: open }))}
+                explain={<>宽限中是正常状态：到期系统自动结束，不扣款，不用处理。{canHandle && "强制取消用于怀疑刷试用等风控介入，强制扣款用于应急结算，平时不用点，都要提交审批。"}</>}>
                 <Table label="试用记录">
                   <thead>
                     <tr>
@@ -692,7 +699,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       <Drawer open={!!currentRow} onClose={() => setCurrentSid(null)} title="试用记录" sub={currentRow?.session.sid} icon={History} tone="role-3"
         nav={{ hasPrev: !loading && currentIndex > 0, hasNext: !loading && currentIndex >= 0 && currentIndex < sessions.length - 1, onPrev: () => setCurrentSid(sessions[currentIndex - 1].sid), onNext: () => setCurrentSid(sessions[currentIndex + 1].sid) }}
         footer={currentRow && !currentRow.terminal && canHandle ? (
-          <Decision note="强制取消用于怀疑刷试用等风控介入，强制扣款用于应急结算。两个都要提交审批，超级管理员批准后才执行。" danger={sessionButtons(currentRow, "drawer").charge} others={sessionButtons(currentRow, "drawer").cancel} />
+          <Decision explain="强制取消用于怀疑刷试用等风控介入，强制扣款用于应急结算。两个都要提交审批，超级管理员批准后才执行。" danger={sessionButtons(currentRow, "drawer").charge} others={sessionButtons(currentRow, "drawer").cancel} />
         ) : undefined}>
         {currentRow && (
           <>
