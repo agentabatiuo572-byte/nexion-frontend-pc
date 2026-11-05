@@ -12,10 +12,11 @@ import Link from "next/link";
 import { ArrowLeftRight, CalendarClock, Coins, Gem, Landmark, Layers, ListChecks, Power, RefreshCw, ScrollText, ShieldAlert, ShieldCheck, SlidersHorizontal, Siren, Ticket, Zap, type LucideIcon } from "lucide-react";
 import { BatchBar, BlockState, Button, Cell, Checkbox, Conclusion, ConfigList, ConfigRow, ControlCard, ControlGrid, Explain, Fact, Facts, Figure, Fold, Modal, Notice, PageHeader, Panel, Stat, StatBand, StatusTag, Table, Td, Th, TierBand, Tr } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { businessClock, businessZone } from "@/lib/admin/business-time";
+import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { createJEmergencyCommandKey, isEmergencyOutcomeUncertain } from "@/lib/admin/j-client";
 import type { AutoConfirmationRow, AutoRuleRow, EmergencySlaRow, JGate } from "@/lib/admin/j-client";
+import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useReach } from "@/lib/nav/use-reach";
@@ -151,7 +152,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           toast("结果未确认，不要重复操作。到页面上方读回核对或按原操作重试。");
           return;
         }
-        toast(`操作未完成 · ${cause instanceof Error ? displayAdminError(cause) : "请稍后重试"}`);
+        // 权限层的 403 由确认框提示并关框（OP-132）。
+        if (!isPermissionDenied(cause)) toast(`操作未完成 · ${cause instanceof Error ? displayAdminError(cause) : "请稍后重试"}`);
         throw cause;
       }
       pendingKeys.forget(scope);
@@ -215,7 +217,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           <Button size="sm" disabled={!expired && !!submitting} disabledReason={expired ? EXPIRED : undefined} onClick={() => void retryPending(record)}>按原操作重试</Button>
           {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除待确认</Button>}
         </>}>
-        {businessClock(record.createdAt)}（{businessZone().label}）发出，{expired ? `${EXPIRED}。` : "可能已经生效。重发原内容，已成功的不会重复执行。"}
+        {expired ? formatBusinessTimeCompact(new Date(record.createdAt).toISOString()) : businessClock(record.createdAt)}（{businessZone().label}）发出，{expired ? `${EXPIRED}。` : "可能已经生效。重发原内容，已成功的不会重复执行。"}
         {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href="/platform/audit?domain=J">到操作记录核查</Link></>}
         <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 理由 ${record.reason}`} />
         {pendingNotes[record.fingerprint] && <div>{pendingNotes[record.fingerprint]}</div>}
