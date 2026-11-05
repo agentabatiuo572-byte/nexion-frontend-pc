@@ -6,7 +6,7 @@ import { businessZone, parseBusinessTime } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TabGroup } from "@/app/components/kit/tab-group";
-import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { bankEvidenceLabels, bankEvidenceTime } from "@/lib/admin/bank-payout-evidence";
 import {
@@ -56,6 +56,7 @@ const ACTION_AUTHORITY: Record<D2ReviewAction, string> = {
 const BATCH_ACTIONS = ["APPROVE", "REJECT", "DELAY", "FREEZE"] as const;
 type D2BatchAction = (typeof BATCH_ACTIONS)[number];
 type D2UncertainBatch = { action: D2BatchAction; ids: string[]; reason: string; businessValue?: BusinessFormValue };
+type D2PendingCommand = PendingMutationRecord & { batch?: D2UncertainBatch };
 const BATCH_UNKNOWN_COPY = "批量操作结果尚未确认，可能已有部分生效。请勿改变勾选或新建批次；核对后重试原操作。";
 
 function money(value: number) {
@@ -456,14 +457,31 @@ function operationKey(scope: string) {
 
 /** 逐笔审核与批量审核共用一张表,靠 fingerprint 前缀分命名空间;刷新后仍能用同一命令号重试,
  *  避免运营在「结果未知」后重铸命令号导致重复放行 / 重复退款。 */
-const pendingKeys = createPendingMutationStore({
+const pendingKeys = createPendingMutationStore<D2PendingCommand>({
   storageKey: "nexion-admin-d2-withdrawal-commands-v1",
+  isValidRecord: (record) => {
+    if (record.batch === undefined) return true;
+    const batch = record.batch;
+    return !!batch && typeof batch === "object"
+      && BATCH_ACTIONS.includes(batch.action)
+      && Array.isArray(batch.ids) && batch.ids.length > 0
+      && batch.ids.every((id) => typeof id === "string" && id.length > 0)
+      && typeof batch.reason === "string"
+      && (batch.businessValue === undefined || !!batch.businessValue && typeof batch.businessValue === "object"
+        && !Array.isArray(batch.businessValue) && Object.values(batch.businessValue).every((value) => typeof value === "string"))
+      && record.fingerprint === batchScope(batch.action, batch.ids);
+  },
 });
 /** 目标对象 id = 提现单号;动作类型 = APPROVE/REJECT/… —— 两者都进指纹,不同单不同动作不撞 key。 */
 const reviewScope = (withdrawalNo: string, action: D2ReviewAction) => `review|${withdrawalNo}|${action}`;
 /** 批量的目标对象 = 本次提交的提现单号集合(排序后),动作类型同上。 */
 const batchScope = (action: D2BatchAction, ids: string[]) => `batch|${action}|${[...ids].sort().join(",")}`;
 const developmentSimulationScope = (withdrawalNo: string) => `simulate-due|${withdrawalNo}`;
+
+function retryBlockedByAccess(cause: unknown, previousKey: string | undefined) {
+  return !!previousKey && cause instanceof DRequestError
+    && [cause.status, cause.code].some((status) => status === 401 || status === 403);
+}
 
 function developmentSimulationEligible(row: D2Withdrawal) {
   return row.status.toUpperCase() === "EXTENDED_HOLD"
@@ -503,6 +521,9 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   // 无默认动作：必须由运营显式选择后才可提交；但允许先勾选，再选动作。
   const [batchAction, setBatchAction] = useState<D2BatchAction | "">("");
   const [uncertainBatches, setUncertainBatches] = useState<D2UncertainBatch[]>([]);
+  useEffect(() => {
+    setUncertainBatches(pendingKeys.list().flatMap((record) => record.batch ? [record.batch] : []));
+  }, []);
   const [detail, setDetail] = useState<D2Withdrawal | null>(null);
   const [bankDetail, setBankDetail] = useState<D2BankPayout | null>(null);
   const [cregisDetail, setCregisDetail] = useState<D2CregisPayout | null>(null);
@@ -636,7 +657,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   const runReview = async (row: D2Withdrawal, action: D2ReviewAction, reason: string, form?: BusinessFormValue) => {
     const scope = reviewScope(row.withdrawalNo, action);
-    const key = pendingKeys.get(scope) ?? operationKey(scope);
+    const previousKey = pendingKeys.get(scope);
+    const key = previousKey ?? operationKey(scope);
     pendingKeys.remember(scope, key);
     setSubmitting(scope);
     try {
@@ -650,7 +672,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       //   4xx 被驳回后运营会改输入重提,若还留着旧号 = 同号不同载荷 → 后端判载荷不符 →
       //   这张单子的这个动作 24h 内做不了,界面还没有清除入口。
       //   结果未知则必须保号 —— 丢了重试就是铸新号 = 重复出金。
-      if (!isDOutcomeUnknownError(cause)) pendingKeys.forget(scope);
+      // 已有编号的登录／权限拦截没有查到原操作结果，也必须保号。
+      if (!isDOutcomeUnknownError(cause) && !retryBlockedByAccess(cause, previousKey)) pendingKeys.forget(scope);
       return await handleWriteFailure(cause);
     } finally {
       setSubmitting("");
@@ -831,8 +854,10 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   const runBatch = async (action: D2BatchAction, ids: string[], reason: string, businessValue?: BusinessFormValue) => {
     const scope = batchScope(action, ids);
-    const key = pendingKeys.get(scope) ?? operationKey(scope);
-    pendingKeys.remember(scope, key);
+    const previous = pendingKeys.list().find((record) => record.fingerprint === scope);
+    const key = previous?.commandKey ?? operationKey(scope);
+    const originalBatch = previous?.batch ?? { action, ids, reason, businessValue };
+    pendingKeys.remember(scope, key, { batch: originalBatch });
     setSubmitting(scope);
     try {
       const result: D2BatchResult = await reviewD2WithdrawalsBatch(action, ids, { ...businessInput(businessValue), reason }, OPERATOR(), key);
@@ -841,10 +866,10 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       toast(`批次 ${result.batchId}：成功 ${result.accepted.length} 笔 / 大额转人工 ${result.rejected.length} 笔 / 状态已变化 ${result.conflicts.length} 笔`);
       await load();
     } catch (cause) {
-      if (isDOutcomeUnknownError(cause)) {
+      if (isDOutcomeUnknownError(cause) || retryBlockedByAccess(cause, previous?.commandKey)) {
         setUncertainBatches((current) => [
           ...current.filter((batch) => batchScope(batch.action, batch.ids) !== scope),
-          { action, ids, reason, businessValue },
+          originalBatch,
         ]);
       } else {
         pendingKeys.forget(scope);

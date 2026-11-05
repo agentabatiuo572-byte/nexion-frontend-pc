@@ -692,7 +692,9 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
     // 🔴 运营看到的话术必须与命令号去留同口径(2026-08-06 第三轮验收 P1-6)。
     //   先前只认 unknown 头:5xx 时命令号已经保住了,提示却仍说「失败」——运营据此重勾一批重试,
     //   而 D2 批量的指纹含 ids,换一批 ids 就是新指纹新号,已放行的那部分会**重复放行**。
-    if (commandKey && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
+    if (commandKey && (result?.message === "IDEMPOTENCY_REQUEST_IN_PROGRESS"
+      || result?.message === "IDEMPOTENCY_RESULT_UNKNOWN"
+      || response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
       || outcomeStaysUnknown(response.status, result?.code))) {
       throw new DOutcomeUnknownError(commandKey);
     }
