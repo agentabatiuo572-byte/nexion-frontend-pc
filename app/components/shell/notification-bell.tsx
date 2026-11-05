@@ -60,6 +60,9 @@ function operationDetail(row: A2OperationRow) {
   return `${row.obj} · ${delta}`;
 }
 
+/** 铃铛的目标里默认读权表没有的两页。其余目标按表判断。 */
+const ALERT_READ: Record<string, string> = { "/emergency/geo-block": "emergency_j2_read", "/users/actions": "user_c2_read" };
+
 /** 告警不能隐藏（DP-03）：目标页进不去时这一行照样显示，只是不能点（X03）。 */
 function AlertRow({ href, tone, onClose, children }: { href?: string; tone?: string; onClose: () => void; children: ReactNode }) {
   return href
@@ -222,14 +225,15 @@ function NotificationDrawer({
         {alerts.length === 0 && <div className="rd-alert-empty">{alertsLoading ? "正在读取告警…" : "现在没有要处理的告警。"}</div>}
         {alerts.map((a) => {
           const lv = LEVEL[a.level];
+          const reachable = reach(a.href, ALERT_READ[a.href]);
           return (
-            <AlertRow key={a.id} href={reach(a.href) ? a.href : undefined} tone={lv.tone} onClose={onClose}>
+            <AlertRow key={a.id} href={reachable ? a.href : undefined} tone={lv.tone} onClose={onClose}>
               <AlertTriangle className="rd-alert-icon" size={14} aria-hidden />
               <span className="min-w-0 flex-1">
                 <span className="rd-alert-text">{a.text}</span>
                 <span className="rd-alert-level">{lv.label}</span>
               </span>
-              {reach(a.href) && <ChevronRight className="rd-alert-go" size={14} aria-hidden />}
+              {reachable && <ChevronRight className="rd-alert-go" size={14} aria-hidden />}
             </AlertRow>
           );
         })}
