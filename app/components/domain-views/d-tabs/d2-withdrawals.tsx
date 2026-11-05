@@ -280,8 +280,8 @@ function lifecycleSummary(row: D2Withdrawal) {
   if (reason !== "—") return reason;
   if (["EXTENDED_HOLD", "DELAYED"].includes(row.status.toUpperCase())) return "等待复查时间，到期后系统自动转回待审核";
   if (row.status.toUpperCase() === "FROZEN") return "资金已冻结，需有权限的人核实后解冻";
-  // 解冻后后端清空原因（BUG-292），1000 起都要人工审核，按这条写回来。
-  if (["REVIEW_PENDING", "REVIEWING"].includes(row.status.toUpperCase()) && row.amount >= 1000) return FAILURE_REASON_LABELS.A3_STRONG_REVIEW_THRESHOLD;
+  // 旧单解冻时后端清空过原因（BUG-292），门槛由后端判定，按这条写回来。
+  if (["REVIEW_PENDING", "REVIEWING"].includes(row.status.toUpperCase()) && row.addressVerificationRequired) return FAILURE_REASON_LABELS.A3_STRONG_REVIEW_THRESHOLD;
   return STATUS_EXPLAIN[row.status.toUpperCase()]?.split("。")[0] ?? "正常处理中";
 }
 
