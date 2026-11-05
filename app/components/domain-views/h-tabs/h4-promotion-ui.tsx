@@ -117,7 +117,7 @@ export function Dialog({ title, children, onClose, footer, wide = false }: {
     return <dialog ref={ref} className={wide ? 'wide-dialog' : ''} aria-labelledby={id} onCancel={e => { e.preventDefault(); onClose(); }}><div className="dialog-head"><h2 id={id}>{title}</h2><button className="close" aria-label="关闭弹窗" onClick={onClose}>×</button></div><div className="dialog-body">{children}</div><div className="dialog-foot">{footer || <Button onClick={onClose}>返回</Button>}</div></dialog>;
 }
 export const PROMOTION_COMMAND_PERMISSIONS: Record<string, string> = {createPromotion: 'edit', saveDraft: 'edit', copyPromotion: 'edit', createDraftVersion: 'edit', submitPromotion: 'submit', withdrawPromotion: 'submit', approvePromotion: 'approve', rejectPromotion: 'approve', publishPromotion: 'publish', pausePromotion: 'pause', resumePromotion: 'pause', endPromotion: 'end', archivePromotion: 'archive', deletePromotion: 'archive', retryReward: 'reward_retry', reconcileReward: 'reward_reconcile', cancelReward: 'reward_cancel', reverseReward: 'reward_reverse', resolveReward: 'reward_resolve', createExport: 'metrics_export', createPolicy: 'policy_write', approvePolicy: 'policy_approve', revokePolicy: 'policy_approve'};
-export function ConfirmCommand({ title, intent, body, children, onClose, onSuccess, onReload, writeAllowed, evidenceOptions = [], requireEvidence = false, evidenceMode = 'upload' }: {
+export function ConfirmCommand({ title, intent, body, children, onClose, onSuccess, onReload, onVersionConflict, writeAllowed, evidenceOptions = [], requireEvidence = false, evidenceMode = 'upload' }: {
     title: string;
     intent: Omit<PromotionCommandIntent, 'body'>;
     body: Record<string, unknown>;
@@ -125,6 +125,7 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
     onClose: () => void;
     onSuccess: (result: CommandReceipt) => void | Promise<void>;
     onReload?: () => Promise<string>;
+    onVersionConflict?: () => void;
     writeAllowed: boolean;
     evidenceOptions?: Array<{
         value: string;
@@ -145,7 +146,10 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
     }
     catch (e) {
         setError(e);
-        if (onReload && e instanceof PromotionApiError && /REVISION|VERSION_CONFLICT|CONCURRENT_CHANGE/.test(e.reasonCode || '')) setReloadNeeded(true);
+        if (e instanceof PromotionApiError && /REVISION|VERSION_CONFLICT|CONCURRENT_CHANGE|VERSION_NOT_CURRENT|VERSION_STATE_INVALID/.test(e.reasonCode || '')) {
+            if (onVersionConflict) onVersionConflict();
+            else if (onReload) setReloadNeeded(true);
+        }
     }
     finally {
         setBusy(false);
