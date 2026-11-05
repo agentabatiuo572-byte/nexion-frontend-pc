@@ -58,3 +58,15 @@ export function isIdempotencyOutcomeOpen(message?: string | null): boolean {
 export function outcomeStaysUnknown(status: number, apiCode?: number | null): boolean {
   return !isDeterministicRejection(status, apiCode);
 }
+
+/**
+ * 写请求结果未知:页面据此转成待确认,不当失败处理(OP-91)。消息和普通 Error 一样可直接显示。
+ * 给没有自带「结果未知」错误类型的 client 用(I 域内容、法律条款、公开内容)。
+ */
+export class OutcomeUnknownError extends Error {
+  readonly outcomeUnknown = true;
+}
+
+export function isOutcomeUnknownError(error: unknown): error is OutcomeUnknownError {
+  return error instanceof OutcomeUnknownError;
+}

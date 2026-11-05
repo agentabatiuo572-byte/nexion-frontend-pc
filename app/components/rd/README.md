@@ -46,6 +46,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 行操作放不下 | `MoreMenu` | `menu.tsx` |
 | 查询区 | `FilterBar`、`FilterField`、`Input` | `filter-bar.tsx` |
 | 多行输入 | `Textarea`，放进 `Field` | `filter-bar.tsx` |
+| 中、越、英三语正文 | `LocaleTabs`，切语言不动其他语言的内容，缺内容的页签写「缺失」 | `locale-tabs.tsx` |
 | 下拉、排序 | `Select` | `select.tsx` |
 | 单条详情、长表单 | `Drawer`，底部用 `Decision` | `overlay.tsx` |
 | 详情开头 3～5 行 | `JudgmentPoints` | `judgment.tsx` |

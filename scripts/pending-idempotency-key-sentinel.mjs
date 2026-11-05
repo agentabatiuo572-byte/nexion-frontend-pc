@@ -94,6 +94,8 @@ const MIGRATED = [
   "lib/admin/f2-activation-attempt.ts",
   "app/components/domain-views/i-tabs/i3-campaign.tsx",
   "app/components/domain-views/i-tabs/i4-trust.tsx",
+  // I5 三个页签的写入路：结果未知时保留完整原操作，刷新后仍能原样重试。
+  "app/components/domain-views/i-tabs/i5-writes.tsx",
   "app/components/domain-views/j-tabs/j3-tamper.tsx",
   "app/components/domain-views/k-tabs/k1-multiaccount.tsx",
   "app/components/domain-views/k-tabs/k2-arbitrage.tsx",

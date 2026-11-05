@@ -17,6 +17,7 @@ export { IconTile } from "./icon-tile";
 export { JudgmentPoints, type JudgmentRow } from "./judgment";
 export { KeyValues, type KeyValueRow } from "./key-values";
 export { LevelList } from "./level-list";
+export { LocaleTabs } from "./locale-tabs";
 export { MoreMenu, type MoreMenuItem } from "./menu";
 export { NumberInput } from "./number-input";
 export { Decision, Drawer, Modal, type DrawerNav } from "./overlay";
