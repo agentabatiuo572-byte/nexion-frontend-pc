@@ -581,7 +581,7 @@ export function D3Treasury() {
       title="资金储备与应付款"
       summary="看平台的钱够不够付，要不要补储备。"
       meta={tab ? <>{asOf ? `统计时间：${timeText(asOf)} · ` : ""}打开时读取 <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={refresh}>刷新</Button></> : undefined}
-      readOnly={canInject || !tab ? undefined : "你只能查看；登记储备注入需财务负责人。"}
+      readOnly={canInject || !tab ? undefined : "你只能查看；登记储备注入需财务主管。"}
       actions={(
         <>
           {canExportReconciliation && <Button icon={<Download size={14} aria-hidden />} disabledReason={exportBlocked("reconciliation")} onClick={() => exportCsv("reconciliation")}>导出对账 CSV</Button>}

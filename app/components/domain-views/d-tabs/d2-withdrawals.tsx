@@ -466,11 +466,11 @@ function routingUnavailable(row: D2Withdrawal) {
  * 批量可执行判定 —— 勾选框禁用态与真正提交的 ids 共用这一处判定(两套判定必然漂移)。
  * 未选择动作时允许先勾选具备任一可用批量动作的行；真正提交时仍按已选动作再次收窄。
  */
-function batchSelectable(row: D2Withdrawal, action: D2BatchAction | "", allowedActions: readonly D2BatchAction[]) {
+function batchSelectable(row: D2Withdrawal, action: D2BatchAction | "", allowedActions: readonly D2BatchAction[], largeLocked: (row: D2Withdrawal) => boolean) {
   const candidates = action ? [action] : allowedActions;
   return candidates.some((candidate) => allowedActions.includes(candidate)
     && actionCandidates(row).includes(candidate)
-    && !(candidate === "APPROVE" && (routingUnavailable(row) || row.chain === "BANK-VND")));
+    && !(candidate === "APPROVE" && (routingUnavailable(row) || row.chain === "BANK-VND" || largeLocked(row))));
 }
 
 /**
@@ -478,8 +478,8 @@ function batchSelectable(row: D2Withdrawal, action: D2BatchAction | "", allowedA
  * 「已选 N 笔」、批量按钮禁用态、确认弹窗笔数、真正提交的 ids 全部由这一处派生 ——
  * 否则前端筛选把行藏起来后,selected 里的隐藏行仍会被提交(运营看到 3 笔、实际提交 10 笔)。
  */
-function batchTargets(visible: D2Withdrawal[], selectedIds: Set<string>, action: D2BatchAction | "", allowedActions: readonly D2BatchAction[]) {
-  return visible.filter((row) => selectedIds.has(row.withdrawalNo) && batchSelectable(row, action, allowedActions));
+function batchTargets(visible: D2Withdrawal[], selectedIds: Set<string>, action: D2BatchAction | "", allowedActions: readonly D2BatchAction[], largeLocked: (row: D2Withdrawal) => boolean) {
+  return visible.filter((row) => selectedIds.has(row.withdrawalNo) && batchSelectable(row, action, allowedActions, largeLocked));
 }
 
 /** 确认框的影响和提交前检查，写这个操作的真实影响（OP-51、OP-53）。 */
@@ -496,7 +496,7 @@ const REVIEW_BRIEF: Record<D2ReviewAction, { impact: string; check: string }> = 
 const REVIEW_UNDO: Record<D2ReviewAction, string> = {
   APPROVE: "打款前可以冻结，打款后不能撤销",
   DELAY: "到复查时间前不能改，到时间自动回到待审核",
-  FREEZE: "财务负责人或风控主管可以解冻，解冻后回到待审核",
+  FREEZE: "财务主管或风控主管可以解冻，解冻后回到待审核",
   UNFREEZE: "回到待审核后可以重新决定",
   REJECT: "不能撤销",
   REFUND: "不能撤销",
@@ -510,12 +510,12 @@ const REVIEW_TIME_EXPLAIN: Partial<Record<D2ReviewAction, string>> = {
 
 /** 谁能处理：按角色权限种子和后端的角色校验写（B9）。 */
 const ACTION_ROLE: Record<D2ReviewAction, string> = {
-  APPROVE: "财务或财务负责人",
-  DELAY: "财务、财务负责人、风控或风控主管",
-  REJECT: "财务、财务负责人、风控或风控主管",
-  FREEZE: "财务负责人或风控主管",
-  UNFREEZE: "财务负责人或风控主管",
-  REFUND: "财务负责人",
+  APPROVE: "财务或财务主管",
+  DELAY: "财务、财务主管、风控或风控主管",
+  REJECT: "财务、财务主管、风控或风控主管",
+  FREEZE: "财务主管或风控主管",
+  UNFREEZE: "财务主管或风控主管",
+  REFUND: "财务主管",
 };
 
 /** 延迟、冻结的时间校验，不过就不能提交。后端按同一规则拒绝（WITHDRAWAL_DELAY_LIFECYCLE_REQUIRED）。 */
@@ -832,6 +832,7 @@ function chainText(row: D2Withdrawal) {
 }
 
 const BANK_BLOCK = "收款账户暂不能审核放行，原因见详情里的「HDPay 银行打款」。";
+const LARGE_BLOCK = "这笔达到大额门槛，要财务主管放行";
 
 function shortAddress(value: string) {
   return value.length > 14 ? `${value.slice(0, 6)}…${value.slice(-4)}` : value;
@@ -911,6 +912,9 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const reach = useReach();
   // Q-16：没有 D5 读权时列表照常，额度写无权限，用到额度的决定禁用。读取失败不算这种情况，仍然全部暂停。
   const canReadD5 = hasAuthority("finance_d5_read");
+  // 达到大额门槛的放行，后端只认财务主管和超管（isD2RoleAllowed），其他账号提交必被拒，入口直接禁用。
+  const canApproveLarge = ["FINANCE_LEAD", "superadmin"].includes(session?.role ?? "");
+  const largeLocked = (row: D2Withdrawal) => !canApproveLarge && row.addressVerificationRequired === true;
   const canBatch = hasAuthority("finance_d2_withdrawal_batch");
   const availableBatchActions = BATCH_ACTIONS.filter((action) => hasAuthority(ACTION_AUTHORITY[action]) && (action !== "APPROVE" || canReadD5));
   const showSelection = canBatch && availableBatchActions.length > 0;
@@ -1005,13 +1009,13 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   // 结果未确认的单不能再进批量，否则换集合重发可能重复放行（OP-107）。
   const batchableRows = useMemo(() => visibleRows.filter((row) => !pendingNos.has(row.withdrawalNo)), [visibleRows, pendingNos]);
   const selectedRows = useMemo(
-    () => batchTargets(batchableRows, selected, "", availableBatchActions),
+    () => batchTargets(batchableRows, selected, "", availableBatchActions, largeLocked),
     // authorities only changes with the authenticated session; keeping the derived action list explicit avoids hidden defaults.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [batchableRows, selected, authorities],
   );
   const submittableRows = useMemo(
-    () => batchTargets(batchableRows, selected, batchAction, availableBatchActions),
+    () => batchTargets(batchableRows, selected, batchAction, availableBatchActions, largeLocked),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [batchableRows, selected, batchAction, authorities],
   );
@@ -1020,7 +1024,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   useEffect(() => {
     setSelected((current) => {
       if (current.size === 0) return current;
-      const kept = batchTargets(batchableRows, current, "", availableBatchActions).map((row) => row.withdrawalNo);
+      const kept = batchTargets(batchableRows, current, "", availableBatchActions, largeLocked).map((row) => row.withdrawalNo);
       return kept.length === current.size ? current : new Set(kept);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1102,6 +1106,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         return;
       }
       addressVerificationRequired = latest.addressVerificationRequired;
+      if (addressVerificationRequired && !canApproveLarge) { toast(LARGE_BLOCK); return; }
     }
     openActionConfirm(reviewRequest(row, action, addressVerificationRequired));
   };
@@ -1286,7 +1291,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const setGroup = (group: D2Group) => setQuery((current) => ({ ...current, group, status: "", page: 1 }));
   const setStatus = (status: string) => setQuery((current) => ({ ...current, status, page: 1 }));
 
-  const selectableVisibleRows = batchableRows.filter((row) => batchSelectable(row, batchAction, availableBatchActions));
+  const selectableVisibleRows = batchableRows.filter((row) => batchSelectable(row, batchAction, availableBatchActions, largeLocked));
   const allVisibleSelected = selectableVisibleRows.length > 0
     && selectableVisibleRows.every((row) => selected.has(row.withdrawalNo));
   const toggleVisibleSelection = (checked: boolean) => {
@@ -1312,8 +1317,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     "批量审核失败",
   );
 
-  const confirmBatch = async () => {
-    const seq = ++reviewConfirmSeq.current;
+  const confirmBatch = () => {
     const action = batchAction;
     if (!action) { toast("请先选择批量操作，再勾选提现单"); return; }
     // 只提交「当前筛选结果里真正可执行」的行；弹窗里报的笔数与下面 run 提交的是同一个 ids。
@@ -1322,14 +1326,9 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     if (ids.length === 0) { toast("当前没有可以执行这个操作的提现单"); return; }
     const excluded = selectedRows.length - ids.length;
     const approve = action === "APPROVE";
-    // 大额门槛在后端配置里，列表不带，读一笔详情拿。读不到就不写数字，后端照样把大额转人工。
-    let threshold: number | null = null;
-    if (approve) {
-      const sample = await fetchD2WithdrawalDetail(ids[0]).catch(() => null);
-      if (seq !== reviewConfirmSeq.current) return;
-      threshold = sample?.strongReviewThresholdUsdt ?? null;
-    }
-    const manual = threshold === null ? [] : targets.filter((row) => row.amount >= (threshold as number));
+    // 门槛读不到时不写数字，后端照样把大额转人工。
+    const threshold = targets[0].strongReviewThresholdUsdt;
+    const manual = targets.filter((row) => row.addressVerificationRequired === true);
     const manualText = !approve ? undefined : threshold === null ? "大额会转单笔人工审核，不会批量放行" : manual.length ? `其中 ${manual.length} 笔达到 ${amountText(threshold)} USDT，转单笔人工审核，不会批量放行` : undefined;
     const batchImpact = REVIEW_BRIEF[action].impact.replace("这笔提现", "这些提现").replace("这笔", "这些单");
     openActionConfirm({ briefKind: "funds",
@@ -1420,6 +1419,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     if (!writesEnabled) return "列表读取失败，已暂停操作，请先重试";
     if (action === "APPROVE" && routingUnavailable(row)) return "风险分暂时算不出来，暂不能放行";
     if (action === "APPROVE" && !canReadD5) return "你没有「USDT 提现参数」的查看权限，读不到额度和覆盖率，不能放行";
+    if (action === "APPROVE" && largeLocked(row)) return LARGE_BLOCK;
     if (action === "APPROVE" && approveGateReason) return approveGateReason;
     if (action === "APPROVE" && bankDetail?.withdrawalNo === row.withdrawalNo && bankDetail.beneficiaryEligibility?.canWithdraw !== true) return BANK_BLOCK;
     return undefined;
@@ -1594,7 +1594,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       </>}>
       {showSelection && (batchAction || selected.size > 0) && (
         <BatchBar summary={`已勾选 ${selectedRows.length} 笔${batchAction ? ` · 可执行 ${submittableRows.length} 笔` : ""}`} hint={!batchAction ? "先选操作，再勾选提现单" : "不符合这个操作的提现单不会被提交"}>
-          <Button variant="primary" disabled={!writesEnabled || !batchAction || submittableRows.length === 0 || !!submitting} disabledReason={batchAction === "APPROVE" ? approveGateReason : undefined} onClick={() => void confirmBatch()}>批量执行</Button>
+          <Button variant="primary" disabled={!writesEnabled || !batchAction || submittableRows.length === 0 || !!submitting} disabledReason={batchAction === "APPROVE" ? approveGateReason : undefined} onClick={confirmBatch}>批量执行</Button>
         </BatchBar>
       )}
       <Table label="提现单列表" aria-busy={loading}>
@@ -1624,13 +1624,15 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
                   : visibleRows.map((row) => {
                     const selectedNow = selected.has(row.withdrawalNo);
                     const pendingRow = pendingNos.has(row.withdrawalNo);
-                    const anyBatchAction = !pendingRow && batchSelectable(row, "", availableBatchActions);
-                    const selectable = !pendingRow && batchSelectable(row, batchAction, availableBatchActions);
+                    const anyBatchAction = !pendingRow && batchSelectable(row, "", availableBatchActions, largeLocked);
+                    const selectable = !pendingRow && batchSelectable(row, batchAction, availableBatchActions, largeLocked);
                     const selectionHint = pendingRow
                       ? "这笔有结果未确认的操作，不能批量处理"
                       : !anyBatchAction
                         ? actionCandidates(row).length ? "这个状态不能批量处理，打开详情单独处理" : "这个状态不用人工处理"
-                        : batchAction && !selectable
+                        : batchAction === "APPROVE" && largeLocked(row)
+                          ? LARGE_BLOCK
+                          : batchAction && !selectable
                           ? `「${actionLabel(batchAction)}」不适用于这个状态`
                           : "选择这笔提现";
                     const selectionNote = pendingRow || selectable || !anyBatchAction ? "" : "当前动作不适用 · ";
