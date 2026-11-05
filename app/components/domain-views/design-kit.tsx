@@ -2343,6 +2343,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
 
   if (spec.kind === "version-authoring") {
     const jurisdictionLabels = Object.fromEntries((spec.jurisdictionOptions ?? []).map((item) => [item.value, item.label]));
+    const englishRequirement = value.languageScope?.includes("en") ? "必填" : "选填";
     return (
       <div className="field" data-business-form="version-authoring">
         <span className="bf-legend">新建 / 编辑披露草稿</span>
@@ -2363,7 +2364,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
           {textArea("zh", "中文版本正文", "填写中文条款/披露正文", 4)}
           {textArea("vi", "越南语版本正文", "Nhập nội dung công bố bằng tiếng Việt", 4)}
-          {textArea("en", "英语版本正文（选择三语时必填）", "Fill English disclosure body", 4)}
+          {textArea("en", `英语版本正文（${englishRequirement}）`, "Fill English disclosure body", 4)}
         </div>
         <div style={{ marginTop: 12 }}>
           <span className="bf-legend">章节内容（共 7 章）</span>
@@ -2372,10 +2373,10 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             <div className="grid g-3" style={{ gap: 8, marginTop: 8 }}>
               {input(`chapter.${index}.zhTitle`, "中文标题", "请输入中文标题")}
               {input(`chapter.${index}.viTitle`, "越南语标题", "Nhập tiêu đề tiếng Việt")}
-              {input(`chapter.${index}.enTitle`, "英语标题（可选）", "English title")}
+              {input(`chapter.${index}.enTitle`, `英语标题（${englishRequirement}）`, "English title")}
               {textArea(`chapter.${index}.zhBody`, "中文正文", "请输入中文正文", 3)}
               {textArea(`chapter.${index}.viBody`, "越南语正文", "Nhập nội dung tiếng Việt", 3)}
-              {textArea(`chapter.${index}.enBody`, "英语正文（可选）", "English body", 3)}
+              {textArea(`chapter.${index}.enBody`, `英语正文（${englishRequirement}）`, "English body", 3)}
             </div>
           </div>)}
         </div>
