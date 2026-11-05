@@ -50,6 +50,7 @@ export function G3MarketConfirm({ session, epoch, requested, onClose, onDone }: 
   }
 
   return <OperationConfirmModal
+    briefKind="config"
     action={title}
     detail={<>
       当前 {before}{unit}。{schedule ? <>填写运行时间与时区，例如「每日 08:30 Asia/Shanghai 自动推进」（北京时间 08:30）。未填时区按 UTC。</> : <>降低继续直接保存。{change.action === "current-price" ? "保存后立即发布，下次自动切换仍按计划执行。" : timing}</>}
@@ -63,7 +64,7 @@ export function G3MarketConfirm({ session, epoch, requested, onClose, onDone }: 
     reasonMin={8}
     reasonMax={200}
     getPendingReason={() => pendingG3MarketCommand(session.adminId, requested)?.reason}
-    completionCopy={schedule ? timing : undefined}
+    completionCopy={change.action === "current-price" ? "降低后立即发布新价格，下次自动切换仍按计划执行。" : timing}
     inlineApproval={{
       dialogClassName: `g3-market-confirm${schedule ? " g3-schedule-confirm" : ""}`,
       pending: pending?.request.kind === "approval",

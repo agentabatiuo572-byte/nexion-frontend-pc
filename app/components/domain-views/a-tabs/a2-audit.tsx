@@ -375,6 +375,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (w.phoneCalibrationError) { toast(w.phoneCalibrationError); return; }
     const commandKey = createA2CommandKey(`a2-approve-${w.id}`);
     openActionConfirm({ briefKind: w.type === "fund" ? "funds" : w.type === "acct" ? "security" : w.type === "sos" ? "emergency" : "config",
+      completionCopy: g3PolicyExecutionTiming(w),
       action: <>确认执行 · {w.id}({a2ActionText(w.action)})</>,
       detail: (
         <>
