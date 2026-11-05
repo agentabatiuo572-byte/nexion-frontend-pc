@@ -1051,6 +1051,8 @@ const HAS_CJK_RE = /[一-鿿]/;
 export function displayAdminReadError(error: unknown): string {
   const shown = displayAdminError(error);
   if (shown === SERVICE_DOWN_WRITE || shown === GATEWAY_FAILED_WRITE) return "服务暂时不可用，请稍后重试；持续失败请联系值班人员。";
+  // 读接口断网只是没读到，不是「操作结果未确认」（visual-1 第 15 条）。
+  if (shown.startsWith("网络连接已中断，本次操作结果尚未确认")) return "网络连接失败，没有读到数据，请检查网络后重试。";
   return shown === NETWORK_FAILED_WRITE ? "网络连接失败，请检查网络后重试。" : shown;
 }
 

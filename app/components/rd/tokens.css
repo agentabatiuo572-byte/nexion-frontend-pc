@@ -15,6 +15,7 @@
   --rd-hover: #202126;         /* 行悬停 */
   --rd-selected: #232A14;      /* 选中行、选中页签（品牌色暗底） */
   --rd-scrim: rgba(0, 0, 0, 0.6);
+  --rd-table-edge: rgba(0, 0, 0, 0.55); /* 表格横向滚动时边上的影子，提示还有内容 */
 
   /* 文字 */
   --rd-text: #F1F2F4;          /* 主文字、数值 */
@@ -138,6 +139,7 @@
   --rd-hover: #F6F7F9;
   --rd-selected: #ECF8D2;
   --rd-scrim: rgba(22, 24, 29, 0.45);
+  --rd-table-edge: rgba(22, 24, 29, 0.16);
 
   /* 文字 */
   --rd-text: #16181D;

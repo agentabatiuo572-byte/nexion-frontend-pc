@@ -22,8 +22,8 @@ export interface TrialParamHelp {
   whatIf?: (value: string) => string;
 }
 
-const NEW_TRIAL = "立即生效，只影响新开始的试用";
-const AT_PURCHASE = "立即生效，用户购买时按最新设置算";
+const NEW_TRIAL = "立即生效，只影响新试用";
+const AT_PURCHASE = "立即生效，购买时按新值算";
 const USDT_RANGE = { unit: "USDT", min: 0, max: 1_000_000 };
 
 export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
@@ -68,7 +68,7 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
   },
   trialOffsetCapUSD: {
     what: "试用收益最多能抵多少购机款",
-    when: "立即生效，按用户领取时的设置算",
+    when: "立即生效，按领取时的设置算",
     how: "0–1,000,000 USDT。要清空点「不设上限」；0 表示上限为 0。只管试用收益能抵多少，和购买折扣、提前购买立减叠加。",
     where: "App 领取弹窗「最高」金额、我的 › 试用页规则",
     input: USDT_RANGE,

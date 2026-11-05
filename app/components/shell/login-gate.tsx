@@ -213,9 +213,9 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
                   }}
       >
         <span className="uvel-logo-mark uvel-logo-mark--login rd-logo-dark" aria-hidden>
-          <Image src="/uvel-mark-dark.png" width={36} height={36} alt="" />
+          <Image src="/uvel-mark-dark.png" width={36} height={36} alt="" loading="eager" />
         </span>
-        <Image className="rd-logo-lockup" src="/uvel-lockup-on-light.png" width={103} height={36} alt="" aria-hidden />
+        <Image className="rd-logo-lockup" src="/uvel-lockup-on-light.png" width={103} height={36} alt="" aria-hidden loading="eager" />
         <h1 className="font-display mt-4 text-[20px]" style={{ color: "var(--rd-text)" }}>
           {changingPassword ? "首次登录修改密码" : verifyingMfa ? "两步验证" : "UVEL 运营控制台登录"}
         </h1>

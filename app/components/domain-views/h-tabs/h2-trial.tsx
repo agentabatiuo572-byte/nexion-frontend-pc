@@ -12,7 +12,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Bell, BellOff, Ban, Coins, History, Lock, RefreshCw, Settings2, SlidersHorizontal, Ticket, TrendingUp, Users } from "lucide-react";
-import { BlockState, Button, Cell, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, JudgmentPoints, Modal, Notice, PageHeader, Pager, Panel, SectionNav, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useSectionNav, type SectionNavItem, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Cell, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, JudgmentPoints, Modal, Notice, PageHeader, Pager, Panel, SectionNav, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useSectionNav, type SectionNavItem, type StateTone } from "@/app/components/rd";
 import {
   fetchH2Trials,
   killH2AutoPush,
@@ -191,7 +191,7 @@ function ParamRow({ ctx, param, trialProducts, onChanged, reach, blocked }: {
   const current = paramInput(param);
   const currentProduct = isProduct ? trialProducts.find((product) => product.productNo === current) : undefined;
   const displayCurrent = paramValue(param, currentProduct);
-  const when = help?.when ?? (param.section === "newonly" ? "立即生效，只影响新开始的试用" : "立即生效");
+  const when = help?.when ?? (param.section === "newonly" ? "立即生效，只影响新试用" : "立即生效");
   const productHref = `/devices/pricing?sku=${encodeURIComponent(current)}`;
 
   const submit = async (reason: string, value?: string) => {
@@ -442,6 +442,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。按当前试用规则重新计算并扣款，重复提交不会重复扣。会直接动用户的 USDT，需要有权限的管理员在「操作记录与审批」批准。</>,
       amplifies: true,
       coverageLead: "这项操作会直接扣用户的 USDT",
+      confirmTone: "danger",
       effect: <StatusTag tone="progress" filled>提交审批，批准后生效</StatusTag>,
       confirmLabel: "提交审批，批准后生效",
       statedBrief: {
@@ -460,6 +461,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       reason: true,
       reasonPlaceholder: "写清调整原因和依据",
       statedBrief: { impact: "立即停止自动弹出试用邀请，用户点试用卡领取不受影响。关闭后这页不能重新打开，这次操作记入操作记录。", check: "确认要关闭，理由写清原因和依据。" },
+      confirmTone: "danger",
       okLabel: "确认关闭，立即生效",
       run: async (reason) => {
         await killH2AutoPush(reason);
@@ -492,13 +494,13 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     </>
   );
 
-  const header = (status?: ReactNode) => (
+  const header = () => (
     <PageHeader
       pageId="H2"
       title="免费试用设置"
       summary="设置试用商品、时长和优惠，查看试用记录。"
       guideExtra={guideExtra}
-      meta={model ? <>{status}{status ? " " : ""}{readAt ? `${readAt} 读取（${businessZone().label}）· ` : ""}打开时读取 <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void reload()}>刷新</Button></> : undefined}
+      meta={model ? <>{readAt ? `${readAt} 读取（${businessZone().label}）· ` : ""}打开时读取 <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void reload()}>刷新</Button></> : undefined}
       readOnly={model && !canWrite ? "你只能查看；修改试用设置要有这页的修改权限。" : undefined}
     />
   );
@@ -567,9 +569,14 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
 
   return (
     <>
-      {header(loading ? <StatusTag tone="progress">{READING}</StatusTag> : issues.length === 0 && pending.length === 0 ? <StatusTag tone="ok">{Number(stats.activeSessions) > 0 ? "试用正常开放，进行中的试用由系统自动结束，没有要处理的事" : "试用正常开放，没有要处理的事"}</StatusTag> : undefined)}
+      {header()}
 
       {pendingNotices}
+
+      {/* 一切正常时一句话、不放大，和其他页的结论条一个样子（VS-23）；有异常时下面的提示条就是结论。 */}
+      {loading
+        ? <Conclusion state="unknown">{READING}</Conclusion>
+        : issues.length === 0 && pending.length === 0 && <Conclusion state="ok">{Number(stats.activeSessions) > 0 ? "试用正常开放，进行中的试用由系统自动结束，没有要处理的事" : "试用正常开放，没有要处理的事"}</Conclusion>}
 
       {issues.map((issue) => <Notice key={issue.key} tone={issue.tone} title={issue.title}>{issue.body}</Notice>)}
 
@@ -590,6 +597,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       <div className="rd-config-layout">
         <div className="rd-config-grid">
           <div className="rd-config-rail">
+            <SectionNav label="本页分组" items={sections} nav={nav} />
             <Panel title="试用邀请弹窗" icon={killed || pushOff ? BellOff : Bell} tone={killed ? "warn" : pushOff ? "done" : "ok"} headingLevel={2}>
               <div className="rd-push-state">
                 <StatusTag tone={killed ? "warn" : pushOff ? "done" : "ok"}>{killed ? "试用邀请弹窗已关闭" : pushOff ? "自动推送已关" : "开启中"}</StatusTag>
@@ -597,7 +605,6 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                 {canWrite && !killed && <Button variant="danger-outline" disabledReason={loading ? READING : undefined} onClick={openPushKill}>紧急关闭试用邀请弹窗</Button>}
               </div>
             </Panel>
-            <SectionNav label="本页分组" items={sections} nav={nav} />
           </div>
 
           <div className="rd-config-groups">

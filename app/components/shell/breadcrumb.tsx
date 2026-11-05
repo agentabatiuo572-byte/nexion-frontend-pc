@@ -43,7 +43,7 @@ export function Breadcrumb() {
       {crumbs.map((c, i) => {
         const last = i === crumbs.length - 1;
         return (
-          <span key={i} className={`admin-topbar-crumb ${last ? "admin-topbar-crumb-current flex min-w-0" : "admin-topbar-crumb-ancestor hidden shrink-0 xl:flex"} items-center gap-1.5`}>
+          <span key={i} className={`admin-topbar-crumb ${last ? "admin-topbar-crumb-current flex shrink-0 min-w-0" : "admin-topbar-crumb-ancestor hidden min-w-0 xl:flex"} items-center gap-1.5`} style={last ? { maxWidth: "18em" } : undefined}>
             {i > 0 && (
               <ChevronRight size={13} className="shrink-0" style={{ color: "var(--rd-text-3)" }} aria-hidden />
             )}
@@ -51,7 +51,7 @@ export function Breadcrumb() {
               <Link
                 href="/"
                 prefetch={false}
-                className="admin-topbar-crumb-label rd-crumb"
+                className="admin-topbar-crumb-label rd-crumb truncate"
                 title={c.label}
                 data-current={last ? "" : undefined}
               >

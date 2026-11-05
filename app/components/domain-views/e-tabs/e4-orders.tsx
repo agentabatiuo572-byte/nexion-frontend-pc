@@ -100,7 +100,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
         : waitCount > 0
           ? <Conclusion state="warn" lead hint={`点一行看差什么，设备分配和激活在「设备运行管理」做。${searchNote}`}
               action={<Button size="sm" onClick={() => ctx.updateE4Query({ group: "flow", state: "" })}>看进行中的订单</Button>}>有 <b>{waitCount}</b> 单等开通或激活</Conclusion>
-          : <Conclusion state="ok" lead hint={`${counts?.placed ? `${counts.placed} 单在等用户付款，不用操作。` : ""}${searchNote}` || undefined}>没有要处理的订单</Conclusion>}
+          : <Conclusion state="ok" hint={`${counts?.placed ? `${counts.placed} 单在等用户付款，不用操作。` : ""}${searchNote}` || undefined}>没有要处理的订单</Conclusion>}
 
     <StatBand label="订单汇总">
       <Stat tone="role-2" icon={Workflow} label="进行中订单" value={flowCount ?? "—"} unit={flowCount === undefined ? undefined : "单"}
@@ -295,7 +295,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
 
   return (
     <Drawer open onClose={ctx.closeOrder} title="订单详情" icon={ClipboardList} tone="role-2"
-      sub={<>{o.id} <IconButton aria-label="复制订单号" data-size="sm" onClick={copyNo}><Copy size={13} aria-hidden /></IconButton> · <StatusTag tone={ORDER_STATE_TONE[eff] ?? "neutral"} explain={STATE_TEXT[eff]}>{stateLabel(eff)}</StatusTag></>}
+      sub={<>{o.id} <IconButton aria-label="复制订单号" data-size="sm" onClick={copyNo}><Copy size={13} aria-hidden /></IconButton><StatusTag tone={ORDER_STATE_TONE[eff] ?? "neutral"} explain={STATE_TEXT[eff]}>{stateLabel(eff)}</StatusTag></>}
       nav={{ hasPrev: Boolean(prev), hasNext: Boolean(next), onPrev: () => { if (prev) ctx.openOrder(prev); }, onNext: () => { if (next) ctx.openOrder(next); } }}
       footer={<Decision note={note}
         danger={canRefundE4 && refundableState && <Button variant="danger-outline" disabledReason={waitReason ?? (refundReady ? undefined : refundBlockText)} onClick={() => {

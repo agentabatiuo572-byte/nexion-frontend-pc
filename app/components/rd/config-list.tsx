@@ -11,11 +11,12 @@
  * - where 只写核对过的位置；影响其他后台页时写页面名，能跳过去。没有就不传。
  * - action 收到说明文字的 id，交给控件的 aria-describedby。没有修改权限时不传（OP-124）。
  * - 只读项 value 照常写，action 换成「去修改」的链接或不传。
+ * - 一项两行：名称后面跟显示位置，下面一行「这是什么 · 什么时候生效」；label 是这组配置的名字，读屏按列表读。
  */
 import { useId, type ReactNode } from "react";
 
-export function ConfigList({ children }: { children: ReactNode }) {
-  return <div className="rd-config">{children}</div>;
+export function ConfigList({ label, children }: { label?: string; children: ReactNode }) {
+  return <div className="rd-config" role="list" aria-label={label}>{children}</div>;
 }
 
 export function ConfigRow({ name, what, when, where, value, sub, action, id }: {
@@ -31,13 +32,10 @@ export function ConfigRow({ name, what, when, where, value, sub, action, id }: {
 }) {
   const helpId = useId();
   return (
-    <div className="rd-config-row" id={id}>
+    <div className="rd-config-row" role="listitem" id={id}>
       <div className="rd-config-main">
-        <div className="rd-config-name">{name}</div>
-        <div id={helpId} className="rd-config-help">
-          {(what || when) && <div>{what}{what && when ? " · " : ""}{when}</div>}
-          {where && <div className="rd-config-where">显示位置：{where}</div>}
-        </div>
+        <div className="rd-config-name">{name}{where && <span className="rd-config-where">显示位置 {where}</span>}</div>
+        {(what || when) && <div id={helpId} className="rd-config-help">{what}{what && when ? " · " : ""}{when}</div>}
       </div>
       <div className="rd-config-value">
         <span>{value}</span>

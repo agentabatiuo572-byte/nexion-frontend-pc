@@ -78,6 +78,12 @@ const RISK_REASON_PLACEHOLDER = "写清场景和依据，例如：合租办公�
 const CLUSTER_PAGE_SIZE_OPTIONS = [5, 10, 20];
 const WHITELIST_PAGE_SIZE_OPTIONS = [5, 10, 20];
 const MAX_FOCUS_RELOCATIONS = 3;
+const DETAIL_ID = "k1-selected-cluster";
+/** 上下排（1366 以下）时点一行看不到右边的选中区，滚到选中区（PG-45）；并排时不动。 */
+function revealDetail() {
+  if (!window.matchMedia("(max-width: 1365px)").matches) return;
+  window.requestAnimationFrame(() => document.getElementById(DETAIL_ID)?.scrollIntoView({ block: "start", behavior: "smooth" }));
+}
 const PROTECTED_ENTRY_LIMIT = 200;
 const K1_TABS = ["accounts", "earnings", "rules"] as const;
 type K1Tab = (typeof K1_TABS)[number];
@@ -108,7 +114,7 @@ const PARAM_LIMITS: Record<string, { min: number; max: number; step: number; int
 const CLUSTER_ST: Record<ClusterStatus, [string, "warn" | "danger" | "done" | "ok", string]> = {
   detected: ["待判定", "warn", "系统发现的账户组，还没人判定。新增收益先锁定。下一步：标记为可疑，或判定为正常。"],
   flagged: ["可疑", "warn", "已标记可疑，账户没有冻结。新增收益先锁定。下一步：批量冻结，或解除误判。"],
-  frozen: ["已冻结", "danger", "这组账户已冻结。新增收益先锁定。核实是误判后解除误判。"],
+  frozen: ["已冻结", "warn", "这组账户已冻结。新增收益先锁定。核实是误判后解除误判。"], // 冻结全站橙黄（VS-20）
   released: ["已解除", "done", "已判定是误判。新增收益仍按同组账号数决定要不要审核。"],
   cleared: ["正常", "ok", "已判定为正常，退出风险监控。新增收益仍按同组账号数决定要不要审核。"],
 };
@@ -156,7 +162,7 @@ function strengthTone(v: number, threshold: number) {
   if (!Number.isFinite(threshold)) return "neutral" as const;
   return v >= threshold
     ? "danger" as const
-    : v >= threshold * 0.8 ? "warn" as const : "ok" as const;
+    : v >= threshold * 0.8 ? "warn" as const : "neutral" as const; // 没到线是「还没到」，不是「安全」，不用绿（visual-1 第 3 条）
 }
 
 const giftHandled = (result: string) => result.includes("拦截") || result.includes("处置");
@@ -1062,18 +1068,21 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     if (issues) rows.push({ label: "账户状态", value: [restricted && `${restricted} 个已受限`, unknown && `${unknown} 个状态未知`].filter(Boolean).join("，"), state: restricted ? "danger" : "warn", reason: issues });
     if (c.reviewNote) rows.push({ label: "复审备注", value: c.reviewNote });
     return (
-      <Panel title={`账户组 ${c.id}`} sub={`${c.layerLabel} · ${c.n} 个账户`} icon={Users} tone="role-3" actions={<StatusTag tone={statusTone} explain={statusExplain}>{statusLabel}</StatusTag>}>
+      <Panel id={DETAIL_ID} title={`账户组 ${c.id}`} sub={`${c.layerLabel} · ${c.n} 个账户`} icon={Users} tone="role-3" actions={<StatusTag tone={statusTone} explain={statusExplain}>{statusLabel}</StatusTag>}>
         <div className="rd-stack">
           {(actions.length > 0 || canWrite) && (
             <Decision
               note={actions.length > 0 ? "处置要提交审批，超级管理员批准后才生效，批准前这组不变。" : undefined}
-              danger={loosen && <Button variant="danger-outline" disabledReason={loosen.blocked} onClick={loosen.run}>{loosen.label}</Button>}
-              others={canWrite && <Button disabledReason={blockedBy("cluster", c.id)} onClick={() => reviewNote(c)}>人工复审备注</Button>}
+              others={<>
+                {/* 「判定为正常」「解除误判」是判断不是止损，用次按钮：红描边只给不可撤销或直接动钱的入口（VS-25），放宽的资金风险在确认框里按覆盖率提示。 */}
+                {loosen && <Button disabledReason={loosen.blocked} onClick={loosen.run}>{loosen.label}</Button>}
+                {canWrite && <Button disabledReason={blockedBy("cluster", c.id)} onClick={() => reviewNote(c)}>人工复审备注</Button>}
+              </>}
               primary={primary && <Button variant="primary" disabledReason={primary.blocked} onClick={primary.run}>{primary.label}</Button>}
             />
           )}
           <JudgmentPoints rows={rows} />
-          <div>
+          <div className="rd-stack">
             <Fold inset icon={Network} tone="risk" title="关系图" summary={c.edges.length ? `${shown} 个账户，${c.edges.length} 条关联${hidden ? `，${hidden} 个未画出` : ""}` : "暂无可展示关联边"}>
               <ClusterGraph c={c} />
             </Fold>
@@ -1164,7 +1173,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               explain="全部账户组里，还没判定为正常、也没解除的组。不随下面的筛选变。" />
             <Stat icon={ShieldAlert} iconTone={Number(stats.highClusters) > 0 ? "warn" : "role-other"} label="高风险账户组" value={statText("highClusters")} unit="组" sub={`建议冻结线 ${formatThreshold(freezeSuggestThreshold)}`}
               explain="待判定或可疑、关联程度达到建议冻结线的组。这只是建议，不会自动冻结。" />
-            <Stat tone="role-2" icon={Snowflake} label="已冻结账户组" value={statText("frozenClusters")} unit="组" sub={`共 ${statText("frozenAccounts")} 个账户`} />
+            <Stat tone={Number(stats.frozenClusters) > 0 ? "warn" : undefined} icon={Snowflake} label="已冻结账户组" value={statText("frozenClusters")} unit="组" sub={`共 ${statText("frozenAccounts")} 个账户`} />
             <Stat tone="role-1" icon={Gift} label="新人礼拦截" value={statKnown("giftBlockedUsd") ? `$${statText("giftBlockedUsd")}` : "—"} sub={statKnown("giftBlockedCnt") ? `${statText("giftBlockedCnt")} 笔重复领取被拦下` : "数据尚未接入，不能判定为 0"}
               explain={statKnown("giftBlockedUsd") ? undefined : "后端还没有提供这项统计。其他三个数字是真实读取的，不受影响。"} />
           </StatBand>
@@ -1192,7 +1201,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                     <Th align="right" icon={Users} tone="users">账户数</Th>
                     <Th icon={ShieldAlert} tone="risk">关联程度</Th>
                     <Th>状态</Th>
-                    <Th align="right">操作</Th>
+                    <Th>操作</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1201,12 +1210,12 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                     const [statusLabel, statusTone, statusExplain] = CLUSTER_ST[c.status];
                     const [first, ...rest] = clusterActions(c);
                     return (
-                      <Tr key={c.id} selected={c.id === cur?.id} aria-label={focusBlocksSelection ? undefined : `查看关联账户组 ${c.id} 详情`} onOpen={focusBlocksSelection ? undefined : () => setSelId(c.id)}>
+                      <Tr key={c.id} selected={c.id === cur?.id} aria-label={focusBlocksSelection ? undefined : `查看关联账户组 ${c.id} 详情`} onOpen={focusBlocksSelection ? undefined : () => { setSelId(c.id); revealDetail(); }}>
                         <Td><Cell mono main={c.key} sub={`${c.layerLabel} · ${c.span}`} title={`${c.key} · ${c.layerLabel} · ${c.span}`} /></Td>
                         <Td align="right"><Cell num main={c.n} /></Td>
                         <Td><Cell main={<InlineMeter value={c.strength} text={c.strength.toFixed(2)} tone={strengthTone(c.strength, freezeSuggestThreshold)} />} sub={isHot(c) ? <StatusTag tone="danger" icon={ShieldAlert}>建议冻结</StatusTag> : undefined} /></Td>
                         <Td><StatusTag tone={statusTone} explain={statusExplain}>{statusLabel}</StatusTag></Td>
-                        <Td align="right">
+                        <Td>
                           {first && (
                             <span className="rd-row-actions">
                               <Button size="sm" disabledReason={first.blocked} onClick={first.run}>{first.label}</Button>
@@ -1243,7 +1252,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                   <Th>来源</Th>
                   <Th align="right" icon={Coins} tone="money">金额</Th>
                   <Th>处理状态</Th>
-                  <Th align="right">操作</Th>
+                  <Th>操作</Th>
                 </tr>
               </thead>
               <tbody>
@@ -1254,7 +1263,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                     <Td><Cell main={({ TRIAL: "试用收益", DEVICE: "设备收益", TASK: "任务奖励", COMMISSION: "团队奖励", REFERRAL: "邀请奖励", WELCOME: "新人奖励" } as Record<string, string>)[entry.sourceType.toUpperCase()] ?? "来源未知"} sub={<span data-mono>{entry.sourceRef}</span>} /></Td>
                     <Td align="right"><Cell num full main={`${amountText(entry.amount)} ${nexGridBrandText(entry.asset)}`} /></Td>
                     <Td><StatusTag tone={entry.bucket === "bonus_locked" ? "danger" : "warn"} explain={entry.bucket === "bonus_locked" ? "这笔收益被锁定，不能提现。账户组解除后不会自动放行，要人工放行。" : "这笔收益等人工审核，不会到期自动放行。"}>{entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}</StatusTag></Td>
-                    <Td align="right">{canRelease && <Button size="sm" disabledReason={blockedBy("entry", entry.entryNo, protectedEntriesLoading) ?? (overviewFailed ? "风险数据读取失败，恢复后才能放行" : undefined)} onClick={() => releaseProtectedEntry(entry)}>人工放行</Button>}</Td>
+                    <Td>{canRelease && <Button size="sm" disabledReason={blockedBy("entry", entry.entryNo, protectedEntriesLoading) ?? (overviewFailed ? "风险数据读取失败，恢复后才能放行" : undefined)} onClick={() => releaseProtectedEntry(entry)}>人工放行</Button>}</Td>
                   </Tr>
                 ))}
                 {!protectedEntriesLoading && protectedEntries.length === 0 && <TableMessage columns={6} role="status">当前没有待审核或已锁定的收益。</TableMessage>}
@@ -1313,7 +1322,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               <Panel id={nav.anchor("whitelist")} title="IP 允许名单" sub="名单内的网段不再按 IP 检测，设备和支付工具照常，加入后立即生效" icon={ListChecks} tone="role-2" flush
                 actions={canWrite && <Button size="sm" onClick={addWl}>+ 添加允许名单</Button>}>
                 <Table label="IP 允许名单">
-                  <thead><tr><Th>IP / 网段</Th><Th>备注</Th><Th>添加人</Th><Th>失效时间</Th><Th align="right">操作</Th></tr></thead>
+                  <thead><tr><Th>IP / 网段</Th><Th>备注</Th><Th>添加人</Th><Th>失效时间</Th><Th>操作</Th></tr></thead>
                   <tbody>
                     {whitelist.map((w) => (
                       <Tr key={w.cidr}>
@@ -1321,7 +1330,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                         <Td><Cell main={w.note} title={w.note} /></Td>
                         <Td><Cell main={w.operator} /></Td>
                         <Td><Cell num main={w.expireText} /></Td>
-                        <Td align="right">{canWrite && <Button size="sm" disabledReason={blockedBy("cidr", w.cidr)} onClick={() => rmWl(w.cidr)}>移除</Button>}</Td>
+                        <Td>{canWrite && <Button size="sm" disabledReason={blockedBy("cidr", w.cidr)} onClick={() => rmWl(w.cidr)}>移除</Button>}</Td>
                       </Tr>
                     ))}
                     {!whitelist.length && <TableMessage columns={5} role="status">暂无允许名单</TableMessage>}

@@ -1591,7 +1591,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     <D2StatusFlow />
 
     <Drawer open={Boolean(detail)} onClose={closeDetail} title="单笔详情" icon={Wallet} tone="role-1" busy={!!submitting}
-      sub={shown && <>{shown.withdrawalNo} <IconButton aria-label="复制提现单号" data-size="sm" onClick={() => copyNo(shown.withdrawalNo)}><Copy size={13} aria-hidden /></IconButton> · <StatusTag tone={statusTone(shown.status)} icon={STATUS_ICON[shown.status.toUpperCase()]} explain={STATUS_EXPLAIN[shown.status.toUpperCase()]}>{detailProvider ? cregisStatusLabel(cregisDetail?.state ?? shown.status) : bankStatusLabel(shown)}</StatusTag></>}
+      sub={shown && <>{shown.withdrawalNo} <IconButton aria-label="复制提现单号" data-size="sm" onClick={() => copyNo(shown.withdrawalNo)}><Copy size={13} aria-hidden /></IconButton><StatusTag tone={statusTone(shown.status)} icon={STATUS_ICON[shown.status.toUpperCase()]} explain={STATUS_EXPLAIN[shown.status.toUpperCase()]}>{detailProvider ? cregisStatusLabel(cregisDetail?.state ?? shown.status) : bankStatusLabel(shown)}</StatusTag></>}
       nav={{ hasPrev: Boolean(prevRow), hasNext: Boolean(nextRow), onPrev: () => { if (prevRow) void openDetail(prevRow); }, onNext: () => { if (nextRow) void openDetail(nextRow); } }}
       footer={shown && <Decision note={decisionNote}
         danger={detailActions.includes("REJECT") ? decisionButton(shown, "REJECT") : undefined}

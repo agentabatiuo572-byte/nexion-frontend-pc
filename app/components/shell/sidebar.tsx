@@ -16,14 +16,15 @@ import { useAdminUi } from "@/lib/store/admin-ui";
 import { IconTile } from "@/app/components/rd/icon-tile";
 import { SidebarGroup } from "./sidebar-group";
 
+/* 两套 Logo 都提前加载：隐藏的那套不能等切换主题时再去取，否则切换后 Logo 会空一下。 */
 function LogoMark() {
   return (
     <>
       <span className="uvel-logo-mark rd-logo-dark" aria-hidden>
-        <Image src="/uvel-mark-dark.png" width={30} height={30} alt="" />
+        <Image src="/uvel-mark-dark.png" width={30} height={30} alt="" loading="eager" />
       </span>
       <span className="uvel-logo-mark rd-logo-symbol" aria-hidden>
-        <Image src="/uvel-symbol.png" width={30} height={22} alt="" />
+        <Image src="/uvel-symbol.png" width={30} height={22} alt="" loading="eager" />
       </span>
     </>
   );
@@ -118,7 +119,7 @@ export function Sidebar({
         <LogoMark />
         {!collapsed && (
           <>
-            <Image className="rd-logo-lockup" src="/uvel-lockup-on-light.png" width={86} height={30} alt="" aria-hidden />
+            <Image className="rd-logo-lockup" src="/uvel-lockup-on-light.png" width={86} height={30} alt="" aria-hidden loading="eager" />
             <span className="flex flex-col leading-tight">
               <span className="font-display rd-side-name">UVEL</span>
               <span className="text-[10px] rd-side-role">运营控制台</span>

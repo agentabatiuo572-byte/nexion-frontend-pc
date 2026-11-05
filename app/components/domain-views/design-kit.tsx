@@ -3631,7 +3631,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
     </div>
   );
   return (
-    <Modal title={action} icon="shield" onClose={handleClose} className={["rd-confirm", inlineApproval?.dialogClassName].filter(Boolean).join(" ")} busy={!!(approval || inlineApproval) && submitting}
+    <Modal title={action} icon={confirmTone === "danger" ? "alert" : "shield"} onClose={handleClose} className={["rd-confirm", inlineApproval?.dialogClassName].filter(Boolean).join(" ")} busy={!!(approval || inlineApproval) && submitting}
       footer={<>
         <Btn disabled={submitting} onClick={handleClose}>取消</Btn>
         {approvalRecovery && recoverApproval && (

@@ -72,6 +72,8 @@ export type ConfirmReq = {
   /** 调用方已展示错误时，共享确认不重复提示。 */
   errorHandled?: boolean | ((error: unknown) => boolean);
   okLabel?: string;
+  /** 不能撤销的操作传 danger：确认按钮用危险色，标题用警告图标（VS-25）。 */
+  confirmTone?: "primary" | "danger";
   run: (reason: string, value?: string) => unknown | Promise<unknown>;
 };
 

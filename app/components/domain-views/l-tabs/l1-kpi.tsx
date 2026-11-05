@@ -87,6 +87,12 @@ const RELATED = ["/analytics/funnel-cohort", "/analytics/financial", "/analytics
 /** 全是 0 不是走势，不画图，写一句话（DP-62）。 */
 const hasTrend = (values: readonly number[]) => values.length >= 2 && values.some((value) => value !== 0);
 const hasSlice = (query: L1KpiQuery) => SLICES.some((key) => Boolean(query[key]));
+const DETAIL_ID = "l1-kpi-detail";
+/** 上下排（1366 以下）时点一行看不到右边的明细，滚到明细（PG-42）；并排时不动。 */
+function revealDetail() {
+  if (!window.matchMedia("(max-width: 1365px)").matches) return;
+  window.requestAnimationFrame(() => document.getElementById(DETAIL_ID)?.scrollIntoView({ block: "start", behavior: "smooth" }));
+}
 
 function deltaText(k: Kpi) {
   if (k.momDelta == null) return "无可比数据";
@@ -688,7 +694,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     return (
       <>
         {red > 0
-          ? <Conclusion state="warn" lead hint="未达标的排在下面最前面，点一行看原因。">关键指标：<b>{red}</b> 项未达标</Conclusion>
+          ? <Conclusion state="danger" lead hint="未达标的排在下面最前面，点一行看原因。">关键指标：<b>{red}</b> 项未达标</Conclusion>
           : unavailable === KPIS.length
             ? <Conclusion state="unknown" hint="这个范围人数太少或缺数据，换个更长的时间范围再看。">关键指标：暂时无法判断</Conclusion>
             : green === KPIS.length
@@ -720,7 +726,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                   const item = KPIS[index];
                   const state = states[index];
                   return (
-                    <Tr key={item.n} selected={index === safeSelKpi} tabIndex={index === safeSelKpi ? 0 : -1} onOpen={() => void selectKpi(index)} onKeyDown={moveRow} title="点击查看明细">
+                    <Tr key={item.n} selected={index === safeSelKpi} tabIndex={index === safeSelKpi ? 0 : -1} onOpen={() => { void selectKpi(index); revealDetail(); }} onKeyDown={moveRow} title="点击查看明细">
                       <Td><Cell main={<AutoGloss>{operatorCopyText(item.name)}</AutoGloss>} /></Td>
                       <Td align="right"><Cell num main={state === "na" || state === "small" ? "—" : `${item.value}${unitText(item)}`} sub={state === "na" || state === "small" || item.momDelta == null ? undefined : deltaText(item)} /></Td>
                       <Td align="right"><Cell num main={tgtShort(item)} /></Td>
@@ -743,6 +749,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
           </Panel>
 
           <Panel
+            id={DETAIL_ID}
             title={<AutoGloss>{operatorCopyText(k.name)}</AutoGloss>}
             sub={<StatusTag tone={STATE_TONE[kState]}>{stateText(kState, k)}</StatusTag>}
             icon={Target}

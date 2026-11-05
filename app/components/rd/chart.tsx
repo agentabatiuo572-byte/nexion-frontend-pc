@@ -14,7 +14,7 @@
  * 走势带线：<TrendLines label="这项指标的走势" ticks={["10-11", …]} format={pct}
  *   series={[{ key: "kpi", label: "首笔收益到账", slot: 2, values: [12, 18, …] }]}
  *   marks={[{ key: "target", text: "目标 95%", value: 95, tone: "ok" }]} event={{ index: 3, text: "运营阶段切换" }} />
- *   多条线比走势，或要画目标线、事件线时用它。纵轴从 0 到包住全部值和线，两个系列以上自动带图例（VS-47）。
+ *   多条线比走势，或要画目标线、事件线时用它。纵轴包住全部值和线；值和线都离 0 很远时从一个整齐的低值起，不然挤成一条看不出变化（visual-1 第 8 条），其余从 0 起。两个系列以上自动带图例（VS-47）。
  * 迷你线：<Sparkline label="近六段走势" values={[…]} />  表格里看走向，不带轴，至少两个点才传（ST-64）。
  * 环图：<Donut label="储备组成" center="2,000,000.00" centerLabel="USDT"
  *   segments={[{ key, label, value, slot, text: "2,000,000.00 USDT", share: "97.6%" }]} />
@@ -197,6 +197,21 @@ export function TrendLine({ label, data, format, axisFormat = format, slot = 1, 
 }
 
 /** 几条线放一根纵轴比走势，也画目标线和事件线。线的颜色是槽位，目标线的颜色是状态（VS-43）。 */
+/** 走势带线的纵轴。上限是包住最大值再留四分之一余量的半步整数（62.5 → 65）；值和线都远离 0（最小值高于上限的 35%）时下限也取半步整数，不然从 0 起。 */
+function axisBounds(values: readonly number[]) {
+  const max = Math.max(0, ...values);
+  const min = Math.min(...values);
+  const pad = (max - min) * 0.25 || max * 0.1;
+  const half = (value: number, round: (n: number) => number) => {
+    if (value <= 0) return 0;
+    const power = 10 ** Math.floor(Math.log10(value));
+    return round(value / power * 2) / 2 * power;
+  };
+  const top = half(max + pad, Math.ceil) || 1;
+  const low = min - pad > top * 0.35 ? half(min - pad, Math.floor) : 0;
+  return { low, top };
+}
+
 export function TrendLines({ label, ticks, series, format, axisFormat = format, marks = [], event, height = 180 }: {
   label: string;
   ticks: readonly string[];
@@ -208,7 +223,8 @@ export function TrendLines({ label, ticks, series, format, axisFormat = format, 
   height?: number;
 }) {
   const [active, setActive] = useState<number | null>(null);
-  const top = niceCeil(Math.max(0, ...series.flatMap((item) => item.values), ...marks.map((mark) => mark.value))) || 1;
+  const { low, top } = axisBounds([...series.flatMap((item) => item.values), ...marks.map((mark) => mark.value)]);
+  const y = (value: number) => (value - low) / (top - low);
   const xRatio = (index: number) => ticks.length > 1 ? index / (ticks.length - 1) : 0.5;
   const every = tickEvery(ticks.length);
   const hover = (mouse: MouseEvent<HTMLDivElement>) => {
@@ -220,19 +236,19 @@ export function TrendLines({ label, ticks, series, format, axisFormat = format, 
       {series.length > 1 && <ChartLegend items={series.map((item) => ({ key: item.key, label: item.label, slot: item.slot }))} />}
       <div className="rd-chart-frame" role="img" aria-label={label}>
         <div className="rd-chart-plot" style={{ height }} onMouseMove={hover} onMouseLeave={() => setActive(null)}>
-          <Ticks ticks={[{ value: 0, ratio: 0 }, { value: top / 2, ratio: 0.5 }, { value: top, ratio: 1 }]} format={axisFormat} />
-          {marks.map((mark, index) => <div key={mark.key} className="rd-chart-ref" data-tone={mark.tone} data-below={index % 2 ? "" : undefined} style={{ bottom: `${mark.value / top * 100}%` }}><span>{mark.text}</span></div>)}
+          <Ticks ticks={[{ value: low, ratio: 0 }, { value: (low + top) / 2, ratio: 0.5 }, { value: top, ratio: 1 }]} format={axisFormat} />
+          {marks.map((mark, index) => <div key={mark.key} className="rd-chart-ref" data-tone={mark.tone} data-below={index % 2 ? "" : undefined} style={{ bottom: `${y(mark.value) * 100}%` }}><span>{mark.text}</span></div>)}
           {event && <div className="rd-chart-event" style={{ left: `${xRatio(event.index) * 100}%` }}><span data-edge={xRatio(event.index) > 0.7 ? "end" : undefined}>{event.text}</span></div>}
           <svg className="rd-chart-line" viewBox="0 0 1000 200" preserveAspectRatio="none" aria-hidden>
             {series.map((item) => (
               <path key={item.key} data-slot={item.slot} vectorEffect="non-scaling-stroke"
-                d={item.values.map((value, index) => `${index ? "L" : "M"}${(xRatio(index) * 1000).toFixed(1)} ${((1 - value / top) * 200).toFixed(1)}`).join(" ")} />
+                d={item.values.map((value, index) => `${index ? "L" : "M"}${(xRatio(index) * 1000).toFixed(1)} ${((1 - y(value)) * 200).toFixed(1)}`).join(" ")} />
             ))}
           </svg>
           {active !== null && <span className="rd-chart-cross" style={{ left: `${xRatio(active) * 100}%` }} />}
           {series.map((item) => {
             const at = Math.min(active ?? item.values.length - 1, item.values.length - 1);
-            return <span key={item.key} className="rd-chart-dot" data-slot={item.slot} style={{ left: `${xRatio(at) * 100}%`, bottom: `${item.values[at] / top * 100}%` }} />;
+            return <span key={item.key} className="rd-chart-dot" data-slot={item.slot} style={{ left: `${xRatio(at) * 100}%`, bottom: `${y(item.values[at]) * 100}%` }} />;
           })}
           {active !== null && (
             <Tip index={active} count={ticks.length}>

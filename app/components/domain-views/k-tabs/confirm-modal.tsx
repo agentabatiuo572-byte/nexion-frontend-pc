@@ -39,14 +39,14 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   return (
     <Modal
       title={req.action}
-      icon="check"
+      icon={req.confirmTone === "danger" ? "alert" : "check"}
       className={surface ? "rd-confirm" : undefined}
       onClose={() => { if (!submitting) onClose(); }}
       footer={
         <>
           <Btn disabled={submitting} onClick={onClose}>取消</Btn>
           <Btn
-            variant="primary"
+            variant={req.confirmTone ?? "primary"}
             disabled={!can || submitting}
             style={!can ? { opacity: 0.45, cursor: "not-allowed" } : undefined}
             onClick={async () => {

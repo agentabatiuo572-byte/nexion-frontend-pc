@@ -3,6 +3,7 @@
 /**
  * 侧栏单域分组 — 折叠态=图标按钮(点击展开侧栏并打开该组);展开态=域头 + L2 链接列表。
  * 图标按业务类别上色(DOMAIN_TONE)。页名前的点表示页面状态:flagship 实心,其他空心;当前页另用浅底和右端品牌色小点标出,两者互不替代。域字母和页面编号不显示(DP-30)。
+ * 当前页所在的域收起时,域头也用浅底、加粗和品牌色小点标出,不自动展开(SH-H01)。
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -61,10 +62,12 @@ export function SidebarGroup({
         aria-controls={`nav-group-${domain.code}`}
         className="rd-nav-item"
         data-group-open={isOpen ? "" : undefined}
+        data-active={groupActive && !isOpen ? "" : undefined}
       >
         <IconTile tone={tone} icon={domain.icon} size={22} />
         <span className="flex-1 truncate text-left">{domain.name}</span>
         {!isOpen && groupBadge > 0 && navBadge(groupBadge)}
+        {!isOpen && groupActive && <span className="rd-nav-dot" data-current="" aria-hidden />}
         <ChevronRight
           size={14}
           className="rd-nav-chevron"
