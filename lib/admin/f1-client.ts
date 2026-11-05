@@ -6,6 +6,7 @@ import { F1OutcomeUncertainError, f1StableWrite } from "@/lib/admin/f1-stable-wr
 import { verifyF5CsvArtifact } from "@/lib/admin/f5-export-verifier";
 import { parseDirectReferralPolicy } from "@/lib/admin/direct-referral-policy";
 import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
+import type { F1PolicyValues } from "./f1-policy-change";
 import {
   assertF1Overview,
   assertF2Overview,
@@ -21,6 +22,7 @@ interface ApiResult<T> {
 }
 
 interface BackendVRankRow {
+  policyRevision?: string | null;
   v?: string | null;
   label?: string | null;
   selfBuy?: string | number | null;
@@ -37,6 +39,7 @@ interface BackendVRankRow {
 }
 
 interface BackendReward {
+  amountText?: string | null;
   id?: string | null;
   type?: string | null;
   amount?: number | string | null;
@@ -64,6 +67,7 @@ interface BackendLeadership {
 }
 
 interface BackendOverview {
+  rewardValuationUsdtPerUvt?: string | null;
   vrankRows?: BackendVRankRow[] | null;
   monthlyPromotionCount?: number | null;
   rewards?: Record<string, BackendReward[] | null> | null;
@@ -437,6 +441,7 @@ interface BackendF5CommissionAuditOverview {
 }
 
 export interface F1VRankRow {
+  policyRevision?: string;
   v: string;
   label: string;
   selfBuy?: string;
@@ -471,6 +476,7 @@ export interface F1Leadership {
 }
 
 export interface F1VRankOverview {
+  rewardValuationUsdtPerUvt: string | null;
   rows: F1VRankRow[];
   monthlyPromotionCount: number | null;
   rewards: Record<string, OpsVRankRewardItem[]>;
@@ -1027,6 +1033,7 @@ function normalizeReward(item: BackendReward): OpsVRankRewardItem {
     id: asText(item.id, `vr-${type}`),
     type,
     amount: type === "usdt" || type === "uvt" ? toNumber(item.amount) : undefined,
+    amountText: (type === "usdt" || type === "uvt") && typeof item.amountText === "string" ? item.amountText : undefined,
     voucherId: type === "voucher" ? optionalText(item.voucherId) : undefined,
     skuId: type === "sku" ? optionalText(item.skuId) : undefined,
     custom: type === "custom" ? asText(item.custom, "自定义") : undefined,
@@ -1076,6 +1083,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): F1VRankOve
     rewards[v] = rowRewards;
     return {
       v,
+      policyRevision: typeof row.policyRevision === "string" ? row.policyRevision : undefined,
       label: asText(row.label, v),
       selfBuy: row.selfBuy == null ? undefined : String(row.selfBuy),
       directRefs: row.directRefs == null ? undefined : String(row.directRefs),
@@ -1105,6 +1113,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): F1VRankOve
     : undefined;
   return {
     rows,
+    rewardValuationUsdtPerUvt: typeof data?.rewardValuationUsdtPerUvt === "string" ? data.rewardValuationUsdtPerUvt : null,
     monthlyPromotionCount: typeof monthlyPromotionCount === "number"
       && Number.isSafeInteger(monthlyPromotionCount) && monthlyPromotionCount >= 0 ? monthlyPromotionCount : null,
     rewards,
@@ -1979,6 +1988,22 @@ export async function updateF1VRankThreshold(rank: string, field: string, value:
       stableIdempotencyKey: commandKey,
       expectsData: true,
     })));
+}
+
+/** F1's confirmation owns the durable original body and key; do not mint another key here. */
+export async function writeF1VRankPolicy(values: F1PolicyValues, reason: string, operator: string, commandKey: string) {
+  const base = `/ranks/${encodeURIComponent(values.rank)}`;
+  const threshold = values.action === "threshold";
+  const path = threshold ? `${base}/thresholds/${encodeURIComponent(values.field!)}`
+    : `${base}/rewards${values.action === "reward_add" ? "" : `/${encodeURIComponent(values.rewardId!)}`}`;
+  const data = await f1Request<unknown>(path, {
+    method: threshold ? "PATCH" : values.action === "reward_add" ? "POST" : values.action === "reward_remove" ? "DELETE" : "PUT",
+    body: JSON.stringify({ ...(threshold ? { value: values.value } : values.reward), reason, operator }),
+    stableIdempotencyKey: commandKey, expectsData: true,
+  });
+  try { assertF1Overview(data); }
+  catch { throw new F1OutcomeUncertainError("操作结果不完整，请按原操作重试核对。", commandKey); }
+  return normalizeOverview(data as BackendOverview);
 }
 
 export async function addF1VRankReward(rank: string, item: Omit<OpsVRankRewardItem, "id">, reason: string, operator: string) {

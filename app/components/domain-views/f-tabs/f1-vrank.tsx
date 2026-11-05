@@ -5,20 +5,21 @@ import { operatorNicknameText } from "@/lib/admin/brand-copy";
  *  奖励改为运营可配的「奖励清单」(USDT / NEX / 代金券 / SKU / 自定义),实物奖与发货队列已删。 */
 import { CodeTag } from "../design-kit";
 import { useState } from "react";
-import type { BusinessFormValue } from "../design-kit";
 import type { FViewCtx } from "./types";
 import type { F1VRankRow } from "@/lib/admin/f1-client";
 import { nexGridBrandText, platformAssetText } from "@/lib/admin/brand-copy";
 import { PublishedContentEditor } from "@/app/components/domain-views/published-content-editor";
 import { F1VrankBootstrap } from "./f1-vrank-bootstrap";
-import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
+import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
+import { F1PolicyConfirm, F1RemovalRecovery } from "./f1-policy-confirm";
+import { formatF1ExactAmount, type F1ConditionField, type F1PolicyEditor } from "@/lib/admin/f1-policy-change";
 
 function popPct(p: number, logMax: number): number { return p <= 0 ? 0 : Math.max(2, (Math.log10(Math.max(p, 1)) / logMax) * 100); }
 function pyrPct(p: number, logMax: number): number { return p <= 0 ? 0 : Math.max(3, (Math.log10(Math.max(p, 1)) / logMax) * 100); }
 function popColor(i: number): string { return i <= 2 ? "var(--cyan)" : i <= 5 ? "var(--brand)" : i <= 7 ? "var(--warning)" : "var(--brand-2)"; }
 
 type VRow = F1VRankRow;
-type VField = { k: string; label: string; cur: string; kind: "text" | "number"; options?: string[] };
+type VField = { k: F1ConditionField; label: string; cur: string; kind: "text" | "number"; options?: string[] };
 
 /**
  * `nx_v_rank_reward_rule.custom_label` 是运营手填自由文本,没有发布审核,因此可能存着
@@ -41,27 +42,14 @@ function safeCustomLabel(raw: string | undefined, fallback = "自定义"): strin
 // 奖励 chip 文案(运营可读)。
 function rewardLabel(it: OpsVRankRewardItem, voucherLabels: Record<string, string>, skuLabels: Record<string, string>): string {
   switch (it.type) {
-    case "usdt": return `USDT $${(it.amount ?? 0).toLocaleString()}`;
-    case "uvt": return `${(it.amount ?? 0).toLocaleString()} UVT`;
+    case "usdt": return it.amountText ? `USDT $${formatF1ExactAmount(it.amountText)}` : "USDT 金额暂不可用";
+    case "uvt": return it.amountText ? `${formatF1ExactAmount(it.amountText)} UVT` : "UVT 金额暂不可用";
     case "voucher": return `券 · ${voucherLabels[it.voucherId ?? ""] ?? it.voucherId ?? "—"}`;
     case "sku": return `商品 · ${(skuLabels[it.skuId ?? ""] ?? it.skuId ?? "—")}`;
     case "custom": return safeCustomLabel(it.custom);
     default: return "—";
   }
 }
-// 业务表单值 → 奖励字段(add / update 共用;按类型只保留相关字段,其余清空防残留)。
-function rewardFields(bv: BusinessFormValue): Omit<OpsVRankRewardItem, "id"> {
-  const type = (bv.rtype ?? "uvt") as VRankRewardType;
-  return {
-    type,
-    amount: type === "usdt" || type === "uvt" ? (Number(bv.amount) || 0) : undefined,
-    voucherId: type === "voucher" ? (bv.voucherId || undefined) : undefined,
-    skuId: type === "sku" ? (bv.skuId || undefined) : undefined,
-    custom: type === "custom" ? (bv.custom || undefined) : undefined,
-  };
-}
-function genRewardId(): string { return `vr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`; }
-const isFund = (t: VRankRewardType): boolean => t === "usdt" || t === "uvt";
 
 // 门槛按钮按语义分色(易辨认):算力额/金额=lemon green · 人数/分支=cyan · 等级=橙。
 function toneOf(k: string): string {
@@ -80,6 +68,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const canReversePayout = ctx.can("network_f1_reward_reverse");
   const [promotionFilters, setPromotionFilters] = useState({ userId: "", v: "", cohort: "", from: "", to: "" });
   const [payoutFilters, setPayoutFilters] = useState({ type: "", v: "", status: "", userId: "" });
+  const [policyEditor, setPolicyEditor] = useState<F1PolicyEditor | null>(null);
   const logMax = Math.max(1, Math.log10(Math.max(...rows.map((r) => r.pop), 1)));
 
   if (ctx.f1Loading && rows.length === 0) {
@@ -124,7 +113,6 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
 
   // 门槛改为每子值单独单值「调整」(不再一个文本框手打整串);展示行由各字段合成可读串。
   const rewardsOf = (v: string): OpsVRankRewardItem[] => ctx.rewards[v] ?? [];
-  const hasFundReward = (v: string): boolean => rewardsOf(v).some((it) => isFund(it.type));
   const composeTh = (r: VRow): string => {
     const p: string[] = [];
     const points = (value: string) => Number.isFinite(Number(value)) ? Number(value).toLocaleString("en-US") : value;
@@ -146,64 +134,17 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     return f;
   };
   const editField = (r: VRow, f: VField) => {
-    const fund = hasFundReward(r.v);
-    const cur = f.cur;
-    ctx.openActionConfirm({
-      name: `调整 ${r.v} 晋升条件 · ${f.label}`, amplify: fund, op: "param", paramKey: `F.vrank.${r.v}.${f.k}`,
-      completionCopy: "确认后更新本级晋升条件，下一轮评估使用新值。",
-      edit: f.options ? { kind: "select", current: cur, options: f.options, optionLabels: { NONE: "不要求" } } : { kind: f.kind, current: cur },
-      detail: `${r.v} 的${f.label}当前为 ${cur === "NONE" ? "不要求" : cur}。从下一轮评估开始生效，已晋升的用户不受影响。${f.k === "legRank" || f.k === "legCount" ? "分支数大于 0 时还须设置低于当前等级的分支等级，未设置完整前不会按该条件晋升。" : ""}${fund ? "这一级有 USDT / UVT 奖励，放宽条件会让平台多付钱，提交时检查兑付覆盖率。" : ""}`,
-    });
+    setPolicyEditor({ row: r, action: "threshold", field: f.k, valuation: ctx.f1RewardValuation });
   };
 
-  // ── 奖励 CRUD(复用 OperationConfirmModal + businessForm「vrank-reward-edit」;真写经 ctx.run 回调 + 审计)──
-  const rewardFormBase = (r: VRow) => ({
-    voucherOptions: ctx.voucherOptions, voucherLabels: ctx.voucherLabels,
-    skuOptions: ctx.skuOptions, skuLabels: Object.fromEntries(Object.entries(ctx.skuLabels).map(([id, label]) => [id, (label)])), subject: `${r.v} 等级`,
-  });
   const openAddReward = (r: VRow) => {
-    // 新增是「配置奖励模板」,非即时发放资金;类型在表单内选,资金提示由表单内 per-type tint 给出,
-    // 真正 B1 备付金硬闸发生在发放结算侧。故入口不整弹窗 amplify(避免对 代金券/SKU/自定义 误挂资金流出警告 + 覆盖率压力档误阻断)。
-    ctx.openActionConfirm({
-      name: `${r.v} · 新增奖励`, amplify: false,
-      businessForm: { kind: "vrank-reward-edit", ...rewardFormBase(r) },
-      detail: `为 ${r.v} 新增一项晋升奖励。USDT / UVT 奖励发放时会检查兑付覆盖率；代金券、商品和自定义奖励不计入资金账。`,
-      run: async (reason, bv) => {
-        if (!bv) return;
-        const item: OpsVRankRewardItem = { id: genRewardId(), ...rewardFields(bv) };
-        await ctx.addReward(r.v, item, reason);
-        ctx.toast(`${r.v} · 已新增奖励 ${rewardLabel(item, ctx.voucherLabels, ctx.skuLabels)}`);
-      },
-    });
+    setPolicyEditor({ row: r, action: "reward_add", valuation: ctx.f1RewardValuation });
   };
   const openEditReward = (r: VRow, item: OpsVRankRewardItem) => {
-    ctx.openActionConfirm({
-      name: `${r.v} · 编辑奖励`, amplify: isFund(item.type),
-      businessForm: {
-        kind: "vrank-reward-edit", ...rewardFormBase(r),
-        currentType: item.type,
-        currentAmount: item.amount != null ? String(item.amount) : "",
-        currentVoucherId: item.voucherId,
-        currentSkuId: item.skuId,
-        currentCustom: item.custom,
-      },
-      detail: `修改 ${r.v} 的奖励「${rewardLabel(item, ctx.voucherLabels, ctx.skuLabels)}」，从下一次发放开始生效，已发的不变。`,
-      run: async (reason, bv) => {
-        if (!bv) return;
-        await ctx.updateReward(r.v, item.id, rewardFields(bv), reason);
-        ctx.toast(`${r.v} · 奖励已更新`);
-      },
-    });
+    setPolicyEditor({ row: r, action: "reward_update", reward: item, valuation: ctx.f1RewardValuation });
   };
   const openRemoveReward = (r: VRow, item: OpsVRankRewardItem) => {
-    ctx.openActionConfirm({
-      name: `${r.v} · 移除奖励`,
-      detail: `移除 ${r.v} 的奖励「${rewardLabel(item, ctx.voucherLabels, ctx.skuLabels)}」，之后不再发放，已发的不收回。`,
-      run: async (reason) => {
-        await ctx.removeReward(r.v, item.id, reason);
-        ctx.toast(`${r.v} · 已移除奖励`);
-      },
-    });
+    setPolicyEditor({ row: r, action: "reward_remove", reward: item, valuation: ctx.f1RewardValuation });
   };
 
   // 服务端存量行仍可能带旧品牌(改名 NexGrid 前的 "Nexion V-Rank")。展示层归一,
@@ -299,6 +240,9 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
 
   return (
     <>
+      {policyEditor && <F1PolicyConfirm
+        key={`${policyEditor.row.v}:${policyEditor.action}:${policyEditor.field ?? policyEditor.reward?.id ?? "new"}:${policyEditor.recoveryCommandKey ?? "edit"}`}
+        editor={policyEditor} ctx={ctx} onClose={() => setPolicyEditor(null)} />}
       <PublishedContentEditor kind="rankHow" />
       <div className="f-stats">
         <div className="f-stat"><div className="k">总会员</div><div className="v">{totalMembers.toLocaleString()}</div><div className="sub">含 V0 {v0Pop.toLocaleString()}</div></div>
@@ -327,6 +271,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                   <div className="l2">团队购买奖励范围 {r.unilevelDepth || "—"} · 同级奖 {(r.peerBonusRate * 100).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}% · {r.votes} 票 · {r.visible ? "App 可见" : "App 隐藏"}</div>
                 </div>
                 <div className="lcell">
+                  <F1RemovalRecovery rank={r.v} onRecover={setPolicyEditor} />
                   <div className="rwd-list">
                     {items.map((it) => (
                       <span key={it.id} className={`rwd-chip rw-${it.type}`}>

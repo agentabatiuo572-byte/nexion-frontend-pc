@@ -12,6 +12,7 @@ import type {
   F1PromotionRecord,
   F1RewardPayout,
   F1VRankRow,
+  F1VRankOverview,
   F2Metric,
   F2PolicyParam,
   F2RateTier,
@@ -68,6 +69,9 @@ export interface FViewCtx {
   f1Loading: boolean;
   f1Error: string | null;
   refreshF1: () => Promise<void>;
+  f1RewardValuation: string | null;
+  f1Coverage: F1VRankOverview["coverage"];
+  acceptF1PolicyOverview: (overview: F1VRankOverview) => void;
   updateVRankThreshold: (rank: string, field: string, value: string, reason: string) => Promise<void>;
   updateF1Config: (key: string, value: string, reason: string) => Promise<void>;
   rewards: Record<string, OpsVRankRewardItem[]>;
