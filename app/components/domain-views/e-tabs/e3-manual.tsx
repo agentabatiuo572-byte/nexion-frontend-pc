@@ -18,15 +18,23 @@ function Sec({ n, title, children }: { n: string; title: string; children: React
   );
 }
 
+function configuredMonth(value: string) {
+  const month = Number(value);
+  return Number.isInteger(month) && month > 0 ? month : null;
+}
+
 export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void }) {
   const { pE } = ctx;
   const early = pE("E.device.capacity.band1DeltaPct");
   const mid = pE("E.device.capacity.band2DeltaPct");
   const late = pE("E.device.capacity.band3DeltaPct");
   const floor = pE("E.device.capacity.floorPct");
-  const cyc = pE("E.device.总周期月数");
-  const s1 = pE("E.device.初期结束月");
-  const s2 = pE("E.device.中期结束月");
+  const cyc = configuredMonth(pE("E.device.cycleMonths")) ?? "—";
+  const s1 = configuredMonth(pE("E.device.stageEarlyEnd"));
+  const s2 = configuredMonth(pE("E.device.stageMidEnd"));
+  const earlyMonths = s1 === null ? "—" : `第 1–${s1} 月`;
+  const midMonths = s1 === null || s2 === null ? "—" : `第 ${s1 + 1}–${s2} 月`;
+  const lateMonths = s2 === null ? "—" : `第 ${s2 + 1} 月起`;
   const subsidy = pE("E.device.capacity.subsidyDays");
   const ladderCuts = [1, 2, 3, 4].map((i) => pE(`E.tradein.ladder.cut${i}`));
   const ladderCredits = [1, 2, 3, 4, 5].map((i) => pE(`E.tradein.ladder.credit${i}`));
@@ -40,7 +48,7 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
     { zh: "中期每月变化", code: "band2DeltaPct", cur: `${mid}% / 月`, up: "中期下降变慢；正值时增长更快", down: "中期下降变快；正值时增长更慢" },
     { zh: "后期每月变化", code: "band3DeltaPct", cur: `${late}% / 月`, up: "后期下降变慢；正值时增长更快", down: "后期下降变快；正值时增长更慢", hot: true },
     { zh: "产能下限", code: "floorPct", cur: `${floor}%`, up: "下限提高，老设备一直有收益（平台应付款更多）", down: "下限降低，老设备更早接近停产" },
-    { zh: "产能分段周期", code: "初期结束月 / 中期结束月 / 总周期月数", cur: `第 ${s1} / 第 ${s2} 月 / 显示 ${cyc} 个月`, up: "分界往后 → 各段更长，后期下降来得更晚", down: "分界往前 → 后期下降来得更早，用户更快换新" },
+    { zh: "产能分段周期", code: "初期结束月 / 中期结束月 / 总周期月数", cur: `第 ${s1 ?? "—"} / 第 ${s2 ?? "—"} 月 / 显示 ${cyc} 个月`, up: "分界往后 → 各段更长，后期下降来得更晚", down: "分界往前 → 后期下降来得更早，用户更快换新" },
     { zh: "新机任务补贴天数", code: "subsidyDays", cur: `${subsidy} 天`, up: "「补贴中」显示更久，新用户更安心（只影响显示）", down: "更早显示产能百分比" },
     { zh: "产能是否逐月下降（按商品）", code: "applyTo.*", cur: `${exemptCount} 个不下降 / ${8 - exemptCount} 个下降`, up: "更多商品会下降 → 更多用户有换新动力", down: "更多商品不下降 → 始终 100%，保护入门体验" },
     { zh: "分档界线", code: "ladder.cut1–4", cur: `${ladderCuts.join("/")}%`, up: "界线往后 → 高抵扣档持续更久，换新动力更持久（平台让利更多）", down: "界线往前 → 抵扣更快变少，用户更急着换新" },
@@ -70,7 +78,7 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
 
         <Sec n="1" title="怎么看产能曲线">
           <ul className="e3man-ul">
-            <li><b>三个阶段</b>：前期（第 1–{s1} 月）→ 中期（第 {Number(s1) + 1}–{s2} 月）→ 后期（第 {Number(s2) + 1} 月起）。颜色从绿到黄到橙。</li>
+            <li><b>三个阶段</b>：前期（{earlyMonths}）→ 中期（{midMonths}）→ 后期（{lateMonths}）。颜色从绿到黄到橙。</li>
             <li><b>最低产能 {floor}%</b>：降到这里就不再下降（虚线）。</li>
             <li>每个圆点是那个月的设备产能，大圆点是阶段分界。</li>
             <li>各段每月按当前产能乘以「1 + 每月变化 ÷ 100」：负值下降、0 不变、正值增长，产能不低于配置下限。</li>
@@ -97,7 +105,7 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
           <ul className="e3man-ul">
             <li>点该行右侧的<b>「调整」</b>，填写新值和操作理由（至少 8 字），提交审批，由另一位超级管理员在「操作记录与审批」中批准后生效。</li>
             <li>一组相关的值（产能分段周期、提示升级的月损失金额、产能是否下降、分档界线、各档抵扣比例）会一起修改、一起保存。</li>
-            <li><b>月份在哪改</b>：三个阶段的分界月份<b>在「产能分段周期」一起改</b>（当前前期到第 {s1} 月、中期到第 {s2} 月、显示 {cyc} 个月），须满足 前期 &lt; 中期 &lt; 显示月数，批准后曲线自动更新；各阶段那一行只改每月变化多少。
+            <li><b>月份在哪改</b>：三个阶段的分界月份<b>在「产能分段周期」一起改</b>（当前前期到第 {s1 ?? "—"} 月、中期到第 {s2 ?? "—"} 月、显示 {cyc} 个月），须满足 前期 &lt; 中期 &lt; 显示月数，批准后曲线自动更新；各阶段那一行只改每月变化多少。
             </li>
             <li>带 <b>⚡</b> 的「调整」会让平台多付钱（后期每月变化、各档抵扣比例），提交时会检查兑付覆盖率，低于红线将无法保存。</li>
           </ul>

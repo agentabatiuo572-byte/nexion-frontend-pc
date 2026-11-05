@@ -65,6 +65,7 @@ interface BackendLeadership {
 
 interface BackendOverview {
   vrankRows?: BackendVRankRow[] | null;
+  monthlyPromotionCount?: number | null;
   rewards?: Record<string, BackendReward[] | null> | null;
   voucherOptions?: string[] | null;
   voucherLabels?: Record<string, string> | null;
@@ -471,6 +472,7 @@ export interface F1Leadership {
 
 export interface F1VRankOverview {
   rows: F1VRankRow[];
+  monthlyPromotionCount: number | null;
   rewards: Record<string, OpsVRankRewardItem[]>;
   voucherOptions: string[];
   voucherLabels: Record<string, string>;
@@ -1069,6 +1071,7 @@ function normalizeLeadership(data: BackendLeadership | null | undefined): F1Lead
 }
 
 function normalizeOverview(data: BackendOverview | null | undefined): F1VRankOverview {
+  const monthlyPromotionCount = data?.monthlyPromotionCount;
   const backendRewards = data?.rewards ?? {};
   const rewards: Record<string, OpsVRankRewardItem[]> = {};
   const rows = (data?.vrankRows ?? []).map((row) => {
@@ -1106,6 +1109,8 @@ function normalizeOverview(data: BackendOverview | null | undefined): F1VRankOve
     : undefined;
   return {
     rows,
+    monthlyPromotionCount: typeof monthlyPromotionCount === "number"
+      && Number.isSafeInteger(monthlyPromotionCount) && monthlyPromotionCount >= 0 ? monthlyPromotionCount : null,
     rewards,
     voucherOptions,
     voucherLabels: normalizeLabels(voucherOptions, data?.voucherLabels),

@@ -556,6 +556,7 @@
 | `/api/legal/risk-disclosure/current?jurisdiction=` | GET | (用户)当前 IP 辖区披露版本(server 权威判辖区) | — | I5 |
 | `/api/admin/legal/risk-disclosure` | PUT | 发布披露新版(per jurisdiction×locale;携 Key;发布标 ack stale 触发 re-ack;执行=风控 lead/超管) | I5-MD1~MD3 | I5 |
 | `/api/admin/i18n/namespaces` · `/:namespace/keys` · `/:namespace` · `/i18n/integrity` | GET/PUT | namespace 矩阵 / key 列表 / 发布(校验镜像+占位符;携 Key)/ 完整性扫描 | I6-MD1~MD3(发布) | I6 |
+| `/api/admin/content/i18n-learning/integrity/{issueCode}/fix` | POST | 保存选中词条的三语草稿，重扫返回该类剩余数和本次实际修复数。仍在发布版上的问题继续计入剩余。 | I6 完整性修复 | I6 |
 | `/api/admin/learn/courses` · `/:slug/versions` · `/:slug` | GET/PUT | 课程列表 / 历史 / 发布回滚+改奖励(改奖励核 B1;携 Key) | I7-MD1~MD4(PUT) | I7 |
 
 ### 域 J — 紧急合规(J1/J2 V4 接管 A3 写路径,读保留别名)

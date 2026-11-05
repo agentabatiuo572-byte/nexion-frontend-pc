@@ -77,6 +77,7 @@ export interface FViewCtx {
   f1ConfigValues: Record<string, string>;
   promotionRecords: F1PromotionRecord[];
   promotionTotal: number;
+  monthlyPromotionCount: number | null;
   promotionNextCursor: string;
   payoutRecords: F1RewardPayout[];
   payoutTotal: number;

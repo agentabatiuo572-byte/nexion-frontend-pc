@@ -135,10 +135,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const TUTORIAL_FEATURED_DEFAULT = data?.featuredCourseId ?? "";
   const featuredCourse = COURSES.find((course) => course.id === TUTORIAL_FEATURED_DEFAULT);
   const TUTORIAL_METRICS = (data?.metrics ?? []).map((m) => ({ k: m.key, v: m.value }));
-  const runBackend = (task: Promise<void>, ok: string) => {
+  const runBackend = <T,>(task: Promise<T>, ok: string | ((result: T) => string)) => {
     return task
-      .then(() => actions.reloadIContent())
-      .then(() => toast(ok))
+      .then(async (result) => {
+        await actions.reloadIContent();
+        toast(typeof ok === "string" ? ok : ok(result));
+      })
       .catch((error) => {
         toast(`操作失败:${displayAdminError(error)}`);
         throw error;
@@ -328,12 +330,17 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       },
       run: (reason, _v, form) => {
         if (!selectedMessage) return false;
+        const messageKey = selectedMessage.messageKey;
         return runBackend(actions.fixI6Integrity(issue.code, {
-          messageKey: selectedMessage.messageKey,
+          messageKey,
           zh: form?.zh || "",
           en: form?.en || "",
           vi: form?.vi || "",
-        }, reason), `${issue.kind} ${issue.cnt} 处已修复 · 待重扫确认`);
+        }, reason), (result) => {
+          const repairedCount = result.repairedCount
+            ?? Number(issue.samples.includes(messageKey) && !result.samples.includes(messageKey));
+          return `${issue.kind} ${repairedCount} 处已修复 · 待重扫确认`;
+        });
       },
     });
 

@@ -1570,7 +1570,7 @@ GET 与实时推送共用 `generatedAt`，表示服务器生成快照的 UTC 时
 **⑤ 接口**
 - `GET /api/admin/risk/radar` — 返回五维风险态势 `{ bankrun:{ ratio24h, light, withdraw24hUsdt, reserveUsdt, pressureRatio }, abnormalAccounts:{ count, byCategory }, withdrawBacklog:{ byState:[{state, count, amountUsdt}] }, killSwitches:[{ key, enabled }], coverage:{ ratio, light } }`(`pressureRatio` = 出金压力比 e(t),模型 §5.3,红线 0.7 固定);各维度数据**引用单一源**——挤兑分母储备来自 B1/D3、覆盖率来自 B1、kill-switch(**5 功能闸**:§9.11d.1 的 4 个二元功能闸 + 后台应急新增 withdraw)来自服务端 config store(V4 归 J1)、异常账户来自 K、队列来自 D2。**geo-block 闸不在本雷达 `killSwitches[]` 内,其状态归 J2 地域屏蔽面(见 ②)**。
 - **SSE 实时**:`GET /api/admin/risk/radar/stream`(Server-Sent Events)推送风险维度实时变化(挤兑比率 / kill-switch 状态 / 覆盖率灯),保证雷达实时性。
-- GET 和 SSE 使用相同的 `coverage.redlinePct` 契约。红线来自 B1，合法范围为 80%–150%，含两端。B5 同时校验服务端返回的覆盖率与灯色。
+- GET 和 SSE 使用同一份 B1 快照中的 `coverage.redlinePct` 和 `coverage.healthyPct`。红线可设 80%–150%，健康线可独立设为 100%–200% 且须高于红线。覆盖率低于红线为红灯，达到红线且低于健康线为黄灯，达到健康线为绿灯。B5 校验服务端返回的覆盖率与灯色。无应付款时覆盖率为空、灯态不可用，覆盖率来源不可靠时读取失败。分步部署先更新 PC。PC 仅对旧 Java 回包中缺失的健康线使用旧校验规则。
 - `PUT /api/admin/risk/bankrun-thresholds`(挤兑阈值配置,确认弹窗 B5-MD1:body 必携 `{reason}`,空值返 400 `REASON_REQUIRED`,确认即生效;**服务端强制校验 `bankrunRed > bankrunYellow`,违反返回 400**)。
 - `PUT /api/admin/risk/alert-subscription`(告警订阅)。
 

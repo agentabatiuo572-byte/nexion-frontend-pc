@@ -44,6 +44,7 @@ export type B5Radar = {
     ratio: number | null;
     light: Light | "unavailable";
     redlinePct: number;
+    healthyPct: number;
     reserveUsdt: number;
     liabilitiesUsdt: number;
     ratioReserveUsdt: number;
@@ -302,6 +303,9 @@ export function normalizeB5Radar(value: unknown): B5Radar {
 
   const coverageRatio = nullableNum(coverage.ratio, "coverage.ratio");
   const coverageRedlinePct = num(coverage.redlinePct, "coverage.redlinePct");
+  const coverageHealthyPct = coverage.healthyPct === undefined
+    ? coverageRedlinePct + 10
+    : num(coverage.healthyPct, "coverage.healthyPct");
   const coverageReserveUsdt = num(coverage.reserveUsdt, "coverage.reserveUsdt");
   const coverageLiabilitiesUsdt = num(coverage.liabilitiesUsdt, "coverage.liabilitiesUsdt");
   const coverageRatioReserveUsdt = num(coverage.ratioReserveUsdt, "coverage.ratioReserveUsdt");
@@ -318,7 +322,7 @@ export function normalizeB5Radar(value: unknown): B5Radar {
     if (coverageRatio === null || coverageLight === "unavailable") invalid("coverage.ratio");
     const expectedCoverageLight = coverageRatio < coverageRedlinePct
       ? "red"
-      : coverageRatio < coverageRedlinePct + 10 ? "yellow" : "green";
+      : coverageRatio < coverageHealthyPct ? "yellow" : "green";
     if (coverageLight !== expectedCoverageLight) invalid("coverage.light");
     close(
       coverageRatio,
@@ -338,6 +342,7 @@ export function normalizeB5Radar(value: unknown): B5Radar {
       ratio: coverageRatio,
       light: coverageLight,
       redlinePct: coverageRedlinePct,
+      healthyPct: coverageHealthyPct,
       reserveUsdt: coverageReserveUsdt,
       liabilitiesUsdt: coverageLiabilitiesUsdt,
       ratioReserveUsdt: coverageRatioReserveUsdt,

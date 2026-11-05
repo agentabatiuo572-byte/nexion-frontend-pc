@@ -133,21 +133,23 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
   const lbDataAvailable = !!periodLeaderboard && (!lbPaused || (data.leaderboardSnapshotState === "FROZEN" && data.leaderboardDataAvailable === true));
   const top1MaxPct = data.configValues["F.pool.top1MaxPct"] ?? "25";
   const top5MaxPct = data.configValues["F.pool.top5MaxPct"] ?? "60";
-  // 4 周期榜单奖池(JSON today/week/month/allTime)回填解析 · 无记录用默认 5K/50K/250K/1M。
   const periodPrizeRaw = data.configValues["F.pool.periodPrize"] ?? "";
-  let ppToday = "5000";
-  let ppWeek = "50000";
-  let ppMonth = "250000";
-  let ppAllTime = "1000000";
+  let periodPrizes: Record<string, unknown> | null = null;
   if (periodPrizeRaw) {
     try {
-      const parsed = JSON.parse(periodPrizeRaw);
-      if (typeof parsed.today === "number") ppToday = String(parsed.today);
-      if (typeof parsed.week === "number") ppWeek = String(parsed.week);
-      if (typeof parsed.month === "number") ppMonth = String(parsed.month);
-      if (typeof parsed.allTime === "number") ppAllTime = String(parsed.allTime);
-    } catch { /* schema 异常用默认,提交时后端 validatePeriodPrize 兜底 */ }
+      periodPrizes = JSON.parse(periodPrizeRaw);
+    } catch { /* 无有效配置时使用当前可用的榜单金额。 */ }
   }
+  const currentPeriodPrize = (period: "today" | "week" | "month" | "all") => {
+    const configured = periodPrizes?.[period === "all" ? "allTime" : period];
+    if (typeof configured === "number" && Number.isFinite(configured) && configured >= 0) return String(configured);
+    const liveAmount = lbPaused ? undefined : data.leaderboardPeriods?.[period]?.poolUsd;
+    return liveAmount === undefined ? "" : String(liveAmount);
+  };
+  const ppToday = currentPeriodPrize("today");
+  const ppWeek = currentPeriodPrize("week");
+  const ppMonth = currentPeriodPrize("month");
+  const ppAllTime = currentPeriodPrize("all");
 
   return (
     <>
@@ -374,7 +376,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
                   { key: "allTime", label: "总榜奖池(USD)", current: ppAllTime, inputKind: "number", min: 0 },
                 ],
               },
-              detail: `各榜奖池 · 当前 日 ${ppToday} / 周 ${ppWeek} / 月 ${ppMonth} / 总 ${ppAllTime} · 调高会多发钱，先看兑付覆盖率。`,
+              detail: `各榜奖池 · 当前 日 ${presentText(ppToday)} / 周 ${presentText(ppWeek)} / 月 ${presentText(ppMonth)} / 总 ${presentText(ppAllTime)} · 调高会多发钱，先看兑付覆盖率。`,
               run: async (reason, bv) => {
                 if (!bv) throw new Error("请填写全部 4 个奖池");
                 const today = Number(bv.today);
