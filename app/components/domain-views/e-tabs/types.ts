@@ -5,6 +5,8 @@ import type { E1BundleDiscount, E1GenerationGateData, E1GenerationGateInput, E1I
 import type { E2PhoneTier, E2TaskPricingSnapshot, E2YieldComparison } from "@/lib/admin/e2-client";
 import type { E3OperationMetric, E3Stats } from "@/lib/admin/e3-client";
 import type { E4OrderDetail } from "@/lib/admin/e4-client";
+import type { PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import type { E5Datacenter, E5DatacenterStatus, E5Device, E5Overview } from "@/lib/admin/e5-client";
 import type { E6ComputeConfigView } from "@/lib/admin/e6-client";
 import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
@@ -84,6 +86,7 @@ export interface McSpec {
   confirmTone?: "primary" | "danger";
   coverageLead?: ReactNode;
   facts?: ReactNode;
+  statedBrief?: { impact: string; check: string };
   deviceId?: number;        // E5 后端设备主键
   deviceNo?: string;        // E5 展示编号(instanceNo)
   deviceAction?: "activate" | "force-activate" | "deactivate" | "unbind";
@@ -92,6 +95,9 @@ export interface McSpec {
   dcForm?: DatacenterForm;
 }
 export type Mc = McSpec | null;
+
+/** E4 结果未确认的提案。原内容、理由和命令号一起存，重试只能原样发（OP-94）。 */
+export type E4PendingCommand = PendingMutationRecord & { label: string; orderNo: string; spec: ProposeSpec };
 
 /** 订单行(队列 / 状态机派生)。 */
 export interface EOrder {
@@ -161,9 +167,12 @@ export interface EViewCtx {
   clearE4Filters: () => void;
   refreshE4: () => Promise<unknown>;
   orderState: (o: EOrder) => string;
-  isCancelled: (id: string) => boolean;
-  isRefunded: (id: string) => boolean;
-  terminalOf: (id: string) => string | undefined;
+  e4Pending: E4PendingCommand[];
+  e4PendingNotes: Record<string, string>;
+  e4RetryRejected: string[];
+  e4Retrying: string;
+  retryE4Pending: (record: E4PendingCommand) => Promise<void>;
+  releaseE4Pending: (record: E4PendingCommand) => void;
   selOrder: EOrder | null;
   e4Detail: E4OrderDetail | null;
   e4DetailLoading: boolean;

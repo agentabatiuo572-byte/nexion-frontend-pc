@@ -19,7 +19,7 @@ export const stateLabel = (s: string): string => STATE_LABEL[s] ?? "状态未知
 
 // 筛选值是后端订单进度契约，不可改。11 个状态分 4 组（ST-68），分组只管显示和读取，不改枚举。
 export const ORDER_STATE_GROUPS = [
-  { value: "flow", label: "流转中", tone: "progress", allLabel: "全部流转中状态", states: ["placed", "paid", "provisioning"] },
+  { value: "flow", label: "进行中", tone: "progress", allLabel: "全部进行中状态", states: ["placed", "paid", "provisioning"] },
   { value: "delivered", label: "已交付", tone: "ok", allLabel: "全部已交付状态", states: ["activated", "inventory"] },
   { value: "failed", label: "失败", tone: "danger", allLabel: "全部失败状态", states: ["payment_failed", "provisioning_failed", "chargeback"] },
   { value: "closed", label: "已结束", tone: "done", allLabel: "全部已结束状态", states: ["expired", "refunded", "cancelled"] },
@@ -34,6 +34,11 @@ export interface E4Query {
   pageSize: number;
 }
 export const E4_PAGE_SIZES = [10, 20, 50, 100] as const;
+/** 已结束的状态：抽屉的终态判断和流程表共用，和标题同一个状态来源。 */
+export const ORDER_FINAL_STATES: readonly string[] = ["payment_failed", "expired", "provisioning_failed", "refunded", "chargeback", "cancelled"];
+/** 订单金额明细写接口的全部小数，至少 2 位，币种是 USDT（TX-19、TX-20）。列表、抽屉、确认框都用这个。 */
+export const orderAmount = (value: number, digits = 2) => value.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: 8 });
+export const orderMoney = (value: number) => `${orderAmount(value)} USDT`;
 export const E4_DEFAULT_QUERY: E4Query = { group: "all", state: "", keyword: "", page: 1, pageSize: 10 };
 export const e4GroupStates = (group: E4Query["group"]): readonly string[] => ORDER_STATE_GROUPS.find((item) => item.value === group)?.states ?? [];
 
@@ -68,8 +73,6 @@ export function writeE4QueryToUrl(query: E4Query) {
   window.history.replaceState(window.history.state, "", `${window.location.pathname}${search ? `?${search}` : ""}`);
 }
 
-// E-13 补建终态可选值(为缺失终态的订单手动落定;真后台由订单状态机校验后写入)。
-export const TERMINAL_STATES = ["payment_failed", "expired", "provisioning_failed", "chargeback"] as const;
 // 非终态(仍流转,允许按状态机落定失败终态);placed 另允许「取消订单」。
 export const NON_TERMINAL = new Set(["placed", "paid", "provisioning"]);
 
