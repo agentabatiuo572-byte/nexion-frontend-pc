@@ -81,7 +81,7 @@ export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, o
         )}
         {action ?? (onSubmit && <Button type="submit" disabled={querying}>查询</Button>)}
         {onClear && <Button variant="ghost" disabled={!canClear} onClick={onClear}>{clearLabel}</Button>}
-        {sort}
+        {sort && <span className="rd-filter-sort">{sort}</span>}
       </div>
       {more && (
         <div id={moreId} className="rd-filter-more" hidden={!moreOpen}>

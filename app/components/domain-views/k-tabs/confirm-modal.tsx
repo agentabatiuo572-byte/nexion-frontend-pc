@@ -101,7 +101,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       }
     >
       {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
-      <fieldset disabled={submitting} style={{ display: "contents" }}>
+      <fieldset disabled={submitting} className="rd-contents">
       {error && (surface
         ? <div className="rd-confirm-alert"><Notice tone="danger">{error}</Notice></div>
         : <div role="alert" className="tint danger">{error}</div>)}
@@ -123,8 +123,8 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
         </div>
       )}
       {req.input && (
-        <div className={surface ? "field" : undefined} style={surface ? undefined : { marginTop: 13 }}>
-          <label htmlFor={`${fieldId}-value`} style={surface ? undefined : { display: "block", fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>{req.input.label}</label>
+        <div className={surface ? "field" : "k-confirm-field"}>
+          <label htmlFor={`${fieldId}-value`} className={surface ? undefined : "k-confirm-label"}>{req.input.label}</label>
           {req.input.options && req.input.options.length > 0 ? (
             // 枚举值:勾选 chips 不让手输(能勾选的不要手输铁律);value=所选项,inputOk 同文本框(选中即非空、确认按钮才启用)。
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -142,15 +142,12 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
               value={value}
               onChange={(e) => setValue(e.target.value)}
               placeholder={req.input.placeholder}
-              style={surface ? undefined : {
-                width: "100%", background: "var(--surface-2)", border: "1px solid var(--border-strong)", borderRadius: 8,
-                padding: "8px 12px", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 13, outline: "none",
-              }}
+              className={surface ? undefined : "k-confirm-input"}
             />
           )}
         </div>
       )}
-      <div className={surface ? "field" : undefined} style={surface ? undefined : { marginTop: 13 }}>
+      <div className={surface ? "field" : "k-confirm-field"}>
         {surface ? (
           // 字段名强，下限跟在后面，上限在框角的字数里，各写一处（VS-104、VS-105）。
           <label htmlFor={`${fieldId}-reason`}>
@@ -170,15 +167,12 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
             rows={2}
             maxLength={req.reason ? reasonMax : 200}
             placeholder={req.reasonPlaceholder ?? (req.reason ? "写清场景和依据，例如：合租办公网络、已知合作账户、客服举报线索" : "可以补充处理依据")}
-            style={surface ? undefined : {
-              width: "100%", background: "var(--surface-2)", border: "1px solid var(--border-strong)", borderRadius: 8,
-              padding: "8px 12px", color: "var(--ink)", fontSize: 12.5, outline: "none", resize: "vertical", fontFamily: "inherit",
-            }}
+            className={surface ? undefined : "k-confirm-textarea"}
           />
           {surface && req.reason && <span className="rd-reason-count">{reasonLength}/{reasonMax}</span>}
         </div>
         {req.reason && (surface ? !reasonOk && (attempted || reasonLeft) : true) && (
-          <div className="tiny" style={{ marginTop: 7, color: reasonOk ? "var(--ink-3)" : "var(--warning)" }}>{reasonShort}</div>
+          <div className="tiny k-confirm-count" data-ok={reasonOk ? "" : undefined}>{reasonShort}</div>
         )}
       </div>
       </fieldset>

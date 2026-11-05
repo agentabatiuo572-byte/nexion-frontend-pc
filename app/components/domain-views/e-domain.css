@@ -586,3 +586,4 @@
   .edom .e6-flag-ctl { width: 100%; justify-content: space-between; }
   .edom .e6-copy-grid { grid-template-columns: 1fr; }
 }
+.e-field { gap: 5px; }

@@ -578,3 +578,9 @@
 /* M3 从客户列表进入时的返回链接（替代域标签行） */
 .mdom .m-back-link { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; color: var(--admin-blue); text-decoration: none; }
 @media (hover: hover) and (pointer: fine) { .mdom .m-back-link:hover { color: color-mix(in srgb, var(--admin-blue) 70%, var(--v5-ink)); } }
+
+/* 跨页会话窗口：在右下角；专属会话页的发送按钮在右下，待确认恢复卡改挂右上，不盖住它 */
+.card.m-dock-pill { position: fixed; right: 22px; bottom: 22px; z-index: 30; display: flex; align-items: center; gap: 9px; padding: 8px 12px 8px 9px; border-radius: 999px; box-shadow: var(--m-sh-pop); cursor: pointer; color: var(--ink); }
+.card.m-dock-panel { position: fixed; right: 22px; bottom: 22px; z-index: 30; display: flex; flex-direction: column; width: min(372px, calc(100vw - 24px)); max-height: min(72vh, 540px); box-shadow: var(--m-sh-pop); overflow: hidden; }
+.card:is(.m-dock-pill, .m-dock-panel)[data-top] { top: 68px; bottom: auto; }
+.m-dock-note { padding: 8px 11px; color: var(--warning); font-size: var(--rd-text-aux); }

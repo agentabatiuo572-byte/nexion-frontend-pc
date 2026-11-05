@@ -3909,13 +3909,13 @@ export function OperationConfirmModal({ action, title, detail, amplifies, covera
   );
 }
 
-/* toast — 自包含顶部居中浮层(对应设计稿 ctx.setToast);hover 暂停自动消失,移开 2s 后再消失。 */
+/* toast — 自包含顶部居中浮层(对应设计稿 ctx.setToast);3 秒消失,hover 暂停,移开后重新计 3 秒。 */
 export function useToast(): [ReactNode, (s: string) => void] {
   const [toast, setToast] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!toast) return;
-    timerRef.current = setTimeout(() => setToast(null), 2800);
+    timerRef.current = setTimeout(() => setToast(null), 3000);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [toast]);
   // 没权限的提示由外壳写（权限一变页面会重挂），这里清掉页面刚写的通用失败提示。
@@ -3927,9 +3927,9 @@ export function useToast(): [ReactNode, (s: string) => void] {
   const node = toast ? (
     <div
       onMouseEnter={() => { if (timerRef.current) clearTimeout(timerRef.current); }}
-      onMouseLeave={() => { if (timerRef.current) clearTimeout(timerRef.current); timerRef.current = setTimeout(() => setToast(null), 2000); }}
-      style={{ position: "fixed", top: "calc(var(--admin-topbar-h) + 32px)", left: "50%", transform: "translateX(-50%)", zIndex: "var(--admin-z-toast)", width: "min(420px, calc(100vw - 40px))", justifyContent: "center", background: "var(--v5-surface-2)", color: "var(--v5-ink)", padding: "12px 20px", borderRadius: 11, fontSize: 13.5, fontWeight: 500, display: "flex", alignItems: "center", gap: 9, boxShadow: "0 12px 36px rgba(0,0,0,.4)", border: "1px solid var(--v5-border-strong)" }}>
-      <span aria-hidden="true" style={{ flexShrink: 0 }}>ⓘ</span> {toast}
+      onMouseLeave={() => { if (timerRef.current) clearTimeout(timerRef.current); timerRef.current = setTimeout(() => setToast(null), 3000); }}
+      className="rd-toast" role="status">
+      <span aria-hidden="true">ⓘ</span> {toast}
     </div>
   ) : null;
   return [node, setToast];

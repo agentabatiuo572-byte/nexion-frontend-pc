@@ -12,7 +12,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Download, Landmark, RefreshCw, ShieldCheck } from "lucide-react";
 import { OperationConfirmModal, useToast, type OperatorBriefKind } from "../design-kit";
-import { BlockState, Button, Change, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Input, IrreversibleTag, Modal, Notice, PageHeader, PageTabs, RdPage, ReleaseModal, Select, StatusTag } from "@/app/components/rd";
+import { BlockState, Button, Change, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Input, IrreversibleTag, Modal, Notice, PageHeader, PageTabs, RdPage, ReleaseModal, Select, StatusTag, useTabIds } from "@/app/components/rd";
 import { useB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import { businessClock } from "@/lib/admin/business-time";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
@@ -99,7 +99,6 @@ interface ConfirmRequest {
 /** 页面上方一条结果未知的操作。重试只发存下来的内容，这里没有能改的东西（OP-94）。 */
 interface PendingItem {
   commandKey: string;
-  tone: "danger" | "warn";
   title: string;
   body: ReactNode;
   /** 还能重试时写在 body 后面；过期后换成 RETRY_EXPIRED。 */
@@ -176,6 +175,7 @@ export function D3Treasury() {
   const canExportReconciliation = has("finance_d3_export");
 
   const visibleTabs = TABS.filter((item) => (item.value === "flow" ? canReadFlow : item.value === "due" ? canReadMain || canReadExposure : canReadMain));
+  const tabIds = useTabIds();
   const [requestedTab, setRequestedTab] = useState<TabValue | null>(() => queryValue("tab", TABS.map((item) => item.value)));
   const tab = visibleTabs.find((item) => item.value === requestedTab)?.value ?? visibleTabs[0]?.value ?? null;
 
@@ -612,7 +612,6 @@ export function D3Treasury() {
   const pendingItems: PendingItem[] = [
     ...unknownCommands.injections.map((record): PendingItem => ({
       commandKey: record.commandKey,
-      tone: "danger",
       title: "储备注入登记结果未知，可能已经入账",
       body: <>{money(Number(record.amount))}，凭证号 {record.voucherNo}，{timeText(new Date(record.createdAt).toISOString())} 提交。</>,
       hint: "先看累计注入有没有变；重试不会重复登记。",
@@ -631,7 +630,6 @@ export function D3Treasury() {
     })),
     ...(forecastRecord && savedForecast ? [{
       commandKey: forecastRecord.commandKey,
-      tone: "danger" as const,
       title: "预测设置保存结果未知，可能已经保存",
       body: <>{timeText(new Date(forecastRecord.createdAt).toISOString())} 提交。</>,
       hint: "先看「预测设置」的版本有没有变；重试不会重复保存。",
@@ -650,7 +648,6 @@ export function D3Treasury() {
     }] : []),
     ...unknownCommands.exports.map((record): PendingItem => ({
       commandKey: record.commandKey,
-      tone: "warn",
       title: `${EXPORT_LABEL[record.exportKind]} 导出结果未知`,
       body: <>{timeText(new Date(record.createdAt).toISOString())} 提交。</>,
       hint: "文件可能没有下载下来，操作记录里可能已经有这次导出；重试不会多记一次。",
@@ -679,7 +676,7 @@ export function D3Treasury() {
       {pendingItems.map((item) => (
         <Notice
           key={item.commandKey}
-          tone={item.tone}
+          tone="warn"
           title={item.title}
           action={(
             <>
@@ -696,11 +693,13 @@ export function D3Treasury() {
         </Notice>
       ))}
       <PageTabs
+        ids={tabIds}
         label="资金储备内容"
         value={tab}
         onChange={selectTab}
         items={visibleTabs.map((item) => ({ ...item, count: item.value === "settings" && main?.config.pendingConfig ? 1 : undefined }))}
       />
+      <div {...tabIds.panel(tab)} className="rd-tab-pane">
       {tab === "overview" && (main
         ? (
           <>
@@ -747,6 +746,7 @@ export function D3Treasury() {
           onSave={saveConfig}
         />
       )}
+      </div>
 
       <Drawer
         open={injectOpen}
@@ -766,7 +766,7 @@ export function D3Treasury() {
         <Field label="凭证编号 / 哈希" required explain="填原始编号，至少 6 位，须能查到。" error={injectShown.voucher ? voucherIssue : undefined}>
           {(control) => (
             <div className="rd-reason-box">
-              <Input {...control} style={{ paddingRight: 64 }} maxLength={96} value={voucherNo} onChange={(event) => setVoucherNo(event.target.value)} onBlur={() => setInjectShown((current) => ({ ...current, voucher: true }))} placeholder="凭证号（不能重复）" aria-label="凭证号（必填，不能重复）" />
+              <Input {...control} className="rd-input-counted" maxLength={96} value={voucherNo} onChange={(event) => setVoucherNo(event.target.value)} onBlur={() => setInjectShown((current) => ({ ...current, voucher: true }))} placeholder="凭证号（不能重复）" aria-label="凭证号（必填，不能重复）" />
               <span className="rd-reason-count">{injectVoucher.length}/96</span>
             </div>
           )}

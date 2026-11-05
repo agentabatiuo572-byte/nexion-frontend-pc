@@ -26,8 +26,8 @@ export function Explain({ label, content, rows, side, children }: { label: strin
   const clear = () => window.clearTimeout(timer.current);
   useEffect(() => clear, []);
   const hover = {
-    onPointerEnter: (event: PointerEvent) => { if (event.pointerType !== "mouse") return; clear(); timer.current = window.setTimeout(() => setOpen(true), 120); },
-    onPointerLeave: (event: PointerEvent) => { if (event.pointerType !== "mouse" || pinned.current) return; clear(); timer.current = window.setTimeout(() => setOpen(false), 160); },
+    onPointerEnter: (event: PointerEvent) => { if (event.pointerType !== "mouse") return; clear(); timer.current = window.setTimeout(() => setOpen(true), 100); },
+    onPointerLeave: (event: PointerEvent) => { if (event.pointerType !== "mouse" || pinned.current) return; clear(); timer.current = window.setTimeout(() => setOpen(false), 100); },
   };
   const shown = rows?.filter((row) => row.v !== undefined && row.v !== null && row.v !== "") ?? [];
   return (

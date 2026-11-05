@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Ban, Check as CheckIcon, CheckCircle2, FilePen, FileText, Globe2, History, ListChecks, MapPinned, Plus, RefreshCw, ShieldAlert, ShieldCheck, Users } from "lucide-react";
-import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, Fold, Input, InlineMeter, InlineRetry, IrreversibleTag, JudgmentPoints, LocaleTabs, Modal, MoreMenu, Notice, PageHeader, PageTabs, Panel, Select, Stat, StatBand, StatusTag, Steps, Table, TableMessage, Td, Textarea, Th, Tr, type JudgmentRow } from "@/app/components/rd";
+import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, Fold, Input, InlineMeter, InlineRetry, IrreversibleTag, JudgmentPoints, LocaleTabs, Modal, MoreMenu, Notice, PageHeader, PageTabs, Panel, Select, Stat, StatBand, StatusTag, Steps, Table, TableMessage, Td, Textarea, Th, Tr, type JudgmentRow, useTabIds } from "@/app/components/rd";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { disclosurePublicationIssue } from "@/lib/admin/disclosure-publication-diagnostic";
@@ -93,6 +93,7 @@ export function I5Disclosures({ ctx, errorText }: { ctx: ICtx; errorText: string
     ...(has("content_i5_read") ? ["disclosure" as const] : []),
     ...(has("content_legal_terms_read") ? ["legal" as const, "privacy" as const] : []),
   ], [has]);
+  const tabIds = useTabIds();
   const [tab, setTab] = useState<TabKey | null>(null);
   const [visited, setVisited] = useState<TabKey[]>([]);
   const [legalNonce, setLegalNonce] = useState(0);
@@ -151,10 +152,10 @@ export function I5Disclosures({ ctx, errorText }: { ctx: ICtx; errorText: string
   return <>
     <DisclosureHeader ctx={ctx} tab={tab} readOnly={readOnly} guideExtra={readOnly ? <p>{readOnly}</p> : undefined} />
     {writes.notices}
-    {tabs.length > 1 && tab && <PageTabs label="法律条款与风险披露内容" value={tab} onChange={choose} items={tabs.map((value) => ({ value, label: TAB_LABEL[value] }))} />}
-    {visited.includes("disclosure") && <div hidden={tab !== "disclosure"} className="rd-tab-pane"><DisclosureTab ctx={ctx} errorText={errorText} writes={writes} has={has} queueNonce={queueNonce} /></div>}
-    {visited.includes("legal") && <div hidden={tab !== "legal"} className="rd-tab-pane"><LegalTab ctx={ctx} writes={writes} canWrite={legalWrite} canPublish={legalPublish} nonce={legalNonce} /></div>}
-    {visited.includes("privacy") && <div hidden={tab !== "privacy"} className="rd-tab-pane"><PrivacyTab ctx={ctx} writes={writes} canWrite={legalWrite} canPublish={legalPublish} nonce={privacyNonce} /></div>}
+    {tabs.length > 1 && tab && <PageTabs ids={tabIds} label="法律条款与风险披露内容" value={tab} onChange={choose} items={tabs.map((value) => ({ value, label: TAB_LABEL[value] }))} />}
+    {visited.includes("disclosure") && <div {...tabIds.panel("disclosure")} hidden={tab !== "disclosure"} className="rd-tab-pane"><DisclosureTab ctx={ctx} errorText={errorText} writes={writes} has={has} queueNonce={queueNonce} /></div>}
+    {visited.includes("legal") && <div {...tabIds.panel("legal")} hidden={tab !== "legal"} className="rd-tab-pane"><LegalTab ctx={ctx} writes={writes} canWrite={legalWrite} canPublish={legalPublish} nonce={legalNonce} /></div>}
+    {visited.includes("privacy") && <div {...tabIds.panel("privacy")} hidden={tab !== "privacy"} className="rd-tab-pane"><PrivacyTab ctx={ctx} writes={writes} canWrite={legalWrite} canPublish={legalPublish} nonce={privacyNonce} /></div>}
     {writes.releaseModal}
   </>;
 }

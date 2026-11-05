@@ -16,6 +16,8 @@
   --rd-selected: #232A14;      /* 选中行、选中页签（品牌色暗底） */
   --rd-scrim: rgba(0, 0, 0, 0.6);
   --rd-table-edge: rgba(0, 0, 0, 0.55); /* 表格横向滚动时边上的影子，提示还有内容 */
+  /* 浮层高度：boxShadowSecondary。平面内容不投影，下拉、气泡、抽屉、弹窗才有。 */
+  --rd-shadow-float: 0 6px 16px 0 rgba(0, 0, 0, 0.32), 0 3px 6px -4px rgba(0, 0, 0, 0.48), 0 9px 28px 8px rgba(0, 0, 0, 0.2);
 
   /* 文字 */
   --rd-text: #F1F2F4;          /* 主文字、数值 */
@@ -75,11 +77,11 @@
   --rd-chart-mid: #34363C;     /* 正负对比：中点 */
 
   /* 圆角 */
-  --rd-radius-panel: 12px;
-  --rd-radius-control: 8px;
-  --rd-radius-tag: 6px;
-  --rd-radius-tile: 8px;
-  --rd-radius-tile-sm: 6px;
+  --rd-radius-panel: 8px;      /* borderRadiusLG */
+  --rd-radius-control: 6px;    /* borderRadius */
+  --rd-radius-tag: 4px;        /* borderRadiusSM */
+  --rd-radius-tile: 6px;
+  --rd-radius-tile-sm: 4px;
   --rd-radius-bar: 4px;        /* 图表条的数据端 */
 
   /* 字体 */
@@ -107,15 +109,15 @@
   --rd-space-8: 40px;
   --rd-page-pad: 24px;         /* 内容区边距 */
   --rd-section-gap: 20px;      /* 区块之间 */
-  --rd-panel-pad-y: 18px;      /* 面板上下内边距 */
+  --rd-panel-pad-y: 16px;      /* 面板上下内边距 */
   --rd-panel-pad-x: 20px;      /* 面板左右内边距 */
-  --rd-cell-pad: 10px;         /* 表格单元格 */
+  --rd-cell-pad-y: 12px;       /* 表格单元格：middle 档 */
+  --rd-cell-pad: 8px;
 
   /* 控件和尺寸 */
-  --rd-control-h: 36px;        /* 输入框、按钮、页签 */
-  --rd-control-h-sm: 30px;     /* 表内和标题栏里的小按钮 */
-  --rd-row-h: 52px;            /* 表格行最低高度 */
-  --rd-row-h-2: 61px;          /* 两行内容的表格行 */
+  --rd-control-h: 32px;        /* 输入框、按钮、页签：controlHeight */
+  --rd-control-h-sm: 24px;     /* 表内和标题栏里的小按钮：controlHeightSM */
+  --rd-control-h-lg: 40px;     /* 单项修改的新值：controlHeightLG */
   --rd-sidebar-w: 216px;
   --rd-aside-w: 408px;         /* 详情侧栏 */
   --rd-icon: 16px;
@@ -129,6 +131,8 @@
 
 [data-theme="light"] {
   color-scheme: light;
+
+  --rd-shadow-float: 0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 9px 28px 8px rgba(0, 0, 0, 0.05);
 
   /* 表面：面板和侧栏是白，页面底浅灰 */
   --rd-bg: #F2F3F6;

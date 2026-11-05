@@ -8,13 +8,14 @@
  *   { key: "reject", label: "拒绝并退款", danger: true, disabledReason: "详情读取失败", onSelect: … },
  * ]} />
  *
- * - 方向键在可用项间移动，Esc 收起并回到按钮，点外面收起，点一项收起。
+ * - 方向键、Home、End 在可用项间移动，Esc 收起并回到按钮，点外面收起，点一项收起。点开才出来，不靠悬停，触屏也能用。
  * - disabledReason 写在这一项下面，不只放悬停（OP-126）。
  * - 放在可点的表格行里时，点菜单不会打开这一行。
  */
 import { useState, type KeyboardEvent, type ReactNode } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { MoreHorizontal } from "lucide-react";
+import { IconTip } from "./button";
 
 export interface MoreMenuItem {
   key: string;
@@ -25,12 +26,12 @@ export interface MoreMenuItem {
 }
 
 function moveFocus(event: KeyboardEvent<HTMLDivElement>) {
-  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
   event.preventDefault();
   const items = [...event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])')];
   if (!items.length) return;
   const index = items.indexOf(document.activeElement as HTMLElement);
-  const next = event.key === "ArrowDown" ? (index + 1) % items.length : (index - 1 + items.length) % items.length;
+  const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : event.key === "ArrowDown" ? (index + 1) % items.length : (index - 1 + items.length) % items.length;
   items[next].focus();
 }
 
@@ -38,7 +39,7 @@ export function MoreMenu({ label = "更多操作", items, disabled = false }: { 
   const [open, setOpen] = useState(false);
   return (
     <Popover.Root open={open && !disabled} onOpenChange={setOpen}>
-      <Popover.Trigger className="rd-iconbtn" aria-label={label} disabled={disabled}><MoreHorizontal size={16} aria-hidden /></Popover.Trigger>
+      <IconTip label={label}><Popover.Trigger className="rd-iconbtn" aria-label={label} disabled={disabled}><MoreHorizontal size={16} aria-hidden /></Popover.Trigger></IconTip>
       <Popover.Portal>
         <Popover.Content className="rd-pop rd-menu" role="menu" aria-label={label} align="end" sideOffset={6} collisionPadding={12} onClick={(event) => event.stopPropagation()} onKeyDown={moveFocus}>
           {items.map((item) => (

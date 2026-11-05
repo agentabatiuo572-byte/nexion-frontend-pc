@@ -1136,15 +1136,14 @@ export default function UserDetailPage() {
         ))}
       </StatBand>}
 
-      {hasEntries && <Panel title="处理入口" icon={UserCog} tone="role-3" explain={<><p>账户和资金操作到对应页面办，办完回到这页点「刷新」。</p><p>{inPageWrites ? `这个账号在这页能${inPageWrites}。` : "这个账号在这页不能改任何内容。"}</p></>}>
-        <div className="rd-detail-entries">
-          <div className="rd-toolbar">
+      {hasEntries && <Panel title="处理入口" icon={UserCog} tone="role-3" explain={<><p>账户和资金操作到对应页面办，办完回到这页点「刷新」。</p><p>{inPageWrites ? `这个账号在这页能${inPageWrites}。` : "这个账号在这页不能改任何内容。"}</p></>} actions={<>
             {canReadC2 && <Link className="rd-btn" data-variant="secondary" data-size="sm" href={{ pathname: "/users/actions", query: { userCode: userNo, source: "C1", returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">冻结 / 解冻账户</span></Link>}
             {canReadC3 && /^[1-9]\d*$/.test(c3UserId) && <Link className="rd-btn" data-variant="secondary" data-size="sm" href={{ pathname: "/users/assets", query: { userCode: userNo, userId: c3UserId, returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">调整余额</span></Link>}
             {canReadC5 && <Link className="rd-btn" data-variant="secondary" data-size="sm" href={{ pathname: "/users/security", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">安全与登录设备</span></Link>}
             {canWriteC1 && <Button size="sm" disabledReason={!c3UserId ? "读不到用户号，刷新后再试" : nicknameBlock} onClick={openNicknameReset}>重置昵称</Button>}
             {canWriteC1 && nicknameBlock && <span className="rd-toolbar-note">{nicknameBlock}</span>}
-          </div>
+      </>}>
+        <div className="rd-detail-entries">
           {crossLinks.length > 0 && <div className="rd-links">
             <span>去查</span>
             {crossLinks.map(([label, target]) => <Link key={target} className="rd-link" href={{ pathname: target, query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}>{label}</Link>)}

@@ -714,7 +714,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
             explain={PHASE_SWITCH_IDX >= 0 ? "趋势图已标出运营阶段切换时间。" : "当前时间范围内没有阶段切换记录。"} />
         </StatBand>
 
-        <div className="rd-split">
+        <div className="rd-split" data-detail="">
           <Panel title="八项指标" explain="未达标的排在前面，点一行看明细。" icon={ListChecks} tone="role-2" flush>
             <Table label="选择要查看的关键指标" rowFocus data-tight={showTrendColumn ? "" : undefined}>
               <thead><tr>
@@ -777,7 +777,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                 {kState !== "small" && <Fact k="分母">{ext.den}</Fact>}
                 {kState !== "small" && <Fact k="较上期">{deltaText(k).replace(/^较上期 ?/, "")}</Fact>}
                 <Fact k="统计范围">{queryScope(applied)}</Fact>
-                <Fact k="解读"><AutoGloss>{operatorCopyText(kState === "small" ? SMALL_SAMPLE_NOTE : ext.note)}</AutoGloss></Fact>
+                <Fact k="解读">{kState === "small" ? <>样本过小，不下结论<Explain label="样本过小的说明" content={SMALL_SAMPLE_NOTE} /></> : <AutoGloss>{operatorCopyText(ext.note)}</AutoGloss>}</Fact>
               </Facts>
               {drillError
                 ? <BlockState state="error" title="明细和趋势暂时加载不出来" detail={`其他内容不受影响。${drillError}`} onRetry={() => void selectKpi(safeSelKpi)} />
@@ -859,7 +859,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                   <Tr key={item.n}>
                     <Td><Cell num main={item.n} /></Td>
                     <Td><Cell main={<AutoGloss>{operatorCopyText(item.name)}</AutoGloss>} /></Td>
-                    <Td><Cell main={<AutoGloss>{operatorCopyText(KPI_PLAIN[item.n] ?? "")}</AutoGloss>} sub={renderFx(KPI_EXT[item.n].fx, KPI_EXT[item.n].fxBold)} /></Td>
+                    <Td><Cell title={`${operatorCopyText(KPI_PLAIN[item.n] ?? "")}：${KPI_EXT[item.n].fx}`} main={<AutoGloss>{operatorCopyText(KPI_PLAIN[item.n] ?? "")}</AutoGloss>} sub={renderFx(KPI_EXT[item.n].fx, KPI_EXT[item.n].fxBold)} /></Td>
                     <Td align="right"><Cell num main={tgtShort(item)} /></Td>
                     <Td><Cell main={batchText(item.vis)} /></Td>
                     <Td><StatusTag tone={STATE_TONE[states[index]]}>{stateText(states[index], item)}</StatusTag></Td>

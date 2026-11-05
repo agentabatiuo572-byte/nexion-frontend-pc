@@ -34,5 +34,5 @@ export { Steps } from "./steps";
 export { RdPage, useRdSurface } from "./surface";
 export { TodoFailed, TodoItem, TodoList } from "./todo-list";
 export { Cell, ColumnPicker, Table, TableLoading, TableMessage, Td, Th, Tr, useTableColumns, type TableColumn, type TableColumns } from "./table";
-export { PageTabs, Segments, type PageTabItem, type SegmentItem } from "./tabs";
+export { PageTabs, Segments, useTabIds, type TabIds, type PageTabItem, type SegmentItem } from "./tabs";
 export { DOMAIN_TONE, type DomainTone, type RoleTone, type StateTone, type Tone } from "./tone";

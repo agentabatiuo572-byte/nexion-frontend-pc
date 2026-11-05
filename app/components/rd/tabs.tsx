@@ -9,6 +9,10 @@
  *   <PageTabs label="资金储备内容" value={tab} onChange={setTab}
  *     items={[{ value: "overview", label: "资金概况" }, { value: "due", label: "应付款与到期", count: 3 }]} />
  *   没有读权限的页签不要传进来；count 是别的页签里的待处理数（PG-52）。
+ *   内容面板用 useTabIds 接上，读屏才知道这块内容属于哪个页签：
+ *   const ids = useTabIds();
+ *   <PageTabs ids={ids} … />
+ *   <div {...ids.panel(tab)} className="rd-tab-pane">…</div>
  *
  * 状态分段筛同一张表，点了立即查询（ST-16）：
  *   <Segments label="提现状态分组" value={group} onChange={setGroup} items={[
@@ -20,7 +24,7 @@
  *
  * 时间窗（J3、L4、D3）也用 Segments，不传 tone。多选不能用这两个（CP-62）。
  */
-import { useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useId, useMemo, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { TabGroup } from "@/app/components/kit/tab-group";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
 import type { StateTone } from "./tone";
@@ -32,7 +36,22 @@ export interface PageTabItem<T extends string> {
   disabled?: boolean;
 }
 
-export function PageTabs<T extends string>({ label, value, items, onChange }: { label: string; value: T; items: readonly PageTabItem<T>[]; onChange: (value: T) => void }) {
+export interface TabIds {
+  tab: (value: string) => string;
+  panelId: (value: string) => string;
+  panel: (value: string) => { id: string; role: "tabpanel"; "aria-labelledby": string };
+}
+
+export function useTabIds(): TabIds {
+  const base = useId();
+  return useMemo(() => ({
+    tab: (value: string) => `${base}-tab-${value}`,
+    panelId: (value: string) => `${base}-panel-${value}`,
+    panel: (value: string) => ({ id: `${base}-panel-${value}`, role: "tabpanel" as const, "aria-labelledby": `${base}-tab-${value}` }),
+  }), [base]);
+}
+
+export function PageTabs<T extends string>({ label, value, items, onChange, ids }: { label: string; value: T; items: readonly PageTabItem<T>[]; onChange: (value: T) => void; ids?: TabIds }) {
   const byValue = new Map(items.map((item) => [item.value, item]));
   return (
     <TabGroup
@@ -43,6 +62,8 @@ export function PageTabs<T extends string>({ label, value, items, onChange }: { 
       onSelect={onChange}
       disabled={(item) => byValue.get(item)?.disabled ?? false}
       itemClassName={() => "rd-tab"}
+      itemId={ids && ((item) => ids.tab(item))}
+      itemControls={ids && ((item) => ids.panelId(item))}
     >
       {(item) => {
         const tab = byValue.get(item);

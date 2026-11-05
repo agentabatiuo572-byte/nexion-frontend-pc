@@ -306,7 +306,7 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
             <Tr key={row.category} selected={row.category === selected} onOpen={() => onSelect(row.category)}>
               <Td><Cell main={<>{slot && <span className="rd-chart-swatch" data-slot={slot} aria-hidden />}{categoryText(row.category)}<Explain label={`${categoryText(row.category)}是什么`} content={LIABILITY_EXPLANATIONS[row.category]} /></>} /></Td>
               <Td align="right"><Cell num main={amountText(row.amountUsdt)} /></Td>
-              <Td align="right"><Cell num main={`${(row.share * 100).toFixed(2)}%`} /></Td>
+              <Td align="right"><Cell num main={`${(row.share * 100).toFixed(1)}%`} /></Td>
               <Td><Cell main={treasurySourceLabel(row.source)} /></Td>
             </Tr>
           );
@@ -383,7 +383,7 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
             <JudgmentPoints title="这类应付款" rows={[
               { label: "这是什么", value: LIABILITY_EXPLANATIONS[current.category] },
               { label: "金额", value: money(current.amountUsdt) },
-              { label: "占比", value: `${(current.share * 100).toFixed(2)}%` },
+              { label: "占比", value: `${(current.share * 100).toFixed(1)}%` },
               { label: "计入预测", value: main.config.liabilityCategories[current.category] ? "计入" : "不计入", reason: "按当前生效的预测设置" },
               { label: "数据来源", value: treasurySourceLabel(current.source), reason: <Explain label="技术信息" content={`类型编号 ${current.category}`} /> },
             ]} />
@@ -436,10 +436,10 @@ export function FlowTab({ history }: { history: { data: { flowWindows: Array<{ l
   return (
     <>
     <div className="rd-split" data-even="">
-      <Panel title="这几天钱是进多还是出多" sub={`近 ${flows.length || 8} 天 · 万 USDT`} icon={ArrowDownUp} tone="role-2" data-testid="b2-fund-flow-history">
+      <Panel title="这几天钱是进多还是出多" sub={`近 ${flows.length || 8} 天 · 万 USDT`} explain="这里只算储备账的收支：流入是充值和财务注入，流出是提现出款和拒付退回。" icon={ArrowDownUp} tone="role-2" data-testid="b2-fund-flow-history">
         {pending ? <BlockState state="loading" title="正在读取资金流…" />
           : !history.data ? <BlockState state="error" title="资金流历史暂不可用" detail={history.error} onRetry={history.reload} />
-          : flows.every((row) => row.inflowWan === 0 && row.outflowWan === 0) ? <BlockState state="empty" title={`近 ${flows.length} 天没有资金进出`} detail="这里只算储备账的收支：流入是充值和财务注入，流出是提现出款和拒付退回。" />
+          : flows.every((row) => row.inflowWan === 0 && row.outflowWan === 0) ? <BlockState state="empty" title={`近 ${flows.length} 天没有资金进出`} />
           : <ColumnChart label={`近 ${flows.length} 天资金流入和流出`} format={wan} axisFormat={(value) => String(Number(value.toFixed(1)))}
               series={[{ label: "流入", slot: 2 }, { label: "流出", slot: 4 }]}
               data={flows.map((row) => ({ key: row.label, tick: row.label, values: [row.inflowWan, row.outflowWan] }))} />}
@@ -520,11 +520,11 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNo
               </CheckGroup>
             </div>
           </Panel>
-          <div className="rd-toolbar">
-            <Button variant="primary" disabledReason={busyReason} onClick={onSave}>保存预测设置</Button>
-            {dirty && <Button variant="ghost" onClick={onDiscard}>放弃修改</Button>}
+          <div className="rd-toolbar" data-end="">
             {dirty && <span className="rd-toolbar-note">有未保存的修改</span>}
             <Explain label="保存预测设置的说明" content="有未保存的修改时，切页签和切窗口不会丢。改错了可以把选项改回去再保存，生效前再保存会覆盖待生效版本。" />
+            {dirty && <Button variant="ghost" onClick={onDiscard}>放弃修改</Button>}
+            <Button variant="primary" disabledReason={busyReason} onClick={onSave}>保存预测设置</Button>
           </div>
         </>
       ) : (

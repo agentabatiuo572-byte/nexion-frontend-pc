@@ -7,7 +7,7 @@
  * 每块各自加载、各自报错，一块失败不挡别的块（5.6）。这页不提交任何东西，要处理就跳业务页。
  * 导出资金数据等 BE-21（权限、理由、记录）一起上，不继续无记录下载（决定 7）。
  */
-import "./command-center/command-center.css";
+import "./overview/b-domain.css";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ListChecks, ShieldAlert, ShieldCheck } from "lucide-react";

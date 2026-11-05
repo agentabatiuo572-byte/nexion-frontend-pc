@@ -35,7 +35,7 @@ import type { StateTone } from "./tone";
 export type ChartSlot = 1 | 2 | 3 | 4 | "other";
 
 /** 每根柱（含两根成对的）最多占 96px，纵轴刻度占 72px：图不随面板横向拉满。 */
-const SLOT_W = 96;
+export const SLOT_W = 96;
 const AXIS_W = 72;
 
 /** 图和数据左右分区。左边图、宽度到 width 为止，右边数据；容器窄时上下排。 */

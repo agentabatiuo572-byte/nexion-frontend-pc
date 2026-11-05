@@ -32,7 +32,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 一排关键数字，最多 4 个 | `StatBand`、`Stat`；整张可点传 `href` 或 `onOpen`；值是 0 或「—」时自动弱化（字色弱、图标底灰、`lead` 不放大）；口径传 `explain` 进名称旁的提示图标，`sub` 只放数据 | `stat.tsx` |
 | 一块内容 | `Panel`；已经在一个面板里的分区传 `plain`，不套底；`sub` 只放数据（范围、单位、数量、时间），解释传 `explain` 进标题旁的提示图标 | `panel.tsx` |
 | 区块标题、统计数字前的图标 | `IconTile`，`Panel`、`Stat` 传 `icon` 就有 | `icon-tile.tsx` |
-| 切不同内容 | `PageTabs` | `tabs.tsx` |
+| 切不同内容 | `PageTabs`；`useTabIds` 一处给 id，内容包 `role="tabpanel"`，页签和面板互相指向 | `tabs.tsx` |
 | 筛同一张表、切时间窗 | `Segments` | `tabs.tsx` |
 | 次要内容收起来 | `Fold`，`summary` 必填；区块的「查看…」传 `actions` 放标题行右侧，每块最多一个；这组怎么算传 `explain`，不在折叠里铺长段落 | `fold.tsx` |
 | 看板里要处理的事 | `TodoList`、`TodoItem`，读不到用 `TodoFailed` | `todo-list.tsx` |
@@ -47,7 +47,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 查询区 | `FilterBar`、`FilterField`、`Input` | `filter-bar.tsx` |
 | 多行输入 | `Textarea`，放进 `Field`；字数传 `count`，写在框的右下角 | `filter-bar.tsx` |
 | 中、越、英三语正文 | `LocaleTabs`，切语言不动其他语言的内容，缺内容的页签写「缺失」 | `locale-tabs.tsx` |
-| 下拉、排序 | `Select` | `select.tsx` |
+| 下拉、排序 | `Select`；放进 `Field` 自动接上 `id`、`aria-describedby`、`aria-invalid` | `select.tsx` |
 | 单条详情、长表单 | `Drawer`，底部用 `Decision` | `overlay.tsx` |
 | 详情开头 3～5 行 | `JudgmentPoints` | `judgment.tsx` |
 | 详情、确认框里成对的名称和值 | `Facts`、`Fact`；确认框的关键数字传 `lead`（每框最多一个，放第一行），带含义的值传 `tone`；状态变化写 `Change`（改后蓝）。放在 `Modal` 里自动带浅底 | `facts.tsx` |
@@ -55,7 +55,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 短任务弹窗 | `Modal`；`icon` 是标题前的图标底，`sub` 放标题下的后果标签，危险确认传 `tone="danger"` | `overlay.tsx` |
 | 写操作确认 | 继续用 `OperationConfirmModal` | 见下 |
 | 解除待确认 | `ReleaseModal`；`label` 写原操作，统一的一句话在组件里，页面特有的说明传 `explain` | `overlay.tsx` |
-| 按钮 | `Button`、`IconButton`；和主按钮并排的危险入口用 `danger-outline`，实心 `danger` 只给最终确认 | `button.tsx` |
+| 按钮 | `Button`、`IconButton`；和主按钮并排的危险入口用 `danger-outline`，实心 `danger` 只给最终确认。高度读 `--rd-control-h`（32）、`-sm`（24）、`-lg`（40），页面不写高度 | `button.tsx` |
 | 状态 | `StatusTag`；列表筛成只有一种状态时，这个默认状态传 `neutral`（灰字加图标）；弹窗标题下「不能撤销」用 `IrreversibleTag` | `status-tag.tsx` |
 | 提示图标和气泡：这是什么、显示位置、生效时间、口径、后果 | `Explain`，悬停、点击、键盘都能开；`content` 自由内容（多段用 `<p>`），`rows` 分行写；`Panel`、`Fold`、`Conclusion`、`Stat`、`ConfigRow`、`Field`、`Check`、`CheckGroup`、`KeyValues`、`Decision`、`Drawer`、`StatusTag` 传 `explain` 就自带。正文里的词写成 children 就是虚线下划线，不加图标 | `explain.tsx` |
 | 一个整体分几份 | `Donut` 环图，中间写总额，图例写数；旁边有表格时传 `legend={false}`，表格第一列放色点当图例；两类都有钱才画 | `chart.tsx` |
@@ -68,8 +68,8 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 只读的流程进度：走到哪一步 | `Steps`，当前步从现有状态字段取 | `steps.tsx` |
 | 几条线比走势，或要画目标线、事件线 | `TrendLines`，目标线传 `marks`，事件线传 `event` | `chart.tsx` |
 | 表格里看走向 | `Sparkline`，至少两个点才传，数值要在别处读到 | `chart.tsx` |
-| 报表主表配所选明细 | `.rd-split` 放两个 `Panel`，点一行右边换明细；1366 以下上下排，给明细面板 `id`，点行后 `scrollIntoView` | `rd.css` |
-| 表单字段、勾选 | `Field`、`Check`、`CheckGroup`；页面上常驻表单的说明传 `explain`（标签旁的提示图标），修改框和抽屉里填写时要看的「怎么填」传 `help`；范围、字数传 `hint`，跟在字段名后面 | `field.tsx` |
+| 并排两块 | `.rd-split` 放两个 `Panel`。看板里对等的两块等高，`data-even` 再等宽；左边选一行右边看详情的主从结构传 `data-detail`，高度跟内容走。放不下时按内容折成上下排，不写窗口宽度；主从结构给明细面板 `id`，点行后 `scrollIntoView` | `rd.css` |
+| 表单字段、勾选 | `Field`、`Check`、`CheckGroup`；页面上常驻表单的说明传 `explain`（标签旁的提示图标），修改框和抽屉里填写时要看的「怎么填」传 `help`；范围、字数传 `hint`，跟在字段名后面。rd 控件直接放就接上 `id` 和错误，别的控件用函数子项 | `field.tsx` |
 | 名称和值成对 | `KeyValues`；名称的解释传 `explain`，`sub` 只放数据 | `key-values.tsx` |
 | 一块内容的加载、空、失败、无权限 | `BlockState` | `block-state.tsx` |
 | 页内提示：待生效、结果未知、只读说明 | `Notice` | `block-state.tsx` |
@@ -216,13 +216,16 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 ## 已经由组件保证的事
 
-- `Explain`：鼠标悬停 120ms 打开、移开关闭，不抢焦点；点击或 Enter、Space 打开并钉住，焦点进气泡，再点一下、Esc 或点外面关闭，焦点回到图标；触屏点一下就开。图标 14px、弱文字色，全站一个样子。
-- `Button`：`type` 默认 `button`，属性全部透传，`loading` 时点击无效、宽度不变；`disabledReason` 时不可点但能聚焦，悬停和聚焦都看得到原因，点一下走 `onBlockedClick`。浅色主题次按钮浅底描边、深色填底（VS-94）。
+- `Explain`：鼠标悬停 100ms 打开、移开关闭，不抢焦点；点击或 Enter、Space 打开并钉住，焦点进气泡，再点一下、Esc 或点外面关闭，焦点回到图标；触屏点一下就开。图标 14px、弱文字色，全站一个样子。
+- `Button`：`type` 默认 `button`，属性全部透传，`loading` 时点击无效、宽度不变，没传 `loadingText` 时显示转圈；`disabledReason` 时不可点但能聚焦，悬停和聚焦都看得到原因，点一下走 `onBlockedClick`。浅色主题次按钮浅底描边、深色填底（VS-94）。
+- `IconButton`：`aria-label` 同时是悬停和聚焦时的提示，不用再包一层。
 - `Panel`：标题行放不下时动作换到下一行，标题不拆字。
-- `Table`：放不下时横向滚动，两侧影子提示还有内容；右对齐列的格子贴右边；悬停不盖选中色。
-- `Steps` 最宽 640；`TrendLines` 的纵轴包住全部值和线，值和线都远离 0 时从整齐的低值起。
+- `Table`：放不下时横向滚动，两侧影子提示还有内容；右对齐列的格子贴右边；悬停不盖选中色。操作列传 `sticky="end"`，默认右对齐，窄屏时固定在右边。
+- `Steps` 排法跟上游：图标和文字一行，连线跟在文字后面，第一步贴左；`TrendLines` 的纵轴包住全部值和线，值和线都远离 0 时从整齐的低值起。
 - `Tr`：传 `onOpen` 后 Tab 能到，Enter、Space 打开，行内的按钮、链接、输入不触发。
-- `Drawer`、`Modal`：Tab 圈在里面，Esc 只关最上层，打开时聚焦容器，关闭后焦点回到当前高亮行或原来的按钮，`busy` 时全部锁住。
+- `Modal`：模态，Tab 圈在里面。`Drawer`：不挡外面的列表，不写 `aria-modal`，Tab 走到头回到页面。两者都是 Esc 只关最上层，打开时聚焦容器，关闭后焦点回到当前高亮行或原来的按钮，`busy` 时全部锁住。
+- `Decision`：危险决定在左，主决定在右；只有危险决定时放右边，和别的框收在同一条线上。
+- 整页表单的操作行用 `<div className="rd-toolbar" data-end="">`：状态和提示图标在左，按钮在右，顺序和抽屉底部一样。
 - `PageTabs`、`Segments`：方向键、Home、End 移动并立即选中，禁用项跳过。页签的网址读写在页面做。
 - `Select`：方向键环绕，Tab 和 Esc 收起，选后焦点回到触发器，禁用时收起且恢复后不自动展开。`required` 时空串算没选，表单提交被拦下，空值选项不进列表；不必填时空值选项是能选中的「全部」，表单值是空串。
 - `FilterBar`：Enter 等于查询；查询中只禁「查询」，条件照常能改；更多筛选收起不丢值。`action` 换掉「查询」的位置，Enter 仍走 `onSubmit`；自定义日期这类第二行放进 `.rd-filter-line`。
@@ -232,7 +235,9 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 权限、审批路径、金额规则、网址参数、幂等键，都由页面传入或继续走原来的 lib。组件不改写调用方的文字。
 
-`Cell` 最宽 280，长文本省略，`title` 给全文，只有鼠标能看到。要让键盘也能看，把这段文字放进可聚焦的按钮或链接里（ST-04）。单号这类不能截短的传 `full`（TX-28）。
+`Cell` 最宽 280，长文本省略。传 `title`：被切时格子可聚焦，悬停和聚焦都看全文（ST-04）。单号这类不能截短的传 `full`（TX-28）。
+
+用户写的内容（聊天气泡）加 `data-user-content`：那是数据，不是页面文字，量尺不按解释长句算。
 
 ## 深浅两套主题
 

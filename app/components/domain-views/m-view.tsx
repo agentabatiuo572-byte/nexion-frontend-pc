@@ -1505,16 +1505,14 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
 
   const customer = conv.customer ?? conv.agentName;
 
-  // 专属会话页的发送按钮在右下，待确认恢复卡改挂右上，不盖住它。
-  const dockAnchor = hidden ? { top: 68 } : { bottom: 22 };
   if (!open) {
     return (
       <button
         type="button"
         data-proof="session-dock-pill"
         onClick={() => setOpen(true)}
-        className="card"
-        style={{ position: "fixed", right: 22, ...dockAnchor, zIndex: 30, display: "flex", alignItems: "center", gap: 9, padding: "8px 12px 8px 9px", borderRadius: 999, boxShadow: "var(--m-sh-pop)", cursor: "pointer", color: "var(--ink)" }}
+        className="card m-dock-pill"
+        data-top={hidden ? "" : undefined}
         title="持续接待 · 切页不挂断"
       >
         <MAvatar name={customer} size="sm" />
@@ -1544,8 +1542,8 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
   return (
     <div
       data-proof="session-dock-panel"
-      className="card"
-      style={{ position: "fixed", right: 22, ...dockAnchor, zIndex: 30, width: "min(372px, calc(100vw - 24px))", maxHeight: "min(72vh, 540px)", boxShadow: "var(--m-sh-pop)", overflow: "hidden", display: "flex", flexDirection: "column" }}
+      className="card m-dock-panel"
+      data-top={hidden ? "" : undefined}
     >
       <div style={{ padding: "9px 12px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8, background: "var(--m-bg-2)" }}>
         <span style={{ display: "inline-flex", width: 8, height: 8, borderRadius: "50%", background: "var(--m-hd)", animation: "m-hd-pulse-blue 1.8s ease-out infinite" }} />
@@ -1569,7 +1567,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
         {conv.detailReady ? <MessageThread messages={threadMessages} relWhen={dockRelWhen} resetKey={conv.id} /> : <div role={detailError ? "alert" : "status"} className="itint">{detailError ? `会话详情加载失败：${detailError}` : "正在加载会话消息…"} {detailError && <button type="button" className="btn btn-sec btn-sm" onClick={() => { setDetailError(""); setDetailRetry((value) => value + 1); }}>重新加载详情</button>}</div>}
       </div>
       {sendError && <div role="alert" style={{ padding: "8px 11px", color: "var(--danger)", fontSize: 12 }}>{sendError}{sendError.startsWith("消息已发送") && <button type="button" className="btn btn-ghost btn-sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</button>}</div>}
-      {pendingDock && isRetryExpired(pendingDock) && <div role="status" style={{ padding: "8px 11px", color: "var(--warning)", fontSize: 12 }}>{RETRY_EXPIRED_TEXT}</div>}
+      {pendingDock && isRetryExpired(pendingDock) && <div role="status" className="m-dock-note">{RETRY_EXPIRED_TEXT}</div>}
       {pendingDock && canAbandon && <div><button type="button" className="btn btn-sec btn-sm" disabled={sending} onClick={() => void copyOriginal(draft)}>复制原文</button><button type="button" className="btn btn-sec btn-sm" disabled={sending} onClick={() => abandonQuery(pendingDock)}>放弃查询</button></div>}
       {!canWriteM3 && <div role="status" style={{ padding: "8px 11px", fontSize: 12 }}>你只能查看会话，发消息需要会话操作权限。</div>}
       <div style={{ padding: "9px 11px", borderTop: "1px solid var(--border)", display: "flex", gap: 8, alignItems: "flex-end" }}>

@@ -9,7 +9,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useReasonRule } from "@/lib/admin/use-reason-rule";
-import { DiffList, Explain, Field as RdField, Notice, StatusTag, Textarea } from "@/app/components/rd";
+import { Button, DiffList, Explain, Field as RdField, Notice, StatusTag, Textarea } from "@/app/components/rd";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
 import { Icon, Modal } from "../design-kit";
 import {
@@ -154,15 +154,15 @@ export function IdlePolicyModal({
           <div>
             <button type="button" className="btn btn-sec btn-sm" onClick={onClose} disabled={saving}>{canSave ? "取消" : "关闭"}</button>
             {confirm && <button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => setConfirm(false)}>返回修改</button>}
-            {canSave && <button
-              type="button"
+            {canSave && <Button
+              variant="primary"
+              size="sm"
               data-proof="session-idle-policy-save"
-              className="btn btn-pri btn-sm"
               onClick={() => { if (confirm) void save(); else setConfirm(true); }}
-              disabled={!canSave || blocked || !reasonOk || !orderOk || unchanged}
+              disabledReason={saving ? "正在保存" : pending ? "先查询原操作结果" : conflict ? "先读取最新策略" : unchanged ? "改了时长才能保存" : !orderOk ? "先把时长填对" : !reasonOk ? "先写变更理由" : undefined}
             >
               {saving ? "保存中…" : unchanged ? "策略未变更" : confirm ? "确认并保存" : "预览变更"}
-            </button>}
+            </Button>}
           </div>
         </div>
       )}

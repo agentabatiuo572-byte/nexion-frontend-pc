@@ -12,10 +12,10 @@
  * <Check label="计入创世节点收益" explain="每日收益算进到期金额" checked={on} onChange={…} />
  * <CheckGroup legend="计入哪些应付款" summary="9/9 开启"><Check … /><Check … /></CheckGroup>
  *
- * - Field 用 render 函数把 id、aria-describedby、aria-invalid 交给控件。Select 这类自带 aria-label 的控件直接传子元素。
+ * - Field 把 id、aria-describedby、aria-invalid 交给控件：render 函数收到这三项，直接放的 rd 控件（Select、Input、Textarea、NumberInput）自动接上。
  * - 说明按 DP-31 写：基础档一句话不超过 25 字，加强档再写怎么填和改了会怎样。
  */
-import { useId, type InputHTMLAttributes, type ReactNode } from "react";
+import { cloneElement, isValidElement, useId, type InputHTMLAttributes, type ReactElement, type ReactNode } from "react";
 import { Checkbox } from "./checkbox";
 import { Explain } from "./explain";
 
@@ -37,10 +37,12 @@ export function Field({ label, hint, help, explain, error, required, children }:
 }) {
   const id = useId();
   const described = [help || explain ? `${id}-help` : "", error ? `${id}-error` : ""].filter(Boolean).join(" ") || undefined;
+  const control: FieldControlProps = { id, "aria-describedby": described, "aria-invalid": error ? true : undefined };
   return (
     <div className="rd-form-field">
       <label className="rd-form-label" htmlFor={id}>{label}{required && <span className="rd-form-required" aria-hidden>*</span>}{explain && <Explain label={`${typeof label === "string" ? label : "这一项"}的说明`} content={explain} />}{hint && <span className="rd-form-hint">{hint}</span>}</label>
-      {typeof children === "function" ? children({ id, "aria-describedby": described, "aria-invalid": error ? true : undefined }) : children}
+      {typeof children === "function" ? children(control)
+        : isValidElement(children) && typeof children.type !== "string" ? cloneElement(children as ReactElement<FieldControlProps>, control) : children}
       {help ? <div id={`${id}-help`} className="rd-form-help">{help}</div> : explain && <span id={`${id}-help`} className="rd-sr-only">{explain}</span>}
       {error && <div id={`${id}-error`} className="rd-form-error" role="alert">{error}</div>}
     </div>

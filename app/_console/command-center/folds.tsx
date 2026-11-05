@@ -398,9 +398,12 @@ export function KpiFold({ refreshKey, reach, open, onOpenChange }: FoldProps & {
         : rows.length === 0 ? "关键指标暂无数据"
           : rollup.failed === 0 && rollup.unknown === 0 ? (rollup.total === 8 ? "八项都达标" : `${rollup.total} 项都达标`)
             : [rollup.failed > 0 ? `未达标 ${rollup.failed} 项` : "", rollup.unknown > 0 ? `暂无法计算 ${rollup.unknown} 项` : ""].filter(Boolean).join("，");
-  const names = (items: readonly B0Kpi[]) => items.map((kpi, index) => (
-    <span key={kpi.n}>{index > 0 && "、"}<button type="button" className="cc-link-button" onClick={() => setSelected(kpi)}>{operatorCopyText(kpi.label)}</button></span>
-  ));
+  const names = (title: string, items: readonly B0Kpi[]) => (
+    <div className="cc-names">
+      <span>{title}</span>
+      <ul aria-label={title}>{items.map((kpi) => <li key={kpi.n}><button type="button" className="cc-link-button" onClick={() => setSelected(kpi)}>{operatorCopyText(kpi.label)}</button></li>)}</ul>
+    </div>
+  );
   return (
     <Fold title="关键指标" summary={summary} icon={Target} tone="role-3" open={open} onOpenChange={onOpenChange}
       actions={<FoldLink reach={reach} href="/analytics/kpi">查看关键指标</FoldLink>}>
@@ -422,8 +425,8 @@ export function KpiFold({ refreshKey, reach, open, onOpenChange }: FoldProps & {
                     ))}
                   </ul>
                 )}
-                {unknownKpis.length > 0 && <p className="cc-line" data-muted="">暂无法计算：{names(unknownKpis)}</p>}
-                {passedKpis.length > 0 && <p className="cc-line" data-muted="">已达标：{names(passedKpis)}</p>}
+                {unknownKpis.length > 0 && names("暂无法计算", unknownKpis)}
+                {passedKpis.length > 0 && names("已达标", passedKpis)}
               </div>
             ))}
       {selected && <KpiDetail kpi={selected} reach={reach} onClose={() => setSelected(null)} />}

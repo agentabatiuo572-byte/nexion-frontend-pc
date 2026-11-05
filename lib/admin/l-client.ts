@@ -194,7 +194,11 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   }
   // The BFF converts an upstream lost response into 503. Retrying this one
   // operation with the unchanged durable key replays the committed result.
-  if (isReportCreation && res.status === 503) res = await execute().catch(() => { throw networkFailure(true); });
+  // 回复已经写明结果未知时重发也问不出结论，直接交给调用方留待确认。
+  if (isReportCreation && res.status === 503) {
+    const answered = await res.clone().json().then((body: ApiResult<T>) => isIdempotencyOutcomeOpen(body.message), () => false);
+    if (!answered) res = await execute().catch(() => { throw networkFailure(true); });
+  }
   if (isReportCreation && res.status >= 500) throw networkFailure(true);
   let payload: ApiResult<T> = {};
   try {

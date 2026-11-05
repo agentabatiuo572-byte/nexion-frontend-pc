@@ -12,6 +12,7 @@
  * - 刻度从 0 到最大值，顶线写最大值，所以不会贴边。
  */
 import type { CSSProperties } from "react";
+import { SLOT_W } from "./chart";
 import * as Tooltip from "@radix-ui/react-tooltip";
 
 export interface BarSeries {
@@ -29,9 +30,9 @@ export function Bars({ label, series, rows, format, height = 120 }: {
   height?: number;
 }) {
   const max = Math.max(...rows.flatMap((row) => row.values));
-  // 每天最多占 100px，图不随面板横向拉满（VS-49）。
+  // 和 chart 同一个每根上限，图不随面板横向拉满（VS-49）。
   return (
-    <div className="rd-bars" style={{ maxWidth: rows.length * 100 }}>
+    <div className="rd-bars" style={{ maxWidth: rows.length * SLOT_W }}>
       {series.length > 1 && (
         <div className="rd-bars-legend" aria-hidden>
           {series.map((item) => <span key={item.name} className="rd-bars-key"><span className="rd-bars-swatch" style={barColor(item.slot)} />{item.name}</span>)}

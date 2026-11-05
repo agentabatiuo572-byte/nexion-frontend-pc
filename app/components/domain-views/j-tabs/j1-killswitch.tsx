@@ -232,7 +232,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   const header = (
     <PageHeader pageId="J1" title="紧急停用开关"
-      summary={<AutoGloss>一键停用或恢复业务。恢复涉及资金的业务前，先确认兑付覆盖率。</AutoGloss>}
+      summary={<AutoGloss>一键停用或恢复业务。恢复资金业务前先看兑付覆盖率。</AutoGloss>}
       actions={<Button loading={contentLoading} onClick={reload}><RefreshCw size={15} aria-hidden />刷新</Button>}
       meta={readAt ? <>{readAt}（{businessZone().label}）读取 <Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动更新。自动关停发生时顶栏告警先提醒，这页要刷新才看到。" /></> : undefined}
       readOnly={!canKill && !canResume && !canBatchKill && !canWrite ? <>你只能查看 <Explain label="只读说明" content="关停、恢复和改参数需要紧急停用开关的操作权限，请联系超级管理员。" /></> : undefined}
@@ -494,7 +494,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         <Stat tone="role-2" icon={Power} label="在线业务" value={`${liveCount} / ${gates.length}`} />
         <Stat tone={data.stats.emergencyGateCount > 0 ? "warn" : "role-other"} icon={Siren} label="应急关停业务" value={String(data.stats.emergencyGateCount)} unit="项" explain="由自动规则、批量应急或应急预案联动关停的业务。" />
         <Stat tone="role-other" icon={ShieldAlert} label="未能恢复" value={String(data.stats.coverageBlockedCount)} unit="次" explain="因备付金不足被系统拒绝的恢复次数，是累计数，不是现在受限的业务数。" />
-        <Stat tone={covPass ? "role-1" : "danger"} icon={Coins} label="兑付覆盖率" value={pct(COV)} sub={`红线 ${pct(RED)}`} explain={`储备除以应付款，${coverageGapText}。恢复提现、兑换、创世节点或质押时，系统都会记录当时的覆盖情况。`} />
+        <Stat tone={covPass ? "role-1" : "danger"} icon={Coins} label="兑付覆盖率" value={pct(COV)} sub={`红线 ${RED}%`} explain={`储备除以应付款，${coverageGapText}。恢复提现、兑换、创世节点或质押时，系统都会记录当时的覆盖情况。`} />
       </StatBand>
 
       <ControlGrid label="业务开关">
@@ -550,7 +550,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         open={folds.coverage ?? (killed > 0 || !covPass)} onOpenChange={(open) => setFolds((state) => ({ ...state, coverage: open }))}>
         <Figure width={560} stack="wide" graphic={
           <TierBand label="当前兑付覆盖率" current={covPass ? "pass" : "blocked"} value={COV} valueText={`当前兑付覆盖率 ${pct(COV)}`}
-            boundText={(value) => (value === tiersTop ? `${pct(tiersTop)} 以上` : pct(value))}
+            boundText={(value) => (value === tiersTop ? `${pct(tiersTop)} 以上` : value === RED ? `${RED}%` : pct(value))}
             tiers={[
               { key: "blocked", label: "不能恢复", tone: "danger", from: 0, to: RED },
               { key: "pass", label: "可以恢复", tone: "ok", from: RED, to: tiersTop },

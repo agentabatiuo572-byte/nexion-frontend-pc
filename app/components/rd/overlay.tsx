@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Drawer 抽屉、Modal 弹窗（CP-66、CP-67）。Radix Dialog：Tab 圈在里面，Esc 只关最上层，
- * 打开时聚焦容器，关闭后焦点回到当前高亮行或打开前的按钮。
+ * Drawer 抽屉、Modal 弹窗（CP-66、CP-67）。Radix Dialog：Esc 只关最上层，打开时聚焦容器，关闭后焦点回到当前高亮行或打开前的按钮。
+ * 弹窗是模态，Tab 圈在里面。抽屉不挡外面的列表，所以不是模态：不声明 aria-modal，Tab 走到头继续回到列表，和鼠标能做的事一致。
  *
  * 单条详情（PG-63）：默认关着，列表占满宽度。点一行抽屉从右侧滑出，浮在列表上，不用暗遮罩，
  * 列表不变窄、不重排，被点的行用 <Tr selected> 保持高亮，关上才取消。不要做成常开并排，
@@ -43,7 +43,7 @@
  *
  * 框里直接放的 Facts 自动带关键信息区的底。解除待确认全站一个样子，用 ReleaseModal，页面只传原操作的名字和核对说明。
  */
-import { isValidElement, useEffect, useRef, type ComponentProps, type KeyboardEvent, type ReactNode, type CSSProperties } from "react";
+import { isValidElement, useEffect, useRef, type ComponentProps, type ReactNode, type CSSProperties } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronDown, ChevronUp, ShieldCheck, X, type LucideIcon } from "lucide-react";
 import { Button, IconButton } from "./button";
@@ -52,25 +52,6 @@ import { Fact, Facts } from "./facts";
 import { IconTile } from "./icon-tile";
 import { useRdSurface } from "./surface";
 import type { RoleTone, StateTone } from "./tone";
-
-/** 抽屉不是 Radix 的模态，Tab 圈要自己做。 */
-function keepTabInside(event: KeyboardEvent<HTMLDivElement>) {
-  if (event.key !== "Tab") return;
-  const controls = [...event.currentTarget.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href], summary, [tabindex="0"]')]
-    .filter((element) => !element.matches(":disabled") && element.getClientRects().length > 0);
-  if (!controls.length) {
-    event.preventDefault();
-    return;
-  }
-  const active = document.activeElement;
-  if (event.shiftKey && (active === controls[0] || active === event.currentTarget)) {
-    event.preventDefault();
-    controls.at(-1)?.focus();
-  } else if (!event.shiftKey && active === controls.at(-1)) {
-    event.preventDefault();
-    controls[0].focus();
-  }
-}
 
 /** 列表里的行和页面控件才算点到外面；提示条、浮层不在这些区域里，点它们不关抽屉。 */
 function dismissesDrawer(target: EventTarget | null) {
@@ -138,10 +119,8 @@ export function Drawer({ open, onClose, title, sub, explain, icon, tone = "role-
           ref={focus.ref}
           className="rd-drawer"
           data-wide={wide ? "" : undefined}
-          aria-modal="true"
           aria-busy={busy}
           aria-describedby={undefined}
-          onKeyDown={keepTabInside}
           onOpenAutoFocus={focus.onOpenAutoFocus}
           onCloseAutoFocus={(event) => {
             if (closedByOutsideClick.current) event.preventDefault();
@@ -182,21 +161,23 @@ export function Drawer({ open, onClose, title, sub, explain, icon, tone = "role-
 }
 
 /**
- * 抽屉底部的决定区。危险决定在左，主决定在右，分开放（DP-40）。
+ * 抽屉底部的决定区。危险决定在左，主决定在右，分开放（DP-40）；只有危险决定时放右边。
  * note 只写现在能不能做、为什么不能（阻断原因常显，DP-03）；按下去会怎样、要不要审批这类后果说明传 explain，
  * 收进提示图标（DP-06）：有 note 时跟在 note 后面，没有时放在按钮行最左。
  */
 export function Decision({ note, explain, danger, others, primary }: { note?: ReactNode; explain?: ReactNode; danger?: ReactNode; others?: ReactNode; primary?: ReactNode }) {
   const mark = explain && <Explain label="这些操作会怎样" content={explain} side="top" />;
+  const paired = Boolean(others || primary);
   return (
     <>
       {note && <p className="rd-decision-note">{note}{mark}</p>}
       <div className="rd-decision">
         {!note && mark}
-        {danger}
+        {paired && danger}
         <span className="rd-decision-spacer" />
         {others}
         {primary}
+        {!paired && danger}
       </div>
     </>
   );

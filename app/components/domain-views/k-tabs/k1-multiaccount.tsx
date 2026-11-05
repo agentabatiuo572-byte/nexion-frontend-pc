@@ -9,7 +9,7 @@ import { AlertTriangle, Coins, Gift, ListChecks, Lock, LockOpen, Network, Refres
 import {
   BlockState, Button, Cell, Change, ChartLegend, Conclusion, ConfigList, ConfigRow, Decision, DiffField, Explain, Fact, Facts, Field, Figure, FilterBar, FilterField, Fold, InlineMeter, Input, IrreversibleTag, JudgmentPoints, KeyValues,
   Modal, MoreMenu, Notice, NumberInput, PageHeader, PageTabs, Pager, Panel, ReleaseModal, SectionNav, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useSectionNav,
-  type ExplainRow, type JudgmentRow, type SectionNavItem,
+  type ExplainRow, type JudgmentRow, type SectionNavItem, useTabIds
 } from "@/app/components/rd";
 import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1_RELEASE_MODE_VALUES, K1_RELEASE_PARAM_LIMITS, newK1CommandKey } from "@/lib/admin/k-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -154,7 +154,7 @@ const RELEASE_PARAM_NAME: Record<string, string> = {
 const releaseParamName = (p: KRiskParam) => RELEASE_PARAM_NAME[p.key] ?? p.name;
 
 /** 收益金额按接口给的精度写全，非零不能显示成 0（TX-20）。 */
-const amountText = (amount: number) => amount.toLocaleString("en-US", { maximumFractionDigits: 20 });
+const amountText = (amount: number) => amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 20 });
 
 /** 时刻按业务时区写，和页头一致。 */
 const clockText = (time: number) => new Date(time).toLocaleTimeString("zh-CN", { timeZone: businessZone().zoneId, hour: "2-digit", minute: "2-digit", hour12: false });
@@ -316,8 +316,8 @@ function ClusterGraph({ c }: { c: K1Cluster }) {
             return (
               <g key={`${gid}-o`}>
                 <circle cx={x} cy={y} r={13} fill="var(--rd-panel-inner)" stroke="var(--rd-line-strong)" strokeWidth={1.3} strokeDasharray="3 3" />
-                <text x={x} y={y + 4} fontSize={11} fontWeight={600} fill="var(--rd-text-3)" textAnchor="middle">{`+${over}`}</text>
-                <text x={x} y={uy >= 0 ? y + 30 : y - 22} fontSize={11} fill="var(--rd-text-3)" textAnchor="middle">未列出</text>
+                <text className="rd-graph-label" x={x} y={y + 4} fontWeight={600} fill="var(--rd-text-3)" textAnchor="middle">{`+${over}`}</text>
+                <text className="rd-graph-label" x={x} y={uy >= 0 ? y + 30 : y - 22} fill="var(--rd-text-3)" textAnchor="middle">未列出</text>
               </g>
             );
           }
@@ -328,11 +328,11 @@ function ClusterGraph({ c }: { c: K1Cluster }) {
               <circle cx={x} cy={y} r={13} fill="var(--rd-panel-inner)" stroke={col} strokeWidth={1.6} />
               <circle cx={x} cy={y} r={3} fill={col} />
               {nd?.[3] === "是" && <circle cx={x + 10} cy={y - 10} r={3.6} fill="var(--rd-warn)" stroke="var(--rd-panel)" strokeWidth={1.5} />}
-              <text x={x} y={uy >= 0 ? y + 31 : y - 23} fontSize={11} fill="var(--rd-text-2)" textAnchor="middle">{(nd?.[0] ?? "").slice(4)}</text>
+              <text className="rd-graph-label" x={x} y={uy >= 0 ? y + 31 : y - 23} fill="var(--rd-text-2)" textAnchor="middle">{(nd?.[0] ?? "").slice(4)}</text>
             </g>
           );
         })}
-        {!c.edges.length && <text x={cx} y={cy + 4} fontSize={11} fill="var(--rd-text-3)" textAnchor="middle">暂无可展示关联边</text>}
+        {!c.edges.length && <text className="rd-graph-label" x={cx} y={cy + 4} fill="var(--rd-text-3)" textAnchor="middle">暂无可展示关联边</text>}
       </svg>
     }>
       <div className="rd-stack">
@@ -457,6 +457,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const focusClusterId = (searchParams?.get("focusClusterId") ?? "").trim();
+  const tabIds = useTabIds();
   const [tab, setTab] = useState<K1Tab>(() => focusClusterId ? "accounts" : pick(searchParams?.get("tab"), K1_TABS, "accounts"));
   const [layer, setLayer] = useState<K1ClusterLayer>(() => pick(searchParams?.get("clusterLayer"), ["all", "ip", "device", "payment"], "all"));
   const [clusterStatus, setClusterStatusFilter] = useState<K1ClusterStatusFilter>(() => pick(searchParams?.get("clusterStatus"), ["all", "detected", "flagged", "frozen", "released", "cleared"], "all"));
@@ -1297,12 +1298,13 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         </Notice>
       )}
 
-      <PageTabs label="多账户风险排查内容" value={tab} onChange={setTab} items={[
+      <PageTabs ids={tabIds} label="多账户风险排查内容" value={tab} onChange={setTab} items={[
         { value: "accounts", label: "账户组排查" },
         { value: "earnings", label: "收益审核", count: pendingEntries.length || undefined },
         { value: "rules", label: "规则与名单" },
       ]} />
 
+      <div {...tabIds.panel(tab)} className="rd-tab-pane">
       {tab === "accounts" && (
         <>
           {overviewReady && conclusion}
@@ -1331,7 +1333,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             ]} /></FilterField>
           </FilterBar>
 
-          {overviewReady ? <div className={clusters.length ? "rd-split" : undefined}>
+          {overviewReady ? <div className={clusters.length ? "rd-split" : undefined} data-detail={clusters.length ? "" : undefined}>
             <Panel title="可能属于同一人的账户" explain={clusters.length ? "点一行看证据和处置" : undefined} icon={Network} tone="role-3" flush>
               <Table label="关联账户组列表">
                 <thead>
@@ -1489,6 +1491,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         </div>
         </>
       ) : overviewState)}
+      </div>
 
       {paramDraft && (() => {
         const { param, value, reason } = paramDraft;

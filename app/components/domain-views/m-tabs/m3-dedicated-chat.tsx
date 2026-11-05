@@ -27,7 +27,6 @@ import { AssignAdvisorDialog, hasPendingFirstAssignment } from "./m3-assign-advi
 import { setSupportAlertPrefs, useSupportAlertPrefs } from "@/lib/admin/support-alerts";
 import { legacySupportDestination, privateMessageRecovery, supportEnhancements, type PrivateMessageRecovery } from "@/lib/admin/m-support-enhancements";
 import "./m3-dedicated-chat.css";
-import "./m3-session.css";
 import { useM3MessagePages } from "./use-m3-message-pages";
 
 type Intent = "SERVICE" | "MAINTENANCE";
@@ -144,13 +143,13 @@ function SupportMessage({message,previous,customerId,customerAvatarRef,customerN
   if(message.kind==="AGENT_SWITCH")return <div className="m3s-divider" role="note"><span>{agentSwitchText(message.agentName,message.senderRole)} · <time>{messageTime(message.ts)}</time></span></div>;
   // System notices are not anyone's speech: a centred strip without bubble, avatar or receipt (M-11).
   if(message.sourceSenderType==="SYSTEM")return <div className="m3s-system" role="note"><span>{(message).text}</span><time>{messageTime(message.ts)}</time></div>;
-  if(message.sourceSenderType==="INTERNAL")return <div className="m3s-internal" role="note"><span className="m3s-internal-label">内部备注 · {message.agentName&&message.agentName!=="系统"?message.agentName:"客服"} · {messageTime(message.ts)}</span><span style={{whiteSpace:"pre-wrap"}}>{(message).text}</span></div>;
+  if(message.sourceSenderType==="INTERNAL")return <div className="m3s-internal" role="note"><span className="m3s-internal-label">内部备注 · {message.agentName&&message.agentName!=="系统"?message.agentName:"客服"} · {messageTime(message.ts)}</span><span className="rd-pre">{(message).text}</span></div>;
   const mine=message.sender==="agent";
   return <div className="m3s-msg" data-side={mine?"agent":"customer"} data-new={newlyArrived?"":undefined}>
     {grouped?<span className="m3s-msg-gap"/>:<SupportAvatar name={name} path={path} version={message.senderAvatar?.version} size={32}/>}
     <div className="m3s-msg-copy">
       {!grouped&&<span className="m3s-msg-author">{name}{mine&&message.senderRole&&<span className="m3s-role" data-tone={message.senderRole==="ADVISOR"?"role-2":message.senderRole==="SUPERVISOR"?"role-3":"role-4"}>{SUPPORT_SESSION_ROLE_LABEL[message.senderRole]}</span>}{message.origin==="WELCOME"&&<span className="m3s-role" data-tone="neutral" title="注册后系统自动发送，不是客服手动输入">自动欢迎语</span>}{!ownerlessWelcome&&message.authorConfidence!=="VERIFIED"?" · 作者身份未确认":""} · <time>{messageTime(message.ts)}</time></span>}
-      <div className="m3s-bubble">
+      <div className="m3s-bubble" data-user-content="">
         {message.kind==="IMAGE"?message.attachmentId?<PrivateImage id={message.attachmentId} onRevoked={onRevoked}/>:"图片暂不可用":<span style={{whiteSpace:"pre-wrap"}}>{(message).text}</span>}
         {imageCaption&&imageCaption!=="[图片]"&&<div className="m3s-caption">{message.text}</div>}
         {message.kind==="SKU"&&<div className="m3s-attach"><strong>{(message.skuName ?? "")}</strong><p>商品编号：{message.skuId}</p>{message.targetAvailability==="UNAVAILABLE"?<span>商品已不可用；原推荐保留。</span>:canCheckSku?<a className="rd-link" href={`/devices/pricing?sku=${encodeURIComponent(message.skuId??"")}`}>核对商城商品</a>:<span aria-disabled="true">核对商城商品（无访问权限）</span>}</div>}
@@ -1549,10 +1548,10 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
                 <SupportAvatar name={userNicknameText(convo.customer || convo.profile?.nickname || "客户", convo.profile?.phone)} path={convo.customerAvatarRef ?? undefined} size={36} />
                 <span className="m3s-row-main">
                   <span className="m3s-row-top"><strong title={name}>{name}</strong><time title={`${messageDay(convo.lastTs)} ${messageTime(convo.lastTs)}（${zoneLabel}）`}>{agoText(convo.lastTs, timeoutNow)}</time></span>
-                  <span className="m3s-row-preview">{kind === "IMAGE" ? "[图片]" : kind === "SKU" ? "[商品推荐]" : kind === "LINK" ? "[页面链接]" : message?.text || convo.lastPreview || (hasMessage === false ? "尚无人工消息" : "消息摘要暂不可用")}</span>
+                  <span className="m3s-row-preview" title={message?.text || convo.lastPreview || undefined}>{kind === "IMAGE" ? "[图片]" : kind === "SKU" ? "[商品推荐]" : kind === "LINK" ? "[页面链接]" : message?.text || convo.lastPreview || (hasMessage === false ? "尚无人工消息" : "消息摘要暂不可用")}</span>
                   <span className="m3s-row-meta">
                     <StatusTag tone={tagTone} explain={STATE_HELP[timeoutLabel ? "late" : replyLabel]}>{timeoutLabel || replyLabel}</StatusTag>
-                    <span className="m3s-row-owner" data-hold={holdText ? (convo.holder?.adminId === adminId ? "mine" : "other") : undefined}>{holdText || `${convo.archived ? "已归档" : conversationStateLabel(convo.status)} · ${convo.owner}`}</span>
+                    <span className="m3s-row-owner" data-hold={holdText ? (convo.holder?.adminId === adminId ? "mine" : "other") : undefined} title={holdText || `${convo.archived ? "已归档" : conversationStateLabel(convo.status)} · ${convo.owner}`}>{holdText || `${convo.archived ? "已归档" : conversationStateLabel(convo.status)} · ${convo.owner}`}</span>
                     {convo.unread > 0 && <span className="m3s-unread" aria-label={`${convo.unread} 条未读`}>{convo.unread}<span className="sr-only"> 条未读</span></span>}
                   </span>
                 </span>

@@ -99,7 +99,7 @@ export function useSupportManagementCommand<T, R>(options: {
         setMessage(restricted ? "尚未查到原操作回执，当前授权仍未确认，请稍后再查询。" : "尚未查到原操作回执。");
       } else if (action !== "query" && [400, 404, 409, 422].includes(status ?? 0) && code && !code.startsWith("IDEMPOTENCY_")) {
         store.forget(slot, commandKey); setPending(undefined);
-        options.onFailure(payload); setMessage(`本次操作未完成。${displayAdminError(error)}`);
+        options.onFailure(payload); const reason = displayAdminError(error); setMessage(reason.startsWith("操作未完成") ? reason : `本次操作未完成。${reason}`);
       } else if (forbidden) {
         store.remember(slot, commandKey, { payload, denied: true });
         setDenied(true); setMessage(deniedNotice);

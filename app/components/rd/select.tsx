@@ -17,6 +17,7 @@
  *   placeholder="请选择收款方式" options={[{ value: "BANK", label: "银行卡" }]} />
  *
  * Radix 自带 portal、首字母跳转、Home、End、Esc 回到触发器；这里补方向键环绕、Tab 收起和禁用时收起（CP-57）。
+ * id、aria-describedby、aria-invalid 给 Field 接标签和错误，放进 Field 不用传；填错时触发器描边和输入框一样。
  */
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import * as Radix from "@radix-ui/react-select";
@@ -39,7 +40,7 @@ function Option({ option }: { option: SelectOption }) {
   );
 }
 
-export function Select({ value, onChange, options, groups, placeholder, disabled, name, required, "aria-label": ariaLabel }: {
+export function Select({ value, onChange, options, groups, placeholder, disabled, name, required, id, "aria-label": ariaLabel, "aria-describedby": describedBy, "aria-invalid": invalid }: {
   value: string;
   onChange: (value: string) => void;
   options?: readonly SelectOption[];
@@ -48,7 +49,10 @@ export function Select({ value, onChange, options, groups, placeholder, disabled
   disabled?: boolean;
   name?: string;
   required?: boolean;
+  id?: string;
   "aria-label": string;
+  "aria-describedby"?: string;
+  "aria-invalid"?: true;
 }) {
   const [open, setOpen] = useState(false);
   useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
@@ -72,7 +76,7 @@ export function Select({ value, onChange, options, groups, placeholder, disabled
     <Radix.Root value={value || (emptyOption && !required ? EMPTY : "")} onValueChange={(next) => onChange(next === EMPTY ? "" : next)} open={open && !disabled} onOpenChange={setOpen} disabled={disabled} required={required}>
       {/* Radix 的原生 select 只管必填校验；表单值走这里，「全部」才是空串，不是内部占位值。 */}
       {name && <input type="hidden" name={name} value={value} disabled={disabled} />}
-      <Radix.Trigger className="rd-select" aria-label={ariaLabel}>
+      <Radix.Trigger className="rd-select" id={id} aria-label={ariaLabel} aria-describedby={describedBy} aria-invalid={invalid}>
         <Radix.Value placeholder={placeholder ?? (required ? emptyOption?.label : undefined)} />
         <Radix.Icon><ChevronDown size={14} aria-hidden /></Radix.Icon>
       </Radix.Trigger>

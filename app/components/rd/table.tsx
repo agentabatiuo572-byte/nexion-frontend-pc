@@ -20,7 +20,7 @@
  *       <Th icon={User} tone="users">用户</Th>
  *       <Th align="right" icon={Coins} tone="money">金额（USDT）</Th>
  *       {columns.isVisible("chain") && <Th>收款链</Th>}
- *       <Th sticky="end" align="right">操作</Th>
+ *       <Th sticky="end">操作</Th>
  *     </tr></thead>
  *     <tbody>
  *       {rows.map((row) => (
@@ -37,13 +37,14 @@
  * - 可点的行传 onOpen：Tab 能到，Enter、Space 打开，行内按钮、链接、输入不触发（ST-06、OP-06）。
  * - 详情开着时给当前行传 selected：抽屉浮在列表上，这一行保持高亮，抽屉关上才取消（PG-63）。
  *   上一条下一条切到视口外的行时自动滚过去。默认列按列表占满宽度定，不给抽屉留宽度。
- * - 对齐按 ST-02：文字、状态左对齐，金额、数量、百分比、操作列 align="right"，操作贴表格右边。空值写「—」。
+ * - 对齐按 ST-02：文字、状态左对齐，金额、数量、百分比 align="right"；操作列传 sticky="end"，默认右对齐，贴表格右边，窄屏也看得全。空值写「—」。
  * - 加载用 <TableLoading columns={n} />；空和失败用 <TableMessage columns={n}>…</TableMessage> 放表体，
  *   失败不写「暂无数据」（T09）。
  * - 列选择只影响显示，不影响导出列和读取请求（ST-03）。按账号和表格记在 localStorage。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type HTMLAttributes, type KeyboardEvent, type MouseEvent, type ReactNode, type TdHTMLAttributes, type ThHTMLAttributes } from "react";
 import * as Popover from "@radix-ui/react-popover";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import { Columns3, type LucideIcon } from "lucide-react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Button } from "./button";
@@ -63,7 +64,7 @@ export function Table({ label, rowFocus, children, className, ...rest }: HTMLAtt
 /** control 是勾选这类控件列，不是数据列，不算进默认 6 列。 */
 export function Th({ align, sticky, control, icon: Icon, tone, children, ...rest }: ThHTMLAttributes<HTMLTableCellElement> & { align?: "left" | "right"; sticky?: "start" | "end"; control?: boolean; icon?: LucideIcon; tone?: DomainTone }) {
   return (
-    <th {...rest} scope={rest.scope ?? "col"} data-cp={control ? undefined : "column"} data-control={control ? "" : undefined} data-align={align} data-sticky={sticky}>
+    <th {...rest} scope={rest.scope ?? "col"} data-cp={control ? undefined : "column"} data-control={control ? "" : undefined} data-align={align ?? (sticky === "end" ? "right" : undefined)} data-sticky={sticky}>
       <span className="rd-th-inner">
         {Icon && <span className="rd-th-icon" data-tone={tone ?? "system"}><Icon size={13} strokeWidth={1.9} aria-hidden /></span>}
         {children}
@@ -73,7 +74,7 @@ export function Th({ align, sticky, control, icon: Icon, tone, children, ...rest
 }
 
 export function Td({ align, sticky, children, ...rest }: TdHTMLAttributes<HTMLTableCellElement> & { align?: "left" | "right"; sticky?: "start" | "end" }) {
-  return <td {...rest} data-align={align} data-sticky={sticky}>{children}</td>;
+  return <td {...rest} data-align={align ?? (sticky === "end" ? "right" : undefined)} data-sticky={sticky}>{children}</td>;
 }
 
 export function Tr({ selected, onOpen, children, onClick, onKeyDown, ...rest }: HTMLAttributes<HTMLTableRowElement> & { selected?: boolean; onOpen?: () => void }) {
@@ -110,13 +111,36 @@ export function Tr({ selected, onOpen, children, onClick, onKeyDown, ...rest }: 
 }
 
 /** 一格两行：第一行主值，第二行弱化。长文本单行省略，title 给全文，只是显示截断（ST-04）。单号这类不能截短的传 full（TX-28）。
- *  mono 只给单号、哈希、地址（等宽字体）；金额、数量、日期传 num（Inter 等宽数字，VS-52）。 */
+ *  mono 只给单号、哈希、地址（等宽字体）；金额、数量、日期传 num（Inter 等宽数字，VS-52）。
+ *  传了 title 又真被切掉时，格子能用 Tab 聚焦，聚焦时气泡写全文；鼠标走原生 title。 */
 export function Cell({ main, sub, mono, num, title, full }: { main: ReactNode; sub?: ReactNode; mono?: boolean; num?: boolean; title?: string; full?: boolean }) {
-  return (
-    <span className="rd-cell" data-mono={mono ? "" : undefined} data-num={num ? "" : undefined} data-full={full ? "" : undefined} title={title}>
+  const ref = useRef<HTMLSpanElement>(null);
+  const [cut, setCut] = useState(false);
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    const box = ref.current;
+    if (!title || !box) return;
+    const measure = () => setCut([...box.children].some((line) => line.scrollWidth > line.clientWidth + 1));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [title, main, sub]);
+  const cell = (
+    <span ref={ref} className="rd-cell" data-mono={mono ? "" : undefined} data-num={num ? "" : undefined} data-full={full ? "" : undefined} title={title}
+      tabIndex={cut ? 0 : undefined} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}>
       <span className="rd-cell-main">{main}</span>
       {sub !== undefined && sub !== null && <span className="rd-cell-sub">{sub}</span>}
     </span>
+  );
+  if (!title) return cell;
+  return (
+    <Tooltip.Provider>
+      <Tooltip.Root open={cut && focused}>
+        <Tooltip.Trigger asChild>{cell}</Tooltip.Trigger>
+        <Tooltip.Portal><Tooltip.Content className="rd-tip" sideOffset={6}>{title}</Tooltip.Content></Tooltip.Portal>
+      </Tooltip.Root>
+    </Tooltip.Provider>
   );
 }
 
