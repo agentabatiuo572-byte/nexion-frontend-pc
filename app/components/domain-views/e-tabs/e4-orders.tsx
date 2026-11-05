@@ -16,7 +16,6 @@ import { E4_PAGE_SIZES, ORDER_FLOW, ORDER_STATE_GROUPS, ORDER_STATE_TONE, stateL
 
 const FLOW_STATES = ["placed", "paid", "provisioning"];
 const FAILED_STATES = ["payment_failed", "provisioning_failed", "chargeback"];
-const money = (value: number) => `$${Math.round(value).toLocaleString()}`;
 
 // 状态的白话：这个状态意味着什么、下一步谁来做（DP-35）。流程示意和抽屉共用。
 const STATE_TEXT: Record<string, string> = {
@@ -65,7 +64,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
   const activeAmount = activated.reduce((sum, order) => sum + order.amt, 0);
   const hasConditions = query.group !== "all" || query.state !== "" || ctx.e4KeywordInput !== "";
   // 同一列按这一页最多的小数位补零，小数点对齐（ST-02）。
-  const amountDigits = Math.max(0, ...orders.map((order) => String(order.amt).split(".")[1]?.length ?? 0));
+  const amountDigits = Math.max(2, ...orders.map((order) => String(order.amt).split(".")[1]?.length ?? 0));
   const tableColumns = ORDER_COLUMNS.filter((column) => columns.isVisible(column.key)).length;
   const countText = (state: string) => `${counts?.[state] ?? "—"} 单`;
 
@@ -81,11 +80,9 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
       <Stat lead tone="role-2" icon={Workflow} label="流转中订单" value={flowCount ?? "—"} unit={flowCount === undefined ? undefined : "单"}
         sub={ctx.e4CountsFailed ? "数量暂时读不到" : "已下单 / 已支付 / 开通中"} explain="全部订单里这三个状态的单数，跟着搜索词变，不随下方状态筛选变。" />
       <Stat icon={AlertTriangle} iconTone={failedCount ? "danger" : undefined} tone={failedCount ? "danger" : undefined} label="失败订单" value={failedCount ?? "—"} unit={failedCount === undefined ? undefined : "单"}
-        sub="支付失败 / 开通失败 / 拒付" explain="全部订单里这三个状态的单数，跟着搜索词变，不随下方状态筛选变。" />
-      <Stat tone="role-1" icon={Coins} label="本页已激活金额" value={error || loading ? "—" : money(activeAmount)}
-        sub={error ? "加载失败" : loading ? "加载中" : `当前页 ${activated.length} 笔已激活`} explain="只算当前页显示的已激活订单，不是全部。翻页和筛选都会变。" />
-      <Stat icon={ClipboardList} label="订单总数" value={error || loading ? "—" : ctx.e4Total} unit={error || loading ? undefined : "单"}
-        sub={loading ? "加载中" : error ? "加载失败" : `当前筛选 · 第 ${query.page} 页 ${orders.length} 条`} explain="符合当前搜索词和状态筛选的全部订单，不只是这一页。" />
+        sub={countSub("支付失败 / 开通失败 / 拒付")} explain="全部订单里这三个状态的单数，跟着搜索词变，不随下方状态筛选变。" />
+      <Stat tone="role-1" icon={Coins} label="本页已激活金额" value={error || loading ? "—" : Math.round(activeAmount).toLocaleString("en-US")} unit={error || loading ? undefined : "USDT"}
+        sub={error ? "加载失败" : loading ? "加载中" : `当前页 ${activated.length} 笔已激活 · 取整`} explain={`只算当前页显示的已激活订单，不是全部。翻页和筛选都会变。这里取整显示${error || loading ? "" : `，完整金额 ${orderMoney(activeAmount)}`}。`} />
     </StatBand>
 
     <FilterBar
@@ -110,7 +107,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           <Th sticky="start">订单号</Th>
           {columns.isVisible("user") && <Th icon={User} tone="users">用户</Th>}
           {columns.isVisible("sku") && <Th icon={Package} tone="devices">商品</Th>}
-          {columns.isVisible("amount") && <Th align="right" icon={Coins} tone="money">金额</Th>}
+          {columns.isVisible("amount") && <Th align="right" icon={Coins} tone="money">金额（USDT）</Th>}
           {columns.isVisible("dc") && <Th icon={Server} tone="devices">数据中心</Th>}
           <Th>状态</Th>
           {columns.isVisible("age") && <Th align="right">下单至今</Th>}
@@ -128,7 +125,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
                       <Td sticky="start"><Cell mono full main={<button type="button" className="rd-cell-link" data-e4-order-trigger aria-label={`查看订单 ${order.id}`} aria-haspopup="dialog" onClick={() => ctx.openOrder(order)}>{order.id}</button>} /></Td>
                       {columns.isVisible("user") && <Td><Cell mono main={order.user} /></Td>}
                       {columns.isVisible("sku") && <Td><Cell main={order.sku} title={order.sku} /></Td>}
-                      {columns.isVisible("amount") && <Td align="right"><Cell num main={`$${order.amt.toLocaleString("en-US", { minimumFractionDigits: amountDigits, maximumFractionDigits: amountDigits })}`} /></Td>}
+                      {columns.isVisible("amount") && <Td align="right"><Cell num main={orderAmount(order.amt, amountDigits)} /></Td>}
                       {columns.isVisible("dc") && <Td><Cell main={order.dc} title={order.dc} /></Td>}
                       <Td><Cell main={<StatusTag tone={ORDER_STATE_TONE[state] ?? "neutral"}>{stateLabel(state)}</StatusTag>} sub={STATE_NEXT[state]} /></Td>
                       {columns.isVisible("age") && <Td align="right"><Cell num main={order.age} /></Td>}
@@ -239,7 +236,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const rows: JudgmentRow[] = [
     nextRow,
     { label: "对象", icon: User, tone: "users", value: o.user, reason: o.sku },
-    { label: "金额", icon: Coins, tone: "money", value: `$${o.amt.toLocaleString()}`, reason: e4Detail ? `${e4Detail.quantity} · ${operatorOrderFact("type", e4Detail.orderType)}` : undefined },
+    { label: "金额", icon: Coins, tone: "money", value: orderMoney(o.amt), reason: e4Detail ? `${e4Detail.quantity} · ${operatorOrderFact("type", e4Detail.orderType)}` : undefined },
     e4Detail
       ? { label: "付款来源", value: `${operatorOrderFact("payment", e4Detail.paymentMethod)} · ${operatorOrderFact("paymentStatus", e4Detail.paymentStatus)}`, reason: e4Detail.paymentNo ? <span data-mono>{e4Detail.paymentNo}</span> : undefined }
       : { label: "付款来源", ...pendingFact },
@@ -311,7 +308,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
             {e4Detail.funding.map((item, position) => {
               const ledgerHref = e4FundingLedgerHref(item);
               return <Fact key={`${item.source}-${item.bizNo}-${position}`} k={operatorOrderFact("source", item.source)}>
-                {operatorOrderFact("direction", item.direction)} {item.amount.toLocaleString()} USDT · {operatorOrderFact("fundingStatus", item.status)} · <span data-mono>{item.bizNo}</span>
+                {operatorOrderFact("direction", item.direction)} {orderMoney(item.amount)} · {operatorOrderFact("fundingStatus", item.status)} · <span data-mono>{item.bizNo}</span>
                 {ledgerHref && reach(ledgerHref, "finance_d4_read") && <> · <Link className="rd-link" href={ledgerHref}>到账本与账单核对查看</Link></>}
               </Fact>;
             })}
