@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import { acknowledgeBDomainAlert, fetchBDomainDashboard, useBDomainDashboard, type BLedger } from "@/lib/admin/b-client";
 import { createD3Injection, downloadD3Csv, updateD3Thresholds } from "@/lib/admin/d-client";
-import { pendingConfigApproval, submitConfigApproval } from "@/lib/admin/withdrawal-config-approval";
+import { pendingThresholdConfigApproval, submitConfigApproval } from "@/lib/admin/withdrawal-config-approval";
 import { displayAdminError, guardedFetch } from "@/lib/admin/error-messages";
 import { fmtUsd, fmtUsdCompact, fmtPct, fmtNum } from "@/lib/format";
 import { Sparkline as MiniSparkline } from "@/app/components/kit/kpi-stat-card";
@@ -254,14 +254,15 @@ export default function DualLedgerPage() {
   const liabRows = accounts.map((a) => ({ ...a, pct: liabilitiesUsd > 0 ? round2((a.amount / liabilitiesUsd) * 100) : 0 }));
 
   const thresholdBaseline = mc?.kind === "threshold" ? mc.baseline : null;
-  const pendingApproval = session && pendingConfigApproval("B1", session.adminId);
+  const pendingApproval = session && pendingThresholdConfigApproval("B1", session.adminId);
   const submitThresholdApproval = async (reason: string, values: BusinessFormValue, lookupOnly = false) => {
     if (!session || !thresholdBaseline) return false;
-    const result = await submitConfigApproval("B1", session, {
+    const original = pendingThresholdConfigApproval("B1", session.adminId);
+    const result = await submitConfigApproval("B1", session, original?.values ?? {
       expectedVersion: thresholdBaseline.thresholdVersion ?? 0,
       redlinePct: round2(Number(values.redlinePct)),
       healthyPct: round2(Number(values.healthyPct)),
-    }, reason, fetchBDomainDashboard, lookupOnly);
+    }, original?.reason ?? reason, fetchBDomainDashboard, lookupOnly);
     if (!result) return false;
     setToast(result.acknowledgement);
     setActionConfirm(null);
@@ -279,11 +280,12 @@ export default function DualLedgerPage() {
         if (!Number.isFinite(redline) || redline < 80 || redline > 150) throw new Error("红线必须在 80%–150%");
         if (!Number.isFinite(healthy) || healthy < 100 || healthy > 200) throw new Error("健康线必须在 100%–200%");
         if (healthy <= redline) throw new Error("健康线必须高于红线");
-        if (current.baseline.thresholdVersion !== LEDGER.thresholdVersion) {
+        const original = pendingThresholdConfigApproval("B1", session.adminId);
+        if (!original && current.baseline.thresholdVersion !== LEDGER.thresholdVersion) {
           throw new Error("当前阈值已更新，请关闭弹窗后重新调整。");
         }
-        if (redline < current.baseline.redlinePct) {
-          if (current.baseline.thresholdVersion === null) throw new Error("暂未取得当前阈值版本，请刷新后重试。");
+        if (original || redline < current.baseline.redlinePct) {
+          if (!original && current.baseline.thresholdVersion === null) throw new Error("暂未取得当前阈值版本，请刷新后重试。");
           await submitThresholdApproval(reason, businessValue!);
           return;
         }
@@ -727,13 +729,13 @@ export default function DualLedgerPage() {
           inlineApproval={thresholdBaseline ? {
             pending: !!pendingApproval,
             expired: !!pendingApproval && pendingApproval.expiresAt <= Date.now(),
-            disabledReason: thresholdBaseline.thresholdVersion !== LEDGER.thresholdVersion
+            disabledReason: !pendingApproval && thresholdBaseline.thresholdVersion !== LEDGER.thresholdVersion
               ? "当前阈值已更新，请关闭弹窗后重新调整。"
               : undefined,
-            resolve: (value) => value.redlinePct?.trim() && round2(Number(value.redlinePct)) < thresholdBaseline.redlinePct ? {
+            resolve: (value) => pendingApproval || value.redlinePct?.trim() && round2(Number(value.redlinePct)) < thresholdBaseline.redlinePct ? {
               coverageCheckCopy: "降低红线会放宽资金操作的覆盖率门槛。提交和批准时按拟调整红线校验覆盖率。",
               completionCopy: `另一位超管批准前，当前红线仍为 ${thresholdBaseline.redlinePct}%。`,
-              disabledReason: thresholdBaseline.thresholdVersion === null ? "暂未取得当前阈值版本，请刷新后重试。" : undefined,
+              disabledReason: !pendingApproval && thresholdBaseline.thresholdVersion === null ? "暂未取得当前阈值版本，请刷新后重试。" : undefined,
             } : undefined,
             renderForm: (value, onChange, locked, approval) => (<>
               <ThresholdComparison approval={approval} fields={[
@@ -781,6 +783,8 @@ export default function DualLedgerPage() {
                   }
                 : undefined
           }
+          getPendingReason={mc.kind === "threshold" ? () => session ? pendingThresholdConfigApproval("B1", session.adminId)?.reason : undefined : undefined}
+          getPendingBusinessValue={mc.kind === "threshold" ? () => pendingApproval ? { redlinePct: String(pendingApproval.values.redlinePct), healthyPct: String(pendingApproval.values.healthyPct) } : undefined : undefined}
           reasonMin={8}
           reasonMax={200}
           onClose={() => setActionConfirm(null)}

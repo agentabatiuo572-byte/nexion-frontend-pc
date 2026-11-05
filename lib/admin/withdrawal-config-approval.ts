@@ -51,6 +51,23 @@ export function pendingConfigApproval(sourceDomain: keyof typeof commands, admin
   return attempts.list().find((record) => record.fingerprint === slot);
 }
 
+type ThresholdApprovalValues = {
+  B1: { expectedVersion: number; redlinePct: number; healthyPct: number };
+  B5: { expectedVersion: number; yellowPct: number; redPct: number };
+};
+
+export function pendingThresholdConfigApproval<T extends keyof ThresholdApprovalValues>(source: T, adminId: string | number) {
+  const record = pendingConfigApproval(source, adminId);
+  if (!record) return undefined;
+  const input: unknown = JSON.parse(record.input);
+  const fields = source === "B1" ? ["expectedVersion", "redlinePct", "healthyPct"] : ["expectedVersion", "yellowPct", "redPct"];
+  if (!Array.isArray(input) || typeof input[1] !== "string" || !input[0] || typeof input[0] !== "object"
+    || !fields.every((key) => typeof input[0][key] === "number" && Number.isFinite(input[0][key]))) {
+    throw new Error("原审批内容不完整，请到操作记录核对。");
+  }
+  return { ...record, values: input[0] as ThresholdApprovalValues[T], reason: input[1] };
+}
+
 export async function submitConfigApproval<T>(
   sourceDomain: ApprovalSource,
   session: AdminSession,

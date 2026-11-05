@@ -3438,13 +3438,13 @@ export type InlineOperationApproval = {
   dialogClassName?: string;
 };
 
-export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; auditSink?: "a2" | "local-history"; briefKind?: OperatorBriefKind; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind?: OperatorBriefKind; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
   const [draftReason, setReason] = useState(pendingReason ?? "");
   const reason = pendingReason ?? draftReason;
   const [newVal, setNewVal] = useState(() => initEditValue(edit));
   const [activeBusinessForm, setActiveBusinessForm] = useState<BusinessFormSpec | undefined>(businessForm);
-  const [businessValue, setBusinessValue] = useState<BusinessFormValue>(() => initBusinessForm(businessForm));
+  const [businessValue, setBusinessValue] = useState<BusinessFormValue>(() => getPendingBusinessValue?.() ?? initBusinessForm(businessForm));
   const [uploadStates, setUploadStates] = useState<Record<string, "uploading" | "failed" | undefined>>({});
   const [businessSelectionLoading, setBusinessSelectionLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -3463,7 +3463,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const recoverApproval = inlineApproval ? (reason: string) => inlineApproval.recover(reason, businessValue, newVal) : approval?.recover;
   const retryApproval = approvalRecovery === "retry" ? inlineApproval?.retry : undefined;
   const approvalOnlyLookup = approvalRecovery === "lookup" || !!(approvalRecovery && inlineApproval?.expired);
-  const formLocked = submitting || approvalOnlyLookup || !!retryApproval;
+  const formLocked = submitting || !!approvalRecovery;
   // 配置型调整:仅当调用方显式传 edit 才提供「目标新值」编辑控件并要求 newVal;纯动作 / 处置(放行 / 冻结 / 驳回 / pause)不传 edit → 仅确认。
   // 去除按动作名猜测的启发式正则(原 isAdjust/select 正则):既防 dispose 名含「调整 / 规则 / 启停…」误弹字段,也防 adjust 名不含触发词漏判;改为 by edit 显式契约。全域调用点已逐一显式传 edit(2026-06 跨域硬化)。
   const spec: EditSpec | null = edit ?? null;
@@ -3657,9 +3657,11 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       )}
       {completionCopy && !approval && <div className="tint tiny" style={{ marginBottom: 14 }}>{completionCopy}</div>}
       {activeBusinessForm && (
-        inlineApproval?.renderForm ? inlineApproval.renderForm(businessValue, setBusinessValue, formLocked, !!approval) : (
+        <fieldset disabled={formLocked} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+        {inlineApproval?.renderForm ? inlineApproval.renderForm(businessValue, setBusinessValue, formLocked, !!approval) : (
           <BusinessFormBlock spec={activeBusinessForm} value={businessValue} onChange={setBusinessValue} onSelectionChange={(next) => void handleBusinessSelectionChange(next)} onUploadStateChange={(key, state) => setUploadStates((current) => ({ ...current, [key]: state }))} />
-        )
+        )}
+        </fieldset>
       )}
       {uploadBlocked && <div role="alert" className="itint" style={{ marginTop: 8 }}>
         {Object.values(uploadStates).includes("uploading") ? "图片正在上传，请完成后再提交。" : "图片上传失败，请重新上传或明确清除图片后再提交。"}
@@ -3670,7 +3672,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
           {!compareEdit && <span className="bf-legend">新值{spec.current ? <> · 当前 <span className="mono">{spec.optionLabels?.[spec.current] ?? spec.current}</span></> : null}</span>}
           {kind === "select" || kind === "toggle" ? (
             <div className="row wrap" style={{ gap: 8 }}>
-              {opts.map((o) => <Chip key={o} tab sel={newVal === o} disabled={spec.disabledOptions?.includes(o)} onClick={() => setNewVal(o)}>{spec.optionLabels?.[o] ?? o}</Chip>)}
+              {opts.map((o) => <Chip key={o} tab sel={newVal === o} disabled={formLocked || spec.disabledOptions?.includes(o)} onClick={() => setNewVal(o)}>{spec.optionLabels?.[o] ?? o}</Chip>)}
             </div>
           ) : (
             <div className={compareEdit ? "row wrap" : "row"} style={{ gap: 8, alignItems: "center" }}>
@@ -3689,7 +3691,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
                 min={kind === "number" ? spec.min : undefined}
                 max={kind === "number" ? spec.max : undefined}
                 step={kind === "number" ? spec.step : undefined}
-                disabled={!!inlineApproval?.compareEdit && formLocked}
+                disabled={formLocked}
                 value={newVal}
                 onChange={(e) => setNewVal(e.target.value)}
                 placeholder={spec.current ? `输入新值（当前 ${spec.current}）` : "输入新值"}
