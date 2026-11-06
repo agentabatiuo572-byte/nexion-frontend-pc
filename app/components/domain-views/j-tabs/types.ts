@@ -23,7 +23,12 @@ export type ActionConfirmReq = {
   facts?: ReactNode;
   reasonPlaceholder?: string;
   reasonPolicyOptional?: boolean;
-  run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void>;
+  /** 框里写这项为什么现在不能提交，确认按钮禁用。 */
+  blockedReason?: ReactNode;
+  /** 换了就重开这个框：理由和输入回到初值。别人改过后读取最新时用（OP-97）。 */
+  formKey?: number;
+  /** 返回 false 时框留着。 */
+  run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | boolean | Promise<void | boolean>;
 };
 
 export type JCtx = {
