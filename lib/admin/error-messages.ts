@@ -213,6 +213,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   TRIAL_POLICY_BUSINESS_TABLE_UNAVAILABLE: "免费试用设置暂时不可用，本次没有保存；请稍后刷新页面再重试。",
   TRIAL_PARAM_READONLY: "这个试用参数由系统或商品资料决定，不能在这里直接修改。",
   TRIAL_QUOTA_INTEGER_REQUIRED: "免费试用天数和名额必须填写范围内的整数，请按字段提示修正。",
+  "Numeric value is out of range": "填写的数值超出允许范围，本次未保存；请核对当前参数允许的最小值和最大值，修改后重试。",
   TRIAL_PARAM_VALUE_TOO_LONG: "免费试用参数内容过长，本次未保存；请缩短后重试。",
   TRIAL_SESSION_BUSINESS_TABLE_UNAVAILABLE: "免费试用数据暂时不可用，本次操作没有完成；请稍后刷新页面核对。",
   TRIAL_SESSION_ID_INVALID: "试用编号无效，本次操作没有执行；请刷新页面后从列表里重新选择。",

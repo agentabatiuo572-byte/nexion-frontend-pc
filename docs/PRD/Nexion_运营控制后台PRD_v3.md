@@ -956,6 +956,7 @@
 **H4 2026-10-25 TEST 验收记录**：#635 整单零应付和超过优惠后商品行均拒绝；单行零、整单 1234.05 USDT 报价建单成功。未付取消及重复取消恢复 18.905 USDT 预算和有限库存，钱包、完整账单、设备与销量不变，临时活动正常结束。#636/#647 正常 E1→A2 双人审批完成 Pro 库存 292→0→292；库存 0 时 readiness 不足且已开启配置再保存被页面拒绝，恢复后 readiness 恢复，冻结规则/revision/原奖励权益保留。新键重复退款、已办退款票重复批准、新期赠机并发、首次耗尽领取及 stock=1/giftQuantity=2 未实跑。证据：`D:/workspace/output/events-boundaries-20261025/635-BC-actual-acceptance.md`、`636-647-stock-actual-acceptance.md`；E1 全字段保留另见[专项验收](specs/E1-SKU-EDIT-PRESERVATION-20261025.md)。
 
 #### [H5] 签到与UVT奖励
+- **成长奖励天数范围拒绝（BUG-257 后续）**：触发天数为 0 时，系统返回数值超范围，弹窗说明本次未保存并提示核对参数上下限、修改后重试，保留天数、备注和理由。系统当前范围为 1–365 天；不改变原审批与保存流程。
 **① 目的 & 对齐**: 配置每日签到的积分规则、Lucky 概率倍率、30 天里程碑路线图、Streak Saver 断签复活卡、Streak Power-Ups 连胜增益,作为留存节奏的签到引擎。对齐前端 **§9.8**(`/daily`:§9.8.1 签到规则 + Lucky multiplier / §9.8.2 30 天里程碑 / §9.8.3 Streak Saver / §9.8.6 Streak Power-Ups)+ **§9.11c.1**(`POST /api/points/sign-in` 返 multiplier「A/B 实验值」)+ **§9.11d.3**(Lucky multiplier「必须 server-driven」,锚 `lib/v3/points.ts:87-88`)。服务业务目标:用每日签到 + 连胜里程碑形成留存激励的回访节奏(§9.8.2:累计连胜越久,里程碑路线图越临近),通过回访→`app.dau` 路径**间接**提升 Day7 活跃(KPI #2 口径为 `app.dau ÷ register cohort`,§2.4.6;本机制经回访间接贡献,非 KPI 直接口径)。**Lucky 概率是概率型奖励,必须 server-canonical RNG**(跨域事实 1);Day-30 里程碑发放一张转盘票(spin 票),转盘奖项池 / 概率 / 派奖治理归 H4(`wheel` EventKind);Streak Power-Ups 含跨域奖励(F2/G5/G1/G4),H5 是触发面。
 
 **② 后台界面**:
