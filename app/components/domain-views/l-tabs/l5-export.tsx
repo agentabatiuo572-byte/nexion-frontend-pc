@@ -3,7 +3,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
  * L5 · 数据导出与监管报告 — 全平台数据出口的唯一管控面。
- * 当前闭环开放四类聚合快照、D4 八类账单脱敏明细与 I5 当前披露版本监管报告。
+ * 当前闭环开放四类聚合快照、D4 八类账单脱敏明细与 I5 当前披露快照。
  * 明文敏感字段导出保持服务端阻断。
  */
 import { useEffect, useState } from "react";
@@ -178,7 +178,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
     setRegulatoryError(null);
     void fetchL5RegulatoryOptions()
       .then((value) => { if (alive) setRegulatoryOptions(value); })
-      .catch((error) => { if (alive) setRegulatoryError(error instanceof Error ? displayAdminError(error) : "监管报告选项加载失败"); })
+      .catch((error) => { if (alive) setRegulatoryError(error instanceof Error ? displayAdminError(error) : "当前披露快照选项加载失败"); })
       .finally(() => { if (alive) setRegulatoryLoading(false); });
     setAuditLoading(true);
     setAuditError(null);
@@ -266,18 +266,18 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
     const templates = regulatoryOptions?.templates ?? [];
     const disclosures = regulatoryOptions?.disclosures ?? [];
     if (templates.length === 0 || disclosures.length === 0) {
-      toast(regulatoryError || "「风险披露」里还没有可用于监管报告的完整（7 章）版本");
+      toast(regulatoryError || "「风险披露」里还没有可用于生成当前披露快照的完整（7 章）版本");
       return;
     }
     const disclosureValues = disclosures.map((item) => `${item.jurisdictionCode}|${item.disclosureVersion}`);
     ctx.openActionConfirm({ briefKind: "export",
-      action: "生成监管报告",
+      action: "生成当前披露快照",
       detail: <>会检查所选地区当前生效的披露版本是否 7 章齐全，再汇总财务、运营、账单、操作记录和应急处理数据生成报告。报告不含用户明细和隐私信息。</>,
       reasonMin: 8,
       reasonMax: 200,
       businessForm: {
         kind: "multi-field",
-        title: "监管报告 · 当前适用地区与披露版本",
+        title: "当前披露快照 · 适用地区与披露版本",
         hint: "地区和版本来自「风险披露」当前生效的设置。",
         fields: [
           { key: "templateCode", label: "报告模板", inputKind: "select", current: templates[0].code, options: templates.map((item) => item.code), optionLabels: Object.fromEntries(templates.map((item) => [item.code, item.label])) },
@@ -298,7 +298,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
           ticket: String(business?.ticket ?? ""),
         }, reason);
         await ctx.reloadBi?.();
-        toast("监管报告已生成，可在下方任务列表下载");
+        toast("当前披露快照已生成，可在下方任务列表下载");
       },
     });
   };
@@ -339,7 +339,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">导出任务管理</span>
-          <span className="sub">· <AutoGloss>四类汇总和监管报告都在这里</AutoGloss></span>
+          <span className="sub">· <AutoGloss>四类汇总和当前披露快照都在这里</AutoGloss></span>
           <div className="r"><TabGroup
             className="chips"
             label="导出任务状态筛选"
@@ -418,18 +418,18 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         </div>
       </section>
 
-      {/* (b) I5 监管报告 */}
+      {/* (b) I5 当前披露快照 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">监管报告生成</span>
+          <span className="ttl">当前披露快照</span>
           <span className="sub">· <AutoGloss>按地区当前生效的披露版本，汇总财务、运营、账单数据</AutoGloss></span>
           <div className="r">
             <button
               className="l-btn primary"
               disabled={!ctx.canGenerateRegulatory || regulatoryLoading || Boolean(regulatoryError) || (regulatoryOptions?.disclosures.length ?? 0) === 0}
-              title={!ctx.canGenerateRegulatory ? "当前角色没有监管报告生成权限" : regulatoryError || undefined}
+              title={!ctx.canGenerateRegulatory ? "当前角色没有披露快照生成权限" : regulatoryError || undefined}
               onClick={requestRegulatoryReport}
-            >生成监管报告</button>
+            >生成当前披露快照</button>
           </div>
         </div>
         <div className="l-b">
@@ -446,7 +446,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
             </div>
           ))}
           {regulatoryLoading && <div className="ltint">正在加载披露版本…</div>}
-          {regulatoryError && <div className="ltint warn">监管报告已失败关闭 · {regulatoryError}</div>}
+          {regulatoryError && <div className="ltint warn">当前披露快照无法生成 · {regulatoryError}</div>}
         </div>
       </section>
 
@@ -492,7 +492,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">导出记录</span>
-            <span className="sub">· <AutoGloss>汇总、账单和监管报告的每一次导出</AutoGloss></span>
+            <span className="sub">· <AutoGloss>汇总、账单和当前披露快照的每一次导出</AutoGloss></span>
             <div className="r"><span className="lcode">只读 · 当前页不写核查结果</span></div>
           </div>
           <div style={{ overflowX: "auto" }}>
@@ -551,7 +551,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         </section>
       </div>
 
-      <p className="f-foot"><b>这页只导出数据，不会改任何业务。</b><AutoGloss>可以导出：关键指标、漏斗、财务、运营四类汇总，8 类账单明细，以及监管报告。下载链接 24 小时有效；账单最多 10 万行；每次导出都有记录，隐私数据不能原文导出。</AutoGloss></p>
+      <p className="f-foot"><b>这页只导出数据，不会改任何业务。</b><AutoGloss>可以导出：关键指标、漏斗、财务、运营四类汇总，8 类账单明细，以及当前披露快照。下载链接 24 小时有效；账单最多 10 万行；每次导出都有记录，隐私数据不能原文导出。</AutoGloss></p>
     </div>
   );
 }
