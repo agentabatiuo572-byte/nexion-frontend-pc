@@ -58,6 +58,7 @@ import {
 } from "@/lib/admin/c1-detail-display";
 import { NotificationTimeEvidenceDrawer, pendingCorrections, type PendingCorrection } from "./notification-time-evidence";
 import { PaymentSecurityBlock, type PaymentSecurityState } from "./payment-security-block";
+import "./record-details.css";
 
 /**
  * C1 用户详情的写动作（昵称重置、支付方式解绑、换绑通知、设备置换和回收）共用一张表，槽位分命名空间。
@@ -293,7 +294,7 @@ function riskFlags(flags: unknown, showsCases: boolean) {
   }).filter(Boolean).join(" · ") || "无";
 }
 
-const revokeUnfinished = (method: UserPaymentMethod) => method.status !== "BOUND" && !!method.pspRevokeStatus && !/^(revoked|success|succeeded|done|completed)$/i.test(method.pspRevokeStatus);
+const revokeUnfinished = (method: UserPaymentMethod) => method.status !== "BOUND" && !!method.pspRevokeStatus && !/^(revoked|confirmed|success|succeeded|done|completed)$/i.test(method.pspRevokeStatus);
 
 interface Column { label: string; align?: "right"; end?: boolean; cell: (row: JsonRecord) => ReactNode }
 
@@ -423,6 +424,25 @@ const RECORD: Record<RecordKind, { title: string; sub: (row: JsonRecord) => stri
   ] },
 };
 
+/** 只使用这条记录已有的状态给出下一步，不推断未知字段。 */
+function recordConclusion(kind: RecordKind, row: JsonRecord) {
+  if (kind === "payment") return row.status !== "BOUND" && row.pspRevokeStatus && !/^(revoked|confirmed|success|succeeded|done|completed)$/i.test(String(row.pspRevokeStatus))
+    ? "账户已解绑，支付商撤销尚未完成，仍需核对扣款风险。"
+    : row.trialGuard ? "这张卡正在用于试用扣款，暂时不能解绑。"
+    : row.status === "BOUND" ? "这张卡仍绑定在账户上，可在支付方式列表办理解绑。" : "账户已解绑；支付商的撤销结果请看下方。";
+  if (kind === "withdrawal") return withdrawalTone(row) === "danger" ? "这笔提现被拒绝或有异常，请到提现审核核对原因。"
+    : withdrawalTone(row) === "warn" ? "这笔提现等待审核或复查，请到提现审核处理。"
+    : withdrawalTone(row) === "ok" ? "这笔提现已到账，无需重复放行。"
+    : withdrawalTone(row) === "progress" ? "这笔提现正在处理中，请到提现审核跟进原单。" : undefined;
+  if (kind === "device") return deviceAbnormal(row) ? "这台设备有异常，请到设备运行管理核对。"
+    : FINAL_DEVICE_STATUS.includes(String(row.status).toUpperCase()) ? "这台设备已回收或停用，不能再置换或回收。" : undefined;
+  if (kind === "order") return orderTone(row) === "danger" ? "这笔订单付款、开通或拒付有异常，请到商城订单核对。"
+    : orderTone(row) === "ok" ? "这笔订单已开通，无需重复开通。" : undefined;
+  if (kind === "deposit" && row.confirmedAt) return "这笔充值已有确认记录；需要查账时按充值单号核对。";
+  if (kind === "session") return row.status === "REVOKED" || row.status === "EXPIRED" ? "这次登录已失效，无需再次撤销。" : undefined;
+  if (kind === "notification") return row.readFlag === true || row.readFlag === 1 ? "这条通知已读；时间有疑问时可查看时间证据。" : row.readFlag === false || row.readFlag === 0 ? "这条通知尚未读，不能据此判断推送失败。" : undefined;
+}
+
 function RecordTable({ label, rows, columns, empty = "暂无记录", selected, onOpen }: {
   label: string;
   rows: JsonRecord[];
@@ -520,6 +540,7 @@ export default function UserDetailPage() {
   const [detail, setDetail] = useState<User360Detail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [writeResult, setWriteResult] = useState<{ key: string; text: string } | null>(null);
   const [denied, setDenied] = useState(false);
   const [readAt, setReadAt] = useState("");
   const [reloadTick, setReloadTick] = useState(0);
@@ -576,7 +597,7 @@ export default function UserDetailPage() {
       setDetail(null);
       setError("用户标识缺失，已停止加载");
       setLoading(false);
-      return;
+      return false;
     }
     try {
       const next = supportScope ? await fetchSupportCustomerFullProfile(userKey, signal) : await fetchUser360(userKey);
@@ -585,6 +606,7 @@ export default function UserDetailPage() {
         setDetail(next);
         setReadAt(businessClock(Date.now()));
         setReloadTick((tick) => tick + 1);
+        return true;
       }
     } catch (err) {
       if (active()) {
@@ -597,6 +619,7 @@ export default function UserDetailPage() {
     } finally {
       if (active()) setLoading(false);
     }
+    return false;
   }, [userKey, supportScope, readKey]);
 
   useEffect(() => {
@@ -733,19 +756,15 @@ export default function UserDetailPage() {
       }
       c1UserCommands.forget(slot);
       syncPending();
-      if (command.kind === "nickname") {
-        toast.success(`昵称已重置为 ${userNicknameText(nextNickname, profile?.phoneMasked)}`);
-        await load();
-      } else if (command.kind === "unbind") {
-        toast.success("支付方式已从 UVEL 账户解绑");
+      const text = command.kind === "nickname" ? `昵称已重置为 ${userNicknameText(nextNickname, profile?.phoneMasked)}`
+        : command.kind === "unbind" ? "支付方式已从 UVEL 账户解绑"
+        : command.kind === "rebind" ? "换绑通知已进入推送队列"
+        : command.kind === "replace" ? "设备置换已执行" : "设备回收已执行";
+      setWriteResult({ key: readKey, text });
+      if (command.kind === "unbind") {
         if (!includeUnbound) { setIncludeUnbound(true); setPaymentPage(1); } else await loadPaymentMethods();
-      } else if (command.kind === "rebind") {
-        toast.success("换绑通知已进入推送队列");
-        await loadPaymentMethods();
-      } else {
-        toast.success(command.kind === "replace" ? "设备置换已执行" : "设备回收已执行");
-        await load();
-      }
+      } else if (command.kind === "rebind") await loadPaymentMethods();
+      else if (!await load() && currentReadKey.current === readKey) setWriteResult({ key: readKey, text: `${text}。资料刷新失败，请重新加载资料核对。` });
     } finally {
       setActionPending(null);
     }
@@ -907,6 +926,7 @@ export default function UserDetailPage() {
       <RdPage>
         <PageHeader title={pageName} back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>} />
         <BlockState state="loading" title="正在加载…" />
+        {writeResult?.key === readKey && <Notice tone="progress">{writeResult.text}</Notice>}
       </RdPage>
     );
   }
@@ -915,6 +935,7 @@ export default function UserDetailPage() {
     return (
       <RdPage>
         <PageHeader title={pageName} back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>} />
+        {writeResult?.key === readKey && <Notice tone="progress">{writeResult.text}</Notice>}
         {denied
           ? <BlockState state="denied" title="无权限访问" detail={error} />
           : <BlockState state="error" title={`${supportScope ? "客户资料" : "用户详情"}加载失败：${error}`} onRetry={() => void load()} />}
@@ -1024,11 +1045,11 @@ export default function UserDetailPage() {
     const device = command.kind === "replace" || command.kind === "recycle";
     const writable = device ? canWriteC2 : canWriteC1;
     const hasWrite = device ? hasC2Write : hasC1Write;
-    const nextStep = command.legacy
+    const nextStep = expired ? `${EXPIRED_TEXT}。` : command.legacy
       ? "这是升级前发出的操作，没有存下原理由，不能重试，先核对原操作有没有生效。"
       : !writable
         ? hasWrite ? "客服入口不能重试，到用户详情处理。" : "这个账号现在没有这项操作的权限，不能重试，请有权限的同事处理。"
-        : expired ? `${EXPIRED_TEXT}。` : "按原操作重试用同一个命令号，不会重复执行。";
+        : "按原操作重试用同一个命令号，不会重复执行。";
     return <Notice key={command.fingerprint} tone="warn" title={`${command.label} · 结果未确认`}
       action={<>
         <Button size="sm" disabled={!!busyReason} onClick={() => void verifyPending(command)}>读回核对</Button>
@@ -1173,6 +1194,7 @@ export default function UserDetailPage() {
 
       {conclusion}
       {pendingNotices}
+      {writeResult?.key === readKey && <Notice tone="progress">{writeResult.text}</Notice>}
       {correctionNotices}
 
       {kpis.length > 0 && <StatBand label="关键数字">
@@ -1347,7 +1369,7 @@ export default function UserDetailPage() {
         </div>}
       </div>
 
-      <Drawer open={!!current && !!record} onClose={() => setRecord(null)} title={record ? RECORD[record.kind].title : ""} sub={record && current ? RECORD[record.kind].sub(current) : undefined}
+      <Drawer data-c1-record="" open={!!current && !!record} onClose={() => setRecord(null)} title={record ? RECORD[record.kind].title : ""} sub={record && current ? RECORD[record.kind].sub(current) : undefined}
         nav={record ? {
           hasPrev: record.index > 0,
           hasNext: record.index < recordRows[record.kind].length - 1,
@@ -1362,6 +1384,7 @@ export default function UserDetailPage() {
           : canReadNotificationEvidence && Number.isSafeInteger(currentNotificationId) && currentNotificationId > 0
             ? <Decision primary={<Button onClick={() => { setRecord(null); setNotificationEvidence({ userKey, authEpoch, id: currentNotificationId }); }}>查看时间证据</Button>} />
             : undefined}>
+        {record && current && recordConclusion(record.kind, current) && <Notice tone="progress">{recordConclusion(record.kind, current)}</Notice>}
         {record && current && <Facts>{RECORD[record.kind].facts(current).map(([label, value]) => <Fact key={label} k={label}>{value}</Fact>)}</Facts>}
       </Drawer>
 
@@ -1390,7 +1413,13 @@ export default function UserDetailPage() {
         && notificationEvidence.userKey === userKey && notificationEvidence.authEpoch === authEpoch && (
         <NotificationTimeEvidenceDrawer key={`${userKey}:${authEpoch}:${notificationEvidence.id}`}
           userKey={userKey} notificationId={notificationEvidence.id} actorKey={session?.adminId == null ? undefined : String(session.adminId)}
-          canCorrect={canCorrectNotificationTime} onPendingChange={syncPending} onCorrected={() => { void load(); }} onClose={() => { setNotificationEvidence(null); syncPending(); }} />
+          canCorrect={canCorrectNotificationTime} onPendingChange={syncPending} onCorrected={() => {
+            const text = `通知 ${notificationEvidence.id} 已按投递事实校正时间，已读状态保持不变。`;
+            setWriteResult({ key: readKey, text });
+            void load().then(refreshed => {
+              if (!refreshed && currentReadKey.current === readKey) setWriteResult({ key: readKey, text: `${text}资料刷新失败，请重新加载资料核对。` });
+            });
+          }} onClose={() => { setNotificationEvidence(null); syncPending(); }} />
       )}
     </RdPage>
   );
