@@ -74,7 +74,10 @@ export interface NavDomain {
   accentVar: string; // "--admin-domain-d"
   roles?: BuiltinAdminRole[]; // 仅作为真实授权数据不可用时的静态 IA fallback
   l2: NavL2[];
+  landingSortOrder?: number;
 }
+
+const PLATFORM_NAV_ORDER = 14;
 
 export const CONSOLE_NAV: NavDomain[] = [
   {
@@ -89,7 +92,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "A2", name: "操作记录与审批", path: "/platform/audit", prdAnchor: "A2", batch: "V1", status: "flagship" },
       { id: "A3", name: "系统配置", path: "/platform/config", prdAnchor: "A3", batch: "V1", status: "flagship" },
       { id: "A4", name: "用户行为事件", path: "/platform/events", prdAnchor: "A4", batch: "V1", status: "flagship" },
-      { id: "A5", name: "平台参数管理", path: "/platform/params-registry", prdAnchor: "A5", batch: "V1", status: "flagship" },
+      { id: "A5", name: "平台参数目录", path: "/platform/params-registry", prdAnchor: "A5", batch: "V1", status: "flagship" },
       { id: "A6", name: "角色管理", path: "/platform/roles", prdAnchor: "A6", batch: "V1", status: "flagship" },
       { id: "A7", name: "菜单管理", path: "/platform/menus", prdAnchor: "A7", batch: "V1", status: "flagship" },
       { id: "A8", name: "权限清单", path: "/platform/permissions", prdAnchor: "A8", batch: "V1", status: "flagship" },
@@ -105,7 +108,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     l2: [
       { id: "B1", name: "资金与应付款总览", path: "/overview/dual-ledger", prdAnchor: "B1", batch: "V1", status: "flagship" },
       { id: "B2", name: "可用资金与应付款", path: "/overview/liquidity", prdAnchor: "B2", batch: "V1", status: "flagship" },
-      { id: "B3", name: "用户转化分析", path: "/overview/funnel", prdAnchor: "B3", batch: "V1", status: "flagship" },
+      { id: "B3", name: "用户转化概览", path: "/overview/funnel", prdAnchor: "B3", batch: "V1", status: "flagship" },
       { id: "B4", name: "运营阶段状态", path: "/overview/rhythm", prdAnchor: "B4", batch: "V1", status: "flagship" },
       { id: "B5", name: "风险提醒", path: "/overview/risk-radar", prdAnchor: "B5", batch: "V1", status: "flagship" },
     ],
@@ -133,13 +136,13 @@ export const CONSOLE_NAV: NavDomain[] = [
     accentVar: "--admin-domain-d",
     roles: ["finance", "risk", "config"],
     l2: [
-      { id: "D1", name: "充值对账中心", path: "/finance/recon", prdAnchor: "D1", batch: "V1", status: "flagship" },
-      { id: "D2", name: "待审核提现", path: "/finance/withdrawals", prdAnchor: "D2", batch: "V1", status: "flagship" },
+      { id: "D1", name: "充值与收款对账", path: "/finance/recon", prdAnchor: "D1", batch: "V1", status: "flagship" },
+      { id: "D2", name: "提现审核", path: "/finance/withdrawals", prdAnchor: "D2", batch: "V1", status: "flagship" },
       { id: "D3", name: "资金储备与应付款", path: "/finance/pool", prdAnchor: "D3", batch: "V1", status: "flagship" },
       { id: "D4", name: "账本与账单核对", path: "/finance/ledger", prdAnchor: "D4", batch: "V1", status: "flagship" },
-      { id: "D5", name: "提现参数配置", path: "/finance/params", prdAnchor: "D5", batch: "V1", status: "flagship" },
+      { id: "D5", name: "USDT 提现参数", path: "/finance/params", prdAnchor: "D5", batch: "V1", status: "flagship" },
       { id: "D6", name: "汇率设置", path: "/finance/fx-rate", prdAnchor: "D6", batch: "V1", status: "flagship" },
-      { id: "D7", name: "法币提现参数", path: "/finance/payout-vnd", prdAnchor: "D7", batch: "V1", status: "flagship" },
+      { id: "D7", name: "越南盾提现参数", path: "/finance/payout-vnd", prdAnchor: "D7", batch: "V1", status: "flagship" },
     ],
   },
   {
@@ -157,7 +160,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "E3", name: "设备使用与升级置换", path: "/devices/trade-in", prdAnchor: "E3", batch: "V2", status: "flagship" },
       { id: "E4", name: "订单进度", path: "/devices/orders", prdAnchor: "E4", batch: "V2", status: "flagship" },
       { id: "E5", name: "设备运行管理", path: "/devices/ops", prdAnchor: "E5", batch: "V2", status: "flagship" },
-      { id: "E6", name: "算力与设备配置", path: "/devices/compute-config", prdAnchor: "E6", batch: "V2", status: "flagship" },
+      { id: "E6", name: "手机算力配置", path: "/devices/compute-config", prdAnchor: "E6", batch: "V2", status: "flagship" },
     ],
   },
   {
@@ -184,7 +187,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     roles: ["finance", "growth"],
     l2: [
       { id: "G1", name: "质押产品配置", path: "/finance-products/staking", prdAnchor: "G1", batch: "V3", status: "flagship" },
-      { id: "G2", name: "兑换风险规则", path: "/finance-products/exchange", prdAnchor: "G2", batch: "V3", status: "flagship" },
+      { id: "G2", name: "兑换额度与规则", path: "/finance-products/exchange", prdAnchor: "G2", batch: "V3", status: "flagship" },
       { id: "G3", name: "UVT价格管理", path: "/finance-products/market", prdAnchor: "G3", batch: "V3", status: "flagship" },
       { id: "G4", name: "创世节点销售与收益", path: "/finance-products/genesis", prdAnchor: "G4", batch: "V3", status: "flagship" },
       { id: "G7", name: "锁定计划", path: "/finance-products/repurchase", prdAnchor: "G7", batch: "V3", status: "flagship" },
@@ -221,8 +224,8 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "I2", name: "Nova 消息推送", path: "/content/nova", prdAnchor: "I2", batch: "V4", status: "flagship" },
       { id: "I3", name: "通知活动", path: "/content/notifications", prdAnchor: "I3", batch: "V4", status: "flagship" },
       { id: "I4", name: "信任中心", path: "/content/trust", prdAnchor: "I4", batch: "V4", status: "flagship" },
-      { id: "I5", name: "风险披露", path: "/content/disclosures", prdAnchor: "I5", batch: "V4", status: "flagship" },
-      { id: "I6", name: "多语言文案", path: "/content/i18n", prdAnchor: "I6", batch: "V4", status: "flagship" },
+      { id: "I5", name: "法律条款与风险披露", path: "/content/disclosures", prdAnchor: "I5", batch: "V4", status: "flagship" },
+      { id: "I6", name: "多语言与课程", path: "/content/i18n", prdAnchor: "I6", batch: "V4", status: "flagship" },
     ],
   },
   {
@@ -263,7 +266,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "L1", name: "关键指标", path: "/analytics/kpi", prdAnchor: "L1", batch: "V4", status: "flagship" },
       { id: "L2", name: "用户转化与留存", path: "/analytics/funnel-cohort", prdAnchor: "L2", batch: "V4", status: "flagship" },
       { id: "L3", name: "财务报表", path: "/analytics/financial", prdAnchor: "L3", batch: "V4", status: "flagship" },
-      { id: "L4", name: "设备/任务/网络报表", path: "/analytics/operations", prdAnchor: "L4", batch: "V4", status: "flagship" },
+      { id: "L4", name: "设备、任务与团队报表", path: "/analytics/operations", prdAnchor: "L4", batch: "V4", status: "flagship" },
       { id: "L5", name: "数据导出与监管报告", path: "/analytics/export", prdAnchor: "L5", batch: "V4", status: "flagship" },
       { id: "L6", name: "用户行为热力图", path: "/analytics/behavior-heatmap", prdAnchor: "L6", batch: "V4", status: "flagship" },
     ],
@@ -339,7 +342,30 @@ const LEGACY_MENU_NAMES: Record<string, string> = {
   "M4": "知识库与 SLA",
 };
 const STOCK_MENU_ALIASES: Record<string, string[]> = {
-  M1: ["客服总览"], M3: ["即时会话台"], M5: ["话术与模板配置"], C3: ["余额 & 资产调整"], C5: ["安全 & 会话"], F2: ["网络版税费率"], G7: ["复投激励"], H3: ["Quest 引擎"], H4: ["活动中心 CMS"], I4: ["信任中心 CMS"], I6: ["i18n 文案与教程", "i18n 文案与课程"]
+  A5: ["平台参数管理"],
+  B3: ["用户转化分析"],
+  C3: ["余额 & 资产调整"],
+  C5: ["安全 & 会话"],
+  D1: ["充值对账中心"],
+  D2: ["待审核提现"],
+  D5: ["提现参数配置"],
+  D7: ["法币提现参数"],
+  E6: ["算力与设备配置"],
+  F2: ["网络版税费率"],
+  G2: ["兑换风险规则"],
+  G3: ["NEX 行情引擎", "UVT 行情引擎"],
+  G7: ["复投激励"],
+  H3: ["Quest 引擎"],
+  H4: ["活动中心 CMS"],
+  H5: ["签到 & NEX", "签到 & UVT"],
+  H9: ["对外公布数据"],
+  I4: ["信任中心 CMS"],
+  I5: ["风险披露", "风险披露版本"],
+  I6: ["i18n 文案与教程", "i18n 文案与课程", "多语言文案"],
+  L4: ["设备/任务/网络报表"],
+  M1: ["客服总览"],
+  M3: ["即时会话台"],
+  M5: ["话术与模板配置"],
 };
 const LEGACY_DOMAIN_NAMES: Record<string, string> = {
   B: "总览驾驶舱",
@@ -467,7 +493,7 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
           && candidate.parentCode?.trim().toUpperCase() === domain.code);
         if (hasMenuMetadata && !node) return [];
         return [{
-          item: node ? { ...item, name: !node.menuName?.trim() || node.menuName.trim() === LEGACY_MENU_NAMES[item.id] || STOCK_MENU_ALIASES[item.id]?.includes(node.menuName.trim()) || (item.id === "I6" && node.menuName.trim() === "i18n 文案与课程") ? item.name : node.menuName.trim() } : item,
+          item: node ? { ...item, name: !node.menuName?.trim() || node.menuName.trim() === LEGACY_MENU_NAMES[item.id] || STOCK_MENU_ALIASES[item.id]?.includes(node.menuName.trim()) ? item.name : node.menuName.trim() } : item,
           node,
         }];
       })
@@ -482,16 +508,19 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
     const domainNode = findNode(domain.code, (node) =>
       !node.parentCode && node.routePath === `/${domain.slug}`)
       ?? findNode(domain.code, (node) => !node.parentCode);
+    const platform = domain.code === "A";
+    const sortOrder = order(domainNode, platform ? PLATFORM_NAV_ORDER : domainIndex);
     return [{
       ...domain,
       name: !domainNode?.menuName?.trim() || domainNode.menuName.trim() === LEGACY_DOMAIN_NAMES[domain.code]
         ? domain.name : domainNode.menuName.trim(),
       l2,
-      __sortOrder: order(domainNode, domainIndex),
+      landingSortOrder: platform && domainNode?.sortOrder === PLATFORM_NAV_ORDER ? 1 : order(domainNode, domainIndex),
+      sortOrder,
     }];
   })
-    .sort((a, b) => a.__sortOrder - b.__sortOrder)
-    .map(({ __sortOrder: _ignored, ...domain }) => domain);
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map(({ sortOrder: _ignored, ...domain }) => domain);
 }
 
 /** Enforce the resolved menu grant on every known console-domain URL. */
@@ -506,7 +535,7 @@ export function canAccessResolvedPath(domains: NavDomain[], pathname: string | n
 }
 
 export function defaultConsolePath(role: AdminRole, domains: NavDomain[]): string | null {
-  const first = domains.find(domain => domain.l2.length > 0)?.l2[0]?.path;
+  const first = domains.find(domain => domain.l2.length > 0);
   if (!first) return null;
   if (role === "superadmin") return "/";
   if (role === "support") {
@@ -516,7 +545,15 @@ export function defaultConsolePath(role: AdminRole, domains: NavDomain[]): strin
       if (page) return page.path;
     }
   }
-  return first;
+  const platform = domains.find(domain => domain.code === "A");
+  // Keep the previous landing priority for the shipped platform order.
+  if (platform?.landingSortOrder !== undefined
+    && first.landingSortOrder !== undefined
+    && platform.landingSortOrder <= first.landingSortOrder
+    && platform.l2.length > 0) {
+    return platform.l2[0].path;
+  }
+  return first.l2[0].path;
 }
 
 export const DOMAIN_COUNT = CONSOLE_NAV.length; // 13
