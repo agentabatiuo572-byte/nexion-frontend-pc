@@ -584,3 +584,4 @@
 .card.m-dock-panel { position: fixed; right: 22px; bottom: 22px; z-index: 30; display: flex; flex-direction: column; width: min(372px, calc(100vw - 24px)); max-height: min(72vh, 540px); box-shadow: var(--m-sh-pop); overflow: hidden; }
 .card:is(.m-dock-pill, .m-dock-panel)[data-top] { top: 68px; bottom: auto; }
 .m-dock-note { padding: 8px 11px; color: var(--warning); font-size: var(--rd-text-aux); }
+.mdom .m-dock-meta { margin-top: 2px; font-size: var(--rd-text-aux); }

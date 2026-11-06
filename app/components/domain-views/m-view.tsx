@@ -1567,7 +1567,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
             <b style={{ fontSize: 13, fontWeight: 500 }}>{customer}</b>
             <span className="chip" style={{ height: 18, fontSize: 11 }}>{conv.type === "advisor" ? "专属客服" : "专属客服"}</span>
           </div>
-          <div className="dim2" style={{ fontSize: 11, marginTop: 2 }} title={`会话编号 ${conv.id}`}>接待 {ownerLabel(conv.owner)} · {dockRelWhen(conv.lastTs)}</div>
+          <div className="dim2 m-dock-meta" title={`会话编号 ${conv.id}`}>接待 {ownerLabel(conv.owner)} · {dockRelWhen(conv.lastTs)}</div>
         </div>
       </div>
       <div className="ChatBody" style={{ flex: 1, minHeight: 0 }}>

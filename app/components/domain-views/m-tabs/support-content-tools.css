@@ -44,3 +44,4 @@
 .support-phrase-add textarea { flex: 1; resize: vertical; }
 .support-phrase-row { display: flex; gap: 6px; align-items: center; }
 .support-phrase-row .support-content-result { flex: 1; min-width: 0; }
+.support-content-tools .sku-pop-body { white-space: pre-wrap; overflow-wrap: anywhere; }
