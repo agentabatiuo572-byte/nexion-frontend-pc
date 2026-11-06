@@ -1632,7 +1632,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
     {withdrawGate === "closed" && <Notice tone="warn" title="提现已关停"
       action={reach("/emergency/kill-switch", "emergency_j1_read") ? <Link className="rd-link" href="/emergency/kill-switch">去紧急停用开关</Link> : undefined}>
-      用户现在不能提交新提现。现在放行不会生效：系统会拒绝，这笔留在待审核，钱不动。<Explain label="关停提现的范围" content="已放行的单还会打款。" />拒绝、延迟、冻结、解冻和退款照常可用。
+      用户现在不能提交新提现。现在放行不会生效：系统会拒绝，这笔留在待审核，钱不动。<Explain label="关停提现的范围" content="关停后暂停尚未提交通道的打款；已提交通道的继续核对和结算，不因关停退款。恢复后按原条件继续派发。" />拒绝、延迟、冻结、解冻和退款照常可用。
     </Notice>}
     {withdrawGate === "unknown" && <Notice tone="warn">提现开关状态暂时读不到。放行时系统会再查，已关停时不会放行。</Notice>}
     {coverageBelow && d5 && hasAuthority(ACTION_AUTHORITY.APPROVE) && <Notice tone="danger" title="兑付覆盖率低于红线，放行已暂停"
