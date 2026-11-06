@@ -3,7 +3,7 @@ import Link from "next/link";
 import { AlertTriangle, ClipboardList, Coins, Copy, History, Package, Receipt, RefreshCw, Route, Server, User, Workflow } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, ColumnPicker, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input, IrreversibleTag,
-  JudgmentPoints, Notice, PageHeader, Pager, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Steps, Table, TableLoading, TableMessage, Td, Th, Tr,
+  JudgmentPoints, Notice, PageHeader, Pager, Panel, RecordList, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Steps, Table, TableLoading, TableMessage, Td, Th, Timeline, Tr,
   useTableColumns, type JudgmentRow, type SegmentItem, type TableColumn,
 } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
@@ -317,12 +317,11 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
     {rows}
   </Facts>;
   const reasonHint = "写清依据或工单号。只记在操作记录里，用户看不到";
-  // 批准后后端把这单的设备改成已退款、停用（rollbackOrderDevices），赠品设备不在内，由活动规则收回。
-  const hasDevice = !!e4Detail?.deviceId || !!e4Detail?.deviceInstanceNo;
-  const refundDeviceLine = hasDevice ? "设备停用，已到账的设备收益不扣回"
-    : eff === "provisioning_failed" ? "没有开通成功，没有设备要停用" : "还没有设备，退款后不再开通";
-  // 后端不收回设备收益。例外：按全期结算转购买的试用奖励，退款后收回钱包里没花掉的部分；活动奖励走活动规则。
-  const refundDeviceDetail = `退款后用户钱包多这笔钱，平台的应付款跟着增加。${hasDevice ? "这单的设备不再归用户，不再派任务，不再产生新收益。活动赠品的设备按活动规则处理。" : ""}${e4Detail?.orderType === "TRIAL_CONVERT" ? "转购买时发的试用奖励按当时的规则处理，最多收回钱包里没花掉的部分。" : ""}活动奖励按活动规则处理。`;
+  // 购买设备和促销赠品走不同的退款路径；数组存在时不再用旧标量推断设备是否生成。
+  const purchaseDevices = e4Detail?.devices?.filter((device) => device.kind === "PURCHASE");
+  const refundDeviceLine = purchaseDevices == null ? "购买设备明细未提供，执行时按实际持有状态处理"
+    : purchaseDevices.length ? "购买设备按持有状态停用，已到账的设备收益不扣回" : "尚未生成购买设备，退款后不再开通";
+  const refundDeviceDetail = `退款后用户钱包多这笔钱，平台的应付款跟着增加。购买设备只处理仍属于原购买者、且未退款或回收的设备：标为已退款并停用，不再产生新收益。赠品设备按促销奖励售后规则单独处理，不计入购买设备停用范围。${e4Detail?.orderType === "TRIAL_CONVERT" ? "转购买时发的试用奖励按当时的规则处理，最多收回钱包里没花掉的部分。" : ""}活动奖励按活动规则处理。`;
 
   // 具体原因只从状态轨迹取，状态本身证明不了原因。
   const closeRecord = e4Detail?.history.findLast((item) => item.toState === eff);
@@ -359,7 +358,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
     : waitReason ? `${waitReason}。` : undefined;
   const consequence = (!canWriteE4 && !canRefundE4) || !hasAction ? undefined
     : refundBlocked ? `${coverageKnown ? "退款后平台资金会低于安全线，补足后才能退款。" : "要先读到资金覆盖率才能退款。"}${terminalOptions.length > 0 ? "「标记失败结果」不会退款。" : ""}`
-    : canRefundE4 && refundableState ? `退款不可撤销。批准后钱退回用户钱包${hasDevice ? "，这单的设备停用" : ""}。${terminalOptions.includes("chargeback") ? "标记拒付不会退款，标记后也不能再退。" : terminalOptions.length > 0 ? "「标记失败结果」不会退款。" : ""}`
+    : canRefundE4 && refundableState ? `退款不可撤销。批准后钱退回用户钱包，购买设备按实际持有状态处理。${terminalOptions.includes("chargeback") ? "标记拒付不会退款，标记后也不能再退。" : terminalOptions.length > 0 ? "「标记失败结果」不会退款。" : ""}`
       : canCancel ? "提交后要批准才生效。用户还没付款，取消和标记失败都不涉及退款。"
         : "提交后要批准才生效。";
   const copyNo = () => {
@@ -382,22 +381,24 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
             // amplify 只管框里的覆盖率提示：那句写「提交时检查」，后端实际在批准执行时才查，所以覆盖率写进事实区。提案里的 amplifies 照旧是 true。
             briefKind: "funds", name: "退款 · " + o.id, title: "退款", op: "order-refund", orderId: o.id, amplify: false, fixedVal: channel,
             effect: irreversibleApproval, confirmLabel: "提交审批", confirmTone: "danger", reasonPlaceholder: reasonHint,
-            statedBrief: { impact: `钱退回用户钱包${hasDevice ? "，这单设备停用" : ""}`, check: "核对用户、金额和退款原因，理由写清依据或工单号。" },
-            facts: orderFacts(<>
-              {channel && <Fact k="退款去向">{REFUND_CHANNEL_LABELS[channel] ?? channel}</Fact>}
-              <Fact k="退款后">{refundDeviceLine}<Explain label="退款后设备和收益怎么处理" content={refundDeviceDetail} /></Fact>
-              {e4Detail.orderType === "TRIAL_CONVERT" && <Fact k="试用转购奖励">这单发给购买者的试用奖励可能追回，金额以执行结果为准<Explain label="试用奖励追回规则" content="按整期结算转购发出的试用奖励，退款后最多收回未花掉的部分；未追回部分转人工核查。" /></Fact>}
-              {/* 退款入口只在读到覆盖率时开。 */}
-              <Fact k="覆盖率">{fmtPct(e4Detail.coverageCurrent!)} → 执行后 {fmtPct(e4Detail.coverageProjected!)}，红线 {e4Detail.coverageRedline}%<Explain label="覆盖率什么时候检查" content="批准执行时后端再查一次，当前或执行后低于红线就不退款。" /></Fact>
-              <Fact k="促销奖励"><PromotionRefundImpact orderNo={o.id} compact /></Fact>
-            </>, "退款金额", true),
+            statedBrief: { impact: "钱退回用户钱包，购买设备按实际持有状态处理", check: "核对用户、金额和退款原因，理由写清依据或工单号。" },
+            facts: <div className="rd-stack">
+              {orderFacts(<>
+                {channel && <Fact k="退款去向">{REFUND_CHANNEL_LABELS[channel] ?? channel}</Fact>}
+                {/* 退款入口只在读到覆盖率时开。 */}
+                <Fact k="覆盖率">{fmtPct(e4Detail.coverageCurrent!)} → 执行后 {fmtPct(e4Detail.coverageProjected!)}，红线 {e4Detail.coverageRedline}%<Explain label="覆盖率什么时候检查" content="批准执行时后端再查一次，当前或执行后低于红线就不退款。" /></Fact>
+              </>, "退款金额", true)}
+              <div>{refundDeviceLine}<Explain label="退款后设备和收益怎么处理" content={refundDeviceDetail} /></div>
+              {e4Detail.orderType === "TRIAL_CONVERT" && <div>这单发给购买者的试用奖励可能追回，金额以执行结果为准<Explain label="试用奖励追回规则" content="按整期结算转购发出的试用奖励，退款后最多收回未花掉的部分；未追回部分转人工核查。" /></div>}
+              <Panel plain headingLevel={3} title="促销奖励"><PromotionRefundImpact orderNo={o.id} compact /></Panel>
+            </div>,
             businessForm: channel
               ? { kind: "multi-field", title: "用户可见的原因", fields: [reasonField] }
               : { kind: "multi-field", title: "退款渠道与原因", fields: [
                 { key: "refundChannel", label: "退款渠道", current: channels[0], inputKind: "select", options: channels, optionLabels: REFUND_CHANNEL_LABELS, required: true, showDiff: true },
                 reasonField,
               ] },
-            detail: `退款 ${orderMoney(o.amt)}。钱退回用户的 USDT 钱包，付款记录标为已退款，补一条退款账单，用户的累计充值减去这笔金额。`,
+            detail: "付款记录标为已退款，补一条退款账单，用户的累计充值减去这笔金额。",
           });
         }}>{e4DetailLoading ? "正在检查…" : e4Detail?.refundAllowed === false ? "暂不能退款" : "退款"}</Button>}
         others={<>
@@ -442,45 +443,47 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
         <Facts>
           <Fact k="数据中心">{o.dc}</Fact>
           <Fact k="下单时间">{o.orderedAt ? `${formatBusinessTimeFull(o.orderedAt, "—")}（${businessZone().label}）` : "—"}</Fact>
-          {e4Detail && <Fact k="设备实例">{e4Detail.devices == null
-            ? <span data-mono>{e4Detail.deviceInstanceNo ?? "尚未生成"}</span>
-            : e4Detail.devices.length === 0 ? "尚未生成" : <ol className="rd-stack" aria-label="订单关联设备">
-              {e4Detail.devices.map((device) => {
-                const label = `${device.kind === "PROMOTION_GIFT" ? "赠品设备" : "购买设备"} · ${operatorDeviceStatus(device.status)} · ${({ OWNED: "持有中", REFUNDED: "已退款", REVOKED: "已收回", RECYCLED: "已回收", UNBOUND: "已解绑" } as Record<string, string>)[device.ownershipStatus ?? ""] ?? device.ownershipStatus ?? "持有状态未提供"}`;
-                const instance = device.deviceInstanceNo ?? `设备 ${device.deviceId}`;
-                return <li key={device.deviceId}>
-                  <Cell full main={label} sub={<span data-mono>{instance}</span>} title={`${label} · ${instance}`} />
-                </li>;
-              })}
-            </ol>}</Fact>}
           {e4Detail && !finalized && !refundableState && <Fact k="平台资金覆盖率">{coverageText}</Fact>}
         </Facts>
       </Fold>
       {e4Detail && <>
+        <Fold inset title="关联设备" icon={Server} tone="devices" summary={e4Detail.devices == null ? "设备明细未提供" : `${e4Detail.devices.length} 台 · 购买 ${purchaseDevices?.length ?? 0} 台 · 赠品 ${e4Detail.devices.length - (purchaseDevices?.length ?? 0)} 台`}>
+          {e4Detail.devices == null
+            ? <Facts><Fact k="设备实例"><span data-mono>{e4Detail.deviceInstanceNo ?? "尚未生成"}</span></Fact></Facts>
+            : e4Detail.devices.length === 0 ? <p className="rd-note">尚未生成</p> : <RecordList label="订单关联设备" records={e4Detail.devices.map((device) => ({
+              id: String(device.deviceId),
+              value: device.kind === "PROMOTION_GIFT" ? "赠品设备" : "购买设备",
+              status: <StatusTag tone="neutral">{operatorDeviceStatus(device.status)} · {({ OWNED: "持有中", REFUNDED: "已退款", REVOKED: "已收回", RECYCLED: "已回收", UNBOUND: "已解绑" } as Record<string, string>)[device.ownershipStatus ?? ""] ?? device.ownershipStatus ?? "持有状态未提供"}</StatusTag>,
+              object: <>设备编号 {device.deviceId} <Explain label="设备原始字段" rows={[{ k: "设备编号", v: String(device.deviceId) }, { k: "来源", v: device.sourceChannel ?? "未提供" }, { k: "设备状态", v: device.status ?? "未提供" }, { k: "持有状态", v: device.ownershipStatus ?? "未提供" }]} /></>,
+              reference: device.deviceInstanceNo ?? undefined,
+            }))} />}
+        </Fold>
         <Fold inset title="状态轨迹" icon={History} summary={e4Detail.history.length ? `${e4Detail.history.length} 条记录` : "暂无记录"}>
-          {e4Detail.history.length === 0 ? "暂无记录" : <Facts>
-            {e4Detail.history.map((item, position) => <Fact key={`${item.createdAt}-${position}`} k={`${stateLabel(item.fromState)} → ${stateLabel(item.toState)}`}>{operatorOrderHistoryActor(item.operator)} · {operatorOrderHistoryReason(item.reason, e4Detail.paymentMethod)}</Fact>)}
-          </Facts>}
+          <Timeline label="订单状态轨迹" entries={e4Detail.history.map((item, position) => ({
+            id: `${item.createdAt}-${position}`,
+            action: <Change from={stateLabel(item.fromState)} to={stateLabel(item.toState)} />,
+            actor: operatorOrderHistoryActor(item.operator),
+            at: item.createdAt,
+            detail: operatorOrderHistoryReason(item.reason, e4Detail.paymentMethod),
+            tone: FAILED_STATES.includes(item.toState) ? "danger" : undefined,
+          }))} />
         </Fold>
         <Fold inset title="资金记录" icon={Receipt} tone="money" summary={e4Detail.funding.length ? `${e4Detail.funding.length} 条记录` : "暂无付款或账单记录"}>
-          {e4Detail.funding.length === 0 ? "暂无付款或账单记录" : <ol className="rd-stack" aria-label="付款与账单记录">
-            {e4Detail.funding.map((item, position) => {
-              const ledgerHref = e4FundingLedgerHref(item);
-              return <li key={`${item.source}-${item.bizNo}-${position}`}>
-                <Panel plain headingLevel={3} title={operatorOrderFact("source", item.source)}>
-                  <Facts>
-                    <Fact k="收支">{operatorOrderFact("direction", item.direction)}</Fact>
-                    <Fact k="金额">{orderMoney(item.amount)}</Fact>
-                    <Fact k="状态">{operatorOrderFact("fundingStatus", item.status)}</Fact>
-                    <Fact k="业务单号"><span data-mono>{item.bizNo}</span></Fact>
-                    {ledgerHref && reach(ledgerHref, "finance_d4_read") && <Fact k="核对"><Link className="rd-link" href={ledgerHref}>到账本与账单核对查看</Link></Fact>}
-                  </Facts>
-                </Panel>
-              </li>;
-            })}
-          </ol>}
+          <RecordList label="付款与账单记录" records={e4Detail.funding.map((item, position) => {
+            const ledgerHref = e4FundingLedgerHref(item);
+            return {
+              id: `${item.source}-${item.bizNo}-${position}`,
+              value: orderAmount(item.amount),
+              unit: "USDT",
+              at: item.occurredAt,
+              object: <>{operatorOrderFact("source", item.source)} · {operatorOrderFact("direction", item.direction)} <Explain label="资金原始字段" rows={[{ k: "来源", v: item.source }, { k: "收支", v: item.direction }, { k: "状态", v: item.status }]} />{ledgerHref && reach(ledgerHref, "finance_d4_read") && <> · <Link className="rd-link" href={ledgerHref}>到账本与账单核对查看</Link></>}</>,
+              status: <StatusTag tone={item.status.toUpperCase() === "FAILED" ? "danger" : "neutral"}>{operatorOrderFact("fundingStatus", item.status)}</StatusTag>,
+              reference: item.bizNo,
+            };
+          })} />
         </Fold>
       </>}
+
       <nav className="rd-links" aria-label="相关页面">
         <span>相关页面</span>
         {reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href={`/platform/audit?domain=E&object=${encodeURIComponent(o.id)}`}>操作记录</Link>}

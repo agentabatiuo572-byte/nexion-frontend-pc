@@ -13,7 +13,7 @@ import { Activity, CheckCircle2, CircleHelp, Download, Flag, Gauge, ListChecks, 
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { KpiTrendPoint } from "@/lib/admin/kpi-trend";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
-import { BlockState, Button, Cell, Check, Conclusion, DiffField, Explain, Fact, Facts, FilterBar, FilterField, Fold, Input, Modal, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Cell, Check, Conclusion, DiffField, Explain, Fact, Facts, FilterBar, FilterField, Fold, Input, Modal, Notice, NumberInput, PageHeader, Panel, RecordList, ReleaseModal, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { businessClock, businessDay, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { findByPath } from "@/lib/nav/console-nav";
@@ -220,12 +220,14 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       reasonPlaceholder: "写这份数据给谁、做什么用，例如：给增长组做周会复盘",
       facts: (
-        <Facts>
-          <Fact k="文件内容">{mode === "series" ? "8 项指标的可用数值、目标和六段趋势；受保护项标为样本过小，相关数值留空" : mode === "snapshot" ? "8 项指标的可用数值、目标和可用性；受保护项标为样本过小，相关数值留空" : "当前累计数"}</Fact>
-          <Fact k="范围">{mode === "totals" ? "当前累计" : queryScope(query)}</Fact>
-          <Fact k="接收人">{L1_EXPORT_RECIPIENT}</Fact>
-          <Fact k="文件行数">{rows}，另有表头</Fact>
-        </Facts>
+        <div className="rd-stack">
+          <Facts>
+            <Fact k="范围">{mode === "totals" ? "当前累计" : queryScope(query)}</Fact>
+            <Fact k="接收人">{L1_EXPORT_RECIPIENT}</Fact>
+            <Fact k="文件行数">{rows}，另有表头</Fact>
+          </Facts>
+          <div>文件内容：{mode === "series" ? "8 项指标的可用数值、目标和六段趋势；受保护项标为样本过小，相关数值留空" : mode === "snapshot" ? "8 项指标的可用数值、目标和可用性；受保护项标为样本过小，相关数值留空" : "当前累计数"}</div>
+        </div>
       ),
       confirmLabel: "确认导出",
       reasonMin: 8,
@@ -342,13 +344,12 @@ function OffsetModal({ current, onApply, onClose }: { current: number; onApply: 
           {(control) => <NumberInput {...control} unit="%" min={5} max={20} step={1} value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={() => setLeft(true)} />}
         </DiffField>
         <Fold inset title="查看业务规则详情" summary="状态怎么判定">
-          <Facts>
-            <Fact k="单侧目标">严格高于或低于目标值才达标；等于目标时算接近目标。</Fact>
-            <Fact k="接近线">越高越好的指标：目标值 × (1 − N%)；越低越好的指标：目标值 × (1 + N%)。</Fact>
-            <Fact k="接近目标">没达标但在接近线以内（含接近线），超出算未达标。</Fact>
-            <Fact k="购买转化">健康带包含两端，带外归接近目标。</Fact>
-          </Facts>
-          <p className="rd-note">只影响显示，不改指标值。</p>
+          <div className="rd-stack">
+            <p className="rd-note"><b>单侧目标：</b>严格高于或低于目标值才达标；等于目标时算接近目标。</p>
+            <p className="rd-note"><b>接近线：</b>越高越好取<b>目标 × (1 − N%)</b>，越低越好取<b>目标 × (1 + N%)</b>。</p>
+            <p className="rd-note"><b>接近目标：</b>没达标但在接近线以内（含接近线），超出算未达标。</p>
+            <p className="rd-note"><b>购买转化：</b>健康带包含两端，带外归接近目标。</p>
+          </div>
         </Fold>
       </div>
     </Modal>
@@ -796,13 +797,12 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
               <Facts>
                 {(kState === "na" || kState === "small") && <Fact k="当前值">{stateText(kState, k)}</Fact>}
                 {(kState === "na" || kState === "small") && <Fact k="目标值">{tgtShort(k)}</Fact>}
-                <Fact k="怎么算"><AutoGloss>{operatorCopyText(KPI_PLAIN[k.n] ?? "")}</AutoGloss></Fact>
                 {kState !== "small" && <Fact k="分子">{ext.num}</Fact>}
                 {kState !== "small" && <Fact k="分母">{ext.den}</Fact>}
                 {kState !== "small" && <Fact k="较上期">{deltaText(k).replace(/^较上期 ?/, "")}</Fact>}
                 <Fact k="统计范围">{queryScope(applied)}</Fact>
-                <Fact k="解读">{kState === "small" ? <>样本过小，不下结论<Explain label="样本过小的说明" content={SMALL_SAMPLE_NOTE} /></> : <AutoGloss>{operatorCopyText(ext.note)}</AutoGloss>}</Fact>
               </Facts>
+              <p className="rd-note">解读：{kState === "small" ? <>样本过小，不下结论<Explain label="样本过小的说明" content={SMALL_SAMPLE_NOTE} /></> : <AutoGloss>{operatorCopyText(ext.note)}</AutoGloss>}</p>
               {drillError
                 ? <BlockState state="error" title="明细和趋势暂时加载不出来" detail={`其他内容不受影响。${drillError}`} onRetry={() => void selectKpi(safeSelKpi)} />
                 : kState === "small"
@@ -867,7 +867,13 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
               </Panel>
             ))}
             {drawnCount === 0 && <p className="rd-note">当前所选指标没有可绘制的对比曲线。</p>}
-            {skipped.length > 0 && <p className="rd-note">没有画：{skipped.map((item) => `#${item.n}（${states[KPIS.findIndex((kpi) => kpi.n === item.n)] === "small" ? "样本过小" : item.sparkSuppressed?.includes(true) ? "部分时段样本过小，其余趋势不足" : item.spark.length >= 2 && item.spark.every((value) => value === 0) ? "每段都是 0" : "趋势数据不足"}）`).join("、")}。</p>}
+            {skipped.length > 0 && <Fold inset title="未绘制的指标" summary={`${skipped.length} 项`}>
+              <RecordList label="未绘制的指标" records={skipped.map((item) => ({
+                id: String(item.n),
+                value: `#${item.n} ${operatorCopyText(item.name)}`,
+                object: states[KPIS.findIndex((kpi) => kpi.n === item.n)] === "small" ? "样本过小" : item.sparkSuppressed?.includes(true) ? "部分时段样本过小，其余趋势不足" : item.spark.length >= 2 && item.spark.every((value) => value === 0) ? "每段都是 0" : "趋势数据不足",
+              }))} />
+            </Fold>}
           </div>
         </Fold>}
 

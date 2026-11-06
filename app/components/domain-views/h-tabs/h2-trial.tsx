@@ -12,7 +12,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Bell, BellOff, Ban, Coins, History, Lock, RefreshCw, Settings2, SlidersHorizontal, Ticket, TrendingUp, Users } from "lucide-react";
-import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, JudgmentPoints, Notice, PageHeader, Pager, Panel, ReleaseModal, SectionNav, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useSectionNav, type SectionNavItem, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, JudgmentPoints, Notice, PageHeader, Pager, Panel, RecordList, ReleaseModal, SectionNav, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useSectionNav, type SectionNavItem, type StateTone } from "@/app/components/rd";
 import {
   createH2CommandKey,
   fetchH2Trials,
@@ -272,10 +272,6 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, killed }: {
       )])),
       // 当前商品在列表里只标「当前」，不能再选；不传 current，当前值就只出现这一处。
       disabledOptions: trialProducts.filter((product) => !product.selectable || product.productNo === current).map((product) => product.productNo),
-      hint: <Explain label="可选条件和商品编号" content={<>
-        <p>{help?.howMore}</p>
-        <p>{trialProducts.map((product) => `${product.name}：${product.productNo}`).join("；")}</p>
-      </>}>可选条件和商品编号</Explain>,
     } : isPushSwitch ? undefined : {
       kind: help?.input ? "number" : "text",
       current: isOffsetCap && !current ? "不设上限" : current,
@@ -303,9 +299,13 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, killed }: {
       amplifies: false,
       edit,
       // 开关只有另一个值可选，直接写前后值，不给选择（OP-126）。
-      facts: isPushSwitch ? <Facts><Fact k="开关"><Change from={current} to={pushTarget} /></Fact></Facts>
-        : productMissing ? <Facts><Fact k="现在">{current || "未设置"}，不在可选列表</Fact></Facts>
-          : undefined,
+      facts: isProduct ? <div className="rd-stack">
+        {productMissing && <Facts><Fact k="现在">{current || "未设置"}，不在可选列表</Fact></Facts>}
+        <div><Explain label="可选条件和商品编号" content={<>
+          <p>{help?.howMore}</p>
+          <RecordList label="可选商品编号" records={trialProducts.map((product) => ({ id: product.productNo, value: product.name, reference: product.productNo }))} />
+        </>}>可选条件和商品编号</Explain></div>
+      </div> : isPushSwitch ? <Facts><Fact k="开关"><Change from={current} to={pushTarget} /></Fact></Facts> : undefined,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认修改，立即生效",
       // 标题行写影响谁（OP-48）。这是什么和显示位置在标题旁的提示图标里。
@@ -527,9 +527,9 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       facts: <Facts>
         <Fact k="用户">{trialOwnerLabel(session)}</Fact>
         <Fact k="试用"><span data-mono="">{session.sid}</span></Fact>
-        <Fact k="当前状态">{stateLabel}</Fact>
+        <Fact k="状态变化"><Change from={stateLabel} to="已取消" /></Fact>
       </Facts>,
-      detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。这次试用会结束并标记为 <b>已取消</b>，重复提交不会重复处理。</>,
+      detail: "重复提交不会重复处理。",
       amplifies: false,
       confirmTone: "danger",
       effect: <><StatusTag tone="progress" filled explain={APPROVAL_NOTE}>批准后生效</StatusTag><IrreversibleTag /></>,
