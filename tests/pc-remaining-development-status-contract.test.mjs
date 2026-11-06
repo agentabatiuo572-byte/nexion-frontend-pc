@@ -457,7 +457,6 @@ test("built rows have real PC callers, including active L3/L4 and C1 detail acti
     ["OPS-G-05", "updateG3Control", "app/components/domain-views/g-tabs/g3-market.tsx"],
     ["OPS-G-07", "rerunG4GenesisDividendBatch", "app/components/domain-views/g-tabs/g4-genesis.tsx"],
     ["OPS-H-01", "updateH1RhythmParam", "app/components/domain-views/h-tabs/h1-phase.tsx"],
-    ["OPS-H-17", "killH2AutoPush", "app/components/domain-views/h-tabs/h2-trial.tsx"],
     ["OPS-H-18", "h8_referral_settlement", "app/components/domain-views/h-tabs/h8-referral-rewards.tsx"],
     ["OPS-H-08", "updateH5StreakMilestone", "app/components/domain-views/h-tabs/h5-daily-milestones.tsx"],
     ["OPS-H-08", "updateH5PowerUp", "app/components/domain-views/h-tabs/h5-daily-milestones.tsx"],

@@ -3565,7 +3565,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 **目标**:
 
-- 将试用全生命周期参数(19 项 TrialConfig)收敛为后台单一可调面,敏感项受操作确认(确认弹窗 + 理由必填)约束。
+- 将试用全生命周期参数(PC 口径 16 项 TrialConfig)收敛为后台单一可调面,敏感项受操作确认(确认弹窗 + 理由必填)约束。
 - 实时监控活动试用会话(7 态)、shadow 累计与状态转换时间线,支持单会话强制介入。
 - 输出试用漏斗 KPI(绑卡转化 / 试用→购买 / 失败 / 提前购买 / 复活),反哺 B3 漏斗与 KPI 看板。
 - 守住资金与风控边界:chargeFailRate server-only、试用 state 全 server-canonical、cooldown server 校验、循环养号联动 K2、扣款幂等、终态 shadow 合并走 server 事务。
@@ -3574,7 +3574,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 | 角色 | 权限 |
 |------|------|
-| 增长(Growth,对应 §1.1 RBAC 角色) | 查看会话监控列表、单会话详情、KPI 看板;直接编辑非敏感 TrialConfig(直接写入留痕,修改原因必填);**执行敏感 TrialConfig 改动(lead 层级,经确认弹窗 + 理由必填)**;触发 auto-push kill switch |
+| 增长(Growth,对应 §1.1 RBAC 角色) | 查看会话监控列表、单会话详情、KPI 看板;直接编辑非敏感 TrialConfig(直接写入留痕,修改原因必填);**执行敏感 TrialConfig 改动(lead 层级,经确认弹窗 + 理由必填)** |
 | 风控(Risk,对应 §1.1 RBAC 角色) | **执行单会话强制操作(强制取消 / 强制触发扣款,lead 层级,经确认弹窗 + 理由必填)**;响应循环养号风控信号 |
 | 超级管理员(Super Admin,对应 §1.1 RBAC 角色) | **执行全部敏感 TrialConfig 改动与强制资金操作**(经确认弹窗 + 理由必填);查看审计 |
 | 只读审计(Read-only) | 仅查看监控列表、详情、KPI,不可发起写操作 |
@@ -3586,7 +3586,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 ##### ③ 界面与信息架构
 
 **(a) TrialConfig 参数面**
-- 19 项 TrialConfig 参数集中编辑(见 ④),按「实时生效项」与「仅影响新 trial 项」分区展示(分区依据 §9.11b)。
+- PC 口径 16 项 TrialConfig 参数集中编辑(见 ④),按「实时生效项」与「仅影响新 trial 项」分区展示(分区依据 §9.11b)。
 - 敏感项(price / chargeFailRate)标注高敏标记,编辑即打开确认弹窗 H2-MD1(理由必填)。
 
 **(b) 活动会话监控列表**
@@ -3606,7 +3606,9 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 **权威来源**:TrialConfig 默认值以前端 **§9.11b** 为权威参考(12 月节奏表未覆盖 trial 具体值,故 §9.11b 默认即现状权威);`phaseOpen` 随 Phase 调度(由 H1 决定试用在当前 Phase 是否开放)。
 
-**TrialConfig 20 参数(§9.11b 权威):**
+**TrialConfig 16 参数(PC 口径，§9.11b 权威):**
+
+> **2026-11-06 范围调整**：App 不展示试用邀请弹窗，PC 移除相关四项配置及紧急关闭入口。后端本次不改，仍返回的四项旧参数在页面分区前过滤，不展示、不计入参数数量、不提供保存入口；其余参数、试用生命周期与审批流程保持原规则。
 
 | 参数 | 默认值 | 实时性 | 范围 | 说明 |
 |------|--------|--------|------|------|
@@ -3625,13 +3627,9 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | `shadowDailyNEX` | 65 | 仅影响新 trial | — | 每日 shadow 累计 NEX |
 | `cooldownDays` | 30 | 实时 | — | 再次试用冷却天数 |
 | `phaseOpen` | true | 实时 | 是 / 否 | 当前 Phase 是否开放试用;运行时由 H1 Phase 调度决定;初始默认 true |
-| `autoPushEnabled` | true(kill switch) | 实时 | 是 / 否 | auto-push 总开关 |
-| `autoPushDelayMs` | 1500 | 实时 | — | auto-push 延迟毫秒 |
-| `autoPushCooldownHours` | 24 | 实时 | — | auto-push 冷却小时 |
-| `autoPushMaxPerSession` | 1 | 实时 | — | 单会话 auto-push 最大次数 |
 | `seatsLeftToday` | 47 | 实时 | 普通十进制 0–1000000 整数 | H2 配置每日免费名额上限；Java 在 `nx_growth_trial_daily_quota` 按服务端自然日保存上限与已领取数，`GET /api/trial/state` 响应的 `config.seatsLeftToday` 下发当天剩余。APP 只展示不自行递减；领取由 Java 在数据库事务内原子计数，0 名额隐藏并拒绝领取 |
 
-> **实时性分区(§9.11b)**:`discountRate` / `discountCapUSD` / `trialOffsetCapUSD` / `highQualityThresholdUSD` / `chargeFailRate` / `cooldownDays` / `phaseOpen` / `autoPush*` / `seatsLeftToday` 为**实时生效**;`trialDays` / `graceDays` / `extensionDays` / `trialProductId` / `trialPriceUSD` / `shadowDaily*` 为**仅影响新 trial**(存量进行中会话保持其开始时锁定的参数及商品快照)。**`autoChargeAtEnd` 在 §9.11b 两类清单中均未列出,实时性未确认——状态为「待 PM 确认(暂按仅影响新 trial)」**,须 PM 确认后再纳入 ⑤ 生效说明。界面分区与生效说明须与本表一致(含 `autoChargeAtEnd` 的未确认状态单列)。
+> **实时性分区(§9.11b)**:`discountRate` / `discountCapUSD` / `trialOffsetCapUSD` / `highQualityThresholdUSD` / `chargeFailRate` / `cooldownDays` / `phaseOpen` / `seatsLeftToday` 为**实时生效**;`trialDays` / `graceDays` / `extensionDays` / `trialProductId` / `trialPriceUSD` / `shadowDaily*` 为**仅影响新 trial**(存量进行中会话保持其开始时锁定的参数及商品快照)。**`autoChargeAtEnd` 在 §9.11b 两类清单中均未列出,实时性未确认——状态为「待 PM 确认(暂按仅影响新 trial)」**,须 PM 确认后再纳入 ⑤ 生效说明。界面分区与生效说明须与本表一致(含 `autoChargeAtEnd` 的未确认状态单列)。
 >
 > **与 12 月节奏表 §6.4 关系**:12 月节奏表 §6.4 未覆盖 trial 具体数值,无冲突;§9.11b 默认值即作现状权威。`phaseOpen` 是 trial 与 H1 的耦合点——试用开放与否随当前 Phase。
 
@@ -3647,7 +3645,6 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 |---|---|---|---|---|
 | 改 TrialConfig 非敏感项 | ③(a)参数面对应参数卡行内「编辑」 | 行内编辑 | 增长/超管渲染；`trialProductId` 使用 E1 允许试用商品选择器，零库存等不可用项保留展示但禁选 | 行内保存直接生效留痕(「修改原因」必填,落 `admin.trial_config_changed`),无弹窗 |
 | 改 TrialConfig 敏感项(`trialPriceUSD` / `chargeFailRate` / `autoChargeAtEnd` 暂按敏感) | ③(a)参数面高敏标记参数行内「编辑」 | 行内按钮 | 增长(lead)/超管渲染(增长 member 只读) | 打开弹窗 H2-MD1 |
-| auto-push kill switch(置 `autoPushEnabled=false`) | ③(a)参数面 auto-push 卡「关停」开关 | 开关 | 增长/超管渲染;实时止血项 | 同非敏感项路径直接生效留痕(原因必填),无弹窗 |
 | 强制取消试用 | ③(d)单会话详情强制操作区「强制取消」 | 警示按钮 | 仅非终态(`active`/`grace`/`extended`)会话显示;风控(lead)/超管渲染 | 打开弹窗 H2-MD2 |
 | 强制触发扣款 | ③(d)单会话详情强制操作区「强制扣款」 | 警示按钮 | 仅 `grace`/`extended` 态会话显示;风控(lead)/超管渲染 | 打开弹窗 H2-MD3 |
 | 查看监控列表 / 详情 / KPI | ③(b)/(c)/(d) 导航 | 链接 | 恒可用(按角色裁剪) | 跳转视图,无弹窗 |
@@ -3694,8 +3691,6 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
    - 风控介入场景(疑似养号 / 风险卡 token);经确认弹窗 H2-MD2 + 理由必填由风控(lead)/ 超管即时执行,落 A2 审计并实时告警;会话转 `cancelled` 终态,产 `trial.cancelled`。
 3. **强制触发扣款**(高敏 · admin `POST /api/admin/trial/sessions/:userId/charge`)
    - 用于测试扣款链路 / 应急结算;经 PSP 扣款须带 `Idempotency-Key` 保证幂等;经确认弹窗 H2-MD3 + 理由必填由风控(lead)/ 超管即时执行,落 A2 审计并实时告警;产 `trial.charge_attempted`。
-4. **auto-push kill switch**
-   - 置 `autoPushEnabled=false` 实时关停 auto-push(实时项);用于异常时快速止血(非敏感直接生效留痕路径)。
 
 ##### ⑥ 风控与边界
 
@@ -4441,7 +4436,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | **RiskScore**(单用户风险分) | `userId / score(0–100)/ band(low\|mid\|high)/ dimensions[]{dim,hit,contribution}/ overridden(bool)/ modelVersion / asOf` | Ch8 K4(§Ch8 K4) | **server-canonical 唯一评分源**;D2 / C1 / B5 复用同一份分数,不各自重算(§3.14)。评分可解释(每分可追溯命中维度与贡献);人工覆盖强制 reason + 审计 |
 | **RiskModel**(评分模型配置) | `weights{multiAccount,arbitrage,kycStatus,withdrawVelocity,accountAge,anomalyBehavior}(六维和=1)/ scoreBand{low<40,mid 40–69,high≥70}/ inputSources{K1,K2,C4,...}(各 ON/OFF)/ autoEscalateScore(默认85)/ version` | Ch8 K4(§Ch8 K4) | 权重配置状态机 `draft→active→archived`;六维权重和强制 =1(接口侧校验,±0.001 容差)。**两类写操作确认分流**:① **模型权重 / 分档阈值 / 输入来源开关**改动**执行=仅超级管理员**(风控 lead 可起草草稿,发布经超管确认弹窗 + 理由必填;2026-06 操作确认决议执行门槛就高,与 A2③ 高敏动作清单一致);② **单用户评分人工覆盖**(`POST /api/admin/risk/score/:userId/override`)**不入高敏确认门**,直接生效 + 强制 reason + 审计(K4④ 明文「确认弹窗=否」)。开发不得对单用户覆盖误套高敏确认流程 |
 | **PhaseConfig**(Phase 逐月 dial 矩阵) | 逐月(月 1–12)× **8 dial**:`newUserBonusMultiplier / inviteRewardMultiplier / reinvestMultiplier / withdrawPenaltyFeeRate / withdrawCooldownDays / binaryDailyCap / questBonusMultiplier / complianceHoldEnabled`;每 dial 标 `生效范围(实时全量\|仅新用户)`;`cohortOverrides[]{cohortId(YYYY-Www),monthOffset,override 生效区间(字段名均为 §9.1 草稿自拟,待 V4 数据模型收口与 H1 正式对齐)}` | Ch7 H1(H1④) | 全平台 Phase 模型后台权威源。后台权威 = **8 dial**(12 月 §6.4 七项时变 dial,Premium/NEXv2 gate 两 dial 随产品下线移除 + 前端 §13.4.1 `complianceHoldEnabled`);**dial 默认值权威来源:12 月节奏表 §6.4 `ProductPhase`**。前端 §13.4.1 / §9.11c.1 / §9.11d.3 仍含已下线的 Premium/NEXv2 gate 为现状差异。`complianceHoldEnabled` 标注 **月 8+ = true(P5 带 ✅);月 8 为实际激活拐点(同时是 P4 带末月 `withdrawCooldownDays=35d` 拐点)**(与 H1④ 逐月矩阵和 D5③ 脚注一致)。`cohortOverrides` 子字段名 `cohortId` / `monthOffset` 为本表草稿自拟命名(H1④ 仅有语义描述、无字段名),不以「§13.4 / 12 月 §6.4」作字段名来源锚点,待 V4 与 H1 正式对齐。dial 值 server 单源下发,前端 `useProductPhase` 仅消费;B4 只读展示 |
-| **TrialConfig**(免费试用配置) | **20 参数**:`trialDays / graceDays / extensionDays / discountRate / discountCapUSD / trialOffsetCapUSD / autoChargeAtEnd / highQualityThresholdUSD / chargeFailRate(server-only,前端永不可知)/ trialProductId / trialPriceUSD / shadowDailyUSD / shadowDailyNEX / cooldownDays / phaseOpen / autoPushEnabled / autoPushDelayMs / autoPushCooldownHours / autoPushMaxPerSession / seatsLeftToday` | Ch7 H2(H2④) | 试用全生命周期后台可调面;`seatsLeftToday` 是每日免费名额上限(默认 47,实时,普通十进制 0–1000000 整数)，APP 获得的是 Java 依据 `nx_growth_trial_daily_quota` 当日领取数计算出的剩余量;敏感项(`trialPriceUSD` / `chargeFailRate`)经确认弹窗(理由必填)。`chargeFailRate` server-only。`cooldownDays` 为 **H2 自有可写参数**(再次试用冷却天数,默认 30,实时;H2④ 明确归 H2),**与 D5 的 `withdrawCooldownDays`(提现冷却,Phase 派发)是不同业务域的同名概念,不混同**。`phaseOpen` 为 **Phase 派发只读字段(运行时由 H1 Phase 调度决定;source:phase-h1)**。`autoChargeAtEnd` 实时性及敏感等级**待 PM 确认**(H2⑤:建议按敏感项处理经确认弹窗,暂不归入增长直接编辑路径;待确认前暂按敏感项处理)。`trialProductId` 由 H2 从 E1 `trialEligible=true` 的实体有限库存商品中选择，只影响新 trial；H2 与领取接口均失败关闭复验，存量试用使用领取快照。配套 **TrialSession**(会话监控):`userId / status(7 态)/ shadowUSD / shadowNEX / 状态转换时间线 / 绑卡 token / cohort,phase`,7 态权威定义见 §9.11.1 |
+| **TrialConfig**(免费试用配置) | **16 参数(PC 口径)**:`trialDays / graceDays / extensionDays / discountRate / discountCapUSD / trialOffsetCapUSD / autoChargeAtEnd / highQualityThresholdUSD / chargeFailRate(server-only,前端永不可知)/ trialProductId / trialPriceUSD / shadowDailyUSD / shadowDailyNEX / cooldownDays / phaseOpen / seatsLeftToday` | Ch7 H2(H2④) | 试用全生命周期后台可调面;`seatsLeftToday` 是每日免费名额上限(默认 47,实时,普通十进制 0–1000000 整数)，APP 获得的是 Java 依据 `nx_growth_trial_daily_quota` 当日领取数计算出的剩余量;敏感项(`trialPriceUSD` / `chargeFailRate`)经确认弹窗(理由必填)。`chargeFailRate` server-only。`cooldownDays` 为 **H2 自有可写参数**(再次试用冷却天数,默认 30,实时;H2④ 明确归 H2),**与 D5 的 `withdrawCooldownDays`(提现冷却,Phase 派发)是不同业务域的同名概念,不混同**。`phaseOpen` 为 **Phase 派发只读字段(运行时由 H1 Phase 调度决定;source:phase-h1)**。`autoChargeAtEnd` 实时性及敏感等级**待 PM 确认**(H2⑤:建议按敏感项处理经确认弹窗,暂不归入增长直接编辑路径;待确认前暂按敏感项处理)。`trialProductId` 由 H2 从 E1 `trialEligible=true` 的实体有限库存商品中选择，只影响新 trial；H2 与领取接口均失败关闭复验，存量试用使用领取快照。配套 **TrialSession**(会话监控):`userId / status(7 态)/ shadowUSD / shadowNEX / 状态转换时间线 / 绑卡 token / cohort,phase`,7 态权威定义见 §9.11.1 |
 | **Withdrawal 扩展态**(提现状态机) | 状态枚举 = **正常 5 态**(`submitted / review-passed / processing / sent / confirmed`,§9.3.6)+ **异常 6 态**(`review-rejected / address-invalid / tx-failed / tx-orphaned / refunded / frozen`,§9.11f)+ **后台扩展中间态 `review-pending / extended-hold`**(D2② 状态机已实现,V1 落地);字段 `withdrawalNo(server mint)/ userId / amountUsdt / address(hash)+chain / riskScore(K4)/ kycStatus(C4)/ 手续费明细(penaltyFeeRate / grossFee / nexBurned / feeWaived / actualFee)/ count24h / hitRules(K3)/ state` | Ch6 D2(§9.3 / §9.3.6 / §9.11f) | **`Withdrawal` 实体本体属用户侧(§12,本表不重列)**;本行仅登记 D2 在前端 §9.3.6 正常 5 态之上**新增的异常 6 态(§9.11f)**及**后台扩展中间态 `review-pending / extended-hold`**。`review-pending` 承接风控评分后待人工处置；`extended-hold` 表示延迟复查或 H1 低风险冷却，必须结合 `lifecycleOwner / previousStatus` 判定到期行为：仅 `H1_PHASE_COOLDOWN + review-passed` 可在重新读取当前 K3/K4、B1 与其他闸门后自动通过，其他持有到期回 `review-pending`。V1 落地状态为 **后台扩展态 2 态 + 正常 5 态 + 异常 6 态共 13 态**。全 server-canonical,client 仅订阅;状态推进非法转移返回 409。**手续费明细**为每笔提现的费用记录(server 权威):`grossFee = amountUsdt × penaltyFeeRate`(惩罚费率 Phase 派发,D5 生效面)、`nexBurned`(本次抵扣燃烧的 NEX,可选)、`feeWaived = nexBurned × nexFeeOffsetRate`、`actualFee = grossFee − feeWaived`;NEX 抵扣为可选、不构成提现门槛。**单笔主键线上真名 = `withdrawalNo`,不是 `withdrawalId`**——与 App 侧权威契约 `PRD/specs/FEAT-WD01-trust-payout-rails.md` §4.2 响应表同名;批量端点入参 `withdrawalIds` 与冲突回传项 `conflicts[].withdrawalId` 是该端点自有真名,与主键不同名属实现现状、非笔误 |
 | **KycLedger**(KYC 合规台账) | `userId / kycStatus(verified\|unverified\|in-review)/ walletPaired(bool)/ pairedAddress(脱敏)/ network(TRC20\|ERC20\|BTC\|ETH)/ verifiedAt / 变更历史 / 关联 K5 工单` | Ch5 C4(§4.4 / §4.4.1) | **全平台 KYC 状态唯一权威台账**(§3.14);`GET /api/kyc/status/:userId` 单源,D2 提现门槛 / G2 兑换门槛 / K5 复审引用。K5 仅触发复审、裁决回写,不持状态 |
 | **TreasuryLedger·D3 储备账本** | `usdtReserveUsdt / otherLiquidUsdt / injectedCumulativeUsdt / reserveTotalUsdt` | Ch6 D3(储备权威) | **真实储备底层账本权威归 D3**(`GET /api/admin/treasury/reserve` 唯一储备源)。储备口径:**储备 = topup 累计 + 注入 − `withdraw.confirmed` − 未到期 USDT staking 本金**(权威来源 B1⑧ / D3⑦;扣减「未到期 USDT staking 本金」以防止储备高估,具体扣减项字段名待 D3 正文定义)。储备科目纳入口径日批(UTC 00:00)生效 |

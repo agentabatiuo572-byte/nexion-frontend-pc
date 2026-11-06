@@ -31,7 +31,6 @@ function harness({ writable = true, model = null } = {}) {
       if (name === "@/lib/admin/h-client") return {
         updateH2TrialParam: async (...args) => { writes.push(args); },
         fetchH2Trials: async () => { throw new Error("unexpected read"); },
-        killH2AutoPush: async () => { throw new Error("unexpected command"); },
       };
       if (name === "@/lib/admin/use-propose") return { usePropose: () => async (_, proposal) => { proposals.push(proposal); } };
       if (name === "@/lib/admin/high-ops-registry") return { findHighOp };

@@ -6,7 +6,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DataListPager } from "../design-kit";
 import {
   fetchH2Trials,
-  killH2AutoPush,
   updateH2TrialParam,
 } from "@/lib/admin/h-client";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -61,7 +60,6 @@ type H2Model = {
   states: TrialState[];
   sessions: TrialSession[];
   trialProducts?: TrialProduct[];
-  autoPushKilled?: boolean;
   modelA?: Record<string, any>;
   serverOnlyFields?: string[];
   sessionsPage?: { total: number; pageNum: number; pageSize: number };
@@ -146,10 +144,8 @@ function ParamRow({
     product.productNo,
     `${(product.name)} · ${product.productNo} · 库存 ${product.stock ?? 0} · $${text(product.priceUsdt, "-")}${product.selectable ? "" : ` · 不可选：${trialProductReason(product.unavailableReason)}`}`,
   ]));
-  const options = ["autoPushEnabled"].includes(param.key)
-    ? ["开", "关"]
-    : param.key === "phaseOpen" ? ["开放", "关闭"]
-      : isProduct ? productOptions : undefined;
+  const options = param.key === "phaseOpen" ? ["开放", "关闭"]
+    : isProduct ? productOptions : undefined;
   const detail = (
     <>
       <b>{operatorCopyText(param.name)}</b> · 当前 <span className="mono">{displayCurrent}</span>。
@@ -242,8 +238,7 @@ function ParamRow({
 }
 
 export function H2Trial({ ctx }: { ctx: HCtx }) {
-  const { toast, openActionConfirm, openConfirm } = ctx;
-  const canWrite = ctx.can("growth_h2_write");
+  const { toast, openActionConfirm } = ctx;
   const canCancel = ctx.can("growth_h2_session_cancel");
   const canCharge = ctx.can("growth_h2_session_charge");
   const adminSession = useAdminAuth((state) => state.session);
@@ -275,8 +270,15 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   }, [reload]);
 
   const states = useMemo(() => stateMap(model?.states ?? []), [model?.states]);
-  const newOnlyParams = (model?.params ?? []).filter((param) => param.key !== "autoChargeAtEnd" && param.section === "newonly");
-  const liveParams = (model?.params ?? []).filter((param) => param.key !== "autoChargeAtEnd" && param.section !== "newonly");
+  // 后端仍返回这四项旧配置，先过滤再分区，避免展示、计数或进入保存流程。
+  const params = (model?.params ?? []).filter((param) => param.key !== "autoChargeAtEnd" && ![
+    "autoPushEnabled",
+    "autoPushDelayMs",
+    "autoPushCooldownHours",
+    "autoPushMaxPerSession",
+  ].includes(param.key));
+  const newOnlyParams = params.filter((param) => param.section === "newonly");
+  const liveParams = params.filter((param) => param.section !== "newonly");
   const stats = model?.stats ?? {};
 
   const pendingBySession = new Map(adminSession ? pendingH2TrialApprovals(adminSession.adminId).map((attempt) => [attempt.sid, attempt]) : []);
@@ -320,21 +322,6 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         retry: async () => { await run("", "retry"); },
       },
       run: async (reason) => { await run(reason); },
-    });
-  };
-
-  const openPushKill = () => {
-    openConfirm({ briefKind: "record",
-      action: "紧急关闭试用邀请弹窗",
-      detail: <>马上停止给用户自动弹出试用邀请。</>,
-      chips: [["马上生效", "ready"], ["记入操作记录", "done"]],
-      reason: true,
-      okLabel: "确认关闭",
-      run: async (reason) => {
-        await killH2AutoPush(reason);
-        await reload();
-        toast("试用邀请弹窗已关闭");
-      },
     });
   };
 
@@ -401,11 +388,6 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           <div className="l-h">
             <span className="ttl">试用参数 · 马上生效</span>
             <span className="sub">· 每次结算都用最新设置</span>
-            <div className="r">
-              <button className="l-btn sm mc" onClick={openPushKill} disabled={!!model.autoPushKilled || !canWrite}>
-                {model.autoPushKilled ? "试用邀请弹窗已关闭" : "紧急关闭试用邀请弹窗"}
-              </button>
-            </div>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             {liveParams.map((param) => (
@@ -520,7 +502,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       </section>
 
       <div className="htint warn">
-        试用参数、强制取消、关闭邀请弹窗都会记入操作记录。
+        试用参数、强制取消都会记入操作记录。
       </div>
 
     </>

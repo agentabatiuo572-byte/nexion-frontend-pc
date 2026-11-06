@@ -94,7 +94,6 @@ test("H2 试用前检查与七种状态都由服务器判断和更新", () => {
   const h2 = tab("h2-trial.tsx");
   assert.match(h2, /fetchH2Trials/);
   assert.match(h2, /updateH2TrialParam/);
-  assert.match(h2, /killH2AutoPush/);
   assert.match(h2, /开始试用前的四项检查/);
   assert.match(h2, /全部通过才能开始试用/);
   assert.match(h2, /试用流程的七种状态/);
@@ -107,7 +106,6 @@ test("H2 试用前检查与七种状态都由服务器判断和更新", () => {
   assert.match(h2, /扣款失败概率等内部数据不在页面显示/);
   assert.match(h2, /onChanged: \(\) => Promise<void>/);
   assert.match(h2, /await updateH2TrialParam[\s\S]*await onChanged\(\)/);
-  assert.match(h2, /await killH2AutoPush\(reason\)[\s\S]*await reload\(\)/);
   assert.match(h2, /onChanged=\{reload\}/);
 });
 
@@ -134,7 +132,6 @@ test("H2 client 端点对齐后端 trials 路径", () => {
   assert.match(hClient, /`\/trials\/params\/\$\{encodeURIComponent\(key\)}`/);
   assert.match(hClient, /`\/trials\/sessions\/\$\{encodeURIComponent\(sessionId\)}\/cancel`/);
   assert.match(hClient, /`\/trials\/sessions\/\$\{encodeURIComponent\(sessionId\)}\/charge`/);
-  assert.match(hClient, /\/trials\/auto-push\/kill/);
   assert.match(hClient, /"h2-cancel"/);
   assert.match(hClient, /"h2-charge"/);
 });

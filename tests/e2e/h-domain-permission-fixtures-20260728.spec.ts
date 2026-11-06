@@ -58,7 +58,7 @@ const MODULES: ModuleProbe[] = [
     writePath: "/api/admin/growth/trials/params/trialDays",
     writeMethod: "PATCH",
     writeBody: { key: "trialDays", value: "3", reason: REASON, operator: "permission-probe" },
-    mutationButtons: /调整|强制取消|强制扣款|auto-push 急停/,
+    mutationButtons: /调整|强制取消|强制扣款/,
   },
   {
     id: "H3",

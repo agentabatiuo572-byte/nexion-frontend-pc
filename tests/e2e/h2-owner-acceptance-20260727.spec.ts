@@ -134,7 +134,7 @@ test("H2 读取失败安全关闭且给首次用户明确重试出口", async ({
   await page.reload();
   await expect(page.getByText("H2 数据加载失败", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /重试|重新加载/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /调整|强制取消|强制扣款|auto-push 急停/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /调整|强制取消|强制扣款/ })).toHaveCount(0);
   await page.screenshot({ path: path.join(EVIDENCE_DIR, "03-read-failure-safe-retry.png"), fullPage: true });
   await page.unroute("**/api/admin/growth/trials");
   await page.getByRole("button", { name: /重试|重新加载/ }).click();

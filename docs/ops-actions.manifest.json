@@ -59,7 +59,7 @@
     "G4": ["OPS-G-07", "OPS-G-08", "OPS-G-12", "OPS-G-13", "OPS-G-15", "OPS-G-16"],
     "G7": ["OPS-G-10"],
     "H1": ["OPS-H-01", "OPS-H-02"],
-    "H2": ["OPS-H-03", "OPS-H-04", "OPS-H-17", "OPS-H-19"],
+    "H2": ["OPS-H-03", "OPS-H-04", "OPS-H-19"],
     "H3": ["OPS-H-05", "OPS-H-12", "OPS-H-14", "OPS-H-20"],
     "H4": ["OPS-H-06", "OPS-H-07", "OPS-H-15"],
     "H5": ["OPS-H-08"],
@@ -3249,16 +3249,6 @@
       "view": "e-view.tsx",
       "batch": "done",
       "restAction": "uploadAdminMedia"
-    },
-    {
-      "id": "OPS-H-17",
-      "domain": "H",
-      "object": "试用自动推送(H2)",
-      "action": "应急终止自动推送",
-      "status": "built",
-      "view": "h-tabs/h2-trial.tsx",
-      "batch": "done",
-      "restAction": "killH2AutoPush"
     },
     {
       "id": "OPS-I-17",

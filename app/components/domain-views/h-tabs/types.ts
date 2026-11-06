@@ -3,7 +3,7 @@
  *  - ActionConfirmReq = 操作确认(H1 dial / Phase 切换 / 沙盒 / H2 敏感参数 🔥 / 强制取消/扣款 /
  *    H3 任务清单/奖励/倍率 / H4 活动 / 转盘 / geo / H5 幸运概率 / 里程碑 / Power-Ups);
  *    显式 edit 契约:调参传 edit:{kind:"text",current};纯处置(下架/急停/上下架)不传 edit。
- *  - ConfirmReq = 普通确认(H1 沙盒预览 / H2 非敏感参数直改+原因必填 / H2 auto-push 急停 / H2 取消);
+ *  - ConfirmReq = 普通确认(H1 沙盒预览 / H2 非敏感参数直改+原因必填 / H2 取消);
  *  - H 域真写统一走后端 /api/admin/growth/*,不再以 platform-config/localStorage 作为有效数据源。
  * H 域 amplifies 多处:H1 放松方向 dial(降冷却 cooldown / 降惩罚费率 nexGate / 升封顶 binaryCap)/
  *   H3 升任务奖励 / H4 活动升奖励 / H4 转盘真实奖 / H5 幸运升概率 / H5 升里程碑奖励 / H5 收益里程碑升 NEX 奖励 / 降门槛 / H5 Power-Ups。

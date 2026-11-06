@@ -317,7 +317,7 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
 | **PhaseConfig 10-dial**(H1) | 逐月(1–12)×10 dial(见第0章 §0.10);每 dial 生效范围:enum{实时全量\|仅新用户};cohortOverrides[]{cohortId(YYYY-Www),monthOffset,区间};**默认值权威=12月§6.4+complianceHoldEnabled** | SC | §9.1 / Ch7 H1 |
-| **TrialConfig**(H2,20参数) | trialDays/graceDays/extensionDays/discountRate/discountCapUSD/autoChargeAtEnd/highQualityThresholdUSD/**chargeFailRate(server-only)**/trialProductId(仅可选 E1 `trialEligible=true` 的在售有库存实物有限库存商品)/trialPriceUSD/shadowDailyUSD/shadowDailyNEX/cooldownDays(30,≠withdrawCooldownDays)/phaseOpen(只读)/autoPush{Enabled,DelayMs,CooldownHours,MaxPerSession}/**trialOffsetCapUSD(=50)**/**seatsLeftToday(每日上限=47,实时；当日剩余由 Java+日额度表计算)** | SC | §9.1 / Ch7 H2 |
+| **TrialConfig**(H2,PC口径16参数) | trialDays/graceDays/extensionDays/discountRate/discountCapUSD/autoChargeAtEnd/highQualityThresholdUSD/**chargeFailRate(server-only)**/trialProductId(仅可选 E1 `trialEligible=true` 的在售有库存实物有限库存商品)/trialPriceUSD/shadowDailyUSD/shadowDailyNEX/cooldownDays(30,≠withdrawCooldownDays)/phaseOpen(只读)/**trialOffsetCapUSD(=50)**/**seatsLeftToday(每日上限=47,实时；当日剩余由 Java+日额度表计算)** | SC | §9.1 / Ch7 H2 |
 | **TrialSession 7态**(H2) | userId · status:enum{idle\|active\|grace\|extended\|redeemed\|failed\|cancelled} · shadowUSD · shadowNEX · 时间线 · 绑卡 token · cohort · phase;**Model A computeTrialOffset** | SC | §9.1 / Ch7 H2 / §9.11.1 |
 | **Quest 配置**(H3) | Day-One{WINDOW_MS=24h,GRACE_END=72h,phase 奖励 500/200/0,6任务} · Weekly{Tier1 9条/Tier2 8条,base+phase mult 曲线 P1 1.0→P6 1.5,Champion +500×mult} · Monthly{5主题,reward 1.5k–10k,3 subGoals};questBonusMultiplier 由 H1 下发 | SC | §17.1 / Ch13 H3 |
 | **活动/Event**(H4) | id · kind:enum{discount\|referral\|wheel\|regional\|boost\|seasonal\|onboarding} · status:enum{ongoing\|upcoming\|ended} · reward(USDT/NEX) · featured(同时仅1) · trackable · href;**Lucky Spin 8档 EV≈$0.78,Genesis 不进转盘,3护栏+B1红线** | SC(RNG) | §17.1 / Ch13 H4 |
@@ -532,7 +532,7 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 |---|---|---|---|---|
 | `/api/admin/phase/dials` | GET / PUT | 逐月 10 dial 矩阵+定时切换(**全 dial 读写唯一路径**;放大流出方向 dial 执行=仅超管+B1;携 Key) | H1-MD1/MD3(PUT) | H1 |
 | `/api/admin/platform/phase-config/cohort-overrides` · `/:cohortId` | GET/POST/DELETE | cohort 月偏移 override 列/增/撤 | H1-MD4/MD5(写) | H1 |
-| `/api/admin/trial/config` | GET / PUT | TrialConfig 20 参数(含今日剩余免费名额；仅敏感项经确认弹窗;携 Key) | H2-MD1(敏感项) | H2 |
+| `/api/admin/trial/config` | GET / PUT | TrialConfig PC 口径 16 参数(后端暂保留四项旧弹窗字段，由 PC 过滤；含今日剩余免费名额；仅敏感项经确认弹窗;携 Key) | H2-MD1(敏感项) | H2 |
 | `/api/admin/trial/sessions[?status=]` · `/sessions/:userId` | GET | 试用会话监控 / 单会话详情(7 态轨迹) | — | H2 |
 | `/api/admin/trial/sessions/:userId/{cancel\|charge}` | POST | 强制取消 / 强制扣款(高敏,经 PSP;携 Key;共用 computeTrialOffset) | H2-MD2/MD3 | H2 |
 | `/api/admin/trial/kpi` | GET | 试用 KPI 看板(喂 B3) | — | H2 |
@@ -741,7 +741,9 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | `questBonusMultiplier` | 月1–2=4 / 其余=1(前端未实装) | 1–4 | 实时全量 | H3 quest 乘数 |
 | `complianceHoldEnabled` | 月8+=是 | 是/否 | 实时全量 | D5/D2 合规留存 |
 
-### 4.6 域 H2 — 免费试用引擎(TrialConfig 20 项)
+### 4.6 域 H2 — 免费试用引擎(TrialConfig PC 口径 16 项)
+
+App 不展示试用邀请弹窗，PC 已移除相关四项配置与紧急关闭入口。后端本次不改，仍返回的旧参数在页面分区前过滤，不展示、不计数、不提供保存入口；其余参数保存、试用生命周期和审批流程沿用原规则。
 
 | 参数(key) | 默认值 | 生效时机 | 权威源 |
 |---|---|---|---|
@@ -756,7 +758,6 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | `shadowDailyUSD` / `shadowDailyNEX` | 38.52 / 65 | 仅新 trial | H2 |
 | `cooldownDays`(再次试用冷却) | 30(**≠ D5 withdrawCooldownDays**) | 实时全量 | H2 |
 | `phaseOpen` | true(Phase 派发只读) | 实时全量 | H1 调度 |
-| `autoPush{Enabled,DelayMs,CooldownHours,MaxPerSession}` | true / 1500 / 24 / 1 | 实时全量 | H2 |
 | `seatsLeftToday`(每日免费名额上限；APP 接收当日剩余) | 47 | 实时全量 | H2 |
 
 ### 4.7 域 K — 风控与反作弊

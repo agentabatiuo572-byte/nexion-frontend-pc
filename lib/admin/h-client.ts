@@ -270,14 +270,6 @@ export async function chargeH2TrialSession(sessionId: string, reason: string) {
   );
 }
 
-export async function killH2AutoPush(reason: string) {
-  return growthRequest<Record<string, any>>(
-    "/trials/auto-push/kill",
-    { method: "POST", body: commandBody("autoPushKilled", "true", reason) },
-    "h2-auto-push",
-  );
-}
-
 export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"): Promise<Record<string, any>> {
   return growthRequest<Record<string, any>>(section === "events" ? "/quest-events/events-overview" : "/quest-events/tasks");
 }
