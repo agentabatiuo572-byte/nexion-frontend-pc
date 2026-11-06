@@ -314,6 +314,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   AUTH_TOKEN_INVALID: "登录凭证无效,请重新登录。",
   ADMIN_AUTH_REQUIRED: "登录已失效，系统已退出当前会话，请重新登录后再查看应急控制状态。",
   ADMIN_PERMISSION_DENIED: "当前账号没有查看或操作此功能的权限，请联系管理员核对菜单、按钮和接口权限。",
+  FORBIDDEN: "当前账号没有查看或操作此功能的权限，请联系管理员核对菜单、按钮和接口权限。",
   ACCESS_DENIED: "当前账号没有执行此操作的权限；请联系管理员核对所需权限后再试。",
   FORBIDDEN: "当前账号没有执行此操作的权限；请联系管理员核对所需权限后再试。",
   EMERGENCY_ROUTE_NOT_FOUND: "当前服务版本未提供该应急能力，请刷新页面；若仍出现，请联系值班人员检查系统版本。",
