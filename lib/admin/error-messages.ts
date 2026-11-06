@@ -90,6 +90,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   SUPPORT_PHRASE_LENGTH_INVALID: "常用语须为 1–500 字。",
   SUPPORT_CONTRACT_MALFORMED: "客服资料暂时无法加载，请刷新后重试；若持续出现，请联系值班人员。",
   SUPPORT_PROFILE_CUSTOMER_MISMATCH: "客户资料与当前选择不一致，请返回客户列表重新打开。",
+  SUPPORT_CUSTOMER_PROJECTION_MISSING: "客户当前的服务统计资料未能对应到唯一记录，请重新加载资料；仍失败时请联系值班人员核对客户归属和服务统计。",
   A1_AVATAR_ID_INVALID: "头像素材标识无效，请重新选择并上传图片。",
   AVATAR_GENDER_INVALID: "请选择有效的头像分类。",
   AVATAR_DEFAULT_INTENT_INVALID: "客服默认头像与自行上传只能选择一种，请核对当前选择。",
