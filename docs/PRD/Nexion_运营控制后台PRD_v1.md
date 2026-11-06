@@ -4825,3 +4825,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 T11 4 维一致性审查(48 findings)中 **14 项卷内须修已应用**:risk.score_overridden 移出 §2.4.5⑤ risk family(归 ⑥ admin)、事件名分叉统一(admin.chargeback_processed→topup_chargeback_refunded、exchange.executed→swapped)、§3.14 补 B5+kill-switch+账户冻结态+累计KYC+账户名单 五行、风险评分章首 stale 订正、K5⑥ 自相矛盾子句删除、risk.trial_cycle_detected 产消方向定为「K2 产/H2 消」、§9.3④ 补 D1/D5 admin 事件、leaderboard 事件改 risk.leaderboard_velocity_flagged 并登记。10 项 V4 项见 A.1/A.2。
 
+
+### HD-FIX7 · 群发待确认核查（2026-11-07）
+
+M3 群发已有待确认原命令时，「查询原操作结果」独立于「已提交批次」历史折叠常显。没有当前群发资格时继续禁止新建；原结果未找到只保留核查，不重新创建或发送。查到受限成功回执后自动折起历史，展示当前可读的原批次结果，保留内容受限说明。
