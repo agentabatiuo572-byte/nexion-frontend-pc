@@ -354,6 +354,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     );
   }
 
+  const offsetCap = model.params.find((param) => param.key === "trialOffsetCapUSD")?.cur;
+
   return (
     <>
       <div className="f-stats">
@@ -369,7 +371,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         </div>
         <div className="f-stat cyan">
           <div className="k">抵扣上限</div>
-          <div className="v">${text(model.params.find((param) => param.key === "trialOffsetCapUSD")?.cur)}</div>
+          <div className="v">{offsetCap == null || String(offsetCap).trim() === "" ? "不设上限" : `$${text(offsetCap)}`}</div>
           <div className="sub">每笔抵扣额由系统自动计算</div>
         </div>
         <div className="f-stat danger">
