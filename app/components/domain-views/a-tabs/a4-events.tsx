@@ -32,7 +32,7 @@ import { A4OutboxDiagnostics } from "./a4-outbox-diagnostics";
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Drawer } from "../design-kit";
+import { Drawer, OperationConfirmModal, type BusinessFormValue } from "../design-kit";
 import {
   addA4SchemaProperty,
   createA4IdempotencyKey,
@@ -40,6 +40,8 @@ import {
   fetchA4SchemaRegistration,
   fetchA4Overview,
   fetchH3DeadOutboxRedrivePreview,
+  pendingA4RegistryProposal,
+  recoverA4RegistryProposal,
   redriveAuditedH3DeadOutboxEvent,
   registerA4DomainExtension,
   registerA4Schema,
@@ -55,10 +57,10 @@ import {
 } from "@/lib/admin/a4-client";
 import { runH3DeadOutboxRedriveCommand, type A4H3DeadOutboxRedriveCommand } from "@/lib/admin/a4-redrive-command";
 
-import { fetchA2ReasonPolicy } from "@/lib/admin/a2-client";
-import { useAdminAuth } from "@/lib/store/admin-auth";
+import { fetchA2ReasonPolicy, type A2OperationRow } from "@/lib/admin/a2-client";
+import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import type { ACtx } from "./types";
+import type { ACtx, ActionConfirmReq } from "./types";
 
 /* ────────────────── helpers ────────────────── */
 
@@ -72,6 +74,15 @@ const BATCH_STATE: Record<A4DomainExtensionBatch["state"], { tone: "ok" | "warn"
 
 const PAST_ACTION = /(?:ed|sent|paid|held|bound|dau)$/;
 const eventNameValid = (value: string) => /^[a-z][a-z0-9_]*\.[a-z0-9]+(?:_[a-z0-9]+)*$/.test(value) && PAST_ACTION.test(value);
+const PROPERTY_TYPES = ["string", "number", "boolean", "enum", "timestamp", "id", "json"];
+const REGISTRY_FIELD_LABELS: Record<string, string> = {
+  eventName: "事件名", ownerDomain: "归属域", domainName: "模块名", producer: "发送方", consumer: "使用方",
+  propertyName: "字段名", propertyType: "字段类型", pii: "含个人信息", serverAuthoritative: "服务端裁决",
+  samplingPolicy: "采样策略", expectedVersion: "事件目录版本",
+};
+type RegistryConfirm = Pick<ActionConfirmReq, "action" | "detail" | "businessForm" | "briefKind"> & {
+  submit?: (actor: AdminSession, reason: string, value?: BusinessFormValue) => Promise<A2OperationRow>;
+};
 
 // This is an audited recovery entry, not an event search or a general outbox
 // console. It permits one ID at a time and never accepts mutable payload.
@@ -88,6 +99,8 @@ const H3_DEAD_REDRIVABLE_EVENT_TYPES = [
 const lifecycleText = (value: string) => ({ new: "新建", pending_publish: "待发布", gray: "分批开放", full: "全面开放", disabled: "已停用" } as Record<string,string>)[value] ?? "未知状态";
 
 export function A4Events({ ctx }: { ctx: ACtx }) {
+  const registryActor = useAdminAuth((state) => state.session);
+  const authEpoch = useAdminAuth((state) => state.authEpoch);
   const canReadOutbox = useAdminAuth((state) => state.session?.authorities.includes("platform_a4_read") ?? false);
   const { toast, openActionConfirm } = ctx;
   const canWrite = useAdminAuth((state) => state.session?.authorities.includes("platform_a4_write") ?? false);
@@ -114,6 +127,8 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
   const [schemaLookup, setSchemaLookup] = useState<A4Overview["schemaRegistrations"][number] | null>(null);
   const [schemaLookupLoading, setSchemaLookupLoading] = useState(false);
   const [schemaLookupError, setSchemaLookupError] = useState<string | null>(null);
+  const [registryConfirm, setRegistryConfirm] = useState<(RegistryConfirm & { adminId: number; epoch: number }) | null>(null);
+  const [registryTicket, setRegistryTicket] = useState<{ adminId: number; ticket: A2OperationRow } | null>(null);
   const schemaLookupSequence = useRef(0);
   const schemaLookupEventNameRef = useRef("");
 
@@ -157,6 +172,50 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
   // 扩展工单登记:多字段抽屉(不再一个文本框塞「domain / 事件名」整串)
   const [naBatch, setNaBatch] = useState(false);
   const [batchForm, setBatchForm] = useState({ domain: "", event: "", producer: "", consumer: "" });
+  const pendingRegistry = registryActor && pendingA4RegistryProposal(registryActor.adminId);
+  const currentRegistryTicket = registryTicket?.adminId === registryActor?.adminId ? registryTicket?.ticket : null;
+
+  const currentRegistryActor = () => {
+    const current = useAdminAuth.getState();
+    if (!current.isAuthenticated || !current.session || current.session.adminId !== registryActor?.adminId
+        || current.authEpoch !== authEpoch || !current.session.authorities.includes("platform_a4_write")) {
+      throw new Error("登录身份或登记权限已变化，请关闭后重新操作。");
+    }
+    return current.session;
+  };
+
+  const finishRegistry = (ticket: A2OperationRow) => {
+    const actor = currentRegistryActor();
+    setRegistryTicket({ adminId: actor.adminId, ticket });
+    setRegistryConfirm(null);
+    setNaBatch(false);
+    if (ticket.status === "approved") void refreshOverview(true);
+  };
+
+  const recoverRegistry = async (retry = false) => {
+    const ticket = await recoverA4RegistryProposal(currentRegistryActor().adminId, retry);
+    if (!ticket) return false;
+    finishRegistry(ticket);
+    return true;
+  };
+
+  const openRegistryConfirm = (draft: RegistryConfirm) => {
+    setRegistryConfirm({ ...draft, adminId: currentRegistryActor().adminId, epoch: authEpoch });
+  };
+
+  const openRegistryRecovery = () => {
+    if (!pendingRegistry) return false;
+    openRegistryConfirm({
+      action: "查询原审批单 · " + pendingRegistry.input.obj,
+      briefKind: "record",
+      detail: <dl>
+        {Object.entries(pendingRegistry.input.command.params).map(([key, value]) => (
+          <div key={key}><dt>{REGISTRY_FIELD_LABELS[key]}</dt><dd>{typeof value === "boolean" ? value ? "是" : "否" : String(value)}</dd></div>
+        ))}
+      </dl>,
+    });
+    return true;
+  };
 
   /* 后端实时态 */
   const A4_STATS = overview?.stats ?? { todayEvents: "0", todayAuditEvents: 0, registeredDomains: 0, pendingDomains: 0, batchDone: 0, batchTotal: 0, schemaVersion: "—" };
@@ -302,8 +361,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
 
   const registerSchema = () => {
     if (!canWrite) { toast("你只有查看权限，不能登记事件"); return; }
-    const stableKey = createA4IdempotencyKey("a4-schema");
-    openActionConfirm({ briefKind: "config",
+    if (openRegistryRecovery()) return;
+    openRegistryConfirm({ briefKind: "config",
       action: "登记新事件或字段",
       detail: (
         <>
@@ -311,22 +370,20 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           事件名格式为 <span className="acode">模块.对象_动作</span>（动作用过去式），不能与已有事件重复，不能包含手机号、地址等隐私信息。
         </>
       ),
-      amplifies: false,
       businessForm: {
         kind: "schema-authoring",
         ownerDomains: SCHEMA_OWNER_DOMAINS,
-        propertyTypes: ["string", "number", "boolean", "enum", "timestamp", "id", "json"],
+        propertyTypes: PROPERTY_TYPES,
         samplingPolicies: ["100%(资金/风控/转化)", "浏览 0%", "浏览 10%", "会话 25%"],
         versionHint: liveSchemaVer,
       },
-      run: (reason, _v, bv) => {
+      submit: (actor, reason, bv) => {
         const ev = (bv?.eventName || "").trim();
-        if (!ev) { toast("请填写事件名"); return; }
-        if (!eventNameValid(ev)) { toast("事件名格式应为 模块.对象_动作，动作用过去式"); return; }
-        if (bv?.isPII === "true") { toast("无法登记：事件不能包含手机号、地址等隐私信息"); return; }
+        if (!ev) throw new Error("请填写事件名");
+        if (!eventNameValid(ev)) throw new Error("事件名格式应为 模块.对象_动作，动作用过去式");
+        if (bv?.isPII === "true") throw new Error("事件不能包含手机号、地址等隐私信息");
         const ver = (bv?.version || "").trim() || liveSchemaVer;
-        setMutating("schema");
-        return registerA4Schema({
+        return registerA4Schema(actor, {
           eventName: ev,
           ownerDomain: (bv?.ownerDomain || "").trim(),
           producer: (bv?.producer || "").trim(),
@@ -338,16 +395,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           samplingPolicy: (bv?.samplingPolicy || "").trim(),
           expectedVersion: ver,
           reason,
-        }, stableKey)
-          .then((next) => {
-            setOverview(next);
-            toast(`事件 ${ev} 已提交登记（${ver} · ${bv?.producer}）`);
-          })
-          .catch((error: unknown) => {
-            toast(`提交失败:${displayAdminError(error)}`);
-            throw error;
-          })
-          .finally(() => setMutating(null));
+        });
       },
     });
   };
@@ -356,21 +404,17 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
 
   const registerBatch = () => {
     if (!canWrite) { toast("你只有查看权限，不能登记"); return; }
+    if (openRegistryRecovery()) return;
     setBatchForm({ domain: "", event: "", producer: "", consumer: "" });
     setNaBatch(true);
   };
 
   const openSchemaPropertyExtension = (schema: A4Overview["schemaRegistrations"][number]) => {
     if (!canWrite) { toast("你只有查看权限，不能新增字段"); return; }
+    if (openRegistryRecovery()) return;
     // Both values are frozen before the confirm drawer opens. A later lookup/input
     // response or overview refresh must not redirect this write to another schema.
     const schemaSnapshot = { ...schema };
-    // A successful mutation returns a fresh overview, but a separately fetched
-    // exact preview can otherwise keep showing the old row version/properties.
-    // Keep both the input target and lookup generation so a completion can only
-    // reconcile the preview it was opened from; it must never overwrite a later lookup.
-    const lookupTargetAtOpen = schemaLookupEventNameRef.current.trim();
-    const lookupSequenceAtOpen = schemaLookupSequence.current;
     // Property writes advance the global registry revision, whereas schema.version is this event's own revision.
     // Freeze the registry value from the overview that the operator reviewed so the server can reject a stale command.
     const registryVersion = overview?.stats.schemaVersion ?? "";
@@ -378,17 +422,13 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       toast("事件目录版本获取失败，请刷新后重试");
       return;
     }
-    const stableKey = createA4IdempotencyKey(`a4-schema-property-${schemaSnapshot.eventName}`);
-    openActionConfirm({ briefKind: "config",
+    openRegistryConfirm({ briefKind: "config",
       action: `给已有事件新增字段 · ${schemaSnapshot.eventName}`,
       detail: <>
         事件版本 <b>{schemaSnapshot.version}</b> · 目录版本 <b>{registryVersion}</b> · 发送方 <span className="acode">{schemaSnapshot.producer}</span> ·
         使用方 <span className="acode">{schemaSnapshot.consumers || "未指定"}</span> · 现有字段 <span className="acode">{schemaSnapshot.properties}</span>。
         这里只能新增一个字段，事件的其他设置不变。
       </>,
-      amplifies: false,
-      reasonMin: a2ReasonMin,
-      reasonMax: 200,
       businessForm: {
         kind: "multi-field",
         title: `新增字段 · ${schemaSnapshot.eventName}`,
@@ -397,50 +437,20 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           { key: "propertyName", label: "字段名", current: "", inputKind: "text", required: true, placeholder: "例如 instance_key" },
           {
             key: "propertyType", label: "字段类型", current: "string", inputKind: "select", required: true,
-            options: ["string", "number", "boolean", "enum", "timestamp", "id", "json"],
+            options: PROPERTY_TYPES,
           },
         ],
       },
-      run: async (reason, _value, businessValue) => {
+      submit: (actor, reason, businessValue) => {
         const propertyName = String(businessValue?.propertyName ?? "").trim();
         const propertyType = String(businessValue?.propertyType ?? "").trim();
         if (!/^[a-z][a-z0-9_]{0,63}$/.test(propertyName)) {
-          toast("字段名须以小写字母开头，只能包含小写字母、数字和下划线");
-          return;
+          throw new Error("字段名须以小写字母开头，只能包含小写字母、数字和下划线");
         }
-        if (!["string", "number", "boolean", "enum", "timestamp", "id", "json"].includes(propertyType)) {
-          toast("请选择字段类型");
-          return;
+        if (!PROPERTY_TYPES.includes(propertyType)) {
+          throw new Error("请选择字段类型");
         }
-        setMutating(`schema-property-${schemaSnapshot.eventName}`);
-        try {
-          const next = await addA4SchemaProperty(schemaSnapshot.eventName, propertyName, propertyType, registryVersion, reason, stableKey);
-          setOverview(next);
-          if (lookupTargetAtOpen === schemaSnapshot.eventName
-            && schemaLookupEventNameRef.current.trim() === schemaSnapshot.eventName
-            && schemaLookupSequence.current === lookupSequenceAtOpen) {
-            // Invalidate an earlier exact GET before replacing the preview, so a
-            // late response cannot put the pre-extension schema back on screen.
-            schemaLookupSequence.current += 1;
-            setSchemaLookupLoading(false);
-            const refreshedSchema = next.schemaRegistrations.find((item) => item.eventName === schemaSnapshot.eventName) ?? null;
-            if (refreshedSchema) {
-              setSchemaLookup(refreshedSchema);
-              setSchemaLookupError(null);
-            } else {
-              // The overview is intentionally capped. Do not retain an old exact
-              // preview when this target is outside the returned current rows.
-              setSchemaLookup(null);
-              setSchemaLookupError("字段已新增，但列表里暂时没有这个事件，请重新查询");
-            }
-          }
-          toast(`${schemaSnapshot.eventName} 已新增字段 ${propertyName}`);
-        } catch (error) {
-          toast(`新增字段失败：${displayAdminError(error)}`);
-          throw error;
-        } finally {
-          setMutating(null);
-        }
+        return addA4SchemaProperty(actor, schemaSnapshot.eventName, propertyName, propertyType, registryVersion, reason);
       },
     });
   };
@@ -723,6 +733,20 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           </div>
         </section>
       )}
+      {canWrite && pendingRegistry && <div className="alertbar warn" role="status">
+        上一次登记审批结果待确认。
+        <button className="l-btn sm" onClick={openRegistryRecovery}>查询原审批单</button>
+      </div>}
+      {currentRegistryTicket && <div className="alertbar ok" role="status">
+        审批单 {currentRegistryTicket.id} · {{
+          pending: "待另一位超级管理员审批，尚未生效",
+          approved: "已批准",
+          rejected: "已驳回",
+          withdrawn: "已撤回",
+          expired: "已过期",
+        }[currentRegistryTicket.status]}
+        {registryActor?.authorities.includes("platform_a2_read") && <Link href="/platform/audit">查看审计与操作确认</Link>}
+      </div>}
       {/* ───── 4 f-stat ───── */}
       <div className="f-stats">
         <div className="f-stat">
@@ -1145,7 +1169,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       })()}
 
       {/* ───── 登记 domain 扩展工单 · 多字段抽屉(domain / 事件名 / 产消方 各一格,不再一个框塞)───── */}
-      {naBatch && (
+      {naBatch && !registryConfirm && (
         <Drawer
           title="登记新模块"
           sub="填写模块名、事件名、发送方和使用方"
@@ -1162,32 +1186,19 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                   const producer = batchForm.producer.trim(), consumer = batchForm.consumer.trim();
                   if (!canWrite) { toast("你只有查看权限，不能登记"); return; }
                   if (!batchFormValid) { toast("请填写模块名、事件名（动作用过去式）、发送方和使用方"); return; }
-                  const stableKey = createA4IdempotencyKey("a4-domain-extension");
-                  setNaBatch(false);
-                  openActionConfirm({ briefKind: "record",
+                  openRegistryConfirm({ briefKind: "record",
                     action: `登记新模块 · ${domain}`,
                     detail: (<><b>{domain}</b> · 事件 <span className="acode">{event}</span> · 发送方 {producer || "—"} → 使用方 {consumer || "—"}。</>),
-                    amplifies: false,
-                    run: (reason) => {
-                      setMutating("domain-extension");
-                      return registerA4DomainExtension({
+                    submit: (actor, reason) => registerA4DomainExtension(actor, {
                         domainName: domain,
                         eventName: `${domain}.${event}`,
                         producer,
                         consumer,
                         reason,
-                      }, stableKey)
-                        .then(() => refreshOverview(true))
-                        .then(() => toast(`新模块 ${domain} / ${event} 已提交登记`))
-                        .catch((error: unknown) => {
-                          toast(`提交失败:${displayAdminError(error)}`);
-                          throw error;
-                        })
-                        .finally(() => setMutating(null));
-                    },
+                    }),
                   });
                 }}
-              >提交登记</button>
+              >下一步</button>
             </div>
           }
         >
@@ -1212,6 +1223,38 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
             );
           })()}
         </Drawer>
+      )}
+      {registryConfirm && registryConfirm.adminId === registryActor?.adminId && registryConfirm.epoch === authEpoch && (
+        <OperationConfirmModal
+          action={registryConfirm.action}
+          detail={registryConfirm.detail}
+          briefKind={registryConfirm.briefKind}
+          businessForm={registryConfirm.businessForm}
+          reasonMin={a2ReasonMin}
+          reasonMax={200}
+          getPendingReason={() => pendingA4RegistryProposal(registryConfirm.adminId)?.input.reason}
+          inlineApproval={{
+            pending: !!pendingRegistry,
+            expired: !!pendingRegistry && Date.now() >= pendingRegistry.expiresAt,
+            resolve: () => ({
+              heading: "登记需另一位超级管理员审批",
+              comparison: registryConfirm.detail,
+              completionCopy: "批准前，事件目录、字段和扩展批次均保持原状。",
+            }),
+            recover: () => recoverRegistry(),
+            retry: async () => { await recoverRegistry(true); },
+          }}
+          onClose={() => setRegistryConfirm(null)}
+          onConfirm={async (reason, _value, businessValue) => {
+            if (!registryConfirm.submit) return;
+            setMutating("registry-approval");
+            try {
+              finishRegistry(await registryConfirm.submit(currentRegistryActor(), reason, businessValue));
+            } finally {
+              setMutating(null);
+            }
+          }}
+        />
       )}
     </>
   );

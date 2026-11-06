@@ -1,6 +1,9 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { normalizeOutboxDiagnostics, outboxDiagnosticsQuery, type OutboxFilters } from "./a4-outbox-diagnostics";
+import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "./a2-client";
+import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
+import type { AdminSession } from "@/lib/store/admin-auth";
 
 interface ApiResult<T> {
   code: number;
@@ -337,59 +340,102 @@ export type A4SchemaRegistrationInput = {
   reason: string;
 };
 
-export async function registerA4Schema(input: A4SchemaRegistrationInput, stableIdempotencyKey?: string) {
-  return a4Request<unknown>("/events/schema-registrations", {
-    method: "POST",
-    body: JSON.stringify({
-      eventName: input.eventName,
-      ownerDomain: input.ownerDomain,
-      producer: input.producer,
-      consumer: input.consumer,
-      propertyName: input.propertyName,
-      propertyType: input.propertyType,
-      pii: input.pii,
-      serverAuthoritative: input.isServerAuthoritative,
-      samplingPolicy: input.samplingPolicy,
-      expectedVersion: input.expectedVersion,
-      reason: input.reason,
-    }),
-    idempotencyPrefix: "a4-schema",
-    stableIdempotencyKey,
-  }).then(normalizeOverview);
+type A4RegistryActor = Pick<AdminSession, "adminId" | "operator" | "username" | "role">;
+type A4RegistryProposal = Parameters<typeof createA2OperationProposal>[0];
+type A4RegistryAttempt = PendingMutationRecord & { input: A4RegistryProposal };
+
+const registryAttempts = createPendingMutationStore<A4RegistryAttempt>({
+  storageKey: "nexion-admin-a4-registry-proposals-v1",
+  retainExpiredRecords: true,
+  isValidRecord: ({ input }) => input?.sourceDomain === "A4" && input.command?.domain === "A",
+});
+
+export function pendingA4RegistryProposal(adminId: number) {
+  return registryAttempts.list().find((row) => row.fingerprint === String(adminId));
+}
+
+async function postRegistryProposal(attempt: A4RegistryAttempt) {
+  try {
+    const ticket = await createA2OperationProposal(attempt.input, attempt.commandKey, true);
+    registryAttempts.forget(attempt.fingerprint, attempt.commandKey);
+    return ticket;
+  } catch (error) {
+    if (error instanceof Error && "backendMessage" in error
+        && ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(String(error.backendMessage))) {
+      throw new A2OutcomeUncertainError("原审批单仍待确认，请稍后查询。", attempt.commandKey);
+    }
+    if (!isA2OutcomeUncertainError(error)) {
+      registryAttempts.forget(attempt.fingerprint, attempt.commandKey);
+    }
+    throw error;
+  }
+}
+
+export async function recoverA4RegistryProposal(adminId: number, retryOriginal = false) {
+  const attempt = pendingA4RegistryProposal(adminId);
+  if (!attempt) return null;
+  const ticket = await fetchA2ProposalByKey(attempt.commandKey);
+  if (ticket) {
+    registryAttempts.forget(attempt.fingerprint, attempt.commandKey);
+    return ticket;
+  }
+  if (!retryOriginal) return null;
+  if (Date.now() >= attempt.expiresAt) {
+    throw new A2OutcomeUncertainError("原命令已过期。请继续查询原审批单。", attempt.commandKey);
+  }
+  return postRegistryProposal(attempt);
+}
+
+async function submitRegistryProposal(actor: A4RegistryActor, action: string, op: string, type: string,
+  params: Record<string, unknown> & { eventName: string }, reason: string) {
+  const previous = pendingA4RegistryProposal(actor.adminId);
+  if (previous) throw new A2OutcomeUncertainError("请先查询上一次登记审批单。", previous.commandKey);
+  const input: A4RegistryProposal = {
+    action, obj: params.eventName, beforeValue: "—", afterValue: "—",
+    operator: actor.operator || actor.username, operatorRole: actor.role,
+    type: "param", amplifies: false, sos: false, roleGate: "超管", reason, sourceDomain: "A4",
+    command: { domain: "A", op, params },
+    target: { domain: "A", type, id: params.eventName },
+  };
+  const fingerprint = String(actor.adminId);
+  const commandKey = createA2CommandKey(op);
+  registryAttempts.remember(fingerprint, commandKey, { input });
+  const attempt = pendingA4RegistryProposal(actor.adminId);
+  if (!attempt || !registryAttempts.isDurablyStored(fingerprint, commandKey)) {
+    registryAttempts.forget(fingerprint, commandKey);
+    throw new Error("浏览器无法保存审批命令号，请允许会话存储后重试。");
+  }
+  return postRegistryProposal(attempt);
+}
+
+export function registerA4Schema(actor: A4RegistryActor, input: A4SchemaRegistrationInput) {
+  const { reason, isServerAuthoritative, ...params } = input;
+  return submitRegistryProposal(actor, "登记事件", "a4_schema_register", "a4_event_schema",
+    { ...params, serverAuthoritative: isServerAuthoritative }, reason);
 }
 
 /** Adds one property to a server-returned existing schema. Metadata remains server-owned. */
-export async function addA4SchemaProperty(
+export function addA4SchemaProperty(
+  actor: A4RegistryActor,
   eventName: string,
   propertyName: string,
   propertyType: string,
   expectedVersion: string,
   reason: string,
-  stableIdempotencyKey: string,
 ) {
-  if (!/^v[1-9][0-9]*$/.test(expectedVersion)) {
-    throw new Error("schema version must use the server canonical v<positive integer> form");
-  }
-  return a4Request<unknown>("/events/schema-registrations/properties", {
-    method: "POST",
-    body: JSON.stringify({ eventName, propertyName, propertyType, expectedVersion, reason }),
-    stableIdempotencyKey,
-  }).then(normalizeOverview);
+  return submitRegistryProposal(actor, "新增事件字段", "a4_schema_property_add", "a4_event_schema",
+    { eventName, propertyName, propertyType, expectedVersion }, reason);
 }
 
-export async function registerA4DomainExtension(input: {
+export function registerA4DomainExtension(actor: A4RegistryActor, input: {
   domainName: string;
   eventName: string;
   producer: string;
   consumer: string;
   reason: string;
-}, stableIdempotencyKey?: string) {
-  return a4Request<unknown>("/events/domain-extension-batches", {
-    method: "POST",
-    body: JSON.stringify(input),
-    idempotencyPrefix: "a4-domain-extension",
-    stableIdempotencyKey,
-  });
+}) {
+  const { reason, ...params } = input;
+  return submitRegistryProposal(actor, "登记域扩展批次", "a4_domain_extension_register", "a4_domain_extension", params, reason);
 }
 
 export async function transitionA4Lifecycle(

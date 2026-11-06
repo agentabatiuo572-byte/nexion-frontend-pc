@@ -40,6 +40,7 @@ const EXECUTOR_MODULE = "lib/admin/stable-mutation.ts";
 
 /** 已迁到共享 store 的文件:必须仍 import 它,且不得再出现裸内存态幂等键。 */
 const MIGRATED = [
+  "lib/admin/a4-client.ts",
   // Payment policy changes retain the original command for query-only audit recovery after unknown outcomes.
   "lib/admin/payment-password-client.ts",
   // Order-payment policy and revalidation retain immutable owner/payload/key after unknown outcomes; same-key retry is time bounded.
