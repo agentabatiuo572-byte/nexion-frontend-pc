@@ -184,7 +184,7 @@ function MenuRow({ node, depth, expanded, onToggle, onCreate, onEdit, onDelete, 
         {node.routePath && <CodeTag><span className="mono" style={{ fontSize: 11 }}>{node.routePath}</span></CodeTag>}
         <Badge tone={node.status === 1 ? "ok" : "dim"}>{node.status === 1 ? "启用" : "停用"}</Badge>
         <span style={{ flex: 1 }} />
-        {canWrite && <Btn sm onClick={() => onCreate(node)} aria-label={`为 ${targetName} 新建下级菜单`}>+ 下级菜单</Btn>}
+        {canWrite && isDomain && <Btn sm onClick={() => onCreate(node)} aria-label={`为 ${targetName} 新建下级菜单`}>+ 下级菜单</Btn>}
         {canWrite && <Btn sm onClick={() => onEdit(node)} aria-label={`编辑 ${targetName}`}>编辑</Btn>}
         {canWrite && <Btn sm onClick={() => onDelete(node)} aria-label={`删除 ${targetName}`}>删除</Btn>}
       </div>

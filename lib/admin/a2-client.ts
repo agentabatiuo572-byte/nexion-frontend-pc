@@ -52,6 +52,8 @@ interface BackendStats {
   weeklyWithdrawn?: number | string | null;
 }
 
+type A2FundEffect = "REWARD_SUSPENSION" | "REWARD_RESUMPTION" | "ORDER_REFUND";
+
 interface BackendTicket {
   id: string;
   action: string;
@@ -61,6 +63,8 @@ interface BackendTicket {
   phoneCalibrationProposal?: string | null;
   coverageCheckOnApproval?: boolean | null;
   operationCode?: string | null;
+  fundEffect?: A2FundEffect | null;
+  refundOrderNo?: string | null;
   operator?: string | null;
   operatorRole?: string | null;
   type?: string | null;
@@ -150,6 +154,8 @@ export interface A2OperationRow {
   phoneCalibrationError?: string;
   coverageCheckOnApproval?: boolean;
   operationCode?: string;
+  fundEffect?: A2FundEffect;
+  refundOrderNo?: string;
   id: string;
   action: string;
   obj: string;
@@ -305,6 +311,8 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
     ...(phoneCalibrationError ? { phoneCalibrationError } : {}),
     ...(ticket.coverageCheckOnApproval === true ? { coverageCheckOnApproval: true } : {}),
     ...(ticket.operationCode ? { operationCode: ticket.operationCode } : {}),
+    fundEffect: ticket.fundEffect ?? undefined,
+    refundOrderNo: ticket.refundOrderNo ?? undefined,
     id: ticket.id,
     action: ticket.action,
     obj: ticket.obj,

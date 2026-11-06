@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * B1 净敞口曲线 · 30d · USDT(设计稿 ExposureCard 模式)。
+ * B1 净敞口曲线 · USDT，按 B 域采样间隔展示时间跨度。
  * 净敞口 = 储备 − 应付负债。数据来自 B 域真实聚合接口。
  */
 import Link from "next/link";
@@ -17,13 +17,14 @@ export function ExposureCard() {
   if ((bDomain.loading && !bDomain.hasData) || bDomain.error || !bDomain.hasData) {
     return <BDomainDataState title="储备与应付款差额" loading={bDomain.loading && !bDomain.error} error={bDomain.error} onRetry={bDomain.reload} />;
   }
-  const { reserveUsd, liabilitiesUsd, coverageSeries: cs, redlinePct: red } = LEDGER;
+  const { reserveUsd, liabilitiesUsd, coverageSeries: cs, coverageSeriesIntervalHours, redlinePct: red } = LEDGER;
   const net = reserveUsd - liabilitiesUsd; // 精确净敞口(与 hero 子卡一致)
   const deficit = net < 0;
   const tone = deficit ? "var(--v5-danger)" : "var(--v5-success)";
-  if (cs.length < 2) {
+  if (cs.length < 2 || coverageSeriesIntervalHours === null) {
     return <BDomainDataState title="储备与应付款差额" error="走势数据不足，暂时无法显示" onRetry={bDomain.reload} />;
   }
+  const spanLabel = `${(cs.length - 1) * coverageSeriesIntervalHours} 小时`;
   // 由覆盖率序列推导净敞口走势(储备 = 负债 × cov%,净敞口 = 储备 − 负债)
   const series = cs;
   const netSeries = series.map((c) => Math.round(liabilitiesUsd * (c / 100 - 1)));
@@ -35,7 +36,7 @@ export function ExposureCard() {
     <div className="flex h-full flex-col rounded-[16px] p-5" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
       <div className="flex items-center gap-2.5">
         <span className="font-display text-[14.5px]" style={{ color: "var(--v5-ink)" }}>储备与应付款差额</span>
-        <span className="text-[12px]" style={{ color: "var(--v5-ink-4)" }}>30 天 · USDT</span>
+        <span className="text-[12px]" style={{ color: "var(--v5-ink-4)" }}>{spanLabel} · USDT</span>
         <span className="ml-auto font-mono-tabular rounded-[7px] px-2 py-0.5 text-[11px]" style={{ background: "var(--v5-surface-2)", color: "var(--v5-ink-4)", border: "1px solid var(--v5-border)" }}>B1</span>
       </div>
       <div className="font-mono-tabular mt-1.5" style={{ fontSize: 26, fontWeight: 600, letterSpacing: "-0.02em", color: tone }}>{fmtUsdCompact(net)}</div>
@@ -44,8 +45,8 @@ export function ExposureCard() {
       </p>
       <AreaChart data={netSeries} color={tone} height={96} />
       <div className="mt-2 flex items-center justify-between font-mono-tabular text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>
-        <span>30 天前 {fmtUsdCompact(netSeries[0])}</span>
-        <span style={{ color: tone }}>今日 {fmtUsdCompact(net)}</span>
+        <span>{spanLabel}前 {fmtUsdCompact(netSeries[0])}</span>
+        <span style={{ color: tone }}>当前 {fmtUsdCompact(net)}</span>
       </div>
       {windowsToRedline != null && (
         <p className="mt-2 text-[11.5px]" style={{ color: "var(--v5-warning)" }}><AutoGloss>覆盖率在下降，照这个速度约 </AutoGloss>{windowsToRedline}<AutoGloss> 个时段后跌破红线 </AutoGloss>{fmtPct(red, 0)}</p>

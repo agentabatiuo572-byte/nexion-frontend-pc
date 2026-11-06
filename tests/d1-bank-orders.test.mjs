@@ -7,9 +7,18 @@ import { collectCalledSymbols, collectClientWriteSymbols, evaluateManifestClaims
 
 const parse = (path, kind = ts.ScriptKind.TS) => ts.createSourceFile(path,
   readFileSync(new URL(`../${path}`, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, kind);
-const execute = (code, scope) => vm.runInNewContext(ts.transpileModule(code,
-  { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS,
-    jsx: ts.JsxEmit.React, jsxFactory: "jsx" } }).outputText, scope);
+const execute = (code, scope) => {
+  scope.exports ??= {};
+  const { outputText } = ts.transpileModule(code, {
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.CommonJS,
+      jsx: ts.JsxEmit.React,
+      jsxFactory: "jsx",
+    },
+  });
+  return vm.runInNewContext(outputText, scope);
+};
 const authModuleCode = (path) => {
   const source = parse(path);
   return source.statements.filter((node) => !ts.isImportDeclaration(node))

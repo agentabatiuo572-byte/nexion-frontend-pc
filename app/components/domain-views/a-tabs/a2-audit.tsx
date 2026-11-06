@@ -380,9 +380,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const approveWo = (w: A2OperationRow) => {
     if (w.phoneCalibrationError) { toast(w.phoneCalibrationError); return; }
     const commandKey = createA2CommandKey(`a2-approve-${w.id}`);
-    openActionConfirm({ briefKind: w.type === "fund" ? "funds" : w.type === "acct" ? "security" : w.type === "sos" ? "emergency" : "config",
+    const isRefund = w.fundEffect === "ORDER_REFUND";
+    const isFunds = w.type === "fund" || isRefund || w.fundEffect === "REWARD_SUSPENSION" || w.fundEffect === "REWARD_RESUMPTION";
+    openActionConfirm({ briefKind: isFunds ? "funds" : w.type === "acct" ? "security" : w.type === "sos" ? "emergency" : "config",
       completionCopy: w.coverageCheckOnApproval ? COVERAGE_ON_APPROVAL_COPY : g3PolicyExecutionTiming(w),
-      content: w.action === `退款 · ${w.obj}` ? <PromotionRefundImpact orderNo={w.obj} /> : undefined,
+      content: isRefund && w.refundOrderNo ? <PromotionRefundImpact orderNo={w.refundOrderNo} /> : undefined,
       action: <>确认执行 · {w.id}({a2ActionText(w.action)})</>,
       detail: (
         <>

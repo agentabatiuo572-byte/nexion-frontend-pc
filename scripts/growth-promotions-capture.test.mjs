@@ -3,12 +3,16 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {fileURLToPath} from 'node:url';
 import {chromium} from '@playwright/test';
 import {capturePromotionPage} from './growth-promotions-capture.mjs';
 import {validatePromotionVisualBoards} from './growth-promotions-workflow-runtime.mjs';
 
 test('native nested dialog capture follows the newly opened child and proves its internal bottom',async()=>{
-  const dir=path.join(process.env.PROMOTION_EVIDENCE_DIR||'D:/CodexData/test-environments/workflow-runs/growth-promotions-20261007','pc-native-dialog-selftest',randomUUID());fs.mkdirSync(dir,{recursive:true});
+  const evidenceRoot = process.env.PROMOTION_EVIDENCE_DIR
+    || fileURLToPath(new URL('../test-results/growth-promotions/', import.meta.url));
+  const dir = path.join(evidenceRoot, 'pc-native-dialog-selftest', randomUUID());
+  fs.mkdirSync(dir, { recursive: true });
   const browser=await chromium.launch({headless:true});
   try{
     const page=await browser.newPage({viewport:{width:1280,height:1000},deviceScaleFactor:1});
