@@ -1251,7 +1251,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       businessForm: { kind: "multi-field", title: "", fields: [
         { key: "providerCid", label: "Cregis 打款单号（CID）", inputKind: "text", required: true,
           current: cregis.providerCid ?? "", minLength: 1, maxLength: 19, pattern: "^[1-9][0-9]{0,18}$",
-          patternMessage: "CID 是不以 0 开头的数字", help: "填这笔提现原来的打款单号，不要新建打款单。",
+          patternMessage: "CID 是不以 0 开头的数字", explain: "填这笔提现原来的打款单号，不要新建打款单。",
           warning: (value) => (value.providerCid && !/^[1-9][0-9]{0,18}$/.test(value.providerCid.trim()) ? "CID 是不以 0 开头的数字" : undefined) },
       ] },
       reasonMin: 10, reasonMax: 300, completionCopy: "系统核对收款地址和金额后继续跟进这笔提现，不会重新打款。",
