@@ -459,7 +459,7 @@ A2 是后台**一切高敏写操作的留痕与确认契约地基**——提供 
 >
 > **K 域旧命名映射注脚**:本清单引用 K 域动作(K1 批量冻结、K4 风险模型、K5 复审裁决)时,角色映射为 §1.1 体系:平台管理员→超级管理员、风控运营→风控(member)、审计员→只读审计;主管层级 = 角色内 lead 层级(承担高敏执行门槛)。K1④ 正文与 K1⑥ 矩阵以**矩阵为准**(矩阵粒度更细),执行权 = 风控(lead)/超管;K5④ 正文与 K5⑥ 矩阵以矩阵为准,执行权 = 风控(lead)/超管。
 >
-> 上列清单是各章「④ 操作动作」「④a 交互与弹窗规格」与「⑥ 权限 & 审计」段标「确认弹窗」动作的**汇总权威**;**本清单随各章新增高敏动作同步更新**。强制登出 / 标记 / 只读查看 / 风控自动检测等**非高敏或即时止血**动作不入确认门(直接生效 + 留痕),其分界以「是否放大资金流出 / 变更权限边界 / 触及用户资产或合规态」为准。
+> 上列清单是各章「④ 操作动作」「④a 交互与弹窗规格」与「⑥ 权限 & 审计」段标「确认弹窗」动作的**汇总权威**;**本清单随各章新增高敏动作同步更新**。运营账号或单设备强制登出 / 标记 / 只读查看 / 风控自动检测等**非高敏或即时止血**动作不入确认门(直接生效 + 留痕),其分界以「是否放大资金流出 / 变更权限边界 / 触及用户资产或合规态」为准。
 
 **④ 操作动作**
 
@@ -1936,11 +1936,11 @@ C2 是**单用户账户处置入口**——冻结 / 解冻、强制登出、加�
 |---|---|---|---|
 | 冻结账户(+ 原因码) | 风控(lead)/ 超管(财务可发起冻结请求单转风控) | C2-MD1(理由必填) | `admin.user_frozen`(operator / reason)+ 联动 D2 frozen |
 | 解冻账户 | 风控(lead)/ 超管 | C2-MD2(理由必填) | `admin.user_unfrozen`(operator / reason) |
-| 强制登出全部 session | 按钮和接口均要求 `user_c2_session_revoke_all` | C2-MD3(理由必填;止血动作,确认后立即生效) | `admin.session_revoked`(scope / reason);请求 `/profiles/{userId}/sessions/revoke-all`，记录 `C2_USER_SESSIONS_REVOKED` |
+| 强制登出全部 session | C2 强退权限及 A2 提案权限 | C2-MD3（理由必填；批准后生效） | 提交 A2 `c2_session_revoke_all`，另一位超管批准后撤销会话并记录 `C2_USER_SESSIONS_REVOKED` |
 | impersonate(模拟登录) | 客服 / 风控 | C2-MD4(理由必填;只读+限时+全审计三重约束) | `admin.user_impersonation_started` / `admin.user_impersonation_ended`(operator / reason / ttl) |
 | 加白 / 拉黑 | 风控(lead)/ 超管 | C2-MD5(加白)/ C2-MD6(拉黑)(理由必填) | admin 审计(名单类型 / reason / 失效时间 / operator) |
 
-> **impersonate / 冻结 = 高敏动作**(§1.8 原则二.4,2026-06 操作确认决议):impersonate(进入用户视角,即便只读亦涉隐私)与冻结 / 解冻(影响用户资金与登录)均为高敏动作,经业务专属确认弹窗 + 理由必填即时执行,落 A2 审计并实时告警超管与风控 lead;冻结 / 解冻 / 名单的执行权按原复核层级就高为风控(lead)/超管(财务发现资金侧异常时可发起冻结请求单转风控处理);impersonate 保留客服 / 风控执行权(客服排障主用例),由**只读 + ≤30min 限时 + 全程审计 + 实时告警**四重约束补偿单人执行风险。强制登出为收紧安全的止血动作,确认即生效。不引入 §1.1 RBAC 枚举之外的角色。
+> **impersonate / 冻结 = 高敏动作**(§1.8 原则二.4,2026-06 操作确认决议):impersonate(进入用户视角,即便只读亦涉隐私)与冻结 / 解冻(影响用户资金与登录)均为高敏动作；按现行权限，财务的冻结 / 恢复提案批准后生效，其他授权账号的冻结 / 恢复及只读模拟登录按当前直接接口执行并留记录;冻结 / 解冻 / 名单的执行权按原复核层级就高为风控(lead)/超管(财务发现资金侧异常时可发起冻结请求单转风控处理);impersonate 保留客服 / 风控执行权(客服排障主用例),由**只读 + ≤30min 限时 + 全程审计 + 实时告警**四重约束补偿单人执行风险。全设备强制登出按 T02 提交审批，另一位超级管理员批准后生效；单设备登出保持立即生效。不引入 §1.1 RBAC 枚举之外的角色。
 
 **④a 交互与弹窗规格**
 
@@ -1979,11 +1979,10 @@ C2 是**单用户账户处置入口**——冻结 / 解冻、强制登出、加�
 - **成功反馈**:弹窗关闭;状态更新「正常」;toast;事件 `admin.user_unfrozen`;实时告警;D2 联动恢复。
 
 ##### [C2-MD3] 强制登出确认
-- **功能（BUG-206）**:立即终止该用户全部活跃 session(被盗号止血)，确认后立即生效。C2 页面读取要求 `user_c2_read`；列表和详情按钮及执行接口均要求 `user_c2_session_revoke_all`。`revokeUserAccountActionSessions` 调用 C2 `/profiles/{userId}/sessions/revoke-all`，不要求 C5 强退权限，也不因角色名放行；当前委托执行限制仅针对冻结 / 解冻，不拦截强制登出。C5 仍用自己的安全接口、权限和显式操作编号。
-- 账户详情加载后，在线设备、强制登出按钮和确认框共用该账户的准确在线会话数。列表按概览会话样本显示数量和启用按钮。原操作结果待确认时，继续使用原请求和原理由。
-- **布局结构**:1. **信息区**:userId / 全部在线设备数量。2. **输入区**:reason(多行文本,必填,8–200 字)。3. **按钮区**:取消 / 确认提交；有待确认操作时显示「重试原操作」，恢复原理由并锁定输入。
-- **错误态（BUG-283）**:系统明确返回无在线设备（`NO_ACTIVE_SESSION`）、对象正在审批（`OBJECT_LOCKED_BY_A2`）、理由格式拒绝（`SESSION_REVOKE_REASON_REJECTED`）、理由长度不合规（`C2_REASON_LENGTH_INVALID`）、未选用户或缺少操作编号等业务拒绝时，均显示可读原因，保留确认框和理由并在框内提示，同时释放该操作编号；即使是重试返回的缓存业务拒绝，也允许后来操作使用新编号。已有待确认操作的重试若遇到认证或授权失败（HTTP 或业务码 401 / 403），不能据此判定原操作未执行，保留原理由和编号；同一操作员重新登录或恢复权限后仍继续原操作，不撤销后来新建的会话。提交期间等待请求完成，不能提前关闭确认框或修改理由。响应丢失、结果未知或仍在处理时，显示「原操作结果尚未确认」，按目标用户恢复现有待确认命令存储中的原理由、请求内容和编号；关闭后重开、刷新后回到同一用户仍恢复原操作，即使当前已无在线设备也可重试确认结果。不同用户独立保存。重试只重放原操作，不再次撤销后来新建的会话。
-- **成功反馈**:收到成功结果即结束该命令；随后刷新账户列表及已打开详情。即使刷新失败，确认框仍按成功关闭并提示已强制登出，页面显示加载错误、暂停登出入口并只提供重新加载，不再发送登出请求；加载恢复后才允许发起后来操作。事件 `admin.session_revoked`。
+- **功能（T02 / BUG-349）**：提交 A2 `c2_session_revoke_all`，命令参数 `{userId}`，目标 `{domain:"C",type:"user",id}`；C2、C5 均使用后端描述符规定的 `sourceDomain:"C2"`。另一位有审批权限的超级管理员批准后才撤销全部会话，发起人不能批准自己的操作。
+- **权限**：C2 按钮要求 `user_c2_session_revoke_all`，并具有 `platform_a2_proposal_create` / `platform_a2_write` 之一。只有 C2 权限、没有 A2 提案权限的账号不能发起，页面隐藏入口；这类角色的提案授权缺口交后端处理，不回退直接登出。
+- **布局与反馈**：显示用户及当前在线设备数，8–200 字理由，明确「批准后生效」。提交成功只提示已提交审批，不声称设备已退出；批准前在线设备维持原状态。C2、C5 停止调用各自的直接 revoke-all 接口。后端仍须阻止直接接口绕过审批。
+- **结果尚未确认（延续 BUG-283）**：按操作员和目标用户保留原理由、显示名、请求内容和操作编号；理由锁定，显示「重试原操作」。关闭重开或刷新仍恢复同一操作，即使当前无在线设备也能重试；C2、C5 共用同一目标的待确认记录。重试只发送原键和原内容；明确业务拒绝后释放记录，原操作重试遇到认证或授权失败则继续保留。批准后回取原提案不会再次撤销后来新建的会话。
 
 ##### [C2-MD4] 发起 impersonate(代入会话)
 - **功能**:授权发起对目标用户的只读限时代入会话(复现用户所见),确认即签发只读会话句柄并进入代入视图。
@@ -2014,7 +2013,7 @@ C2 是**单用户账户处置入口**——冻结 / 解冻、强制登出、加�
 **⑤ 接口**
 - `POST /api/admin/users/:userId/freeze`(冻结,确认弹窗 C2-MD1:body 携 `{reasonCode, reason}`,reason 空值 400 `REASON_REQUIRED`;`Idempotency-Key` 必带,防重复冻结)。冻结确认后 server **原子**置账户 frozen + 联动 D2 提现 frozen(§9.11f),client 不本地冻结。
 - `POST /api/admin/users/:userId/unfreeze`(解冻,确认弹窗 C2-MD2,body 携 reason;`Idempotency-Key` 必带)。
-- `POST /api/admin/users/profiles/{userId}/sessions/revoke-all`（C2 全部活跃会话登出；body 携 `{reason, operator}`，带 `Idempotency-Key`，与按钮一致要求 `user_c2_session_revoke_all`；成功返回 `{userId, revokedCount, status: "REVOKED"}`，记录 `C2_USER_SESSIONS_REVOKED`）。待确认操作沿用 users 待确认存储，按该 C2 路径与目标查找原请求、理由和编号；不迁移旧 C5 路径记录。C5 继续调用 `/profiles/{userId}/security/sessions/revoke-all`，校验 `user_c5_session_revoke_all` 并使用自身显式编号，成功返回 `revokedSessionCount`。
+- `POST /api/admin/platform/audit/operations`：C2、C5 全设备登出提交审批，命令 `C / c2_session_revoke_all / {userId}`，理由和 `Idempotency-Key` 必填。批准由 A2 执行会话撤销；PC 不再调用两个直接 revoke-all 接口。
 - `POST /api/admin/users/:userId/impersonate`(发起模拟登录,确认弹窗 C2-MD4,body 携 `{ttlMin, reasonCode, reason}`;返回**只读受限**的 impersonation 会话句柄 + 到期时间 ≤ 30min)。**只读识别机制**:impersonation 会话句柄包含特殊 claim(如 `scope:'impersonate_readonly'` 或独立的 impersonation token type),所有写操作 endpoint 的 auth middleware 须检测该 claim 并对会话内一切写请求返回 403 `IMPERSONATION_READ_ONLY`;具体实现方案见 A3 / Ch9 auth middleware 规范。运营端以该会话句柄载入**用户前端只读会话视图**(②(b) 代入会话视图,渲染用户视角画面);句柄到期(≤ 30min)或运营退出即失效,失效后该会话一切请求(含读)一并拒绝。
 - 名单:`POST /api/admin/users/:userId/{allowlist|blocklist}`(确认弹窗 C2-MD5/MD6,body 携 reason;**账户级 userId 维度**,与 K1 IP 维度白名单不重叠)。
 
@@ -2026,7 +2025,7 @@ C2 是**单用户账户处置入口**——冻结 / 解冻、强制登出、加�
 |---|---|---|---|---|---|---|
 | 查看账户状态 / impersonate 台账 | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | 冻结 / 解冻 | ✅ | —(可发起冻结请求单) | ✅(lead) | — | — | — |
-| 强制登出全部会话 | ✅（按钮与接口均校验 C2 强退权限） | 不因角色名放行 | 按实际 C2 授权 | 不因角色名放行 | 按实际 C2 授权 | — |
+| 提交全部会话登出审批 | ✅ | 按 C2 与 A2 实际授权 | 按 C2 与 A2 实际授权 | 按 C2 与 A2 实际授权 | 按 C2 与 A2 实际授权 | — |
 | impersonate | ✅ | — | ✅ | — | ✅ | — |
 | 加白 / 拉黑 | ✅ | — | ✅(lead) | — | — | — |
 
@@ -2309,12 +2308,13 @@ App 自助修改密码先校验旧密码，再提交本次校验通过的固定�
 
 | 动作 | 角色 | 确认弹窗 | 审计点 |
 |---|---|---|---|
-| 强制登出(指定 / 全部 session) | 风控 / 客服 | C5-MD1(理由必填;止血动作,确认即生效) | `admin.session_revoked`(scope / reason);经 §4.5.2 revoke 体系 |
+| 强制登出指定 session | 按 `user_c5_session_revoke_one` 授权 | C5-MD1（理由必填；立即生效） | `admin.session_revoked`；经会话撤销体系 |
+| 提交全部 session 登出审批 | C5 全设备登出权限、C2 强退权限及 A2 提案权限 | C5-MD1（8–200 字理由；批准后生效） | A2 `c2_session_revoke_all`；另一位超管批准后撤销 |
 | 人工 disable 2FA(丢设备路径) | 风控(lead)/ 超管(客服可发起请求单) | C5-MD2(理由必填+**KYC 二验前置**,防社工,§4.5.1) | `admin.2fa_disabled`(operator / KYC 校验结果 / reason) |
 | 密码重置 | 风控(lead)/ 超管(客服可发起请求单) | C5-MD3(理由必填+**KYC 二验前置**) | admin 审计(operator / KYC 校验 / reason) |
 | 解除账户锁定(15min / 24h) | 15min 短锁:风控 / 客服;24h 长锁:风控(lead)/ 超管 | C5-MD4(理由必填+KYC 二验;server 按锁定类型校验执行门槛) | admin 审计(锁定类型 / KYC 校验 / operator) |
 
-> **disable 2FA / 密码重置 = 确认弹窗 + KYC 二验**(§4.5.1 / §4.6.2,2026-06 操作确认决议):前端不提供「忘记 2FA」自助路径(防社工,§4.5.1);运营侧 disable 2FA 与密码重置执行权 = 风控(lead)/超管(原复核层级转执行门槛),均须**确认弹窗 + 理由必填 + KYC 二次验证 + audit log + 实时告警**(§4.5.1:「server 人工 disable 2FA + audit log,审核通过后用户重新走 enroll」;§4.6.2 异常解锁:「提交 KYC 二次验证 + 客服工单,server 人工 unblock + 写 audit log」);客服可发起请求单(转风控核实执行)。强制登出为收紧安全的止血动作,确认即生效。
+> **disable 2FA / 密码重置 = 确认弹窗 + KYC 二验**(§4.5.1 / §4.6.2,2026-06 操作确认决议):前端不提供「忘记 2FA」自助路径(防社工,§4.5.1);运营侧 disable 2FA 与密码重置执行权 = 风控(lead)/超管(原复核层级转执行门槛),均须**确认弹窗 + 理由必填 + KYC 二次验证 + audit log + 实时告警**(§4.5.1:「server 人工 disable 2FA + audit log,审核通过后用户重新走 enroll」;§4.6.2 异常解锁:「提交 KYC 二次验证 + 客服工单,server 人工 unblock + 写 audit log」);客服可发起请求单(转风控核实执行)。全设备强制登出按 T02 提交审批，另一位超级管理员批准后生效；单设备登出保持立即生效。
 >
 > **24h 长锁执行门槛升级的依据(前端 PRD 无直接依据,本 PRD 政策扩展)**:前端 §4.6.2 异常解锁路径**未区分锁定类型**;本 PRD 作为运营后台政策扩展,**对 24h 长锁解除设更高执行门槛(风控 lead/超管)**,原因是 **24h 锁关联 §4.6.2 强制 reset 流程,解锁等同绕过 reset 门槛,安全敏感性高于 15min 短锁**。
 >
@@ -2335,10 +2335,9 @@ App 自助修改密码先校验旧密码，再提交本次校验通过的固定�
 **(2) 弹窗规格**
 
 ##### [C5-MD1] 强制登出确认
-- **功能**:终止该用户指定 / 全部活跃 session(经 §4.5.2 revoke 体系),确认即生效。
-- **布局结构**:1. **信息区**:userId / 目标 scope(session 设备/IP/lastActiveAt 或「全部 N 个」)。2. **输入区**:reason(多行文本,必填,8–200 字)。3. **按钮区**:取消 / 确认登出。
-- **错误态**:409(session 已结束)/ 400 `REASON_REQUIRED` / 403。
-- **成功反馈**:弹窗关闭;session 列表就地更新;toast;事件 `admin.session_revoked`。
+- **单设备**：原确认框与 `user_c5_session_revoke_one` 权限不变，填写理由后立即退出该设备，成功刷新会话列表。
+- **全部设备（BUG-349）**：改用现有操作确认，8–200 字理由，明确「批准后生效」；提交 A2 `c2_session_revoke_all`，参数和来源同 C2-MD3。按钮同时要求 `user_c5_session_revoke_all`、`user_c2_session_revoke_all` 及 A2 提案权限，遵循后端实际边界。
+- **反馈与恢复**：成功仅提示已提交审批，不声称已经下线。结果尚未确认时保留原键、原内容与理由；刷新、重开恢复并锁定原理由，重试原操作，不另建命令。发起人不能审批自己的提案。
 
 ##### [C5-MD2] 人工 disable 2FA
 - **功能**:解绑用户 2FA(丢设备路径,server revoke recovery codes),确认即生效;用户须重新 enroll。
@@ -2360,7 +2359,7 @@ App 自助修改密码先校验旧密码，再提交本次校验通过的固定�
 
 **⑤ 接口**
 - `GET /api/admin/users/:userId/sessions` — session 列表(IP / UA / lastActiveAt / 当前标识,§4.5.2)+ 2FA 状态 + 锁定态。
-- `POST /api/admin/users/:userId/revoke-session`(强制登出;`?scope=current|all|:sessionId`;经 §4.5.2 revoke refresh + access token revocation list / JTI)。
+- 指定设备登出沿用现有 `POST /api/admin/users/sessions/{refreshTokenId}/revoke`；全部设备登出改为 `POST /api/admin/platform/audit/operations` 提交 `c2_session_revoke_all`，批准后经会话撤销体系执行。
 - `POST /api/admin/users/:userId/invalidate-password`(密码重置,确认弹窗 C5-MD3,body 携 reason + **KYC 二验前置**(未过 422 `KYC_REVERIFY_REQUIRED`);server **置该用户密码失效**并向用户手机发送 reset OTP(或令下次登录强制走 reset 路径),用户侧走 **§4.2.3 一次性 reset** 完成设置新密码并撤销原会话，再回到密码登录，不自动签发 session;server `argon2id` 哈希存储,§4.6.3;`Idempotency-Key` 必带)。
 - `POST /api/admin/users/:userId/disable-2fa`(人工 disable 2FA,确认弹窗 C5-MD2,body 携 reason + **KYC 二验前置**;server revoke recovery codes,§4.5.1;`Idempotency-Key` 必带)。
 - `POST /api/admin/users/:userId/unlock`(解除锁定,账户解锁处置权落 C5;确认弹窗 C5-MD4,body 携 reason + KYC 二验;server 按锁定类型校验执行门槛——24h 长锁须风控(lead)/超管(资质不足 403),15min 短锁风控/客服,§4.6.2;与 C6 共用同一 endpoint,C6 不另设解锁端点)。

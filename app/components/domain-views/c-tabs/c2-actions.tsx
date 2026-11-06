@@ -13,12 +13,9 @@ import {
   fetchUserAccountActionAccount,
   fetchUserAccountActionContext,
   fetchUserAccountActionOverview,
-  getPendingUserSessionRevocation,
   isUsersRequestNotFound,
   UsersRequestError,
-  UsersOutcomeUnknownError,
   removeUserAccountList,
-  revokeUserAccountActionSessions,
   startUserImpersonation,
   terminateUserImpersonation,
   updateUserStatus,
@@ -31,6 +28,7 @@ import {
   type UserSession,
   type JsonRecord,
 } from "@/lib/admin/user360-client";
+import { pendingSessionRevocationApproval, proposeSessionRevocation } from "@/lib/admin/session-revocation-approval";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -246,7 +244,8 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const authorities = session?.authorities ?? [];
   const canFreeze = authorities.includes("user_c2_account_freeze");
   const canUnfreeze = authorities.includes("user_c2_account_unfreeze");
-  const canLogout = authorities.includes("user_c2_session_revoke_all");
+  const canLogout = authorities.includes("user_c2_session_revoke_all")
+    && authorities.some((authority) => ["platform_a2_write", "platform_a2_proposal_create"].includes(authority));
   const canStartImpersonation = authorities.includes("user_c2_impersonate_start");
   const canTerminateImpersonation = authorities.includes("user_c2_impersonate_terminate");
   const canManageLists = authorities.includes("user_c2_blocklist_add");
@@ -554,7 +553,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
 
   const logoutAll = (account: User360Profile, accountActiveCount?: number) => {
     const id = accountId(account);
-    const pending = getPendingUserSessionRevocation(id);
+    const pending = pendingSessionRevocationApproval(session!.adminId, id);
     const activeCount = accountActiveCount ?? sessionCounts.get(id) ?? 0;
     if (!pending && activeCount <= 0) {
       toast("该用户当前没有在线设备");
@@ -562,30 +561,18 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     }
     openActionConfirm({ briefKind: "security",
     action: `强制登出 · ${displayAccount(account)}`,
-    detail: pending ? "继续确认该用户的原登出操作，使用原理由，不会重复执行。" : `确认后该用户在 ${activeCount} 台设备上立即下线。`,
+    detail: pending ? "审批提交结果尚未确认，重试原操作会使用原理由和操作编号。" : `提交审批后，由另一位超级管理员批准，该用户的全部在线设备才会退出登录（当前 ${activeCount} 台）。`,
     amplifies: false,
-    completionCopy: "确认后立即生效。",
+    completionCopy: "批准后生效；提交审批不会立即退出设备。",
     reasonMin: 8,
     reasonMax: 200,
-    getPendingReason: () => getPendingUserSessionRevocation(id)?.reason,
+    getPendingReason: () => pendingSessionRevocationApproval(session!.adminId, id)?.reason,
     run: async (reason) => {
-      if (!id) throw new Error("该账户没有系统编号");
+      if (!id || !session) throw new Error("请选择账户并登录后再提交");
       setBusy(true);
       try {
-        try {
-          await revokeUserAccountActionSessions(id, reason, OPERATOR());
-        } catch (error) {
-          if (error instanceof UsersOutcomeUnknownError) {
-            throw new Error("原操作结果尚未确认，请重试原操作。系统会使用原理由，不会重复执行。");
-          }
-          throw error;
-        }
-        // A confirmed write stays successful even if the following reads fail.
-        await loadOverview(true);
-        if (acct) await refreshAccountContext(accountId(acct)).catch((error: unknown) => {
-          setAccountContextError(errorMessage(error));
-        });
-        toast(`${displayAccount(account)} 已强制登出`);
+        await proposeSessionRevocation(session, id, displayAccount(account), reason);
+        toast("已提交强制登出审批，批准后生效");
       } finally {
         setBusy(false);
       }
@@ -824,7 +811,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         {status === "ACTIVE" && canFreeze && <button disabled={busy} className="l-btn sm mc" aria-label={`冻结 ${displayAccount(account)}`} onClick={(e) => { e.stopPropagation(); freeze(account); }}>冻结</button>}
                         {status === "FROZEN" && canUnfreeze && <button disabled={busy} className="l-btn sm mc" aria-label={`恢复 ${displayAccount(account)}`} onClick={(e) => { e.stopPropagation(); unfreeze(account); }}>恢复</button>}
-                        {canLogout && <button disabled={busy || !!error || (!getPendingUserSessionRevocation(accountId(account)) && (sessionCounts.get(accountId(account)) ?? 0) <= 0)} className="l-btn sm" aria-label={`强制登出 ${displayAccount(account)}`} style={{ marginLeft: 6 }} onClick={(e) => { e.stopPropagation(); logoutAll(account); }}>强制登出</button>}
+                        {canLogout && <button disabled={busy || !!error || (!pendingSessionRevocationApproval(session!.adminId, accountId(account)) && (sessionCounts.get(accountId(account)) ?? 0) <= 0)} className="l-btn sm" aria-label={`强制登出 ${displayAccount(account)}`} style={{ marginLeft: 6 }} onClick={(e) => { e.stopPropagation(); logoutAll(account); }}>强制登出</button>}
                         {!canFreeze && !canUnfreeze && !canLogout && <span className="tiny">只读</span>}
                       </td>
                     </tr>
@@ -927,7 +914,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         />
       </section>
 
-      {freezeProposalOnly && <p className="f-foot">你的冻结和恢复操作提交后，需在「操作记录与审批」确认才生效；强制下线立即生效。</p>}
+      {freezeProposalOnly && <p className="f-foot">你的冻结和恢复操作提交后，需在「操作记录与审批」确认才生效；全设备强制下线需另一位超级管理员批准后生效。</p>}
 
       {selectedAccount && (() => {
         const status = statusOf(selectedAccount);
@@ -995,7 +982,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
             <div className="row wrap" style={{ gap: 8 }}>
               {status === "ACTIVE" && canFreeze && <button disabled={busy || !!accountContextError} className="l-btn sm mc" aria-label={`冻结 ${displayAccount(selectedAccount)}`} onClick={() => freeze(selectedAccount)}>冻结</button>}
               {status === "FROZEN" && canUnfreeze && <button disabled={busy || !!accountContextError} className="l-btn sm mc" aria-label={`恢复 ${displayAccount(selectedAccount)}`} onClick={() => unfreeze(selectedAccount)}>恢复</button>}
-              {canLogout && <button disabled={busy || !!error || !!accountContextError || (!getPendingUserSessionRevocation(accountId(selectedAccount)) && activeCount <= 0)} className="l-btn sm" aria-label={`强制登出 ${displayAccount(selectedAccount)}`} onClick={() => logoutAll(selectedAccount, activeCount)}>强制登出</button>}
+              {canLogout && <button disabled={busy || !!error || !!accountContextError || (!pendingSessionRevocationApproval(session!.adminId, accountId(selectedAccount)) && activeCount <= 0)} className="l-btn sm" aria-label={`强制登出 ${displayAccount(selectedAccount)}`} onClick={() => logoutAll(selectedAccount, activeCount)}>强制登出</button>}
             </div>
           </Drawer>
         );
