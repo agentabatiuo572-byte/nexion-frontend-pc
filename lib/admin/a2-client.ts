@@ -52,6 +52,8 @@ interface BackendStats {
   weeklyWithdrawn?: number | string | null;
 }
 
+type A2FundEffect = "REWARD_SUSPENSION" | "REWARD_RESUMPTION" | "ORDER_REFUND";
+
 interface BackendTicket {
   id: string;
   action: string;
@@ -61,6 +63,8 @@ interface BackendTicket {
   phoneCalibrationProposal?: string | null;
   coverageCheckOnApproval?: boolean | null;
   operationCode?: string | null;
+  fundEffect?: A2FundEffect | null;
+  refundOrderNo?: string | null;
   operator?: string | null;
   operatorRole?: string | null;
   type?: string | null;
@@ -150,6 +154,8 @@ export interface A2OperationRow {
   phoneCalibrationError?: string;
   coverageCheckOnApproval?: boolean;
   operationCode?: string;
+  fundEffect?: A2FundEffect;
+  refundOrderNo?: string;
   id: string;
   action: string;
   obj: string;
@@ -307,6 +313,8 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
     ...(phoneCalibrationError ? { phoneCalibrationError } : {}),
     ...(ticket.coverageCheckOnApproval === true ? { coverageCheckOnApproval: true } : {}),
     ...(ticket.operationCode ? { operationCode: ticket.operationCode } : {}),
+    fundEffect: ticket.fundEffect ?? undefined,
+    refundOrderNo: ticket.refundOrderNo ?? undefined,
     id: ticket.id,
     action: ticket.action,
     obj: ticket.obj,
@@ -619,14 +627,16 @@ export async function exportA2Audit(reason: string, filter: Record<string, unkno
     body: JSON.stringify({ reason, filter }),
     cache: "no-store",
   });
-  if (!response.ok) {
+  const contentType = response.headers.get("Content-Type")?.split(";")[0]?.trim();
+  if (!response.ok || (contentType !== "text/csv" && contentType !== "application/vnd.ms-excel")) {
     const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
     throw new Error(formatAdminApiError(result?.message, `A2_AUDIT_EXPORT_FAILED_${response.status}`));
   }
   const blob = await response.blob();
+  const extension = contentType === "text/csv" ? "csv" : "xls";
   const fileName = fileNameFromContentDisposition(
     response.headers.get("Content-Disposition"),
-    `a2-audit-${Date.now()}.xls`,
+    `a2-audit-${Date.now()}.${extension}`,
   );
   downloadBlob(blob, fileName);
   return { fileName, size: blob.size };

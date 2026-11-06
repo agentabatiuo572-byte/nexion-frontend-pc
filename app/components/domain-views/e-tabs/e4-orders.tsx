@@ -8,7 +8,7 @@ import {
 } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
-import { E4_CLOSE_REASONS, E4_CLOSE_REASON_LABELS, E4_REFUND_REASONS, E4_REFUND_REASON_LABELS, e4FundingLedgerHref } from "@/lib/admin/e4-client";
+import { E4_CLOSE_REASONS, E4_CLOSE_REASON_LABELS, E4_REFUND_REASONS, E4_REFUND_REASON_LABELS, e4FundingLedgerHref, type E4PendingApproval } from "@/lib/admin/e4-client";
 import { operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
 import { fmtPct } from "@/lib/format";
 import { useReach } from "@/lib/nav/use-reach";
@@ -65,6 +65,19 @@ const ORDER_COLUMNS: readonly TableColumn[] = [
 const shortNo = (value: string) => value.length > 24 ? `${value.slice(0, 12)}…${value.slice(-6)}` : value;
 const statusOption = (state: string) => ({ value: state, label: stateLabel(state) });
 
+export function E4PendingApprovalDetails({ approval }: { approval: E4PendingApproval }) {
+  return (
+    <>
+      <StatusTag tone="warn">待审批</StatusTag>
+      {(approval.action || approval.submittedBy || approval.submittedAt) && <span className="rd-approval-meta">
+        {approval.action && <span>{approval.action}</span>}
+        {approval.submittedBy && <span> · {approval.submittedBy}</span>}
+        {approval.submittedAt && <span> · <time dateTime={`${approval.submittedAt}+08:00`}>{formatBusinessTimeFull(approval.submittedAt, "—")}（{businessZone().label}）</time></span>}
+      </span>}
+    </>
+  );
+}
+
 export function E4Orders({ ctx }: { ctx: EViewCtx }) {
   const { orders, e4Query: query, e4Counts: counts, e4Loading: loading, e4Error: error } = ctx;
   const reach = useReach();
@@ -107,6 +120,10 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
       </span>}
       readOnly={ctx.canWriteE4 || ctx.canRefundE4 ? undefined : "你只能查看；处理订单需要对应的修改权限"} />
 
+    {ctx.e4ReceiptAttempts.map((record) => <Notice key={record.commandKey} tone="warn" title={`${record.orderNo} · 原提交结果未确认`}
+      action={ctx.canQueryE4 && <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Receipt(record)}>查询原提交结果</Button>}>
+      保留了原命令号，查到原审批单前不要重复处理。{!ctx.canQueryE4 && "请有操作记录读取权限的同事核对。"}
+    </Notice>)}
     {ctx.e4Pending.map((record) => {
       const expired = record.expiresAt <= Date.now();
       // 能查原提案就先查，明确查不到才重试；重试要当前还有这项写权（OP-93）。
@@ -181,7 +198,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
                   return (
                     <Tr key={order.id} selected={ctx.selOrder?.id === order.id} onOpen={() => ctx.openOrder(order)}>
                       <Td sticky="start"><Cell mono full main={<button type="button" className="rd-cell-link" data-e4-order-trigger title={order.id} aria-label={`查看订单 ${order.id}`} aria-haspopup="dialog" onClick={() => ctx.openOrder(order)}>{shortNo(order.id)}</button>} /></Td>
-                      <Td><Cell main={<StatusTag tone={ORDER_STATE_TONE[state] ?? "neutral"}>{stateLabel(state)}</StatusTag>} sub={STATE_NEXT[state]} /></Td>
+                      <Td><Cell main={<StatusTag tone={ORDER_STATE_TONE[state] ?? "neutral"}>{stateLabel(state)}</StatusTag>} sub={order.pendingApproval ? <E4PendingApprovalDetails approval={order.pendingApproval} /> : STATE_NEXT[state]} /></Td>
                       {columns.isVisible("user") && <Td><Cell mono main={order.user} /></Td>}
                       {columns.isVisible("sku") && <Td><Cell main={order.sku} title={order.sku} /></Td>}
                       {columns.isVisible("amount") && <Td align="right"><Cell num main={orderAmount(order.amt, amountDigits)} /></Td>}
@@ -233,6 +250,8 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   if (!o) return <Drawer open={false} onClose={ctx.closeOrder} title="订单详情">{null}</Drawer>;
 
   const eff = ctx.orderState(o);
+  const pendingApproval = e4Detail?.order.id === o.id && e4Detail.pendingApproval !== undefined
+    ? e4Detail.pendingApproval : e4Detail?.order.pendingApproval ?? o.pendingApproval;
   const finalized = ORDER_FINAL_STATES.includes(eff);
   const canCancel = canWriteE4 && eff === "placed";
   const terminalOptions = eff === "placed" ? ["payment_failed", "expired"]
@@ -268,7 +287,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   // 开通失败要读完详情才知道付没付款，没读完时先当能退，动作由读取锁挡着。
   const refundableState = ["paid", "provisioning", "activated", "inventory"].includes(eff)
     || (eff === "provisioning_failed" && (!e4Detail || e4Detail.paymentStatus.toUpperCase() === "PAID"));
-  const refundReady = canRefundE4 && refundableState && e4Detail?.refundAllowed === true;
+  const refundReady = canRefundE4 && refundableState && e4Detail?.refundAllowed === true && !pendingApproval;
   // 三个数缺一个就算不出能不能退，和资金不足是两回事，阻断相同（后端 refundCoverageBlocked）。
   const coverageKnown = e4Detail?.coverageCurrent != null && e4Detail.coverageProjected != null && e4Detail.coverageRedline != null;
   // 覆盖率一位小数，红线是配置值，按原值写（TX-23）。
@@ -282,8 +301,8 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const next = index >= 0 ? orders[index + 1] : undefined;
   const pendingFact = e4DetailError ? { value: "读取失败", state: "danger" as const } : { value: "正在读取…" };
   // 读完详情才能做决定（OP-150）：下一步、退款条件都靠详情里的事实。
-  const orderPending = ctx.e4Pending.some((record) => record.orderNo === o.id);
-  const waitReason = orderPending ? "这单有结果未确认的操作，先到页面上方处理" : e4DetailError ? "订单详情读取失败，重试成功后才能操作" : e4DetailLoading || !e4Detail ? "正在读取订单事实" : ctx.e4ReadBlock;
+  const orderPending = ctx.e4Pending.some((record) => record.orderNo === o.id) || ctx.e4ReceiptAttempts.some((record) => record.orderNo === o.id);
+  const waitReason = pendingApproval ? "这单已有待审批操作，审批结束后才能再次处理" : orderPending ? "这单有结果未确认的操作，先到页面上方处理" : e4DetailError ? "订单详情读取失败，重试成功后才能操作" : e4DetailLoading || !e4Detail ? "正在读取订单事实" : ctx.e4ReadBlock;
   const approvalTag = <StatusTag tone="progress" filled explain={APPROVAL_NOTE}>批准后生效</StatusTag>;
   // 批准后收不回来的操作：不能撤销，红按钮（VS-25、VS-106）。
   const irreversibleApproval = <>{approvalTag}<IrreversibleTag /></>;
@@ -413,6 +432,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
       />}>
       {!finalized && <Steps label="订单进度" items={orderFlow.map((state, position) => ({ label: stateLabel(state), state: position < idx ? "done" as const : position === idx ? "current" as const : "todo" as const }))} />}
       {orderPending && <Notice tone="warn">这单有结果未确认的操作，不要重复处理。状态变了也不算确认。到页面上方核查结果，或看操作记录核查。</Notice>}
+      {pendingApproval && <Notice tone="warn" title="这单已有待审批操作"><E4PendingApprovalDetails approval={pendingApproval} />审批结束后才能发起新操作。</Notice>}
       {e4DetailError && <BlockState state="error" title="详情加载失败" detail={`${e4DetailError} · 为避免按旧数据操作，已暂停处理。`} onRetry={() => ctx.openOrder(o)} />}
       <JudgmentPoints rows={rows} />
       <Fold inset title="订单信息" icon={Package} tone="devices" summary={`${o.dc === "—" ? "未分配数据中心" : o.dc} · 下单 ${o.age} 前`}>

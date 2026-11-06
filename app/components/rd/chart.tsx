@@ -30,6 +30,7 @@
  * 图是 role="img"，数值要能在图外读到：结论、表格、图例或明细（ST-63）。刻度尺和档位带在 meter.tsx。
  */
 import { useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { kpiTrendPath, type KpiTrendPoint } from "@/lib/admin/kpi-trend";
 import type { StateTone } from "./tone";
 
 export type ChartSlot = 1 | 2 | 3 | 4 | "other";
@@ -215,7 +216,7 @@ function axisBounds(values: readonly number[]) {
 export function TrendLines({ label, ticks, series, format, axisFormat = format, marks = [], event, height = 180 }: {
   label: string;
   ticks: readonly string[];
-  series: readonly { key: string; label: string; slot: ChartSlot; values: readonly number[] }[];
+  series: readonly { key: string; label: string; slot: ChartSlot; values: readonly KpiTrendPoint[] }[];
   format: (value: number) => string;
   axisFormat?: (value: number) => string;
   marks?: readonly { key: string; text: string; value: number; tone: StateTone }[];
@@ -223,7 +224,7 @@ export function TrendLines({ label, ticks, series, format, axisFormat = format, 
   height?: number;
 }) {
   const [active, setActive] = useState<number | null>(null);
-  const { low, top } = axisBounds([...series.flatMap((item) => item.values), ...marks.map((mark) => mark.value)]);
+  const { low, top } = axisBounds([...series.flatMap((item) => item.values.filter((value) => value !== null)), ...marks.map((mark) => mark.value)]);
   const y = (value: number) => (value - low) / (top - low);
   const xRatio = (index: number) => ticks.length > 1 ? index / (ticks.length - 1) : 0.5;
   const every = tickEvery(ticks.length);
@@ -241,19 +242,23 @@ export function TrendLines({ label, ticks, series, format, axisFormat = format, 
           {event && <div className="rd-chart-event" style={{ left: `${xRatio(event.index) * 100}%` }}><span data-edge={xRatio(event.index) > 0.7 ? "end" : undefined}>{event.text}</span></div>}
           <svg className="rd-chart-line" viewBox="0 0 1000 200" preserveAspectRatio="none" aria-hidden>
             {series.map((item) => (
-              <path key={item.key} data-slot={item.slot} vectorEffect="non-scaling-stroke"
-                d={item.values.map((value, index) => `${index ? "L" : "M"}${(xRatio(index) * 1000).toFixed(1)} ${((1 - y(value)) * 200).toFixed(1)}`).join(" ")} />
+              <g key={item.key} data-slot={item.slot}>
+                <path vectorEffect="non-scaling-stroke" d={kpiTrendPath(item.values, (index) => xRatio(index) * 1000, (value) => (1 - y(value)) * 200)} />
+                {item.values.map((value, index) => value !== null && item.values[index - 1] == null && item.values[index + 1] == null
+                  ? <circle key={index} className="rd-chart-point" cx={xRatio(index) * 1000} cy={(1 - y(value)) * 200} r={2} /> : null)}
+              </g>
             ))}
           </svg>
           {active !== null && <span className="rd-chart-cross" style={{ left: `${xRatio(active) * 100}%` }} />}
           {series.map((item) => {
             const at = Math.min(active ?? item.values.length - 1, item.values.length - 1);
-            return <span key={item.key} className="rd-chart-dot" data-slot={item.slot} style={{ left: `${xRatio(at) * 100}%`, bottom: `${y(item.values[at]) * 100}%` }} />;
+            const value = item.values[at];
+            return value == null ? null : <span key={item.key} className="rd-chart-dot" data-slot={item.slot} style={{ left: `${xRatio(at) * 100}%`, bottom: `${y(value) * 100}%` }} />;
           })}
           {active !== null && (
             <Tip index={active} count={ticks.length}>
               <b>{ticks[active]}</b>
-              {series.map((item) => <span key={item.key}>{series.length > 1 ? `${item.label} ` : ""}{format(item.values[active])}</span>)}
+              {series.map((item) => <span key={item.key}>{series.length > 1 ? `${item.label} ` : ""}{item.values[active] == null ? "暂无数据" : format(item.values[active])}</span>)}
             </Tip>
           )}
         </div>
@@ -266,11 +271,18 @@ export function TrendLines({ label, ticks, series, format, axisFormat = format, 
 }
 
 /** 迷你走势线，放在表格格子里。不是数据的来源，数值要在别处读到。 */
-export function Sparkline({ label, values, slot = "other" }: { label: string; values: readonly number[]; slot?: ChartSlot }) {
-  const low = Math.min(...values);
-  const span = Math.max(...values) - low || 1;
-  const path = values.map((value, index) => `${index ? "L" : "M"}${(index / (values.length - 1) * 100).toFixed(1)} ${(22 - (value - low) / span * 20).toFixed(1)}`).join(" ");
-  return <svg className="rd-spark" viewBox="0 0 100 24" preserveAspectRatio="none" role="img" aria-label={label}><path d={path} data-slot={slot} vectorEffect="non-scaling-stroke" /></svg>;
+export function Sparkline({ label, values, slot = "other" }: { label: string; values: readonly KpiTrendPoint[]; slot?: ChartSlot }) {
+  const known = values.filter((value) => value !== null);
+  if (!known.length) return null;
+  const low = Math.min(...known);
+  const span = Math.max(...known) - low || 1;
+  const x = (index: number) => index / Math.max(1, values.length - 1) * 100;
+  const y = (value: number) => 22 - (value - low) / span * 20;
+  return <svg className="rd-spark" data-slot={slot} viewBox="0 0 100 24" preserveAspectRatio="none" role="img" aria-label={label}>
+    <path d={kpiTrendPath(values, x, y)} vectorEffect="non-scaling-stroke" />
+    {values.map((value, index) => value !== null && values[index - 1] == null && values[index + 1] == null
+      ? <circle key={index} className="rd-chart-point" cx={x(index)} cy={y(value)} r={1.5} /> : null)}
+  </svg>;
 }
 
 /** 环图。r 取 15.9155 让周长正好是 100，dasharray 直接用百分比；段间留 2px 底色（VS-46）。 */

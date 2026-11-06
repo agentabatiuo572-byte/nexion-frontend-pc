@@ -4,7 +4,7 @@ import type { E4Query } from "./data";
 import type { E1BundleDiscount, E1GenerationGateData, E1GenerationGateInput, E1InvalidSku } from "@/lib/admin/e1-client";
 import type { E2PhoneTier, E2TaskPricingSnapshot, E2YieldComparison } from "@/lib/admin/e2-client";
 import type { E3OperationMetric, E3Stats } from "@/lib/admin/e3-client";
-import type { E4OrderDetail } from "@/lib/admin/e4-client";
+import type { E4OrderDetail, E4PendingApproval } from "@/lib/admin/e4-client";
 import type { PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import type { E5Datacenter, E5DatacenterStatus, E5Device, E5Overview } from "@/lib/admin/e5-client";
@@ -113,6 +113,7 @@ export interface EOrder {
   dc: string;
   age: string;
   orderedAt?: string;
+  pendingApproval?: E4PendingApproval | null;
 }
 
 /** 子视图上下文:派生读 + 打开抽屉/操作确认 + toast。全部由 shell 注入,子视图无自有 store。 */
@@ -173,6 +174,8 @@ export interface EViewCtx {
   refreshE4: () => Promise<unknown>;
   orderState: (o: EOrder) => string;
   e4Pending: E4PendingCommand[];
+  e4ReceiptAttempts: { fingerprint: string; commandKey: string; orderNo: string }[];
+  checkE4Receipt: (record: EViewCtx["e4ReceiptAttempts"][number]) => Promise<void>;
   e4PendingNotes: Record<string, string>;
   e4RetryRejected: string[];
   e4Retrying: string;

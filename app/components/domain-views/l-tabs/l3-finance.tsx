@@ -7,7 +7,6 @@
  */
 import { useRef, useState } from "react";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { displayAdminError } from "@/lib/admin/error-messages";
 import { formatReserveCoverDays } from "@/lib/admin/treasury-cover-days";
 import { LDataState, fmtM, num, rec, rows, strings } from "./live-data";
 import { readL3FinanceSnapshot, readL3LiveFacts } from "./l3-live-data";
@@ -56,28 +55,34 @@ export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
   const periodFrom = typeof period.from === "string" && /^\d{4}-\d{2}-\d{2}$/.test(period.from) ? period.from : "";
   const periodTo = typeof period.to === "string" && /^\d{4}-\d{2}-\d{2}$/.test(period.to) ? period.to : "";
   const detailExportable = Boolean(periodFrom && periodTo && periodFrom <= periodTo);
-  const exportAgg = async () => {
+  const exportAgg = () => {
     if (exportingRef.current) return;
-    exportingRef.current = true;
-    setExporting(true);
-    try {
-      await ctx.biActions?.createReport({
-        exportType: "财务当前汇总",
-        timeRange: String(ctx.biData?.l3?.periodLabel ?? "当前周期"),
-        fields: "资金池概览/负债科目/七日到期排程/钱包账单分类计数",
-        piiLevel: "NONE",
-        maskPolicy: "NONE",
-        recipient: "财务管理员",
-        ticket: "L3-FINANCE",
-      }, "导出当前财务汇总，用于财务核对");
-      await ctx.reloadBi?.();
-      ctx.toast("财务当前汇总已生成 · 已记录导出范围与操作者");
-    } catch (error) {
-      ctx.toast(error instanceof Error ? `导出任务提交失败 · ${displayAdminError(error)}` : "导出任务提交失败 · 请稍后重试");
-    } finally {
-      exportingRef.current = false;
-      setExporting(false);
-    }
+    const timeRange = String(ctx.biData?.l3?.periodLabel ?? "当前周期");
+    ctx.openActionConfirm({ briefKind: "export",
+      action: "导出财务汇总",
+      detail: <>导出 <b>{timeRange}</b> 的财务汇总，不含用户明细。</>,
+      reasonMax: 200,
+      run: async (reason) => {
+        exportingRef.current = true;
+        setExporting(true);
+        try {
+          await ctx.biActions?.createReport({
+            exportType: "财务当前汇总",
+            timeRange,
+            fields: "资金池概览/负债科目/七日到期排程/钱包账单分类计数",
+            piiLevel: "NONE",
+            maskPolicy: "NONE",
+            recipient: "财务管理员",
+            ticket: "L3-FINANCE",
+          }, reason);
+          await ctx.reloadBi?.();
+          ctx.toast("财务当前汇总已生成 · 已记录导出范围与操作者");
+        } finally {
+          exportingRef.current = false;
+          setExporting(false);
+        }
+      },
+    });
   };
   const openDetailExport = () => {
     if (!ctx.canExportFinanceDetail || !detailExportable || detailExportingRef.current) return;

@@ -2,6 +2,7 @@ import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outco
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { isK1LocalIsoDateTime } from "@/lib/admin/k1-date-contract";
+import type { A3PlatformParam } from "@/lib/admin/a3-client";
 
 type ApiResult<T> = {
   code?: number;
@@ -219,6 +220,7 @@ export type K1Cluster = {
   nodes: K1Node[];
   edges: K1Edge[];
   reviewNote?: string;
+  pendingApproval?: { action?: string; submittedBy?: string; submittedAt?: string };
   version: number;
 };
 export type K1WhitelistRow = { cidr: string; note: string; operator: string; expireText: string; active: boolean };
@@ -234,6 +236,8 @@ export type K1ProtectedEntry = {
   createdAt: string;
 };
 export type MultiAccountOverview = {
+  lastSuccessfulCheckAt: string | null;
+  registrationParams: A3PlatformParam[];
   serverCanonical: true;
   domain: "K1";
   stats: Record<string, unknown>;
@@ -550,27 +554,21 @@ const K1_REQUIRED_SOURCES = [
   "nx_admin_risk_ip_whitelist",
 ] as const;
 
-/** 收益释放参数键集(SPEC-7,合并底账 §二#5)。releaseParams 组在场时六键齐备、不许未知键,
- *  与拦截参数 K1_REQUIRED_PARAM_KEYS 同款精确集合纪律。 */
+/** 收益释放参数保留待审起点、冻结起点和仅人工放行模式。 */
 export const K1_RELEASE_PARAM_KEYS = [
-  "freePhoneSlotsPerCluster",
   "duplicateAccountPendingFrom",
   "duplicateAccountFreezeFrom",
-  "pendingReleaseHours",
   "releaseMode",
-  "freeSlotRequiresBinding",
 ] as const;
 export type K1ReleaseParamKey = (typeof K1_RELEASE_PARAM_KEYS)[number];
+const RETIRED_K1_RELEASE_KEYS = new Set([
+  "freePhoneSlotsPerCluster", "pendingReleaseHours", "freeSlotRequiresBinding", "appAttestationReleaseHours",
+]);
 
-/** 数值型释放参数的范围(读校验与编辑弹窗共用同一份,避免两处漂移)。
- *  下界对齐原型可编辑域(min 1:「第 1 个账号即待审」是合法的严格模式,读校验收紧会误拒
- *  合法服务端值);上界是防御性护栏,权威裁决在服务端。跨字段关系(冻结建议线 ≥ 待审起点等)
- *  由服务端权威校验,此处只管单键形态。 */
+/** 数值范围供读校验和编辑共用，跨字段关系由后端判断。 */
 export const K1_RELEASE_PARAM_LIMITS: Record<string, { min: number; max: number; step: number; integer: boolean }> = {
-  freePhoneSlotsPerCluster: { min: 1, max: 10, step: 1, integer: true },
-  duplicateAccountPendingFrom: { min: 1, max: 50, step: 1, integer: true },
+  duplicateAccountPendingFrom: { min: 2, max: 50, step: 1, integer: true },
   duplicateAccountFreezeFrom: { min: 1, max: 50, step: 1, integer: true },
-  pendingReleaseHours: { min: 1, max: 720, step: 1, integer: true },
 };
 
 /** 释放模式取值全集(工程串)。运营可读中文标签由 UI 层映射,页面禁裸工程串。 */
@@ -583,7 +581,6 @@ export function validateK1ReleaseParamValue(key: string, value: string): boolean
     return Number.isInteger(parsed) && parsed >= limits.min && parsed <= limits.max;
   }
   if (key === "releaseMode") return (K1_RELEASE_MODE_VALUES as readonly string[]).includes(value);
-  if (key === "freeSlotRequiresBinding") return value === "true" || value === "false";
   return false;
 }
 
@@ -737,19 +734,18 @@ function normalizeK1(raw: unknown): MultiAccountOverview {
     };
   });
   // Ignore only the inert historical compatibility field; no automatic release is available.
-  const retiredIndex=releaseParams.findIndex(param => param.key === "appAttestationReleaseHours");
-  if(retiredIndex >= 0) releaseParams.splice(retiredIndex,1);
-  for (const param of releaseParams) if(param.key === "releaseMode") {
+  const currentReleaseParams = releaseParams.filter(param => !RETIRED_K1_RELEASE_KEYS.has(param.key));
+  for (const param of currentReleaseParams) if(param.key === "releaseMode") {
     if (!["manual_only","attest_or_manual"].includes(param.value)) invalidK1Response("multiAccount.releaseParams.releaseMode");
     param.value="manual_only"; param.val="manual_only"; param.adjustable=false;
   }
-  if (releaseParams.length > 0) {
-    const releaseKeys = new Set(releaseParams.map((param) => param.key));
-    if (releaseParams.length !== releaseKeys.size || releaseParams.length !== K1_RELEASE_PARAM_KEYS.length
+  if (currentReleaseParams.length > 0) {
+    const releaseKeys = new Set(currentReleaseParams.map((param) => param.key));
+    if (currentReleaseParams.length !== releaseKeys.size || currentReleaseParams.length !== K1_RELEASE_PARAM_KEYS.length
       || K1_RELEASE_PARAM_KEYS.some((key) => !releaseKeys.has(key))) {
       invalidK1Response("multiAccount.releaseParams");
     }
-    releaseParams.forEach((param, index) => {
+    currentReleaseParams.forEach((param, index) => {
       if (!validateK1ReleaseParamValue(param.key, param.value)) invalidK1Response(`multiAccount.releaseParams[${index}].value`);
     });
   }
@@ -812,6 +808,7 @@ function normalizeK1(raw: unknown): MultiAccountOverview {
         requiredK1Number(item[3], `${edgePath}[3]`, 0, 1),
       ] as K1Edge;
     });
+    const pending = row.pendingApproval == null ? undefined : requiredK1Record(row.pendingApproval, `${path}.pendingApproval`);
     return {
       id: requiredK1String(row.id, `${path}.id`),
       key: requiredK1String(row.key, `${path}.key`),
@@ -826,6 +823,11 @@ function normalizeK1(raw: unknown): MultiAccountOverview {
       nodes,
       edges,
       reviewNote: row.reviewNote == null ? undefined : requiredK1String(row.reviewNote, `${path}.reviewNote`, true),
+      pendingApproval: pending && {
+        action: pending.action == null ? undefined : requiredK1String(pending.action, `${path}.pendingApproval.action`),
+        submittedBy: pending.submittedBy == null ? undefined : requiredK1String(pending.submittedBy, `${path}.pendingApproval.submittedBy`),
+        submittedAt: pending.submittedAt == null ? undefined : requiredK1LocalIsoDateTime(pending.submittedAt, `${path}.pendingApproval.submittedAt`),
+      },
       version: requiredK1Integer(row.version, `${path}.version`),
     };
   });
@@ -839,7 +841,30 @@ function normalizeK1(raw: unknown): MultiAccountOverview {
   }));
   const sources = requiredK1StringArray(data.sources, "multiAccount.sources");
   if (K1_REQUIRED_SOURCES.some((source) => !sources.includes(source))) invalidK1Response("multiAccount.sources");
-  return { serverCanonical: true, domain: "K1", stats, params, releaseParams, clusters, whitelist, sources };
+  const lastSuccessfulCheckAt = data.lastSuccessfulCheckAt ?? null;
+  if (lastSuccessfulCheckAt !== null && (typeof lastSuccessfulCheckAt !== "string"
+      || !lastSuccessfulCheckAt.endsWith("Z") || !Number.isFinite(Date.parse(lastSuccessfulCheckAt)))) {
+    invalidK1Response("multiAccount.lastSuccessfulCheckAt");
+  }
+  const registrationParams = requiredK1Array(data.registrationParams ?? [], "multiAccount.registrationParams").map((item, index) => {
+    const path = `multiAccount.registrationParams[${index}]`;
+    const row = requiredK1Record(item, path);
+    return {
+      key: requiredK1String(row.key, `${path}.key`), name: requiredK1String(row.name, `${path}.name`),
+      desc: requiredK1String(row.desc, `${path}.desc`), value: requiredK1String(row.value, `${path}.value`),
+      unit: requiredK1String(row.unit, `${path}.unit`, true), min: requiredK1Number(row.min, `${path}.min`),
+      max: requiredK1Number(row.max, `${path}.max`), consumer: requiredK1String(row.consumer, `${path}.consumer`),
+      writable: requiredK1Boolean(row.writable, `${path}.writable`), lastChange: requiredK1String(row.lastChange, `${path}.lastChange`),
+    };
+  });
+  return { serverCanonical: true, domain: "K1", lastSuccessfulCheckAt, registrationParams, stats, params, releaseParams: currentReleaseParams, clusters, whitelist, sources };
+}
+
+export async function updateK1RegistrationParam(param: Pick<A3PlatformParam, "key" | "value">, value: string, reason: string, commandKey: string) {
+  await apiRequest("/multi-account/registration-params", {
+    method: "PATCH", commandKey,
+    body: JSON.stringify(withReason({ kind: "param", flagKey: param.key, value, expectedValue: param.value }, reason)),
+  });
 }
 
 const K2_RESPONSE_INVALID = "K2_RESPONSE_INVALID";

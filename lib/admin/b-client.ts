@@ -36,6 +36,7 @@ export interface BLedger {
   queueBacklogUsd: number;
   avgRiskScore: number;
   coverageSeries: number[];
+  coverageSeriesIntervalHours: number | null;
   accounts: BLedgerAccount[];
   prev: {
     reserveUsd: number;
@@ -144,6 +145,7 @@ const EMPTY_LEDGER: BLedger = {
   queueBacklogUsd: 0,
   avgRiskScore: 0,
   coverageSeries: [],
+  coverageSeriesIntervalHours: null,
   accounts: [],
   prev: {
     reserveUsd: 0,
@@ -306,6 +308,7 @@ function normalizeLedger(raw: Record<string, unknown>): BLedger {
   const prev = requiredRow(raw.prev, "dualLedger.prev");
   const coverageSeries = requiredArr<unknown>(snapshot.coverageSeries, "dualLedger.snapshot.coverageSeries")
     .map((item, index) => requiredNum(item, `dualLedger.snapshot.coverageSeries.${index}`));
+  const intervalHours = snapshot.coverageSeriesIntervalHours;
   return {
     reserveUsd,
     liabilitiesUsd,
@@ -321,6 +324,8 @@ function normalizeLedger(raw: Record<string, unknown>): BLedger {
     queueBacklogUsd,
     avgRiskScore: requiredNum(snapshot.avgRiskScore, "dualLedger.snapshot.avgRiskScore"),
     coverageSeries,
+    coverageSeriesIntervalHours: typeof intervalHours === "number" && Number.isSafeInteger(intervalHours) && intervalHours > 0
+      ? intervalHours : null,
     accounts,
     prev: {
       reserveUsd: requiredNum(prev.reserveUsd, "dualLedger.prev.reserveUsd"),

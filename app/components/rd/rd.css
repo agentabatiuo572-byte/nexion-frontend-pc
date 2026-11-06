@@ -485,6 +485,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-toolbar[data-end] > .rd-explain { margin-right: auto; }  /* 整页表单的操作行：状态在左，按钮在右，和抽屉底部同一条线 */
 .rd-panel-foot { padding: 12px 20px 16px; }
 .rd-note { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-approval-meta { display: block; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: normal; overflow-wrap: anywhere; }
 .rd-stack { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .rd-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 
@@ -637,6 +638,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-chart-event span[data-edge="end"] { left: auto; right: 6px; }
 .rd-spark { display: block; width: 72px; height: 24px; overflow: visible; }
 .rd-spark path { fill: none; stroke: var(--slot); stroke-width: 2; stroke-linejoin: round; }
+.rd-chart-point { fill: var(--slot); }
 .rd-chart-cross { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--rd-chart-axis); }
 .rd-chart-dot { position: absolute; width: 8px; height: 8px; margin: 0 0 -4px -4px; border-radius: 50%; background: var(--slot); box-shadow: 0 0 0 2px var(--rd-panel); }
 .rd-chart-tip { position: absolute; bottom: calc(100% + 8px); z-index: 2; display: grid; gap: 2px; min-width: 120px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); border: 1px solid var(--rd-line-strong); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); white-space: nowrap; transform: translateX(-50%); pointer-events: none; }

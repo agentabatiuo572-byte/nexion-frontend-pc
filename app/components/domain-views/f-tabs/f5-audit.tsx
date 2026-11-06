@@ -10,6 +10,7 @@ import { Badge } from "../design-kit";
 import type { F5CommissionEvent, F5CommissionQuery } from "@/lib/admin/f1-client";
 import type { FViewCtx } from "./types";
 import { F5_KINDS as KINDS, F5_KIND_LABELS as KIND_LABELS } from "@/lib/admin/f-overview-contract";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const STATUS_BY_LABEL: Record<string, string> = {
   已解锁可提: "unlocked",
@@ -52,6 +53,7 @@ const amountLabel = (row: F5CommissionEvent) => directGroup(row)
   : `${row.amt.toLocaleString("en-US")} ${nexGridBrandText(row.cur)}`;
 
 export function F5Audit({ ctx }: { ctx: FViewCtx }) {
+  const canExport = useAdminAuth(({ session }) => session?.authorities.includes("network_f5_export") ?? false);
   const canWrite = ctx.can("network_f5_write");
   const canFreeze = ctx.can("network_f5_commission_freeze");
   const canSuspend = ctx.can("network_f5_commission_suspend");
@@ -249,7 +251,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
             <option value="withdrawn">已提现</option><option value="reversed">已撤销</option><option value="frozen">已冻结</option><option value="rejected">未发放</option><option value="recovery_pending">待追回</option>
           </select>
           <button className="fbtn primary" disabled={ctx.f5Loading} onClick={() => { setSelected([]); void ctx.refreshF5(query()); }}>筛选</button>
-          <button className="fbtn" onClick={exportAllFiltered}>导出筛选结果（CSV）</button>
+          {canExport && <button className="fbtn" onClick={exportAllFiltered}>导出筛选结果（CSV）</button>}
           {reissueAvailable && <button className="fbtn" onClick={reissue}>批量补发 ({selectedRows.length})</button>}
         </div>
       </section>

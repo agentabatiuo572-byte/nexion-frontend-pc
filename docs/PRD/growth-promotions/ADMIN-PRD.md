@@ -459,6 +459,7 @@ flowchart LR
 - 异常 ADM06-AC05：Given 发布超时，When 操作者重试，Then 查询原命令并返回唯一发布结果；页面不可同时显示发布失败却创建第二次发布。
 - 异常 ADM06-AC06：Given 提交时有效商品在发布前已下架或额度被其他订单占用，When 最终检查，Then 发布拒绝或返回需重新确认的差异，不以之前试算结果替代当前事实。
 - 正例 ADM06-AC07：Given 旧发布版本 ACTIVE 且新草稿已提交，When 新版被驳回、获批或发布失败，Then 旧活动继续按原发布版本接受符合原规则的订单；新草稿状态单列，不把活动改成 DRAFT/PENDING_APPROVAL/APPROVED。
+- 异常 ADM06-AC08：发布将开放报价的版本时，若与其他启用的发布版本有 §P6.2 所定义的交集，发布接口返回 409 `PROMOTION_EXCLUSIVE_ACTIVITY_CONFLICT`，保留 APPROVED 候选、原生效版本及原公开投放。同一 SKU 的发布或恢复并行提交时，后续命令按先提交成功的版本复核交集。
 
 **③ 数据字典与生成规则**
 
@@ -546,6 +547,7 @@ simulate 使用独立 AdminSimulation 响应：pricing、ruleResults、rewardUni
 - 异常 ADM07-AC03：Given 终止确认页打开后又新增预留或操作状态已变，When 提交，Then 服务端按最新事实复核并拒绝过时确认或要求重新审阅影响，不按旧计数直接处置。
 - 异常 ADM07-AC04：Given 恢复时已过结束时间、预算耗尽、SKU 不可用或能力被回收，When 恢复，Then 拒绝并给出原因；不自动延长时间、加预算或重置人均限额。
 - 异常 ADM07-AC05：Given 有未解决奖励，When 归档，Then 归档条件按 §P9 校验；归档不得隐藏未履约责任或删除台账，仍能从历史入口追踪原义务。
+- 异常 ADM07-AC06：恢复暂停活动时按 §P6.2 检查互斥。发生重叠时接口返回 409 `PROMOTION_EXCLUSIVE_ACTIVITY_CONFLICT`，活动保留 PAUSED，解除重叠后可重新发起恢复。
 
 **③ 数据字典与生成规则**
 

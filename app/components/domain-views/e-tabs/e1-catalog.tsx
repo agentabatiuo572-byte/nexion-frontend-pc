@@ -372,9 +372,9 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
         hint: "会直接改变 App 组合购的价格。",
         requireAnyChange: true,
         fields: [
-          { key: "twoItemsPct", label: "2 件折扣（%）", current: String(discount.twoItemsPct), inputKind: "number", min: 0.01, max: 50, step: 0.01, required: true },
-          { key: "threeItemsPct", label: "3 件折扣（%）", current: String(discount.threeItemsPct), inputKind: "number", min: 0.01, max: 50, step: 0.01, required: true },
-          { key: "fourPlusItemsPct", label: "4 件及以上折扣（%）", current: String(discount.fourPlusItemsPct), inputKind: "number", min: 0.01, max: 50, step: 0.01, required: true },
+          { key: "twoItemsPct", label: "2 件折扣（%）", current: String(discount.twoItemsPct), inputKind: "number", min: 0.01, max: 30, step: 0.01, required: true },
+          { key: "threeItemsPct", label: "3 件折扣（%）", current: String(discount.threeItemsPct), inputKind: "number", min: 0.01, max: 30, step: 0.01, required: true },
+          { key: "fourPlusItemsPct", label: "4 件及以上折扣（%）", current: String(discount.fourPlusItemsPct), inputKind: "number", min: 0.01, max: 30, step: 0.01, required: true },
         ],
       },
       detail: `保存后新订单立即按新折扣，已有订单不变。`,

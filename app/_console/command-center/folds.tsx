@@ -10,8 +10,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowLeftRight, ShieldAlert, Target, Users, Wallet, XCircle } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { AreaChart } from "@/app/components/kit/charts/area-chart";
-import { BarList, Bars, BlockState, Button, Explain, Fact, Facts, Figure, Fold, Modal, StatusTag, ThresholdMeter } from "@/app/components/rd";
+import { BarList, Bars, BlockState, Button, Explain, Fact, Facts, Figure, Fold, Modal, StatusTag, ThresholdMeter, TrendLines } from "@/app/components/rd";
 import { fetchB0Kpis, fetchB0Redemption, type B0Kpi } from "@/lib/admin/b0-client";
 import type { B0Blocks } from "@/lib/admin/b0-access";
 import type { B2LiquidityHistory } from "@/lib/admin/b-restoration-client";
@@ -309,15 +308,17 @@ function FunnelBody({ onSummary }: { onSummary: (text: string) => void }) {
   const { data, loading, error, reload } = useB3Funnel(FUNNEL_FILTERS, "purchase");
   const stages = useMemo(() => data?.stages ?? [], [data]);
   const first = stages[0]?.distinctUsers ?? 0;
-  const tooFew = first < SMALL_SAMPLE;
+  const protectedSample = stages.some((stage) => stage.suppressed);
+  const tooFew = !protectedSample && first < SMALL_SAMPLE;
   const worst = stages.slice(1).reduce<{ from: string; to: string; cvr: number } | null>((found, stage, index) => {
     const previous = stages[index];
-    if (stage.cvrFromPrev == null || previous.distinctUsers < SMALL_SAMPLE || stage.distinctUsers < SMALL_SAMPLE) return found;
+    if (stage.cvrFromPrev == null || previous.distinctUsers == null || stage.distinctUsers == null || previous.distinctUsers < SMALL_SAMPLE || stage.distinctUsers < SMALL_SAMPLE) return found;
     return !found || stage.cvrFromPrev < found.cvr ? { from: previous.stage, to: stage.stage, cvr: stage.cvrFromPrev } : found;
   }, null);
   const conclusion = error ? "读取失败"
     : !data ? "正在读取…"
       : !data.available || !stages.length ? (data.message ?? "暂无转化数据")
+        : protectedSample ? "部分阶段样本过小，暂不比较流失"
         : tooFew ? "注册不足 5 人，样本过小"
           : worst ? `流失最多的一步是${worst.from}到${worst.to}` : "每一步人数都太少，样本过小";
   useEffect(() => { onSummary(conclusion); }, [conclusion, onSummary]);
@@ -329,10 +330,10 @@ function FunnelBody({ onSummary }: { onSummary: (text: string) => void }) {
       {tooFew ? <p className="cc-line">注册不足 5 人，样本过小</p> : (
         <>
           <BarList label="注册到提现各步人数" slot={3} max={first} rows={stages.map((stage) => {
-            const shown = stage.distinctUsers >= SMALL_SAMPLE;
-            return { key: stage.key, label: stage.stage, value: shown ? stage.distinctUsers : null, text: shown ? `${fmtNum(stage.distinctUsers)} 人` : "样本过小" };
+            const shown = !stage.suppressed && stage.distinctUsers !== null && stage.distinctUsers >= SMALL_SAMPLE;
+            return { key: stage.key, label: stage.stage, value: shown ? stage.distinctUsers : null, text: shown ? `${fmtNum(stage.distinctUsers!)} 人` : "样本过小" };
           })} />
-          {worst && <p className="cc-line">流失最多的一步是{worst.from}到{worst.to}，只有 {worst.cvr}% 走到下一步</p>}
+          {protectedSample ? <p className="cc-line">部分阶段样本过小，暂不比较流失。</p> : worst && <p className="cc-line">流失最多的一步是{worst.from}到{worst.to}，只有 {worst.cvr}% 走到下一步</p>}
         </>
       )}
     </div>
@@ -370,12 +371,13 @@ function KpiDetail({ kpi, reach, onClose }: { kpi: B0Kpi; reach: Reach; onClose:
         : pass ? <StatusTag tone="ok">达标</StatusTag> : <StatusTag tone="warn">未达标</StatusTag>}<span>关键指标 #{kpi.n}</span></>}>
       <div className="cc-fold-stack">
         <Facts>
-          <Fact k="当前值" lead>{kpi.smallSample ? "—" : kpi.value}</Fact>
+          <Fact k="当前值" lead>{kpi.smallSample ? "样本过小" : kpi.value}</Fact>
           <Fact k="目标">{targetText(kpi.target)}</Fact>
           <Fact k="怎么算">{operatorCopyText(kpi.hint) || "—"}</Fact>
           <Fact k="数据来源">用户行为事件</Fact>
         </Facts>
-        {kpi.series.length >= 2 ? <AreaChart data={kpi.series} color="var(--rd-chart-2)" height={70} /> : <p className="cc-line" data-muted="">趋势数据不足，暂时不画</p>}
+        {kpi.series.some((value) => value !== null) ? <TrendLines label={`${kpi.label}的走势`} ticks={kpi.trendLabels} format={String} height={96} series={[{ key: "kpi", label: kpi.label, slot: 2, values: kpi.series }]} /> : <p className="cc-line" data-muted="">{kpi.smallSample || kpi.trendSuppressed ? "样本过小，趋势留空" : "趋势数据不足，暂时不画"}</p>}
+        {kpi.trendSuppressed && !kpi.smallSample && <p className="cc-line" data-muted="">部分时段样本过小，曲线在这些时段留空。</p>}
         <p className="cc-line"><FoldLink reach={reach} href="/analytics/kpi">查看关键指标</FoldLink></p>
       </div>
     </Modal>
@@ -387,17 +389,18 @@ export function KpiFold({ refreshKey, reach, open, onOpenChange }: FoldProps & {
   const kpis = useBlock(fetchB0Kpis, opened, refreshKey);
   const [selected, setSelected] = useState<B0Kpi | null>(null);
   const rows = kpis.data ?? [];
-  const effective = rows.map((kpi) => ({ ...kpi, pass: kpi.smallSample ? null : kpi.pass }));
+  const effective = rows.map((kpi) => ({ ...kpi, pass: kpi.smallSample ? null : kpi.pass, suppressed: kpi.smallSample }));
   const rollup = rollupKpiPassState(effective);
   const failedKpis = effective.filter((kpi) => kpi.pass === false);
-  const unknownKpis = effective.filter((kpi) => kpi.pass === null);
+  const unknownKpis = effective.filter((kpi) => !kpi.smallSample && kpi.pass === null);
+  const smallKpis = effective.filter((kpi) => kpi.smallSample);
   const passedKpis = effective.filter((kpi) => kpi.pass === true);
   const summary = kpis.error ? "读取失败"
     : !opened ? "点开看哪些目标没达到"
       : !kpis.data ? "正在读取…"
         : rows.length === 0 ? "关键指标暂无数据"
-          : rollup.failed === 0 && rollup.unknown === 0 ? (rollup.total === 8 ? "八项都达标" : `${rollup.total} 项都达标`)
-            : [rollup.failed > 0 ? `未达标 ${rollup.failed} 项` : "", rollup.unknown > 0 ? `暂无法计算 ${rollup.unknown} 项` : ""].filter(Boolean).join("，");
+          : rollup.failed === 0 && rollup.unknown === 0 && rollup.suppressed === 0 ? (rollup.total === 8 ? "八项都达标" : `${rollup.total} 项都达标`)
+            : [rollup.failed > 0 ? `未达标 ${rollup.failed} 项` : "", rollup.unknown > 0 ? `暂无法计算 ${rollup.unknown} 项` : "", rollup.suppressed > 0 ? `样本过小 ${rollup.suppressed} 项` : ""].filter(Boolean).join("，");
   const names = (title: string, items: readonly B0Kpi[]) => (
     <div className="cc-names">
       <span>{title}</span>
@@ -426,6 +429,7 @@ export function KpiFold({ refreshKey, reach, open, onOpenChange }: FoldProps & {
                   </ul>
                 )}
                 {unknownKpis.length > 0 && names("暂无法计算", unknownKpis)}
+                {smallKpis.length > 0 && names("样本过小", smallKpis)}
                 {passedKpis.length > 0 && names("已达标", passedKpis)}
               </div>
             ))}

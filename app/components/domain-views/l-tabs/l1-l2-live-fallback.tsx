@@ -2,7 +2,7 @@
 
 import { ListChecks, ScrollText, ShoppingCart, Users, Wallet } from "lucide-react";
 import { Cell, Conclusion, Panel, Stat, StatBand, Table, Td, Th, Tr } from "@/app/components/rd";
-import type { L1LiveMetric, L2LiveStage } from "./l1-l2-live-data";
+import { SMALL_SAMPLE_LABEL, type L1LiveMetric, type L2LiveStage } from "./l1-l2-live-data";
 
 export function L1LiveTotals({ metrics }: { metrics: L1LiveMetric[] }) {
   const byKey = new Map(metrics.map((metric) => [metric.key, metric]));
@@ -40,7 +40,7 @@ export function L1LiveTotals({ metrics }: { metrics: L1LiveMetric[] }) {
 }
 
 export function L2LiveStages({ stages }: { stages: L2LiveStage[] }) {
-  const maxCount = Math.max(...stages.map((stage) => stage.count), 1);
+  const maxCount = Math.max(...stages.map((stage) => stage.count ?? 0), 1);
   const highlights = stages.slice(0, 4);
 
   return (
@@ -49,7 +49,7 @@ export function L2LiveStages({ stages }: { stages: L2LiveStage[] }) {
         {highlights.map((stage, index) => (
           <div key={stage.key} className={`f-stat ${index === 0 ? "cyan" : index === 3 ? "ok" : ""}`}>
             <div className="k">{stage.label}</div>
-            <div className="v">{stage.count.toLocaleString("zh-CN")}</div>
+            <div className="v">{stage.suppressed ? SMALL_SAMPLE_LABEL : stage.count?.toLocaleString("zh-CN")}</div>
             <div className="sub">单独计数 · {stage.sourceLabel}</div>
           </div>
         ))}
@@ -70,9 +70,9 @@ export function L2LiveStages({ stages }: { stages: L2LiveStage[] }) {
                   <span className="ev">{stage.description}</span>
                 </div>
                 <div className="barzone">
-                  <div className="bar" style={{ width: `${Math.max((stage.count / maxCount) * 100, stage.count === 0 ? 0 : 4)}%`, background: "var(--cyan)" }}>
+                  {stage.count == null ? SMALL_SAMPLE_LABEL : <div className="bar" style={{ width: `${Math.max((stage.count / maxCount) * 100, stage.count === 0 ? 0 : 4)}%`, background: "var(--cyan)" }}>
                     {stage.count > 0 && <span>{stage.count.toLocaleString("zh-CN")}</span>}
-                  </div>
+                  </div>}
                 </div>
                 <div className="cvr"><span className="lcode">{stage.sourceLabel}</span></div>
               </div>

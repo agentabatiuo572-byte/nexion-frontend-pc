@@ -19,11 +19,10 @@ import {
   fetchL2RetentionMatrix,
   type L2FunnelQuery,
 } from "@/lib/admin/l-client";
-import { confirm } from "@/lib/store/ui";
 import { PaginationExemptionList } from "../design-kit";
-import { LDataState, num, rec, rows, str, strings, type KpiRow } from "./live-data";
+import { LDataState, rec, rows, str, strings } from "./live-data";
 import { formatB3RefOption } from "@/lib/admin/b3-ref-display";
-import { readL2LiveStages } from "./l1-l2-live-data";
+import { readL2LiveStages, SMALL_SAMPLE_LABEL } from "./l1-l2-live-data";
 import { L2LiveStages } from "./l1-l2-live-fallback";
 import {
   isCanonicalL2StageEvents,
@@ -35,20 +34,23 @@ import {
 import type { LCtx } from "./types";
 import { ATTRIBUTION_ROUTE_READ, L2_ATTRIBUTION_LINKS } from "./l-attribution-routes";
 
-type FunnelRow = { stage: string; ev?: string; users: number; cvr?: number | null; lc: string; color: string; target?: string | null };
+type FunnelRow = { stage: string; ev?: string; users: number | null; cvr?: number | null; lc: string; color: string; target?: string | null; suppressed?: true };
 type FunnelExt = {
   plain: string;
-  inflow: string;
-  lost: string;
+  inflow: string | null;
+  lost: string | null;
   dwell: number[];
   note: string;
   tg?: string | null;
   trial?: boolean;
   v1?: boolean;
+  suppressed?: true;
+  lostSuppressed?: true;
+  dwellSuppressed?: true;
 };
-type TrialStep = { e: string; n: number; arr?: string; arrLb?: string };
-type CohortRow = { w: string; size: number; d1?: number | null; d7?: number | null; d14?: number | null; d30?: number | null; d60?: number | null };
-type XdMetric = { columns: string[]; rows: (string | number | null)[][]; alert: number[]; unit: string; msg: { pre: string; bold: string; post: string } };
+type TrialStep = { e: string; n: number | null; arr?: string; arrLb?: string; suppressed?: true };
+type CohortRow = { w: string; size: number | null; d1?: number | null; d7?: number | null; d14?: number | null; d30?: number | null; d60?: number | null; suppressed?: true };
+type XdMetric = { columns: string[]; rows: (string | number | null)[][]; alert: number[]; unit: string; suppressedCells: Set<string>; msg: { pre: string; bold: string; post: string } };
 
 const L2_STAGE_EVENTS = L2_STAGE_QUERY_EVENTS;
 const L2_WINDOWS = ["Day1", "Day7", "Day14", "Day30", "Day60"] as const;
@@ -96,26 +98,35 @@ export function isStrictL2Dashboard(raw: unknown): boolean {
   for (let index = 0; index < funnel.length; index += 1) {
     const item = funnel[index];
     const ext = extensions[index];
-    if (!str(item.stage) || !str(item.lc) || !str(item.color) || !finiteCount(item.users)
-      || !finitePercent(item.cvr) || Number(item.users) > previousUsers || !str(ext.plain)
+    if (!str(item.stage) || !str(item.lc) || !str(item.color) || !str(ext.plain)
       || !Array.isArray(ext.dwell) || ext.dwell.some((value) => !finiteCount(value))) return false;
+    if (item.suppressed === true) {
+      if (item.users != null || item.cvr != null || ext.suppressed !== true
+        || ext.inflow != null || ext.lost != null || ext.dwell.length) return false;
+      continue;
+    }
+    if (!finiteCount(item.users) || !finitePercent(item.cvr) || Number(item.users) > previousUsers) return false;
     previousUsers = Number(item.users);
   }
   const validateCohorts = (items: Record<string, unknown>[], pattern: RegExp) => {
     const seen = new Set<string>();
     return items.every((item) => {
       const key = str(item.w || item.cohort);
-      if (!pattern.test(key) || seen.has(key) || !finiteCount(item.size)) return false;
+      if (!pattern.test(key) || seen.has(key)) return false;
       seen.add(key);
-      return ["d1", "d7", "d14", "d30", "d60"].every((field) => finitePercent(item[field]));
+      const rates = [item.d1, item.d7, item.d14, item.d30, item.d60];
+      return item.suppressed === true
+        ? item.size == null && rates.every((rate) => rate == null)
+        : finiteCount(item.size) && rates.every((rate) => finitePercent(rate));
     });
   };
   if (!validateCohorts(cohorts, /^\d{4}-W(?:0[1-9]|[1-4]\d|5[0-3])$/)
     || (monthly.length > 0 && !validateCohorts(monthly, /^\d{4}-(?:0[1-9]|1[0-2])$/))) return false;
-  const curves = rec(data.curves);
-  if (cohorts.some((item) => !validCurve(curves[str(item.w || item.cohort)]))) return false;
-  const monthlyCurves = rec(data.monthlyCurves);
-  if (monthly.some((item) => !validCurve(monthlyCurves[str(item.w || item.cohort)]))) return false;
+  const validateCurves = (items: Record<string, unknown>[], curves: Record<string, unknown>) => items.every((item) => {
+    const curve = curves[str(item.w || item.cohort)];
+    return item.suppressed === true ? Array.isArray(curve) && curve.length === 0 : validCurve(curve);
+  });
+  if (!validateCurves(cohorts, rec(data.curves)) || !validateCurves(monthly, rec(data.monthlyCurves))) return false;
   const cross = rec(data.crossAnalysis);
   for (const key of ["cvr", "ret", "trial"]) {
     const metric = rec(cross[key]);
@@ -140,6 +151,7 @@ function normalizeXdMetric(raw: unknown): XdMetric {
     columns: strings(data.columns),
     rows: rows<(string | number | null)[]>(data.rows),
     alert: rows<number>(data.alert),
+    suppressedCells: new Set(rows<[number, number]>(data.suppressedCells).map(([row, column]) => `${row}:${column}`)),
     unit: str(data.unit, "%"),
     msg: {
       pre: str(msg.pre, message),
@@ -161,34 +173,31 @@ export function L2HeaderActions({ ctx }: { ctx: LCtx }) {
   const detailedAttempt = hasDetailedL2(ctx.biData?.l2);
   const liveStages = detailedAttempt ? [] : readL2LiveStages(ctx.biData?.l2);
   const exportable = ctx.l2SliceExportable !== false && (complete || liveStages.length > 0);
-  const exportFunnel = async () => {
-    const ok = await confirm({
-      title: complete ? "导出用户转化与留存数据" : "导出用户各阶段人数",
-      message: complete
+  const exportFunnel = () => {
+    ctx.openActionConfirm({ briefKind: "export",
+      action: complete ? "导出用户转化与留存数据" : "导出用户各阶段人数",
+      detail: complete
         ? "导出各步骤人数、转化率，以及按注册时间分组的留存率。仅包含汇总数据，不含手机号、地址等个人信息；操作会留记录。"
         : "详细转化与留存数据暂不可用。本次只导出页面已显示的各阶段人数，不计算转化率或留存率；不含手机号、地址等个人信息。",
-      confirmLabel: "导出",
+      reasonMax: 200,
+      run: async (reason) => {
+        await ctx.biActions?.createReport({
+          exportType: complete ? "漏斗序列" : "漏斗生命周期事实",
+          timeRange: complete ? "当前同批用户时段" : "当前数据",
+          fields: complete ? "漏斗去重人数/CVR/cohort 留存率" : "注册/资料/订单/钱包活动聚合计数",
+          piiLevel: "NONE",
+          maskPolicy: "NONE",
+          recipient: "BI 管理员",
+          ticket: "L2-FUNNEL",
+          cohort: complete ? ctx.l2Query?.cohort : undefined,
+          phase: complete ? ctx.l2Query?.phase : undefined,
+          locale: complete ? ctx.l2Query?.locale : undefined,
+          ref: complete ? ctx.l2Query?.ref : undefined,
+        }, reason);
+        await ctx.reloadBi?.();
+        ctx.toast(complete ? "用户转化与留存数据导出任务已提交" : "用户各阶段人数导出任务已提交");
+      },
     });
-    if (!ok) return;
-    try {
-      await ctx.biActions?.createReport({
-        exportType: complete ? "漏斗序列" : "漏斗生命周期事实",
-        timeRange: complete ? "当前同批用户时段" : "当前数据",
-        fields: complete ? "漏斗去重人数/CVR/cohort 留存率" : "注册/资料/订单/钱包活动聚合计数",
-        piiLevel: "NONE",
-        maskPolicy: "NONE",
-        recipient: "BI 管理员",
-        ticket: "L2-FUNNEL",
-        cohort: complete ? ctx.l2Query?.cohort : undefined,
-        phase: complete ? ctx.l2Query?.phase : undefined,
-        locale: complete ? ctx.l2Query?.locale : undefined,
-        ref: complete ? ctx.l2Query?.ref : undefined,
-      }, complete ? "导出漏斗同批用户汇总，用于转化分析" : "导出当前各阶段人数，用于数据核对");
-      await ctx.reloadBi?.();
-      ctx.toast(complete ? "用户转化与留存数据导出任务已提交" : "用户各阶段人数导出任务已提交");
-    } catch (error) {
-      ctx.toast(error instanceof Error ? `导出任务提交失败 · ${displayAdminError(error)}` : "导出任务提交失败 · 请稍后重试");
-    }
   };
   return (
     <>
@@ -353,7 +362,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
   const CURVES = rec<[number, number][]>(cohortKind === "月" ? data?.monthlyCurves : data?.curves);
   const XD = crossOverride ?? rec(data?.crossAnalysis);
   const STAGE_EV = strings(data?.stageEvents);
-  const day7 = (data?.day7Kpi ?? {}) as Partial<KpiRow>;
+  const day7 = rec(data?.day7Kpi);
   const liveStages = detailedAttempt ? [] : readL2LiveStages(data);
   const sliceFilters = (
     <div className="chips" aria-label="筛选条件"><span className="lb">筛选数据</span>
@@ -416,9 +425,14 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
   if (!FUNNEL.length || !FUNNEL_EXT.length || !COHORTS.length) return <LDataState ctx={ctx} label="L2" />;
   const safeStage = Math.min(selStage, FUNNEL.length - 1);
   const safeCohort = Math.min(selCohort, COHORTS.length - 1);
-  const fullCvr = FUNNEL[0]?.users ? ((FUNNEL[FUNNEL.length - 1].users / FUNNEL[0].users) * 100).toFixed(1) : "0.0";
-  const trialBuy = TRIAL_STEPS[1]?.n ? ((num(TRIAL_STEPS[2]?.n) / TRIAL_STEPS[1].n) * 100).toFixed(1) : null;
-  const maxUsers = FUNNEL[0].users;
+  const latestCohort = COHORTS[COHORTS.length - 1];
+  const registrations = FUNNEL[0].users;
+  const withdrawals = FUNNEL[FUNNEL.length - 1].users;
+  const fullCvr = registrations && withdrawals != null ? ((withdrawals / registrations) * 100).toFixed(1) : null;
+  const trialStarted = TRIAL_STEPS[1]?.n;
+  const trialPurchased = TRIAL_STEPS[2]?.n;
+  const trialBuy = trialStarted && trialPurchased != null ? ((trialPurchased / trialStarted) * 100).toFixed(1) : null;
+  const maxUsers = registrations || 1;
   const s = FUNNEL[safeStage];
   const ext = FUNNEL_EXT[safeStage] ?? { plain: s.stage, inflow: "—", lost: "—", dwell: [], note: "" };
   const dwellMax = Math.max(...(ext.dwell.length ? ext.dwell : [1]));
@@ -427,7 +441,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
     .filter((day) => wins.includes(`Day${day}`))
     .map((day) => ({ day, key: `d${day}` as keyof CohortRow }));
 
-  const cohortCurveKeys = COHORTS.map((cohort) => cohort.w).filter((key) => Array.isArray(CURVES[key]));
+  const cohortCurveKeys = COHORTS.filter((cohort) => !cohort.suppressed).map((cohort) => cohort.w);
   const activeQuery: L2FunnelQuery = ctx.l2Query ?? {};
 
   const loadRetentionWindows = async (nextWins: string[]) => {
@@ -436,7 +450,12 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
     try {
       const response = await fetchL2RetentionMatrix(activeQuery, nextWins);
       if (generation !== queryGeneration.current) return;
-      const merged = { ...rec(data), cohorts: response.cohorts };
+      const cohorts = rows<CohortRow>(response.cohorts);
+      const curves = { ...rec(data?.curves) };
+      for (const cohort of cohorts) {
+        if (cohort.suppressed) curves[cohort.w] = [];
+      }
+      const merged = { ...rec(data), cohorts, curves };
       if (!isStrictL2Dashboard(merged)) throw new Error("L2_RETENTION_PROTOCOL_ERROR");
       setQueryData(merged);
       setWins(nextWins);
@@ -474,18 +493,30 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
   };
 
   const loadCurve = async (cohortIndex: number) => {
-    const cohort = COHORTS[cohortIndex]?.w;
-    if (!cohort) return;
+    const selected = COHORTS[cohortIndex];
+    if (!selected) return;
+    if (selected.suppressed) {
+      setSelCohort(cohortIndex);
+      return;
+    }
+    const cohort = selected.w;
     const generation = ++queryGeneration.current;
     setQueryLoading(true);
     try {
       const response = await fetchL2RetentionCurve(cohort, activeQuery);
       if (generation !== queryGeneration.current) return;
-      if (!validCurve(response.curve)) throw new Error("L2_RETENTION_CURVE_PROTOCOL_ERROR");
+      const suppressed = response.suppressed === true;
+      if (suppressed ? !Array.isArray(response.curve) || response.curve.length > 0 : !validCurve(response.curve)) {
+        throw new Error("L2_RETENTION_CURVE_PROTOCOL_ERROR");
+      }
       const curveKey = cohortKind === "月" ? "monthlyCurves" : "curves";
+      const rowKey = cohortKind === "月" ? "monthlyCohorts" : "cohorts";
       const merged = {
         ...rec(data),
         [curveKey]: { ...rec(data?.[curveKey]), [cohort]: response.curve },
+        [rowKey]: suppressed ? COHORTS.map((row) => row.w === cohort
+          ? { w: row.w, size: null, suppressed: true }
+          : row) : COHORTS,
       };
       if (!isStrictL2Dashboard(merged)) throw new Error("L2_RETENTION_CURVE_PROTOCOL_ERROR");
       setQueryData(merged);
@@ -538,10 +569,10 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
     <div>
       {/* stat strip */}
       <div className="f-stats">
-        <div className="f-stat cyan"><div className="k">{COHORTS[COHORTS.length - 1].w} 注册用户</div><div className="v">{COHORTS[COHORTS.length - 1].w}</div><div className="sub">{COHORTS[COHORTS.length - 1].size.toLocaleString("en-US")} 人新注册 · 按注册{cohortKind}分组</div></div>
-        <div className="f-stat"><div className="k">注册到提现的转化率</div><div className="v">{fullCvr}%</div><div className="sub">同批注册用户中最终发起提现的比例</div></div>
-        <div className="f-stat warn"><div className="k">最近可统计的一批用户 · 第 7 天留存</div><div className="v">{day7.value == null ? "—" : `${day7.value}%`}</div><div className="sub">目标 &gt; {day7.target ?? 60}% · 注册未满 7 天的不推算</div></div>
-        <div className="f-stat ok"><div className="k">试用后购买比例</div><div className="v">{trialBuy == null ? "—" : `${trialBuy}%`}</div><div className="sub">单独统计试用到购买的转化</div></div>
+        <div className="f-stat cyan"><div className="k">{latestCohort.w} 注册用户</div><div className="v">{latestCohort.w}</div><div className="sub">{latestCohort.suppressed ? SMALL_SAMPLE_LABEL : `${latestCohort.size?.toLocaleString("en-US")} 人新注册`} · 按注册{cohortKind}分组</div></div>
+        <div className="f-stat"><div className="k">注册到提现的转化率</div><div className="v">{FUNNEL[0].suppressed || FUNNEL[FUNNEL.length - 1].suppressed ? SMALL_SAMPLE_LABEL : fullCvr == null ? "—" : `${fullCvr}%`}</div><div className="sub">同批注册用户中最终发起提现的比例</div></div>
+        <div className="f-stat warn"><div className="k">最近可统计的一批用户 · 第 7 天留存</div><div className="v">{day7.suppressed === true ? SMALL_SAMPLE_LABEL : day7.value == null ? "—" : `${day7.value}%`}</div><div className="sub">目标 &gt; {String(day7.target ?? 60)}% · 注册未满 7 天的不推算</div></div>
+        <div className="f-stat ok"><div className="k">试用后购买比例</div><div className="v">{TRIAL_STEPS[1]?.suppressed || TRIAL_STEPS[2]?.suppressed ? SMALL_SAMPLE_LABEL : trialBuy == null ? "—" : `${trialBuy}%`}</div><div className="sub">单独统计试用到购买的转化</div></div>
       </div>
 
       {/* view slice bar */}
@@ -595,15 +626,15 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
           >{(i) => {
             const f = FUNNEL[i];
             const ex = FUNNEL_EXT[i];
-            const w = Math.max((f.users / maxUsers) * 100, 4);
+            const w = f.users == null ? 0 : Math.max((f.users / maxUsers) * 100, 4);
             return (
               <>
                 <div className="lbl">
                   <span className="nm"><AutoGloss>{f.stage}</AutoGloss><span className="lc">{f.lc}</span>{ex.v1 && <span className="bdg dim" style={{ fontSize: 10.5 }}>暂用二次下单统计规则</span>}</span>
                   <span className="ev" title={STAGE_EV[i] ?? f.ev ?? ""}><AutoGloss>{ex.plain}</AutoGloss></span>
                 </div>
-                <div className="barzone"><div className="bar" style={{ width: `${w}%`, background: f.color }}><span>{f.users.toLocaleString("en-US")}</span></div></div>
-                <div className="cvr">{f.cvr != null ? <><span className="pc">{f.cvr}%</span><span className="tg">{ex.tg ? `目标 ${ex.tg}` : "上一步转化"}</span></> : <span className="tg">{i === 0 ? "漏斗顶" : FUNNEL[i - 1].users === 0 ? "上一步人数为 0，转化率不可计算" : "转化率不可计算"}</span>}</div>
+                <div className="barzone">{f.suppressed ? SMALL_SAMPLE_LABEL : <div className="bar" style={{ width: `${w}%`, background: f.color }}><span>{f.users?.toLocaleString("en-US")}</span></div>}</div>
+                <div className="cvr">{f.cvr != null ? <><span className="pc">{f.cvr}%</span><span className="tg">{ex.tg ? `目标 ${ex.tg}` : "上一步转化"}</span></> : <span className="tg">{f.suppressed ? SMALL_SAMPLE_LABEL : i === 0 ? "漏斗顶" : FUNNEL[i - 1].users === 0 ? "上一步人数为 0，转化率不可计算" : "转化率不可计算"}</span>}</div>
               </>
             );
           }}</TabGroup>
@@ -616,10 +647,10 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
               <button className="l-btn sm" disabled={queryLoading} onClick={() => void applySlice(L2_STAGE_EVENTS[safeStage])}>刷新这一级的数据</button>
             </div>
             <div className="stage-x-grid">
-              <div className="cell"><div className="k">上一步流入</div><div className="v">{ext.inflow}</div></div>
-              <div className="cell"><div className="k">本级转化</div><div className="v" style={{ color: "var(--cyan)" }}>{s.cvr != null ? `${s.cvr}%` : "—"}</div><div className="s">{s.users.toLocaleString("en-US")} 人到达本级</div></div>
-              <div className="cell"><div className="k">流失去向</div><div className="s" style={{ marginTop: 6 }}><AutoGloss>{ext.lost}</AutoGloss></div></div>
-              <div className="cell"><div className="k">本级停留时长分布</div><div className="dwell">{ext.dwell.map((d, i) => <i key={i} style={{ height: `${(d / dwellMax) * 100}%` }} />)}</div><div className="s">0h → 7d+ 八档</div></div>
+              <div className="cell"><div className="k">上一步流入</div><div className="v">{ext.suppressed ? SMALL_SAMPLE_LABEL : ext.inflow}</div></div>
+              <div className="cell"><div className="k">本级转化</div><div className="v" style={{ color: "var(--cyan)" }}>{s.suppressed ? SMALL_SAMPLE_LABEL : s.cvr != null ? `${s.cvr}%` : "—"}</div>{s.users != null && <div className="s">{s.users.toLocaleString("en-US")} 人到达本级</div>}</div>
+              <div className="cell"><div className="k">流失去向</div><div className="s" style={{ marginTop: 6 }}><AutoGloss>{ext.suppressed || ext.lostSuppressed ? SMALL_SAMPLE_LABEL : ext.lost ?? "—"}</AutoGloss></div></div>
+              <div className="cell"><div className="k">本级停留时长分布</div>{ext.suppressed || ext.dwellSuppressed ? <div className="s">{SMALL_SAMPLE_LABEL}</div> : <><div className="dwell">{ext.dwell.map((d, i) => <i key={i} style={{ height: `${(d / dwellMax) * 100}%` }} />)}</div><div className="s">0h → 7d+ 八档</div></>}</div>
             </div>
             <div className="ltint" style={{ marginTop: 12, fontSize: 12 }}><b>解读</b> · <AutoGloss>{ext.note}</AutoGloss></div>
             {ext.trial && (
@@ -630,9 +661,9 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
                 <div className="trial-strip">
                   {TRIAL_STEPS.map((t, i) => (
                     <div key={t.e} className="trial-step">
-                      <div className="bx"><div className="e">{t.e}</div><div className="n">{t.n.toLocaleString("en-US")}</div></div>
+                      <div className="bx"><div className="e">{t.e}</div><div className="n">{t.suppressed ? SMALL_SAMPLE_LABEL : t.n?.toLocaleString("en-US")}</div></div>
                       {i < TRIAL_STEPS.length - 1
-                        ? <div className="arr"><b>{TRIAL_STEPS[i + 1].arr}</b>{TRIAL_STEPS[i + 1].arrLb}</div>
+                        ? <div className="arr"><b>{t.suppressed || TRIAL_STEPS[i + 1].suppressed ? SMALL_SAMPLE_LABEL : TRIAL_STEPS[i + 1].arr}</b>{TRIAL_STEPS[i + 1].arrLb}</div>
                         : <div className="arr" style={{ color: "var(--ink-4)" }}>结束后发放奖励<br />账单见「账本与账单核对」</div>}
                     </div>
                   ))}
@@ -662,9 +693,9 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
                 {COHORTS.map((c, i) => (
                   <tr key={c.w}>
                     <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{c.w}{i === safeCohort && <span className="bdg cyan" style={{ fontSize: 10.5, marginLeft: 4 }}>曲线</span>}</td>
-                    <td className="num mono">{c.size.toLocaleString("en-US")}</td>
+                    <td className="num mono">{c.suppressed ? SMALL_SAMPLE_LABEL : c.size?.toLocaleString("en-US")}</td>
                     {retentionColumns.map(({ day, key }) => (
-                      <td key={day} className="cellv" style={heatStyle(c[key] as number | null | undefined)} onClick={() => void loadCurve(i)} title={`${c.w} · Day${day}`}>{c[key] == null ? "—" : `${c[key]}%`}</td>
+                      <td key={day} className="cellv" style={heatStyle(c[key] as number | null | undefined)} onClick={() => void loadCurve(i)} title={`${c.w} · Day${day}`}>{c.suppressed ? SMALL_SAMPLE_LABEL : c[key] == null ? "—" : `${c[key]}%`}</td>
                     ))}
                     <td style={{ textAlign: "center" }}><button className="l-btn sm" disabled={queryLoading} onClick={() => void loadCurve(i)}>查询曲线</button></td>
                   </tr>
@@ -676,7 +707,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
           <div>
             <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 4 }}>留存衰减曲线 · {COHORTS[safeCohort].w}</div>
             <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginBottom: 10 }}>这批用户每天仍在使用的比例 · 虚线表示用于对比的另一批用户</div>
-            {curveChart()}
+            {COHORTS[safeCohort].suppressed ? <div className="ltint">{SMALL_SAMPLE_LABEL}</div> : curveChart()}
             <TabGroup
               className="chips"
               style={{ marginTop: 10 }}
@@ -716,9 +747,9 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
                   <tr key={String(r[0])}>
                     <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{formatL2CrossRowLabel(r[0])}</td>
                     {r.slice(1, xd.columns.length + 1).map((v, ci) => (
-                      <td key={ci} className={"xv" + (ri === xd.alert[0] && ci === xd.alert[1] - 1 ? " alert" : "")}>{v == null ? "—" : `${v}${xd.unit}`}</td>
+                      <td key={ci} className={"xv" + (ri === xd.alert[0] && ci === xd.alert[1] - 1 ? " alert" : "")}>{xd.suppressedCells.has(`${ri}:${ci}`) ? SMALL_SAMPLE_LABEL : v == null ? "—" : `${v}${xd.unit}`}</td>
                     ))}
-                    <td className="xv" style={{ color: "var(--ink-3)" }}>{r[xd.columns.length + 1] == null ? "—" : `${r[xd.columns.length + 1]}${xd.unit}`}</td>
+                    <td className="xv" style={{ color: "var(--ink-3)" }}>{xd.suppressedCells.has(`${ri}:${xd.columns.length}`) ? SMALL_SAMPLE_LABEL : r[xd.columns.length + 1] == null ? "—" : `${r[xd.columns.length + 1]}${xd.unit}`}</td>
                   </tr>
                 ))}
               </tbody>

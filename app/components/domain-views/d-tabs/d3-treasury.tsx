@@ -578,7 +578,7 @@ export function D3Treasury() {
   const injectAmount = amount.trim();
   const injectVoucher = voucherNo.trim();
   const amountIssue = !injectAmount || !Number.isFinite(Number(injectAmount)) || Number(injectAmount) <= 0 ? "请输入有效的注入金额"
-    : !/^\d+(\.\d{1,2})?$/.test(injectAmount) ? "最多两位小数，不会自动四舍五入" : undefined;
+    : !/^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/.test(injectAmount) ? "最多两位小数，不会自动四舍五入" : undefined;
   const voucherIssue = !injectVoucher ? "请输入到账凭证号"
     : !/^[A-Za-z0-9][A-Za-z0-9:_./-]{5,95}$/.test(injectVoucher) ? "6–96 位，字母或数字开头，只能用字母、数字和 : _ . / -"
       : unknownCommands.injections.some((record) => record.voucherNo === injectVoucher) ? "这个凭证号的登记结果未知，先在页面上方核对" : undefined;

@@ -11,6 +11,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import Link from "next/link";
 import { Activity, CheckCircle2, CircleHelp, Download, Flag, Gauge, ListChecks, Lock, SlidersHorizontal, Target } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
+import type { KpiTrendPoint } from "@/lib/admin/kpi-trend";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
 import { BlockState, Button, Cell, Check, Conclusion, DiffField, Explain, Fact, Facts, FilterBar, FilterField, Fold, Input, Modal, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
@@ -29,19 +30,24 @@ import { loadL1LocalView, saveL1LocalView, type L1Window } from "./l1-local-view
 import { createL1ReadController } from "./l1-request-generation";
 import { ATTRIBUTION_ROUTE_READ, assertL1AttributionLinks } from "./l-attribution-routes";
 
-type Kpi = KpiRow & {
+type Kpi = Omit<KpiRow, "value" | "spark"> & {
+  value: number | null;
+  spark: KpiTrendPoint[];
+  sparkSuppressed?: boolean[];
+  suppressed?: boolean;
+  previousSuppressed?: boolean;
   available?: boolean;
   unavailableReason?: string;
   status?: string;
   momDelta?: number | null;
-  numerator?: number;
-  denominator?: number;
+  numerator?: number | null;
+  denominator?: number | null;
 };
 type KpiExt = {
   fx: string;
   fxBold: string[];
-  num: string;
-  den: string;
+  num: string | null;
+  den: string | null;
   delta: string;
   note: string;
   jump: { label: string; href?: string }[];
@@ -57,8 +63,9 @@ const SMALL_SAMPLE = 5;
 const unitText = (k: Kpi) => (k.unit === "d" ? "天" : k.unit);
 const tgtShort = (k: Kpi) => tgtLabel(k).replace("目标 ", "").replace("健康带 ", "");
 const kpiStatus = (k: Kpi, offset: number): KpiState => {
+  if (k.suppressed) return "small";
   if (k.available === false || k.value == null) return "na";
-  return k.denominator != null && k.denominator < SMALL_SAMPLE ? "small" : kpiState(k, offset);
+  return k.denominator != null && k.denominator < SMALL_SAMPLE ? "small" : kpiState({ ...k, value: k.value }, offset);
 };
 const STATE_TONE: Record<KpiState, StateTone> = { g: "ok", y: "warn", r: "danger", na: "done", small: "done" };
 const stateText = (state: KpiState, k: Kpi) => ({ g: "达标", y: k.dir === "band" ? "在健康带外" : "接近目标", r: "未达标", na: "暂无法计算", small: "样本过小" })[state];
@@ -85,7 +92,7 @@ const URL_KEYS = ["window", "from", "to", ...SLICES] as const;
 const COHORT_FORMAT = /^\d{4}-W\d{2}$/;
 const RELATED = ["/analytics/funnel-cohort", "/analytics/financial", "/analytics/operations"] as const;
 /** 全是 0 不是走势，不画图，写一句话（DP-62）。 */
-const hasTrend = (values: readonly number[]) => values.length >= 2 && values.some((value) => value !== 0);
+const hasTrend = (values: readonly KpiTrendPoint[]) => values.length >= 2 && values.some((value) => value !== null && value !== 0);
 const hasSlice = (query: L1KpiQuery) => SLICES.some((key) => Boolean(query[key]));
 const DETAIL_ID = "l1-kpi-detail";
 /** 上下排（1366 以下）时点一行看不到右边的明细，滚到明细（PG-42）；并排时不动。 */
@@ -95,6 +102,7 @@ function revealDetail() {
 }
 
 function deltaText(k: Kpi) {
+  if (k.previousSuppressed) return "上期样本过小";
   if (k.momDelta == null) return "无可比数据";
   if (k.momDelta === 0) return "较上期持平";
   return `较上期 ${k.momDelta > 0 ? "+" : ""}${k.momDelta} ${k.unit === "%" ? "个百分点" : unitText(k)}`;
@@ -365,7 +373,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
   const [refreshError, setRefreshError] = useState("");
   const [readAt, setReadAt] = useState("");
   const [drillKpi, setDrillKpi] = useState<Kpi | null>(null);
-  const [drillTrend, setDrillTrend] = useState<number[] | null>(null);
+  const [drillTrend, setDrillTrend] = useState<{ values: KpiTrendPoint[]; suppressedPoints?: boolean[] } | null>(null);
   const [drillError, setDrillError] = useState("");
   const l1Requests = useRef(createL1ReadController());
   const selectedQuery = useRef<L1KpiQuery>({ window: "7d" });
@@ -408,7 +416,9 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     }
   }, [ctx.biData?.l1]);
 
-  useEffect(() => () => l1Requests.current.invalidate(), []);
+  useEffect(() => () => {
+    l1Requests.current.invalidate();
+  }, []);
 
   useEffect(() => {
     let saved: ReturnType<typeof loadL1LocalView> = null;
@@ -626,7 +636,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     const safeSelKpi = Math.min(picked ?? order[0], KPIS.length - 1);
     const baseKpi = KPIS[safeSelKpi];
     const k = drillKpi?.n === baseKpi.n
-      ? { ...baseKpi, ...drillKpi, spark: drillTrend ?? drillKpi.spark ?? baseKpi.spark }
+      ? { ...baseKpi, ...drillKpi, spark: drillTrend?.values ?? drillKpi.spark ?? baseKpi.spark, sparkSuppressed: drillTrend?.suppressedPoints ?? drillKpi.sparkSuppressed }
       : baseKpi;
     const baseExt = KPI_EXT[String(k.n)] ?? { fx: k.name, fxBold: [], num: "—", den: "—", delta: "0", note: "暂未返回该关键指标解释", jump: [] };
     const ext = {
@@ -657,7 +667,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
         const checkedTrend = validateL1Trend(trend, kpiId);
         if (read !== drillRead.current) return;
         setDrillKpi(checkedDrilldown.selected as Kpi);
-        setDrillTrend(checkedTrend.values as number[]);
+        setDrillTrend({ values: checkedTrend.values as KpiTrendPoint[], suppressedPoints: checkedTrend.suppressedPoints as boolean[] | undefined });
       } catch (error) {
         if (read !== drillRead.current) return;
         const message = displayAdminReadError(error);
@@ -691,9 +701,9 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     const compared = picks.filter((item) => item.dir !== "band").map((item, position) => ({
       item,
       slot: (position < 4 ? position + 1 : "other") as ChartSlot,
-      values: item.spark.map((value) => (item.dir === "lte" ? (item.target / value) * 100 : (value / item.target) * 100)),
+      values: item.spark.map((value) => value === null ? null : (item.dir === "lte" ? (item.target / value) * 100 : (value / item.target) * 100)),
     }));
-    const drawable = compared.filter(({ item, values }) => item.available !== false && hasTrend(values) && values.every(Number.isFinite));
+    const drawable = compared.filter(({ item, values }) => item.available !== false && hasTrend(values) && values.every((value) => value === null || Number.isFinite(value)));
     const bandDrawable = bandPicks.filter((item) => item.available !== false && hasTrend(item.spark));
     const skipped = [...compared.filter((entry) => !drawable.includes(entry)).map(({ item }) => item), ...bandPicks.filter((item) => !bandDrawable.includes(item))];
     const drawnCount = drawable.length + bandDrawable.length;
@@ -735,10 +745,12 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                   return (
                     <Tr key={item.n} selected={index === safeSelKpi} tabIndex={index === safeSelKpi ? 0 : -1} onOpen={() => { void selectKpi(index); revealDetail(); }} onKeyDown={moveRow} title="点击查看明细">
                       <Td><Cell main={<AutoGloss>{operatorCopyText(item.name)}</AutoGloss>} /></Td>
-                      <Td align="right"><Cell num main={state === "na" || state === "small" ? "—" : `${item.value}${unitText(item)}`} sub={state === "na" || state === "small" || item.momDelta == null ? undefined : deltaText(item)} /></Td>
+                      <Td align="right"><Cell num main={state === "small" ? "样本过小" : state === "na" ? "—" : `${item.value}${unitText(item)}`} sub={state === "na" || state === "small" || (item.momDelta == null && !item.previousSuppressed) ? undefined : deltaText(item)} /></Td>
                       <Td align="right"><Cell num main={tgtShort(item)} /></Td>
                       {showTrendColumn && <Td>{state === "small"
                         ? <span className="rd-note">—</span>
+                        : item.sparkSuppressed?.includes(true)
+                          ? <><Sparkline label={`${operatorCopyText(item.name)}的走势，样本过小时段留空`} values={item.spark} /><span className="rd-note">部分时段样本过小</span></>
                         : hasTrend(item.spark)
                         ? <Sparkline label={`${operatorCopyText(item.name)}的走势`} values={item.spark} />
                         : item.spark.length >= 2
@@ -750,7 +762,9 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                 })}
               </tbody>
             </Table>
-            {!showTrendColumn && (KPIS.some((_, index) => trendOf(index).length >= 2)
+            {!showTrendColumn && (KPIS.some((item) => item.sparkSuppressed?.includes(true))
+              ? <p className="rd-note rd-panel-foot">部分时段样本过小，趋势留空。</p>
+              : KPIS.some((_, index) => trendOf(index).length >= 2)
               ? <p className="rd-note rd-panel-foot">这个范围有趋势的指标每段都是 0，没有走势可画。</p>
               : <p className="rd-note rd-panel-foot" data-proof="l1-kpi-trend-unavailable">这个范围的数据不够，画不出走势。</p>)}
           </Panel>
@@ -769,7 +783,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
               {kState !== "na" && kState !== "small" && (
                 <ThresholdMeter
                   label="当前值和目标"
-                  rows={[{ key: "now", label: "当前", value: k.value, text: `${k.value}${unitText(k)}`, tone: STATE_TONE[kState] }]}
+                  rows={[{ key: "now", label: "当前", value: k.value!, text: `${k.value}${unitText(k)}`, tone: STATE_TONE[kState] }]}
                   marks={goalMarks}
                 />
               )}
@@ -798,7 +812,8 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                         event={phaseEvent}
                       />
                     </Panel>
-                  : <p className="rd-note">{k.spark.length >= 2 ? "这段时间每段都是 0，没有走势可画。" : "这个范围的数据不够，画不出走势。"}</p>}
+                  : <p className="rd-note">{k.sparkSuppressed?.includes(true) ? "样本过小，趋势时段留空。" : k.spark.length >= 2 ? "这段时间每段都是 0，没有走势可画。" : "这个范围的数据不够，画不出走势。"}</p>}
+              {kState !== "small" && hasTrend(k.spark) && k.sparkSuppressed?.includes(true) && <p className="rd-note">部分时段样本过小，曲线在这些时段留空。</p>}
               <Fold inset title="这项指标怎么算" summary={`统计规则编号 #${k.n}`} explain={<AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss>}>
                 <div className="rd-stack">
                   <div>{renderFx(ext.fx, ext.fxBold)}</div>

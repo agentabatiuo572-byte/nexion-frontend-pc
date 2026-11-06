@@ -21,6 +21,8 @@ import {
   updateH2TrialParam,
 } from "@/lib/admin/h-client";
 import { usePropose } from "@/lib/admin/use-propose";
+import { H2_TRIAL_ACTIONS, pendingH2TrialApprovals, submitH2TrialApproval, type H2TrialApprovalMode } from "@/lib/admin/h2-trial-approval";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
@@ -54,7 +56,15 @@ type TrialSession = {
   expiresAt?: string;
   cancelledAt?: string;
   chargedAt?: string;
+  pendingApproval?: { action?: string | null; submittedBy?: string | null; submittedAt?: string | null } | null;
 };
+
+function TrialPendingApproval({ approval }: { approval: NonNullable<TrialSession["pendingApproval"]> }) {
+  return <>
+    <StatusTag tone="warn">待审批</StatusTag>
+    <span className="rd-approval-meta">{[approval.action, approval.submittedBy, approval.submittedAt && formatBusinessTimeFull(approval.submittedAt, "—")].filter(Boolean).join(" · ")}</span>
+  </>;
+}
 
 type TrialState = { key: string; label: string; tone: string };
 
@@ -335,6 +345,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const canWrite = ctx.can("growth_h2_write");
   const canCancel = ctx.can("growth_h2_session_cancel");
   const canCharge = ctx.can("growth_h2_session_charge");
+  const adminSession = useAdminAuth((state) => state.session);
+  const [legacyApprovals, setLegacyApprovals] = useState<ReturnType<typeof pendingH2TrialApprovals>>([]);
   const propose = usePropose();
   const reach = useReach();
   const [model, setModel] = useState<H2Model | null>(null);
@@ -376,6 +388,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     void reload();
   }, [reload]);
   useEffect(() => syncPending(), [syncPending]);
+  useEffect(() => { setLegacyApprovals(adminSession ? pendingH2TrialApprovals(adminSession.adminId) : []); }, [adminSession]);
 
   const params = useMemo(() => (model?.params ?? []).filter((param) => param.key !== "autoChargeAtEnd"), [model?.params]);
   const states = useMemo(() => new Map((model?.states ?? []).map((state) => [state.key, state])), [model?.states]);
@@ -446,6 +459,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     syncPending();
     if (isProposal(item)) {
       toast(APPROVAL_SENT);
+      await reload();
       return;
     }
     await reload();
@@ -489,7 +503,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       }
       pendingCommands.forget(record.fingerprint, record.commandKey);
       syncPending();
-      toast(`查到原提案，${PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`);
+      toast(`已找回原审批单 ${original.id}，${PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`);
+      await reload();
     } catch (cause) {
       notePending(record, `查询没有成功：${displayAdminError(cause)} 原操作继续保留。`);
     } finally {
@@ -604,8 +619,35 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
 
   const canQuery = ctx.can("platform_a2_read");
   const auditHref = "/platform/audit";
+  const recoverLegacy = async (record: (typeof legacyApprovals)[number], mode: H2TrialApprovalMode) => {
+    if (!adminSession || useAdminAuth.getState().session?.adminId !== adminSession.adminId) return;
+    setRecovering(record.commandKey);
+    try {
+      const ticket = await submitH2TrialApproval(adminSession, record, "", mode);
+      if (!ticket) {
+        setQueryMissing((current) => [...current, record.commandKey]);
+        toast("暂未查到原审批单，原命令号和记录继续保留。");
+        return;
+      }
+      setLegacyApprovals(pendingH2TrialApprovals(adminSession.adminId));
+      toast(`已找回原审批单 ${ticket.id}，${PROPOSAL_STATUS[ticket.status]}。`);
+      await reload();
+    } catch (cause) {
+      toast(displayAdminError(cause));
+    } finally {
+      setRecovering("");
+    }
+  };
   // 待确认常显，读取失败时也在（OP-93）。
-  const pendingNotices = pending.map((record) => {
+  const pendingNotices = [
+    ...legacyApprovals.map((record) => <Notice key={record.commandKey} tone="warn" title={`${H2_TRIAL_ACTIONS[record.op]} · ${record.sid} · 原结果未确认`}
+      action={<>
+        {canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void recoverLegacy(record, "lookup")}>查询原操作</Button>}
+        {record.expiresAt > Date.now() && <Button size="sm" disabled={!!recovering}
+          disabledReason={record.op === "h2_trial_charge" ? CHARGE_RESULT : !canCancel ? NO_WRITE : !queryMissing.includes(record.commandKey) ? "先查原审批单，明确查不到才能重试" : undefined}
+          onClick={() => void recoverLegacy(record, "retry")}>按原操作重试</Button>}
+      </>}>原对象 {record.obj}，原理由 {record.reason}。查询和重试均使用原命令号，结果确认前这条试用不能再操作。{record.expiresAt <= Date.now() && "已超过 24 小时，只能核对原审批单。"}</Notice>),
+    ...pending.map((record) => {
     const proposal = isProposal(record);
     const expired = record.expiresAt <= Date.now();
     const object = proposal ? record.sid : record.kind === "param" ? record.paramKey : KILL_AUDIT_OBJECT;
@@ -628,7 +670,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         {!expired && pendingNotes[record.commandKey] && <div>{pendingNotes[record.commandKey]}</div>}
       </Notice>
     );
-  });
+  })];
   const releaseModal = releasing && (
     <ReleaseModal label={commandTitle(releasing)} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
       explain="重试被拒说明不了原操作的结果，先到操作记录确认它有没有生效。解除后原操作不再重试，系统仍按现在的状态校验。" />
@@ -655,7 +697,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   else if (Number(seats?.cur) === 0 && Number(paramOf("seatsLeftToday")?.cur) === 0) issues.push({ key: "seats", tone: "warn", title: "每日免费名额上限是 0", body: `用户不能开始试用，次日也不会恢复。${canWrite ? "要开放试用，调高「每日免费名额上限」。" : ""}` });
   else if (Number(seats?.cur) === 0) issues.push({ key: "seats", tone: "warn", title: "今日免费名额已用完", body: `用户今天不能开始试用，次日恢复。${canWrite ? "要今天多放名额，调高「每日免费名额上限」。" : ""}` });
 
-  const lockedSids = new Set(pending.flatMap((record) => isProposal(record) ? [record.sid] : []));
+  const lockedSids = new Set([...pending.flatMap((record) => isProposal(record) ? [record.sid] : []), ...legacyApprovals.map((record) => record.sid)]);
   // 紧急关闭待确认时，开关这一行也锁住：它们改的是同一件事。
   const lockedParams = new Set(pending.flatMap((record) => record.kind === "param" ? [record.paramKey] : record.kind === "kill" ? ["autoPushEnabled"] : []));
   const paramBlock = (key: string) => loading ? READING : lockedParams.has(key) ? PARAM_LOCKED : undefined;
@@ -665,7 +707,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   });
   const currentRow = current ? rows[currentIndex] : null;
   const sessionButtons = (row: (typeof rows)[number], variant: "row" | "drawer") => {
-    const reason = lockedSids.has(row.session.sid) ? LOCKED : loading ? READING : row.owner ? undefined : "用户信息暂不可用";
+    const reason = row.session.pendingApproval ? "这条试用已有待审批操作，审批结束后才能再次处理" : lockedSids.has(row.session.sid) ? LOCKED : loading ? READING : row.owner ? undefined : "用户信息暂不可用";
     return {
       cancel: canCancel && <Button size={variant === "row" ? "sm" : "md"} disabledReason={reason} onClick={() => openSessionCancel(row.session, row.label)}>强制取消</Button>,
       charge: canCharge && <Button size={variant === "row" ? "sm" : "md"} variant={variant === "row" ? "secondary" : "danger-outline"} disabledReason={CHARGE_RESULT} onClick={() => openSessionCharge(row.session, row.label)}>强制扣款</Button>,
@@ -776,7 +818,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                       return (
                         <Tr key={row.session.sid} selected={row.session.sid === currentSid} onOpen={loading ? undefined : () => setCurrentSid(row.session.sid)}>
                           <Td><Cell main={trialOwnerLabel(row.session)} sub={<span data-mono="">{row.session.sid}</span>} title={row.session.sid} full /></Td>
-                          <Td><StatusTag tone={row.tone} explain={TRIAL_STATE_HELP[row.session.state]}>{row.label}</StatusTag></Td>
+                          <Td><Cell main={<StatusTag tone={row.tone} explain={TRIAL_STATE_HELP[row.session.state]}>{row.label}</StatusTag>} sub={row.session.pendingApproval && <TrialPendingApproval approval={row.session.pendingApproval} />} /></Td>
                           <Td align="right"><Cell num main={shadowText(row.session.shadow)} /></Td>
                           {canHandle && <Td sticky="end">{row.terminal ? "—" : <span className="rd-row-actions">{buttons.cancel}{buttons.charge}</span>}</Td>}
                         </Tr>
@@ -805,6 +847,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           <>
             <JudgmentPoints rows={[
               { label: "状态", value: <StatusTag tone={currentRow.tone}>{currentRow.label}</StatusTag>, reason: TRIAL_STATE_HELP[currentRow.session.state] },
+              ...(currentRow.session.pendingApproval ? [{ label: "审批", value: <TrialPendingApproval approval={currentRow.session.pendingApproval} />, reason: "审批结束后才能发起新操作。" }] : []),
               { label: "账户", value: trialOwnerLabel(currentRow.session), state: currentRow.owner ? undefined : "warn" },
               { label: "累计收益", value: shadowText(currentRow.session.shadow) },
               ...(canCharge && !currentRow.terminal ? [{ label: "强制扣款", value: CHARGE_RESULT }] : []),

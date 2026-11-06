@@ -59,12 +59,16 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (isWrite) {
     const providedCommandKey = headers.get("Idempotency-Key");
+    // J3 supplies a key bound to the window and reason. Other emergency commands keep their own retry identity.
+    const fingerprint = path === "/tamper/reports" && providedCommandKey
+      ? JSON.stringify([inputFingerprint, providedCommandKey])
+      : inputFingerprint;
     const commandKey = emergencyAttempts.resolve(
       writeSlot,
-      inputFingerprint,
+      fingerprint,
       () => providedCommandKey || idempotencyKey(),
     );
-    if (!emergencyAttempts.isDurablyStored(writeSlot, inputFingerprint, commandKey)) {
+    if (!emergencyAttempts.isDurablyStored(writeSlot, fingerprint, commandKey)) {
       emergencyAttempts.forget(writeSlot);
       throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
     }

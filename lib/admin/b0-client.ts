@@ -7,6 +7,7 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { finiteDashboardNumber } from "@/lib/admin/dashboard-number";
+import type { KpiTrendPoint } from "@/lib/admin/kpi-trend";
 import { fetchUserProfilesPage } from "@/lib/admin/user360-client";
 import { businessDay } from "@/lib/admin/business-time";
 
@@ -70,7 +71,9 @@ export type B0Kpi = {
   pass: boolean | null;
   /** 分母不足 5，不算比例（决定 8）。 */
   smallSample: boolean;
-  series: number[];
+  series: KpiTrendPoint[];
+  trendLabels: string[];
+  trendSuppressed: boolean;
   hint: string;
 };
 
@@ -111,15 +114,18 @@ export async function fetchB0Kpis(): Promise<B0Kpi[]> {
     if (!label || target == null) return [];
     const value = finiteDashboardNumber(row.value);
     const denominator = finiteDashboardNumber(row.denominator);
+    const smallSample = row.suppressed === true || (denominator != null && denominator < 5);
     const hint = plain[String(n)] ?? ext[String(n)]?.note ?? row.vis;
     return [{
       n,
       label,
-      value: value == null ? "—" : `${value}${typeof row.unit === "string" ? row.unit : ""}`,
+      value: smallSample ? "样本过小" : value == null ? "—" : `${value}${typeof row.unit === "string" ? row.unit : ""}`,
       target,
-      pass: kpiPass(row),
-      smallSample: denominator != null && denominator < 5,
-      series: Array.isArray(row.spark) ? row.spark.map(finiteDashboardNumber).filter((item) => item != null) : [],
+      pass: smallSample ? null : kpiPass(row),
+      smallSample,
+      series: !smallSample && Array.isArray(row.spark) ? row.spark.map(finiteDashboardNumber) : [],
+      trendLabels: Array.isArray(data.weeks) ? data.weeks.map(String) : [],
+      trendSuppressed: Array.isArray(row.sparkSuppressed) && row.sparkSuppressed.includes(true),
       hint: typeof hint === "string" ? hint : "",
     }];
   });

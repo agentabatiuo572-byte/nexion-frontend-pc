@@ -651,14 +651,14 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           <Conclusion state="danger" lead strong hint={<>
             {overdue.slice(0, 3).map((row, index) => <span key={row.incidentId}>{index > 0 && " · "}{operatorCopyText(row.name)}（截止 {timeText(row.dueAt)}）</span>)}
             {overdue.length > 3 && <span> · 另有 {overdue.length - 3} 项</span>}
-          </>} explain="相关业务已停止，但还没写处理结论。逾期事项不会自动消失，请值班同事马上补录，或交给值班主管处理。">{conclusionFacts}</Conclusion>
+          </>} explainTitle="逾期结论怎么补录" explain="相关业务已停止，但还没写处理结论。逾期事项不会自动消失，请值班同事马上补录，或交给值班主管处理。">{conclusionFacts}</Conclusion>
         </div>
       ) : backfills.length > 0 ? (
-        <Conclusion state="warn" lead explain="自动关停后要写清为什么关。到业务卡上点「补录结论」，补录不会恢复业务。">{conclusionFacts}</Conclusion>
+        <Conclusion state="warn" lead explainTitle="自动关停后怎么处理" explain="自动关停后要写清为什么关。到业务卡上点「补录结论」，补录不会恢复业务。">{conclusionFacts}</Conclusion>
       ) : killed > 0 ? (
-        <Conclusion state="warn" lead hint={resumeBlocked ? recoveryBlock : undefined} explain={nextStepHelp}>{conclusionFacts}</Conclusion>
+        <Conclusion state="warn" lead hint={resumeBlocked ? recoveryBlock : undefined} explainTitle="恢复业务怎么操作" explain={nextStepHelp}>{conclusionFacts}</Conclusion>
       ) : pending.length + visibleRestores.length > 0 ? (
-        <Conclusion state="warn" lead hint="到上方核对原操作结果。" explain="业务卡读到的是现在的状态，不能当成这次操作的结果。">业务开关：全部开启，<b>{pending.length + visibleRestores.length}</b> 项操作或审批结果未确认</Conclusion>
+        <Conclusion state="warn" lead hint="到上方核对原操作结果。" explainTitle="待确认结果怎么核对" explain="业务卡读到的是现在的状态，不能当成这次操作的结果。">业务开关：全部开启，<b>{pending.length + visibleRestores.length}</b> 项操作或审批结果未确认</Conclusion>
       ) : (
         <Conclusion state="ok">业务开关：全部开启，没有要处理的事</Conclusion>
       )}

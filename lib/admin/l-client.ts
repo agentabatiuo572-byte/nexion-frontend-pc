@@ -290,7 +290,7 @@ const REPORT_TYPE_LABELS: Record<string, string> = {
   FINANCE_AGG: "财务聚合",
   OPERATIONS_AGG: "运营聚合",
   NETWORK_TREE: "团队树明细",
-  REGULATORY: "监管报告",
+  REGULATORY: "当前披露快照",
 };
 
 function reportToTask(report: LReportView): LExportTask {

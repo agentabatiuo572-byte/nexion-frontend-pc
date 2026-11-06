@@ -11,7 +11,7 @@ import {
   Modal, MoreMenu, Notice, NumberInput, PageHeader, PageTabs, Pager, Panel, ReleaseModal, SectionNav, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useSectionNav,
   type ExplainRow, type JudgmentRow, type SectionNavItem, useTabIds
 } from "@/app/components/rd";
-import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1_RELEASE_MODE_VALUES, K1_RELEASE_PARAM_LIMITS, newK1CommandKey } from "@/lib/admin/k-client";
+import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1_RELEASE_MODE_VALUES, K1_RELEASE_PARAM_LIMITS, newK1CommandKey, updateK1RegistrationParam } from "@/lib/admin/k-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
@@ -26,7 +26,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import type { ActionConfirmReq, KCtx } from "./types";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
-type K1PendingKind = "cluster" | "note" | "param" | "release-param" | "entry" | "whitelist-add" | "whitelist-remove";
+type K1PendingKind = "cluster" | "note" | "param" | "release-param" | "registration-param" | "entry" | "whitelist-add" | "whitelist-remove";
 type K1ClusterAction = "flag" | "freeze" | "release" | "clear";
 /** 一次写操作的完整内容。先存再发，结果未知时只能按这份原样重试（OP-92～OP-94）。 */
 type K1PendingCommand = PendingMutationRecord & {
@@ -41,29 +41,41 @@ type K1PendingCommand = PendingMutationRecord & {
   version?: number;
   name?: string;
   value?: string;
+  expectedValue?: string;
   note?: string;
   expireText?: string;
 };
 type K1PendingExtra = PendingMutationExtra<K1PendingCommand>;
-const K1_PENDING_KINDS: readonly K1PendingKind[] = ["cluster", "note", "param", "release-param", "entry", "whitelist-add", "whitelist-remove"];
+const K1_PENDING_KINDS: readonly K1PendingKind[] = ["cluster", "note", "param", "release-param", "registration-param", "entry", "whitelist-add", "whitelist-remove"];
+function isK1PendingCommand(record: PendingMutationRecord): record is K1PendingCommand {
+  const value = record as Partial<K1PendingCommand>;
+  return value.kind !== undefined && K1_PENDING_KINDS.includes(value.kind) && typeof value.target === "string" && value.target.length > 0
+    && typeof value.reason === "string" && typeof value.label === "string"
+    && value.fingerprint === `${value.kind}|${value.target}`;
+}
 /** 全部写操作共用一张表，刷新后还能用同一命令号按原内容重试。 */
-const pendingCommands = createPendingMutationStore<K1PendingCommand>({
+const commandEvidence = createPendingMutationStore<K1PendingCommand | PendingMutationRecord>({
   storageKey: "nexion-admin-k1-multiaccount-commands-v1",
   retainExpiredRecords: true, // 过期不能重试，但记录和对象锁都留着（OP-96）
   // 重试直接用记录里的内容，坏记录不能当原操作重发。
-  isValidRecord: (record) => K1_PENDING_KINDS.includes(record.kind) && typeof record.target === "string" && record.target.length > 0
-    && typeof record.reason === "string" && typeof record.label === "string"
-    && record.fingerprint === `${record.kind}|${record.target}`,
+  isValidRecord: (record) => isK1PendingCommand(record) || /^cluster-(flag|freeze|release|clear):.+:\d+$/.test(record.fingerprint),
 });
+// test 的旧记录只有命令号，没有原请求内容，保留为只读回执查询，不能拼出新请求重发。
+const pendingCommands = { ...commandEvidence, list: () => commandEvidence.list().filter(isK1PendingCommand) };
+const LEGACY_CLUSTER_RECEIPTS = {
+  flag: ["k1_cluster_flag", "标记可疑账户簇"], freeze: ["k1_cluster_freeze", "批量冻结关联账户"],
+  release: ["k1_cluster_release", "解除误判"], clear: ["k1_cluster_cleared", "判定为正常"],
+} as const;
 /** 待确认时要锁住的对象：同一个账户组、参数、收益或网段。 */
 const PENDING_GROUP: Record<K1PendingKind, string> = {
-  cluster: "cluster", note: "cluster", param: "param", "release-param": "param", entry: "entry", "whitelist-add": "cidr", "whitelist-remove": "cidr",
+  cluster: "cluster", note: "cluster", param: "param", "release-param": "param", "registration-param": "param", entry: "entry", "whitelist-add": "cidr", "whitelist-remove": "cidr",
 };
 const RECOVERY_HINT: Record<K1PendingKind, string> = {
   cluster: "可能已经生成审批单。",
   note: "备注可能已经保存。",
   param: "新值可能已经生效。",
   "release-param": "新值可能已经生效。",
+  "registration-param": "新的注册设置可能已经生效。",
   entry: "这笔收益可能已经放行。",
   "whitelist-add": "这个网段可能已经加入。",
   "whitelist-remove": "这个网段可能已经移除。",
@@ -75,6 +87,14 @@ const CLUSTER_OPS: Record<K1ClusterAction, { def: () => NonNullable<ReturnType<t
   clear: { def: () => findHighOp("k1_cluster_cleared")!, from: ["detected"], after: "cleared", amplifies: true },
 };
 const PROPOSAL_STATUS: Record<string, string> = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
+function PendingClusterApproval({ approval }: { approval: NonNullable<K1Cluster["pendingApproval"]> }) {
+  return <>
+    <StatusTag tone="warn">待审批</StatusTag>
+    {approval.action && approval.submittedBy && approval.submittedAt && <span className="rd-approval-meta">
+      {approval.action} · {approval.submittedBy} · <time dateTime={`${approval.submittedAt}+08:00`}>{formatBusinessTimeFull(approval.submittedAt, "—")}（{businessZone().label}）</time>
+    </span>}
+  </>;
+}
 /** 谁批、批准前怎样每次都一样，收进生效标签的提示图标，不占事实行（VS-105）。 */
 const APPROVAL_EFFECT = <StatusTag tone="progress" filled explain="超级管理员批准后才生效，超管发起的由另一位超管批准。批准前这组的状态和账户都不变。">批准后生效</StatusTag>;
 const IMMEDIATE_EFFECT = <StatusTag tone="progress" filled>立即生效</StatusTag>;
@@ -189,32 +209,21 @@ function errorText(error: unknown) {
     : message ? displayAdminError(error) : "暂时无法读取风险数据";
 }
 
-/** 释放参数的「放宽」方向判定(口径与 PRD v1 [K1] K1-MD4 逐条一致)。
- *  放宽 = 让更多收益更快进入可提桶 = 放大资金流出方向,须在弹窗告知并由服务端前置 B1 覆盖率核验。
- *  数值键分两族:调**大**是放宽(槽位 / 待审起点 / 重复账号建议线)· 调**小**是放宽(观察窗口 / 在线证明时长)。 */
-const RELEASE_LOOSEN_WHEN_LARGER = new Set(["freePhoneSlotsPerCluster", "duplicateAccountPendingFrom", "duplicateAccountFreezeFrom"]);
-const RELEASE_LOOSEN_WHEN_SMALLER = new Set(["pendingReleaseHours"]);
+/** 提高收益审核或冻结起点时，保存须通过后端覆盖率核验。 */
+const RELEASE_LOOSEN_WHEN_LARGER = new Set(["duplicateAccountPendingFrom", "duplicateAccountFreezeFrom"]);
 export function isLooseningRelease(key: string, current: string, next: string): boolean {
-  if (RELEASE_LOOSEN_WHEN_LARGER.has(key)) return Number(next) > Number(current);
-  if (RELEASE_LOOSEN_WHEN_SMALLER.has(key)) return Number(next) < Number(current);
-  // 释放模式:仅人工放行 → 允许在线证明放行 = 多开一条自动放行来源 = 放宽。
-  if (key === "releaseMode") return false;
-  // 首号绑定要求:开启 → 关闭 = 免费槽不再要求绑定 = 放宽。
-  if (key === "freeSlotRequiresBinding") return current === "true" && next === "false";
-  return false;
+  return RELEASE_LOOSEN_WHEN_LARGER.has(key) && Number(next) > Number(current);
 }
 
 /** 这两项决定收益走向，放宽真的会多放钱。其余几项现在不影响收益，放宽时后端仍查覆盖率。 */
 const RELEASE_AFFECTS_EARNINGS = new Set(["duplicateAccountPendingFrom", "duplicateAccountFreezeFrom"]);
 
-/** 后端 validateCross：名额 < 审核起点 ≤ 锁定起点。用另外两项的当前值算这一项能填的范围（OP-15）。 */
+/** 现行参数只保留审核起点和锁定起点，审核起点不大于锁定起点（OP-15）。 */
 function releaseRange(key: string, limits: { min: number; max: number }, params: readonly KRiskParam[]) {
   const read = (name: string) => Number(params.find((p) => p.key === name)?.value);
-  const slots = read("freePhoneSlotsPerCluster");
   const pendingFrom = read("duplicateAccountPendingFrom");
   const freezeFrom = read("duplicateAccountFreezeFrom");
-  if (key === "freePhoneSlotsPerCluster") return { min: limits.min, max: Math.min(limits.max, pendingFrom - 1), problem: `要小于审核起点 ${pendingFrom}`, next: "要改先调大审核起点。" };
-  if (key === "duplicateAccountPendingFrom") return { min: Math.max(limits.min, slots + 1), max: Math.min(limits.max, freezeFrom), problem: `要大于 ${slots}，不大于 ${freezeFrom}`, next: "要改先调大锁定起点。" };
+  if (key === "duplicateAccountPendingFrom") return { min: limits.min, max: Math.min(limits.max, freezeFrom), problem: `不能大于锁定起点 ${freezeFrom}`, next: "要改先调大锁定起点。" };
   if (key === "duplicateAccountFreezeFrom") return { min: Math.max(limits.min, pendingFrom), max: limits.max, problem: `不能小于审核起点 ${pendingFrom}`, next: "" };
   return { min: limits.min, max: limits.max, problem: "", next: "" };
 }
@@ -765,7 +774,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           command: def.buildCommand({ clusterId: target, expectedVersion: version }),
           target: def.buildTarget({ clusterId: target }),
           commandKey: key,
-        }), async () => ctx.toast(`已提交审批，等超级管理员批准。${reach("/platform/audit", "platform_a2_read") ? "到「操作记录与审批」看进度。" : ""}`));
+        }), () => reloadAfter("已提交审批，等超级管理员批准。到「操作记录与审批」看进度。", "已提交审批，但页面刷新失败；请重新加载核对待审批状态。"));
       }
       case "note":
         return sendCommand(record, (key) => ctx.actions.updateK1ClusterReviewNote(target, record.version!, reason, key),
@@ -773,6 +782,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       case "param":
         return sendCommand(record, (key) => ctx.actions.updateK1Param(target, record.value!, reason, key),
           () => reloadAfter(`${name}已更新为 ${record.value}`, `${name}已保存，但暂时无法读取最新数据；请刷新本页核对`));
+      case "registration-param":
+        return sendCommand(record, (key) => updateK1RegistrationParam({ key: target, value: record.expectedValue! }, record.value!, reason, key),
+          () => reloadAfter(`${name}已更新`, `${name}已保存，但暂时无法读回；请刷新本页核对`));
       case "release-param": {
         const effect = target === "duplicateAccountPendingFrom" ? "后续新增收益按新审核起点处理"
           : target === "duplicateAccountFreezeFrom" ? "后续新增收益和当前提现资格按新锁定起点判断"
@@ -823,7 +835,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   /** 重试要的权限和正常入口一样，不能比入口宽（OP-93、OP-123）。 */
   const mayRetry = (record: K1PendingCommand) => record.kind === "cluster"
     ? { flag: canFlag, freeze: canFreeze, release: canRelease, clear: canClear }[record.clusterAction!]
-    : record.kind === "release-param" || record.kind === "entry" ? canRelease : canWrite;
+    : record.kind === "registration-param" ? overview?.registrationParams.some((param) => param.key === record.target && param.writable) === true
+      : record.kind === "release-param" || record.kind === "entry" ? canRelease : canWrite;
   /** 现在不能重试的原因。处置查得到回执，明确查不到才能重发；查询失败不算查不到（OP-95 甲档）。其他写入没有查询接口，走乙档。 */
   const retryBlocked = (record: K1PendingCommand) => record.expiresAt <= Date.now() ? EXPIRED_TEXT
     : !mayRetry(record) ? "这个账号没有这项权限，不能重试，请有权限的同事核对。"
@@ -841,9 +854,14 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         setPendingNotes((current) => ({ ...current, [record.fingerprint]: "暂未查到原提案，结果仍待核实。" }));
         return;
       }
+      if (!original.mine || original.obj !== record.target || original.action !== record.label
+          || (original.operationCode && original.operationCode !== CLUSTER_OPS[record.clusterAction!].def().op)) {
+        setPendingNotes((current) => ({ ...current, [record.fingerprint]: "回执与原操作不符，保留原记录，请到操作记录核对。" }));
+        return;
+      }
       pendingCommands.forget(record.fingerprint, record.commandKey);
       syncPending();
-      ctx.toast(`查到原提案，${PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`);
+      await reloadAfter(`已找回原审批单 ${original.id}，${PROPOSAL_STATUS[original.status]}。`, `已找回原审批单 ${original.id}，但页面刷新失败；请重新加载核对。`);
     } catch (cause) {
       setPendingNotes((current) => ({ ...current, [record.fingerprint]: `查询没有成功：${errorText(cause)} 原操作继续保留。` }));
     } finally {
@@ -860,9 +878,37 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   };
 
   const pendingBlocks = new Set(pending.map((record) => `${PENDING_GROUP[record.kind]}:${record.target}`));
+  const retainedEvidence = commandEvidence.list();
+  const legacyProposals = cur ? Object.entries(LEGACY_CLUSTER_RECEIPTS).flatMap(([action, [code, title]]) => {
+    const prefix = `cluster-${action}:${cur.id}:`;
+    return retainedEvidence.filter((record) => record.fingerprint.startsWith(prefix) && /^\d+$/.test(record.fingerprint.slice(prefix.length)))
+      .map((record) => ({ ...record, code, title }));
+  }) : [];
+  const recoverLegacyProposal = async () => {
+    if (!cur) return;
+    setChecking(cur.id);
+    try {
+      for (const record of legacyProposals) {
+        const receipt = await fetchA2ProposalByKey(record.commandKey);
+        if (!receipt?.mine || receipt.obj !== cur.id || receipt.action !== record.title
+            || (receipt.operationCode && receipt.operationCode !== record.code)) continue;
+        commandEvidence.forget(record.fingerprint, record.commandKey);
+        syncPending();
+        await reloadAfter(`已找回原审批单 ${receipt.id}`, `已找回原审批单 ${receipt.id}，但页面刷新失败；请重新加载核对。`);
+        return;
+      }
+      ctx.toast("暂未找到原审批单，请稍后继续按原命令号查询。");
+    } catch (cause) {
+      ctx.toast(errorText(cause));
+    } finally {
+      setChecking("");
+    }
+  };
   /** 现在不能动的原因，写给人看（OP-126）。依赖最新数据的动作在读取时也等一下（ST-32）。 */
   const blockedBy = (group: string, target: string, loading = ctx.contentLoading) =>
-    pendingBlocks.has(`${group}:${target}`) ? "有结果未确认的操作，先到页面上方处理" : loading ? "正在读取最新数据" : undefined;
+    group === "cluster" && clusters.some((cluster) => cluster.id === target && cluster.pendingApproval) ? "这组已有待审批操作，审批结束后才能再次处理"
+      : group === "cluster" && retainedEvidence.some((record) => Object.keys(LEGACY_CLUSTER_RECEIPTS).some((action) => record.fingerprint.startsWith(`cluster-${action}:${target}:`))) ? "有原操作结果未确认，先在账户组详情找回提交结果"
+        : pendingBlocks.has(`${group}:${target}`) ? "有结果未确认的操作，先到页面上方处理" : loading ? "正在读取最新数据" : undefined;
 
   /** 已冻结组里账户是冻结状态是应该的，不算异常。 */
   const expectedFrozen = (c: K1Cluster, n: K1Cluster["nodes"][number]) => c.status === "frozen" && /FROZEN/i.test(n[5]);
@@ -1018,7 +1064,6 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
   const releaseParamDisplay = (p: KRiskParam): string => {
     if (p.key === "releaseMode") return RELEASE_MODE_LABELS[p.value] ?? p.value;
-    if (p.key === "freeSlotRequiresBinding") return RELEASE_BOOL_LABELS[p.value] ?? p.value;
     return p.value;
   };
 
@@ -1150,6 +1195,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   };
   const sections: SectionNavItem[] = [
     { id: "risk", label: "风险判断标准" },
+    { id: "registration", label: "H5 注册防刷与新人礼" },
     { id: "earnings", label: "收益审核规则", alert: Boolean(overviewReady) && overviewReady?.releaseParams.length === 0 },
     { id: "whitelist", label: "IP 允许名单" },
   ];
@@ -1199,7 +1245,6 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     const hot = isHot(c);
     // 按结算顺序展示新增收益分流，解除误判或判定正常后仍须判断人数。
     const releaseValue = (key: string) => overview?.releaseParams.find((p) => p.key === key)?.value;
-    const slots = releaseValue("freePhoneSlotsPerCluster");
     const pendingFrom = releaseValue("duplicateAccountPendingFrom");
     const freezeFrom = releaseValue("duplicateAccountFreezeFrom");
     let impact: { label: string; tone: "danger" | "warn" | "ok" | "neutral"; desc: string } = { label: "尚未确认", tone: "neutral", desc: "收益审核规则暂时加载不出来，新增收益的处理方式尚未确认。" };
@@ -1212,8 +1257,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           ? { label: "须审核收益", tone: "warn", desc: `同组 ${c.n} 个账号已达到收益审核起点 ${pendingFrom}，新增收益须先人工审核。` }
           : { label: "可提现收益", tone: "ok", desc: "同组账号数未达到收益审核起点，新增收益记为可提现收益。" };
     }
-    const ruleText = slots && pendingFrom && freezeFrom
-      ? `当前规则：正常手机号名额为 ${slots} 个。账户组待判定、可疑、已冻结，或同组账号数达到 ${freezeFrom} 时，这组账户不能提现，新增收益锁定；其余情况下，账号数达到 ${pendingFrom} 时须审核，未达到时可提现。`
+    const ruleText = pendingFrom && freezeFrom
+      ? `当前规则：账户组待判定、可疑、已冻结，或同组账号数达到 ${freezeFrom} 时，这组账户不能提现，新增收益锁定；其余情况下，账号数达到 ${pendingFrom} 时须审核，未达到时可提现。`
       : "收益审核规则暂时加载不出来。";
     const restricted = c.nodes.filter((n) => isRestrictedStatus(n[5]) && !expectedFrozen(c, n)).length;
     const unknown = c.nodes.filter((n) => isUnknownStatus(n[5])).length;
@@ -1247,6 +1292,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     return (
       <Panel id={DETAIL_ID} title={`账户组 ${c.id}`} sub={`${c.layerLabel} · ${c.n} 个账户`} icon={Users} tone="role-3" actions={<StatusTag tone={statusTone} explain={statusExplain}>{statusLabel}</StatusTag>}>
         <div className="rd-stack">
+          {c.pendingApproval && <Notice tone="warn" title="这组已有待审批操作"><PendingClusterApproval approval={c.pendingApproval} />审批结束后才能再次处置或修改备注。</Notice>}
+          {legacyProposals.length > 0 && <Notice tone="warn" title="原提交结果未确认" action={canQueryProposal && <Button size="sm" loading={checking === c.id} onClick={() => void recoverLegacyProposal()}>找回提交结果</Button>}>这组账户的原提交结果仍待核对。状态变化不代表原操作已结束。{!canQueryProposal && "请有操作记录读取权限的同事核对。"}</Notice>}
           {(actions.length > 0 || canWrite) && (
             <Decision
               explain={actions.length > 0 ? "处置要提交审批，超级管理员批准后才生效，批准前这组不变。" : undefined}
@@ -1301,6 +1348,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       <PageHeader pageId="K1" title="多账户风险排查" summary="找出可能是同一人的账户，判断后处置。"
         meta={<span className="rd-toolbar">
           <span>{readAt ? `账户组和规则 ${readAt} 读取（${businessZone().label}），` : ""}不自动刷新</span>
+          <span>上次成功检查 {overview?.lastSuccessfulCheckAt ? formatBusinessTimeFull(overview.lastSuccessfulCheckAt, "—") : "暂无成功检查记录"}</span>
           <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={ctx.contentLoading || protectedEntriesLoading} onClick={() => { reloadOverview(); void refreshProtectedEntries(); }}>刷新</Button>
         </span>}
         readOnly={anyWrite ? undefined : "你只能查看；处置和调整需要风控权限"} />
@@ -1397,7 +1445,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                         <Td><Cell mono main={c.key} sub={`${c.layerLabel} · ${c.span}`} title={`${c.key} · ${c.layerLabel} · ${c.span}`} /></Td>
                         <Td align="right"><Cell num main={c.n} /></Td>
                         <Td><Cell main={<InlineMeter value={c.strength} text={c.strength.toFixed(2)} tone={strengthTone(c.strength, freezeSuggestThreshold)} />} sub={isHot(c) ? <StatusTag tone="danger" icon={ShieldAlert}>建议冻结</StatusTag> : undefined} /></Td>
-                        <Td><StatusTag tone={statusTone} explain={statusExplain}>{statusLabel}</StatusTag></Td>
+                        <Td><Cell main={<StatusTag tone={statusTone} explain={statusExplain}>{statusLabel}</StatusTag>} sub={c.pendingApproval && <PendingClusterApproval approval={c.pendingApproval} />} /></Td>
                         <Td align="right">
                           {first && (
                             <span className="rd-row-actions">
@@ -1476,7 +1524,20 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 </ConfigList>
               </Panel>
 
-              {/* 收益释放参数(SPEC-7 搬回,合并底账 §二#5):与整簇冻结分开的放行细调。 */}
+              <Panel id={nav.anchor("registration")} title="H5 注册防刷与新人礼" icon={Gift} tone="role-3">
+                {overviewReady.registrationParams.length ? <ConfigList>
+                  {overviewReady.registrationParams.map((param) => <ConfigRow key={param.key} name={param.name} what={param.desc} value={`${param.value} ${param.unit}`}
+                    action={param.writable ? paramAction(param.name, blockedBy("param", param.key), () => ctx.openActionConfirm({
+                      briefKind: "config", action: `调整${param.name}`, detail: param.desc,
+                      edit: { kind: "number", current: param.value, min: param.min, max: param.max, step: 1, maxDecimals: 0, disallowCurrent: true },
+                      effect: IMMEDIATE_EFFECT, confirmLabel: "确认保存", reasonMax: 200,
+                      facts: <Facts><Fact k="现在">{param.value} {param.unit}</Fact></Facts>,
+                      run: (reason, value) => runRecord({ kind: "registration-param", target: param.key, name: param.name, label: `调整${param.name}`, operator, reason, value, expectedValue: param.value }),
+                    })) : undefined} />)}
+                </ConfigList> : <p className="rd-note">暂无已配置的 H5 注册参数。</p>}
+              </Panel>
+
+              {/* 收益审核规则与账户组处置分开。 */}
               <Panel id={nav.anchor("earnings")} title="关联账户的收益审核规则" icon={Coins} tone="role-1" explain="决定新增收益怎么处理；人数达到锁定起点的组也不能提现。保存后立即生效，不走审批，一保存就影响用户。">
                 {overviewReady.releaseParams.length > 0 ? (
                   <div className="rd-stack" data-proof="k1-risk-release-params">

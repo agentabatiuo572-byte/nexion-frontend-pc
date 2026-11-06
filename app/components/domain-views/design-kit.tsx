@@ -574,7 +574,7 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 }
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
-export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; current?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; step?: number; disallowCurrent?: boolean; /** 清空也是合法的新值时写这个选项的名字，比如「不设上限」。要人点它才算清空，框里什么都没填或填坏了都不算。 */ emptyOption?: string; /** 怎么填，只在 RdPage 里显示（CP-87）。 */ hint?: ReactNode; /** 改了会怎样，随输入变化，只在 RdPage 里显示。 */ preview?: (value: string) => ReactNode; /** 范围之外的校验，比如和别的参数的关系：返回原因就不能提交，写在字段下。 */ validate?: (value: string) => string | undefined; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
+export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; current?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; maxDecimals?: number; step?: number; disallowCurrent?: boolean; /** 清空也是合法的新值时写这个选项的名字，比如「不设上限」。要人点它才算清空，框里什么都没填或填坏了都不算。 */ emptyOption?: string; /** 怎么填，只在 RdPage 里显示（CP-87）。 */ hint?: ReactNode; /** 改了会怎样，随输入变化，只在 RdPage 里显示。 */ preview?: (value: string) => ReactNode; /** 范围之外的校验，比如和别的参数的关系：返回原因就不能提交，写在字段下。 */ validate?: (value: string) => string | undefined; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
@@ -637,6 +637,7 @@ function isEditValueValid(spec: EditSpec | null, value: string): boolean {
   if ((spec.kind ?? "text") !== "number") return true;
   const normalized = value.trim();
   if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(normalized)) return false;
+  if (spec.maxDecimals !== undefined && (normalized.split(".")[1]?.length ?? 0) > spec.maxDecimals) return false;
   const numeric = Number(normalized);
   if (!Number.isFinite(numeric)) return false;
   if (spec.min !== undefined && numeric < spec.min) return false;
@@ -658,13 +659,13 @@ function editCurrent(spec: EditSpec, kind: string): { text: ReactNode; unit?: st
 }
 
 /** 数字框填错时写什么。范围全站写「1–90」「0–1,000,000」，不写开发词（TX-05）。 */
-function numberRangeText({ min, max, step }: { min?: number; max?: number; step?: number }): string {
+function numberRangeText({ min, max, step, maxDecimals }: { min?: number; max?: number; step?: number; maxDecimals?: number }): string {
   const num = (value: number) => value.toLocaleString("en-US", { maximumFractionDigits: 20 });
   const range = min != null && max != null ? `${num(min)}–${num(max)} 的`
     : min != null ? `不小于 ${num(min)} 的`
     : max != null ? `不大于 ${num(max)} 的`
     : "有效的";
-  const decimals = step != null && step < 1 ? `，最多 ${String(step).split(".")[1]?.length} 位小数` : "";
+  const decimals = maxDecimals != null ? `，最多 ${maxDecimals} 位小数` : step != null && step < 1 ? `，最多 ${String(step).split(".")[1]?.length} 位小数` : "";
   return `${range}${step === 1 ? "整数" : "数字"}${decimals}`;
 }
 
@@ -760,7 +761,7 @@ export type BusinessFormSpec =
   | { kind: "multi-field"; title?: string; hint?: string; /** 跨字段校验。传 field 时写在那一项下面，不传写在表单最后。 */ feedback?: (value: BusinessFormValue) => { message: string; invalid: boolean; field?: string }; amplifies?: (value: BusinessFormValue) => boolean; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; onFieldChange?: (key: string, next: BusinessFormValue) => BusinessFormValue; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "datetime-local" | "asset-upload" | "checkbox"; options?: string[]; mustChoose?: boolean; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; /** 这一项是什么、怎么填：收进字段名旁的提示图标（DP-06），只在 RdPage 里显示。 */ explain?: ReactNode; warning?: (value: BusinessFormValue) => string | undefined; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
-  | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentIssuanceLimit?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentPopupCadenceEnabled?: string; currentPopupDelayMs?: string; currentPopupCooldownHours?: string; currentPopupMaxPerSession?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
+  | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; typeLocked?: boolean; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentIssuanceLimit?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentPopupCadenceEnabled?: string; currentPopupDelayMs?: string; currentPopupCooldownHours?: string; currentPopupMaxPerSession?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
   | { kind: "promo-banner-edit"; currentBaseReward?: string; currentMultiplier?: string; currentCountdownDays?: string; currentCountdownHours?: string; currentTargetDevice?: string; currentTargetDaily?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "vrank-reward-edit"; subject?: string; voucherOptions?: string[]; voucherLabels?: Record<string, string>; skuOptions?: string[]; skuLabels?: Record<string, string>; currentType?: string; currentAmount?: string; currentVoucherId?: string; currentSkuId?: string; currentCustom?: string }
   | { kind: "mission-create"; subject?: string }
@@ -1638,7 +1639,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
       if (!Number.isFinite(a) || a < 1 || a > 1_000_000) missing.push("满减面值(1–1,000,000 USDT)");
     } else if (state.type === "percent") {
       const p = Number(state.percent);
-      if (!Number.isFinite(p) || p <= 0 || p >= 100) missing.push("折扣率 1-99");
+      if (!Number.isInteger(p) || p < 1 || p > 99) missing.push("折扣率须为 1–99 的整数");
     }
     const surfs = (state.claimSurfaces ?? "").split(",").map((s) => s.trim()).filter(Boolean);
     if (surfs.some((s) => !["home", "store", "me", "earn"].includes(s))) missing.push("领取入口仅限 home/store/me/earn");
@@ -1652,6 +1653,11 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (!Number.isSafeInteger(delay) || delay < 0 || delay > 60000) missing.push("弹窗延迟须为 0-60000 毫秒");
     if (!Number.isSafeInteger(cooldown) || cooldown < 0 || cooldown > 720) missing.push("弹窗冷却须为 0-720 小时");
     if (!Number.isSafeInteger(cap) || cap < 1 || cap > 10) missing.push("单会话上限须为 1-10 次");
+  } else if (spec.kind === "quest-event-config") {
+    const target = state.targetValue?.trim();
+    if (target && (!Number.isInteger(Number(target)) || Number(target) < 1 || Number(target) > 1_000_000_000)) {
+      missing.push("目标值须为 1–1,000,000,000 的整数");
+    }
   } else if (spec.kind === "vrank-reward-edit") {
     needs("rtype", "奖励类型");
     if (state.rtype === "usdt" || state.rtype === "uvt") {
@@ -2725,11 +2731,18 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
         <span className="bf-legend">代金券设置{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("name", "名称", "如 新人专享券")}
-          {select("type", "类型", ["fixed", "percent"], "voucher-type", { fixed: "满减", percent: "折扣" })}
+          {spec.typeLocked ? (
+            <label className="field" style={{ marginBottom: 0 }}>
+              <span>类型（已发券，不可修改）</span>
+              <select className="fld" data-proof="voucher-type" disabled value={spec.currentType}>
+                <option value={spec.currentType}>{spec.currentType === "percent" ? "折扣" : "满减"}</option>
+              </select>
+            </label>
+          ) : select("type", "类型", ["fixed", "percent"], "voucher-type", { fixed: "满减", percent: "折扣" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
           {input("amountUSD", "满减面值 (1–1,000,000 USDT)", "满减券填写，可含小数；如 1.01", "number")}
-          {input("percent", "折扣率 (%)", "折扣券填写，如 8", "number")}
+          {input("percent", "折扣率 (%)", "折扣券填写 1–99 的整数，如 8", "number")}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
           {input("minPurchaseUSD", "满减门槛 (美元)", "满多少可用，0 为无门槛", "number")}
@@ -2910,8 +2923,6 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
             "/pages/team/team",
             "/pages/team/commissions",
             "/pages/learn/courses",
-            "/pages/staking/staking",
-            "/pages/genesis/genesis",
             "/pages/genesis/marketplace",
           ], {
             "/pages/missions/missions": "任务中心",
@@ -2970,8 +2981,8 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
           {input("tierName", "奖项名称", "如 小额奖")}
           {input("rewardName", "奖励展示", "如 100 UVT")}
           {input("probabilityPct", "中奖概率（%）", "0–100，如 5", "number")}
-          {select("realOutflow", "是否发真钱", ["0", "1"], "tier-real-outflow", { "0": "否（积分等）", "1": "是" })}
-          {select("rewardKind", "奖励类型", ["uvt", "points", "usdt", "coupon"], "tier-reward-kind", { uvt: "UVT", points: "积分", usdt: "USDT", coupon: "代金券" })}
+          {select("realOutflow", "是否发真钱", ["0", "1"], "tier-real-outflow", { "0": "否", "1": "是" })}
+          {select("rewardKind", "奖励类型", ["uvt", "usdt", "coupon"], "tier-reward-kind", { uvt: "UVT", usdt: "USDT", coupon: "代金券" })}
           {input("rewardAmount", "实际发放数量", "如 100", "number")}
           {input("voucherId", "代金券编号（奖励为代金券时填）", "如 WHEEL-50")}
           {input("dailyStock", "每日总数量（0 为不限）", "如 50", "number")}
@@ -3011,7 +3022,10 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
           {select("state", "状态", ["ongoing", "upcoming", "ended"], "event-state", { ongoing: "进行中", upcoming: "待开始", ended: "已结束" })}
           {input("reward", "奖励", "如 100 UVT")}
           {input("condition", "完成条件", "如 order.paid")}
-          {input("targetValue", "目标值", "如 5", "number")}
+          <label className="field" style={{ marginBottom: 0 }}>
+            <span>目标值</span>
+            <input className="fld" type="number" min={1} max={1_000_000_000} step={1} value={value.targetValue ?? ""} onChange={(event) => set("targetValue", event.target.value)} placeholder="至少 1，留空按 1" />
+          </label>
           {input("geo", "地域范围", "如 VN / GLOBAL")}
           {input("href", "App 跳转", "如 /pages/store/store")}
           {input("startsAt", "开始时间(UTC)", "", "datetime-local")}

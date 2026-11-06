@@ -71,6 +71,7 @@ import "./e-domain.css";
 /** E 域 A2 提交稳定命令号:槽位=动作 op|目标对象,指纹=终值+结构化命令+目标锁(**不含 reason**)。
  *  落 sessionStorage,结果未知后哪怕刷新页面,同弹窗同业务输入重试仍复用同一命令号被后端去重。 */
 const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-e-domain-commands-v1" });
+const E4_APPROVAL_OPS = ["e4_order_refund", "e4_order_cancel", "e4_order_terminal", "e4_order_state"];
 const E4_PROPOSAL_STATUS: Record<string, string> = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
 
 /** E4 四个提案走这张表：一单一条，结果未知时原内容、理由和命令号留到有结论（OP-92～OP-95）。坏记录不能当原操作重发。 */
@@ -624,6 +625,29 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [e4Retrying, setE4Retrying] = useState("");
   const [e4QueryMissing, setE4QueryMissing] = useState<string[]>([]);
   const syncE4Pending = useCallback(() => setE4Pending(e4PendingCommands.list()), []);
+  const e4ReceiptAttempts = commandAttempts.list().flatMap((record) => {
+    const [op, orderNo] = record.fingerprint.split("|");
+    return E4_APPROVAL_OPS.includes(op) && orderNo ? [{ ...record, orderNo }] : [];
+  });
+  const checkE4Receipt = async (record: EViewCtx["e4ReceiptAttempts"][number]) => {
+    setE4Retrying(record.fingerprint);
+    try {
+      const receipt = await fetchA2ProposalByKey(record.commandKey);
+      if (!receipt?.mine || receipt.obj !== record.orderNo
+          || (receipt.operationCode && receipt.operationCode !== record.fingerprint.split("|")[0])) {
+        setToast("暂未找到对应的原审批单，请稍后再查。原命令号继续保留。");
+        return;
+      }
+      commandAttempts.forget(record.fingerprint, record.commandKey);
+      syncE4Pending();
+      setToast(`已找回原审批单 ${receipt.id}`);
+      await refreshE4();
+    } catch (error) {
+      setToast(displayAdminError(error));
+    } finally {
+      setE4Retrying("");
+    }
+  };
   useEffect(() => { if (tab === "E4") syncE4Pending(); }, [tab, syncE4Pending]);
   /**
    * 先把原操作存好再发。确定失败丢号，留在确认框；结果未知保号，关框，转成页面上方的待确认条，这单在有结论前不能再操作。
@@ -693,7 +717,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       e4PendingCommands.forget(record.fingerprint, record.commandKey);
       syncE4Pending();
       await refreshE4();
-      setToast(`查到原提案，${E4_PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`);
+      setToast(`已找回原审批单 ${original.id}，${E4_PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`);
     } catch (error) {
       noteE4Pending(record, `查询没有成功：${displayAdminError(error)} 原操作继续保留。`);
     } finally {
@@ -1264,7 +1288,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     canWriteE2, tasks, phoneTiers, yieldComparisons, e2Pricing, e2Loading, e2Error, e2TaskCatalogReady, refreshE2, openAddTask, openEditTask, delTask,
     canWriteE3, e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
     canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4ReadBlock, e4Total, e4Query, e4KeywordInput, e4Counts, e4CountsFailed, e4ReadAt, updateE4Query, setE4KeywordInput, clearE4Filters, refreshE4,
-    orderState, e4Pending, e4PendingNotes, e4RetryRejected, e4Retrying, retryE4Pending, checkE4Pending, canQueryE4, e4QueryMissing, releaseE4Pending, selOrder, e4Detail, e4DetailLoading, e4DetailError, openOrder, closeOrder,
+    orderState, e4Pending, e4ReceiptAttempts, checkE4Receipt, e4PendingNotes, e4RetryRejected, e4Retrying, retryE4Pending, checkE4Pending, canQueryE4, e4QueryMissing, releaseE4Pending, selOrder, e4Detail, e4DetailLoading, e4DetailError, openOrder, closeOrder,
     canWriteE5, canForceActivateE5, canUnbindE5, canPauseDcE5,
     runE5DeviceAction, runE5UserBatch,
     e5Devices, e5Overview, e5Datacenters, e5Loading, e5DeviceError, e5OverviewError, e5DatacenterError, e5Page, e5PageSize, e5Total,
@@ -1721,10 +1745,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 threeItemsPct: Number(businessValue.threeItemsPct),
                 fourPlusItemsPct: Number(businessValue.fourPlusItemsPct),
               };
-              if (Object.values(next).some((value) => !Number.isFinite(value) || value <= 0 || value > 50)
+              if (Object.values(next).some((value) => !Number.isFinite(value) || value < 0.01 || value > 30)
                   || next.threeItemsPct < next.twoItemsPct
                   || next.fourPlusItemsPct < next.threeItemsPct) {
-                setToast("折扣须在 0–50% 之间，且买得越多折扣不能越少");
+                setToast("折扣须在 0.01%–30% 之间，且买得越多折扣不能越少");
                 return;
               }
               const def = findHighOp("e1_bundle_discount")!;
@@ -2085,6 +2109,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             throw error;
           }
           setActionConfirm(null);
+          if (mc.orderId) void refreshE4();
         }} />}
       {toastNode}
     </>

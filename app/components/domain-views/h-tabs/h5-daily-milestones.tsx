@@ -14,6 +14,7 @@ import {
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { HCtx } from "./types";
 
 type CheckInRule = { key: string; name: string; sub?: string; cur: string; hot?: boolean };
@@ -71,6 +72,9 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
   const canRuleWrite = ctx.can("growth_h5_rule_write");
   const canWrite = ctx.can("growth_h5_write");
+  const canWriteTick = useAdminAuth(({ session }) => !!session
+    && ["superadmin", "super"].includes(session.role)
+    && session.authorities.includes("growth_h5_tick_write"));
   const propose = usePropose();
   const [model, setModel] = useState<H5Model | null>(null);
   const [loading, setLoading] = useState(true);
@@ -398,7 +402,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 )}
               </span>
               <span className="bdg">{powerUp.day} 天</span>
-              <button className="l-btn sm mc" aria-label={`调整成长奖励 ${operatorCopyText(powerUp.label)}（${powerUp.day} 天）`} onClick={() => openPowerUp(powerUp)} disabled={!canWrite}>调整</button>
+              {powerUp.businessAvailable === false ? <span className="bdg dim">只读</span> :
+                <button className="l-btn sm mc" aria-label={`调整成长奖励 ${operatorCopyText(powerUp.label)}（${powerUp.day} 天）`} onClick={() => openPowerUp(powerUp)} disabled={!canWrite}>调整</button>}
             </div>
           ))}
         </div>
@@ -409,7 +414,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           <span className="ttl">收益里程碑</span>
           <span className="sub">· 累计收益达到门槛就发 UVT 奖励</span>
           <div className="r">
-            <button className="l-btn sm mc" onClick={openTick} disabled={!canWrite}>检查间隔: {text(model.tickInterval?.value)}</button>
+            <button className="l-btn sm mc" onClick={openTick} disabled={!canWriteTick}
+              title={canWriteTick ? undefined : "仅超级管理员可调整检查间隔"}>检查间隔: {text(model.tickInterval?.value)}</button>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
