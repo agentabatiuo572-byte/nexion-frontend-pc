@@ -1529,9 +1529,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                   {overviewReady.registrationParams.map((param) => <ConfigRow key={param.key} name={param.name} what={param.desc} value={`${param.value} ${param.unit}`}
                     action={param.writable ? paramAction(param.name, blockedBy("param", param.key), () => ctx.openActionConfirm({
                       briefKind: "config", action: `调整${param.name}`, detail: param.desc,
-                      edit: { kind: "number", current: param.value, min: param.min, max: param.max, step: 1, maxDecimals: 0, disallowCurrent: true },
+                      statedBrief: { impact: param.desc, check: "核对参数、当前值和新值，理由写明调整依据。" },
+                      edit: { kind: "number", current: param.value, unit: param.unit === "0/1" ? undefined : param.unit, min: param.min, max: param.max, step: 1, maxDecimals: 0, disallowCurrent: true, hint: `${param.min}–${param.max} 的整数` },
                       effect: IMMEDIATE_EFFECT, confirmLabel: "确认保存", reasonMax: 200,
-                      facts: <Facts><Fact k="现在">{param.value} {param.unit}</Fact></Facts>,
                       run: (reason, value) => runRecord({ kind: "registration-param", target: param.key, name: param.name, label: `调整${param.name}`, operator, reason, value, expectedValue: param.value }),
                     })) : undefined} />)}
                 </ConfigList> : <p className="rd-note">暂无已配置的 H5 注册参数。</p>}

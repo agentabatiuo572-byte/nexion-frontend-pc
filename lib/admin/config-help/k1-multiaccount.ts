@@ -70,7 +70,7 @@ export const K1_PARAM_HELP: Record<string, K1ParamHelp> = {
   duplicateAccountPendingFrom: {
     what: "同组账号总数达到这个数，全组收益要审核",
     when: LATER_EARNINGS,
-    how: "1–50 的整数，要大于同组正常放行的手机号数，不大于锁定起点。按这组账号总数算，不分谁先注册。",
+    how: "2–50 的整数，不大于锁定起点。按这组账号总数算，不分谁先注册。",
     direction: "改大算放宽，改小算收紧",
     whatIf: (value) => `改成 ${value}：同组账号总数达到 ${value} 时，这组每个账户的新增收益都要先审核。`,
   },
