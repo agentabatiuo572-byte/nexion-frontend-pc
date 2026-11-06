@@ -11,7 +11,7 @@ import { AlertTriangle, ClipboardList, Coins, Copy, FileText, Flag, Gauge, Histo
 import { AutoGloss } from "@/app/components/kit/gloss";
 import {
   BatchBar, Button, Cell, Checkbox, ColumnPicker, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input, IrreversibleTag,
-  JudgmentPoints, Modal, MoreMenu, Notice, PageHeader, Pager, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table,
+  JudgmentPoints, KeyValues, Modal, MoreMenu, Notice, PageHeader, Pager, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table,
   TableLoading, TableMessage, Td, Th, Tr, useTableColumns, type JudgmentRow, type SegmentItem, type StateTone, type TableColumn,
 } from "@/app/components/rd";
 import { businessClock, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
@@ -131,27 +131,6 @@ function historyStatusLabel(status: string, chain?: string) {
   if (!chain && ["FAILED", "TX_FAILED"].includes(status)) return "处理失败";
   if (!chain && ["TX_ORPHANED", "DEAD"].includes(status)) return "处理异常";
   return statusLabel(status);
-}
-
-function historyFactsText(facts: string) {
-  const match = /^([\d.]+) (\S+)@(.+)$/.exec(facts);
-  return match ? `${listTime(match[3])} · ${amountText(Number(match[1]))} ${match[2]}` : facts;
-}
-
-function withdrawalHistoryText(value?: string) {
-  if (!value?.trim()) return "—";
-  return value.split(" | ").map((entry) => {
-    const parts = entry.split("/");
-    if (parts.length === 4) {
-      const [order, chain, status, facts] = parts;
-      return `${historyFactsText(facts)} · ${chain.replace(/^USDT-/, "")} · ${historyStatusLabel(status, chain)} · ${order}`;
-    }
-    if (parts.length === 3) {
-      const [order, status, facts] = parts;
-      return `${historyFactsText(facts)} · ${historyStatusLabel(status)} · ${order}`;
-    }
-    return entry;
-  }).join(" | ");
 }
 
 function statusHistoryText(value: string | undefined, chain: string) {
@@ -310,7 +289,7 @@ function userStatusLabel(value?: string) {
 function freezePeriodLabel(value?: string) {
   const rhythm = /^H1:M([1-9]\d*):(P[1-6])$/.exec(value ?? "");
   if (rhythm) return `下单时的运营阶段设置：第 ${rhythm[1]} 月 · ${rhythm[2]}（以复查时间为准）`;
-  return ({ "7d": "7 天", "14d": "14 天", "30d": "30 天", "45d": "45 天", LONG_TERM: "长期（需复查）", SEVEN_DAYS: "7 天" } as Record<string, string>)[value ?? ""] ?? (value ? "未知" : "—");
+  return ({ "7D": "7 天", "14D": "14 天", "30D": "30 天", "45D": "45 天", LONG_TERM: "长期（需复查）", SEVEN_DAYS: "7 天" } as Record<string, string>)[value?.toUpperCase() ?? ""] ?? (value ? "未知" : "—");
 }
 
 /** 待审核是「要处理」列表的默认状态，灰字加时钟；颜色留给冻结、失败、异常这些例外（VS-21）。 */
@@ -1579,7 +1558,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const gateClosedHere = detailActions.includes("APPROVE") && withdrawGate === "closed";
   const [needRole] = shown ? actionCandidates(shown, cregisDetail) : [];
   // 常显的只有现在能不能做、为什么不能；放行会怎样收进按钮旁的提示图标（DP-06）。
-  const decisionNote = shown && (detailBlockedReason(shown) ?? approveBlocked ?? (detailActions.length || bankRecovery || cregisRecovery ? undefined
+  const decisionNote = shown && (detailBlockedReason(shown) ?? approveBlocked ?? (simulation ? simulationBlockedReason(shown) : undefined) ?? (detailActions.length || bankRecovery || cregisRecovery ? undefined
     : needRole ? `${actionLabel(needRole)}这笔需要${needRole === "APPROVE" ? approvalRole(shown) : ACTION_ROLE[needRole]}，你只能查看。`
       : shown && ["TX_ORPHANED", "DEAD"].includes(shown.status.toUpperCase()) ? "这笔打款结果待核对，这里没有可用的操作。到打款方核对，不要重新放行或退款。" : "这笔现在没有人工操作。"));
   const decisionExplain = shown && detailActions.includes("APPROVE") && !approveBlocked
@@ -1632,7 +1611,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
     {withdrawGate === "closed" && <Notice tone="warn" title="提现已关停"
       action={reach("/emergency/kill-switch", "emergency_j1_read") ? <Link className="rd-link" href="/emergency/kill-switch">去紧急停用开关</Link> : undefined}>
-      用户现在不能提交新提现。现在放行不会生效：系统会拒绝，这笔留在待审核，钱不动。<Explain label="关停提现的范围" content="已放行的单还会打款。" />拒绝、延迟、冻结、解冻和退款照常可用。
+      用户现在不能提交新提现。现在放行不会生效：系统会拒绝，这笔留在待审核，钱不动。<Explain label="关停提现的范围" content="关停后暂停尚未提交通道的打款；已提交通道的继续核对和结算，不因关停退款。恢复后按原条件继续派发。" />拒绝、延迟、冻结、解冻和退款照常可用。
     </Notice>}
     {withdrawGate === "unknown" && <Notice tone="warn">提现开关状态暂时读不到。放行时系统会再查，已关停时不会放行。</Notice>}
     {coverageBelow && d5 && hasAuthority(ACTION_AUTHORITY.APPROVE) && <Notice tone="danger" title="兑付覆盖率低于红线，放行已暂停"
@@ -1786,8 +1765,11 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         <Fold inset title="风险规则" summary={ruleCount ? `${ruleCount} 条命中` : "没有命中"} alert={ruleCount > 0} icon={Shield} tone="risk">
           <Facts>
             <Fact k="触发的风险规则">{operationalText(shown.riskReason)}</Fact>
-            <Fact k="风险分明细">{riskBreakdownText(shown.riskScoreBreakdown)}</Fact>
           </Facts>
+          <KeyValues rows={riskBreakdownText(shown.riskScoreBreakdown).split("；").map((entry, index) => {
+            const separator = entry.indexOf("：");
+            return { key: String(index), label: separator < 0 ? "风险分明细" : entry.slice(0, separator), value: separator < 0 ? entry : entry.slice(separator + 1) };
+          })} />
         </Fold>
         {["USDT-BEP20", "BEP20"].includes(shown.chain) && <Fold inset title="Cregis 打款核对" icon={Link2} alert={!detailLoading && (!cregisDetail || cregisDetail.canRecover)} alertTone={cregisDetail?.canRecover ? "danger" : "warn"}
           summary={cregisDetail ? (detailProvider ? cregisStatusLabel(cregisDetail.state) : "未经 Cregis 打款") : "暂时无法获取"}>
@@ -1841,16 +1823,32 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         </Fold>
         <Fold inset title="收款与用户信息" summary={`账户${userStatusLabel(shown.userStatus)}，24h 第 ${shown.withdrawalCount24h} 笔`} icon={User} tone="users">
           <Facts>
-            <Fact k="用户资料">{`${shown.userNo} · ${operatorNicknameText(shown.nickname)} · ${shown.userLevel} · ${shown.phoneMasked || "未展示手机号"}`}</Fact>
+            <Fact k="用户编号">{shown.userNo}</Fact>
+            <Fact k="昵称">{operatorNicknameText(shown.nickname)}</Fact>
+            <Fact k="用户等级">{shown.userLevel || "—"}</Fact>
+            <Fact k="手机号">{shown.phoneMasked || "未展示手机号"}</Fact>
             <Fact k="资产 / 网络">{`${shown.asset} / ${shown.chain}`}</Fact>
             <Fact k="目标地址"><span data-mono>{shown.targetAddress}</span></Fact>
             <Fact k="IP 段">{shown.ipSegment || "—"}</Fact>
-            <Fact k="设备">{factsText(shown.deviceSummary)}</Fact>
-            <Fact k="团队位置">{factsText(shown.referralPosition)}</Fact>
           </Facts>
+          <KeyValues rows={[...factsText(shown.deviceSummary).split("；"), ...factsText(shown.referralPosition).split("；")].map((entry, index) => {
+            const separator = entry.indexOf("：");
+            return { key: String(index), label: separator < 0 ? (index === 0 ? "设备" : "团队位置") : entry.slice(0, separator), value: separator < 0 ? entry : entry.slice(separator + 1) };
+          })} />
         </Fold>
         <Fold inset title="提现历史" summary={historyCount ? `共 ${historyCount} 笔` : "没有记录"} icon={History}>
-          <Facts><Fact k="全部提现历史">{withdrawalHistoryText(shown.withdrawalHistory).split(" | ").map((entry) => <div key={entry}>{entry}</div>)}</Fact></Facts>
+          {shown.withdrawalHistory?.trim() ? <Table label="全部提现历史">
+            <thead><tr><Th>提现单 / 提交时间</Th><Th>金额 / 状态</Th></tr></thead>
+            <tbody>{shown.withdrawalHistory.split(" | ").map((entry, index) => {
+              const parts = entry.split("/");
+              const [order, chain, status, facts] = parts.length === 4 ? parts : [parts[0], "", parts[1], parts[2]];
+              const amount = /^([\d.]+) (\S+)@(.+)$/.exec(facts ?? "");
+              return parts.length === 3 || parts.length === 4 ? <Tr key={index}>
+                <Td><Cell mono full main={order} sub={amount ? listTime(amount[3]) : facts} /></Td>
+                <Td><Cell num main={amount ? `${amountText(Number(amount[1]))} ${amount[2]}` : "—"} sub={<>{historyStatusLabel(status, chain || undefined)}{chain && ` · ${chain.replace(/^USDT-/, "")}`}</>} /></Td>
+              </Tr> : <Tr key={index}><Td colSpan={2}><Cell full main={entry} /></Td></Tr>;
+            })}</tbody>
+          </Table> : <p className="rd-note">没有提现历史</p>}
         </Fold>
         <Fold inset title="状态记录与操作记录" summary={`${recordCount} 条操作`} icon={ClipboardList}>
           <Facts>
@@ -1859,10 +1857,13 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
             <Fact k="责任人">{shown.lifecycleOwner || "系统自动"}</Fact>
             <Fact k="持有 / 冻结期限">{freezePeriodLabel(shown.freezePeriod)}</Fact>
             <Fact k="上一状态">{shown.previousStatus ? statusLabel(shown.previousStatus) : "—"}</Fact>
-            <Fact k="状态历史">{statusHistoryText(shown.statusHistory, shown.chain)}</Fact>
-            <Fact k="操作记录">{auditTrailText(shown.auditTrail)}</Fact>
             {(shown.failureReason || shown.auditTrail) && <Fact k="原始记录"><Explain label="查看原始记录" content={[shown.failureReason, shown.auditTrail].filter(Boolean).join(" ｜ ")}>查证时看</Explain></Fact>}
           </Facts>
+          <KeyValues rows={statusHistoryText(shown.statusHistory, shown.chain).split("；").map((entry, index) => {
+            const separator = entry.indexOf("：");
+            return { key: String(index), label: separator < 0 ? "状态历史" : entry.slice(0, separator), value: separator < 0 ? entry : entry.slice(separator + 1) };
+          })} />
+          <ol className="rd-stack" aria-label="操作记录">{auditTrailText(shown.auditTrail).split("；").map((entry, index) => <li key={index}>{entry}</li>)}</ol>
         </Fold>
       </>}
     </Drawer>

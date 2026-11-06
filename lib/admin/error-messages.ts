@@ -523,7 +523,13 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   WITHDRAWAL_NO_REQUIRED: "缺少提现单号，本次未执行。请从列表重新打开目标提现单。",
   WITHDRAWAL_BATCH_ACTION_INVALID: "批量只支持放行、拒绝、延迟或冻结。请重新选择批量操作。",
   WITHDRAWAL_STATE_CONFLICT: "这笔提现状态已变化，本次未执行。请查看最新状态后选择适用的操作。",
+  D2_REJECT_REFUND_STATE_CONFLICT: "拒绝退款的状态更新发生冲突，不能确认处理结果。请到提现详情和操作记录核对原操作，不要换号重复退款。",
+  LARGE_AMOUNT_REQUIRES_SINGLE_MANUAL_REVIEW: "这笔达到大额门槛，不能批量放行。请由财务主管打开单笔详情，核对收款地址、风险和覆盖率后处理。",
+  HDPAY_PAYOUT_RETURNED: "HDPay 已退回这笔打款。请核对原单结算和用户退款记录，不要重新放行或重复退款。",
+  HDPAY_PAYOUT_FAILED: "HDPay 返回打款失败。请核对原单结算和用户退款记录，不要重新放行或重复退款。",
+  // 后端事实核对：FINANCE_LEAD 是角色；K3_EXPIRY_DELAY、K3_DELAY_ONCE 是生命周期来源／期限标记，均非接口错误码。
   CREGIS_PAYOUT_ALREADY_DISPATCHED: "打款方已接手这笔提现，不能继续审核或直接退款。请在详情核对原单的打款结果。",
+  CREGIS_DISPATCH_INTENT_CONFLICT: "打款派发记录发生冲突。请到提现详情和操作记录核对原单，由技术值班人员检查派发记录；不要重新打款。",
   CREGIS_CHAIN_PROOF_REQUIRED: "这笔提现需要可靠的链上付款证据才能确认结果。请核对打款方原单和链上交易。",
   H1_WITHDRAWAL_DIAL_UNAVAILABLE: "当前阶段的提现冷却设置暂不可读取，已转待审核。请核对阶段设置与最新提现详情。",
   WITHDRAWAL_AUTO_REVIEW_POLICY_CHANGED: "自动审核的条件已变化，已转待审核。请按最新金额门槛和风险信息人工复核。",
@@ -1229,6 +1235,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   // 真属运营输入侧的两个码:给可操作提示,不落中性兜底(兜底只说「刷新重试」对它们没用)。
   A1_CREATE_TEMPORARY_PASSWORD_MISSING: "请先填写新账号的初始密码后再提交。",
   NOVA_PUBLISHED_TEMPLATE_REQUIRED: "该渠道还没有已发布的模板，请先发布模板再恢复投放。",
+  C1_PAGE_NUM_INVALID: "分页页码无效，请返回第一页重新查询。",
   C1_RAW_PHONE_SEARCH_FORBIDDEN: "为保护用户隐私，不支持按原始手机号检索；请使用脱敏手机号或手机号哈希",
   // ---- 2026-08-06 main 合流补账:合流后哨兵扫出的 17 个无文案机器码,逐条补运营中文 ----
   E2_TASK_PRICING_PROTOCOL_INVALID: "任务定价服务返回的数据不完整或不一致，页面已停止展示；请重试加载或联系值班人员。",
