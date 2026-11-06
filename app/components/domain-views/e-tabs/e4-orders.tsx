@@ -9,7 +9,7 @@ import {
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { E4_CLOSE_REASONS, E4_CLOSE_REASON_LABELS, E4_REFUND_REASONS, E4_REFUND_REASON_LABELS, e4FundingLedgerHref, type E4PendingApproval } from "@/lib/admin/e4-client";
-import { operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
+import { operatorDeviceStatus, operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
 import { fmtPct } from "@/lib/format";
 import { useReach } from "@/lib/nav/use-reach";
 import { PromotionRefundImpact } from "../promotion-refund-impact";
@@ -442,7 +442,17 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
         <Facts>
           <Fact k="数据中心">{o.dc}</Fact>
           <Fact k="下单时间">{o.orderedAt ? `${formatBusinessTimeFull(o.orderedAt, "—")}（${businessZone().label}）` : "—"}</Fact>
-          {e4Detail && <Fact k="设备实例"><span data-mono>{e4Detail.deviceInstanceNo ?? "尚未生成"}</span></Fact>}
+          {e4Detail && <Fact k="设备实例">{e4Detail.devices == null
+            ? <span data-mono>{e4Detail.deviceInstanceNo ?? "尚未生成"}</span>
+            : e4Detail.devices.length === 0 ? "尚未生成" : <ol className="rd-stack" aria-label="订单关联设备">
+              {e4Detail.devices.map((device) => {
+                const label = `${device.kind === "PROMOTION_GIFT" ? "赠品设备" : "购买设备"} · ${operatorDeviceStatus(device.status)} · ${({ OWNED: "持有中", REFUNDED: "已退款", REVOKED: "已收回", RECYCLED: "已回收", UNBOUND: "已解绑" } as Record<string, string>)[device.ownershipStatus ?? ""] ?? device.ownershipStatus ?? "持有状态未提供"}`;
+                const instance = device.deviceInstanceNo ?? `设备 ${device.deviceId}`;
+                return <li key={device.deviceId}>
+                  <Cell full main={label} sub={<span data-mono>{instance}</span>} title={`${label} · ${instance}`} />
+                </li>;
+              })}
+            </ol>}</Fact>}
           {e4Detail && !finalized && !refundableState && <Fact k="平台资金覆盖率">{coverageText}</Fact>}
         </Facts>
       </Fold>

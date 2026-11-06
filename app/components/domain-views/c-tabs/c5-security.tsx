@@ -17,7 +17,6 @@ import {
   fetchUserSecurityOverview,
   requestUserPasswordReset,
   revokeUserSession,
-  revokeUserSessions,
   unlockUserSecurity,
   updateUserCredentialParam,
   type User360Profile,
@@ -28,6 +27,7 @@ import {
   type UserSession,
   UsersOutcomeUnknownError,
 } from "@/lib/admin/user360-client";
+import { pendingSessionRevocationApproval, proposeSessionRevocation } from "@/lib/admin/session-revocation-approval";
 import type { CCtx } from "./types";
 
 const OPERATOR = currentAdminOperator;
@@ -200,9 +200,11 @@ function SecLabel({ children }: { children: string }) {
 
 export function C5Security({ ctx }: { ctx: CCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
-  const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
+  const session = useAdminAuth((state) => state.session);
+  const authorities = session?.authorities ?? [];
   const canRevokeOne = authorities.includes("user_c5_session_revoke_one");
-  const canRevokeAll = authorities.includes("user_c5_session_revoke_all");
+  const canRevokeAll = authorities.includes("user_c2_session_revoke_all")
+    && authorities.some((authority) => ["platform_a2_write", "platform_a2_proposal_create"].includes(authority));
   const canDisable2fa = authorities.includes("user_c5_2fa_disable");
   const canResetPassword = authorities.includes("user_c5_password_reset");
   const canUnlockShort = authorities.includes("user_c5_unlock_short");
@@ -386,20 +388,25 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       },
     });
 
+  const pendingLogout = selectedUserId && session ? pendingSessionRevocationApproval(session.adminId, selectedUserId) : undefined;
   const revokeAll = () => {
-    if (!selectedUserId) return;
-    openConfirm({ briefKind: "security",
+    if (!selectedUserId || !session) return;
+    openActionConfirm({ briefKind: "security",
       action: `退出全部设备 · ${userLabel(selectedUser)}`,
-      detail: "确认后用户在所有设备上立即下线，常用于怀疑账号被盗时。",
-      chips: [["全部设备立即下线", "ready"]],
-      reason: true,
-      okLabel: "确认退出全部设备",
-      run: (reason) => {
-        if (!selectedUserId) return;
-        return perform(`revoke-all|${selectedUserId}|${reason}`, async (commandKey) => {
-          await revokeUserSessions(selectedUserId, reason, OPERATOR(), commandKey);
-          return "所有设备已下线";
-        }, "所有设备已下线");
+      detail: "提交审批后，由另一位超级管理员批准，该用户的全部在线设备才会退出登录。",
+      completionCopy: "批准后生效；提交审批不会立即退出设备。",
+      amplifies: false,
+      reasonMin: 8,
+      reasonMax: 200,
+      getPendingReason: () => pendingSessionRevocationApproval(session.adminId, selectedUserId)?.reason,
+      run: async (reason) => {
+        setBusy(true);
+        try {
+          await proposeSessionRevocation(session, selectedUserId, userLabel(selectedUser), reason);
+          toast("已提交全部设备登出审批，批准后生效");
+        } finally {
+          setBusy(false);
+        }
       },
     });
   };
@@ -698,8 +705,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
           />
           <div className="l-b" style={{ paddingTop: 10 }}>
             {selectedUserId && <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button className="l-btn" disabled={!selectedUserId || busy || !canRevokeAll || activeSessionCount === 0} onClick={revokeAll}>
-                {!canRevokeAll ? "退出全部设备（无权限）" : activeSessionCount === 0 ? "退出全部设备（暂无在线设备）" : "退出全部设备"}
+              <button className="l-btn" disabled={!selectedUserId || busy || (!pendingLogout && (!canRevokeAll || activeSessionCount === 0))} onClick={revokeAll}>
+                {pendingLogout ? "重试原操作" : !canRevokeAll ? "退出全部设备（无权限）" : activeSessionCount === 0 ? "退出全部设备（暂无在线设备）" : "退出全部设备"}
               </button>
               <button className="l-btn mc" disabled={!selectedUserId || busy || !canDisable2fa || !selectedUser?.twoFactorEnabled} onClick={disable2fa}>
                 {!canDisable2fa ? "关闭两步验证（无权限）" : !selectedUser?.twoFactorEnabled ? "关闭两步验证（未开启）" : "关闭两步验证"}

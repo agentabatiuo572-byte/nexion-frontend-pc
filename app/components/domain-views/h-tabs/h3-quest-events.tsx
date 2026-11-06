@@ -571,7 +571,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       detail: <>当前状态 <b>{EVENT_LABEL[event.state]?.[0] ?? "状态未知"}</b>，请选择新状态。</>,
       chips: [["记入操作记录", "done"]],
       reason: true,
-      input: { label: "新状态", options: statusOptions(event.state) },
+      input: { label: "新状态", options: statusOptions(event.state), optionLabels: { ongoing: "进行中", ended: "已结束" } },
       okLabel: "确认修改",
       run: async (reason, value) => {
         if (!value) return;
@@ -1180,7 +1180,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         requireAnyChange: true,
         fields: [
           { key: "rewardName", label: "奖项名称", current: text(tier.reward), inputKind: "text", required: true, showDiff: true },
-          { key: "rewardKind", label: "奖励类型", current: text(tier.kind, "uvt"), inputKind: "select", options: ["uvt", "usdt", "coupon"], optionLabels: { uvt: "UVT", usdt: "USDT", coupon: "代金券" }, required: true, showDiff: true },
+          { key: "rewardKind", label: "奖励类型", current: tier.kind === "nex" ? "uvt" : text(tier.kind, "uvt"), inputKind: "select", options: ["uvt", "usdt", "coupon"], optionLabels: { uvt: "UVT", usdt: "USDT", coupon: "代金券" }, required: true, showDiff: true },
           { key: "realOutflow", label: "是否发真钱", current: boolValue(tier.real) ? "1" : "0", inputKind: "select", options: ["0", "1"], optionLabels: { "0": "否", "1": "是" }, required: true, showDiff: true },
           { key: "rewardAmount", label: "每次发放数量", current: String(numericValue(tier.amount)), inputKind: "number", min: 0.000001, max: 1000000, step: 0.000001, required: true, showDiff: true },
           { key: "voucherId", label: "代金券 ID", current: text(tier.voucherId, ""), inputKind: "text", required: true, visibleWhen: { key: "rewardKind", equals: "coupon" }, showDiff: true },
@@ -1953,7 +1953,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   <span style={{ fontWeight: 600, color: "var(--ink)" }}>{text(tier.tier)}</span>
                   <span className="mono">{wheelRewardText(tier.reward)}</span>
                   <span className="mono" style={{ fontWeight: 700 }}>{percentText(tier.prob)}%</span>
-                  <span>{real ? <span className="bdg bad">发真钱</span> : <span className="bdg dim">{({nex:"UVT奖励",UVT:"UVT奖励",usdt:"USDT奖励",USDT:"USDT奖励",voucher:"代金券",none:"未中奖"} as Record<string,string>)[text(tier.kind)] ?? "其他奖励"}</span>}</span>
+                  <span>{real ? <span className="bdg bad">发真钱</span> : <span className="bdg dim">{({nex:"UVT奖励",uvt:"UVT奖励",UVT:"UVT奖励",usdt:"USDT奖励",USDT:"USDT奖励",voucher:"代金券",coupon:"代金券",none:"未中奖"} as Record<string,string>)[text(tier.kind)] ?? "其他奖励"}</span>}</span>
                   <span style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                     {wheelPointsTier(tier) ? <span className="bdg dim">历史积分 · 只读</span> : <>
                       <button className="l-btn sm mc" aria-label={`编辑 ${text(tier.tier)}（${wheelRewardText(tier.reward)}）`} onClick={() => openEditWheelTier(tier)} disabled={!canWheelWrite}>编辑</button>

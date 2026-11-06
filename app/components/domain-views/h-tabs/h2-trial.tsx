@@ -4,7 +4,7 @@
  * 免费试用设置（配置页样板，PG-46）：先看试用现在开着没、用得怎么样，再改常用参数；
  * 其他参数进「高级设置」，别处决定的值进「只读项」，试用记录收起，单条详情用抽屉。
  * 修改权 growth_h2_write、取消权 growth_h2_session_cancel、扣款权 growth_h2_session_charge 各判各的，没有就不显示按钮（OP-124）。
- * 强制取消和强制扣款提交审批，批准后才执行；紧急关闭和参数修改直接生效。四种写操作结果未知时走同一条待确认。
+ * 强制取消提交审批，批准后执行；强制扣款已退役，历史申请仍可查询。紧急关闭和参数修改直接生效，结果未知时保留原操作。
  */
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
@@ -209,7 +209,7 @@ function usdt(value: unknown) {
 
 function paramValue(param: TrialParam, product: TrialProduct | undefined) {
   const unit = TRIAL_PARAM_HELP[param.key]?.input?.unit;
-  if (param.key === "trialOffsetCapUSD" && text(param.cur, "") === "") return "不设上限";
+  if (param.key === "trialOffsetCapUSD" && text(param.cur, "").trim() === "") return "不设上限";
   if (param.key === "trialProductId") return product?.name ?? text(param.cur);
   if (param.key === "trialPriceUSD") return usdt(param.cur);
   if (param.serverOnly) return operatorCopyText(text(param.cur));
@@ -542,32 +542,6 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     });
   };
 
-  const openSessionCharge = (session: TrialSession, stateLabel: string) => {
-    const label = `强制触发扣款 · ${session.sid}`;
-    openActionConfirm({ briefKind: "funds",
-      action: label,
-      title: "强制扣款",
-      facts: <Facts>
-        <Fact k="用户">{trialOwnerLabel(session)}</Fact>
-        <Fact k="试用"><span data-mono="">{session.sid}</span></Fact>
-        <Fact k="当前状态">{stateLabel}</Fact>
-        <Fact k="累计收益">{shadowText(session.shadow)}</Fact>
-        <Fact k="扣款结果">{CHARGE_RESULT}</Fact>
-      </Facts>,
-      detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。后端现在固定拒绝这项操作，批准后不会扣用户的钱。用户要购买，只能自己确认购买。</>,
-      // 提案里的 amplifies 照旧是 true；框里不写「提交时检查覆盖率」，后端这条路不查。
-      amplifies: false,
-      confirmTone: "danger",
-      effect: <><StatusTag tone="progress" filled explain={APPROVAL_NOTE}>批准后生效</StatusTag><IrreversibleTag /></>,
-      confirmLabel: "提交审批",
-      statedBrief: {
-        impact: "现在批准后也不会扣款，后端要求用户自己确认购买。结果到「操作记录与审批」看。",
-        check: "核对用户和试用记录编号，理由写清依据或工单号。",
-      },
-      run: (reason) => sendCommand({ kind: "charge", sid: session.sid, owner: trialOwnerLabel(session), before: session.state, reason, label }),
-    });
-  };
-
   const openPushKill = () => {
     // 走共用确认框：理由规则读取中不放行，读不到才按 8–200 继续（Q-06，REV2-06）。
     openActionConfirm({ briefKind: "record",
@@ -688,7 +662,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const pricingHref = `/devices/pricing?sku=${encodeURIComponent(productNo ?? "")}`;
   const j1Href = "/emergency/kill-switch";
   const issues: Array<{ key: string; tone: StateTone; title: string; body: ReactNode }> = [];
-  if (j1Closed) issues.push({ key: "j1", tone: "danger", title: "试用已被紧急停用开关关闭", body: <>用户现在不能开始试用，强制扣款也不会执行。{reach(j1Href) && <Link className="rd-link" href={j1Href} prefetch={false}>去紧急停用开关</Link>}</> });
+  if (j1Closed) issues.push({ key: "j1", tone: "danger", title: "试用已被紧急停用开关关闭", body: <>用户现在不能开始试用。{reach(j1Href) && <Link className="rd-link" href={j1Href} prefetch={false}>去紧急停用开关</Link>}</> });
   if (productBlocked) issues.push({ key: "product", tone: "danger", title: "当前目标商品不可用", body: product
     ? <>库存 {product.stock ?? 0} · {trialProductReason(product.unavailableReason)}</>
     : <>商品编号 {productNo || "未设置"} 不在可选列表，用户现在不能开始试用。{reach(pricingHref) && <Link className="rd-link" href={pricingHref} prefetch={false}>去商品管理核对「允许试用」</Link>}</> });
@@ -710,11 +684,10 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     const reason = row.session.pendingApproval ? "这条试用已有待审批操作，审批结束后才能再次处理" : lockedSids.has(row.session.sid) ? LOCKED : loading ? READING : row.owner ? undefined : "用户信息暂不可用";
     return {
       cancel: canCancel && <Button size={variant === "row" ? "sm" : "md"} disabledReason={reason} onClick={() => openSessionCancel(row.session, row.label)}>强制取消</Button>,
-      charge: canCharge && <Button size={variant === "row" ? "sm" : "md"} variant={variant === "row" ? "secondary" : "danger-outline"} disabledReason={CHARGE_RESULT} onClick={() => openSessionCharge(row.session, row.label)}>强制扣款</Button>,
     };
   };
   const total = model.sessionsPage?.total ?? sessions.length;
-  const canHandle = canCancel || canCharge;
+  const canHandle = canCancel;
 
   return (
     <>
@@ -820,7 +793,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                           <Td><Cell main={trialOwnerLabel(row.session)} sub={<span data-mono="">{row.session.sid}</span>} title={row.session.sid} full /></Td>
                           <Td><Cell main={<StatusTag tone={row.tone} explain={TRIAL_STATE_HELP[row.session.state]}>{row.label}</StatusTag>} sub={row.session.pendingApproval && <TrialPendingApproval approval={row.session.pendingApproval} />} /></Td>
                           <Td align="right"><Cell num main={shadowText(row.session.shadow)} /></Td>
-                          {canHandle && <Td sticky="end">{row.terminal ? "—" : <span className="rd-row-actions">{buttons.cancel}{buttons.charge}</span>}</Td>}
+                          {canHandle && <Td sticky="end">{row.terminal ? "—" : <span className="rd-row-actions">{buttons.cancel}</span>}</Td>}
                         </Tr>
                       );
                     })}
@@ -841,7 +814,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       <Drawer open={!!currentRow} onClose={() => setCurrentSid(null)} title="试用记录" sub={currentRow?.session.sid} icon={History} tone="role-3"
         nav={{ hasPrev: !loading && currentIndex > 0, hasNext: !loading && currentIndex >= 0 && currentIndex < sessions.length - 1, onPrev: () => setCurrentSid(sessions[currentIndex - 1].sid), onNext: () => setCurrentSid(sessions[currentIndex + 1].sid) }}
         footer={currentRow && !currentRow.terminal && canHandle ? (
-          <Decision explain="强制取消用于怀疑刷试用等风控介入，要提交审批，超级管理员批准后才执行。强制扣款现在批准后也不会扣款，用户要购买只能自己确认。" danger={sessionButtons(currentRow, "drawer").charge} others={sessionButtons(currentRow, "drawer").cancel} />
+          <Decision explain="强制取消用于怀疑刷试用等风控介入，要提交审批，超级管理员批准后才执行。强制扣款现在批准后也不会扣款，用户要购买只能自己确认。" others={sessionButtons(currentRow, "drawer").cancel} />
         ) : undefined}>
         {currentRow && (
           <>

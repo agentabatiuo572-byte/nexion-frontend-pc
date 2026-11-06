@@ -107,6 +107,7 @@ function statusLabel(status: string) {
 }
 
 function bankStatusLabel(row: D2Withdrawal) {
+  if (erc20ConfirmationLost(row)) return "冻结 · 仍占提现额度";
   if (row.chain !== "BANK-VND") return statusLabel(row.status);
   if (row.status === "SENT") return "银行处理中";
   if (row.status === "TX_ORPHANED") return "人工核对 · 未解冻";
@@ -121,6 +122,7 @@ function cregisStatusLabel(state: string) {
 }
 
 function historyStatusLabel(status: string, chain?: string) {
+  if (chain === "USDT-ERC20" && ["TX_ORPHANED", "DEAD"].includes(status)) return "冻结 · 仍占提现额度";
   if (chain === "BANK-VND") {
     if (["SENT", "CHAIN_SUBMITTED"].includes(status)) return "银行处理中";
     if (["TX_ORPHANED", "DEAD"].includes(status)) return "人工核对";
@@ -249,6 +251,7 @@ function reviewNoteText(value?: string) {
 }
 
 function lifecycleSummary(row: D2Withdrawal) {
+  if (erc20ConfirmationLost(row)) return "链上确认已丢失，资金保持冻结并继续占用提现额度，禁止退款，需核对链上结果。";
   const reason = operationalText(reviewNoteText(row.failureReason));
   if (reason !== "—") return reason;
   if (["EXTENDED_HOLD", "DELAYED"].includes(row.status.toUpperCase())) return "等待复查时间，到期后系统自动处理";
@@ -289,7 +292,7 @@ function userStatusLabel(value?: string) {
 function freezePeriodLabel(value?: string) {
   const rhythm = /^H1:M([1-9]\d*):(P[1-6])$/.exec(value ?? "");
   if (rhythm) return `下单时的运营阶段设置：第 ${rhythm[1]} 月 · ${rhythm[2]}（以复查时间为准）`;
-  return ({ "7D": "7 天", "14D": "14 天", "30D": "30 天", "45D": "45 天", LONG_TERM: "长期（需复查）", SEVEN_DAYS: "7 天" } as Record<string, string>)[value?.toUpperCase() ?? ""] ?? (value ? "未知" : "—");
+  return ({ "7D": "7 天", "14D": "14 天", "30D": "30 天", "45D": "45 天", LONG_TERM: "长期（需复查）", SEVEN_DAYS: "7 天", K3_DELAY_ONCE: "到期复核后再延迟一次（以复查时间为准）" } as Record<string, string>)[value?.toUpperCase() ?? ""] ?? (value ? "未知" : "—");
 }
 
 /** 待审核是「要处理」列表的默认状态，灰字加时钟；颜色留给冻结、失败、异常这些例外（VS-21）。 */
@@ -332,20 +335,23 @@ function actionLabel(action: D2ReviewAction) {
 
 function actionCandidates(row: D2Withdrawal, cregis?: D2CregisPayout | null): D2ReviewAction[] {
   const status = row.status.toUpperCase();
+  if (erc20ConfirmationLost(row)) return [];
   if (["USDT-BEP20", "BEP20"].includes(row.chain)) {
     if (cregis?.withdrawalNo === row.withdrawalNo && cregis.source === "provider") return [];
     if (["PROCESSING", "SENT", "CHAIN_SUBMITTED", "FAILED", "TX_FAILED", "TX_ORPHANED", "DEAD", "REVIEW_REJECTED", "REJECTED", "ADDRESS_INVALID"].includes(status)
         && (!cregis || cregis.withdrawalNo !== row.withdrawalNo)) return [];
   }
   if (row.chain === "BANK-VND" && ["PROCESSING", "FAILED", "TX_FAILED", "TX_ORPHANED", "REVIEW_REJECTED", "ADDRESS_INVALID", "DEAD"].includes(status)) return [];
-  // S04：ERC20 失去链上确认时继续占额度，禁止退款。
-  if (["USDT-ERC20", "ERC20"].includes(row.chain) && ["TX_ORPHANED", "DEAD"].includes(status)) return [];
   if (["REVIEW_PENDING", "REVIEWING"].includes(status)) return ["APPROVE", "DELAY", "FREEZE", "REJECT"];
   if (["EXTENDED_HOLD", "DELAYED"].includes(status)) return [];
   if (["REVIEW_PASSED", "PENDING_CHAIN", "PROCESSING"].includes(status)) return ["FREEZE"];
   if (status === "FROZEN") return ["UNFREEZE"];
   if (["REVIEW_REJECTED", "REJECTED", "ADDRESS_INVALID", "TX_FAILED", "FAILED", "TX_ORPHANED", "DEAD"].includes(status)) return ["REFUND"];
   return [];
+}
+
+function erc20ConfirmationLost(row: D2Withdrawal) {
+  return ["USDT-ERC20", "ERC20"].includes(row.chain) && ["TX_ORPHANED", "DEAD"].includes(row.status.toUpperCase());
 }
 
 /** 状态流转图。节点名取 STATUS_TABS,分支与 actionCandidates 同一套判断。 */
@@ -362,7 +368,7 @@ const D2_BRANCHES: { from: string[]; trigger: string; to: string[]; note: string
   { from: ["REVIEW_PENDING"], trigger: "点「拒绝并退款」", to: ["REFUNDED"], note: "要填拒绝原因，钱当场退回用户余额" },
   { from: ["SENT"], trigger: "打款结果返回", to: ["ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], note: "按银行或链上返回的结果处理，结果不明时继续核对" },
   { from: ["REVIEW_REJECTED"], trigger: "手动退款", to: ["REFUNDED"], note: "仅历史遗留记录；提交前先确认钱没有打出去" },
-  { from: ["ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], trigger: "手动退款", to: ["REFUNDED"], note: "提交前先确认钱没有打出去。ERC20 打款异常不能手动退款" },
+  { from: ["ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], trigger: "手动退款", to: ["REFUNDED"], note: "ERC20 丢失链上确认时冻结并继续占额度，禁止退款；其他单提交前先确认钱没有打出去" },
 ];
 
 function StatusFlowChip({ code }: { code: string }) {
@@ -1435,6 +1441,17 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       notePending(record, "浏览器里查不到这条记录，本次没有发送。待确认继续保留，请到操作记录与审批核对。");
       return;
     }
+    if (record.kind === "review" && record.action === "REFUND") {
+      const latest = await fetchD2WithdrawalDetail(record.nos[0]).catch(() => null);
+      if (!latest) {
+        notePending(record, "暂时无法核对这笔提现的渠道和状态，本次没有重试。原操作继续保留，请稍后读回核对。");
+        return;
+      }
+      if (erc20ConfirmationLost(latest)) {
+        notePending(record, "这笔 ERC20 提现已丢失链上确认，保持冻结并继续占提现额度，不能退款。原操作记录继续保留，请到操作记录核对。");
+        return;
+      }
+    }
     setRetryRejected((current) => current.filter((key) => key !== record.commandKey));
     const [no] = record.nos;
     try {
@@ -1477,6 +1494,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   /** 现在不能做的原因，写给人看（OP-126）。没有权限的动作不走这里，直接隐藏（OP-124）。 */
   function blockedReason(row: D2Withdrawal, action?: D2ReviewAction) {
+    if (action === "REFUND" && erc20ConfirmationLost(row)) return "这笔 ERC20 提现已丢失链上确认，保持冻结并继续占提现额度，不能退款；原操作记录继续保留，请核对链上结果";
     if (pendingNos.has(row.withdrawalNo)) return "这笔有结果未确认的操作，先到页面上方核对";
     if (loading) return "正在刷新列表";
     if (!writesEnabled) return "列表读取失败，已暂停操作，请先重试";
@@ -1532,7 +1550,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const riskNotice = !riskScoreIsValid(draft.minRiskScore)
     ? `最低风险分须为 0–100 的整数。未查询${error ? "。" : `，列表${query.minRiskScore ? `仍按最低风险分 ${query.minRiskScore}` : "仍是不限风险分的结果"}。`}`
     : riskDropped && `「${riskDropped}」不是 0–100 的整数，没有生效。已改回${draft.minRiskScore ? `最低风险分 ${draft.minRiskScore}` : "不限风险分"}。`;
-  const filterNotice = amountRangeInvalid ? "最低金额不能大于最高金额。这次没有查询。" : riskNotice;
+  const filterNotice = amountRangeInvalid ? "最低金额不能大于最高金额。这次没有查询。" : riskNotice || (query.status === "FROZEN" ? "ERC20 丢失链上确认的单也按冻结处理，要在「打款异常，需人工核对」里查看。" : undefined);
 
   const shown = drawerRow.current;
   const detailIndex = detail ? visibleRows.findIndex((row) => row.withdrawalNo === detail.withdrawalNo) : -1;

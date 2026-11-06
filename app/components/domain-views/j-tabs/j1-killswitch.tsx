@@ -125,6 +125,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const canWrite = authorities.has("emergency_j1_write");
   const reach = useReach();
   const data = emergency.killSwitch;
+  const covPass = data?.coverage.valuationReliable === true && data.coverage.recoveryAllowedByServer === true;
 
   // 运营勾选要批量关停的业务。
   const [sel, setSel] = useState<Record<string, boolean>>({});
@@ -288,6 +289,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         if (!ticket && previous.expiresAt <= Date.now()) {
           throw new A2OutcomeUncertainError("原申请命令已过期，请到操作记录核对。", key);
         }
+        if (!ticket && (data?.activeGates.find((gate) => gate.key === g.key)?.coveragePrecheckRequired ?? g.key !== "trial") && !covPass) {
+          throw new A2OutcomeUncertainError("暂未查到原恢复申请，当前只能核对已有申请，暂不能继续提交资金业务恢复。", key);
+        }
       }
       if (!ticket) {
         if (useAdminAuth.getState().session?.adminId !== session.adminId) {
@@ -385,7 +389,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   const gates = data.activeGates;
   const { coverageRatio: COV, redlinePct: RED } = data.coverage;
-  const covPass = data.coverage.valuationReliable && data.coverage.recoveryAllowedByServer;
+  const coverageReady = data.coverage.valuationReliable;
   const recoveryBlock = !data.coverage.valuationReliable
     ? "估值不可靠，暂不能发起资金业务恢复审批。到「资金储备与应付款」核对估值，待估值可靠且服务端允许恢复后再申请。"
     : data.coverage.recoveryAllowedByServer ? undefined : BLOCKED_RESUME;
@@ -668,7 +672,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         <Stat tone="role-2" icon={Power} label="在线业务" value={`${liveCount} / ${gates.length}`} />
         <Stat tone={data.stats.emergencyGateCount > 0 ? "warn" : "role-other"} icon={Siren} label="应急关停业务" value={String(data.stats.emergencyGateCount)} unit="项" explain="由自动规则、批量应急或应急预案联动关停的业务。" />
         <Stat tone="role-other" icon={ShieldAlert} label="未能恢复" value={String(data.stats.coverageBlockedCount)} unit="次" explain="因覆盖率或估值检查未通过而未能恢复的累计次数，不是现在受限的业务数。审批时覆盖率不通过仍保留待批工单。" />
-        <Stat tone={covPass ? "role-1" : "danger"} icon={Coins} label="兑付覆盖率" value={pct(COV)} sub={`红线 ${RED}%`} explain={`储备除以应付款，${coverageGapText}。恢复提现、兑换、创世节点或质押批准时，系统重查覆盖率；试用免查。`} />
+        <Stat tone={covPass ? "role-1" : "danger"} icon={Coins} label="兑付覆盖率" value={coverageReady ? pct(COV) : "暂时无法判断"} sub={`红线 ${RED}%`} explain={`储备除以应付款，${coverageGapText}。恢复提现、兑换、创世节点或质押批准时，系统重查覆盖率；试用免查。`} />
       </StatBand>
 
       <ControlGrid label="业务开关">
@@ -723,14 +727,14 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         alert={!covPass} alertTone="danger"
         open={folds.coverage ?? (killed > 0 || !covPass)} onOpenChange={(open) => setFolds((state) => ({ ...state, coverage: open }))}>
         {recoveryBlock && <Notice tone="danger" title="资金业务恢复受阻">{recoveryBlock}</Notice>}
-        <Figure width={560} stack="wide" graphic={
+        {coverageReady && <Figure width={560} stack="wide" graphic={
           <ThresholdMeter label="兑付覆盖率和恢复红线" rows={[{ key: "coverage", label: "当前", value: COV, text: pct(COV), tone: covPass ? "ok" : "danger" }]}
             marks={[{ key: "red", text: `恢复红线 ${RED}%`, value: RED, tone: "danger" }]} />
         }>
           <Facts>
             <Fact k="检查结果">{covPass ? "通过" : "不通过"} · {coverageGapText}</Fact>
           </Facts>
-        </Figure>
+        </Figure>}
       </Fold>
 
       <Fold title="功能开关总表" explain="关停确认后立即生效，恢复提交 A2 应急审批、批准后生效，都要填写理由。提交恢复后业务仍已关停。提现关停只挡新申请和审核放行，已放行的单还会打款。"

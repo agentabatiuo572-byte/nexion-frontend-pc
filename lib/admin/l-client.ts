@@ -301,7 +301,7 @@ function reportToTask(report: LReportView): LExportTask {
   const acts: LExportTask["acts"] = !supported ? []
     : status === "PENDING_CONFIRM" || status === "PENDING_SPLIT_CONFIRM" ? ["approve"]
       : status === "READY" && report.snapshotAvailable ? ["download"]
-        : (status === "EXPIRED" || status === "FAILED") && report.snapshotAvailable ? ["retry"]
+        : normalizedType !== "NETWORK_TREE" && (status === "EXPIRED" || status === "FAILED") && report.snapshotAvailable ? ["retry"]
           : [];
   return {
     id: report.reportId,

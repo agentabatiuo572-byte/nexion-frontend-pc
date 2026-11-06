@@ -15,7 +15,7 @@ import { ShieldOff } from "lucide-react";
 import { currentAdminSession, recordAdminActivity, AdminActivityIdentityChangedError } from "@/lib/admin/auth-client";
 import { createAdminActivityTracker } from "@/lib/admin/admin-activity";
 import { fetchA3RuntimeFlags } from "@/lib/admin/a3-client";
-import { installAdminAuthFetchLifecycle } from "@/lib/admin/auth-lifecycle";
+import { AdminAuthEpochChangedError, adminAuthLifecycleEpoch, installAdminAuthFetchLifecycle } from "@/lib/admin/auth-lifecycle";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { PERMISSION_DENIED_EVENT, PERMISSION_DENIED_TEXT } from "@/lib/admin/operation-confirm-error";
 import { requestAdminLogout } from "@/lib/admin/logout-request";
@@ -123,6 +123,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const [narrow, setNarrow] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const bootstrapAttemptRef = useRef(0);
+  const bootstrapReadRef = useRef<{ epoch: number } | null>(null);
   useEffect(() => setMounted(true), []);
   useEffect(() => {
     const media = window.matchMedia("(max-width: 640px)");
@@ -165,10 +166,14 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
 
   const restoreAdminSession = useCallback(async (signal?: AbortSignal) => {
     const attempt = ++bootstrapAttemptRef.current;
+    const read = { epoch: adminAuthLifecycleEpoch() };
+    bootstrapReadRef.current = read;
     setBootstrapState("checking");
     try {
       const auth = await currentAdminSession({ signal });
       if (signal?.aborted || attempt !== bootstrapAttemptRef.current) return;
+      if (read.epoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
+      bootstrapReadRef.current = null;
       if (auth) {
         signIn(auth);
         setBootstrapState("authenticated");
@@ -181,6 +186,8 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       // Do not turn transport failures or malformed 200s into an anonymous
       // session. Protected content and the login form both stay closed.
       setBootstrapState("error");
+    } finally {
+      if (bootstrapReadRef.current === read) bootstrapReadRef.current = null;
     }
   }, [signIn, signOut]);
 
@@ -212,9 +219,15 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (observedAuthEpochRef.current === authEpoch) return;
     observedAuthEpochRef.current = authEpoch;
-    bootstrapAttemptRef.current += 1;
-    if (sessionResolution === "anonymous") setBootstrapState("anonymous");
-  }, [authEpoch, sessionResolution]);
+    if (sessionResolution === "anonymous") {
+      bootstrapAttemptRef.current += 1;
+      bootstrapReadRef.current = null;
+      setBootstrapState("anonymous");
+      return;
+    }
+    const read = bootstrapReadRef.current;
+    if (read && read.epoch !== adminAuthLifecycleEpoch()) void restoreAdminSession();
+  }, [authEpoch, restoreAdminSession, sessionResolution]);
 
   useEffect(() => {
     if (!mounted) return;

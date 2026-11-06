@@ -632,6 +632,9 @@
 ---
 
 #### [H3] Quest 任务引擎
+
+- **状态与完成条件拒绝（BUG-257 后续）**：任务当前状态不允许操作时，说明本次未生效，提示刷新「用户任务管理」核对最新状态后重试；完成条件已被其他操作更新时，说明更新冲突并提示同样的核对步骤。两种明确拒绝均保留确认框和理由，不显示成功。
+
 **① 目的 & 对齐**: 配置平台三层任务体系(首日 Day-One Quest / 每周 Weekly Quests / 每月 Monthly Challenge)的任务清单、NEX 奖励、3-phase 时窗与 Phase 乘数消费面,作为新用户拉新期与持续活跃期的任务化转化引擎。对齐前端 **§5.15**(`/` Home 顶部 Day-One Quest:active 0-24h=500 NEX / grace 24-72h=200 NEX / expired 72h+=0;§5.15.3 6 任务清单)+ **§11.13**(`/missions` Mission Center 4 层架构 L1-L4:Weekly Tier1/Tier2 + Monthly Challenge,§11.13.1 总览)+ **§9.11c.1**(`GET /api/config/quest/day-one`「新人转化最核心钩子」)。服务业务目标:把新用户首日活跃→商城浏览→绑卡前段漏斗动作组织成任务化引导——首日 6 任务中,逛商城(`visit_store`)/ 看 ROI(`view_product_roi`)直接产 `store.viewed`(漏斗 #3,§2.4.7),绑卡(`connect_wallet`,href `topup?kyc=1`)命中绑卡级 `kyc.express_verified`,邀请(`invite_friend`)产 `referral.invite_sent`,设资料(`setup_profile`)/ 逛 Earn(`visit_earn`)为纯留存动作(不入漏斗)。通过签到/任务/里程碑回访激励**间接**提升 Day7 活跃(KPI #2 口径为 `app.dau ÷ register cohort`,§2.4.6;本机制经回访→`app.dau` 路径间接贡献,非 KPI 直接口径),并通过任务 CTA 引导用户产生 `store.viewed` / `checkout.completed` 这些 B3 漏斗级事件(行为驱动,非 quest 事件本身入漏斗)。
 > **§5.15 / §11.13 锚点脚注**:Monthly Challenge 规格簇散落多处——§11.13.1(,L3 概览「10,000 NEX + 月度勋章」,口径为该层「单次最大奖」)/ §12.14(,`useMonthlyChallenge` store)/ §9.11c.2(,列 `GET /api/quests/monthly` endpoint,锚 `lib/mock/monthly-challenge.ts`)/ 代码(`lib/mock/monthly-challenge.ts:42-103` 完整 5 主题 reward 表)。**前端 PRD 不存在 §11.14 标题**(章节序 §11.13.1…§11.13.10 后跳 §12.x);前端 PRD 三处 `§11.14` 引用为悬空引用,本章一律不引 §11.14,改引上述真实锚点。
 
@@ -788,9 +791,12 @@
 
 #### [H4] 活动中心 CMS
 
+- **主推状态拒绝（BUG-257 后续）**：只有进行中的活动才能设为主推。确认时若活动已不在进行中，说明本次未生效并提示核对活动状态后重试，保留确认框和理由。
+- **活动状态选项（BUG-350）**：既有活动状态确认框显示「进行中」「已结束」，选择和提交仍使用 `ongoing`、`ended`，状态流转规则不变。
 - **概率输入与提交（BUG-258 Follow-up 1）**：H4 转盘与 H5 幸运概率只接受普通十进制数字，拒绝科学计数法等旧编辑器不接受的格式。前置校验与提交使用同一完整数值；H5 不截取数字前缀，填写 0.5 时提交的概率仍是 0.5。
 - **概率提交前反馈（BUG-258）**：转盘弹窗实时显示所有奖项概率合计；单项超出 0–100% 或合计不等于 100% 时禁用确认，合法配置沿用原保存及系统校验。
 - **转盘奖项可选字段（BUG-253）**：代金券 ID 只在奖励类型为代金券时显示并必填；UVT、USDT 等非券奖项无需填写，保存为空。其他数量、库存和版本校验沿用原规则。
+- **旧转盘奖项编辑与列表标签（BUG-347）**：旧 `nex` 档打开编辑时奖励类型取 `uvt`，无需重选类型，只改奖名即可保存，保存后读回 `uvt`，列表显示「UVT奖励」。`coupon` 档列表显示「代金券」。只处理编辑及标签显示，不迁移旧数据，原奖池签名仍用于版本校验。
 
 > **2026-11-04 产品决定**：移除持币活动（`holding`，原 NEX Holders Share），后端同步删除该类型及钱包余额变化触发。PC 不再提供创建选项、专属标签、规则字段或奖池说明；旧记录按未知类型显示“其他活动”，玩法区标为“其他活动（已停用）”且不可选择。不增加兼容玩法，其他活动沿用现有配置及服务端结果。
 
@@ -924,7 +930,7 @@
 - `POST /api/admin/events` / `PUT /api/admin/events/:id` — 新建 / 改活动(经确认弹窗 H4-MD1/MD2/MD3/MD5,reason 必填(空值 400 `REASON_REQUIRED`);**升奖励 server 先核 B1,< 红线返 422**;**改 featured 时 server 强制 featured 唯一性,违反返 422**)。
 - `POST /api/admin/events/:id/{publish|unpublish}` — 上下架(经确认弹窗 H4-MD1,reason 必填)。
 - `POST /api/events/:id/spin` — Lucky Spin 转盘派奖(**server-canonical RNG** 裁决奖项;奖项池 / 概率已裁定 §③ 奖池表;server 强制日派彩预算 / 单奖每日库存 / B1 红线自动降级三护栏 + `spinDate` 日桶计票超额 409)。
-- `PUT /api/admin/events/:id/wheel` — **Lucky Spin 转盘专属配置端点**(奖池档位 + 各档概率 + 三护栏,从通用 `PUT /api/admin/events/:id` 拆出,因奖池为结构化大对象,独立端点便于校验与审计);payload `{ segments: [{ id, kind: "nex"|"points"|"usdt"|"coupon", amount, weight, isReal, labelKey }], guardrails: { wheelDailyPayoutBudgetUSD, wheelPrizeDailyCap, wheelRealPrizeEnabled } }`;经确认弹窗 H4-MD4(reason 必填,执行=财务(lead)/ 超管);**server 三重校验**:① 各档 `weight` 之和 = 100(违反返 **422**)② 档位数 ∈ [2, 12](越界返 422)③ 含真实奖档(`isReal=true`)的放大流出须先过 B1 红线(< 红线返 **422** + 当前覆盖率);幂等 `Idempotency-Key`;放行落 `admin.event_wheel_changed` 审计(§④)。
+- `PUT /api/admin/events/:id/wheel` — **Lucky Spin 转盘专属配置端点**(奖池档位 + 各档概率 + 三护栏,从通用 `PUT /api/admin/events/:id` 拆出,因奖池为结构化大对象,独立端点便于校验与审计);payload `{ segments: [{ id, kind: "uvt"|"usdt"|"coupon", amount, weight, isReal, labelKey }], guardrails: { wheelDailyPayoutBudgetUSD, wheelPrizeDailyCap, wheelRealPrizeEnabled } }`;经确认弹窗 H4-MD4(reason 必填,执行=财务(lead)/ 超管);**server 三重校验**:① 各档 `weight` 之和 = 100(违反返 **422**)② 档位数 ∈ [2, 12](越界返 422)③ 含真实奖档(`isReal=true`)的放大流出须先过 B1 红线(< 红线返 **422** + 当前覆盖率);历史 `points` 档仅保留只读，仍计入概率合计，不作为新增或编辑类型。幂等 `Idempotency-Key`;放行落 `admin.event_wheel_changed` 审计(§④)。
 
 **⑥ 权限 & 审计**:
 | 角色 | 查看活动/tracking | 上下架 | 改 featured | 改奖励/evaluator/转盘 | 改 geo |
@@ -959,6 +965,7 @@
 **H4 2026-10-25 TEST 验收记录**：#635 整单零应付和超过优惠后商品行均拒绝；单行零、整单 1234.05 USDT 报价建单成功。未付取消及重复取消恢复 18.905 USDT 预算和有限库存，钱包、完整账单、设备与销量不变，临时活动正常结束。#636/#647 正常 E1→A2 双人审批完成 Pro 库存 292→0→292；库存 0 时 readiness 不足且已开启配置再保存被页面拒绝，恢复后 readiness 恢复，冻结规则/revision/原奖励权益保留。新键重复退款、已办退款票重复批准、新期赠机并发、首次耗尽领取及 stock=1/giftQuantity=2 未实跑。证据：`D:/workspace/output/events-boundaries-20261025/635-BC-actual-acceptance.md`、`636-647-stock-actual-acceptance.md`；E1 全字段保留另见[专项验收](specs/E1-SKU-EDIT-PRESERVATION-20261025.md)。
 
 #### [H5] 签到与UVT奖励
+- **成长奖励天数范围拒绝（BUG-257 后续）**：触发天数为 0 时，系统返回数值超范围，弹窗说明本次未保存并提示核对参数上下限、修改后重试，保留天数、备注和理由。系统当前范围为 1–365 天；不改变原审批与保存流程。
 **① 目的 & 对齐**: 配置每日签到的积分规则、Lucky 概率倍率、30 天里程碑路线图、Streak Saver 断签复活卡、Streak Power-Ups 连胜增益,作为留存节奏的签到引擎。对齐前端 **§9.8**(`/daily`:§9.8.1 签到规则 + Lucky multiplier / §9.8.2 30 天里程碑 / §9.8.3 Streak Saver / §9.8.6 Streak Power-Ups)+ **§9.11c.1**(`POST /api/points/sign-in` 返 multiplier「A/B 实验值」)+ **§9.11d.3**(Lucky multiplier「必须 server-driven」,锚 `lib/v3/points.ts:87-88`)。服务业务目标:用每日签到 + 连胜里程碑形成留存激励的回访节奏(§9.8.2:累计连胜越久,里程碑路线图越临近),通过回访→`app.dau` 路径**间接**提升 Day7 活跃(KPI #2 口径为 `app.dau ÷ register cohort`,§2.4.6;本机制经回访间接贡献,非 KPI 直接口径)。**Lucky 概率是概率型奖励,必须 server-canonical RNG**(跨域事实 1);Day-30 里程碑发放一张转盘票(spin 票),转盘奖项池 / 概率 / 派奖治理归 H4(`wheel` EventKind);Streak Power-Ups 含跨域奖励(F2/G5/G1/G4),H5 是触发面。
 
 **② 后台界面**:

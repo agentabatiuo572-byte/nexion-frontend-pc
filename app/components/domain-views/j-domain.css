@@ -95,6 +95,7 @@
 .jdom .matrix-tbl .acts button.resume { color: var(--success); border-color: color-mix(in srgb, var(--success) 32%, transparent);
   background: var(--success-soft); font-weight: 600; }
 @media (hover: hover) and (pointer: fine) { .jdom .matrix-tbl .acts button.resume:hover { background: var(--success); color: #0A0A0A; } }
+.jdom .matrix-tbl .acts button.resume:disabled { color: var(--ink-4); border-color: var(--border); background: var(--surface-2); cursor: not-allowed; }
 
 /* 应急快速通道 + B1 备付金检查 双卡 */
 .jdom .j1-side { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
@@ -153,6 +154,8 @@
   font-size: 12px; color: var(--ink-2); line-height: 1.5; display: flex; align-items: flex-start; gap: 8px; }
 .jdom .b1cov-detail .ic { color: var(--success); flex-shrink: 0; margin-top: 1px; }
 .jdom .b1cov-detail b { color: var(--success); font-weight: 600; }
+.jdom .b1cov-detail.warn { background: var(--warning-soft); }
+.jdom .b1cov-detail.warn .ic, .jdom .b1cov-detail.warn b { color: var(--warning); }
 
 /* 自动触发规则 */
 .jdom .rules-card { background: var(--surface); border-radius: var(--r-card); margin-bottom: 16px; overflow: hidden; }

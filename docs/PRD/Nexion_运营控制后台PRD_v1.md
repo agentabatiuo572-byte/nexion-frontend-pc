@@ -459,7 +459,7 @@ A2 是后台**一切高敏写操作的留痕与确认契约地基**——提供 
 >
 > **K 域旧命名映射注脚**:本清单引用 K 域动作(K1 批量冻结、K4 风险模型、K5 复审裁决)时,角色映射为 §1.1 体系:平台管理员→超级管理员、风控运营→风控(member)、审计员→只读审计;主管层级 = 角色内 lead 层级(承担高敏执行门槛)。K1④ 正文与 K1⑥ 矩阵以**矩阵为准**(矩阵粒度更细),执行权 = 风控(lead)/超管;K5④ 正文与 K5⑥ 矩阵以矩阵为准,执行权 = 风控(lead)/超管。
 >
-> 上列清单是各章「④ 操作动作」「④a 交互与弹窗规格」与「⑥ 权限 & 审计」段标「确认弹窗」动作的**汇总权威**;**本清单随各章新增高敏动作同步更新**。强制登出 / 标记 / 只读查看 / 风控自动检测等**非高敏或即时止血**动作不入确认门(直接生效 + 留痕),其分界以「是否放大资金流出 / 变更权限边界 / 触及用户资产或合规态」为准。
+> 上列清单是各章「④ 操作动作」「④a 交互与弹窗规格」与「⑥ 权限 & 审计」段标「确认弹窗」动作的**汇总权威**;**本清单随各章新增高敏动作同步更新**。运营账号或单设备强制登出 / 标记 / 只读查看 / 风控自动检测等**非高敏或即时止血**动作不入确认门(直接生效 + 留痕),其分界以「是否放大资金流出 / 变更权限边界 / 触及用户资产或合规态」为准。
 
 **④ 操作动作**
 
@@ -1159,6 +1159,7 @@ Nexion 运营控制后台
 2. **真实储备账本卡**:平台实际可兑付资产明细(USDT 储备主科目 + 其他可变现资产),含手动注入登记的累计额(④ 登记动作写入)。
 3. **应付负债账本卡**:用户端累计应付项汇总(余额 + 收益 + 待提现 + 锁仓本息),作为概览数;**9 类负债科目的完整分解下钻入 B2**(本卡点击"查看负债构成"跳 B2)。
 4. **净敞口曲线**:净敞口(= 真实储备 − 应付负债,绝对额 USDT)时间序列折线,可选窗口(7d / 30d / 90d);敞口转负(负债 > 储备)区段高亮红。 今日概览的资金区按精确净差额区分三态：负值写储备不够付，0 写「储备刚好够付应付款」，正值才写储备多于应付款；0 不归入富余分支（BUG-179）。
+4. **净敞口曲线**:净敞口(= 真实储备 − 应付负债,绝对额 USDT)时间序列折线,可选窗口(7d / 30d / 90d);敞口转负(负债 > 储备)区段高亮红。 首页覆盖率卡与差额卡按精确净差额区分三态：负值写储备不足，0 写「储备与应付款持平」/「储备等于应付款，刚好够付」，正值才写储备有余；0 不归入富余分支。双账本「两本账对照」中的「有富余 / 刚好够 / 不够付」同样按净差额判断，与下方净额标签一致；即使覆盖率舍入为 100%，差额 −1 USDT 仍显示「不够付」（BUG-179）。
 5. **告警条**:覆盖率跌破红线 / 黄线时置顶常驻告警条(联动 B5 风险雷达 + ⑦ 风控),展示触发时刻、当前值、建议处置(收紧提现 dial,**仅建议不自动执行**)。
 
 数据来源:储备与负债数字由服务端读资金账本、配置和业务存量聚合(见 ⑧),**server-canonical**,不来自事件流。其中真实储备总额引用 **D3 聚合结果**(§3.14:资金池水位权威归 D3),B1 不另立独立账本计算(见 ⑦)。
@@ -1171,7 +1172,7 @@ Nexion 运营控制后台
 | 兑付覆盖率黄线(`coverageYellowLine`) | **110%** | 100%–200%(须 > 红线值) | 实时 | 同上(运营内部预警缓冲带);默认 110% 给运营 10pct 安全垫提前介入 |
 | 净敞口曲线默认窗口 | 30d | 7d / 30d / 90d | 实时(仅视图) | 无(视图参数) |
 | 储备科目纳入范围 | USDT 储备(主)+ 已配置可变现资产 | 科目级开关 | 仅新对账周期(改后下一对账批生效,不追溯历史快照) | 与 B2 负债科目开关对称;科目定义须与 D3 资金池口径一致(§3.14 D3 权威) |
-| 告警通知渠道 | 站内 + 邮件 | 站内 / 邮件 / Webhook | 实时 | 告警订阅,B5 共用同一订阅配置 |
+| 告警通知渠道 | 站内 | 站内；邮件暂不可用；外部消息通知按配置开放 | 实时 | 首页差额卡显示「站内」（BUG-345）；告警订阅与 B5 共用同一配置 |
 
 > **红黄线互锁约束**:`coverageYellowLine` 与 `coverageRedLine` 不是相互独立的两个范围——必须强制满足 **`coverageYellowLine > coverageRedLine`**(黄线为预警缓冲带,须高于红线触发线),否则告警逻辑倒置。该互锁由 ⑤ `PUT /api/admin/treasury/thresholds` 在服务端校验(违反返回 400);上表范围列已就地标注"须 < 黄线值 / 须 > 红线值"作为互锁边界。
 
@@ -2089,11 +2090,11 @@ C2 是**单用户账户处置入口**——冻结 / 解冻、强制登出、加�
 |---|---|---|---|
 | 冻结账户(+ 原因码) | 风控(lead)/ 超管(财务可发起冻结请求单转风控) | C2-MD1(理由必填) | `admin.user_frozen`(operator / reason)+ 联动 D2 frozen |
 | 解冻账户 | 风控(lead)/ 超管 | C2-MD2(理由必填) | `admin.user_unfrozen`(operator / reason) |
-| 强制登出全部 session | 按钮和接口均要求 `user_c2_session_revoke_all` | C2-MD3(理由必填;止血动作,确认后立即生效) | `admin.session_revoked`(scope / reason);请求 `/profiles/{userId}/sessions/revoke-all`，记录 `C2_USER_SESSIONS_REVOKED` |
+| 强制登出全部 session | C2 强退权限及 A2 提案权限 | C2-MD3（理由必填；批准后生效） | 提交 A2 `c2_session_revoke_all`，另一位超管批准后撤销会话并记录 `C2_USER_SESSIONS_REVOKED` |
 | impersonate(模拟登录) | 客服 / 风控 | C2-MD4(理由必填;只读+限时+全审计三重约束) | `admin.user_impersonation_started` / `admin.user_impersonation_ended`(operator / reason / ttl) |
 | 加白 / 拉黑 | 风控(lead)/ 超管 | C2-MD5(加白)/ C2-MD6(拉黑)(理由必填) | admin 审计(名单类型 / reason / 失效时间 / operator) |
 
-> **impersonate / 冻结 = 高敏动作**(§1.8 原则二.4,2026-06 操作确认决议):impersonate(进入用户视角,即便只读亦涉隐私)与冻结 / 解冻(影响用户资金与登录)均为高敏动作,经业务专属确认弹窗 + 理由必填即时执行,落 A2 审计并实时告警超管与风控 lead;冻结 / 解冻 / 名单的执行权按原复核层级就高为风控(lead)/超管(财务发现资金侧异常时可发起冻结请求单转风控处理);impersonate 保留客服 / 风控执行权(客服排障主用例),由**只读 + ≤30min 限时 + 全程审计 + 实时告警**四重约束补偿单人执行风险。强制登出为收紧安全的止血动作,确认即生效。不引入 §1.1 RBAC 枚举之外的角色。
+> **impersonate / 冻结 = 高敏动作**(§1.8 原则二.4,2026-06 操作确认决议):impersonate(进入用户视角,即便只读亦涉隐私)与冻结 / 解冻(影响用户资金与登录)均为高敏动作；按现行权限，财务的冻结 / 恢复提案批准后生效，其他授权账号的冻结 / 恢复及只读模拟登录按当前直接接口执行并留记录;冻结 / 解冻 / 名单的执行权按原复核层级就高为风控(lead)/超管(财务发现资金侧异常时可发起冻结请求单转风控处理);impersonate 保留客服 / 风控执行权(客服排障主用例),由**只读 + ≤30min 限时 + 全程审计 + 实时告警**四重约束补偿单人执行风险。全设备强制登出按 T02 提交审批，另一位超级管理员批准后生效；单设备登出保持立即生效。不引入 §1.1 RBAC 枚举之外的角色。
 
 **④a 交互与弹窗规格**
 
@@ -2132,11 +2133,10 @@ C2 是**单用户账户处置入口**——冻结 / 解冻、强制登出、加�
 - **成功反馈**:弹窗关闭;状态更新「正常」;toast;事件 `admin.user_unfrozen`;实时告警;D2 联动恢复。
 
 ##### [C2-MD3] 强制登出确认
-- **功能（BUG-206）**:立即终止该用户全部活跃 session(被盗号止血)，确认后立即生效。C2 页面读取要求 `user_c2_read`；列表和详情按钮及执行接口均要求 `user_c2_session_revoke_all`。`revokeUserAccountActionSessions` 调用 C2 `/profiles/{userId}/sessions/revoke-all`，不要求 C5 强退权限，也不因角色名放行；当前委托执行限制仅针对冻结 / 解冻，不拦截强制登出。C5 仍用自己的安全接口、权限和显式操作编号。
-- 账户详情加载后，在线设备、强制登出按钮和确认框共用该账户的准确在线会话数。列表按概览会话样本显示数量和启用按钮。原操作结果待确认时，继续使用原请求和原理由。
-- **布局结构**:1. **信息区**:userId / 全部在线设备数量。2. **输入区**:reason(多行文本,必填,8–200 字)。3. **按钮区**:取消 / 确认提交；有待确认操作时显示「重试原操作」，恢复原理由并锁定输入。
-- **错误态（BUG-283）**:系统明确返回无在线设备（`NO_ACTIVE_SESSION`）、对象正在审批（`OBJECT_LOCKED_BY_A2`）、理由格式拒绝（`SESSION_REVOKE_REASON_REJECTED`）、理由长度不合规（`C2_REASON_LENGTH_INVALID`）、未选用户或缺少操作编号等业务拒绝时，均显示可读原因，保留确认框和理由并在框内提示，同时释放该操作编号；即使是重试返回的缓存业务拒绝，也允许后来操作使用新编号。已有待确认操作的重试若遇到认证或授权失败（HTTP 或业务码 401 / 403），不能据此判定原操作未执行，保留原理由和编号；同一操作员重新登录或恢复权限后仍继续原操作，不撤销后来新建的会话。提交期间等待请求完成，不能提前关闭确认框或修改理由。响应丢失、结果未知或仍在处理时，显示「原操作结果尚未确认」，按目标用户恢复现有待确认命令存储中的原理由、请求内容和编号；关闭后重开、刷新后回到同一用户仍恢复原操作，即使当前已无在线设备也可重试确认结果。不同用户独立保存。重试只重放原操作，不再次撤销后来新建的会话。
-- **成功反馈**:收到成功结果即结束该命令；随后刷新账户列表及已打开详情。即使刷新失败，确认框仍按成功关闭并提示已强制登出，页面显示加载错误、暂停登出入口并只提供重新加载，不再发送登出请求；加载恢复后才允许发起后来操作。事件 `admin.session_revoked`。
+- **功能（T02 / BUG-349）**：提交 A2 `c2_session_revoke_all`，命令参数 `{userId}`，目标 `{domain:"C",type:"user",id}`；C2、C5 均使用后端描述符规定的 `sourceDomain:"C2"`。另一位有审批权限的超级管理员批准后才撤销全部会话，发起人不能批准自己的操作。
+- **权限**：C2 按钮要求 `user_c2_session_revoke_all`，并具有 `platform_a2_proposal_create` / `platform_a2_write` 之一。只有 C2 权限、没有 A2 提案权限的账号不能新建提案；已有当前操作员针对该用户的待确认记录时，C2 列表、详情与 C5 均保留可用的「重试原操作」，不再按当前写权限隐藏或禁用。恢复请求若被系统拒绝，显示拒绝原因并保留原记录。提案授权缺口交后端处理，不回退直接登出。
+- **布局与反馈**：显示用户及当前在线设备数，8–200 字理由，明确「批准后生效」。提交成功只提示已提交审批，不声称设备已退出；批准前在线设备维持原状态。C2、C5 停止调用各自的直接 revoke-all 接口。后端仍须阻止直接接口绕过审批。
+- **结果尚未确认（延续 BUG-283）**：按操作员和目标用户保留原理由、显示名、请求内容和操作编号；理由锁定，显示「重试原操作」。关闭重开或刷新仍恢复同一操作，即使当前无在线设备也能重试；C2、C5 共用同一目标的待确认记录。每次恢复先按原键精确查询；本人、目标用户及原键核对通过后确认收敛并清除本地记录。`operationCode` 是可选回执字段，只有回执携带时才要求为 `c2_session_revoke_all`，为空不阻碍确认。未查到且仍在 24 小时内时才允许原键原内容重试；超过 24 小时保留记录且只查询，不重发、不换键。查询失败、本人或目标不匹配、已携带的操作类型不符时保持尚未确认；丢失响应显示中文未知结果与「重试原操作」，不显示原始错误码。`IDEMPOTENCY_REQUEST_IN_PROGRESS`、`IDEMPOTENCY_RESULT_UNKNOWN`、`IDEMPOTENCY_KEY_PAYLOAD_MISMATCH` 三种 409 均保留原记录；明确业务拒绝后释放记录，原操作重试遇到认证或授权失败则继续保留。批准后回取原提案不会再次撤销后来新建的会话。
 
 ##### [C2-MD4] 发起 impersonate(代入会话)
 - **功能**:授权发起对目标用户的只读限时代入会话(复现用户所见),确认即签发只读会话句柄并进入代入视图。
@@ -2167,7 +2167,7 @@ C2 是**单用户账户处置入口**——冻结 / 解冻、强制登出、加�
 **⑤ 接口**
 - `POST /api/admin/users/:userId/freeze`(冻结,确认弹窗 C2-MD1:body 携 `{reasonCode, reason}`,reason 空值 400 `REASON_REQUIRED`;`Idempotency-Key` 必带,防重复冻结)。冻结确认后 server **原子**置账户 frozen + 联动 D2 提现 frozen(§9.11f),client 不本地冻结。
 - `POST /api/admin/users/:userId/unfreeze`(解冻,确认弹窗 C2-MD2,body 携 reason;`Idempotency-Key` 必带)。
-- `POST /api/admin/users/profiles/{userId}/sessions/revoke-all`（C2 全部活跃会话登出；body 携 `{reason, operator}`，带 `Idempotency-Key`，与按钮一致要求 `user_c2_session_revoke_all`；成功返回 `{userId, revokedCount, status: "REVOKED"}`，记录 `C2_USER_SESSIONS_REVOKED`）。待确认操作沿用 users 待确认存储，按该 C2 路径与目标查找原请求、理由和编号；不迁移旧 C5 路径记录。C5 继续调用 `/profiles/{userId}/security/sessions/revoke-all`，校验 `user_c5_session_revoke_all` 并使用自身显式编号，成功返回 `revokedSessionCount`。
+- `POST /api/admin/platform/audit/operations`：C2、C5 全设备登出提交审批，命令 `C / c2_session_revoke_all / {userId}`，理由和 `Idempotency-Key` 必填。批准由 A2 执行会话撤销；PC 不再调用两个直接 revoke-all 接口。
 - `POST /api/admin/users/:userId/impersonate`(发起模拟登录,确认弹窗 C2-MD4,body 携 `{ttlMin, reasonCode, reason}`;返回**只读受限**的 impersonation 会话句柄 + 到期时间 ≤ 30min)。**只读识别机制**:impersonation 会话句柄包含特殊 claim(如 `scope:'impersonate_readonly'` 或独立的 impersonation token type),所有写操作 endpoint 的 auth middleware 须检测该 claim 并对会话内一切写请求返回 403 `IMPERSONATION_READ_ONLY`;具体实现方案见 A3 / Ch9 auth middleware 规范。运营端以该会话句柄载入**用户前端只读会话视图**(②(b) 代入会话视图,渲染用户视角画面);句柄到期(≤ 30min)或运营退出即失效,失效后该会话一切请求(含读)一并拒绝。
 - 名单:`POST /api/admin/users/:userId/{allowlist|blocklist}`(确认弹窗 C2-MD5/MD6,body 携 reason;**账户级 userId 维度**,与 K1 IP 维度白名单不重叠)。
 
@@ -2179,7 +2179,7 @@ C2 是**单用户账户处置入口**——冻结 / 解冻、强制登出、加�
 |---|---|---|---|---|---|---|
 | 查看账户状态 / impersonate 台账 | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | 冻结 / 解冻 | ✅ | —(可发起冻结请求单) | ✅(lead) | — | — | — |
-| 强制登出全部会话 | ✅（按钮与接口均校验 C2 强退权限） | 不因角色名放行 | 按实际 C2 授权 | 不因角色名放行 | 按实际 C2 授权 | — |
+| 提交全部会话登出审批 | ✅ | 按 C2 与 A2 实际授权 | 按 C2 与 A2 实际授权 | 按 C2 与 A2 实际授权 | 按 C2 与 A2 实际授权 | — |
 | impersonate | ✅ | — | ✅ | — | ✅ | — |
 | 加白 / 拉黑 | ✅ | — | ✅(lead) | — | — | — |
 
@@ -2466,12 +2466,13 @@ App 自助修改密码先校验旧密码，再提交本次校验通过的固定�
 
 | 动作 | 角色 | 确认弹窗 | 审计点 |
 |---|---|---|---|
-| 强制登出(指定 / 全部 session) | 风控 / 客服 | C5-MD1(理由必填;止血动作,确认即生效) | `admin.session_revoked`(scope / reason);经 §4.5.2 revoke 体系 |
+| 强制登出指定 session | 按 `user_c5_session_revoke_one` 授权 | C5-MD1（理由必填；立即生效） | `admin.session_revoked`；经会话撤销体系 |
+| 提交全部 session 登出审批 | C2 强退权限及 A2 提案权限（与 C2 相同） | C5-MD1（8–200 字理由；批准后生效） | A2 `c2_session_revoke_all`；另一位超管批准后撤销 |
 | 人工 disable 2FA(丢设备路径) | 风控(lead)/ 超管(客服可发起请求单) | C5-MD2(理由必填+**KYC 二验前置**,防社工,§4.5.1) | `admin.2fa_disabled`(operator / KYC 校验结果 / reason) |
 | 密码重置 | 风控(lead)/ 超管(客服可发起请求单) | C5-MD3(理由必填+**KYC 二验前置**) | admin 审计(operator / KYC 校验 / reason) |
 | 解除账户锁定(15min / 24h) | 15min 短锁:风控 / 客服;24h 长锁:风控(lead)/ 超管 | C5-MD4(理由必填+KYC 二验;server 按锁定类型校验执行门槛) | admin 审计(锁定类型 / KYC 校验 / operator) |
 
-> **disable 2FA / 密码重置 = 确认弹窗 + KYC 二验**(§4.5.1 / §4.6.2,2026-06 操作确认决议):前端不提供「忘记 2FA」自助路径(防社工,§4.5.1);运营侧 disable 2FA 与密码重置执行权 = 风控(lead)/超管(原复核层级转执行门槛),均须**确认弹窗 + 理由必填 + KYC 二次验证 + audit log + 实时告警**(§4.5.1:「server 人工 disable 2FA + audit log,审核通过后用户重新走 enroll」;§4.6.2 异常解锁:「提交 KYC 二次验证 + 客服工单,server 人工 unblock + 写 audit log」);客服可发起请求单(转风控核实执行)。强制登出为收紧安全的止血动作,确认即生效。
+> **disable 2FA / 密码重置 = 确认弹窗 + KYC 二验**(§4.5.1 / §4.6.2,2026-06 操作确认决议):前端不提供「忘记 2FA」自助路径(防社工,§4.5.1);运营侧 disable 2FA 与密码重置执行权 = 风控(lead)/超管(原复核层级转执行门槛),均须**确认弹窗 + 理由必填 + KYC 二次验证 + audit log + 实时告警**(§4.5.1:「server 人工 disable 2FA + audit log,审核通过后用户重新走 enroll」;§4.6.2 异常解锁:「提交 KYC 二次验证 + 客服工单,server 人工 unblock + 写 audit log」);客服可发起请求单(转风控核实执行)。全设备强制登出按 T02 提交审批，另一位超级管理员批准后生效；单设备登出保持立即生效。
 >
 > **24h 长锁执行门槛升级的依据(前端 PRD 无直接依据,本 PRD 政策扩展)**:前端 §4.6.2 异常解锁路径**未区分锁定类型**;本 PRD 作为运营后台政策扩展,**对 24h 长锁解除设更高执行门槛(风控 lead/超管)**,原因是 **24h 锁关联 §4.6.2 强制 reset 流程,解锁等同绕过 reset 门槛,安全敏感性高于 15min 短锁**。
 >
@@ -2492,10 +2493,9 @@ App 自助修改密码先校验旧密码，再提交本次校验通过的固定�
 **(2) 弹窗规格**
 
 ##### [C5-MD1] 强制登出确认
-- **功能**:终止该用户指定 / 全部活跃 session(经 §4.5.2 revoke 体系),确认即生效。
-- **布局结构**:1. **信息区**:userId / 目标 scope(session 设备/IP/lastActiveAt 或「全部 N 个」)。2. **输入区**:reason(多行文本,必填,8–200 字)。3. **按钮区**:取消 / 确认登出。
-- **错误态**:409(session 已结束)/ 400 `REASON_REQUIRED` / 403。
-- **成功反馈**:弹窗关闭;session 列表就地更新;toast;事件 `admin.session_revoked`。
+- **单设备**：原确认框与 `user_c5_session_revoke_one` 权限不变，填写理由后立即退出该设备，成功刷新会话列表。
+- **全部设备（BUG-349）**：改用现有操作确认，8–200 字理由，明确「批准后生效」；提交 A2 `c2_session_revoke_all`，参数和来源同 C2-MD3。新提案与 C2 使用同一权限：`user_c2_session_revoke_all` 加 `platform_a2_write` / `platform_a2_proposal_create` 之一，不额外要求 `user_c5_session_revoke_all`。
+- **反馈与恢复**：成功仅提示已提交审批，不声称已经下线。结果尚未确认时保留原键、原内容与理由；刷新、重开恢复并锁定原理由；已有原记录时，即使不再具有新提案所需权限仍显示可用的「重试原操作」。恢复与超过 24 小时后的只查询规则同 C2-MD3，不另建命令。发起人不能审批自己的提案。
 
 ##### [C5-MD2] 人工 disable 2FA
 - **功能**:解绑用户 2FA(丢设备路径,server revoke recovery codes),确认即生效;用户须重新 enroll。
@@ -2517,7 +2517,7 @@ App 自助修改密码先校验旧密码，再提交本次校验通过的固定�
 
 **⑤ 接口**
 - `GET /api/admin/users/:userId/sessions` — session 列表(IP / UA / lastActiveAt / 当前标识,§4.5.2)+ 2FA 状态 + 锁定态。
-- `POST /api/admin/users/:userId/revoke-session`(强制登出;`?scope=current|all|:sessionId`;经 §4.5.2 revoke refresh + access token revocation list / JTI)。
+- 指定设备登出沿用现有 `POST /api/admin/users/sessions/{refreshTokenId}/revoke`；全部设备登出改为 `POST /api/admin/platform/audit/operations` 提交 `c2_session_revoke_all`，批准后经会话撤销体系执行。
 - `POST /api/admin/users/:userId/invalidate-password`(密码重置,确认弹窗 C5-MD3,body 携 reason + **KYC 二验前置**(未过 422 `KYC_REVERIFY_REQUIRED`);server **置该用户密码失效**并向用户手机发送 reset OTP(或令下次登录强制走 reset 路径),用户侧走 **§4.2.3 一次性 reset** 完成设置新密码并撤销原会话，再回到密码登录，不自动签发 session;server `argon2id` 哈希存储,§4.6.3;`Idempotency-Key` 必带)。
 - `POST /api/admin/users/:userId/disable-2fa`(人工 disable 2FA,确认弹窗 C5-MD2,body 携 reason + **KYC 二验前置**;server revoke recovery codes,§4.5.1;`Idempotency-Key` 必带)。
 - `POST /api/admin/users/:userId/unlock`(解除锁定,账户解锁处置权落 C5;确认弹窗 C5-MD4,body 携 reason + KYC 二验;server 按锁定类型校验执行门槛——24h 长锁须风控(lead)/超管(资质不足 403),15min 短锁风控/客服,§4.6.2;与 C6 共用同一 endpoint,C6 不另设解锁端点)。
@@ -2872,6 +2872,8 @@ D2 是后台**最高频操盘动作**,控制平台**资金流出节奏**与**兑
 
 **(b) 完整提现状态机**(server-canonical,client 仅订阅):
 
+**ERC20 失去链上确认（S04 / BUG-343）**：`USDT-ERC20` 的 `TX_ORPHANED` / `DEAD` 在队列与详情统一显示「冻结 · 仍占提现额度」，资金保持冻结并继续占额度，不提供手动退款或其他处置入口；需核对链上结果。即使从页顶遗留退款记录点「重试原操作」，确认入口也先按最新行状态拒绝退款，保留原记录并提示到操作记录核对，不发退款请求。选择「冻结」筛选时只查询 FROZEN；筛选行下提示丢失链上确认的 ERC20 单须在「打款异常，需人工核对」中查看，不扩展后端查询。BEP20、银行轨及 ERC20 其他状态沿用各自规则。后端必须在直接调用退款接口时明确业务拒绝，不能返回 500；实际冻结余额、额度占用及链上重组处理仍由后端负责。
+
 **银行轨详情与恢复**：BANKQR 单据在同一 D2 队列展示，读取锁定报价、收款账户一致性 `beneficiaryEligibility:{canWithdraw,reasonCode}` 和资金终态证据 `settlementEvidence`。详情只展示掩码账号；服务端检查当前平台账号、收款账户编号和版本与原报价一致，不要求外部账户/本人归属核验证据，也不生成伪造 verified。服务商原始状态不能单独证明已到账或已退款；终态以服务端完成原单和账本核对后落库的 `paid/refunded` 证据为准。
 
 银行单 `MANUAL_REVIEW` 的“重新查单”仅查询原服务商订单，再由服务端裁决恢复；不新建提现、不重复出款。请求携 `Idempotency-Key`、当前 `version` 和 10–300 字理由，版本变化或已有处理中/未知命令时拒绝重发。权限同时要求 `finance_d2_read`、`finance_d2_withdrawal_approve`、`finance_d2_withdrawal_refund`；结果冲突继续人工核对并保留资金原状态。
@@ -2898,15 +2900,15 @@ submitted ─风控评分─▶ review-pending ─approve─▶ review-passed �
                       │                                                  │            │
    submitted ─地址校验失败──▶ address-invalid ─────────────────────────┐│            │
                                                                        ││            │
-   processing/sent 链上异常 ──▶ tx-failed / tx-orphaned ──▶ refunded(退回余额)◀┘          │
+   processing/sent 链上异常 ──▶ tx-failed / tx-orphaned ──▶ 按渠道规则处理◀┘          │
                                                                                        │
-   (review-rejected / address-invalid / tx-failed / tx-orphaned 均可 ──▶ refunded)◀─────┘
+   (review-rejected / address-invalid / tx-failed 按渠道规则 ──▶ refunded)◀─────┘
 ```
 
 - **正常 5 态**(§9.3.6 / §1.9):`submitted → review-passed → processing → sent → confirmed`。状态机中 `review-pending` 为 `approve` 动作前的待审中间节点,`approve` 推进至 `review-passed`(与前端 §9.3.6 及后台 PRD 术语表 `review-passed` 命名对齐),`review-passed` 后进 `processing`;事件侧 `withdraw.approved`(=review-passed 态,§2.4.5 ③)。**`review-pending` 是后台扩展态**——对应前端 §9.3.6 `submitted` 状态在后台队列中的细分(等待人工审核中),其上承接 `delay` / `freeze` / `reject` / `approve` 四条转出边(详见下"转出边触发态"说明)。
 - **异常 / 失败 6 态**(§9.11f,真后台扩展):`review-rejected`(审核拒绝)/ `address-invalid`(地址非法)/ `tx-failed`(链上交易失败)/ `tx-orphaned`(交易孤块)/ `refunded`(已退回余额)/ `frozen`(账户冻结)。全部 server-canonical,client 仅订阅(§9.11f:client 绝不本地推进)。
 - **转出边触发态(delay / freeze 前置态)**:`delay`(extended-hold)与 `freeze`(冻结)均从 `review-pending` 态引出,`submitted` 仅保留一条转出边(→ `review-pending`,风控评分后自动推进);具体——`freeze` 可在 `review-pending` 及之后任何在途态(`review-passed` / `processing`)触发,`delay` 仅在 `review-pending` 态触发。
-- **失败态资金归位**:`review-rejected` / `address-invalid` / `tx-failed` / `tx-orphaned` 均须将冻结的提现额经 `refunded` 退回用户可提余额(server 记 refund bill),不得资金悬空。
+- **失败态资金归位**：各渠道按已确认资金结果处理；`USDT-ERC20` 的 `TX_ORPHANED` / `DEAD` 禁止退款，继续冻结并占额度。`TX_FAILED` 等其他状态沿用原规则，不因本次调整扩大退款范围。
 
 **到期处理**：人工延迟、冻结到复查时间自动回待审核，不直接打款；H1 系统冷却到期重新检查当前规则与风险，结果可能是放行、待审核、冻结或再次延迟一次。打款异常单不能批量处理，须打开详情到打款方核对。
 
@@ -2962,6 +2964,9 @@ submitted ─风控评分─▶ review-pending ─approve─▶ review-passed �
 | freeze | ②(d)决策区「冻结」 | 警示按钮 | `review-pending` / `review-passed` / `processing` 在途态;有动作权限才显示，角色不足时禁用并写原因 | 打开弹窗 D2-MD4 |
 | unfreeze | ②(a)队列 `frozen` 态行内「解冻」+ ②(d)决策区 | 次按钮 / 行内按钮 | 仅 `frozen` 态;有动作权限才显示，角色不足时禁用并写原因 | 打开弹窗 D2-MD5 |
 | manual-refund-override | ②(d)异常态单详情「手动退款」 | 警示按钮 | 仅 `review-rejected` / `address-invalid` / `tx-failed` / `tx-orphaned` 异常态且未 refund;有动作权限才显示，角色不足时禁用并写原因 | 打开弹窗 D2-MD6 |
+| freeze | ②(d)决策区「冻结」 | 警示按钮 | `review-pending` / `review-passed` / `processing` 在途态;风控(lead)/财务(lead)/超管渲染 | 打开弹窗 D2-MD4 |
+| unfreeze | ②(a)队列 `frozen` 态行内「解冻」+ ②(d)决策区 | 次按钮 / 行内按钮 | 仅 `frozen` 态;风控(lead)/财务(lead)/超管渲染 | 打开弹窗 D2-MD5 |
+| manual-refund-override | ②(d)异常态单详情「手动退款」 | 警示按钮 | 按渠道与状态允许退款且未 refund；ERC20 `TX_ORPHANED` / `DEAD` 不提供入口；财务(lead)/超管渲染 | 打开弹窗 D2-MD6 |
 | 批量操作 | ②(c)批量操作面「批量执行」 | 主按钮 | 已筛选 ≥ 1 单且已选动作;财务/风控渲染 | 打开弹窗 D2-MD7 |
 | 查看队列 / 单笔详情 | ②(a)/(d) 导航 | 链接 | 按角色裁剪(客服只读受限) | 跳转视图,无弹窗 |
 
@@ -2997,6 +3002,7 @@ submitted ─风控评分─▶ review-pending ─approve─▶ review-passed �
 - **功能**:对在途提现执行 freeze(转 `frozen` 态,账户资金冻结),确认即生效。
 - **布局结构**:1. **信息区**:withdrawalNo / userId(链 C1)/ 金额 / 当前状态 / K4 风险评分与命中证据 / 关联 C2 账户冻结态(如有)。2. **影响预览区**:提示行「冻结后该单停在 frozen 态,手动解冻或到复查时间回 review-pending;账户级冻结另走 C2(本动作仅冻结本单资金)」。3. **输入区(生命周期字段)**:**冻结期限(period,枚举:7d / 14d / 30d / 45d / 长期需复查)** + **责任人(owner)** + **复查时间(reviewAt,北京时间 UTC+8 的日期时间)** + reason(必填,8–200 字)。4. **按钮区**:`[取消]` · `[确认冻结]`(警示色;置灰条件 / loading;携 `Idempotency-Key`)。
 - **现行校验**:同 D2-MD3;长期冻结要在未来 1–365 天内复查。
+- **布局结构**:1. **信息区**:withdrawalNo / userId(链 C1)/ 金额 / 当前状态 / K4 风险评分与命中证据 / 关联 C2 账户冻结态(如有)。2. **影响预览区**:提示行「冻结后该单停在 frozen 态,解冻回 review-pending;账户级冻结另走 C2(本动作仅冻结本单资金)」。3. **输入区(生命周期字段)**:**冻结期限(period,后端枚举:7D / 14D / 30D / 45D / LONG_TERM；详情分别显示 7 天 / 14 天 / 30 天 / 45 天 / 长期（需复查），BUG-344；表单中文选项仍提交原值 7d / 14d / 30d / 45d / LONG_TERM；K3_DELAY_ONCE 显示「到期复核后再延迟一次（以复查时间为准）」)** + **责任人(owner)** + **复查时间(reviewAt,北京时间 UTC+8 的日期时间)** + reason(必填,8–200 字)。4. **按钮区**:`[取消]` · `[确认冻结]`(警示色;置灰条件 / loading;携 `Idempotency-Key`)。
 - **错误态**:409(非在途态)/ 400 `REASON_REQUIRED`(reason / period / owner / reviewAt 任一缺失)/ 403。
 - **成功反馈**:关窗;行内状态更新 `frozen`;**到复查时间自动回待审核,列表展示冻结时长、剩余复查时间、当前责任人**;toast;事件 `withdraw.frozen`(period / owner / reviewAt / reason / operator);实时告警风控 lead;喂 B5。
 
@@ -3009,6 +3015,8 @@ submitted ─风控评分─▶ review-pending ─approve─▶ review-passed �
 ##### [D2-MD6] 手动退款覆盖确认
 - **功能**:对异常态(`review-rejected` / `address-invalid` / `tx-failed` / `tx-orphaned`)提现单手动执行 refund(转 `refunded`,退回用户可提余额并记 refund bill),确认即生效。
 - **布局结构**:1. **信息区**:withdrawalNo / userId / 金额 / 当前异常态与异常原因 / 链上 txHash(如有)。2. **影响预览区**:提示行「退回额将计入用户可提余额并记 refund bill;链上态单 server 预检无在途重复出金后方可退回」。3. **输入区**:reason(必填,8–200 字)+「退款前核实」复选框「我已核实钱没有打出去」,默认不勾,勾选才能提交。ERC20 打款异常不显示手动退款。4. **按钮区**:`[取消]` · `[确认退款]`(警示色;置灰条件 / loading;携 `Idempotency-Key`)。
+- **功能**：仅对渠道和状态规则允许退款的异常提现单手动执行 refund（转 `refunded`，退回用户可提余额并记 refund bill），确认即生效。ERC20 `TX_ORPHANED` / `DEAD` 禁止退款，列表和详情均无入口。
+- **布局结构**:1. **信息区**:withdrawalNo / userId / 金额 / 当前异常态与异常原因 / 链上 txHash(如有)。2. **影响预览区**:提示行「退回额将计入用户可提余额并记 refund bill;链上态单 server 预检无在途重复出金后方可退回」。3. **输入区**:reason(必填,8–200 字)+ 确认勾选「我已核实链上未出金 / 资金未离开平台」(未勾置灰)。4. **按钮区**:`[取消]` · `[确认退款]`(警示色;置灰条件 / loading;携 `Idempotency-Key`)。
 - **错误态**:409(已 refunded / 状态机非法)/ 422(server 预检发现链上在途出金,阻断)/ 400 `REASON_REQUIRED` / 403。
 - **成功反馈**:关窗;行内状态更新 `refunded`;toast「已退回 · 已记账 · 已记审计」;refund bill + admin 审计;实时告警财务 lead。
 
@@ -3744,6 +3752,10 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 #### [H2] 免费试用引擎
 
+- **试用收益抵扣上限显示（BUG-346）**：空值时顶部卡片与参数行均显示「不设上限」；0 显示 `$0`，正数继续显示金额。留空与 0 的存储及业务含义保持区别。
+- **数值范围拒绝提示（BUG-257 后续）**：试用天数、自动推送数值或每日收益超出系统允许范围被拒绝时，说明数值超出允许范围、本次未保存，并提示核对参数允许的上下限后修改重试；保留确认框、原输入及理由。名额超过 1000000 或整数项填入小数时，前置校验同样保留确认框、输入和理由，不发保存请求。系统当前允许每日收益 0–1000000，不在页面截断或取整。
+- **系统只读参数（S25）**：`chargeFailRate`（扣款失败概率）、`phaseOpen`、`trialPriceUSD`、`autoChargeAtEnd`、`actualSeatsLeftToday` 均不提供「调整」入口。扣款失败概率保持隐藏数值；商品价格随 E1、阶段开放随 H1、实际剩余名额由系统计算。
+
 ##### ① 模块定位与目标
 
 试用转化漏斗(开始试用 → shadow 累积 → 用户确认购买或到期结束)的运营控制面。对齐前端 §9.11a(admin/user endpoints 与 server-side 职责)、§9.11b(TrialConfig)、§9.11d.3(chargeFailRate server-only)、§9.11.1(trial 7 态状态机)。**§9.11f 确认 trial 7 态已完整实现(✓,7-state, MVP-A 已实现)**;§9.11f 主体内容为 Order / Withdrawal / Staking 失败态扩展,不新增 trial 状态,trial 7 态权威定义以 §9.11.1 为准,本章 trial 子模块不引用 §9.11f 作为失败路径风控参考。
@@ -3752,7 +3764,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 **目标**:
 
-- 将试用全生命周期参数(19 项 TrialConfig)收敛为后台单一可调面,敏感项受操作确认(确认弹窗 + 理由必填)约束。
+- 将试用全生命周期参数收敛为后台统一参数面,可编辑项经确认弹窗 + 理由必填提交,系统只读项不提供调整入口。
 - 实时监控活动试用会话(7 态)、shadow 累计与状态转换时间线,支持单会话强制介入。
 - 输出试用漏斗 KPI(绑卡转化 / 试用→购买 / 失败 / 提前购买 / 复活),反哺 B3 漏斗与 KPI 看板。
 - 守住资金与风控边界:chargeFailRate server-only、试用 state 全 server-canonical、cooldown server 校验、循环养号联动 K2、扣款幂等、终态 shadow 合并走 server 事务。
@@ -3761,13 +3773,15 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 | 角色 | 权限 |
 |------|------|
-| 增长(Growth,对应 §1.1 RBAC 角色) | 查看会话监控列表、单会话详情、KPI 看板;直接编辑非敏感 TrialConfig(直接写入留痕,修改原因必填);**执行敏感 TrialConfig 改动(lead 层级,经确认弹窗 + 理由必填)**;触发 auto-push kill switch |
+| 增长(Growth,对应 §1.1 RBAC 角色) | 查看会话监控列表、单会话详情、KPI 看板;按动作权限编辑可编辑的 TrialConfig(确认弹窗 + 理由必填);触发 auto-push kill switch |
 | 风控(Risk,对应 §1.1 RBAC 角色) | **执行单会话强制操作(强制取消 / 强制触发扣款,lead 层级,经确认弹窗 + 理由必填)**;响应循环养号风控信号 |
-| 超级管理员(Super Admin,对应 §1.1 RBAC 角色) | **执行全部敏感 TrialConfig 改动与强制资金操作**(经确认弹窗 + 理由必填);查看审计 |
+| 超级管理员(Super Admin,对应 §1.1 RBAC 角色) | 按动作权限调整可编辑的 TrialConfig 及执行强制资金操作;查看审计 |
 | 只读审计(Read-only) | 仅查看监控列表、详情、KPI,不可发起写操作 |
 
 - 强制取消试用、强制触发扣款提交 A2 审批,超级管理员在「操作记录与审批」批准后回放,批准前试用状态和用户的钱都不变；强制扣款现行后端固定拒绝，批准后也不会扣款;提案记录操作者、理由、对象和前后值。参数修改和紧急关闭试用邀请弹窗不走审批,填操作理由后立即生效,记入操作记录。
 - `chargeFailRate` 系统只读:页面只显示「•••（不公开）」,不给修改入口,服务端 `TRIAL_PARAM_READONLY` 拒绝写入,**前端永不可知**(§9.11d.3)。
+- 强制取消试用、强制触发扣款为**高敏写操作**(2026-06 操作确认决议):由具备执行权的单人经业务专属确认弹窗 + 理由必填(server 强制非空 400 `REASON_REQUIRED`,8–200 字)即时执行,落 A2 审计(operator / before / after / reason / IP / ts)并实时告警超管与对应域 lead。**强制取消 / 强制触发扣款执行 = 风控(lead)/ 超管**。可编辑 TrialConfig 的调整入口受 `growth_h2_write` 动作权限约束,系统只读项即使有写权限也不可调整。
+- `chargeFailRate` 为 server-only 参数,按 S25 系统只读,后台仅展示「不公开」且无调整入口;**前端永不可知其数值**(§9.11d.3)。
 - **角色命名归属**:本表角色取自 A6 当前启用角色；执行门槛由 A6 的显式动作权限码和 A2 高敏动作清单共同约束，本章只引用。
 
 ##### ③ 界面与信息架构
@@ -3776,6 +3790,9 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 - 打开先看状态和经营摘要:结论条一句话写「试用正常开放，没有要处理的事」(16px,不放大,和其他页一个样子),有进行中的试用时写「试用正常开放，进行中的试用由系统自动结束，没有要处理的事」;J1 紧急开关关闭、目标商品不可用、运营阶段不开放、今日名额读不到或已用完时,改用提示条写原因和去哪解决。四个数字:进行中的试用、试用转购买率(第二行写提前购买的比例)、今日实际剩余免费名额、拦截反复薅试用;没有分母时显示「—」,不当 0。四个数的口径在名称旁的提示图标里,第二行只放数据。绑卡转化已退役,只在转购买率的口径说明里写。
 - 常改参数 6 项常显:试用目标商品、试用天数、每日免费名额上限、购买折扣率、购买折扣上限(`discountCapUSD`,原名「抵扣上限」)、试用收益抵扣上限。其余可写参数进「高级设置」,分试用周期、收益与立减、试用邀请弹窗三组。别处决定的值进「只读项」:当前阶段是否开放(去运营阶段设置)、试用设备价格(去商品管理)、扣款失败概率。每项一行:名称、提示图标、当前值、动作;这是什么、核对过的显示位置、什么时候生效在提示图标的气泡里(悬停或点击打开),改一项存一项,没有修改权的账号不显示「调整」。金额都写 USDT,协议键里的 USD 不改。商品写「商品编号」;`autoPush*` 四项页面写「试用邀请弹窗开关」「试用邀请弹窗延迟」「试用邀请弹窗冷却时间」「一次打开最多弹几次」,延迟写秒,接口仍存毫秒。三种优惠可以叠加:实付 = 售价 − 购买折扣 − 试用收益抵扣 − 提前购买立减,最低 0,这句在常改参数标题旁的提示图标里。右侧窄栏放试用邀请弹窗的当前状态、紧急关闭和分组导航,定位写进网址 `section`。系统固定的开始前检查和七态说明放「这页怎么用」;`gates` 为空时写「后台配置的检查项：未配置检查项」。紧急关闭卡片里只有状态和按钮;立即生效、关闭后这页不能重新打开、App 和 H5 现在不自动弹这些说明在卡片标题旁的提示图标里。每项一行高,不写第二行说明(生效文字写短,如「立即生效，只影响新试用」)。右边窄栏先放分组导航,再放「试用邀请弹窗」卡(红色紧急按钮不抢首屏),窄宽时卡里的状态和按钮排成一行。
 - 刷新和翻页时保留内容,但「调整」、紧急关闭、强制操作和点行都不可用,页头写「正在读取最新数据，读完再操作」。
+**(a) TrialConfig 参数面**
+- TrialConfig 参数集中展示(见 ④),按「实时生效项」与「仅影响新 trial 项」分区展示(分区依据 §9.11b),可编辑性另受系统只读规则约束。
+- 可编辑项点击「调整」打开确认弹窗(理由必填);price / chargeFailRate 为系统只读,不开放编辑确认框。
 
 **(b) 试用记录(默认收起)**
 - 折叠标题写总数和「平时不用处理」。折叠标题旁的提示图标写宽限中是正常状态、到期系统自动结束、不扣款,以及强制操作什么时候才用;抽屉底部按钮旁的提示图标写强制取消和强制扣款各用在什么时候、都要审批。列:账户 · 试用记录编号(`sid`,和确认框里的编号一致,不显示卡凭证)、状态(7 态:`idle` / `active` / `grace` / `extended` / `redeemed` / `failed` / `cancelled`,点开看解释)、试用期累计收益(写全 USDT 和 UVT),有处置权限时再加操作列。
@@ -3813,6 +3830,19 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | `shadowDailyNEX` | 65 | 仅影响新 trial | — | 每日 shadow 累计 NEX |
 | `cooldownDays` | 30 | 实时 | 1–365 整数 | 再次试用冷却天数 |
 | `phaseOpen` | true | 实时 | 是 / 否 | 当前 Phase 是否开放试用;运行时由 H1 Phase 调度决定;初始默认 true |
+| `extensionDays` | 3 | 仅影响新 trial | — | 延长天数 |
+| `discountRate` | 15% | 实时 | 0–100%（允许小数） | 转购促销折扣率。参数行展示百分比，调整框标注百分比并说明填 1 表示 1%。接口使用百分点。 |
+| `discountCapUSD` | 20 | 实时 | — | 早购促销折扣金额上限 USD;与 `discountRate` 同步实时生效,每次 claim sheet 渲染读取最新值(§9.11b) |
+| `trialOffsetCapUSD` | 按当前系统配置显示 | 实时 | 可清空为不设上限；0 与正数分别保存（BUG-255） | **试用收益抵扣购机款上限 USD**(§9.11b 新增);Model A:购前试用收益只能抵扣购机款、不可提现、不可当现金;购后经 `computeTrialOffset` 拆分,`offsetUSD = min(shadowUSD, cap)` 抵实付价、仅超出 cap 的 `remainderUSD` 入余额(见 ⑥ Model A)。实时生效,每次 redeem / charge / claim sheet 渲染读最新值 |
+| `autoChargeAtEnd` | true | 待 PM 确认(暂按仅影响新 trial) | 是 / 否 | 期末是否自动扣款;系统只读,不开放本页调整入口。实时性仍待 PM 确认(见下方实时性分区说明) |
+| `highQualityThresholdUSD` | 100 | 实时 | — | 高质量延长触发阈值 USD |
+| `chargeFailRate` | 0.01 | 实时 | 0–1 | **server-only,前端永不可知(§9.11d.3)**;扣款失败概率,按 S25 系统只读,数值不公开,无调整入口 |
+| `trialProductId` | `stellarbox-s1` | 仅影响新 trial | E1 商品选择 | 只能从 E1 明确开启 `trialEligible` 且满足实体有限库存、在售、正价、有库存的商品中选择；价格随 E1 当前售价同步，存量试用继续使用领取快照 |
+| `trialPriceUSD` | 1299 | 仅影响新 trial | — | 试用对应购机价 USD,随 E1 商品价格,系统只读 |
+| `shadowDailyUSD` | 38.52 | 仅影响新 trial | — | 每日 shadow 累计 USD |
+| `shadowDailyNEX` | 65 | 仅影响新 trial | — | 每日 shadow 累计 NEX |
+| `cooldownDays` | 30 | 实时 | — | 再次试用冷却天数 |
+| `phaseOpen` | true | 实时 | 是 / 否 | 当前 Phase 是否开放试用;运行时由 H1 Phase 调度决定;初始默认 true,系统只读 |
 | `autoPushEnabled` | true(kill switch) | 实时 | 是 / 否 | auto-push 总开关 |
 | `autoPushDelayMs` | 1500 | 实时 | — | auto-push 延迟毫秒 |
 | `autoPushCooldownHours` | 24 | 实时 | — | auto-push 冷却小时 |
@@ -3822,6 +3852,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 > **2026-11-06 合并口径**：保留 test 对折扣率显示百分比和输入标注单位的要求。核对后端 `origin/test` 的 `AppTrialLifecycleService.conversionPromoDiscount`，`(0,1]` 仍按比例计算，`1` 实际减 100%，因此不采用「填 1 表示 1%」；保留改版按实际折扣展示旧值及禁填歧义区间的限制。金额折扣仍支持小数，单位统一后再开放该区间。
 
 > **实时性分区(§9.11b)**:`discountRate` / `discountCapUSD` / `highQualityThresholdUSD` / `chargeFailRate` / `cooldownDays` / `phaseOpen` / `autoPush*` / `seatsLeftToday` 为**实时生效**;`trialDays` / `graceDays` / `extensionDays` / `trialProductId` / `trialPriceUSD` / `trialOffsetCapUSD` / `shadowDaily*` 为**仅影响新 trial**(存量进行中会话保持其开始时锁定的参数及商品快照)。`autoChargeAtEnd` 当前为系统只读旧标记，不作为自动购买承诺。界面分区与生效说明按当前可写项显示。
+> **实时性分区(§9.11b)**:`discountRate` / `discountCapUSD` / `trialOffsetCapUSD` / `highQualityThresholdUSD` / `chargeFailRate` / `cooldownDays` / `phaseOpen` / `autoPush*` / `seatsLeftToday` 为**实时生效**;`trialDays` / `graceDays` / `extensionDays` / `trialProductId` / `trialPriceUSD` / `shadowDaily*` 为**仅影响新 trial**(存量进行中会话保持其开始时锁定的参数及商品快照)。**`autoChargeAtEnd` 在 §9.11b 两类清单中均未列出,实时性未确认——状态为「待 PM 确认(暂按仅影响新 trial)」**,系统只读,不开放本页调整入口。实时性描述不代表可编辑性;系统只读项遵循上方 S25 规则。
 >
 > **与 12 月节奏表 §6.4 关系**:12 月节奏表 §6.4 未覆盖 trial 具体数值,无冲突;§9.11b 默认值即作现状权威。`phaseOpen` 是 trial 与 H1 的耦合点——试用开放与否随当前 Phase。
 
@@ -3840,6 +3871,11 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | 紧急关闭试用邀请弹窗 | 右侧窄栏 | 描边危险按钮 | 有 `growth_h2_write` 才显示;已关闭时只显示状态 | 打开确认框,按钮写「确认关闭，立即生效」,理由按 A2 规则和可见字符计数,规则读取中不能确认，读失败才按 8–200 继续。关闭后这页不能重新打开，并加「不能撤销」 |
 | 强制取消试用 | 试用记录行内、抽屉底部「强制取消」 | 按钮 | 仅非终态(`active`/`grace`/`extended`)显示;要 `growth_h2_session_cancel` | 打开弹窗 H2-MD2,按钮写「提交审批」，生效说明在蓝色标签内 |
 | 强制扣款 | 试用记录行内、抽屉底部「强制扣款」 | 按钮 | 仅非终态显示;要 `growth_h2_session_charge` | 打开弹窗 H2-MD3,按钮写「提交审批」，生效说明在蓝色标签内 |
+| 改可编辑 TrialConfig | ③(a)参数面对应参数行「调整」 | 确认弹窗 | 具有 `growth_h2_write` 权限；`trialProductId` 使用 E1 允许试用商品选择器，零库存等不可用项保留展示但禁选 | 填写目标值及理由后确认保存；明确拒绝时保留弹窗、输入及理由 |
+| 系统只读参数 | ③(a)参数面 | 只读展示或隐藏写入口 | `phaseOpen` / `trialPriceUSD` / `chargeFailRate` / `autoChargeAtEnd` / `actualSeatsLeftToday` | 不提供「调整」入口 |
+| auto-push kill switch | ③(a)参数面「紧急关闭试用邀请弹窗」 | 按钮 | 具有 `growth_h2_write` 权限且尚未关闭 | 打开确认框,填写理由后确认关闭并留痕 |
+| 强制取消试用 | ③(d)单会话详情强制操作区「强制取消」 | 警示按钮 | 仅非终态(`active`/`grace`/`extended`)会话显示;风控(lead)/超管渲染 | 打开弹窗 H2-MD2 |
+| 强制触发扣款 | ③(d)单会话详情强制操作区「强制扣款」 | 警示按钮 | 仅 `grace`/`extended` 态会话显示;风控(lead)/超管渲染 | 打开弹窗 H2-MD3 |
 | 查看监控列表 / 详情 / KPI | ③(b)/(c)/(d) 导航 | 链接 | 恒可用(按角色裁剪) | 跳转视图,无弹窗 |
 
 **(2) 弹窗规格**
@@ -3849,6 +3885,11 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 - **布局结构**:
   1. **信息区**:标题写调整项与影响谁；这是什么、显示位置进标题旁提示图标，当前值与新值合并展示。目标商品用单选列表，区分可选、不可选，价格带千分位，不可选原因常显。
   2. **影响预览区**:「当前值 → 目标值」并排;`trialPriceUSD` / `shadowDaily*` 等「仅影响新 trial」项提示行「存量进行中会话保持其开始时锁定的参数」;`chargeFailRate` 提示行「server-only,前端永不可知,任何下发 / 响应不得回显该值或判定结果」；`autoChargeAtEnd` 系统只读，不进入修改框。
+##### [H2-MD1] 可编辑 TrialConfig 参数变更确认
+- **功能**:变更单个可编辑 TrialConfig 参数,确认即写入并按 ④ 实时性分区生效;系统只读项不进入此流程。
+- **布局结构**:
+  1. **信息区**:参数名(技术字段名 + 说明,引 ④ 表)/ 当前值 / 实时性分区(实时 | 仅影响新 trial | 待 PM 确认)/ 最近变更记录(引自审计)。
+  2. **影响预览区**:「当前值 → 目标值」并排;`shadowDaily*` 等「仅影响新 trial」项提示行「存量进行中会话保持其开始时锁定的参数」。
   3. **输入区**:见下表。
   4. **按钮区**:取消 / 确认变更。
   5. **层级(现行实现)**:标题下面是生效范围的蓝色标签。现在值和新值输入合成一块:左边写「现在」和当前值,右边是「改后」的输入框,数字放大,单位写在框里;范围只写在输入框下面;填了合法的新值,下面写一句改了会怎样。没改或填错时确认按钮禁用并写原因,错误在失焦或点过提交后用橙黄写在输入框下面。
@@ -3856,7 +3897,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 | 字段 | 控件类型 | 必填 | 校验 | 默认值 |
 |---|---|---|---|---|
-| 目标值 | 数字输入 / 开关(按参数类型) | 是 | 范围引 ④ 表(如 `chargeFailRate` 0–1 浮点);不得与当前值相同;超范围 server 422 | 当前值 |
+| 目标值 | 数字输入 / 开关(按参数类型) | 是 | 范围引 ④ 表(如每日名额 0–1000000 整数);不得与当前值相同;超范围系统拒绝,保留原输入及理由 | 当前值 |
 | reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
 
 - **按钮区**:`[取消]` · `[确认修改，立即生效]`(主按钮;必填未过校验置灰;loading 防双击;携 `Idempotency-Key`)。
@@ -3881,6 +3922,9 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
    - 所有可写项均使用逐项确认框，填理由后立即生效留痕，不走 A2 提案审批；权限仍用原动作码。
    - `trialPriceUSD` 跟随商品售价,`chargeFailRate` 系统只读,都没有修改入口(S25)。
    - `autoChargeAtEnd` 系统只读；提前购买立减大于 0 时，用户提前购买按整期试用收益结算，0 时按已用时间结算，页面写明这项影响。
+   - 具有 `growth_h2_write` 权限的操作员通过参数确认框填写目标值和理由,确认后保存并留痕。生效遵循 ④ 实时性分区。
+   - 数值范围或整数校验明确拒绝时,确认框显示具体原因并保留目标值与理由,修改后可重新确认。
+   - `phaseOpen` / `trialPriceUSD` / `chargeFailRate` / `autoChargeAtEnd` / `actualSeatsLeftToday` 系统只读,不开放此写入路径。
 2. **强制取消试用**(高敏 · admin `POST /api/admin/trial/sessions/:userId/cancel`)
    - 风控介入场景(疑似养号 / 风险卡 token);经确认弹窗 H2-MD2 + 理由必填提交 A2 审批,超级管理员批准后执行,会话转 `cancelled` 终态,产 `trial.cancelled`。
 3. **强制触发扣款**(高敏 · admin `POST /api/admin/trial/sessions/:userId/charge`)
@@ -3892,6 +3936,11 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 ##### ⑥ 风控与边界
 
 - **chargeFailRate server-only**:扣款失败为 server-only RNG,**前端永不可知**(§9.11d.3);后台不能改(S25),任何下发 / 接口响应均不得暴露该值或其判定结果给客户端。
+   - 点击「紧急关闭试用邀请弹窗」,确认并填写理由后实时关停 auto-push,用于异常时快速止血。
+
+##### ⑥ 风控与边界
+
+- **chargeFailRate server-only**:扣款失败为 server-only RNG,**前端永不可知**(§9.11d.3);按 S25 后台系统只读、数值不公开且无调整入口,任何下发 / 接口响应均不得暴露该值或其判定结果给客户端。
 - **试用 state 全 server-canonical**:trial 状态机与资格(eligibility)由 server 单源决策(§9.11d.2)。前端 `useFreeTrial` 在客户端可被篡改(client-tamper 防护见 §9.11e.1),**资格与状态一律以 server 为单源**,客户端不得越过 server 开启 / 延长试用。
 - **30 天 cooldown server 校验**:`cooldownDays` 冷却由 server 校验,前端不得绕过再次开启试用。
 - **循环养号联动 K2**:trial 循环养号由 **K2 套利检测产出** `risk.trial_cycle_detected`(§9.11e.1);H2 **消费**该信号,联动阻断 trial 资格(server canonical canStart)。产消方向:K2 产、H2 消(与 Ch8 K2 一致)。
@@ -3903,7 +3952,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 ##### ⑦ 接口与依赖
 
 - **接口**:
-  - `GET/PUT /api/admin/trial/config`(§9.11a)——读 / 改 TrialConfig(敏感项经确认弹窗 H2-MD1,**body 必携 `{reason}`**,server 校验非空 400 `REASON_REQUIRED`,并按参数敏感级校验执行角色资质——敏感项 = 增长 lead / 超管,资质不足 403;非敏感项直接写入留痕,落 `admin.trial_config_changed`)。**`PUT` 须支持 `Idempotency-Key` header(§1.8 原则二),server 24h 内对同一 key 幂等返回首次响应**,防止网络抖动导致重复配置写入。
+  - 参数面实际读取 `GET /api/admin/growth/trials`，可编辑参数经确认框调用 `PATCH /api/admin/growth/trials/params/:key`，请求携带目标值及理由，使用原操作键避免重复写入。系统只读参数不开放调整入口；明确拒绝时保留确认框、输入及理由。
   - `GET /api/admin/trial/sessions[?status=]`(§9.11a)——会话监控列表(可按状态过滤)。
   - `GET /api/admin/trial/sessions/:userId`(§9.11a)——单会话详情。
   - `POST /api/admin/trial/sessions/:userId/cancel`(§9.11a)——后台强制取消(高敏);请求体 `reason` 枚举为后台专属新增 `forced_admin | risk_auto`(§9.11a admin cancel 无此枚举定义,后台端枚举是用户端枚举的超集,见 ⑧)。
@@ -3965,6 +4014,8 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 **关联账户收益审核（2026-11-04 现行口径）**：新增收益先按账户组状态和人数分流：组状态为 `detected`（待判定）、`flagged`（可疑）或 `frozen`（已冻结），或组内账号数达到 `duplicateAccountFreezeFrom` 时，直接进入 `bonus_locked`（锁定奖励），无需先人工冻结账户组。其余情况下，账号数达到 `duplicateAccountPendingFrom` 时进入 `pending_review`，未达到时进入 `withdrawable`。收益锁定与账户冻结分开处理；放行统计窗口及窗口内放行数量不作为当前新增收益锁定的触发条件。收益放行方式固定为 `manual_only`（仅人工放行），页面处理规则与该方式一致。待审核收益不会因等待到期自动放行，只能经人工审核后放行；已退役的应用在线证明不能作为放行途径。历史 `attest_or_manual` 模式和在线证明时长写入仍返回 410 `K1_TRUSTED_ATTESTATION_RETIRED`，不得重新开放。此处只说明关联账户收益审核，不替代 H5 新人礼首笔实付释放规则。
 
 **BE-45 待审批状态。** 账户组列表和详情沿用 K1 对象读权。服务端对象锁有效时，在当前业务状态旁显示「待审批」，以及可核实的动作、提交人和时间。历史工单无法与对象绑定核对时只显示「待审批」。待审期间暂停同组处置和会修改版本的人工复审备注。详情及已提交动作的原键查回仍可用。原键查回依据本地保留的同组提交记录，组版本更新和工单已决不会隐藏找回入口，回执仍须核对本人、对象和动作。审批、拒绝或撤回释放锁后，刷新按最新业务状态恢复相应操作。收益单笔人工放行是独立入口。
+
+原键恢复须完整匹配服务端规范动作名「动作名 · 账户组 ID」，涵盖标记可疑账户簇、批量冻结关联账户、解除误判和判定为正常；不能只与不带对象的动作名比较。有操作码时还须匹配对应动作。提交成功但响应丢失后刷新，按原键取得本人、同对象及完整动作名均相符的回执才清除该键；多个保留键逐一查询，未找到或不匹配的键继续保留。
 
 账户组详情的「收益影响」按同一顺序从当前状态、账号数和审核规则派生：待判定、可疑、已冻结直接显示「锁定奖励」；已解除或正常仍判断账号数，达到冻结起点显示「锁定奖励」，其余达到审核起点显示「须审核收益」，未达到才显示「可提现收益」。所需规则未加载时显示「尚未确认」。下方当前规则摘要使用相同顺序，不承诺解除误判、判定正常或正常手机号名额内一定可提现（BUG-128 文案补漏及复核修正）。
 
@@ -4649,7 +4700,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | **RiskScore**(单用户风险分) | `userId / score(0–100)/ band(low\|mid\|high)/ dimensions[]{dim,hit,contribution}/ overridden(bool)/ modelVersion / asOf` | Ch8 K4(§Ch8 K4) | **server-canonical 唯一评分源**;D2 / C1 / B5 复用同一份分数,不各自重算(§3.14)。评分可解释(每分可追溯命中维度与贡献);人工覆盖强制 reason + 审计 |
 | **RiskModel**(评分模型配置) | `weights{multiAccount,arbitrage,kycStatus,withdrawVelocity,accountAge,anomalyBehavior}(六维和=1)/ scoreBand{low<40,mid 40–69,high≥70}/ inputSources{K1,K2,C4,...}(各 ON/OFF)/ autoEscalateScore(默认85)/ version` | Ch8 K4(§Ch8 K4) | 权重配置状态机 `draft→active→archived`;六维权重和强制 =1(接口侧校验,±0.001 容差)。**两类写操作确认分流**:① **模型权重 / 分档阈值 / 输入来源开关**改动**执行=仅超级管理员**(风控 lead 可起草草稿,发布经超管确认弹窗 + 理由必填;2026-06 操作确认决议执行门槛就高,与 A2③ 高敏动作清单一致);② **单用户评分人工覆盖**(`POST /api/admin/risk/score/:userId/override`)**不入高敏确认门**,直接生效 + 强制 reason + 审计(K4④ 明文「确认弹窗=否」)。开发不得对单用户覆盖误套高敏确认流程 |
 | **PhaseConfig**(Phase 逐月 dial 矩阵) | 逐月(月 1–12)× **8 dial**:`newUserBonusMultiplier / inviteRewardMultiplier / reinvestMultiplier / withdrawPenaltyFeeRate / withdrawCooldownDays / binaryDailyCap / questBonusMultiplier / complianceHoldEnabled`;每 dial 标 `生效范围(实时全量\|仅新用户)`;`cohortOverrides[]{cohortId(YYYY-Www),monthOffset,override 生效区间(字段名均为 §9.1 草稿自拟,待 V4 数据模型收口与 H1 正式对齐)}` | Ch7 H1(H1④) | 全平台 Phase 模型后台权威源。后台权威 = **8 dial**(12 月 §6.4 七项时变 dial,Premium/NEXv2 gate 两 dial 随产品下线移除 + 前端 §13.4.1 `complianceHoldEnabled`);**dial 默认值权威来源:12 月节奏表 §6.4 `ProductPhase`**。前端 §13.4.1 / §9.11c.1 / §9.11d.3 仍含已下线的 Premium/NEXv2 gate 为现状差异。`complianceHoldEnabled` 标注 **月 8+ = true(P5 带 ✅);月 8 为实际激活拐点(同时是 P4 带末月 `withdrawCooldownDays=35d` 拐点)**(与 H1④ 逐月矩阵和 D5③ 脚注一致)。`cohortOverrides` 子字段名 `cohortId` / `monthOffset` 为本表草稿自拟命名(H1④ 仅有语义描述、无字段名),不以「§13.4 / 12 月 §6.4」作字段名来源锚点,待 V4 与 H1 正式对齐。dial 值 server 单源下发,前端 `useProductPhase` 仅消费;B4 只读展示 |
-| **TrialConfig**(免费试用配置) | **20 参数**:`trialDays / graceDays / extensionDays / discountRate / discountCapUSD / trialOffsetCapUSD / autoChargeAtEnd / highQualityThresholdUSD / chargeFailRate(server-only,前端永不可知)/ trialProductId / trialPriceUSD / shadowDailyUSD / shadowDailyNEX / cooldownDays / phaseOpen / autoPushEnabled / autoPushDelayMs / autoPushCooldownHours / autoPushMaxPerSession / seatsLeftToday` | Ch7 H2(H2④) | 试用全生命周期后台可调面;`seatsLeftToday` 是每日免费名额上限(默认 47,实时,普通十进制 0–1000000 整数)，APP 获得的是 Java 依据 `nx_growth_trial_daily_quota` 当日领取数计算出的剩余量;敏感项(`trialPriceUSD` / `chargeFailRate`)经确认弹窗(理由必填)。`chargeFailRate` server-only。`cooldownDays` 为 **H2 自有可写参数**(再次试用冷却天数,默认 30,实时;H2④ 明确归 H2),**与 D5 的 `withdrawCooldownDays`(提现冷却,Phase 派发)是不同业务域的同名概念,不混同**。`phaseOpen` 为 **Phase 派发只读字段(运行时由 H1 Phase 调度决定;source:phase-h1)**。`autoChargeAtEnd` 实时性及敏感等级**待 PM 确认**(H2⑤:建议按敏感项处理经确认弹窗,暂不归入增长直接编辑路径;待确认前暂按敏感项处理)。`trialProductId` 由 H2 从 E1 `trialEligible=true` 的实体有限库存商品中选择，只影响新 trial；H2 与领取接口均失败关闭复验，存量试用使用领取快照。配套 **TrialSession**(会话监控):`userId / status(7 态)/ shadowUSD / shadowNEX / 状态转换时间线 / 绑卡 token / cohort,phase`,7 态权威定义见 §9.11.1 |
+| **TrialConfig**(免费试用配置) | **20 参数**:`trialDays / graceDays / extensionDays / discountRate / discountCapUSD / trialOffsetCapUSD / autoChargeAtEnd / highQualityThresholdUSD / chargeFailRate(server-only,前端永不可知)/ trialProductId / trialPriceUSD / shadowDailyUSD / shadowDailyNEX / cooldownDays / phaseOpen / autoPushEnabled / autoPushDelayMs / autoPushCooldownHours / autoPushMaxPerSession / seatsLeftToday` | Ch7 H2(H2④) | 试用全生命周期参数面;`seatsLeftToday` 是每日免费名额上限(默认 47,实时,普通十进制 0–1000000 整数)，APP 获得的是 Java 依据 `nx_growth_trial_daily_quota` 当日领取数计算出的剩余量。可编辑项经确认弹窗(理由必填)；`trialPriceUSD` / `chargeFailRate` / `phaseOpen` / `autoChargeAtEnd` 及派生的 `actualSeatsLeftToday` 系统只读,无调整入口。`chargeFailRate` server-only且数值不公开。`cooldownDays` 为 **H2 自有可写参数**(再次试用冷却天数,默认 30,实时;H2④ 明确归 H2),**与 D5 的 `withdrawCooldownDays`(提现冷却,Phase 派发)是不同业务域的同名概念,不混同**。`phaseOpen` 为 **Phase 派发只读字段(运行时由 H1 Phase 调度决定;source:phase-h1)**。`autoChargeAtEnd` 实时性仍待 PM 确认,本页不开放修改。`trialProductId` 由 H2 从 E1 `trialEligible=true` 的实体有限库存商品中选择，只影响新 trial；H2 与领取接口均失败关闭复验，存量试用使用领取快照。配套 **TrialSession**(会话监控):`userId / status(7 态)/ shadowUSD / shadowNEX / 状态转换时间线 / 绑卡 token / cohort,phase`,7 态权威定义见 §9.11.1 |
 | **Withdrawal 扩展态**(提现状态机) | 状态枚举 = **正常 5 态**(`submitted / review-passed / processing / sent / confirmed`,§9.3.6)+ **异常 6 态**(`review-rejected / address-invalid / tx-failed / tx-orphaned / refunded / frozen`,§9.11f)+ **后台扩展中间态 `review-pending / extended-hold`**(D2② 状态机已实现,V1 落地);字段 `withdrawalNo(server mint)/ userId / amountUsdt / address(hash)+chain / riskScore(K4)/ kycStatus(C4)/ 手续费明细(penaltyFeeRate / grossFee / nexBurned / feeWaived / actualFee)/ count24h / hitRules(K3)/ state` | Ch6 D2(§9.3 / §9.3.6 / §9.11f) | **`Withdrawal` 实体本体属用户侧(§12,本表不重列)**;本行仅登记 D2 在前端 §9.3.6 正常 5 态之上**新增的异常 6 态(§9.11f)**及**后台扩展中间态 `review-pending / extended-hold`**。`review-pending` 承接风控评分后待人工处置；`extended-hold` 表示延迟复查或 H1 低风险冷却，必须结合 `lifecycleOwner / previousStatus` 判定到期行为：仅 `H1_PHASE_COOLDOWN + review-passed` 可在重新读取当前 K3/K4、B1 与其他闸门后自动通过，其他持有到期回 `review-pending`。V1 落地状态为 **后台扩展态 2 态 + 正常 5 态 + 异常 6 态共 13 态**。全 server-canonical,client 仅订阅;状态推进非法转移返回 409。**手续费明细**为每笔提现的费用记录(server 权威):`grossFee = amountUsdt × penaltyFeeRate`(惩罚费率 Phase 派发,D5 生效面)、`nexBurned`(本次抵扣燃烧的 NEX,可选)、`feeWaived = nexBurned × nexFeeOffsetRate`、`actualFee = grossFee − feeWaived`;NEX 抵扣为可选、不构成提现门槛。**单笔主键线上真名 = `withdrawalNo`,不是 `withdrawalId`**——与 App 侧权威契约 `PRD/specs/FEAT-WD01-trust-payout-rails.md` §4.2 响应表同名;批量端点入参 `withdrawalIds` 与冲突回传项 `conflicts[].withdrawalId` 是该端点自有真名,与主键不同名属实现现状、非笔误 |
 | **KycLedger**(KYC 合规台账) | `userId / kycStatus(verified\|unverified\|in-review)/ walletPaired(bool)/ pairedAddress(脱敏)/ network(TRC20\|ERC20\|BTC\|ETH)/ verifiedAt / 变更历史 / 关联 K5 工单` | Ch5 C4(§4.4 / §4.4.1) | **全平台 KYC 状态唯一权威台账**(§3.14);`GET /api/kyc/status/:userId` 单源,D2 提现门槛 / G2 兑换门槛 / K5 复审引用。K5 仅触发复审、裁决回写,不持状态 |
 | **TreasuryLedger·D3 储备账本** | `usdtReserveUsdt / otherLiquidUsdt / injectedCumulativeUsdt / reserveTotalUsdt` | Ch6 D3(储备权威) | **真实储备底层账本权威归 D3**(`GET /api/admin/treasury/reserve` 唯一储备源)。储备口径:**储备 = topup 累计 + 注入 − `withdraw.confirmed` − 未到期 USDT staking 本金**(权威来源 B1⑧ / D3⑦;扣减「未到期 USDT staking 本金」以防止储备高估,具体扣减项字段名待 D3 正文定义)。储备科目纳入口径日批(UTC 00:00)生效 |
@@ -4756,7 +4807,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | H1 | `/api/admin/phase/dials` | GET / PUT | 逐月 8 dial 矩阵读取 / 改动 + 定时切换配置(全 dial 读写唯一路径) | Ch7 H1 | 是(PUT) | 是(PUT) |
 | H1 | `/api/admin/platform/phase-config/cohort-overrides` | GET / POST | cohort 月偏移 override 列出 / 新增 | Ch7 H1 | 是(POST) | — |
 | H1 | `/api/admin/platform/phase-config/cohort-overrides/:cohortId` | DELETE | 撤销某 cohort override | Ch7 H1 | 是 | — |
-| H2 | `/api/admin/trial/config` | GET / PUT | TrialConfig 18 参数读 / 改(仅敏感项经确认弹窗 + 理由必填;非敏感项直接写入须落 `admin.trial_config_changed` 审计事件,见 H2⑤) | Ch7 H2 | 是(仅敏感项) | 是(PUT) |
+| H2 | `/api/admin/growth/trials`、`/api/admin/growth/trials/params/:key` | GET / PATCH | TrialConfig 展示及可编辑参数调整(确认弹窗 + 理由必填；系统只读项无调整入口，见 H2⑤) | Ch7 H2 | 是(可编辑项) | 是(PATCH) |
 | H2 | `/api/admin/trial/sessions[?status=]` | GET | 试用会话监控列表 | Ch7 H2 | — | — |
 | H2 | `/api/admin/trial/sessions/:userId` | GET | 单会话详情(7 态轨迹 + shadow 明细) | Ch7 H2 | — | — |
 | H2 | `/api/admin/trial/sessions/:userId/cancel` | POST | 强制取消试用(高敏;reason 枚举 `forced_admin\|risk_auto`) | Ch7 H2 | 是 | 是 |

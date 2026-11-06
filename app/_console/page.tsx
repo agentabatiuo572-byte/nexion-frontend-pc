@@ -4,13 +4,12 @@
  * 今日概览（首页 /）。一个「今天」面板：结论句是头，下面是要处理的事和今日经营；其余收进 5 行带结论的折叠摘要。
  * 一屏只有一条结论横幅（VS-23）：资金告警把可覆盖天数和建议并进这一句，不再另起一条。
  * 所有运营角色都能进，每块看自己的读权限，没有权限的块不出现、不发请求（重构说明 5.7）。
- * 每块各自加载、各自报错，一块失败不挡别的块（5.6）。这页不提交任何东西，要处理就跳业务页。
- * 导出资金数据等 BE-21（权限、理由、记录）一起上，不继续无记录下载（决定 7）。
+ * 每块各自加载、各自报错，一块失败不挡别的块（5.6）。业务处理跳业务页；资金快照导出先登记理由再下载。
  */
 import "./overview/b-domain.css";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ListChecks, ShieldAlert, ShieldCheck } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, Download, ListChecks, ShieldAlert, ShieldCheck } from "lucide-react";
 import { Button, Conclusion, Explain, InlineRetry, PageHeader, RdPage } from "@/app/components/rd";
 import { BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
@@ -29,6 +28,9 @@ import { isRiskConclusion, riskFeedTitle } from "@/lib/admin/risk-feed";
 import { fmtAmount, fmtNum } from "@/lib/format";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
+import { downloadB0Snapshot, pendingB0Export } from "@/lib/admin/b0-export-client";
+import { toast } from "@/lib/store/ui";
 import { FlowFold, FundFold, FunnelFold, KpiFold, pressureLevel, RiskFold, useFoldChoices } from "./command-center/folds";
 import { PendingPanel, type PendingFailure, type PendingRow } from "./command-center/pending";
 import { fundLevel, statusSentence } from "./command-center/status";
@@ -62,6 +64,9 @@ function approvalDetail(row: A2OperationRow) {
 
 export default function CommandCenter() {
   const session = useAdminAuth((state) => state.session);
+  const [exportConfirm, setExportConfirm] = useState<{ adminId: number; snapshotJson: string } | null>(null);
+  const canExport = session?.role === "superadmin" && session.authorities.includes("overview_b0_export");
+  const pendingExport = session ? pendingB0Export(session.adminId) : undefined;
   const blocks = useMemo(() => b0Blocks(session?.authorities ?? []), [session?.authorities]);
   const reach = useReach();
 
@@ -211,12 +216,28 @@ export default function CommandCenter() {
   const anyTodayBlock = blocks.sales || blocks.newUsers || blocks.netFlow || blocks.devices;
   const showFundLine = blocks.fund && !(fundReady && level !== "ok");
 
+  const exportSnapshot = () => {
+    if (!canExport || !session || (!pendingExport && !fundReady)) return;
+    const snap = {
+      generatedAt: new Date().toISOString(),
+      coverageRatio: Math.round(ledger.coverageRatio * 100) / 100,
+      redlinePct: ledger.redlinePct,
+      healthyPct: ledger.healthyPct,
+      reserveUsd: ledger.reserveUsd,
+      liabilitiesUsd: ledger.liabilitiesUsd,
+      netExposureUsd: ledger.reserveUsd - ledger.liabilitiesUsd,
+      accounts: ledger.accounts.map((account) => ({ key: account.key, label: account.label, amount: account.amount })),
+    };
+    setExportConfirm({ adminId: session.adminId, snapshotJson: pendingExport?.snapshotJson ?? JSON.stringify(snap, null, 2) });
+  };
+
   return (
     <RdPage className="cc">
       <PageHeader
         pageId="B0"
         title="今日概览"
         summary="今天的状况和要处理的事"
+        actions={canExport && <Button icon={<Download size={15} aria-hidden />} disabledReason={!pendingExport && !fundReady ? "资金数据尚未读取成功，请刷新后再导出" : undefined} onClick={exportSnapshot}>导出资金数据</Button>}
         meta={(
           <span className="cc-meta">
             {fundReady && (
@@ -351,6 +372,23 @@ export default function CommandCenter() {
           </div>
         )}
       </div>
+      {canExport && exportConfirm && exportConfirm.adminId === session?.adminId && (
+        <OperationConfirmModal
+          briefKind="export"
+          action="导出资金数据"
+          detail="下载本次点击时的资金账本 JSON 快照，包含覆盖率、红线、健康线、储备金、负债、净敞口及账户金额。"
+          completionCopy="登记导出理由成功后，浏览器下载本次原始快照；结果未确认时保留原快照和理由，按原操作重试。"
+          confirmLabel="登记并下载"
+          reasonMax={200}
+          getPendingReason={() => pendingB0Export(exportConfirm.adminId)?.reason}
+          onClose={() => setExportConfirm(null)}
+          onConfirm={async (reason) => {
+            const receipt = await downloadB0Snapshot(exportConfirm.adminId, exportConfirm.snapshotJson, reason);
+            toast.success("资金数据已导出", `导出号：${receipt.exportNo}`);
+            setExportConfirm(null);
+          }}
+        />
+      )}
     </RdPage>
   );
 }

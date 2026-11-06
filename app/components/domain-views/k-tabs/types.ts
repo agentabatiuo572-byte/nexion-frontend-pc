@@ -76,6 +76,7 @@ export type ConfirmReq = {
     placeholder?: string;
     required?: boolean;
     options?: string[];
+    optionLabels?: Record<string, string>;
     kind?: "text" | "number";
     min?: number;
     max?: number;

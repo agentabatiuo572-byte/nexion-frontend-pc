@@ -32,6 +32,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { configApprovalOriginalInput, pendingConfigApproval } from "@/lib/admin/withdrawal-config-approval";
 import G4AdminOperations from "./g4-admin-operations";
 import { G4FirstDividendConfirm } from "./g4-first-dividend-confirm";
+import { G4TierConfirm, hasPendingG4TierApproval, type G4TierChange } from "./g4-tier-confirm";
 
 const OPERATOR = currentAdminOperator;
 
@@ -106,6 +107,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const [nodePageNo, setNodePageNo] = useState(1);
   const [nodePageSize, setNodePageSize] = useState(10);
   const [firstDividend, setFirstDividend] = useState<{ epoch: number; expectedRevision: string } | null>(null);
+  const [tierConfirm, setTierConfirm] = useState<{ epoch: number; change?: G4TierChange } | null>(null);
 
   const reload = useCallback(async (silent = false, page = nodePageNo, pageSize = nodePageSize) => {
     if (!silent) setLoading(true);
@@ -424,10 +426,20 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     if (!Number.isInteger(to) || !Number.isInteger(priceUSDT)) throw new Error("截止数量和单价要填整数");
     return { to, priceUSDT };
   };
+  const openTierConfirm = (tier?: G4Tier) => {
+    if (!session || !tiers) return;
+    setTierConfirm({ epoch, change: {
+      tierId: tier?.id, from: tier?.from ?? tiers[tiers.length - 1].to,
+      currentTo: tier?.to ?? tiers[tiers.length - 1].to, currentPrice: tier?.priceUSDT,
+      totalSupply: stats.totalSlots, sold: stats.sold, seriesSetupRequired: overview.seriesSetupRequired,
+      expectedTiersVersion: overview.tiersVersion,
+    } });
+  };
 
   const editTier = (tier: G4Tier, index: number) => {
     if (!canPriceTiers || !tiers) return;
     const nextTier = tiers[index + 1];
+    if (!nextTier) { openTierConfirm(tier); return; }
     openActionConfirm({ briefKind: "config",
       action: `修改价格档位 · ${tier.id}`,
       detail: <><b>{tier.id}</b> 档 · 当前区间 [{fmtInt(tier.from)}, {fmtInt(tier.to)}) · 单价 ${fmtInt(tier.priceUSDT)}。起点等于上一档的截止，不能单独改；改截止时{nextTier ? <>下一档 <b>{nextTier.id}</b> 的起点</> : "总供应量"}会跟着调整，最后一档总量不能少于已售的 {fmtNumber(stats.sold, 0)} 张。只影响以后的销售，已下单的按下单时价格结算。</>,
@@ -445,13 +457,14 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const addTier = () => {
     if (!canPriceTiers || !tiers) return;
     const firstTier = tiers.length === 0;
+    if (!firstTier) { openTierConfirm(); return; }
     const lastTier = firstTier ? null : tiers[tiers.length - 1];
     const rangeFrom = lastTier?.to ?? 0;
     openActionConfirm({ briefKind: "config",
       action: firstTier ? "创建第一个价格档位" : "新增价格档位",
       detail: firstTier
         ? <>创建第一档（从 0 到截止）及价格，用来确定节点总量和起始价格。不会发布系列、不会开放市场。已有用户持仓时不能创建。</>
-        : <>在最后一档 <b>{lastTier!.id}</b>（截止 {fmtInt(lastTier!.to)}）之后新增一档，起点自动为 {fmtInt(lastTier!.to)}。这里只保存价格档位，不会自动更新节点总量或开放销售。新增后需核对节点总量与档位范围，目录未就绪时不能销售。只影响以后的销售，已下单的按下单时价格结算。</>,
+        : <>在最后一档 <b>{lastTier!.id}</b>（截止 {fmtInt(lastTier!.to)}）之后新增一档，起点自动为 {fmtInt(lastTier!.to)}。保存时同步调整已有系列的总供应量，不会自动开放销售；尚未发布系列时仍需单独发布。新增后需核对节点总量与档位范围，目录未就绪时不能销售。只影响以后的销售，已下单的按下单时价格结算。</>,
       amplifies: false,
       businessForm: { kind: "multi-field", title: firstTier ? "第一个价格档位" : "新价格档位", hint: `起点 = ${fmtInt(rangeFrom)}${firstTier ? "" : "（上一档的截止）"}。截止和单价都填整数。`, fields: [
         { key: "to", label: "截止（卖到第几张）", inputKind: "number", min: rangeFrom + 1, step: 1, required: true },
@@ -511,6 +524,22 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
 
   return (
     <>
+      {tierConfirm && session && tierConfirm.epoch === epoch && <G4TierConfirm
+        session={session} epoch={epoch} requested={tierConfirm.change}
+        readActive={() => fetchG4GenesisOverview(nodePageNo, nodePageSize)}
+        onDirect={async (change, reason, to, priceUSDT) => {
+          await mutate(change.tierId ? `tier:update:${change.tierId}` : "tier:create", () => change.tierId
+            ? updateG4GenesisTier(change.tierId, to, priceUSDT, change.expectedTiersVersion, reason, OPERATOR())
+            : createG4GenesisTier(to, priceUSDT, change.expectedTiersVersion, reason, OPERATOR()),
+          `${change.tierId ? `档位 ${change.tierId} 已更新` : "已新增一档"} · [${fmtInt(change.from)}, ${fmtInt(to)}) · $${fmtInt(priceUSDT)}`);
+        }}
+        onClose={() => setTierConfirm(null)}
+        onDone={(active, acknowledgement) => {
+          setOverview(active);
+          setTierConfirm(null);
+          toast(acknowledgement);
+        }}
+      />}
       {firstDividend && session && firstDividend.epoch === epoch && <G4FirstDividendConfirm
         session={session} epoch={epoch} expectedRevision={firstDividend.expectedRevision}
         readActive={() => fetchG4GenesisOverview(nodePageNo, nodePageSize)}
@@ -647,7 +676,10 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
           <span className="ttl">价格档位</span>
           <span className="sub">· 卖到哪一档就按哪一档的价格 · 一档卖完自动涨到下一档</span>
           {tiers && canPriceTiers && (
-            <div className="r"><button className="l-btn sm mc" disabled={busy} onClick={addTier}>{tiers.length === 0 ? "+ 创建第一档" : "+ 新增档位"}</button></div>
+            <div className="r">
+              {session && hasPendingG4TierApproval(session.adminId) && <button className="l-btn sm" disabled={busy} onClick={() => setTierConfirm({ epoch })}>查询原提交结果</button>}
+              <button className="l-btn sm mc" disabled={busy} onClick={addTier}>{tiers.length === 0 ? "+ 创建第一档" : "+ 新增档位"}</button>
+            </div>
           )}
         </div>
         {tiers ? (

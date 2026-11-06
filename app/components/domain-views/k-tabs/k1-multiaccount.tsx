@@ -854,7 +854,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         setPendingNotes((current) => ({ ...current, [record.fingerprint]: "暂未查到原提案，结果仍待核实。" }));
         return;
       }
-      if (!original.mine || original.obj !== record.target || original.action !== record.label
+      if (!original.mine || original.obj !== record.target || original.action !== `${LEGACY_CLUSTER_RECEIPTS[record.clusterAction!][1]} · ${record.target}`
           || (original.operationCode && original.operationCode !== CLUSTER_OPS[record.clusterAction!].def().op)) {
         setPendingNotes((current) => ({ ...current, [record.fingerprint]: "回执与原操作不符，保留原记录，请到操作记录核对。" }));
         return;
@@ -890,7 +890,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     try {
       for (const record of legacyProposals) {
         const receipt = await fetchA2ProposalByKey(record.commandKey);
-        if (!receipt?.mine || receipt.obj !== cur.id || receipt.action !== record.title
+        if (!receipt?.mine || receipt.obj !== cur.id || receipt.action !== `${record.title} · ${cur.id}`
             || (receipt.operationCode && receipt.operationCode !== record.code)) continue;
         commandEvidence.forget(record.fingerprint, record.commandKey);
         syncPending();

@@ -79,6 +79,15 @@ export interface E4OrderFunding {
   occurredAt: string;
 }
 
+export interface E4OrderDevice {
+  deviceId: number;
+  deviceInstanceNo: string | null;
+  kind: "PURCHASE" | "PROMOTION_GIFT";
+  sourceChannel: string | null;
+  status: string | null;
+  ownershipStatus: string | null;
+}
+
 /** Ledger references may be claim-based (trial conversion), not the order number. */
 export function e4FundingLedgerHref(item: E4OrderFunding): string | null {
   return item.source === "D4_LEDGER" && item.bizNo.trim()
@@ -101,6 +110,7 @@ export interface E4OrderDetail {
   deviceId?: number | null;
   deviceInstanceNo?: string | null;
   deviceActivatedAt?: string | null;
+  devices?: E4OrderDevice[] | null;
   history: E4OrderHistory[];
   funding: E4OrderFunding[];
   coverageCurrent?: number | null;
