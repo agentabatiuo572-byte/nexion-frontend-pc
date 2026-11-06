@@ -180,6 +180,10 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
       toast("请输入有效的注入金额");
       return;
     }
+    if (!/^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/.test(nextAmount)) {
+      toast("注入金额最多两位小数");
+      return;
+    }
     if (!nextVoucher) {
       toast("请输入到账凭证号");
       return;

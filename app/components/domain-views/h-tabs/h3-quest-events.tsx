@@ -995,7 +995,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           state: bv.state || "ongoing",
           reward: String(bv.reward || "").trim(),
           condition: String(bv.condition || "").trim(),
-          targetValue: Number(bv.targetValue) || 1,
+          targetValue: bv.targetValue?.trim() ? Number(bv.targetValue) : 1,
           geo: String(bv.geo || "").trim(),
           href: String(bv.href || "").trim(),
           startsAt: String(bv.startsAt || "").trim() || null,

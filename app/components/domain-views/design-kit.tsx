@@ -678,7 +678,7 @@ export type BusinessFormSpec =
   | { kind: "multi-field"; title?: string; hint?: string; feedback?: (value: BusinessFormValue) => { message: string; invalid: boolean }; amplifies?: (value: BusinessFormValue) => boolean; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; onFieldChange?: (key: string, next: BusinessFormValue) => BusinessFormValue; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "datetime-local" | "asset-upload" | "checkbox"; options?: string[]; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; warning?: (value: BusinessFormValue) => string | undefined; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
-  | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentIssuanceLimit?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentPopupCadenceEnabled?: string; currentPopupDelayMs?: string; currentPopupCooldownHours?: string; currentPopupMaxPerSession?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
+  | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; typeLocked?: boolean; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentIssuanceLimit?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentPopupCadenceEnabled?: string; currentPopupDelayMs?: string; currentPopupCooldownHours?: string; currentPopupMaxPerSession?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
   | { kind: "promo-banner-edit"; currentBaseReward?: string; currentMultiplier?: string; currentCountdownDays?: string; currentCountdownHours?: string; currentTargetDevice?: string; currentTargetDaily?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "vrank-reward-edit"; subject?: string; voucherOptions?: string[]; voucherLabels?: Record<string, string>; skuOptions?: string[]; skuLabels?: Record<string, string>; currentType?: string; currentAmount?: string; currentVoucherId?: string; currentSkuId?: string; currentCustom?: string }
   | { kind: "mission-create"; subject?: string }
@@ -1556,7 +1556,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
       if (!Number.isFinite(a) || a < 1 || a > 1_000_000) missing.push("满减面值(1–1,000,000 USDT)");
     } else if (state.type === "percent") {
       const p = Number(state.percent);
-      if (!Number.isFinite(p) || p <= 0 || p >= 100) missing.push("折扣率 1-99");
+      if (!Number.isInteger(p) || p < 1 || p > 99) missing.push("折扣率须为 1–99 的整数");
     }
     const surfs = (state.claimSurfaces ?? "").split(",").map((s) => s.trim()).filter(Boolean);
     if (surfs.some((s) => !["home", "store", "me", "earn"].includes(s))) missing.push("领取入口仅限 home/store/me/earn");
@@ -1570,6 +1570,11 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (!Number.isSafeInteger(delay) || delay < 0 || delay > 60000) missing.push("弹窗延迟须为 0-60000 毫秒");
     if (!Number.isSafeInteger(cooldown) || cooldown < 0 || cooldown > 720) missing.push("弹窗冷却须为 0-720 小时");
     if (!Number.isSafeInteger(cap) || cap < 1 || cap > 10) missing.push("单会话上限须为 1-10 次");
+  } else if (spec.kind === "quest-event-config") {
+    const target = state.targetValue?.trim();
+    if (target && (!Number.isInteger(Number(target)) || Number(target) < 1 || Number(target) > 1_000_000_000)) {
+      missing.push("目标值须为 1–1,000,000,000 的整数");
+    }
   } else if (spec.kind === "vrank-reward-edit") {
     needs("rtype", "奖励类型");
     if (state.rtype === "usdt" || state.rtype === "uvt") {
@@ -2622,11 +2627,18 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <span className="bf-legend">代金券设置{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("name", "名称", "如 新人专享券")}
-          {select("type", "类型", ["fixed", "percent"], "voucher-type", { fixed: "满减", percent: "折扣" })}
+          {spec.typeLocked ? (
+            <label className="field" style={{ marginBottom: 0 }}>
+              <span>类型（已发券，不可修改）</span>
+              <select className="fld" data-proof="voucher-type" disabled value={spec.currentType}>
+                <option value={spec.currentType}>{spec.currentType === "percent" ? "折扣" : "满减"}</option>
+              </select>
+            </label>
+          ) : select("type", "类型", ["fixed", "percent"], "voucher-type", { fixed: "满减", percent: "折扣" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
           {input("amountUSD", "满减面值 (1–1,000,000 USDT)", "满减券填写，可含小数；如 1.01", "number")}
-          {input("percent", "折扣率 (%)", "折扣券填写，如 8", "number")}
+          {input("percent", "折扣率 (%)", "折扣券填写 1–99 的整数，如 8", "number")}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
           {input("minPurchaseUSD", "满减门槛 (美元)", "满多少可用，0 为无门槛", "number")}
@@ -2906,7 +2918,10 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {select("state", "状态", ["ongoing", "upcoming", "ended"], "event-state", { ongoing: "进行中", upcoming: "待开始", ended: "已结束" })}
           {input("reward", "奖励", "如 100 UVT")}
           {input("condition", "完成条件", "如 order.paid")}
-          {input("targetValue", "目标值", "如 5", "number")}
+          <label className="field" style={{ marginBottom: 0 }}>
+            <span>目标值</span>
+            <input className="fld" type="number" min={1} max={1_000_000_000} step={1} value={value.targetValue ?? ""} onChange={(event) => set("targetValue", event.target.value)} placeholder="至少 1，留空按 1" />
+          </label>
           {input("geo", "地域范围", "如 VN / GLOBAL")}
           {input("href", "App 跳转", "如 /pages/store/store")}
           {input("startsAt", "开始时间(UTC)", "", "datetime-local")}

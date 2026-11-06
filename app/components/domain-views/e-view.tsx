@@ -1644,10 +1644,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 threeItemsPct: Number(businessValue.threeItemsPct),
                 fourPlusItemsPct: Number(businessValue.fourPlusItemsPct),
               };
-              if (Object.values(next).some((value) => !Number.isFinite(value) || value <= 0 || value > 50)
+              if (Object.values(next).some((value) => !Number.isFinite(value) || value < 0.01 || value > 30)
                   || next.threeItemsPct < next.twoItemsPct
                   || next.fourPlusItemsPct < next.threeItemsPct) {
-                setToast("折扣须在 0–50% 之间，且买得越多折扣不能越少");
+                setToast("折扣须在 0.01%–30% 之间，且买得越多折扣不能越少");
                 return;
               }
               const def = findHighOp("e1_bundle_discount")!;

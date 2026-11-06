@@ -298,7 +298,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       action: `编辑代金券 · ${v.name}`,
       detail: (
         <>
-          <b>{v.name}</b> · 可修改类型、面值、门槛、适用商品、发给谁、有效期、领取入口和弹窗。
+          <b>{v.name}</b> · 可修改面值、门槛、适用商品、发给谁、有效期、领取入口和弹窗。{v.issuedCount > 0 ? "已发券的模板类型不可修改。" : "尚未发券，可修改类型。"}
           已填好当前值，修改前后对比可见。代金券不算平台负债，不受覆盖率限制。
         </>
       ),
@@ -309,6 +309,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         applicableSkuLabels: skuLabels,
         currentName: v.name,
         currentType: v.type,
+        typeLocked: v.issuedCount > 0,
         currentAmountUSD: v.amountUSD != null ? String(v.amountUSD) : "",
         currentPercent: v.percent != null ? String(v.percent) : "",
         currentMinPurchaseUSD: v.minPurchaseUSD != null ? String(v.minPurchaseUSD) : "",
@@ -456,7 +457,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       <section className="l-card" data-proof="h7-voucher-config">
         <div className="l-h">
           <span className="ttl">代金券列表</span>
-          <span className="sub">· 满减或折扣，所有设置都可以修改</span>
+          <span className="sub">· 满减或折扣，已发券模板的类型固定</span>
           <div className="r">
             <button className="l-btn sm mc" onClick={openAdd} disabled={!canWrite}>+ 新增代金券</button>
           </div>
