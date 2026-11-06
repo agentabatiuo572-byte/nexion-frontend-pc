@@ -81,7 +81,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
             // 枚举值:勾选 chips 不让手输(能勾选的不要手输铁律);value=所选项,inputOk 同文本框(选中即非空、确认按钮才启用)。
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {req.input.options.map((o) => (
-                <Chip key={o} tab sel={value === o} onClick={() => setValue(o)}>{o}</Chip>
+                <Chip key={o} tab sel={value === o} onClick={() => setValue(o)}>{req.input?.optionLabels?.[o] ?? o}</Chip>
               ))}
             </div>
           ) : (

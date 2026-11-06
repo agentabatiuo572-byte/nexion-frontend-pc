@@ -74,6 +74,7 @@ const MIGRATED = [
   "lib/admin/h-client.ts",
   "lib/admin/h2-trial-approval.ts",
   "lib/admin/h7-voucher-approval.ts",
+  "lib/admin/session-revocation-approval.ts",
   "lib/admin/e5-stable-device-command.ts",
   "lib/admin/g2-client.ts",
   "lib/admin/g3-client.ts",
