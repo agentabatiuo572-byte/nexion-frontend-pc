@@ -310,7 +310,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(String(error.backendMessage))) {
         throw new A2OutcomeUncertainError("原申请结果待核实，请稍后查询。", key);
       }
-      if (!isA2OutcomeUncertainError(error)) restoreAttempts.forget(slot, key);
+      // 重试被拒不能证明首次提交的结果，原申请继续保留以供核对。
+      if (!previous && !isA2OutcomeUncertainError(error)) restoreAttempts.forget(slot, key);
       throw error;
     } finally {
       setCheckingRestore(null);
