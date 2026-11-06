@@ -452,7 +452,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">试用记录</span>
-          <span className="sub">· 可以强制取消或扣款</span>
+          <span className="sub">· 可以强制取消</span>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 620 }}>
@@ -492,9 +492,6 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                           <button className="l-btn sm mc" onClick={() => openSessionApproval(session, "h2_trial_cancel")} disabled={!canCancel || blocked} style={{ marginRight: 6 }}>
                             强制取消
                           </button>
-                          <button className="l-btn sm mc" onClick={() => openSessionApproval(session, "h2_trial_charge")} disabled={!canCharge || blocked}>
-                            强制扣款
-                          </button>
                         </>
                       )}
                       {previous && canPropose(previous.op) && <button className="l-btn sm" onClick={() => openSessionApproval(session, previous.op, true)}>查询原操作</button>}
@@ -523,7 +520,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       </section>
 
       <div className="htint warn">
-        试用参数、强制取消/扣款、关闭邀请弹窗都会记入操作记录。
+        试用参数、强制取消、关闭邀请弹窗都会记入操作记录。
       </div>
 
     </>
