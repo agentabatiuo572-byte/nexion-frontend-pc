@@ -10,7 +10,7 @@ import "./overview/b-domain.css";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Download, ListChecks, ShieldAlert, ShieldCheck } from "lucide-react";
-import { Button, Conclusion, Explain, InlineRetry, PageHeader, RdPage } from "@/app/components/rd";
+import { Button, Conclusion, Explain, Fact, Facts, InlineRetry, PageHeader, RdPage, StatusTag } from "@/app/components/rd";
 import { BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { a2ActionText } from "@/lib/admin/operator-copy";
@@ -376,6 +376,8 @@ export default function CommandCenter() {
         <OperationConfirmModal
           briefKind="export"
           action="导出资金数据"
+          effect={<StatusTag tone="progress" filled>立即生效</StatusTag>}
+          facts={<Facts><Fact k="文件格式" lead>JSON</Fact><Fact k="数据范围">本次点击时的资金账本快照</Fact></Facts>}
           detail="下载本次点击时的资金账本 JSON 快照，包含覆盖率、红线、健康线、储备金、负债、净敞口及账户金额。"
           completionCopy="登记导出理由成功后，浏览器下载本次原始快照；结果未确认时保留原快照和理由，按原操作重试。"
           confirmLabel="登记并下载"
