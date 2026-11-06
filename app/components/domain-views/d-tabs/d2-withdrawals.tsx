@@ -11,7 +11,7 @@ import { AlertTriangle, ClipboardList, Coins, Copy, FileText, Flag, Gauge, Histo
 import { AutoGloss } from "@/app/components/kit/gloss";
 import {
   BatchBar, Button, Cell, Checkbox, ColumnPicker, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input, IrreversibleTag,
-  JudgmentPoints, Modal, MoreMenu, Notice, PageHeader, Pager, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table,
+  JudgmentPoints, KeyValues, Modal, MoreMenu, Notice, PageHeader, Pager, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table,
   TableLoading, TableMessage, Td, Th, Tr, useTableColumns, type JudgmentRow, type SegmentItem, type StateTone, type TableColumn,
 } from "@/app/components/rd";
 import { businessClock, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
@@ -131,27 +131,6 @@ function historyStatusLabel(status: string, chain?: string) {
   if (!chain && ["FAILED", "TX_FAILED"].includes(status)) return "处理失败";
   if (!chain && ["TX_ORPHANED", "DEAD"].includes(status)) return "处理异常";
   return statusLabel(status);
-}
-
-function historyFactsText(facts: string) {
-  const match = /^([\d.]+) (\S+)@(.+)$/.exec(facts);
-  return match ? `${listTime(match[3])} · ${amountText(Number(match[1]))} ${match[2]}` : facts;
-}
-
-function withdrawalHistoryText(value?: string) {
-  if (!value?.trim()) return "—";
-  return value.split(" | ").map((entry) => {
-    const parts = entry.split("/");
-    if (parts.length === 4) {
-      const [order, chain, status, facts] = parts;
-      return `${historyFactsText(facts)} · ${chain.replace(/^USDT-/, "")} · ${historyStatusLabel(status, chain)} · ${order}`;
-    }
-    if (parts.length === 3) {
-      const [order, status, facts] = parts;
-      return `${historyFactsText(facts)} · ${historyStatusLabel(status)} · ${order}`;
-    }
-    return entry;
-  }).join(" | ");
 }
 
 function statusHistoryText(value: string | undefined, chain: string) {
@@ -1786,8 +1765,11 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         <Fold inset title="风险规则" summary={ruleCount ? `${ruleCount} 条命中` : "没有命中"} alert={ruleCount > 0} icon={Shield} tone="risk">
           <Facts>
             <Fact k="触发的风险规则">{operationalText(shown.riskReason)}</Fact>
-            <Fact k="风险分明细">{riskBreakdownText(shown.riskScoreBreakdown)}</Fact>
           </Facts>
+          <KeyValues rows={riskBreakdownText(shown.riskScoreBreakdown).split("；").map((entry, index) => {
+            const separator = entry.indexOf("：");
+            return { key: String(index), label: separator < 0 ? "风险分明细" : entry.slice(0, separator), value: separator < 0 ? entry : entry.slice(separator + 1) };
+          })} />
         </Fold>
         {["USDT-BEP20", "BEP20"].includes(shown.chain) && <Fold inset title="Cregis 打款核对" icon={Link2} alert={!detailLoading && (!cregisDetail || cregisDetail.canRecover)} alertTone={cregisDetail?.canRecover ? "danger" : "warn"}
           summary={cregisDetail ? (detailProvider ? cregisStatusLabel(cregisDetail.state) : "未经 Cregis 打款") : "暂时无法获取"}>
@@ -1841,16 +1823,32 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         </Fold>
         <Fold inset title="收款与用户信息" summary={`账户${userStatusLabel(shown.userStatus)}，24h 第 ${shown.withdrawalCount24h} 笔`} icon={User} tone="users">
           <Facts>
-            <Fact k="用户资料">{`${shown.userNo} · ${operatorNicknameText(shown.nickname)} · ${shown.userLevel} · ${shown.phoneMasked || "未展示手机号"}`}</Fact>
+            <Fact k="用户编号">{shown.userNo}</Fact>
+            <Fact k="昵称">{operatorNicknameText(shown.nickname)}</Fact>
+            <Fact k="用户等级">{shown.userLevel || "—"}</Fact>
+            <Fact k="手机号">{shown.phoneMasked || "未展示手机号"}</Fact>
             <Fact k="资产 / 网络">{`${shown.asset} / ${shown.chain}`}</Fact>
             <Fact k="目标地址"><span data-mono>{shown.targetAddress}</span></Fact>
             <Fact k="IP 段">{shown.ipSegment || "—"}</Fact>
-            <Fact k="设备">{factsText(shown.deviceSummary)}</Fact>
-            <Fact k="团队位置">{factsText(shown.referralPosition)}</Fact>
           </Facts>
+          <KeyValues rows={[...factsText(shown.deviceSummary).split("；"), ...factsText(shown.referralPosition).split("；")].map((entry, index) => {
+            const separator = entry.indexOf("：");
+            return { key: String(index), label: separator < 0 ? (index === 0 ? "设备" : "团队位置") : entry.slice(0, separator), value: separator < 0 ? entry : entry.slice(separator + 1) };
+          })} />
         </Fold>
         <Fold inset title="提现历史" summary={historyCount ? `共 ${historyCount} 笔` : "没有记录"} icon={History}>
-          <Facts><Fact k="全部提现历史">{withdrawalHistoryText(shown.withdrawalHistory).split(" | ").map((entry) => <div key={entry}>{entry}</div>)}</Fact></Facts>
+          {shown.withdrawalHistory?.trim() ? <Table label="全部提现历史">
+            <thead><tr><Th>提现单 / 提交时间</Th><Th>金额 / 状态</Th></tr></thead>
+            <tbody>{shown.withdrawalHistory.split(" | ").map((entry, index) => {
+              const parts = entry.split("/");
+              const [order, chain, status, facts] = parts.length === 4 ? parts : [parts[0], "", parts[1], parts[2]];
+              const amount = /^([\d.]+) (\S+)@(.+)$/.exec(facts ?? "");
+              return parts.length === 3 || parts.length === 4 ? <Tr key={index}>
+                <Td><Cell mono full main={order} sub={amount ? listTime(amount[3]) : facts} /></Td>
+                <Td><Cell num main={amount ? `${amountText(Number(amount[1]))} ${amount[2]}` : "—"} sub={<>{historyStatusLabel(status, chain || undefined)}{chain && ` · ${chain.replace(/^USDT-/, "")}`}</>} /></Td>
+              </Tr> : <Tr key={index}><Td colSpan={2}><Cell full main={entry} /></Td></Tr>;
+            })}</tbody>
+          </Table> : <p className="rd-note">没有提现历史</p>}
         </Fold>
         <Fold inset title="状态记录与操作记录" summary={`${recordCount} 条操作`} icon={ClipboardList}>
           <Facts>
@@ -1859,10 +1857,13 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
             <Fact k="责任人">{shown.lifecycleOwner || "系统自动"}</Fact>
             <Fact k="持有 / 冻结期限">{freezePeriodLabel(shown.freezePeriod)}</Fact>
             <Fact k="上一状态">{shown.previousStatus ? statusLabel(shown.previousStatus) : "—"}</Fact>
-            <Fact k="状态历史">{statusHistoryText(shown.statusHistory, shown.chain)}</Fact>
-            <Fact k="操作记录">{auditTrailText(shown.auditTrail)}</Fact>
             {(shown.failureReason || shown.auditTrail) && <Fact k="原始记录"><Explain label="查看原始记录" content={[shown.failureReason, shown.auditTrail].filter(Boolean).join(" ｜ ")}>查证时看</Explain></Fact>}
           </Facts>
+          <KeyValues rows={statusHistoryText(shown.statusHistory, shown.chain).split("；").map((entry, index) => {
+            const separator = entry.indexOf("：");
+            return { key: String(index), label: separator < 0 ? "状态历史" : entry.slice(0, separator), value: separator < 0 ? entry : entry.slice(separator + 1) };
+          })} />
+          <ol className="rd-stack" aria-label="操作记录">{auditTrailText(shown.auditTrail).split("；").map((entry, index) => <li key={index}>{entry}</li>)}</ol>
         </Fold>
       </>}
     </Drawer>
