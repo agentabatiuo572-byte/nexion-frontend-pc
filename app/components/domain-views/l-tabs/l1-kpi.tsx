@@ -342,7 +342,13 @@ function OffsetModal({ current, onApply, onClose }: { current: number; onApply: 
           {(control) => <NumberInput {...control} unit="%" min={5} max={20} step={1} value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={() => setLeft(true)} />}
         </DiffField>
         <Fold inset title="查看业务规则详情" summary="状态怎么判定">
-          <p className="rd-note">单侧指标须严格高于或低于目标值才达标；等于目标时算接近目标。数值越高越好的指标，接近线为目标值 × (1 − N%)；数值越低越好的指标，接近线为目标值 × (1 + N%)。没达标但在接近线以内（含接近线）算接近目标，超出算未达标。购买转化健康带包含两端，带外也归接近目标。只影响显示，不改指标值。</p>
+          <Facts>
+            <Fact k="单侧目标">严格高于或低于目标值才达标；等于目标时算接近目标。</Fact>
+            <Fact k="接近线">越高越好的指标：目标值 × (1 − N%)；越低越好的指标：目标值 × (1 + N%)。</Fact>
+            <Fact k="接近目标">没达标但在接近线以内（含接近线），超出算未达标。</Fact>
+            <Fact k="购买转化">健康带包含两端，带外归接近目标。</Fact>
+          </Facts>
+          <p className="rd-note">只影响显示，不改指标值。</p>
         </Fold>
       </div>
     </Modal>
