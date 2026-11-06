@@ -345,10 +345,10 @@ function OffsetModal({ current, onApply, onClose }: { current: number; onApply: 
         </DiffField>
         <Fold inset title="查看业务规则详情" summary="状态怎么判定">
           <div className="rd-stack">
-            <p className="rd-note">单侧目标：严格高于或低于目标值才达标；等于目标时算接近目标。</p>
-            <p className="rd-note">接近线：越高越好的指标：目标值 × (1 − N%)；越低越好的指标：目标值 × (1 + N%)。</p>
-            <p className="rd-note">接近目标：没达标但在接近线以内（含接近线），超出算未达标。</p>
-            <p className="rd-note">购买转化：健康带包含两端，带外归接近目标。</p>
+            <p className="rd-note"><b>单侧目标：</b>严格高于或低于目标值才达标；等于目标时算接近目标。</p>
+            <p className="rd-note"><b>接近线：</b>越高越好取<b>目标 × (1 − N%)</b>，越低越好取<b>目标 × (1 + N%)</b>。</p>
+            <p className="rd-note"><b>接近目标：</b>没达标但在接近线以内（含接近线），超出算未达标。</p>
+            <p className="rd-note"><b>购买转化：</b>健康带包含两端，带外归接近目标。</p>
           </div>
         </Fold>
       </div>
