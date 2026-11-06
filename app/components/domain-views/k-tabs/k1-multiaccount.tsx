@@ -31,9 +31,11 @@ const releaseAttempts = createSlotAttemptStore({
 const CLUSTER_PAGE_SIZE_OPTIONS = [5, 10, 20];
 const WHITELIST_PAGE_SIZE_OPTIONS = [5, 10, 20];
 const MAX_FOCUS_RELOCATIONS = 3;
-const CLUSTER_PROPOSAL_CODES = {
-  flag: "k1_cluster_flag", freeze: "k1_cluster_freeze",
-  release: "k1_cluster_release", clear: "k1_cluster_cleared",
+const CLUSTER_PROPOSAL_RECEIPTS = {
+  flag: ["k1_cluster_flag", "标记可疑账户簇"],
+  freeze: ["k1_cluster_freeze", "批量冻结关联账户"],
+  release: ["k1_cluster_release", "解除误判"],
+  clear: ["k1_cluster_cleared", "判定为正常"],
 } as const;
 const EMPTY_CLUSTER_PAGE: AdminPage<K1Cluster> = { total: 0, pageNum: 1, pageSize: 5, records: [] };
 const EMPTY_WHITELIST_PAGE: AdminPage<K1WhitelistRow> = { total: 0, pageNum: 1, pageSize: 5, records: [] };
@@ -44,10 +46,10 @@ type RegistrationDraft = { param: A3PlatformParam; value: string; reason: string
 function PendingClusterApproval({ approval }: { approval: NonNullable<K1Cluster["pendingApproval"]> }) {
   return <div>
     <span className="bdg warn">待审批</span>
-    {approval.action && <div className="tiny">
-      {approval.action} · {approval.submittedBy} · {approval.submittedAt && (
+    {approval.action && approval.submittedBy && approval.submittedAt && <div className="tiny">
+      {approval.action} · {approval.submittedBy} · {
         <time dateTime={`${approval.submittedAt}Z`}>{approval.submittedAt.replace("T", " ")} UTC</time>
-      )}
+      }
     </div>}
   </div>;
 }
@@ -479,17 +481,18 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     }
   };
 
-  const recoverableProposal = cur?.pendingApproval ? Object.entries(CLUSTER_PROPOSAL_CODES).map(([action, code]) => {
+  const recoverableProposal = cur?.pendingApproval ? Object.entries(CLUSTER_PROPOSAL_RECEIPTS).map(([action, [code, title]]) => {
     const scope = `cluster-${action}:${cur.id}:${cur.version}`;
-    return { scope, code, key: commandAttempt.get(scope) };
+    return { scope, code, title, key: commandAttempt.get(scope) };
   }).find(attempt => attempt.key) : undefined;
 
   const recoverClusterProposal = async () => {
     if (!cur || !recoverableProposal?.key) return;
-    const { key, scope, code } = recoverableProposal;
+    const { key, scope, code, title } = recoverableProposal;
     try {
       const receipt = await fetchA2ProposalByKey(key);
-      if (!receipt?.mine || receipt.obj !== cur.id || receipt.operationCode !== code) {
+      if (!receipt?.mine || receipt.obj !== cur.id || receipt.action !== title
+          || (receipt.operationCode && receipt.operationCode !== code)) {
         ctx.toast("暂未找到本次提交的工单，请稍后按原提交号查询。");
         return;
       }
