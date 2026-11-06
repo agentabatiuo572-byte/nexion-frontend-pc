@@ -529,6 +529,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   HDPAY_PAYOUT_FAILED: "HDPay 返回打款失败。请核对原单结算和用户退款记录，不要重新放行或重复退款。",
   // 后端事实核对：FINANCE_LEAD 是角色；K3_EXPIRY_DELAY、K3_DELAY_ONCE 是生命周期来源／期限标记，均非接口错误码。
   CREGIS_PAYOUT_ALREADY_DISPATCHED: "打款方已接手这笔提现，不能继续审核或直接退款。请在详情核对原单的打款结果。",
+  CREGIS_DISPATCH_INTENT_CONFLICT: "打款派发记录发生冲突。请到提现详情和操作记录核对原单，由技术值班人员检查派发记录；不要重新打款。",
   CREGIS_CHAIN_PROOF_REQUIRED: "这笔提现需要可靠的链上付款证据才能确认结果。请核对打款方原单和链上交易。",
   H1_WITHDRAWAL_DIAL_UNAVAILABLE: "当前阶段的提现冷却设置暂不可读取，已转待审核。请核对阶段设置与最新提现详情。",
   WITHDRAWAL_AUTO_REVIEW_POLICY_CHANGED: "自动审核的条件已变化，已转待审核。请按最新金额门槛和风险信息人工复核。",
