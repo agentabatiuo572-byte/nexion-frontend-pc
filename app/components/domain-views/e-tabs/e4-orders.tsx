@@ -327,7 +327,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   // 具体原因只从状态轨迹取，状态本身证明不了原因。
   const closeRecord = e4Detail?.history.findLast((item) => item.toState === eff);
   const nextRow: JudgmentRow = pendingApproval
-    ? { label: "下一步", value: "等待审批结果", reason: "这单已有待审批操作，审批结束后才能再次处理。", state: "warn" }
+    ? { label: "下一步", value: "等待审批结果", reason: "这单已有待审批操作，审批结束后才能再次处理。等待超级管理员审批。", state: "warn" }
     : finalized
     ? { label: "结果", value: stateLabel(eff), reason: <>{STATE_TEXT[eff]}{closeRecord && e4Detail && <> · 记录的原因：{operatorOrderHistoryReason(closeRecord.reason, e4Detail.paymentMethod)}</>}</>, state: ORDER_STATE_TONE[eff] === "danger" ? "danger" : undefined }
     : !e4Detail ? { label: "下一步", ...pendingFact }
@@ -435,7 +435,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
       />}>
       {!finalized && <Steps label="订单进度" items={orderFlow.map((state, position) => ({ label: stateLabel(state), state: position < idx ? "done" as const : position === idx ? "current" as const : "todo" as const }))} />}
       {orderPending && <Notice tone="warn">这单有结果未确认的操作，不要重复处理。状态变了也不算确认。到页面上方核查结果，或看操作记录核查。</Notice>}
-      {pendingApproval && <Notice tone="warn" title="这单已有待审批操作"><E4PendingApprovalDetails approval={pendingApproval} />审批结束后才能发起新操作。</Notice>}
+      {pendingApproval && <Notice tone="warn" title="这单已有待审批操作"><E4PendingApprovalDetails approval={pendingApproval} />等待超级管理员审批，批准后才执行原操作。审批结束后才能发起新操作。</Notice>}
       {e4DetailError && <BlockState state="error" title="详情加载失败" detail={`${e4DetailError} · 为避免按旧数据操作，已暂停处理。`} onRetry={() => ctx.openOrder(o)} />}
       <JudgmentPoints rows={rows} />
       <Fold inset title="订单信息" icon={Package} tone="devices" summary={`${o.dc === "—" ? "未分配数据中心" : o.dc} · 下单 ${o.age} 前`}>

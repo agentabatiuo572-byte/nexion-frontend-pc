@@ -847,7 +847,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           <>
             <JudgmentPoints rows={[
               { label: "状态", value: <StatusTag tone={currentRow.tone}>{currentRow.label}</StatusTag>, reason: TRIAL_STATE_HELP[currentRow.session.state] },
-              ...(currentRow.session.pendingApproval ? [{ label: "审批", value: <TrialPendingApproval approval={currentRow.session.pendingApproval} />, reason: "审批结束后才能发起新操作。" }] : []),
+              ...(currentRow.session.pendingApproval ? [{ label: "审批", value: <TrialPendingApproval approval={currentRow.session.pendingApproval} />, reason: "等待超级管理员审批，批准后才执行原操作。审批结束后才能发起新操作。" }] : []),
               { label: "账户", value: trialOwnerLabel(currentRow.session), state: currentRow.owner ? undefined : "warn" },
               { label: "累计收益", value: shadowText(currentRow.session.shadow) },
               ...(canCharge && !currentRow.terminal ? [{ label: "强制扣款", value: CHARGE_RESULT }] : []),
