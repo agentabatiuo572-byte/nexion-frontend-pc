@@ -1542,7 +1542,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
     );
   }
 
-  const threadMessages: ThreadMessage[] = conv.messages.map((m) => {
+  const threadMessages = conv.messages.map((m): ThreadMessage => {
     const isAgent = m.sender === "agent";
     // System rows are known by their source, not by a display name: 「客服已切换」 carries the new handler's name.
     const isSystem = isAgent && (m.sourceSenderType === "SYSTEM" || m.kind === "AGENT_SWITCH" || m.agentName === "系统");
@@ -1554,9 +1554,9 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       agentName: m.agentName,
       senderName: isAgent ? m.agentName : customer,
       body: m.kind === "AGENT_SWITCH" ? agentSwitchText(m.agentName, m.senderRole) : m.kind === "IMAGE" ? "[图片]" : m.text,
-      cta: m.kind === "IMAGE" ? { label: "打开完整会话查看图片", onClick: () => window.location.assign(`/service/sessions?conversationNo=${encodeURIComponent(conv.id)}`) } : undefined,
+      cta: m.kind === "IMAGE" ? { kind: "link", label: "打开完整会话查看图片", onClick: () => window.location.assign(`/service/sessions?conversationNo=${encodeURIComponent(conv.id)}`) } : undefined,
       ctaHref: m.ctaHref,
-    } as ThreadMessage;
+    };
   });
 
   return (

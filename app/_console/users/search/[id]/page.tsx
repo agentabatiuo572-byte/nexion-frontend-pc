@@ -467,7 +467,7 @@ function RecordTable({ label, rows, columns, empty = "暂无记录", selected, o
 }
 
 /** 折叠组里的一小块：缺的不显示，读取失败只替换这一块（C1-V02、C1-S04）。 */
-function Block({ id, title, sub, explain, section, actions, failure, children }: {
+function Block({ id, title, sub, explain, section, actions, failure, disclosure, children }: {
   id?: string;
   title: string;
   sub?: ReactNode;
@@ -476,18 +476,20 @@ function Block({ id, title, sub, explain, section, actions, failure, children }:
   actions?: ReactNode;
   /** 这块单独读取、读失败有自己的原因时传，不走整页刷新。 */
   failure?: ReactNode;
+  disclosure?: { open: boolean; onOpenChange: (open: boolean) => void; summary: ReactNode };
   children: ReactNode;
 }) {
   if (!section) return null;
+  const body = failure
+    ? <BlockState state="error" compact title={failure} />
+    : sectionFailed(section)
+      ? <BlockState state="error" compact title="这部分资料加载失败，请刷新重试。" retryLabel="刷新页面重试" onRetry={() => window.location.reload()} />
+      : <div className="rd-detail-block">{children}</div>;
   return (
     <div id={id} className="rd-detail-block">
-      <Panel plain headingLevel={3} title={title} sub={sub} explain={explain} actions={actions}>
-        {failure
-          ? <BlockState state="error" compact title={failure} />
-          : sectionFailed(section)
-            ? <BlockState state="error" compact title="这部分资料加载失败，请刷新重试。" retryLabel="刷新页面重试" onRetry={() => window.location.reload()} />
-            : <div className="rd-detail-block">{children}</div>}
-      </Panel>
+      {disclosure
+        ? <Fold inset title={title} explain={explain} actions={actions} alert={!!failure || sectionFailed(section)} {...disclosure} summary={failure || (sectionFailed(section) ? "这部分资料加载失败" : sub ?? disclosure.summary)}>{body}</Fold>
+        : <Panel plain headingLevel={3} title={title} sub={sub} explain={explain} actions={actions}>{body}</Panel>}
     </div>
   );
 }
@@ -541,6 +543,13 @@ export default function UserDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [writeResult, setWriteResult] = useState<{ key: string; text: string } | null>(null);
+  const writeResultRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (writeResult?.key !== readKey) return;
+    // 等确认框把焦点还给入口后，再把结果带进视口。
+    const timer = window.setTimeout(() => writeResultRef.current?.scrollIntoView({ block: "center" }), 0);
+    return () => window.clearTimeout(timer);
+  }, [writeResult, readKey]);
   const [denied, setDenied] = useState(false);
   const [readAt, setReadAt] = useState("");
   const [reloadTick, setReloadTick] = useState(0);
@@ -559,6 +568,7 @@ export default function UserDetailPage() {
   const [revokeScanFailed, setRevokeScanFailed] = useState(false);
   const [paymentSecurity, setPaymentSecurity] = useState<{ state: PaymentSecurityState; pending: boolean }>({ state: "loading", pending: false });
   const [openFolds, setOpenFolds] = useState<Record<string, boolean>>({});
+  const [openRecordList, setOpenRecordList] = useState<RecordKind | null>();
   const [record, setRecord] = useState<{ kind: RecordKind; index: number } | null>(null);
   const [pendingCommands, setPendingCommands] = useState<C1Command[]>([]);
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
@@ -591,7 +601,7 @@ export default function UserDetailPage() {
     setDenied(false);
     setActionConfirm(null); setNotificationEvidence(null); setRecord(null);
     // 换用户、换账号时先清旧资料（C1-H02）。同一个用户刷新时旧资料留在屏幕上，写入口禁用，读失败再清。
-    if (loadedKey.current !== readKey) { setDetail(null); setPaymentMethods(null); setRevokeScan(null); setRevokeScanFailed(false); setOpenFolds({}); }
+    if (loadedKey.current !== readKey) { setDetail(null); setPaymentMethods(null); setRevokeScan(null); setRevokeScanFailed(false); setOpenFolds({}); setOpenRecordList(undefined); }
     setDetailKey(readKey);
     if (!userKey) {
       setDetail(null);
@@ -869,6 +879,8 @@ export default function UserDetailPage() {
   const showFold = (group: string) => setOpenFolds((current) => ({ ...current, [group]: true }));
   const locate = useCallback((group: string, anchor?: string) => {
     setOpenFolds((current) => ({ ...current, [group]: true }));
+    const list = ({ "hub-payment-methods": "payment", "hub-deposit": "deposit", "hub-withdrawal": "withdrawal", "hub-devices": "device", "hub-referral": "member", "hub-engagement": "engagement", "hub-orders": "order" } as Partial<Record<string, RecordKind>>)[anchor ?? ""];
+    if (list) setOpenRecordList(list);
     window.requestAnimationFrame(() => document.getElementById(anchor ?? `section-${group}`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }, []);
 
@@ -920,13 +932,23 @@ export default function UserDetailPage() {
     open: openFolds[group] ?? alert,
     onOpenChange: (next: boolean) => setOpenFolds((current) => ({ ...current, [group]: next })),
   });
+  // 多个分区可以同时露出异常摘要，记录表只展开一张（DP-67）。
+  const visibleRecordList = openRecordList === undefined
+    ? unfinishedRevokes.length > 0 ? "payment" : fundsAlert ? "withdrawal" : devicesAlert ? "device" : orderExceptions > 0 ? "order" : failedPushCount > 0 ? "notification" : null
+    : openRecordList;
+  const listProps = (kind: RecordKind) => ({ disclosure: {
+    open: visibleRecordList === kind,
+    onOpenChange: (next: boolean) => setOpenRecordList((current) => next ? kind : current === kind || current === undefined ? null : current),
+    summary: `${recordRows[kind].length} 条记录`,
+  } });
 
+  const writeResultNotice = writeResult?.key === readKey && <div ref={writeResultRef}><Notice tone="progress">{writeResult.text}</Notice></div>;
   if (detailKey !== readKey || loading && !detail) {
     return (
       <RdPage>
         <PageHeader title={pageName} back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>} />
         <BlockState state="loading" title="正在加载…" />
-        {writeResult?.key === readKey && <Notice tone="progress">{writeResult.text}</Notice>}
+        {writeResultNotice}
       </RdPage>
     );
   }
@@ -935,7 +957,7 @@ export default function UserDetailPage() {
     return (
       <RdPage>
         <PageHeader title={pageName} back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>} />
-        {writeResult?.key === readKey && <Notice tone="progress">{writeResult.text}</Notice>}
+        {writeResultNotice}
         {denied
           ? <BlockState state="denied" title="无权限访问" detail={error} />
           : <BlockState state="error" title={`${supportScope ? "客户资料" : "用户详情"}加载失败：${error}`} onRetry={() => void load()} />}
@@ -1194,7 +1216,7 @@ export default function UserDetailPage() {
 
       {conclusion}
       {pendingNotices}
-      {writeResult?.key === readKey && <Notice tone="progress">{writeResult.text}</Notice>}
+      {writeResultNotice}
       {correctionNotices}
 
       {kpis.length > 0 && <StatBand label="关键数字">
@@ -1237,7 +1259,7 @@ export default function UserDetailPage() {
       <div className="rd-detail-groups">
         {securityPresent && <div id={nav.anchor("security")}>
           <Fold title="安全" icon={ShieldCheck} tone="role-3" summary={foldSummary("security", securityAlert || securityFailed, securityText)} alertTone={securityFailed ? "danger" : "warn"} {...foldProps("security", securityAlert || securityFailed)}>
-            {detail.sessions && <Block title="登录安全" section={{ sourceStatus: "READY" }} sub={filteredSessions.length > C1_SESSION_PAGE_SIZE ? "最近 50 条登录记录" : `最近 50 条登录记录 · 筛选后 ${filteredSessions.length} 条`} explain="这是最近最多 50 条样本，不是全部历史。登录记录读取失败时后端也返回空，写 0 或没有记录不能证明没登录过。">
+            {detail.sessions && <Block title="登录安全" {...listProps("session")} section={{ sourceStatus: "READY" }} sub={filteredSessions.length > C1_SESSION_PAGE_SIZE ? "最近 50 条登录记录" : `最近 50 条登录记录 · 筛选后 ${filteredSessions.length} 条`} explain="这是最近最多 50 条样本，不是全部历史。登录记录读取失败时后端也返回空，写 0 或没有记录不能证明没登录过。">
               <Values rows={[
                 ["在线设备", numberLabel(summary.activeSessionCount)],
                 ["两步验证", securityValue(summary.twoFactorEnabled, "开启", "关闭")],
@@ -1252,7 +1274,7 @@ export default function UserDetailPage() {
               <PaymentSecurityBlock key={`${readKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={`${displayNickname} · ${userNo}`} reloadKey={reloadTick} canRelease={canReleasePayment}
                 onState={onPaymentSecurity} />
             </div>}
-            {!supportScope && <Block id="hub-payment-methods" title="支付方式" section={{ sourceStatus: "READY" }} failure={paymentError && `支付方式加载失败：${paymentError}`}
+            {!supportScope && <Block id="hub-payment-methods" title="支付方式" {...listProps("payment")} section={{ sourceStatus: "READY" }} failure={paymentError && `支付方式加载失败：${paymentError}`}
               sub={paymentMethods && paymentMethods.total > 0 ? `${paymentMethods.total} 条` : undefined}
               actions={<Button size="sm" icon={<RefreshCcw size={13} aria-hidden />} loading={paymentLoading} onClick={() => void loadPaymentMethods()}>刷新支付方式</Button>}>
               <Check label="显示已解绑" checked={includeUnbound} onChange={(event) => { setIncludeUnbound(event.target.checked); setPaymentPage(1); setRecord(null); }} />
@@ -1272,11 +1294,11 @@ export default function UserDetailPage() {
 
         {fundsPresent && <div id={nav.anchor("funds")}>
           <Fold title="资金" icon={Wallet} tone="role-1" summary={foldSummary("funds", fundsFailed || fundsAlert, fundsText)} alertTone={fundsFailed || withdrawalExceptions > 0 ? "danger" : "warn"} {...foldProps("funds", fundsFailed || fundsAlert)}>
-            <Block id="hub-deposit" title="充值记录" section={detail.deposits} sub={`最多 30 条 · 共 ${numberLabel(detail.deposits?.total)} 笔`}
+            <Block id="hub-deposit" title="充值记录" {...listProps("deposit")} section={detail.deposits} sub={`最多 30 条 · 共 ${numberLabel(detail.deposits?.total)} 笔`}
               explain={`这里只列已确认的充值，最多 30 条。确认总额 ${amountText(detail.deposits?.confirmedUsd)} 是能核对到的小计，不保证覆盖全部历史，也不是这些行相加。`}>
               <RecordTable label="充值记录" rows={deposits} columns={DEPOSIT_COLUMNS} {...recordProps("deposit")} />
             </Block>
-            <Block id="hub-withdrawal" title="提现记录" section={detail.withdrawals} sub={`最多 30 条 · 共 ${numberLabel(detail.withdrawals?.total)} 笔`}
+            <Block id="hub-withdrawal" title="提现记录" {...listProps("withdrawal")} section={detail.withdrawals} sub={`最多 30 条 · 共 ${numberLabel(detail.withdrawals?.total)} 笔`}
               explain={<><p>这里最多列 30 条，不是近 30 天。</p><p>完成总额 {amountText(detail.withdrawals?.completedUsd)}：能核对到的成功提现本金小计。申请总额 {amountText(detail.withdrawals?.requestedUsd)}：能核对到的处理中提现本金小计。都不保证覆盖全部历史。</p></>}>
               <RecordTable label="提现记录" rows={withdrawals} columns={WITHDRAWAL_COLUMNS} {...recordProps("withdrawal")} />
             </Block>
@@ -1288,7 +1310,7 @@ export default function UserDetailPage() {
                 ["需重置密码", securityValue(summary.passwordResetRequired)],
               ]} />
             </Block>
-            <Block title="兑换记录" section={detail.financial} failure={ledgerUnread && "账单流水读不到，兑换记录暂时无法确认，不是没有记录。"} sub={Array.isArray(detail.financial?.stakingLedgerRows) ? `质押记录 ${numberLabel(detail.financial.stakingLedgerRows.length)} 条` : undefined}
+            <Block title="兑换记录" {...listProps("exchange")} section={detail.financial} failure={ledgerUnread && "账单流水读不到，兑换记录暂时无法确认，不是没有记录。"} sub={Array.isArray(detail.financial?.stakingLedgerRows) ? `质押记录 ${numberLabel(detail.financial.stakingLedgerRows.length)} 条` : undefined}
               explain={`钱包 USDT ${amountText(wallet?.usdt)}，钱包 UVT ${amountText(wallet?.nex, "UVT")}。`}>
               <RecordTable label="兑换记录" rows={exchanges} columns={EXCHANGE_COLUMNS} empty="暂无兑换记录" {...recordProps("exchange")} />
             </Block>
@@ -1297,7 +1319,7 @@ export default function UserDetailPage() {
 
         {devicesPresent && <div id={nav.anchor("devices")}>
           <Fold title="设备与收益" icon={Cpu} tone="role-2" summary={foldSummary("devices", devicesFailed || devicesAlert, devicesText)} alertTone="danger" {...foldProps("devices", devicesFailed || devicesAlert)}>
-            <Block id="hub-devices" title="设备明细" section={detail.devices} sub={inKpi("设备数") ? "最多 200 台" : `最多 200 台 · 共 ${numberLabel(detail.devices?.total)} 台`}
+            <Block id="hub-devices" title="设备明细" {...listProps("device")} section={detail.devices} sub={inKpi("设备数") ? "最多 200 台" : `最多 200 台 · 共 ${numberLabel(detail.devices?.total)} 台`}
               explain={<><p>这是设定值，不是今天实际到账的收益。合计含已停用设备。</p><p>在线、活跃和合计都按这里列出的设备算。</p></>}>
               <Values rows={[
                 ["在线 / 活跃", `${numberLabel(detail.devices?.onlineCount)} / ${numberLabel(detail.devices?.activeCount)}`],
@@ -1305,7 +1327,7 @@ export default function UserDetailPage() {
               ]} />
               <RecordTable label="设备明细" rows={devices} columns={deviceColumns} {...recordProps("device")} />
             </Block>
-            <Block title="收益明细" section={detail.earnings ? { sourceStatus: asText(detail.earnings.sourceStatus, "READY") } : undefined} failure={ledgerUnread && "账单流水读不到，收益暂时无法确认，不是没有收益。"} sub={`共 ${numberLabel(detail.earnings?.total)} 条`}
+            <Block title="收益明细" {...listProps("earning")} section={detail.earnings ? { sourceStatus: asText(detail.earnings.sourceStatus, "READY") } : undefined} failure={ledgerUnread && "账单流水读不到，收益暂时无法确认，不是没有收益。"} sub={`共 ${numberLabel(detail.earnings?.total)} 条`}
               explain="收益合计按这次读到的账单流水算，不承诺是全部历史。">
               <Values rows={[
                 ["收益合计", `${amountText(detail.earnings?.totalUsdt)} · ${amountText(detail.earnings?.totalNex, "UVT")}`],
@@ -1319,7 +1341,7 @@ export default function UserDetailPage() {
 
         {teamPresent && <div id={nav.anchor("team")}>
           <Fold title="团队与互动" icon={Network} tone="role-3" summary={foldSummary("team", teamFailed, teamText)} alertTone="danger" {...foldProps("team", teamFailed)}>
-            <Block id="hub-referral" title="推荐团队" section={detail.referral ? { sourceStatus: asText(detail.referral.sourceStatus, "READY") } : undefined} sub="最多 20 条"
+            <Block id="hub-referral" title="推荐团队" {...listProps("member")} section={detail.referral ? { sourceStatus: asText(detail.referral.sourceStatus, "READY") } : undefined} sub="最多 20 条"
               explain="成员最多列 20 条，不是完整名单。团队规模、直接邀请和团队订单额是另外算的总数，不是这些行相加。">
               <Values rows={[
                 ...(inKpi("团队规模") ? [] : [["团队规模", `${numberLabel(detail.referral?.teamSize)} 人`] as const]),
@@ -1328,7 +1350,7 @@ export default function UserDetailPage() {
               ]} />
               <RecordTable label="推荐团队" rows={members} columns={MEMBER_COLUMNS} {...recordProps("member")} />
             </Block>
-            <Block id="hub-engagement" title="互动与参与" section={detail.engagement ? { sourceStatus: asText(detail.engagement.sourceStatus, "READY") } : undefined}>
+            <Block id="hub-engagement" title="互动与参与" {...listProps("engagement")} section={detail.engagement ? { sourceStatus: asText(detail.engagement.sourceStatus, "READY") } : undefined}>
               <RecordTable label="互动与参与" rows={engagement} columns={ENGAGEMENT_COLUMNS} {...recordProps("engagement")} />
             </Block>
             <Block title="团队等级" section={detail.vrank}>
@@ -1347,7 +1369,7 @@ export default function UserDetailPage() {
 
         {recordsPresent && <div id={nav.anchor("records")}>
           <Fold title="记录" icon={FileClock} tone="role-other" summary={foldSummary("records", recordsAlert || recordsFailed, recordsText)} alertTone={recordsFailed ? "danger" : "warn"} {...foldProps("records", recordsAlert || recordsFailed)}>
-            <Block title="参与与通知" section={detail.notifications} sub="最多 20 条" explain="未读、待推送和失败是另外算的总数，不是这些行相加。点通知编号看时间证据。">
+            <Block title="参与与通知" {...listProps("notification")} section={detail.notifications} sub="最多 20 条" explain="未读、待推送和失败是另外算的总数，不是这些行相加。点通知编号看时间证据。">
               <Values rows={[
                 ["未读", `${numberLabel(detail.notifications?.unreadCount)} 条`],
                 ["待推送", `${numberLabel(detail.notifications?.pendingPushCount)} 条`],
@@ -1355,7 +1377,7 @@ export default function UserDetailPage() {
               ]} />
               <RecordTable label="参与与通知" rows={notifications} columns={notificationColumns} {...recordProps("notification")} />
             </Block>
-            <Block id="hub-orders" title="商城订单" section={detail.commerce ? { sourceStatus: asText(detail.commerce.sourceStatus, "READY") } : undefined} sub="最多 50 单" explain="订单总数和活跃订单按这里列出的订单算。">
+            <Block id="hub-orders" title="商城订单" {...listProps("order")} section={detail.commerce ? { sourceStatus: asText(detail.commerce.sourceStatus, "READY") } : undefined} sub="最多 50 单" explain="订单总数和活跃订单按这里列出的订单算。">
               <Values rows={[
                 ["订单总数", `${numberLabel(detail.commerce?.total)} 单`],
                 ["活跃订单", `${numberLabel(detail.commerce?.activeOrderCount)} 单`],
