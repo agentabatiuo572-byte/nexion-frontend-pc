@@ -422,6 +422,19 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     if (!Number.isInteger(to) || !Number.isInteger(priceUSDT)) throw new Error("截止数量和单价要填整数");
     return { to, priceUSDT };
   };
+  const tierSupplyFeedback = (currentTo: number, rangeFrom: number) => (value: Record<string, string>) => {
+    const raw = value.to?.trim() ?? "";
+    const to = Number(raw);
+    const target = raw && Number.isInteger(to) && to > rangeFrom && to >= stats.sold
+      ? `${fmtInt(to)} 张` : "待填写有效截止数量";
+    const supply = overview.seriesSetupRequired
+      ? "系列总供应量：尚未发布 → 尚未发布；发布系列时以末档截止数量确定总量。"
+      : `系列总供应量：${fmtInt(stats.totalSlots)} 张 → ${target}。`;
+    return {
+      message: `保存影响 · 末档截止数量：${fmtInt(currentTo)} 张 → ${target}；${supply}末档截止数量和系列总供应量均不能少于已售的 ${fmtInt(stats.sold)} 张。`,
+      invalid: false,
+    };
+  };
 
   const editTier = (tier: G4Tier, index: number) => {
     if (!canPriceTiers || !tiers) return;
@@ -429,7 +442,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     openActionConfirm({ briefKind: "config",
       action: `修改价格档位 · ${tier.id}`,
       detail: <><b>{tier.id}</b> 档 · 当前区间 [{fmtInt(tier.from)}, {fmtInt(tier.to)}) · 单价 ${fmtInt(tier.priceUSDT)}。起点等于上一档的截止，不能单独改；改截止时{nextTier ? <>下一档 <b>{nextTier.id}</b> 的起点</> : "总供应量"}会跟着调整，最后一档总量不能少于已售的 {fmtNumber(stats.sold, 0)} 张。只影响以后的销售，已下单的按下单时价格结算。</>,
-      businessForm: { kind: "multi-field", title: `档位 ${tier.id}`, hint: "截止 = 卖到第几张换下一档；单价 = 这一档每张多少钱。都填整数。", fields: [
+      businessForm: { kind: "multi-field", title: `档位 ${tier.id}`, hint: "截止 = 卖到第几张换下一档；单价 = 这一档每张多少钱。都填整数。", feedback: nextTier ? undefined : tierSupplyFeedback(tier.to, tier.from), fields: [
         { key: "to", label: "截止（卖到第几张）", current: String(tier.to), inputKind: "number", min: tier.from + 1, step: 1, required: true },
         { key: "priceUSDT", label: "单价（USDT）", current: String(tier.priceUSDT), inputKind: "number", min: 1, step: 1, required: true },
       ] },
@@ -449,9 +462,9 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
       action: firstTier ? "创建第一个价格档位" : "新增价格档位",
       detail: firstTier
         ? <>创建第一档（从 0 到截止）及价格，用来确定节点总量和起始价格。不会发布系列、不会开放市场。已有用户持仓时不能创建。</>
-        : <>在最后一档 <b>{lastTier!.id}</b>（截止 {fmtInt(lastTier!.to)}）之后新增一档，起点自动为 {fmtInt(lastTier!.to)}。这里只保存价格档位，不会自动更新节点总量或开放销售。新增后需核对节点总量与档位范围，目录未就绪时不能销售。只影响以后的销售，已下单的按下单时价格结算。</>,
+        : <>在最后一档 <b>{lastTier!.id}</b>（截止 {fmtInt(lastTier!.to)}）之后新增一档，起点自动为 {fmtInt(lastTier!.to)}。保存时同步调整已有系列的总供应量，不会自动开放销售；尚未发布系列时仍需单独发布。新增后需核对节点总量与档位范围，目录未就绪时不能销售。只影响以后的销售，已下单的按下单时价格结算。</>,
       amplifies: false,
-      businessForm: { kind: "multi-field", title: firstTier ? "第一个价格档位" : "新价格档位", hint: `起点 = ${fmtInt(rangeFrom)}${firstTier ? "" : "（上一档的截止）"}。截止和单价都填整数。`, fields: [
+      businessForm: { kind: "multi-field", title: firstTier ? "第一个价格档位" : "新价格档位", hint: `起点 = ${fmtInt(rangeFrom)}${firstTier ? "" : "（上一档的截止）"}。截止和单价都填整数。`, feedback: firstTier ? undefined : tierSupplyFeedback(lastTier!.to, rangeFrom), fields: [
         { key: "to", label: "截止（卖到第几张）", inputKind: "number", min: rangeFrom + 1, step: 1, required: true },
         { key: "priceUSDT", label: "单价（USDT）", inputKind: "number", min: 1, step: 1, required: true },
       ] },
