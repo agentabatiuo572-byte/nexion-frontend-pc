@@ -313,6 +313,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const [selectedClosedIds, setSelectedClosedIds] = useState<Set<string>>(() => new Set());
   const [includeCurrentReply, setIncludeCurrentReply] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [actionResult, setActionResult] = useState("");
   const [actionChecking, setActionChecking] = useState(false);
   const [ticketLinks, setTicketLinks] = useState<Record<string, string>>({});
   const markedRef = useRef("");
@@ -781,7 +782,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     };
   }, []);
   useEffect(() => {
-    setDrafts({}); setDraftOwner(0); setPending(null); setFirstPending(null); setSendError(""); setMaintenanceChosen(false); setBusy(false); setActionChecking(false); setRevokedIds(new Set()); setTicketLinks({}); setContentChoice(null); setBulkOpen(false); setContactOpen(false); setTimeoutOpen(false); seenMessages.current=null; setNewMessageIds(new Set()); clearAttachment();
+    setDrafts({}); setDraftOwner(0); setActionResult(""); setPending(null); setFirstPending(null); setSendError(""); setMaintenanceChosen(false); setBusy(false); setActionChecking(false); setRevokedIds(new Set()); setTicketLinks({}); setContentChoice(null); setBulkOpen(false); setContactOpen(false); setTimeoutOpen(false); seenMessages.current=null; setNewMessageIds(new Set()); clearAttachment();
   }, [authEpoch, clearAttachment]);
   useEffect(() => {
     setTimeoutOpen(false); setTimeoutPolicy(null); setTimeoutInput(undefined); setTimeoutPending(null); setTimeoutLatest(null); setTimeoutConflict(false); setTimeoutReadOnly(false); setTimeoutError(""); setTimeoutSaving(false);
@@ -1383,7 +1384,9 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     try {
       await updateMConversationTimeoutPolicy(command.policy, command.input, command.key, command.operator);
       submitted = true;
+      pendingTimeoutPolicies.forget(timeoutSlot);
       if (stamp !== timeoutIdentityRef.current) return false;
+      setActionResult("超时策略已保存。");
       const next = await fetchMConversationTimeoutPolicy();
       if (stamp !== timeoutIdentityRef.current) return false;
       setTimeoutPolicy(next); setTimeoutInput(undefined); pendingTimeoutPolicies.forget(timeoutSlot); return true;
@@ -1391,9 +1394,9 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (stamp !== timeoutIdentityRef.current) return false;
       const status = cause && typeof cause === "object" && "status" in cause ? Number(cause.status) : 0;
       if (submitted) {
-        setTimeoutPending(command);
-        if (status === 403) await revokeTimeoutWrite(stamp);
-        else setTimeoutError("修改已提交，但页面刷新失败；请查询结果并刷新。");
+        setTimeoutPending(null); setTimeoutInput(undefined);
+        setActionResult("超时策略已保存，但最新设置读取失败，请重新打开超时策略核对。");
+        return true;
       } else if ([400, 401, 403, 404, 409, 422].includes(status) && !isIndeterminateSupportError(cause)) {
         pendingTimeoutPolicies.forget(timeoutSlot);
         if (status === 403) await revokeTimeoutWrite(stamp);
@@ -1413,9 +1416,11 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       const result = await supportClient.command(command.key);
       if (stamp !== timeoutIdentityRef.current) return;
       if (result.status === "SUCCEEDED") {
-        const policy = await fetchMConversationTimeoutPolicy();
+        forgetTimeoutCommand(command); setTimeoutPending(null); setTimeoutInput(undefined); setTimeoutOpen(false);
+        setActionResult("超时策略已保存。");
+        const policy = await fetchMConversationTimeoutPolicy().catch(() => { setActionResult("超时策略已保存，但最新设置读取失败，请重新打开超时策略核对。"); return null; });
         if (stamp !== timeoutIdentityRef.current) return;
-        forgetTimeoutCommand(command); setTimeoutPending(null); setTimeoutPolicy(policy); setTimeoutInput(undefined); setTimeoutError(""); setTimeoutOpen(false);
+        if (policy) setTimeoutPolicy(policy); setTimeoutError("");
       } else if (result.status === "FAILED") {
         forgetTimeoutCommand(command); setTimeoutPending(null); setTimeoutPolicy(command.policy); setTimeoutConflict(true); setTimeoutError("上次修改没有成功，你填写的内容还在；请看最新设置后再确认。"); await refreshTimeoutLatest();
       } else setTimeoutError("原操作仍待确认，请稍后查询；原操作记录与输入已保留。");
@@ -1579,9 +1584,10 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
             {chatMenu.length > 0 && <MoreMenu items={chatMenu} />}
           </div>
         </header>
-        {(endPending && !holdEnding || serviceStatus && conversationsAvailable || actionError || !requestedCustomerIdValid || readError || paneMessages && messagePages.error || messagePages.gap) && <div className="m3s-notices">
+        {(endPending && !holdEnding || serviceStatus && conversationsAvailable || actionError || actionResult || !requestedCustomerIdValid || readError || paneMessages && messagePages.error || messagePages.gap) && <div className="m3s-notices">
           {endPending && !holdEnding && <Notice tone="warn">{holdEndCommand && isRetryExpired(holdEndCommand) ? RETRY_EXPIRED_TEXT : "上次结束会话的结果尚未确认，原操作已保留。点「结束会话」会先查询原操作，不会重复结束。"}</Notice>}
           {serviceStatus && conversationsAvailable && <Notice tone="danger">{serviceStatus}</Notice>}
+          {actionResult && <Notice tone="progress" action={<Button size="sm" onClick={() => setActionResult("")}>知道了</Button>}>{actionResult}</Notice>}
           {actionError && <Notice tone="danger" action={<Button size="sm" onClick={() => setActionError("")}>知道了</Button>}>{actionError}</Notice>}
           {!requestedCustomerIdValid && <Notice tone="danger">客户链接无效，无法打开会话。请从<a className="rd-link" href="/service/overview">我的客户</a>重新进入。</Notice>}
           {readError && <Notice tone="warn" action={<Button size="sm" onClick={() => { const failed = failedReadContext.current; if (!failed || failed.key !== messagePages.key) return; markedRef.current = ""; void messagePages.refreshReadContexts(failed).then(() => setReadRetry(value => value + 1)); }}>重试</Button>}>已读状态更新失败：{readError}</Notice>}
@@ -1659,7 +1665,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
         <div className="m3s-profile-narrow"><h2>客户资料</h2><Button size="sm" onClick={() => setScreen("chat")}>返回会话</Button></div>
         {selectedUnbound ? <BlockState state="empty" title="待分配专属客服，尚无绑定客户的维护状态。" /> : profileCustomerId ? <M3CustomerProfile key={`${authEpoch}:${profileCustomerId}`} ctx={ctx} customerId={profileCustomerId} source="M3" transferEntry={!canReviewAll || canTransfer} conversation={selected ?? undefined} scopeVersion={selected?.version ?? firstProfileCustomer?.version} messageError={conversationError} onRetryMessages={() => { void messagePages.retry(); }} onHistory={no => { const convo = visible.find(c => c.id === no); if (convo) select(convo); }} /> : <BlockState state="empty" title={requestedCustomerId ? "客户归属尚未核对，资料暂时加载不出来。" : "选择客户后查看资料。"} />}
       </aside>
-      {assignOpen && canAssign && selected?.customerId && <AssignAdvisorDialog key={`${scopeIdentity}:${selected.customerId}`} adminId={adminId} canWrite={canWriteAssignment} customerId={String(selected.customerId)} customerName={title} onClose={() => setAssignOpen(false)} onAssigned={name => { setAssignOpen(false); setActionError(""); ctx.toast(`已确认原分配，专属客服为 ${name}。`); void ctx.refreshConversations().catch(() => {}); }} />}
+      {assignOpen && canAssign && selected?.customerId && <AssignAdvisorDialog key={`${scopeIdentity}:${selected.customerId}`} adminId={adminId} canWrite={canWriteAssignment} customerId={String(selected.customerId)} customerName={title} onClose={() => setAssignOpen(false)} onAssigned={name => { setAssignOpen(false); setActionError(""); setActionResult(`已确认原分配，专属客服为 ${name}。`); void ctx.refreshConversations().catch(() => setActionResult(`已确认原分配，专属客服为 ${name}。会话刷新失败，请刷新会话核对。`)); }} />}
       {bulkOpen && <SupportBulkComposer ctx={ctx} createBlocked={noOwnCustomers} onClose={() => setBulkOpen(false)} />}
       {contactOpen && <SupportContactPicker onClose={() => setContactOpen(false)} onSelect={customerId => { setRequestedCustomerId(customerId); setScreen("chat"); setContactOpen(false); const url = new URL(window.location.href); url.searchParams.delete("conversationNo"); url.searchParams.set("customerId", customerId); window.history.replaceState(null, "", url); }} />}
       {timeoutOpen && timeoutPolicy && <IdlePolicyModal policy={timeoutPolicy} initialInput={timeoutInput} canSave={canTimeout} saving={timeoutSaving} error={timeoutError} pending={Boolean(timeoutPending)} conflict={timeoutConflict} latest={timeoutLatest} onDraftChange={setTimeoutInput} onCheckPending={checkTimeoutPending} onRefreshLatest={refreshTimeoutLatest} onReviewLatest={() => { if (timeoutLatest) { setTimeoutPolicy(timeoutLatest); setTimeoutLatest(null); setTimeoutConflict(false); setTimeoutError(""); setTimeoutInput(input => input && { ...input, reason: "" }); } }} onClose={() => { if (!timeoutSaving) setTimeoutOpen(false); }} onSave={saveTimeout} />}
