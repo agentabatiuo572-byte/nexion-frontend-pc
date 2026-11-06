@@ -2,6 +2,12 @@ import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { parseE4OrderPage } from "@/lib/admin/e456-overview-contract";
 import { operatorSkuLabel } from "@/lib/admin/e-operator-display";
 
+export interface E4PendingApproval {
+  action: string | null;
+  submittedBy: string | null;
+  submittedAt: string | null;
+}
+
 export interface E4Order {
   id: string;
   user: string;
@@ -10,6 +16,7 @@ export interface E4Order {
   state: string;
   dc: string;
   age: string;
+  pendingApproval?: E4PendingApproval | null;
 }
 
 interface ApiResult<T> {
@@ -37,6 +44,7 @@ interface BackendOrder {
   ageText?: string | null;
   orderedAt?: string | null;
   updatedAt?: string | null;
+  pendingApproval?: E4PendingApproval | null;
 }
 
 export interface E4OrderQuery {
@@ -78,6 +86,7 @@ export function e4FundingLedgerHref(item: E4OrderFunding): string | null {
 
 export interface E4OrderDetail {
   order: E4Order;
+  pendingApproval?: E4PendingApproval | null;
   userId: number;
   quantity: number;
   orderType: string;
@@ -196,6 +205,7 @@ function fromOrder(order: BackendOrder): E4Order {
     state: normalizeState(order.state),
     dc: order.dcLocation?.trim() || "—",
     age: order.ageText?.trim() || "—",
+    pendingApproval: order.pendingApproval,
   };
 }
 

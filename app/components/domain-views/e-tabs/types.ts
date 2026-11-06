@@ -3,6 +3,7 @@ import type { OperatorBriefKind, BusinessFormSpec, EditSpec } from "../design-ki
 import type { E1BundleDiscount, E1GenerationGateData, E1GenerationGateInput, E1InvalidSku } from "@/lib/admin/e1-client";
 import type { E2PhoneTier, E2TaskPricingSnapshot, E2YieldComparison } from "@/lib/admin/e2-client";
 import type { E3OperationMetric, E3Stats } from "@/lib/admin/e3-client";
+import type { E4Order } from "@/lib/admin/e4-client";
 import type { E5Datacenter, E5DatacenterStatus, E5Device, E5Overview } from "@/lib/admin/e5-client";
 import type { E6ComputeConfigView } from "@/lib/admin/e6-client";
 import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
@@ -89,15 +90,7 @@ export interface McSpec {
 export type Mc = McSpec | null;
 
 /** 订单行(队列 / 状态机派生)。 */
-export interface EOrder {
-  id: string;
-  user: string;
-  sku: string;
-  amt: number;
-  state: string;
-  dc: string;
-  age: string;
-}
+export type EOrder = E4Order;
 
 /** 子视图上下文:派生读 + 打开抽屉/操作确认 + toast。全部由 shell 注入,子视图无自有 store。 */
 export interface EViewCtx {

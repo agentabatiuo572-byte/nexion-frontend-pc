@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { CodeTag, Badge, DataListPager } from "../design-kit";
 import { TabGroup } from "@/app/components/kit/tab-group";
+import type { E4PendingApproval } from "@/lib/admin/e4-client";
 import type { EViewCtx } from "./types";
 import { ostate, stateLabel } from "./data";
 import { EStats } from "./stats";
@@ -17,6 +18,19 @@ const FILTERS = [
 ];
 const IN_FLIGHT_STATES = new Set(["placed", "paid", "provisioning"]);
 const money = (value: number) => `$${Math.round(value).toLocaleString()}`;
+
+export function E4PendingApprovalDetails({ approval }: { approval: E4PendingApproval }) {
+  return (
+    <>
+      <Badge tone="warn">待审批</Badge>
+      {(approval.action || approval.submittedBy || approval.submittedAt) && <div className="muted tiny" style={{ marginTop: 4, overflowWrap: "anywhere" }}>
+        {approval.action && <span>{approval.action}</span>}
+        {approval.submittedBy && <span> · {approval.submittedBy}</span>}
+        {approval.submittedAt && <span> · <time dateTime={approval.submittedAt}>{approval.submittedAt.replace("T", " ")}</time></span>}
+      </div>}
+    </>
+  );
+}
 
 export function E4Orders({ ctx }: { ctx: EViewCtx }) {
   const { orders } = ctx;
@@ -134,7 +148,10 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
                 <div className="sku">{o.sku}</div>
                 <div className="amt">${o.amt.toLocaleString()}</div>
                 <div className="dc">{o.dc}</div>
-                <div><Badge tone={ostate[st] ?? "neutral"}>{stateLabel(st)}</Badge></div>
+                <div>
+                  <Badge tone={ostate[st] ?? "neutral"}>{stateLabel(st)}</Badge>
+                  {o.pendingApproval && <div style={{ marginTop: 4 }}><E4PendingApprovalDetails approval={o.pendingApproval} /></div>}
+                </div>
                 <div className="age">{o.age}</div>
                 <div className="chev"><Chevron /></div>
               </div>

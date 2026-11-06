@@ -358,12 +358,14 @@ export interface SlotAttemptRecord extends PendingMutationRecord {
 }
 
 export interface SlotAttemptStore {
+  /** 读取当前槽位的原命令号，供只读回执查询使用。 */
+  peek(slot: string): string | undefined;
   /** 取该槽位可复用的命令号:输入指纹一致才复用,否则铸新号并丢弃旧号。 */
   resolve(slot: string, inputFingerprint: string, mint: () => string): string;
   /** 该命令号是否已经真正落入可跨刷新读取的 sessionStorage。 */
   isDurablyStored(slot: string, inputFingerprint: string, commandKey: string): boolean;
   /** 命令已收敛,丢弃该槽位。 */
-  forget(slot: string): void;
+  forget(slot: string, commandKey?: string): void;
 }
 
 /**
@@ -381,6 +383,7 @@ export function createSlotAttemptStore(options: { storageKey: string; ttlMs?: nu
     isValidRecord: (record) => typeof record.inputFingerprint === "string" && record.inputFingerprint.length > 0,
   });
   return {
+    peek: store.get,
     resolve(slot, inputFingerprint, mint) {
       const saved = store.list().find((record) => record.fingerprint === slot);
       if (saved?.inputFingerprint === inputFingerprint) {

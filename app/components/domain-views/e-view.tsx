@@ -46,7 +46,7 @@ import {
 } from "@/lib/admin/e5-client";
 import { fetchE6ComputeConfig, isE6ParamKey, type E6ComputeConfigView } from "@/lib/admin/e6-client";
 import { usePropose } from "@/lib/admin/use-propose";
-import { createA2CommandKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
@@ -62,7 +62,7 @@ import { E1Catalog } from "./e-tabs/e1-catalog";
 import { E2Tasks } from "./e-tabs/e2-tasks";
 import { E3Lifecycle } from "./e-tabs/e3-lifecycle";
 import { E3Manual } from "./e-tabs/e3-manual";
-import { E4Orders } from "./e-tabs/e4-orders";
+import { E4Orders, E4PendingApprovalDetails } from "./e-tabs/e4-orders";
 import { E5Ops } from "./e-tabs/e5-ops";
 import { E6ComputeConfig as E6ComputeConfigComp } from "./e-tabs/e6-compute-config";
 import "./e-domain.css";
@@ -70,6 +70,7 @@ import "./e-domain.css";
 /** E 域 A2 提交稳定命令号:槽位=动作 op|目标对象,指纹=终值+结构化命令+目标锁(**不含 reason**)。
  *  落 sessionStorage,结果未知后哪怕刷新页面,同弹窗同业务输入重试仍复用同一命令号被后端去重。 */
 const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-e-domain-commands-v1" });
+const E4_APPROVAL_OPS = ["e4_order_refund", "e4_order_cancel", "e4_order_terminal", "e4_order_state"] as const;
 
 
 type SkuMediaKind = "image" | "video";
@@ -268,6 +269,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [e4Detail, setE4Detail] = useState<E4OrderDetail | null>(null);
   const [e4DetailLoading, setE4DetailLoading] = useState(false);
   const [e4DetailError, setE4DetailError] = useState<string | null>(null);
+  const [e4RecoveryLoading, setE4RecoveryLoading] = useState(false);
   const [manualOpen, setManualOpen] = useState(false); // E3 操作说明手册弹窗
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
   const canWriteE1 = useAdminAuth((s) => s.session?.authorities.includes("device_e1_write") ?? false);
@@ -520,6 +522,25 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE4DetailLoading(false);
     }
   }, []);
+  const recoverE4Approval = async (attempts: { slot: string; commandKey: string }[]) => {
+    setE4RecoveryLoading(true);
+    try {
+      const receipts = [];
+      for (const { slot, commandKey } of attempts) {
+        const receipt = await fetchA2ProposalByKey(commandKey);
+        if (receipt) {
+          receipts.push(receipt.id);
+          commandAttempts.forget(slot, commandKey);
+        }
+      }
+      ctx.toast(receipts.length ? `已找回原提交结果 · ${receipts.join("、")}` : "暂未查到原提交结果，请稍后再查");
+      void refreshE4();
+    } catch (error) {
+      ctx.toast(displayAdminError(error));
+    } finally {
+      setE4RecoveryLoading(false);
+    }
+  };
   const orderById = useMemo(() => new Map(orders.map((order) => [order.id, order])), [orders]);
   const orderState = useCallback((order: EOrder): string => orderById.get(order.id)?.state ?? order.state, [orderById]);
   const isRefunded = useCallback((id: string): boolean => orderById.get(id)?.state === "refunded", [orderById]);
@@ -1181,6 +1202,15 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       {selOrder && (() => {
         const o = orderById.get(selOrder.id) ?? selOrder;
         const eff = orderState(o);
+        const listedOrder = orderById.get(o.id) ?? o;
+        const pendingApproval = e4Detail?.order.id === o.id && e4Detail.pendingApproval !== undefined
+          ? e4Detail.pendingApproval
+          : listedOrder.pendingApproval;
+        const recoveryAttempts = E4_APPROVAL_OPS.flatMap((op) => {
+          const slot = `${op}|${o.id}`;
+          const commandKey = commandAttempts.peek(slot);
+          return commandKey ? [{ slot, commandKey }] : [];
+        });
         const finalized = isCancelled(o.id) || isRefunded(o.id) || !!terminalOf(o.id);
         const canCancel = canWriteE4 && eff === "placed";
         const terminalOptions = eff === "placed" ? ["payment_failed", "expired"]
@@ -1213,7 +1243,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               ? { code: "ORDER_DEVICE_ACTIVATION_REQUIRED", text: "要先在「设备运行管理」激活设备，订单才能完成。" }
               : null;
         const refundableState = ["paid", "provisioning", "activated", "inventory"].includes(eff);
-        const refundReady = canRefundE4 && refundableState && e4Detail?.refundAllowed === true;
+        const refundReady = canRefundE4 && refundableState && e4Detail?.refundAllowed === true && !pendingApproval;
         const closeOrder = () => { setSelOrder(null); setE4Detail(null); setE4DetailError(null); };
         const coverageText = e4Detail?.coverageCurrent == null
           ? "暂无数据"
@@ -1221,12 +1251,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         return (
           <Drawer title={o.id} sub={`${o.sku} · ${o.user}`} onClose={closeOrder}
             footer={<>
-                  {nextState && <Btn onClick={() => openActionConfirm({ briefKind: "record", name: `推进订单 · ${o.id} → ${stateLabel(nextState)}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, detail: `手动推进 ${o.id}：${stateLabel(eff)} → ${stateLabel(nextState)}` })}>推进到下一步</Btn>}
-                  {canCancel && <Btn onClick={() => openActionConfirm({ briefKind: "record", name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, detail: `取消 ${o.id}（${stateLabel(eff)}）。用户还没付款，取消后订单终止。`,
+                  {nextState && <Btn disabled={!!pendingApproval} onClick={() => openActionConfirm({ briefKind: "record", name: `推进订单 · ${o.id} → ${stateLabel(nextState)}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, detail: `手动推进 ${o.id}：${stateLabel(eff)} → ${stateLabel(nextState)}` })}>推进到下一步</Btn>}
+                  {canCancel && <Btn disabled={!!pendingApproval} onClick={() => openActionConfirm({ briefKind: "record", name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, detail: `取消 ${o.id}（${stateLabel(eff)}）。用户还没付款，取消后订单终止。`,
                     businessForm: { kind: "multi-field", title: "取消原因", fields: [
                       { key: "closeReasonCode", label: "取消原因（用户可见）", current: "", inputKind: "select", options: ["", ...E4_CLOSE_REASONS.cancelled], optionLabels: { "": "请选择取消原因", ...E4_CLOSE_REASON_LABELS }, required: true, help: "这个原因会显示在用户的订单详情里；下方备注只记在操作记录里，用户看不到。" },
                     ] } })}>取消订单</Btn>}
-                  {canWriteE4 && terminalOptions.length > 0 && <Btn onClick={() => openActionConfirm({ briefKind: "record", name: "标记失败结果 · " + o.id, op: "order-terminal", orderId: o.id, amplify: false, detail: `当前状态：${stateLabel(eff)}，选择一个失败结果。退款请用「退款」按钮。`,
+                  {canWriteE4 && terminalOptions.length > 0 && <Btn disabled={!!pendingApproval} onClick={() => openActionConfirm({ briefKind: "record", name: "标记失败结果 · " + o.id, op: "order-terminal", orderId: o.id, amplify: false, detail: `当前状态：${stateLabel(eff)}，选择一个失败结果。退款请用「退款」按钮。`,
                     businessForm: { kind: "multi-field", title: "失败结果与原因", hint: "过期、拒付的原因会自动记录；支付失败、开通失败需要选择原因。", fields: [
                       { key: "terminalState", label: "失败结果", current: "", inputKind: "select", options: ["", ...terminalOptions], optionLabels: { "": "请选择失败结果", ...Object.fromEntries(terminalOptions.map((s) => [s, stateLabel(s)])) }, required: true },
                       ...terminalOptions.filter((s) => E4_CLOSE_REASONS[s]).map((s) => (
@@ -1244,11 +1274,16 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                       ] },
                       detail: `退款 ${o.id} · $${o.amt.toLocaleString()} · ${coverageText}。钱会退回用户，充值记录、账单和累计充值一起冲回，不可撤销。`,
                     });
-                  }}><AutoGloss>{e4DetailLoading ? "正在检查退款条件…" : e4Detail?.refundAllowed === false ? "平台资金低于安全线，暂不能退款" : "退款"}</AutoGloss></Btn>}
+                  }}><AutoGloss>{pendingApproval ? "退款" : e4DetailLoading ? "正在检查退款条件…" : e4Detail?.refundAllowed === false ? "平台资金低于安全线，暂不能退款" : "退款"}</AutoGloss></Btn>}
+                  {recoveryAttempts.length > 0 && <Btn disabled={e4RecoveryLoading} onClick={() => void recoverE4Approval(recoveryAttempts)}>查询原提交结果</Btn>}
                   <Btn style={{ flex: 1, justifyContent: "center" }} onClick={closeOrder}>关闭</Btn>
                 </>}>
             <div className="tint" style={{ marginBottom: 14, textAlign: "center" }}><div className="muted tiny">订单金额</div><div style={{ fontSize: 30, fontWeight: 600, color: "var(--ink)" }} className="tnum">${o.amt.toLocaleString()}</div></div>
             <KV k="状态" v={<Badge tone={ostate[eff] ?? "neutral"}>{stateLabel(eff)}</Badge>} />
+            {pendingApproval && <div className="tint warn tiny" style={{ marginBottom: 10 }}>
+              <E4PendingApprovalDetails approval={pendingApproval} />
+              该订单已有待审批操作，审批结束后可发起新操作。
+            </div>}
             {!finalized && <KV k="下一处理步骤" v={nextState ? stateLabel(nextState) : <span style={{ color: "var(--ink-4)" }}>暂无可推进步骤</span>} />}
             {progressBlock && <div className="tint warn tiny" style={{ marginBottom: 10 }} title={progressBlock.code}>{progressBlock.text}</div>}
             <KV k="数据中心" v={o.dc} />
@@ -2012,6 +2047,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             throw error;
           }
           setActionConfirm(null);
+          if (mc.orderId) void refreshE4();
         }} />}
       {toastNode}
     </div>
