@@ -481,10 +481,13 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     }
   };
 
-  const recoverableProposal = cur?.pendingApproval ? Object.entries(CLUSTER_PROPOSAL_RECEIPTS).map(([action, [code, title]]) => {
-    const scope = `cluster-${action}:${cur.id}:${cur.version}`;
-    return { scope, code, title, key: commandAttempt.get(scope) };
-  }).find(attempt => attempt.key) : undefined;
+  const savedClusterAttempts = commandAttempt.list();
+  const recoverableProposal = cur ? Object.entries(CLUSTER_PROPOSAL_RECEIPTS).flatMap(([action, [code, title]]) => {
+    const prefix = `cluster-${action}:${cur.id}:`;
+    return savedClusterAttempts.filter(attempt => attempt.fingerprint.startsWith(prefix)
+      && /^\d+$/.test(attempt.fingerprint.slice(prefix.length)))
+      .map(attempt => ({ scope: attempt.fingerprint, code, title, key: attempt.commandKey }));
+  })[0] : undefined;
 
   const recoverClusterProposal = async () => {
     if (!cur || !recoverableProposal?.key) return;
