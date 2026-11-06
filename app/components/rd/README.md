@@ -51,6 +51,8 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 单条详情、长表单 | `Drawer`，底部用 `Decision` | `overlay.tsx` |
 | 详情开头 3～5 行 | `JudgmentPoints` | `judgment.tsx` |
 | 详情、确认框里成对的名称和值 | `Facts`、`Fact`；确认框的关键数字传 `lead`（每框最多一个，放第一行），带含义的值传 `tone`；状态变化写 `Change`（改后蓝）。放在 `Modal` 里自动带浅底 | `facts.tsx` |
+| 按时间发生的操作、状态历史 | `Timeline`；最新在上，主体在组件内经 `maskAuditActor` 打码；仅失败 `danger`、待确认 `warn` 的节点上色 | `timeline.tsx` |
+| 提现历史、流水、同组账户等同类记录 | `RecordList`；主值、单位、时间和对象、状态、可复制单号分层；默认 5 条，点「查看全部」展开 | `record-list.tsx` |
 | 要人看到的提醒、错误、待确认条 | `Notice` | `notice.tsx` |
 | 短任务弹窗 | `Modal`；`icon` 是标题前的图标底，`sub` 放标题下的后果标签，危险确认传 `tone="danger"` | `overlay.tsx` |
 | 写操作确认 | 继续用 `OperationConfirmModal` | 见下 |
@@ -255,3 +257,21 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 ## 依赖
 
 `@radix-ui/react-dialog`、`react-popover`、`react-select`、`react-tooltip` 都写确切版本，而且要一起升。它们共用一份 DismissableLayer，版本不齐会装出两份，Esc 就关不准最上层了。
+
+## 成组记录（VS-109）
+
+`Fact` 一项只放一条事实，不能用分隔符或多个子块拼记录。按时间发生的过程用 `Timeline`，同类对象用 `RecordList`。它们都能直接放进 `Fold`、`Drawer`，空态分别是「暂无操作记录」「暂无记录」；读取中、失败交给外层 `BlockState`。
+
+```tsx
+<Fold inset title="操作记录" summary={`共 ${events.length} 条`}>
+  <Timeline entries={events} />
+</Fold>
+<RecordList label="提现历史" records={[
+  { id: "1", value: "1,000.00", unit: "USDT", at: "2026-11-06T09:00:00+08:00",
+    object: "TRON", status: <StatusTag tone="done">已完成</StatusTag>, reference: "WD20261106001" },
+]} />
+```
+
+`TimelineEntry` 的 `id`、`action`、`actor`、`at` 必填，`detail`、`role`、`ip`、`tone` 选填。组件复制后排序，不改写输入记录。`RecordListEntry` 的 `id`、`value` 必填，`unit`、`at`、`object`、`status`、`reference` 选填，保持调用方的顺序。两者的 `at` 都传原始时间，显示沿用业务时区并标注时区；不把后端无时区时间当浏览器时间。金额由调用方按业务精度格式化，组件提供 tabular-nums 和单位层级。单号等宽、换行、复制有成功或失败反馈，复制按钮有完整名称。
+
+结构采用 [Ant Design Timeline](https://ant.design/components/timeline/) 的单侧节点、连线和事件内容，以及 [List](https://ant.design/components/list/) 的横排主内容、右侧附属信息、行分隔和默认 `12px 0` 内边距。节点灰色、失败红、待确认橙黄，14/22 正文、13/18 辅助，以及超过 5 条折起，是 VS-109 的产品差异；颜色全部取已有 `--rd-*`。

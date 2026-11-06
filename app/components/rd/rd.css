@@ -188,6 +188,32 @@
 .rd-fold[data-alert] .rd-fold-summary { color: var(--tone, var(--rd-warn)); font-weight: 500; }
 .rd-fold-body { min-width: 0; padding: 0 var(--rd-panel-pad-x) 16px calc(var(--rd-panel-pad-x) + 14px + var(--rd-space-2)); color: var(--rd-text-2); }
 
+/* ── 时间线、记录列表（CP-46 / VS-109）── */
+/* 沿用 Ant Design 的单侧时间轴和 List 横排结构；List 默认 12px 0 行内边距。 */
+.rd-timeline, .rd-records { margin: 0; padding: 0; list-style: none; min-width: 0; }
+.rd-timeline-item { position: relative; padding: 0 0 var(--rd-space-3) 26px; min-width: 0; }
+.rd-timeline-item:not(:last-child)::before { content: ""; position: absolute; top: 12px; bottom: 0; left: 4px; border-left: 2px solid var(--rd-line); }
+.rd-timeline-item:last-child { padding-bottom: 0; }
+.rd-timeline-dot { position: absolute; top: 6px; left: 0; width: 10px; height: 10px; box-sizing: border-box; border: 2px solid var(--rd-text-3); border-radius: 50%; }
+.rd-timeline-item[data-tone="danger"] > .rd-timeline-dot { border-color: var(--rd-danger); }
+.rd-timeline-item[data-tone="warn"] > .rd-timeline-dot { border-color: var(--rd-warn); }
+.rd-timeline-content { min-width: 0; overflow-wrap: anywhere; }
+.rd-timeline-event, .rd-timeline-detail { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 400; color: var(--rd-text); }
+.rd-timeline-detail { color: var(--rd-text-2); }
+.rd-record-meta { display: flex; flex-wrap: wrap; gap: var(--rd-space-1) var(--rd-space-2); margin-top: var(--rd-space-1); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-3); overflow-wrap: anywhere; }
+.rd-record-list { min-width: 0; }
+.rd-record { min-width: 0; padding: var(--rd-space-3) 0; }
+.rd-record + .rd-record { border-top: 1px solid var(--rd-line); }
+.rd-record-main { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--rd-space-1) var(--rd-space-3); }
+.rd-record-value { min-width: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; font-variant-numeric: tabular-nums; color: var(--rd-text); overflow-wrap: anywhere; }
+.rd-record-unit { margin-left: var(--rd-space-1); font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
+.rd-record-status { flex: none; margin-left: auto; }
+.rd-record-reference { display: flex; align-items: flex-start; gap: var(--rd-space-1); margin-top: var(--rd-space-1); font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-record-reference > span { min-width: 0; overflow-wrap: anywhere; }
+.rd-record-reference > .rd-iconbtn { flex: none; width: var(--rd-control-h-sm); height: var(--rd-control-h-sm); margin-top: -3px; }
+.rd-record-empty, .rd-record-feedback { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-3); }
+.rd-record-more { margin-top: var(--rd-space-1); }
+
 /* ── 表格 ── */
 /* 表格放不下时横向滚动；两侧的影子提示还有内容，滚到头影子消失（背景随内容滚动的老办法，不用脚本）。 */
 .rd-table-scroll { overflow-x: auto; background:
