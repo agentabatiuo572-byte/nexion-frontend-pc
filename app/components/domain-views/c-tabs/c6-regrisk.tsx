@@ -415,7 +415,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
           ))}
           {k1Guards.length === 0 && <div className="ctint" style={{ marginTop: 10 }}>暂无</div>}
           <div className="ctint" style={{ marginTop: 10 }}>
-            注册数据会进入用户转化分析，登录锁定会显示在风险提醒和「安全与登录设备」，注册时发现的同 IP / 同设备会同步到多账户风险排查。
+            注册数据会进入用户转化概览，登录锁定会显示在风险提醒和「安全与登录设备」，注册时发现的同 IP / 同设备会同步到多账户风险排查。
           </div>
         </div>
       </section>

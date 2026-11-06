@@ -26,8 +26,7 @@ import { B2RestoredInsights } from "@/app/components/dashboard/restored-b-insigh
 import { useReach } from "@/lib/nav/use-reach";
 import { TREASURY_VALUATION_UNAVAILABLE } from "@/lib/admin/treasury-valuation";
 
-/** B2 预测配置只有一个槽位:草稿 / 期望版本 / 理由没变就复用命令号,变了铸新号并丢弃旧号。
- *  落 sessionStorage,刷新后「结果未知」的重试仍是同一命令号,后端才能去重。 */
+/** B2 预测设置与资金储备页共用命令号，结果未知时跨刷新保留原操作。 */
 const forecastConfigCommandKey = createSlotAttemptStore({
   storageKey: "nexion-admin-b2-liquidity-commands-v1",
   // 和资金储备页同一条记录，过期后不能再用原号重试，记录和锁都留着（OP-96）。

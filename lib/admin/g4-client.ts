@@ -638,6 +638,15 @@ export async function fetchG4GenesisOverview(page = 1, pageSize = 10) {
   }));
 }
 
+export async function fetchG4DividendApprovalState() {
+  const state = await g4Request<{ dividend: string; expectedRevision: string }>("/nex/genesis/dividend-approval-state");
+  if (typeof state?.dividend !== "string" || !/^\d+(?:\.\d+)?$/.test(state.dividend)
+      || typeof state.expectedRevision !== "string" || !/^[0-9a-f]{64}$/.test(state.expectedRevision)) {
+    throw new Error("日分红审批状态不完整，请重新加载后再试。");
+  }
+  return state;
+}
+
 export async function updateG4GenesisParam(paramKey: string, value: string, reason: string, operator: string, decisionRef?: string) {
   return g4OverviewMutation(
     `/nex/genesis/params/${encodeURIComponent(paramKey)}`,

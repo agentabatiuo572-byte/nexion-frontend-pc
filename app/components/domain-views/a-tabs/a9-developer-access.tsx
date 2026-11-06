@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Btn, Card, CardH, DataListPager } from "../design-kit";
+import { Badge, Btn, Card, CardH, DataListPager, Modal } from "../design-kit";
 import { TabGroup } from "@/app/components/kit/tab-group";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
@@ -14,16 +14,23 @@ import {
   type DeveloperAccessRequest,
 } from "@/lib/admin/developer-access-client";
 import { canReviewDeveloperAccess, developerAccessResourceGuard } from "@/lib/admin/developer-access-policy";
-import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
 
-const developerAccessAttempts = createSlotAttemptStore({
+type ReviewAction = "approve" | "reject" | "revoke";
+type DeveloperAccessAttempt = SlotAttemptRecord & { adminId?: number; reason?: string };
+const reviewActionLabel: Record<ReviewAction, string> = { approve: "批准", reject: "驳回", revoke: "撤销" };
+
+const developerAccessAttempts = createPendingMutationStore<DeveloperAccessAttempt>({
   storageKey: "nexion-admin-a9-developer-access-attempts-v1",
+  isValidRecord: (record) => typeof record.inputFingerprint === "string"
+    && (record.reason === undefined || (typeof record.reason === "string" && Number.isSafeInteger(record.adminId))),
 });
 
 /** Real server-backed developer access governance. Navigation ownership remains with the A-domain integrator. */
 const developerStatusText = (value: string) => ({ PENDING: "待审批", APPROVED: "已批准", REJECTED: "已驳回", REVOKED: "已撤销", EXPIRED: "已过期" } as Record<string,string>)[value] ?? "未知状态";
 
 export function A9DeveloperAccess() {
+  const adminId = useAdminAuth((s) => s.session?.adminId);
   const authorities = useAdminAuth((s) => s.session?.authorities ?? []);
   const isSuper = authorities.includes("ROLE_SUPER_ADMIN");
   const reviewPermissions = {
@@ -40,6 +47,12 @@ export function A9DeveloperAccess() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [recovery, setRecovery] = useState<{
+    row: DeveloperAccessRequest;
+    action: ReviewAction;
+    attempt: DeveloperAccessAttempt;
+    reason: string;
+  } | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => { setKeyword(keywordInput.trim()); setPage(1); }, 300);
@@ -59,29 +72,47 @@ export function A9DeveloperAccess() {
 
   useEffect(() => load(), [load]);
 
-  const review = async (row: DeveloperAccessRequest, action: "approve" | "reject" | "revoke") => {
-    if (!reviewPermissions[action] || !canReviewDeveloperAccess(row.status, action)) return;
-    const reason = window.prompt("请填写备注（至少 8 个字）", "")?.trim() ?? "";
-    if (reason.length < 8) {
-      setError("备注至少 8 个字，操作未执行");
-      return;
-    }
+  const submitReview = async (row: DeveloperAccessRequest, action: ReviewAction, reason: string,
+    previous?: DeveloperAccessAttempt) => {
+    if (!adminId || useAdminAuth.getState().session?.adminId !== adminId
+      || !reviewPermissions[action] || !canReviewDeveloperAccess(row.status, action)) return;
     const identity = `${action}:${row.requestNo}`;
-    const key = developerAccessAttempts.resolve(
-      identity,
-      `${identity}:${row.status}`,
-      () => globalThis.crypto?.randomUUID?.() ?? `developer-access-${action}-${row.requestNo}`,
-    );
+    const key = previous?.commandKey ?? globalThis.crypto?.randomUUID?.() ?? `developer-access-${action}-${row.requestNo}`;
+    if (!previous) developerAccessAttempts.forget(identity);
+    if (!previous) {
+      developerAccessAttempts.remember(identity, key, { inputFingerprint: `${identity}:${row.status}`, adminId, reason });
+    }
     try {
       if (action === "approve") await approveDeveloperAccess(row, reason, key);
       if (action === "reject") await rejectDeveloperAccess(row, reason, key);
       if (action === "revoke") await revokeDeveloperAccess(row, reason, key);
-      developerAccessAttempts.forget(identity);
+      developerAccessAttempts.forget(identity, key);
+      setError(null);
       setReloadKey((value) => value + 1);
     } catch (cause) {
-      if (!isDeveloperAccessOutcomeUnknownError(cause)) developerAccessAttempts.forget(identity);
+      if (!isDeveloperAccessOutcomeUnknownError(cause) && (!previous || previous.reason !== undefined)) {
+        developerAccessAttempts.forget(identity, key);
+      }
       setError(cause instanceof Error ? cause.message : "操作失败，结果未确认，请刷新后查看");
     }
+  };
+
+  const review = (row: DeveloperAccessRequest, action: ReviewAction) => {
+    if (!adminId || !reviewPermissions[action] || !canReviewDeveloperAccess(row.status, action)) return;
+    const identity = `${action}:${row.requestNo}`;
+    const previous = developerAccessAttempts.list().find((record) => record.fingerprint === identity
+      && record.inputFingerprint === `${identity}:${row.status}` && (record.adminId === undefined || record.adminId === adminId));
+    if (previous?.reason !== undefined) {
+      setRecovery({ row, action, attempt: previous, reason: previous.reason });
+      return;
+    }
+    // Legacy attempts retain the key but need the original remark from the operator.
+    const reason = window.prompt(previous ? "请填写上次提交的原备注（至少 8 个字）" : "请填写备注（至少 8 个字）", "")?.trim() ?? "";
+    if (reason.length < 8) {
+      setError("备注至少 8 个字，操作未执行");
+      return;
+    }
+    void submitReview(row, action, reason, previous);
   };
 
   return (
@@ -131,6 +162,18 @@ export function A9DeveloperAccess() {
         </div>
         {!error && <DataListPager label="开发者访问申请" page={page} pageSize={pageSize} total={data?.total ?? 0} onPageChange={setPage} onPageSizeChange={(size: number) => { setPageSize(size); setPage(1); }} />}
       </Card>
+      {recovery && recovery.attempt.adminId === adminId && reviewPermissions[recovery.action] && (
+        <Modal title="核对原审批" onClose={() => setRecovery(null)} footer={<>
+          <Btn onClick={() => setRecovery(null)}>取消</Btn>
+          <Btn variant="primary" onClick={() => {
+            setRecovery(null);
+            void submitReview(recovery.row, recovery.action, recovery.reason, recovery.attempt);
+          }}>确认核对</Btn>
+        </>}>
+          <p>原操作 · {reviewActionLabel[recovery.action]} {recovery.row.requestNo}</p>
+          <div className="kv"><span className="k">原备注</span><span className="v" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{recovery.reason}</span></div>
+        </Modal>
+      )}
     </div>
   );
 }

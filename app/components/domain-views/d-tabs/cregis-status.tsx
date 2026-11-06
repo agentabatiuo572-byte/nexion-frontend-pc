@@ -289,7 +289,8 @@ export function CregisStatus({ canManage = false, openActionConfirm, onActivityC
   const confirmCommand = (briefKind: OperatorBriefKind, action: string, detail: string, path: string,
                           body?: Record<string, unknown>) => openActionConfirm({ briefKind,
     action, detail, reasonMin: 10, reasonMax: 255,
-    completionCopy: path === "/cregis/switch-cases" ? "提交后需另一位管理员复核才生效。" : "提交后立即执行。",
+    completionCopy: path === "/cregis/switch-cases" || path === "/cregis/review-cases"
+      ? "提交后需另一位管理员复核才生效。" : "提交后立即执行。",
     run: (reason) => command(path, { ...body, reason }),
   });
 
@@ -346,7 +347,7 @@ export function CregisStatus({ canManage = false, openActionConfirm, onActivityC
         <div className="dtint">全局出款总闸：{payoutCapabilityText(data)}</div>
         <div className="cregis-recon" aria-label="分网络出款能力">{(["BEP20", "ERC20"] as const).map(network => {
           const capability = data.networkCapabilities?.find(item => item.network === network);
-          return <span key={network}>{network}：{!capability ? "能力待核实" : capability.enabled ? "出款能力已启用，是否放行仍看「提现参数配置」里的网络开关" : !capability.configured ? "出款接入未就绪" : capability.disabledReason === "SWITCH_OFF" ? "出款开关已关闭" : "出款暂停，须核对配置与风险状态"}</span>;
+          return <span key={network}>{network}：{!capability ? "能力待核实" : capability.enabled ? "出款能力已启用，是否放行仍看「USDT 提现参数」里的网络开关" : !capability.configured ? "出款接入未就绪" : capability.disabledReason === "SWITCH_OFF" ? "出款开关已关闭" : "出款暂停，须核对配置与风险状态"}</span>;
         })}</div>
         <div className="cregis-recon">
           <label>网络 <select aria-label="地址池网络" value={poolNetwork} disabled={busy || loading} onChange={event => setPoolNetwork(event.target.value as "BEP20" | "ERC20")}><option value="BEP20">BEP20</option><option value="ERC20">ERC20</option></select></label>

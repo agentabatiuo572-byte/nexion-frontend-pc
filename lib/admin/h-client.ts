@@ -497,22 +497,6 @@ export async function updateH7VoucherStatus(
   );
 }
 
-export async function deleteH7Voucher(id: string, reason: string, expectedVersion: number) {
-  return growthRequest<Record<string, any>>(
-    `/vouchers/${encodeURIComponent(id)}`,
-    { method: "DELETE", body: commandBody("delete", "delete", reason, currentAdminOperator(), expectedVersion) },
-    "h7-delete",
-  );
-}
-
-export async function revokeH7VoucherAvailableGrants(id: string, reason: string, expectedVersion: number) {
-  return growthRequest<Record<string, any>>(
-    `/vouchers/${encodeURIComponent(id)}/grants/revoke-available`,
-    { method: "PATCH", body: commandBody("grants", "revoke-available", reason, currentAdminOperator(), expectedVersion) },
-    "h7-revoke-available",
-  );
-}
-
 export interface H8SettlementRow {
   settlementNo?: string;
   invitedUserId?: number;

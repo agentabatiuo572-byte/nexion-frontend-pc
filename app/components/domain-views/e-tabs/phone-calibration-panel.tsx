@@ -126,7 +126,7 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false }: { ctx: EV
             onChange={event => setThresholds(old => old.map((item,i) => i === index ? event.target.value : item))} /></label>)}
       </div></fieldset>
       <p className="f-foot">T1：低于首个分界；T2–T4：从本档下限至下一档下限；T5：不低于最后一个分界。小数不会落入空档。</p>
-      {thresholdsOnly ? <p>Android 芯片档 {androidRules.length} 个，iPhone 机型 {iosRules.length} 个。<Link href="/devices/compute-config#phone-calibration">去「算力与设备配置」维护手机算力规则</Link></p> : <>
+      {thresholdsOnly ? <p>Android 芯片档 {androidRules.length} 个，iPhone 机型 {iosRules.length} 个。<Link href="/devices/compute-config#phone-calibration">去「手机算力配置」维护手机算力规则</Link></p> : <>
         <IosModelRulesSection rules={iosRules} published={publishedPolicy?.iosModelRules ?? []} androidRuleIds={androidRules.map(rule => rule.id)}
           editing={editing} onChange={next => { setIosRules(next); setPreview(null); }} />
         <AndroidSocTiersSection rules={androidRules} removals={removals} published={publishedPolicy?.androidSocRules ?? []}

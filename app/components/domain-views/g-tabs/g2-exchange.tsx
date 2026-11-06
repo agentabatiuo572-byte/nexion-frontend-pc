@@ -11,16 +11,21 @@ import { displayAdminError } from "@/lib/admin/error-messages";
  */
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Drawer } from "../design-kit";
+import { Btn, Drawer, Modal } from "../design-kit";
 import {
   cancelG2ExchangeQueueOrder,
   fetchG2ExchangeOverview,
+  finishLocalG2QueueBatchReview,
+  G2BatchReceiptNotFound,
+  pendingG2QueueBatch,
   processG2ExchangeQueue,
+  recoverG2ExchangeQueue,
   updateG2ExchangeParam,
   updateG2ExchangeSwapStatus,
   type G2Cap,
   type G2ExchangeOrder,
   type G2Overview,
+  type G2PendingBatch,
 } from "@/lib/admin/g2-client";
 import type { GCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -28,6 +33,13 @@ import { classifyStableMutationFailure } from "@/lib/admin/stable-mutation";
 import { summarizeG2BatchResult, type G2BatchResult } from "@/lib/admin/g2-batch-result";
 
 const OPERATOR = currentAdminOperator;
+const BATCH_AUTHORITY = "finprod_g2_write";
+const batchOrderStatusLabel = {
+  COMPLETED: "已成交",
+  CANCELLED: "订单已取消",
+  QUEUED: "订单仍在队列",
+  FAILED: "订单已失败",
+};
 type GateKey = "user" | "platform" | "geo";
 
 function messageOf(error: unknown) {
@@ -63,11 +75,21 @@ function toneClass(tone: string) {
   return "dim";
 }
 
+function requireBatchActor(adminId: number) {
+  const auth = useAdminAuth.getState();
+  if (!auth.isAuthenticated || auth.logoutPending || auth.session?.adminId !== adminId
+      || !auth.session.authorities.includes(BATCH_AUTHORITY)) {
+    throw new Error("登录身份或兑换处理权限已变化，请关闭后重新打开。");
+  }
+}
+
 export function G2Exchange({ ctx }: { ctx: GCtx }) {
   const reach = useReach();
   const { toast, openActionConfirm } = ctx;
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
+  const batchAdminId = session?.adminId ?? 0;
+  const canProcessBatch = Number.isSafeInteger(batchAdminId) && batchAdminId > 0 && authorities.includes(BATCH_AUTHORITY);
   const isSuper = session?.role === "super" || session?.role === "superadmin";
   const allowed = (authority: string) => isSuper || authorities.includes(authority);
   const capAuthority = (key: string) => key === "userDailyCap" ? "finprod_g2_cap_user_write"
@@ -80,6 +102,16 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
   const [gateDrawer, setGateDrawer] = useState<GateKey | null>(null);
   const [queueDrawer, setQueueDrawer] = useState<string | null>(null);
   const [batchResult, setBatchResult] = useState<G2BatchResult | null>(null);
+  const [pendingBatch, setPendingBatch] = useState<G2PendingBatch>();
+  const [recoveryKey, setRecoveryKey] = useState<string | null>(null);
+  const [recoveryError, setRecoveryError] = useState<{ message: string; notFound: boolean } | null>(null);
+  const ownPendingBatch = canProcessBatch && pendingBatch?.adminId === batchAdminId ? pendingBatch : undefined;
+  const recoveryBatch = ownPendingBatch?.commandKey === recoveryKey ? ownPendingBatch : undefined;
+
+  useEffect(() => {
+    setPendingBatch(canProcessBatch ? pendingG2QueueBatch(batchAdminId) : undefined);
+    setRecoveryKey(null);
+  }, [batchAdminId, canProcessBatch]);
 
   const reload = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -135,24 +167,34 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
     }
   }, [toast]);
 
+  const showBatchResult = useCallback((result: Awaited<ReturnType<typeof processG2ExchangeQueue>>) => {
+    setOverview(result.overview);
+    setBatchResult(result.batch);
+    toast(summarizeG2BatchResult(result.batch));
+  }, [toast]);
+
   const processQueueBatch = useCallback(async (limit: number, reason: string) => {
+    requireBatchActor(batchAdminId);
     setBusyKey("queue:batch");
     setError("");
     setBatchResult(null);
     try {
-      const result = await processG2ExchangeQueue(limit, reason, OPERATOR());
-      setOverview(result.overview);
-      setBatchResult(result.batch);
-      toast(summarizeG2BatchResult(result.batch));
+      const result = await processG2ExchangeQueue(batchAdminId, limit, reason, OPERATOR());
+      requireBatchActor(batchAdminId);
+      showBatchResult(result);
     } catch (err) {
+      requireBatchActor(batchAdminId);
       const unknown = classifyStableMutationFailure(err) === "outcome-unknown";
       if (unknown) {
         try {
-          setOverview(await fetchG2ExchangeOverview());
+          const current = await fetchG2ExchangeOverview();
+          requireBatchActor(batchAdminId);
+          setOverview(current);
         } catch {
           // POST 的原始错误仍是主证据；回读失败不能改写成确定失败。
         }
-        const message = "处理结果暂未确认。请在当前确认框直接重试（沿用同一命令号），不会重复处理。";
+        requireBatchActor(batchAdminId);
+        const message = "处理结果暂未确认。可关闭确认框后选择「核对原处理」，查看原批次回执。";
         setError(message);
         toast(message);
         throw new Error(message);
@@ -162,9 +204,39 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
       toast(`批次没有处理 · ${message}`);
       throw err;
     } finally {
+      setPendingBatch(pendingG2QueueBatch(batchAdminId));
       setBusyKey(null);
     }
-  }, [toast]);
+  }, [batchAdminId, showBatchResult, toast]);
+
+  const checkOriginalBatch = async (original: G2PendingBatch) => {
+    setBusyKey("queue:batch");
+    setError("");
+    setRecoveryError(null);
+    try {
+      requireBatchActor(original.adminId);
+      const result = await recoverG2ExchangeQueue(original.adminId, original.commandKey);
+      requireBatchActor(original.adminId);
+      showBatchResult(result);
+      setRecoveryKey(null);
+    } catch (error) {
+      setRecoveryError({ message: messageOf(error), notFound: error instanceof G2BatchReceiptNotFound });
+    } finally {
+      setPendingBatch(pendingG2QueueBatch(original.adminId));
+      setBusyKey(null);
+    }
+  };
+
+  const finishLocalReview = (original: G2PendingBatch) => {
+    try {
+      requireBatchActor(original.adminId);
+      finishLocalG2QueueBatchReview(original.adminId, original.commandKey);
+      setRecoveryKey(null);
+      setPendingBatch(pendingG2QueueBatch(original.adminId));
+    } catch (error) {
+      setRecoveryError({ message: messageOf(error), notFound: false });
+    }
+  };
 
   if (loading && !overview) {
     return (
@@ -306,19 +378,22 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
             </div>
             <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span>排队到明天的兑换</span>
-              {allowed("finprod_g2_write") && <button className="l-btn sm mc" disabled={busy || queue.length === 0} onClick={() => openActionConfirm({ briefKind: "funds",
+              {canProcessBatch && (ownPendingBatch ? <button className="l-btn sm mc" disabled={busy} onClick={() => {
+                setRecoveryError(null);
+                setRecoveryKey(ownPendingBatch.commandKey);
+              }}>核对原处理</button> : <button className="l-btn sm mc" disabled={busy || queue.length === 0} onClick={() => openActionConfirm({ briefKind: "funds",
                 action: "处理今天的排队兑换",
                 detail: <>按当前 UVT 价格、每日额度、地区封锁和用户余额逐单检查，符合条件的马上成交。</>,
                 edit: { kind: "number", current: String(Math.min(queue.length, 50)), min: 1, max: 100, step: 1 },
                 run: async (reason, value) => processQueueBatch(Number(value || 50), reason),
-              })}>处理今天的排队</button>}
+              })}>处理今天的排队</button>)}
             </div>
             {batchResult && (
               <div className="gtint" data-proof="g2-batch-result" style={{ marginBottom: 12 }}>
                 <div><b>处理结果 · {summarizeG2BatchResult(batchResult)}</b></div>
                 {batchResult.completed.length > 0 && <div>已成交：{batchResult.completed.map((row) => `${row.exchangeNo} · 已成交`).join(" / ")}</div>}
-                {batchResult.skipped.length > 0 && <div><b>跳过</b>：{batchResult.skipped.map((row) => `${row.exchangeNo} · ${row.reason} · 订单${row.orderStatus === "CANCELLED" ? "已取消" : "仍在队列"}`).join("; ")}</div>}
-                {batchResult.failed.length > 0 && <div><b>失败</b>：{batchResult.failed.map((row) => `${row.exchangeNo} · ${row.reason} · 订单仍在队列`).join("; ")}</div>}
+                {batchResult.skipped.length > 0 && <div><b>跳过</b>：{batchResult.skipped.map((row) => `${row.exchangeNo} · ${row.reason} · ${batchOrderStatusLabel[row.orderStatus]}`).join("; ")}</div>}
+                {batchResult.failed.length > 0 && <div><b>失败</b>：{batchResult.failed.map((row) => `${row.exchangeNo} · ${row.reason} · ${batchOrderStatusLabel[row.orderStatus]}`).join("; ")}</div>}
                 <div>还在排队：{batchResult.remainingQueuedCount} 单。</div>
                 <div>列表已刷新。</div>
               </div>
@@ -355,6 +430,20 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
 
       <p className="f-foot">额度、地区和风险拦截都由系统自动执行。<b>放宽额度要求覆盖率不低于红线</b>：调高个人或平台每日额度时，覆盖率低于红线无法保存；收紧不受限制。成交后自动记入资金账本。</p>
       <details className="f-foot"><summary>技术信息（数据来源）</summary>{overview.sources.join(" / ")} · exchange.swapped</details>
+
+      {recoveryBatch && <Modal title="核对原处理" icon="shield" busy={busy} onClose={() => setRecoveryKey(null)}
+        footer={<>
+          <Btn disabled={busy} onClick={() => setRecoveryKey(null)}>取消</Btn>
+          {recoveryError?.notFound && <Btn disabled={busy} onClick={() => finishLocalReview(recoveryBatch)}>结束本机核对</Btn>}
+          <Btn variant="primary" disabled={busy} onClick={() => void checkOriginalBatch(recoveryBatch)}>{busy ? "核对中…" : "核对原处理"}</Btn>
+        </>}>
+        <dl style={{ display: "grid", gridTemplateColumns: "max-content minmax(0, 1fr)", gap: "12px 18px", margin: 0 }}>
+          <dt>原处理笔数</dt><dd style={{ margin: 0 }}>{recoveryBatch.limit} 单</dd>
+          <dt>原操作理由</dt><dd style={{ margin: 0, overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>{recoveryBatch.reason}</dd>
+        </dl>
+        {recoveryError && <div role="alert" className={recoveryError.notFound ? "alertbar warn" : "gtint"} style={{ marginTop: 12 }}>{recoveryError.message}</div>}
+        {recoveryError?.notFound && <div className="muted tiny">结束本机核对只清除此浏览器的待核对记录。</div>}
+      </Modal>}
 
       {gateDrawer && (() => {
         const detail = gateDetails[gateDrawer];

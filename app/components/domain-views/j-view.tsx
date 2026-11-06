@@ -111,8 +111,10 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
       action={mc.action}
       title={mc.title}
       detail={mc.detail}
+      completionCopy={mc.completionCopy}
       amplifies={mc.amplifies}
       coverage={mc.coverage}
+      coverageCheck={mc.coverageCheck}
       edit={mc.edit}
       businessForm={mc.businessForm}
       effect={mc.effect}

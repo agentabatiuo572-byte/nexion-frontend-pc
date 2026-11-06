@@ -14,7 +14,7 @@ import {
   JudgmentPoints, Modal, MoreMenu, Notice, PageHeader, Pager, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table,
   TableLoading, TableMessage, Td, Th, Tr, useTableColumns, type JudgmentRow, type SegmentItem, type StateTone, type TableColumn,
 } from "@/app/components/rd";
-import { businessClock, businessOffsetMinutes, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
+import { businessClock, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
 import { fmtPct } from "@/lib/format";
 import { fetchWithdrawalGateOpen } from "@/lib/admin/ops-dashboard-client";
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -87,21 +87,10 @@ function listTime(value?: string) {
   return timeText(value).slice(0, 16);
 }
 
-/** 复查时间的输入框按业务时区（BUG-289）。 */
+/** 复查字段按后端存储时钟（北京时间 UTC+8）显示和提交；期限校验仍按 A3 业务日界。 */
 function reviewAtAfter(days: number) {
-  return new Date(Date.now() + days * 86_400_000 + businessOffsetMinutes() * 60_000).toISOString().slice(0, 16);
-}
-
-/** 后端按存储时钟（UTC+8）解析复查时间，业务时区换过时这里换算回去。 */
-function reviewAtForBackend(value: string) {
-  return new Date(Date.parse(`${value.slice(0, 16)}:00Z`) + (480 - businessOffsetMinutes()) * 60_000).toISOString().slice(0, 16);
-}
-
-/** 第一次发送前定下后端时间，存进待确认记录。重试原样发送，不随业务时区重新换算（OP-94）。 */
-function formForBackend(value?: BusinessFormValue): BusinessFormValue | undefined {
-  const raw = value as Record<string, unknown> | undefined;
-  if (typeof raw?.reviewAt !== "string" || !raw.reviewAt) return value;
-  return { ...value, reviewAt: reviewAtForBackend(raw.reviewAt) } as BusinessFormValue;
+  const shanghaiOffsetMs = 8 * 3_600_000;
+  return new Date(Date.now() + days * 86_400_000 + shanghaiOffsetMs).toISOString().slice(0, 16);
 }
 
 function statusLabel(status: string) {
@@ -574,7 +563,7 @@ function actionBusinessForm(action: D2ReviewAction, addressVerificationRequired 
               warning: (value: BusinessFormValue) => (value.holdDays && !HOLD_DAYS.test(value.holdDays) ? HOLD_DAYS_ISSUE : undefined) }]
           : [{ key: "period", label: "冻结期限", inputKind: "select" as const, required: true, wide: true, options: ["7d", "14d", "30d", "45d", "LONG_TERM"], optionLabels: { "7d": "7 天", "14d": "14 天", "30d": "30 天", "45d": "45 天", LONG_TERM: "长期，需复查" } }]),
         { key: "owner", label: "责任人", required: true, current: OPERATOR() },
-        { key: "reviewAt", label: `复查时间（${businessZone().label}）`, inputKind: "datetime-local", required: true, current: reviewAtAfter(7), explain: REVIEW_TIME_EXPLAIN[action] },
+        { key: "reviewAt", label: "复查时间（北京时间 UTC+8）", inputKind: "datetime-local", required: true, current: reviewAtAfter(7), explain: REVIEW_TIME_EXPLAIN[action] },
       ],
     };
   }
@@ -1195,7 +1184,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       confirmTone: action === "REJECT" || action === "REFUND" ? "danger" : undefined,
       run: async (reason, _newValue, businessValue) => {
         try {
-          await runReview(row.withdrawalNo, action, reason, formForBackend(businessValue), row.status.toUpperCase());
+          await runReview(row.withdrawalNo, action, reason, businessValue, row.status.toUpperCase());
         } catch (cause) {
           // 状态已被别人改了：框里刷新成最新状态，确认按钮禁用，写清现在是什么状态（S05 实测）。
           const latest = await fetchD2WithdrawalDetail(row.withdrawalNo).catch(() => null);
@@ -1425,7 +1414,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       confirmTone: action === "REJECT" ? "danger" : undefined,
       run: async (reason, _newValue, businessValue) => {
         try {
-          await runBatch(action, ids, reason, formForBackend(businessValue));
+          await runBatch(action, ids, reason, businessValue);
         } catch (cause) {
           const stale = staleBlock(action);
           if (stale) openActionConfirm({ ...batchRequest(action, targets, excluded), blockedReason: stale });

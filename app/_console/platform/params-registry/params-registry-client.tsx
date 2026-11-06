@@ -97,7 +97,7 @@ function ownerLinkAccessibleName(row: A5RegistryRow) {
 
 const ERROR_COPY: Record<A5LoadErrorKind, { title: string; detail: string }> = {
   auth: { title: "登录已失效", detail: "正在清理旧会话，请重新登录后查看。" },
-  forbidden: { title: "没有查看平台参数的权限", detail: "请联系管理员开通「平台参数管理」的查看权限。" },
+  forbidden: { title: "没有查看平台参数的权限", detail: "请联系管理员开通「平台参数目录」的查看权限。" },
   integrity: { title: "数据有误，已停止显示", detail: "参数数据存在重复或统计不一致，为避免误判已暂停显示，请联系技术人员。" },
   server: { title: "平台参数加载失败", detail: "暂时无法显示参数，请重新加载；持续失败请联系技术人员。" },
   unavailable: { title: "平台参数暂时无法加载", detail: "参数设置没有被修改，请稍后重新加载。" },
@@ -151,7 +151,7 @@ export function PlatformParamsRegistry() {
   return (
     <div className="mx-auto w-full max-w-[1240px]">
       <div className="mb-4">
-        <PageHeader pageId="A5" title="平台参数管理" summary="汇总全平台可调参数和紧急开关的当前值。这里只能查看，修改请点进每行标注的所在页面。" />
+        <PageHeader pageId="A5" title="平台参数目录" summary="汇总全平台可调参数和紧急开关的当前值。这里只能查看，修改请点进每行标注的所在页面。" />
       </div>
 
       {loading ? (

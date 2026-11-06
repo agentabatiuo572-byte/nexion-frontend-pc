@@ -118,6 +118,13 @@ function isPendingCommandTable(raw: string | null): boolean {
  */
 const COMMAND_OWNER_KEY = "nexion-admin-command-owner";
 
+/** Legacy records without their own admin ID need the authenticated tab's durable owner. */
+export function hasPersistedPendingCommandOwner(ownerId: string): boolean {
+  try {
+    return typeof window !== "undefined" && window.sessionStorage.getItem(COMMAND_OWNER_KEY) === ownerId;
+  } catch { return false; }
+}
+
 /**
  * 归属标记的内存兜底。
  *

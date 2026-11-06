@@ -109,7 +109,7 @@ export default function FunnelPage() {
     <div className="dkpage bpage funnelpage">
       <BPageHeader
         id="B3"
-        title="用户转化分析"
+        title="用户转化概览"
         desc={
           <>
             同一批用户从注册到提现，每一步还剩多少人。注册不满 7 天或没有符合条件的用户时显示「暂无法计算」。

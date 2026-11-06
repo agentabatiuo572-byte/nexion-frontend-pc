@@ -65,7 +65,7 @@
 - **Gate 决策监控**:三类拦截命中计数与趋势(`kyc-required / user-cap / platform-cap`)。
 - **Queue 视图**：展示超额度排队订单及取消入口。已预占来源资金的订单，其可用余额已减少；成交不会重复扣款，取消退回来源币种的预占金额并写退款账本。无预占记录的历史订单在成交时扣来源金额；取消仅终止订单，不扣款也不退款。页面说明与取消确认均按此区分，不把全部队列描述为未扣余额（2026-11-04，BUG-217）。
 - **风控仪表盘**(对齐 §9.4.4):平台日池进度条 + KYC 触发线命中分布 + Queue 深度。
-- **状态机**(兑换单,server-canonical):`submitted → gated(被拦截)| queued(排队) | swapped(成交·落 swap bill)`;`queued → swapped(次日处理)| cancelled(用户取消)`。
+- **状态机**(兑换单,server-canonical):`submitted → gated(被拦截)| queued(排队) | swapped(成交·落 swap bill)`;`queued → swapped(次日处理)| cancelled(取消)| failed(处理失败终止)`。
 
 **③ 可控参数**:
 
@@ -154,6 +154,8 @@
 **⑤ 接口**(收敛 §9.11c.1 / §9.11d.1):
 - `GET /api/config/exchange/caps` — 三阈值 + Queue 配置 + 费率配置;**server-canonical**,前端 §9.4.1 swap UI(`feeLabel/feeFree`)+ §9.4.2 gate 判定读此。
 - `GET /api/admin/exchange/queue?cursor=` — 次日队列监控(server 权威待处理单)。
+- `POST /api/admin/market/exchange/queue/process` 携带 `Idempotency-Key` 执行批次。G2「拦截与排队」结果卡分别列出成交、跳过、失败的订单，显示服务端给出的原因，并按回执 `orderStatus` 标明订单状态。`FAILED` 显示「订单已失败」，`QUEUED` 显示「订单仍在队列」，`CANCELLED` 显示「订单已取消」。结果未确认时，重试相同批次参数和理由沿用原命令号。只有收到有效批次回执并刷新队列后，才确认本次结果。
+- 同一操作员有待核对批次时，G2 原按钮区显示「核对原处理」，队列为空也可打开。弹窗只读显示原笔数和理由，以原 `Idempotency-Key` 通过 `GET /api/admin/market/exchange/queue/process` 核对所属回执。收到有效回执并刷新现有队列后恢复普通入口。服务端明确返回 `404 G2_BATCH_RECEIPT_NOT_FOUND` 时，提示先查看操作记录，并提供「结束本机核对」，只清除此浏览器中本账号的这一条待核对记录。其他查询失败继续保留原记录。
 - `GET /api/admin/exchange/gate-stats?window=` — 三类拦截命中统计(喂仪表盘)。
 - `PUT /api/admin/exchange/caps` — 改三阈值 + Queue 配置(经确认弹窗 G2-MD1 / G2-MD3,reason 必填(空值 400 `REASON_REQUIRED`);**放宽 server 先核 B1,< 红线返 422**)。
 - `PUT /api/admin/exchange/fee` — 改 `EXCHANGE_FEE_PCT` / `EXCHANGE_FEE_MIN_USD`(经确认弹窗 G2-MD2,reason 必填;**降费率 server 先核 B1,< 红线返 422**;仅新单生效)。

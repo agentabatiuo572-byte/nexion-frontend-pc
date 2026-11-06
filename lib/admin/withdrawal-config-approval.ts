@@ -24,6 +24,7 @@ const commands = {
   E2: { domain: "E", op: "e2_task_pricing_change", type: "e2_task_pricing", action: "放宽任务定价配置" },
   F3: { domain: "F", op: "f3_binary_settle", type: "binary_settlement", action: "手动结算团队平衡奖励" },
   F4: { domain: "F", op: "f4_ambassador_policy_change", type: "ambassador_policy", action: "提高区域大使申请预算" },
+  G4: { domain: "G", op: "g4_genesis_param", type: "genesis_param", action: "首次配置每日收益比例" },
   H8: { domain: "H", op: "h8_reward_param_change", type: "h8_reward_policy", action: "放宽新人礼与邀请奖励" },
 } as const;
 
@@ -37,6 +38,7 @@ type ApprovalValues = TeamFundApprovalValues[keyof TeamFundApprovalValues]
   | (Record<string, unknown> & ({ expectedVersion: number } | { expectedRevision: string }));
 type ApprovalScope = { objectId: string; field: string };
 export type H8ConfigApprovalInput = [{ key: string; value: string; expectedVersion: number }, string];
+export type G4ConfigApprovalInput = [{ paramKey: "dividend"; value: string; decisionRef: string; expectedRevision: string }, string];
 
 function approvalSlot(sourceDomain: keyof typeof commands, adminId: string | number, scope?: ApprovalScope) {
   return scope ? `${adminId}:${sourceDomain}:${scope.objectId}:${scope.field}` : `${adminId}:${sourceDomain}`;
@@ -71,6 +73,7 @@ export function pendingThresholdConfigApproval<T extends keyof ThresholdApproval
 }
 
 export function configApprovalOriginalInput(sourceDomain: "H8", input: string): H8ConfigApprovalInput;
+export function configApprovalOriginalInput(sourceDomain: "G4", input: string): G4ConfigApprovalInput;
 export function configApprovalOriginalInput(sourceDomain: ApprovalSource, input: string): [ApprovalValues, string];
 export function configApprovalOriginalInput(sourceDomain: ApprovalSource, input: string): [ApprovalValues, string] {
   const original: unknown = JSON.parse(input);
@@ -79,6 +82,8 @@ export function configApprovalOriginalInput(sourceDomain: ApprovalSource, input:
       : sourceDomain === "F4" ? !Number.isSafeInteger(original[0]?.expectedRevision)
       : sourceDomain === "H8" ? !Number.isSafeInteger(original[0]?.expectedVersion)
         || typeof original[0]?.key !== "string" || typeof original[0]?.value !== "string"
+      : sourceDomain === "G4" ? original[0]?.paramKey !== "dividend" || typeof original[0]?.value !== "string"
+        || typeof original[0]?.decisionRef !== "string" || !/^[0-9a-f]{64}$/.test(original[0]?.expectedRevision)
       : typeof original[0]?.expectedRevision !== "string")) {
     throw new Error("原审批命令不完整，请到操作记录核对。");
   }
@@ -116,7 +121,7 @@ export async function submitConfigApproval<T>(
   let ticket;
   let canClearOnRejection = !previous;
   try {
-    if (previous && (domain === "B" || domain === "F" || sourceDomain === "E2" || sourceDomain === "H8" || session.authorities.includes("platform_a2_read"))) {
+    if (previous && (domain === "B" || domain === "F" || sourceDomain === "E2" || sourceDomain === "G4" || sourceDomain === "H8" || session.authorities.includes("platform_a2_read"))) {
       try {
         ticket = await fetchA2ProposalByKey(key);
       } catch {
@@ -135,7 +140,7 @@ export async function submitConfigApproval<T>(
       if (!values) throw new Error("请填写完整后提交。");
       const objectId = sourceDomain === "F3" && "ownerUserId" in values && "settlementDate" in values
         ? `${values.ownerUserId}:${values.settlementDate}`
-        : sourceDomain === "F4" ? "default" : scope?.objectId ?? "current";
+        : sourceDomain === "F4" ? "default" : sourceDomain === "G4" ? "dividend" : scope?.objectId ?? "current";
       ticket = await createA2OperationProposal({
         action,
         obj: objectId,
@@ -149,7 +154,7 @@ export async function submitConfigApproval<T>(
         roleGate: "超管",
         reason,
         sourceDomain,
-        command: { domain, op, params: { values } },
+        command: { domain, op, params: sourceDomain === "G4" ? { ...values } : { values } },
         target: { domain, type, id: objectId },
       }, key, true);
     }
@@ -168,9 +173,10 @@ export async function submitConfigApproval<T>(
   } catch {
     throw new A2OutcomeUncertainError(`审批单 ${ticket.id} 已登记，当前配置回读失败。请保持当前输入并重试核对。`, key);
   }
-  attempts.forget(slot, key);
+  if (sourceDomain !== "G4" || ticket.status !== "pending") attempts.forget(slot, key);
   return {
     active,
+    ticket,
     acknowledgement: previous && lookupOnly && domain === "F"
       ? `已找到原审批单 ${ticket.id}${ticket.status === "pending" ? " · 等待另一位超管批准" : " · 请在操作记录查看处理结果"}`
       : previous && previous.input !== input

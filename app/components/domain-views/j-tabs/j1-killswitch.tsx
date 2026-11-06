@@ -4,7 +4,7 @@
  * J1 紧急停用开关（应急控制页，PG-48）。五项业务：提现、质押、创世节点、兑换、试用。
  * 第一层：结论、待补录、统计、业务卡、批量关停。总表、参数、规则收起；有业务已关停时备付金检查展开。
  * 业务卡是控制区：关停和恢复入口不收进折叠组。关停不查覆盖率，恢复前查覆盖率（等于红线算通过），补录不恢复业务（OP-56）。
- * 恢复现在是确认后立即生效，文字按真实路径写（OP-25）。后端交付审批（BE-08）后，把 resumeGate 的命令和文字一起换成「批准后生效」。
+ * 恢复提交 A2 应急审批，另一位有权超管批准后生效；资金业务批准时重查覆盖率，试用免查（BE-08）。
  * 写操作先存原操作再发；结果未知时关框、转成上方待确认条，只能原样重试（OP-92～OP-94）。
  * 改参数被别人抢先时框不关：「读取最新」在框里换成最新值，拟改的新值留着，理由清空重填（OP-97）。
  */
@@ -21,8 +21,16 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { A2OutcomeUncertainError, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import type { ActionConfirmReq, JCtx } from "./types";
 
+type RestoreProposal = Parameters<typeof createA2OperationProposal>[0];
+type RestoreAttempt = PendingMutationRecord & { input: RestoreProposal };
+const restoreAttempts = createPendingMutationStore<RestoreAttempt>({
+  storageKey: "nexion-admin-j1-restore-proposals",
+  retainExpiredRecords: true,
+  isValidRecord: (record) => record.input?.command?.op === "j1_gate_resume" && typeof record.input.reason === "string",
+});
 const IMPACT_LABEL: Record<string, string> = { immediate: "即时资金流出", delayed: "未来负债增加", none: "不直接影响兑付" };
 const GATE_ICON: Record<string, LucideIcon> = { withdraw: Landmark, staking: Layers, genesis: Gem, exchange: ArrowLeftRight, trial: Ticket };
 const TRIGGER_BASES = ["", "监管点名", "挤兑风险", "安全事件", "其他"];
@@ -39,7 +47,7 @@ const RULE_SOURCE: Record<string, string> = { withdrawSurge: "/overview/risk-rad
 const EXPIRED = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
 const READING = "正在读取最新状态，读完再操作";
 const LOCKED = "这项有结果未确认的操作，先处理页面上方的待确认";
-const BLOCKED_RESUME = "兑付覆盖率低于红线，暂不能恢复。到「资金储备与应付款」补足储备，回到红线以上再恢复。";
+const BLOCKED_RESUME = "兑付覆盖率低于红线，暂不能发起恢复审批。到「资金储备与应付款」补足储备，达到红线后再申请。";
 const REASON_HINT = "例如：监管通知编号、工单号、事件编号";
 const STALE = "这个值刚被别人改过，本次没有保存。";
 const RETRY_DENIED = "这个账号现在没有这项操作的权限，不能重试。请联系超级管理员，或到操作记录与审批核对";
@@ -111,7 +119,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const session = useAdminAuth((state) => state.session);
   const authorities = new Set(session?.authorities ?? []);
   const canKill = authorities.has("emergency_j1_gate_kill");
-  const canResume = authorities.has("emergency_j1_gate_resume");
+  const canResume = authorities.has("emergency_j1_gate_resume")
+    && (authorities.has("platform_a2_proposal_create") || authorities.has("platform_a2_write"));
   const canBatchKill = authorities.has("emergency_j1_batch_kill");
   const canWrite = authorities.has("emergency_j1_write");
   const reach = useReach();
@@ -123,13 +132,18 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const [folds, setFolds] = useState<Record<string, boolean>>({});
   const [submitting, setSubmitting] = useState("");
   const [pending, setPending] = useState<J1Pending[]>([]);
+  const [pendingRestores, setPendingRestores] = useState<RestoreAttempt[]>([]);
+  const [checkingRestore, setCheckingRestore] = useState<string | null>(null);
   /** 待确认条上最近一次读回或重试的结果，只是当下的事实，不影响待确认本身。 */
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
   /** 最近一次重试被后端明确拒绝的命令号，只有它们才能人工解除。 */
   const [retryRejected, setRetryRejected] = useState<string[]>([]);
   const [releasing, setReleasing] = useState<J1Pending | null>(null);
 
-  const syncPending = () => setPending(pendingKeys.list());
+  const syncPending = () => {
+    setPending(pendingKeys.list());
+    setPendingRestores(restoreAttempts.list());
+  };
   useEffect(() => { syncPending(); }, []);
   useEffect(() => { if (data) setReadAt(businessClock(Date.now())); }, [data]);
 
@@ -138,7 +152,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   const dispatch = (command: J1Command, reason: string, key: string) => {
     switch (command.kind) {
-      case "toggle": return actions.toggleJ1KillSwitch(command.gate, command.enabled, reason, command.context, key);
+      case "toggle":
+        if (command.enabled) throw new Error("原恢复操作不能直接重试，请到操作记录与审批核对。");
+        return actions.toggleJ1KillSwitch(command.gate, false, reason, command.context, key);
       case "batch": return actions.emergencyDisableJ1(command.keys, reason, undefined, command.context, key);
       case "sla": return actions.updateJ1Sla(command.id, command.value, command.expected, reason, key);
       case "rule": return actions.updateJ1AutoRule(command.id, command.value, command.expected, reason, key);
@@ -190,13 +206,14 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   /** 重试也要有原操作的权限：记录是之前留下的，账号的权限可能已经变了（OP-124）。 */
   const canRetry = ({ command }: J1Pending) => {
-    if (command.kind === "toggle") return command.enabled ? canResume : canKill;
+    if (command.kind === "toggle") return !command.enabled && canKill;
     if (command.kind === "batch") return canBatchKill;
     return command.kind === "backfill" ? canKill : canWrite;
   };
 
   /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。 */
   const retryPending = async (record: J1Pending) => {
+    if (!canRetry(record)) { notePending(record, RETRY_DENIED); return; }
     if (record.expiresAt <= Date.now()) {
       syncPending();
       return;
@@ -233,6 +250,88 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     }
   };
 
+  const submitRestore = async (g: Pick<JGate, "key" | "name" | "amplifies">, reason?: string) => {
+    if (!session || !canResume) throw new Error("当前账号没有发起恢复审批的权限。");
+    const slot = `${session.adminId}:${g.key}`;
+    const previous = restoreAttempts.list().find((record) => record.fingerprint === slot);
+    if (!previous && !reason) return;
+    const key = previous?.commandKey ?? createJEmergencyCommandKey();
+    const input: RestoreProposal = previous?.input ?? {
+      action: `恢复业务开关 · ${operatorCopyText(g.name)}`,
+      obj: g.key,
+      beforeValue: "已关停",
+      afterValue: "批准后恢复",
+      operator: session.operator ?? session.username,
+      operatorRole: session.role,
+      type: "sos",
+      amplifies: g.amplifies,
+      sos: true,
+      roleGate: "超管",
+      reason: reason!,
+      sourceDomain: "J1",
+      command: { domain: "J", op: "j1_gate_resume", params: { gateKey: g.key } },
+      target: { domain: "J", type: "kill_switch", id: g.key },
+    };
+    if (!previous) {
+      restoreAttempts.remember(slot, key, { input });
+      if (!restoreAttempts.isDurablyStored(slot, key)) {
+        restoreAttempts.forget(slot, key);
+        throw new Error("浏览器无法保存本次审批命令号，请允许会话存储后重试。");
+      }
+    }
+    setCheckingRestore(g.key);
+    try {
+      let ticket = null;
+      if (previous) {
+        try { ticket = await fetchA2ProposalByKey(key); }
+        catch { throw new A2OutcomeUncertainError("暂时无法核对原恢复申请，请稍后重试。", key); }
+        if (!ticket && previous.expiresAt <= Date.now()) {
+          throw new A2OutcomeUncertainError("原申请命令已过期，请到操作记录核对。", key);
+        }
+      }
+      if (!ticket) {
+        if (useAdminAuth.getState().session?.adminId !== session.adminId) {
+          throw new A2OutcomeUncertainError("会话已变更，请使用原账号核对恢复申请。", key);
+        }
+        ticket = await createA2OperationProposal(input, key, true);
+      }
+      if (ticket.operationCode !== "j1_gate_resume" || ticket.obj !== g.key) {
+        throw new A2OutcomeUncertainError("恢复申请回执不完整，请到操作记录核对。", key);
+      }
+      restoreAttempts.forget(slot, key);
+      toast(ticket.status === "pending"
+        ? `${operatorCopyText(g.name)}恢复申请 ${ticket.id} 待审批，业务仍已关停；另一位有权超管批准后生效`
+        : `已核对原恢复申请 ${ticket.id}，请在 A2 查看结果`);
+      if (ticket.status !== "pending") {
+        void actions.reloadJEmergency().catch(() => toast(`已核对原恢复申请 ${ticket.id}，请刷新确认最新开关状态`));
+      }
+    } catch (error) {
+      if (error instanceof Error && "backendMessage" in error && ["IDEMPOTENCY_REQUEST_IN_PROGRESS",
+        "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(String(error.backendMessage))) {
+        throw new A2OutcomeUncertainError("原申请结果待核实，请稍后查询。", key);
+      }
+      if (!isA2OutcomeUncertainError(error)) restoreAttempts.forget(slot, key);
+      throw error;
+    } finally {
+      setCheckingRestore(null);
+      syncPending();
+    }
+  };
+
+  const visibleRestores = pendingRestores.filter((record) => record.fingerprint.startsWith(`${session?.adminId}:`));
+  const restoreNotices = visibleRestores.map((record) => (
+    <Notice key={record.commandKey} tone="warn" title={`${record.input.action} · 申请结果未确认`}
+      action={<Button size="sm" disabled={checkingRestore !== null} disabledReason={canResume ? undefined : RETRY_DENIED} onClick={() => {
+        void submitRestore({ key: record.input.obj, name: record.input.action.replace("恢复业务开关 · ", ""), amplifies: record.input.amplifies === true })
+          .catch((error) => setPendingNotes((notes) => ({ ...notes, [record.fingerprint]: displayAdminError(error) })));
+      }}>核对原恢复申请</Button>}>
+      提交恢复审批不会打开业务。先查原审批单，未查到且仍在 24 小时内才按原内容、原理由和原命令号重试；过期后只查询。
+      {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href="/platform/audit?domain=J">到操作记录与审批核对</Link></>}
+      <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 理由 ${record.input.reason}`} />
+      {pendingNotes[record.fingerprint] && <div>{pendingNotes[record.fingerprint]}</div>}
+    </Notice>
+  ));
+
   const pendingNotices = pending.map((record) => {
     const expired = record.expiresAt <= Date.now();
     return (
@@ -257,17 +356,18 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   const header = (
     <PageHeader pageId="J1" title="紧急停用开关"
-      summary={<AutoGloss>一键停用或恢复业务。恢复资金业务前先看兑付覆盖率。</AutoGloss>}
+      summary={<AutoGloss>关停立即生效，恢复提交 A2 应急审批，另一位有权超管批准后生效。</AutoGloss>}
       actions={<Button loading={contentLoading} onClick={reload}><RefreshCw size={15} aria-hidden />刷新</Button>}
       meta={readAt ? <>{readAt}（{businessZone().label}）读取 <Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动更新。自动关停发生时顶栏告警先提醒，这页要刷新才看到。" /></> : undefined}
       readOnly={!canKill && !canResume && !canBatchKill && !canWrite ? <>你只能查看 <Explain label="只读说明" content="关停、恢复和改参数需要紧急停用开关的操作权限，请联系超级管理员。" /></> : undefined}
-      guideExtra={<p>这个账号：{canKill ? "能关停和补录" : "不能关停和补录"}，{canBatchKill ? "能批量关停" : "不能批量关停"}，{canResume ? "能恢复" : "不能恢复，要恢复请联系超级管理员"}，{canWrite ? "能改参数" : "不能改参数"}。</p>} />
+      guideExtra={<p>这个账号：{canKill ? "能关停和补录" : "不能关停和补录"}，{canBatchKill ? "能批量关停" : "不能批量关停"}，{canResume ? "能提交恢复审批，不能批准自己的申请" : "不能提交恢复审批，请联系超级管理员"}，{canWrite ? "能改参数" : "不能改参数"}。</p>} />
   );
 
   if (contentError) {
     return <>
       {header}
       {pendingNotices}
+      {restoreNotices}
       <BlockState state="error" title="当前无法确认最新状态" detail={`${contentError} 为避免误操作，控制项已隐藏。`} onRetry={reload} retrying={contentLoading} />
       {releaseModal}
     </>;
@@ -276,6 +376,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     return <>
       {header}
       {pendingNotices}
+      {restoreNotices}
       <BlockState state="loading" title="业务开关加载中" detail="正在确认各业务开关的最新状态" />
       {releaseModal}
     </>;
@@ -299,7 +400,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     return { value: signalText(row.signalValue, unit).trim(), threshold: signalText(row.threshold, unit).trim() };
   };
 
-  const locks = new Set(pending.flatMap((record) => record.locks));
+  const locks = new Set([...pending.flatMap((record) => record.locks), ...visibleRestores.map((record) => record.input.obj)]);
   const blockOf = (lock: string) => (contentLoading ? READING : locks.has(lock) ? LOCKED : undefined);
   const selectedGates = gates.filter((gate) => sel[gate.key] && gate.enabled && !locks.has(gate.key));
   const selOnCount = selectedGates.length;
@@ -314,7 +415,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       facts: <Facts><Fact k="业务">{name}，控制{cap}</Fact><Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{gate.key === "withdraw" && <Fact k="关停范围" tone="warn">已放行的单还会打款</Fact>}</Facts>,
       detail: <><b>{name}</b>控制{cap}。确认后开关立即关闭，并记入操作记录。关停不会多付钱，不需要先检查备付金。</>,
       effect: IMMEDIATE,
-      statedBrief: { impact: gate.key === "withdraw" ? "立即停止新提现申请和审核放行。恢复要回到这页操作。" : `${name}控制的业务全站马上停止。恢复要回到这页操作。`, check: "核对业务和触发依据，理由写清监管通知、工单或事件编号。" },
+      statedBrief: { impact: gate.key === "withdraw" ? "立即停止新提现申请和审核放行。恢复要回到这页提交审批。" : `${name}控制的业务全站马上停止。恢复要回到这页提交审批。`, check: "核对业务和触发依据，理由写清监管通知、工单或事件编号。" },
       confirmTone: "danger",
       confirmLabel: "确认关停，立即生效",
       reasonPlaceholder: REASON_HINT,
@@ -340,31 +441,36 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     const name = operatorCopyText(gate.name);
     const cap = operatorCopyText(gate.cap);
     openActionConfirm({ briefKind: "emergency",
-      action: `恢复业务开关 · ${name}`,
-      title: `恢复${name}`,
+      action: `提交恢复申请 · ${name}`,
+      title: `申请恢复${name}`,
+      completionCopy: "提交 A2 审批，批准后生效",
       amplifies: gate.amplifies,
       coverage: gate.coveragePrecheckRequired ? { coverageRatio: COV, redlinePct: RED } : undefined,
+      coverageCheck: "批准时重新检查兑付覆盖率，检查不通过仍保留待批工单，业务继续关停。",
       facts: <Facts>
-        <Fact k="业务">{name}，重新开放{cap}</Fact>
-        <Fact k="状态变化"><Change from="已关停" to="在线" /></Fact>
-        {/* 要查覆盖率的业务，框里有覆盖率那一行，这里不再写一遍（VS-105）。 */}
-        {!gate.coveragePrecheckRequired && <Fact k="备付金检查">不需要，试用不直接付钱</Fact>}
+        <Fact k="业务">{name}，批准后重新开放{cap}</Fact>
+        <Fact k="提交后状态">仍为已关停</Fact>
+        <Fact k="审批人">另一位有 A2 审批和 J1 恢复权限的超级管理员，发起人不能批自己的单</Fact>
+        <Fact k="备付金检查">{gate.coveragePrecheckRequired ? "批准时重新检查覆盖率；不通过则保留待批工单，业务继续关停" : "试用免查，不直接付钱"}</Fact>
       </Facts>,
-      detail: (
-        <><b>{name}</b>将从已关停恢复为在线，重新开放{cap}。{gate.coveragePrecheckRequired
-          ? <><b>恢复前检查备付金</b>：当前覆盖率 <b>{pct(COV)}</b>，恢复红线 <b>{RED}%</b>；{covPass ? <>检查通过，{coverageGapText}</> : <>检查不通过，暂不能恢复</>}。</>
-          : <>该业务不会直接增加资金流出，可在填写理由后立即恢复。</>}确认后马上生效，并记入操作记录。</>
-      ),
-      effect: IMMEDIATE,
-      statedBrief: gate.coveragePrecheckRequired
-        ? { impact: `${cap}马上重新开放，资金影响：${IMPACT_LABEL[gate.coverageImpactCategory]}。`, check: "确认风险已解除。提交时系统再查一次覆盖率，低于红线会拒绝。" }
-        : { impact: `${cap}马上重新开放，不直接增加资金流出。`, check: "确认风险已解除，理由写清依据或工单号。" },
-      confirmLabel: "确认恢复，立即生效",
+      detail: <><b>{name}</b>恢复申请进入 A2 应急审批队列，排在其他待办前。提交后仍已关停，另一位有权超管批准后才重新开放{cap}。</>,
+      effect: <StatusTag tone="progress" filled>批准后生效</StatusTag>,
+      statedBrief: {
+        impact: `提交后${name}仍已关停。另一位有权超管批准后重新开放${cap}，发起人不能批自己的单。`,
+        check: gate.coveragePrecheckRequired
+          ? "确认风险已解除。资金业务批准时重查覆盖率，低于红线保留待批工单，业务继续关停。"
+          : "确认风险已解除，理由写清依据或工单号。试用恢复免查覆盖率。",
+      },
+      confirmLabel: "提交恢复审批",
       reasonPlaceholder: "例如：风险已解除的依据、工单号",
-      run: (reason) => sendCommand(`toggle|${gate.key}`, {
-        label: `恢复 ${name}`, locks: [gate.key], reason, okText: `${name}已立即恢复`,
-        command: { kind: "toggle", gate: gate.key, enabled: true },
-      }),
+      run: async (reason) => {
+        try {
+          await submitRestore(gate, reason);
+        } catch (error) {
+          if (!isA2OutcomeUncertainError(error)) throw error;
+          toast("恢复申请结果未确认。批准前业务保持关停，到页面上方核对原恢复申请。");
+        }
+      },
     });
   };
 
@@ -377,7 +483,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       facts: <Facts><Fact k={`关停 ${targets.length} 项业务`}>{names}</Fact><Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{targets.some((gate) => gate.key === "withdraw") && <Fact k="提现关停范围" tone="warn">已放行的单还会打款</Fact>}</Facts>,
       detail: <>一次性立即关停<b>已选 {targets.length} 项业务</b>，用于监管点名、法务事件等重大场景。确认后全部马上关停，每一项都记入操作记录。<b>已选业务开关：{names}</b>。</>,
       effect: IMMEDIATE,
-      statedBrief: { impact: `已选的 ${targets.length} 个业务开关立即关闭。有一项不符合时整批不执行。恢复要回到这页逐项操作。`, check: "核对已选业务、触发依据和监管事由，理由写清依据或工单号。" },
+      statedBrief: { impact: `已选的 ${targets.length} 个业务开关立即关闭。有一项不符合时整批不执行。恢复要回到这页逐项提交审批。`, check: "核对已选业务、触发依据和监管事由，理由写清依据或工单号。" },
       confirmTone: "danger",
       confirmLabel: `确认关停 ${targets.length} 项，立即生效`,
       reasonPlaceholder: "例如：为什么现在要关停、内部工单号",
@@ -483,7 +589,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         <Fact k="触发值 / 阈值">{signal.value} / {signal.threshold}</Fact>
         <Fact k="截止时间">{timeText(row.dueAt)}{row.overdue ? "，已逾期" : ""}</Fact>
       </Facts>,
-      detail: <><b>{name}</b>由 {autoRuleName(row.ruleId)} 自动关停，触发值 {signal.value}，阈值 {signal.threshold}。本操作只补全处置结论，不会自动恢复业务；如建议恢复，仍需超级管理员单独发起恢复并通过备付金检查。</>,
+      detail: <><b>{name}</b>由 {autoRuleName(row.ruleId)} 自动关停，触发值 {signal.value}，阈值 {signal.threshold}。本操作只补全处置结论，不会自动恢复业务；如建议恢复，仍需单独提交 A2 应急审批，另一位有权超管批准后生效；资金业务批准时重查覆盖率，试用免查。</>,
       effect: <StatusTag tone="neutral" filled>业务继续关停</StatusTag>,
       statedBrief: { impact: "只写下处理结论，业务继续关停，不会恢复。", check: "核对触发值和阈值，理由写清判断依据。" },
       confirmLabel: "确认补录，业务仍关停",
@@ -508,7 +614,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     if (backfill) return canKill ? <Button disabledReason={block} onClick={() => confirmAutoTrigger(backfill)}>补录结论</Button> : undefined;
     if (!canResume) return undefined;
     if (gate.coveragePrecheckRequired && !covPass) return <Button disabledReason={BLOCKED_RESUME}>恢复受阻</Button>;
-    return <Button disabledReason={block} onClick={() => resumeGate(gate)}>恢复</Button>;
+    return <Button disabledReason={block} onClick={() => resumeGate(gate)}>提交恢复审批</Button>;
   };
 
   const gateHelp = (gate: JGate) => {
@@ -519,21 +625,22 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       { k: "最近变更", v: gate.lastChange || "—" },
       { k: "操作后果", v: gate.enabled ? "关停不查覆盖率，确认后立即生效。"
         : backfill ? "先补录结论才能恢复，补录不会恢复业务。"
-          : gate.coveragePrecheckRequired ? "恢复确认后立即生效，提交时再查一次覆盖率。" : "恢复确认后立即生效，不查覆盖率。" },
-      { k: "谁能恢复", v: !gate.enabled && !canResume && canKill ? "这个账号不能恢复，请联系超级管理员。" : undefined },
+          : gate.coveragePrecheckRequired ? "提交 A2 应急审批，批准后生效；批准时重查覆盖率，失败仍待批。" : "提交 A2 应急审批，批准后生效；试用免查覆盖率。" },
+      { k: "谁能恢复", v: "另一位有 A2 审批和 J1 恢复权限的超级管理员批准，发起人不能批自己的单。" },
     ];
   };
 
   const conclusionFacts = <>
-    业务开关：已关停 <b>{killed}</b> 个业务{backfills.length > 0 && <>，{overdue.length > 0 ? <><b>{overdue.length}</b> 项待补录已逾期</> : <><b>{backfills.length}</b> 项待补录</>}</>}
+    业务开关：已关停 <b>{killed}</b> 个业务{killed > 0 && "，恢复需审批，批准后生效"}{backfills.length > 0 && <>，{overdue.length > 0 ? <><b>{overdue.length}</b> 项待补录已逾期</> : <><b>{backfills.length}</b> 项待补录</>}</>}
   </>;
-  const nextStepHelp = canResume ? "风险解除后，到业务卡上点「恢复」。系统不会自动恢复。" : canKill ? "风险解除后，请超级管理员恢复。系统不会自动恢复。" : "风险解除后由超级管理员恢复。系统不会自动恢复。";
+  const nextStepHelp = canResume ? "风险解除后，到业务卡上点「提交恢复审批」。提交后仍已关停，另一位有权超管批准后生效。" : "风险解除后，请有权的超级管理员发起恢复审批，再由另一位有权超管批准。提交后仍已关停。";
   const resumeBlocked = !covPass && killedGates.some((gate) => gate.coveragePrecheckRequired);
 
   return (
     <>
       {header}
       {pendingNotices}
+      {restoreNotices}
 
       {overdue.length > 0 ? (
         <div data-proof="j1-backfill-overdue-banner">
@@ -545,9 +652,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       ) : backfills.length > 0 ? (
         <Conclusion state="warn" lead explain="自动关停后要写清为什么关。到业务卡上点「补录结论」，补录不会恢复业务。">{conclusionFacts}</Conclusion>
       ) : killed > 0 ? (
-        <Conclusion state="warn" lead hint={resumeBlocked ? "覆盖率低于红线，暂不能恢复。到「资金储备与应付款」补足储备后再恢复。" : undefined} explain={nextStepHelp}>{conclusionFacts}</Conclusion>
-      ) : pending.length > 0 ? (
-        <Conclusion state="warn" lead hint="到上方读回核对或按原操作重试。" explain="业务卡读到的是现在的状态，不能当成这次操作的结果。">业务开关：全部开启，<b>{pending.length}</b> 项操作结果未确认</Conclusion>
+        <Conclusion state="warn" lead hint={resumeBlocked ? "覆盖率低于红线，暂不能发起资金业务恢复审批。到「资金储备与应付款」补足储备后再申请。" : undefined} explain={nextStepHelp}>{conclusionFacts}</Conclusion>
+      ) : pending.length + visibleRestores.length > 0 ? (
+        <Conclusion state="warn" lead hint="到上方读回核对或按原操作重试。" explain="业务卡读到的是现在的状态，不能当成这次操作的结果。">业务开关：全部开启，<b>{pending.length + visibleRestores.length}</b> 项操作或审批结果未确认</Conclusion>
       ) : (
         <Conclusion state="ok">业务开关：全部开启，没有要处理的事</Conclusion>
       )}
@@ -555,8 +662,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       <StatBand label="业务开关摘要">
         <Stat tone="role-2" icon={Power} label="在线业务" value={`${liveCount} / ${gates.length}`} />
         <Stat tone={data.stats.emergencyGateCount > 0 ? "warn" : "role-other"} icon={Siren} label="应急关停业务" value={String(data.stats.emergencyGateCount)} unit="项" explain="由自动规则、批量应急或应急预案联动关停的业务。" />
-        <Stat tone="role-other" icon={ShieldAlert} label="未能恢复" value={String(data.stats.coverageBlockedCount)} unit="次" explain="因备付金不足被系统拒绝的恢复次数，是累计数，不是现在受限的业务数。" />
-        <Stat tone={covPass ? "role-1" : "danger"} icon={Coins} label="兑付覆盖率" value={pct(COV)} sub={`红线 ${RED}%`} explain={`储备除以应付款，${coverageGapText}。恢复提现、兑换、创世节点或质押时，系统都会记录当时的覆盖情况。`} />
+        <Stat tone="role-other" icon={ShieldAlert} label="未能恢复" value={String(data.stats.coverageBlockedCount)} unit="次" explain="因备付金不足未能恢复的累计次数，不是现在受限的业务数。审批时覆盖率不通过仍保留待批工单。" />
+        <Stat tone={covPass ? "role-1" : "danger"} icon={Coins} label="兑付覆盖率" value={pct(COV)} sub={`红线 ${RED}%`} explain={`储备除以应付款，${coverageGapText}。恢复提现、兑换、创世节点或质押批准时，系统重查覆盖率；试用免查。`} />
       </StatBand>
 
       <ControlGrid label="业务开关">
@@ -581,7 +688,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         <div className="rd-control-batch">
           <BatchBar summary={<><b data-proof="j1-batch-count">已选 {selOnCount} 项业务</b>{liveCount === 0 && " · 所有业务都已关停"}</>}
             hint={<AutoGloss>遇监管点名、法务事件时，在业务卡右上角勾选多个业务，一次全部关停。立即生效，有一项不符合时整批不执行。</AutoGloss>}>
-            <Button variant="danger-outline" disabledReason={contentLoading ? READING : selOnCount === 0 ? (liveCount === 0 ? "所有业务都已关停，没有可关停的业务。要再用批量关停，先在业务卡上恢复。" : "先在业务卡右上角勾选要关停的业务") : undefined} onClick={launchBatch}>立即应急关停</Button>
+            <Button variant="danger-outline" disabledReason={contentLoading ? READING : selOnCount === 0 ? (liveCount === 0 ? "所有业务都已关停，没有可关停的业务。要再用批量关停，先在业务卡上提交恢复审批，批准后再操作。" : "先在业务卡右上角勾选要关停的业务") : undefined} onClick={launchBatch}>立即应急关停</Button>
           </BatchBar>
         </div>
       )}
@@ -605,9 +712,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         </Panel>
       )}
 
-      <Fold title="恢复业务前 · 备付金检查" explain="恢复会增加资金流出或未来负债的业务（提现、兑换、创世节点、质押）前，先检查平台备付金。提交时系统再查一次。"
+      <Fold title="恢复业务前 · 备付金检查" explain="资金业务恢复需提交 A2 应急审批。批准时重查覆盖率，检查不通过仍待批，业务继续关停；试用免查。"
         icon={ShieldCheck} tone={covPass ? "role-1" : "danger"}
-        summary={covPass ? "可以恢复" : "低于红线，禁止恢复"}
+        summary={covPass ? "达到发起恢复审批的门槛" : "低于红线，禁止发起恢复审批"}
         alert={!covPass} alertTone="danger"
         open={folds.coverage ?? (killed > 0 || !covPass)} onOpenChange={(open) => setFolds((state) => ({ ...state, coverage: open }))}>
         <Figure width={560} stack="wide" graphic={
@@ -620,7 +727,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         </Figure>
       </Fold>
 
-      <Fold title="功能开关总表" explain="关停和恢复都是确认后立即执行，都要填写理由并记入操作记录。提现关停只挡新申请和审核放行，已放行的单还会打款。"
+      <Fold title="功能开关总表" explain="关停确认后立即生效，恢复提交 A2 应急审批、批准后生效，都要填写理由。提交恢复后业务仍已关停。提现关停只挡新申请和审核放行，已放行的单还会打款。"
         icon={ScrollText} tone="role-other" summary={`${gates.length} 个业务开关`}
         actions={reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=J">查看操作记录</Link> : undefined}
         open={!!folds.table} onOpenChange={(open) => setFolds((state) => ({ ...state, table: open }))}>

@@ -6,18 +6,24 @@
  *
  * 真写后端 growth/vouchers 接口。OpsVoucher 是前端 VoucherDef 的结构化超集
  * (字段级镜像门:后台可编辑 ⊇ 前端展示)。增/编辑走 OperationConfirmModal 的
- * businessForm "voucher-config"(当前值预填 = 显式 before→after);上下架/删除为纯处置(不传 businessForm/edit)。
+ * businessForm "voucher-config"(当前值预填 = 显式 before→after);删除和批量作废走 A2。
  * 代金券是促销折扣、非 NEX 负债 → 不挂 amplifies / B1 红线(与 H2 试用折扣同口径)。
  */
 import { useEffect, useState } from "react";
 import {
   createH7Voucher,
-  deleteH7Voucher,
   fetchH7Vouchers,
-  revokeH7VoucherAvailableGrants,
   updateH7Voucher,
   updateH7VoucherStatus,
 } from "@/lib/admin/h-client";
+import {
+  H7_VOUCHER_ACTIONS,
+  pendingH7VoucherApprovals,
+  submitH7VoucherApproval,
+  type H7VoucherApprovalInput,
+  type H7VoucherApprovalMode,
+} from "@/lib/admin/h7-voucher-approval";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { HCtx } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
 
@@ -182,12 +188,19 @@ function parseServerVoucher(raw: unknown): OpsVoucher {
 export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   const { toast, openActionConfirm } = ctx;
   const canWrite = ctx.can("growth_h7_write");
+  const session = useAdminAuth((state) => state.session);
+  const adminId = session?.adminId;
+  const [pendingApprovals, setPendingApprovals] = useState<ReturnType<typeof pendingH7VoucherApprovals>>([]);
   const [data, setData] = useState<{ vouchers: OpsVoucher[]; skus: OpsSku[]; stats?: Record<string, number> }>({
     vouchers: [],
     skus: [],
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPendingApprovals(adminId === undefined ? [] : pendingH7VoucherApprovals(adminId));
+  }, [adminId]);
 
   const applyResponse = (payload: Record<string, any>) => {
     if (!Array.isArray(payload.vouchers) || !Array.isArray(payload.skus)) {
@@ -343,47 +356,74 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     });
   };
 
-  const openDelete = (v: OpsVoucher) => {
-    openActionConfirm({ briefKind: "record",
-      action: `删除代金券 · ${v.name}`,
-      detail: (
-        <>
-          <b>{v.name}</b> · 从代金券列表<b>永久删除</b>，马上生效，已领的不收回。临时下线建议用「暂停」。
-        </>
-      ),
-      run: async (reason) => {
-        applyResponse(await deleteH7Voucher(v.id, reason, v.version));
-        toast(`${v.name} 已删除`);
+  const openDisposition = (input: H7VoucherApprovalInput) => {
+    if (!session || !canWrite) return;
+    const original = () => pendingH7VoucherApprovals(session.adminId)
+      .find((record) => record.voucherId === input.voucherId);
+    const pending = original();
+    const run = async (reason: string, mode: H7VoucherApprovalMode = "submit") => {
+      if (useAdminAuth.getState().session?.adminId !== session.adminId) {
+        throw new Error("登录账号已变化，请关闭弹窗后重新操作。");
+      }
+      try {
+        const ticket = await submitH7VoucherApproval(session, input, reason, mode);
+        if (!ticket) return false;
+        if (ticket.status === "pending") {
+          toast(`已提交审批 · 审批单 ${ticket.id} · 等待另一位有权限的管理员批准`);
+        } else {
+          toast(`已找到原审批单 ${ticket.id}，请在操作记录查看处理结果`);
+          if (ticket.status === "approved") void reload();
+        }
+        openActionConfirm(null);
+        return true;
+      } finally {
+        setPendingApprovals(pendingH7VoucherApprovals(session.adminId));
+      }
+    };
+    const deletion = input.op === "h7_voucher_delete";
+    const detail = deletion
+      ? "批准后删除券模板，已领取的券仍保留。临时下线可用「暂停」。"
+      : "批准时作废这个模板届时仍未使用的券，已使用的券仍保留。";
+    openActionConfirm({
+      briefKind: "record",
+      action: `${H7_VOUCHER_ACTIONS[input.op]} · ${input.voucherName}`,
+      detail,
+      getPendingReason: () => original()?.reason,
+      inlineApproval: {
+        pending: !!pending,
+        expired: !!pending && pending.expiresAt <= Date.now(),
+        resolve: () => ({
+          heading: "需另一位有权限的管理员批准",
+          completionCopy: `提交后等待审批，待审期间券模板和领取记录保持原样。${detail}`,
+        }),
+        recover: () => run("", "lookup"),
+        retry: async () => { await run("", "retry"); },
       },
+      run: async (reason) => { await run(reason); },
     });
   };
 
-  const openRevoke = (v: OpsVoucher) => {
-    openActionConfirm({ briefKind: "record",
-      action: `作废未使用的代金券 · ${v.name}`,
-      detail: (
-        <>
-          <b>{v.name}</b> · 把 {v.availableCount} 张已领取但还没用的券全部作废。
-          已使用的 {v.redeemedCount} 张不受影响。
-        </>
-      ),
-      run: async (reason) => {
-        applyResponse(await revokeH7VoucherAvailableGrants(v.id, reason, v.version));
-        toast(`${v.name} 未使用的券已作废`);
-      },
-    });
-  };
+  const pendingRecovery = canWrite && pendingApprovals.map((record) => (
+    <p key={record.commandKey} className="htint">
+      {H7_VOUCHER_ACTIONS[record.op]} · {record.voucherName} · 提交结果待核对{" "}
+      <button className="l-btn sm" onClick={() => openDisposition(record)}>查询原操作</button>
+    </p>
+  ));
 
-  if (loading) return <section className="l-card"><div className="l-b">代金券数据加载中…</div></section>;
+  if (loading) return <>{pendingRecovery}<section className="l-card"><div className="l-b">代金券数据加载中…</div></section></>;
   if (error) return (
-    <section className="l-card">
-      <div className="l-h"><span className="ttl">代金券数据加载失败</span></div>
-      <div className="l-b">{error} · 为避免误操作，暂时不能新增和编辑。<button className="l-btn sm" style={{ marginLeft: 8 }} onClick={() => void reload()}>重试</button></div>
-    </section>
+    <>
+      {pendingRecovery}
+      <section className="l-card">
+        <div className="l-h"><span className="ttl">代金券数据加载失败</span></div>
+        <div className="l-b">{error} · 为避免误操作，暂时不能新增和编辑。<button className="l-btn sm" style={{ marginLeft: 8 }} onClick={() => void reload()}>重试</button></div>
+      </section>
+    </>
   );
 
   return (
     <>
+      {pendingRecovery}
       {/* 顶部 KPI */}
       <div className="f-stats">
         <div className="f-stat">
@@ -443,6 +483,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
             <tbody>
               {list.map((v) => {
                 const isActive = v.status === "active";
+                const canDispose = canWrite && !pendingApprovals.some((record) => record.voucherId === v.id);
                 return (
                   <tr key={v.id}>
                     <td style={{ fontWeight: 600, color: isActive ? "var(--ink)" : "var(--ink-3)" }}>{v.name}</td>
@@ -461,8 +502,8 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
                       <span style={{ display: "inline-flex", gap: 6, justifyContent: "flex-end" }}>
                         <button className="l-btn sm mc" onClick={() => openEdit(v)} disabled={!canWrite}>编辑</button>
                         <button className="l-btn sm mc" aria-label={`${isActive ? "暂停" : "投放"} ${v.name}`} onClick={() => openToggle(v)} disabled={!canWrite}>{isActive ? "暂停" : "投放"}</button>
-                        {v.availableCount > 0 ? <button className="l-btn sm mc" style={{ color: "var(--danger)" }} aria-label={`作废未使用的代金券 · ${v.name}`} onClick={() => openRevoke(v)} disabled={!canWrite}>作废未使用</button> : null}
-                        <button className="l-btn sm mc" style={{ color: "var(--danger)" }} aria-label={`删除代金券 · ${v.name}`} onClick={() => openDelete(v)} disabled={!canWrite}>删除</button>
+                        {v.availableCount > 0 ? <button className="l-btn sm mc" style={{ color: "var(--danger)" }} aria-label={`作废未使用的代金券 · ${v.name}`} onClick={() => openDisposition({ op: "h7_voucher_revoke_available", voucherId: v.id, voucherName: v.name, expectedVersion: v.version })} disabled={!canDispose}>作废未使用</button> : null}
+                        <button className="l-btn sm mc" style={{ color: "var(--danger)" }} aria-label={`删除代金券 · ${v.name}`} onClick={() => openDisposition({ op: "h7_voucher_delete", voucherId: v.id, voucherName: v.name, expectedVersion: v.version })} disabled={!canDispose}>删除</button>
                       </span>
                     </td>
                   </tr>

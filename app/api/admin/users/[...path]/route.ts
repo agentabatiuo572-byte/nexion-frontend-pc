@@ -6,6 +6,7 @@ import { ADMIN_TOKEN_COOKIE, requirePasswordChangeCleared } from "@/lib/admin/re
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 const MASKED_PHONE_PATTERN = /^[0-9]{3}\*{4}[0-9]{4}$/;
+const ACTIVE_SUMMARY_PATH = "/api/admin/users/active-summary";
 
 type RouteContext = {
   params: Promise<{ path?: string[] }>;
@@ -47,6 +48,9 @@ function backendPath(parts: string[]) {
   }
   if (parts.length === 1 && parts[0] === "overview") {
     return "/api/admin/users/overview";
+  }
+  if (parts.length === 1 && parts[0] === "active-summary") {
+    return ACTIVE_SUMMARY_PATH;
   }
   if (parts.length === 2 && parts[0] === "account-actions" && parts[1] === "overview") {
     return "/api/admin/users/account-actions/overview";
@@ -185,7 +189,7 @@ async function proxy(request: Request, context: RouteContext) {
   }
 
   const passwordChangeBlocked = requirePasswordChangeCleared(await cookies());
-  if (targetPath.endsWith("/time-evidence") && request.method !== "GET") {
+  if ((targetPath === ACTIVE_SUMMARY_PATH || targetPath.endsWith("/time-evidence")) && request.method !== "GET") {
     return jsonError(405, "METHOD_NOT_ALLOWED");
   }
   if (targetPath.endsWith("/time-correction") && request.method !== "POST") {

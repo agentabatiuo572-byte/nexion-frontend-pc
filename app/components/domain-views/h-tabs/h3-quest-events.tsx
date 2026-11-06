@@ -1281,9 +1281,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     ? [
         ...[...model.dayOneTasks, ...model.weeklyTier1, ...model.weeklyTier2].map((task) => ({
           entity: "mission" as const, code: text(task.taskCode ?? task.missionCode ?? task.id, ""), label: text(task.task),
+          readOnly: task.status === "archived",
         })),
       ]
-    : (model.events ?? []).map((event) => ({ entity: "event" as const, code: event.id, label: event.name }));
+    : (model.events ?? []).map((event) => ({ entity: "event" as const, code: event.id, label: event.name, readOnly: false }));
 
   /**
    * 目标语言缺失清单。
@@ -1382,6 +1383,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   <td>{taskTitleText(row.source)}</td>
                   {(["en", "zh", "vi"] as const).map((language) => {
                     const current = localizedValue(item.entity, item.code, row.field, language);
+                    if (item.readOnly) {
+                      return <td key={language}><span title="任务已归档，译文只读">{current || "未填写"}</span></td>;
+                    }
                     // 目标语言缺失(zh/vi)是发布阻断项,不是可忽略的空值 —— 单独标出。
                     const missing = !current && item.entity === "event" && language !== "en";
                     return (

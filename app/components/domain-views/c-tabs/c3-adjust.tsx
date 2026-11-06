@@ -684,7 +684,12 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
           {detailLoading && <div className="ctint" style={{ marginBottom: 12 }}>正在加载…</div>}
           <div className="kv"><span className="k">状态</span><span className="v"><span className={`bdg ${statusTone(detailRow)}`}>{statusLabel(detailRow)}</span></span></div>
           <div className="kv"><span className="k">金额</span><span className="v">{text(detailRow.direction) === "CREDIT" ? "+" : "−"}{formatNumber(detailRow.amount)} {nexGridBrandText(text(detailRow.asset))}（${formatUsdEquivalent(detailRow.amountUsd)}）</span></div>
-          <div className="kv"><span className="k">执行后余额</span><span className="v">{formatNumber(detailRow.balanceAfter)} {nexGridBrandText(text(detailRow.asset))}</span></div>
+          <div className="kv">
+            <span className="k">执行后余额</span>
+            <span className="v">{detailRow.balanceAfter == null
+              ? "—"
+              : `${formatNumber(detailRow.balanceAfter)} ${nexGridBrandText(text(detailRow.asset))}`}</span>
+          </div>
           <div className="kv"><span className="k">原因分类</span><span className="v">{reasonCodeLabel(detailRow.reasonCode)}</span></div>
           <div className="kv"><span className="k">详细原因</span><span className="v">{text(detailRow.reason)}</span></div>
           <div className="kv"><span className="k">凭证</span><span className="v mono">{text(detailRow.evidenceRef)}</span></div>

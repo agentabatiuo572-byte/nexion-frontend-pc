@@ -2744,7 +2744,7 @@
       "id": "OPS-H-11",
       "domain": "H",
       "object": "代金券生命周期(H7)",
-      "action": "新建、编辑、启停及撤销可用发放",
+      "action": "新建、编辑、启停及提交作废未用券审批",
       "status": "built",
       "view": "h-tabs/h7-voucher-config.tsx",
       "batch": "done",
@@ -2752,7 +2752,7 @@
         "createH7Voucher",
         "updateH7Voucher",
         "updateH7VoucherStatus",
-        "revokeH7VoucherAvailableGrants"
+        "submitH7VoucherApproval"
       ]
     },
     {
@@ -2888,11 +2888,11 @@
       "id": "OPS-H-16",
       "domain": "H",
       "object": "代金券永久删除(H7)",
-      "action": "删除满足服务端状态门的代金券",
+      "action": "提交删除代金券审批",
       "status": "built",
       "view": "h-tabs/h7-voucher-config.tsx",
       "batch": "done",
-      "restAction": "deleteH7Voucher"
+      "restAction": "submitH7VoucherApproval"
     },
     {
       "id": "OPS-E-17",

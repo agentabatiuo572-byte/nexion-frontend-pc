@@ -79,18 +79,20 @@ else {
     const end = i + 1 < marks.length ? marks[i + 1].idx : Math.min(ev.length, start + 900);
     return ev.slice(start, end);
   };
+  const e4Dispatcher = /const sendE4Proposal = async[\s\S]*?\n  \};/u.exec(ev)?.[0] ?? "";
+  const e4UsesA2 = ev.includes("const rawPropose = usePropose()") && e4Dispatcher.includes("await rawPropose(");
   for (const op of GAP_OPS) {
     const body = branchOf(op);
     if (body == null) {
       failures.push(`${EVIEW}: onConfirm 未找到 mc.op === "${op}" 分支(分支被删/改名?同步更新本哨兵 GAP_OPS)`);
-    } else if (!body.includes("propose(") && !body.includes("proposeParam(")) {
+    } else if (!body.includes("propose(") && !body.includes("proposeParam(")
+      && !(op.startsWith("order-") && body.includes("sendE4Proposal(") && e4UsesA2)) {
       failures.push(`${EVIEW}: onConfirm 分支 "${op}" 未进入后端 A2 提案入口`);
     }
   }
 }
 
-// ── D. 焦点动作接真实 A2；J1 止血动作直接执行并由后端审计 ──
-// J1 是止血开关:理由确认后由业务接口立即执行并写 A2 审计，不能排队等待审批。
+// ── D. 焦点动作接真实 A2；J1 即时关停，恢复走 A2 ──
 const J1_IMMEDIATE = "app/components/domain-views/j-tabs/j1-killswitch.tsx";
 const PENDING_FOCAL = [
   "app/components/domain-views/h-tabs/h1-phase.tsx",
@@ -100,9 +102,12 @@ const j1 = read(J1_IMMEDIATE);
 if (j1 == null) {
   failures.push(`${J1_IMMEDIATE} 未找到`);
 } else {
-  if (j1.includes("usePropose")) failures.push(`${J1_IMMEDIATE}: J1 止血动作错误回退到待审批队列`);
-  if (!j1.includes("actions.toggleJ1KillSwitch") || !j1.includes("actions.emergencyDisableJ1")) {
+  if (!j1.includes("actions.toggleJ1KillSwitch(command.gate, false") || !j1.includes("actions.emergencyDisableJ1")) {
     failures.push(`${J1_IMMEDIATE}: J1 熔断/批量熔断未直连业务接口`);
+  }
+  if (j1.includes("actions.toggleJ1KillSwitch(command.gate, true") || !j1.includes('op: "j1_gate_resume"')
+      || !j1.includes("createA2OperationProposal(input, key, true)") || !j1.includes("fetchA2ProposalByKey(key)")) {
+    failures.push(`${J1_IMMEDIATE}: J1 恢复应提交 A2 并可按原命令号核对`);
   }
 }
 for (const f of PENDING_FOCAL) {
@@ -133,7 +138,15 @@ if (d2 != null) {
   for (const command of ["openActionConfirm", "reviewD2Withdrawal", "reviewD2WithdrawalsBatch"]) {
     if (!d2.includes(command)) failures.push(`d2-withdrawals: 缺少确认或直接业务命令 ${command}`);
   }
-  for (const gate of ['amplifies: action === "APPROVE"', 'amplifies: batchAction === "APPROVE"']) {
+  // 改版在入口和失败回读后拦截覆盖率，数字放在事实区，不再依赖通用确认框的 amplifies 标签。
+  for (const gate of [
+    "d5.coverageRatio < d5.redlinePct",
+    "const approveGateReason = approveGateText(withdrawGate, d5)",
+    'if (action === "APPROVE" && approveGateReason) return approveGateReason',
+    "const blocked = blockedReason(row, action)",
+    'disabledReason={batchAction === "APPROVE" ? approveGateReason : undefined}',
+    'action === "APPROVE" ? approveGateText(gateRef.current, d5Ref.current)',
+  ]) {
     if (!d2.includes(gate)) failures.push(`d2-withdrawals: 放行资金流出未经过 B1 覆盖率确认门 ${gate}`);
   }
   for (const idempotency of ["pendingKeys", "operationKey"]) {
@@ -147,7 +160,7 @@ const result = {
     a1BackendWorkflow: A1,
     eviewGapBranches: `${EVIEW} (${GAP_OPS.length} ops)`,
     focalProposalCardinality: "A1 >= 7, G1 retired-readonly (0 write commands), D2 immediate-with-required-audit, D2 approve coverage gate",
-    pendingRealtime: `${A2} backend tickets + J1 immediate + ${PENDING_FOCAL.length} 焦点域 usePropose`,
+    pendingRealtime: `${A2} backend tickets + J1 restore + ${PENDING_FOCAL.length} 焦点域 usePropose`,
   },
   failureCount: failures.length,
   failures,

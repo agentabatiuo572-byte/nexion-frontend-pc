@@ -39,6 +39,7 @@ const EXECUTOR_MODULE = "lib/admin/stable-mutation.ts";
 
 /** 已迁到共享 store 的文件:必须仍 import 它,且不得再出现裸内存态幂等键。 */
 const MIGRATED = [
+  "lib/admin/a4-client.ts",
   // Payment policy changes retain the original command for query-only audit recovery after unknown outcomes.
   "lib/admin/payment-password-client.ts",
   // Order-payment policy and revalidation retain immutable owner/payload/key after unknown outcomes; same-key retry is time bounded.
@@ -68,13 +69,14 @@ const MIGRATED = [
   "lib/admin/i-client.ts",
   "lib/admin/stable-mutation.ts",
   "lib/admin/f1-stable-write.ts",
+  "lib/admin/f1-policy-change.ts",
   // H3 task-event bindings keep their key across an unknown write outcome before server readback.
   "lib/admin/h-client.ts",
+  "lib/admin/h7-voucher-approval.ts",
   "lib/admin/e5-stable-device-command.ts",
   "lib/admin/g2-client.ts",
   "lib/admin/g3-client.ts",
   "lib/admin/g3-market-command.ts",
-  "lib/admin/f1-policy-change.ts",
   "lib/admin/g4-client.ts",
   "lib/admin/g7-client.ts",
   // H9:失败横幅向运营承诺「原样重试用的是同一个幂等键」,而旧实现每点一次保存都现铸一个新键
@@ -348,7 +350,7 @@ for (const key of Object.keys(KNOWN)) {
 
 // 判据 3:已迁移文件不得回退。两条合法路径:
 //   直接 —— import 共享 store 并 create{PendingMutation,SlotAttempt}Store;
-//   间接 —— 走 createStableMutationExecutor,但**必须传非空 storageKey**(不传就静默退回内存态)。
+//   间接 —— 给 createStableMutationExecutor 传非空 storageKey 或当前文件创建的持久化 store。
 let storeIdents = 0; // 判据 3b 实际核过调用点的标识符数(0 = 判据失效,PASS 必打样本量)
 for (const rel of MIGRATED) {
   const full = path.join(ROOT, rel);
@@ -375,12 +377,16 @@ for (const rel of MIGRATED) {
   const executorSites = executorBindings.has("createStableMutationExecutor")
     ? [...code.matchAll(/(?:const|let)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*createStableMutationExecutor\s*\(([^)]*)\)/g)]
     : [];
+  const persistentStores = storeBindings.has("createPendingMutationStore")
+    ? [...code.matchAll(/^\s*const\s+([A-Za-z_$][\w$]*)\s*=\s*createPendingMutationStore\s*(?:<[^>]*>)?\s*\(\s*\{\s*storageKey:\s*([^,}\n]+)/gm)]
+        .filter(([, , key]) => nonEmptyStringLiteral(key.trim(), code)).map(([, name]) => name)
+    : [];
   for (const [, ident, argsRaw] of executorSites) {
     storeIdents += 1;
     const storageArg = splitArgs(argsRaw)[1];
-    if (!nonEmptyStringLiteral(storageArg, code)) {
-      failures.push(`${rel} 的 ${ident} 调用 createStableMutationExecutor 时 storageKey 不是非空字符串`
-        + `(实参:${storageArg ?? "缺失"})→ 命令号退回内存态,刷新即失效`);
+    if (!nonEmptyStringLiteral(storageArg, code) && !persistentStores.includes(storageArg)) {
+      failures.push(`${rel} 的 ${ident} 调用 createStableMutationExecutor 时未传有效 storageKey 或持久化 store`
+        + `(实参:${storageArg ?? "缺失"})→ 刷新后无法恢复命令号`);
     }
     if (!new RegExp(`\\b${ident.replace(/\$/g, "\\$")}\\s*\\(`).test(code)) {
       failures.push(`${rel} 的通用执行器 ${ident} 建了却从不调用 → 悬空 const 顶包,真实写路径已绕开幂等键`);

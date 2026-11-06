@@ -451,7 +451,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       action: <>新建课程(存为草稿)</>,
       detail: (
         <>
-          填 课程标识 / 分类 / 形式 / 难度 / 奖励（{TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVT）；标题和正文在「多语言文案」里另建中英越三语。草稿用户看不到，发布时需要确认。
+          填 课程标识 / 分类 / 形式 / 难度 / 奖励（{TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVT）；标题和正文在「多语言与课程」里另建中英越三语。草稿用户看不到，发布时需要确认。
         </>
       ),
       amplifies: false,

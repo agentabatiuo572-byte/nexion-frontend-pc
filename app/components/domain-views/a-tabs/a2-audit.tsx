@@ -63,6 +63,7 @@ import {
 } from "@/lib/admin/a2-policy";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canApprovePending, type AuthPrincipal } from "@/lib/admin/ops-authority";
+import { isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import type { ACtx } from "./types";
 
@@ -215,6 +216,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     authorities: session?.authorities ?? [],
   } as AuthPrincipal;
   const canApprove = canApprovePending(principal);
+  const canDecide = (ticket: A2OperationRow) => canApprove
+    && (ticket.operationCode !== "j1_gate_resume"
+      || principal.role === "superadmin" && principal.authorities.includes("emergency_j1_gate_resume"))
+    && (!["a4_schema_register", "a4_schema_property_add", "a4_domain_extension_register"].includes(ticket.operationCode ?? "")
+      || principal.role === "superadmin")
+    && (!isH7VoucherApproval(ticket.operationCode) || principal.authorities.includes("growth_h7_write"));
   const canExport = canAccessA2Export(principal.authorities);
   const canWrite = canAccessA2Write(principal.authorities);
   const canWithdraw = principal.authorities.includes("platform_a2_proposal_create");
@@ -382,7 +389,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           对象 <b>{w.obj}</b> · 发起人 {w.operator}。
           <A2ChangeReview before={w.before} after={w.after} />
           {w.coverageCheckOnApproval ? "通过覆盖率检查后执行" : g3PolicyExecutionTiming(w) ?? "确认后立即执行"}
-          {w.sos ? (<>，<b>并通知应急值班人员</b></>) : null}。<br />
+          {w.sos && w.operationCode !== "j1_gate_resume" ? (<>，<b>并通知应急值班人员</b></>) : null}。<br />
           谁能执行：<b>{w.roleGate}</b>
           {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
           {w.phoneCalibrationError && <p role="alert">{w.phoneCalibrationError}</p>}
@@ -599,12 +606,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       const mOk = qOperator === "all" || matchesA2OperationRole(w.operatorRole, qOperator);
       return tOk && mOk;
     });
-    // fund 置顶 stable:用 indexOf 锚定原序,fund 排前
+    const queuePriority = (ticket: A2OperationRow) => ticket.sos && ticket.operationCode === "j1_gate_resume"
+      ? 0 : ticket.type === "fund" ? 1 : 2;
     return arr
       .map((w, i) => ({ w, i }))
       .sort((a, b) => {
-        const af = a.w.type === "fund" ? 0 : 1;
-        const bf = b.w.type === "fund" ? 0 : 1;
+        const af = queuePriority(a.w);
+        const bf = queuePriority(b.w);
         if (af !== bf) return af - bf;
         return a.i - b.i;
       })
@@ -751,7 +759,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                           </span>{" "}
                           <button className="l-btn sm" disabled={!canWithdraw} onClick={(e) => { e.stopPropagation(); withdrawWo(w); }}>撤回我的申请</button>
                         </>
-                      ) : canApprove ? (
+                      ) : canDecide(w) ? (
                         <>
                           <button
                             className="l-btn sm mc"
@@ -1044,7 +1052,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     </div>
                     <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--ink-3)" }}>{OWN_TICKET_REASON}</p>
                   </div>
-                ) : canApprove ? (
+                ) : canDecide(w) ? (
                   <div style={{ display: "flex", gap: 8, padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
                     <button
                       className="l-btn mc"

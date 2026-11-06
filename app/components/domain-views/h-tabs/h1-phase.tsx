@@ -563,7 +563,7 @@ export default function H1Phase({ ctx, onRhythmChange }: {
           {
             label: "运营阶段效果分析",
             maxRows: model.attribution.length,
-            reason: "这里只显示摘要；详细数据见「运营阶段状态」和「设备/任务/网络报表」",
+            reason: "这里只显示摘要；详细数据见「运营阶段状态」和「设备、任务与团队报表」",
           },
         ]}
       />

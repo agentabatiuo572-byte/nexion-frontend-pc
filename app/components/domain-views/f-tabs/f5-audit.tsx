@@ -397,7 +397,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                   ? <Link href="/finance/ledger" style={LINK_STYLE}>账本与账单核对</Link>
                   : <span title="你没有查看资金账本的权限" style={{ ...LINK_STYLE, cursor: "not-allowed" }}>资金账本（无权限）</span>}
                 <GatedLink allowed={canReadB1} href="/overview/dual-ledger" label="兑付覆盖率" />
-                <GatedLink allowed={canReadL4} href="/analytics/operations" label="设备/任务/网络报表" />
+                <GatedLink allowed={canReadL4} href="/analytics/operations" label="设备、任务与团队报表" />
                 <GatedLink allowed={canReadA2} href="/platform/audit" label="操作记录与审批" />
                 <GatedLink allowed={canReadA4} href="/platform/events" label="用户行为事件" />
               </div>

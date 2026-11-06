@@ -156,8 +156,9 @@ function PaymentDetail({ intentNo, owner, owns, ctx, pending, onChanged, onClose
   }, [intentNo, owns]);
   useEffect(() => { live.current = true; void load(); return () => { live.current = false; sequence.current++; }; }, [load]);
   function revalidate() {
-    if (!record || purchaseWasDelivered(record) || record.receipt || busy || pending || !allowed("finance_d1_bank_reconcile")) return;
+    if (!record || record.version == null || purchaseWasDelivered(record) || record.receipt || busy || pending || !allowed("finance_d1_bank_reconcile")) return;
     const current = record;
+    const expectedVersion = record.version;
     ctx.openActionConfirm({ briefKind: "funds", action: `重新核对到账 · ${intentNo}`, reasonMin: 10, reasonMax: 300,
       detail: `用户 ${current.userId}，当前${stateText[current.status]}，用户实付 ${purchaseMoney(current.totalUsdt)} USDT。会再查一次支付商或链上记录，并重新检查库存、资格和设备位。金额不对、到账太晚或核对不通过的，仍然留给人工处理。`,
       completionCopy: "不会重新收款、强制完成、退款，也不会转进钱包余额。",
@@ -165,7 +166,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, pending, onChanged, onClose
         if (mutation.current || !live.current || !owns()) throw new Error("付款信息或登录身份已变化，请重新打开详情。");
         mutation.current = true; setBusy(true); setError(""); setNotice("");
         try {
-          const next = await revalidatePurchasePayment(owner, intentNo, current.version, reason) as PurchasePaymentRecord;
+          const next = await revalidatePurchasePayment(owner, intentNo, expectedVersion, reason) as PurchasePaymentRecord;
           if (!live.current || !owns()) return;
           setRecord(next); setNotice(`已重新核对：${stateText[next.status]}。${purchaseWasDelivered(next) ? "业务已完成。" : "业务还没完成，请按当前状态继续处理。"}`); onChanged();
         } catch (failure) { if (live.current && owns()) { setRecord(null); setError(message(failure)); onChanged(); } throw failure; }
@@ -173,11 +174,11 @@ function PaymentDetail({ intentNo, owner, owns, ctx, pending, onChanged, onClose
       } });
   }
   const facts = (rows: Array<[string, string | number]>) => <dl className="d1-payment-facts">{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
-  return <Modal title={`付款详情 · ${intentNo}`} wide busy={busy} onClose={onClose} footer={<><button className="l-btn" disabled={busy} onClick={onClose}>关闭</button><button className="l-btn" disabled={busy} onClick={() => void load()}>刷新</button>{allowed("finance_d1_bank_reconcile") && <button className="l-btn primary" disabled={busy || pending || !record || purchaseWasDelivered(record) || !!record.receipt || ["EXPIRED", "CREATING"].includes(record.status)} onClick={revalidate}>重新核对到账</button>}</>}>
+  return <Modal title={`付款详情 · ${intentNo}`} wide busy={busy} onClose={onClose} footer={<><button className="l-btn" disabled={busy} onClick={onClose}>关闭</button><button className="l-btn" disabled={busy} onClick={() => void load()}>刷新</button>{allowed("finance_d1_bank_reconcile") && <button className="l-btn primary" disabled={busy || pending || !record || record.version == null || purchaseWasDelivered(record) || !!record.receipt || ["EXPIRED", "CREATING"].includes(record.status)} onClick={revalidate}>重新核对到账</button>}</>}>
     <div className="d1-order-payments">{busy && !record && <p role="status">正在加载…</p>}{error && <p className="dtint warn" role="alert">{error}</p>}{pending && <p className="dtint warn">这笔付款有一次操作还没确认结果，请在页面上方的提醒里查看。</p>}{notice && <p className="dtint" role="status">{notice}</p>}
       {record && <><p className="dtint">{purchaseWasDelivered(record) ? record.status === "DELIVERED" ? record.receipt ? "业务已完成。" : "状态是已完成，但没有业务回执，请核对原业务记录。" : "业务已完成，但资金有异常需要核查。不会再次完成、自动退款或转进钱包。" : record.receipt ? "已有业务回执，完成状态待确认；请核对原业务记录，不会重复完成。" : "收到钱不等于已完成。系统不会自动退款，也不会把钱转进用户钱包。"}</p>
-        <h3>基本信息</h3>{facts([["用户", record.userId], ["用途", kindText[record.kind] ?? "用途待确认"], ["付款方式", methodText[record.paymentMethod]], ["状态", stateText[record.status]], ["是否已完成", purchaseWasDelivered(record) ? "已完成" : record.receipt ? "已有回执，待确认" : "还没完成"], ["支付商单号", record.providerReference || "尚未提供"], ["创建 / 更新时间", `${time(record.createdAt)} / ${time(record.updatedAt)}（${businessZoneText()}）`], ["异常说明", record.reason || "无"]])}
-        <h3>金额（USDT）</h3>{facts([["订单金额", record.businessAmountUsdt == null ? "尚未提供" : record.businessAmountUsdt], ["收款金额", purchaseMoney(record.subtotalUsdt)], ["取整差额", record.roundingAdjustmentUsdt == null ? "尚未提供" : record.roundingAdjustmentUsdt], ["手续费", purchaseMoney(record.channelFeeUsdt)], ["网络费", purchaseMoney(record.networkConfirmFeeUsdt)], ["用户实付", purchaseMoney(record.totalUsdt)], ["通道实际成本", record.providerActualFeeUsdt == null ? "尚未提供" : purchaseMoney(record.providerActualFeeUsdt)]])}
+        <h3>基本信息</h3>{facts([["用户", record.userId], ["用途", kindText[record.kind] ?? "用途待确认"], ["付款方式", methodText[record.paymentMethod]], ["状态", stateText[record.status]], ["付款单版本", record.version ?? "尚未提供"], ["是否已完成", purchaseWasDelivered(record) ? "已完成" : record.receipt ? "已有回执，待确认" : "还没完成"], ["支付商单号", record.providerReference || "尚未提供"], ["创建 / 更新时间", `${time(record.createdAt)} / ${time(record.updatedAt)}（${businessZoneText()}）`], ["异常说明", record.reason || "无"]])}
+        <h3>金额（USDT）</h3>{facts([["锁定费用版本", record.feePolicyVersion ?? "尚未提供"], ["订单金额", record.businessAmountUsdt == null ? "尚未提供" : record.businessAmountUsdt], ["收款金额", purchaseMoney(record.subtotalUsdt)], ["取整差额", record.roundingAdjustmentUsdt == null ? "尚未提供" : record.roundingAdjustmentUsdt], ["手续费", purchaseMoney(record.channelFeeUsdt)], ["网络费", purchaseMoney(record.networkConfirmFeeUsdt)], ["用户实付", purchaseMoney(record.totalUsdt)], ["通道实际成本", record.providerActualFeeUsdt == null ? "尚未提供" : purchaseMoney(record.providerActualFeeUsdt)]])}
         {record.paymentMethod === "HDPAY_BANK" ? facts([["锁定汇率", record.fxRateVndPerUsdt ? `1 USDT = ${record.fxRateVndPerUsdt} VND` : "尚未提供"], ["应付越南盾", record.amountVnd ? `${BigInt(record.amountVnd).toLocaleString("zh-CN")} VND` : "尚未提供"]]) : <p className="sub">用户在自己钱包里另付的 {record.paymentMethod === "CREGIS_USDT_ERC20" ? "ETH" : "BNB"} 矿工费不算在内。</p>}
         {record.arrivals && <><h3>链上到账</h3><div className="d1-payment-scroll"><table className="l-tbl" aria-label="链上到账"><thead><tr><th>交易号</th><th>到账金额（USDT）</th><th>区块 / 确认数</th><th>核对结果</th></tr></thead><tbody>{record.arrivals.map(row => <tr key={`${row.txid}:${row.log_index}`}><td>{row.txid}<div className="sub">日志 {row.log_index}</div></td><td>{row.amount}</td><td>{row.block_number} / {row.confirmations}<div className="sub">{row.block_hash}</div></td><td>{row.status === "CONFIRMED" ? "已核对" : row.status === "MANUAL_REVIEW" ? "需人工处理" : "待确认"}</td></tr>)}{record.arrivals.length === 0 && <tr><td colSpan={4}>还没有链上到账记录。</td></tr>}</tbody></table></div></>}<div className="d1-payment-actions">{reach("/platform/audit", "platform_a2_read") && <Link className="l-btn sm" href="/platform/audit?domain=D">到「操作记录」查看处理过程</Link>}</div></>}
     </div>

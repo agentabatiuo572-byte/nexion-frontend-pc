@@ -468,13 +468,13 @@ export function C1HeaderActions({ ctx, query }: { ctx: CCtx; query: C1ExportQuer
   const [exportOperation, setExportOperation] = useState<C1ExportOperation | null>(null);
   const [exportError, setExportError] = useState("");
   const session = useAdminAuth((state) => state.session);
-  const canExport = session?.role === "superadmin" || session?.authorities.includes("user_c1_write") === true;
+  const canExport = session?.authorities.includes("user_c1_export") === true;
   const exportReason = exportOperation?.reason ?? reason;
   const reasonLength = exportReason.trim().length;
   const reasonValid = reasonLength >= 8 && reasonLength <= 200;
 
   const runExport = async () => {
-    if (!reasonValid) return;
+    if (!canExport || !reasonValid) return;
     if (exportingRef.current || Date.now() < exportCooldownUntilRef.current) {
       ctx.toast("正在生成用户名单，请稍候");
       return;
