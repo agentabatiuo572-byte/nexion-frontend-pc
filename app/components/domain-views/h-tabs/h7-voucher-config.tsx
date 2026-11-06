@@ -190,7 +190,6 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   const canWrite = ctx.can("growth_h7_write");
   const session = useAdminAuth((state) => state.session);
   const adminId = session?.adminId;
-  const canPropose = canWrite && (ctx.can("platform_a2_proposal_create") || ctx.can("platform_a2_write"));
   const [pendingApprovals, setPendingApprovals] = useState<ReturnType<typeof pendingH7VoucherApprovals>>([]);
   const [data, setData] = useState<{ vouchers: OpsVoucher[]; skus: OpsSku[]; stats?: Record<string, number> }>({
     vouchers: [],
@@ -358,7 +357,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   };
 
   const openDisposition = (input: H7VoucherApprovalInput) => {
-    if (!session || !canPropose) return;
+    if (!session || !canWrite) return;
     const original = () => pendingH7VoucherApprovals(session.adminId)
       .find((record) => record.voucherId === input.voucherId);
     const pending = original();
@@ -404,7 +403,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     });
   };
 
-  const pendingRecovery = canPropose && pendingApprovals.map((record) => (
+  const pendingRecovery = canWrite && pendingApprovals.map((record) => (
     <p key={record.commandKey} className="htint">
       {H7_VOUCHER_ACTIONS[record.op]} · {record.voucherName} · 提交结果待核对{" "}
       <button className="l-btn sm" onClick={() => openDisposition(record)}>查询原操作</button>
@@ -484,7 +483,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
             <tbody>
               {list.map((v) => {
                 const isActive = v.status === "active";
-                const canDispose = canPropose && !pendingApprovals.some((record) => record.voucherId === v.id);
+                const canDispose = canWrite && !pendingApprovals.some((record) => record.voucherId === v.id);
                 return (
                   <tr key={v.id}>
                     <td style={{ fontWeight: 600, color: isActive ? "var(--ink)" : "var(--ink-3)" }}>{v.name}</td>

@@ -219,6 +219,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const canDecide = (ticket: A2OperationRow) => canApprove
     && (ticket.operationCode !== "j1_gate_resume"
       || principal.role === "superadmin" && principal.authorities.includes("emergency_j1_gate_resume"))
+    && (!["a4_schema_register", "a4_schema_property_add", "a4_domain_extension_register"].includes(ticket.operationCode ?? "")
+      || principal.role === "superadmin")
     && (!isH7VoucherApproval(ticket.operationCode) || principal.authorities.includes("growth_h7_write"));
   const canExport = canAccessA2Export(principal.authorities);
   const canWrite = canAccessA2Write(principal.authorities);
