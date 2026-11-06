@@ -1579,7 +1579,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const gateClosedHere = detailActions.includes("APPROVE") && withdrawGate === "closed";
   const [needRole] = shown ? actionCandidates(shown, cregisDetail) : [];
   // 常显的只有现在能不能做、为什么不能；放行会怎样收进按钮旁的提示图标（DP-06）。
-  const decisionNote = shown && (detailBlockedReason(shown) ?? approveBlocked ?? (detailActions.length || bankRecovery || cregisRecovery ? undefined
+  const decisionNote = shown && (detailBlockedReason(shown) ?? approveBlocked ?? (simulation ? simulationBlockedReason(shown) : undefined) ?? (detailActions.length || bankRecovery || cregisRecovery ? undefined
     : needRole ? `${actionLabel(needRole)}这笔需要${needRole === "APPROVE" ? approvalRole(shown) : ACTION_ROLE[needRole]}，你只能查看。`
       : shown && ["TX_ORPHANED", "DEAD"].includes(shown.status.toUpperCase()) ? "这笔打款结果待核对，这里没有可用的操作。到打款方核对，不要重新放行或退款。" : "这笔现在没有人工操作。"));
   const decisionExplain = shown && detailActions.includes("APPROVE") && !approveBlocked
