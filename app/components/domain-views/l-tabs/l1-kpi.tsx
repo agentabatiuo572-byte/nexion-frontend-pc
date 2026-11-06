@@ -221,7 +221,7 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
       reasonPlaceholder: "写这份数据给谁、做什么用，例如：给增长组做周会复盘",
       facts: (
         <Facts>
-          <Fact k="文件内容">{mode === "series" ? "8 项指标的当前值、目标、分子分母和六段趋势" : mode === "snapshot" ? "8 项指标的当前值、目标、分子分母和可用性" : "当前累计数"}</Fact>
+          <Fact k="文件内容">{mode === "series" ? "8 项指标的可用数值、目标和六段趋势；受保护项标为样本过小，相关数值留空" : mode === "snapshot" ? "8 项指标的可用数值、目标和可用性；受保护项标为样本过小，相关数值留空" : "当前累计数"}</Fact>
           <Fact k="范围">{mode === "totals" ? "当前累计" : queryScope(query)}</Fact>
           <Fact k="接收人">{L1_EXPORT_RECIPIENT}</Fact>
           <Fact k="文件行数">{rows}，另有表头</Fact>
@@ -723,7 +723,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
           <Stat label="接近目标的指标" value={yellow} tone={yellow > 0 ? "warn" : undefined} icon={Gauge} iconTone="warn"
             sub={<>距目标 {ylOffset}% 以内 · <button type="button" className="rd-link" onClick={() => setEditingOffset(true)}>调整接近范围</button></>}
             explain={`没达标，但离目标不超过 ${ylOffset}%；购买转化在健康带外也算这里。调整只改你看到的状态，不改业务规则。`} />
-          <Stat label="暂无法计算" value={unavailable} tone={unavailable > 0 ? "done" : undefined} icon={CircleHelp} iconTone="done" explain="缺数据或样本过小，不按 0% 算。" />
+          <Stat label="暂无法判断" value={unavailable} tone={unavailable > 0 ? "done" : undefined} icon={CircleHelp} iconTone="done" sub={`缺数据 ${count("na")} 项 · 样本过小 ${count("small")} 项`} explain="缺数据算不出来；样本过小的数值受保护。两类都不按 0% 算，也不算未达标。" />
           <Stat label="当前运营阶段" value={phaseKnown ? String(phase.code) : "未返回"} unit={phaseKnown ? `· ${String(phase.name ?? "")} · 第 ${num(phase.month, 0)} 月` : undefined} tone="role-2" icon={Flag}
             explain={PHASE_SWITCH_IDX >= 0 ? "趋势图已标出运营阶段切换时间。" : "当前时间范围内没有阶段切换记录。"} />
         </StatBand>
@@ -860,8 +860,8 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                 />
               </Panel>
             ))}
-            {drawnCount === 0 && <p className="rd-note">当前所选指标没有足够的趋势数据，暂时无法画出对比曲线。</p>}
-            {drawnCount > 0 && skipped.length > 0 && <p className="rd-note">没有画：{skipped.map((item) => `#${item.n}`).join(" ")}，趋势数据不足或每段都是 0。</p>}
+            {drawnCount === 0 && <p className="rd-note">当前所选指标没有可绘制的对比曲线。</p>}
+            {skipped.length > 0 && <p className="rd-note">没有画：{skipped.map((item) => `#${item.n}（${states[KPIS.findIndex((kpi) => kpi.n === item.n)] === "small" ? "样本过小" : item.sparkSuppressed?.includes(true) ? "部分时段样本过小，其余趋势不足" : item.spark.length >= 2 && item.spark.every((value) => value === 0) ? "每段都是 0" : "趋势数据不足"}）`).join("、")}。</p>}
           </div>
         </Fold>}
 

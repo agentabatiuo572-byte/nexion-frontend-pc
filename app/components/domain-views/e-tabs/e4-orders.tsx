@@ -91,14 +91,14 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
   ];
   const countOf = (states: readonly string[]) => counts ? states.reduce((sum, state) => sum + (counts[state] ?? 0), 0) : undefined;
   const flowCount = countOf(FLOW_STATES);
-  // 要人工的单：等开通或激活的，加开通失败等退款的（后端把开通失败都记成已付款）。
+  // 全量状态数量不区分待审批，只描述进度；能否处理到单条详情判断。
   const flowWait = countOf(["paid", "provisioning"]);
   const refundWait = counts?.provisioning_failed ?? 0;
   const waitCount = flowWait === undefined ? undefined : flowWait + refundWait;
   const searchNote = query.keyword ? "按当前搜索词算。" : "";
-  const waitTitle = flowWait && refundWait ? <>有 <b>{waitCount}</b> 单要处理</>
-    : refundWait ? <>有 <b>{refundWait}</b> 单开通失败待退款</> : <>有 <b>{flowWait}</b> 单等开通或激活</>;
-  const waitHint = `${flowWait && refundWait ? `${flowWait} 单等开通或激活，${refundWait} 单开通失败待退款。` : ""}${flowWait ? "点一行看差什么。" : "点一行核对付款和覆盖率，再提交退款。"}`;
+  const waitTitle = flowWait && refundWait ? <>有 <b>{waitCount}</b> 单等待交付或退款核对</>
+    : refundWait ? <>有 <b>{refundWait}</b> 单开通失败待核对</> : <>有 <b>{flowWait}</b> 单等开通或激活</>;
+  const waitHint = "点一行看下一步；有待审批标记的订单先等审批结束。";
   // 怎么算、去哪做收进结论旁的提示图标（DP-06）。
   const waitExplain = `${flowWait ? "设备分配和激活在「设备运行管理」做。" : ""}${searchNote}` || undefined;
   const failedCount = countOf(FAILED_STATES);
@@ -326,7 +326,9 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
 
   // 具体原因只从状态轨迹取，状态本身证明不了原因。
   const closeRecord = e4Detail?.history.findLast((item) => item.toState === eff);
-  const nextRow: JudgmentRow = finalized
+  const nextRow: JudgmentRow = pendingApproval
+    ? { label: "下一步", value: "等待审批结果", reason: "这单已有待审批操作，审批结束后才能再次处理。", state: "warn" }
+    : finalized
     ? { label: "结果", value: stateLabel(eff), reason: <>{STATE_TEXT[eff]}{closeRecord && e4Detail && <> · 记录的原因：{operatorOrderHistoryReason(closeRecord.reason, e4Detail.paymentMethod)}</>}</>, state: ORDER_STATE_TONE[eff] === "danger" ? "danger" : undefined }
     : !e4Detail ? { label: "下一步", ...pendingFact }
       : nextStep ? { label: "下一步", value: `可以推进到「${stateLabel(nextStep)}」`, reason: canWriteE4 ? "条件都满足了，点下面「推进到下一步」提交审批。" : "条件都满足了，要有修改权限的账号提交。", state: "progress" }
@@ -336,7 +338,8 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const refundRow: JudgmentRow | null = finalized && !refundableState ? null
     : !refundableState ? { label: "退款", value: "不能退款", reason: "用户还没付款。只有已支付、开通中、已激活、已入库或已付款的开通失败订单能退款。" }
       : !e4Detail ? { label: "退款", ...pendingFact }
-        : e4Detail.refundAllowed ? { label: "退款", value: canRefundE4 ? "可以退款" : "符合退款条件，这个账号不能退款", reason: coverageReason }
+        : pendingApproval ? { label: "退款", value: "等待审批结束", reason: "这单已有待审批操作，暂时不能提交退款。", state: "warn" }
+          : e4Detail.refundAllowed ? { label: "退款", value: canRefundE4 ? "可以退款" : "符合退款条件，这个账号不能退款", reason: coverageReason }
           : { label: "退款", value: refundBlockText, reason: coverageKnown ? coverageReason : "要先读到资金覆盖率才能退款。过一会儿重新打开这单。", state: coverageKnown ? "danger" : "warn" };
   const rows: JudgmentRow[] = [
     nextRow,
