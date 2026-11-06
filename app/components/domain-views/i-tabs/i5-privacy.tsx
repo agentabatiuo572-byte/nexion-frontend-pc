@@ -69,7 +69,7 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: 
         ? { impact: "公开隐私政策马上显示这个版本，没有译文的语言回退到英语。", check: "核对正文版本和改动的语言，只发布已审核的正文，理由写清依据。" }
         : form.status === "UNPUBLISHED"
           ? { impact: "公开版本立即撤下，公开接口读不到隐私政策。", check: "确认要下架，理由写清依据。" }
-          : { impact: "只保存草稿，注册页和邀请页显示的内容不变。", check: "核对改动，理由写清修改依据。" },
+          : { impact: "只保存草稿，公开版本不变。", check: "核对改动，理由写清修改依据。" },
       facts: <DiffList rows={[
         { key: "status", label: "状态", before: STATUS_NAME[baseline.status], after: form.status === "DRAFT" && baseline.hasPublishedVersion ? "另存草稿，公开版不变" : STATUS_NAME[form.status] },
         { key: "version", label: "正文版本", before: baseline.version || "—", after: form.version },
@@ -91,7 +91,7 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: 
   const conclusion = !doc ? null
     : writes.isLocked("privacy") ? <Conclusion state="warn" hint="到页面上方核对原操作结果。">隐私政策：有操作结果未确认</Conclusion>
       : doc.status === "PUBLISHED"
-        ? <Conclusion state="ok" icon={FileCheck2} explain="注册页和邀请页公开阅读。">隐私政策：已发布，正文版本 {doc.version}</Conclusion>
+        ? <Conclusion state="ok" icon={FileCheck2} explain="公开接口按语言读取，没有译文时回退到英语。">隐私政策：已发布，正文版本 {doc.version}</Conclusion>
         : doc.status === "UNPUBLISHED"
           ? <Conclusion state="warn">隐私政策：已撤下公开版本，用户读不到</Conclusion>
           : doc.hasPublishedVersion
