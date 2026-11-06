@@ -234,6 +234,10 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
       syncPending();
       return;
     }
+    if (!ctx.canExport) {
+      setRetryNote("这个账号已没有导出权限，请有权限的同事处理。");
+      return;
+    }
     if (!pendingExports.isDurablyStored(record.fingerprint, record.commandKey)) {
       setRetryNote("浏览器里读不到这条记录，这次没有重发。请到操作记录与审批核对。");
       return;
@@ -277,12 +281,12 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
     notices: <>
       {pending && (
         <Notice tone="warn" title={`${pending.label} · 结果未确认`} action={<>
-          <Button size="sm" loading={retrying} disabledReason={expired ? "已超过 24 小时，不能再重试" : undefined} onClick={() => void retry(pending)}>按原操作重试</Button>
-          {retryRejected && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除待确认</Button>}
+          {!expired && <Button size="sm" loading={retrying} disabledReason={!ctx.canExport ? "这个账号已没有导出权限，请有权限的同事处理" : undefined} onClick={() => void retry(pending)}>按原操作重试</Button>}
+          {!expired && retryRejected && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除待确认</Button>}
         </>}>
-          {formatBusinessTimeFull(new Date(pending.createdAt).toISOString(), "—")}（{businessZone().label}）发出，任务可能已经生成，不要重新导出。{expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : "重发原内容，已成功的不会重复执行。"}{exportPage(`到「${pageName}」核对`)}
+          {formatBusinessTimeFull(new Date(pending.createdAt).toISOString(), "—")}（{businessZone().label}）发出，任务可能已经生成，不要重新导出。{expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !ctx.canExport ? "这个账号已没有导出权限，不能重试，请有权限的同事处理。" : "重发原内容，已成功的不会重复执行。"}{exportPage(`到「${pageName}」核对`)}
           <Explain label="技术信息" content={`命令号 ${pending.commandKey} ｜ 理由 ${pending.reason}`} />
-          {retryNote && <div>{retryNote}</div>}
+          {!expired && retryNote && <div>{retryNote}</div>}
         </Notice>
       )}
       {finished && !pending && (

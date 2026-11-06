@@ -7,7 +7,7 @@ import type { RewardAdmin, RewardAdminPage } from "@/lib/admin/promotion-types";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { Button, Explain, Notice } from "@/app/components/rd";
 
-/** compact：放进事实区一行，明细进提示图标，退款框才不被撑过一屏（N01）。 */
+/** 资金去向常显；compact 只收起台账编号，不收起对象、金额和追回后果（DP-06）。 */
 export function PromotionRefundImpact({ orderNo, compact = false }: { orderNo: string; compact?: boolean }) {
   const canRead = useAdminAuth(s => s.session?.authorities.includes("growth_promotion_reward_read") ?? false);
   const [retry, setRetry] = useState(0);
@@ -38,7 +38,7 @@ export function PromotionRefundImpact({ orderNo, compact = false }: { orderNo: s
   const rewards = <ul className="rd-impact-list">
         {result.items.map(r => <li key={r.obligationId}>
           <b>{r.beneficiaryRole === "BUYER" ? "购买者" : "直接邀请人"} · {r.beneficiaryId} · {r.reward.type === "DEVICE" ? `${r.disclosure.deviceName || "赠品设备"} × ${r.reward.quantity} 台` : `${r.reward.amount} ${nexGridBrandText(r.reward.type === "DISCOUNT_USDT" ? "USDT" : r.reward.type)}`}</b>
-          <div className="rd-note">奖励项 {r.obligationId}</div>
+          {compact ? <Explain label="奖励台账编号" content={`奖励项 ${r.obligationId}`} /> : <div className="rd-note">奖励项 {r.obligationId}</div>}
           <div>{["CANCELLED", "REVERSED"].includes(r.state) ? "原奖励已取消或已冲正，本次不重复发放或追回。"
             : ["PENDING", "READY", "RETRYABLE_FAILED"].includes(r.state) && !r.assetReceipt ? "退款申请先暂停发奖；退款确认执行后，取消未发放的奖励。"
             : <>{["PROCESSING", "OUTCOME_UNKNOWN", "MANUAL_REVIEW"].includes(r.state) && "先核对原发放结果，未发放的取消；已发放的按以下规则处理。"}{r.reward.type === "DEVICE"
@@ -52,7 +52,7 @@ export function PromotionRefundImpact({ orderNo, compact = false }: { orderNo: s
     if (result.status === "failed") return <>读取失败，还不能确认影响，仍可提交退款 <Button size="sm" onClick={() => setRetry(v => v + 1)}>重试</Button></>;
     if (result.status === "loading") return <>正在加载…</>;
     if (!result.items.length) return <>这单没有促销奖励</>;
-    return <>{result.total} 项奖励，退款后按售后规则处理<Explain label="退款后奖励怎么处理" content={rewards} /></>;
+    return rewards;
   }
   return <section className="rd-confirm-facts rd-impact" aria-label="促销奖励影响">
     <h4 className="rd-impact-title">促销奖励影响<Explain label="退款后奖励怎么处理" content="退款须由另一位超级管理员批准，系统按售后规则执行；实际追回与损失以执行后「活动中心 → 奖励台账」及活动效果为准。" /></h4>

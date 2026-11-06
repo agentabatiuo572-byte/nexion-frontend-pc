@@ -116,13 +116,13 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
       return <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未确认`}
         action={<>
           {ctx.canQueryE4 && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Pending(record)}>查询原提案</Button>}
-          <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying || expired} disabledReason={retryBlock} onClick={() => void ctx.retryE4Pending(record)}>按原操作重试</Button>
-          {ctx.e4RetryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除待确认</Button>}
+          {!expired && <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} disabledReason={retryBlock} onClick={() => void ctx.retryE4Pending(record)}>按原操作重试</Button>}
+          {!expired && ctx.e4RetryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除待确认</Button>}
         </>}>
         {formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，可能已经提交。{expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? "这个账号已没有这项权限，不能重试。" : needQuery ? "先查原提案，查不到再按原操作重试。" : "重发原内容，已成功的不会重复执行。"}这单在有结论前不能再操作。
         {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=E&object=${encodeURIComponent(record.orderNo)}`}>到操作记录核查</Link></>}
         <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 理由 ${record.spec.reason}`} />
-        {ctx.e4PendingNotes[record.fingerprint] && <div>{ctx.e4PendingNotes[record.fingerprint]}</div>}
+        {!expired && ctx.e4PendingNotes[record.fingerprint] && <div>{ctx.e4PendingNotes[record.fingerprint]}</div>}
       </Notice>;
     })}
 
@@ -288,10 +288,11 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   // 批准后收不回来的操作：不能撤销，红按钮（VS-25、VS-106）。
   const irreversibleApproval = <>{approvalTag}<IrreversibleTag /></>;
   // 对象、金额、审批人常显在框里（OP-48）；rows 放这个操作自己要核对的事实。
-  // 金额是确认框的关键数字，放第一行（VS-102）。
+  // 只有退款实际动钱；其他框先写对象，金额是普通事实（VS-102）。
   const orderFacts = (rows: ReactNode, amountLabel = "金额", orderRow = false) => <Facts>
-    <Fact k={amountLabel} lead tone="role-1" unit="USDT">{orderAmount(o.amt)}</Fact>
+    {amountLabel === "退款金额" && <Fact k={amountLabel} lead tone="role-1" unit="USDT">{orderAmount(o.amt)}</Fact>}
     {orderRow && <Fact k="订单"><span data-mono>{o.id}</span></Fact>}
+    {amountLabel !== "退款金额" && <Fact k={amountLabel}>{orderMoney(o.amt)}</Fact>}
     <Fact k="用户">{o.user}</Fact>
     <Fact k="商品">{o.sku}</Fact>
     {rows}
@@ -299,7 +300,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const reasonHint = "写清依据或工单号。只记在操作记录里，用户看不到";
   // 批准后后端把这单的设备改成已退款、停用（rollbackOrderDevices），赠品设备不在内，由活动规则收回。
   const hasDevice = !!e4Detail?.deviceId || !!e4Detail?.deviceInstanceNo;
-  const refundDeviceLine = hasDevice ? "设备停用，已到账的收益不扣回"
+  const refundDeviceLine = hasDevice ? "设备停用，已到账的设备收益不扣回"
     : eff === "provisioning_failed" ? "没有开通成功，没有设备要停用" : "还没有设备，退款后不再开通";
   // 后端不收回设备收益。例外：按全期结算转购买的试用奖励，退款后收回钱包里没花掉的部分；活动奖励走活动规则。
   const refundDeviceDetail = `退款后用户钱包多这笔钱，平台的应付款跟着增加。${hasDevice ? "这单的设备不再归用户，不再派任务，不再产生新收益。活动赠品的设备按活动规则处理。" : ""}${e4Detail?.orderType === "TRIAL_CONVERT" ? "转购买时发的试用奖励按当时的规则处理，最多收回钱包里没花掉的部分。" : ""}活动奖励按活动规则处理。`;
@@ -363,6 +364,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
             facts: orderFacts(<>
               {channel && <Fact k="退款去向">{REFUND_CHANNEL_LABELS[channel] ?? channel}</Fact>}
               <Fact k="退款后">{refundDeviceLine}<Explain label="退款后设备和收益怎么处理" content={refundDeviceDetail} /></Fact>
+              {e4Detail.orderType === "TRIAL_CONVERT" && <Fact k="试用转购奖励">这单发给购买者的试用奖励可能追回，金额以执行结果为准<Explain label="试用奖励追回规则" content="按整期结算转购发出的试用奖励，退款后最多收回未花掉的部分；未追回部分转人工核查。" /></Fact>}
               {/* 退款入口只在读到覆盖率时开。 */}
               <Fact k="覆盖率">{fmtPct(e4Detail.coverageCurrent!)} → 执行后 {fmtPct(e4Detail.coverageProjected!)}，红线 {e4Detail.coverageRedline}%<Explain label="覆盖率什么时候检查" content="批准执行时后端再查一次，当前或执行后低于红线就不退款。" /></Fact>
               <Fact k="促销奖励"><PromotionRefundImpact orderNo={o.id} compact /></Fact>
@@ -410,7 +412,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
           detail: `手动推进 ${o.id}：${stateLabel(eff)} → ${stateLabel(nextState)}` })}>推进到下一步</Button>}
       />}>
       {!finalized && <Steps label="订单进度" items={orderFlow.map((state, position) => ({ label: stateLabel(state), state: position < idx ? "done" as const : position === idx ? "current" as const : "todo" as const }))} />}
-      {orderPending && <Notice tone="warn">这单有结果未确认的操作，不要重复处理。状态变了也不算确认。到页面上方按原操作重试，或看操作记录核查。</Notice>}
+      {orderPending && <Notice tone="warn">这单有结果未确认的操作，不要重复处理。状态变了也不算确认。到页面上方核查结果，或看操作记录核查。</Notice>}
       {e4DetailError && <BlockState state="error" title="详情加载失败" detail={`${e4DetailError} · 为避免按旧数据操作，已暂停处理。`} onRetry={() => ctx.openOrder(o)} />}
       <JudgmentPoints rows={rows} />
       <Fold inset title="订单信息" icon={Package} tone="devices" summary={`${o.dc === "—" ? "未分配数据中心" : o.dc} · 下单 ${o.age} 前`}>

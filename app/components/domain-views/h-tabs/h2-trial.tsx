@@ -96,7 +96,7 @@ const PARAM_LOCKED = "这项有结果未确认的修改，先处理页面上方�
 const KILLED = "已紧急关闭，这页不能重新打开，开关不能再调";
 const APPROVAL_SENT = "已提交，等待审批后执行。等超级管理员批准，进度到「操作记录与审批」看。";
 // 后端的强制扣款走已退役的入口，固定回 410 TRIAL_EXPLICIT_PURCHASE_REQUIRED（AppTrialLifecycleService.redeemOnce）。
-const CHARGE_RESULT = "后端固定拒绝，批准后不会扣款";
+const CHARGE_RESULT = "强制扣款已停用，系统要求用户主动确认购买。请用户到 App 或 H5 的试用页确认购买";
 const NO_WRITE = "这个账号已没有这项权限，请有权限的同事处理";
 // 紧急关闭写的是这个配置项，操作记录按它查（后端 TRIAL_AUTO_PUSH_KILLED_KEY）。
 const KILL_AUDIT_OBJECT = "growth.trial.auto_push_killed";
@@ -135,8 +135,8 @@ function proposalSpec(item: TrialProposal): ProposeSpec {
   return {
     action: item.label,
     obj: `${item.owner} · ${item.sid}`,
-    before: item.before,
-    after: charge ? "已扣款" : "cancelled",
+    before: ({ idle: "待启动", active: "试用中", grace: "宽限中", extended: "已延长", cancelled: "已取消", redeemed: "已购买", failed: "扣款失败" } as Record<string, string>)[item.before] ?? item.before,
+    after: charge ? "已扣款" : "已取消",
     type: charge ? "fund" : "sos",
     amplifies: charge,
     gate: { roles: [] },
@@ -197,19 +197,11 @@ function usdt(value: unknown) {
   return `${Number(value).toLocaleString("en-US", { maximumFractionDigits: 6 })} USDT`;
 }
 
-/** 后端 0 到 1（含 1）按比例算（AppTrialLifecycleService.conversionPromoDiscount）。这样存着的值要写实际折扣，别当百分比读。 */
-function discountRatePercent(param: TrialParam) {
-  const rate = Number(param.cur);
-  return param.key === "discountRate" && rate > 0 && rate <= 1 ? `${Number((rate * 100).toFixed(6))}%` : undefined;
-}
-
 function paramValue(param: TrialParam, product: TrialProduct | undefined) {
   const unit = TRIAL_PARAM_HELP[param.key]?.input?.unit;
   if (param.key === "trialOffsetCapUSD" && text(param.cur, "") === "") return "不设上限";
   if (param.key === "trialProductId") return product?.name ?? text(param.cur);
   if (param.key === "trialPriceUSD") return usdt(param.cur);
-  const ratio = discountRatePercent(param);
-  if (ratio) return `${text(param.cur)}（实际减 ${ratio}）`;
   if (param.serverOnly) return operatorCopyText(text(param.cur));
   if (unit === "%") return `${text(param.cur)}%`;
   return unit ? `${paramInput(param)} ${unit}` : text(param.cur);
@@ -251,7 +243,6 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, killed }: {
   const productDeadEnd = deadEndLead && `${deadEndLead}。要换商品，先到「商品管理与上架条件」给别的在售商品开启「允许试用」`;
   // 商品退出「允许试用」后不会出现在候选列表里，这里读不到它（REV2-03）。
   const productMissing = isProduct && !currentProduct;
-  const ratioNow = discountRatePercent(param);
 
   const open = () => {
     // 怎么填留一句单位和范围，其余进提示图标。
@@ -304,7 +295,7 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, killed }: {
       // 开关只有另一个值可选，直接写前后值，不给选择（OP-126）。
       facts: isPushSwitch ? <Facts><Fact k="开关"><Change from={current} to={pushTarget} /></Fact></Facts>
         : productMissing ? <Facts><Fact k="现在">{current || "未设置"}，不在可选列表</Fact></Facts>
-          : ratioNow ? <Facts><Fact k="现在实际减">{ratioNow}</Fact></Facts> : undefined,
+          : undefined,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认修改，立即生效",
       // 标题行写影响谁（OP-48）。这是什么和显示位置在标题旁的提示图标里。
@@ -429,6 +420,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
    * 重试的是保留下来的原命令时，确定失败也证明不了原命令的结果，继续保留。
    */
   const sendCommand = async (item: TrialCommand) => {
+    if (item.kind === "charge") throw new Error(CHARGE_RESULT);
     const scope = commandScope(item);
     const retained = pendingCommands.get(scope);
     const key = retained ?? (item.kind === "param" ? createH2CommandKey("h2-param") : item.kind === "kill" ? createH2CommandKey("h2-auto-push") : createA2CommandKey("h2-trial-session"));
@@ -463,6 +455,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有成功才解除待确认。 */
   const retryPending = async (record: PendingCommand) => {
     if (record.expiresAt <= Date.now()) { syncPending(); return; }
+    if (record.kind === "charge") { notePending(record, CHARGE_RESULT); return; }
+    if (!(record.kind === "cancel" ? canCancel : canWrite)) { notePending(record, NO_WRITE); return; }
     // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
     if (!pendingCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
       pendingCommands.forget(record.fingerprint, record.commandKey);
@@ -616,22 +610,22 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     const expired = record.expiresAt <= Date.now();
     const object = proposal ? record.sid : record.kind === "param" ? record.paramKey : KILL_AUDIT_OBJECT;
     // 能查原提案就先查，明确查不到才重试；重试要当前还有这项写权（OP-93）。没有查询能力的路径只能重试，照实写。
-    const canRetry = record.kind === "cancel" ? canCancel : record.kind === "charge" ? canCharge : canWrite;
+    const canRetry = record.kind === "cancel" ? canCancel : record.kind === "charge" ? false : canWrite;
     const needQuery = proposal && canQuery && !queryMissing.includes(record.commandKey);
-    const retryBlock = expired ? undefined : !canRetry ? NO_WRITE : needQuery ? "先查原提案，明确查不到才能重试" : undefined;
+    const retryBlock = record.kind === "charge" ? CHARGE_RESULT : !canRetry ? NO_WRITE : needQuery ? "先查原提案，明确查不到才能重试" : undefined;
     return (
       <Notice key={record.fingerprint} tone="warn" title={`${commandTitle(record)} · 结果未确认`} action={<>
         {proposal && canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void checkPending(record)}>查询原提案</Button>}
-        <Button size="sm" disabled={!!recovering || expired} disabledReason={retryBlock} onClick={() => void retryPending(record)}>按原操作重试</Button>
-        {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除待确认</Button>}
+        {!expired && <Button size="sm" disabled={!!recovering} disabledReason={retryBlock} onClick={() => void retryPending(record)}>按原操作重试</Button>}
+        {!expired && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除待确认</Button>}
       </>}>
         {formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，
         {proposal ? "提案可能已经提交，批准前不会执行。这条记录确认前不能再操作。" : "可能已经生效。这项确认前不能再改。"}
         {proposal && !canQuery ? " 这个账号查不了原提案，请能看操作记录的同事核查。" : ""}
-        {expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? " 这个账号已没有这项权限，不能重试。" : needQuery ? " 先查原提案，查不到再按原操作重试。" : " 重发原内容，已成功的不会重复执行。"}
+        {expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : record.kind === "charge" ? ` ${CHARGE_RESULT}。` : !canRetry ? " 这个账号已没有这项权限，不能重试。" : needQuery ? " 先查原提案，查不到再按原操作重试。" : " 重发原内容，已成功的不会重复执行。"}
         {reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href={`${auditHref}?domain=H&object=${encodeURIComponent(object)}`} prefetch={false}>到操作记录核查</Link></>}
         <Explain label="技术信息" content={`命令号 ${record.commandKey}${proposal ? ` ｜ 用户 ${record.owner}` : record.kind === "param" ? ` ｜ 新值 ${record.value || "空"}` : ""} ｜ 理由 ${record.reason}`} />
-        {pendingNotes[record.commandKey] && <div>{pendingNotes[record.commandKey]}</div>}
+        {!expired && pendingNotes[record.commandKey] && <div>{pendingNotes[record.commandKey]}</div>}
       </Notice>
     );
   });
@@ -674,7 +668,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     const reason = lockedSids.has(row.session.sid) ? LOCKED : loading ? READING : row.owner ? undefined : "用户信息暂不可用";
     return {
       cancel: canCancel && <Button size={variant === "row" ? "sm" : "md"} disabledReason={reason} onClick={() => openSessionCancel(row.session, row.label)}>强制取消</Button>,
-      charge: canCharge && <Button size={variant === "row" ? "sm" : "md"} variant={variant === "row" ? "secondary" : "danger-outline"} disabledReason={reason} onClick={() => openSessionCharge(row.session, row.label)}>强制扣款</Button>,
+      charge: canCharge && <Button size={variant === "row" ? "sm" : "md"} variant={variant === "row" ? "secondary" : "danger-outline"} disabledReason={CHARGE_RESULT} onClick={() => openSessionCharge(row.session, row.label)}>强制扣款</Button>,
     };
   };
   const total = model.sessionsPage?.total ?? sessions.length;
@@ -766,6 +760,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
             <div id={nav.anchor("records")}>
               <Fold title="试用记录" icon={History} tone="role-3" summary={`共 ${total} 条，平时不用处理`} open={!!folds.records} onOpenChange={(open) => setFolds((state) => ({ ...state, records: open }))}
                 explain={<>宽限中是正常状态：到期系统自动结束，不扣款，不用处理。{canHandle && "强制取消用于怀疑刷试用等风控介入，平时不用点，要提交审批。强制扣款现在批准后也不会扣款。"}</>}>
+                {canCharge && <Notice tone="neutral">{CHARGE_RESULT}。</Notice>}
                 <Table label="试用记录">
                   <thead>
                     <tr>
@@ -812,6 +807,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
               { label: "状态", value: <StatusTag tone={currentRow.tone}>{currentRow.label}</StatusTag>, reason: TRIAL_STATE_HELP[currentRow.session.state] },
               { label: "账户", value: trialOwnerLabel(currentRow.session), state: currentRow.owner ? undefined : "warn" },
               { label: "累计收益", value: shadowText(currentRow.session.shadow) },
+              ...(canCharge && !currentRow.terminal ? [{ label: "强制扣款", value: CHARGE_RESULT }] : []),
               { label: "能不能处理", value: currentRow.terminal ? "已结束，不能再取消或扣款" : lockedSids.has(currentRow.session.sid) ? "有结果未确认的操作，先处理页面上方的待确认" : !currentRow.owner ? "没有用户归属，不能取消或扣款" : canHandle ? "平时不用处理，确要干预才提交下面的操作" : "这个账号只能查看" },
             ]} />
             <Facts>
