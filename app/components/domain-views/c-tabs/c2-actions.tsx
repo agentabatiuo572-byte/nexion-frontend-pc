@@ -794,6 +794,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
                   const status = statusOf(account);
                   const [label, tone] = statusMeta(status);
                   const locked = status === "FROZEN";
+                  const pendingLogout = session ? pendingSessionRevocationApproval(session.adminId, accountId(account)) : undefined;
                   return (
                     <tr className={`click${locked ? " frozen-row" : ""}`} key={accountId(account)} onClick={() => openAccount(account)}>
                       <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{text(account.userNo, accountId(account))}{" "}
@@ -811,8 +812,8 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         {status === "ACTIVE" && canFreeze && <button disabled={busy} className="l-btn sm mc" aria-label={`冻结 ${displayAccount(account)}`} onClick={(e) => { e.stopPropagation(); freeze(account); }}>冻结</button>}
                         {status === "FROZEN" && canUnfreeze && <button disabled={busy} className="l-btn sm mc" aria-label={`恢复 ${displayAccount(account)}`} onClick={(e) => { e.stopPropagation(); unfreeze(account); }}>恢复</button>}
-                        {canLogout && <button disabled={busy || !!error || (!pendingSessionRevocationApproval(session!.adminId, accountId(account)) && (sessionCounts.get(accountId(account)) ?? 0) <= 0)} className="l-btn sm" aria-label={`强制登出 ${displayAccount(account)}`} style={{ marginLeft: 6 }} onClick={(e) => { e.stopPropagation(); logoutAll(account); }}>强制登出</button>}
-                        {!canFreeze && !canUnfreeze && !canLogout && <span className="tiny">只读</span>}
+                        {(canLogout || pendingLogout) && <button disabled={busy || (!pendingLogout && (!!error || (sessionCounts.get(accountId(account)) ?? 0) <= 0))} className="l-btn sm" aria-label={`强制登出 ${displayAccount(account)}`} style={{ marginLeft: 6 }} onClick={(e) => { e.stopPropagation(); logoutAll(account); }}>{pendingLogout ? "重试原操作" : "强制登出"}</button>}
+                        {!canFreeze && !canUnfreeze && !canLogout && !pendingLogout && <span className="tiny">只读</span>}
                       </td>
                     </tr>
                   );
@@ -925,6 +926,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           : accountSessions.filter(activeSession).length;
         const listEntry = listFor(selectedAccount);
         const controlFact = controlFactFor(selectedAccount);
+        const pendingLogout = session ? pendingSessionRevocationApproval(session.adminId, accountId(selectedAccount)) : undefined;
         return (
           <Drawer
             title={`账户明细 · ${displayAccount(selectedAccount)}`}
@@ -982,7 +984,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
             <div className="row wrap" style={{ gap: 8 }}>
               {status === "ACTIVE" && canFreeze && <button disabled={busy || !!accountContextError} className="l-btn sm mc" aria-label={`冻结 ${displayAccount(selectedAccount)}`} onClick={() => freeze(selectedAccount)}>冻结</button>}
               {status === "FROZEN" && canUnfreeze && <button disabled={busy || !!accountContextError} className="l-btn sm mc" aria-label={`恢复 ${displayAccount(selectedAccount)}`} onClick={() => unfreeze(selectedAccount)}>恢复</button>}
-              {canLogout && <button disabled={busy || !!error || !!accountContextError || (!pendingSessionRevocationApproval(session!.adminId, accountId(selectedAccount)) && activeCount <= 0)} className="l-btn sm" aria-label={`强制登出 ${displayAccount(selectedAccount)}`} onClick={() => logoutAll(selectedAccount, activeCount)}>强制登出</button>}
+              {(canLogout || pendingLogout) && <button disabled={busy || (!pendingLogout && (!!error || !!accountContextError || activeCount <= 0))} className="l-btn sm" aria-label={`强制登出 ${displayAccount(selectedAccount)}`} onClick={() => logoutAll(selectedAccount, activeCount)}>{pendingLogout ? "重试原操作" : "强制登出"}</button>}
             </div>
           </Drawer>
         );

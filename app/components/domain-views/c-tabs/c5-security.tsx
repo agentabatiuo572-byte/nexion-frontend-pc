@@ -203,8 +203,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
   const canRevokeOne = authorities.includes("user_c5_session_revoke_one");
-  const canRevokeAll = authorities.includes("user_c5_session_revoke_all")
-    && authorities.includes("user_c2_session_revoke_all")
+  const canRevokeAll = authorities.includes("user_c2_session_revoke_all")
     && authorities.some((authority) => ["platform_a2_write", "platform_a2_proposal_create"].includes(authority));
   const canDisable2fa = authorities.includes("user_c5_2fa_disable");
   const canResetPassword = authorities.includes("user_c5_password_reset");
@@ -706,8 +705,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
           />
           <div className="l-b" style={{ paddingTop: 10 }}>
             {selectedUserId && <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button className="l-btn" disabled={!selectedUserId || busy || !canRevokeAll || (!pendingLogout && activeSessionCount === 0)} onClick={revokeAll}>
-                {!canRevokeAll ? "退出全部设备（无权限）" : pendingLogout ? "重试全部设备登出原操作" : activeSessionCount === 0 ? "退出全部设备（暂无在线设备）" : "退出全部设备"}
+              <button className="l-btn" disabled={!selectedUserId || busy || (!pendingLogout && (!canRevokeAll || activeSessionCount === 0))} onClick={revokeAll}>
+                {pendingLogout ? "重试原操作" : !canRevokeAll ? "退出全部设备（无权限）" : activeSessionCount === 0 ? "退出全部设备（暂无在线设备）" : "退出全部设备"}
               </button>
               <button className="l-btn mc" disabled={!selectedUserId || busy || !canDisable2fa || !selectedUser?.twoFactorEnabled} onClick={disable2fa}>
                 {!canDisable2fa ? "关闭两步验证（无权限）" : !selectedUser?.twoFactorEnabled ? "关闭两步验证（未开启）" : "关闭两步验证"}
