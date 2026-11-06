@@ -162,13 +162,13 @@ export type EditorSwitch = { attempt: (next: () => void) => void };
 /**
  * 有未保存内容时拦离开（OP-29）：侧栏、面包屑、命令面板都是链接，抓在捕获阶段；关窗口走浏览器提示；
  * 抽屉不挡列表，换草稿、新建、看别的版本要走 switcher，不能绕过这个框。
- * 浏览器前进后退不拦，Next 没有可取消的入口。
+ * 有草稿时加一条同地址历史记录，后退先回到编辑器再询问；离开前退回原记录，继续原导航。
  */
 export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefObject<EditorSwitch | null>) {
   const router = useRouter();
   const [asking, setAsking] = useState(false);
-  const [href, setHref] = useState<string | null>(null);
   const nextAction = useRef<(() => void) | null>(null);
+  const releaseHistory = useRef<((next?: () => void) => void) | null>(null);
   useEffect(() => {
     switcher.current = { attempt: (next) => {
       if (dirty) { nextAction.current = next; setAsking(true); }
@@ -178,6 +178,34 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
   }, [dirty, close, switcher]);
   useEffect(() => {
     if (!dirty) return;
+    let phase: "armed" | "restoring" | "releasing" = "armed";
+    let afterRelease: (() => void) | undefined;
+    // 保留 Next 的路由状态；副本只用来先拦住后退，不改 URL 和编辑器内容。
+    window.history.pushState(window.history.state, "", window.location.href);
+    const release = (next?: () => void) => {
+      if (next) afterRelease = next;
+      if (phase === "releasing") return;
+      phase = "releasing";
+      window.history.back();
+    };
+    releaseHistory.current = release;
+    const back = (event: PopStateEvent) => {
+      // Next 的 popstate 在冒泡阶段恢复路由；先截住，避免编辑器被卸载。
+      event.stopImmediatePropagation();
+      if (phase === "releasing") {
+        window.removeEventListener("popstate", back, true);
+        if (releaseHistory.current === release) releaseHistory.current = null;
+        afterRelease?.();
+      } else if (phase === "restoring") {
+        phase = "armed";
+        nextAction.current = () => window.history.back();
+        setAsking(true);
+      } else {
+        phase = "restoring";
+        window.history.forward();
+      }
+    };
+    window.addEventListener("popstate", back, true);
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
     const intercept = (event: MouseEvent) => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -186,7 +214,7 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
       if (link.pathname === window.location.pathname && link.search === window.location.search) return;
       event.preventDefault();
       event.stopPropagation();
-      setHref(`${link.pathname}${link.search}${link.hash}`);
+      nextAction.current = () => router.push(`${link.pathname}${link.search}${link.hash}`);
       setAsking(true);
     };
     window.addEventListener("beforeunload", warn);
@@ -194,23 +222,29 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
     return () => {
       window.removeEventListener("beforeunload", warn);
       document.removeEventListener("click", intercept, true);
+      release();
     };
-  }, [dirty]);
+  }, [dirty, router]);
   const proceed = () => {
     const next = nextAction.current;
     nextAction.current = null;
     next?.();
-    if (href) router.push(href);
+  };
+  const finish = (discard: boolean) => {
+    setAsking(false);
+    const next = () => { if (discard) close(); proceed(); };
+    if (releaseHistory.current) releaseHistory.current(next);
+    else next();
   };
   return {
     asking,
     askClose: () => { if (dirty) setAsking(true); else close(); },
-    stay: () => { setAsking(false); setHref(null); nextAction.current = null; },
+    stay: () => { setAsking(false); nextAction.current = null; },
     /** 去确认框保存：这个框先收起，取消保存时回到编辑。 */
     hide: () => setAsking(false),
-    discard: () => { setAsking(false); close(); proceed(); },
+    discard: () => finish(true),
     /** 保存成功后接着去原来要去的地方。 */
-    saved: () => { setAsking(false); proceed(); },
+    saved: () => finish(false),
   };
 }
 

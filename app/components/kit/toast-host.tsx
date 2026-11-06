@@ -13,14 +13,19 @@ const KIND: Record<ToastKind, { varName: string; Icon: typeof Info }> = {
   error: { varName: "--v5-danger", Icon: XCircle },
 };
 
-export function ToastHost() {
+export function ToastHost({ dialogId }: { dialogId?: string }) {
   const toasts = useUI((s) => s.toasts);
   const dismiss = useUI((s) => s.dismissToast);
+  const pause = useUI((s) => s.pauseToast);
+  const resume = useUI((s) => s.resumeToast);
+  const activeDialog = useUI((s) => s.dialogs.at(-1));
+  if (dialogId !== activeDialog || !toasts.length) return null;
 
   return (
     <div
-      className="pointer-events-none fixed left-1/2 flex -translate-x-1/2 flex-col gap-2"
-      style={{
+      className={dialogId ? "rd-dialog-feedback flex flex-col gap-2" : "pointer-events-none fixed left-1/2 flex -translate-x-1/2 flex-col gap-2"}
+      role="status"
+      style={dialogId ? undefined : {
         zIndex: "var(--admin-z-toast)",
         top: "calc(var(--admin-topbar-h) + 32px)",
         width: "min(420px, calc(100vw - 40px))",
@@ -33,6 +38,8 @@ export function ToastHost() {
           return (
             <motion.div
               key={t.id}
+              onMouseEnter={() => pause(t.id)}
+              onMouseLeave={() => resume(t.id)}
               layout
               initial={{ opacity: 0, y: -10, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}

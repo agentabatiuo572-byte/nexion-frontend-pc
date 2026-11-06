@@ -4,11 +4,14 @@
 import { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useUI } from "@/lib/store/ui";
+import { useDialogFeedback } from "./dialog-feedback";
+import { ToastHost } from "./toast-host";
 
 export function ConfirmDialog() {
   const queue = useUI((s) => s.confirmQueue);
   const resolve = useUI((s) => s.resolveConfirm);
   const top = queue[0];
+  const feedbackId = useDialogFeedback(top?.id ?? false);
   const dialog = useRef<HTMLDivElement>(null);
   const confirmButton = useRef<HTMLButtonElement>(null);
 
@@ -75,6 +78,7 @@ export function ConfirmDialog() {
             <h2 id={`${top.id}-title`} className="font-display text-[16px]" style={{ color: "var(--v5-ink)" }}>
               {top.title}
             </h2>
+            <ToastHost dialogId={feedbackId} />
             {top.message && (
               <p id={`${top.id}-message`} className="mt-1.5 text-[13px] leading-relaxed" style={{ color: "var(--v5-ink-2)" }}>
                 {top.message}

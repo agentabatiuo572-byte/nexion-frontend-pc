@@ -211,6 +211,10 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 收到权限层的 403（`ADMIN_PERMISSION_DENIED`、`ACCESS_DENIED`）时共用层提示「这个账号没有这项权限」，关框，外壳重读权限，页面上的按钮随之收起。业务规则的 403 有自己的说明，按普通失败留在框里。页面自己的表单（不走 `OperationConfirmModal`、`KConfirmModal`）在 catch 里用 `isPermissionDenied(error)` 判断，调 `announcePermissionDenied()` 后自己关框。
 
+`useToast` 保留 `[toastNode, setToast]` 调用方式，提示统一交给根布局的 `ToastHost`，发起页面卸载后仍显示。打开 `Modal`（含 `OperationConfirmModal`、`KConfirmModal`）或全局确认框时立即清掉旧提示；框打开后新来的提示放在最上层框的标题下面，参与排版，不覆盖标题或表单。默认 3 秒，悬停暂停，移开重新计时。
+
+`Conclusion` 的气泡标题可传 `explainTitle`，默认仍为「这句话怎么算」。`PageGuide` 的技术信息默认收起，页面编号只作为查找指南的内部键。
+
 旧的 `KConfirmModal` 放进 `RdPage` 后同样换新外观；`statedBrief`、`effect`、`reasonPlaceholder` 用法同上。它按 A2 理由规则和可见字符计数，规则读不到时按默认 8–200 继续，紧急关闭这类操作继续用它（Q-06）。
 
 业务表单的字段传 `mustChoose: true` 时不给默认值，下拉多一项「请选择」，必须人选了才能提交。核验类字段（大额放行的「地址与风险信息」、手动退款的「已核实」）和不能撤销的操作的原因都要这样，不能取第一项当默认值。多字段表单传 `derive(key, next)` 时，一个字段变了可以带着别的字段变，比如改等待天数时复查时间跟着变。

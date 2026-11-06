@@ -65,11 +65,10 @@ export function PageGuide({ pageId, extra }: { pageId: string; extra?: ReactNode
           </section>
         )}
         {extra}
-        <section className="rd-guide-tech">
-          <h3>技术信息</h3>
-          <div>页面编号 {pageId}</div>
+        <details className="rd-guide-tech" key={pageId}>
+          <summary>技术信息</summary>
           {guide.more}
-        </section>
+        </details>
       </Drawer>
     </>
   );

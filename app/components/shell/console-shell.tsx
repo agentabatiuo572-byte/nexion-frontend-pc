@@ -9,6 +9,7 @@
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { toast, useUI } from "@/lib/store/ui";
 import { usePathname, useRouter } from "next/navigation";
 import { ShieldOff } from "lucide-react";
 import { currentAdminSession, recordAdminActivity, AdminActivityIdentityChangedError } from "@/lib/admin/auth-client";
@@ -104,18 +105,15 @@ function AdminNoAccessPage({ pathname, landingPath }: { pathname: string; landin
 
 /** 确认框收到 403 后框已关，权限读回一变外壳里面还会重挂，所以提示单独放（OP-81、OP-132）。 */
 function PermissionDeniedToast() {
-  const [shownAt, setShownAt] = useState(0);
   useEffect(() => {
-    const onDenied = () => setShownAt(Date.now());
+    const onDenied = () => {
+      useUI.getState().dismissToasts();
+      toast.warn(PERMISSION_DENIED_TEXT);
+    };
     window.addEventListener(PERMISSION_DENIED_EVENT, onDenied);
     return () => window.removeEventListener(PERMISSION_DENIED_EVENT, onDenied);
   }, []);
-  useEffect(() => {
-    if (!shownAt) return;
-    const timer = window.setTimeout(() => setShownAt(0), 4000);
-    return () => window.clearTimeout(timer);
-  }, [shownAt]);
-  return shownAt ? <div className="rd-toast" role="status">{PERMISSION_DENIED_TEXT}</div> : null;
+  return null;
 }
 
 export function ConsoleShell({ children }: { children: React.ReactNode }) {

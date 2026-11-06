@@ -7,10 +7,13 @@
  * 跨域跳转用 next/navigation。导航/外壳仍沿用本项目 shell。
  */
 import { businessZone } from "@/lib/admin/business-time";
-import { Fragment, isValidElement, useEffect, useId, useMemo, useRef, useState, type ReactNode, type CSSProperties } from "react";
+import { Fragment, isValidElement, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { announcePermissionDenied, isPermissionDenied, operationConfirmErrorMessage, PERMISSION_DENIED_EVENT } from "@/lib/admin/operation-confirm-error";
+import { announcePermissionDenied, isPermissionDenied, operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
+import { useUI } from "@/lib/store/ui";
+import { useDialogFeedback } from "@/app/components/kit/dialog-feedback";
+import { ToastHost } from "@/app/components/kit/toast-host";
 import { fmtPct } from "@/lib/format";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
 import { fetchA2ReasonPolicy, isA2OutcomeUncertainError, visibleReasonLength } from "@/lib/admin/a2-client";
@@ -363,6 +366,7 @@ export function Modal({ icon, ...props }: ModalProps) {
 }
 
 function LegacyModal({ title, icon, onClose, children, footer, wide, busy = false, className }: Omit<ModalProps, "sub" | "tone">) {
+  const feedbackId = useDialogFeedback();
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useEffect(() => {
@@ -392,6 +396,7 @@ function LegacyModal({ title, icon, onClose, children, footer, wide, busy = fals
           <div className="spacer" />
           <button className="icon-btn" disabled={busy} onClick={onClose} aria-label="关闭"><Icon name="x" size={16} /></button>
         </div>
+        <ToastHost dialogId={feedbackId} />
         <div className="modal-b">{children}</div>
         {footer && <div className="modal-f">{footer}</div>}
       </div>
@@ -3948,30 +3953,11 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   );
 }
 
-/* toast — 自包含顶部居中浮层(对应设计稿 ctx.setToast);3 秒消失,hover 暂停,移开后重新计 3 秒。 */
+/* 保留旧调用契约，反馈交给根布局，页面/抽屉卸载后仍可见。 */
 export function useToast(): [ReactNode, (s: string) => void] {
-  const [toast, setToast] = useState<string | null>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (!toast) return;
-    timerRef.current = setTimeout(() => setToast(null), 3000);
-    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [toast]);
-  // 没权限的提示由外壳写（权限一变页面会重挂），这里清掉页面刚写的通用失败提示。
-  useEffect(() => {
-    const onDenied = () => setToast(null);
-    window.addEventListener(PERMISSION_DENIED_EVENT, onDenied);
-    return () => window.removeEventListener(PERMISSION_DENIED_EVENT, onDenied);
-  }, []);
-  const node = toast ? (
-    <div
-      onMouseEnter={() => { if (timerRef.current) clearTimeout(timerRef.current); }}
-      onMouseLeave={() => { if (timerRef.current) clearTimeout(timerRef.current); timerRef.current = setTimeout(() => setToast(null), 3000); }}
-      className="rd-toast" role="status">
-      <span aria-hidden="true">ⓘ</span> {toast}
-    </div>
-  ) : null;
-  return [node, setToast];
+  const key = useId();
+  const show = useCallback((title: string) => { useUI.getState().pushToast({ kind: "info", title, key }); }, [key]);
+  return [null, show];
 }
 
 /* 跨域跳转 hook(对应设计稿 ctx.setActive(domainLetter)) */

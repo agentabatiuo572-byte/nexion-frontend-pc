@@ -53,6 +53,8 @@ import { IconTile } from "./icon-tile";
 import { EffectSlot } from "./status-tag";
 import { useRdSurface } from "./surface";
 import type { RoleTone, StateTone } from "./tone";
+import { useDialogFeedback } from "../kit/dialog-feedback";
+import { ToastHost } from "../kit/toast-host";
 
 /** 列表里的行和页面控件才算点到外面；提示条、浮层不在这些区域里，点它们不关抽屉。 */
 function dismissesDrawer(target: EventTarget | null) {
@@ -210,6 +212,7 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
 }) {
   const surface = useRdSurface();
   const focus = useFocusHandoff(true);
+  const feedbackId = useDialogFeedback();
   const typed = useRef(false);
   const close = () => { if (!busy) onClose(); };
   return (
@@ -241,6 +244,7 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
             </div>
             <IconButton aria-label="关闭" disabled={busy} onClick={close}><X size={16} aria-hidden /></IconButton>
           </div>
+          <ToastHost dialogId={feedbackId} />
           <div className="rd-modal-body">{children}</div>
           {footer && <div className="rd-modal-foot">{footer}</div>}
         </Dialog.Content>

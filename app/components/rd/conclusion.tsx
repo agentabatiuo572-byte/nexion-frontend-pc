@@ -29,14 +29,14 @@ const STATE: Record<"ok" | "neutral" | "warn" | "danger" | "unknown", { tone: St
   unknown: { tone: "done", icon: CircleHelp },
 };
 
-export function Conclusion({ state, icon, lead, strong, hint, explain, action, children }: { state: keyof typeof STATE; icon?: LucideIcon; lead?: boolean; strong?: boolean; hint?: ReactNode; explain?: ReactNode; action?: ReactNode; children: ReactNode }) {
+export function Conclusion({ state, icon, lead, strong, hint, explain, explainTitle = "这句话怎么算", action, children }: { state: keyof typeof STATE; icon?: LucideIcon; lead?: boolean; strong?: boolean; hint?: ReactNode; explain?: ReactNode; explainTitle?: string; action?: ReactNode; children: ReactNode }) {
   const { tone, icon: fallback } = STATE[state];
   return (
     <div className="rd-conclusion" role={state === "danger" ? "alert" : "status"} data-tone={tone} data-lead={lead ? "" : undefined} data-alarm={state === "warn" || state === "danger" ? "" : undefined} data-strong={strong && state === "danger" ? "" : undefined}>
       <IconTile tone={tone} icon={icon ?? fallback} size={36} />
       <div className="rd-conclusion-text">
         {children}
-        {explain && <Explain label="这句话怎么算" content={explain} />}
+        {explain && <Explain label={explainTitle} content={explain} />}
         {hint && <div className="rd-conclusion-hint">{hint}</div>}
       </div>
       {action && <div className="rd-conclusion-action">{action}</div>}
