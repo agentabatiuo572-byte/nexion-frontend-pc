@@ -523,6 +523,11 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   WITHDRAWAL_NO_REQUIRED: "缺少提现单号，本次未执行。请从列表重新打开目标提现单。",
   WITHDRAWAL_BATCH_ACTION_INVALID: "批量只支持放行、拒绝、延迟或冻结。请重新选择批量操作。",
   WITHDRAWAL_STATE_CONFLICT: "这笔提现状态已变化，本次未执行。请查看最新状态后选择适用的操作。",
+  D2_REJECT_REFUND_STATE_CONFLICT: "拒绝退款的状态更新发生冲突，不能确认处理结果。请到提现详情和操作记录核对原操作，不要换号重复退款。",
+  LARGE_AMOUNT_REQUIRES_SINGLE_MANUAL_REVIEW: "这笔达到大额门槛，不能批量放行。请由财务主管打开单笔详情，核对收款地址、风险和覆盖率后处理。",
+  HDPAY_PAYOUT_RETURNED: "HDPay 已退回这笔打款。请核对原单结算和用户退款记录，不要重新放行或重复退款。",
+  HDPAY_PAYOUT_FAILED: "HDPay 返回打款失败。请核对原单结算和用户退款记录，不要重新放行或重复退款。",
+  // 后端事实核对：FINANCE_LEAD 是角色；K3_EXPIRY_DELAY、K3_DELAY_ONCE 是生命周期来源／期限标记，均非接口错误码。
   CREGIS_PAYOUT_ALREADY_DISPATCHED: "打款方已接手这笔提现，不能继续审核或直接退款。请在详情核对原单的打款结果。",
   CREGIS_CHAIN_PROOF_REQUIRED: "这笔提现需要可靠的链上付款证据才能确认结果。请核对打款方原单和链上交易。",
   H1_WITHDRAWAL_DIAL_UNAVAILABLE: "当前阶段的提现冷却设置暂不可读取，已转待审核。请核对阶段设置与最新提现详情。",
