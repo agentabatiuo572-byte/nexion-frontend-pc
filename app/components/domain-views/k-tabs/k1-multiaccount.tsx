@@ -497,7 +497,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     try {
       for (const { key, scope, code, title } of recoverableProposals) {
         const receipt = await fetchA2ProposalByKey(key);
-        if (!receipt?.mine || receipt.obj !== cur.id || receipt.action !== title
+        if (!receipt?.mine || receipt.obj !== cur.id || receipt.action !== `${title} · ${cur.id}`
             || (receipt.operationCode && receipt.operationCode !== code)) continue;
         commandAttempt.forget(scope, key);
         ctx.toast(`已找回工单 ${receipt.id}`);
