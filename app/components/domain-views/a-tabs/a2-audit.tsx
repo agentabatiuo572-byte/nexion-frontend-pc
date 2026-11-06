@@ -63,6 +63,7 @@ import {
 } from "@/lib/admin/a2-policy";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canApprovePending, type AuthPrincipal } from "@/lib/admin/ops-authority";
+import { isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import type { ACtx } from "./types";
 
@@ -215,8 +216,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     authorities: session?.authorities ?? [],
   } as AuthPrincipal;
   const canApprove = canApprovePending(principal);
-  const canDecide = (ticket: A2OperationRow) => canApprove && (ticket.operationCode !== "j1_gate_resume"
-    || principal.role === "superadmin" && principal.authorities.includes("emergency_j1_gate_resume"));
+  const canDecide = (ticket: A2OperationRow) => canApprove
+    && (ticket.operationCode !== "j1_gate_resume"
+      || principal.role === "superadmin" && principal.authorities.includes("emergency_j1_gate_resume"))
+    && (!isH7VoucherApproval(ticket.operationCode) || principal.authorities.includes("growth_h7_write"));
   const canExport = canAccessA2Export(principal.authorities);
   const canWrite = canAccessA2Write(principal.authorities);
   const canWithdraw = principal.authorities.includes("platform_a2_proposal_create");
