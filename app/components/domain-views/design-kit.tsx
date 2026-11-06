@@ -21,7 +21,7 @@ import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/med
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
 import { isL5KpiExport, l5KpiRange, L5_KPI_WINDOWS, l5BusinessToday } from "./l-tabs/l5-kpi-range";
-import { Check as RdCheck, CheckGroup as RdCheckGroup } from "@/app/components/rd/field";
+import { Check as RdCheck, CheckGroup as RdCheckGroup, Field as RdField } from "@/app/components/rd/field";
 import { Fold as RdFold } from "@/app/components/rd/fold";
 import { Button as RdButton } from "@/app/components/rd/button";
 import { Select as RdSelect } from "@/app/components/rd/select";
@@ -1308,6 +1308,9 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
   return { rollback: "", ack: "false" };
 }
 
+const DISCLOSURE_JURISDICTION_CODE = /^[A-Z][A-Z0-9_-]{1,15}$/;
+const DISCLOSURE_JURISDICTION_CODE_HELP = "以字母开头，2–16 位字母、数字、下划线或短横线";
+
 function missingBusinessFields(spec: BusinessFormSpec | undefined, state: BusinessFormValue): string[] {
   if (!spec) return [];
   const missing: string[] = [];
@@ -1468,7 +1471,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     needs("code", "适用地区代码");
     needs("name", "适用地区名称");
     if (spec.mode === "edit" && state.name?.trim() === spec.name) missing.push("名称没有改动");
-    if (!/^[A-Z][A-Z0-9_-]{1,15}$/.test((state.code ?? "").trim().toUpperCase())) missing.push("适用地区代码格式（2-16 位大写字母、数字、下划线或短横线）");
+    if (!DISCLOSURE_JURISDICTION_CODE.test((state.code ?? "").trim().toUpperCase())) missing.push(DISCLOSURE_JURISDICTION_CODE_HELP);
   } else if (spec.kind === "disclosure-publish-review") {
     if (spec.targetChapters.length !== 7) missing.push("完整 7 章节");
     if (spec.targetChapters.some((chapter) => !chapter.zh.trim() || !chapter.vi.trim() || !chapter.zhBody.trim() || !chapter.viBody.trim())) missing.push("七章中越双语完整内容");
@@ -2492,12 +2495,13 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
   }
 
   if (spec.kind === "disclosure-jurisdiction") {
+    const codeError = spec.mode === "create" && (attempted || leftFields.code) && !DISCLOSURE_JURISDICTION_CODE.test((value.code ?? "").trim().toUpperCase()) ? DISCLOSURE_JURISDICTION_CODE_HELP : undefined;
     return (
       <div className="field" data-business-form="disclosure-jurisdiction">
         <div className="grid g-2" style={{ gap: 10 }}>
-          <label className="field" style={{ marginBottom: 0 }}>
-            <span>适用地区代码<span className="rd-form-required" aria-hidden="true">*</span></span>
-            <input
+          <RdField label="适用地区代码" required error={codeError}>
+            {(control) => <input
+              {...control}
               className="fld"
               value={value.code ?? ""}
               readOnly={spec.mode === "edit"}
@@ -2505,8 +2509,9 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
               maxLength={16}
               placeholder="如 VN、US-FINCEN"
               onChange={(event) => set("code", event.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ""))}
-            />
-          </label>
+              onBlur={() => setLeftFields((current) => ({ ...current, code: true }))}
+            />}
+          </RdField>
           {input("name", <>适用地区名称<span className="rd-form-required" aria-hidden="true">*</span></>, "如 越南司法辖区")}
         </div>
         <div className="rd-form-help" style={{ marginTop: 8 }}>地区代码创建后不能修改。</div>
