@@ -2,7 +2,7 @@
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
@@ -219,6 +219,7 @@ function operationalText(value?: string) {
   const raw = value?.trim();
   if (!raw) return "—";
   if (FAILURE_REASON_LABELS[raw]) return FAILURE_REASON_LABELS[raw];
+  if (ADMIN_ERROR_MESSAGES[raw]) return ADMIN_ERROR_MESSAGES[raw];
   let result = raw.replace(/(^|;)(K4_MANUAL|K4_HIGH_PRIORITY|K4_ESCALATED):(\d+)(?=;|$)/g,
     (_, separator: string, code: string, score: string) => `${separator}${({
       K4_MANUAL: "风险分需要人工审核",
@@ -559,8 +560,7 @@ function actionBusinessForm(action: D2ReviewAction, addressVerificationRequired 
       },
       fields: [
         ...(action === "DELAY"
-          ? [{ key: "holdDays", label: "等待天数（1–45 天）", inputKind: "number" as const, required: true, wide: true, current: "7", pattern: HOLD_DAYS.source, patternMessage: HOLD_DAYS_ISSUE,
-              warning: (value: BusinessFormValue) => (value.holdDays && !HOLD_DAYS.test(value.holdDays) ? HOLD_DAYS_ISSUE : undefined) }]
+          ? [{ key: "holdDays", label: "等待天数（1–45 天）", inputKind: "number" as const, required: true, wide: true, current: "7", pattern: HOLD_DAYS.source, patternMessage: HOLD_DAYS_ISSUE }]
           : [{ key: "period", label: "冻结期限", inputKind: "select" as const, required: true, wide: true, options: ["7d", "14d", "30d", "45d", "LONG_TERM"], optionLabels: { "7d": "7 天", "14d": "14 天", "30d": "30 天", "45d": "45 天", LONG_TERM: "长期，需复查" } }]),
         { key: "owner", label: "责任人", required: true, current: OPERATOR() },
         { key: "reviewAt", label: "复查时间（北京时间 UTC+8）", inputKind: "datetime-local", required: true, current: reviewAtAfter(7), explain: REVIEW_TIME_EXPLAIN[action] },
@@ -944,9 +944,10 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     ? "冻结、解冻和手动退款需财务主管、风控主管或超级管理员操作"
     : undefined;
   /** 只看这一笔的情况就知道放行必被拒的原因，行、抽屉、批量共用（DP-42）。全局的开关和覆盖率在 approveGateText。 */
+  const approvalRole = (row: D2Withdrawal) => row.addressVerificationRequired === true ? "财务主管" : ACTION_ROLE.APPROVE;
   const approveBlock = (row: D2Withdrawal) => {
     if (routingUnavailable(row)) return "风险分暂时算不出来，暂不能放行";
-    if (!canApproveLarge && row.addressVerificationRequired === true) return LARGE_BLOCK;
+    if (!canApproveLarge && row.addressVerificationRequired === true) return `这笔是大额提现，需${approvalRole(row)}放行`;
     if (row.userStatus.toUpperCase() !== "ACTIVE") return `账户状态是「${userStatusLabel(row.userStatus)}」，账户恢复正常后才能放行`;
     if (row.holdUntil && parseBusinessTime(row.holdUntil) > Date.now()) return `冷却到 ${timeText(row.holdUntil)}，到时间后才能放行`;
     return undefined;
@@ -1240,15 +1241,20 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     openActionConfirm({ briefKind: "record",
       action: `核对 Cregis 打款单 · ${row.withdrawalNo}`,
       title: "核对 Cregis 打款单",
-      facts: <Facts><Fact k="金额" lead tone="role-1" unit={row.asset}>{amountText(row.amount)}</Fact><Fact k="提现单"><span data-mono>{row.withdrawalNo}</span></Fact></Facts>,
+      facts: <Facts><Fact k="提现单" lead><span data-mono>{row.withdrawalNo}</span></Fact><Fact k="金额">{amountText(row.amount)} {row.asset}</Fact></Facts>,
       detail: "到 Cregis 查到这笔提现的打款单号（CID）填在下面。系统会核对收款地址和金额，然后继续跟进这笔提现，不会重新打款。",
-      businessForm: { kind: "multi-field", title: "", fields: [
+      businessForm: { kind: "multi-field", title: "",
+        feedback: (value) => {
+          const cid = (value.providerCid ?? "").trim();
+          const outOfRange = /^[1-9][0-9]{18}$/.test(cid) && cid > "9223372036854775807";
+          return { field: "providerCid", invalid: outOfRange, message: outOfRange ? "CID 超出有效号码范围，请到 Cregis 核对原单号。" : "" };
+        },
+        fields: [
         { key: "providerCid", label: "Cregis 打款单号（CID）", inputKind: "text", required: true,
           current: cregis.providerCid ?? "", minLength: 1, maxLength: 19, pattern: "^[1-9][0-9]{0,18}$",
-          patternMessage: "CID 是不以 0 开头的数字", explain: "填这笔提现原来的打款单号，不要新建打款单。",
-          warning: (value) => (value.providerCid && !/^[1-9][0-9]{0,18}$/.test(value.providerCid.trim()) ? "CID 是不以 0 开头的数字" : undefined) },
+          patternMessage: "CID 是不以 0 开头的数字", explain: "填这笔提现原来的打款单号，不要新建打款单。" },
       ] },
-      reasonMin: 10, reasonMax: 300, completionCopy: "系统核对收款地址和金额后继续跟进这笔提现，不会重新打款。",
+      reasonMin: 10, reasonMax: 200, completionCopy: "系统核对收款地址和金额后继续跟进这笔提现，不会重新打款。",
       statedBrief: { impact: "系统核对收款地址和金额后继续跟进这笔提现，不会重新打款。", check: "填这笔原来的打款单号，不要新建打款单，理由写清依据或工单号。" },
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认核对",
@@ -1267,12 +1273,12 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   );
 
   const confirmBankRequery = (row: D2Withdrawal, bank: D2BankPayout) => {
-    openActionConfirm({ briefKind: "funds",
+    openActionConfirm({ briefKind: "record",
       action: `查询银行打款结果 · ${row.withdrawalNo}`,
       title: "查询银行打款结果",
-      facts: <Facts><Fact k="金额" lead tone="role-1" unit={row.asset}>{amountText(row.amount)}</Fact><Fact k="提现单"><span data-mono>{row.withdrawalNo}</span></Fact></Facts>,
+      facts: <Facts><Fact k="提现单" lead><span data-mono>{row.withdrawalNo}</span></Fact><Fact k="金额">{amountText(row.amount)} {row.asset}</Fact></Facts>,
       detail: "向 HDPay 查询这笔打款的结果，不会重新打款。结果明确就自动完成或退回；有疑问的继续人工核对。原因里不要写完整银行卡号。",
-      reasonMin: 10, reasonMax: 300, completionCopy: "向 HDPay 查询原单，不会重新打款。",
+      reasonMin: 10, reasonMax: 200, completionCopy: "向 HDPay 查询原单，不会重新打款。",
       statedBrief: { impact: "向 HDPay 查询原单，不会重新打款。", check: "理由写清依据或工单号，不要写完整银行卡号。" },
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认查询",
@@ -1291,19 +1297,19 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   );
 
   const confirmDevelopmentSimulation = (row: D2Withdrawal) => {
-    openActionConfirm({ briefKind: "funds",
+    if (simulationBlockedReason(row)) return;
+    openActionConfirm({ briefKind: "record",
       action: `模拟冷却到期 · ${row.withdrawalNo}`,
       title: "模拟冷却到期",
-      facts: <Facts><Fact k="提现单"><span data-mono>{row.withdrawalNo}</span></Fact></Facts>,
+      facts: <Facts><Fact k="当前状态" lead>{statusLabel(row.status)}</Fact><Fact k="提现单"><span data-mono>{row.withdrawalNo}</span></Fact><Fact k="金额">{amountText(row.amount)} {row.asset}</Fact><Fact k="本次影响">提前触发到期复查，可能自动放行、转待审核、冻结或再次延迟。</Fact></Facts>,
       detail: "仅测试环境可用。把这笔测试提现的冷却时间提前到现在，然后按正常流程重新检查风险规则、风险分、覆盖率和提现开关。",
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
-      amplifies: true,
       coverageCheck: "模拟到期后，系统重新检查；尝试自动放行时才检查兑付覆盖率，低于红线会转待审核。",
       coverage: d5 ? { coverageRatio: d5.coverageRatio, redlinePct: d5.redlinePct } : undefined,
       statedBrief: { impact: "把冷却时间提前到现在，再按正常到期流程处理，可能放行、转待审核、冻结或再次延迟。", check: "核对测试提现单和模拟依据。系统尝试自动放行时才检查兑付覆盖率，低于红线会转待审核。" },
       reasonMin: 8,
       reasonMax: 200,
-      completionCopy: "到期模拟已提交",
+      completionCopy: "提前触发到期复查，可能自动放行、转待审核、冻结或再次延迟。",
       run: (reason) => runDevelopmentSimulation(row.withdrawalNo, reason),
     });
   };
@@ -1367,7 +1373,6 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       await refresh();
       // 一笔也没执行、又不是状态变了：留在确认框改了再提交，不当成功收尾（BUG-291）。重试没有确认框，看结果窗。
       if (!retry && result.accepted.length === 0 && result.rejected.length === 0 && result.conflicts.some((conflict) => !MOVED_STATE_CODES.includes(conflict.reason))) throw new Error(summary);
-      toast(summary);
       setBatchResult({ action, result });
     },
   );
@@ -1513,6 +1518,15 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     return undefined;
   }
 
+  function simulationBlockedReason(row: D2Withdrawal) {
+    const blocked = detailBlockedReason(row);
+    if (blocked) return blocked;
+    if (!developmentCapabilities?.simulateCooldownExpiry || !hasAuthority("finance_d2_withdrawal_approve")) return "当前账号或环境不能模拟冷却到期";
+    if (!developmentSimulationEligible(row)) return "只有 H1 阶段冷却中的已放行提现可以模拟到期";
+    if (parseBusinessTime(row.holdUntil) <= Date.now()) return "这笔已到复查时间，无需模拟；请刷新查看系统复查结果";
+    return undefined;
+  }
+
   const groupCount = (group: D2Group) => statusCounts ? groupStatuses(group).reduce((sum, status) => sum + (statusCounts[status] ?? 0), 0) : undefined;
   const todoCount = groupCount("todo");
   const segments: SegmentItem<D2Group>[] = [
@@ -1566,7 +1580,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const [needRole] = shown ? actionCandidates(shown, cregisDetail) : [];
   // 常显的只有现在能不能做、为什么不能；放行会怎样收进按钮旁的提示图标（DP-06）。
   const decisionNote = shown && (detailBlockedReason(shown) ?? approveBlocked ?? (detailActions.length || bankRecovery || cregisRecovery ? undefined
-    : needRole ? `${actionLabel(needRole)}这笔需要${ACTION_ROLE[needRole]}，你只能查看。`
+    : needRole ? `${actionLabel(needRole)}这笔需要${needRole === "APPROVE" ? approvalRole(shown) : ACTION_ROLE[needRole]}，你只能查看。`
       : shown && ["TX_ORPHANED", "DEAD"].includes(shown.status.toUpperCase()) ? "这笔打款结果待核对，这里没有可用的操作。到打款方核对，不要重新放行或退款。" : "这笔现在没有人工操作。"));
   const decisionExplain = shown && detailActions.includes("APPROVE") && !approveBlocked
     ? shown.chain === "BANK-VND" ? "点「放行」并确认后立即生效，由 HDPay 打款，付款成功才算完成。" : "点「放行」并确认后立即生效，钱从储备中扣除。"
@@ -1762,7 +1776,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         primary={<>
           {bankRecovery && bankDetail && <Button variant="primary" disabled={!!submitting} disabledReason={detailBlockedReason(shown)} onClick={() => confirmBankRequery(shown, bankDetail)}>查询银行打款结果</Button>}
           {cregisRecovery && cregisDetail && <Button variant="primary" disabled={!!submitting} disabledReason={detailBlockedReason(shown)} onClick={() => confirmCregisRecovery(shown, cregisDetail)}>核对 Cregis 打款单</Button>}
-          {simulation && <Button variant="primary" disabled={!!submitting} disabledReason={detailBlockedReason(shown, "APPROVE")} onClick={() => confirmDevelopmentSimulation(shown)}>模拟冷却到期</Button>}
+          {simulation && <Button variant="primary" disabled={!!submitting} disabledReason={simulationBlockedReason(shown)} onClick={() => confirmDevelopmentSimulation(shown)}>模拟冷却到期</Button>}
           {(["UNFREEZE", "REFUND", "APPROVE"] as const).filter((action) => detailActions.includes(action)).map((action) => decisionButton(shown, action))}
         </>} />}>
       {shown && <>

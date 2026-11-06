@@ -2039,7 +2039,7 @@ export async function fetchD2CregisPayout(withdrawalNo: string): Promise<D2Cregi
 export async function recoverD2CregisPayout(withdrawalNo: string, providerCid: string, reason: string, idempotencyKey: string) {
   try {
     d2CregisCid(providerCid);
-    if (reason.trim().length < 10 || reason.trim().length > 300) d2Invalid("cregisRecoveryReason");
+    if (reason.trim().length < 10 || reason.trim().length > 200) d2Invalid("cregisRecoveryReason");
   } catch {
     throw new Error(formatAdminApiError("CREGIS_PAYOUT_RECOVERY_REQUEST_INVALID", "CREGIS_PAYOUT_RECOVERY_REQUEST_INVALID"));
   }
