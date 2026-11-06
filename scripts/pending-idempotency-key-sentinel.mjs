@@ -83,6 +83,7 @@ const MIGRATED = [
   "lib/admin/h9-client.ts",
   // J1/J2/J4 emergency writes retain their command key after an outcome-unknown refresh retry.
   "lib/admin/j-client.ts",
+  "app/components/domain-views/j-tabs/j1-killswitch.tsx",
   "app/components/domain-views/c-tabs/c3-adjust.tsx",
   // A3：参数写入在结果未知时必须保留同一幂等键，刷新后仍可安全重试。
   "app/components/domain-views/a-tabs/a3-config.tsx",

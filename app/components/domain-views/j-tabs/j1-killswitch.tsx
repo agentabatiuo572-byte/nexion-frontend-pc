@@ -14,8 +14,16 @@ import { createJEmergencyCommandKey } from "@/lib/admin/j-client";
 import type { AutoConfirmationRow, AutoRuleRow, EmergencySlaRow, JGate } from "@/lib/admin/j-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { A2OutcomeUncertainError, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 
 type Gate = JGate;
+type RestoreProposal = Parameters<typeof createA2OperationProposal>[0];
+const restoreAttempts = createPendingMutationStore<PendingMutationRecord & { input: RestoreProposal }>({
+  storageKey: "nexion-admin-j1-restore-proposals",
+  retainExpiredRecords: true,
+  isValidRecord: (record) => record.input?.command?.op === "j1_gate_resume" && typeof record.input.reason === "string",
+});
 const IMPACT_LABEL: Record<string, string> = { immediate: "即时资金流出", delayed: "未来负债增加", none: "不直接影响兑付" };
 const TRIGGER_BASES = ["", "监管点名", "挤兑风险", "安全事件", "其他"];
 const TRIGGER_LABELS = { "": "请选择触发依据" };
@@ -31,7 +39,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const session = useAdminAuth((state) => state.session);
   const authorities = new Set(session?.authorities ?? []);
   const canKill = authorities.has("emergency_j1_gate_kill");
-  const canResume = authorities.has("emergency_j1_gate_resume");
+  const canResume = authorities.has("emergency_j1_gate_resume")
+    && (authorities.has("platform_a2_proposal_create") || authorities.has("platform_a2_write"));
   const canBatchKill = authorities.has("emergency_j1_batch_kill");
   const canWrite = authorities.has("emergency_j1_write");
   const data = emergency.killSwitch;
@@ -57,6 +66,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     : "最新覆盖率暂不可用";
   // #28 批量关停选择集:运营勾选要熔断的闸(替代旧的固定「立即出钱」闸硬编码)。
   const [sel, setSel] = useState<Record<string, boolean>>({});
+  const [checkingRestore, setCheckingRestore] = useState<string | null>(null);
+  const pendingRestores = restoreAttempts.list();
   const toggleSel = (key: string) => setSel((s) => ({ ...s, [key]: !s[key] }));
 
   if (contentLoading && !data) {
@@ -123,22 +134,87 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     });
   };
 
+  const submitRestore = async (g: Gate, reason?: string) => {
+    if (!session || !canResume) throw new Error("当前账号没有发起恢复审批的权限。");
+    const slot = `${session.adminId}:${g.key}`;
+    const previous = restoreAttempts.list().find((record) => record.fingerprint === slot);
+    if (!previous && !reason) return;
+    const key = previous?.commandKey ?? createJEmergencyCommandKey();
+    const input: RestoreProposal = previous?.input ?? {
+      action: `恢复业务开关 · ${operatorCopyText(g.name)}`,
+      obj: g.key,
+      beforeValue: "已关停",
+      afterValue: "批准后恢复",
+      operator: session.operator ?? session.username,
+      operatorRole: session.role,
+      type: "sos",
+      amplifies: g.amplifies,
+      sos: true,
+      roleGate: "超管",
+      reason: reason!,
+      sourceDomain: "J1",
+      command: { domain: "J", op: "j1_gate_resume", params: { gateKey: g.key } },
+      target: { domain: "J", type: "kill_switch", id: g.key },
+    };
+    if (!previous) {
+      restoreAttempts.remember(slot, key, { input });
+      if (!restoreAttempts.isDurablyStored(slot, key)) {
+        restoreAttempts.forget(slot, key);
+        throw new Error("浏览器无法保存本次审批命令号，请允许会话存储后重试。");
+      }
+    }
+    setCheckingRestore(g.key);
+    try {
+      let ticket = null;
+      if (previous) {
+        try { ticket = await fetchA2ProposalByKey(key); }
+        catch { throw new A2OutcomeUncertainError("暂时无法核对原恢复申请，请稍后重试。", key); }
+        if (!ticket && previous.expiresAt <= Date.now()) {
+          throw new A2OutcomeUncertainError("原申请命令已过期，请到操作记录核对。", key);
+        }
+      }
+      if (!ticket) {
+        if (useAdminAuth.getState().session?.adminId !== session.adminId) {
+          throw new A2OutcomeUncertainError("会话已变更，请使用原账号核对恢复申请。", key);
+        }
+        ticket = await createA2OperationProposal(input, key, true);
+      }
+      if (ticket.operationCode !== "j1_gate_resume" || ticket.obj !== g.key) {
+        throw new A2OutcomeUncertainError("恢复申请回执不完整，请到操作记录核对。", key);
+      }
+      restoreAttempts.forget(slot, key);
+      toast(ticket.status === "pending"
+        ? `${operatorCopyText(g.name)}恢复申请 ${ticket.id} 待审批，批准后生效`
+        : `已核对原恢复申请 ${ticket.id}，请在 A2 查看结果`);
+      if (ticket.status !== "pending") {
+        void actions.reloadJEmergency().catch(() => toast(`已核对原恢复申请 ${ticket.id}，请刷新确认最新开关状态`));
+      }
+    } catch (error) {
+      if (error instanceof Error && "backendMessage" in error && ["IDEMPOTENCY_REQUEST_IN_PROGRESS",
+        "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(String(error.backendMessage))) {
+        throw new A2OutcomeUncertainError("原申请结果待核实，请稍后查询。", key);
+      }
+      if (!isA2OutcomeUncertainError(error)) restoreAttempts.forget(slot, key);
+      throw error;
+    } finally {
+      setCheckingRestore(null);
+    }
+  };
+
   const resumeGate = (g: Gate) => {
-    const commandKey = createJEmergencyCommandKey();
     openActionConfirm({ briefKind: "emergency",
-    action: `恢复业务开关 · ${operatorCopyText(g.name)}`,
+    action: `提交恢复申请 · ${operatorCopyText(g.name)}`,
+    completionCopy: "提交 A2 审批，批准后生效",
     amplifies: g.amplifies,
     coverage: g.coveragePrecheckRequired && coverageReady
       ? { coverageRatio: COV, redlinePct: RED, healthyPct: YELLOW }
       : undefined,
     detail: (
-      <><b>{operatorCopyText(g.name)}</b>将从已关停恢复为在线，重新开放{operatorCopyText(g.cap)}。{g.coveragePrecheckRequired
-        ? <><b>恢复前检查备付金</b>：当前覆盖率 <b>{coverageText(COV)}</b>，恢复红线 <b>{coverageText(RED)}</b>；{covPass ? <>检查通过，{coverageGapText}</> : <>检查不通过，暂不能恢复</>}。</>
-        : <>该业务不会直接增加资金流出，可在填写理由后立即恢复。</>}确认后马上生效，并记入操作记录。</>
+      <><b>{operatorCopyText(g.name)}</b>在另一位有权的超级管理员批准前保持关停。批准后重新开放{operatorCopyText(g.cap)}。{g.coveragePrecheckRequired
+        ? <><b>批准时重新检查备付金</b>。当前覆盖率 <b>{coverageText(COV)}</b>，恢复红线 <b>{coverageText(RED)}</b>。</>
+        : <>该业务不会直接增加资金流出。</>}</>
     ),
-    run: (reason) => {
-      return runBackend(actions.toggleJ1KillSwitch(g.key, true, reason, undefined, commandKey), `${operatorCopyText(g.name)}已立即恢复`);
-    },
+    run: (reason) => submitRestore(g, reason),
     });
   };
 
@@ -300,7 +376,10 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
             <div className="c"><AutoGloss>恢复需备付金</AutoGloss></div><div className="c">执行方式</div><div className="c">最近变更</div><div className="c">应急</div>
             <div className="c" style={{ justifyContent: "flex-end" }}>动作</div>
           </div>
-          {gates.map((g) => { const on = effOn(g); return (
+          {gates.map((g) => {
+            const on = effOn(g);
+            const hasUncertainRestore = pendingRestores.some((record) => record.fingerprint === `${session?.adminId}:${g.key}`);
+            return (
             <div className="rw" key={g.key}>
               <div className="c">
                 <div style={{ fontWeight: 600, color: "var(--ink)" }}>{operatorCopyText(g.name)}</div>
@@ -309,19 +388,24 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
               <div className="c">{on ? <span className="badge-st live">在线</span> : <span className="badge-st killed">已关停</span>}</div>
               <div className="c"><span className={"badge-impact " + g.coverageImpactCategory}>{IMPACT_LABEL[g.coverageImpactCategory]}</span></div>
               <div className="c">{g.coveragePrecheckRequired ? <span className="badge-impact immediate"><AutoGloss>需核备付金</AutoGloss></span> : <span className="badge-impact none">不需</span>}</div>
-              <div className="c"><span className="badge-proposal approved">确认后立即执行</span></div>
+              <div className="c"><span className="badge-proposal approved">{on ? "确认后立即执行" : "批准后生效"}</span></div>
               <div className="c mono ink" title={effChange(g)}>{effChange(g)}</div>
               <div className="c">{effEmer(g) ? <span className="badge-emergency">应急</span> : <span className="mono" style={{ color: "var(--ink-4)" }}>—</span>}</div>
               <div className="c acts">
+                {canResume && hasUncertainRestore && (
+                  <button className="resume" disabled={checkingRestore !== null} onClick={() => {
+                    void submitRestore(g).catch((error: Error) => toast(displayAdminError(error)));
+                  }}>核对原恢复申请</button>
+                )}
                 {on ? (
                   canKill ? <button className="kill" title="立即关停" onClick={() => killGate(g)}>关停</button> : null
                 ) : (
                   pendingAutoConfirmationKeys.has(g.key)
                     ? <span className="badge-emergency">待补录</span>
-                    : canResume
+                    : canResume && !hasUncertainRestore
                       ? g.coveragePrecheckRequired && !covPass
                         ? <button className="resume" disabled title="当前备付金覆盖率低于红线或缺少数据，暂不能恢复">恢复受阻</button>
-                        : <button className="resume" title="立即恢复" onClick={() => resumeGate(g)}>恢复</button>
+                        : <button className="resume" title="提交 A2 审批，批准后生效" onClick={() => resumeGate(g)}>恢复</button>
                       : null
                 )}
               </div>

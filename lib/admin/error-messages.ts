@@ -289,6 +289,8 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   DIRECT_REFERRAL_L1_NEX_READONLY: "好友购买奖励拆分生效期间，旧的 L1 额外 UVT 系数只能查看，不能调整。",
   DIRECT_REFERRAL_REISSUE_REQUIRES_SOURCE_RECONCILIATION: "好友奖励需按原来源核对，不能重复补发。",
   A2_CONFIRMATION_REQUIRED: "此项配置须先提交审批，批准后才会生效。",
+  J1_RESTORE_CHECKER_FORBIDDEN: "需要另一位有恢复权限的超级管理员处理该申请。",
+  J1_RESTORE_STALE: "开关状态已发生变化。请核对当前状态，再处理原申请。",
   VRANK_POLICY_REVISION_REQUIRED: "当前等级版本不可用，请关闭弹窗并重新加载后再提交。",
   VRANK_POLICY_VERSION_CONFLICT: "该等级的条件或奖励已被修改，请重新加载并核对后再操作。",
   VRANK_POLICY_APPROVAL_NOT_REQUIRED: "按当前条件和 UVT 价格，本次无需审批。请关闭弹窗并重新加载后核对保存。",

@@ -10,6 +10,7 @@ export type ActionConfirmReq = {
   briefKind: OperatorBriefKind;
   action: ReactNode;
   detail: ReactNode;
+  completionCopy?: string;
   amplifies?: boolean;
   coverage?: CoverageSnapshot;
   edit?: EditSpec;
