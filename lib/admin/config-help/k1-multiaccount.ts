@@ -20,8 +20,8 @@ export interface K1ParamHelp {
 const NEXT_CHECK = "保存后立即生效，系统约每分钟检查一次，下次检查按新值算";
 const LATER_EARNINGS = "保存后立即生效，之后的新增收益按新值处理，历史记录不改";
 const WITHDRAW_NOW = "保存后立即生效：之后的新增收益，和这组账户现在能不能提现，都按新值判断。已入账的记录不改";
-/** 上限决定谁成组。成组后全组不能提现，组消失限制就解除，不止是分组（MultiAccountClusterBatchService）。 */
-const GROUP_EFFECT = "下次检查起，新成组的账户不能提现、新增收益锁定；不再够条件的待判定组会消失，限制解除。不会自动冻结账户。";
+/** 上限只影响后续检测；既有组及成员限制由人工处置（MultiAccountClusterBatchService）。 */
+const GROUP_EFFECT = "下次检查起，新成组的账户不能提现、新增收益锁定；既有组和成员限制保留，须在「账户组排查」人工判定或解除。不会自动冻结账户。";
 const NOT_IN_USE = "保存后立即生效";
 const NO_EARNING_EFFECT = "现在不影响收益。";
 
@@ -30,21 +30,21 @@ export const K1_PARAM_HELP: Record<string, K1ParamHelp> = {
     what: "同一 IP 24 小时内最多注册几个账号",
     when: "保存后立即生效，下一次用户注册就按新值算",
     how: "1–10 的整数。",
-    direction: "改大算放宽，改小算收紧",
+    direction: "改大算放宽，保存时检查覆盖率，低于红线或无法读取时不能保存；改小收紧不受这项门槛阻断",
     whatIf: (value) => `改成 ${value}：同一 IP 24 小时内注册到 ${value} 个后，新用户注册被拒绝；超过 ${value} 个的账户归成一组。${GROUP_EFFECT}`,
   },
   maxAccountsPerDevice: {
     what: "同一设备超过这个数就归成一组",
     when: NEXT_CHECK,
     how: "1–5 的整数。",
-    direction: "改大算放宽，改小算收紧",
+    direction: "改大算放宽，保存时检查覆盖率，低于红线或无法读取时不能保存；改小收紧不受这项门槛阻断",
     whatIf: (value) => `改成 ${value}：同一设备超过 ${value} 个账户时，这些账户归成一组。${GROUP_EFFECT}`,
   },
   maxAccountsPerPaymentInstrument: {
     what: "同一支付工具超过这个数就归成一组",
     when: NEXT_CHECK,
     how: "1–5 的整数。",
-    direction: "改大算放宽，改小算收紧",
+    direction: "改大算放宽，保存时检查覆盖率，低于红线或无法读取时不能保存；改小收紧不受这项门槛阻断",
     whatIf: (value) => `改成 ${value}：同一支付工具超过 ${value} 个账户时，这些账户归成一组。${GROUP_EFFECT}`,
   },
   linkWeight: {
