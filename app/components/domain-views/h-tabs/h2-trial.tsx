@@ -12,7 +12,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Bell, BellOff, Ban, Coins, History, Lock, RefreshCw, Settings2, SlidersHorizontal, Ticket, TrendingUp, Users } from "lucide-react";
-import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, JudgmentPoints, Notice, PageHeader, Pager, Panel, ReleaseModal, SectionNav, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useSectionNav, type SectionNavItem, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, JudgmentPoints, Notice, PageHeader, Pager, Panel, RecordList, ReleaseModal, SectionNav, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useSectionNav, type SectionNavItem, type StateTone } from "@/app/components/rd";
 import {
   createH2CommandKey,
   fetchH2Trials,
@@ -274,7 +274,7 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, killed }: {
       disabledOptions: trialProducts.filter((product) => !product.selectable || product.productNo === current).map((product) => product.productNo),
       hint: <Explain label="可选条件和商品编号" content={<>
         <p>{help?.howMore}</p>
-        <p>{trialProducts.map((product) => `${product.name}：${product.productNo}`).join("；")}</p>
+        <RecordList label="可选商品编号" records={trialProducts.map((product) => ({ id: product.productNo, value: product.name, reference: product.productNo }))} />
       </>}>可选条件和商品编号</Explain>,
     } : isPushSwitch ? undefined : {
       kind: help?.input ? "number" : "text",

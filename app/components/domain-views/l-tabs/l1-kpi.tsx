@@ -342,13 +342,12 @@ function OffsetModal({ current, onApply, onClose }: { current: number; onApply: 
           {(control) => <NumberInput {...control} unit="%" min={5} max={20} step={1} value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={() => setLeft(true)} />}
         </DiffField>
         <Fold inset title="查看业务规则详情" summary="状态怎么判定">
-          <Facts>
-            <Fact k="单侧目标">严格高于或低于目标值才达标；等于目标时算接近目标。</Fact>
-            <Fact k="接近线">越高越好的指标：目标值 × (1 − N%)；越低越好的指标：目标值 × (1 + N%)。</Fact>
-            <Fact k="接近目标">没达标但在接近线以内（含接近线），超出算未达标。</Fact>
-            <Fact k="购买转化">健康带包含两端，带外归接近目标。</Fact>
-          </Facts>
-          <p className="rd-note">只影响显示，不改指标值。</p>
+          <div className="rd-stack">
+            <p className="rd-note">单侧目标：严格高于或低于目标值才达标；等于目标时算接近目标。</p>
+            <p className="rd-note">接近线：越高越好的指标：目标值 × (1 − N%)；越低越好的指标：目标值 × (1 + N%)。</p>
+            <p className="rd-note">接近目标：没达标但在接近线以内（含接近线），超出算未达标。</p>
+            <p className="rd-note">购买转化：健康带包含两端，带外归接近目标。</p>
+          </div>
         </Fold>
       </div>
     </Modal>
@@ -796,13 +795,12 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
               <Facts>
                 {(kState === "na" || kState === "small") && <Fact k="当前值">{stateText(kState, k)}</Fact>}
                 {(kState === "na" || kState === "small") && <Fact k="目标值">{tgtShort(k)}</Fact>}
-                <Fact k="怎么算"><AutoGloss>{operatorCopyText(KPI_PLAIN[k.n] ?? "")}</AutoGloss></Fact>
                 {kState !== "small" && <Fact k="分子">{ext.num}</Fact>}
                 {kState !== "small" && <Fact k="分母">{ext.den}</Fact>}
                 {kState !== "small" && <Fact k="较上期">{deltaText(k).replace(/^较上期 ?/, "")}</Fact>}
                 <Fact k="统计范围">{queryScope(applied)}</Fact>
-                <Fact k="解读">{kState === "small" ? <>样本过小，不下结论<Explain label="样本过小的说明" content={SMALL_SAMPLE_NOTE} /></> : <AutoGloss>{operatorCopyText(ext.note)}</AutoGloss>}</Fact>
               </Facts>
+              <p className="rd-note">解读：{kState === "small" ? <>样本过小，不下结论<Explain label="样本过小的说明" content={SMALL_SAMPLE_NOTE} /></> : <AutoGloss>{operatorCopyText(ext.note)}</AutoGloss>}</p>
               {drillError
                 ? <BlockState state="error" title="明细和趋势暂时加载不出来" detail={`其他内容不受影响。${drillError}`} onRetry={() => void selectKpi(safeSelKpi)} />
                 : kState === "small"
@@ -822,6 +820,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
               {kState !== "small" && hasTrend(k.spark) && k.sparkSuppressed?.includes(true) && <p className="rd-note">部分时段样本过小，曲线在这些时段留空。</p>}
               <Fold inset title="这项指标怎么算" summary={`统计规则编号 #${k.n}`} explain={<AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss>}>
                 <div className="rd-stack">
+                  <p className="rd-note"><AutoGloss>{operatorCopyText(KPI_PLAIN[k.n] ?? "")}</AutoGloss></p>
                   <div>{renderFx(ext.fx, ext.fxBold)}</div>
                   <p className="rd-note">统计规则编号 #{k.n} · 上线批次：{batchText(k.vis)}</p>
                 </div>
