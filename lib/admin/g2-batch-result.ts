@@ -1,5 +1,12 @@
 export type G2BatchOutcome = "COMPLETED" | "PARTIAL" | "SKIPPED" | "FAILED" | "EMPTY" | "BUSY";
-export type G2BatchOrderStatus = "COMPLETED" | "CANCELLED" | "QUEUED";
+export type G2BatchOrderStatus = "COMPLETED" | "CANCELLED" | "QUEUED" | "FAILED";
+
+type BatchItemKind = "completed" | "skipped" | "failed";
+const orderStatuses: Record<BatchItemKind, G2BatchOrderStatus[]> = {
+  completed: ["COMPLETED"],
+  skipped: ["CANCELLED", "QUEUED"],
+  failed: ["FAILED", "CANCELLED", "QUEUED"],
+};
 
 export interface G2BatchItemResult {
   exchangeNo: string;
@@ -35,15 +42,13 @@ function text(value: unknown, required = true) {
   return required ? invalid() : "";
 }
 
-function item(value: unknown, kind: "completed" | "skipped" | "failed"): G2BatchItemResult {
+function item(value: unknown, kind: BatchItemKind): G2BatchItemResult {
   if (!value || typeof value !== "object" || Array.isArray(value)) invalid();
   const row = value as Record<string, unknown>;
   const expectedStatus = kind.toUpperCase();
   const status = text(row.status);
   const orderStatus = text(row.orderStatus) as G2BatchOrderStatus;
-  if (status !== expectedStatus || !["COMPLETED", "CANCELLED", "QUEUED"].includes(orderStatus)) invalid();
-  if (kind === "completed" && orderStatus !== "COMPLETED") invalid();
-  if (kind !== "completed" && orderStatus === "COMPLETED") invalid();
+  if (status !== expectedStatus || !orderStatuses[kind].includes(orderStatus)) invalid();
   return {
     exchangeNo: text(row.exchangeNo),
     status,
@@ -53,7 +58,7 @@ function item(value: unknown, kind: "completed" | "skipped" | "failed"): G2Batch
   };
 }
 
-function list(value: unknown, kind: "completed" | "skipped" | "failed") {
+function list(value: unknown, kind: BatchItemKind) {
   if (!Array.isArray(value)) invalid();
   return value.map((row) => item(row, kind));
 }

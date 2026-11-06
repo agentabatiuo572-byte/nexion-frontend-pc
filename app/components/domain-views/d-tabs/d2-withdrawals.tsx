@@ -73,7 +73,8 @@ function timeText(value?: string) {
 }
 
 function reviewAtAfter(days: number) {
-  return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 16);
+  const shanghaiOffsetMs = 8 * 3_600_000;
+  return new Date(Date.now() + days * 86_400_000 + shanghaiOffsetMs).toISOString().slice(0, 16);
 }
 
 function statusLabel(status: string) {
@@ -411,7 +412,7 @@ function actionBusinessForm(action: D2ReviewAction, addressVerificationRequired 
           ? [{ key: "holdDays", label: "等待天数", inputKind: "number" as const, required: true, min: 1, max: 45, current: "7" }]
           : [{ key: "period", label: "冻结期限", inputKind: "select" as const, required: true, options: ["7d", "14d", "30d", "45d", "LONG_TERM"], optionLabels: { "7d": "7 天", "14d": "14 天", "30d": "30 天", "45d": "45 天", LONG_TERM: "长期，需复查" } }]),
         { key: "owner", label: "责任人", required: true, current: OPERATOR() },
-        { key: "reviewAt", label: "复查时间", inputKind: "datetime-local", required: true, current: reviewAtAfter(7),
+        { key: "reviewAt", label: "复查时间（北京时间 UTC+8）", inputKind: "datetime-local", required: true, current: reviewAtAfter(7),
           help: "随期限自动更新；手动修改后保留。固定期限允许相差一天；长期冻结须在未来 1–365 天内复查，默认 7 天后。",
           warning: (value) => {
             if (!value.reviewAt) return;

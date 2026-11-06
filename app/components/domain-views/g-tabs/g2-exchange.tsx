@@ -27,6 +27,12 @@ import { classifyStableMutationFailure } from "@/lib/admin/stable-mutation";
 import { summarizeG2BatchResult, type G2BatchResult } from "@/lib/admin/g2-batch-result";
 
 const OPERATOR = currentAdminOperator;
+const batchOrderStatusLabel = {
+  COMPLETED: "已成交",
+  CANCELLED: "订单已取消",
+  QUEUED: "订单仍在队列",
+  FAILED: "订单已失败",
+};
 type GateKey = "user" | "platform" | "geo";
 
 function messageOf(error: unknown) {
@@ -315,8 +321,8 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
               <div className="gtint" data-proof="g2-batch-result" style={{ marginBottom: 12 }}>
                 <div><b>处理结果 · {summarizeG2BatchResult(batchResult)}</b></div>
                 {batchResult.completed.length > 0 && <div>已成交：{batchResult.completed.map((row) => `${row.exchangeNo} · 已成交`).join(" / ")}</div>}
-                {batchResult.skipped.length > 0 && <div><b>跳过</b>：{batchResult.skipped.map((row) => `${row.exchangeNo} · ${row.reason} · 订单${row.orderStatus === "CANCELLED" ? "已取消" : "仍在队列"}`).join("; ")}</div>}
-                {batchResult.failed.length > 0 && <div><b>失败</b>：{batchResult.failed.map((row) => `${row.exchangeNo} · ${row.reason} · 订单仍在队列`).join("; ")}</div>}
+                {batchResult.skipped.length > 0 && <div><b>跳过</b>：{batchResult.skipped.map((row) => `${row.exchangeNo} · ${row.reason} · ${batchOrderStatusLabel[row.orderStatus]}`).join("; ")}</div>}
+                {batchResult.failed.length > 0 && <div><b>失败</b>：{batchResult.failed.map((row) => `${row.exchangeNo} · ${row.reason} · ${batchOrderStatusLabel[row.orderStatus]}`).join("; ")}</div>}
                 <div>还在排队：{batchResult.remainingQueuedCount} 单。</div>
                 <div>列表已刷新。</div>
               </div>
