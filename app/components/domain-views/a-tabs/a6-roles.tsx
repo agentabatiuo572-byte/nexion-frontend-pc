@@ -364,13 +364,13 @@ const PERM_TONE: Record<string, string> = { HIGH: "danger", WRITE: "warn", READ:
 /** 8 内置角色中文职责说明(角色定义,从 A1 挪来)。自定义角色用 remark 兜底。 */
 const ROLE_DESC: Record<string, { desc: string; scope: string }> = {
   SUPER_ADMIN: { desc: "平台负责人，拥有全部权限", scope: "全部模块" },
-  CONFIG_ADMIN: { desc: "管理平台配置、菜单、角色和权限", scope: "平台基础" },
+  CONFIG_ADMIN: { desc: "查看运营总览的部分页面", scope: "运营总览（部分）" },
   FINANCE: { desc: "负责资金对账、提现、账单和资金储备", scope: "运营总览、资金与财务" },
   RISK: { desc: "负责风控规则、风险评分和反作弊", scope: "用户与账户、风控，以及部分其他模块" },
   CONTENT: { desc: "负责文案、通知、信任中心和风险披露", scope: "内容与合规" },
   GROWTH: { desc: "负责活动、任务、代金券和运营节奏", scope: "增长与活动" },
   SUPPORT: { desc: "负责工单、会话、知识库和话术", scope: "客服中心" },
-  AUDITOR: { desc: "查看全部操作记录，不能修改", scope: "全部模块（只读）" },
+  AUDITOR: { desc: "全域只读，可导出脱敏文件", scope: "全部模块（只读）" },
 };
 
 /** 权限授权编辑 Drawer:按业务域 A-M(中文+域色) → 域内页面(L2) → 权限 三级分组 + 搜索定位。 */
