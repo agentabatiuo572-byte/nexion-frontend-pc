@@ -137,7 +137,7 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: 
             <tbody>{contentOf(doc, viewing).sections.map((section) => <Tr key={section.id}><Td><Cell mono main={section.id} /></Td><Td align="right"><Cell num main={section.order} /></Td><Td><Cell main={section.title} /></Td></Tr>)}</tbody>
           </Table>
         </Fold>}
-        {viewing && <Fold inset title="技术信息" summary={`${localeName(viewing)}的结构化内容`}><pre className="rd-json">{JSON.stringify(doc.locales[viewing], null, 2)}</pre></Fold>}
+        {viewing && <Fold inset title="技术信息" summary={`${localeName(viewing)}的结构化内容`}><Field label="原始内容（JSON，只读）">{(control) => <Textarea {...control} readOnly rows={12} value={JSON.stringify(doc.locales[viewing], null, 2)} />}</Field></Fold>}
       </Drawer>
     </>}
 

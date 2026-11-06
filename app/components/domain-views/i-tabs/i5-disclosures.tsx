@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import { Ban, Check as CheckIcon, CheckCircle2, FilePen, FileText, Globe2, History, ListChecks, MapPinned, Plus, RefreshCw, ShieldAlert, ShieldCheck, Users } from "lucide-react";
-import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, Fold, Input, InlineMeter, InlineRetry, IrreversibleTag, JudgmentPoints, LocaleTabs, Modal, MoreMenu, Notice, PageHeader, PageTabs, Panel, Select, Stat, StatBand, StatusTag, Steps, Table, TableMessage, Td, Textarea, Th, Tr, type JudgmentRow, useTabIds } from "@/app/components/rd";
+import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, Fold, Input, InlineMeter, InlineRetry, IrreversibleTag, JudgmentPoints, LocaleTabs, Modal, MoreMenu, Notice, PageHeader, PageTabs, Panel, RecordList, Select, Stat, StatBand, StatusTag, Steps, Table, TableMessage, Td, Textarea, Th, Tr, type JudgmentRow, useTabIds } from "@/app/components/rd";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { businessClock, businessDay, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { disclosurePublicationIssue } from "@/lib/admin/disclosure-publication-diagnostic";
@@ -396,7 +396,13 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
       title: `${current ? "调整" : "新增"}版本映射`,
       detail: <>这里仅维护启用适用地区的适用国家/地区与已发布版本映射。映射批准后生效；版本或适用国家变化时，新旧国家的用户须重新确认。</>,
       statedBrief: { impact: `批准后这个地区按这里的版本和国家生效；版本或适用国家变了，新旧国家的用户都要重新确认，并收到通知。${gateEffect}由${APPROVER}，批准前当前生效版本不变。`, check: "核对地区、版本和适用国家，理由写清版本依据。" },
-      facts: <Facts>{current && <><Fact k="地区">{current.code} · {nameOf(current.code, current.name)}</Fact><Fact k="当前">{current.version} · {current.countryCodes.join("、") || "未配置国家"}</Fact></>}{versions.filter((row) => (current ? row.jurisdiction === current.code : mappableOptions.some((item) => item.value === row.jurisdiction)) && ["published", "superseded"].includes(row.status.toLowerCase())).map((row) => <Fact key={versionKey(row)} k={`${row.jurisdiction} ${row.version}`}>{row.effectiveDate || "日期未提供"}{current && compareVersionsDesc(row.version, current.version) > 0 ? " · 旧版本，选用将退回历史内容" : ""}</Fact>)}</Facts>,
+      facts: <div className="rd-stack">{current && <Facts><Fact k="地区">{current.code} · {nameOf(current.code, current.name)}</Fact><Fact k="当前">{current.version} · {current.countryCodes.join("、") || "未配置国家"}</Fact></Facts>}
+        <Fold inset title="可选版本" summary="已发布和历史版本">
+          <RecordList label="可映射的披露版本" records={versions.filter((row) => (current ? row.jurisdiction === current.code : mappableOptions.some((item) => item.value === row.jurisdiction)) && ["published", "superseded"].includes(row.status.toLowerCase())).map((row) => ({
+            id: versionKey(row), value: row.version, object: `${row.jurisdiction} · 生效日期 ${row.effectiveDate || "日期未提供"}`,
+            status: current && compareVersionsDesc(row.version, current.version) > 0 ? <StatusTag tone="warn">旧版本，选用将退回历史内容</StatusTag> : undefined,
+          }))} />
+        </Fold></div>,
       businessForm: spec,
       run: async (reason, _value, form) => {
         const jurisdictionCode = form?.jurisdictionCode?.trim().toUpperCase() || "";
