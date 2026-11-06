@@ -181,7 +181,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   const history = (() => { try { return (JSON.parse(ctx.pget("I.session.convos") ?? "[]") as SessionConvo[]).filter(c => c.customerId === customerId).sort((a,b)=>b.lastTs-a.lastTs); } catch { return []; } })();
   const tickets = (() => { try { return (JSON.parse(ctx.pget("I.support.tickets") ?? "[]") as SupportTicket[]).filter(t => String(t.userId) === customerId); } catch { return []; } })();
   const financeLabels: Record<string,string> = { netContributionTotal: "累计净贡献", creditedDepositTotal: "累计成功充值实际入账", successfulWithdrawalPrincipalTotal: "累计成功提现金额", successfulWithdrawalFeeTotal: "累计提现手续费", successfulWithdrawalNetTotal: "累计提现实际到账", processingWithdrawalPrincipalTotal: "处理中提现金额", balance: "余额", availableBalance: "可用余额" };
-  const pager = (page: number, total: unknown, set: (n:number)=>void, pageSize = 10) => <div className="m-admin-toolbar"><Button size="sm" disabled={page<=1} onClick={()=>set(page-1)}>上一页</Button><span>第 {page} 页 · {compactSupportBoardValue(total,"count") === "-" ? "-" : show(total)} 条</span><Button size="sm" disabled={typeof total !== "number" || page*pageSize>=total} onClick={()=>set(page+1)}>下一页</Button></div>;
+  const pager = (page: number, total: unknown, set: (n:number)=>void, pageSize = 10, showTotal = true) => <div className="m-admin-toolbar"><Button size="sm" disabled={page<=1} onClick={()=>set(page-1)}>上一页</Button><span>第 {page} 页{showTotal && <> · {compactSupportBoardValue(total,"count") === "-" ? "-" : show(total)} 条</>}</span><Button size="sm" disabled={typeof total !== "number" || page*pageSize>=total} onClick={()=>set(page+1)}>下一页</Button></div>;
   const summaryFinance = currencies.find(row => row.currency === summaryCurrency) ?? currencies[0];
   const summaryStatuses = summaryFinance?.fieldStatuses as Record<string, SupportFinanceFieldStatus> | undefined;
   const summaryMoney = (key: string) => profile?.finance.status === "READY" && ["READY", "PARTIAL"].includes(summaryStatuses?.[key] ?? "") ? compactSupportBoardValue(summaryFinance?.[key]) : "-";
@@ -266,7 +266,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
           ...maintenance.cycles.map(r => ({ id: `cycle:${r.id}`, action: "维护周期开启", actor: "系统", at: r.occurredAt,
             detail: r.state === "SUCCEEDED" ? "成功周期" : r.state === "OPEN" ? "等待新的有效活动" : r.state === "STOPPED" ? "已停止" : r.state === "TRANSFERRED" ? "已正式转绑" : "未知", tone: r.state === "OPEN" ? "warn" as const : undefined })),
         ]} />
-        {pager(maintenancePage,Math.max(maintenance.totalCycles,maintenance.totalExecutions),setMaintenancePage)}
+        {pager(maintenancePage,Math.max(maintenance.totalCycles,maintenance.totalExecutions),setMaintenancePage,10,false)}
       </>}
     </Fold>
     <Fold inset title="历史会话" explain="只显示你有权查看的。总数按这位客户的全部会话算。" {...recordFold("历史会话")} summary={typeof service?.conversationCount === "number" && service.conversationCount !== history.length ? `可看 ${history.length} / 共 ${service.conversationCount}` : `${history.length} 段`}>
