@@ -34,6 +34,9 @@ import { FunnelBars } from "@/app/components/dashboard/funnel-bars";
 import { KpiWall, type DashboardKpi } from "@/app/components/dashboard/kpi-wall";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { B_DASHBOARD_READ_AUTHORITIES, L_BI_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
+import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
+import { downloadB0Snapshot, pendingB0Export } from "@/lib/admin/b0-export-client";
+import { toast } from "@/lib/store/ui";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -212,7 +215,9 @@ export default function CommandCenter() {
   const [lBiData, setLBiData] = useState<LBiData | null>(null);
   const [lBiError, setLBiError] = useState<string | null>(null);
   const [lBiLoading, setLBiLoading] = useState(false);
+  const [exportConfirm, setExportConfirm] = useState<{ adminId: number; snapshotJson: string } | null>(null);
   const authorities = session?.authorities ?? [];
+  const canExport = session?.role === "superadmin" && authorities.includes("overview_b0_export");
   const canReadA2 = authorities.includes("platform_a2_read");
   const canReadBDomain = B_DASHBOARD_READ_AUTHORITIES.every((authority) => authorities.includes(authority));
   const canReadLBi = L_BI_READ_AUTHORITIES.every((authority) => authorities.includes(authority));
@@ -406,8 +411,10 @@ export default function CommandCenter() {
     return flagship ? `${flagship.name} 等 ${domain?.l2.length ?? 0} 个页面` : "";
   }
 
-  // 对账导出 — 客户端导出当前账本快照(真实功能,无需后端)
+  // 先登记导出理由，再下载本次点击时的原账本 JSON；未知结果恢复同一次快照。
   function exportSnapshot() {
+    if (!canExport || !session) return;
+    const pending = pendingB0Export(session.adminId);
     const snap = {
       generatedAt: new Date().toISOString(),
       coverageRatio: round2(LEDGER.coverageRatio),
@@ -418,15 +425,7 @@ export default function CommandCenter() {
       netExposureUsd: LEDGER.reserveUsd - LEDGER.liabilitiesUsd,
       accounts: LEDGER.accounts.map((a) => ({ key: a.key, label: a.label, amount: a.amount })),
     };
-    const blob = new Blob([JSON.stringify(snap, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `uvel-reconciliation-${snap.generatedAt.slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    setExportConfirm({ adminId: session.adminId, snapshotJson: pending?.snapshotJson ?? JSON.stringify(snap, null, 2) });
   }
 
   return (
@@ -442,7 +441,7 @@ export default function CommandCenter() {
             欢迎，{operator || "运营同学"}<AutoGloss> · 资金安全和用户转化，一屏看全。</AutoGloss>
           </p>
         </div>
-        <div className="flex items-center gap-2.5">
+        {canExport && <div className="flex items-center gap-2.5">
           <button
             type="button"
             onClick={exportSnapshot}
@@ -451,7 +450,7 @@ export default function CommandCenter() {
           >
             <Download size={15} aria-hidden /> <AutoGloss>导出资金数据</AutoGloss>
           </button>
-        </div>
+        </div>}
       </header>
       <BDomainWarnings warnings={bDomain.warnings} />
 
@@ -537,6 +536,22 @@ export default function CommandCenter() {
           ))}
         </div>
       </div>
+      {canExport && exportConfirm && exportConfirm.adminId === session?.adminId && (
+        <OperationConfirmModal
+          briefKind="export"
+          action="导出资金数据"
+          detail="下载本次点击时的资金账本 JSON 快照，包含覆盖率、红线、健康线、储备金、负债、净敞口及账户金额。"
+          completionCopy="服务端登记导出理由成功后，浏览器下载本次原始快照，文件名使用服务端回执；结果未知时保留原快照和理由，重试原操作。"
+          reasonMax={200}
+          getPendingReason={() => pendingB0Export(exportConfirm.adminId)?.reason}
+          onClose={() => setExportConfirm(null)}
+          onConfirm={async (reason) => {
+            const receipt = await downloadB0Snapshot(exportConfirm.adminId, exportConfirm.snapshotJson, reason);
+            toast.success("资金数据已导出", `导出号：${receipt.exportNo}`);
+            setExportConfirm(null);
+          }}
+        />
+      )}
     </div>
   );
 }
