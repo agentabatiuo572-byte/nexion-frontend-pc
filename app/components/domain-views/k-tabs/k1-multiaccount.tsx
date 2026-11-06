@@ -8,7 +8,7 @@ import { TabGroup } from "@/app/components/kit/tab-group";
 import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1_RELEASE_PARAM_LIMITS, newK1CommandKey, updateK1RegistrationParam } from "@/lib/admin/k-client";
 import type { A3PlatformParam } from "@/lib/admin/a3-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { A2OutcomeUncertainError, fetchA2ProposalByKey } from "@/lib/admin/a2-client";
 import type { AdminPage, ClusterStatus, K1Cluster, K1ClusterLayer, K1ClusterSort, K1ClusterStatusFilter, K1ProtectedEntry, K1WhitelistRow, KRiskParam } from "@/lib/admin/k-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
@@ -31,12 +31,26 @@ const releaseAttempts = createSlotAttemptStore({
 const CLUSTER_PAGE_SIZE_OPTIONS = [5, 10, 20];
 const WHITELIST_PAGE_SIZE_OPTIONS = [5, 10, 20];
 const MAX_FOCUS_RELOCATIONS = 3;
+const CLUSTER_PROPOSAL_CODES = {
+  flag: "k1_cluster_flag", freeze: "k1_cluster_freeze",
+  release: "k1_cluster_release", clear: "k1_cluster_cleared",
+} as const;
 const EMPTY_CLUSTER_PAGE: AdminPage<K1Cluster> = { total: 0, pageNum: 1, pageSize: 5, records: [] };
 const EMPTY_WHITELIST_PAGE: AdminPage<K1WhitelistRow> = { total: 0, pageNum: 1, pageSize: 5, records: [] };
 // if (ctx.contentError) the K1 component returns a dedicated retry state before rendering any stale business controls.
 type WeightDraft = { param: KRiskParam; device: string; payment: string; ip: string; reason: string; commandKey: string };
 type ParamDraft = { param: KRiskParam; value: string; reason: string; commandKey: string };
 type RegistrationDraft = { param: A3PlatformParam; value: string; reason: string };
+function PendingClusterApproval({ approval }: { approval: NonNullable<K1Cluster["pendingApproval"]> }) {
+  return <div>
+    <span className="bdg warn">待审批</span>
+    {approval.action && <div className="tiny">
+      {approval.action} · {approval.submittedBy} · {approval.submittedAt && (
+        <time dateTime={`${approval.submittedAt}Z`}>{approval.submittedAt.replace("T", " ")} UTC</time>
+      )}
+    </div>}
+  </div>;
+}
 type WhitelistDraft = { cidr: string; note: string; expireText: string; reason: string; commandKey: string };
 const PARAM_LIMITS: Record<string, { min: number; max: number; step: number; integer: boolean }> = {
   maxSignupPerIp24h: { min: 1, max: 10, step: 1, integer: true },
@@ -455,10 +469,35 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     try {
       const result = await propose(ctx.toast, { ...spec, commandKey });
       commandAttempt.forget(scope);
+      await ctx.reloadKRisk({ multiAccount: pageQuery }).catch(() => {
+        ctx.toast("工单已提交，页面刷新失败。请点「重新加载」核对待审批状态。");
+      });
       return result;
     } catch (error) {
       if (!(error instanceof A2OutcomeUncertainError)) commandAttempt.forget(scope);
       throw error;
+    }
+  };
+
+  const recoverableProposal = cur?.pendingApproval ? Object.entries(CLUSTER_PROPOSAL_CODES).map(([action, code]) => {
+    const scope = `cluster-${action}:${cur.id}:${cur.version}`;
+    return { scope, code, key: commandAttempt.get(scope) };
+  }).find(attempt => attempt.key) : undefined;
+
+  const recoverClusterProposal = async () => {
+    if (!cur || !recoverableProposal?.key) return;
+    const { key, scope, code } = recoverableProposal;
+    try {
+      const receipt = await fetchA2ProposalByKey(key);
+      if (!receipt?.mine || receipt.obj !== cur.id || receipt.operationCode !== code) {
+        ctx.toast("暂未找到本次提交的工单，请稍后按原提交号查询。");
+        return;
+      }
+      commandAttempt.forget(scope, key);
+      ctx.toast(`已找回工单 ${receipt.id}`);
+      await ctx.reloadKRisk({ multiAccount: pageQuery });
+    } catch (error) {
+      ctx.toast(confirmedK1FailureText(error));
     }
   };
 
@@ -984,12 +1023,14 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                       {hot && <span className="bdg bad" style={{ marginLeft: 9, verticalAlign: "middle" }}>建议冻结</span>}
                     </td>
                     <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{c.span}</td>
-                    <td><span className={`bdg ${stTone}`}>{stLb}</span></td>
+                    <td><span className={`bdg ${stTone}`}>{stLb}</span>
+                      {c.pendingApproval && <PendingClusterApproval approval={c.pendingApproval} />}
+                    </td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       <span style={{ display: "inline-flex", gap: 6 }} onClick={(e) => e.stopPropagation()}>
-                        {!focusBlocksSelection && c.status === "detected" && <>{canFlag && <button className="l-btn sm" onClick={() => flagCluster(c)}>标记为可疑</button>}{canClear && <button className="l-btn sm mc" onClick={() => clearCluster(c)}>判定为正常</button>}</>}
-                        {!focusBlocksSelection && c.status === "flagged" && canFreeze && <button className="l-btn sm mc" onClick={() => freezeCluster(c)}>批量冻结</button>}
-                        {!focusBlocksSelection && (c.status === "frozen" || c.status === "flagged") && canRelease && <button className="l-btn sm mc" onClick={() => releaseCluster(c)}>解除误判</button>}
+                        {!focusBlocksSelection && c.status === "detected" && <>{canFlag && <button className="l-btn sm" disabled={Boolean(c.pendingApproval)} onClick={() => flagCluster(c)}>标记为可疑</button>}{canClear && <button className="l-btn sm mc" disabled={Boolean(c.pendingApproval)} onClick={() => clearCluster(c)}>判定为正常</button>}</>}
+                        {!focusBlocksSelection && c.status === "flagged" && canFreeze && <button className="l-btn sm mc" disabled={Boolean(c.pendingApproval)} onClick={() => freezeCluster(c)}>批量冻结</button>}
+                        {!focusBlocksSelection && (c.status === "frozen" || c.status === "flagged") && canRelease && <button className="l-btn sm mc" disabled={Boolean(c.pendingApproval)} onClick={() => releaseCluster(c)}>解除误判</button>}
                       </span>
                     </td>
                   </tr>
@@ -1018,11 +1059,13 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           <div className="l-h">
             <span className="ttl">关联账户组详情 · {cur.id}</span>
             <span className="sub">· 连线表示账户之间共有的设备、支付工具或 IP</span>
+            {cur.pendingApproval && <PendingClusterApproval approval={cur.pendingApproval} />}
             <div className="r">
-              {canWrite && <button className="l-btn" onClick={() => reviewNote(cur)}>人工复审备注</button>}
-              {cur.status === "detected" && canFlag && <button className="l-btn" onClick={() => flagCluster(cur)}>标记为可疑</button>}
-              {cur.status === "flagged" && canFreeze && <button className="l-btn mc" onClick={() => freezeCluster(cur)}>批量冻结</button>}
-              {(cur.status === "frozen" || cur.status === "flagged") && canRelease && <button className="l-btn mc" onClick={() => releaseCluster(cur)}>解除误判</button>}
+              {recoverableProposal && <button className="l-btn" onClick={() => void recoverClusterProposal()}>找回提交结果</button>}
+              {canWrite && <button className="l-btn" disabled={Boolean(cur.pendingApproval)} onClick={() => reviewNote(cur)}>人工复审备注</button>}
+              {cur.status === "detected" && canFlag && <button className="l-btn" disabled={Boolean(cur.pendingApproval)} onClick={() => flagCluster(cur)}>标记为可疑</button>}
+              {cur.status === "flagged" && canFreeze && <button className="l-btn mc" disabled={Boolean(cur.pendingApproval)} onClick={() => freezeCluster(cur)}>批量冻结</button>}
+              {(cur.status === "frozen" || cur.status === "flagged") && canRelease && <button className="l-btn mc" disabled={Boolean(cur.pendingApproval)} onClick={() => releaseCluster(cur)}>解除误判</button>}
             </div>
           </div>
           <div className="cl-split">

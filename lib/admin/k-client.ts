@@ -212,6 +212,7 @@ export type K1Cluster = {
   nodes: K1Node[];
   edges: K1Edge[];
   reviewNote?: string;
+  pendingApproval?: { action?: string; submittedBy?: string; submittedAt?: string };
   version: number;
 };
 export type K1WhitelistRow = { cidr: string; note: string; operator: string; expireText: string; active: boolean };
@@ -799,6 +800,7 @@ function normalizeK1(raw: unknown): MultiAccountOverview {
         requiredK1Number(item[3], `${edgePath}[3]`, 0, 1),
       ] as K1Edge;
     });
+    const pending = row.pendingApproval == null ? undefined : requiredK1Record(row.pendingApproval, `${path}.pendingApproval`);
     return {
       id: requiredK1String(row.id, `${path}.id`),
       key: requiredK1String(row.key, `${path}.key`),
@@ -813,6 +815,11 @@ function normalizeK1(raw: unknown): MultiAccountOverview {
       nodes,
       edges,
       reviewNote: row.reviewNote == null ? undefined : requiredK1String(row.reviewNote, `${path}.reviewNote`, true),
+      pendingApproval: pending && {
+        action: pending.action == null ? undefined : requiredK1String(pending.action, `${path}.pendingApproval.action`),
+        submittedBy: pending.submittedBy == null ? undefined : requiredK1String(pending.submittedBy, `${path}.pendingApproval.submittedBy`),
+        submittedAt: pending.submittedAt == null ? undefined : requiredK1LocalIsoDateTime(pending.submittedAt, `${path}.pendingApproval.submittedAt`),
+      },
       version: requiredK1Integer(row.version, `${path}.version`),
     };
   });
