@@ -6,21 +6,22 @@
  * 业务卡是控制区：关停和恢复入口不收进折叠组。关停不查覆盖率，恢复前查覆盖率（等于红线算通过），补录不恢复业务（OP-56）。
  * 恢复现在是确认后立即生效，文字按真实路径写（OP-25）。后端交付审批（BE-08）后，把 resumeGate 的命令和文字一起换成「批准后生效」。
  * 写操作先存原操作再发；结果未知时关框、转成上方待确认条，只能原样重试（OP-92～OP-94）。
+ * 改参数被别人抢先时框不关：「读取最新」在框里换成最新值，拟改的新值留着，理由清空重填（OP-97）。
  */
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowLeftRight, CalendarClock, Coins, Gem, Landmark, Layers, ListChecks, Power, RefreshCw, ScrollText, ShieldAlert, ShieldCheck, SlidersHorizontal, Siren, Ticket, type LucideIcon } from "lucide-react";
-import { BatchBar, BlockState, Button, Cell, Change, Checkbox, Conclusion, ConfigList, ConfigRow, ControlCard, ControlGrid, Explain, Fact, Facts, Figure, Fold, Notice, PageHeader, Panel, ReleaseModal, Stat, StatBand, StatusTag, Table, Td, Th, TierBand, Tr } from "@/app/components/rd";
+import { BatchBar, BlockState, Button, Cell, Change, Checkbox, Conclusion, ConfigList, ConfigRow, ControlCard, ControlGrid, Explain, Fact, Facts, Figure, Fold, Notice, PageHeader, Panel, ReleaseModal, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
 import { createJEmergencyCommandKey, isEmergencyOutcomeUncertain } from "@/lib/admin/j-client";
-import type { AutoConfirmationRow, AutoRuleRow, EmergencySlaRow, JGate } from "@/lib/admin/j-client";
+import type { AutoConfirmationRow, AutoRuleRow, EmergencySlaRow, JGate, KillSwitchOverview } from "@/lib/admin/j-client";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import type { JCtx } from "./types";
+import type { ActionConfirmReq, JCtx } from "./types";
 
 const IMPACT_LABEL: Record<string, string> = { immediate: "即时资金流出", delayed: "未来负债增加", none: "不直接影响兑付" };
 const GATE_ICON: Record<string, LucideIcon> = { withdraw: Landmark, staking: Layers, genesis: Gem, exchange: ArrowLeftRight, trial: Ticket };
@@ -40,6 +41,10 @@ const READING = "正在读取最新状态，读完再操作";
 const LOCKED = "这项有结果未确认的操作，先处理页面上方的待确认";
 const BLOCKED_RESUME = "兑付覆盖率低于红线，暂不能恢复。到「资金储备与应付款」补足储备，回到红线以上再恢复。";
 const REASON_HINT = "例如：监管通知编号、工单号、事件编号";
+const STALE = "这个值刚被别人改过，本次没有保存。";
+const RETRY_DENIED = "这个账号现在没有这项操作的权限，不能重试。请联系超级管理员，或到操作记录与审批核对";
+/** 这页有两条红线：R1 的挤兑红线比提现占储备，恢复门槛比覆盖率。通用词条只讲后一种，这里单独写。 */
+const BANK_RUN_TIP = "挤兑红线：24 小时提现申请额占真实储备的比例。达到后系统自动暂停提现，和恢复业务的备付金红线不是一回事。";
 /** 生效方式全站一个样子，蓝底（VS-106）。关停危险与否看红图标和红按钮，不看这个标签。 */
 const IMMEDIATE = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 
@@ -84,8 +89,21 @@ function ruleValue(rule: AutoRuleRow) {
   return rule.kind === "number" ? unitText(Number(rule.thr).toLocaleString(), rule.unit) : rule.thr;
 }
 
+/** 事件存下来的原值，只加千分位和单位，不舍入（TX-19、TX-20）。 */
+function signalText(value: number, unit: string) {
+  const [whole, fraction] = String(value).split(".");
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return unitText(fraction ? `${grouped}.${fraction}` : grouped, unit);
+}
+
 function timeText(value: string) {
   return value.replace("T", " ").slice(0, 16);
+}
+
+function RuleCondition({ text }: { text: string }) {
+  const [before, after] = text.split("挤兑红线");
+  if (after === undefined) return <AutoGloss>{text}</AutoGloss>;
+  return <><AutoGloss>{before}</AutoGloss><span className="gloss" data-tip={BANK_RUN_TIP} role="note" aria-label={BANK_RUN_TIP}>挤兑红线</span><AutoGloss>{after}</AutoGloss></>;
 }
 
 export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
@@ -170,6 +188,13 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     }
   };
 
+  /** 重试也要有原操作的权限：记录是之前留下的，账号的权限可能已经变了（OP-124）。 */
+  const canRetry = ({ command }: J1Pending) => {
+    if (command.kind === "toggle") return command.enabled ? canResume : canKill;
+    if (command.kind === "batch") return canBatchKill;
+    return command.kind === "backfill" ? canKill : canWrite;
+  };
+
   /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。 */
   const retryPending = async (record: J1Pending) => {
     if (record.expiresAt <= Date.now()) {
@@ -214,7 +239,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未确认`}
         action={<>
           <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>读回核对</Button>
-          <Button size="sm" disabled={!expired && !!submitting} disabledReason={expired ? EXPIRED : undefined} onClick={() => void retryPending(record)}>按原操作重试</Button>
+          <Button size="sm" disabled={!expired && !!submitting} disabledReason={expired ? EXPIRED : canRetry(record) ? undefined : RETRY_DENIED} onClick={() => void retryPending(record)}>按原操作重试</Button>
           {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除待确认</Button>}
         </>}>
         {expired ? formatBusinessTimeCompact(new Date(record.createdAt).toISOString()) : businessClock(record.createdAt)}（{businessZone().label}）发出，{expired ? `${EXPIRED}。` : "可能已经生效。重发原内容，已成功的不会重复执行。"}
@@ -268,6 +293,11 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const overdue = backfills.filter((row) => row.overdue);
   const backfillOf = (key: string) => backfills.find((row) => row.key === key);
   const autoRuleName = (ruleId: string) => data.autoRules.find((rule) => rule.id === ruleId)?.nm ?? "未知自动规则";
+  /** 比较的是什么量看规则：R1 是百分比，R2 是 USDT。阈值用事件存下的，不用现在的（R03）。 */
+  const signalOf = (row: AutoConfirmationRow) => {
+    const unit = data.autoRules.find((rule) => rule.id === row.ruleId)?.unit ?? "";
+    return { value: signalText(row.signalValue, unit).trim(), threshold: signalText(row.threshold, unit).trim() };
+  };
 
   const locks = new Set(pending.flatMap((record) => record.locks));
   const blockOf = (lock: string) => (contentLoading ? READING : locks.has(lock) ? LOCKED : undefined);
@@ -290,7 +320,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       reasonPolicyOptional: true,
       businessForm: {
         kind: "multi-field",
-        title: "关停依据与后续处置",
+        title: ["staking", "genesis"].includes(gate.key) ? "关停依据与后续处置" : "关停依据",
         fields: [
           { key: "triggerBasis", label: "触发依据", current: "", inputKind: "select", options: TRIGGER_BASES, optionLabels: TRIGGER_LABELS },
           ...(["staking", "genesis"].includes(gate.key)
@@ -342,18 +372,18 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     const names = targets.map((gate) => operatorCopyText(gate.name)).join(" / ");
     openActionConfirm({ briefKind: "emergency",
       action: "应急批量停用 · 监管点名场景",
-      title: "应急批量停用",
+      title: `批量关停 ${targets.length} 项业务`,
       facts: <Facts><Fact k={`关停 ${targets.length} 项业务`}>{names}</Fact><Fact k="状态变化"><Change from="在线" to="已关停" /></Fact></Facts>,
       detail: <>一次性立即关停<b>已选 {targets.length} 项业务</b>，用于监管点名、法务事件等重大场景。确认后全部马上关停，每一项都记入操作记录。<b>已选业务开关：{names}</b>。</>,
       effect: IMMEDIATE,
       statedBrief: { impact: `已选的 ${targets.length} 项业务全站马上停止。有一项不符合时整批不执行。恢复要回到这页逐项操作。`, check: "核对已选业务、触发依据和监管事由，理由写清依据或工单号。" },
       confirmTone: "danger",
       confirmLabel: `确认关停 ${targets.length} 项，立即生效`,
-      reasonPlaceholder: REASON_HINT,
+      reasonPlaceholder: "例如：为什么现在要关停、内部工单号",
       reasonPolicyOptional: true,
       businessForm: {
         kind: "multi-field",
-        title: "批量应急依据与处置",
+        title: targets.some((gate) => ["staking", "genesis"].includes(gate.key)) ? "批量应急依据与处置" : "批量应急依据",
         hint: "以下内容都会记入操作记录。",
         fields: [
           { key: "triggerBasis", label: "触发依据", current: "", inputKind: "select", options: TRIGGER_BASES, optionLabels: TRIGGER_LABELS },
@@ -373,54 +403,86 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     });
   };
 
-  const adjEmer = (row: EmergencySlaRow) => {
-    openActionConfirm({ briefKind: "config",
+  /**
+   * 改参数被别人抢先时框不关，给「读取最新」。读到后用最新值重开这个框：新值留着，理由清空，再核对一次（OP-97）。
+   * 读不到就留在框里再读，页面读取失败不影响这个框。
+   */
+  const staleAware = (request: ActionConfirmReq, reopen: (latest: KillSwitchOverview, draft: string) => void): ActionConfirmReq => {
+    const guarded: ActionConfirmReq = {
+      ...request,
+      run: async (reason, newValue, businessValue) => {
+        try {
+          return await request.run(reason, newValue, businessValue);
+        } catch (cause) {
+          if (displayAdminError(cause) !== ADMIN_ERROR_MESSAGES.J1_CONFIG_STALE_VERSION) throw cause;
+          const blockWith = (text: string, label: string) => openActionConfirm({ ...guarded, blockedReason: <>{text} <Button size="sm" onClick={() => void readLatest()}>{label}</Button></> });
+          const readLatest = async () => {
+            const latest = (await actions.reloadJEmergency().catch(() => undefined))?.killSwitch;
+            if (latest) reopen(latest, newValue ?? "");
+            else blockWith("最新值没读到，你填的内容还在，读到后再提交。", "再读一次");
+          };
+          blockWith(STALE, "读取最新");
+          return false;
+        }
+      },
+    };
+    return guarded;
+  };
+  const changedByOther = (from: string, to: string) => <Facts><Fact k="别人刚改过"><Change from={from} to={to} /></Fact></Facts>;
+
+  const adjEmer = (row: EmergencySlaRow, stale?: { draft: string; was: string; round: number }) => {
+    openActionConfirm(staleAware({ briefKind: "config",
+      formKey: stale?.round,
       action: `应急参数调整 · ${row.k}`,
       title: `调整${row.k}`,
       detail: <><b>{row.k}</b> · {operatorCopyText(row.d)}。自动关停马上生效；补录只是补写处理结论，不会自动恢复业务。</>,
       effect: IMMEDIATE,
       statedBrief: { impact: "只影响之后的自动关停，已经在等补录的事项截止时间不变。", check: "核对新值，理由写清依据或工单号。" },
+      facts: stale && changedByOther(unitText(stale.was, row.unit), unitText(row.v, row.unit)),
       confirmLabel: "确认调整，立即生效",
-      edit: { kind: row.kind, current: row.v, unit: row.unit, min: row.id === "autoConfirmMins" ? 10 : undefined, max: row.id === "autoConfirmMins" ? 120 : undefined, step: 1, disallowCurrent: true,
+      edit: { kind: row.kind, current: row.v, initialValue: stale?.draft, unit: row.unit, min: row.id === "autoConfirmMins" ? 10 : undefined, max: row.id === "autoConfirmMins" ? 120 : undefined, step: 1, disallowCurrent: true,
         hint: "10–120 的整数",
         preview: (value) => `改成 ${value} 分钟：之后自动关停时，要在 ${value} 分钟内补录，超过算逾期。` },
       run: (reason, newValue) => sendCommand(`sla|${row.id}`, {
         label: `调整 ${row.k}`, locks: [`sla:${row.id}`], reason, okText: `${row.k} 已调整`,
         command: { kind: "sla", id: row.id, value: newValue ?? row.v, expected: row.v },
       }),
-    });
+    }, (latest, draft) => adjEmer(latest.emergencySla.find((item) => item.id === row.id) ?? row, { draft, was: row.v, round: (stale?.round ?? 0) + 1 })));
   };
 
-  const adjRule = (rule: AutoRuleRow) => {
-    openActionConfirm({ briefKind: "config",
+  const adjRule = (rule: AutoRuleRow, stale?: { draft: string; was: string; round: number }) => {
+    openActionConfirm(staleAware({ briefKind: "config",
+      formKey: stale?.round,
       action: `自动触发规则调整 · ${rule.nm}`,
       title: `调整${rule.nm}`,
-      detail: <><b>{rule.nm}</b>当前阈值为 {rule.thr} {rule.unit}。保存后系统会定时检查实际数据，超过阈值就自动关停对应业务，并记入操作记录。</>,
+      detail: <><b>{rule.nm}</b>当前阈值为 {ruleValue(rule)}。保存后系统会定时检查实际数据，超过阈值就自动关停对应业务，并记入操作记录。</>,
       effect: IMMEDIATE,
       statedBrief: { impact: "阈值改小更容易自动关停，改大更不容易。", check: "核对新值和单位，理由写清依据或工单号。" },
+      facts: stale && changedByOther(ruleValue({ ...rule, thr: stale.was }), ruleValue(rule)),
       confirmLabel: "确认调整，立即生效",
-      edit: { kind: "number", current: rule.thr, unit: rule.unit, min: 1, max: 1_000_000_000, step: 1, disallowCurrent: true,
+      edit: { kind: "number", current: rule.thr, initialValue: stale?.draft, unit: rule.unit, min: 1, max: 1_000_000_000, step: 1, disallowCurrent: true,
         hint: "1–1,000,000,000 的整数",
         preview: (value) => `改成 ${Number(value).toLocaleString()} ${rule.unit}：实际数据超过这个值时自动关停对应业务。` },
       run: (reason, newValue) => sendCommand(`rule|${rule.id}`, {
         label: `调整 ${rule.nm}`, locks: [`rule:${rule.id}`], reason, okText: `${rule.nm} 已生效`,
         command: { kind: "rule", id: rule.id, value: newValue ?? rule.thr, expected: rule.thr },
       }),
-    });
+    }, (latest, draft) => adjRule(latest.autoRules.find((item) => item.id === rule.id) ?? rule, { draft, was: rule.thr, round: (stale?.round ?? 0) + 1 })));
   };
 
   const confirmAutoTrigger = (row: AutoConfirmationRow) => {
     const name = operatorCopyText(row.name);
+    const signal = signalOf(row);
     openActionConfirm({ briefKind: "record",
       action: `补录自动关停结论 · ${name}`,
       title: `补录${name}的自动关停结论`,
       facts: <Facts>
         <Fact k="业务">{name}（已关停）</Fact>
         <Fact k="触发规则">{autoRuleName(row.ruleId)}</Fact>
-        <Fact k="触发值 / 阈值">{row.signalValue} / {row.threshold}</Fact>
+        <Fact k="触发值 / 阈值">{signal.value} / {signal.threshold}</Fact>
         <Fact k="截止时间">{timeText(row.dueAt)}{row.overdue ? "，已逾期" : ""}</Fact>
       </Facts>,
-      detail: <><b>{name}</b>由 {autoRuleName(row.ruleId)} 自动关停，触发值 {row.signalValue}，阈值 {row.threshold}。本操作只补全处置结论，不会自动恢复业务；如建议恢复，仍需超级管理员单独发起恢复并通过备付金检查。</>,
+      detail: <><b>{name}</b>由 {autoRuleName(row.ruleId)} 自动关停，触发值 {signal.value}，阈值 {signal.threshold}。本操作只补全处置结论，不会自动恢复业务；如建议恢复，仍需超级管理员单独发起恢复并通过备付金检查。</>,
       effect: <StatusTag tone="neutral" filled>业务继续关停</StatusTag>,
       statedBrief: { impact: "只写下处理结论，业务继续关停，不会恢复。", check: "核对触发值和阈值，理由写清判断依据。" },
       confirmLabel: "确认补录，业务仍关停",
@@ -467,9 +529,6 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const nextStepHelp = canResume ? "风险解除后，到业务卡上点「恢复」。系统不会自动恢复。" : canKill ? "风险解除后，请超级管理员恢复。系统不会自动恢复。" : "风险解除后由超级管理员恢复。系统不会自动恢复。";
   const resumeBlocked = !covPass && killedGates.some((gate) => gate.coveragePrecheckRequired);
 
-  // 档位带不是线性尺，上界只是末端的标注：超过时标记贴末端，数字照写真实值（F05）。
-  const tiersTop = RED * 2.5;
-
   return (
     <>
       {header}
@@ -486,6 +545,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         <Conclusion state="warn" lead explain="自动关停后要写清为什么关。到业务卡上点「补录结论」，补录不会恢复业务。">{conclusionFacts}</Conclusion>
       ) : killed > 0 ? (
         <Conclusion state="warn" lead hint={resumeBlocked ? "覆盖率低于红线，暂不能恢复。到「资金储备与应付款」补足储备后再恢复。" : undefined} explain={nextStepHelp}>{conclusionFacts}</Conclusion>
+      ) : pending.length > 0 ? (
+        <Conclusion state="warn" lead hint="到上方读回核对或按原操作重试。" explain="业务卡读到的是现在的状态，不能当成这次操作的结果。">业务开关：全部开启，<b>{pending.length}</b> 项操作结果未确认</Conclusion>
       ) : (
         <Conclusion state="ok">业务开关：全部开启，没有要处理的事</Conclusion>
       )}
@@ -532,7 +593,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
               {backfills.map((row) => (
                 <Tr key={row.incidentId}>
                   <Td><Cell main={operatorCopyText(row.name)} sub={autoRuleName(row.ruleId)} /></Td>
-                  <Td align="right"><Cell num main={`${row.signalValue} / ${row.threshold}`} /></Td>
+                  <Td align="right"><Cell num main={`${signalOf(row).value} / ${signalOf(row).threshold}`} /></Td>
                   <Td><Cell num main={timeText(row.dueAt)} sub={`${timeText(row.triggeredAt)} 触发`} /></Td>
                   <Td>{row.overdue ? <StatusTag tone="danger">已逾期</StatusTag> : <StatusTag tone="warn">待补录</StatusTag>}</Td>
                   {canKill && <Td align="right"><Button size="sm" disabledReason={blockOf(row.key)} onClick={() => confirmAutoTrigger(row)}>补录结论</Button></Td>}
@@ -549,12 +610,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         alert={!covPass} alertTone="danger"
         open={folds.coverage ?? (killed > 0 || !covPass)} onOpenChange={(open) => setFolds((state) => ({ ...state, coverage: open }))}>
         <Figure width={560} stack="wide" graphic={
-          <TierBand label="当前兑付覆盖率" current={covPass ? "pass" : "blocked"} value={COV} valueText={`当前兑付覆盖率 ${pct(COV)}`}
-            boundText={(value) => (value === tiersTop ? `${pct(tiersTop)} 以上` : value === RED ? `${RED}%` : pct(value))}
-            tiers={[
-              { key: "blocked", label: "不能恢复", tone: "danger", from: 0, to: RED },
-              { key: "pass", label: "可以恢复", tone: "ok", from: RED, to: tiersTop },
-            ]} />
+          <ThresholdMeter label="兑付覆盖率和恢复红线" rows={[{ key: "coverage", label: "当前", value: COV, text: pct(COV), tone: covPass ? "ok" : "danger" }]}
+            marks={[{ key: "red", text: `恢复红线 ${RED}%`, value: RED, tone: "danger" }]} />
         }>
           <Facts>
             <Fact k="检查结果">{covPass ? "通过" : "不通过"} · {coverageGapText}</Fact>
@@ -609,7 +666,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
                   if (!part) return null;
                   // R2、R3 的阈值可变，条件文字跟当前值走，后端给的是固定文字（F04）。
                   const text = index !== 1 ? part : rule.id === "tamperCluster" ? `${rule.thr} ${rule.unit}` : rule.id === "maturityGap" ? ruleValue(rule) : part;
-                  return index % 2 ? <b key={index}>{operatorCopyText(text)}</b> : <AutoGloss key={index}>{operatorCopyText(text)}</AutoGloss>;
+                  return index % 2 ? <b key={index}>{operatorCopyText(text)}</b> : <RuleCondition key={index} text={operatorCopyText(text)} />;
                 })}
                 when={`${RULE_MODE_LABEL[rule.mode]}${rule.adjustable ? "，保存后立即生效" : ""}`}
                 note={rule.refNote || undefined}

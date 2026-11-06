@@ -157,6 +157,8 @@ export interface A2OperationRow {
   amplifies: boolean;
   sos: boolean;
   ts: string;
+  /** 后端原始时间，要按业务时区显示时用。ts 是按浏览器时区格式化好的。 */
+  rawTs?: string;
   mine: boolean;
   roleGate: string;
   reason: string;
@@ -310,6 +312,7 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
     amplifies: !!ticket.amplifies,
     sos: !!ticket.sos,
     ts: formatTime(ticket.ts),
+    rawTs: ticket.ts ?? undefined,
     mine: !!ticket.mine,
     roleGate: ticket.roleGate?.trim() || "超管",
     reason: ticket.reason?.trim() || "—",

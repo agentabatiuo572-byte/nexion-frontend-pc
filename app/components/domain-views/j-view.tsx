@@ -64,7 +64,9 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
       const nextEmergency = tab === "J3"
         ? fetchJEmergencyOverviews(tab, j3State.window, j3State.page, j3State.pageSize)
         : fetchJEmergencyOverviews(tab);
-      setEmergency(await nextEmergency);
+      const next = await nextEmergency;
+      setEmergency(next);
+      return next;
     } catch (error) {
       setEmergency({});
       setContentError(error instanceof Error ? displayAdminError(error) : "应急控制数据读取失败，请稍后重试。");
@@ -105,7 +107,7 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
   };
 
   const confirmModal = mc && (
-    <OperationConfirmModal briefKind={mc.briefKind}
+    <OperationConfirmModal key={mc.formKey} briefKind={mc.briefKind}
       action={mc.action}
       title={mc.title}
       detail={mc.detail}
@@ -120,11 +122,11 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
       facts={mc.facts}
       reasonPlaceholder={mc.reasonPlaceholder}
       reasonPolicyOptional={mc.reasonPolicyOptional}
+      blockedReason={mc.blockedReason}
       onClose={() => setActionConfirm(null)}
       onConfirm={async (reason, newValue, businessValue) => {
         try {
-          await mc.run(reason, newValue, businessValue);
-          setActionConfirm(null);
+          if (await mc.run(reason, newValue, businessValue) !== false) setActionConfirm(null);
         } catch (error) {
           // 操作失败时保留确认弹窗，便于修正条件或重试。
           throw error;

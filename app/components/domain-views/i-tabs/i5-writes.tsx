@@ -9,7 +9,7 @@
  * - 披露草稿和地区只有幂等，重试用同一命令号，后端不重复执行；
  * - 法律条款和隐私政策接口不收命令号，只比对修订号：原操作已生效时，重试会被当成改动冲突拒绝，不会写两次。
  */
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
@@ -83,18 +83,60 @@ function recoveryText(op: I5Op, canQuery: boolean): string {
   return "可能已经生效。这个接口没有命令号，原操作已生效时重试会按改动冲突被拒，不会写两次。";
 }
 
-/** 别人改过时，把自己改过的字段留下，其余取最新（OP-97）。base 是打开时读到的内容。 */
-export function mergeEdits<T>(base: T, mine: T, latest: T): T {
-  if (JSON.stringify(mine) === JSON.stringify(base)) return latest;
-  if (Array.isArray(mine) && Array.isArray(base) && Array.isArray(latest)) {
-    if (mine.length !== base.length || latest.length !== base.length) return mine;
-    return mine.map((item, index) => mergeEdits(base[index], item, latest[index])) as T;
+/** 合并结果里要给人看的两类位置（路径）：别人改了的、两边都改了留下自己的。 */
+export type MergeReport = { theirs: string[][]; clashes: string[][] };
+export type Merged<T> = { value: T; report: MergeReport };
+
+const sameJson = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
+const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
+/** 段落和章节按自己的编号对齐：增删段落后下标不再对应同一段。 */
+const itemId = (item: unknown) => isRecord(item) ? String(item.id ?? item.key ?? item.no ?? "") : "";
+const byItemId = (list: unknown[]) => new Map(list.map((item) => [itemId(item), item]));
+const distinctIds = (list: unknown[]) => list.every(itemId) && byItemId(list).size === list.length;
+
+function merge(base: unknown, mine: unknown, latest: unknown, path: string[], report: MergeReport): unknown {
+  if (sameJson(mine, latest)) return mine;
+  if (sameJson(mine, base)) { report.theirs.push(path); return latest; }
+  if (sameJson(latest, base)) return mine;
+  const baseList = Array.isArray(base) ? base : [];
+  if (Array.isArray(mine) && Array.isArray(latest) && [baseList, mine, latest].every(distinctIds)) {
+    const [baseItems, mineItems, latestItems] = [byItemId(baseList), byItemId(mine), byItemId(latest)];
+    const ids = [...latestItems.keys(), ...[...mineItems.keys()].filter((id) => !latestItems.has(id))];
+    return ids.map((id) => merge(baseItems.get(id), mineItems.get(id), latestItems.get(id), [...path, id], report)).filter((item) => item !== undefined);
   }
-  if (mine && base && latest && typeof mine === "object" && typeof base === "object" && typeof latest === "object") {
-    const keys = new Set([...Object.keys(mine), ...Object.keys(latest)]);
-    return Object.fromEntries([...keys].map((key) => [key, mergeEdits((base as Record<string, unknown>)[key], (mine as Record<string, unknown>)[key], (latest as Record<string, unknown>)[key])])) as T;
+  if (isRecord(mine) && isRecord(latest)) {
+    const baseRecord = isRecord(base) ? base : {};
+    const keys = new Set([...Object.keys(latest), ...Object.keys(mine)]);
+    return Object.fromEntries([...keys].flatMap((key) => {
+      const value = merge(baseRecord[key], mine[key], latest[key], [...path, key], report);
+      return value === undefined ? [] : [[key, value]];
+    }));
   }
+  report.clashes.push(path);
   return mine;
+}
+
+/**
+ * 别人改过时三方合并（OP-97）：base 是打开时读到的，mine 是表单，latest 是刚读到的。
+ * 只有自己改了的留自己的，只有别人改了的取最新；同一处两边都改了留自己的，写进 clashes 让人核对，不悄悄盖掉别人的。
+ */
+export function mergeEdits<T>(base: T, mine: T, latest: T): Merged<T> {
+  const report: MergeReport = { theirs: [], clashes: [] };
+  return { value: merge(base, mine, latest, [], report) as T, report };
+}
+
+/** 「读取最新」之后写在编辑器最上面：别人改了哪、哪里两边都改了要核对（OP-97 第 2 步）。name 把路径换成人话，内部字段返回空。 */
+export function MergeNotice({ report, name }: { report: MergeReport | null; name: (path: string[]) => string | null }) {
+  if (!report) return null;
+  const names = (paths: string[][]) => [...new Set(paths.flatMap((path) => name(path) ?? []))].join("、");
+  const theirs = names(report.theirs);
+  const clashes = names(report.clashes);
+  return (
+    <Notice tone="warn" title="已读取最新内容，你的修改还在">
+      {theirs ? `别人改了：${theirs}，已换成最新。` : clashes ? "" : "别人这次没有改这里的内容。"}
+      {clashes && ` 这几处你和别人都改了，现在是你的版本，请核对：${clashes}。`}
+    </Notice>
+  );
 }
 
 /** 确认框里被冲突拒绝时框不关、理由留着，写「这项刚被别人改过。」和「读取最新」。 */
@@ -114,14 +156,26 @@ export function withConflict(ctx: Pick<ICtx, "openActionConfirm" | "closeActionC
   return wrapped;
 }
 
+/** 列表和详情的入口通过它换编辑对象，先过编辑器的未保存保护。 */
+export type EditorSwitch = { attempt: (next: () => void) => void };
+
 /**
- * 有未保存内容时拦站内离开（OP-29）：侧栏、面包屑、命令面板都是链接，抓在捕获阶段；关窗口走浏览器提示。
+ * 有未保存内容时拦离开（OP-29）：侧栏、面包屑、命令面板都是链接，抓在捕获阶段；关窗口走浏览器提示；
+ * 抽屉不挡列表，换草稿、新建、看别的版本要走 switcher，不能绕过这个框。
  * 浏览器前进后退不拦，Next 没有可取消的入口。
  */
-export function useLeaveGuard(dirty: boolean, close: () => void) {
+export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefObject<EditorSwitch | null>) {
   const router = useRouter();
   const [asking, setAsking] = useState(false);
   const [href, setHref] = useState<string | null>(null);
+  const nextAction = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    switcher.current = { attempt: (next) => {
+      if (dirty) { nextAction.current = next; setAsking(true); }
+      else { close(); next(); }
+    } };
+    return () => { switcher.current = null; };
+  }, [dirty, close, switcher]);
   useEffect(() => {
     if (!dirty) return;
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
@@ -142,11 +196,16 @@ export function useLeaveGuard(dirty: boolean, close: () => void) {
       document.removeEventListener("click", intercept, true);
     };
   }, [dirty]);
-  const proceed = () => { if (href) router.push(href); };
+  const proceed = () => {
+    const next = nextAction.current;
+    nextAction.current = null;
+    next?.();
+    if (href) router.push(href);
+  };
   return {
     asking,
     askClose: () => { if (dirty) setAsking(true); else close(); },
-    stay: () => { setAsking(false); setHref(null); },
+    stay: () => { setAsking(false); setHref(null); nextAction.current = null; },
     /** 去确认框保存：这个框先收起，取消保存时回到编辑。 */
     hide: () => setAsking(false),
     discard: () => { setAsking(false); close(); proceed(); },
@@ -172,7 +231,8 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
   canQuery: boolean;
   /** 一次写入有了结果（成功或转成待确认）后，读回对应的数据。 */
   onSettled: (write: I5Write) => Promise<unknown> | void;
-  onReadBack: (write: I5Write) => void;
+  /** 读回原操作的对象，返回写在待确认条上的一句话。 */
+  onReadBack: (write: I5Write) => Promise<string>;
 }) {
   const propose = usePropose();
   const reach = useReach();
@@ -187,7 +247,11 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
   /** 发一条已存好的操作。"done" 已成功；"unknown" 已转成待确认；确定失败抛出。 */
   const execute = async (write: I5Write, scope: string, key: string, retained: boolean): Promise<"done" | "unknown"> => {
     try {
-      await dispatch(write, key, actions, (spec) => propose(toast, spec));
+      await dispatch(write, key, actions, async (spec) => {
+        // 失败写在确认框里，结果未知转成待确认条，都不再弹同一句；只有提交成功才提示。
+        await propose(() => undefined, spec);
+        toast("已提交，等待审批后执行");
+      });
     } catch (cause) {
       const unknown = isA2OutcomeUncertainError(cause) || isOutcomeUnknownError(cause);
       if (!unknown && !retained) pendingWrites.forget(scope);
@@ -256,6 +320,18 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
     }
   };
 
+  /** 读回只给现在的事实，状态可能是别人改的，不算原操作的回执，待确认继续保留（OP-95）。 */
+  const readBack = async (record: I5Pending) => {
+    setRecovering(record.commandKey);
+    try {
+      note(record, `${await onReadBack(record)} 这可能是别人改的，待确认继续保留。`);
+    } catch (cause) {
+      note(record, `读回失败：${displayAdminError(cause)} 待确认继续保留。`);
+    } finally {
+      setRecovering("");
+    }
+  };
+
   const release = (record: I5Pending) => {
     pendingWrites.forget(record.fingerprint, record.commandKey);
     sync();
@@ -269,7 +345,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
     return (
       <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未确认`} action={<>
         {record.op.kind === "a2" && canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void check(record)}>查询原提案</Button>}
-        {(record.op.kind === "legal-save" || record.op.kind === "legal-transition" || record.op.kind === "privacy") && <Button size="sm" disabled={!!recovering} onClick={() => onReadBack(record)}>读回核对</Button>}
+        {(record.op.kind === "legal-save" || record.op.kind === "legal-transition" || record.op.kind === "privacy") && <Button size="sm" disabled={!!recovering} onClick={() => void readBack(record)}>读回核对</Button>}
         <Button size="sm" disabled={!!recovering} disabledReason={expired ? EXPIRED_TEXT : undefined} onClick={() => void retry(record)}>按原操作重试</Button>
         {record.rejected && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除待确认</Button>}
       </>}>
@@ -286,7 +362,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
   );
 
   const lockedTargets = new Set(pending.map((record) => record.target));
-  return { send, notices, releaseModal, isLocked: (target: string) => lockedTargets.has(target) };
+  return { send, notices, releaseModal, isLocked: (target: string) => lockedTargets.has(target), unconfirmed: (match: (target: string) => boolean) => pending.filter((record) => match(record.target)).length };
 }
 
 export type I5Writes = ReturnType<typeof useI5Writes>;

@@ -562,7 +562,7 @@ export type JEmergencyData = {
 };
 
 export type JEmergencyActions = {
-  reloadJEmergency: () => Promise<void>;
+  reloadJEmergency: () => Promise<JEmergencyData>;
   toggleJ1KillSwitch: (key: string, enabled: boolean, reason: string, context?: { triggerBasis?: string; dispositionPlan?: string }, commandKey?: string) => Promise<void>;
   emergencyDisableJ1: (keys: string[], reason: string, operator?: string, context?: { triggerBasis: string; regulatoryContext: string; dispositionPlan?: string }, commandKey?: string) => Promise<void>;
   updateJ1Sla: (paramKey: string, value: string, expectedValue: string, reason: string, commandKey?: string) => Promise<void>;
