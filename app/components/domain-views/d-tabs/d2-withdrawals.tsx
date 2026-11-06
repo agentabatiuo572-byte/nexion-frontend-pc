@@ -11,8 +11,8 @@ import { AlertTriangle, ClipboardList, Coins, Copy, FileText, Flag, Gauge, Histo
 import { AutoGloss } from "@/app/components/kit/gloss";
 import {
   BatchBar, Button, Cell, Checkbox, ColumnPicker, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input, IrreversibleTag,
-  JudgmentPoints, KeyValues, Modal, MoreMenu, Notice, PageHeader, Pager, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table,
-  TableLoading, TableMessage, Td, Th, Tr, useTableColumns, type JudgmentRow, type SegmentItem, type StateTone, type TableColumn,
+  JudgmentPoints, Modal, MoreMenu, Notice, PageHeader, Pager, Panel, RecordList, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, Timeline,
+  TableLoading, TableMessage, Td, Th, Tr, useTableColumns, type JudgmentRow, type RecordListEntry, type SegmentItem, type StateTone, type TableColumn, type TimelineEntry,
 } from "@/app/components/rd";
 import { businessClock, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
 import { fmtPct } from "@/lib/format";
@@ -135,18 +135,21 @@ function historyStatusLabel(status: string, chain?: string) {
   return statusLabel(status);
 }
 
-function statusHistoryText(value: string | undefined, chain: string) {
-  if (!value?.trim()) return "—";
-  return value.split("; ").map((entry) => {
+function statusHistoryEntries(value: string | undefined, chain: string): TimelineEntry[] {
+  if (!value?.trim()) return [];
+  return value.split("; ").filter(Boolean).flatMap((entry, index) => {
     const separator = entry.indexOf(":");
     const key = entry.slice(0, separator), fact = entry.slice(separator + 1);
-    if (key === "status") return `状态：${historyStatusLabel(fact, chain)}`;
+    // status 是当前快照，不把它冒充发生于 updated 的状态变更。
+    if (key === "status") return [];
     const labels: Record<string, string> = {
       created: "提交时间", chain: chain === "BANK-VND" ? "银行打款时间" : "链上发出时间",
       payout: "银行打款时间", completed: "完成时间", failed: "失败时间", updated: "更新时间",
     };
-    return labels[key] ? `${labels[key]}：${timeText(fact)}` : entry;
-  }).join("；");
+    return [{ id: `${key}-${index}`, action: labels[key] ?? key, actor: "操作人未提供",
+      at: labels[key] ? (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(fact) ? `${fact}:00` : fact) : "",
+      detail: labels[key] ? undefined : entry, tone: key === "failed" ? "danger" as const : undefined }];
+  });
 }
 
 const FAILURE_REASON_LABELS: Record<string, string> = {
@@ -272,13 +275,34 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
 };
 
 /** 操作记录是 {内部码}@{时间} | …，内部码不给运营看（DP-30）。 */
-function auditTrailText(value?: string) {
-  if (!value?.trim()) return "—";
-  return value.split(" | ").map((entry) => {
+function auditTrailEntries(value?: string): TimelineEntry[] {
+  if (!value?.trim()) return [];
+  return value.split(" | ").filter(Boolean).map((entry, index) => {
     const separator = entry.lastIndexOf("@");
     const code = separator < 0 ? entry : entry.slice(0, separator);
-    return `${AUDIT_ACTION_LABELS[code] ?? "其他操作"}${separator < 0 ? "" : `（${entry.slice(separator + 1)}）`}`;
-  }).join("；");
+    const rawTime = separator < 0 ? "" : entry.slice(separator + 1);
+    // Mapper 只提供月日时分，不能补当前年份；空 at 保持后端最新在前的顺序。
+    const fullTime = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(rawTime);
+    return { id: `${code}-${index}`, action: AUDIT_ACTION_LABELS[code] ?? "其他操作", actor: "操作人未提供",
+      at: fullTime ? (/^.{10} \d{2}:\d{2}$/.test(rawTime) ? `${rawTime}:00` : rawTime) : "",
+      detail: !fullTime && rawTime ? `${rawTime}（北京时间，未提供年份）` : undefined,
+      tone: /REJECT|BLOCKED|FAILED/.test(code) ? "danger" : /UNKNOWN/.test(code) ? "warn" : undefined };
+  });
+}
+
+/** 兼容含渠道的四段记录和旧三段记录；不从当前提现推测历史渠道。 */
+function withdrawalHistoryRecords(value?: string): RecordListEntry[] {
+  if (!value?.trim()) return [];
+  return value.split(" | ").filter(Boolean).map((entry, index) => {
+    const parts = entry.split("/");
+    const [order, chain, status, facts] = parts.length === 4 ? parts : [parts[0], "", parts[1], parts[2]];
+    const amount = /^([\d.]+) (\S+)@(.+)$/.exec(facts ?? "");
+    if ((parts.length !== 3 && parts.length !== 4) || !amount) return { id: String(index), value: entry };
+    return { id: `${order}-${index}`, value: amountText(Number(amount[1])), unit: amount[2],
+      at: /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(amount[3]) ? `${amount[3]}:00` : amount[3],
+      object: chain ? chain === "BANK-VND" ? "越南银行卡 · HDPay" : chain.replace(/^USDT-/, "") : "渠道未提供",
+      status: <StatusTag tone={statusTone(status)}>{historyStatusLabel(status, chain || undefined)}</StatusTag>, reference: order };
+  });
 }
 
 function routeLabel(value?: string) {
@@ -777,8 +801,10 @@ const RECOVERY_HINT: Record<string, string> = {
 };
 
 /** 风险分明细是后端拼的「键=值」，键名换成白话。 */
-function riskBreakdownText(value?: string) {
-  return factsText(value).replace("提交快照", "提交时风险分").replace("当前模型", "现在的风险分").replace("人工覆盖", "人工调整").replace("决策", "风控决定").replace("规则：", "命中规则：");
+function riskBreakdownRecords(value?: string): RecordListEntry[] {
+  const labels: Record<string, string> = { 提交快照: "提交时风险分", 当前模型: "现在的风险分", 人工覆盖: "人工调整", 决策: "风控决定", 规则: "命中规则" };
+  return factRows(value, "风险分明细").map((row) => ({ id: row.key, value: row.value, object: labels[row.label] ?? row.label,
+    unit: /^\d+(\.\d+)?$/.test(row.value) && ["提交快照", "当前模型", "人工覆盖"].includes(row.label) ? "分" : undefined }));
 }
 
 /** 风险等级、分数和命中规则，确认框常显（DP-03）。 */
@@ -813,8 +839,14 @@ function holdsForReview(row: D2Withdrawal) {
 }
 
 /** 后端的「键=值; 键=值」摘要写成白话的分隔。 */
-function factsText(value?: string) {
-  return operationalText(value).replaceAll("=", "：").replaceAll("; ", "；");
+function factRows(value: string | undefined, label: string) {
+  if (!value?.trim()) return [];
+  return value.split("; ").filter(Boolean).map((entry, index) => {
+    const localized = operationalText(entry);
+    const separator = localized.indexOf("=");
+    return { key: `${label}-${index}`, label: separator < 0 ? label : localized.slice(0, separator),
+      value: separator < 0 ? localized : localized.slice(separator + 1) };
+  });
 }
 
 function chainText(row: D2Withdrawal) {
@@ -1595,8 +1627,9 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     ...(gateClosedHere ? [{ label: "提现开关", state: "warn" as const, value: "已关停" }] : []),
   ] : [];
   const ruleCount = shown ? countEntries(shown.hitRules, ",") : 0;
-  const historyCount = shown ? countEntries(shown.withdrawalHistory, " | ") : 0;
-  const recordCount = shown ? countEntries(shown.auditTrail, " | ") : 0;
+  const historyRecords = withdrawalHistoryRecords(shown?.withdrawalHistory);
+  const statusEntries = shown ? statusHistoryEntries(shown.statusHistory, shown.chain) : [];
+  const auditEntries = auditTrailEntries(shown?.auditTrail);
 
   const tableColumnCount = QUEUE_COLUMNS.filter((column) => columns.isVisible(column.key)).length + (showSelection ? 1 : 0);
   const copyNo = (value: string) => {
@@ -1781,13 +1814,11 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         {detailError && <Notice tone="danger" title="详情加载失败" action={<Button size="sm" onClick={() => void openDetail(shown)}>重试</Button>}>{detailError}</Notice>}
         <JudgmentPoints title={`判断要点 · 时间均为${businessZone().label}`} loading={detailLoading} rows={judgment} />
         <Fold inset title="风险规则" summary={ruleCount ? `${ruleCount} 条命中` : "没有命中"} alert={ruleCount > 0} icon={Shield} tone="risk">
-          <Facts>
-            <Fact k="触发的风险规则">{operationalText(shown.riskReason)}</Fact>
-          </Facts>
-          <KeyValues rows={riskBreakdownText(shown.riskScoreBreakdown).split("；").map((entry, index) => {
-            const separator = entry.indexOf("：");
-            return { key: String(index), label: separator < 0 ? "风险分明细" : entry.slice(0, separator), value: separator < 0 ? entry : entry.slice(separator + 1) };
-          })} />
+          <RecordList label="风险分明细" records={[
+            ...(shown.riskReason?.trim() ? shown.riskReason.split(" | ").filter(Boolean).map((reason, index) => ({ id: `hit-${index}`, value: operationalText(reason), object: "触发的风险规则" })) : []),
+            ...riskBreakdownRecords(shown.riskScoreBreakdown),
+          ]} />
+          <Explain label="查看风险原始记录" content={<div className="rd-stack"><p>{shown.riskReason || "—"}</p><p>{shown.riskScoreBreakdown || "—"}</p><p>{shown.hitRules || "—"}</p></div>}>查看原始记录</Explain>
         </Fold>
         {["USDT-BEP20", "BEP20"].includes(shown.chain) && <Fold inset title="Cregis 打款核对" icon={Link2} alert={!detailLoading && (!cregisDetail || cregisDetail.canRecover)} alertTone={cregisDetail?.canRecover ? "danger" : "warn"}
           summary={cregisDetail ? (detailProvider ? cregisStatusLabel(cregisDetail.state) : "未经 Cregis 打款") : "暂时无法获取"}>
@@ -1849,39 +1880,28 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
             <Fact k="目标地址"><span data-mono>{shown.targetAddress}</span></Fact>
             <Fact k="IP 段">{shown.ipSegment || "—"}</Fact>
           </Facts>
-          <KeyValues rows={[...factsText(shown.deviceSummary).split("；"), ...factsText(shown.referralPosition).split("；")].map((entry, index) => {
-            const separator = entry.indexOf("：");
-            return { key: String(index), label: separator < 0 ? (index === 0 ? "设备" : "团队位置") : entry.slice(0, separator), value: separator < 0 ? entry : entry.slice(separator + 1) };
-          })} />
+          <Facts>{[...factRows(shown.deviceSummary, "设备"), ...factRows(shown.referralPosition, "团队位置")].map((row) => <Fact key={row.key} k={row.label}>{row.value}</Fact>)}</Facts>
         </Fold>
-        <Fold inset title="提现历史" summary={historyCount ? `共 ${historyCount} 笔` : "没有记录"} icon={History}>
-          {shown.withdrawalHistory?.trim() ? <Table label="全部提现历史">
-            <thead><tr><Th>提现单 / 提交时间</Th><Th>金额 / 状态</Th></tr></thead>
-            <tbody>{shown.withdrawalHistory.split(" | ").map((entry, index) => {
-              const parts = entry.split("/");
-              const [order, chain, status, facts] = parts.length === 4 ? parts : [parts[0], "", parts[1], parts[2]];
-              const amount = /^([\d.]+) (\S+)@(.+)$/.exec(facts ?? "");
-              return parts.length === 3 || parts.length === 4 ? <Tr key={index}>
-                <Td><Cell mono full main={order} sub={amount ? listTime(amount[3]) : facts} /></Td>
-                <Td><Cell num main={amount ? `${amountText(Number(amount[1]))} ${amount[2]}` : "—"} sub={<>{historyStatusLabel(status, chain || undefined)}{chain && ` · ${chain.replace(/^USDT-/, "")}`}</>} /></Td>
-              </Tr> : <Tr key={index}><Td colSpan={2}><Cell full main={entry} /></Td></Tr>;
-            })}</tbody>
-          </Table> : <p className="rd-note">没有提现历史</p>}
+        <Fold inset title="提现历史" summary={historyRecords.length ? `共 ${historyRecords.length} 笔` : "没有记录"} icon={History}>
+          <RecordList key={shown.withdrawalNo} label="提现历史" records={historyRecords} />
+          {shown.withdrawalHistory && <Explain label="查看提现历史原文" content={shown.withdrawalHistory}>查看原始记录</Explain>}
         </Fold>
-        <Fold inset title="状态记录与操作记录" summary={`${recordCount} 条操作`} icon={ClipboardList}>
+        <Fold inset title="状态历史" summary={`${statusEntries.length} 个时间节点`} icon={Route}>
+          <p className="rd-note">{detailProvider ? "按 Cregis 的打款结果结算，不会重新打款。" : lifecycleSummary(shown)}</p>
           <Facts>
-            <Fact k="说明">{detailProvider ? "按 Cregis 的打款结果结算，不会重新打款。" : lifecycleSummary(shown)}</Fact>
+            <Fact k="当前状态"><StatusTag tone={statusTone(shown.status)}>{bankStatusLabel(shown)}</StatusTag></Fact>
             <Fact k="复查时间">{holdsForReview(shown) ? timeText(shown.holdUntil) : "—"}</Fact>
             <Fact k="责任人">{shown.lifecycleOwner || "系统自动"}</Fact>
-            <Fact k="持有 / 冻结期限">{freezePeriodLabel(shown.freezePeriod)}</Fact>
             <Fact k="上一状态">{shown.previousStatus ? statusLabel(shown.previousStatus) : "—"}</Fact>
-            {(shown.failureReason || shown.auditTrail) && <Fact k="原始记录"><Explain label="查看原始记录" content={[shown.failureReason, shown.auditTrail].filter(Boolean).join(" ｜ ")}>查证时看</Explain></Fact>}
           </Facts>
-          <KeyValues rows={statusHistoryText(shown.statusHistory, shown.chain).split("；").map((entry, index) => {
-            const separator = entry.indexOf("：");
-            return { key: String(index), label: separator < 0 ? "状态历史" : entry.slice(0, separator), value: separator < 0 ? entry : entry.slice(separator + 1) };
-          })} />
-          <ol className="rd-stack" aria-label="操作记录">{auditTrailText(shown.auditTrail).split("；").map((entry, index) => <li key={index}>{entry}</li>)}</ol>
+          <p className="rd-note">持有 / 冻结期限：{freezePeriodLabel(shown.freezePeriod)}</p>
+          <Timeline label="状态历史" entries={statusEntries} />
+          {(shown.failureReason || shown.statusHistory) && <Explain label="查看状态历史原文" content={<div className="rd-stack"><p>{shown.failureReason || "—"}</p><p>{shown.statusHistory || "—"}</p></div>}>查看原始记录</Explain>}
+        </Fold>
+        <Fold inset title="操作记录" summary={`${auditEntries.length} 条操作`} icon={ClipboardList}
+          explain="操作记录只提供月日时分，未提供年份和操作人，按原记录顺序展示。完整时间和操作人到操作记录与审批核对。">
+          <Timeline label="操作记录" entries={auditEntries} />
+          {shown.auditTrail && <Explain label="查看操作记录原文" content={shown.auditTrail}>查看原始记录</Explain>}
         </Fold>
       </>}
     </Drawer>
@@ -1892,10 +1912,17 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     {batchResult && <Modal title={`批量${actionLabel(batchResult.action)}结果`} icon={ClipboardList} onClose={() => setBatchResult(null)} footer={<Button variant="primary" onClick={() => setBatchResult(null)}>知道了</Button>}>
       <Facts>
         <Fact k="批次">{batchResult.result.batchId}</Fact>
-        <Fact k={`成功 ${batchResult.result.accepted.length} 笔`}>{batchResult.result.accepted.join("、") || "—"}</Fact>
-        <Fact k={`大额转人工 ${batchResult.result.rejected.length} 笔`}>{batchResult.result.rejected.join("、") || "—"}</Fact>
-        <Fact k={`未执行 ${batchResult.result.conflicts.length} 笔`}>{batchConflictText(batchResult.result) || "—"}</Fact>
       </Facts>
+      <Fold inset title="成功" summary={`${batchResult.result.accepted.length} 笔`} defaultOpen={batchResult.result.accepted.length > 0 && batchResult.result.conflicts.length === 0}>
+        <RecordList label="批量成功的提现" records={batchResult.result.accepted.map((id) => ({ id, value: "处理成功", reference: id, status: <StatusTag tone="ok">成功</StatusTag> }))} />
+      </Fold>
+      <Fold inset title="大额转人工" summary={`${batchResult.result.rejected.length} 笔`}>
+        <RecordList label="大额转人工的提现" records={batchResult.result.rejected.map((id) => ({ id, value: "转单笔人工审核", reference: id, status: <StatusTag tone="warn">未批量放行</StatusTag> }))} />
+      </Fold>
+      <Fold inset title="未执行" summary={`${batchResult.result.conflicts.length} 笔`} alert={batchResult.result.conflicts.length > 0}>
+        <RecordList label="批量未执行的提现" records={batchResult.result.conflicts.map((conflict) => ({ id: conflict.withdrawalId, reference: conflict.withdrawalId,
+          value: displayAdminError(new Error(conflict.reason)), status: <StatusTag tone="warn">{MOVED_STATE_CODES.includes(conflict.reason) ? "状态已变化" : "未执行"}</StatusTag> }))} />
+      </Fold>
     </Modal>}
   </>;
 }
