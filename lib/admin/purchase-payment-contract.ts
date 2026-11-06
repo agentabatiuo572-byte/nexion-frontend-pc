@@ -10,7 +10,7 @@ export type PurchasePaymentArrival = { txid: string; log_index: number; amount: 
 export type PurchasePaymentRecord = {
   intentNo: string; userId: string; kind: string; paymentMethod: PurchasePaymentMethod; status: PurchasePaymentState;
   subtotalUsdt: string; channelFeeUsdt: string; networkConfirmFeeUsdt: string; totalUsdt: string;
-  feePolicyVersion: number; version: number; reason: string | null; createdAt: string; updatedAt: string;
+  feePolicyVersion?: number | null; version?: number | null; reason: string | null; createdAt: string; updatedAt: string;
   providerReference?: string | null; providerActualFeeUsdt?: string | null; receipt?: Record<string, unknown> | null;
   businessAmountUsdt?: string; roundingAdjustmentUsdt?: string; amountVnd?: string | null; fxRateVndPerUsdt?: string | null;
   fulfilmentStatus?: "NOT_DELIVERED" | "DELIVERED"; arrivals?: PurchasePaymentArrival[];
@@ -54,7 +54,8 @@ export function parsePurchasePaymentPolicy(raw: unknown): PurchasePaymentPolicy 
 export function parsePurchasePaymentRecord(raw: unknown, intentNo?: string): PurchasePaymentRecord {
   if (!object(raw) || !text(raw.intentNo) || !/^[A-Za-z0-9_-]{1,100}$/.test(raw.intentNo) || intentNo !== undefined && raw.intentNo !== intentNo
     || !text(raw.userId) || !text(raw.kind) || !purchasePaymentMethods.includes(raw.paymentMethod as PurchasePaymentMethod)
-    || !purchasePaymentStates.includes(raw.status as PurchasePaymentState) || !integer(raw.version) || !integer(raw.feePolicyVersion)
+    || !purchasePaymentStates.includes(raw.status as PurchasePaymentState)
+    || raw.version != null && !integer(raw.version) || raw.feePolicyVersion != null && !integer(raw.feePolicyVersion)
     || ![raw.subtotalUsdt, raw.channelFeeUsdt, raw.networkConfirmFeeUsdt, raw.totalUsdt].every(purchasePaymentDecimal)
     || !optionalText(raw.reason) || !text(raw.createdAt) || !text(raw.updatedAt)
     || raw.providerReference !== undefined && !optionalText(raw.providerReference)
