@@ -307,13 +307,14 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   const killGate = (gate: JGate) => {
     const name = operatorCopyText(gate.name);
+    const cap = gate.key === "withdraw" ? "新提现申请和审核放行" : operatorCopyText(gate.cap);
     openActionConfirm({ briefKind: "emergency",
       action: `关停业务开关 · ${name}`,
       title: `关停${name}`,
-      facts: <Facts><Fact k="业务">{name}，控制{operatorCopyText(gate.cap)}</Fact><Fact k="状态变化"><Change from="在线" to="已关停" /></Fact></Facts>,
-      detail: <><b>{name}</b>控制{operatorCopyText(gate.cap)}。确认后这项业务马上停止，并记入操作记录。关停不会多付钱，不需要先检查备付金。</>,
+      facts: <Facts><Fact k="业务">{name}，控制{cap}</Fact><Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{gate.key === "withdraw" && <Fact k="关停范围" tone="warn">已放行的单还会打款</Fact>}</Facts>,
+      detail: <><b>{name}</b>控制{cap}。确认后开关立即关闭，并记入操作记录。关停不会多付钱，不需要先检查备付金。</>,
       effect: IMMEDIATE,
-      statedBrief: { impact: `${name}控制的业务全站马上停止。恢复要回到这页操作。`, check: "核对业务和触发依据，理由写清监管通知、工单或事件编号。" },
+      statedBrief: { impact: gate.key === "withdraw" ? "立即停止新提现申请和审核放行。恢复要回到这页操作。" : `${name}控制的业务全站马上停止。恢复要回到这页操作。`, check: "核对业务和触发依据，理由写清监管通知、工单或事件编号。" },
       confirmTone: "danger",
       confirmLabel: "确认关停，立即生效",
       reasonPlaceholder: REASON_HINT,
@@ -373,10 +374,10 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     openActionConfirm({ briefKind: "emergency",
       action: "应急批量停用 · 监管点名场景",
       title: `批量关停 ${targets.length} 项业务`,
-      facts: <Facts><Fact k={`关停 ${targets.length} 项业务`}>{names}</Fact><Fact k="状态变化"><Change from="在线" to="已关停" /></Fact></Facts>,
+      facts: <Facts><Fact k={`关停 ${targets.length} 项业务`}>{names}</Fact><Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{targets.some((gate) => gate.key === "withdraw") && <Fact k="提现关停范围" tone="warn">已放行的单还会打款</Fact>}</Facts>,
       detail: <>一次性立即关停<b>已选 {targets.length} 项业务</b>，用于监管点名、法务事件等重大场景。确认后全部马上关停，每一项都记入操作记录。<b>已选业务开关：{names}</b>。</>,
       effect: IMMEDIATE,
-      statedBrief: { impact: `已选的 ${targets.length} 项业务全站马上停止。有一项不符合时整批不执行。恢复要回到这页逐项操作。`, check: "核对已选业务、触发依据和监管事由，理由写清依据或工单号。" },
+      statedBrief: { impact: `已选的 ${targets.length} 个业务开关立即关闭。有一项不符合时整批不执行。恢复要回到这页逐项操作。`, check: "核对已选业务、触发依据和监管事由，理由写清依据或工单号。" },
       confirmTone: "danger",
       confirmLabel: `确认关停 ${targets.length} 项，立即生效`,
       reasonPlaceholder: "例如：为什么现在要关停、内部工单号",
@@ -513,7 +514,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const gateHelp = (gate: JGate) => {
     const backfill = backfillOf(gate.key);
     return [
-      { k: "控制", v: operatorCopyText(gate.cap) },
+      { k: "控制", v: gate.key === "withdraw" ? "新提现申请和审核放行；已放行的单还会打款" : operatorCopyText(gate.cap) },
       { k: "资金影响", v: IMPACT_LABEL[gate.coverageImpactCategory] },
       { k: "最近变更", v: gate.lastChange || "—" },
       { k: "操作后果", v: gate.enabled ? "关停不查覆盖率，确认后立即生效。"
@@ -619,7 +620,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         </Figure>
       </Fold>
 
-      <Fold title="功能开关总表" explain="关停和恢复都是确认后立即执行，全站马上生效，App 无法绕过，都要填写理由并记入操作记录。"
+      <Fold title="功能开关总表" explain="关停和恢复都是确认后立即执行，都要填写理由并记入操作记录。提现关停只挡新申请和审核放行，已放行的单还会打款。"
         icon={ScrollText} tone="role-other" summary={`${gates.length} 个业务开关`}
         actions={reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=J">查看操作记录</Link> : undefined}
         open={!!folds.table} onOpenChange={(open) => setFolds((state) => ({ ...state, table: open }))}>
@@ -629,7 +630,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
             {gates.map((gate) => (
               <Tr key={gate.key}>
                 <Td><Cell main={operatorCopyText(gate.name)} /></Td>
-                <Td>{operatorCopyText(gate.cap)} <Explain label={`${operatorCopyText(gate.name)}控制范围`} content={<AutoGloss>{operatorCopyText(gate.desc)}</AutoGloss>} /></Td>
+                <Td>{gate.key === "withdraw" ? "新提现申请和审核放行" : operatorCopyText(gate.cap)} <Explain label={`${operatorCopyText(gate.name)}控制范围`} content={gate.key === "withdraw" ? "已放行的单还会打款。" : <AutoGloss>{operatorCopyText(gate.desc)}</AutoGloss>} /></Td>
                 <Td><Cell main={gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>} sub={gate.emergency ? "应急" : undefined} /></Td>
                 <Td>{IMPACT_LABEL[gate.coverageImpactCategory]}</Td>
                 <Td>{gate.coveragePrecheckRequired ? <AutoGloss>需核备付金</AutoGloss> : "不需"}</Td>

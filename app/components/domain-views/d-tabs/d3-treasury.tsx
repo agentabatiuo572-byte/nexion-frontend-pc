@@ -36,7 +36,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { exportScope, treasuryCommandKey, treasuryCommands, type TreasuryExportKind } from "@/lib/admin/treasury-commands";
-import { LeaveDialog, useLeaveGuard } from "../i-tabs/i5-writes";
+import { LeaveDialog, useLeaveGuard, type EditorSwitch } from "../i-tabs/i5-writes";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import { DueTab, FORECAST_90D_BLOCK, FlowTab, FundConclusion, OverviewTab, SettingsTab, amountText, categoryText, effectiveText, forecastDiffRows, money, timeText, type CrossLink, type ForecastValues, type Loadable } from "./d3-treasury-views";
@@ -302,7 +302,8 @@ export function D3Treasury() {
   }, [previewKey, canConfig]);
 
   // 配置改了没保存时，离开这页先问（OP-29）。结果未知时设置已锁，草稿等核对完再说，不拦。
-  const leave = useLeaveGuard(dirty && !forecastCommand.list().some((record) => record.fingerprint === FORECAST_SLOT), () => { if (baseValues) setDraft(baseValues); });
+  const leaveSwitcher = useRef<EditorSwitch | null>(null);
+  const leave = useLeaveGuard(dirty && !forecastCommand.list().some((record) => record.fingerprint === FORECAST_SLOT), () => { if (baseValues) setDraft(baseValues); }, leaveSwitcher);
 
   // 预测保存结果未知时草稿留着，解除待确认后可以接着改了重新提交。
   const reloadAll = () => {

@@ -526,7 +526,7 @@ const ACTION_ROLE: Record<D2ReviewAction, string> = {
   REJECT: "财务、财务主管、风控或风控主管",
   FREEZE: "财务主管或风控主管",
   UNFREEZE: "财务主管或风控主管",
-  REFUND: "财务主管",
+  REFUND: "财务主管或风控主管",
 };
 
 const HOLD_DAYS = /^([1-9]|[1-3][0-9]|4[0-5])$/;
@@ -949,6 +949,11 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const canReadD5 = hasAuthority("finance_d5_read");
   // 达到大额门槛的放行，后端只认财务主管和超管（isD2RoleAllowed），其他账号提交必被拒，入口直接禁用。
   const canApproveLarge = ["FINANCE_LEAD", "superadmin"].includes(session?.role ?? "");
+  // 冻结、解冻和手动退款另有角色门槛，动作权限仍按原权限码判断。
+  const canManageRestricted = ["FINANCE_LEAD", "RISK_LEAD", "superadmin"].includes(session?.role ?? "");
+  const roleBlock = (action?: D2ReviewAction) => !canManageRestricted && action && ["FREEZE", "UNFREEZE", "REFUND"].includes(action)
+    ? "冻结、解冻和手动退款需财务主管、风控主管或超级管理员操作"
+    : undefined;
   /** 只看这一笔的情况就知道放行必被拒的原因，行、抽屉、批量共用（DP-42）。全局的开关和覆盖率在 approveGateText。 */
   const approveBlock = (row: D2Withdrawal) => {
     if (routingUnavailable(row)) return "风险分暂时算不出来，暂不能放行";
@@ -958,8 +963,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     return undefined;
   };
   const canBatch = hasAuthority("finance_d2_withdrawal_batch");
-  const availableBatchActions = BATCH_ACTIONS.filter((action) => hasAuthority(ACTION_AUTHORITY[action]) && (action !== "APPROVE" || canReadD5));
-  const showSelection = canBatch && availableBatchActions.length > 0;
+  const availableBatchActions = BATCH_ACTIONS.filter((action) => hasAuthority(ACTION_AUTHORITY[action]) && !roleBlock(action) && (action !== "APPROVE" || canReadD5));
+  const showSelection = canBatch && (availableBatchActions.length > 0 || hasAuthority(ACTION_AUTHORITY.FREEZE));
   const canWriteAny = Object.values(ACTION_AUTHORITY).some(hasAuthority);
   const dailyLimit = d5?.dailyLimitCount ?? 0;
   const pendingNos = useMemo(() => new Set(pendingCommands.flatMap((record) => record.nos)), [pendingCommands]);
@@ -1304,7 +1309,9 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       detail: "仅测试环境可用。把这笔测试提现的冷却时间提前到现在，然后按正常流程重新检查风险规则、风险分、覆盖率和提现开关。",
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       amplifies: true,
+      coverageCheck: "模拟到期后，系统重新检查；尝试自动放行时才检查兑付覆盖率，低于红线会转待审核。",
       coverage: d5 ? { coverageRatio: d5.coverageRatio, redlinePct: d5.redlinePct } : undefined,
+      statedBrief: { impact: "把冷却时间提前到现在，再按正常到期流程处理，可能放行、转待审核、冻结或再次延迟。", check: "核对测试提现单和模拟依据。系统尝试自动放行时才检查兑付覆盖率，低于红线会转待审核。" },
       reasonMin: 8,
       reasonMax: 200,
       completionCopy: "到期模拟已提交",
@@ -1500,6 +1507,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     if (pendingNos.has(row.withdrawalNo)) return "这笔有结果未确认的操作，先到页面上方核对";
     if (loading) return "正在刷新列表";
     if (!writesEnabled) return "列表读取失败，已暂停操作，请先重试";
+    if (roleBlock(action)) return roleBlock(action);
     if (action === "APPROVE" && !canReadD5) return "你没有「USDT 提现参数」的查看权限，读不到额度和覆盖率，不能放行";
     if (action === "APPROVE" && approveBlock(row)) return approveBlock(row);
     if (action === "APPROVE" && approveGateReason) return approveGateReason;
@@ -1621,7 +1629,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
     {withdrawGate === "closed" && <Notice tone="warn" title="提现已关停"
       action={reach("/emergency/kill-switch", "emergency_j1_read") ? <Link className="rd-link" href="/emergency/kill-switch">去紧急停用开关</Link> : undefined}>
-      用户现在不能提交新提现。现在放行不会生效：系统会拒绝，这笔留在待审核，钱不动。拒绝、延迟、冻结、解冻和退款照常可用。
+      用户现在不能提交新提现。现在放行不会生效：系统会拒绝，这笔留在待审核，钱不动。<Explain label="关停提现的范围" content="已放行的单还会打款。" />拒绝、延迟、冻结、解冻和退款照常可用。
     </Notice>}
     {withdrawGate === "unknown" && <Notice tone="warn">提现开关状态暂时读不到。放行时系统会再查，已关停时不会放行。</Notice>}
     {coverageBelow && d5 && hasAuthority(ACTION_AUTHORITY.APPROVE) && <Notice tone="danger" title="兑付覆盖率低于红线，放行已暂停"
@@ -1676,7 +1684,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     <Panel flush icon={FileText} tone="role-1" title={currentGroup ? `${currentGroup.label}的提现` : "全部提现"} explain={canWriteAny && (query.group === "todo" || query.group === "all") ? "可单笔或批量处理" : undefined}
       actions={<>
         {showSelection && <Select aria-label="批量操作" value={batchAction} onChange={(value) => setBatchAction(value as D2BatchAction | "")} placeholder="选择批量操作"
-          options={[{ value: "", label: "选择批量操作" }, ...BATCH_ACTIONS.filter((action) => hasAuthority(ACTION_AUTHORITY[action])).map((action) => ({ value: action, label: action === "APPROVE" && !canReadD5 ? `${actionLabel(action)}（无额度权限）` : actionLabel(action), disabled: !availableBatchActions.includes(action) }))]} />}
+          options={[{ value: "", label: "选择批量操作" }, ...BATCH_ACTIONS.filter((action) => hasAuthority(ACTION_AUTHORITY[action])).map((action) => ({ value: action, label: roleBlock(action) ? `${actionLabel(action)}（需财务主管、风控主管或超级管理员）` : action === "APPROVE" && !canReadD5 ? `${actionLabel(action)}（无额度权限）` : actionLabel(action), disabled: !availableBatchActions.includes(action) }))]} />}
         <ColumnPicker columns={columns} />
       </>}>
       {showSelection && (batchAction || selected.size > 0) && (

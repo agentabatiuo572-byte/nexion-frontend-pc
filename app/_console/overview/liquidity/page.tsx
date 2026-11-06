@@ -640,7 +640,7 @@ export default function LiquidityPage() {
             <header>
               <div>
                 <b id="b2-config-title">{dialogStep === "edit" ? "调整预测配置" : "确认资金预测配置"}</b>
-                <span>只有财务负责人或超级管理员可以提交</span>
+                <span>只有财务主管或超级管理员可以提交</span>
               </div>
               <button type="button" aria-label="关闭配置弹窗" onClick={() => setDialogStep("closed")}>×</button>
             </header>

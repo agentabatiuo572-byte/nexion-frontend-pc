@@ -51,6 +51,7 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
           detail={mc.detail}
           amplifies={mc.amplifies}
           coverage={mc.coverage}
+          coverageCheck={mc.coverageCheck}
           edit={mc.edit}
           businessForm={mc.businessForm}
           getPendingReason={mc.getPendingReason}

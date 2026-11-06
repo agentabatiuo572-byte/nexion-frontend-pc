@@ -499,7 +499,7 @@ export default function DualLedgerPage() {
               )}
             </div>
             {!canConfigureThresholds && !canInjectReserve && (
-              <div className="muted tiny">你只能查看；调整红线和登记注入需财务负责人或超级管理员。</div>
+              <div className="muted tiny">你只能查看；调整红线和登记注入需财务主管或超级管理员。</div>
             )}
           </div>
 

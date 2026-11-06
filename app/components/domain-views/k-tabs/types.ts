@@ -11,6 +11,8 @@ export type ActionConfirmReq = {
   /** 放大资金流出方向才挂(B1 覆盖率预检):解除误判 / 复审通过解冻 / 调阈值放宽 / 停用规则;冻结 / 驳回 / 确认违规不挂。 */
   amplifies?: boolean;
   coverage?: CoverageSnapshot;
+  /** 按该操作的真实路径说明覆盖率检查时机。 */
+  coverageCheck?: string;
   edit?: EditSpec;
   businessForm?: BusinessFormSpec;
   /** 与服务端理由长度约束保持一致；未指定时沿用共享弹窗的领域默认值。 */
