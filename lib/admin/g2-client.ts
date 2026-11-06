@@ -1,8 +1,9 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { assertG2OverviewContract } from "@/lib/admin/g-overview-contract";
-import { createStableMutationExecutor, stableMutationFingerprint, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
-import { normalizeG2BatchResult, type G2BatchResult } from "@/lib/admin/g2-batch-result";
+import { classifyStableMutationFailure, createStableMutationExecutor, StableMutationFailure, stableMutationFingerprint, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
+import { normalizeG2BatchResult } from "@/lib/admin/g2-batch-result";
+import { createPendingMutationStore, hasPersistedPendingCommandOwner, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 
 interface ApiResult<T> {
   code: number;
@@ -194,7 +195,44 @@ function idempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${requestSeq}`;
 }
 
-const executeG2Mutation = createStableMutationExecutor(idempotencyKey, "nexion-admin-g2-exchange-commands-v1");
+const BATCH_PATH = "/exchange/queue/process";
+const BATCH_PREFIX = "g2-queue-batch";
+const BATCH_INTENT = `${BATCH_PREFIX}:${stableMutationFingerprint("POST", BATCH_PATH, "")}`;
+const pendingCommands = createPendingMutationStore<PendingMutationRecord & { adminId?: number }>({
+  storageKey: "nexion-admin-g2-exchange-commands-v1",
+  retainExpiredRecords: true,
+  isValidRecord: (record) => record.fingerprint.startsWith(BATCH_INTENT) || record.expiresAt > Date.now(),
+});
+const executeG2Mutation = createStableMutationExecutor(idempotencyKey, pendingCommands);
+
+export interface G2PendingBatch extends PendingMutationRecord {
+  adminId: number;
+  limit: number;
+  reason: string;
+  body: string;
+}
+
+export class G2BatchReceiptNotFound extends Error {
+  constructor() {
+    super("暂未找到可核对的原回执。请先查看操作记录。");
+  }
+}
+
+export function pendingG2QueueBatch(adminId: number): G2PendingBatch | undefined {
+  if (!Number.isSafeInteger(adminId) || adminId < 1) return;
+  for (const record of pendingCommands.list()) {
+    if (!record.fingerprint.startsWith(BATCH_INTENT) || !/^g2-queue-batch-\d+-\d+$/.test(record.commandKey)) continue;
+    if (record.adminId === undefined ? !hasPersistedPendingCommandOwner(String(adminId)) : record.adminId !== adminId) continue;
+    const body = record.fingerprint.slice(BATCH_INTENT.length);
+    try {
+      const draft = JSON.parse(body) as { limit: number; reason: string; operator: string } | null;
+      if (draft && Number.isSafeInteger(draft.limit) && draft.limit >= 1 && draft.limit <= 100
+          && typeof draft.reason === "string" && draft.reason.trim() && typeof draft.operator === "string") {
+        return { ...record, adminId, limit: draft.limit, reason: draft.reason, body };
+      }
+    } catch { /* An incomplete legacy record cannot be submitted or queried. */ }
+  }
+}
 
 function toNumber(value: number | string | null | undefined, fallback = 0) {
   if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
@@ -347,9 +385,15 @@ async function g2Request<T>(path: string, init?: RequestInit) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
+    if (path === BATCH_PATH && init?.method === "GET" && response.status === 404
+        && result?.message === "G2_BATCH_RECEIPT_NOT_FOUND") {
+      throw new G2BatchReceiptNotFound();
+    }
+    const batchStillUnknown = path === BATCH_PATH && init?.method === "POST" && response.status === 409
+      && result?.message?.startsWith("IDEMPOTENCY_");
     throw stableMutationHttpFailure(
       formatAdminApiError(result?.message, `G2_REQUEST_FAILED_${response.status}`),
-      response.status,
+      batchStillUnknown ? 0 : response.status,
       result?.code,
     );
   }
@@ -404,32 +448,65 @@ export async function updateG2ExchangeSwapStatus(
   );
 }
 
-export async function processG2ExchangeQueue(limit: number, reason: string, operator: string) {
-  const path = "/exchange/queue/process";
+async function confirmG2Batch(response: BackendOverview, fingerprint: string, commandKey: string) {
+  const batch = normalizeG2BatchResult(response?.batch);
+  // Keep the original command until both the receipt and the current queue can be shown.
+  let overview: G2Overview;
+  try { overview = await fetchG2ExchangeOverview(); }
+  catch (error) { throw stableMutationHttpFailure(displayAdminError(error), 0); }
+  pendingCommands.forget(fingerprint, commandKey);
+  return { overview, batch };
+}
+
+export async function processG2ExchangeQueue(adminId: number, limit: number, reason: string, operator: string) {
   const body = JSON.stringify({ limit, reason, operator });
-  return executeG2Mutation(
-    "g2-queue-batch",
-    stableMutationFingerprint("POST", path, body),
-    async (commandKey) => {
-      const response = await g2Request<BackendOverview>(path, {
-        method: "POST",
-        headers: { "Idempotency-Key": commandKey },
-        body,
-      });
-      const batch = normalizeG2BatchResult(response?.batch);
-      // POST 已被后端接受后仍显式 GET 权威投影。若 GET 失败，执行器保留同一命令号；
-      // 运营重试时后端回放原批次回执，再次 GET，不会把未知结果变成第二次批处理。
-      let authoritative: G2Overview;
-      try {
-        authoritative = await fetchG2ExchangeOverview();
-      } catch (error) {
-        const message = displayAdminError(error);
-        throw stableMutationHttpFailure(message, 0);
-      }
-      return { overview: authoritative, batch };
-    },
-    (result): { overview: G2Overview; batch: G2BatchResult } => result,
-  );
+  const original = pendingG2QueueBatch(adminId);
+  const now = Date.now();
+  if (original && (original.body !== body || now < original.createdAt || now >= original.expiresAt)) {
+    throw new StableMutationFailure("outcome-unknown", "原处理结果尚未确认，请先核对原处理。");
+  }
+  const fingerprint = BATCH_INTENT + body;
+  const commandKey = original?.commandKey ?? idempotencyKey(BATCH_PREFIX);
+  if (!original) {
+    pendingCommands.remember(fingerprint, commandKey, { adminId });
+    if (!pendingCommands.isDurablyStored(fingerprint, commandKey)) {
+      pendingCommands.forget(fingerprint, commandKey);
+      throw new StableMutationFailure("deterministic", "无法保存原命令，请允许浏览器会话存储后再提交。");
+    }
+  }
+  try {
+    const response = await g2Request<BackendOverview>(BATCH_PATH, {
+      method: "POST", headers: { "Idempotency-Key": commandKey }, body,
+    });
+    return await confirmG2Batch(response, fingerprint, commandKey);
+  } catch (error) {
+    if (!original && classifyStableMutationFailure(error) === "deterministic") {
+      pendingCommands.forget(fingerprint, commandKey);
+    }
+    throw error;
+  }
+}
+
+function requirePendingG2QueueBatch(adminId: number, commandKey: string) {
+  const original = pendingG2QueueBatch(adminId);
+  if (!original || original.commandKey !== commandKey) throw new Error("原处理记录已变化，请重新打开核对入口。");
+  return original;
+}
+
+export async function recoverG2ExchangeQueue(adminId: number, commandKey: string) {
+  const original = requirePendingG2QueueBatch(adminId, commandKey);
+  const response = await g2Request<BackendOverview>(BATCH_PATH, {
+    method: "GET", headers: { "Idempotency-Key": original.commandKey },
+  });
+  return confirmG2Batch(response, original.fingerprint, original.commandKey);
+}
+
+export function finishLocalG2QueueBatchReview(adminId: number, commandKey: string) {
+  const original = requirePendingG2QueueBatch(adminId, commandKey);
+  pendingCommands.forget(original.fingerprint, original.commandKey);
+  if (pendingCommands.isDurablyStored(original.fingerprint, original.commandKey)) {
+    throw new Error("暂时无法清除本机核对记录，请允许浏览器会话存储后再试。");
+  }
 }
 
 export async function cancelG2ExchangeQueueOrder(exchangeNo: string, reason: string, operator: string) {

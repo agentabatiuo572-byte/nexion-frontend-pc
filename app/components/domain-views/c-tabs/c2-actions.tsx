@@ -552,10 +552,10 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     },
   });
 
-  const logoutAll = (account: User360Profile) => {
+  const logoutAll = (account: User360Profile, accountActiveCount?: number) => {
     const id = accountId(account);
     const pending = getPendingUserSessionRevocation(id);
-    const activeCount = sessionCounts.get(id) ?? 0;
+    const activeCount = accountActiveCount ?? sessionCounts.get(id) ?? 0;
     if (!pending && activeCount <= 0) {
       toast("该用户当前没有在线设备");
       return;
@@ -933,6 +933,9 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         const status = statusOf(selectedAccount);
         const [statusLabel, statusTone] = statusMeta(status);
         const accountSessions = sessionsFor(selectedAccount);
+        const activeCount = accountContext?.account && accountId(accountContext.account) === accountId(selectedAccount)
+          ? asNumber(accountContext.activeSessions)
+          : accountSessions.filter(activeSession).length;
         const listEntry = listFor(selectedAccount);
         const controlFact = controlFactFor(selectedAccount);
         return (
@@ -957,7 +960,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
             <div className="kv"><span className="k">余额</span><span className="v">{formatAmount(selectedAccount.walletUsdt)} USDT · {formatAmount(selectedAccount.walletNex)} UVT</span></div>
             <div className="kv"><span className="k">风险分</span><span className="v">{text(selectedAccount.riskScore, "0")} · {formatC1RiskBand(selectedAccount.riskBand)}</span></div>
             <div className="kv"><span className="k">当前名单</span><span className="v">{listEntry ? `${displayListKind(listEntry.kind)[0]} · ${text(listEntry.reason)}` : "无生效名单"}</span></div>
-            <div className="kv"><span className="k">在线设备</span><span className="v">{accountContext?.account && accountId(accountContext.account) === accountId(selectedAccount) ? asNumber(accountContext.activeSessions) : accountSessions.filter(activeSession).length} 个</span></div>
+            <div className="kv"><span className="k">在线设备</span><span className="v">{activeCount} 个</span></div>
             {accountContext?.sessionsTruncated && <div className="ctint warn" style={{ marginTop: 8 }}>该用户共有 {asNumber(accountContext.totalSessions)} 条登录记录，这里显示最近 {accountSessions.length} 条。</div>}
 
             {status === "FROZEN" && <>
@@ -992,7 +995,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
             <div className="row wrap" style={{ gap: 8 }}>
               {status === "ACTIVE" && canFreeze && <button disabled={busy || !!accountContextError} className="l-btn sm mc" aria-label={`冻结 ${displayAccount(selectedAccount)}`} onClick={() => freeze(selectedAccount)}>冻结</button>}
               {status === "FROZEN" && canUnfreeze && <button disabled={busy || !!accountContextError} className="l-btn sm mc" aria-label={`恢复 ${displayAccount(selectedAccount)}`} onClick={() => unfreeze(selectedAccount)}>恢复</button>}
-              {canLogout && <button disabled={busy || !!error || !!accountContextError || (!getPendingUserSessionRevocation(accountId(selectedAccount)) && (accountContext?.account && accountId(accountContext.account) === accountId(selectedAccount) ? asNumber(accountContext.activeSessions) : accountSessions.filter(activeSession).length) <= 0)} className="l-btn sm" aria-label={`强制登出 ${displayAccount(selectedAccount)}`} onClick={() => logoutAll(selectedAccount)}>强制登出</button>}
+              {canLogout && <button disabled={busy || !!error || !!accountContextError || (!getPendingUserSessionRevocation(accountId(selectedAccount)) && activeCount <= 0)} className="l-btn sm" aria-label={`强制登出 ${displayAccount(selectedAccount)}`} onClick={() => logoutAll(selectedAccount, activeCount)}>强制登出</button>}
             </div>
           </Drawer>
         );

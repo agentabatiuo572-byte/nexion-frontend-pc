@@ -2,7 +2,7 @@
 // node --test 直接 import,node 既不认 tsconfig 的路径别名,也不做无后缀补全
 // (tsconfig 已开 allowImportingTsExtensions,tsc 与 next build 都吃这种写法)。
 import { isDeterministicRejection } from "./outcome-classification.ts";
-import { createPendingMutationStore } from "./pending-mutation-store.ts";
+import { createPendingMutationStore, type PendingMutationRecord, type PendingMutationStore } from "./pending-mutation-store.ts";
 
 export type StableMutationCommand<T> = (commandKey: string) => Promise<T>;
 
@@ -44,7 +44,7 @@ export function stableMutationHttpFailure(
 /**
  * 通用「结果未知就复用同一命令号」执行器。
  *
- * storageKey 是必填的:命令号必须跨刷新存活,否则运营刷新后重试会铸新号,后端无法去重 →
+ * 存储键或已有的业务 store 必填:命令号必须跨刷新存活,否则运营刷新后重试会铸新号,后端无法去重 →
  * 重复入账 / 重复处置。每个域各用各的键,共用一把会让不同域的在途命令号互相覆盖。
  *
  * ⚠ fingerprint 必须由调用方把「动作类型 + 目标对象 id」都编码进去(推荐 `${method} ${path}\n${body}`)。
@@ -53,9 +53,9 @@ export function stableMutationHttpFailure(
  */
 export function createStableMutationExecutor(
   nextCommandKey: (prefix: string) => string,
-  storageKey: string,
+  storage: string | PendingMutationStore<PendingMutationRecord>,
 ) {
-  const pendingKeys = createPendingMutationStore({ storageKey });
+  const pendingKeys = typeof storage === "string" ? createPendingMutationStore({ storageKey: storage }) : storage;
 
   return async function executeStableMutation<T, R>(
     prefix: string,

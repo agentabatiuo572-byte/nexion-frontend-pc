@@ -73,7 +73,7 @@
 | A6 角色管理 | `platform_a6_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR | H：SUPER_ADMIN | ALL；禁止编辑 SUPER_ADMIN 使其失控，禁止自批 |
 | A7 菜单管理 | `platform_a7_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR | W：CONFIG_ADMIN；根菜单/删除 H：SUPER_ADMIN | ALL；父子、角色授权和路由完整性保护 |
 | A8 权限字典 | `platform_a8_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR | H：SUPER_ADMIN | ALL；permission code 发布后不可改语义，只能停用/新建 |
-| A9 开发者访问审批 | `developer_access_read` | 按当前会话读取授权 | 批准 / 驳回 / 撤销分别核对动作权限 | 全局申请；动作同时受申请状态约束 |
+| A9 开发者访问审批 | `developer_access_read` | 按当前会话读取授权 | 批准 / 驳回 / 撤销分别核对动作权限 | 全局申请。动作受申请状态约束。本人同一申请、动作和状态的审批结果未确认时，核对原命令显示原备注并沿用原键。 |
 
 A6 当前执行路径（2026-11-04，T02、BUG-134）：新建角色、修改名称和备注填写理由并确认后「立即生效」，保留操作记录；角色启停、授权和删除提交到「操作记录与审批」，由另一位管理员「批准后生效」。页头和确认框按实际路径说明，本次不改变审批流程。切换角色时详情只属于当前选中角色；加载中或失败时不提供旧角色的操作，失败明确提示并可重试。
 

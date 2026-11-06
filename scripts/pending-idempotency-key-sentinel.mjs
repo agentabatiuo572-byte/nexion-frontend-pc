@@ -348,7 +348,7 @@ for (const key of Object.keys(KNOWN)) {
 
 // 判据 3:已迁移文件不得回退。两条合法路径:
 //   直接 —— import 共享 store 并 create{PendingMutation,SlotAttempt}Store;
-//   间接 —— 走 createStableMutationExecutor,但**必须传非空 storageKey**(不传就静默退回内存态)。
+//   间接 —— 给 createStableMutationExecutor 传非空 storageKey 或当前文件创建的持久化 store。
 let storeIdents = 0; // 判据 3b 实际核过调用点的标识符数(0 = 判据失效,PASS 必打样本量)
 for (const rel of MIGRATED) {
   const full = path.join(ROOT, rel);
@@ -375,12 +375,16 @@ for (const rel of MIGRATED) {
   const executorSites = executorBindings.has("createStableMutationExecutor")
     ? [...code.matchAll(/(?:const|let)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*createStableMutationExecutor\s*\(([^)]*)\)/g)]
     : [];
+  const persistentStores = storeBindings.has("createPendingMutationStore")
+    ? [...code.matchAll(/^\s*const\s+([A-Za-z_$][\w$]*)\s*=\s*createPendingMutationStore\s*(?:<[^>]*>)?\s*\(\s*\{\s*storageKey:\s*([^,}\n]+)/gm)]
+        .filter(([, , key]) => nonEmptyStringLiteral(key.trim(), code)).map(([, name]) => name)
+    : [];
   for (const [, ident, argsRaw] of executorSites) {
     storeIdents += 1;
     const storageArg = splitArgs(argsRaw)[1];
-    if (!nonEmptyStringLiteral(storageArg, code)) {
-      failures.push(`${rel} 的 ${ident} 调用 createStableMutationExecutor 时 storageKey 不是非空字符串`
-        + `(实参:${storageArg ?? "缺失"})→ 命令号退回内存态,刷新即失效`);
+    if (!nonEmptyStringLiteral(storageArg, code) && !persistentStores.includes(storageArg)) {
+      failures.push(`${rel} 的 ${ident} 调用 createStableMutationExecutor 时未传有效 storageKey 或持久化 store`
+        + `(实参:${storageArg ?? "缺失"})→ 刷新后无法恢复命令号`);
     }
     if (!new RegExp(`\\b${ident.replace(/\$/g, "\\$")}\\s*\\(`).test(code)) {
       failures.push(`${rel} 的通用执行器 ${ident} 建了却从不调用 → 悬空 const 顶包,真实写路径已绕开幂等键`);
