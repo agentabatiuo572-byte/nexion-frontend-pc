@@ -1832,19 +1832,18 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
                 : cregisDetail.state === "CONFIRMED" ? "已到账，已结算"
                   : "按正常提现流程结算，可在账单里核对"}</Fact>
               <Notice tone="progress">{cregisDetail.canRecover
-                ? "请到 Cregis 查到打款单号后点「核对 Cregis 打款单」，不会重新打款。"
+                ? "查到打款单号后点「核对 Cregis 打款单」，不会重新打款。"
                 : "系统会继续跟进打款结果；结果不明时请核对，不要重新放行或退款。"}</Notice>
             </>}
           </Facts> : <Notice tone="warn">打款信息正在加载或暂时无法获取，加载成功后再处理。</Notice>}
         </Fold>}
         {shown.chain === "BANK-VND" && <Fold inset title="HDPay 银行打款" icon={Landmark} alert={!detailLoading && (bankDetail?.beneficiaryEligibility?.canWithdraw !== true || bankDetail?.state === "MANUAL_REVIEW")}
           summary={bankDetail ? (bankDetail.beneficiaryEligibility?.canWithdraw === true ? "收款账户一致" : "暂不能审核放行") : "暂时无法获取"}>
-          {bankDetail ? <Facts>
+          {bankDetail ? <><Facts>
             <Fact k="收款方式">按银行账号打款（银行未提前核验账号）</Fact><Fact k="收款账号">{bankDetail.maskedAccount}</Fact>
             <Fact k="锁定汇率">{`${bankDetail.rateVnd.toLocaleString("en-US")} ₫ / USDT`}</Fact>
             <Fact k="银行到账金额">{`${bankDetail.amountVnd.toLocaleString("en-US")} ₫`}</Fact>
             <Fact k="打款状态">{({READY:"准备出款",DISPATCHING:"派发中",PAID:"已到账",MANUAL_REVIEW:"待人工核查",CREATED:"待派发",PENDING:"待处理",PROCESSING:"银行处理中",SENT:"银行处理中",SUCCESS:"已到账",COMPLETED:"已到账",FAILED:"打款失败",REFUNDED:"已退款",CANCELLED:"已取消",UNKNOWN:"状态待核实"} as Record<string,string>)[bankDetail.state] ?? "状态待核实"}</Fact><Fact k="HDPay 单号">{bankDetail.providerOrderId || "尚未取得"}</Fact>
-            <Fact k="核对提示">{bankDetail.lastError ? operationalText(bankDetail.lastError) : "按 HDPay 返回的结果自动结算；银行接单不代表已到账"}</Fact>
             <Fact k="收款账户">{bankDetail.beneficiaryEligibility?.canWithdraw === true ? "与订单收款账户一致" : "暂不能审核放行"}</Fact>
             {bankDetail.beneficiaryEligibility?.canWithdraw !== true && <Notice tone="warn">{bankDetail.beneficiaryEligibility?.reasonCode ? displayAdminError(new Error(bankDetail.beneficiaryEligibility.reasonCode)) : "收款账户状态加载失败，请刷新后重试。"}</Notice>}
             <Fact k="结算凭证">{bankDetail.settlementEvidence ? bankEvidenceLabels[bankDetail.settlementEvidence.status] : "暂无"}</Fact>
@@ -1853,7 +1852,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
               <Fact k="确认时间">{bankEvidenceTime(bankDetail.settlementEvidence.checkedAt)}</Fact>
               {bankDetail.settlementEvidence.status === "refunded" && <Fact k="已退回余额">{`${bankDetail.settlementEvidence.amountUsdt?.toLocaleString("zh-CN", { maximumFractionDigits: 6 })} USDT`}</Fact>}
             </>}
-          </Facts> : <Notice tone="warn">收款账户信息正在加载或暂时无法获取，加载成功前不能放行。</Notice>}
+          </Facts><p className="rd-note">核对提示：{bankDetail.lastError ? operationalText(bankDetail.lastError) : "按 HDPay 返回的结果自动结算；银行接单不代表已到账"}</p></> : <Notice tone="warn">收款账户信息正在加载或暂时无法获取，加载成功前不能放行。</Notice>}
         </Fold>}
         <Fold inset title="费用明细" summary={`手续费 ${money(shown.actualFee)}`} icon={Receipt}>
           <Facts>
