@@ -786,6 +786,7 @@
 - **概率输入与提交（BUG-258 Follow-up 1）**：H4 转盘与 H5 幸运概率只接受普通十进制数字，拒绝科学计数法等旧编辑器不接受的格式。前置校验与提交使用同一完整数值；H5 不截取数字前缀，填写 0.5 时提交的概率仍是 0.5。
 - **概率提交前反馈（BUG-258）**：转盘弹窗实时显示所有奖项概率合计；单项超出 0–100% 或合计不等于 100% 时禁用确认，合法配置沿用原保存及系统校验。
 - **转盘奖项可选字段（BUG-253）**：代金券 ID 只在奖励类型为代金券时显示并必填；UVT、USDT 等非券奖项无需填写，保存为空。其他数量、库存和版本校验沿用原规则。
+- **旧转盘奖项编辑（BUG-347）**：旧 `nex` 档打开编辑时奖励类型取 `uvt`，无需重选类型，只改奖名即可保存，保存后读回 `uvt`。仅处理该编辑入口，不迁移旧数据，原奖池签名仍用于版本校验。
 
 > **2026-11-04 产品决定**：移除持币活动（`holding`，原 NEX Holders Share），后端同步删除该类型及钱包余额变化触发。PC 不再提供创建选项、专属标签、规则字段或奖池说明；旧记录按未知类型显示“其他活动”，玩法区标为“其他活动（已停用）”且不可选择。不增加兼容玩法，其他活动沿用现有配置及服务端结果。
 
@@ -919,7 +920,7 @@
 - `POST /api/admin/events` / `PUT /api/admin/events/:id` — 新建 / 改活动(经确认弹窗 H4-MD1/MD2/MD3/MD5,reason 必填(空值 400 `REASON_REQUIRED`);**升奖励 server 先核 B1,< 红线返 422**;**改 featured 时 server 强制 featured 唯一性,违反返 422**)。
 - `POST /api/admin/events/:id/{publish|unpublish}` — 上下架(经确认弹窗 H4-MD1,reason 必填)。
 - `POST /api/events/:id/spin` — Lucky Spin 转盘派奖(**server-canonical RNG** 裁决奖项;奖项池 / 概率已裁定 §③ 奖池表;server 强制日派彩预算 / 单奖每日库存 / B1 红线自动降级三护栏 + `spinDate` 日桶计票超额 409)。
-- `PUT /api/admin/events/:id/wheel` — **Lucky Spin 转盘专属配置端点**(奖池档位 + 各档概率 + 三护栏,从通用 `PUT /api/admin/events/:id` 拆出,因奖池为结构化大对象,独立端点便于校验与审计);payload `{ segments: [{ id, kind: "nex"|"points"|"usdt"|"coupon", amount, weight, isReal, labelKey }], guardrails: { wheelDailyPayoutBudgetUSD, wheelPrizeDailyCap, wheelRealPrizeEnabled } }`;经确认弹窗 H4-MD4(reason 必填,执行=财务(lead)/ 超管);**server 三重校验**:① 各档 `weight` 之和 = 100(违反返 **422**)② 档位数 ∈ [2, 12](越界返 422)③ 含真实奖档(`isReal=true`)的放大流出须先过 B1 红线(< 红线返 **422** + 当前覆盖率);幂等 `Idempotency-Key`;放行落 `admin.event_wheel_changed` 审计(§④)。
+- `PUT /api/admin/events/:id/wheel` — **Lucky Spin 转盘专属配置端点**(奖池档位 + 各档概率 + 三护栏,从通用 `PUT /api/admin/events/:id` 拆出,因奖池为结构化大对象,独立端点便于校验与审计);payload `{ segments: [{ id, kind: "uvt"|"usdt"|"coupon", amount, weight, isReal, labelKey }], guardrails: { wheelDailyPayoutBudgetUSD, wheelPrizeDailyCap, wheelRealPrizeEnabled } }`;经确认弹窗 H4-MD4(reason 必填,执行=财务(lead)/ 超管);**server 三重校验**:① 各档 `weight` 之和 = 100(违反返 **422**)② 档位数 ∈ [2, 12](越界返 422)③ 含真实奖档(`isReal=true`)的放大流出须先过 B1 红线(< 红线返 **422** + 当前覆盖率);历史 `points` 档仅保留只读，仍计入概率合计，不作为新增或编辑类型。幂等 `Idempotency-Key`;放行落 `admin.event_wheel_changed` 审计(§④)。
 
 **⑥ 权限 & 审计**:
 | 角色 | 查看活动/tracking | 上下架 | 改 featured | 改奖励/evaluator/转盘 | 改 geo |
