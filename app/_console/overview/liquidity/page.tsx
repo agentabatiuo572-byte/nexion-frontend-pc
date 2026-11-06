@@ -16,17 +16,19 @@ import {
 } from "lucide-react";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import { isDOutcomeUnknownError } from "@/lib/admin/d-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { B2RestoredInsights } from "@/app/components/dashboard/restored-b-insights";
+import { KConfirmModal } from "@/app/components/domain-views/k-tabs/confirm-modal";
 import { canAccessCrossDomainPath } from "@/lib/admin/cross-domain-authority";
 import { TREASURY_VALUATION_UNAVAILABLE } from "@/lib/admin/treasury-valuation";
 
-/** B2 预测配置只有一个槽位:草稿 / 期望版本 / 理由没变就复用命令号,变了铸新号并丢弃旧号。
- *  落 sessionStorage,刷新后「结果未知」的重试仍是同一命令号,后端才能去重。 */
-const forecastConfigCommandKey = createSlotAttemptStore({
+/** 每项 B2 操作单独保存命令号。输入相同的未知结果可跨刷新重试。 */
+const b2CommandAttempts = createSlotAttemptStore({
   storageKey: "nexion-admin-b2-liquidity-commands-v1",
 });
 const FORECAST_CONFIG_SLOT = "forecast-config";
+const LIABILITY_EXPORT_SLOT = "liability-export";
 import {
   B2_LIABILITY_KEYS,
   B2OutcomeUnknownError,
@@ -91,6 +93,7 @@ export default function LiquidityPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [exportOpen, setExportOpen] = useState(false);
   const [dialogStep, setDialogStep] = useState<"closed" | "edit" | "confirm">("closed");
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState("");
@@ -154,11 +157,21 @@ export default function LiquidityPage() {
     void load(value);
   };
 
-  const exportLiabilities = () => {
-    setError("");
-    void downloadB2LiabilitiesCsv()
-      .then(() => setNotice("负债明细 CSV 已导出"))
-      .catch((caught) => setError(caught instanceof Error ? displayAdminError(caught) : "导出失败，请重试"));
+  const exportLiabilities = async (exportReason: string) => {
+    const operator = currentAdminOperator();
+    const commandKey = b2CommandAttempts.resolve(
+      LIABILITY_EXPORT_SLOT,
+      JSON.stringify([operator, exportReason]),
+      () => `b2-liability-export-${crypto.randomUUID()}`,
+    );
+    try {
+      await downloadB2LiabilitiesCsv(exportReason, operator, commandKey);
+      b2CommandAttempts.forget(LIABILITY_EXPORT_SLOT);
+      setNotice("负债明细 CSV 已导出");
+    } catch (caught) {
+      if (!isDOutcomeUnknownError(caught)) b2CommandAttempts.forget(LIABILITY_EXPORT_SLOT);
+      throw caught;
+    }
   };
 
   const openConfig = () => {
@@ -191,20 +204,20 @@ export default function LiquidityPage() {
       reason: reason.trim(),
       operator,
     });
-    const commandKey = forecastConfigCommandKey.resolve(
+    const commandKey = b2CommandAttempts.resolve(
       FORECAST_CONFIG_SLOT, fingerprint, () => `b2-forecast-config-${crypto.randomUUID()}`,
     );
     setSaving(true);
     setSaveError("");
     void updateB2ForecastConfig(draft, data.config.version, reason.trim(), operator, commandKey)
       .then(async () => {
-        forecastConfigCommandKey.forget(FORECAST_CONFIG_SLOT);
+        b2CommandAttempts.forget(FORECAST_CONFIG_SLOT);
         setDialogStep("closed");
         setNotice("已保存，次日 UTC 00:00 起生效");
         await load(window);
       })
       .catch(async (caught) => {
-        if (!(caught instanceof B2OutcomeUnknownError)) forecastConfigCommandKey.forget(FORECAST_CONFIG_SLOT);
+        if (!(caught instanceof B2OutcomeUnknownError)) b2CommandAttempts.forget(FORECAST_CONFIG_SLOT);
         setDialogStep(caught instanceof B2OutcomeUnknownError ? "confirm" : "edit");
         setSaveError(caught instanceof Error ? displayAdminError(caught) : "保存失败，请重试");
         if (caught instanceof B2RequestError && caught.status === 409) await load(window);
@@ -289,7 +302,7 @@ export default function LiquidityPage() {
           <RefreshCw size={14} className={loading ? "spin" : ""} />刷新
         </button>
         {canExport ? (
-          <button type="button" className="b2-button" onClick={exportLiabilities}>
+          <button type="button" className="b2-button" onClick={() => { setNotice(""); setExportOpen(true); }}>
             <Download size={14} />导出负债 CSV
           </button>
         ) : (
@@ -439,6 +452,20 @@ export default function LiquidityPage() {
       </section>
 
       <B2RestoredInsights data={data} />
+
+      {exportOpen && canExport && (
+        <KConfirmModal
+          req={{
+            briefKind: "export",
+            action: "导出负债 CSV",
+            detail: "导出当前应付款明细。操作理由将写入审计记录。",
+            reason: true,
+            okLabel: "确认导出",
+            run: exportLiabilities,
+          }}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
 
       {dialogStep !== "closed" && draft && (
         <div className="b2-dialog-backdrop" role="presentation">

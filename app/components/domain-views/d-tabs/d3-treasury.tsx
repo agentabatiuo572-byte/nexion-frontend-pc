@@ -85,7 +85,8 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
   const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
   const canConfig = authorities.includes("finance_d3_write");
   const canInject = authorities.includes("finance_d3_injection_create");
-  const canExport = authorities.includes("finance_d3_export");
+  const canExportReconciliation = authorities.includes("finance_d3_export");
+  const canExportLiabilities = canExportReconciliation || authorities.includes("overview_b2_export");
   const [data, setData] = useState<D3Dashboard | null>(null);
   const [draft, setDraft] = useState<D3ForecastConfig | null>(null);
   const [maturityWindow, setMaturityWindow] = useState<"7d" | "30d">("7d");
@@ -348,7 +349,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
       </div>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">应付款 · 9 类</span><span className="sub">· {data?.liabilities.hardLiabilityCategoryCount ?? 0}/9</span>{canExport && <div className="r"><button className="l-btn sm" onClick={() => exportCsv("liabilities")}>导出应付款 CSV</button></div>}</div>
+        <div className="l-h"><span className="ttl">应付款 · 9 类</span><span className="sub">· {data?.liabilities.hardLiabilityCategoryCount ?? 0}/9</span>{canExportLiabilities && <div className="r"><button className="l-btn sm" onClick={() => exportCsv("liabilities")}>导出应付款 CSV</button></div>}</div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 920 }}>
             <thead><tr><th>类型</th><th>说明</th><th className="num">金额</th><th className="num">占比</th><th>数据来源</th></tr></thead>
@@ -380,7 +381,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
       </div>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">应付款预测设置</span><span className="sub">· 次日 UTC 00:00 起生效，不影响历史</span>{canExport && <div className="r"><button className="l-btn sm" onClick={() => exportCsv("reconciliation")}>导出对账 CSV</button></div>}</div>
+        <div className="l-h"><span className="ttl">应付款预测设置</span><span className="sub">· 次日 UTC 00:00 起生效，不影响历史</span>{canExportReconciliation && <div className="r"><button className="l-btn sm" onClick={() => exportCsv("reconciliation")}>导出对账 CSV</button></div>}</div>
         <div className="l-b">
           {draft && <>
             <div className="ui-form-grid" style={{ marginBottom: 12 }}>

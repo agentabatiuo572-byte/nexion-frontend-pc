@@ -13,6 +13,7 @@ import { Drawer, PaginationExemption } from "../design-kit";
 import {
   createG4GenesisTier,
   deleteG4GenesisTier,
+  fetchG4DividendApprovalState,
   fetchG4GenesisOverview,
   initializeG4GenesisSeries,
   rerunG4GenesisDividendBatch,
@@ -27,7 +28,9 @@ import {
 } from "@/lib/admin/g4-client";
 import type { GCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { configApprovalOriginalInput, pendingConfigApproval } from "@/lib/admin/withdrawal-config-approval";
 import G4AdminOperations from "./g4-admin-operations";
+import { G4FirstDividendConfirm } from "./g4-first-dividend-confirm";
 
 const OPERATOR = currentAdminOperator;
 
@@ -82,6 +85,7 @@ function catalogBlockText(reason: string) {
 export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const { toast, openActionConfirm } = ctx;
   const session = useAdminAuth((state) => state.session);
+  const epoch = useAdminAuth((state) => state.authEpoch);
   const authorities = session?.authorities ?? [];
   const isSuper = session?.role === "super" || session?.role === "superadmin";
   const allowed = (authority: string) => isSuper || authorities.includes(authority);
@@ -99,6 +103,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const [nodeDrawer, setNodeDrawer] = useState<string | null>(null);
   const [nodePageNo, setNodePageNo] = useState(1);
   const [nodePageSize, setNodePageSize] = useState(10);
+  const [firstDividend, setFirstDividend] = useState<{ epoch: number; expectedRevision: string } | null>(null);
 
   const reload = useCallback(async (silent = false, page = nodePageNo, pageSize = nodePageSize) => {
     if (!silent) setLoading(true);
@@ -204,11 +209,16 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const marketOn = overview.market.enabled;
   const stats = overview.stats;
   const dividend = overview.dividend;
+  const dividendParam = paramByKey(overview, "dividend");
   const showPaidEmission = overview.emissionGate.open || dividend.paidCount > 0;
   const geoBlocked = overview.geoBlocked.filter((geo) => geo.status === "blocked").map((geo) => geo.cc).join(" / ") || "-";
   const batchRerun = dividend.batchStatus === "done";
   const soldPct = Math.max(0, Math.min(100, stats.soldPct));
   const nodePage = overview.nodePage;
+  const canSetupDividend = authorities.includes("finprod_g4_dividend_rate_write");
+  const pendingFirstDividend = session && pendingConfigApproval("G4", session.adminId);
+  const firstDividendEntry = !!pendingFirstDividend
+    || (!!dividendParam?.value.trim() && Number(dividendParam.value) === 0);
 
   const loadNodePage = (page: number, pageSize = nodePage.pageSize) => {
     void reload(false, page, pageSize);
@@ -222,8 +232,37 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     void reload(false, 1, nextPageSize);
   };
 
+  const openFirstDividend = async () => {
+    if (!session || !canSetupDividend) return;
+    setError("");
+    setBusyKey("param:dividend");
+    try {
+      if (pendingFirstDividend) {
+        const [original] = configApprovalOriginalInput("G4", pendingFirstDividend.input);
+        setFirstDividend({ epoch, expectedRevision: original.expectedRevision });
+        return;
+      }
+      const state = await fetchG4DividendApprovalState();
+      if (useAdminAuth.getState().authEpoch !== epoch) return;
+      if (Number(state.dividend) !== 0) {
+        await reload(true);
+        toast("每日收益比例已配置，请核对当前值后再调整。");
+        return;
+      }
+      setFirstDividend({ epoch, expectedRevision: state.expectedRevision });
+    } catch (err) {
+      setError(messageOf(err));
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
   const adjustParam = (param: G4Param) => {
     if (!allowed(paramAuthority(param.key))) return;
+    if (param.key === "dividend" && firstDividendEntry) {
+      void openFirstDividend();
+      return;
+    }
     // 主人拍板(2026-08-06):阶梯档位在场时一级单价由档位派生、本参数只读,调价走档位卡
     // (OPS-G-07/G-13 仲裁)。入口已不渲染,这里是钱路径双保险。
     if (param.key === "price" && overview.tierPrice.status !== "legacy") return;
@@ -438,7 +477,6 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
 
   const supplyParam = paramByKey(overview, "supply");
   const priceParam = paramByKey(overview, "price");
-  const dividendParam = paramByKey(overview, "dividend");
   const royaltyParam = paramByKey(overview, "royalty");
   const divBaseParam = paramByKey(overview, "divBase");
   const airdropPctParam = paramByKey(overview, "airdropPct");
@@ -471,6 +509,16 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
 
   return (
     <>
+      {firstDividend && session && firstDividend.epoch === epoch && <G4FirstDividendConfirm
+        session={session} epoch={epoch} expectedRevision={firstDividend.expectedRevision}
+        readActive={() => fetchG4GenesisOverview(nodePageNo, nodePageSize)}
+        onClose={() => setFirstDividend(null)}
+        onDone={(active, acknowledgement) => {
+          setOverview(active);
+          setFirstDividend(null);
+          toast(acknowledgement);
+        }}
+      />}
       {error && <div className="gtint" style={{ marginBottom: 12 }}>操作提示 · {error}</div>}
       {refreshError && <div className="gtint" role="status" style={{ marginBottom: 12 }}>
         <b>操作已成功，页面刷新失败。</b> 以下为刷新前的数据，重新加载成功前暂不能修改；无需再次提交原操作。
@@ -541,7 +589,11 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
             </div>
             {supplyParam && <div className="p-row"><div className="txt"><div className="k">节点总量</div><div className="s">{operatorCopyText(supplyParam.sub)}</div></div><span className="v">{operatorCopyText(supplyParam.displayValue)}</span>{allowed(paramAuthority(supplyParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${supplyParam.name}`} onClick={() => adjustParam(supplyParam)}>调整</button>}</div>}
             {priceParam && <div className="p-row"><div className="txt"><div className="k">单价{tiers && <span className="bdg ok" style={{ fontSize: 9, marginLeft: 6 }}>按价格档位</span>}</div><div className="s">{overview.tierPrice.status === "active" ? "已设置价格档位，单价按卖到第几张自动决定，这里的值不生效。改价请用下方「价格档位」" : tierPriceNote}</div></div><span className="v">{tierPriceText}</span>{overview.tierPrice.status === "legacy" && allowed(paramAuthority(priceParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${priceParam.name}`} onClick={() => adjustParam(priceParam)}>调整</button>}</div>}
-            {dividendParam && <div className="p-row"><div className="txt"><div className="k">每日收益比例 <span className="bdg ok" style={{ fontSize: 9 }}>基准 0.1%/日</span></div><div className="s">{operatorCopyText(dividendParam.sub)}</div></div><span className="v">{operatorCopyText(dividendParam.displayValue)}</span>{allowed(paramAuthority(dividendParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${dividendParam.name}`} onClick={() => adjustParam(dividendParam)}>调整</button>}</div>}
+            {dividendParam && <div className="p-row"><div className="txt"><div className="k">每日收益比例 <span className="bdg ok" style={{ fontSize: 9 }}>基准 0.1%/日</span></div><div className="s">{operatorCopyText(dividendParam.sub)}</div></div><span className="v">{operatorCopyText(dividendParam.displayValue)}</span>{(firstDividendEntry ? canSetupDividend : allowed(paramAuthority(dividendParam.key))) && <button
+              className="l-btn sm mc" disabled={busy}
+              aria-label={pendingFirstDividend ? "查询原日分红审批" : firstDividendEntry ? "首次配置每日收益比例" : `调整 ${dividendParam.name}`}
+              onClick={() => adjustParam(dividendParam)}
+            >{pendingFirstDividend ? "查询原审批" : firstDividendEntry ? "首次配置" : "调整"}</button>}</div>}
             {royaltyParam && <div className="p-row"><div className="txt"><div className="k">转让手续费</div><div className="s">{operatorCopyText(royaltyParam.sub)}</div></div><span className="v">{operatorCopyText(royaltyParam.displayValue)}</span>{allowed(paramAuthority(royaltyParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${royaltyParam.name}`} onClick={() => adjustParam(royaltyParam)}>调整</button>}</div>}
             <div className="p-row"><div className="txt"><div className="k">开始发放收益 <span className="bdg ok" style={{ fontSize: 9 }}>跟随运营阶段</span></div><div className="s">上交易所前不发放；在「运营阶段设置」里控制，这里只能查看</div></div><span className="v">{overview.emissionGate.open ? "已开放" : "未开放"}</span></div>
             {airdropPctParam && <div className="p-row"><div className="txt"><div className="k">空投占比</div><div className="s">{operatorCopyText(airdropPctParam.sub)}</div></div><span className="v">{operatorCopyText(airdropPctParam.displayValue)}</span>{allowed(paramAuthority(airdropPctParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${airdropPctParam.name}`} onClick={() => adjustParam(airdropPctParam)}>调整</button>}</div>}

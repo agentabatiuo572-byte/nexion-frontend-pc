@@ -62,6 +62,9 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "nex" && parts[1] === "genesis") {
     return "/api/admin/market/nex/genesis";
   }
+  if (parts.length === 3 && parts[0] === "nex" && parts[1] === "genesis" && parts[2] === "dividend-approval-state") {
+    return "/api/admin/market/nex/genesis/dividend-approval-state";
+  }
   if (parts.length === 3 && parts[0] === "nex" && parts[1] === "genesis" && parts[2] === "operations") {
     return "/api/admin/market/nex/genesis/operations";
   }
@@ -216,6 +219,10 @@ async function proxy(request: Request, context: RouteContext) {
   }
 
   const sourceUrl = new URL(request.url);
+  if (targetPath === "/api/admin/market/nex/genesis/dividend-approval-state") {
+    if (request.method !== "GET") return jsonError(405, "METHOD_NOT_ALLOWED");
+    if (sourceUrl.search) return jsonError(400, "G4_DIVIDEND_APPROVAL_STATE_QUERY_UNSUPPORTED");
+  }
   const targetUrl = `${BACKEND_BASE_URL}${targetPath}${sourceUrl.search}`;
   const g4OverviewRead = request.method === "GET" && targetPath === "/api/admin/market/nex/genesis";
   const headers = new Headers({
