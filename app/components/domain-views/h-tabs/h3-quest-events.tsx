@@ -571,7 +571,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       detail: <>当前状态 <b>{EVENT_LABEL[event.state]?.[0] ?? "状态未知"}</b>，请选择新状态。</>,
       chips: [["记入操作记录", "done"]],
       reason: true,
-      input: { label: "新状态", options: statusOptions(event.state) },
+      input: { label: "新状态", options: statusOptions(event.state), optionLabels: { ongoing: "进行中", ended: "已结束" } },
       okLabel: "确认修改",
       run: async (reason, value) => {
         if (!value) return;
