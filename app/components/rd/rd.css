@@ -605,6 +605,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-change[data-size="body"]:not([data-stack]) { padding: 0; background: none; }
 .rd-change[data-size="body"] .rd-change-now, .rd-change-now[data-words] { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); }
 .rd-change-hint { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-change > :is(.rd-change-hint, .rd-form-error) { flex-basis: 100%; }
 .rd-change-note { flex-basis: 100%; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-change-note .rd-diff-note { margin-top: 8px; }
 .rd-change-note .rd-diff-note svg { margin-top: 2px; }

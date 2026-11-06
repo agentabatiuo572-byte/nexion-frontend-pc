@@ -274,4 +274,6 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 `TimelineEntry` 的 `id`、`action`、`actor`、`at` 必填，`detail`、`role`、`ip`、`tone` 选填。组件复制后排序，不改写输入记录。`RecordListEntry` 的 `id`、`value` 必填，`unit`、`at`、`object`、`status`、`reference` 选填，保持调用方的顺序。两者的 `at` 都传原始时间，显示沿用业务时区并标注时区；不把后端无时区时间当浏览器时间。金额由调用方按业务精度格式化，组件提供 tabular-nums 和单位层级。单号等宽、换行、复制有成功或失败反馈，复制按钮有完整名称。
 
+`DiffField` 的 `hint` 和 `error` 放在前后值下面，占整行；不要把说明塞在新值的窄列里（VS-105）。原有输入框的 `aria-describedby` 仍连接这些提示。
+
 结构采用 [Ant Design Timeline](https://ant.design/components/timeline/) 的单侧节点、连线和事件内容，以及 [List](https://ant.design/components/list/) 的横排主内容、右侧附属信息、行分隔和默认 `12px 0` 内边距。节点灰色、失败红、待确认橙黄，14/22 正文、13/18 辅助，以及超过 5 条折起，是 VS-109 的产品差异；颜色全部取已有 `--rd-*`。

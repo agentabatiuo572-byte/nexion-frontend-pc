@@ -119,8 +119,8 @@ export function DiffField({ before, unit, beforeLabel = "现在", label = "改�
           {typeof children === "function" ? children({ id, "aria-describedby": described, "aria-invalid": error ? true : undefined }) : children}
           {state}
         </div>
-        {error ? <div id={`${id}-error`} className="rd-form-error" role="alert">{error}</div> : hint && <div id={`${id}-hint`} className="rd-change-hint">{hint}</div>}
       </div>
+      {error ? <div id={`${id}-error`} className="rd-form-error" role="alert">{error}</div> : hint && <div id={`${id}-hint`} className="rd-change-hint">{hint}</div>}
       {note && <div id={`${id}-note`} className="rd-change-note">{note}</div>}
     </div>
   );
