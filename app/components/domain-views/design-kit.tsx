@@ -2807,8 +2807,6 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             "/pages/team/team",
             "/pages/team/commissions",
             "/pages/learn/courses",
-            "/pages/staking/staking",
-            "/pages/genesis/genesis",
             "/pages/genesis/marketplace",
           ], {
             "/pages/missions/missions": "任务中心",
@@ -2867,8 +2865,8 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {input("tierName", "奖项名称", "如 小额奖")}
           {input("rewardName", "奖励展示", "如 100 UVT")}
           {input("probabilityPct", "中奖概率（%）", "0–100，如 5", "number")}
-          {select("realOutflow", "是否发真钱", ["0", "1"], "tier-real-outflow", { "0": "否（积分等）", "1": "是" })}
-          {select("rewardKind", "奖励类型", ["uvt", "points", "usdt", "coupon"], "tier-reward-kind", { uvt: "UVT", points: "积分", usdt: "USDT", coupon: "代金券" })}
+          {select("realOutflow", "是否发真钱", ["0", "1"], "tier-real-outflow", { "0": "否", "1": "是" })}
+          {select("rewardKind", "奖励类型", ["uvt", "usdt", "coupon"], "tier-reward-kind", { uvt: "UVT", usdt: "USDT", coupon: "代金券" })}
           {input("rewardAmount", "实际发放数量", "如 100", "number")}
           {input("voucherId", "代金券编号（奖励为代金券时填）", "如 WHEEL-50")}
           {input("dailyStock", "每日总数量（0 为不限）", "如 50", "number")}

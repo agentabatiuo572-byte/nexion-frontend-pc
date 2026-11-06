@@ -610,14 +610,16 @@ export async function exportA2Audit(reason: string, filter: Record<string, unkno
     body: JSON.stringify({ reason, filter }),
     cache: "no-store",
   });
-  if (!response.ok) {
+  const contentType = response.headers.get("Content-Type")?.split(";")[0]?.trim();
+  if (!response.ok || (contentType !== "text/csv" && contentType !== "application/vnd.ms-excel")) {
     const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
     throw new Error(formatAdminApiError(result?.message, `A2_AUDIT_EXPORT_FAILED_${response.status}`));
   }
   const blob = await response.blob();
+  const extension = contentType === "text/csv" ? "csv" : "xls";
   const fileName = fileNameFromContentDisposition(
     response.headers.get("Content-Disposition"),
-    `a2-audit-${Date.now()}.xls`,
+    `a2-audit-${Date.now()}.${extension}`,
   );
   downloadBlob(blob, fileName);
   return { fileName, size: blob.size };

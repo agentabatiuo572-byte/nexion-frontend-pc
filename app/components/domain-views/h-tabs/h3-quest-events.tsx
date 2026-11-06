@@ -21,7 +21,6 @@ import {
   updateH4EventReward,
   updateH4EventStatus,
   createH3Mission,
-  createH3MonthlyMission,
   editH3Mission,
   updateH3MissionPresentation,
   transitionH3Mission,
@@ -160,8 +159,6 @@ const TASK_ACTION_ROUTES = [
   "/pages/team/team",
   "/pages/team/commissions",
   "/pages/learn/courses",
-  "/pages/staking/staking",
-  "/pages/genesis/genesis",
   "/pages/genesis/marketplace",
 ];
 const TASK_ACTION_ROUTE_LABELS: Record<string, string> = {
@@ -234,6 +231,8 @@ function text(value: unknown, fallback = "-") {
 function wheelRewardText(value: unknown) {
   return nexGridBrandText(text(value).replace(/\bNEX\b/gi, "UVT")).replace(/\bpoints\b/gi, "积分").replace(/\bdevice coupon\b/gi, "设备代金券");
 }
+
+const wheelPointsTier = (tier: Record<string, unknown>) => text(tier.kind).toLowerCase() === "points";
 
 function cleanPhaseKey(value: string) {
   return value.replace(/\s*当前\s*/g, "").trim();
@@ -620,32 +619,6 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     });
   };
 
-  const openCreateMonthlyMission = () => {
-    openActionConfirm({ briefKind: "config",
-      action: "新建月度挑战",
-      detail: <>新建一个月度挑战主题，按用户注册时长分配。奖励大于 0 时，覆盖率低于红线无法保存。</>,
-      amplifies: true,
-      businessForm: { kind: "monthly-mission-create", subject: "新月度挑战" },
-      run: async (reason, _v, bv) => {
-        if (!bv) return;
-        const payload = {
-          challengeCode: String(bv.challengeCode || "").trim(),
-          challengeName: String(bv.challengeName || "").trim(),
-          theme: String(bv.theme || "").trim(),
-          monthsFrom: Number(bv.monthsFrom) || 0,
-          monthsTo: Number(bv.monthsTo) || 999,
-          targetType: String(bv.targetType || "").trim(),
-          targetValue: Number(bv.targetValue) || 1,
-          rewardType: bv.rewardType || "UVT",
-          rewardAmount: Number(bv.rewardAmount) || 0,
-          rewardName: String(bv.rewardName || "").trim(),
-        };
-        if (!payload.challengeCode || !payload.challengeName) return;
-        await applyMissionMutation(createH3MonthlyMission(payload, reason));
-        toast(`月度挑战「${payload.challengeName}」已新建`);
-      },
-    });
-  };
 
   const localizedValue = (
     entity: "mission" | "event", code: string,
@@ -720,7 +693,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             label: "点「去完成」跳转到",
             current: currentActionRoute,
             inputKind: "select",
-            options: TASK_ACTION_ROUTES,
+            options: TASK_ACTION_ROUTES.includes(currentActionRoute)
+              ? TASK_ACTION_ROUTES : [currentActionRoute, ...TASK_ACTION_ROUTES],
             optionLabels: TASK_ACTION_ROUTE_LABELS,
             required: true,
             showDiff: true,
@@ -1108,6 +1082,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
   const openWheelProbabilities = () => {
     const tiers = model?.wheelTiers ?? [];
+    const fixed = tiers.filter(wheelPointsTier);
+    const probabilityText = (tier: Record<string, unknown>, values: Record<string, string>) =>
+      wheelPointsTier(tier) ? String(numericValue(tier.prob)) : values[text(tier.tier)];
     openActionConfirm({ briefKind: "config",
       action: "调整转盘奖项概率",
       detail: <>一次设置所有奖项，加起来要等于 100%。调高发钱奖项的概率时，覆盖率低于红线无法保存。</>,
@@ -1116,14 +1093,16 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         kind: "multi-field",
         title: "转盘奖项概率",
         feedback: (values) => {
-          const decimal = tiers.every((tier) => /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(values[text(tier.tier)].trim()));
-          const total = tiers.reduce((sum, tier) => sum + Math.round(Number(values[text(tier.tier)]) * 10000), 0) / 10000;
+          const decimal = tiers.every((tier) => /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(probabilityText(tier, values).trim()));
+          const total = tiers.reduce((sum, tier) => sum + Math.round(Number(probabilityText(tier, values)) * 10000), 0) / 10000;
           const invalid = !decimal || total !== 100;
           return { message: `概率合计 ${Number(total.toFixed(4))}%；${!decimal ? "概率请填写普通十进制数字，不支持科学计数法" : invalid ? "所有奖项的概率加起来必须等于 100%" : "合计符合 100% 要求"}。`, invalid };
         },
-        hint: "所有奖项一起提交，加起来要等于 100%。",
+        hint: fixed.length
+          ? `历史积分档只读：${fixed.map((tier) => `${text(tier.tier)} ${numericValue(tier.prob)}%`).join("、")}。所有奖项合计须为 100%。`
+          : "所有奖项一起提交，加起来要等于 100%。",
         requireAnyChange: true,
-        fields: tiers.map((tier) => ({
+        fields: tiers.filter((tier) => !wheelPointsTier(tier)).map((tier) => ({
           key: text(tier.tier),
           label: `${text(tier.tier)} · ${wheelRewardText(tier.reward)}`,
           current: String(numericValue(tier.prob)),
@@ -1139,7 +1118,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         if (!businessValue) return;
         const probabilities = Object.fromEntries(tiers.map((tier) => [
           text(tier.tier),
-          Number(businessValue[text(tier.tier)]),
+          Number(probabilityText(tier, businessValue)),
         ]));
         const total = Object.values(probabilities).reduce((sum, value) => sum + value, 0);
         if (Math.round(total * 10000) !== 1000000) {
@@ -1201,7 +1180,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         requireAnyChange: true,
         fields: [
           { key: "rewardName", label: "奖项名称", current: text(tier.reward), inputKind: "text", required: true, showDiff: true },
-          { key: "rewardKind", label: "奖励类型", current: text(tier.kind, "uvt"), inputKind: "select", options: ["uvt", "points", "usdt", "coupon"], optionLabels: { uvt: "UVT", points: "积分", usdt: "USDT", coupon: "代金券" }, required: true, showDiff: true },
+          { key: "rewardKind", label: "奖励类型", current: text(tier.kind, "uvt"), inputKind: "select", options: ["uvt", "usdt", "coupon"], optionLabels: { uvt: "UVT", usdt: "USDT", coupon: "代金券" }, required: true, showDiff: true },
           { key: "realOutflow", label: "是否发真钱", current: boolValue(tier.real) ? "1" : "0", inputKind: "select", options: ["0", "1"], optionLabels: { "0": "否", "1": "是" }, required: true, showDiff: true },
           { key: "rewardAmount", label: "每次发放数量", current: String(numericValue(tier.amount)), inputKind: "number", min: 0.000001, max: 1000000, step: 0.000001, required: true, showDiff: true },
           { key: "voucherId", label: "代金券 ID", current: text(tier.voucherId, ""), inputKind: "text", required: true, visibleWhen: { key: "rewardKind", equals: "coupon" }, showDiff: true },
@@ -1717,9 +1696,6 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         <div className="l-h">
           <span className="ttl">月度挑战（按注册时长分配）</span>
           <span className="sub">· 每个主题 3 个小目标全部完成才能领 · 每月重新开始</span>
-          <div className="r">
-            <button className="l-btn sm mc" onClick={() => openCreateMonthlyMission()} disabled={!canModuleWrite}>+ 新建月度挑战</button>
-          </div>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 680 }}>
@@ -1737,7 +1713,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               {model.monthlyMissions.length === 0 && (
                 <tr>
                   <td colSpan={6} style={{ textAlign: "center", padding: 24, color: "var(--ink-4)" }}>
-                    还没有月度挑战。点右上角「+ 新建月度挑战」，按用户注册时长设置主题、小目标和奖励。
+                    没有历史月度挑战。
                   </td>
                 </tr>
               )}
@@ -1979,8 +1955,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   <span className="mono" style={{ fontWeight: 700 }}>{percentText(tier.prob)}%</span>
                   <span>{real ? <span className="bdg bad">发真钱</span> : <span className="bdg dim">{({nex:"UVT奖励",UVT:"UVT奖励",usdt:"USDT奖励",USDT:"USDT奖励",voucher:"代金券",none:"未中奖"} as Record<string,string>)[text(tier.kind)] ?? "其他奖励"}</span>}</span>
                   <span style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                    <button className="l-btn sm mc" aria-label={`编辑 ${text(tier.tier)}（${wheelRewardText(tier.reward)}）`} onClick={() => openEditWheelTier(tier)} disabled={!canWheelWrite}>编辑</button>
-                    <button className="l-btn sm" aria-label={`删除 ${text(tier.tier)}（${wheelRewardText(tier.reward)}）`} onClick={() => openDeleteWheelTier(tier)} disabled={numericValue(tier.prob) !== 0 || !canWheelWrite} title={numericValue(tier.prob) === 0 ? "删除档位" : "先将概率调为 0%"}>删除</button>
+                    {wheelPointsTier(tier) ? <span className="bdg dim">历史积分 · 只读</span> : <>
+                      <button className="l-btn sm mc" aria-label={`编辑 ${text(tier.tier)}（${wheelRewardText(tier.reward)}）`} onClick={() => openEditWheelTier(tier)} disabled={!canWheelWrite}>编辑</button>
+                      <button className="l-btn sm" aria-label={`删除 ${text(tier.tier)}（${wheelRewardText(tier.reward)}）`} onClick={() => openDeleteWheelTier(tier)} disabled={numericValue(tier.prob) !== 0 || !canWheelWrite} title={numericValue(tier.prob) === 0 ? "删除档位" : "先将概率调为 0%"}>删除</button>
+                    </>}
                   </span>
                 </div>
               );
