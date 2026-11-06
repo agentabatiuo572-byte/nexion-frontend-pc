@@ -56,7 +56,8 @@ export async function downloadB0Snapshot(adminId: number, snapshotJson: string, 
       || !("code" in payload) || !Number.isInteger(payload.code)
       || ("message" in payload && payload.message != null && typeof payload.message !== "string")) throw unknown();
   const result = payload as { code: number; message?: string; data?: unknown };
-  if (result.message === "IDEMPOTENCY_REQUEST_IN_PROGRESS") throw unknown();
+  // The backend can wrap an internal failure in HTTP 200; keep the original attempt.
+  if (result.code >= 500 || result.message === "IDEMPOTENCY_REQUEST_IN_PROGRESS") throw unknown();
   if (!response.ok || result.code !== 0) {
     // A later auth/policy rejection cannot settle an earlier lost success response.
     if (!previous) attempts.forget(fingerprint, commandKey);
