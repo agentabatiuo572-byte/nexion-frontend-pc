@@ -56,6 +56,7 @@ const EDITABLE_LANGUAGES = ["zh", "vi", "en"];
 /** 这里只有中、越、英三种语言的输入框，范围超过这三种的选了也填不了（M14）。 */
 const scopeTooWide = (scope: string) => scope.split("+").some((code) => !EDITABLE_LANGUAGES.includes(code));
 const SCOPE_TOO_WIDE = "这里只能录入中文、越南语和英语。选这一档也填不了另外 6 种，它们在 App 里显示英语。";
+const LEGAL_LOCALE: Record<string, string> = { en: "英文", zh: "中文", vi: "越南语" };
 const LEGAL_STATUS: Record<string, string> = { DRAFT: "草稿", PUBLISHED: "已发布", SUPERSEDED: "历史版本", REVOKED: "已撤回" };
 const PRIVACY_STATUS: Record<string, string> = { DRAFT: "草稿", PUBLISHED: "已发布", UNPUBLISHED: "已撤下公开版本" };
 /** 审批单的 action 是操作记录的原文，页面上写人话。 */
@@ -153,7 +154,7 @@ export function I5Disclosures({ ctx, errorText }: { ctx: ICtx; errorText: string
       setLegalFocus((current) => ({ locale, jurisdiction, nonce: (current?.nonce ?? 0) + 1 }));
       setLegalNonce((value) => value + 1);
       const found = (await fetchLegalTermsAdmin(locale, jurisdiction)).find((row) => row.version === version);
-      return `已读回 ${locale} · ${jurisdiction} ${version}：${found ? `现在是${LEGAL_STATUS[found.status] ?? "状态待核实"}` : "这个范围没有这个版本"}。`;
+      return `已读回 ${LEGAL_LOCALE[locale] ?? locale} · ${jurisdiction} ${version}：${found ? `现在是${LEGAL_STATUS[found.status] ?? "状态待核实"}` : "这个范围没有这个版本"}。`;
     },
   });
 
@@ -547,8 +548,8 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
       effect: irreversibleApproval,
       statedBrief: { impact: `批准后这个版本封存，不能再改也不能删除。App 还是当前版本，不要求用户重新确认，要另外切换生效版本。由${APPROVER}，批准前不变。`, check: `逐章核对${languageNames(row.languageScope)}内容，理由写清版本依据。` },
       facts: <>
-        <Facts><Fact k="地区">{row.jurisdiction} · {nameOf(row.jurisdiction)}</Fact><Fact k="版本"><Change from={current?.version ?? j?.version ?? "无生效版"} to={row.version} /></Fact><Fact k="语言">{scopeChanged ? <Change from={languageText(current?.languageScope)} to={languageText(row.languageScope)} /> : languageText(row.languageScope)}</Fact><Fact k="切换生效后要确认的用户">{people(affected)}</Fact></Facts>
-        <PublishDiff current={current} target={row} affected={affected} pendingAck={pendingAck} blocked={row.blocked ?? j?.blocked ?? 0} gatedActions={activeGates} />
+        <Facts><Fact k="地区">{row.jurisdiction} · {nameOf(row.jurisdiction)}</Fact><Fact k="版本"><Change from={current?.version ?? j?.version ?? "无生效版"} to={row.version} /></Fact><Fact k="语言">{scopeChanged ? <Change from={languageText(current?.languageScope)} to={languageText(row.languageScope)} /> : languageText(row.languageScope)}</Fact><Fact k="切换生效后要确认的用户">{isSmall(affected) ? SMALL_SAMPLE : `${count(affected)} 人，现在待重新确认 ${count(pendingAck)} 人`}，已拦截 {count(row.blocked ?? j?.blocked ?? 0)} 次 <Explain label="这次审批会怎样" content={`本次只审批版本内容，App 上暂不变化。切换生效后用户要重新确认，${activeGates.length ? `期间受限的操作：${activeGates.join("、")}` : "现在没有受限的操作"}。`} /></Fact></Facts>
+        <PublishDiff current={current} target={row} />
       </>,
       businessForm: {
         kind: "multi-field",
@@ -892,7 +893,7 @@ function regionPoints(jur: DisclosureJurisdictionView, issue: string | undefined
       : { label: "生效版本", value: `${jur.version} · ${timeText(jur.publishedAt)} 起`, state: issue ? "danger" : undefined, reason: issue },
     { label: "适用国家/地区", value: jur.countryCodes?.join("、") || "未配置" },
     { label: "用户", value: jur.affected === 0 ? "无覆盖用户" : isSmall(jur.affected) ? SMALL_SAMPLE : `共 ${count(jur.affected)} 人，已确认 ${count(ackedOf(jur))} 人（${ackText(jur.ackProgress)}）` },
-    { label: "历史拦截（近 7 天）", value: `${count(jur.blocked)} 次` },
+    { label: "近 7 天拦截", value: `${count(jur.blocked)} 次` },
     { label: "要不要处理", value: archived ? "归档的映射不用处理，要用时重新新增" : isSmall(jur.affected) || pendingAck > 0 ? todo : "没有待确认的用户" },
   ];
 }
@@ -913,7 +914,7 @@ const languageNames = (scope?: string) => {
 const sameDisclosure = (left: Editor, right: Editor) => JSON.stringify([left.zh, left.vi, left.en, left.chapters]) === JSON.stringify([right.zh, right.vi, right.en, right.chapters]);
 
 /** 发布核对：只比两边都有的语言，语言范围的变化在上面单独写（M13）。改过的章展开，只放改过的语言（CP-48）。 */
-function PublishDiff({ current, target, affected, pendingAck, blocked, gatedActions }: { current?: DisclosureVersionItemView; target: DisclosureVersionItemView; affected: number; pendingAck: number; blocked: number; gatedActions: readonly string[] }) {
+function PublishDiff({ current, target }: { current?: DisclosureVersionItemView; target: DisclosureVersionItemView }) {
   const targetCodes = (target.languageScope ?? "").split("+");
   const currentCodes = (current?.languageScope ?? target.languageScope ?? "").split("+");
   const compared = LANGUAGES.filter(([code]) => targetCodes.includes(code) && currentCodes.includes(code));
@@ -927,9 +928,6 @@ function PublishDiff({ current, target, affected, pendingAck, blocked, gatedActi
   const changed = target.chapters.filter((chapter) => changedLanguages(chapter).length > 0);
   const ordered = [...changed, ...target.chapters.filter((chapter) => !changed.includes(chapter))];
   return <div data-business-form="disclosure-publish-review" className="rd-form-stack">
-    <div>
-      {affected > 0 && affected < 5 ? "涉及用户样本过小" : `涉及用户 ${count(affected)} 人 · 待重新确认 ${count(pendingAck)} 人`} · 已拦截 {count(blocked)} 次 <Explain label="这次审批会怎样" content={`本次只审批版本内容，App 上暂不变化。切换生效后用户要重新确认，${gatedActions.length ? `期间受限的操作：${gatedActions.join("、")}` : "现在没有受限的操作"}。`} />
-    </div>
     <h3 className="rd-form-group-title">版本差异 · 共 {changed.length} / 7 章发生变化</h3>
     {ordered.map((chapter) => {
       const languages = changedLanguages(chapter);

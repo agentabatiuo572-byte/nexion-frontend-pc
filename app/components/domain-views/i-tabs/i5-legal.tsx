@@ -374,7 +374,7 @@ function LegalEditor({ initial, latest, base, sectionsBlocked, canPublish, block
         {isNew && base && (base.locale !== form.locale || base.jurisdiction !== form.jurisdiction) && <Notice tone="warn" title={`内容带入自 ${localeName(base.locale)} · ${base.jurisdiction} ${base.version}`}>这个范围还没有版本。改成这个范围要用的内容再保存。</Notice>}
         {isNew && !base && <Notice tone="warn" title="没有可以带入的版本">这个范围和回退范围都没有已发布版本，这里只有一节，不能增删节。</Notice>}
         {sectionsBlocked(form) && <Notice tone="warn" title="这个草稿不能发布">{sectionsBlocked(form)}</Notice>}
-        {unchanged && <Notice tone="progress" title={`内容和 ${base.version} 相同`}>改完再保存，不改也能存成新草稿。</Notice>}
+        {unchanged && base.locale === form.locale && base.jurisdiction === form.jurisdiction && <Notice tone="progress" title={`内容和 ${base.version} 相同`}>改完再保存，不改也能存成新草稿。</Notice>}
         <div className="rd-form-grid">
           <Field label="版本"><div className="rd-form-static">{form.version}<Explain label="版本号怎么来的" content="现有最大版本号加一，不能手填。" /></div></Field>
           <Field label="生效时间" required explain="写在条款上给用户看。发布后马上替换公开版本，不会等到这个时间。" error={validTime(form.effectiveAt) ? undefined : "格式：2026-11-05 09:00:00"}>{(control) => <Input {...control} value={form.effectiveAt} onChange={(event) => update({ effectiveAt: event.target.value })} />}</Field>
