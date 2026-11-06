@@ -248,7 +248,7 @@
 .rd-page .m3-service-profile .m3-profile-group { padding: var(--rd-space-3) 0; border-bottom: 1px solid var(--rd-line); }
 .rd-page .m3-service-profile .m3-profile-group > summary { color: var(--rd-text); font-size: var(--rd-text-body); font-weight: var(--rd-weight-medium); }
 .rd-page .m3-service-profile h4 { margin: var(--rd-space-3) 0 var(--rd-space-1); color: var(--rd-text-2); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-medium); }
-.rd-page .m3-service-profile .cvp-row { display: flex; justify-content: space-between; gap: var(--rd-space-3); padding: var(--rd-space-1) 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; }
+.rd-page .m3-service-profile .cvp-row { display: grid; grid-template-columns: minmax(120px, 184px) minmax(0, 1fr); justify-content: start; gap: var(--rd-space-3); padding: var(--rd-space-1) 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; }
 .rd-page .m3-service-profile .cvp-row .k { color: var(--rd-text-3); }
 .rd-page .m3-service-profile .m-admin-muted { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 
@@ -271,6 +271,12 @@
 .rd-modal .m3-policy-readonly { margin: 0 0 var(--rd-space-1); color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 .rd-modal .m3-policy-num:disabled { border-color: transparent; background: none; color: var(--rd-text); }
 .rd-modal .m-bulk-head { margin: 0; color: var(--rd-text-2); }
+.rd-modal .m-bulk-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 var(--rd-space-3); }
+.rd-modal .m-bulk-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--rd-space-2); margin-block: var(--rd-space-2); }
+.rd-modal .m-bulk-row-tools { display: inline-flex; flex-wrap: wrap; gap: var(--rd-space-2); }
+.rd-modal .ui-support-contact-picker .ui-bulk-contact-list { max-height: none; overflow: visible; }
+/* 群发里的折叠用 rd：框只留一层滚动（M10）。 */
+.rd-modal .ui-support-workflow details.rd-fold { margin: 0; padding: 0; border-width: 1px 0 0; border-color: var(--rd-line); border-radius: 0; max-height: none; overflow: visible; }
 /* 群发和客户资料也分四层（VS-100、VS-104）：要填的字段名强，只读标签弱，值强。 */
 .rd-modal .ui-support-workflow { color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
 .rd-modal .ui-support-workflow :is(> label, .m-admin-toolbar > label, .rd-form-field > label) { color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-medium); }
@@ -284,17 +290,11 @@
 .rd-modal .ui-support-workflow .ui-workflow-steps li { font-size: var(--rd-text-aux); }
 .rd-modal .ui-support-workflow .ui-workflow-steps li.current { background: var(--rd-panel-inner); color: var(--rd-text); font-weight: var(--rd-weight-medium); }
 .rd-modal .ui-support-workflow .ui-workflow-steps li.complete { color: var(--rd-text-2); }
-.rd-modal .m-bulk-counts { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-block: var(--rd-space-3); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
+.rd-modal .m-bulk-counts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin-block: var(--rd-space-3); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
 .rd-modal .ui-support-contact-picker p > .l-btn { margin-left: 8px; }
-.rd-modal .m3-profile-group small + .l-btn { margin-left: 8px; }
-.m3-profile-group > summary { list-style: none; }
-.m3-profile-group > summary::-webkit-details-marker { display: none; }
-.m3-profile-chevron { margin-right: var(--rd-space-1); vertical-align: -2px; color: var(--rd-text-3); transition: transform .15s; }
-.m3-profile-group[open] > summary .m3-profile-chevron { transform: rotate(90deg); }
 .rd-modal .m-bulk-counts b { color: var(--rd-text); font-size: var(--rd-text-body); font-weight: var(--rd-weight-medium); font-variant-numeric: tabular-nums; }
 .rd-modal-foot .m-admin-toolbar { display: flex; flex: 1; justify-content: flex-end; gap: var(--rd-space-2); margin: 0; }
 .rd-modal .m3-service-profile .cvp-row { align-items: baseline; }
 .rd-modal .m3-service-profile .cvp-row .v { color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-medium); }
 .rd-modal .m3-service-profile .m3-profile-editor > label { color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-medium); }
 .rd-modal .m3-service-profile .m3-profile-editor :is(input, textarea) { font-weight: var(--rd-weight-regular); }
-.rd-page .m3-service-profile .m3-profile-group > summary .rd-explain { vertical-align: -2px; }
