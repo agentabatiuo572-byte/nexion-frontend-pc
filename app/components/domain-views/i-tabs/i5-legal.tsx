@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { FileCheck2, FilePen, FileText, History, RefreshCw, Scale } from "lucide-react";
-import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterField, Fold, Input, IrreversibleTag, Notice, Panel, Select, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterField, Fold, Input, IrreversibleTag, Notice, Panel, RecordList, Select, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr, type StateTone } from "@/app/components/rd";
 import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { fetchLegalTermsAdmin, type LegalTermsSection, type LegalTermsVersion } from "@/lib/admin/legal-terms-client";
@@ -305,7 +305,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus }: { 
           {shown.sections.map((section, index) => <section key={section.key}><h3>第 {index + 1} 节 · {section.title}</h3><p>{section.body}</p></section>)}
         </div>
         <Fold inset title="技术信息" summary={`修订号 ${shown.revision}`}>
-          <Facts>{shown.sections.map((section, index) => <Fact key={section.key} k={`第 ${index + 1} 节标识`}><span data-mono="">{section.key}</span></Fact>)}</Facts>
+          <RecordList label="法律条款章节标识" records={shown.sections.map((section, index) => ({ id: section.key, value: `第 ${index + 1} 节 · ${section.title}`, reference: section.key }))} />
         </Fold>
       </>}
     </Drawer>

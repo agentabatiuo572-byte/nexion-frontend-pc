@@ -8,7 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Coins, Gift, ListChecks, Lock, LockOpen, Network, RefreshCw, ShieldAlert, ShieldCheck, SlidersHorizontal, Snowflake, Users, type LucideIcon } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, ChartLegend, Conclusion, ConfigList, ConfigRow, Decision, DiffField, Explain, Fact, Facts, Field, Figure, FilterBar, FilterField, Fold, InlineMeter, Input, IrreversibleTag, JudgmentPoints, KeyValues,
-  Modal, MoreMenu, Notice, NumberInput, PageHeader, PageTabs, Pager, Panel, ReleaseModal, SectionNav, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useSectionNav,
+  Modal, MoreMenu, Notice, NumberInput, PageHeader, PageTabs, Pager, Panel, RecordList, ReleaseModal, SectionNav, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useSectionNav,
   type ExplainRow, type JudgmentRow, type SectionNavItem, useTabIds
 } from "@/app/components/rd";
 import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1_RELEASE_MODE_VALUES, K1_RELEASE_PARAM_LIMITS, newK1CommandKey, updateK1RegistrationParam } from "@/lib/admin/k-client";
@@ -912,40 +912,40 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
   /** 已冻结组里账户是冻结状态是应该的，不算异常。 */
   const expectedFrozen = (c: K1Cluster, n: K1Cluster["nodes"][number]) => c.status === "frozen" && /FROZEN/i.test(n[5]);
-  const nodeList = (nodes: K1Cluster["nodes"]) => nodes.map((n) => `${n[0]} ${accountStatusLabel(n[5])}`).join("、");
-  const accountIssues = (c: K1Cluster) => nodeList(c.nodes.filter((n) => (isRestrictedStatus(n[5]) || isUnknownStatus(n[5])) && !expectedFrozen(c, n)));
+  const accountIssues = (c: K1Cluster) => c.nodes.filter((n) => (isRestrictedStatus(n[5]) || isUnknownStatus(n[5])) && !expectedFrozen(c, n));
 
-  const clusterFacts = (c: K1Cluster, { scope, changed, accounts, restores, money, coverage }: { scope?: ReactNode; changed?: string; accounts?: ReactNode; restores?: boolean; money?: ReactNode; coverage?: boolean } = {}) => {
+  const clusterFacts = (c: K1Cluster, { scope, changed, accounts, restores, money, coverage }: { scope?: string; changed?: string; accounts?: ReactNode; restores?: boolean; money?: ReactNode; coverage?: boolean } = {}) => {
     // 解除只恢复因这组冻结的账户，封禁、受限的不动（restoreUsersFrozenBySource）。
-    const notRestored = restores ? nodeList(c.nodes.filter((n) => isRestrictedStatus(n[5]) && !expectedFrozen(c, n))) : "";
-    const issues = restores ? nodeList(c.nodes.filter((n) => isUnknownStatus(n[5]))) : accountIssues(c);
+    const nodes = scope ? c.nodes : accountIssues(c);
+    const missing = c.n - c.nodes.length;
     return (
-      <Facts>
-        {coverage && <Fact k="覆盖率门槛" tone="warn">{DISPOSITION_COVERAGE_GATE}</Fact>}
-        {/* 这次真的会动到账户时，账户数是这个框的关键数字（VS-102）。 */}
-        {scope && <Fact k="涉及账户" lead unit="个">{c.n}</Fact>}
-        <Fact k="账户组">{c.id}</Fact>
-        {changed && <Fact k="别人改了">{changed}</Fact>}
-        <Fact k="依据">{c.layerLabel} · {c.key} · 关联程度 {c.strength.toFixed(2)}</Fact>
-        <Fact k="当前状态">{CLUSTER_ST[c.status][0]}</Fact>
-        {scope ? <Fact k="账户清单">{scope}</Fact> : <Fact k="涉及账户">{c.n} 个</Fact>}
-        {accounts && <Fact k="账户冻结">{accounts}</Fact>}
-        {notRestored && <Fact k="不会恢复">{notRestored}</Fact>}
-        {issues && <Fact k="账户状态异常">{issues}</Fact>}
-        {money && <Fact k="资金影响" tone="warn">{money}</Fact>}
-      </Facts>
+      <div className="rd-stack">
+        <Facts>
+          {coverage && <Fact k="覆盖率门槛" tone="warn">{DISPOSITION_COVERAGE_GATE}</Fact>}
+          {scope && <Fact k="涉及账户" lead unit="个">{c.n}</Fact>}
+          <Fact k="账户组">{c.id}</Fact>
+          {changed && <Fact k="别人改了">{changed}</Fact>}
+          <Fact k="依据">{c.layerLabel} · {c.key} · 关联程度 {c.strength.toFixed(2)}</Fact>
+          <Fact k="当前状态">{CLUSTER_ST[c.status][0]}</Fact>
+          {!scope && <Fact k="涉及账户">{c.n} 个</Fact>}
+          {accounts && <Fact k="账户冻结">{accounts}</Fact>}
+          {money && <Fact k="资金影响" tone="warn">{money}</Fact>}
+        </Facts>
+        {nodes.length > 0 && <Fold inset title={scope ? "账户清单" : "账户状态异常"} summary={`${nodes.length} 个账户`}>
+          <RecordList label={scope ? "本次涉及的账户" : "状态异常的账户"} records={nodes.map((node) => ({
+            id: node[0], value: node[0],
+            status: <StatusTag tone={isRestrictedStatus(node[5]) ? "danger" : isUnknownStatus(node[5]) ? "warn" : "ok"}>{accountStatusLabel(node[5])}</StatusTag>,
+            object: restores && isRestrictedStatus(node[5]) && !expectedFrozen(c, node) ? "不会恢复：不是因这组冻结的账户"
+              : isUnknownStatus(node[5]) ? "账户状态未知，需核对" : undefined,
+          }))} />
+        </Fold>}
+        {scope && missing > 0 && <p className="rd-note">已读到 {c.nodes.length} 个，还有 {missing} 个读不到，批准后也会一起{scope}。</p>}
+      </div>
     );
   };
 
   const clusterRecord = (c: K1Cluster, clusterAction: K1ClusterAction, label: string, reason: string): K1PendingExtra =>
     ({ kind: "cluster", target: c.id, label, operator, reason, clusterAction, clusterStatus: c.status, version: c.version });
-
-  /** 这次会动到的全部账户。读不到的也算在内，写明。 */
-  const scopeText = (c: K1Cluster, verb: string) => {
-    const codes = c.nodes.map((node) => node[0]).join("、");
-    const missing = c.n - c.nodes.length;
-    return missing > 0 ? `已读到 ${c.nodes.length} 个：${codes}。还有 ${missing} 个读不到，批准后也会一起${verb}。` : codes;
-  };
 
   /** 四种处置的确认框内容，changed 是读取最新后别人改了什么。 */
   const clusterConfirm = (action: K1ClusterAction, c: K1Cluster, changed?: string): Omit<ActionConfirmReq, "run"> & { label: string } => {
@@ -966,7 +966,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           impact: "批准后这组里状态正常的账户全部冻结，退出登录，待处理的提现暂停。",
           check: missing > 0 ? `这里读不到其中 ${missing} 个账户，核对不全。核对已读到的账户和证据，理由写清依据或工单号。` : "核对账户清单和证据，理由写清依据或工单号。",
         },
-        facts: clusterFacts(c, { changed, scope: scopeText(c, "冻结"), accounts: "批准后状态正常的账户冻结并退出登录，待处理的提现暂停。" }) };
+        facts: clusterFacts(c, { changed, scope: "冻结", accounts: "批准后状态正常的账户冻结并退出登录，待处理的提现暂停。" }) };
     }
     if (action === "release") {
       const label = `解除误判 · ${c.id}`;
@@ -978,7 +978,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           impact: `批准后${frozen ? "解除因这组冻结的账户，" : ""}这组不再按风险状态限制提现和新增收益，改按同组账号数判断。`,
           check: "核对账户、证据和触发的风险规则。",
         },
-        facts: clusterFacts(c, { changed, scope: scopeText(c, frozen ? "解除冻结" : "解除限制"), money: "可提现的钱可能变多", coverage: true, restores: frozen,
+        facts: clusterFacts(c, { changed, scope: frozen ? "解除冻结" : "解除限制", money: "可提现的钱可能变多", coverage: true, restores: frozen,
           accounts: frozen ? "批准后解除因这组冻结的账户，恢复它们因此暂停的提现。因别的原因冻结的不动。" : undefined }) };
     }
     const label = `判定为正常 · ${c.id}`;
@@ -1287,7 +1287,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         reason: impact.desc,
       },
     ];
-    if (issues) rows.push({ label: "账户状态", value: [restricted && `${restricted} 个已受限`, unknown && `${unknown} 个状态未知`].filter(Boolean).join("，"), state: restricted ? "danger" : "warn", reason: issues });
+    if (issues.length) rows.push({ label: "账户状态", value: [restricted && `${restricted} 个已受限`, unknown && `${unknown} 个状态未知`].filter(Boolean).join("，"), state: restricted ? "danger" : "warn", reason: "逐个账户的状态见账户明细。" });
     if (c.reviewNote) rows.push({ label: "复审备注", value: c.reviewNote });
     return (
       <Panel id={DETAIL_ID} title={`账户组 ${c.id}`} sub={`${c.layerLabel} · ${c.n} 个账户`} icon={Users} tone="role-3" actions={<StatusTag tone={statusTone} explain={statusExplain}>{statusLabel}</StatusTag>}>
@@ -1331,7 +1331,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               alert={!c.gifts.length || openGifts > 0}
               summary={c.gifts.length ? `${c.gifts.length} 条${openGifts ? `，${openGifts} 条要处理` : "，都已拦截或处置"}` : "读不到记录"}>
               {c.gifts.length
-                ? <KeyValues rows={c.gifts.map((g) => ({ key: g[0], label: g[1], sub: g[0], value: <StatusTag tone={giftHandled(g[2]) ? "ok" : "warn"}>{g[2]}</StatusTag> }))} />
+                ? <RecordList label="新人礼重复发放记录" records={c.gifts.map((g, index) => ({ id: `${g[0]}-${index}`, value: g[1], object: g[0], status: <StatusTag tone={giftHandled(g[2]) ? "ok" : "warn"}>{g[2]}</StatusTag> }))} />
                 : <p className="rd-note">暂时无法读取这组账户的重复发放记录，不能据此认定没有重复发放。</p>}
             </Fold>
           </div>
