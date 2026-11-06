@@ -317,6 +317,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   AUTH_REQUIRED: "登录已失效,请重新登录。",
   AUTH_TOKEN_INVALID: "登录凭证无效,请重新登录。",
   ADMIN_AUTH_REQUIRED: "登录已失效，系统已退出当前会话，请重新登录后再查看应急控制状态。",
+  ADMIN_SUBJECT_REQUIRED: "无法确认当前登录账号，请重新登录后再操作。",
   ADMIN_PERMISSION_DENIED: "当前账号没有查看或操作此功能的权限，请联系管理员核对菜单、按钮和接口权限。",
   FORBIDDEN: "当前账号没有查看或操作此功能的权限，请联系管理员核对菜单、按钮和接口权限。",
   ACCESS_DENIED: "当前账号没有执行此操作的权限；请联系管理员核对所需权限后再试。",

@@ -373,9 +373,9 @@ function KpiDetail({ kpi, reach, onClose }: { kpi: B0Kpi; reach: Reach; onClose:
         <Facts>
           <Fact k="当前值" lead>{kpi.smallSample ? "样本过小" : kpi.value}</Fact>
           <Fact k="目标">{targetText(kpi.target)}</Fact>
-          <Fact k="怎么算">{operatorCopyText(kpi.hint) || "—"}</Fact>
           <Fact k="数据来源">用户行为事件</Fact>
         </Facts>
+        <p className="rd-note">怎么算：{operatorCopyText(kpi.hint) || "—"}</p>
         {kpi.series.some((value) => value !== null) ? <TrendLines label={`${kpi.label}的走势`} ticks={kpi.trendLabels} format={String} height={96} series={[{ key: "kpi", label: kpi.label, slot: 2, values: kpi.series }]} /> : <p className="cc-line" data-muted="">{kpi.smallSample || kpi.trendSuppressed ? "样本过小，趋势留空" : "趋势数据不足，暂时不画"}</p>}
         {kpi.trendSuppressed && !kpi.smallSample && <p className="cc-line" data-muted="">部分时段样本过小，曲线在这些时段留空。</p>}
         <p className="cc-line"><FoldLink reach={reach} href="/analytics/kpi">查看关键指标</FoldLink></p>

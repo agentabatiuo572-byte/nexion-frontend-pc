@@ -4,7 +4,7 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { AlarmClock, ArrowDownUp, CalendarClock, Coins, Gauge, Landmark, PieChart, ReceiptText, Scale, ShieldCheck, Wallet } from "lucide-react";
-import { BlockState, Button, Check, CheckGroup, Cell, ColumnChart, Conclusion, DiffList, Donut, Explain, Field, Figure, Fold, JudgmentPoints, KeyValues, LevelList, Notice, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Th, TierBand, Tr, TrendLine, Drawer, type ChartSlot } from "@/app/components/rd";
+import { BlockState, Button, Check, CheckGroup, Cell, ColumnChart, Conclusion, DiffList, Donut, Explain, Field, Figure, Fold, JudgmentPoints, KeyValues, LevelList, Notice, Panel, RecordList, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Th, TierBand, Tr, TrendLine, Drawer, type ChartSlot } from "@/app/components/rd";
 import { businessOffsetMinutes, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { D3ForecastConfig, D3Main, D3MaturityForecast, D3NetExposure, D3WaterLevel } from "@/lib/admin/d-client";
 import { LIABILITY_EXPLANATIONS, liabilityDisplayName } from "@/lib/admin/liability-labels";
@@ -205,7 +205,7 @@ export function OverviewTab({ main, links }: { main: D3Main; links: readonly Cro
         {composition}{levels}
       </div>
       <Fold title="数据来源" summary={`${sources.length} 项，都来自系统账目`}>
-        <p className="rd-note">{sources.join(" / ") || "资金储备记录"}。</p>
+        <RecordList label="资金数据来源" records={sources.map((source) => ({ id: source, value: source }))} />
       </Fold>
       <RelatedLinks links={links} />
     </>
@@ -405,15 +405,15 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
       >
         {current && main && (
           <>
+            <p className="rd-note">{LIABILITY_EXPLANATIONS[current.category]}</p>
             <JudgmentPoints title="这类应付款" rows={[
-              { label: "这是什么", value: LIABILITY_EXPLANATIONS[current.category] },
               { label: "金额", value: money(current.amountUsdt) },
               { label: "占比", value: current.share === null ? TREASURY_VALUATION_UNAVAILABLE : `${(current.share * 100).toFixed(1)}%` },
               { label: "计入差额", value: includedText(!liabilityOffReason(current.category, main.config)), reason: liabilityOffReason(current.category, main.config) ?? "按当前生效的预测设置" },
               { label: "计入到期预测", value: DUE_CATEGORIES.includes(current.category) ? includedText(!liabilityOffReason(current.category, main.config)) : "这类不进到期预测", reason: DUE_CATEGORIES.includes(current.category) ? liabilityOffReason(current.category, main.config) : "到期预测只算提现、质押奖励和创世节点收益" },
-              ...(current.category === "nex_v2_future" ? [{ label: "估值", value: UVT_VALUATION_NOTE }] : []),
               { label: "数据来源", value: treasurySourceLabel(current.source), reason: <Explain label="技术信息" content={`类型编号 ${current.category}`} /> },
             ]} />
+            {current.category === "nex_v2_future" && <p className="rd-note">{UVT_VALUATION_NOTE}</p>}
           </>
         )}
       </Drawer>
@@ -432,7 +432,8 @@ export function FlowTab({ history }: { history: { data: { flowWindows: Array<{ l
   const moved = flows.some((row) => row.inflowWan > 0 || row.outflowWan > 0) || months.some((row) => row.amountWan > 0);
   const detail = history.data && moved && (
     <Panel flush title="明细" sub="万 USDT" explain="图里的数，单位万 USDT。" icon={ReceiptText} tone="role-2">
-      <div className="rd-split" data-even="">
+      <div className="rd-stack">
+        <Fold inset title="资金流入和流出明细" summary={`近 ${flows.length} 天`}>
         <Table label="近 8 天资金流入和流出明细">
           <thead><tr><Th>日期</Th><Th align="right">流入</Th><Th align="right">流出</Th><Th align="right">净流入</Th></tr></thead>
           <tbody>
@@ -446,6 +447,8 @@ export function FlowTab({ history }: { history: { data: { flowWindows: Array<{ l
             ))}
           </tbody>
         </Table>
+        </Fold>
+        <Fold inset title="新增入金明细" summary={`近 ${months.length} 个月`}>
         <Table label="近 8 个月新增入金明细">
           <thead><tr><Th>月份</Th><Th align="right">新增入金</Th></tr></thead>
           <tbody>
@@ -457,6 +460,7 @@ export function FlowTab({ history }: { history: { data: { flowWindows: Array<{ l
             ))}
           </tbody>
         </Table>
+        </Fold>
       </div>
     </Panel>
   );
