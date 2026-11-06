@@ -5,7 +5,8 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation";
 import { DataListPager, Modal } from "../design-kit";
 import { TabGroup } from "@/app/components/kit/tab-group";
-import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1_RELEASE_MODE_VALUES, K1_RELEASE_PARAM_LIMITS, newK1CommandKey } from "@/lib/admin/k-client";
+import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1_RELEASE_PARAM_LIMITS, newK1CommandKey, updateK1RegistrationParam } from "@/lib/admin/k-client";
+import type { A3PlatformParam } from "@/lib/admin/a3-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import type { AdminPage, ClusterStatus, K1Cluster, K1ClusterLayer, K1ClusterSort, K1ClusterStatusFilter, K1ProtectedEntry, K1WhitelistRow, KRiskParam } from "@/lib/admin/k-client";
@@ -35,6 +36,7 @@ const EMPTY_WHITELIST_PAGE: AdminPage<K1WhitelistRow> = { total: 0, pageNum: 1, 
 // if (ctx.contentError) the K1 component returns a dedicated retry state before rendering any stale business controls.
 type WeightDraft = { param: KRiskParam; device: string; payment: string; ip: string; reason: string; commandKey: string };
 type ParamDraft = { param: KRiskParam; value: string; reason: string; commandKey: string };
+type RegistrationDraft = { param: A3PlatformParam; value: string; reason: string };
 type WhitelistDraft = { cidr: string; note: string; expireText: string; reason: string; commandKey: string };
 const PARAM_LIMITS: Record<string, { min: number; max: number; step: number; integer: boolean }> = {
   maxSignupPerIp24h: { min: 1, max: 10, step: 1, integer: true },
@@ -58,7 +60,6 @@ const CLUSTER_ST: Record<ClusterStatus, [string, string]> = {
 const RELEASE_MODE_LABELS: Record<string, string> = {
   manual_only: "仅人工放行",
 };
-const RELEASE_BOOL_LABELS: Record<string, string> = { true: "开启", false: "关闭" };
 const RISK_PARAM_COPY: Record<string, { name: string; sub: string }> = {
   maxSignupPerIp24h: { name: "同一 IP 每天最多注册多少个账号", sub: "正式环境达到上限后，会拒绝该 IP 的新注册。" },
   maxAccountsPerDevice: { name: "同一设备最多关联多少个账号", sub: "超过这个数量后，系统会提示多账户风险。" },
@@ -69,12 +70,9 @@ const RISK_PARAM_COPY: Record<string, { name: string; sub: string }> = {
 const riskParamName = (p: KRiskParam) => RISK_PARAM_COPY[p.key]?.name ?? p.name;
 const riskParamSub = (p: KRiskParam) => RISK_PARAM_COPY[p.key]?.sub ?? p.sub;
 const RELEASE_PARAM_COPY: Record<string, { name: string; sub: string }> = {
-  freePhoneSlotsPerCluster: { name: "同组正常放行的手机号数", sub: "同一组关联账户中，可按正常账户处理的手机号数量。" },
   duplicateAccountPendingFrom: { name: "第几个关联账号起审核收益", sub: "从这个账号开始，新增收益须先审核。" },
   duplicateAccountFreezeFrom: { name: "第几个关联账号起建议冻结", sub: "达到这个账号数只提出冻结建议，不会自动冻结账户。" },
-  pendingReleaseHours: { name: "批量放行统计时间范围", sub: "只统计这段时间内的放行记录，不会自动放款。" },
   releaseMode: { name: "收益放行方式", sub: "目前只能人工审核后放行。" },
-  freeSlotRequiresBinding: { name: "正常名额是否需要绑定手机号", sub: "开启后，正常放行的名额须绑定手机号。" },
 };
 const releaseParamName = (p: KRiskParam) => RELEASE_PARAM_COPY[p.key]?.name ?? p.name;
 const releaseParamSub = (p: KRiskParam) => RELEASE_PARAM_COPY[p.key]?.sub ?? p.sub;
@@ -98,19 +96,10 @@ function errorText(error: unknown) {
     : message ? displayAdminError(error) : "暂时无法读取风险数据";
 }
 
-/** 释放参数的「放宽」方向判定(口径与 PRD v1 [K1] K1-MD4 逐条一致)。
- *  放宽 = 让更多收益更快进入可提桶 = 放大资金流出方向,须在弹窗告知并由服务端前置 B1 覆盖率核验。
- *  数值键分两族:调**大**是放宽(槽位 / 待审起点 / 重复账号建议线)· 调**小**是放宽(观察窗口 / 在线证明时长)。 */
-const RELEASE_LOOSEN_WHEN_LARGER = new Set(["freePhoneSlotsPerCluster", "duplicateAccountPendingFrom", "duplicateAccountFreezeFrom"]);
-const RELEASE_LOOSEN_WHEN_SMALLER = new Set(["pendingReleaseHours"]);
+/** 提高收益审核或冻结起点时，保存须通过后端覆盖率核验。 */
+const RELEASE_LOOSEN_WHEN_LARGER = new Set(["duplicateAccountPendingFrom", "duplicateAccountFreezeFrom"]);
 export function isLooseningRelease(key: string, current: string, next: string): boolean {
-  if (RELEASE_LOOSEN_WHEN_LARGER.has(key)) return Number(next) > Number(current);
-  if (RELEASE_LOOSEN_WHEN_SMALLER.has(key)) return Number(next) < Number(current);
-  // 释放模式:仅人工放行 → 允许在线证明放行 = 多开一条自动放行来源 = 放宽。
-  if (key === "releaseMode") return false;
-  // 首号绑定要求:开启 → 关闭 = 免费槽不再要求绑定 = 放宽。
-  if (key === "freeSlotRequiresBinding") return current === "true" && next === "false";
-  return false;
+  return RELEASE_LOOSEN_WHEN_LARGER.has(key) && Number(next) > Number(current);
 }
 
 function confirmedK1FailureText(error: unknown) {
@@ -292,11 +281,12 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const [weightDraft, setWeightDraft] = useState<WeightDraft | null>(null);
   const [paramDraft, setParamDraft] = useState<ParamDraft | null>(null);
   const [releaseDraft, setReleaseDraft] = useState<ParamDraft | null>(null);
+  const [registrationDraft, setRegistrationDraft] = useState<RegistrationDraft | null>(null);
   const [protectedEntries, setProtectedEntries] = useState<K1ProtectedEntry[]>([]);
   const [protectedEntriesLoading, setProtectedEntriesLoading] = useState(true);
   const [protectedEntriesError, setProtectedEntriesError] = useState<string | null>(null);
   const [whitelistDraft, setWhitelistDraft] = useState<WhitelistDraft | null>(null);
-  const [draftSubmitting, setDraftSubmitting] = useState<"param" | "weight" | "whitelist" | "release" | null>(null);
+  const [draftSubmitting, setDraftSubmitting] = useState<"param" | "weight" | "whitelist" | "release" | "registration" | null>(null);
   const draftSubmitLock = useRef(false);
   const formId = useId();
   const [focusLookupState, setFocusLookupState] = useState<"idle" | "loading" | "positioning" | "found" | "not-found" | "error">("idle");
@@ -670,8 +660,36 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
   const releaseParamDisplay = (p: KRiskParam): string => {
     if (p.key === "releaseMode") return RELEASE_MODE_LABELS[p.value] ?? p.value;
-    if (p.key === "freeSlotRequiresBinding") return RELEASE_BOOL_LABELS[p.value] ?? p.value;
     return p.value;
+  };
+
+  const saveRegistrationDraft = async () => {
+    if (!registrationDraft || draftSubmitLock.current) return;
+    const { param, value, reason } = registrationDraft;
+    const scope = `registration-param:${param.key}`;
+    const commandKey = releaseAttempts.resolve(scope, JSON.stringify([value, param.value, reason.trim()]), newK1CommandKey);
+    draftSubmitLock.current = true;
+    setDraftSubmitting("registration");
+    try {
+      await updateK1RegistrationParam(param, value, reason.trim(), commandKey);
+      releaseAttempts.forget(scope);
+    } catch (error) {
+      ctx.toast(error instanceof K1OutcomeUncertainError
+        ? `结果暂未确认 · 请保留弹窗直接重试 · 命令号 ${error.commandKey}`
+        : confirmedK1FailureText(error));
+      if (!(error instanceof K1OutcomeUncertainError)) releaseAttempts.forget(scope);
+      return;
+    } finally {
+      draftSubmitLock.current = false;
+      setDraftSubmitting(null);
+    }
+    setRegistrationDraft(null);
+    try {
+      await ctx.reloadKRisk({ multiAccount: pageQuery });
+      ctx.toast(`${param.name}已更新`);
+    } catch {
+      ctx.toast(`${param.name}已保存，但暂时无法读回。请刷新本页核对`);
+    }
   };
 
   const saveWeightDraft = async () => {
@@ -814,6 +832,11 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         <div className="f-stat danger"><div className="k">已冻结账户组</div><div className="v">{statText("frozenClusters")}</div><div className="sub">共 {statText("frozenAccounts")} 个账户</div></div>
         <div className="f-stat ok"><div className="k">新人礼拦截</div><div className="v">{statKnown("giftBlockedUsd") ? `$${statText("giftBlockedUsd")}` : "—"}</div><div className="sub">{statKnown("giftBlockedCnt") ? `${statText("giftBlockedCnt")} 笔重复领取被拦下` : "数据尚未接入，不能判定为 0"}</div></div>
       </div>
+      <p className="f-foot">
+        上次成功检查 {overview?.lastSuccessfulCheckAt
+          ? <time dateTime={overview.lastSuccessfulCheckAt}>{new Date(overview.lastSuccessfulCheckAt).toISOString().slice(0, 19).replace("T", " ")} UTC</time>
+          : "暂无成功检查记录"}
+      </p>
 
       <section className="l-card">
         <div className="l-h">
@@ -834,11 +857,25 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         </div>
       </section>
 
-      {/* 收益释放参数(SPEC-7 搬回,合并底账 §二#5):与整簇冻结分开的放行细调。 */}
+      <section className="l-card">
+        <div className="l-h"><span className="ttl">H5 注册防刷与新人礼</span></div>
+        <div className="l-b param-list">
+          {overview?.registrationParams.length ? overview.registrationParams.map((param) => (
+            <div className="p" key={param.key}>
+              <div className="txt"><div className="k">{param.name}</div><div className="s">{param.desc}</div></div>
+              <span className="v">{param.value} {param.unit}</span>
+              {param.writable && <button className="l-btn sm mc" aria-label={`调整${param.name}`}
+                onClick={() => setRegistrationDraft({ param, value: param.value, reason: "" })}>调整</button>}
+            </div>
+          )) : <p className="f-foot">暂无已配置的 H5 注册参数。</p>}
+        </div>
+      </section>
+
+      {/* 收益释放参数与整簇处置分开。 */}
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">关联账户的收益审核规则</span>
-          <span className="sub">· 同组账户超过正常名额后，新增收益须审核；账户数量和冻结建议标准在上方调整</span>
+          <span className="sub">· 同组账户达到审核起点后，新增收益须审核</span>
           <div className="r"><span className="kcode electric">影响后续收益审核与提现</span></div>
         </div>
         <div className="l-b">
@@ -995,7 +1032,6 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               {(() => {
                 // 按结算顺序展示新增收益分流，解除误判或判定正常后仍须判断人数。
                 const releaseValue = (key: string) => overview?.releaseParams.find((p) => p.key === key)?.value;
-                const slots = releaseValue("freePhoneSlotsPerCluster");
                 const pendingFrom = releaseValue("duplicateAccountPendingFrom");
                 const freezeFrom = releaseValue("duplicateAccountFreezeFrom");
                 let impact = { label: "尚未确认", tone: "dim", desc: "收益审核规则暂时加载不出来，新增收益的处理方式尚未确认。" };
@@ -1012,8 +1048,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                   <div className={`ktint${impact.tone === "bad" ? " bad" : impact.tone === "warn" ? " warn" : ""}`} data-proof="k1-cluster-earning-impact" style={{ fontSize: 12, marginTop: 10 }}>
                     <b>收益影响</b> · 当前结论:<span className={`bdg ${impact.tone}`} style={{ marginLeft: 6 }}>{impact.label}</span>
                     <div style={{ marginTop: 6 }}>{impact.desc}</div>
-                    <div style={{ marginTop: 6 }}>{slots && pendingFrom && freezeFrom
-                      ? `当前规则：正常手机号名额为 ${slots} 个。账户组待判定、可疑、已冻结，或同组账号数达到 ${freezeFrom} 时，新增收益锁定；其余情况下，账号数达到 ${pendingFrom} 时须审核，未达到时可提现。`
+                    <div style={{ marginTop: 6 }}>{pendingFrom && freezeFrom
+                      ? `当前规则：账户组待判定、可疑、已冻结，或同组账号数达到 ${freezeFrom} 时，新增收益锁定；其余情况下，账号数达到 ${pendingFrom} 时须审核，未达到时可提现。`
                       : "收益审核规则暂时加载不出来。"}</div>
                   </div>
                 );
@@ -1125,14 +1161,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       {releaseDraft && (() => {
         const key = releaseDraft.param.key;
         const limits = K1_RELEASE_PARAM_LIMITS[key];
-        const isMode = key === "releaseMode";
-        const isBool = key === "freeSlotRequiresBinding";
+        if (!limits) return null;
         const numeric = Number(releaseDraft.value);
-        const valueOk = limits
-          ? Number.isInteger(numeric) && numeric >= limits.min && numeric <= limits.max
-          : isMode ? (K1_RELEASE_MODE_VALUES as readonly string[]).includes(releaseDraft.value)
-            : isBool ? releaseDraft.value === "true" || releaseDraft.value === "false"
-              : false;
+        const valueOk = Number.isInteger(numeric) && numeric >= limits.min && numeric <= limits.max;
         const reasonOk = releaseDraft.reason.trim().length >= 8 && releaseDraft.reason.trim().length <= 200;
         const update = (patch: Partial<ParamDraft>) => setReleaseDraft((current) => current ? { ...current, ...patch } : current);
         return (
@@ -1140,29 +1171,15 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             <button className="l-btn" disabled={draftSubmitting === "release"} onClick={() => setReleaseDraft(null)}>取消</button>
             <button className="l-btn mc" disabled={!valueOk || !reasonOk || draftSubmitting === "release"} onClick={() => void saveReleaseDraft()}>{draftSubmitting === "release" ? "保存中…" : "确认保存"}</button>
           </>}>
-            {limits ? (
-              <div className="field">
-                <label htmlFor={`${formId}-release-value`}>新值（{limits.min}–{limits.max}{releaseDraft.param.unit ? ` · ${releaseDraft.param.unit}` : ""}）</label>
-                <input id={`${formId}-release-value`} className="fld" type="number" min={limits.min} max={limits.max} step={limits.step} value={releaseDraft.value} onChange={(event) => update({ value: event.target.value })} />
-                {!valueOk && <div className="tiny" style={{ color: "var(--danger)", marginTop: 6 }}>必须填写范围内的整数</div>}
-              </div>
-            ) : (
-              // 可枚举值走下拉不手输(释放模式 / 开关);选项集合与 k-client 校验白名单同源。
-              <div className="field">
-                <label htmlFor={`${formId}-release-value`}>新值（从下拉选择）</label>
-                <select id={`${formId}-release-value`} className="fld" value={releaseDraft.value} onChange={(event) => update({ value: event.target.value })}>
-                  {(isMode ? [...K1_RELEASE_MODE_VALUES] : ["true", "false"]).map((option) => (
-                    <option key={option} value={option}>{isMode ? RELEASE_MODE_LABELS[option] : RELEASE_BOOL_LABELS[option]}</option>
-                  ))}
-                </select>
-              </div>
-            )}
+            <div className="field">
+              <label htmlFor={`${formId}-release-value`}>新值（{limits.min}–{limits.max}{releaseDraft.param.unit ? ` · ${releaseDraft.param.unit}` : ""}）</label>
+              <input id={`${formId}-release-value`} className="fld" type="number" min={limits.min} max={limits.max} step={limits.step} value={releaseDraft.value} onChange={(event) => update({ value: event.target.value })} />
+              {!valueOk && <div className="tiny" style={{ color: "var(--danger)", marginTop: 6 }}>必须填写范围内的整数</div>}
+            </div>
             <div className="field">
               <label htmlFor={`${formId}-release-reason`}>操作理由（必填 · 8-200 字）</label>
               <textarea id={`${formId}-release-reason`} rows={3} maxLength={200} value={releaseDraft.reason} onChange={(event) => update({ reason: event.target.value })} />
             </div>
-            {/* 必须先过 valueOk:输入框清空时 Number("") = 0,对「调小才是放宽」族会被误判成放宽,
-                对一个根本提交不了的无效值报「放大资金流出」是谎报风险。 */}
             {valueOk && isLooseningRelease(key, releaseDraft.param.value, releaseDraft.value) && (
               // 放大资金流出方向的告知(与其它放大类动作同款口径):真正的拦截在服务端,
               // 本页没有覆盖率数据,不做客户端预检 —— 只如实告知会被核验,不假装拦得住。
@@ -1170,9 +1187,32 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 <b>这项调整可能增加可提现收益</b> · 保存前会检查兑付覆盖率，低于红线时无法保存。请在操作理由中写明依据。
               </div>
             )}
-            <div className="ctint">{key === "releaseMode" && releaseDraft.param.adjustable === false
-              ? "在线验证放行尚未开放，当前只能人工审核收益。"
-              : "调整只影响后续收益审核和提现，历史记录不会改动；放宽规则时请写明理由。"}</div>
+            <div className="ctint">调整只影响后续收益审核和提现，历史记录不会改动；放宽规则时请写明理由。</div>
+          </Modal>
+        );
+      })()}
+
+      {registrationDraft && (() => {
+        const { param, value, reason } = registrationDraft;
+        const numeric = Number(value);
+        const valid = /^\d+$/.test(value) && Number.isInteger(numeric) && numeric >= param.min && numeric <= param.max
+          && numeric !== Number(param.value) && reason.trim().length >= 8 && reason.trim().length <= 200;
+        const busy = draftSubmitting === "registration";
+        return (
+          <Modal title={`调整${param.name}`} icon="shield" busy={busy} onClose={() => setRegistrationDraft(null)} footer={<>
+            <button className="l-btn" disabled={busy} onClick={() => setRegistrationDraft(null)}>取消</button>
+            <button className="l-btn mc" disabled={busy || !valid} onClick={() => void saveRegistrationDraft()}>确认保存</button>
+          </>}>
+            <div className="field">
+              <label htmlFor={`${formId}-registration-value`}>新值（{param.min}–{param.max}）</label>
+              <input id={`${formId}-registration-value`} className="fld" type="number" min={param.min} max={param.max} step={1}
+                value={value} onChange={event => setRegistrationDraft({ ...registrationDraft, value: event.target.value })} />
+            </div>
+            <div className="field">
+              <label htmlFor={`${formId}-registration-reason`}>操作理由（必填 · 8–200 字）</label>
+              <textarea id={`${formId}-registration-reason`} rows={3} maxLength={200} value={reason}
+                onChange={event => setRegistrationDraft({ ...registrationDraft, reason: event.target.value })} />
+            </div>
           </Modal>
         );
       })()}
