@@ -527,9 +527,9 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       facts: <Facts>
         <Fact k="用户">{trialOwnerLabel(session)}</Fact>
         <Fact k="试用"><span data-mono="">{session.sid}</span></Fact>
-        <Fact k="当前状态">{stateLabel}</Fact>
+        <Fact k="状态变化"><Change from={stateLabel} to="已取消" /></Fact>
       </Facts>,
-      detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。这次试用会结束并标记为 <b>已取消</b>，重复提交不会重复处理。</>,
+      detail: "重复提交不会重复处理。",
       amplifies: false,
       confirmTone: "danger",
       effect: <><StatusTag tone="progress" filled explain={APPROVAL_NOTE}>批准后生效</StatusTag><IrreversibleTag /></>,
