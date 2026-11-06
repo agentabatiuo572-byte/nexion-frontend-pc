@@ -2716,6 +2716,8 @@ D2 是后台**最高频操盘动作**,控制平台**资金流出节奏**与**兑
 
 **(b) 完整提现状态机**(server-canonical,client 仅订阅):
 
+**ERC20 失去链上确认（S04 / BUG-343）**：`USDT-ERC20` 的 `TX_ORPHANED` / `DEAD` 在队列与详情统一显示「冻结 · 仍占提现额度」，资金保持冻结并继续占额度，不提供手动退款或其他处置入口；需核对链上结果。BEP20、银行轨及 ERC20 其他状态沿用各自规则。后端必须在直接调用退款接口时明确业务拒绝，不能返回 500；实际冻结余额、额度占用及链上重组处理仍由后端负责。
+
 **银行轨详情与恢复**：BANKQR 单据在同一 D2 队列展示，读取锁定报价、收款账户一致性 `beneficiaryEligibility:{canWithdraw,reasonCode}` 和资金终态证据 `settlementEvidence`。详情只展示掩码账号；服务端检查当前平台账号、收款账户编号和版本与原报价一致，不要求外部账户/本人归属核验证据，也不生成伪造 verified。服务商原始状态不能单独证明已到账或已退款；终态以服务端完成原单和账本核对后落库的 `paid/refunded` 证据为准。
 
 银行单 `MANUAL_REVIEW` 的“重新查单”仅查询原服务商订单，再由服务端裁决恢复；不新建提现、不重复出款。请求携 `Idempotency-Key`、当前 `version` 和 10–300 字理由，版本变化或已有处理中/未知命令时拒绝重发。权限同时要求 `finance_d2_read`、`finance_d2_withdrawal_approve`、`finance_d2_withdrawal_refund`；结果冲突继续人工核对并保留资金原状态。
@@ -2742,15 +2744,15 @@ submitted ─风控评分─▶ review-pending ─approve─▶ review-passed �
                       │                                                  │            │
    submitted ─地址校验失败──▶ address-invalid ─────────────────────────┐│            │
                                                                        ││            │
-   processing/sent 链上异常 ──▶ tx-failed / tx-orphaned ──▶ refunded(退回余额)◀┘          │
+   processing/sent 链上异常 ──▶ tx-failed / tx-orphaned ──▶ 按渠道规则处理◀┘          │
                                                                                        │
-   (review-rejected / address-invalid / tx-failed / tx-orphaned 均可 ──▶ refunded)◀─────┘
+   (review-rejected / address-invalid / tx-failed 按渠道规则 ──▶ refunded)◀─────┘
 ```
 
 - **正常 5 态**(§9.3.6 / §1.9):`submitted → review-passed → processing → sent → confirmed`。状态机中 `review-pending` 为 `approve` 动作前的待审中间节点,`approve` 推进至 `review-passed`(与前端 §9.3.6 及后台 PRD 术语表 `review-passed` 命名对齐),`review-passed` 后进 `processing`;事件侧 `withdraw.approved`(=review-passed 态,§2.4.5 ③)。**`review-pending` 是后台扩展态**——对应前端 §9.3.6 `submitted` 状态在后台队列中的细分(等待人工审核中),其上承接 `delay` / `freeze` / `reject` / `approve` 四条转出边(详见下"转出边触发态"说明)。
 - **异常 / 失败 6 态**(§9.11f,真后台扩展):`review-rejected`(审核拒绝)/ `address-invalid`(地址非法)/ `tx-failed`(链上交易失败)/ `tx-orphaned`(交易孤块)/ `refunded`(已退回余额)/ `frozen`(账户冻结)。全部 server-canonical,client 仅订阅(§9.11f:client 绝不本地推进)。
 - **转出边触发态(delay / freeze 前置态)**:`delay`(extended-hold)与 `freeze`(冻结)均从 `review-pending` 态引出,`submitted` 仅保留一条转出边(→ `review-pending`,风控评分后自动推进);具体——`freeze` 可在 `review-pending` 及之后任何在途态(`review-passed` / `processing`)触发,`delay` 仅在 `review-pending` 态触发。
-- **失败态资金归位**:`review-rejected` / `address-invalid` / `tx-failed` / `tx-orphaned` 均须将冻结的提现额经 `refunded` 退回用户可提余额(server 记 refund bill),不得资金悬空。
+- **失败态资金归位**：各渠道按已确认资金结果处理；`USDT-ERC20` 的 `TX_ORPHANED` / `DEAD` 禁止退款，继续冻结并占额度。`TX_FAILED` 等其他状态沿用原规则，不因本次调整扩大退款范围。
 
 **(c) 批量操作面**:按**风控规则 / IP 段 / 金额区间**筛选后批量 `approve / reject / delay / freeze`;批量放行受 ③ 大额阈值约束(超阈值单笔不可批量自动放行,server 自动过滤大额单 → 拦截转人工单笔,见 ④ 批量行)。批量动作单条记审计、整体记批次 ID。
 
@@ -2803,7 +2805,7 @@ submitted ─风控评分─▶ review-pending ─approve─▶ review-passed �
 | delay | ②(d)决策区「延迟」 | 次按钮 | 仅 `review-pending` 态;风控/财务渲染 | 打开弹窗 D2-MD3 |
 | freeze | ②(d)决策区「冻结」 | 警示按钮 | `review-pending` / `review-passed` / `processing` 在途态;风控(lead)/财务(lead)/超管渲染 | 打开弹窗 D2-MD4 |
 | unfreeze | ②(a)队列 `frozen` 态行内「解冻」+ ②(d)决策区 | 次按钮 / 行内按钮 | 仅 `frozen` 态;风控(lead)/财务(lead)/超管渲染 | 打开弹窗 D2-MD5 |
-| manual-refund-override | ②(d)异常态单详情「手动退款」 | 警示按钮 | 仅 `review-rejected` / `address-invalid` / `tx-failed` / `tx-orphaned` 异常态且未 refund;财务(lead)/超管渲染 | 打开弹窗 D2-MD6 |
+| manual-refund-override | ②(d)异常态单详情「手动退款」 | 警示按钮 | 按渠道与状态允许退款且未 refund；ERC20 `TX_ORPHANED` / `DEAD` 不提供入口；财务(lead)/超管渲染 | 打开弹窗 D2-MD6 |
 | 批量操作 | ②(c)批量操作面「批量执行」 | 主按钮 | 已筛选 ≥ 1 单且已选动作;财务/风控渲染 | 打开弹窗 D2-MD7 |
 | 查看队列 / 单笔详情 | ②(a)/(d) 导航 | 链接 | 按角色裁剪(客服只读受限) | 跳转视图,无弹窗 |
 
@@ -2845,7 +2847,7 @@ submitted ─风控评分─▶ review-pending ─approve─▶ review-passed �
 - **成功反馈**:关窗;行内状态更新 `review-pending`;toast;admin 审计(reason / operator);实时告警风控 lead。
 
 ##### [D2-MD6] 手动退款覆盖确认
-- **功能**:对异常态(`review-rejected` / `address-invalid` / `tx-failed` / `tx-orphaned`)提现单手动执行 refund(转 `refunded`,退回用户可提余额并记 refund bill),确认即生效。
+- **功能**：仅对渠道和状态规则允许退款的异常提现单手动执行 refund（转 `refunded`，退回用户可提余额并记 refund bill），确认即生效。ERC20 `TX_ORPHANED` / `DEAD` 禁止退款，列表和详情均无入口。
 - **布局结构**:1. **信息区**:withdrawalNo / userId / 金额 / 当前异常态与异常原因 / 链上 txHash(如有)。2. **影响预览区**:提示行「退回额将计入用户可提余额并记 refund bill;链上态单 server 预检无在途重复出金后方可退回」。3. **输入区**:reason(必填,8–200 字)+ 确认勾选「我已核实链上未出金 / 资金未离开平台」(未勾置灰)。4. **按钮区**:`[取消]` · `[确认退款]`(警示色;置灰条件 / loading;携 `Idempotency-Key`)。
 - **错误态**:409(已 refunded / 状态机非法)/ 422(server 预检发现链上在途出金,阻断)/ 400 `REASON_REQUIRED` / 403。
 - **成功反馈**:关窗;行内状态更新 `refunded`;toast「已退回 · 已记账 · 已记审计」;refund bill + admin 审计;实时告警财务 lead。

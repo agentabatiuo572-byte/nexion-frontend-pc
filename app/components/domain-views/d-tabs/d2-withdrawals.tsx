@@ -91,6 +91,7 @@ function statusLabel(status: string) {
 }
 
 function bankStatusLabel(row: D2Withdrawal) {
+  if (erc20ConfirmationLost(row)) return "冻结 · 仍占提现额度";
   if (row.chain !== "BANK-VND") return statusLabel(row.status);
   if (row.status === "SENT") return "银行处理中";
   if (row.status === "TX_ORPHANED") return "人工核对 · 未解冻";
@@ -105,6 +106,7 @@ function cregisStatusLabel(state: string) {
 }
 
 function historyStatusLabel(status: string, chain?: string) {
+  if (chain === "USDT-ERC20" && ["TX_ORPHANED", "DEAD"].includes(status)) return "冻结 · 仍占提现额度";
   if (chain === "BANK-VND") {
     if (["SENT", "CHAIN_SUBMITTED"].includes(status)) return "银行处理中";
     if (["TX_ORPHANED", "DEAD"].includes(status)) return "人工核对";
@@ -224,6 +226,7 @@ function ruleSummary(value?: string) {
 }
 
 function lifecycleSummary(row: D2Withdrawal) {
+  if (erc20ConfirmationLost(row)) return "链上确认已丢失，资金保持冻结并继续占用提现额度，禁止退款，需核对链上结果。";
   const reason = operationalText(row.failureReason);
   if (reason !== "—") return reason;
   if (["EXTENDED_HOLD", "DELAYED"].includes(row.status.toUpperCase())) return "等待复查时间，到期后系统自动转回待审核";
@@ -259,6 +262,7 @@ function actionLabel(action: D2ReviewAction) {
 
 function actionCandidates(row: D2Withdrawal, cregis?: D2CregisPayout | null): D2ReviewAction[] {
   const status = row.status.toUpperCase();
+  if (erc20ConfirmationLost(row)) return [];
   if (["USDT-BEP20", "BEP20"].includes(row.chain)) {
     if (cregis?.withdrawalNo === row.withdrawalNo && cregis.source === "provider") return [];
     if (["PROCESSING", "SENT", "CHAIN_SUBMITTED", "FAILED", "TX_FAILED", "TX_ORPHANED", "DEAD", "REVIEW_REJECTED", "REJECTED", "ADDRESS_INVALID"].includes(status)
@@ -271,6 +275,10 @@ function actionCandidates(row: D2Withdrawal, cregis?: D2CregisPayout | null): D2
   if (status === "FROZEN") return ["UNFREEZE"];
   if (["REVIEW_REJECTED", "REJECTED", "ADDRESS_INVALID", "TX_FAILED", "FAILED", "TX_ORPHANED", "DEAD"].includes(status)) return ["REFUND"];
   return [];
+}
+
+function erc20ConfirmationLost(row: D2Withdrawal) {
+  return row.chain === "USDT-ERC20" && ["TX_ORPHANED", "DEAD"].includes(row.status.toUpperCase());
 }
 
 /** 状态流转图。节点名取 STATUS_TABS,分支与 actionCandidates 同一套判断。 */
@@ -286,7 +294,7 @@ const D2_BRANCHES: { from: string[]; trigger: string; to: string[]; note: string
   { from: ["REVIEW_PENDING"], trigger: "点「拒绝并退款」", to: ["REFUNDED"], note: "填写拒绝原因，立即退回用户余额" },
   { from: ["SENT"], trigger: "打款结果返回", to: ["ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], note: "按银行或链上返回的结果处理，结果不明时继续核对" },
   { from: ["REVIEW_REJECTED"], trigger: "手动退款", to: ["REFUNDED"], note: "仅历史遗留记录；提交前先确认钱没有打出去" },
-  { from: ["ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], trigger: "手动退款", to: ["REFUNDED"], note: "提交前先确认钱没有打出去" },
+  { from: ["ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], trigger: "手动退款", to: ["REFUNDED"], note: "ERC20 丢失链上确认时冻结并继续占额度，禁止退款；其他单提交前先确认钱没有打出去" },
 ];
 
 function StatusFlowChip({ code }: { code: string }) {
