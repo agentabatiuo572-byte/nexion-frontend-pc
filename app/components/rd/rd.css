@@ -334,6 +334,7 @@
 .rd-modal.rd-confirm .field label { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; color: var(--rd-text); }
 .rd-modal.rd-confirm .field .bf-legend { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-3); }
 .rd-modal.rd-confirm .field :is(textarea, input, select, .fld) { font-weight: 400; }
+.rd-modal.rd-confirm .field > .rd-select { display: flex; width: 100%; margin-top: 4px; font-weight: 400; }  /* 和原生下拉一样独占一行 */
 .rd-modal.rd-confirm .field :is(textarea, input, .fld)::placeholder { color: var(--rd-text-3); opacity: 1; }
 .rd-modal.rd-confirm select.fld:has(option[value=""]:checked) { color: var(--rd-text-3); }
 .rd-modal.rd-confirm .field textarea, .rd-modal.rd-confirm .field input:not([type="checkbox"]):not([type="radio"]), .rd-modal.rd-confirm .fld { border: 0; border-radius: var(--rd-radius-control); background: var(--rd-control); color: var(--rd-text); font-size: var(--rd-text-body); }
