@@ -753,7 +753,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                           ? <><Sparkline label={`${operatorCopyText(item.name)}的走势，样本过小时段留空`} values={item.spark} /><span className="rd-note">部分时段样本过小</span></>
                         : hasTrend(item.spark)
                         ? <Sparkline label={`${operatorCopyText(item.name)}的走势`} values={item.spark} />
-                        : item.spark.length >= 2
+                        : item.spark.length >= 2 && item.spark.every((point) => point === 0)
                           ? <span className="rd-note">每段都是 0</span>
                           : <span className="rd-note" data-proof="l1-kpi-trend-unavailable">趋势数据不足</span>}</Td>}
                       <Td><StatusTag tone={STATE_TONE[state]}>{stateText(state, item)}</StatusTag></Td>
@@ -764,7 +764,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
             </Table>
             {!showTrendColumn && (KPIS.some((item) => item.sparkSuppressed?.includes(true))
               ? <p className="rd-note rd-panel-foot">部分时段样本过小，趋势留空。</p>
-              : KPIS.some((_, index) => trendOf(index).length >= 2)
+              : KPIS.some((_, index) => trendOf(index).length >= 2 && trendOf(index).every((point) => point === 0))
               ? <p className="rd-note rd-panel-foot">这个范围有趋势的指标每段都是 0，没有走势可画。</p>
               : <p className="rd-note rd-panel-foot" data-proof="l1-kpi-trend-unavailable">这个范围的数据不够，画不出走势。</p>)}
           </Panel>
