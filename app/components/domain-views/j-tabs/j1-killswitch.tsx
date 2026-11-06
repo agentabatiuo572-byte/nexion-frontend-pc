@@ -21,7 +21,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { A2OutcomeUncertainError, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { A2OutcomeUncertainError, createA2OperationProposal, fetchA2Overview, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import type { ActionConfirmReq, JCtx } from "./types";
 
 type RestoreProposal = Parameters<typeof createA2OperationProposal>[0];
@@ -118,6 +118,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const { toast, openActionConfirm, actions, emergency, contentLoading, contentError } = ctx;
   const session = useAdminAuth((state) => state.session);
   const authorities = new Set(session?.authorities ?? []);
+  const canReadApprovals = authorities.has("platform_a2_read");
   const canKill = authorities.has("emergency_j1_gate_kill");
   const canResume = authorities.has("emergency_j1_gate_resume")
     && (authorities.has("platform_a2_proposal_create") || authorities.has("platform_a2_write"));
@@ -133,6 +134,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const [folds, setFolds] = useState<Record<string, boolean>>({});
   const [submitting, setSubmitting] = useState("");
   const [pending, setPending] = useState<J1Pending[]>([]);
+  const [restoreApprovals, setRestoreApprovals] = useState<A2OperationRow[]>([]);
+  const [approvalsLoading, setApprovalsLoading] = useState(canReadApprovals);
+  const [approvalsError, setApprovalsError] = useState("");
   const [pendingRestores, setPendingRestores] = useState<RestoreAttempt[]>([]);
   const [checkingRestore, setCheckingRestore] = useState<string | null>(null);
   /** 待确认条上最近一次读回或重试的结果，只是当下的事实，不影响待确认本身。 */
@@ -147,6 +151,19 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   };
   useEffect(() => { syncPending(); }, []);
   useEffect(() => { if (data) setReadAt(businessClock(Date.now())); }, [data]);
+  useEffect(() => {
+    if (!canReadApprovals) { setRestoreApprovals([]); setApprovalsLoading(false); return; }
+    let current = true;
+    setApprovalsLoading(true);
+    fetchA2Overview({ domain: "J" }).then((overview) => {
+      if (!current) return;
+      setRestoreApprovals(overview.operationQueue.filter((row) => row.operationCode === "j1_gate_resume" && row.status === "pending"));
+      setApprovalsError("");
+    }, (error: unknown) => {
+      if (current) setApprovalsError(`恢复审批状态暂时读不到，请到操作记录与审批核对。${displayAdminError(error)}`);
+    }).finally(() => { if (current) setApprovalsLoading(false); });
+    return () => { current = false; };
+  }, [canReadApprovals, session?.adminId, data]);
 
   const reload = () => void actions.reloadJEmergency().catch(() => undefined);
   const notePending = (record: J1Pending, note: string) => setPendingNotes((current) => ({ ...current, [record.fingerprint]: `${businessClock(Date.now())} ${note}` }));
@@ -253,6 +270,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   const submitRestore = async (g: Pick<JGate, "key" | "name" | "amplifies">, reason?: string) => {
     if (!session || !canResume) throw new Error("当前账号没有发起恢复审批的权限。");
+    if (restoreApprovals.some((row) => row.obj === g.key)) throw new Error("这项恢复申请待审批，请核对原审批。");
     const slot = `${session.adminId}:${g.key}`;
     const previous = restoreAttempts.list().find((record) => record.fingerprint === slot);
     if (!previous && !reason) return;
@@ -302,6 +320,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       if (ticket.operationCode !== "j1_gate_resume" || ticket.obj !== g.key) {
         throw new A2OutcomeUncertainError("恢复申请回执不完整，请到操作记录核对。", key);
       }
+      setRestoreApprovals((rows) => [...rows.filter((row) => row.obj !== g.key), ...(ticket.status === "pending" ? [ticket] : [])]);
       restoreAttempts.forget(slot, key);
       toast(ticket.status === "pending"
         ? `${operatorCopyText(g.name)}恢复申请 ${ticket.id} 待审批，业务仍已关停；另一位有权超管批准后生效`
@@ -408,7 +427,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     return { value: signalText(row.signalValue, unit).trim(), threshold: signalText(row.threshold, unit).trim() };
   };
 
-  const locks = new Set([...pending.flatMap((record) => record.locks), ...visibleRestores.map((record) => record.input.obj)]);
+  const locks = new Set([...pending.flatMap((record) => record.locks), ...visibleRestores.map((record) => record.input.obj), ...restoreApprovals.map((row) => row.obj)]);
   const blockOf = (lock: string) => (contentLoading ? READING : locks.has(lock) ? LOCKED : undefined);
   const selectedGates = gates.filter((gate) => sel[gate.key] && gate.enabled && !locks.has(gate.key));
   const selOnCount = selectedGates.length;
@@ -620,9 +639,14 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const cardAction = (gate: JGate): ReactNode => {
     const block = blockOf(gate.key);
     if (gate.enabled) return canKill ? <Button variant="danger-outline" disabledReason={block} onClick={() => killGate(gate)}>关停</Button> : undefined;
+    const approval = restoreApprovals.find((row) => row.obj === gate.key);
+    if (approval) return reach("/platform/audit", "platform_a2_read")
+      ? <Link className="rd-link" href={`/platform/audit?domain=J&object=${encodeURIComponent(gate.key)}`}>到操作记录与审批核对</Link>
+      : <span className="rd-note">请有权管理员核对原审批。</span>;
     const backfill = backfillOf(gate.key);
     if (backfill) return canKill ? <Button disabledReason={block} onClick={() => confirmAutoTrigger(backfill)}>补录结论</Button> : undefined;
     if (!canResume) return undefined;
+    if (approvalsLoading || approvalsError) return <Button disabledReason={approvalsLoading ? "正在读取恢复审批状态，读完再操作" : approvalsError}>提交恢复审批</Button>;
     if (gate.coveragePrecheckRequired && !covPass) return <Button disabledReason={recoveryBlock}>恢复受阻</Button>;
     return <Button disabledReason={block} onClick={() => resumeGate(gate)}>提交恢复审批</Button>;
   };
@@ -676,6 +700,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         <Stat tone={covPass ? "role-1" : "danger"} icon={Coins} label="兑付覆盖率" value={coverageReady ? pct(COV) : "暂时无法判断"} sub={`红线 ${RED}%`} explain={`储备除以应付款，${coverageGapText}。恢复提现、兑换、创世节点或质押批准时，系统重查覆盖率；试用免查。`} />
       </StatBand>
 
+      {approvalsError && <Notice tone="warn">{approvalsError}</Notice>}
       <ControlGrid label="业务开关">
         {gates.map((gate) => {
           const name = operatorCopyText(gate.name);
@@ -685,6 +710,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
               explain={gateHelp(gate)}
               status={<>
                 {gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>}
+                {restoreApprovals.filter((row) => row.obj === gate.key).map((row) => <span key={row.id}><StatusTag tone="progress">恢复待审批</StatusTag> <span className="rd-note">审批号 {row.id}</span></span>)}
                 {gate.emergency && <StatusTag tone="warn" icon={Siren}>应急</StatusTag>}
                 {backfill && (backfill.overdue ? <StatusTag tone="danger">已逾期</StatusTag> : <StatusTag tone="warn">待补录</StatusTag>)}
               </>}

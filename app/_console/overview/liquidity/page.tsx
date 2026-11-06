@@ -24,7 +24,7 @@ import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { B2RestoredInsights } from "@/app/components/dashboard/restored-b-insights";
 import { useReach } from "@/lib/nav/use-reach";
-import { TREASURY_VALUATION_UNAVAILABLE } from "@/lib/admin/treasury-valuation";
+import { TREASURY_EXPORT_BLOCKED, TREASURY_VALUATION_UNAVAILABLE } from "@/lib/admin/treasury-valuation";
 
 /** B2 预测设置与资金储备页共用命令号，结果未知时跨刷新保留原操作。 */
 const forecastConfigCommandKey = createSlotAttemptStore({
@@ -93,6 +93,7 @@ export default function LiquidityPage() {
   const canConfig = authorities.includes("overview_b2_write") || authorities.includes("finance_d3_write");
   const canExport = authorities.includes("overview_b2_export") || authorities.includes("finance_d3_export");
   const [data, setData] = useState<B2Dashboard | null>(null);
+  const valuationExportBlocked = data?.liabilities.totalUsdt === null ? TREASURY_EXPORT_BLOCKED : undefined;
   const [draft, setDraft] = useState<B2ForecastValues | null>(null);
   const [window, setWindow] = useState<B2MaturityWindow>("7d");
   const [loading, setLoading] = useState(true);
@@ -186,6 +187,8 @@ export default function LiquidityPage() {
 
   /** 确定失败丢号，留在框里改了再提交；结果未知保号，关框，转成页面上方的待确认（OP-92、OP-93）。 */
   const submitExport = async (reason: string) => {
+    if (!data || loading) throw new Error("资金数据没读到或正在刷新，读完再导出。");
+    if (valuationExportBlocked) throw new Error(valuationExportBlocked);
     const scope = exportScope("liabilities");
     const operator = currentAdminOperator();
     const key = treasuryCommandKey(scope, { exportKind: "liabilities", reason, operator });
@@ -208,6 +211,7 @@ export default function LiquidityPage() {
   /** 按原操作重试：同命令号、同理由。过期和查不到记录都不发送，也不解除（OP-96）。 */
   const retryExport = async () => {
     if (!pendingExport?.reason) return;
+    if (valuationExportBlocked) { setExportNote(valuationExportBlocked); return; }
     if (pendingExport.expiresAt <= Date.now()) { setExportNote(RETRY_EXPIRED); return; }
     if (!treasuryCommands.isDurablyStored(pendingExport.fingerprint, pendingExport.commandKey)) {
       setExportNote("浏览器里查不到这条记录，本次没有发送。待确认继续保留，请到操作记录与审批核对。");
@@ -407,6 +411,7 @@ export default function LiquidityPage() {
         ctaAllowed={canCross("/finance/pool")}
       />
 
+      {valuationExportBlocked && <div className="b2-alert" role="status">{valuationExportBlocked}</div>}
       <div className="b2-toolbar" aria-label="操作栏">
         {/* 互斥到期预测窗口(zentao #159):aria-pressed 会被读屏按 toggle button 朗读,
             运营无法判断「7 天 / 30 天」是一组单选。TabGroup 给 tablist + aria-selected。 */}
@@ -424,7 +429,7 @@ export default function LiquidityPage() {
           <RefreshCw size={14} className={loading ? "spin" : ""} />刷新
         </button>
         {canExport ? (
-          <button type="button" className="b2-button" disabled={!!pendingExport} title={pendingExport ? "上次导出结果未知，先在页面上方核对" : undefined} onClick={() => { setError(""); setExportOpen(true); }}>
+          <button type="button" className="b2-button" disabled={!!pendingExport || loading || !!valuationExportBlocked} title={valuationExportBlocked ?? (pendingExport ? "上次导出结果未知，先在页面上方核对" : undefined)} onClick={() => { setError(""); setExportOpen(true); }}>
             <Download size={14} />导出负债 CSV
           </button>
         ) : (
@@ -458,7 +463,7 @@ export default function LiquidityPage() {
           <div>文件可能没有下载下来，操作记录里可能已经有这次导出。{pendingExport.expiresAt <= Date.now() ? `${RETRY_EXPIRED}。` : "重试不会多记一次。"}</div>
           {exportNote && <div>{exportNote}</div>}
           <div className="b2-dialog-actions">
-            <button type="button" className="b2-button" disabled={retrying || pendingExport.expiresAt <= Date.now()} title={pendingExport.expiresAt <= Date.now() ? RETRY_EXPIRED : undefined} onClick={() => void retryExport()}>{retrying ? "提交中…" : "按原操作重试"}</button>
+            <button type="button" className="b2-button" disabled={retrying || loading || !!valuationExportBlocked || pendingExport.expiresAt <= Date.now()} title={pendingExport.expiresAt <= Date.now() ? RETRY_EXPIRED : undefined} onClick={() => void retryExport()}>{retrying ? "提交中…" : "按原操作重试"}</button>
             {exportRejectedKey === pendingExport.commandKey && <button type="button" className="b2-button" disabled={retrying} onClick={() => setReleaseOpen("export")}>解除待确认</button>}
           </div>
         </div>

@@ -154,13 +154,13 @@ export function OverviewTab({ main, links }: { main: D3Main; links: readonly Cro
   const sources = Array.from(new Set([...reserve.sources, ...liabilities.sources].map(treasurySourceLabel)));
   const reserveParts = [
     { key: "usdt", name: "USDT 储备", sub: "基础可动用储备", value: reserve.usdtReserveUsdt, slot: 1 as ChartSlot },
-    { key: "other", name: "其他高流动资产", sub: "已计入储备", value: reserve.otherLiquidUsdt, slot: "other" as ChartSlot },
+    { key: "other", name: "其他高流动资产", sub: "其他高流动资产暂不参与储备计算。", value: reserve.otherLiquidUsdt, slot: "other" as ChartSlot },
   ];
   const liveParts = reserveParts.filter((part) => part.value > 0);
   const share = (value: number) => (reserve.reserveTotalUsdt > 0 ? `${(value / reserve.reserveTotalUsdt * 100).toFixed(1)}%` : "—");
   // 两类都有钱才画环，中间写总额，图例写每类的数；只有一类时一句话加数字（DP-62）。每类是什么、口径都在提示图标里（DP-06）。
   const composition = (
-    <Panel title="储备组成" icon={PieChart} tone="role-1" explain="USDT 储备是基础可动用储备，其他高流动资产已计入储备。可用储备已扣除质押锁定金额。">
+    <Panel title="储备组成" icon={PieChart} tone="role-1" explain="USDT 储备是基础可动用储备，其他高流动资产暂不参与储备计算。可用储备已扣除质押锁定金额。">
       <div className="rd-stack">
         {liveParts.length > 1
           ? <Donut label="储备组成" center={amountText(reserve.reserveTotalUsdt)} centerLabel="USDT" segments={reserveParts.map((part) => ({ key: part.key, label: part.name, value: part.value, slot: part.slot, text: money(part.value), share: share(part.value) }))} />
@@ -196,7 +196,7 @@ export function OverviewTab({ main, links }: { main: D3Main; links: readonly Cro
   return (
     <>
       <StatBand label="资金概况">
-        <Stat tone="role-1" icon={Wallet} label="可用储备" value={amountText(reserve.reserveTotalUsdt)} unit="USDT" explain="USDT 和其他可随时动用的资产，已扣除质押锁定金额。" />
+        <Stat tone="role-1" icon={Wallet} label="可用储备" value={amountText(reserve.reserveTotalUsdt)} unit="USDT" explain="USDT 储备已扣除质押锁定金额。其他高流动资产暂不参与储备计算。" />
         <Stat tone="role-2" icon={ReceiptText} label="应付款" value={amountText(liabilities.totalUsdt)} unit={liabilities.totalUsdt === null ? undefined : "USDT"} explain={`共 9 类，待核实的银行充值算在第 9 类。明细在「应付款与到期」。${UVT_VALUATION_NOTE}`} />
         <Stat tone={water.tier === "DANGER" ? "danger" : water.tier === "WARNING" ? "warn" : "role-3"} icon={CalendarClock} label="7 天到期应付款" value={amountText(maturity7.cumulativeUsdt)} unit="USDT" explain={`${dueParts(main.config, maturity7.trialStressIncluded)}。固定看未来 7 天。`} />
       </StatBand>
@@ -556,7 +556,7 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNo
                 <Check label="计入远期应付款" explain="差额里算 UVT 锁仓到期应付，不进到期预测。下面「计入哪些应付款」也要勾着这一类。" checked={draft.includeFarLiabilities} onChange={(event) => onChange({ ...draft, includeFarLiabilities: event.target.checked })} />
                 <Check label="试用业务压力测试" explain="到期预测和资金安全等级每天多算一笔试用业务压力值，差额不算。" checked={draft.trialStressEnabled} onChange={(event) => onChange({ ...draft, trialStressEnabled: event.target.checked })} />
               </CheckGroup>
-              <CheckGroup legend="计入哪些储备" summary={`${Number(draft.reserveCategories.usdt)} 开启`} explain="不计入 USDT 储备时，资金安全等级和差额按储备 0 算。其他可用资产现在不参与计算。">
+              <CheckGroup legend="计入哪些储备" summary={`${Number(draft.reserveCategories.usdt)} 开启`} explain="不计入 USDT 储备时，资金安全等级和差额按储备 0 算。其他高流动资产暂不参与储备计算。">
                 {Object.entries(draft.reserveCategories).map(([key, enabled]) => <Check key={key} label={key === "otherLiquid" ? `${categoryText(key)}（暂不参与计算）` : categoryText(key)} disabled={key === "otherLiquid"} checked={enabled} onChange={(event) => onChange({ ...draft, reserveCategories: { ...draft.reserveCategories, [key]: event.target.checked } })} />)}
               </CheckGroup>
               <CheckGroup legend="计入哪些应付款" summary={`${enabledCount(draft.liabilityCategories)} 开启`} explain="差额只算勾选的类。到期预测只看提现、质押奖励和创世节点收益这三类。页面上的九类金额不变。">

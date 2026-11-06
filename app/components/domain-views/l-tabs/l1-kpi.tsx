@@ -818,7 +818,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                         event={phaseEvent}
                       />
                     </Panel>
-                  : <p className="rd-note">{k.sparkSuppressed?.includes(true) ? "样本过小，趋势时段留空。" : k.spark.length >= 2 ? "这段时间每段都是 0，没有走势可画。" : "这个范围的数据不够，画不出走势。"}</p>}
+                  : <p className="rd-note">{k.sparkSuppressed?.includes(true) ? "样本过小，趋势时段留空。" : k.spark.length >= 2 && k.spark.every((point) => point === 0) ? "这段时间每段都是 0，没有走势可画。" : "这个范围的数据不够，画不出走势。"}</p>}
               {kState !== "small" && hasTrend(k.spark) && k.sparkSuppressed?.includes(true) && <p className="rd-note">部分时段样本过小，曲线在这些时段留空。</p>}
               <Fold inset title="这项指标怎么算" summary={`统计规则编号 #${k.n}`} explain={<AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss>}>
                 <div className="rd-stack">

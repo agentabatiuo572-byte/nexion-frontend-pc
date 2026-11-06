@@ -90,7 +90,7 @@
 .m3s-chat-head { flex: none; display: flex; align-items: center; gap: 10px; min-height: 64px; padding: var(--rd-space-3) var(--rd-space-4); border-bottom: 1px solid var(--rd-line); }
 .m3s-chat-id { flex: 1; min-width: 0; }
 .m3s-chat-id h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); }
-.m3s-chat-sub { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.m3s-chat-sub { margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .m3s-chat-actions { flex: none; display: flex; align-items: center; gap: var(--rd-space-2); }
 .m3s-hold[data-hold="mine"] { color: var(--rd-progress); }
 .m3s-hold[data-hold="other"] { color: var(--rd-warn); }
@@ -160,7 +160,7 @@
 /* 主动联系 */
 .m3s-picker { display: flex; flex-direction: column; gap: var(--rd-space-3); }
 .m3s-picker-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
-.m3s-picker-list button { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: var(--rd-space-3); padding: var(--rd-space-2) var(--rd-space-3); border: 0; border-radius: var(--rd-radius-control); background: transparent; color: var(--rd-text); font: inherit; text-align: left; cursor: pointer; }
+.m3s-picker-list button { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: var(--rd-space-3); padding: var(--rd-space-2) 0; border: 0; border-radius: var(--rd-radius-control); background: transparent; color: var(--rd-text); font: inherit; text-align: left; cursor: pointer; }
 .m3s-picker-list button:disabled { color: var(--rd-text-3); cursor: not-allowed; }
 .m3s-picker-list button > span:first-child { display: flex; flex-direction: column; min-width: 0; }
 .m3s-picker-list strong { font-weight: var(--rd-weight-medium); }
