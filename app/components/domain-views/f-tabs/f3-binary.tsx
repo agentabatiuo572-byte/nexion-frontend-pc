@@ -316,7 +316,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="ckv"><span className="k">未匹配订单额处理</span><span className="v" style={{ color: "var(--ink-3)" }}>{text(residualEff)}</span></div>
           {canConfigure && <div className="cfg-foot"><button className="fbtn primary" onClick={() => ctx.openActionConfirm({ briefKind: "config",
             name: "调整每组订单额门槛",
-            edit: { kind: "number", label: "门槛须为普通数字，大于 0、不超过 5000，最多 6 位小数", current: thresholdCurrent, unit: "USDT", min: 0.000001, max: 5000, amplifiesWhen: "decrease" },
+            edit: { kind: "number", label: "门槛须为普通数字，大于 0、不超过 5000，最多 6 位小数", current: thresholdCurrent, unit: "USDT", min: 0.000001, max: 5000, maxDecimals: 6, amplifiesWhen: "decrease" },
             detail: `每组订单额门槛 · 当前 ${text(thEff)}。须大于 0、不超过 5000，最多 6 位小数；降低门槛会增加奖励流出，需检查兑付覆盖率。`,
             completionCopy: "批准后生效，后续结算使用新设置；已结算的不变。",
             run: async (reason, _fields, newValue) => {
@@ -336,7 +336,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="ckv"><span className="k">月累计匹配</span><span className="v">{usd(ctx.f3MonthlyMatchedUsd)}</span></div>
           {canConfigure && <div className="cfg-foot"><button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({ briefKind: "config",
             name: "调整匹配比例",
-            edit: { kind: "number", label: "比例按百分比填写，大于 0、不超过 20，最多 10 位小数", current: ratePercent ?? "", unit: "%", min: 0.0000000001, max: 20, amplifiesWhen: "increase" },
+            edit: { kind: "number", label: "比例按百分比填写，大于 0、不超过 20，最多 10 位小数", current: ratePercent ?? "", unit: "%", min: 0.0000000001, max: 20, maxDecimals: 10, amplifiesWhen: "increase" },
             detail: `较小一组订单额 × 这个比例 = 奖励 · 当前 ${rateEff}。按百分比填写，填 1 就是 1%；须大于 0、不超过 20，最多 10 位小数。调高会多发奖励，需检查兑付覆盖率。`,
             completionCopy: "批准后生效，后续结算使用新设置；已结算的不变。",
             run: async (reason, _fields, newValue) => {
