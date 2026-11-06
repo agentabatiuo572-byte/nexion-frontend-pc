@@ -136,10 +136,12 @@ export async function executeG3MarketChange(
       commands.forget(fingerprint, key);
       return { acknowledgement: `已找到原审批单 ${ticket.id} · ${ticket.status === "pending" ? "等待另一位有权超管批准，尚未生效" : "请核对审批记录及当前配置"}` };
     }
-    if (mode === "lookup") return null;
   }
   if (g3MarketCommandExpired(command)) throw new A2OutcomeUncertainError("原命令已过期或本机时间异常，只能继续核对，不能重试或另建编号。", key);
-  if (mode === "lookup") throw new Error("直接保存没有按命令号查询接口，只能在有效期内按原操作重试。");
+  if (mode === "lookup") {
+    if (command.request.kind === "approval") return null;
+    throw new Error("直接保存没有按命令号查询接口，只能在有效期内按原操作重试。");
+  }
   try {
     if (command.request.kind === "approval") {
       const ticket = await createA2OperationProposal(command.request.input, key, true);
