@@ -70,9 +70,10 @@ export function L2LiveStages({ stages }: { stages: L2LiveStage[] }) {
                   <span className="ev">{stage.description}</span>
                 </div>
                 <div className="barzone">
-                  {stage.count == null ? SMALL_SAMPLE_LABEL : <div className="bar" style={{ width: `${Math.max((stage.count / maxCount) * 100, stage.count === 0 ? 0 : 4)}%`, background: "var(--cyan)" }}>
+                  {stage.count == null ? SMALL_SAMPLE_LABEL : (
+                  <div className="bar" style={{ width: `${Math.max((stage.count / maxCount) * 100, stage.count === 0 ? 0 : 4)}%`, background: "var(--cyan)" }}>
                     {stage.count > 0 && <span>{stage.count.toLocaleString("zh-CN")}</span>}
-                  </div>}
+                  </div>)}
                 </div>
                 <div className="cvr"><span className="lcode">{stage.sourceLabel}</span></div>
               </div>
