@@ -5,7 +5,7 @@ import { customerConversations, replyTimeout } from "@/lib/admin/customer-conver
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Bell, BellOff, Check as CheckIcon, Clock3, Image as ImageIcon, Lock, Megaphone, Plus, SendHorizontal, Square } from "lucide-react";
-import { BlockState, Button, Check, Checkbox, Conclusion, Explain, Fact, Facts, Field, IconButton, Input, Modal as RdModal, MoreMenu, Notice, PageHeader, Segments, Select, StatusTag, Textarea, type MoreMenuItem, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Check, Checkbox, Conclusion, Explain, Fact, Facts, Field, IconButton, Input, Modal as RdModal, MoreMenu, Notice, PageHeader, RecordList, Segments, Select, StatusTag, Textarea, type MoreMenuItem, type StateTone } from "@/app/components/rd";
 import { subscribeAdminRealtime, getAdminRealtimeSnapshot, watchAdminConversation, sendAdminTyping } from "@/lib/admin/admin-conversation-realtime";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -1299,7 +1299,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     const payload={conversationNos:chosen.map(c=>c.id),expectedVersions:Object.fromEntries(chosen.map(c=>[c.id,c.version]))};
     const key=newKey();
     const requestStamp=identityRef.current;
-    ctx.openActionConfirm({action:"批量归档",briefKind:"conversation",detail:`确认归档 ${new Set(chosen.map(customerIdOf)).size} 位客户的全部对话。未处理客户消息不能归档。`,statedBrief:{impact:`${new Set(chosen.map(customerIdOf)).size} 位客户的全部对话从收件箱收起，消息和专属客服都不变。客户再发消息，对话会自动回到收件箱。`,check:"核对名单，有未回复消息的客户不能归档，理由写清依据或工单号。"},facts:<Facts><Fact k="客户">{selectedCustomers.map(rowName).join("、")}</Fact></Facts>,effect:<StatusTag tone="progress" filled>立即生效</StatusTag>,confirmLabel:"确认批量归档",reasonMin:8,reasonMax:200,run:async reason=>{const ok=await confirmWrite("I.session.archiveBatch.__create",JSON.stringify(payload),{action:"批量归档已选会话",reason,commandKey:key},requestStamp);if(ok)setArchiveIds(new Set());return ok;}});
+    ctx.openActionConfirm({action:"批量归档",briefKind:"conversation",detail:`确认归档 ${new Set(chosen.map(customerIdOf)).size} 位客户的全部对话。未处理客户消息不能归档。`,statedBrief:{impact:`${new Set(chosen.map(customerIdOf)).size} 位客户的全部对话从收件箱收起，消息和专属客服都不变。客户再发消息，对话会自动回到收件箱。`,check:"核对名单，有未回复消息的客户不能归档，理由写清依据或工单号。"},facts:<RecordList label="归档客户" records={selectedCustomers.map(row => ({ id: customerIdOf(row), value: rowName(row), reference: customerIdOf(row) }))} />,effect:<StatusTag tone="progress" filled>立即生效</StatusTag>,confirmLabel:"确认批量归档",reasonMin:8,reasonMax:200,run:async reason=>{const ok=await confirmWrite("I.session.archiveBatch.__create",JSON.stringify(payload),{action:"批量归档已选会话",reason,commandKey:key},requestStamp);if(ok)setArchiveIds(new Set());return ok;}});
   };
   const canReadTimeout = Boolean(session?.authorities?.includes("service_m3_read"));
   const canTimeout = (session?.role === "super" || session?.role === "superadmin") && Boolean(session?.authorities?.includes("service_m3_timeout_manage")) && !timeoutReadOnly;

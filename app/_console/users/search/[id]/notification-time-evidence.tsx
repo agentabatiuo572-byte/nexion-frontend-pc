@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Clock3 } from "lucide-react";
 import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
-import { BlockState, Button, Change, Decision, Drawer, Explain, Fact, Facts, JudgmentPoints, Notice, ReleaseModal, StatusTag } from "@/app/components/rd";
+import { BlockState, Button, Change, Decision, Drawer, Explain, Fact, Facts, JudgmentPoints, Notice, ReleaseModal, StatusTag, Timeline } from "@/app/components/rd";
 import { correctNotificationTime, fetchNotificationTimeEvidence, UsersOutcomeUnknownError, UsersRequestError, type NotificationTimeEvidence } from "@/lib/admin/user360-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
@@ -156,14 +156,18 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
     {!data && !error && <BlockState state="loading" title="正在读取关联证据…" />}
     {error && <BlockState state="error" title={error} onRetry={() => setAttempt(value => value + 1)} />}
     {data && <>
+      <Notice tone={data.status === "MATCHED" ? "neutral" : "warn"}>{conclusion}</Notice>
       <JudgmentPoints title="判断要点" rows={[
-        { label: "结论", value: conclusion, state: data.status === "MATCHED" ? undefined : "warn" },
         { label: "当前记录时间（北京时间）", value: data.storedCreatedAt },
         { label: "投递事实时间（北京时间）", value: data.deliveryFactTime ?? "尚不可确认" },
       ]} />
-      {data.facts.length > 0 && <Facts>{data.facts.map(fact => <Fact key={fact.eventId} k={FACT_NAME[fact.eventName] ?? fact.eventName}>
-        <span data-mono>事件编号：{fact.eventId}</span><br />UTC：{new Date(fact.timestampMillis).toISOString()}
-      </Fact>)}</Facts>}
+      <Timeline label="通知投递证据" entries={data.facts.map(fact => ({
+        id: fact.eventId,
+        action: FACT_NAME[fact.eventName] ?? fact.eventName,
+        actor: "系统",
+        at: new Date(fact.timestampMillis).toISOString(),
+        detail: <><span data-mono>事件编号：{fact.eventId}</span> <Explain label="原始事件和 UTC 时间" content={`${fact.eventName} · UTC：${new Date(fact.timestampMillis).toISOString()}`} /></>,
+      }))} />
     </>}
     {confirmation && canCorrect && actorKey && <OperationConfirmModal briefKind={"content"} action={`校正通知 ${notificationId} 的时间`} title="校正通知时间"
       detail={`仅此通知：${confirmation.storedCreatedAt} → ${confirmation.deliveryFactTime}（北京时间）。根据实际投递事实校正展示时间，不会重新发送通知或改变已读状态。`}

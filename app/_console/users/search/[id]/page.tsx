@@ -28,10 +28,9 @@ import {
   type User360Summary,
 } from "@/lib/admin/user360-client";
 import { OperationConfirmModal, type OperatorBriefKind } from "@/app/components/domain-views/design-kit";
-import { AuditTimeline, type AuditEntry } from "@/app/components/kit/audit-timeline";
 import {
   BlockState, Button, Cell, Change, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, Notice, PageHeader, Pager, Panel,
-  RdPage, ReleaseModal, SectionNav, Segments, Stat, StatBand, StatusTag, Table, Td, Th, Tr, useSectionNav, type SectionNavItem,
+  RdPage, ReleaseModal, SectionNav, Segments, Stat, StatBand, StatusTag, Table, Td, Th, Timeline, Tr, useSectionNav, type SectionNavItem, type TimelineEntry,
 } from "@/app/components/rd";
 import { useReach } from "@/lib/nav/use-reach";
 import { formatD4Subtype } from "@/lib/admin/d4-ledger-display";
@@ -40,7 +39,7 @@ import { platformSessionDeviceText, userNicknameText, nexGridBrandText, operator
 import { fmtNum } from "@/lib/format";
 import { toast } from "@/lib/store/ui";
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
-import type { AdminRole } from "@/lib/nav/console-nav";
+import { roleLabel, type AdminRole } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
@@ -272,16 +271,20 @@ function auditRole(row: JsonRecord): AdminRole | undefined {
   return undefined;
 }
 
-function toAuditEntries(rowsValue: unknown): AuditEntry[] {
-  return asArray(rowsValue).map((row, index) => ({
-    id: asText(row.id, `${index}`),
-    actor: asText(row.actorUsername, "系统"),
-    role: auditRole(row),
-    action: asText(row.action, "UNKNOWN"),
-    detail: auditDetail(row),
-    at: `${shortTime(row.createdAt)}（${businessZone().label}）`,
-    ip: asText(row.clientIp, "—"),
-  }));
+function toAuditEntries(rowsValue: unknown): TimelineEntry[] {
+  return asArray(rowsValue).map((row, index) => {
+    const role = auditRole(row);
+    return {
+      id: asText(row.id, `${index}`),
+      actor: asText(row.actorUsername, "系统"),
+      role: role ? roleLabel(role) : undefined,
+      action: asText(row.action, "UNKNOWN"),
+      detail: <>{auditDetail(row)} <Explain label="原始操作内容" content={<><p className="rd-pre">{asText(row.detailJson, asText(row.result))}</p><p>结果：{asText(row.result)}</p></>} /></>,
+      at: asText(row.createdAt, ""),
+      ip: asText(row.clientIp, "—"),
+      tone: asText(row.result, "").toUpperCase() === "FAILED" ? "danger" : undefined,
+    };
+  });
 }
 
 /** 风险标记后端给的是码。账户状态在身份行、案件数在风险案件，这里不重复，有别的标记才写。 */
@@ -568,7 +571,7 @@ export default function UserDetailPage() {
   const [revokeScanFailed, setRevokeScanFailed] = useState(false);
   const [paymentSecurity, setPaymentSecurity] = useState<{ state: PaymentSecurityState; pending: boolean }>({ state: "loading", pending: false });
   const [openFolds, setOpenFolds] = useState<Record<string, boolean>>({});
-  const [openRecordList, setOpenRecordList] = useState<RecordKind | null>();
+  const [openRecordList, setOpenRecordList] = useState<RecordKind | "audit" | null>();
   const [record, setRecord] = useState<{ kind: RecordKind; index: number } | null>(null);
   const [pendingCommands, setPendingCommands] = useState<C1Command[]>([]);
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
@@ -1385,7 +1388,7 @@ export default function UserDetailPage() {
               <RecordTable label="商城订单" rows={orders} columns={ORDER_COLUMNS} {...recordProps("order")} />
             </Block>
             {detail.audit && <div className="rd-detail-block">
-              <Fold inset title="后台操作记录" summary={`最多 20 条 · 这里有 ${auditEntries.length} 条`}><AuditTimeline entries={auditEntries} /></Fold>
+              <Fold inset title="后台操作记录" open={visibleRecordList === "audit"} onOpenChange={next => setOpenRecordList(next ? "audit" : null)} summary={`最多 20 条 · 这里有 ${auditEntries.length} 条`}><Timeline entries={auditEntries} label="后台操作记录" /></Fold>
             </div>}
           </Fold>
         </div>}
