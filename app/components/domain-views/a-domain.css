@@ -66,6 +66,8 @@
 @media (hover: hover) and (pointer: fine) { .adom .l-btn.primary:hover { filter: brightness(1.07); } }
 .adom .l-btn.mc { color: var(--warning); border-color: var(--warning-border); background: color-mix(in srgb, var(--warning) 8%, transparent); font-weight: 600; }
 @media (hover: hover) and (pointer: fine) { .adom .l-btn.mc:hover { background: color-mix(in srgb, var(--warning) 18%, transparent); } }
+.adom .l-btn:disabled { cursor: not-allowed; opacity: .5; filter: grayscale(.25); }
+@media (hover: hover) and (pointer: fine) { .adom .l-btn:disabled:hover { background: var(--surface-2); color: var(--ink-2); } }
 .adom .l-btn.dgr { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); background: transparent; }
 @media (hover: hover) and (pointer: fine) { .adom .l-btn.dgr:hover { background: var(--danger-soft); color: var(--danger); } }
 .adom .l-btn.okk { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, transparent); background: transparent; }

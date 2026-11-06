@@ -143,13 +143,10 @@ function operationMarkers(w: A2OperationRow): OperationMarker[] {
   return [{ key: "general", label: "敏感操作", className: "a2-sensitive" }];
 }
 
-function normalizeOperatorIdentity(value: string | null | undefined) {
-  return (value ?? "").trim().toLocaleLowerCase();
-}
+const OWN_TICKET_REASON = "这是你发起的，需要另一位管理员处理";
 
-function isCurrentOperator(w: A2OperationRow, principal: AuthPrincipal) {
-  const current = normalizeOperatorIdentity(principal.name);
-  return w.mine || (!!current && current === normalizeOperatorIdentity(w.operator));
+function isCurrentOperator(w: A2OperationRow, username: string | undefined) {
+  return w.mine || (!!username && username === w.operator);
 }
 
 function g3PolicyExecutionTiming(w: A2OperationRow) {
@@ -745,8 +742,14 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {isFinal ? (
                         <span className={`bdg ${HIST_TONE[status] ?? "dim"}`}>{HIST_LABEL[status] ?? status}</span>
-                      ) : isCurrentOperator(w, principal) ? (
-                        <button className="l-btn sm" disabled={!canWithdraw} onClick={(e) => { e.stopPropagation(); withdrawWo(w); }}>撤回我的申请</button>
+                      ) : isCurrentOperator(w, session?.username) ? (
+                        <>
+                          <span title={OWN_TICKET_REASON}>
+                            <button className="l-btn sm mc" disabled title={OWN_TICKET_REASON}>执行</button>{" "}
+                            <button className="l-btn sm" disabled title={OWN_TICKET_REASON}>取消</button>
+                          </span>{" "}
+                          <button className="l-btn sm" disabled={!canWithdraw} onClick={(e) => { e.stopPropagation(); withdrawWo(w); }}>撤回我的申请</button>
+                        </>
                       ) : canApprove ? (
                         <>
                           <button
@@ -1031,7 +1034,16 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             onClose={() => setWoIdx(null)}
             footer={
               !isFinal ? (
-                canApprove && !isCurrentOperator(w, principal) ? (
+                isCurrentOperator(w, session?.username) ? (
+                  <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button className="l-btn mc" disabled title={OWN_TICKET_REASON}>执行</button>
+                      <button className="l-btn" disabled title={OWN_TICKET_REASON}>取消</button>
+                      <button className="l-btn" disabled={!canWithdraw} onClick={() => { setWoIdx(null); withdrawWo(w); }}>撤回我的申请</button>
+                    </div>
+                    <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--ink-3)" }}>{OWN_TICKET_REASON}</p>
+                  </div>
+                ) : canApprove ? (
                   <div style={{ display: "flex", gap: 8, padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
                     <button
                       className="l-btn mc"
@@ -1048,7 +1060,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 ) : (
                   <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)", textAlign: "center" }}>
                     <span className="bdg dim">
-                      {isCurrentOperator(w, principal) ? "需由其他有权限的人执行" : "等待有权限的人执行"}
+                      等待有权限的人执行
                     </span>
                   </div>
                 )
