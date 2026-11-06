@@ -361,7 +361,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   const header = (
     <PageHeader pageId="J1" title="紧急停用开关"
-      summary={<AutoGloss>关停立即生效，恢复提交 A2 应急审批，另一位有权超管批准后生效。</AutoGloss>}
+      summary={<AutoGloss>关停立即生效，恢复需审批。</AutoGloss>}
       actions={<Button loading={contentLoading} onClick={reload}><RefreshCw size={15} aria-hidden />刷新</Button>}
       meta={readAt ? <>{readAt}（{businessZone().label}）读取 <Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动更新。自动关停发生时顶栏告警先提醒，这页要刷新才看到。" /></> : undefined}
       readOnly={!canKill && !canResume && !canBatchKill && !canWrite ? <>你只能查看 <Explain label="只读说明" content="关停、恢复和改参数需要紧急停用开关的操作权限，请联系超级管理员。" /></> : undefined}
@@ -489,7 +489,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     openActionConfirm({ briefKind: "emergency",
       action: "应急批量停用 · 监管点名场景",
       title: `批量关停 ${targets.length} 项业务`,
-      facts: <div className="rd-stack"><Facts><Fact k="关停业务" lead unit="项">{targets.length}</Fact><Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{targets.some((gate) => gate.key === "withdraw") && <Fact k="提现关停范围" tone="warn">已放行的单还会打款</Fact>}</Facts>
+      facts: <div className="rd-stack"><Facts><Fact k="关停业务" unit="项">{targets.length}</Fact><Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{targets.some((gate) => gate.key === "withdraw") && <Fact k="提现关停范围" tone="warn">已放行的单还会打款</Fact>}</Facts>
         <Fold inset title="本次关停业务" summary={`${targets.length} 项`}><RecordList label="本次关停业务" records={targets.map((gate) => ({ id: gate.key, value: operatorCopyText(gate.name), object: gate.key === "withdraw" ? "新提现申请和审核放行" : operatorCopyText(gate.cap) }))} /></Fold></div>,
       detail: <>一次性立即关停<b>已选 {targets.length} 项业务</b>，用于监管点名、法务事件等重大场景。确认后全部马上关停，每一项都记入操作记录。</>,
       effect: IMMEDIATE,
