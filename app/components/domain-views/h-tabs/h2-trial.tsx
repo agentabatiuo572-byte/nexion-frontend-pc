@@ -123,6 +123,7 @@ function ParamRow({
   const { toast, openActionConfirm, openConfirm } = ctx;
   const canWrite = ctx.can("growth_h2_write");
   const isOffsetCap = param.key === "trialOffsetCapUSD";
+  const isDiscountRate = param.key === "discountRate";
   const current = text(param.cur);
   const isDay = isTrialDayParam(param.key);
   const isInteger = isTrialIntegerParam(param.key);
@@ -132,7 +133,8 @@ function ParamRow({
   const currentProduct = isProduct ? trialProducts.find((product) => product.productNo === current) : undefined;
   const displayCurrent = isOffsetCap && (param.cur == null || String(param.cur).trim() === "") ? "不设上限" : isDay ? `${current} 天`
     : isQuota || isActualQuota ? (current === "UNKNOWN" ? "-" : `${current} 张`)
-      : currentProduct ? `${(currentProduct.name)} · ${current}` : param.serverOnly ? operatorCopyText(current) : current;
+      : isDiscountRate && current !== "-" ? `${current}%`
+        : currentProduct ? `${(currentProduct.name)} · ${current}` : param.serverOnly ? operatorCopyText(current) : current;
   const readOnly = !!param.readOnly || isActualQuota || ["phaseOpen", "trialPriceUSD"].includes(param.key);
   const productOptions = trialProducts.map((product) => product.productNo);
   const disabledProductOptions = trialProducts
@@ -217,9 +219,15 @@ function ParamRow({
           openConfirm({ briefKind: "config",
             action: `调整试用参数 · ${operatorCopyText(param.name)}`,
             detail,
+            content: isDiscountRate ? <p className="muted">请输入 0 至 100，可填写小数。填 1 表示 1%。</p> : undefined,
             chips: [["记入操作记录", "done"]],
             reason: true,
-            input: { label: isOffsetCap ? "新值（可选，留空即不设上限）" : "新值", placeholder: isOffsetCap ? "留空即不设上限；0 表示上限为 0" : `当前 ${displayCurrent}`, options, required: !isOffsetCap },
+            input: {
+              label: isOffsetCap ? "新值（可选，留空即不设上限）" : isDiscountRate ? "新值（%）" : "新值",
+              placeholder: isOffsetCap ? "留空即不设上限；0 表示上限为 0" : `当前 ${displayCurrent}`,
+              options,
+              required: !isOffsetCap,
+            },
             okLabel: "确认修改",
             run: submit,
           });

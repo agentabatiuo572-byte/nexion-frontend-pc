@@ -139,6 +139,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
         <OperationConfirmModal briefKind={mc.briefKind}
           action={mc.action}
           detail={mc.detail}
+          content={mc.content}
           amplifies={mc.amplifies}
           coverage={mc.coverage}
           edit={mc.edit}

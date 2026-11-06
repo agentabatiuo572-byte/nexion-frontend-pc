@@ -9,6 +9,7 @@ import type { B3Dashboard } from "@/lib/admin/b3-client";
 import type { B5Radar } from "@/lib/admin/b5-client";
 import { summarizePressureHistory } from "@/lib/admin/b5-pressure-summary";
 import { useB2LiquidityHistory, useB4GrowthFlowHistory } from "@/lib/admin/b-restoration-client";
+import { TREASURY_VALUATION_UNAVAILABLE } from "@/lib/admin/treasury-valuation";
 
 const CARD: CSSProperties = {
   border: "1px solid var(--border)", borderRadius: 12, background: "var(--surface)", padding: 16, minWidth: 0,
@@ -140,11 +141,14 @@ function FlowBars({ rows }: { rows: Array<{ label: string; inflowWan: number; ou
 
 export function B2RestoredInsights({ data }: { data: B2Dashboard }) {
   const history = useB2LiquidityHistory();
-  const liabilityRows = data.liabilities.breakdown.filter((row) => row.amountUsdt > 0);
+  const liabilityRows = data.liabilities.breakdown.flatMap((row) =>
+    row.amountUsdt !== null && row.amountUsdt > 0 && row.share !== null
+      ? [{ label: operatorCopyText(row.label), value: row.share * 100, suffix: "%" }]
+      : []);
   return <>
     <div style={GRID}>
       <section data-testid="b2-maturity-chart" style={CARD}><Header title={`未来 ${data.maturity.window === "7d" ? 7 : 30} 天到期的应付款`} meta="柱子为每日到期，曲线为累计 · USDT" /><MaturityChart daily={data.maturity.daily} cumulative={data.maturity.cumulative} /></section>
-      <section data-testid="b2-liability-distribution" style={CARD}><Header title="应付款构成" meta={`共 ${data.liabilities.hardLiabilityCategoryCount} 类`} />{liabilityRows.length ? <Donut center="应付负债" rows={liabilityRows.map((row, index) => ({ label: operatorCopyText(row.label), value: row.share * 100, suffix: "%", color: COLORS[index % COLORS.length] }))} /> : <Notice>目前没有应付款。</Notice>}</section>
+      <section data-testid="b2-liability-distribution" style={CARD}><Header title="应付款构成" meta={`共 ${data.liabilities.hardLiabilityCategoryCount} 类`} />{data.liabilities.totalUsdt === null ? <Notice>{TREASURY_VALUATION_UNAVAILABLE}</Notice> : liabilityRows.length ? <Donut center="应付负债" rows={liabilityRows.map((row, index) => ({ ...row, color: COLORS[index % COLORS.length] }))} /> : <Notice>目前没有应付款。</Notice>}</section>
     </div>
     <div style={GRID}>
       <section data-testid="b2-fund-flow-history" style={CARD}><Header title="近 8 个时段资金流入 / 流出" meta="单位：万 USDT" />{history.data ? <FlowBars rows={history.data.flowWindows} /> : history.loading ? <Notice>正在加载…</Notice> : <Notice healthState="error">{`资金流历史暂不可用：${history.error ?? "响应为空"}`}</Notice>}</section>

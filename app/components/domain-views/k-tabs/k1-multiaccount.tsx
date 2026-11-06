@@ -42,6 +42,7 @@ const PARAM_LIMITS: Record<string, { min: number; max: number; step: number; int
   maxAccountsPerPaymentInstrument: { min: 1, max: 5, step: 1, integer: true },
   clusterFreezeSuggestThreshold: { min: 0, max: 1, step: 0.05, integer: false },
 };
+const K1_DISPOSITION_APPROVAL_COPY = "另一位有权限的管理员批准时，系统会检查兑付覆盖率。低于红线时，审批单继续待处理，账户组状态和提现限制保持原样。";
 
 const CLUSTER_ST: Record<ClusterStatus, [string, string]> = {
   detected: ["待判定", "dim"],
@@ -526,7 +527,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     ctx.openActionConfirm({ briefKind: "funds",
       action: `解除误判 · ${c.id}`,
       detail: "解除后，这些账户可能有更多收益可以提现。请核对影响并写明原因。",
-      amplifies: true,
+      content: <div className="ctint" style={{ marginBottom: 14 }}>{K1_DISPOSITION_APPROVAL_COPY}</div>,
       reasonMax: 200,
       run: (reason) => {
         const def = findHighOp("k1_cluster_release")!;
@@ -551,7 +552,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     ctx.openActionConfirm({ briefKind: "judgment",
       action: `判定为正常 · ${c.id}`,
       detail: "这组账户将退出风险监控，后续风险评分也会受影响。请填写判定依据。",
-      amplifies: true,
+      content: <div className="ctint" style={{ marginBottom: 14 }}>{K1_DISPOSITION_APPROVAL_COPY}</div>,
       reasonMax: 200,
       run: (reason) => {
         const def = findHighOp("k1_cluster_cleared")!;
@@ -1112,6 +1113,11 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               <textarea id={`${formId}-param-reason`} rows={3} maxLength={200} value={paramDraft.reason} onChange={(event) => update({ reason: event.target.value })} />
             </div>
             <div className="ctint">{paramDraft.param.key === "maxSignupPerIp24h" ? "正式环境达到该 IP 的每日注册上限后，会拒绝新注册；不会自动冻结已有账户。" : "该参数会影响关联账户识别或冻结建议，不会自动冻结已有账户。"}</div>
+            {limits.integer && (
+              <div className="ctint" style={{ marginTop: 10 }}>
+                调大上限属于放宽，保存时会检查兑付覆盖率。已有待判定组仍需人工处置，提现限制会保留。
+              </div>
+            )}
           </Modal>
         );
       })()}
@@ -1183,7 +1189,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             <button className="l-btn" disabled={draftSubmitting === "whitelist"} onClick={() => setWhitelistDraft(null)}>取消</button>
             <button className="l-btn mc" disabled={!canSave || draftSubmitting === "whitelist"} onClick={() => void saveWhitelistDraft()}>{draftSubmitting === "whitelist" ? "提交中…" : "确认加入"}</button>
           </>}>
-            <div className="ctint" style={{ marginBottom: 12 }}>只是不再按 IP 检测；设备和支付工具仍照常检测，已冻结的账户不会自动解冻。</div>
+            <div className="ctint" style={{ marginBottom: 12 }}>
+              新增、重新启用或延长有效期时，保存前会检查兑付覆盖率。允许名单适用于之后的 IP 检测，设备和支付工具仍照常检测。已有待判定组仍需人工处置，提现限制会保留。
+            </div>
             <div className="field"><label htmlFor={`${formId}-cidr`}>IP / CIDR 网段</label><input id={`${formId}-cidr`} className="fld" value={whitelistDraft.cidr} onChange={(event) => update({ cidr: event.target.value })} placeholder="198.51.100.0/24" />{whitelistDraft.cidr && !cidrOk && <div className="tiny" style={{ color: "var(--danger)", marginTop: 6 }}>请输入合法 IPv4 CIDR（每段不使用前导零）</div>}</div>
             <div className="field"><label htmlFor={`${formId}-whitelist-note`}>备注</label><input id={`${formId}-whitelist-note`} className="fld" maxLength={200} value={whitelistDraft.note} onChange={(event) => update({ note: event.target.value })} placeholder="例如：已核验的办公出口网段" /></div>
             <div className="field"><label htmlFor={`${formId}-whitelist-expiry`}>失效日期</label><input id={`${formId}-whitelist-expiry`} className="fld" type="date" value={whitelistDraft.expireText} onChange={(event) => update({ expireText: event.target.value })} />{whitelistDraft.expireText && !expiryOk && <div className="tiny" style={{ color: "var(--danger)", marginTop: 6 }}>失效日期必须晚于今天</div>}</div>

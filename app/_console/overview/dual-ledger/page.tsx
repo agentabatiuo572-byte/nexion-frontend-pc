@@ -26,9 +26,10 @@ import {
   TrendingDown,
 } from "lucide-react";
 import { acknowledgeBDomainAlert, fetchBDomainDashboard, useBDomainDashboard, type BLedger } from "@/lib/admin/b-client";
-import { createD3Injection, downloadD3Csv, updateD3Thresholds } from "@/lib/admin/d-client";
+import { createD3Injection, downloadD3Csv, fetchD3NetExposure, updateD3Thresholds, type D3NetExposure } from "@/lib/admin/d-client";
 import { pendingThresholdConfigApproval, submitConfigApproval } from "@/lib/admin/withdrawal-config-approval";
-import { displayAdminError, guardedFetch } from "@/lib/admin/error-messages";
+import { displayAdminError } from "@/lib/admin/error-messages";
+import { TREASURY_VALUATION_UNAVAILABLE } from "@/lib/admin/treasury-valuation";
 import { fmtUsd, fmtUsdCompact, fmtPct, fmtNum } from "@/lib/format";
 import { Sparkline as MiniSparkline } from "@/app/components/kit/kpi-stat-card";
 import { TabGroup } from "@/app/components/kit/tab-group";
@@ -52,8 +53,6 @@ type Mc =
   | { kind: "threshold"; idempotencyKey: string; baseline: Pick<BLedger, "redlinePct" | "healthyPct" | "thresholdVersion"> }
   | { kind: "injection" | "ack" | "export"; idempotencyKey: string };
 
-type ExposurePoint = { date: string; netExposureUsdt: number };
-
 function command(kind: Exclude<Mc["kind"], "threshold">): Mc {
   return { kind, idempotencyKey: `b1-${kind}-${crypto.randomUUID()}` };
 }
@@ -72,30 +71,21 @@ export default function DualLedgerPage() {
   const [mc, setActionConfirm] = useState<Mc | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
   const [exposureWindow, setExposureWindow] = useState<"7d" | "30d" | "90d">("30d");
-  const [exposureSeries, setExposureSeries] = useState<ExposurePoint[]>([]);
+  const [exposure, setExposure] = useState<D3NetExposure | null>(null);
   const [exposureError, setExposureError] = useState("");
+  const currentExposure = exposure?.window === exposureWindow ? exposure : null;
+  const exposureSeries = currentExposure?.series ?? [];
 
   useEffect(() => {
     const controller = new AbortController();
     void (async () => {
       try {
         setExposureError("");
-        const response = await guardedFetch(`/api/admin/treasury/net-exposure?window=${exposureWindow}`, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        const payload = await response.json() as {
-          code?: number;
-          message?: string;
-          data?: { series?: ExposurePoint[] };
-        };
-        if (!response.ok || payload.code !== 0 || !Array.isArray(payload.data?.series)) {
-          throw new Error(payload.message || `B1_NET_EXPOSURE_FAILED_${response.status}`);
-        }
-        setExposureSeries(payload.data.series);
+        const next = await fetchD3NetExposure(exposureWindow, controller.signal);
+        if (!controller.signal.aborted) setExposure(next);
       } catch (err) {
         if (controller.signal.aborted) return;
-        setExposureSeries([]);
+        setExposure(null);
         setExposureError(displayAdminError(err));
       }
     })();
@@ -127,6 +117,7 @@ export default function DualLedgerPage() {
   const {
     reserveUsd,
     liabilitiesUsd,
+    valuationReliable,
     coverageRatio,
     redlinePct,
     healthyPct,
@@ -139,7 +130,7 @@ export default function DualLedgerPage() {
     prev,
   } = LEDGER;
   const b1DataError =
-    coverageSeries.length < 2
+    valuationReliable && coverageSeries.length < 2
       ? "覆盖率走势数据不足，暂时无法显示"
       : accounts.length === 0
         ? "B1_LEDGER_ACCOUNTS_EMPTY"
@@ -359,52 +350,56 @@ export default function DualLedgerPage() {
                 <span className="help" data-tip="平台手上能动用的钱，够付用户应得款项的多少。只在后台显示。">?</span>
               </span>
             </div>
-            <span className={`status-pill ${zoneCls}`}>
+            {valuationReliable && <span className={`status-pill ${zoneCls}`}>
               <span className={`dot ${zoneDot}`} /> {zoneLabel}
-            </span>
+            </span>}
           </div>
 
-          <div className="cov-num" style={{ color: zoneColor }}>
+          {valuationReliable ? <div className="cov-num" style={{ color: zoneColor }}>
             {coverageRatio.toFixed(1)}<span>%</span>
-          </div>
+          </div> : <div className="alertbar" role="status">{TREASURY_VALUATION_UNAVAILABLE}</div>}
           <div className="cov-ref">
-            红线 <b>{fmtPct(effRedline, 0)}</b> · 健康 <b>{fmtPct(healthyPct, 0)}</b> · {refTail}
+            红线 <b>{fmtPct(effRedline, 0)}</b> · 健康 <b>{fmtPct(healthyPct, 0)}</b>{valuationReliable && ` · ${refTail}`}
           </div>
 
           {/* zone 仪表条 */}
-          <div className="track">
-            <div className="green-zone" style={{ left: `${healthyPos}%`, right: 0 }} />
-            <div
-              className="fill"
-              style={{
-                width: `${fillPos}%`,
-                background: `linear-gradient(90deg, ${zoneColor} 0%, color-mix(in srgb, ${zoneColor} 62%, #fff) 100%)`,
-              }}
-            />
-            <div className="redline" style={{ left: `${redlinePos}%` }} />
-            <div className="healthline" style={{ left: `${healthyPos}%` }} />
-            <div className="marker" style={{ left: `${fillPos}%` }} />
-          </div>
-          <div className="scale">
-            <span>0%</span>
-            <span>红线 {fmtPct(effRedline, 0)}</span>
-            <span>健康 {fmtPct(healthyPct, 0)}</span>
-            <span>{fmtPct(SCALE_MAX, 0)}</span>
-          </div>
+          {valuationReliable && (
+            <>
+              <div className="track">
+                <div className="green-zone" style={{ left: `${healthyPos}%`, right: 0 }} />
+                <div
+                  className="fill"
+                  style={{
+                    width: `${fillPos}%`,
+                    background: `linear-gradient(90deg, ${zoneColor} 0%, color-mix(in srgb, ${zoneColor} 62%, #fff) 100%)`,
+                  }}
+                />
+                <div className="redline" style={{ left: `${redlinePos}%` }} />
+                <div className="healthline" style={{ left: `${healthyPos}%` }} />
+                <div className="marker" style={{ left: `${fillPos}%` }} />
+              </div>
+              <div className="scale">
+                <span>0%</span>
+                <span>红线 {fmtPct(effRedline, 0)}</span>
+                <span>健康 {fmtPct(healthyPct, 0)}</span>
+                <span>{fmtPct(SCALE_MAX, 0)}</span>
+              </div>
+            </>
+          )}
 
           {/* 趋势 + 触红线预测 */}
           <div className="trend">
             <div className="tx">
               <div className="k">覆盖率趋势 · 近 8 个时段</div>
-              <div className="v" style={{ color: trendColor }}>{trendMsg}</div>
+              <div className="v" style={{ color: valuationReliable ? trendColor : undefined }}>{valuationReliable ? trendMsg : TREASURY_VALUATION_UNAVAILABLE}</div>
             </div>
-            <div className="spark-wrap">
+            {valuationReliable && <div className="spark-wrap">
               <MiniSparkline data={coverageSeries} color={zoneColor} />
-            </div>
+            </div>}
           </div>
 
           {/* 警戒/破线 → P0 告警:建议动作 + 深链 + 标记已处置 */}
-          {zone !== "success" && (
+          {valuationReliable && zone !== "success" && (
             <div className={`advis${alertAcked ? " done" : ""}`}>
               <div className="row1">
                 <span className="advis-ic">
@@ -460,9 +455,9 @@ export default function DualLedgerPage() {
           <div className="ledger-row">
             <div className="lr-head">
               <span className="lr-name">应付款 <small>欠用户的钱</small></span>
-              <span className="lr-val" style={{ color: "var(--cyan)" }}>{fmtUsdCompact(liabilitiesUsd)}</span>
+              <span className="lr-val" style={{ color: "var(--cyan)" }}>{valuationReliable ? fmtUsdCompact(liabilitiesUsd) : TREASURY_VALUATION_UNAVAILABLE}</span>
             </div>
-            <div className="lr-bar"><div className="f" style={{ width: "100%", background: "var(--cyan)" }} /></div>
+            {valuationReliable && <div className="lr-bar"><div className="f" style={{ width: "100%", background: "var(--cyan)" }} /></div>}
           </div>
 
           <div className="ledger-row">
@@ -470,12 +465,16 @@ export default function DualLedgerPage() {
               <span className="lr-name">可用储备 <small>手上能动用的钱</small></span>
               <span className="lr-val" style={{ color: "var(--success)" }}>{fmtUsdCompact(reserveUsd)}</span>
             </div>
-            <div className="lr-bar"><div className="f" style={{ width: `${round2(Math.min(coverageRatio, 100))}%`, background: "var(--success)" }} /></div>
-            <div className="muted tiny" style={{ marginTop: 7 }}>
-              储备够付应付款的 <b style={{ color: "var(--warning)", fontWeight: 600 }}>{fmtPct(coverageRatio)}</b>
-              {/* 「超 100% 已现盈余」只在严格大于 100% 时成立;等于 100% 是刚好覆盖、无盈余(zentao #169)。 */}
-              {round2(coverageRatio - 100) > 0 ? "（有富余）" : round2(coverageRatio - 100) === 0 ? "（刚好够）" : "（不够付）"}，也就是当前兑付覆盖率
-            </div>
+            {valuationReliable && (
+              <>
+                <div className="lr-bar"><div className="f" style={{ width: `${round2(Math.min(coverageRatio, 100))}%`, background: "var(--success)" }} /></div>
+                <div className="muted tiny" style={{ marginTop: 7 }}>
+                  储备够付应付款的 <b style={{ color: "var(--warning)", fontWeight: 600 }}>{fmtPct(coverageRatio)}</b>
+                  {/* 「超 100% 已现盈余」只在严格大于 100% 时成立;等于 100% 是刚好覆盖、无盈余(zentao #169)。 */}
+                  {round2(coverageRatio - 100) > 0 ? "（有富余）" : round2(coverageRatio - 100) === 0 ? "（刚好够）" : "（不够付）"}，也就是当前兑付覆盖率
+                </div>
+              </>
+            )}
           </div>
 
           <div className="net-box">
@@ -483,16 +482,20 @@ export default function DualLedgerPage() {
               储备 − 应付款{" "}
               <span className="help" data-tip="为负数表示储备不够付用户的应得款项。">?</span>
             </div>
-            <div className="net-num" style={{ color: netExposure < 0 ? "var(--danger)" : "var(--success)" }}>
-              {netExposure < 0 ? "−" : ""}{fmtUsd(Math.abs(netExposure))}
-            </div>
-            <div className="net-tags">
-              {/* 敞口为 0 时既不是缺口也不是盈余,是持平(zentao #169):旧写法把 0 归进「盈余」。 */}
-              <span className="gap-tag" style={{ color: netExposure < 0 ? "var(--danger)" : netExposure > 0 ? "var(--success)" : "var(--v5-ink-3)" }}>
-                <TrendingDown size={13} /> {netExposure < 0 ? "不够付" : netExposure > 0 ? "有富余" : "刚好够"}
-              </span>
-              <span className="muted">{fmtUsdCompact(reserveUsd)} − {fmtUsdCompact(liabilitiesUsd)}</span>
-            </div>
+            {valuationReliable ? (
+              <>
+                <div className="net-num" style={{ color: netExposure < 0 ? "var(--danger)" : "var(--success)" }}>
+                  {netExposure < 0 ? "−" : ""}{fmtUsd(Math.abs(netExposure))}
+                </div>
+                <div className="net-tags">
+                  {/* 敞口为 0 时既不是缺口也不是盈余,是持平(zentao #169):旧写法把 0 归进「盈余」。 */}
+                  <span className="gap-tag" style={{ color: netExposure < 0 ? "var(--danger)" : netExposure > 0 ? "var(--success)" : "var(--v5-ink-3)" }}>
+                    <TrendingDown size={13} /> {netExposure < 0 ? "不够付" : netExposure > 0 ? "有富余" : "刚好够"}
+                  </span>
+                  <span className="muted">{fmtUsdCompact(reserveUsd)} − {fmtUsdCompact(liabilitiesUsd)}</span>
+                </div>
+              </>
+            ) : <div className="muted">{TREASURY_VALUATION_UNAVAILABLE}</div>}
           </div>
         </section>
       </div>
@@ -556,7 +559,7 @@ export default function DualLedgerPage() {
             </div>
             <div>
               <div className="muted tiny">应付款总额</div>
-              <div className="mono dec-foot-v">{fmtUsd(liabilitiesUsd)}</div>
+              <div className="mono dec-foot-v">{valuationReliable ? fmtUsd(liabilitiesUsd) : TREASURY_VALUATION_UNAVAILABLE}</div>
             </div>
           </div>
         </section>
@@ -590,7 +593,7 @@ export default function DualLedgerPage() {
           <div className="alertbar" style={{ marginTop: 14 }}>
             <span className="ico" style={{ color: "var(--warning)" }}><AlertTriangle size={16} /></span>
             <div style={{ fontSize: "12.5px" }}>
-              {netFlow24hUsd >= 0 ? "资金在净流入" : "资金在净流出"}，结合覆盖率走势，建议持续关注大额提现和奖励发放节奏。
+              {netFlow24hUsd >= 0 ? "资金在净流入" : "资金在净流出"}，{valuationReliable && "结合覆盖率走势，"}建议持续关注大额提现和奖励发放节奏。
             </div>
           </div>
         </section>
@@ -631,6 +634,8 @@ export default function DualLedgerPage() {
             title="储备与应付款差额趋势暂不可用"
             error={`${exposureError}，已暂停显示。`}
           />
+        ) : currentExposure?.valuationReliable === false ? (
+          <div className="alertbar" role="status">{TREASURY_VALUATION_UNAVAILABLE}</div>
         ) : exposureSeries.length === 0 ? (
           <div className="alertbar">
             <AlertTriangle size={16} />
@@ -667,12 +672,12 @@ export default function DualLedgerPage() {
           <span className="h">应付款构成</span>
           <span className="sub">按类型</span>
           <div className="r">
-            <span className="liab-total">{fmtUsd(liabilitiesUsd)}</span>
+            <span className="liab-total">{valuationReliable ? fmtUsd(liabilitiesUsd) : TREASURY_VALUATION_UNAVAILABLE}</span>
             <span className="b1-tag">{liabRows.length} 类应付款 · 明细见「可用资金与应付款」</span>
           </div>
         </div>
 
-        <div className="liab-stack">
+        {valuationReliable && <div className="liab-stack">
           {liabRows.map((a, i) => {
             const isLast = i === liabRows.length - 1; // 末段 flex 吸收舍入残差,堆叠条恒满 100%
             return (
@@ -691,7 +696,7 @@ export default function DualLedgerPage() {
               />
             );
           })}
-        </div>
+        </div>}
 
         <div className="liab-grid">
           {liabRows.map((a, i) => (
@@ -703,8 +708,8 @@ export default function DualLedgerPage() {
             >
               <span className="dot" style={{ background: `var(${a.cat})` }} />
               <span className="nm">{operatorCopyText(a.label)}</span>
-              <span className="am">{fmtUsdCompact(a.amount)}</span>
-              <span className="pc">{fmtPct(a.pct)}</span>
+              <span className="am">{!valuationReliable && a.key === "nex_v2_future" ? TREASURY_VALUATION_UNAVAILABLE : fmtUsdCompact(a.amount)}</span>
+              <span className="pc">{valuationReliable ? fmtPct(a.pct) : TREASURY_VALUATION_UNAVAILABLE}</span>
             </div>
           ))}
         </div>

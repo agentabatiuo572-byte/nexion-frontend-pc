@@ -24,6 +24,7 @@ export interface BLedgerAccount {
 export interface BLedger {
   reserveUsd: number;
   liabilitiesUsd: number;
+  valuationReliable: boolean;
   coverageRatio: number;
   redlinePct: number;
   healthyPct: number;
@@ -131,6 +132,7 @@ const CAT_VARS = [
 const EMPTY_LEDGER: BLedger = {
   reserveUsd: 0,
   liabilitiesUsd: 0,
+  valuationReliable: false,
   coverageRatio: 0,
   redlinePct: 0,
   thresholdVersion: null,
@@ -307,6 +309,7 @@ function normalizeLedger(raw: Record<string, unknown>): BLedger {
   return {
     reserveUsd,
     liabilitiesUsd,
+    valuationReliable: snapshot.valuationReliable === undefined || requiredBool(snapshot.valuationReliable, "dualLedger.snapshot.valuationReliable"),
     coverageRatio: requiredNum(snapshot.coverageRatio, "dualLedger.snapshot.coverageRatio"),
     redlinePct: requiredNum(snapshot.redlinePct, "dualLedger.snapshot.redlinePct"),
     healthyPct: requiredNum(snapshot.healthyPct, "dualLedger.snapshot.healthyPct"),

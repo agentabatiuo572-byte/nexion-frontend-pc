@@ -144,6 +144,7 @@ function operationMarkers(w: A2OperationRow): OperationMarker[] {
 }
 
 const OWN_TICKET_REASON = "这是你发起的，需要另一位管理员处理";
+const COVERAGE_ON_APPROVAL_COPY = "批准执行时，系统会检查兑付覆盖率。低于红线时，审批单继续待处理，账户组状态和提现限制保持原样。";
 
 function isCurrentOperator(w: A2OperationRow, username: string | undefined) {
   return w.mine || (!!username && username === w.operator);
@@ -373,21 +374,21 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (w.phoneCalibrationError) { toast(w.phoneCalibrationError); return; }
     const commandKey = createA2CommandKey(`a2-approve-${w.id}`);
     openActionConfirm({ briefKind: w.type === "fund" ? "funds" : w.type === "acct" ? "security" : w.type === "sos" ? "emergency" : "config",
-      completionCopy: g3PolicyExecutionTiming(w),
+      completionCopy: w.coverageCheckOnApproval ? COVERAGE_ON_APPROVAL_COPY : g3PolicyExecutionTiming(w),
       content: w.action === `退款 · ${w.obj}` ? <PromotionRefundImpact orderNo={w.obj} /> : undefined,
       action: <>确认执行 · {w.id}({a2ActionText(w.action)})</>,
       detail: (
         <>
           对象 <b>{w.obj}</b> · 发起人 {w.operator}。
           <A2ChangeReview before={w.before} after={w.after} />
-          {g3PolicyExecutionTiming(w) ?? "确认后立即执行"}
+          {w.coverageCheckOnApproval ? "通过覆盖率检查后执行" : g3PolicyExecutionTiming(w) ?? "确认后立即执行"}
           {w.sos ? (<>，<b>并通知应急值班人员</b></>) : null}。<br />
           谁能执行：<b>{w.roleGate}</b>
           {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
           {w.phoneCalibrationError && <p role="alert">{w.phoneCalibrationError}</p>}
         </>
       ),
-      amplifies: w.amplifies,
+      amplifies: w.amplifies && !w.coverageCheckOnApproval,
       reasonMin,
       reasonMax: 200,
       run: async (reason) => {
@@ -1076,7 +1077,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               <div className="kv"><span className="k">谁能执行</span><span className="v">{w.roleGate}</span></div>
             </div>
             <div className="atint" style={{ marginTop: 14 }}>
-              {w.amplifies ? (
+              {w.coverageCheckOnApproval ? COVERAGE_ON_APPROVAL_COPY : w.amplifies ? (
                 <>
                   <b>🔥 会让平台多付钱</b>：执行时会再次显示当前兑付覆盖率，如已跌破红线请取消并注明原因。
                 </>

@@ -59,6 +59,7 @@ interface BackendTicket {
   beforeValue?: string | null;
   afterValue?: string | null;
   phoneCalibrationProposal?: string | null;
+  coverageCheckOnApproval?: boolean | null;
   operator?: string | null;
   operatorRole?: string | null;
   type?: string | null;
@@ -146,6 +147,7 @@ export interface A2Stats {
 export interface A2OperationRow {
   phoneCalibrationProposal?: PhoneProposalView;
   phoneCalibrationError?: string;
+  coverageCheckOnApproval?: boolean;
   id: string;
   action: string;
   obj: string;
@@ -299,6 +301,7 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
   return {
     ...(phoneCalibrationProposal ? { phoneCalibrationProposal } : {}),
     ...(phoneCalibrationError ? { phoneCalibrationError } : {}),
+    ...(ticket.coverageCheckOnApproval === true ? { coverageCheckOnApproval: true } : {}),
     id: ticket.id,
     action: ticket.action,
     obj: ticket.obj,

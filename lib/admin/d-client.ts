@@ -5,6 +5,7 @@ import { adminAuthLifecycleEpoch, AdminAuthEpochChangedError } from "@/lib/admin
 import { normalizeD1NullableString } from "@/lib/admin/d1-nullable-string";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { treasuryValuation } from "@/lib/admin/treasury-valuation";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 interface ApiResult<T> {
@@ -390,11 +391,11 @@ export interface D3Reserve {
 }
 
 export interface D3Liabilities {
-  totalUsdt: number;
+  totalUsdt: number | null;
   hardLiabilityCategoryCount: number;
   trialShadowIncluded: boolean;
   asOf: string;
-  breakdown: Array<{ category: string; label: string; amountUsdt: number; share: number; source: string }>;
+  breakdown: Array<{ category: string; label: string; amountUsdt: number | null; share: number | null; source: string }>;
   sources: string[];
 }
 
@@ -419,6 +420,7 @@ export interface D3MaturityForecast {
 
 export interface D3NetExposure {
   window: "7d" | "30d" | "90d";
+  valuationReliable: boolean;
   series: Array<{
     date: string;
     reserveUsdt: number;
@@ -1527,27 +1529,32 @@ function normalizeD3Reserve(raw: Record<string, unknown>): D3Reserve {
 }
 
 function normalizeD3Liabilities(raw: Record<string, unknown>): D3Liabilities {
-  const totalUsdt = d3Number(raw.totalUsdt, "liabilities.totalUsdt");
+  const valuation = treasuryValuation(raw, () => d3Invalid("liabilities.valuationStatus"));
+  const unavailable = valuation === "VALUATION_UNAVAILABLE";
+  const legacy = valuation === "LEGACY";
+  const totalUsdt = unavailable ? null : d3Number(legacy ? raw.totalUsdt : raw.valuedTotalUsdt, "liabilities.totalUsdt");
   const hardLiabilityCategoryCount = d3Number(raw.hardLiabilityCategoryCount, "liabilities.hardLiabilityCategoryCount");
   const breakdown = d3Array(raw.breakdown, "liabilities.breakdown").map((item, index) => {
     const row = d3Object(item, `liabilities.breakdown[${index}]`);
+    const category = d3String(row.category, `liabilities.breakdown[${index}].category`);
     const normalized = {
-      category: d3String(row.category, `liabilities.breakdown[${index}].category`),
+      category,
       label: d3String(row.label, `liabilities.breakdown[${index}].label`),
-      amountUsdt: d3Number(row.amountUsdt, `liabilities.breakdown[${index}].amountUsdt`),
-      share: d3Number(row.share, `liabilities.breakdown[${index}].share`),
+      amountUsdt: unavailable && category === "nex_v2_future" ? null
+        : d3Number(legacy ? row.amountUsdt : row.valuedAmountUsdt, `liabilities.breakdown[${index}].amountUsdt`),
+      share: unavailable ? null : d3Number(legacy ? row.share : row.valuedShare, `liabilities.breakdown[${index}].share`),
       source: d3String(row.source, `liabilities.breakdown[${index}].source`),
     };
-    if (normalized.amountUsdt < 0 || normalized.share < 0 || normalized.share > 1) d3Invalid(`liabilities.breakdown[${index}].range`);
+    if ((normalized.amountUsdt ?? 0) < 0 || (normalized.share ?? 0) < 0 || (normalized.share ?? 0) > 1) d3Invalid(`liabilities.breakdown[${index}].range`);
     return normalized;
   });
   const categories = breakdown.map((row) => row.category);
-  const amountTotal = breakdown.reduce((sum, row) => sum + row.amountUsdt, 0);
-  const shareTotal = breakdown.reduce((sum, row) => sum + row.share, 0);
-  if (totalUsdt < 0 || hardLiabilityCategoryCount !== 9 || breakdown.length !== 9
+  const amountTotal = breakdown.reduce((sum, row) => sum + (row.amountUsdt ?? 0), 0);
+  const shareTotal = breakdown.reduce((sum, row) => sum + (row.share ?? 0), 0);
+  if (hardLiabilityCategoryCount !== 9 || breakdown.length !== 9
       || D3_LIABILITY_KEYS.length !== 9 || new Set(categories).size !== 9 || D3_LIABILITY_KEYS.some((key) => !categories.includes(key))
-      || !d3Near(amountTotal, totalUsdt)
-      || (totalUsdt > 0 && Math.abs(shareTotal - 1) > 0.001)) d3Invalid("liabilities.invariants");
+      || (totalUsdt !== null && (totalUsdt < 0 || !d3Near(amountTotal, totalUsdt)
+        || (totalUsdt > 0 && Math.abs(shareTotal - 1) > 0.001)))) d3Invalid("liabilities.invariants");
   return {
     totalUsdt,
     hardLiabilityCategoryCount,
@@ -1605,15 +1612,20 @@ function normalizeD3Maturity(raw: Record<string, unknown>): D3MaturityForecast {
 
 function normalizeD3Exposure(raw: Record<string, unknown>): D3NetExposure {
   const window = d3String(raw.window, "exposure.window");
-  if (!( ["7d", "30d", "90d"] as string[]).includes(window)) d3Invalid("exposure.window");
+  if (window !== "7d" && window !== "30d" && window !== "90d") d3Invalid("exposure.window");
+  const asOf = d3String(raw.asOf, "exposure.asOf");
+  const valuation = treasuryValuation(raw, () => d3Invalid("exposure.valuationStatus"));
+  if (valuation === "VALUATION_UNAVAILABLE") return { window, asOf, valuationReliable: false, series: [] };
+  const legacy = valuation === "LEGACY";
   const series = d3Array(raw.series, "exposure.series").map((item, index) => {
       const row = d3Object(item, `exposure.series[${index}]`);
+      const netExposureUsdt = d3Number(legacy ? row.netExposureUsdt : row.valuedNetExposureUsdt, `exposure.series[${index}].netExposureUsdt`);
       const normalized = {
         date: d3String(row.date, `exposure.series[${index}].date`),
         reserveUsdt: d3Number(row.reserveUsdt, `exposure.series[${index}].reserveUsdt`),
-        liabilitiesUsdt: d3Number(row.liabilitiesUsdt, `exposure.series[${index}].liabilitiesUsdt`),
-        netExposureUsdt: d3Number(row.netExposureUsdt, `exposure.series[${index}].netExposureUsdt`),
-        negative: d3Boolean(row.negative, `exposure.series[${index}].negative`),
+        liabilitiesUsdt: d3Number(legacy ? row.liabilitiesUsdt : row.valuedLiabilitiesUsdt, `exposure.series[${index}].liabilitiesUsdt`),
+        netExposureUsdt,
+        negative: legacy ? d3Boolean(row.negative, `exposure.series[${index}].negative`) : netExposureUsdt < 0,
       };
       if (normalized.reserveUsdt < 0 || normalized.liabilitiesUsdt < 0
           || !d3Near(normalized.reserveUsdt - normalized.liabilitiesUsdt, normalized.netExposureUsdt)
@@ -1621,11 +1633,7 @@ function normalizeD3Exposure(raw: Record<string, unknown>): D3NetExposure {
       return normalized;
     });
   d3AssertDateSeries(series, Number(window.slice(0, -1)), "exposure.series");
-  return {
-    window: window as D3NetExposure["window"],
-    series,
-    asOf: d3String(raw.asOf, "exposure.asOf"),
-  };
+  return { window, asOf, valuationReliable: true, series };
 }
 
 function normalizeD3ForecastConfig(raw: Record<string, unknown>): D3ForecastConfig {
@@ -2252,6 +2260,10 @@ export async function reviewD2WithdrawalsBatch(
   });
 }
 
+export async function fetchD3NetExposure(window: D3NetExposure["window"], signal?: AbortSignal) {
+  return normalizeD3Exposure(await apiRequest<Record<string, unknown>>("treasury", `/net-exposure?window=${window}`, { signal }));
+}
+
 export async function fetchD3Dashboard(maturityWindow?: "7d" | "30d", exposureWindow?: "7d" | "30d" | "90d"): Promise<D3Dashboard> {
   const config = normalizeD3ForecastConfig(await apiRequest<Record<string, unknown>>("treasury", "/forecast-config"));
   const selectedMaturity = maturityWindow ?? (config.forecastWindow === "30d" ? "30d" : "7d");
@@ -2260,13 +2272,13 @@ export async function fetchD3Dashboard(maturityWindow?: "7d" | "30d", exposureWi
     apiRequest<Record<string, unknown>>("treasury", "/reserve"),
     apiRequest<Record<string, unknown>>("treasury", "/liabilities?breakdown=true"),
     apiRequest<Record<string, unknown>>("treasury", `/maturity-forecast?window=${selectedMaturity}`),
-    apiRequest<Record<string, unknown>>("treasury", `/net-exposure?window=${selectedExposure}`),
+    fetchD3NetExposure(selectedExposure),
   ]);
   return {
     reserve: normalizeD3Reserve(reserve),
     liabilities: normalizeD3Liabilities(liabilities),
     maturity: normalizeD3Maturity(maturity),
-    exposure: normalizeD3Exposure(exposure),
+    exposure,
     config,
   };
 }

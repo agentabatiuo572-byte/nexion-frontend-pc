@@ -19,6 +19,7 @@ import {
 } from "@/lib/admin/d-client";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { formatReserveCoverDays } from "@/lib/admin/treasury-cover-days";
+import { TREASURY_VALUATION_UNAVAILABLE } from "@/lib/admin/treasury-valuation";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { DCtx } from "./types";
 import { liabilityDisplayName } from "@/lib/admin/liability-labels";
@@ -57,8 +58,9 @@ function treasurySourceLabel(source: string) {
   return TREASURY_SOURCE_LABELS[value] ?? (value.startsWith("nx_") ? "系统账目" : value || "系统账目");
 }
 
-function money(value: number) {
-  return `$${Number(value).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
+function money(value: number | null) {
+  return value === null ? TREASURY_VALUATION_UNAVAILABLE
+    : `$${Number(value).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
 }
 
 /** 储备注入命令号跨刷新存活:注资是真金白银入账,重铸命令号 = 后端无法去重 = 重复入账。
@@ -296,7 +298,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
 
       <div className="f-stats">
         <div className="f-stat ok"><div className="k">可用储备</div><div className="v">{money(data?.reserve.reserveTotalUsdt ?? 0)}</div><div className="sub">已扣除质押锁定金额</div></div>
-        <div className="f-stat"><div className="k">应付款</div><div className="v">{money(data?.liabilities.totalUsdt ?? 0)}</div><div className="sub">共 9 类，待核实的银行充值算在第 9 类</div></div>
+        <div className="f-stat"><div className="k">应付款</div><div className="v">{money(data.liabilities.totalUsdt)}</div><div className="sub">共 9 类，待核实的银行充值算在第 9 类</div></div>
         <div className={`f-stat ${water?.tier === "DANGER" ? "danger" : water?.tier === "WARNING" ? "warn" : "cyan"}`}><div className="k">资金安全等级</div><div className="v">{water ? WATER_LABEL[water.tier] : "—"}</div><div className="sub">{formatReserveCoverDays(data.maturity.cumulativeUsdt, water?.reserveCoverDays ?? 0)}</div></div>
         <div className="f-stat warn"><div className="k">{(data?.maturity.window ?? maturityWindow).replace("d", " 天")}到期应付款</div><div className="v">{money(data?.maturity.cumulativeUsdt ?? 0)}</div><div className="sub">提现 + 质押奖励 + 创世节点收益</div></div>
       </div>
@@ -350,7 +352,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 920 }}>
             <thead><tr><th>类型</th><th>说明</th><th className="num">金额</th><th className="num">占比</th><th>数据来源</th></tr></thead>
-            <tbody>{(data?.liabilities.breakdown ?? []).map((row) => <tr key={row.category}><td className="mono">{categoryText(row.category)}</td><td>{operatorCopyText(row.label)}</td><td className="num mono">{money(row.amountUsdt)}</td><td className="num mono">{(row.share * 100).toFixed(2)}%</td><td style={{ color: "var(--ink-4)" }}>{treasurySourceLabel(row.source)}</td></tr>)}</tbody>
+            <tbody>{data.liabilities.breakdown.map((row) => <tr key={row.category}><td className="mono">{categoryText(row.category)}</td><td>{operatorCopyText(row.label)}</td><td className="num mono">{money(row.amountUsdt)}</td><td className="num mono">{row.share === null ? TREASURY_VALUATION_UNAVAILABLE : `${(row.share * 100).toFixed(2)}%`}</td><td style={{ color: "var(--ink-4)" }}>{treasurySourceLabel(row.source)}</td></tr>)}</tbody>
           </table>
         </div>
       </section>
@@ -367,10 +369,12 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
         <section className="l-card">
           <div className="l-h"><span className="ttl">储备与应付款差额曲线</span><span className="sub">· 储备 − 应付款</span><div className="r"><select className="ui-control" value={exposureWindow} onChange={(event) => selectExposure(event.target.value as "7d" | "30d" | "90d")}><option value="7d">7 天</option><option value="30d">30 天</option><option value="90d">90 天</option></select></div></div>
           <div className="l-b">
-            <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(1, data?.exposure.series.length ?? 1)}, minmax(2px, 1fr))`, gap: 2, alignItems: "end", height: 220 }}>
-              {(data?.exposure.series ?? []).map((row) => <div key={row.date} title={`${row.date}: ${money(row.netExposureUsdt)}`} style={{ minHeight: 4, height: `${Math.max(4, Math.abs(row.netExposureUsdt) / exposureMax * 200)}px`, background: row.negative ? "var(--danger)" : "var(--success)", borderRadius: 2 }} />)}
-            </div>
-            <div className="dtint" style={{ marginTop: 12 }}>绿色表示储备有富余，红色表示储备不够付。</div>
+            {data.exposure.valuationReliable ? <>
+              <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(1, data.exposure.series.length)}, minmax(2px, 1fr))`, gap: 2, alignItems: "end", height: 220 }}>
+                {data.exposure.series.map((row) => <div key={row.date} title={`${row.date}: ${money(row.netExposureUsdt)}`} style={{ minHeight: 4, height: `${Math.max(4, Math.abs(row.netExposureUsdt) / exposureMax * 200)}px`, background: row.negative ? "var(--danger)" : "var(--success)", borderRadius: 2 }} />)}
+              </div>
+              <div className="dtint" style={{ marginTop: 12 }}>绿色表示储备有富余，红色表示储备不够付。</div>
+            </> : <div className="dtint warn" role="status">{TREASURY_VALUATION_UNAVAILABLE}</div>}
           </div>
         </section>
       </div>
