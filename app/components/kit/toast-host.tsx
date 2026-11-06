@@ -7,10 +7,10 @@ import type { ToastKind } from "@/lib/store/ui";
 import { useUI } from "@/lib/store/ui";
 
 const KIND: Record<ToastKind, { varName: string; Icon: typeof Info }> = {
-  success: { varName: "--v5-success", Icon: CheckCircle2 },
-  info: { varName: "--admin-blue", Icon: Info },
-  warn: { varName: "--v5-warning", Icon: AlertTriangle },
-  error: { varName: "--v5-danger", Icon: XCircle },
+  success: { varName: "--rd-ok", Icon: CheckCircle2 },
+  info: { varName: "--rd-progress", Icon: Info },
+  warn: { varName: "--rd-warn", Icon: AlertTriangle },
+  error: { varName: "--rd-danger", Icon: XCircle },
 };
 
 export function ToastHost({ dialogId }: { dialogId?: string }) {

@@ -11,6 +11,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { CircleHelp, X } from "lucide-react";
 import { getPageGuide } from "@/lib/admin/page-guides";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { Fold } from "./fold";
 import { Drawer } from "./overlay";
 
 function seenKey(adminId: number | undefined, pageId: string) {
@@ -38,6 +39,8 @@ export function PageGuide({ pageId, extra }: { pageId: string; extra?: ReactNode
     }
   };
   if (!guide) return null;
+  // 一句一行：技术信息是查证时才看的，不能是一整段（DT-08、VS-51）。
+  const more = guide.more?.split(/(?<=[。；])/).map((line) => line.trim()).filter(Boolean);
   return (
     <>
       <button type="button" className="rd-guide-entry" onClick={() => { dismissHint(); setOpen(true); }}>
@@ -56,7 +59,7 @@ export function PageGuide({ pageId, extra }: { pageId: string; extra?: ReactNode
         </section>
         <section className="rd-guide-section">
           <h3>最常做的三件事</h3>
-          <ol>{guide.tasks.map((task) => <li key={task.title}><b>{task.title}：</b>{task.steps.join(" → ")}</li>)}</ol>
+          <ol>{guide.tasks.map((task) => <li key={task.title}><b>{task.title}</b><ol>{task.steps.map((step) => <li key={step}>{step}</li>)}</ol></li>)}</ol>
         </section>
         {guide.terms.length > 0 && (
           <section className="rd-guide-section">
@@ -65,12 +68,7 @@ export function PageGuide({ pageId, extra }: { pageId: string; extra?: ReactNode
           </section>
         )}
         {extra}
-        {guide.more ? (
-          <details className="rd-guide-tech" key={pageId}>
-            <summary>技术信息</summary>
-            {guide.more}
-          </details>
-        ) : null}
+        {more && <Fold key={pageId} inset title="技术信息" summary={`${more.length} 条`}><ul className="rd-guide-more">{more.map((line) => <li key={line}>{line}</li>)}</ul></Fold>}
       </Drawer>
     </>
   );

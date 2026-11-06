@@ -9,6 +9,7 @@
  * </Facts>
  *
  * - lead 是这次操作的关键数字（金额、数量），弹窗里最大最亮，每个框最多一个，放第一行（VS-102）。
+ *   值是不带数字的文字（JSON、样本过小）时按普通的值显示：大字只给数字（DT-21）。
  * - tone 给值上色，规则和页面上的数字一样，先问状态再问角色（VS-11）：风险等级、不能撤销这类传状态色；
  *   金额传 role-1。角色色只在深色主题上字，浅色主题是正文色（VS-14）。不传就是正文色。
  * - k 过 AutoGloss，命中词典的术语带解释。
@@ -24,8 +25,9 @@ export function Facts({ children }: { children: ReactNode }) {
 }
 
 export function Fact({ k, children, tone, lead, unit }: { k: string; children: ReactNode; tone?: StateTone | RoleTone; lead?: boolean; unit?: ReactNode }) {
+  const big = lead && !(typeof children === "string" && !/\d/.test(children));
   return (
-    <div className="rd-fact" data-tone={tone} data-lead={lead ? "" : undefined}>
+    <div className="rd-fact" data-tone={tone} data-lead={big ? "" : undefined}>
       <dt><AutoGloss>{k}</AutoGloss></dt>
       <dd>{children}{unit && <span className="rd-fact-unit">{unit}</span>}</dd>
     </div>

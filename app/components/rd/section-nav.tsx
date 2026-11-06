@@ -49,22 +49,33 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
 
   useEffect(() => {
     if (!ready) return;
+    const list = ids.split("|");
     const seen = new Set<string>();
+    const scroller = document.getElementById(`section-${list[0]}`)?.closest("main");
+    const pick = () => {
+      if (Date.now() < lock.current) return;
+      // 滚到底时最后一组进不了判定带，上面的组还在里面，这时算最后一组。
+      const atEnd = scroller && scroller.scrollTop > 0 && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2;
+      const current = atEnd ? list.at(-1) : list.find((id) => seen.has(id));
+      if (current) setActive(current);
+    };
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         const id = entry.target.id.replace(/^section-/, "");
         if (entry.isIntersecting) seen.add(id);
         else seen.delete(id);
       }
-      if (Date.now() < lock.current) return;
-      const first = ids.split("|").find((id) => seen.has(id));
-      if (first) setActive(first);
+      pick();
     }, { rootMargin: "-80px 0px -60% 0px" });
-    for (const id of ids.split("|")) {
+    for (const id of list) {
       const target = document.getElementById(`section-${id}`);
       if (target) observer.observe(target);
     }
-    return () => observer.disconnect();
+    scroller?.addEventListener("scroll", pick, { passive: true });
+    return () => {
+      observer.disconnect();
+      scroller?.removeEventListener("scroll", pick);
+    };
   }, [ids, ready]);
 
   const select = useCallback((id: string) => {

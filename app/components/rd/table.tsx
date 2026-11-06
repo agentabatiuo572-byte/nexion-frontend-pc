@@ -227,14 +227,14 @@ export function useTableColumns(tableId: string, columns: readonly TableColumn[]
   }), [columns, hidden, key, save]);
 }
 
-/** 「显示更多列 · 已选 {n}」。Esc 收起回到按钮。 */
+/** 「显示更多列 · 已选 {n}」，没选时只写「显示更多列」。Esc 收起回到按钮。 */
 export function ColumnPicker({ columns }: { columns: TableColumns }) {
   const [open, setOpen] = useState(false);
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
         <Button variant="ghost" size="sm" icon={<Columns3 size={14} aria-hidden />} aria-expanded={open}>
-          显示更多列 · 已选 {columns.extraSelected}
+          {columns.extraSelected > 0 ? `显示更多列 · 已选 ${columns.extraSelected}` : "显示更多列"}
         </Button>
       </Popover.Trigger>
       <Popover.Portal>

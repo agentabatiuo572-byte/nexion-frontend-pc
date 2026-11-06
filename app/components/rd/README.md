@@ -29,18 +29,18 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 页头：标题、一句说明、「这页怎么用」、动作、数据时间；详情页的身份行传 `identity` | `PageHeader` | `page-header.tsx` |
 | 这页怎么用 | `PageGuide`，`PageHeader` 自动带 | `page-guide.tsx` |
 | 看板第一句话 | `Conclusion`；正常态不放大，`lead` 只在异常或带关键数字时放大；`hint` 只写建议和该做什么，怎么算传 `explain` 进句尾的提示图标 | `conclusion.tsx` |
-| 一排关键数字，最多 4 个 | `StatBand`、`Stat`；整张可点传 `href` 或 `onOpen`；值是 0 或「—」时自动弱化（字色弱、图标底灰、`lead` 不放大）；口径传 `explain` 进名称旁的提示图标，`sub` 只放数据 | `stat.tsx` |
+| 一排关键数字，最多 4 个 | `StatBand`、`Stat`；整张可点传 `href` 或 `onOpen`；值是 0 或「—」时自动弱化（字色弱、图标底灰、`lead` 不放大）；口径传 `explain` 进名称旁的提示图标，`sub` 只放数据。窄于 900 时四个才两两一行，三个留在一行 | `stat.tsx` |
 | 一块内容 | `Panel`；已经在一个面板里的分区传 `plain`，不套底；`sub` 只放数据（范围、单位、数量、时间），解释传 `explain` 进标题旁的提示图标 | `panel.tsx` |
 | 区块标题、统计数字前的图标 | `IconTile`，`Panel`、`Stat` 传 `icon` 就有 | `icon-tile.tsx` |
 | 切不同内容 | `PageTabs`；`useTabIds` 一处给 id，内容包 `role="tabpanel"`，页签和面板互相指向 | `tabs.tsx` |
 | 筛同一张表、切时间窗 | `Segments` | `tabs.tsx` |
 | 次要内容收起来 | `Fold`，`summary` 必填；区块的「查看…」传 `actions` 放标题行右侧，每块最多一个；这组怎么算传 `explain`，不在折叠里铺长段落 | `fold.tsx` |
 | 看板里要处理的事 | `TodoList`、`TodoItem`，读不到用 `TodoFailed` | `todo-list.tsx` |
-| 一块内容读取中、失败、空 | `BlockState`，折叠摘要里的失败传 `compact` 一行写完；一个数字或一行读不到用 `InlineRetry` | `block-state.tsx` |
+| 一块内容读取中、失败、空 | `BlockState`，折叠摘要里的失败传 `compact` 一行写完，重试是文字链；一个数字或一行读不到用 `InlineRetry`，同一个样子 | `block-state.tsx` |
 | 按天的柱图 | `Bars`，全是 0 别画，写一句话 | `bars.tsx` |
 | 表格 | `Table`、`Th`、`Tr`、`Td`、`Cell`；金额、数量、日期传 `num`，单号、哈希、地址才传 `mono` | `table.tsx` |
 | 显示更多列 | `useTableColumns`、`ColumnPicker` | `table.tsx` |
-| 表格加载、空、失败 | `TableLoading`、`TableMessage` | `table.tsx` |
+| 表格加载、空、失败 | `TableLoading`、`TableMessage`；失败传 `role="alert"`，自动是失败红 | `table.tsx` |
 | 表格分页 | `Pager`，有数据才渲染 | `pager.tsx` |
 | 勾选后的批量操作 | `BatchBar`，勾选框用 `Checkbox`，勾选列的表头传 `Th control`；`hint` 收进已勾选数旁的提示图标 | `batch-bar.tsx`、`checkbox.tsx` |
 | 行操作放不下 | `MoreMenu` | `menu.tsx` |
@@ -50,7 +50,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 下拉、排序 | `Select`；放进 `Field` 自动接上 `id`、`aria-describedby`、`aria-invalid` | `select.tsx` |
 | 单条详情、长表单 | `Drawer`，底部用 `Decision` | `overlay.tsx` |
 | 详情开头 3～5 行 | `JudgmentPoints` | `judgment.tsx` |
-| 详情、确认框里成对的名称和值 | `Facts`、`Fact`；确认框的关键数字传 `lead`（每框最多一个，放第一行），带含义的值传 `tone`；状态变化写 `Change`（改后蓝）。放在 `Modal` 里自动带浅底 | `facts.tsx` |
+| 详情、确认框里成对的名称和值 | `Facts`、`Fact`；确认框的关键数字传 `lead`（每框最多一个，放第一行），值是不带数字的文字时按普通的值显示，大字只给数字；带含义的值传 `tone`；状态变化写 `Change`（改后蓝）。放在 `Modal` 里自动带浅底 | `facts.tsx` |
 | 按时间发生的操作、状态历史 | `Timeline`；最新在上，主体在组件内经 `maskAuditActor` 打码；仅失败 `danger`、待确认 `warn` 的节点上色 | `timeline.tsx` |
 | 提现历史、流水、同组账户等同类记录 | `RecordList`；主值、单位、时间和对象、状态、可复制单号分层；默认 5 条，点「查看全部」展开 | `record-list.tsx` |
 | 要人看到的提醒、错误、待确认条 | `Notice` | `notice.tsx` |
@@ -80,7 +80,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 改一个值：现在值、新值输入、方向 | `DiffField`；范围只写 `hint`，方向传 `state`，改了会怎样传 `note` | `diff-list.tsx` |
 | 一列固定的等级 | `LevelList` | `level-list.tsx` |
 | 配置项：名称、提示图标、当前值、动作 | `ConfigList`（`label` 给这组起名）、`ConfigRow`；一项一行，这是什么、显示位置、生效时间、改了会怎样（`what`、`where`、`when`、`effect`）都在提示图标的气泡里；说明表放 `lib/admin/config-help/`，按参数键取 | `config-list.tsx` |
-| 配置页三组以上的分组导航，详情页的分区导航（传 `row` 横排） | `SectionNav`、`useSectionNav`；定位写进网址 `section`，目标在折叠组里先展开 | `section-nav.tsx` |
+| 配置页三组以上的分组导航，详情页的分区导航（传 `row` 横排） | `SectionNav`、`useSectionNav`；定位写进网址 `section`，目标在折叠组里先展开，滚到底时亮最后一组 | `section-nav.tsx` |
 | 数字输入，单位写在框里 | `NumberInput`；`OperationConfirmModal` 的 `edit.kind: "number"` 在 `RdPage` 里自动用它 | `number-input.tsx` |
 
 ## 颜色：只传 tone，不写色值
@@ -99,7 +99,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 
 ## 配置页的排法
 
-样板是 H2 免费试用设置：汇总带下面左边是分组、右边是窄栏，窄栏先放分组导航、再放紧急关闭和当前状态（红按钮不抢首屏），滚动时钉住；窄宽时窄栏排到分组上方，导航收成一行，紧急关闭的状态和按钮排成一行，卡的说明在标题旁的提示图标里。
+样板是 H2 免费试用设置：汇总带下面左边是分组、右边是窄栏，窄栏先放分组导航、再放紧急关闭和当前状态（红按钮不抢首屏），滚动时钉住；窄宽时导航收成一排文字加下划线，钉在顶上，窄栏其余的卡片排到第一组后面，紧急关闭的状态和按钮排成一行，卡的说明在标题旁的提示图标里。配置项的值紧跟名称（名称列最宽 280），动作贴右边线。
 
 ```tsx
 const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold(id) });
@@ -194,7 +194,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 - `title`：框上写的短标题，只写动作和对象。不传就用 `action`；`action` 照旧是记进操作记录的名字，不要为了缩短标题去改它，长单号放 `facts`。
 - `confirmLabel`：确认按钮写动作，比如 `确认放行`，默认 `确认提交`。
 - `statedBrief`：这个操作自己的 `{ impact, check }`，传了摘要就不按文字猜（OP-51）。
-- `content`：比 `facts` 更长的影响块，比如促销奖励影响，放在事实区下面、要填的字段上面，能进事实区一行的不用它。资金信息都排在要填的字段前：框里内容超过一屏时理由框固定在底部，排在字段下面的内容会滚到它后面。块用 `.rd-impact`，标题 `.rd-impact-title`，里面的 `Table` 不带面板底色，行距收紧。
+- `content`：比 `facts` 更长的影响块，比如促销奖励影响，放在事实区下面、要填的字段上面，能进事实区一行的不用它。资金信息都排在要填的字段前。框里内容超过一屏时框体一层滚动，头和底栏固定，内容在底栏前渐隐；理由框排在内容最后，不吸底，不盖东西。块用 `.rd-impact`，标题 `.rd-impact-title`，里面的 `Table` 不带面板底色，行距收紧。
 - `blockedReason`：这次不能再提交的原因，写在框里，确认按钮禁用。比如提交时发现单据已被别人处理：再调一次 `openActionConfirm`，传最新内容和这个字段，框不关，已填的理由留着。
 
 - `reasonPlaceholder`：理由框的占位，按场景写（TX-11），默认「例如：工单号、处理依据」。
@@ -203,7 +203,9 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 - `reasonPolicyOptional`：理由规则读不到时按默认 8–200 继续。只给紧急关停（Q-06），放大资金流出的操作不传。
 - `coverageLead`：放大方向提示的开头，默认「这项操作会让平台多付钱」，页面可以换成这个操作的白话。读到覆盖率且不低于红线时，提示是安静的一行「覆盖率 753.8%，红线 100%」，这句开头和检查说明进提示图标；低于红线才红，写全文。页面自己把覆盖率写进 `coverageLead` 时也只留这一句，检查说明进提示图标。
 
-业务表单（`businessForm` 的 `multi-field`）的字段传 `explain` 时，字段名旁出现提示图标；校验不过的提示失焦或点过提交才出现，用橙黄。
+业务表单（`businessForm` 的 `multi-field`）的字段传 `explain` 时，字段名旁出现提示图标；校验不过的提示失焦或点过提交才出现，用橙黄。`multi-field` 不传 `title` 时没有分组小标题，只有一组字段就别传，框的标题已经说了（VS-104）。
+
+框里的控件在 `RdPage` 里是一套样子：业务表单的下拉都是 rd `Select`，输入框高 32，字段名到控件 8，勾选框是 Ant Design 的样子，`Btn` 就是 rd `Button`，确认按钮不带勾。页面自己写的原生 `<select>` 不在这里面，要换成 `Select`。
 
 改一个值的确认框（`edit`）在 `RdPage` 里自动用 `DiffField`：现在值在左、新值输入在右，数字放大，不再有「新值 · 当前 X」的标签和「当前 X」的占位。再给三个可选项：`hint` 写怎么填（范围只写这里），`preview(value)` 写改了会怎样、随输入变化，这两项只在 `RdPage` 里显示（CP-87）；`emptyOption` 写清空选项的名字，比如「不设上限」，要人点它才算清空，框里没填或填坏了都不算。`disallowCurrent` 时没改动不能保存，框里写原因（OP-18）。
 
@@ -215,7 +217,9 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 `useToast` 保留 `[toastNode, setToast]` 调用方式，提示统一交给根布局的 `ToastHost`，发起页面卸载后仍显示。打开 `Modal`（含 `OperationConfirmModal`、`KConfirmModal`）或全局确认框时立即清掉旧提示；框打开后新来的提示放在最上层框的标题下面，参与排版，不覆盖标题或表单。默认 3 秒，悬停暂停，移开重新计时。
 
-`Conclusion` 的气泡标题可传 `explainTitle`，默认仍为「这句话怎么算」。`PageGuide` 的技术信息默认收起，页面编号只作为查找指南的内部键。
+提示类型写第二个参数：`setToast("已保存", "success")`，失败 `error`，要人注意和结果未知 `warn`，其余 `info`。没传时按文字判断：「已」开头又没有转折「但」是 `success`，含「失败」「错误」是 `error`，含「未确认」「待确认」「未完成」「不能」「无法」「没有提交」是 `warn`，别的是 `info`。这是迁移期的兜底，页面都传了就删。`Notice` 的 `tone` 同理，按这条提示说的事传，不要整页写死一种：失败 `danger`、等人处理 `warn`、已完成 `ok`、处理中 `progress`。
+
+`Conclusion` 的气泡标题可传 `explainTitle`，默认仍为「这句话怎么算」。`PageGuide` 的技术信息用 `Fold`，默认收起，`more` 是纯文字，按句号和分号一句一行；最常做的三件事一件一个小标题，步骤一行一步。页面编号只作为查找指南的内部键。
 
 旧的 `KConfirmModal` 放进 `RdPage` 后同样换新外观；`statedBrief`、`effect`、`reasonPlaceholder` 用法同上。它按 A2 理由规则和可见字符计数，规则读不到时按默认 8–200 继续，紧急关闭这类操作继续用它（Q-06）。
 
@@ -224,19 +228,23 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 ## 已经由组件保证的事
 
 - `Explain`：鼠标悬停 100ms 打开、移开关闭，不抢焦点；点击或 Enter、Space 打开并钉住，焦点进气泡，再点一下、Esc 或点外面关闭，焦点回到图标；触屏点一下就开。图标 14px、弱文字色，全站一个样子。
-- `Button`：`type` 默认 `button`，属性全部透传，`loading` 时点击无效、宽度不变，没传 `loadingText` 时显示转圈；`disabledReason` 时不可点但能聚焦，悬停和聚焦都看得到原因，点一下走 `onBlockedClick`。浅色主题次按钮浅底描边、深色填底（VS-94）。
+- `Button`：`type` 默认 `button`，属性全部透传，`loading` 时点击无效、宽度不变，没传 `loadingText` 时显示转圈；`disabledReason` 时不可点但能聚焦，悬停和聚焦都看得到原因，点一下走 `onBlockedClick`。浅色主题次按钮浅底描边、深色填底（VS-94）。禁用不靠透明度，所有样式一个中性灰，两套主题强度一样。
 - `IconButton`：`aria-label` 同时是悬停和聚焦时的提示，不用再包一层。
 - `Panel`：标题行放不下时动作换到下一行，标题不拆字。
 - `Table`：放不下时横向滚动，两侧影子提示还有内容；右对齐列的格子贴右边；悬停不盖选中色。操作列传 `sticky="end"`，默认右对齐，窄屏时固定在右边。
 - `Steps` 排法跟上游：图标和文字一行，连线跟在文字后面，第一步贴左；`TrendLines` 的纵轴包住全部值和线，值和线都远离 0 时从整齐的低值起。
 - `Tr`：传 `onOpen` 后 Tab 能到，Enter、Space 打开，行内的按钮、链接、输入不触发。
 - `Modal`：模态，Tab 圈在里面。`Drawer`：不挡外面的列表，不写 `aria-modal`，Tab 走到头回到页面。两者都是 Esc 只关最上层，打开时聚焦容器，关闭后焦点回到当前高亮行或原来的按钮，`busy` 时全部锁住。
-- `Decision`：危险决定在左，主决定在右；只有危险决定时放右边，和别的框收在同一条线上。
+- `Decision`：危险决定在左，主决定在右；只有危险决定时放右边，和别的框收在同一条线上。`explain` 的问号没有 `note` 时紧挨右边的按钮，不孤零零留在左下角。
 - 整页表单的操作行用 `<div className="rd-toolbar" data-end="">`：状态和提示图标在左，按钮在右，顺序和抽屉底部一样。
 - `PageTabs`、`Segments`：方向键、Home、End 移动并立即选中，禁用项跳过。页签的网址读写在页面做。
 - `Select`：方向键环绕，Tab 和 Esc 收起，选后焦点回到触发器，禁用时收起且恢复后不自动展开。`required` 时空串算没选，表单提交被拦下，空值选项不进列表；不必填时空值选项是能选中的「全部」，表单值是空串。
 - `FilterBar`：Enter 等于查询；查询中只禁「查询」，条件照常能改；更多筛选收起不丢值。`action` 换掉「查询」的位置，Enter 仍走 `onSubmit`；自定义日期这类第二行放进 `.rd-filter-line`。
-- 列选择按账号和表格记在本地，记忆损坏时回到默认列，不影响导出和请求。
+- 列选择按账号和表格记在本地，记忆损坏时回到默认列，不影响导出和请求。按钮写「显示更多列」，选了才写「· 已选 n」。
+- `Fold`：`alert` 的颜色只给这一行的摘要，折叠里的内容和子折叠不跟着变色。
+- `JudgmentPoints`：有的行带图标时，不带的留出位置，标签一条线；值线和 `Fact` 一样。
+- `Textarea`：随内容长高，不在外层滚动里再套一层滚动。
+- 宽抽屉（`wide`）窄屏时停在侧栏右边。抽屉头下面有条线，内容滚上去不切成半行。
 
 ## 组件不管的事
 
@@ -250,7 +258,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 深色默认，浅色挂 `data-theme="light"`，两套都正式保留。`theme-switch.tsx` 管三件事：`<ThemeScript />` 在 `app/layout.tsx` 的 `<head>` 里同步执行，首屏按记住的选择设属性，不闪屏；`<ThemeToggle adminId={…} />` 是顶栏和登录页的开关（太阳「浅色」、月亮「深色」）；`useAdminTheme(adminId)` 登录后按账号记住的选择切换。记忆在本机：`nexion-admin-rd-theme` 是最近一次的选择（登录前也用它），`nexion-admin-rd-theme:<adminId>` 是每个账号的选择。网址参数 `?theme=light|dark` 只给截图和验收脚本用，不是入口。
 
-两套主题的差别只在 `tokens.css` 和 `rd.css` 里：浅色数字用正文色、身份靠实色图标底和图表色（VS-14）；白面板加 1px 边、横幅改左侧 3px 状态色竖条加很浅的底（VS-94）；Logo 换横版 on-light（`shell.css`）。页面不写这些。
+两套主题的差别只在 `tokens.css` 和 `rd.css` 里：浅色数字用正文色、身份靠实色图标底和图表色（VS-14）；白面板加 1px 边（VS-94）；Logo 换横版 on-light（`shell.css`）。告警横幅和 `Notice` 两套主题一个样子：浅底加同色 1px 边，取 Ant Design Alert 默认。页面不写这些。
 
 还没迁移的页面，`console-shell.tsx` 给内容区 `<main>` 挂 `data-theme="dark"` 和 `.rd-legacy`，里面仍是旧的深色取值，侧栏和顶栏跟主题走（VS-95）。迁完一页就把它的路径加进 `lib/nav/console-nav.ts` 的 `REDESIGNED_PATHS`；路径带对象编号的详情页加进 `REDESIGNED_DETAIL_PREFIXES`。
 
@@ -272,7 +280,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 ]} />
 ```
 
-`TimelineEntry` 的 `id`、`action`、`actor`、`at` 必填，`detail`、`role`、`ip`、`tone` 选填。组件复制后排序，不改写输入记录。`RecordListEntry` 的 `id`、`value` 必填，`unit`、`at`、`object`、`status`、`reference` 选填，保持调用方的顺序。两者的 `at` 都传原始时间，显示沿用业务时区并标注时区；不把后端无时区时间当浏览器时间。金额由调用方按业务精度格式化，组件提供 tabular-nums 和单位层级。单号等宽、换行、复制有成功或失败反馈，复制按钮有完整名称。
+`TimelineEntry` 的 `id`、`action`、`actor`、`at` 必填，`detail`、`role`、`ip`、`tone` 选填。组件复制后排序，不改写输入记录。`RecordListEntry` 的 `id`、`value` 必填，`unit`、`at`、`object`、`status`、`reference` 选填，保持调用方的顺序。两者的 `at` 都传原始时间，显示按业务时区写成 `2026-11-06 09:00`（`Timeline` 带秒），时区只写在第一条有时间的记录上（TX-25、TX-26）；不把后端无时区时间当浏览器时间。金额由调用方按业务精度格式化，组件提供 tabular-nums 和单位层级。单号等宽、换行、复制有成功或失败反馈，复制按钮有完整名称。
 
 `DiffField` 的 `hint` 和 `error` 放在前后值下面，占整行；不要把说明塞在新值的窄列里（VS-105）。原有输入框的 `aria-describedby` 仍连接这些提示。
 

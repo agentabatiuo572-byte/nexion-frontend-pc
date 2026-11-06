@@ -40,7 +40,7 @@ function Option({ option }: { option: SelectOption }) {
   );
 }
 
-export function Select({ value, onChange, options, groups, placeholder, disabled, name, required, id, "aria-label": ariaLabel, "aria-describedby": describedBy, "aria-invalid": invalid }: {
+export function Select({ value, onChange, options, groups, placeholder, disabled, name, required, id, "aria-label": ariaLabel, "aria-describedby": describedBy, "aria-invalid": invalid, "data-proof": proof }: {
   value: string;
   onChange: (value: string) => void;
   options?: readonly SelectOption[];
@@ -53,6 +53,7 @@ export function Select({ value, onChange, options, groups, placeholder, disabled
   "aria-label": string;
   "aria-describedby"?: string;
   "aria-invalid"?: true;
+  "data-proof"?: string;
 }) {
   const [open, setOpen] = useState(false);
   useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
@@ -76,7 +77,7 @@ export function Select({ value, onChange, options, groups, placeholder, disabled
     <Radix.Root value={value || (emptyOption && !required ? EMPTY : "")} onValueChange={(next) => onChange(next === EMPTY ? "" : next)} open={open && !disabled} onOpenChange={setOpen} disabled={disabled} required={required}>
       {/* Radix 的原生 select 只管必填校验；表单值走这里，「全部」才是空串，不是内部占位值。 */}
       {name && <input type="hidden" name={name} value={value} disabled={disabled} />}
-      <Radix.Trigger className="rd-select" id={id} aria-label={ariaLabel} aria-describedby={describedBy} aria-invalid={invalid}>
+      <Radix.Trigger className="rd-select" id={id} aria-label={ariaLabel} aria-describedby={describedBy} aria-invalid={invalid} data-proof={proof}>
         <Radix.Value placeholder={placeholder ?? (required ? emptyOption?.label : undefined)} />
         <Radix.Icon><ChevronDown size={14} aria-hidden /></Radix.Icon>
       </Radix.Trigger>

@@ -11,7 +11,7 @@ import { Fragment, isValidElement, useCallback, useEffect, useId, useMemo, useRe
 import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { announcePermissionDenied, isPermissionDenied, operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
-import { useUI } from "@/lib/store/ui";
+import { useUI, type ToastKind } from "@/lib/store/ui";
 import { useDialogFeedback } from "@/app/components/kit/dialog-feedback";
 import { ToastHost } from "@/app/components/kit/toast-host";
 import { fmtPct } from "@/lib/format";
@@ -23,7 +23,7 @@ import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "
 import { isL5KpiExport, l5KpiRange, L5_KPI_WINDOWS, l5BusinessToday } from "./l-tabs/l5-kpi-range";
 import { Check as RdCheck, CheckGroup as RdCheckGroup, Field as RdField } from "@/app/components/rd/field";
 import { Fold as RdFold } from "@/app/components/rd/fold";
-import { Button as RdButton } from "@/app/components/rd/button";
+import { Button as RdButton, type ButtonVariant } from "@/app/components/rd/button";
 import { Select as RdSelect } from "@/app/components/rd/select";
 import { DiffField } from "@/app/components/rd/diff-list";
 import { Explain } from "@/app/components/rd/explain";
@@ -119,9 +119,13 @@ export const Badge = ({ tone = "neutral", children }: { tone?: string; children:
   <span className={"badge-s " + tone}>{children}</span>
 );
 
-export const Btn = ({ variant, sm, children, ...rest }: { variant?: string; sm?: boolean; children: ReactNode } & AnyProps) => (
-  <button className={"btn " + (variant || "") + (sm ? " sm" : "")} {...rest}>{children}</button>
-);
+/* 改版页面里就是 rd 按钮，弹窗底栏和页面只有一套样子（DT-22）；旧页面不变。 */
+export const Btn = ({ variant, sm, children, ...rest }: { variant?: string; sm?: boolean; children: ReactNode } & AnyProps) => {
+  const surface = useRdSurface();
+  return surface
+    ? <RdButton variant={(variant || "secondary") as ButtonVariant} size={sm ? "sm" : "md"} {...rest}>{children}</RdButton>
+    : <button className={"btn " + (variant || "") + (sm ? " sm" : "")} {...rest}>{children}</button>;
+};
 
 export const Toggle = ({ on, danger, onClick }: { on?: boolean; danger?: boolean; onClick?: () => void }) => (
   <div className={"sw " + (on ? "on " : "") + (danger && on ? "danger-on" : "")} onClick={onClick} role="switch" aria-checked={!!on} />
@@ -872,6 +876,23 @@ export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, complet
   const brief = buildOperatorBrief(action, !!amplifies, !!hasEdit, auditSink === "local-history", kind, stated)
     .map((row) => row.label === "影响" && completionCopy ? { ...row, text: completionCopy } : row);
   const detailText = compactText(plainText(detail));
+  // 改版页面的摘要也默认收起，标题行写影响（OP-48）。金额、对象、前后值放在框里常显的地方，不靠摘要。
+  // 要做什么就是框的标题；说明和影响一字不差时只写一处（VS-105）。
+  if (surface) {
+    const impact = brief.find((row) => row.label === "影响")?.text;
+    return (
+      <details className="operator-brief rd-brief">
+        <summary>
+          <span className="rd-brief-head"><b>执行摘要</b>{impact && <span>{impact}</span>}</span>
+          <span className="rd-brief-toggle"><span className="brief-closed">查看详情</span><span className="brief-open">收起</span></span>
+        </summary>
+        <dl className="rd-brief-rows">
+          {brief.filter((row) => row.label !== "要做什么").map((row) => <div key={row.label}><dt>{row.label}</dt><dd><AutoGloss>{row.text}</AutoGloss></dd></div>)}
+          {detailText && detailText !== compactText(impact ?? "") && <div><dt>说明</dt><dd><AutoGloss>{detail}</AutoGloss></dd></div>}
+        </dl>
+      </details>
+    );
+  }
   const rows = (
     <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
       {brief.map((row) => (
@@ -892,19 +913,6 @@ export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, complet
       )}
     </div>
   );
-  // 改版页面的摘要也默认收起，标题行写影响（OP-48）。金额、对象、前后值放在框里常显的地方，不靠摘要。
-  if (surface) {
-    const impact = brief.find((row) => row.label === "影响")?.text;
-    return (
-      <details className="operator-brief rd-brief">
-        <summary>
-          <span className="rd-brief-head"><b>执行摘要</b>{impact && <span>{impact}</span>}</span>
-          <span className="rd-brief-toggle"><span className="brief-closed">查看详情</span><span className="brief-open">收起</span></span>
-        </summary>
-        {rows}
-      </details>
-    );
-  }
   return (
     <details className="tint brand operator-brief" style={{ marginBottom: 16, border: 0 }}>
       <summary
@@ -1748,6 +1756,10 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
     latestValueRef.current = next;
     onChange(next);
   };
+  // 改版页面用 rd 下拉，和框里别的控件同高同样子；旧页面仍是原生下拉（CP-57）。
+  const choice = ({ label, proof, current, disabled, onValue, options }: { label: string; proof?: string; current: string; disabled?: boolean; onValue: (next: string) => void; options: readonly { value: string; label: ReactNode; disabled?: boolean }[] }) => surface
+    ? <RdSelect aria-label={label} data-proof={proof} value={current} disabled={disabled} onChange={onValue} options={options} />
+    : <select className="fld" aria-label={label} data-proof={proof} value={current} disabled={disabled} onChange={(event) => onValue(event.target.value)}>{options.map((o) => <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>)}</select>;
   const textArea = (key: string, label: string, placeholder: string, rows = 3, maxLength?: number) => (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}</span>
@@ -1768,10 +1780,10 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
     return (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}</span>
-      <select className="fld" data-proof={proof} value={current} disabled={options.length === 0} onChange={(e) => onValueChange ? onValueChange(e.target.value) : set(key, e.target.value)}>
-        {unavailableLabel && !options.includes(current) && <option value={current} disabled>{unavailableLabel}</option>}
-        {options.length === 0 ? <option value="">暂无可选项</option> : options.map((o) => <option key={o} value={o}>{typeof labels?.[o] === "string" ? displayOption(String(labels[o])) : labels?.[o] ?? displayOption(o)}</option>)}
-      </select>
+      {choice({ label, proof, current, disabled: options.length === 0, onValue: (next) => onValueChange ? onValueChange(next) : set(key, next), options: [
+        ...(unavailableLabel && !options.includes(current) ? [{ value: current, label: unavailableLabel, disabled: true }] : []),
+        ...(options.length === 0 ? [{ value: "", label: "暂无可选项" }] : options.map((o) => ({ value: o, label: typeof labels?.[o] === "string" ? displayOption(String(labels[o])) : labels?.[o] ?? displayOption(o) }))),
+      ] })}
     </label>
     );
   };
@@ -1869,7 +1881,8 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
       const next = (value[target.key] ?? "").split(",").map((item) => item.trim()).filter(Boolean);
       return next.some((item) => !initial.includes(item));
     });
-    const legend = spec.title ?? "填写设置";
+    // 改版页面不写「填写设置」：框的标题已经说了，小标题和字段名叠在一起（VS-104）。
+    const legend = spec.title ?? (surface ? undefined : "填写设置");
     const feedback = spec.feedback?.(value);
     const issues = surface ? multiFieldIssues(spec, value) : {};
     const fieldError = (key: string) => (attempted || leftFields[key] ? issues[key] : undefined) ?? (feedback?.invalid && feedback.field === key && (attempted || formLeft) ? feedback.message : undefined);
@@ -2053,9 +2066,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
           {spec.roles.map((r) => (
             <label key={r.key} className="field" style={{ marginBottom: 0 }}>
               <span>{r.label} 授权 · 当前 <span className="mono">{r.current}</span></span>
-              <select className="fld" data-proof={`permission-grant-${r.key}`} value={value[`grant.${r.key}`] ?? r.current} onChange={(e) => set(`grant.${r.key}`, e.target.value)}>
-                {grants.map((g) => <option key={g} value={g}>{g}</option>)}
-              </select>
+              {choice({ label: `${r.label} 授权`, proof: `permission-grant-${r.key}`, current: value[`grant.${r.key}`] ?? r.current, onValue: (next) => set(`grant.${r.key}`, next), options: grants.map((g) => ({ value: g, label: g })) })}
             </label>
           ))}
         </div>
@@ -2235,9 +2246,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
         <span className="bf-legend">创建文案对比测试</span>
         <label className="field" style={{ marginBottom: 10 }}>
           <span>选择文案</span>
-          <select className="fld" aria-label="选择文案" value={copy?.value ?? ""} onChange={(event) => changeCopy(event.target.value)}>
-            {spec.copies.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-          </select>
+          {choice({ label: "选择文案", current: copy?.value ?? "", onValue: changeCopy, options: spec.copies })}
         </label>
         <div className="itint" style={{ marginBottom: 10 }}>
           从同一文案的非草稿版本中至少选 2 个，分流比例加起来须为 100%。
@@ -2252,9 +2261,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
               <div key={index} className="tint" data-proof={`experiment-variant-${index}`} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10, alignItems: "end" }}>
                 <label className="field" style={{ marginBottom: 0 }}>
                   <span>变体 {String.fromCharCode(65 + index)} · 内容版本</span>
-                  <select className="fld" aria-label={`变体 ${String.fromCharCode(65 + index)} 内容版本`} value={currentVersion} onChange={(event) => set(`variantVersion.${index}`, event.target.value)}>
-                    {options.map((item) => <option key={item.value} value={item.value} disabled={item.value !== currentVersion && unavailable.has(item.value)}>{item.label}</option>)}
-                  </select>
+                  {choice({ label: `变体 ${String.fromCharCode(65 + index)} 内容版本`, current: currentVersion, onValue: (next) => set(`variantVersion.${index}`, next), options: options.map((item) => ({ value: item.value, label: item.label, disabled: item.value !== currentVersion && unavailable.has(item.value) })) })}
                 </label>
                 <label className="field" style={{ marginBottom: 0 }}>
                   <span>分流比例 · {split || 0}%</span>
@@ -2505,7 +2512,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
     return (
       <div className="field" data-business-form="disclosure-jurisdiction">
         <div className="grid g-2" style={{ gap: 10 }}>
-          <RdField label="适用地区代码" required error={codeError}>
+          <RdField label="适用地区代码" required={spec.mode === "create"} error={codeError}>
             {(control) => <input
               {...control}
               className="fld"
@@ -2572,7 +2579,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
     };
     return (
       <div className="field" data-business-form="disclosure-matrix">
-        <span className="bf-legend">{spec.mode === "create" ? "为地区指定披露版本" : "修改地区的披露版本"}</span>
+        {!surface && <span className="bf-legend">{spec.mode === "create" ? "为地区指定披露版本" : "修改地区的披露版本"}</span>}
         <div className={spec.mode === "create" ? "grid g-2" : undefined} style={{ gap: 10 }}>
           {spec.mode === "create" && select("jurisdictionCode", "适用地区", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels, undefined, (next) => {
             const selected = spec.jurisdictionOptions?.find((item) => item.value === next);
@@ -2734,9 +2741,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
           {spec.typeLocked ? (
             <label className="field" style={{ marginBottom: 0 }}>
               <span>类型（已发券，不可修改）</span>
-              <select className="fld" data-proof="voucher-type" disabled value={spec.currentType}>
-                <option value={spec.currentType}>{spec.currentType === "percent" ? "折扣" : "满减"}</option>
-              </select>
+              {choice({ label: "类型", proof: "voucher-type", current: spec.currentType ?? "", disabled: true, onValue: () => undefined, options: [{ value: spec.currentType ?? "", label: spec.currentType === "percent" ? "折扣" : "满减" }] })}
             </label>
           ) : select("type", "类型", ["fixed", "percent"], "voucher-type", { fixed: "满减", percent: "折扣" })}
         </div>
@@ -3749,7 +3754,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     }
   };
   const submitLabel = pendingReason !== undefined ? "重试原操作" : approvalRecovery === "retry" ? "按原操作重试" : approval ? "提交审批" : confirmLabel;
-  // 资金信息排在要填的字段前，理由框固定在底部时不会把它盖住（OP-47）。改一个值的框方向随输入变，放在输入框下面，不然打字时输入框会跳。
+  // 资金信息排在要填的字段前（OP-47）。改一个值的框方向随输入变，放在输入框下面，不然打字时输入框会跳。
   const coverageFirst = surface && !approval && !spec;
   const coverageInFacts = coverageFirst && !!facts;
   const coverageNotice = effectiveAmplifies && (
@@ -3793,7 +3798,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
           </Btn>
         )}
         {!approvalOnlyLookup && (surface ? (
-          <RdButton variant={confirmTone} icon={<Icon name="check" size={15} />} loading={submitting} loadingText="提交中…"
+          <RdButton variant={confirmTone} loading={submitting} loadingText="提交中…"
             disabledReason={canConfirm || submitting ? undefined : missing.length ? missing.map((item, index) => <Fragment key={index}>{index > 0 && "；"}{item}</Fragment>) : "暂时无法提交"}
             onBlockedClick={() => setAttempted(true)} onClick={() => void handleConfirm()}>
             {submitLabel}
@@ -3972,10 +3977,13 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   );
 }
 
-/* 保留旧调用契约，反馈交给根布局，页面/抽屉卸载后仍可见。 */
-export function useToast(): [ReactNode, (s: string) => void] {
+/* 页面没传提示类型时按这几种明确的说法判断，别的还是信息。页面都传 kind 后删掉。 */
+const TOAST_KIND_BY_WORDS: readonly (readonly [RegExp, ToastKind])[] = [[/^已(?!.*但)/, "success"], [/失败|错误/, "error"], [/未确认|待确认|未完成|不能|无法|没有提交/, "warn"]];
+
+/* 保留旧调用契约，反馈交给根布局，页面/抽屉卸载后仍可见。第二个参数写提示类型（CP-70）：成功 success、失败 error、要人注意或结果未知 warn，其余 info。 */
+export function useToast(): [ReactNode, (s: string, kind?: ToastKind) => void] {
   const key = useId();
-  const show = useCallback((title: string) => { useUI.getState().pushToast({ kind: "info", title, key }); }, [key]);
+  const show = useCallback((title: string, kind?: ToastKind) => { useUI.getState().pushToast({ kind: kind ?? TOAST_KIND_BY_WORDS.find(([words]) => words.test(title))?.[1] ?? "info", title, key }); }, [key]);
   return [null, show];
 }
 

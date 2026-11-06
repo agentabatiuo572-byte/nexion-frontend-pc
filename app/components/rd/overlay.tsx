@@ -166,7 +166,7 @@ export function Drawer({ open, onClose, title, sub, explain, icon, tone = "role-
 /**
  * 抽屉底部的决定区。危险决定在左，主决定在右，分开放（DP-40）；只有危险决定时放右边。
  * note 只写现在能不能做、为什么不能（阻断原因常显，DP-03）；按下去会怎样、要不要审批这类后果说明传 explain，
- * 收进提示图标（DP-06）：有 note 时跟在 note 后面，没有时放在按钮行最左。
+ * 收进提示图标（DP-06）：有 note 时跟在 note 后面，没有时紧挨右边的按钮，不孤零零留在左下角（VS-85）。
  */
 /** 传了片段但里面的按钮都没渲染时，算没传。 */
 const filled = (node: ReactNode) => Children.toArray(isValidElement<{ children?: ReactNode }>(node) && node.type === Fragment ? node.props.children : node).length > 0;
@@ -178,9 +178,9 @@ export function Decision({ note, explain, danger, others, primary }: { note?: Re
     <>
       {note && <p className="rd-decision-note">{note}{mark}</p>}
       <div className="rd-decision">
-        {!note && mark}
         {paired && danger}
         <span className="rd-decision-spacer" />
+        {!note && mark}
         {others}
         {primary}
         {!paired && danger}

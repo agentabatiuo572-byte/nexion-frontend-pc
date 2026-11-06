@@ -3,8 +3,6 @@
  * 只写现有功能，步骤里的按钮名和页面一致，写不准的标「待确认」（DP-33）。
  * 每页迁移时在这里加一条；原来页底的规则说明、长页头说明写进三块正文，口径全文放 more。
  */
-import type { ReactNode } from "react";
-
 export interface PageGuideContent {
   /** 这页管什么，一句话，不超过 30 字。 */
   purpose: string;
@@ -12,8 +10,8 @@ export interface PageGuideContent {
   tasks: readonly { title: string; steps: readonly string[] }[];
   /** 这页特有的词，不超过 5 个。 */
   terms: readonly { name: string; text: string }[];
-  /** 底部「技术信息」：口径全文这类第三层内容（TX-37）。 */
-  more?: ReactNode;
+  /** 底部「技术信息」：口径全文这类第三层内容（TX-37）。一句一行显示，句号和分号处换行。 */
+  more?: string;
 }
 
 const PAGE_GUIDES: Record<string, PageGuideContent> = {

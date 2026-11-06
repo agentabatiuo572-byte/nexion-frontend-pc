@@ -26,10 +26,12 @@
   --rd-text-disabled: #6B7280; /* 禁用、占位，不承载信息 */
   --rd-text-on-brand: #0A0A0A;
   --rd-text-on-danger: #FFFFFF;
+  --rd-disabled-bg: rgba(255, 255, 255, 0.08); /* 禁用控件底：colorBgContainerDisabled */
 
   /* 线 */
   --rd-line: #26272C;          /* 表格行分隔、图表网格 */
   --rd-line-strong: #34363C;   /* 坐标轴、分割条 */
+  --rd-control-line: #6A707C;  /* 勾选框的边：对面板 3.5:1，图标档（VS-05） */
   --rd-focus: #9EDC1D;         /* 焦点环 */
 
   /* 品牌 */
@@ -152,10 +154,12 @@
   --rd-text-disabled: #9AA0A9;
   --rd-text-on-brand: #0A0A0A;
   --rd-text-on-danger: #FFFFFF;
+  --rd-disabled-bg: rgba(0, 0, 0, 0.04);
 
   /* 线 */
   --rd-line: #E2E5EA;
   --rd-line-strong: #C9CED6;
+  --rd-control-line: #8A919C;  /* 对白 3.2:1 */
   --rd-focus: #4F7100;
 
   /* 品牌：按钮底仍是柠檬绿；文字和选中点用深柠檬，柠檬绿在白底上只有 1.7:1 */
