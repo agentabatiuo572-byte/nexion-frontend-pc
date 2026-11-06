@@ -18,7 +18,6 @@ import {
   fetchL2RetentionMatrix,
   type L2FunnelQuery,
 } from "@/lib/admin/l-client";
-import { confirm } from "@/lib/store/ui";
 import { PaginationExemptionList } from "../design-kit";
 import { LDataState, num, rec, rows, str, strings, type KpiRow } from "./live-data";
 import { formatB3RefOption } from "@/lib/admin/b3-ref-display";
@@ -160,34 +159,31 @@ export function L2HeaderActions({ ctx }: { ctx: LCtx }) {
   const detailedAttempt = hasDetailedL2(ctx.biData?.l2);
   const liveStages = detailedAttempt ? [] : readL2LiveStages(ctx.biData?.l2);
   const exportable = ctx.l2SliceExportable !== false && (complete || liveStages.length > 0);
-  const exportFunnel = async () => {
-    const ok = await confirm({
-      title: complete ? "导出用户转化与留存数据" : "导出用户各阶段人数",
-      message: complete
+  const exportFunnel = () => {
+    ctx.openActionConfirm({ briefKind: "export",
+      action: complete ? "导出用户转化与留存数据" : "导出用户各阶段人数",
+      detail: complete
         ? "导出各步骤人数、转化率，以及按注册时间分组的留存率。仅包含汇总数据，不含手机号、地址等个人信息；操作会留记录。"
         : "详细转化与留存数据暂不可用。本次只导出页面已显示的各阶段人数，不计算转化率或留存率；不含手机号、地址等个人信息。",
-      confirmLabel: "导出",
+      reasonMax: 200,
+      run: async (reason) => {
+        await ctx.biActions?.createReport({
+          exportType: complete ? "漏斗序列" : "漏斗生命周期事实",
+          timeRange: complete ? "当前同批用户时段" : "当前数据",
+          fields: complete ? "漏斗去重人数/CVR/cohort 留存率" : "注册/资料/订单/钱包活动聚合计数",
+          piiLevel: "NONE",
+          maskPolicy: "NONE",
+          recipient: "BI 管理员",
+          ticket: "L2-FUNNEL",
+          cohort: complete ? ctx.l2Query?.cohort : undefined,
+          phase: complete ? ctx.l2Query?.phase : undefined,
+          locale: complete ? ctx.l2Query?.locale : undefined,
+          ref: complete ? ctx.l2Query?.ref : undefined,
+        }, reason);
+        await ctx.reloadBi?.();
+        ctx.toast(complete ? "用户转化与留存数据导出任务已提交" : "用户各阶段人数导出任务已提交");
+      },
     });
-    if (!ok) return;
-    try {
-      await ctx.biActions?.createReport({
-        exportType: complete ? "漏斗序列" : "漏斗生命周期事实",
-        timeRange: complete ? "当前同批用户时段" : "当前数据",
-        fields: complete ? "漏斗去重人数/CVR/cohort 留存率" : "注册/资料/订单/钱包活动聚合计数",
-        piiLevel: "NONE",
-        maskPolicy: "NONE",
-        recipient: "BI 管理员",
-        ticket: "L2-FUNNEL",
-        cohort: complete ? ctx.l2Query?.cohort : undefined,
-        phase: complete ? ctx.l2Query?.phase : undefined,
-        locale: complete ? ctx.l2Query?.locale : undefined,
-        ref: complete ? ctx.l2Query?.ref : undefined,
-      }, complete ? "导出漏斗同批用户汇总，用于转化分析" : "导出当前各阶段人数，用于数据核对");
-      await ctx.reloadBi?.();
-      ctx.toast(complete ? "用户转化与留存数据导出任务已提交" : "用户各阶段人数导出任务已提交");
-    } catch (error) {
-      ctx.toast(error instanceof Error ? `导出任务提交失败 · ${displayAdminError(error)}` : "导出任务提交失败 · 请稍后重试");
-    }
   };
   return (
     <>

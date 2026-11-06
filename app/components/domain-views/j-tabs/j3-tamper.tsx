@@ -21,7 +21,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 
 const W = 720;
 const H = 200;
-/** 阈值配置与报表导出各占一个槽位:输入(阈值 / 窗口)没变就复用命令号,变了才铸新号。
+/** 阈值配置与报表导出各占一个槽位:输入(阈值 / 窗口和理由)没变就复用命令号,变了才铸新号。
  *  落 sessionStorage,刷新后「结果未确认」的重试仍是同一命令号,后端才能去重。 */
 const commandAttempt = createSlotAttemptStore({
   storageKey: "nexion-admin-j3-tamper-commands-v1",
@@ -33,7 +33,7 @@ function j3ErrorText(error: unknown) {
   return error instanceof Error ? displayAdminError(error) : "操作失败，请刷新页面后重试。";
 }
 
-/** J3 页头 CTA(挂 DomainHeader 右槽):导出报表(无 操作确认)+ 告警阈值配置(操作确认)。 */
+/** J3 页头操作：导出报表和配置告警阈值。 */
 export function J3HeaderActions({ ctx }: { ctx: JCtx }) {
   const { toast, actions, emergency } = ctx;
   const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
@@ -50,9 +50,8 @@ export function J3HeaderActions({ ctx }: { ctx: JCtx }) {
     setPendingReport(null);
     toast("已放弃这次下载；下次点击导出会重新生成报表。");
   };
-  const downloadReport = async () => {
+  const downloadReport = () => {
     if ((!hasData && !retryableReport) || exporting) return;
-    setExporting(true);
     if (retryableReport) {
       try {
         downloadJ3ReportFile(retryableReport);
@@ -60,47 +59,52 @@ export function J3HeaderActions({ ctx }: { ctx: JCtx }) {
         toast(`已重新下载 ${retryableReport.window} 隐藏敏感信息的报表 `);
       } catch (error) {
         toast(`报表已生成，但下载仍失败；可以再试一次下载，或放弃后重新生成 · ${j3ErrorText(error)}`);
-      } finally {
-        setExporting(false);
       }
       return;
     }
-    const exportKey = commandAttempt.resolve(REPORT_EXPORT_SLOT, window, () => `j3-report-${crypto.randomUUID()}`);
-    let report: TamperReport;
-    try {
-      report = await actions.createJ3Report(
-        window, `导出 ${window} 篡改拦截报表（已隐藏敏感信息）`, exportKey,
-      );
-    } catch (error) {
-      if (isEmergencyOutcomeUncertain(error)) {
-        toast("导出结果暂未确认。可以再点一次导出（不会重复生成），或刷新后到操作记录核对。");
-      } else {
+    ctx.openActionConfirm({ briefKind: "export",
+      action: `导出 ${window} 报表`,
+      detail: <>导出当前窗口内的篡改拦截报表，文件隐藏敏感信息，操作会留记录。</>,
+      reasonMax: 200,
+      run: async (reason) => {
+        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(reason));
+        const reasonHash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+        const fingerprint = `${window}:${reasonHash}`;
+        const exportKey = commandAttempt.resolve(REPORT_EXPORT_SLOT, fingerprint, () => `j3-report-${crypto.randomUUID()}`);
+        setExporting(true);
+        let report: TamperReport;
+        try {
+          report = await actions.createJ3Report(window, reason, exportKey);
+        } catch (error) {
+          if (isEmergencyOutcomeUncertain(error)) {
+            toast("导出结果暂未确认。可用同一窗口和理由重新提交，或到操作记录核对。");
+            return;
+          }
+          commandAttempt.forget(REPORT_EXPORT_SLOT);
+          throw error;
+        } finally {
+          setExporting(false);
+        }
+        // 服务端已生成报表，后续只重试下载该文件。
         commandAttempt.forget(REPORT_EXPORT_SLOT);
-        toast(`导出失败 · ${j3ErrorText(error)}`);
-      }
-      setExporting(false);
-      return;
-    }
-    // API 成功就是服务端提交边界；从这里开始只允许重试本地下载，不能再次生成报表或审计。
-    commandAttempt.forget(REPORT_EXPORT_SLOT);
-    setPendingReport(report);
-    try {
-      downloadJ3ReportFile(report);
-      setPendingReport(null);
-      toast(`已导出 ${report.window} 隐藏敏感信息的报表 · ${report.eventCount} 起拦截`);
-    } catch (error) {
-      toast(`报表已生成，但下载失败；可以再试一次下载，或放弃后重新生成 · ${j3ErrorText(error)}`);
-    } finally {
-      setExporting(false);
-    }
+        setPendingReport(report);
+        try {
+          downloadJ3ReportFile(report);
+          setPendingReport(null);
+          toast(`已导出 ${report.window} 隐藏敏感信息的报表 · ${report.eventCount} 起拦截`);
+        } catch (error) {
+          toast(`报表已生成，但下载失败；可以再试一次下载，或放弃后重新生成 · ${j3ErrorText(error)}`);
+        }
+      },
+    });
   };
   return (
     <>
       {canExport && (
         <>
-          <button className="f-cta neutral" disabled={exporting || (!hasData && !retryableReport)} onClick={() => void downloadReport()} title={retryableReport ? "只重新下载已生成的报表，不会重新生成" : !hasData ? "当前筛选结果为空，不能导出" : `导出 ${window} 隐藏敏感信息的报表`}>
+          <button className="f-cta neutral" disabled={exporting || (!hasData && !retryableReport)} onClick={downloadReport} title={retryableReport ? "只重新下载已生成的报表，不会重新生成" : !hasData ? "当前筛选结果为空，不能导出" : `导出 ${window} 隐藏敏感信息的报表`}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
-            {exporting ? (retryableReport ? "下载中…" : "生成中…") : retryableReport ? `重试下载 ${window} 报表` : `导出 ${window} 报表`}
+            {exporting ? "生成中…" : retryableReport ? `重试下载 ${window} 报表` : `导出 ${window} 报表`}
           </button>
           {retryableReport && (
             <button className="f-cta neutral" disabled={exporting} onClick={abandonPendingReport} title="放弃后可以重新生成">

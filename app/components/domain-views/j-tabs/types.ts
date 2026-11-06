@@ -11,6 +11,7 @@ export type ActionConfirmReq = {
   action: ReactNode;
   detail: ReactNode;
   completionCopy?: string;
+  reasonMax?: number;
   amplifies?: boolean;
   coverage?: CoverageSnapshot;
   edit?: EditSpec;

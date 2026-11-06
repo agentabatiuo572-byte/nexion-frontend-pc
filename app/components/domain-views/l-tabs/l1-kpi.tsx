@@ -63,24 +63,28 @@ export function L1HeaderActions({ ctx, source }: { ctx: LCtx; source?: L1ExportS
     exportData, ctx.biLoading ? "loading" : ctx.biError ? "error" : source?.status ?? "ready",
   );
   const complete = exportMode === "series";
-  const exportKpi = async () => {
-    if (!ctx.canExport) return;
-    try {
-      const submittedMode = await submitL1Export(
-        exportData,
-        sourceUnavailable,
-        ctx.biActions?.createReport,
-        source?.query ?? { window: "7d" },
-      );
-      if (!submittedMode) {
-        ctx.toast("关键指标暂时不能导出，请刷新后再试");
-        return;
-      }
-      await ctx.reloadBi?.();
-      ctx.toast(submittedMode === "series" ? "关键指标趋势已导出" : "关键指标当前汇总已导出");
-    } catch (error) {
-      ctx.toast(error instanceof Error ? `导出任务提交失败 · ${displayAdminError(error)}` : "导出任务提交失败 · 请稍后重试");
-    }
+  const exportKpi = () => {
+    const createReport = ctx.biActions?.createReport;
+    if (!ctx.canExport || !exportable || !createReport) return;
+    ctx.openActionConfirm({ briefKind: "export",
+      action: complete ? "导出关键指标序列" : "导出关键指标当前汇总",
+      detail: complete ? "按当前报表筛选范围导出关键指标趋势，不含用户明细。" : "导出当前可用的关键指标汇总，不含用户明细。",
+      reasonMax: 200,
+      run: async (reason) => {
+        const submittedMode = await submitL1Export(
+          exportData,
+          sourceUnavailable,
+          (input) => createReport(input, reason),
+          source?.query ?? { window: "7d" },
+        );
+        if (!submittedMode) {
+          ctx.toast("关键指标暂时不能导出，请刷新后再试");
+          return;
+        }
+        await ctx.reloadBi?.();
+        ctx.toast(submittedMode === "series" ? "关键指标趋势已导出" : "关键指标当前汇总已导出");
+      },
+    });
   };
   return (
     <>

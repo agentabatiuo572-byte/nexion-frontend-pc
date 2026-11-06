@@ -3,7 +3,6 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import { useEffect, useId, useRef, useState } from "react";
 import { TabGroup } from "@/app/components/kit/tab-group";
-import { displayAdminError } from "@/lib/admin/error-messages";
 import { LDataState } from "./live-data";
 import { readL4Operations, type L4DistRow, type L4OperationsData } from "./l4-live-data";
 import type { LCtx } from "./types";
@@ -35,14 +34,9 @@ export function L4HeaderActions({ ctx }: { ctx: LCtx }) {
   const canExportCurrent = ctx.canExport && data?.available && queryMatchesData
     && !ctx.biLoading && !ctx.biError;
 
-  const exportCurrent = async () => {
+  const exportCurrent = () => {
     if (exportingRef.current || !canExportCurrent || !data) return;
-    const now = Date.now();
-    if (lastSuccessAtRef.current && now - lastSuccessAtRef.current < 2_000) return;
-    if (lastSuccessAtRef.current) {
-      intentKeyRef.current = { fingerprint: "", key: "" };
-      lastSuccessAtRef.current = 0;
-    }
+    if (Date.now() - lastSuccessAtRef.current < 2_000) return;
     const range = [
       `period=${query.period}`,
       `phase=${query.phase}`,
@@ -58,23 +52,28 @@ export function L4HeaderActions({ ctx }: { ctx: LCtx }) {
       recipient: "运营管理员",
       ticket: "L4-OPERATIONS",
     };
-    const reason = `导出 ${data.period.label} ${data.phaseFilter === "ALL" ? "全部阶段" : data.phaseFilter} 聚合运营报表`;
-    const fingerprint = JSON.stringify([input, reason]);
-    if (intentKeyRef.current.fingerprint !== fingerprint) {
-      intentKeyRef.current = { fingerprint, key: `l4-ops-${now}-${Math.random().toString(36).slice(2, 10)}` };
-    }
-    exportingRef.current = true;
-    setExporting(true);
-    try {
-      await ctx.biActions?.createReport(input, reason, intentKeyRef.current.key);
-      lastSuccessAtRef.current = Date.now();
-      ctx.toast("运营报表已导出（按当前周期和阶段）");
-    } catch (error) {
-      ctx.toast(error instanceof Error ? `导出任务提交失败 · ${displayAdminError(error)}` : "导出任务提交失败 · 请稍后重试");
-    } finally {
-      exportingRef.current = false;
-      setExporting(false);
-    }
+    ctx.openActionConfirm({ briefKind: "export",
+      action: "导出运营报表",
+      detail: <>按 <b>{data.period.label} · {data.phaseFilter === "ALL" ? "全部阶段" : data.phaseFilter}</b> 导出运营汇总，不含用户明细。</>,
+      reasonMax: 200,
+      run: async (reason) => {
+        const fingerprint = JSON.stringify([input, reason]);
+        if (lastSuccessAtRef.current || intentKeyRef.current.fingerprint !== fingerprint) {
+          intentKeyRef.current = { fingerprint, key: `l4-ops-${Date.now()}-${Math.random().toString(36).slice(2, 10)}` };
+          lastSuccessAtRef.current = 0;
+        }
+        exportingRef.current = true;
+        setExporting(true);
+        try {
+          await ctx.biActions?.createReport(input, reason, intentKeyRef.current.key);
+          lastSuccessAtRef.current = Date.now();
+          ctx.toast("运营报表已导出（按当前周期和阶段）");
+        } finally {
+          exportingRef.current = false;
+          setExporting(false);
+        }
+      },
+    });
   };
 
   return (

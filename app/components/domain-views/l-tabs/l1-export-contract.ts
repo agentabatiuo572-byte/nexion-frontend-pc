@@ -11,7 +11,7 @@ export type L1ExportSource = {
   status: "ready" | "loading" | "error";
 };
 
-type CreateReport = (input: LReportCreateInput, reason: string) => Promise<void>;
+type CreateReport = (input: LReportCreateInput) => Promise<void>;
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -91,10 +91,6 @@ export async function submitL1Export(
     maskPolicy: "NONE",
     recipient: "BI 管理员",
     ticket: "L1-KPI",
-  }, complete
-    ? "导出关键指标聚合序列用于经营复盘"
-    : detailedSnapshot
-      ? "趋势数据不足，导出当前关键指标用于经营核对"
-      : "导出当前累计数用于经营核对");
+  });
   return mode;
 }
