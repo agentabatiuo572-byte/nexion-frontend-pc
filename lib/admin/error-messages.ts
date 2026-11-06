@@ -157,6 +157,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   STATUS_REQUIRED: "缺少要设置的会话状态，本次未修改。请重新打开操作。",
   STATUS_UNSUPPORTED: "该会话状态不支持此操作，本次未修改。请重新加载会话核对。",
   SUPPORT_REPLY_REQUIRED_BEFORE_CLOSE: "这段会话还有待处理消息，本次未解决或归档。请先回复客户。",
+  SUPPORT_REPLY_TARGETS_INVALID: "这次发送附带了不支持的待回复范围，本次未发送。请返回专属会话核对原会话后再发送。",
+  SUPPORT_REPLY_TARGET_INVALID: "待回复范围包含重复、不属于当前客户或已无法核对的消息，本次未发送。请重新加载当前客户会话并核对回复范围。",
   CUSTOMER_TAG_REQUIRED: "标签内容为空，本次未保存。请填写标签。",
   CUSTOMER_TAG_TOO_LONG: "标签内容超过允许长度，本次未保存。请缩短标签。",
   CUSTOMER_NOTE_REQUIRED: "备注内容为空，本次未保存。请填写备注。",
