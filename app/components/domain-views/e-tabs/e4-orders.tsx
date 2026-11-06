@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { formatBusinessTime } from "@/lib/admin/business-time";
 import { CodeTag, Badge, DataListPager } from "../design-kit";
 import { TabGroup } from "@/app/components/kit/tab-group";
 import type { E4PendingApproval } from "@/lib/admin/e4-client";
@@ -26,7 +27,9 @@ export function E4PendingApprovalDetails({ approval }: { approval: E4PendingAppr
       {(approval.action || approval.submittedBy || approval.submittedAt) && <div className="muted tiny" style={{ marginTop: 4, overflowWrap: "anywhere" }}>
         {approval.action && <span>{approval.action}</span>}
         {approval.submittedBy && <span> · {approval.submittedBy}</span>}
-        {approval.submittedAt && <span> · <time dateTime={approval.submittedAt}>{approval.submittedAt.replace("T", " ")}</time></span>}
+        {approval.submittedAt && <span> · <time dateTime={`${approval.submittedAt}+08:00`}>{formatBusinessTime(approval.submittedAt, {
+          year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+        })}</time></span>}
       </div>}
     </>
   );

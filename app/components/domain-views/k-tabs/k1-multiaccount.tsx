@@ -1,6 +1,7 @@
 "use client";
 
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { formatBusinessTime } from "@/lib/admin/business-time";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DataListPager, Modal } from "../design-kit";
@@ -48,7 +49,9 @@ function PendingClusterApproval({ approval }: { approval: NonNullable<K1Cluster[
     <span className="bdg warn">待审批</span>
     {approval.action && approval.submittedBy && approval.submittedAt && <div className="tiny">
       {approval.action} · {approval.submittedBy} · {
-        <time dateTime={`${approval.submittedAt}Z`}>{approval.submittedAt.replace("T", " ")} UTC</time>
+        <time dateTime={`${approval.submittedAt}+08:00`}>{formatBusinessTime(approval.submittedAt, {
+          year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+        })}</time>
       }
     </div>}
   </div>;
@@ -482,26 +485,26 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   };
 
   const savedClusterAttempts = commandAttempt.list();
-  const recoverableProposal = cur ? Object.entries(CLUSTER_PROPOSAL_RECEIPTS).flatMap(([action, [code, title]]) => {
+  const recoverableProposals = cur ? Object.entries(CLUSTER_PROPOSAL_RECEIPTS).flatMap(([action, [code, title]]) => {
     const prefix = `cluster-${action}:${cur.id}:`;
     return savedClusterAttempts.filter(attempt => attempt.fingerprint.startsWith(prefix)
       && /^\d+$/.test(attempt.fingerprint.slice(prefix.length)))
       .map(attempt => ({ scope: attempt.fingerprint, code, title, key: attempt.commandKey }));
-  })[0] : undefined;
+  }) : [];
 
   const recoverClusterProposal = async () => {
-    if (!cur || !recoverableProposal?.key) return;
-    const { key, scope, code, title } = recoverableProposal;
+    if (!cur) return;
     try {
-      const receipt = await fetchA2ProposalByKey(key);
-      if (!receipt?.mine || receipt.obj !== cur.id || receipt.action !== title
-          || (receipt.operationCode && receipt.operationCode !== code)) {
-        ctx.toast("暂未找到本次提交的工单，请稍后按原提交号查询。");
+      for (const { key, scope, code, title } of recoverableProposals) {
+        const receipt = await fetchA2ProposalByKey(key);
+        if (!receipt?.mine || receipt.obj !== cur.id || receipt.action !== title
+            || (receipt.operationCode && receipt.operationCode !== code)) continue;
+        commandAttempt.forget(scope, key);
+        ctx.toast(`已找回工单 ${receipt.id}`);
+        await ctx.reloadKRisk({ multiAccount: pageQuery });
         return;
       }
-      commandAttempt.forget(scope, key);
-      ctx.toast(`已找回工单 ${receipt.id}`);
-      await ctx.reloadKRisk({ multiAccount: pageQuery });
+      ctx.toast("暂未找到本次提交的工单，请稍后按原提交号查询。");
     } catch (error) {
       ctx.toast(confirmedK1FailureText(error));
     }
@@ -1067,7 +1070,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             <span className="sub">· 连线表示账户之间共有的设备、支付工具或 IP</span>
             {cur.pendingApproval && <PendingClusterApproval approval={cur.pendingApproval} />}
             <div className="r">
-              {recoverableProposal && <button className="l-btn" onClick={() => void recoverClusterProposal()}>找回提交结果</button>}
+              {recoverableProposals.length > 0 && <button className="l-btn" onClick={() => void recoverClusterProposal()}>找回提交结果</button>}
               {canWrite && <button className="l-btn" disabled={Boolean(cur.pendingApproval)} onClick={() => reviewNote(cur)}>人工复审备注</button>}
               {cur.status === "detected" && canFlag && <button className="l-btn" disabled={Boolean(cur.pendingApproval)} onClick={() => flagCluster(cur)}>标记为可疑</button>}
               {cur.status === "flagged" && canFreeze && <button className="l-btn mc" disabled={Boolean(cur.pendingApproval)} onClick={() => freezeCluster(cur)}>批量冻结</button>}
