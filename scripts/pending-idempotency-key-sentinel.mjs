@@ -90,6 +90,8 @@ const MIGRATED = [
   "app/components/domain-views/d-tabs/d2-withdrawals.tsx",
   "app/components/domain-views/l-tabs/l1-kpi.tsx",
   "app/components/domain-views/d-tabs/d3-treasury.tsx",
+  // 资金储备和旧「可用资金与应付款」共用的注入、导出命令表，只建一份。
+  "lib/admin/treasury-commands.ts",
   "app/components/domain-views/f-view.tsx",
   // F2 lifecycle retains the complete original proposal for explicit unknown-result recovery.
   "lib/admin/f2-activation-attempt.ts",

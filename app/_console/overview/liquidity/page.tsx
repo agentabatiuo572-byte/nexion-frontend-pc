@@ -1,6 +1,11 @@
 "use client";
 
 import { ForecastConfigImpact } from "@/app/components/forecast-config-preview";
+import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
+import { RdPage } from "@/app/components/rd";
+import { isDOutcomeUnknownError } from "@/lib/admin/d-client";
+import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
+import { exportScope, treasuryCommandKey, treasuryCommands } from "@/lib/admin/treasury-commands";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -102,7 +107,11 @@ export default function LiquidityPage() {
   /** 重试被后端明确拒绝的命令号，只有它能人工解除。 */
   const [rejectedKey, setRejectedKey] = useState("");
   const [retrying, setRetrying] = useState(false);
-  const [releaseOpen, setReleaseOpen] = useState(false);
+  const [releaseOpen, setReleaseOpen] = useState<"forecast" | "export" | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportNote, setExportNote] = useState("");
+  /** 导出重试被后端明确拒绝的命令号，只有它能人工解除。 */
+  const [exportRejectedKey, setExportRejectedKey] = useState("");
   const [preview, setPreview] = useState<{ key: string; value: ForecastConfigPreview } | null>(null);
   const [previewError, setPreviewError] = useState("");
   const [previewRetry, setPreviewRetry] = useState(0);
@@ -168,11 +177,60 @@ export default function LiquidityPage() {
     void load(value);
   };
 
-  const exportLiabilities = () => {
-    setError("");
-    void downloadB2LiabilitiesCsv()
-      .then(() => setNotice("负债明细 CSV 已导出"))
-      .catch((caught) => setError(caught instanceof Error ? displayAdminError(caught) : "导出失败，请重试"));
+  /** 结果未知的导出，和资金储备页是同一条记录。 */
+  const pendingExport = useMemo(() => {
+    void pendingTick;
+    return treasuryCommands.list().find((record) => record.fingerprint === exportScope("liabilities") && record.reason) ?? null;
+  }, [pendingTick]);
+
+  /** 确定失败丢号，留在框里改了再提交；结果未知保号，关框，转成页面上方的待确认（OP-92、OP-93）。 */
+  const submitExport = async (reason: string) => {
+    const scope = exportScope("liabilities");
+    const operator = currentAdminOperator();
+    const key = treasuryCommandKey(scope, { exportKind: "liabilities", reason, operator });
+    if (!treasuryCommands.isDurablyStored(scope, key)) {
+      treasuryCommands.forget(scope);
+      throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
+    }
+    try {
+      await downloadB2LiabilitiesCsv(reason, operator, key);
+    } catch (caught) {
+      if (isDOutcomeUnknownError(caught)) { setPendingTick((tick) => tick + 1); return; }
+      treasuryCommands.forget(scope);
+      throw caught;
+    }
+    treasuryCommands.forget(scope);
+    setPendingTick((tick) => tick + 1);
+    setNotice("应付款 CSV 已导出");
+  };
+
+  /** 按原操作重试：同命令号、同理由。过期和查不到记录都不发送，也不解除（OP-96）。 */
+  const retryExport = async () => {
+    if (!pendingExport?.reason) return;
+    if (pendingExport.expiresAt <= Date.now()) { setExportNote(RETRY_EXPIRED); return; }
+    if (!treasuryCommands.isDurablyStored(pendingExport.fingerprint, pendingExport.commandKey)) {
+      setExportNote("浏览器里查不到这条记录，本次没有发送。待确认继续保留，请到操作记录与审批核对。");
+      return;
+    }
+    setRetrying(true);
+    setExportRejectedKey("");
+    setExportNote("");
+    try {
+      await downloadB2LiabilitiesCsv(pendingExport.reason, pendingExport.operator ?? currentAdminOperator(), pendingExport.commandKey);
+      treasuryCommands.forget(pendingExport.fingerprint, pendingExport.commandKey);
+      setPendingTick((tick) => tick + 1);
+      setNotice("应付款 CSV 已导出");
+    } catch (caught) {
+      if (isDOutcomeUnknownError(caught)) {
+        setExportNote("结果还是未知，不要重复操作，可以稍后再按原操作重试。");
+        return;
+      }
+      if (isPermissionDenied(caught)) announcePermissionDenied();
+      setExportNote(`重试没有成功：${caught instanceof Error ? displayAdminError(caught) : "原因未知"} 这说明不了原操作的结果，原命令继续保留。`);
+      setExportRejectedKey(pendingExport.commandKey);
+    } finally {
+      setRetrying(false);
+    }
   };
 
   const openConfig = () => {
@@ -211,6 +269,12 @@ export default function LiquidityPage() {
     const commandKey = forecastConfigCommandKey.resolve(
       FORECAST_CONFIG_SLOT, fingerprint, () => `b2-forecast-config-${crypto.randomUUID()}`,
     );
+    // 记录存不下就不发：结果未知时没有它就没法用原号重试（OP-92）。
+    if (!forecastConfigCommandKey.isDurablyStored(FORECAST_CONFIG_SLOT, fingerprint, commandKey)) {
+      forecastConfigCommandKey.forget(FORECAST_CONFIG_SLOT);
+      setSaveError("浏览器存不下这次操作，没有提交。换一个窗口再试。");
+      return;
+    }
     setSaving(true);
     setSaveError("");
     void updateB2ForecastConfig(draft, data.config.version, reason.trim(), operator, commandKey)
@@ -270,8 +334,16 @@ export default function LiquidityPage() {
     forecastConfigCommandKey.forget(FORECAST_CONFIG_SLOT);
     setPendingTick((tick) => tick + 1);
     setPendingNote("");
-    setReleaseOpen(false);
+    setReleaseOpen(null);
     setNotice("已解除待确认，可以重新提交");
+  };
+
+  const releaseExport = () => {
+    if (pendingExport) treasuryCommands.forget(pendingExport.fingerprint, pendingExport.commandKey);
+    setPendingTick((tick) => tick + 1);
+    setExportNote("");
+    setReleaseOpen(null);
+    setNotice("已解除待确认，可以重新导出");
   };
 
   if (loading && !data) {
@@ -351,7 +423,7 @@ export default function LiquidityPage() {
           <RefreshCw size={14} className={loading ? "spin" : ""} />刷新
         </button>
         {canExport ? (
-          <button type="button" className="b2-button" onClick={exportLiabilities}>
+          <button type="button" className="b2-button" disabled={!!pendingExport} title={pendingExport ? "上次导出结果未知，先在页面上方核对" : undefined} onClick={() => { setError(""); setExportOpen(true); }}>
             <Download size={14} />导出负债 CSV
           </button>
         ) : (
@@ -375,7 +447,18 @@ export default function LiquidityPage() {
           {pendingNote && <div>{pendingNote}</div>}
           <div className="b2-dialog-actions">
             <button type="button" className="b2-button" disabled={retrying || pending.expiresAt <= Date.now()} title={pending.expiresAt <= Date.now() ? RETRY_EXPIRED : undefined} onClick={() => void retryPending()}>{retrying ? "提交中…" : "按原操作重试"}</button>
-            {rejectedKey === pending.commandKey && <button type="button" className="b2-button" disabled={retrying} onClick={() => setReleaseOpen(true)}>解除待确认</button>}
+            {rejectedKey === pending.commandKey && <button type="button" className="b2-button" disabled={retrying} onClick={() => setReleaseOpen("forecast")}>解除待确认</button>}
+          </div>
+        </div>
+      )}
+      {pendingExport && canExport && (
+        <div className="b2-alert error" role="alert">
+          <b>应付款 CSV 导出结果未知</b>
+          <div>文件可能没有下载下来，操作记录里可能已经有这次导出。{pendingExport.expiresAt <= Date.now() ? `${RETRY_EXPIRED}。` : "重试不会多记一次。"}</div>
+          {exportNote && <div>{exportNote}</div>}
+          <div className="b2-dialog-actions">
+            <button type="button" className="b2-button" disabled={retrying || pendingExport.expiresAt <= Date.now()} title={pendingExport.expiresAt <= Date.now() ? RETRY_EXPIRED : undefined} onClick={() => void retryExport()}>{retrying ? "提交中…" : "按原操作重试"}</button>
+            {exportRejectedKey === pendingExport.commandKey && <button type="button" className="b2-button" disabled={retrying} onClick={() => setReleaseOpen("export")}>解除待确认</button>}
           </div>
         </div>
       )}
@@ -513,20 +596,39 @@ export default function LiquidityPage() {
 
       <B2RestoredInsights data={data} />
 
+      {exportOpen && (
+        <RdPage>
+          <OperationConfirmModal
+            briefKind="export"
+            action="导出应付款 CSV"
+            detail="不生成任务，没有下载链接。"
+            facts={<dl className="rd-facts"><div className="rd-fact"><dt>范围</dt><dd>全部 9 类的当前数据，不随页面窗口变</dd></div><div className="rd-fact"><dt>去向</dt><dd>浏览器直接下载</dd></div></dl>}
+            statedBrief={{ impact: "浏览器直接下载，这次导出记入操作记录。", check: "核对导出内容，理由写明导出依据或工单号。" }}
+            confirmLabel="确认导出"
+            reasonMin={8}
+            reasonMax={200}
+            onClose={() => setExportOpen(false)}
+            onConfirm={async (exportReason) => {
+              await submitExport(exportReason);
+              setExportOpen(false);
+            }}
+          />
+        </RdPage>
+      )}
+
       {releaseOpen && (
         <div className="b2-dialog-backdrop" role="presentation">
           <section className="b2-dialog" role="dialog" aria-modal="true" aria-labelledby="b2-release-title">
             <header>
               <div><b id="b2-release-title">解除待确认</b></div>
-              <button type="button" aria-label="关闭解除待确认弹窗" onClick={() => setReleaseOpen(false)}>×</button>
+              <button type="button" aria-label="关闭解除待确认弹窗" onClick={() => setReleaseOpen(null)}>×</button>
             </header>
             <div className="b2-confirm">
-              <p>重试被拒说明不了原操作的结果。先到操作记录确认原操作有没有生效，再解除。</p>
-              <p>解除后可以重新提交，原操作不再重试。这一步只放开本页的锁，不发请求，不写操作记录。</p>
+              <p>确认这次操作没有生效后再解除。解除后可以重新操作，这一步不发请求，不写操作记录。</p>
             </div>
             <div className="b2-dialog-actions">
-              <button type="button" className="b2-button" onClick={() => setReleaseOpen(false)}>取消</button>
-              <button type="button" className="b2-button primary" onClick={releasePending}>确认解除</button>
+              <button type="button" className="b2-button" onClick={() => setReleaseOpen(null)}>取消</button>
+              <button type="button" className="b2-button primary" onClick={releaseOpen === "export" ? releaseExport : releasePending}>确认解除</button>
             </div>
           </section>
         </div>

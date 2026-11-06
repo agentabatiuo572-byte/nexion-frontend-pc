@@ -42,6 +42,15 @@ export function isDOutcomeUnknownError(error: unknown): error is DOutcomeUnknown
     || (error instanceof Error && error.name === "DOutcomeUnknownError");
 }
 
+/** 写请求已成功返回，响应却读不懂：命令可能已经执行，按结果未知保号（OP-91）。 */
+function readWriteResult<T>(idempotencyKey: string, read: () => T): T {
+  try {
+    return read();
+  } catch {
+    throw new DOutcomeUnknownError(idempotencyKey);
+  }
+}
+
 export interface PageResult<T> {
   total: number;
   pageNum: number;
@@ -2065,11 +2074,14 @@ export async function fetchD2BankPayout(withdrawalNo: string): Promise<D2BankPay
 }
 
 export async function requeryD2BankPayout(withdrawalNo: string, version: number, reason: string, idempotencyKey: string) {
-  const row = d2Object(await apiRequest<unknown>("finance", `/withdrawals/${encodeURIComponent(withdrawalNo)}/bank/requery`, {
+  const response = await apiRequest<unknown>("finance", `/withdrawals/${encodeURIComponent(withdrawalNo)}/bank/requery`, {
     method: "POST", body: JSON.stringify({ version, reason }), idempotencyKey,
-  }), "bankRecovery");
-  if (row.withdrawalNo !== withdrawalNo || !["PAID", "FAILED", "MANUAL_REVIEW"].includes(String(row.state))) d2Invalid("bankRecovery");
-  return String(row.state);
+  });
+  return readWriteResult(idempotencyKey, () => {
+    const row = d2Object(response, "bankRecovery");
+    if (row.withdrawalNo !== withdrawalNo || !["PAID", "FAILED", "MANUAL_REVIEW"].includes(String(row.state))) d2Invalid("bankRecovery");
+    return String(row.state);
+  });
 }
 
 export async function fetchD2DevelopmentCapabilities() {
@@ -2084,7 +2096,7 @@ export async function simulateD2CooldownExpiry(
   reason: string,
   idempotencyKey: string,
 ) {
-  return normalizeWithdrawal(await apiRequest<unknown>(
+  const response = await apiRequest<unknown>(
     "finance",
     `/withdrawals/development/${encodeURIComponent(withdrawalNo)}/simulate-cooldown-expiry`,
     {
@@ -2092,7 +2104,8 @@ export async function simulateD2CooldownExpiry(
       body: JSON.stringify({ reason }),
       idempotencyKey,
     },
-  ));
+  );
+  return readWriteResult(idempotencyKey, () => normalizeWithdrawal(response));
 }
 
 export async function reviewD2Withdrawal(
@@ -2102,11 +2115,12 @@ export async function reviewD2Withdrawal(
   operator: string,
   idempotencyKey: string,
 ) {
-  return normalizeWithdrawal(await apiRequest<unknown>("finance", `/withdrawals/${encodeURIComponent(withdrawalNo)}/review`, {
+  const response = await apiRequest<unknown>("finance", `/withdrawals/${encodeURIComponent(withdrawalNo)}/review`, {
     method: "POST",
     body: JSON.stringify({ action, operator, ...input }),
     idempotencyKey,
-  }));
+  });
+  return readWriteResult(idempotencyKey, () => normalizeWithdrawal(response));
 }
 
 export async function updateD1TopupChannelMax(channelCode: string, numericValue: number, expectedValue: number, reason: string, operator: string) {
@@ -2124,10 +2138,25 @@ export async function reviewD2WithdrawalsBatch(
   operator: string,
   idempotencyKey: string,
 ) {
-  return apiRequest<D2BatchResult>("finance", "/withdrawals/batch", {
+  const response = await apiRequest<unknown>("finance", "/withdrawals/batch", {
     method: "POST",
     body: JSON.stringify({ action, withdrawalIds, operator, ...input }),
     idempotencyKey,
+  });
+  return readWriteResult(idempotencyKey, (): D2BatchResult => {
+    const row = d2Object(response, "batchResult");
+    const ids = (value: unknown, field: string) => (Array.isArray(value) ? value.map((id) => d2String(id, field)) : d2Invalid(field));
+    if (!Array.isArray(row.conflicts)) d2Invalid("batchResult.conflicts");
+    return {
+      batchId: d2String(row.batchId, "batchResult.batchId"),
+      accepted: ids(row.accepted, "batchResult.accepted"),
+      rejected: ids(row.rejected, "batchResult.rejected"),
+      conflicts: row.conflicts.map((item) => {
+        const conflict = d2Object(item, "batchResult.conflict");
+        return { withdrawalId: d2String(conflict.withdrawalId, "batchResult.conflict"), reason: d2String(conflict.reason, "batchResult.conflict") };
+      }),
+      reason: typeof row.reason === "string" ? row.reason : "",
+    };
   });
 }
 
