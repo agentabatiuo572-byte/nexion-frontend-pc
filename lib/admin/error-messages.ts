@@ -1,4 +1,5 @@
 export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  C1_PAGE_NUM_INVALID: "分页页码无效，请返回第一页重新查询。",
   SIMULATED_DURATION_MINUTES_INVALID: "固定时长须为 1–1440 的整数分钟。",
   SIMULATED_FIXED_REWARD_INVALID: "固定奖励须为非负数，最多 12 位整数、6 位小数。",
   SIMULATED_ASSET_INVALID: "请选择 USDT 或 UVT 奖励资产。",
