@@ -259,7 +259,7 @@ export function FlowFold({ blocks, history, historyError, historyRetrying, onRet
   const moved = history?.flowWindows.some((item) => item.inflowWan > 0 || item.outflowWan > 0);
   return (
     <Fold title="资金进出" summary={summary} icon={ArrowLeftRight} tone="role-2" open={open} onOpenChange={onOpenChange}
-      explain={blocks.netFlow ? "这里只算到账的充值、财务注资和已打款的提现。用余额买设备、还没打款的提现申请不算。" : undefined}
+      explain={blocks.netFlow ? "按储备账已确认的流入、流出统计。流入包括充值、财务注资和储备返还／冲正；流出包括提现扣储备和拒付退回。非银行提现在放行时扣储备，银行提现在付款成功时结算，不代表全部已实际打款。用余额买设备不算。" : undefined}
       actions={blocks.netFlow ? <FoldLink reach={reach} href="/overview/liquidity">查看资金流</FoldLink> : undefined}>
       <div className="cc-fold-stack">
         <div className="cc-cols">

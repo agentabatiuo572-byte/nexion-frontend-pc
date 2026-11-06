@@ -76,7 +76,7 @@ export function TodayPanel({ blocks, sales, newUsers, flows, devices, clock, net
             unit="USDT"
             sub={flows.error ? failed(flows) : flowToday ? `流入 ${fmtAmountCompact(toUsdt(flowToday.inflowWan))} USDT · 流出 ${fmtAmountCompact(toUsdt(flowToday.outflowWan))} USDT` : undefined}
             explain={<>
-              今天到现在已确认的流入减流出。流入是用户充值加财务注资，所以财务打一笔注资也算流入；流出是提现打款和拒付退回。用余额买设备不算。
+              按储备账已确认的流入、流出统计。流入包括充值、财务注资和储备返还／冲正；流出包括提现扣储备和拒付退回。非银行提现在放行时扣储备，银行提现在付款成功时结算，不代表全部已实际打款。用余额买设备不算。
               {netFlow24h != null && ` 另一个算法是滚动近 24 小时：${fmtAmount(netFlow24h)} USDT，时间段不同，数可能不一样。`}{dataTime}
             </>}
             onOpen={flowToday ? onOpenFlows : undefined}

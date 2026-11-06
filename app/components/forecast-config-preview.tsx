@@ -31,16 +31,16 @@ export function ForecastConfigImpact({ preview, categoryLabel, surface = false }
           {rows.map(([label, before, after, delta]) => (
             <tr key={label}>
               <Td>{label}</Td>
-              <Td align="right"><Cell num main={amount(before)} /></Td>
+              <Td align="right"><Cell num main={<span className="rd-diff-before">{amount(before)}</span>} /></Td>
               <Td align="right"><Cell num main={<span className={delta === 0 ? undefined : "rd-diff-after"}>{amount(after)}</span>} /></Td>
-              <Td align="right"><Cell num main={`${delta > 0 ? "+" : ""}${amount(delta)}`} /></Td>
+              <Td align="right"><Cell num main={<span className={delta === 0 ? undefined : "rd-diff-after"}>{`${delta > 0 ? "+" : ""}${amount(delta)}`}</span>} /></Td>
             </tr>
           ))}
           <tr>
             <Td>配置覆盖率（配置口径）</Td>
-            <Td align="right"><Cell num main={coverage(d.beforeCoverageStatus, d.beforeCoveragePct)} /></Td>
-            <Td align="right"><Cell num main={<span className={d.coverageDeltaPct ? "rd-diff-after" : undefined}>{coverage(d.afterCoverageStatus, d.afterCoveragePct)}</span>} /></Td>
-            <Td align="right"><Cell num main={d.coverageDeltaPct === null ? "—" : `${d.coverageDeltaPct > 0 ? "+" : ""}${d.coverageDeltaPct.toFixed(1)} 个百分点`} /></Td>
+            <Td align="right"><Cell num main={<span className="rd-diff-before">{coverage(d.beforeCoverageStatus, d.beforeCoveragePct)}</span>} /></Td>
+            <Td align="right"><Cell num main={<span className={d.beforeCoverageStatus !== d.afterCoverageStatus || d.coverageDeltaPct ? "rd-diff-after" : undefined}>{coverage(d.afterCoverageStatus, d.afterCoveragePct)}</span>} /></Td>
+            <Td align="right"><Cell num main={<span className={d.coverageDeltaPct ? "rd-diff-after" : undefined}>{d.coverageDeltaPct === null ? "—" : `${d.coverageDeltaPct > 0 ? "+" : ""}${d.coverageDeltaPct.toFixed(1)} 个百分点`}</span>} /></Td>
           </tr>
         </tbody>
       </Table>
