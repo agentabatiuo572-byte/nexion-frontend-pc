@@ -9,9 +9,10 @@ import {
   killH2AutoPush,
   updateH2TrialParam,
 } from "@/lib/admin/h-client";
-import { usePropose } from "@/lib/admin/use-propose";
-import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { H2_TRIAL_ACTIONS, pendingH2TrialApprovals, submitH2TrialApproval, type H2TrialApprovalInput, type H2TrialApprovalMode } from "@/lib/admin/h2-trial-approval";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { HCtx } from "./types";
 
 type TrialParam = {
@@ -36,6 +37,7 @@ type TrialSession = {
   cardToken?: string;
   cancelledAt?: string;
   chargedAt?: string;
+  pendingApproval?: { action?: string | null; submittedBy?: string | null; submittedAt?: string | null } | null;
 };
 
 type TrialState = { key: string; label: string; tone: string };
@@ -244,7 +246,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const canWrite = ctx.can("growth_h2_write");
   const canCancel = ctx.can("growth_h2_session_cancel");
   const canCharge = ctx.can("growth_h2_session_charge");
-  const propose = usePropose();
+  const adminSession = useAdminAuth((state) => state.session);
   const [model, setModel] = useState<H2Model | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -277,55 +279,47 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const liveParams = (model?.params ?? []).filter((param) => param.key !== "autoChargeAtEnd" && param.section !== "newonly");
   const stats = model?.stats ?? {};
 
-  const openSessionCancel = (session: TrialSession) => {
-    if (!canCancel || !knownTrialOwner(session)) return;
-    openActionConfirm({ briefKind: "record",
-      action: `强制取消试用 · ${session.sid}`,
-      detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。这次试用会结束并标记为 <b>已取消</b>，重复提交不会重复处理。</>,
-      amplifies: false,
-      run: (reason) => {
-        const def = findHighOp("h2_trial_cancel")!;
-        void propose(ctx.toast, {
-          action: `强制取消试用 · ${session.sid}`,
-          obj: `${trialOwnerLabel(session)} · ${session.sid}`,
-          before: session.state,
-          after: "cancelled",
-          type: "sos",
-          amplifies: false,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "H2",
-          command: def.buildCommand({ sid: session.sid }),
-          target: def.buildTarget({ sid: session.sid }),
-        });
-      },
-    });
-  };
+  const pendingBySession = new Map(adminSession ? pendingH2TrialApprovals(adminSession.adminId).map((attempt) => [attempt.sid, attempt]) : []);
+  const canPropose = (op: H2TrialApprovalInput["op"]) => op === "h2_trial_cancel" ? canCancel : canCharge;
 
-  const openSessionCharge = (session: TrialSession) => {
-    if (!canCharge || !knownTrialOwner(session)) return;
-    openActionConfirm({ briefKind: "funds",
-      action: `强制触发扣款 · ${session.sid}`,
-      detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。按当前试用规则重新计算并扣款，重复提交不会重复扣。会直接动用户的 USDT，需要有权限的管理员在「操作记录与审批」批准。</>,
-      amplifies: true,
-      run: (reason) => {
-        const def = findHighOp("h2_trial_charge")!;
-        void propose(ctx.toast, {
-          action: `强制触发扣款 · ${session.sid}`,
-          obj: `${trialOwnerLabel(session)} · ${session.sid}`,
-          before: session.state,
-          after: "已扣款",
-          type: "fund",
-          amplifies: true,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "H2",
-          command: def.buildCommand({ sid: session.sid }),
-          target: def.buildTarget({ sid: session.sid }),
-        });
+  const openSessionApproval = (session: TrialSession, requestedOp: H2TrialApprovalInput["op"], recovery = false) => {
+    if (!adminSession || !canPropose(requestedOp)) return;
+    const original = () => pendingH2TrialApprovals(adminSession.adminId).find((record) => record.sid === session.sid);
+    const previous = original();
+    if (recovery ? !previous : previous || session.pendingApproval || !knownTrialOwner(session)) return;
+    const input = previous ?? { op: requestedOp, sid: session.sid, obj: `${trialOwnerLabel(session)} · ${session.sid}`, before: session.state };
+    const charge = input.op === "h2_trial_charge";
+    const detail = charge ? "批准后按当前试用规则重新计算并扣用户的 USDT。" : "批准后结束这次试用，并标记为已取消。";
+    const run = async (reason: string, mode: H2TrialApprovalMode = "submit") => {
+      if (useAdminAuth.getState().session?.adminId !== adminSession.adminId) {
+        throw new Error("登录账号已变化，请关闭弹窗后重新操作。");
+      }
+      const ticket = await submitH2TrialApproval(adminSession, input, reason, mode);
+      if (!ticket) return false;
+      toast(ticket.status === "pending"
+        ? `已提交审批 · 审批单 ${ticket.id} · 等待另一位有权限的管理员批准`
+        : `已找到原审批单 ${ticket.id}，请在操作记录查看处理结果`);
+      openActionConfirm(null);
+      void reload();
+      return true;
+    };
+    openActionConfirm({
+      briefKind: charge ? "funds" : "record",
+      action: `${H2_TRIAL_ACTIONS[input.op]} · ${session.sid}`,
+      detail: <>{input.obj}。{detail}</>,
+      amplifies: charge,
+      getPendingReason: () => original()?.reason,
+      inlineApproval: {
+        pending: !!previous,
+        expired: !!previous && previous.expiresAt <= Date.now(),
+        resolve: () => ({
+          heading: "需另一位有权限的管理员批准",
+          completionCopy: `${input.obj}。提交后等待审批，待审期间试用记录保持原样。${detail}`,
+        }),
+        recover: () => run("", "lookup"),
+        retry: async () => { await run("", "retry"); },
       },
+      run: async (reason) => { await run(reason); },
     });
   };
 
@@ -475,10 +469,19 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
               {model.sessions.map((session) => {
                 const [label, tone] = nextStateLabel(states, session.state);
                 const terminal = ["cancelled", "redeemed", "failed"].includes(session.state);
+                const approval = session.pendingApproval;
+                const previous = pendingBySession.get(session.sid);
+                const blocked = Boolean(approval || previous) || !knownTrialOwner(session);
                 return (
                   <tr key={session.sid}>
                     <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{trialOwnerLabel(session)}</td>
-                    <td><span className={`bdg ${tone}`}>{label}</span></td>
+                    <td>
+                      <span className={`bdg ${tone}`}>{label}</span>
+                      {approval && <div>
+                        <span className="bdg warn">待审批</span>
+                        <span className="tiny">{[approval.action, approval.submittedBy, approval.submittedAt && formatBusinessTimeCompact(approval.submittedAt)].filter(Boolean).join(" · ")}</span>
+                      </div>}
+                    </td>
                     <td className="num mono">{operatorCopyText(text(session.shadow))}</td>
                     <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(session.cardTok ?? session.cardToken)}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
@@ -486,14 +489,15 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                         <span style={{ color: "var(--ink-4)" }}>-</span>
                       ) : (
                         <>
-                          <button className="l-btn sm mc" onClick={() => openSessionCancel(session)} disabled={!canCancel || !knownTrialOwner(session)} style={{ marginRight: 6 }}>
+                          <button className="l-btn sm mc" onClick={() => openSessionApproval(session, "h2_trial_cancel")} disabled={!canCancel || blocked} style={{ marginRight: 6 }}>
                             强制取消
                           </button>
-                          <button className="l-btn sm mc" onClick={() => openSessionCharge(session)} disabled={!canCharge || !knownTrialOwner(session)}>
+                          <button className="l-btn sm mc" onClick={() => openSessionApproval(session, "h2_trial_charge")} disabled={!canCharge || blocked}>
                             强制扣款
                           </button>
                         </>
                       )}
+                      {previous && canPropose(previous.op) && <button className="l-btn sm" onClick={() => openSessionApproval(session, previous.op, true)}>查询原操作</button>}
                     </td>
                   </tr>
                 );
