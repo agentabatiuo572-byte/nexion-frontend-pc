@@ -52,18 +52,19 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const COV = Number.isFinite(coverage?.coverageRatio) ? coverage!.coverageRatio : Number.NaN;
   const RED = Number.isFinite(coverage?.redlinePct) ? coverage!.redlinePct : Number.NaN;
   const YELLOW = Number.isFinite(coverage?.yellowLinePct) ? coverage!.yellowLinePct : Number.NaN;
-  const coverageReady = Number.isFinite(COV) && Number.isFinite(RED) && Number.isFinite(YELLOW);
-  const RANGE = coverageReady ? RED + 40 : 100;
+  const coverageReady = coverage?.valuationReliable === true && coverage.recoveryAllowedByServer !== undefined
+    && Number.isFinite(COV) && Number.isFinite(RED) && Number.isFinite(YELLOW);
+  const RANGE = coverageReady ? Math.max(RED, YELLOW) + 40 : 100;
   const pct = (v: number) => Number.isFinite(v) ? Math.min(100, Math.max(0, (v / RANGE) * 100)) : 0;
   const coverageText = (v: number) => Number.isFinite(v) ? `${v}%` : "缺数据";
-  // 恢复判据与后端 OpsKillSwitchService 同源:coverageRatio >= redlinePct 才放行。
-  // 因此 COV == RED 是「等于红线且通过」,既不是「高于红线」也不是「低于红线」,文案必须三分。
+  const currentCoverageText = coverageReady ? coverageText(COV) : "暂时无法判断";
+  // 显示值用于解释红线距离，资金恢复只采信服务端判定。
   const covRelation = !coverageReady ? "unavailable" : COV > RED ? "above" : COV === RED ? "equal" : "below";
   const coverageGapText = coverageReady
     ? covRelation === "above" ? `高于红线 ${Math.abs(COV - RED).toFixed(0)} 个百分点`
       : covRelation === "equal" ? "等于红线 0 个百分点"
         : `低于红线 ${Math.abs(COV - RED).toFixed(0)} 个百分点`
-    : "最新覆盖率暂不可用";
+    : "估值暂不可用";
   // #28 批量关停选择集:运营勾选要熔断的闸(替代旧的固定「立即出钱」闸硬编码)。
   const [sel, setSel] = useState<Record<string, boolean>>({});
   const [checkingRestore, setCheckingRestore] = useState<string | null>(null);
@@ -103,7 +104,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   const live = gates.filter(effOn).length;
   const killed = gates.length - live;
-  const covPass = coverageReady && COV >= RED;
+  const covPass = coverageReady && coverage.recoveryAllowedByServer === true;
   const emergencyGateCount = data.stats.emergencyGateCount;
   const coverageBlockedCount = data.stats.coverageBlockedCount;
   const pendingAutoConfirmationKeys = new Set(AUTO_CONFIRMATIONS.map((row) => row.key));
@@ -171,6 +172,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         catch { throw new A2OutcomeUncertainError("暂时无法核对原恢复申请，请稍后重试。", key); }
         if (!ticket && previous.expiresAt <= Date.now()) {
           throw new A2OutcomeUncertainError("原申请命令已过期，请到操作记录核对。", key);
+        }
+        if (!ticket && g.coveragePrecheckRequired && !covPass) {
+          throw new A2OutcomeUncertainError("暂未查到原恢复申请，当前只能核对已有申请，暂不能继续提交资金业务恢复。", key);
         }
       }
       if (!ticket) {
@@ -343,7 +347,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         <div className="f-stat ok"><div className="k">在线功能开关</div><div className="v">{live} / {gates.length}</div><div className="sub">{killed === 0 ? "全部业务正常开放" : "部分业务已关停"}</div></div>
         <div className="f-stat warn"><div className="k">应急关停业务</div><div className="v">{emergencyGateCount}</div><div className="sub">自动或批量应急关停</div></div>
         <div className="f-stat danger"><div className="k">已关停业务</div><div className="v">{killed}</div><div className="sub">因备付金不足未能恢复 {coverageBlockedCount} 次</div></div>
-        <div className="f-stat cyan"><div className="k">备付金覆盖率</div><div className="v">{coverageText(COV)}</div><div className="sub">红线 {coverageText(RED)} · {coverageGapText}</div></div>
+        <div className="f-stat cyan"><div className="k">备付金覆盖率</div><div className="v">{currentCoverageText}</div><div className="sub">红线 {coverageText(RED)} · {coverageGapText}</div></div>
       </div>
 
       {/* 5 闸 status cards */}
@@ -404,7 +408,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
                     ? <span className="badge-emergency">待补录</span>
                     : canResume && !hasUncertainRestore
                       ? g.coveragePrecheckRequired && !covPass
-                        ? <button className="resume" disabled title="当前备付金覆盖率低于红线或缺少数据，暂不能恢复">恢复受阻</button>
+                        ? <button className="resume" disabled title={coverageReady ? "当前备付金未通过服务端恢复检查" : "估值或恢复判定暂不可用，暂不能发起资金业务恢复"}>恢复受阻</button>
                         : <button className="resume" title="提交 A2 审批，批准后生效" onClick={() => resumeGate(g)}>恢复</button>
                       : null
                 )}
@@ -444,10 +448,10 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
             <span className="tag">备付金</span>
           </div>
           <div className="b1cov-hero">
-            <div className={"item " + (covPass ? "ok" : "warn")}>
+            <div className={"item " + (coverageReady && COV >= YELLOW ? "ok" : "warn")}>
               <div className="k">当前备付金覆盖率</div>
-              <div className="v">{coverageText(COV)}</div>
-              <div className="sub">{!coverageReady ? "最新覆盖率暂不可用" : COV >= YELLOW ? "能覆盖全部应付 · 还有富余" : covRelation === "above" ? "高于红线 · 审慎区间" : covRelation === "equal" ? "等于红线 · 审慎区间(已通过恢复门槛)" : "低于红线 · 禁止恢复"}</div>
+              <div className="v">{currentCoverageText}</div>
+              <div className="sub">{!coverageReady ? "估值暂不可用，资金业务暂不能发起恢复" : !covPass ? "服务端暂未允许资金业务恢复" : COV >= YELLOW ? "能覆盖全部应付 · 还有富余" : "已通过恢复检查 · 审慎区间"}</div>
             </div>
             <div className="item warn">
               <div className="k">恢复门槛(红线)</div>
@@ -455,7 +459,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
               <div className="sub">低于此线不允许恢复</div>
             </div>
           </div>
-          <div className="b1cov-bar" style={{ background: `linear-gradient(90deg, color-mix(in srgb, var(--danger) 50%, transparent) 0%, color-mix(in srgb, var(--danger) 50%, transparent) ${pct(RED)}%, color-mix(in srgb, var(--warning) 50%, transparent) ${pct(RED)}%, color-mix(in srgb, var(--warning) 50%, transparent) ${pct(YELLOW)}%, color-mix(in srgb, var(--success) 50%, transparent) ${pct(YELLOW)}%, color-mix(in srgb, var(--success) 50%, transparent) 100%)` }}>
+          {coverageReady && <><div className="b1cov-bar" style={{ background: `linear-gradient(90deg, color-mix(in srgb, var(--danger) 50%, transparent) 0%, color-mix(in srgb, var(--danger) 50%, transparent) ${pct(RED)}%, color-mix(in srgb, var(--warning) 50%, transparent) ${pct(RED)}%, color-mix(in srgb, var(--warning) 50%, transparent) ${pct(YELLOW)}%, color-mix(in srgb, var(--success) 50%, transparent) ${pct(YELLOW)}%, color-mix(in srgb, var(--success) 50%, transparent) 100%)` }}>
             <div className="bnd" style={{ left: `${pct(RED)}%` }} />
             <div className="bnd" style={{ left: `${pct(YELLOW)}%` }} />
             <div className="needle" style={{ left: `${pct(COV)}%` }}><span className="nlb">当前 {coverageText(COV)}</span></div>
@@ -465,10 +469,10 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
             <span className="it"><span className="d yellow" />审慎 {coverageText(RED)}–{coverageText(YELLOW)}</span>
             <span className="it"><span className="d green" />健康 ≥{coverageText(YELLOW)}</span>
             <span className="it" style={{ marginLeft: "auto", color: covPass ? "var(--success)" : "var(--danger)", fontWeight: 600 }}>当前 {coverageText(COV)} · {covPass ? "通过" : "不通过"}</span>
-          </div>
-          <div className="b1cov-detail">
-            <span className="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5L20 7" /></svg></span>
-            <div><b>{covPass ? "需要备付金检查的业务可以恢复" : "低于红线或缺少覆盖率，相关业务禁止恢复"}</b> · <AutoGloss>{coverageReady ? `备付金覆盖率 ${COV}%，${covPass ? (covRelation === "equal" ? `等于 ${RED}% 红线，缓冲为 0 个百分点(已达到恢复门槛)` : `高于 ${RED}% 红线，还有 ${(COV - RED).toFixed(0)} 个百分点的缓冲`) : `低于 ${RED}% 红线`}。恢复提现、兑换、创世节点 或质押时，系统都会记录当时的备付金覆盖情况。` : "最新备付金覆盖率暂不可用，系统不会使用默认值放行恢复操作。"}</AutoGloss></div>
+          </div></>}
+          <div className={"b1cov-detail" + (covPass ? "" : " warn")}>
+            <span className="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">{covPass ? <path d="M5 12l5 5L20 7" /> : <><circle cx="12" cy="12" r="9" /><path d="M12 8v4m0 4h.01" /></>}</svg></span>
+            <div><b>{covPass ? "需要备付金检查的业务可以发起恢复审批" : "资金业务暂不能发起恢复"}</b> · <AutoGloss>{coverageReady ? `备付金覆盖率 ${COV}%，恢复红线 ${RED}%，健康线 ${YELLOW}%。${covPass ? "已通过当前服务端检查，批准时仍会重新核验。" : "当前服务端检查未通过。"}系统会记录恢复时的备付金覆盖情况。` : "估值或服务端恢复判定暂不可用，原恢复申请仍可核对。"}</AutoGloss></div>
           </div>
         </section>
       </div>

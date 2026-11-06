@@ -325,7 +325,7 @@ export type KillSwitchOverview = {
   activeGateCount: number;
   activeGates: JGate[];
   retiredGates: Record<string, unknown>[];
-  coverage: { coverageRatio: number; redlinePct: number; yellowLinePct: number; recoveryAllowed: boolean };
+  coverage: { coverageRatio: number; redlinePct: number; yellowLinePct: number; valuationReliable?: boolean; recoveryAllowedByServer?: boolean };
   stats: KillSwitchStats;
   emergencySla: EmergencySlaRow[];
   autoRules: AutoRuleRow[];
@@ -646,11 +646,11 @@ function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
   const coverageRatio = requiredNum(coverage.coverageRatio, "coverage.coverageRatio");
   const redlinePct = requiredNum(coverage.redlinePct, "coverage.redlinePct");
   const yellowLinePct = requiredNum(coverage.yellowLinePct, "coverage.yellowLinePct");
-  const recoveryAllowed = requiredBool(coverage.recoveryAllowed, "coverage.recoveryAllowed");
+  const valuationReliable = typeof coverage.valuationReliable === "boolean" ? coverage.valuationReliable : undefined;
+  const recoveryAllowedByServer = typeof coverage.recoveryAllowedByServer === "boolean" ? coverage.recoveryAllowedByServer : undefined;
   if (coverageRatio < 0 || redlinePct < 0 || yellowLinePct < 0 || yellowLinePct <= redlinePct) {
     contractError("coverage.thresholds");
   }
-  if (recoveryAllowed !== (coverageRatio >= redlinePct)) contractError("coverage.recoveryAllowed");
   const stats = rec(data.stats);
   const liveGateCount = requiredNum(stats.liveGateCount, "killSwitch.stats.liveGateCount");
   const killedGateCount = requiredNum(stats.killedGateCount, "killSwitch.stats.killedGateCount");
@@ -771,7 +771,8 @@ function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
       coverageRatio,
       redlinePct,
       yellowLinePct,
-      recoveryAllowed,
+      valuationReliable,
+      recoveryAllowedByServer,
     },
     stats: (() => {
       return {

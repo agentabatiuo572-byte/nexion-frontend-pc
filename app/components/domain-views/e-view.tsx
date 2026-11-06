@@ -18,7 +18,7 @@ import { Icon, Btn, Chip, Drawer, KV, Badge, OperationConfirmModal, useToast } f
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import { operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
+import { operatorDeviceStatus, operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
@@ -1294,7 +1294,15 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             {e4Detail && <>
               <KV k="数量 / 类型" v={`${e4Detail.quantity} · ${operatorOrderFact("type", e4Detail.orderType)}`} />
               <KV k="支付" v={`${operatorOrderFact("payment", e4Detail.paymentMethod)} · ${operatorOrderFact("paymentStatus", e4Detail.paymentStatus)}${e4Detail.paymentNo ? ` · ${e4Detail.paymentNo}` : ""}`} />
-              <KV k="设备实例" v={e4Detail.deviceInstanceNo ?? "尚未生成"} />
+              <KV k={<span style={{ whiteSpace: "nowrap" }}>设备实例</span>} v={e4Detail.devices == null ? e4Detail.deviceInstanceNo ?? "尚未生成" : e4Detail.devices.length === 0 ? "尚未生成" : <span style={{ display: "grid", gap: 8, textAlign: "left" }}>
+                {e4Detail.devices.map((device, index) => {
+                  const ownershipLabels: Record<string, string> = { OWNED: "持有中", REFUNDED: "已退款", REVOKED: "已收回", RECYCLED: "已回收", UNBOUND: "已解绑" };
+                  return <span key={device.deviceId} style={{ borderTop: index > 0 ? "1px solid var(--border)" : undefined, paddingTop: index > 0 ? 8 : 0 }}>
+                    <span style={{ display: "block" }}>{device.kind === "PROMOTION_GIFT" ? "赠品设备" : "购买设备"} · {operatorDeviceStatus(device.status)} · {ownershipLabels[device.ownershipStatus ?? ""] ?? device.ownershipStatus ?? "持有状态未提供"}</span>
+                    <span style={{ display: "block", marginTop: 4, fontFamily: "var(--mono)", fontSize: 12, color: "var(--ink-3)", wordBreak: "break-all" }}>{device.deviceInstanceNo ?? `设备 ${device.deviceId}`}</span>
+                  </span>;
+                })}
+              </span>} />
               <KV k="平台资金覆盖率" v={<span style={{ color: e4Detail.refundAllowed ? "var(--ok)" : "var(--danger)" }}>{coverageText}</span>} />
             </>}
             {isCancelled(o.id) && <KV k="取消" v={<span style={{ color: "var(--ink-3)" }}>已取消 · 用户未付款，订单已终止</span>} />}

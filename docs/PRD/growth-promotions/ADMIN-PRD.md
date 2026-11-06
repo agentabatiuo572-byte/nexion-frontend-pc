@@ -520,6 +520,8 @@ withdraw 使用 growth_promotion_submit，输入当前候选 version、expectedR
 
 simulate 使用独立 AdminSimulation 响应：pricing、ruleResults、rewardUnits、resources、quotaImpact、publicPreview、blockers 与 configHash/asOf。ruleResults 列出每条规则的双方结果和可读原因，rewardUnits 指向购买组范围与受益人；resources 分资产/设备 SKU 表示预算和库存需求、可用量、短缺或未知。quotaImpact 读取活动和受益人累计计数，列出限额、已用加预留、预计本笔消耗及剩余，覆盖活动订单、人员订单和规则组数。缺账户样本、可执行政策或事实源时标未知；成本无来源为 null，不拿售价当成本。公开 Quote 不承载运营诊断，试算不保存真实报价、不预留、不执行资产动作。
 
+H4 试算摘要的「赠品成本」读取本次响应的 `giftCostUsdt`，按 USDT 显示；null 显示「未提供」，真实零值显示 0。页面不自行从售价、预算或其他报表推算成本（2026-11-06，BUG-271）。
+
 ##### 权限与审计
 
 能力分别为试算活动、提交审核、审核活动、发布活动；全部待映射 RBAC/A2。审计保留操作者、审批人与操作关系、版本/hash、样本类型、检查结果、原因、命令号和执行结果。最终发布需后端授权复核，不能接受客户端 `approved=true`。

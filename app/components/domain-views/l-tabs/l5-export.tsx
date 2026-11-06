@@ -354,7 +354,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
             <span className="st">确认聚合范围</span><span className="ar">→</span>
             <span className="st ok">文件已生成</span><span className="ar">生成 24 小时下载链接 →</span>
             <span className="st">下载（有记录）</span>
-            <span className="ar" style={{ marginLeft: 12 }}>旧任务失败 / 过期 →</span><span className="st bad">可重新发起</span>
+            <span className="ar" style={{ marginLeft: 12 }}>支持重发且有快照的任务失败 / 过期 →</span><span className="st bad">可重新发起</span>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
