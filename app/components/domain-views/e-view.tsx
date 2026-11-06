@@ -656,6 +656,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有后端明确拒绝才给解除入口。 */
   const retryE4Pending = async (record: E4PendingCommand) => {
     if (record.expiresAt <= Date.now()) { syncE4Pending(); return; }
+    if (!(record.spec.command.op === "e4_order_refund" ? canRefundE4 : canWriteE4)) {
+      noteE4Pending(record, "这个账号已没有这项权限，请有权限的同事处理");
+      return;
+    }
     // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
     if (!e4PendingCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
       e4PendingCommands.forget(record.fingerprint, record.commandKey);
@@ -1984,7 +1988,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               if (!(E4_REFUND_REASONS as readonly string[]).includes(refundReasonCode)) { throw new Error("请选择退款原因"); }
               const def = findHighOp("e4_order_refund")!;
               if (await sendE4Proposal({
-                action: mc.name, obj: mc.orderId, before: effOrderState(mc.orderId), after: "已退款", type: def.type, amplifies: true,
+                action: mc.name, obj: mc.orderId, before: stateLabel(effOrderState(mc.orderId)), after: "已退款", type: def.type, amplifies: true,
                 gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
                 command: def.buildCommand({ orderNo: mc.orderId, refundChannel, refundReasonCode }),
                 target: def.buildTarget({ orderNo: mc.orderId }),
@@ -1994,7 +1998,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               if (!E4_CLOSE_REASONS.cancelled.includes(closeReasonCode)) { throw new Error("请选择取消原因"); }
               const def = findHighOp("e4_order_cancel")!;
               if (await sendE4Proposal({
-                action: mc.name, obj: mc.orderId, before: effOrderState(mc.orderId), after: "已取消", type: def.type, amplifies: false,
+                action: mc.name, obj: mc.orderId, before: stateLabel(effOrderState(mc.orderId)), after: "已取消", type: def.type, amplifies: false,
                 gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
                 command: def.buildCommand({ orderNo: mc.orderId, closeReasonCode }),
                 target: def.buildTarget({ orderNo: mc.orderId }),
@@ -2007,7 +2011,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               if (choices && !choices.includes(closeReasonCode)) { throw new Error("请选择原因"); }
               const def = findHighOp("e4_order_terminal")!;
               if (await sendE4Proposal({
-                action: mc.name, obj: mc.orderId, before: effOrderState(mc.orderId), after: stateLabel(v), type: def.type, amplifies: false,
+                action: mc.name, obj: mc.orderId, before: stateLabel(effOrderState(mc.orderId)), after: stateLabel(v), type: def.type, amplifies: false,
                 gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
                 command: def.buildCommand({ orderNo: mc.orderId, terminalState: v, closeReasonCode }),
                 target: def.buildTarget({ orderNo: mc.orderId }),

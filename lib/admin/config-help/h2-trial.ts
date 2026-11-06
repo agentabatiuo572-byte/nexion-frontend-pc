@@ -64,13 +64,11 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
     what: "试用转购买时，售价减掉的比例",
     when: AT_PURCHASE,
     impact: "用户购买时按新比例算，进行中的试用也一样",
-    how: "填 0，或大于 1、不超过 100 的百分比，15 就是减 15%。",
+    how: "0–100 的百分比，0.5 就是减 0.5%，15 就是减 15%。",
     howMore: "实际减的钱不超过「购买折扣上限」，和试用收益抵扣、提前购买立减叠加。",
     where: "App 结算页「试用折扣」这一行",
     input: { unit: "%", min: 0, max: 100 },
     whatIf: (value) => (Number(value) === 0 ? "改成 0：用户购买时没有购买折扣。" : `改成 ${value}：用户购买时售价减 ${value}%，不超过购买折扣上限。`),
-    // 后端小于等于 1 时按比例算（填 1 等于减 100%），大于 1 才按百分比。后端统一单位前，页面不让配出和写的不一样的结果。
-    reject: (value) => (Number(value) > 0 && Number(value) <= 1 ? "现在不能填 0 到 1 之间的数（含 1）：系统会按比例算，填 1 等于减 100%。填 0，或大于 1 的百分比。" : undefined),
   },
   discountCapUSD: {
     label: "购买折扣上限",
@@ -94,21 +92,21 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
   },
   graceDays: {
     what: "试用到期后还能用抵扣金购买的天数",
-    when: "立即生效，进行中的试用也按新天数算",
-    impact: "没结束的试用都按新天数算，已延长的不变",
+    when: "立即生效，只影响之后新领取或重新领取的试用",
+    impact: "只影响之后新领取或重新领取的试用，已有试用按领取时的天数",
     how: "整数，0–30 天。",
     where: "App 我的 › 试用页「抵扣剩余时间」",
     input: { unit: "天", min: 0, max: 30, step: 1 },
-    whatIf: (value) => (Number(value) === 0 ? "改成 0：试用到期后不能再用抵扣金购买。" : `改成 ${value}：试用到期后 ${value} 天内还能用抵扣金购买。`),
+    whatIf: (value) => (Number(value) === 0 ? "改成 0：之后新领取或重新领取的试用，到期后不能再用抵扣金购买。" : `改成 ${value}：之后新领取或重新领取的试用，到期后 ${value} 天内还能用抵扣金购买。`),
   },
   extensionDays: {
     what: "用户接受延长时多给的天数",
-    when: "立即生效，之后接受延长的用新天数",
-    impact: "之后接受延长的试用按新天数，已延长的不变",
+    when: "立即生效，只影响之后新领取或重新领取的试用",
+    impact: "只影响之后新领取或重新领取的试用，已有试用按领取时的天数",
     how: "整数，1–30 天。",
     // 后端存得下 0，但用的时候按 1 天算（positiveInt），这里不让填 0，改后的值才是真实天数。
     input: { unit: "天", min: 1, max: 30, step: 1 },
-    whatIf: (value) => `改成 ${value}：之后接受延长的试用多给 ${value} 天。`,
+    whatIf: (value) => `改成 ${value}：之后新领取或重新领取的试用，接受延长时多给 ${value} 天。`,
   },
   highQualityThresholdUSD: {
     what: "累计试用收益到这个数算高质量，才能延长",
