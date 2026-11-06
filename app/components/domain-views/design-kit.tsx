@@ -543,7 +543,7 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 }
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
-export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; current?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; step?: number; disallowCurrent?: boolean; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
+export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; current?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; maxDecimals?: number; step?: number; disallowCurrent?: boolean; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
@@ -606,6 +606,7 @@ function isEditValueValid(spec: EditSpec | null, value: string): boolean {
   if ((spec.kind ?? "text") !== "number") return true;
   const normalized = value.trim();
   if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(normalized)) return false;
+  if (spec.maxDecimals !== undefined && (normalized.split(".")[1]?.length ?? 0) > spec.maxDecimals) return false;
   const numeric = Number(normalized);
   if (!Number.isFinite(numeric)) return false;
   if (spec.min !== undefined && numeric < spec.min) return false;
@@ -3711,7 +3712,7 @@ export function OperationConfirmModal({ action, detail, content, amplifies, cove
           )}
           {!editValueOk && !retryApproval && kind === "number" && newVal && (
             <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
-              请输入 {spec.min ?? "允许范围"}～{spec.max ?? "允许上限"} 的有效数字{spec.step ? `（步长 ${spec.step}）` : ""}。
+              请输入 {(spec.maxDecimals !== undefined ? spec.min?.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: spec.maxDecimals }) : spec.min) ?? "允许范围"}～{(spec.maxDecimals !== undefined ? spec.max?.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: spec.maxDecimals }) : spec.max) ?? "允许上限"} 的有效数字{spec.maxDecimals !== undefined ? `，最多 ${spec.maxDecimals} 位小数` : ""}{spec.step ? `（步长 ${spec.step}）` : ""}。
             </div>
           )}
           {!compareEdit && newVal && spec.current && (
