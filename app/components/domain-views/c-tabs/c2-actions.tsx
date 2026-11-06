@@ -305,7 +305,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     setMirror(null);
     setMirrorToken("");
     setMirrorPage("HOME");
-    toast("模拟登录已到期，已自动关闭。");
+    toast("用户数据只读视图已到期，已自动关闭。");
     void loadOverview(true);
   }, [loadOverview, mirror, nowMs, toast]);
 
@@ -776,7 +776,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         || asNumber(overview?.totalImpersonations) > impersonations.length
       ) && (
         <div className="ctint" style={{ marginBottom: 12 }}>
-          当前显示最近的记录：账户 {accounts.length}/{asNumber(overview?.totalAccounts)}、名单 {listRows.length}/{asNumber(overview?.totalAccountLists)}、会话 {sessions.length}/{asNumber(overview?.totalSessions)}、模拟登录 {impersonations.length}/{asNumber(overview?.totalImpersonations)}；上方统计值来自全量聚合，不受展示上限影响。
+          当前显示最近的记录：账户 {accounts.length}/{asNumber(overview?.totalAccounts)}、名单 {listRows.length}/{asNumber(overview?.totalAccountLists)}、会话 {sessions.length}/{asNumber(overview?.totalSessions)}、用户数据只读视图 {impersonations.length}/{asNumber(overview?.totalImpersonations)}；上方统计值来自全量聚合，不受展示上限影响。
         </div>
       )}
 

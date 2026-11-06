@@ -379,7 +379,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "c2_impersonate_terminate",
     domain: "C",
-    action: "终止模拟登录",
+    action: "终止用户数据只读视图",
     amplifies: false,
     type: "acct",
     gateLabel: "门槛者",
@@ -394,7 +394,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "c2_impersonate_start",
     domain: "C",
-    action: "发起模拟登录",
+    action: "发起用户数据只读视图",
     amplifies: false,
     type: "acct",
     gateLabel: "门槛者",
