@@ -285,8 +285,6 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const [recoveryError, setRecoveryError] = useState("");
   const [recoveryBusy, setRecoveryBusy] = useState("");
   const [sendError, setSendError] = useState("");
-  // 权限失效会把这位客户和右边的提示一起清掉，这句放在页面上，换客户也不消失（OP-132）。
-  const [scopeNotice, setScopeNotice] = useState("");
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [attachmentPolicy, setAttachmentPolicy] = useState<SupportAttachmentPolicy | null>(null);
   const [attachmentPolicyError, setAttachmentPolicyError] = useState("");
@@ -783,7 +781,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     };
   }, []);
   useEffect(() => {
-    setDrafts({}); setDraftOwner(0); setPending(null); setFirstPending(null); setSendError(""); setScopeNotice(""); setMaintenanceChosen(false); setBusy(false); setActionChecking(false); setRevokedIds(new Set()); setTicketLinks({}); setContentChoice(null); setBulkOpen(false); setContactOpen(false); setTimeoutOpen(false); seenMessages.current=null; setNewMessageIds(new Set()); clearAttachment();
+    setDrafts({}); setDraftOwner(0); setPending(null); setFirstPending(null); setSendError(""); setMaintenanceChosen(false); setBusy(false); setActionChecking(false); setRevokedIds(new Set()); setTicketLinks({}); setContentChoice(null); setBulkOpen(false); setContactOpen(false); setTimeoutOpen(false); seenMessages.current=null; setNewMessageIds(new Set()); clearAttachment();
   }, [authEpoch, clearAttachment]);
   useEffect(() => {
     setTimeoutOpen(false); setTimeoutPolicy(null); setTimeoutInput(undefined); setTimeoutPending(null); setTimeoutLatest(null); setTimeoutConflict(false); setTimeoutReadOnly(false); setTimeoutError(""); setTimeoutSaving(false);
@@ -1037,9 +1035,9 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
             lockFromBusy(requestedCustomerId, busyHold);
           } else if (submitted && rejectedSend(cause)) {
             pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId)); setFirstPending(null);
-            if (lostPermission(cause)) { setScopeNotice("消息没有发出，内容已清除：这位客户的归属或你的会话权限变了。请回客户列表核对。"); ctx.invalidateScope(undefined, requestedCustomerId); setSendError("当前客户归属或会话权限已变化，请返回客户列表核对。"); }
+            if (lostPermission(cause)) { ctx.invalidateScope(undefined, requestedCustomerId, "消息没有发出，内容已清除：这位客户的归属或你的会话权限变了。请回客户列表核对。"); setSendError("当前客户归属或会话权限已变化，请返回客户列表核对。"); }
             else { setDetailRetry((value) => value + 1); setSendError(`本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对客户归属后修改重发。`); }
-          } else { if (lostPermission(cause)) { setScopeNotice("这条消息的发送结果待确认：这位客户的归属或你的会话权限变了。请回客户列表核对，不要重发。"); ctx.invalidateScope(undefined, requestedCustomerId); } setSendError(`发送失败或结果待确认：${displayAdminError(cause)} 请查询发送结果。`); }
+          } else { if (lostPermission(cause)) { ctx.invalidateScope(undefined, requestedCustomerId, "这条消息的发送结果待确认：这位客户的归属或你的会话权限变了。请回客户列表核对，不要重发。"); } setSendError(`发送失败或结果待确认：${displayAdminError(cause)} 请查询发送结果。`); }
         }
       }
       finally { if (identityRef.current === identity) setBusy(false); }
@@ -1124,11 +1122,11 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (identityRef.current === identity && submitted && rejectedSend(cause)) {
         pendingMessages.forget(pendingKey(adminId)); setPending(null);
         void ctx.refreshConversations().catch(() => {});
-        if (lostPermission(cause)) { setScopeNotice("消息没有发出，内容已清除：你对这个会话的权限变了。请回客户列表核对。"); ctx.invalidateScope(selected.id, String(selected.customerId)); setSendError("当前会话权限已变化，请返回客户列表核对。"); }
+        if (lostPermission(cause)) { ctx.invalidateScope(selected.id, String(selected.customerId), "消息没有发出，内容已清除：你对这个会话的权限变了。请回客户列表核对。"); setSendError("当前会话权限已变化，请返回客户列表核对。"); }
         else setSendError(`本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对会话后修改重发。`);
         return;
       }
-      if (identityRef.current === identity) { if (lostPermission(cause)) { setScopeNotice("这条消息的发送结果待确认：你对这个会话的权限变了。请回客户列表核对，不要重发。"); ctx.invalidateScope(selected.id, String(selected.customerId)); } setSendError(`发送结果待确认：${displayAdminError(cause)} 请查询发送结果。`); }
+      if (identityRef.current === identity) { if (lostPermission(cause)) { ctx.invalidateScope(selected.id, String(selected.customerId), "这条消息的发送结果待确认：你对这个会话的权限变了。请回客户列表核对，不要重发。"); } setSendError(`发送结果待确认：${displayAdminError(cause)} 请查询发送结果。`); }
     }
     finally { if (identityRef.current === identity) setBusy(false); }
     if (identityRef.current !== identity) return;
@@ -1185,7 +1183,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (controller.signal.aborted) return;
       if (attachmentRef.current?.uploadId !== current.uploadId) return;
       if (lostPermission(cause)) {
-        setScopeNotice("图片没有上传：你对这位客户的权限变了。请回客户列表核对。"); ctx.invalidateScope(selected.id, String(selected.customerId)); setSendError("当前已无权上传该客户图片，请返回客户列表刷新。");
+        ctx.invalidateScope(selected.id, String(selected.customerId), "图片没有上传：你对这位客户的权限变了。请回客户列表核对。"); setSendError("当前已无权上传该客户图片，请返回客户列表刷新。");
       } else setAttachment({ ...current, state: "error", error: displayAdminError(cause) });
     } finally { if (uploadControllerRef.current === controller) uploadControllerRef.current = null; }
   };
@@ -1199,12 +1197,12 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     try {
       const detail = await supportClient.customerDetail(String(conversation.customerId));
       if(requestStamp!==identityRef.current)return false;
-      if (detail.agentAdminId !== adminId || !detail.assignmentId) { setScopeNotice("这次操作没有执行：这位客户的归属变了。请回客户列表核对。"); ctx.invalidateScope(conversation.id, String(conversation.customerId)); setActionError("客户归属已变化，请刷新会话后重试。"); return false; }
+      if (detail.agentAdminId !== adminId || !detail.assignmentId) { ctx.invalidateScope(conversation.id, String(conversation.customerId), "这次操作没有执行：这位客户的归属变了。请回客户列表核对。"); setActionError("客户归属已变化，请刷新会话后重试。"); return false; }
       if(conversation.id===activeConversationRef.current)setProfileDetail(detail);
       // waitingReply aggregates all customer history. The backend checks pending
       // replies for each selected conversation together with its versioned write.
       return true;
-    } catch (cause) { if(requestStamp!==identityRef.current)return false; if (lostPermission(cause)) { setScopeNotice("这次操作没有执行：你对这位客户的权限变了。请回客户列表核对。"); ctx.invalidateScope(conversation.id, String(conversation.customerId)); } setActionError(`客户归属暂时无法核对：${displayAdminError(cause)} 请重试。`); return false; }
+    } catch (cause) { if(requestStamp!==identityRef.current)return false; if (lostPermission(cause)) { ctx.invalidateScope(conversation.id, String(conversation.customerId), "这次操作没有执行：你对这位客户的权限变了。请回客户列表核对。"); } setActionError(`客户归属暂时无法核对：${displayAdminError(cause)} 请重试。`); return false; }
     finally { if(requestStamp===identityRef.current)setActionChecking(false); }
   };
   // 确认框里的写入：失败原因抛给确认框写在框内，理由留着，原操作号不变，再点就是重试。
@@ -1483,7 +1481,6 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       readOnly={!canWriteM3 ? "当前账号只能查看会话" : undefined}
       guideExtra={<p>{guideRole}</p>} />
     {banner}
-    {scopeNotice && <Notice tone="danger" action={<Button size="sm" onClick={() => setScopeNotice("")}>知道了</Button>}>{scopeNotice}</Notice>}
     {streamLost && !reconnectExhausted && <Notice tone="warn">连接已断开，正在重连；下面是最近一次的数据</Notice>}
     {!conversationsAvailable
       ? <Conclusion state="danger" action={<Button size="sm" onClick={() => void ctx.refreshConversations()}>重新连接</Button>}>{serviceStatus}</Conclusion>

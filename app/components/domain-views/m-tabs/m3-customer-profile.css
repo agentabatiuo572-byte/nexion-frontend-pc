@@ -44,8 +44,8 @@
 .m3-profile-shortcuts .rd-btn-face{flex-direction:column;gap:3px}
 .m3-customer-sidebar button:focus-visible,.m3-customer-sidebar select:focus-visible{outline:2px solid var(--v5-brand);outline-offset:2px}
 .m3-service-profile{font-size:14px}
-.m3-service-profile .cvp-row{display:grid;grid-template-columns:minmax(120px,184px) minmax(0,1fr);gap:var(--rd-space-3);padding:4px 0}
-.m3-service-profile .cvp-row .k{color:var(--rd-text-3);font-size:var(--rd-text-aux)}
+.mdom .m3-service-profile .cvp-row,.rd-modal .m3-service-profile .cvp-row{padding:4px 0;border-top:0}
+.mdom .m3-service-profile .cvp-row .v,.rd-modal .m3-service-profile .cvp-row .v{text-align:left}
 .m3-profile-actions{display:flex;flex-wrap:wrap;gap:var(--rd-space-2)}
 .m3-profile-editor{display:flex;align-items:flex-end;gap:12px;margin:16px 0}
 .m3-profile-editor>label{display:flex;flex:1;flex-direction:column;gap:8px;min-width:0}

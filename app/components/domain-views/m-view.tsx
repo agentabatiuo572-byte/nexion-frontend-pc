@@ -145,6 +145,9 @@ const refusedWrite = (error: unknown) => {
 
 const M3_SUMMARY = "和客户对话：先回待回复的，客户资料在右边。";
 
+/** 权限失效后外壳读回权限，这一页整个重挂，提示放在模块里才留得住（OP-132）。换账号不显示，刷新页面才清。 */
+let lastScopeNotice: { adminId?: number; text: string } | null = null;
+
 export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "M1", [meta.l2Id]);
@@ -158,6 +161,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const actionConfirmRunRef = useRef<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
   const [mData, setMData] = useState<MContentData | null>(null);
+  const [scopeNotice, setScopeNotice] = useState(lastScopeNotice);
   const [alertMinutes, setAlertMinutes] = useState(5);
   const supervisesSupport = Boolean(session?.supportReadModes?.some((mode) => mode === "MANAGED" || mode === "ALL")) || session?.role === "superadmin" || session?.role === "super";
   useEffect(() => {
@@ -370,7 +374,8 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   // 鉴权：走同源 cookie（nexion_admin_token 由 Next route 转 Authorization 头）。
   // 仅走同源 httpOnly cookie 代理；JWT 永不进入 SSE URL。
   const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
-  const invalidateScope = useCallback((conversationNo?: string, customerId?: string) => {
+  const invalidateScope = useCallback((conversationNo?: string, customerId?: string, notice?: string) => {
+    if (notice) { lastScopeNotice = { adminId: session?.adminId, text: notice }; setScopeNotice(lastScopeNotice); }
     mLoadCoordinator.current.beginConversationSnapshot();
     liveSnapshotController.current?.abort();
     const affectedIds = mDataRef.current?.conversations.filter((conversation) => conversation.id === conversationNo || customerId && conversation.customerId === customerId).map((conversation) => conversation.id) ?? [];
@@ -650,7 +655,9 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const right = liveCount ? <span className="f-live"><span className="dot" />{liveCount}</span> : null;
   const backToCustomers = fromCustomers ? <Link className="m-back-link" href="/service/overview?view=customers&restore=customers">‹ 返回负责组客户</Link> : undefined;
   // 这三条提醒说的是整页的数据，放在专属会话的页头下面。
-  const m3Banner = tab === "M3" && (mError || permissionUnknown || reconnectExhausted) ? <>
+  const shownScopeNotice = scopeNotice?.adminId === session?.adminId ? scopeNotice?.text : "";
+  const m3Banner = tab === "M3" && (mError || permissionUnknown || reconnectExhausted || shownScopeNotice) ? <>
+    {shownScopeNotice && <Notice tone="danger" action={<Button size="sm" onClick={() => { lastScopeNotice = null; setScopeNotice(null); }}>知道了</Button>}>{shownScopeNotice}</Notice>}
     {mError && <Notice tone="danger" action={<Button size="sm" onClick={() => void reloadMContent()}>重试</Button>}>客服中心暂时无法同步数据,请稍后重试。</Notice>}
     {permissionUnknown && <Notice tone="warn" action={<Button size="sm" onClick={() => void reloadMContent()}>重试核对</Button>}>坐席身份暂时无法核对，对客操作和管理入口已暂缓显示。</Notice>}
     {reconnectExhausted && <Notice tone="danger" action={<Button size="sm" onClick={retryConversationStream}>重新连接</Button>}>会话更新已暂停，当前信息可能不是最新状态。请点击“重新连接”或刷新页面。</Notice>}
