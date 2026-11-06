@@ -847,11 +847,11 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           <>
             <JudgmentPoints rows={[
               { label: "状态", value: <StatusTag tone={currentRow.tone}>{currentRow.label}</StatusTag>, reason: TRIAL_STATE_HELP[currentRow.session.state] },
-              ...(currentRow.session.pendingApproval ? [{ label: "审批", value: <TrialPendingApproval approval={currentRow.session.pendingApproval} />, reason: "审批结束后才能发起新操作。" }] : []),
+              ...(currentRow.session.pendingApproval ? [{ label: "审批", value: <TrialPendingApproval approval={currentRow.session.pendingApproval} />, reason: "等待超级管理员审批，批准后才执行原操作。审批结束后才能发起新操作。" }] : []),
               { label: "账户", value: trialOwnerLabel(currentRow.session), state: currentRow.owner ? undefined : "warn" },
               { label: "累计收益", value: shadowText(currentRow.session.shadow) },
               ...(canCharge && !currentRow.terminal ? [{ label: "强制扣款", value: CHARGE_RESULT }] : []),
-              { label: "能不能处理", value: currentRow.terminal ? "已结束，不能再取消或扣款" : lockedSids.has(currentRow.session.sid) ? "有结果未确认的操作，先处理页面上方的待确认" : !currentRow.owner ? "没有用户归属，不能取消或扣款" : canHandle ? "平时不用处理，确要干预才提交下面的操作" : "这个账号只能查看" },
+              { label: "能不能处理", value: currentRow.session.pendingApproval ? "等待审批结果，审批结束后才能再次处理" : currentRow.terminal ? "已结束，不能再取消或扣款" : lockedSids.has(currentRow.session.sid) ? "有结果未确认的操作，先处理页面上方的待确认" : !currentRow.owner ? "没有用户归属，不能取消或扣款" : canCancel ? "平时不用处理，确要干预才提交强制取消审批" : "这个账号只能查看" },
             ]} />
             <Facts>
               <Fact k="试用记录编号"><span data-mono="">{currentRow.session.sid}</span></Fact>
