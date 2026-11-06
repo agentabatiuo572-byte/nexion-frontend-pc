@@ -204,7 +204,7 @@ function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
     const assets = jsonRecords(screen.assetSummary);
     const devices = jsonRecord(screen.deviceSummary);
     return <div data-testid="impersonation-home-screen">
-      <h3 style={{ margin: "14px 0 4px" }}>用户看到的首页</h3>
+      <h3 style={{ margin: "14px 0 4px" }}>首页数据</h3>
       <p style={{ margin: "0 0 12px", color: "var(--ink-3)" }}>{text(screen.greeting).replace(/^(你好，)(.+)$/, (_, greeting: string, name: string) => greeting + operatorNicknameText(name))}</p>
       <div className="row wrap" style={{ gap: 8 }}>{assets.map((asset) => <div className="ctint" key={nexGridBrandText(text(asset.symbol))}><b>{nexGridBrandText(text(asset.symbol))}</b><br />{formatAmount(asset.available)}</div>)}</div>
       <div className="kv"><span className="k">设备概况</span><span className="v">活跃 {text(devices.active, "0")} / 共 {text(devices.total, "0")}</span></div>
@@ -214,7 +214,7 @@ function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
   if (template === "H5_WALLET") {
     const assets = jsonRecords(screen.assets);
     return <div data-testid="impersonation-wallet-screen">
-      <h3 style={{ margin: "14px 0 8px" }}>用户看到的钱包</h3>
+      <h3 style={{ margin: "14px 0 8px" }}>钱包数据</h3>
       {assets.map((asset) => <div className="kv" key={nexGridBrandText(text(asset.symbol))}><span className="k">{nexGridBrandText(text(asset.symbol))} 可用</span><span className="v">{formatAmount(asset.available)}</span></div>)}
       <div className="ctint warn" style={{ marginTop: 10 }}>{text(screen.readOnlyHint)}</div>
     </div>;
@@ -222,14 +222,14 @@ function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
   if (template === "H5_DEVICES") {
     const devices = jsonRecords(screen.devices);
     return <div data-testid="impersonation-devices-screen">
-      <h3 style={{ margin: "14px 0 8px" }}>用户看到的设备</h3>
+      <h3 style={{ margin: "14px 0 8px" }}>设备数据</h3>
       <div className="kv"><span className="k">设备概况</span><span className="v">活跃 {text(screen.active, "0")} / 共 {text(screen.total, "0")}</span></div>
       {Boolean(screen.truncated) && <div className="ctint warn" style={{ marginBottom: 10 }}>该用户共有 {text(screen.total, "0")} 台设备，这里只显示最近 {text(screen.shown, String(devices.length))} 台。</div>}
       {devices.length > 0 ? <table className="l-tbl"><thead><tr><th>设备</th><th>状态</th><th>算力</th><th>日收益参考</th></tr></thead><tbody>{devices.map((device) => <tr key={text(device.instanceNo)}><td>{text(device.name)}<br /><span className="mono">{text(device.instanceNo)}</span></td><td>{formatC1DeviceStatus(device.status)}</td><td>{formatAmount(device.hashrate)}</td><td>{deviceDailyReference(device)}</td></tr>)}</tbody></table> : <p className="tiny">该用户暂无设备。</p>}
     </div>;
   }
   return <div data-testid="impersonation-profile-screen">
-    <h3 style={{ margin: "14px 0 8px" }}>用户看到的「我的」</h3>
+    <h3 style={{ margin: "14px 0 8px" }}>用户资料</h3>
     <div className="kv"><span className="k">用户编码</span><span className="v">{text(screen.userNo)}</span></div>
     <div className="kv"><span className="k">昵称</span><span className="v">{operatorNicknameText(text(screen.nickname))}</span></div>
     <div className="kv"><span className="k">账户状态</span><span className="v">{accountStatusLabel(screen.accountStatus)}</span></div>
@@ -305,7 +305,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     setMirror(null);
     setMirrorToken("");
     setMirrorPage("HOME");
-    toast("模拟登录已到期，已自动关闭。");
+    toast("用户数据只读视图已到期，已自动关闭。");
     void loadOverview(true);
   }, [loadOverview, mirror, nowMs, toast]);
 
@@ -581,8 +581,8 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   };
 
   const startImp = () => openActionConfirm({ briefKind: "security",
-    action: "以用户身份只读查看",
-    detail: "确认后打开该用户看到的 App 页面，只能看不能改，到时间自动关闭。",
+    action: "用户数据只读视图",
+    detail: "确认后打开用户数据只读视图，只能看不能改，到时间自动关闭。",
     amplifies: false,
     completionCopy: "确认后立即生效。",
     reasonMin: 8,
@@ -611,8 +611,8 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
             setMirrorToken(accessToken);
             setMirrorPage("HOME");
             setMirror(await fetchImpersonationReadonlyView(accessToken, "HOME"));
-            return `已打开 ${displayAccount(target)} 的用户视角`;
-          }, "已打开用户视角");
+            return `已打开 ${displayAccount(target)} 的用户数据只读视图`;
+          }, "已打开用户数据只读视图");
         } catch (err) {
           toast(errorMessage(err));
         }
@@ -776,7 +776,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         || asNumber(overview?.totalImpersonations) > impersonations.length
       ) && (
         <div className="ctint" style={{ marginBottom: 12 }}>
-          当前显示最近的记录：账户 {accounts.length}/{asNumber(overview?.totalAccounts)}、名单 {listRows.length}/{asNumber(overview?.totalAccountLists)}、会话 {sessions.length}/{asNumber(overview?.totalSessions)}、模拟登录 {impersonations.length}/{asNumber(overview?.totalImpersonations)}；上方统计值来自全量聚合，不受展示上限影响。
+          当前显示最近的记录：账户 {accounts.length}/{asNumber(overview?.totalAccounts)}、名单 {listRows.length}/{asNumber(overview?.totalAccountLists)}、会话 {sessions.length}/{asNumber(overview?.totalSessions)}、用户数据只读视图 {impersonations.length}/{asNumber(overview?.totalImpersonations)}；上方统计值来自全量聚合，不受展示上限影响。
         </div>
       )}
 
@@ -836,7 +836,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
 
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">以用户身份只读查看</span>
+            <span className="ttl">用户数据只读视图</span>
             <span className="sub">· 用于复现用户反馈的问题</span>
             <div className="r">{canStartImpersonation && <button disabled={busy} className="l-btn mc" onClick={startImp}>开始查看</button>}</div>
           </div>
@@ -862,7 +862,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
             {!loading && impersonations.length === 0 && (
               <div style={{ fontSize: 12, color: "var(--ink-4)", lineHeight: 1.55 }}>暂无记录。</div>
             )}
-            <div className="ctint warn" style={{ marginTop: 12, fontSize: 12 }}><b>只能看，不能改</b> · 看到的就是用户在 App 里看到的页面，所有修改操作都会被拒绝。</div>
+            <div className="ctint warn" style={{ marginTop: 12, fontSize: 12 }}><b>只能看，不能改</b> · 这里显示该用户的数据，不是用户看到的 App 页面；所有修改操作都会被拒绝。</div>
           </div>
         </section>
       </div>
@@ -1011,9 +1011,9 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       )}
 
       {mirror && (
-        <Drawer title={`用户视角（只读）· ${text(jsonRecord(mirror.user).userNo)}`} onClose={() => { setMirror(null); setMirrorToken(""); }}>
+        <Drawer title={`用户数据只读视图 · ${text(jsonRecord(mirror.user).userNo)}`} onClose={() => { setMirror(null); setMirrorToken(""); }}>
           <div className="ctint warn" style={{ marginBottom: 12 }}>
-            <b>正在以用户身份只读查看</b>　剩余 <b className="inline-block min-w-[5ch] tabular-nums" data-testid="impersonation-countdown">{formatCountdown(mirrorRemainingSeconds)}</b> · 到期 {formatDate(mirror.expiresAt)}
+            <b>用户数据只读视图</b>　剩余 <b className="inline-block min-w-[5ch] tabular-nums" data-testid="impersonation-countdown">{formatCountdown(mirrorRemainingSeconds)}</b> · 到期 {formatDate(mirror.expiresAt)}
             <div style={{ marginTop: 6 }}>点右上角关闭只是收起窗口，计时仍在继续；看完请点「退出并结束」。</div>
           </div>
           <ImpersonationUserScreen screen={jsonRecord(mirror.screen)} />
