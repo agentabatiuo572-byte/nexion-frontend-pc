@@ -363,8 +363,8 @@
 /* 覆盖率跟在事实后面，是这一块的最后一行：资金信息排在要填的字段前，不会滚到理由框后面。 */
 .rd-modal.rd-confirm .rd-confirm-facts > .alertbar { margin-top: 8px; }
 .rd-modal.rd-confirm .rd-confirm-facts > .alertbar.calm { padding: 0; background: none; }
-/* 只有一句「现在 → 改后」时不用底块，内容太短，底块右边全是空的。 */
-.rd-confirm-facts:has(> .rd-diff-one:only-child) { padding: 0; background: none; }
+/* 只有一句「现在 → 改后」或一行事实时不用底块，内容太短，底块右边全是空的。 */
+.rd-confirm-facts:is(:has(> .rd-diff-one:only-child), :has(> .rd-facts:only-child > .rd-fact:only-child)) { padding: 0; background: none; }
 .rd-confirm-alert { margin-bottom: 16px; }
 .rd-confirm-alert .rd-notice { padding: 8px 16px; border-radius: var(--rd-radius-control); }
 .rd-confirm-edit { margin-bottom: 16px; }
@@ -568,7 +568,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-change-unit { margin-left: 4px; font-size: var(--rd-text-body); font-weight: 400; color: var(--rd-text-3); }
 .rd-change-arrow { flex: none; color: var(--rd-text-3); }
 .rd-change-entry { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: var(--rd-control-h-lg); }
-.rd-change-entry > :is(.rd-number, .rd-input) { flex: 1 1 160px; width: auto; min-width: 0; }
+.rd-change-entry > :is(.rd-number, .rd-input) { flex: 1 1 160px; width: auto; min-width: 0; max-width: none; }
 .rd-change[data-size="key"] .rd-change-entry .rd-input { height: var(--rd-control-h-lg); font-size: var(--rd-text-title); font-weight: 600; font-variant-numeric: tabular-nums; }
 .rd-change[data-size="key"] .rd-change-entry .rd-number-unit { height: var(--rd-control-h-lg); }
 .rd-change[data-size="body"] :is(.rd-change-now, .rd-change-entry) { min-height: var(--rd-control-h); }
