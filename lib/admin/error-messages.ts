@@ -1,5 +1,4 @@
 export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
-  C1_PAGE_NUM_INVALID: "分页页码无效，请返回第一页重新查询。",
   SIMULATED_DURATION_MINUTES_INVALID: "固定时长须为 1–1440 的整数分钟。",
   SIMULATED_FIXED_REWARD_INVALID: "固定奖励须为非负数，最多 12 位整数、6 位小数。",
   SIMULATED_ASSET_INVALID: "请选择 USDT 或 UVT 奖励资产。",
@@ -1236,6 +1235,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   // 真属运营输入侧的两个码:给可操作提示,不落中性兜底(兜底只说「刷新重试」对它们没用)。
   A1_CREATE_TEMPORARY_PASSWORD_MISSING: "请先填写新账号的初始密码后再提交。",
   NOVA_PUBLISHED_TEMPLATE_REQUIRED: "该渠道还没有已发布的模板，请先发布模板再恢复投放。",
+  C1_PAGE_NUM_INVALID: "分页页码无效，请返回第一页重新查询。",
   C1_RAW_PHONE_SEARCH_FORBIDDEN: "为保护用户隐私，不支持按原始手机号检索；请使用脱敏手机号或手机号哈希",
   // ---- 2026-08-06 main 合流补账:合流后哨兵扫出的 17 个无文案机器码,逐条补运营中文 ----
   E2_TASK_PRICING_PROTOCOL_INVALID: "任务定价服务返回的数据不完整或不一致，页面已停止展示；请重试加载或联系值班人员。",
