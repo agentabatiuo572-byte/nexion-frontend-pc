@@ -145,8 +145,8 @@ const refusedWrite = (error: unknown) => {
 
 const M3_SUMMARY = "和客户对话：先回待回复的，客户资料在右边。";
 
-/** 权限失效后外壳读回权限，这一页整个重挂，提示放在模块里才留得住（OP-132）。换账号不显示，刷新页面才清。 */
-let lastScopeNotice: { adminId?: number; text: string } | null = null;
+/** 权限刷新可能重挂页面，操作结果由父页面保留（OP-132）。换账号不显示，整页刷新才清。 */
+let lastOperationNotice: { adminId?: number; text: string; tone: "danger" | "progress" | "warn" } | null = null;
 
 export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
@@ -161,7 +161,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const actionConfirmRunRef = useRef<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
   const [mData, setMData] = useState<MContentData | null>(null);
-  const [scopeNotice, setScopeNotice] = useState(lastScopeNotice);
+  const [operationNotice, setOperationNotice] = useState(lastOperationNotice);
   const [alertMinutes, setAlertMinutes] = useState(5);
   const supervisesSupport = Boolean(session?.supportReadModes?.some((mode) => mode === "MANAGED" || mode === "ALL")) || session?.role === "superadmin" || session?.role === "super";
   useEffect(() => {
@@ -375,7 +375,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   // 仅走同源 httpOnly cookie 代理；JWT 永不进入 SSE URL。
   const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
   const invalidateScope = useCallback((conversationNo?: string, customerId?: string, notice?: string) => {
-    if (notice) { lastScopeNotice = { adminId: session?.adminId, text: notice }; setScopeNotice(lastScopeNotice); }
+    if (notice) { lastOperationNotice = { adminId: session?.adminId, text: notice, tone: "danger" }; setOperationNotice(lastOperationNotice); }
     mLoadCoordinator.current.beginConversationSnapshot();
     liveSnapshotController.current?.abort();
     const affectedIds = mDataRef.current?.conversations.filter((conversation) => conversation.id === conversationNo || customerId && conversation.customerId === customerId).map((conversation) => conversation.id) ?? [];
@@ -489,6 +489,10 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       try {
         const backendResult = await applyMBackendWrite(key, stableValue, stableBaseline.legacyParams, stableBaseline.data, { ...meta, ...stableMetadata, idempotencyKey });
         writeConfirmed = true;
+        if (key === "I.session.convos" || key === "I.session.archiveBatch.__create") {
+          lastOperationNotice = { adminId: session?.adminId, text: closeMatch ? "会话已标记为已解决。" : `${meta?.action || "会话操作"}已完成。`, tone: "progress" };
+          setOperationNotice(lastOperationNotice);
+        }
         await reloadMContent();
         mCommands.forget(commandSlot(commandFingerprint));
         pendingMCommandMetadata.current.delete(commandFingerprint);
@@ -555,16 +559,21 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       } catch (error) {
         if (currentAuthEpoch.current !== authEpoch) return false;
         if (error instanceof MContentReadError && [403, 404].includes(error.status)) invalidateScope();
-        setToast(`客户标注已保存，但会话刷新失败，请手动刷新 · ${displayAdminError(error)}`);
+        lastOperationNotice = { adminId: session?.adminId, text: `客户标注已保存，但会话刷新失败，请手动刷新 · ${displayAdminError(error)}`, tone: "warn" };
+        setOperationNotice(lastOperationNotice);
+        return true;
       }
+      lastOperationNotice = { adminId: session?.adminId, text: "客户标注已保存。", tone: "progress" };
+      setOperationNotice(lastOperationNotice);
       return true;
     } catch (error) {
       if (currentAuthEpoch.current !== authEpoch) return false;
+      if (!original && refusedWrite(error)) mCommands.forget(slot, idempotencyKey);
       const failure = refusedWrite(error) ? `${failureMessage}：${displayAdminError(error)}` : `${failureMessage}或结果未知 · ${displayAdminError(error)}${usingOriginalReason ? " · 继续使用原提交理由核对结果" : ""}`;
       if (onFailure) onFailure(failure); else setToast(failure);
       return false;
     }
-  }, [authEpoch, reconcileConversationSnapshot, invalidateScope, setToast]);
+  }, [authEpoch, reconcileConversationSnapshot, invalidateScope, setToast, session?.adminId]);
 
   // 客户标签/备注持久化后刷新完整会话快照；资料编辑器另行回读当前客户资料。
   // 即时标注使用描述性理由；备注删除透传确认理由，并随原命令保留以便未知结果重试。
@@ -655,9 +664,9 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const right = liveCount ? <span className="f-live"><span className="dot" />{liveCount}</span> : null;
   const backToCustomers = fromCustomers ? <Link className="m-back-link" href="/service/overview?view=customers&restore=customers">‹ 返回负责组客户</Link> : undefined;
   // 这三条提醒说的是整页的数据，放在专属会话的页头下面。
-  const shownScopeNotice = scopeNotice?.adminId === session?.adminId ? scopeNotice?.text : "";
-  const m3Banner = tab === "M3" && (mError || permissionUnknown || reconnectExhausted || shownScopeNotice) ? <>
-    {shownScopeNotice && <Notice tone="danger" action={<Button size="sm" onClick={() => { lastScopeNotice = null; setScopeNotice(null); }}>知道了</Button>}>{shownScopeNotice}</Notice>}
+  const shownOperationNotice = operationNotice?.adminId === session?.adminId ? operationNotice?.text : "";
+  const m3Banner = tab === "M3" && (mError || permissionUnknown || reconnectExhausted || shownOperationNotice) ? <>
+    {shownOperationNotice && <Notice tone={operationNotice?.tone ?? "danger"} action={<Button size="sm" onClick={() => { lastOperationNotice = null; setOperationNotice(null); }}>知道了</Button>}>{shownOperationNotice}</Notice>}
     {mError && <Notice tone="danger" action={<Button size="sm" onClick={() => void reloadMContent()}>重试</Button>}>客服中心暂时无法同步数据,请稍后重试。</Notice>}
     {permissionUnknown && <Notice tone="warn" action={<Button size="sm" onClick={() => void reloadMContent()}>重试核对</Button>}>坐席身份暂时无法核对，对客操作和管理入口已暂缓显示。</Notice>}
     {reconnectExhausted && <Notice tone="danger" action={<Button size="sm" onClick={retryConversationStream}>重新连接</Button>}>会话更新已暂停，当前信息可能不是最新状态。请点击“重新连接”或刷新页面。</Notice>}
@@ -666,6 +675,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const page = (
     <>
       {tab !== "M3" && <DomainHeader {...meta} right={right} back={backToCustomers} />}
+      {tab !== "M3" && shownOperationNotice && <Notice tone={operationNotice?.tone ?? "danger"} action={<>{operationNotice?.tone === "danger" && <Link className="rd-link" href="/service/sessions">到专属会话核对</Link>}<Button size="sm" onClick={() => { lastOperationNotice = null; setOperationNotice(null); }}>知道了</Button></>}>{shownOperationNotice}</Notice>}
       {tab === "M3" && !safeMData && <PageHeader pageId="M3" title="专属会话" summary={M3_SUMMARY} back={backToCustomers} />}
 
       {tab !== "M3" && mError && (
@@ -1309,7 +1319,7 @@ function dockRelWhen(ts: number): string {
   return `${Math.floor(diff / 86_400_000)} 天前`;
 }
 
-function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: boolean; onScopeInvalidated: (conversationNo?: string, customerId?: string) => void }) {
+function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: boolean; onScopeInvalidated: (conversationNo?: string, customerId?: string, notice?: string) => void }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
@@ -1407,7 +1417,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
     return <div className="card" role="status" style={{ position: "fixed", right: 22, bottom: 22, zIndex: 30, padding: 12, maxWidth: 360 }}>
     <div>会话 {recovery.conversationNo} 的发送结果待确认。</div>
     {readOnlyRecovery ? <div>私聊原文已清除，只保留原消息编号供查询。{!dockCommands.isDurablyStored(recovery.fingerprint, recovery.commandKey) && "原编号仅保留在本页；恢复浏览器存储前请勿刷新或关闭页面。"}</div> : <textarea readOnly aria-label="待确认消息原文" value={recoveryText} style={{ width: "100%", marginTop: 8 }} />}
-    {sendError && <div role="alert">{sendError}</div>}
+    {isRetryExpired(recovery) ? <div role="status">{RETRY_EXPIRED_TEXT}</div> : sendError && <div role="alert">{sendError}</div>}
     <button type="button" className="btn btn-sec btn-sm" disabled={sending} onClick={() => void (async () => {
       const generation = identityGeneration.current;
       setSending(true); setSendError(""); setCanAbandon(false);
@@ -1499,13 +1509,14 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       window.dispatchEvent(new Event("support-todo-changed"));
     } catch (error) {
       if (generation !== identityGeneration.current) return;
-      const rejected = submitted && error instanceof SupportClientError && [400, 401, 403, 404, 409, 422].includes(error.status) && !isIndeterminateSupportError(error);
+      const rejected = !pendingDock && submitted && error instanceof SupportClientError && [400, 401, 403, 404, 409, 422].includes(error.status) && !isIndeterminateSupportError(error);
       if (rejected) {
         dockCommands.forget(dockSlot, key);
         setSendError(`本次发送已被拒绝：${displayAdminError(error)} 原文已保留，可修改后重发。`);
       } else setSendError(`发送失败或结果待确认：${displayAdminError(error)} 请查询结果并重试。`);
-      // 权限失效后小窗会收起，框里的提示跟着没了，这里再提示一次（OP-132）。
-      if (error instanceof SupportClientError && [403, 404].includes(error.status)) { ctx.toast(rejected ? "消息没有发出：这个会话的权限变了，请到专属会话核对。" : "发送结果待确认：这个会话的权限变了，请到专属会话核对，不要重发。"); onScopeInvalidated(conv.id, conv.customerId); }
+      // 权限刷新会卸载小窗，结果交给页面的常驻权限提示；原文仍按权限边界清除。
+      if (error instanceof SupportClientError && [403, 404].includes(error.status)) onScopeInvalidated(conv.id, conv.customerId,
+        rejected || !pendingDock && !submitted ? "消息没有发出：这个会话的权限变了，请到专属会话核对。" : "发送结果待确认：这个会话的权限变了，请到专属会话核对，不要重发。");
     } finally {
       if (generation === identityGeneration.current) { sendInFlight.current = false; setSending(false); }
     }
@@ -1542,7 +1553,8 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       role: isAgent ? (conv.type === "advisor" ? "advisor" : "support") : "user",
       agentName: m.agentName,
       senderName: isAgent ? m.agentName : customer,
-      body: m.kind === "AGENT_SWITCH" ? agentSwitchText(m.agentName, m.senderRole) : m.kind === "IMAGE" ? "[图片] 到专属会话查看" : m.text,
+      body: m.kind === "AGENT_SWITCH" ? agentSwitchText(m.agentName, m.senderRole) : m.kind === "IMAGE" ? "[图片]" : m.text,
+      cta: m.kind === "IMAGE" ? { label: "打开完整会话查看图片", onClick: () => window.location.assign(`/service/sessions?conversationNo=${encodeURIComponent(conv.id)}`) } : undefined,
       ctaHref: m.ctaHref,
     } as ThreadMessage;
   });
@@ -1573,7 +1585,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       <div className="ChatBody" style={{ flex: 1, minHeight: 0 }}>
         {conv.detailReady ? <MessageThread messages={threadMessages} relWhen={dockRelWhen} resetKey={conv.id} /> : <div role={detailError ? "alert" : "status"} className="itint">{detailError ? `会话详情加载失败：${detailError}` : "正在加载会话消息…"} {detailError && <button type="button" className="btn btn-sec btn-sm" onClick={() => { setDetailError(""); setDetailRetry((value) => value + 1); }}>重新加载详情</button>}</div>}
       </div>
-      {sendError && <div role="alert" style={{ padding: "8px 11px", color: "var(--danger)", fontSize: 12 }}>{sendError}{sendError.startsWith("消息已发送") && <button type="button" className="btn btn-ghost btn-sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</button>}</div>}
+      {sendError && !(pendingDock && isRetryExpired(pendingDock)) && <div role="alert" className="m-dock-error">{sendError}{sendError.startsWith("消息已发送") && <button type="button" className="btn btn-ghost btn-sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</button>}</div>}
       {pendingDock && isRetryExpired(pendingDock) && <div role="status" className="m-dock-note">{RETRY_EXPIRED_TEXT}</div>}
       {pendingDock && canAbandon && <div><button type="button" className="btn btn-sec btn-sm" disabled={sending} onClick={() => void copyOriginal(draft)}>复制原文</button><button type="button" className="btn btn-sec btn-sm" disabled={sending} onClick={() => abandonQuery(pendingDock)}>放弃查询</button></div>}
       {!canWriteM3 && <div role="status" style={{ padding: "8px 11px", fontSize: 12 }}>你只能查看会话，发消息需要会话操作权限。</div>}
@@ -1596,7 +1608,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
           placeholder="回车发送，Shift+回车换行"
           style={{ maxHeight: 80 }}
         />
-        <button type="button" className="btn btn-pri btn-sm" aria-label={pendingDock ? "查询结果并重试会话回复" : "发送会话回复"} disabled={(!canWrite && !pendingDock) || !draft.trim() || sending} onClick={() => void send()}><Icon name="arrow" size={16} /></button>
+        <button type="button" className="btn btn-pri btn-sm" aria-label={pendingDock ? isRetryExpired(pendingDock) ? "查询原操作" : "查询结果并重试会话回复" : "发送会话回复"} disabled={(!canWrite && !pendingDock) || !draft.trim() || sending} onClick={() => void send()}><Icon name="arrow" size={16} /></button>
       </div>
     </div>
   );

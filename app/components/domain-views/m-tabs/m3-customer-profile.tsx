@@ -137,15 +137,15 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   const canReadAccount = session?.role === "super" || session?.role === "superadmin" || Boolean(session?.authorities.includes("user_c1hub_read"));
   const annotationScope = `${scopeKey}:${conversationId ?? ""}:${conversation?.ownerAdminId ?? ""}:${conversation?.assignmentId ?? ""}:${writable}`;
   const currentAnnotationScope = useRef(annotationScope); currentAnnotationScope.current = annotationScope;
-  async function annotate(action: (id: string) => Promise<boolean>, clear: () => void) {
+  async function annotate(action: (id: string) => Promise<boolean>, clear: () => void, failureInDialog = false) {
     if (revokedScope.current === scopeKey || stamp.current !== requestStamp || !conversationId || !writable || annotationWrite.current) return false; const saved = stamp.current, writeToken = {}; annotationWrite.current = writeToken; setWriting(true); setWriteError("");
     const sameWriteScope = () => mounted.current && annotationWrite.current === writeToken && revokedScope.current !== scopeKey && currentAnnotationScope.current === annotationScope;
     let confirmed = false;
     try {
       const ok = await action(conversationId);
       if (!sameWriteScope()) return false;
-      if (!ok) setWriteError("未确认保存，原输入已保留，请核对归属后重试。");
-      else {
+      // 写请求失败由页面 toast 或删除确认框展示一次。
+      if (ok) {
         confirmed = true; clear();
         // A new message can advance the conversation version without changing
         // annotation ownership. Settle the receipt, but let the newer read win.
@@ -156,7 +156,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
       }
       return ok;
     } catch(e) {
-      if (sameWriteScope() && saved === stamp.current && !denied(e)) setWriteError(confirmed ? `已保存，但资料刷新失败，请重新加载 · ${displayAdminError(e)}` : displayAdminError(e));
+      if ((!failureInDialog || confirmed) && sameWriteScope() && saved === stamp.current && !denied(e)) setWriteError(confirmed ? `已保存，但资料刷新失败，请重新加载 · ${displayAdminError(e)}` : displayAdminError(e));
       return confirmed;
     } finally { if (annotationWrite.current === writeToken) { annotationWrite.current = null; if (mounted.current) setWriting(false); } }
   }
@@ -232,7 +232,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
       <p>系统标签（只读）</p><div className="m3-profile-tags">{Array.isArray(annotations?.systemTags)&&annotations.systemTags.map(t=><span key={String(t)}>{show(t)}</span>)}</div>
       <p>自定义标签</p><div className="m3-profile-tags">{Array.isArray(annotations?.customTags)&&annotations.customTags.map(t=><span key={String(t)}>{show(t)} <button aria-label={`删除标签 ${show(t)}`} disabled={!writable||writing} onClick={()=>void annotate(id=>ctx.removeCustomerTag(id,String(t)),()=>{})}>删除</button> </span>)}</div>
       {writable&&<div className="m3-profile-editor"><label>新标签<input className="fld" value={tag} maxLength={30} disabled={!writable||writing} onChange={e=>setTag(e.target.value)}/></label><button className="l-btn sm" disabled={!writable||writing||!tag.trim()} onClick={()=>void annotate(id=>ctx.addCustomerTag(id,tag.trim()),()=>setTag(""))}>添加标签</button></div>}
-      {asRows(annotations?.notes).map((r,i)=><div key={String(r.id??i)}><p>{show(r.text)}</p><small>{show(r.authorName??r.author)} · {dates(r.createdAt)}</small><button className="l-btn sm" disabled={!writable||writing} onClick={()=>ctx.openActionConfirm({action:"删除内部备注",briefKind:"note-delete",detail:"删除后这条备注不再显示。",facts:<Facts><Fact k="客户">{userNicknameText(show(identity?.nickname), identity?.phoneMasked)}</Fact><Fact k="备注内容">{show(r.text)}</Fact></Facts>,effect:<><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag/></>,confirmLabel:"确认删除备注",confirmTone:"danger",reasonMin:8,reasonMax:200,run:async(reason)=>{let failure="";if(!await annotate(id=>ctx.removeCustomerNote(id,String(r.id),reason,message=>{failure=message;}),()=>{}))throw new Error(`${(failure||"备注没有删除成功").replace(/。$/,"")}。再点确认会按原操作重试。`);return true;}})}>删除备注</button></div>)}
+      {asRows(annotations?.notes).map((r,i)=><div key={String(r.id??i)}><p>{show(r.text)}</p><small>{show(r.authorName??r.author)} · {dates(r.createdAt)}</small><button className="l-btn sm" disabled={!writable||writing} onClick={()=>ctx.openActionConfirm({action:"删除内部备注",briefKind:"note-delete",detail:"删除后这条备注不再显示。",facts:<Facts><Fact k="客户">{userNicknameText(show(identity?.nickname), identity?.phoneMasked)}</Fact><Fact k="备注内容">{show(r.text)}</Fact></Facts>,effect:<><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag/></>,confirmLabel:"确认删除备注",confirmTone:"danger",reasonMin:8,reasonMax:200,run:async(reason)=>{let failure="";if(!await annotate(id=>ctx.removeCustomerNote(id,String(r.id),reason,message=>{failure=message;}),()=>{},true))throw new Error(failure||"备注没有删除成功，请核对客户归属和原备注。");return true;}})}>删除备注</button></div>)}
       {writable&&<div className="m3-profile-editor"><label>新内部备注<textarea className="fld" value={note} maxLength={1000} disabled={!writable||writing} onChange={e=>setNote(e.target.value)}/></label><button className="l-btn sm" disabled={!writable||writing||!note.trim()} onClick={()=>void annotate(id=>ctx.addCustomerNote(id,note.trim()),()=>setNote(""))}>保存备注</button></div>}
       {!writable&&<p className="m-admin-muted">只读 <Explain label="谁能修改标签和备注" content={conversation ? "只有这位客户当前的专属客服能改，客服主管审阅时只读。" : "还没有服务会话，标签和备注只读。发出第一条消息后，专属客服就能修改。"}/></p>}{writeError&&<p role="alert">{writeError}</p>}
     </Group>

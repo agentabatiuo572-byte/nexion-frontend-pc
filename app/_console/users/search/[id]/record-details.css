@@ -1,0 +1,6 @@
+/* 单条查证记录随内容收紧，保留抽屉内滚动和底部操作。 */
+.rd-drawer[data-c1-record] {
+  top: var(--rd-space-4);
+  bottom: auto;
+  max-height: calc(100dvh - var(--rd-space-4) * 2);
+}

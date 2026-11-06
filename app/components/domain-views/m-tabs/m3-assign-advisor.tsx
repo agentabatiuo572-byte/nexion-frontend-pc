@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { supportClient, readFirstAssignmentCommand, readSupportPoolCustomer, type SupportAgentCandidate, type SupportBindingPoolItem } from "@/lib/admin/m-support-client";
-import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
+import { RETRY_EXPIRED_TEXT, isRetryExpired, createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useSupportManagementCommand, type SupportIntent } from "@/lib/admin/use-support-management-command";
-import { Button, Fact, Facts, Field, Notice, StatusTag, Textarea } from "@/app/components/rd";
+import { Button, Fact, Facts, Field, Fold, Notice, StatusTag, Textarea } from "@/app/components/rd";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
 import { useReasonRule } from "@/lib/admin/use-reason-rule";
 import { Modal } from "../design-kit";
@@ -72,7 +72,7 @@ export function AssignAdvisorDialog({ adminId, customerId, customerName, canWrit
   if (pending) return <Modal title="核对上次分配" icon="users" busy={saving} onClose={onClose} footer={<>
     <Button disabled={saving} onClick={onClose}>关闭</Button>
     <Button variant={command.canReplay ? "secondary" : "primary"} disabled={saving} onClick={() => void command.run("query")}>查询原操作</Button>
-    {canWrite && <Button variant={command.canReplay ? "primary" : "secondary"} disabled={saving} disabledReason={command.canReplay ? undefined : "先查询原操作，查不到才能按原操作重试"} onClick={() => void command.run("replay")}>按原操作重试</Button>}
+    {canWrite && <Button variant={command.canReplay ? "primary" : "secondary"} disabled={saving} disabledReason={isRetryExpired(pending) ? RETRY_EXPIRED_TEXT : command.canReplay ? undefined : "先查询原操作，查不到才能按原操作重试"} onClick={() => void command.run("replay")}>按原操作重试</Button>}
   </>}>
     <div className="m3s-assign">
       <Notice tone="warn">{saving ? "正在核对原操作…" : error || "上次分配结果待确认，请先查询原操作。"}</Notice>
@@ -80,10 +80,9 @@ export function AssignAdvisorDialog({ adminId, customerId, customerName, canWrit
         <Fact k="客户">{customerName}</Fact>
         <Fact k="原分配目标客服">{pending.payload.targetName} · 客服编号 {pending.payload.request.targetAgentAdminId}</Fact>
         <Fact k="客户编号">{customerId}</Fact>
-        <Fact k="原待分配版本">{pending.payload.request.customers[0].expectedVersion}</Fact>
         <Fact k="原分配原因">{pending.payload.request.reason}</Fact>
-        <Fact k="原操作编号"><span data-mono="">{pending.commandKey}</span></Fact>
       </Facts>}
+      <Fold inset title="技术信息" summary="原操作编号与版本"><Facts><Fact k="原待分配版本">{pending.payload.request.customers[0].expectedVersion}</Fact><Fact k="原操作编号"><span data-mono="">{pending.commandKey}</span></Fact></Facts><Button size="sm" onClick={() => { void navigator.clipboard.writeText(pending.commandKey).then(() => setLoadError("原操作编号已复制。"), () => setLoadError("自动复制失败，请选择原操作编号手动复制。")); }}>复制原操作编号</Button>{loadError && <p role="status">{loadError}</p>}</Fold>
     </div>
   </Modal>;
 

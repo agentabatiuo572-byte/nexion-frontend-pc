@@ -585,3 +585,5 @@
 .card:is(.m-dock-pill, .m-dock-panel)[data-top] { top: 68px; bottom: auto; }
 .m-dock-note { padding: 8px 11px; color: var(--warning); font-size: var(--rd-text-aux); }
 .mdom .m-dock-meta { margin-top: 2px; font-size: var(--rd-text-aux); }
+
+.m-dock-error { padding: var(--rd-space-2) var(--rd-space-3); color: var(--danger); font-size: var(--rd-text-body); }
