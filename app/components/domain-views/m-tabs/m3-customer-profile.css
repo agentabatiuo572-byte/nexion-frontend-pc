@@ -59,3 +59,11 @@
 .m3-profile-flow-filters>div{display:flex;flex-direction:column;gap:6px}
 @media(max-width:760px){.m3-profile-open,.m3-profile-shortcuts .rd-btn{min-height:44px}}
 @media(max-width:560px){.m3-profile-editor{flex-direction:column;align-items:stretch}.mdom .m3-service-profile .m3-profile-editor>.l-btn.sm{align-self:flex-end;min-height:44px}}
+
+.m3-profile-note-event{display:flex;align-items:flex-start;gap:var(--rd-space-3)}
+.m3-profile-note-event>span{flex:1;min-width:0}
+.m3-profile-note-event>button{flex-shrink:0}
+
+.m3-profile-explanation{padding:var(--rd-space-2) 0;font-size:var(--rd-text-aux);line-height:var(--rd-lh-aux)}
+.m3-profile-explanation>span{color:var(--rd-text-3)}
+.m3-profile-explanation>p{margin:var(--rd-space-1) 0 0;color:var(--rd-text-2);overflow-wrap:anywhere}
