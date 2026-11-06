@@ -64,7 +64,6 @@ export function G4TierConfirm({ session, epoch, requested, readActive, onDirect,
     try { return { pending: pendingApproval(session.adminId), error: "" }; }
     catch { return { pending: undefined, error: "原档位提案内容不完整，请到操作记录核对，勿重复提交。" }; }
   });
-  const [endedError, setEndedError] = useState("");
   const change = opening.pending?.change ?? requested;
   if (!change) return <Modal title="查询原档位提交结果" onClose={onClose}>
     <div role="alert">{opening.error || "原操作已处理，请关闭后重新读取页面。"}</div>
@@ -94,6 +93,7 @@ export function G4TierConfirm({ session, epoch, requested, readActive, onDirect,
   async function execute(mode: "submit" | "lookup" | "retry", reason = "", value: BusinessFormValue = {}) {
     ensureOwner(false);
     let command = pendingApproval(session.adminId);
+    const hadPending = !!command;
     if (opening.pending && command?.commandKey !== opening.pending.commandKey) {
       throw new Error("原档位操作已处理，请关闭后重新读取页面。");
     }
@@ -136,7 +136,7 @@ export function G4TierConfirm({ session, epoch, requested, readActive, onDirect,
     const original = command!;
     let ticket;
     // Every recovery checks the exact original key, including already decided tickets.
-    if (mode !== "submit" || opening.pending) {
+    if (hadPending) {
       try { ticket = await fetchA2ProposalByKey(original.commandKey); }
       catch { throw new A2OutcomeUncertainError("暂时无法查询原档位审批，请稍后再查。", original.commandKey); }
       ensureOwner(true);
@@ -150,16 +150,18 @@ export function G4TierConfirm({ session, epoch, requested, readActive, onDirect,
       catch (failure) {
         const code = failure && typeof failure === "object" && "backendMessage" in failure ? String(failure.backendMessage) : "";
         const rejected = failure && typeof failure === "object" && "backendMessage" in failure && "status" in failure && typeof failure.status === "number";
-        if (isA2OutcomeUncertainError(failure)
+        if (hadPending || isA2OutcomeUncertainError(failure)
             || !rejected || ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(code)) {
           throw new A2OutcomeUncertainError("原档位提案结果待确认，请查询原操作，或按原输入和原键重试。", original.commandKey);
         }
         attempts.forget(slot(session.adminId), original.commandKey);
-        if (opening.pending) setEndedError("原提案已明确拒绝，请关闭后重新读取当前配置。");
         throw failure;
       }
     }
     ensureOwner(true);
+    if (ticket.mine !== true || ticket.obj !== "tiers" || ticket.action !== "调整创世节点价格档位") {
+      throw new A2OutcomeUncertainError("回执与本人的原档位审批不匹配，请继续核对原操作。", original.commandKey);
+    }
     let active;
     try { active = await readActive(); }
     catch { throw new A2OutcomeUncertainError(`审批单 ${ticket.id} 已登记，当前配置回读失败，请查询原操作。`, original.commandKey); }
@@ -194,7 +196,7 @@ export function G4TierConfirm({ session, epoch, requested, readActive, onDirect,
     inlineApproval={{
       pending: !!opening.pending,
       expired: !!opening.pending && (Date.now() < opening.pending.createdAt || Date.now() >= opening.pending.expiresAt),
-      disabledReason: opening.error || endedError || undefined,
+      disabledReason: opening.error || undefined,
       resolve: value => requiresApproval(value) ? {
         heading: "需另一位有权超管批准后生效",
         disabledReason: approvalPermissionError,
