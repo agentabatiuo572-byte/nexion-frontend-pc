@@ -315,6 +315,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   ADMIN_AUTH_REQUIRED: "登录已失效，系统已退出当前会话，请重新登录后再查看应急控制状态。",
   ADMIN_PERMISSION_DENIED: "当前账号没有查看或操作此功能的权限，请联系管理员核对菜单、按钮和接口权限。",
   ACCESS_DENIED: "当前账号没有执行此操作的权限；请联系管理员核对所需权限后再试。",
+  FORBIDDEN: "当前账号没有执行此操作的权限；请联系管理员核对所需权限后再试。",
   EMERGENCY_ROUTE_NOT_FOUND: "当前服务版本未提供该应急能力，请刷新页面；若仍出现，请联系值班人员检查系统版本。",
   EMERGENCY_BACKEND_UNAVAILABLE: "应急控制系统当前不可用，控制项已隐藏；请稍后重新加载，持续失败时联系值班人员。",
   EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE: "当前浏览器无法安全保存应急命令号，本次操作未提交；请启用会话存储或更换受支持的浏览器后重试。",
