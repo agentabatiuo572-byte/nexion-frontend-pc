@@ -2834,7 +2834,7 @@ submitted ─风控评分─▶ review-pending ─approve─▶ review-passed �
 
 ##### [D2-MD4] 提现资金冻结确认
 - **功能**:对在途提现执行 freeze(转 `frozen` 态,账户资金冻结),确认即生效。
-- **布局结构**:1. **信息区**:withdrawalNo / userId(链 C1)/ 金额 / 当前状态 / K4 风险评分与命中证据 / 关联 C2 账户冻结态(如有)。2. **影响预览区**:提示行「冻结后该单停在 frozen 态,解冻回 review-pending;账户级冻结另走 C2(本动作仅冻结本单资金)」。3. **输入区(生命周期字段)**:**冻结期限(period,枚举:7d / 14d / 30d / 45d / 长期需复查)** + **责任人(owner)** + **复查时间(reviewAt,北京时间 UTC+8 的日期时间)** + reason(必填,8–200 字)。4. **按钮区**:`[取消]` · `[确认冻结]`(警示色;置灰条件 / loading;携 `Idempotency-Key`)。
+- **布局结构**:1. **信息区**:withdrawalNo / userId(链 C1)/ 金额 / 当前状态 / K4 风险评分与命中证据 / 关联 C2 账户冻结态(如有)。2. **影响预览区**:提示行「冻结后该单停在 frozen 态,解冻回 review-pending;账户级冻结另走 C2(本动作仅冻结本单资金)」。3. **输入区(生命周期字段)**:**冻结期限(period,后端枚举:7D / 14D / 30D / 45D / LONG_TERM；详情分别显示 7 天 / 14 天 / 30 天 / 45 天 / 长期（需复查），BUG-344)** + **责任人(owner)** + **复查时间(reviewAt,北京时间 UTC+8 的日期时间)** + reason(必填,8–200 字)。4. **按钮区**:`[取消]` · `[确认冻结]`(警示色;置灰条件 / loading;携 `Idempotency-Key`)。
 - **错误态**:409(非在途态)/ 400 `REASON_REQUIRED`(reason / period / owner / reviewAt 任一缺失)/ 403。
 - **成功反馈**:关窗;行内状态更新 `frozen`;**到期进入「待复查」队列,列表展示冻结时长、剩余复查时间、当前责任人**;toast;事件 `withdraw.frozen`(period / owner / reviewAt / reason / operator);实时告警风控 lead;喂 B5。
 
