@@ -196,7 +196,7 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | G6 | NEX v2 Founders Vault | NEX v2 锁仓(250% APY/24 月/min 1,000 NEX) | G 金融 | V3·Ch12 | §9.5b / §9.11d.1 |
 | G7 | 锁定计划 | 锁定计划参考年奖励率/期限/积分倍率/好友升级奖励倍率/Genesis 抽奖券 | G 金融 | V3·Ch12 | §9.5 |
 | H1 | 12 月节奏 Phase 调度器 | 12 月节奏唯一操作面 + 全平台 10-dial 权威源 | H 增长 | V1·Ch7 | §13.4 / 节奏表§6.4 / §9.11c.1 |
-| H2 | 免费试用引擎 | 试用漏斗(绑卡→shadow→自动扣款/提前购)控制面 | H 增长 | V1·Ch7 | §9.11a / §9.11b / §9.11.1 |
+| H2 | 免费试用引擎 | 试用配置与记录、用户主动购买、强制取消审批 | H 增长 | V1·Ch7 | §9.11a / §9.11b / §9.11.1 |
 | H3 | Quest 任务引擎 | 三层任务(首日/每周/每月)清单/NEX 奖励/3-phase 时窗 | H 增长 | V3·Ch13 | §5.15 / §11.13 / §9.11c.1 |
 | H4 | 活动中心 CMS | 限时活动上下架/featured/奖励/追踪/7 种 EventKind | H 增长 | V3·Ch13 | §11.10 / §9.11c.2 |
 | H5 | 签到 & 积分 | 签到积分/Lucky 倍率/30 天里程碑/Streak Saver/Power-Ups | H 增长 | V3·Ch13 | §9.8 / §9.11c.1 / §9.11d.3 |
@@ -537,7 +537,7 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | `/api/admin/platform/phase-config/cohort-overrides` · `/:cohortId` | GET/POST/DELETE | cohort 月偏移 override 列/增/撤 | H1-MD4/MD5(写) | H1 |
 | `/api/admin/trial/config` | GET / PUT | TrialConfig 20 参数(含今日剩余免费名额；仅敏感项经确认弹窗;携 Key) | H2-MD1(敏感项) | H2 |
 | `/api/admin/trial/sessions[?status=]` · `/sessions/:userId` | GET | 试用会话监控 / 单会话详情(7 态轨迹) | — | H2 |
-| `/api/admin/trial/sessions/:userId/{cancel\|charge}` | POST | 强制取消 / 强制扣款(高敏,经 PSP;携 Key;共用 computeTrialOffset) | H2-MD2/MD3 | H2 |
+| A2 `h2_trial_cancel` 命令／原键查询 | POST / GET | 强制取消审批与原结果核查；历史 `h2_trial_charge` 仅查询，不重发 | H2-MD2/MD3 | H2 |
 | `/api/admin/trial/kpi` | GET | 试用 KPI 看板(喂 B3) | — | H2 |
 | `/api/trial/eligibility` | GET | (用户)试用资格单源(server-canonical,拒重领) | — | H2 |
 | `/api/trial/redeem-early` · `/trial/charge` · `/trial/cancel` | POST | (用户)早购重算 / (cron)auto-charge / 取消(reason 枚举) | — | H2 |
@@ -574,7 +574,7 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 |---|---|---|---|---|
 | `/api/admin/emergency/kill-switches` | GET | 5 功能闸矩阵(server-canonical,client 仅读灯) | — | J1 |
 | `/api/admin/emergency/kill-switches/alerts` | GET | 已登录运营账号可读的五闸最小状态/待补录快照，不泄露阈值、配置与控制能力 | — | J1 |
-| `/api/admin/emergency/kill-switches/:key` | PUT | 单闸熔断/恢复(熔断按 `emergency_j1_gate_kill` 权限码单人确认+持久广播事件;恢复按 `emergency_j1_gate_resume` 权限码,确认后立即生效,前置 B1 闸 `coverageRatio ≥ recoverGate` 未达 422 `COVERAGE_BELOW_REDLINE`;携 Key。恢复改提交审批等 BE-08) | J1-MD1/MD2 | J1 |
+| `/api/admin/emergency/kill-switches/:key` | PUT | 单闸关停按 `emergency_j1_gate_kill` 确认后立即执行；恢复按 `emergency_j1_gate_resume` 及 A2 提案权限提交 `j1_gate_resume` 审批，另一位有权超管批准后回放；批准前保持关停，资金业务重查服务端覆盖率资格，试用免查；携原 Key | J1-MD1/MD2 | J1 |
 | `/api/admin/emergency/kill-switches/emergency-disable` | POST | 批量应急熔断(可多闸;触发事由空 422 / reason 空 400;风控/超管单人确认;全量预校验后同事务原子关停+持久广播事件;携 Key) | J1-MD3 | J1 |
 | 服务端定时任务（无外部 endpoint） | — | R1/R2 自动熔断评估命中后走 J1 原子写边界(`trigger=auto`,补录时限默认 30 分钟,J1 可调 10–120 分钟,值班补录 J1-MD5;补录不恢复业务) | 自动+J1-MD5 补录 | J1 |
 | `/api/admin/killswitch/geo` | GET / PUT | geo-block 配置(server-canonical)/ 黑名单+受限名单(limitedCountries)+per-endpoint(拒绝财务执行 403;携 Key) | J2-MD1~MD3(PUT) | J2 |
@@ -589,13 +589,15 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 **J1 紧急停用开关页面行为（2026-11-06 补修）：**
 
 - 第一层：一句话结论、统计、五张业务卡、批量关停。业务卡是控制区，只显示名称、状态和动作，关停、恢复、补录入口不收进折叠组；控制范围、资金影响、最近变更和操作后果在名称旁的提示图标里。待补录有内容时展开在批量关停下面，逾期的排前面，结论条写逾期项和截止时间，最多 3 条。
-- 折叠组：备付金检查（有业务已关停或覆盖率低于红线时展开）、功能开关总表、应急处置参数、应急判定与自动关停规则。备付金检查使用包住当前覆盖率和恢复红线的阈值尺，不把超过量程的标记贴末端。J1 接口的 `yellowLinePct` 是红线加 25，不是资金总览的健康线，页面不用它下结论。红线数值只在统计条和确认框。R1 的挤兑红线与备付金恢复红线分开解释；R2 的条件文字用当前阈值。没有待补录时规则组摘要写「当前没有待补录事项」。
-- 不能操作时入口禁用：覆盖率低于红线时恢复按钮写「恢复受阻」，结论条写原因和去「资金储备与应付款」补足；全部业务已关停时批量按钮禁用并写明。
+- 折叠组：备付金检查（有业务已关停或覆盖率低于红线时展开）、功能开关总表、应急处置参数、应急判定与自动关停规则。备付金检查使用包住当前覆盖率和恢复红线的阈值尺，不把超过量程的标记贴末端。健康线按服务端实际值显示，不用固定「红线加 25」替代；恢复资格不由前端比较覆盖率自行推算。红线数值只在统计条和确认框。R1 的挤兑红线与备付金恢复红线分开解释；R2 的条件文字用当前阈值。没有待补录时规则组摘要写「当前没有待补录事项」。
+- 不能操作时入口禁用：资金恢复只采信服务端估值可靠性和恢复许可，估值不可靠时写「暂时无法判断」并隐藏数值图；未允许时按钮写「恢复受阻」，结论说明服务端尚未许可，到资金页核对覆盖率与估值；全部业务已关停时批量按钮禁用并写明。
 - 确认框的业务、状态变化、触发值和阈值常显，执行摘要默认收起；事件触发值与阈值按规则带 % 或 USDT 和千分位，不用现在的阈值替代事件值。全部业务开启但有结果未知时结论写「全部开启，N 项操作结果未确认」，橙黄并指向待确认条。
 - 关停和批量关停写「立即生效」，确认按钮红色。规则服务读不到时用默认 8–200 字继续（Q-06），恢复和补录不走这条例外。
-- 恢复写「立即生效」，提交执行恢复前重新检查覆盖率，低于红线拒绝；试用不查。BE-08 交付后才改写「批准后生效」。提现关停仅阻断新申请和审核放行；单项、含提现的批量关停框在关键信息用橙黄写「已放行的单还会打款」，提现审核与业务控制范围也写明边界。`WithdrawalPayoutMapper`、`WithdrawalPayoutExecutor`、`WithdrawalPayoutDispatchGuard` 尚未接入该开关（2912398b，BE-44 未交付）。
+- 恢复写蓝色「批准后生效」，按钮「提交恢复审批」。新申请须估值可靠且服务端允许恢复，试用免查；提交后业务仍关停，另一位有 A2 审批及 J1 恢复权限的超级管理员批准后执行，发起人不能自审。资金检查失败保留待批。批量关停逐项列出业务、控制能力、数量和状态变化。
+- 提现关停暂停新申请、审核放行及尚未提交通道的派发，已提交通道的继续核对结算，不因关停退款。J1 当前仍有「已放行的单还会打款」的概括提示，不能据此判断未派发单已出款；提现审核按通道提交状态说明边界。
 - 补录写「业务继续关停」。没补录的业务不能恢复。调参冲突留框给「读取最新」，读取成功写明别人改了什么、新值保留、理由清空；失败保留原草稿和再读入口。
 - 写操作先在浏览器存原操作再发。结果未知（含 `IDEMPOTENCY_REQUEST_IN_PROGRESS`、`IDEMPOTENCY_RESULT_UNKNOWN`）时关框，转成页面上方的待确认条，这项的入口锁住，只能原样重试。重试被后端明确拒绝后才能解除，解除不发请求，不写操作记录。超过 24 小时不能再用原号重试，记录和入口锁保留，写明到操作记录与审批核对，到期和读不到记录都不算解除。读取失败时待确认条仍显示；重试按该命令当前的写权限判断。
+- 恢复结果未知时先查原恢复申请，明确未查到、未过期且当前服务端仍许可才按原内容重发；被拒仍保号，过期只查询。读取失败时也保留核查入口。结论解释使用「恢复业务怎么操作」标题。
 - 刷新中所有写入口禁用并写原因。读取失败时控制项全部隐藏。页面打开和点「刷新」时读取，不自动更新，页头写数据时间。
 
 ### 域 K — 风控
@@ -1074,8 +1076,8 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 ### 5.10 H2 Trial 7 态(Ch7 H2,§9.11.1 权威)
 - **状态集(7)**:`idle / active / grace / extended / redeemed(终)/ failed(终)/ cancelled(终)`
-- **合法转移**:`idle → active`(server canStart() 前置:冷却内/phaseOpen=false 拒)/ `active → grace`(shadow 冻结)/ `active,grace → extended`(highQualityThresholdUSD)/ `active,grace,extended → redeemed`(redeem-early 主动 + auto-charge 自动两路径;shadow 经 computeTrialOffset 拆分)/ `→ failed`(扣款失败,shadow 归零不入账)/ `→ cancelled`(取消,强制取消=MC)
-- **约束**:扣款(含强制 charge)经 PSP 携 Key;`chargeFailRate` server-only;shadow active/grace/extended 仅 UI display 不写账本;循环养号联动 K2 阻断。
+- **合法转移**:`idle → active`(server canStart() 前置:冷却内/phaseOpen=false 拒)/ `active → grace`(shadow 冻结)/ `active,grace → extended`(highQualityThresholdUSD)/ `active,grace,extended → redeemed`（用户明确确认购买，服务端重算优惠、抵扣和入账；到期不自动购买）/ `failed`（历史失败终态保留核对）/ `→ cancelled`（用户取消、到期结束或强制取消审批获批）
+- **约束**:强制扣款退役，只保留历史审批核查，不重发；`chargeFailRate` 系统只读且不公开;shadow active/grace/extended 仅 UI display 不写账本;循环养号联动 K2 阻断。
 
 ### 5.11 H3 Quest / H4 活动 / H5 签到 / H6 里程碑(Ch13)
 - **H3 Day-One**:`active(0–24h·500NEX)→ grace(24–72h·200NEX)→ expired(72h+·0)` / `{active,grace} → claimed`(全 6 任务,creditNex+badge)。Weekly 按 weekKey reset;Monthly 跨月清。
@@ -1091,18 +1093,20 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 - **I1 文案 A/B**:版本 `draft → published(MC)→ archived`(回滚=重发历史版,MC);实验 `scheduled → running → concluded(adopted|discarded)`。分组 assignment server 权威,已分组 sticky。
 - **I5 风险披露**:版本 `draft → published(per jurisdiction,批准后封存)→ superseded`；发布不切换 App 当前版本。生效版本映射另行批准切换；用户 ack `not_acked → acked → stale` 在生效映射改变时触发，不能在客户端直接置 accepted。提现、质押不再前置拦截，也不支持重新纳入。
 - **I5 页面**:页名「法律条款与风险披露」，分风险披露、法律条款、隐私政策三个页签，按权限给：`content_i5_read` 看风险披露，`content_legal_terms_read` 看法律条款和隐私政策，两边读取互不影响，都没有时显示无权限。风险披露首屏是一句话结论、统计、草稿和待审批、各地区生效版本（含重新确认进度）；版本列表、适用地区目录、需要先确认的操作收起。版本的查看和编辑在抽屉里，语言分页签。披露的发布、切换生效、地区启停归档删除、受限动作都提交审批，批准后生效；账号没有 `platform_a2_write` 或 `platform_a2_proposal_create` 时这些入口隐藏。法律条款和隐私政策填理由后立即生效，理由在确认框里填；发布只发已保存的草稿；法律新草稿带入当前范围已发布版本全部节，没有时按本范围最近版本、用户端回退顺序带入并写来源；节数少于现行版时，列表、详情、编辑器发布入口都禁用并写明去补全，后端接口尚未拦截。撤回 en/GLOBAL 影响依赖它回退的范围，有自己已发布版本的范围不受影响。调整映射时版本或适用国家变了，新旧国家的用户都要重新确认并收到通知，确认框写明。法律范围没读取完时不显示旧地区的内容和写入口。少于 5 人的地区写「样本过小」。待审批随 10 秒轮询更新，看不到或没读到时不算没有。写入结果未知时页面上方常显待确认，对象和新建入口都锁定，只能按原操作重试；超过 24 小时不能再重试，记录保留，到「操作记录与审批」核对；重试被后端明确拒绝后才能人工解除。改动冲突时写「这项刚被别人改过。」，点「读取最新」后自己改过的字段保留，其余取最新。
+- **I5 草稿与原操作**：披露、法律、隐私三个编辑器在浏览器后退、站内离页时询问继续编辑、放弃或保存后继续。保存拒绝、冲突、无权限或结果未知时不当作保存成功离页。法律与隐私过期记录引导核对原操作，保留对象锁，不按过期解锁或继续重发。
+- **I5 版本与技术信息**：映射确认逐条列出已发布／历史版本、生效日期与回退提醒；法律章节标识逐项保留。技术信息默认收起，隐私原文用带标签的只读文本框，可选择复制。隐私另存草稿不替换公开版，发布后公开接口按请求语言、基础语言、英语回退，撤下后公开接口不可读，不承诺未经核实的注册页或邀请页位置。
 - **I5 补修**：三个编辑器换稿、新建、看别的版本及行内发布撤回均走未保存保护；版本冲突按段落标识三方合并，两边都改同一处时保留自己的并提示核对，读取最新失败不丢稿且读到前不能保存。读回核对切到原操作语言、地区，待确认和审批时间按业务时区。归档映射写「无，vN 已归档」，历史版不标生效中；待确认用户是否被拦按当前受限动作写，没有受限动作时明确不要求确认。发布差异只比两边共有语言，范围变化列事实，核对勾选紧贴理由区；九语新增录入暂禁用，已有版本仍可保存。新版本日期默认今天，过去日期及相同内容只提示；地区归档不能撤销，不能再启用或改名。隐私另存草稿不改公开版，删除语言先确认，技术信息默认收起。
 - **I2 Nova**:channel `enabled ⇄ disabled`(kill);模板 `draft → published → archived`(MC)。
 - **I3 通知 campaign**:`draft → scheduled → sending → sent`;仅 `scheduled → cancelled`;紧急取消另核紧急执行权;`cancelled` 不能编辑或重新排期,只能删除,要改就新建;`draft` 和 `cancelled` 可删,`sent` 不可删;调度下发=MC;优先级 in-place 升级 server emit canonical。
 - **I4 信任 / I6 i18n / I7 课程**:内容与课程 `draft → published → archived`；I7 课程版本 `DRAFT → PUBLISHED → SUPERSEDED`，回滚重新选定历史版本为当前版。I4 财务/NEX 叙事须合规审查，I6 发布前镜像+占位符 gate；I7 初次发布、版本发布和回滚均须课程写与奖励调整双权限，featured set⇄unset 单位互斥。
-- **J1 功能闸**：闸 `enabled ⇄ disabled`；关停、恢复当前都在确认后直接执行，不走提案。需覆盖率检查的恢复在提交执行前检查，低于红线返回 422；试用恢复不查。批量关停同一事务，有一项不符合时整批不执行。自动关停后等待补录，补录不恢复。提现关停边界见域 J 页面行为，BE-44 未交付前不拦已放行单打款。
+- **J1 功能闸**：关停确认后立即执行，恢复提交 A2 应急审批、另一位有权超管批准后执行。资金恢复须服务端估值可靠且允许恢复，批准时重查覆盖率；试用免查。批量关停同一事务，有一项不符合则整批不执行；补录不恢复。结果未知保原申请、先查原键，重试被拒仍保留，过期只查询。提现关停的通道边界见域 J 页面行为。
 - **J3 篡改告警**:`normal → flagged`(超频次)→ `escalated`(喂 K4+B5);纯只读监控,处置跳 K 域。
 
 ### 5.13 状态机 — PRD 未完整定义 / 已声明偏差(开发须知)
 - **D2 `review-pending`**:§1.9 仅列正常 5 态,review-pending 为后台扩展;`withdraw.approved`↔`review-passed` 命名映射须 A4 registry 确认。
 - **E4 订单过期时窗**(placed→expired):**未定义**(建议 15–30min,V2 PM 确认)。`order` domain 未注册,过渡用 `checkout.order_*`。
 - **E4 `cumulativeDepositUsdt` 退款逆向写权归属**:**未定义**(拟 D4 recordDeposit(-amount),V2 与 D1/D4 对齐)。
-- **H2 `autoChargeAtEnd` 实时性**:**未定义**(暂按仅新 trial,待 PM)。
+- **H2 `autoChargeAtEnd`**：系统只读旧标记，页面隐藏；现行到期结束试用，购买必须由用户确认，参数与结算以 v1 H2 为准。
 - **里程碑事务边界**:§9.11e 表未含 milestone 行,V4 收口补。
 - **连续值非状态机**:K4 风险分 / E3 设备效率 / G3 行情(分档阈值是路由守卫,非状态转移)。
 
@@ -1397,7 +1401,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | H1-MD5 | 撤销 cohort override 确认 | 是 | v1 H1④a |
 | H2-MD1 | TrialConfig 敏感参数变更确认 | — | v1 H2④a |
 | H2-MD2 | 强制取消试用确认 | — | v1 H2④a |
-| H2-MD3 | 强制触发扣款确认 | — | v1 H2④a |
+| H2-MD3 | 历史强制扣款核查（无新确认入口） | — | v1 H2④a |
 | H3-MD1 | Day-One Quest 配置变更 | 是 | v3 H3④a |
 | H3-MD2 | Weekly Quests 配置变更 | 是 | v3 H3④a |
 | H3-MD3 | Monthly Challenge 配置变更 | 是 | v3 H3④a |
