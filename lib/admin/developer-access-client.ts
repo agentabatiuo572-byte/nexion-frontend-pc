@@ -55,6 +55,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     cache: "no-store",
     signal: init?.signal ?? AbortSignal.timeout(12_000),
+  }).catch((cause: Error) => {
+    if (init?.method === "POST") throw new DeveloperAccessOutcomeUnknownError(cause.message);
+    throw cause;
   });
   const envelope = await response.json().catch(() => null) as Envelope<T> | null;
   if (!response.ok || !envelope || envelope.code !== 0 || envelope.data === undefined) {

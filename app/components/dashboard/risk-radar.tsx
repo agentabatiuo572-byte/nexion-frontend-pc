@@ -2,7 +2,7 @@
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
- * B5 风险提醒(设计稿 RiskRadar 模式)— 挤兑比率 + 异常账户 + Kill 状态灯 + 实时告警。
+ * 首页风险提醒：提现队列积压比率、异常账户、紧急开关状态和实时告警。
  * 取代旧 AlertCenter:在告警列表之上补足 B5 的态势指标。只读,跳转到对应域处置。
  */
 import Link from "next/link";
@@ -31,12 +31,12 @@ export interface KillGate {
 
 export function RiskRadar({
   alerts,
-  bankRunRatio,
+  withdrawalBacklogPercent,
   flaggedAccounts,
   killGates,
 }: {
   alerts: AlertItem[];
-  bankRunRatio: number;
+  withdrawalBacklogPercent: number;
   flaggedAccounts: number;
   killGates: KillGate[];
 }) {
@@ -56,7 +56,7 @@ export function RiskRadar({
       <div className="mt-3 grid grid-cols-2 gap-3">
         <div className="rounded-[10px] p-3" style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)" }}>
           <p className="text-[11px]" style={{ color: "var(--v5-ink-3)" }}><AutoGloss>提现压力（待提现 ÷ 储备）</AutoGloss></p>
-          <p className="font-mono-tabular mt-0.5" style={{ fontSize: 21, fontWeight: 600, color: bankRunRatio >= 10 ? "var(--v5-warning)" : "var(--v5-ink)" }}>{bankRunRatio.toFixed(1)}%</p>
+          <p className="font-mono-tabular mt-0.5" style={{ fontSize: 21, fontWeight: 600, color: withdrawalBacklogPercent >= 10 ? "var(--v5-warning)" : "var(--v5-ink)" }}>{withdrawalBacklogPercent.toFixed(1)}%</p>
         </div>
         <div className="rounded-[10px] p-3" style={{ background: "var(--v5-warning-soft)", border: "1px solid color-mix(in srgb, var(--v5-warning) 40%, transparent)" }}>
           <p className="text-[11px]" style={{ color: "var(--v5-ink-3)" }}>风控标记的异常账户</p>

@@ -311,8 +311,7 @@ export default function CommandCenter() {
   const zoneLabel = cov < LEDGER.redlinePct ? "跌破红线" : cov < LEDGER.healthyPct ? "警戒" : "健康";
   const inReview = LEDGER.queueBacklogCount;
   const backlogUsd = LEDGER.queueBacklogUsd;
-  // 队列积压比率 = 待提现负债存量 ÷ 储备(B5 雷达「挤兑比率」为 24h 申请流量口径 7.9%,两者口径不同,RiskRadar 内已分别标注)
-  const bankRunRatio = riskRadar.bankRunRatio || round2((LEDGER.queueBacklogUsd / Math.max(LEDGER.reserveUsd, 1)) * 100);
+  const withdrawalBacklogPercent = LEDGER.pressureRatio * 100;
   const prevFlowAbs = Math.max(Math.abs(LEDGER.prev.netFlow24hUsd), 1);
   const outflowChg = Math.round(((Math.abs(LEDGER.netFlow24hUsd) - prevFlowAbs) / prevFlowAbs) * 100);
   const netFlowPositive = LEDGER.netFlow24hUsd >= 0;
@@ -482,7 +481,7 @@ export default function CommandCenter() {
         <div className="lg:col-span-2">
           <FundPool />
         </div>
-        <RiskRadar alerts={liveAlerts} bankRunRatio={bankRunRatio} flaggedAccounts={flaggedAccounts} killGates={KILL_GATES} />
+        <RiskRadar alerts={liveAlerts} withdrawalBacklogPercent={withdrawalBacklogPercent} flaggedAccounts={flaggedAccounts} killGates={KILL_GATES} />
       </div>
 
       {/* ③ 实时运营脉搏 */}
