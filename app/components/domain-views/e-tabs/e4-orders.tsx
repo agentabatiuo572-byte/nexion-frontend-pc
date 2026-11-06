@@ -453,15 +453,22 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
           </Facts>}
         </Fold>
         <Fold inset title="资金记录" icon={Receipt} tone="money" summary={e4Detail.funding.length ? `${e4Detail.funding.length} 条记录` : "暂无付款或账单记录"}>
-          {e4Detail.funding.length === 0 ? "暂无付款或账单记录" : <Facts>
+          {e4Detail.funding.length === 0 ? "暂无付款或账单记录" : <ol className="rd-stack" aria-label="付款与账单记录">
             {e4Detail.funding.map((item, position) => {
               const ledgerHref = e4FundingLedgerHref(item);
-              return <Fact key={`${item.source}-${item.bizNo}-${position}`} k={operatorOrderFact("source", item.source)}>
-                {operatorOrderFact("direction", item.direction)} {orderMoney(item.amount)} · {operatorOrderFact("fundingStatus", item.status)} · <span data-mono>{item.bizNo}</span>
-                {ledgerHref && reach(ledgerHref, "finance_d4_read") && <> · <Link className="rd-link" href={ledgerHref}>到账本与账单核对查看</Link></>}
-              </Fact>;
+              return <li key={`${item.source}-${item.bizNo}-${position}`}>
+                <Panel plain headingLevel={3} title={operatorOrderFact("source", item.source)}>
+                  <Facts>
+                    <Fact k="收支">{operatorOrderFact("direction", item.direction)}</Fact>
+                    <Fact k="金额">{orderMoney(item.amount)}</Fact>
+                    <Fact k="状态">{operatorOrderFact("fundingStatus", item.status)}</Fact>
+                    <Fact k="业务单号"><span data-mono>{item.bizNo}</span></Fact>
+                    {ledgerHref && reach(ledgerHref, "finance_d4_read") && <Fact k="核对"><Link className="rd-link" href={ledgerHref}>到账本与账单核对查看</Link></Fact>}
+                  </Facts>
+                </Panel>
+              </li>;
             })}
-          </Facts>}
+          </ol>}
         </Fold>
       </>}
       <nav className="rd-links" aria-label="相关页面">
