@@ -100,12 +100,13 @@ function normalizeDashboardKpis(data: LBiData | null): DashboardKpi[] {
   return rawRows(l1.kpis).flatMap((row, index) => {
     const n = finiteRawNum(row.n) ?? index + 1;
     const ext = rawRec(kpiExt[String(n)]);
-    const spark = rawNumRows(row.spark);
+    const suppressed = row.suppressed === true;
+    const spark = Array.isArray(row.spark) ? row.spark.map(finiteRawNum) : [];
     const unit = rawText(row.unit);
     const label = rawText(row.name).trim();
-    const value = finiteRawNum(row.value);
+    const value = suppressed ? null : finiteRawNum(row.value);
     const target = kpiTargetLabel(row);
-    const pass = kpiPass(row);
+    const pass = suppressed ? null : kpiPass(row);
     if (!label || target == null) return [];
     return [{
       key: `l1-${n}`,
@@ -113,7 +114,9 @@ function normalizeDashboardKpis(data: LBiData | null): DashboardKpi[] {
       value: value == null ? "—" : `${value}${unit}`,
       target,
       pass,
-      series: spark,
+      suppressed,
+      series: suppressed ? [] : spark,
+      trendSuppressed: Array.isArray(row.sparkSuppressed) && row.sparkSuppressed.includes(true),
       hint: rawText(kpiPlain[String(n)] ?? ext.note ?? row.vis, ""),
     }];
   });
@@ -390,7 +393,7 @@ export default function CommandCenter() {
     if (code === "J") return KILL_GATES.length > 0 ? `业务开关 ${killOnline}/${KILL_GATES.length} 正常${killTripped ? ` · ${killTripped} 个已关停` : ""}${killMissing ? ` · ${killMissing} 个未设置` : ""}` : "正在加载业务开关";
     if (code === "K") return `风险账户 ${fmtNum(flaggedAccounts)} · 规则 ${riskRadar.rules.length} 条`;
     if (code === "L") {
-      if (dashboardKpis.length) return `${kpiRollup.total} 项关键指标 · 达标 ${kpiRollup.passed} / 未达标 ${kpiRollup.failed}${kpiRollup.unknown ? ` / 暂无法计算 ${kpiRollup.unknown}` : ""}`;
+      if (dashboardKpis.length) return `${kpiRollup.total} 项关键指标 · 达标 ${kpiRollup.passed} / 未达标 ${kpiRollup.failed}${kpiRollup.unknown ? ` / 暂无法计算 ${kpiRollup.unknown}` : ""}${kpiRollup.suppressed ? ` / 样本过小 ${kpiRollup.suppressed}` : ""}`;
       return lBiError ? "关键指标加载失败" : "正在加载关键指标";
     }
     if (code === "H") {

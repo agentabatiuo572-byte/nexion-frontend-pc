@@ -56,7 +56,7 @@ export function fmtM(value: number) {
   return `${sign}$${abs.toFixed(0)}`;
 }
 
-export function kpiState(kpi: KpiRow, offset: number): "g" | "y" | "r" {
+export function kpiState(kpi: Pick<KpiRow, "value" | "target" | "dir" | "band">, offset: number): "g" | "y" | "r" {
   if (kpi.dir === "band") {
     const [low = 0, high = 0] = kpi.band ?? [];
     if (kpi.value >= low && kpi.value <= high) return "g";

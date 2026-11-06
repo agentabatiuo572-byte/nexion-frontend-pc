@@ -32,8 +32,9 @@ export function resolveL1ExportMode(raw: unknown, sourceUnavailable: boolean): L
     try {
       validateL1Dashboard(raw);
       const kpis = record(raw).kpis as Array<Record<string, unknown>>;
-      if (!kpis.some((row) => row.available === true)) return null;
-      return kpis.every((row) => Array.isArray(row.spark) && row.spark.length === 6)
+      if (!kpis.some((row) => row.available === true || row.suppressed === true)) return null;
+      return kpis.every((row) => Array.isArray(row.spark) && row.spark.length === 6
+        && row.spark.every((point) => point !== null))
         ? "series"
         : "snapshot";
     } catch {

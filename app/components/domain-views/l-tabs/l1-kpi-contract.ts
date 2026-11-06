@@ -13,6 +13,18 @@ function finite(value: unknown) {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+function validTrend(values: unknown, markers: unknown, length: number) {
+  return Array.isArray(values)
+    && (values.length === 0 || values.length === length)
+    && values.every(point => point === null || finite(point))
+    && (markers === undefined || Array.isArray(markers) && markers.length === values.length
+      && markers.every((masked, index) => typeof masked === "boolean" && (!masked || values[index] === null)));
+}
+
+function count(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
 function validateKpi(value: unknown, expectedId: number) {
   const row = record(value);
   if (row.n !== expectedId || String(row.kpiId) !== String(expectedId)) {
@@ -23,11 +35,10 @@ function validateKpi(value: unknown, expectedId: number) {
       || !["gte", "lte", "band"].includes(String(row.dir))
       || !["%", "d"].includes(String(row.unit))
       || typeof row.available !== "boolean"
-      || typeof row.numerator !== "number" || !Number.isInteger(row.numerator) || row.numerator < 0
-      || typeof row.denominator !== "number" || !Number.isInteger(row.denominator) || row.denominator < 0
-      || !Array.isArray(row.spark)
-      || (row.spark.length !== 0 && row.spark.length !== 6)
-      || !row.spark.every(finite)) {
+      || !validTrend(row.spark, row.sparkSuppressed, 6)
+      || (row.suppressed === true
+        ? row.available || row.numerator != null || row.denominator != null || row.momDelta != null
+        : !count(row.numerator) || !count(row.denominator))) {
     throw new Error("L1_KPI_ROW_INVALID");
   }
   if (row.available) {
@@ -76,8 +87,7 @@ export function validateL1Trend(value: unknown, expectedId: number): JsonRecord 
   if (data.module !== "L1" || data.kpiId !== expectedId
       || !Array.isArray(data.labels) || data.labels.length !== 6
       || !data.labels.every((item) => typeof item === "string" && item.length > 0)
-      || !Array.isArray(data.values) || !data.values.every(finite)
-      || (data.values.length !== 0 && data.values.length !== data.labels.length)) {
+      || !validTrend(data.values, data.suppressedPoints, data.labels.length)) {
     throw new Error("L1_TREND_PROTOCOL_INVALID");
   }
   return data;

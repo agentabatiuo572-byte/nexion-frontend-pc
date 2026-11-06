@@ -10,6 +10,8 @@ import { Sparkline } from "@/app/components/kit/kpi-stat-card";
 import { AreaChart } from "@/app/components/kit/charts/area-chart";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { rollupKpiPassState } from "@/lib/admin/dashboard-number";
+import { type KpiTrendPoint } from "@/lib/admin/kpi-trend";
+import { KpiTrendLine } from "./kpi-trend-line";
 
 export type DashboardKpi = {
   key: string;
@@ -17,14 +19,17 @@ export type DashboardKpi = {
   value: string;
   target: string;
   pass: boolean | null;
-  series: number[];
+  suppressed?: boolean;
+  trendSuppressed?: boolean;
+  series: KpiTrendPoint[];
   hint: string;
 };
 
 export function KpiWall({ kpis }: { kpis: DashboardKpi[] }) {
   // 三态口径与运营总览的 L 域速览共用同一个汇总函数(zentao #208),两处不再各写一套算式。
   const rollup = rollupKpiPassState(kpis);
-  const [sel, setSel] = useState<{ kpi: DashboardKpi; n: number } | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const selectedIndex = kpis.findIndex(kpi => kpi.key === selectedKey);
 
   return (
     <div>
@@ -36,6 +41,7 @@ export function KpiWall({ kpis }: { kpis: DashboardKpi[] }) {
           达标 <span style={{ color: "var(--v5-success)" }}>{rollup.passed}</span> / 未达{" "}
           <span style={{ color: "var(--v5-danger)" }}>{rollup.failed}</span>
           {" / 暂无法计算 "}{rollup.unknown}
+          {rollup.suppressed > 0 && ` / 样本过小 ${rollup.suppressed}`}
         </span>
       </div>
       <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
@@ -45,7 +51,7 @@ export function KpiWall({ kpis }: { kpis: DashboardKpi[] }) {
             <button
               key={k.key}
               type="button"
-              onClick={() => setSel({ kpi: k, n: i + 1 })}
+              onClick={() => setSelectedKey(k.key)}
               className="rounded-[12px] border border-[var(--v5-border)] p-3.5 text-left transition-colors hover:border-[var(--v5-border-strong)]"
               style={{ background: "var(--v5-surface)" }}
             >
@@ -53,20 +59,22 @@ export function KpiWall({ kpis }: { kpis: DashboardKpi[] }) {
                 <span className="font-mono-tabular rounded-[6px] px-1.5 py-0.5 text-[10.5px]" style={{ background: "var(--v5-brand-soft)", color: "var(--v5-brand)", border: "1px solid var(--v5-brand-border)" }}>关键指标 #{i + 1}</span>
                 <span className="ml-auto inline-flex items-center gap-1 rounded-[6px] px-1.5 py-0.5 text-[10.5px] font-medium" style={{ background: k.pass ? "var(--v5-brand-soft)" : "var(--v5-danger-soft)", color }}>
                   <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color }} />
-                  {k.pass === null ? "暂无法计算" : k.pass ? "达标" : "未达标"}
+                  {k.suppressed ? "样本过小" : k.pass === null ? "暂无法计算" : k.pass ? "达标" : "未达标"}
                 </span>
               </div>
               <p className="mt-2 text-[11.5px]" style={{ color: "var(--v5-ink-3)", minHeight: 30 }}><AutoGloss>{operatorCopyText(k.label)}</AutoGloss></p>
               <div className="mt-1 flex items-end justify-between gap-2">
-                <span className="font-mono-tabular text-[22px] leading-none" style={{ color }}>{k.value}</span>
-                <Sparkline data={k.series} color={color} />
+                <span className="font-mono-tabular text-[22px] leading-none" style={{ color }}>{k.suppressed ? "样本过小" : k.value}</span>
+                {!k.suppressed && (k.series.every(point => point !== null)
+                  ? <Sparkline data={k.series} color={color} />
+                  : <KpiTrendLine series={k.series} color={color} width={56} height={18} />)}
               </div>
               <p className="mt-1.5 text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>目标 </AutoGloss>{operatorCopyText(k.target)}<AutoGloss> · 点击看算法</AutoGloss></p>
             </button>
           );
         })}
       </div>
-      {sel && <KpiModal kpi={sel.kpi} n={sel.n} onClose={() => setSel(null)} />}
+      {selectedIndex >= 0 && <KpiModal kpi={kpis[selectedIndex]} n={selectedIndex + 1} onClose={() => setSelectedKey(null)} />}
     </div>
   );
 }
@@ -106,23 +114,26 @@ function KpiModal({ kpi, n, onClose }: { kpi: DashboardKpi; n: number; onClose: 
           <span className="font-mono-tabular rounded-[6px] px-1.5 py-0.5 text-[10.5px]" style={{ background: "var(--v5-brand-soft)", color: "var(--v5-brand)", border: "1px solid var(--v5-brand-border)" }}>关键指标 #{n}</span>
           <span className="font-display text-[15px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>{operatorCopyText(kpi.label)}</AutoGloss></span>
           <span className="ml-auto inline-flex items-center gap-1 rounded-[6px] px-2 py-0.5 text-[11px] font-medium" style={{ background: kpi.pass ? "var(--v5-brand-soft)" : "var(--v5-danger-soft)", color }}>
-            {kpi.pass === null ? "暂无法计算" : kpi.pass ? "达标" : "未达标"}
+            {kpi.suppressed ? "样本过小" : kpi.pass === null ? "暂无法计算" : kpi.pass ? "达标" : "未达标"}
           </span>
         </div>
         <div className="p-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-[10px] p-3" style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)" }}>
               <p className="text-[11px]" style={{ color: "var(--v5-ink-3)" }}>当前值</p>
-              <p className="font-mono-tabular mt-0.5 text-[22px]" style={{ color }}>{kpi.value}</p>
+              <p className="font-mono-tabular mt-0.5 text-[22px]" style={{ color }}>{kpi.suppressed ? "样本过小" : kpi.value}</p>
             </div>
             <div className="rounded-[10px] p-3" style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)" }}>
               <p className="text-[11px]" style={{ color: "var(--v5-ink-3)" }}>目标</p>
               <p className="font-mono-tabular mt-0.5 text-[22px]" style={{ color: "var(--v5-ink)" }}>{operatorCopyText(kpi.target)}</p>
             </div>
           </div>
-          <div className="mt-3">
-            <AreaChart data={kpi.series} color={color} height={70} />
-          </div>
+          {!kpi.suppressed && <div className="mt-3">
+            {kpi.series.every(point => point !== null)
+              ? <AreaChart data={kpi.series} color={color} height={70} />
+              : <KpiTrendLine series={kpi.series} color={color} width={240} height={70} responsive />}
+            {kpi.trendSuppressed && <p className="text-[11.5px]">趋势空缺 · 样本过小</p>}
+          </div>}
           <hr className="my-3 border-0" style={{ height: 1, background: "var(--v5-border)" }} />
           {rows.map((r) => (
             <div key={r.k} className="flex justify-between gap-4 py-2" style={{ borderBottom: "1px solid var(--v5-border)" }}>

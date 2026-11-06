@@ -9,8 +9,10 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AutoGloss } from "@/app/components/kit/gloss";
+import { KpiTrendLine } from "@/app/components/dashboard/kpi-trend-line";
 import { TabGroup } from "@/app/components/kit/tab-group";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { kpiTrendPath, type KpiTrendPoint } from "@/lib/admin/kpi-trend";
 import { PaginationExemptionList } from "../design-kit";
 import { LDataState, kpiState, num, rec, rows, strings, type KpiRow } from "./live-data";
 import { readL1LiveTotals } from "./l1-l2-live-data";
@@ -24,30 +26,30 @@ import { loadL1LocalView, saveL1LocalView, type L1Window } from "./l1-local-view
 import { createL1ReadController } from "./l1-request-generation";
 import { assertL1AttributionLinks } from "./l-attribution-routes";
 
-type Kpi = KpiRow & {
+type Kpi = Omit<KpiRow, "value" | "spark"> & {
+  value: number | null;
+  spark: KpiTrendPoint[];
+  sparkSuppressed?: boolean[];
+  suppressed?: boolean;
+  previousSuppressed?: boolean;
   available?: boolean;
   unavailableReason?: string;
   status?: string;
   momDelta?: number | null;
-  numerator?: number;
-  denominator?: number;
+  numerator?: number | null;
+  denominator?: number | null;
 };
 type KpiExt = {
   fx: string;
   fxBold: string[];
-  num: string;
-  den: string;
+  num: string | null;
+  den: string | null;
   delta: string;
   note: string;
   jump: { label: string; href?: string }[];
 };
 const LED_COLOR = { g: "var(--success)", y: "var(--warning)", r: "var(--danger)" } as const;
 
-function sparkPath(series: readonly number[], w: number, h: number): string {
-  if (series.length < 2) return "";
-  const min = Math.min(...series), max = Math.max(...series), rng = max - min || 1;
-  return series.map((v, i) => `${i ? "L" : "M"}${((i / (series.length - 1)) * w).toFixed(1)} ${(h - 3 - ((v - min) / rng) * (h - 6)).toFixed(1)}`).join(" ");
-}
 const tgtLabel = (k: Kpi) => {
   const [low = 0, high = 0] = k.band ?? [];
   return k.dir === "band" ? `健康带 ${low}–${high}${k.unit === "d" ? "天" : k.unit}` : `目标 ${k.dir === "lte" ? "< " : "> "}${k.target}${k.unit === "d" ? "天" : k.unit}`;
@@ -133,13 +135,15 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
   const [drillKpi, setDrillKpi] = useState<Kpi | null>(null);
-  const [drillTrend, setDrillTrend] = useState<number[] | null>(null);
+  const [drillTrend, setDrillTrend] = useState<{ values: KpiTrendPoint[]; suppressedPoints?: boolean[] } | null>(null);
   const [drillError, setDrillError] = useState("");
   const l1Requests = useRef(createL1ReadController());
+  const drillRequests = useRef(createL1ReadController());
   const selectedQuery = useRef<L1KpiQuery>({ window: "7d" });
 
   useEffect(() => {
     l1Requests.current.invalidate();
+    drillRequests.current.invalidate();
     setDrillKpi(null);
     setDrillTrend(null);
     setDrillError("");
@@ -171,7 +175,10 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
     }
   }, [ctx.biData?.l1]);
 
-  useEffect(() => () => l1Requests.current.invalidate(), []);
+  useEffect(() => () => {
+    l1Requests.current.invalidate();
+    drillRequests.current.invalidate();
+  }, []);
 
   useEffect(() => {
     let saved: ReturnType<typeof loadL1LocalView>;
@@ -252,23 +259,26 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
   const KPI_PLAIN = rec<string>(data?.kpiPlain);
   const KPI_EXT = rec<KpiExt>(data?.kpiExt);
   const safeSelKpi = Math.min(selKpi, KPIS.length - 1);
-  const states = KPIS.map((item) => item.available === false || item.value == null ? "na" : kpiState(item, ylOffset));
+  const states = KPIS.map((item) => item.suppressed || item.available === false || item.value == null
+    ? "na" : kpiState({ ...item, value: item.value }, ylOffset));
   const green = states.filter((s) => s === "g").length;
   const yellow = states.filter((s) => s === "y").length;
   const red = states.filter((s) => s === "r").length;
-  const unavailable = states.filter((s) => s === "na").length;
-  const attention = red + unavailable;
+  const suppressed = KPIS.filter((item) => item.suppressed).length;
+  const unavailable = states.filter((s) => s === "na").length - suppressed;
+  const attention = red + unavailable + suppressed;
   const redNames = KPIS.filter((_, i) => states[i] === "r").map((k) => `#${k.n}`).join(" ");
   const baseKpi = KPIS[safeSelKpi];
   const k = drillKpi?.n === baseKpi.n
-    ? { ...baseKpi, ...drillKpi, spark: drillTrend ?? drillKpi.spark ?? baseKpi.spark }
+    ? { ...baseKpi, ...drillKpi, spark: drillTrend?.values ?? drillKpi.spark,
+      sparkSuppressed: drillTrend?.suppressedPoints ?? drillKpi.sparkSuppressed }
     : baseKpi;
   const baseExt = KPI_EXT[String(k.n)] ?? { fx: k.name, fxBold: [], num: "—", den: "—", delta: "0", note: "暂未返回该关键指标解释", jump: [] };
   const ext = {
     ...baseExt,
-    num: k.numerator == null ? baseExt.num : String(k.numerator),
-    den: k.denominator == null ? baseExt.den : String(k.denominator),
-    note: k.unavailableReason === "NO_GENESIS_PURCHASES"
+    num: k.suppressed ? "—" : k.numerator == null ? baseExt.num : String(k.numerator),
+    den: k.suppressed ? "—" : k.denominator == null ? baseExt.den : String(k.denominator),
+    note: k.suppressed ? "样本过小" : k.unavailableReason === "NO_GENESIS_PURCHASES"
       ? "当前筛选范围没有创世节点购买记录，尚未售罄，售罄天数不可计算。"
       : k.unavailableReason === "GENESIS_NOT_SOLD_OUT"
         ? "创世节点尚未累计售出 1,000，售罄天数不可计算。"
@@ -296,6 +306,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
     nextWindow: L1Window = win,
     filters: Partial<L1KpiQuery> = {},
   ) => {
+    drillRequests.current.invalidate();
     setRefreshing(true);
     setLocalData(data ?? null);
     const query = activeQuery(nextWindow, filters);
@@ -326,28 +337,33 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
   };
   const attributionLinks = assertL1AttributionLinks(ext.jump);
 
-  const selectKpi = async (index: number) => {
+  const selectKpi = (index: number) => {
+    if (refreshing) return;
     setSelKpi(index);
     const kpiId = KPIS[index]?.n;
     if (!kpiId) return;
     setDrillKpi(null);
     setDrillTrend(null);
     setDrillError("");
-    const query = activeQuery();
-    try {
-      const [drilldown, trend] = await Promise.all([
+    const query = selectedQuery.current;
+    drillRequests.current.run(
+      () => Promise.all([
         fetchL1KpiDrilldown(kpiId, query),
         fetchL1KpiTrend(kpiId, query),
-      ]);
-      const checkedDrilldown = validateL1Drilldown(drilldown, kpiId);
-      const checkedTrend = validateL1Trend(trend, kpiId);
-      setDrillKpi(checkedDrilldown.selected as Kpi);
-      setDrillTrend(checkedTrend.values as number[]);
-    } catch (error) {
-      const message = displayAdminError(error);
-      setDrillError(message);
-      ctx.toast(`明细加载失败 · ${message}`);
-    }
+      ]),
+      ([drilldown, trend]) => {
+        const checkedDrilldown = validateL1Drilldown(drilldown, kpiId);
+        const checkedTrend = validateL1Trend(trend, kpiId);
+        setDrillKpi(checkedDrilldown.selected as Kpi);
+        setDrillTrend({ values: checkedTrend.values as KpiTrendPoint[],
+          suppressedPoints: checkedTrend.suppressedPoints as boolean[] | undefined });
+      },
+      (error) => {
+        const message = displayAdminError(error);
+        setDrillError(message);
+        ctx.toast(`明细加载失败 · ${message}`);
+      },
+    );
   };
 
   const toggleOvl = (i: number) => setOvlSel((p) => (p.includes(i) ? (p.length > 1 ? p.filter((x) => x !== i) : p) : [...p, i]));
@@ -355,15 +371,16 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
   /* ---- 查看明细图(cohort 周序列 + 目标线 + 黄线 + Phase 标记;固定 viewBox 等比缩放) ---- */
   const drillChart = () => {
     const W = 860, H = 260, P = 36;
-    const s = [...k.spark];
-    if (s.length < 2) return <div className="empty">当前筛选范围没有可绘制的趋势点；不会用 0 补齐缺失周。</div>;
+    const s = k.spark;
+    const visible = s.filter((value) => value !== null);
+    if (visible.length === 0) return <div className="empty">{k.sparkSuppressed?.includes(true) ? "样本过小" : "当前筛选范围没有可绘制的趋势点"}</div>;
     const tgt = tgtValue(k);
     const yl = k.dir === "lte" ? k.target * (1 + ylOffset / 100) : tgt * (1 - ylOffset / 100);
-    const all = [...s, tgt, yl];
+    const all = [...visible, tgt, yl];
     const min = Math.min(...all) * 0.97, max = Math.max(...all) * 1.03, rng = max - min || 1;
     const X = (i: number) => P + (i / (s.length - 1)) * (W - 2 * P);
     const Y = (v: number) => H - 26 - ((v - min) / rng) * (H - 56);
-    const path = s.map((v, i) => `${i ? "L" : "M"}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(" ");
+    const path = kpiTrendPath(s, X, Y);
     return (
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`KPI #${k.n} 同批用户 周序列趋势`}>
         {s.map((_, i) => (
@@ -382,9 +399,9 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
         <text x={W - P} y={Y(tgt) - 5} fontSize={11} fill="var(--success)" textAnchor="end">目标 {tgt}{k.unit === "d" ? "天" : k.unit}</text>
         <line x1={P} y1={Y(yl)} x2={W - P} y2={Y(yl)} stroke="var(--warning)" strokeWidth={1.2} strokeDasharray="3 4" />
         <text x={W - P} y={Y(yl) + 13} fontSize={11} fill="var(--warning)" textAnchor="end">黄灯 {yl.toFixed(1)}{k.unit === "d" ? "天" : k.unit}</text>
-        <path d={`${path} L${X(s.length - 1)} ${H - 26} L${X(0)} ${H - 26} Z`} fill="var(--cyan)" opacity={0.07} />
+        {visible.length === s.length && <path d={`${path} L${X(s.length - 1)} ${H - 26} L${X(0)} ${H - 26} Z`} fill="var(--cyan)" opacity={0.07} />}
         <path d={path} fill="none" stroke="var(--cyan)" strokeWidth={2.2} />
-        {s.map((v, i) => (
+        {s.map((v, i) => v !== null && (
           <g key={i}>
             <circle cx={X(i)} cy={Y(v)} r={3.4} fill="#0A0A0A" stroke="var(--cyan)" strokeWidth={2} />
             <text x={X(i)} y={Y(v) - 9} fontSize={11} fill="var(--ink-3)" textAnchor="middle">{v}</text>
@@ -396,7 +413,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
 
   /* ---- 趋势叠加(指数化:实际 ÷ 目标 → 目标线 100) ---- */
   const ovlChart = () => {
-    const drawable = ovlSel.filter((index) => KPIS[index]?.available !== false && (KPIS[index]?.spark?.length ?? 0) >= 2);
+    const drawable = ovlSel.filter((index) => KPIS[index]?.spark.some((point) => point !== null));
     if (!drawable.length) return <div className="empty">当前所选指标没有足够的趋势数据，暂时无法画出对比曲线。</div>;
     const W = 1240, H = 230, P = 40, min = 80, max = 125;
     const X = (i: number) => P + (i / (WEEKS.length - 1)) * (W - 2 * P);
@@ -404,7 +421,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
     return (
       <svg className="ovl-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="多个关键指标的对比趋势">
         {WEEKS.map((w, i) => (
-          <g key={w}>
+          <g key={i}>
             <line x1={X(i)} y1={14} x2={X(i)} y2={H - 24} stroke="var(--border)" />
             <text x={X(i)} y={H - 6} fontSize={11} fill="var(--ink-4)" textAnchor="middle">{w}</text>
           </g>
@@ -418,12 +435,13 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
         {drawable.map((i) => {
           const kk = KPIS[i];
           const tgt = tgtValue(kk);
-          const idx = kk.spark.map((v) => (kk.dir === "lte" ? (tgt / v) * 100 : (v / tgt) * 100));
-          const path = idx.map((v, j) => {
-            const y = H - 24 - ((Math.min(Math.max(v, min), max) - min) / (max - min)) * (H - 44);
-            return `${j ? "L" : "M"}${X(j).toFixed(1)} ${y.toFixed(1)}`;
-          }).join(" ");
-          return <path key={i} d={path} fill="none" stroke={KPI_COLORS[i]} strokeWidth={2} />;
+          const idx = kk.spark.map((v) => v === null ? null : (kk.dir === "lte" ? (tgt / v) * 100 : (v / tgt) * 100));
+          const y = (value: number) => H - 24 - ((Math.min(Math.max(value, min), max) - min) / (max - min)) * (H - 44);
+          return <g key={i}>
+            <path d={kpiTrendPath(idx, X, y)} fill="none" stroke={KPI_COLORS[i]} strokeWidth={2} />
+            {idx.map((value, index) => value !== null && idx[index - 1] == null && idx[index + 1] == null
+              ? <circle key={index} cx={X(index)} cy={y(value)} r={2.5} fill={KPI_COLORS[i]} /> : null)}
+          </g>;
         })}
         <line x1={P} y1={y100} x2={W - P} y2={y100} stroke="var(--success)" strokeWidth={1.4} strokeDasharray="5 4" />
         <text x={W - P} y={y100 - 5} fontSize={11} fill="var(--success)" textAnchor="end">目标线 = 各自目标值(指数 100)</text>
@@ -442,7 +460,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
       <div className="f-stats">
         <div className="f-stat ok"><div className="k">已达标指标</div><div className="v">{green} / {KPIS.length}</div><div className="sub">绿灯 · 满足对应指标的目标</div></div>
         <div className="f-stat warn"><div className="k">接近目标的指标</div><div className="v">{yellow}</div><div className="sub">黄灯 · 单侧指标距目标不超过 {ylOffset}%；购买转化在健康带外</div></div>
-        <div className="f-stat danger"><div className="k">未达标 + 暂无法计算</div><div className="v">{attention} / {KPIS.length}</div><div className="sub">未达 {red} 项{redNames ? ` (${redNames})` : ""} · 暂无法计算 {unavailable} 项（缺数据时不按 0% 算）</div></div>
+        <div className="f-stat danger"><div className="k">未达标 + 暂无法计算</div><div className="v">{attention} / {KPIS.length}</div><div className="sub">未达 {red} 项{redNames ? ` (${redNames})` : ""} · 暂无法计算 {unavailable} 项{suppressed > 0 ? ` · 样本过小 ${suppressed} 项` : ""}</div></div>
         <div className="f-stat cyan"><div className="k">当前运营阶段</div><div className="v">{rs.currentPhase}{phaseKnown ? ` · 月 ${rs.currentMonth}` : ""}</div><div className="sub">{PHASE_SWITCH_IDX >= 0 ? "趋势图已标出运营阶段切换时间" : "当前时间范围内没有阶段切换记录"}</div></div>
       </div>
 
@@ -533,17 +551,13 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
             <>
               <div className="top"><span className="n">#{kk.n}</span><span className="nm"><AutoGloss>{operatorCopyText(kk.name)}</AutoGloss></span><span className={"led " + st} /></div>
               <div className="vrow">
-                <span className="v">{kk.available === false || kk.value == null ? "不可计算" : kk.value}<span className="u">{kk.available === false || kk.value == null ? "" : kk.unit === "d" ? "天" : kk.unit}</span></span>
+                <span className="v">{kk.suppressed ? "样本过小" : kk.value ?? "不可计算"}<span className="u">{kk.value == null ? "" : kk.unit === "d" ? "天" : kk.unit}</span></span>
                 <span className="tgt">{tgtLabel(kk)}</span>
-                <span className={"delta " + (dUp === goodUp ? "up" : "dn")}>{ex.delta === "—" ? "环比 —" : `${dUp ? "▲" : "▼"} ${ex.delta.replace("-", "")}`}</span>
+                <span className={"delta " + (dUp === goodUp ? "up" : "dn")}>{kk.suppressed || kk.previousSuppressed ? "环比样本过小" : ex.delta === "—" ? "环比 —" : `${dUp ? "▲" : "▼"} ${ex.delta.replace("-", "")}`}</span>
               </div>
-              {kk.spark.length === 0 ? (
-                <span className="spark-empty" data-proof="l1-kpi-trend-unavailable">趋势数据不足</span>
-              ) : (
-                <svg className="spark" viewBox="0 0 150 30" preserveAspectRatio="none" aria-hidden>
-                  <path d={sparkPath(kk.spark, 150, 30)} fill="none" stroke={st === "na" ? "var(--ink-4)" : LED_COLOR[st]} strokeWidth={1.8} />
-                </svg>
-              )}
+              {kk.spark.some((point) => point !== null) ? <KpiTrendLine className="spark" series={kk.spark} width={150} height={30}
+                color={st === "na" ? "var(--ink-4)" : LED_COLOR[st]} />
+                : <span className="spark-empty" data-proof="l1-kpi-trend-unavailable">{kk.sparkSuppressed?.includes(true) ? "趋势样本过小" : "趋势数据不足"}</span>}
               <div className="ft"><span className="ev" title={ex.fx}><AutoGloss>{KPI_PLAIN[kk.n]}</AutoGloss></span><span className="ph">{rs.currentPhase}</span><span className="lat">约2分钟</span></div>
             </>
           );
@@ -586,7 +600,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
             <div className="nd">
               <div className="it"><div className="k">分子(实时)</div><div className="v" style={{ color: "var(--cyan)" }}>{ext.num}</div></div>
               <div className="it"><div className="k">分母(实时)</div><div className="v">{ext.den}</div></div>
-              <div className="it"><div className="k">当前值</div><div className="v" style={{ color: k.available === false || k.value == null ? "var(--ink-4)" : "var(--success)" }}>{k.available === false || k.value == null ? "不可计算" : `${k.value}${k.unit === "d" ? "天" : k.unit}`}</div></div>
+              <div className="it"><div className="k">当前值</div><div className="v" style={{ color: k.value == null ? "var(--ink-4)" : "var(--success)" }}>{k.suppressed ? "样本过小" : k.value == null ? "不可计算" : `${k.value}${k.unit === "d" ? "天" : k.unit}`}</div></div>
               <div className="it"><div className="k">目标值</div><div className="v" style={{ color: "var(--ink-3)" }}>{tgtLabel(k).replace("目标 ", "").replace("健康带 ", "")}</div></div>
             </div>
             <div className="ltint" style={{ fontSize: 12 }}><b>解读</b> · <AutoGloss>{ext.note}</AutoGloss></div>
@@ -605,6 +619,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
             {drillChart()}
             <div className="legend">
               <span className="it"><span className="lsw" style={{ background: "var(--cyan)" }} />按注册周统计的趋势</span>
+              {k.sparkSuppressed?.includes(true) && <span className="it">趋势空缺 · 样本过小</span>}
               <span className="it" style={{ color: "var(--success)" }}><span className="lsw dash" />目标线</span>
               <span className="it" style={{ color: "var(--warning)" }}><span className="lsw dash" />黄灯预警线(距目标 {ylOffset}%)</span>
               <span className="it" style={{ color: "var(--ink-4)" }}><span className="lsw" style={{ width: 8, height: 10 }} />运营阶段切换时间</span>
@@ -631,6 +646,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
           <div className="legend">
             {ovlSel.map((i) => <span key={i} className="it"><span className="lsw" style={{ background: KPI_COLORS[i] }} />#{KPIS[i].n} {operatorCopyText(KPIS[i].name)}</span>)}
             <span className="it" style={{ color: "var(--ink-4)" }}>纵轴 = 实际值 ÷ 目标值(目标线 100)</span>
+            {ovlSel.some((i) => KPIS[i].sparkSuppressed?.includes(true)) && <span className="it">趋势空缺 · 样本过小</span>}
           </div>
         </div>
       </section>
@@ -655,7 +671,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
                     <td><div style={{ color: "var(--ink-2)" }}><AutoGloss>{KPI_PLAIN[kk.n]}</AutoGloss></div><div className="mono fx" style={{ color: "var(--ink-4)", fontSize: 11.5, marginTop: 3 }}>{renderFx(KPI_EXT[kk.n].fx, KPI_EXT[kk.n].fxBold)}</div></td>
                     <td className="num mono" style={{ color: "var(--ink)" }}>{tgtLabel(kk).replace("目标 ", "").replace("健康带 ", "")}</td>
                     <td><span className="lcode">{kk.vis}</span></td>
-                    <td>{st === "g" ? <span className="bdg ok">达标</span> : st === "y" ? <span className="bdg warn">预警</span> : st === "na" ? <span className="bdg">不可计算</span> : <span className="bdg bad">未达</span>}</td>
+                    <td>{kk.suppressed ? <span className="bdg">样本过小</span> : st === "g" ? <span className="bdg ok">达标</span> : st === "y" ? <span className="bdg warn">预警</span> : st === "na" ? <span className="bdg">不可计算</span> : <span className="bdg bad">未达</span>}</td>
                   </tr>
                 );
               })}
