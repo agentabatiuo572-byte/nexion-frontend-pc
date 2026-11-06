@@ -568,9 +568,9 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const rosterSource = ctx.pget("I.support.agents");
   useEffect(() => { setOwnCustomers(null); setBulkBatches(null); }, [adminId, authEpoch]);
   useEffect(() => {
-    if (!canWriteM3 || qualificationUnknown) return;
+    if (qualificationUnknown) return;
     const controller = new AbortController();
-    void supportClient.customers({ mode: "PERSONAL", pageNum: 1, pageSize: 1, filter: "ALL", keyword: "", signal: controller.signal }).then(page => { if (!controller.signal.aborted) setOwnCustomers(page.total); }).catch(() => undefined);
+    if (canWriteM3) void supportClient.customers({ mode: "PERSONAL", pageNum: 1, pageSize: 1, filter: "ALL", keyword: "", signal: controller.signal }).then(page => { if (!controller.signal.aborted) setOwnCustomers(page.total); }).catch(() => undefined);
     void supportEnhancements.bulkJobs(1, controller.signal).then(page => { if (!controller.signal.aborted) setBulkBatches(page.total); }).catch(() => undefined);
     return () => controller.abort();
   }, [canWriteM3, qualificationUnknown, adminId, authEpoch, conversationSource, rosterSource, entryCheck]);
@@ -1468,7 +1468,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const baseBlocked = !canWriteM3 ? "当前账号只能查看会话" : qualificationUnknown ? "正在确认你的专属客服身份" : undefined;
   const noOwnCustomers = hasOwn ? undefined : !myAgent ? "当前账号不是专属客服，没有本人客户" : ownCustomers === 0 ? "你名下还没有客户。客户分配给你之后才能用，分配情况看「客服工作台」" : undefined;
   // 新建要有本人客户；已有批次和待确认的原操作照样能进去查（OP-93）。
-  const bulkBlocked = baseBlocked ?? (noOwnCustomers && bulkBatches === 0 && !hasBulkPending(adminId) ? noOwnCustomers : undefined);
+  const bulkBlocked = hasBulkPending(adminId) || (bulkBatches ?? 0) > 0 ? undefined : baseBlocked ?? (bulkBatches === 0 ? noOwnCustomers : undefined);
   const checkingOwner = Boolean(selected && !writable && composerMode === "write" && !currentProfileDetail && !profileError && !recoveryBlocksTarget && canWriteM3 && selected.status === "open");
   const guideRole = !canWriteM3 ? "当前账号只能查看会话，不能发消息。" : scopeMode === "ALL" ? "当前账号是超级管理员：能看全部客户。别人没在接待时，可以用你自己的名字回复，不能记为联系维护；能修改超时策略。" : scopeMode === "MANAGED" ? "当前账号是客服主管：「我的客户」是你本人的客户，「组内审阅」是负责组的客户。别人没在接待时，可以用你自己的名字回复组内客户，不能记为联系维护；超时策略只能看。" : "当前账号是专属客服：只看得到、只能回复自己的客户；超时策略只能看。";
 
@@ -1666,7 +1666,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
         {selectedUnbound ? <BlockState state="empty" title="待分配专属客服，尚无绑定客户的维护状态。" /> : profileCustomerId ? <M3CustomerProfile key={`${authEpoch}:${profileCustomerId}`} ctx={ctx} customerId={profileCustomerId} source="M3" transferEntry={!canReviewAll || canTransfer} conversation={selected ?? undefined} scopeVersion={selected?.version ?? firstProfileCustomer?.version} messageError={conversationError} onRetryMessages={() => { void messagePages.retry(); }} onHistory={no => { const convo = visible.find(c => c.id === no); if (convo) select(convo); }} /> : <BlockState state="empty" title={requestedCustomerId ? "客户归属尚未核对，资料暂时加载不出来。" : "选择客户后查看资料。"} />}
       </aside>
       {assignOpen && canAssign && selected?.customerId && <AssignAdvisorDialog key={`${scopeIdentity}:${selected.customerId}`} adminId={adminId} canWrite={canWriteAssignment} customerId={String(selected.customerId)} customerName={title} onClose={() => setAssignOpen(false)} onAssigned={name => { setAssignOpen(false); setActionError(""); setActionResult(`已确认原分配，专属客服为 ${name}。`); void ctx.refreshConversations().catch(() => setActionResult(`已确认原分配，专属客服为 ${name}。会话刷新失败，请刷新会话核对。`)); }} />}
-      {bulkOpen && <SupportBulkComposer ctx={ctx} createBlocked={noOwnCustomers} onClose={() => setBulkOpen(false)} />}
+      {bulkOpen && <SupportBulkComposer ctx={ctx} createBlocked={baseBlocked ?? noOwnCustomers} onClose={() => setBulkOpen(false)} />}
       {contactOpen && <SupportContactPicker onClose={() => setContactOpen(false)} onSelect={customerId => { setRequestedCustomerId(customerId); setScreen("chat"); setContactOpen(false); const url = new URL(window.location.href); url.searchParams.delete("conversationNo"); url.searchParams.set("customerId", customerId); window.history.replaceState(null, "", url); }} />}
       {timeoutOpen && timeoutPolicy && <IdlePolicyModal policy={timeoutPolicy} initialInput={timeoutInput} canSave={canTimeout} saving={timeoutSaving} error={timeoutError} pending={Boolean(timeoutPending)} conflict={timeoutConflict} latest={timeoutLatest} onDraftChange={setTimeoutInput} onCheckPending={checkTimeoutPending} onRefreshLatest={refreshTimeoutLatest} onReviewLatest={() => { if (timeoutLatest) { setTimeoutPolicy(timeoutLatest); setTimeoutLatest(null); setTimeoutConflict(false); setTimeoutError(""); setTimeoutInput(input => input && { ...input, reason: "" }); } }} onClose={() => { if (!timeoutSaving) setTimeoutOpen(false); }} onSave={saveTimeout} />}
       {timeoutOpen && !timeoutPolicy && <Modal title="会话超时策略" icon="clock" footer={<Button onClick={() => setTimeoutOpen(false)}>关闭</Button>} onClose={() => setTimeoutOpen(false)}><p role={timeoutError ? "alert" : "status"}>{timeoutError || "正在加载…"}</p>{timeoutError && <Button size="sm" onClick={() => void openTimeout()}>重新加载</Button>}</Modal>}
