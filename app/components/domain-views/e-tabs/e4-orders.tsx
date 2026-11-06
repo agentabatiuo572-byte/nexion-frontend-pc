@@ -381,7 +381,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
             // amplify 只管框里的覆盖率提示：那句写「提交时检查」，后端实际在批准执行时才查，所以覆盖率写进事实区。提案里的 amplifies 照旧是 true。
             briefKind: "funds", name: "退款 · " + o.id, title: "退款", op: "order-refund", orderId: o.id, amplify: false, fixedVal: channel,
             effect: irreversibleApproval, confirmLabel: "提交审批", confirmTone: "danger", reasonPlaceholder: reasonHint,
-            statedBrief: { impact: `钱退回用户钱包，购买设备按实际持有状态处理`, check: "核对用户、金额和退款原因，理由写清依据或工单号。" },
+            statedBrief: { impact: "钱退回用户钱包，购买设备按实际持有状态处理", check: "核对用户、金额和退款原因，理由写清依据或工单号。" },
             facts: <>
               {orderFacts(<>
               {channel && <Fact k="退款去向">{REFUND_CHANNEL_LABELS[channel] ?? channel}</Fact>}
@@ -454,8 +454,8 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
               id: String(device.deviceId),
               value: device.kind === "PROMOTION_GIFT" ? "赠品设备" : "购买设备",
               status: <StatusTag tone="neutral">{operatorDeviceStatus(device.status)} · {({ OWNED: "持有中", REFUNDED: "已退款", REVOKED: "已收回", RECYCLED: "已回收", UNBOUND: "已解绑" } as Record<string, string>)[device.ownershipStatus ?? ""] ?? device.ownershipStatus ?? "持有状态未提供"}</StatusTag>,
-              object: <Explain label="设备原始字段" rows={[{ k: "设备编号", v: String(device.deviceId) }, { k: "来源", v: device.sourceChannel ?? "未提供" }, { k: "设备状态", v: device.status ?? "未提供" }, { k: "持有状态", v: device.ownershipStatus ?? "未提供" }]} />,
-              reference: device.deviceInstanceNo ?? `设备 ${device.deviceId}`,
+              object: <>设备编号 {device.deviceId} <Explain label="设备原始字段" rows={[{ k: "设备编号", v: String(device.deviceId) }, { k: "来源", v: device.sourceChannel ?? "未提供" }, { k: "设备状态", v: device.status ?? "未提供" }, { k: "持有状态", v: device.ownershipStatus ?? "未提供" }]} /></>,
+              reference: device.deviceInstanceNo ?? undefined,
             }))} />}
         </Fold>
         <Fold inset title="状态轨迹" icon={History} summary={e4Detail.history.length ? `${e4Detail.history.length} 条记录` : "暂无记录"}>

@@ -13,7 +13,7 @@ import { Activity, CheckCircle2, CircleHelp, Download, Flag, Gauge, ListChecks, 
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { KpiTrendPoint } from "@/lib/admin/kpi-trend";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
-import { BlockState, Button, Cell, Check, Conclusion, DiffField, Explain, Fact, Facts, FilterBar, FilterField, Fold, Input, Modal, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Cell, Check, Conclusion, DiffField, Explain, Fact, Facts, FilterBar, FilterField, Fold, Input, Modal, Notice, NumberInput, PageHeader, Panel, RecordList, ReleaseModal, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { businessClock, businessDay, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { findByPath } from "@/lib/nav/console-nav";
@@ -866,7 +866,13 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
               </Panel>
             ))}
             {drawnCount === 0 && <p className="rd-note">当前所选指标没有可绘制的对比曲线。</p>}
-            {skipped.length > 0 && <p className="rd-note">没有画：{skipped.map((item) => `#${item.n}（${states[KPIS.findIndex((kpi) => kpi.n === item.n)] === "small" ? "样本过小" : item.sparkSuppressed?.includes(true) ? "部分时段样本过小，其余趋势不足" : item.spark.length >= 2 && item.spark.every((value) => value === 0) ? "每段都是 0" : "趋势数据不足"}）`).join("、")}。</p>}
+            {skipped.length > 0 && <Fold inset title="未绘制的指标" summary={`${skipped.length} 项`}>
+              <RecordList label="未绘制的指标" records={skipped.map((item) => ({
+                id: String(item.n),
+                value: `#${item.n} ${operatorCopyText(item.name)}`,
+                object: states[KPIS.findIndex((kpi) => kpi.n === item.n)] === "small" ? "样本过小" : item.sparkSuppressed?.includes(true) ? "部分时段样本过小，其余趋势不足" : item.spark.length >= 2 && item.spark.every((value) => value === 0) ? "每段都是 0" : "趋势数据不足",
+              }))} />
+            </Fold>}
           </div>
         </Fold>}
 
