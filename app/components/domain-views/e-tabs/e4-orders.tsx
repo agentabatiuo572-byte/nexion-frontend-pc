@@ -382,23 +382,23 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
             briefKind: "funds", name: "退款 · " + o.id, title: "退款", op: "order-refund", orderId: o.id, amplify: false, fixedVal: channel,
             effect: irreversibleApproval, confirmLabel: "提交审批", confirmTone: "danger", reasonPlaceholder: reasonHint,
             statedBrief: { impact: "钱退回用户钱包，购买设备按实际持有状态处理", check: "核对用户、金额和退款原因，理由写清依据或工单号。" },
-            facts: <>
+            facts: <div className="rd-stack">
               {orderFacts(<>
-              {channel && <Fact k="退款去向">{REFUND_CHANNEL_LABELS[channel] ?? channel}</Fact>}
-              <Fact k="退款后">{refundDeviceLine}<Explain label="退款后设备和收益怎么处理" content={refundDeviceDetail} /></Fact>
-              {e4Detail.orderType === "TRIAL_CONVERT" && <Fact k="试用转购奖励">这单发给购买者的试用奖励可能追回，金额以执行结果为准<Explain label="试用奖励追回规则" content="按整期结算转购发出的试用奖励，退款后最多收回未花掉的部分；未追回部分转人工核查。" /></Fact>}
-              {/* 退款入口只在读到覆盖率时开。 */}
-              <Fact k="覆盖率">{fmtPct(e4Detail.coverageCurrent!)} → 执行后 {fmtPct(e4Detail.coverageProjected!)}，红线 {e4Detail.coverageRedline}%<Explain label="覆盖率什么时候检查" content="批准执行时后端再查一次，当前或执行后低于红线就不退款。" /></Fact>
-            </>, "退款金额", true)}
+                {channel && <Fact k="退款去向">{REFUND_CHANNEL_LABELS[channel] ?? channel}</Fact>}
+                {/* 退款入口只在读到覆盖率时开。 */}
+                <Fact k="覆盖率">{fmtPct(e4Detail.coverageCurrent!)} → 执行后 {fmtPct(e4Detail.coverageProjected!)}，红线 {e4Detail.coverageRedline}%<Explain label="覆盖率什么时候检查" content="批准执行时后端再查一次，当前或执行后低于红线就不退款。" /></Fact>
+              </>, "退款金额", true)}
+              <div>{refundDeviceLine}<Explain label="退款后设备和收益怎么处理" content={refundDeviceDetail} /></div>
+              {e4Detail.orderType === "TRIAL_CONVERT" && <div>这单发给购买者的试用奖励可能追回，金额以执行结果为准<Explain label="试用奖励追回规则" content="按整期结算转购发出的试用奖励，退款后最多收回未花掉的部分；未追回部分转人工核查。" /></div>}
               <Panel plain headingLevel={3} title="促销奖励"><PromotionRefundImpact orderNo={o.id} compact /></Panel>
-            </>,
+            </div>,
             businessForm: channel
               ? { kind: "multi-field", title: "用户可见的原因", fields: [reasonField] }
               : { kind: "multi-field", title: "退款渠道与原因", fields: [
                 { key: "refundChannel", label: "退款渠道", current: channels[0], inputKind: "select", options: channels, optionLabels: REFUND_CHANNEL_LABELS, required: true, showDiff: true },
                 reasonField,
               ] },
-            detail: `退款 ${orderMoney(o.amt)}。钱退回用户的 USDT 钱包，付款记录标为已退款，补一条退款账单，用户的累计充值减去这笔金额。`,
+            detail: "付款记录标为已退款，补一条退款账单，用户的累计充值减去这笔金额。",
           });
         }}>{e4DetailLoading ? "正在检查…" : e4Detail?.refundAllowed === false ? "暂不能退款" : "退款"}</Button>}
         others={<>

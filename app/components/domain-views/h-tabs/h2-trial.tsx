@@ -272,10 +272,6 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, killed }: {
       )])),
       // 当前商品在列表里只标「当前」，不能再选；不传 current，当前值就只出现这一处。
       disabledOptions: trialProducts.filter((product) => !product.selectable || product.productNo === current).map((product) => product.productNo),
-      hint: <Explain label="可选条件和商品编号" content={<>
-        <p>{help?.howMore}</p>
-        <RecordList label="可选商品编号" records={trialProducts.map((product) => ({ id: product.productNo, value: product.name, reference: product.productNo }))} />
-      </>}>可选条件和商品编号</Explain>,
     } : isPushSwitch ? undefined : {
       kind: help?.input ? "number" : "text",
       current: isOffsetCap && !current ? "不设上限" : current,
@@ -303,9 +299,13 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, killed }: {
       amplifies: false,
       edit,
       // 开关只有另一个值可选，直接写前后值，不给选择（OP-126）。
-      facts: isPushSwitch ? <Facts><Fact k="开关"><Change from={current} to={pushTarget} /></Fact></Facts>
-        : productMissing ? <Facts><Fact k="现在">{current || "未设置"}，不在可选列表</Fact></Facts>
-          : undefined,
+      facts: isProduct ? <div className="rd-stack">
+        {productMissing && <Facts><Fact k="现在">{current || "未设置"}，不在可选列表</Fact></Facts>}
+        <div><Explain label="可选条件和商品编号" content={<>
+          <p>{help?.howMore}</p>
+          <RecordList label="可选商品编号" records={trialProducts.map((product) => ({ id: product.productNo, value: product.name, reference: product.productNo }))} />
+        </>}>可选条件和商品编号</Explain></div>
+      </div> : isPushSwitch ? <Facts><Fact k="开关"><Change from={current} to={pushTarget} /></Fact></Facts> : undefined,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认修改，立即生效",
       // 标题行写影响谁（OP-48）。这是什么和显示位置在标题旁的提示图标里。

@@ -220,12 +220,14 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       reasonPlaceholder: "写这份数据给谁、做什么用，例如：给增长组做周会复盘",
       facts: (
-        <Facts>
-          <Fact k="文件内容">{mode === "series" ? "8 项指标的可用数值、目标和六段趋势；受保护项标为样本过小，相关数值留空" : mode === "snapshot" ? "8 项指标的可用数值、目标和可用性；受保护项标为样本过小，相关数值留空" : "当前累计数"}</Fact>
-          <Fact k="范围">{mode === "totals" ? "当前累计" : queryScope(query)}</Fact>
-          <Fact k="接收人">{L1_EXPORT_RECIPIENT}</Fact>
-          <Fact k="文件行数">{rows}，另有表头</Fact>
-        </Facts>
+        <div className="rd-stack">
+          <Facts>
+            <Fact k="范围">{mode === "totals" ? "当前累计" : queryScope(query)}</Fact>
+            <Fact k="接收人">{L1_EXPORT_RECIPIENT}</Fact>
+            <Fact k="文件行数">{rows}，另有表头</Fact>
+          </Facts>
+          <div>文件内容：{mode === "series" ? "8 项指标的可用数值、目标和六段趋势；受保护项标为样本过小，相关数值留空" : mode === "snapshot" ? "8 项指标的可用数值、目标和可用性；受保护项标为样本过小，相关数值留空" : "当前累计数"}</div>
+        </div>
       ),
       confirmLabel: "确认导出",
       reasonMin: 8,
@@ -820,7 +822,6 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
               {kState !== "small" && hasTrend(k.spark) && k.sparkSuppressed?.includes(true) && <p className="rd-note">部分时段样本过小，曲线在这些时段留空。</p>}
               <Fold inset title="这项指标怎么算" summary={`统计规则编号 #${k.n}`} explain={<AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss>}>
                 <div className="rd-stack">
-                  <p className="rd-note"><AutoGloss>{operatorCopyText(KPI_PLAIN[k.n] ?? "")}</AutoGloss></p>
                   <div>{renderFx(ext.fx, ext.fxBold)}</div>
                   <p className="rd-note">统计规则编号 #{k.n} · 上线批次：{batchText(k.vis)}</p>
                 </div>
