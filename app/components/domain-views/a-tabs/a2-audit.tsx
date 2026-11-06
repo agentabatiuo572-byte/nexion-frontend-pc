@@ -143,13 +143,11 @@ function operationMarkers(w: A2OperationRow): OperationMarker[] {
   return [{ key: "general", label: "敏感操作", className: "a2-sensitive" }];
 }
 
-function normalizeOperatorIdentity(value: string | null | undefined) {
-  return (value ?? "").trim().toLocaleLowerCase();
-}
+const OWN_TICKET_REASON = "这是你发起的，需要另一位管理员处理";
+const COVERAGE_ON_APPROVAL_COPY = "批准执行时，系统会检查兑付覆盖率。低于红线时，审批单继续待处理，账户组状态和提现限制保持原样。";
 
-function isCurrentOperator(w: A2OperationRow, principal: AuthPrincipal) {
-  const current = normalizeOperatorIdentity(principal.name);
-  return w.mine || (!!current && current === normalizeOperatorIdentity(w.operator));
+function isCurrentOperator(w: A2OperationRow, username: string | undefined) {
+  return w.mine || (!!username && username === w.operator);
 }
 
 function g3PolicyExecutionTiming(w: A2OperationRow) {
@@ -376,21 +374,21 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (w.phoneCalibrationError) { toast(w.phoneCalibrationError); return; }
     const commandKey = createA2CommandKey(`a2-approve-${w.id}`);
     openActionConfirm({ briefKind: w.type === "fund" ? "funds" : w.type === "acct" ? "security" : w.type === "sos" ? "emergency" : "config",
-      completionCopy: g3PolicyExecutionTiming(w),
+      completionCopy: w.coverageCheckOnApproval ? COVERAGE_ON_APPROVAL_COPY : g3PolicyExecutionTiming(w),
       content: w.action === `退款 · ${w.obj}` ? <PromotionRefundImpact orderNo={w.obj} /> : undefined,
       action: <>确认执行 · {w.id}({a2ActionText(w.action)})</>,
       detail: (
         <>
           对象 <b>{w.obj}</b> · 发起人 {w.operator}。
           <A2ChangeReview before={w.before} after={w.after} />
-          {g3PolicyExecutionTiming(w) ?? "确认后立即执行"}
+          {w.coverageCheckOnApproval ? "通过覆盖率检查后执行" : g3PolicyExecutionTiming(w) ?? "确认后立即执行"}
           {w.sos ? (<>，<b>并通知应急值班人员</b></>) : null}。<br />
           谁能执行：<b>{w.roleGate}</b>
           {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
           {w.phoneCalibrationError && <p role="alert">{w.phoneCalibrationError}</p>}
         </>
       ),
-      amplifies: w.amplifies,
+      amplifies: w.amplifies && !w.coverageCheckOnApproval,
       reasonMin,
       reasonMax: 200,
       run: async (reason) => {
@@ -745,8 +743,14 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {isFinal ? (
                         <span className={`bdg ${HIST_TONE[status] ?? "dim"}`}>{HIST_LABEL[status] ?? status}</span>
-                      ) : isCurrentOperator(w, principal) ? (
-                        <button className="l-btn sm" disabled={!canWithdraw} onClick={(e) => { e.stopPropagation(); withdrawWo(w); }}>撤回我的申请</button>
+                      ) : isCurrentOperator(w, session?.username) ? (
+                        <>
+                          <span title={OWN_TICKET_REASON}>
+                            <button className="l-btn sm mc" disabled title={OWN_TICKET_REASON}>执行</button>{" "}
+                            <button className="l-btn sm" disabled title={OWN_TICKET_REASON}>取消</button>
+                          </span>{" "}
+                          <button className="l-btn sm" disabled={!canWithdraw} onClick={(e) => { e.stopPropagation(); withdrawWo(w); }}>撤回我的申请</button>
+                        </>
                       ) : canApprove ? (
                         <>
                           <button
@@ -1031,7 +1035,16 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             onClose={() => setWoIdx(null)}
             footer={
               !isFinal ? (
-                canApprove && !isCurrentOperator(w, principal) ? (
+                isCurrentOperator(w, session?.username) ? (
+                  <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button className="l-btn mc" disabled title={OWN_TICKET_REASON}>执行</button>
+                      <button className="l-btn" disabled title={OWN_TICKET_REASON}>取消</button>
+                      <button className="l-btn" disabled={!canWithdraw} onClick={() => { setWoIdx(null); withdrawWo(w); }}>撤回我的申请</button>
+                    </div>
+                    <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--ink-3)" }}>{OWN_TICKET_REASON}</p>
+                  </div>
+                ) : canApprove ? (
                   <div style={{ display: "flex", gap: 8, padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
                     <button
                       className="l-btn mc"
@@ -1048,7 +1061,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 ) : (
                   <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)", textAlign: "center" }}>
                     <span className="bdg dim">
-                      {isCurrentOperator(w, principal) ? "需由其他有权限的人执行" : "等待有权限的人执行"}
+                      等待有权限的人执行
                     </span>
                   </div>
                 )
@@ -1064,7 +1077,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               <div className="kv"><span className="k">谁能执行</span><span className="v">{w.roleGate}</span></div>
             </div>
             <div className="atint" style={{ marginTop: 14 }}>
-              {w.amplifies ? (
+              {w.coverageCheckOnApproval ? COVERAGE_ON_APPROVAL_COPY : w.amplifies ? (
                 <>
                   <b>🔥 会让平台多付钱</b>：执行时会再次显示当前兑付覆盖率，如已跌破红线请取消并注明原因。
                 </>

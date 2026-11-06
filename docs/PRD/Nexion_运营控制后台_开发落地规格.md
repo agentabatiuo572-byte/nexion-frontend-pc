@@ -758,7 +758,7 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | 参数(key) | 默认值 | 生效时机 | 权威源 |
 |---|---|---|---|
 | `trialDays` / `graceDays` / `extensionDays` | 3 / 7 / 3 | 仅新 trial | H2 |
-| `discountRate` / `discountCapUSD` | 0.15 / 20 | 实时全量 | H2 |
+| `discountRate` / `discountCapUSD` | 按当前值显示；0.15 实际减 15%，15 也减 15% / 20 | 购买时按最新值 | H2；后端 (0,1] 仍按比例计算，不能把 1 说明为 1%，界面禁填歧义区间，详见 v1 H2 合并口径 |
 | `trialOffsetCapUSD`(试用收益抵购机款上限) | 50 | 实时全量 | H2 |
 | `autoChargeAtEnd` | true(实时性待 PM,见第7章 #1) | 暂仅新 trial | H2 |
 | `highQualityThresholdUSD` | 100 | 实时全量 | H2 |

@@ -24,6 +24,7 @@ import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { B2RestoredInsights } from "@/app/components/dashboard/restored-b-insights";
 import { useReach } from "@/lib/nav/use-reach";
+import { TREASURY_VALUATION_UNAVAILABLE } from "@/lib/admin/treasury-valuation";
 
 /** B2 预测配置只有一个槽位:草稿 / 期望版本 / 理由没变就复用命令号,变了铸新号并丢弃旧号。
  *  落 sessionStorage,刷新后「结果未知」的重试仍是同一命令号,后端才能去重。 */
@@ -67,8 +68,9 @@ const LIABILITY_CATEGORY_COUNT = B2_LIABILITY_KEYS.length;
 
 const LIABILITY_LABELS: Record<(typeof B2_LIABILITY_KEYS)[number], string> = LIABILITY_DISPLAY_NAMES;
 
-function money(value: number) {
-  return `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function money(value: number | null) {
+  return value === null ? TREASURY_VALUATION_UNAVAILABLE
+    : `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function activeConfig(config: B2ForecastConfig): B2ForecastValues {
@@ -385,7 +387,7 @@ export default function LiquidityPage() {
   }
 
   const { reserve, liabilities, maturity, config } = data;
-  const coverageRatio = liabilities.totalUsdt > 0
+  const coverageRatio = liabilities.totalUsdt !== null && liabilities.totalUsdt > 0
     ? (reserve.reserveTotalUsdt / liabilities.totalUsdt) * 100
     : null;
   const noDue = maturity.cumulativeUsdt === 0;
@@ -472,7 +474,7 @@ export default function LiquidityPage() {
         <article className="card b2-kpi">
           <span>应付款</span>
           <strong>{money(liabilities.totalUsdt)}</strong>
-          <small>{liabilities.hardLiabilityCategoryCount}/{LIABILITY_CATEGORY_COUNT} 类有金额</small>
+          <small>{liabilities.totalUsdt === null ? "UVT 应付款缺少有效价格" : `${liabilities.hardLiabilityCategoryCount}/${LIABILITY_CATEGORY_COUNT} 类有金额`}</small>
         </article>
         <article className={`card b2-kpi tier-${reserve.waterLevel.tier.toLowerCase()}`}>
           <span>资金安全等级</span>
@@ -493,11 +495,11 @@ export default function LiquidityPage() {
       <section className="card b2-coverage">
         <div>
           <span className="eyebrow">兑付覆盖率</span>
-          <strong>{coverageRatio === null ? "无应付款" : `${coverageRatio.toFixed(1)}%`}</strong>
+          <strong>{liabilities.totalUsdt === null ? TREASURY_VALUATION_UNAVAILABLE : coverageRatio === null ? "无应付款" : `${coverageRatio.toFixed(1)}%`}</strong>
         </div>
-        <div className="b2-meter" aria-label="兑付覆盖率">
+        {liabilities.totalUsdt !== null && <div className="b2-meter" aria-label="兑付覆盖率">
           <div style={{ width: `${meterWidth}%` }} />
-        </div>
+        </div>}
         <div className="b2-cover-copy">
           <ShieldCheck size={18} />
           {noDue ? (
@@ -584,7 +586,7 @@ export default function LiquidityPage() {
                   <td className="mono">{row.category}</td>
                   <td>{operatorCopyText(row.label)}</td>
                   <td className="num mono">{money(row.amountUsdt)}</td>
-                  <td className="num mono">{(row.share * 100).toFixed(2)}%</td>
+                  <td className="num mono">{row.share === null ? TREASURY_VALUATION_UNAVAILABLE : `${(row.share * 100).toFixed(2)}%`}</td>
                   <td className="mono source">{row.source.startsWith("nx_") ? "业务资金记录" : /[\u3400-\u9fff]/.test(row.source) ? row.source : "业务资金记录"}</td>
                 </tr>
               ))}

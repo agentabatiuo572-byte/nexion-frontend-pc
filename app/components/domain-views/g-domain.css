@@ -37,6 +37,42 @@ html[data-theme="dark"] .gdom .g3-market-confirm { --admin-confirm-focus: var(--
 .gdom .g3-market-confirm .field :is(input, textarea) { font-size: 14px; }
 .gdom .g3-market-confirm .field > .tiny:has(.mono) { display: none; }
 .gdom .g3-schedule-confirm .field input { max-width: 100% !important; width: 100%; }
+.gdom .g3-market-confirm:has(.g3-market-comparison) .field:has(> .row > input[aria-label="目标新值"]) {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  align-items: center;
+  gap: 8px 12px;
+}
+.gdom .g3-market-confirm:has(.g3-market-comparison) .field:has(> .row > input[aria-label="目标新值"]) > .tiny { grid-column: 1 / -1; }
+.gdom .g3-market-confirm:has(.g3-market-comparison) .row:has(> input[aria-label="目标新值"]) { position: relative; min-width: 0; }
+.gdom .g3-market-confirm:has(.g3-market-comparison) input[aria-label="目标新值"] { max-width: none !important; width: 100%; min-width: 0; }
+.gdom .g3-market-confirm:has(.g3-market-comparison) input[aria-label="目标新值"]:has(+ .tiny) { padding-inline-end: 4.25rem; }
+.gdom .g3-market-confirm:has(.g3-market-comparison) input[aria-label="目标新值"] + .tiny {
+  position: absolute;
+  inset-inline-end: 12px;
+  pointer-events: none;
+}
+.gdom .g3-market-confirm .field:has(> .reason-count-inset) { display: grid; grid-template-columns: minmax(0, 1fr); }
+.gdom .g3-market-confirm .field:has(> .reason-count-inset) > .g3-reason-box {
+  grid-area: 2 / 1;
+}
+.gdom .g3-market-confirm .g3-reason-box > textarea {
+  padding-bottom: 28px;
+}
+.gdom .g3-market-confirm .reason-count-inset {
+  grid-area: 2 / 1;
+  place-self: end;
+  display: flex;
+  gap: 10px;
+  margin: 0 18px 8px 0;
+  color: var(--ink-3);
+  pointer-events: none;
+}
+@media (max-width: 600px) {
+  .gdom .g3-market-confirm:has(.g3-market-comparison) .field:has(> .row > input[aria-label="目标新值"]) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .gdom .g3-market-confirm .modal-f .btn.primary {
   background: var(--admin-confirm-brand);
   border-color: var(--admin-confirm-brand);

@@ -2,6 +2,7 @@ import { downloadD3Csv } from "@/lib/admin/d-client";
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { treasuryValuation } from "@/lib/admin/treasury-valuation";
 
 interface ApiResult<T> {
   code: number;
@@ -34,13 +35,13 @@ export interface B2Reserve {
 export interface B2Liability {
   category: string;
   label: string;
-  amountUsdt: number;
-  share: number;
+  amountUsdt: number | null;
+  share: number | null;
   source: string;
 }
 
 export interface B2Liabilities {
-  totalUsdt: number;
+  totalUsdt: number | null;
   hardLiabilityCategoryCount: number;
   trialShadowIncluded: boolean;
   asOf: string;
@@ -244,33 +245,37 @@ function normalizeReserve(value: unknown): B2Reserve {
 
 function normalizeLiabilities(value: unknown): B2Liabilities {
   const raw = object(value, "liabilities");
-  const totalUsdt = number(raw.totalUsdt, "liabilities.totalUsdt");
+  const valuation = treasuryValuation(raw, () => invalid("liabilities.valuationStatus"));
+  const unavailable = valuation === "VALUATION_UNAVAILABLE";
+  const legacy = valuation === "LEGACY";
+  const totalUsdt = unavailable ? null : number(legacy ? raw.totalUsdt : raw.valuedTotalUsdt, "liabilities.totalUsdt");
   const hardLiabilityCategoryCount = number(raw.hardLiabilityCategoryCount, "liabilities.hardLiabilityCategoryCount");
   const breakdown = array(raw.breakdown, "liabilities.breakdown").map((item, index) => {
     const row = object(item, `liabilities.breakdown[${index}]`);
+    const category = string(row.category, `liabilities.breakdown[${index}].category`);
     const normalized = {
-      category: string(row.category, `liabilities.breakdown[${index}].category`),
+      category,
       label: string(row.label, `liabilities.breakdown[${index}].label`),
-      amountUsdt: number(row.amountUsdt, `liabilities.breakdown[${index}].amountUsdt`),
-      share: number(row.share, `liabilities.breakdown[${index}].share`),
+      amountUsdt: unavailable && category === "nex_v2_future" ? null
+        : number(legacy ? row.amountUsdt : row.valuedAmountUsdt, `liabilities.breakdown[${index}].amountUsdt`),
+      share: unavailable ? null : number(legacy ? row.share : row.valuedShare, `liabilities.breakdown[${index}].share`),
       source: string(row.source, `liabilities.breakdown[${index}].source`),
     };
-    if (normalized.amountUsdt < 0 || normalized.share < 0 || normalized.share > 1) {
+    if ((normalized.amountUsdt ?? 0) < 0 || (normalized.share ?? 0) < 0 || (normalized.share ?? 0) > 1) {
       invalid(`liabilities.breakdown[${index}].range`);
     }
     return normalized;
   });
   const categories = breakdown.map((row) => row.category);
-  const amountTotal = breakdown.reduce((sum, row) => sum + row.amountUsdt, 0);
-  const shareTotal = breakdown.reduce((sum, row) => sum + row.share, 0);
+  const amountTotal = breakdown.reduce((sum, row) => sum + (row.amountUsdt ?? 0), 0);
+  const shareTotal = breakdown.reduce((sum, row) => sum + (row.share ?? 0), 0);
   if (
-    totalUsdt < 0
-    || hardLiabilityCategoryCount !== B2_LIABILITY_KEYS.length
+    hardLiabilityCategoryCount !== B2_LIABILITY_KEYS.length
     || breakdown.length !== B2_LIABILITY_KEYS.length
     || new Set(categories).size !== B2_LIABILITY_KEYS.length
     || B2_LIABILITY_KEYS.some((key) => !categories.includes(key))
-    || !near(amountTotal, totalUsdt)
-    || (totalUsdt > 0 && Math.abs(shareTotal - 1) > 0.001)
+    || (totalUsdt !== null && (totalUsdt < 0 || !near(amountTotal, totalUsdt)
+      || (totalUsdt > 0 && Math.abs(shareTotal - 1) > 0.001)))
   ) {
     invalid("liabilities.invariants");
   }

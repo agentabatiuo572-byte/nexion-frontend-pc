@@ -122,6 +122,8 @@ const PARAM_LIMITS: Record<string, { min: number; max: number; step: number; int
   maxAccountsPerPaymentInstrument: { min: 1, max: 5, step: 1, integer: true },
   clusterFreezeSuggestThreshold: { min: 0, max: 1, step: 0.05, integer: false },
 };
+const K1_DISPOSITION_APPROVAL_COPY = "须另一位有权限的超级管理员批准。批准前不执行；本次批准被系统拒绝时，不改变账户组状态和提现限制。";
+const K1_DISPOSITION_EFFECT = <StatusTag tone="progress" filled explain={<>{K1_DISPOSITION_APPROVAL_COPY}{NO_COVERAGE_GATE}</>}>批准后生效</StatusTag>;
 
 const CLUSTER_ST: Record<ClusterStatus, [string, "warn" | "danger" | "done" | "ok", string]> = {
   detected: ["待判定", "warn", "系统发现的账户组，还没人判定。这组账户不能提现，新增收益先锁定。下一步：标记为可疑，或判定为正常。"],
@@ -919,19 +921,21 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       const label = `解除误判 · ${c.id}`;
       const frozen = c.status === "frozen";
       return { ...common, label, action: label, title: "解除误判", briefKind: "funds",
+        effect: K1_DISPOSITION_EFFECT,
         detail: "解除后，这些账户可能有更多收益可以提现。请核对影响并写明原因。",
         statedBrief: {
           impact: `批准后${frozen ? "解除因这组冻结的账户，" : ""}这组不再按风险状态限制提现和新增收益，改按同组账号数判断。`,
           check: "核对账户、证据和触发的风险规则。",
         },
-        facts: clusterFacts(c, { changed, scope: scopeText(c, frozen ? "解除冻结" : "解除限制"), money: NO_COVERAGE_GATE, restores: frozen,
+        facts: clusterFacts(c, { changed, scope: scopeText(c, frozen ? "解除冻结" : "解除限制"), money: "可提现的钱可能变多", restores: frozen,
           accounts: frozen ? "批准后解除因这组冻结的账户，恢复它们因此暂停的提现。因别的原因冻结的不动。" : undefined }) };
     }
     const label = `判定为正常 · ${c.id}`;
     return { ...common, label, action: label, title: "判定为正常", briefKind: "judgment",
+      effect: K1_DISPOSITION_EFFECT,
       detail: "这组不再算监控中，后续风险评分也会受影响。请填写判定依据。",
       statedBrief: { impact: "批准后这组不再算监控中，提现和新增收益改按同组账号数判断。", check: "核对账户和证据。" },
-      facts: clusterFacts(c, { changed, money: NO_COVERAGE_GATE }) };
+      facts: clusterFacts(c, { changed, money: "可提现的钱可能变多" }) };
   };
 
   const clusterChange = (before: K1Cluster, latest: K1Cluster) => [

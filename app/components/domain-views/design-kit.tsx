@@ -3527,6 +3527,7 @@ export type InlineOperationApproval = {
   disabledReason?: string;
   compareEdit?: { rangeLabel?: string };
   dialogClassName?: string;
+  fieldLayout?: "compact";
 };
 
 export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", coverageCheck = "提交时会先检查兑付覆盖率。", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional }: { /** 系统什么时候查覆盖率，写真实路径；走审批的后端不在提交时查，传批准时的说法。 */ coverageCheck?: string; /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode; confirmLabel?: string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string }; facts?: ReactNode; confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
@@ -3560,6 +3561,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const effectiveBriefKind = typeof briefKind === "function" ? briefKind(businessValue) : briefKind;
   const approval = approvalSpec ?? inlineApproval?.resolve(businessValue, newVal);
   const compareEdit = approval ? inlineApproval?.compareEdit : undefined;
+  const compactFields = !!approval && inlineApproval?.fieldLayout === "compact";
   const completionCopy = approval?.completionCopy ?? directCompletionCopy;
   const recoverApproval = inlineApproval ? (reason: string) => inlineApproval.recover(reason, businessValue, newVal) : approval?.recover;
   const retryApproval = approvalRecovery === "retry" ? inlineApproval?.retry : undefined;
@@ -3569,6 +3571,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   // 去除按动作名猜测的启发式正则(原 isAdjust/select 正则):既防 dispose 名含「调整 / 规则 / 启停…」误弹字段,也防 adjust 名不含触发词漏判;改为 by edit 显式契约。全域调用点已逐一显式传 edit(2026-06 跨域硬化)。
   const spec: EditSpec | null = edit ?? null;
   const comparisonUnit = compareEdit?.rangeLabel ?? spec?.unit;
+  const unitDescriptionId = comparisonUnit && (compareEdit || compactFields) ? comparisonUnitId : undefined;
+  const editDescribedBy = compareEdit ? [comparisonValueId, unitDescriptionId].filter(Boolean).join(" ") : unitDescriptionId;
   const actionText = typeof action === "string" ? action : "";
   const isJ4Command = businessForm?.kind === "sop-authoring" || /应急剧本|应急预案|启动演练|回滚剧本|回滚预案/.test(actionText);
   const kind = spec?.kind ?? "text";
@@ -3883,7 +3887,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
               <input
                 className="fld"
                 aria-label="目标新值"
-                aria-describedby={compareEdit ? [comparisonValueId, comparisonUnit && comparisonUnitId].filter(Boolean).join(" ") : undefined}
+                aria-describedby={editDescribedBy}
                 type={kind === "number" ? "number" : "text"}
                 min={kind === "number" ? spec.min : undefined}
                 max={kind === "number" ? spec.max : undefined}
@@ -3896,7 +3900,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
                 placeholder={spec.current ? `输入新值（当前 ${spec.current}）` : "输入新值"}
                 style={{ maxWidth: compareEdit ? 140 : 240 }}
               />
-              {comparisonUnit && <span className="muted tiny" id={compareEdit ? comparisonUnitId : undefined}>{comparisonUnit}</span>}
+              {comparisonUnit && <span className="muted tiny" id={unitDescriptionId}>{comparisonUnit}</span>}
               {spec.emptyOption && <Chip tab sel={emptyChosen} onClick={() => { setEmptyChosen(!emptyChosen); setNewVal(""); setNumberBad(false); }}>{spec.emptyOption}</Chip>}
             </div>
           )}
@@ -3917,18 +3921,22 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       {surface && !approval && !coverageFirst && coverageNotice}
       <div className={surface ? "field rd-reason-field" : "field"}>
         {surface
-          ? <label htmlFor={reasonFieldId}>{approval ? "变更理由" : "操作理由"}<span className="rd-form-required" aria-hidden="true">*</span><span className="rd-form-hint">至少 {reasonMin} 字</span></label>
-          : <label htmlFor={reasonFieldId}>{approval ? "变更理由" : "操作理由"}{(compareEdit || approval?.heading) && <span aria-hidden="true" style={{ color: "var(--danger)" }}> *</span>}（必填，{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）</label>}
+          ? <label htmlFor={reasonFieldId}>{approval && !compactFields ? "变更理由" : "操作理由"}<span className="rd-form-required" aria-hidden="true">*</span><span className="rd-form-hint">至少 {reasonMin} 字</span></label>
+          : <label htmlFor={reasonFieldId}>{approval && !compactFields ? "变更理由" : "操作理由"}{(compareEdit || approval?.heading) && <span aria-hidden="true" style={{ color: "var(--danger)" }}> *</span>}{compactFields ? <span className="muted"> 至少 {reasonMin} 字</span> : `（必填，${reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）`}</label>}
         {/* 字数写在框内角落，够不够看按钮的提示，失焦或点过提交才用警告色（DP-06）。 */}
-        <div className={surface ? "rd-reason-box" : undefined}>
-          <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} aria-required={compareEdit || inlineApproval?.dialogClassName ? true : undefined} aria-describedby={inlineApproval?.dialogClassName && ((!reasonOk && !retryApproval) || (reasonOk && reasonMax)) ? `${reasonFieldId}-length` : undefined} disabled={inlineApproval ? formLocked : !!approval ? submitting || !!approvalRecovery : submitting || (!!getPendingReason && pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} onBlur={() => setReasonLeft(true)} placeholder={reasonPlaceholder} />
-          {surface && <span className="rd-reason-count">{reasonMax ? `${reasonLength}/${reasonMax}` : `${reasonLength} 字`}</span>}
+        <div className={surface ? "rd-reason-box" : compactFields ? "g3-reason-box" : undefined}>
+          <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} aria-required={compareEdit || inlineApproval?.dialogClassName ? true : undefined} aria-describedby={surface ? `${reasonFieldId}-count${showReasonError ? ` ${reasonFieldId}-length` : ""}` : inlineApproval?.dialogClassName && (compactFields || showReasonError || (reasonOk && reasonMax)) ? `${reasonFieldId}-length` : undefined} disabled={inlineApproval ? formLocked : !!approval ? submitting || !!approvalRecovery : submitting || (!!getPendingReason && pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} onBlur={() => setReasonLeft(true)} placeholder={compactFields ? "填写调整依据或工单号" : reasonPlaceholder} />
+          {surface && <span id={`${reasonFieldId}-count`} className="rd-reason-count">{reasonMax ? `${reasonLength}/${reasonMax}` : `${reasonLength} 字`}</span>}
         </div>
         {pendingReason !== undefined && <div className={surface ? "rd-form-help" : "tiny"} style={{ marginTop: 7 }}>{surface ? "重发原内容，已成功的不会重复执行。" : "原操作结果尚未确认，理由已锁定。重试将继续原操作，不会重复执行。"}</div>}
-        {showReasonError && (
+        {!surface && compactFields && <div id={`${reasonFieldId}-length`} className="tiny reason-count-inset">
+          {reasonMax && <span>{reasonLength}/{reasonMax}</span>}
+          {showReasonError && <span style={{ color: "var(--warning)" }}>{reasonShort}</span>}
+        </div>}
+        {showReasonError && (surface || !compactFields) && (
           <div id={`${reasonFieldId}-length`} className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>{reasonShort}</div>
         )}
-        {!surface && reasonMax && reasonOk && <div id={`${reasonFieldId}-length`} className="tiny" style={{ marginTop: 7, color: approval || inlineApproval?.dialogClassName ? "var(--ink-3)" : "var(--ink-4)" }}>已填写 {reasonLength}/{reasonMax} 字</div>}
+        {!surface && !compactFields && reasonMax && reasonOk && <div id={`${reasonFieldId}-length`} className="tiny" style={{ marginTop: 7, color: approval || inlineApproval?.dialogClassName ? "var(--ink-3)" : "var(--ink-4)" }}>已填写 {reasonLength}/{reasonMax} 字</div>}
         {listedMissing.length > 0 && (!surface || attempted) && (
           <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
             请检查以下内容： {listedMissing.slice(0, 4).map((message) => message.replace(/。+$/, "")).join(" / ")}{listedMissing.length > 4 ? "…" : ""}。
