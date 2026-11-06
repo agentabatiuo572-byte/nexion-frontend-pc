@@ -541,6 +541,13 @@ export default function UserDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [writeResult, setWriteResult] = useState<{ key: string; text: string } | null>(null);
+  const writeResultRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (writeResult?.key !== readKey) return;
+    // 等确认框把焦点还给入口后，再把结果带进视口。
+    const timer = window.setTimeout(() => writeResultRef.current?.scrollIntoView({ block: "center" }), 0);
+    return () => window.clearTimeout(timer);
+  }, [writeResult, readKey]);
   const [denied, setDenied] = useState(false);
   const [readAt, setReadAt] = useState("");
   const [reloadTick, setReloadTick] = useState(0);
@@ -921,12 +928,13 @@ export default function UserDetailPage() {
     onOpenChange: (next: boolean) => setOpenFolds((current) => ({ ...current, [group]: next })),
   });
 
+  const writeResultNotice = writeResult?.key === readKey && <div ref={writeResultRef}><Notice tone="progress">{writeResult.text}</Notice></div>;
   if (detailKey !== readKey || loading && !detail) {
     return (
       <RdPage>
         <PageHeader title={pageName} back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>} />
         <BlockState state="loading" title="正在加载…" />
-        {writeResult?.key === readKey && <Notice tone="progress">{writeResult.text}</Notice>}
+        {writeResultNotice}
       </RdPage>
     );
   }
@@ -935,7 +943,7 @@ export default function UserDetailPage() {
     return (
       <RdPage>
         <PageHeader title={pageName} back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>} />
-        {writeResult?.key === readKey && <Notice tone="progress">{writeResult.text}</Notice>}
+        {writeResultNotice}
         {denied
           ? <BlockState state="denied" title="无权限访问" detail={error} />
           : <BlockState state="error" title={`${supportScope ? "客户资料" : "用户详情"}加载失败：${error}`} onRetry={() => void load()} />}
@@ -1194,7 +1202,7 @@ export default function UserDetailPage() {
 
       {conclusion}
       {pendingNotices}
-      {writeResult?.key === readKey && <Notice tone="progress">{writeResult.text}</Notice>}
+      {writeResultNotice}
       {correctionNotices}
 
       {kpis.length > 0 && <StatBand label="关键数字">
