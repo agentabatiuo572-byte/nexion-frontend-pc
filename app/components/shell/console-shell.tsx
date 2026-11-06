@@ -235,13 +235,17 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
     const onPageShow = (event: PageTransitionEvent) => {
       if (event.persisted) revalidate();
     };
+    // 草稿保护先在同一路径内恢复历史记录；此时切到登录检查会卸载编辑器。
+    const onPopState = () => {
+      if (window.location.pathname !== pathname) revalidate();
+    };
     window.addEventListener("pageshow", onPageShow);
-    window.addEventListener("popstate", revalidate);
+    window.addEventListener("popstate", onPopState);
     return () => {
       window.removeEventListener("pageshow", onPageShow);
-      window.removeEventListener("popstate", revalidate);
+      window.removeEventListener("popstate", onPopState);
     };
-  }, [mounted, restoreAdminSession]);
+  }, [mounted, pathname, restoreAdminSession]);
 
   // R-1: every time label follows the business time zone set in A3; refreshed on focus so a zone that just took effect shows up.
   useEffect(() => {
