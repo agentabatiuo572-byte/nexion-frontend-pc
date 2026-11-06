@@ -323,9 +323,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     <Notice key={record.commandKey} tone="warn" title={`${record.input.action} · 申请结果未确认`}
       action={<Button size="sm" disabled={checkingRestore !== null} disabledReason={canResume ? undefined : RETRY_DENIED} onClick={() => {
         void submitRestore({ key: record.input.obj, name: record.input.action.replace("恢复业务开关 · ", ""), amplifies: record.input.amplifies === true })
-          .catch((error) => setPendingNotes((notes) => ({ ...notes, [record.fingerprint]: displayAdminError(error) })));
+          .catch((error) => setPendingNotes((notes) => ({ ...notes, [record.fingerprint]: record.expiresAt <= Date.now() ? `${EXPIRED}。原申请结果仍待核实。` : displayAdminError(error) })));
       }}>核对原恢复申请</Button>}>
-      提交恢复审批不会打开业务。先查原审批单，未查到且仍在 24 小时内才按原内容、原理由和原命令号重试；过期后只查询。
+      提交恢复审批不会打开业务。{record.expiresAt <= Date.now() ? EXPIRED : "先查原审批单，未查到且仍在 24 小时内才按原内容、原理由和原命令号重试。"}
       {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href="/platform/audit?domain=J">到操作记录与审批核对</Link></>}
       <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 理由 ${record.input.reason}`} />
       {pendingNotes[record.fingerprint] && <div>{pendingNotes[record.fingerprint]}</div>}
@@ -338,7 +338,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未确认`}
         action={<>
           <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>读回核对</Button>
-          <Button size="sm" disabled={!expired && !!submitting} disabledReason={expired ? EXPIRED : canRetry(record) ? undefined : RETRY_DENIED} onClick={() => void retryPending(record)}>按原操作重试</Button>
+          {!expired && <Button size="sm" disabled={!expired && !!submitting} disabledReason={expired ? EXPIRED : canRetry(record) ? undefined : RETRY_DENIED} onClick={() => void retryPending(record)}>按原操作重试</Button>}
           {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除待确认</Button>}
         </>}>
         {expired ? formatBusinessTimeCompact(new Date(record.createdAt).toISOString()) : businessClock(record.createdAt)}（{businessZone().label}）发出，{expired ? `${EXPIRED}。` : "可能已经生效。重发原内容，已成功的不会重复执行。"}
@@ -384,10 +384,13 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   const gates = data.activeGates;
   const { coverageRatio: COV, redlinePct: RED } = data.coverage;
-  const covPass = COV >= RED;
+  const covPass = data.coverage.valuationReliable && data.coverage.recoveryAllowedByServer;
+  const recoveryBlock = !data.coverage.valuationReliable
+    ? "估值不可靠，暂不能发起资金业务恢复审批。到「资金储备与应付款」核对估值，待估值可靠且服务端允许恢复后再申请。"
+    : data.coverage.recoveryAllowedByServer ? undefined : BLOCKED_RESUME;
   // yellowLinePct 是红线加 25，不是资金总览的健康线（F03）。这页只和红线比，不下「正常」结论。
-  // 恢复判据与后端同源：coverageRatio >= redlinePct 放行，等于红线是通过，文字要三分。
-  const coverageGapText = COV > RED ? `高于红线 ${pointsText(COV - RED)} 个百分点` : COV === RED ? "等于红线，已达到恢复门槛" : `低于红线 ${pointsText(RED - COV)} 个百分点`;
+  // 恢复资格使用服务端许可；数值比较只用于展示差值。
+  const coverageGapText = !data.coverage.valuationReliable ? "估值不可靠，当前数值不能作为恢复依据" : COV > RED ? `高于红线 ${pointsText(COV - RED)} 个百分点` : COV === RED ? "等于红线" : `低于红线 ${pointsText(RED - COV)} 个百分点`;
   const killedGates = gates.filter((gate) => !gate.enabled);
   const killed = killedGates.length;
   const backfills = [...data.autoConfirmations.filter((row) => row.overdue), ...data.autoConfirmations.filter((row) => !row.overdue)];
@@ -439,7 +442,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   const resumeGate = (gate: JGate) => {
     const name = operatorCopyText(gate.name);
-    const cap = operatorCopyText(gate.cap);
+    const cap = gate.key === "withdraw" ? "新提现申请和审核放行" : operatorCopyText(gate.cap);
     openActionConfirm({ briefKind: "emergency",
       action: `提交恢复申请 · ${name}`,
       title: `申请恢复${name}`,
@@ -449,6 +452,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       coverageCheck: "批准时重新检查兑付覆盖率，检查不通过仍保留待批工单，业务继续关停。",
       facts: <Facts>
         <Fact k="业务">{name}，批准后重新开放{cap}</Fact>
+        {gate.key === "withdraw" && <Fact k="控制范围" tone="warn">已放行的单还会打款</Fact>}
         <Fact k="提交后状态">仍为已关停</Fact>
         <Fact k="审批人">另一位有 A2 审批和 J1 恢复权限的超级管理员，发起人不能批自己的单</Fact>
         <Fact k="备付金检查">{gate.coveragePrecheckRequired ? "批准时重新检查覆盖率；不通过则保留待批工单，业务继续关停" : "试用免查，不直接付钱"}</Fact>
@@ -456,9 +460,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       detail: <><b>{name}</b>恢复申请进入 A2 应急审批队列，排在其他待办前。提交后仍已关停，另一位有权超管批准后才重新开放{cap}。</>,
       effect: <StatusTag tone="progress" filled>批准后生效</StatusTag>,
       statedBrief: {
-        impact: `提交后${name}仍已关停。另一位有权超管批准后重新开放${cap}，发起人不能批自己的单。`,
+        impact: `提交后${name}仍已关停。另一位有权超管批准后重新开放${cap}，发起人不能批自己的单。${gate.key === "withdraw" ? "已放行的单还会打款。" : ""}`,
         check: gate.coveragePrecheckRequired
-          ? "确认风险已解除。资金业务批准时重查覆盖率，低于红线保留待批工单，业务继续关停。"
+          ? "确认风险已解除。资金业务批准时重查覆盖率和估值可靠性，检查不通过仍保留待批工单，业务继续关停。"
           : "确认风险已解除，理由写清依据或工单号。试用恢复免查覆盖率。",
       },
       confirmLabel: "提交恢复审批",
@@ -613,7 +617,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     const backfill = backfillOf(gate.key);
     if (backfill) return canKill ? <Button disabledReason={block} onClick={() => confirmAutoTrigger(backfill)}>补录结论</Button> : undefined;
     if (!canResume) return undefined;
-    if (gate.coveragePrecheckRequired && !covPass) return <Button disabledReason={BLOCKED_RESUME}>恢复受阻</Button>;
+    if (gate.coveragePrecheckRequired && !covPass) return <Button disabledReason={recoveryBlock}>恢复受阻</Button>;
     return <Button disabledReason={block} onClick={() => resumeGate(gate)}>提交恢复审批</Button>;
   };
 
@@ -652,9 +656,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       ) : backfills.length > 0 ? (
         <Conclusion state="warn" lead explain="自动关停后要写清为什么关。到业务卡上点「补录结论」，补录不会恢复业务。">{conclusionFacts}</Conclusion>
       ) : killed > 0 ? (
-        <Conclusion state="warn" lead hint={resumeBlocked ? "覆盖率低于红线，暂不能发起资金业务恢复审批。到「资金储备与应付款」补足储备后再申请。" : undefined} explain={nextStepHelp}>{conclusionFacts}</Conclusion>
+        <Conclusion state="warn" lead hint={resumeBlocked ? recoveryBlock : undefined} explain={nextStepHelp}>{conclusionFacts}</Conclusion>
       ) : pending.length + visibleRestores.length > 0 ? (
-        <Conclusion state="warn" lead hint="到上方读回核对或按原操作重试。" explain="业务卡读到的是现在的状态，不能当成这次操作的结果。">业务开关：全部开启，<b>{pending.length + visibleRestores.length}</b> 项操作或审批结果未确认</Conclusion>
+        <Conclusion state="warn" lead hint="到上方核对原操作结果。" explain="业务卡读到的是现在的状态，不能当成这次操作的结果。">业务开关：全部开启，<b>{pending.length + visibleRestores.length}</b> 项操作或审批结果未确认</Conclusion>
       ) : (
         <Conclusion state="ok">业务开关：全部开启，没有要处理的事</Conclusion>
       )}
@@ -662,7 +666,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       <StatBand label="业务开关摘要">
         <Stat tone="role-2" icon={Power} label="在线业务" value={`${liveCount} / ${gates.length}`} />
         <Stat tone={data.stats.emergencyGateCount > 0 ? "warn" : "role-other"} icon={Siren} label="应急关停业务" value={String(data.stats.emergencyGateCount)} unit="项" explain="由自动规则、批量应急或应急预案联动关停的业务。" />
-        <Stat tone="role-other" icon={ShieldAlert} label="未能恢复" value={String(data.stats.coverageBlockedCount)} unit="次" explain="因备付金不足未能恢复的累计次数，不是现在受限的业务数。审批时覆盖率不通过仍保留待批工单。" />
+        <Stat tone="role-other" icon={ShieldAlert} label="未能恢复" value={String(data.stats.coverageBlockedCount)} unit="次" explain="因覆盖率或估值检查未通过而未能恢复的累计次数，不是现在受限的业务数。审批时覆盖率不通过仍保留待批工单。" />
         <Stat tone={covPass ? "role-1" : "danger"} icon={Coins} label="兑付覆盖率" value={pct(COV)} sub={`红线 ${RED}%`} explain={`储备除以应付款，${coverageGapText}。恢复提现、兑换、创世节点或质押批准时，系统重查覆盖率；试用免查。`} />
       </StatBand>
 
@@ -714,9 +718,10 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
       <Fold title="恢复业务前 · 备付金检查" explain="资金业务恢复需提交 A2 应急审批。批准时重查覆盖率，检查不通过仍待批，业务继续关停；试用免查。"
         icon={ShieldCheck} tone={covPass ? "role-1" : "danger"}
-        summary={covPass ? "达到发起恢复审批的门槛" : "低于红线，禁止发起恢复审批"}
+        summary={covPass ? "服务端允许发起恢复审批" : data.coverage.valuationReliable ? "服务端未允许发起恢复审批" : "估值不可靠，禁止发起恢复审批"}
         alert={!covPass} alertTone="danger"
         open={folds.coverage ?? (killed > 0 || !covPass)} onOpenChange={(open) => setFolds((state) => ({ ...state, coverage: open }))}>
+        {recoveryBlock && <Notice tone="danger" title="资金业务恢复受阻">{recoveryBlock}</Notice>}
         <Figure width={560} stack="wide" graphic={
           <ThresholdMeter label="兑付覆盖率和恢复红线" rows={[{ key: "coverage", label: "当前", value: COV, text: pct(COV), tone: covPass ? "ok" : "danger" }]}
             marks={[{ key: "red", text: `恢复红线 ${RED}%`, value: RED, tone: "danger" }]} />

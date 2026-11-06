@@ -51,7 +51,8 @@ const IN_APPROVAL = "这个对象有审批中的操作，批准或驳回后再�
 const APPROVAL_TEXT = "提交审批，批准后生效";
 const APPROVER = "有审批权限的管理员在「操作记录与审批」批准";
 const LANGUAGE_NAME: Record<string, string> = { zh: "中文", vi: "越南语", en: "英语", id: "印尼语", ms: "马来语", fil: "菲律宾语", ru: "俄语", kk: "哈萨克语", uz: "乌兹别克语" };
-const DEFAULT_LANGUAGE_SCOPES = ["zh+vi", "zh+vi+en"];
+const DEFAULT_LANGUAGE_SCOPES = ["zh+vi+en"];
+const ENGLISH_REQUIRED = "英语必填：App 的英语和缺少翻译的其他语言都回退到英语，必须保留完整英语正文。";
 const EDITABLE_LANGUAGES = ["zh", "vi", "en"];
 /** 这里只有中、越、英三种语言的输入框，范围超过这三种的选了也填不了（M14）。 */
 const scopeTooWide = (scope: string) => scope.split("+").some((code) => !EDITABLE_LANGUAGES.includes(code));
@@ -332,7 +333,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
     const effects = {
       enable: "批准后这个地区可以新建披露版本和配置生效版本。",
       disable: "批准后不能再为这个地区新建披露版本或绑定版本，历史版本和操作记录保留。",
-      archive: "批准后这个地区不再出现在可选列表里，不能再启用或改名，之后只能删除。历史版本和操作记录永久保留。",
+      archive: "批准后这个地区不再出现在可选列表里，不能再启用或改名，之后只能删除。历史版本和操作记录保留。",
     } as const;
     openActionConfirm({ briefKind: "content", ...approvalProps,
       ...(action === "archive" ? { confirmTone: "danger" as const, effect: irreversibleApproval } : {}),
@@ -395,7 +396,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
       title: `${current ? "调整" : "新增"}版本映射`,
       detail: <>这里仅维护启用适用地区的适用国家/地区与已发布版本映射。映射批准后生效；版本或适用国家变化时，新旧国家的用户须重新确认。</>,
       statedBrief: { impact: `批准后这个地区按这里的版本和国家生效；版本或适用国家变了，新旧国家的用户都要重新确认，并收到通知。${gateEffect}由${APPROVER}，批准前当前生效版本不变。`, check: "核对地区、版本和适用国家，理由写清版本依据。" },
-      facts: current && <Facts><Fact k="地区">{current.code} · {nameOf(current.code, current.name)}</Fact><Fact k="当前">{current.version} · {current.countryCodes.join("、") || "未配置国家"}</Fact></Facts>,
+      facts: <Facts>{current && <><Fact k="地区">{current.code} · {nameOf(current.code, current.name)}</Fact><Fact k="当前">{current.version} · {current.countryCodes.join("、") || "未配置国家"}</Fact></>}{versions.filter((row) => (current ? row.jurisdiction === current.code : mappableOptions.some((item) => item.value === row.jurisdiction)) && ["published", "superseded"].includes(row.status.toLowerCase())).map((row) => <Fact key={versionKey(row)} k={`${row.jurisdiction} ${row.version}`}>{row.effectiveDate || "日期未提供"}{current && compareVersionsDesc(row.version, current.version) > 0 ? " · 旧版本，选用将退回历史内容" : ""}</Fact>)}</Facts>,
       businessForm: spec,
       run: async (reason, _value, form) => {
         const jurisdictionCode = form?.jurisdictionCode?.trim().toUpperCase() || "";
@@ -443,7 +444,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
   // ---------- 版本 ----------
   const editorFrom = (snapshot: DisclosureVersionItemView | undefined, jurisdiction: string, version: string, mode: Editor["mode"], editing?: DisclosureVersionItemView): Editor => ({
     mode, editing, version, jurisdiction,
-    languageScope: snapshot?.languageScope ?? data?.languageScopes?.[0] ?? DEFAULT_LANGUAGE_SCOPES[0],
+    languageScope: snapshot?.languageScope?.split("+").includes("en") ? snapshot.languageScope : "zh+vi+en",
     // 新版本不带旧版的日期，不然没改也写着一个过去的日子（M15）。
     effectiveDate: mode === "create" ? businessDay() : snapshot?.effectiveDate ?? "",
     zh: snapshot?.zh ?? "", vi: snapshot?.vi ?? "", en: snapshot?.en ?? "",
@@ -621,7 +622,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
   const queueLimit = queueUnknown ? (!canQueue ? "这个账号看不到待审批" : queueRead ? "待审批没读到" : "待审批还在读取") : undefined;
   const unconfirmed = writes.unconfirmed((target) => target === "gate" || target.startsWith("jur:"));
   const conclusion = unconfirmed > 0 && !issues.size
-    ? <Conclusion state="warn" action={headActions} hint="到页面上方查询或按原操作重试。"><b>{unconfirmed}</b> 项操作结果未确认</Conclusion>
+    ? <Conclusion state="warn" action={headActions} hint="到页面上方核对原操作结果。"><b>{unconfirmed}</b> 项操作结果未确认</Conclusion>
     : issues.size
     ? <Conclusion state="danger" icon={ShieldAlert} action={headActions} hint={todoHint}><b>{issues.size}</b> 个地区的披露引用异常，App 可能读不到</Conclusion>
     : unmapped.length
@@ -635,7 +636,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
   const hasToken = (row: DisclosureVersionItemView) => row.revision != null && Boolean(row.contentHash);
   const publishBlocked = (row: DisclosureVersionItemView) => regionBlocked(row.jurisdiction)
     ?? (!hasToken(row) ? "版本信息不完整，请刷新"
-      : row.chapters.length !== 7 || row.chapters.some((chapter) => !chapter.zh.trim() || !chapter.vi.trim() || !chapter.zhBody.trim() || !chapter.viBody.trim()) ? "七章中文、越南语还没写全，先编辑版本"
+      : row.chapters.length !== 7 || row.chapters.some((chapter) => !chapter.zh.trim() || !chapter.vi.trim() || !chapter.zhBody.trim() || !chapter.viBody.trim() || !chapter.en.trim() || !chapter.enBody.trim()) || !row.zh.trim() || !row.vi.trim() || !row.en.trim() || !row.languageScope?.split("+").includes("en") ? "中文、越南语、英语正文与七章内容必填，先编辑版本"
         : !isActive(row.jurisdiction) ? "须先启用适用地区" : undefined);
   const editBlocked = (row: DisclosureVersionItemView) => regionBlocked(row.jurisdiction) ?? (!hasToken(row) ? "版本信息不完整，请刷新" : undefined);
   const catalogStatus = (code: string) => catalog.find((item) => item.code === code)?.status.toLowerCase() ?? "";
@@ -664,13 +665,13 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce }: { ctx: ICtx;
     {queueFailed && <Notice tone="warn" title="待审批读取失败" action={<InlineRetry onRetry={() => void loadQueue()} />}>审批中的操作这里看不到，到「操作记录与审批」核对。</Notice>}
     {todoCount > 0 && <Panel title="草稿和待审批" icon={FilePen} tone="role-1" flush>
         <Table label="草稿和待审批">
-          <thead><tr><Th>内容</Th><Th>状态</Th><Th>下一步</Th><Th align="right">操作</Th></tr></thead>
+          <thead><tr><Th>内容</Th><Th>状态</Th><Th>变更 / 下一步</Th><Th align="right">操作</Th></tr></thead>
           <tbody>
             {queue.map((row) => (
               <Tr key={row.id}>
                 <Td><Cell main={queueTitle(row.action)} sub={`${row.operator} · ${timeText(row.rawTs)}`} title={row.reason} /></Td>
                 <Td><StatusTag tone="warn" explain="已提交，还没批准。批准前用户看到的内容不变。">待审批</StatusTag></Td>
-                <Td>等待审批</Td>
+                <Td><Change from={row.before} to={row.after} /></Td>
                 <Td align="right">{auditReachable ? <Link className="rd-link" href={`${auditHref}&object=${encodeURIComponent(row.obj)}`} prefetch={false}>查看审批</Link> : "—"}</Td>
               </Tr>
             ))}
@@ -963,7 +964,6 @@ function VersionEditor({ initial, switcher, regions, languageScopes, loadRegionB
   const [pendingRegion, setPendingRegion] = useState<string | null>(null);
   const [merged, setMerged] = useState<MergeReport | null>(null);
   const dirty = JSON.stringify(form) !== JSON.stringify(baseline);
-  const needEn = form.languageScope.split("+").includes("en");
   const guard = useLeaveGuard(dirty, onClose, switcher);
   useEffect(() => {
     if (!initial.rebase) return;
@@ -985,7 +985,7 @@ function VersionEditor({ initial, switcher, regions, languageScopes, loadRegionB
     !form.effectiveDate && "生效日期",
     langMissing("zh") && "中文内容",
     langMissing("vi") && "越南语内容",
-    needEn && langMissing("en") && "英语内容",
+    langMissing("en") && "英语内容",
   ].filter(Boolean);
   const saveBlocked = blockedFor(form.jurisdiction) ?? (loadingRegion ? "正在加载该地区的版本内容" : missing.length ? `还缺：${missing.join("、")}` : form.mode === "edit" && !dirty ? "没有改动" : undefined);
   const setChapter = (index: number, patch: Partial<Editor["chapters"][number]>) => setForm((current) => ({ ...current, chapters: current.chapters.map((chapter, itemIndex) => itemIndex === index ? { ...chapter, ...patch } : chapter) }));
@@ -1010,20 +1010,20 @@ function VersionEditor({ initial, switcher, regions, languageScopes, loadRegionB
           <Field label="披露版本"><div className="rd-form-static">{form.version}<Explain label="版本号怎么来的" content="系统自动编号，不能手填。" /></div></Field>
           <Field label="适用地区">{initial.mode === "edit" ? <div className="rd-form-static">{regions[0]?.label ?? form.jurisdiction}</div>
             : <Select aria-label="适用地区" value={form.jurisdiction} options={regions} disabled={loadingRegion} onChange={(next) => { if (next === form.jurisdiction) return; if (dirty) setPendingRegion(next); else void switchRegion(next); }} />}</Field>
-          <Field label="语言范围" explain={languageScopes.some(scopeTooWide) ? SCOPE_TOO_WIDE : undefined} help={scopeTooWide(form.languageScope) ? SCOPE_TOO_WIDE : undefined}><Select aria-label="语言范围" value={form.languageScope} options={languageScopes.map((scope) => ({ value: scope, label: scopeTooWide(scope) ? `${languageText(scope)}（暂不能录入）` : languageText(scope), disabled: scopeTooWide(scope) }))} onChange={(next) => setForm((current) => ({ ...current, languageScope: next }))} /></Field>
+          <Field label="语言范围" explain={SCOPE_TOO_WIDE} help={ENGLISH_REQUIRED}><Select aria-label="语言范围" value={form.languageScope} options={[...new Set([...languageScopes, "zh+vi+en"])].map((scope) => ({ value: scope, label: !scope.split("+").includes("en") ? `${languageText(scope)}（缺少英语，不可选）` : scopeTooWide(scope) ? `${languageText(scope)}（暂不能录入）` : languageText(scope), disabled: scopeTooWide(scope) || !scope.split("+").includes("en") }))} onChange={(next) => setForm((current) => ({ ...current, languageScope: next }))} /></Field>
           <Field label="生效日期" required explain="写在披露上给用户看。切换生效版本批准后才换版本，不是到这一天自动生效。" help={form.effectiveDate && form.effectiveDate < businessDay() ? `早于今天（${businessDay()}），确认是要写这个日子` : undefined}>{(control) => <Input {...control} type="date" value={form.effectiveDate} onChange={(event) => setForm((current) => ({ ...current, effectiveDate: event.target.value }))} />}</Field>
         </div>
         <LocaleTabs label="正文语言" value={lang} onChange={setLang} items={[
           { value: "zh", label: "中文", missing: langMissing("zh") },
           { value: "vi", label: "越南语", missing: langMissing("vi") },
-          { value: "en", label: needEn ? "英语" : "英语（选填）", missing: needEn && langMissing("en") },
+          { value: "en", label: "英语", missing: langMissing("en") },
         ]} />
-        <Field label={`${langName}版本正文`} required={lang !== "en" || needEn}>{(control) => <Textarea {...control} rows={4} value={form[lang]} onChange={(event) => setForm((current) => ({ ...current, [lang]: event.target.value }))} />}</Field>
+        <Field label={`${langName}版本正文`} required>{(control) => <Textarea {...control} rows={4} value={form[lang]} onChange={(event) => setForm((current) => ({ ...current, [lang]: event.target.value }))} />}</Field>
         {form.chapters.map((chapter, index) => (
           <section key={chapter.no} className="rd-form-stack" aria-label={`第 ${chapter.no} 章`}>
             <h3 className="rd-form-group-title">第 {chapter.no} 章</h3>
-            <Field label={`${langName}标题`} required={lang !== "en" || needEn}>{(control) => <Input {...control} value={chapter[lang]} onChange={(event) => setChapter(index, { [lang]: event.target.value })} />}</Field>
-            <Field label={`${langName}正文`} required={lang !== "en" || needEn}>{(control) => <Textarea {...control} rows={3} value={chapter[`${lang}Body`]} onChange={(event) => setChapter(index, { [`${lang}Body`]: event.target.value })} />}</Field>
+            <Field label={`${langName}标题`} required>{(control) => <Input {...control} value={chapter[lang]} onChange={(event) => setChapter(index, { [lang]: event.target.value })} />}</Field>
+            <Field label={`${langName}正文`} required>{(control) => <Textarea {...control} rows={3} value={chapter[`${lang}Body`]} onChange={(event) => setChapter(index, { [`${lang}Body`]: event.target.value })} />}</Field>
           </section>
         ))}
       </div>

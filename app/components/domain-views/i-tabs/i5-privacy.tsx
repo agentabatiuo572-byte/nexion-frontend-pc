@@ -66,9 +66,9 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: 
       effect: live ? <StatusTag tone="progress" filled>立即生效</StatusTag> : <StatusTag tone="neutral" filled>保存草稿，线上不变</StatusTag>,
       confirmLabel: form.status === "PUBLISHED" ? "确认发布，立即生效" : form.status === "UNPUBLISHED" ? "确认撤下，立即生效" : "保存草稿",
       statedBrief: form.status === "PUBLISHED"
-        ? { impact: "注册页和邀请页马上显示这个版本，没有译文的语言回退到英语。", check: "核对正文版本和改动的语言，只发布已审核的正文，理由写清依据。" }
+        ? { impact: "公开隐私政策马上显示这个版本，没有译文的语言回退到英语。", check: "核对正文版本和改动的语言，只发布已审核的正文，理由写清依据。" }
         : form.status === "UNPUBLISHED"
-          ? { impact: "公开版本立即撤下，注册页和邀请页读不到隐私政策。", check: "确认要下架，理由写清依据。" }
+          ? { impact: "公开版本立即撤下，公开接口读不到隐私政策。", check: "确认要下架，理由写清依据。" }
           : { impact: "只保存草稿，注册页和邀请页显示的内容不变。", check: "核对改动，理由写清修改依据。" },
       facts: <DiffList rows={[
         { key: "status", label: "状态", before: STATUS_NAME[baseline.status], after: form.status === "DRAFT" && baseline.hasPublishedVersion ? "另存草稿，公开版不变" : STATUS_NAME[form.status] },
