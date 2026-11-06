@@ -52,6 +52,7 @@ export type LExportTask = {
   st: string;
   chain: string;
   acts: ("approve" | "download" | "retry")[];
+  approvalEligibility?: "ELIGIBLE" | "SELF" | "MAKER_UNVERIFIED";
 };
 
 export type LBiData = {
@@ -676,9 +677,16 @@ export async function fetchL5ExportTasks(status = "", pageNum = 1, pageSize = 8)
     pageSize: String(pageSize),
   });
   if (status.trim()) query.set("status", status.trim());
-  return apiRequest<AdminPage<LReportView>>(`/reports?${query.toString()}`).then((page) => ({
-    ...page,
-    records: page.records.map(reportToTask),
+  return apiRequest<AdminPage<LReportView> & {
+    approvalEligibility?: Record<string, LExportTask["approvalEligibility"]>;
+  }>(`/reports?${query.toString()}`).then((page) => ({
+    total: page.total,
+    pageNum: page.pageNum,
+    pageSize: page.pageSize,
+    records: page.records.map((report) => ({
+      ...reportToTask(report),
+      approvalEligibility: page.approvalEligibility?.[report.reportId],
+    })),
   }));
 }
 
