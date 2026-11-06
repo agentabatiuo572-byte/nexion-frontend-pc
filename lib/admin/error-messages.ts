@@ -791,6 +791,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   A4_OUTBOX_DIAGNOSTICS_INVALID: "事件积压诊断数据不完整或统计不一致，本次结果未展示；请重新查询或联系值班人员。",
   A4_REASON_LENGTH_INVALID: "操作理由必须填写 8-200 个字符。",
   A4_DAY0_VALUE_INVALID: "Day0 接入窗口必须是 30-600 秒。",
+  A4_DAY0_POLICY_INVALID: "首笔收益统计窗口配置无效，必须为 30–600 秒。请有权限的同事到「用户行为事件」核对接入窗口设置。",
   A4_EVENT_RETENTION_INVALID: "事件留存期必须是 13-60 个月。",
   A4_SAMPLING_VALUE_INVALID: "浏览或会话采样率必须是 0%–100%；资金、风控、转化类必须保持 100%。",
   A4_PROTECTED_EVENT_SAMPLING_INVALID: "资金、风控和转化事件必须保持 100% 全量采集。",
