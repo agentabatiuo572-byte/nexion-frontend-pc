@@ -2076,12 +2076,12 @@ C2 是**单用户账户处置入口**——冻结 / 解冻、强制登出、加�
 
 **带入用户的来源（BUG-204）**：用户详情、客服工作台客户卡、专属会话客户卡及篡改防御监控的账户操作链接分别携带 `source=C1/M1/M3/J3`。客服客户卡由承载它的页面显式传入 M1 或 M3 来源，返回地址也分别指向工作台或原客户会话。账户操作页按本次来源显示「用户详情」「客服工作台」「专属会话」「篡改防御监控」，未找到时指引回到对应入口核对用户编码。仅 J3 来源显示篡改防御监控；来源缺失或未知时只说「带入用户」及核对编码，不推断来源，不改变查找或处置对象。
 
-**(b) impersonate 控制台 + 代入会话视图**:
+**(b) 用户数据只读视图（impersonate）**:
 - **发起面板**:`[目标 userId / impersonate 时限(默认 ≤ 30min)/ 只读标识 / 发起原因码]` + 进行中 impersonate 会话列表(operator / target / 起止时间 / 剩余时长 / 终止入口);**impersonate 全程只读 + 限时 + 全审计**(见 ⑦)。
-- **代入会话视图(核心交付)**:确认弹窗(C2-MD4)执行授权后,运营进入**该用户真实 App(H5 端)的只读载入视图**——呈现用户在自己屏幕上看到的画面(首页 / 钱包 / 设备 / 我的 等核心页),数据取该用户的 server 权威态(余额 / 收益 / 设备 / V 级 / KYC / 账户状态等),且**忠实呈现用户实际所处状态态**(如账户冻结提示、KYC 待完成提示、空数据态),供客服复现用户所述现象。视图顶部常驻**代入会话横幅**:被代入用户标识 + 剩余时长倒计时 + 退出代入入口(横幅为运营侧叠加层,非用户 App 自身内容)。
-- **与 C1「360 HUB 用户画像」的分工(勿混)**:C1 是**运营视角的后台数据档案**(聚合各域 server 数据 + 内置运营处置动作);代入会话视图是**用户视角的前端只读镜像**(用户屏幕所见,无任何运营动作)。前者回答"后台记录这个用户是什么样",后者回答"用户自己屏幕上看到的是什么样";代入会话视图专用于排查"后台数据正常、但用户端显示 / 体验异常"类问题(如用户称某入口不显示 / 数字不符 / 按钮无响应),二者互补不重叠。
-- **生产实现方式**:代入会话视图 = 以只读 impersonation 会话句柄(`scope:'impersonate_readonly'`,见 ⑤)载入真实用户前端;前端识别该 claim 后进入**只读态**(隐藏 / 禁用一切写入口,任何写请求经 ⑤ auth middleware 返回 403),仅渲染展示;会话句柄到期(≤ 30min)或运营主动退出即失效。
-  > **原型说明(prototype ≠ production)**:当前后台原型以**同源只读「用户视角镜像」组件**演示本视图(按被代入用户数据渲染消费端画面、全部控件禁用并提示"只读代入·不可操作"),因真实用户前端为独立工程、设 `X-Frame-Options: DENY` / `frame-ancestors 'none'`(不可被后台 iframe 内嵌)且原型为单一演示 persona;**生产须按上方"生产实现方式"以只读会话句柄载入真实用户前端**,本节功能需求(只读载入用户视角 + 横幅 + 限时 + 退出)不因原型实现方式而改变。
+- **用户数据只读视图（S32 / BUG-355）**：确认弹窗(C2-MD4)执行授权后，以只读会话展示该用户的首页数据、钱包数据、设备数据和用户资料四组系统数据，不承诺复现用户看到的 App 页面。动作、标题和横幅统一称「用户数据只读视图」。区内说明为「只能看，不能改 · 这里显示该用户的数据，不是用户看到的 App 页面；所有修改操作都会被拒绝。」
+- **名称一致性（S32 后续）**：页面简介、记录总数、到期提示、错误说明、术语解释和操作显示名称同样使用「用户数据只读视图」。机器码、操作码、接口、权限键和操作记录中的动作码沿用原值；后端下发的钱包只读提示仍由后端维护。
+- **与 C1「360 HUB 用户画像」的分工**：C1 是聚合各域资料并提供处置动作的后台档案；此处通过限时只读会话核对四组用户数据，不提供修改入口，也不用于判断用户实际看到的 App 布局或交互。
+- **现行实现**：沿用只读 impersonation 会话句柄加载四组数据，顶部显示用户标识、剩余时长及退出入口；会话到期(≤ 30min)或运营主动结束即失效。S32 仅修正文案，不改变只读约束、限时、权限、操作码或记录机制，不接入真实 App 页面。
 **(c) 名单管理**:账户加白(信任名单,降风控摩擦)/ 拉黑(禁入名单)台账 `[userId / 名单类型 / 原因 / 失效时间 / operator]`。**C2 名单为账户级(userId 维度,信任 / 禁入),与 K1 的 IP 维度白名单(共享网络豁免)不重叠**:IP 维度豁免经 K1 操作,账户级加白 / 拉黑经 C2 操作(§3.14 跨域归属:账户级名单 → C2 权威 / K1 IP 白名单 → K1 权威)。
 
 **③ 可控参数**
@@ -2149,15 +2149,15 @@ C2 是**单用户账户处置入口**——冻结 / 解冻、强制登出、加�
 - **布局与反馈**：显示用户及当前在线设备数，8–200 字理由，明确「批准后生效」。提交成功只提示已提交审批，不声称设备已退出；批准前在线设备维持原状态。C2、C5 停止调用各自的直接 revoke-all 接口。后端仍须阻止直接接口绕过审批。
 - **结果尚未确认（延续 BUG-283）**：按操作员和目标用户保留原理由、显示名、请求内容和操作编号；理由锁定，显示「重试原操作」。关闭重开或刷新仍恢复同一操作，即使当前无在线设备也能重试；C2、C5 共用同一目标的待确认记录。每次恢复先按原键精确查询；本人、目标用户及原键核对通过后确认收敛并清除本地记录。`operationCode` 是可选回执字段，只有回执携带时才要求为 `c2_session_revoke_all`，为空不阻碍确认。未查到且仍在 24 小时内时才允许原键原内容重试；超过 24 小时保留记录且只查询，不重发、不换键。查询失败、本人或目标不匹配、已携带的操作类型不符时保持尚未确认；丢失响应显示中文未知结果与「重试原操作」，不显示原始错误码。`IDEMPOTENCY_REQUEST_IN_PROGRESS`、`IDEMPOTENCY_RESULT_UNKNOWN`、`IDEMPOTENCY_KEY_PAYLOAD_MISMATCH` 三种 409 均保留原记录；明确业务拒绝后释放记录，原操作重试遇到认证或授权失败则继续保留。批准后回取原提案不会再次撤销后来新建的会话。
 
-##### [C2-MD4] 发起 impersonate(代入会话)
-- **功能**:授权发起对目标用户的只读限时代入会话(复现用户所见),确认即签发只读会话句柄并进入代入视图。
+##### [C2-MD4] 用户数据只读视图（impersonate）
+- **功能**:授权发起对目标用户的限时只读会话,确认即签发只读会话句柄并展示四组用户数据,不承诺复现用户所见 App 页面。
 - **布局结构**:1. **信息区**:目标 userId / 账户状态 / 约束声明(「会话强制只读·任何写请求 403·全程审计留痕·到期自动终止」)。2. **输入区**:见下表。3. **按钮区**:取消 / 确认发起。
 - **输入与选择控件**:
 
 | 字段 | 控件类型 | 必填 | 校验 | 默认值 |
 |---|---|---|---|---|
-| 时限 | 下拉单选(5 / 10 / 15 / 30 分钟) | 是 | ≤ 30min(③ 表) | 30 分钟 |
-| 发起原因码 | 下拉单选(用户报障复现 / 排查显示异常 / 其他) | 是 | 枚举内 | 空 |
+| 时限 | 下拉单选(5 / 10 / 15 / 30 分钟) | 是 | ≤ 30min(③ 表) | 15 分钟 |
+| 发起原因码 | 下拉单选(用户报障复现 / 排查显示异常 / 其他) | 是 | 枚举内 | `USER_ISSUE_REPRO`（复现用户反馈的问题） |
 | reason(详述) | 多行文本 | 是 | 8–200 字;400 `REASON_REQUIRED` | 空 |
 
 - **错误态**:409(该用户已有进行中代入会话)/ 400 / 403(账户冻结态拒绝代入)。
@@ -2179,7 +2179,7 @@ C2 是**单用户账户处置入口**——冻结 / 解冻、强制登出、加�
 - `POST /api/admin/users/:userId/freeze`(冻结,确认弹窗 C2-MD1:body 携 `{reasonCode, reason}`,reason 空值 400 `REASON_REQUIRED`;`Idempotency-Key` 必带,防重复冻结)。冻结确认后 server **原子**置账户 frozen + 联动 D2 提现 frozen(§9.11f),client 不本地冻结。
 - `POST /api/admin/users/:userId/unfreeze`(解冻,确认弹窗 C2-MD2,body 携 reason;`Idempotency-Key` 必带)。
 - `POST /api/admin/platform/audit/operations`：C2、C5 全设备登出提交审批，命令 `C / c2_session_revoke_all / {userId}`，理由和 `Idempotency-Key` 必填。批准由 A2 执行会话撤销；PC 不再调用两个直接 revoke-all 接口。
-- `POST /api/admin/users/:userId/impersonate`(发起模拟登录,确认弹窗 C2-MD4,body 携 `{ttlMin, reasonCode, reason}`;返回**只读受限**的 impersonation 会话句柄 + 到期时间 ≤ 30min)。**只读识别机制**:impersonation 会话句柄包含特殊 claim(如 `scope:'impersonate_readonly'` 或独立的 impersonation token type),所有写操作 endpoint 的 auth middleware 须检测该 claim 并对会话内一切写请求返回 403 `IMPERSONATION_READ_ONLY`;具体实现方案见 A3 / Ch9 auth middleware 规范。运营端以该会话句柄载入**用户前端只读会话视图**(②(b) 代入会话视图,渲染用户视角画面);句柄到期(≤ 30min)或运营退出即失效,失效后该会话一切请求(含读)一并拒绝。
+- `POST /api/admin/users/profiles/:userId/impersonations`(发起用户数据只读视图,确认弹窗 C2-MD4,body 携 `{ttlMinutes, reasonCode, reason, operator}`;返回**只读受限**的 impersonation 会话句柄 + 到期时间 ≤ 30min)。沿用系统对只读会话的写入拒绝和到期限制；运营端通过 `GET /api/impersonation/view?page=HOME|WALLET|DEVICES|PROFILE` 加载四组数据，不载入真实 App 页面。`POST /api/admin/users/impersonations/:sessionNo/terminate` 结束会话；句柄到期(≤ 30min)或运营结束即失效，失效后该会话一切请求(含读)一并拒绝。
 - 名单:`POST /api/admin/users/:userId/{allowlist|blocklist}`(确认弹窗 C2-MD5/MD6,body 携 reason;**账户级 userId 维度**,与 K1 IP 维度白名单不重叠)。
 
 所有写操作带 `Idempotency-Key`(§1.8 原则二.3);`userId` 为 server 权威 ID;时间戳 ms epoch 服务端权威。状态 server-canonical,client 仅订阅。
@@ -4773,7 +4773,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | C2 | `/api/admin/users/:userId/freeze` | POST | 冻结账户(原子置 frozen + 联动 D2 提现 frozen) | Ch5 C2 | 是 | 是 |
 | C2 | `/api/admin/users/:userId/unfreeze` | POST | 解冻账户 | Ch5 C2 | 是 | 是 |
 | C2 | `/api/admin/users/profiles/{userId}/sessions/revoke-all` | POST | 强制登出全部活跃会话（要求 `user_c2_session_revoke_all`；返回 `revokedCount / status`） | Ch5 C2 | — | — |
-| C2 | `/api/admin/users/:userId/impersonate` | POST | 发起只读受限模拟登录(≤30min;写请求返回 403) | Ch5 C2 | 是 | — |
+| C2 | `/api/admin/users/profiles/:userId/impersonations` | POST | 发起用户数据只读视图(≤30min;沿用只读约束) | Ch5 C2 | 是 | — |
 | C2 | `/api/admin/users/:userId/{allowlist\|blocklist}` | POST | 账户级名单(userId 维度;与 K1 IP 白名单不重叠) | Ch5 C2 | 是 | — |
 | C3 | `/api/admin/users/:userId/adjust` | POST | 人工资产调整(usdt/nex 落 D4 bill;加余额过 B1 红线) | Ch5 C3 | 是 | 是 |
 | C3 | `/api/admin/users/:userId/adjustments` | GET | 调整历史(含 D4 billId / audit log ref) | Ch5 C3 | — | — |

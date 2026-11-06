@@ -408,7 +408,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
       {/* stat strip */}
       <div className="f-stats">
         <div className="f-stat"><div className="k">本期总收入</div><div className="v">{fmtM(revTotal)}</div><div className="sub">按当前报表周期汇总</div></div>
-        <div className="f-stat ok"><div className="k">兑付率(本期)</div><div className="v">{redRate}</div><div className="sub">已兑付 ÷ 已提交 · 慢性核账指标</div></div>
+        <div className="f-stat ok"><div className="k">本期确认 / 本期申请</div><div className="v">{redRate}</div><div className="sub">本期确认数 ÷ 本期申请数 · 周期核账指标</div></div>
         <div className="f-stat ok"><div className="k">兑付覆盖率</div><div className="v">{TREASURY.coverageRatio}%</div><div className="sub">红线 {TREASURY.redLine} / 健康线 {TREASURY.yellowLine}</div></div>
         <div className="f-stat cyan"><div className="k">储备可覆盖到期</div><div className="v">{reserveCoverDaysValue}</div><div className="sub">{reserveCoverDaysCopy} · 来自可用资金与应付款</div></div>
       </div>
@@ -449,16 +449,16 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
             <div className="red-tiles">
                <div className="t"><div className="k">提现申请</div><div className="v">{REDEMPTION.submitted.toLocaleString("zh-CN")}</div><div className="s">本期已提交申请</div></div>
                <div className="t"><div className="k">已兑付</div><div className="v" style={{ color: "var(--success)" }}>{REDEMPTION.confirmed.toLocaleString("zh-CN")}</div><div className="s">本期已完成兑付</div></div>
-               <div className="t"><div className="k">兑付率</div><div className="v" style={{ color: "var(--success)" }}>{redRate}</div><div className="s">已兑付占提现申请的比例</div></div>
+               <div className="t"><div className="k">本期确认 / 本期申请</div><div className="v" style={{ color: "var(--success)" }}>{redRate}</div><div className="s">本期确认数 ÷ 本期申请数</div></div>
                <div className="t"><div className="k">平均兑付时延</div><div className="v">{REDEMPTION.avgLatency}</div><div className="s">从申请到完成的平均耗时</div></div>
                <div className="t"><div className="k">驳回</div><div className="v">{REDEMPTION.rejected}</div><div className="s">本期已驳回申请（结果分类）</div></div>
                <div className="t"><div className="k">延迟</div><div className="v" style={{ color: "var(--warning)" }}>{REDEMPTION.delayed}</div><div className="s">本期曾延迟 · 过程事件，可与最终兑付重叠</div></div>
                <div className="t"><div className="k">冻结</div><div className="v" style={{ color: "var(--danger)" }}>{REDEMPTION.frozen}</div><div className="s">本期曾冻结 · 过程事件，可与最终兑付重叠</div></div>
                <div className="t"><div className="k">较上期变化</div><div className="v" style={{ color: signedColor(redRateDelta) }}>{redRateDelta === null ? "—" : `${redRateDelta > 0 ? "+" : ""}${redRateDelta.toFixed(1)} 个百分点`}</div><div className="s">{REDEMPTION.prevLabel}为 {REDEMPTION.prevRate === null ? "—" : `${REDEMPTION.prevRate}%`}</div></div>
             </div>
-            <div className="ltint" style={{ fontSize: 12, marginBottom: 8 }}><b>比率与余额不可混用</b> · <AutoGloss>兑付率衡量本期申请完成比例；在途余额衡量尚未完成的应付款。两者同源但含义不同。</AutoGloss></div>
-            <div className="ltint" style={{ fontSize: 12, marginBottom: 8 }}><b>怎么算</b> · <AutoGloss>已兑付、已驳回是最终结果；延迟、冻结是中间状态，一笔提现可能先被延迟或冻结、后来又兑付了，所以这几项加起来不等于申请总数。兑付率 = 已兑付 ÷ 本期申请总数。</AutoGloss></div>
-            <div className="ltint warn" style={{ fontSize: 12 }}><b>告警归属</b> · <AutoGloss>兑付率用于周期核账；急性提现安全信号以覆盖率和挤兑比率越线记录为准。需要处置时请进入提现审核。</AutoGloss></div>
+            <div className="ltint" style={{ fontSize: 12, marginBottom: 8 }}><b>比率与余额不可混用</b> · <AutoGloss>本期确认 / 本期申请可以超过 100%，本期确认可含前期申请；在途余额衡量尚未完成的应付款。两者同源但含义不同。</AutoGloss></div>
+            <div className="ltint" style={{ fontSize: 12, marginBottom: 8 }}><b>怎么算</b> · <AutoGloss>已兑付、已驳回是最终结果；延迟、冻结是中间状态，一笔提现可能先被延迟或冻结、后来又兑付了，所以这几项加起来不等于申请总数。本期确认 / 本期申请 = 本期确认数 ÷ 本期申请数。</AutoGloss></div>
+            <div className="ltint warn" style={{ fontSize: 12 }}><b>告警归属</b> · <AutoGloss>本期确认 / 本期申请用于周期核账；急性提现安全信号以覆盖率和挤兑比率越线记录为准。需要处置时请进入提现审核。</AutoGloss></div>
           </div>
         </section>
       </div>
