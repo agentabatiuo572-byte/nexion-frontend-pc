@@ -29,10 +29,12 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   const surface = useRdSurface();
   // 理由规则读得到就按它，读不到按默认 8–200 继续，紧急关停不能被规则服务挡住（Q-06）。
   const [policy, setPolicy] = useState<{ minChars: number; maxChars: number } | null>(null);
+  // 读取中还不知道规则，不放行；读失败才按默认继续。
+  const [policySettled, setPolicySettled] = useState(!req.reason);
   useEffect(() => {
     if (!req.reason) return;
     let active = true;
-    void fetchA2ReasonPolicy().then((next) => { if (active) setPolicy(next); }, () => { if (active) setPolicy(null); });
+    void fetchA2ReasonPolicy().then((next) => { if (active) setPolicy(next); }, () => { if (active) setPolicy(null); }).finally(() => { if (active) setPolicySettled(true); });
     return () => { active = false; };
   }, [req.reason]);
   const reasonMin = policy?.minChars ?? 8;
@@ -41,7 +43,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   const reasonOk = !req.reason || (reasonLength >= reasonMin && reasonLength <= reasonMax);
   // chips 模式:所选项即非空,用精确判空(防空串 option 误配后按钮静默禁用);文本模式:仍要求 trim 后非空(拒纯空白)。
   const inputOk = !req.input || req.input.required === false || (req.input.options ? value !== "" : value.trim().length >= 1);
-  const can = reasonOk && inputOk;
+  const can = reasonOk && inputOk && policySettled;
   const reasonShort = reasonLength < reasonMin ? `还差 ${reasonMin - reasonLength} 字` : `已填写 ${reasonLength}/${reasonMax} 字`;
   const submit = async () => {
     if (!can || submitting) return;
@@ -81,7 +83,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
               variant={req.confirmTone ?? "primary"}
               loading={submitting}
               loadingText="提交中…"
-              disabledReason={can || submitting ? undefined : [!inputOk && `填写${req.input?.label}`, !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : `操作理由不能超过 ${reasonMax} 字`)].filter(Boolean).join("；")}
+              disabledReason={can || submitting ? undefined : [!policySettled && "正在读取理由规则", !inputOk && `填写${req.input?.label}`, !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : `操作理由不能超过 ${reasonMax} 字`)].filter(Boolean).join("；")}
               onBlockedClick={() => setAttempted(true)}
               onClick={() => void submit()}
             >

@@ -29,7 +29,7 @@ export { Panel } from "./panel";
 export { SectionNav, useSectionNav, type SectionNavItem } from "./section-nav";
 export { Select, type SelectOption } from "./select";
 export { Stat, StatBand } from "./stat";
-export { ApprovalTag, IrreversibleTag, StatusTag } from "./status-tag";
+export { IrreversibleTag, StatusTag } from "./status-tag";
 export { Steps } from "./steps";
 export { RdPage, useRdSurface } from "./surface";
 export { TodoFailed, TodoItem, TodoList } from "./todo-list";

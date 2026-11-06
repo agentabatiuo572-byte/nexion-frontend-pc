@@ -569,7 +569,7 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 }
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
-export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; current?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; step?: number; disallowCurrent?: boolean; /** 清空也是合法的新值时写这个选项的名字，比如「不设上限」。要人点它才算清空，框里什么都没填或填坏了都不算。 */ emptyOption?: string; /** 怎么填，只在 RdPage 里显示（CP-87）。 */ hint?: ReactNode; /** 改了会怎样，随输入变化，只在 RdPage 里显示。 */ preview?: (value: string) => ReactNode; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
+export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; current?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; step?: number; disallowCurrent?: boolean; /** 清空也是合法的新值时写这个选项的名字，比如「不设上限」。要人点它才算清空，框里什么都没填或填坏了都不算。 */ emptyOption?: string; /** 怎么填，只在 RdPage 里显示（CP-87）。 */ hint?: ReactNode; /** 改了会怎样，随输入变化，只在 RdPage 里显示。 */ preview?: (value: string) => ReactNode; /** 范围之外的校验，比如和别的参数的关系：返回原因就不能提交，写在字段下。 */ validate?: (value: string) => string | undefined; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
@@ -3529,7 +3529,7 @@ export type InlineOperationApproval = {
   dialogClassName?: string;
 };
 
-export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional }: { /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode; confirmLabel?: string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string }; facts?: ReactNode; confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", coverageCheck = "提交时会先检查兑付覆盖率。", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional }: { /** 系统什么时候查覆盖率，写真实路径；走审批的后端不在提交时查，传批准时的说法。 */ coverageCheck?: string; /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode; confirmLabel?: string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string }; facts?: ReactNode; confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const surface = useRdSurface();
   const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
   const [draftReason, setReason] = useState(pendingReason ?? "");
@@ -3614,7 +3614,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const submittedValue = spec?.submitEditValue
     ? newVal
     : businessNewValue(activeBusinessForm, businessValue) ?? newVal;
-  const editValueOk = emptyChosen || (!numberBad && isEditValueValid(spec, newVal));
+  const editIssue = !emptyChosen && !numberBad && isEditValueValid(spec, newVal) ? spec?.validate?.(newVal) : undefined;
+  const editValueOk = !editIssue && (emptyChosen || (!numberBad && isEditValueValid(spec, newVal)));
   const sameAsCurrent = !!spec?.disallowCurrent && !!newVal.trim() && (newVal.trim() === spec.current?.trim() || (kind === "number" && Number(newVal) === Number(spec.current)));
   const uploadBlocked = Object.values(uploadStates).some(Boolean);
   const canConfirm = !blockedReason && (retryApproval || pendingReason !== undefined ? !submitting && !approvalOnlyLookup && !inlineApproval?.disabledReason
@@ -3631,7 +3632,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     inlineApproval?.disabledReason,
     businessSelectionLoading && "正在加载",
     uploadBlocked && "图片还没上传好",
-    !editValueOk && (sameAsCurrent ? "和当前值一样，没有改动" : kind === "number" && (newVal.trim() || numberBad) ? editNumberError(spec!) : `填写${spec?.label ?? "新值"}`),
+    !editValueOk && (editIssue ? editIssue : sameAsCurrent ? "和当前值一样，没有改动" : kind === "number" && (newVal.trim() || numberBad) ? editNumberError(spec!) : `填写${spec?.label ?? "新值"}`),
     ...businessMissing.map((message) => message.replace(/。+$/, "")),
     !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : reasonShort.replace(/。$/, "")),
   ].filter(Boolean);
@@ -3730,13 +3731,13 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         // 够得上红线时只留数字，后果和检查说明进提示图标（DP-06）。
         <div className="tiny">
           覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b>，红线 <b>{coverage.redlinePct}%</b>
-          <Explain label="这项操作对资金的影响" content={<><p>{coverageLead}</p><p>提交时会先检查兑付覆盖率{coverage.healthyPct !== undefined ? `，健康线 ${coverage.healthyPct}%` : ""}。</p></>} />
+          <Explain label="这项操作对资金的影响" content={<><p>{coverageLead}</p><p>{coverageCheck}</p>{coverage.healthyPct !== undefined && <p>健康线 {coverage.healthyPct}%。</p>}</>} />
         </div>
       ) : surface && !covBlocked && !coverage && auditSink !== "local-history" ? (
         // 页面自己把覆盖率写进 coverageLead 时也只留这一句，检查说明进提示图标（DP-06）。
-        <div className="tiny">{typeof coverageLead === "string" ? <b>{coverageLead}</b> : coverageLead}<Explain label="提交时怎么检查" content="提交时会先检查兑付覆盖率。" /></div>
+        <div className="tiny">{typeof coverageLead === "string" ? <b>{coverageLead}</b> : coverageLead}<Explain label="什么时候检查" content={coverageCheck} /></div>
       ) : <div className="tiny">
-        <b>{coverageLead}</b> · 提交时会先检查兑付覆盖率。
+        <b>{coverageLead}</b> · {coverageCheck}
         {coverage ? (
           <>
             当前覆盖率 <b className="mono">{fmtPct(coverage.coverageRatio)}</b>
@@ -3843,6 +3844,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
             note={spec.preview && editValueOk ? spec.preview(newVal) : undefined}
             error={retryApproval ? undefined
               : showEditError && sameAsCurrent ? "新值和当前值一样，改了才能保存。"
+              : showEditError && editIssue ? editIssue
               : showEditError && !editValueOk && kind === "number" && (newVal || numberBad) ? `${editNumberError(spec)}。`
               : attempted && !editValueOk && !newVal.trim() && !numberBad ? `填写${spec.label ?? "新值"}。`
               : undefined}

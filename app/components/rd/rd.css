@@ -774,8 +774,8 @@ td .rd-flow { margin-bottom: 0; }
 
 /* 配置页（CP-87、CP-88、CP-91、CP-54）：配置项一行一项、一行高，名称和提示图标在左，当前值和动作在右；说明都在气泡里（DP-06）；分组导航和页级状态放在内容旁边。 */
 .rd-config { display: grid; }
-.rd-config-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(112px, max-content) 88px; align-items: center; gap: 4px 20px; min-height: var(--rd-control-h-lg); padding: 4px 0; border-top: 1px solid var(--rd-line); }
-.rd-config-row:first-child { border-top: 0; padding-top: 0; }
+.rd-config-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(112px, max-content) 88px; align-items: center; gap: 4px 20px; min-height: var(--rd-control-h-lg); padding: 4px 0; }  /* 分组靠留白，线只给表格（VS-73） */
+.rd-config-row:first-child { padding-top: 0; }
 .rd-config-row:last-child { padding-bottom: 0; }
 .rd-config-name { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; min-width: 0; color: var(--rd-text-2); }
 .rd-config-value { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: baseline; gap: 2px 8px; min-width: 0; text-align: right; color: var(--rd-text); font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
@@ -900,9 +900,6 @@ td .rd-flow { margin-bottom: 0; }
 .rd-impact .rd-table :is(th, td) { padding-block: var(--rd-space-1); }
 .rd-impact .rd-table :is(th, td):first-child { padding-left: 0; }
 .rd-impact .rd-table :is(th, td):last-child { padding-right: 0; }
-.rd-impact-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0 0 16px; color: var(--rd-text-2); }
-.rd-impact-line b { font-weight: 400; color: var(--rd-text-3); }
-.rd-impact-fold { margin-bottom: 16px; }
 .rd-impact-title { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; color: var(--rd-text); }
 .rd-impact-title .rd-explain { margin-left: 4px; }
 .rd-impact-list { display: grid; gap: var(--rd-space-3); margin: 0; padding: 0; list-style: none; }

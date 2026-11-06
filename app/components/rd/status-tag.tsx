@@ -10,7 +10,7 @@
  * 表格里第二行说明用 Cell：<Cell main={<StatusTag …/>} sub="需人工审核" />。
  *
  * 弹窗标题下的后果标签（VS-106）：生效方式用 <StatusTag tone="progress" filled>立即生效</StatusTag>，
- * 走审批用 <ApprovalTag scope="这单" />，真的收不回来的操作再加 <IrreversibleTag />。只有这几种，不拿它写别的提醒。
+ * 走审批的写「批准后生效」，谁来批、批准前什么不变传 explain，真的收不回来的操作再加 <IrreversibleTag />。只有这几种，不拿它写别的提醒。
  * 在弹窗标题下（EffectSlot 里）生效方式换成闪电和时钟：虚线圈读作「处理中」，这里说的是什么时候生效。
  */
 import { createContext, useContext, type ReactNode } from "react";
@@ -42,9 +42,4 @@ export function StatusTag({ tone, icon, filled, explain, children }: { tone: Sta
 /** 不能撤销：只给提交后收不回来的操作（退款、拒绝、强制扣款），和生效方式并排在弹窗标题下面。 */
 export function IrreversibleTag({ children = "不能撤销" }: { children?: ReactNode }) {
   return <StatusTag tone="danger" filled icon={Ban}>{children}</StatusTag>;
-}
-
-/** 走审批的生效标签。谁来批、批准前什么不变每个框都一样，进提示图标，不占事实行（VS-105）。 */
-export function ApprovalTag({ scope }: { scope: string }) {
-  return <StatusTag tone="progress" filled explain={`超级管理员批准后才生效，超管发起的由另一位超管批准。批准前${scope}不变。`}>批准后生效</StatusTag>;
 }
