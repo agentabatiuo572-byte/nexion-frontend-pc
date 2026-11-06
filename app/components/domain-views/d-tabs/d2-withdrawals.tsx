@@ -245,7 +245,7 @@ function userStatusLabel(value?: string) {
 function freezePeriodLabel(value?: string) {
   const rhythm = /^H1:M([1-9]\d*):(P[1-6])$/.exec(value ?? "");
   if (rhythm) return `下单时的运营阶段设置：第 ${rhythm[1]} 月 · ${rhythm[2]}（以复查时间为准）`;
-  return ({ "7D": "7 天", "14D": "14 天", "30D": "30 天", "45D": "45 天", LONG_TERM: "长期（需复查）", SEVEN_DAYS: "7 天" } as Record<string, string>)[value?.toUpperCase() ?? ""] ?? (value ? "未知" : "—");
+  return ({ "7D": "7 天", "14D": "14 天", "30D": "30 天", "45D": "45 天", LONG_TERM: "长期（需复查）", SEVEN_DAYS: "7 天", K3_DELAY_ONCE: "到期复核后再延迟一次（以复查时间为准）" } as Record<string, string>)[value?.toUpperCase() ?? ""] ?? (value ? "未知" : "—");
 }
 
 function statusTone(status: string) {
@@ -418,7 +418,7 @@ function actionBusinessForm(action: D2ReviewAction, addressVerificationRequired 
       fields: [
         ...(action === "DELAY"
           ? [{ key: "holdDays", label: "等待天数", inputKind: "number" as const, required: true, min: 1, max: 45, current: "7" }]
-          : [{ key: "period", label: "冻结期限", inputKind: "select" as const, required: true, options: ["7d", "14d", "30d", "45d", "LONG_TERM"], optionLabels: { "7D": "7 天", "14D": "14 天", "30D": "30 天", "45D": "45 天", LONG_TERM: "长期，需复查" } }]),
+          : [{ key: "period", label: "冻结期限", inputKind: "select" as const, required: true, options: ["7d", "14d", "30d", "45d", "LONG_TERM"], optionLabels: { "7d": "7 天", "14d": "14 天", "30d": "30 天", "45d": "45 天", LONG_TERM: "长期，需复查" } }]),
         { key: "owner", label: "责任人", required: true, current: OPERATOR() },
         { key: "reviewAt", label: "复查时间（北京时间 UTC+8）", inputKind: "datetime-local", required: true, current: reviewAtAfter(7),
           help: "随期限自动更新；手动修改后保留。固定期限允许相差一天；长期冻结须在未来 1–365 天内复查，默认 7 天后。",
@@ -726,6 +726,10 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       toast(REVIEW_ENDED_COPY);
       return;
     }
+    if (action === "REFUND" && erc20ConfirmationLost(row)) {
+      toast("这笔 ERC20 提现已丢失链上确认，按规则冻结并继续占提现额度，不能退款。原操作记录已保留，请到操作记录核对。");
+      return;
+    }
     const records = pendingKeys.list();
     if (records.some((record) => record.batch?.ids.includes(row.withdrawalNo))) {
       toast(REVIEW_OVERLAP_COPY);
@@ -1026,6 +1030,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           <button className="l-btn primary" onClick={() => { if (!riskScoreValid) { setAdvancedOpen(true); return; } setPage(1); void load(1); }}>查询</button>
           <button className="l-btn" aria-expanded={advancedOpen} onClick={() => setAdvancedOpen((value) => !value)}>{advancedOpen ? "收起高级筛选" : "高级筛选"}</button>
         </div>
+        {status === "FROZEN" && <div className="tiny" style={{ marginTop: 8 }}>ERC20 丢失链上确认的单也按冻结处理，要在「打款异常，需人工核对」里查看。</div>}
         {advancedOpen && <div className="d2-advanced-filters">
           <label className="d2-filter-field"><span>最低金额</span><input type="number" min="0" value={minAmount} onChange={(event) => setMinAmount(event.target.value)} /></label>
           <label className="d2-filter-field"><span>最高金额</span><input type="number" min="0" value={maxAmount} onChange={(event) => setMaxAmount(event.target.value)} /></label>
