@@ -463,7 +463,7 @@ export function FlowTab({ history }: { history: { data: { flowWindows: Array<{ l
   return (
     <>
     <div className="rd-split" data-even="">
-      <Panel title="这几天钱是进多还是出多" sub={`近 ${flows.length || 8} 天 · 万 USDT`} explain="这里只算储备账的收支：流入是充值和财务注入，流出是提现出款和拒付退回。" icon={ArrowDownUp} tone="role-2" data-testid="b2-fund-flow-history">
+      <Panel title="这几天钱是进多还是出多" sub={`近 ${flows.length || 8} 天 · 万 USDT`} explain="按储备账已确认的流入、流出统计。流入包括充值、财务注资和储备返还／冲正；流出包括提现扣储备和拒付退回。非银行提现在放行时扣储备，银行提现在付款成功时结算，不代表全部已实际打款。用余额买设备不算。" icon={ArrowDownUp} tone="role-2" data-testid="b2-fund-flow-history">
         {pending ? <BlockState state="loading" title="正在读取资金流…" />
           : !history.data ? <BlockState state="error" title="资金流历史暂不可用" detail={history.error} onRetry={history.reload} />
           : flows.every((row) => row.inflowWan === 0 && row.outflowWan === 0) ? <BlockState state="empty" title={`近 ${flows.length} 天没有资金进出`} />
@@ -522,7 +522,7 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNo
     <>
       {pending && (
         <Notice tone="progress" title={`待生效 v${config.pendingVersion}`}>
-          窗口 {windowDays(pending.forecastWindow)}，储备科目 {enabledCount(pending.reserveCategories)}，负债科目 {enabledCount(pending.liabilityCategories)}，创世节点 {pending.genesisIncluded ? "纳入" : "不纳入"}，生效时间 {timeText(config.pendingEffectiveAt)}。
+          窗口 {windowDays(pending.forecastWindow)}，储备科目 {Number(pending.reserveCategories.usdt)}，负债科目 {enabledCount(pending.liabilityCategories)}，创世节点 {pending.genesisIncluded ? "纳入" : "不纳入"}，生效时间 {timeText(config.pendingEffectiveAt)}。
         </Notice>
       )}
       {pending && (
@@ -532,7 +532,7 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNo
       )}
       {!canConfig && <Notice tone="done">你只能查看；调整预测设置需财务主管。</Notice>}
       {canConfig && lockedNote && <Notice tone="warn">{lockedNote}</Notice>}
-      <p className="rd-note">当前版本 v{config.version}（已生效 v{config.effectiveVersion}）· 储备 {enabledCount(draft.reserveCategories)} 开启 · 负债科目 {enabledCount(draft.liabilityCategories)} 开启<Explain label="预测设置什么时候生效" content={`${effectiveText()}，不影响历史。`} /></p>
+      <p className="rd-note">当前版本 v{config.version}（已生效 v{config.effectiveVersion}）· 储备 {Number(draft.reserveCategories.usdt)} 开启 · 负债科目 {enabledCount(draft.liabilityCategories)} 开启<Explain label="预测设置什么时候生效" content={`${effectiveText()}，不影响历史。`} /></p>
       {canConfig && !lockedNote ? (
         <>
           <Panel title="预测窗口和算法" icon={CalendarClock} tone="role-3">
@@ -552,8 +552,8 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNo
                 <Check label="计入远期应付款" explain="差额里算 UVT 锁仓到期应付，不进到期预测。下面「计入哪些应付款」也要勾着这一类。" checked={draft.includeFarLiabilities} onChange={(event) => onChange({ ...draft, includeFarLiabilities: event.target.checked })} />
                 <Check label="试用业务压力测试" explain="到期预测和资金安全等级每天多算一笔试用业务压力值，差额不算。" checked={draft.trialStressEnabled} onChange={(event) => onChange({ ...draft, trialStressEnabled: event.target.checked })} />
               </CheckGroup>
-              <CheckGroup legend="计入哪些储备" summary={`${enabledCount(draft.reserveCategories)} 开启`} explain="不计入 USDT 储备时，资金安全等级和差额按储备 0 算。其他可用资产现在不参与计算。">
-                {Object.entries(draft.reserveCategories).map(([key, enabled]) => <Check key={key} label={categoryText(key)} checked={enabled} onChange={(event) => onChange({ ...draft, reserveCategories: { ...draft.reserveCategories, [key]: event.target.checked } })} />)}
+              <CheckGroup legend="计入哪些储备" summary={`${Number(draft.reserveCategories.usdt)} 开启`} explain="不计入 USDT 储备时，资金安全等级和差额按储备 0 算。其他可用资产现在不参与计算。">
+                {Object.entries(draft.reserveCategories).map(([key, enabled]) => <Check key={key} label={key === "otherLiquid" ? `${categoryText(key)}（暂不参与计算）` : categoryText(key)} disabled={key === "otherLiquid"} checked={enabled} onChange={(event) => onChange({ ...draft, reserveCategories: { ...draft.reserveCategories, [key]: event.target.checked } })} />)}
               </CheckGroup>
               <CheckGroup legend="计入哪些应付款" summary={`${enabledCount(draft.liabilityCategories)} 开启`} explain="差额只算勾选的类。到期预测只看提现、质押奖励和创世节点收益这三类。页面上的九类金额不变。">
                 {Object.entries(draft.liabilityCategories).map(([key, enabled]) => <Check key={key} label={categoryText(key)} checked={enabled} onChange={(event) => onChange({ ...draft, liabilityCategories: { ...draft.liabilityCategories, [key]: event.target.checked } })} />)}
@@ -577,7 +577,7 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNo
             { key: "genesis", label: "创世节点收益", value: includedText(config.genesisIncluded) },
             { key: "far", label: "远期应付款", value: includedText(config.includeFarLiabilities) },
             { key: "trial", label: "试用业务压力测试", value: config.trialStressEnabled ? "开启（不算必须付的钱）" : "关闭" },
-            { key: "reserve", label: "计入的储备", value: Object.entries(config.reserveCategories).filter(([, on]) => on).map(([key]) => categoryText(key)).join("、") || "无" },
+            { key: "reserve", label: "计入的储备", value: Object.entries(config.reserveCategories).filter(([key, on]) => key === "usdt" && on).map(([key]) => categoryText(key)).join("、") || "无" },
             { key: "liability", label: "计入的应付款", value: Object.entries(config.liabilityCategories).filter(([, on]) => on).map(([key]) => categoryText(key)).join("、") || "无" },
             { key: "rule", label: "生效方式", value: config.effectiveRule === "NEXT_UTC_DAY_00:00" ? effectiveText() : operatorCopyText(config.effectiveRule) },
           ]} />
@@ -594,7 +594,7 @@ export function forecastDiffRows(before: ForecastValues, after: ForecastValues) 
     { key: "genesis", label: "计入创世节点收益", before: includedText(before.genesisIncluded), after: includedText(after.genesisIncluded) },
     { key: "far", label: "计入远期应付款", before: includedText(before.includeFarLiabilities), after: includedText(after.includeFarLiabilities) },
     { key: "trial", label: "试用业务压力测试", before: before.trialStressEnabled ? "开启" : "关闭", after: after.trialStressEnabled ? "开启" : "关闭" },
-    ...Object.keys(after.reserveCategories).map((key) => ({ key: `reserve-${key}`, label: `储备 · ${categoryText(key)}`, before: includedText(before.reserveCategories[key]), after: includedText(after.reserveCategories[key]) })),
+    ...Object.keys(after.reserveCategories).map((key) => ({ key: `reserve-${key}`, label: `储备 · ${categoryText(key)}`, before: key === "otherLiquid" ? "暂不参与计算" : includedText(before.reserveCategories[key]), after: key === "otherLiquid" ? "暂不参与计算" : includedText(after.reserveCategories[key]) })),
     ...Object.keys(after.liabilityCategories).map((key) => ({ key: `liability-${key}`, label: `应付款 · ${categoryText(key)}`, before: includedText(before.liabilityCategories[key]), after: includedText(after.liabilityCategories[key]) })),
   ];
 }
