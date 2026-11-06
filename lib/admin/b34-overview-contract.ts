@@ -113,6 +113,12 @@ function exactKeys(
   }
 }
 
+function b3Suppressed(row: JsonRecord, fields: string[], path: string) {
+  if (row.suppressed !== true) return false;
+  for (const field of fields) if (row[field] != null) invalid("B3", `${path}.${field}`);
+  return true;
+}
+
 export function assertB3Dashboard(value: unknown): asserts value is JsonRecord {
   const data = record(value, "B3", "data");
   const available = boolean(data.available, "B3", "available");
@@ -130,6 +136,7 @@ export function assertB3Dashboard(value: unknown): asserts value is JsonRecord {
     for (const key of ["stage", "event", "lifecycleLabel", "color", "source"]) {
       text(stage[key], "B3", `stages.${index}.${key}`);
     }
+    if (b3Suppressed(stage, ["distinctUsers", "previousUsers", "cvrFromPrev", "momDelta"], `stages.${index}`)) continue;
     const distinctUsers = nonNegativeInteger(stage.distinctUsers, "B3", `stages.${index}.distinctUsers`);
     const previousUsers = nonNegativeInteger(stage.previousUsers, "B3", `stages.${index}.previousUsers`);
     if (index === 0) {
@@ -143,21 +150,27 @@ export function assertB3Dashboard(value: unknown): asserts value is JsonRecord {
   }
 
   const metrics = record(data.auxMetrics, "B3", "auxMetrics");
-  ratio(metrics.storeViewNumerator, metrics.storeViewDenominator, metrics.storeViewRate, "B3", "auxMetrics.storeViewRate");
-  ratio(metrics.purchaseFromStoreNumerator, metrics.purchaseFromStoreDenominator, metrics.purchaseFromStoreRate, "B3", "auxMetrics.purchaseFromStoreRate");
-  ratio(metrics.day0Numerator, metrics.day0Denominator, metrics.day0AccessRate, "B3", "auxMetrics.day0AccessRate");
-  ratio(metrics.day7Numerator, metrics.day7Denominator, metrics.day7Retention, "B3", "auxMetrics.day7Retention");
+  const suppressedMetrics = metrics.suppressed === true ? strings(metrics.suppressedMetrics, "B3", "auxMetrics.suppressedMetrics") : [];
+  for (const [rate, prefix] of [["storeViewRate", "storeView"], ["purchaseFromStoreRate", "purchaseFromStore"],
+    ["day0AccessRate", "day0"], ["day7Retention", "day7"]]) {
+    const fields = [rate, `${prefix}Numerator`, `${prefix}Denominator`];
+    if (suppressedMetrics.includes(rate)) b3Suppressed(metrics, fields, "auxMetrics");
+    else ratio(metrics[fields[1]], metrics[fields[2]], metrics[rate], "B3", `auxMetrics.${rate}`);
+  }
   if (nullablePercentage(metrics.day0Target, "B3", "auxMetrics.day0Target") !== 95) invalid("B3", "auxMetrics.day0Target");
   const day0WindowSeconds = nonNegativeInteger(metrics.day0WindowSeconds, "B3", "auxMetrics.day0WindowSeconds");
   if (day0WindowSeconds < 30 || day0WindowSeconds > 600) invalid("B3", "auxMetrics.day0WindowSeconds");
   if (nullablePercentage(metrics.day7Target, "B3", "auxMetrics.day7Target") !== 60) invalid("B3", "auxMetrics.day7Target");
   const day7Mature = boolean(metrics.day7Mature, "B3", "auxMetrics.day7Mature");
-  const day7Denominator = nonNegativeInteger(metrics.day7Denominator, "B3", "auxMetrics.day7Denominator");
-  if (day7Mature !== (day7Denominator > 0)) invalid("B3", "auxMetrics.day7Mature");
+  if (!suppressedMetrics.includes("day7Retention")) {
+    const day7Denominator = nonNegativeInteger(metrics.day7Denominator, "B3", "auxMetrics.day7Denominator");
+    if (day7Mature !== (day7Denominator > 0)) invalid("B3", "auxMetrics.day7Mature");
+  }
 
   const trend = records(data.trend, "B3", "trend");
   for (const [index, point] of trend.entries()) {
     text(point.cohort, "B3", `trend.${index}.cohort`);
+    if (b3Suppressed(point, ["distinctUsers", "cvrFromPrev"], `trend.${index}`)) continue;
     nonNegativeInteger(point.distinctUsers, "B3", `trend.${index}.distinctUsers`);
     nullablePercentage(point.cvrFromPrev, "B3", `trend.${index}.cvrFromPrev`);
   }
@@ -171,6 +184,7 @@ export function assertB3Dashboard(value: unknown): asserts value is JsonRecord {
   const dailyDates = new Set<string>();
   for (const [index, point] of daily.entries()) {
     dailyDates.add(text(point.date, "B3", `dailyFirstPurchase.${index}.date`));
+    if (b3Suppressed(point, ["registeredUsers", "firstPurchaseUsers", "conversionPct"], `dailyFirstPurchase.${index}`)) continue;
     try {
       ratio(point.firstPurchaseUsers, point.registeredUsers, point.conversionPct, "B3", `dailyFirstPurchase.${index}.conversionPct`);
     } catch (error) {
@@ -184,8 +198,13 @@ export function assertB3Dashboard(value: unknown): asserts value is JsonRecord {
   const channels = records(data.purchaseChannels, "B3", "purchaseChannels");
   let channelShareTotal = 0;
   let channelUserTotal = 0;
+  let anyChannelSuppressed = false;
   for (const [index, channel] of channels.entries()) {
     text(channel.channel, "B3", `purchaseChannels.${index}.channel`);
+    if (b3Suppressed(channel, ["firstPurchaseUsers", "sharePct"], `purchaseChannels.${index}`)) {
+      anyChannelSuppressed = true;
+      continue;
+    }
     const firstPurchaseUsers = nonNegativeInteger(channel.firstPurchaseUsers, "B3", `purchaseChannels.${index}.firstPurchaseUsers`);
     if (firstPurchaseUsers === 0) invalid("B3", `purchaseChannels.${index}.firstPurchaseUsers`);
     const sharePct = nullablePercentage(channel.sharePct, "B3", `purchaseChannels.${index}.sharePct`);
@@ -193,14 +212,17 @@ export function assertB3Dashboard(value: unknown): asserts value is JsonRecord {
     channelUserTotal += firstPurchaseUsers;
     channelShareTotal += sharePct;
   }
-  if (channels.length && Math.abs(channelShareTotal - 100) > Math.max(0.2, channels.length * 0.1)) {
+  if (!anyChannelSuppressed && channels.length && Math.abs(channelShareTotal - 100) > Math.max(0.2, channels.length * 0.1)) {
     invalid("B3", "purchaseChannels.sharePct");
   }
   const purchaseStage = stages.find((stage) => stage.key === "purchase");
-  const purchaseUsers = purchaseStage ? nonNegativeInteger(purchaseStage.distinctUsers, "B3", "stages.purchase.distinctUsers") : 0;
-  if (channelUserTotal !== purchaseUsers || (purchaseUsers === 0) !== (channels.length === 0)) invalid("B3", "purchaseChannels");
+  const purchaseUsers = purchaseStage?.suppressed === true ? null
+    : purchaseStage ? nonNegativeInteger(purchaseStage.distinctUsers, "B3", "stages.purchase.distinctUsers") : 0;
+  if (purchaseUsers !== null && !anyChannelSuppressed
+      && (channelUserTotal !== purchaseUsers || (purchaseUsers === 0) !== (channels.length === 0))) invalid("B3", "purchaseChannels");
   for (const [index, channel] of channels.entries()) {
-    const expectedShare = Math.round((Number(channel.firstPurchaseUsers) * 100 / channelUserTotal) * 10) / 10;
+    if (channel.suppressed === true || purchaseUsers == null) continue;
+    const expectedShare = Math.round((Number(channel.firstPurchaseUsers) * 100 / purchaseUsers) * 10) / 10;
     if (Math.abs(Number(channel.sharePct) - expectedShare) > 0.001) invalid("B3", `purchaseChannels.${index}.sharePct`);
   }
   records(data.savedViews, "B3", "savedViews");

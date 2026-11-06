@@ -8,7 +8,7 @@ import Link from "next/link";
 import { fmtNum, fmtPct } from "@/lib/format";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { BDomainDataState } from "@/app/components/dashboard/b-domain-state";
-import { useB3Funnel } from "@/lib/admin/b3-client";
+import { SMALL_SAMPLE_LABEL, useB3Funnel } from "@/lib/admin/b3-client";
 
 const SWATCH = ["#A8DC2E", "#9EDC1D", "#8E93C9", "#9588DA", "#9B89E0"];
 const TARGET: Record<string, number> = { first_buy: 30 }; // 软目标(对齐 KPI L2→L3 与 P3 焦点)
@@ -26,12 +26,13 @@ export function FunnelBars() {
     return <BDomainDataState title="用户转化" loading={loading} empty={!error && !loading} error={error ?? (loading ? null : data?.message ?? "暂无转化数据")} onRetry={reload} />;
   }
   const stages = data.stages.map((stage) => ({ key: stage.key, label: stage.stage,
-    count: stage.distinctUsers, prevCount: stage.previousUsers, cvr: stage.cvrFromPrev }));
+    count: stage.distinctUsers, prevCount: stage.previousUsers, cvr: stage.cvrFromPrev, suppressed: stage.suppressed }));
 
   const first = stages[0].count;
-  const max = Math.max(first, 1);
+  const max = Math.max(first ?? 1, 1);
   const last = stages[stages.length - 1].count;
-  const e2e = first > 0 ? (last / first) * 100 : null;
+  const e2e = first != null && first > 0 && last != null ? (last / first) * 100 : null;
+  const hasSuppressedStage = stages.some((stage) => stage.suppressed);
 
   // 最大流失环节(最低"较上级转化")
   let worst = { from: "", to: "", cvr: 101 };
@@ -49,12 +50,17 @@ export function FunnelBars() {
         <span className="ml-auto font-mono-tabular rounded-[7px] px-2 py-0.5 text-[11px]" style={{ background: "var(--v5-surface-3)", color: "var(--v5-ink-3)", border: "1px solid var(--v5-border)" }}>按用户行为统计</span>
       </div>
       <p className="font-mono-tabular mt-1 text-[12px]" style={{ color: "var(--v5-ink-4)" }}>
-        注册到提现 <span style={{ color: "var(--v5-brand)", fontWeight: 500 }}>{e2e === null ? "暂无法计算" : fmtPct(e2e)}</span> · {fmtNum(first)} 注册 → {fmtNum(last)} 提现
+        注册到提现 <span style={{ color: "var(--v5-brand)", fontWeight: 500 }}>{e2e === null ? (hasSuppressedStage ? SMALL_SAMPLE_LABEL : "暂无法计算") : fmtPct(e2e)}</span> · {first == null ? SMALL_SAMPLE_LABEL : fmtNum(first)} 注册 → {last == null ? SMALL_SAMPLE_LABEL : fmtNum(last)} 提现
       </p>
 
       {/* bar 区:垂直居中吸收余高 */}
       <div className="flex flex-1 flex-col justify-center gap-3 py-3">
         {stages.map((s, i) => {
+          if (s.count === null || s.prevCount === null) return (
+            <div key={s.key} className="flex items-center justify-between gap-3.5">
+              <span>{s.label}</span><span>{SMALL_SAMPLE_LABEL}</span>
+            </div>
+          );
           const cvr = s.cvr;
           const d = s.count - s.prevCount;
           const up = d >= 0;
@@ -94,7 +100,7 @@ export function FunnelBars() {
       <div className="mt-auto flex items-center gap-2.5 rounded-[10px] px-3.5 py-2.5" style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)" }}>
         <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: "var(--v5-warning)" }} />
         <span className="text-[12px]" style={{ color: "var(--v5-ink-3)" }}>
-          {worst.from ? <>流失最多 · {worst.from} → {worst.to} 只有 <span className="font-mono-tabular" style={{ color: "var(--v5-warning)", fontWeight: 600 }}>{worst.cvr}%</span> 转化</> : "暂无转化数据"}
+          {hasSuppressedStage ? SMALL_SAMPLE_LABEL : worst.from ? <>流失最多 · {worst.from} → {worst.to} 只有 <span className="font-mono-tabular" style={{ color: "var(--v5-warning)", fontWeight: 600 }}>{worst.cvr}%</span> 转化</> : "暂无转化数据"}
         </span>
         <Link href="/overview/funnel" prefetch={false} className="ml-auto shrink-0 text-[12.5px]" style={{ color: "var(--v5-brand)" }}><AutoGloss>查看明细 →</AutoGloss></Link>
       </div>

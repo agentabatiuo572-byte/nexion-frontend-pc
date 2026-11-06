@@ -5,7 +5,7 @@ import { formatB3RefOption } from "@/lib/admin/b3-ref-display";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { useId, type CSSProperties, type ReactNode } from "react";
 import type { B2Dashboard } from "@/lib/admin/b2-client";
-import type { B3Dashboard } from "@/lib/admin/b3-client";
+import { SMALL_SAMPLE_LABEL, type B3Dashboard } from "@/lib/admin/b3-client";
 import type { B5Radar } from "@/lib/admin/b5-client";
 import { summarizePressureHistory } from "@/lib/admin/b5-pressure-summary";
 import { useB2LiquidityHistory, useB4GrowthFlowHistory } from "@/lib/admin/b-restoration-client";
@@ -159,9 +159,22 @@ export function B2RestoredInsights({ data }: { data: B2Dashboard }) {
 
 export function B3RestoredInsights({ data }: { data: B3Dashboard }) {
   const daily = data.dailyFirstPurchase;
+  const suppressedDaily = daily.filter((row) => row.suppressed);
+  const partialChannels = data.purchaseChannels.some((row) => row.suppressed);
   return <div style={GRID}>
-    <section data-testid="b5-daily-first-purchase-conversion" style={CARD}><Header title="每日首购转化率（当日注册→当日首购）" meta={`近 8 日 · 目标 ${data.dailyFirstPurchaseTargetPct}%`} /><TrendChart values={daily.map((row) => row.conversionPct)} labels={daily.map((row) => row.date.slice(5))} threshold={data.dailyFirstPurchaseTargetPct} thresholdLabel={`目标 ${data.dailyFirstPurchaseTargetPct}%`} valueSuffix="%" ariaLabel={`当日注册用户的每日首购转化率曲线与 ${data.dailyFirstPurchaseTargetPct}% 目标线`} />{daily.every((row) => row.conversionPct === null) && <Notice>近 8 天没有新注册用户，暂无法计算转化率（目标 {data.dailyFirstPurchaseTargetPct}%）。</Notice>}</section>
-    <section data-testid="b7-first-purchase-channel-share" style={CARD}><Header title="首购渠道来源占比" meta="按用户注册来源统计" />{data.purchaseChannels.length ? <Donut center="首购渠道" rows={data.purchaseChannels.map((row, index) => ({ label: formatB3RefOption(row.channel), value: row.sharePct, suffix: "%", color: COLORS[index % COLORS.length] }))} /> : <Notice>当前筛选下没有首购用户，暂无法计算。</Notice>}</section>
+    <section data-testid="b5-daily-first-purchase-conversion" style={CARD}>
+      <Header title="每日首购转化率（当日注册→当日首购）" meta={`近 8 日 · 目标 ${data.dailyFirstPurchaseTargetPct}%`} />
+      <TrendChart values={daily.map((row) => row.conversionPct)} labels={daily.map((row) => row.date.slice(5))} threshold={data.dailyFirstPurchaseTargetPct} thresholdLabel={`目标 ${data.dailyFirstPurchaseTargetPct}%`} valueSuffix="%" ariaLabel={`当日注册用户的每日首购转化率曲线与 ${data.dailyFirstPurchaseTargetPct}% 目标线`} />
+      {suppressedDaily.length > 0 ? <Notice>{suppressedDaily.map((row) => row.date.slice(5)).join("、")} · {SMALL_SAMPLE_LABEL}</Notice>
+        : daily.every((row) => row.conversionPct === null) && <Notice>近 8 天没有新注册用户，暂无法计算转化率（目标 {data.dailyFirstPurchaseTargetPct}%）。</Notice>}
+    </section>
+    <section data-testid="b7-first-purchase-channel-share" style={CARD}>
+      <Header title="首购渠道来源占比" meta="按用户注册来源统计" />
+      {partialChannels ? <ul>{data.purchaseChannels.map((row) => <li key={row.channel}>
+        {formatB3RefOption(row.channel)} · {row.suppressed ? SMALL_SAMPLE_LABEL : `${row.sharePct?.toFixed(1)}%`}
+      </li>)}</ul> : data.purchaseChannels.length ? <Donut center="首购渠道" rows={data.purchaseChannels.flatMap((row, index) => row.sharePct == null ? [] : [{ label: formatB3RefOption(row.channel), value: row.sharePct, suffix: "%", color: COLORS[index % COLORS.length] }])} />
+        : <Notice>当前筛选下没有首购用户，暂无法计算。</Notice>}
+    </section>
     <section data-testid="b3-cohort-trend-chart" style={{ ...CARD, gridColumn: "1 / -1" }}><Header title="按注册周查看转化趋势" meta="当前转化步骤" />{data.trend.length ? <TrendChart values={data.trend.map((row) => row.cvrFromPrev)} labels={data.trend.map((row) => row.cohort.replace(/^\d{4}-/, ""))} valueSuffix="%" ariaLabel="按注册周查看转化率趋势" /> : <div data-testid="b3-cohort-trend-empty"><Notice>当前筛选下没有可比较的数据，暂无法显示趋势。</Notice></div>}</section>
   </div>;
 }

@@ -13,13 +13,15 @@ interface ApiResult<T> {
 }
 
 export type B3Filters = { cohort: string; phase: string; ref: string };
+export const SMALL_SAMPLE_LABEL = "样本过小";
 
 export interface B3Stage {
   key: "register" | "purchase" | "repurchase" | "withdraw";
   stage: string;
   event: string;
-  distinctUsers: number;
-  previousUsers: number;
+  suppressed?: true;
+  distinctUsers: number | null;
+  previousUsers: number | null;
   cvrFromPrev: number | null;
   momDelta: number | null;
   lifecycleLabel: string;
@@ -29,41 +31,46 @@ export interface B3Stage {
 }
 
 export interface B3AuxMetrics {
+  suppressed?: true;
+  suppressedMetrics?: string[];
   storeViewRate: number | null;
-  storeViewNumerator: number;
-  storeViewDenominator: number;
+  storeViewNumerator: number | null;
+  storeViewDenominator: number | null;
   purchaseFromStoreRate: number | null;
-  purchaseFromStoreNumerator: number;
-  purchaseFromStoreDenominator: number;
+  purchaseFromStoreNumerator: number | null;
+  purchaseFromStoreDenominator: number | null;
   day0AccessRate: number | null;
-  day0Numerator: number;
-  day0Denominator: number;
+  day0Numerator: number | null;
+  day0Denominator: number | null;
   day0Target: number;
   day0WindowSeconds: number;
   day7Retention: number | null;
-  day7Numerator: number;
-  day7Denominator: number;
+  day7Numerator: number | null;
+  day7Denominator: number | null;
   day7Target: number;
   day7Mature: boolean;
 }
 
 export interface B3TrendPoint {
   cohort: string;
-  distinctUsers: number;
+  suppressed?: true;
+  distinctUsers: number | null;
   cvrFromPrev: number | null;
 }
 
 export interface B3DailyFirstPurchasePoint {
   date: string;
-  registeredUsers: number;
-  firstPurchaseUsers: number;
+  suppressed?: true;
+  registeredUsers: number | null;
+  firstPurchaseUsers: number | null;
   conversionPct: number | null;
 }
 
 export interface B3PurchaseChannel {
   channel: string;
-  firstPurchaseUsers: number;
-  sharePct: number;
+  suppressed?: true;
+  firstPurchaseUsers: number | null;
+  sharePct: number | null;
 }
 
 export interface B3Dashboard {

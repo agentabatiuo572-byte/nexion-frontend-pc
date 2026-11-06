@@ -12,11 +12,14 @@ export type L1LiveMetric = {
 export type L2LiveStage = {
   key: string;
   label: string;
-  count: number;
+  count: number | null;
+  suppressed?: true;
   source: string;
   sourceLabel: string;
   description: string;
 };
+
+export const SMALL_SAMPLE_LABEL = "样本过小";
 
 const L1_TOTALS = [
   ["users", "注册完成用户", "nx_event_outbox:auth.register_completed", "用户行为事件", "注册完成的人数（同一人只算一次）"],
@@ -128,14 +131,15 @@ export function readL2LiveStages(raw: unknown): L2LiveStage[] {
     const key = typeof row.key === "string" ? row.key.trim() : "";
     const source = typeof row.source === "string" ? row.source.trim() : "";
     const count = finiteNumber(row.count);
+    const suppressed = row.suppressed === true;
     const meta = L2_STAGE_META[key];
     if (!meta || seen.has(key) || (!source.startsWith("nx_event_outbox:") && !SOURCE_LABELS[source])
-      || count === null || !Number.isSafeInteger(count) || count < 0) {
+      || (suppressed ? row.count != null : count === null || !Number.isSafeInteger(count) || count < 0)) {
       return [];
     }
     seen.add(key);
     const sourceLabel = source.startsWith("nx_event_outbox:") ? "用户行为事件" : (SOURCE_LABELS[source] ?? "业务统计");
-    parsed.push({ key, label: meta.label, count, source, sourceLabel, description: meta.description });
+    parsed.push({ key, label: meta.label, count, ...(suppressed ? { suppressed: true } : {}), source, sourceLabel, description: meta.description });
   }
   return parsed;
 }

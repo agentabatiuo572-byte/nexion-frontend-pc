@@ -14,6 +14,7 @@ import {
   B3OutcomeUnknownError,
   exportB3Cohort,
   saveB3View,
+  SMALL_SAMPLE_LABEL,
   useB3Funnel,
   type B3Filters,
 } from "@/lib/admin/b3-client";
@@ -207,33 +208,33 @@ export default function FunnelPage() {
           <section className="b3-aux-grid" aria-label="核心辅助指标">
             <article className="card">
               <span className="b3-kicker">商店访问率</span>
-              <strong>{pct(data.auxMetrics.storeViewRate)}</strong>
-              <small>
+              <strong>{data.auxMetrics.suppressedMetrics?.includes("storeViewRate") ? SMALL_SAMPLE_LABEL : pct(data.auxMetrics.storeViewRate)}</strong>
+              {!data.auxMetrics.suppressedMetrics?.includes("storeViewRate") && <small>
                 商店访问 {data.auxMetrics.storeViewNumerator} ÷ 注册 {data.auxMetrics.storeViewDenominator}
-              </small>
+              </small>}
             </article>
             <article className="card">
               <span className="b3-kicker">商店到首购转化</span>
-              <strong>{pct(data.auxMetrics.purchaseFromStoreRate)}</strong>
-              <small>
+              <strong>{data.auxMetrics.suppressedMetrics?.includes("purchaseFromStoreRate") ? SMALL_SAMPLE_LABEL : pct(data.auxMetrics.purchaseFromStoreRate)}</strong>
+              {!data.auxMetrics.suppressedMetrics?.includes("purchaseFromStoreRate") && <small>
                 首购 {data.auxMetrics.purchaseFromStoreNumerator} ÷ 商店访问 {data.auxMetrics.purchaseFromStoreDenominator}
-              </small>
+              </small>}
             </article>
             <article className="card">
               <span className="b3-kicker">注册当天获得收益比例</span>
-              <strong>{pct(data.auxMetrics.day0AccessRate)}</strong>
-              <small>
+              <strong>{data.auxMetrics.suppressedMetrics?.includes("day0AccessRate") ? SMALL_SAMPLE_LABEL : pct(data.auxMetrics.day0AccessRate)}</strong>
+              {!data.auxMetrics.suppressedMetrics?.includes("day0AccessRate") && <small>
                 {data.auxMetrics.day0WindowSeconds} 秒内首笔收益 {data.auxMetrics.day0Numerator} ÷ 注册 {data.auxMetrics.day0Denominator}
                 · 目标 &gt; {data.auxMetrics.day0Target}%
-              </small>
+              </small>}
             </article>
             <article className="card">
               <span className="b3-kicker">注册第 7 天仍活跃的比例</span>
-              <strong>{pct(data.auxMetrics.day7Retention)}</strong>
-              <small>
+              <strong>{data.auxMetrics.suppressedMetrics?.includes("day7Retention") ? SMALL_SAMPLE_LABEL : pct(data.auxMetrics.day7Retention)}</strong>
+              {!data.auxMetrics.suppressedMetrics?.includes("day7Retention") && <small>
                 第 7 天活跃 {data.auxMetrics.day7Numerator} ÷ 满 7 天的注册用户 {data.auxMetrics.day7Denominator}
                 · 目标 &gt; {data.auxMetrics.day7Target}%
-              </small>
+              </small>}
             </article>
           </section>
 
@@ -253,8 +254,8 @@ export default function FunnelPage() {
                   <span className="b3-stage-index">{index + 1}</span>
                   <span className="b3-stage-name">{item.stage}</span>
                   <span className="b3-stage-life">{item.lifecycleLabel}</span>
-                  <strong>{item.distinctUsers.toLocaleString()}</strong>
-                  <small>{index === 0 ? "第一步" : `从上一步转化 ${pct(item.cvrFromPrev)}`}</small>
+                  <strong>{item.suppressed ? SMALL_SAMPLE_LABEL : item.distinctUsers?.toLocaleString()}</strong>
+                  {!item.suppressed && <small>{index === 0 ? "第一步" : `从上一步转化 ${pct(item.cvrFromPrev)}`}</small>}
                   <code>{item.event}</code>
                 </>;
               }}
@@ -280,9 +281,11 @@ export default function FunnelPage() {
                 <tbody>
                   {data.stages.map((item) => (
                     <tr key={item.key}>
-                      <td>{item.stage}</td><td>{item.lifecycleLabel}</td><td>{item.distinctUsers}</td>
-                      <td>{item.previousUsers}</td><td>{pct(item.cvrFromPrev)}</td>
-                      <td>{item.momDelta == null ? "—" : pct(item.momDelta)}</td>
+                      <td>{item.stage}</td><td>{item.lifecycleLabel}</td>
+                      {item.suppressed ? <td colSpan={4}>{SMALL_SAMPLE_LABEL}</td> : <>
+                        <td>{item.distinctUsers}</td><td>{item.previousUsers}</td><td>{pct(item.cvrFromPrev)}</td>
+                        <td>{item.momDelta == null ? "—" : pct(item.momDelta)}</td>
+                      </>}
                       <td><code>{item.event}</code></td>
                     </tr>
                   ))}
@@ -302,8 +305,8 @@ export default function FunnelPage() {
                 {data.trend.map((point) => (
                   <div key={point.cohort}>
                     <span>{point.cohort}</span>
-                    <i style={{ width: `${Math.max(point.cvrFromPrev ?? 0, 2)}%` }} />
-                    <b>{pct(point.cvrFromPrev)}</b>
+                    {!point.suppressed && <i style={{ width: `${Math.max(point.cvrFromPrev ?? 0, 2)}%` }} />}
+                    <b>{point.suppressed ? SMALL_SAMPLE_LABEL : pct(point.cvrFromPrev)}</b>
                   </div>
                 ))}
               </div>
