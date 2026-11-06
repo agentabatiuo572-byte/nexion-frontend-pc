@@ -324,6 +324,25 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
     note(record, "");
     setRecovering(record.commandKey);
     try {
+      if (record.op.kind === "a2") {
+        if (!canQuery) {
+          note(record, "这个账号查不了原提案，请有操作记录查看权限的同事先核查。原操作继续保留。");
+          return;
+        }
+        let original;
+        try { original = await fetchA2ProposalByKey(record.commandKey); }
+        catch (cause) {
+          note(record, `查询没有成功：${displayAdminError(cause)} 原操作继续保留，这次没有重试。`);
+          return;
+        }
+        if (original) {
+          pendingWrites.forget(record.fingerprint, record.commandKey);
+          sync();
+          toast(`查到原提案，${PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`);
+          await onSettled(record);
+          return;
+        }
+      }
       if (await execute({ target: record.target, label: record.label, op: record.op }, record.fingerprint, record.commandKey, true) === "done") toast("原操作已完成，请核对最新内容");
     } catch (cause) {
       note(record, `重试没有成功：${displayAdminError(cause)} 这说明不了原操作的结果，原操作继续保留。`);
@@ -380,12 +399,12 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
       <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未确认`} action={<>
         {record.op.kind === "a2" && canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void check(record)}>查询原提案</Button>}
         {(record.op.kind === "legal-save" || record.op.kind === "legal-transition" || record.op.kind === "privacy") && <Button size="sm" disabled={!!recovering} onClick={() => void readBack(record)}>读回核对</Button>}
-        <Button size="sm" disabled={!!recovering} disabledReason={expired ? EXPIRED_TEXT : undefined} onClick={() => void retry(record)}>按原操作重试</Button>
+        {!expired && <Button size="sm" disabled={!!recovering} disabledReason={record.op.kind === "a2" && !canQuery ? "当前账号不能查询原提案，请联系有查看权限的同事核对" : undefined} onClick={() => void retry(record)}>按原操作重试</Button>}
         {record.rejected && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除待确认</Button>}
       </>}>
         {formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出。{expired ? EXPIRED_TEXT : "重发原内容，已成功的不会重复执行。"}
         {reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href={auditHref} prefetch={false}>到操作记录核查</Link></>}
-        <Explain label="这条操作怎么恢复" rows={[{ k: "恢复", v: recoveryText(record.op, canQuery) }, { k: "命令号", v: record.commandKey }]} />
+        <Explain label="这条操作怎么恢复" rows={[{ k: "恢复", v: expired ? "原操作结果仍待核实，记录和对象锁继续保留。请到操作记录与审批核对。" : recoveryText(record.op, canQuery) }, { k: "命令号", v: record.commandKey }]} />
         {notes[record.commandKey] && <div>{notes[record.commandKey]}</div>}
       </Notice>
     );

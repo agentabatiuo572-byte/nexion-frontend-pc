@@ -377,7 +377,7 @@ function LegalEditor({ initial, latest, base, sectionsBlocked, canPublish, block
         {unchanged && base.locale === form.locale && base.jurisdiction === form.jurisdiction && <Notice tone="progress" title={`内容和 ${base.version} 相同`}>改完再保存，不改也能存成新草稿。</Notice>}
         <div className="rd-form-grid">
           <Field label="版本"><div className="rd-form-static">{form.version}<Explain label="版本号怎么来的" content="现有最大版本号加一，不能手填。" /></div></Field>
-          <Field label="生效时间" required explain="写在条款上给用户看。发布后马上替换公开版本，不会等到这个时间。" error={validTime(form.effectiveAt) ? undefined : "格式：2026-11-05 09:00:00"}>{(control) => <Input {...control} value={form.effectiveAt} onChange={(event) => update({ effectiveAt: event.target.value })} />}</Field>
+          <Field label={`生效时间（${businessZone().label}）`} required explain="写在条款上给用户看。发布后马上替换公开版本，不会等到这个时间。" error={validTime(form.effectiveAt) ? undefined : "格式：2026-11-05 09:00:00"}>{(control) => <Input {...control} value={form.effectiveAt} onChange={(event) => update({ effectiveAt: event.target.value })} />}</Field>
         </div>
         <Field label="标题" required>{(control) => <Input {...control} maxLength={200} value={form.title} onChange={(event) => update({ title: event.target.value })} />}</Field>
         <Field label="摘要" required>{(control) => <Textarea {...control} rows={3} maxLength={2000} value={form.summary} onChange={(event) => update({ summary: event.target.value })} />}</Field>
