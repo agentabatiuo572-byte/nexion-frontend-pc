@@ -178,7 +178,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   QUEST_DAY_ONE_GROUP_REWARD_REQUIRED: "新手任务统一使用总奖励，请在首日任务总奖励中调整，不能修改单项奖励。",
   H3_BINDING_APP_OBSERVATION_UNAVAILABLE: "该页面任务当前暂不可用，不能新增或启用；已有绑定可停用，或改绑为其他可用事件。",
   LEARNING_COURSE_COPY_TOO_LONG: "课程各语言标题和正文分别最多 1024 字，请精简超长内容后重试；本次未保存。",
-  LEARNING_COURSE_ACTIVATION_APPROVAL_REQUIRED: "这门课程带有奖励，发布需要审批；当前页面尚不支持提交这项审批，暂时无法在这里发布。",
+  LEARNING_COURSE_ACTIVATION_APPROVAL_REQUIRED: "这门课程带有奖励，发布或回滚到奖励更高的版本需要审批；当前页面尚不支持提交这项审批，暂时无法在这里操作。",
   ADMIN_SESSION_STORE_UNAVAILABLE: "登录会话服务暂时不可用，请稍后重试；持续失败时请联系值班人员。",
   ADMIN_COOKIE_NAMESPACE_INVALID: "后台登录配置有误，暂时无法使用。请联系维护人员检查服务配置后重试。",
   AUTH_REQUIRED: "登录已失效,请重新登录。",
