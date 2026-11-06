@@ -85,6 +85,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   SUPPORT_SERVICE_TYPE_INVALID: "服务类型无效，只能是「普通客服」或「专属客服」。",
   SUPPORT_UNBOUND_POLICY_RANGE_INVALID: "提醒时长须为 1–120 分钟，兜底时长须大于提醒时长且不超过 1440 分钟。",
   SUPPORT_UNBOUND_POLICY_VERSION_CONFLICT: "待分配设置已被他人修改，请重新加载后再保存。",
+  SUPPORT_PHRASE_NOT_FOUND: "这条常用语已不存在，本次未删除其他内容。请重新加载我的常用语。",
   SUPPORT_PHRASE_LIMIT_REACHED: "常用语最多保存 100 条，请先删除不用的。",
   SUPPORT_PHRASE_LENGTH_INVALID: "常用语须为 1–500 字。",
   SUPPORT_CONTRACT_MALFORMED: "客服资料暂时无法加载，请刷新后重试；若持续出现，请联系值班人员。",
