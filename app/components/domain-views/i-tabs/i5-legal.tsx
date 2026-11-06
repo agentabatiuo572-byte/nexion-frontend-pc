@@ -215,7 +215,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus }: { 
   const conclusion = !scopeReady ? null
     : busy ? <Conclusion state="unknown">正在加载条款…</Conclusion>
       : error ? null
-        : writes.isLocked(target) ? <Conclusion state="warn" hint="到页面上方读回核对或按原操作重试。">{scopeText}：有操作结果未确认</Conclusion>
+        : writes.isLocked(target) ? <Conclusion state="warn" hint="到页面上方核对原操作结果。">{scopeText}：有操作结果未确认</Conclusion>
         : !rows.length ? <Conclusion state="warn" explain={fallbackHint}>当前适用地区暂无条款版本。</Conclusion>
           : !published ? <Conclusion state="warn" explain={fallbackHint}>{scopeText}：没有已发布版本</Conclusion>
             : drafts.length ? <Conclusion state="neutral" icon={FilePen}>{scopeText}：{published.version} 生效中，有 {drafts.length} 个草稿待发布</Conclusion>
