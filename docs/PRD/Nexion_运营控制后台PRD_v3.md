@@ -627,6 +627,9 @@
 ---
 
 #### [H3] Quest 任务引擎
+
+- **状态与完成条件拒绝（BUG-257 后续）**：任务当前状态不允许操作时，说明本次未生效，提示刷新「用户任务管理」核对最新状态后重试；完成条件已被其他操作更新时，说明更新冲突并提示同样的核对步骤。两种明确拒绝均保留确认框和理由，不显示成功。
+
 **① 目的 & 对齐**: 配置平台三层任务体系(首日 Day-One Quest / 每周 Weekly Quests / 每月 Monthly Challenge)的任务清单、NEX 奖励、3-phase 时窗与 Phase 乘数消费面,作为新用户拉新期与持续活跃期的任务化转化引擎。对齐前端 **§5.15**(`/` Home 顶部 Day-One Quest:active 0-24h=500 NEX / grace 24-72h=200 NEX / expired 72h+=0;§5.15.3 6 任务清单)+ **§11.13**(`/missions` Mission Center 4 层架构 L1-L4:Weekly Tier1/Tier2 + Monthly Challenge,§11.13.1 总览)+ **§9.11c.1**(`GET /api/config/quest/day-one`「新人转化最核心钩子」)。服务业务目标:把新用户首日活跃→商城浏览→绑卡前段漏斗动作组织成任务化引导——首日 6 任务中,逛商城(`visit_store`)/ 看 ROI(`view_product_roi`)直接产 `store.viewed`(漏斗 #3,§2.4.7),绑卡(`connect_wallet`,href `topup?kyc=1`)命中绑卡级 `kyc.express_verified`,邀请(`invite_friend`)产 `referral.invite_sent`,设资料(`setup_profile`)/ 逛 Earn(`visit_earn`)为纯留存动作(不入漏斗)。通过签到/任务/里程碑回访激励**间接**提升 Day7 活跃(KPI #2 口径为 `app.dau ÷ register cohort`,§2.4.6;本机制经回访→`app.dau` 路径间接贡献,非 KPI 直接口径),并通过任务 CTA 引导用户产生 `store.viewed` / `checkout.completed` 这些 B3 漏斗级事件(行为驱动,非 quest 事件本身入漏斗)。
 > **§5.15 / §11.13 锚点脚注**:Monthly Challenge 规格簇散落多处——§11.13.1(,L3 概览「10,000 NEX + 月度勋章」,口径为该层「单次最大奖」)/ §12.14(,`useMonthlyChallenge` store)/ §9.11c.2(,列 `GET /api/quests/monthly` endpoint,锚 `lib/mock/monthly-challenge.ts`)/ 代码(`lib/mock/monthly-challenge.ts:42-103` 完整 5 主题 reward 表)。**前端 PRD 不存在 §11.14 标题**(章节序 §11.13.1…§11.13.10 后跳 §12.x);前端 PRD 三处 `§11.14` 引用为悬空引用,本章一律不引 §11.14,改引上述真实锚点。
 
@@ -783,6 +786,7 @@
 
 #### [H4] 活动中心 CMS
 
+- **主推状态拒绝（BUG-257 后续）**：只有进行中的活动才能设为主推。确认时若活动已不在进行中，说明本次未生效并提示核对活动状态后重试，保留确认框和理由。
 - **活动状态选项（BUG-350）**：既有活动状态确认框显示「进行中」「已结束」，选择和提交仍使用 `ongoing`、`ended`，状态流转规则不变。
 - **概率输入与提交（BUG-258 Follow-up 1）**：H4 转盘与 H5 幸运概率只接受普通十进制数字，拒绝科学计数法等旧编辑器不接受的格式。前置校验与提交使用同一完整数值；H5 不截取数字前缀，填写 0.5 时提交的概率仍是 0.5。
 - **概率提交前反馈（BUG-258）**：转盘弹窗实时显示所有奖项概率合计；单项超出 0–100% 或合计不等于 100% 时禁用确认，合法配置沿用原保存及系统校验。

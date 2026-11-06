@@ -137,7 +137,7 @@ function ParamRow({
     : isQuota || isActualQuota ? (current === "UNKNOWN" ? "-" : `${current} 张`)
       : isDiscountRate && current !== "-" ? `${current}%`
         : currentProduct ? `${(currentProduct.name)} · ${current}` : param.serverOnly ? operatorCopyText(current) : current;
-  const readOnly = !!param.readOnly || isActualQuota || ["phaseOpen", "trialPriceUSD"].includes(param.key);
+  const readOnly = !!param.readOnly || isActualQuota || ["phaseOpen", "trialPriceUSD", "chargeFailRate"].includes(param.key);
   const productOptions = trialProducts.map((product) => product.productNo);
   const disabledProductOptions = trialProducts
     .filter((product) => !product.selectable)
@@ -170,12 +170,10 @@ function ParamRow({
     if (value === undefined || (!isOffsetCap && value.trim().length === 0)) return;
     const normalizedValue = value.trim();
     if (isInteger && !/^\d+$/.test(normalizedValue)) {
-      toast(`${operatorCopyText(param.name)} 请输入整数`);
-      return;
+      throw new Error(`${operatorCopyText(param.name)} 请输入整数`);
     }
     if (isQuota && Number(normalizedValue) > 1_000_000) {
-      toast(`${operatorCopyText(param.name)} 必须在 0-1000000 张之间`);
-      return;
+      throw new Error(`${operatorCopyText(param.name)} 必须在 0-1000000 张之间`);
     }
     await updateH2TrialParam(param.key, normalizedValue, reason);
     await onChanged();
