@@ -60,7 +60,7 @@ export function BusinessPanel({ blocks, period, onPeriodChange, moneyFlows, sale
   activeUsers: Block<Awaited<ReturnType<typeof fetchB0ActiveUsers>>>;
   topup: Block<Awaited<ReturnType<typeof fetchD1TopupOverview>>>;
   devices: Block<Awaited<ReturnType<typeof fetchB0Devices>>>;
-  /** 待审核提现笔数。读不到时待处理已写失败和重试，这里不再写一遍（VS-107）。 */
+  /** 待审核提现笔数，提现审核页不可达时不读。读不到时待处理已写失败和重试，这里不再写一遍（VS-107）。 */
   inTransit: Block<number>;
   clock: string | null;
   reach: (href: string) => boolean;
@@ -79,11 +79,13 @@ export function BusinessPanel({ blocks, period, onPeriodChange, moneyFlows, sale
     : channels.error ? [{ k: "分渠道", v: <>暂时读不到 · <InlineRetry onRetry={channels.reload} /></> }]
       : channels.data ? [{ k: "USDT 链上", v: usdt(channelSum(true)) }, { k: "银行卡", v: usdt(channelSum(false)) }]
         : [{ k: "分渠道", v: "…" }];
-  const inTransitRow = blocks.withdrawals && !inTransit.error ? [{ k: "在途（待审核）", v: inTransit.data === null ? "…" : `${fmtNum(inTransit.data)} 笔` }] : [];
-  const deviceRows = !blocks.devices || devices.error ? [] : [
-    { k: "在线设备", v: devices.data ? `${fmtNum(devices.data.online)} 台` : "…" },
-    { k: "设备异常", v: devices.data ? `${fmtNum(devices.data.abnormal)} 台` : "…", tone: devices.data?.abnormal ? "warn" as const : undefined },
-  ];
+  const inTransitRow = blocks.withdrawals && reach("/finance/withdrawals") && !inTransit.error ? [{ k: "在途（待审核）", v: inTransit.data === null ? "…" : `${fmtNum(inTransit.data)} 笔` }] : [];
+  const deviceRows = !blocks.devices ? []
+    : devices.error ? [{ k: "设备", v: <>暂时读不到 · <InlineRetry onRetry={devices.reload} /></> }]
+      : [
+        { k: "在线设备", v: devices.data ? `${fmtNum(devices.data.online)} 台` : "…" },
+        { k: "设备异常", v: devices.data ? `${fmtNum(devices.data.abnormal)} 台` : "…", tone: devices.data?.abnormal ? "warn" as const : undefined },
+      ];
 
   const active = activeUsers.data;
   return (
