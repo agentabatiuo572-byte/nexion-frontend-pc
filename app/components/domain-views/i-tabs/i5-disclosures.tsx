@@ -57,7 +57,7 @@ const ENGLISH_REQUIRED = "英语必填：App 的英语和缺少翻译的其他�
 const EDITABLE_LANGUAGES = ["zh", "vi", "en"];
 /** 这里只有中、越、英三种语言的输入框，范围超过这三种的选了也填不了（M14）。 */
 const scopeTooWide = (scope: string) => scope.split("+").some((code) => !EDITABLE_LANGUAGES.includes(code));
-const SCOPE_TOO_WIDE = "这里只能录入中文、越南语和英语。选这一档也填不了另外 6 种，它们在 App 里显示英语。";
+const SCOPE_TOO_WIDE = "本轮只支持中文、越南语和英语录入，其余六语另排能力和内容。";
 const LEGAL_LOCALE: Record<string, string> = { en: "英文", zh: "中文", vi: "越南语" };
 const LEGAL_STATUS: Record<string, string> = { DRAFT: "草稿", PUBLISHED: "生效中", SUPERSEDED: "历史版本", REVOKED: "已撤回" };
 const PRIVACY_STATUS: Record<string, string> = { DRAFT: "草稿", PUBLISHED: "已发布", UNPUBLISHED: "已撤下公开版本" };
@@ -1028,7 +1028,7 @@ function VersionEditor({ initial, switcher, regions, languageScopes, loadRegionB
           <Field label="披露版本"><div className="rd-form-static">{form.version}<Explain label="版本号怎么来的" content="系统自动编号，不能手填。" /></div></Field>
           <Field label="适用地区">{initial.mode === "edit" ? <div className="rd-form-static">{regions[0]?.label ?? form.jurisdiction}</div>
             : <Select aria-label="适用地区" value={form.jurisdiction} options={regions} disabled={loadingRegion} onChange={(next) => { if (next === form.jurisdiction) return; if (dirty) setPendingRegion(next); else void switchRegion(next); }} />}</Field>
-          <Field label="语言范围" explain={<><p>{ENGLISH_REQUIRED}</p><p>{SCOPE_TOO_WIDE}</p></>}><Select aria-label="语言范围" value={form.languageScope} options={[...new Set([...languageScopes, "zh+vi+en"])].map((scope) => ({ value: scope, label: !scope.split("+").includes("en") ? `${languageText(scope)}（缺少英语，不可选）` : scopeTooWide(scope) ? `${languageText(scope)}（暂不能录入）` : languageText(scope), disabled: scopeTooWide(scope) || !scope.split("+").includes("en") }))} onChange={(next) => setForm((current) => ({ ...current, languageScope: next }))} /></Field>
+          <Field label="语言范围" explain={<><p>{ENGLISH_REQUIRED}</p><p>{SCOPE_TOO_WIDE}</p></>}><Select aria-label="语言范围" value={form.languageScope} options={[...new Set([...languageScopes, "zh+vi+en"])].filter((scope) => !scopeTooWide(scope)).map((scope) => ({ value: scope, label: !scope.split("+").includes("en") ? `${languageText(scope)}（缺少英语，不可选）` : languageText(scope), disabled: !scope.split("+").includes("en") }))} onChange={(next) => setForm((current) => ({ ...current, languageScope: next }))} /></Field>
           <Field label="生效日期" required explain="写在披露上给用户看。切换生效版本批准后才换版本，不是到这一天自动生效。" help={form.effectiveDate && form.effectiveDate < businessDay() ? `早于今天（${businessDay()}），确认是要写这个日子` : undefined}>{(control) => <Input {...control} type="date" value={form.effectiveDate} onChange={(event) => setForm((current) => ({ ...current, effectiveDate: event.target.value }))} />}</Field>
         </div>
         <LocaleTabs label="正文语言" value={lang} onChange={setLang} items={[
