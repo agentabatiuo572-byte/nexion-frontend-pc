@@ -293,9 +293,9 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, reloadTick }: { ctx
                 </tr>;
               })}</tbody>
             </Table>
-            <div className="rd-toolbar" data-end="">
-              <span className="rd-note">{changed ? `没保存：${changedChannels.map(row => methodText[row.paymentMethod]).join("、")}。切页签不会丢。` : ""}</span>
+            <div className="rd-col-foot">
               <span className="rd-row-actions">
+                {changed && <span className="rd-note">没保存：{changedChannels.map(row => methodText[row.paymentMethod]).join("、")}。切页签不会丢。</span>}
                 <Button variant="ghost" icon={<RefreshCw size={14} aria-hidden />} disabled={busy} loading={policyLoading} onClick={() => changed ? setRefreshAsk(true) : doRefreshPolicy()}>刷新</Button>
                 {canEdit && policy.constraints && <>
                   <Button disabled={busy || policyLoading || policyPending} disabledReason={changed ? undefined : "还没有修改"} onClick={() => { setDraft(policy.channels.map(row => ({ ...row }))); setTouched(false); }}>撤销修改</Button>
