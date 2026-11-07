@@ -30,6 +30,8 @@ const kindText: Record<string, string> = { ORDER_PAY: "购买", TRIAL_CONVERT: "
 const FEE_FIELDS = ["channelFeeRatePct", "channelFeeFixed", "networkConfirmFeeUsdt", "minTopupPrincipal"] as const;
 type FeeField = typeof FEE_FIELDS[number];
 const feeLabel: Record<FeeField, string> = { channelFeeRatePct: "手续费比例", channelFeeFixed: "每笔固定费", networkConfirmFeeUsdt: "网络费", minTopupPrincipal: "最低充值金额" };
+/** 表头放不下全名时用的短名（1024 下列宽固定），框里的说明、读屏和修改清单仍用全名。 */
+const feeHead: Record<FeeField, string> = { channelFeeRatePct: "手续费比例", channelFeeFixed: "固定费", networkConfirmFeeUsdt: "网络费", minTopupPrincipal: "最低充值" };
 const feeUnit: Record<FeeField, string> = { channelFeeRatePct: "%", channelFeeFixed: "USDT", networkConfirmFeeUsdt: "USDT", minTopupPrincipal: "USDT" };
 const message = (failure: unknown) => displayAdminReadError(failure);
 const time = (value: string) => formatBusinessTimeCompact(value, "—");
@@ -270,7 +272,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
             <Table label="付款手续费" className="d1-fee-table">
               <thead><tr>
                 <Th>付款方式</Th>
-                {FEE_FIELDS.map(field => <Th key={field} align={canEdit && policy.constraints ? "left" : "right"}>{feeLabel[field]}（{feeUnit[field]}）</Th>)}
+                {FEE_FIELDS.map(field => <Th key={field} align={canEdit && policy.constraints ? "left" : "right"} title={`${feeLabel[field]}（${feeUnit[field]}）`}>{feeHead[field]}（{feeUnit[field]}）</Th>)}
               </tr></thead>
               <tbody>{draft.map((row, rowIndex) => {
                 const saved = policy.channels.find(item => item.paymentMethod === row.paymentMethod)!;

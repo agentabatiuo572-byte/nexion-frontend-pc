@@ -823,7 +823,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
         </Fold>
         <Fold inset title="未解除告警" summary={alertCount ? `${alertCount} 条` : "没有"} defaultOpen={alertCount > 0}>
           {alerts.length === 0 ? <p className="rd-note">没有未解除的告警。</p> : <Table label="未解除告警">
-            <thead><tr><Th>级别</Th><Th>类型</Th><Th>对象</Th><Th>时间（{zone}）</Th></tr></thead>
+            <thead><tr><Th>级别</Th><Th>类型</Th><Th>对象 · 时间（{zone}）</Th></tr></thead>
             <tbody>{alerts.map(row => {
               const [label, tone] = SEVERITY[String(row.severity)] ?? ["未知", "neutral" as StateTone];
               const object = text(row.txid ?? row.address ?? `#${text(row.id)}`);
@@ -831,8 +831,8 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                 <Td><Cell main={<StatusTag tone={tone}>{label}</StatusTag>} /></Td>
                 {/* 类型写中文；编号和原始证据收进提示，不在表里放 key=value（DP-30、DT-17）。 */}
                 <Td><Cell main={<>{ALERT_KIND[text(row.kind)] ?? "其他告警"}<Explain label="告警证据" content={<><p>类型编号 {text(row.kind)}</p><p>{text(row.evidence)}</p></>} /></>} /></Td>
-                <Td><Cell mono main={object.length > 22 ? `${object.slice(0, 10)}…${object.slice(-8)}` : object} sub={rowNetwork(row) ?? undefined} title={object} /></Td>
-                <Td><Cell num main={time(row.createdAt)} /></Td>
+                {/* 时间并进对象一格：抽屉里三列放得下，不横滚（DT-17）。 */}
+                <Td><Cell mono main={object.length > 22 ? `${object.slice(0, 10)}…${object.slice(-8)}` : object} sub={[rowNetwork(row), time(row.createdAt)].filter(Boolean).join(" · ")} title={object} /></Td>
               </tr>;
             })}</tbody>
           </Table>}

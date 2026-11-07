@@ -144,7 +144,7 @@ function gapText(row: D1ReconciliationRow) {
 /** 三种结果分开写：金额与笔数一致、有差异待挂账、有差异已挂账。挂账只是登记例外，钱和笔数仍然对不上。 */
 function diffText(row: D1ReconciliationRow) {
   if (!mismatched(row)) return "金额与笔数一致";
-  return row.reconciled ? `已挂账，差异仍在：${gapText(row)}` : `待挂账：${gapText(row)}`;
+  return row.reconciled ? `已挂账 · 差异仍在` : `待挂账：${gapText(row)}`;
 }
 
 /** 结果未确认的写请求叫什么，按路径认，不露路径（D1-A09）。 */
@@ -624,7 +624,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
                   <Td><Cell main={depositChannelText(row.channel)} /></Td>
                   <Td align="right"><Cell num main={usdt(row.providerAmount)} sub={`${row.providerCount} 笔`} /></Td>
                   <Td align="right"><Cell num main={usdt(row.ledgerAmount)} sub={`${row.ledgerCount} 笔`} /></Td>
-                  <Td><Cell main={<StatusTag tone={!mismatched(row) ? "ok" : row.reconciled ? "done" : "warn"}>{diffText(row)}</StatusTag>} /></Td>
+                  <Td><Cell main={<StatusTag tone={!mismatched(row) ? "ok" : row.reconciled ? "done" : "warn"}>{diffText(row)}</StatusTag>} sub={row.reconciled && mismatched(row) ? gapText(row) : undefined} /></Td>
                   {canReconcile && <Td sticky="end" align="right">{!row.reconciled && mismatched(row)
                     ? <Button size="sm" disabledReason={readingReason ?? d1PendingObjectReason(`/topup/reconciliation/${encodeURIComponent(row.channel)}/writeoff`)} onClick={() => writeoff(row)}>挂账</Button>
                     : <span className="rd-note">—</span>}</Td>}
@@ -642,7 +642,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
         onClear={() => { setStatus(""); setKeyword(""); setQuery(""); setUserInput(""); setUserQuery(""); setPage(1); }}
         canClear={status !== "" || query !== "" || keyword !== "" || userInput !== "" || userQuery !== ""}
       >
-        <FilterField><Input data-search id="d1-flow-user" aria-label="用户编号" inputMode="numeric" placeholder="用户编号" aria-invalid={userIssue ? true : undefined} title={userIssue} value={userInput} onChange={(e) => setUserInput(e.target.value)} /></FilterField>
+        <FilterField><Input data-search id="d1-flow-user" aria-label="用户编号" inputMode="numeric" size={9} placeholder="用户编号" aria-invalid={userIssue ? true : undefined} title={userIssue} value={userInput} onChange={(e) => setUserInput(e.target.value)} /></FilterField>
         <FilterField grow><Input data-search id="d1-flow-keyword" aria-label="充值流水查询关键字：充值单号 / 交易号" placeholder="充值单号 / 交易号" value={keyword} onChange={(e) => setKeyword(e.target.value)} /></FilterField>
       </FilterBar>
       <Panel flush icon={FileText} tone="role-2" title="充值流水" explain="链上充值单、历史支付记录和国际卡记录。银行卡支付的订单不在这张表，在「银行卡充值」里看。金额按每一行自己的币种写，不折算。"
