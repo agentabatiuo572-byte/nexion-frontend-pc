@@ -56,7 +56,8 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
       if (Date.now() < lock.current) return;
       // 滚到底时最后一组进不了判定带，上面的组还在里面，这时算最后一组。
       const atEnd = scroller && scroller.scrollTop > 0 && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2;
-      const current = atEnd ? list.at(-1) : list.find((id) => seen.has(id));
+      // 回到顶部时第一组可能还在判定带下面，这时算第一组，不留着上一次的高亮。
+      const current = scroller?.scrollTop === 0 ? list[0] : atEnd ? list.at(-1) : list.find((id) => seen.has(id));
       if (current) setActive(current);
     };
     const observer = new IntersectionObserver((entries) => {
