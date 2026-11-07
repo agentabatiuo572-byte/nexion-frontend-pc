@@ -199,7 +199,8 @@
 .rd-confirm-facts .rd-facts + .rd-recipients { margin-top: 12px; }
 
 /* 批量确认的清单：单号、金额、风险排成列，金额右对齐 */
-.d2-batch-row { display: grid; grid-template-columns: minmax(0, 1fr) 9em 6em; column-gap: 12px; }
+.d2-batch-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 12px; }
+.d2-batch-row > :nth-child(3) { white-space: nowrap; }  /* 「低优先 · 风险分 3」一格放得下，不把「风险分」拆成两行。 */
 .d2-batch-row > :nth-child(2) { text-align: right; font-variant-numeric: tabular-nums; }
 .d2-batch-pay { grid-column: 1 / -1; color: var(--rd-text-3); }
 

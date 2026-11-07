@@ -67,7 +67,8 @@ export function PageTabs<T extends string>({ label, value, items, onChange, ids 
     >
       {(item) => {
         const tab = byValue.get(item);
-        return <>{tab?.label}{tab?.count ? <span className="rd-tab-count">{tab.count}</span> : null}</>;
+        // 读到 0 也写 0，弱文字色：和读取中、读取失败（不传 count）分得开（DT-23、VS-11）。
+        return <>{tab?.label}{tab?.count !== undefined ? <span className="rd-tab-count" data-zero={tab.count === 0 ? "" : undefined}>{tab.count}</span> : null}</>;
       }}
     </TabGroup>
   );

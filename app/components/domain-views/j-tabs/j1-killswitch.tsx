@@ -471,9 +471,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       action: `关停业务开关 · ${name}`,
       title: `关停${name.replace(/开关$/, "")}`,
       facts: <Facts><Fact k="业务">{name}，控制{cap}</Fact><Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{gate.key === "withdraw" && <Fact k="关停范围" tone="warn">{gateCopy(gate).desc}</Fact>}</Facts>,
-      detail: "关停不会多付钱，不需要先检查备付金。恢复需另一位有权超管批准。",
+      detail: "关停不会多付钱，不需要先检查备付金。",
       effect: IMMEDIATE,
-      statedBrief: { impact: gate.key === "withdraw" ? "立即停止新提现申请、审核放行和未派发的链上打款。恢复要回到这页提交审批。" : gate.key === "trial" ? "立即停止新试用领取和试用转购，已有记录仍按系统状态显示，用户仍可取消。恢复要回到这页提交审批。" : `${name}控制的业务全站马上停止。恢复要回到这页提交审批。`, check: "核对业务和触发依据，理由写清监管通知、工单或事件编号。" },
+      statedBrief: { impact: gate.key === "withdraw" ? "立即停止新提现申请、审核放行和未派发的链上打款。恢复要回到这页提交审批，由另一位有权超管批准。" : gate.key === "trial" ? "立即停止新试用领取和试用转购，用户仍可取消。恢复要回到这页提交审批，由另一位有权超管批准。" : `${name}控制的业务全站马上停止。恢复要回到这页提交审批，由另一位有权超管批准。`, check: "核对业务和触发依据，理由写清监管通知、工单或事件编号。" },
       confirmTone: "danger",
       confirmLabel: "确认关停，立即生效",
       reasonPlaceholder: REASON_HINT,
@@ -536,9 +536,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       title: `批量关停 ${targets.length} 项业务`,
       facts: <div className="rd-stack"><Facts>{targets.length === 1 ? <Fact k="关停业务">{names}</Fact> : <Fact k="关停业务" unit="项">{targets.length}</Fact>}<Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{targets.some((gate) => gate.key === "withdraw") && <Fact k="提现关停范围" tone="warn">{GATE_COPY.withdraw.desc}</Fact>}</Facts>
         {targets.length > 1 && <Fold inset title="本次关停业务" summary={`${targets.length} 项`}><RecordList label="本次关停业务" records={targets.map((gate) => ({ id: gate.key, value: operatorCopyText(gate.name), object: gateCopy(gate).cap }))} /></Fold>}</div>,
-      detail: "用于监管点名、法务事件等重大场景。每一项都记入操作记录。恢复需另一位有权超管批准。",
+      detail: "用于监管点名、法务事件等重大场景。每一项都记入操作记录。",
       effect: IMMEDIATE,
-      statedBrief: { impact: `已选的 ${targets.length} 个业务开关立即关闭。有一项不符合时整批不执行。恢复要回到这页逐项提交审批。`, check: "核对已选业务、触发依据和监管事由，理由写清依据或工单号。" },
+      statedBrief: { impact: `已选的 ${targets.length} 项业务立即关停。有一项不符合时整批不执行。恢复要逐项提交审批，由另一位有权超管批准。`, check: "核对已选业务、触发依据和监管事由，理由写清依据或工单号。" },
       confirmTone: "danger",
       confirmLabel: `确认关停 ${targets.length} 项，立即生效`,
       reasonPlaceholder: "例如：为什么现在要关停、内部工单号",
@@ -694,7 +694,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const conclusionFacts = overdue.length > 0
     ? <><b>{overdue.length}</b> 项待补录已逾期，已关停 {killed} 个业务</>
     : <>业务开关：已关停 <b>{killed}</b> 个业务{backfills.length > 0 && <>，<b>{backfills.length}</b> 项待补录</>}</>;
-  const nextStepHelp = canResume ? "风险解除后，到业务卡上点「提交恢复审批」。提交后仍已关停，另一位有权超管批准后生效。" : "风险解除后，请有权的超级管理员发起恢复审批，再由另一位有权超管批准。提交后仍已关停。";
+  const nextStepHelp = canResume ? "风险解除后，到业务卡点「提交恢复审批」；批准前仍关停。" : "风险解除后，请有权超管发起恢复审批；批准前仍关停。";
+  // 审批人写在页头副标题，结论第二行只写下一步；问号补第二行没有的事（DT-12）。
+  const approvalHelp = "发起人不能批自己的申请。提交后业务卡标「恢复待审批」，申请在应急审批队列置顶。";
   const resumeBlocked = !covPass && killedGates.some((gate) => gate.coveragePrecheckRequired);
 
   return (
@@ -714,7 +716,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       ) : backfills.length > 0 ? (
         <Conclusion state="warn" hint={<>到业务卡点「补录结论」，再判断是否恢复。{resumeBlocked && <div>{recoveryBlock}</div>}</>} explainTitle="自动关停后怎么处理" explain="自动关停后要写清为什么关。到业务卡上点「补录结论」，补录不会恢复业务。">{conclusionFacts}</Conclusion>
       ) : killed > 0 ? (
-        <Conclusion state="warn" hint={<>{nextStepHelp}{resumeBlocked && <div>{recoveryBlock}</div>}</>} explainTitle="恢复业务怎么操作" explain={nextStepHelp}>{conclusionFacts}</Conclusion>
+        <Conclusion state="warn" hint={<>{nextStepHelp}{resumeBlocked && <div>{recoveryBlock}</div>}</>} explainTitle="恢复审批怎么走" explain={approvalHelp}>{conclusionFacts}</Conclusion>
       ) : pending.length + visibleRestores.length > 0 ? (
         <Conclusion state="warn" hint="到上方核对原操作结果。" explainTitle="待确认结果怎么核对" explain="业务卡读到的是现在的状态，不能当成这次操作的结果。">业务开关：可用业务全部开启，<b>{pending.length + visibleRestores.length}</b> 项操作或审批结果未确认</Conclusion>
       ) : restoreApprovals.length > 0 ? (

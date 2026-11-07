@@ -225,6 +225,7 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-tab[aria-selected="true"]::before { content: ""; position: absolute; top: 50%; left: 5px; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--rd-brand-ink); }  /* 点放在留白里，不占宽度，切页签时后面的字不跳 */
 .rd-tab:disabled { opacity: .45; cursor: not-allowed; }
 .rd-tab-count { font-variant-numeric: tabular-nums; font-size: var(--rd-text-aux); color: var(--rd-warn); }
+.rd-tab-count[data-zero] { color: var(--rd-text-3); }
 @media (hover: hover) and (pointer: fine) { .rd-tab:not(:disabled):not([aria-selected="true"]):hover { background: var(--rd-panel); color: var(--rd-text); } }
 
 /* ── 状态分段 ── */
@@ -328,6 +329,9 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-cell-link { display: block; max-width: 100%; padding: 0; overflow: hidden; border: 0; background: none; color: inherit; font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .rd-cell-link:focus-visible, .rd-cell:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
 .rd-cell-sub .rd-link, .rd-stat-sub .rd-link { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
+/* 表格第二行是辅助字，里面的链接一样弱，靠下划线认出能点；指上去或聚焦时才亮（DP-13、VS-62）。 */
+.rd-cell-sub .rd-link { color: inherit; }
+.rd-cell-sub .rd-link:hover, .rd-cell-sub .rd-link:focus-visible { color: var(--rd-text); }
 .rd-cell { display: block; min-width: 0; max-width: 280px; }
 .rd-cell[data-full] { max-width: none; }
 .rd-table td[data-align="right"] > .rd-cell { margin-left: auto; }  /* 右对齐列里的格子贴右边，表头和数值才对得齐 */
