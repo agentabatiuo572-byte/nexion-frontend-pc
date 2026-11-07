@@ -250,7 +250,7 @@ function auditDetail(row: JsonRecord) {
       const reason = asText(parsed.reason, "");
       const fromStatus = asText(parsed.fromStatus, "");
       const toStatus = asText(parsed.toStatus, "");
-      if (reason && fromStatus && toStatus) return `${fromStatus} -> ${toStatus} · ${reason}`;
+      if (reason && fromStatus && toStatus) return `${statusLabel(fromStatus)} → ${statusLabel(toStatus)} · ${reason}`;
       if (reason) return reason;
     } catch {
       return detail;
