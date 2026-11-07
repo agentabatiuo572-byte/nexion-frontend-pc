@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { UNAVAILABLE_GATES } from "@/lib/admin/j-client";
 
 type ApiResult<T> = {
   code?: number;
@@ -116,7 +117,7 @@ export async function fetchWithdrawalGateOpen() {
 export async function fetchOpsDashboardAlerts(): Promise<OpsDashboardAlert[]> {
   const { gates, pending } = await readKillSwitchAlerts();
   const alerts: OpsDashboardAlert[] = [];
-  const disabled = gates.filter((gate) => !gate.enabled);
+  const disabled = gates.filter((gate) => !gate.enabled && !UNAVAILABLE_GATES[gate.key]);
   if (disabled.length > 0) {
     const emergencyCount = disabled.filter((gate) => gate.emergency).length;
     // 这个接口分不出「已关停」和「未设置」，两种业务都用不了，统一写没有开启，细分看风险与开关。

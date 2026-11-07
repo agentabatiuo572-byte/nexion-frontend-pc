@@ -20,6 +20,7 @@ import { fetchD1TopupOverview } from "@/lib/admin/d-client";
 import { rollupKpiPassState } from "@/lib/admin/dashboard-number";
 import { liabilityDisplayName } from "@/lib/admin/liability-labels";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { UNAVAILABLE_GATES } from "@/lib/admin/j-client";
 import { fetchC1Overview } from "@/lib/admin/user360-client";
 import { fmtAmount, fmtNum, fmtPct } from "@/lib/format";
 import type { FundLevel } from "./status";
@@ -138,6 +139,11 @@ export function FundFold({ ledger, liquidity, error, retrying, onRetry, alert, l
 
 const GATE_NAMES: Record<string, string> = { withdraw: "提现", exchange: "兑换", staking: "质押", genesis: "创世节点", trial: "免费试用" };
 
+/** 暂不可用的业务和 J1 用同一份清单：不列、不计数、不提醒。 */
+export function availableGates(risk: BRiskRadar) {
+  return risk.gates.filter((gate) => !UNAVAILABLE_GATES[gate.dom]);
+}
+
 export function pressureLevel(ledger: BLedger | null, risk: BRiskRadar | null) {
   if (!ledger || !risk) return { flow: "ok", backlog: "ok", worst: "ok" } as const;
   const level = (pct: number) => (pct >= risk.bankRunRedlinePct ? "danger" : pct >= risk.bankRunYellowPct ? "warn" : "ok");
@@ -149,9 +155,10 @@ export function pressureLevel(ledger: BLedger | null, risk: BRiskRadar | null) {
 function riskFoldSummary(ledger: BLedger | null, risk: BRiskRadar | null, error: string | null) {
   if (error) return "读取失败";
   if (!ledger || !risk) return "正在读取…";
-  const closed = risk.gates.filter((gate) => !gate.on);
+  const gates = availableGates(risk);
+  const closed = gates.filter((gate) => !gate.on);
   const parts = [
-    closed.length === 0 ? "五个业务都开着" : `${closed.length} 个业务没有开启`,
+    closed.length === 0 ? `${gates.length} 个业务都开着` : `${closed.length} 个业务没有开启`,
     risk.flaggedAccounts === 0 ? "没有异常账户" : `异常账户 ${fmtNum(risk.flaggedAccounts)} 个`,
   ];
   const { worst } = pressureLevel(ledger, risk);
@@ -171,7 +178,8 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
   /** 结论句已经给了去开关页的入口。 */
   linkInBrief?: boolean;
 }) {
-  const closed = (risk?.gates ?? []).filter((gate) => !gate.on);
+  const closed = (risk ? availableGates(risk) : []).filter((gate) => !gate.on);
+  const switchLink = !linkInBrief && reach("/emergency/kill-switch") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>查看或恢复业务开关</Link>;
   const pressure = pressureLevel(ledger, risk);
   // 同一件事同一个颜色：业务没开用橙，和状态句一样。红只给压力到红线。
   const alertTone = pressure.worst === "danger" ? "danger" : "warn";
@@ -183,18 +191,21 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
         : !ledger || !risk ? <BlockState state="loading" title="正在读取…" />
           : (
             <>
-              {closed.length > 0 && (
+              {(closed.length > 0 || switchLink) && (
               <section className="cc-gates-row" aria-label="业务开关">
+                {closed.length > 0 && (
                   <ul className="cc-gates">
                     {closed.map((gate) => (
                       <li key={gate.dom}>
                         <span>{GATE_NAMES[gate.dom] ?? gate.nm}</span>
                         {gate.unset
-                          ? <StatusTag tone="warn" explain="这个开关还没人设置过，系统按关闭处理，用户现在用不了这项业务。要开放，到「紧急停用开关」页设置。">未设置</StatusTag>
+                          ? <StatusTag tone="warn" explain="这个开关还没人设置过，系统按关闭处理，用户现在用不了这项业务。要开放，到「紧急停用开关」页提交恢复审批。">未设置</StatusTag>
                           : <StatusTag tone="warn" icon={XCircle} explain="有人关了这项业务，用户现在用不了。为什么关、怎么恢复，到「紧急停用开关」页看。">已关停</StatusTag>}
                       </li>
                     ))}
                   </ul>
+                )}
+                {switchLink}
               </section>
               )}
               {/* 尺在左、其余数字在右（VS-49）；两条比率都是 0 时不画尺，一句话写完（DP-62）。 */}
@@ -234,7 +245,7 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
               </Figure>
             </>
           )}
-        {!linkInBrief && reach("/emergency/kill-switch") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>查看或恢复业务开关</Link>}
+        {(error || !ledger || !risk) && switchLink}
       </div>
     </Fold>
   );

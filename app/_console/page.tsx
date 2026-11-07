@@ -31,7 +31,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
 import { downloadB0Snapshot, pendingB0Export } from "@/lib/admin/b0-export-client";
 import { toast } from "@/lib/store/ui";
-import { FlowFold, FundFold, FunnelFold, KpiFold, pressureLevel, RiskFold, useFoldChoices } from "./command-center/folds";
+import { availableGates, FlowFold, FundFold, FunnelFold, KpiFold, pressureLevel, RiskFold, useFoldChoices } from "./command-center/folds";
 import { PendingPanel, type PendingFailure, type PendingRow } from "./command-center/pending";
 import { fundLevel, statusSentence } from "./command-center/status";
 import { TodayPanel } from "./command-center/today";
@@ -155,7 +155,7 @@ export default function CommandCenter() {
   const folds = useFoldChoices(session?.adminId);
   const pressure = pressureLevel(fundReady ? ledger : null, fundReady ? riskRadar : null);
   // 读取失败由结论句说一次，折叠不再上色展开（VS-107）；风险真的到线才默认展开。
-  const riskAlert = (fundReady && riskRadar.gates.some((gate) => !gate.on)) || pressure.worst !== "ok";
+  const riskAlert = (fundReady && availableGates(riskRadar).some((gate) => !gate.on)) || pressure.worst !== "ok";
   const fundAlert = level !== "ok";
 
   const foldsRef = useRef<HTMLDivElement>(null);
