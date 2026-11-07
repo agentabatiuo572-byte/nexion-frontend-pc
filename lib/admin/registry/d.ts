@@ -28,7 +28,7 @@ export const DOMAIN_D: ModuleEntry[] = [
   },
   {
     path: "/finance/params",
-    summary: "设置每日提现次数、可提比例、网络费、UVT 抵扣、小额免审和到账时限。放宽限制前先看兑付覆盖率；随运营阶段变化的设置在「运营阶段设置」修改。",
+    summary: "设置提现次数、比例、网络费和到账时效。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

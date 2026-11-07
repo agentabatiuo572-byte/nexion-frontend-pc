@@ -55,6 +55,11 @@ export function pendingConfigApproval(sourceDomain: keyof typeof commands, admin
   return attempts.list().find((record) => record.fingerprint === slot);
 }
 
+/** 按原操作重试被明确拒绝、人核实过结果后解除本页的锁。不发请求，只删这一条原命令（OP-153）。 */
+export function releaseConfigApproval(sourceDomain: keyof typeof commands, adminId: string | number, commandKey: string, scope?: ApprovalScope) {
+  attempts.forget(approvalSlot(sourceDomain, adminId, scope), commandKey);
+}
+
 type ThresholdApprovalValues = {
   B1: { expectedVersion: number; redlinePct: number; healthyPct: number };
   B5: { expectedVersion: number; yellowPct: number; redPct: number };
@@ -80,6 +85,7 @@ export function configApprovalOriginalInput(sourceDomain: ApprovalSource, input:
   if (!Array.isArray(original) || typeof original[1] !== "string"
     || (sourceDomain === "F3" ? !Number.isSafeInteger(original[0]?.ownerUserId) || typeof original[0]?.settlementDate !== "string"
       : sourceDomain === "F4" ? !Number.isSafeInteger(original[0]?.expectedRevision)
+      : sourceDomain === "D5" ? !Number.isSafeInteger(original[0]?.expectedVersion)
       : sourceDomain === "H8" ? !Number.isSafeInteger(original[0]?.expectedVersion)
         || typeof original[0]?.key !== "string" || typeof original[0]?.value !== "string"
       : sourceDomain === "G4" ? original[0]?.paramKey !== "dividend" || typeof original[0]?.value !== "string"

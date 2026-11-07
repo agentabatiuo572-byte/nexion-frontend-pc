@@ -2431,11 +2431,13 @@ export async function updateD5WithdrawalLimits(
   expectedVersion: number,
   reason: string,
   operator: string,
+  /** 页面自己保存的命令号；结果未知后按原操作重试时传同一个（OP-94）。 */
+  commandKey?: string,
 ) {
   const payload = { ...d5WithdrawalLimitsValues(changes, expectedVersion), reason, operator };
   return normalizeD5Params(await apiRequest<Record<string, unknown>>("withdraw", "/limits", {
     method: "PUT",
     body: JSON.stringify(payload),
-    idempotencyPrefix: "d5-withdrawal-limits",
+    ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "d5-withdrawal-limits" }),
   }));
 }
