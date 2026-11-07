@@ -127,7 +127,7 @@ export function D1BankOrders({ refreshKey, onCount, ...actions }: OrderActions &
   const current = index >= 0 ? records[index] : null;
   const reviewing = reviewCounts && reviewCounts !== "failed" ? BANK_REVIEW_STATUSES.filter(value => reviewCounts[value] > 0) : [];
   const filtered = status !== "" || query !== "";
-  const columns = 6;
+  const columns = 5;
   const zone = zoneLabel();
   return <>
     {reviewing.length > 0 && !(reviewing as readonly string[]).includes(status) && (
@@ -154,9 +154,8 @@ export function D1BankOrders({ refreshKey, onCount, ...actions }: OrderActions &
       <Table label="银行卡支付订单" aria-busy={loading}>
         <thead><tr>
           <Th sticky="start">付款单 · 用户</Th>
-          <Th align="right" icon={Coins} tone="money">申请 · 应付</Th>
+          <Th align="right" icon={Coins} tone="money">应付（VND）</Th>
           <Th align="right">实际收款（VND）</Th>
-          <Th align="right">实际入账（USDT）</Th>
           <Th>状态</Th>
           <Th sticky="end" align="right">操作</Th>
         </tr></thead>
@@ -169,9 +168,8 @@ export function D1BankOrders({ refreshKey, onCount, ...actions }: OrderActions &
                   const block = creditBlock(order, actions);
                   return <Tr key={order.intentNo} selected={order.intentNo === selected} onOpen={() => setSelected(order.intentNo)}>
                     <Td sticky="start"><Cell mono full main={order.intentNo} sub={`用户 ${order.userId}`} /></Td>
-                    <Td align="right"><Cell num main={`${usdt(order.requestedUsdt)} USDT`} sub={`应付 ${vnd(order.payableVnd)} VND`} /></Td>
-                    <Td align="right"><Cell num main={order.receivedVnd === null ? "—" : vnd(order.receivedVnd)} sub={order.receivedVnd === null ? "还没收到" : time(order.receivedAt)} /></Td>
-                    <Td align="right"><Cell num main={done ? usdt(order.creditedUsdt) : "—"} sub={done ? (order.confirmationSource === "ADMIN_MANUAL" ? "人工确认入账" : "已入账") : "尚未入账"} /></Td>
+                    <Td align="right"><Cell num main={vnd(order.payableVnd)} sub={`申请 ${usdt(order.requestedUsdt)} USDT`} /></Td>
+                    <Td align="right"><Cell num main={order.receivedVnd === null ? "—" : vnd(order.receivedVnd)} sub={done ? `入账 ${usdt(order.creditedUsdt)} USDT` : order.receivedVnd === null ? "还没收到" : time(order.receivedAt)} /></Td>
                     <Td><Cell main={<StatusTag tone={orderTone(order)}>{orderStatusText(order.status)}</StatusTag>} sub={actions.blocked(order) ? "有入账结果未确认" : order.settlementStatus === "MANUAL_REVIEW" ? "本地待人工核对" : providerStatusText(order.providerStatus)} /></Td>
                     <Td sticky="end" align="right"><span className="rd-row-actions">
                       {actions.canManage && !done

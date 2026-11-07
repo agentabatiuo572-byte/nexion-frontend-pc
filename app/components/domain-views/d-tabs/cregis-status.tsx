@@ -149,6 +149,8 @@ function rowNetwork(row: { network?: unknown; chainId?: unknown; chain_id?: unkn
   return chain == null ? "BEP20" : chain === "60" || chain === 60 ? "ERC20" : chain === "2510" || chain === 2510 ? "BEP20" : null;
 }
 const text = (value: unknown) => value == null || value === "" ? "—" : String(value);
+/** 表格里的长地址、哈希只写头尾，全文在悬停和详情里。 */
+const shortHash = (value: unknown) => { const full = text(value); return full.length > 18 ? `${full.slice(0, 10)}…${full.slice(-6)}` : full; };
 const time = (value: unknown) => formatBusinessTimeCompact(typeof value === "string" ? value : undefined, "—");
 const isMaker = (row: ExceptionRow, adminId: unknown) => String(row.makerId) === String(adminId);
 
@@ -281,9 +283,9 @@ function exceptionEntries(data: CregisExceptions): ExceptionEntry[] {
 
 function entryObject(entry: ExceptionEntry) {
   const row = entry.row;
-  if (entry.queue === "uncertainAddresses") return { main: text(row.address), sub: `地址 #${text(row.id)}` };
-  if (row.cid != null) return { main: `CID ${text(row.cid)}`, sub: text(row.txid) };
-  return { main: text(row.txid), sub: row.logIndex != null ? `日志 ${text(row.logIndex)}` : `#${text(row.id)}` };
+  if (entry.queue === "uncertainAddresses") return { main: shortHash(row.address), full: text(row.address), sub: `地址 #${text(row.id)}` };
+  if (row.cid != null) return { main: `CID ${text(row.cid)}`, full: text(row.txid), sub: shortHash(row.txid) };
+  return { main: shortHash(row.txid), full: text(row.txid), sub: row.logIndex != null ? `日志 ${text(row.logIndex)}` : `#${text(row.id)}` };
 }
 const entryAmount = (row: ExceptionRow) => row.grossAmount ?? row.rawAmount;
 const entryState = (entry: ExceptionEntry) => entry.queue === "failedDeliveries" ? "处理失败" : entry.queue === "pendingDeliveries" ? "等待处理"
@@ -541,20 +543,20 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
         explain="六类异常合在一张表。待处理的回调和创建中、核对中的新地址由系统继续处理，标「系统处理中」，不算进要处理的数。每类最多读 50 条。"
         actions={<Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => { void refresh(); setChildKey(value => value + 1); }}>刷新异常处置</Button>}>
         <Table label="USDT 异常" aria-busy={loading}>
-          <thead><tr><Th sticky="start">类型</Th><Th>对象</Th><Th align="right" icon={Coins} tone="money">金额（USDT）</Th><Th>状态</Th><Th>时间（{zone}）</Th><Th sticky="end" align="right">操作</Th></tr></thead>
+          <thead><tr><Th sticky="start">类型 · 时间（{zone}）</Th><Th>对象</Th><Th align="right" icon={Coins} tone="money">金额（USDT）</Th><Th>状态</Th><Th sticky="end" align="right">操作</Th></tr></thead>
           <tbody>
-            {loading && !data ? <TableLoading columns={6} rows={3} />
-              : !data ? <TableMessage columns={6} role="alert">异常读取失败。{error} <Button size="sm" onClick={() => void refresh()}>重试</Button></TableMessage>
-                : entries.length === 0 ? <TableMessage columns={6} role="status">暂无异常。</TableMessage>
+            {loading && !data ? <TableLoading columns={5} rows={3} />
+              : !data ? <TableMessage columns={5} role="alert">异常读取失败。{error} <Button size="sm" onClick={() => void refresh()}>重试</Button></TableMessage>
+                : entries.length === 0 ? <TableMessage columns={5} role="status">暂无异常。</TableMessage>
                   : entries.map(item => {
                     const object = entryObject(item);
                     const action = entryAction(item);
                     return <Tr key={item.key} selected={item.key === entryKey} onOpen={() => setEntryKey(item.key)}>
-                      <Td sticky="start"><Cell main={item.label} sub={rowNetwork(item.row) ?? "网络待核实"} /></Td>
-                      <Td><Cell mono main={object.main} sub={object.sub} title={object.main} /></Td>
+                      <Td sticky="start"><Cell main={item.label} sub={`${rowNetwork(item.row) ?? "网络待核实"} · ${time(item.row.createdAt ?? item.row.checkedAt)}`} /></Td>
+                      <Td><Cell mono main={object.main} sub={object.sub} title={object.full} /></Td>
                       <Td align="right"><Cell num main={entryAmount(item.row) == null ? "—" : usdt(String(entryAmount(item.row)))} /></Td>
-                      <Td><Cell main={item.counted ? <StatusTag tone="warn">{entryState(item)}</StatusTag> : <StatusTag tone="progress">系统处理中</StatusTag>} sub={item.counted ? undefined : entryState(item)} /></Td>
-                      <Td><Cell num main={time(item.row.createdAt ?? item.row.checkedAt)} sub={item.row.ageSeconds != null ? `等待 ${text(item.row.ageSeconds)} 秒` : undefined} /></Td>
+                      <Td><Cell main={item.counted ? <StatusTag tone="warn">{entryState(item)}</StatusTag> : <StatusTag tone="progress">系统处理中</StatusTag>}
+                        sub={item.counted ? undefined : `${entryState(item)}${item.row.ageSeconds != null ? ` · 等待 ${text(item.row.ageSeconds)} 秒` : ""}`} title={entryState(item)} /></Td>
                       <Td sticky="end" align="right">{action
                         ? <Button size="sm" disabledReason={action.block} onClick={action.run}>{action.label}</Button>
                         : <Button size="sm" variant="ghost" onClick={() => setEntryKey(item.key)}>查看详情</Button>}</Td>
