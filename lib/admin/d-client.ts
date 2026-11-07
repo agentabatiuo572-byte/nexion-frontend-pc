@@ -4,7 +4,7 @@ import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session"
 import { adminAuthLifecycleEpoch, AdminAuthEpochChangedError } from "@/lib/admin/auth-lifecycle";
 import { normalizeD1NullableString } from "@/lib/admin/d1-nullable-string";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, hasPersistedPendingCommandOwner, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { treasuryValuation } from "@/lib/admin/treasury-valuation";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
@@ -537,6 +537,8 @@ export interface D5Params {
   networkConfirmFeeUsd: { trc20: number; bep20: number; erc20: number };
   /** 三网络提现通道状态；由 D5 权威配置下发，缺失时冻结页面而非猜测可用性。 */
   networkEnabled: { trc20: boolean; bep20: boolean; erc20: boolean };
+  effectiveNetworks?: string[];
+  networkStatus?: Array<{ network: string; configured: boolean; enabled: boolean; disabledReason: string | null }>;
   nexFeeOffsetRate: number;
   /** FEAT-WD01:小额免审线(USD)。金额 ≤ 此值时可跳过新地址冷却；0 = 关闭快车道。
    *  **永不**免除服务端风控路由裁决(冻结簇/共用地址/风险分)。 */
@@ -562,7 +564,10 @@ interface PersistedPendingMutation extends PendingMutationRecord {
   path: string;
   method: string;
   body: string;
+  adminId?: number;
 }
+
+const D1_CREGIS_SWITCH_PATH = /^\/cregis\/(?:switch-cases(?:\/[1-9]\d*\/decision)?|switches\/emergency-off)$/;
 
 const pendingMutations = createPendingMutationStore<PersistedPendingMutation>({
   storageKey: "nexgrid-admin-d1-uncertain-commands-v1",
@@ -600,10 +605,10 @@ export interface D1PendingCommand extends D1PendingTopupCommand {
   body: string;
 }
 
-/** D1 页上还没确认结果的写请求：充值通道、对账核销、银行卡支付参数和 USDT 收款，按发出时间排。 */
+/** D1 页上还没确认结果的写请求：充值通道、对账核销、银行卡支付参数和 USDT 收款，按发出时间排。资金开关的按管理员另列。 */
 export function listD1PendingCommands(): D1PendingCommand[] {
   return pendingMutations.list()
-    .filter(value => value.base === "finance"
+    .filter(value => value.base === "finance" && !D1_CREGIS_SWITCH_PATH.test(value.path)
       && (value.path.startsWith("/topup/") || value.path.startsWith("/cregis/") || value.path === "/vietqr/config"))
     .map(({ commandKey, path, method, body, createdAt, expiresAt }) => ({ commandKey, path, method, body, createdAt, expiresAt }))
     .sort((left, right) => left.createdAt - right.createdAt);
@@ -628,6 +633,30 @@ export async function retryD1PendingCommand(commandKey: string) {
 export function releaseD1PendingCommand(commandKey: string) {
   const pending = pendingMutations.list().find(value => value.commandKey === commandKey);
   if (pending) pendingMutations.forget(pending.fingerprint, pending.commandKey);
+}
+
+function currentD1PendingCregisSwitchCommands() {
+  const { session, isAuthenticated, logoutPending, logoutUnknown } = useAdminAuth.getState();
+  if (!session || !isAuthenticated || logoutPending || logoutUnknown) return [];
+  return pendingMutations.list().filter(value => value.base === "finance" && value.method === "POST"
+    && D1_CREGIS_SWITCH_PATH.test(value.path)
+    && (value.adminId === session.adminId || value.adminId === undefined && hasPersistedPendingCommandOwner(String(session.adminId))));
+}
+
+export function listD1PendingCregisSwitchCommands(): D1PendingTopupCommand[] {
+  return currentD1PendingCregisSwitchCommands()
+    .map(({ commandKey, path, createdAt, expiresAt }) => ({ commandKey, path, createdAt, expiresAt }))
+    .sort((left, right) => left.createdAt - right.createdAt);
+}
+
+export async function retryD1PendingCregisSwitchCommand(commandKey: string) {
+  const authEpoch = adminAuthLifecycleEpoch();
+  const pending = currentD1PendingCregisSwitchCommands().find(value => value.commandKey === commandKey);
+  if (!pending) throw new Error("待恢复的资金开关请求不存在、已过期或不属于当前管理员，请先刷新核对真实状态");
+  return apiRequest<unknown>("finance", pending.path, {
+    method: pending.method, body: pending.body, idempotencyPrefix: "cregis-ops",
+    idempotencyKey: pending.commandKey, bankManualAuthEpoch: authEpoch,
+  });
 }
 
 function nextId(prefix: string) {
@@ -702,6 +731,8 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
         path,
         method,
         body: typeof init?.body === "string" ? init.body : "",
+        ...(base === "finance" && method === "POST" && D1_CREGIS_SWITCH_PATH.test(path)
+          ? { adminId: useAdminAuth.getState().session?.adminId } : {}),
       });
     }
   }
@@ -773,6 +804,10 @@ export function financeAdminRequest<T>(
   path: string,
   init?: RequestInit & { idempotencyPrefix?: string; idempotencyKey?: string; bankManualAuthEpoch?: number },
 ) {
+  if ((init?.method ?? "GET").toUpperCase() === "POST" && D1_CREGIS_SWITCH_PATH.test(path)) {
+    const unresolved = currentD1PendingCregisSwitchCommands().find(value => value.path === path);
+    if (unresolved) throw new DOutcomeUnknownError(unresolved.commandKey);
+  }
   return apiRequest<T>("finance", path, init);
 }
 
@@ -1847,7 +1882,29 @@ export function normalizeD5Params(value: unknown): D5Params {
     }
     sourceByField[key] = item;
   });
+  let networkStatus: D5Params["networkStatus"];
+  let effectiveNetworks: D5Params["effectiveNetworks"];
+  if (raw.networkStatus !== undefined || raw.effectiveNetworks !== undefined) {
+    if (!Array.isArray(raw.networkStatus) || raw.networkStatus.length !== 3 || !Array.isArray(raw.effectiveNetworks))
+      throw new Error("提现网络实际状态加载不完整，请刷新后再试");
+    const networks = ["USDT-TRC20", "USDT-BEP20", "USDT-ERC20"];
+    networkStatus = raw.networkStatus.map((item, index, all) => {
+      const row = d5Object(item, "networkStatus");
+      const network = d5String(row.network, "networkStatus.network");
+      const configured = d5Boolean(row.configured, "networkStatus.configured"), enabled = d5Boolean(row.enabled, "networkStatus.enabled");
+      if (!networks.includes(network) || all.findIndex(value => (value as Record<string, unknown>).network === network) !== index
+          || (row.disabledReason !== null && (typeof row.disabledReason !== "string" || !row.disabledReason))
+          || enabled !== (row.disabledReason === null) || enabled && !configured)
+        throw new Error("提现网络实际状态加载不完整，请刷新后再试");
+      return { network, configured, enabled, disabledReason: row.disabledReason as string | null };
+    });
+    effectiveNetworks = raw.effectiveNetworks as string[];
+    const expected = networkStatus.filter(row => row.enabled).map(row => row.network);
+    if (effectiveNetworks.length !== expected.length || effectiveNetworks.some((value, index, all) => typeof value !== "string" || !expected.includes(value) || all.indexOf(value) !== index))
+      throw new Error("提现网络实际状态加载不完整，请刷新后再试");
+  }
   const result: D5Params = {
+    networkStatus, effectiveNetworks,
     version: d5Integer(raw.version, "version", 0),
     dailyLimitCount: d5Integer(raw.dailyLimitCount, "dailyLimitCount", 1),
     maxBalanceRatio: d5Number(raw.balanceMaxRatio, "balanceMaxRatio"),
