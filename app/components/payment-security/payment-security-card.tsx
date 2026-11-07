@@ -1,17 +1,21 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ButtonHTMLAttributes } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { formatBusinessTime } from "@/lib/admin/business-time";
+import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useReasonRule } from "@/lib/admin/use-reason-rule";
 import { pendingPaymentRelease, queryPaymentRelease, submitPaymentRelease, PaymentPasswordApiError, type PaymentSecurityPort } from "@/lib/admin/payment-password-client";
 import type { PaymentSecurityRecord, PaymentSecurityDetail as Detail, PaymentSecuritySummary, PaymentReleaseReceipt } from "@/lib/admin/payment-password-contract";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
-import { Field as RdField, Notice, StatusTag, Textarea, useRdSurface } from "@/app/components/rd";
+import { Button, Field as RdField, Fold, Notice, StatusTag, Textarea, useRdSurface } from "@/app/components/rd";
 import { Modal, DataListPager } from "../domain-views/design-kit";
 import "./payment-security.css";
 
 const message = (failure: unknown) => failure instanceof Error ? failure.message : "支付安全信息未确认，请重新加载。";
-const time = (value: string | null) => formatBusinessTime(value, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }, "暂无记录");
+const time = (value: string | null) => formatBusinessTimeCompact(value, "暂无记录");
+/** 改版页面里的框用全站按钮，旧页面保持原样。 */
+function PsButton({ primary, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { primary?: boolean }) {
+  return useRdSurface() ? <Button variant={primary ? "primary" : "secondary"} {...props} /> : <button className={primary ? "ps-button ps-primary" : "ps-button"} {...props} />;
+}
 export const paymentSecurityStateText = { ACTIVE: "暂时锁定", RELEASED: "已手动解除", EXPIRED: "自然到期", UNKNOWN: "状态未确认" };
 export function PaymentSecurityState({ record }: { record: PaymentSecurityRecord }) {
   if (record.type === "UNSUPPORTED") return <span className="ps-state ps-history">异常类型未确认</span>;
@@ -21,7 +25,7 @@ const actionText = (record: PaymentSecurityRecord) => record.type === "PAYMENT_P
 /** 解除是独立权限：没有就不给入口（OP-124）。有权限但这一条解除不了时才禁用写原因，后端 capability 和提交鉴权照旧。 */
 const mayRelease = (session: { role?: string; authorities?: string[] } | null) => session?.role === "superadmin" || !!session?.authorities?.includes("user_c5_payment_password_release");
 function Facts({ record }: { record: PaymentSecurityRecord }) {
-  return <dl className="ps-facts"><div><dt>异常原因</dt><dd className={record.state === "ACTIVE" ? "ps-reason" : "ps-history"}>{record.reason}</dd></div><div><dt>原锁定至</dt><dd>{time(record.lockedUntil)}</dd></div></dl>;
+  return <dl className="ps-facts"><div><dt>异常原因</dt><dd className={record.state === "ACTIVE" ? "ps-reason" : "ps-history"}>{record.reason}</dd></div>{record.lockedUntil && <div><dt>原锁定至</dt><dd>{time(record.lockedUntil)}</dd></div>}</dl>;
 }
 
 /** Existing customer/profile surfaces inject their own scoped port; never fall back to global access. */
@@ -103,18 +107,18 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
     finally { if (live.current && id === generation.current) setLoading(false); }
   }
   if (!session) return null;
-  return <div className="payment-security"><Modal className="payment-security" icon="shield" sub={reviewing ? <StatusTag tone="progress" filled>立即生效</StatusTag> : undefined} title={reviewing && record ? `解除支付密码${record.type === "PAYMENT_PASSWORD_EXCEPTION" ? "异常标记" : "锁定"}` : "支付密码异常详情"} onClose={onClose} busy={busy} wide footer={<><button className="ps-button" disabled={busy} onClick={() => reviewing ? setReviewing(false) : onClose()}>{reviewing ? "返回详情" : "关闭"}</button>{reviewing ? <button className="ps-button ps-primary" disabled={busy || !canRelease || !reasonRule.ok(reason) || !confirmed} onClick={() => void execute(false)}>{busy ? "正在提交…" : "确认解除"}</button> : record?.state === "ACTIVE" && mayRelease(session) && <button className="ps-button ps-primary" disabled={busy || loading || !canRelease} onClick={() => { setReviewing(true); setConfirmed(false); }}>{actionText(record)}</button>}</>}>
+  return <div className="payment-security"><Modal className="payment-security" icon="shield" sub={reviewing ? <StatusTag tone="progress" filled>立即生效</StatusTag> : undefined} title={reviewing && record ? `解除支付密码${record.type === "PAYMENT_PASSWORD_EXCEPTION" ? "异常标记" : "锁定"}` : "支付密码异常详情"} onClose={onClose} busy={busy} wide footer={<><PsButton disabled={busy} onClick={() => reviewing ? setReviewing(false) : onClose()}>{reviewing ? "返回详情" : "关闭"}</PsButton>{reviewing ? <PsButton primary disabled={busy || !canRelease || !reasonRule.ok(reason) || !confirmed} onClick={() => void execute(false)}>{busy ? "正在提交…" : "确认解除"}</PsButton> : record?.state === "ACTIVE" && mayRelease(session) && <PsButton primary disabled={busy || loading || !canRelease} onClick={() => { setReviewing(true); setConfirmed(false); }}>{actionText(record)}</PsButton>}</>}>
     <div ref={contentRef} className="ps-modal-content">
       {loading && <div className="ps-skeleton" role="status" aria-label="正在读取异常详情"><span /><span /><span /></div>}
       {error && (surface
         ? <Notice tone={pending ? "warn" : "danger"} action={!busy && <button className="ps-link" onClick={() => void load()}>重新加载详情</button>}>{error}</Notice>
         : <p className="ps-reason" role="alert">{error} {!busy && <button className="ps-link" onClick={() => void load()}>重新加载详情</button>}</p>)}
-      {pending && <div className="ps-pending" role="status">{surface ? !error && <Notice tone="warn">解除结果暂未确认，请查询原操作，不能重复提交。</Notice> : <p>解除结果暂未确认，请查询原操作，不能重复提交。</p>}<button className="ps-button" disabled={busy || pending.portKey !== port.key} onClick={() => void execute(true)}>{busy ? "正在查询…" : "查询本次结果"}</button>{pending.portKey !== port.key && <p className="ps-secondary">请回原操作入口查询。</p>}</div>}
+      {pending && <div className="ps-pending" role="status">{surface ? !error && <Notice tone="warn">解除结果暂未确认，请查询原操作，不能重复提交。</Notice> : <p>解除结果暂未确认，请查询原操作，不能重复提交。</p>}<PsButton disabled={busy || pending.portKey !== port.key} onClick={() => void execute(true)}>{busy ? "正在查询…" : "查询本次结果"}</PsButton>{pending.portKey !== port.key && <p className="ps-secondary">请回原操作入口查询。</p>}</div>}
       {receipt?.status === "APPLIED" && <p role="status"><strong className="ps-released">解除已确认，审计记录已核对</strong><br /><span className="ps-secondary">{receipt.auditId} · {receipt.changedBy} · {time(receipt.changedAt)}</span></p>}
       {receipt?.status === "REJECTED" && (surface ? <Notice tone="danger">本次解除未执行，请核对最新状态。</Notice> : <p className="ps-reason" role="status">本次解除未执行，请核对最新状态。</p>)}
       {(receipt?.status === "PENDING" || receipt?.status === "NOT_FOUND") && <p className="ps-secondary">处理结果尚未确认，请继续查询本次操作。</p>}
       {record && <>
-        <dl className="ps-facts"><div><dt>操作对象</dt><dd className="ps-user">{userLabel}</dd></div><div><dt>当前状态</dt><dd><PaymentSecurityState record={record} /></dd></div><div><dt>{reviewing ? "本次解除范围" : "凭证类型"}</dt><dd>{reviewing ? "仅本条" : ""}<span className="ps-payment">支付密码</span>{reviewing ? record.type === "PAYMENT_PASSWORD_EXCEPTION" ? "异常标记" : "锁定" : ""}</dd></div><div><dt>原锁定至</dt><dd>{time(record.lockedUntil)}</dd></div></dl>
+        <dl className="ps-facts"><div><dt>操作对象</dt><dd className="ps-user">{userLabel}</dd></div><div><dt>当前状态</dt><dd><PaymentSecurityState record={record} /></dd></div><div><dt>{reviewing ? "本次解除范围" : "凭证类型"}</dt><dd>{reviewing ? "仅本条" : ""}<span className="ps-payment">支付密码</span>{reviewing ? record.type === "PAYMENT_PASSWORD_EXCEPTION" ? "异常标记" : "锁定" : ""}</dd></div>{record.lockedUntil && <div><dt>原锁定至</dt><dd>{time(record.lockedUntil)}</dd></div>}</dl>
         {reviewing ? <><p className="ps-description">{record.capabilities.effectDescription} 仅影响钱包余额付款的支付密码验证；HDPay 银行直付和 USDT-BSC / ERC20 链上直付不受此锁定影响。本次操作不改变登录状态，不修改支付密码，也不会自动完成付款。</p>{surface
           ? <RdField label="解除原因" required hint={`至少 ${reasonRule.min} 字`} error={reasonLeft ? reasonRule.hint(reason) || undefined : undefined}>{control => <Textarea {...control} disabled={busy} value={reason} onChange={event => setReason(event.target.value)} onBlur={() => setReasonLeft(true)} minLength={8} maxLength={200} rows={3} count={`${visibleReasonLength(reason)}/${reasonRule.max}`} placeholder="写清已核查的事实和解除依据" />}</RdField>
           : <label className="ps-field"><span>解除原因 <span className="ps-reason">*</span></span><textarea disabled={busy} value={reason} onChange={event => setReason(event.target.value)} minLength={8} maxLength={200} rows={3} placeholder="请输入已核查的事实和解除依据，至少8个字" /><span className="ps-secondary">{reasonRule.hint(reason) || `${reason.trim().length} / ${reasonRule.max} 字`}</span></label>}<label className="ps-check"><input disabled={busy} type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />我已核对操作对象、异常信息和解除影响，确认执行本次解除。</label></> : <>
@@ -123,7 +127,7 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
           {tab === "attempts" && <><div className="ps-table-scroll"><table className="ps-table"><thead><tr><th>时间</th><th>用途</th><th>结果</th><th>来源</th></tr></thead><tbody>{detail.attempts.records.map(row => <tr key={row.id}><td>{time(row.occurredAt)}</td><td>{row.purpose === "PAYMENT" ? "购买或置换" : "修改支付密码"}</td><td className={row.result === "INCORRECT" ? "ps-reason" : ""}>{{ SUCCEEDED: "验证通过", INCORRECT: "密码不正确", LOCKED: "暂时锁定", BUSINESS_REJECTED: "交易条件不满足" }[row.result]}</td><td>{row.channel}</td></tr>)}{!detail.attempts.records.length && <tr><td colSpan={4}>暂无相关验证记录</td></tr>}</tbody></table></div><DataListPager label="异常关联验证记录" page={detail.attempts.pageNum} pageSize={10} total={detail.attempts.total} onPageChange={next => void attemptPage(next)} onPageSizeChange={() => void attemptPage(1)} pageSizeOptions={[10]} /></>}
           {tab === "audit" && <div className="ps-audit">{detail.audit.map(row => <div key={row.id}><strong>{{ RELEASE_LOCK: "解除支付密码锁定", CLEAR_EXCEPTION: "解除支付密码异常", LOCKED: "触发支付密码锁定" }[row.action] ?? "支付安全操作"}</strong><p>{row.reason}</p><p className="ps-secondary">{time(row.occurredAt)} · {row.operator} · {row.id}</p></div>)}{!detail.audit.length && <p>暂无处置记录</p>}</div>}
         </>}
-        <details className="ps-help"><summary>忘记支付密码时如何处理</summary><p>引导用户在 APP 或 H5 完成既有身份验证后重设；无法使用恢复渠道时，按既有身份核验流程协助。运营不能查看、代设或清除支付密码。</p></details>
+        {surface ? <Fold inset title="忘记支付密码时如何处理" summary="用户自己重设"><p className="ps-description">引导用户在 APP 或 H5 完成既有身份验证后重设；无法使用恢复渠道时，按既有身份核验流程协助。运营不能查看、代设或清除支付密码。</p></Fold> : <details className="ps-help"><summary>忘记支付密码时如何处理</summary><p>引导用户在 APP 或 H5 完成既有身份验证后重设；无法使用恢复渠道时，按既有身份核验流程协助。运营不能查看、代设或清除支付密码。</p></details>}
       </>}
     </div>
   </Modal></div>;

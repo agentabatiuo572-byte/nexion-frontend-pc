@@ -447,7 +447,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       }
       if (["I.session.convos", "I.session.ticket.__create", "I.session.archiveBatch.__create"].includes(key)
         && (!m3WriteQualifiedRef.current.qualified || m3WriteQualifiedRef.current.authEpoch !== authEpoch || m3WriteQualifiedRef.current.adminId !== session?.adminId)) {
-        setToast("当前坐席身份或会话权限待核对，请刷新后重新确认操作。");
+        setToast("当前坐席身份或会话权限待核对，请刷新后重新确认操作。", "warn");
         return false;
       }
       const fingerprint = `${key}\u0000${value}\u0000${meta?.reason?.trim() ?? ""}`;
@@ -465,7 +465,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         ?? records.find((record) => record.paramFingerprint === fingerprint)?.commandKey
         ?? `m-${Date.now()}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
       if (attempt && isRetryExpired(attempt)) {
-        if (meta?.onFailure) meta.onFailure(RETRY_EXPIRED_TEXT); else setToast(RETRY_EXPIRED_TEXT);
+        if (meta?.onFailure) meta.onFailure(RETRY_EXPIRED_TEXT); else setToast(RETRY_EXPIRED_TEXT, "warn");
         return false;
       }
       const stableValue = attempt?.value ?? value;
@@ -473,7 +473,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       const closeReason = attempt ? attempt.closeReason : meta?.reason;
       const closeBaseline = closeMatch ? originalM3CloseBaseline(commandFingerprint, stableValue) : undefined;
       if (closeMatch && (attempt && attempt.value === undefined || !closeBaseline || closeReason === undefined)) {
-        setToast("原会话结束请求的版本或理由无法核对，请保留原操作并核对结果。");
+        setToast("原会话结束请求的版本或理由无法核对，请保留原操作并核对结果。", "warn");
         return false;
       }
       const savedMetadata = pendingMCommandMetadata.current.get(commandFingerprint) ?? { action: meta?.action, reason: meta?.reason };
@@ -499,7 +499,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         pendingMCommandBaselines.current.delete(commandFingerprint);
         if (commandFingerprint !== requestedFingerprint) {
           if (confirming) setActionConfirm((current) => current === confirming ? null : current);
-          setToast("原会话结束操作已确认，请刷新后重新确认当前会话。");
+          setToast("原会话结束操作已确认，请刷新后重新确认当前会话。", "info");
           return false;
         }
         meta?.onBackendResult?.(backendResult);
@@ -520,7 +520,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         // client 已接咽喉,英文网络错误不再到达;按原压制意图改判「咽喉网络中文」,命中仍不附加 detail。
         const detail = message.includes("网络连接失败或系统暂时连不上") ? "" : ` · ${message}`;
         const failure = rejected ? `后台明确拒绝原会话结束操作，请核对当前会话后重新确认${detail}` : refusedWrite(error) ? `后台拒绝了这次操作${detail}` : `结果未确认${detail.replace(/。$/, "")}。再点确认会按原操作重试`;
-        if (meta?.onFailure) meta.onFailure(failure); else setToast(failure);
+        if (meta?.onFailure) meta.onFailure(failure); else setToast(failure, rejected || refusedWrite(error) ? "error" : "warn");
         return false;
       }
     },
@@ -540,13 +540,13 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     const idempotencyKey = original?.commandKey
       ?? `m3-${Date.now()}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
     if (original && isRetryExpired(original)) {
-      if (onFailure) onFailure(RETRY_EXPIRED_TEXT); else setToast(RETRY_EXPIRED_TEXT);
+      if (onFailure) onFailure(RETRY_EXPIRED_TEXT); else setToast(RETRY_EXPIRED_TEXT, "warn");
       return false;
     }
     const originalValue = original ? original.value : value;
     mCommands.remember(slot, idempotencyKey, { value: originalValue });
     const usingOriginalReason = Boolean(original && value !== undefined && value !== originalValue);
-    if (usingOriginalReason) setToast("正在核对原删除请求，继续使用原提交理由。");
+    if (usingOriginalReason) setToast("正在核对原删除请求，继续使用原提交理由。", "info");
     try {
       await write(idempotencyKey, originalValue);
       mCommands.forget(slot);
@@ -570,7 +570,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       if (currentAuthEpoch.current !== authEpoch) return false;
       if (!original && refusedWrite(error)) mCommands.forget(slot, idempotencyKey);
       const failure = refusedWrite(error) ? `${failureMessage}：${displayAdminError(error)}` : `${failureMessage}或结果未知 · ${displayAdminError(error)}${usingOriginalReason ? " · 继续使用原提交理由核对结果" : ""}`;
-      if (onFailure) onFailure(failure); else setToast(failure);
+      if (onFailure) onFailure(failure); else setToast(failure, refusedWrite(error) ? "error" : "warn");
       return false;
     }
   }, [authEpoch, reconcileConversationSnapshot, invalidateScope, setToast, session?.adminId]);
@@ -1368,7 +1368,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
     return () => window.removeEventListener("support-scope-invalidated", clearPrivate);
   }, [pendingForAdmin?.conversationNo, pendingForAdmin?.customerId, conv?.id, conv?.customerId]);
   const copyOriginal = async (original: string) => {
-    try { await navigator.clipboard.writeText(original); ctx.toast("原文已复制。"); }
+    try { await navigator.clipboard.writeText(original); ctx.toast("原文已复制。", "success"); }
     catch { setSendError("自动复制失败。可在原文框中手动选择并复制。"); }
   };
   const abandonQuery = (row: DockCommandRecord) => {
@@ -1376,7 +1376,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
     dockCommands.forget(row.fingerprint);
     setCanAbandon(false);
     setSendError("");
-    ctx.toast("待确认记录已清除。");
+    ctx.toast("待确认记录已清除。", "success");
   };
 
   useEffect(() => {
@@ -1426,10 +1426,10 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
         if (generation !== identityGeneration.current) return;
         if (result.status === "SUCCEEDED") {
           dockCommands.forget(recovery.fingerprint, recovery.commandKey);
-          ctx.toast("消息已发送。");
+          ctx.toast("消息已发送。", "success");
           void ctx.refreshConversations();
         } else if (result.status === "FAILED") {
-          if (readOnlyRecovery) { dockCommands.forget(recovery.fingerprint, recovery.commandKey); ctx.toast("原消息发送失败，待确认记录已清除。"); }
+          if (readOnlyRecovery) { dockCommands.forget(recovery.fingerprint, recovery.commandKey); ctx.toast("原消息发送失败，待确认记录已清除。", "error"); }
           else { setCanAbandon(true); setSendError("消息发送失败。请复制原文并清除待确认记录。"); }
         } else setSendError("发送结果仍在确认，请稍后查询原命令。");
       } catch (cause) {
@@ -1505,7 +1505,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       if (generation !== identityGeneration.current) return;
       dockCommands.forget(dockSlot, key);
       setDraft("");
-      ctx.toast(`${conv.id} 已回复`);
+      ctx.toast(`${conv.id} 已回复`, "success");
       window.dispatchEvent(new Event("support-todo-changed"));
     } catch (error) {
       if (generation !== identityGeneration.current) return;

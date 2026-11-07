@@ -36,8 +36,19 @@
   flex: 1 1 0;
 }
 
+/* 放不下时先截中间段，再截第一段，末段写全（PG-10）。收缩比差得足够大，前一档截完才轮到下一档，后一档一个像素也不少。 */
+.admin-topbar-crumb-ancestor {
+  flex: 0 1000000 auto;
+  min-width: 52px;
+}
+
+.admin-topbar-crumb-ancestor:first-child {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
 .admin-topbar-crumb-current {
-  flex: 1 1 0;
+  flex: 0 0.000001 auto;
 }
 
 .admin-topbar-crumb-label {
@@ -88,6 +99,13 @@
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+}
+
+/* 详情页四段放不下时，中间段截到只剩箭头不如不写。 */
+@container admin-topbar (max-width: 1110px) {
+  .admin-topbar-breadcrumb:has(> :nth-child(4)) .admin-topbar-crumb-ancestor:not(:first-child) {
+    display: none;
   }
 }
 

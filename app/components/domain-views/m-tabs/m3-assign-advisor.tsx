@@ -79,7 +79,7 @@ export function AssignAdvisorDialog({ adminId, customerId, customerName, canWrit
       {!command.denied && <Facts>
         <Fact k="客户">{customerName}</Fact>
         <Fact k="原分配目标客服">{pending.payload.targetName} · 客服编号 {pending.payload.request.targetAgentAdminId}</Fact>
-        <Fact k="客户编号">{customerId}</Fact>
+        <Fact k="系统编号">{customerId}</Fact>
         <Fact k="原分配原因">{pending.payload.request.reason}</Fact>
       </Facts>}
       <Fold inset title="技术信息" summary="原操作编号与版本"><Facts><Fact k="原待分配版本">{pending.payload.request.customers[0].expectedVersion}</Fact><Fact k="原操作编号"><span data-mono="">{pending.commandKey}</span></Fact></Facts><Button size="sm" onClick={() => { void navigator.clipboard.writeText(pending.commandKey).then(() => setLoadError("原操作编号已复制。"), () => setLoadError("自动复制失败，请选择原操作编号手动复制。")); }}>复制原操作编号</Button>{loadError && <p role="status">{loadError}</p>}</Fold>

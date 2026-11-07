@@ -8,8 +8,9 @@
  * 均渲染于 design-kit Modal;合规(运营可读中文 · 数字不自曝)。
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Lock } from "lucide-react";
 import { useReasonRule } from "@/lib/admin/use-reason-rule";
-import { Button, DiffList, Explain, Field as RdField, Notice, StatusTag, Textarea } from "@/app/components/rd";
+import { Button, DiffList, Field as RdField, Notice, NumberInput, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
 import { Icon, Modal } from "../design-kit";
 import {
@@ -118,64 +119,42 @@ export function IdlePolicyModal({
     max: number,
     available = true,
     fieldError?: string,
-  ) => (<>
-    <label className="m3-policy-field">
-      <span className="m3-policy-label">
-        <strong>{label}</strong>
-        <Explain label={`${label}是什么`} content={hint} />
-        {available && canSave && <span className="rd-form-hint">{min}–{max}</span>}
-      </span>
-      <input
-        className="m3-policy-num"
-        type="number"
-        min={min}
-        max={max}
-        step={1}
-        value={value}
-        placeholder={available ? undefined : "-"}
-        disabled={!available || !canSave || blocked || confirm}
-        onChange={(event) => { setConfirm(false); setValue(event.target.value); }}
-        onBlur={() => setNumbersLeft(true)}
-        aria-label={label}
-        aria-invalid={numbersLeft && !!fieldError || undefined}
-      />
-    </label>
-    {numbersLeft && fieldError && <div className="rd-form-error" role="alert">{fieldError}</div>}
-  </>);
+  ) => {
+    const shownError = numbersLeft ? fieldError : undefined;
+    // 范围只写在框下面，填错时错误顶替这一行（VS-103）。
+    return <RdField label={label} explain={hint} help={available && canSave && !shownError ? `${min}–${max}` : undefined} error={shownError}>
+      {(control) => <NumberInput {...control} unit="分钟" min={min} max={max} step={1} value={value} placeholder={available ? undefined : "—"} disabled={!available || !canSave || blocked || confirm}
+        onChange={(event) => { setConfirm(false); setValue(event.target.value); }} onBlur={() => setNumbersLeft(true)} />}
+    </RdField>;
+  };
 
   return (
     <Modal
       className="m3-policy-modal"
       title={canSave ? "调整会话超时策略" : "会话超时策略"}
       icon="clock"
-      sub={canSave ? <StatusTag tone="progress" filled>立即生效</StatusTag> : undefined}
+      sub={canSave ? <StatusTag tone="progress" filled>立即生效</StatusTag> : <StatusTag tone="neutral" filled icon={Lock} explain="仅获准超级管理员可修改。要调整请联系超级管理员。">只读</StatusTag>}
       busy={saving}
       onClose={onClose}
-      footer={(
-        <div className="m3-policy-foot">
-          <span />
-          <div>
-            <button type="button" className="btn btn-sec btn-sm" onClick={onClose} disabled={saving}>{canSave ? "取消" : "关闭"}</button>
-            {confirm && <button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => setConfirm(false)}>返回修改</button>}
-            {canSave && <Button
-              variant="primary"
-              size="sm"
-              data-proof="session-idle-policy-save"
-              onClick={() => { if (confirm) void save(); else setConfirm(true); }}
-              disabledReason={saving ? "正在保存" : pending ? "先查询原操作结果" : conflict ? "先读取最新策略" : unchanged ? "改了时长才能保存" : !orderOk ? "先把时长填对" : !reasonOk ? "先写变更理由" : undefined}
-            >
-              {saving ? "保存中…" : unchanged ? "策略未变更" : confirm ? "确认并保存" : "预览变更"}
-            </Button>}
-          </div>
-        </div>
-      )}
+      footer={<>
+        <Button onClick={onClose} disabled={saving}>{canSave ? "取消" : "关闭"}</Button>
+        {confirm && <Button disabled={saving} onClick={() => setConfirm(false)}>返回修改</Button>}
+        {canSave && <Button
+          variant="primary"
+          data-proof="session-idle-policy-save"
+          onClick={() => { if (confirm) void save(); else setConfirm(true); }}
+          disabledReason={saving ? "正在保存" : pending ? "先查询原操作结果" : conflict ? "先读取最新策略" : unchanged ? "改了时长才能保存" : !orderOk ? "先把时长填对" : !reasonOk ? "先写变更理由" : undefined}
+        >
+          {saving ? "保存中…" : confirm ? "确认并保存" : "预览变更"}
+        </Button>}
+      </>}
     >
-      {!canSave && <p className="m3-policy-readonly" role="status">只读 <Explain label="谁能修改" content="仅获准超级管理员可修改。要调整请联系超级管理员。" /></p>}
-      {numField("待回复提醒时长（分钟）", "客户消息等待回复达到该时长，标记待处理。", warn, setWarn, 1, 30, true, warnOk ? undefined : "填 1 到 30 的整数分钟")}
-      {numField("严重超时时长（分钟）", "超过该时长仍未回复，标记严重超时。须大于提醒时长。", close, setClose, 2, 120, true, !closeOk ? "填 2 到 120 的整数分钟" : warnOk && closeN <= warnN ? "要大于待回复提醒时长" : undefined)}
-      {numField("无人发言自动结束会话（分钟）", endAvailable ? "后台人员最后一次发消息后，超过该时长没人再发，会话自动结束，其他人就可以发起。" : "暂不可用：自动结束时长还不能在这里设置，其他两项照常保存。", end, setEnd, 2, 120, endAvailable, endOk ? undefined : "填 2 到 120 的整数分钟")}
+      <div className="m3-policy-fields">
+        {numField("待回复提醒", "客户消息等待回复达到该时长，标记待处理。", warn, setWarn, 1, 30, true, warnOk ? undefined : "填 1 到 30 的整数分钟")}
+        {numField("严重超时", "超过该时长仍未回复，标记严重超时。须大于提醒时长。", close, setClose, 2, 120, true, !closeOk ? "填 2 到 120 的整数分钟" : warnOk && closeN <= warnN ? "要大于待回复提醒时长" : undefined)}
+        {numField("无人发言自动结束", endAvailable ? "后台人员最后一次发消息后，超过该时长没人再发，会话自动结束，其他人就可以发起。" : "暂不可用：自动结束时长还不能在这里设置，其他两项照常保存。", end, setEnd, 2, 120, endAvailable, endOk ? undefined : "填 2 到 120 的整数分钟")}
+      </div>
       {confirm && <div className="rd-confirm-facts m3-policy-preview" role="status">
-        <p className="rd-form-group-title">确认下列变更</p>
         <DiffList rows={[
           { key: "warn", label: "待回复提醒", before: `${policy.warnMinutes} 分钟`, after: `${warnN} 分钟` },
           { key: "close", label: "严重超时", before: `${policy.closeMinutes} 分钟`, after: `${closeN} 分钟` },
@@ -188,10 +167,10 @@ export function IdlePolicyModal({
           onChange={(event) => { setConfirm(false); setReason(event.target.value); }} onBlur={() => setReasonLeft(true)} placeholder="请说明调整的原因" />}
       </RdField>}
       {error && !conflict && !pending && <Notice tone="danger">{error}</Notice>}
-      {pending && <Notice tone="warn" title={error || undefined} action={canSave && onCheckPending ? <button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => void onCheckPending()}>查询原操作结果</button> : undefined}>原操作结果待确认，输入已锁定。{latest && <p>现在的策略：待回复提醒 {latest.warnMinutes} 分钟，严重超时 {latest.closeMinutes} 分钟{latest.sessionEndMinutes !== null && `，无人发言自动结束 ${latest.sessionEndMinutes} 分钟`}；尚不能据此认定原操作成功。</p>}</Notice>}
+      {pending && <Notice tone="warn" title={error || undefined} action={canSave && onCheckPending ? <Button size="sm" disabled={saving} onClick={() => void onCheckPending()}>查询原操作结果</Button> : undefined}>原操作结果待确认，输入已锁定。{latest && <p>现在的策略：待回复提醒 {latest.warnMinutes} 分钟，严重超时 {latest.closeMinutes} 分钟{latest.sessionEndMinutes !== null && `，无人发言自动结束 ${latest.sessionEndMinutes} 分钟`}；尚不能据此认定原操作成功。</p>}</Notice>}
       {conflict && <Notice tone="warn" action={latest
-        ? <button type="button" className="btn btn-sec btn-sm" disabled={saving || !canSave} onClick={onReviewLatest}>以最新策略重新确认</button>
-        : <button type="button" className="btn btn-sec btn-sm" disabled={saving || !canSave} onClick={() => void onRefreshLatest?.()}>读取最新策略</button>}>设置刚被别人改过，你填写的内容还在。{latest && <p>待回复提醒：原 {policy.warnMinutes} 分钟 → 最新 {latest.warnMinutes} 分钟；严重超时：原 {policy.closeMinutes} 分钟 → 最新 {latest.closeMinutes} 分钟{endAvailable && latest.sessionEndMinutes !== null && `；无人发言自动结束：原 ${policy.sessionEndMinutes} 分钟 → 最新 ${latest.sessionEndMinutes} 分钟`}。</p>}</Notice>}
+        ? <Button size="sm" disabled={saving || !canSave} onClick={onReviewLatest}>以最新策略重新确认</Button>
+        : <Button size="sm" disabled={saving || !canSave} onClick={() => void onRefreshLatest?.()}>读取最新策略</Button>}>设置刚被别人改过，你填写的内容还在。{latest && <p>待回复提醒：原 {policy.warnMinutes} 分钟 → 最新 {latest.warnMinutes} 分钟；严重超时：原 {policy.closeMinutes} 分钟 → 最新 {latest.closeMinutes} 分钟{endAvailable && latest.sessionEndMinutes !== null && `；无人发言自动结束：原 ${policy.sessionEndMinutes} 分钟 → 最新 ${latest.sessionEndMinutes} 分钟`}。</p>}</Notice>}
     </Modal>
   );
 }
@@ -515,10 +494,7 @@ export function InitiateModal({
       <div className="pa-grid">
         <div className="pa-col">
           <Field label="发起身份">
-            <select className="fld" value={identId} onChange={(e) => setIdentId(e.target.value)}>
-              {identities.length === 0 && <option value="">暂无可发起身份</option>}
-              {identities.map((i) => <option key={i.id} value={i.id}>{i.label} · {i.name}（{i.id}）</option>)}
-            </select>
+            <Select aria-label="发起身份" value={identId} onChange={setIdentId} options={identities.length === 0 ? [{ value: "", label: "暂无可发起身份" }] : identities.map((i) => ({ value: i.id, label: `${i.label} · ${i.name}（${i.id}）` }))} />
             <span className="hint" style={{ color: isAdvisor ? "var(--m-wait)" : "var(--ink-4)" }}>
               {identity ? (isAdvisor ? "顾问身份 · 可带主动话术与转化跳转" : "客服身份 · 中性答复,无主动话术 / 跳转") : "请先在「服务规则与话术」给客服设置可用的服务类型"}
             </span>
@@ -550,15 +526,9 @@ export function InitiateModal({
 
           <Field label={isAdvisor ? "选择话术" : "选择回复模板"}>
             {isAdvisor ? (
-              <select className="fld" value={scriptId} onChange={(e) => setScriptId(e.target.value)}>
-                <option value="">自定义开场消息</option>
-                {advisorScripts.map((s) => <option key={s.id} value={s.id}>{s.id} · {scriptGroupLabel(s.group)}{s.ctaHref !== "—" ? `（${s.ctaHref}）` : ""}</option>)}
-              </select>
+              <Select aria-label="选择话术" value={scriptId} onChange={setScriptId} options={[{ value: "", label: "自定义开场消息" }, ...advisorScripts.map((s) => ({ value: s.id, label: `${s.id} · ${scriptGroupLabel(s.group)}${s.ctaHref !== "—" ? `（${s.ctaHref}）` : ""}` }))]} />
             ) : (
-              <select className="fld" value={tplId} onChange={(e) => setTplId(e.target.value)}>
-                <option value="">自定义开场消息</option>
-                {supportTpls.map((t) => <option key={t.id} value={t.id}>{t.id} · {t.text.slice(0, 14)}…</option>)}
-              </select>
+              <Select aria-label="选择回复模板" value={tplId} onChange={setTplId} options={[{ value: "", label: "自定义开场消息" }, ...supportTpls.map((t) => ({ value: t.id, label: `${t.id} · ${t.text.slice(0, 14)}…` }))]} />
             )}
           </Field>
 
@@ -671,10 +641,7 @@ export function TransferModal({
             </div>
           )}
           {kind === "queue" && (
-            <select className="fld" style={{ marginTop: 8 }} value={queue} onChange={(e) => setQueue(e.target.value)}>
-              {queues.length === 0 && <option value="">暂无可转交队列</option>}
-              {queues.map((q) => <option key={q} value={q}>{q}</option>)}
-            </select>
+            <Select aria-label="转交队列" value={queue} onChange={setQueue} options={queues.length === 0 ? [{ value: "", label: "暂无可转交队列" }] : queues.map((q) => ({ value: q, label: q }))} />
           )}
           {kind === "standby" && (
             <div className="itint" style={{ marginTop: 8 }}>转入<b>{STANDBY_POOL_LABEL}</b>,由负载调度重新分配给空闲坐席接待。</div>
