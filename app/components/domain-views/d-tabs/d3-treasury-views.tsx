@@ -338,7 +338,7 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
   // 差额是这个页签的答案（够不够付），放第一个，最大。读不到时写原因，不写 0。
   const net = latest?.netExposureUsdt ?? null;
   const gapStat = canReadExposure && (
-    <Stat lead tone={net !== null && net < 0 ? "danger" : undefined} icon={Scale} iconTone="role-1" label="储备和应付款的差额"
+    <Stat lead={net !== null} tone={net !== null && net < 0 ? "danger" : undefined} icon={Scale} iconTone="role-1" label="储备和应付款的差额"
       value={exposure.data?.valuationReliable === false ? TREASURY_VALUATION_UNAVAILABLE : net !== null ? amountText(net) : exposure.loading ? "…" : "—"}
       unit={exposure.data?.valuationReliable !== false && net !== null ? "USDT" : undefined}
       sub={exposure.data?.valuationReliable === false ? undefined
@@ -372,7 +372,7 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
   return (
     <>
       {mainState}
-      {!main && gapStat && <StatBand label="差额">{gapStat}</StatBand>}
+      {!main && gapStat && <div className="d3-stats"><StatBand label="差额">{gapStat}</StatBand></div>}
       {main && water && (
         <>
           <div className="rd-toolbar d3-window">
