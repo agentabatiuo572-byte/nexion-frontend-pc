@@ -339,7 +339,7 @@ function ClaimDrawer({ source, sources, policyMode, canRefund, scopeFor, owns, b
     { value: "CLAIM_CREDIT", label: source.dust ? "认领并入账（低额入金不能认领）" : "认领并入账", disabled: source.dust },
     ...(canRefund ? [{ value: "REFUND_ORIGIN", label: policyMode === "UNCONFIGURED" ? "原路退款（费用待配置）" : "原路退款", disabled: policyMode === "UNCONFIGURED" }] : []),
   ];
-  return <Drawer open onClose={onClose} title="认领或退款" sub={source.title} icon={HandCoins} tone="role-2" busy={working || busy} wide
+  return <Drawer open onClose={onClose} title="认领或退款" sub={source.title} icon={HandCoins} tone="role-2" busy={working || busy}
     footer={<Decision note={proposeBlock}
       explain="由原转出钱包签名证明归属。交易所或合约不能提供该证明时，保留待核查并联系原平台补证；公开交易哈希不能代替签名。"
       primary={<Button variant="primary" disabledReason={proposeBlock} onClick={() => challenge && evidence && onPropose(intent, {
