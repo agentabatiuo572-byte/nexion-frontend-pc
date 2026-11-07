@@ -694,7 +694,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const conclusionFacts = overdue.length > 0
     ? <><b>{overdue.length}</b> 项待补录已逾期，已关停 {killed} 个业务</>
     : <>业务开关：已关停 <b>{killed}</b> 个业务{backfills.length > 0 && <>，<b>{backfills.length}</b> 项待补录</>}</>;
-  const nextStepHelp = canResume ? "风险解除后，到业务卡上点「提交恢复审批」；批准前业务仍关停。" : "风险解除后，请有权的超级管理员发起恢复审批；批准前业务仍关停。";
+  const nextStepHelp = canResume ? "风险解除后，到业务卡点「提交恢复审批」；批准前仍关停。" : "风险解除后，请有权超管发起恢复审批；批准前仍关停。";
   // 审批人写在页头副标题，结论第二行只写下一步；问号补第二行没有的事（DT-12）。
   const approvalHelp = "发起人不能批自己的申请。提交后业务卡标「恢复待审批」，申请在应急审批队列置顶。";
   const resumeBlocked = !covPass && killedGates.some((gate) => gate.coveragePrecheckRequired);
