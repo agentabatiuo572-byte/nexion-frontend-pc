@@ -391,7 +391,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     <PageHeader pageId="J1" title="紧急停用开关"
       summary={<AutoGloss>关停立即生效，恢复需审批。</AutoGloss>}
       meta={<span className="rd-toolbar">
-        {readAt && <span>{readAt}（{businessZone().label}）读取 <Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动更新。自动关停发生时顶栏告警先提醒，这页要刷新才看到。" /></span>}
+        {readAt && <span>{readAt} 读取（{businessZone().label}）<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动更新。自动关停发生时顶栏告警先提醒，这页要刷新才看到。" /></span>}
         {!contentError && <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={contentLoading} onClick={reload}>刷新</Button>}
       </span>}
       readOnly={!canKill && !canResume && !canBatchKill && !canWrite ? <>你只能查看 <Explain label="只读说明" content="关停、恢复和改参数需要紧急停用开关的操作权限，请联系超级管理员。" /></> : undefined}
@@ -460,7 +460,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       action: `关停业务开关 · ${name}`,
       title: `关停${name}`,
       facts: <Facts><Fact k="业务">{name}，控制{cap}</Fact><Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{gate.key === "withdraw" && <Fact k="关停范围" tone="warn">已放行的单还会打款</Fact>}</Facts>,
-      detail: <><b>{name}</b>控制{cap}。确认后开关立即关闭，并记入操作记录。关停不会多付钱，不需要先检查备付金。</>,
+      detail: "关停不会多付钱，不需要先检查备付金。",
       effect: IMMEDIATE,
       statedBrief: { impact: gate.key === "withdraw" ? "立即停止新提现申请和审核放行。恢复要回到这页提交审批。" : `${name}控制的业务全站马上停止。恢复要回到这页提交审批。`, check: "核对业务和触发依据，理由写清监管通知、工单或事件编号。" },
       confirmTone: "danger",
@@ -497,7 +497,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         {gate.key === "withdraw" && <Fact k="控制范围" tone="warn">已放行的单还会打款</Fact>}
         <Fact k="备付金检查">{gate.coveragePrecheckRequired ? "批准时重新检查覆盖率；不通过则保留待批工单，业务继续关停" : "试用免查，不直接付钱"}</Fact>
       </Facts>,
-      detail: <><b>{name}</b>恢复申请进入应急审批队列，排在其他待办前。审批人要有审批和恢复权限。</>,
+      detail: "恢复申请进入应急审批队列，排在其他待办前。审批人要有审批和恢复权限。",
       effect: <StatusTag tone="progress" filled>批准后生效</StatusTag>,
       statedBrief: {
         impact: `提交后${name}仍已关停。另一位有权超管批准后重新开放${cap}，发起人不能批自己的单。`,
@@ -524,7 +524,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       title: `批量关停 ${targets.length} 项业务`,
       facts: <div className="rd-stack"><Facts>{targets.length === 1 ? <Fact k="关停业务">{names}</Fact> : <Fact k="关停业务" unit="项">{targets.length}</Fact>}<Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{targets.some((gate) => gate.key === "withdraw") && <Fact k="提现关停范围" tone="warn">已放行的单还会打款</Fact>}</Facts>
         {targets.length > 1 && <Fold inset title="本次关停业务" summary={`${targets.length} 项`}><RecordList label="本次关停业务" records={targets.map((gate) => ({ id: gate.key, value: operatorCopyText(gate.name), object: gate.key === "withdraw" ? "新提现申请和审核放行" : operatorCopyText(gate.cap) }))} /></Fold>}</div>,
-      detail: <>一次性立即关停<b>已选 {targets.length} 项业务</b>，用于监管点名、法务事件等重大场景。确认后全部马上关停，每一项都记入操作记录。</>,
+      detail: "用于监管点名、法务事件等重大场景。每一项都记入操作记录。",
       effect: IMMEDIATE,
       statedBrief: { impact: `已选的 ${targets.length} 个业务开关立即关闭。有一项不符合时整批不执行。恢复要回到这页逐项提交审批。`, check: "核对已选业务、触发依据和监管事由，理由写清依据或工单号。" },
       confirmTone: "danger",
@@ -630,7 +630,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         <Fact k="触发值 / 阈值">{signal.value} / {signal.threshold}</Fact>
         <Fact k="截止时间">{timeText(row.dueAt)}{row.overdue ? "，已逾期" : ""}</Fact>
       </Facts>,
-      detail: <><b>{name}</b>由 {autoRuleName(row.ruleId)} 自动关停，触发值 {signal.value}，阈值 {signal.threshold}。本操作只补全处置结论，不会自动恢复业务；如建议恢复，仍需单独提交应急审批，另一位有权超管批准后生效；资金业务批准时重查覆盖率，试用免查。</>,
+      detail: "如建议恢复，仍需单独提交应急审批，另一位有权超管批准后生效；资金业务批准时重查覆盖率，试用免查。",
       effect: <StatusTag tone="neutral" filled>业务继续关停</StatusTag>,
       statedBrief: { impact: "只写下处理结论，业务继续关停，不会恢复。", check: "核对触发值和阈值，理由写清判断依据。" },
       confirmLabel: "确认补录，业务仍关停",
