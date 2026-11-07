@@ -4,7 +4,7 @@ import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session"
 import { adminAuthLifecycleEpoch, AdminAuthEpochChangedError } from "@/lib/admin/auth-lifecycle";
 import { normalizeD1NullableString } from "@/lib/admin/d1-nullable-string";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, hasPersistedPendingCommandOwner, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { treasuryValuation } from "@/lib/admin/treasury-valuation";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
@@ -553,7 +553,10 @@ interface PersistedPendingMutation extends PendingMutationRecord {
   path: string;
   method: string;
   body: string;
+  adminId?: number;
 }
+
+const D1_CREGIS_SWITCH_PATH = /^\/cregis\/(?:switch-cases(?:\/[1-9]\d*\/decision)?|switches\/emergency-off)$/;
 
 const pendingMutations = createPendingMutationStore<PersistedPendingMutation>({
   storageKey: "nexgrid-admin-d1-uncertain-commands-v1",
@@ -584,6 +587,30 @@ export function listD1PendingCregisCommands(): D1PendingTopupCommand[] {
   return pendingMutations.list()
     .filter(value => value.base === "finance" && value.path.startsWith("/cregis/"))
     .map(({ commandKey, path, createdAt, expiresAt }) => ({ commandKey, path, createdAt, expiresAt }));
+}
+
+function currentD1PendingCregisSwitchCommands() {
+  const { session, isAuthenticated, logoutPending, logoutUnknown } = useAdminAuth.getState();
+  if (!session || !isAuthenticated || logoutPending || logoutUnknown) return [];
+  return pendingMutations.list().filter(value => value.base === "finance" && value.method === "POST"
+    && D1_CREGIS_SWITCH_PATH.test(value.path)
+    && (value.adminId === session.adminId || value.adminId === undefined && hasPersistedPendingCommandOwner(String(session.adminId))));
+}
+
+export function listD1PendingCregisSwitchCommands(): D1PendingTopupCommand[] {
+  return currentD1PendingCregisSwitchCommands()
+    .map(({ commandKey, path, createdAt, expiresAt }) => ({ commandKey, path, createdAt, expiresAt }))
+    .sort((left, right) => left.createdAt - right.createdAt);
+}
+
+export async function retryD1PendingCregisSwitchCommand(commandKey: string) {
+  const authEpoch = adminAuthLifecycleEpoch();
+  const pending = currentD1PendingCregisSwitchCommands().find(value => value.commandKey === commandKey);
+  if (!pending) throw new Error("待恢复的资金开关请求不存在、已过期或不属于当前管理员，请先刷新核对真实状态");
+  return apiRequest<unknown>("finance", pending.path, {
+    method: pending.method, body: pending.body, idempotencyPrefix: "cregis-ops",
+    idempotencyKey: pending.commandKey, bankManualAuthEpoch: authEpoch,
+  });
 }
 
 function nextId(prefix: string) {
@@ -658,6 +685,8 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
         path,
         method,
         body: typeof init?.body === "string" ? init.body : "",
+        ...(base === "finance" && method === "POST" && D1_CREGIS_SWITCH_PATH.test(path)
+          ? { adminId: useAdminAuth.getState().session?.adminId } : {}),
       });
     }
   }
@@ -729,6 +758,10 @@ export function financeAdminRequest<T>(
   path: string,
   init?: RequestInit & { idempotencyPrefix?: string; idempotencyKey?: string; bankManualAuthEpoch?: number },
 ) {
+  if ((init?.method ?? "GET").toUpperCase() === "POST" && D1_CREGIS_SWITCH_PATH.test(path)) {
+    const unresolved = currentD1PendingCregisSwitchCommands().find(value => value.path === path);
+    if (unresolved) throw new DOutcomeUnknownError(unresolved.commandKey);
+  }
   return apiRequest<T>("finance", path, init);
 }
 

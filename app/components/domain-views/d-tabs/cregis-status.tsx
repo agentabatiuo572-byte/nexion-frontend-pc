@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { financeAdminRequest, listD1PendingCregisCommands } from "@/lib/admin/d-client";
+import { financeAdminRequest, listD1PendingCregisCommands, listD1PendingCregisSwitchCommands, retryD1PendingCregisSwitchCommand } from "@/lib/admin/d-client";
+import { adminAuthLifecycleEpoch, AdminAuthEpochChangedError } from "@/lib/admin/auth-lifecycle";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { OperatorBriefKind } from "../design-kit";
 import type { DCtx } from "./types";
 import { CregisExceptionOperations } from "./cregis-exceptions";
@@ -240,6 +242,7 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
   canManage?: boolean; openActionConfirm: DCtx["openActionConfirm"]; embedded?: boolean;
   onActivityChange?: (activity: D1CregisActivity) => void;
 }) {
+  const adminId = useAdminAuth(state => state.session?.adminId);
   const [data, setData] = useState<CregisExceptions | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -255,55 +258,83 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
   const [proposalActivity, setProposalActivity] = useState<DepositProposalActivity>({ unknown: 0, awaitingApproval: 0 });
   const selectedPool = data?.addressPools?.[poolNetwork] ?? (poolNetwork === "BEP20" ? data?.addressPool : undefined);
   const refresh = useCallback(async () => {
+    const authEpoch = adminAuthLifecycleEpoch();
     setLoading(true);
     setError("");
     setExtraAlerts([]);
     setExtraReviewCases([]);
     try {
-      const next = parseExceptions(await financeAdminRequest<unknown>("/cregis/exceptions"));
+      const next = parseExceptions(await financeAdminRequest<unknown>("/cregis/exceptions", { bankManualAuthEpoch: authEpoch }));
+      if (authEpoch !== adminAuthLifecycleEpoch()) return false;
       setData(next);
       setNetworkDrafts(previous => Object.fromEntries((next.networkSwitches ?? []).map(row => [row.network,
         previous[row.network]?.version === row.version ? previous[row.network] : { depositEnabled: row.depositEnabled, version: row.version }])));
       setGlobalPayout(previous => next.provisionGate.version == null ? null : previous?.version === next.provisionGate.version ? previous : { enabled: Boolean(next.provisionGate.payoutEnabled), version: next.provisionGate.version });
       return true;
     } catch (failure) {
+      if (authEpoch !== adminAuthLifecycleEpoch()) return false;
       setData(null);
       setError(failure instanceof Error ? failure.message : "加载失败");
       return false;
     } finally {
-      setLoading(false);
+      if (authEpoch === adminAuthLifecycleEpoch()) setLoading(false);
     }
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
   const pendingCommands = listD1PendingCregisCommands().length, needsAttention = !!error;
+  const pendingSwitchCommands = listD1PendingCregisSwitchCommands();
+  const proposalBlocked = busy || pendingSwitchCommands.some(pending => pending.path === "/cregis/switch-cases");
   useEffect(() => { onActivityChange?.({ pendingCommands, needsAttention, proposalUnknown: proposalActivity.unknown, proposalPending: proposalActivity.awaitingApproval }); }, [onActivityChange, pendingCommands, needsAttention, proposalActivity.unknown, proposalActivity.awaitingApproval]);
 
   const command = async (path: string, body?: Record<string, unknown>) => {
     if (busy) return;
+    const authEpoch = adminAuthLifecycleEpoch();
     setBusy(true);
     setError("");
     try {
       await financeAdminRequest<unknown>(path, {
         method: "POST", body: body ? JSON.stringify(body) : undefined,
         idempotencyPrefix: "cregis-ops",
+        bankManualAuthEpoch: authEpoch,
       });
+      if (authEpoch !== adminAuthLifecycleEpoch()) return;
       if (!await refresh()) {
         setError("操作已提交，但状态没刷新出来。请先刷新查看，不要重复提交。");
       }
     } catch (failure) {
+      if (authEpoch !== adminAuthLifecycleEpoch()) throw failure;
       setError(failure instanceof Error ? failure.message : "操作结果未确认，请刷新查看后再试");
       throw failure;
-    } finally { setBusy(false); }
+    } finally { if (authEpoch === adminAuthLifecycleEpoch()) setBusy(false); }
+  };
+
+  const recoverSwitchCommand = async (commandKey: string) => {
+    if (busy || !canManage) return;
+    const authEpoch = adminAuthLifecycleEpoch();
+    setBusy(true); setError("");
+    try {
+      await retryD1PendingCregisSwitchCommand(commandKey);
+      if (authEpoch !== adminAuthLifecycleEpoch()) return;
+      if (!await refresh()) setError("原请求已返回结果，但当前资金状态读取失败，请刷新核对后再操作。");
+    } catch (failure) {
+      if (authEpoch === adminAuthLifecycleEpoch()) setError(failure instanceof Error ? failure.message : "原请求结果仍未确认，请保留原请求后再恢复");
+    } finally { if (authEpoch === adminAuthLifecycleEpoch()) setBusy(false); }
   };
 
   const confirmCommand = (briefKind: OperatorBriefKind, action: string, detail: string, path: string,
-                          body?: Record<string, unknown>) => openActionConfirm({ briefKind,
-    action, detail, reasonMin: 10, reasonMax: 255,
-    completionCopy: path === "/cregis/switch-cases" || path === "/cregis/review-cases"
-      ? "提交后需另一位管理员复核才生效。" : "提交后立即执行。",
-    run: (reason) => command(path, { ...body, reason }),
-  });
+                          body?: Record<string, unknown>) => {
+    const authEpoch = adminAuthLifecycleEpoch();
+    openActionConfirm({ briefKind,
+      action, detail, reasonMin: 10, reasonMax: 255,
+      completionCopy: path === "/cregis/switch-cases" || path === "/cregis/review-cases"
+        ? "提交后需另一位管理员复核才生效。" : "提交后立即执行。",
+      run: (reason) => {
+        if (authEpoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
+        return command(path, { ...body, reason });
+      },
+    });
+  };
 
   const previewReview = async (targetCid: number) => {
     setBusy(true);
@@ -455,6 +486,11 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
         </>}
       </section>
       <section id="cregis-settings" hidden={section !== "settings"} aria-label="充值与地址设置" className="cregis-content">
+        {pendingSwitchCommands.length > 0 && <div className="dtint warn" role="status">资金开关操作结果待确认，可能已经生效。请按原请求恢复，不要另建提案或重新填写理由。
+          {pendingSwitchCommands.map(pending => <div className="p-row" key={pending.commandKey}><div className="txt"><div>{pending.path === "/cregis/switch-cases" ? "开关提案" : pending.path === "/cregis/switches/emergency-off" ? "紧急停用" : "提案复核"}</div><div className="sub mono">原请求：{pending.commandKey}</div></div>
+            {canManage && <button className="l-btn sm" disabled={busy || loading} onClick={() => void recoverSwitchCommand(pending.commandKey)}>按原请求恢复</button>}
+          </div>)}
+        </div>}
         <CregisDepositPolicy canManage={canManage} openActionConfirm={openActionConfirm} onActivityChange={setProposalActivity} />
         {data && <CregisPoolPolicy canManage={canManage} openActionConfirm={openActionConfirm} />}
         {data && <>
@@ -473,9 +509,9 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
               return <div className="cregis-network-row" role="row" key={row.network}>
                 <div role="cell"><strong>{row.network}</strong><div className="sub">{row.network === "BEP20" ? "BNB Smart Chain" : "Ethereum"} / 当前：{row.depositEnabled ? "开启" : "关闭"}</div></div>
                 <div role="cell"><label><input type="checkbox" aria-label={`${row.network} 充值目标`} checked={draft?.depositEnabled ?? row.depositEnabled}
-                  disabled={!canManage || busy || loading || pending || !draft} onChange={event => setNetworkDrafts(previous => ({ ...previous, [row.network]: { ...draft!, depositEnabled: event.target.checked } }))} />开启</label></div>
+                  disabled={!canManage || proposalBlocked || loading || pending || !draft} onChange={event => setNetworkDrafts(previous => ({ ...previous, [row.network]: { ...draft!, depositEnabled: event.target.checked } }))} />开启</label></div>
                 <div role="cell" className="cregis-network-availability"><span className={!row.depositAvailable || !row.addressAvailable ? "cregis-network-blocked" : ""}>{row.depositAvailable ? row.addressAvailable ? "已开放" : "已开放 · 地址准备中" : availabilityText(row.depositDisabledReason)}</span></div>
-                <div role="cell">{canManage ? <button className="l-btn sm" disabled={busy || loading || !draft || pending || data.provisionGate.version == null || draft.depositEnabled === row.depositEnabled && !restoring}
+                <div role="cell">{canManage ? <button className="l-btn sm" disabled={proposalBlocked || loading || !draft || pending || data.provisionGate.version == null || draft.depositEnabled === row.depositEnabled && !restoring}
                   onClick={() => confirmCommand("config", `提交 ${row.network} 充值${restoring ? "恢复" : "开关"}审批`,
                     `${restoring ? "当前全局暂停，本次只申请恢复所选网络充值；其他网络充值继续保持暂停，不会恢复出款总闸。" : ""}${row.network} 充值：${row.depositEnabled ? "开" : "关"} → ${draft!.depositEnabled ? "开" : "关"}。关闭将停止该网地址分配、链上直付新下单与自动入账，原交易继续核验。`,
                     "/cregis/switch-cases", { network: row.network, expectedVersion: data.provisionGate.version, expectedNetworkVersion: row.version, depositEnabled: draft!.depositEnabled })}>{pending ? "待另一管理员复核" : restoring ? "提交恢复审批" : "提交审批"}</button> : <span className="sub">只读</span>}</div>
@@ -483,8 +519,8 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
             })}
           </div>}
           <p>关闭该网将停止地址分配、链上直付新下单和自动入账，原交易继续核验。关闭一条网络，不改变另一条网络的充值开关。</p>
-          <div className="cregis-global-payout"><strong>全局链上出款总闸</strong><label><input type="checkbox" aria-label="全局链上出款目标" checked={globalPayout?.enabled ?? Boolean(data.provisionGate.payoutEnabled)} disabled={!canManage || busy || loading || !globalPayout} onChange={event => setGlobalPayout(previous => previous ? { ...previous, enabled: event.target.checked } : previous)} />开启</label>
-            {canManage && <button className="l-btn sm" disabled={busy || loading || !globalPayout || globalPayout.enabled === Boolean(data.provisionGate.payoutEnabled) && data.provisionGate.state === "IDLE"}
+          <div className="cregis-global-payout"><strong>全局链上出款总闸</strong><label><input type="checkbox" aria-label="全局链上出款目标" checked={globalPayout?.enabled ?? Boolean(data.provisionGate.payoutEnabled)} disabled={!canManage || proposalBlocked || loading || !globalPayout} onChange={event => setGlobalPayout(previous => previous ? { ...previous, enabled: event.target.checked } : previous)} />开启</label>
+            {canManage && <button className="l-btn sm" disabled={proposalBlocked || loading || !globalPayout || globalPayout.enabled === Boolean(data.provisionGate.payoutEnabled) && data.provisionGate.state === "IDLE"}
               onClick={() => confirmCommand("config", "提交全局链上出款审批", `两网共用出款总闸：${data.provisionGate.payoutEnabled ? "开" : "关"} → ${globalPayout!.enabled ? "开" : "关"}。不恢复充值，也不修改 D5 的分网络提现许可；开启后仍须满足支付商、对账、风险和单笔审核条件。`,
                 "/cregis/switch-cases", { expectedVersion: data.provisionGate.version, payoutEnabled: globalPayout!.enabled })}>提交出款审批</button>}
             <span>BEP20 / ERC20 分别是否允许提现，在 D5 设置。</span>
@@ -498,16 +534,18 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
             const network = row.network ?? "全局出款";
             const detail = row.network ? `${network} 充值 ${row.beforeDepositEnabled == null ? "原值" : row.beforeDepositEnabled ? "开" : "关"} → ${row.creditEnabled ? "开" : "关"}` : `全局链上出款 → ${payoutSwitchText(row)}`;
             const stale = Boolean(row.expectedVersion !== data.provisionGate.version || row.network && data.networkSwitches?.find(item => item.network === row.network)?.version !== row.expectedNetworkVersion);
-            return <div className="cregis-case" key={`switch-${row.id}`}><div>提案 #{String(row.id)} · {detail} · 发起人 {String(row.makerId)} · {String(row.reason)}</div>{stale && <p>配置版本已变，请拒绝后重新申请。</p>}{canManage && <div className="cregis-switch-form">
-              <button className="l-btn sm" disabled={busy || loading || Boolean(stale)} onClick={() => confirmCommand("config", `复核 ${network} 提案 #${row.id}`, `${detail}；发起人 ${String(row.makerId)}；理由 ${String(row.reason)}。按当前条件核验后生效。`,
+            const ownProposal = adminId != null && String(row.makerId) === String(adminId);
+            const decisionBlocked = busy || pendingSwitchCommands.some(pending => pending.path === `/cregis/switch-cases/${row.id}/decision`);
+            return <div className="cregis-case" key={`switch-${row.id}`}><div>提案 #{String(row.id)} · {detail} · 发起人 {String(row.makerId)} · {String(row.reason)}</div>{stale && <p>配置版本已变，请拒绝后重新申请。</p>}{ownProposal && <p>这是你发起的，需要另一位管理员处理</p>}{canManage && <div className="cregis-switch-form">
+              <button className="l-btn sm" disabled={decisionBlocked || loading || ownProposal || Boolean(stale)} onClick={() => confirmCommand("config", `复核 ${network} 提案 #${row.id}`, `${detail}；发起人 ${String(row.makerId)}；理由 ${String(row.reason)}。按当前条件核验后生效。`,
                 `/cregis/switch-cases/${row.id}/decision`, { decision: "APPROVE" })}>复核通过</button>
-              <button className="l-btn sm" disabled={busy || loading} onClick={() => confirmCommand("record", `拒绝 ${network} 提案 #${row.id}`, `${detail}；发起理由 ${String(row.reason)}`,
+              <button className="l-btn sm" disabled={decisionBlocked || loading || ownProposal} onClick={() => confirmCommand("record", `拒绝 ${network} 提案 #${row.id}`, `${detail}；发起理由 ${String(row.reason)}`,
                 `/cregis/switch-cases/${row.id}/decision`, { decision: "REJECT" })}>拒绝</button>
             </div>}</div>;
           })}
         </div>
         {canManage && <div className="cregis-danger-zone cregis-network-controls"><strong>全局紧急停用</strong><p>立即停止两网的地址分配、自动入账和新出款，继续接收回调并查询原单。旧提案失效，恢复须重新核对条件并提交审批。</p>
-          <button className="l-btn sm cregis-danger-button" disabled={busy || loading || data.provisionGate.version == null} onClick={() => confirmCommand("emergency", "紧急停用 BEP20 与 ERC20", "立即停止两网地址分配、自动入账和新出款；原交易继续核验和查询。",
+          <button className="l-btn sm cregis-danger-button" disabled={busy || loading || pendingSwitchCommands.some(pending => pending.path === "/cregis/switches/emergency-off") || data.provisionGate.version == null} onClick={() => confirmCommand("emergency", "紧急停用 BEP20 与 ERC20", "立即停止两网地址分配、自动入账和新出款；原交易继续核验和查询。",
             "/cregis/switches/emergency-off", { expectedVersion: data.provisionGate.version })}>紧急停用两网</button>
         </div>}
         </>}
