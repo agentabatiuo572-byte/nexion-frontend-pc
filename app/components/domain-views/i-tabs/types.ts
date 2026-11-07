@@ -8,11 +8,13 @@
  */
 import type { DCtx } from "../d-tabs/types";
 import type { IContentActions, IContentData } from "@/lib/admin/i-client";
+import type { ToastKind } from "@/lib/store/ui";
 
 export type { ActionConfirmReq, ConfirmReq, ConfirmChip } from "../k-tabs/types";
 
 /** I 域 ctx:后端 content client 是业务权威,前端仅承载弹窗和页面数据。 */
-export type ICtx = DCtx & {
+export type ICtx = Omit<DCtx, "toast"> & {
+  toast: (s: string, kind?: ToastKind) => void;
   content: IContentData;
   actions: IContentActions;
   contentLoading: boolean;

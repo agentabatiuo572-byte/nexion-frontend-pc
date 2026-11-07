@@ -5,10 +5,12 @@
  * 「正文版本」是给人看的版本号，「修订号」是防并发的内部计数，两个不能都叫版本（TX-04）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { FileCheck2, FilePen, FileText, Languages, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { BlockState, Button, Cell, Conclusion, Decision, DiffList, Drawer, Fact, Facts, Field, Fold, Input, Modal, Notice, NumberInput, Panel, Segments, Select, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr } from "@/app/components/rd";
+import { FileCheck2, FilePen, FileText, Languages, Plus, Trash2 } from "lucide-react";
+import { BlockState, Button, Cell, Conclusion, Decision, DiffList, Drawer, Fact, Facts, Field, Fold, Input, Modal, MoreMenu, Notice, NumberInput, Panel, RecordList, Segments, Select, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr } from "@/app/components/rd";
+import { businessClock } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { fetchPrivacyPolicyAdmin, type PublishedContentDocument } from "@/lib/admin/published-content-client";
+import type { TabHead } from "./i5-disclosures";
 import { LeaveDialog, MergeNotice, mergeEdits, useLeaveGuard, withConflict, WRITE_LOCKED, type EditorSwitch, type I5Writes, type MergeReport } from "./i5-writes";
 import type { ICtx } from "./types";
 
@@ -19,16 +21,19 @@ type Doc = PublishedContentDocument;
 const LOCALE_NAME: Record<string, string> = { zh: "中文", "zh-cn": "简体中文", en: "英语", vi: "越南语" };
 const STATUS_NAME: Record<Doc["status"], string> = { DRAFT: "草稿", PUBLISHED: "已发布", UNPUBLISHED: "已撤下公开版本" };
 const localeName = (key: string) => LOCALE_NAME[key] ?? key;
+/** 种子版本号带内部前缀 default-，写给人看时去掉；输入框和操作记录里还是原值（DT-14）。 */
+const versionName = (version: string) => version.replace(/^default-/, "");
 const contentOf = (doc: Doc, locale: string): Content => {
   const raw = doc.locales[locale] as Partial<Content> | undefined;
   return { hero: raw?.hero ?? "", sections: raw?.sections ?? [] };
 };
 
-export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: ICtx; writes: I5Writes; canWrite: boolean; canPublish: boolean; nonce: number }) {
+export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce, onHead }: { ctx: ICtx; writes: I5Writes; canWrite: boolean; canPublish: boolean; nonce: number; onHead: (key: "privacy", head: TabHead) => void }) {
   const { openActionConfirm, toast } = ctx;
   const [doc, setDoc] = useState<Doc | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [readAt, setReadAt] = useState("");
   const [viewing, setViewing] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const editorSwitch = useRef<EditorSwitch | null>(null);
@@ -41,6 +46,7 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: 
     setError(null);
     try {
       setDoc(await fetchPrivacyPolicyAdmin());
+      setReadAt(businessClock(Date.now()));
     } catch (cause) {
       // 上次读到的 doc 留着给编辑器，页面按 error 不再显示它。清掉会卸载编辑器，丢未保存的输入（OP-97）。
       setError(displayAdminError(cause));
@@ -49,6 +55,7 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: 
     }
   }, []);
   useEffect(() => { void refresh(); }, [refresh, nonce]);
+  useEffect(() => { onHead("privacy", { readAt, busy: loading, disabled: editing, failed: !doc || !!error, refresh: () => void refresh() }); }, [onHead, readAt, loading, editing, doc, error, refresh]);
 
   const locales = doc ? Object.keys(doc.locales) : [];
   const writeBlocked = loading ? "正在读取最新数据，读完再操作" : error ? "最新内容没读到，重新读取后再操作" : writes.isLocked("privacy") ? WRITE_LOCKED : undefined;
@@ -60,7 +67,7 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: 
     openActionConfirm(withConflict(ctx, { briefKind: "content",
       action: <>{form.status === "PUBLISHED" ? "发布隐私政策" : form.status === "UNPUBLISHED" ? "撤下隐私政策公开版本" : "保存隐私政策草稿"} · {form.version}</>,
       title: form.status === "PUBLISHED" ? "发布隐私政策" : form.status === "UNPUBLISHED" ? "撤下隐私政策公开版本" : "保存隐私政策草稿",
-      detail: <>{live ? "填完理由立即生效，不走审批。" : "只保存草稿，公开版本不变。"}</>,
+      detail: <>{live ? "不走审批。" : "只保存草稿，公开版本不变。"}</>,
       amplifies: false,
       confirmTone: live ? "danger" : "primary",
       effect: live ? <StatusTag tone="progress" filled>立即生效</StatusTag> : <StatusTag tone="neutral" filled>保存草稿，线上不变</StatusTag>,
@@ -81,7 +88,7 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: 
         const { version, status, locales: nextLocales, revision } = form;
         const result = await writes.send({ target: "privacy", label: `保存隐私政策 · ${version}`, op: { kind: "privacy", document: { version, status, locales: nextLocales, revision }, reason } });
         setEditing(false);
-        if (result === "done") { toast(live ? "隐私政策已更新，请核对公开页" : "草稿已保存，公开版本不变"); after?.(); }
+        if (result === "done") { toast(live ? "隐私政策已更新，请核对公开页" : "草稿已保存，公开版本不变", "success"); after?.(); }
       },
     }, () => void refresh()));
   };
@@ -91,29 +98,26 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: 
   const conclusion = !doc ? null
     : writes.isLocked("privacy") ? <Conclusion state="warn" hint="到页面上方核对原操作结果。">隐私政策：有操作结果未确认</Conclusion>
       : doc.status === "PUBLISHED"
-        ? <Conclusion state="ok" icon={FileCheck2} explain="公开接口按语言读取，没有译文时回退到英语。">隐私政策：已发布，正文版本 {doc.version}</Conclusion>
+        ? <Conclusion state="ok" icon={FileCheck2} explain="公开接口按语言读取，没有译文时回退到英语。">隐私政策：已发布，正文版本 {versionName(doc.version)}</Conclusion>
         : doc.status === "UNPUBLISHED"
           ? <Conclusion state="warn">隐私政策：已撤下公开版本，用户读不到</Conclusion>
           : doc.hasPublishedVersion
-            ? <Conclusion state="neutral" icon={FilePen}>隐私政策：有草稿 {doc.version}，已有公开版，草稿不替换</Conclusion>
-            : <Conclusion state="warn">隐私政策：有草稿 {doc.version}，暂无公开版</Conclusion>;
+            ? <Conclusion state="neutral" icon={FilePen}>隐私政策：有草稿 {versionName(doc.version)}，已有公开版，草稿不替换</Conclusion>
+            : <Conclusion state="warn">隐私政策：有草稿 {versionName(doc.version)}，暂无公开版</Conclusion>;
 
   return <div data-testid="published-content-privacyPolicy" className="rd-tab-stack">
     {!doc || error ? <BlockState state="error" title="公开内容状态尚未确认，请刷新重试。" detail={error ?? undefined} onRetry={() => void refresh()} retryLabel="刷新" /> : <>
       {conclusion}
-      <Panel title="各语言内容" icon={Languages} tone="role-2" flush actions={<>
-        <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} disabled={editing} onClick={() => void refresh()}>刷新</Button>
-        {canWrite && <Button variant="primary" size="sm" disabledReason={writeBlocked} onClick={() => { setViewing(null); setEditing(true); }}>编辑隐私政策</Button>}
-      </>}>
+      <Panel title="各语言内容" icon={Languages} tone="role-2" flush actions={canWrite ? <Button variant="primary" size="sm" disabledReason={writeBlocked} onClick={() => { setViewing(null); setEditing(true); }}>编辑隐私政策</Button> : undefined}>
         <Table label="各语言内容">
-          <thead><tr><Th>语言</Th><Th>页面主说明</Th><Th align="right">段落</Th></tr></thead>
+          <thead><tr><Th>语言</Th><Th>开头说明</Th><Th align="right">段落</Th></tr></thead>
           <tbody>
             {locales.map((key) => {
               const content = contentOf(doc, key);
               return (
                 <Tr key={key} selected={key === viewing} onOpen={() => leaveEditor(() => setViewing(key))}>
                   <Td><Cell main={localeName(key)} /></Td>
-                  <Td><Cell main={content.hero || "未填写"} title={content.hero} /></Td>
+                  <Td className="i5-hero-cell"><Cell main={content.hero || "未填写"} title={content.hero} /></Td>
                   <Td align="right"><Cell num main={content.sections.length} /></Td>
                 </Tr>
               );
@@ -123,21 +127,18 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce }: { ctx: 
         </Table>
       </Panel>
       <Fold title="技术信息" icon={FileText} tone="role-other" summary={`修订号 ${doc.revision}`}>
-        <Facts><Fact k="状态">{STATUS_NAME[doc.status] ?? "状态待核实"}</Fact><Fact k="公开版本">{doc.hasPublishedVersion ? "已有公开版" : "暂无公开版"}</Fact></Facts>
+        <Facts><Fact k="正文版本"><span data-mono="">{doc.version}</span></Fact></Facts>
       </Fold>
 
-      <Drawer open={!!viewing} onClose={() => setViewing(null)} title="隐私政策" sub={viewing ? `${localeName(viewing)} · ${doc.version}` : undefined} icon={FileText} tone="role-3">
+      <Drawer open={!!viewing} onClose={() => setViewing(null)} title="隐私政策" sub={viewing ? `${localeName(viewing)} · ${versionName(doc.version)}` : undefined} icon={FileText} tone="role-3">
         {viewing && <div className="rd-doc">
           <p>{contentOf(doc, viewing).hero}</p>
           {[...contentOf(doc, viewing).sections].sort((a, b) => a.order - b.order).map((section) => <section key={section.id}><h3>{section.title}</h3><p>{section.body}</p></section>)}
         </div>}
-        {viewing && <Fold inset title="段落结构" summary={`${contentOf(doc, viewing).sections.length} 段`}>
-          <Table label="段落结构">
-            <thead><tr><Th>段落标识</Th><Th align="right">顺序</Th><Th>标题</Th></tr></thead>
-            <tbody>{contentOf(doc, viewing).sections.map((section) => <Tr key={section.id}><Td><Cell mono main={section.id} /></Td><Td align="right"><Cell num main={section.order} /></Td><Td><Cell main={section.title} /></Td></Tr>)}</tbody>
-          </Table>
+        {viewing && <Fold inset title="技术信息" summary={`${contentOf(doc, viewing).sections.length} 段`}>
+          <RecordList label="段落结构" records={[...contentOf(doc, viewing).sections].sort((a, b) => a.order - b.order).map((section, index) => ({ id: section.id, value: `第 ${index + 1} 段 · ${section.title}`, reference: section.id }))} />
+          <Fold inset title="原始内容（JSON，只读）" summary={`${localeName(viewing)}的结构化内容`}><div className="rd-doc"><p data-mono="">{JSON.stringify(doc.locales[viewing], null, 2)}</p></div></Fold>
         </Fold>}
-        {viewing && <Fold inset title="技术信息" summary={`${localeName(viewing)}的结构化内容`}><Field label="原始内容（JSON，只读）">{(control) => <Textarea {...control} readOnly rows={12} value={JSON.stringify(doc.locales[viewing], null, 2)} />}</Field></Fold>}
       </Drawer>
     </>}
 
@@ -149,6 +150,7 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
   const [form, setForm] = useState(initial);
   const [baseline, setBaseline] = useState(initial);
   const [locale, setLocale] = useState(Object.keys(initial.locales)[0] ?? "en");
+  const [addingLocale, setAddingLocale] = useState(false);
   const [newLocale, setNewLocale] = useState("");
   const [localeError, setLocaleError] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
@@ -172,7 +174,7 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
     if (path[0] !== "locales") return null;
     if (!path[1]) return "各语言内容";
     const index = contentOf(form, path[1]).sections.findIndex((section) => section.id === path[3]);
-    return `${localeName(path[1])}${path[2] === "hero" ? "主说明" : !path[3] ? "" : index >= 0 ? `第 ${index + 1} 段` : "一个已删除的段落"}`;
+    return `${localeName(path[1])}${path[2] === "hero" ? "开头说明" : !path[3] ? "" : index >= 0 ? `第 ${index + 1} 段` : "一个已删除的段落"}`;
   };
   const localeKeys = Object.keys(form.locales);
   const current = contentOf(form, locale);
@@ -192,6 +194,7 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
     setLocale(normalized);
     setNewLocale("");
     setLocaleError(null);
+    setAddingLocale(false);
   };
   const removeLocale = () => {
     const next = { ...form.locales };
@@ -203,7 +206,7 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
   const localeProblem = (key: string) => {
     const content = contentOf(form, key);
     const ids = content.sections.map((section) => section.id.trim());
-    if (!content.hero.trim()) return "主说明";
+    if (!content.hero.trim()) return "开头说明";
     if (!content.sections.length) return "段落";
     if (ids.some((id) => !id) || new Set(ids).size !== ids.length) return "段落标识（不能空、不能重复）";
     if (content.sections.some((section) => !section.title.trim() || !section.body.trim())) return "段落标题或正文";
@@ -223,28 +226,30 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
   const saveLabel = form.status === "PUBLISHED" ? "保存并发布" : form.status === "UNPUBLISHED" ? "保存并撤下" : "保存草稿";
   const close = guard.askClose;
   return <>
-    <Drawer open wide onClose={close} title="编辑隐私政策" sub={`正文版本 ${baseline.version || "—"}`} icon={FilePen} tone="role-1"
-      footer={<Decision explain={form.status === "DRAFT" ? "草稿保留当前公开版本。" : "保存后立即生效，请仅发布已审核正文。"} others={<Button onClick={close}>取消</Button>} primary={<Button variant="primary" disabledReason={saveBlocked} onClick={() => onSave(form)}>{saveLabel}</Button>} />}>
+    <Drawer open wide onClose={close} title="编辑隐私政策" sub={`正文版本 ${versionName(baseline.version) || "—"}`} icon={FilePen} tone="role-1"
+      footer={<Decision note={form.status === "DRAFT" ? "草稿保留当前公开版本。" : "保存后立即生效，请仅发布已审核正文。"}
+        danger={<span className="rd-toolbar"><span className="rd-toolbar-note">保存后状态</span><Select aria-label="保存后状态" value={form.status} options={[
+          { value: "DRAFT", label: "草稿" },
+          { value: "PUBLISHED", label: "已发布", disabled: !canPublish },
+          { value: "UNPUBLISHED", label: "已撤下公开版本", disabled: !canPublish },
+        ]} onChange={(next) => setForm((doc) => ({ ...doc, status: next as Doc["status"] }))} /></span>}
+        others={<Button onClick={close}>取消</Button>} primary={<Button variant="primary" disabledReason={saveBlocked} onClick={() => onSave(form)}>{saveLabel}</Button>} />}>
       <div className="rd-form-stack">
         {readFailed && <Notice tone="warn" title="最新内容没读到" action={<Button size="sm" onClick={onRetryRead}>重新读取</Button>}>你的修改还在，读到后再保存。</Notice>}
         <MergeNotice report={merged} name={fieldName} />
         <div className="rd-form-grid">
           <Field label="正文版本" required error={needNewVersion ? "发布修改后的隐私政策需要新的版本号，请修改版本号后再发布。" : undefined}>{(control) => <Input {...control} maxLength={64} value={form.version} onChange={(event) => setForm((doc) => ({ ...doc, version: event.target.value }))} />}</Field>
-          <Field label="保存后状态"><Select aria-label="保存后状态" value={form.status} options={[
-            { value: "DRAFT", label: "草稿" },
-            { value: "PUBLISHED", label: "已发布", disabled: !canPublish },
-            { value: "UNPUBLISHED", label: "已撤下公开版本", disabled: !canPublish },
-          ]} onChange={(next) => setForm((doc) => ({ ...doc, status: next as Doc["status"] }))} /></Field>
         </div>
-        <div className="rd-form-grid">
-          <Field label="新增语言" error={localeError}>{(control) => <div className="rd-inline-form"><Input {...control} placeholder="例如 vi、zh-cn" maxLength={11} value={newLocale} onChange={(event) => setNewLocale(event.target.value)} /><Button size="sm" onClick={addLocale}>新增语言</Button></div>}</Field>
-        </div>
+        {localeKeys.length > 0 && <div className="rd-inline-form rd-inline-form-between">
+          <Segments label="内容语言" value={locale} onChange={setLocale} items={localeKeys.map((key) => ({ value: key, label: localeName(key), tone: localeProblem(key) ? "warn" as const : undefined }))} />
+          <span className="rd-row-actions">
+            <Button size="sm" aria-expanded={addingLocale} onClick={() => setAddingLocale(!addingLocale)}>+ 新增语言</Button>
+            <MoreMenu label="内容语言的更多操作" items={[{ key: "remove", label: "删除当前语言", danger: true, disabledReason: localeKeys.length <= 1 ? "至少保留一种语言。" : undefined, onSelect: () => setRemoving(true) }]} />
+          </span>
+        </div>}
+        {(addingLocale || !localeKeys.length) && <Field label="新增语言" error={localeError}>{(control) => <div className="rd-inline-form"><Input {...control} placeholder="例如 vi、zh-cn" maxLength={11} value={newLocale} onChange={(event) => setNewLocale(event.target.value)} /><Button size="sm" onClick={addLocale}>新增语言</Button></div>}</Field>}
         {localeKeys.length > 0 && <>
-          <div className="rd-inline-form rd-inline-form-between">
-            <Segments label="内容语言" value={locale} onChange={setLocale} items={localeKeys.map((key) => ({ value: key, label: localeName(key), tone: localeProblem(key) ? "warn" as const : undefined }))} />
-            <Button size="sm" variant="danger-outline" disabledReason={localeKeys.length <= 1 ? "至少保留一种语言。" : undefined} onClick={() => setRemoving(true)}>删除当前语言</Button>
-          </div>
-          <Field label="页面主说明" required>{(control) => <Textarea {...control} rows={3} maxLength={500} value={current.hero} onChange={(event) => setContent({ ...current, hero: event.target.value })} />}</Field>
+          <Field label="开头说明" required>{(control) => <Textarea {...control} rows={3} maxLength={500} value={current.hero} onChange={(event) => setContent({ ...current, hero: event.target.value })} />}</Field>
           <h3 className="rd-form-group-title">规则段落 · {current.sections.length} 段</h3>
           {current.sections.map((section, index) => (
             <Fold key={index} inset title={section.title || `第 ${index + 1} 段（未填标题）`} summary={section.body ? `${section.body.length} 字` : "未填写"} defaultOpen={!section.title || !section.body}>
@@ -257,12 +262,12 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
                     <Field label="顺序" explain="数字小的排前面。">{(control) => <NumberInput {...control} aria-label="顺序" min={0} max={100000} step={1} value={String(section.order)} onChange={(event) => setSection(index, { order: Number(event.target.value) })} />}</Field>
                   </div>
                 </Fold>
-                <div><Button size="sm" variant="danger-outline" icon={<Trash2 size={14} aria-hidden />} onClick={() => setContent({ ...current, sections: current.sections.filter((_, itemIndex) => itemIndex !== index) })}>删除段落</Button></div>
+                <div><Button size="sm" variant="ghost" icon={<Trash2 size={14} aria-hidden />} onClick={() => setContent({ ...current, sections: current.sections.filter((_, itemIndex) => itemIndex !== index) })}>删除段落</Button></div>
               </div>
             </Fold>
           ))}
           <div><Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={current.sections.length >= 100 ? "最多 100 段" : undefined} onClick={addSection}>新增段落</Button></div>
-          <Fold inset title="变更预览（只读）" summary={`${localeName(locale)}保存后的样子`}>
+          <Fold inset title="保存后预览" summary={localeName(locale)}>
             <div className="rd-doc">
               <p>{current.hero}</p>
               {[...current.sections].sort((a, b) => a.order - b.order).map((section, index) => <section key={index}><h3>{section.title}</h3><p>{section.body}</p></section>)}
@@ -276,6 +281,6 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
     {removing && <Modal title={`删除${localeName(locale)}`} icon={Trash2} onClose={() => setRemoving(false)} footer={<>
       <Button onClick={() => setRemoving(false)}>取消</Button>
       <Button variant="danger" onClick={removeLocale}>删除这种语言</Button>
-    </>}><p>这种语言的主说明和全部段落从表单里去掉。保存前点「取消」关掉抽屉可以放弃，保存后这种语言改读英语。</p></Modal>}
+    </>}><p>这种语言的开头说明和全部段落从表单里去掉。保存前点「取消」关掉抽屉可以放弃，保存后这种语言改读英语。</p></Modal>}
   </>;
 }
