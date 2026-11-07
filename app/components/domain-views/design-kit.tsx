@@ -3846,7 +3846,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
           <p style={{ margin: "0 0 14px", lineHeight: 1.5 }}>{completionCopy}</p>
           {coverage && <p className="operation-approval-coverage">当前覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b> · 红线 <b>{coverage.redlinePct}%</b></p>}
           {approval.comparison}
-        </> : !compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} completionCopy={completionCopy} auditSink={auditSink} kind={effectiveBriefKind} />}
+        </> : !compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} completionCopy={statedBrief ? undefined : completionCopy} auditSink={auditSink} kind={effectiveBriefKind} stated={statedBrief} />}
       </>}
       {!surface && !approval && coverageNotice}
       {!surface && !approval && completionCopy && <div className="tint tiny" style={{ marginBottom: 14 }}>{completionCopy}</div>}

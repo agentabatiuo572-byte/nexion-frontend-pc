@@ -92,6 +92,8 @@ const MIGRATED = [
   "app/components/domain-views/c-tabs/c5-security.tsx",
   "app/components/domain-views/c-tabs/c6-regrisk.tsx",
   "app/components/domain-views/d-tabs/d2-withdrawals.tsx",
+  // D7 direct saves retain the immutable original values, version, reason and key until success or an explicit release.
+  "app/components/domain-views/d-tabs/d7-payout-vnd.tsx",
   "app/components/domain-views/l-tabs/l1-kpi.tsx",
   "app/components/domain-views/d-tabs/d3-treasury.tsx",
   // 资金储备和旧「可用资金与应付款」共用的注入、导出命令表，只建一份。

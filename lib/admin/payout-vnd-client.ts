@@ -21,16 +21,18 @@ export async function loadPayoutVndConfig(): Promise<PayoutVndConfig> {
   return normalizeServerConfig(await financeAdminRequest<unknown>("/payout-vnd/config"));
 }
 
+/** commandKey 由页面持有：结果未知时页面保留原命令号和原内容，只能原样重试（OP-92、OP-94）。 */
 export async function updatePayoutVndConfig(
   values: PayoutVndValues,
   expectedVersion: number,
   reason: string,
-  forceInverted = false,
+  forceInverted: boolean,
+  commandKey: string,
 ): Promise<PayoutVndConfig> {
   const payload = { ...values, expectedVersion, reason, forceInverted };
   return normalizeServerConfig(await financeAdminRequest<unknown>("/payout-vnd/config", {
     method: "PATCH",
     body: JSON.stringify(payload),
-    idempotencyPrefix: "d7-payout-config",
+    idempotencyKey: commandKey,
   }));
 }

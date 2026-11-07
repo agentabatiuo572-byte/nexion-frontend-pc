@@ -32,10 +32,12 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
   } as DCtx;
 
   if (tab === "D3") return <D3Treasury />;
+  // 已改版的页包 RdPage，页头在页面里，不再渲染旧的域页头。
+  const redesigned = tab === "D2" || tab === "D7";
 
   const page = (
     <>
-      {tab !== "D2" && <DomainHeader {...meta} />}
+      {!redesigned && <DomainHeader {...meta} />}
 
       {tab === "D1" && <D1Recon ctx={ctx} />}
       {tab === "D2" && <D2Withdrawals ctx={ctx} />}
@@ -75,6 +77,7 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
           facts={mc.facts}
           confirmTone={mc.confirmTone}
           coverageLead={mc.coverageLead}
+          reasonPlaceholder={mc.reasonPlaceholder}
           onBusinessSelectionChange={mc.onBusinessSelectionChange}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {
@@ -88,5 +91,5 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
     </>
   );
 
-  return tab === "D2" ? <RdPage className="ddom">{page}</RdPage> : <div className="dkpage ddom">{page}</div>;
+  return redesigned ? <RdPage className="ddom">{page}</RdPage> : <div className="dkpage ddom">{page}</div>;
 }

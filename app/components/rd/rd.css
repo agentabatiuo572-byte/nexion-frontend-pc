@@ -651,6 +651,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-form-error { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-danger); }
 .rd-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--rd-space-6) 20px; }
 .rd-form-grid[data-cols="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.rd-form-grid[data-cols="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }  /* 成对的上下限放一行（research-form 233 行），抽屉 540 宽放不下两个 240 的自动列 */
 :is(.rd-input, .rd-select)[aria-invalid="true"] { outline: 1px solid var(--rd-danger); }
 /* 弹窗和抽屉里填错了是「要你处理」，用橙黄；红只给失败和不能撤销（VS-107）。 */
 :is(.rd-modal, .rd-drawer) .rd-form-error { color: var(--rd-warn); }
