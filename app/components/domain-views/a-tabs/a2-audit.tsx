@@ -149,6 +149,18 @@ const OWN_TICKET_REASON = "这是你发起的，需要另一位管理员处理";
 const RETIRED_OPERATION_COPY = "此操作已退役，不可执行或重新发起；保留原申请和历史记录，待审申请可按原权限取消。";
 const COVERAGE_ON_APPROVAL_COPY = "批准执行时，系统会检查兑付覆盖率。低于红线时，审批单继续待处理，账户组状态和提现限制保持原样。";
 
+function approvalCoverageCopy(w: A2OperationRow) {
+  return w.ambassadorMaterialProposal?.applicationDecision === "APPROVE"
+    ? "批准执行时，系统会重新核验材料版本、核验结论、认可金额及兑付覆盖率。任一条件不满足时，审批单继续待处理，申请状态和所选类别预算额度保持原样。"
+    : COVERAGE_ON_APPROVAL_COPY;
+}
+
+function approvalExecutorLabel(w: A2OperationRow) {
+  return w.ambassadorMaterialProposal?.applicationDecision === "APPROVE"
+    ? "另一位具有审批和大使批准权限、且未参与本版材料核验的管理员"
+    : w.roleGate;
+}
+
 function isCurrentOperator(w: A2OperationRow, username: string | undefined) {
   return w.mine || (!!username && username === w.operator);
 }
@@ -387,7 +399,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const isRefund = w.fundEffect === "ORDER_REFUND";
     const isFunds = w.type === "fund" || isRefund || w.fundEffect === "REWARD_SUSPENSION" || w.fundEffect === "REWARD_RESUMPTION";
     openActionConfirm({ briefKind: isFunds ? "funds" : w.type === "acct" ? "security" : w.type === "sos" ? "emergency" : "config",
-      completionCopy: w.coverageCheckOnApproval ? COVERAGE_ON_APPROVAL_COPY : g3PolicyExecutionTiming(w),
+      completionCopy: w.coverageCheckOnApproval ? approvalCoverageCopy(w) : g3PolicyExecutionTiming(w),
       content: isRefund && w.refundOrderNo ? <PromotionRefundImpact orderNo={w.refundOrderNo} /> : undefined,
       action: <>确认执行 · {w.id}({a2ActionText(w.action)})</>,
       detail: (
@@ -396,7 +408,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           <A2ChangeReview before={w.before} after={w.after} />
           {w.coverageCheckOnApproval ? "通过覆盖率检查后执行" : g3PolicyExecutionTiming(w) ?? "确认后立即执行"}
           {w.sos && w.operationCode !== "j1_gate_resume" ? (<>，<b>并通知应急值班人员</b></>) : null}。<br />
-          谁能执行：<b>{w.roleGate}</b>
+          谁能执行：<b>{approvalExecutorLabel(w)}</b>
           {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
           {w.phoneCalibrationError && <p role="alert">{w.phoneCalibrationError}</p>}
           {w.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={w.ambassadorMaterialProposal} expectedMaterialRevision={w.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? w.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
@@ -1108,10 +1120,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               {w.ambassadorMaterialError && <div className="amb-alert" role="alert">{w.ambassadorMaterialError}</div>}
               <div className="kv"><span className="k">操作理由</span><span className="v" style={{ maxWidth: 360, textAlign: "right" }}>{w.reason}</span></div>
               <div className="kv"><span className="k">记录时间</span><span className="v">{w.ts}{w.sos ? "（应急，优先处理）" : ""}</span></div>
-              <div className="kv"><span className="k">{w.retiredOperation ? "原执行权限" : "谁能执行"}</span><span className="v">{w.roleGate}</span></div>
+              <div className="kv"><span className="k">{w.retiredOperation ? "原执行权限" : "谁能执行"}</span><span className="v">{approvalExecutorLabel(w)}</span></div>
             </div>
             <div className="atint" style={{ marginTop: 14 }}>
-              {w.retiredOperation ? RETIRED_OPERATION_COPY : w.coverageCheckOnApproval ? COVERAGE_ON_APPROVAL_COPY : w.amplifies ? (
+              {w.retiredOperation ? RETIRED_OPERATION_COPY : w.coverageCheckOnApproval ? approvalCoverageCopy(w) : w.amplifies ? (
                 <>
                   <b>🔥 会让平台多付钱</b>：执行时会再次显示当前兑付覆盖率，如已跌破红线请取消并注明原因。
                 </>
