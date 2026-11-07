@@ -99,3 +99,6 @@
 
 /* 隐私政策的开头说明占满这一列，再长才截断（DT-09）。 */
 .idom .i5-hero-cell .rd-cell { max-width: calc(100cqw - 220px); }
+
+/* 原始 JSON 用等宽字，缩进才对得齐（DT-08）。 */
+.rd-doc p[data-mono] { font-family: var(--rd-font-mono); }

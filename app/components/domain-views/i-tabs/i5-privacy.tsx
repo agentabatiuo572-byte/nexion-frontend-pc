@@ -136,7 +136,7 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce, onHead }:
           {[...contentOf(doc, viewing).sections].sort((a, b) => a.order - b.order).map((section) => <section key={section.id}><h3>{section.title}</h3><p>{section.body}</p></section>)}
         </div>}
         {viewing && <Fold inset title="技术信息" summary={`${contentOf(doc, viewing).sections.length} 段`}>
-          <RecordList label="段落结构" records={[...contentOf(doc, viewing).sections].sort((a, b) => a.order - b.order).map((section, index) => ({ id: section.id, value: `第 ${index + 1} 段 · ${section.title}`, reference: section.id }))} />
+          <RecordList label="段落结构" records={[...contentOf(doc, viewing).sections].sort((a, b) => a.order - b.order).map((section) => ({ id: section.id, value: section.title, reference: section.id }))} />
           <Fold inset title="原始内容（JSON，只读）" summary={`${localeName(viewing)}的结构化内容`}><div className="rd-doc"><p data-mono="">{JSON.stringify(doc.locales[viewing], null, 2)}</p></div></Fold>
         </Fold>}
       </Drawer>

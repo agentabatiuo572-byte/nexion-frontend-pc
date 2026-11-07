@@ -59,7 +59,7 @@ const EDITABLE_LANGUAGES = ["zh", "vi", "en"];
 const scopeTooWide = (scope: string) => scope.split("+").some((code) => !EDITABLE_LANGUAGES.includes(code));
 const SCOPE_TOO_WIDE = "这里只能录入中文、越南语和英语。选这一档也填不了另外 6 种，它们在 App 里显示英语。";
 const LEGAL_LOCALE: Record<string, string> = { en: "英文", zh: "中文", vi: "越南语" };
-const LEGAL_STATUS: Record<string, string> = { DRAFT: "草稿", PUBLISHED: "已发布", SUPERSEDED: "历史版本", REVOKED: "已撤回" };
+const LEGAL_STATUS: Record<string, string> = { DRAFT: "草稿", PUBLISHED: "生效中", SUPERSEDED: "历史版本", REVOKED: "已撤回" };
 const PRIVACY_STATUS: Record<string, string> = { DRAFT: "草稿", PUBLISHED: "已发布", UNPUBLISHED: "已撤下公开版本" };
 /** 审批单的 action 是操作记录的原文，页面上写人话。 */
 const queueTitle = (action: string) => action.replace("披露适用地区版本矩阵", "版本映射").replace("披露适用地区", "适用地区");
@@ -575,7 +575,6 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       </>,
       businessForm: {
         kind: "multi-field",
-        title: "发布前核对",
         fields: [
           { key: "jurisdictionConfirmed", label: `确认发布适用地区为 ${row.jurisdiction}`, inputKind: "checkbox", wide: true },
           { key: "bilingualConfirmed", label: `已核对七章${languageNames(row.languageScope)}内容，与监管要求一致`, inputKind: "checkbox", wide: true },

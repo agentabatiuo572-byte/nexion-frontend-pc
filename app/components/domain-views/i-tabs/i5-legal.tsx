@@ -21,7 +21,7 @@ const LOCALE_OPTIONS = [{ value: "en", label: "英文" }, { value: "zh", label: 
 const localeName = (value: string) => LOCALE_OPTIONS.find((item) => item.value === value)?.label ?? value;
 const STATUS: Record<string, { text: string; tone: StateTone }> = {
   DRAFT: { text: "草稿", tone: "neutral" },
-  PUBLISHED: { text: "已发布", tone: "ok" },
+  PUBLISHED: { text: "生效中", tone: "ok" },
   SUPERSEDED: { text: "历史版本", tone: "done" },
   REVOKED: { text: "已撤回", tone: "warn" },
 };
@@ -207,7 +207,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
     effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag /></>,
     confirmLabel: "确认撤回，立即生效",
     statedBrief: { impact: `${scopeText} 的公开条款立即下架，不能恢复这个版本。`, check: "确认要下架线上条款，理由写清依据。" },
-    facts: <Facts><Fact k="范围">{scopeText}</Fact><Fact k="版本">{row.version} · {row.title}</Fact><Fact k="状态"><Change from="已发布" to="已撤回" /></Fact><Fact k="后果" tone="danger">{locale === "en" && jurisdiction === "GLOBAL" ? "读 en/GLOBAL 的用户，以及回退到这里的用户都读不到条款" : "英文和 GLOBAL 都没有已发布版本时，用户读不到条款"}</Fact></Facts>,
+    facts: <Facts><Fact k="范围">{scopeText}</Fact><Fact k="版本">{row.version} · {row.title}</Fact><Fact k="状态"><Change from="生效中" to="已撤回" /></Fact><Fact k="后果" tone="danger">{locale === "en" && jurisdiction === "GLOBAL" ? "读 en/GLOBAL 的用户，以及回退到这里的用户都读不到条款" : "英文和 GLOBAL 都没有已发布版本时，用户读不到条款"}</Fact></Facts>,
     reasonPlaceholder: "例如：条款有误，法务要求下架",
     run: async (reason) => {
       const result = await writes.send({ target, label: `撤回法律条款 · ${scopeText} ${row.version}`, op: { kind: "legal-transition", action: "revoke", row, reason } });
