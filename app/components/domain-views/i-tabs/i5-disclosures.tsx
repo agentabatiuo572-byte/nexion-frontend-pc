@@ -737,7 +737,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       {[...issues].map(([code, issue]) => (
         <div className="rd-panel-line" key={code} data-proof="disclosure-publication-issue"><Notice tone="danger" title={`${code} 引用异常`}>{issue}</Notice></div>
       ))}
-      <Table label="各地区生效版本">
+      <Table label="各地区生效版本" className={canPublish ? "i5-region-table" : undefined}>
         <thead><tr><Th>适用地区</Th><Th>当前版本</Th><Th>状态</Th><Th>重新确认进度</Th>{canPublish && <Th align="right">操作</Th>}</tr></thead>
         <tbody>
           {jurisdictions.map((j) => {
