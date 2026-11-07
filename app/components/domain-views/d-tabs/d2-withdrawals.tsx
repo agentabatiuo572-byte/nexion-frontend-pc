@@ -1235,7 +1235,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       briefKind: "funds",
       action: `${label}提现 · ${row.withdrawalNo}`,
       title: REVIEW_TITLE[action],
-      detail: `当前 ${statusLabel(row.status)}；账户 ${userStatusLabel(row.userStatus)}。${action === "APPROVE" ? (row.chain === "BANK-VND" ? "确认后立即放行，由 HDPay 打款，打款成功才算完成。" : "确认后立即放行，钱从储备中扣除。提交时系统会再查一次覆盖率，低于红线不会放行。") : action === "REJECT" ? "确认后立即拒绝，完成后为已退款。" : "确认后立即生效。"}`,
+      detail: `当前 ${statusLabel(row.status)}；账户 ${userStatusLabel(row.userStatus)}。${action === "APPROVE" ? (row.chain === "BANK-VND" ? "确认后立即放行，由 HDPay 打款，打款成功才算完成。" : "确认后立即放行，钱从储备中扣除。提交时系统会再查一次覆盖率，低于红线不会放行。") : action === "REJECT" ? "确认后立即拒绝并退款。" : "确认后立即生效。"}`,
       businessForm: actionBusinessForm(action, addressVerificationRequired),
       facts: reviewFacts(row, action, bankDetail?.withdrawalNo === row.withdrawalNo ? bankDetail : null, coverageFacts()),
       reasonMin: 8,
