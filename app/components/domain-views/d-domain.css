@@ -202,3 +202,26 @@
 .d2-batch-row { display: grid; grid-template-columns: minmax(0, 1fr) 9em 6em; column-gap: 12px; }
 .d2-batch-row > :nth-child(2) { text-align: right; font-variant-numeric: tabular-nums; }
 .d2-batch-pay { grid-column: 1 / -1; color: var(--rd-text-3); }
+
+/* 数字列右对齐、下一列文字左对齐时，两列的内容贴在一起，空白却都在别处：这里补开（亲密性）。 */
+.d-num-gap :is(th, td)[data-align="right"] + :is(th, td):not([data-align="right"]) { padding-left: var(--rd-space-8); }
+
+/* 提现单抽屉 */
+.d2-history { display: flex; flex-direction: column; gap: var(--rd-space-4); }
+.d2-history .rd-note { margin-bottom: var(--rd-space-1); }
+.d2-raw { display: block; margin-top: var(--rd-space-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+/* 查证入口是文字链，不是术语：实线下划线，和「查看全部」一条左边线（VS-06）。 */
+.d2-raw .rd-explain[data-term] { border-bottom: 0; color: var(--rd-text-2); text-decoration: underline; text-decoration-color: var(--rd-text-3); text-underline-offset: 3px; cursor: pointer; }
+
+/* 资金储备与应付款 */
+.d3-kv { max-width: 560px; }  /* 名称和值不隔半屏（DT-05）。 */
+.d3-levels .rd-tiers { max-width: none; }  /* 宽度由 Figure 管：左右排时到 560，上下排时占满面板。 */
+.d3-window { gap: var(--rd-space-1); }
+.d3-stats .rd-stat[data-lead] .rd-stat-value { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); }  /* 差额是 8 位以上的金额，关键数字档四格一行放不下。 */
+.d3-zero { color: var(--rd-text-3); }
+.d3-amount { max-width: none; }
+.d3-form { grid-template-columns: repeat(2, minmax(0, 280px)); }  /* 下拉里是两个字，不拉满半屏。 */
+@container (max-width: 799px) { .rd-figure .d3-liabilities :is(th, td):nth-child(4) { display: none; } }  /* 环在左时窄屏放不下四列，数据来源在抽屉里。 */
+.d3-checks .rd-check-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }  /* 九类三列，不让最后一行只剩一项。 */
+/* 改完不用往下找保存：操作条贴住视口底部（DT-11）。 */
+.d3-savebar { position: sticky; bottom: calc(-1 * var(--admin-gutter)); z-index: 2; margin-bottom: calc(-1 * var(--admin-gutter)); padding-block: var(--rd-space-3) calc(var(--rd-space-3) + var(--admin-gutter)); background: var(--rd-bg); }
