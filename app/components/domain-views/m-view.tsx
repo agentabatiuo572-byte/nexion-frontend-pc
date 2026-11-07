@@ -520,7 +520,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         // client 已接咽喉,英文网络错误不再到达;按原压制意图改判「咽喉网络中文」,命中仍不附加 detail。
         const detail = message.includes("网络连接失败或系统暂时连不上") ? "" : ` · ${message}`;
         const failure = rejected ? `后台明确拒绝原会话结束操作，请核对当前会话后重新确认${detail}` : refusedWrite(error) ? `后台拒绝了这次操作${detail}` : `结果未确认${detail.replace(/。$/, "")}。再点确认会按原操作重试`;
-        if (meta?.onFailure) meta.onFailure(failure); else setToast(failure);
+        if (meta?.onFailure) meta.onFailure(failure); else setToast(failure, rejected || refusedWrite(error) ? "error" : "warn");
         return false;
       }
     },
