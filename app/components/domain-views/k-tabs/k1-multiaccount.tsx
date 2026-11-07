@@ -1298,8 +1298,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         value: c.strength.toFixed(2),
         state: strengthTone(c.strength, freezeSuggestThreshold),
         reason: hot
-          ? `达到关联程度建议冻结线 ${formatThreshold(freezeSuggestThreshold)}（0–1 分）。这只是建议，不会自动冻结。`
-          : `关联程度建议冻结线 ${formatThreshold(freezeSuggestThreshold)}（0–1 分）`,
+          ? `达到建议冻结的关联程度 ${formatThreshold(freezeSuggestThreshold)}（0–1 分）。这只是建议，不会自动冻结。`
+          : `建议冻结的关联程度 ${formatThreshold(freezeSuggestThreshold)}（0–1 分）`,
       },
       { label: "判读", value: c.note || "—" },
       {
@@ -1412,7 +1412,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           <StatBand label="关联账户组概况">
             <Stat tone="role-3" icon={Users} label="监控中的关联账户组" value={statText("activeClusters")} unit="组" sub={`涉及 ${statText("flaggedAccounts")} 个账户`}
               explain="全部账户组里，还没判定为正常、也没解除的组。不随下面的筛选变。" />
-            <Stat icon={ShieldAlert} iconTone={Number(stats.highClusters) > 0 ? "warn" : "role-other"} label="高风险账户组" value={statText("highClusters")} unit="组" sub={`关联程度建议冻结线 ${formatThreshold(freezeSuggestThreshold)}（0–1 分）`}
+            <Stat icon={ShieldAlert} iconTone={Number(stats.highClusters) > 0 ? "warn" : "role-other"} label="高风险账户组" value={statText("highClusters")} unit="组" sub={`建议冻结的关联程度 ${formatThreshold(freezeSuggestThreshold)}（0–1 分）`}
               explain="待判定或可疑、关联程度达到建议冻结线的组。这只是建议，不会自动冻结。" />
             <Stat tone={Number(stats.frozenClusters) > 0 ? "warn" : undefined} icon={Snowflake} label="已冻结账户组" value={statText("frozenClusters")} unit="组" sub={`共 ${statText("frozenAccounts")} 个账户`} />
             <Stat tone="role-1" icon={Gift} label="新人礼拦截" value={statKnown("giftBlockedUsd") ? `$${statText("giftBlockedUsd")}` : "—"} sub={statKnown("giftBlockedCnt") ? `${statText("giftBlockedCnt")} 笔重复领取被拦下` : "数据尚未接入，不能判定为 0"}
@@ -1736,11 +1736,10 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const help = K1_PARAM_HELP.linkWeight;
         return (
           <DraftModal title={`调整${riskParamName(weightDraft.param)}`} icon={SlidersHorizontal} effect={IMMEDIATE_EFFECT} wide busy={busy} saveLabel="保存并立即生效"
-            explain={[{ k: "怎么算", v: "每种依据按同用账户数给分，乘权重后相加，取组里关联最强的一对账户。只影响建议冻结的提示，不改账户组状态。" }, { k: "怎么填", v: help.how }, { k: "生效时间", v: help.when }]}
+            explain={[{ k: "怎么算", v: "每种依据按同用账户数给分，乘权重后相加，取组里关联最强的一对账户。" }, { k: "怎么填", v: help.how }, { k: "生效时间", v: help.when }]}
             blocked={firstProblem ?? (!totalOk ? "三项合计必须等于 1.00" : !changed ? "保存值和当前值一样，没有改动" : undefined)}
             reason={weightDraft.reason} placeholder="例如：误判多来自同一网络，降低 IP 权重、提高设备指纹权重" {...draftAttempt} policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => updateDraft({ reason: next })} onClose={() => setWeightDraft(null)} onSave={saveWeightDraft}>
-            <p className="rd-note">系统下次检查时按新权重重算关联程度；只影响建议冻结的提示，不改账户组状态。</p>
             {/* 三个值都要填，现在值跟在字段名后面，输入框里是正在填的内容（VS-103）。 */}
             <div className="rd-form-grid" data-cols="3">
               {fields.map(([key, label, fieldHelp]) => (
@@ -1750,7 +1749,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 </Field>
               ))}
             </div>
-            {!firstProblem && <p className={!totalOk && (touched.submit || touched.total) ? "rd-form-error" : "rd-note"}>合计 {total.toFixed(2)}，三项必须合计 1.00</p>}
+            {!firstProblem && <p className={!totalOk && (touched.submit || touched.total) ? "rd-form-error" : "rd-note"}>合计 {total.toFixed(2)}，要等于 1.00</p>}
+            {/* 改了会怎样写在块的最下面（VS-103），和允许名单框一个位置。 */}
+            <p className="rd-note">系统下次检查时按新权重重算关联程度；只影响建议冻结的提示，不改账户组状态。</p>
           </DraftModal>
         );
       })()}
