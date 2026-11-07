@@ -9,11 +9,11 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
  */
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import Link from "next/link";
-import { Activity, CheckCircle2, CircleHelp, Download, Flag, Gauge, ListChecks, Lock, SlidersHorizontal, Target } from "lucide-react";
+import { Activity, CheckCircle2, CircleHelp, Download, Flag, Gauge, ListChecks, Lock, RefreshCw, SlidersHorizontal, Target } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { KpiTrendPoint } from "@/lib/admin/kpi-trend";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
-import { BlockState, Button, Cell, Check, Conclusion, DiffField, Explain, Fact, Facts, FilterBar, FilterField, Fold, Input, Modal, Notice, NumberInput, PageHeader, Panel, RecordList, ReleaseModal, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Cell, Check, Conclusion, DiffField, Explain, Fact, Facts, Figure, FilterBar, FilterField, Fold, Input, Modal, Notice, NumberInput, PageHeader, Panel, RecordList, ReleaseModal, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { businessClock, businessDay, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { findByPath } from "@/lib/nav/console-nav";
@@ -52,15 +52,15 @@ type KpiExt = {
   note: string;
   jump: { label: string; href?: string }[];
 };
+const unitText = (k: Kpi) => (k.unit === "d" ? " 天" : k.unit);
 const tgtLabel = (k: Kpi) => {
   const [low = 0, high = 0] = k.band ?? [];
-  return k.dir === "band" ? `健康带 ${low}–${high}${k.unit === "d" ? "天" : k.unit}` : `目标 ${k.dir === "lte" ? "< " : "> "}${k.target}${k.unit === "d" ? "天" : k.unit}`;
+  return k.dir === "band" ? `健康带 ${low}–${high}${unitText(k)}` : `目标 ${k.dir === "lte" ? "< " : "> "}${k.target}${unitText(k)}`;
 };
 const tgtValue = (k: Kpi) => (k.dir === "band" ? (k.band?.[0] ?? k.target) : k.target);
 
 type KpiState = "g" | "y" | "r" | "na" | "small";
 const SMALL_SAMPLE = 5;
-const unitText = (k: Kpi) => (k.unit === "d" ? "天" : k.unit);
 const tgtShort = (k: Kpi) => tgtLabel(k).replace("目标 ", "").replace("健康带 ", "");
 const kpiStatus = (k: Kpi, offset: number): KpiState => {
   if (k.suppressed) return "small";
@@ -105,7 +105,15 @@ function deltaText(k: Kpi) {
   if (k.previousSuppressed) return "上期样本过小";
   if (k.momDelta == null) return "无可比数据";
   if (k.momDelta === 0) return "较上期持平";
-  return `较上期 ${k.momDelta > 0 ? "+" : ""}${k.momDelta} ${k.unit === "%" ? "个百分点" : unitText(k)}`;
+  return `较上期 ${k.momDelta > 0 ? "+" : ""}${k.momDelta} ${k.unit === "%" ? "个百分点" : unitText(k).trim()}`;
+}
+
+/** 最新值离目标多远。好坏按这项的方向说，不用人去想高了好还是低了好。 */
+function targetGap(k: Kpi) {
+  if (k.value == null) return "—";
+  const gap = k.dir === "lte" ? k.target - k.value : k.value - k.target;
+  const size = `${Number(Math.abs(gap).toFixed(1))} ${k.unit === "%" ? "个百分点" : unitText(k).trim()}`;
+  return gap === 0 ? "等于目标" : gap > 0 ? `好于目标 ${size}` : `差 ${size}`;
 }
 
 /** 后端才知道的范围先在这里查（ST-19）：起止差不超过 400 天，不含未来日期。 */
@@ -199,7 +207,7 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
       if (!unknown && !retained) pendingExports.forget(EXPORT_SCOPE);
       syncPending();
       if (!unknown) throw cause;
-      ctx.toast("结果未确认，不要重复导出。到页面上方按原操作重试。");
+      ctx.toast("结果未确认，不要重复导出。到页面上方按原操作重试。", "warn");
       return;
     }
     pendingExports.forget(EXPORT_SCOPE);
@@ -208,7 +216,7 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
     setRetryNote("");
     setFinished(mode);
     await ctx.reloadBi?.();
-    ctx.toast(reach(EXPORT_PAGE, "bi_l5_read") ? `已提交导出，生成后到「${pageName}」下载` : "已提交导出，文件生成后才能下载");
+    ctx.toast(reach(EXPORT_PAGE, "bi_l5_read") ? `已提交导出，生成后到「${pageName}」下载` : "已提交导出，文件生成后才能下载", "success");
   };
 
   const openConfirm = (mode: L1ExportMode) => {
@@ -216,18 +224,17 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
     ctx.openActionConfirm({ briefKind: "export",
       action: "导出关键指标",
       detail: `聚合数据，不含用户隐私。提交后生成任务，文件到「${pageName}」下载。`,
-      statedBrief: { impact: "生成一个导出任务，不改任何数据，操作记录里留痕。", check: "看时间范围对不对，理由写这份数据给谁、做什么用。" },
+      statedBrief: { impact: "生成一个导出任务，不改任何数据，操作记录里留痕。", check: "看时间范围对不对。" },
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       reasonPlaceholder: "写这份数据给谁、做什么用，例如：给增长组做周会复盘",
       facts: (
-        <div className="rd-stack">
-          <Facts>
-            <Fact k="范围">{mode === "totals" ? "当前累计" : queryScope(query)}</Fact>
-            <Fact k="接收人">{L1_EXPORT_RECIPIENT}</Fact>
-            <Fact k="文件行数">{rows}，另有表头</Fact>
-          </Facts>
-          <div>文件内容：{mode === "series" ? "8 项指标的可用数值、目标和六段趋势；受保护项标为样本过小，相关数值留空" : mode === "snapshot" ? "8 项指标的可用数值、目标和可用性；受保护项标为样本过小，相关数值留空" : "当前累计数"}</div>
-        </div>
+        <Facts>
+          <Fact k="范围">{mode === "totals" ? "当前累计" : queryScope(query)}</Fact>
+          <Fact k="接收人">{L1_EXPORT_RECIPIENT}</Fact>
+          <Fact k="文件格式">CSV</Fact>
+          <Fact k="文件行数">{rows}，另有表头</Fact>
+          <Fact k="文件内容">{mode === "series" ? "8 项指标的可用数值、目标和六段趋势" : mode === "snapshot" ? "8 项指标的可用数值、目标和可用性" : "当前累计数"}{mode !== "totals" && <Explain label="样本过小的项怎么导出" content="受保护项标为样本过小，相关数值留空。" />}</Fact>
+        </Facts>
       ),
       confirmLabel: "确认导出",
       reasonMin: 8,
@@ -272,14 +279,13 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
     setRetryRejected(false);
     setRetryNote("");
     setReleasing(false);
-    ctx.toast("已解除待确认，可以重新导出");
+    ctx.toast("已解除待确认，可以重新导出", "success");
   };
 
   const expired = pending ? pending.expiresAt <= Date.now() : false;
 
   return {
     button: ctx.canExport ? (<>
-      <Explain label="导出的说明" content="要填理由，生成下载任务，留操作记录。" />
       <Button
         icon={<Download size={14} aria-hidden />}
         disabledReason={pending ? "上一次导出结果未确认，先处理页面上方的待确认" : exportMode === null || ctx.biLoading ? exportUnavailableReason : undefined}
@@ -287,6 +293,7 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
       >
         {exportMode === "series" ? "导出关键指标序列 CSV" : "导出关键指标当前汇总 CSV"}
       </Button>
+      <Explain label="导出的说明" content="要填理由，生成下载任务，留操作记录。" />
     </>) : null,
     notices: <>
       {pending && (
@@ -337,13 +344,13 @@ function OffsetModal({ current, onApply, onClose }: { current: number; onApply: 
   return (
     <Modal title={<>调整接近目标的范围<Explain label="接近目标的范围的说明" content="只改你看到的状态和接近线，不改业务规则或统计方式。刷新会恢复最后保存的设置，没有保存视图时回到默认值。要保留请点「保存为视图」。" /></>} icon={SlidersHorizontal}
       sub={<StatusTag tone="neutral" filled>只改你看到的显示</StatusTag>} onClose={onClose}
-      footer={<><Button onClick={onClose}>取消</Button><Button variant="primary" disabledReason={problem} onBlockedClick={() => setAttempted(true)} onClick={() => { onApply(next); onClose(); }}>应用 · 实时生效</Button></>}>
+      footer={<><Button onClick={onClose}>取消</Button><Button variant="primary" disabledReason={problem} onBlockedClick={() => setAttempted(true)} onClick={() => { onApply(next); onClose(); }}>应用</Button></>}>
       <div className="rd-stack">
         {/* 现在值、新值输入合成一块（VS-103）。刚打开不报错，失焦且填过或点过提交才用警告色（OP-15）。 */}
         <DiffField before={String(current)} unit="%" hint="5–20 的整数" error={attempted || (left && typed) ? problem : undefined}>
           {(control) => <NumberInput {...control} unit="%" min={5} max={20} step={1} value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={() => setLeft(true)} />}
         </DiffField>
-        <Fold inset title="查看业务规则详情" summary="状态怎么判定">
+        <Fold inset title="状态怎么判定" summary="4 条规则">
           <div className="rd-stack">
             <p className="rd-note"><b>单侧目标：</b>严格高于或低于目标值才达标；等于目标时算接近目标。</p>
             <p className="rd-note"><b>接近线：</b>越高越好取<b>目标 × (1 − N%)</b>，越低越好取<b>目标 × (1 + N%)</b>。</p>
@@ -516,13 +523,13 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
         setWin(next.window ?? "7d");
         setApplied(next);
         writeQueryToUrl(next);
-        ctx.toast(`关键指标 已按${next.window === "custom" ? `${next.from} 至 ${next.to}` : WINDOW_NAME[next.window ?? "7d"]}重新加载`);
+        ctx.toast(`关键指标 已按${next.window === "custom" ? `${next.from} 至 ${next.to}` : WINDOW_NAME[next.window ?? "7d"]}重新加载`, "success");
       },
       (error) => {
         const message = displayAdminReadError(error);
         setRefreshError(message);
         onExportSource?.({ parentData: ctx.biData?.l1, data, query: next, status: "error" });
-        ctx.toast(`关键指标 刷新失败 · ${message}`);
+        ctx.toast(`关键指标 刷新失败 · ${message}`, "error");
       },
       () => setRefreshing(false),
     );
@@ -560,7 +567,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     } catch {
       saved = null;
     }
-    ctx.toast(saved ? "视图已保存在这台电脑的浏览器里，刷新后仍按这个视图显示" : "视图设置有误或浏览器不能保存，没有保存");
+    ctx.toast(saved ? "视图已保存在这台电脑的浏览器里，刷新后仍按这个视图显示" : "视图设置有误或浏览器不能保存，没有保存", saved ? "success" : "error");
   };
   const draftChanged = SLICES.some((key) => (draftSlices[key] ?? "") !== (applied[key] ?? ""));
 
@@ -591,16 +598,16 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
             label="按注册周或月分组"
             value={gran}
             items={[{ value: "week", label: "注册周（如2026-W42）" }, { value: "month", label: "注册月" }]}
-            onChange={(next) => { setGran(next); ctx.toast(`已选${next === "week" ? "注册周" : "注册月"} · 只影响保存视图，不改数据`); }}
+            onChange={(next) => { setGran(next); ctx.toast(`已选${next === "week" ? "注册周" : "注册月"} · 只影响保存视图，不改数据`, "info"); }}
           />
           <Explain label="分组方式的说明" content="只影响保存视图，不改数据。" />
-          <Check label="显示运营阶段切换" checked={phaseOn} onChange={() => { setPhaseOn(!phaseOn); ctx.toast(`运营阶段切换标记已${!phaseOn ? "开启" : "关闭"}`); }} />
+          <Check label="显示运营阶段切换" checked={phaseOn} onChange={() => { setPhaseOn(!phaseOn); ctx.toast(`运营阶段切换标记已${!phaseOn ? "开启" : "关闭"}`, "info"); }} />
         </div>
       </>}
       moreCount={SLICES.filter((key) => applied[key]).length}
       onSubmit={applySlices}
       querying={refreshing}
-      action={<Button disabled={refreshing} onClick={() => reloadKpi(applied)}>{refreshing ? "刷新中…" : "刷新指标"}</Button>}
+      action={<></>}
       onClear={() => { clearDrafts(); reloadKpi(appliedTime); }}
       canClear={!refreshing && (hasSlice(applied) || draftChanged)}
       sort={<div className="rd-filter-end">
@@ -679,7 +686,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
         if (read !== drillRead.current) return;
         const message = displayAdminReadError(error);
         setDrillError(message);
-        ctx.toast(`明细加载失败 · ${message}`);
+        ctx.toast(`明细加载失败 · ${message}`, "error");
       }
     };
     /** 八项是一组单选：方向键、Home、End 移动并立即选中，Tab 只停在当前行（ST-56）。 */
@@ -752,7 +759,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                   return (
                     <Tr key={item.n} selected={index === safeSelKpi} tabIndex={index === safeSelKpi ? 0 : -1} onOpen={() => { void selectKpi(index); revealDetail(); }} onKeyDown={moveRow} title="点击查看明细">
                       <Td><Cell main={<AutoGloss>{operatorCopyText(item.name)}</AutoGloss>} /></Td>
-                      <Td align="right"><Cell num main={state === "small" ? "样本过小" : state === "na" ? "—" : `${item.value}${unitText(item)}`} sub={state === "na" || state === "small" || (item.momDelta == null && !item.previousSuppressed) ? undefined : deltaText(item)} /></Td>
+                      <Td align="right"><Cell num main={state === "small" || state === "na" ? "—" : `${item.value}${unitText(item)}`} sub={state === "na" || state === "small" || (item.momDelta == null && !item.previousSuppressed) ? undefined : deltaText(item)} /></Td>
                       <Td align="right"><Cell num main={tgtShort(item)} /></Td>
                       {showTrendColumn && <Td>{state === "small"
                         ? <span className="rd-note">—</span>
@@ -795,14 +802,14 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                 />
               )}
               <Facts>
-                {(kState === "na" || kState === "small") && <Fact k="当前值">{stateText(kState, k)}</Fact>}
+                {(kState === "na" || kState === "small") && <Fact k="当前值">—</Fact>}
                 {(kState === "na" || kState === "small") && <Fact k="目标值">{tgtShort(k)}</Fact>}
                 {kState !== "small" && <Fact k="分子">{ext.num}</Fact>}
                 {kState !== "small" && <Fact k="分母">{ext.den}</Fact>}
                 {kState !== "small" && <Fact k="较上期">{deltaText(k).replace(/^较上期 ?/, "")}</Fact>}
                 <Fact k="统计范围">{queryScope(applied)}</Fact>
               </Facts>
-              <p className="rd-note">解读：{kState === "small" ? <>样本过小，不下结论<Explain label="样本过小的说明" content={SMALL_SAMPLE_NOTE} /></> : <AutoGloss>{operatorCopyText(ext.note)}</AutoGloss>}</p>
+              <p className="rd-note">解读：{kState === "small" ? <>人数太少，不下结论<Explain label="样本过小的说明" content={SMALL_SAMPLE_NOTE} /></> : <AutoGloss>{operatorCopyText(ext.note)}</AutoGloss>}</p>
               {drillError
                 ? <BlockState state="error" title="明细和趋势暂时加载不出来" detail={`其他内容不受影响。${drillError}`} onRetry={() => void selectKpi(safeSelKpi)} />
                 : kState === "small"
@@ -823,7 +830,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
               <Fold inset title="这项指标怎么算" summary={`统计规则编号 #${k.n}`} explain={<AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss>}>
                 <div className="rd-stack">
                   <div>{renderFx(ext.fx, ext.fxBold)}</div>
-                  <p className="rd-note">统计规则编号 #{k.n} · 上线批次：{batchText(k.vis)}</p>
+                  <p className="rd-note">上线批次：{batchText(k.vis)}</p>
                 </div>
               </Fold>
             </div>
@@ -837,33 +844,50 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
           </>}>
           <div className="rd-stack">
             <div role="group" aria-label="要比的指标" className="rd-filter-more-row">
-              {KPIS.map((item, index) => {
+              {order.map((index) => {
+                const item = KPIS[index];
                 const on = ovlSel.includes(index);
                 return <Check key={item.n} label={`#${item.n} ${operatorCopyText(item.name)}`} checked={on} disabled={on && ovlSel.length === 1} onChange={() => setOvlSel((current) => (on ? current.filter((value) => value !== index) : [...current, index]))} />;
               })}
             </div>
             {drawable.length > 0 && (
-              <>
-                <TrendLines
-                  label="多个关键指标的对比趋势"
-                  ticks={WEEKS}
-                  format={(value) => value.toFixed(0)}
-                  series={drawable.map(({ item, slot, values }) => ({ key: String(item.n), label: `#${item.n} ${operatorCopyText(item.name)}`, slot, values }))}
-                  marks={[{ key: "target", text: "各自目标 = 100", value: 100, tone: "ok" }]}
-                  event={phaseEvent}
-                />
-              </>
+              <Figure width={640} graphic={<TrendLines
+                label="多个关键指标的对比趋势"
+                ticks={WEEKS}
+                format={(value) => value.toFixed(0)}
+                series={drawable.map(({ item, slot, values }) => ({ key: String(item.n), label: `#${item.n} ${operatorCopyText(item.name)}`, slot, values }))}
+                marks={[{ key: "target", text: "100 = 等于目标", value: 100, tone: "ok" }]}
+                event={phaseEvent}
+              />}>
+                <Table label="对比指标的最新值">
+                  <thead><tr><Th>指标</Th><Th align="right">最新</Th><Th align="right">距目标</Th></tr></thead>
+                  <tbody>
+                    {drawable.map(({ item, slot }) => (
+                      <Tr key={item.n}>
+                        <Td><span className="rd-chart-swatch" data-slot={slot} />#{item.n} {operatorCopyText(item.name)}</Td>
+                        <Td align="right"><Cell num main={item.value == null ? "—" : `${item.value}${unitText(item)}`} /></Td>
+                        <Td align="right"><Cell num main={targetGap(item)} /></Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </Figure>
             )}
             {bandDrawable.map((item) => (
-              <Panel key={item.n} plain headingLevel={3} title={`${operatorCopyText(item.name)}有没有在健康带里`} sub={`健康带 ${tgtShort(item)}`} explain="没有单一目标，按真实值画。">
-                <TrendLines
+              <Panel key={item.n} plain headingLevel={3} title={`${operatorCopyText(item.name)}有没有在健康带里`} explain="没有单一目标，按真实值画。">
+                <Figure width={640} graphic={<TrendLines
                   label={`${operatorCopyText(item.name)}和健康带`}
                   ticks={WEEKS}
                   format={(value) => `${Number(value.toFixed(1))}${unitText(item)}`}
                   series={[{ key: String(item.n), label: operatorCopyText(item.name), slot: 2, values: item.spark }]}
                   marks={[{ key: "low", text: `下限 ${item.band?.[0]}${unitText(item)}`, value: item.band?.[0] ?? 0, tone: "ok" }, { key: "high", text: `上限 ${item.band?.[1]}${unitText(item)}`, value: item.band?.[1] ?? 0, tone: "ok" }]}
                   event={phaseEvent}
-                />
+                />}>
+                  <Facts>
+                    <Fact k="最新">{item.value == null ? "—" : `${item.value}${unitText(item)}`}</Fact>
+                    <Fact k="健康带">{tgtShort(item)}</Fact>
+                  </Facts>
+                </Figure>
               </Panel>
             ))}
             {drawnCount === 0 && <p className="rd-note">当前所选指标没有可绘制的对比曲线。</p>}
@@ -884,16 +908,15 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
           </>}>
           <div className="rd-stack">
             <Table label="关键指标的计算方式">
-              <thead><tr><Th>#</Th><Th>指标</Th><Th>计算方式</Th><Th align="right">目标</Th><Th>上线批次</Th><Th>状态</Th></tr></thead>
+              <thead><tr><Th>#</Th><Th>指标</Th><Th>计算方式</Th><Th align="right">目标</Th><Th>上线批次</Th></tr></thead>
               <tbody>
-                {KPIS.map((item, index) => (
+                {KPIS.map((item) => (
                   <Tr key={item.n}>
                     <Td><Cell num main={item.n} /></Td>
                     <Td><Cell main={<AutoGloss>{operatorCopyText(item.name)}</AutoGloss>} /></Td>
-                    <Td><Cell title={`${operatorCopyText(KPI_PLAIN[item.n] ?? "")}：${KPI_EXT[item.n].fx}`} main={<AutoGloss>{operatorCopyText(KPI_PLAIN[item.n] ?? "")}</AutoGloss>} sub={renderFx(KPI_EXT[item.n].fx, KPI_EXT[item.n].fxBold)} /></Td>
+                    <Td><Cell full main={<><AutoGloss>{operatorCopyText(KPI_PLAIN[item.n] ?? "")}</AutoGloss><Explain label={`${operatorCopyText(item.name)}的公式`} content={renderFx(KPI_EXT[item.n].fx, KPI_EXT[item.n].fxBold)} /></>} /></Td>
                     <Td align="right"><Cell num main={tgtShort(item)} /></Td>
                     <Td><Cell main={batchText(item.vis)} /></Td>
-                    <Td><StatusTag tone={STATE_TONE[states[index]]}>{stateText(states[index], item)}</StatusTag></Td>
                   </Tr>
                 ))}
               </tbody>
@@ -930,7 +953,10 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
         title={title}
         summary={<AutoGloss>{summary}</AutoGloss>}
         actions={exporting.button}
-        meta={readAt ? `${readAt} 读取（${businessZone().label}）· 打开时读取，不自动刷新` : "打开时读取，不自动刷新"}
+        meta={<span className="rd-toolbar">
+          <span>{readAt ? `${readAt} 读取（${businessZone().label}）· ` : ""}打开时读取，不自动刷新</span>
+          <Button variant="ghost" size="sm" loading={refreshing} icon={<RefreshCw size={14} aria-hidden />} onClick={() => reloadKpi(applied)}>刷新</Button>
+        </span>}
         readOnly={ctx.canExport ? "这页只能查看，不会改任何数据" : "这页只能查看，不会改任何数据 · 导出需报表管理权限"}
       />
       {exporting.notices}
@@ -941,7 +967,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
         </Notice>
       )}
       {body}
-      {editingOffset && <OffsetModal current={ylOffset} onClose={() => setEditingOffset(false)} onApply={(next) => { setYlOffset(next); ctx.toast(`接近目标的范围 → 距目标 ${next}% · 只改显示`); }} />}
+      {editingOffset && <OffsetModal current={ylOffset} onClose={() => setEditingOffset(false)} onApply={(next) => { setYlOffset(next); ctx.toast(`接近目标的范围 → 距目标 ${next}% · 只改显示`, "success"); }} />}
     </>
   );
 }
