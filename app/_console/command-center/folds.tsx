@@ -20,7 +20,7 @@ import { fetchD1TopupOverview } from "@/lib/admin/d-client";
 import { rollupKpiPassState } from "@/lib/admin/dashboard-number";
 import { liabilityDisplayName } from "@/lib/admin/liability-labels";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
-import { UNAVAILABLE_GATES } from "@/lib/admin/j-client";
+import { UNAVAILABLE_GATES, byGateDisplayOrder } from "@/lib/admin/j-client";
 import { fmtAmount, fmtNum, fmtPct } from "@/lib/format";
 import type { FundLevel } from "./status";
 import { useBlock } from "./use-block";
@@ -142,7 +142,7 @@ const GATE_NAMES: Record<string, string> = { withdraw: "提现", exchange: "兑�
 
 /** 暂不可用的业务和 J1 用同一份清单：不列、不计数、不提醒。 */
 export function availableGates(risk: BRiskRadar) {
-  return risk.gates.filter((gate) => !UNAVAILABLE_GATES[gate.dom]);
+  return risk.gates.filter((gate) => !UNAVAILABLE_GATES[gate.dom]).sort((a, b) => byGateDisplayOrder(a.dom, b.dom));
 }
 
 export function pressureLevel(ledger: BLedger | null, risk: BRiskRadar | null) {

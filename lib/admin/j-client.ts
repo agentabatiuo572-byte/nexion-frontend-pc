@@ -218,6 +218,11 @@ export const UNAVAILABLE_GATES: Record<string, { note: string; detail: string }>
   staking: { note: "App 已下线质押功能", detail: "App 已下线质押功能，这一项暂不可用。" },
 };
 
+/** 业务开关的显示顺序（产品 2026-11-07）：提现、试用、兑换、创世节点、质押；暂不可用的永远排最后。紧急停用开关和今日概览都按它排。 */
+const GATE_DISPLAY_ORDER: readonly string[] = ["withdraw", "trial", "exchange", "genesis", "staking"];
+export const byGateDisplayOrder = (a: string, b: string) =>
+  Number(!!UNAVAILABLE_GATES[a]) - Number(!!UNAVAILABLE_GATES[b]) || GATE_DISPLAY_ORDER.indexOf(a) - GATE_DISPLAY_ORDER.indexOf(b);
+
 const J1_GATE_KEYS = ["withdraw", "staking", "genesis", "exchange", "trial"] as const;
 const J1_GATE_KEY_SET = new Set<string>(J1_GATE_KEYS);
 const J1_EMERGENCY_SLA_IDS = ["autoConfirmMins", "recoverGate"] as const;
@@ -770,7 +775,7 @@ function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
   });
   return {
     activeGateCount,
-    activeGates,
+    activeGates: [...activeGates].sort((a, b) => byGateDisplayOrder(a.key, b.key)),
     retiredGates: rows<Record<string, unknown>>(data.retiredGates),
     coverage: {
       coverageRatio,
