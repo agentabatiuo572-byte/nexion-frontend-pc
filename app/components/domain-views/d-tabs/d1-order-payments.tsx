@@ -267,7 +267,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
           : policy && <div className="rd-stack">
             {!canEdit && <p className="rd-note">只有超级管理员能改付款手续费。</p>}
             {canEdit && !policy.constraints && <p className="rd-note">暂时拿不到可填范围，只能查看，不能修改。</p>}
-            <Table label="付款手续费">
+            <Table label="付款手续费" className="d1-fee-table">
               <thead><tr>
                 <Th>付款方式</Th>
                 {FEE_FIELDS.map(field => <Th key={field} align={canEdit && policy.constraints ? "left" : "right"}>{feeLabel[field]}（{feeUnit[field]}）</Th>)}

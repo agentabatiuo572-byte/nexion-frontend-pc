@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ClipboardList, Plus, RefreshCw } from "lucide-react";
-import { BlockState, Button, Cell, ConfigList, ConfigRow, Decision, Drawer, Fact, Facts, Field, Input, JudgmentPoints, KeyValues, Notice, Panel, Select, StatusTag, Table, Td, Th, Tr } from "@/app/components/rd";
+import { BlockState, Button, Cell, ConfigList, ConfigRow, Decision, Drawer, Fact, Facts, Field, Fold, Input, JudgmentPoints, KeyValues, Notice, Panel, Select, StatusTag, Table, Td, Th, Tr } from "@/app/components/rd";
 import type { StateTone } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminAuthActivityAllowed, adminAuthLifecycleEpoch } from "@/lib/admin/auth-lifecycle";
@@ -10,7 +10,7 @@ import { d1PendingObjectReason, financeAdminRequest } from "@/lib/admin/d-client
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { exceptionCommand, exceptionList, exceptionRead, exceptionObject, type ExceptionPage, type ExceptionRecord } from "@/lib/admin/cregis-exceptions";
 import { preparationAmount, preparationConfig, PREPARATION_BLOCKER, PREPARATION_STATE, type PreparationConfig, type PreparationKind } from "@/lib/admin/cregis-funds-preparation";
-import { usdt } from "./d1-shared";
+import { LongValue, usdt } from "./d1-shared";
 import type { DCtx } from "./types";
 
 const EMPTY: ExceptionPage = { records: [], hasMore: false, nextBeforeId: null };
@@ -128,8 +128,8 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
   const amountIssue = amount && !/^(0|[1-9][0-9]{0,11})(\.[0-9]{1,6})?$/.test(amount) ? "金额须大于零，最多十二位整数和六位小数" : undefined;
   const createBlock = block ?? (kind === "COLLECTION" && !source ? "先选来源子地址" : !amount ? "先填金额" : amountIssue ? amountIssue : !reference.trim() ? "先填业务参考号" : undefined);
 
-  return <Panel icon={ClipboardList} tone="role-2" title="USDT-BSC 归集与甲方付款准备"
-    explain={<><p>这里只保存准备单和复核意见，不会转出资金。真实转账须另行授权后在 Cregis 执行，审批不自动发送。</p><p>1. 选择本项目充值子地址，核对金额后创建归集准备单。2. 由另一管理员复核，后续另行授权后在 Cregis 将资金归集到平台钱包。3. 平台钱包到账后，按业务金额创建并复核甲方付款准备单；后续在 Cregis 单独付款，保存原单号和交易哈希。</p></>}
+  return <Panel icon={ClipboardList} tone="role-2" title="BEP20 归集与甲方付款准备"
+    explain={<><p>这里只保存准备单和复核意见，不会转出资金。真实转账须另行授权后在收款服务后台执行，审批不自动发送。</p><p>1. 选择本项目充值子地址，核对金额后创建归集准备单。2. 由另一管理员复核，后续另行授权后在收款服务后台将资金归集到平台钱包。3. 平台钱包到账后，按业务金额创建并复核甲方付款准备单；后续在收款服务后台单独付款，保存原单号和交易哈希。</p></>}
     actions={<>
       <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} disabled={busy} onClick={() => void refresh()}>刷新准备记录</Button>
       {canWrite && config && <Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={block} onClick={() => setCreating(true)}>新建准备单</Button>}
@@ -141,7 +141,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
           <p className="rd-note">只保存准备单和复核意见，不会转出资金。</p>
           <ConfigList label="准备地址">
             <ConfigRow name="归集接收 / 甲方付款来源" value={<span data-mono="">{config.platformAddress}</span>} />
-            <ConfigRow name="甲方 USDT-BSC 接收地址" value={<span data-mono="">{config.counterpartyAddress}</span>} />
+            <ConfigRow name="甲方 BEP20 接收地址" value={<span data-mono="">{config.counterpartyAddress}</span>} />
           </ConfigList>
           {records.length === 0 ? <p className="rd-note">暂无准备单</p> : <Table label="准备记录 · 不代表已转账">
             <thead><tr><Th>准备单 · 业务参考</Th><Th align="right">金额（USDT）</Th><Th>状态</Th><Th sticky="end" align="right">操作</Th></tr></thead>
@@ -197,11 +197,14 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
           { label: "状态", state: planTone(plan.state) === "done" ? undefined : planTone(plan.state), value: PREPARATION_STATE[String(plan.state)] ?? "状态未知" },
           { label: "发起理由", value: String(plan.reason), reason: plan.decisionReason ? `复核/取消理由：${String(plan.decisionReason)}` : undefined },
         ]} />
-        <KeyValues rows={[
-          { key: "ref", label: "业务参考", value: String(plan.businessReference) },
-          { key: "from", label: "来源", value: String(plan.sourceAddress), mono: true },
-          { key: "to", label: "接收", value: String(plan.targetAddress), mono: true },
-        ]} />
+        {/* 和自动任务抽屉一个样子：地址收进折叠，长地址写前后几位加复制（对齐原则、DT-09）。 */}
+        <Fold inset title="原单和地址" summary={String(plan.businessReference)}>
+          <KeyValues rows={[
+            { key: "ref", label: "业务参考", value: String(plan.businessReference) },
+            { key: "from", label: "来源", value: <LongValue value={String(plan.sourceAddress)} label="来源地址" />, mono: true },
+            { key: "to", label: "接收", value: <LongValue value={String(plan.targetAddress)} label="接收地址" />, mono: true },
+          ]} />
+        </Fold>
       </>}
     </Drawer>
   </Panel>;

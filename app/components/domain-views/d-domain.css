@@ -20,7 +20,6 @@
   background: var(--surface-3); border-radius: 5px; padding: 2px 7px; white-space: nowrap; }
 .ddom .dcode.electric { background: var(--success-soft); color: var(--success); }
 .ddom .chip.sel { background: var(--success); color: #0A0A0A; font-weight: 600; }
-/* 不上提：要排在 .cregis-danger-zone .l-btn 之后，悬停才盖得住它的文字色和底色。 */
 @media (hover: hover) and (pointer: fine) { .ddom .l-btn:hover { background: var(--surface-3); color: var(--ink); } }
 .ddom .l-btn:disabled { cursor: not-allowed; opacity: .5; filter: grayscale(.25); }
 @media (hover: hover) and (pointer: fine) { .ddom .l-btn:disabled:hover { background: var(--surface-2); color: var(--ink-2); } }
@@ -150,3 +149,8 @@
 .ddom .d5-network-row .d5-network-effective { flex: 1; min-width: 0; margin-top: 0; }
 .ddom .d5-network-row .blocked { color: var(--warning); }
 .ddom .l-inp:disabled { color: var(--ink-4); cursor: not-allowed; }
+
+/* D1 付款手续费表：付款方式一列、四个数值列等宽，1024 下输入框里放得下「未配置」（视觉复查必须改 13）。 */
+.ddom .d1-fee-table { table-layout: fixed; }
+.ddom .d1-fee-table :is(th, td):first-child { width: 16%; }
+.ddom .d1-fee-table .rd-number { max-width: none; }

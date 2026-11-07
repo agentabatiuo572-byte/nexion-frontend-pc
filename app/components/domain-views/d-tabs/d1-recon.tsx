@@ -2,7 +2,7 @@
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeftRight, Coins, FileText, Hash, ListChecks, RefreshCw, Scale, Settings2 } from "lucide-react";
+import { ArrowLeftRight, Coins, FileText, Hash, ListChecks, RefreshCw, Scale, Settings2, ShieldAlert } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, ConfigList, IrreversibleTag, ConfigRow, Conclusion, Drawer, Fact, Facts, FilterBar, FilterField, Fold, Input, JudgmentPoints, KeyValues,
   Notice, PageHeader, PageTabs, Pager, Panel, Segments, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, useTabIds,
@@ -66,7 +66,7 @@ function vietQrReceivedAtInstant(value: string) {
   const normalized = value.trim().replace(" ", "T");
   const parts = normalized.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?(?:Z|[+-]\d{2}:\d{2})?$/);
   if (!parts) {
-    throw new Error("到账时间格式不对，请按 YYYY-MM-DDTHH:mm:ss 填写（默认按越南时间 UTC+7）");
+    throw new Error("请选择到账时间（按越南时间 UTC+7）");
   }
   const [, year, month, day, hour, minute, second = "00"] = parts;
   const calendarCheck = new Date(Date.UTC(
@@ -226,7 +226,9 @@ function D1Workspace({ ctx }: { ctx: DCtx }) {
     {conclusion}
     <CrossAreaNotice rows={crossRows} onGo={select} />
     <PageTabs ids={tabIds} label="充值与收款对账分区" value={section} onChange={select}
-      items={D1_SECTIONS.map(key => ({ value: key, label: D1_SECTION_NAME[key], count: countText(counts[key]) }))} />
+      items={D1_SECTIONS.map(key => ({ value: key, count: countText(counts[key]),
+        // 有未解除告警时页签上标出来；告警不加进数字（产品已定，告警可能和异常是同一件事）。
+        label: key === "usdt" && usdtAlert ? <>{D1_SECTION_NAME[key]}<ShieldAlert size={14} color="var(--rd-danger)" aria-label="有未解除告警" /></> : D1_SECTION_NAME[key] }))} />
     <div {...tabIds.panel("payments")} hidden={section !== "payments"} className="rd-tab-pane">
       <D1OrderPayments ctx={ctx} onCount={report.payments.count} onActivity={report.payments.activity} onUnconfigured={setUnconfiguredFees} reloadTick={reloadTick} />
     </div>
@@ -370,8 +372,9 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
         { key: "paymentReference", label: "实际收款交易参考号", inputKind: "text", required: true,
           minLength: 6, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9._:/-]*$", patternMessage: "只能填字母、数字和 . _ : / -，以字母或数字开头",
           explain: "照抄银行或支付商收款凭证上的交易参考号，不是付款单号或附言码。" },
-        { key: "receivedAt", label: "实际到账时间（越南 UTC+7）", inputKind: "text", required: true, placeholder: "例如 2026-11-07T14:30:00",
-          current: "", explain: "填收款凭证上的到账时间，不是现在的时间。格式 YYYY-MM-DDTHH:mm:ss，默认按越南时间。" },
+        // 用日期时间选择，不让人手敲带 T 的格式（DP-44）。按越南时间理解。
+        { key: "receivedAt", label: "实际到账时间（越南 UTC+7）", inputKind: "datetime-local", step: 1, required: true,
+          current: "", explain: "选收款凭证上的到账时间，不是现在的时间，按越南时间。" },
         VIETQR_ACTION_EVIDENCE_FIELD,
       ] },
       run: async (reason, _value, business) => {

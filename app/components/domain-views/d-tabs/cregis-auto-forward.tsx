@@ -76,9 +76,9 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch}:Props&{owner:
       openActionConfirm({ briefKind: retry ? "funds" : "record",action:retry?"申请重试明确拒绝的自动任务":"核对自动任务原 CID",title:retry?"申请重试明确拒绝的任务":"核对原 CID",
         confirmLabel:retry?"提交申请":"确认核对",effect:<StatusTag tone="progress" filled>立即生效</StatusTag>,
         facts:<Facts><Fact k="任务">{id}</Fact><Fact k="阶段">{stage==="COLLECTION"?"归集":"甲方付款"}</Fact><Fact k="金额">{usdt(String(stage==="COLLECTION"?row.grossAmount:row.netAmount))} USDT</Fact></Facts>,
-        detail:retry?`任务 ${id} · 仅限没有 CID 的明确创建拒绝；未知请求不能重试。发送仍受全部开关和证据约束。`:`任务 ${id}。仅绑定供应商核实的原单，不创建新转账。`,
-        completionCopy:retry?"发送仍受全部开关和证据约束，不会绕过任何检查。":"仅绑定供应商核实的原单，不创建新转账。",
-        businessForm:retry?undefined:{kind:"multi-field",fields:[{key:"cid",label:"供应商原单 CID",inputKind:"text",required:true,pattern:"^[1-9][0-9]{0,18}$",patternMessage:"CID 只能是数字",maxLength:19}]},
+        detail:retry?`任务 ${id} · 仅限没有 CID 的明确创建拒绝；未知请求不能重试。发送仍受全部开关和证据约束。`:`任务 ${id}。仅绑定收款服务核实的原单，不创建新转账。`,
+        completionCopy:retry?"发送仍受全部开关和证据约束，不会绕过任何检查。":"仅绑定收款服务核实的原单，不创建新转账。",
+        businessForm:retry?undefined:{kind:"multi-field",fields:[{key:"cid",label:"收款服务原单 CID",inputKind:"text",required:true,pattern:"^[1-9][0-9]{0,18}$",patternMessage:"CID 只能是数字",maxLength:19}]},
         reasonMin:10,reasonMax:300,run:(reason,_value,form)=>command(`/tasks/${id}/recover`,{expectedVersion,stage,cid:retry?"":exceptionId((form?.cid??"").trim()),retry,reason})});
     }catch(failure){setError(displayAdminError(failure));}
   };
@@ -108,7 +108,7 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch}:Props&{owner:
     {loading&&!status?<BlockState state="loading" title="正在读取自动资金流程…"/>
       :!status?<BlockState state="error" title="自动资金流程读取失败" detail={error} onRetry={()=>void refresh()}/>
         :<div className="rd-stack">
-          {!status.runtimeApproved&&<Notice tone="neutral" title="当前不发送自动转账">未来启用前须确认 Cregis 自动审批/签名及套餐权益、绑定钱包和 BNB 手续费安排，再取得运行总开关批准，并由另一位管理员复核开关。</Notice>}
+          {!status.runtimeApproved&&<Notice tone="neutral" title="当前不发送自动转账">未来启用前须确认收款服务的自动审批/签名及套餐权益、绑定钱包和 BNB 手续费安排，再取得运行总开关批准，并由另一位管理员复核开关。</Notice>}
           {status.makerId!==null&&<Notice tone="progress" title="有一个开关提案待复核"
             action={canWrite?<>
               <Button size="sm" disabledReason={String(status.makerId)===String(owner)?"发起人不能复核自己的提案":block} onClick={()=>policy("APPROVE")}>复核自动流程开关</Button>

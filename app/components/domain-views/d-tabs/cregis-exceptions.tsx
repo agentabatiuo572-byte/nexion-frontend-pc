@@ -15,12 +15,12 @@ import { exceptionChallengeId, exceptionCommand, exceptionFee, exceptionId, exce
   type ExceptionPage, type ExceptionRecord, type ExceptionRequestScope } from "@/lib/admin/cregis-exceptions";
 import type { OperatorBriefKind } from "../design-kit";
 import type { DCtx } from "./types";
-import { usdt } from "./d1-shared";
+import { LongValue, usdt } from "./d1-shared";
 
 const EMPTY: ExceptionPage = { records: [], hasMore: false, nextBeforeId: null };
 const MODE: Record<string, string> = { UNCONFIGURED: "待配置（禁止退款）", PLATFORM_PAYS: "全额退回，平台承担网络费", FIXED_USDT: "扣除固定 USDT 费用" };
 const ACTION: Record<string, string> = { REVERSE: "核实重组并冲正", RESTORE: "原入金恢复后还原账务", RELEASE_HOLD: "解除本事件误报冻结", COLLECT_DEBT: "追偿本事件欠款", UNFREEZE: "检查并解除本事件账户冻结" };
-const STATE: Record<string, string> = { MAKER_DONE: "等待另一管理员复核", PROPOSED: "等待另一管理员复核", APPROVED: "已批准，等待发送", SUBMITTING: "发送请求处理中", UNKNOWN: "结果未知，保留原单核查", SENT: "已取得供应商订单，等待链确认", COMPLETED: "处置完成", RESOLVED: "处置完成", REJECTED: "已拒绝", CANCELLED: "已取消", FAILED_NO_TRANSFER: "确认未转出，可重新提案", REVERSED: "已冲正", DEBT_OPEN: "尚有欠款", OPEN: "等待处置", RELEASED: "本事件已释放", RESTORED: "原入金已恢复" };
+const STATE: Record<string, string> = { MAKER_DONE: "等待另一管理员复核", PROPOSED: "等待另一管理员复核", APPROVED: "已批准，等待发送", SUBMITTING: "发送请求处理中", UNKNOWN: "结果未知，保留原单核查", SENT: "已取得收款服务订单，等待链确认", COMPLETED: "处置完成", RESOLVED: "处置完成", REJECTED: "已拒绝", CANCELLED: "已取消", FAILED_NO_TRANSFER: "确认未转出，可重新提案", REVERSED: "已冲正", DEBT_OPEN: "尚有欠款", OPEN: "等待处置", RELEASED: "本事件已释放", RESTORED: "原入金已恢复" };
 Object.assign(STATE, { CREDITED: "认领已入账", INVESTIGATING: "调查中", REVERSED_DEBT: "已冲正，尚有欠款", REPROPOSED: "已生成新的复核提案", CANCELLED_LATE_EVIDENCE: "原单证据变化，已撤销此提案" });
 const label = (value: unknown) => value == null || value === "" ? "—" : String(value);
 const stateOf = (row: ExceptionRecord) => String(row.state ?? row.status);
@@ -38,11 +38,11 @@ function caseRows(row: ExceptionRecord): KeyValueRow[] {
   const facts: Array<[string, string, unknown, boolean?]> = [
     ["user", "用户", row.userId ?? row.targetUserId ?? row.claimantUserId],
     ["gross", "毛额（USDT）", row.grossAmount], ["fee", "费用（USDT）", row.feeAmount], ["net", "净额（USDT）", row.netAmount],
-    ["return", "原转出地址", row.returnAddress, true], ["cid", "Cregis 订单编号", row.providerCid, true],
+    ["return", "原转出地址", row.returnAddress, true], ["cid", "收款服务订单编号", row.providerCid, true],
     ["debt", "待追偿（USDT）", row.outstandingDebt], ["evidence", "证据摘要", row.evidenceHash, true], ["reason", "理由", row.reason], ["error", "待核查原因", row.lastError],
   ];
   return facts.filter(([, , value], index) => index < 4 || value != null && value !== "").map(([key, name, value, mono]) => ({ key, label: name,
-    value: key === "error" ? ADMIN_ERROR_MESSAGES[String(value)] ?? `原因待核对（${label(value)}）` : label(value), mono: mono && value != null }));
+    value: key === "error" ? ADMIN_ERROR_MESSAGES[String(value)] ?? `原因待核对（${label(value)}）` : mono && value != null ? <LongValue value={label(value)} label={name} /> : label(value), mono: mono && value != null }));
 }
 
 type OperationsProps = {
@@ -156,8 +156,8 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
   });
   const recover = (row: ExceptionRecord) => openActionConfirm({ briefKind: "record", action: "核对并恢复原退款单 CID", title: "核对原单 CID", confirmLabel: "确认核对", effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
     completionCopy: "只核对原退款单，不重新发送退款", detail: "只核对原业务号、返款地址及净额，不重新发送退款。",
-    facts: <Facts><Fact k="退款工单">#{label(row.id)}</Fact><Fact k="原转出地址">{label(row.returnAddress)}</Fact><Fact k="净额">{label(row.netAmount)} USDT</Fact></Facts>,
-    reasonMin: 10, reasonMax: 200, businessForm: { kind: "multi-field", fields: [{ key: "cid", label: "供应商原单 CID", inputKind: "text", required: true, pattern: "^[1-9][0-9]{0,18}$", patternMessage: "CID 只能是数字", maxLength: 19 }] },
+    facts: <Facts><Fact k="退款工单">#{label(row.id)}</Fact><Fact k="原转出地址"><span data-mono="">{label(row.returnAddress)}</span></Fact><Fact k="净额">{label(row.netAmount)} USDT</Fact></Facts>,
+    reasonMin: 10, reasonMax: 200, businessForm: { kind: "multi-field", fields: [{ key: "cid", label: "收款服务原单 CID", inputKind: "text", required: true, pattern: "^[1-9][0-9]{0,18}$", patternMessage: "CID 只能是数字", maxLength: 19 }] },
     run: (reason, _v, form) => mutate(`/refunds/cases/${exceptionId(row.id)}/recover`, { expectedVersion: exceptionVersion(row.version), providerCid: exceptionId(form?.cid), reason }),
   });
   const proposeReorg = async (row: ExceptionRecord, action: string) => {
@@ -190,7 +190,7 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
         detail: `目标用户 ${label(row.userId ?? row.targetUserId ?? row.claimantUserId)}，净额 ${label(row.netAmount)} USDT。`, completion: "拒绝后这笔入金留在异常里，不入账。" }) });
     }
     if (kind === "refund" && canRefund) {
-      const facts = <Facts>{net}<Fact k="原转出地址">{label(row.returnAddress)}</Fact><Fact k="毛额">{label(row.grossAmount)} USDT</Fact><Fact k="费用">{label(row.feeAmount)} USDT</Fact><Fact k="证据">{label(row.evidenceHash)}</Fact></Facts>;
+      const facts = <Facts>{net}<Fact k="原转出地址"><span data-mono="">{label(row.returnAddress)}</span></Fact><Fact k="毛额">{label(row.grossAmount)} USDT</Fact><Fact k="费用">{label(row.feeAmount)} USDT</Fact><Fact k="证据">{label(row.evidenceHash)}</Fact></Facts>;
       if (waitsReview(row) && !own) {
         actions.push({ key: "approve", label: "复核退款", primary: true, run: () => confirm({ kind: "funds", review: true, danger: true, action: "复核链上原路退款", title: "复核原路退款", confirmLabel: "确认复核", path: `/refunds/cases/${exceptionId(row.id)}/decision`, body: { expectedVersion: exceptionVersion(row.version), decision: "APPROVE" }, facts,
           detail: `原地址 ${label(row.returnAddress)}，毛额 ${label(row.grossAmount)}，费用 ${label(row.feeAmount)}，实退 ${label(row.netAmount)} USDT。证据 ${label(row.evidenceHash)}。`, completion: "确认后按净额原路退回到原转出地址，钱转出后不能撤销。" }) });
