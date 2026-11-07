@@ -75,7 +75,7 @@ export function PromotionRefundImpact({ orderNo, compact = false }: { orderNo: s
           id: r.obligationId,
           value: r.reward.type === "DEVICE" ? `${r.disclosure.deviceName || "赠品设备"} × ${r.reward.quantity}` : r.reward.amount,
           unit: r.reward.type === "DEVICE" ? "台" : nexGridBrandText(r.reward.type === "DISCOUNT_USDT" ? "USDT" : r.reward.type),
-          object: <>{r.beneficiaryRole === "BUYER" ? "购买者 ID" : "直接邀请人 ID"} {r.beneficiaryId}<Explain label="奖励台账编号" content={<RecordList label="奖励台账编号" records={[{ id: r.obligationId, value: "奖励项", reference: r.obligationId }]} />} /></>,
+          object: <>{r.beneficiaryRole === "BUYER" ? "购买者（本单用户）" : `直接邀请人 ID ${r.beneficiaryId}`}<Explain label="奖励台账编号" content={<RecordList label="奖励台账编号" records={[{ id: r.obligationId, value: "奖励项", reference: r.obligationId }]} />} /></>,
           status: <StatusTag tone={tone} icon={tone === "warn" ? AlertTriangle : undefined}>{text}</StatusTag>,
         };
       })} /></div>
