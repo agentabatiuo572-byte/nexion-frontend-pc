@@ -824,7 +824,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
             ...(entry.row.logIndex != null ? [{ key: "log", label: "日志序号", value: text(entry.row.logIndex) }] : []),
             ...(entry.row.address != null ? [{ key: "addr", label: "地址", value: <LongValue value={text(entry.row.address)} label="地址" />, mono: true }] : []),
             ...(entry.row.ageSeconds != null ? [{ key: "age", label: "已等待", value: `${text(entry.row.ageSeconds)} 秒` }] : []),
-            ...(entry.row.lastError != null || entry.row.last_error != null ? [{ key: "err", label: "错误记录", value: text(entry.row.lastError ?? entry.row.last_error), mono: true }] : []),
+            ...(entry.row.lastError != null || entry.row.last_error != null ? [{ key: "err", label: "错误记录", value: <>{ADMIN_ERROR_MESSAGES[text(entry.row.lastError ?? entry.row.last_error)] ?? "有错误记录，原因待核对"}<Explain label="错误码" content={`错误码 ${text(entry.row.lastError ?? entry.row.last_error)}`} /></> }] : []),
             { key: "time", label: `时间（${zone}）`, value: time(entry.row.createdAt ?? entry.row.checkedAt) },
           ]} />
         </Fold>

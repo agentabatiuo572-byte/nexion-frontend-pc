@@ -10,7 +10,7 @@ import type { KeyValueRow, StateTone } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminAuthLifecycleEpoch, adminAuthActivityAllowed } from "@/lib/admin/auth-lifecycle";
 import { d1PendingObjectReason, financeAdminRequest } from "@/lib/admin/d-client";
-import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { ADMIN_ERROR_MESSAGES, displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { exceptionChallengeId, exceptionCommand, exceptionFee, exceptionId, exceptionList, exceptionObject, exceptionRead, exceptionVersion,
   type ExceptionPage, type ExceptionRecord, type ExceptionRequestScope } from "@/lib/admin/cregis-exceptions";
 import type { OperatorBriefKind } from "../design-kit";
@@ -41,7 +41,8 @@ function caseRows(row: ExceptionRecord): KeyValueRow[] {
     ["return", "原转出地址", row.returnAddress, true], ["cid", "Cregis 订单编号", row.providerCid, true],
     ["debt", "待追偿（USDT）", row.outstandingDebt], ["evidence", "证据摘要", row.evidenceHash, true], ["reason", "理由", row.reason], ["error", "待核查原因", row.lastError],
   ];
-  return facts.filter(([, , value], index) => index < 4 || value != null && value !== "").map(([key, name, value, mono]) => ({ key, label: name, value: label(value), mono: mono && value != null }));
+  return facts.filter(([, , value], index) => index < 4 || value != null && value !== "").map(([key, name, value, mono]) => ({ key, label: name,
+    value: key === "error" ? ADMIN_ERROR_MESSAGES[String(value)] ?? `原因待核对（${label(value)}）` : label(value), mono: mono && value != null }));
 }
 
 type OperationsProps = {
@@ -292,7 +293,7 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
         <JudgmentPoints rows={[
           { label: "状态", state: stateTone(openedRow) === "progress" ? undefined : stateTone(openedRow), value: STATE[stateOf(openedRow)] ?? "状态未知", reason: openedRow.makerId != null ? `发起人 ${label(openedRow.makerId)}${isMaker(openedRow, session?.adminId) ? "（你）" : ""}` : undefined },
           { label: "净额", icon: Coins, tone: "money", value: openedRow.netAmount == null ? "—" : `${usdt(String(openedRow.netAmount))} USDT`, reason: openedRow.grossAmount != null ? `毛额 ${usdt(String(openedRow.grossAmount))} · 费用 ${openedRow.feeAmount == null ? "—" : usdt(String(openedRow.feeAmount))}` : undefined },
-          ...(openedRow.lastError ? [{ label: "待核查", state: "warn" as const, value: label(openedRow.lastError) }] : []),
+          ...(openedRow.lastError ? [{ label: "待核查", state: "warn" as const, value: ADMIN_ERROR_MESSAGES[String(openedRow.lastError)] ?? "原因待核对", reason: `错误码 ${label(openedRow.lastError)}` }] : []),
         ]} />
         <Fold inset title="工单内容" summary={openedRow.evidenceHash ? "含证据摘要" : "工单字段"}><KeyValues rows={caseRows(openedRow)} /></Fold>
       </>}
