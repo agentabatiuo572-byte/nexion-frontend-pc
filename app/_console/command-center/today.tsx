@@ -3,10 +3,10 @@
 /**
  * 今日经营：4 个数，销售额最大（没有权限时下一个能看的放大）。
  * 只并排写昨天全天，不算百分比：今天没过完，和昨天全天比百分比会误导（DP-63）。
- * 颜色按 06 第 2.1 节：销售额金、新增用户紫，各带图标底；资金净流入是带正负号的差额，用正文色；
- * 设备异常是告警数，0 灰字，大于 0 橙黄（VS-11）。这块放在「今天」面板里，不带自己的底。
+ * 颜色按 06 第 2.1 节：销售额金、新增用户紫；资金净流入是带正负号的差额，用正文色，图标底灰；
+ * 设备异常是告警数，0 灰字，大于 0 橙黄（VS-11）。四个都带图标底，换行时同列文字才一条左边线。这块放在「今天」面板里，不带自己的底。
  */
-import { CircleDollarSign, UserPlus } from "lucide-react";
+import { ArrowLeftRight, CircleDollarSign, Server, UserPlus } from "lucide-react";
 import { InlineRetry, Panel, Stat } from "@/app/components/rd";
 import type { fetchB0Devices, fetchB0NewUsers, fetchB0Sales } from "@/lib/admin/b0-client";
 import type { B0Blocks } from "@/lib/admin/b0-access";
@@ -71,10 +71,11 @@ export function TodayPanel({ blocks, sales, newUsers, flows, devices, clock, net
         {blocks.netFlow && (
           <Stat
             lead={leadKey === "netFlow"}
+            icon={ArrowLeftRight}
             label="资金净流入"
             value={flowToday ? signed(toUsdt(flowToday.netWan)) : flows.loading ? "…" : "—"}
             unit="USDT"
-            sub={flows.error ? failed(flows) : flowToday ? `流入 ${fmtAmountCompact(toUsdt(flowToday.inflowWan))} USDT · 流出 ${fmtAmountCompact(toUsdt(flowToday.outflowWan))} USDT` : undefined}
+            sub={flows.error ? failed(flows) : flowToday ? `流入 ${fmtAmountCompact(toUsdt(flowToday.inflowWan))} · 流出 ${fmtAmountCompact(toUsdt(flowToday.outflowWan))} USDT` : undefined}
             explain={<>
               按储备账已确认的流入、流出统计。流入包括充值、财务注资和储备返还／冲正；流出包括提现扣储备和拒付退回。非银行提现在放行时扣储备，银行提现在付款成功时结算，不代表全部已实际打款。用余额买设备不算。
               {netFlow24h != null && ` 另一个算法是滚动近 24 小时：${fmtAmount(netFlow24h)} USDT，时间段不同，数可能不一样。`}{dataTime}
@@ -87,10 +88,11 @@ export function TodayPanel({ blocks, sales, newUsers, flows, devices, clock, net
           <Stat
             lead={leadKey === "devices"}
             tone={abnormal > 0 ? "warn" : "done"}
+            icon={Server}
             label="设备异常"
             value={value(devices, (data) => fmtNum(data.abnormal))}
             unit="台"
-            sub={devices.error ? failed(devices) : devices.data ? (devices.data.online === 0 && abnormal > 0 ? "现在没有设备有心跳" : `10 分钟内有心跳 ${fmtNum(devices.data.online)} 台`) : undefined}
+            sub={devices.error ? failed(devices) : devices.data ? `10 分钟内有心跳 ${fmtNum(devices.data.online)} 台` : undefined}
             explain={<>离线或异常的设备，已包含离线。上报在线且 10 分钟内有心跳才算有心跳。这个数没有告警线。全部设备都没有心跳时进待处理，其余时候橙色只提醒有设备不在线。要看是哪些设备、为什么不在线，去设备运行管理。设备没有历史，不和昨天比。{dataTime}</>}
             href={devices.data && reach("/devices/ops") ? "/devices/ops" : undefined}
             openLabel="查看设备运行管理"

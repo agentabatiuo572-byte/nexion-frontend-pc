@@ -4,7 +4,7 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { AlarmClock, ArrowDownUp, CalendarClock, Coins, Gauge, Landmark, PieChart, ReceiptText, Scale, ShieldCheck, Wallet } from "lucide-react";
-import { BlockState, Button, Check, CheckGroup, Cell, ColumnChart, Conclusion, DiffList, Donut, Explain, Field, Figure, Fold, JudgmentPoints, KeyValues, LevelList, Notice, Panel, RecordList, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Th, TierBand, Tr, TrendLine, Drawer, type ChartSlot } from "@/app/components/rd";
+import { BlockState, Button, Check, CheckGroup, Cell, ColumnChart, Conclusion, DiffList, Donut, Explain, Fact, Facts, Field, Figure, Fold, InlineRetry, KeyValues, LevelList, Notice, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Th, TierBand, Tr, TrendLine, Drawer, type ChartSlot, type StateTone } from "@/app/components/rd";
 import { businessOffsetMinutes, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { D3ForecastConfig, D3Main, D3MaturityForecast, D3NetExposure, D3WaterLevel } from "@/lib/admin/d-client";
 import { LIABILITY_EXPLANATIONS, liabilityDisplayName } from "@/lib/admin/liability-labels";
@@ -39,6 +39,8 @@ const WATER_LABEL: Record<D3WaterLevel["tier"], string> = { NORMAL: "正常", WA
 const WATER_TONE = { NORMAL: "ok", WATCH: "warn", WARNING: "warn", DANGER: "danger" } as const;
 /** 档位带最后一档的显示上限：够付一年以上天数就没有判断价值（coverDaysText 同一口径）。 */
 const COVER_CAP_DAYS = 365;
+/** 一类占到这个比例时，环几乎是单色，说明不了构成，写一句话（DP-62）。 */
+const RING_DOMINANT_SHARE = 0.9;
 
 /** 后端给的是 >=30d、15-30d、<7d 这种写法，这里换成运营能读的话。 */
 function thresholdText(condition: string) {
@@ -93,7 +95,7 @@ const TREASURY_SOURCE_LABELS: Record<string, string> = {
   "nx_treasury_reserve_ledger": "储备资金账本",
   "nx_staking_position.amount_usdt": "生效中的质押锁定金额",
   "nx_user_wallet": "用户钱包余额",
-  "nx_user_wallet.usdt_available": "用户可提余额",
+  "nx_user_wallet.usdt_available": "用户钱包的可提现余额",
   "nx_staking_position": "质押锁定金额与奖励",
   "nx_staking_position.estimated_interest_usdt": "待付质押奖励",
   "nx_genesis_holding": "创世节点持仓",
@@ -132,16 +134,19 @@ export function FundConclusion({ main, emergencyLink, withdrawalsLink }: { main:
   const tone = WATER_TONE[water.tier];
   const days = coverDaysText(water.reserveCoverDays);
   const next = water.tier === "DANGER" ? emergencyLink : water.tier === "WARNING" ? withdrawalsLink : null;
+  // 够付一年以上时「1」不是要看的数，整句一个字号（VS-23）；天数才放大。
+  const cover = main.maturity7.cumulativeUsdt === 0 ? "未来 7 天没有到期"
+    : water.reserveCoverDays >= COVER_CAP_DAYS ? `可覆盖 ${days}` : <>可覆盖 <b>{days.split(" ")[0]}</b> {days.split(" ")[1]}</>;
   return (
     <Conclusion
       state={tone}
       icon={ShieldCheck}
       lead
       strong={water.tier === "DANGER"}
-      hint={<>{adviceText(water)}。{water.tier !== "NORMAL" && <> 通知方式：{water.notification}。平均每天到期 {money(water.dailyAverageDueUsdt)}。</>}</>}
-      action={next?.reachable ? <Link className="rd-btn" data-variant={water.tier === "DANGER" ? "danger" : "secondary"} data-size="md" href={next.href}><span className="rd-btn-face">{next.label}</span></Link> : undefined}
+      hint={`${adviceText(water)}。`}
+      action={next?.reachable ? <Link className="rd-btn" data-variant={water.tier === "DANGER" ? "danger-outline" : "secondary"} data-size="md" href={next.href}><span className="rd-btn-face">{next.label}</span></Link> : undefined}
     >
-      资金安全：{WATER_LABEL[water.tier]}，{main.maturity7.cumulativeUsdt === 0 ? "未来 7 天没有到期" : <>可覆盖 <b>{days.split(" ")[0]}</b> {days.split(" ")[1]}</>}
+      资金安全：{WATER_LABEL[water.tier]}，{cover}
     </Conclusion>
   );
 }
@@ -158,54 +163,55 @@ export function OverviewTab({ main, links }: { main: D3Main; links: readonly Cro
   ];
   const liveParts = reserveParts.filter((part) => part.value > 0);
   const share = (value: number) => (reserve.reserveTotalUsdt > 0 ? `${(value / reserve.reserveTotalUsdt * 100).toFixed(1)}%` : "—");
-  // 两类都有钱才画环，中间写总额，图例写每类的数；只有一类时一句话加数字（DP-62）。每类是什么、口径都在提示图标里（DP-06）。
+  // 储备组成收起（01 映射表）。两类都有钱才画环，中间写总额，图例写每类的数；只有一类时不画，结论写在摘要里（DP-62）。
+  const locked = { key: "locked", label: "已扣除质押锁定金额", explain: "锁定中，不能动用", value: money(-reserve.lockedStakingPrincipalDeductedUsdt || 0), mono: true };
   const composition = (
-    <Panel title="储备组成" icon={PieChart} tone="role-1" explain="USDT 储备是基础可动用储备，其他高流动资产暂不参与储备计算。可用储备已扣除质押锁定金额。">
-      <div className="rd-stack">
+    <Fold title="储备组成" summary={liveParts.length > 1 ? `${liveParts.length} 类` : liveParts.length ? `全部是 ${liveParts[0].name}` : "目前没有可用储备"} icon={PieChart} tone="role-1"
+      explain="USDT 储备是基础可动用储备，其他高流动资产暂不参与储备计算。可用储备已扣除质押锁定金额。">
+      <div className="d3-kv">
         {liveParts.length > 1
-          ? <Donut label="储备组成" center={amountText(reserve.reserveTotalUsdt)} centerLabel="USDT" segments={reserveParts.map((part) => ({ key: part.key, label: part.name, value: part.value, slot: part.slot, text: money(part.value), share: share(part.value) }))} />
-          : (
-            <>
-              <p className="rd-note">{liveParts.length ? `全部是 ${liveParts[0].name}` : "目前没有可用储备"}</p>
-              <KeyValues rows={reserveParts.map((part) => ({ key: part.key, label: part.name, explain: part.sub, value: money(part.value), mono: true }))} />
-            </>
-          )}
-        <KeyValues rows={[
-          { key: "locked", label: "已扣除质押锁定金额", explain: "锁定中，不能动用", value: money(-reserve.lockedStakingPrincipalDeductedUsdt || 0), mono: true },
-          { key: "injected", label: "累计注入", explain: "累计注入按登记的凭证汇总，不是当前余额。", value: money(reserve.injectedCumulativeUsdt), mono: true },
-        ]} />
+          ? <div className="rd-stack">
+              <Donut label="储备组成" center={amountText(reserve.reserveTotalUsdt)} centerLabel="USDT" segments={reserveParts.map((part) => ({ key: part.key, label: part.name, value: part.value, slot: part.slot, text: money(part.value), share: share(part.value) }))} />
+              <KeyValues rows={[locked]} />
+            </div>
+          : <KeyValues rows={[...reserveParts.map((part) => ({ key: part.key, label: part.name, explain: part.sub, value: money(part.value), mono: true })), locked]} />}
       </div>
-    </Panel>
+    </Fold>
   );
-  // 档位带：四档等宽、边界写在下面、标记落在当前档里；阈值写法认不出时退回等级表。没有到期时天数是占位值，只标当前档，不画标记。
+  // 档位带：四档等宽、边界写在下面。阈值写法认不出时退回等级表。标记只在刻度包得住时画（DP-63）：没有到期时天数是占位值，够付一年以上已经到头，都只标当前档。
   const bounds = water.thresholds.map((row) => ({ row, bound: thresholdBounds(row.condition) }));
+  // 关注和预警都是橙，不是当前档时关注退成灰，相邻两档才分得开。
+  const bandTone = (tier: D3WaterLevel["tier"]): StateTone => (tier === "WATCH" && tier !== water.tier ? "done" : WATER_TONE[tier]);
   const tiers = bounds.every((item) => item.bound)
-    ? bounds.map(({ row, bound }) => ({ key: row.tier, label: WATER_LABEL[row.tier], tone: WATER_TONE[row.tier], from: bound!.from, to: bound!.to })).sort((a, b) => a.from - b.from)
+    ? bounds.map(({ row, bound }) => ({ key: row.tier, label: WATER_LABEL[row.tier], tone: bandTone(row.tier), from: bound!.from, to: bound!.to })).sort((a, b) => a.from - b.from)
     : null;
   const noDue = maturity7.cumulativeUsdt === 0;
   const levels = (
     <Panel title="资金安全等级" icon={ShieldCheck} tone={quiet ? "role-other" : tone} explain="按未来 7 天到期的应付款判断，不随页面选的窗口变。">
-      <div className="rd-stack">
-        {tiers
-          ? <TierBand label="资金安全等级" tiers={tiers} current={water.tier} value={noDue ? null : water.reserveCoverDays} valueText={formatReserveCoverDays(maturity7.cumulativeUsdt, water.reserveCoverDays)} boundText={(value) => (value === COVER_CAP_DAYS ? "1 年" : value === 0 ? "0" : `${value} 天`)} />
-          : <LevelList label="资金安全等级" rows={water.thresholds.map((row) => ({ key: row.tier, label: WATER_LABEL[row.tier], note: thresholdText(row.condition), tone: WATER_TONE[row.tier], current: row.tier === water.tier }))} />}
-        {quiet && <p className="rd-note">这一档的通知方式：{water.notification} · 平均每天到期 {money(water.dailyAverageDueUsdt)}</p>}
+      <div className="d3-levels">
+        <Figure width={560} stack="wide" graphic={tiers
+          ? <TierBand label="资金安全等级" tiers={tiers} current={water.tier} value={noDue || water.reserveCoverDays >= COVER_CAP_DAYS ? null : water.reserveCoverDays} valueText={formatReserveCoverDays(maturity7.cumulativeUsdt, water.reserveCoverDays)} boundText={(value) => (value === COVER_CAP_DAYS ? "1 年" : value === 0 ? "0" : `${value} 天`)} />
+          : <LevelList label="资金安全等级" rows={water.thresholds.map((row) => ({ key: row.tier, label: WATER_LABEL[row.tier], note: thresholdText(row.condition), tone: WATER_TONE[row.tier], current: row.tier === water.tier }))} />}>
+          <Facts>
+            <Fact k="通知方式">{water.notification}</Fact>
+            <Fact k="平均每天到期">{money(water.dailyAverageDueUsdt)}</Fact>
+          </Facts>
+        </Figure>
       </div>
     </Panel>
   );
   return (
     <>
       <StatBand label="资金概况">
-        <Stat tone="role-1" icon={Wallet} label="可用储备" value={amountText(reserve.reserveTotalUsdt)} unit="USDT" explain="USDT 储备已扣除质押锁定金额。其他高流动资产暂不参与储备计算。" />
+        <Stat tone="role-1" icon={Wallet} label="可用储备" value={amountText(reserve.reserveTotalUsdt)} unit="USDT" sub={`累计注入 ${amountText(reserve.injectedCumulativeUsdt)}`} explain="USDT 储备已扣除质押锁定金额。其他高流动资产暂不参与储备计算。累计注入按登记的凭证汇总，不是当前余额。" />
         <Stat tone="role-2" icon={ReceiptText} label="应付款" value={amountText(liabilities.totalUsdt)} unit={liabilities.totalUsdt === null ? undefined : "USDT"} explain={`共 9 类，待核实的银行充值算在第 9 类。明细在「应付款与到期」。${UVT_VALUATION_NOTE}`} />
         <Stat tone={water.tier === "DANGER" ? "danger" : water.tier === "WARNING" ? "warn" : "role-3"} icon={CalendarClock} label="7 天到期应付款" value={amountText(maturity7.cumulativeUsdt)} unit="USDT" explain={`${dueParts(main.config, maturity7.trialStressIncluded)}。固定看未来 7 天。`} />
       </StatBand>
       {/* 面板位置固定，危险态只换颜色和内容，眼睛靠位置找东西（06 审查 6）。 */}
-      <div className="rd-split">
-        {composition}{levels}
-      </div>
+      {levels}
+      {composition}
       <Fold title="数据来源" summary={`${sources.length} 项，都来自系统账目`}>
-        <RecordList label="资金数据来源" records={sources.map((source) => ({ id: source, value: source }))} />
+        <p className="rd-note">{sources.join("、")}</p>
       </Fold>
       <RelatedLinks links={links} />
     </>
@@ -223,12 +229,18 @@ function MaturityPanel({ maturity, loading, error, onRetry }: { maturity: D3Matu
   const days = maturity.daily.length;
   const noDue = maturity.cumulativeUsdt === 0;
   const trial = maturity.trialStressIncluded;
-  const parts = (row: D3MaturityForecast["daily"][number]) => `提现 ${amountText(row.withdrawDueUsdt)} · 质押奖励 ${amountText(row.interestDueUsdt)} · 创世节点 ${amountText(row.genesisDividendUsdt)}${trial ? ` · 试用业务 ${amountText(row.trialShadowStressUsdt)}` : ""}`;
+  const dueDays = maturity.daily.filter((row) => row.totalDueUsdt > 0);
+  const peak = dueDays.reduce<D3MaturityForecast["daily"][number] | null>((best, row) => (!best || row.totalDueUsdt > best.totalDueUsdt ? row : best), null);
+  const dim = (value: number) => (value === 0 ? <span className="d3-zero">{amountText(value)}</span> : amountText(value));
+  const partList = (row: D3MaturityForecast["daily"][number]): [string, number][] => [["提现", row.withdrawDueUsdt], ["质押奖励", row.interestDueUsdt], ["创世节点", row.genesisDividendUsdt], ...(trial ? [["试用业务", row.trialShadowStressUsdt] as [string, number]] : [])];
+  const partText = (list: [string, number][]) => list.map(([name, value]) => `${name} ${amountText(value)}`).join(" · ");
+  const parts = (row: D3MaturityForecast["daily"][number]) => partText(partList(row));
   return (
-    <Panel title="哪天要付的钱最多" sub={`未来 ${days} 天 · USDT`} icon={CalendarClock} tone="role-3" data-testid="b2-maturity-chart"
+    <Panel title="哪天要付的钱最多" sub={`未来 ${days} 天 · USDT${dueDays.length > 1 && peak ? ` · 峰值 ${peak.date.slice(5)} ${amountText(peak.totalDueUsdt)}` : ""}`} icon={CalendarClock} tone="role-3" data-testid="b2-maturity-chart"
       explain={maturity.farLiabilityExcluded ? "UVT 锁仓要 24 个月后才到期，不在这张图里，也不算眼下必须付的钱。" : operatorCopyText(maturity.farLiabilityNote)}>
       <div className="rd-stack">
-        {noDue ? <BlockState state="empty" title={`未来 ${days} 天没有到期`} /> : (
+        {noDue ? <BlockState state="empty" title={`未来 ${days} 天没有到期`} />
+          : dueDays.length === 1 && peak ? <BlockState state="empty" title={`只有 ${peak.date.slice(5)} 到期，${money(peak.totalDueUsdt)}`} detail={partText(partList(peak).filter(([, value]) => value > 0))} /> : (
           <div className="rd-split" data-even="" role="group" aria-label="每日预计兑付额柱状图与累计到期负债曲线">
             <div className="rd-stack">
               <p className="rd-note">每天到期</p>
@@ -253,11 +265,11 @@ function MaturityPanel({ maturity, loading, error, onRetry }: { maturity: D3Matu
               {maturity.daily.map((row, index) => (
                 <Tr key={row.date}>
                   <Td><Cell num main={row.date} /></Td>
-                  <Td align="right"><Cell num main={amountText(row.withdrawDueUsdt)} /></Td>
-                  <Td align="right"><Cell num main={amountText(row.interestDueUsdt)} /></Td>
-                  <Td align="right"><Cell num main={amountText(row.genesisDividendUsdt)} /></Td>
-                  {trial && <Td align="right"><Cell num main={amountText(row.trialShadowStressUsdt)} /></Td>}
-                  <Td align="right"><Cell num main={amountText(row.totalDueUsdt)} /></Td>
+                  <Td align="right"><Cell num main={dim(row.withdrawDueUsdt)} /></Td>
+                  <Td align="right"><Cell num main={dim(row.interestDueUsdt)} /></Td>
+                  <Td align="right"><Cell num main={dim(row.genesisDividendUsdt)} /></Td>
+                  {trial && <Td align="right"><Cell num main={dim(row.trialShadowStressUsdt)} /></Td>}
+                  <Td align="right"><Cell num main={dim(row.totalDueUsdt)} /></Td>
                   <Td align="right"><Cell num main={amountText(maturity.cumulative[index].amountUsdt)} /></Td>
                 </Tr>
               ))}
@@ -280,6 +292,9 @@ function liabilityRing(rows: D3Main["liabilities"]["breakdown"], total: number |
   if (ranked.length < 2) {
     const note = ranked.length ? <p className="rd-note">全部是 {categoryText(ranked[0].category)}。</p> : <BlockState state="empty" title="目前没有应付款。" />;
     return { ring: null, slots: new Map<string, ChartSlot>(), note };
+  }
+  if (total > 0 && ranked[0].amountUsdt / total >= RING_DOMINANT_SHARE) {
+    return { ring: null, slots: new Map<string, ChartSlot>(), note: <p className="rd-note">几乎全是 {categoryText(ranked[0].category)}，占 {(ranked[0].amountUsdt / total * 100).toFixed(1)}%。</p> };
   }
   const rest = ranked.slice(2);
   const restSum = rest.reduce((sum, row) => sum + row.amountUsdt, 0);
@@ -316,14 +331,24 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
   const currentIndex = current ? breakdown.indexOf(current) : -1;
   const water = main?.reserve.waterLevel;
   const shown = maturity.data;
-  const noDue = shown?.cumulativeUsdt === 0;
-  const peak = shown?.daily.reduce((best, row) => (row.totalDueUsdt > best.totalDueUsdt ? row : best), shown.daily[0]);
   const coverage = main && main.liabilities.totalUsdt !== null && main.liabilities.totalUsdt > 0 ? (main.reserve.reserveTotalUsdt / main.liabilities.totalUsdt) * 100 : null;
   const latest = exposure.data?.series.at(-1);
+  const offReason = current && main ? liabilityOffReason(current.category, main.config) : undefined;
   const composition = liabilityRing(breakdown, main ? main.liabilities.totalUsdt : 0);
+  // 差额是这个页签的答案（够不够付），放第一个，最大。读不到时写原因，不写 0。
+  const net = latest?.netExposureUsdt ?? null;
+  const gapStat = canReadExposure && (
+    <Stat lead={net !== null} tone={net !== null && net < 0 ? "danger" : undefined} icon={Scale} iconTone="role-1" label="储备和应付款的差额"
+      value={exposure.data?.valuationReliable === false ? TREASURY_VALUATION_UNAVAILABLE : net !== null ? amountText(net) : exposure.loading ? "…" : "—"}
+      unit={exposure.data?.valuationReliable !== false && net !== null ? "USDT" : undefined}
+      sub={exposure.data?.valuationReliable === false ? undefined
+        : net !== null ? (net > 0 ? <StatusTag tone="ok">有富余</StatusTag> : net === 0 ? <StatusTag tone="warn">刚好够</StatusTag> : <StatusTag tone="danger">不够付</StatusTag>)
+          : exposure.loading ? undefined : <>读取失败 · <InlineRetry onRetry={onExposureRetry} /></>}
+      explain="储备 − 应付款，按当前预测设置计入的储备和应付款算。过去每天的应付款没有记录，算不出真实的历史差额，所以这里不画走势。计入的 UVT 应付款缺少有效价格时，差额暂时无法估值；没有计入远期 UVT 时仍可计算。" />
+  );
   const liabilityTable = (
-    <Table label="九类应付款">
-      <thead><tr><Th>类型</Th><Th align="right">金额（USDT）</Th><Th align="right">占比</Th><Th>数据来源</Th></tr></thead>
+    <Table label="九类应付款" className="d-num-gap d3-liabilities">
+      <thead><tr><Th>类型</Th><Th align="right">金额 USDT</Th><Th align="right">占比</Th><Th>数据来源</Th></tr></thead>
       <tbody>
         {listed.map((row) => {
           const slot = composition.slots.get(row.category);
@@ -338,7 +363,7 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
         })}
         {zeroRows.length > 0 && !showZero && (
           <Tr>
-            <Td colSpan={4}><button type="button" className="rd-link" onClick={() => setShowZero(true)}>另有 {zeroRows.length} 类现在是 0，展开看</button></Td>
+            <Td colSpan={4}><Button variant="ghost" size="sm" className="rd-record-more" onClick={() => setShowZero(true)}>另有 {zeroRows.length} 类现在是 0，展开看</Button></Td>
           </Tr>
         )}
       </tbody>
@@ -347,19 +372,20 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
   return (
     <>
       {mainState}
+      {!main && gapStat && <div className="d3-stats"><StatBand label="差额">{gapStat}</StatBand></div>}
       {main && water && (
         <>
-          <div className="rd-toolbar">
+          <div className="rd-toolbar d3-window">
             <Segments label="到期预测窗口" value={windowValue} onChange={onWindow} items={[{ value: "7d", label: "7 天" }, { value: "30d", label: "30 天" }]} />
             <Explain label="到期预测窗口的说明" content="窗口只影响这一页签的到期数字。资金安全等级固定按未来 7 天算。" />
           </div>
-          <StatBand label="到期和覆盖">
+          <div className="d3-stats"><StatBand label="到期和覆盖">
+            {gapStat}
             <Stat tone="role-3" icon={AlarmClock} label={`未来 ${windowDays(windowValue)}累计到期`} value={shown ? amountText(shown.cumulativeUsdt) : "—"} unit="USDT" explain={`${dueParts(main.config, shown?.trialStressIncluded)}。提现按冷却到期日排，窗口之外的不算在这里，所以可能比待处理提现少。`} />
             {/* 能付多久是状态，和资金概况那句话同一个颜色；覆盖率是和红线比的数，角色四（VS-12）。 */}
             <Stat tone={WATER_TONE[water.tier]} icon={Gauge} label="能付多久" value={formatReserveCoverDays(main.maturity7.cumulativeUsdt, water.reserveCoverDays)} explain={main.maturity7.cumulativeUsdt === 0 ? "未来 7 天没有到期，算不出能付多少天。" : `按未来 7 天每天平均到期额算，储备够付多少天。精确值 ${Number(water.reserveCoverDays).toLocaleString("en-US")} 天。`} />
             <Stat tone="role-4" icon={Landmark} label="兑付覆盖率" value={main.liabilities.totalUsdt === null ? TREASURY_VALUATION_UNAVAILABLE : coverage === null ? "无应付款" : `${coverage.toFixed(1)}%`} explain={`可用储备 ÷ 应付款总额，看全部应付款够不够付。可覆盖天数按最近到期速度算，和覆盖率独立。${UVT_VALUATION_NOTE}`} />
-          </StatBand>
-          {shown && <p className="rd-note">{noDue ? "这段时间没有到期款项，无需安排资金。" : `峰值日 ${peak?.date} 到期 ${money(peak?.totalDueUsdt ?? 0)}；${adviceText(water)}。`}</p>}
+          </StatBand></div>
           <MaturityPanel maturity={shown} loading={maturity.loading} error={maturity.error} onRetry={onMaturityRetry} />
           <Panel
             flush
@@ -372,33 +398,16 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
           >
             <div className="rd-panel-inset" data-testid="b2-liability-distribution">
               {composition.ring
-                ? <Figure graphic={composition.ring} width={200} stack="wide">{liabilityTable}</Figure>
+                ? <Figure graphic={composition.ring} width={200}>{liabilityTable}</Figure>
                 : <div className="rd-stack">{composition.note}{liabilityTable}</div>}
             </div>
           </Panel>
         </>
       )}
-      {canReadExposure && (
-        <Panel title="储备和应付款的差额" icon={Scale} tone="role-1" explain="按当前预测设置计入的储备和应付款算。过去每天的应付款没有记录，算不出真实的历史差额，所以这里不画走势。计入的 UVT 应付款缺少有效价格时，差额暂时无法估值；没有计入远期 UVT 时仍可计算。">
-          {exposure.data?.valuationReliable === false ? <BlockState state="empty" title={TREASURY_VALUATION_UNAVAILABLE} /> : latest ? (
-            <div className="rd-stack">
-              <KeyValues rows={[{
-                key: "net",
-                label: "当前差额",
-                explain: "储备 − 应付款",
-                mono: true,
-                value: <>{money(latest.netExposureUsdt)} {latest.netExposureUsdt > 0 ? <StatusTag tone="ok">有富余</StatusTag> : latest.netExposureUsdt === 0 ? <StatusTag tone="warn">刚好够</StatusTag> : <StatusTag tone="danger">不够付</StatusTag>}</>,
-              }]} />
-            </div>
-          ) : exposure.loading ? <BlockState state="loading" title="正在读取差额…" />
-            : <BlockState state="error" title="差额读取失败，不显示旧数据" detail={exposure.error} onRetry={onExposureRetry} />}
-        </Panel>
-      )}
       <Drawer
         open={Boolean(current)}
         onClose={() => onSelect(null)}
         title={current ? categoryText(current.category) : ""}
-        sub={current ? operatorCopyText(current.label) : undefined}
         icon={ReceiptText}
         tone="role-2"
         nav={{ onPrev: () => onSelect(breakdown[currentIndex - 1].category), onNext: () => onSelect(breakdown[currentIndex + 1].category), hasPrev: currentIndex > 0, hasNext: currentIndex >= 0 && currentIndex < breakdown.length - 1 }}
@@ -406,13 +415,14 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
         {current && main && (
           <>
             <p className="rd-note">{LIABILITY_EXPLANATIONS[current.category]}</p>
-            <JudgmentPoints title="这类应付款" rows={[
-              { label: "金额", value: money(current.amountUsdt) },
-              { label: "占比", value: current.share === null ? TREASURY_VALUATION_UNAVAILABLE : `${(current.share * 100).toFixed(1)}%` },
-              { label: "计入差额", value: includedText(!liabilityOffReason(current.category, main.config)), reason: liabilityOffReason(current.category, main.config) ?? "按当前生效的预测设置" },
-              { label: "计入到期预测", value: DUE_CATEGORIES.includes(current.category) ? includedText(!liabilityOffReason(current.category, main.config)) : "这类不进到期预测", reason: DUE_CATEGORIES.includes(current.category) ? liabilityOffReason(current.category, main.config) : "到期预测只算提现、质押奖励和创世节点收益" },
-              { label: "数据来源", value: treasurySourceLabel(current.source), reason: <Explain label="技术信息" content={`类型编号 ${current.category}`} /> },
-            ]} />
+            {/* 金额是这个抽屉的主数字，其余按名称和值排（DT-01）。 */}
+            <Facts>
+              <Fact k="金额" lead tone="role-2" unit={current.amountUsdt === null ? undefined : "USDT"}>{amountText(current.amountUsdt)}</Fact>
+              <Fact k="占比">{current.share === null ? TREASURY_VALUATION_UNAVAILABLE : `${(current.share * 100).toFixed(1)}%`}</Fact>
+              <Fact k="差额">{offReason ? `不计入，${offReason}` : "计入"}</Fact>
+              <Fact k="到期预测">{!DUE_CATEGORIES.includes(current.category) ? <>这类不进到期预测<Explain label="到期预测算哪些" content="到期预测只算提现、质押奖励和创世节点收益" /></> : offReason ? `不计入，${offReason}` : "计入"}</Fact>
+              <Fact k="数据来源">{treasurySourceLabel(current.source)}<Explain label="技术信息" content={`类型编号 ${current.category}`} /></Fact>
+            </Facts>
             {current.category === "nex_v2_future" && <p className="rd-note">{UVT_VALUATION_NOTE}</p>}
           </>
         )}
@@ -426,10 +436,12 @@ export function FlowTab({ history }: { history: { data: { flowWindows: Array<{ l
   const flows = history.data?.flowWindows ?? [];
   const months = history.data?.monthlyNewDeposits ?? [];
   const pending = !history.data && !history.error;
-  const fixed = (value: number) => value.toFixed(2);
+  const fixed = (value: number) => (value === 0 ? <span className="d3-zero">{value.toFixed(2)}</span> : value.toFixed(2));
   const signed = (value: number) => `${value > 0 ? "+" : ""}${value.toFixed(2)}`;
   // 图下面给同一份数的表，数值不只靠图和悬停（VS-47）。
-  const moved = flows.some((row) => row.inflowWan > 0 || row.outflowWan > 0) || months.some((row) => row.amountWan > 0);
+  const flowsEmpty = Boolean(history.data) && flows.every((row) => row.inflowWan === 0 && row.outflowWan === 0);
+  const monthsEmpty = Boolean(history.data) && months.every((row) => row.amountWan === 0);
+  const moved = !flowsEmpty || !monthsEmpty;
   const detail = history.data && moved && (
     <Panel flush title="明细" sub="万 USDT" explain="图里的数，单位万 USDT。" icon={ReceiptText} tone="role-2">
       <div className="rd-stack">
@@ -442,7 +454,7 @@ export function FlowTab({ history }: { history: { data: { flowWindows: Array<{ l
                 <Td><Cell num main={row.label} /></Td>
                 <Td align="right"><Cell num main={fixed(row.inflowWan)} /></Td>
                 <Td align="right"><Cell num main={fixed(row.outflowWan)} /></Td>
-                <Td align="right"><Cell num main={signed(row.inflowWan - row.outflowWan)} /></Td>
+                <Td align="right"><Cell num main={row.inflowWan === row.outflowWan ? fixed(0) : signed(row.inflowWan - row.outflowWan)} /></Td>
               </Tr>
             ))}
           </tbody>
@@ -467,18 +479,18 @@ export function FlowTab({ history }: { history: { data: { flowWindows: Array<{ l
   return (
     <>
     <div className="rd-split" data-even="">
-      <Panel title="这几天钱是进多还是出多" sub={`近 ${flows.length || 8} 天 · 万 USDT`} explain="按储备账已确认的流入、流出统计。流入包括充值、财务注资和储备返还／冲正；流出包括提现扣储备和拒付退回。非银行提现在放行时扣储备，银行提现在付款成功时结算，不代表全部已实际打款。用余额买设备不算。" icon={ArrowDownUp} tone="role-2" data-testid="b2-fund-flow-history">
+      <Panel title="这几天钱是进多还是出多" sub={flowsEmpty ? `近 ${flows.length} 天` : `近 ${flows.length || 8} 天 · 万 USDT`} explain="按储备账已确认的流入、流出统计。流入包括充值、财务注资和储备返还／冲正；流出包括提现扣储备和拒付退回。非银行提现在放行时扣储备，银行提现在付款成功时结算，不代表全部已实际打款。用余额买设备不算。" icon={ArrowDownUp} tone="role-2" data-testid="b2-fund-flow-history">
         {pending ? <BlockState state="loading" title="正在读取资金流…" />
           : !history.data ? <BlockState state="error" title="资金流历史暂不可用" detail={history.error} onRetry={history.reload} />
-          : flows.every((row) => row.inflowWan === 0 && row.outflowWan === 0) ? <BlockState state="empty" title={`近 ${flows.length} 天没有资金进出`} />
+          : flowsEmpty ? <BlockState state="empty" title={`近 ${flows.length} 天没有资金进出`} />
           : <ColumnChart label={`近 ${flows.length} 天资金流入和流出`} format={wan} axisFormat={(value) => String(Number(value.toFixed(1)))}
               series={[{ label: "流入", slot: 2 }, { label: "流出", slot: 4 }]}
               data={flows.map((row) => ({ key: row.label, tick: row.label, values: [row.inflowWan, row.outflowWan] }))} />}
       </Panel>
-      <Panel title="每个月新增入金有多少" sub={`近 ${months.length || 8} 个月 · 万 USDT`} explain="只算用户成功充值，财务注入的储备不算。" icon={Coins} tone="role-2" data-testid="b2-monthly-inflow-history">
+      <Panel title="每个月新增入金有多少" sub={monthsEmpty ? `近 ${months.length} 个月` : `近 ${months.length || 8} 个月 · 万 USDT`} explain="只算用户成功充值，财务注入的储备不算。" icon={Coins} tone="role-2" data-testid="b2-monthly-inflow-history">
         {pending ? <BlockState state="loading" title="正在读取新增入金…" />
           : !history.data ? <BlockState state="error" title="月新增入金暂不可用" detail={history.error} onRetry={history.reload} />
-          : months.every((row) => row.amountWan === 0) ? <BlockState state="empty" title={`近 ${months.length} 个月没有新增入金`} detail="这里只算用户成功充值，财务注入的储备不算。" />
+          : monthsEmpty ? <BlockState state="empty" title={`近 ${months.length} 个月没有新增入金`} detail="这里只算用户成功充值，财务注入的储备不算。" />
           : <ColumnChart label={`近 ${months.length} 个月新增入金`} format={wan} axisFormat={(value) => String(Number(value.toFixed(1)))}
               series={[{ label: "新增入金", slot: 2 }]}
               data={months.map((row) => ({ key: row.label, tick: row.label.slice(5), values: [row.amountWan] }))} />}
@@ -526,7 +538,7 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNo
     <>
       {pending && (
         <Notice tone="progress" title={`待生效 v${config.pendingVersion}`}>
-          窗口 {windowDays(pending.forecastWindow)}，储备科目 {Number(pending.reserveCategories.usdt)}，负债科目 {enabledCount(pending.liabilityCategories)}，创世节点 {pending.genesisIncluded ? "纳入" : "不纳入"}，生效时间 {timeText(config.pendingEffectiveAt)}。
+          窗口 {windowDays(pending.forecastWindow)}，储备 {Number(pending.reserveCategories.usdt)} 开启，应付款 {enabledCount(pending.liabilityCategories)} 开启，创世节点收益{includedText(pending.genesisIncluded)}，生效时间 {timeText(config.pendingEffectiveAt)}。
         </Notice>
       )}
       {pending && (
@@ -536,11 +548,11 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNo
       )}
       {!canConfig && <Notice tone="done">你只能查看；调整预测设置需财务主管。</Notice>}
       {canConfig && lockedNote && <Notice tone="warn">{lockedNote}</Notice>}
-      <p className="rd-note">当前版本 v{config.version}（已生效 v{config.effectiveVersion}）· 储备 {Number(draft.reserveCategories.usdt)} 开启 · 负债科目 {enabledCount(draft.liabilityCategories)} 开启<Explain label="预测设置什么时候生效" content={`${effectiveText()}，不影响历史。`} /></p>
+      <p className="rd-note">当前版本 v{config.version}（已生效 v{config.effectiveVersion}）· 储备 {Number(draft.reserveCategories.usdt)} 开启 · 应付款 {enabledCount(draft.liabilityCategories)} 开启<Explain label="预测设置什么时候生效" content={`${effectiveText()}，不影响历史。`} /></p>
       {canConfig && !lockedNote ? (
         <>
           <Panel title="预测窗口和算法" icon={CalendarClock} tone="role-3">
-            <div className="rd-form-grid">
+            <div className="rd-form-grid d3-form">
               <Field label="默认预测天数" explain="打开这页时先看几天的到期。差额不随这项变，资金安全等级固定按 7 天算。" error={draft.forecastWindow === "90d" ? FORECAST_90D_BLOCK : undefined}>
                 <Select aria-label="默认预测天数" value={draft.forecastWindow} options={windowOptions} onChange={(value) => onChange({ ...draft, forecastWindow: value as ForecastValues["forecastWindow"] })} />
               </Field>
@@ -550,23 +562,23 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNo
             </div>
           </Panel>
           <Panel title="计入哪些金额" icon={ReceiptText} tone="role-2" explain="用户看不到这些设置。它们影响这页的到期、差额和资金安全等级，也影响今日概览的可覆盖天数。">
-            <div className="rd-stack">
-              <CheckGroup legend="其他口径">
-                <Check label="计入创世节点收益" explain="到期和差额都算创世节点收益。下面「计入哪些应付款」也要勾着这一类。" checked={draft.genesisIncluded} onChange={(event) => onChange({ ...draft, genesisIncluded: event.target.checked })} />
-                <Check label="计入远期应付款" explain="差额里算 UVT 锁仓到期应付，不进到期预测。下面「计入哪些应付款」也要勾着这一类。" checked={draft.includeFarLiabilities} onChange={(event) => onChange({ ...draft, includeFarLiabilities: event.target.checked })} />
-                <Check label="试用业务压力测试" explain="到期预测和资金安全等级每天多算一笔试用业务压力值，差额不算。" checked={draft.trialStressEnabled} onChange={(event) => onChange({ ...draft, trialStressEnabled: event.target.checked })} />
-              </CheckGroup>
+            <div className="rd-stack d3-checks">
               <CheckGroup legend="计入哪些储备" summary={`${Number(draft.reserveCategories.usdt)} 开启`} explain="不计入 USDT 储备时，资金安全等级和差额按储备 0 算。其他高流动资产暂不参与储备计算。">
                 {Object.entries(draft.reserveCategories).map(([key, enabled]) => <Check key={key} label={key === "otherLiquid" ? `${categoryText(key)}（暂不参与计算）` : categoryText(key)} disabled={key === "otherLiquid"} checked={enabled} onChange={(event) => onChange({ ...draft, reserveCategories: { ...draft.reserveCategories, [key]: event.target.checked } })} />)}
               </CheckGroup>
               <CheckGroup legend="计入哪些应付款" summary={`${enabledCount(draft.liabilityCategories)} 开启`} explain="差额只算勾选的类。到期预测只看提现、质押奖励和创世节点收益这三类。页面上的九类金额不变。">
                 {Object.entries(draft.liabilityCategories).map(([key, enabled]) => <Check key={key} label={categoryText(key)} checked={enabled} onChange={(event) => onChange({ ...draft, liabilityCategories: { ...draft.liabilityCategories, [key]: event.target.checked } })} />)}
               </CheckGroup>
+              <CheckGroup legend="其他口径">
+                <Check label="计入创世节点收益" explain="到期和差额都算创世节点收益。上面「计入哪些应付款」也要勾着这一类。" checked={draft.genesisIncluded} onChange={(event) => onChange({ ...draft, genesisIncluded: event.target.checked })} />
+                <Check label="计入远期应付款" explain="差额里算 UVT 锁仓到期应付，不进到期预测。上面「计入哪些应付款」也要勾着这一类。" checked={draft.includeFarLiabilities} onChange={(event) => onChange({ ...draft, includeFarLiabilities: event.target.checked })} />
+                <Check label="试用业务压力测试" explain="到期预测和资金安全等级每天多算一笔试用业务压力值，差额不算。" checked={draft.trialStressEnabled} onChange={(event) => onChange({ ...draft, trialStressEnabled: event.target.checked })} />
+              </CheckGroup>
             </div>
           </Panel>
           {impact}
           {note && <Notice tone={note.tone}>{note.text}</Notice>}
-          <div className="rd-toolbar" data-end="">
+          <div className="rd-toolbar d3-savebar" data-end="">
             {dirty && <span className="rd-toolbar-note">有未保存的修改</span>}
             <Explain label="保存预测设置的说明" content="有未保存的修改时，切页签和切窗口不会丢。改错了可以把选项改回去再保存，生效前再保存会覆盖待生效版本。" />
             {dirty && <Button variant="ghost" onClick={onDiscard}>放弃修改</Button>}

@@ -16,7 +16,7 @@ import { ForecastConfigImpact } from "@/app/components/forecast-config-preview";
 import { BlockState, Button, Change, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Input, IrreversibleTag, Modal, Notice, PageHeader, PageTabs, RdPage, ReleaseModal, Select, StatusTag, useTabIds } from "@/app/components/rd";
 import { B2RequestError, previewB2ForecastConfig, type ForecastConfigPreview } from "@/lib/admin/b2-client";
 import { useB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
-import { businessClock } from "@/lib/admin/business-time";
+import { businessClock, businessZone, parseBusinessTime } from "@/lib/admin/business-time";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import {
   createD3Injection,
@@ -49,7 +49,7 @@ const pendingKeys = treasuryCommands;
 const injectionScope = (voucherNo: string, amount: string) => `injection|${voucherNo}|${amount}`;
 const EXPORT_LABEL: Record<ExportKind, string> = { reconciliation: "对账 CSV", liabilities: "应付款明细 CSV" };
 const EXPORT_TITLE: Record<ExportKind, string> = { reconciliation: "导出对账 CSV", liabilities: "导出应付款 CSV" };
-const EXPORT_RANGE: Record<ExportKind, string> = { reconciliation: "储备、应付款、净差额三行", liabilities: "全部 9 类的当前数据，不随页面窗口变" };
+const EXPORT_RANGE: Record<ExportKind, string> = { reconciliation: "储备、应付款、差额三行", liabilities: "全部 9 类的当前数据，不随页面窗口变" };
 const RETRY_EXPIRED = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
 const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不能重试，请到操作记录与审批核对";
 
@@ -345,7 +345,7 @@ export function D3Treasury() {
       setUnknownTick((tick) => tick + 1);
       if (!unknown) throw err;
       onUnknown?.();
-      toast("结果未确认，不要重复操作。到页面上方核对或按原操作重试。");
+      toast("结果未确认，不要重复操作。到页面上方核对或按原操作重试。", "warn");
       return;
     }
     forget();
@@ -371,7 +371,7 @@ export function D3Treasury() {
       onUnknown: clearForm,
       done: async () => {
         clearForm();
-        toast("储备注入已登记");
+        toast("储备注入已登记", "success");
         await load({ keepDraft: true });
       },
     });
@@ -385,7 +385,8 @@ export function D3Treasury() {
     const reasonPrefix = `凭证类型：${typeLabel}。`;
     setConfirm({
       action: "储备注入登记",
-      detail: `登记 ${money(Number(nextAmount))}，${typeLabel}，凭证号 ${nextVoucher}。凭证号不可重复。凭证类型会写在理由前面，留在操作记录里。`,
+      title: "登记储备注入",
+      detail: "凭证号不可重复。",
       facts: <Facts><Fact k="注入金额" lead tone="role-1" unit="USDT">{amountText(Number(nextAmount))}</Fact><Fact k="凭证类型">{typeLabel}</Fact><Fact k="凭证号"><span data-mono>{nextVoucher}</span></Fact></Facts>,
       briefKind: "funds",
       statedBrief: { impact: "登记后计入可用储备。", check: "核对金额和凭证号，理由写清到账依据或工单号。" },
@@ -412,7 +413,7 @@ export function D3Treasury() {
     forget: () => forecastCommand.forget(FORECAST_SLOT),
     send: () => updateD3ForecastConfig(values, version, reason, operator, commandKey),
     done: async () => {
-      toast(`已保存，${effectiveText()}`);
+      toast(`已保存，${effectiveText()}`, "success");
       await load();
       leave.saved();
     },
@@ -443,7 +444,7 @@ export function D3Treasury() {
     setDraft(merged);
     if (JSON.stringify(merged) === JSON.stringify(after)) {
       setConfirm(null);
-      toast("你改的内容和最新设置一样，不用再保存。");
+      toast("你改的内容和最新设置一样，不用再保存。", "info");
       return;
     }
     // 版本变了，原来的影响作废，要看到最新版本的影响才能确认。
@@ -473,7 +474,7 @@ export function D3Treasury() {
       action: "调整应付款预测设置",
       title: "保存预测设置",
       revision,
-      detail: `预测 ${values.forecastWindow.replace("d", " 天")}，创世节点收益${values.genesisIncluded ? "计入" : "不计入"}。${effectiveText()}，不影响历史。`,
+      detail: `预测 ${values.forecastWindow.replace("d", " 天")}，创世节点收益${values.genesisIncluded ? "计入" : "不计入"}。不影响历史。也影响今日概览的可覆盖天数；不改全部应付款算的兑付覆盖率。`,
       facts: (
         <div className="rd-stack">
           {/* 这次没动、但 USDT 储备本来就不计入时，照旧提醒一句。 */}
@@ -484,9 +485,9 @@ export function D3Treasury() {
         </div>
       ),
       briefKind: "config",
-      statedBrief: { impact: "影响这页的到期、差额、资金安全等级和今日概览的可覆盖天数，用户看不到。不改全部应付款算的兑付覆盖率。", check: "核对改动项和生效时间，理由写清依据或工单号。" },
+      statedBrief: { impact: "影响这页的到期、差额和资金安全等级，用户看不到。", check: "核对改动项和生效时间，理由写清依据或工单号。" },
       effect: effectiveText(),
-      confirmLabel: "确认保存，次日生效",
+      confirmLabel: "确认保存",
       run: async (reason) => {
         const operator = OPERATOR();
         const fingerprint = JSON.stringify({ draft: values, expectedVersion: version, reason, operator });
@@ -549,7 +550,7 @@ export function D3Treasury() {
       stored: () => pendingKeys.isDurablyStored(scope, key),
       forget: () => pendingKeys.forget(scope),
       send: () => downloadD3Csv(kind, reason, operator, key),
-      done: async () => toast(`${EXPORT_LABEL[kind]} 已导出`),
+      done: async () => toast(`${EXPORT_LABEL[kind]} 已导出`, "success"),
     });
   };
 
@@ -557,10 +558,10 @@ export function D3Treasury() {
     setConfirm({
       action: "导出",
       title: EXPORT_TITLE[kind],
-      detail: "不生成任务，没有下载链接。",
+      detail: "",
       facts: <Facts><Fact k="范围">{EXPORT_RANGE[kind]}</Fact><Fact k="去向">浏览器直接下载</Fact></Facts>,
       briefKind: "export",
-      statedBrief: { impact: "浏览器直接下载，这次导出记入操作记录。", check: "核对导出内容，理由写明导出依据或工单号。" },
+      statedBrief: { impact: "这次导出记入操作记录。", check: "核对导出内容，理由写明导出依据或工单号。" },
       effect: "立即生效",
       confirmLabel: "确认导出",
       run: (reason) => submitExport(kind, reason),
@@ -616,7 +617,7 @@ export function D3Treasury() {
     item.forget();
     setUnknownTick((tick) => tick + 1);
     setReleasing(null);
-    toast("已解除待确认，可以重新提交");
+    toast("已解除待确认，可以重新提交", "success");
   };
 
   const crossLink = (href: string, label: string): CrossLink => ({
@@ -628,11 +629,8 @@ export function D3Treasury() {
   const dataBlocked = !main ? "资金数据没读到，刷新后再试" : loading ? "正在刷新，稍等" : undefined;
   const exportBlocked = (kind: ExportKind) => (unknownCommands.exports.some((record) => record.exportKind === kind) ? "上次导出结果未知，先在页面上方核对" : valuationExportBlocked ?? dataBlocked);
   const mainFailed = canReadMain && !main && !loading;
-  const mainState = loading && !main
-    ? <BlockState state="loading" title="正在读取资金数据…" />
-    : mainFailed
-      ? <BlockState state="error" title="资金数据没读到，这里先不显示" detail="页面上方可以重新加载。" />
-      : null;
+  // 读取失败只在页签上方写一条，带重新加载（VS-107）。
+  const mainState = loading && !main ? <BlockState state="loading" title="正在读取资金数据…" /> : null;
   const tier = main?.reserve.waterLevel.tier;
   const fundAlarm = tier === "DANGER" || tier === "WARNING";
   const fundConclusion = main ? <FundConclusion main={main} emergencyLink={crossLink("/emergency/kill-switch", "去紧急停用开关")} withdrawalsLink={crossLink("/finance/withdrawals", "去提现审核")} /> : null;
@@ -643,7 +641,12 @@ export function D3Treasury() {
       pageId="D3"
       title="资金储备与应付款"
       summary="看平台的钱够不够付，要不要补储备。"
-      meta={tab ? <>{asOf ? `统计时间：${timeText(asOf)} · ` : ""}打开时读取 <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={refresh}>刷新</Button></> : undefined}
+      meta={tab ? (
+        <span className="rd-toolbar">
+          <span>{asOf ? `${businessClock(parseBusinessTime(asOf))} 读取（${businessZone().label}），` : ""}不自动刷新</span>
+          <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={refresh}>刷新</Button>
+        </span>
+      ) : undefined}
       readOnly={canInject || canConfig || canExportLiabilities || !tab ? undefined : "你只能查看；登记储备注入需财务主管。"}
       actions={(
         <>
@@ -671,7 +674,7 @@ export function D3Treasury() {
   const pendingItems: PendingItem[] = [
     ...unknownCommands.injections.map((record): PendingItem => ({
       commandKey: record.commandKey,
-      title: "储备注入登记结果未知，可能已经入账",
+      title: "登记储备注入结果未知，可能已经入账",
       body: <>{money(Number(record.amount))}，凭证号 {record.voucherNo}，{timeText(new Date(record.createdAt).toISOString())} 提交。</>,
       hint: "先看累计注入有没有变；重试不会重复登记。",
       expiresAt: record.expiresAt,
@@ -817,14 +820,26 @@ export function D3Treasury() {
       <Drawer
         open={injectOpen}
         onClose={() => setInjectOpen(false)}
-        title="储备注入登记"
+        title="登记储备注入"
         explain="须填写到账凭证号"
         icon={Landmark}
         tone="role-1"
         footer={<Decision explain="凭证号重复时不会登记。下一步核对金额和凭证，再写理由。" others={<Button variant="ghost" onClick={() => setInjectOpen(false)}>取消</Button>} primary={<Button variant="primary" disabledReason={dataBlocked ?? ([amountIssue, voucherIssue].filter(Boolean).join("；") || undefined)} onBlockedClick={() => setInjectShown({ amount: true, voucher: true })} onClick={saveInjection}>下一步：确认</Button>} />}
       >
-        <Field label="注入金额" required explain="单位 USDT，最多两位小数。" error={injectShown.amount ? amountIssue : undefined}>
-          {(control) => <Input {...control} value={amount} onChange={(event) => setAmount(event.target.value)} onBlur={() => setInjectShown((current) => ({ ...current, amount: true }))} inputMode="decimal" placeholder="注入金额 USDT" aria-label="注入金额（USDT，最多两位小数）" />}
+        {/* 填之前先看现在有多少，填完看登记后是多少（DT-10）。 */}
+        {main && (
+          <Facts>
+            <Fact k="现在可用储备">{money(main.reserve.reserveTotalUsdt)}</Fact>
+            {!amountIssue && <Fact k="登记后可用储备">{money(main.reserve.reserveTotalUsdt + Number(injectAmount))}</Fact>}
+          </Facts>
+        )}
+        <Field label="注入金额" required explain="最多两位小数。" error={injectShown.amount ? amountIssue : undefined}>
+          {(control) => (
+            <span className="rd-number d3-amount">
+              <Input {...control} value={amount} onChange={(event) => setAmount(event.target.value)} onBlur={() => setInjectShown((current) => ({ ...current, amount: true }))} inputMode="decimal" aria-label="注入金额（USDT，最多两位小数）" />
+              <span className="rd-number-unit">USDT</span>
+            </span>
+          )}
         </Field>
         <Field label="凭证类型" required explain="到账凭证是链上交易还是银行流水。会写进理由，不进凭证号。">
           <Select aria-label="凭证类型" value={voucherType} options={VOUCHER_TYPES} onChange={setVoucherType} />
@@ -832,7 +847,7 @@ export function D3Treasury() {
         <Field label="凭证编号 / 哈希" required explain="填原始编号，至少 6 位，须能查到。" error={injectShown.voucher ? voucherIssue : undefined}>
           {(control) => (
             <div className="rd-reason-box">
-              <Input {...control} className="rd-input-counted" maxLength={96} value={voucherNo} onChange={(event) => setVoucherNo(event.target.value)} onBlur={() => setInjectShown((current) => ({ ...current, voucher: true }))} placeholder="凭证号（不能重复）" aria-label="凭证号（必填，不能重复）" />
+              <Input {...control} className="rd-input-counted" maxLength={96} value={voucherNo} onChange={(event) => setVoucherNo(event.target.value)} onBlur={() => setInjectShown((current) => ({ ...current, voucher: true }))} placeholder="不能重复" aria-label="凭证号（必填，不能重复）" />
               <span className="rd-reason-count">{injectVoucher.length}/96</span>
             </div>
           )}

@@ -9,7 +9,7 @@
 import "./overview/b-domain.css";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Download, ListChecks, ShieldAlert, ShieldCheck } from "lucide-react";
+import { ChevronDown, Download, ListChecks, RefreshCw, ShieldAlert, ShieldCheck } from "lucide-react";
 import { Button, Conclusion, Explain, Fact, Facts, InlineRetry, PageHeader, RdPage, StatusTag } from "@/app/components/rd";
 import { BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
@@ -121,7 +121,7 @@ export default function CommandCenter() {
   if (orphaned.error) rows.push({ key: "orphaned", name: "打款异常", onRetry: orphaned.reload });
   else if (orphaned.data) rows.push({ key: "orphaned", title: `打款异常 ${orphaned.data} 单`, sub: "需要人工核对", owner: "财务", href: "/finance/withdrawals", tone: "warn" });
   if (devices.data && devices.data.online === 0 && devices.data.abnormal > 0 && reach("/devices/ops")) {
-    rows.push({ key: "devices", title: `设备全部没有心跳 ${devices.data.abnormal} 台`, sub: "到设备运行管理看是哪些设备、为什么不在线", owner: "其他", href: "/devices/ops", tone: "warn" });
+    rows.push({ key: "devices", title: "设备全部没有心跳", sub: "到设备运行管理看是哪些设备、为什么不在线", owner: "其他", href: "/devices/ops", tone: "warn" });
   }
   if (approvals.error) rows.push({ key: "a2", name: "待审批操作", onRetry: approvals.reload });
   else if (approvals.data?.stats.pendingTickets) {
@@ -154,8 +154,9 @@ export default function CommandCenter() {
 
   const folds = useFoldChoices(session?.adminId);
   const pressure = pressureLevel(fundReady ? ledger : null, fundReady ? riskRadar : null);
-  const riskAlert = (fundReady && riskRadar.gates.some((gate) => !gate.on)) || pressure.worst !== "ok" || Boolean(bDomain.error);
-  const fundAlert = level !== "ok" || Boolean(bDomain.error);
+  // 读取失败由结论句说一次，折叠不再上色展开（VS-107）；风险真的到线才默认展开。
+  const riskAlert = (fundReady && riskRadar.gates.some((gate) => !gate.on)) || pressure.worst !== "ok";
+  const fundAlert = level !== "ok";
 
   const foldsRef = useRef<HTMLDivElement>(null);
   const openFold = (fold: string, anchor: string) => {
@@ -201,8 +202,14 @@ export default function CommandCenter() {
     ],
     loading: statusLoading,
   });
-  // 结论句的入口只放一个：说开关给开关页，说资金给资金总览，说提现压力就展开「风险与开关」。
-  const briefAction = sentence.aboutSwitch && reach("/emergency/kill-switch")
+  const retryFund = () => {
+    if (bDomain.error) void bDomain.reload();
+    if (reserve.error) reserve.reload();
+  };
+  // 结论句的入口只放一个：资金读取失败给重试，说开关给开关页，说资金给资金总览，说提现压力就展开「风险与开关」。
+  const briefAction = sentence.fundFailed
+    ? <Button loading={bDomain.loading || reserve.loading} onClick={retryFund}>重试</Button>
+    : sentence.aboutSwitch && reach("/emergency/kill-switch")
     ? <Link className="rd-btn" data-variant="secondary" data-size="md" href="/emergency/kill-switch" prefetch={false}><span className="rd-btn-face">查看或恢复业务开关</span></Link>
     : sentence.aboutFund && reach(RESERVE_PAGE)
       ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={RESERVE_PAGE} prefetch={false}><span className="rd-btn-face">查看资金总览</span></Link>
@@ -214,7 +221,7 @@ export default function CommandCenter() {
   const fundOpen = folds.isOpen("fund", fundAlert);
 
   const anyTodayBlock = blocks.sales || blocks.newUsers || blocks.netFlow || blocks.devices;
-  const showFundLine = blocks.fund && !(fundReady && level !== "ok");
+  const showFundLine = blocks.fund && !(fundReady && level !== "ok") && !sentence.fundFailed;
 
   const exportSnapshot = () => {
     if (!canExport || !session || (!pendingExport && !fundReady)) return;
@@ -248,7 +255,7 @@ export default function CommandCenter() {
               </span>
             )}
             <span>{clock ? `${clock} 读取（${businessZone().label}）` : "正在读取…"}</span>
-            <Button size="sm" variant="ghost" loading={firstScreenLoading} onClick={refresh}>刷新</Button>
+            <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={firstScreenLoading} onClick={refresh}>刷新</Button>
           </span>
         )}
       />
@@ -268,7 +275,7 @@ export default function CommandCenter() {
         </Conclusion>
 
         {(showPending || anyTodayBlock || showFundLine) && (
-        <div className="cc-brief-body" data-solo={showPending && (anyTodayBlock || showFundLine) ? undefined : ""}>
+        <div className="cc-brief-body" data-solo={showPending && (rows.length > 1 || pendingLoading) && (anyTodayBlock || showFundLine) ? undefined : ""}>
           {showPending && <PendingPanel rows={rows} failures={pendingFailed.length} loading={pendingLoading} />}
           {(anyTodayBlock || showFundLine) && (
             <div className="cc-side">
@@ -321,11 +328,12 @@ export default function CommandCenter() {
               liquidity={fundReady ? liquidity : null}
               error={bDomain.error}
               retrying={bDomain.loading}
-              onRetry={() => void bDomain.reload()}
+              onRetry={sentence.fundFailed ? undefined : () => void bDomain.reload()}
               alert={fundAlert}
               level={level}
               clock={clock}
               reach={reach}
+              linkInBrief={sentence.aboutFund}
               open={folds.isOpen("fund", fundAlert)}
               onOpenChange={(open) => folds.setOpen("fund", open)}
             />
@@ -338,9 +346,10 @@ export default function CommandCenter() {
               risk={fundReady ? riskRadar : null}
               error={bDomain.error}
               retrying={bDomain.loading}
-              onRetry={() => void bDomain.reload()}
+              onRetry={sentence.fundFailed ? undefined : () => void bDomain.reload()}
               alert={riskAlert}
               reach={reach}
+              linkInBrief={sentence.aboutSwitch}
               open={folds.isOpen("risk", riskAlert)}
               onOpenChange={(open) => folds.setOpen("risk", open)}
             />
@@ -377,9 +386,9 @@ export default function CommandCenter() {
           briefKind="export"
           action="导出资金数据"
           effect={<StatusTag tone="progress" filled>立即生效</StatusTag>}
-          facts={<Facts><Fact k="文件格式" lead>JSON</Fact><Fact k="数据范围">本次点击时的资金账本快照</Fact></Facts>}
-          detail="下载本次点击时的资金账本 JSON 快照，包含覆盖率、红线、健康线、储备金、负债、净敞口及账户金额。"
-          completionCopy="登记导出理由成功后，浏览器下载本次原始快照；结果未确认时保留原快照和理由，按原操作重试。"
+          facts={<Facts><Fact k="文件格式">JSON</Fact><Fact k="数据范围">本次点击时的资金账本快照</Fact></Facts>}
+          detail="快照包含覆盖率、红线、健康线、可用储备、应付款、差额及账户金额。结果未确认时保留原快照和理由，按原操作重试。"
+          completionCopy="登记导出理由成功后，浏览器下载本次原始快照。"
           confirmLabel="登记并下载"
           reasonMax={200}
           getPendingReason={() => pendingB0Export(exportConfirm.adminId)?.reason}
