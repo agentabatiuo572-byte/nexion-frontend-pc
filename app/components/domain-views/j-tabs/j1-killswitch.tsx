@@ -290,7 +290,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     if (restoreApprovals.some((row) => row.obj === g.key)) throw new Error("这项恢复申请待审批，请核对原审批。");
     const slot = `${session.adminId}:${g.key}`;
     const previous = restoreAttempts.list().find((record) => record.fingerprint === slot);
-    if (!previous && UNAVAILABLE_GATES[g.key]) throw new Error(UNAVAILABLE_GATES[g.key]);
+    if (!previous && UNAVAILABLE_GATES[g.key]) throw new Error(UNAVAILABLE_GATES[g.key].detail);
     if (!previous && !reason) return;
     const key = previous?.commandKey ?? createJEmergencyCommandKey();
     const input: RestoreProposal = previous?.input ?? {
@@ -418,7 +418,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         <ControlGrid label="上次读到的业务开关">
           {lastRead.current.activeGates.map((gate) => (
             <ControlCard key={gate.key} title={operatorCopyText(gate.name)} icon={GATE_ICON[gate.key] ?? Power} tone={UNAVAILABLE_GATES[gate.key] ? "neutral" : gate.enabled ? "ok" : "warn"}
-              status={UNAVAILABLE_GATES[gate.key] ? <><StatusTag tone="neutral" icon={Ban}>暂不可用</StatusTag><span className="rd-note">{UNAVAILABLE_GATES[gate.key]}</span></> : gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>} />
+              status={UNAVAILABLE_GATES[gate.key] ? <><StatusTag tone="neutral" icon={Ban}>暂不可用</StatusTag><span className="rd-note">{UNAVAILABLE_GATES[gate.key].note}</span></> : gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>} />
           ))}
         </ControlGrid>
       </>}
@@ -677,7 +677,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   };
 
   const gateHelp = (gate: JGate) => {
-    if (UNAVAILABLE_GATES[gate.key]) return [{ k: "状态", v: UNAVAILABLE_GATES[gate.key] }, { k: "最近变更", v: gate.lastChange || "—" }];
+    if (UNAVAILABLE_GATES[gate.key]) return [{ k: "状态", v: UNAVAILABLE_GATES[gate.key].detail }, { k: "最近变更", v: gate.lastChange || "—" }];
     const backfill = backfillOf(gate.key);
     return [
       { k: "控制", v: gateCopy(gate).cap },
@@ -739,7 +739,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
             <ControlCard key={gate.key} title={name} icon={GATE_ICON[gate.key] ?? Power} tone={UNAVAILABLE_GATES[gate.key] ? "neutral" : gate.enabled ? "ok" : backfill?.overdue ? "danger" : "warn"}
               explain={gateHelp(gate)}
               status={<>
-                {UNAVAILABLE_GATES[gate.key] ? <><StatusTag tone="neutral" icon={Ban}>暂不可用</StatusTag><span className="rd-note">{UNAVAILABLE_GATES[gate.key]}</span></> : gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>}
+                {UNAVAILABLE_GATES[gate.key] ? <><StatusTag tone="neutral" icon={Ban}>暂不可用</StatusTag><span className="rd-note">{UNAVAILABLE_GATES[gate.key].note}</span></> : gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>}
                 {restoreApprovals.filter((row) => row.obj === gate.key).map((row) => <span key={row.id}><StatusTag tone="progress">恢复待审批</StatusTag> <span className="rd-note">审批号 {row.id}</span></span>)}
                 {UNAVAILABLE_GATES[gate.key] && restoreApprovals.some((row) => row.obj === gate.key) && reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href={`/platform/audit?domain=J&object=${encodeURIComponent(gate.key)}`}>核对原审批</Link>}
                 {gate.emergency && <StatusTag tone="warn" icon={Siren}>应急</StatusTag>}
@@ -806,7 +806,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           <tbody>
             {gates.map((gate) => (
               <Tr key={gate.key}>
-                <Td><Cell full main={operatorCopyText(gate.name)} sub={UNAVAILABLE_GATES[gate.key] ?? <>{gateCopy(gate).cap} <Explain label={`${operatorCopyText(gate.name)}控制范围`} content={<AutoGloss>{gateCopy(gate).desc}</AutoGloss>} /></>} /></Td>
+                <Td><Cell full main={operatorCopyText(gate.name)} sub={UNAVAILABLE_GATES[gate.key]?.detail ?? <>{gateCopy(gate).cap} <Explain label={`${operatorCopyText(gate.name)}控制范围`} content={<AutoGloss>{gateCopy(gate).desc}</AutoGloss>} /></>} /></Td>
                 <Td><Cell main={UNAVAILABLE_GATES[gate.key] ? <StatusTag tone="neutral" icon={Ban}>暂不可用</StatusTag> : gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>} sub={gate.emergency ? "应急" : undefined} /></Td>
                 <Td>{UNAVAILABLE_GATES[gate.key] ? "—" : IMPACT_LABEL[gate.coverageImpactCategory]}</Td>
                 <Td>{UNAVAILABLE_GATES[gate.key] ? "—" : gate.coveragePrecheckRequired ? <AutoGloss>需核备付金</AutoGloss> : "不需"}</Td>
