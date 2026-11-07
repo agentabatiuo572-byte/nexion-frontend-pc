@@ -666,7 +666,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
               </Table>}
             <ConfigList label="全局链上出款总闸">
               <ConfigRow name="全局链上出款总闸" what="两条网共用的链上出款上限" when="另一位管理员复核后生效" effect="不会直接放行任何提现；开启后仍须满足支付商、对账、风险和单笔审核条件。不恢复充值，也不修改分网络提现许可"
-                note={payoutCapabilityText(data)}
+                note={payoutCapabilityText(data).replace(/。$/, "")}
                 value={<SwitchTag on={Boolean(gate?.payoutEnabled)} stopped={gate?.state === "BLOCKED"}>{onOff(gate?.payoutEnabled, "未知")}</SwitchTag>}
                 action={canManage ? <Button size="sm" disabledReason={proposalBlock} onClick={() => confirmCommand({ kind: "config",
                   action: "提交全局链上出款审批", title: "调整全局链上出款总闸", confirmLabel: "提交审批", effect: approval,

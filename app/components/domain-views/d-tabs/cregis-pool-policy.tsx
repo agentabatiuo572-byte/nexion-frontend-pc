@@ -17,10 +17,10 @@ export function parsePoolPolicy(value:unknown):Policy {
   return p;
 }
 const NUMBERS = [
-  ["target", "备用地址目标", "每个网络要备多少地址。", "10–100,000 的整数", 10, 100000],
-  ["lowWatermark", "补充触发阈值", "低于这个数开始补。", "1 到目标减 1 的整数", 1, 99999],
-  ["batchSize", "每批补充数量", "一批补多少地址。", "1–100 的整数", 1, 100],
-  ["concurrency", "建址并发上限", "同时创建多少地址。", "1–10 的整数，不超过每批数量", 1, 10],
+  ["target", "备用地址目标", "每个网络要备多少地址", "10–100,000 的整数", 10, 100000],
+  ["lowWatermark", "补充触发阈值", "低于这个数开始补", "1 到目标减 1 的整数", 1, 99999],
+  ["batchSize", "每批补充数量", "一批补多少地址", "1–100 的整数", 1, 100],
+  ["concurrency", "建址并发上限", "同时创建多少地址", "1–10 的整数，不超过每批数量", 1, 10],
 ] as const;
 
 export function CregisPoolPolicy({canManage,openActionConfirm}:{canManage:boolean;openActionConfirm:DCtx["openActionConfirm"]}) {
@@ -54,7 +54,7 @@ export function CregisPoolPolicy({canManage,openActionConfirm}:{canManage:boolea
         },
         fields:[
           {key:"enabled",label:"自动补充",inputKind:"select",options:["true","false"],optionLabels:{true:"开启",false:"关闭"},current:String(current.enabled),showDiff:true,explain:"库存低时自动补地址。"},
-          ...NUMBERS.map(([key,label,what,hint,min,max])=>({key,label,inputKind:"number" as const,current:String(current[key]),min,max,step:1,showDiff:true,required:true,explain:`${what}${hint}。用户看不到，只影响地址库存。`})),
+          ...NUMBERS.map(([key,label,what,hint,min,max])=>({key,label,inputKind:"number" as const,current:String(current[key]),min,max,step:1,showDiff:true,required:true,explain:`${what}。${hint}。用户看不到，只影响地址库存。`})),
         ]},
       run:async(reason,_value,form)=>{
         if(!owns() || !useAdminAuth.getState().session?.authorities.includes("finance_d1_channel_manage"))throw new Error("登录身份或权限已变化，请重新打开页面");
