@@ -19,7 +19,7 @@ export function ForecastConfigImpact({ preview, categoryLabel, surface = false }
     ["30 天到期预测", d.before30dUsdt, d.after30dUsdt, d.delta30dUsdt],
     ["配置储备", d.beforeReserveUsdt, d.afterReserveUsdt, d.reserveDeltaUsdt],
     ["配置应付款", d.beforeLiabilitiesUsdt, d.afterLiabilitiesUsdt, d.liabilitiesDeltaUsdt],
-    ["净差额", d.beforeNetExposureUsdt, d.afterNetExposureUsdt, d.netExposureDeltaUsdt],
+    ["差额", d.beforeNetExposureUsdt, d.afterNetExposureUsdt, d.netExposureDeltaUsdt],
   ];
   if (d.beforeDailyGenesisUsdt !== d.afterDailyGenesisUsdt) rows.push(["每日创世", d.beforeDailyGenesisUsdt, d.afterDailyGenesisUsdt, d.dailyDeltaUsdt]);
   return (
@@ -37,14 +37,15 @@ export function ForecastConfigImpact({ preview, categoryLabel, surface = false }
             </tr>
           ))}
           <tr>
-            <Td>配置覆盖率（配置口径）</Td>
+            <Td>配置覆盖率</Td>
             <Td align="right"><Cell num main={<span className="rd-diff-before">{coverage(d.beforeCoverageStatus, d.beforeCoveragePct)}</span>} /></Td>
             <Td align="right"><Cell num main={<span className={d.beforeCoverageStatus !== d.afterCoverageStatus || d.coverageDeltaPct ? "rd-diff-after" : undefined}>{coverage(d.afterCoverageStatus, d.afterCoveragePct)}</span>} /></Td>
             <Td align="right"><Cell num main={<span className={d.coverageDeltaPct ? "rd-diff-after" : undefined}>{d.coverageDeltaPct === null ? "—" : `${d.coverageDeltaPct > 0 ? "+" : ""}${d.coverageDeltaPct.toFixed(1)} 个百分点`}</span>} /></Td>
           </tr>
         </tbody>
       </Table>
-      <p className="rd-note">生效时间：{new Date(preview.effectiveAt).toISOString().slice(0, 16).replace("T", " ")} UTC，不影响历史数据。</p>
+      {/* 确认框标题下已经写了生效时间，只有放在页面上时才写（VS-105）。 */}
+      {surface && <p className="rd-note">生效时间：{new Date(preview.effectiveAt).toISOString().slice(0, 16).replace("T", " ")} UTC，不影响历史数据。</p>}
       {d.removedLiabilityCategories.length > 0 && <Notice tone="warn">以下科目将退出配置覆盖率分母：{d.removedLiabilityCategories.map(categoryLabel).join("、")}。</Notice>}
       {d.afterCoverageStatus === "VALUATION_UNAVAILABLE" && <Notice tone="warn">改后暂时无法估值，无法确认完整影响，不能提交。请返回修改草稿，或在估值恢复后重试预览。</Notice>}
     </section>
