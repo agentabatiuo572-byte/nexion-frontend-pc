@@ -48,7 +48,7 @@ export async function submitH2TrialApproval(
   const previous = pendingH2TrialApprovals(session.adminId).find((record) => record.sid === input.sid);
   if (input.op === "h2_trial_charge" || previous?.op === "h2_trial_charge") {
     if (mode !== "lookup" || previous?.op !== "h2_trial_charge") {
-      throw new Error("旧强制扣款已退役，仅可查询原申请，不能创建或重试提案。");
+      throw new Error("旧强制扣款已停用，只能查询原申请，不能新建或重试。");
     }
     const ticket = await fetchA2ProposalByKey(previous.commandKey, true);
     if (ticket && (!ticket.mine || ticket.obj !== previous.obj

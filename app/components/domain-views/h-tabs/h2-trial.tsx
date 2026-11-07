@@ -58,9 +58,10 @@ type TrialSession = {
   pendingApproval?: { action?: string | null; submittedBy?: string | null; submittedAt?: string | null } | null;
 };
 
-/** 列表格里只留「待审批」，动作、提交人和时间写在抽屉里（PG-43 每格最多两行）。 */
-function trialApprovalMeta(approval: NonNullable<TrialSession["pendingApproval"]>) {
-  return [approval.action, approval.submittedBy, approval.submittedAt && formatBusinessTimeFull(approval.submittedAt, "—")].filter(Boolean).join(" · ");
+/** 列表格里只留「待审批」，动作、提交人和时间写在抽屉里（PG-43 每格最多两行）。动作名后面带的记录编号抽屉标题下已有，这里去掉，一行放得下。 */
+function trialApprovalMeta(approval: NonNullable<TrialSession["pendingApproval"]>, sid: string) {
+  const bare = sid.replace(/^trial-/, "");
+  return [approval.action?.split(" · ").filter((part) => !part.endsWith(bare)).join(" · "), approval.submittedBy, approval.submittedAt && formatBusinessTimeFull(approval.submittedAt, "—")].filter(Boolean).join(" · ");
 }
 
 type TrialState = { key: string; label: string; tone: string };
@@ -563,17 +564,19 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
             <ol>
               <li>紧急停用开关和当前运营阶段都开着</li>
               <li>用户没有被风控判定为循环试用</li>
-              <li>用户没有进行中的试用或已转购的试用记录，原记录可重新领取，也过了冷却期</li>
+              <li>用户没有进行中的试用，试用也没转成过购买</li>
+              <li>以前领过的，上次试用已取消或扣款失败，并过了冷却期</li>
               <li>目标商品是允许试用且已上架的可用实物商品</li>
               <li>今天还有免费名额，用户的实物设备位够</li>
               <li>本次若带有支付方式，该方式仍可用；不要求先绑卡</li>
             </ol>
           </li>
         </ol>
-        <p>后台门禁表仅供展示，不控制领取；实际领取按以上固定条件检查。</p>
-        {model.gates.length === 0 ? <p>门禁展示表暂无记录。</p> : (
-          <dl>{model.gates.map((gate) => <div key={gate.gate}><dt>{gate.gate}：</dt><dd>仅展示{gate.note ? `，${gate.note}` : ""}</dd></div>)}</dl>
-        )}
+        {/* 后台门禁表不控制领取（闸门 2 第 33 条）：没有记录时不提它，有记录时写明只做记录。 */}
+        {model.gates.length > 0 && <>
+          <p>后台另外记着下面这些检查项，只做记录，不影响领取：</p>
+          <dl>{model.gates.map((gate) => <div key={gate.gate}><dt>{gate.gate}：</dt><dd>只做记录{gate.note ? `，${gate.note}` : ""}</dd></div>)}</dl>
+        </>}
       </section>
       <section className="rd-guide-section">
         <h3>试用流程的七种状态</h3>
@@ -665,11 +668,10 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         <Fact k="原试用记录">{retiredCharge.source === "legacy" ? retiredCharge.record.obj : `${retiredCharge.record.owner} · ${retiredCharge.record.sid}`}</Fact>
         <Fact k="原操作理由"><span className="rd-pre">{retiredCharge.record.reason}</span></Fact>
       </Facts>
-      <Explain label="技术信息" content={`命令号 ${retiredCharge.record.commandKey}`} />
-      <p>旧强制扣款已退役，仅查询原申请，不新建或执行扣款。</p>
+      <p>强制扣款已停用，这里只查原申请，不会新建或执行扣款。<Explain label="技术信息" content={`命令号 ${retiredCharge.record.commandKey}`} /></p>
       {chargeLookup.error && <p role="alert" className="rd-form-error">{chargeLookup.error}</p>}
       {chargeLookup.missing && <p role="status">未找到可核对的原申请，旧入口不能重建。可结束本机这一条核对；历史事实请到操作记录核查，不会删除服务端记录。</p>}
-      {chargeLookup.ticket && <p role="status">已找到原审批单 {chargeLookup.ticket.id} · {{ pending: "待审批，已退役不可执行", approved: "历史已执行", rejected: "历史已取消", withdrawn: "历史已撤回", expired: "已过期" }[chargeLookup.ticket.status]}。请到操作记录查看原申请和处理结果。</p>}
+      {chargeLookup.ticket && <p role="status">已找到原审批单 {chargeLookup.ticket.id} · {{ pending: "待审批，已停用，不会执行", approved: "历史已执行", rejected: "历史已取消", withdrawn: "历史已撤回", expired: "已过期" }[chargeLookup.ticket.status]}。请到操作记录查看原申请和处理结果。</p>}
       {reach(auditHref, "platform_a2_read") && <Link className="rd-link" href={`${auditHref}?domain=H&object=${encodeURIComponent(retiredCharge.record.sid)}`} prefetch={false}>到操作记录核查</Link>}
     </Modal>
   );
@@ -679,7 +681,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     ...legacyApprovals.map((record) => record.op === "h2_trial_charge" ? (
       <Notice key={record.commandKey} tone="warn" title={`强制扣款 · ${record.sid} · 原结果未确认`}
         action={adminSession && canCharge && <Button size="sm" disabled={!!recovering} onClick={() => { setChargeLookup({}); setRetiredCharge({ adminId: adminSession.adminId, source: "legacy", record }); }}>核对旧申请</Button>}>
-        原对象 {record.obj}，原理由 {record.reason}。旧强制扣款已退役，只能核对原申请。
+        原对象 {record.obj}，原理由 {record.reason}。旧强制扣款已停用，只能核对原申请。
       </Notice>
     ) : <Notice key={record.commandKey} tone="warn" title={`${H2_TRIAL_ACTIONS[record.op]} · ${record.sid} · 原结果未确认`}
       action={<>
@@ -692,7 +694,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     if (record.kind === "charge") return (
       <Notice key={record.fingerprint} tone="warn" title={`${commandTitle(record)} · 结果未确认`}
         action={adminSession && canCharge && <Button size="sm" disabled={!!recovering} onClick={() => { setChargeLookup({}); setRetiredCharge({ adminId: adminSession.adminId, source: "redesign", record }); }}>核对旧申请</Button>}>
-        原对象 {record.owner} · {record.sid}，原理由 {record.reason}。旧强制扣款已退役，只能核对原申请。
+        原对象 {record.owner} · {record.sid}，原理由 {record.reason}。旧强制扣款已停用，只能核对原申请。
       </Notice>
     );
     const proposal = isProposal(record);
@@ -780,7 +782,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           explain="试用中、宽限中和已延长的账号数，每个账号只算最近一次试用，不受下方分页影响。" />
         <Stat tone="role-4" icon={TrendingUp} label="试用转购买率" value={text(stats.trialBuyRate)}
           sub={`提前购买率 ${text(stats.earlyBuyRate)}`}
-          explain={<>已购买账号 ÷ 全部已开始试用的账号，每个账号只算最近一次。提前购买率 = 按提前购买规则结算的账号 ÷ 全部已开始试用的账号。提前购买立减为 0 时，试用期内购买也不计入提前购买率。没有分母时显示「—」，表示不可计算，不是 0。绑卡转化 {text(stats.bindCardRate)}：绑卡环节已退役，不再计算。</>} />
+          explain={<>已购买账号 ÷ 全部已开始试用的账号，每个账号只算最近一次。提前购买率 = 按提前购买规则结算的账号 ÷ 全部已开始试用的账号。提前购买立减为 0 时，试用期内购买也不计入提前购买率。没有分母时显示「—」，表示不可计算，不是 0。绑卡转化 {text(stats.bindCardRate)}：绑卡环节已停用，不再计算。</>} />
         <Stat tone="role-2" icon={Ticket} label="今日实际剩余免费名额" value={seatsKnown ? text(seats?.cur) : "—"} unit={seatsKnown ? "人" : undefined}
           sub={seats?.businessDate && seats.businessDate !== "UNKNOWN" ? `日期 ${seats.businessDate}` : undefined}
           explain="按试用业务日实时读取，和 App 用同一个名额计数。「每日免费名额上限」是配置，这个是领取后的实际剩余。" />
@@ -799,7 +801,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
               <Panel title={<span tabIndex={-1} data-section-focus="">常改参数</span>} explainLabel="常改参数" icon={SlidersHorizontal} tone="role-4"
                 explain={<>
                   <p>每项是什么、显示在哪、什么时候生效，看名称旁的提示；改一项存一项。</p>
-                  <p>三种优惠可以叠加：实付 = 售价 − 购买折扣 − 试用收益抵扣 − 提前购买立减，最低 0。提前购买立减只在试用期内有，在高级设置里改。</p>
+                  <p>三种优惠可以叠加：实付 = 售价 − 购买减价 − 试用收益抵扣 − 提前购买立减，最低 0。提前购买立减只在试用期内有，在高级设置里改。</p>
                 </>}>
                 <ConfigList>
                   {commonParams.map((param) => <ParamRow key={param.key} ctx={ctx} param={param} trialProducts={trialProducts} send={sendCommand} reach={reach} blocked={paramBlock(param.key)} seatsLeft={seatsKnown ? seats?.cur : undefined} />)}
@@ -836,7 +838,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
 
             <div id={nav.anchor("records")}>
               <Fold title="试用记录" icon={History} tone="role-3" summary={`共 ${total} 条，平时不用处理`} open={!!folds.records} onOpenChange={(open) => setFolds((state) => ({ ...state, records: open }))}
-                explain={<>宽限中是正常状态：到期系统自动结束，不扣款，不用处理。{canHandle && "强制取消用于怀疑刷试用等风控介入，平时不用点，要提交审批。强制扣款已退役。"}</>}>
+                explain={<>宽限中是正常状态：到期系统自动结束，不扣款，不用处理。{canHandle && "强制取消用于怀疑刷试用等风控介入，平时不用点，要提交审批。强制扣款已停用。"}</>}>
                 {canCharge && <Notice tone="neutral">{CHARGE_RESULT}。</Notice>}
                 <Table label="试用记录">
                   <thead>
@@ -877,13 +879,13 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         sub={currentRow && <><span title={currentRow.session.sid}>{shortSid(currentRow.session.sid)}</span> <IconButton aria-label="复制试用记录编号" data-size="sm" onClick={() => void navigator.clipboard?.writeText(currentRow.session.sid).then(() => toast("已复制试用记录编号", "success"), () => toast("复制失败，请手动选择编号", "error"))}><Copy size={13} aria-hidden /></IconButton></>}
         nav={{ hasPrev: !loading && currentIndex > 0, hasNext: !loading && currentIndex >= 0 && currentIndex < sessions.length - 1, onPrev: () => setCurrentSid(sessions[currentIndex - 1].sid), onNext: () => setCurrentSid(sessions[currentIndex + 1].sid) }}
         footer={currentRow && !currentRow.terminal && canHandle ? (
-          <Decision explain="强制取消用于怀疑刷试用等风控介入，要提交审批，超级管理员批准后才执行。强制扣款已退役，用户要购买只能自己确认。" others={sessionButtons(currentRow, "drawer").cancel} />
+          <Decision explain="强制取消用于怀疑刷试用等风控介入，要提交审批，超级管理员批准后才执行。强制扣款已停用，用户要购买只能自己确认。" others={sessionButtons(currentRow, "drawer").cancel} />
         ) : undefined}>
         {currentRow && (
           <>
             <JudgmentPoints rows={[
               { label: "状态", value: <StatusTag tone={currentRow.tone}>{currentRow.label}</StatusTag>, reason: TRIAL_STATE_HELP[currentRow.session.state] },
-              ...(currentRow.session.pendingApproval ? [{ label: "审批", value: <StatusTag tone="warn">待审批</StatusTag>, reason: <>{trialApprovalMeta(currentRow.session.pendingApproval)}<br />审批进度到「操作记录与审批」看；旧扣款已退役，只能按原权限取消或撤回。审批结束后才能发起新操作。</> }] : []),
+              ...(currentRow.session.pendingApproval ? [{ label: "审批", value: <StatusTag tone="warn">待审批</StatusTag>, reason: <>{trialApprovalMeta(currentRow.session.pendingApproval, currentRow.session.sid)}<br />审批进度看「操作记录与审批」。{currentRow.session.pendingApproval.action?.startsWith(H2_TRIAL_ACTIONS.h2_trial_charge) && "这是强制扣款停用前提交的申请，批准也不会扣款，只能按原权限取消或撤回。"}</> }] : []),
               { label: "账户", value: trialOwnerLabel(currentRow.session), state: currentRow.owner ? undefined : "warn" },
               { label: "累计收益", value: shadowText(currentRow.session.shadow) },
               { label: "能不能处理", reason: canCharge && !currentRow.terminal ? `${CHARGE_RESULT}。` : undefined, value: currentRow.session.pendingApproval ? "等待审批结果，审批结束后才能再次处理" : currentRow.terminal ? "已结束，不能再取消或扣款" : lockedSids.has(currentRow.session.sid) ? "有结果未确认的操作，先处理页面上方的待确认" : !currentRow.owner ? "没有用户归属，不能取消或扣款" : canCancel ? "平时不用处理，确要干预才提交强制取消审批" : "这个账号只能查看" },
