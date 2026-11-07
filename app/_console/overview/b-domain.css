@@ -85,6 +85,7 @@
 .cc-pending .rd-todo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; }
 .cc-pending .rd-todo-item + .rd-todo-item { margin-top: 0; }
 .cc-pending .rd-todo-item:only-child { grid-column: 1 / -1; }
+.cc-pending .rd-todo-sub { white-space: normal; }  /* 两列窄时折行，审批详情这类长文字不切掉 */
 .cc-pending-rest { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .cc-pending-rest a { color: var(--rd-text-2); }
 
