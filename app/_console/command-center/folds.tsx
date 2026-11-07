@@ -10,7 +10,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowLeftRight, ShieldAlert, Target, Users, Wallet, XCircle } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { BarList, Bars, BlockState, Button, Explain, Fact, Facts, Fold, Modal, StatusTag, ThresholdMeter, TrendLines } from "@/app/components/rd";
+import { BarList, Bars, BlockState, Button, Explain, Fact, Facts, Figure, Fold, Modal, StatusTag, ThresholdMeter, TrendLines } from "@/app/components/rd";
 import { fetchB0Kpis, fetchB0Redemption, type B0Kpi } from "@/lib/admin/b0-client";
 import type { B0Blocks } from "@/lib/admin/b0-access";
 import type { B2LiquidityHistory } from "@/lib/admin/b-restoration-client";
@@ -175,8 +175,6 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
   const pressure = pressureLevel(ledger, risk);
   // 同一件事同一个颜色：业务没开用橙，和状态句一样。红只给压力到红线。
   const alertTone = pressure.worst === "danger" ? "danger" : "warn";
-  const lines = risk ? `黄线 ${fmtPct(risk.bankRunYellowPct, 0)}，红线 ${fmtPct(risk.bankRunRedlinePct, 0)}。到线时这里变色。` : "";
-  const pressureTone = (level: "ok" | "warn" | "danger", value: number) => (level !== "ok" ? level : value === 0 ? "done" : undefined);
   return (
     <Fold title="风险与开关" summary={riskFoldSummary(ledger, risk, error)} icon={ShieldAlert} tone="role-4" alert={alert} alertTone={alertTone} open={open} onOpenChange={onOpenChange}
       actions={<FoldLink reach={reach} href="/overview/risk-radar">查看风险提醒</FoldLink>}>
@@ -201,16 +199,21 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                 {!linkInBrief && reach("/emergency/kill-switch") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>查看或恢复业务开关</Link>}
               </section>
               )}
-              {/* 压力和账户都是短句（5.4）：比率常年很小，长条几乎全空，说明不了什么。黄线、红线收进提示（DP-06）。 */}
-              <ul className="cc-list" data-cols="">
-                <li>
-                  <span><Explain label="近 24 小时提现申请占储备怎么看" content={lines}>近 24 小时提现申请占储备</Explain></span>
-                  <span className="cc-num" data-tone={pressureTone(pressure.flow, risk.bankRunRatio)}>{fmtPct(risk.bankRunRatio)}</span>
-                </li>
-                <li>
-                  <span><Explain label="待提现总额占储备怎么看" content={lines}>待提现总额占储备</Explain></span>
-                  <span className="cc-num" data-tone={pressureTone(pressure.backlog, ledger.pressureRatio)}>{fmtPct(ledger.pressureRatio * 100)}</span>
-                </li>
+              {/* 尺在左、其余数字在右（VS-49）；两条比率都是 0 时不画尺，一句话写完（DP-62）。 */}
+              <Figure width={560} stack="wide" graphic={risk.bankRunRatio === 0 && ledger.pressureRatio === 0
+                ? <p className="cc-line">近 24 小时提现申请占储备 {fmtPct(risk.bankRunRatio)}，待提现总额占储备 {fmtPct(ledger.pressureRatio * 100)}；黄线 {fmtPct(risk.bankRunYellowPct, 0)}、红线 {fmtPct(risk.bankRunRedlinePct, 0)}</p>
+                : <ThresholdMeter
+                    label="提现压力和黄线、红线"
+                    rows={[
+                      { key: "flow", label: "近 24 小时提现申请占储备", value: risk.bankRunRatio, text: fmtPct(risk.bankRunRatio), tone: pressure.flow },
+                      { key: "backlog", label: "待提现总额占储备", value: ledger.pressureRatio * 100, text: fmtPct(ledger.pressureRatio * 100), tone: pressure.backlog },
+                    ]}
+                    marks={[
+                      { key: "yellow", text: `黄线 ${fmtPct(risk.bankRunYellowPct, 0)}`, value: risk.bankRunYellowPct, tone: "warn" },
+                      { key: "red", text: `红线 ${fmtPct(risk.bankRunRedlinePct, 0)}`, value: risk.bankRunRedlinePct, tone: "danger" },
+                    ]}
+                  />}>
+              <ul className="cc-list">
                 <li>
                   <span>
                     <Explain label="异常账户怎么算" content="风控按当前评分规则标记的账户数。等待重新评分的账户不算在内，它们在待处理里。">异常账户</Explain>
@@ -230,6 +233,7 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                   <span className="cc-num" data-tone={ledger.avgRiskScore === 0 ? "done" : undefined}>{ledger.avgRiskScore}</span>
                 </li>
               </ul>
+              </Figure>
             </div>
           )}
     </Fold>
