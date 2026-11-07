@@ -587,3 +587,6 @@
   .edom .e6-copy-grid { grid-template-columns: 1fr; }
 }
 .e-field { gap: 5px; }
+
+/* ===== 订单进度：退款框里促销奖励的后果句。给人读的句子，14px 次文字，不和金额同档（VS-105） ===== */
+.e4-refund-outcome { margin: 8px 0 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); }

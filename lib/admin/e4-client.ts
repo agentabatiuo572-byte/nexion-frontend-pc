@@ -211,7 +211,7 @@ function fromOrder(order: BackendOrder): E4Order {
   return {
     id: order.orderNo,
     user: order.userNo,
-    sku: operatorSkuLabel(order),
+    sku: operatorSkuLabel(order).replace(/×(\d+)/gu, " × $1"),
     amt: toNumber(order.amount),
     state: normalizeState(order.state),
     dc: order.dcLocation?.trim() || "—",

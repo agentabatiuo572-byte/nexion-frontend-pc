@@ -635,15 +635,15 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       const receipt = await fetchA2ProposalByKey(record.commandKey);
       if (!receipt?.mine || receipt.obj !== record.orderNo
           || (receipt.operationCode && receipt.operationCode !== record.fingerprint.split("|")[0])) {
-        setToast("暂未找到对应的原审批单，请稍后再查。原命令号继续保留。");
+        setToast("暂未找到对应的原审批单，请稍后再查。原命令号继续保留。", "warn");
         return;
       }
       commandAttempts.forget(record.fingerprint, record.commandKey);
       syncE4Pending();
-      setToast(`已找回原审批单 ${receipt.id}`);
+      setToast(`已找回原审批单 ${receipt.id}`, "success");
       await refreshE4();
     } catch (error) {
-      setToast(displayAdminError(error));
+      setToast(displayAdminError(error), "error");
     } finally {
       setE4Retrying("");
     }
@@ -668,12 +668,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       if (!unknown && !retained) e4PendingCommands.forget(scope);
       syncE4Pending();
       if (!unknown) throw error;
-      setToast("结果未确认，不要重复操作。到页面上方按原操作重试，或到操作记录核查。");
+      setToast("结果未确认，不要重复操作。到页面上方按原操作重试，或到操作记录核查。", "warn");
       return false;
     }
     e4PendingCommands.forget(scope);
     syncE4Pending();
-    setToast("已提交，等待审批后执行。等超级管理员批准，进度到「操作记录与审批」看。");
+    setToast("已提交，等待审批后执行。等超级管理员批准，进度到「操作记录与审批」看。", "success");
     return true;
   };
   const noteE4Pending = (record: E4PendingCommand, note: string) => setE4PendingNotes((current) => ({ ...current, [record.fingerprint]: note }));
@@ -689,7 +689,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       e4PendingCommands.forget(record.fingerprint, record.commandKey);
       syncE4Pending();
       await refreshE4();
-      setToast("原操作已结束或过期，本次未再次发送。请先核对列表，再决定如何处理。");
+      setToast("原操作已结束或过期，本次未再次发送。请先核对列表，再决定如何处理。", "warn");
       return;
     }
     setE4Retrying(record.fingerprint);
@@ -717,7 +717,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       e4PendingCommands.forget(record.fingerprint, record.commandKey);
       syncE4Pending();
       await refreshE4();
-      setToast(`已找回原审批单 ${original.id}，${E4_PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`);
+      setToast(`已找回原审批单 ${original.id}，${E4_PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`, "success");
     } catch (error) {
       noteE4Pending(record, `查询没有成功：${displayAdminError(error)} 原操作继续保留。`);
     } finally {
@@ -728,7 +728,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const releaseE4Pending = (record: E4PendingCommand) => {
     e4PendingCommands.forget(record.fingerprint, record.commandKey);
     syncE4Pending();
-    setToast("已解除待确认，这单可以重新处理");
+    setToast("已解除待确认，这单可以重新处理", "success");
   };
 
   // ── E5 设备运行管理:服务端 fleet / overview 为单一来源 ──

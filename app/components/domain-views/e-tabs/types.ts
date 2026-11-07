@@ -10,6 +10,7 @@ import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import type { E5Datacenter, E5DatacenterStatus, E5Device, E5Overview } from "@/lib/admin/e5-client";
 import type { E6ComputeConfigView } from "@/lib/admin/e6-client";
 import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
+import type { ToastKind } from "@/lib/store/ui";
 
 /**
  * E 域子视图共享类型。
@@ -120,7 +121,7 @@ export interface EOrder {
 export interface EViewCtx {
   pE: (k: string) => string;
   openActionConfirm: (m: McSpec) => void;
-  toast: (msg: string) => void;
+  toast: (msg: string, kind?: ToastKind) => void;
   // E1 商品目录 & 上架门
   canWriteE1: boolean;
   skus: OpsSku[];
