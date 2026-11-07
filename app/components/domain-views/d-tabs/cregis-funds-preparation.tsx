@@ -6,7 +6,7 @@ import { BlockState, Button, Cell, ConfigList, ConfigRow, Decision, Drawer, Fact
 import type { StateTone } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminAuthActivityAllowed, adminAuthLifecycleEpoch } from "@/lib/admin/auth-lifecycle";
-import { financeAdminRequest } from "@/lib/admin/d-client";
+import { d1PendingObjectReason, financeAdminRequest } from "@/lib/admin/d-client";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { exceptionCommand, exceptionList, exceptionRead, exceptionObject, type ExceptionPage, type ExceptionRecord } from "@/lib/admin/cregis-exceptions";
 import { preparationAmount, preparationConfig, PREPARATION_BLOCKER, PREPARATION_STATE, type PreparationConfig, type PreparationKind } from "@/lib/admin/cregis-funds-preparation";
@@ -17,7 +17,7 @@ const EMPTY: ExceptionPage = { records: [], hasMore: false, nextBeforeId: null }
 const ROOT = "/funds-preparation";
 const kindLabel = (kind: unknown) => kind === "COLLECTION" ? "归集准备" : "甲方付款准备";
 const planTone = (state: unknown): StateTone => state === "DRAFT" ? "warn" : state === "REVIEWED" ? "ok" : "done";
-type Props = { canManage: boolean; openActionConfirm: DCtx["openActionConfirm"] };
+type Props = { canManage: boolean; openActionConfirm: DCtx["openActionConfirm"]; onChanged?: () => void };
 
 export function CregisFundsPreparation(props: Props) {
   const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch);
@@ -26,7 +26,7 @@ export function CregisFundsPreparation(props: Props) {
     {...props} owner={session.adminId} ownerEpoch={epoch} />;
 }
 
-function OwnedPreparation({ canManage, openActionConfirm, owner, ownerEpoch }: Props & { owner: number; ownerEpoch: number }) {
+function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, ownerEpoch }: Props & { owner: number; ownerEpoch: number }) {
   const lifecycle = useRef(adminAuthLifecycleEpoch()).current;
   const live = useRef(true), mutation = useRef(false), selection = useRef(0), readEpoch = useRef(0);
   const [config, setConfig] = useState<PreparationConfig | null>(null);
@@ -86,11 +86,12 @@ function OwnedPreparation({ canManage, openActionConfirm, owner, ownerEpoch }: P
     if (mutation.current) throw new Error("上一项操作仍在处理，请刷新核对");
     mutation.current = true; setBusy(true);
     try { await exceptionCommand(`${ROOT}${path}`, body, request); request.assertOwner(); }
-    finally { mutation.current = false; if (owns()) { setBusy(false); await refresh(); } }
+    finally { mutation.current = false; onChanged?.(); if (owns()) { setBusy(false); await refresh(); } }
   };
   const create = () => {
     try {
       assertOwner(true); const body = payload();
+      const held = d1PendingObjectReason(`/cregis${ROOT}/plans`); if (held) throw new Error(held);
       if (!reference.trim() || reference.length > 100 || /[\u0000-\u001f\u007f]/.test(reference)) throw new Error("请填写不超过 100 字的业务参考号");
       const snapshot = { ...body, businessReference: reference.trim() };
       const target = kind === "COLLECTION" ? config!.platformAddress : config!.counterpartyAddress;
@@ -103,6 +104,7 @@ function OwnedPreparation({ canManage, openActionConfirm, owner, ownerEpoch }: P
   };
   const decide = (row: ExceptionRecord, decision: "REVIEW" | "CANCEL") => {
     assertOwner(true);
+    const held = d1PendingObjectReason(`/cregis${ROOT}/plans/${String(row.planNo)}/decision`); if (held) { setError(held); return; }
     openActionConfirm({ briefKind: "record", action: decision === "REVIEW" ? "复核准备单" : "取消准备单", title: decision === "REVIEW" ? "复核准备单" : "取消准备单",
       confirmLabel: decision === "REVIEW" ? "确认复核" : "确认取消", effect: <StatusTag tone="neutral" filled>不转账</StatusTag>,
       facts: <Facts><Fact k="金额" lead tone="role-1" unit="USDT">{usdt(String(row.amountUsdt))}</Fact><Fact k="类型">{kindLabel(row.kind)}</Fact><Fact k="来源">{String(row.sourceAddress)}</Fact><Fact k="接收">{String(row.targetAddress)}</Fact><Fact k="业务参考">{String(row.businessReference)}</Fact></Facts>,

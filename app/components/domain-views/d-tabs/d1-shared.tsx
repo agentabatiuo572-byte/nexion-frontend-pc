@@ -103,9 +103,9 @@ export type D1PendingItem = {
   auditHref?: string;
   /** 读回这条对象的现状，返回写给人看的一句话。 */
   verify?: () => Promise<ReactNode>;
-  /** 按原请求重发。成功后由 after 重读；结果仍未知或被拒时抛错。 */
-  retry: () => Promise<unknown>;
-  /** 被明确拒绝、人核实过之后，只放开本页的锁。 */
+  /** 按原请求重发。后端不按命令号去重的操作不给：再发可能再执行一次，只能读回核对（OP-94）。 */
+  retry?: () => Promise<unknown>;
+  /** 被明确拒绝、或不能重试的读回核对过之后，人核实过原操作再放开本页的锁，不发请求。 */
   release: () => void;
   after: () => void;
 };
@@ -113,31 +113,47 @@ export type D1PendingItem = {
 const unknownOutcome = (error: unknown) => isDOutcomeUnknownError(error)
   || (typeof error === "object" && error !== null && (error as { unknownOutcome?: unknown }).unknownOutcome === true);
 
+/** 这些状态码说的是登录、权限、超时、限流，不是后端对这条命令的结论。 */
+const NOT_A_VERDICT = new Set([401, 403, 408, 425, 429]);
+
 /**
- * 结果未确认的写操作，所在页签顶部常显（OP-93）。只能按原请求重试（OP-94）；重试被明确拒绝后才出现「解除待确认」，
- * 解除只放开本页的锁，不发请求（OP-153）。写法同提现审核。
+ * 后端明确拒绝：带原因码的 4xx。处理中、结果未知、响应读不懂、本地没发出去的都不算，原命令照旧保留（OP-153）。
+ * 写法同提现审核：只有明确拒绝之后才能人工核实解除。
+ */
+export function explicitRejection(error: unknown) {
+  if (typeof error !== "object" || error === null || unknownOutcome(error)) return false;
+  const value = error as { name?: unknown; status?: unknown; reasonCode?: unknown };
+  return (value.name === "DRequestError" || value.name === "PurchasePaymentApiError")
+    && typeof value.status === "number" && value.status >= 400 && value.status < 500 && !NOT_A_VERDICT.has(value.status)
+    && typeof value.reasonCode === "string" && value.reasonCode !== "" && !value.reasonCode.startsWith("IDEMPOTENCY_");
+}
+
+/**
+ * 结果未确认的写操作，所在页签顶部常显（OP-93）。只能按原请求重试（OP-94）；重试被后端明确拒绝后才出现「解除待确认」，
+ * 后端不按命令号去重的操作不给重试，读回核对之后才出现「核对后解除」。解除只放开本页的锁，不发请求（OP-153）。写法同提现审核。
  */
 export function PendingNotices({ items, disabled }: { items: readonly D1PendingItem[]; disabled?: boolean }) {
   const reach = useReach();
   const [running, setRunning] = useState("");
-  const [rejected, setRejected] = useState<readonly string[]>([]);
+  const [releasable, setReleasable] = useState<readonly string[]>([]);
   const [notes, setNotes] = useState<Record<string, ReactNode>>({});
   const [releasing, setReleasing] = useState<D1PendingItem | null>(null);
   if (!items.length && !releasing) return null;
   const note = (key: string, text: ReactNode) => setNotes((current) => ({ ...current, [key]: text }));
   const retry = async (item: D1PendingItem) => {
+    if (!item.retry) return;
     setRunning(item.key);
-    setRejected((current) => current.filter((key) => key !== item.key));
+    setReleasable((current) => current.filter((key) => key !== item.key));
     try {
       await item.retry();
       note(item.key, "");
     } catch (error) {
       if (isPermissionDenied(error)) announcePermissionDenied();
-      if (unknownOutcome(error)) note(item.key, "重试结果仍未确认，原操作继续保留。");
-      else {
+      if (explicitRejection(error)) {
         note(item.key, <>重试被拒：{displayAdminError(error)} 这说明不了原操作的结果，先核实原操作，再决定要不要解除。</>);
-        setRejected((current) => [...current, item.key]);
-      }
+        setReleasable((current) => [...current, item.key]);
+      } else if (unknownOutcome(error)) note(item.key, "重试结果仍未确认，原操作继续保留。");
+      else note(item.key, <>这次没能确认结果：{displayAdminError(error)} 原操作继续保留。</>);
     } finally {
       setRunning("");
       item.after();
@@ -146,8 +162,10 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
   const verify = async (item: D1PendingItem) => {
     if (!item.verify) return;
     setRunning(item.key);
-    try { note(item.key, await item.verify()); }
-    catch (error) { note(item.key, `读回失败：${displayAdminError(error)} 待确认继续保留。`); }
+    try {
+      note(item.key, await item.verify());
+      if (!item.retry) setReleasable((current) => current.includes(item.key) ? current : [...current, item.key]);
+    } catch (error) { note(item.key, `读回失败：${displayAdminError(error)} 待确认继续保留。`); }
     finally { setRunning(""); }
   };
   return (
@@ -156,10 +174,10 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
         <Notice key={item.key} tone="warn" title={`${item.label} · 结果未确认`}
           action={<>
             {item.verify && <Button size="sm" disabled={disabled || !!running} onClick={() => void verify(item)}>读回核对</Button>}
-            <Button size="sm" loading={running === item.key} disabled={disabled || (!!running && running !== item.key)} disabledReason={item.blocked} onClick={() => void retry(item)}>按原操作重试</Button>
-            {rejected.includes(item.key) && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>解除待确认</Button>}
+            {item.retry && <Button size="sm" loading={running === item.key} disabled={disabled || (!!running && running !== item.key)} disabledReason={item.blocked} onClick={() => void retry(item)}>按原操作重试</Button>}
+            {releasable.includes(item.key) && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>{item.retry ? "解除待确认" : "核对后解除"}</Button>}
           </>}>
-          {businessStamp(item.createdAt)}（{zoneLabel()}）发出，可能已经生效。{item.blocked ?? item.hint}
+          {businessStamp(item.createdAt)}（{zoneLabel()}）发出，可能已经生效。{item.retry ? item.blocked ?? item.hint : item.hint}
           {item.auditHref && reach(item.auditHref, "platform_a2_read") && <> <Link className="rd-link" href={item.auditHref}>到操作记录核查</Link></>}
           <Explain label="技术信息" content={`命令号 ${item.key}`} />
           {notes[item.key] && <div>{notes[item.key]}</div>}
@@ -167,7 +185,7 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
       ))}
       {releasing && (
         <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)}
-          explain="重试被拒说明不了原操作的结果，先到操作记录确认。解除后原操作不再重试。"
+          explain={releasing.retry ? "重试被拒说明不了原操作的结果，先到操作记录确认。解除后原操作不再重试。" : "这项操作不能按原请求重试。按读回的结果和操作记录确认原操作有没有执行，再解除；解除后可以重新操作。"}
           onConfirm={() => { releasing.release(); setReleasing(null); releasing.after(); }} />
       )}
     </>

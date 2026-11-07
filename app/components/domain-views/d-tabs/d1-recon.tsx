@@ -17,6 +17,9 @@ import { D1OrderPayments } from "./d1-order-payments";
 import { CrossAreaNotice, D1_SECTIONS, D1_SECTION_NAME, PendingNotices, SwitchTag, countText, readPage, readParam, usdt, vnd, writeParams, zoneLabel, type D1Activity, type D1Count, type D1PendingItem, type D1Section } from "./d1-shared";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
+  D1_COMMAND_EXPIRED_TEXT,
+  d1PendingObjectReason,
+  fetchD1BankOrders,
   fetchD1TopupFlows,
   fetchD1TopupOverview,
   listD1PendingBankOrderCommands,
@@ -466,13 +469,40 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
     });
   };
 
+  /** 读回这条命令改的对象现在是什么样，只给事实，不当成原命令的结果（OP-93、OP-95）。 */
+  const verifyCommand = async (path: string) => {
+    const code = decodeURIComponent(path.split("/")[3] ?? "");
+    const kept = "状态可能是别人改的，待确认继续保留。";
+    if (path === "/vietqr/config") {
+      const current = await loadD1VietQrOverview("inflight");
+      setVietQr(current);
+      return `读回：银行卡支付单笔上限现在是 ${current.config.perTxLimitUsd.toLocaleString("en-US")} USD（第 ${current.config.version} 版）。${kept}`;
+    }
+    if (path.startsWith("/vietqr/orders/")) {
+      const latest = await fetchD1BankOrders({ keyword: code, pageNum: 1, pageSize: 20 });
+      const order = latest.records.find(value => value.intentNo === code);
+      return order ? `读回：这笔现在是「${orderStatusText(order.status)}」${order.creditedUsdt > 0 ? `，已入账 ${usdt(order.creditedUsdt)} USDT` : "，还没入账"}。${kept}` : "读回：列表里暂时找不到这笔，待确认继续保留。";
+    }
+    const current = await fetchD1TopupOverview();
+    setOverview(current);
+    const name = depositChannelText(code);
+    if (path.startsWith("/topup/reconciliation/")) {
+      const row = current.reconciliation.find(value => value.channel === code);
+      return row ? `读回：${name}今天的差异现在是「${diffText(row)}」。${kept}` : `读回：今天没有${name}的对账记录。${kept}`;
+    }
+    const channel = current.channels.find(value => value.code === code);
+    if (!channel) return `读回：暂时读不到${name}。待确认继续保留。`;
+    return path.endsWith("/enabled") ? `读回：${name}现在是「${channel.enabled ? "启用" : "停用"}」。${kept}`
+      : `读回：${name}单笔上限现在是 ${channel.maxAmountValue == null ? "未设置" : `${channel.maxAmountValue.toLocaleString("en-US")} USD`}。${kept}`;
+  };
   const pendingItem = (command: D1PendingCommand, retry: () => Promise<unknown>, permitted: boolean): D1PendingItem => ({
     key: command.commandKey,
     label: pendingLabel(command.path),
     createdAt: command.createdAt,
-    hint: "先刷新核对；按原操作重试不会重复执行。",
-    blocked: permitted ? undefined : "这个账号没有这项权限",
+    hint: "先读回核对；按原操作重试用同一个命令号，不会重复执行。",
+    blocked: command.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : permitted ? undefined : "这个账号没有这项权限",
     auditHref: "/platform/audit?domain=D",
+    verify: () => verifyCommand(command.path),
     retry: async () => { setBusy(true); try { await retry(); } finally { setBusy(false); } },
     release: () => releaseD1PendingCommand(command.commandKey),
     after: () => { void refreshAfterWrite(); setBankKey(value => value + 1); },
@@ -519,17 +549,17 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
               what="银行卡充值入口开不开" when="确认后立即生效，只影响新充值" where="App 充值页的银行卡支付入口"
               effect="停用后 App 充值页不再显示银行卡支付。已在付款的不受影响，订单付款也不受影响"
               value={<SwitchTag on={channel.enabled}>{channel.enabled ? "启用" : "停用"}</SwitchTag>}
-              action={canManageChannels ? <Button size="sm" variant={channel.enabled ? "danger-outline" : "secondary"} disabledReason={readingReason} onClick={() => toggleChannel(channel)}>{channel.enabled ? "停用" : "启用"}</Button> : undefined} />;
+              action={canManageChannels ? <Button size="sm" variant={channel.enabled ? "danger-outline" : "secondary"} disabledReason={readingReason ?? d1PendingObjectReason(`/topup/channels/${encodeURIComponent(channel.code)}/enabled`)} onClick={() => toggleChannel(channel)}>{channel.enabled ? "停用" : "启用"}</Button> : undefined} />;
           })}
           {bankChannels.filter(channel => channel.maxAmountValue !== null).map(channel => (
             <ConfigRow key={`${channel.code}-max`} name={`${depositChannelText(channel.code)}单笔上限`} what="这个通道一笔充值的上限" when="确认后立即生效，只影响新交易"
               value={`${(channel.maxAmountValue ?? 0).toLocaleString("en-US")} USD`}
-              action={canManageChannels ? <Button size="sm" disabledReason={readingReason} onClick={() => updateChannelMax(channel)}>调整</Button> : undefined} />
+              action={canManageChannels ? <Button size="sm" disabledReason={readingReason ?? d1PendingObjectReason(`/topup/channels/${encodeURIComponent(channel.code)}/max-amount`)} onClick={() => updateChannelMax(channel)}>调整</Button> : undefined} />
           ))}
           <ConfigRow name="单笔上限" what="银行卡充值一笔的上限" when="确认后立即生效，只对之后的新付款单" where="App 充值页 › 银行卡支付「单笔限额」"
             effect="改成 1,000：用户一笔最多充 1,000 USD"
             value={perTxLimit != null ? `${perTxLimit.toLocaleString("en-US")} USD` : "—"}
-            action={canManageBankConfig ? <Button size="sm" disabledReason={readingReason ?? (vietQr ? undefined : "银行卡支付参数没读到，刷新后再试")} onClick={editPerTxLimit}>调整</Button> : undefined} />
+            action={canManageBankConfig ? <Button size="sm" disabledReason={readingReason ?? (vietQr ? d1PendingObjectReason("/vietqr/config") : "银行卡支付参数没读到，刷新后再试")} onClick={editPerTxLimit}>调整</Button> : undefined} />
           <ConfigRow name="最低充值金额" what="银行卡充值的最低金额" where="App 充值页 › 银行卡支付「单笔限额」" effect="只限制充值，不限制订单付款"
             value="在「订单付款 › 付款手续费」里设置"
             action={<Button size="sm" onClick={() => onGo("payments")}>去设置</Button>} />
@@ -573,7 +603,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
                   <Td align="right"><Cell num main={usdt(row.ledgerAmount)} sub={`${row.ledgerCount} 笔`} /></Td>
                   <Td><Cell main={<StatusTag tone={row.reconciled ? "done" : row.diff ? "warn" : "ok"}>{diffText(row)}</StatusTag>} /></Td>
                   {canReconcile && <Td sticky="end" align="right">{!row.reconciled && Boolean(row.diff)
-                    ? <Button size="sm" disabledReason={readingReason} onClick={() => writeoff(row)}>核销</Button>
+                    ? <Button size="sm" disabledReason={readingReason ?? d1PendingObjectReason(`/topup/reconciliation/${encodeURIComponent(row.channel)}/writeoff`)} onClick={() => writeoff(row)}>核销</Button>
                     : <span className="rd-note">—</span>}</Td>}
                 </tr>)}</tbody>
               </Table>}

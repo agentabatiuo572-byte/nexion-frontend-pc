@@ -132,7 +132,9 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, reloadTick }: { ctx
   ], [changed, changedChannels.length, pending.length]);
   useEffect(() => { onActivity(activity); }, [onActivity, activity]);
 
-  const afterRecovery = () => { syncPending(); void loadPolicy(); void loadRecords(); void loadCount(); };
+  // 恢复只重读它影响的数据：付款单的恢复不碰手续费草稿（D1-A01、A04）。手续费的恢复期间输入框是锁着的，草稿就是原来那次提交的值。
+  const afterPolicyRecovery = () => { syncPending(); void loadPolicy(); };
+  const afterPaymentRecovery = () => { syncPending(); void loadRecords(); void loadCount(); };
   const pendingItems: D1PendingItem[] = pending.map((row) => {
     const isPolicy = row.scope === "policy";
     const permitted = allowed(isPolicy ? "finance_d1_fx_manage" : "finance_d1_bank_reconcile");
@@ -162,7 +164,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, reloadTick }: { ctx
         } finally { mutation.current = false; if (owns()) setBusy(false); }
       },
       release: () => releasePurchasePayment(row),
-      after: afterRecovery,
+      after: isPolicy ? afterPolicyRecovery : afterPaymentRecovery,
     };
   });
 

@@ -571,6 +571,8 @@ const D1_CREGIS_SWITCH_PATH = /^\/cregis\/(?:switch-cases(?:\/[1-9]\d*\/decision
 
 const pendingMutations = createPendingMutationStore<PersistedPendingMutation>({
   storageKey: "nexgrid-admin-d1-uncertain-commands-v1",
+  // 过期的留着做核查证据，只是不能再发（OP-96）。D1 以外过期的号在 apiRequest 里丢掉换新号，和原来一样。
+  retainExpiredRecords: true,
   isValidRecord: (value) =>
     ["finance", "treasury", "bills", "withdraw"].includes(value.base)
     && typeof value.path === "string"
@@ -579,6 +581,47 @@ const pendingMutations = createPendingMutationStore<PersistedPendingMutation>({
     && value.method !== "GET"
     && typeof value.body === "string",
 });
+
+/** D1 的写请求：充值通道、对账核销、银行卡支付、USDT 收款。 */
+const isD1Write = (base: string, path: string) => base === "finance" && /^\/(topup|cregis|vietqr)\//.test(path);
+
+/**
+ * 后端不按请求号去重的写接口（后端 origin/test 这几个控制器不收 Idempotency-Key）：结果未知时只能读回核对，
+ * 不能按原请求再发，再发可能再执行一次（建地址会再入队一个）。
+ */
+const D1_NOT_DEDUPED = /^\/cregis\/(?:addresses\/(?:policy|provision)|reconciliation\/run|review-cases(?:\/[1-9]\d*\/decision)?|exception-ownership\/challenges)(?:\?|$)/;
+export const d1CommandReplayable = (path: string) => !D1_NOT_DEDUPED.test(path);
+
+export const D1_PENDING_OBJECT_TEXT = "这项上次的操作结果还没确认，先在本页上方核对";
+export const D1_COMMAND_EXPIRED_TEXT = "已超过 24 小时，不能再按原请求重试，请到操作记录核查";
+const D1_IDENTITY_FIELDS = ["network", "cid", "sourceType", "sourceId", "intentNo"] as const;
+
+/**
+ * 写请求改的是哪个对象：路径去掉最后的动作（decision、recover、retry），再加上 network、cid、来源这类对象字段。
+ * 改理由或数值不换对象，结果未知时同一对象不能另发新命令（OP-93、OP-94）。暂停自动流程是收紧，不被未确认的提案挡。
+ */
+export function d1CommandObject(path: string, body = "") {
+  const [route, query = ""] = path.split("?");
+  const params = new URLSearchParams(query);
+  let parsed: Record<string, unknown> = {};
+  try {
+    const value: unknown = body ? JSON.parse(body) : {};
+    if (value && typeof value === "object" && !Array.isArray(value)) parsed = value as Record<string, unknown>;
+  } catch { /* 不是 JSON 的按路径认 */ }
+  if (parsed.action === "PAUSE") return `${route}|PAUSE`;
+  const ids = D1_IDENTITY_FIELDS.flatMap(field => {
+    const value = params.get(field) ?? parsed[field];
+    return value === undefined || value === null || value === "" ? [] : [`${field}=${String(value)}`];
+  });
+  return [route.replace(/\/(?:decision|recover|retry)$/, ""), ...ids].join("|");
+}
+
+/** 这个对象有没有还没确认结果的命令（资金开关按管理员另管，不在这里）。打开确认框前和发送前都查。 */
+export function d1PendingObjectReason(path: string, body?: Record<string, unknown>) {
+  const object = d1CommandObject(path, body ? JSON.stringify(body) : "");
+  return pendingMutations.list().some(value => isD1Write(value.base, value.path) && !D1_CREGIS_SWITCH_PATH.test(value.path)
+    && d1CommandObject(value.path, value.body) === object) ? D1_PENDING_OBJECT_TEXT : undefined;
+}
 
 export interface D1PendingTopupCommand {
   commandKey: string;
@@ -717,9 +760,28 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
   const mutationFingerprint = init?.idempotencyPrefix && method !== "GET"
     ? `${method}|${base}|${path}|${typeof init.body === "string" ? init.body : ""}`
     : null;
-  const pendingKeyBeforeRequest = mutationFingerprint
+  let pendingKeyBeforeRequest = mutationFingerprint
     ? pendingMutations.get(mutationFingerprint)
     : undefined;
+  const d1Write = isD1Write(base, path) && method !== "GET";
+  if (mutationFingerprint) {
+    const previous = pendingMutations.list().find(value => value.commandKey === (init?.idempotencyKey ?? pendingKeyBeforeRequest));
+    if (previous && previous.expiresAt <= Date.now()) {
+      // D1 过期的命令只留作核查，不能再发；别的页按原来的做法丢掉过期号，换新号。
+      if (d1Write) throw new Error(D1_COMMAND_EXPIRED_TEXT);
+      pendingMutations.forget(previous.fingerprint, previous.commandKey);
+      pendingKeyBeforeRequest = undefined;
+    }
+    if (d1Write && init?.idempotencyKey && previous && !d1CommandReplayable(previous.path)) {
+      throw new Error("这项操作后端不按命令号去重，再发一次可能再执行一次，所以不能按原请求重试；先读回核对。");
+    }
+    // 从原入口再交一次（哪怕内容一样）也不发：只能从页面上方的恢复入口按原请求重试。
+    if (d1Write && !init?.idempotencyKey && !D1_CREGIS_SWITCH_PATH.test(path)) {
+      const object = d1CommandObject(path, typeof init?.body === "string" ? init.body : "");
+      if (pendingKeyBeforeRequest || pendingMutations.list().some(value => isD1Write(value.base, value.path) && !D1_CREGIS_SWITCH_PATH.test(value.path)
+        && d1CommandObject(value.path, value.body) === object)) throw new Error(D1_PENDING_OBJECT_TEXT);
+    }
+  }
   if (init?.idempotencyKey || init?.idempotencyPrefix) {
     const commandKey = init.idempotencyKey
       || pendingKeyBeforeRequest
@@ -734,6 +796,11 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
         ...(base === "finance" && method === "POST" && D1_CREGIS_SWITCH_PATH.test(path)
           ? { adminId: useAdminAuth.getState().session?.adminId } : {}),
       });
+      // 记不住就不发：刷新后找不回原命令号，结果未知时没法按原请求核对（OP-96）。
+      if (d1Write && !pendingMutations.isDurablyStored(mutationFingerprint, commandKey)) {
+        if (!pendingKeyBeforeRequest && !init?.idempotencyKey) pendingMutations.forget(mutationFingerprint, commandKey);
+        throw new Error("浏览器无法保存这次操作的记录，没有提交。请允许浏览器存储后重试。");
+      }
     }
   }
   let response: Response;

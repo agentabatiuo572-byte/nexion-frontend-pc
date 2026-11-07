@@ -7,10 +7,11 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminAuthActivityAllowed,adminAuthLifecycleEpoch } from "@/lib/admin/auth-lifecycle";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { exceptionRead,exceptionList,exceptionCommand,exceptionId,exceptionVersion,type ExceptionRecord,type ExceptionPage } from "@/lib/admin/cregis-exceptions";
+import { d1PendingObjectReason } from "@/lib/admin/d-client";
 import { autoForwardStatus,AUTO_STATES,AUTO_ERRORS } from "@/lib/admin/cregis-auto-forward";
 import { SwitchTag, usdt } from "./d1-shared";
 import type { DCtx } from "./types";
-type Props={canManage:boolean;openActionConfirm:DCtx["openActionConfirm"]};
+type Props={canManage:boolean;openActionConfirm:DCtx["openActionConfirm"];onChanged?:()=>void};
 const ROOT="/auto-forward",EMPTY:ExceptionPage={records:[],hasMore:false,nextBeforeId:null};
 const taskTone=(state:string):StateTone=>state==="COMPLETED"?"ok":/_(UNKNOWN|FAILED)$/.test(state)?"warn":"progress";
 export function CregisAutoForward(props:Props){
@@ -18,7 +19,7 @@ export function CregisAutoForward(props:Props){
   if(!auth?.authorities.includes("finance_d1_read"))return null;
   return <Owned key={`${auth.adminId}:${epoch}:${adminAuthLifecycleEpoch()}:${props.canManage}:${auth.authorities.join("|")}`} {...props} owner={auth.adminId} epoch={epoch}/>;
 }
-function Owned({canManage,openActionConfirm,owner,epoch}:Props&{owner:number;epoch:number}){
+function Owned({canManage,openActionConfirm,onChanged,owner,epoch}:Props&{owner:number;epoch:number}){
   const lifecycle=useRef(adminAuthLifecycleEpoch()).current,live=useRef(true),mutation=useRef(false),read=useRef(0);
   const [status,setStatus]=useState<ExceptionRecord|null>(null),[page,setPage]=useState<ExceptionPage>(EMPTY);
   const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(""),[selected,setSelected]=useState<string|null>(null);
@@ -44,11 +45,12 @@ function Owned({canManage,openActionConfirm,owner,epoch}:Props&{owner:number;epo
     const request=scope(true);request.assertOwner();if(mutation.current)throw new Error("上一项操作尚未完成，请先刷新核对");
     mutation.current=true;setBusy(true);
     try{await exceptionCommand(`${ROOT}${path}`,body,request);request.assertOwner();}
-    finally{mutation.current=false;if(owns()){setBusy(false);await refresh();}}
+    finally{mutation.current=false;onChanged?.();if(owns()){setBusy(false);await refresh();}}
   };
   const approval=<StatusTag tone="progress" filled>另一位管理员复核后生效</StatusTag>;
   const policy=(action:"PROPOSE"|"APPROVE"|"CANCEL"|"PAUSE")=>{
     try{assertOwner(true);if(!status)throw new Error("请刷新配置");
+      const held=d1PendingObjectReason(`/cregis${ROOT}/policy`,{action});if(held)throw new Error(held);
       const current=status,expectedVersion=exceptionVersion(current.version);
       const title=action==="PAUSE"?"暂停自动归集及付款":action==="PROPOSE"?"调整自动流程开关":action==="APPROVE"?"复核自动流程开关":"取消自动流程开关提案";
       const pendingFacts=<Facts><Fact k="待复核">归集 {current.pendingCollection?"开":"关"} · 付款 {current.pendingPayment?"开":"关"}</Fact><Fact k="发起人">{String(current.makerId)}</Fact><Fact k="理由">{String(current.reason)}</Fact></Facts>;
@@ -69,6 +71,7 @@ function Owned({canManage,openActionConfirm,owner,epoch}:Props&{owner:number;epo
   };
   const recover=(row:ExceptionRecord,retry:boolean)=>{
     try{assertOwner(true);const id=exceptionId(row.id);
+      const held=d1PendingObjectReason(`/cregis${ROOT}/tasks/${id}/recover`);if(held)throw new Error(held);
       const stage=String(row.state).startsWith("COLLECTION")?"COLLECTION":"PAYMENT",expectedVersion=exceptionVersion(row.version);
       openActionConfirm({ briefKind: retry ? "funds" : "record",action:retry?"申请重试明确拒绝的自动任务":"核对自动任务原 CID",title:retry?"申请重试明确拒绝的任务":"核对原 CID",
         confirmLabel:retry?"提交申请":"确认核对",effect:<StatusTag tone="progress" filled>立即生效</StatusTag>,
@@ -86,7 +89,7 @@ function Owned({canManage,openActionConfirm,owner,epoch}:Props&{owner:number;epo
     finally{if(owns()&&at===read.current)setLoading(false);}
   };
   const block=loading?"正在读取最新数据":busy?"正在提交":undefined;
-  const proposeBlock=block??(!status?.runtimeApproved?"运行总开关还没批准，不能开启自动流程":status.makerId!==null?"有待复核的提案，先复核或取消":undefined);
+  const proposeBlock=block??d1PendingObjectReason(`/cregis${ROOT}/policy`,{action:"PROPOSE"})??(!status?.runtimeApproved?"运行总开关还没批准，不能开启自动流程":status.makerId!==null?"有待复核的提案，先复核或取消":undefined);
   const records=page.records,index=records.findIndex(row=>String(row.id)===selected),task=index>=0?records[index]:null;
   const taskActions=(row:ExceptionRecord)=>{
     const state=String(row.state),stage=state.startsWith("COLLECTION")?"collection":"payment";

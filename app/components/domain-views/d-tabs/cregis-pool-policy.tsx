@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MapPin, RefreshCw } from "lucide-react";
 import { BlockState, Button, ConfigList, ConfigRow, Panel, StatusTag } from "@/app/components/rd";
-import { financeAdminRequest } from "@/lib/admin/d-client";
+import { d1PendingObjectReason, financeAdminRequest } from "@/lib/admin/d-client";
 import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { SwitchTag } from "./d1-shared";
@@ -23,7 +23,7 @@ const NUMBERS = [
   ["concurrency", "建址并发上限", "同时创建多少地址", "1–10 的整数，不超过每批数量", 1, 10],
 ] as const;
 
-export function CregisPoolPolicy({canManage,openActionConfirm}:{canManage:boolean;openActionConfirm:DCtx["openActionConfirm"]}) {
+export function CregisPoolPolicy({canManage,openActionConfirm,onChanged}:{canManage:boolean;openActionConfirm:DCtx["openActionConfirm"];onChanged?:()=>void}) {
   const [saved,setSaved]=useState<Policy|null>(null);
   const [error,setError]=useState(""),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true);
   const sequence=useRef(0),live=useRef(true),owner=useAdminAuth(s=>s.session?.adminId),epoch=useAdminAuth(s=>s.authEpoch);
@@ -38,7 +38,7 @@ export function CregisPoolPolicy({canManage,openActionConfirm}:{canManage:boolea
   },[owns]);
   useEffect(()=>{live.current=true;void refresh();return()=>{live.current=false;sequence.current++;};},[refresh]);
   const save=()=>{
-    if(!saved || busy || !canManage || !owns())return;
+    if(!saved || busy || !canManage || !owns() || d1PendingObjectReason("/cregis/addresses/policy"))return;
     const current=saved;
     openActionConfirm({ briefKind: "config",action:"保存地址池补充配置",title:"调整地址池补充",confirmLabel:"确认保存",
       effect:<StatusTag tone="progress" filled>保存后立即生效</StatusTag>,
@@ -63,10 +63,10 @@ export function CregisPoolPolicy({canManage,openActionConfirm}:{canManage:boolea
         try{const next=parsePoolPolicy(await financeAdminRequest<unknown>("/cregis/addresses/policy",{method:"POST",body:JSON.stringify({...selected,reason}),idempotencyPrefix:"cregis-pool-policy"}));
           if(owns())setSaved(next);}
         catch(e){if(owns())void refresh();throw e;}
-        finally{if(owns())setBusy(false);}
+        finally{if(owns())setBusy(false);onChanged?.();}
       }});
   };
-  const block=loading?"正在读取最新数据":busy?"正在提交":!saved?"地址池配置没读到，刷新后再试":undefined;
+  const block=loading?"正在读取最新数据":busy?"正在提交":!saved?"地址池配置没读到，刷新后再试":d1PendingObjectReason("/cregis/addresses/policy");
   return <Panel icon={MapPin} tone="role-4" title="专属充值地址 · 库存与自动补充" sub={saved?`版本 v${saved.version}`:undefined}
     explain="首次进入充值页时分配专属地址，后续重复使用。BEP20 与 ERC20 分别计算库存，共用以下补充目标。低于补充阈值后，分批补至目标库存；已分配地址不计入备用库存。保存后直接生效；供应商限流或额度不足时延后补充。"
     actions={<>

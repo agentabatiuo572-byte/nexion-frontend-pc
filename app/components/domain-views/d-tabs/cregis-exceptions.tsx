@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Coins, FileCheck2, HandCoins, Receipt, RotateCcw, Undo2 } from "lucide-react";
 import {
-  BlockState, Button, Cell, ConfigList, ConfigRow, Decision, Drawer, Fact, Facts, Field, Fold, Input, IrreversibleTag, JudgmentPoints, KeyValues, Select, StatusTag, Steps,
+  BlockState, Button, Cell, ConfigList, ConfigRow, Decision, Drawer, Fact, Facts, Field, Fold, Input, IrreversibleTag, JudgmentPoints, KeyValues, Notice, Select, StatusTag, Steps,
   Table, Td, Textarea, Th, Tr,
 } from "@/app/components/rd";
 import type { KeyValueRow, StateTone } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminAuthLifecycleEpoch, adminAuthActivityAllowed } from "@/lib/admin/auth-lifecycle";
-import { financeAdminRequest } from "@/lib/admin/d-client";
+import { d1PendingObjectReason, financeAdminRequest } from "@/lib/admin/d-client";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { exceptionChallengeId, exceptionCommand, exceptionFee, exceptionId, exceptionList, exceptionObject, exceptionRead, exceptionVersion,
   type ExceptionPage, type ExceptionRecord, type ExceptionRequestScope } from "@/lib/admin/cregis-exceptions";
@@ -78,6 +78,8 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
   const [claims, setClaims] = useState(EMPTY);
   const [incidents, setIncidents] = useState(EMPTY);
   const [reorgCases, setReorgCases] = useState(EMPTY);
+  /** 六个读取各管各的：哪个失败只影响依赖它的部分，别的照常显示（D1-C95、S07）。 */
+  const [errors, setErrors] = useState<Partial<Record<"fee" | "feeCases" | CaseKind, string>>>({});
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -89,21 +91,28 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
     const scope = scopeFor(); scope.assertOwner();
     const epoch = ++refreshEpoch.current;
     setLoading(true); setError("");
-    try {
-      const [p, pc, rf, cl, ri, rc] = await Promise.all([
-        exceptionRead("/refunds/fee-policy", scope), financeAdminRequest<unknown>("/cregis/refunds/fee-policy/cases", { bankManualAuthEpoch: scope.authEpoch }),
-        exceptionList("/refunds/cases", undefined, scope), exceptionList("/exception-claims", undefined, scope),
-        exceptionList("/reorg/incidents", undefined, scope), exceptionList("/reorg/proposals", undefined, scope),
-      ]);
-      scope.assertOwner();
-      if (epoch !== refreshEpoch.current || !live.current || adminAuthLifecycleEpoch() !== lifecycleEpoch) return;
-      if (!(String(p.mode) in MODE) || !Array.isArray(pc)) throw new Error("退款配置响应无效");
-      exceptionVersion(p.version);
-      setPolicy(p); setPolicyCases(pc.map(exceptionObject)); setRefunds(rf); setClaims(cl); setIncidents(ri); setReorgCases(rc);
-    } catch (failure) {
-      if (epoch !== refreshEpoch.current || !owns()) return;
-      setPolicy(null); setError(displayAdminReadError(failure));
-    } finally { if (epoch === refreshEpoch.current && owns()) setLoading(false); }
+    const [p, pc, rf, cl, ri, rc] = await Promise.allSettled([
+      exceptionRead("/refunds/fee-policy", scope).then(value => {
+        if (!(String(value.mode) in MODE)) throw new Error("退款费用规则响应无效");
+        exceptionVersion(value.version); return value;
+      }),
+      financeAdminRequest<unknown>("/cregis/refunds/fee-policy/cases", { bankManualAuthEpoch: scope.authEpoch }).then(value => {
+        if (!Array.isArray(value)) throw new Error("退款费用规则提案响应无效");
+        return value.map(exceptionObject);
+      }),
+      exceptionList("/refunds/cases", undefined, scope), exceptionList("/exception-claims", undefined, scope),
+      exceptionList("/reorg/incidents", undefined, scope), exceptionList("/reorg/proposals", undefined, scope),
+    ]);
+    if (epoch !== refreshEpoch.current || !owns() || adminAuthLifecycleEpoch() !== lifecycleEpoch) return;
+    const failed = (result: PromiseSettledResult<unknown>) => result.status === "rejected" ? displayAdminReadError(result.reason) : undefined;
+    setPolicy(p.status === "fulfilled" ? p.value : null);
+    setPolicyCases(pc.status === "fulfilled" ? pc.value : []);
+    setRefunds(rf.status === "fulfilled" ? rf.value : EMPTY);
+    setClaims(cl.status === "fulfilled" ? cl.value : EMPTY);
+    setIncidents(ri.status === "fulfilled" ? ri.value : EMPTY);
+    setReorgCases(rc.status === "fulfilled" ? rc.value : EMPTY);
+    setErrors({ fee: failed(p), feeCases: failed(pc), refund: failed(rf), claim: failed(cl), incident: failed(ri), reorg: failed(rc) });
+    setLoading(false);
   }, [scopeFor, lifecycleEpoch, owns]);
   useEffect(() => { live.current = true; void refresh(); return () => { live.current = false; refreshEpoch.current++; }; }, [refresh]);
 
@@ -120,12 +129,15 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
   };
   const readBlock = loading ? "正在读取最新数据" : busy ? "正在提交" : undefined;
   const approval = <StatusTag tone="progress" filled>另一位管理员复核后生效</StatusTag>;
-  const confirm = (spec: { kind: OperatorBriefKind; action: string; title: string; path: string; body: ExceptionRecord; detail: string; confirmLabel: string; danger?: boolean; review?: boolean; facts?: React.ReactNode; completion?: string }) => openActionConfirm({ briefKind: spec.kind,
+  const confirm = (spec: { kind: OperatorBriefKind; action: string; title: string; path: string; body: ExceptionRecord; detail: string; confirmLabel: string; danger?: boolean; review?: boolean; facts?: React.ReactNode; completion?: string }) => {
+    const held = d1PendingObjectReason(`/cregis${spec.path}`, spec.body);
+    if (held) { setError(held); return; }
+    openActionConfirm({ briefKind: spec.kind,
     action: spec.action, title: spec.title, detail: spec.detail, reasonMin: 10, reasonMax: 200, confirmLabel: spec.confirmLabel, confirmTone: spec.danger ? "danger" : "primary",
     effect: spec.review ? <><StatusTag tone="progress" filled>立即生效</StatusTag>{spec.danger && spec.kind === "funds" && spec.confirmLabel === "确认复核" && <IrreversibleTag />}</> : approval, facts: spec.facts,
     completionCopy: spec.completion ?? (spec.review ? "复核通过后系统会再次独立核验，再执行。" : "提交后需另一位管理员复核才执行。"),
     run: reason => mutate(spec.path, { ...spec.body, reason }),
-  });
+  }); };
   const pageMore = async (path: string, page: ExceptionPage, setter: (page: ExceptionPage) => void) => {
     const scope = scopeFor(); scope.assertOwner();
     setBusy(true);
@@ -207,8 +219,10 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
   const caseFold = (kind: CaseKind, icon: typeof Coins) => {
     const [path, page, setter] = pages[kind];
     const waiting = page.records.filter(row => waitsReview(row) || ["OPEN", "UNKNOWN", "FAILED_NO_TRANSFER", "DEBT_OPEN"].includes(stateOf(row))).length;
-    return <Fold key={kind} title={CASE_TITLE[kind]} icon={icon} tone="role-2" alert={waiting > 0} summary={page.records.length === 0 ? "暂无记录" : waiting ? `${waiting} 条等处理，共 ${page.records.length} 条` : `共 ${page.records.length} 条，都已处理`}>
-      {page.records.length === 0 ? <p className="rd-note">暂无记录</p> : <Table label={CASE_TITLE[kind]}>
+    const failure = errors[kind];
+    return <Fold key={kind} title={CASE_TITLE[kind]} icon={icon} tone="role-2" alert={waiting > 0 || !!failure} alertTone={failure ? "danger" : undefined} summary={failure ? "读取失败" : page.records.length === 0 ? "暂无记录" : waiting ? `${waiting} 条等处理，共 ${page.records.length} 条` : `共 ${page.records.length} 条，都已处理`}>
+      {failure ? <BlockState state="error" compact title={`${CASE_TITLE[kind]}读取失败`} detail={failure} onRetry={() => void refresh()} />
+        : page.records.length === 0 ? <p className="rd-note">暂无记录</p> : <Table label={CASE_TITLE[kind]}>
         <thead><tr><Th>编号</Th><Th>用户</Th><Th align="right">净额（USDT）</Th><Th>状态</Th><Th sticky="end" align="right">操作</Th></tr></thead>
         <tbody>{page.records.map(row => <Tr key={String(row.id)} selected={opened?.kind === kind && opened.id === String(row.id)} onOpen={() => setOpened({ kind, id: String(row.id) })}>
           <Td><Cell mono main={`#${label(row.id)}`} sub={kind === "incident" || kind === "reorg" ? (ACTION[String(row.action)] ?? undefined) : undefined} /></Td>
@@ -227,18 +241,22 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
   const openedActions = opened && openedRow ? caseActions(opened.kind, openedRow) : null;
   const policyWaiting = policyCases.filter(waitsReview);
 
-  if (error && !policy) return <BlockState state="error" title="异常处置读取失败" detail={error} onRetry={() => void refresh()} />;
+  const firstLoad = loading && Object.keys(errors).length === 0 && !policy;
   return <>
-    {error && <BlockState state="error" compact title="异常处置读取失败" detail={error} onRetry={() => void refresh()} />}
-    {loading && !policy ? <BlockState state="loading" title="正在核对费用规则与处置工单…" /> : policy && <>
+    {error && <Notice tone="warn">{error}</Notice>}
+    {firstLoad ? <BlockState state="loading" title="正在核对费用规则与处置工单…" /> : <>
       {caseFold("claim", HandCoins)}
       {caseFold("refund", Undo2)}
       {caseFold("incident", RotateCcw)}
       {caseFold("reorg", FileCheck2)}
-      <Fold title="退款手续费" icon={Receipt} tone="role-4" alert={policy.mode === "UNCONFIGURED" || policyWaiting.length > 0} defaultOpen={policyWaiting.length > 0}
+      {!policy ? <Fold title="退款手续费" icon={Receipt} tone="role-4" alert alertTone="danger" summary="读取失败" defaultOpen
+        explain="异常入金原路退款时扣多少费用。读不到时原路退款先不能提交，认领照常。">
+        <BlockState state="error" compact title="退款手续费读取失败" detail={errors.fee} onRetry={() => void refresh()} />
+      </Fold> : <Fold title="退款手续费" icon={Receipt} tone="role-4" alert={policy.mode === "UNCONFIGURED" || policyWaiting.length > 0 || !!errors.feeCases} defaultOpen={policyWaiting.length > 0}
         summary={`${MODE[String(policy.mode)]}${policy.mode === "FIXED_USDT" ? ` ${label(policy.feeUsdt)} USDT` : ""}${policyWaiting.length ? `，${policyWaiting.length} 个提案待复核` : ""}`}
         explain="异常入金原路退款时扣多少费用。另一位管理员复核后生效，只对新工单；待配置时不能退款。">
         <div className="rd-stack">
+          {errors.feeCases && <BlockState state="error" compact title="费用规则提案读取失败" detail={errors.feeCases} onRetry={() => void refresh()} />}
           <ConfigList label="退款手续费">
             <ConfigRow name="退款手续费" what="异常退款时扣多少费用" when="另一位管理员复核后生效，只对新工单" effect="待配置时不能退款"
               value={`${MODE[String(policy.mode)]}${policy.mode === "FIXED_USDT" ? ` ${label(policy.feeUsdt)} USDT` : ""}`} sub={`版本 ${label(policy.version)}`}
@@ -261,7 +279,7 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
             })}</tbody>
           </Table>}
         </div>
-      </Fold>
+      </Fold>}
     </>}
 
     <Drawer open={!!openedRow} onClose={() => setOpened(null)} title={opened ? CASE_TITLE[opened.kind] : ""} sub={openedRow ? `#${label(openedRow.id)}` : undefined} icon={FileCheck2} tone="role-2" busy={busy}
@@ -280,7 +298,7 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
       </>}
     </Drawer>
 
-    {claim && <ClaimDrawer key={`${claim.sourceType}:${claim.sourceId}`} source={claim} sources={sources} policyMode={String(policy?.mode ?? "UNCONFIGURED")} canRefund={canRefund}
+    {claim && <ClaimDrawer key={`${claim.sourceType}:${claim.sourceId}`} source={claim} sources={sources} policyMode={policy ? String(policy.mode) : "UNREAD"} canRefund={canRefund}
       scopeFor={scopeFor} owns={owns} busy={busy} onClose={onClaimClose}
       onPropose={(intent, body, facts) => confirm({ kind: "funds", action: intent === "CLAIM_CREDIT" ? "提交认领入账提案" : "提交原路退款提案", title: intent === "CLAIM_CREDIT" ? "提交认领入账提案" : "提交原路退款提案", confirmLabel: "提交审批",
         path: intent === "CLAIM_CREDIT" ? "/exception-claims" : "/refunds/cases", body, facts,
@@ -305,7 +323,7 @@ function ClaimDrawer({ source, sources, policyMode, canRefund, scopeFor, owns, b
   const clearProof = () => { selection.current++; setChallenge(null); setEvidence(null); setSignature(""); setError(""); };
   const refund = intent === "REFUND_ORIGIN";
   const userValid = /^[1-9][0-9]{0,18}$/.test(userId);
-  const prepareBlock = working || busy ? "正在处理" : refund && !canRefund ? "没有退款权限" : refund && policyMode === "UNCONFIGURED" ? "退款手续费待配置，先在「退款手续费」里配置" : !refund && source.dust ? "这笔低额入金已有归属，仅支持原路退款" : !refund && !userValid ? "先填认领用户编号" : undefined;
+  const prepareBlock = working || busy ? "正在处理" : refund && !canRefund ? "没有退款权限" : refund && policyMode === "UNREAD" ? "退款手续费没读到，刷新后再试" : refund && policyMode === "UNCONFIGURED" ? "退款手续费待配置，先在「退款手续费」里配置" : !refund && source.dust ? "这笔低额入金已有归属，仅支持原路退款" : !refund && !userValid ? "先填认领用户编号" : undefined;
   const prepare = async () => {
     const scope = scopeFor(true, refund); scope.assertOwner();
     setWorking(true); setError(""); const epoch = ++selection.current;
@@ -337,7 +355,7 @@ function ClaimDrawer({ source, sources, policyMode, canRefund, scopeFor, owns, b
   const proposeBlock = working || busy ? "正在处理" : !challenge ? "先生成钱包签名原文" : !evidence ? "先核对归属与资金证据" : refund && evidence.canPropose !== true ? "当前费用规则下不能提交退款，请核对净额及费用配置。" : undefined;
   const options = [
     { value: "CLAIM_CREDIT", label: source.dust ? "认领并入账（低额入金不能认领）" : "认领并入账", disabled: source.dust },
-    ...(canRefund ? [{ value: "REFUND_ORIGIN", label: policyMode === "UNCONFIGURED" ? "原路退款（费用待配置）" : "原路退款", disabled: policyMode === "UNCONFIGURED" }] : []),
+    ...(canRefund ? [{ value: "REFUND_ORIGIN", label: policyMode === "UNREAD" ? "原路退款（费用没读到）" : policyMode === "UNCONFIGURED" ? "原路退款（费用待配置）" : "原路退款", disabled: policyMode === "UNCONFIGURED" || policyMode === "UNREAD" }] : []),
   ];
   return <Drawer open onClose={onClose} title="认领或退款" sub={source.title} icon={HandCoins} tone="role-2" busy={working || busy}
     footer={<Decision note={proposeBlock}

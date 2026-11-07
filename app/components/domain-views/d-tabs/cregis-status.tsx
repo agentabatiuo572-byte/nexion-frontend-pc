@@ -7,7 +7,7 @@ import {
   PageTabs, Panel, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, useTabIds, FilterField, Change,
 } from "@/app/components/rd";
 import type { StateTone } from "@/app/components/rd";
-import { financeAdminRequest, listD1PendingCommands, listD1PendingCregisSwitchCommands, releaseD1PendingCommand, retryD1PendingCommand, retryD1PendingCregisSwitchCommand, type D1PendingCommand, type D1PendingTopupCommand } from "@/lib/admin/d-client";
+import { D1_COMMAND_EXPIRED_TEXT, d1CommandReplayable, d1PendingObjectReason, financeAdminRequest, listD1PendingCommands, listD1PendingCregisSwitchCommands, releaseD1PendingCommand, retryD1PendingCommand, retryD1PendingCregisSwitchCommand, type D1PendingCommand, type D1PendingTopupCommand } from "@/lib/admin/d-client";
 import { adminAuthLifecycleEpoch, AdminAuthEpochChangedError } from "@/lib/admin/auth-lifecycle";
 import { useReach } from "@/lib/nav/use-reach";
 import Link from "next/link";
@@ -380,11 +380,14 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   useEffect(() => { onCount(canRead ? count : { n: 0 }); }, [onCount, canRead, count && typeof count === "object" ? count.n : count, capped]); // eslint-disable-line react-hooks/exhaustive-deps
   const alertCount = data?.openRiskAlertCount ?? 0;
   useEffect(() => { onAlert(alertCount > 0); }, [onAlert, alertCount]);
+  const switchWaiting = data?.switchCases?.filter((row) => row.status === "MAKER_DONE").length ?? 0;
   const activity = useMemo(() => [
     ...(pending.length ? [`有 ${pending.length} 次操作结果未确认`] : []),
+    ...(switchPending.length ? [`有 ${switchPending.length} 次收款或出款开关操作结果未确认`] : []),
+    ...(switchWaiting ? [`有 ${switchWaiting} 个开关提案待另一位管理员复核`] : []),
     ...(proposalActivity.unknown ? [`共同充值规则有 ${proposalActivity.unknown} 项提案结果待核对`] : []),
     ...(proposalActivity.awaitingApproval ? [`共同充值规则有 ${proposalActivity.awaitingApproval} 项提案待审批`] : []),
-  ], [pending.length, proposalActivity.unknown, proposalActivity.awaitingApproval]);
+  ], [pending.length, switchPending.length, switchWaiting, proposalActivity.unknown, proposalActivity.awaitingApproval]);
   useEffect(() => { onActivity(activity); }, [onActivity, activity]);
 
   const command = async (path: string, body?: Record<string, unknown>) => {
@@ -410,6 +413,8 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     confirmLabel: string; danger?: boolean; effect: ReactNode; facts?: ReactNode; completion: string; businessForm?: Parameters<DCtx["openActionConfirm"]>[0]["businessForm"];
     toBody?: (form: Record<string, string> | undefined) => Record<string, unknown>; optionalPolicy?: boolean };
   const confirmCommand = (spec: ConfirmSpec) => {
+    const held = d1PendingObjectReason(spec.path, spec.body);
+    if (held) { toast(held, "warn"); return; }
     const authEpoch = adminAuthLifecycleEpoch();
     openActionConfirm({ briefKind: spec.kind,
       action: spec.action, title: spec.title, detail: spec.detail, reasonMin: 10, reasonMax: 255,
@@ -455,16 +460,47 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   const proposalBlock = switchBlock ?? (switchPending.some(record => record.path === "/cregis/switch-cases") ? "上一个开关提案结果未确认，先在上方核对" : undefined);
   const globalPaused = !!gate && (gate.state !== "IDLE" || !gate.assignEnabled || !gate.creditEnabled);
   const switchState = (value: unknown): StateTone => gate?.state === "BLOCKED" ? "danger" : value ? "ok" : "neutral";
+  /** 读回这条命令改的对象现在是什么样，只给事实，不当成原命令的结果（OP-93、OP-95）。 */
+  const verifyCregisCommand = async (record: D1PendingCommand) => {
+    const kept = "状态可能是别人改的，待确认继续保留。";
+    if (record.path.startsWith("/cregis/exception-ownership/challenges")) return "生成签名原文不动钱，也不改记录；核对后可以解除，再重新生成。";
+    if (record.path.startsWith("/cregis/addresses/policy")) {
+      const policy = await financeAdminRequest<Record<string, unknown>>("/cregis/addresses/policy");
+      return `读回：地址池配置现在是第 ${text(policy.version)} 版，自动补充${policy.enabled ? "开启" : "关闭"}，备用目标 ${text(policy.target)} 个。${kept}`;
+    }
+    const next = parseExceptions(await financeAdminRequest<unknown>("/cregis/exceptions"));
+    setData(next);
+    const network = new URLSearchParams(record.path.split("?")[1] ?? "").get("network") as "BEP20" | "ERC20" | null;
+    if (record.path.startsWith("/cregis/addresses/provision") && network) {
+      const pool = poolOf(next, network);
+      return pool?.available ? `读回：${network} 可分配 ${pool.unassigned}、待创建 ${pool.queued ?? 0}、总计 ${pool.total}。看待创建有没有多出这一个，再到操作记录确认。` : `读回：${network} 地址池暂时读不到。待确认继续保留。`;
+    }
+    if (record.path.startsWith("/cregis/reconciliation/run") && network) {
+      const run = next.reconcileRuns?.find(row => rowNetwork(row) === network);
+      return run ? `读回：${network} 最近一次完整对账「${cregisStateText(run.status)}」，${time(run.completedAt ?? run.startedAt)}（${zoneLabel()}）。${kept}` : `读回：${network} 还没有完整对账记录。${kept}`;
+    }
+    if (record.path.startsWith("/cregis/review-cases")) {
+      let cid = "";
+      try { cid = String((JSON.parse(record.body) as { cid?: unknown }).cid ?? ""); } catch { /* 复核决定的 body 里没有 cid */ }
+      const id = record.path.split("/")[3];
+      const found = (next.reviewCases ?? []).find(row => (id && id !== "" && String(row.id) === id) || (cid && String(row.cid) === cid));
+      return found ? `读回：复核工单 #${text(found.id)} 现在是「${cregisStateText(found.status)}」。${kept}` : `读回：待复核列表里没有这条工单，可能已经处理完。请到操作记录确认。`;
+    }
+    return `读回：收款状态已重新读取。${kept}`;
+  };
   const pendingItems: D1PendingItem[] = pending.map((record): D1PendingItem => {
     const refund = record.path.startsWith("/cregis/refunds") || record.path.startsWith("/cregis/auto-forward") || record.path.startsWith("/cregis/funds-preparation");
+    const replayable = d1CommandReplayable(record.path);
     return {
       key: record.commandKey,
       label: cregisCommandLabel(record.path),
       createdAt: record.createdAt,
-      hint: "先刷新核对；按原操作重试不会重复执行。",
-      blocked: (refund ? canRefund : canManage) ? undefined : "这个账号没有这项权限",
+      hint: replayable ? "先读回核对；按原操作重试用同一个命令号，不会重复执行。"
+        : "这项操作后端不按命令号去重，再发一次可能再执行一次，所以不能重试。先读回核对，确认原操作有没有执行，再解除。",
+      blocked: record.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : (refund ? canRefund : canManage) ? undefined : "这个账号没有这项权限",
       auditHref: "/platform/audit?domain=D",
-      retry: async () => { setBusy(true); try { await retryD1PendingCommand(record.commandKey); } finally { setBusy(false); } },
+      verify: () => verifyCregisCommand(record),
+      retry: replayable ? async () => { setBusy(true); try { await retryD1PendingCommand(record.commandKey); } finally { setBusy(false); } } : undefined,
       release: () => releaseD1PendingCommand(record.commandKey),
       after: () => { syncPending(); void refresh(); setChildKey(value => value + 1); },
     };
@@ -473,7 +509,14 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     label: record.path === "/cregis/switch-cases" ? "开关提案" : record.path === "/cregis/switches/emergency-off" ? "紧急停用两网" : "开关提案复核",
     createdAt: record.createdAt,
     hint: "请按原请求恢复，不要另建提案或重新填写理由。",
-    blocked: canManage ? undefined : "这个账号没有这项权限",
+    blocked: record.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : canManage ? undefined : "这个账号没有这项权限",
+    verify: async () => {
+      const next = parseExceptions(await financeAdminRequest<unknown>("/cregis/exceptions"));
+      setData(next);
+      const gateNow = next.provisionGate;
+      const nets = (next.networkSwitches ?? []).map(row => `${text(row.network)} 充值${row.depositEnabled ? "开" : "关"}`).join("、");
+      return `读回：${nets || "两网开关读不到"}，链上出款${gateNow?.payoutEnabled ? "开" : "关"}，待复核提案 ${next.switchCases?.filter(row => row.status === "MAKER_DONE").length ?? 0} 个。状态可能是别人改的，待确认继续保留。`;
+    },
     auditHref: "/platform/audit?domain=D",
     retry: async () => { setBusy(true); try { await retryD1PendingCregisSwitchCommand(record.commandKey); } finally { setBusy(false); } },
     release: () => releaseD1PendingCommand(record.commandKey),
@@ -551,12 +594,12 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
               </> : <Td colSpan={3}><Cell main="暂不可用，请刷新核对" /></Td>}
               <Td><Cell num main={reconLatest(network) ? time(reconLatest(network)) : "尚无"} /></Td>
               {canManage && <Td sticky="end" align="right"><span className="rd-row-actions">
-                <Button size="sm" disabledReason={provisionBlock(data, network) ?? readBlock} onClick={() => confirmCommand({ kind: "record",
+                <Button size="sm" disabledReason={provisionBlock(data, network) ?? readBlock ?? d1PendingObjectReason(`/cregis/addresses/provision?network=${network}`)} onClick={() => confirmCommand({ kind: "record",
                   action: `补充一个 ${network} 专属收款地址`, title: `补充 ${network} 收款地址`, confirmLabel: "确认补充", effect: now,
                   facts: pool && <Facts><Fact k="网络">{network}</Fact><Fact k="可分配">{pool.unassigned} 个</Fact><Fact k="总计">{pool.total}{pool.limit > 0 ? ` / 上限 ${pool.limit}` : "，无上限"}</Fact></Facts>,
                   detail: "向 Cregis 创建一个候选地址；系统核对归属、余额和链上历史后才可分配给用户。创建结果不明时请先核查，勿连续重试。",
                   completion: "提交后立即执行。地址核对通过后才会分配给用户。", path: `/cregis/addresses/provision?network=${network}` })}>补充收款地址</Button>
-                <MoreMenu label={`${network} 更多操作`} items={[{ key: "recon", label: "立即完整对账", disabledReason: readBlock, onSelect: () => confirmCommand({ kind: "record",
+                <MoreMenu label={`${network} 更多操作`} items={[{ key: "recon", label: "立即完整对账", disabledReason: readBlock ?? d1PendingObjectReason(`/cregis/reconciliation/run?network=${network}`), onSelect: () => confirmCommand({ kind: "record",
                   action: `立即运行 Cregis ${network} 完整对账`, title: `立即完整对账`, confirmLabel: "确认对账", effect: now,
                   facts: <Facts><Fact k="网络">{network}</Fact><Fact k="最近完整对账">{reconLatest(network) ? `${time(reconLatest(network))}（${zone}）` : "尚无"}</Fact></Facts>,
                   detail: `核对 Cregis 和 ${network} 链上记录，发现异常会生成告警。`, completion: "提交后立即执行，发现异常会生成告警。",
@@ -631,7 +674,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
 
     <div {...subIds.panel("settings")} hidden={sub !== "settings"} className="rd-tab-pane">
       <CregisDepositPolicy key={`policy-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} onActivityChange={setProposalActivity} />
-      <CregisPoolPolicy key={`pool-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} />
+      <CregisPoolPolicy key={`pool-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} onChanged={syncPending} />
       <Panel icon={Power} tone="role-4" title="收款与出款开关"
         explain={<><p>BEP20、ERC20 各有一个充值开关，选目标状态后提交审批，另一位管理员复核后生效。关闭一条网络会停止这条网的地址分配、链上直付新下单和自动入账，原交易继续核验，另一条网络不受影响。</p><p>全局链上出款总闸是两条网共用的出款上限。BEP20 / ERC20 分别是否允许提现，在「USDT 提现参数」设置。</p></>}
         actions={reach("/finance/params", "finance_d5_read") ? <Link className="rd-link" href="/finance/params">前往 USDT 提现参数</Link> : undefined}>
@@ -720,8 +763,8 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     </div>
     <div {...subIds.panel("funds")} hidden={sub !== "funds"} className="rd-tab-pane">
       {data ? <>
-        <CregisAutoForward key={`auto-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} />
-        <CregisFundsPreparation key={`prep-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} />
+        <CregisAutoForward key={`auto-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} onChanged={syncPending} />
+        <CregisFundsPreparation key={`prep-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} onChanged={syncPending} />
       </> : <BlockState state={loading ? "loading" : "error"} title={loading ? "正在读取…" : "收款状态读取失败，归集与付款先不显示"} onRetry={loading ? undefined : () => void refresh()} />}
     </div>
 
@@ -839,8 +882,8 @@ function ReviewDrawer({ cid, caseRow, canManage, adminId, busy, readBlock, onClo
   const matches = !!evidence && String(evidence.cid) === cid;
   const own = caseRow ? String(caseRow.makerId) === String(adminId) : false;
   const sameEvidence = matches && !!caseRow && String(evidence?.evidenceHash) === String(caseRow.evidenceHash);
-  const proposeBlock = readBlock ?? (loading ? "正在核验证据" : !matches ? "证据没读到，先点「刷新证据」" : undefined);
-  const decideBlock = own ? "发起人不能复核自己的工单" : readBlock ?? (loading ? "正在核验证据" : !evidence ? "先点「刷新证据」" : !sameEvidence ? "证据和发起时不一致，不能复核" : undefined);
+  const proposeBlock = readBlock ?? d1PendingObjectReason("/cregis/review-cases", { cid: Number(cid) }) ?? (loading ? "正在核验证据" : !matches ? "证据没读到，先点「刷新证据」" : undefined);
+  const decideBlock = own ? "发起人不能复核自己的工单" : readBlock ?? (caseRow ? d1PendingObjectReason(`/cregis/review-cases/${text(caseRow.id)}/decision`) : undefined) ?? (loading ? "正在核验证据" : !evidence ? "先点「刷新证据」" : !sameEvidence ? "证据和发起时不一致，不能复核" : undefined);
   const net = caseRow?.proposedNetAmount ?? evidence?.proposedNetAmount;
   const caseFacts = caseRow && <Facts>
     <Fact k="净入账" lead tone="role-1" unit="USDT">{usdt(text(caseRow.proposedNetAmount))}</Fact>
