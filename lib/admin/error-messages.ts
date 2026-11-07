@@ -183,7 +183,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   CREGIS_REVIEW_CASE_MISSING: "找不到这个复核工单，请刷新。",
   CREGIS_REVIEW_REQUEST_INVALID: "复核请求不完整，请刷新后重试。",
   CREGIS_SWITCH_REQUEST_INVALID: "开关申请内容不对，请刷新后重新操作。",
-  ADMIN_FINANCE_AUTH_REQUIRED: "财务权限核对没通过：可能是你的登录或权限已失效，也可能是这条提案的发起人已被收回权限。先重新登录核对；如果是发起人权限被收回，这条提案不能再复核，请拒绝后由有权限的人重新发起。",
+  ADMIN_FINANCE_AUTH_REQUIRED: "财务权限核对没通过：你的登录或财务权限可能已失效，请重新登录后核对。复核收款开关提案时，也可能是发起人已被收回权限，这条提案不能再通过，请拒绝后由有权限的人重新发起。",
   CREGIS_SWITCH_CASE_INSERT_FAILED: "开关提案创建失败，请刷新核对，不要重复提交。",
   CREGIS_SWITCH_CASE_MISSING: "找不到这个开关提案，请刷新。",
   CREGIS_SWITCH_REASON_TOO_LONG: "理由太长，请缩短到 255 字以内。",
