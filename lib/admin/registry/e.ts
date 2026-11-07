@@ -33,7 +33,7 @@ export const DOMAIN_E: ModuleEntry[] = [
   },
   {
     path: "/devices/compute-config",
-    summary: "设置手机绑定与换机规则、App 在线加成和收益估算参数。H5 手机算力奖励已停用，已购设备不受影响。",
+    summary: "设置手机绑定与换机规则、收益估算参数，查看已退役的在线兼容参数。H5 手机算力奖励已停用，已购设备不受影响。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

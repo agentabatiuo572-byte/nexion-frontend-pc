@@ -63,6 +63,7 @@ interface BackendTicket {
   phoneCalibrationProposal?: string | null;
   coverageCheckOnApproval?: boolean | null;
   operationCode?: string | null;
+  retiredOperation?: boolean | null;
   fundEffect?: A2FundEffect | null;
   refundOrderNo?: string | null;
   operator?: string | null;
@@ -154,6 +155,7 @@ export interface A2OperationRow {
   phoneCalibrationError?: string;
   coverageCheckOnApproval?: boolean;
   operationCode?: string;
+  retiredOperation?: boolean;
   fundEffect?: A2FundEffect;
   refundOrderNo?: string;
   id: string;
@@ -311,6 +313,7 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
     ...(phoneCalibrationError ? { phoneCalibrationError } : {}),
     ...(ticket.coverageCheckOnApproval === true ? { coverageCheckOnApproval: true } : {}),
     ...(ticket.operationCode ? { operationCode: ticket.operationCode } : {}),
+    ...(ticket.retiredOperation === true ? { retiredOperation: true } : {}),
     fundEffect: ticket.fundEffect ?? undefined,
     refundOrderNo: ticket.refundOrderNo ?? undefined,
     id: ticket.id,
@@ -559,13 +562,14 @@ export async function fetchA2ReasonPolicy(): Promise<A2ReasonPolicy> {
 }
 
 /** Exact original-maker lookup includes archived audit evidence; never resubmit a lost proposal. */
-export async function fetchA2ProposalByKey(commandKey: string): Promise<A2OperationRow | null> {
+export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = false): Promise<A2OperationRow | null> {
   try {
     const row = await a2Request<BackendTicket>(`/operations/proposals/by-idempotency-key?${new URLSearchParams({ idempotencyKey: commandKey })}`);
     if (!row || typeof row.id !== "string" || !row.id || typeof row.status !== "string") throw new Error("提交结果不完整，请稍后再查。");
     return fromTicket(row);
   } catch (failure) {
-    if (failure && typeof failure === "object" && "status" in failure && failure.status === 404) return null;
+    if (failure && typeof failure === "object" && "status" in failure && failure.status === 404
+        && (!strictNotFound || "backendMessage" in failure && failure.backendMessage === "A2_PROPOSAL_NOT_FOUND")) return null;
     throw failure;
   }
 }

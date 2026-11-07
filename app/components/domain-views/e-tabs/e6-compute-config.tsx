@@ -1,7 +1,7 @@
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 /**
  * E6 · 算力与设备配置(server-canonical 聚合视图)。
- * 手机绑定换机 / 手机校准 / App 在线加成系数 / 收益估算。
+ * 手机绑定换机 / 手机校准 / 退役在线参数兼容读取 / 收益估算。
  * 所有写入经 OperationConfirmModal,由 shell(e-view)统一落 A2 审计 + Idempotency-Key。
  *
  * 数据源:ctx.e6Config(后端 GET /api/admin/devices/compute-config 聚合视图),
@@ -26,6 +26,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
   const ready = !!e6Config; // 后端聚合视图已加载
 
   const editCoefficient = (c: (typeof coefficients)[number]) => {
+    if (c.key === "continuityFullHours") return;
     openActionConfirm({ briefKind: "config",
       name: `调整${operatorCopyText(c.label)}`,
       op: "param",
@@ -71,28 +72,30 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
     <div>
       <div id="phone-calibration"><PhoneCalibrationPanel ctx={ctx} /></div>
       <EStats items={[
-        { k: "在线系数", v: coefficients.length, sub: "公共配置参数", tone: "cyan" },
+        { k: "在线参数（含退役项）", v: coefficients.length, sub: "退役项仅兼容读取", tone: "cyan" },
       ]} />
 
       <PhoneReplacementPolicyPanel />
 
       <section className="pane" style={{ marginTop: 14 }}>
         <div className="pane-h">
-          <span className="ttl">在线加成系数</span>
-          <span className="sub">批准后发布到公共配置</span>
+          <span className="ttl">在线系数与兼容项</span>
+          <span className="sub">退役项只读，不参与收益计算</span>
         </div>
         {coefficients.map((c) => (
           <div className="pkv" key={c.key}>
             <div className="lhs">
               <span className="zh">{operatorCopyText(c.label)}</span>
-              <span className="desc">批准后发布到公共配置。</span>
+              <span className="desc">{c.key === "continuityFullHours" ? operatorCopyText(c.desc) : "批准后发布到公共配置。"}</span>
             </div>
             <span className="v">{ready ? c.value : "—"}<span className="u">{operatorCopyText(c.unit)}</span></span>
-            {canWriteE6 && <button type="button" className="adj" data-proof={`e6-coeff-${c.key}`} onClick={() => editCoefficient(c)}>调整</button>}
+            {c.key === "continuityFullHours"
+              ? <span className="sub">已退役 · 只读</span>
+              : canWriteE6 && <button type="button" className="adj" data-proof={`e6-coeff-${c.key}`} onClick={() => editCoefficient(c)}>调整</button>}
           </div>
         ))}
         <div className="tint cyan tiny" style={{ margin: "12px 16px 14px" }}>
-          <AutoGloss>修改提交审批，批准后发布到公共配置。</AutoGloss>
+          <AutoGloss>连续在线满额时长保留历史兼容值，不可修改，不参与任务收益计算。</AutoGloss>
         </div>
       </section>
 
@@ -123,7 +126,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
           <span className="ttl">修改记录与回滚</span>
         </div>
         <div className="tint cyan tiny" style={{ margin: "12px 16px" }}>
-          <AutoGloss>每次修改都会记录改前、改后的值和操作人。要回滚时，在操作记录里找到原来的值，回到这里重新填入并提交。</AutoGloss>
+          <AutoGloss>每次修改都会记录改前、改后的值和操作人。可修改参数需要回滚时，在操作记录里找到原来的值，回到这里重新填入并提交；退役参数仅可查看，不能恢复调整。</AutoGloss>
         </div>
         <div className="row" style={{ margin: "0 16px 14px", gap: 10, flexWrap: "wrap" }}>
           <Link className="adj" href="/platform/audit?domain=E&object=E.compute">查看修改记录</Link>
@@ -137,12 +140,12 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
           <span className="sub">不随运营阶段变化</span>
         </div>
         <div className="tint cyan tiny" style={{ margin: "12px 16px 14px" }}>
-          <AutoGloss>机型风控填理由保存后立即生效，用于之后的校准。手机校准规则须由另一位超级管理员批准后生效；预约发布还须等到所选时间，若批准时已过预约时间，则批准后生效。手机换机策略批准后生效，用于之后的换机资格检查。在线加成系数和收益估算参数批准后发布到公共配置，不用等运营阶段切换。</AutoGloss>
+          <AutoGloss>机型风控填理由保存后立即生效，用于之后的校准。手机校准规则须由另一位超级管理员批准后生效；预约发布还须等到所选时间，若批准时已过预约时间，则批准后生效。手机换机策略批准后生效，用于之后的换机资格检查。连续在线满额时长已退役，仅兼容读取，不参与收益计算。收益估算参数批准后发布到公共配置，不用等运营阶段切换。</AutoGloss>
         </div>
       </section>
 
       <p className="f-foot">
-        <b>说明</b>：<AutoGloss>机型风控立即生效；手机校准和换机策略批准后生效，校准预约发布还须到达生效时间。在线系数和收益估算参数批准后发布到公共配置。</AutoGloss>
+        <b>说明</b>：<AutoGloss>机型风控立即生效；手机校准和换机策略批准后生效，校准预约发布还须到达生效时间。连续在线满额时长已退役，仅兼容读取；收益估算参数批准后发布到公共配置。</AutoGloss>
       </p>
     </div>
   );

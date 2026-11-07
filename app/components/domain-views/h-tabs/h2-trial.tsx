@@ -3,13 +3,14 @@ import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DataListPager } from "../design-kit";
+import { DataListPager, Modal } from "../design-kit";
 import {
   fetchH2Trials,
   updateH2TrialParam,
 } from "@/lib/admin/h-client";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { H2_TRIAL_ACTIONS, pendingH2TrialApprovals, submitH2TrialApproval, type H2TrialApprovalInput, type H2TrialApprovalMode } from "@/lib/admin/h2-trial-approval";
+import { finishRetiredH2TrialChargeLookup, H2_TRIAL_ACTIONS, pendingH2TrialApprovals, submitH2TrialApproval, type H2TrialApprovalInput, type H2TrialApprovalMode } from "@/lib/admin/h2-trial-approval";
+import type { A2OperationRow } from "@/lib/admin/a2-client";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { HCtx } from "./types";
@@ -245,6 +246,9 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const [error, setError] = useState<string | null>(null);
   const [sessionPage, setSessionPage] = useState(1);
   const [sessionPageSize, setSessionPageSize] = useState(20);
+  const [retiredCharge, setRetiredCharge] = useState<{ adminId: number; attempt: ReturnType<typeof pendingH2TrialApprovals>[number] } | null>(null);
+  const [chargeLookup, setChargeLookup] = useState<{ missing?: boolean; ticket?: A2OperationRow; error?: string }>({});
+  const [chargeLookupBusy, setChargeLookupBusy] = useState(false);
   const reloadEpochRef = useRef(0);
 
   const reload = useCallback(async () => {
@@ -282,14 +286,36 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const pendingBySession = new Map(adminSession ? pendingH2TrialApprovals(adminSession.adminId).map((attempt) => [attempt.sid, attempt]) : []);
   const canPropose = (op: H2TrialApprovalInput["op"]) => op === "h2_trial_cancel" ? canCancel : canCharge;
 
+  const queryRetiredCharge = async () => {
+    if (!retiredCharge || !canCharge || adminSession?.adminId !== retiredCharge.adminId) return;
+    setChargeLookupBusy(true);
+    setChargeLookup({});
+    try {
+      const ticket = await submitH2TrialApproval(adminSession, retiredCharge.attempt, "", "lookup");
+      if (useAdminAuth.getState().session?.adminId !== retiredCharge.adminId) return;
+      if (ticket) finishRetiredH2TrialChargeLookup(retiredCharge.adminId, retiredCharge.attempt.sid, retiredCharge.attempt.commandKey);
+      setChargeLookup(ticket ? { ticket } : { missing: true });
+    } catch (cause) {
+      setChargeLookup({ error: `暂时无法确认原申请，原命令已保留。${displayAdminError(cause)}` });
+    } finally {
+      setChargeLookupBusy(false);
+    }
+  };
+
   const openSessionApproval = (session: TrialSession, requestedOp: H2TrialApprovalInput["op"], recovery = false) => {
     if (!adminSession || !canPropose(requestedOp)) return;
     const original = () => pendingH2TrialApprovals(adminSession.adminId).find((record) => record.sid === session.sid);
     const previous = original();
     if (recovery ? !previous : previous || session.pendingApproval || !knownTrialOwner(session)) return;
     const input = previous ?? { op: requestedOp, sid: session.sid, obj: `${trialOwnerLabel(session)} · ${session.sid}`, before: session.state };
-    const charge = input.op === "h2_trial_charge";
-    const detail = charge ? "批准后按当前试用规则重新计算并扣用户的 USDT。" : "批准后结束这次试用，并标记为已取消。";
+    if (input.op === "h2_trial_charge") {
+      if (previous) {
+        setChargeLookup({});
+        setRetiredCharge({ adminId: adminSession.adminId, attempt: previous });
+      }
+      return;
+    }
+    const detail = "批准后结束这次试用，并标记为已取消。";
     const run = async (reason: string, mode: H2TrialApprovalMode = "submit") => {
       if (useAdminAuth.getState().session?.adminId !== adminSession.adminId) {
         throw new Error("登录账号已变化，请关闭弹窗后重新操作。");
@@ -304,10 +330,10 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       return true;
     };
     openActionConfirm({
-      briefKind: charge ? "funds" : "record",
+      briefKind: "record",
       action: `${H2_TRIAL_ACTIONS[input.op]} · ${session.sid}`,
       detail: <>{input.obj}。{detail}</>,
-      amplifies: charge,
+      amplifies: false,
       getPendingReason: () => original()?.reason,
       inlineApproval: {
         pending: !!previous,
@@ -476,7 +502,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                           </button>
                         </>
                       )}
-                      {previous && canPropose(previous.op) && <button className="l-btn sm" onClick={() => openSessionApproval(session, previous.op, true)}>查询原操作</button>}
+                      {previous && canPropose(previous.op) && <button className="l-btn sm" onClick={() => openSessionApproval(session, previous.op, true)}>{previous.op === "h2_trial_charge" ? "核对旧申请" : "查询原操作"}</button>}
                     </td>
                   </tr>
                 );
@@ -504,6 +530,25 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       <div className="htint warn">
         试用参数、强制取消都会记入操作记录。
       </div>
+
+      {retiredCharge && adminSession?.adminId === retiredCharge.adminId && canCharge && (
+        <Modal title="核对旧扣款申请" busy={chargeLookupBusy} onClose={() => setRetiredCharge(null)} footer={<>
+          <button className="l-btn" disabled={chargeLookupBusy} onClick={() => setRetiredCharge(null)}>关闭</button>
+          {chargeLookup.missing && <button className="l-btn" disabled={chargeLookupBusy} onClick={() => {
+            if (useAdminAuth.getState().session?.adminId !== retiredCharge.adminId) return;
+            finishRetiredH2TrialChargeLookup(retiredCharge.adminId, retiredCharge.attempt.sid, retiredCharge.attempt.commandKey);
+            setRetiredCharge(null);
+          }}>结束本机核对</button>}
+          {!chargeLookup.ticket && <button className="l-btn primary" disabled={chargeLookupBusy} onClick={() => void queryRetiredCharge()}>{chargeLookupBusy ? "查询中…" : "查询原申请"}</button>}
+        </>}>
+          <div className="kv"><span className="k">原试用记录</span><span className="v">{retiredCharge.attempt.obj}</span></div>
+          <div className="kv"><span className="k">原操作理由</span><span className="v" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{retiredCharge.attempt.reason}</span></div>
+          <p className="htint">旧强制扣款已退役，仅查询原申请，不新建或执行扣款。</p>
+          {chargeLookup.error && <p role="alert" className="htint warn">{chargeLookup.error}</p>}
+          {chargeLookup.missing && <p role="status" className="htint">未找到可核对的原申请，旧入口不能重建。可结束本机这一条核对；历史事实请到操作记录核查，不会删除服务端记录。</p>}
+          {chargeLookup.ticket && <p role="status" className="htint">已找到原审批单 {chargeLookup.ticket.id} · {{ pending: "待审批，已退役不可执行", approved: "历史已执行", rejected: "历史已取消", withdrawn: "历史已撤回", expired: "已过期" }[chargeLookup.ticket.status]}。请到操作记录查看原申请和处理结果。</p>}
+        </Modal>
+      )}
 
     </>
   );

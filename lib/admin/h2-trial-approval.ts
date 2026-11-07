@@ -36,11 +36,28 @@ export function pendingH2TrialApprovals(adminId: number) {
   return attempts.list().filter((record) => record.fingerprint === `${adminId}:${record.sid}`);
 }
 
+export function finishRetiredH2TrialChargeLookup(adminId: number, sid: string, commandKey: string) {
+  const previous = pendingH2TrialApprovals(adminId).find((record) => record.sid === sid && record.commandKey === commandKey);
+  if (previous?.op === "h2_trial_charge") attempts.forget(previous.fingerprint, commandKey);
+}
+
 export async function submitH2TrialApproval(
   session: AdminSession, input: H2TrialApprovalInput, reason: string, mode: H2TrialApprovalMode,
 ) {
   const slot = `${session.adminId}:${input.sid}`;
   const previous = pendingH2TrialApprovals(session.adminId).find((record) => record.sid === input.sid);
+  if (input.op === "h2_trial_charge" || previous?.op === "h2_trial_charge") {
+    if (mode !== "lookup" || previous?.op !== "h2_trial_charge") {
+      throw new Error("旧强制扣款已退役，仅可查询原申请，不能创建或重试提案。");
+    }
+    const ticket = await fetchA2ProposalByKey(previous.commandKey, true);
+    if (ticket && (!ticket.mine || ticket.obj !== previous.obj
+        || ticket.action !== `${H2_TRIAL_ACTIONS[previous.op]} · ${previous.sid}`
+        || ticket.operationCode !== previous.op || ticket.retiredOperation !== true)) {
+      throw new Error("审批回执与原操作不符，原命令已保留，请到操作记录核对。");
+    }
+    return ticket;
+  }
   if (mode === "lookup" && !previous) return null;
   if (mode === "retry" && !previous) throw new Error("原审批命令已处理，请刷新后核对结果。");
   const original = previous ?? { ...input, reason };
@@ -74,7 +91,7 @@ export async function submitH2TrialApproval(
         action,
         obj: original.obj,
         beforeValue: original.before,
-        afterValue: original.op === "h2_trial_cancel" ? "cancelled" : "已扣款",
+        afterValue: "cancelled",
         operator: session.operator || session.username,
         operatorRole: roleLabel(session.role),
         type: def.type,
