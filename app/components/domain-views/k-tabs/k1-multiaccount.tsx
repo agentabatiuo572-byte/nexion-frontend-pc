@@ -529,7 +529,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       setEarningsReadAt(clockText(Date.now()));
     } catch (error) {
       setProtectedEntries([]);
-      setProtectedEntriesError(errorText(error));
+      setProtectedEntriesError(readFailureText(error));
     } finally {
       setProtectedEntriesLoading(false);
     }
@@ -1360,7 +1360,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       <PageHeader pageId="K1" title="多账户风险排查" summary="找出可能是同一人的账户，判断后处置。"
         meta={<span className="rd-toolbar">
           {shownReadAt && <span>{shownReadAt} 读取（{businessZone().label}）<Explain label="数据时间说明" content={tab === "earnings" ? "打开和点「刷新」时读取，不自动刷新。" : <>打开和点「刷新」时读取，不自动刷新。<br />上次成功检查 {overview?.lastSuccessfulCheckAt ? formatBusinessTimeFull(overview.lastSuccessfulCheckAt, "—") : "暂无成功检查记录"}</>} /></span>}
-          {(tab === "earnings" || !overviewFailed) && <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={ctx.contentLoading || protectedEntriesLoading} onClick={() => { reloadOverview(); void refreshProtectedEntries(); }}>刷新</Button>}
+          {!(tab === "earnings" ? protectedEntriesError : overviewFailed) && <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={ctx.contentLoading || protectedEntriesLoading} onClick={() => { reloadOverview(); void refreshProtectedEntries(); }}>刷新</Button>}
         </span>}
         readOnly={anyWrite ? undefined : "你只能查看；处置和调整需要风控权限"} />
 
