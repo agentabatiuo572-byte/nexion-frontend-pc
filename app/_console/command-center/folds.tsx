@@ -10,7 +10,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowLeftRight, ShieldAlert, Target, Users, Wallet, XCircle } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { BarList, Bars, BlockState, Button, Explain, Fact, Facts, Fold, Modal, StatusTag, TrendLines } from "@/app/components/rd";
+import { BarList, Bars, BlockState, Button, Explain, Fact, Facts, Fold, Modal, StatusTag, ThresholdMeter, TrendLines } from "@/app/components/rd";
 import { fetchB0Kpis, fetchB0Redemption, type B0Kpi } from "@/lib/admin/b0-client";
 import type { B0Blocks } from "@/lib/admin/b0-access";
 import type { B2LiquidityHistory } from "@/lib/admin/b-restoration-client";
@@ -89,9 +89,8 @@ export function FundFold({ ledger, liquidity, error, retrying, onRetry, alert, l
   const others = accounts.slice(3).reduce((sum, item) => sum + item.amount, 0);
   const dueRows = (liquidity?.runway ?? []).map((item) => ({ label: item.day.slice(5), values: [item.valueWan * 10_000] }));
   const dueDays = dueRows.filter((row) => row.values[0] > 0);
-  // 覆盖率的数在顶栏，这里写和红线差多少。颜色和首屏的「跌破红线」「警戒」同一个比较（严格小于）。
-  const coverTone = !ledger ? undefined : ledger.coverageRatio < ledger.redlinePct ? "danger" : ledger.coverageRatio < ledger.healthyPct ? "warn" : undefined;
-  const redlineGap = ledger ? ledger.coverageRatio - ledger.redlinePct : 0;
+  // 覆盖率条的颜色只看覆盖率和两条线，和首屏的「跌破红线」「警戒」同一个比较（严格小于）。
+  const coverTone = !ledger ? "ok" : ledger.coverageRatio < ledger.redlinePct ? "danger" : ledger.coverageRatio < ledger.healthyPct ? "warn" : "ok";
   return (
     <Fold title="资金明细" summary={fundFoldSummary(ledger, liquidity, error, level)} icon={Wallet} tone="role-1" alert={alert} alertTone={level === "danger" ? "danger" : "warn"} open={open} onOpenChange={onOpenChange}
       actions={linkInBrief ? undefined : <FoldLink reach={reach} href="/overview/dual-ledger">查看资金总览</FoldLink>}>
@@ -104,10 +103,14 @@ export function FundFold({ ledger, liquidity, error, retrying, onRetry, alert, l
                 <Amount label="应付款" value={ledger.liabilitiesUsd} tone="role-2" href="/overview/dual-ledger" reach={reach} />
                 <Amount label="差额（储备 − 应付款）" value={net} note={net > 0 ? "有富余" : net === 0 ? "刚好够" : "不够付"} href="/overview/dual-ledger" reach={reach} />
               </div>
-              <p className="cc-line">
-                <span className="cc-num" data-tone={coverTone}>覆盖率比红线{redlineGap < 0 ? "低" : "高"} {Math.abs(redlineGap).toFixed(1)} 个百分点</span>
-                <span className="cc-amount-note">红线 {fmtPct(ledger.redlinePct, 0)}，健康线 {fmtPct(ledger.healthyPct, 0)}</span>
-              </p>
+              <ThresholdMeter
+                label="覆盖率和红线、健康线"
+                rows={[{ key: "coverage", label: "覆盖率（储备 ÷ 应付款）", value: ledger.coverageRatio, text: fmtPct(ledger.coverageRatio), tone: coverTone }]}
+                marks={[
+                  { key: "redline", text: `红线 ${fmtPct(ledger.redlinePct, 0)}`, value: ledger.redlinePct, tone: "danger" },
+                  { key: "healthy", text: `健康线 ${fmtPct(ledger.healthyPct, 0)}`, value: ledger.healthyPct, tone: "ok" },
+                ]}
+              />
               <div className="cc-cols">
               <section className="cc-bars" aria-label="应付款">
                 <h3 className="cc-sub">应付款最多的几类<FoldLink reach={reach} href="/overview/liquidity">查看全部 9 类</FoldLink></h3>
