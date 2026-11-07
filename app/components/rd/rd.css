@@ -651,6 +651,10 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-notice-text > p { margin: 0; }
 .rd-notice-text > p + p { margin-top: 8px; }
 .rd-notice .rd-link { white-space: nowrap; }  /* 链接不在词中间折行 */
+/* 三个以上动作挤窄正文时，动作换到正文下面一行，和正文同一条左边线（VS-105） */
+.rd-notice:has(> .rd-notice-action > :nth-child(3)) { flex-wrap: wrap; }
+.rd-notice:has(> .rd-notice-action > :nth-child(3)) > .rd-notice-text { flex-basis: calc(100% - 24px); }
+.rd-notice:has(> .rd-notice-action > :nth-child(3)) > .rd-notice-action { flex-basis: 100%; padding-left: 24px; }
 
 /* ── 表单字段 ── */
 .rd-form-field { display: grid; gap: 8px; align-content: start; min-width: 0; }
@@ -824,6 +828,8 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-fact-change { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; color: var(--rd-text-3); font-weight: 400; }
 .rd-fact-change > svg { flex: none; }
 .rd-fact-change [data-after] { color: var(--rd-progress); font-weight: 500; }
+.rd-fact-change [data-settled] { color: var(--rd-text); font-weight: 500; }  /* 已经生效的新值不是待生效，不用蓝（VS-103） */
+.rd-fact[data-empty] dd { color: var(--rd-text-3); font-weight: 400; }  /* 读不到写「—」时弱化（VS-11） */
 /* 这次操作的关键数字（VS-102）：弹窗里最大最亮，每个框最多一个。字号借页面标题那一档，不加新字号。 */
 .rd-fact[data-lead] { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 .rd-fact[data-lead] + .rd-fact { margin-top: 4px; }

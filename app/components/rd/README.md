@@ -51,10 +51,10 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 下拉、排序 | `Select`；放进 `Field` 自动接上 `id`、`aria-describedby`、`aria-invalid` | `select.tsx` |
 | 单条详情、长表单 | `Drawer`，底部用 `Decision` | `overlay.tsx` |
 | 详情开头 3～5 行 | `JudgmentPoints` | `judgment.tsx` |
-| 详情、确认框里成对的名称和值 | `Facts`、`Fact`；确认框的关键数字传 `lead`（每框最多一个，放第一行），值是不带数字的文字时按普通的值显示，大字只给数字；带含义的值传 `tone`；状态变化写 `Change`（改后蓝）。放在 `Modal` 里自动带浅底 | `facts.tsx` |
+| 详情、确认框里成对的名称和值 | `Facts`、`Fact`；确认框的关键数字传 `lead`（每框最多一个，放第一行），值是不带数字的文字时按普通的值显示，大字只给数字；带含义的值传 `tone`；状态变化写 `Change`（改后蓝），已经生效的变化传 `settled`（新值正文色）；值是「—」时自动弱化。放在 `Modal` 里自动带浅底 | `facts.tsx` |
 | 按时间发生的操作、状态历史 | `Timeline`；最新在上，主体在组件内经 `maskAuditActor` 打码；仅失败 `danger`、待确认 `warn` 的节点上色 | `timeline.tsx` |
 | 提现历史、流水、同组账户等同类记录 | `RecordList`；主值、单位、时间和对象、状态、可复制单号分层；默认 5 条，点「查看全部」展开 | `record-list.tsx` |
-| 要人看到的提醒、错误、待确认条 | `Notice`；正文超过一行、动作不止一个时传 `actionBelow`，动作排到正文下面、和正文左对齐，正文占满整条宽；多段正文用 `<p>`，段间 8px；按钮和解释它的问号包在 `<span data-pair>` 里挨着；条里的链接不在词中间折行 | `notice.tsx` |
+| 要人看到的提醒、错误、待确认条 | `Notice`；正文超过一行、动作不止一个时传 `actionBelow`，动作排到正文下面、和正文左对齐，正文占满整条宽；没传时动作有三个以上也会自动换到正文下面一行；多段正文用 `<p>`，段间 8px；按钮和解释它的问号包在 `<span data-pair>` 里挨着；条里的链接不在词中间折行 | `block-state.tsx` |
 | 短任务弹窗 | `Modal`；`icon` 是标题前的图标底，`sub` 放标题下的后果标签，危险确认传 `tone="danger"` | `overlay.tsx` |
 | 写操作确认 | 继续用 `OperationConfirmModal` | 见下 |
 | 解除待确认 | `ReleaseModal`；`label` 写原操作，统一的一句话在组件里，页面特有的说明传 `explain` | `overlay.tsx` |
@@ -172,7 +172,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 后果不写成灰字：生效方式是标题下的蓝色标签（`<StatusTag tone="progress" filled>立即生效</StatusTag>`），收不回来的操作再加 `<IrreversibleTag />`；不改线上的写操作（保存草稿、业务继续关停、只改你看到的显示）用灰底标签。红只给危险确认、提交失败和真危险的后果；填错、结果未知、被别人改了用橙黄。同一件事只写一处：范围不在标签、占位、说明里各写一遍，没改时不写「还没改动」，确认按钮禁用并写原因就够。
 
-页面只传内容：`title`、`facts`、`Fact` 的 `lead`、`sub` 或 `effect`。`openActionConfirm`、`openConfirm` 和 `KConfirmModal` 都能传 `title`，`action` 照旧进操作记录，不要动。框里的状态变化写 `<Fact k="状态"><Change from="冻结" to="待审核" /></Fact>`。三个并排的字段放 `<div className="rd-form-grid" data-cols="3">`。
+页面只传内容：`title`、`facts`、`Fact` 的 `lead`、`sub` 或 `effect`。`openActionConfirm`、`openConfirm` 和 `KConfirmModal` 都能传 `title`，`action` 照旧进操作记录，不要动。框里的状态变化写 `<Fact k="状态"><Change from="冻结" to="待审核" /></Fact>`。三个并排的字段放 `<div className="rd-form-grid" data-cols="3">`。540 宽的抽屉里字段一项一行，帮助在窄列里会断词折行（VS-105）。
 
 ```tsx
 <Modal title="调整同一 IP 每天最多注册多少个账号" icon={SlidersHorizontal} sub={<StatusTag tone="progress" filled>立即生效</StatusTag>} …>
@@ -202,6 +202,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 - `facts`：做决定要核对的事实，常显在业务字段上面，比如收款网络和完整地址。人要在看得到它的地方选核验项。金额放第一行传 `lead`，它是这个框最大最亮的字。
 - `confirmTone`：不能撤销或直接动钱的操作传 `danger`，确认按钮用危险色、标题前是红底警告图标（退款、拒绝、紧急关闭、强制扣款）。能解除的处置和放宽类判断不传。`KConfirmModal` 的 `ConfirmReq` 认同一个字段。
 - `reasonPolicyOptional`：理由规则读不到时按默认 8–200 继续。只给紧急关停（Q-06），放大资金流出的操作不传。
+- `approval`（整组审批，不带 `heading`）：在 `RdPage` 里和直接生效的框一个样子：标题下默认是「批准后生效」标签（谁来批、批准前什么不变进标签的提示，页面可以传 `effect` 换成自己的标签），覆盖率是安静的一行，不再铺橙黄横幅，理由叫「操作理由」。`coverageCheckCopy` 进覆盖率那行的提示。
 - `coverageLead`：放大方向提示的开头，默认「这项操作会让平台多付钱」，页面可以换成这个操作的白话。读到覆盖率且不低于红线时，提示是安静的一行「覆盖率 753.8%，红线 100%」，这句开头和检查说明进提示图标；低于红线才红，写全文。页面自己把覆盖率写进 `coverageLead` 时也只留这一句，检查说明进提示图标。
 
 业务表单（`businessForm` 的 `multi-field`）的字段传 `explain` 时，字段名旁出现提示图标；校验不过的提示失焦或点过提交才出现，用橙黄。`multi-field` 不传 `title` 时没有分组小标题，只有一组字段就别传，框的标题已经说了（VS-104）。
