@@ -37,6 +37,8 @@ type Editor = {
   version: string;
   jurisdiction: string;
   languageScope: string;
+  /** 新建时底稿的语言范围超出中、越、英：表单改用三语，这里记原范围，控件下写一句（决定 32）。 */
+  narrowedFrom?: string;
   effectiveDate: string;
   zh: string;
   vi: string;
@@ -462,16 +464,22 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   });
 
   // ---------- 版本 ----------
-  const editorFrom = (snapshot: DisclosureVersionItemView | undefined, jurisdiction: string, version: string, mode: Editor["mode"], editing?: DisclosureVersionItemView): Editor => ({
-    mode, editing, version, jurisdiction,
-    languageScope: snapshot?.languageScope?.split("+").includes("en") ? snapshot.languageScope : "zh+vi+en",
-    // 新版本不带旧版的日期，不然没改也写着一个过去的日子（M15）。
-    effectiveDate: mode === "create" ? businessDay() : snapshot?.effectiveDate ?? "",
-    zh: snapshot?.zh ?? "", vi: snapshot?.vi ?? "", en: snapshot?.en ?? "",
-    chapters: snapshot?.chapters?.length === 7
-      ? snapshot.chapters.map(({ no, zh, vi, en, zhBody, viBody, enBody }) => ({ no, zh, vi, en, zhBody, viBody, enBody }))
-      : Array.from({ length: 7 }, (_, index) => ({ no: String(index + 1).padStart(2, "0"), zh: "", vi: "", en: "", zhBody: "", viBody: "", enBody: "" })),
-  });
+  const editorFrom = (snapshot: DisclosureVersionItemView | undefined, jurisdiction: string, version: string, mode: Editor["mode"], editing?: DisclosureVersionItemView): Editor => {
+    // 这一轮只交付中、越、英（决定 32）：新建时底稿更宽就改用三语，旧版本和已有草稿不动。
+    const baseScope = snapshot?.languageScope ?? "";
+    const narrowed = mode === "create" && !!baseScope && scopeTooWide(baseScope);
+    return {
+      mode, editing, version, jurisdiction,
+      languageScope: !narrowed && baseScope.split("+").includes("en") ? baseScope : "zh+vi+en",
+      ...(narrowed ? { narrowedFrom: baseScope } : {}),
+      // 新版本不带旧版的日期，不然没改也写着一个过去的日子（M15）。
+      effectiveDate: mode === "create" ? businessDay() : snapshot?.effectiveDate ?? "",
+      zh: snapshot?.zh ?? "", vi: snapshot?.vi ?? "", en: snapshot?.en ?? "",
+      chapters: snapshot?.chapters?.length === 7
+        ? snapshot.chapters.map(({ no, zh, vi, en, zhBody, viBody, enBody }) => ({ no, zh, vi, en, zhBody, viBody, enBody }))
+        : Array.from({ length: 7 }, (_, index) => ({ no: String(index + 1).padStart(2, "0"), zh: "", vi: "", en: "", zhBody: "", viBody: "", enBody: "" })),
+    };
+  };
   const nextVersionFor = (jurisdiction: string) => data?.nextVersionByJurisdiction?.[jurisdiction] ?? data?.nextDisclosureVersionByJurisdiction?.[jurisdiction] ?? data?.nextDisclosureVersion ?? "";
   const firstRegion = activeCatalog[0]?.code ?? "";
   const newVersionBlocked = blocked() ?? (!firstRegion ? "暂无启用的适用范围，请先在适用范围目录新增或启用" : !nextVersionFor(firstRegion) ? "暂时拿不到新版本号，请刷新后再新建" : undefined);
@@ -1029,7 +1037,7 @@ function VersionEditor({ initial, switcher, regions, languageScopes, loadRegionB
           <Field label="披露版本"><div className="rd-form-static">{form.version}<Explain label="版本号怎么来的" content="系统自动编号，不能手填。" /></div></Field>
           <Field label="适用范围">{initial.mode === "edit" ? <div className="rd-form-static">{regions[0]?.label ?? form.jurisdiction}</div>
             : <Select aria-label="适用范围" value={form.jurisdiction} options={regions} disabled={loadingRegion} onChange={(next) => { if (next === form.jurisdiction) return; if (dirty) setPendingRegion(next); else void switchRegion(next); }} />}</Field>
-          <Field label="语言范围" explain={<><p>{ENGLISH_REQUIRED}</p><p>{SCOPE_TOO_WIDE}</p></>}><Select aria-label="语言范围" value={form.languageScope} options={[...new Set([...languageScopes, "zh+vi+en", form.languageScope])].filter((scope) => !scopeTooWide(scope) || scope === form.languageScope).map((scope) => ({ value: scope, label: !scope.split("+").includes("en") ? `${languageText(scope)}（缺少英语，不可选）` : scopeTooWide(scope) ? `${scope.split("+").length} 种语言（暂不能录入）` : languageText(scope), disabled: scopeTooWide(scope) || !scope.split("+").includes("en") }))} onChange={(next) => setForm((current) => ({ ...current, languageScope: next }))} /></Field>
+          <Field label="语言范围" explain={<><p>{ENGLISH_REQUIRED}</p><p>{SCOPE_TOO_WIDE}</p></>} help={form.narrowedFrom ? `原版本的另外 ${form.narrowedFrom.split("+").filter((code) => !EDITABLE_LANGUAGES.includes(code)).length} 种语言这里不能录入，新版本只含中文、越南语和英语。` : undefined}><Select aria-label="语言范围" value={form.languageScope} options={[...new Set([...languageScopes, "zh+vi+en", form.languageScope])].filter((scope) => !scopeTooWide(scope) || scope === form.languageScope).map((scope) => ({ value: scope, label: !scope.split("+").includes("en") ? `${languageText(scope)}（缺少英语，不可选）` : scopeTooWide(scope) ? `${scope.split("+").length} 种语言（暂不能录入）` : languageText(scope), disabled: scopeTooWide(scope) || !scope.split("+").includes("en") }))} onChange={(next) => setForm((current) => ({ ...current, languageScope: next }))} /></Field>
           <Field label="生效日期" required explain="写在披露上给用户看。切换生效版本批准后才换版本，不是到这一天自动生效。" help={form.effectiveDate && form.effectiveDate < businessDay() ? `早于今天（${businessDay()}），确认是要写这个日子` : undefined}>{(control) => <Input {...control} type="date" value={form.effectiveDate} onChange={(event) => setForm((current) => ({ ...current, effectiveDate: event.target.value }))} />}</Field>
         </div>
         <LocaleTabs label="正文语言" value={lang} onChange={setLang} items={[
