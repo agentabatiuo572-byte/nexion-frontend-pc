@@ -326,9 +326,12 @@ function userStatusLabel(value?: string) {
   return ({ active: "正常", enabled: "正常", frozen: "冻结", disabled: "停用", locked: "锁定" } as Record<string, string>)[value?.toLowerCase() ?? ""] ?? (value ? "未知" : "—");
 }
 
+/** 后端在提交时记下当时的运营阶段：H1:M{第几月}:{P1–P6}（AppWithdrawalService）。 */
+const H1_RHYTHM = /^H1:M([1-9]\d*):(P[1-6])$/;
+
 function freezePeriodLabel(value?: string) {
-  const rhythm = /^H1:M([1-9]\d*):(P[1-6])$/.exec(value ?? "");
-  if (rhythm) return `下单时的运营阶段设置：第 ${rhythm[1]} 月 · ${rhythm[2]}（以复查时间为准）`;
+  const rhythm = H1_RHYTHM.exec(value ?? "");
+  if (rhythm) return `按申请时的运营阶段（第 ${rhythm[1]} 月 · ${rhythm[2]}）`;
   return ({ "7D": "7 天", "14D": "14 天", "30D": "30 天", "45D": "45 天", LONG_TERM: "自定复查（到期回待审核）", SEVEN_DAYS: "7 天", K3_DELAY_ONCE: "到期复核后再延迟一次（以复查时间为准）" } as Record<string, string>)[value?.toUpperCase() ?? ""] ?? (value ? "未知" : "—");
 }
 
@@ -402,7 +405,7 @@ const D2_BRANCHES: { from: string[]; trigger: string; to: string[]; note: string
   { from: ["REVIEW_PENDING", "REVIEW_PASSED", "PROCESSING"], trigger: "点「冻结」", to: ["FROZEN"], note: "打款前都可以冻结" },
   { from: ["FROZEN"], trigger: "点「解冻」", to: ["REVIEW_PENDING"], note: "回到待审核重新决定" },
   { from: ["FROZEN"], trigger: "等到复查时间", to: ["REVIEW_PENDING"], note: "到时间系统自动送回待审核，不用操作" },
-  { from: ["REVIEW_PENDING"], trigger: "点「拒绝并退款」", to: ["REFUNDED"], note: "要填拒绝原因，钱当场退回用户余额" },
+  { from: ["REVIEW_PENDING"], trigger: "点「拒绝并退款」", to: ["REFUNDED"], note: "要选拒绝原因分类，申请金额全额退回用户余额" },
   { from: ["SENT"], trigger: "打款结果返回", to: ["ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], note: "按银行或链上返回的结果处理，结果不明时继续核对" },
   { from: ["REVIEW_REJECTED"], trigger: "手动退款", to: ["REFUNDED"], note: "仅历史遗留记录；提交前先确认钱没有打出去" },
   { from: ["ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], trigger: "手动退款", to: ["REFUNDED"], note: "ERC20 丢失链上确认时冻结并继续占额度，禁止退款；其他单提交前先确认钱没有打出去" },
@@ -500,12 +503,12 @@ const REVIEW_TITLE: Record<D2ReviewAction, string> = { APPROVE: "放行提现", 
 
 /** 确认框的影响和提交前检查，写这个操作的真实影响（OP-51、OP-53）。 */
 const REVIEW_BRIEF: Record<D2ReviewAction, { impact: string; check: string }> = {
-  APPROVE: { impact: "审核通过，交给系统打款；付款成功才算完成。", check: "核对用户、金额、收款地址和命中的风险规则，理由写清依据或工单号。" },
-  DELAY: { impact: "暂停审核，到复查时间自动回到待审核；到时前不能改。", check: "复查时间跟着等待天数走，手动改过要核对，理由写清依据或工单号。" },
-  FREEZE: { impact: "暂停处理并冻结资金；可提前解冻，或等复查时间回到待审核，不会直接打款。", check: "核对冻结期限、责任人和复查时间，理由写清依据或工单号。" },
+  APPROVE: { impact: "审核通过，交给系统打款；打款成功才算完成。", check: "核对用户、金额、收款地址和命中的风险规则，理由写清依据或工单号。" },
+  DELAY: { impact: "暂停审核，到复查时间自动回到待审核。", check: "复查时间跟着等待天数走，手动改过要核对，理由写清依据或工单号。" },
+  FREEZE: { impact: "冻结资金、不会打款，到复查时间回到待审核。", check: "核对冻结期限、责任人和复查时间，理由写清依据或工单号。" },
   UNFREEZE: { impact: "这笔回到待审核重新决定，不会直接打款。", check: "确认冻结的原因已经核实，理由写清依据或工单号。" },
-  REJECT: { impact: "这笔被拒绝，申请金额全额退回用户余额，手续费不扣。", check: "核对用户和拒绝原因，理由写清依据或工单号。" },
-  REFUND: { impact: "申请金额全额退回用户余额，手续费不扣，这笔结束。", check: "先到打款方和账单确认钱没有打出去，理由写清依据或工单号。" },
+  REJECT: { impact: "申请金额全额退回用户余额，手续费不扣。", check: "核对用户和拒绝原因，理由写清依据或工单号。" },
+  REFUND: { impact: "申请金额全额退回用户余额，手续费不扣。", check: "先到打款方和账单确认钱没有打出去，理由写清依据或工单号。" },
 };
 
 /** 确认框常显的「能否撤销」（OP-47）。拒绝和退款收不回来，写成标题下的「不能撤销」标签，不写这一行（VS-106）。 */
@@ -1232,7 +1235,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       briefKind: "funds",
       action: `${label}提现 · ${row.withdrawalNo}`,
       title: REVIEW_TITLE[action],
-      detail: `当前 ${statusLabel(row.status)}；账户 ${userStatusLabel(row.userStatus)}。${action === "APPROVE" ? (row.chain === "BANK-VND" ? "确认后立即放行，由 HDPay 打款，付款成功才算完成。" : "确认后立即放行，钱从储备中扣除。提交时系统会再查一次覆盖率，低于红线不会放行。") : action === "REJECT" ? "确认后立即拒绝，并退回用户余额；完成后为已退款。" : "确认后立即生效。"}`,
+      detail: `当前 ${statusLabel(row.status)}；账户 ${userStatusLabel(row.userStatus)}。${action === "APPROVE" ? (row.chain === "BANK-VND" ? "确认后立即放行，由 HDPay 打款，打款成功才算完成。" : "确认后立即放行，钱从储备中扣除。提交时系统会再查一次覆盖率，低于红线不会放行。") : action === "REJECT" ? "确认后立即拒绝，完成后为已退款。" : "确认后立即生效。"}`,
       businessForm: actionBusinessForm(action, addressVerificationRequired),
       facts: reviewFacts(row, action, bankDetail?.withdrawalNo === row.withdrawalNo ? bankDetail : null, coverageFacts()),
       reasonMin: 8,
@@ -1448,7 +1451,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     return { briefKind: "funds",
       action: `批量执行 · ${actionLabel(action)}`,
       title: `批量${REVIEW_TITLE[action]}`,
-      detail: `将对 ${ids.length} 笔提现执行${actionLabel(action)}（不符合条件的已自动排除）。${action === "REJECT" ? "拒绝后立即退回用户余额，完成后为已退款。" : ""}提交后看批量结果。`,
+      detail: `将对 ${ids.length} 笔提现执行${actionLabel(action)}（不符合条件的已自动排除）。${action === "REJECT" ? "完成后为已退款。" : ""}提交后看批量结果。`,
       businessForm: actionBusinessForm(action),
       facts: <>
         <Facts>
@@ -1653,7 +1656,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     : needRole ? `${actionLabel(needRole)}这笔需要${needRole === "APPROVE" ? approvalRole(shown) : ACTION_ROLE[needRole]}，你只能查看。`
       : shown && ["TX_ORPHANED", "DEAD"].includes(shown.status.toUpperCase()) ? "这笔打款结果待核对，这里没有可用的操作。到打款方核对，不要重新放行或退款。" : "这笔现在没有人工操作。"));
   const decisionExplain = shown && detailActions.includes("APPROVE") && !approveBlocked
-    ? shown.chain === "BANK-VND" ? "点「放行」并确认后立即生效，由 HDPay 打款，付款成功才算完成。" : "点「放行」并确认后立即生效，钱从储备中扣除。"
+    ? shown.chain === "BANK-VND" ? "点「放行」并确认后立即生效，由 HDPay 打款，打款成功才算完成。" : "点「放行」并确认后立即生效，钱从储备中扣除。"
     : undefined;
 
   const riskTone = shown ? routingPriorityTone(shown) : undefined;
@@ -1951,7 +1954,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
                 {shown.previousStatus && <Fact k="上一状态">{statusLabel(shown.previousStatus)}</Fact>}
                 {holdsForReview(shown) && <Fact k="复查时间">{timeText(shown.holdUntil)}</Fact>}
                 <Fact k="责任人">{lifecycleOwnerText(shown.lifecycleOwner)}</Fact>
-                {shown.freezePeriod && <Fact k="持有 / 冻结期限">{freezePeriodLabel(shown.freezePeriod)}</Fact>}
+                {shown.freezePeriod && <Fact k="持有 / 冻结期限">{freezePeriodLabel(shown.freezePeriod)}{H1_RHYTHM.test(shown.freezePeriod) && <Explain label="运营阶段怎么影响这笔" content="这笔提现申请时，运营阶段是这里写的第几月、P 几，冷却天数按那时「运营阶段设置」的值算。冷却中的单什么时候处理，看复查时间。" />}</Fact>}
               </Facts>
             </section>
             <section aria-label="经过">
