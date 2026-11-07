@@ -73,7 +73,7 @@ export function PromotionRefundImpact({ orderNo, compact = false }: { orderNo: s
           status: <StatusTag tone={tone} icon={tone === "warn" ? AlertTriangle : undefined}>{text}</StatusTag>,
         };
       })} /></div>
-      {[...new Map(result.items.map(r => [refundResult(r).short, refundOutcome(r)]))].map(([short, full]) => <p key={short} className="e4-refund-outcome">{short}<Explain label="奖励退款后怎么处理" content={full} /></p>)}
+      {[...new Map(result.items.map(r => [refundOutcome(r), refundResult(r).short]))].map(([full, short]) => <p key={full} className="e4-refund-outcome">{short}<Explain label="奖励退款后怎么处理" content={full} /></p>)}
     </>;
   }
   return <section className="rd-confirm-facts rd-impact" aria-label="促销奖励影响">
