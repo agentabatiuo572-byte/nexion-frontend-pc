@@ -343,7 +343,7 @@
 .ddom .cregis-network-row input:focus-visible { outline: 2px solid var(--success); outline-offset: 3px; }
 .ddom .cregis-network-row strong { color: var(--ink); font-size: 16px; font-weight: 600; }
 .ddom .cregis-network-availability { color: var(--ink); }
-.ddom .cregis-network-blocked { color: var(--warn); }
+.ddom .cregis-network-blocked { color: var(--warning); }
 
 .ddom .cregis-global-payout { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; padding: 16px 0; color: var(--ink-3); }
 .ddom .cregis-global-payout label { display: inline-flex; gap: 8px; align-items: center; color: var(--ink); }
@@ -351,5 +351,5 @@
 .ddom .cregis-config-link:focus-visible { outline: 2px solid var(--success); outline-offset: 3px; }
 .ddom .d5-network-status-list { display: grid; gap: 12px; margin: 12px 0; }
 .ddom .d5-network-status { display: grid; grid-template-columns: minmax(80px,.5fr) minmax(140px,1fr) minmax(240px,2fr); gap: 16px; align-items: center; padding: 12px; background: var(--surface-2); border-radius: 8px; font-size: 14px; line-height: 22px; }
-.ddom .d5-network-status .blocked { color: var(--warn); }
+.ddom .d5-network-status .blocked { color: var(--warning); }
 @media (max-width: 1024px) { .ddom .d5-network-status { grid-template-columns: 1fr; gap: 4px; } }
