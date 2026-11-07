@@ -306,15 +306,15 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             {model.rules.map((rule) => {
-              const fixedLuckyCap = rule.key === "luckyMultiplierMax";
+              const fixedValue = rule.key === "luckyMultiplierMax" ? "2×" : rule.key === "revive" ? "1 张" : null;
               return (
                 <div className="p-row" key={rule.key}>
                   <div className="k">
                     {operatorCopyText(rule.name)}
                     {rule.sub && <small>{operatorCopyText(rule.sub)}</small>}
                   </div>
-                  <span className="v">{fixedLuckyCap ? "2×" : text(rule.cur)}</span>
-                  {fixedLuckyCap ? (
+                  <span className="v">{fixedValue ?? text(rule.cur)}</span>
+                  {fixedValue != null ? (
                     <span className="bdg dim">只读</span>
                   ) : (
                     <button className={`l-btn sm${rule.hot ? " mc" : ""}`} aria-label={`调整 ${operatorCopyText(rule.name)}`} onClick={() => openRule(rule)} disabled={!canRuleWrite}>
