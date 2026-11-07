@@ -536,7 +536,7 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-head-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .rd-head-title { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; color: var(--rd-text); }
 .rd-head-summary { margin: 4px 0 0; max-width: 760px; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); }
-.rd-head-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; max-width: 100%; min-width: 0; }
+.rd-head-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; max-width: 100%; min-width: 0; margin-left: auto; }  /* 标题旁有提示、放不下折到第二行时，按钮仍贴右 */
 .rd-head-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-head-readonly { margin-left: auto; color: var(--rd-text-2); }
 .rd-head-back a { display: inline-flex; align-items: center; gap: 4px; color: inherit; text-decoration: none; }
