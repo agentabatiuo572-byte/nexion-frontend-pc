@@ -36,6 +36,7 @@
  *
  * - 可点的行传 onOpen：Tab 能到，Enter、Space 打开，行内按钮、链接、输入不触发（ST-06、OP-06）。
  * - 详情开着时给当前行传 selected：抽屉浮在列表上，这一行保持高亮，抽屉关上才取消（PG-63）。
+ *   要一直标出来的行传 mark：带单号进来命中的行 "hit"，对不上要核查的行 "danger"。它不滚动、不表示已打开，选中时选中色优先。
  *   上一条下一条切到视口外的行时自动滚过去。默认列按列表占满宽度定，不给抽屉留宽度。
  * - 对齐按 ST-02：文字、状态左对齐，金额、数量、百分比 align="right"；操作列传 sticky="end"，默认右对齐，贴表格右边，窄屏也看得全。空值写「—」。
  * - 加载用 <TableLoading columns={n} />；空和失败用 <TableMessage columns={n}>…</TableMessage> 放表体，
@@ -77,7 +78,8 @@ export function Td({ align, sticky, children, ...rest }: TdHTMLAttributes<HTMLTa
   return <td {...rest} data-align={align ?? (sticky === "end" ? "right" : undefined)} data-sticky={sticky}>{children}</td>;
 }
 
-export function Tr({ selected, onOpen, children, onClick, onKeyDown, ...rest }: HTMLAttributes<HTMLTableRowElement> & { selected?: boolean; onOpen?: () => void }) {
+/** mark 是常亮的行标记，和打开详情的 selected 无关：hit 是带单号进来定位到的行，danger 是对不上要核查的行。 */
+export function Tr({ selected, mark, onOpen, children, onClick, onKeyDown, ...rest }: HTMLAttributes<HTMLTableRowElement> & { selected?: boolean; mark?: "hit" | "danger"; onOpen?: () => void }) {
   const rowRef = useRef<HTMLTableRowElement>(null);
   useEffect(() => {
     if (selected) rowRef.current?.scrollIntoView({ block: "nearest" });
@@ -91,6 +93,7 @@ export function Tr({ selected, onOpen, children, onClick, onKeyDown, ...rest }: 
       tabIndex={rest.tabIndex ?? (onOpen ? 0 : undefined)}
       aria-current={selected ? "true" : undefined}
       data-selected={selected ? "" : undefined}
+      data-mark={mark}
       data-clickable={onOpen ? "" : undefined}
       onClick={(event) => {
         onClick?.(event);

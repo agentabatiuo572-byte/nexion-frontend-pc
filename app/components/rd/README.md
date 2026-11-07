@@ -39,13 +39,13 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 看板里要处理的事 | `TodoList`、`TodoItem`，读不到用 `TodoFailed`；目标页不可达时不传 `href`，这一行照样提醒，不能点、没有箭头，`sub` 写该找谁 | `todo-list.tsx` |
 | 一块内容读取中、失败、空 | `BlockState`，折叠摘要里的失败传 `compact` 一行写完，重试是文字链；一个数字或一行读不到用 `InlineRetry`，同一个样子 | `block-state.tsx` |
 | 按天的柱图 | `Bars`，全是 0 别画，写一句话 | `bars.tsx` |
-| 表格 | `Table`、`Th`、`Tr`、`Td`、`Cell`；金额、数量、日期传 `num`，单号、哈希、地址才传 `mono` | `table.tsx` |
+| 表格 | `Table`、`Th`、`Tr`、`Td`、`Cell`；金额、数量、日期传 `num`，单号、哈希、地址才传 `mono`，只有第一行是单号时把它包进 `<span data-mono>`；6 列在 1024 放不下、第一列是长单号时给 `Table` 传 `data-tight`，格子最宽 200；要一直标出来的行给 `Tr` 传 `mark`：带单号进来命中的 `hit`（蓝底），对不上要核查的 `danger`（红底），和打开详情的 `selected` 分开 | `table.tsx` |
 | 显示更多列 | `useTableColumns`、`ColumnPicker` | `table.tsx` |
 | 表格加载、空、失败 | `TableLoading`、`TableMessage`；失败传 `role="alert"`，自动是失败红 | `table.tsx` |
 | 表格分页 | `Pager`，有数据才渲染 | `pager.tsx` |
 | 勾选后的批量操作 | `BatchBar`，勾选框用 `Checkbox`，勾选列的表头传 `Th control`；`hint` 收进已勾选数旁的提示图标 | `batch-bar.tsx`、`checkbox.tsx` |
 | 行操作放不下 | `MoreMenu` | `menu.tsx` |
-| 查询区 | `FilterBar`、`FilterField`、`Input` | `filter-bar.tsx` |
+| 查询区 | `FilterBar`、`FilterField`、`Input`；范围控件项多、和搜索框排一行放不下时，`scope` 外面包 `<div className="rd-filter-scope-row">`，独占第一行 | `filter-bar.tsx` |
 | 多行输入 | `Textarea`，放进 `Field`；字数传 `count`，写在框的右下角 | `filter-bar.tsx` |
 | 中、越、英三语正文 | `LocaleTabs`，切语言不动其他语言的内容，缺内容的页签写「缺失」 | `locale-tabs.tsx` |
 | 下拉、排序 | `Select`；放进 `Field` 自动接上 `id`、`aria-describedby`、`aria-invalid` | `select.tsx` |

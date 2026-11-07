@@ -35,7 +35,7 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const page = (
     <>
-      {tab !== "D2" && <DomainHeader {...meta} />}
+      {tab !== "D2" && tab !== "D4" && <DomainHeader {...meta} />}
 
       {tab === "D1" && <D1Recon ctx={ctx} />}
       {tab === "D2" && <D2Withdrawals ctx={ctx} />}
@@ -88,5 +88,5 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
     </>
   );
 
-  return tab === "D2" ? <RdPage className="ddom">{page}</RdPage> : <div className="dkpage ddom">{page}</div>;
+  return tab === "D2" || tab === "D4" ? <RdPage className="ddom">{page}</RdPage> : <div className="dkpage ddom">{page}</div>;
 }

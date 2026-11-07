@@ -309,6 +309,11 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-table tr[data-clickable] { cursor: pointer; }
 .rd-table tr[data-clickable]:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: -2px; }
 @media (hover: hover) and (pointer: fine) { .rd-table tbody tr[data-clickable]:hover td { background: var(--rd-hover); } }
+/* 常亮的行标记：定位命中蓝底、对不上红底，悬停和选中照常盖过去。 */
+.rd-table tbody tr[data-mark="hit"] td { background: var(--rd-progress-bg); }
+.rd-table tbody tr[data-mark="danger"] td { background: var(--rd-danger-bg); }
+.rd-table tbody tr[data-mark="hit"] td:not(:last-child) { box-shadow: 1px 0 0 var(--rd-progress-bg); }  /* 同选中行：列宽带小数时格子之间不露缝 */
+.rd-table tbody tr[data-mark="danger"] td:not(:last-child) { box-shadow: 1px 0 0 var(--rd-danger-bg); }
 .rd-table tbody tr[data-selected] td { background: var(--rd-selected); }
 .rd-table tbody tr[data-selected] td:not(:last-child) { box-shadow: 1px 0 0 var(--rd-selected); }  /* 列宽带小数时格子之间露一条缝 */
 @media (hover: hover) and (pointer: fine) { .rd-table tbody tr[data-selected]:hover td { background: var(--rd-selected); } }  /* 悬停不盖掉选中色 */
@@ -340,6 +345,7 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-cell-main { display: block; color: var(--rd-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rd-cell-sub { display: block; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rd-cell[data-mono] .rd-cell-main, .rd-cell[data-mono] .rd-cell-sub { font-family: var(--rd-font-mono); }
+.rd-cell-main [data-mono] { font-family: var(--rd-font-mono); }  /* 第一行是单号、第二行是人名时只给单号等宽 */
 .rd-cell[data-num] .rd-cell-main, .rd-cell[data-num] .rd-cell-sub { font-variant-numeric: tabular-nums; }
 .rd-skeleton { display: block; height: 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); animation: rd-pulse 1.4s ease-in-out infinite; }
 @keyframes rd-pulse { 50% { opacity: .5; } }
@@ -359,8 +365,10 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-filter-more { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; padding: 16px; border-radius: var(--rd-radius-panel); background: var(--rd-panel); }
 .rd-filter-more[hidden] { display: none; }
 .rd-filter-more-row { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.rd-filter-scope-row { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }  /* 范围控件项多（八类账单）时独占第一行，搜索和按钮排第二行，不让按钮单个掉下去 */
 .rd-filter-line { order: 1; flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .rd-filter-line .rd-input { width: 160px; }
+.rd-filter-line .rd-input[type="datetime-local"] { width: 200px; }  /* 日期加时分，160 放不下 */
 .rd-filter-end { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .rd-filter-sort { margin-left: auto; }  /* 没有搜索框占满这一行时，排序靠右，这一行才铺得开 */
 .rd-filter-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -605,7 +613,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-split > * + * { flex: 5 1 480px; }
 .rd-split[data-even] > * { flex: 1 1 480px; }
 .rd-split[data-detail] { align-items: flex-start; }
-.rd-split .rd-table[data-tight] .rd-cell { max-width: 200px; }
+.rd-table[data-tight] .rd-cell { max-width: 200px; }  /* 窄屏也要放下 6 列：长单号这类第一列收窄，悬停和详情看全文 */
 .rd-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .rd-toolbar-note { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-toolbar[data-end] > .rd-explain { margin-right: auto; }  /* 整页表单的操作行：状态在左，按钮在右，和抽屉底部同一条线 */
