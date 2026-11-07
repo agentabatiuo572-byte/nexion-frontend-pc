@@ -82,7 +82,7 @@ const REASON_TEXT: Record<string, string> = {
   NO_GENESIS_PURCHASES: "这个范围没有创世节点购买记录，还没售罄，售罄天数暂无法计算。",
   GENESIS_NOT_SOLD_OUT: "创世节点还没累计售出 1,000，售罄天数暂无法计算。",
 };
-const SMALL_SAMPLE_NOTE = "每项统计样本至少 5 人才显示。首笔收益、商城到访按完成人数，创世节点按购买人数，其余按分母人数。少于 5 人不下结论；扩大范围仍不足时，等样本积累后再看。受保护的当前人数不显示。";
+const SMALL_SAMPLE_NOTE = "每项统计样本至少 5 人才显示。首笔收益到账、注册后浏览商城按分子人数算（收到首笔收益的人、看过商城的人），创世节点售罄速度按购买人数，其余按分母人数。少于 5 人不下结论；扩大范围仍不足时，等样本积累后再看。受保护的当前人数不显示。";
 /** 「V1 实时」是 PRD 的上线批次（§1.6 后台可见性），不是刷新方式。 */
 const batchText = (vis = "") => vis.replace(/^V(\d+).*$/, "第 $1 批");
 const WINDOW_NAME: Record<Exclude<L1Window, "custom">, string> = { "1d": "近 24 小时", "7d": "近 7 天", "30d": "近 30 天" };
@@ -732,7 +732,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
         {red > 0
           ? <Conclusion state="danger" lead hint="点一行看原因。" explain="未达标的排在下面最前面。">关键指标：<b>{red}</b> 项未达标</Conclusion>
           : unavailable === KPIS.length
-            ? <Conclusion state="unknown" hint="每项统计样本至少 5 人；扩大范围仍不足时，等样本积累。缺数据的项点开看原因。">关键指标：暂时无法判断</Conclusion>
+            ? <Conclusion state="unknown" hint={`选更长的时间范围再看；仍不足 5 人时等样本积累。${count("na") > 0 ? "缺数据的项点开看原因。" : ""}`} explain={SMALL_SAMPLE_NOTE}>关键指标：暂时无法判断</Conclusion>
             : green === KPIS.length
               ? <Conclusion state="ok" hint="这页无需处理。">关键指标：全部达标</Conclusion>
               : <Conclusion state="neutral" explain={unavailable > 0 ? "有的项人数太少或缺数据，不算达标。" : "接近目标的排在下面最前面。"}>关键指标：没有未达标的项</Conclusion>}
@@ -832,10 +832,10 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                     </Panel>
                   : <p className="rd-note">{k.sparkSuppressed?.includes(true) ? "样本过小，趋势时段留空。" : k.spark.length >= 2 && k.spark.every((point) => point === 0) ? "这段时间每段都是 0，没有走势可画。" : "这个范围的数据不够，画不出走势。"}</p>}
               {kState !== "small" && hasTrend(k.spark) && k.sparkSuppressed?.includes(true) && <p className="rd-note">部分时段样本过小，曲线在这些时段留空。</p>}
-              <Fold inset title="这项指标怎么算" summary={`指标 ${k.n} 的算法与目标`} explain={<AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss>}>
+              <Fold inset title="这项指标怎么算" summary={`指标 ${k.n} 的公式和开放批次`} explain={<AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss>}>
                 <div className="rd-stack">
                   <div>{renderFx(ext.fx, ext.fxBold)}</div>
-                  <p className="rd-note">功能开放批次：{batchText(k.vis)}</p>
+                  <p className="rd-note">开放批次：{batchText(k.vis)}</p>
                 </div>
               </Fold>
             </div>
@@ -913,7 +913,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
           </>}>
           <div className="rd-stack">
             <Table label="关键指标的计算方式">
-              <thead><tr><Th>#</Th><Th>指标</Th><Th>计算方式</Th><Th align="right">目标</Th><Th>上线批次</Th></tr></thead>
+              <thead><tr><Th>#</Th><Th>指标</Th><Th>计算方式</Th><Th align="right">目标</Th><Th>开放批次</Th></tr></thead>
               <tbody>
                 {KPIS.map((item) => (
                   <Tr key={item.n}>
