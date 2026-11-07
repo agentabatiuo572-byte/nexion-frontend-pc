@@ -605,10 +605,11 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       action: `调整提现参数 · ${label}`,
       title: editTitle(GROUP_TITLE[group]),
       detail: <>版本 v{p.version}。提交时带上这个版本，别人先改了这次不会生效。</>,
-      facts: <DiffList rows={evaluation.rows} restTitle="没改的项" />,
-      content: !loosens && pendingApproval.length > 0
-        ? <Notice tone="warn">现在有放宽等批准。收紧后版本变了，那张审批单要重新发起。</Notice>
-        : undefined,
+      // 等批准的提醒跟在前后值后面，同一块里看（有放宽在等时才有）。
+      facts: <>
+        <DiffList rows={evaluation.rows} restTitle="没改的项" />
+        {!loosens && pendingApproval.length > 0 && <Notice tone="warn">现在有放宽等批准。收紧后版本变了，那张审批单要重新发起。</Notice>}
+      </>,
       amplifies: loosens,
       coverage: p.coverageReliable ? { coverageRatio: p.coverageRatio, redlinePct: p.redlinePct } : undefined,
       coverageLead: "放宽让用户更容易提现，平台付出去的钱可能变多",
@@ -866,7 +867,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const conclusion = tightenPending.length || loosenRecord
     ? <Conclusion state="warn" lead>有修改的结果没确认，先到上方核对</Conclusion>
     : coverageBlock
-      ? <Conclusion state="danger" lead hint={poolHint} explain={coverageExplain}>{coverageBlock}。收紧不受影响</Conclusion>
+      ? <Conclusion state="danger" lead hint={<>收紧不受影响。{poolHint}</>} explain={coverageExplain}>{coverageBlock}</Conclusion>
       : pendingApproval.length
         ? <Conclusion state="warn" hint={<>{pendingApproval.map(approvalLine).join("；")}。{reach(auditHref, "platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=D&object=current" prefetch={false}>到操作记录查看</Link>}</>} explain={APPROVAL_NOTE}>
           有 {pendingApproval.length} 项放宽等批准，批准前当前值不变
