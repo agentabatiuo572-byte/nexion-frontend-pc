@@ -14,13 +14,14 @@ export function b0Blocks(authorities: readonly string[]) {
     approvals: has("platform_a2_read"),
     support: has("service_m1_read") || has("service_m3_read"),
     sales: has("bi_l3_read"),
+    moneyFlows: has("bi_l3_read"),
     newUsers: has("user_c1_read"),
+    activeUsers: has("user_c1_read"),
     netFlow: has("overview_b2_read"),
     devices: DEVICE_READS.some(has),
     topup: has("finance_d1_read"),
     redemption: has("bi_l3_read"),
     funnel: has("overview_b3_read"),
-    totalUsers: has("user_c1_read"),
     kpi: has("bi_l1_read"),
   };
 }

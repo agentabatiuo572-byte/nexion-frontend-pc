@@ -75,31 +75,22 @@
 .cc-meta a { color: var(--rd-text-2); }
 .cc-meta-item { display: inline-flex; align-items: center; gap: 4px; }
 
-/* 「今天」面板：结论句是头，下面左边待处理、右边今日经营，一屏只有一个焦点（06 审查 4、12）。 */
+/* 「今天」面板：结论句是头，下面是待处理和资金安全，一屏只有一个焦点（06 审查 4、12）。经营数据是面板下面单独一组。 */
 .cc-brief { padding: 0; }
 .cc-brief > .rd-conclusion { border-radius: var(--rd-radius-panel) var(--rd-radius-panel) 0 0; }
 .cc-brief > .rd-conclusion:last-child { border-radius: var(--rd-radius-panel); }
 .cc-brief > .rd-conclusion:not([data-alarm]) { background: none; }
-.cc-brief-body { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 20px 32px; padding: 16px var(--rd-panel-pad-x) var(--rd-panel-pad-y); border-top: 1px solid var(--rd-line); }
-.cc-brief-body[data-solo] { grid-template-columns: minmax(0, 1fr); }
-@media (max-width: 1100px) { .cc-brief-body { grid-template-columns: minmax(0, 1fr); } }
-.cc-side { container-type: inline-size; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.cc-side .cc-today { flex: 1; }
+.cc-brief-body { padding: 12px var(--rd-panel-pad-x) var(--rd-panel-pad-y); border-top: 1px solid var(--rd-line); }
+.cc-pending .rd-panel-head { margin-bottom: 8px; }
+.cc-pending .rd-todo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; }
+.cc-pending .rd-todo-item + .rd-todo-item { margin-top: 0; }
+.cc-pending .rd-todo-item:only-child { grid-column: 1 / -1; }
 .cc-pending-rest { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .cc-pending-rest a { color: var(--rd-text-2); }
 
-/* 四格：放得下一行四个，窄于 900 两两一行，不让第四格孤零零掉下去（VS-65）。销售额放大时独占一行，下面三格一行。 */
-.cc-today-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 24px; }
-.cc-today-grid:has(.rd-stat[data-lead]) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.cc-today-grid .rd-stat[data-lead] { grid-column: 1 / -1; margin-right: 0; }
-.cc-today-grid .rd-stat[data-lead] .rd-stat-value { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); }
-@container (min-width: 900px) {
-  .cc-today-grid, .cc-today-grid:has(.rd-stat[data-lead]) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .cc-today-grid .rd-stat[data-lead] { grid-column: auto; }
-}
-
 .cc-fundline { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); color: var(--rd-text); }
 .cc-fundline svg:first-child { flex: none; color: var(--tone, var(--rd-text-3)); }
+.cc-pending .cc-fundline { width: auto; min-height: 0; padding: 0; background: none; }
 .cc-fundline-toggle { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; padding: 4px 8px; border: 0; border-radius: var(--rd-radius-control); background: none; color: var(--rd-text-2); font: inherit; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); cursor: pointer; }
 .cc-fundline-toggle:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
 @media (hover: hover) and (pointer: fine) { .cc-fundline-toggle:hover { background: var(--rd-hover); } }

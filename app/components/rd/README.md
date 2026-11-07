@@ -30,6 +30,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 这页怎么用 | `PageGuide`，`PageHeader` 自动带 | `page-guide.tsx` |
 | 看板第一句话 | `Conclusion`；正常态不放大，`lead` 只在异常或带关键数字时放大；`hint` 只写建议和该做什么，怎么算传 `explain` 进句尾的提示图标 | `conclusion.tsx` |
 | 一排关键数字，最多 4 个 | `StatBand`、`Stat`；整张可点传 `href` 或 `onOpen`；值是 0 或「—」时自动弱化（字色弱、图标底灰、`lead` 不放大）；口径传 `explain` 进名称旁的提示图标，`sub` 只放数据。窄于 900 时四个才两两一行，三个留在一行 | `stat.tsx` |
+| 一组经营数字：每个都带对比和分项，要切时段 | `MetricBoard`、`MetricCard`；一张卡四层：名称、主数、对比一行、最多三行分项，层高都是定的，同排同高，切时段不跳版。0、读不到（`state="failed"`，传 `onRetry`）、读取中（`state="loading"`）分开，没权限不渲染。3、6 张三列，4 张够宽四列，不够两两一行，2 张两列。主数 13 个字符以上且卡窄于 320 时整组小一档。目前只有今日概览用（PG-41），其他页用 `StatBand` | `metric.tsx` |
 | 一块内容 | `Panel`；已经在一个面板里的分区传 `plain`，不套底；`sub` 只放数据（范围、单位、数量、时间），解释传 `explain` 进标题旁的提示图标 | `panel.tsx` |
 | 区块标题、统计数字前的图标 | `IconTile`，`Panel`、`Stat` 传 `icon` 就有 | `icon-tile.tsx` |
 | 切不同内容 | `PageTabs`；`useTabIds` 一处给 id，内容包 `role="tabpanel"`，页签和面板互相指向 | `tabs.tsx` |
