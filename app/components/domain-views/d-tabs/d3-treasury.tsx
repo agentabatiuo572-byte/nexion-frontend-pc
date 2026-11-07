@@ -32,7 +32,6 @@ import {
   type D3MaturityForecast,
   type D3NetExposure,
 } from "@/lib/admin/d-client";
-import { TREASURY_EXPORT_BLOCKED } from "@/lib/admin/treasury-valuation";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
@@ -180,7 +179,6 @@ export function D3Treasury() {
   const tab = visibleTabs.find((item) => item.value === requestedTab)?.value ?? visibleTabs[0]?.value ?? null;
 
   const [main, setMain] = useState<D3Main | null>(null);
-  const valuationExportBlocked = main?.liabilities.totalUsdt === null ? TREASURY_EXPORT_BLOCKED : undefined;
   const [draft, setDraft] = useState<ForecastValues | null>(null);
   const [loading, setLoading] = useState(canReadMain);
   const [mainError, setMainError] = useState("");
@@ -541,7 +539,6 @@ export function D3Treasury() {
 
   const submitExport = async (kind: ExportKind, reason: string, operator = OPERATOR()) => {
     if (!main || loading) throw new Error("资金数据没读到或正在刷新，读完再导出。");
-    if (valuationExportBlocked) throw new Error(valuationExportBlocked);
     const scope = exportScope(kind);
     const retained = Boolean(pendingKeys.get(scope));
     const key = treasuryCommandKey(scope, { exportKind: kind, reason, operator });
@@ -627,7 +624,7 @@ export function D3Treasury() {
   });
 
   const dataBlocked = !main ? "资金数据没读到，刷新后再试" : loading ? "正在刷新，稍等" : undefined;
-  const exportBlocked = (kind: ExportKind) => (unknownCommands.exports.some((record) => record.exportKind === kind) ? "上次导出结果未知，先在页面上方核对" : valuationExportBlocked ?? dataBlocked);
+  const exportBlocked = (kind: ExportKind) => (unknownCommands.exports.some((record) => record.exportKind === kind) ? "上次导出结果未知，先在页面上方核对" : dataBlocked);
   const mainFailed = canReadMain && !main && !loading;
   // 读取失败只在页签上方写一条，带重新加载（VS-107）。
   const mainState = loading && !main ? <BlockState state="loading" title="正在读取资金数据…" /> : null;
@@ -732,7 +729,7 @@ export function D3Treasury() {
   return (
     <RdPage>
       {header}
-      {valuationExportBlocked && <Notice tone="warn">{valuationExportBlocked}</Notice>}
+      {main?.liabilities.totalUsdt === null && <Notice tone="warn">缺价时仍可导出 CSV；无法估值的金额及占比留空，并标注估值状态，不能作为完整总额使用。</Notice>}
       {fundAlarm && fundConclusion}
       {mainFailed && (
         <Notice tone="warn" title="资金状态：暂时无法判断" action={<Button size="sm" onClick={reloadAll}>重新加载</Button>}>
@@ -747,7 +744,7 @@ export function D3Treasury() {
           action={(
             <>
               <Button size="sm" onClick={refresh}>刷新核对</Button>
-              <Button size="sm" disabledReason={item.expiresAt <= Date.now() ? RETRY_EXPIRED : item.allowed ? (unknownCommands.exports.some((record) => record.commandKey === item.commandKey) ? valuationExportBlocked ?? dataBlocked : undefined) : RETRY_NO_PERMISSION} onClick={() => setRetry(item)}>按原操作重试</Button>
+              <Button size="sm" disabledReason={item.expiresAt <= Date.now() ? RETRY_EXPIRED : item.allowed ? (unknownCommands.exports.some((record) => record.commandKey === item.commandKey) ? dataBlocked : undefined) : RETRY_NO_PERMISSION} onClick={() => setRetry(item)}>按原操作重试</Button>
               {retryRejected.includes(item.commandKey) && <Button size="sm" onClick={() => setReleasing(item)}>解除待确认</Button>}
             </>
           )}
