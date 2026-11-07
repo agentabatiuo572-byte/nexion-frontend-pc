@@ -329,7 +329,7 @@ function userStatusLabel(value?: string) {
 function freezePeriodLabel(value?: string) {
   const rhythm = /^H1:M([1-9]\d*):(P[1-6])$/.exec(value ?? "");
   if (rhythm) return `下单时的运营阶段设置：第 ${rhythm[1]} 月 · ${rhythm[2]}（以复查时间为准）`;
-  return ({ "7D": "7 天", "14D": "14 天", "30D": "30 天", "45D": "45 天", LONG_TERM: "长期（需复查）", SEVEN_DAYS: "7 天", K3_DELAY_ONCE: "到期复核后再延迟一次（以复查时间为准）" } as Record<string, string>)[value?.toUpperCase() ?? ""] ?? (value ? "未知" : "—");
+  return ({ "7D": "7 天", "14D": "14 天", "30D": "30 天", "45D": "45 天", LONG_TERM: "自定复查（到期回待审核）", SEVEN_DAYS: "7 天", K3_DELAY_ONCE: "到期复核后再延迟一次（以复查时间为准）" } as Record<string, string>)[value?.toUpperCase() ?? ""] ?? (value ? "未知" : "—");
 }
 
 /** 待审核是「要处理」列表的默认状态，灰字加时钟；颜色留给冻结、失败、异常这些例外（VS-21）。 */
@@ -527,7 +527,7 @@ function reviewEffect(action: D2ReviewAction) {
 /** 复查时间怎么定，收进字段名旁的提示图标（DP-06）。 */
 const REVIEW_TIME_EXPLAIN: Partial<Record<D2ReviewAction, string>> = {
   DELAY: "复查时间跟着等待天数走。手动改过就保留，和等待天数最多差一天。",
-  FREEZE: "复查时间跟着冻结期限走。手动改过就保留，和期限最多差一天。长期冻结要在未来 1–365 天内复查，默认 7 天后。",
+  FREEZE: "复查时间跟着冻结期限走。手动改过就保留，和期限最多差一天。自定复查时间须在未来 1–365 天内，默认 7 天后。",
 };
 
 /** 谁能处理：按角色权限种子和后端的角色校验写（B9）。 */
@@ -552,7 +552,7 @@ function reviewTimeIssue(action: D2ReviewAction, value: BusinessFormValue) {
   if (!Number.isFinite(reviewAt) || reviewAt <= Date.now()) return "复查时间须在未来，请调整。";
   const date = new Intl.DateTimeFormat("en-CA", { timeZone: businessZone().zoneId, year: "numeric", month: "2-digit", day: "2-digit" });
   const days = (Date.parse(date.format(reviewAt)) - Date.parse(date.format(Date.now()))) / 86_400_000;
-  if (value.period === "LONG_TERM") return days >= 1 && days <= 365 ? undefined : "长期冻结要在未来 1–365 天内复查，请调整复查时间。";
+  if (value.period === "LONG_TERM") return days >= 1 && days <= 365 ? undefined : "自定复查时间须在未来 1–365 天内，请调整复查时间。";
   const expectedDays = action === "DELAY" ? holdDays : Number.parseInt(value.period, 10);
   return Math.abs(days - expectedDays) > 1 ? "复查时间和所选期限相差超过一天，请调整。" : undefined;
 }
@@ -582,7 +582,7 @@ function actionBusinessForm(action: D2ReviewAction, addressVerificationRequired 
       fields: [
         ...(action === "DELAY"
           ? [{ key: "holdDays", label: "等待天数", inputKind: "number" as const, required: true, wide: true, current: "7", pattern: HOLD_DAYS.source, patternMessage: HOLD_DAYS_ISSUE, help: "1–45 天" }]
-          : [{ key: "period", label: "冻结期限", inputKind: "select" as const, required: true, wide: true, options: ["7d", "14d", "30d", "45d", "LONG_TERM"], optionLabels: { "7d": "7 天", "14d": "14 天", "30d": "30 天", "45d": "45 天", LONG_TERM: "长期，需复查" } }]),
+          : [{ key: "period", label: "冻结期限", inputKind: "select" as const, required: true, wide: true, options: ["7d", "14d", "30d", "45d", "LONG_TERM"], optionLabels: { "7d": "7 天", "14d": "14 天", "30d": "30 天", "45d": "45 天", LONG_TERM: "自定复查（到期回待审核）" } }]),
         { key: "owner", label: "责任人", required: true, current: OPERATOR() },
         { key: "reviewAt", label: "复查时间", inputKind: "datetime-local", required: true, current: reviewAtAfter(7), help: "北京时间 UTC+8", explain: REVIEW_TIME_EXPLAIN[action] },
       ],
@@ -994,6 +994,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const reach = useReach();
   // Q-16：没有 D5 读权时列表照常，额度写无权限，用到额度的决定禁用。读取失败不算这种情况，仍然全部暂停。
   const canReadD5 = hasAuthority("finance_d5_read");
+  const canReadUserDetail = reach("/users/search", "user_c1hub_read");
   // 达到大额门槛的放行，后端只认财务主管和超管（isD2RoleAllowed），其他账号提交必被拒，入口直接禁用。
   const canApproveLarge = ["FINANCE_LEAD", "superadmin"].includes(session?.role ?? "");
   // 冻结、解冻和手动退款另有角色门槛，动作权限仍按原权限码判断。
@@ -1240,7 +1241,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       statedBrief: brief,
       effect: reviewEffect(action),
       confirmLabel: `确认${label}`,
-      confirmTone: action === "REJECT" || action === "REFUND" ? "danger" : undefined,
+      confirmTone: action === "APPROVE" || action === "REJECT" || action === "REFUND" ? "danger" : undefined,
       run: async (reason, _newValue, businessValue) => {
         try {
           await runReview(row.withdrawalNo, action, reason, businessValue, row.status.toUpperCase());
@@ -1473,7 +1474,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       statedBrief: { impact: batchImpact, check: REVIEW_BRIEF[action].check },
       effect: reviewEffect(action),
       confirmLabel: `确认批量${actionLabel(action)}`,
-      confirmTone: action === "REJECT" ? "danger" : undefined,
+      confirmTone: action === "APPROVE" || action === "REJECT" ? "danger" : undefined,
       run: async (reason, _newValue, businessValue) => {
         try {
           await runBatch(action, ids, reason, businessValue);
@@ -1821,7 +1822,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
                     return <Tr key={row.withdrawalNo} selected={row.withdrawalNo === detail?.withdrawalNo} onOpen={() => { if (!submitting) void openDetail(row); }}>
                       {showSelection && <Td><Checkbox aria-label={`${selectionHint}：${row.withdrawalNo}`} title={`${selectionNote}${selectionHint}`} disabled={!selectable && !selectedNow} checked={selectedNow} onChange={(event) => setSelected((current) => { const next = new Set(current); event.target.checked ? next.add(row.withdrawalNo) : next.delete(row.withdrawalNo); return next; })} /></Td>}
                       <Td sticky="start"><Cell mono full main={<button type="button" className="rd-cell-link" title={row.withdrawalNo} aria-label={`打开提现单 ${row.withdrawalNo} 的详情`} onClick={() => { if (!submitting) void openDetail(row); }}>{shortNo(row.withdrawalNo)}</button>} sub={listTime(row.createdAt)} /></Td>
-                      {columns.isVisible("user") && <Td><Cell main={operatorNicknameText(row.nickname)} sub={row.userNo} /></Td>}
+                      {columns.isVisible("user") && <Td><Cell main={operatorNicknameText(row.nickname)} sub={canReadUserDetail ? <Link className="rd-link" href={`/users/search/${encodeURIComponent(row.userNo)}`}>{row.userNo}</Link> : row.userNo} /></Td>}
                       {columns.isVisible("asset") && <Td><Cell main={<span title={`${row.asset} / ${row.chain}`} aria-label={`资产与渠道：${row.asset} / ${row.chain}`}>{row.chain === "BANK-VND" ? "越南银行卡 · HDPay" : chainText(row)}</span>} sub={<span title={row.targetAddress}>{row.chain === "BANK-VND" ? "账户信息见详情" : shortAddress(row.targetAddress)}</span>} /></Td>}
                       {columns.isVisible("amount") && <Td align="right"><Cell num main={amountText(row.amount)} sub={`${row.chain === "BANK-VND" ? "兑换" : "到账"} ${amountText(row.netReceive)}`} /></Td>}
                       {columns.isVisible("fee") && <Td align="right"><Cell num main={amountText(row.actualFee)} sub={<button type="button" className="rd-link" onClick={() => void openDetail(row)}>详情中查看完整费用</button>} /></Td>}
@@ -1925,7 +1926,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         </Fold>
         <Fold inset title="收款与用户信息" summary={`账户${userStatusLabel(shown.userStatus)}，24h 第 ${shown.withdrawalCount24h} 笔`} icon={User} tone="users">
           <Facts>
-            <Fact k="用户编号">{shown.userNo}</Fact>
+            <Fact k="用户编号">{canReadUserDetail ? <Link className="rd-link" href={`/users/search/${encodeURIComponent(shown.userNo)}`}>{shown.userNo}</Link> : shown.userNo}</Fact>
             <Fact k="昵称">{operatorNicknameText(shown.nickname)}</Fact>
             <Fact k="用户等级">{shown.userLevel || "—"}</Fact>
             <Fact k="手机号">{shown.phoneMasked || "未展示手机号"}</Fact>
