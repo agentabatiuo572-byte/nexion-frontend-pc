@@ -106,7 +106,7 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce, onHead }:
             : <Conclusion state="warn">隐私政策：有草稿 {versionName(doc.version)}，暂无公开版</Conclusion>;
 
   return <div data-testid="published-content-privacyPolicy" className="rd-tab-stack">
-    {!doc || error ? <BlockState state="error" title="公开内容状态尚未确认，请刷新重试。" detail={error ?? undefined} onRetry={() => void refresh()} retryLabel="刷新" /> : <>
+    {!doc || error ? <BlockState state="error" title="公开内容状态尚未确认" detail={error ?? undefined} onRetry={() => void refresh()} /> : <>
       {conclusion}
       <Panel title="各语言内容" icon={Languages} tone="role-2" flush actions={canWrite ? <Button variant="primary" size="sm" disabledReason={writeBlocked} onClick={() => { setViewing(null); setEditing(true); }}>编辑隐私政策</Button> : undefined}>
         <Table label="各语言内容">
@@ -247,7 +247,7 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
             <MoreMenu label="内容语言的更多操作" items={[{ key: "remove", label: "删除当前语言", danger: true, disabledReason: localeKeys.length <= 1 ? "至少保留一种语言。" : undefined, onSelect: () => setRemoving(true) }]} />
           </span>
         </div>}
-        {(addingLocale || !localeKeys.length) && <Field label="新增语言" error={localeError}>{(control) => <div className="rd-inline-form"><Input {...control} placeholder="例如 vi、zh-cn" maxLength={11} value={newLocale} onChange={(event) => setNewLocale(event.target.value)} /><Button size="sm" onClick={addLocale}>新增语言</Button></div>}</Field>}
+        {(addingLocale || !localeKeys.length) && <Field label="新增语言" error={localeError}>{(control) => <div className="rd-inline-form"><Input {...control} placeholder="例如 vi、zh-cn" maxLength={11} value={newLocale} onChange={(event) => setNewLocale(event.target.value)} /><Button size="sm" onClick={addLocale}>添加</Button></div>}</Field>}
         {localeKeys.length > 0 && <>
           <Field label="开头说明" required>{(control) => <Textarea {...control} rows={3} maxLength={500} value={current.hero} onChange={(event) => setContent({ ...current, hero: event.target.value })} />}</Field>
           <h3 className="rd-form-group-title">规则段落 · {current.sections.length} 段</h3>

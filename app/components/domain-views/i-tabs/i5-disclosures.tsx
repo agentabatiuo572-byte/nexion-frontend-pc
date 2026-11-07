@@ -364,7 +364,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   const deleteJurisdiction = (item: DisclosureJurisdictionOption) => openActionConfirm({ briefKind: "config", ...approvalProps,
     action: <>删除未使用适用地区 · {item.code}</>,
     title: "删除未使用的适用地区",
-    detail: <>只有已归档、且没有任何披露版本用到的地区可以删除；删除后这个地区代码不能再次使用。</>,
+    detail: <>只有已归档、且没有任何披露版本用到的地区可以删除。</>,
     confirmTone: "danger",
     effect: irreversibleApproval,
     confirmLabel: "提交删除审批",
@@ -444,7 +444,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   const archiveMatrix = (j: DisclosureJurisdictionView) => openActionConfirm({ briefKind: "record", ...approvalProps,
     action: <>归档适用地区版本映射 · {j.code}</>,
     title: "归档版本映射",
-    detail: <>归档后不再作为生效版本，历史版本和操作记录仍保留。</>,
+    detail: <>历史版本和操作记录仍保留。</>,
     confirmTone: "danger",
     effect: irreversibleApproval,
     confirmLabel: "提交归档审批",
@@ -539,7 +539,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   const deleteDraft = (row: DisclosureVersionItemView) => openActionConfirm({ briefKind: "record",
     action: <>删除披露草稿 · {row.jurisdiction} {row.version}</>,
     title: "删除披露草稿",
-    detail: <>只删除还没发布的草稿；已发布和旧版本不能删除。</>,
+    detail: "",
     amplifies: false,
     confirmTone: "danger",
     effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag /></>,
@@ -563,7 +563,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
     openActionConfirm({ briefKind: "config", ...approvalProps,
       action: <>发布已存披露草稿 · {row.jurisdiction}</>,
       title: "发布披露草稿",
-      detail: <>发布的是已保存的草稿，批准后 7 章内容固定不能改，App 当前版本不变。之后另行提交生效版本映射，批准切换后才要求用户重新确认。</>,
+      detail: <>发布的是已保存的草稿。批准切换后才要求用户重新确认。</>,
       confirmTone: "danger",
       effect: irreversibleApproval,
       confirmLabel: "提交发布审批",
@@ -617,7 +617,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
 
   // ---------- 读取状态 ----------
   if (contentLoading && !data) return <BlockState state="loading" title="风险披露数据加载中…" />;
-  if (!data) return <BlockState state="error" title="风险披露读取失败" detail={errorText ?? "请刷新重试。"} retryLabel="重新加载" onRetry={() => void refresh()} retrying={refreshing} />;
+  if (!data) return <BlockState state="error" title="风险披露读取失败" detail={errorText ?? "暂时读不到，请稍后重试。"} onRetry={() => void refresh()} retrying={refreshing} />;
 
   /** 同一个版本全页一个词一个颜色（VS-23）：映射着的写生效中，封存但没切换的写已发布。 */
   const versionState = (row: DisclosureVersionItemView): { text: string; tone: StateTone } => {
@@ -677,7 +677,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   const switchBlocked = (code: string) => regionBlocked(code) ?? (!isActive(code) ? "地区未启用，先到适用地区目录启用" : undefined);
 
   return <>
-    {errorText && <Notice tone="warn" title="数据没有读到最新" action={<Button size="sm" loading={refreshing} onClick={() => void refresh()}>重新加载</Button>}>内容数据加载失败 · {errorText} 下面是上次读到的内容，写入口已禁用。</Notice>}
+    {errorText && <Notice tone="warn" title="数据没有读到最新" action={<Button size="sm" loading={refreshing} onClick={() => void refresh()}>重试</Button>}>内容数据加载失败 · {errorText} 下面是上次读到的内容，写入口已禁用。</Notice>}
     {conclusion}
     <StatBand label="风险披露关键数字">
       <Stat tone="role-3" icon={Users} label="当前版本待确认用户" value={count(stats.staleAckUsers)} unit="人" explain={`切换生效版本或改适用国家后，还没重新确认的用户。${gates.find((gate) => gate.key === "withdraw")?.active ? "提现受限内 · 未确认时拦截" : "提现已移出受限动作范围"}。`} />

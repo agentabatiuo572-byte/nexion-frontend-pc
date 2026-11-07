@@ -114,7 +114,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
   const history = rows.filter((row) => row.status !== "PUBLISHED" && row.status !== "DRAFT");
   const shown = viewing === null ? null : rows.find((row) => row.id === viewing) ?? null;
   const scopeText = `${localeName(locale)} · ${jurisdiction}`;
-  const writeBlocked = !scopeReady ? "适用法律地区还没读取，先完成地区" : busy ? "正在读取最新数据，读完再操作" : error ? "当前范围的条款尚未确认，请刷新重试。" : writes.isLocked(target) ? WRITE_LOCKED : undefined;
+  const writeBlocked = !scopeReady ? "适用法律地区还没读取，先完成地区" : busy ? "正在读取最新数据，读完再操作" : error ? "当前范围的条款尚未确认，请先点「重试」。" : writes.isLocked(target) ? WRITE_LOCKED : undefined;
 
   /** 节数比现行版本少的草稿不发布：会用少的几节换掉线上全部条款。 */
   const sectionsBlocked = (row: LegalTermsVersion) => published && row.sections.length < published.sections.length
@@ -187,7 +187,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认发布，立即生效",
       statedBrief: { impact: `这个版本立即替换 ${scopeText} 的公开条款，旧发布版转为历史版本。发布后不能再改。`, check: "核对版本、节数和生效时间，理由写清发布依据。" },
-      facts: <Facts><Fact k="范围">{scopeText}</Fact><Fact k="版本"><Change from={published ? `${published.version}（${published.sections.length} 节）` : "无已发布版本"} to={`${row.version}（${row.sections.length} 节）`} /></Fact><Fact k="条款上写的生效时间">{timeText(row.effectiveAt)}（{businessZone().label}）</Fact></Facts>,
+      facts: <Facts><Fact k="范围">{scopeText}</Fact><Fact k="版本"><Change from={published ? `${published.version}（${published.sections.length} 节）` : "无已发布版本"} to={`${row.version}（${row.sections.length} 节）`} /></Fact><Fact k="条文生效时间">{timeText(row.effectiveAt)}（{businessZone().label}）</Fact></Facts>,
       reasonPlaceholder: "例如：法务审定稿，工单号",
       run: async (reason) => {
         const result = await writes.send({ target, label: `发布法律条款 · ${scopeText} ${row.version}`, op: { kind: "legal-transition", action: "publish", row, reason } });
@@ -243,7 +243,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
     {scopeError && <Notice tone="warn" title="请先完成适用法律地区，再加载条款。">{scopeError}</Notice>}
     {scopePending && <BlockState state="empty" compact title={`回车或离开输入框后读取 ${typedScope} 的条款`} />}
     {conclusion}
-    {scopeReady && error && !busy && <BlockState state="error" title="当前范围的条款尚未确认，请刷新重试。" detail={error} onRetry={() => void refresh()} retryLabel="刷新" />}
+    {scopeReady && error && !busy && <BlockState state="error" title="当前范围的条款尚未确认" detail={error} onRetry={() => void refresh()} />}
 
     {scopeReady && !error && !busy && <>
       <Panel title="当前生效版本" icon={Scale} tone="role-2" actions={published ? <>
