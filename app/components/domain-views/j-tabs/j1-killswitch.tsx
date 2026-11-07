@@ -10,7 +10,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowLeftRight, CalendarClock, Coins, Gem, Landmark, Layers, ListChecks, Power, RefreshCw, ScrollText, ShieldAlert, ShieldCheck, SlidersHorizontal, Siren, Ticket, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, Ban, CalendarClock, Coins, Gem, Landmark, Layers, ListChecks, Power, RefreshCw, ScrollText, ShieldAlert, ShieldCheck, SlidersHorizontal, Siren, Ticket, type LucideIcon } from "lucide-react";
 import { BatchBar, BlockState, Button, Cell, Change, Checkbox, Conclusion, ConfigList, ConfigRow, ControlCard, ControlGrid, Explain, Fact, Facts, Figure, Fold, Notice, PageHeader, Panel, RecordList, ReleaseModal, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -36,7 +36,7 @@ const GATE_ICON: Record<string, LucideIcon> = { withdraw: Landmark, staking: Lay
 /** 只覆盖本页显示，等待后端同步开关说明。 */
 const GATE_COPY: Record<string, { cap: string; desc: string }> = {
   withdraw: { cap: "新提现申请、审核放行和未派发的链上打款", desc: "已提交打款方的链上单继续核对原结果，不能保证撤回。" },
-  trial: { cap: "新试用领取和试用转购", desc: "关停后停止新领取和试用转购；已有试用记录仍按服务端状态展示，用户仍可取消。" },
+  trial: { cap: "新试用领取和试用转购", desc: "关停后停止新领取和试用转购；已有试用记录仍按系统状态显示，用户仍可取消。" },
 };
 function gateCopy(gate: JGate) {
   return GATE_COPY[gate.key] ?? { cap: operatorCopyText(gate.cap), desc: operatorCopyText(gate.desc) };
@@ -418,7 +418,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         <ControlGrid label="上次读到的业务开关">
           {lastRead.current.activeGates.map((gate) => (
             <ControlCard key={gate.key} title={operatorCopyText(gate.name)} icon={GATE_ICON[gate.key] ?? Power} tone={UNAVAILABLE_GATES[gate.key] ? "neutral" : gate.enabled ? "ok" : "warn"}
-              status={UNAVAILABLE_GATES[gate.key] ? <><StatusTag tone="neutral">暂不可用</StatusTag><span className="rd-note">{UNAVAILABLE_GATES[gate.key]}</span></> : gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>} />
+              status={UNAVAILABLE_GATES[gate.key] ? <><StatusTag tone="neutral" icon={Ban}>暂不可用</StatusTag><span className="rd-note">{UNAVAILABLE_GATES[gate.key]}</span></> : gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>} />
           ))}
         </ControlGrid>
       </>}
@@ -473,7 +473,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       facts: <Facts><Fact k="业务">{name}，控制{cap}</Fact><Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{gate.key === "withdraw" && <Fact k="关停范围" tone="warn">{gateCopy(gate).desc}</Fact>}</Facts>,
       detail: "关停不会多付钱，不需要先检查备付金。",
       effect: IMMEDIATE,
-      statedBrief: { impact: gate.key === "withdraw" ? "立即停止新提现申请、审核放行和未派发的链上打款。恢复要回到这页提交审批。" : gate.key === "trial" ? "立即停止新试用领取和试用转购，已有记录仍按服务端状态展示，用户仍可取消。恢复要回到这页提交审批。" : `${name}控制的业务全站马上停止。恢复要回到这页提交审批。`, check: "核对业务和触发依据，理由写清监管通知、工单或事件编号。" },
+      statedBrief: { impact: gate.key === "withdraw" ? "立即停止新提现申请、审核放行和未派发的链上打款。恢复要回到这页提交审批。" : gate.key === "trial" ? "立即停止新试用领取和试用转购，已有记录仍按系统状态显示，用户仍可取消。恢复要回到这页提交审批。" : `${name}控制的业务全站马上停止。恢复要回到这页提交审批。`, check: "核对业务和触发依据，理由写清监管通知、工单或事件编号。" },
       confirmTone: "danger",
       confirmLabel: "确认关停，立即生效",
       reasonPlaceholder: REASON_HINT,
@@ -739,7 +739,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
             <ControlCard key={gate.key} title={name} icon={GATE_ICON[gate.key] ?? Power} tone={UNAVAILABLE_GATES[gate.key] ? "neutral" : gate.enabled ? "ok" : backfill?.overdue ? "danger" : "warn"}
               explain={gateHelp(gate)}
               status={<>
-                {UNAVAILABLE_GATES[gate.key] ? <><StatusTag tone="neutral">暂不可用</StatusTag><span className="rd-note">{UNAVAILABLE_GATES[gate.key]}</span></> : gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>}
+                {UNAVAILABLE_GATES[gate.key] ? <><StatusTag tone="neutral" icon={Ban}>暂不可用</StatusTag><span className="rd-note">{UNAVAILABLE_GATES[gate.key]}</span></> : gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>}
                 {restoreApprovals.filter((row) => row.obj === gate.key).map((row) => <span key={row.id}><StatusTag tone="progress">恢复待审批</StatusTag> <span className="rd-note">审批号 {row.id}</span></span>)}
                 {UNAVAILABLE_GATES[gate.key] && restoreApprovals.some((row) => row.obj === gate.key) && reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href={`/platform/audit?domain=J&object=${encodeURIComponent(gate.key)}`}>核对原审批</Link>}
                 {gate.emergency && <StatusTag tone="warn" icon={Siren}>应急</StatusTag>}
@@ -807,7 +807,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
             {gates.map((gate) => (
               <Tr key={gate.key}>
                 <Td><Cell full main={operatorCopyText(gate.name)} sub={UNAVAILABLE_GATES[gate.key] ?? <>{gateCopy(gate).cap} <Explain label={`${operatorCopyText(gate.name)}控制范围`} content={<AutoGloss>{gateCopy(gate).desc}</AutoGloss>} /></>} /></Td>
-                <Td><Cell main={UNAVAILABLE_GATES[gate.key] ? <StatusTag tone="neutral">暂不可用</StatusTag> : gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>} sub={gate.emergency ? "应急" : undefined} /></Td>
+                <Td><Cell main={UNAVAILABLE_GATES[gate.key] ? <StatusTag tone="neutral" icon={Ban}>暂不可用</StatusTag> : gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>} sub={gate.emergency ? "应急" : undefined} /></Td>
                 <Td>{UNAVAILABLE_GATES[gate.key] ? "—" : IMPACT_LABEL[gate.coverageImpactCategory]}</Td>
                 <Td>{UNAVAILABLE_GATES[gate.key] ? "—" : gate.coveragePrecheckRequired ? <AutoGloss>需核备付金</AutoGloss> : "不需"}</Td>
                 <Td><Cell num main={gate.lastChange.split(" · ")[0] || "—"} sub={gate.lastChange.split(" · ").slice(1).join(" · ") || undefined} /></Td>
