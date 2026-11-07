@@ -1477,8 +1477,8 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
       if (state.languageScope?.includes("en")) ["enTitle", "enBody"].forEach((field) => needs(`chapter.${index}.${field}`, `第 ${index + 1} 章 ${field}`));
     });
   } else if (spec.kind === "disclosure-jurisdiction") {
-    needs("code", "适用地区代码");
-    needs("name", "适用地区名称");
+    needs("code", "适用范围代码");
+    needs("name", "适用范围名称");
     if (spec.mode === "edit" && state.name?.trim() === spec.name) missing.push("名称没有改动");
     if (!DISCLOSURE_JURISDICTION_CODE.test((state.code ?? "").trim().toUpperCase())) missing.push(DISCLOSURE_JURISDICTION_CODE_HELP);
   } else if (spec.kind === "disclosure-publish-review") {
@@ -1487,7 +1487,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (state.jurisdictionConfirmed !== "true") missing.push("受众适用地区确认");
     if (state.bilingualConfirmed !== "true") missing.push("七章中越英内容核对");
   } else if (spec.kind === "disclosure-matrix") {
-    needs("jurisdictionCode", "适用地区");
+    needs("jurisdictionCode", "适用范围");
     needs("version", "已发布版本");
     needs("countryCodes", "适用国家/地区");
     if (spec.unchanged && state.version === spec.unchanged.version && (state.countryCodes ?? "") === [...spec.unchanged.countryCodes].sort().join(",")) missing.push("版本或适用国家没有改动");
@@ -2512,7 +2512,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
     return (
       <div className="field" data-business-form="disclosure-jurisdiction">
         <div className="grid g-2" style={{ gap: 10 }}>
-          <RdField label="适用地区代码" required={spec.mode === "create"} error={codeError}>
+          <RdField label="适用范围代码" required={spec.mode === "create"} error={codeError}>
             {(control) => <input
               {...control}
               className="fld"
@@ -2525,9 +2525,9 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
               onBlur={() => setLeftFields((current) => ({ ...current, code: true }))}
             />}
           </RdField>
-          {input("name", <>适用地区名称<span className="rd-form-required" aria-hidden="true">*</span></>, "如 越南司法辖区")}
+          {input("name", <>适用范围名称<span className="rd-form-required" aria-hidden="true">*</span></>, "如 越南司法辖区")}
         </div>
-        <div className="rd-form-help" style={{ marginTop: 8 }}>地区代码创建后不能修改。</div>
+        <div className="rd-form-help" style={{ marginTop: 8 }}>代码创建后不能修改。</div>
       </div>
     );
   }
@@ -2579,9 +2579,9 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
     };
     return (
       <div className="field" data-business-form="disclosure-matrix">
-        {!surface && <span className="bf-legend">{spec.mode === "create" ? "为地区指定披露版本" : "修改地区的披露版本"}</span>}
+        {!surface && <span className="bf-legend">{spec.mode === "create" ? "为适用范围指定披露版本" : "修改适用范围的披露版本"}</span>}
         <div className={spec.mode === "create" ? "grid g-2" : undefined} style={{ gap: 10 }}>
-          {spec.mode === "create" && select("jurisdictionCode", "适用地区", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels, undefined, (next) => {
+          {spec.mode === "create" && select("jurisdictionCode", "适用范围", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels, undefined, (next) => {
             const selected = spec.jurisdictionOptions?.find((item) => item.value === next);
             const nextVersions = spec.publishedVersionsByJurisdiction?.[next] ?? [];
             onChange({
