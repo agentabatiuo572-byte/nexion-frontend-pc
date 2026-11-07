@@ -556,7 +556,7 @@ export function D3Treasury() {
       action: "导出",
       title: EXPORT_TITLE[kind],
       detail: "",
-      facts: <Facts><Fact k="范围">{EXPORT_RANGE[kind]}</Fact>{main?.liabilities.totalUsdt === null && <Fact k="估值">{kind === "liabilities" ? "UVT 部分暂时无法估值，金额和占比留空" : "应付款和差额暂时无法估值，金额留空"}</Fact>}<Fact k="去向">浏览器直接下载</Fact></Facts>,
+      facts: <Facts><Fact k="范围">{EXPORT_RANGE[kind]}</Fact>{main?.liabilities.totalUsdt === null && <Fact k="估值">{kind === "liabilities" ? "暂时无法估值，UVT 那一类的金额和各类占比留空" : "暂时无法估值，应付款和差额两行金额留空"}</Fact>}<Fact k="去向">浏览器直接下载</Fact></Facts>,
       briefKind: "export",
       statedBrief: { impact: "这次导出记入操作记录。", check: "核对导出内容，理由写明导出依据或工单号。" },
       effect: "立即生效",
