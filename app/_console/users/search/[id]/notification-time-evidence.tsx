@@ -158,8 +158,8 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
     {data && <>
       <Notice tone={data.status === "MATCHED" ? "neutral" : "warn"}>{conclusion}</Notice>
       <JudgmentPoints title="判断要点" rows={[
-        { label: "当前记录时间（北京时间）", value: data.storedCreatedAt },
-        { label: "投递事实时间（北京时间）", value: data.deliveryFactTime ?? "尚不可确认" },
+        { label: "当前记录时间", value: `${data.storedCreatedAt}（北京时间）` },
+        { label: "投递事实时间", value: data.deliveryFactTime ?? "尚不可确认" },
       ]} />
       <Timeline label="通知投递证据" entries={data.facts.map(fact => ({
         id: fact.eventId,
@@ -173,7 +173,7 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
       detail={`仅此通知：${confirmation.storedCreatedAt} → ${confirmation.deliveryFactTime}（北京时间）。根据实际投递事实校正展示时间，不会重新发送通知或改变已读状态。`}
       facts={<Facts>
         <Fact k="通知编号">{notificationId}</Fact>
-        <Fact k="展示时间（北京时间）"><Change from={confirmation.storedCreatedAt} to={confirmation.deliveryFactTime} /></Fact>
+        <Fact k="展示时间"><Change from={confirmation.storedCreatedAt} to={confirmation.deliveryFactTime} /></Fact>
       </Facts>}
       effect={<StatusTag tone="progress" filled>立即生效</StatusTag>} confirmLabel="确认校正，立即生效"
       statedBrief={{ impact: "只改这条通知显示的时间，不重新发送，已读状态不变。", check: "核对当前记录时间和投递事实时间，理由写明依据。" }}

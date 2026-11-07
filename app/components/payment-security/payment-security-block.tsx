@@ -89,7 +89,7 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
             </div>
             {record.state === "ACTIVE" && canRelease && !pending && !record.capabilities.releaseAllowed && <p className="rd-toolbar-note">{record.capabilities.disabledReason || "现在不能解除"}</p>}
           </>}
-          {summary && !record && <p className="rd-detail-empty">当前没有支付密码异常。历史处置记录仍保留。</p>}
+          {summary && !record && <p className="rd-detail-empty">历史处置记录仍保留。</p>}
           {summary && <p className="rd-toolbar-note">查询时间 {formatBusinessTimeCompact(summary.observedAt, "暂无记录")}</p>}
           {pending && <Notice tone="warn" title="有一笔解除结果等待确认。"
             action={<Button size="sm" onClick={() => { const row = pendingPaymentRelease(owner, port.userId); if (row) setSelected({ id: row.recordId, release: false }); }}>查询原操作</Button>} />}

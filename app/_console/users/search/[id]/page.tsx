@@ -344,24 +344,20 @@ const SESSION_COLUMNS: Column[] = [
 ];
 const DEPOSIT_COLUMNS: Column[] = [
   { label: "充值单号", cell: (row) => <Cell mono full main={asText(row.depositNo)} /> },
-  { label: "渠道", cell: (row) => <Cell main={asText(row.channel)} /> },
-  { label: "金额", align: "right", cell: (row) => <Cell num main={amountText(row.amount, row.asset)} /> },
+  { label: "金额 · 渠道", align: "right", cell: (row) => <Cell num main={amountText(row.amount, row.asset)} sub={asText(row.channel)} /> },
   { label: "状态", cell: (row) => <Cell main={asText(row.statusLabel)} /> },
   { label: "确认时间", cell: (row) => <Cell num main={shortTime(row.confirmedAt)} /> },
 ];
 const WITHDRAWAL_COLUMNS: Column[] = [
   { label: "提现单号", cell: (row) => <Cell mono full main={asText(row.withdrawalNo)} /> },
   { label: "金额 · 链", align: "right", cell: (row) => <Cell num main={amountText(row.amount, row.asset)} sub={asText(row.chain)} /> },
-  { label: "状态", cell: withdrawalStatus },
-  { label: "风险分", align: "right", cell: (row) => <Cell num main={asText(row.riskScore)} /> },
+  { label: "状态 · 风险分", cell: (row) => <Cell main={withdrawalStatus(row)} sub={`风险分 ${asText(row.riskScore)}`} /> },
   { label: "创建时间", cell: (row) => <Cell num main={shortTime(row.createdAt)} /> },
 ];
 const EARNING_COLUMNS: Column[] = [
   { label: "业务单号", cell: (row) => <Cell mono full main={asText(row.bizNo)} /> },
-  { label: "类型", cell: (row) => <Cell main={formatD4Subtype(row.bizType)} /> },
-  { label: "方向", cell: (row) => DIRECTION[asText(row.direction, "").toUpperCase()] ?? "—" },
-  { label: "金额", align: "right", cell: (row) => <Cell num main={amountText(row.amount, row.asset)} /> },
-  { label: "余额", align: "right", cell: (row) => <Cell num main={amountText(row.balanceAfter, row.asset)} /> },
+  { label: "类型 · 方向", cell: (row) => <Cell main={formatD4Subtype(row.bizType)} sub={DIRECTION[asText(row.direction, "").toUpperCase()] ?? "—"} /> },
+  { label: "金额 · 余额", align: "right", cell: (row) => <Cell num main={amountText(row.amount, row.asset)} sub={amountText(row.balanceAfter, row.asset)} /> },
   { label: "时间", cell: (row) => <Cell num main={shortTime(row.createdAt)} /> },
 ];
 const MEMBER_COLUMNS: Column[] = [
@@ -380,17 +376,15 @@ const ENGAGEMENT_COLUMNS: Column[] = [
 ];
 const EXCHANGE_COLUMNS: Column[] = [
   { label: "业务单号", cell: (row) => <Cell mono full main={asText(row.bizNo)} /> },
-  { label: "类型", cell: (row) => <Cell main={formatD4Subtype(row.bizType)} /> },
-  { label: "方向", cell: (row) => DIRECTION[asText(row.direction, "").toUpperCase()] ?? "—" },
+  { label: "类型 · 方向", cell: (row) => <Cell main={formatD4Subtype(row.bizType)} sub={DIRECTION[asText(row.direction, "").toUpperCase()] ?? "—"} /> },
   { label: "金额", align: "right", cell: (row) => <Cell num main={amountText(row.amount, row.asset)} /> },
   { label: "时间", cell: (row) => <Cell num main={shortTime(row.createdAt)} /> },
 ];
 const ORDER_COLUMNS: Column[] = [
   { label: "订单号", cell: (row) => <Cell mono full main={asText(row.orderNo)} /> },
-  { label: "商品", cell: (row) => <Cell main={asText(row.skuName)} /> },
+  { label: "商品 · 机房", cell: (row) => <Cell main={asText(row.skuName)} sub={datacenterNameText(asText(row.dcLocation))} /> },
   { label: "金额", align: "right", cell: (row) => <Cell num main={amountText(row.amount)} /> },
   { label: "状态", cell: orderStatus },
-  { label: "机房", cell: (row) => <Cell main={datacenterNameText(asText(row.dcLocation))} /> },
   { label: "下单时间", cell: (row) => <Cell num main={shortTime(row.orderedAt)} /> },
 ];
 
@@ -1077,9 +1071,9 @@ export default function UserDetailPage() {
     : issues.length > 0
       ? <Conclusion state={issues.some((issue) => issue.danger) ? "danger" : "warn"} hint={issueText} explain={checkedExplain} action={firstGo ? <Button onClick={firstGo}>去看看</Button> : (riskHigh || openCases > 0) ? k4Link : undefined}>有 <b>{issues.length}</b> 件事要处理{unreadCount && `，${unreadCount}`}</Conclusion>
       : status === "UNKNOWN"
-        ? <Conclusion state="unknown" hint={unreadText || undefined}>账户状态未确认，暂时无法判断</Conclusion>
+        ? <Conclusion state="unknown" hint={unreadText || undefined} explain={checkedExplain}>账户状态未确认，暂时无法判断</Conclusion>
         : unreadable.length > 0
-          ? <Conclusion state="unknown" hint={`${unreadText}，这部分没有判断。`}>账户正常，{unreadCount}</Conclusion>
+          ? <Conclusion state="unknown" hint={`${unreadText}，这部分没有判断。`} explain={checkedExplain}>账户正常，{unreadCount}</Conclusion>
           : checking
             ? <Conclusion state="unknown">账户正常，正在核对其余项目…</Conclusion>
             // 结果未确认在下面的提示里写一次，这里不写「没发现问题」，也不再说一遍（VS-105）。
@@ -1109,16 +1103,18 @@ export default function UserDetailPage() {
       : !writable
         ? hasWrite ? "客服入口不能重试，到用户详情处理。" : "这个账号现在没有这项操作的权限，不能重试，请有权限的同事处理。"
         : "按原操作重试用同一个命令号，不会重复执行。";
+    // 能重试时这句只是解释，进问号，提示留一行（DP-06）；不能重试的原因常显。
+    const quietStep = !expired && !command.legacy && writable;
     return <Notice key={command.fingerprint} tone="warn" title={`${command.label} · 结果未确认`}
       action={<>
         <Button size="sm" disabled={!!busyReason} onClick={() => void verifyPending(command)}>读回核对</Button>
         {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason} onClick={() => void retryPending(command)}>按原操作重试</Button>}
         {writable && (command.retryRejected || command.legacy) && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除待确认</Button>}
       </>}>
-      {shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效，不要重复操作。{nextStep}
+      {shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效，不要重复操作。{!quietStep && nextStep}
       {supportScope && hasWrite && <> <Link className="rd-link" href={`/users/search/${encodeURIComponent(userNo)}`} prefetch={false}>到用户详情</Link></>}
       {auditLink}
-      <Explain label="技术信息" content={command.legacy ? `命令号 ${command.commandKey} ｜ 升级前的记录，没有存操作人和理由` : `命令号 ${command.commandKey} ｜ 操作人 ${command.operator} ｜ 理由 ${command.reason}`} />
+      <Explain label="技术信息" content={<>{quietStep && <p>{nextStep}</p>}<p>{command.legacy ? `命令号 ${command.commandKey} ｜ 升级前的记录，没有存操作人和理由` : `命令号 ${command.commandKey} ｜ 操作人 ${command.operator} ｜ 理由 ${command.reason}`}</p></>} />
       {pendingNotes[command.fingerprint] && <div>{pendingNotes[command.fingerprint]}</div>}
     </Notice>;
   });
@@ -1333,7 +1329,7 @@ export default function UserDetailPage() {
                 </Notice>
               ))}
               <RecordTable label="支付方式" rows={methods} columns={paymentColumns} empty={paymentLoading ? "正在读取支付方式…" : "该用户暂无支付方式"} {...recordProps("payment")} />
-              {!!paymentMethods?.total && <Pager label="支付方式" total={paymentMethods.total} page={paymentMethods.page} pageSize={paymentMethods.pageSize} sizes={[paymentMethods.pageSize]} loading={paymentLoading} onPage={(page) => { setRecord(null); setPaymentPage(page); }} onPageSize={() => undefined} />}
+              {!!paymentMethods && paymentMethods.total > paymentMethods.pageSize && <Pager label="支付方式" total={paymentMethods.total} page={paymentMethods.page} pageSize={paymentMethods.pageSize} sizes={[paymentMethods.pageSize]} loading={paymentLoading} onPage={(page) => { setRecord(null); setPaymentPage(page); }} onPageSize={() => undefined} />}
             </Block>}
           </Fold>
         </div>}
@@ -1380,7 +1376,7 @@ export default function UserDetailPage() {
                 ...(detail.devices ? [] : [["设定日收益合计（含已停用设备）", `${amountText(detail.earnings?.deviceDailyUsdt)} · ${amountText(detail.earnings?.deviceDailyNex, "UVT")}`] as const]),
               ]} />
               <RecordTable label="收益明细" rows={visibleEarnings} columns={EARNING_COLUMNS} {...recordProps("earning")} />
-              {earningsRecords.length > 0 && <Pager label="收益明细" total={earningsRecords.length} page={earningsPage} pageSize={earningsPageSize} sizes={[10, 20, 50]} onPage={(page) => { setRecord(null); setEarningsPage(page); }} onPageSize={(size) => { setRecord(null); setEarningsPageSize(size); setEarningsPage(1); }} />}
+              {earningsRecords.length > 10 && <Pager label="收益明细" total={earningsRecords.length} page={earningsPage} pageSize={earningsPageSize} sizes={[10, 20, 50]} onPage={(page) => { setRecord(null); setEarningsPage(page); }} onPageSize={(size) => { setRecord(null); setEarningsPageSize(size); setEarningsPage(1); }} />}
             </Block>
           </Fold>
         </div>}

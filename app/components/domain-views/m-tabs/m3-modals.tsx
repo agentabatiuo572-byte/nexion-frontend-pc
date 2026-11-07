@@ -8,6 +8,7 @@
  * 均渲染于 design-kit Modal;合规(运营可读中文 · 数字不自曝)。
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Lock } from "lucide-react";
 import { useReasonRule } from "@/lib/admin/use-reason-rule";
 import { Button, DiffList, Field as RdField, Notice, NumberInput, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
@@ -126,18 +127,13 @@ export function IdlePolicyModal({
         onChange={(event) => { setConfirm(false); setValue(event.target.value); }} onBlur={() => setNumbersLeft(true)} />}
     </RdField>;
   };
-  const changes = [
-    { key: "warn", label: "待回复提醒", before: `${policy.warnMinutes} 分钟`, after: `${warnN} 分钟` },
-    { key: "close", label: "严重超时", before: `${policy.closeMinutes} 分钟`, after: `${closeN} 分钟` },
-    ...(endAvailable ? [{ key: "end", label: "无人发言自动结束", before: `${policy.sessionEndMinutes} 分钟`, after: `${endN} 分钟` }] : []),
-  ].filter((row) => row.before !== row.after);
 
   return (
     <Modal
       className="m3-policy-modal"
       title={canSave ? "调整会话超时策略" : "会话超时策略"}
       icon="clock"
-      sub={canSave ? <StatusTag tone="progress" filled>立即生效</StatusTag> : <StatusTag tone="neutral" explain="仅获准超级管理员可修改。要调整请联系超级管理员。">只读</StatusTag>}
+      sub={canSave ? <StatusTag tone="progress" filled>立即生效</StatusTag> : <StatusTag tone="neutral" filled icon={Lock} explain="仅获准超级管理员可修改。要调整请联系超级管理员。">只读</StatusTag>}
       busy={saving}
       onClose={onClose}
       footer={<>
@@ -149,7 +145,7 @@ export function IdlePolicyModal({
           onClick={() => { if (confirm) void save(); else setConfirm(true); }}
           disabledReason={saving ? "正在保存" : pending ? "先查询原操作结果" : conflict ? "先读取最新策略" : unchanged ? "改了时长才能保存" : !orderOk ? "先把时长填对" : !reasonOk ? "先写变更理由" : undefined}
         >
-          {saving ? "保存中…" : confirm ? "确认并保存" : "保存策略"}
+          {saving ? "保存中…" : confirm ? "确认并保存" : "预览变更"}
         </Button>}
       </>}
     >
@@ -159,7 +155,11 @@ export function IdlePolicyModal({
         {numField("无人发言自动结束", endAvailable ? "后台人员最后一次发消息后，超过该时长没人再发，会话自动结束，其他人就可以发起。" : "暂不可用：自动结束时长还不能在这里设置，其他两项照常保存。", end, setEnd, 2, 120, endAvailable, endOk ? undefined : "填 2 到 120 的整数分钟")}
       </div>
       {confirm && <div className="rd-confirm-facts m3-policy-preview" role="status">
-        <DiffList rows={changes} />
+        <DiffList rows={[
+          { key: "warn", label: "待回复提醒", before: `${policy.warnMinutes} 分钟`, after: `${warnN} 分钟` },
+          { key: "close", label: "严重超时", before: `${policy.closeMinutes} 分钟`, after: `${closeN} 分钟` },
+          ...(endAvailable ? [{ key: "end", label: "无人发言自动结束", before: `${policy.sessionEndMinutes} 分钟`, after: `${endN} 分钟` }] : []),
+        ]} />
       </div>}
       {canSave && <RdField label="变更理由" required hint={`至少 ${rule.min} 字`} explain="待回复提醒和严重超时只做标记。自动结束只让出接待：不结束对话、不改专属客服，客户的待回复照常保留。保存后立即生效。"
         error={blocked || unchanged || !orderOk || reasonOk || !reasonLeft ? undefined : rule.ready || rule.error ? rule.hint(reason) : "正在读取理由规则…"}>
