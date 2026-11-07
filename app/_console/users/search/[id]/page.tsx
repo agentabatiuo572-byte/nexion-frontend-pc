@@ -1135,8 +1135,8 @@ export default function UserDetailPage() {
   const goLink = goTarget && <Link className="rd-btn" data-variant="secondary" data-size="md" href={{ pathname: goTarget.pathname, query: goTarget.query }} prefetch={false}><span className="rd-btn-face">{goTarget.label}</span></Link>;
   const recordProps = (kind: RecordKind) => ({ selected: record?.kind === kind ? record.index : undefined, onOpen: (index: number) => setRecord({ kind, index }) });
   const deviceColumns: Column[] = [
-    { label: "实例 · 名称", cell: (row) => <Cell mono main={asText(row.instanceNo)} sub={asText(row.name)} title={asText(row.instanceNo)} /> },
-    { label: "规格", cell: (row) => formatC1DeviceTier(row.productTier) },
+    // 规格并进第二行：操作列是「回收并记录置换」加「设备回收」，五列在 1024 放不下（DT-16）。
+    { label: "实例 · 名称 · 规格", cell: (row) => <Cell mono main={asText(row.instanceNo)} sub={[asText(row.name, ""), formatC1DeviceTier(row.productTier)].filter((text) => text && text !== "—").join(" · ") || "—"} title={asText(row.instanceNo)} /> },
     { label: "状态", cell: (row) => <Cell main={deviceTag(row)} sub={formatC1RuntimeStatus(row.runtimeStatus)} /> },
     { label: "设定日收益", align: "right", cell: (row) => <Cell num main={amountText(row.dailyUsdt)} sub={amountText(row.dailyNex, "UVT")} /> },
     ...(canWriteC2 ? [{ label: "操作", align: "right" as const, end: true, cell: (row: JsonRecord) => {
