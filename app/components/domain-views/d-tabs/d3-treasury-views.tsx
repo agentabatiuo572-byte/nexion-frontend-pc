@@ -95,7 +95,7 @@ const TREASURY_SOURCE_LABELS: Record<string, string> = {
   "nx_treasury_reserve_ledger": "储备资金账本",
   "nx_staking_position.amount_usdt": "生效中的质押锁定金额",
   "nx_user_wallet": "用户钱包余额",
-  "nx_user_wallet.usdt_available": "用户可提余额",
+  "nx_user_wallet.usdt_available": "用户钱包的可提现余额",
   "nx_staking_position": "质押锁定金额与奖励",
   "nx_staking_position.estimated_interest_usdt": "待付质押奖励",
   "nx_genesis_holding": "创世节点持仓",
