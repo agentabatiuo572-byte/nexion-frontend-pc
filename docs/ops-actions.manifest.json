@@ -1590,11 +1590,11 @@
       "id": "OPS-I-05",
       "domain": "I",
       "object": "风险披露(I5)",
-      "action": "发布新版/归档",
+      "action": "新增、编辑或删除披露草稿",
       "status": "built",
-      "view": "i-tabs/i4-trust.tsx",
+      "view": "i-tabs/i5-disclosures.tsx",
       "batch": "P1",
-      "note": "合规披露版本激活",
+      "note": "草稿保存不改变 App 当前公开版本；发布封存与映射生效另行审批。",
       "restActions": [
         "createI5DisclosureVersion",
         "updateI5DisclosureVersion",
@@ -1650,21 +1650,23 @@
       "id": "OPS-I-09",
       "domain": "I",
       "object": "披露版本(I5)",
-      "action": "发布新版(风控 操作员 · 风控 lead·超管 执行门槛 · 触发 critical re-ack)",
+      "action": "提交披露版本发布审批（批准后仅封存，不切换 App 当前版本）",
       "status": "built",
-      "view": "i-tabs/i4-trust.tsx",
+      "view": "i-tabs/i5-disclosures.tsx",
       "batch": "done",
-      "restAction": "i5_disclosure_publish"
+      "restAction": "i5_disclosure_publish",
+      "note": "发布批准只封存内容；另行批准切换版本或适用国家才使新旧国家用户原确认失效，并生成紧急级通知。不确认不影响任何操作。"
     },
     {
       "id": "OPS-I-10",
       "domain": "I",
       "object": "受限动作范围(I5)",
-      "action": "调整范围(操作确认 + edit;缩小=放松合规拦截要写依据)",
+      "action": "提交受限动作配置审批（当前无受限动作，App 不强制确认）",
       "status": "built",
-      "view": "i-tabs/i4-trust.tsx",
+      "view": "i-tabs/i5-disclosures.tsx",
       "batch": "done",
-      "restAction": "i5_gate_adjust"
+      "restAction": "i5_gate_adjust",
+      "note": "保留配置与审批入口，不据此承诺 App 执行确认拦截；历史近 7 天拦截总数在折叠内，地区数在抽屉。"
     },
     {
       "id": "OPS-I-11",
@@ -3272,10 +3274,11 @@
       "id": "OPS-I-19",
       "domain": "I",
       "object": "风险披露法域与矩阵(I5)",
-      "action": "法域创建/编辑/状态/删除及法域×版本矩阵配置/归档",
+      "action": "维护适用地区；版本映射切换、状态及归档删除提交审批",
       "status": "built",
-      "view": "i-tabs/i4-trust.tsx",
+      "view": "i-tabs/i5-disclosures.tsx",
       "batch": "done",
+      "note": "版本或适用国家批准变更后，旧确认失效并生成紧急级通知。App 仅供主动阅读确认，不确认不影响任何操作。",
       "restActions": [
         "createI5Jurisdiction",
         "updateI5Jurisdiction",

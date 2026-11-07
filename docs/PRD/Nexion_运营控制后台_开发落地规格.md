@@ -205,7 +205,7 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | I2 | Nova 推送运营 | 推送模板池/每 channel 节奏/per-channel kill(10 channel) | I 内容 | V4·Ch14 | §11.0A / §9.11c.1 / §9.11c.2 |
 | I3 | 通知 Campaign | 系统通知批量下发 + 优先级 CAP 限频(critical 永不被淹) | I 内容 | V4·Ch14 | §11.2 |
 | I4 | 信任中心 CMS | /trust 展示内容生命周期(财务数字/leadership/NEX 叙事/徽章) | I 内容 | V4·Ch14 | §11.3 |
-| I5 | 风险披露版本管理 | 披露文案 version×法域双维 + 改版触发 re-ack(合规关键件) | I 内容 | V4·Ch14 | §11.4a / §9.11d.1 / §9.11d.2 / §9.11c.2 |
+| I5 | 风险披露版本管理 | 披露文案 version×法域双维；映射切换使旧确认失效，App 不强制确认、不阻断操作 | I 内容 | V4·Ch14 | §11.4a / §9.11d.1 / §9.11d.2 / §9.11c.2 |
 | I6 | i18n 文案管理 | en/zh 双语镜像 + marketing 多版(~770 key,两语言同步) | I 内容 | V4·Ch14 | §14 / §9.11c.2 |
 | I7 | 教程中心 | /learn 课程内容/featured/完成 NEX 奖励(Learn-to-Earn) | I 内容 | V4·Ch14 | §11.11 |
 | J1 | Kill-Switch 矩阵 | 5 功能闸 kill 统一权威矩阵 + kill/恢复 + 联动 + 应急通道 | J 应急 | V4·Ch15 | §9.11d.1 / §9.11d.2 |
@@ -331,7 +331,7 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | **Content version**(I1) | key · version · status:enum{draft\|published\|archived} · body{zh,en,vi} · activeExperimentId?;A/B state:enum{scheduled\|running\|concluded(adopted\|discarded)} | SC | §17.1 / Ch14 I1 |
 | **Nova cadence**(I2) | 10 channel × {enabled,tickMs,cooldownMs};phase-keyed(tradein/task-lock 随 H1);per-channel kill(不入 J1) | SC | §17.1 / Ch14 I2 |
 | **Notification Campaign**(I3) | campaignId · 优先级:enum{critical\|high\|normal\|low} · NotifKind · 受众 · state:enum{draft\|scheduled\|sending\|sent\|failed\|cancelled};CAP{CRITICAL ∞/HIGH 50/NORMAL 200/LOW 30} | SC | Ch14 I3 |
-| **Disclosure version × jurisdiction**(I5) | jurisdiction × version(单调递增) · 7章节体 · locale{zh,en,vi} · acceptedVersion · acceptedJurisdiction;版本 state:enum{draft\|published\|superseded};用户 ack:enum{not_acked\|acked\|stale};**server 边缘按 IP 判法域** | SC | §17.1 / Ch14 I5 |
+| **Disclosure version × jurisdiction**(I5) | jurisdiction × version(单调递增) · 7章节体 · locale{zh,en,vi} · acceptedVersion · acceptedJurisdiction;版本 state:enum{draft\|published\|superseded};用户 ack:enum{not_acked\|acked\|stale};**以系统解析的适用地区为准；账号读取默认用保存的国家/地区，可信边缘来源由服务端处理** | SC | §17.1 / Ch14 I5 |
 | **i18n**(I6) | namespace × 基础 locale{zh,en,vi} · key 数 · 覆盖率;**三语完整与变量一致性、占位文字/退役品牌发布检查；完整性扫描单独触发** | SC | Ch14 I6 |
 | **教程课程**(I7) | slug · 分类:enum{Basics\|Earn\|Team\|Wealth\|Security} · format:enum{Article\|Video\|Hands-on} · level · UVT 奖励(10–50) · featured(单) · quiz;state:enum{draft\|published\|archived} | SC | §17.1 / Ch14 I7 |
 
@@ -562,8 +562,8 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | `/api/admin/notifications/campaigns` | GET / POST | campaign 列表 / 下发(携 Key 防重复) | I3-MD1(POST) | I3 |
 | `/api/notifications?cursor=&priority=` · `/:id/read` · `/stream`(SSE) | GET/POST/SSE | (用户)分页拉取 / 标读 / 推优先级升级 | — | I3 |
 | `/api/admin/trust/sections` · `/:sectionKey/versions` · `/:sectionKey` | GET/PUT | 信任 section 列表 / 历史 / 发布回滚(携 Key;财务数字/NEX 叙事类执行=风控 lead/超管) | I4-MD1~MD3(PUT) | I4 |
-| `/api/legal/risk-disclosure/current?jurisdiction=` | GET | (用户)当前 IP 辖区披露版本(server 权威判辖区) | — | I5 |
-| `/api/admin/content/trust-disclosure/disclosures/{jurisdiction}/publish` · `/api/admin/content/trust-disclosure/disclosures/matrix/{jurisdiction}` | POST / PUT | 发布批准后仅封存 / 生效版本映射另行批准切换后标 ack stale(携 Key;执行=风控 lead/超管) | I5-MD1~MD3 | I5 |
+| `/api/legal/risk-disclosure/current?jurisdiction=` | GET | (用户)当前适用地区的披露版本（账号国家/地区由服务端解析，不能由客户端任意改写） | — | I5 |
+| `/api/admin/content/trust-disclosure/disclosures/{jurisdiction}/publish` · `/api/admin/content/trust-disclosure/disclosures/matrix/{jurisdiction}` | POST / PUT | 发布批准后仅封存 / 生效版本或适用国家另行批准切换后使新旧国家用户原确认失效，并生成紧急级通知；App 不强制确认、不阻断操作(携 Key;执行=风控 lead/超管) | I5-MD1~MD3 | I5 |
 | `/api/admin/i18n/namespaces` · `/:namespace/keys` · `/:namespace` · `/i18n/integrity` | GET/PUT | namespace 矩阵 / key 列表 / 发布(校验镜像+占位符;携 Key)/ 完整性扫描 | I6-MD1~MD3(发布) | I6 |
 | `/api/admin/content/i18n-learning/integrity/{issueCode}/fix` | POST | 保存选中词条的三语草稿，重扫返回该类剩余数和本次实际修复数。仍在发布版上的问题继续计入剩余。 | I6 完整性修复 | I6 |
 | `/api/admin/learn/courses` · `/:slug/versions` · `/:slug` | GET/PUT | 课程列表 / 历史 / 发布回滚+改奖励(改奖励核 B1;携 Key) | I7-MD1~MD4(PUT) | I7 |
@@ -932,8 +932,8 @@ App 不展示试用邀请弹窗，也没有申请或接受延长的入口。PC �
 | phase-keyed cadence | tradein 15min/P3-4 60min/P5-6 24h;task-lock 30min/P1-2 30d/P3-4 7d/P5-6 3.5d | 随 Phase | 随 Phase 切换 | I2(H1 联动) |
 | `CAP_{CRITICAL,HIGH,NORMAL,LOW}` | ∞(不可降)/ 50 / 200 / 30 | 运营设定 | 实时 | I3 |
 | campaign 优先级 | 按 NotifKind(system/监管→critical/high) | critical/high/normal/low | 下发时锁定 | I3 |
-| 披露 `acceptedVersion` 模型 | version×jurisdiction 矩阵 | 单调递增 | 发布批准后仅封存；生效版本映射另行批准切换后要求重新确认 | I5 |
-| jurisdiction 判定来源 | user IP(server 边缘判) | — | 实时 | I5 |
+| 披露 `acceptedVersion` 模型 | version×jurisdiction 矩阵 | 单调递增 | 发布批准后仅封存；生效映射的版本或适用国家改变后原确认失效并生成紧急级通知；不确认不影响操作 | I5 |
+| jurisdiction 判定来源 | 账号保存的国家/地区；可信边缘国家由服务端处理，公开文本可按所选国家只读查询 | — | 读取时由服务端解析 | I5 |
 | 双 gate 阅读约束 | scroll-to-bottom + checkbox | 不可弱化 | 配置即生效 | I5 |
 | i18n 镜像/占位符强制 | 强制(缺镜像/不匹配→发布拦截) | — | 发布时校验 | I6 |
 | 课程完成 NEX 奖励 | 10–50 NEX/课(featured 第1课 +20) | 放大流出受 B1 约束 | 实时(对新完成) | I7 |
@@ -1091,11 +1091,11 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 ### 5.12 I 内容 / J 应急(Ch14 / Ch15)
 - **I1 文案 A/B**:版本 `draft → published(MC)→ archived`(回滚=重发历史版,MC);实验 `scheduled → running → concluded(adopted|discarded)`。分组 assignment server 权威,已分组 sticky。
-- **I5 风险披露**:版本 `draft → published(per jurisdiction,批准后封存)→ superseded`；发布不切换 App 当前版本。生效版本映射另行批准切换；用户 ack `not_acked → acked → stale` 在生效映射改变时触发，不能在客户端直接置 accepted。提现、质押不再前置拦截，也不支持重新纳入。
-- **I5 页面**:页名「法律条款与风险披露」，分风险披露、法律条款、隐私政策三个页签，按权限给：`content_i5_read` 看风险披露，`content_legal_terms_read` 看法律条款和隐私政策，两边读取互不影响，都没有时显示无权限。风险披露首屏是一句话结论、统计、草稿和待审批、各地区生效版本（含重新确认进度）；版本列表、适用地区目录、需要先确认的操作收起。版本的查看和编辑在抽屉里，语言分页签。披露的发布、切换生效、地区启停归档删除、受限动作都提交审批，批准后生效；账号没有 `platform_a2_write` 或 `platform_a2_proposal_create` 时这些入口隐藏。法律条款和隐私政策填理由后立即生效，理由在确认框里填；发布只发已保存的草稿；法律新草稿带入当前范围已发布版本全部节，没有时按本范围最近版本、用户端回退顺序带入并写来源；节数少于现行版时，列表、详情、编辑器发布入口都禁用并写明去补全，后端接口尚未拦截。撤回 en/GLOBAL 影响依赖它回退的范围，有自己已发布版本的范围不受影响。调整映射时版本或适用国家变了，新旧国家的用户都要重新确认并收到通知，确认框写明。法律范围没读取完时不显示旧地区的内容和写入口。少于 5 人的地区写「样本过小」。待审批随 10 秒轮询更新，看不到或没读到时不算没有。写入结果未知时页面上方常显待确认，对象和新建入口都锁定，只能按原操作重试；超过 24 小时不能再重试，记录保留，到「操作记录与审批」核对；重试被后端明确拒绝后才能人工解除。改动冲突时写「这项刚被别人改过。」，点「读取最新」后自己改过的字段保留，其余取最新。
+- **I5 风险披露**:版本 `draft → published(per jurisdiction,批准后封存)→ superseded`；发布不切换 App 当前版本。生效版本或适用国家另行批准切换后，新旧国家用户原确认失效，并生成紧急级通知；用户可在 App 主动阅读、确认，不能在客户端直接置 accepted。App 不强制确认，不确认不影响任何操作；提现、质押不再前置拦截，也不支持重新纳入。
+- **I5 页面**:页名「法律条款与风险披露」，分风险披露、法律条款、隐私政策三个页签，按权限给：`content_i5_read` 看风险披露，`content_legal_terms_read` 看法律条款和隐私政策，两边读取互不影响，都没有时显示无权限。风险披露首屏是一句话结论、两个统计（当前版本待确认用户、生效地区）、草稿和待审批、各地区生效版本（含重新确认进度，不含拦截数）；版本列表、适用地区目录、需要先确认的操作收起。版本的查看和编辑在抽屉里，语言分页签。披露的发布、切换生效、地区启停归档删除、受限动作都提交审批，批准后生效；账号没有 `platform_a2_write` 或 `platform_a2_proposal_create` 时这些入口隐藏。法律条款和隐私政策填理由后立即生效，理由在确认框里填；发布只发已保存的草稿；法律新草稿带入当前范围已发布版本全部节，没有时按本范围最近版本、用户端回退顺序带入并写来源；节数少于现行版时，列表、详情、编辑器发布入口都禁用并写明去补全，后端接口尚未拦截。撤回 en/GLOBAL 影响依赖它回退的范围，有自己已发布版本的范围不受影响。调整映射时版本或适用国家变了，新旧国家的用户都要重新确认并收到通知，确认框写明。法律范围没读取完时不显示旧地区的内容和写入口。少于 5 人的地区写「样本过小」。待审批随 10 秒轮询更新，看不到或没读到时不算没有。写入结果未知时页面上方常显待确认，对象和新建入口都锁定，只能按原操作重试；超过 24 小时不能再重试，记录保留，到「操作记录与审批」核对；重试被后端明确拒绝后才能人工解除。改动冲突时写「这项刚被别人改过。」，点「读取最新」后自己改过的字段保留，其余取最新。
 - **I5 草稿与原操作**：披露、法律、隐私三个编辑器在浏览器后退、站内离页时询问继续编辑、放弃或保存后继续。保存拒绝、冲突、无权限或结果未知时不当作保存成功离页。法律与隐私过期记录引导核对原操作，保留对象锁，不按过期解锁或继续重发。
 - **I5 版本与技术信息**：映射确认逐条列出已发布／历史版本、生效日期与回退提醒；法律章节标识逐项保留。技术信息默认收起，隐私原文用带标签的只读文本框，可选择复制。隐私另存草稿不替换公开版，发布后公开接口按请求语言、基础语言、英语回退，撤下后公开接口不可读，不承诺未经核实的注册页或邀请页位置。
-- **I5 补修**：三个编辑器换稿、新建、看别的版本及行内发布撤回均走未保存保护；版本冲突按段落标识三方合并，两边都改同一处时保留自己的并提示核对，读取最新失败不丢稿且读到前不能保存。读回核对切到原操作语言、地区，待确认和审批时间按业务时区。归档映射写「无，vN 已归档」，历史版不标生效中；待确认用户是否被拦按当前受限动作写，没有受限动作时明确不要求确认。发布差异只比两边共有语言，范围变化列事实，核对勾选紧贴理由区；九语新增录入暂禁用，已有版本仍可保存。新版本日期默认今天，过去日期及相同内容只提示；地区归档不能撤销，不能再启用或改名。隐私另存草稿不改公开版，删除语言先确认，技术信息默认收起。
+- **I5 补修**：三个编辑器换稿、新建、看别的版本及行内发布撤回均走未保存保护；版本冲突按段落标识三方合并，两边都改同一处时保留自己的并提示核对，读取最新失败不丢稿且读到前不能保存。读回核对切到原操作语言、地区，待确认和审批时间按业务时区。归档映射写「无，vN 已归档」，历史版不标生效中；当前没有受限操作，待确认人数只做记录。近 7 天拦截总数只放「需要先确认的操作」折叠，注明历史记录及可能包含已确认用户；分地区拦截数只在地区抽屉。发布差异只比两边共有语言，范围变化列事实，核对勾选紧贴理由区；九语新增录入暂禁用，已有版本仍可保存。新版本日期默认今天，过去日期及相同内容只提示；地区归档不能撤销，不能再启用或改名。隐私另存草稿不改公开版，删除语言先确认，技术信息默认收起。
 - **I2 Nova**:channel `enabled ⇄ disabled`(kill);模板 `draft → published → archived`(MC)。
 - **I3 通知 campaign**:`draft → scheduled → sending → sent`;仅 `scheduled → cancelled`;紧急取消另核紧急执行权;`cancelled` 不能编辑或重新排期,只能删除,要改就新建;`draft` 和 `cancelled` 可删,`sent` 不可删;调度下发=MC;优先级 in-place 升级 server emit canonical。
 - **I4 信任 / I6 i18n / I7 课程**:内容与课程 `draft → published → archived`；I7 课程版本 `DRAFT → PUBLISHED → SUPERSEDED`，回滚重新选定历史版本为当前版。I4 财务/NEX 叙事须合规审查，I6 发布前镜像+占位符 gate；I7 初次发布、版本发布和回滚均须课程写与奖励调整双权限，featured set⇄unset 单位互斥。
@@ -1155,7 +1155,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | Genesis 经济(单价/排放率/pause/geo) | ✅(排放率仅超管) | ✅(lead,pause/geo) | ✅(lead,其余参数) | — | — | — | 是(理由必填;排放率放大负债前置 B1) | G4 |
 | 佣金事件撤销/补发/暂停 | ✅ | ✅(lead) | ✅(lead,联动 D 退回) | — | — | — | 是(理由必填;补发方向 B1 预检) | F5 |
 | 直属分成 / Partner Status / 其他奖励冷却 | ✅ | ✅(lead) | ✅(lead) | ✅(增长侧) | — | — | 是(A2、理由、24h幂等；资金放大 B1；具体权威权限沿用 v2 F2⑥；旧层级只读) | F2 |
-| 风险披露版本切换 + 强制 re-ack | ✅ | ✅(lead,合规) | — | — | — | — | 是(I5-MD1,理由必填;合规关键,非熔断闸) | I5 |
+| 风险披露版本切换 + 旧确认失效（不阻断操作） | ✅ | ✅(lead,合规) | — | — | — | — | 是(I5-MD1,理由必填;合规关键,非熔断闸) | I5 |
 | 监管点名应急 SOP 编排执行 | ✅ | ✅(lead) | — | — | — | — | 是(J4-MD3,理由必填+触发事由;逐步经各域弹窗,串联 J1/J2/I5/C2/K1/D2/I3) | J4 |
 | **数据导出/监管报告(含敏感)** | ✅(超限/解密仅超管) | ✅(lead,风控域) | ✅(lead,资金域) | — | — | ✅(全量脱敏) | 是(理由必填;数据出境=敏感,脱敏+审计) | L5 |
 
@@ -1200,7 +1200,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | 7 | 前端文档编号/计数瑕疵簇 | §14 误编 §15.x;§11.3「14 section」vs 13 行;§11.0A 缺 wrapped 行 | 后台按逻辑号/正确计数落地(I2/I4/I6 已对齐) | I2/I4/I6 | v1 附录 A.1 #6 |
 | 8 | Pro 设备旧 salvage 基价冲突 | 历史原型曾用 `DEVICE_PRICE_USDT["stellarbox-pro"]=2639` | **已随 salvage 模型退役关闭**；当前换新按旧机真实实付价 + 累计已结算产出计算，目标商品价仍以 E1 权威价为准 | E3 / E1 | FEAT-DEV02 |
 | 9 | SKU 数量口径 | V1 §3.2 E1「6 SKU」 | **7 个管理对象**(补 Pro v2 / Genesis 目录位) | E1 | v2 §E1① |
-| 10 | 风险披露 ack 数据模型 | version × jurisdiction 双维矩阵 | 发布批准后仅封存；生效映射另行批准切换后要求重新确认 | I5 | v4 §I5③ |
+| 10 | 风险披露 ack 数据模型 | version × jurisdiction 双维矩阵 | 发布批准后仅封存；生效映射的版本或适用国家改变后原确认失效并生成紧急级通知；不确认不影响操作 | I5 | v4 §I5③ |
 | 11 | 披露页 gated action 拦截范围 | 提现与质押已移出 | 不恢复退役前置门槛；范围为空与历史拦截分开说明 | I5 / G1 / G6 | v4 §I5③ |
 | 12 | 低优先级通知 `CAP_LOW` | 前端保留 30 条 | 真后台对接后改 24–48h TTL 自动淘汰 | I3 | v4 §I3 |
 | 13 | B1 兑付覆盖率红线拒绝码 | V1 卷 B1 原用 **403** | **✅ 全卷统一 422**(PM 2026-06-02;auth/authz 类 403 保持) | B1 / 全 G 域写 | v1 附录 A.2 #11 |
