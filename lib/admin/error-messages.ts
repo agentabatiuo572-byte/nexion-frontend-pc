@@ -218,6 +218,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   DISCLOSURE_GATE_ACTION_REQUIRED: "缺少披露受限动作，请回到风险披露核对操作对象。",
   DISCLOSURE_GATE_BUSINESS_FLOW_ID_INVALID: "业务流程编号过长，本次没有执行，请联系值班人员核对请求。",
   DISCLOSURE_GATE_ACTION_NOT_FOUND: "这个披露受限动作不存在，请重新读取受限动作目录。",
+  DISCLOSURE_REACK_PUBLICATION_REQUIRED: "重新确认通知缺少地区或版本，请回到风险披露核对这次切换。",
+  DISCLOSURE_REACK_COUNTRIES_REQUIRED: "这个映射没有适用国家，发不了重新确认通知，请回到风险披露核对。",
   DISCLOSURE_JURISDICTION_NOT_FOUND: "这个适用地区不存在，请重新读取地区目录。",
   DISCLOSURE_JURISDICTION_ARCHIVED: "这个适用地区已归档，不能再修改或启用，请核对地区目录。",
   DISCLOSURE_JURISDICTION_CODE_EXISTS: "这个地区代码已存在，请使用已有地区或改用其他代码。",

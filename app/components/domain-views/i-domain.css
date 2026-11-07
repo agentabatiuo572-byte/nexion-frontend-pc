@@ -93,3 +93,15 @@
 .idom .in-vrow .nm small { display: block; font-size: 11.5px; color: var(--ink-4); }
 .idom .in-vrow .v { font-family: var(--mono); font-size: 13px; font-weight: 700; white-space: nowrap; color: var(--ink); }
 .idom .ns-name { font-family: var(--mono); font-size: 12.5px; font-weight: 700; color: var(--ink); }
+
+/* 披露版本的四个字段：1024 的抽屉两两一行，不留 3+1 孤行（VS-65）。 */
+.rd-form-grid.i5-form-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+
+/* 隐私政策的开头说明占满这一列，再长才截断（DT-09）。 */
+.idom .i5-hero-cell .rd-cell { max-width: calc(100cqw - 220px); }
+
+/* 原始 JSON 用等宽字，缩进才对得齐（DT-08）。 */
+.rd-doc p[data-mono] { font-family: var(--rd-font-mono); }
+
+/* 标题栏的三个点贴到右边线，和表格行内同一个做法，图标按钮自带的留白不算。 */
+.idom .rd-panel-actions > .rd-iconbtn:last-child { margin-right: -8px; }

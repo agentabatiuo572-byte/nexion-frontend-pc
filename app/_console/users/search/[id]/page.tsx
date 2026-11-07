@@ -406,7 +406,7 @@ const RECORD: Record<RecordKind, { title: string; sub: (row: JsonRecord) => Reac
   ] },
   payment: { title: "支付方式", sub: (row) => `${asText(row.brand)} ···· ${asText(row.last4)}`, facts: (row) => [
     ["状态", paymentTag(row)], ["提供商", asText(row.provider)], ["有效期", asText(row.expiryLabel, "无到期信息")],
-    ["试用保护", row.trialGuard ? `正在用于试用扣款 · ${asText(row.trialRefId, "关联试用")}` : "否"],
+    ["历史试用关联", row.trialGuard ? `历史试用记录 · ${asText(row.trialRefId, "关联试用")}` : "否"],
     ["解绑时间", shortTime(row.unboundAt)], ["支付商撤销状态", asText(row.pspRevokeStatus)], ["撤销命令号", asText(row.revokeCommandNo)],
     ["重试次数", asText(row.revokeAttempts)], ["撤销时限", shortTime(row.revokeDeadlineAt)], ["最近错误", asText(row.revokeLastError)],
   ] },
@@ -446,7 +446,7 @@ const RECORD: Record<RecordKind, { title: string; sub: (row: JsonRecord) => Reac
 function recordConclusion(kind: RecordKind, row: JsonRecord): { tone: StateTone; text: string } | undefined {
   if (kind === "payment") return row.status !== "BOUND" && row.pspRevokeStatus && !/^(revoked|confirmed|success|succeeded|done|completed)$/i.test(String(row.pspRevokeStatus))
     ? { tone: "warn", text: "账户已解绑，支付商撤销尚未完成，仍需核对扣款风险。" }
-    : row.trialGuard ? { tone: "neutral", text: "这张卡正在用于试用扣款，暂时不能解绑。" }
+    : row.trialGuard ? { tone: "neutral", text: "这张卡有历史试用关联记录，暂时不能解绑。" }
     : row.status === "BOUND" ? { tone: "neutral", text: "这张卡仍绑定在账户上，可在支付方式列表办理解绑。" } : { tone: "neutral", text: "账户已解绑；支付商的撤销结果请看下方。" };
   if (kind === "withdrawal") return withdrawalTone(row) === "danger" ? { tone: "danger", text: "这笔提现被拒绝或有异常，请到提现审核核对原因。" }
     : withdrawalTone(row) === "warn" ? { tone: "warn", text: "这笔提现等待审核或复查，请到提现审核处理。" }
@@ -861,16 +861,6 @@ export default function UserDetailPage() {
     statedBrief: { impact: "立即解绑，这张卡要用户自己重新绑定。支付商那边的撤销另外处理，完成前这张卡仍可能被扣款。", check: "核对卡的尾号和用户，理由写清依据或工单号。" },
     run: (reason) => execute({ kind: "unbind", label: `解绑支付方式 · 尾号 ${method.last4}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), methodId: method.id, version: method.version }),
   });
-  const openRebind = (method: UserPaymentMethod) => setActionConfirm({ briefKind: "content",
-    action: `发送换绑通知 · 尾号 ${method.last4}`,
-    title: "发送换绑通知",
-    detail: "向该用户发送真实站内通知与推送，引导先换绑试用扣款支付方式。",
-    amplifies: false,
-    facts: <Facts><Fact k="操作对象">{displayNickname} · {userNo}</Fact><Fact k="支付方式">{method.brand} ···· {method.last4}</Fact><Fact k="关联试用">{method.trialRefId || "关联试用"}</Fact></Facts>,
-    confirmLabel: "确认发送，立即进入推送队列",
-    statedBrief: { impact: "向这个用户发一条真实站内通知和推送，发出后不能撤回。", check: "核对卡的尾号和关联试用，理由写清依据或工单号。" },
-    run: (reason) => execute({ kind: "rebind", label: `发送换绑通知 · 尾号 ${method.last4}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), methodId: method.id, version: method.version }),
-  });
   const openDeviceAction = (device: JsonRecord, operation: "replace" | "recycle") => {
     const deviceId = asNumber(device.id);
     const instance = asText(device.instanceNo);
@@ -1005,7 +995,7 @@ export default function UserDetailPage() {
   const usdtTotals = asArray(detail.financial?.byCurrency).find((row) => row.currency === "USDT")?.fieldStatuses as JsonRecord | undefined;
   const subtotal = (field: string) => usdtTotals?.[field] === "PARTIAL" ? "已核对小计" : undefined;
   const kpis = [
-    detail.financial && { label: "可提余额", value: amountValue(summary.walletUsdt ?? profile.walletUsdt), unit: "USDT", tone: "role-1" as const, icon: Wallet, group: "funds", anchor: "hub-deposit" },
+    detail.financial && { label: "钱包可用余额", value: amountValue(summary.walletUsdt ?? profile.walletUsdt), unit: "USDT", tone: "role-1" as const, icon: Wallet, group: "funds", anchor: "hub-deposit" },
     detail.deposits && { label: "累计充值", value: amountValue(summary.depositedUsd), unit: "USDT", tone: "role-2" as const, icon: ArrowDownToLine, group: "funds", anchor: "hub-deposit", sub: subtotal("creditedDepositTotal"), explain: "能核对到的已确认充值小计，不保证覆盖这个用户的全部历史，也不是下面列出的那些相加。读不到时写「—」，不算 0。" },
     detail.withdrawals && { label: "累计提现", value: amountValue(summary.withdrawnUsd), unit: "USDT", tone: "role-4" as const, icon: ArrowUpFromLine, group: "funds", anchor: "hub-withdrawal", sub: subtotal("successfulWithdrawalPrincipalTotal"), explain: "能核对到的成功提现本金小计，不保证覆盖这个用户的全部历史，也不是下面列出的那些相加。读不到时写「—」，不算 0。" },
     detail.devices && { label: "设备数", value: numberLabel(summary.deviceCount), unit: "台", tone: "role-2" as const, icon: Cpu, group: "devices", anchor: "hub-devices", explain: "这个用户的全部设备记录，含已回收和已停用的，最多读 200 台。现在还能运行的看下面的活跃数。" },
@@ -1174,13 +1164,12 @@ export default function UserDetailPage() {
     { label: "支付方式", cell: (row) => <Cell main={`${asText(row.brand)} ···· ${asText(row.last4)}`} sub={`${asText(row.provider)} · ${asText(row.expiryLabel, "无到期信息")}`} /> },
     { label: "状态", cell: (row) => <Cell full
       main={paymentTag(row)}
-      sub={row.trialGuard ? `正在用于试用扣款 · ${asText(row.trialRefId, "关联试用")}，暂不能解绑` : row.status !== "BOUND" && row.unboundAt ? `解绑时间：${shortTime(row.unboundAt)}` : undefined} /> },
+      sub={row.trialGuard ? `历史试用记录 · ${asText(row.trialRefId, "关联试用")}，暂不能解绑` : row.status !== "BOUND" && row.unboundAt ? `解绑时间：${shortTime(row.unboundAt)}` : undefined} /> },
     ...(canWriteC1 ? [{ label: "操作", align: "right" as const, end: true, cell: (row: JsonRecord) => {
       const method = row as UserPaymentMethod;
       if (method.status !== "BOUND") return "—";
-      return <Cell full sub={methodBlock(method)} main={method.trialGuard
-        ? <Button size="sm" disabledReason={methodBlock(method)} onClick={() => openRebind(method)}>发送换绑通知</Button>
-        : <Button size="sm" disabledReason={methodBlock(method)} onClick={() => openUnbind(method)}>解绑</Button>} />;
+      if (method.trialGuard) return methodBlock(method) ?? "这张卡有历史试用关联记录，暂时不能解绑。";
+      return <Cell full sub={methodBlock(method)} main={<Button size="sm" disabledReason={methodBlock(method)} onClick={() => openUnbind(method)}>解绑</Button>} />;
     } }] : []),
   ];
 

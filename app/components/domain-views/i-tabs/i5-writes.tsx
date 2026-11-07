@@ -18,6 +18,7 @@ import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError } f
 import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import type { IContentActions } from "@/lib/admin/i-client";
+import type { ToastKind } from "@/lib/store/ui";
 import { saveLegalTermsDraft, transitionLegalTerms, type LegalTermsVersion } from "@/lib/admin/legal-terms-client";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -261,7 +262,7 @@ export function LeaveDialog({ guard, saveLabel, saveBlocked, onSave }: { guard: 
 
 export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }: {
   actions: IContentActions;
-  toast: (message: string) => void;
+  toast: (message: string, kind?: ToastKind) => void;
   canQuery: boolean;
   /** 一次写入有了结果（成功或转成待确认）后，读回对应的数据。 */
   onSettled: (write: I5Write) => Promise<unknown> | void;
@@ -284,14 +285,14 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
       await dispatch(write, key, actions, async (spec) => {
         // 失败写在确认框里，结果未知转成待确认条，都不再弹同一句；只有提交成功才提示。
         await propose(() => undefined, spec);
-        toast("已提交，等待审批后执行");
+        toast("已提交，等待审批后执行", "success");
       });
     } catch (cause) {
       const unknown = isA2OutcomeUncertainError(cause) || isOutcomeUnknownError(cause);
       if (!unknown && !retained) pendingWrites.forget(scope);
       sync();
       if (!unknown) throw cause;
-      toast("结果未确认，不要重复操作。到页面上方核对或按原操作重试。");
+      toast("结果未确认，不要重复操作。到页面上方核对或按原操作重试。", "warn");
       await onSettled(write);
       return "unknown";
     }
@@ -338,12 +339,12 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
         if (original) {
           pendingWrites.forget(record.fingerprint, record.commandKey);
           sync();
-          toast(`查到原提案，${PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`);
+          toast(`查到原提案，${PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`, "info");
           await onSettled(record);
           return;
         }
       }
-      if (await execute({ target: record.target, label: record.label, op: record.op }, record.fingerprint, record.commandKey, true) === "done") toast("原操作已完成，请核对最新内容");
+      if (await execute({ target: record.target, label: record.label, op: record.op }, record.fingerprint, record.commandKey, true) === "done") toast("原操作已完成，请核对最新内容", "success");
     } catch (cause) {
       note(record, `重试没有成功：${displayAdminError(cause)} 这说明不了原操作的结果，原操作继续保留。`);
       pendingWrites.remember(record.fingerprint, record.commandKey, { target: record.target, label: record.label, op: record.op, rejected: true });
@@ -364,7 +365,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
       }
       pendingWrites.forget(record.fingerprint, record.commandKey);
       sync();
-      toast(`查到原提案，${PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`);
+      toast(`查到原提案，${PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`, "info");
       await onSettled(record);
     } catch (cause) {
       note(record, `查询没有成功：${displayAdminError(cause)} 原操作继续保留。`);
@@ -389,7 +390,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
     pendingWrites.forget(record.fingerprint, record.commandKey);
     sync();
     setReleasing(null);
-    toast("已解除待确认，这个对象可以重新操作");
+    toast("已解除待确认，这个对象可以重新操作", "success");
   };
 
   const auditHref = "/platform/audit?domain=I";
