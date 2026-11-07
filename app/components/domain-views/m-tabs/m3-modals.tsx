@@ -360,7 +360,7 @@ export function QuickActionModal({
             </button>
           ))}
         </div>
-        <div className="itint" style={{ marginTop: 10 }}>点击会跳到对应页面 · 客服这里不代为提交，实际由账户、资金、设备相关页面审核处理。</div>
+        <div className="itint" style={{ marginTop: 10 }}>点入口到对应页面 · 客服这里不代为提交，实际由账户、资金、设备相关页面审核处理。</div>
       </Modal>
     );
   }
