@@ -563,13 +563,13 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
     openActionConfirm({ briefKind: "config", ...approvalProps,
       action: <>发布已存披露草稿 · {row.jurisdiction}</>,
       title: "发布披露草稿",
-      detail: <>发布的是已保存的草稿。批准切换后才要求用户重新确认。</>,
+      detail: <>发布的是已保存的草稿。批准切换后，用户原来的确认才失效。</>,
       confirmTone: "danger",
       effect: irreversibleApproval,
       confirmLabel: "提交发布审批",
       statedBrief: { impact: "批准后这个版本封存，不能再改也不能删除。App 还是当前版本，要另外切换生效版本。", check: `逐章核对${languageNames(row.languageScope)}内容，理由写清版本依据。` },
       facts: <>
-        <Facts><Fact k="地区">{row.jurisdiction} · {nameOf(row.jurisdiction)}</Fact><Fact k="版本"><Change from={current?.version ?? j?.version ?? "无生效版"} to={row.version} /></Fact><Fact k="语言">{scopeChanged ? <Change from={languageText(current?.languageScope)} to={languageText(row.languageScope)} /> : languageText(row.languageScope)}</Fact><Fact k="切换后要确认">{isSmall(affected) ? SMALL_SAMPLE : `${count(affected)} 人，现在待重新确认 ${count(pendingAck)} 人`}，已拦截 {count(row.blocked ?? j?.blocked ?? 0)} 次 <Explain label="这次审批会怎样" content={`本次只审批版本内容，App 上暂不变化。切换生效后用户要重新确认，${activeGates.length ? `期间受限的操作：${activeGates.join("、")}` : "现在没有受限的操作"}。`} /></Fact></Facts>
+        <Facts><Fact k="地区">{row.jurisdiction} · {nameOf(row.jurisdiction)}</Fact><Fact k="版本"><Change from={current?.version ?? j?.version ?? "无生效版"} to={row.version} /></Fact><Fact k="语言">{scopeChanged ? <Change from={languageText(current?.languageScope)} to={languageText(row.languageScope)} /> : languageText(row.languageScope)}</Fact><Fact k="切换后要确认">{isSmall(affected) ? SMALL_SAMPLE : `${count(affected)} 人，现在待重新确认 ${count(pendingAck)} 人`}，已拦截 {count(row.blocked ?? j?.blocked ?? 0)} 次 <Explain label="这次审批会怎样" content={`本次只审批版本内容，App 上暂不变化。切换生效后用户原来的确认失效，${activeGates.length ? `期间受限的操作：${activeGates.join("、")}` : "现在没有受限的操作"}。`} /></Fact></Facts>
         <PublishDiff current={current} target={row} />
       </>,
       businessForm: {
@@ -711,7 +711,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
               return (
                 <Tr key={versionKey(row)} selected={detail === row} onOpen={() => openVersion(row)}>
                   <Td><Cell main={`${row.jurisdiction} ${row.version}`} sub={`当前生效 ${mapping.version}`} /></Td>
-                  <Td><StatusTag tone="progress" explain="内容已封存，用户还在看旧版本。切换生效后才要求用户重新确认。">已发布，未切换</StatusTag></Td>
+                  <Td><StatusTag tone="progress" explain="内容已封存，用户还在看旧版本。切换生效后才换成新版本，用户原来的确认失效。">已发布，未切换</StatusTag></Td>
                   <Td>切换生效版本</Td>
                   <Td align="right">{canPublish ? <Button size="sm" disabledReason={switchBlocked(row.jurisdiction)} onClick={() => configMatrix(mapping, row.version)}>切换生效</Button> : "—"}</Td>
                 </Tr>
