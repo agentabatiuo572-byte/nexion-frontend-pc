@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { K4PaginationQuery, KRiskActions, KRiskData, KRiskOverviewQuery, MultiAccountOverview, ScoringOverview } from "@/lib/admin/k-client";
 import type { BusinessFormSpec, BusinessFormValue, CoverageSnapshot, EditSpec, OperationApproval, OperatorBriefKind } from "../design-kit";
+import type { ToastKind } from "@/lib/store/ui";
 
 export type ActionConfirmReq = {
   action: ReactNode;
@@ -94,7 +95,7 @@ export type KCtx = {
   pget: (k: string) => string | undefined;
   params: Record<string, unknown>;
   setParam: (k: string, v: string, meta: { action: string; reason: string }) => void;
-  toast: (s: string) => void;
+  toast: (s: string, kind?: ToastKind) => void;
   openActionConfirm: (req: ActionConfirmReq) => void;
   openConfirm: (req: ConfirmReq) => void;
   risk: KRiskData;

@@ -63,8 +63,8 @@ function contentErrorForTab(tab: string, content: IContentData) {
 
 // 页面上不显示 I1–I7 模块代号，只保留用户能看懂的原因。
 function contentErrorText(error: string) {
-  if (/^I\d 数据加载失败，请刷新重试$/.test(error)) return "请刷新重试。";
-  if (/^I\d 返回数据格式异常，请刷新重试$/.test(error)) return "收到的数据格式不对，请刷新重试。";
+  if (/^I\d 数据加载失败，请刷新重试$/.test(error)) return "暂时读不到，请稍后重试。";
+  if (/^I\d 返回数据格式异常，请刷新重试$/.test(error)) return "收到的数据格式不对，请稍后重试。";
   return error;
 }
 

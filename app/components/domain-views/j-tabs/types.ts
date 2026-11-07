@@ -5,6 +5,7 @@
 import type { ReactNode } from "react";
 import type { OperatorBriefKind, EditSpec, BusinessFormSpec, BusinessFormValue, CoverageSnapshot } from "../design-kit";
 import type { JEmergencyActions, JEmergencyData } from "@/lib/admin/j-client";
+import type { ToastKind } from "@/lib/store/ui";
 
 export type ActionConfirmReq = {
   /** 框上写的短标题，只写动作和对象；action 照旧是记进操作记录的名字（VS-101）。 */
@@ -39,7 +40,7 @@ export type JCtx = {
   /** 水合后的 store 参数全量(未水合时为空对象)— 供 J2 枚举 J.geo.* 派生 activeCountries。 */
   params: Record<string, unknown>;
   setParam: (k: string, v: string, meta: { action: string; reason: string }) => void;
-  toast: (s: string) => void;
+  toast: (s: string, kind?: ToastKind) => void;
   openActionConfirm: (req: ActionConfirmReq) => void;
   emergency: JEmergencyData;
   actions: JEmergencyActions;
