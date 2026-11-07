@@ -1138,7 +1138,7 @@ export default function UserDetailPage() {
   const currentNotificationId = record?.kind === "notification" && current ? Number(current.notificationId) : 0;
   const conclusionOf = record && current ? recordConclusion(record.kind, current) : undefined;
   // 写了「请到…核对」就要走得到（DT-06、DT-23）：没有那页权限时只留这句话。
-  const goTarget = record?.kind === "withdrawal" && current && canReadD2 && withdrawalTone(current) !== "ok" ? { label: "去提现审核", pathname: "/finance/withdrawals", query: { q: asText(current.withdrawalNo, ""), returnTo: selfHref } }
+  const goTarget = record?.kind === "withdrawal" && current && canReadD2 && withdrawalTone(current) !== "ok" ? { label: "去提现审核", pathname: "/finance/withdrawals", query: { group: "all", q: asText(current.withdrawalNo, ""), returnTo: selfHref } }
     : record?.kind === "device" && current && deviceAbnormal(current) && reach("/devices/ops") ? { label: "去设备运行管理", pathname: "/devices/ops", query: { returnTo: selfHref } }
     : record?.kind === "order" && current && orderTone(current) === "danger" && reach("/devices/orders") ? { label: "去订单进度", pathname: "/devices/orders", query: { returnTo: selfHref } }
     : undefined;
