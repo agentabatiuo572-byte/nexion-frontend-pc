@@ -304,3 +304,6 @@
 .ldom .zone-row .ztrack { height: 8px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
 .ldom .zone-row .ztrack i { display: block; height: 100%; border-radius: 999px; background: var(--cyan); }
 .ldom .zone-row .zpct { font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--ink); text-align: right; }
+
+/* 行尾的提示图标贴右边线：图标 14 在 20 的点击区里，右边空 3px（FP-1）。 */
+:is(.rd-head-actions, .rd-filter-end) > .rd-explain:last-child { margin-right: -3px; }
