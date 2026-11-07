@@ -14,6 +14,8 @@
  *   金额传 role-1。角色色只在深色主题上字，浅色主题是正文色（VS-14）。不传就是正文色。
  * - k 过 AutoGloss，命中词典的术语带解释。
  * - 一行里的前后变化写成 <Change from="在线" to="已关停" />：现在值弱，改后的值进行中蓝（VS-103），不要写成「在线 → 已关停」一串。
+ *   已经生效的变化（读取最新后别人改了什么）传 settled，新值用正文色，不用待生效的蓝。
+ * - 值是「—」时自动弱化，和 Stat 一样（VS-11）。
  */
 import type { ReactNode } from "react";
 import { ArrowRight } from "lucide-react";
@@ -27,7 +29,7 @@ export function Facts({ children }: { children: ReactNode }) {
 export function Fact({ k, children, tone, lead, unit }: { k: string; children: ReactNode; tone?: StateTone | RoleTone; lead?: boolean; unit?: ReactNode }) {
   const big = lead && !(typeof children === "string" && !/\d/.test(children));
   return (
-    <div className="rd-fact" data-tone={tone} data-lead={big ? "" : undefined}>
+    <div className="rd-fact" data-tone={tone} data-lead={big ? "" : undefined} data-empty={children === "—" ? "" : undefined}>
       <dt><AutoGloss>{k}</AutoGloss></dt>
       <dd>{children}{unit && <span className="rd-fact-unit">{unit}</span>}</dd>
     </div>
@@ -35,13 +37,13 @@ export function Fact({ k, children, tone, lead, unit }: { k: string; children: R
 }
 
 /** 事实一行里的前后变化。前后靠位置和箭头分，不只靠颜色；读屏读「改为」。 */
-export function Change({ from, to }: { from: ReactNode; to: ReactNode }) {
+export function Change({ from, to, settled }: { from: ReactNode; to: ReactNode; settled?: boolean }) {
   return (
     <span className="rd-fact-change">
       <span>{from}</span>
       <ArrowRight size={14} aria-hidden />
       <span className="rd-sr-only">改为</span>
-      <span data-after="">{to}</span>
+      <span data-after={settled ? undefined : ""} data-settled={settled ? "" : undefined}>{to}</span>
     </span>
   );
 }

@@ -55,6 +55,11 @@ export function pendingConfigApproval(sourceDomain: keyof typeof commands, admin
   return attempts.list().find((record) => record.fingerprint === slot);
 }
 
+/** 按原操作重试被明确拒绝、人核实过结果后解除本页的锁。不发请求，只删这一条原命令（OP-153）。 */
+export function releaseConfigApproval(sourceDomain: keyof typeof commands, adminId: string | number, commandKey: string, scope?: ApprovalScope) {
+  attempts.forget(approvalSlot(sourceDomain, adminId, scope), commandKey);
+}
+
 type ThresholdApprovalValues = {
   B1: { expectedVersion: number; redlinePct: number; healthyPct: number };
   B5: { expectedVersion: number; yellowPct: number; redPct: number };
@@ -126,7 +131,8 @@ export async function submitConfigApproval<T>(
     if (previous && (domain === "B" || domain === "F" || sourceDomain === "E2" || sourceDomain === "G4" || sourceDomain === "H8"
       || session.authorities.includes("platform_a2_read") || session.authorities.includes("platform_a2_proposal_create"))) {
       try {
-        ticket = await fetchA2ProposalByKey(key);
+        // 只有 A2_PROPOSAL_NOT_FOUND 才算没有原单；OPERATION_RESULT_UNKNOWN 这类 404 说明不了，按查询失败保留原命令。
+        ticket = await fetchA2ProposalByKey(key, true);
       } catch {
         throw new A2OutcomeUncertainError("暂时无法查询原审批单。", key);
       }

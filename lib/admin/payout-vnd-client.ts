@@ -1,4 +1,4 @@
-import { financeAdminRequest } from "./d-client";
+import { DOutcomeUnknownError, financeAdminRequest } from "./d-client";
 import {
   normalizePayoutVndConfig,
   type PayoutVndConfig,
@@ -30,9 +30,15 @@ export async function updatePayoutVndConfig(
   commandKey: string,
 ): Promise<PayoutVndConfig> {
   const payload = { ...values, expectedVersion, reason, forceInverted };
-  return normalizeServerConfig(await financeAdminRequest<unknown>("/payout-vnd/config", {
+  const data = await financeAdminRequest<unknown>("/payout-vnd/config", {
     method: "PATCH",
     body: JSON.stringify(payload),
     idempotencyKey: commandKey,
-  }));
+  });
+  // 写请求已经成功返回，回执却读不懂：命令可能已经执行，按结果未知保号（OP-91），不当明确失败。
+  try {
+    return normalizePayoutVndConfig(data);
+  } catch {
+    throw new DOutcomeUnknownError(commandKey);
+  }
 }

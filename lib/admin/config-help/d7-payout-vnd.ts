@@ -20,8 +20,9 @@ export interface PayoutVndFieldHelp {
   where?: string;
 }
 
-const FEE_WHERE = "App 银行卡提现 › 金额页「费率 {rate}%，最低 {min} USDT，封顶 {max} USDT。」";
-const LIMIT_WHERE = "App 银行卡提现 › 金额页「单笔限额 {min}–{max} USDT」";
+// App 按自己的金额格式填当前值，这里只写位置，不写占位符（DP-30）。
+const FEE_WHERE = "App 银行卡提现 › 金额页的手续费说明（费率、最低、封顶）";
+const LIMIT_WHERE = "App 银行卡提现 › 金额页的「单笔限额」";
 
 export const PAYOUT_VND_HELP: Record<PayoutVndWritableField, PayoutVndFieldHelp> = {
   sellSpreadPct: {
@@ -42,7 +43,7 @@ export const PAYOUT_VND_HELP: Record<PayoutVndWritableField, PayoutVndFieldHelp>
     what: "当前不起作用；只保存，不触发重新报价",
     when: "只改配置；调大要批准",
     how: "0–10%，最多一位小数",
-    effect: "现在改了不影响报价和到账金额",
+    effect: "现在改了不影响报价和到账金额；保存后整组版本更新，用户还没提交的旧报价需要重新报价",
   },
   feeRatePct: {
     what: "手续费按提现金额算的比例",

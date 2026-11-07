@@ -28,6 +28,7 @@ import { Select as RdSelect } from "@/app/components/rd/select";
 import { DiffField } from "@/app/components/rd/diff-list";
 import { Explain } from "@/app/components/rd/explain";
 import { Notice as RdNotice } from "@/app/components/rd/block-state";
+import { StatusTag as RdStatusTag } from "@/app/components/rd/status-tag";
 import { Modal as RdModal } from "@/app/components/rd/overlay";
 import { NumberInput as RdNumberInput } from "@/app/components/rd/number-input";
 import { useRdSurface } from "@/app/components/rd/surface";
@@ -3618,6 +3619,9 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const effectiveAmplifies = (activeBusinessForm?.kind === "multi-field" ? activeBusinessForm.amplifies?.(businessValue) : undefined) ?? directionalAmplifies ?? Boolean(amplifies);
   // B1 红线禁放行:只有调用方传入真实后端覆盖率时才做前端镜像拦截;后端仍是最终裁决。
   const covBlocked = Boolean(effectiveAmplifies && coverage && coverage.coverageRatio < coverage.redlinePct);
+  // 改版页面里的整组审批（不带自定标题、不是内嵌审批）和直接生效的框一个样子：生效方式是标题下的标签，
+  // 谁来批、批准前什么不变进标签的提示；覆盖率够得上红线是安静的一行；不再铺橙黄横幅（VS-103、VS-106、VS-107）。
+  const rdApproval = surface && !!approvalSpec && !approvalSpec.heading && !inlineApproval;
   const requestedMinimum = Number.isFinite(requestedReasonMin)
     ? Math.max(1, Math.min(200, Math.floor(requestedReasonMin!)))
     : 8;
@@ -3755,8 +3759,9 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   };
   const submitLabel = pendingReason !== undefined ? "重试原操作" : approvalRecovery === "retry" ? "按原操作重试" : approval ? "提交审批" : confirmLabel;
   // 资金信息排在要填的字段前（OP-47）。改一个值的框方向随输入变，放在输入框下面，不然打字时输入框会跳。
-  const coverageFirst = surface && !approval && !spec;
+  const coverageFirst = surface && (!approval || rdApproval) && !spec;
   const coverageInFacts = coverageFirst && !!facts;
+  const checkCopy = rdApproval ? approvalSpec?.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。" : coverageCheck;
   const coverageNotice = effectiveAmplifies && (
     <div className={surface && !covBlocked ? "alertbar calm" : "alertbar danger"} style={{ marginBottom: coverageInFacts ? 0 : 16, border: 0 }}>
       <span className="ico"><Icon name="alert" size={16} /></span>
@@ -3764,16 +3769,16 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         // 够得上红线时只留数字，后果和检查说明进提示图标（DP-06）。
         <div className="tiny">
           覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b>，红线 <b>{coverage.redlinePct}%</b>
-          <Explain label="这项操作对资金的影响" content={<><p>{coverageLead}</p><p>{coverageCheck}</p>{coverage.healthyPct !== undefined && <p>健康线 {coverage.healthyPct}%。</p>}</>} />
+          <Explain label="这项操作对资金的影响" content={<><p>{coverageLead}</p><p>{checkCopy}</p>{coverage.healthyPct !== undefined && <p>健康线 {coverage.healthyPct}%。</p>}</>} />
         </div>
       ) : surface && !covBlocked && !coverage && auditSink !== "local-history" ? (
         // 页面自己把覆盖率写进 coverageLead 时也只留这一句，检查说明进提示图标（DP-06）。
-        <div className="tiny">{typeof coverageLead === "string" ? <b>{coverageLead}</b> : coverageLead}<Explain label="什么时候检查" content={coverageCheck} /></div>
+        <div className="tiny">{typeof coverageLead === "string" ? <b>{coverageLead}</b> : coverageLead}<Explain label="什么时候检查" content={checkCopy} /></div>
       ) : <div className="tiny">
-        <b>{coverageLead}</b> · {coverageCheck}
+        <b>{coverageLead}</b> · {checkCopy}
         {coverage ? (
           <>
-            当前覆盖率 <b className="mono">{fmtPct(coverage.coverageRatio)}</b>
+            当前覆盖率 <b className={surface ? undefined : "mono"}>{fmtPct(coverage.coverageRatio)}</b>
             {coverage.healthyPct !== undefined && coverage.coverageRatio >= coverage.healthyPct
               ? `，高于健康线 ${coverage.healthyPct}%`
               : coverage.coverageRatio > coverage.redlinePct
@@ -3789,7 +3794,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     </div>
   );
   return (
-    <Modal title={title ?? action} icon={confirmTone === "danger" ? "alert" : spec ? "sliders" : "shield"} tone={confirmTone === "danger" ? "danger" : "neutral"} sub={effect} onClose={handleClose} className={["rd-confirm", inlineApproval?.dialogClassName].filter(Boolean).join(" ")} busy={submitting} dirty={JSON.stringify([newVal, businessValue]) !== openedForm}
+    <Modal title={title ?? action} icon={confirmTone === "danger" ? "alert" : spec ? "sliders" : "shield"} tone={confirmTone === "danger" ? "danger" : "neutral"} sub={rdApproval ? effect ?? <RdStatusTag tone="progress" filled explain={completionCopy}>批准后生效</RdStatusTag> : effect} onClose={handleClose} className={["rd-confirm", inlineApproval?.dialogClassName].filter(Boolean).join(" ")} busy={submitting} dirty={JSON.stringify([newVal, businessValue]) !== openedForm}
       footer={<>
         <Btn disabled={submitting} onClick={handleClose}>取消</Btn>
         {approvalRecovery && recoverApproval && (
@@ -3811,7 +3816,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       </>}>
       {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
       <fieldset disabled={submitting} style={{ display: "contents" }}>
-      {!approval && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={effectiveBriefKind} stated={statedBrief} />}
+      {(!approval || rdApproval) && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={rdApproval && statedBrief ? undefined : completionCopy} auditSink={auditSink} kind={effectiveBriefKind} stated={statedBrief} />}
       {!surface && content}
       {surface ? (blockedReason || submitError) && (
         // 红只给明确失败；被别人改了、结果还不知道是要人处理，用橙黄（VS-107）。
@@ -3828,7 +3833,9 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
           {reasonPolicyError ?? "正在加载，稍候即可提交。"}
         </div>
       )}
-      {approval && <>
+      {rdApproval && approvalSpec?.disabledReason && <div className="rd-confirm-alert"><RdNotice tone="warn">{approvalSpec.disabledReason}</RdNotice></div>}
+      {rdApproval && approvalSpec?.comparison}
+      {approval && !rdApproval && <>
         {!approval.heading && approval.comparison && <div className="tint" style={{ marginBottom: 14 }}>{approval.comparison}</div>}
         <div className="alertbar warn" style={{ marginBottom: 14 }}>
           <span className="ico" style={{ color: "var(--operation-approval-icon, var(--warning))" }}><Icon name="alert" size={16} /></span>
@@ -3950,7 +3957,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       {surface && !approval && !coverageFirst && coverageNotice}
       <div className={surface ? "field rd-reason-field" : "field"}>
         {surface
-          ? <label htmlFor={reasonFieldId}>{approval && !compactFields ? "变更理由" : "操作理由"}<span className="rd-form-required" aria-hidden="true">*</span><span className="rd-form-hint">至少 {reasonMin} 字</span></label>
+          ? <label htmlFor={reasonFieldId}>{approval && !compactFields && !rdApproval ? "变更理由" : "操作理由"}<span className="rd-form-required" aria-hidden="true">*</span><span className="rd-form-hint">至少 {reasonMin} 字</span></label>
           : <label htmlFor={reasonFieldId}>{approval && !compactFields ? "变更理由" : "操作理由"}{(compareEdit || approval?.heading) && <span aria-hidden="true" style={{ color: "var(--danger)" }}> *</span>}{compactFields ? <span className="muted"> 至少 {reasonMin} 字</span> : `（必填，${reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）`}</label>}
         {/* 字数写在框内角落，够不够看按钮的提示，失焦或点过提交才用警告色（DP-06）。 */}
         <div className={surface ? "rd-reason-box" : compactFields ? "g3-reason-box" : undefined}>
