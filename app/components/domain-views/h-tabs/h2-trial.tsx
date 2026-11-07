@@ -295,6 +295,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       if (useAdminAuth.getState().session?.adminId !== retiredCharge.adminId) return;
       if (ticket) finishRetiredH2TrialChargeLookup(retiredCharge.adminId, retiredCharge.attempt.sid, retiredCharge.attempt.commandKey);
       setChargeLookup(ticket ? { ticket } : { missing: true });
+      if (ticket) await reload();
     } catch (cause) {
       setChargeLookup({ error: `暂时无法确认原申请，原命令已保留。${displayAdminError(cause)}` });
     } finally {
