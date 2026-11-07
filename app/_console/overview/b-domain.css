@@ -159,7 +159,6 @@ a.cc-amount:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 
 .cc-kpi-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cc-kpi-target { flex: none; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .cc-gates-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 24px; }
-.cc-gates-row > a { color: var(--rd-text-2); }
 .cc-gates { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; padding: 0; list-style: none; }
 .cc-gates li { display: inline-flex; align-items: center; gap: 8px; color: var(--rd-text); }
 

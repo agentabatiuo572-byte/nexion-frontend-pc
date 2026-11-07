@@ -328,7 +328,7 @@ export default function CommandCenter() {
               liquidity={fundReady ? liquidity : null}
               error={bDomain.error}
               retrying={bDomain.loading}
-              onRetry={() => void bDomain.reload()}
+              onRetry={sentence.fundFailed ? undefined : () => void bDomain.reload()}
               alert={fundAlert}
               level={level}
               clock={clock}
@@ -346,7 +346,7 @@ export default function CommandCenter() {
               risk={fundReady ? riskRadar : null}
               error={bDomain.error}
               retrying={bDomain.loading}
-              onRetry={() => void bDomain.reload()}
+              onRetry={sentence.fundFailed ? undefined : () => void bDomain.reload()}
               alert={riskAlert}
               reach={reach}
               linkInBrief={sentence.aboutSwitch}

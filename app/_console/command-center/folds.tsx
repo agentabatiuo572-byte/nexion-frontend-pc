@@ -75,7 +75,8 @@ export function FundFold({ ledger, liquidity, error, retrying, onRetry, alert, l
   liquidity: BLiquidity | null;
   error: string | null;
   retrying: boolean;
-  onRetry: () => void;
+  /** 结论句已经给了重试时不传。 */
+  onRetry?: () => void;
   alert: boolean;
   level: FundLevel;
   clock: string | null;
@@ -160,7 +161,8 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
   risk: BRiskRadar | null;
   error: string | null;
   retrying: boolean;
-  onRetry: () => void;
+  /** 结论句已经给了重试时不传。 */
+  onRetry?: () => void;
   alert: boolean;
   reach: Reach;
   /** 结论句已经给了去开关页的入口。 */
@@ -193,7 +195,7 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                     ))}
                   </ul>
                 )}
-                {!linkInBrief && <FoldLink reach={reach} href="/emergency/kill-switch">查看或恢复业务开关</FoldLink>}
+                {!linkInBrief && reach("/emergency/kill-switch") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>查看或恢复业务开关</Link>}
               </section>
               )}
               {/* 压力和账户都是短句（5.4）：比率常年很小，长条几乎全空，说明不了什么。黄线、红线收进提示（DP-06）。 */}
