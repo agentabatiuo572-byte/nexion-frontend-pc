@@ -336,6 +336,9 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const reasonHint = "写清依据或工单号。只记在操作记录里，用户看不到";
   // 购买设备和促销赠品走不同的退款路径；数组存在时不再用旧标量推断设备是否生成。
   const purchaseDevices = e4Detail?.devices?.filter((device) => device.kind === "PURCHASE");
+  // 赠品的后果只在这单真有赠品设备时写；明细没给时不下结论。
+  const giftDevices = e4Detail?.devices?.filter((device) => device.kind === "PROMOTION_GIFT");
+  const giftClause = giftDevices == null ? "，赠品按促销规则处理" : giftDevices.length ? "，赠品收回，赠品已到账收益由平台承担" : "";
   const refundDeviceLine = purchaseDevices == null ? "明细未提供；仍归原购买者且未退款、未回收的设备会停用"
     : purchaseDevices.length ? "仍归原购买者且未退款、未回收的设备停用，已到账收益不扣回" : "尚未生成，退款后不再开通";
   const refundDeviceDetail = `退款后用户钱包多这笔钱，平台的应付款跟着增加。购买设备只处理仍属于原购买者、且未退款或回收的设备：标为已退款并停用，不再产生新收益。已发放的赠品设备收回并停止任务；已到账的赠品收益不扣回，由平台承担。${e4Detail?.orderType === "TRIAL_CONVERT" ? "转购买时发的试用奖励按当时的规则处理，最多收回钱包里没花掉的部分。" : ""}活动奖励按活动规则处理。`;
@@ -377,7 +380,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
     : waitReason ? `${waitReason}。` : undefined;
   const consequence = (!canWriteE4 && !canRefundE4) || !hasAction ? undefined
     : refundBlocked ? `${coverageKnown ? "退款后平台资金会低于安全线，补足后才能退款。" : "要先读到资金覆盖率才能退款。"}${terminalOptions.length > 0 ? "「标记失败结果」不会退款。" : ""}`
-    : canRefundE4 && refundableState ? `退款不可撤销。批准后钱退回用户钱包；符合条件的购买设备停用，赠品收回，赠品已到账收益由平台承担。${terminalOptions.includes("chargeback") ? "标记拒付不会退款，标记后也不能再退。" : terminalOptions.length > 0 ? "「标记失败结果」不会退款。" : ""}`
+    : canRefundE4 && refundableState ? `退款不可撤销。批准后钱退回用户钱包；符合条件的购买设备停用${giftClause}。${terminalOptions.includes("chargeback") ? "标记拒付不会退款，标记后也不能再退。" : terminalOptions.length > 0 ? "「标记失败结果」不会退款。" : ""}`
       : canCancel ? "提交后要批准才生效。用户还没付款，取消和标记失败都不涉及退款。"
         : "提交后要批准才生效。";
   const copyNo = () => {
@@ -400,7 +403,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
             // amplify 只管框里的覆盖率提示：那句写「提交时检查」，后端实际在批准执行时才查，所以覆盖率写进事实区。提案里的 amplifies 照旧是 true。
             briefKind: "funds", name: "退款 · " + o.id, title: "退款订单", op: "order-refund", orderId: o.id, amplify: false, fixedVal: channel,
             effect: irreversibleApproval, confirmLabel: "提交审批", confirmTone: "danger", reasonPlaceholder: reasonHint,
-            statedBrief: { impact: "钱退回用户钱包；符合条件的购买设备停用，赠品收回，赠品已到账收益由平台承担", check: "核对用户、金额和退款原因，理由写清依据或工单号。" },
+            statedBrief: { impact: `钱退回用户钱包；符合条件的购买设备停用${giftClause}`, check: "核对用户、金额和退款原因，理由写清依据或工单号。" },
             facts: <div className="rd-stack">
               {orderFacts(<Fact k="退款金额" lead tone="role-1" unit="USDT">{orderAmount(o.amt)}</Fact>, <>
                 {channel && <Fact k="退款去向">{REFUND_CHANNEL_LABELS[channel] ?? channel}</Fact>}

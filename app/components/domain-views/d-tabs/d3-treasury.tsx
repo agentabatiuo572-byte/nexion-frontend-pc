@@ -384,7 +384,7 @@ export function D3Treasury() {
     setConfirm({
       action: "储备注入登记",
       title: "登记储备注入",
-      detail: "这里只登记已经到账的资金，不会转账。凭证号不可重复。",
+      detail: "这里只登记已经到账的资金，不会转账。",
       facts: <Facts><Fact k="注入金额" lead tone="role-1" unit="USDT">{amountText(Number(nextAmount))}</Fact><Fact k="凭证类型">{typeLabel}</Fact><Fact k="凭证号"><span data-mono>{nextVoucher}</span></Fact></Facts>,
       briefKind: "funds",
       statedBrief: { impact: "登记后计入可用储备。", check: "核对金额和凭证号，理由写清到账依据或工单号。" },
@@ -556,7 +556,7 @@ export function D3Treasury() {
       action: "导出",
       title: EXPORT_TITLE[kind],
       detail: "",
-      facts: <Facts><Fact k="范围">{EXPORT_RANGE[kind]}</Fact><Fact k="去向">浏览器直接下载</Fact></Facts>,
+      facts: <Facts><Fact k="范围">{EXPORT_RANGE[kind]}</Fact>{main?.liabilities.totalUsdt === null && <Fact k="估值">{kind === "liabilities" ? "暂时无法估值，UVT 那一类的金额和各类占比留空" : "暂时无法估值，应付款和差额两行金额留空"}</Fact>}<Fact k="去向">浏览器直接下载</Fact></Facts>,
       briefKind: "export",
       statedBrief: { impact: "这次导出记入操作记录。", check: "核对导出内容，理由写明导出依据或工单号。" },
       effect: "立即生效",
@@ -729,7 +729,7 @@ export function D3Treasury() {
   return (
     <RdPage>
       {header}
-      {main?.liabilities.totalUsdt === null && <Notice tone="warn">缺价时仍可导出 CSV；无法估值的金额及占比留空，并标注估值状态，不能作为完整总额使用。</Notice>}
+      {main?.liabilities.totalUsdt === null && <Notice tone="warn">UVT 缺少有效价格，应付款总额暂时无法估值。导出的 CSV 里无法估值的金额和占比留空，并标注估值状态，不能当完整总额用。</Notice>}
       {fundAlarm && fundConclusion}
       {mainFailed && (
         <Notice tone="warn" title="资金状态：暂时无法判断" action={<Button size="sm" onClick={reloadAll}>重新加载</Button>}>
