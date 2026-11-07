@@ -674,7 +674,7 @@ export function D3Treasury() {
   const pendingItems: PendingItem[] = [
     ...unknownCommands.injections.map((record): PendingItem => ({
       commandKey: record.commandKey,
-      title: "储备注入登记结果未知，可能已经入账",
+      title: "登记储备注入结果未知，可能已经入账",
       body: <>{money(Number(record.amount))}，凭证号 {record.voucherNo}，{timeText(new Date(record.createdAt).toISOString())} 提交。</>,
       hint: "先看累计注入有没有变；重试不会重复登记。",
       expiresAt: record.expiresAt,
