@@ -134,9 +134,8 @@ export function FundConclusion({ main, emergencyLink, withdrawalsLink }: { main:
   const tone = WATER_TONE[water.tier];
   const days = coverDaysText(water.reserveCoverDays);
   const next = water.tier === "DANGER" ? emergencyLink : water.tier === "WARNING" ? withdrawalsLink : null;
-  // 够付一年以上时「1」不是要看的数，整句一个字号（VS-23）；天数才放大。
-  const cover = main.maturity7.cumulativeUsdt === 0 ? "未来 7 天没有到期"
-    : water.reserveCoverDays >= COVER_CAP_DAYS ? `可覆盖 ${days}` : <>可覆盖 <b>{days.split(" ")[0]}</b> {days.split(" ")[1]}</>;
+  // 这一屏最大的字是统计里的关键数字（VS-50 每屏一个），结论整句一个字号，异常时靠底色和整句放大。
+  const cover = main.maturity7.cumulativeUsdt === 0 ? "未来 7 天没有到期" : `可覆盖 ${days}`;
   return (
     <Conclusion
       state={tone}
@@ -203,7 +202,7 @@ export function OverviewTab({ main, links }: { main: D3Main; links: readonly Cro
   return (
     <>
       <StatBand label="资金概况">
-        <Stat tone="role-1" icon={Wallet} label="可用储备" value={amountText(reserve.reserveTotalUsdt)} unit="USDT" sub={`累计注入 ${amountText(reserve.injectedCumulativeUsdt)}`} explain="USDT 储备已扣除质押锁定金额。其他高流动资产暂不参与储备计算。累计注入按登记的凭证汇总，不是当前余额。" />
+        <Stat lead tone="role-1" icon={Wallet} label="可用储备" value={amountText(reserve.reserveTotalUsdt)} unit="USDT" sub={`累计注入 ${amountText(reserve.injectedCumulativeUsdt)}`} explain="USDT 储备已扣除质押锁定金额。其他高流动资产暂不参与储备计算。累计注入按登记的凭证汇总，不是当前余额。" />
         <Stat tone="role-2" icon={ReceiptText} label="应付款" value={amountText(liabilities.totalUsdt)} unit={liabilities.totalUsdt === null ? undefined : "USDT"} explain={`共 9 类，待核实的银行充值算在第 9 类。明细在「应付款与到期」。${UVT_VALUATION_NOTE}`} />
         <Stat tone={water.tier === "DANGER" ? "danger" : water.tier === "WARNING" ? "warn" : "role-3"} icon={CalendarClock} label="7 天到期应付款" value={amountText(maturity7.cumulativeUsdt)} unit="USDT" explain={`${dueParts(main.config, maturity7.trialStressIncluded)}。固定看未来 7 天。`} />
       </StatBand>
@@ -372,20 +371,20 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
   return (
     <>
       {mainState}
-      {!main && gapStat && <div className="d3-stats"><StatBand label="差额">{gapStat}</StatBand></div>}
+      {!main && gapStat && <StatBand label="差额">{gapStat}</StatBand>}
       {main && water && (
         <>
           <div className="rd-toolbar d3-window">
             <Segments label="到期预测窗口" value={windowValue} onChange={onWindow} items={[{ value: "7d", label: "7 天" }, { value: "30d", label: "30 天" }]} />
             <Explain label="到期预测窗口的说明" content="窗口只影响这一页签的到期数字。资金安全等级固定按未来 7 天算。" />
           </div>
-          <div className="d3-stats"><StatBand label="到期和覆盖">
+          <StatBand label="到期和覆盖">
             {gapStat}
             <Stat tone="role-3" icon={AlarmClock} label={`未来 ${windowDays(windowValue)}累计到期`} value={shown ? amountText(shown.cumulativeUsdt) : "—"} unit="USDT" explain={`${dueParts(main.config, shown?.trialStressIncluded)}。提现按冷却到期日排，窗口之外的不算在这里，所以可能比待处理提现少。`} />
             {/* 能付多久是状态，和资金概况那句话同一个颜色；覆盖率是和红线比的数，角色四（VS-12）。 */}
             <Stat tone={WATER_TONE[water.tier]} icon={Gauge} label="能付多久" value={formatReserveCoverDays(main.maturity7.cumulativeUsdt, water.reserveCoverDays)} explain={main.maturity7.cumulativeUsdt === 0 ? "未来 7 天没有到期，算不出能付多少天。" : `按未来 7 天每天平均到期额算，储备够付多少天。精确值 ${Number(water.reserveCoverDays).toLocaleString("en-US")} 天。`} />
             <Stat tone="role-4" icon={Landmark} label="兑付覆盖率" value={main.liabilities.totalUsdt === null ? TREASURY_VALUATION_UNAVAILABLE : coverage === null ? "无应付款" : `${coverage.toFixed(1)}%`} explain={`可用储备 ÷ 应付款总额，看全部应付款够不够付。可覆盖天数按最近到期速度算，和覆盖率独立。${UVT_VALUATION_NOTE}`} />
-          </StatBand></div>
+          </StatBand>
           <MaturityPanel maturity={shown} loading={maturity.loading} error={maturity.error} onRetry={onMaturityRetry} />
           <Panel
             flush

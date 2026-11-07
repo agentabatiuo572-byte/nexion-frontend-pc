@@ -217,7 +217,6 @@
 .d3-kv { max-width: 560px; }  /* 名称和值不隔半屏（DT-05）。 */
 .d3-levels .rd-tiers { max-width: none; }  /* 宽度由 Figure 管：左右排时到 560，上下排时占满面板。 */
 .d3-window { gap: var(--rd-space-1); }
-.d3-stats .rd-stat[data-lead] .rd-stat-value { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); }  /* 差额是 8 位以上的金额，关键数字档四格一行放不下。 */
 .d3-zero { color: var(--rd-text-3); }
 .d3-amount { max-width: none; }
 .d3-form { grid-template-columns: repeat(2, minmax(0, 280px)); }  /* 下拉里是两个字，不拉满半屏。 */

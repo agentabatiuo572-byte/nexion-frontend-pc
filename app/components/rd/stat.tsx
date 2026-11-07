@@ -11,7 +11,10 @@
  *
  * 读取失败传 value="—"，不写 0（CP-42）。explain 是口径说明，收进名称旁的提示图标（DP-06、DP-36）；sub 只放数据（昨天全天多少、涉及几个账户），说明不写在 sub 里。
  * 深色主题数字用角色色字，浅色主题数字用正文色、身份靠实色图标底（VS-14），这条写在 rd.css 里。
+ * 普通数字 24px，lead 40px（VS-50）。名称、数字、单位、第二行分四层，页面不改字号；长金额放不下时 rd.css 换行，不缩字。
  * 值是 0、0.00、$0、0% 或「—」时弱化：字色弱、图标底灰、lead 不放大，最大的字不给 0（novice-2、visual-1 第 7 条）。
+ * 大字只给数字：不带数字的文字（「无权限」「暂时无法估值」）不是答案，16px，传了 lead 也不放大（DT-21）。
+ * 这一屏的结论已经放大了数字（Conclusion lead 里的 <b>）时不传 lead，每屏一个 40px。
  * 带 data-cp="stat"，首屏检查按它数。
  * 整张可点：传 href 跳页，或传 onOpen 做页内动作，openLabel 是读屏名字。问号和 sub 里的按钮浮在上面，各点各的。
  * 目标页不可达时不传（X03）。
@@ -45,7 +48,8 @@ export function Stat({ label, value, unit, sub, tone, icon, iconTone, lead, expl
   openLabel?: string;
 }) {
   const zero = typeof value === "number" ? value === 0 : typeof value === "string" && ZERO.test(value.trim());
-  const big = lead && !zero;
+  const words = !zero && typeof value === "string" && !/\d/.test(value);
+  const big = lead && !zero && !words;
   return (
     <div className="rd-stat" data-cp="stat" data-lead={big ? "" : undefined}>
       {href && <Link className="rd-stat-hit" href={href} prefetch={false} aria-label={openLabel} />}
@@ -56,7 +60,7 @@ export function Stat({ label, value, unit, sub, tone, icon, iconTone, lead, expl
           {label}
           {explain && <Explain label={typeof label === "string" ? `${label}的口径` : "数字口径"} content={explain} />}
         </div>
-        <div className="rd-stat-value" data-tone={tone} data-zero={zero ? "" : undefined}>{value}{unit && <span className="rd-stat-unit">{unit}</span>}</div>
+        <div className="rd-stat-value" data-tone={tone} data-zero={zero ? "" : undefined} data-words={words ? "" : undefined}>{value}{unit && <span className="rd-stat-unit">{unit}</span>}</div>
         {sub && <div className="rd-stat-sub">{sub}</div>}
       </div>
     </div>

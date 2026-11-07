@@ -94,8 +94,8 @@
   --rd-weight-semibold: 600;
 
   /* 字号 / 行高：只有四级加一个关键数字 */
-  --rd-text-title: 24px;       --rd-lh-title: 32px;     /* 页面标题 */
-  --rd-text-section: 16px;     --rd-lh-section: 24px;   /* 区块标题、统计数字 */
+  --rd-text-title: 24px;       --rd-lh-title: 32px;     /* 页面标题、统计数字 */
+  --rd-text-section: 16px;     --rd-lh-section: 24px;   /* 区块标题 */
   --rd-text-body: 14px;        --rd-lh-body: 22px;      /* 正文、表格第一行、按钮，最小正文 */
   --rd-text-aux: 13px;         --rd-lh-aux: 18px;       /* 辅助：第二行、字段名、时间、单位 */
   --rd-text-key: 40px;         --rd-lh-key: 48px;       /* 关键数字，每屏一个 */

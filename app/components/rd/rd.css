@@ -114,17 +114,21 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-stats { container-type: inline-size; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px 32px; background: var(--rd-panel); border-radius: var(--rd-radius-panel); padding: var(--rd-panel-pad-y) var(--rd-panel-pad-x); }
 .rd-stat { display: flex; align-items: flex-start; gap: 12px; min-width: 0; flex: 0 1 auto; }
 /* 顶对齐：说明折成两行时标签和数字仍和邻格齐平；图标底对准数字那一行。 */
-.rd-stat > .rd-tile { margin-top: 20px; }
-.rd-stat-label { display: flex; align-items: center; gap: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-stat > .rd-tile { margin-top: 24px; }
+.rd-stat[data-lead] > .rd-tile { margin-top: 22px; }
+.rd-stat-label { display: flex; align-items: center; gap: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
 .rd-stat-label > .rd-explain { height: var(--rd-lh-aux); }
-.rd-stat-value { margin-top: 4px; font-variant-numeric: tabular-nums; font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; color: var(--tone, var(--rd-text)); white-space: nowrap; }
+.rd-stat-value { margin-top: 4px; font-variant-numeric: tabular-nums; font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; color: var(--tone, var(--rd-text)); white-space: nowrap; }
 /* 浅色主题数字用正文色，身份靠实色图标底（VS-14）；状态色数字照旧。 */
 :root[data-theme="light"] .rd-stat-value[data-tone^="role-"] { color: var(--rd-text); }
 /* 0 和「—」弱文字色：全 0 时不显得重要，图标底和大字号也一起让掉（组件按值判断）。 */
 .rd-stat-value[data-zero] { color: var(--rd-text-3); }
-.rd-stat-unit { margin-left: 4px; font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
+/* 不带数字的文字不是答案，不给大字；行高不变，和邻格同一行。 */
+.rd-stat-value[data-words] { font-size: var(--rd-text-section); }
+.rd-stat-unit { margin-left: 4px; font-size: var(--rd-text-body); font-weight: 400; color: var(--rd-text-3); }
 .rd-stat-sub { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
-.rd-stats .rd-stat { flex: 1 1 180px; }
+/* 数字不折行也不缩字：一格至少放得下数字，长金额自己撑宽这一列，再放不下才换行。 */
+.rd-stats .rd-stat { flex: 1 1 120px; min-width: min-content; }
 .rd-stat { position: relative; }
 .rd-stat-hit { position: absolute; inset: -8px; padding: 0; border: 0; border-radius: var(--rd-radius-control); background: none; cursor: pointer; }
 .rd-stat-hit:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 0; }
@@ -132,10 +136,12 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-stat:has(> .rd-stat-hit) > :not(.rd-stat-hit) { position: relative; pointer-events: none; }
 .rd-stat:has(> .rd-stat-hit) :is(.rd-explain, button:not(.rd-stat-hit), a:not(.rd-stat-hit)) { pointer-events: auto; }
 .rd-stat[data-lead] .rd-stat-value { margin-top: 0; font-size: var(--rd-text-key); line-height: var(--rd-lh-key); font-variant-numeric: normal; }
-/* 内容区窄（1024 开侧栏）时两个数字一行，不让第四个孤零零掉到第二行。 */
+/* 内容区窄（1024 开侧栏）时：有关键数字的，它独占一行，其余排在下面；没有的，四个才两两一行，不让第四个孤零零掉到第二行。 */
 @container (max-width: 900px) {
-  .rd-stats:has(> .rd-stat:nth-child(4)) > .rd-stat[data-cp] { flex: 1 1 calc(50% - 24px); }  /* 三个放得下一行，只有四个才两两一行 */
-  .rd-stats:has(> .rd-stat:nth-child(4)):has(> .rd-stat[data-lead]) > .rd-stat:not([data-lead]) > .rd-tile { margin-inline: 6px; }  /* 上下两行时 28 的图标底和 40 的同宽，同列文字一条左边 */
+  .rd-stats:has(> .rd-stat:nth-child(4)):not(:has(> .rd-stat[data-lead])) > .rd-stat[data-cp] { flex: 1 1 calc(50% - 24px); }
+  .rd-stats > .rd-stat[data-lead] { flex: 1 1 100%; }
+  .rd-stats:has(> .rd-stat[data-lead]) > .rd-stat:not([data-lead]) { flex-basis: auto; }  /* 下面一行按内容分宽，第二行的说明不折行 */
+  .rd-stats > .rd-stat[data-lead] + .rd-stat > .rd-tile { margin-inline: 6px; }  /* 28 的图标底和上面 40 的同宽，同列文字一条左边 */
 }
 
 /* ── 经营卡：名称、主数、对比、分项四层，层高都是定的，同排同高、四层同一条线，切时段不跳版 ── */
