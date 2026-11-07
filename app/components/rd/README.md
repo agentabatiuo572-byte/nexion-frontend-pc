@@ -39,7 +39,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 看板里要处理的事 | `TodoList`、`TodoItem`，读不到用 `TodoFailed`；目标页不可达时不传 `href`，这一行照样提醒，不能点、没有箭头，`sub` 写该找谁 | `todo-list.tsx` |
 | 一块内容读取中、失败、空 | `BlockState`，折叠摘要里的失败传 `compact` 一行写完，重试是文字链；一个数字或一行读不到用 `InlineRetry`，同一个样子 | `block-state.tsx` |
 | 按天的柱图 | `Bars`，全是 0 别画，写一句话 | `bars.tsx` |
-| 表格 | `Table`、`Th`、`Tr`、`Td`、`Cell`；金额、数量、日期传 `num`，单号、哈希、地址才传 `mono` | `table.tsx` |
+| 表格 | `Table`、`Th`、`Tr`、`Td`、`Cell`；金额、数量、日期传 `num`，单号、哈希、地址才传 `mono`；理由这类长文本列给 `Td` 传 `grow`，占满剩下的列宽，放不下才省略（一张表最多一列） | `table.tsx` |
 | 显示更多列 | `useTableColumns`、`ColumnPicker` | `table.tsx` |
 | 表格加载、空、失败 | `TableLoading`、`TableMessage`；失败传 `role="alert"`，自动是失败红 | `table.tsx` |
 | 表格分页 | `Pager`，有数据才渲染 | `pager.tsx` |
@@ -54,13 +54,13 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 详情、确认框里成对的名称和值 | `Facts`、`Fact`；确认框的关键数字传 `lead`（每框最多一个，放第一行），值是不带数字的文字时按普通的值显示，大字只给数字；带含义的值传 `tone`；状态变化写 `Change`（改后蓝）。放在 `Modal` 里自动带浅底 | `facts.tsx` |
 | 按时间发生的操作、状态历史 | `Timeline`；最新在上，主体在组件内经 `maskAuditActor` 打码；仅失败 `danger`、待确认 `warn` 的节点上色 | `timeline.tsx` |
 | 提现历史、流水、同组账户等同类记录 | `RecordList`；主值、单位、时间和对象、状态、可复制单号分层；默认 5 条，点「查看全部」展开 | `record-list.tsx` |
-| 要人看到的提醒、错误、待确认条 | `Notice` | `notice.tsx` |
+| 要人看到的提醒、错误、待确认条 | `Notice`；正文超过一行、动作不止一个时传 `actionBelow`，动作排到正文下面、和正文左对齐，正文占满整条宽；多段正文用 `<p>`，段间 8px；按钮和解释它的问号包在 `<span data-pair>` 里挨着；条里的链接不在词中间折行 | `notice.tsx` |
 | 短任务弹窗 | `Modal`；`icon` 是标题前的图标底，`sub` 放标题下的后果标签，危险确认传 `tone="danger"` | `overlay.tsx` |
 | 写操作确认 | 继续用 `OperationConfirmModal` | 见下 |
 | 解除待确认 | `ReleaseModal`；`label` 写原操作，统一的一句话在组件里，页面特有的说明传 `explain` | `overlay.tsx` |
 | 按钮 | `Button`、`IconButton`；和主按钮并排的危险入口用 `danger-outline`，实心 `danger` 只给最终确认。高度读 `--rd-control-h`（32）、`-sm`（24）、`-lg`（40），页面不写高度 | `button.tsx` |
 | 状态 | `StatusTag`；列表筛成只有一种状态时，这个默认状态传 `neutral`（灰字加图标）；弹窗标题下「不能撤销」用 `IrreversibleTag`，走审批的「批准后生效」把谁来批、批准前什么不变传 `explain`，不写事实行 | `status-tag.tsx` |
-| 提示图标和气泡：这是什么、显示位置、生效时间、口径、后果 | `Explain`，悬停、点击、键盘都能开；`content` 自由内容（多段用 `<p>`），`rows` 分行写；`Panel`、`Fold`、`Conclusion`、`Stat`、`ConfigRow`、`Field`、`Check`、`CheckGroup`、`KeyValues`、`Decision`、`Drawer`、`StatusTag` 传 `explain` 就自带。正文里的词写成 children 就是虚线下划线，不加图标 | `explain.tsx` |
+| 提示图标和气泡：这是什么、显示位置、生效时间、口径、后果 | `Explain`，悬停、点击、键盘都能开；`Stat` 里的气泡向上、`ConfigRow` 里的向下展开，都从问号左边起，不盖住被解释的数字、不压侧栏，放不下自动翻边；`content` 自由内容（多段用 `<p>`），`rows` 分行写；`Panel`、`Fold`、`Conclusion`、`Stat`、`ConfigRow`、`Field`、`Check`、`CheckGroup`、`KeyValues`、`Decision`、`Drawer`、`StatusTag` 传 `explain` 就自带。正文里的词写成 children 就是虚线下划线，不加图标 | `explain.tsx` |
 | 一个整体分几份 | `Donut` 环图，中间写总额，图例写数；旁边有表格时传 `legend={false}`，表格第一列放色点当图例；两类都有钱才画 | `chart.tsx` |
 | 图和数据放一起 | `Figure`，图在左（`width` 是上限）、数据在右，名字和数字挨着；容器窄时上下排，尺和条这类宽图传 `stack="wide"` | `chart.tsx` |
 | 几类比大小 | `BarList` 排序条，一个颜色，数字在条右边；`value` 传 `null` 写「样本过小」 | `chart.tsx` |
@@ -112,8 +112,6 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
   </div>
 </div></div>
 ```
-
-窄栏只放「相关页面」时（D6）给 `.rd-config-rail` 加 `data-end`，窄宽时整块排到全部分组后面；链接用 `<nav className="rd-links" data-stack>`，宽时一行一个，窄宽时排成一行。
 
 一切正常时用 `Conclusion` 一句话（16px，不放大），和看板、报表、工作台一个样子；有异常才用 `Notice`。每项自己保存，页头不放全局保存。没有修改权限时 `ConfigRow` 不传 `action`。`PageHeader` 的 `guideExtra` 放「这页怎么用」里随数据变的内容。
 

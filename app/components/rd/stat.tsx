@@ -60,7 +60,7 @@ export function Stat({ label, value, unit, sub, tone, icon, iconTone, lead, expl
       <div>
         <div className="rd-stat-label">
           {label}
-          {explain && <Explain label={typeof label === "string" ? `${label}的口径` : "数字口径"} content={explain} />}
+          {explain && <Explain label={typeof label === "string" ? `${label}的口径` : "数字口径"} content={explain} side="top" align="start" />}
         </div>
         <div className="rd-stat-value" data-tone={tone} data-zero={zero ? "" : undefined} data-words={words ? "" : undefined}>{value}{unit && <span className="rd-stat-unit">{unit}</span>}</div>
         {sub && <div className="rd-stat-sub">{sub}</div>}
