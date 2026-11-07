@@ -443,7 +443,7 @@ function normalizeRisk(raw: Record<string, unknown>): BRiskRadar {
         on: state === "missing" ? true : state === "on",
         state,
         configKey: text(item.configKey, ""),
-        // 没有配置行时后端发 default_off，业务按关闭处理（KillSwitchState 失败关闭），显示成「未设置」。
+        // 没有配置行时后端发 default_off，业务按关闭处理（KillSwitchState 失败关闭），页面写「已关停」，原因放问号。
         unset: rawState === "default_off",
       };
     }),

@@ -8,7 +8,7 @@ import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session"
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { finiteDashboardNumber } from "@/lib/admin/dashboard-number";
 import type { KpiTrendPoint } from "@/lib/admin/kpi-trend";
-import { fetchUserProfilesPage } from "@/lib/admin/user360-client";
+import { fetchC1Overview, fetchUserProfilesPage } from "@/lib/admin/user360-client";
 import { businessDay } from "@/lib/admin/business-time";
 
 type ApiResult<T> = { code: number; message?: string; data?: T };
@@ -32,12 +32,56 @@ function amount(value: unknown, field: string): number {
   return finiteDashboardNumber(value) ?? invalid(field);
 }
 
-/** 今天和昨天全天的设备销售额。totalUsdt 把团队奖励这种支出也算了，不用（B0 4.2）。 */
+/** 经营数据的三个时段，切换时不重读：三段数据都在第一次读齐（B0 5.6）。 */
+export type B0Period = "today" | "week" | "month";
+
+/** 某个业务日的昨天、周一、上周一、上周日、1 日。只做日期串运算，不碰浏览器时区。 */
+export function b0PeriodDays(today: string) {
+  const [year, month, day] = today.split("-").map(Number);
+  const shifted = (offset: number) => new Date(Date.UTC(year, month - 1, day + offset)).toISOString().slice(0, 10);
+  const sinceMonday = (new Date(Date.UTC(year, month - 1, day)).getUTCDay() + 6) % 7;
+  return { yesterday: shifted(-1), monday: shifted(-sinceMonday), lastMonday: shifted(-sinceMonday - 7), lastSunday: shifted(-sinceMonday - 1), monthStart: `${today.slice(0, 8)}01` };
+}
+
+/** 设备销售额和订单数，带上一期全期的金额。totalUsdt 把团队奖励这种支出也算了，不用（B0 4.2）。 */
 export async function fetchB0Sales() {
-  const data = await read("/api/admin/bi/finance/revenue?period=day");
-  if (!Array.isArray(data.streams)) invalid("streams");
-  const sales = (data.streams as Row[]).find((row) => row.stream === "device_sales") ?? invalid("streams.device_sales");
-  return { today: amount(sales.amountUsdt, "amountUsdt"), yesterday: amount(sales.previousAmountUsdt, "previousAmountUsdt") };
+  const period = async (name: "day" | "week" | "month") => {
+    const data = await read(`/api/admin/bi/finance/revenue?period=${name}`);
+    if (!Array.isArray(data.streams)) invalid("streams");
+    const sales = (data.streams as Row[]).find((row) => row.stream === "device_sales") ?? invalid("streams.device_sales");
+    return { amount: amount(sales.amountUsdt, "amountUsdt"), orders: amount(sales.orderCount, "orderCount"), previous: amount(sales.previousAmountUsdt, "previousAmountUsdt") };
+  };
+  const [today, week, month] = await Promise.all([period("day"), period("week"), period("month")]);
+  return { today, week, month };
+}
+
+/** 用户入金和已完成提现。按天的接口最多 31 天，够算本月和上周，不够算上月，所以本月没有对比。今天取接口最后一天，和后端切日一致。 */
+export async function fetchB0MoneyFlows() {
+  const data = await read("/api/admin/bi/finance/daily-flows?days=31");
+  if (!Array.isArray(data.days) || data.days.length === 0) invalid("days");
+  const days = (data.days as Row[]).map((row) => ({
+    date: typeof row.date === "string" ? row.date : invalid("date"),
+    topup: amount(row.userTopupUsdt, "userTopupUsdt"),
+    topupCount: amount(row.userTopupCount, "userTopupCount"),
+    withdrawal: amount(row.withdrawalUsdt, "withdrawalUsdt"),
+    withdrawalCount: amount(row.withdrawalCount, "withdrawalCount"),
+  }));
+  const today = days[days.length - 1].date;
+  const { yesterday, monday, lastMonday, lastSunday, monthStart } = b0PeriodDays(today);
+  // 金额是两位小数，相加相减后回到分，净入金才不会出现 +0.00。
+  const cents = (value: number) => Math.round(value * 100) / 100;
+  const between = (from: string, to: string) => {
+    const rows = days.filter((row) => row.date >= from && row.date <= to);
+    const total = (pick: (row: (typeof days)[number]) => number) => cents(rows.reduce((sum, row) => sum + pick(row), 0));
+    const topup = total((row) => row.topup);
+    const withdrawal = total((row) => row.withdrawal);
+    return { topup, topupCount: total((row) => row.topupCount), withdrawal, withdrawalCount: total((row) => row.withdrawalCount), net: cents(topup - withdrawal) };
+  };
+  return {
+    today: { current: between(today, today), previous: between(yesterday, yesterday) },
+    week: { current: between(monday, today), previous: between(lastMonday, lastSunday) },
+    month: { current: between(monthStart, today), previous: null },
+  };
 }
 
 /** 今天的提现提交、完成、拒绝笔数和平均到账小时数。 */
@@ -51,11 +95,23 @@ export async function fetchB0Redemption() {
   };
 }
 
-/** 今天和昨天全天的新增用户，按业务日历取日期（B0 5.6）。接口每页至少 20 条，传小了分页校验不过，只用 total。 */
-export async function fetchB0NewUsers() {
-  const count = async (day: string) => (await fetchUserProfilesPage({ joinedFrom: day, joinedTo: day, pageNum: 1, pageSize: 20 })).total;
-  const [today, yesterday] = await Promise.all([count(businessDay()), count(businessDay(-1))]);
-  return { today, yesterday };
+/** 累计注册和今日、本周、本月新增，按业务日历取日期（B0 5.6）。接口每页至少 20 条，传小了分页校验不过，只用 total。 */
+export async function fetchB0Registrations() {
+  const today = businessDay();
+  const { monday, monthStart } = b0PeriodDays(today);
+  const joined = async (from: string) => (await fetchUserProfilesPage({ joinedFrom: from, joinedTo: today, pageNum: 1, pageSize: 20 })).total;
+  const [overview, todayNew, weekNew, monthNew] = await Promise.all([fetchC1Overview(), joined(today), joined(monday), joined(monthStart)]);
+  return { total: overview.totalUsers, today: todayNew, week: weekNew, month: monthNew };
+}
+
+/** 今日和昨日活跃人数。当天没有记录时接口给 null，不当 0。 */
+export async function fetchB0ActiveUsers() {
+  const data = await read("/api/admin/users/active-summary");
+  const count = (day: unknown, field: string) => {
+    if (!day || typeof day !== "object") invalid(field);
+    return finiteDashboardNumber((day as Row).activeUsers);
+  };
+  return { today: count(data.today, "today"), yesterday: count(data.yesterday, "yesterday") };
 }
 
 export async function fetchB0Devices() {

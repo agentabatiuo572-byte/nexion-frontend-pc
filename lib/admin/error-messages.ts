@@ -1044,6 +1044,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   DISPLAY_NAME_REQUIRED: "请填写显示名。",
   INVALID_STATE_TRANSITION: "当前状态不允许执行该操作，请刷新后查看最新状态。",
   AGGREGATE_EXPORT_MUST_BE_NON_SENSITIVE: "聚合报表只支持非敏感数据，请使用页面提供的导出字段。",
+  L3_DAYS_INVALID: "按天查询只能取 1 到 31 天。",
   BI_REPORT_REQUIRED_FIELD_MISSING: "导出信息不完整，请核对报表类型、时间范围、字段、接收人和用途。",
   BI_REPORT_FIELD_LENGTH_INVALID: "导出信息超过长度限制，请缩短筛选条件、接收人或用途后提交。",
   DECRYPTED_PII_EXPORT_BLOCKED: "当前不支持导出解密的用户隐私数据，请使用聚合数据或脱敏导出。",

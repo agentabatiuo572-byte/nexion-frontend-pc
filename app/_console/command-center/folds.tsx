@@ -3,7 +3,7 @@
 /**
  * 第二层：5 行带结论的折叠摘要，点一下原地展开。标题写结论，不重复首屏数字（DP-04、DP-61）。
  * 每块最多一个「查看…」入口，放在标题行右侧，正文色不加箭头（VS-06）；结论句已给的入口这里不再给一个。读取失败一行写完，不占整块。
- * 资金和风险用首屏已读的数据；资金进出的今日明细、用户与转化、关键指标展开时才读，
+ * 资金和风险用首屏已读的数据；资金进出的今日提现明细、用户与转化、关键指标展开时才读，
  * 转化每读一次写一条审计，所以第一次展开后才挂载，收起也不卸载。
  */
 import Link from "next/link";
@@ -16,15 +16,14 @@ import type { B0Blocks } from "@/lib/admin/b0-access";
 import type { B2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import type { BLedger, BLiquidity, BRiskRadar } from "@/lib/admin/b-client";
 import { useB3Funnel } from "@/lib/admin/b3-client";
-import { fetchD1TopupOverview } from "@/lib/admin/d-client";
+import type { fetchD1TopupOverview } from "@/lib/admin/d-client";
 import { rollupKpiPassState } from "@/lib/admin/dashboard-number";
 import { liabilityDisplayName } from "@/lib/admin/liability-labels";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { UNAVAILABLE_GATES } from "@/lib/admin/j-client";
-import { fetchC1Overview } from "@/lib/admin/user360-client";
 import { fmtAmount, fmtNum, fmtPct } from "@/lib/format";
 import type { FundLevel } from "./status";
-import { useBlock } from "./use-block";
+import { useBlock, type Block } from "./use-block";
 
 const usdt = (value: number) => `${fmtAmount(value)} USDT`;
 const FUNNEL_FILTERS = { cohort: "ALL", phase: "ALL", ref: "ALL" };
@@ -198,9 +197,10 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                     {closed.map((gate) => (
                       <li key={gate.dom}>
                         <span>{GATE_NAMES[gate.dom] ?? gate.nm}</span>
-                        {gate.unset
-                          ? <StatusTag tone="warn" explain="这个开关还没人设置过，系统按关闭处理，用户现在用不了这项业务。要开放，到「紧急停用开关」页提交恢复审批。">未设置</StatusTag>
-                          : <StatusTag tone="warn" icon={XCircle} explain="有人关了这项业务，用户现在用不了。为什么关、怎么恢复，到「紧急停用开关」页看。">已关停</StatusTag>}
+                        {/* 和「紧急停用开关」页同一个词：没人设置过也写已关停，原因放问号。 */}
+                        <StatusTag tone="warn" icon={XCircle} explain={gate.unset
+                          ? "这个开关还没人设置过，系统按关闭处理，用户现在用不了这项业务。要开放，到「紧急停用开关」页提交恢复审批。"
+                          : "有人关了这项业务，用户现在用不了。为什么关、怎么恢复，到「紧急停用开关」页看。"}>已关停</StatusTag>
                       </li>
                     ))}
                   </ul>
@@ -251,32 +251,40 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
   );
 }
 
+/** 储备净流入不在首屏，标题行写今天的数，没权限看财务报表的账号靠它看资金（B0 5.3）。 */
 function flowConclusion(history: B2LiquidityHistory) {
   const inflow = history.flowWindows.reduce((sum, item) => sum + item.inflowWan, 0);
   const outflow = history.flowWindows.reduce((sum, item) => sum + item.outflowWan, 0);
   if (inflow === 0 && outflow === 0) return "近 8 天储备账没有进出";
-  return inflow > outflow ? "近 8 天流入多于流出" : inflow < outflow ? "近 8 天流出多于流入" : "近 8 天流入流出持平";
+  const net = (history.flowWindows.at(-1)?.netWan ?? 0) * 10_000;
+  const trend = inflow > outflow ? "近 8 天流入多于流出" : inflow < outflow ? "近 8 天流出多于流入" : "近 8 天流入流出持平";
+  return `今日储备净流入 ${net > 0 ? "+" : ""}${usdt(net)}，${trend}`;
 }
 
-export function FlowFold({ blocks, history, historyError, historyRetrying, onRetryHistory, refreshKey, reach, open, onOpenChange }: FoldProps & {
+export function FlowFold({ blocks, history, historyError, historyRetrying, onRetryHistory, topup, netFlow24h, clock, refreshKey, reach, open, onOpenChange }: FoldProps & {
   blocks: B0Blocks;
   history: B2LiquidityHistory | null;
   historyError: string | null;
   historyRetrying: boolean;
   onRetryHistory: () => void;
+  topup: Block<Awaited<ReturnType<typeof fetchD1TopupOverview>>>;
+  netFlow24h: number | null;
+  clock: string | null;
   refreshKey: number;
   reach: Reach;
 }) {
   const opened = useOpenedOnce(open);
-  const topup = useBlock(fetchD1TopupOverview, opened && blocks.topup, refreshKey);
   const redemption = useBlock(fetchB0Redemption, opened && blocks.redemption, refreshKey);
-  const summary = !blocks.netFlow ? "今日充值和提现明细" : historyError ? "读取失败" : history ? flowConclusion(history) : "正在读取…";
+  // 有入金卡时今日充值已经写在卡上，同一个数一页只出现一次；看不到入金卡的账号才在这里看。
+  const showTopup = blocks.topup && !blocks.moneyFlows;
+  const summary = !blocks.netFlow ? (showTopup ? "今日充值和提现明细" : "今日提现明细") : historyError ? "读取失败" : history ? flowConclusion(history) : "正在读取…";
+  const todayFlow = history?.flowWindows.at(-1);
   const moved = history?.flowWindows.some((item) => item.inflowWan > 0 || item.outflowWan > 0);
   // 近 8 天全是 0 时结论在标题行写过，这里不再写，今日明细左右排。
   const quiet = blocks.netFlow && history !== null && !moved && !historyError;
   const today = (
     <>
-      {blocks.topup && (
+      {showTopup && (
         <section aria-label="今日充值">
           <h3 className="cc-sub">今日充值</h3>
           {topup.error ? <BlockState compact state="error" title="今日充值读取失败" detail={topup.error} onRetry={topup.reload} retrying={topup.loading} />
@@ -305,7 +313,10 @@ export function FlowFold({ blocks, history, historyError, historyRetrying, onRet
   );
   return (
     <Fold title="资金进出" summary={summary} icon={ArrowLeftRight} tone="role-2" open={open} onOpenChange={onOpenChange}
-      explain={blocks.netFlow ? "按储备账已确认的流入、流出统计。流入包括充值、财务注资和储备返还／冲正；流出包括提现扣储备和拒付退回。非银行提现在放行时扣储备，银行提现在付款成功时结算，不代表全部已实际打款。用余额买设备不算。" : undefined}
+      explain={blocks.netFlow ? <>
+        按储备账已确认的流入、流出统计。流入包括充值、财务注资和储备返还／冲正；流出包括提现扣储备和拒付退回。非银行提现在放行时扣储备，银行提现在付款成功时结算，不代表全部已实际打款。用余额买设备不算。
+        {netFlow24h != null && ` 另一个算法是滚动近 24 小时：${fmtAmount(netFlow24h)} USDT，时间段不同，数可能不一样。`}{clock && ` 数据时间 ${clock}。`}
+      </> : undefined}
       actions={blocks.netFlow ? <FoldLink reach={reach} href="/overview/liquidity">查看资金流</FoldLink> : undefined}>
       <div className="cc-cols">
         {blocks.netFlow && !quiet && (
@@ -313,6 +324,7 @@ export function FlowFold({ blocks, history, historyError, historyRetrying, onRet
             {historyError ? <BlockState compact state="error" title="资金进出读取失败" detail={historyError} onRetry={onRetryHistory} retrying={historyRetrying} />
               : !history ? <BlockState state="loading" title="正在读取…" />
                 : <Bars label="近 8 天每天流入和流出" series={[{ name: "流入", slot: 2 }, { name: "流出", slot: 4 }]} rows={history.flowWindows.map((item) => ({ label: item.label, values: [item.inflowWan * 10_000, item.outflowWan * 10_000] }))} format={usdt} height={96} />}
+            {todayFlow && <p className="cc-line">今日流入 {usdt(todayFlow.inflowWan * 10_000)}，流出 {usdt(todayFlow.outflowWan * 10_000)}</p>}
           </section>
         )}
         {quiet ? today : <div className="cc-fold-stack">{today}</div>}
@@ -344,8 +356,8 @@ function FunnelBody({ onSummary }: { onSummary: (text: string) => void }) {
   if (error) return <BlockState compact state="error" title="用户转化读取失败" detail={error} onRetry={() => void reload()} retrying={loading} />;
   if (!data) return <BlockState state="loading" title="正在读取…" />;
   if (!data.available || !stages.length) return <BlockState compact state="error" title="用户转化暂无数据" detail={data.message ?? "暂无转化数据"} onRetry={() => void reload()} retrying={loading} />;
-  // 结论已经写在折叠标题行：全是样本过小时一句话带过（5.4），这里不再写一遍（VS-105）。
-  if (tooFew || allSmall) return null;
+  // 结论已经写在折叠标题行，这里不再写一遍（VS-105），只说什么时候会有图。
+  if (tooFew || allSmall) return <p className="cc-line" data-muted="">每一步到 5 人后，这里显示各步人数。</p>;
   return (
     <div className="cc-fold-stack cc-bars">
       <BarList label="注册到提现各步人数" slot={3} max={first} rows={stages.map((stage) => {
@@ -357,25 +369,13 @@ function FunnelBody({ onSummary }: { onSummary: (text: string) => void }) {
   );
 }
 
-export function FunnelFold({ blocks, refreshKey, reach, open, onOpenChange }: FoldProps & { blocks: B0Blocks; refreshKey: number; reach: Reach }) {
+export function FunnelFold({ refreshKey, reach, open, onOpenChange }: FoldProps & { refreshKey: number; reach: Reach }) {
   const opened = useOpenedOnce(open);
   const [summary, setSummary] = useState<string | null>(null);
-  const total = useBlock(fetchC1Overview, opened && blocks.totalUsers, refreshKey);
   return (
-    <Fold title="用户与转化" summary={summary ?? (opened ? "正在读取…" : "点开看累计用户和注册到提现各步人数")} icon={Users} tone="role-3" open={open} onOpenChange={onOpenChange}
-      actions={blocks.funnel ? <FoldLink reach={reach} href="/overview/funnel">查看明细</FoldLink> : undefined}>
-      {opened && (
-        <div className="cc-cols">
-          <div className="cc-fold-stack">
-            {blocks.totalUsers && (
-              total.error ? <BlockState compact state="error" title="累计用户读取失败" detail={total.error} onRetry={total.reload} retrying={total.loading} />
-                : <p className="cc-line">累计用户 <span className="cc-num" data-tone="role-3">{total.data ? `${fmtNum(total.data.totalUsers)} 人` : "…"}</span></p>
-            )}
-            <p className="cc-line" data-muted="">活跃用户暂未统计</p>
-          </div>
-          {blocks.funnel && <FunnelBody key={refreshKey} onSummary={setSummary} />}
-        </div>
-      )}
+    <Fold title="用户与转化" summary={summary ?? (opened ? "正在读取…" : "点开看注册到提现各步人数")} icon={Users} tone="role-3" open={open} onOpenChange={onOpenChange}
+      actions={<FoldLink reach={reach} href="/overview/funnel">查看明细</FoldLink>}>
+      {opened && <FunnelBody key={refreshKey} onSummary={setSummary} />}
     </Fold>
   );
 }

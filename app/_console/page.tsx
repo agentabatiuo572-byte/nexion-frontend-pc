@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 今日概览（首页 /）。一个「今天」面板：结论句是头，下面是要处理的事和今日经营；其余收进 5 行带结论的折叠摘要。
+ * 今日概览（首页 /）。「今天」面板：结论句是头，下面是要处理的事和资金安全；再下面是经营数据六张卡；其余收进 5 行带结论的折叠摘要。
  * 一屏只有一条结论横幅（VS-23）：资金告警把可覆盖天数和建议并进这一句，不再另起一条。
  * 所有运营角色都能进，每块看自己的读权限，没有权限的块不出现、不发请求（重构说明 5.7）。
  * 每块各自加载、各自报错，一块失败不挡别的块（5.6）。业务处理跳业务页；资金快照导出先登记理由再下载。
@@ -16,12 +16,12 @@ import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { a2ActionText } from "@/lib/admin/operator-copy";
 import { b0Blocks } from "@/lib/admin/b0-access";
 import { coverDaysText } from "@/lib/admin/treasury-cover-days";
-import { fetchB0Devices, fetchB0NewUsers, fetchB0Sales } from "@/lib/admin/b0-client";
+import { fetchB0ActiveUsers, fetchB0Devices, fetchB0MoneyFlows, fetchB0Registrations, fetchB0Sales } from "@/lib/admin/b0-client";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { fetchB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import { fetchB2Reserve } from "@/lib/admin/b2-client";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
-import { fetchD2Withdrawals } from "@/lib/admin/d-client";
+import { fetchD1TopupOverview, fetchD2Withdrawals } from "@/lib/admin/d-client";
 import { supportClient } from "@/lib/admin/m-support-client";
 import { opsAlertHref, refreshJ1DutyAlerts, useJ1DutyAlerts } from "@/lib/admin/ops-dashboard-client";
 import { isRiskConclusion, riskFeedTitle } from "@/lib/admin/risk-feed";
@@ -31,10 +31,10 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
 import { downloadB0Snapshot, pendingB0Export } from "@/lib/admin/b0-export-client";
 import { toast } from "@/lib/store/ui";
+import { BusinessPanel, usePeriodChoice } from "./command-center/business";
 import { availableGates, FlowFold, FundFold, FunnelFold, KpiFold, pressureLevel, RiskFold, useFoldChoices } from "./command-center/folds";
 import { PendingPanel, type PendingFailure, type PendingRow } from "./command-center/pending";
 import { fundLevel, statusSentence } from "./command-center/status";
-import { TodayPanel } from "./command-center/today";
 import { useBlock, type Block } from "./command-center/use-block";
 
 const RESERVE_PAGE = "/overview/dual-ledger";
@@ -74,8 +74,11 @@ export default function CommandCenter() {
   const bDomain = useBDomainDashboard(blocks.fund);
   const reserve = useBlock(fetchB2Reserve, blocks.coverDays, refreshKey);
   const flows = useBlock(fetchB2LiquidityHistory, blocks.netFlow, refreshKey);
+  const moneyFlows = useBlock(fetchB0MoneyFlows, blocks.moneyFlows, refreshKey);
   const sales = useBlock(fetchB0Sales, blocks.sales, refreshKey);
-  const newUsers = useBlock(fetchB0NewUsers, blocks.newUsers, refreshKey);
+  const registrations = useBlock(fetchB0Registrations, blocks.newUsers, refreshKey);
+  const activeUsers = useBlock(fetchB0ActiveUsers, blocks.activeUsers, refreshKey);
+  const topup = useBlock(fetchD1TopupOverview, blocks.topup, refreshKey);
   const devices = useBlock(fetchB0Devices, blocks.devices, refreshKey);
   const approvals = useBlock(fetchA2Overview, blocks.approvals && reach("/platform/audit"), refreshKey);
   const reviewPending = useBlock(countReviewPending, blocks.withdrawals && reach("/finance/withdrawals"), refreshKey);
@@ -120,8 +123,10 @@ export default function CommandCenter() {
   risks.forEach((item, index) => rows.push({ key: `risk-${index}`, title: riskFeedTitle(item.t), sub: item.m, owner: "风控", href: item.href, tone: item.sev === "p0" ? "danger" : undefined }));
   if (orphaned.error) rows.push({ key: "orphaned", name: "打款异常", onRetry: orphaned.reload });
   else if (orphaned.data) rows.push({ key: "orphaned", title: `打款异常 ${orphaned.data} 单`, sub: "需要人工核对", owner: "财务", href: "/finance/withdrawals", tone: "warn" });
-  if (devices.data && devices.data.online === 0 && devices.data.abnormal > 0 && reach("/devices/ops")) {
-    rows.push({ key: "devices", title: "设备全部没有心跳", sub: "到设备运行管理看是哪些设备、为什么不在线", owner: "其他", href: "/devices/ops", tone: "warn" });
+  // 数字写在活跃用户卡的分项里，看不到这张卡的账号才写在这一行（DP-61）。
+  if (devices.data && devices.data.abnormal > 0 && reach("/devices/ops")) {
+    const deviceTitle = devices.data.online === 0 ? "设备全部没有心跳" : blocks.activeUsers ? "有设备异常" : `设备异常 ${fmtNum(devices.data.abnormal)} 台`;
+    rows.push({ key: "devices", title: deviceTitle, sub: "到设备运行管理看是哪些设备、为什么不在线", owner: "其他", href: "/devices/ops", tone: "warn" });
   }
   if (approvals.error) rows.push({ key: "a2", name: "待审批操作", onRetry: approvals.reload });
   else if (approvals.data?.stats.pendingTickets) {
@@ -141,8 +146,8 @@ export default function CommandCenter() {
   const hasPendingSource = blocks.fund || blocks.j1 || blocks.withdrawals || blocks.approvals || blocks.support || blocks.devices;
   const showPending = hasPendingSource && (rows.length > 0 || pendingLoading);
 
-  const firstScreenLoading = bDomain.loading || reserve.loading || flows.loading || sales.loading || newUsers.loading || devices.loading || pendingLoading;
-  const statusLoading = (bDomain.loading && !bDomain.hasData) || pendingLoading || [reserve, flows, sales, newUsers, devices].some(firstLoad);
+  const firstScreenLoading = bDomain.loading || reserve.loading || flows.loading || moneyFlows.loading || sales.loading || registrations.loading || activeUsers.loading || topup.loading || devices.loading || pendingLoading;
+  const statusLoading = (bDomain.loading && !bDomain.hasData) || pendingLoading || [reserve, flows, moneyFlows, sales, registrations, activeUsers, devices].some(firstLoad);
   const [readAt, setReadAt] = useState<number | null>(null);
   useEffect(() => { if (!firstScreenLoading) setReadAt(Date.now()); }, [firstScreenLoading]);
   const clock = readAt === null ? null : businessClock(readAt);
@@ -194,9 +199,11 @@ export default function CommandCenter() {
     pendingRows,
     fundSafe: fundReady && level === "ok" && !reserve.error,
     failed: [
+      ...(moneyFlows.error ? ["入金和提现"] : []),
       ...(sales.error ? ["销售额"] : []),
-      ...(newUsers.error ? ["新增用户"] : []),
-      ...(flows.error ? ["资金净流入"] : []),
+      ...(registrations.error ? ["注册用户"] : []),
+      ...(activeUsers.error ? ["活跃用户"] : []),
+      ...(flows.error ? ["资金进出"] : []),
       ...(devices.error ? ["设备数据"] : []),
       ...pendingFailed,
     ],
@@ -220,8 +227,32 @@ export default function CommandCenter() {
   const phaseText = phase.currentPhase ? `${phase.currentPhase} 阶段 · 第 ${phase.currentMonth}/${phase.totalMonths} 月` : "运营阶段未配置";
   const fundOpen = folds.isOpen("fund", fundAlert);
 
-  const anyTodayBlock = blocks.sales || blocks.newUsers || blocks.netFlow || blocks.devices;
+  const { period, setPeriod } = usePeriodChoice(session?.adminId);
+  const anyBusinessCard = blocks.moneyFlows || blocks.sales || blocks.newUsers || blocks.activeUsers;
   const showFundLine = blocks.fund && !(fundReady && level !== "ok") && !sentence.fundFailed;
+
+  const fundLine = !showFundLine ? null : bDomain.error ? (
+    <div className="cc-fundline" role="alert" data-tone="warn">
+      <ShieldAlert size={16} aria-hidden />
+      <span>资金数据读取失败 · <InlineRetry onRetry={() => void bDomain.reload()} /></span>
+    </div>
+  ) : reserve.error ? (
+    <div className="cc-fundline" role="alert" data-tone="warn">
+      <ShieldAlert size={16} aria-hidden />
+      <span>{fundText} · 可覆盖天数读取失败 · <InlineRetry onRetry={reserve.reload} /></span>
+    </div>
+  ) : (
+    <div className="cc-fundline" data-tone={fundReady ? "ok" : undefined}>
+      <ShieldCheck size={16} aria-hidden />
+      {fundReady ? <Explain label="资金安全怎么看" content={fundExplain}>{fundText}</Explain> : <span>正在读取资金安全…</span>}
+      {fundReady && (
+        <button type="button" className="cc-fundline-toggle" aria-expanded={fundOpen} onClick={() => (fundOpen ? folds.setOpen("fund", false) : openFold("fund", "fund"))}>
+          {fundOpen ? "收起明细" : "展开明细"}
+          <ChevronDown className="cc-fundline-chevron" data-open={fundOpen ? "" : undefined} size={16} aria-hidden />
+        </button>
+      )}
+    </div>
+  );
 
   const exportSnapshot = () => {
     if (!canExport || !session || (!pendingExport && !fundReady)) return;
@@ -274,51 +305,29 @@ export default function CommandCenter() {
           {sentence.text}
         </Conclusion>
 
-        {(showPending || anyTodayBlock || showFundLine) && (
-        <div className="cc-brief-body" data-solo={showPending && (rows.length > 1 || pendingLoading) && (anyTodayBlock || showFundLine) ? undefined : ""}>
-          {showPending && <PendingPanel rows={rows} failures={pendingFailed.length} loading={pendingLoading} />}
-          {(anyTodayBlock || showFundLine) && (
-            <div className="cc-side">
-              {anyTodayBlock && (
-                <TodayPanel
-                  blocks={blocks}
-                  sales={sales}
-                  newUsers={newUsers}
-                  flows={flows}
-                  devices={devices}
-                  clock={clock}
-                  netFlow24h={fundReady ? ledger.netFlow24hUsd : null}
-                  reach={reach}
-                  onOpenFlows={() => openFold("flow", "flow")}
-                />
-              )}
-              {showFundLine && (bDomain.error ? (
-                <div className="cc-fundline" role="alert" data-tone="warn">
-                  <ShieldAlert size={16} aria-hidden />
-                  <span>资金数据读取失败 · <InlineRetry onRetry={() => void bDomain.reload()} /></span>
-                </div>
-              ) : reserve.error ? (
-                <div className="cc-fundline" role="alert" data-tone="warn">
-                  <ShieldAlert size={16} aria-hidden />
-                  <span>{fundText} · 可覆盖天数读取失败 · <InlineRetry onRetry={reserve.reload} /></span>
-                </div>
-              ) : (
-                <div className="cc-fundline" data-tone={fundReady ? "ok" : undefined}>
-                  <ShieldCheck size={16} aria-hidden />
-                  {fundReady ? <Explain label="资金安全怎么看" content={fundExplain}>{fundText}</Explain> : <span>正在读取资金安全…</span>}
-                  {fundReady && (
-                    <button type="button" className="cc-fundline-toggle" aria-expanded={fundOpen} onClick={() => (fundOpen ? folds.setOpen("fund", false) : openFold("fund", "fund"))}>
-                      {fundOpen ? "收起明细" : "展开明细"}
-                      <ChevronDown className="cc-fundline-chevron" data-open={fundOpen ? "" : undefined} size={16} aria-hidden />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {(showPending || showFundLine) && (
+          <div className="cc-brief-body">
+            {showPending ? <PendingPanel rows={rows} failures={pendingFailed.length} loading={pendingLoading} aside={fundLine} /> : fundLine}
+          </div>
         )}
       </section>
+
+      {anyBusinessCard && (
+        <BusinessPanel
+          blocks={blocks}
+          period={period}
+          onPeriodChange={setPeriod}
+          moneyFlows={moneyFlows}
+          sales={sales}
+          registrations={registrations}
+          activeUsers={activeUsers}
+          topup={topup}
+          devices={devices}
+          inTransit={reviewPending}
+          clock={clock}
+          reach={reach}
+        />
+      )}
 
       <div className="cc-folds" ref={foldsRef}>
         {blocks.fund && (
@@ -363,6 +372,9 @@ export default function CommandCenter() {
               historyError={flows.error}
               historyRetrying={flows.loading}
               onRetryHistory={flows.reload}
+              topup={topup}
+              netFlow24h={fundReady ? ledger.netFlow24hUsd : null}
+              clock={clock}
               refreshKey={refreshKey}
               reach={reach}
               open={folds.isOpen("flow")}
@@ -370,9 +382,9 @@ export default function CommandCenter() {
             />
           </div>
         )}
-        {(blocks.funnel || blocks.totalUsers) && (
+        {blocks.funnel && (
           <div data-fold="funnel">
-            <FunnelFold blocks={blocks} refreshKey={refreshKey} reach={reach} open={folds.isOpen("funnel")} onOpenChange={(open) => folds.setOpen("funnel", open)} />
+            <FunnelFold refreshKey={refreshKey} reach={reach} open={folds.isOpen("funnel")} onOpenChange={(open) => folds.setOpen("funnel", open)} />
           </div>
         )}
         {blocks.kpi && (

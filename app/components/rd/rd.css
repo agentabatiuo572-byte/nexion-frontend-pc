@@ -138,6 +138,41 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
   .rd-stats:has(> .rd-stat:nth-child(4)):has(> .rd-stat[data-lead]) > .rd-stat:not([data-lead]) > .rd-tile { margin-inline: 6px; }  /* 上下两行时 28 的图标底和 40 的同宽，同列文字一条左边 */
 }
 
+/* ── 经营卡：名称、主数、对比、分项四层，层高都是定的，同排同高、四层同一条线，切时段不跳版 ── */
+.rd-metrics { container: metrics / inline-size; min-width: 0; }
+.rd-metrics-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; min-width: 0; }
+.rd-metrics-head > .rd-panel-title + .rd-explain { margin-left: -8px; }
+.rd-metrics-meta { margin-left: auto; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.rd-metrics-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.rd-metrics-grid:has(> :nth-child(2):last-child) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.rd-metrics-grid:has(> :nth-child(4):last-child) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@container metrics (max-width: 1000px) { .rd-metrics-grid:has(> :nth-child(4):last-child) { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container metrics (max-width: 680px) { .rd-metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.rd-metric { container: metric / inline-size; position: relative; min-width: 0; padding: var(--rd-panel-pad-y) var(--rd-panel-pad-x); border-radius: var(--rd-radius-panel); background: var(--rd-panel); }
+.rd-metric-hit { position: absolute; inset: 0; border-radius: inherit; }
+.rd-metric-hit:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 0; }
+@media (hover: hover) and (pointer: fine) { .rd-metric-hit:hover { background: var(--rd-hover); } }
+.rd-metric:has(> .rd-metric-hit) > :not(.rd-metric-hit) { position: relative; pointer-events: none; }
+.rd-metric:has(> .rd-metric-hit) :is(.rd-explain, button) { pointer-events: auto; }
+.rd-metric-label { display: flex; align-items: center; gap: 8px; min-height: var(--rd-tile); font-size: var(--rd-text-body); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.rd-metric-label > .rd-explain { margin-left: -4px; }
+.rd-metric-value { display: flex; align-items: baseline; margin-top: 8px; min-height: var(--rd-lh-title); font-variant-numeric: tabular-nums; font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; color: var(--tone, var(--rd-text)); white-space: nowrap; }
+:root[data-theme="light"] .rd-metric-value[data-tone^="role-"] { color: var(--rd-text); }
+.rd-metric-value[data-zero] { color: var(--rd-text-3); }
+.rd-metric-unit { margin-left: 4px; font-size: var(--rd-text-aux); line-height: 1; font-weight: 400; color: var(--rd-text-3); }
+.rd-metric-compare { min-height: var(--rd-lh-aux); margin-top: 4px; font-variant-numeric: tabular-nums; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.rd-metric-rows { display: flex; flex-direction: column; gap: 4px; min-height: calc(var(--rd-lh-aux) * 3 + 8px + 9px); margin: 8px 0 0; padding: 8px 0 0; border-top: 1px solid var(--rd-line); }
+.rd-metric-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.rd-metric-row dt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rd-text-3); }
+.rd-metric-row dd { flex: none; margin: 0; font-variant-numeric: tabular-nums; color: var(--tone, var(--rd-text)); white-space: nowrap; }
+.rd-metric-row dd[data-zero] { color: var(--rd-text-3); }
+.rd-metric-value .rd-skeleton { width: 60%; height: 20px; }
+.rd-metric-compare .rd-skeleton { width: 45%; margin-top: 3px; }
+.rd-metric-row dt:has(.rd-skeleton) { flex: 1; }
+.rd-metric-row .rd-skeleton { width: 80%; margin-top: 3px; }
+/* 窄卡放长数字：同组一起小一档，大小不串。 */
+@container metric (max-width: 320px) { .rd-metrics-grid:has([data-long]) .rd-metric-value { font-size: 20px; } }
+
 /* ── 状态标签 ── */
 .rd-tag { display: inline-flex; align-items: center; gap: 4px; color: var(--tone); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; white-space: nowrap; }
 .rd-tag[data-filled] { padding: 0 8px; border-radius: var(--rd-radius-tag); background: var(--tone-pill); }
@@ -912,7 +947,7 @@ td .rd-flow { margin-bottom: 0; }
 .rd-theme[data-floating] { position: fixed; top: 16px; right: 16px; z-index: 1; }
 
 /* 浅色主题（VS-94）：白面板在浅灰页面上加 1px 边，用内阴影，不改尺寸。 */
-:root[data-theme="light"] :is(.rd-panel:not([data-plain]), .rd-stats, .rd-fold:not([data-inset]), .rd-conclusion:not([data-alarm]), .rd-control-card, .rd-control-batch) { box-shadow: inset 0 0 0 1px var(--rd-line); }
+:root[data-theme="light"] :is(.rd-panel:not([data-plain]), .rd-stats, .rd-metric, .rd-fold:not([data-inset]), .rd-conclusion:not([data-alarm]), .rd-control-card, .rd-control-batch) { box-shadow: inset 0 0 0 1px var(--rd-line); }
 :root[data-theme="light"] .rd-panel > .rd-conclusion:not([data-alarm]) { box-shadow: none; }
 /* 贴边表格的面板：表头底会盖住内阴影，边线改画在最上层。 */
 :root[data-theme="light"] .rd-panel[data-flush] { position: relative; }
