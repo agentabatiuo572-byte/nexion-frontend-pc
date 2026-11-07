@@ -1030,6 +1030,14 @@ td .rd-flow { margin-bottom: 0; }
 .rd-detail-values dt .rd-explain { height: var(--rd-lh-aux); }  /* 带问号的名称不撑高，值才在一条线上 */
 .rd-detail-values dd { margin: 0; color: var(--rd-text); font-weight: 500; font-variant-numeric: tabular-nums; }
 .rd-detail-empty { margin: 0; color: var(--rd-text-3); }
+/* 用户详情统计格第二行的最近一笔：名称和金额一行、时间和状态一行，词不拆；金额是点开那一笔的链接，状态标签跟着辅助字号。
+   限宽：长状态（「打款异常，需人工核对」）整个换到时间下面，不撑宽这一格，统计带不被挤成三行。 */
+.rd-detail-recent { display: grid; max-width: 17em; }
+.rd-detail-recent > span { display: flex; flex-wrap: wrap; align-items: center; column-gap: 6px; white-space: nowrap; }
+.rd-detail-recent :is([data-num], .rd-link) { font-variant-numeric: tabular-nums; }
+.rd-detail-recent .rd-tag { font-size: inherit; line-height: inherit; }
+/* 小字号单位按大字的行高排会把数字行撑高 4px，带最近一笔的两格一格有单位、一格是「—」时第二行就错开；单位不撑行高。 */
+.rd-stat:has(.rd-detail-recent) .rd-stat-unit { line-height: 1; }
 .rd-link-button { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; white-space: nowrap; }
 /* 支付安全的旧详情弹窗放进改版页：颜色接到状态色和角色色，两套主题都用这一组。 */
 .rd-modal.payment-security { --ps-user: var(--rd-text); --ps-payment: var(--rd-role-3); --ps-locked: var(--rd-warn); --ps-reason: var(--rd-danger); --ps-released: var(--rd-ok); --ps-history: var(--rd-done); }
