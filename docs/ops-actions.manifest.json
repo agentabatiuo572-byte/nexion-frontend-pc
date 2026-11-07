@@ -3563,7 +3563,7 @@
           "negativePatterns": ["return ApiResult\\.ok\\(Map\\.of\\(\"status\", \"ACTIVE\"\\)\\)", "catch \\(Exception[^)]*\\)[\\s\\S]{0,120}TRIAL_STARTED"]
         }
       ],
-      "note": "Production：UniApp 的 trial state/start/cancel/redeem 全部经真实 API 严格解析，服务端持久状态机与幂等/版本规则决定终态；拒绝或网络失败不生成本地成功。"
+      "note": "Production：UniApp 的 trial state/start/cancel/convert 经真实 API 严格解析；购买须用户主动确认，旧 redeem 扣款已退役。生命周期由服务端决定，拒绝或网络失败不生成本地成功。"
     },
     {
       "id": "OPS-H-20",
