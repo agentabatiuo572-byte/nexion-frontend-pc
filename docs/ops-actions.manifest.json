@@ -627,12 +627,12 @@
       "id": "OPS-C-24",
       "domain": "C",
       "object": "用户支付方式(C1)",
-      "action": "向受试用保护的支付方式发送换绑通知",
+      "action": "核对和恢复历史换绑通知原命令",
       "status": "built",
       "view": "_console/users/search/[id]/page.tsx",
       "batch": "done",
       "restAction": "notifyUserPaymentMethodRebind",
-      "note": "用户详情页调用真实后端命令；服务端具备幂等、版本校验、通知入队和审计"
+      "note": "2026-11-07：已移除新发起按钮和确认框。当前试用无需绑卡；已有结果未知记录仍可查询、按原命令重试和恢复，沿用权限与 24 小时限制。通知入队不代表手机送达。"
     },
     {
       "id": "OPS-C-25",
@@ -1372,7 +1372,7 @@
       "id": "OPS-H-03",
       "domain": "H",
       "object": "试用引擎",
-      "action": "调TrialConfig参数",
+      "action": "调整现行 TrialConfig 参数（目录 14 项；旧邀请及延长参数不提供新保存入口）",
       "status": "built",
       "view": "h-view.tsx",
       "batch": "P1",
@@ -1382,13 +1382,12 @@
       "id": "OPS-H-04",
       "domain": "H",
       "object": "试用引擎",
-      "action": "强制取消/触发扣款",
+      "action": "强制取消试用提交审批；历史扣款只核查",
       "status": "built",
       "view": "h-view.tsx",
       "batch": "P2",
       "restActions": [
-        "h2_trial_cancel",
-        "h2_trial_charge"
+        "h2_trial_cancel"
       ]
     },
     {
@@ -1722,16 +1721,17 @@
     {
       "id": "OPS-J-01",
       "domain": "J",
-      "object": "Kill-Switch 5闸",
-      "action": "熔断/恢复/应急批量(操作确认)",
+      "object": "J1 业务开关（四项可用，质押暂不可用）",
+      "action": "单项或批量关停即时执行；恢复提交应急审批",
       "status": "built",
       "view": "j-view.tsx",
       "batch": "done",
-      "note": "设计稿 port:5 闸矩阵(前端 4 + withdraw;Premium/NEXv2 已下线);单闸熔断恒走常规轨(对齐 PRD §15:单闸仅 J1-MD1 熔断/J1-MD2 恢复);恢复 amplifying 闸 操作确认弹窗 B1 红线护栏(覆盖率<redLine 禁放行);应急轨 emergency=true(A2 高亮+SLA 压缩+I3 升级)仅用于侧栏批量应急关停 J1-MD3,A2 标记 J.killswitch.<key>.emergency",
+      "note": "2026-11-07：提现、创世节点、兑换、试用四项可用；质押卡保留但暂不可用，排除新关停、恢复、批量勾选及在线计数。既有审批、结果未知和补录保留。恢复经 createA2OperationProposal 提交，另一位有权超管批准后生效，资金业务批准时重查覆盖率；关停及补录沿原接口。",
       "restActions": [
         "toggleJ1KillSwitch",
         "emergencyDisableJ1",
-        "confirmJ1AutoTrigger"
+        "confirmJ1AutoTrigger",
+        "createA2OperationProposal"
       ]
     },
     {
