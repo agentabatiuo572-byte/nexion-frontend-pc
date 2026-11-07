@@ -225,3 +225,27 @@
 .d3-checks .rd-check-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }  /* 九类三列，不让最后一行只剩一项。 */
 /* 改完不用往下找保存：操作条贴住视口底部（DT-11）。 */
 .d3-savebar { position: sticky; bottom: calc(-1 * var(--admin-gutter)); z-index: 2; margin-bottom: calc(-1 * var(--admin-gutter)); padding-block: var(--rd-space-3) calc(var(--rd-space-3) + var(--admin-gutter)); background: var(--rd-bg); }
+.ddom .l-inp:disabled { color: var(--ink-4); cursor: not-allowed; }
+
+/* D1: network-specific business controls, shared by embedded and standalone panels. */
+.ddom .cregis-network-controls { font-size: 14px; line-height: 1.6; }
+.ddom .cregis-network-controls .cregis-panel-title { margin: 0; font-size: 16px; line-height: 24px; }
+.ddom .cregis-network-controls .sub { font-size: 13px; line-height: 18px; margin-top: 4px; }
+.ddom .cregis-network-grid { overflow-x: auto; margin: 16px 0; }
+.ddom .cregis-network-row { display: grid; grid-template-columns: minmax(220px,1.3fr) minmax(120px,.7fr) minmax(260px,1.5fr) minmax(150px,1fr); gap: 20px; align-items: center; min-width: 900px; padding: 16px 12px; }
+.ddom .cregis-network-head { color: var(--ink-3); font-size: 13px; background: var(--surface-3); border-radius: 8px; padding-top: 10px; padding-bottom: 10px; }
+.ddom .cregis-network-row label { display: inline-flex; gap: 8px; align-items: center; min-height: 40px; }
+.ddom .cregis-network-row input { accent-color: var(--success); width: 18px; height: 18px; }
+.ddom .cregis-network-row input:focus-visible { outline: 2px solid var(--success); outline-offset: 3px; }
+.ddom .cregis-network-row strong { color: var(--ink); font-size: 16px; font-weight: 600; }
+.ddom .cregis-network-availability { color: var(--ink); }
+.ddom .cregis-network-blocked { color: var(--warning); }
+
+.ddom .cregis-global-payout { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; padding: 16px 0; color: var(--ink-3); }
+.ddom .cregis-global-payout label { display: inline-flex; gap: 8px; align-items: center; color: var(--ink); }
+.ddom .cregis-config-link { display: inline-block; margin-top: 8px; color: var(--success); font-size: 14px; }
+.ddom .cregis-config-link:focus-visible { outline: 2px solid var(--success); outline-offset: 3px; }
+.ddom .d5-network-status-list { display: grid; gap: 12px; margin: 12px 0; }
+.ddom .d5-network-status { display: grid; grid-template-columns: minmax(80px,.5fr) minmax(140px,1fr) minmax(240px,2fr); gap: 16px; align-items: center; padding: 12px; background: var(--surface-2); border-radius: 8px; font-size: 14px; line-height: 22px; }
+.ddom .d5-network-status .blocked { color: var(--warning); }
+@media (max-width: 1024px) { .ddom .d5-network-status { grid-template-columns: 1fr; gap: 4px; } }

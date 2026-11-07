@@ -1,4 +1,11 @@
 export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  CREGIS_SWITCH_DIFFERENT_CHECKER_REQUIRED: "不能复核自己发起的资金开关申请，请由另一位有权限的管理员复核。",
+  CREGIS_SWITCH_VERSION_CHANGED: "资金开关版本已变化，请刷新当前状态后重新提交审批。",
+  CREGIS_SWITCH_CASE_CHANGED: "该资金开关申请已处理或状态已变化，请刷新待复核申请。",
+  CREGIS_SWITCH_UNCHANGED: "目标状态与当前资金开关一致，无需重复申请。",
+  CREGIS_SWITCH_RECOVERY_NOT_SAFE: "暂不满足恢复条件，请先核对所选网络的完整对账、链配置和未解决风险。",
+  CREGIS_SWITCH_MAKER_INACTIVE: "发起管理员已停用，请由当前有权限的管理员重新发起申请。",
+  CREGIS_SWITCH_NETWORK_REQUIRED: "充值开关须按 BEP20 或 ERC20 网络单独提交，请刷新后重新操作。",
   MATERIAL_REVISION_STALE: "材料版本已变化，请刷新原申请，旧版本核验或批准不能继续执行。",
   MATERIALS_NOT_SUBMITTED: "申请人尚未提交材料，暂不能批准。",
   MATERIALS_NEEDS_MORE: "请申请人按核验意见补交材料，再重新核验。",
