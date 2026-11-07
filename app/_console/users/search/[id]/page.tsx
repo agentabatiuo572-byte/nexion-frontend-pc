@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
-import { ArrowLeft, Coins, Cpu, FileClock, Network, RefreshCcw, ShieldAlert, ShieldCheck, UserCog, UsersRound, Wallet } from "lucide-react";
+import { ArrowDownToLine, ArrowLeft, ArrowUpFromLine, Cpu, FileClock, Lock, Network, RefreshCcw, ShieldAlert, ShieldCheck, Snowflake, UserCog, UsersRound, Wallet, type LucideIcon } from "lucide-react";
 import {
   fetchUser360,
   fetchSupportCustomerFullProfile,
@@ -30,7 +30,7 @@ import {
 import { OperationConfirmModal, type OperatorBriefKind } from "@/app/components/domain-views/design-kit";
 import {
   BlockState, Button, Cell, Change, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, Notice, PageHeader, Pager, Panel,
-  RdPage, ReleaseModal, SectionNav, Segments, Stat, StatBand, StatusTag, Table, Td, Th, Timeline, Tr, useSectionNav, type SectionNavItem, type TimelineEntry,
+  RdPage, ReleaseModal, SectionNav, Segments, Stat, StatBand, StatusTag, Table, Td, Th, Timeline, Tr, useSectionNav, type SectionNavItem, type StateTone, type TimelineEntry,
 } from "@/app/components/rd";
 import { useReach } from "@/lib/nav/use-reach";
 import { formatD4Subtype } from "@/lib/admin/d4-ledger-display";
@@ -56,8 +56,7 @@ import {
   formatC1SessionStatus,
 } from "@/lib/admin/c1-detail-display";
 import { NotificationTimeEvidenceDrawer, pendingCorrections, type PendingCorrection } from "./notification-time-evidence";
-import { PaymentSecurityBlock, type PaymentSecurityState } from "./payment-security-block";
-import "./record-details.css";
+import { PaymentSecurityBlock, type PaymentSecurityState } from "@/app/components/payment-security/payment-security-block";
 
 /**
  * C1 用户详情的写动作（昵称重置、支付方式解绑、换绑通知、设备置换和回收）共用一张表，槽位分命名空间。
@@ -153,6 +152,9 @@ const STATUS_LABEL: Record<string, string> = {
   BANNED: "封禁",
   RESTRICTED: "受限",
 };
+
+/** 冻结和受限不是等待，默认的钟读起来像处理中。 */
+const STATUS_ICON: Record<string, LucideIcon> = { FROZEN: Snowflake, RESTRICTED: Lock };
 
 const WITHDRAWAL_STATUS: Record<string, readonly [string, "ok" | "warn" | "danger" | "progress" | "done"]> = {
   SUBMITTED: ["已提交", "progress"], REVIEW_PENDING: ["待审核", "warn"], EXTENDED_HOLD: ["等待复查", "warn"], DELAYED: ["延迟复查", "warn"], FROZEN: ["已冻结", "warn"],
@@ -271,18 +273,33 @@ function auditRole(row: JsonRecord): AdminRole | undefined {
   return undefined;
 }
 
+/** 事件是给人读的主文字，原始代码只留在问号里（VS-109）。不在表里的写「后台操作」，不把代码拼上屏。 */
+const AUDIT_EVENT: Record<string, string> = {
+  USER_PROFILE_VIEWED: "查看了用户资料", USER_PROFILE_SEARCHED: "搜索了用户", USER_LIST_EXPORTED: "导出了用户列表", USER_PAYMENT_METHOD_LIST: "查看了支付方式",
+  USER_PAYMENT_METHOD_UNBIND: "解绑支付方式", USER_PAYMENT_METHOD_REBIND_NOTICE: "发送换绑通知", USER_NICKNAME_RESET: "重置昵称", USER_NOTIFICATION_TIME_CORRECTED: "校正通知时间",
+  PAYMENT_METHOD_PROVIDER_REVOKE_FAILED: "支付商撤销失败",
+  C2_USER_STATUS_CHANGED: "修改账户状态", C2_USER_STATUS_CHANGED_BY_K1: "风控修改账户状态", C2_USER_STATUS_RESTORED_BY_K1: "风控恢复账户状态", C2_USER_SESSIONS_REVOKED: "强制登出全部设备",
+  C2_USER_IMPERSONATION_STARTED: "打开用户数据只读视图", C2_USER_IMPERSONATION_TERMINATED: "结束用户数据只读视图", C2_ACCOUNT_LIST_UPSERTED: "更新账户名单", C2_ACCOUNT_LIST_REMOVED: "移出账户名单",
+  C3_ASSET_ADJUSTMENT_CREATED: "创建余额调整", C3_ASSET_ADJUSTMENT_EXECUTED: "执行余额调整", C3_ASSET_ADJUSTMENT_REVERSED: "冲正余额调整", C3_ASSET_ADJUSTMENT_WITHDRAWN: "撤回余额调整", C3_LARGE_ADJUSTMENT_REQUESTED: "申请大额余额调整",
+  C5_TWO_FACTOR_DISABLED: "关闭两步验证", C5_PASSWORD_RESET_REQUESTED: "发起重置密码", C5_USER_UNLOCKED: "解锁账号", C5_SESSION_REVOKED: "撤销一条登录", C5_ALL_SESSIONS_REVOKED: "撤销全部登录",
+};
+const auditEvent = (row: JsonRecord) => AUDIT_EVENT[asText(row.action, "").toUpperCase().replace(/^ADMIN\./, "")] ?? "后台操作";
+
 function toAuditEntries(rowsValue: unknown): TimelineEntry[] {
   return asArray(rowsValue).map((row, index) => {
     const role = auditRole(row);
+    const failed = asText(row.result, "").toUpperCase() === "FAILED";
+    const note = auditDetail(row);
     return {
       id: asText(row.id, `${index}`),
       actor: asText(row.actorUsername, "系统"),
       role: role ? roleLabel(role) : undefined,
-      action: asText(row.action, "UNKNOWN"),
-      detail: <>{auditDetail(row)} <Explain label="原始操作内容" content={<><p className="rd-pre">{asText(row.detailJson, asText(row.result))}</p><p>结果：{asText(row.result)}</p></>} /></>,
+      action: <>{auditEvent(row)}{failed ? " · 失败" : ""} <Explain label="原始操作内容" content={<><p className="rd-pre">{asText(row.action, "UNKNOWN")}</p><p className="rd-pre">{asText(row.detailJson, asText(row.result))}</p><p>结果：{asText(row.result)}</p></>} /></>,
+      // 成功是常态不写，只留理由和前后状态，一条两行（VS-109）。
+      detail: /^success$/i.test(note) ? undefined : note || undefined,
       at: asText(row.createdAt, ""),
       ip: asText(row.clientIp, "—"),
-      tone: asText(row.result, "").toUpperCase() === "FAILED" ? "danger" : undefined,
+      tone: failed ? "danger" : undefined,
     };
   });
 }
@@ -312,6 +329,8 @@ const deviceTag = (row: JsonRecord) => {
   const tone = deviceAbnormal(row) ? "danger" : FINAL_DEVICE_STATUS.includes(status) ? "done" : ["ONLINE", "RUNNING", "ACTIVE"].includes(status) ? "ok" : "neutral";
   return <StatusTag tone={tone}>{formatC1DeviceStatus(status)}</StatusTag>;
 };
+const sessionTag = (row: JsonRecord) => <StatusTag tone={asText(row.status, "").toUpperCase() === "ACTIVE" ? "ok" : "done"}>{formatC1SessionStatus(row.status)}</StatusTag>;
+const paymentTag = (row: JsonRecord) => <StatusTag tone={row.status === "BOUND" ? "ok" : "done"}>{row.status === "BOUND" ? (row.isDefault ? "已绑定 · 默认" : "已绑定") : "已解绑"}</StatusTag>;
 const pushText = (row: JsonRecord) => asText(row.pushStatus, "").toUpperCase() === "FAILED"
   ? <StatusTag tone="danger">{formatC1PushStatus(row.pushStatus)}</StatusTag>
   : formatC1PushStatus(row.pushStatus);
@@ -319,7 +338,7 @@ const pushText = (row: JsonRecord) => asText(row.pushStatus, "").toUpperCase() =
 const SESSION_COLUMNS: Column[] = [
   { label: "设备", cell: (row) => <Cell main={platformSessionDeviceText(asText(row.deviceName))} /> },
   { label: "IP", cell: (row) => <Cell mono main={asText(row.clientIpMasked)} /> },
-  { label: "状态", cell: (row) => <StatusTag tone={asText(row.status, "").toUpperCase() === "ACTIVE" ? "ok" : "done"}>{formatC1SessionStatus(row.status)}</StatusTag> },
+  { label: "状态", cell: sessionTag },
   { label: "登录时间", cell: (row) => <Cell num main={shortTime(row.issuedAt)} /> },
   { label: "过期时间", cell: (row) => <Cell num main={shortTime(row.expiresAt)} /> },
 ];
@@ -375,75 +394,74 @@ const ORDER_COLUMNS: Column[] = [
   { label: "下单时间", cell: (row) => <Cell num main={shortTime(row.orderedAt)} /> },
 ];
 
-/** 单条记录抽屉：表格放不下或要查证的字段都在这里（PG-50）。 */
+/** 后端把审核表单拼在说明后面，这里只取中文说明，原因码留给提现审核。 */
+const withdrawalReason = (row: JsonRecord) => {
+  const note = asText(row.failureReason, "").split(" | ")[0].trim();
+  return /[\u4e00-\u9fa5]/.test(note) ? note : "";
+};
+
+/** 单条记录抽屉：表格放不下或要查证的字段都在这里（PG-50）。对象写在副标题，这里不再写一遍；决定要用的金额和状态排最前（DP-16）。 */
 type RecordKind = "session" | "payment" | "deposit" | "withdrawal" | "device" | "earning" | "member" | "engagement" | "exchange" | "notification" | "order";
-const RECORD: Record<RecordKind, { title: string; sub: (row: JsonRecord) => string; facts: (row: JsonRecord) => readonly (readonly [string, ReactNode])[] }> = {
+const mono = (value: unknown) => <span data-mono>{asText(value)}</span>;
+const RECORD: Record<RecordKind, { title: string; sub: (row: JsonRecord) => ReactNode; facts: (row: JsonRecord) => readonly (readonly [string, ReactNode])[] }> = {
   session: { title: "登录记录", sub: (row) => platformSessionDeviceText(asText(row.deviceName)), facts: (row) => [
-    ["设备", platformSessionDeviceText(asText(row.deviceName))], ["IP", asText(row.clientIpMasked)], ["状态", formatC1SessionStatus(row.status)],
-    ["登录时间", fullTime(row.issuedAt)], ["过期时间", fullTime(row.expiresAt)],
+    ["状态", sessionTag(row)], ["IP", asText(row.clientIpMasked)], ["登录时间", fullTime(row.issuedAt)], ["过期时间", fullTime(row.expiresAt)],
   ] },
   payment: { title: "支付方式", sub: (row) => `${asText(row.brand)} ···· ${asText(row.last4)}`, facts: (row) => [
-    ["卡", `${asText(row.brand)} ···· ${asText(row.last4)}`], ["提供商", asText(row.provider)], ["有效期", asText(row.expiryLabel, "无到期信息")],
-    ["状态", row.status === "BOUND" ? (row.isDefault ? "已绑定 · 默认" : "已绑定") : "已解绑"],
+    ["状态", paymentTag(row)], ["提供商", asText(row.provider)], ["有效期", asText(row.expiryLabel, "无到期信息")],
     ["试用保护", row.trialGuard ? `正在用于试用扣款 · ${asText(row.trialRefId, "关联试用")}` : "否"],
     ["解绑时间", shortTime(row.unboundAt)], ["支付商撤销状态", asText(row.pspRevokeStatus)], ["撤销命令号", asText(row.revokeCommandNo)],
     ["重试次数", asText(row.revokeAttempts)], ["撤销时限", shortTime(row.revokeDeadlineAt)], ["最近错误", asText(row.revokeLastError)],
   ] },
-  deposit: { title: "充值记录", sub: (row) => asText(row.depositNo), facts: (row) => [
-    ["充值单号", <span key="no" data-mono>{asText(row.depositNo)}</span>], ["渠道", asText(row.channel)], ["币种", assetText(row.asset) || "—"],
-    ["金额", amountText(row.amount, row.asset)], ["状态", asText(row.statusLabel)], ["确认时间", fullTime(row.confirmedAt)],
+  deposit: { title: "充值记录", sub: (row) => mono(row.depositNo), facts: (row) => [
+    ["金额", amountText(row.amount, row.asset)], ["状态", asText(row.statusLabel)], ["渠道", asText(row.channel)], ["币种", assetText(row.asset) || "—"], ["确认时间", fullTime(row.confirmedAt)],
   ] },
-  withdrawal: { title: "提现记录", sub: (row) => asText(row.withdrawalNo), facts: (row) => [
-    ["提现单号", <span key="no" data-mono>{asText(row.withdrawalNo)}</span>], ["币种", assetText(row.asset) || "—"], ["链", asText(row.chain)],
-    ["金额", amountText(row.amount, row.asset)], ["状态", withdrawalStatus(row)], ["风险分", asText(row.riskScore)], ["创建时间", fullTime(row.createdAt)],
+  withdrawal: { title: "提现记录", sub: (row) => mono(row.withdrawalNo), facts: (row) => [
+    ["金额", amountText(row.amount, row.asset)], ["状态", withdrawalStatus(row)], ...(withdrawalReason(row) ? [["原因", withdrawalReason(row)] as const] : []),
+    ["风险分", asText(row.riskScore)], ["币种", assetText(row.asset) || "—"], ["链", asText(row.chain)], ["创建时间", fullTime(row.createdAt)],
   ] },
-  device: { title: "设备明细", sub: (row) => asText(row.instanceNo), facts: (row) => [
-    ["实例", <span key="no" data-mono>{asText(row.instanceNo)}</span>], ["名称", asText(row.name)], ["规格", formatC1DeviceTier(row.productTier)],
-    ["状态", formatC1DeviceStatus(row.status)], ["运行状态", formatC1RuntimeStatus(row.runtimeStatus)],
+  device: { title: "设备明细", sub: (row) => mono(row.instanceNo), facts: (row) => [
+    ["状态", deviceTag(row)], ["运行状态", formatC1RuntimeStatus(row.runtimeStatus)], ["名称", asText(row.name)], ["规格", formatC1DeviceTier(row.productTier)],
     ["设定日收益 USDT", amountText(row.dailyUsdt)], ["设定日收益 UVT", amountText(row.dailyNex, "UVT")],
   ] },
-  earning: { title: "收益明细", sub: (row) => asText(row.bizNo), facts: (row) => [
-    ["业务单号", <span key="no" data-mono>{asText(row.bizNo)}</span>], ["类型", formatD4Subtype(row.bizType)], ["币种", assetText(row.asset) || "—"],
-    ["方向", DIRECTION[asText(row.direction, "").toUpperCase()] ?? "—"], ["金额", amountText(row.amount, row.asset)], ["余额", amountText(row.balanceAfter, row.asset)], ["时间", fullTime(row.createdAt)],
+  earning: { title: "收益明细", sub: (row) => mono(row.bizNo), facts: (row) => [
+    ["金额", amountText(row.amount, row.asset)], ["余额", amountText(row.balanceAfter, row.asset)], ["类型", formatD4Subtype(row.bizType)],
+    ["方向", DIRECTION[asText(row.direction, "").toUpperCase()] ?? "—"], ["币种", assetText(row.asset) || "—"], ["时间", fullTime(row.createdAt)],
   ] },
-  member: { title: "推荐团队成员", sub: (row) => asText(row.memberNo), facts: (row) => [
-    ["成员编码", asText(row.memberNo)], ["昵称", operatorNicknameText(asText(row.nickname))], ["团队等级", asText(row.vRank)],
-    ["相隔邀请次数", asText(row.level)], ["贡献额", amountText(row.volume)], ["加入时间", fullTime(row.createdAt)],
+  member: { title: "推荐团队成员", sub: (row) => mono(row.memberNo), facts: (row) => [
+    ["昵称", operatorNicknameText(asText(row.nickname))], ["团队等级", asText(row.vRank)], ["相隔邀请次数", asText(row.level)], ["贡献额", amountText(row.volume)], ["加入时间", fullTime(row.createdAt)],
   ] },
   engagement: { title: "互动与参与", sub: (row) => asText(row.name), facts: (row) => [
-    ["项目", asText(row.name)], ["状态", asText(row.status)], ["进度", asText(row.progress)], ["更新时间", fullTime(row.updatedAt)],
+    ["状态", asText(row.status)], ["进度", asText(row.progress)], ["更新时间", fullTime(row.updatedAt)],
   ] },
-  exchange: { title: "兑换记录", sub: (row) => asText(row.bizNo), facts: (row) => [
-    ["业务单号", <span key="no" data-mono>{asText(row.bizNo)}</span>], ["类型", formatD4Subtype(row.bizType)], ["币种", assetText(row.asset) || "—"],
-    ["方向", DIRECTION[asText(row.direction, "").toUpperCase()] ?? "—"], ["金额", amountText(row.amount, row.asset)], ["时间", fullTime(row.createdAt)],
+  exchange: { title: "兑换记录", sub: (row) => mono(row.bizNo), facts: (row) => [
+    ["金额", amountText(row.amount, row.asset)], ["类型", formatD4Subtype(row.bizType)], ["方向", DIRECTION[asText(row.direction, "").toUpperCase()] ?? "—"], ["币种", assetText(row.asset) || "—"], ["时间", fullTime(row.createdAt)],
   ] },
   notification: { title: "通知", sub: (row) => asText(row.notificationId), facts: (row) => [
-    ["通知编号", asText(row.notificationId)], ["标题", nexGridBrandText(asText(row.title))], ["类型", formatC1NotificationType(row.type)],
-    ["推送", formatC1PushStatus(row.pushStatus)], ["已读", formatC1ReadFlag(row.readFlag)], ["创建时间", fullTime(row.createdAt)],
+    ["标题", nexGridBrandText(asText(row.title))], ["类型", formatC1NotificationType(row.type)], ["推送", pushText(row)], ["已读", formatC1ReadFlag(row.readFlag)], ["创建时间", fullTime(row.createdAt)],
   ] },
-  order: { title: "商城订单", sub: (row) => asText(row.orderNo), facts: (row) => [
-    ["订单号", <span key="no" data-mono>{asText(row.orderNo)}</span>], ["商品", asText(row.skuName)], ["金额", amountText(row.amount)], ["状态", orderStatus(row)],
-    ["机房", datacenterNameText(asText(row.dcLocation))], ["下单时间", fullTime(row.orderedAt)],
+  order: { title: "商城订单", sub: (row) => mono(row.orderNo), facts: (row) => [
+    ["金额", amountText(row.amount)], ["状态", orderStatus(row)], ["商品", asText(row.skuName)], ["机房", datacenterNameText(asText(row.dcLocation))], ["下单时间", fullTime(row.orderedAt)],
   ] },
 };
 
-/** 只使用这条记录已有的状态给出下一步，不推断未知字段。 */
-function recordConclusion(kind: RecordKind, row: JsonRecord) {
+/** 只使用这条记录已有的状态给出下一步，不推断未知字段。颜色跟这句话说的事走（VS-107）。 */
+function recordConclusion(kind: RecordKind, row: JsonRecord): { tone: StateTone; text: string } | undefined {
   if (kind === "payment") return row.status !== "BOUND" && row.pspRevokeStatus && !/^(revoked|confirmed|success|succeeded|done|completed)$/i.test(String(row.pspRevokeStatus))
-    ? "账户已解绑，支付商撤销尚未完成，仍需核对扣款风险。"
-    : row.trialGuard ? "这张卡正在用于试用扣款，暂时不能解绑。"
-    : row.status === "BOUND" ? "这张卡仍绑定在账户上，可在支付方式列表办理解绑。" : "账户已解绑；支付商的撤销结果请看下方。";
-  if (kind === "withdrawal") return withdrawalTone(row) === "danger" ? "这笔提现被拒绝或有异常，请到提现审核核对原因。"
-    : withdrawalTone(row) === "warn" ? "这笔提现等待审核或复查，请到提现审核处理。"
-    : withdrawalTone(row) === "ok" ? "这笔提现已到账，无需重复放行。"
-    : withdrawalTone(row) === "progress" ? "这笔提现正在处理中，请到提现审核跟进原单。" : undefined;
-  if (kind === "device") return deviceAbnormal(row) ? "这台设备有异常，请到设备运行管理核对。"
-    : FINAL_DEVICE_STATUS.includes(String(row.status).toUpperCase()) ? "这台设备已回收或停用，不能再置换或回收。" : undefined;
-  if (kind === "order") return orderTone(row) === "danger" ? "这笔订单付款、开通或拒付有异常，请到商城订单核对。"
-    : orderTone(row) === "ok" ? "这笔订单已开通，无需重复开通。" : undefined;
-  if (kind === "deposit" && row.confirmedAt) return "这笔充值已有确认记录；需要查账时按充值单号核对。";
-  if (kind === "session") return row.status === "REVOKED" || row.status === "EXPIRED" ? "这次登录已失效，无需再次撤销。" : undefined;
-  if (kind === "notification") return row.readFlag === true || row.readFlag === 1 ? "这条通知已读；时间有疑问时可查看时间证据。" : row.readFlag === false || row.readFlag === 0 ? "这条通知尚未读，不能据此判断推送失败。" : undefined;
+    ? { tone: "warn", text: "账户已解绑，支付商撤销尚未完成，仍需核对扣款风险。" }
+    : row.trialGuard ? { tone: "neutral", text: "这张卡正在用于试用扣款，暂时不能解绑。" }
+    : row.status === "BOUND" ? { tone: "neutral", text: "这张卡仍绑定在账户上，可在支付方式列表办理解绑。" } : { tone: "neutral", text: "账户已解绑；支付商的撤销结果请看下方。" };
+  if (kind === "withdrawal") return withdrawalTone(row) === "danger" ? { tone: "danger", text: "这笔提现被拒绝或有异常，请到提现审核核对原因。" }
+    : withdrawalTone(row) === "warn" ? { tone: "warn", text: "这笔提现等待审核或复查，请到提现审核处理。" }
+    : withdrawalTone(row) === "ok" ? { tone: "ok", text: "这笔提现已到账，无需重复放行。" }
+    : withdrawalTone(row) === "progress" ? { tone: "progress", text: "这笔提现正在处理中，请到提现审核跟进原单。" } : undefined;
+  if (kind === "device") return deviceAbnormal(row) ? { tone: "danger", text: "这台设备有异常，请到设备运行管理核对。" }
+    : FINAL_DEVICE_STATUS.includes(String(row.status).toUpperCase()) ? { tone: "neutral", text: "这台设备已回收或停用，不能再置换或回收。" } : undefined;
+  if (kind === "order") return orderTone(row) === "danger" ? { tone: "danger", text: "这笔订单付款、开通或拒付有异常，请到订单进度核对。" }
+    : orderTone(row) === "ok" ? { tone: "ok", text: "这笔订单已开通，无需重复开通。" } : undefined;
+  if (kind === "deposit" && row.confirmedAt) return { tone: "ok", text: "这笔充值已有确认记录；需要查账时按充值单号核对。" };
+  if (kind === "session") return row.status === "REVOKED" || row.status === "EXPIRED" ? { tone: "neutral", text: "这次登录已失效，无需再次撤销。" } : undefined;
+  if (kind === "notification") return row.readFlag === true || row.readFlag === 1 ? { tone: "neutral", text: "这条通知已读；时间有疑问时可查看时间证据。" } : row.readFlag === false || row.readFlag === 0 ? { tone: "neutral", text: "这条通知尚未读，不能据此判断推送失败。" } : undefined;
 }
 
 function RecordTable({ label, rows, columns, empty = "暂无记录", selected, onOpen }: {
@@ -469,8 +487,8 @@ function RecordTable({ label, rows, columns, empty = "暂无记录", selected, o
   );
 }
 
-/** 折叠组里的一小块：缺的不显示，读取失败只替换这一块（C1-V02、C1-S04）。 */
-function Block({ id, title, sub, explain, section, actions, failure, disclosure, children }: {
+/** 折叠组里的一小块：缺的不显示，读取失败只替换这一块（C1-V02、C1-S04）。同组块头一个样子，都是收起的一行（重复）；里面有事时摘要写清是哪件事（DP-04）。 */
+function Block({ id, title, sub, explain, section, actions, failure, issue, issueTone = "warn", summary, disclosure, children }: {
   id?: string;
   title: string;
   sub?: ReactNode;
@@ -479,20 +497,24 @@ function Block({ id, title, sub, explain, section, actions, failure, disclosure,
   actions?: ReactNode;
   /** 这块单独读取、读失败有自己的原因时传，不走整页刷新。 */
   failure?: ReactNode;
+  /** 这块里有要处理的事：写进摘要并上色，不用点开才知道（DP-04）。 */
+  issue?: string;
+  issueTone?: StateTone;
+  /** 不是列表的小块：摘要写结论，自己管开合。 */
+  summary?: ReactNode;
   disclosure?: { open: boolean; onOpenChange: (open: boolean) => void; summary: ReactNode };
   children: ReactNode;
 }) {
   if (!section) return null;
+  const failed = !!failure || sectionFailed(section);
   const body = failure
     ? <BlockState state="error" compact title={failure} />
     : sectionFailed(section)
-      ? <BlockState state="error" compact title="这部分资料加载失败，请刷新重试。" retryLabel="刷新页面重试" onRetry={() => window.location.reload()} />
+      ? <BlockState state="error" compact title={`${title}加载失败`} onRetry={() => window.location.reload()} />
       : <div className="rd-detail-block">{children}</div>;
   return (
     <div id={id} className="rd-detail-block">
-      {disclosure
-        ? <Fold inset title={title} explain={explain} actions={actions} alert={!!failure || sectionFailed(section)} {...disclosure} summary={failure || (sectionFailed(section) ? "这部分资料加载失败" : sub ?? disclosure.summary)}>{body}</Fold>
-        : <Panel plain headingLevel={3} title={title} sub={sub} explain={explain} actions={actions}>{body}</Panel>}
+      <Fold inset title={title} explain={explain} actions={actions} alert={failed || !!issue} alertTone={failed ? "danger" : issueTone} {...disclosure} summary={failed ? "加载失败" : issue ?? sub ?? disclosure?.summary ?? summary}>{body}</Fold>
     </div>
   );
 }
@@ -545,7 +567,7 @@ export default function UserDetailPage() {
   const [detail, setDetail] = useState<User360Detail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [writeResult, setWriteResult] = useState<{ key: string; text: string } | null>(null);
+  const [writeResult, setWriteResult] = useState<{ key: string; text: string; tone: StateTone } | null>(null);
   const writeResultRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (writeResult?.key !== readKey) return;
@@ -761,7 +783,7 @@ export default function UserDetailPage() {
         if (!unknown && !retained) c1UserCommands.forget(slot);
         syncPending();
         if (unknown) {
-          toast.error("结果未确认，不要重复操作", "到页面上方读回核对或按原操作重试。");
+          toast.warn("结果未确认，不要重复操作", "到页面上方读回核对或按原操作重试。");
           return;
         }
         if (isPermissionDenied(cause)) throw cause;
@@ -773,11 +795,11 @@ export default function UserDetailPage() {
         : command.kind === "unbind" ? "支付方式已从 UVEL 账户解绑"
         : command.kind === "rebind" ? "换绑通知已进入推送队列"
         : command.kind === "replace" ? "设备置换已执行" : "设备回收已执行";
-      setWriteResult({ key: readKey, text });
+      setWriteResult({ key: readKey, text, tone: "ok" });
       if (command.kind === "unbind") {
         if (!includeUnbound) { setIncludeUnbound(true); setPaymentPage(1); } else await loadPaymentMethods();
       } else if (command.kind === "rebind") await loadPaymentMethods();
-      else if (!await load() && currentReadKey.current === readKey) setWriteResult({ key: readKey, text: `${text}。资料刷新失败，请重新加载资料核对。` });
+      else if (!await load() && currentReadKey.current === readKey) setWriteResult({ key: readKey, text: `${text}。资料刷新失败，请点「刷新」核对。`, tone: "warn" });
     } finally {
       setActionPending(null);
     }
@@ -866,15 +888,15 @@ export default function UserDetailPage() {
         <Fact k="操作对象">{displayNickname} · {userNo}</Fact>
         <Fact k="设备">{instance} · {asText(device.name)}</Fact>
         <Fact k="状态"><Change from={formatC1DeviceStatus(device.status)} to="已回收，离线" /></Fact>
-        {operation === "replace" && <Fact k="置换单">新增一张，状态已完成，只作记录，后面没有人要办</Fact>}
-        <Fact k="收益">停止派新任务，不再产生新收益；已到账的收益不扣回</Fact>
+        {operation === "replace" && <Fact k="置换单">新增一张已完成的，只作记录</Fact>}
+        <Fact k="收益">不再派新任务，已到账的收益不扣回</Fact>
         <Fact k="资金和新设备">不退款，不发新设备</Fact>
         <Fact k="用户通知">不发通知</Fact>
       </Facts>,
       confirmLabel: operation === "replace" ? "确认置换，立即生效" : "确认回收，立即生效",
       confirmTone: "danger",
       irreversible: true,
-      statedBrief: { impact: operation === "replace" ? "和设备回收的差别只有一点：多记一张已完成的置换单，留下这次置换的记录。设备有任务在跑时后端会拒绝。" : "和设备置换的差别只有一点：不留置换单。设备有任务在跑时后端会拒绝。", check: "核对设备实例号和用户，理由写清依据或工单号。" },
+      statedBrief: { impact: operation === "replace" ? "和设备回收的差别只有一点：多记一张已完成的置换单，留下这次置换的记录。设备有任务在跑时系统会拒绝。" : "和设备置换的差别只有一点：不留置换单。设备有任务在跑时系统会拒绝。", check: "核对设备实例号和用户，理由写清依据或工单号。" },
       run: (reason) => execute({ kind: operation, label: `${operation === "replace" ? "设备置换" : "设备回收"} · ${instance}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), deviceId, deviceStatus: asText(device.status) }),
     });
   };
@@ -922,12 +944,17 @@ export default function UserDetailPage() {
   const recordsFailed = failedSection(detail?.notifications, detail?.commerce);
   const failedPushCount = asNumber(detail?.notifications?.failedPushCount);
   const recordsAlert = failedPushCount > 0 || orderExceptions > 0 || corrections.length > 0;
+  // 「有异常」只给真出事的：待审核写数量，加载失败写加载失败，都不是异常（DP-04）。异常的数量写在名字后面，读成「资金 2 笔 有异常」。
+  const securityIssues = [summary.locked === true, paymentSecurity.state === "exception", unfinishedRevokes.length > 0].filter(Boolean).length;
+  const navItem = (id: string, name: string, failed: boolean, count: string, waiting = ""): SectionNavItem => failed
+    ? { id, label: `${name} · 加载失败` }
+    : count ? { id, label: `${name} ${count}`, alert: true } : { id, label: waiting ? `${name} · ${waiting}` : name };
   const sections: SectionNavItem[] = [
-    securityPresent && { id: "security", label: "安全", alert: securityAlert || securityFailed },
-    fundsPresent && { id: "funds", label: "资金", alert: fundsFailed || fundsAlert },
-    devicesPresent && { id: "devices", label: "设备与收益", alert: devicesFailed || devicesAlert },
-    teamPresent && { id: "team", label: "团队与互动", alert: teamFailed },
-    recordsPresent && { id: "records", label: "记录", alert: recordsAlert || recordsFailed },
+    securityPresent && navItem("security", "安全", securityFailed, securityIssues > 0 ? `${securityIssues} 项` : "", paymentSecurity.pending ? "解除结果待确认" : ""),
+    fundsPresent && navItem("funds", "资金", fundsFailed, withdrawalExceptions > 0 ? `${withdrawalExceptions} 笔` : "", withdrawalsWaiting > 0 ? `${withdrawalsWaiting} 笔待处理` : ""),
+    devicesPresent && navItem("devices", "设备与收益", devicesFailed, deviceExceptions > 0 ? `${deviceExceptions} 台` : ""),
+    teamPresent && navItem("team", "团队与互动", teamFailed, ""),
+    recordsPresent && navItem("records", "记录", recordsFailed, failedPushCount + orderExceptions > 0 ? `${failedPushCount + orderExceptions} 条` : "", corrections.length > 0 ? "校正结果待确认" : ""),
   ].filter((item) => item !== false);
   const nav = useSectionNav(sections, { ready: layoutReady, onReveal: showFold });
   const foldProps = (group: string, alert: boolean) => ({
@@ -945,7 +972,7 @@ export default function UserDetailPage() {
     summary: `${recordRows[kind].length} 条记录`,
   } });
 
-  const writeResultNotice = writeResult?.key === readKey && <div ref={writeResultRef}><Notice tone="progress">{writeResult.text}</Notice></div>;
+  const writeResultNotice = writeResult?.key === readKey && <div ref={writeResultRef}><Notice tone={writeResult.tone}>{writeResult.text}</Notice></div>;
   if (detailKey !== readKey || loading && !detail) {
     return (
       <RdPage>
@@ -982,8 +1009,8 @@ export default function UserDetailPage() {
   const subtotal = (field: string) => usdtTotals?.[field] === "PARTIAL" ? "已核对小计" : undefined;
   const kpis = [
     detail.financial && { label: "可提余额", value: amountValue(summary.walletUsdt ?? profile.walletUsdt), unit: "USDT", tone: "role-1" as const, icon: Wallet, group: "funds", anchor: "hub-deposit" },
-    detail.deposits && { label: "累计充值", value: amountValue(summary.depositedUsd), unit: "USDT", tone: "role-2" as const, icon: Coins, group: "funds", anchor: "hub-deposit", sub: subtotal("creditedDepositTotal"), explain: "能核对到的已确认充值小计，不保证覆盖这个用户的全部历史，也不是下面列出的那些相加。读不到时写「—」，不算 0。" },
-    detail.withdrawals && { label: "累计提现", value: amountValue(summary.withdrawnUsd), unit: "USDT", tone: "role-4" as const, icon: Coins, group: "funds", anchor: "hub-withdrawal", sub: subtotal("successfulWithdrawalPrincipalTotal"), explain: "能核对到的成功提现本金小计，不保证覆盖这个用户的全部历史，也不是下面列出的那些相加。读不到时写「—」，不算 0。" },
+    detail.deposits && { label: "累计充值", value: amountValue(summary.depositedUsd), unit: "USDT", tone: "role-2" as const, icon: ArrowDownToLine, group: "funds", anchor: "hub-deposit", sub: subtotal("creditedDepositTotal"), explain: "能核对到的已确认充值小计，不保证覆盖这个用户的全部历史，也不是下面列出的那些相加。读不到时写「—」，不算 0。" },
+    detail.withdrawals && { label: "累计提现", value: amountValue(summary.withdrawnUsd), unit: "USDT", tone: "role-4" as const, icon: ArrowUpFromLine, group: "funds", anchor: "hub-withdrawal", sub: subtotal("successfulWithdrawalPrincipalTotal"), explain: "能核对到的成功提现本金小计，不保证覆盖这个用户的全部历史，也不是下面列出的那些相加。读不到时写「—」，不算 0。" },
     detail.devices && { label: "设备数", value: numberLabel(summary.deviceCount), unit: "台", tone: "role-2" as const, icon: Cpu, group: "devices", anchor: "hub-devices", explain: "这个用户的全部设备记录，含已回收和已停用的，最多读 200 台。现在还能运行的看下面的活跃数。" },
     detail.referral && { label: "团队规模", value: numberLabel(summary.teamSize), unit: "人", tone: "role-3" as const, icon: UsersRound, group: "team", anchor: "hub-referral" },
   ].filter((value) => !!value).slice(0, 4) as { label: string; value: string; unit: string; tone: "role-1" | "role-2" | "role-3" | "role-4"; icon: typeof Wallet; group: string; anchor: string; explain?: string; sub?: string }[];
@@ -994,7 +1021,6 @@ export default function UserDetailPage() {
   const riskHigh = riskAuthorityReady && riskTone === "danger";
   // 数字在下面的区块里，这里只写有什么事，不重复（DP-61）。
   const issues: { key: string; text: string; danger?: boolean; go?: () => void }[] = [
-    pendingCommands.length + corrections.length > 0 && { key: "pending", text: `${pendingCommands.length + corrections.length} 个操作结果未确认` },
     summary.locked === true && { key: "locked", text: "账号已锁定", go: () => locate("security") },
     paymentSecurity.state === "exception" && { key: "payment", text: "支付密码有异常", go: () => locate("security") },
     paymentSecurity.pending && { key: "release", text: "有一笔解除结果等待确认", go: () => locate("security") },
@@ -1006,7 +1032,7 @@ export default function UserDetailPage() {
     deviceExceptions > 0 && { key: "device", text: "有设备异常", go: () => locate("devices", "hub-devices") },
     orderExceptions > 0 && { key: "order", text: "有订单异常", go: () => locate("records", "hub-orders") },
     failedPushCount > 0 && { key: "push", text: "有通知推送失败", go: () => locate("records") },
-  ].filter((value) => !!value);
+  ].filter((value) => !!value).sort((a, b) => Number(!!b.danger) - Number(!!a.danger));
   const unreadable = [
     securityUnread && "账号锁定和两步验证",
     paymentSecurity.state === "failed" && "支付安全",
@@ -1040,18 +1066,26 @@ export default function UserDetailPage() {
     ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={{ pathname: "/risk/scoring", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">去风险评分规则</span></Link>
     : undefined;
   const unreadText = unreadable.length > 0 ? `${unreadable.join("、")}暂时无法确认` : "";
-  const issueText = [...issues.map((issue) => issue.text), unreadText].filter(Boolean).join("，");
+  const unreadCount = unreadable.length > 0 ? `${unreadable.length} 组资料加载失败` : "";
+  // 最重要的两件写出来，其余写数量（DP-10）；危险的排在前面。
+  const issueText = [issues.slice(0, 2).map((issue) => issue.text).join("，") + (issues.length > 2 ? `，还有 ${issues.length - 2} 件` : ""), unreadText].filter(Boolean).join("；");
+  const scopeNote = `这个账号看不到的区块不在内${detail.risk?.cases !== undefined ? "，风险案件读取失败时后端也返回 0" : ""}`;
+  const checkedExplain = <p>核对了：{checked.join("、")}。{scopeNote}。</p>;
+  const pendingCount = pendingCommands.length + corrections.length;
   const conclusion = nonActive
-    ? <Conclusion state={status === "BANNED" ? "danger" : "warn"} lead icon={ShieldAlert} hint={issueText || undefined} action={c2Link}>账户状态：{statusLabel(status)}，提现和交易可能受限。</Conclusion>
+    ? <Conclusion state={status === "BANNED" ? "danger" : "warn"} lead icon={ShieldAlert} hint={issueText || undefined} explain={checkedExplain} action={c2Link}>账户状态：{statusLabel(status)}，提现和交易可能受限。</Conclusion>
     : issues.length > 0
-      ? <Conclusion state={issues.some((issue) => issue.danger) ? "danger" : "warn"} hint={issueText} action={firstGo ? <Button onClick={firstGo}>去看看</Button> : (riskHigh || openCases > 0) ? k4Link : undefined}>有 <b>{issues.length}</b> 件事要处理</Conclusion>
+      ? <Conclusion state={issues.some((issue) => issue.danger) ? "danger" : "warn"} hint={issueText} explain={checkedExplain} action={firstGo ? <Button onClick={firstGo}>去看看</Button> : (riskHigh || openCases > 0) ? k4Link : undefined}>有 <b>{issues.length}</b> 件事要处理{unreadCount && `，${unreadCount}`}</Conclusion>
       : status === "UNKNOWN"
         ? <Conclusion state="unknown" hint={unreadText || undefined}>账户状态未确认，暂时无法判断</Conclusion>
         : unreadable.length > 0
-          ? <Conclusion state="unknown" hint={`${unreadText}，这部分没有判断。`}>账户正常，部分资料暂时无法判断</Conclusion>
+          ? <Conclusion state="unknown" hint={`${unreadText}，这部分没有判断。`}>账户正常，{unreadCount}</Conclusion>
           : checking
             ? <Conclusion state="unknown">账户正常，正在核对其余项目…</Conclusion>
-            : <Conclusion state="ok" icon={ShieldCheck} explain={<><p>核对了：{checked.join("、")}。</p><p>这只说明这些项目没发现问题，不代表全部没事：这个账号看不到的区块不在内{detail.risk?.cases !== undefined ? "，风险案件读取失败时后端也返回 0" : ""}。</p></>}>账户正常，已核对的项目没发现问题</Conclusion>;
+            // 结果未确认在下面的提示里写一次，这里不写「没发现问题」，也不再说一遍（VS-105）。
+            : pendingCount > 0
+              ? null
+              : <Conclusion state="ok" icon={ShieldCheck} explain={<><p>核对了：{checked.join("、")}。</p><p>这只说明这些项目没发现问题，不代表全部没事：{scopeNote}。</p></>}>账户正常，已核对的项目没发现问题</Conclusion>;
 
   const hasEntries = !supportScope;
   const inPageWrites = [canWriteC1 && "重置昵称、处理支付方式", canWriteC2 && "置换和回收设备", canReleasePayment && "解除支付密码异常"].filter(Boolean).join("，");
@@ -1103,6 +1137,13 @@ export default function UserDetailPage() {
   const currentDevice = record?.kind === "device" && current ? current : null;
   const currentDeviceWritable = !!currentDevice && canWriteC2 && asNumber(currentDevice.id) > 0 && !FINAL_DEVICE_STATUS.includes(asText(currentDevice.status, "").toUpperCase());
   const currentNotificationId = record?.kind === "notification" && current ? Number(current.notificationId) : 0;
+  const conclusionOf = record && current ? recordConclusion(record.kind, current) : undefined;
+  // 写了「请到…核对」就要走得到（DT-06、DT-23）：没有那页权限时只留这句话。
+  const goTarget = record?.kind === "withdrawal" && current && canReadD2 && withdrawalTone(current) !== "ok" ? { label: "去提现审核", pathname: "/finance/withdrawals", query: { q: asText(current.withdrawalNo, ""), returnTo: selfHref } }
+    : record?.kind === "device" && current && deviceAbnormal(current) && reach("/devices/ops") ? { label: "去设备运行管理", pathname: "/devices/ops", query: { returnTo: selfHref } }
+    : record?.kind === "order" && current && orderTone(current) === "danger" && reach("/devices/orders") ? { label: "去订单进度", pathname: "/devices/orders", query: { returnTo: selfHref } }
+    : undefined;
+  const goLink = goTarget && <Link className="rd-btn" data-variant="secondary" data-size="md" href={{ pathname: goTarget.pathname, query: goTarget.query }} prefetch={false}><span className="rd-btn-face">{goTarget.label}</span></Link>;
   const recordProps = (kind: RecordKind) => ({ selected: record?.kind === kind ? record.index : undefined, onOpen: (index: number) => setRecord({ kind, index }) });
   const deviceColumns: Column[] = [
     { label: "实例 · 名称", cell: (row) => <Cell mono main={asText(row.instanceNo)} sub={asText(row.name)} title={asText(row.instanceNo)} /> },
@@ -1114,7 +1155,7 @@ export default function UserDetailPage() {
       if (!deviceId || FINAL_DEVICE_STATUS.includes(asText(row.status, "").toUpperCase())) return "—";
       return <Cell full main={<span className="rd-row-actions">
         <Button size="sm" disabledReason={deviceBlock(deviceId)} onClick={() => openDeviceAction(row, "replace")}>设备置换</Button>
-        <Button size="sm" disabledReason={deviceBlock(deviceId)} onClick={() => openDeviceAction(row, "recycle")}>设备回收</Button>
+        <Button size="sm" variant="danger-outline" disabledReason={deviceBlock(deviceId)} onClick={() => openDeviceAction(row, "recycle")}>设备回收</Button>
       </span>} sub={deviceBlock(deviceId)} />;
     } }] : []),
   ];
@@ -1133,7 +1174,7 @@ export default function UserDetailPage() {
   const paymentColumns: Column[] = [
     { label: "支付方式", cell: (row) => <Cell main={`${asText(row.brand)} ···· ${asText(row.last4)}`} sub={`${asText(row.provider)} · ${asText(row.expiryLabel, "无到期信息")}`} /> },
     { label: "状态", cell: (row) => <Cell full
-      main={<StatusTag tone={row.status === "BOUND" ? "ok" : "done"}>{row.status === "BOUND" ? (row.isDefault ? "已绑定 · 默认" : "已绑定") : "已解绑"}</StatusTag>}
+      main={paymentTag(row)}
       sub={row.trialGuard ? `正在用于试用扣款 · ${asText(row.trialRefId, "关联试用")}，暂不能解绑` : row.status !== "BOUND" && row.unboundAt ? `解绑时间：${shortTime(row.unboundAt)}` : undefined} /> },
     ...(canWriteC1 ? [{ label: "操作", align: "right" as const, end: true, cell: (row: JsonRecord) => {
       const method = row as UserPaymentMethod;
@@ -1149,7 +1190,7 @@ export default function UserDetailPage() {
   // 摘要只给收起时看，展开后下面有同样的数（DP-61）。有异常时只写异常。
   const foldSummary = (group: string, alert: boolean, text: string) => (openFolds[group] ?? alert) ? "" : text;
   const securityText = securityFailed
-    ? joined([securityUnread && "账号锁定和两步验证暂时无法确认", paymentSecurity.state === "failed" && "支付安全暂时无法确认", paymentError && "支付方式读取失败", !paymentError && revokeScanFailed && "撤销状态读取失败"])
+    ? joined([securityUnread && "账号锁定和两步验证暂时无法确认", paymentSecurity.state === "failed" && "支付安全暂时无法确认", paymentError && "支付方式加载失败", !paymentError && revokeScanFailed && "撤销状态加载失败"])
     : securityAlert
       ? joined([summary.locked === true && "账号已锁定", paymentSecurity.state === "exception" && "支付密码有异常", paymentSecurity.pending && "解除结果等待确认", unfinishedRevokes.length > 0 && `${unfinishedRevokes.length} 张卡仍可能被扣款`])
       : joined([
@@ -1158,10 +1199,11 @@ export default function UserDetailPage() {
         paymentSecurity.state === "clear" ? "支付密码无异常" : paymentSecurity.state === "loading" && "正在读取…",
         !supportScope && paymentCount !== null && `支付方式 ${paymentCount} 张`,
       ]);
+  const fundsIssue = joined([withdrawalExceptions > 0 && `${withdrawalExceptions} 笔提现异常`, withdrawalsWaiting > 0 && `${withdrawalsWaiting} 笔提现等待处理`]);
   const fundsText = fundsFailed
-    ? ledgerUnread ? "账单流水读不到" : "有区块读取失败"
+    ? ledgerUnread ? "账单流水加载失败" : "有区块加载失败"
     : fundsAlert
-      ? joined([withdrawalExceptions > 0 && `${withdrawalExceptions} 笔提现异常`, withdrawalsWaiting > 0 && `${withdrawalsWaiting} 笔提现等待处理`])
+      ? fundsIssue
       : joined([
         detail.deposits && `充值 ${numberLabel(detail.deposits.total)} 笔`,
         detail.withdrawals && `提现 ${numberLabel(detail.withdrawals.total)} 笔`,
@@ -1169,20 +1211,20 @@ export default function UserDetailPage() {
         !detail.deposits && !detail.withdrawals && !detail.financial && `账户${statusLabel(status)}`,
       ]);
   const devicesText = devicesFailed
-    ? ledgerUnread ? "账单流水读不到，收益不可用" : "有区块读取失败"
+    ? ledgerUnread ? "账单流水加载失败，收益不可用" : "有区块加载失败"
     : devicesAlert
       ? `${deviceExceptions} 台设备异常`
       : joined([
         detail.devices && `在线 ${numberLabel(detail.devices.onlineCount)} / 活跃 ${numberLabel(detail.devices.activeCount)}`,
         detail.earnings && `收益合计 ${amountText(detail.earnings.totalUsdt)}`,
       ]);
-  const teamText = teamFailed ? "有区块读取失败" : joined([
+  const teamText = teamFailed ? "有区块加载失败" : joined([
     detail.referral && !inKpi("团队规模") && `团队 ${numberLabel(detail.referral.teamSize)} 人`,
     detail.referral && `直接邀请 ${numberLabel(detail.referral.directCount)} 人`,
     detail.vrank && `等级 ${asText(detail.vrank.currentRank)}`,
   ]);
   const recordsText = recordsFailed
-    ? "有区块读取失败"
+    ? "有区块加载失败"
     : recordsAlert
       ? joined([failedPushCount > 0 && `${failedPushCount} 条通知推送失败`, orderExceptions > 0 && `${orderExceptions} 单订单异常`, corrections.length > 0 && "通知校正结果未确认"])
       : joined([
@@ -1209,11 +1251,11 @@ export default function UserDetailPage() {
         actions={<Button icon={<RefreshCcw size={14} aria-hidden />} loading={loading} loadingText="读取中…" onClick={() => void load()}>刷新</Button>}
         identity={<>
           <span data-mono>用户编码 {userNo}</span>
-          <StatusTag tone={statusTone(status)} filled>{statusLabel(status)}</StatusTag>
+          <StatusTag tone={statusTone(status)} icon={STATUS_ICON[status]} filled>{statusLabel(status)}</StatusTag>
           <span>分层 {asText(profile.userLevel)} · {asText(profile.vRank)}</span>
           <span>{asText(profile.phoneMasked)}</span>
         </>}
-        meta={`注册 ${shortTime(profile.registeredAt)} · 最近登录 ${shortTime(profile.lastLoginAt)} · ${readAt} 读取（${businessZone().label}），打开和点「刷新」时读取`}
+        meta={<>注册 {shortTime(profile.registeredAt)} · 最近登录 {shortTime(profile.lastLoginAt)} · {readAt} 读取（{businessZone().label}）<Explain label="什么时候读取" content="打开和点「刷新」时读取，不自动刷新。" /></>}
         readOnly={!supportScope && !canWriteC1 && !canWriteC2 && !canReleasePayment ? "当前账号在这页只能查看" : undefined}
         guideExtra={hiddenNote ? <p>这个账号看不到的区块不显示：{hiddenNote}。</p> : undefined} />
 
@@ -1234,9 +1276,9 @@ export default function UserDetailPage() {
             {canReadC3 && /^[1-9]\d*$/.test(c3UserId) && <Link className="rd-btn" data-variant="secondary" data-size="sm" href={{ pathname: "/users/assets", query: { userCode: userNo, userId: c3UserId, returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">调整余额</span></Link>}
             {canReadC5 && <Link className="rd-btn" data-variant="secondary" data-size="sm" href={{ pathname: "/users/security", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">安全与登录设备</span></Link>}
             {canWriteC1 && <Button size="sm" disabledReason={!c3UserId ? "读不到用户号，刷新后再试" : nicknameBlock} onClick={openNicknameReset}>重置昵称</Button>}
-            {canWriteC1 && nicknameBlock && <span className="rd-toolbar-note">{nicknameBlock}</span>}
       </>}>
         <div className="rd-detail-entries">
+          {canWriteC1 && nicknameBlock && <p className="rd-toolbar-note">{nicknameBlock}</p>}
           {crossLinks.length > 0 && <div className="rd-links">
             <span>去查</span>
             {crossLinks.map(([label, target]) => <Link key={target} className="rd-link" href={{ pathname: target, query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}>{label}</Link>)}
@@ -1262,7 +1304,7 @@ export default function UserDetailPage() {
       <div className="rd-detail-groups">
         {securityPresent && <div id={nav.anchor("security")}>
           <Fold title="安全" icon={ShieldCheck} tone="role-3" summary={foldSummary("security", securityAlert || securityFailed, securityText)} alertTone={securityFailed ? "danger" : "warn"} {...foldProps("security", securityAlert || securityFailed)}>
-            {detail.sessions && <Block title="登录安全" {...listProps("session")} section={{ sourceStatus: "READY" }} sub={filteredSessions.length > C1_SESSION_PAGE_SIZE ? "最近 50 条登录记录" : `最近 50 条登录记录 · 筛选后 ${filteredSessions.length} 条`} explain="这是最近最多 50 条样本，不是全部历史。登录记录读取失败时后端也返回空，写 0 或没有记录不能证明没登录过。">
+            {detail.sessions && <Block title="登录安全" {...listProps("session")} section={{ sourceStatus: "READY" }} issue={summary.locked === true ? "账号已锁定" : undefined} sub={filteredSessions.length > C1_SESSION_PAGE_SIZE ? "最近 50 条登录记录" : `最近 50 条登录记录 · 筛选后 ${filteredSessions.length} 条`} explain="这是最近最多 50 条样本，不是全部历史。登录记录读取失败时后端也返回空，写 0 或没有记录不能证明没登录过。">
               <Values rows={[
                 ["在线设备", numberLabel(summary.activeSessionCount)],
                 ["两步验证", securityValue(summary.twoFactorEnabled, "开启", "关闭")],
@@ -1279,9 +1321,10 @@ export default function UserDetailPage() {
             </div>}
             {!supportScope && <Block id="hub-payment-methods" title="支付方式" {...listProps("payment")} section={{ sourceStatus: "READY" }} failure={paymentError && `支付方式加载失败：${paymentError}`}
               sub={paymentMethods && paymentMethods.total > 0 ? `${paymentMethods.total} 条` : undefined}
-              actions={<Button size="sm" icon={<RefreshCcw size={13} aria-hidden />} loading={paymentLoading} onClick={() => void loadPaymentMethods()}>刷新支付方式</Button>}>
+              issue={unfinishedRevokes.length > 0 ? `${unfinishedRevokes.length} 张卡仍可能被扣款` : undefined} issueTone="danger"
+              actions={<Button size="sm" aria-label="刷新支付方式" icon={<RefreshCcw size={13} aria-hidden />} loading={paymentLoading} onClick={() => void loadPaymentMethods()}>刷新</Button>}>
               <Check label="显示已解绑" checked={includeUnbound} onChange={(event) => { setIncludeUnbound(event.target.checked); setPaymentPage(1); setRecord(null); }} />
-              {revokeScanFailed && <Notice tone="warn">撤销状态读取失败：已解绑的卡有没有撤销完暂时无法确认，点「刷新支付方式」重读。</Notice>}
+              {revokeScanFailed && <Notice tone="warn">撤销状态读取失败：已解绑的卡有没有撤销完暂时无法确认，点这一行的「刷新」重读。</Notice>}
               {unfinishedRevokes.map((method) => (
                 <Notice key={method.id} tone={method.revokeDeadlineAt && new Date(method.revokeDeadlineAt).getTime() < Date.now() ? "danger" : "warn"} title={`${method.brand} ···· ${method.last4}`}>
                   我们这边已解绑，但支付商那边{method.pspRevokeStatus === "FAILED" ? "撤销失败" : "还在处理"}，这张卡仍可能被扣款，还不算彻底解绑。
@@ -1302,13 +1345,12 @@ export default function UserDetailPage() {
               <RecordTable label="充值记录" rows={deposits} columns={DEPOSIT_COLUMNS} {...recordProps("deposit")} />
             </Block>
             <Block id="hub-withdrawal" title="提现记录" {...listProps("withdrawal")} section={detail.withdrawals} sub={`最多 30 条 · 共 ${numberLabel(detail.withdrawals?.total)} 笔`}
+              issue={fundsAlert ? fundsIssue : undefined} issueTone={withdrawalExceptions > 0 ? "danger" : "warn"}
               explain={<><p>这里最多列 30 条，不是近 30 天。</p><p>完成总额 {amountText(detail.withdrawals?.completedUsd)}：能核对到的成功提现本金小计。申请总额 {amountText(detail.withdrawals?.requestedUsd)}：能核对到的处理中提现本金小计。都不保证覆盖全部历史。</p></>}>
               <RecordTable label="提现记录" rows={withdrawals} columns={WITHDRAWAL_COLUMNS} {...recordProps("withdrawal")} />
             </Block>
-            <Block title="账户状态" section={detail.account}>
+            <Block title="账户状态" section={detail.account} summary={`两步验证${securityValue(summary.twoFactorEnabled, "已开启", "未开启")} · 需重置密码：${securityValue(summary.passwordResetRequired)}`}>
               <Values rows={[
-                ["用户编码", userNo],
-                ["账户状态", <StatusTag key="status" tone={statusTone(status)}>{statusLabel(status)}</StatusTag>],
                 ["两步验证", securityValue(summary.twoFactorEnabled, "已开启", "未开启")],
                 ["需重置密码", securityValue(summary.passwordResetRequired)],
               ]} />
@@ -1323,6 +1365,7 @@ export default function UserDetailPage() {
         {devicesPresent && <div id={nav.anchor("devices")}>
           <Fold title="设备与收益" icon={Cpu} tone="role-2" summary={foldSummary("devices", devicesFailed || devicesAlert, devicesText)} alertTone="danger" {...foldProps("devices", devicesFailed || devicesAlert)}>
             <Block id="hub-devices" title="设备明细" {...listProps("device")} section={detail.devices} sub={inKpi("设备数") ? "最多 200 台" : `最多 200 台 · 共 ${numberLabel(detail.devices?.total)} 台`}
+              issue={deviceExceptions > 0 ? `${deviceExceptions} 台设备异常` : undefined} issueTone="danger"
               explain={<><p>这是设定值，不是今天实际到账的收益。合计含已停用设备。</p><p>在线、活跃和合计都按这里列出的设备算。</p></>}>
               <Values rows={[
                 ["在线 / 活跃", `${numberLabel(detail.devices?.onlineCount)} / ${numberLabel(detail.devices?.activeCount)}`],
@@ -1356,7 +1399,7 @@ export default function UserDetailPage() {
             <Block id="hub-engagement" title="互动与参与" {...listProps("engagement")} section={detail.engagement ? { sourceStatus: asText(detail.engagement.sourceStatus, "READY") } : undefined}>
               <RecordTable label="互动与参与" rows={engagement} columns={ENGAGEMENT_COLUMNS} {...recordProps("engagement")} />
             </Block>
-            <Block title="团队等级" section={detail.vrank}>
+            <Block title="团队等级" section={detail.vrank} summary={`等级 ${asText(detail.vrank?.currentRank)} · 级别 ${asText(detail.vrank?.userLevel)}`}>
               <Values rows={[
                 ["当前等级", asText(detail.vrank?.currentRank)],
                 ["用户级别", asText(detail.vrank?.userLevel)],
@@ -1371,8 +1414,8 @@ export default function UserDetailPage() {
         </div>}
 
         {recordsPresent && <div id={nav.anchor("records")}>
-          <Fold title="记录" icon={FileClock} tone="role-other" summary={foldSummary("records", recordsAlert || recordsFailed, recordsText)} alertTone={recordsFailed ? "danger" : "warn"} {...foldProps("records", recordsAlert || recordsFailed)}>
-            <Block title="参与与通知" {...listProps("notification")} section={detail.notifications} sub="最多 20 条" explain="未读、待推送和失败是另外算的总数，不是这些行相加。点通知编号看时间证据。">
+          <Fold title="记录" icon={FileClock} tone="role-other" summary={foldSummary("records", recordsAlert || recordsFailed, recordsText)} alertTone={recordsFailed || failedPushCount + orderExceptions > 0 ? "danger" : "warn"} {...foldProps("records", recordsAlert || recordsFailed)}>
+            <Block title="参与与通知" {...listProps("notification")} section={detail.notifications} sub="最多 20 条" issue={failedPushCount > 0 ? `${failedPushCount} 条推送失败` : undefined} issueTone="danger" explain="未读、待推送和失败是另外算的总数，不是这些行相加。点通知编号看时间证据。">
               <Values rows={[
                 ["未读", `${numberLabel(detail.notifications?.unreadCount)} 条`],
                 ["待推送", `${numberLabel(detail.notifications?.pendingPushCount)} 条`],
@@ -1380,7 +1423,7 @@ export default function UserDetailPage() {
               ]} />
               <RecordTable label="参与与通知" rows={notifications} columns={notificationColumns} {...recordProps("notification")} />
             </Block>
-            <Block id="hub-orders" title="商城订单" {...listProps("order")} section={detail.commerce ? { sourceStatus: asText(detail.commerce.sourceStatus, "READY") } : undefined} sub="最多 50 单" explain="订单总数和活跃订单按这里列出的订单算。">
+            <Block id="hub-orders" title="商城订单" {...listProps("order")} section={detail.commerce ? { sourceStatus: asText(detail.commerce.sourceStatus, "READY") } : undefined} sub="最多 50 单" issue={orderExceptions > 0 ? `${orderExceptions} 单异常` : undefined} issueTone="danger" explain="订单总数和活跃订单按这里列出的订单算。">
               <Values rows={[
                 ["订单总数", `${numberLabel(detail.commerce?.total)} 单`],
                 ["活跃订单", `${numberLabel(detail.commerce?.activeOrderCount)} 单`],
@@ -1394,7 +1437,7 @@ export default function UserDetailPage() {
         </div>}
       </div>
 
-      <Drawer data-c1-record="" open={!!current && !!record} onClose={() => setRecord(null)} title={record ? RECORD[record.kind].title : ""} sub={record && current ? RECORD[record.kind].sub(current) : undefined}
+      <Drawer open={!!current && !!record} onClose={() => setRecord(null)} title={record ? RECORD[record.kind].title : ""} sub={record && current ? RECORD[record.kind].sub(current) : undefined}
         nav={record ? {
           hasPrev: record.index > 0,
           hasNext: record.index < recordRows[record.kind].length - 1,
@@ -1405,11 +1448,11 @@ export default function UserDetailPage() {
           ? <Decision note={deviceBlock(asNumber(currentDevice.id))}
               explain="两个操作都让设备回收并离线，不能撤销，不退钱，不发新设备。设备置换多记一张已完成的置换单，设备回收不留单。"
               danger={<Button variant="danger-outline" disabledReason={deviceBlock(asNumber(currentDevice.id))} onClick={() => openDeviceAction(currentDevice, "recycle")}>设备回收</Button>}
-              others={<Button disabledReason={deviceBlock(asNumber(currentDevice.id))} onClick={() => openDeviceAction(currentDevice, "replace")}>设备置换</Button>} />
+              others={<>{goLink}<Button disabledReason={deviceBlock(asNumber(currentDevice.id))} onClick={() => openDeviceAction(currentDevice, "replace")}>设备置换</Button></>} />
           : canReadNotificationEvidence && Number.isSafeInteger(currentNotificationId) && currentNotificationId > 0
             ? <Decision primary={<Button onClick={() => { setRecord(null); setNotificationEvidence({ userKey, authEpoch, id: currentNotificationId }); }}>查看时间证据</Button>} />
-            : undefined}>
-        {record && current && recordConclusion(record.kind, current) && <Notice tone="progress">{recordConclusion(record.kind, current)}</Notice>}
+            : goLink ? <Decision primary={goLink} /> : undefined}>
+        {record && current && conclusionOf && <Notice tone={conclusionOf.tone}>{conclusionOf.text}</Notice>}
         {record && current && <Facts>{RECORD[record.kind].facts(current).map(([label, value]) => <Fact key={label} k={label}>{value}</Fact>)}</Facts>}
       </Drawer>
 
@@ -1440,9 +1483,9 @@ export default function UserDetailPage() {
           userKey={userKey} notificationId={notificationEvidence.id} actorKey={session?.adminId == null ? undefined : String(session.adminId)}
           canCorrect={canCorrectNotificationTime} onPendingChange={syncPending} onCorrected={() => {
             const text = `通知 ${notificationEvidence.id} 已按投递事实校正时间，已读状态保持不变。`;
-            setWriteResult({ key: readKey, text });
+            setWriteResult({ key: readKey, text, tone: "ok" });
             void load().then(refreshed => {
-              if (!refreshed && currentReadKey.current === readKey) setWriteResult({ key: readKey, text: `${text}资料刷新失败，请重新加载资料核对。` });
+              if (!refreshed && currentReadKey.current === readKey) setWriteResult({ key: readKey, text: `${text}资料刷新失败，请点「刷新」核对。`, tone: "warn" });
             });
           }} onClose={() => { setNotificationEvidence(null); syncPending(); }} />
       )}
