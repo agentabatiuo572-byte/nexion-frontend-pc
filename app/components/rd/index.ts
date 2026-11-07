@@ -28,7 +28,7 @@ export { Pager } from "./pager";
 export { Panel } from "./panel";
 export { SectionNav, useSectionNav, type SectionNavItem } from "./section-nav";
 export { Select, type SelectOption } from "./select";
-export { MetricBoard, MetricCard } from "./metric";
+export { LONG, MetricBoard, MetricCard } from "./metric";
 export { Stat, StatBand } from "./stat";
 export { IrreversibleTag, StatusTag } from "./status-tag";
 export { Steps } from "./steps";

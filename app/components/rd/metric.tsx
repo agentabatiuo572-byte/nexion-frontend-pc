@@ -2,7 +2,7 @@
  * MetricBoard、MetricCard 经营卡（CP-40 的看板变体）。一屏要并排看 4 个以上、每个都带对比和分项时用，
  * 少于这个用 StatBand。目前只有今日概览用，产品批准了它放六张（PG-41）。
  *
- * <MetricBoard title="经营数据" explain="…" tools={<Segments … />} meta="11-02 至今 · 截至 16:20 · 北京时间" rows={3}>
+ * <MetricBoard title="经营数据" explain="…" tools={<Segments … />} meta="11-02 至今 · 截至 16:20 · 北京时间" rows={3} long={isLong}>
  *   <MetricCard label="入金总额" icon={ArrowDownToLine} tone="role-2" value="12,480.00" unit="USDT" compare="昨日全天 9,300.00 USDT"
  *     rows={[{ k: "笔数", v: "12 笔" }]} explain="算什么、不算什么。" href="/finance/recon" openLabel="查看充值与收款对账" />
  *   <MetricCard label="净入金" value="+3,180.00" unit="USDT" compare="昨日全天 +900.00 USDT"
@@ -19,7 +19,8 @@
  * - 卡的颜色按 VS-12，值是 0 或「—」时弱化（字色弱、图标底灰），两套主题都弱；分项里 0 也弱化。对比数不分好坏，不用红绿。
  * - 0、读不到、没权限分开：0 写 0；读不到传 state="failed" 和 onRetry，主数写「—」，对比行写「暂时读不到 · 重试」；没权限不渲染这张卡。
  * - state="loading" 时主数、对比和分项是占位条，高度和有数时一样。刷新时页面保留旧数，不要传 loading。
- * - 金额写完整数字，不折行、不缩字。主数 13 个字符以上（8 位整数带小数）时，放不下三列就两列（VS-65）。
+ * - 金额写完整数字，不折行、不缩字。这组卡任一时段有 13 个字符以上的主数（8 位整数带小数）时，页面给 MetricBoard 传 long，
+ *   放不下三列就两列（VS-65）；按所有时段定，切时段列数不变。
  * - 张数由子项决定：3、6 张三列；4 张够宽四列，不够两两一行；2 张两列。窄到放不下三列时两列。
  * - 整张可点传 href，名称行右边有箭头，悬停整张变亮；openLabel 是读屏名字，目标页不可达时不传（X03），也就没有箭头。
  *   问号和重试浮在上面，各点各的。
@@ -37,10 +38,10 @@ import type { RoleTone, StateTone } from "./tone";
 /** 「—」、0、0.00、0 笔、0.00 USDT：不是要看的数。 */
 const EMPTY = /^(?:[-–—]|[+-]?0(?:\.0+)?(?: .*)?)$/;
 const empty = (value: ReactNode) => typeof value === "string" && EMPTY.test(value.trim());
-/** 「12,345,678.90」起算长数字。 */
-const LONG = 13;
+/** 「12,345,678.90」起算长数字，页面按它算 MetricBoard 的 long。 */
+export const LONG = 13;
 
-export function MetricBoard({ title, explain, tools, meta, rows = 3, children }: {
+export function MetricBoard({ title, explain, tools, meta, rows = 3, long, children }: {
   title: string;
   explain?: ReactNode;
   /** 标题旁的控件，比如切时段的 Segments。 */
@@ -49,6 +50,8 @@ export function MetricBoard({ title, explain, tools, meta, rows = 3, children }:
   meta?: ReactNode;
   /** 分项区留几行高：这组卡各时段最多几行。比例条算两行。 */
   rows?: number;
+  /** 这组卡任一时段有长金额：窄时两列，切时段不变。 */
+  long?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -59,7 +62,7 @@ export function MetricBoard({ title, explain, tools, meta, rows = 3, children }:
         {tools}
         {meta && <span className="rd-metrics-meta">{meta}</span>}
       </div>
-      <div className="rd-metrics-grid" style={{ "--rd-metric-rows": rows } as CSSProperties}>{children}</div>
+      <div className="rd-metrics-grid" data-long={long ? "" : undefined} style={{ "--rd-metric-rows": rows } as CSSProperties}>{children}</div>
     </section>
   );
 }
@@ -96,7 +99,7 @@ export function MetricCard({ label, value, unit, compare, rows = [], bar, tone, 
         ? <><div className="rd-metric-value"><span className="rd-skeleton" /></div><div className="rd-metric-compare"><span className="rd-skeleton" /></div></>
         : (
           <>
-            <div className="rd-metric-value" data-tone={tone} data-zero={quiet ? "" : undefined} data-long={shown.length >= LONG ? "" : undefined}>
+            <div className="rd-metric-value" data-tone={tone} data-zero={quiet ? "" : undefined}>
               {shown}{unit && shown !== "—" && <span className="rd-metric-unit">{unit}</span>}
             </div>
             <div className="rd-metric-compare">{state === "failed" ? <>暂时读不到{onRetry && <> · <InlineRetry onRetry={onRetry} /></>}</> : compare}</div>

@@ -10,7 +10,7 @@
  */
 import { useState } from "react";
 import { Activity, ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, CircleDollarSign, UserPlus } from "lucide-react";
-import { Explain, InlineRetry, MetricBoard, MetricCard, Segments } from "@/app/components/rd";
+import { Explain, InlineRetry, LONG, MetricBoard, MetricCard, Segments } from "@/app/components/rd";
 import { b0PeriodDays, type fetchB0ActiveUsers, type fetchB0Devices, type fetchB0MoneyFlows, type fetchB0Registrations, type fetchB0Sales, type B0Period } from "@/lib/admin/b0-client";
 import type { B0Blocks } from "@/lib/admin/b0-access";
 import { businessDay, businessZone } from "@/lib/admin/business-time";
@@ -80,9 +80,16 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, moneyFlo
   const sale = sales.data?.[period];
   const link = (href: string) => (reach(href) ? href : undefined);
   const before = (text: string) => `${previous} ${text}`;
-  // 资金三张卡本月没有上月可比：按天的接口只给最近 31 天。
-  const moneyCompare = (text: (data: NonNullable<typeof flowBefore>) => string) => (flowBefore ? before(text(flowBefore))
-    : period === "month" ? <>暂不对比上月<Explain label="为什么不对比上月" content="按天的资金数只能取最近 31 天，取不到上月全月，所以本月先不对比。" /></> : undefined);
+  // 资金三张卡本月没有上月可比：按天的接口只给最近 31 天。原因只在第一张卡写一次（VS-105）。
+  const moneyCompare = (text: (data: NonNullable<typeof flowBefore>) => string, why = false) => (flowBefore ? before(text(flowBefore))
+    : period === "month" ? <>暂不对比上月{why && <Explain label="为什么不对比上月" content="按天的资金数只能取最近 31 天，取不到上月全月，所以本月资金三张卡先不对比。" />}</> : undefined);
+  // 列数按三个时段里最长的金额定，切时段不在三列和两列之间跳。
+  const long = PERIODS.some(({ value }) => {
+    const money = moneyFlows.data?.[value].current;
+    const sold = sales.data?.[value];
+    return [money && fmtAmount(money.topup), money && fmtAmount(money.withdrawal), money && signed(money.net), sold && fmtAmount(sold.amount)]
+      .some((text) => (text?.length ?? 0) >= LONG);
+  });
 
   const reviewOnCard = blocks.withdrawals && !reach("/finance/withdrawals");
   const withdrawalCounts = [
@@ -106,10 +113,13 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, moneyFlo
   return (
     <MetricBoard
       title="经营数据"
-      explain="今日从 0 点到现在，本周从周一 0 点到现在，本月从 1 日 0 点到现在。今天还没过完，所以只并排写昨日全天、上周全周、上月全月的数，不算百分比。数字大小不分好坏，提现多了不代表不好。金额和注册人数现在还没有排除测试账号。"
+      explain={switchable
+        ? "今日从 0 点到现在，本周从周一 0 点到现在，本月从 1 日 0 点到现在。今天还没过完，所以只并排写昨日全天、上周全周、上月全月的数，不算百分比。数字大小不分好坏，提现多了不代表不好。金额和注册人数现在还没有排除测试账号。"
+        : "注册用户是上线以来累计，下面三个新增按今日、本周、本月分开写。活跃用户只有今日和昨日。注册人数现在还没有排除测试账号。"}
       tools={switchable ? <Segments label="经营数据时段" value={period} items={PERIODS} onChange={onPeriodChange} /> : undefined}
       meta={clock ? `${since}截至 ${clock} · ${businessZone().label}` : "正在读取…"}
       rows={reservedRows}
+      long={long}
     >
       {blocks.moneyFlows && (
         <>
@@ -119,7 +129,7 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, moneyFlo
             tone="role-2"
             value={flow ? fmtAmount(flow.topup) : ""}
             unit="USDT"
-            compare={moneyCompare((data) => usdt(data.topup))}
+            compare={moneyCompare((data) => usdt(data.topup), true)}
             rows={flow ? [{ k: "笔数", v: `${fmtNum(flow.topupCount)} 笔` }] : []}
             explain={<>
               <p>算：用户从外部打进平台、已经入账的钱，有链上充值和银行卡折算成的 USDT，按入账时间算。</p>

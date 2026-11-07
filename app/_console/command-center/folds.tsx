@@ -26,6 +26,8 @@ import type { FundLevel } from "./status";
 import { useBlock } from "./use-block";
 
 const usdt = (value: number) => `${fmtAmount(value)} USDT`;
+/** 充值渠道显示名：接口叫「银行卡支付」，页面和入金卡问号统一叫「银行卡」（DT-14），接口名不动。 */
+const channelName = (channel: string) => (channel === "银行卡支付" ? "银行卡" : channel);
 const FUNNEL_FILTERS = { cohort: "ALL", phase: "ALL", ref: "ALL" };
 /** T10：少于 5 人不算比例。 */
 const SMALL_SAMPLE = 5;
@@ -95,7 +97,7 @@ export function FundFold({ ledger, liquidity, error, retrying, onRetry, alert, l
     <Fold title="资金明细" summary={fundFoldSummary(ledger, liquidity, error, level)} icon={Wallet} tone="role-1" alert={alert} alertTone={level === "danger" ? "danger" : "warn"} open={open} onOpenChange={onOpenChange}
       actions={linkInBrief ? undefined : <FoldLink reach={reach} href="/overview/dual-ledger">查看资金总览</FoldLink>}>
       {error ? <BlockState compact state="error" title="资金数据读取失败" detail={error} onRetry={onRetry} retrying={retrying} />
-        : !ledger || !liquidity ? <BlockState state="loading" title="正在读取…" />
+        : !ledger || !liquidity ? <BlockState compact state="loading" title="正在读取…" />
           : (
             <div className="cc-fold-stack">
               <div className="cc-amounts">
@@ -187,7 +189,7 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
       actions={<FoldLink reach={reach} href="/overview/risk-radar">查看风险提醒</FoldLink>}>
       <div className="cc-fold-stack">
       {error ? <BlockState compact state="error" title="风险数据读取失败" detail={error} onRetry={onRetry} retrying={retrying} />
-        : !ledger || !risk ? <BlockState state="loading" title="正在读取…" />
+        : !ledger || !risk ? <BlockState compact state="loading" title="正在读取…" />
           : (
             <>
               {(closed.length > 0 || switchLink) && (
@@ -233,7 +235,7 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                   <span>
                     <Explain label="提现在途怎么算" content="还没结案的提现单：等审核、打款中，也包括被拒绝或打款失败、钱还没退回的单。所以比待处理里的待审核提现多。">提现在途</Explain>
                   </span>
-                  <span className="cc-num">{fmtNum(ledger.queueBacklogCount)} 单，{usdt(ledger.queueBacklogUsd)}</span>
+                  <span className="cc-num">{fmtNum(ledger.queueBacklogCount)} 笔，{usdt(ledger.queueBacklogUsd)}</span>
                 </li>
                 <li>
                   <span>
@@ -289,7 +291,7 @@ export function FlowFold({ blocks, history, historyError, historyRetrying, onRet
         <section aria-label="今日充值">
           <h3 className="cc-sub">今日充值</h3>
           {topup.error ? <BlockState compact state="error" title="今日充值读取失败" detail={topup.error} onRetry={topup.reload} retrying={topup.loading} />
-            : !topup.data ? <BlockState state="loading" title="正在读取…" />
+            : !topup.data ? <BlockState compact state="loading" title="正在读取…" />
               : (
                 <>
                   {/* 合计已在入金卡上时不再写，同一个数一页只出现一次（DP-61）；各渠道金额和笔数只在这里。 */}
@@ -297,7 +299,7 @@ export function FlowFold({ blocks, history, historyError, historyRetrying, onRet
                   {topup.data.reconciliation.length > 0
                     ? (
                       <ul className="cc-list">
-                        {topup.data.reconciliation.map((row) => <li key={row.channel}><span>{row.channel}</span><span className="cc-num">{usdt(row.ledgerAmount)}，{fmtNum(row.ledgerCount)} 笔</span></li>)}
+                        {topup.data.reconciliation.map((row) => <li key={row.channel}><span>{channelName(row.channel)}</span><span className="cc-num">{usdt(row.ledgerAmount)}，{fmtNum(row.ledgerCount)} 笔</span></li>)}
                       </ul>
                     )
                     : topupOnCard && <p className="cc-line" data-muted="">今天还没有充值到账</p>}
@@ -309,7 +311,7 @@ export function FlowFold({ blocks, history, historyError, historyRetrying, onRet
         <section aria-label="今日提现">
           <h3 className="cc-sub">今日提现申请</h3>
           {redemption.error ? <BlockState compact state="error" title="今日提现读取失败" detail={redemption.error} onRetry={redemption.reload} retrying={redemption.loading} />
-            : !redemption.data ? <BlockState state="loading" title="正在读取…" />
+            : !redemption.data ? <BlockState compact state="loading" title="正在读取…" />
               : <p className="cc-line">提交 {fmtNum(redemption.data.submitted)} 笔，完成 {fmtNum(redemption.data.confirmed)} 笔，拒绝 {fmtNum(redemption.data.rejected)} 笔{redemption.data.averageLatencyHours == null ? "" : `，平均到账 ${redemption.data.averageLatencyHours} 小时`}</p>}
         </section>
       )}
@@ -326,7 +328,7 @@ export function FlowFold({ blocks, history, historyError, historyRetrying, onRet
         {blocks.netFlow && !quiet && (
           <section aria-label="近 8 天资金进出">
             {historyError ? <BlockState compact state="error" title="资金进出读取失败" detail={historyError} onRetry={onRetryHistory} retrying={historyRetrying} />
-              : !history ? <BlockState state="loading" title="正在读取…" />
+              : !history ? <BlockState compact state="loading" title="正在读取…" />
                 : <Bars label="近 8 天每天流入和流出" series={[{ name: "流入", slot: 2 }, { name: "流出", slot: 4 }]} rows={history.flowWindows.map((item) => ({ label: item.label, values: [item.inflowWan * 10_000, item.outflowWan * 10_000] }))} format={usdt} height={96} />}
             {todayFlow && <p className="cc-line">今日流入 {usdt(todayFlow.inflowWan * 10_000)}，流出 {usdt(todayFlow.outflowWan * 10_000)}</p>}
           </section>
@@ -358,7 +360,7 @@ function FunnelBody({ onSummary }: { onSummary: (text: string) => void }) {
               : worst ? `流失最多的一步是${worst.from}到${worst.to}` : "每一步人数都太少，样本过小";
   useEffect(() => { onSummary(conclusion); }, [conclusion, onSummary]);
   if (error) return <BlockState compact state="error" title="用户转化读取失败" detail={error} onRetry={() => void reload()} retrying={loading} />;
-  if (!data) return <BlockState state="loading" title="正在读取…" />;
+  if (!data) return <BlockState compact state="loading" title="正在读取…" />;
   if (!data.available || !stages.length) return <BlockState compact state="error" title="用户转化暂无数据" detail={data.message ?? "暂无转化数据"} onRetry={() => void reload()} retrying={loading} />;
   // 结论已经写在折叠标题行，这里不再写一遍（VS-105），只说什么时候会有图。
   if (tooFew || allSmall) return <p className="cc-line" data-muted="">满 5 人的步骤显示人数，不满 5 人的步骤先不显示。</p>;
@@ -438,7 +440,7 @@ export function KpiFold({ refreshKey, reach, open, onOpenChange }: FoldProps & {
     <Fold title="关键指标" summary={summary} icon={Target} tone="role-3" open={open} onOpenChange={onOpenChange}
       actions={<FoldLink reach={reach} href="/analytics/kpi">查看关键指标</FoldLink>}>
       {opened && (kpis.error ? <BlockState compact state="error" title="关键指标读取失败" detail={kpis.error} onRetry={kpis.reload} retrying={kpis.loading} />
-        : !kpis.data ? <BlockState state="loading" title="正在读取…" />
+        : !kpis.data ? <BlockState compact state="loading" title="正在读取…" />
           : rows.length === 0 ? <BlockState state="empty" title="关键指标暂无数据" />
             : (
               <div className="cc-fold-stack">
