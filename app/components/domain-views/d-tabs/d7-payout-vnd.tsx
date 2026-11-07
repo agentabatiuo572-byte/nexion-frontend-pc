@@ -49,6 +49,9 @@ const NO_WRITE = "这个账号现在没有这项修改权限，不能重试，�
 const READY_EXPLAIN = "只表示服务端配置齐全，不代表已确认真实到账。和充值收款共用同一商户。提现总开关关闭时，用户也不能提现。";
 const APPROVAL_COPY = "另一位超管批准前，当前配置保持不变。批准后新报价使用新参数，未提交的旧报价需重新报价，已提交订单金额不变。";
 const IMPACT = "只影响之后的报价；用户还没提交的旧报价需要重新报价，已提交的订单金额不变。";
+const PROPOSAL_STATUS: Record<A2OperationRow["status"], string> = { pending: "等待另一位超管批准", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
+/** 共用文字让人去「操作记录与审批」看进度；到不了那页的账号（财务主管）改写成等谁处理。 */
+const PENDING_ELSEWHERE = "已有放宽单在等批准，等超级管理员处理后再提交。";
 
 /** 直接保存的原操作：结果未知时原样保存，重试只能发这一份（OP-92、OP-94）。 */
 type DirectCommand = { values: PayoutVndValues; expectedVersion: number; reason: string; forceInverted: boolean };
@@ -397,7 +400,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
             setEditing((current) => current && { ...current, conflict: true });
             openActionConfirm({ ...request, blockedReason: CONFLICT });
           }
-          if (code === "OBJECT_ALREADY_PENDING" && !canReachAudit) throw new Error("已有放宽单在等批准，等超级管理员处理后再提交。");
+          if (code === "OBJECT_ALREADY_PENDING" && !canReachAudit) throw new Error(PENDING_ELSEWHERE);
           throw cause;
         }
       },
@@ -494,7 +497,8 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       }
       syncPending();
       applyRead(result.active);
-      toast(result.acknowledgement, "success");
+      // 只是查询，没有提交新内容；共用回执会写「本次输入未提交」，这里按查到的单写。
+      toast(`已找到原审批单 ${result.ticket.id}，${PROPOSAL_STATUS[result.ticket.status]}`, "success");
       void loadQueue();
     } catch (cause) {
       note(key, `查询没有成功：${isA2OutcomeUncertainError(cause) ? cause.message : displayAdminError(cause)} 原命令继续保留。`);
@@ -520,7 +524,8 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       syncPending();
-      const message = isA2OutcomeUncertainError(cause) ? cause.message : displayAdminError(cause);
+      const message = isA2OutcomeUncertainError(cause) ? cause.message
+        : errorCode(cause) === "OBJECT_ALREADY_PENDING" && !canReachAudit ? PENDING_ELSEWHERE : displayAdminError(cause);
       if (pendingConfigApproval("D7", session.adminId)) note(key, `重试没有成功：${message} 原命令继续保留。`);
       else setApprovalRejected(`${message} 原记录已清除，可以重新修改参数。`);
     } finally {
