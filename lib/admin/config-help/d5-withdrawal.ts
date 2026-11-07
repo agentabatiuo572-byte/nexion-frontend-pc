@@ -61,7 +61,7 @@ export const D5_PARAM_HELP = {
     what: "这个网络能不能发起 USDT 提现",
     when: "关闭提交后立即生效，开启批准后生效",
     effect: "关掉 TRC20：App 不再显示这个网络，已提交的提现不受影响",
-    where: "App 提现页的网络选项；全部关闭时写「提现通道暂不可用，请稍后再试。」",
+    where: "App「选择提现网络」页的网络卡片；全部关闭时写「提现通道暂不可用，请稍后再试。」",
     note: "开启只是配置。打款方不支持或没开的网络，这里开着 App 也不显示，比如接打款方时 TRC20 不显示",
   },
   networkConfirmFeeUsd: {
@@ -70,7 +70,7 @@ export const D5_PARAM_HELP = {
     when: "调高提交后立即生效，调低批准后生效。只影响新提现",
     how: "0–25 USD，每档 0.5，三个网络一起保存",
     effect: "改成 TRC20 2 USD：之后走 TRC20 的提现每笔收 2 USD。设为 0 不收费。任一网络调低，三个一起走审批",
-    where: "App 提现页「网络确认费」这一行",
+    where: "App「选择提现网络」页每个网络卡片上的网络费；提现页「网络确认费」这一行",
   },
   nexFeeOffsetRate: {
     label: "UVT 抵扣率",
