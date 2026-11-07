@@ -313,7 +313,7 @@ export function accountStatusLabel(status?: string) {
 
 function ClusterGraph({ c }: { c: K1Cluster }) {
   const gid = useId();
-  const W = 320, H = 272, cx = W / 2, cy = H / 2, R = 94;
+  const W = 400, H = 272, cx = W / 2, cy = H / 2, R = 94;
   const edgeColor = (layer: string) => layer === "device" ? "var(--rd-chart-3)" : layer === "payment" ? "var(--rd-chart-2)" : "var(--rd-chart-other)";
   // 三态与账户明细同源:空状态走已结束的灰,绝不能落进「正常」绿。
   const nodeColor = (status: string) => isRestrictedStatus(status) ? "var(--rd-danger)" : isUnknownStatus(status) ? "var(--rd-done)" : "var(--rd-ok)";
@@ -326,7 +326,7 @@ function ClusterGraph({ c }: { c: K1Cluster }) {
     return [node[0], { x: cx + R * Math.cos(angle), y: cy + R * Math.sin(angle), angle }] as const;
   }));
   return (
-    <Figure width={320} graphic={
+    <Figure width={400} graphic={
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} role="img" aria-label={`关联账户组 ${c.id} 关系图`}>
         <circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--rd-line-strong)" strokeDasharray="3 6" />
         {c.edges.map((edge, index) => {
@@ -356,7 +356,10 @@ function ClusterGraph({ c }: { c: K1Cluster }) {
               <circle cx={x} cy={y} r={13} fill="var(--rd-panel-inner)" stroke={col} strokeWidth={1.6} />
               <circle cx={x} cy={y} r={3} fill={col} />
               {nd?.[3] === "是" && <circle cx={x + 10} cy={y - 10} r={3.6} fill="var(--rd-warn)" stroke="var(--rd-panel)" strokeWidth={1.5} />}
-              <text className="rd-graph-label" x={x} y={uy >= 0 ? y + 31 : y - 23} fill="var(--rd-text-2)" textAnchor="middle">{nd?.[0] ?? ""}</text>
+              {/* 账号写全后比节点宽，左右两侧的字朝外排，不压连线。 */}
+              {Math.abs(ux) > 0.35
+                ? <text className="rd-graph-label" x={x + (ux > 0 ? 19 : -19)} y={y + 4} fill="var(--rd-text-2)" textAnchor={ux > 0 ? "start" : "end"}>{nd?.[0] ?? ""}</text>
+                : <text className="rd-graph-label" x={x} y={uy >= 0 ? y + 31 : y - 23} fill="var(--rd-text-2)" textAnchor="middle">{nd?.[0] ?? ""}</text>}
             </g>
           );
         })}
@@ -988,7 +991,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           check: "核对账户、证据和触发的风险规则。",
         },
         facts: clusterFacts(c, { changed, scope: frozen ? "解除冻结" : "解除限制", money: "可提现的钱可能变多", coverage: true, restores: frozen,
-          accounts: frozen ? "恢复它们因此暂停的提现。因别的原因冻结的不动。" : undefined }) };
+          accounts: frozen ? "恢复这些账户因此暂停的提现。因别的原因冻结的不动。" : undefined }) };
     }
     const label = `判定为正常 · ${c.id}`;
     return { ...common, label, action: label, title: "判定为正常", briefKind: "judgment",
@@ -1467,7 +1470,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
       {tab === "earnings" && (
         <Panel data-proof="k1-protected-earnings" title="待审核或已锁定的收益" icon={Coins} tone="role-1" flush
-          sub={protectedEntries.length ? `待审核 ${pendingEntries.length} 笔 · 已锁定 ${lockedEntries} 笔${entriesAtLimit ? ` · 最多显示 ${PROTECTED_ENTRY_LIMIT} 条` : ""}` : undefined}
+          sub={protectedEntries.length ? `待审核 ${pendingEntries.length} 笔 · 已锁定 ${lockedEntries} 笔${entriesAtLimit ? ` · 最多显示 ${PROTECTED_ENTRY_LIMIT} 条` : ""} · 时间均为${businessZone().label}` : undefined}
           explain="人工放行需要相应权限、操作理由，并留下操作记录。">
           {protectedEntriesError ? (
             <BlockState state="error" title="收益记录读取失败" detail={`${protectedEntriesError}当前不提供人工放行入口。`} onRetry={() => void refreshProtectedEntries()} retrying={protectedEntriesLoading} />
@@ -1475,7 +1478,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             <Table label="待审核或已锁定的收益">
               <thead>
                 <tr>
-                  <Th>收益记录号 · 生成时间（{businessZone().label}）</Th>
+                  <Th>收益记录号 · 生成时间</Th>
                   <Th icon={Users} tone="users">用户 / 关联账户组</Th>
                   <Th>来源</Th>
                   <Th>处理状态</Th>
@@ -1704,7 +1707,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             <Field label="失效日期" required error={fieldError(expiryProblem, Boolean(whitelistDraft.expireText), "expire")}>
               {(control) => <Input {...control} disabled={busy} type="date" value={whitelistDraft.expireText} onChange={(event) => update({ expireText: event.target.value })} onBlur={() => touch("expire")} />}
             </Field>
-            <p className="rd-note">保存时检查兑付覆盖率，低于红线或无法读取时不能保存。</p>
+            <p className="rd-note">新增、重新启用或延长有效期时，保存会检查兑付覆盖率，低于红线或无法读取时不能保存。</p>
           </DraftModal>
         );
       })()}
