@@ -163,12 +163,12 @@ legalMarketGate / claimIds / userDisclosureVersion
 | PAR-092 | `auth.risk.otp_send_window_limit` | INTEGER/次 | App OTP 窗口发送上限；范围 2–20、缺失/畸形/越界回落 5 | C3/dynamic | ACTIVE_FACT / FALLBACK GAP |
 | PAR-093 | `auth.risk.otp_send_day_limit` | INTEGER/次 | App OTP 单日发送上限；范围 5–50、缺失/畸形/越界回落 10 | C3/dynamic | ACTIVE_FACT / FALLBACK GAP |
 | PAR-094 | `withdrawal.daily_count_limit` | INTEGER/次/日 | D5 App 强制读取的唯一业务权威：每日次数 | C3/dynamic | ACTIVE_FACT / CANONICAL |
-| PAR-095 | `withdrawal.max_balance_pct` | DECIMAL/比例 | D5 单次余额比例上限，范围 `(0,1]` | C3/new-intent | ACTIVE_FACT / CANONICAL |
+| PAR-095 | `withdrawal.max_balance_pct` | DECIMAL/比例 | D5 单次余额比例上限，范围 `[0.5,1]`（50%–100%） | C3/new-intent | ACTIVE_FACT / CANONICAL |
 | PAR-096 | `withdrawal.fee_rate` | DECIMAL/比例 | 旧比例网络费率；现行提现费用为 `networkConfirmFeeUsd`（FEAT-WD02），不参与 App 提现计费 | C3/new-intent snapshot | LEGACY_COMPAT |
 | PAR-097 | `withdrawal.fee_min_usdt` | DECIMAL/USDT | 旧最低网络费；现行提现费用不再使用 | C3/new-intent snapshot | LEGACY_COMPAT |
 | PAR-098 | `withdrawal.fee_max_usdt` | DECIMAL/USDT | 旧最高网络费；现行提现费用不再使用 | C3/new-intent snapshot | LEGACY_COMPAT |
 | PAR-099 | `withdrawal.nex_fee_offset_rate` | DECIMAL/比例 | D5 NEX 抵扣率；相关代币功能仍受合规门禁 | C3/new-intent snapshot | ACTIVE_FACT / CANONICAL |
-| PAR-100 | `withdrawal.min_usdt` | DECIMAL/USDT | D5 最低提现额 | C3/new-intent | ACTIVE_FACT / CANONICAL |
+| PAR-100 | `withdrawal.min_usdt` | DECIMAL/USDT | USDT 最低提现额本轮固定 20 USDT，D5 无配置入口；可配置能力另排需求 | C3/new-intent | ACTIVE_FACT / CANONICAL |
 | PAR-101 | `withdrawal.trc20.enabled` | BOOLEAN | TRC20 网络可用性 | C4/dynamic | ACTIVE_FACT / CANONICAL |
 | PAR-102 | `withdrawal.erc20.enabled` | BOOLEAN | ERC20 网络可用性 | C4/dynamic | ACTIVE_FACT / CANONICAL |
 | PAR-103 | `withdrawal.d5.version` | INTEGER | D5 参数变更版本；当前仅锁定/递增 canonical，尚无持续 mirror 比较任务 | C3/dynamic | ACTIVE_FACT / DRIFT-SENTINEL IMPLEMENTATION GAP |
