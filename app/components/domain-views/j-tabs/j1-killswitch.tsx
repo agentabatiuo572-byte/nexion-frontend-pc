@@ -398,7 +398,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   const header = (
     <PageHeader pageId="J1" title="紧急停用开关"
-      summary={<AutoGloss>关停立即生效，恢复需审批。</AutoGloss>}
+      summary={<AutoGloss>关停立即生效，恢复需另一位有权超管批准。</AutoGloss>}
       meta={<span className="rd-toolbar">
         {readAt && <span>{readAt} 读取（{businessZone().label}）<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动更新。自动关停发生时顶栏告警先提醒，这页要刷新才看到。" /></span>}
         {!contentError && <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={contentLoading} onClick={reload}>刷新</Button>}
@@ -469,7 +469,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     const cap = gateCopy(gate).cap;
     openActionConfirm({ briefKind: "emergency",
       action: `关停业务开关 · ${name}`,
-      title: `关停${name}`,
+      title: `关停${name.replace(/开关$/, "")}`,
       facts: <Facts><Fact k="业务">{name}，控制{cap}</Fact><Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{gate.key === "withdraw" && <Fact k="关停范围" tone="warn">{gateCopy(gate).desc}</Fact>}</Facts>,
       detail: "关停不会多付钱，不需要先检查备付金。",
       effect: IMMEDIATE,
@@ -708,13 +708,13 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           <Conclusion state="danger" strong hint={<>
             {overdue.slice(0, 3).map((row, index) => <span key={row.incidentId}>{index > 0 && " · "}{operatorCopyText(row.name)}（截止 {timeText(row.dueAt)}）</span>)}
             {overdue.length > 3 && <span> · 另有 {overdue.length - 3} 项</span>}
-            {resumeBlocked && <div>{recoveryBlock}</div>}
+            <div>到业务卡点「补录结论」。{resumeBlocked && recoveryBlock}</div>
           </>} explainTitle="逾期结论怎么补录" explain="相关业务已停止，但还没写处理结论。逾期事项不会自动消失，请值班同事马上补录，或交给值班主管处理。">{conclusionFacts}</Conclusion>
         </div>
       ) : backfills.length > 0 ? (
-        <Conclusion state="warn" hint={resumeBlocked ? recoveryBlock : undefined} explainTitle="自动关停后怎么处理" explain="自动关停后要写清为什么关。到业务卡上点「补录结论」，补录不会恢复业务。">{conclusionFacts}</Conclusion>
+        <Conclusion state="warn" hint={<>到业务卡点「补录结论」，再判断是否恢复。{resumeBlocked && <div>{recoveryBlock}</div>}</>} explainTitle="自动关停后怎么处理" explain="自动关停后要写清为什么关。到业务卡上点「补录结论」，补录不会恢复业务。">{conclusionFacts}</Conclusion>
       ) : killed > 0 ? (
-        <Conclusion state="warn" hint={resumeBlocked ? recoveryBlock : undefined} explainTitle="恢复业务怎么操作" explain={nextStepHelp}>{conclusionFacts}</Conclusion>
+        <Conclusion state="warn" hint={<>{nextStepHelp}{resumeBlocked && <div>{recoveryBlock}</div>}</>} explainTitle="恢复业务怎么操作" explain={nextStepHelp}>{conclusionFacts}</Conclusion>
       ) : pending.length + visibleRestores.length > 0 ? (
         <Conclusion state="warn" hint="到上方核对原操作结果。" explainTitle="待确认结果怎么核对" explain="业务卡读到的是现在的状态，不能当成这次操作的结果。">业务开关：可用业务全部开启，<b>{pending.length + visibleRestores.length}</b> 项操作或审批结果未确认</Conclusion>
       ) : restoreApprovals.length > 0 ? (
@@ -724,7 +724,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       )}
 
       <StatBand label="业务开关摘要">
-        <Stat tone={liveCount < availableGates.length ? "warn" : "role-2"} icon={Power} label="在线业务" value={`${liveCount} / ${availableGates.length}`} explain="只统计当前可用的业务，暂不可用项不计入。" />
+        <Stat tone={liveCount < availableGates.length ? "warn" : "role-2"} icon={Power} label="在线 / 可用业务" value={`${liveCount} / ${availableGates.length}`} explain="分母只算当前可用业务；暂不可用业务仍显示卡片，但不计入分母。" />
         <Stat tone={data.stats.emergencyGateCount > 0 ? "warn" : "role-other"} icon={Siren} label="自动或批量关停" value={String(data.stats.emergencyGateCount)} unit="项" explain="由自动规则、批量应急或应急预案联动关停的业务。" />
         <Stat tone="role-other" icon={ShieldAlert} label="未能恢复" value={String(data.stats.coverageBlockedCount)} unit="次" explain="因覆盖率或估值检查未通过而未能恢复的累计次数，不是现在受限的业务数。审批时覆盖率不通过仍保留待批工单。" />
         <Stat tone={covPass ? "role-1" : "danger"} icon={Coins} label="兑付覆盖率" value={coverageReady ? pct(COV) : "暂时无法判断"} sub={`红线 ${RED}%`} explain={`储备除以应付款，${coverageGapText}。恢复提现、兑换或创世节点批准时，系统重查覆盖率；试用免查。`} />
