@@ -250,10 +250,8 @@ function auditDetail(row: JsonRecord) {
       const reason = asText(parsed.reason, "");
       const fromStatus = asText(parsed.fromStatus, "");
       const toStatus = asText(parsed.toStatus, "");
-      if (reason && fromStatus && toStatus) {
-        const accountStatus = ["C2_USER_STATUS_CHANGED", "C2_USER_STATUS_CHANGED_BY_K1", "C2_USER_STATUS_RESTORED_BY_K1"].includes(asText(row.action, "").toUpperCase().replace(/^ADMIN\./, ""));
-        return `${accountStatus ? statusLabel(fromStatus) : fromStatus} → ${accountStatus ? statusLabel(toStatus) : toStatus} · ${reason}`;
-      }
+      const accountStatus = ["C2_USER_STATUS_CHANGED", "C2_USER_STATUS_CHANGED_BY_K1", "C2_USER_STATUS_RESTORED_BY_K1"].includes(asText(row.action, "").toUpperCase().replace(/^ADMIN\./, ""));
+      if (reason && fromStatus && toStatus && accountStatus) return `${statusLabel(fromStatus)} → ${statusLabel(toStatus)} · ${reason}`;
       if (reason) return reason;
     } catch {
       return detail;
@@ -1164,12 +1162,11 @@ export default function UserDetailPage() {
     { label: "支付方式", cell: (row) => <Cell main={`${asText(row.brand)} ···· ${asText(row.last4)}`} sub={`${asText(row.provider)} · ${asText(row.expiryLabel, "无到期信息")}`} /> },
     { label: "状态", cell: (row) => <Cell full
       main={paymentTag(row)}
-      sub={row.trialGuard ? `历史试用记录 · ${asText(row.trialRefId, "关联试用")}，暂不能解绑` : row.status !== "BOUND" && row.unboundAt ? `解绑时间：${shortTime(row.unboundAt)}` : undefined} /> },
+      sub={row.trialGuard ? `历史试用记录 · ${asText(row.trialRefId, "关联试用")}` : row.status !== "BOUND" && row.unboundAt ? `解绑时间：${shortTime(row.unboundAt)}` : undefined} /> },
     ...(canWriteC1 ? [{ label: "操作", align: "right" as const, end: true, cell: (row: JsonRecord) => {
       const method = row as UserPaymentMethod;
       if (method.status !== "BOUND") return "—";
-      if (method.trialGuard) return methodBlock(method) ?? "这张卡有历史试用关联记录，暂时不能解绑。";
-      return <Cell full sub={methodBlock(method)} main={<Button size="sm" disabledReason={methodBlock(method)} onClick={() => openUnbind(method)}>解绑</Button>} />;
+      return <Cell full sub={methodBlock(method)} main={<Button size="sm" disabledReason={methodBlock(method) ?? (method.trialGuard ? "这张卡有历史试用关联记录，暂时不能解绑。" : undefined)} onClick={() => openUnbind(method)}>解绑</Button>} />;
     } }] : []),
   ];
 
