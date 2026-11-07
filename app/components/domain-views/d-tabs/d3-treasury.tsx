@@ -826,11 +826,11 @@ export function D3Treasury() {
         tone="role-1"
         footer={<Decision explain="凭证号重复时不会登记。下一步核对金额和凭证，再写理由。" others={<Button variant="ghost" onClick={() => setInjectOpen(false)}>取消</Button>} primary={<Button variant="primary" disabledReason={dataBlocked ?? ([amountIssue, voucherIssue].filter(Boolean).join("；") || undefined)} onBlockedClick={() => setInjectShown({ amount: true, voucher: true })} onClick={saveInjection}>下一步：确认</Button>} />}
       >
-        {/* 填之前先看现在有多少，填完看登记后是多少（DT-10）。 */}
+        {/* 可用储备归零时看不出锁定本金缺口，不从归零的余额预估（DT-10）。 */}
         {main && (
           <Facts>
             <Fact k="现在可用储备">{money(main.reserve.reserveTotalUsdt)}</Fact>
-            {!amountIssue && <Fact k="登记后可用储备">{money(main.reserve.reserveTotalUsdt + Number(injectAmount))}</Fact>}
+            {!amountIssue && <Fact k="登记后可用储备">{main.reserve.reserveTotalUsdt > 0 ? money(main.reserve.reserveTotalUsdt + Number(injectAmount)) : "当前可用储备为 0，登记后以刷新结果为准。"}</Fact>}
           </Facts>
         )}
         <Field label="注入金额" required explain="最多两位小数。" error={injectShown.amount ? amountIssue : undefined}>

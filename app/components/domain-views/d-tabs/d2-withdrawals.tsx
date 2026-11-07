@@ -889,9 +889,9 @@ function deviceFacts(value?: string) {
   });
 }
 
-/** 责任人可能是填的人名，也可能是系统阶段的码，码不上屏（DP-30）。 */
+/** 只转换后端已确认的系统值；人工填写的责任人保留原文（DP-30）。 */
 function lifecycleOwnerText(owner?: string) {
-  return !owner || /^[A-Z][A-Z0-9_]+$/.test(owner) ? "系统自动" : owner;
+  return !owner || ["H1_PHASE_COOLDOWN", "H1_ZERO_DAY_AUTO_REVIEW", "K3_EXPIRY_DELAY", "K3_RULE_FREEZE", "K3_RULE_DELAY"].includes(owner) ? "系统自动" : owner;
 }
 
 /** 这两种状态放行一定不生效，入口禁用，不开框（DP-42）。提现开关读不到时照旧开框，后端再查。 */

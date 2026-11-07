@@ -178,13 +178,13 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
   return (
     <Fold title="风险与开关" summary={riskFoldSummary(ledger, risk, error)} icon={ShieldAlert} tone="role-4" alert={alert} alertTone={alertTone} open={open} onOpenChange={onOpenChange}
       actions={<FoldLink reach={reach} href="/overview/risk-radar">查看风险提醒</FoldLink>}>
+      <div className="cc-fold-stack">
       {error ? <BlockState compact state="error" title="风险数据读取失败" detail={error} onRetry={onRetry} retrying={retrying} />
         : !ledger || !risk ? <BlockState state="loading" title="正在读取…" />
           : (
-            <div className="cc-fold-stack">
-              {(closed.length > 0 || (!linkInBrief && reach("/emergency/kill-switch"))) && (
+            <>
+              {closed.length > 0 && (
               <section className="cc-gates-row" aria-label="业务开关">
-                {closed.length > 0 && (
                   <ul className="cc-gates">
                     {closed.map((gate) => (
                       <li key={gate.dom}>
@@ -195,8 +195,6 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                       </li>
                     ))}
                   </ul>
-                )}
-                {!linkInBrief && reach("/emergency/kill-switch") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>查看或恢复业务开关</Link>}
               </section>
               )}
               {/* 尺在左、其余数字在右（VS-49）；两条比率都是 0 时不画尺，一句话写完（DP-62）。 */}
@@ -234,8 +232,10 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                 </li>
               </ul>
               </Figure>
-            </div>
+            </>
           )}
+        {!linkInBrief && reach("/emergency/kill-switch") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>查看或恢复业务开关</Link>}
+      </div>
     </Fold>
   );
 }
