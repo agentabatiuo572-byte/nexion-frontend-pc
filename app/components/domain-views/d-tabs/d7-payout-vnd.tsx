@@ -645,10 +645,11 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
           { k: "这是什么", v: help.what },
           { k: "显示位置", v: help.where },
           { k: "生效时间", v: help.when },
+          { k: "填写规则", v: help.rule },
           { k: "改了会怎样", v: help.effect },
         ]} /></>}
         hint={changed && <StatusTag tone="progress" icon={PencilLine}>已改</StatusTag>}
-        help={<>现在 {valueText(key, draft.base[key])}。{help.how}，默认 {valueText(key, draft.base.defaults[key])}{help.rule && `。${help.rule}`}{theirs && <span className="rd-form-error">。这项刚被别人改过</span>}</>}
+        help={<>现在 {valueText(key, draft.base[key])}。{help.how}，默认 {valueText(key, draft.base.defaults[key])}{theirs && <span className="rd-form-error">。这项刚被别人改过</span>}</>}
         error={shown ? draft.errors[key] : undefined}>
         {(control) => (
           <NumberInput {...control} aria-label={`${spec.label}目标值`} unit={spec.unit} min={spec.min} max={spec.max} step={spec.step}

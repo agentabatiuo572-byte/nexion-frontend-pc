@@ -12,7 +12,7 @@ export interface PayoutVndFieldHelp {
   when: string;
   /** 怎么填：范围和格式，默认值由页面补。 */
   how: string;
-  /** 跟在怎么填后面的约束，比如跨字段关系。 */
+  /** 跨字段的填写规则：抽屉里进名称旁的提示，违反时错误写在这一项下面。 */
   rule?: string;
   /** 改了会怎样，举一个例子。 */
   effect: string;
