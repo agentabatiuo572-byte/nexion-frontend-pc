@@ -1894,7 +1894,8 @@ export async function retryD1PendingTopupCommand(commandKey: string) {
   ));
 }
 
-export async function fetchD1TopupFlows(params: { status?: string; keyword?: string; pageNum?: number; pageSize?: number }) {
+/** userId 按用户号精确筛（后端 user_id =）；keyword 只模糊匹配单号、凭证和币种，不能用来找人。按发起时间倒序。 */
+export async function fetchD1TopupFlows(params: { status?: string; userId?: number; keyword?: string; pageNum?: number; pageSize?: number }) {
   return requireD1FlowsPage(await apiRequest<PageResult<D1DepositFlow>>("finance", `/topup/flows${buildQuery(params)}`));
 }
 
