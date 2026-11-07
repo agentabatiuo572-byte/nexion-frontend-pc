@@ -1528,7 +1528,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                   {overviewReady.registrationParams.map((param) => <ConfigRow key={param.key} name={param.name} what={h5ParamDesc(param.desc, param.unit)} value={h5ParamValue(param.value, param.unit)}
                     action={param.writable ? paramAction(param.name, blockedBy("param", param.key), () => ctx.openActionConfirm({
                       briefKind: "config", action: `调整${param.name}`, title: `调整 ${param.name}`, detail: "",
-                      statedBrief: { impact: h5ParamDesc(param.desc, param.unit), check: "核对参数、当前值和新值，理由写明调整依据。" },
+                      statedBrief: { impact: `${h5ParamDesc(param.desc, param.unit)}。`, check: "核对参数、当前值和新值，理由写明调整依据。" },
                       edit: param.unit === "0/1"
                         ? { kind: "select", current: param.value, options: ["1", "0"], optionLabels: H5_SWITCH_LABELS, disallowCurrent: true }
                         : { kind: "number", current: param.value, unit: accountUnit(param.unit), min: param.min, max: param.max, step: 1, maxDecimals: 0, disallowCurrent: true, hint: `${param.min}–${param.max} 的整数` },
