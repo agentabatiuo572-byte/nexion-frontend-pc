@@ -69,9 +69,8 @@ export function statusSentence(input: {
   if (input.pressure === "danger") return { state: "danger", aboutRisk: true, text: "提现压力到红线，先看风险与开关", explain: "近 24 小时提现申请或待提现总额占储备的比例到了红线。" };
   if (input.withdrawClosed) {
     const notMoney = input.fundSafe ? "这是业务开关没开，不是钱不够。" : "";
-    return input.withdrawUnset
-      ? { state: "warn", aboutSwitch: true, text: `提现开关未设置，用户现在不能提现${also(pendingRows - input.withdrawRows)}`, explain: `这个开关还没人设置过，系统按关闭处理。${notMoney}` }
-      : { state: "warn", aboutSwitch: true, text: `提现已关停${also(pendingRows - input.withdrawRows)}`, hint: "用户现在不能提现。", explain: notMoney || undefined };
+    const why = input.withdrawUnset ? "这个开关还没人设置过，系统按关闭处理。" : "";
+    return { state: "warn", aboutSwitch: true, text: `提现已关停${also(pendingRows - input.withdrawRows)}`, hint: "用户现在不能提现。", explain: `${why}${notMoney}` || undefined };
   }
   if (input.belowHealthy) return { state: "warn", aboutFund: true, text: withDays("资金需要注意：覆盖率低于健康线"), hint: advice ?? undefined };
   if (input.tier === "WARNING") return { state: "warn", aboutFund: true, text: days ? `资金需要注意：储备只够付${days.replace("可覆盖 ", "")}` : "资金需要注意", hint: advice ?? undefined };
