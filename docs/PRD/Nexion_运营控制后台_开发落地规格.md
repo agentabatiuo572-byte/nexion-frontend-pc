@@ -317,8 +317,8 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
 | **PhaseConfig 10-dial**(H1) | 逐月(1–12)×10 dial(见第0章 §0.10);每 dial 生效范围:enum{实时全量\|仅新用户};cohortOverrides[]{cohortId(YYYY-Www),monthOffset,区间};**默认值权威=12月§6.4+complianceHoldEnabled** | SC | §9.1 / Ch7 H1 |
-| **TrialConfig**(H2,PC口径14参数) | trialDays/graceDays/discountRate/discountCapUSD/autoChargeAtEnd/**chargeFailRate(server-only)**/trialProductId(仅可选 E1 `trialEligible=true` 的在售有库存实物有限库存商品)/trialPriceUSD/shadowDailyUSD/shadowDailyNEX/cooldownDays(30,≠withdrawCooldownDays)/phaseOpen(只读)/**trialOffsetCapUSD(=50)**/**seatsLeftToday(每日上限=47,实时；当日剩余由 Java+日额度表计算)** | SC | §9.1 / Ch7 H2 |
-| **TrialSession 7态**(H2) | userId · status:enum{idle\|active\|grace\|extended\|redeemed\|failed\|cancelled} · shadowUSD · shadowNEX · 时间线 · 绑卡 token · cohort · phase;**Model A computeTrialOffset** | SC | §9.1 / Ch7 H2 / §9.11.1 |
+| **TrialConfig**(H2,PC口径14参数) | trialDays/graceDays/discountRate/discountCapUSD/earlyPurchaseDiscountUSD/**chargeFailRate(server-only)**/trialProductId(仅可选 E1 `trialEligible=true` 的在售有库存实物有限库存商品)/trialPriceUSD/shadowDailyUSD/shadowDailyNEX/cooldownDays(30,≠withdrawCooldownDays)/phaseOpen(只读)/**trialOffsetCapUSD(=50)**/**seatsLeftToday(每日上限=47,实时；当日剩余由 Java+日额度表计算)** | SC | §9.1 / Ch7 H2 |
+| **TrialSession 7态**(H2) | sid · userId · state:enum{idle\|active\|grace\|extended\|redeemed\|failed\|cancelled} · shadow · claimedAt · expiresAt · cancelledAt · chargedAt · pendingApproval{action,submittedBy,submittedAt};当前列表没有完整状态轨迹或绑卡前置要求，**Model A computeTrialOffset** | SC | §9.1 / Ch7 H2 / §9.11.1 |
 | **Quest 配置**(H3) | Day-One{WINDOW_MS=24h,GRACE_END=72h,phase 奖励 500/200/0,6任务} · Weekly{Tier1 9条/Tier2 8条,base+phase mult 曲线 P1 1.0→P6 1.5,Champion +500×mult} · Monthly{5主题,reward 1.5k–10k,3 subGoals};questBonusMultiplier 由 H1 下发 | SC | §17.1 / Ch13 H3 |
 | **活动/Event**(H4) | id · kind:enum{discount\|referral\|wheel\|regional\|boost\|seasonal\|onboarding} · status:enum{ongoing\|upcoming\|ended} · reward(USDT/NEX) · featured(同时仅1) · trackable · href;**Lucky Spin 8档 EV≈$0.78,Genesis 不进转盘,3护栏+B1红线** | SC(RNG) | §17.1 / Ch13 H4 |
 | **签到/Lucky/Power-Ups**(H5) | baseline(+1/日) · 7天 bonus(+5) · Lucky 1.5×(15%)/2×(5%)(和≤100%,server RNG) · 断签(>48h) · Streak Saver(默认1,恢复至 min(longest,30)) · 里程碑7阶 · Power-Ups 4档(→F2/G5/G1/G4) | SC(RNG) | §17.1 / Ch13 H5 |
@@ -535,8 +535,8 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 |---|---|---|---|---|
 | `/api/admin/phase/dials` | GET / PUT | 逐月 10 dial 矩阵+定时切换(**全 dial 读写唯一路径**;放大流出方向 dial 执行=仅超管+B1;携 Key) | H1-MD1/MD3(PUT) | H1 |
 | `/api/admin/platform/phase-config/cohort-overrides` · `/:cohortId` | GET/POST/DELETE | cohort 月偏移 override 列/增/撤 | H1-MD4/MD5(写) | H1 |
-| `/api/admin/trial/config` | GET / PUT | TrialConfig PC 口径 14 参数(后端保留四项旧邀请字段及 extensionDays、highQualityThresholdUSD，由 PC 在分区前过滤，不计数、不提供保存入口；含今日剩余免费名额；仅敏感项经确认弹窗;携 Key) | H2-MD1(敏感项) | H2 |
-| `/api/admin/trial/sessions[?status=]` · `/sessions/:userId` | GET | 试用会话监控 / 单会话详情(7 态轨迹) | — | H2 |
+| `/api/admin/growth/trials?pageNum=&pageSize=` | GET | 现行配置、统计、商品及分页试用记录；PC 参数目录 14 项，另读实际剩余派生值。旧邀请、延长及自动扣款字段不提供新保存入口 | — | H2 |
+| `/api/admin/growth/trials/params/{key}` | PATCH | 可写参数逐项保存，带目标值、理由和原命令号；系统只读项、旧邀请及延长字段不提供新入口，历史结果未知仍可按原命令恢复 | H2-MD1 | H2 |
 | A2 `h2_trial_cancel` 命令／原键查询 | POST / GET | 强制取消审批与原结果核查；历史 `h2_trial_charge` 仅查询，不重发 | H2-MD2/MD3 | H2 |
 | `/api/admin/trial/kpi` | GET | 试用 KPI 看板(喂 B3) | — | H2 |
 | `/api/trial/eligibility` | GET | (用户)试用资格单源(server-canonical,拒重领) | — | H2 |
@@ -757,14 +757,14 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 
 ### 4.6 域 H2 — 免费试用引擎(TrialConfig PC 口径 14 项)
 
-App 不展示试用邀请弹窗，也没有申请或接受延长的入口。PC 已移除四项邀请配置、紧急关闭邀请入口，以及延长天数和高质量阈值。后端保留旧字段，六项在页面分区前过滤，不展示、不计数、不分组、不提供说明或保存入口；原参数结果未知记录仍可恢复。参数目录由 16 项减为 14 项；历史已延长记录按系统返回的结束时间展示。名额耗尽或上限为 0 只关闭新领取，已有进度或抵扣卡仍显示；冷却期内不能重新领取，App 展示结束说明，不显示冷却倒计时。现行 App 定位及领取快照、购买时配置的区别见 v1 H2④。
+App 不展示试用邀请弹窗，也没有申请或接受延长的入口。PC 已移除四项邀请配置、紧急关闭邀请入口，以及延长天数和高质量阈值。后端保留旧字段，六项在页面分区前过滤，不展示、不计数、不分组、不提供说明或保存入口；原参数结果未知记录仍可恢复。参数目录由 16 项减为 14 项，包含提前购买立减；隐藏旧字段 `autoChargeAtEnd` 和派生值 `actualSeatsLeftToday` 不计入目录。历史已延长记录按系统返回的结束时间展示。名额耗尽或上限为 0 只关闭新领取，已有进度或抵扣卡仍显示；冷却期内不能重新领取，App 展示结束说明，不显示冷却倒计时。现行 App 定位及领取快照、购买时配置的区别见 v1 H2④。
 
 | 参数(key) | 默认值 | 生效时机 | 权威源 |
 |---|---|---|---|
 | `trialDays` / `graceDays` | 3 / 7 | 仅新 trial | H2 |
 | `discountRate` / `discountCapUSD` | 按当前值显示；0–100 的百分点，0.5 是 0.5%，1 是 1% / 金额上限 | 购买时按最新值 | H2；不再猜比例单位，详见 v1 H2④ |
 | `trialOffsetCapUSD`(试用收益抵购机款上限) | 以当前值为准，空为不设上限，0 为零上限 | 领取快照，已领取的不随修改变化 | H2 |
-| `autoChargeAtEnd` | 历史只读字段，PC 隐藏 | 不执行自动购买 | H2 |
+| `earlyPurchaseDiscountUSD` | 以当前值为准；0–100 USDT，0 为关闭 | 购买时按最新值及提前购买条件 | H2 |
 | `chargeFailRate` | 0.01(**server-only,前端永不可知**) | 实时全量 | H2 |
 | `trialProductId` | stellarbox-s1(从 E1 明确开启 `trialEligible` 的商品中选择) | 仅新 trial | E1 商品目录 + H2 选择 |
 | `trialPriceUSD` | 1299(随目标商品读取 E1 售价) | 仅新 trial | E1 商品目录 |
