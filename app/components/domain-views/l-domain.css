@@ -307,3 +307,6 @@
 
 /* 行尾的提示图标贴右边线：图标 14 在 20 的点击区里，右边空 3px（FP-1）。 */
 :is(.rd-head-actions, .rd-filter-end) > .rd-explain:last-child { margin-right: -3px; }
+
+/* 规则表：放得下时计算方式一行，1024 放不下时折行，上线批次留在屏内（DT-16）。 */
+.l1-rule-fx .rd-cell-main { white-space: normal; }
