@@ -250,7 +250,10 @@ function auditDetail(row: JsonRecord) {
       const reason = asText(parsed.reason, "");
       const fromStatus = asText(parsed.fromStatus, "");
       const toStatus = asText(parsed.toStatus, "");
-      if (reason && fromStatus && toStatus) return `${statusLabel(fromStatus)} → ${statusLabel(toStatus)} · ${reason}`;
+      if (reason && fromStatus && toStatus) {
+        const accountStatus = ["C2_USER_STATUS_CHANGED", "C2_USER_STATUS_CHANGED_BY_K1", "C2_USER_STATUS_RESTORED_BY_K1"].includes(asText(row.action, "").toUpperCase().replace(/^ADMIN\./, ""));
+        return `${accountStatus ? statusLabel(fromStatus) : fromStatus} → ${accountStatus ? statusLabel(toStatus) : toStatus} · ${reason}`;
+      }
       if (reason) return reason;
     } catch {
       return detail;
