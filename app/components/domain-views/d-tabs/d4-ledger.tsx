@@ -680,7 +680,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
   );
   const diffDigits = running?.reconciliation ? digitsOf([running.reconciliation.USDT, running.reconciliation.UVT]) : 2;
   const changeDigits = userData ? digitsOf([userData.ledger.totals.USDT ?? 0, userData.ledger.totals.UVT ?? 0]) : 2;
-  const PERIOD_EXPLAIN = "这段时间里全部账单的合计，入账加、出账减，处理中的也算。设了时间范围时不和钱包比，所以这里不写钱包差额。";
+  const PERIOD_EXPLAIN = "这段时间里全部账单的合计，入账加、出账减，处理中的也算。这次没和钱包比（设了开始时间，或结束时间早于现在），所以这里不写钱包差额。";
   const userPane = <>
     <FilterBar onSubmit={openUser} action={<Button type="submit" disabled={userLoading}>加载账户</Button>}
       result={userDraftChanged ? "条件未应用" : undefined} notice={userRefused}>
