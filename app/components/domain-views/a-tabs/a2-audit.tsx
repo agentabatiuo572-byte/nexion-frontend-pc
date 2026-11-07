@@ -214,9 +214,9 @@ export function A2ChangeReview({ before, after }: { before: string; after: strin
       return parsed && typeof parsed === "object" ? format(parsed) : value;
     } catch { return value; }
   };
-  return <dl aria-label="完整变更内容" style={{ display: "grid", gap: 8, margin: "12px 0" }}>
-    <dt>变更前</dt><dd style={{ margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{review(before)}</dd>
-    <dt>变更后</dt><dd style={{ margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{review(after)}</dd>
+  return <dl className="a2-change-review" aria-label="完整变更内容">
+    <div><dt>变更前</dt><dd>{review(before)}</dd></div>
+    <div><dt>变更后</dt><dd>{review(after)}</dd></div>
   </dl>;
 }
 
