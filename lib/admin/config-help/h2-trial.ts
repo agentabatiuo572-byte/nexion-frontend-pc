@@ -45,7 +45,7 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
     when: NEW_TRIAL,
     impact: "之后开始的试用按新天数，进行中的不变",
     how: "整数，1–90 天。",
-    where: "App 领取弹窗「试用时长」",
+    where: "App 用户主动领取时，确认面板的「N 天免费试用」",
     input: { unit: "天", min: 1, max: 90, step: 1 },
     whatIf: (value) => `改成 ${value}：之后开始的试用持续 ${value} 天。`,
   },
@@ -54,9 +54,9 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
     when: "立即生效，今天已领的算在内",
     impact: "今天和之后每天的名额都按新上限，今天已领的算在内",
     how: "整数，0–1,000,000 张。这是上限，不是实际剩余。",
-    where: "App 首页「我的福利」的试用卡，名额用完就不显示",
+    where: "App 首页「我的福利」的新领取入口；名额用完后，已有试用进度或抵扣卡仍显示",
     input: { unit: "张", min: 0, max: 1_000_000, step: 1 },
-    whatIf: (value) => (value === "0" ? "改成 0：今天不再有人能开始试用，App 的试用卡不显示。" : `改成 ${value}：今天最多 ${value} 人开始试用，已领的算在内。`),
+    whatIf: (value) => (value === "0" ? "改成 0：不能开始新试用，App 已有试用进度或抵扣卡仍显示。" : `改成 ${value}：今天最多 ${value} 人开始试用，已领的算在内。`),
   },
   discountRate: {
     what: "试用转购买时，售价减掉的比例",
@@ -75,7 +75,7 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
     impact: "用户购买时按新上限算，进行中的试用也一样",
     how: "0–1,000,000 USDT。",
     howMore: "只管购买折扣这一项，不管试用收益抵扣和提前购买立减。",
-    where: "App 试用结束前 24 小时的提示「转购最高优惠」",
+    where: "App 运行并检查试用状态时，剩余 24 小时内提示「现在购买最高抵」；试用详情也展示折扣上限",
     input: USDT_RANGE,
     whatIf: (value) => `改成 ${value}：购买折扣最多减 ${value} USDT。`,
   },
@@ -94,35 +94,17 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
     when: "立即生效，只影响之后新领取或重新领取的试用",
     impact: "之后新领取或重新领取的试用，宽限期按新天数；已有试用按领取时的天数",
     how: "整数，0–30 天。",
-    where: "App 我的 › 试用页「抵扣剩余时间」",
+    where: "App 试用详情宽限期的「收益保留」倒计时与到期时间",
     input: { unit: "天", min: 0, max: 30, step: 1 },
     whatIf: (value) => (Number(value) === 0 ? "改成 0：之后新领取或重新领取的试用，到期后不能再用抵扣金购买。" : `改成 ${value}：之后新领取或重新领取的试用，到期后 ${value} 天内还能用抵扣金购买。`),
-  },
-  extensionDays: {
-    what: "用户接受延长时多给的天数",
-    when: "立即生效，只影响之后新领取或重新领取的试用",
-    impact: "之后新领取或重新领取的试用，接受延长时按新天数多给；已有试用按领取时的天数",
-    how: "整数，1–30 天。",
-    // 后端存得下 0，但用的时候按 1 天算（positiveInt），这里不让填 0，改后的值才是真实天数。
-    input: { unit: "天", min: 1, max: 30, step: 1 },
-    whatIf: (value) => `改成 ${value}：之后新领取或重新领取的试用，接受延长时多给 ${value} 天。`,
-  },
-  highQualityThresholdUSD: {
-    what: "累计试用收益到这个数算高质量，才能延长",
-    when: "立即生效，用户申请延长时按最新设置判断",
-    impact: "用户申请延长时按新阈值判断，已延长的不变",
-    how: "0–1,000,000 USDT。填 0 表示宽限期内都能延长。",
-    where: "用户看不到，只影响能不能延长",
-    input: USDT_RANGE,
-    whatIf: (value) => `改成 ${value}：宽限期内试用收益达到 ${value} USDT 才能延长。`,
   },
   cooldownDays: {
     what: "试用取消或到期结束后多少天内不能再领",
     when: "立即生效，只影响之后结束的试用",
     impact: "之后结束的试用按新天数，已在等待的不变",
     how: "整数，1–365 天。",
-    where: "App 我的 › 试用页「再次领取的等待期尚未结束」",
-    // 同延长天数：0 按 1 天算（positiveInt）。
+    where: "App 试用页在冷却期内展示结束说明，不显示冷却倒计时",
+    // 0 按 1 天算（positiveInt）。
     input: { unit: "天", min: 1, max: 365, step: 1 },
     whatIf: (value) => `改成 ${value}：之后结束的试用要等 ${value} 天才能再领。`,
   },
@@ -132,7 +114,7 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
     impact: "符合条件时再减这笔，并结算全部试用天数的收益",
     how: "0–100 USDT，最多两位小数，填 0 表示关闭。",
     howMore: "立减金额大于 0，且原领取记录的时长、收益、价格和日期齐全时，才能在原试用期内提前购买。每日 USDT 和 UVT 收益也必须都大于 0。符合条件时，在购买折扣和试用收益抵扣之外再减，不超过应付金额，并按「每日收益 × 全部试用天数」结算。抵扣仍只用已累计的 USDT，多出的 USDT 和全部 UVT 购买后进余额，入账前检查覆盖率。其他情况或填 0 时按已累计结算，不享提前购买立减。",
-    where: "App 我的 › 试用页「现在购买再减」",
+    where: "App 试用详情的「额外立减」标题和「专享立减」明细，满足提前购买条件时出现",
     input: { unit: "USDT", min: 0, max: 100, step: 0.01 },
     whatIf: (value) => (Number(value) === 0 ? "改成 0：关闭提前购买立减和整期结算，购买时只结算已累计的收益。" : `改成 ${value}：符合提前购买条件时再减 ${value} USDT，并结算全部试用天数的收益；其他按已累计结算。`),
   },
@@ -163,7 +145,7 @@ export const COMMON_TRIAL_PARAMS = ["trialProductId", "trialDays", "seatsLeftTod
 
 /** 高级设置里的两组。接口多给的键放「其他」。 */
 export const ADVANCED_TRIAL_GROUPS = [
-  { title: "试用周期", keys: ["graceDays", "extensionDays", "highQualityThresholdUSD", "cooldownDays"] },
+  { title: "试用周期", keys: ["graceDays", "cooldownDays"] },
   { title: "收益与立减", keys: ["earlyPurchaseDiscountUSD", "shadowDailyUSD", "shadowDailyNEX"] },
 ] as const;
 
@@ -172,7 +154,7 @@ export const TRIAL_STATE_HELP: Record<string, string> = {
   idle: "用户还没开始这次试用。",
   active: "试用进行中，收益在累积，用户可以提前购买或取消。",
   grace: "试用期已到，设备停止产出；宽限期内用户还能用抵扣金购买。这是正常状态，到期系统自动结束，不扣款，不用处理。",
-  extended: "试用收益达到高质量延长阈值，用户接受了延长。",
+  extended: "服务端记录为已延长，按服务端返回的结束时间展示。",
   cancelled: "已结束，没有转成购买。再次试用要等冷却期过去。",
   redeemed: "已结束，用户买下了设备。",
   failed: "已结束，扣款没有成功，这条不用处理。原因看操作记录。",

@@ -389,12 +389,14 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   useEffect(() => syncPending(), [syncPending]);
   useEffect(() => { setLegacyApprovals(adminSession ? pendingH2TrialApprovals(adminSession.adminId) : []); }, [adminSession]);
 
-  // 后端仍返回这四项旧配置，先过滤再分区，避免展示、计数或进入保存流程。
+  // 后端仍返回旧邀请配置和延长参数，先过滤再分区，避免展示、计数或进入保存流程。
   const params = useMemo(() => (model?.params ?? []).filter((param) => param.key !== "autoChargeAtEnd" && ![
     "autoPushEnabled",
     "autoPushDelayMs",
     "autoPushCooldownHours",
     "autoPushMaxPerSession",
+    "extensionDays",
+    "highQualityThresholdUSD",
   ].includes(param.key)), [model?.params]);
   const states = useMemo(() => new Map((model?.states ?? []).map((state) => [state.key, state])), [model?.states]);
   const paramOf = (key: string) => params.find((param) => param.key === key);
