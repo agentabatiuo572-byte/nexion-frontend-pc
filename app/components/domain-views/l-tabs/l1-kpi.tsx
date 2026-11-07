@@ -919,7 +919,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                   <Tr key={item.n}>
                     <Td><Cell num main={item.n} /></Td>
                     <Td><Cell main={<AutoGloss>{operatorCopyText(item.name)}</AutoGloss>} /></Td>
-                    <Td><Cell full main={<><AutoGloss>{operatorCopyText(KPI_PLAIN[item.n] ?? "")}</AutoGloss><Explain label={`${operatorCopyText(item.name)}的公式`} content={renderFx(KPI_EXT[item.n].fx, KPI_EXT[item.n].fxBold)} /></>} /></Td>
+                    <Td className="l1-rule-fx"><Cell full main={<><AutoGloss>{operatorCopyText(KPI_PLAIN[item.n] ?? "")}</AutoGloss><Explain label={`${operatorCopyText(item.name)}的公式`} content={renderFx(KPI_EXT[item.n].fx, KPI_EXT[item.n].fxBold)} /></>} /></Td>
                     <Td align="right"><Cell num main={tgtShort(item)} /></Td>
                     <Td><Cell main={batchText(item.vis)} /></Td>
                   </Tr>

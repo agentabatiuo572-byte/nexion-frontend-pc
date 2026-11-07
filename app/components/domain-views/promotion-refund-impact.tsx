@@ -62,6 +62,12 @@ export function PromotionRefundImpact({ orderNo, compact = false }: { orderNo: s
     if (result.status === "loading") return <>正在加载…</>;
     if (!result.items.length) return <>这单没有促销奖励</>;
     // 金额在左，谁是弱字，结果标签靠右（VS-109）；后果相同的合成一句，一行写清钱的去向和谁承担，全文进提示图标（DT-10）。
+    // 屏上按短句去重（DT-12）；同一句有多条规则全文时都进这句的问号，一条一段，一条不丢。
+    const outcomes = new Map<string, Set<string>>();
+    for (const r of result.items) {
+      const short = refundResult(r).short;
+      outcomes.set(short, (outcomes.get(short) ?? new Set<string>()).add(refundOutcome(r)));
+    }
     return <>
       <div className="e4-refund-rewards"><RecordList label="促销奖励退款影响" records={result.items.map(r => {
         const { text, tone } = refundResult(r);
@@ -73,7 +79,7 @@ export function PromotionRefundImpact({ orderNo, compact = false }: { orderNo: s
           status: <StatusTag tone={tone} icon={tone === "warn" ? AlertTriangle : undefined}>{text}</StatusTag>,
         };
       })} /></div>
-      {[...new Map(result.items.map(r => [refundOutcome(r), refundResult(r).short]))].map(([full, short]) => <p key={full} className="e4-refund-outcome">{short}<Explain label="奖励退款后怎么处理" content={full} /></p>)}
+      {[...outcomes].map(([short, fulls]) => <p key={short} className="e4-refund-outcome">{short}<Explain label="奖励退款后怎么处理" content={[...fulls].map(full => <p key={full}>{full}</p>)} /></p>)}
     </>;
   }
   return <section className="rd-confirm-facts rd-impact" aria-label="促销奖励影响">
