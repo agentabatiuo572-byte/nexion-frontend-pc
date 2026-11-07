@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import { Ban, Copy, FilePen, FileText, Globe2, History, ListChecks, MapPinned, Plus, RefreshCw, ShieldAlert, ShieldCheck, Users } from "lucide-react";
-import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, Fold, IconButton, Input, InlineMeter, InlineRetry, IrreversibleTag, JudgmentPoints, LocaleTabs, Modal, MoreMenu, Notice, PageHeader, PageTabs, Panel, RecordList, Select, Stat, StatBand, StatusTag, Steps, Table, TableMessage, Td, Textarea, Th, Tr, type JudgmentRow, type StateTone, useTabIds } from "@/app/components/rd";
+import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Field, Fold, IconButton, Input, InlineMeter, InlineRetry, IrreversibleTag, JudgmentPoints, LocaleTabs, Modal, MoreMenu, Notice, PageHeader, PageTabs, Panel, RecordList, Select, Stat, StatBand, StatusTag, Steps, Table, TableMessage, Td, Textarea, Th, Tr, type JudgmentRow, type StateTone, useTabIds } from "@/app/components/rd";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { businessClock, businessDay, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { disclosurePublicationIssue } from "@/lib/admin/disclosure-publication-diagnostic";
@@ -289,7 +289,6 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   const effectiveCount = jurisdictions.filter((j) => j.status.toLowerCase() === "published").length;
   const inApproval = (code: string) => queue.some((row) => row.obj === code);
   const gateInApproval = queue.some((row) => row.action.includes("受限动作"));
-  const gateActionable = canAdjustGate && gates.some((gate) => !gate.retired);
 
   /** 写入口不能点的原因：读取中、数据旧、结果未确认、审批中，按这个顺序（ST-32、OP-93）。 */
   const blocked = (target?: string, approvalBusy = false) => refreshing ? READING : errorText ? STALE : target && writes.isLocked(target) ? WRITE_LOCKED : approvalBusy ? IN_APPROVAL : undefined;
@@ -821,19 +820,13 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
     </Fold>
 
     <Fold title="需要先确认的操作" icon={ShieldCheck} tone="role-4" explain={<><p>{gates.some((gate) => gate.active) ? "还没重新确认的用户，做这里受限的操作时会被拦下并跳到披露页。" : "当前没有受限的操作，用户不会被拦。"}</p><p>重新确认相当于让用户重新签一次条款，不是紧急开关。监管要求停业务，去「紧急停用开关」。</p></>} summary={gates.some((gate) => gate.active) ? `${gates.filter((gate) => gate.active).length} 项受限，未确认的用户会被拦下` : "当前没有纳入风险披露前置确认范围的操作。"}>
-      <Table label="需要先确认的操作">
-        <thead><tr><Th>操作</Th><Th>状态</Th>{gateActionable && <Th sticky="end" align="right">动作</Th>}</tr></thead>
-        <tbody>
-          {gates.map((gate) => (
-            <Tr key={gate.key}>
-              <Td><Cell main={gate.name} /></Td>
-              <Td>{gate.retired ? <StatusTag tone="done" explain="已移出风险披露前置确认范围，不支持重新纳入。">不再纳入</StatusTag> : <StatusTag tone={gate.active ? "ok" : "done"} explain={gate.sub}>{gate.active ? "受限内" : "已移出"}</StatusTag>}</Td>
-              {gateActionable && <Td sticky="end" align="right">{gate.retired ? "—" : <Button size="sm" disabledReason={blocked("gate", gateInApproval)} onClick={() => toggleGate(gate)}>{gate.active ? "移出" : "纳入"}</Button>}</Td>}
-            </Tr>
-          ))}
-          {gates.length === 0 && <TableMessage columns={gateActionable ? 3 : 2}>当前没有纳入风险披露前置确认范围的操作。</TableMessage>}
-        </tbody>
-      </Table>
+      {gates.length ? <ConfigList label="需要先确认的操作">
+        {gates.map((gate) => (
+          <ConfigRow key={gate.key} name={gate.name}
+            value={gate.retired ? <StatusTag tone="done" explain="已移出风险披露前置确认范围，不支持重新纳入。">不再纳入</StatusTag> : <StatusTag tone={gate.active ? "ok" : "done"} explain={gate.sub}>{gate.active ? "受限内" : "已移出"}</StatusTag>}
+            action={canAdjustGate && !gate.retired ? <Button size="sm" disabledReason={blocked("gate", gateInApproval)} onClick={() => toggleGate(gate)}>{gate.active ? "移出" : "纳入"}</Button> : undefined} />
+        ))}
+      </ConfigList> : <p className="rd-note">当前没有纳入风险披露前置确认范围的操作。</p>}
     </Fold>
 
     <nav className="rd-links" aria-label="相关页面">
@@ -933,7 +926,7 @@ const languageNames = (scope?: string) => {
 };
 const sameDisclosure = (left: Editor, right: Editor) => JSON.stringify([left.zh, left.vi, left.en, left.chapters]) === JSON.stringify([right.zh, right.vi, right.en, right.chapters]);
 
-/** 发布核对：只比两边都有的语言，语言范围的变化在上面单独写（M13）。改过的章一章一行，点开只放改过的语言；没改的合成一行，框打开时理由框在一屏里（DP-06）。 */
+/** 发布核对：只比两边都有的语言，语言范围的变化在上面单独写（M13）。改过的章合成一个折叠，点开只放改过的语言；改几章框都一样高，打开时理由框在一屏里（DP-06）。 */
 function PublishDiff({ current, target }: { current?: DisclosureVersionItemView; target: DisclosureVersionItemView }) {
   const targetCodes = (target.languageScope ?? "").split("+");
   const currentCodes = (current?.languageScope ?? target.languageScope ?? "").split("+");
@@ -948,16 +941,15 @@ function PublishDiff({ current, target }: { current?: DisclosureVersionItemView;
   const changed = target.chapters.filter((chapter) => changedLanguages(chapter).length > 0);
   const same = target.chapters.filter((chapter) => !changed.includes(chapter));
   return <div data-business-form="disclosure-publish-review" className="rd-form-stack">
-    <h3 className="rd-form-group-title">版本差异 · 共 {changed.length} / {target.chapters.length} 章发生变化</h3>
-    {changed.map((chapter) => <Fold key={chapter.no} inset title={`第 ${chapter.no} 章 · 有修改`} summary={chapter.zh}>
+    {changed.length > 0 && <Fold inset title="版本差异" summary={`共 ${changed.length} / ${target.chapters.length} 章发生变化`}>
       <div className="rd-doc">
-        {changedLanguages(chapter).map(([code, name]) => <section key={code}>
-          <h3>{name} · {chapter[code]}</h3>
+        {changed.flatMap((chapter) => changedLanguages(chapter).map(([code, name]) => <section key={`${chapter.no}-${code}`}>
+          <h3>第 {chapter.no} 章 · {name} · {chapter[code]}</h3>
           <p>{chapter[`${code}Body`]}</p>
           {chapterOf(chapter.no) && <p className="rd-weak">现在：{chapterOf(chapter.no)?.[code]} {chapterOf(chapter.no)?.[`${code}Body`]}</p>}
-        </section>)}
+        </section>))}
       </div>
-    </Fold>)}
+    </Fold>}
     {same.length > 0 && <Fold inset title="无变化的章" summary={`${same.length} 章`}>
       <div className="rd-doc">
         {same.map((chapter) => <section key={chapter.no}>
