@@ -58,9 +58,10 @@ type TrialSession = {
   pendingApproval?: { action?: string | null; submittedBy?: string | null; submittedAt?: string | null } | null;
 };
 
-/** 列表格里只留「待审批」，动作、提交人和时间写在抽屉里（PG-43 每格最多两行）。 */
-function trialApprovalMeta(approval: NonNullable<TrialSession["pendingApproval"]>) {
-  return [approval.action, approval.submittedBy, approval.submittedAt && formatBusinessTimeFull(approval.submittedAt, "—")].filter(Boolean).join(" · ");
+/** 列表格里只留「待审批」，动作、提交人和时间写在抽屉里（PG-43 每格最多两行）。动作名后面带的记录编号抽屉标题下已有，这里去掉，一行放得下。 */
+function trialApprovalMeta(approval: NonNullable<TrialSession["pendingApproval"]>, sid: string) {
+  const bare = sid.replace(/^trial-/, "");
+  return [approval.action?.split(" · ").filter((part) => !part.endsWith(bare)).join(" · "), approval.submittedBy, approval.submittedAt && formatBusinessTimeFull(approval.submittedAt, "—")].filter(Boolean).join(" · ");
 }
 
 type TrialState = { key: string; label: string; tone: string };
@@ -667,8 +668,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         <Fact k="原试用记录">{retiredCharge.source === "legacy" ? retiredCharge.record.obj : `${retiredCharge.record.owner} · ${retiredCharge.record.sid}`}</Fact>
         <Fact k="原操作理由"><span className="rd-pre">{retiredCharge.record.reason}</span></Fact>
       </Facts>
-      <Explain label="技术信息" content={`命令号 ${retiredCharge.record.commandKey}`} />
-      <p>强制扣款已停用，这里只查原申请，不会新建或执行扣款。</p>
+      <p>强制扣款已停用，这里只查原申请，不会新建或执行扣款。<Explain label="技术信息" content={`命令号 ${retiredCharge.record.commandKey}`} /></p>
       {chargeLookup.error && <p role="alert" className="rd-form-error">{chargeLookup.error}</p>}
       {chargeLookup.missing && <p role="status">未找到可核对的原申请，旧入口不能重建。可结束本机这一条核对；历史事实请到操作记录核查，不会删除服务端记录。</p>}
       {chargeLookup.ticket && <p role="status">已找到原审批单 {chargeLookup.ticket.id} · {{ pending: "待审批，已停用，不会执行", approved: "历史已执行", rejected: "历史已取消", withdrawn: "历史已撤回", expired: "已过期" }[chargeLookup.ticket.status]}。请到操作记录查看原申请和处理结果。</p>}
@@ -885,7 +885,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           <>
             <JudgmentPoints rows={[
               { label: "状态", value: <StatusTag tone={currentRow.tone}>{currentRow.label}</StatusTag>, reason: TRIAL_STATE_HELP[currentRow.session.state] },
-              ...(currentRow.session.pendingApproval ? [{ label: "审批", value: <StatusTag tone="warn">待审批</StatusTag>, reason: <>{trialApprovalMeta(currentRow.session.pendingApproval)}<br />审批进度到「操作记录与审批」看，审批结束后才能发起新操作。{currentRow.session.pendingApproval.action?.startsWith(H2_TRIAL_ACTIONS.h2_trial_charge) && "这是强制扣款停用前提交的申请，批准也不会扣款，只能按原权限取消或撤回。"}</> }] : []),
+              ...(currentRow.session.pendingApproval ? [{ label: "审批", value: <StatusTag tone="warn">待审批</StatusTag>, reason: <>{trialApprovalMeta(currentRow.session.pendingApproval, currentRow.session.sid)}<br />审批进度看「操作记录与审批」。{currentRow.session.pendingApproval.action?.startsWith(H2_TRIAL_ACTIONS.h2_trial_charge) && "这是强制扣款停用前提交的申请，批准也不会扣款，只能按原权限取消或撤回。"}</> }] : []),
               { label: "账户", value: trialOwnerLabel(currentRow.session), state: currentRow.owner ? undefined : "warn" },
               { label: "累计收益", value: shadowText(currentRow.session.shadow) },
               { label: "能不能处理", reason: canCharge && !currentRow.terminal ? `${CHARGE_RESULT}。` : undefined, value: currentRow.session.pendingApproval ? "等待审批结果，审批结束后才能再次处理" : currentRow.terminal ? "已结束，不能再取消或扣款" : lockedSids.has(currentRow.session.sid) ? "有结果未确认的操作，先处理页面上方的待确认" : !currentRow.owner ? "没有用户归属，不能取消或扣款" : canCancel ? "平时不用处理，确要干预才提交强制取消审批" : "这个账号只能查看" },
