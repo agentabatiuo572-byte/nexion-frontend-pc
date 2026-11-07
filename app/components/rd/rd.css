@@ -204,6 +204,7 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-tab[aria-selected="true"]::before { content: ""; position: absolute; top: 50%; left: 5px; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--rd-brand-ink); }  /* 点放在留白里，不占宽度，切页签时后面的字不跳 */
 .rd-tab:disabled { opacity: .45; cursor: not-allowed; }
 .rd-tab-count { font-variant-numeric: tabular-nums; font-size: var(--rd-text-aux); color: var(--rd-warn); }
+.rd-tab-count[data-zero] { color: var(--rd-text-3); }
 @media (hover: hover) and (pointer: fine) { .rd-tab:not(:disabled):not([aria-selected="true"]):hover { background: var(--rd-panel); color: var(--rd-text); } }
 
 /* ── 状态分段 ── */
