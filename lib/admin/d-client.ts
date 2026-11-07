@@ -526,6 +526,8 @@ export interface D5Params {
   networkConfirmFeeUsd: { trc20: number; bep20: number; erc20: number };
   /** 三网络提现通道状态；由 D5 权威配置下发，缺失时冻结页面而非猜测可用性。 */
   networkEnabled: { trc20: boolean; bep20: boolean; erc20: boolean };
+  effectiveNetworks?: string[];
+  networkStatus?: Array<{ network: string; configured: boolean; enabled: boolean; disabledReason: string | null }>;
   nexFeeOffsetRate: number;
   /** FEAT-WD01:小额免审线(USD)。金额 ≤ 此值时可跳过新地址冷却；0 = 关闭快车道。
    *  **永不**免除服务端风控路由裁决(冻结簇/共用地址/风险分)。 */
@@ -1800,7 +1802,29 @@ export function normalizeD5Params(value: unknown): D5Params {
     }
     sourceByField[key] = item;
   });
+  let networkStatus: D5Params["networkStatus"];
+  let effectiveNetworks: D5Params["effectiveNetworks"];
+  if (raw.networkStatus !== undefined || raw.effectiveNetworks !== undefined) {
+    if (!Array.isArray(raw.networkStatus) || raw.networkStatus.length !== 3 || !Array.isArray(raw.effectiveNetworks))
+      throw new Error("提现网络实际状态加载不完整，请刷新后再试");
+    const networks = ["USDT-TRC20", "USDT-BEP20", "USDT-ERC20"];
+    networkStatus = raw.networkStatus.map((item, index, all) => {
+      const row = d5Object(item, "networkStatus");
+      const network = d5String(row.network, "networkStatus.network");
+      const configured = d5Boolean(row.configured, "networkStatus.configured"), enabled = d5Boolean(row.enabled, "networkStatus.enabled");
+      if (!networks.includes(network) || all.findIndex(value => (value as Record<string, unknown>).network === network) !== index
+          || (row.disabledReason !== null && (typeof row.disabledReason !== "string" || !row.disabledReason))
+          || enabled !== (row.disabledReason === null) || enabled && !configured)
+        throw new Error("提现网络实际状态加载不完整，请刷新后再试");
+      return { network, configured, enabled, disabledReason: row.disabledReason as string | null };
+    });
+    effectiveNetworks = raw.effectiveNetworks as string[];
+    const expected = networkStatus.filter(row => row.enabled).map(row => row.network);
+    if (effectiveNetworks.length !== expected.length || effectiveNetworks.some((value, index, all) => typeof value !== "string" || !expected.includes(value) || all.indexOf(value) !== index))
+      throw new Error("提现网络实际状态加载不完整，请刷新后再试");
+  }
   const result: D5Params = {
+    networkStatus, effectiveNetworks,
     version: d5Integer(raw.version, "version", 0),
     dailyLimitCount: d5Integer(raw.dailyLimitCount, "dailyLimitCount", 1),
     maxBalanceRatio: d5Number(raw.balanceMaxRatio, "balanceMaxRatio"),

@@ -22,6 +22,11 @@ import { KV } from "../design-kit";
 import type { DCtx } from "./types";
 
 const OPERATOR = currentAdminOperator;
+const networkStateReason = (reason: string | null) => ({ NETWORK_SWITCH_OFF: "运营开关已关闭", NETWORK_UNSUPPORTED: "正式接入不支持该网络",
+  NOT_CONFIGURED: "链上接入配置未就绪", SWITCH_OFF: "全局出款总闸已关闭", RISK_HOLD: "风险暂停，请核对资金状态",
+  RECONCILIATION_REQUIRED: "需完成资金对账", PAYOUT_ASSET_UNAVAILABLE: "支付商未开通该网络出款",
+  PROVIDER_CAPABILITY_UNAVAILABLE: "暂时无法核实支付商能力" } as Record<string,string>)[reason ?? ""] ?? "状态待核实，请刷新或到资金页查看";
+
 
 function pctRatio(value: number) {
   return `${(Number(value) * 100).toFixed(2)}%`;
@@ -231,7 +236,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       <div className="f-stat"><div className="k">每日提现次数</div><div className="v">{params.dailyLimitCount}</div><div className="sub">每个用户每天最多提现几次</div></div>
       <div className="f-stat cyan"><div className="k">余额可提上限</div><div className="v">{pctRatio(params.maxBalanceRatio)}</div><div className="sub">每次最多提余额的多少</div></div>
       <div className="f-stat warn"><div className="k">网络确认费</div><div className="v">${params.networkConfirmFeeUsd.trc20} / ${params.networkConfirmFeeUsd.bep20} / ${params.networkConfirmFeeUsd.erc20}</div><div className="sub">TRC20 / BEP20 / ERC20 · 每笔固定</div></div>
-      <div className="f-stat"><div className="k">提现网络</div><div className="v">{params.networkEnabled.trc20 ? "TRC20 开" : "TRC20 关"} / {params.networkEnabled.bep20 ? "BEP20 开" : "BEP20 关"} / {params.networkEnabled.erc20 ? "ERC20 开" : "ERC20 关"}</div><div className="sub">当前生效配置 · 应用将按此隐藏不可用通道</div></div>
+      <div className="f-stat"><div className="k">实际可用提现网络</div><div className="v">{params.effectiveNetworks === undefined ? "尚未核实" : params.effectiveNetworks.length ? params.effectiveNetworks.map(network => network.replace("USDT-", "")).join(" / ") : "暂无可用网络"}</div><div className="sub">运营配置：TRC20 {params.networkEnabled.trc20 ? "开" : "关"} / BEP20 {params.networkEnabled.bep20 ? "开" : "关"} / ERC20 {params.networkEnabled.erc20 ? "开" : "关"}</div></div>
       <div className="f-stat cyan"><div className="k">UVT 抵扣率</div><div className="v">${params.nexFeeOffsetRate.toFixed(2)}/UVT</div><div className="sub">1 UVT 能抵多少手续费</div></div>
       <div className="f-stat"><div className="k">小额免审线</div><div className="v">${params.smallAmountThresholdUsd}</div><div className="sub">低于这个金额自动通过</div></div>
       <div className="f-stat"><div className="k">预计到账时限</div><div className="v">{params.payoutSlaHours} 小时</div><div className="sub">承诺用户的到账时间</div></div>
@@ -266,8 +271,17 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
               const enabled = params.networkEnabled[network];
               const label = network.toUpperCase();
               const next = { ...params.networkEnabled, [network]: !enabled };
-              return <button key={network} aria-label={`${label} 提现通道${enabled ? "关闭" : "开启"}`} className={`l-btn sm ${enabled ? "mc" : ""}`} disabled={!canFeeWrite} onClick={() => submit(`${label} 提现通道`, { networkEnabled: next }, !enabled, `${label} ${enabled ? "开启" : "关闭"}`, enabled ? "关闭" : "开启")}>{label} {enabled ? "已开启" : "已关闭"}</button>;
+              return <button key={network} aria-label={`${label} 提现通道${enabled ? "关闭" : "开启"}`} className={`l-btn sm ${enabled ? "mc" : ""}`} disabled={!canFeeWrite} onClick={() => submit(`${label} 提现通道`, { networkEnabled: next }, !enabled, `${label} ${enabled ? "开启" : "关闭"}`, enabled ? "关闭" : "开启")}>{label} 配置{enabled ? "开" : "关"}</button>;
             })}
+          </div>
+          <div className="d5-network-status-list" aria-label="提现网络实际生效状态">
+            {!params.networkStatus && <p>后端尚未提供实际生效状态，请核对部署并刷新；不能只凭配置开启判断 App 可用。</p>}
+            {params.networkStatus?.map(row => <div className="d5-network-status" key={row.network}>
+              <strong>{row.network.replace("USDT-", "")}</strong><span>运营配置：{row.configured ? "开启" : "关闭"}</span>
+              <span className={row.enabled ? "" : "blocked"}>{row.enabled ? "实际已生效" : `实际未生效：${networkStateReason(row.disabledReason)}`}</span>
+            </div>)}
+            <p>配置开启不等于实际可用，App 只显示服务端实际生效的提现网络。</p>
+            <Link className="cregis-config-link" href="/finance/recon">前往 USDT 资金页核对 →</Link>
           </div>
           <div className="p-row">
             <div className="txt"><div className="k">到账时效</div><div className="s">{D5_PAYOUT_SLA_HOURS_MIN}–{D5_PAYOUT_SLA_HOURS_MAX} 小时；缩短时间会加大出款压力</div></div>

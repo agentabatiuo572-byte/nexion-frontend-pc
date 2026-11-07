@@ -11,6 +11,15 @@ import { CregisPoolPolicy } from "./cregis-pool-policy";
 import { CregisDepositPolicy, type DepositProposalActivity } from "./cregis-deposit-policy";
 
 type ExceptionRow = Record<string, unknown>;
+type FundsNetwork = "BEP20" | "ERC20";
+type NetworkSwitch = { network: FundsNetwork; depositEnabled: boolean; version: number;
+  depositAvailable: boolean; addressAvailable: boolean; depositDisabledReason: string | null };
+type NetworkDraft = { depositEnabled: boolean; version: number };
+const availabilityText = (reason: string | null) => ({ NETWORK_SWITCH_OFF: "该网络开关已关闭", GLOBAL_SWITCH_OFF: "全局开关已关闭",
+  NOT_CONFIGURED: "接入配置未就绪", RISK_HOLD: "风险暂停，请核对异常与告警", RECONCILIATION_REQUIRED: "需完成资金对账",
+  ADDRESS_POOL_EMPTY: "缺少可分配地址，已有地址按原状态处理", WITHDRAWAL_NETWORK_OFF: "请核对 D5 提现网络许可",
+  SWITCH_OFF: "全局出款开关已关闭", PAYOUT_ASSET_UNAVAILABLE: "支付商未开通该网络出款",
+  PROVIDER_CAPABILITY_UNAVAILABLE: "暂时无法核实支付商能力" } as Record<string,string>)[reason ?? ""] ?? (reason ? "状态待核实，请刷新或查看异常" : "可用");
 type AddressPool = { available: boolean; total: number; unassigned: number; assigned: number; verifying: number; unknown: number; limit: number; reserveTarget?: number; automatic?: boolean; queued?: number; lastError?: string | null; retryAfter?: number | null };
 type CregisExceptions = {
   mode: string;
@@ -18,6 +27,7 @@ type CregisExceptions = {
   depositCreditEnabled: boolean;
   addressPool?: AddressPool;
   addressPools?: Partial<Record<"BEP20" | "ERC20", AddressPool>>;
+  networkSwitches?: NetworkSwitch[];
   networkCapabilities?: Array<{ network: "BEP20" | "ERC20"; configured: boolean; enabled: boolean; disabledReason: string | null }>;
   providerPayout?: { configured: boolean; enabled: boolean; disabledReason: string | null };
   provisionGate: { state: string; updatedAt?: string; version?: number;
@@ -79,6 +89,14 @@ function parseExceptions(value: unknown): CregisExceptions {
         || capability.enabled && (!capability.configured || capability.disabledReason !== null || !gate.payoutEnabled)))) {
     throw new Error("各网络出款状态加载不完整，请刷新后再试");
   }
+  if (row.networkSwitches !== undefined && (!Array.isArray(row.networkSwitches) || row.networkSwitches.length !== 2
+      || row.networkSwitches.some((item, index, all) => !item || !["BEP20", "ERC20"].includes(item.network)
+        || all.findIndex(other => other.network === item.network) !== index || !Number.isSafeInteger(item.version) || item.version < 0
+        || [item.depositEnabled, item.depositAvailable, item.addressAvailable].some(value => typeof value !== "boolean")
+        || [item.depositDisabledReason].some(value => value !== null && (typeof value !== "string" || !value))
+        || item.depositAvailable !== (item.depositDisabledReason === null)
+        || item.depositAvailable && !item.depositEnabled)))
+    throw new Error("分网络资金开关加载不完整，请刷新后再试");
   for (const pool of [row.addressPool, ...(row.addressPools ? Object.values(row.addressPools as Record<string, AddressPool>) : [])].filter(value => value !== undefined) as AddressPool[]) {
     if (!pool || typeof pool.available !== "boolean" || [pool.total, pool.unassigned, pool.assigned, pool.verifying, pool.unknown, pool.limit]
       .some((count) => !Number.isSafeInteger(count) || count < 0)
@@ -96,12 +114,6 @@ function canProvisionAddress(data: CregisExceptions, network: "BEP20" | "ERC20" 
     && Boolean(data.provisionGate.assignEnabled) && pool?.available === true
     && (pool.limit === 0 || pool.total < pool.limit) && pool.verifying === 0
     && pool.unknown === 0;
-}
-
-function canEnableProviderPayout(data: CregisExceptions): boolean {
-  const capability = data.providerPayout;
-  return data.mode === "PROVIDER" && capability?.configured === true
-    && (capability.enabled || capability.disabledReason === "SWITCH_OFF");
 }
 
 function payoutCapabilityText(data: CregisExceptions): string {
@@ -237,9 +249,8 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
   const [reviewEvidence, setReviewEvidence] = useState<ExceptionRow | null>(null);
   const [extraAlerts, setExtraAlerts] = useState<ExceptionRow[]>([]);
   const [extraReviewCases, setExtraReviewCases] = useState<ExceptionRow[]>([]);
-  const [assign, setAssign] = useState(false);
-  const [credit, setCredit] = useState(false);
-  const [payout, setPayout] = useState(false);
+  const [globalPayout, setGlobalPayout] = useState<{ enabled: boolean; version: number } | null>(null);
+  const [networkDrafts, setNetworkDrafts] = useState<Partial<Record<FundsNetwork, NetworkDraft>>>({});
   const [poolNetwork, setPoolNetwork] = useState<"BEP20" | "ERC20">("BEP20");
   const [proposalActivity, setProposalActivity] = useState<DepositProposalActivity>({ unknown: 0, awaitingApproval: 0 });
   const selectedPool = data?.addressPools?.[poolNetwork] ?? (poolNetwork === "BEP20" ? data?.addressPool : undefined);
@@ -251,9 +262,9 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
     try {
       const next = parseExceptions(await financeAdminRequest<unknown>("/cregis/exceptions"));
       setData(next);
-      setAssign(Boolean(next.provisionGate.assignEnabled));
-      setCredit(Boolean(next.provisionGate.creditEnabled));
-      setPayout(Boolean(next.provisionGate.payoutEnabled));
+      setNetworkDrafts(previous => Object.fromEntries((next.networkSwitches ?? []).map(row => [row.network,
+        previous[row.network]?.version === row.version ? previous[row.network] : { depositEnabled: row.depositEnabled, version: row.version }])));
+      setGlobalPayout(previous => next.provisionGate.version == null ? null : previous?.version === next.provisionGate.version ? previous : { enabled: Boolean(next.provisionGate.payoutEnabled), version: next.provisionGate.version });
       return true;
     } catch (failure) {
       setData(null);
@@ -347,7 +358,7 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
         <div className="dtint">全局出款总闸：{payoutCapabilityText(data)}</div>
         <div className="cregis-recon" aria-label="分网络出款能力">{(["BEP20", "ERC20"] as const).map(network => {
           const capability = data.networkCapabilities?.find(item => item.network === network);
-          return <span key={network}>{network}：{!capability ? "能力待核实" : capability.enabled ? "出款能力已启用，是否放行仍看「提现参数配置」里的网络开关" : !capability.configured ? "出款接入未就绪" : capability.disabledReason === "SWITCH_OFF" ? "出款开关已关闭" : "出款暂停，须核对配置与风险状态"}</span>;
+          return <span key={network}>{network}：{!capability ? "能力待核实" : capability.enabled ? "出款能力已启用，是否放行仍看「提现参数配置」里的网络开关" : !capability.configured ? "出款接入未就绪" : ["SWITCH_OFF", "NETWORK_SWITCH_OFF"].includes(capability.disabledReason ?? "") ? "出款开关已关闭" : "出款暂停，须核对配置与风险状态"}</span>;
         })}</div>
         <div className="cregis-recon">
           <label>网络 <select aria-label="地址池网络" value={poolNetwork} disabled={busy || loading} onChange={event => setPoolNetwork(event.target.value as "BEP20" | "ERC20")}><option value="BEP20">BEP20</option><option value="ERC20">ERC20</option></select></label>
@@ -446,52 +457,59 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
       <section id="cregis-settings" hidden={section !== "settings"} aria-label="充值与地址设置" className="cregis-content">
         <CregisDepositPolicy canManage={canManage} openActionConfirm={openActionConfirm} onActivityChange={setProposalActivity} />
         {data && <CregisPoolPolicy canManage={canManage} openActionConfirm={openActionConfirm} />}
-        {data && canManage && <>
-        <div className="cregis-panel">
-          <div className="cregis-panel-title">收款与出款开关</div>
-          <p>修改后提交审批，另一位管理员批准后生效；下方紧急停用立即执行。</p>
-
-          <div className="cregis-switch-form">
-          <label><input type="checkbox" checked={assign} onChange={(event) => setAssign(event.target.checked)} /> 分配地址</label>
-          <label><input type="checkbox" checked={credit} onChange={(event) => setCredit(event.target.checked)} /> 充值入账</label>
-          <button className="l-btn sm mc" disabled={busy || data.provisionGate.version == null} onClick={() => confirmCommand("config",
-            "提交 Cregis 收款开关修改", `分配地址：${assign ? "开" : "关"}；自动入账：${credit ? "开" : "关"}。需另一位管理员复核后生效。`,
-            "/cregis/switch-cases", { expectedVersion: data.provisionGate.version, assignEnabled: assign, creditEnabled: credit },
-          )}>提交审批</button>{" "}
-
+        {data && <>
+        <div className="cregis-panel cregis-network-controls">
+          <h3 className="cregis-panel-title">分网络充值开关</h3>
+          <p>选择目标状态后提交审批，另一位管理员复核后生效。</p>
+          {!data.networkSwitches && <div className="dtint warn">后端尚未提供分网络充值开关，当前不能修改。请核对部署并刷新。</div>}
+          {data.networkSwitches && <div className="cregis-network-grid" role="table" aria-label="分网络充值开关">
+            <div className="cregis-network-row cregis-network-head" role="row">
+              {["网络 / 当前配置", "充值目标", "实际开放情况", "操作"].map(label => <div role="columnheader" key={label}>{label}</div>)}
+            </div>
+            {data.networkSwitches.map(row => {
+              const draft = networkDrafts[row.network];
+              const pending = data.switchCases?.some(item => item.status === "MAKER_DONE" && item.network === row.network);
+              const restoring = (data.provisionGate.state !== "IDLE" || !data.provisionGate.assignEnabled || !data.provisionGate.creditEnabled) && draft?.depositEnabled === true;
+              return <div className="cregis-network-row" role="row" key={row.network}>
+                <div role="cell"><strong>{row.network}</strong><div className="sub">{row.network === "BEP20" ? "BNB Smart Chain" : "Ethereum"} / 当前：{row.depositEnabled ? "开启" : "关闭"}</div></div>
+                <div role="cell"><label><input type="checkbox" aria-label={`${row.network} 充值目标`} checked={draft?.depositEnabled ?? row.depositEnabled}
+                  disabled={!canManage || busy || loading || pending || !draft} onChange={event => setNetworkDrafts(previous => ({ ...previous, [row.network]: { ...draft!, depositEnabled: event.target.checked } }))} />开启</label></div>
+                <div role="cell" className="cregis-network-availability"><span className={!row.depositAvailable || !row.addressAvailable ? "cregis-network-blocked" : ""}>{row.depositAvailable ? row.addressAvailable ? "已开放" : "已开放 · 地址准备中" : availabilityText(row.depositDisabledReason)}</span></div>
+                <div role="cell">{canManage ? <button className="l-btn sm" disabled={busy || loading || !draft || pending || data.provisionGate.version == null || draft.depositEnabled === row.depositEnabled && !restoring}
+                  onClick={() => confirmCommand("config", `提交 ${row.network} 充值${restoring ? "恢复" : "开关"}审批`,
+                    `${restoring ? "当前全局暂停，本次只申请恢复所选网络充值；其他网络充值继续保持暂停，不会恢复出款总闸。" : ""}${row.network} 充值：${row.depositEnabled ? "开" : "关"} → ${draft!.depositEnabled ? "开" : "关"}。关闭将停止该网地址分配、链上直付新下单与自动入账，原交易继续核验。`,
+                    "/cregis/switch-cases", { network: row.network, expectedVersion: data.provisionGate.version, expectedNetworkVersion: row.version, depositEnabled: draft!.depositEnabled })}>{pending ? "待另一管理员复核" : restoring ? "提交恢复审批" : "提交审批"}</button> : <span className="sub">只读</span>}</div>
+              </div>;
+            })}
+          </div>}
+          <p>关闭该网将停止地址分配、链上直付新下单和自动入账，原交易继续核验。关闭一条网络，不改变另一条网络的充值开关。</p>
+          <div className="cregis-global-payout"><strong>全局链上出款总闸</strong><label><input type="checkbox" aria-label="全局链上出款目标" checked={globalPayout?.enabled ?? Boolean(data.provisionGate.payoutEnabled)} disabled={!canManage || busy || loading || !globalPayout} onChange={event => setGlobalPayout(previous => previous ? { ...previous, enabled: event.target.checked } : previous)} />开启</label>
+            {canManage && <button className="l-btn sm" disabled={busy || loading || !globalPayout || globalPayout.enabled === Boolean(data.provisionGate.payoutEnabled) && data.provisionGate.state === "IDLE"}
+              onClick={() => confirmCommand("config", "提交全局链上出款审批", `两网共用出款总闸：${data.provisionGate.payoutEnabled ? "开" : "关"} → ${globalPayout!.enabled ? "开" : "关"}。不恢复充值，也不修改 D5 的分网络提现许可；开启后仍须满足支付商、对账、风险和单笔审核条件。`,
+                "/cregis/switch-cases", { expectedVersion: data.provisionGate.version, payoutEnabled: globalPayout!.enabled })}>提交出款审批</button>}
+            <span>BEP20 / ERC20 分别是否允许提现，在 D5 设置。</span>
           </div>
-          <div className="cregis-switch-form">
-          <label><input type="checkbox" checked={payout}
-            disabled={busy || loading || (!payout && !canEnableProviderPayout(data))}
-            onChange={(event) => setPayout(event.target.checked)} /> 链上出款（独立开关）</label>
-          <button className="l-btn sm mc"
-            disabled={busy || loading || data.provisionGate.version == null
-              || payout === Boolean(data.provisionGate.payoutEnabled)
-              || (payout && !canEnableProviderPayout(data))}
-            onClick={() => confirmCommand("config",
-              "提交 Cregis 链上出款开关提案",
-              `链上出款：${payout ? "开" : "关"}；地址分配和自动入账不变。需另一位管理员复核后生效，不会直接放行任何提现。`,
-              "/cregis/switch-cases", { expectedVersion: data.provisionGate.version,
-                assignEnabled: Boolean(data.provisionGate.assignEnabled),
-                creditEnabled: Boolean(data.provisionGate.creditEnabled), payoutEnabled: payout },
-            )}>提交出款开关审批</button>
-          </div>
-          {data.switchCases?.filter((row) => row.status === "MAKER_DONE").map((row) => <div className="cregis-case" key={`switch-${row.id}`}>
-            提案 #{String(row.id)} · 发起人 {String(row.makerId)} · 地址 {row.assignEnabled ? "开" : "关"} / 入账 {row.creditEnabled ? "开" : "关"} / 出款 {payoutSwitchText(row)} · {String(row.reason)}{" "}
-            <button className="l-btn sm" disabled={busy} onClick={() => confirmCommand("config",
-              `批准 Cregis 开关修改 #${row.id}`, `发起人 ${String(row.makerId)}；地址 ${row.assignEnabled ? "开" : "关"} / 入账 ${row.creditEnabled ? "开" : "关"} / 出款 ${payoutSwitchText(row)}；发起理由 ${String(row.reason)}`,
-              `/cregis/switch-cases/${row.id}/decision`, { decision: "APPROVE" },
-            )}>复核通过</button>{" "}
-            <button className="l-btn sm" disabled={busy} onClick={() => confirmCommand("record",
-              `拒绝 Cregis 开关修改 #${row.id}`, `发起人 ${String(row.makerId)}；发起理由 ${String(row.reason)}`,
-              `/cregis/switch-cases/${row.id}/decision`, { decision: "REJECT" },
-            )}>拒绝</button>
-          </div>)}
-          <div className="cregis-danger-zone"><strong>紧急停用</strong><p>立即关闭地址分配、自动入账和链上出款。恢复须重新核对条件并提交审批。</p>          <button className="l-btn sm cregis-danger-button" disabled={busy || data.provisionGate.version == null} onClick={() => confirmCommand("emergency",
-            "紧急关闭 Cregis 资金开关", "立即关闭地址分配、自动入账和链上出款。",
-            "/cregis/switches/emergency-off", { expectedVersion: data.provisionGate.version },
-          )}>紧急关闭三项开关</button></div>
+          <a className="cregis-config-link" href="/finance/params">前往 USDT 提现参数 →</a>
         </div>
+        <div className="cregis-panel cregis-network-controls">
+          <h3 className="cregis-panel-title">待复核申请</h3>
+          {!data.switchCases?.some(row => row.status === "MAKER_DONE") && <p>暂无待复核申请。</p>}
+          {data.switchCases?.filter(row => row.status === "MAKER_DONE").map(row => {
+            const network = row.network ?? "全局出款";
+            const detail = row.network ? `${network} 充值 ${row.beforeDepositEnabled == null ? "原值" : row.beforeDepositEnabled ? "开" : "关"} → ${row.creditEnabled ? "开" : "关"}` : `全局链上出款 → ${payoutSwitchText(row)}`;
+            const stale = Boolean(row.expectedVersion !== data.provisionGate.version || row.network && data.networkSwitches?.find(item => item.network === row.network)?.version !== row.expectedNetworkVersion);
+            return <div className="cregis-case" key={`switch-${row.id}`}><div>提案 #{String(row.id)} · {detail} · 发起人 {String(row.makerId)} · {String(row.reason)}</div>{stale && <p>配置版本已变，请拒绝后重新申请。</p>}{canManage && <div className="cregis-switch-form">
+              <button className="l-btn sm" disabled={busy || loading || Boolean(stale)} onClick={() => confirmCommand("config", `复核 ${network} 提案 #${row.id}`, `${detail}；发起人 ${String(row.makerId)}；理由 ${String(row.reason)}。按当前条件核验后生效。`,
+                `/cregis/switch-cases/${row.id}/decision`, { decision: "APPROVE" })}>复核通过</button>
+              <button className="l-btn sm" disabled={busy || loading} onClick={() => confirmCommand("record", `拒绝 ${network} 提案 #${row.id}`, `${detail}；发起理由 ${String(row.reason)}`,
+                `/cregis/switch-cases/${row.id}/decision`, { decision: "REJECT" })}>拒绝</button>
+            </div>}</div>;
+          })}
+        </div>
+        {canManage && <div className="cregis-danger-zone cregis-network-controls"><strong>全局紧急停用</strong><p>立即停止两网的地址分配、自动入账和新出款，继续接收回调并查询原单。旧提案失效，恢复须重新核对条件并提交审批。</p>
+          <button className="l-btn sm cregis-danger-button" disabled={busy || loading || data.provisionGate.version == null} onClick={() => confirmCommand("emergency", "紧急停用 BEP20 与 ERC20", "立即停止两网地址分配、自动入账和新出款；原交易继续核验和查询。",
+            "/cregis/switches/emergency-off", { expectedVersion: data.provisionGate.version })}>紧急停用两网</button>
+        </div>}
         </>}
       </section>
       <section id="cregis-funds" hidden={section !== "funds"} aria-label="归集与付款" className="cregis-content">
