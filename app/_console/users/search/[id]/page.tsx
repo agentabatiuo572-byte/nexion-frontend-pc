@@ -28,6 +28,7 @@ import {
   type User360Summary,
 } from "@/lib/admin/user360-client";
 import { fetchD1TopupFlows } from "@/lib/admin/d-client";
+import { withdrawalRecordLabel } from "@/lib/admin/withdrawal-status";
 import { OperationConfirmModal, type OperatorBriefKind } from "@/app/components/domain-views/design-kit";
 import {
   BlockState, Button, Cell, Change, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, Notice, PageHeader, Pager, Panel,
@@ -157,12 +158,11 @@ const STATUS_LABEL: Record<string, string> = {
 /** 冻结和受限不是等待，默认的钟读起来像处理中。 */
 const STATUS_ICON: Record<string, LucideIcon> = { FROZEN: Snowflake, RESTRICTED: Lock };
 
-const WITHDRAWAL_STATUS: Record<string, readonly [string, "ok" | "warn" | "danger" | "progress" | "done"]> = {
-  SUBMITTED: ["已提交", "progress"], REVIEW_PENDING: ["待审核", "warn"], EXTENDED_HOLD: ["等待复查", "warn"], DELAYED: ["延迟复查", "warn"], FROZEN: ["已冻结", "warn"],
-  REVIEW_PASSED: ["已放行", "progress"], PENDING_CHAIN: ["已放行", "progress"], CHAIN_SUBMITTED: ["已发出", "progress"], CONFIRMED: ["已确认到账", "ok"],
-  REVIEW_REJECTED: ["审核拒绝", "danger"], ADDRESS_INVALID: ["地址无效", "danger"], TX_FAILED: ["处理失败", "danger"], TX_ORPHANED: ["交易异常待核查", "danger"], DEAD: ["交易异常待核查", "danger"],
-  PENDING: ["待审核", "warn"], REVIEWING: ["审核中", "warn"], APPROVED: ["已批准", "progress"], PROCESSING: ["处理中", "progress"], SENT: ["已发出", "progress"],
-  COMPLETED: ["已到账", "ok"], SUCCESS: ["已到账", "ok"], REJECTED: ["已拒绝", "danger"], FAILED: ["失败", "danger"], REFUNDED: ["已退款", "done"], CANCELLED: ["已取消", "done"],
+/** 提现状态的叫法和提现审核页同一份（withdrawalRecordLabel）。颜色按这页的用途：等人处理的橙黄，计入结论的「等待处理」；失败和异常红。旧码跟后端对应的新码同色。 */
+const WITHDRAWAL_TONE: Record<string, "ok" | "warn" | "danger" | "progress" | "done"> = {
+  SUBMITTED: "progress", PENDING: "progress", REVIEW_PENDING: "warn", REVIEWING: "warn", EXTENDED_HOLD: "warn", DELAYED: "warn", FROZEN: "warn",
+  REVIEW_PASSED: "progress", PENDING_CHAIN: "progress", PROCESSING: "progress", SENT: "progress", CHAIN_SUBMITTED: "progress", CONFIRMED: "ok", SUCCESS: "ok",
+  REVIEW_REJECTED: "danger", REJECTED: "danger", ADDRESS_INVALID: "danger", TX_FAILED: "danger", FAILED: "danger", TX_ORPHANED: "danger", DEAD: "danger", REFUNDED: "done",
 };
 const ORDER_STATE: Record<string, readonly [string, "ok" | "warn" | "danger" | "progress" | "done"]> = {
   placed: ["待付款", "warn"], paid: ["已付款", "progress"], provisioning: ["设备开通中", "progress"], activated: ["已开通", "ok"], payment_failed: ["付款失败", "danger"],
@@ -175,7 +175,8 @@ const DEPOSIT_TONE: Record<string, "progress" | "danger"> = Object.fromEntries([
 ]);
 const DIRECTION: Record<string, string> = { IN: "收入", OUT: "支出" };
 const EXPIRED_TEXT = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
-const withdrawalTone = (row: JsonRecord) => WITHDRAWAL_STATUS[asText(row.status, "").toUpperCase()]?.[1];
+const withdrawalTone = (row: JsonRecord) => WITHDRAWAL_TONE[asText(row.status, "").toUpperCase()];
+const withdrawalLabel = (row: JsonRecord) => withdrawalRecordLabel({ status: asText(row.status, ""), chain: asText(row.chain, "") });
 const depositTone = (row: JsonRecord) => DEPOSIT_TONE[asText(row.status, "").toUpperCase()];
 const orderTone = (row: JsonRecord) => ORDER_STATE[asText(row.state, "").toLowerCase()]?.[1];
 const deviceAbnormal = (row: JsonRecord) => asText(row.status, "").toUpperCase() === "FAULT" || asText(row.runtimeStatus, "").toUpperCase() === "ERROR";
@@ -330,7 +331,10 @@ const statusCell = (table: Record<string, readonly [string, "ok" | "warn" | "dan
   const hit = table[value];
   return hit ? <StatusTag tone={hit[1]}>{hit[0]}</StatusTag> : unknown;
 };
-const withdrawalStatus = (row: JsonRecord) => statusCell(WITHDRAWAL_STATUS, asText(row.status, "").toUpperCase(), "状态待核实");
+const withdrawalStatus = (row: JsonRecord) => {
+  const tone = withdrawalTone(row);
+  return tone ? <StatusTag tone={tone}>{withdrawalLabel(row)}</StatusTag> : withdrawalLabel(row);
+};
 /** 已入账照旧写字，待确认和异常才用标签。 */
 const depositStatus = (row: JsonRecord) => {
   const tone = depositTone(row);
@@ -1070,10 +1074,9 @@ export default function UserDetailPage() {
     status={asText(latestDeposit?.statusLabel)} tone={latestDeposit && depositTone(latestDeposit)}
     onOpen={() => setRecord(latestDepositListed >= 0 ? { kind: "deposit", index: latestDepositListed } : { kind: "topup", index: 0 })} />;
   const withdrawalRow = withdrawals[latestWithdrawal];
-  const withdrawalState = WITHDRAWAL_STATUS[asText(withdrawalRow?.status, "").toUpperCase()];
   const withdrawalsTotal = asNumber(detail.withdrawals?.total, withdrawals.length);
   const withdrawalRecent = <Recent label="最近一笔" openLabel="查看最近一笔提现" note={sectionFailed(detail.withdrawals) ? "—" : withdrawalRow ? undefined : "暂无提现"}
-    amount={amountText(withdrawalRow?.amount, withdrawalRow?.asset)} time={shortTime(withdrawalRow?.createdAt)} status={withdrawalState?.[0] ?? "状态待核实"} tone={withdrawalState?.[1]}
+    amount={amountText(withdrawalRow?.amount, withdrawalRow?.asset)} time={shortTime(withdrawalRow?.createdAt)} status={withdrawalRow && withdrawalLabel(withdrawalRow)} tone={withdrawalRow && withdrawalTone(withdrawalRow)}
     onOpen={() => setRecord({ kind: "withdrawal", index: latestWithdrawal })} />;
   const kpis = [
     detail.financial && { label: "钱包可用余额", value: amountValue(summary.walletUsdt ?? profile.walletUsdt), unit: "USDT", tone: "role-1" as const, icon: Wallet, group: "funds", anchor: "hub-deposit" },
@@ -1127,7 +1130,7 @@ export default function UserDetailPage() {
     detail.sessions && !securityUnread && "账号锁定",
     paymentSecurityPort && "支付安全",
     !supportScope && "全部支付方式的撤销状态",
-    detail.withdrawals && "最近 30 条提现",
+    detail.withdrawals && "提现记录列出的最多 30 条（风险档高的排在前，同档新的在前，所以不一定是最近 30 条）",
     detail.devices && "设备状态",
     detail.commerce && "最近 50 单订单",
     detail.notifications && "通知推送失败",
@@ -1418,7 +1421,7 @@ export default function UserDetailPage() {
         {fundsPresent && <div id={nav.anchor("funds")}>
           <Fold title="资金" icon={Wallet} tone="role-1" summary={foldSummary("funds", fundsFailed || fundsAlert, fundsText)} alertTone={fundsFailed || withdrawalExceptions > 0 ? "danger" : "warn"} {...foldProps("funds", fundsFailed || fundsAlert)}>
             <Block id="hub-deposit" title="充值记录" {...listProps("deposit")} section={detail.deposits} sub={`最多 30 条 · 共 ${numberLabel(detail.deposits?.total)} 笔`}
-              explain={`这里只列已确认的充值，最多 30 条。确认总额 ${amountText(detail.deposits?.confirmedUsd)} 是能核对到的小计，不保证覆盖全部历史，也不是这些行相加。`}>
+              explain={`这里只列已确认的链上充值和停用前的国际卡充值，最多 30 条，银行卡充值不在这里。确认总额 ${amountText(detail.deposits?.confirmedUsd)} 是能核对到的小计，含银行卡充值，不保证覆盖全部历史，也不是这些行相加。`}>
               <RecordTable label="充值记录" rows={deposits} columns={DEPOSIT_COLUMNS} {...recordProps("deposit")} />
             </Block>
             <Block id="hub-withdrawal" title="提现记录" {...listProps("withdrawal")} section={detail.withdrawals} sub={`最多 30 条 · 共 ${numberLabel(detail.withdrawals?.total)} 笔`}

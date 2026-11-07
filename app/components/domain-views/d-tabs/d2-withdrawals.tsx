@@ -22,6 +22,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { bankEvidenceLabels, bankEvidenceTime } from "@/lib/admin/bank-payout-evidence";
 import { formatC1DeviceStatus } from "@/lib/admin/c1-detail-display";
+import { WITHDRAWAL_STATUS_TABS as STATUS_TABS, WITHDRAWAL_STATUS_CN as STATUS_CN, erc20ConfirmationLost, withdrawalRecordLabel as bankStatusLabel, withdrawalStatusLabel as statusLabel } from "@/lib/admin/withdrawal-status";
 import {
   fetchD2WithdrawalDetail,
   fetchD2BankPayout,
@@ -49,12 +50,6 @@ import {
 import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
 import type { ActionConfirmReq, DCtx } from "./types";
 const OPERATOR = currentAdminOperator;
-const STATUS_TABS = [
-  ["", "全部"], ["SUBMITTED", "已提交"], ["REVIEW_PENDING", "待审核"], ["EXTENDED_HOLD", "冷却中，等待复查"], ["FROZEN", "冻结"],
-  ["REVIEW_PASSED", "已放行"], ["PROCESSING", "处理中"], ["SENT", "银行处理中 / 已发出"], ["CONFIRMED", "已确认"],
-  ["REVIEW_REJECTED", "审核拒绝"], ["ADDRESS_INVALID", "地址无效"], ["TX_FAILED", "打款失败"], ["TX_ORPHANED", "打款异常，需人工核对"], ["REFUNDED", "已退款"],
-] as const;
-
 const ACTION_AUTHORITY: Record<D2ReviewAction, string> = {
   APPROVE: "finance_d2_withdrawal_approve",
   DELAY: "finance_d2_withdrawal_delay",
@@ -92,28 +87,6 @@ function listTime(value?: string) {
 function reviewAtAfter(days: number) {
   const shanghaiOffsetMs = 8 * 3_600_000;
   return new Date(Date.now() + days * 86_400_000 + shanghaiOffsetMs).toISOString().slice(0, 16);
-}
-
-function statusLabel(status: string) {
-  return ({
-    SUBMITTED: "已提交", PENDING: "已提交",
-    REVIEW_PENDING: "待审核", REVIEWING: "待审核",
-    EXTENDED_HOLD: "冷却中，等待复查", DELAYED: "延迟复查", FROZEN: "冻结",
-    REVIEW_PASSED: "已放行", PENDING_CHAIN: "已放行", PROCESSING: "处理中",
-    SENT: "已发出", CHAIN_SUBMITTED: "已发出", CONFIRMED: "已到账", SUCCESS: "已到账",
-    REVIEW_REJECTED: "审核拒绝", REJECTED: "审核拒绝", ADDRESS_INVALID: "地址无效",
-    TX_FAILED: "打款失败", FAILED: "打款失败", TX_ORPHANED: "打款异常，需人工核对", DEAD: "打款异常，需人工核对",
-    REFUNDED: "已退款",
-  } as Record<string, string>)[status.toUpperCase()] ?? "未知状态";
-}
-
-function bankStatusLabel(row: D2Withdrawal) {
-  if (erc20ConfirmationLost(row)) return "冻结 · 仍占提现额度";
-  if (row.chain !== "BANK-VND") return statusLabel(row.status);
-  if (row.status === "SENT") return "银行处理中";
-  if (row.status === "TX_ORPHANED") return "人工核对 · 未解冻";
-  if (["FAILED", "TX_FAILED"].includes(row.status)) return "打款失败 · 已退回";
-  return statusLabel(row.status);
 }
 
 function cregisStatusLabel(state: string) {
@@ -390,12 +363,7 @@ function actionCandidates(row: D2Withdrawal, cregis?: D2CregisPayout | null): D2
   return [];
 }
 
-function erc20ConfirmationLost(row: D2Withdrawal) {
-  return ["USDT-ERC20", "ERC20"].includes(row.chain) && ["TX_ORPHANED", "DEAD"].includes(row.status.toUpperCase());
-}
-
-/** 状态流转图。节点名取 STATUS_TABS,分支与 actionCandidates 同一套判断。 */
-const STATUS_CN: Record<string, string> = Object.fromEntries(STATUS_TABS.filter(([code]) => code).map(([code, label]) => [code, label]));
+/** 状态流转图。节点名取 STATUS_TABS（lib/admin/withdrawal-status）,分支与 actionCandidates 同一套判断。 */
 const D2_HAPPY_PATH = ["SUBMITTED", "REVIEW_PENDING", "REVIEW_PASSED", "PROCESSING", "SENT", "CONFIRMED"];
 /** 终态:走到这里就结束,没有出边是对的,不该被下面的死结自检报出来。 */
 const D2_TERMINAL = new Set(["CONFIRMED", "REFUNDED"]);
