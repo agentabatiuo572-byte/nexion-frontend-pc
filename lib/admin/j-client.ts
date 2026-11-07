@@ -213,6 +213,9 @@ function requiredText(value: unknown, field: string) {
   return normalized;
 }
 
+/** 暂不可用的业务开关。代码都留着，以后恢复这项，删掉对应这一行就行。 */
+export const UNAVAILABLE_GATES: Record<string, string> = { staking: "App 已下线质押功能，这一项暂不可用。" };
+
 const J1_GATE_KEYS = ["withdraw", "staking", "genesis", "exchange", "trial"] as const;
 const J1_GATE_KEY_SET = new Set<string>(J1_GATE_KEYS);
 const J1_EMERGENCY_SLA_IDS = ["autoConfirmMins", "recoverGate"] as const;

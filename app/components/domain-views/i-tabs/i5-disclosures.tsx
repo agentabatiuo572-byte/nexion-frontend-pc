@@ -569,7 +569,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       confirmLabel: "提交发布审批",
       statedBrief: { impact: "批准后这个版本封存，不能再改也不能删除。App 还是当前版本，要另外切换生效版本。", check: `逐章核对${languageNames(row.languageScope)}内容，理由写清版本依据。` },
       facts: <>
-        <Facts><Fact k="地区">{row.jurisdiction} · {nameOf(row.jurisdiction)}</Fact><Fact k="版本"><Change from={current?.version ?? j?.version ?? "无生效版"} to={row.version} /></Fact><Fact k="语言">{scopeChanged ? <Change from={languageText(current?.languageScope)} to={languageText(row.languageScope)} /> : languageText(row.languageScope)}</Fact><Fact k="切换后要确认">{isSmall(affected) ? SMALL_SAMPLE : `${count(affected)} 人，现在待重新确认 ${count(pendingAck)} 人`}，已拦截 {count(row.blocked ?? j?.blocked ?? 0)} 次 <Explain label="这次审批会怎样" content={`本次只审批版本内容，App 上暂不变化。切换生效后用户原来的确认失效，${activeGates.length ? `期间受限的操作：${activeGates.join("、")}` : "现在没有受限的操作"}。`} /></Fact></Facts>
+        <Facts><Fact k="地区">{row.jurisdiction} · {nameOf(row.jurisdiction)}</Fact><Fact k="版本"><Change from={current?.version ?? j?.version ?? "无生效版"} to={row.version} /></Fact><Fact k="语言">{scopeChanged ? <Change from={languageText(current?.languageScope)} to={languageText(row.languageScope)} /> : languageText(row.languageScope)}</Fact><Fact k="切换后确认失效">{isSmall(affected) ? SMALL_SAMPLE : `${count(affected)} 人，现在待重新确认 ${count(pendingAck)} 人`}，已拦截 {count(row.blocked ?? j?.blocked ?? 0)} 次 <Explain label="这次审批会怎样" content={`本次只审批版本内容，App 上暂不变化。切换生效后用户原来的确认失效，${activeGates.length ? `期间受限的操作：${activeGates.join("、")}` : "现在没有受限的操作"}。`} /></Fact></Facts>
         <PublishDiff current={current} target={row} />
       </>,
       businessForm: {
@@ -1019,7 +1019,7 @@ function VersionEditor({ initial, switcher, regions, languageScopes, loadRegionB
   const langName = LANGUAGE_NAME[lang];
 
   return <>
-    <Drawer open wide onClose={close} title={initial.mode === "edit" ? "编辑披露草稿" : "新建披露版本"} sub={initial.mode === "edit" ? `${form.jurisdiction} ${form.version}` : undefined} explain={initial.mode === "create" ? "内容已带入这个地区当前的已发布版本，切换生效版本后用户须重新确认。" : undefined} icon={FilePen} tone="role-1"
+    <Drawer open wide onClose={close} title={initial.mode === "edit" ? "编辑披露草稿" : "新建披露版本"} sub={initial.mode === "edit" ? `${form.jurisdiction} ${form.version}` : undefined} explain={initial.mode === "create" ? "内容已带入这个地区当前的已发布版本，切换生效版本后，用户原来的确认失效。" : undefined} icon={FilePen} tone="role-1"
       footer={<Decision explain="保存草稿不改变 App 内容。" others={<Button onClick={close}>取消</Button>} primary={<Button variant="primary" disabledReason={saveBlocked} onClick={() => onSave(form)}>保存草稿</Button>} />}>
       <div data-business-form="version-authoring" className="rd-form-stack">
         <MergeNotice report={merged} name={fieldName} />

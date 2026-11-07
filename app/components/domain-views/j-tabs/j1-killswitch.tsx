@@ -15,7 +15,7 @@ import { BatchBar, BlockState, Button, Cell, Change, Checkbox, Conclusion, Confi
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
-import { createJEmergencyCommandKey, isEmergencyOutcomeUncertain } from "@/lib/admin/j-client";
+import { UNAVAILABLE_GATES, createJEmergencyCommandKey, isEmergencyOutcomeUncertain } from "@/lib/admin/j-client";
 import type { AutoConfirmationRow, AutoRuleRow, EmergencySlaRow, JGate, KillSwitchOverview } from "@/lib/admin/j-client";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -33,8 +33,6 @@ const restoreAttempts = createPendingMutationStore<RestoreAttempt>({
 });
 const IMPACT_LABEL: Record<string, string> = { immediate: "即时资金流出", delayed: "未来负债增加", none: "不直接影响兑付" };
 const GATE_ICON: Record<string, LucideIcon> = { withdraw: Landmark, staking: Layers, genesis: Gem, exchange: ArrowLeftRight, trial: Ticket };
-/** 以后恢复该业务时，删掉对应这一行即可恢复原有入口。 */
-const UNAVAILABLE_GATES: Record<string, string> = { staking: "App 已下线质押功能，这一项暂不可用。" };
 /** 只覆盖本页显示，等待后端同步开关说明。 */
 const GATE_COPY: Record<string, { cap: string; desc: string }> = {
   withdraw: { cap: "新提现申请、审核放行和未派发的链上打款", desc: "已提交打款方的链上单继续核对原结果，不能保证撤回。" },
