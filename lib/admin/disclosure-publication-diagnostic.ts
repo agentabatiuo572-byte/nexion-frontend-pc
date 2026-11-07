@@ -7,7 +7,7 @@ export function disclosurePublicationIssue(
 ): string | null {
   if (mapping.status.toLowerCase() !== "published") return null;
   const matches = versions.filter((item) => item.jurisdiction === mapping.code && item.version === mapping.version);
-  if (matches.length === 0) return "未找到当前设置引用的披露版本，App 无法读取该地区的风险披露。请核对版本列表与当前生效版本设置。";
+  if (matches.length === 0) return "未找到当前设置引用的披露版本，App 无法读取该适用范围的风险披露。请核对版本列表与当前生效版本设置。";
   if (matches.length !== 1) return "当前设置引用的披露版本不唯一，请核查后台版本数据。";
   const version = matches[0];
   if (!["published", "superseded"].includes(version.status.toLowerCase())) return "当前设置引用的版本尚未发布或已归档，App 无法读取。请按既有发布流程核对正文与生效版本设置。";
