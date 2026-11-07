@@ -198,8 +198,8 @@ function D1Workspace({ ctx }: { ctx: DCtx }) {
   const failedNames = failed.map(key => D1_SECTION_NAME[key]).join("、");
   const explain = "算了需人工处理的付款、待核对的银行卡订单、USDT 异常和待挂账的对账差异。系统还在处理的不算。没有数据不代表已经对上。";
   // 后端还没给「本地待人工核对」的银行卡订单计数（BE-27），这个数不全，零也不是绝对的：常显说明，不收进问号（D1-S04）。
-  const bankGap = "银行卡订单里「本地待人工核对」的还没算进来，要在「银行卡充值」列表里逐行看。";
-  const feeGap = unconfiguredFees ? `付款手续费有 ${unconfiguredFees} 种付款方式未配置，用户付款时看不到这几种方式。` : "";
+  const bankGap = "不含银行卡本地待人工核对的订单";
+  const feeGap = unconfiguredFees ? `；手续费 ${unconfiguredFees} 种未配置` : "";
   const retryAll = <Button size="sm" onClick={() => setReloadTick(value => value + 1)}>重试</Button>;
   const alertLead = usdtAlert ? "USDT 有未解除的紧急或严重告警" : "";
   const conclusion = failed.length === D1_SECTIONS.length
@@ -207,7 +207,7 @@ function D1Workspace({ ctx }: { ctx: DCtx }) {
     : loadingCount && !usdtAlert
       ? <Conclusion state="unknown" explain={explain}>正在读取要处理的事</Conclusion>
       : total > 0
-        ? <Conclusion state={usdtAlert ? "danger" : "warn"} lead explain={explain} hint={failed.length ? undefined : `点页签上带数字的区处理。${bankGap}`} action={failed.length ? retryAll : undefined}>
+        ? <Conclusion state={usdtAlert ? "danger" : "warn"} lead explain={explain} hint={failed.length ? undefined : `点页签上带数字的区处理，${bankGap}`} action={failed.length ? retryAll : undefined}>
           {alertLead && `${alertLead}；`}有 <b>{totalText}</b> 项要处理{failed.length ? `，${failedNames}读取失败，这个数不全` : ""}
         </Conclusion>
         : usdtAlert

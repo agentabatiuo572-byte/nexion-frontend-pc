@@ -152,5 +152,5 @@
 
 /* D1 付款手续费表：付款方式一列、四个数值列等宽，1024 下输入框里放得下「未配置」（视觉复查必须改 13）。 */
 .ddom .d1-fee-table { table-layout: fixed; }
-.ddom .d1-fee-table :is(th, td):first-child { width: 16%; }
+.ddom .d1-fee-table :is(th, td):first-child { width: 22%; }
 .ddom .d1-fee-table .rd-number { max-width: none; }

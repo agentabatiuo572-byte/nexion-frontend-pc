@@ -137,7 +137,7 @@ export function D1BankOrders({ refreshKey, onCount, ...actions }: OrderActions &
       </Notice>
     )}
     {/* 页签上的数只算三种待核对；本地待人工核对的后端还没给计数（BE-27），常显说明，不能让 0 变成「都处理完了」（D1-S04）。 */}
-    <p className="rd-note">页签上的数只算三种待核对。「本地待人工核对」的还没算进来，要在列表里看每行状态下的「本地待人工核对」。</p>
+    <Notice tone="neutral">页签上的数只算三种待核对，「本地待人工核对」的要在列表里看每行状态。</Notice>
     <FilterBar
       scope={<FilterField><Select aria-label="银行订单状态" value={status} onChange={value => { setStatus(value); setPageNum(1); }} options={[{ value: "", label: "全部状态" }]}
         groups={STATUS_GROUPS.map(group => ({ label: group.label, options: group.statuses.map(value => ({ value, label: ORDER_STATUS[value] })) }))} /></FilterField>}
