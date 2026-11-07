@@ -35,7 +35,7 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const page = (
     <>
-      {tab !== "D2" && <DomainHeader {...meta} />}
+      {tab !== "D2" && tab !== "D1" && <DomainHeader {...meta} />}
 
       {tab === "D1" && <D1Recon ctx={ctx} />}
       {tab === "D2" && <D2Withdrawals ctx={ctx} />}
@@ -45,10 +45,13 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "D7" && <D7PayoutVnd ctx={ctx} />}
 
       {mc && (
-        <OperationConfirmModal briefKind={mc.briefKind}
+        <OperationConfirmModal key={mc.formKey} briefKind={mc.briefKind}
           action={mc.action}
           title={mc.title}
           detail={mc.detail}
+          content={mc.content}
+          reasonPlaceholder={mc.reasonPlaceholder}
+          reasonPolicyOptional={mc.reasonPolicyOptional}
           amplifies={mc.amplifies}
           coverage={mc.coverage}
           coverageCheck={mc.coverageCheck}
@@ -88,5 +91,5 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
     </>
   );
 
-  return tab === "D2" ? <RdPage className="ddom">{page}</RdPage> : <div className="dkpage ddom">{page}</div>;
+  return tab === "D2" || tab === "D1" ? <RdPage className="ddom">{page}</RdPage> : <div className="dkpage ddom">{page}</div>;
 }

@@ -61,3 +61,5 @@ async function submit(owner: number, scope: string, path: string, method: "PATCH
 export const updatePurchasePaymentPolicy = (owner: number, expectedVersion: number, channels: PurchasePaymentChannelInput[], reason: string) => submit(owner, "policy", "/purchase-payment-policy", "PATCH", { expectedVersion, channels, reason });
 export const revalidatePurchasePayment = (owner: number, intentNo: string, expectedVersion: number, reason: string) => submit(owner, intentNo, `/purchase-payment-records/${encodeURIComponent(intentNo)}/revalidate-deliver`, "POST", { expectedVersion, reason });
 export const retryPurchasePayment = (row: PendingPurchasePayment) => execute(row, true);
+/** 重试被明确拒绝、人核实过原操作后，只放开本页的锁，不发请求（OP-153）。 */
+export const releasePurchasePayment = (row: PendingPurchasePayment) => commands.forget(row.fingerprint, row.commandKey);

@@ -595,6 +595,41 @@ export function listD1PendingCregisCommands(): D1PendingTopupCommand[] {
     .map(({ commandKey, path, createdAt, expiresAt }) => ({ commandKey, path, createdAt, expiresAt }));
 }
 
+export interface D1PendingCommand extends D1PendingTopupCommand {
+  method: string;
+  body: string;
+}
+
+/** D1 页上还没确认结果的写请求：充值通道、对账核销、银行卡支付参数和 USDT 收款，按发出时间排。 */
+export function listD1PendingCommands(): D1PendingCommand[] {
+  return pendingMutations.list()
+    .filter(value => value.base === "finance"
+      && (value.path.startsWith("/topup/") || value.path.startsWith("/cregis/") || value.path === "/vietqr/config"))
+    .map(({ commandKey, path, method, body, createdAt, expiresAt }) => ({ commandKey, path, method, body, createdAt, expiresAt }))
+    .sort((left, right) => left.createdAt - right.createdAt);
+}
+
+/** 按原请求重发 USDT 收款和银行卡支付参数的写操作：同命令号、同路径、同内容（OP-94）。 */
+export async function retryD1PendingCommand(commandKey: string) {
+  const pending = pendingMutations.list().find(value => value.commandKey === commandKey);
+  if (!pending || pending.base !== "finance" || pending.method === "GET"
+      || !(pending.path.startsWith("/cregis/") || pending.path === "/vietqr/config")) {
+    throw new Error("待重试的请求不存在或已过期，请刷新页面");
+  }
+  return apiRequest<unknown>(pending.base, pending.path, {
+    method: pending.method,
+    body: pending.body || undefined,
+    idempotencyPrefix: "d1-retry",
+    idempotencyKey: pending.commandKey,
+  });
+}
+
+/** 重试被明确拒绝、人核实过原操作后，只放开本页的锁，不发请求（OP-153）。 */
+export function releaseD1PendingCommand(commandKey: string) {
+  const pending = pendingMutations.list().find(value => value.commandKey === commandKey);
+  if (pending) pendingMutations.forget(pending.fingerprint, pending.commandKey);
+}
+
 function nextId(prefix: string) {
   requestSeq = (requestSeq + 1) % 1_000_000;
   return `${prefix}-${Date.now()}-${requestSeq}`;

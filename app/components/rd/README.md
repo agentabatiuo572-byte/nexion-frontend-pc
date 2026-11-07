@@ -33,7 +33,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 一组经营数字：每个都带对比和分项，要切时段 | `MetricBoard`、`MetricCard`；一张卡四层：名称、主数、对比一行、分项，层高都是定的，同排同高，切时段不跳版。分项是 `rows`（最多三行名称和值），或 `bar` 比例条：两样比哪样多，条下只写图例不写数，全是 0 时写 `bar.empty`。`MetricBoard` 的 `rows` 传这组卡各时段最多几行（比例条算两行），分项区按它留高。0、读不到（`state="failed"`，传 `onRetry`）、读取中（`state="loading"`）分开，没权限不渲染；两套主题 0 和「—」都弱化。整张可点传 `href`，名称行右边有箭头，悬停整张变亮。3、6 张三列，4 张够宽四列，不够两两一行，2 张两列，只有 2 张时分项限宽 360；这组卡任一时段有 8 位以上长金额时页面传 `long`（用导出的 `LONG` 算），内容区窄于 900 时两列，不缩字，切时段列数不变。对比行里可以放一个问号，不撑高这一行。目前只有今日概览用（PG-41），其他页用 `StatBand` | `metric.tsx` |
 | 一块内容 | `Panel`；已经在一个面板里的分区传 `plain`，不套底；`sub` 只放数据（范围、单位、数量、时间），解释传 `explain` 进标题旁的提示图标 | `panel.tsx` |
 | 区块标题、统计数字前的图标 | `IconTile`，`Panel`、`Stat` 传 `icon` 就有 | `icon-tile.tsx` |
-| 切不同内容 | `PageTabs`；`useTabIds` 一处给 id，内容包 `role="tabpanel"`，页签和面板互相指向 | `tabs.tsx` |
+| 切不同内容 | `PageTabs`；`useTabIds` 一处给 id，内容包 `role="tabpanel"`，页签和面板互相指向；`count` 写页签里要处理的数，0 弱化，读不到传「—」，数到上限传「50+」这类文字 | `tabs.tsx` |
 | 筛同一张表、切时间窗 | `Segments` | `tabs.tsx` |
 | 次要内容收起来 | `Fold`，`summary` 必填；区块的「查看…」传 `actions` 放标题行右侧，每块最多一个；这组怎么算传 `explain`，不在折叠里铺长段落 | `fold.tsx` |
 | 看板里要处理的事 | `TodoList`、`TodoItem`，读不到用 `TodoFailed`；目标页不可达时不传 `href`，这一行照样提醒，不能点、没有箭头，`sub` 写该找谁 | `todo-list.tsx` |
