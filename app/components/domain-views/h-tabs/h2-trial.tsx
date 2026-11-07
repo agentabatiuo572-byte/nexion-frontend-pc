@@ -173,7 +173,7 @@ function sessionTime(value: string | undefined, zoned = false) {
   return value ? `${formatBusinessTimeFull(value, "—")}${zoned ? `（${businessZone().label}）` : ""}` : "—";
 }
 
-/** 列表和框里中间省略，全值在悬停和抽屉里（ST-04）。编号开头都一样，留开头分不出谁是谁。 */
+/** 中间省略，全值在悬停和复制里（ST-04）。编号开头都一样，留开头分不出谁是谁。 */
 function shortSid(sid: string) {
   return sid.length > 24 ? `${sid.slice(0, 6)}…${sid.slice(-12)}` : sid;
 }
@@ -187,6 +187,8 @@ function stateTone(state: TrialState | undefined): StateTone {
   // 宽限中、已延长都是还在走的正常状态，不用人处理，不用橙黄（VS-107）。
   if (state?.key === "active" || state?.key === "grace" || state?.key === "extended") return "progress";
   if (state?.key === "idle") return "neutral";
+  // 扣款失败是历史结果，这条不用处理，不标红（DT-13）。
+  if (state?.key === "failed") return "done";
   return STATE_TONE[state?.tone ?? ""] ?? "neutral";
 }
 
@@ -295,13 +297,12 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, seatsLeft }
       ),
       amplifies: false,
       edit,
-      facts: isProduct ? <div className="rd-stack">
-        {productMissing && <Facts><Fact k="现在">{current || "未设置"}，不在可选列表</Fact></Facts>}
-        <div><Explain label="可选条件和商品编号" content={<>
+      facts: isProduct ? <Facts>
+        <Fact k="现在">{currentProduct?.name ?? (current || "未设置")}{productMissing && "，不在可选列表"}<Explain label="可选条件和商品编号" content={<>
           <p>{help?.howMore}</p>
           <RecordList label="可选商品编号" records={trialProducts.map((product) => ({ id: product.productNo, value: product.name, reference: product.productNo }))} />
-        </>}>可选条件和商品编号</Explain></div>
-      </div> : undefined,
+        </>} /></Fact>
+      </Facts> : undefined,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认修改，立即生效",
       // 标题行写影响谁（OP-48）。这是什么和显示位置在标题旁的提示图标里。
@@ -794,7 +795,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       </div>
 
       <Drawer open={!!currentRow} onClose={() => setCurrentSid(null)} title="试用记录" icon={History} tone="role-3"
-        sub={currentRow && <>{currentRow.session.sid} <IconButton aria-label="复制试用记录编号" data-size="sm" onClick={() => void navigator.clipboard?.writeText(currentRow.session.sid).then(() => toast("已复制试用记录编号", "success"), () => toast("复制失败，请手动选择编号", "error"))}><Copy size={13} aria-hidden /></IconButton></>}
+        sub={currentRow && <><span title={currentRow.session.sid}>{shortSid(currentRow.session.sid)}</span> <IconButton aria-label="复制试用记录编号" data-size="sm" onClick={() => void navigator.clipboard?.writeText(currentRow.session.sid).then(() => toast("已复制试用记录编号", "success"), () => toast("复制失败，请手动选择编号", "error"))}><Copy size={13} aria-hidden /></IconButton></>}
         nav={{ hasPrev: !loading && currentIndex > 0, hasNext: !loading && currentIndex >= 0 && currentIndex < sessions.length - 1, onPrev: () => setCurrentSid(sessions[currentIndex - 1].sid), onNext: () => setCurrentSid(sessions[currentIndex + 1].sid) }}
         footer={currentRow && !currentRow.terminal && canHandle ? (
           <Decision explain="强制取消用于怀疑刷试用等风控介入，要提交审批，超级管理员批准后才执行。强制扣款现在批准后也不会扣款，用户要购买只能自己确认。" others={sessionButtons(currentRow, "drawer").cancel} />
