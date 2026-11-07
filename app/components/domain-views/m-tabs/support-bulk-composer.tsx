@@ -134,7 +134,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
   }
   async function mutate(){if(!job||!mutationAction||!reasonRule.ok(mutationReason)||busy||pending)return;const payload=input??{selectionId:"result",intent:"SERVICE" as const,kind:"TEXT" as const,content:"",reason:mutationReason.trim()};const record:Stored={fingerprint:`${actorId}:${job.batchId}:${mutationAction}`,commandKey:crypto.randomUUID(),createdAt:Date.now(),expiresAt:Date.now()+86400000,actorId,payload,batchId:job.batchId,action:mutationAction,mutation:{expectedVersion:job.version,reason:mutationReason.trim()}};commands.remember(record.fingerprint,record.commandKey,{actorId,payload,batchId:record.batchId,action:record.action,mutation:record.mutation});setPending(record);if(!commands.isDurablyStored(record.fingerprint,record.commandKey))setError("原命令暂不能持久保存，尚未提交，请恢复存储后查询原操作。");}
   useEffect(()=>{if(pending?.action&&!busy)void submit(true);},[pending?.commandKey]);
-  const customerName=(id:string)=>identities[id]?`${userNicknameText(identities[id].nickname,undefined)} · ${identities[id].userNo}`:`客户编号 ${id}`;
+  const customerName=(id:string)=>identities[id]?`${userNicknameText(identities[id].nickname,undefined)} · ${identities[id].userNo}`:`系统编号 ${id}`;
   const recipientRecords=(preview:BulkPreview)=>preview.customers.map(c=>{const p=profiles[c.id];return {
     id:c.id, value:userNicknameText(String(identities[c.id]?.nickname??p?.identity.data?.nickname??"客户"),p?.identity.data?.phoneMasked),
     object:<>{identities[c.id]?.userNo??p?.identity.data?.userNo??"编码未知"} · 当前专属客服 {String(p?.service.data?.agentName??"当前本人（已核对）")}</>, reference:c.id,
@@ -150,7 +150,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
     {!historyOpen&&<>
     {step===1&&createBlocked&&<Notice tone="warn">{createBlocked}</Notice>}
     {step===1&&!createBlocked&&<><p className="m-bulk-head">筛选 <Explain label="哪些客户能群发" content="只发送当前本人客户；两种主动群发均排除“不再维护”。选择保持原名单，新匹配客户不会自动加入。"/></p><div className="m-bulk-filters">
-      <Field label="搜索昵称、手机号或用户编号">{control=><Input {...control} aria-label="搜索昵称、手机号或用户编号" value={filterDraft.keyword??""} onChange={e=>setFilter("keyword",e.target.value)}/>}</Field>
+      <Field label="搜索昵称、手机号或用户编码">{control=><Input {...control} aria-label="搜索昵称、手机号或用户编码" value={filterDraft.keyword??""} onChange={e=>setFilter("keyword",e.target.value)}/>}</Field>
       <Field label="账户活动">{control=><Select {...control} aria-label="账户活动" value={filterDraft.accountState??""} onChange={value=>setFilter("accountState",value)} options={[{value:"",label:"全部"},{value:"ACTIVE",label:"活跃"},{value:"DORMANT",label:"沉睡"},{value:"UNKNOWN",label:"未知"}]}/>}</Field>
       <Field label="维护状态">{control=><Select {...control} aria-label="维护状态" value={filterDraft.maintenanceState??""} onChange={value=>setFilter("maintenanceState",value)} options={[{value:"",label:"全部"},{value:"ENABLED",label:"正常维护"},{value:"DUE",label:"待维护"},{value:"STOPPED",label:"不再维护（仅核对）"}]}/>}</Field>
     </div><Fold inset title="更多筛选" explain={`日期按${businessZone().label}算。`} summary={moreCount?`${moreCount} 项已生效`:"等级、币种、时间、金额、标签"}><div className="m-bulk-filters">
