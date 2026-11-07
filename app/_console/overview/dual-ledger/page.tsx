@@ -471,7 +471,7 @@ export default function DualLedgerPage() {
                 <div className="muted tiny" style={{ marginTop: 7 }}>
                   储备够付应付款的 <b style={{ color: "var(--warning)", fontWeight: 600 }}>{fmtPct(coverageRatio)}</b>
                   {/* 「超 100% 已现盈余」只在严格大于 100% 时成立;等于 100% 是刚好覆盖、无盈余(zentao #169)。 */}
-                  {round2(coverageRatio - 100) > 0 ? "（有富余）" : round2(coverageRatio - 100) === 0 ? "（刚好够）" : "（不够付）"}，也就是当前兑付覆盖率
+                  {netExposure > 0 ? "（有富余）" : netExposure === 0 ? "（刚好够）" : "（不够付）"}，也就是当前兑付覆盖率
                 </div>
               </>
             )}

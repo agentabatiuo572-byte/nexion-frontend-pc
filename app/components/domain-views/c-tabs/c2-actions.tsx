@@ -13,12 +13,9 @@ import {
   fetchUserAccountActionAccount,
   fetchUserAccountActionContext,
   fetchUserAccountActionOverview,
-  getPendingUserSessionRevocation,
   isUsersRequestNotFound,
   UsersRequestError,
-  UsersOutcomeUnknownError,
   removeUserAccountList,
-  revokeUserAccountActionSessions,
   startUserImpersonation,
   terminateUserImpersonation,
   updateUserStatus,
@@ -31,6 +28,7 @@ import {
   type UserSession,
   type JsonRecord,
 } from "@/lib/admin/user360-client";
+import { pendingSessionRevocationApproval, proposeSessionRevocation } from "@/lib/admin/session-revocation-approval";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -206,7 +204,7 @@ function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
     const assets = jsonRecords(screen.assetSummary);
     const devices = jsonRecord(screen.deviceSummary);
     return <div data-testid="impersonation-home-screen">
-      <h3 style={{ margin: "14px 0 4px" }}>用户看到的首页</h3>
+      <h3 style={{ margin: "14px 0 4px" }}>首页数据</h3>
       <p style={{ margin: "0 0 12px", color: "var(--ink-3)" }}>{text(screen.greeting).replace(/^(你好，)(.+)$/, (_, greeting: string, name: string) => greeting + operatorNicknameText(name))}</p>
       <div className="row wrap" style={{ gap: 8 }}>{assets.map((asset) => <div className="ctint" key={nexGridBrandText(text(asset.symbol))}><b>{nexGridBrandText(text(asset.symbol))}</b><br />{formatAmount(asset.available)}</div>)}</div>
       <div className="kv"><span className="k">设备概况</span><span className="v">活跃 {text(devices.active, "0")} / 共 {text(devices.total, "0")}</span></div>
@@ -216,7 +214,7 @@ function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
   if (template === "H5_WALLET") {
     const assets = jsonRecords(screen.assets);
     return <div data-testid="impersonation-wallet-screen">
-      <h3 style={{ margin: "14px 0 8px" }}>用户看到的钱包</h3>
+      <h3 style={{ margin: "14px 0 8px" }}>钱包数据</h3>
       {assets.map((asset) => <div className="kv" key={nexGridBrandText(text(asset.symbol))}><span className="k">{nexGridBrandText(text(asset.symbol))} 可用</span><span className="v">{formatAmount(asset.available)}</span></div>)}
       <div className="ctint warn" style={{ marginTop: 10 }}>{text(screen.readOnlyHint)}</div>
     </div>;
@@ -224,14 +222,14 @@ function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
   if (template === "H5_DEVICES") {
     const devices = jsonRecords(screen.devices);
     return <div data-testid="impersonation-devices-screen">
-      <h3 style={{ margin: "14px 0 8px" }}>用户看到的设备</h3>
+      <h3 style={{ margin: "14px 0 8px" }}>设备数据</h3>
       <div className="kv"><span className="k">设备概况</span><span className="v">活跃 {text(screen.active, "0")} / 共 {text(screen.total, "0")}</span></div>
       {Boolean(screen.truncated) && <div className="ctint warn" style={{ marginBottom: 10 }}>该用户共有 {text(screen.total, "0")} 台设备，这里只显示最近 {text(screen.shown, String(devices.length))} 台。</div>}
       {devices.length > 0 ? <table className="l-tbl"><thead><tr><th>设备</th><th>状态</th><th>算力</th><th>日收益参考</th></tr></thead><tbody>{devices.map((device) => <tr key={text(device.instanceNo)}><td>{text(device.name)}<br /><span className="mono">{text(device.instanceNo)}</span></td><td>{formatC1DeviceStatus(device.status)}</td><td>{formatAmount(device.hashrate)}</td><td>{deviceDailyReference(device)}</td></tr>)}</tbody></table> : <p className="tiny">该用户暂无设备。</p>}
     </div>;
   }
   return <div data-testid="impersonation-profile-screen">
-    <h3 style={{ margin: "14px 0 8px" }}>用户看到的「我的」</h3>
+    <h3 style={{ margin: "14px 0 8px" }}>用户资料</h3>
     <div className="kv"><span className="k">用户编码</span><span className="v">{text(screen.userNo)}</span></div>
     <div className="kv"><span className="k">昵称</span><span className="v">{operatorNicknameText(text(screen.nickname))}</span></div>
     <div className="kv"><span className="k">账户状态</span><span className="v">{accountStatusLabel(screen.accountStatus)}</span></div>
@@ -246,7 +244,8 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const authorities = session?.authorities ?? [];
   const canFreeze = authorities.includes("user_c2_account_freeze");
   const canUnfreeze = authorities.includes("user_c2_account_unfreeze");
-  const canLogout = authorities.includes("user_c2_session_revoke_all");
+  const canLogout = authorities.includes("user_c2_session_revoke_all")
+    && authorities.some((authority) => ["platform_a2_write", "platform_a2_proposal_create"].includes(authority));
   const canStartImpersonation = authorities.includes("user_c2_impersonate_start");
   const canTerminateImpersonation = authorities.includes("user_c2_impersonate_terminate");
   const canManageLists = authorities.includes("user_c2_blocklist_add");
@@ -306,7 +305,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     setMirror(null);
     setMirrorToken("");
     setMirrorPage("HOME");
-    toast("模拟登录已到期，已自动关闭。");
+    toast("用户数据只读视图已到期，已自动关闭。");
     void loadOverview(true);
   }, [loadOverview, mirror, nowMs, toast]);
 
@@ -554,7 +553,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
 
   const logoutAll = (account: User360Profile, accountActiveCount?: number) => {
     const id = accountId(account);
-    const pending = getPendingUserSessionRevocation(id);
+    const pending = pendingSessionRevocationApproval(session!.adminId, id);
     const activeCount = accountActiveCount ?? sessionCounts.get(id) ?? 0;
     if (!pending && activeCount <= 0) {
       toast("该用户当前没有在线设备");
@@ -562,30 +561,18 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     }
     openActionConfirm({ briefKind: "security",
     action: `强制登出 · ${displayAccount(account)}`,
-    detail: pending ? "继续确认该用户的原登出操作，使用原理由，不会重复执行。" : `确认后该用户在 ${activeCount} 台设备上立即下线。`,
+    detail: pending ? "审批提交结果尚未确认，重试原操作会使用原理由和操作编号。" : `提交审批后，由另一位超级管理员批准，该用户的全部在线设备才会退出登录（当前 ${activeCount} 台）。`,
     amplifies: false,
-    completionCopy: "确认后立即生效。",
+    completionCopy: "批准后生效；提交审批不会立即退出设备。",
     reasonMin: 8,
     reasonMax: 200,
-    getPendingReason: () => getPendingUserSessionRevocation(id)?.reason,
+    getPendingReason: () => pendingSessionRevocationApproval(session!.adminId, id)?.reason,
     run: async (reason) => {
-      if (!id) throw new Error("该账户没有系统编号");
+      if (!id || !session) throw new Error("请选择账户并登录后再提交");
       setBusy(true);
       try {
-        try {
-          await revokeUserAccountActionSessions(id, reason, OPERATOR());
-        } catch (error) {
-          if (error instanceof UsersOutcomeUnknownError) {
-            throw new Error("原操作结果尚未确认，请重试原操作。系统会使用原理由，不会重复执行。");
-          }
-          throw error;
-        }
-        // A confirmed write stays successful even if the following reads fail.
-        await loadOverview(true);
-        if (acct) await refreshAccountContext(accountId(acct)).catch((error: unknown) => {
-          setAccountContextError(errorMessage(error));
-        });
-        toast(`${displayAccount(account)} 已强制登出`);
+        await proposeSessionRevocation(session, id, displayAccount(account), reason);
+        toast("已提交强制登出审批，批准后生效");
       } finally {
         setBusy(false);
       }
@@ -594,8 +581,8 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   };
 
   const startImp = () => openActionConfirm({ briefKind: "security",
-    action: "以用户身份只读查看",
-    detail: "确认后打开该用户看到的 App 页面，只能看不能改，到时间自动关闭。",
+    action: "用户数据只读视图",
+    detail: "确认后打开用户数据只读视图，只能看不能改，到时间自动关闭。",
     amplifies: false,
     completionCopy: "确认后立即生效。",
     reasonMin: 8,
@@ -624,8 +611,8 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
             setMirrorToken(accessToken);
             setMirrorPage("HOME");
             setMirror(await fetchImpersonationReadonlyView(accessToken, "HOME"));
-            return `已打开 ${displayAccount(target)} 的用户视角`;
-          }, "已打开用户视角");
+            return `已打开 ${displayAccount(target)} 的用户数据只读视图`;
+          }, "已打开用户数据只读视图");
         } catch (err) {
           toast(errorMessage(err));
         }
@@ -789,7 +776,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         || asNumber(overview?.totalImpersonations) > impersonations.length
       ) && (
         <div className="ctint" style={{ marginBottom: 12 }}>
-          当前显示最近的记录：账户 {accounts.length}/{asNumber(overview?.totalAccounts)}、名单 {listRows.length}/{asNumber(overview?.totalAccountLists)}、会话 {sessions.length}/{asNumber(overview?.totalSessions)}、模拟登录 {impersonations.length}/{asNumber(overview?.totalImpersonations)}；上方统计值来自全量聚合，不受展示上限影响。
+          当前显示最近的记录：账户 {accounts.length}/{asNumber(overview?.totalAccounts)}、名单 {listRows.length}/{asNumber(overview?.totalAccountLists)}、会话 {sessions.length}/{asNumber(overview?.totalSessions)}、用户数据只读视图 {impersonations.length}/{asNumber(overview?.totalImpersonations)}；上方统计值来自全量聚合，不受展示上限影响。
         </div>
       )}
 
@@ -807,6 +794,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
                   const status = statusOf(account);
                   const [label, tone] = statusMeta(status);
                   const locked = status === "FROZEN";
+                  const pendingLogout = session ? pendingSessionRevocationApproval(session.adminId, accountId(account)) : undefined;
                   return (
                     <tr className={`click${locked ? " frozen-row" : ""}`} key={accountId(account)} onClick={() => openAccount(account)}>
                       <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{text(account.userNo, accountId(account))}{" "}
@@ -824,8 +812,8 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         {status === "ACTIVE" && canFreeze && <button disabled={busy} className="l-btn sm mc" aria-label={`冻结 ${displayAccount(account)}`} onClick={(e) => { e.stopPropagation(); freeze(account); }}>冻结</button>}
                         {status === "FROZEN" && canUnfreeze && <button disabled={busy} className="l-btn sm mc" aria-label={`恢复 ${displayAccount(account)}`} onClick={(e) => { e.stopPropagation(); unfreeze(account); }}>恢复</button>}
-                        {canLogout && <button disabled={busy || !!error || (!getPendingUserSessionRevocation(accountId(account)) && (sessionCounts.get(accountId(account)) ?? 0) <= 0)} className="l-btn sm" aria-label={`强制登出 ${displayAccount(account)}`} style={{ marginLeft: 6 }} onClick={(e) => { e.stopPropagation(); logoutAll(account); }}>强制登出</button>}
-                        {!canFreeze && !canUnfreeze && !canLogout && <span className="tiny">只读</span>}
+                        {(canLogout || pendingLogout) && <button disabled={busy || (!pendingLogout && (!!error || (sessionCounts.get(accountId(account)) ?? 0) <= 0))} className="l-btn sm" aria-label={`强制登出 ${displayAccount(account)}`} style={{ marginLeft: 6 }} onClick={(e) => { e.stopPropagation(); logoutAll(account); }}>{pendingLogout ? "重试原操作" : "强制登出"}</button>}
+                        {!canFreeze && !canUnfreeze && !canLogout && !pendingLogout && <span className="tiny">只读</span>}
                       </td>
                     </tr>
                   );
@@ -848,7 +836,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
 
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">以用户身份只读查看</span>
+            <span className="ttl">用户数据只读视图</span>
             <span className="sub">· 用于复现用户反馈的问题</span>
             <div className="r">{canStartImpersonation && <button disabled={busy} className="l-btn mc" onClick={startImp}>开始查看</button>}</div>
           </div>
@@ -874,7 +862,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
             {!loading && impersonations.length === 0 && (
               <div style={{ fontSize: 12, color: "var(--ink-4)", lineHeight: 1.55 }}>暂无记录。</div>
             )}
-            <div className="ctint warn" style={{ marginTop: 12, fontSize: 12 }}><b>只能看，不能改</b> · 看到的就是用户在 App 里看到的页面，所有修改操作都会被拒绝。</div>
+            <div className="ctint warn" style={{ marginTop: 12, fontSize: 12 }}><b>只能看，不能改</b> · 这里显示该用户的数据，不是用户看到的 App 页面；所有修改操作都会被拒绝。</div>
           </div>
         </section>
       </div>
@@ -927,7 +915,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         />
       </section>
 
-      {freezeProposalOnly && <p className="f-foot">你的冻结和恢复操作提交后，需在「操作记录与审批」确认才生效；强制下线立即生效。</p>}
+      {freezeProposalOnly && <p className="f-foot">你的冻结和恢复操作提交后，需在「操作记录与审批」确认才生效；全设备强制下线需另一位超级管理员批准后生效。</p>}
 
       {selectedAccount && (() => {
         const status = statusOf(selectedAccount);
@@ -938,6 +926,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           : accountSessions.filter(activeSession).length;
         const listEntry = listFor(selectedAccount);
         const controlFact = controlFactFor(selectedAccount);
+        const pendingLogout = session ? pendingSessionRevocationApproval(session.adminId, accountId(selectedAccount)) : undefined;
         return (
           <Drawer
             title={`账户明细 · ${displayAccount(selectedAccount)}`}
@@ -995,7 +984,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
             <div className="row wrap" style={{ gap: 8 }}>
               {status === "ACTIVE" && canFreeze && <button disabled={busy || !!accountContextError} className="l-btn sm mc" aria-label={`冻结 ${displayAccount(selectedAccount)}`} onClick={() => freeze(selectedAccount)}>冻结</button>}
               {status === "FROZEN" && canUnfreeze && <button disabled={busy || !!accountContextError} className="l-btn sm mc" aria-label={`恢复 ${displayAccount(selectedAccount)}`} onClick={() => unfreeze(selectedAccount)}>恢复</button>}
-              {canLogout && <button disabled={busy || !!error || !!accountContextError || (!getPendingUserSessionRevocation(accountId(selectedAccount)) && activeCount <= 0)} className="l-btn sm" aria-label={`强制登出 ${displayAccount(selectedAccount)}`} onClick={() => logoutAll(selectedAccount, activeCount)}>强制登出</button>}
+              {(canLogout || pendingLogout) && <button disabled={busy || (!pendingLogout && (!!error || !!accountContextError || activeCount <= 0))} className="l-btn sm" aria-label={`强制登出 ${displayAccount(selectedAccount)}`} onClick={() => logoutAll(selectedAccount, activeCount)}>{pendingLogout ? "重试原操作" : "强制登出"}</button>}
             </div>
           </Drawer>
         );
@@ -1022,9 +1011,9 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       )}
 
       {mirror && (
-        <Drawer title={`用户视角（只读）· ${text(jsonRecord(mirror.user).userNo)}`} onClose={() => { setMirror(null); setMirrorToken(""); }}>
+        <Drawer title={`用户数据只读视图 · ${text(jsonRecord(mirror.user).userNo)}`} onClose={() => { setMirror(null); setMirrorToken(""); }}>
           <div className="ctint warn" style={{ marginBottom: 12 }}>
-            <b>正在以用户身份只读查看</b>　剩余 <b className="inline-block min-w-[5ch] tabular-nums" data-testid="impersonation-countdown">{formatCountdown(mirrorRemainingSeconds)}</b> · 到期 {formatDate(mirror.expiresAt)}
+            <b>用户数据只读视图</b>　剩余 <b className="inline-block min-w-[5ch] tabular-nums" data-testid="impersonation-countdown">{formatCountdown(mirrorRemainingSeconds)}</b> · 到期 {formatDate(mirror.expiresAt)}
             <div style={{ marginTop: 6 }}>点右上角关闭只是收起窗口，计时仍在继续；看完请点「退出并结束」。</div>
           </div>
           <ImpersonationUserScreen screen={jsonRecord(mirror.screen)} />

@@ -13,7 +13,7 @@ export const DOMAIN_C: ModuleEntry[] = [
   },
   {
     path: "/users/actions",
-    summary: "冻结或解冻账户、强制下线、以用户身份只读查看、管理信任和禁入名单。冻结后，该用户进行中的提现会一并冻结并强制下线；只读查看最长 30 分钟。",
+    summary: "冻结或解冻账户、强制下线、打开用户数据只读视图、管理信任和禁入名单。冻结后，该用户进行中的提现会一并冻结并强制下线；只读查看最长 30 分钟。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

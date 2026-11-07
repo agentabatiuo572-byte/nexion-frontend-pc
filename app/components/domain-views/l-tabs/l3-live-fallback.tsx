@@ -94,7 +94,7 @@ export function L3LiveFacts({ facts, snapshot }: { facts: L3LiveFact[]; snapshot
       <section className="l-card">
         <div className="l-b">
           <div className="ltint warn" style={{ fontSize: 12 }}>
-            <b>部分统计还没接入</b> · 现在能看资金池、应付款明细、7 天内到期和钱包账单；收入明细、兑付率历史和多周期趋势还没有，页面不会估算这些数字。
+            <b>部分统计还没接入</b> · 现在能看资金池、应付款明细、7 天内到期和钱包账单；收入明细、本期确认 / 本期申请的历史和多周期趋势还没有，页面不会估算这些数字。
           </div>
           <div className="ltint" style={{ fontSize: 12, marginTop: 10 }}>
             <b>导出范围</b> · 「财务汇总」包含本页的资金池、应付款明细、7 天内到期和钱包账单，不含用户级明细。有权限的人可以申请资金明细（已隐藏隐私），需要审批，下载链接限时有效。

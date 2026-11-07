@@ -58,7 +58,7 @@ export function ExposureCard() {
       </div>
       <div className="flex items-center justify-between gap-3 py-1 text-[12.5px]">
         <span style={{ color: "var(--v5-ink-3)" }}>告警渠道</span>
-        <span style={{ color: "var(--v5-ink-2)" }}>站内 + 邮件</span>
+        <span style={{ color: "var(--v5-ink-2)" }}>站内</span>
       </div>
       <Link href="/overview/dual-ledger" prefetch={false} className="mt-3 inline-flex text-[12.5px]" style={{ color: "var(--v5-brand)" }}><AutoGloss>查看资金总览 →</AutoGloss></Link>
     </div>
