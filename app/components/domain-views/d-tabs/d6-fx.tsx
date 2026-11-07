@@ -240,7 +240,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       await sendCommand(record, record);
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
-      setPendingNote(`重试没有成功：${displayAdminError(cause)} ${RETRY_REJECTED}`);
+      setPendingNote(`重试没有成功：${displayAdminError(cause)}${RETRY_REJECTED}`);
       setRetryRejected(true);
     } finally {
       setRetrying(false);
@@ -368,7 +368,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
         {retryRejected && !expired && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除待确认</Button>}
       </>}>
         {formatBusinessTimeFull(new Date(pending.createdAt).toISOString(), "—")}（{zone}）把{param.label}改成 {valueText(pending.param, pending.after)} 的修改可能已经生效，{data ? "下面是重新读到的值。" : ""}确认前不能再改。
-        {expired ? ` ${expiredText}` : !canManage ? ` ${NO_WRITE}。` : ""}
+        {expired ? expiredText : !canManage ? `${NO_WRITE}。` : ""}
         {canAudit && <> <Link className="rd-link" href="/platform/audit?domain=D&object=VND_USDT" prefetch={false}>到操作记录与审批核查</Link></>}
         <Explain label="技术信息" content={`命令号 ${pending.commandKey} ｜ 原版本 ${pending.expectedVersion} ｜ 理由 ${pending.reason}`} />
         {pendingNote && <div>{pendingNote}</div>}
