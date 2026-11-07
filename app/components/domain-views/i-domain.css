@@ -102,6 +102,7 @@
 
 /* 原始 JSON 用等宽字，缩进才对得齐（DT-08）。 */
 .rd-doc p[data-mono] { font-family: var(--rd-font-mono); }
+.i5-region-table th:last-child { width: 1%; }  /* 这张表只有五列，操作列只占按钮的宽，多出来的宽度给前面的列 */
 
 /* 标题栏的三个点贴到右边线，和表格行内同一个做法，图标按钮自带的留白不算。 */
 .idom .rd-panel-actions > .rd-iconbtn:last-child { margin-right: -8px; }

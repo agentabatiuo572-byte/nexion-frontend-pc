@@ -619,10 +619,11 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   if (contentLoading && !data) return <BlockState state="loading" title="风险披露数据加载中…" />;
   if (!data) return <BlockState state="error" title="风险披露读取失败" detail={errorText ?? "暂时读不到，请稍后重试。"} onRetry={() => void refresh()} retrying={refreshing} />;
 
-  /** 同一个版本全页一个词一个颜色（VS-23）：映射着的写生效中，封存但没切换的写已发布。 */
+  /** 同一个版本全页一个词一个颜色（VS-23）：映射已发布、版本可读、引用没有异常才写生效中，其余写真实状态；封存但没切换的写已发布。 */
   const versionState = (row: DisclosureVersionItemView): { text: string; tone: StateTone } => {
     const status = row.status.toLowerCase();
-    if (isLive(jurisdictions.find((item) => item.code === row.jurisdiction), row.version)) return { text: "生效中", tone: "ok" };
+    const mapping = jurisdictions.find((item) => item.code === row.jurisdiction);
+    if (mapping?.status.toLowerCase() === "published" && mapping.version === row.version && ["published", "superseded"].includes(status) && !issues.has(row.jurisdiction)) return { text: "生效中", tone: "ok" };
     return { text: statusZh(row.status), tone: status === "draft" ? "neutral" : status === "published" ? "progress" : "done" };
   };
   const stats = data.stats;
@@ -737,7 +738,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       {[...issues].map(([code, issue]) => (
         <div className="rd-panel-line" key={code} data-proof="disclosure-publication-issue"><Notice tone="danger" title={`${code} 引用异常`}>{issue}</Notice></div>
       ))}
-      <Table label="各地区生效版本">
+      <Table label="各地区生效版本" className={canPublish ? "i5-region-table" : undefined}>
         <thead><tr><Th>适用地区</Th><Th>当前版本</Th><Th>状态</Th><Th>重新确认进度</Th>{canPublish && <Th align="right">操作</Th>}</tr></thead>
         <tbody>
           {jurisdictions.map((j) => {
