@@ -790,7 +790,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       }
       case "note":
         return sendCommand(record, (key) => ctx.actions.updateK1ClusterReviewNote(target, record.version!, reason, key),
-          () => reloadAfter(`${target} 复审备注已保存`, `${target} 复审备注已保存，但页面刷新失败；请点「重新加载」核对`));
+          () => reloadAfter(`${target} 复审备注已保存`, `${target} 复审备注已保存，但页面刷新失败；请点「重试」核对`));
       case "param":
         return sendCommand(record, (key) => ctx.actions.updateK1Param(target, record.value!, reason, key),
           () => reloadAfter(`${name}已更新为 ${record.value}`, `${name}已保存，但暂时无法读取最新数据；请刷新本页核对`));
@@ -811,10 +811,10 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         });
       case "whitelist-add":
         return sendCommand(record, (key) => ctx.actions.upsertK1Whitelist(target, record.note!, reason, record.expireText!, key),
-          () => reloadAfter("已加入允许名单", "已加入允许名单，但页面刷新失败；请点「重新加载」核对"));
+          () => reloadAfter("已加入允许名单", "已加入允许名单，但页面刷新失败；请点「重试」核对"));
       case "whitelist-remove":
         return sendCommand(record, (key) => ctx.actions.disableK1Whitelist(target, reason, key),
-          () => reloadAfter("已从允许名单移除", "已从允许名单移除，但页面刷新失败；请点「重新加载」核对"));
+          () => reloadAfter("已从允许名单移除", "已从允许名单移除，但页面刷新失败；请点「重试」核对"));
     }
   };
 
@@ -965,7 +965,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     if (action === "flag") {
       const label = `标记可疑账户组 · ${c.id}`;
       return { ...common, label, action: label, title: "标记可疑账户组", briefKind: "judgment",
-        detail: "只标记为可疑，账户不冻结，提现限制和新增收益的处理都不变，保留操作记录。",
+        detail: "",
         statedBrief: { impact: "批准后这组变成可疑，账户不冻结，提现限制和新增收益的处理都不变。", check: "确认对象、证据和结论，理由写清依据或工单号。" },
         facts: clusterFacts(c, { changed }) };
     }
@@ -973,7 +973,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       const label = `批量冻结关联账户 · ${c.id}`;
       const missing = c.n - c.nodes.length;
       return { ...common, label, action: label, title: "批量冻结关联账户", briefKind: "security",
-        detail: `冻结这组里状态正常的账户。请填写原因，会记入操作记录。`,
+        detail: "",
         statedBrief: {
           impact: "批准后这组里状态正常的账户全部冻结，退出登录，待处理的提现暂停。",
           check: missing > 0 ? `这里读不到其中 ${missing} 个账户，核对不全。核对已读到的账户和证据，理由写清依据或工单号。` : "核对账户清单和证据，理由写清依据或工单号。",
@@ -985,7 +985,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       const frozen = c.status === "frozen";
       return { ...common, label, action: label, title: "解除误判", briefKind: "funds",
         effect: K1_DISPOSITION_EFFECT,
-        detail: "解除后，这些账户可能有更多收益可以提现。请核对影响并写明原因。",
+        detail: "",
         statedBrief: {
           impact: `批准后${frozen ? "解除因这组冻结的账户，" : ""}这组不再按风险状态限制提现和新增收益，改按同组账号数判断。`,
           check: "核对账户、证据和触发的风险规则。",
@@ -996,7 +996,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     const label = `判定为正常 · ${c.id}`;
     return { ...common, label, action: label, title: "判定为正常", briefKind: "judgment",
       effect: K1_DISPOSITION_EFFECT,
-      detail: "这组不再算监控中，提现和新增收益改按同组账号数判断。请填写判定依据。",
+      detail: "",
       statedBrief: { impact: "批准后这组不再算监控中，提现和新增收益改按同组账号数判断。", check: "核对账户和证据。" },
       facts: clusterFacts(c, { changed, money: "可提现的钱可能变多", coverage: true }) };
   };
@@ -1052,7 +1052,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     ctx.openActionConfirm({ briefKind: "funds",
       action: `人工放行收益 · ${entry.entryNo}`,
       title: "人工放行收益",
-      detail: `这笔收益现在是「${entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}」，放行后解除这笔的待审或锁定状态。`,
+      detail: "",
       amplifies: true,
       confirmTone: "danger",
       statedBrief: { impact: "立即解除这笔收益的待审或锁定状态，记入操作记录。", check: "核对用户、金额和所属账户组。提交时会先检查兑付覆盖率。" },
@@ -1182,7 +1182,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       action: `移出允许名单 · ${cidr}`,
       title: "移出允许名单",
       facts: <Facts><Fact k="网段"><span data-mono="">{cidr}</span></Fact></Facts>,
-      detail: "移除后该网段恢复同 IP 多账户检测。",
+      detail: "",
       statedBrief: { impact: "这个网段恢复按 IP 检测。下次检查可能重新成组，新组不能提现、新增收益锁定；账户不会自动冻结。移除属于收紧，不受新增名单的覆盖率门槛阻断。", check: "确认网段和授权来源，理由写清工单号和处理依据。" },
       effect: IMMEDIATE_EFFECT,
       confirmLabel: "立即移除",
@@ -1258,7 +1258,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
   const overviewState = (
     overviewFailed
-      ? <BlockState state="error" title={tab === "rules" ? "规则和名单读取失败" : "账户组读取失败"} detail={`${readFailureText(ctx.contentError)}为避免误操作，已隐藏数据和操作按钮`} onRetry={reloadOverview} retrying={ctx.contentLoading} retryLabel="重新加载" />
+      ? <BlockState state="error" title={tab === "rules" ? "规则和名单读取失败" : "账户组读取失败"} detail={`${readFailureText(ctx.contentError)}为避免误操作，已隐藏数据和操作按钮。`} onRetry={reloadOverview} retrying={ctx.contentLoading} />
       : <BlockState state="loading" title="多账户风险数据加载中" detail="请稍候" />
   );
 
@@ -1527,12 +1527,12 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 {overviewReady.registrationParams.length ? <ConfigList>
                   {overviewReady.registrationParams.map((param) => <ConfigRow key={param.key} name={param.name} what={h5ParamDesc(param.desc, param.unit)} value={h5ParamValue(param.value, param.unit)}
                     action={param.writable ? paramAction(param.name, blockedBy("param", param.key), () => ctx.openActionConfirm({
-                      briefKind: "config", action: `调整${param.name}`, title: `调整 ${param.name}`, detail: h5ParamDesc(param.desc, param.unit),
+                      briefKind: "config", action: `调整${param.name}`, title: `调整 ${param.name}`, detail: "",
                       statedBrief: { impact: h5ParamDesc(param.desc, param.unit), check: "核对参数、当前值和新值，理由写明调整依据。" },
                       edit: param.unit === "0/1"
                         ? { kind: "select", current: param.value, options: ["1", "0"], optionLabels: H5_SWITCH_LABELS, disallowCurrent: true }
                         : { kind: "number", current: param.value, unit: accountUnit(param.unit), min: param.min, max: param.max, step: 1, maxDecimals: 0, disallowCurrent: true, hint: `${param.min}–${param.max} 的整数` },
-                      effect: IMMEDIATE_EFFECT, confirmLabel: "保存并立即生效", reasonMax: 200,
+                      effect: IMMEDIATE_EFFECT, confirmLabel: "保存并立即生效", reasonPlaceholder: "写清调整原因和依据", reasonMax: 200,
                       run: (reason, value) => runRecord({ kind: "registration-param", target: param.key, name: param.name, label: `调整${param.name}`, operator, reason, value, expectedValue: param.value }),
                     })) : undefined} />)}
                 </ConfigList> : <p className="rd-note">暂无已配置的 H5 注册参数。</p>}
