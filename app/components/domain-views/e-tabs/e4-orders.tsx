@@ -217,7 +217,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
                       <Td sticky="start"><Cell mono full main={<button type="button" className="rd-cell-link" data-e4-order-trigger title={order.id} aria-label={`查看订单 ${order.id}`} aria-haspopup="dialog" onClick={() => ctx.openOrder(order)}>{shortNo(order.id)}</button>} /></Td>
                       <Td><Cell main={<StatusTag tone={ORDER_STATE_TONE[state] ?? "neutral"}>{stateLabel(state)}</StatusTag>} sub={order.pendingApproval ? <StatusTag tone="warn">待审批</StatusTag> : STATE_NEXT[state]} /></Td>
                       {columns.isVisible("user") && <Td><Cell mono main={order.user} /></Td>}
-                      {columns.isVisible("sku") && <Td><Cell main={order.sku} title={order.sku} /></Td>}
+                      {columns.isVisible("sku") && <Td className="e4-sku"><Cell main={order.sku} title={order.sku} /></Td>}
                       {columns.isVisible("amount") && <Td align="right"><Cell num main={orderAmount(order.amt, amountDigits)} /></Td>}
                       {columns.isVisible("dc") && <Td><Cell main={order.dc} title={order.dc} /></Td>}
                       {columns.isVisible("age") && <Td align="right"><Cell num main={ORDER_FINAL_STATES.includes(state) ? "—" : order.age} /></Td>}
@@ -336,8 +336,8 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const reasonHint = "写清依据或工单号。只记在操作记录里，用户看不到";
   // 购买设备和促销赠品走不同的退款路径；数组存在时不再用旧标量推断设备是否生成。
   const purchaseDevices = e4Detail?.devices?.filter((device) => device.kind === "PURCHASE");
-  const refundDeviceLine = purchaseDevices == null ? "购买设备明细未提供，执行时按实际持有状态处理"
-    : purchaseDevices.length ? "购买设备按持有状态停用，已到账的设备收益不扣回" : "尚未生成购买设备，退款后不再开通";
+  const refundDeviceLine = purchaseDevices == null ? "明细未提供，执行时按实际持有状态处理"
+    : purchaseDevices.length ? "按持有状态停用，已到账的收益不扣回" : "尚未生成，退款后不再开通";
   const refundDeviceDetail = `退款后用户钱包多这笔钱，平台的应付款跟着增加。购买设备只处理仍属于原购买者、且未退款或回收的设备：标为已退款并停用，不再产生新收益。赠品设备按促销奖励售后规则单独处理，不计入购买设备停用范围。${e4Detail?.orderType === "TRIAL_CONVERT" ? "转购买时发的试用奖励按当时的规则处理，最多收回钱包里没花掉的部分。" : ""}活动奖励按活动规则处理。`;
 
   // 具体原因只从状态轨迹取，状态本身证明不了原因。
@@ -394,7 +394,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
           const channels = e4Detail.refundChannels.length ? e4Detail.refundChannels : ["WALLET"];
           // 只有一个去向时没得选，写成事实，不给下拉（OP-126）。
           const channel = channels.length === 1 ? channels[0] : undefined;
-          const reasonField = { key: "refundReasonCode", label: channel ? "退款原因" : "退款原因（用户可见）", current: "", inputKind: "select" as const, options: ["", ...E4_REFUND_REASONS], optionLabels: { "": "请选择退款原因", ...E4_REFUND_REASON_LABELS }, required: true, wide: !!channel };
+          const reasonField = { key: "refundReasonCode", label: "退款原因（用户可见）", current: "", inputKind: "select" as const, options: ["", ...E4_REFUND_REASONS], optionLabels: { "": "请选择退款原因", ...E4_REFUND_REASON_LABELS }, required: true, wide: !!channel };
           openActionConfirm({
             // 标题只写动作，单号进事实区；name 照旧记进操作记录（VS-101）。
             // amplify 只管框里的覆盖率提示：那句写「提交时检查」，后端实际在批准执行时才查，所以覆盖率写进事实区。提案里的 amplifies 照旧是 true。
@@ -406,7 +406,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
                 {channel && <Fact k="退款去向">{REFUND_CHANNEL_LABELS[channel] ?? channel}</Fact>}
                 {/* 退款入口只在读到覆盖率时开。 */}
                 <Fact k="覆盖率"><Change from={fmtPct(e4Detail.coverageCurrent!)} to={fmtPct(e4Detail.coverageProjected!)} /><span className="rd-fact-unit">红线 {e4Detail.coverageRedline}%</span><Explain label="覆盖率什么时候检查" content="批准执行时后端再查一次，当前或执行后低于红线就不退款。" /></Fact>
-                <Fact k="设备">{refundDeviceLine}<Explain label="退款后设备和收益怎么处理" content={refundDeviceDetail} /></Fact>
+                <Fact k="购买设备">{refundDeviceLine}<Explain label="退款后设备和收益怎么处理" content={refundDeviceDetail} /></Fact>
                 {e4Detail.orderType === "TRIAL_CONVERT" && <Fact k="试用奖励">这单发给购买者的试用奖励可能追回，金额以执行结果为准<Explain label="试用奖励追回规则" content="按整期结算转购发出的试用奖励，退款后最多收回未花掉的部分；未追回部分转人工核查。" /></Fact>}
               </>, true)}
               <section>
@@ -415,7 +415,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
               </section>
             </div>,
             businessForm: channel
-              ? { kind: "multi-field", title: "用户可见的原因", fields: [reasonField] }
+              ? { kind: "multi-field", fields: [reasonField] }
               : { kind: "multi-field", title: "退款渠道与原因", fields: [
                 { key: "refundChannel", label: "退款渠道", current: channels[0], inputKind: "select", options: channels, optionLabels: REFUND_CHANNEL_LABELS, required: true, showDiff: true },
                 reasonField,
@@ -428,14 +428,14 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
             statedBrief: { impact: "订单终止，占用的库存放回。用户没付款，不涉及退款", check: "核对订单和取消原因，理由写清依据或工单号。" },
             facts: orderFacts(<Fact k="当前状态">{stateLabel(eff)}</Fact>),
             detail: `取消 ${o.id}（${stateLabel(eff)}）。用户还没付款，取消后订单终止。`,
-            businessForm: { kind: "multi-field", title: "用户可见的原因", fields: [
-              { key: "closeReasonCode", label: "取消原因", current: "", inputKind: "select", options: ["", ...E4_CLOSE_REASONS.cancelled], optionLabels: { "": "请选择取消原因", ...E4_CLOSE_REASON_LABELS }, required: true, wide: true },
+            businessForm: { kind: "multi-field", fields: [
+              { key: "closeReasonCode", label: "取消原因（用户可见）", current: "", inputKind: "select", options: ["", ...E4_CLOSE_REASONS.cancelled], optionLabels: { "": "请选择取消原因", ...E4_CLOSE_REASON_LABELS }, required: true, wide: true },
             ] } })}>取消订单</Button>}
           {canWriteE4 && terminalOptions.length > 0 && <Button disabledReason={waitReason} onClick={() => {
             // 已支付只能拒付，开通中只能开通失败：只有一个结果时写成事实，不给下拉（OP-126）。
             const only = terminalOptions.length === 1 ? terminalOptions[0] : undefined;
             const reasonFields = terminalOptions.filter((s) => E4_CLOSE_REASONS[s]).map((s) => (
-              { key: "closeReasonCode", label: only ? "失败原因" : "原因（用户可见）", current: "", inputKind: "select" as const, options: ["", ...E4_CLOSE_REASONS[s]], optionLabels: { "": "请选择原因", ...E4_CLOSE_REASON_LABELS }, required: true, wide: !!only, visibleWhen: only ? undefined : { key: "terminalState", equals: s } }));
+              { key: "closeReasonCode", label: only ? "失败原因（用户可见）" : "原因（用户可见）", current: "", inputKind: "select" as const, options: ["", ...E4_CLOSE_REASONS[s]], optionLabels: { "": "请选择原因", ...E4_CLOSE_REASON_LABELS }, required: true, wide: !!only, visibleWhen: only ? undefined : { key: "terminalState", equals: s } }));
             openActionConfirm({ briefKind: "record", name: "标记失败结果 · " + o.id, title: "标记失败结果", op: "order-terminal", orderId: o.id, amplify: false, fixedVal: only, effect: irreversibleApproval, confirmLabel: "提交审批", confirmTone: "danger", reasonPlaceholder: reasonHint,
               statedBrief: { impact: TERMINAL_IMPACT[eff], check: "核对失败结果和原因，理由写清依据或工单号。" },
               facts: orderFacts(only ? <Fact k="状态变化"><Change from={stateLabel(eff)} to={stateLabel(only)} /></Fact> : <Fact k="当前状态">{stateLabel(eff)}</Fact>,
@@ -446,7 +446,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
                   { key: "terminalState", label: "失败结果", current: "", inputKind: "select", options: ["", ...terminalOptions], optionLabels: { "": "请选择失败结果", ...Object.fromEntries(terminalOptions.map((s) => [s, stateLabel(s)])) }, required: true },
                   ...reasonFields,
                 ] }
-                : reasonFields.length > 0 ? { kind: "multi-field", title: "用户可见的原因", fields: reasonFields } : undefined });
+                : reasonFields.length > 0 ? { kind: "multi-field", fields: reasonFields } : undefined });
           }}>标记失败结果</Button>}
         </>}
         primary={nextState && <Button variant="primary" disabledReason={waitReason} onClick={() => openActionConfirm({ briefKind: "record", name: `推进订单 · ${o.id} → ${stateLabel(nextState)}`, title: "推进订单", op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, effect: approvalTag, confirmLabel: "提交审批", reasonPlaceholder: reasonHint,
@@ -459,7 +459,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
       {pendingApproval && <Notice tone="warn" title="这单已有待审批操作">批准后才执行原操作。审批结束后才能发起新操作。<E4PendingApprovalDetails approval={pendingApproval} /></Notice>}
       {e4DetailError && <BlockState state="error" title="详情加载失败" detail={`${e4DetailError} · 为避免按旧数据操作，已暂停处理。`} onRetry={() => ctx.openOrder(o)} />}
       <JudgmentPoints rows={rows} />
-      <Fold inset title="订单信息" icon={Package} tone="devices" open={infoOpen} onOpenChange={setInfoOpen} summary={infoOpen ? undefined : `${o.dc === "—" ? "未分配数据中心" : o.dc} · 下单 ${o.age} 前`}>
+      <Fold inset title="订单信息" icon={Package} tone="devices" open={infoOpen} onOpenChange={setInfoOpen} summary={infoOpen ? undefined : `${o.dc === "—" ? "未分配数据中心" : o.dc} · 下单 ${o.age}前`}>
         <Facts>
           <Fact k="数据中心">{o.dc}</Fact>
           <Fact k="下单时间">{o.orderedAt ? `${formatBusinessTimeFull(o.orderedAt, "—")}（${businessZone().label}）` : "—"}</Fact>

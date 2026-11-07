@@ -590,3 +590,10 @@
 
 /* ===== 订单进度：退款框里促销奖励的后果句。给人读的句子，14px 次文字，不和金额同档（VS-105） ===== */
 .e4-refund-outcome { margin: 8px 0 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); }
+/* 退款框要一屏放下（DP-06）：一条奖励一行，金额、对象、结果从左到右。RecordList 没有紧凑写法，这里顶着，缺口写在 REVIEW。 */
+.e4-refund-rewards .rd-record { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 0 var(--rd-space-3); padding-block: var(--rd-space-1); }
+.e4-refund-rewards .rd-record-main { display: contents; }
+.e4-refund-rewards .rd-record-meta { order: 1; margin-top: 0; }
+.e4-refund-rewards .rd-record-status { order: 2; }
+/* 1024 时六列放得下：组合商品最长，单行省略，全文在悬停里（ST-04）。 */
+@media (max-width: 1100px) { .e4-sku .rd-cell { max-width: 200px; } }
