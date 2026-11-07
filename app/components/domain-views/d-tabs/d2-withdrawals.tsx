@@ -234,10 +234,15 @@ function ruleSummary(value?: string) {
   return localized === "—" ? "无" : localized;
 }
 
+/** 风险原因是后端拼的一串，「 | 」「;」都分隔过，一条规则一条。 */
+function riskReasons(row: D2Withdrawal) {
+  return (row.riskReason ?? "").split(/\s*[|;]\s*/).filter(Boolean).map(operationalText);
+}
+
 /** 命中规则的白话：优先用风险原因，规则码翻不出来时才退回码本身的翻译。 */
 function hitRulesText(row: D2Withdrawal) {
-  const reason = operationalText(row.riskReason);
-  return reason === "—" || reason.includes("未知") ? ruleSummary(row.hitRules) : reason;
+  const reasons = riskReasons(row);
+  return !reasons.length || reasons.some((reason) => reason.includes("未知")) ? ruleSummary(row.hitRules) : reasons.join("、");
 }
 
 const REJECT_REASON_LABELS: Record<string, string> = { RISK_HIT: "触发风控规则", ADDRESS_RISK: "地址风险", DATA_MISMATCH: "资料不符", USER_CANCELLED: "用户申诉撤回", OTHER: "其他" };
@@ -497,7 +502,7 @@ const REVIEW_TITLE: Record<D2ReviewAction, string> = { APPROVE: "放行提现", 
 const REVIEW_BRIEF: Record<D2ReviewAction, { impact: string; check: string }> = {
   APPROVE: { impact: "这笔提现往下走，由系统打款。", check: "核对用户、金额、收款地址和命中的风险规则，理由写清依据或工单号。" },
   DELAY: { impact: "这笔进入冷却，到复查时间自动回到待审核。", check: "复查时间跟着等待天数走，手动改过要核对，理由写清依据或工单号。" },
-  FREEZE: { impact: "这笔暂停处理，不会打款。解冻或到复查时间后回到待审核。", check: "核对冻结期限、责任人和复查时间，理由写清依据或工单号。" },
+  FREEZE: { impact: "这笔暂停处理，不会打款。到复查时间自动回到待审核。", check: "核对冻结期限、责任人和复查时间，理由写清依据或工单号。" },
   UNFREEZE: { impact: "这笔回到待审核重新决定，不会直接打款。", check: "确认冻结的原因已经核实，理由写清依据或工单号。" },
   REJECT: { impact: "这笔被拒绝，钱当场退回用户余额。", check: "核对用户和拒绝原因，理由写清依据或工单号。" },
   REFUND: { impact: "钱退回用户余额，这笔结束。", check: "先到打款方和账单确认钱没有打出去，理由写清依据或工单号。" },
@@ -506,8 +511,8 @@ const REVIEW_BRIEF: Record<D2ReviewAction, { impact: string; check: string }> = 
 /** 确认框常显的「能否撤销」（OP-47）。拒绝和退款收不回来，写成标题下的「不能撤销」标签，不写这一行（VS-106）。 */
 const REVIEW_UNDO: Partial<Record<D2ReviewAction, string>> = {
   APPROVE: "打款前可以冻结，打款后不能撤销",
-  DELAY: "到复查时间前不能改，到时间自动回到待审核",
-  FREEZE: "可以解冻；到复查时间自动回到待审核",
+  DELAY: "到复查时间前不能改",
+  FREEZE: "可以解冻",
   UNFREEZE: "回到待审核后可以重新决定",
 };
 
@@ -1664,7 +1669,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     { label: "金额", icon: Coins, tone: "money", value: `${amountText(shown.amount)} ${shown.asset}`, reason: `${shown.chain === "BANK-VND" ? "兑换金额" : "到账"} ${amountText(shown.netReceive)} · 手续费 ${amountText(shown.actualFee)}` },
     { label: "对象", icon: User, tone: "users", value: `${operatorNicknameText(shown.nickname)} ${shown.userNo}`, state: ["active", "enabled"].includes(shown.userStatus.toLowerCase()) ? undefined : "warn", reason: `账户${userStatusLabel(shown.userStatus)} · 近 24h ${shown.withdrawalCount24h} 笔 · 每日上限 ${canReadD5 ? `${dailyLimit || "—"} 笔` : "无权限"}` },
     { label: "收款", value: payoutChannel(shown), reason: shown.chain === "BANK-VND" ? bankDetail?.maskedAccount ?? "账户信息见下方" : <span data-mono>{shown.targetAddress}</span> },
-    { label: "风险", icon: Shield, tone: "risk", state: riskTone, value: `${routingPriorityLabel(shown)}，${k4RiskText(shown)}`, reason: `风险规则：${routeLabel(shown.k3RiskRoute)} · ${hitRulesText(shown)}` },
+    { label: "风险", icon: Shield, tone: "risk", state: riskTone, value: `${routingPriorityLabel(shown)}，${k4RiskText(shown)}`, reason: [`风险规则：${routeLabel(shown.k3RiskRoute)}`, ...(hitRulesText(shown) === "无" ? [] : [hitRulesText(shown)])].join(" · ") },
     ...(plainPending ? [] : [{ label: "说明", state: orphaned ? "warn" as const : undefined, value: stateNote, reason: holdsForReview(shown) ? `复查时间：${timeText(shown.holdUntil)}` : orphaned && !plainStatus ? lifecycleNote : undefined }]),
     ...(detailActions.includes("APPROVE") ? [{ label: "覆盖率", state: !canReadD5 || !d5 ? "warn" as const : coverageBelow ? "danger" as const : undefined, value: !canReadD5 ? "无权限" : d5 ? `${fmtPct(d5.coverageRatio)}，红线 ${d5.redlinePct}%` : "读取失败" }] : []),
     ...(gateClosedHere ? [{ label: "提现开关", state: "warn" as const, value: "已关停" }] : []),
@@ -1673,7 +1678,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const historyRecords = withdrawalHistoryRecords(shown?.withdrawalHistory, shown?.withdrawalNo);
   const statusEntries = shown ? statusHistoryEntries(shown.statusHistory, shown.chain) : [];
   const auditEntries = auditTrailEntries(shown?.auditTrail, shown?.createdAt ?? "");
-  const riskHits = shown?.riskReason?.trim() ? shown.riskReason.split(" | ").filter(Boolean).map((reason, index): RecordListEntry => ({ id: `hit-${index}`, value: operationalText(reason) })) : [];
+  const riskHits = shown ? riskReasons(shown).map((reason, index): RecordListEntry => ({ id: `hit-${index}`, value: reason })) : [];
 
   const tableColumnCount = QUEUE_COLUMNS.filter((column) => columns.isVisible(column.key)).length + (showSelection ? 1 : 0);
   const copyNo = (value: string) => {

@@ -222,7 +222,7 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                   <span>
                     <Explain label="风险分怎么算" content={<>这些提现单绑定的风控决定分的平均，满分 100，70 以上为高危。没有风控决定的单按 0 算，所以可能比提现审核页的分低，单笔以提现审核页为准。 <FoldLink reach={reach} href="/risk/scoring">风险评分规则</FoldLink></>}>在途提现平均风险分</Explain>
                   </span>
-                  <span className="cc-num">{ledger.avgRiskScore}</span>
+                  <span className="cc-num" data-tone={ledger.avgRiskScore === 0 ? "done" : undefined}>{ledger.avgRiskScore}</span>
                 </li>
               </ul>
             </div>
