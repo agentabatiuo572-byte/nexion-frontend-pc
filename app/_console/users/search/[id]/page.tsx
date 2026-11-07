@@ -1345,9 +1345,9 @@ export default function UserDetailPage() {
               explain={<><p>这里最多列 30 条，不是近 30 天。</p><p>完成总额 {amountText(detail.withdrawals?.completedUsd)}：能核对到的成功提现本金小计。申请总额 {amountText(detail.withdrawals?.requestedUsd)}：能核对到的处理中提现本金小计。都不保证覆盖全部历史。</p></>}>
               <RecordTable label="提现记录" rows={withdrawals} columns={WITHDRAWAL_COLUMNS} {...recordProps("withdrawal")} />
             </Block>
-            <Block title="账户状态" section={detail.account} summary={`两步验证${securityValue(summary.twoFactorEnabled, "已开启", "未开启")} · 需重置密码：${securityValue(summary.passwordResetRequired)}`}>
+            <Block title="账户状态" section={detail.account} summary={`两步验证${securityValue(summary.twoFactorEnabled, "开启", "关闭")} · 需重置密码：${securityValue(summary.passwordResetRequired)}`}>
               <Values rows={[
-                ["两步验证", securityValue(summary.twoFactorEnabled, "已开启", "未开启")],
+                ["两步验证", securityValue(summary.twoFactorEnabled, "开启", "关闭")],
                 ["需重置密码", securityValue(summary.passwordResetRequired)],
               ]} />
             </Block>
