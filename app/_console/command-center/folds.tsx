@@ -3,7 +3,7 @@
 /**
  * 第二层：5 行带结论的折叠摘要，点一下原地展开。标题写结论，不重复首屏数字（DP-04、DP-61）。
  * 每块最多一个「查看…」入口，放在标题行右侧，正文色不加箭头（VS-06）；结论句已给的入口这里不再给一个。读取失败一行写完，不占整块。
- * 资金和风险用首屏已读的数据；资金进出的今日提现明细、用户与转化、关键指标展开时才读，
+ * 资金和风险用首屏已读的数据；资金进出的今日充值和提现明细、用户与转化、关键指标展开时才读，
  * 转化每读一次写一条审计，所以第一次展开后才挂载，收起也不卸载。
  */
 import Link from "next/link";
@@ -16,14 +16,14 @@ import type { B0Blocks } from "@/lib/admin/b0-access";
 import type { B2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import type { BLedger, BLiquidity, BRiskRadar } from "@/lib/admin/b-client";
 import { useB3Funnel } from "@/lib/admin/b3-client";
-import type { fetchD1TopupOverview } from "@/lib/admin/d-client";
+import { fetchD1TopupOverview } from "@/lib/admin/d-client";
 import { rollupKpiPassState } from "@/lib/admin/dashboard-number";
 import { liabilityDisplayName } from "@/lib/admin/liability-labels";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { UNAVAILABLE_GATES } from "@/lib/admin/j-client";
 import { fmtAmount, fmtNum, fmtPct } from "@/lib/format";
 import type { FundLevel } from "./status";
-import { useBlock, type Block } from "./use-block";
+import { useBlock } from "./use-block";
 
 const usdt = (value: number) => `${fmtAmount(value)} USDT`;
 const FUNNEL_FILTERS = { cohort: "ALL", phase: "ALL", ref: "ALL" };
@@ -261,42 +261,46 @@ function flowConclusion(history: B2LiquidityHistory) {
   return `今日储备净流入 ${net > 0 ? "+" : ""}${usdt(net)}，${trend}`;
 }
 
-export function FlowFold({ blocks, history, historyError, historyRetrying, onRetryHistory, topup, netFlow24h, clock, refreshKey, reach, open, onOpenChange }: FoldProps & {
+export function FlowFold({ blocks, history, historyError, historyRetrying, onRetryHistory, topupOnCard, netFlow24h, clock, refreshKey, reach, open, onOpenChange }: FoldProps & {
   blocks: B0Blocks;
   history: B2LiquidityHistory | null;
   historyError: string | null;
   historyRetrying: boolean;
   onRetryHistory: () => void;
-  topup: Block<Awaited<ReturnType<typeof fetchD1TopupOverview>>>;
+  /** 入金卡上已经写了今日充值合计（有 L3 而且读到了），这里只写各渠道。 */
+  topupOnCard: boolean;
   netFlow24h: number | null;
   clock: string | null;
   refreshKey: number;
   reach: Reach;
 }) {
   const opened = useOpenedOnce(open);
+  // 充值渠道只看 D1 读权，不跟入金卡走：入金卡读不到时这里照样有，各自重试。
+  const topup = useBlock(fetchD1TopupOverview, opened && blocks.topup, refreshKey);
   const redemption = useBlock(fetchB0Redemption, opened && blocks.redemption, refreshKey);
-  // 有入金卡时今日充值已经写在卡上，同一个数一页只出现一次；看不到入金卡的账号才在这里看。
-  const showTopup = blocks.topup && !blocks.moneyFlows;
-  const summary = !blocks.netFlow ? (showTopup ? "今日充值和提现明细" : "今日提现明细") : historyError ? "读取失败" : history ? flowConclusion(history) : "正在读取…";
+  const summary = !blocks.netFlow ? `今日${[blocks.topup ? "充值" : "", blocks.redemption ? "提现" : ""].filter(Boolean).join("和")}明细` : historyError ? "读取失败" : history ? flowConclusion(history) : "正在读取…";
   const todayFlow = history?.flowWindows.at(-1);
   const moved = history?.flowWindows.some((item) => item.inflowWan > 0 || item.outflowWan > 0);
   // 近 8 天全是 0 时结论在标题行写过，这里不再写，今日明细左右排。
   const quiet = blocks.netFlow && history !== null && !moved && !historyError;
   const today = (
     <>
-      {showTopup && (
+      {blocks.topup && (
         <section aria-label="今日充值">
           <h3 className="cc-sub">今日充值</h3>
           {topup.error ? <BlockState compact state="error" title="今日充值读取失败" detail={topup.error} onRetry={topup.reload} retrying={topup.loading} />
             : !topup.data ? <BlockState state="loading" title="正在读取…" />
               : (
                 <>
-                  <p className="cc-line">{usdt(topup.data.ledgerTotal)}，{fmtNum(topup.data.ledgerCount)} 笔</p>
-                  {topup.data.reconciliation.length > 0 && (
-                    <ul className="cc-list">
-                      {topup.data.reconciliation.map((row) => <li key={row.channel}><span>{row.channel}</span><span className="cc-num">{usdt(row.ledgerAmount)}，{fmtNum(row.ledgerCount)} 笔</span></li>)}
-                    </ul>
-                  )}
+                  {/* 合计已在入金卡上时不再写，同一个数一页只出现一次（DP-61）；各渠道金额和笔数只在这里。 */}
+                  {!topupOnCard && <p className="cc-line">{usdt(topup.data.ledgerTotal)}，{fmtNum(topup.data.ledgerCount)} 笔</p>}
+                  {topup.data.reconciliation.length > 0
+                    ? (
+                      <ul className="cc-list">
+                        {topup.data.reconciliation.map((row) => <li key={row.channel}><span>{row.channel}</span><span className="cc-num">{usdt(row.ledgerAmount)}，{fmtNum(row.ledgerCount)} 笔</span></li>)}
+                      </ul>
+                    )
+                    : topupOnCard && <p className="cc-line" data-muted="">今天还没有充值到账</p>}
                 </>
               )}
         </section>
@@ -357,7 +361,7 @@ function FunnelBody({ onSummary }: { onSummary: (text: string) => void }) {
   if (!data) return <BlockState state="loading" title="正在读取…" />;
   if (!data.available || !stages.length) return <BlockState compact state="error" title="用户转化暂无数据" detail={data.message ?? "暂无转化数据"} onRetry={() => void reload()} retrying={loading} />;
   // 结论已经写在折叠标题行，这里不再写一遍（VS-105），只说什么时候会有图。
-  if (tooFew || allSmall) return <p className="cc-line" data-muted="">每一步到 5 人后，这里显示各步人数。</p>;
+  if (tooFew || allSmall) return <p className="cc-line" data-muted="">满 5 人的步骤显示人数，不满 5 人的步骤先不显示。</p>;
   return (
     <div className="cc-fold-stack cc-bars">
       <BarList label="注册到提现各步人数" slot={3} max={first} rows={stages.map((stage) => {

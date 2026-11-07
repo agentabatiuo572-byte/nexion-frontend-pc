@@ -3,28 +3,31 @@
 /**
  * 经营数据：六张卡和时段切换。只接现成接口，时段切换不重读，三段数据第一次都读齐（B0 5.6）。
  * 今天没过完，对比只写昨日全天、上周全周、上月全月，不算百分比（DP-63）；同时段对比等后端汇总接口。
- * 颜色按 VS-12：入金是流入青，提现是流出品红，净入金是差额用正文色（VS-11），销售额金，人紫。
- * 注册用户和在途是存量，不随时段变。卡按权限各自显示，读不到的卡写失败和重试，其余不受影响（5.6）。
+ * 颜色按 VS-12：入金是流入青，提现是流出品红，净入金是差额用正文色（VS-11），销售额金，注册紫；
+ * 活跃用户是第五个有角色色的数，用灰（VS-10），一屏主色多一个是产品批准的例外，见重构说明。
+ * 注册用户、系统处理中、待审核和设备是存量，不随时段变。卡按权限各自显示，读不到的卡写失败和重试，其余不受影响（5.6）。
+ * 同一个数一页只出现一次（DP-61）：待审核写在待处理那一行，那一行不显示时才写在提现卡上；净入金用比例条，不再写入金、提现金额。
  */
 import { useState } from "react";
 import { Activity, ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, CircleDollarSign, UserPlus } from "lucide-react";
-import { InlineRetry, MetricBoard, MetricCard, Segments } from "@/app/components/rd";
-import type { fetchB0ActiveUsers, fetchB0Devices, fetchB0MoneyFlows, fetchB0Registrations, fetchB0Sales, B0Period } from "@/lib/admin/b0-client";
+import { Explain, InlineRetry, MetricBoard, MetricCard, Segments } from "@/app/components/rd";
+import { b0PeriodDays, type fetchB0ActiveUsers, type fetchB0Devices, type fetchB0MoneyFlows, type fetchB0Registrations, type fetchB0Sales, type B0Period } from "@/lib/admin/b0-client";
 import type { B0Blocks } from "@/lib/admin/b0-access";
-import { businessZone } from "@/lib/admin/business-time";
-import type { fetchD1TopupOverview } from "@/lib/admin/d-client";
+import { businessDay, businessZone } from "@/lib/admin/business-time";
 import { fmtAmount, fmtNum } from "@/lib/format";
 import type { Block } from "./use-block";
 
-const PERIODS: readonly { value: B0Period; label: string; since: string; previous: string }[] = [
-  { value: "today", label: "今日", since: "", previous: "昨日全天" },
-  { value: "week", label: "本周", since: "周一至今 · ", previous: "上周全周" },
-  { value: "month", label: "本月", since: "1 日至今 · ", previous: "上月全月" },
+const PERIODS: readonly { value: B0Period; label: string; previous: string; word: string }[] = [
+  { value: "today", label: "今日", previous: "昨日全天", word: "今天" },
+  { value: "week", label: "本周", previous: "上周全周", word: "本周" },
+  { value: "month", label: "本月", previous: "上月全月", word: "本月" },
 ];
 
 const usdt = (value: number) => `${fmtAmount(value)} USDT`;
 const signed = (value: number) => `${value > 0 ? "+" : ""}${fmtAmount(value)}`;
 const cardState = (block: Block<unknown>) => (block.data !== null ? "ready" : block.error ? "failed" : "loading");
+/** 一个笔数分项：读不到时就在这一行重试，不当 0。 */
+const countRow = (k: string, block: Block<number>) => ({ k, v: block.error ? <>暂时读不到 · <InlineRetry onRetry={block.reload} /></> : block.data === null ? "…" : `${fmtNum(block.data)} 笔` });
 
 /** 上次选的时段按账号记住；读不到或写不进时按今日，不影响这页（DP-50）。 */
 export function usePeriodChoice(adminId: number | undefined) {
@@ -50,7 +53,7 @@ export function usePeriodChoice(adminId: number | undefined) {
   };
 }
 
-export function BusinessPanel({ blocks, period, onPeriodChange, moneyFlows, sales, registrations, activeUsers, topup, devices, inTransit, clock, reach }: {
+export function BusinessPanel({ blocks, period: chosen, onPeriodChange, moneyFlows, sales, registrations, activeUsers, devices, reviewPending, systemProcessing, clock, reach }: {
   blocks: B0Blocks;
   period: B0Period;
   onPeriodChange: (period: B0Period) => void;
@@ -58,42 +61,55 @@ export function BusinessPanel({ blocks, period, onPeriodChange, moneyFlows, sale
   sales: Block<Awaited<ReturnType<typeof fetchB0Sales>>>;
   registrations: Block<Awaited<ReturnType<typeof fetchB0Registrations>>>;
   activeUsers: Block<Awaited<ReturnType<typeof fetchB0ActiveUsers>>>;
-  topup: Block<Awaited<ReturnType<typeof fetchD1TopupOverview>>>;
   devices: Block<Awaited<ReturnType<typeof fetchB0Devices>>>;
-  /** 待审核提现笔数，提现审核页不可达时不读。读不到时待处理已写失败和重试，这里不再写一遍（VS-107）。 */
-  inTransit: Block<number>;
+  /** 待审核提现笔数。提现审核页可达时写在待处理那一行，这里不写。 */
+  reviewPending: Block<number>;
+  /** 和提现审核页「系统处理中」分组同一组单的笔数。 */
+  systemProcessing: Block<number>;
   clock: string | null;
   reach: (href: string) => boolean;
 }) {
-  const { since, previous } = PERIODS.find((item) => item.value === period)!;
+  // 只有注册、活跃两张卡时切时段没有用，不放切换，按今日（00 提供邀请）。
+  const switchable = blocks.moneyFlows || blocks.sales;
+  const period = switchable ? chosen : "today";
+  const { previous, word } = PERIODS.find((item) => item.value === period)!;
+  const { monday, monthStart } = b0PeriodDays(businessDay());
+  const since = period === "week" ? `${monday.slice(5)} 至今 · ` : period === "month" ? `${monthStart.slice(5)} 至今 · ` : "";
   const flow = moneyFlows.data?.[period].current;
   const flowBefore = moneyFlows.data?.[period].previous;
   const sale = sales.data?.[period];
   const link = (href: string) => (reach(href) ? href : undefined);
   const before = (text: string) => `${previous} ${text}`;
+  // 资金三张卡本月没有上月可比：按天的接口只给最近 31 天。
+  const moneyCompare = (text: (data: NonNullable<typeof flowBefore>) => string) => (flowBefore ? before(text(flowBefore))
+    : period === "month" ? <>暂不对比上月<Explain label="为什么不对比上月" content="按天的资金数只能取最近 31 天，取不到上月全月，所以本月先不对比。" /></> : undefined);
 
-  // 分渠道只有今日：按「USDT-」开头的通道算链上，其余是银行卡，切到本周、本月只写笔数。
-  const channels = period === "today" && blocks.topup ? topup : null;
-  const channelSum = (chain: boolean) => (channels?.data?.reconciliation ?? []).filter((row) => row.channel.startsWith("USDT-") === chain).reduce((sum, row) => sum + row.ledgerAmount, 0);
-  const channelRows = !channels ? []
-    : channels.error ? [{ k: "分渠道", v: <>暂时读不到 · <InlineRetry onRetry={channels.reload} /></> }]
-      : channels.data ? [{ k: "USDT 链上", v: usdt(channelSum(true)) }, { k: "银行卡", v: usdt(channelSum(false)) }]
-        : [{ k: "分渠道", v: "…" }];
-  const inTransitRow = blocks.withdrawals && reach("/finance/withdrawals") && !inTransit.error ? [{ k: "在途（待审核）", v: inTransit.data === null ? "…" : `${fmtNum(inTransit.data)} 笔` }] : [];
+  const reviewOnCard = blocks.withdrawals && !reach("/finance/withdrawals");
+  const withdrawalCounts = [
+    ...(blocks.withdrawals ? [countRow("系统处理中", systemProcessing)] : []),
+    ...(reviewOnCard ? [countRow("待审核", reviewPending)] : []),
+  ];
   const deviceRows = !blocks.devices ? []
     : devices.error ? [{ k: "设备", v: <>暂时读不到 · <InlineRetry onRetry={devices.reload} /></> }]
       : [
         { k: "在线设备", v: devices.data ? `${fmtNum(devices.data.online)} 台` : "…" },
         { k: "设备异常", v: devices.data ? `${fmtNum(devices.data.abnormal)} 台` : "…", tone: devices.data?.abnormal ? "warn" as const : undefined },
       ];
+  // 分项区按这组卡最多几行留高：注册 3 行，提现 1～3 行，净入金比例条和销售、设备各算 2 行。
+  const reservedRows = Math.max(
+    blocks.newUsers ? 3 : 1,
+    blocks.moneyFlows ? Math.max(2, 1 + withdrawalCounts.length) : 1,
+    blocks.sales || (blocks.activeUsers && blocks.devices) ? 2 : 1,
+  );
 
   const active = activeUsers.data;
   return (
     <MetricBoard
       title="经营数据"
       explain="今日从 0 点到现在，本周从周一 0 点到现在，本月从 1 日 0 点到现在。今天还没过完，所以只并排写昨日全天、上周全周、上月全月的数，不算百分比。数字大小不分好坏，提现多了不代表不好。金额和注册人数现在还没有排除测试账号。"
-      tools={<Segments label="经营数据时段" value={period} items={PERIODS} onChange={onPeriodChange} />}
+      tools={switchable ? <Segments label="经营数据时段" value={period} items={PERIODS} onChange={onPeriodChange} /> : undefined}
       meta={clock ? `${since}截至 ${clock} · ${businessZone().label}` : "正在读取…"}
+      rows={reservedRows}
     >
       {blocks.moneyFlows && (
         <>
@@ -103,11 +119,12 @@ export function BusinessPanel({ blocks, period, onPeriodChange, moneyFlows, sale
             tone="role-2"
             value={flow ? fmtAmount(flow.topup) : ""}
             unit="USDT"
-            compare={flowBefore ? before(usdt(flowBefore.topup)) : undefined}
-            rows={flow ? [...channelRows, { k: "笔数", v: `${fmtNum(flow.topupCount)} 笔` }] : []}
+            compare={moneyCompare((data) => usdt(data.topup))}
+            rows={flow ? [{ k: "笔数", v: `${fmtNum(flow.topupCount)} 笔` }] : []}
             explain={<>
               <p>算：用户从外部打进平台、已经入账的钱，有链上充值和银行卡折算成的 USDT，按入账时间算。</p>
               <p>不算：用余额买设备、财务注资、调账、待确认和失败的单。外部直付购机现在取不到，还没算进来。</p>
+              {blocks.topup && <p>今天每个充值渠道的金额和笔数在下面「资金进出」里。</p>}
             </>}
             href={link("/finance/recon")}
             openLabel="查看充值与收款对账"
@@ -120,12 +137,12 @@ export function BusinessPanel({ blocks, period, onPeriodChange, moneyFlows, sale
             tone="role-4"
             value={flow ? fmtAmount(flow.withdrawal) : ""}
             unit="USDT"
-            compare={flowBefore ? before(usdt(flowBefore.withdrawal)) : undefined}
-            rows={flow ? [{ k: "已完成", v: `${fmtNum(flow.withdrawalCount)} 笔` }, ...inTransitRow] : inTransitRow}
+            compare={moneyCompare((data) => usdt(data.withdrawal))}
+            rows={flow ? [{ k: "已完成", v: `${fmtNum(flow.withdrawalCount)} 笔` }, ...withdrawalCounts] : withdrawalCounts}
             explain={<>
               <p>算：已经完成的提现本金，按完成时间算。</p>
               <p>不算：待审、处理中、被拒、已退款的单，手续费也不在里面。</p>
-              <p>在途是此刻还没完成的提现，不随时段变。现在只数待审核的笔数，打款中的不在这个数里。</p>
+              {blocks.withdrawals && <p>系统处理中和提现审核页的「系统处理中」是同一组单：已提交、冷却中、已放行、处理中、已发出。是此刻的笔数，不随时段变。{reviewOnCard ? "待审核是此刻等人审核的笔数。" : "待审核的笔数在上面待处理里。"}</p>}
             </>}
             href={link("/finance/withdrawals")}
             openLabel="查看提现审核"
@@ -137,10 +154,14 @@ export function BusinessPanel({ blocks, period, onPeriodChange, moneyFlows, sale
             icon={ArrowLeftRight}
             value={flow ? signed(flow.net) : ""}
             unit="USDT"
-            compare={flowBefore ? before(`${signed(flowBefore.net)} USDT`) : undefined}
-            rows={flow ? [{ k: "入金", v: usdt(flow.topup) }, { k: "提现", v: usdt(flow.withdrawal) }] : []}
+            compare={moneyCompare((data) => `${signed(data.net)} USDT`)}
+            bar={flow && {
+              label: `${word}入金和提现的比例`,
+              empty: `${word}没有进出`,
+              items: [{ key: "in", label: "入金", value: flow.topup, slot: 2 }, { key: "out", label: "提现", value: flow.withdrawal, slot: 4 }],
+            }}
             explain={<>
-              <p>入金总额减提现总额。</p>
+              <p>入金总额减提现总额。条是入金和提现的比例，哪边长哪边多。</p>
               <p>不算储备流入，也不等于银行现金净变化。储备账的净流入在下面「资金进出」里。</p>
             </>}
             href={link("/analytics/financial")}
@@ -176,7 +197,7 @@ export function BusinessPanel({ blocks, period, onPeriodChange, moneyFlows, sale
           tone="role-3"
           value={registrations.data ? fmtNum(registrations.data.total) : ""}
           unit="人"
-          compare="累计，不随时段变"
+          compare="上线以来累计"
           rows={registrations.data ? [
             { k: "今日新增", v: `${fmtNum(registrations.data.today)} 人` },
             { k: "本周新增", v: `${fmtNum(registrations.data.week)} 人` },
@@ -196,16 +217,15 @@ export function BusinessPanel({ blocks, period, onPeriodChange, moneyFlows, sale
         <MetricCard
           label="活跃用户"
           icon={Activity}
-          tone="role-3"
           value={period === "today" && active?.today != null ? fmtNum(active.today) : "—"}
           unit="人"
           compare={period !== "today" ? "只有今日数据"
             : active ? (active.yesterday === null ? "昨日没有记录" : `昨日全天 ${fmtNum(active.yesterday)} 人`) : undefined}
           rows={deviceRows}
           explain={<>
-            <p>当天有过一次有效登录请求的人数，同一个人算一次，不算后台账号和测试账号。当天没有记录时写「—」。</p>
+            <p>当天用有效的登录状态访问过 App 或 H5 的人数，同一人一天算一次，不算后台账号和测试账号。当天没有记录时写「—」。</p>
             <p>现在只有今日和昨日。本周、本月要跨天去重，不能把每天相加，所以先不写。</p>
-            <p>在线设备是上报在线且 10 分钟内有心跳的台数。设备异常是离线或异常的设备，已包含离线，大于 0 时进待处理。</p>
+            {blocks.devices && <p>在线设备是上报在线且 10 分钟内有心跳的台数。设备异常是离线或异常的设备，已包含离线，大于 0 时进待处理。</p>}
           </>}
           href={link("/analytics/funnel-cohort")}
           openLabel="查看用户转化与留存"

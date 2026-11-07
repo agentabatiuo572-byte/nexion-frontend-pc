@@ -9,7 +9,7 @@
 import "./overview/b-domain.css";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Download, ListChecks, RefreshCw, ShieldAlert, ShieldCheck } from "lucide-react";
+import { ChevronDown, Download, ListChecks, RefreshCw, Server, ShieldAlert, ShieldCheck } from "lucide-react";
 import { Button, Conclusion, Explain, Fact, Facts, InlineRetry, PageHeader, RdPage, StatusTag } from "@/app/components/rd";
 import { BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
@@ -21,7 +21,7 @@ import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { fetchB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import { fetchB2Reserve } from "@/lib/admin/b2-client";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
-import { fetchD1TopupOverview, fetchD2Withdrawals } from "@/lib/admin/d-client";
+import { fetchD2Withdrawals } from "@/lib/admin/d-client";
 import { supportClient } from "@/lib/admin/m-support-client";
 import { opsAlertHref, refreshJ1DutyAlerts, useJ1DutyAlerts } from "@/lib/admin/ops-dashboard-client";
 import { isRiskConclusion, riskFeedTitle } from "@/lib/admin/risk-feed";
@@ -41,6 +41,9 @@ const RESERVE_PAGE = "/overview/dual-ledger";
 
 const countReviewPending = async () => (await fetchD2Withdrawals({ status: "REVIEW_PENDING", pageNum: 1, pageSize: 1 })).total;
 const countOrphaned = async () => (await fetchD2Withdrawals({ status: "TX_ORPHANED", pageNum: 1, pageSize: 1 })).total;
+/** 提现审核页「系统处理中」分组的状态（d2-withdrawals.tsx STATUS_GROUPS），那页也是一个状态一个请求，数一致。 */
+const SYSTEM_PROCESSING = ["SUBMITTED", "EXTENDED_HOLD", "REVIEW_PASSED", "PROCESSING", "SENT"];
+const countSystemProcessing = async () => (await Promise.all(SYSTEM_PROCESSING.map((status) => fetchD2Withdrawals({ status, pageNum: 1, pageSize: 1 })))).reduce((sum, page) => sum + page.total, 0);
 const countSupportTodo = async () => (await supportClient.customers({ pageNum: 1, pageSize: 1, filter: "TODO" })).total;
 
 /** 接口给的角色，认不出写「其他」，不丢这一条（B0-H06）。 */
@@ -78,10 +81,11 @@ export default function CommandCenter() {
   const sales = useBlock(fetchB0Sales, blocks.sales, refreshKey);
   const registrations = useBlock(fetchB0Registrations, blocks.newUsers, refreshKey);
   const activeUsers = useBlock(fetchB0ActiveUsers, blocks.activeUsers, refreshKey);
-  const topup = useBlock(fetchD1TopupOverview, blocks.topup, refreshKey);
   const devices = useBlock(fetchB0Devices, blocks.devices, refreshKey);
   const approvals = useBlock(fetchA2Overview, blocks.approvals && reach("/platform/audit"), refreshKey);
-  const reviewPending = useBlock(countReviewPending, blocks.withdrawals && reach("/finance/withdrawals"), refreshKey);
+  // 待审核按提现读权读：提现审核页可达时写在待处理，不可达时写在提现卡上，都要有这个数。
+  const reviewPending = useBlock(countReviewPending, blocks.withdrawals, refreshKey);
+  const systemProcessing = useBlock(countSystemProcessing, blocks.withdrawals, refreshKey);
   const orphaned = useBlock(countOrphaned, blocks.withdrawals && reach("/finance/withdrawals"), refreshKey);
   // 有 M 读权限但没有客服读取范围的账号，接口回 403，这一行不出现，不算读取失败。
   const canReadSupportTodo = blocks.support && Boolean(session?.supportReadModes?.length) && reach("/service/overview");
@@ -122,19 +126,21 @@ export default function CommandCenter() {
   const risks = fundReady ? riskRadar.feed.filter((item) => !isRiskConclusion(item) && reach(item.href)) : [];
   risks.forEach((item, index) => rows.push({ key: `risk-${index}`, title: riskFeedTitle(item.t), sub: item.m, owner: "风控", href: item.href, tone: item.sev === "p0" ? "danger" : undefined }));
   if (orphaned.error) rows.push({ key: "orphaned", name: "打款异常", onRetry: orphaned.reload });
-  else if (orphaned.data) rows.push({ key: "orphaned", title: `打款异常 ${orphaned.data} 单`, sub: "需要人工核对", owner: "财务", href: "/finance/withdrawals", tone: "warn" });
-  // 数字写在活跃用户卡的分项里，看不到这张卡的账号才写在这一行（DP-61）。
-  if (devices.data && devices.data.abnormal > 0 && reach("/devices/ops")) {
-    const deviceTitle = devices.data.online === 0 ? "设备全部没有心跳" : blocks.activeUsers ? "有设备异常" : `设备异常 ${fmtNum(devices.data.abnormal)} 台`;
-    rows.push({ key: "devices", title: deviceTitle, sub: "到设备运行管理看是哪些设备、为什么不在线", owner: "其他", href: "/devices/ops", tone: "warn" });
+  else if (orphaned.data) rows.push({ key: "orphaned", title: `打款异常 ${orphaned.data} 笔`, sub: "需要人工核对", owner: "财务", href: "/finance/withdrawals", tone: "warn" });
+  // 设备异常一定提醒；设备运行管理不可达时这一行照样写，只是不能点（X03）。台数写在活跃用户卡或设备那一行，这里不再写（DP-61）。
+  if (devices.data && devices.data.abnormal > 0) {
+    const canOpen = reach("/devices/ops");
+    rows.push({ key: "devices", title: devices.data.online === 0 ? "设备全部没有心跳" : "有设备异常", sub: canOpen ? "到设备运行管理看哪几台不在线" : "这个账号打不开设备运行管理，请转给设备负责人", owner: "设备", href: canOpen ? "/devices/ops" : undefined, tone: "warn" });
   }
   if (approvals.error) rows.push({ key: "a2", name: "待审批操作", onRetry: approvals.reload });
   else if (approvals.data?.stats.pendingTickets) {
     const queue = approvals.data.operationQueue.filter((row) => row.status === "pending").sort((a, b) => a.ts.localeCompare(b.ts));
     rows.push({ key: "a2", title: `待审批操作 ${approvals.data.stats.pendingTickets} 条`, sub: queue[0] && approvalDetail(queue[0]), owner: queue[0] ? approvalOwner(queue[0]) : "其他", href: "/platform/audit" });
   }
-  if (reviewPending.error) rows.push({ key: "review", name: "待审核提现", onRetry: reviewPending.reload });
-  else if (reviewPending.data) rows.push({ key: "review", title: `待审核提现 ${reviewPending.data} 单`, owner: "财务", href: "/finance/withdrawals" });
+  if (reach("/finance/withdrawals")) {
+    if (reviewPending.error) rows.push({ key: "review", name: "待审核提现", onRetry: reviewPending.reload });
+    else if (reviewPending.data) rows.push({ key: "review", title: `待审核提现 ${reviewPending.data} 笔`, owner: "财务", href: "/finance/withdrawals" });
+  }
   if (supportTodo.error) rows.push({ key: "support", name: "客服待跟进", onRetry: supportTodo.reload });
   else if (supportTodo.data) rows.push({ key: "support", title: `客服待跟进 ${supportTodo.data} 位`, owner: "客服", href: "/service/overview" });
 
@@ -146,7 +152,7 @@ export default function CommandCenter() {
   const hasPendingSource = blocks.fund || blocks.j1 || blocks.withdrawals || blocks.approvals || blocks.support || blocks.devices;
   const showPending = hasPendingSource && (rows.length > 0 || pendingLoading);
 
-  const firstScreenLoading = bDomain.loading || reserve.loading || flows.loading || moneyFlows.loading || sales.loading || registrations.loading || activeUsers.loading || topup.loading || devices.loading || pendingLoading;
+  const firstScreenLoading = bDomain.loading || reserve.loading || flows.loading || moneyFlows.loading || sales.loading || registrations.loading || activeUsers.loading || systemProcessing.loading || devices.loading || pendingLoading;
   const statusLoading = (bDomain.loading && !bDomain.hasData) || pendingLoading || [reserve, flows, moneyFlows, sales, registrations, activeUsers, devices].some(firstLoad);
   const [readAt, setReadAt] = useState<number | null>(null);
   useEffect(() => { if (!firstScreenLoading) setReadAt(Date.now()); }, [firstScreenLoading]);
@@ -254,6 +260,26 @@ export default function CommandCenter() {
     </div>
   );
 
+  // 没有活跃用户卡的账号，设备数写在这一行，和资金安全句同一种样子；台数只写一处（DP-61）。
+  const deviceLine = !blocks.devices || blocks.activeUsers ? null : devices.error ? (
+    <div className="cc-fundline" role="alert" data-tone="warn">
+      <Server size={16} aria-hidden />
+      <span>设备数据读取失败 · <InlineRetry onRetry={devices.reload} /></span>
+    </div>
+  ) : (
+    <div className="cc-fundline">
+      <Server size={16} aria-hidden />
+      {devices.data ? (
+        <Explain label="设备怎么算" content="在线设备是上报在线且 10 分钟内有心跳的台数。设备异常是离线或异常的设备，已包含离线，大于 0 时进待处理。">
+          设备：在线 {fmtNum(devices.data.online)} 台，异常 <span className="cc-num" data-tone={devices.data.abnormal > 0 ? "warn" : undefined}>{fmtNum(devices.data.abnormal)}</span> 台
+        </Explain>
+      ) : <span>正在读取设备…</span>}
+      {devices.data && reach("/devices/ops") && <Link className="cc-fundline-toggle" href="/devices/ops" prefetch={false}>查看设备运行管理</Link>}
+    </div>
+  );
+  // 待处理在时资金安全句放在它的标题行；还有设备那一行时两句并排放在待处理下面。
+  const fundInPending = showPending && !deviceLine;
+
   const exportSnapshot = () => {
     if (!canExport || !session || (!pendingExport && !fundReady)) return;
     const snap = {
@@ -305,9 +331,10 @@ export default function CommandCenter() {
           {sentence.text}
         </Conclusion>
 
-        {(showPending || showFundLine) && (
+        {(showPending || showFundLine || deviceLine) && (
           <div className="cc-brief-body">
-            {showPending ? <PendingPanel rows={rows} failures={pendingFailed.length} loading={pendingLoading} aside={fundLine} /> : fundLine}
+            {showPending && <PendingPanel rows={rows} failures={pendingFailed.length} loading={pendingLoading} aside={fundInPending ? fundLine : undefined} />}
+            {((!fundInPending && fundLine) || deviceLine) && <div className="cc-lines">{!fundInPending && fundLine}{deviceLine}</div>}
           </div>
         )}
       </section>
@@ -321,9 +348,9 @@ export default function CommandCenter() {
           sales={sales}
           registrations={registrations}
           activeUsers={activeUsers}
-          topup={topup}
           devices={devices}
-          inTransit={reviewPending}
+          reviewPending={reviewPending}
+          systemProcessing={systemProcessing}
           clock={clock}
           reach={reach}
         />
@@ -372,7 +399,7 @@ export default function CommandCenter() {
               historyError={flows.error}
               historyRetrying={flows.loading}
               onRetryHistory={flows.reload}
-              topup={topup}
+              topupOnCard={blocks.moneyFlows && !moneyFlows.error}
               netFlow24h={fundReady ? ledger.netFlow24hUsd : null}
               clock={clock}
               refreshKey={refreshKey}
