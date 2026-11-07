@@ -317,6 +317,11 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
 }
 
 /** fx 公式渲染:fxBold 词高亮(cyan b),其余纯文本。 */
+/** 后端第 6 项写成了推送送达，事件实际是 Nova 站内通知发出。只改这页显示，等后端同步。 */
+const NOVA_FX = "nova.push_clicked ÷ nova.push_sent";
+const NOVA_PLAIN = "Nova 通知操作去重用户 ÷ Nova 站内通知发出去重用户";
+const NOVA_NOTE = "统计的是站内通知事件，不代表手机系统推送送达率。";
+
 function renderFx(fx: string, bold: string[]) {
   const firstYield = /^device\.first_yield_received\.latency_sec ≤ ([0-9.]+) ÷ auth\.register_completed$/.exec(fx);
   fx = firstYield ? `${firstYield[1]} 秒内收到首笔收益的人数 ÷ 注册完成人数` : ({
@@ -638,8 +643,8 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     const KPIS = rawKpis;
     const WEEKS = strings(data?.weeks);
     const PHASE_SWITCH_IDX = num(data?.phaseSwitchIndex, -1);
-    const KPI_PLAIN = rec<string>(data?.kpiPlain);
     const KPI_EXT = rec<KpiExt>(data?.kpiExt);
+    const KPI_PLAIN = Object.fromEntries(Object.entries(rec<string>(data?.kpiPlain)).map(([n, plain]) => [n, KPI_EXT[n]?.fx === NOVA_FX ? NOVA_PLAIN : plain]));
     const states = KPIS.map((item) => kpiStatus(item, ylOffset));
     const count = (state: KpiState) => states.filter((item) => item === state).length;
     const green = count("g");
@@ -657,7 +662,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
       ...baseExt,
       num: k.numerator == null ? baseExt.num : String(k.numerator),
       den: k.denominator == null ? baseExt.den : String(k.denominator),
-      note: REASON_TEXT[k.unavailableReason ?? ""] ?? (k.available === false ? "这个范围缺数据，暂无法计算，不按 0% 算。" : baseExt.note),
+      note: REASON_TEXT[k.unavailableReason ?? ""] ?? (k.available === false ? "这个范围缺数据，暂无法计算，不按 0% 算。" : baseExt.fx === NOVA_FX ? NOVA_NOTE : baseExt.note),
     };
     const kState = kpiStatus(k, ylOffset);
     const phase = rec(data?.currentPhase);

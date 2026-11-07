@@ -719,6 +719,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         <Conclusion state="warn" hint={resumeBlocked ? recoveryBlock : undefined} explainTitle="恢复业务怎么操作" explain={nextStepHelp}>{conclusionFacts}</Conclusion>
       ) : pending.length + visibleRestores.length > 0 ? (
         <Conclusion state="warn" hint="到上方核对原操作结果。" explainTitle="待确认结果怎么核对" explain="业务卡读到的是现在的状态，不能当成这次操作的结果。">业务开关：可用业务全部开启，<b>{pending.length + visibleRestores.length}</b> 项操作或审批结果未确认</Conclusion>
+      ) : restoreApprovals.length > 0 ? (
+        <Conclusion state="warn" hint="到业务卡上核对原审批。">业务开关：可用业务全部开启，<b>{restoreApprovals.length}</b> 项恢复申请待审批</Conclusion>
       ) : (
         <Conclusion state="ok">业务开关：可用业务全部开启，没有要处理的事</Conclusion>
       )}
