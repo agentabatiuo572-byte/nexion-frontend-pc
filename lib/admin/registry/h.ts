@@ -15,7 +15,7 @@ export const DOMAIN_H: ModuleEntry[] = [
   },
   {
     path: "/growth/trial",
-    summary: "设置免费试用的时长、资格、冷却期和防刷规则，查看试用进行情况，可随时急停自动推送。",
+    summary: "设置免费试用的时长、资格、冷却期和防刷规则，查看试用进行情况。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
