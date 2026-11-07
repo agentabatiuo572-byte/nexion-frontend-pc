@@ -438,6 +438,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   A2_REFUND_COMMAND_CHANGED: "退款审批的命令或订单对象已与原提案不一致，本次未执行；请核对原退款审批单与订单。",
   A2_WITHDRAW_MAKER_ONLY: "只有原发起人可以撤回这张审批单；请联系发起人处理。",
   A2_WITHDRAW_STALE: "审批单状态已变化，本次未撤回；请读取原提案的最新结果后核对。",
+  A2_PROPOSAL_NOT_FOUND: "没有查到原审批单；请到「操作记录与审批」核对。",
   A2_PROPOSAL_REQUIRED: "当前角色只能提交审批，不能直接执行；请按页面上的审批流程操作。",
   A2_MAKER_CHECKER_REQUIRED: "不能执行自己发起的审批（需要两个人确认），请换另一位有执行权限的同事处理。",
   A2_OPERATION_NOT_FOUND: "该审批单不存在或已被处理，请刷新「操作记录与审批」列表后重试。",
