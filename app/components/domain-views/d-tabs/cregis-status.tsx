@@ -384,8 +384,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     ...(pending.length ? [`有 ${pending.length} 次操作结果未确认`] : []),
     ...(proposalActivity.unknown ? [`共同充值规则有 ${proposalActivity.unknown} 项提案结果待核对`] : []),
     ...(proposalActivity.awaitingApproval ? [`共同充值规则有 ${proposalActivity.awaitingApproval} 项提案待审批`] : []),
-    ...(error ? ["收款状态读取失败"] : []),
-  ], [pending.length, proposalActivity.unknown, proposalActivity.awaitingApproval, error]);
+  ], [pending.length, proposalActivity.unknown, proposalActivity.awaitingApproval]);
   useEffect(() => { onActivity(activity); }, [onActivity, activity]);
 
   const command = async (path: string, body?: Record<string, unknown>) => {
@@ -528,8 +527,8 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
         explain="到账后自动进用户钱包。关掉后到账的进人工复核，App 写「该方式暂不自动入账。转账前请先联系客服。」" />
     </StatBand>
 
-    <Fold title="收款状态" icon={ShieldCheck} tone="role-2" summary={statusSummary} alert={!!error} alertTone="danger">
-      {!data ? <BlockState state={loading ? "loading" : "error"} title={loading ? "正在读取收款状态…" : "收款状态读取失败"} detail={error || undefined} onRetry={loading ? undefined : () => void refresh()} />
+    {(data || loading) && <Fold title="收款状态" icon={ShieldCheck} tone="role-2" summary={statusSummary}>
+      {!data ? <BlockState state="loading" title="正在读取收款状态…" />
         : <div className="rd-stack">
           <ConfigList label="收款状态">
             <ConfigRow name="接入模式" value={MODE_TEXT[data.mode] ?? "未知"} />
@@ -567,7 +566,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
           </Table>
           <div className="rd-links"><Button size="sm" variant="ghost" icon={<FileSearch size={14} aria-hidden />} onClick={() => setAlertsOpen(true)}>查看最近对账与告警</Button></div>
         </div>}
-    </Fold>
+    </Fold>}
 
     <PageTabs ids={subIds} label="USDT 操作分区" value={sub} onChange={setSub} items={[
       { value: "records", label: "收款记录" },
