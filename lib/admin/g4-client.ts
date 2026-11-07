@@ -1,7 +1,13 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { assertG4OverviewContract } from "@/lib/admin/g-overview-contract";
-import { createStableMutationExecutor, stableMutationFingerprint, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
+import { createStableMutationExecutor, StableMutationFailure, stableMutationFingerprint, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
+
+export class G4CatalogApprovalRequiredError extends StableMutationFailure {
+  constructor() {
+    super("deterministic", "该档位调整需另一位有权超管批准后生效，请核对原输入后提交审批。");
+  }
+}
 
 interface ApiResult<T> {
   code: number;
@@ -563,6 +569,10 @@ export async function g4Request<T>(path: string, init?: RequestInit) {
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
+    }
+    if ((response.status === 409 || response.ok && result?.code === 409)
+        && result?.message === "G4_CATALOG_APPROVAL_REQUIRED") {
+      throw new G4CatalogApprovalRequiredError();
     }
     throw stableMutationHttpFailure(
       formatAdminApiError(result?.message, `G4_REQUEST_FAILED_${response.status}`),

@@ -246,11 +246,11 @@ export async function fetchH2Trials(pageNum = 1, pageSize = 20): Promise<Record<
   return growthRequest<Record<string, any>>(`/trials?pageNum=${pageNum}&pageSize=${pageSize}`);
 }
 
-export function createH2CommandKey(prefix: "h2-param" | "h2-auto-push") {
+export function createH2CommandKey(prefix: "h2-param") {
   return nextIdempotencyKey(prefix);
 }
 
-/** 试用参数和紧急关闭的结果未知：断网、回执读不出、5xx，或幂等处理中。4xx 是后端明确拒绝。口径同 H8。 */
+/** 试用参数的结果未知：断网、回执读不出、5xx，或幂等处理中。4xx 是后端明确拒绝。口径同 H8。 */
 export function isH2OutcomeUnknown(error: unknown) {
   const { status, apiCode, apiMessage, bodyUnreadable } = error as Error & { status?: number; apiCode?: number; apiMessage?: string; bodyUnreadable?: boolean };
   return typeof status !== "number" || !!bodyUnreadable || isIdempotencyOutcomeOpen(apiMessage) || outcomeStaysUnknown(status, apiCode);
@@ -276,13 +276,6 @@ export async function chargeH2TrialSession(sessionId: string, reason: string) {
     `/trials/sessions/${encodeURIComponent(sessionId)}/charge`,
     { method: "POST", body: commandBody("charge", "redeemed", reason) },
     "h2-charge",
-  );
-}
-
-export async function killH2AutoPush(reason: string, commandKey: string) {
-  return growthRequest<Record<string, any>>(
-    "/trials/auto-push/kill",
-    { method: "POST", body: commandBody("autoPushKilled", "true", reason), headers: { "Idempotency-Key": commandKey } },
   );
 }
 

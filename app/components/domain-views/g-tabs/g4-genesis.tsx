@@ -16,6 +16,7 @@ import {
   deleteG4GenesisTier,
   fetchG4DividendApprovalState,
   fetchG4GenesisOverview,
+  G4CatalogApprovalRequiredError,
   initializeG4GenesisSeries,
   rerunG4GenesisDividendBatch,
   updateG4GenesisMarketStatus,
@@ -156,7 +157,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     };
   }, []);
 
-  const mutate = useCallback(async (key: string, action: () => Promise<unknown>, success: string) => {
+  const mutate = useCallback(async (key: string, action: () => Promise<unknown>, success: string, approvalFallback = false) => {
     setBusyKey(key);
     setError("");
     try {
@@ -173,9 +174,11 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
         setRefreshError(messageOf(result.reason));
       }
     } catch (err) {
-      const message = messageOf(err);
-      setError(message);
-      toast(`操作失败 · ${message}`);
+      if (!approvalFallback || !(err instanceof G4CatalogApprovalRequiredError)) {
+        const message = messageOf(err);
+        setError(message);
+        toast(`操作失败 · ${message}`);
+      }
       throw err;
     } finally {
       setBusyKey(null);
@@ -426,10 +429,13 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     if (!Number.isInteger(to) || !Number.isInteger(priceUSDT)) throw new Error("截止数量和单价要填整数");
     return { to, priceUSDT };
   };
-  const openTierConfirm = (tier?: G4Tier) => {
+  const openTierConfirm = (tier?: G4Tier, index?: number, operation?: "delete") => {
     if (!session || !tiers) return;
     setTierConfirm({ epoch, change: {
-      tierId: tier?.id, from: tier?.from ?? tiers[tiers.length - 1].to,
+      tierId: tier?.id, operation,
+      nextTierId: index === undefined ? undefined : tiers[index + 1]?.id,
+      previousTierId: index === undefined ? undefined : tiers[index - 1]?.id,
+      from: tier?.from ?? tiers[tiers.length - 1].to,
       currentTo: tier?.to ?? tiers[tiers.length - 1].to, currentPrice: tier?.priceUSDT,
       totalSupply: stats.totalSlots, sold: stats.sold, seriesSetupRequired: overview.seriesSetupRequired,
       expectedTiersVersion: overview.tiersVersion,
@@ -438,20 +444,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
 
   const editTier = (tier: G4Tier, index: number) => {
     if (!canPriceTiers || !tiers) return;
-    const nextTier = tiers[index + 1];
-    if (!nextTier) { openTierConfirm(tier); return; }
-    openActionConfirm({ briefKind: "config",
-      action: `修改价格档位 · ${tier.id}`,
-      detail: <><b>{tier.id}</b> 档 · 当前区间 [{fmtInt(tier.from)}, {fmtInt(tier.to)}) · 单价 ${fmtInt(tier.priceUSDT)}。起点等于上一档的截止，不能单独改；改截止时{nextTier ? <>下一档 <b>{nextTier.id}</b> 的起点</> : "总供应量"}会跟着调整，最后一档总量不能少于已售的 {fmtNumber(stats.sold, 0)} 张。只影响以后的销售，已下单的按下单时价格结算。</>,
-      businessForm: { kind: "multi-field", title: `档位 ${tier.id}`, hint: "截止 = 卖到第几张换下一档；单价 = 这一档每张多少钱。都填整数。", fields: [
-        { key: "to", label: "截止（卖到第几张）", current: String(tier.to), inputKind: "number", min: tier.from + 1, step: 1, required: true },
-        { key: "priceUSDT", label: "单价（USDT）", current: String(tier.priceUSDT), inputKind: "number", min: 1, step: 1, required: true },
-      ] },
-      run: async (reason, _value, businessValue) => {
-        const { to, priceUSDT } = requireTierInts(businessValue);
-        await mutate(`tier:update:${tier.id}`, () => updateG4GenesisTier(tier.id, to, priceUSDT, overview.tiersVersion, reason, OPERATOR()), `档位 ${tier.id} 已更新为 [${fmtInt(tier.from)}, ${fmtInt(to)}) · $${fmtInt(priceUSDT)}`);
-      },
-    });
+    openTierConfirm(tier, index);
   };
 
   const addTier = () => {
@@ -479,15 +472,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
 
   const deleteTier = (tier: G4Tier, index: number) => {
     if (!canPriceTiers || !tiers || tiers.length <= 1) return;
-    const prevTier = tiers[index - 1];
-    const nextTier = tiers[index + 1];
-    openActionConfirm({ briefKind: "config",
-      action: `删除价格档位 · ${tier.id}`,
-      detail: <>删除 <b>{tier.id}</b> 档（{fmtInt(tier.from)}–{fmtInt(tier.to)}）。空出来的区间会自动补上（{prevTier ? <>上一档 <b>{prevTier.id}</b> 的截止延长到 {fmtInt(tier.to)}</> : nextTier ? <>下一档 <b>{nextTier.id}</b> 的起点提前到 {fmtInt(tier.from)}</> : "只剩一档时不能删"}），至少保留一档。已下单的按下单时价格结算。</>,
-      run: async (reason) => {
-        await mutate(`tier:delete:${tier.id}`, () => deleteG4GenesisTier(tier.id, overview.tiersVersion, reason, OPERATOR()), `档位 ${tier.id} 已删除`);
-      },
-    });
+    openTierConfirm(tier, index, "delete");
   };
 
   const supplyParam = paramByKey(overview, "supply");
@@ -528,10 +513,14 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
         session={session} epoch={epoch} requested={tierConfirm.change}
         readActive={() => fetchG4GenesisOverview(nodePageNo, nodePageSize)}
         onDirect={async (change, reason, to, priceUSDT) => {
+          if (change.operation === "delete") {
+            await mutate(`tier:delete:${change.tierId}`, () => deleteG4GenesisTier(change.tierId!, change.expectedTiersVersion, reason, OPERATOR()), `档位 ${change.tierId} 已删除`, true);
+            return;
+          }
           await mutate(change.tierId ? `tier:update:${change.tierId}` : "tier:create", () => change.tierId
             ? updateG4GenesisTier(change.tierId, to, priceUSDT, change.expectedTiersVersion, reason, OPERATOR())
             : createG4GenesisTier(to, priceUSDT, change.expectedTiersVersion, reason, OPERATOR()),
-          `${change.tierId ? `档位 ${change.tierId} 已更新` : "已新增一档"} · [${fmtInt(change.from)}, ${fmtInt(to)}) · $${fmtInt(priceUSDT)}`);
+          `${change.tierId ? `档位 ${change.tierId} 已更新` : "已新增一档"} · [${fmtInt(change.from)}, ${fmtInt(to)}) · $${fmtInt(priceUSDT)}`, true);
         }}
         onClose={() => setTierConfirm(null)}
         onDone={(active, acknowledgement) => {

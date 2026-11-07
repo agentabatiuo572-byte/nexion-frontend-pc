@@ -30,8 +30,6 @@ export interface TrialParamHelp {
 
 const NEW_TRIAL = "立即生效，只影响新试用";
 const AT_PURCHASE = "立即生效，购买时按新值算";
-const PUSH_WHEN = "立即生效；App 和 H5 现在不自动弹，暂不影响用户";
-const PUSH_IMPACT = "App 和 H5 现在不自动弹，暂不影响用户";
 const USDT_RANGE = { unit: "USDT", min: 0, max: 1_000_000 };
 
 export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
@@ -155,32 +153,6 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
     input: { unit: "UVT", min: 0, max: 1_000_000 },
     whatIf: (value) => `改成 ${value}：商品没配日收益时，之后开始的试用每天按 ${value} UVT 累积。`,
   },
-  autoPushEnabled: { label: "试用邀请弹窗开关", what: "要不要自动弹出试用邀请", when: PUSH_WHEN, impact: PUSH_IMPACT },
-  autoPushDelayMs: {
-    label: "试用邀请弹窗延迟",
-    what: "满足条件后等多久弹出",
-    when: PUSH_WHEN,
-    impact: PUSH_IMPACT,
-    how: "0–86,400 秒，可以填小数。",
-    input: { unit: "秒", min: 0, max: 86_400, step: 0.001 },
-    scale: 1000,
-  },
-  autoPushCooldownHours: {
-    label: "试用邀请弹窗冷却时间",
-    what: "用户关掉弹窗后多久才再弹",
-    when: PUSH_WHEN,
-    impact: PUSH_IMPACT,
-    how: "整数，0–86,400,000 小时。",
-    input: { unit: "小时", min: 0, max: 86_400_000, step: 1 },
-  },
-  autoPushMaxPerSession: {
-    label: "一次打开最多弹几次",
-    what: "试用邀请弹窗一次打开最多弹几次",
-    when: PUSH_WHEN,
-    impact: PUSH_IMPACT,
-    how: "整数，0–86,400,000 次，填 0 就不弹。",
-    input: { unit: "次", min: 0, max: 86_400_000, step: 1 },
-  },
   phaseOpen: { what: "这个运营阶段开不开放试用", when: "跟随「运营阶段设置」" },
   trialPriceUSD: { what: "试用设备的购买价", when: "跟随所选商品的售价" },
   chargeFailRate: { what: "系统内部参数，页面不显示真实值", when: "只由系统判定，这里不能修改" },
@@ -189,11 +161,10 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
 /** 常改参数，一屏约 6 项（DP-15）；其余可写的进高级设置。 */
 export const COMMON_TRIAL_PARAMS = ["trialProductId", "trialDays", "seatsLeftToday", "discountRate", "discountCapUSD", "trialOffsetCapUSD"] as const;
 
-/** 高级设置里的三组。接口多给的键放「其他」。 */
+/** 高级设置里的两组。接口多给的键放「其他」。 */
 export const ADVANCED_TRIAL_GROUPS = [
   { title: "试用周期", keys: ["graceDays", "extensionDays", "highQualityThresholdUSD", "cooldownDays"] },
   { title: "收益与立减", keys: ["earlyPurchaseDiscountUSD", "shadowDailyUSD", "shadowDailyNEX"] },
-  { title: "试用邀请弹窗", keys: ["autoPushEnabled", "autoPushDelayMs", "autoPushCooldownHours", "autoPushMaxPerSession"] },
 ] as const;
 
 /** 试用记录七种状态的白话解释（DP-35）。 */
