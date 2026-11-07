@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
-import { Ban, Copy, FilePen, FileText, Globe2, History, ListChecks, MapPinned, Plus, RefreshCw, ShieldAlert, ShieldCheck, Users } from "lucide-react";
+import { Copy, FilePen, FileText, Globe2, History, ListChecks, MapPinned, Plus, RefreshCw, ShieldAlert, ShieldCheck, Users } from "lucide-react";
 import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Field, Fold, IconButton, Input, InlineMeter, InlineRetry, IrreversibleTag, JudgmentPoints, LocaleTabs, Modal, MoreMenu, Notice, PageHeader, PageTabs, Panel, RecordList, Select, Stat, StatBand, StatusTag, Steps, Table, TableMessage, Td, Textarea, Th, Tr, type JudgmentRow, type StateTone, useTabIds } from "@/app/components/rd";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { businessClock, businessDay, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -308,7 +308,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
 
   // 「要重新确认」拦不拦人看受限动作：现在一项都没有时，没确认的用户不会被拦（M2）。
   const activeGates = gates.filter((gate) => gate.active).map((gate) => gate.name);
-  const gateEffect = activeGates.length ? `没确认的用户做${activeGates.join("、")}时会被拦下。` : "现在没有受限操作，没确认的用户不会被拦。";
+  const gateEffect = activeGates.length ? `没确认的用户做${activeGates.join("、")}时会被拦下。` : "现在没有受限操作，不确认也不影响用户使用。";
 
   // ---------- 地区 ----------
   const editJurisdiction = (current?: DisclosureJurisdictionOption) => openActionConfirm({ briefKind: "config",
@@ -406,7 +406,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       action: <>{current ? "编辑" : "新增"}适用地区 × 版本映射</>,
       title: `${current ? "调整" : "新增"}版本映射`,
       confirmLabel: `提交${current ? "调整" : "新增"}审批`,
-      detail: <>版本或适用国家变了，新旧国家的用户都要重新确认，并收到通知。{gateEffect}</>,
+      detail: <>版本或适用国家变了，新旧国家的用户原来的确认失效，并收到紧急级通知。{gateEffect}</>,
       statedBrief: { impact: "批准后这个地区按这里的版本和国家生效。", check: "核对地区、版本和适用国家，理由写清版本依据。" },
       facts: <div className="rd-stack">{current && <Facts><Fact k="地区">{current.code} · {nameOf(current.code, current.name)}</Fact><Fact k="当前">{current.version} · {current.countryCodes.join("、") || "未配置国家"}</Fact></Facts>}
         <Fold inset title="各版本的生效日期" summary={`${mappableRows.length} 个版本`}>
@@ -680,9 +680,8 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
     {errorText && <Notice tone="warn" title="数据没有读到最新" action={<Button size="sm" loading={refreshing} onClick={() => void refresh()}>重试</Button>}>内容数据加载失败 · {errorText} 下面是上次读到的内容，写入口已禁用。</Notice>}
     {conclusion}
     <StatBand label="风险披露关键数字">
-      <Stat tone="role-3" icon={Users} label="当前版本待确认用户" value={count(stats.staleAckUsers)} unit="人" explain={`切换生效版本或改适用国家后，还没重新确认的用户。${gates.find((gate) => gate.key === "withdraw")?.active ? "提现受限内 · 未确认时拦截" : "提现已移出受限动作范围"}。`} />
+      <Stat tone="role-3" icon={Users} label="当前版本待确认用户" value={count(stats.staleAckUsers)} unit="人" explain="切换生效版本或改适用国家后，还没重新确认的用户。不确认不影响使用，这个数只做记录。" />
       <Stat tone="role-2" icon={Globe2} label="生效地区" value={effectiveCount} unit="个" explain="已发布、正在生效的地区数，已归档的不算。" />
-      <Stat tone="role-4" icon={Ban} label="未确认被拦截（近 7 天）" value={stats.weeklyGateBlocked} unit="次" explain="全部受限动作的历史事件，不代表当前提现状态。" />
     </StatBand>
 
     {queueFailed && <Notice tone="warn" title="待审批读取失败" action={<InlineRetry onRetry={() => void loadQueue()} />}>审批中的操作这里看不到，到「操作记录与审批」核对。</Notice>}
@@ -734,12 +733,12 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       </div>
     )}
 
-    <Panel title="各地区生效版本" icon={MapPinned} tone="role-2" flush explain="用户现在看的版本。覆盖人数按账号地区算，确认进度按当前版本算。拦截数是历史记录，可能包含已经确认过的用户。" actions={canPublish ? <Button size="sm" disabledReason={newMappingBlocked} onClick={() => configMatrix()}>新增映射</Button> : undefined}>
+    <Panel title="各地区生效版本" icon={MapPinned} tone="role-2" flush explain="用户现在看的版本。覆盖人数按账号地区算，确认进度按当前版本算。" actions={canPublish ? <Button size="sm" disabledReason={newMappingBlocked} onClick={() => configMatrix()}>新增映射</Button> : undefined}>
       {[...issues].map(([code, issue]) => (
         <div className="rd-panel-line" key={code} data-proof="disclosure-publication-issue"><Notice tone="danger" title={`${code} 引用异常`}>{issue}</Notice></div>
       ))}
       <Table label="各地区生效版本">
-        <thead><tr><Th>适用地区</Th><Th>当前版本</Th><Th>状态</Th><Th>重新确认进度</Th><Th align="right">未确认被拦截（近 7 天）</Th>{canPublish && <Th align="right">操作</Th>}</tr></thead>
+        <thead><tr><Th>适用地区</Th><Th>当前版本</Th><Th>状态</Th><Th>重新确认进度</Th>{canPublish && <Th align="right">操作</Th>}</tr></thead>
         <tbody>
           {jurisdictions.map((j) => {
             const archived = j.status.toLowerCase() === "archived";
@@ -751,7 +750,6 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
                 <Td>{issues.has(j.code) ? <StatusTag tone="danger">引用异常</StatusTag> : <StatusTag tone={archived ? "done" : "ok"}>{archived ? statusZh(j.status) : "生效中"}</StatusTag>}</Td>
                 <Td>{j.affected === 0 ? <Cell main={<span className="rd-weak">无覆盖用户</span>} /> : isSmall(j.affected) ? <Cell main={SMALL_SAMPLE} />
                   : <Cell main={<InlineMeter value={j.ackProgress / 100} text={ackText(j.ackProgress)} tone={pendingAck > 0 ? "progress" : "ok"} />} sub={`待确认 ${count(pendingAck)} · 共 ${count(j.affected)} 人`} />}</Td>
-                <Td align="right"><Cell num main={j.blocked ? count(j.blocked) : <span className="rd-weak">0</span>} /></Td>
                 {canPublish && <Td align="right">{archived ? <span className="rd-note">要用时重新新增</span> : <span className="rd-row-actions">
                   <Button size="sm" disabledReason={switchBlocked(j.code)} onClick={() => configMatrix(j)}>调整映射</Button>
                   <MoreMenu label={`${j.code} 的更多操作`} items={[{ key: "archive", label: "归档", danger: true, disabledReason: regionBlocked(j.code), onSelect: () => archiveMatrix(j) }]} />
@@ -759,7 +757,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
               </Tr>
             );
           })}
-          {jurisdictions.length === 0 && <TableMessage columns={canPublish ? 6 : 5}>还没有地区配置生效版本。{canPublish ? "发布版本后点「新增映射」。" : ""}</TableMessage>}
+          {jurisdictions.length === 0 && <TableMessage columns={canPublish ? 5 : 4}>还没有地区配置生效版本。{canPublish ? "发布版本后点「新增映射」。" : ""}</TableMessage>}
         </tbody>
       </Table>
     </Panel>
@@ -819,14 +817,16 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       </Table>
     </Fold>
 
-    <Fold title="需要先确认的操作" icon={ShieldCheck} tone="role-4" explain={<><p>{gates.some((gate) => gate.active) ? "还没重新确认的用户，做这里受限的操作时会被拦下并跳到披露页。" : "当前没有受限的操作，用户不会被拦。"}</p><p>重新确认相当于让用户重新签一次条款，不是紧急开关。监管要求停业务，去「紧急停用开关」。</p></>} summary={gates.some((gate) => gate.active) ? `${gates.filter((gate) => gate.active).length} 项受限，未确认的用户会被拦下` : "当前没有纳入风险披露前置确认范围的操作。"}>
-      {gates.length ? <ConfigList label="需要先确认的操作">
+    <Fold title="需要先确认的操作" icon={ShieldCheck} tone="role-4" explain={<><p>{gates.some((gate) => gate.active) ? "还没重新确认的用户，做这里受限的操作时会被拦下。" : "当前没有受限的操作，用户不会被拦。"}</p><p>重新确认相当于让用户重新签一次条款，不是紧急开关。监管要求停业务，去「紧急停用开关」。</p></>} summary={gates.some((gate) => gate.active) ? `${gates.filter((gate) => gate.active).length} 项受限，未确认的用户会被拦下` : "当前没有受限操作"}>
+      {!gates.length && <p className="rd-note">当前没有纳入风险披露前置确认范围的操作。</p>}
+      <ConfigList label="需要先确认的操作">
         {gates.map((gate) => (
           <ConfigRow key={gate.key} name={gate.name}
             value={gate.retired ? <StatusTag tone="done" explain="已移出风险披露前置确认范围，不支持重新纳入。">不再纳入</StatusTag> : <StatusTag tone={gate.active ? "ok" : "done"} explain={gate.sub}>{gate.active ? "受限内" : "已移出"}</StatusTag>}
             action={canAdjustGate && !gate.retired ? <Button size="sm" disabledReason={blocked("gate", gateInApproval)} onClick={() => toggleGate(gate)}>{gate.active ? "移出" : "纳入"}</Button> : undefined} />
         ))}
-      </ConfigList> : <p className="rd-note">当前没有纳入风险披露前置确认范围的操作。</p>}
+        <ConfigRow name="未确认被拦截（近 7 天）" what="历史记录，可能包含已经确认过的用户。" value={`${count(stats.weeklyGateBlocked)} 次`} />
+      </ConfigList>
     </Fold>
 
     <nav className="rd-links" aria-label="相关页面">
