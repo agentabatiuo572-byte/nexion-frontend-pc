@@ -169,7 +169,7 @@ function payoutCapabilityText(data: CregisExceptions): string {
   if (capability.enabled) return "链上出款能力已启用，提现仍须通过原有资格、审核与链上确认。";
   switch (capability.disabledReason) {
     case "NOT_CONFIGURED": return "链上出款接入尚未就绪，当前不能开启。";
-    case "SWITCH_OFF": return "链上出款开关已关闭；开启须由另一管理员复核。";
+    case "SWITCH_OFF": return "链上出款开关已关闭；开启须由另一位管理员复核。";
     case "RISK_HOLD": return "链上出款因风险暂停，请先查看异常和告警。";
     case "RECONCILIATION_REQUIRED": return "链上出款需要先完成资金对账，请核对对账结果。";
     default: return "链上出款能力待核实，请刷新后再试；当前不能开启。";
@@ -183,7 +183,7 @@ const ALERT_KIND: Record<string, string> = {
   PROVIDER_ORPHAN: "收款服务有记录、平台没有", PLATFORM_ORPHAN: "平台有记录、收款服务没有", UNRESOLVED_EXPOSURE: "待处理资金过多",
   MANUAL_EMERGENCY_OFF: "管理员紧急停用", CREGIS_SWITCH_EMERGENCY_OFF: "紧急停用", REFUND_LATE_EVIDENCE: "退款后链上证据又变化", AUTO_FORWARD_UNKNOWN: "自动归集结果未知",
 };
-const cregisStateText = (value: unknown) => ({ IDLE: "暂无地址在创建", BUSY: "正在创建地址", BLOCKED: "风险暂停", DISABLED: "未接入收款服务", MISSING: "开关设置缺失", UNKNOWN: "创建结果待核实", PROVISIONING: "地址创建中", VERIFYING: "地址核对中", UNATTRIBUTED_HOLD: "未归属充值待处理", RETIRED_HOLD: "停用地址充值待处理", DUST_HOLD: "低额充值待处理", REVIEW_HOLD: "大额充值待审核", REORG_INVESTIGATING: "链重组调查中", PROVIDER_CONFLICT_HOLD: "收款服务与链上记录冲突待处理", PROVIDER_MISSING: "收款服务缺单待核对", CHAIN_MISMATCH_HOLD: "链上记录不符待核对", RUNNING: "对账中", COMPLETE: "完整对账完成", INCOMPLETE: "对账未完成", MAKER_DONE: "待另一管理员复核", RESOLVED: "复核处理完成", REJECTED: "已驳回" } as Record<string,string>)[String(value)] ?? "状态待核实";
+const cregisStateText = (value: unknown) => ({ IDLE: "暂无地址在创建", BUSY: "正在创建地址", BLOCKED: "风险暂停", DISABLED: "未接入收款服务", MISSING: "开关设置缺失", UNKNOWN: "创建结果待核实", PROVISIONING: "地址创建中", VERIFYING: "地址核对中", UNATTRIBUTED_HOLD: "未归属充值待处理", RETIRED_HOLD: "停用地址充值待处理", DUST_HOLD: "低额充值待处理", REVIEW_HOLD: "大额充值待审核", REORG_INVESTIGATING: "链重组调查中", PROVIDER_CONFLICT_HOLD: "收款服务与链上记录冲突待处理", PROVIDER_MISSING: "收款服务缺单待核对", CHAIN_MISMATCH_HOLD: "链上记录不符待核对", RUNNING: "对账中", COMPLETE: "完整对账完成", INCOMPLETE: "对账未完成", MAKER_DONE: "待另一位管理员复核", RESOLVED: "复核处理完成", REJECTED: "已驳回" } as Record<string,string>)[String(value)] ?? "状态待核实";
 const SEVERITY: Record<string, [string, StateTone]> = { P0: ["紧急", "danger"], P1: ["严重", "danger"], P2: ["警告", "warn"], P3: ["提示", "neutral"] };
 function rowNetwork(row: { network?: unknown; chainId?: unknown; chain_id?: unknown }): "BEP20" | "ERC20" | null {
   if (row.network === "BEP20" || row.network === "ERC20") return row.network;
@@ -262,7 +262,7 @@ function CregisDepositHistory({ reloadKey }: { reloadKey: number }) {
   const zone = zoneLabel();
   return <>
     <Panel flush icon={Inbox} tone="role-2" title="USDT 入金记录 / 充值单" explain="链上转账经收款服务和链上核实后生成入金记录，入账时生成充值单。未入账的净额只供核对。"
-      actions={<Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => void load()}>刷新列表</Button>}>
+      actions={<Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => void load()}>刷新</Button>}>
       <Table label="USDT 入金记录" aria-busy={loading}>
         <thead><tr>
           <Th sticky="start">入金 · 充值单</Th>
@@ -579,7 +579,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
 
   return <>
     <PendingNotices items={pendingItems} disabled={busy} />
-    {error && <Notice tone="danger" title="USDT 收款状态读取失败" action={<Button size="sm" loading={loading} onClick={() => void refresh()}>重新读取</Button>}>{error} 读不到时，依赖收款状态的操作都先禁用。</Notice>}
+    {error && <Notice tone="danger" title="USDT 收款状态读取失败" action={<Button size="sm" loading={loading} onClick={() => void refresh()}>重试</Button>}>{error}读不到时，依赖收款状态的操作都先禁用。</Notice>}
     {/* 告警只在页头结论和下面的「未解除告警」一格说，不再另起一条提示（DT-12、DP-61）。 */}
     {/* 根因只写这一处；下面的汇总带、折叠摘要和键值用同一个词（DT-12、DT-14）。 */}
     {data && (!data.depositEnabled || !data.depositCreditEnabled || !gate?.assignEnabled) && <Notice tone="warn">{connected
@@ -658,7 +658,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     <div {...subIds.panel("exceptions")} hidden={sub !== "exceptions"} className="rd-tab-pane">
       <Panel flush icon={AlertTriangle} tone="warn" title="异常" sub={data ? `共 ${entries.length} 条，其中 ${entries.length - counted} 条系统处理中` : undefined}
         explain="六类异常合在一张表。待处理的回调和创建中、核对中的新地址由系统继续处理，标「系统处理中」，不算进要处理的数。每类最多读 50 条。"
-        actions={<Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => { void refresh(); setChildKey(value => value + 1); }}>刷新异常处置</Button>}>
+        actions={<Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => { void refresh(); setChildKey(value => value + 1); }}>刷新</Button>}>
         <Table label="USDT 异常" aria-busy={loading}>
           <thead><tr><Th sticky="start">类型 · 时间（{zone}）</Th><Th>对象</Th><Th align="right" icon={Coins} tone="money">金额（USDT）</Th><Th>状态</Th><Th sticky="end" align="right">操作</Th></tr></thead>
           <tbody>
@@ -721,7 +721,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                 <thead><tr><Th>网络</Th><Th>充值开关</Th><Th>实际开放情况</Th>{canManage && <Th sticky="end" align="right">操作</Th>}</tr></thead>
                 <tbody>{data.networkSwitches.map(row => {
                   const waiting = switchCases.some(item => item.network === row.network);
-                  const block = waiting ? "待另一管理员复核" : proposalBlock;
+                  const block = waiting ? "待另一位管理员复核" : proposalBlock;
                   const proposal = (target: boolean, restoring: boolean) => confirmCommand({ kind: "config",
                     action: `提交 ${row.network} 充值${restoring ? "恢复" : "开关"}审批`, title: restoring ? `恢复 ${row.network} 充值` : `调整 ${row.network} 充值开关`, confirmLabel: "提交审批", effect: approval,
                     facts: <Facts><Fact k="网络">{row.network}</Fact>{restoring && <Fact k="充值开关"><Change from={row.depositEnabled ? "开" : "关"} to="开（申请恢复）" /></Fact>}<Fact k="实际开放情况">{row.depositAvailable ? "已开放" : availabilityText(row.depositDisabledReason)}</Fact></Facts>,
@@ -795,7 +795,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
           </Facts>,
           detail: "立即停止两网地址分配、自动入账和新出款；原交易继续核验和查询。", completion: "确认后立即停止两网的地址分配、自动入账和新出款，继续接收回调并查询原单。旧提案失效，恢复要重新提交审批。",
           path: "/cregis/switches/emergency-off", body: { expectedVersion: gate?.version } })}>紧急停用两网</Button> : undefined}>
-        <p className="rd-note">{!data ? "开关状态读不到。" : `现在：${(data.networkSwitches ?? []).map(row => `${row.network} 充值${row.depositEnabled ? "开" : "关"}`).join("，") || `地址分配${onOff(gate?.assignEnabled, "未知")}，自动入账${onOff(gate?.creditEnabled, "未知")}`}，链上出款${onOff(gate?.payoutEnabled, "未知")}。`}{emergencyBlock && canManage ? ` 不能停用：${emergencyBlock}` : ""}</p>
+        <p className="rd-note">{!data ? "开关状态读不到。" : `现在：${(data.networkSwitches ?? []).map(row => `${row.network} 充值${row.depositEnabled ? "开" : "关"}`).join("，") || `地址分配${onOff(gate?.assignEnabled, "未知")}，自动入账${onOff(gate?.creditEnabled, "未知")}`}，链上出款${onOff(gate?.payoutEnabled, "未知")}。`}{emergencyBlock && canManage ? `不能停用：${emergencyBlock}` : ""}</p>
       </Panel>
     </div>
     <div {...subIds.panel("funds")} hidden={sub !== "funds"} className="rd-tab-pane">
@@ -944,7 +944,7 @@ function ReviewDrawer({ cid, caseRow, canManage, adminId, busy, readBlock, onClo
         others={<Button variant="ghost" loading={loading} onClick={() => void load()}>刷新证据</Button>}
         primary={<Button variant="primary" disabledReason={decideBlock} onClick={() => confirm({ kind: "funds",
           action: `复核入账 CID ${cid}`, title: "复核入账", confirmLabel: "确认复核", danger: true,
-          effect: <><StatusTag tone="progress" filled>立即入账</StatusTag><IrreversibleTag /></>, facts: caseFacts,
+          effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag /></>, facts: caseFacts,
           detail: `交易 ${text(caseRow.txid)}，毛额 ${text(caseRow.grossAmount)} USDT，净入账 ${text(caseRow.proposedNetAmount)} USDT 给用户 ${text(caseRow.userId)}。请独立核对地址、发起理由与证据。`,
           completion: "确认后立即把净额入账到用户钱包，不能撤销。",
           path: `/cregis/review-cases/${text(caseRow.id)}/decision`, body: { expectedVersion: caseRow.version, decision: "APPROVE" } })}>复核入账</Button>} />

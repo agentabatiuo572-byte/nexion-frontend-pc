@@ -151,10 +151,10 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
   const canRetry = !!pending && !pending.ticketId && !pending.terminal && Date.now() >= pending.createdAt && Date.now() < Math.min(pending.expiresAt, pending.createdAt + RETRY_WINDOW_MS);
   const entryBlock = loading ? "正在读取最新数据" : busy ? "正在提交" : !policy ? "规则没读到，刷新后再试" : pending && !pending.terminal ? "有一个提案还没结束，先在上面查询原提案" : pending ? "先点「核对完成，准备新变更」" : undefined;
   const audit = reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=D">查看操作记录与审批</Link>;
-  return <Panel icon={Scale} tone="role-4" title="USDT 共同充值规则" sub={policy ? `生效版本 v${policy.version}` : undefined}
-    explain={<><p>BEP20 和 ERC20 共用这三项。三项一起提交审批。</p><p>{APPROVAL_TEXT}未入账交易仍须满足环境安全确认数下限。</p></>}
+  return <Panel icon={Scale} tone="role-4" title="USDT 共同充值规则"
+    explain={<><p>BEP20 和 ERC20 共用这三项。三项一起提交审批。</p><p>{APPROVAL_TEXT}未入账交易仍须满足环境安全确认数下限。</p>{policy && <p>现在生效的是第 {policy.version} 版。</p>}</>}
     actions={<>
-      <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} disabled={busy} onClick={() => void refresh()}>刷新规则</Button>
+      <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} disabled={busy} onClick={() => void refresh()}>刷新</Button>
       {canManage && <Button size="sm" disabledReason={entryBlock} onClick={submit}>调整</Button>}
     </>}>
     <div className="rd-stack">

@@ -129,9 +129,9 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
   const createBlock = block ?? (kind === "COLLECTION" && !source ? "先选来源子地址" : !amount ? "先填金额" : amountIssue ? amountIssue : !reference.trim() ? "先填业务参考号" : undefined);
 
   return <Panel icon={ClipboardList} tone="role-2" title="BEP20 归集与甲方付款准备"
-    explain={<><p>这里只保存准备单和复核意见，不会转出资金。真实转账须另行授权后在收款服务后台执行，审批不自动发送。</p><p>1. 选择本项目充值子地址，核对金额后创建归集准备单。2. 由另一管理员复核，后续另行授权后在收款服务后台将资金归集到平台钱包。3. 平台钱包到账后，按业务金额创建并复核甲方付款准备单；后续在收款服务后台单独付款，保存原单号和交易哈希。</p></>}
+    explain={<><p>这里只保存准备单和复核意见，不会转出资金。真实转账须另行授权后在收款服务后台执行，审批不自动发送。</p><p>1. 选择本项目充值子地址，核对金额后创建归集准备单。2. 由另一位管理员复核，后续另行授权后在收款服务后台将资金归集到平台钱包。3. 平台钱包到账后，按业务金额创建并复核甲方付款准备单；后续在收款服务后台单独付款，保存原单号和交易哈希。</p></>}
     actions={<>
-      <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} disabled={busy} onClick={() => void refresh()}>刷新准备记录</Button>
+      <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} disabled={busy} onClick={() => void refresh()}>刷新</Button>
       {canWrite && config && <Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={block} onClick={() => setCreating(true)}>新建准备单</Button>}
     </>}>
     {error && config && <Notice tone="warn">{error}</Notice>}

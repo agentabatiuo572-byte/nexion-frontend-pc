@@ -41,7 +41,7 @@ export function CregisPoolPolicy({canManage,openActionConfirm,onChanged}:{canMan
     if(!saved || busy || !canManage || !owns() || d1PendingObjectReason("/cregis/addresses/policy"))return;
     const current=saved;
     openActionConfirm({ briefKind: "config",action:"保存地址池补充配置",title:"调整地址池补充",confirmLabel:"确认保存",
-      effect:<StatusTag tone="progress" filled>保存后立即生效</StatusTag>,
+      effect:<StatusTag tone="progress" filled>立即生效</StatusTag>,
       detail:`现在：备用目标 ${current.target}，低于 ${current.lowWatermark} 触发补充，每批 ${current.batchSize}，建址并发 ${current.concurrency}；自动补充${current.enabled?"开启":"关闭"}。`,
       reasonMin:10,reasonMax:255,completionCopy:"保存后按新配置补充地址，已有用户地址保持绑定",
       businessForm:{kind:"multi-field",requireAnyChange:true,
@@ -69,10 +69,10 @@ export function CregisPoolPolicy({canManage,openActionConfirm,onChanged}:{canMan
       }});
   };
   const block=loading?"正在读取最新数据":busy?"正在提交":!saved?"地址池配置没读到，刷新后再试":d1PendingObjectReason("/cregis/addresses/policy");
-  return <Panel icon={MapPin} tone="role-4" title="专属充值地址 · 库存与自动补充" sub={saved?`版本 v${saved.version}`:undefined}
-    explain="首次进入充值页时分配专属地址，后续重复使用。BEP20 与 ERC20 分别计算库存，共用以下补充目标。低于补充阈值后，分批补至目标库存；已分配地址不计入备用库存。保存后直接生效；收款服务限流或额度不足时延后补充。"
+  return <Panel icon={MapPin} tone="role-4" title="专属充值地址 · 库存与自动补充"
+    explain={`首次进入充值页时分配专属地址，后续重复使用。BEP20 与 ERC20 分别计算库存，共用以下补充目标。低于补充阈值后，分批补至目标库存；已分配地址不计入备用库存。保存后直接生效；收款服务限流或额度不足时延后补充。${saved?` 现在是第 ${saved.version} 版。`:""}`}
     actions={<>
-      <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden/>} loading={loading} disabled={busy} onClick={()=>void refresh()}>刷新配置</Button>
+      <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden/>} loading={loading} disabled={busy} onClick={()=>void refresh()}>刷新</Button>
       {canManage && <Button size="sm" disabledReason={block} onClick={save}>调整</Button>}
     </>}>
     {loading && !saved ? <BlockState state="loading" title="正在读取地址池配置…"/>

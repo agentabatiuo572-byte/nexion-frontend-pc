@@ -200,7 +200,7 @@ function D1Workspace({ ctx }: { ctx: DCtx }) {
   // 后端还没给「本地待人工核对」的银行卡订单计数（BE-27），这个数不全，零也不是绝对的：常显说明，不收进问号（D1-S04）。
   const bankGap = "银行卡订单里「本地待人工核对」的还没算进来，要在「银行卡充值」列表里逐行看。";
   const feeGap = unconfiguredFees ? `付款手续费有 ${unconfiguredFees} 种付款方式未配置，用户付款时看不到这几种方式。` : "";
-  const retryAll = <Button size="sm" onClick={() => setReloadTick(value => value + 1)}>重新读取</Button>;
+  const retryAll = <Button size="sm" onClick={() => setReloadTick(value => value + 1)}>重试</Button>;
   const alertLead = usdtAlert ? "USDT 有未解除的紧急或严重告警" : "";
   const conclusion = failed.length === D1_SECTIONS.length
     ? <Conclusion state="danger" explain={explain} action={retryAll}>读取失败，不知道有没有要处理的事</Conclusion>
@@ -357,7 +357,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
       confirmLabel: "确认入账",
       confirmTone: "danger",
       reasonMin: 8, reasonMax: 200,
-      effect: <><StatusTag tone="progress" filled>立即入账</StatusTag><IrreversibleTag /></>,
+      effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag /></>,
       facts: <Facts>
         <Fact k="入账" lead tone="role-1" unit="USDT">{usdt(order.requestedUsdt)}</Fact>
         <Fact k="应付">{vnd(order.payableVnd)} VND</Fact>
@@ -410,7 +410,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
       confirmLabel: stopping ? "确认停用" : "确认启用",
       confirmTone: stopping ? "danger" : "primary",
       reasonMin: 8, reasonMax: 200,
-      effect: <StatusTag tone="progress" filled>确认后立即生效</StatusTag>,
+      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       facts: <Facts><Fact k="通道">{name}</Fact><Fact k="状态"><Change from={stopping ? "启用" : "停用"} to={stopping ? "停用" : "启用"} /></Fact></Facts>,
       detail: "只影响之后的新交易。",
       completionCopy: stopping ? "确认后立即生效。App 充值页不再显示银行卡支付。已在付款的不受影响，订单付款也不受影响。" : "确认后立即生效，App 充值页重新显示银行卡支付，只影响新充值。",
@@ -427,7 +427,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
       title: `调整${name}单笔上限`,
       confirmLabel: "确认调整",
       reasonMin: 8, reasonMax: 200,
-      effect: <StatusTag tone="progress" filled>确认后立即生效</StatusTag>,
+      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       detail: "只影响之后的新交易。",
       edit: { kind: "number", current: String(current), unit: "USD", min: 0.01, max: 100000, step: 0.01, disallowCurrent: true, hint: "0.01–100,000，最多两位小数" },
       run: (reason, value) => write(() => updateD1TopupChannelMax(channel.code, Number(value), current, reason, operator), `${name} 单笔上限已更新`),
@@ -443,7 +443,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
       title: "调整银行卡支付单笔上限",
       confirmLabel: "确认调整",
       reasonMin: 8, reasonMax: 200,
-      effect: <StatusTag tone="progress" filled>确认后立即生效</StatusTag>,
+      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       detail: "只对之后的新付款单生效。",
       completionCopy: "只对之后的新付款单生效。",
       edit: { kind: "number", current: String(current), unit: "USD", min: 100, max: 10_000, step: 1, disallowCurrent: true, hint: "100–10,000 的整数",

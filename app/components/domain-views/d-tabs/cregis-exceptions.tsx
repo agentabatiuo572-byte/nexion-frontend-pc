@@ -20,7 +20,7 @@ import { LongValue, usdt } from "./d1-shared";
 const EMPTY: ExceptionPage = { records: [], hasMore: false, nextBeforeId: null };
 const MODE: Record<string, string> = { UNCONFIGURED: "待配置（禁止退款）", PLATFORM_PAYS: "全额退回，平台承担网络费", FIXED_USDT: "扣除固定 USDT 费用" };
 const ACTION: Record<string, string> = { REVERSE: "核实重组并冲正", RESTORE: "原入金恢复后还原账务", RELEASE_HOLD: "解除本事件误报冻结", COLLECT_DEBT: "追偿本事件欠款", UNFREEZE: "检查并解除本事件账户冻结" };
-const STATE: Record<string, string> = { MAKER_DONE: "等待另一管理员复核", PROPOSED: "等待另一管理员复核", APPROVED: "已批准，等待发送", SUBMITTING: "发送请求处理中", UNKNOWN: "结果未知，保留原单核查", SENT: "已取得收款服务订单，等待链确认", COMPLETED: "处置完成", RESOLVED: "处置完成", REJECTED: "已拒绝", CANCELLED: "已取消", FAILED_NO_TRANSFER: "确认未转出，可重新提案", REVERSED: "已冲正", DEBT_OPEN: "尚有欠款", OPEN: "等待处置", RELEASED: "本事件已释放", RESTORED: "原入金已恢复" };
+const STATE: Record<string, string> = { MAKER_DONE: "等待另一位管理员复核", PROPOSED: "等待另一位管理员复核", APPROVED: "已批准，等待发送", SUBMITTING: "发送请求处理中", UNKNOWN: "结果未知，保留原单核查", SENT: "已取得收款服务订单，等待链确认", COMPLETED: "处置完成", RESOLVED: "处置完成", REJECTED: "已拒绝", CANCELLED: "已取消", FAILED_NO_TRANSFER: "确认未转出，可重新提案", REVERSED: "已冲正", DEBT_OPEN: "尚有欠款", OPEN: "等待处置", RELEASED: "本事件已释放", RESTORED: "原入金已恢复" };
 Object.assign(STATE, { CREDITED: "认领已入账", INVESTIGATING: "调查中", REVERSED_DEBT: "已冲正，尚有欠款", REPROPOSED: "已生成新的复核提案", CANCELLED_LATE_EVIDENCE: "原单证据变化，已撤销此提案" });
 const label = (value: unknown) => value == null || value === "" ? "—" : String(value);
 const stateOf = (row: ExceptionRecord) => String(row.state ?? row.status);
@@ -147,7 +147,7 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
     finally { if (owns()) setBusy(false); }
   };
   const configureFee = () => openActionConfirm({ briefKind: "config", action: "提议异常退款费用规则", title: "配置退款手续费", confirmLabel: "提交审批", effect: approval,
-    completionCopy: "提案提交后，须由另一管理员复核才生效", detail: "另一管理员复核后仅对新工单生效，已有工单保留原毛额、费用与净额快照。",
+    completionCopy: "提案提交后，须由另一位管理员复核才生效", detail: "另一位管理员复核后仅对新工单生效，已有工单保留原毛额、费用与净额快照。",
     reasonMin: 10, reasonMax: 200, businessForm: { kind: "multi-field", requireAnyChange: true, fields: [
       { key: "mode", label: "退款费用方式", inputKind: "select", current: String(policy?.mode ?? "UNCONFIGURED"), options: Object.keys(MODE), optionLabels: MODE, required: true, showDiff: true, help: `现在：${MODE[String(policy?.mode ?? "UNCONFIGURED")]}` },
       { key: "fee", label: "固定扣费（USDT）", current: policy?.mode === "FIXED_USDT" ? String(policy.feeUsdt ?? "0") : "0", inputKind: "text", help: policy?.mode === "FIXED_USDT" ? `现在 ${String(policy.feeUsdt ?? "0")} USDT` : "现在不扣固定费", visibleWhen: { key: "mode", equals: "FIXED_USDT" }, pattern: "^(0|[1-9][0-9]{0,11})(\\.[0-9]{1,6})?$", patternMessage: "填不小于 0 的数，最多六位小数", required: true },
@@ -201,7 +201,7 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
         detail: "取消尚未批准的原退款提案并释放其资金占用。", completion: "取消尚未批准的原退款提案并释放其资金占用。" }) });
       if (stateOf(row) === "UNKNOWN" && !row.providerCid) actions.push({ key: "recover", label: "核对原单 CID", primary: true, run: () => recover(row) });
       if (stateOf(row) === "FAILED_NO_TRANSFER") actions.push({ key: "retry", label: "重新提案", primary: true, run: () => confirm({ kind: "funds", action: "重新提交退款审核", title: "重新提交退款审核", confirmLabel: "提交审批", path: `/refunds/cases/${exceptionId(row.id)}/retry`, body: { expectedVersion: exceptionVersion(row.version) }, facts,
-        detail: "仅在原单已确认未转出后申请新工单，仍须另一管理员重新复核。" }) });
+        detail: "仅在原单已确认未转出后申请新工单，仍须另一位管理员重新复核。" }) });
     }
     if (kind === "incident" && canManage && Array.isArray(row.allowedActions)) {
       row.allowedActions.filter(action => typeof action === "string" && action in ACTION).forEach((action, index) =>
@@ -306,7 +306,7 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
       scopeFor={scopeFor} owns={owns} busy={busy} onClose={onClaimClose}
       onPropose={(intent, body, facts) => confirm({ kind: "funds", action: intent === "CLAIM_CREDIT" ? "提交认领入账提案" : "提交原路退款提案", title: intent === "CLAIM_CREDIT" ? "提交认领入账提案" : "提交原路退款提案", confirmLabel: "提交审批",
         path: intent === "CLAIM_CREDIT" ? "/exception-claims" : "/refunds/cases", body, facts,
-        detail: `证据 ${label(body.evidenceHash)}。另一管理员须独立复核后才会执行。`, completion: "提交后需另一位管理员复核才执行。" })} />}
+        detail: `证据 ${label(body.evidenceHash)}。另一位管理员须独立复核后才会执行。`, completion: "提交后需另一位管理员复核才执行。" })} />}
   </>;
 }
 

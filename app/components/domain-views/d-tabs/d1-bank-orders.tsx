@@ -36,7 +36,7 @@ const originalOrderStatusText = (value?: string | null) => value ? ({ AWAITING_P
 const submissionStatusText = (value?: string | null) => value ? ({ PENDING: "待提交", SUBMIT_UNKNOWN: "提交结果待核实", CREATED: "付款单已创建", REJECTED: "支付商拒绝创建" } as Record<string,string>)[value] ?? "未知" : "—";
 const settlementStatusText = (value?: string | null) => value ? ({ UNSETTLED: "未入账", CREDITED: "已入账", MANUAL_REVIEW: "待人工核对" } as Record<string,string>)[value] ?? "未知" : "—";
 const confirmationSourceText = (value?: string | null) => value ? ({ UNCONFIRMED: "尚未确认", ADMIN_MANUAL: "管理员人工确认", BANK_RECEIPT: "银行回单核实", AUTO_PROVIDER: "支付商自动确认", UNKNOWN: "未知" } as Record<string,string>)[value] ?? "未知" : "尚未确认";
-const providerStatusText = (value: unknown) => value == null ? "—" : ({ "0": "支付处理中", "1": "支付处理中", "3": "支付商已确认付款", "4": "支付商结果待核对", "5": "支付商结果待核对" } as Record<string,string>)[String(value)] ?? "未知";
+const providerStatusText = (value: unknown) => value == null ? "—" : ({ "0": "支付商：处理中", "1": "支付商：处理中", "3": "支付商：已确认付款", "4": "支付商：结果待核对", "5": "支付商：结果待核对" } as Record<string,string>)[String(value)] ?? "支付商：状态未知";
 /** 不能人工入账的原因，后端代码转成中文，不露原始代码（D1 第五节）。 */
 const MANUAL_BLOCK_TEXT: Record<string, string> = {
   HDPAY_ORDER_ALREADY_CREDITED: "这笔已入账，不能重复入账",
@@ -152,7 +152,7 @@ export function D1BankOrders({ refreshKey, onCount, ...actions }: OrderActions &
     <Panel flush icon={Landmark} tone="role-2" title="银行卡支付订单"
       sub={data ? `数据时间 ${time(data.asOf)}（${zone}）` : undefined}
       explain="包含所有状态的订单。订单数不等于实际收款，实际入账看「实际入账」列。到账时间按越南时间（UTC+7）填写和核对。"
-      actions={<Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => { void load(); void loadCounts(); }}>刷新订单</Button>}>
+      actions={<Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => { void load(); void loadCounts(); }}>刷新</Button>}>
       <Table label="银行卡支付订单" aria-busy={loading}>
         <thead><tr>
           <Th sticky="start">付款单 · 用户</Th>
@@ -201,7 +201,7 @@ export function D1BankOrders({ refreshKey, onCount, ...actions }: OrderActions &
           ...(credited(current) ? [{ label: "入账", state: "ok" as const, value: `${usdt(current.creditedUsdt)} USDT`, reason: confirmationSourceText(current.confirmationSource) }]
             : actions.canManage ? [] : [{ label: "人工入账", value: current.manualCreditAllowed ? "可以人工入账，需财务主管操作" : manualBlockText(current.manualCreditBlockReason) }]),
         ]} />
-        <Fold inset title="支付商与确认" summary={`支付 ${providerStatusText(current.providerStatus)}`}>
+        <Fold inset title="支付商与确认" summary={providerStatusText(current.providerStatus)}>
           <KeyValues rows={[
             { key: "submit", label: "提交", value: submissionStatusText(current.submissionStatus) },
             { key: "provider", label: "支付商", value: providerStatusText(current.providerStatus) },

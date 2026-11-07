@@ -180,7 +180,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
         .map(field => ({ key: `${row.paymentMethod}:${field}`, label: `${methodText[row.paymentMethod]} · ${feeLabel[field]}`, before: before.configured || field === "minTopupPrincipal" ? shown(before, field) : "未配置", after: shown(row, field) }));
     });
     ctx.openActionConfirm({ briefKind: "config", action: "修改付款手续费", title: "修改付款手续费", reasonMin: 10, reasonMax: 300,
-      effect: <StatusTag tone="progress" filled>保存后立即生效</StatusTag>,
+      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认保存",
       detail: "新手续费只用于之后发起的付款，已下单的按原费用。",
       content: <DiffList rows={rows} restTitle="没改的项" />,
@@ -209,7 +209,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
     : !policy?.constraints ? "暂时拿不到可填范围，只能查看" : !changed ? "还没有修改" : !valid ? "有填错的项，按框下的提示改" : undefined;
   const feeSummary = policyLoading ? "正在读取" : policyError ? "读取失败" : policy
     ? `${policy.channels.length} 种付款方式${unconfigured ? `，${unconfigured} 种未配置 · 用户付款时看不到` : "，都已配置"}${changed ? "，有修改没保存" : ""}` : "—";
-  const feeFoldOpen = feeOpen ?? (unconfigured > 0 || changed);
+  const feeFoldOpen = feeOpen ?? (unconfigured > 0 || changed || !!policyError);
   const doRefreshPolicy = () => { setRefreshAsk(false); void loadPolicy(); };
 
   const items = records?.items ?? [];
@@ -344,7 +344,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, reloadTick, pending, nav, o
     const expectedVersion = record.version!;
     ctx.openActionConfirm({ briefKind: "funds", action: `重新核对到账 · ${intentNo}`, title: "重新核对到账", reasonMin: 10, reasonMax: 300,
       confirmLabel: "确认核对",
-      effect: <StatusTag tone="progress" filled>立即核对</StatusTag>,
+      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       facts: <Facts>
         <Fact k="用户实付" lead tone="role-1" unit="USDT">{usdt(current.totalUsdt)}</Fact>
         <Fact k="付款单">{intentNo}</Fact>
@@ -381,7 +381,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, reloadTick, pending, nav, o
         { label: "用户实付", icon: Coins, tone: "money", value: `${usdt(r.totalUsdt)} USDT`, reason: `订单 ${usdt(r.subtotalUsdt)} · 手续费 ${usdt(r.channelFeeUsdt)} · 网络费 ${usdt(r.networkConfirmFeeUsdt)}` },
         { label: "用户", icon: User, tone: "users", value: r.userId, reason: `${kindText[r.kind] ?? "用途待确认"} · ${methodText[r.paymentMethod]}` },
         { label: "状态", state: stateTone(r.status) === "progress" ? undefined : stateTone(r.status), value: stateText[r.status], reason: r.reason ?? undefined },
-        { label: "完成", state: purchaseWasDelivered(r) && r.status === "DELIVERED" && r.receipt ? undefined : "warn", value: purchaseWasDelivered(r) ? "已完成" : r.receipt ? "已有回执，待确认" : "还没完成", reason: deliveryNote(r) },
+        { label: "是否完成", state: purchaseWasDelivered(r) && r.status === "DELIVERED" && r.receipt ? undefined : "warn", value: purchaseWasDelivered(r) ? "已完成" : r.receipt ? "已有回执，待确认" : "还没完成", reason: deliveryNote(r) },
         ...(pending ? [{ label: "待确认", state: "warn" as const, value: "这笔付款有一次操作还没确认结果，请在页面上方的提醒里查看。" }] : []),
       ] : []} />}
     {r && <>
@@ -410,7 +410,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, reloadTick, pending, nav, o
           </tr>)}</tbody>
         </Table>}
       </Fold>}
-      <Fold inset title="单号和版本" summary={`付款单版本 ${r.version ?? "尚未提供"}`}>
+      <Fold inset title="单号和版本" summary={r.providerReference ? "含支付商单号" : "支付商单号尚未提供"}>
         <KeyValues rows={[
           { key: "version", label: "付款单版本", value: r.version ?? "尚未提供" },
           { key: "fee", label: "锁定费用版本", value: r.feePolicyVersion ?? "尚未提供" },
