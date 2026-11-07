@@ -403,7 +403,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       {header}
       {pendingNotices}
       {restoreNotices}
-      <BlockState state="error" title="当前无法确认最新状态" detail={`${contentError.startsWith("操作") ? "业务开关读取失败。" : contentError} 为避免误操作，控制项已隐藏。`} onRetry={reload} retrying={contentLoading} />
+      <BlockState state="error" title="当前无法确认最新状态" detail={`${contentError.startsWith("操作") ? "业务开关读取失败。" : contentError}为避免误操作，控制项已隐藏。`} onRetry={reload} retrying={contentLoading} />
       {lastRead.current && <>
         <p className="rd-note">这是 {readAt} 读到的状态，可能已过期</p>
         <ControlGrid label="上次读到的业务开关">
@@ -493,7 +493,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       coverage: gate.coveragePrecheckRequired ? { coverageRatio: COV, redlinePct: RED } : undefined,
       coverageCheck: "批准时重新检查兑付覆盖率，检查不通过仍保留待批工单，业务继续关停。",
       facts: <Facts>
-        <Fact k="业务">{name}，批准后重新开放{cap}</Fact>
+        <Fact k="业务">{name}</Fact>
         {gate.key === "withdraw" && <Fact k="控制范围" tone="warn">已放行的单还会打款</Fact>}
         <Fact k="备付金检查">{gate.coveragePrecheckRequired ? "批准时重新检查覆盖率；不通过则保留待批工单，业务继续关停" : "试用免查，不直接付钱"}</Fact>
       </Facts>,

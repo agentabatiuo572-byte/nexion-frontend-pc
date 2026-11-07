@@ -313,7 +313,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   // ---------- 地区 ----------
   const editJurisdiction = (current?: DisclosureJurisdictionOption) => openActionConfirm({ briefKind: "config",
     action: <>{current ? "编辑" : "新增"}披露适用地区</>,
-    detail: <>适用地区代码创建后不可修改；名称与生命周期由适用地区配置统一维护，版本和国家映射在下方独立管理。</>,
+    detail: <>版本和国家在版本映射里单独管理。</>,
     amplifies: false,
     effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
     confirmLabel: current ? "保存名称" : "确认新增",
@@ -409,7 +409,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       detail: <>版本或适用国家变了，新旧国家的用户都要重新确认，并收到通知。{gateEffect}</>,
       statedBrief: { impact: "批准后这个地区按这里的版本和国家生效。", check: "核对地区、版本和适用国家，理由写清版本依据。" },
       facts: <div className="rd-stack">{current && <Facts><Fact k="地区">{current.code} · {nameOf(current.code, current.name)}</Fact><Fact k="当前">{current.version} · {current.countryCodes.join("、") || "未配置国家"}</Fact></Facts>}
-        <Fold inset title="已发布的版本" summary={`${mappableRows.length} 个版本`}>
+        <Fold inset title="各版本的生效日期" summary={`${mappableRows.length} 个版本`}>
           <RecordList label="可映射的披露版本" records={mappableRows.map((row) => ({
             id: versionKey(row), value: row.version, object: `${row.jurisdiction} · 生效日期 ${row.effectiveDate || "日期未提供"}`,
             status: current && compareVersionsDesc(row.version, current.version) > 0 ? <StatusTag tone="warn">旧版本，选用将退回历史内容</StatusTag> : undefined,
@@ -846,7 +846,8 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
         <Fold inset title="版本历史" summary={`${regionHistory.length} 个版本`}>
           <RecordList label="这个地区的版本" records={regionHistory.map((row) => ({
             id: versionKey(row), value: <button type="button" className="rd-link rd-link-button" onClick={() => openVersion(row)}>{row.version}</button>,
-            at: row.publishedAt || row.updatedAt || undefined, object: languageText(row.languageScope),
+            at: row.publishedAt || row.updatedAt || undefined,
+            object: `${row.publishedAt || row.updatedAt ? "" : `${row.effectiveDate || "日期未提供"} · `}${languageText(row.languageScope)}`,
             status: <StatusTag tone={versionState(row).tone}>{versionState(row).text}</StatusTag>,
           }))} />
         </Fold>
