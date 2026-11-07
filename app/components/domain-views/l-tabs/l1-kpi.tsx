@@ -491,7 +491,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
   const selectedReadRequired = query.window !== "7d" || Boolean(query.from || query.to || query.cohort || query.phase || query.locale || query.ref);
   const data = localData ?? (selectedReadRequired ? undefined : ctx.biData?.l1);
   useEffect(() => { if (data) setReadAt(businessClock(Date.now())); }, [data]);
-  const rawKpis = rows<Kpi>(data?.kpis);
+  const rawKpis = rows<Kpi>(data?.kpis).map((item) => item.n === 6 ? { ...item, name: "站内通知点击率" } : item);
   const liveTotals = readL1LiveTotals(data);
   let protocolBroken = false;
   if (rawKpis.length) {
@@ -655,7 +655,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     const safeSelKpi = Math.min(picked ?? order[0], KPIS.length - 1);
     const baseKpi = KPIS[safeSelKpi];
     const k = drillKpi?.n === baseKpi.n
-      ? { ...baseKpi, ...drillKpi, spark: drillTrend?.values ?? drillKpi.spark ?? baseKpi.spark, sparkSuppressed: drillTrend?.suppressedPoints ?? drillKpi.sparkSuppressed }
+      ? { ...baseKpi, ...drillKpi, name: baseKpi.name, spark: drillTrend?.values ?? drillKpi.spark ?? baseKpi.spark, sparkSuppressed: drillTrend?.suppressedPoints ?? drillKpi.sparkSuppressed }
       : baseKpi;
     const baseExt = KPI_EXT[String(k.n)] ?? { fx: k.name, fxBold: [], num: "—", den: "—", delta: "0", note: "暂未返回该关键指标解释", jump: [] };
     const ext = {

@@ -187,7 +187,7 @@ export function OverviewTab({ main, links }: { main: D3Main; links: readonly Cro
     : null;
   const noDue = maturity7.cumulativeUsdt === 0;
   const levels = (
-    <Panel title="资金安全等级" icon={ShieldCheck} tone={quiet ? "role-other" : tone} explain="按未来 7 天到期的应付款判断，不随页面选的窗口变。">
+    <Panel title="资金安全等级" icon={ShieldCheck} tone={quiet ? "role-other" : tone} explain="按未来 7 天到期的应付款判断，不随页面选的窗口变。「关注」是水位提醒，不等同今日概览的资金告警，两页按各自阈值判断。">
       <div className="d3-levels">
         <Figure width={560} stack="wide" graphic={tiers
           ? <TierBand label="资金安全等级" tiers={tiers} current={water.tier} value={noDue || water.reserveCoverDays >= COVER_CAP_DAYS ? null : water.reserveCoverDays} valueText={formatReserveCoverDays(maturity7.cumulativeUsdt, water.reserveCoverDays)} boundText={(value) => (value === COVER_CAP_DAYS ? "1 年" : value === 0 ? "0" : `${value} 天`)} />
@@ -391,7 +391,7 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
             flush
             title="应付款 · 9 类"
             sub={main.liabilities.totalUsdt === null ? "UVT 应付款缺少有效价格" : `${breakdown.filter((row) => row.amountUsdt !== null && row.amountUsdt > 0).length} 类有金额`}
-            explain={`九类里统计了 ${main.liabilities.hardLiabilityCategoryCount} 类。试用业务只做压力测试，${main.liabilities.trialShadowIncluded ? "这里已显示" : "不算必须付的钱"}。${UVT_VALUATION_NOTE}`}
+            explain={`九类里统计了 ${main.liabilities.hardLiabilityCategoryCount} 类。试用业务只做压力测试，开启后影响到期预测和资金安全等级，不计入实际应付款或当前差额。${UVT_VALUATION_NOTE}`}
             icon={ReceiptText}
             tone="role-2"
             actions={canExport ? <Button size="sm" disabledReason={exportBlocked} onClick={onExport}>导出应付款 CSV</Button> : undefined}
@@ -592,7 +592,7 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNo
             { key: "mode", label: "质押奖励预测", value: interestModeText(config.stakingInterestMode) },
             { key: "genesis", label: "创世节点收益", value: includedText(config.genesisIncluded) },
             { key: "far", label: "远期应付款", value: includedText(config.includeFarLiabilities) },
-            { key: "trial", label: "试用业务压力测试", value: config.trialStressEnabled ? "开启（不算必须付的钱）" : "关闭" },
+            { key: "trial", label: "试用业务压力测试", value: config.trialStressEnabled ? "开启（影响预测和等级）" : "关闭" },
             { key: "reserve", label: "计入的储备", value: Object.entries(config.reserveCategories).filter(([key, on]) => key === "usdt" && on).map(([key]) => categoryText(key)).join("、") || "无" },
             { key: "liability", label: "计入的应付款", value: Object.entries(config.liabilityCategories).filter(([, on]) => on).map(([key]) => categoryText(key)).join("、") || "无" },
             { key: "rule", label: "生效方式", value: config.effectiveRule === "NEXT_UTC_DAY_00:00" ? effectiveText() : operatorCopyText(config.effectiveRule) },

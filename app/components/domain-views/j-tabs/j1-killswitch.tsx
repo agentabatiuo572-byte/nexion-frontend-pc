@@ -471,7 +471,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       action: `关停业务开关 · ${name}`,
       title: `关停${name.replace(/开关$/, "")}`,
       facts: <Facts><Fact k="业务">{name}，控制{cap}</Fact><Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{gate.key === "withdraw" && <Fact k="关停范围" tone="warn">{gateCopy(gate).desc}</Fact>}</Facts>,
-      detail: "关停不会多付钱，不需要先检查备付金。",
+      detail: "关停不会多付钱，不需要先检查备付金。恢复需另一位有权超管批准。",
       effect: IMMEDIATE,
       statedBrief: { impact: gate.key === "withdraw" ? "立即停止新提现申请、审核放行和未派发的链上打款。恢复要回到这页提交审批。" : gate.key === "trial" ? "立即停止新试用领取和试用转购，已有记录仍按系统状态显示，用户仍可取消。恢复要回到这页提交审批。" : `${name}控制的业务全站马上停止。恢复要回到这页提交审批。`, check: "核对业务和触发依据，理由写清监管通知、工单或事件编号。" },
       confirmTone: "danger",
@@ -536,7 +536,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       title: `批量关停 ${targets.length} 项业务`,
       facts: <div className="rd-stack"><Facts>{targets.length === 1 ? <Fact k="关停业务">{names}</Fact> : <Fact k="关停业务" unit="项">{targets.length}</Fact>}<Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{targets.some((gate) => gate.key === "withdraw") && <Fact k="提现关停范围" tone="warn">{GATE_COPY.withdraw.desc}</Fact>}</Facts>
         {targets.length > 1 && <Fold inset title="本次关停业务" summary={`${targets.length} 项`}><RecordList label="本次关停业务" records={targets.map((gate) => ({ id: gate.key, value: operatorCopyText(gate.name), object: gateCopy(gate).cap }))} /></Fold>}</div>,
-      detail: "用于监管点名、法务事件等重大场景。每一项都记入操作记录。",
+      detail: "用于监管点名、法务事件等重大场景。每一项都记入操作记录。恢复需另一位有权超管批准。",
       effect: IMMEDIATE,
       statedBrief: { impact: `已选的 ${targets.length} 个业务开关立即关闭。有一项不符合时整批不执行。恢复要回到这页逐项提交审批。`, check: "核对已选业务、触发依据和监管事由，理由写清依据或工单号。" },
       confirmTone: "danger",

@@ -994,6 +994,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const reach = useReach();
   // Q-16：没有 D5 读权时列表照常，额度写无权限，用到额度的决定禁用。读取失败不算这种情况，仍然全部暂停。
   const canReadD5 = hasAuthority("finance_d5_read");
+  const canReadUserDetail = reach("/users/search", "user_c1hub_read");
   // 达到大额门槛的放行，后端只认财务主管和超管（isD2RoleAllowed），其他账号提交必被拒，入口直接禁用。
   const canApproveLarge = ["FINANCE_LEAD", "superadmin"].includes(session?.role ?? "");
   // 冻结、解冻和手动退款另有角色门槛，动作权限仍按原权限码判断。
@@ -1240,7 +1241,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       statedBrief: brief,
       effect: reviewEffect(action),
       confirmLabel: `确认${label}`,
-      confirmTone: action === "REJECT" || action === "REFUND" ? "danger" : undefined,
+      confirmTone: action === "APPROVE" || action === "REJECT" || action === "REFUND" ? "danger" : undefined,
       run: async (reason, _newValue, businessValue) => {
         try {
           await runReview(row.withdrawalNo, action, reason, businessValue, row.status.toUpperCase());
@@ -1473,7 +1474,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       statedBrief: { impact: batchImpact, check: REVIEW_BRIEF[action].check },
       effect: reviewEffect(action),
       confirmLabel: `确认批量${actionLabel(action)}`,
-      confirmTone: action === "REJECT" ? "danger" : undefined,
+      confirmTone: action === "APPROVE" || action === "REJECT" ? "danger" : undefined,
       run: async (reason, _newValue, businessValue) => {
         try {
           await runBatch(action, ids, reason, businessValue);
@@ -1821,7 +1822,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
                     return <Tr key={row.withdrawalNo} selected={row.withdrawalNo === detail?.withdrawalNo} onOpen={() => { if (!submitting) void openDetail(row); }}>
                       {showSelection && <Td><Checkbox aria-label={`${selectionHint}：${row.withdrawalNo}`} title={`${selectionNote}${selectionHint}`} disabled={!selectable && !selectedNow} checked={selectedNow} onChange={(event) => setSelected((current) => { const next = new Set(current); event.target.checked ? next.add(row.withdrawalNo) : next.delete(row.withdrawalNo); return next; })} /></Td>}
                       <Td sticky="start"><Cell mono full main={<button type="button" className="rd-cell-link" title={row.withdrawalNo} aria-label={`打开提现单 ${row.withdrawalNo} 的详情`} onClick={() => { if (!submitting) void openDetail(row); }}>{shortNo(row.withdrawalNo)}</button>} sub={listTime(row.createdAt)} /></Td>
-                      {columns.isVisible("user") && <Td><Cell main={operatorNicknameText(row.nickname)} sub={row.userNo} /></Td>}
+                      {columns.isVisible("user") && <Td><Cell main={operatorNicknameText(row.nickname)} sub={canReadUserDetail ? <Link className="rd-link" href={`/users/search/${encodeURIComponent(row.userNo)}`}>{row.userNo}</Link> : row.userNo} /></Td>}
                       {columns.isVisible("asset") && <Td><Cell main={<span title={`${row.asset} / ${row.chain}`} aria-label={`资产与渠道：${row.asset} / ${row.chain}`}>{row.chain === "BANK-VND" ? "越南银行卡 · HDPay" : chainText(row)}</span>} sub={<span title={row.targetAddress}>{row.chain === "BANK-VND" ? "账户信息见详情" : shortAddress(row.targetAddress)}</span>} /></Td>}
                       {columns.isVisible("amount") && <Td align="right"><Cell num main={amountText(row.amount)} sub={`${row.chain === "BANK-VND" ? "兑换" : "到账"} ${amountText(row.netReceive)}`} /></Td>}
                       {columns.isVisible("fee") && <Td align="right"><Cell num main={amountText(row.actualFee)} sub={<button type="button" className="rd-link" onClick={() => void openDetail(row)}>详情中查看完整费用</button>} /></Td>}
@@ -1925,7 +1926,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         </Fold>
         <Fold inset title="收款与用户信息" summary={`账户${userStatusLabel(shown.userStatus)}，24h 第 ${shown.withdrawalCount24h} 笔`} icon={User} tone="users">
           <Facts>
-            <Fact k="用户编号">{shown.userNo}</Fact>
+            <Fact k="用户编号">{canReadUserDetail ? <Link className="rd-link" href={`/users/search/${encodeURIComponent(shown.userNo)}`}>{shown.userNo}</Link> : shown.userNo}</Fact>
             <Fact k="昵称">{operatorNicknameText(shown.nickname)}</Fact>
             <Fact k="用户等级">{shown.userLevel || "—"}</Fact>
             <Fact k="手机号">{shown.phoneMasked || "未展示手机号"}</Fact>

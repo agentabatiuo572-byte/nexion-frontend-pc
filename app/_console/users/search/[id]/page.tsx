@@ -59,7 +59,7 @@ import { NotificationTimeEvidenceDrawer, pendingCorrections, type PendingCorrect
 import { PaymentSecurityBlock, type PaymentSecurityState } from "@/app/components/payment-security/payment-security-block";
 
 /**
- * C1 用户详情的写动作（昵称重置、支付方式解绑、换绑通知、设备置换和回收）共用一张表，槽位分命名空间。
+ * C1 用户详情的写动作（昵称重置、支付方式解绑、换绑通知、回收并记录置换和回收）共用一张表，槽位分命名空间。
  * 槽位带用户 ID 和目标 ID：命令号跨刷新存活，不带目标就会在切到下一个用户时复用上一个目标的号。
  * 原操作内容一起存，结果未知时只能原样重试（OP-94）。
  */
@@ -88,7 +88,7 @@ const LEGACY_COMMAND: Record<string, readonly [C1CommandKind, string]> = {
   "nickname-reset": ["nickname", "重置昵称"],
   "payment-unbind": ["unbind", "解绑支付方式"],
   "payment-rebind": ["rebind", "发送换绑通知"],
-  "device-replace": ["replace", "设备置换"],
+  "device-replace": ["replace", "回收并记录置换"],
   "device-recycle": ["recycle", "设备回收"],
 };
 const c1UserCommands = createPendingMutationStore<C1Command>({
@@ -789,7 +789,7 @@ export default function UserDetailPage() {
       const text = command.kind === "nickname" ? `昵称已重置为 ${userNicknameText(nextNickname, profile?.phoneMasked)}`
         : command.kind === "unbind" ? "支付方式已从 UVEL 账户解绑"
         : command.kind === "rebind" ? "换绑通知已进入推送队列"
-        : command.kind === "replace" ? "设备置换已执行" : "设备回收已执行";
+        : command.kind === "replace" ? "回收并记录置换已执行" : "设备回收已执行";
       setWriteResult({ key: readKey, text, tone: "ok" });
       if (command.kind === "unbind") {
         if (!includeUnbound) { setIncludeUnbound(true); setPaymentPage(1); } else await loadPaymentMethods();
@@ -863,8 +863,8 @@ export default function UserDetailPage() {
     const deviceId = asNumber(device.id);
     const instance = asText(device.instanceNo);
     setActionConfirm({ briefKind: "record",
-      action: operation === "replace" ? `设备置换 · ${asText(device.instanceNo)}` : `设备回收 · ${asText(device.instanceNo)}`,
-      title: operation === "replace" ? "设备置换" : "设备回收",
+      action: operation === "replace" ? `回收并记录置换 · ${asText(device.instanceNo)}` : `设备回收 · ${asText(device.instanceNo)}`,
+      title: operation === "replace" ? "回收并记录置换" : "设备回收",
       detail: operation === "replace"
         ? "这台设备回收并离线，同时记一张已完成的置换单。不发新设备，不退钱，也不给用户发通知。"
         : "这台设备回收并离线，不留置换单。不退钱，也不给用户发通知。",
@@ -881,8 +881,8 @@ export default function UserDetailPage() {
       confirmLabel: operation === "replace" ? "确认置换，立即生效" : "确认回收，立即生效",
       confirmTone: "danger",
       irreversible: true,
-      statedBrief: { impact: operation === "replace" ? "和设备回收的差别只有一点：多记一张已完成的置换单，留下这次置换的记录。设备有任务在跑时系统会拒绝。" : "和设备置换的差别只有一点：不留置换单。设备有任务在跑时系统会拒绝。", check: "核对设备实例号和用户，理由写清依据或工单号。" },
-      run: (reason) => execute({ kind: operation, label: `${operation === "replace" ? "设备置换" : "设备回收"} · ${instance}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), deviceId, deviceStatus: asText(device.status) }),
+      statedBrief: { impact: operation === "replace" ? "和设备回收的差别只有一点：多记一张已完成的置换单，留下这次置换的记录。设备有任务在跑时系统会拒绝。" : "和回收并记录置换的差别只有一点：不留置换单。设备有任务在跑时系统会拒绝。", check: "核对设备实例号和用户，理由写清依据或工单号。" },
+      run: (reason) => execute({ kind: operation, label: `${operation === "replace" ? "回收并记录置换" : "设备回收"} · ${instance}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), deviceId, deviceStatus: asText(device.status) }),
     });
   };
 
@@ -1142,7 +1142,7 @@ export default function UserDetailPage() {
       const deviceId = asNumber(row.id);
       if (!deviceId || FINAL_DEVICE_STATUS.includes(asText(row.status, "").toUpperCase())) return "—";
       return <Cell full main={<span className="rd-row-actions">
-        <Button size="sm" disabledReason={deviceBlock(deviceId)} onClick={() => openDeviceAction(row, "replace")}>设备置换</Button>
+        <Button size="sm" disabledReason={deviceBlock(deviceId)} onClick={() => openDeviceAction(row, "replace")}>回收并记录置换</Button>
         <Button size="sm" variant="danger-outline" disabledReason={deviceBlock(deviceId)} onClick={() => openDeviceAction(row, "recycle")}>设备回收</Button>
       </span>} sub={deviceBlock(deviceId)} />;
     } }] : []),
@@ -1432,9 +1432,9 @@ export default function UserDetailPage() {
         } : undefined}
         footer={currentDevice && currentDeviceWritable
           ? <Decision note={deviceBlock(asNumber(currentDevice.id))}
-              explain="两个操作都让设备回收并离线，不能撤销，不退钱，不发新设备。设备置换多记一张已完成的置换单，设备回收不留单。"
+              explain="两个操作都让设备回收并离线，不能撤销，不退钱，不发新设备。回收并记录置换多记一张已完成的置换单，设备回收不留单。"
               danger={<Button variant="danger-outline" disabledReason={deviceBlock(asNumber(currentDevice.id))} onClick={() => openDeviceAction(currentDevice, "recycle")}>设备回收</Button>}
-              others={<>{goLink}<Button disabledReason={deviceBlock(asNumber(currentDevice.id))} onClick={() => openDeviceAction(currentDevice, "replace")}>设备置换</Button></>} />
+              others={<>{goLink}<Button disabledReason={deviceBlock(asNumber(currentDevice.id))} onClick={() => openDeviceAction(currentDevice, "replace")}>回收并记录置换</Button></>} />
           : canReadNotificationEvidence && Number.isSafeInteger(currentNotificationId) && currentNotificationId > 0
             ? <Decision primary={<Button onClick={() => { setRecord(null); setNotificationEvidence({ userKey, authEpoch, id: currentNotificationId }); }}>查看时间证据</Button>} />
             : goLink ? <Decision primary={goLink} /> : undefined}>
