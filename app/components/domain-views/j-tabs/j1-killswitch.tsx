@@ -33,6 +33,16 @@ const restoreAttempts = createPendingMutationStore<RestoreAttempt>({
 });
 const IMPACT_LABEL: Record<string, string> = { immediate: "即时资金流出", delayed: "未来负债增加", none: "不直接影响兑付" };
 const GATE_ICON: Record<string, LucideIcon> = { withdraw: Landmark, staking: Layers, genesis: Gem, exchange: ArrowLeftRight, trial: Ticket };
+/** 以后恢复该业务时，删掉对应这一行即可恢复原有入口。 */
+const UNAVAILABLE_GATES: Record<string, string> = { staking: "App 已下线质押功能，这一项暂不可用。" };
+/** 只覆盖本页显示，等待后端同步开关说明。 */
+const GATE_COPY: Record<string, { cap: string; desc: string }> = {
+  withdraw: { cap: "新提现申请、审核放行和未派发的链上打款", desc: "已提交打款方的链上单继续核对原结果，不能保证撤回。" },
+  trial: { cap: "新试用领取和试用转购", desc: "关停后停止新领取和试用转购；已有试用记录仍按服务端状态展示，用户仍可取消。" },
+};
+function gateCopy(gate: JGate) {
+  return GATE_COPY[gate.key] ?? { cap: operatorCopyText(gate.cap), desc: operatorCopyText(gate.desc) };
+}
 const TRIGGER_BASES = ["", "监管点名", "挤兑风险", "安全事件", "其他"];
 const TRIGGER_LABELS = { "": "请选择触发依据" };
 const AUTO_CONFIRM_DECISIONS = ["", "keep_disabled", "recommend_restore"];
@@ -282,6 +292,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     if (restoreApprovals.some((row) => row.obj === g.key)) throw new Error("这项恢复申请待审批，请核对原审批。");
     const slot = `${session.adminId}:${g.key}`;
     const previous = restoreAttempts.list().find((record) => record.fingerprint === slot);
+    if (!previous && UNAVAILABLE_GATES[g.key]) throw new Error(UNAVAILABLE_GATES[g.key]);
     if (!previous && !reason) return;
     const key = previous?.commandKey ?? createJEmergencyCommandKey();
     const input: RestoreProposal = previous?.input ?? {
@@ -408,8 +419,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         <p className="rd-note">这是 {readAt} 读到的状态，可能已过期</p>
         <ControlGrid label="上次读到的业务开关">
           {lastRead.current.activeGates.map((gate) => (
-            <ControlCard key={gate.key} title={operatorCopyText(gate.name)} icon={GATE_ICON[gate.key] ?? Power} tone={gate.enabled ? "ok" : "warn"}
-              status={gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>} />
+            <ControlCard key={gate.key} title={operatorCopyText(gate.name)} icon={GATE_ICON[gate.key] ?? Power} tone={UNAVAILABLE_GATES[gate.key] ? "neutral" : gate.enabled ? "ok" : "warn"}
+              status={UNAVAILABLE_GATES[gate.key] ? <><StatusTag tone="neutral">暂不可用</StatusTag><span className="rd-note">{UNAVAILABLE_GATES[gate.key]}</span></> : gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>} />
           ))}
         </ControlGrid>
       </>}
@@ -427,6 +438,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   }
 
   const gates = data.activeGates;
+  const availableGates = gates.filter((gate) => !UNAVAILABLE_GATES[gate.key]);
   const { coverageRatio: COV, redlinePct: RED } = data.coverage;
   const coverageReady = data.coverage.valuationReliable;
   const recoveryBlock = !data.coverage.valuationReliable
@@ -435,7 +447,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   // yellowLinePct 是红线加 25，不是资金总览的健康线（F03）。这页只和红线比，不下「正常」结论。
   // 恢复资格使用服务端许可；数值比较只用于展示差值。
   const coverageGapText = !data.coverage.valuationReliable ? "估值不可靠，当前数值不能作为恢复依据" : COV > RED ? `高于红线 ${pointsText(COV - RED)} 个百分点` : COV === RED ? "等于红线" : `低于红线 ${pointsText(RED - COV)} 个百分点`;
-  const killedGates = gates.filter((gate) => !gate.enabled);
+  const killedGates = availableGates.filter((gate) => !gate.enabled);
   const killed = killedGates.length;
   const backfills = [...data.autoConfirmations.filter((row) => row.overdue), ...data.autoConfirmations.filter((row) => !row.overdue)];
   const overdue = backfills.filter((row) => row.overdue);
@@ -449,20 +461,21 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   const locks = new Set([...pending.flatMap((record) => record.locks), ...visibleRestores.map((record) => record.input.obj), ...restoreApprovals.map((row) => row.obj)]);
   const blockOf = (lock: string) => (contentLoading ? READING : locks.has(lock) ? LOCKED : undefined);
-  const selectedGates = gates.filter((gate) => sel[gate.key] && gate.enabled && !locks.has(gate.key));
+  const selectedGates = availableGates.filter((gate) => sel[gate.key] && gate.enabled && !locks.has(gate.key));
   const selOnCount = selectedGates.length;
-  const liveCount = gates.length - killed;
+  const liveCount = availableGates.length - killed;
 
   const killGate = (gate: JGate) => {
+    if (UNAVAILABLE_GATES[gate.key]) return;
     const name = operatorCopyText(gate.name);
-    const cap = gate.key === "withdraw" ? "新提现申请和审核放行" : operatorCopyText(gate.cap);
+    const cap = gateCopy(gate).cap;
     openActionConfirm({ briefKind: "emergency",
       action: `关停业务开关 · ${name}`,
       title: `关停${name}`,
-      facts: <Facts><Fact k="业务">{name}，控制{cap}</Fact><Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{gate.key === "withdraw" && <Fact k="关停范围" tone="warn">已放行的单还会打款</Fact>}</Facts>,
+      facts: <Facts><Fact k="业务">{name}，控制{cap}</Fact><Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{gate.key === "withdraw" && <Fact k="关停范围" tone="warn">{gateCopy(gate).desc}</Fact>}</Facts>,
       detail: "关停不会多付钱，不需要先检查备付金。",
       effect: IMMEDIATE,
-      statedBrief: { impact: gate.key === "withdraw" ? "立即停止新提现申请和审核放行。恢复要回到这页提交审批。" : `${name}控制的业务全站马上停止。恢复要回到这页提交审批。`, check: "核对业务和触发依据，理由写清监管通知、工单或事件编号。" },
+      statedBrief: { impact: gate.key === "withdraw" ? "立即停止新提现申请、审核放行和未派发的链上打款。恢复要回到这页提交审批。" : gate.key === "trial" ? "立即停止新试用领取和试用转购，已有记录仍按服务端状态展示，用户仍可取消。恢复要回到这页提交审批。" : `${name}控制的业务全站马上停止。恢复要回到这页提交审批。`, check: "核对业务和触发依据，理由写清监管通知、工单或事件编号。" },
       confirmTone: "danger",
       confirmLabel: "确认关停，立即生效",
       reasonPlaceholder: REASON_HINT,
@@ -484,8 +497,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   };
 
   const resumeGate = (gate: JGate) => {
+    if (UNAVAILABLE_GATES[gate.key]) return;
     const name = operatorCopyText(gate.name);
-    const cap = gate.key === "withdraw" ? "新提现申请和审核放行" : operatorCopyText(gate.cap);
+    const cap = gateCopy(gate).cap;
     openActionConfirm({ briefKind: "emergency",
       action: `提交恢复申请 · ${name}`,
       title: `申请恢复${name}`,
@@ -494,7 +508,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       coverageCheck: "批准时重新检查兑付覆盖率，检查不通过仍保留待批工单，业务继续关停。",
       facts: <Facts>
         <Fact k="业务">{name}</Fact>
-        {gate.key === "withdraw" && <Fact k="控制范围" tone="warn">已放行的单还会打款</Fact>}
+        {gate.key === "withdraw" && <Fact k="控制范围" tone="warn">{gateCopy(gate).desc}</Fact>}
         <Fact k="备付金检查">{gate.coveragePrecheckRequired ? "批准时重新检查覆盖率；不通过则保留待批工单，业务继续关停" : "试用免查，不直接付钱"}</Fact>
       </Facts>,
       detail: "恢复申请进入应急审批队列，排在其他待办前。审批人要有审批和恢复权限。",
@@ -522,8 +536,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     openActionConfirm({ briefKind: "emergency",
       action: "应急批量停用 · 监管点名场景",
       title: `批量关停 ${targets.length} 项业务`,
-      facts: <div className="rd-stack"><Facts>{targets.length === 1 ? <Fact k="关停业务">{names}</Fact> : <Fact k="关停业务" unit="项">{targets.length}</Fact>}<Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{targets.some((gate) => gate.key === "withdraw") && <Fact k="提现关停范围" tone="warn">已放行的单还会打款</Fact>}</Facts>
-        {targets.length > 1 && <Fold inset title="本次关停业务" summary={`${targets.length} 项`}><RecordList label="本次关停业务" records={targets.map((gate) => ({ id: gate.key, value: operatorCopyText(gate.name), object: gate.key === "withdraw" ? "新提现申请和审核放行" : operatorCopyText(gate.cap) }))} /></Fold>}</div>,
+      facts: <div className="rd-stack"><Facts>{targets.length === 1 ? <Fact k="关停业务">{names}</Fact> : <Fact k="关停业务" unit="项">{targets.length}</Fact>}<Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{targets.some((gate) => gate.key === "withdraw") && <Fact k="提现关停范围" tone="warn">{GATE_COPY.withdraw.desc}</Fact>}</Facts>
+        {targets.length > 1 && <Fold inset title="本次关停业务" summary={`${targets.length} 项`}><RecordList label="本次关停业务" records={targets.map((gate) => ({ id: gate.key, value: operatorCopyText(gate.name), object: gateCopy(gate).cap }))} /></Fold>}</div>,
       detail: "用于监管点名、法务事件等重大场景。每一项都记入操作记录。",
       effect: IMMEDIATE,
       statedBrief: { impact: `已选的 ${targets.length} 个业务开关立即关闭。有一项不符合时整批不执行。恢复要回到这页逐项提交审批。`, check: "核对已选业务、触发依据和监管事由，理由写清依据或工单号。" },
@@ -648,6 +662,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   /** 业务卡底部只有一个动作，后果收进名称旁的提示图标（DP-06）。 */
   const cardAction = (gate: JGate): ReactNode => {
+    if (UNAVAILABLE_GATES[gate.key]) return undefined;
     const block = blockOf(gate.key);
     if (gate.enabled) return canKill ? <Button variant="danger-outline" disabledReason={block} onClick={() => killGate(gate)}>关停</Button> : undefined;
     const approval = restoreApprovals.find((row) => row.obj === gate.key);
@@ -664,9 +679,11 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   };
 
   const gateHelp = (gate: JGate) => {
+    if (UNAVAILABLE_GATES[gate.key]) return [{ k: "状态", v: UNAVAILABLE_GATES[gate.key] }, { k: "最近变更", v: gate.lastChange || "—" }];
     const backfill = backfillOf(gate.key);
     return [
-      { k: "控制", v: gate.key === "withdraw" ? "新提现申请和审核放行；已放行的单还会打款" : operatorCopyText(gate.cap) },
+      { k: "控制", v: gateCopy(gate).cap },
+      ...(GATE_COPY[gate.key] ? [{ k: "关停范围", v: gateCopy(gate).desc }] : []),
       { k: "资金影响", v: IMPACT_LABEL[gate.coverageImpactCategory] },
       { k: "最近变更", v: gate.lastChange || "—" },
       { k: "操作后果", v: gate.enabled ? "关停不查覆盖率，确认后立即生效。"
@@ -701,16 +718,16 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       ) : killed > 0 ? (
         <Conclusion state="warn" hint={resumeBlocked ? recoveryBlock : undefined} explainTitle="恢复业务怎么操作" explain={nextStepHelp}>{conclusionFacts}</Conclusion>
       ) : pending.length + visibleRestores.length > 0 ? (
-        <Conclusion state="warn" hint="到上方核对原操作结果。" explainTitle="待确认结果怎么核对" explain="业务卡读到的是现在的状态，不能当成这次操作的结果。">业务开关：全部开启，<b>{pending.length + visibleRestores.length}</b> 项操作或审批结果未确认</Conclusion>
+        <Conclusion state="warn" hint="到上方核对原操作结果。" explainTitle="待确认结果怎么核对" explain="业务卡读到的是现在的状态，不能当成这次操作的结果。">业务开关：可用业务全部开启，<b>{pending.length + visibleRestores.length}</b> 项操作或审批结果未确认</Conclusion>
       ) : (
-        <Conclusion state="ok">业务开关：全部开启，没有要处理的事</Conclusion>
+        <Conclusion state="ok">业务开关：可用业务全部开启，没有要处理的事</Conclusion>
       )}
 
       <StatBand label="业务开关摘要">
-        <Stat tone={liveCount < gates.length ? "warn" : "role-2"} icon={Power} label="在线业务" value={`${liveCount} / ${gates.length}`} />
+        <Stat tone={liveCount < availableGates.length ? "warn" : "role-2"} icon={Power} label="在线业务" value={`${liveCount} / ${availableGates.length}`} explain="只统计当前可用的业务，暂不可用项不计入。" />
         <Stat tone={data.stats.emergencyGateCount > 0 ? "warn" : "role-other"} icon={Siren} label="自动或批量关停" value={String(data.stats.emergencyGateCount)} unit="项" explain="由自动规则、批量应急或应急预案联动关停的业务。" />
         <Stat tone="role-other" icon={ShieldAlert} label="未能恢复" value={String(data.stats.coverageBlockedCount)} unit="次" explain="因覆盖率或估值检查未通过而未能恢复的累计次数，不是现在受限的业务数。审批时覆盖率不通过仍保留待批工单。" />
-        <Stat tone={covPass ? "role-1" : "danger"} icon={Coins} label="兑付覆盖率" value={coverageReady ? pct(COV) : "暂时无法判断"} sub={`红线 ${RED}%`} explain={`储备除以应付款，${coverageGapText}。恢复提现、兑换、创世节点或质押批准时，系统重查覆盖率；试用免查。`} />
+        <Stat tone={covPass ? "role-1" : "danger"} icon={Coins} label="兑付覆盖率" value={coverageReady ? pct(COV) : "暂时无法判断"} sub={`红线 ${RED}%`} explain={`储备除以应付款，${coverageGapText}。恢复提现、兑换或创世节点批准时，系统重查覆盖率；试用免查。`} />
       </StatBand>
 
       {approvalsError && <Notice tone="warn">{approvalsError}</Notice>}
@@ -719,16 +736,17 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           const name = operatorCopyText(gate.name);
           const backfill = backfillOf(gate.key);
           return (
-            <ControlCard key={gate.key} title={name} icon={GATE_ICON[gate.key] ?? Power} tone={gate.enabled ? "ok" : backfill?.overdue ? "danger" : "warn"}
+            <ControlCard key={gate.key} title={name} icon={GATE_ICON[gate.key] ?? Power} tone={UNAVAILABLE_GATES[gate.key] ? "neutral" : gate.enabled ? "ok" : backfill?.overdue ? "danger" : "warn"}
               explain={gateHelp(gate)}
               status={<>
-                {gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>}
+                {UNAVAILABLE_GATES[gate.key] ? <><StatusTag tone="neutral">暂不可用</StatusTag><span className="rd-note">{UNAVAILABLE_GATES[gate.key]}</span></> : gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>}
                 {restoreApprovals.filter((row) => row.obj === gate.key).map((row) => <span key={row.id}><StatusTag tone="progress">恢复待审批</StatusTag> <span className="rd-note">审批号 {row.id}</span></span>)}
+                {UNAVAILABLE_GATES[gate.key] && restoreApprovals.some((row) => row.obj === gate.key) && reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href={`/platform/audit?domain=J&object=${encodeURIComponent(gate.key)}`}>核对原审批</Link>}
                 {gate.emergency && <StatusTag tone="warn" icon={Siren}>应急</StatusTag>}
                 {backfill && (backfill.overdue ? <StatusTag tone="danger">已逾期</StatusTag> : <StatusTag tone="warn">待补录</StatusTag>)}
-                {!gate.enabled && !backfill && gate.coveragePrecheckRequired && !covPass && <StatusTag tone="warn">恢复受阻</StatusTag>}
+                {!UNAVAILABLE_GATES[gate.key] && !gate.enabled && !backfill && gate.coveragePrecheckRequired && !covPass && <StatusTag tone="warn">恢复受阻</StatusTag>}
               </>}
-              select={gate.enabled && canBatchKill ? <Checkbox data-proof="j1-gate-select" checked={!!sel[gate.key]} disabled={locks.has(gate.key)} onChange={() => setSel((state) => ({ ...state, [gate.key]: !state[gate.key] }))} aria-label={`勾选${name}纳入批量关停`} title={`勾选${name}纳入批量关停`} /> : undefined}
+              select={!UNAVAILABLE_GATES[gate.key] && gate.enabled && canBatchKill ? <Checkbox data-proof="j1-gate-select" checked={!!sel[gate.key]} disabled={locks.has(gate.key)} onChange={() => setSel((state) => ({ ...state, [gate.key]: !state[gate.key] }))} aria-label={`勾选${name}纳入批量关停`} title={`勾选${name}纳入批量关停`} /> : undefined}
               action={cardAction(gate)} />
           );
         })}
@@ -779,7 +797,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         </Figure>}
       </Fold>
 
-      <Fold title="功能开关总表" explain="关停确认后立即生效，恢复提交应急审批、批准后生效，都要填写理由。提交恢复后业务仍已关停。提现关停只挡新申请和审核放行，已放行的单还会打款。"
+      <Fold title="功能开关总表" explain="关停确认后立即生效，恢复提交应急审批、批准后生效，都要填写理由。提交恢复后业务仍已关停。提现关停还会停止未派发的链上打款；已提交打款方的链上单继续核对原结果，不能保证撤回。"
         icon={ScrollText} tone="role-other" summary={`${gates.length} 个业务开关`}
         actions={reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=J">查看操作记录</Link> : undefined}
         open={!!folds.table} onOpenChange={(open) => setFolds((state) => ({ ...state, table: open }))}>
@@ -788,10 +806,10 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           <tbody>
             {gates.map((gate) => (
               <Tr key={gate.key}>
-                <Td><Cell full main={operatorCopyText(gate.name)} sub={<>{gate.key === "withdraw" ? "新提现申请和审核放行" : operatorCopyText(gate.cap)} <Explain label={`${operatorCopyText(gate.name)}控制范围`} content={gate.key === "withdraw" ? "已放行的单还会打款。" : <AutoGloss>{operatorCopyText(gate.desc)}</AutoGloss>} /></>} /></Td>
-                <Td><Cell main={gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>} sub={gate.emergency ? "应急" : undefined} /></Td>
-                <Td>{IMPACT_LABEL[gate.coverageImpactCategory]}</Td>
-                <Td>{gate.coveragePrecheckRequired ? <AutoGloss>需核备付金</AutoGloss> : "不需"}</Td>
+                <Td><Cell full main={operatorCopyText(gate.name)} sub={UNAVAILABLE_GATES[gate.key] ?? <>{gateCopy(gate).cap} <Explain label={`${operatorCopyText(gate.name)}控制范围`} content={<AutoGloss>{gateCopy(gate).desc}</AutoGloss>} /></>} /></Td>
+                <Td><Cell main={UNAVAILABLE_GATES[gate.key] ? <StatusTag tone="neutral">暂不可用</StatusTag> : gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>} sub={gate.emergency ? "应急" : undefined} /></Td>
+                <Td>{UNAVAILABLE_GATES[gate.key] ? "—" : IMPACT_LABEL[gate.coverageImpactCategory]}</Td>
+                <Td>{UNAVAILABLE_GATES[gate.key] ? "—" : gate.coveragePrecheckRequired ? <AutoGloss>需核备付金</AutoGloss> : "不需"}</Td>
                 <Td><Cell num main={gate.lastChange.split(" · ")[0] || "—"} sub={gate.lastChange.split(" · ").slice(1).join(" · ") || undefined} /></Td>
               </Tr>
             ))}
