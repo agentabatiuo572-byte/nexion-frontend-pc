@@ -74,13 +74,13 @@ function feeIssue(field: FeeField, value: string | null, policy: PurchasePayment
     ? undefined : `填 ${range.min}–${Number(range.max).toLocaleString("en-US")}，最多两位小数`;
 }
 
-export function D1OrderPayments({ ctx, onCount, onActivity, reloadTick }: { ctx: DCtx; onCount: (count: D1Count) => void; onActivity: (lines: D1Activity) => void; reloadTick: number }) {
+export function D1OrderPayments({ ctx, onCount, onActivity, onUnconfigured, reloadTick }: { ctx: DCtx; onCount: (count: D1Count) => void; onActivity: (lines: D1Activity) => void; onUnconfigured: (count: number) => void; reloadTick: number }) {
   const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
   if (!session || !allowed("finance_d1_read")) return null;
-  return <Workspace key={`${session.adminId}:${epoch}`} ctx={ctx} owner={session.adminId} epoch={epoch} onCount={onCount} onActivity={onActivity} reloadTick={reloadTick} />;
+  return <Workspace key={`${session.adminId}:${epoch}`} ctx={ctx} owner={session.adminId} epoch={epoch} onCount={onCount} onActivity={onActivity} onUnconfigured={onUnconfigured} reloadTick={reloadTick} />;
 }
 
-function Workspace({ ctx, owner, epoch, onCount, onActivity, reloadTick }: { ctx: DCtx; owner: number; epoch: number; onCount: (count: D1Count) => void; onActivity: (lines: D1Activity) => void; reloadTick: number }) {
+function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, reloadTick }: { ctx: DCtx; owner: number; epoch: number; onCount: (count: D1Count) => void; onActivity: (lines: D1Activity) => void; onUnconfigured: (count: number) => void; reloadTick: number }) {
   const reach = useReach();
   const [policy, setPolicy] = useState<PurchasePaymentPolicy | null>(null), [draft, setDraft] = useState<PurchasePaymentChannel[]>([]);
   const [records, setRecords] = useState<PurchasePaymentPage | null>(null);
@@ -126,6 +126,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, reloadTick }: { ctx
   const changed = changedChannels.length > 0;
   const canEdit = allowed("finance_d1_fx_manage");
   const unconfigured = policy?.channels.filter(row => !row.configured).length ?? 0;
+  useEffect(() => { onUnconfigured(unconfigured); }, [onUnconfigured, unconfigured]);
   const activity = useMemo(() => [
     ...(changed ? [`付款手续费有 ${changedChannels.length} 种付款方式没保存`] : []),
     ...(pending.length ? [`有 ${pending.length} 次操作结果未确认`] : []),
@@ -207,7 +208,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, reloadTick }: { ctx
   const saveBlock = !canEdit ? "只有超级管理员能改" : policyLoading ? "正在读取最新数据" : busy ? "正在提交" : policyPending ? "上次保存结果未确认，先在本页上方核对"
     : !policy?.constraints ? "暂时拿不到可填范围，只能查看" : !changed ? "还没有修改" : !valid ? "有填错的项，按框下的提示改" : undefined;
   const feeSummary = policyLoading ? "正在读取" : policyError ? "读取失败" : policy
-    ? `${policy.channels.length} 种付款方式${unconfigured ? `，${unconfigured} 种未配置` : "，都已配置"}${changed ? "，有修改没保存" : ""}` : "—";
+    ? `${policy.channels.length} 种付款方式${unconfigured ? `，${unconfigured} 种未配置 · 用户付款时看不到` : "，都已配置"}${changed ? "，有修改没保存" : ""}` : "—";
   const feeFoldOpen = feeOpen ?? (unconfigured > 0 || changed);
   const doRefreshPolicy = () => { setRefreshAsk(false); void loadPolicy(); };
 

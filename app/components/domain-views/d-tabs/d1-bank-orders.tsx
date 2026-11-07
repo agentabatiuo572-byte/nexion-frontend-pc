@@ -43,7 +43,7 @@ const MANUAL_BLOCK_TEXT: Record<string, string> = {
   HDPAY_MANUAL_INTENT_STATE_CONFLICT: "当前状态不能人工入账",
   HDPAY_MANUAL_PROVIDER_STATE_CONFLICT: "支付商状态不允许人工入账，请先核对",
   HDPAY_MANUAL_AMOUNT_MISMATCH: "订单金额和支付商金额不一致，不能人工入账",
-  HDPAY_BANK_RECEIPT_REQUIRES_REVIEW: "这笔有回单待核对，不能人工入账",
+  HDPAY_BANK_RECEIPT_REQUIRES_REVIEW: "这笔挂着多张或不能复用的银行回单，要先核清回单才能人工入账。这页没有回单核对入口（旧入口已下线），请联系财务负责人处理",
   HDPAY_LOCAL_SETTLEMENT_CONFLICT: "这笔已有入账记录，请先核对",
   HDPAY_ORDER_NOT_FOUND: "找不到支付商订单",
   HDPAY_SETTLEMENT_TARGET_INVALID: "这笔不是钱包充值，不能人工入账",
@@ -133,9 +133,11 @@ export function D1BankOrders({ refreshKey, onCount, ...actions }: OrderActions &
     {reviewing.length > 0 && !(reviewing as readonly string[]).includes(status) && (
       <Notice tone="warn" title="有订单待核对"
         action={reviewing.map(value => <Button key={value} size="sm" onClick={() => { setStatus(value); setKeyword(""); setQuery(""); setPageNum(1); }}>只看{ORDER_STATUS[value]}</Button>)}>
-        回单、金额或到账时间和订单对不上，要人核对后入账或退回。
+        回单、金额或到账时间和订单对不上，要人核对后再人工入账；挂着多张回单的要先核清回单，这页没有入口，请联系财务负责人。
       </Notice>
     )}
+    {/* 页签上的数只算三种待核对；本地待人工核对的后端还没给计数（BE-27），常显说明，不能让 0 变成「都处理完了」（D1-S04）。 */}
+    <p className="rd-note">页签上的数只算三种待核对。「本地待人工核对」的还没算进来，要在列表里看每行状态下的「本地待人工核对」。</p>
     <FilterBar
       scope={<FilterField><Select aria-label="银行订单状态" value={status} onChange={value => { setStatus(value); setPageNum(1); }} options={[{ value: "", label: "全部状态" }]}
         groups={STATUS_GROUPS.map(group => ({ label: group.label, options: group.statuses.map(value => ({ value, label: ORDER_STATUS[value] })) }))} /></FilterField>}

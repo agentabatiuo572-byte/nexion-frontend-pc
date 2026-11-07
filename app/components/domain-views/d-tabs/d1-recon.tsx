@@ -131,18 +131,25 @@ function d1StatusText(status: string) {
   return D1_STATUS_LABELS[status.toUpperCase()] ?? "状态未知";
 }
 
-/** 后端的差异文字带 $，这些数其实是 USDT：按字段重写（D1-V12）。 */
-function diffText(row: D1ReconciliationRow) {
-  if (row.reconciled) return "已核销";
-  if (!row.diff) return "金额与笔数一致";
+/** 金额和笔数是不是真的一致：按原数比，挂账不等于对上（D1-A10）。 */
+const mismatched = (row: D1ReconciliationRow) => row.providerCount !== row.ledgerCount || row.providerAmount !== row.ledgerAmount;
+
+/** 差异怎么写：后端的差异文字带 $，这些数其实是 USDT，按字段重写（D1-V12）。 */
+function gapText(row: D1ReconciliationRow) {
   const amount = `${usdt(Math.abs(row.diffAmount))} USDT`;
-  if (row.providerCount !== row.ledgerCount) return `单边挂账 ${amount}`;
+  if (row.providerCount !== row.ledgerCount) return `单边 ${amount}`;
   return row.diffAmount > 0 ? `支付商侧多 ${amount}` : `平台侧多 ${amount}`;
+}
+
+/** 三种结果分开写：金额与笔数一致、有差异待挂账、有差异已挂账。挂账只是登记例外，钱和笔数仍然对不上。 */
+function diffText(row: D1ReconciliationRow) {
+  if (!mismatched(row)) return "金额与笔数一致";
+  return row.reconciled ? `已挂账，差异仍在：${gapText(row)}` : `待挂账：${gapText(row)}`;
 }
 
 /** 结果未确认的写请求叫什么，按路径认，不露路径（D1-A09）。 */
 function pendingLabel(path: string) {
-  if (path.startsWith("/topup/reconciliation/")) return `核销对账差异 · ${depositChannelText(path.split("/")[3] ?? "")}`;
+  if (path.startsWith("/topup/reconciliation/")) return `对账差异挂账 · ${depositChannelText(path.split("/")[3] ?? "")}`;
   if (path.endsWith("/enabled")) return `启用或停用充值渠道 · ${depositChannelText(path.split("/")[3] ?? "")}`;
   if (path.endsWith("/max-amount") || path.endsWith("/max")) return "单笔上限调整";
   if (path === "/vietqr/config") return "调整银行卡支付参数 · 单笔上限";
@@ -167,6 +174,7 @@ function D1Workspace({ ctx }: { ctx: DCtx }) {
   const [counts, setCounts] = useState<Record<D1Section, D1Count>>({ payments: undefined, bank: undefined, usdt: undefined, ledger: undefined });
   const [activity, setActivity] = useState<Record<D1Section, D1Activity>>({ payments: [], bank: [], usdt: [], ledger: [] });
   const [usdtAlert, setUsdtAlert] = useState(false);
+  const [unconfiguredFees, setUnconfiguredFees] = useState(0);
   const [reloadTick, setReloadTick] = useState(0);
   const report = useMemo(() => Object.fromEntries(D1_SECTIONS.map(key => [key, {
     count: (count: D1Count) => setCounts(current => current[key] === count ? current : { ...current, [key]: count }),
@@ -188,7 +196,10 @@ function D1Workspace({ ctx }: { ctx: DCtx }) {
   const capped = values.some(value => value && value !== "failed" && value.capped);
   const totalText = `${total}${capped ? "+" : ""}`;
   const failedNames = failed.map(key => D1_SECTION_NAME[key]).join("、");
-  const explain = "算了需人工处理的付款、待核对的银行卡订单、USDT 异常和对账差异。系统还在处理的不算。没有数据不代表已经对上。银行卡订单里「本地待人工核对」的还没算进来，要在银行卡订单列表里逐行看。";
+  const explain = "算了需人工处理的付款、待核对的银行卡订单、USDT 异常和待挂账的对账差异。系统还在处理的不算。没有数据不代表已经对上。";
+  // 后端还没给「本地待人工核对」的银行卡订单计数（BE-27），这个数不全，零也不是绝对的：常显说明，不收进问号（D1-S04）。
+  const bankGap = "银行卡订单里「本地待人工核对」的还没算进来，要在「银行卡充值」列表里逐行看。";
+  const feeGap = unconfiguredFees ? `付款手续费有 ${unconfiguredFees} 种付款方式未配置，用户付款时看不到这几种方式。` : "";
   const retryAll = <Button size="sm" onClick={() => setReloadTick(value => value + 1)}>重新读取</Button>;
   const alertLead = usdtAlert ? "USDT 有未解除的紧急或严重告警" : "";
   const conclusion = failed.length === D1_SECTIONS.length
@@ -196,14 +207,15 @@ function D1Workspace({ ctx }: { ctx: DCtx }) {
     : loadingCount && !usdtAlert
       ? <Conclusion state="unknown" explain={explain}>正在读取要处理的事</Conclusion>
       : total > 0
-        ? <Conclusion state={usdtAlert ? "danger" : "warn"} lead explain={explain} hint={failed.length ? undefined : "点页签上带数字的区处理。"} action={failed.length ? retryAll : undefined}>
+        ? <Conclusion state={usdtAlert ? "danger" : "warn"} lead explain={explain} hint={failed.length ? undefined : `点页签上带数字的区处理。${bankGap}`} action={failed.length ? retryAll : undefined}>
           {alertLead && `${alertLead}；`}有 <b>{totalText}</b> 项要处理{failed.length ? `，${failedNames}读取失败，这个数不全` : ""}
         </Conclusion>
         : usdtAlert
           ? <Conclusion state="danger" explain={explain} hint="到「USDT 充值」看告警。">{alertLead}{failed.length ? `；${failedNames}读取失败` : ""}</Conclusion>
           : failed.length
             ? <Conclusion state="warn" explain={explain} action={retryAll}>{failedNames}读取失败，不知道这部分有没有要处理的事</Conclusion>
-            : <Conclusion state="neutral" explain={explain}>现在没有要处理的事</Conclusion>;
+            // 零态不用绿色：银行卡本地人工核对还没计入，不能说成全部正常（重构说明版面例外）。
+            : <Conclusion state="neutral" explain={explain} hint={`${bankGap}${feeGap}`}>没有发现要处理的事</Conclusion>;
   const crossRows = D1_SECTIONS.filter(key => key !== section && activity[key].length > 0).map(key => ({ section: key, lines: activity[key] }));
 
   return <>
@@ -216,7 +228,7 @@ function D1Workspace({ ctx }: { ctx: DCtx }) {
     <PageTabs ids={tabIds} label="充值与收款对账分区" value={section} onChange={select}
       items={D1_SECTIONS.map(key => ({ value: key, label: D1_SECTION_NAME[key], count: countText(counts[key]) }))} />
     <div {...tabIds.panel("payments")} hidden={section !== "payments"} className="rd-tab-pane">
-      <D1OrderPayments ctx={ctx} onCount={report.payments.count} onActivity={report.payments.activity} reloadTick={reloadTick} />
+      <D1OrderPayments ctx={ctx} onCount={report.payments.count} onActivity={report.payments.activity} onUnconfigured={setUnconfiguredFees} reloadTick={reloadTick} />
     </div>
     <RechargeAreas ctx={ctx} section={section} tabIds={tabIds} onGo={select} reloadTick={reloadTick}
       onBankCount={report.bank.count} onBankActivity={report.bank.activity}
@@ -253,6 +265,9 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
   const [status, setStatus] = useState(() => readParam("flowStatus", FLOW_TABS.map(([key]) => key)) ?? "");
   const [keyword, setKeyword] = useState(() => readParam("flowQ") ?? "");
   const [query, setQuery] = useState(() => readParam("flowQ") ?? "");
+  // 用户编号单独一个框，按后端的 userId 精确查；关键字只匹配单号和交易号，不拿来猜人（D1-Q06）。
+  const [userInput, setUserInput] = useState(() => readParam("flowUser") ?? "");
+  const [userQuery, setUserQuery] = useState(() => { const value = readParam("flowUser") ?? ""; return /^[1-9]\d{0,18}$/.test(value) ? value : ""; });
   const [page, setPage] = useState(() => readPage("flowPage"));
   const [pageSize, setPageSize] = useState(() => Number(readParam("flowPageSize", FLOW_SIZES.map(String)) ?? 10));
   const [busy, setBusy] = useState(false);
@@ -285,20 +300,21 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
     const current = ++flowSeq.current;
     setFlowsLoading(true); setFlowsError("");
     try {
-      const next = await fetchD1TopupFlows({ status, keyword: query, pageNum: page, pageSize });
+      const next = await fetchD1TopupFlows({ status, keyword: query, userId: userQuery ? Number(userQuery) : undefined, pageNum: page, pageSize });
       if (current === flowSeq.current) setFlows(next);
     } catch (err) {
       if (current === flowSeq.current) { setFlows(null); setFlowsError(displayAdminReadError(err)); }
     } finally {
       if (current === flowSeq.current) setFlowsLoading(false);
     }
-  }, [status, query, page, pageSize]);
+  }, [status, query, userQuery, page, pageSize]);
 
   useEffect(() => { void loadOverview(); return () => { overviewSeq.current++; }; }, [loadOverview]);
   useEffect(() => { void loadFlows(); return () => { flowSeq.current++; }; }, [loadFlows]);
   const firstTick = useRef(reloadTick);
   useEffect(() => { if (reloadTick !== firstTick.current) { void loadOverview(); void loadFlows(); setBankKey(value => value + 1); } }, [reloadTick, loadOverview, loadFlows]);
-  useEffect(() => { writeParams({ flowStatus: status || null, flowQ: query || null, flowPage: page > 1 ? page : null, flowPageSize: pageSize !== 10 ? pageSize : null }); }, [status, query, page, pageSize]);
+  useEffect(() => { writeParams({ flowStatus: status || null, flowQ: query || null, flowUser: userQuery || null, flowPage: page > 1 ? page : null, flowPageSize: pageSize !== 10 ? pageSize : null }); }, [status, query, userQuery, page, pageSize]);
+  const userIssue = userInput.trim() && !/^[1-9]\d{0,18}$/.test(userInput.trim()) ? "用户编号只能是数字" : undefined;
   useEffect(() => { onLedgerCount(overviewLoading && !overview ? undefined : overview ? { n: overview.diffCount } : "failed"); }, [onLedgerCount, overview, overviewLoading]);
 
   const ledgerPending = pending.filter(command => command.path.startsWith("/topup/reconciliation/"));
@@ -445,26 +461,26 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
   const writeoff = (row: D1ReconciliationRow) => {
     const name = depositChannelText(row.channel);
     openActionConfirm({ briefKind: "record",
-      action: `核销对账差异 · ${name}`,
-      title: "核销对账差异",
+      action: `对账差异挂账 · ${name}`,
+      title: "对账差异挂账",
       confirmLabel: "确认挂账",
       reasonMin: 8, reasonMax: 200,
       effect: <StatusTag tone="neutral" filled>只登记，不动余额</StatusTag>,
+      // 不动钱的框第一行写对象，金额是普通的值（VS-102）。
       facts: <Facts>
-        <Fact k="差异金额" lead tone="role-1" unit="USDT">{usdt(Math.abs(row.diffAmount))}</Fact>
-        <Fact k="通道">{name}</Fact>
+        <Fact k="对象">{name} · {gapText(row)}</Fact>
+        <Fact k="差异金额">{usdt(Math.abs(row.diffAmount))} USDT</Fact>
         <Fact k="支付商">{row.providerCount} 笔 · {usdt(row.providerAmount)} USDT</Fact>
         <Fact k="平台">{row.ledgerCount} 笔 · {usdt(row.ledgerAmount)} USDT</Fact>
-        <Fact k="处理方式">确认异常并挂账</Fact>
       </Facts>,
-      detail: "只能标记为异常并挂账，须填写支付商账单或工单号。",
-      completionCopy: "只登记差异，不改用户余额。今天这个通道不能再核销一次。",
+      detail: "把这个差异登记为例外并挂账，须填写支付商账单或工单号。挂账后差异仍在，只是不再算待处理。",
+      completionCopy: "只登记差异，不改用户余额，金额和笔数仍然对不上。今天这个通道不能再挂账一次。",
       businessForm: { kind: "multi-field", fields: [
         { key: "evidenceRef", label: "支付商账单号或工单号", inputKind: "text", placeholder: "如 PSP-STMT-20260720-001", required: true },
       ] },
       run: (reason, _value, business) => {
         const evidenceRef = business?.evidenceRef?.trim() ?? "";
-        return write(() => writeoffD1Reconciliation(row.channel, "CONFIRM_EXCEPTION", evidenceRef, reason, operator), `${name} 差异已核销`);
+        return write(() => writeoffD1Reconciliation(row.channel, "CONFIRM_EXCEPTION", evidenceRef, reason, operator), `${name} 差异已挂账，差异仍在`);
       },
     });
   };
@@ -524,8 +540,11 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
 
   const reconRows = overview?.reconciliation ?? [];
   const hasDiff = (overview?.diffCount ?? 0) > 0;
+  const registered = reconRows.filter(row => row.reconciled && mismatched(row)).length;
   const reconSummary = overviewLoading && !overview ? "正在读取" : !overview ? "读取失败"
-    : reconRows.length === 0 ? "今天还没有支付商流水或入账记录" : hasDiff ? "有通道没对上，要核销" : "今天的通道都对上了";
+    : reconRows.length === 0 ? "今天还没有支付商流水或入账记录"
+      : hasDiff ? "有通道没对上，要挂账"
+        : registered ? `没有待挂账的差异；${registered} 个通道的差异已挂账，金额仍对不上` : "今天的通道金额与笔数都一致";
   const flowRecords = flows?.records ?? [];
   const flowIndex = flowRecords.findIndex(flow => flow.depositNo === flowSelected);
   const flow = flowIndex >= 0 ? flowRecords[flowIndex] : null;
@@ -576,19 +595,19 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
       <PendingNotices items={ledgerItems} disabled={busy} />
       {overview && !overview.historicalBackfillComplete && (
         <Notice tone="warn" title="历史充值累计数不完整">
-          部分历史账目尚未核清，共 {overview.historicalBackfillAnomalyCount} 条（手续费 {overview.feeEvidenceAnomalyCount} 条，储备 {overview.treasuryReserveAnomalyCount} 条）。下面的累计金额只算已核清的部分。
+          部分历史账目尚未核清，共 {overview.historicalBackfillAnomalyCount} 条（手续费 {overview.feeEvidenceAnomalyCount} 条，储备 {overview.treasuryReserveAnomalyCount} 条）。
         </Notice>
       )}
       {overviewError && !overview
         ? <BlockState state="error" title="今日入账和对账差异读取失败" detail={overviewError} onRetry={() => void loadOverview()} />
         : <StatBand label="今日充值">
           <Stat tone="role-1" icon={Coins} label="今日入账" value={overview ? usdt(overview.ledgerTotal) : "—"} unit={overview ? "USDT" : undefined}
-            explain="今天平台已入账的充值合计，只算 USDT。按业务日算。" />
+            explain="今天对账记录里平台已入账的充值合计，只算 USDT，按业务日算。和上面的历史累计无关。" />
           <Stat tone="role-2" icon={Hash} label="今日入账笔数" value={overview ? String(overview.ledgerCount) : "—"} unit={overview ? "笔" : undefined} />
           <Stat tone={hasDiff ? "warn" : undefined} icon={Scale} iconTone={hasDiff ? "warn" : undefined} label="对账差异" value={overview ? String(overview.diffCount) : "—"} unit={overview ? "个通道" : undefined}
-            explain="今天支付商记录和平台账目对不上、还没核销的通道数。" />
+            explain="今天支付商记录和平台账目对不上、还没挂账的通道数。已挂账的差异仍在，但不算在这里。" />
           <Stat tone={hasDiff ? "warn" : undefined} icon={ArrowLeftRight} label="差异金额" value={overview ? usdt(overview.diffAmount) : "—"} unit={overview ? "USDT" : undefined}
-            explain="没核销的通道里，支付商金额减平台金额的合计。" />
+            explain="还没挂账的通道里，支付商金额减平台金额的合计。" />
         </StatBand>}
       <Fold title="对账差异" icon={Scale} tone="role-2" summary={reconSummary} alert={hasDiff} open={reconOpen ?? hasDiff} onOpenChange={setReconOpen}
         explain="支付商记录和平台账目按通道比对，今天的数。有数据后会自动对比；没有数据不代表已经对上。">
@@ -601,40 +620,45 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
                   <Td><Cell main={depositChannelText(row.channel)} /></Td>
                   <Td align="right"><Cell num main={usdt(row.providerAmount)} sub={`${row.providerCount} 笔`} /></Td>
                   <Td align="right"><Cell num main={usdt(row.ledgerAmount)} sub={`${row.ledgerCount} 笔`} /></Td>
-                  <Td><Cell main={<StatusTag tone={row.reconciled ? "done" : row.diff ? "warn" : "ok"}>{diffText(row)}</StatusTag>} /></Td>
-                  {canReconcile && <Td sticky="end" align="right">{!row.reconciled && Boolean(row.diff)
-                    ? <Button size="sm" disabledReason={readingReason ?? d1PendingObjectReason(`/topup/reconciliation/${encodeURIComponent(row.channel)}/writeoff`)} onClick={() => writeoff(row)}>核销</Button>
+                  <Td><Cell main={<StatusTag tone={!mismatched(row) ? "ok" : row.reconciled ? "done" : "warn"}>{diffText(row)}</StatusTag>} /></Td>
+                  {canReconcile && <Td sticky="end" align="right">{!row.reconciled && mismatched(row)
+                    ? <Button size="sm" disabledReason={readingReason ?? d1PendingObjectReason(`/topup/reconciliation/${encodeURIComponent(row.channel)}/writeoff`)} onClick={() => writeoff(row)}>挂账</Button>
                     : <span className="rd-note">—</span>}</Td>}
                 </tr>)}</tbody>
               </Table>}
       </Fold>
       <FilterBar
         scope={<Segments label="充值流水状态" value={status} onChange={(key) => { setStatus(key); setPage(1); }} items={FLOW_TABS.map(([value, label]) => ({ value, label }))} />}
-        onSubmit={() => { if (page === 1 && query === keyword.trim()) void loadFlows(); else { setPage(1); setQuery(keyword.trim()); } }}
+        onSubmit={() => {
+          if (userIssue) return;
+          const nextUser = userInput.trim();
+          if (page === 1 && query === keyword.trim() && userQuery === nextUser) void loadFlows(); else { setPage(1); setQuery(keyword.trim()); setUserQuery(nextUser); }
+        }}
         querying={flowsLoading}
-        onClear={() => { setStatus(""); setKeyword(""); setQuery(""); setPage(1); }}
-        canClear={status !== "" || query !== "" || keyword !== ""}
+        onClear={() => { setStatus(""); setKeyword(""); setQuery(""); setUserInput(""); setUserQuery(""); setPage(1); }}
+        canClear={status !== "" || query !== "" || keyword !== "" || userInput !== "" || userQuery !== ""}
       >
-        <FilterField grow><Input data-search id="d1-flow-keyword" aria-label="充值流水查询关键字：充值单号 / 用户编号 / 交易号" placeholder="充值单号 / 用户编号 / 交易号" value={keyword} onChange={(e) => setKeyword(e.target.value)} /></FilterField>
+        <FilterField><Input data-search id="d1-flow-user" aria-label="用户编号" inputMode="numeric" placeholder="用户编号" aria-invalid={userIssue ? true : undefined} title={userIssue} value={userInput} onChange={(e) => setUserInput(e.target.value)} /></FilterField>
+        <FilterField grow><Input data-search id="d1-flow-keyword" aria-label="充值流水查询关键字：充值单号 / 交易号" placeholder="充值单号 / 交易号" value={keyword} onChange={(e) => setKeyword(e.target.value)} /></FilterField>
       </FilterBar>
-      <Panel flush icon={FileText} tone="role-2" title="充值流水" explain="所有通道的充值单。金额按 USDT。"
+      <Panel flush icon={FileText} tone="role-2" title="充值流水" explain="链上充值单、历史支付记录和国际卡记录。银行卡支付的订单不在这张表，在「银行卡充值」里看。金额按每一行自己的币种写，不折算。"
         actions={<Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={flowsLoading} onClick={() => { void loadFlows(); void loadOverview(); }}>刷新</Button>}>
         <Table label="充值流水" aria-busy={flowsLoading}>
           <thead><tr>
             <Th sticky="start">充值单 · 提交时间（{zone}）</Th>
             <Th>用户 · 通道</Th>
-            <Th align="right" icon={Coins} tone="money">金额（USDT）</Th>
+            <Th align="right" icon={Coins} tone="money">金额</Th>
             <Th>状态</Th>
             <Th sticky="end" align="right">操作</Th>
           </tr></thead>
           <tbody>
             {flowsLoading ? <TableLoading columns={5} rows={5} />
               : flowsError ? <TableMessage columns={5} role="alert">充值流水读取失败。{flowsError} <Button size="sm" onClick={() => void loadFlows()}>重试</Button></TableMessage>
-                : flowRecords.length === 0 ? <TableMessage columns={5} role="status">{status || query ? "没有符合条件的充值流水。" : "暂无充值流水"}</TableMessage>
+                : flowRecords.length === 0 ? <TableMessage columns={5} role="status">{status || query || userQuery ? "没有符合条件的充值流水。" : "暂无充值流水。用户链上充值或国际卡充值后会出现在这里；银行卡支付的订单在「银行卡充值」里看。"}</TableMessage>
                   : flowRecords.map((item) => <Tr key={item.depositNo} selected={item.depositNo === flowSelected} onOpen={() => setFlowSelected(item.depositNo)}>
                     <Td sticky="start"><Cell mono full main={item.depositNo} sub={time(item.createdAt)} /></Td>
-                    <Td><Cell main={String(item.userId)} sub={`${depositChannelText(item.channel)} · ${nexGridBrandText(item.asset)}`} /></Td>
-                    <Td align="right"><Cell num main={usdt(item.amount)} sub={`实收 ${usdt(item.providerReceived)}`} /></Td>
+                    <Td><Cell main={String(item.userId)} sub={depositChannelText(item.channel)} /></Td>
+                    <Td align="right"><Cell num main={`${usdt(item.amount)} ${nexGridBrandText(item.asset)}`} sub={`实收 ${usdt(item.providerReceived)}`} /></Td>
                     <Td><Cell main={<StatusTag tone={flowTone(item.status)}>{d1StatusText(item.status)}</StatusTag>} sub={item.creditedAt ? `入账 ${time(item.creditedAt)}` : "尚未入账"} /></Td>
                     <Td sticky="end" align="right"><Button size="sm" variant="ghost" onClick={() => setFlowSelected(item.depositNo)}>查看详情</Button></Td>
                   </Tr>)}
@@ -647,7 +671,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
         nav={{ hasPrev: flowIndex > 0, hasNext: flowIndex >= 0 && flowIndex < flowRecords.length - 1, onPrev: () => setFlowSelected(flowRecords[flowIndex - 1]?.depositNo ?? flowSelected), onNext: () => setFlowSelected(flowRecords[flowIndex + 1]?.depositNo ?? flowSelected) }}>
         {flow && <>
           <JudgmentPoints rows={[
-            { label: "金额", icon: Coins, tone: "money", value: `${usdt(flow.amount)} USDT`, reason: `支付商实收 ${usdt(flow.providerReceived)} USDT` },
+            { label: "金额", icon: Coins, tone: "money", value: `${usdt(flow.amount)} ${nexGridBrandText(flow.asset)}`, reason: `支付商实收 ${usdt(flow.providerReceived)} ${nexGridBrandText(flow.asset)}` },
             { label: "用户", icon: ListChecks, tone: "users", value: String(flow.userId), reason: `${depositChannelText(flow.channel)} · ${nexGridBrandText(flow.asset)}` },
             { label: "状态", state: flowTone(flow.status) === "progress" ? undefined : flowTone(flow.status), value: d1StatusText(flow.status) },
           ]} />
