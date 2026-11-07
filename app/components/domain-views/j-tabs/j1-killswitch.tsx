@@ -538,7 +538,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         {targets.length > 1 && <Fold inset title="本次关停业务" summary={`${targets.length} 项`}><RecordList label="本次关停业务" records={targets.map((gate) => ({ id: gate.key, value: operatorCopyText(gate.name), object: gateCopy(gate).cap }))} /></Fold>}</div>,
       detail: "用于监管点名、法务事件等重大场景。每一项都记入操作记录。",
       effect: IMMEDIATE,
-      statedBrief: { impact: `已选的 ${targets.length} 个业务开关立即关闭。有一项不符合时整批不执行。恢复要回到这页逐项提交审批，由另一位有权超管批准。`, check: "核对已选业务、触发依据和监管事由，理由写清依据或工单号。" },
+      statedBrief: { impact: `已选的 ${targets.length} 项业务立即关停。有一项不符合时整批不执行。恢复要逐项提交审批，由另一位有权超管批准。`, check: "核对已选业务、触发依据和监管事由，理由写清依据或工单号。" },
       confirmTone: "danger",
       confirmLabel: `确认关停 ${targets.length} 项，立即生效`,
       reasonPlaceholder: "例如：为什么现在要关停、内部工单号",
