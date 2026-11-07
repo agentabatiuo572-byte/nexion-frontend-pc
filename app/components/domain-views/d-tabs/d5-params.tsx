@@ -129,6 +129,7 @@ const feeSpec = (net: Net): NumSpec => ({
   tightest: 25,
   current: (p) => p.networkConfirmFeeUsd[net],
   show: usd,
+  how: `0–25 USD，每档 0.5，默认 ${D5_NETWORK_CONFIRM_FEE_DEFAULT[net]} USD`,
   authority: FEE_WRITE,
 });
 

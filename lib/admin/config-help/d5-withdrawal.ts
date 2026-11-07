@@ -76,7 +76,7 @@ export const D5_PARAM_HELP = {
     label: "UVT 抵扣率",
     what: "1 UVT 能抵多少 USD 手续费",
     when: "调低提交后立即生效，调高批准后生效。只影响新提现",
-    how: "大于 0，最小 0.000001",
+    how: "最小 0.000001",
     effect: "改成 0.5：1 USD 手续费要 2 UVT 抵满。调高算放宽",
     where: "App 提现页「用 UVT 抵扣」开关下的消耗数量",
   },
