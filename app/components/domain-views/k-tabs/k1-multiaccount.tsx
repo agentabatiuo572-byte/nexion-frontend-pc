@@ -1249,7 +1249,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const conclusion = !statKnown("activeClusters") || !statKnown("frozenClusters")
     ? <Conclusion state="unknown" hint={conclusionHint("统计没有读到，先看下面的列表。")} action={conclusionAction}>账户组数量暂时读不到</Conclusion>
     : openCount > 0
-    ? <Conclusion state="warn" hint={conclusionHint("点下面一行看证据，再决定标记、冻结或判定为正常。")} action={conclusionAction}>有 <b>{openCount}</b> 组账户等判定{highCount > 0 ? `，${highCount} 组达到建议冻结线` : ""}</Conclusion>
+    ? <Conclusion state="warn" hint={conclusionHint("点下面一行看证据，再决定标记、冻结或判定为正常。")} action={conclusionAction}>有 <b>{openCount}</b> 组账户等判定{highCount > 0 ? `，${highCount} 组达到建议冻结的关联程度` : ""}</Conclusion>
     : frozenCount > 0
       ? <Conclusion state="neutral" hint={conclusionHint("已冻结的组核实是误判后可以解除。")} action={conclusionAction}>没有等判定的账户组，{frozenCount} 组已冻结</Conclusion>
       : earningsTodo
@@ -1413,7 +1413,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             <Stat tone="role-3" icon={Users} label="监控中的关联账户组" value={statText("activeClusters")} unit="组" sub={`涉及 ${statText("flaggedAccounts")} 个账户`}
               explain="全部账户组里，还没判定为正常、也没解除的组。不随下面的筛选变。" />
             <Stat icon={ShieldAlert} iconTone={Number(stats.highClusters) > 0 ? "warn" : "role-other"} label="高风险账户组" value={statText("highClusters")} unit="组" sub={`建议冻结的关联程度 ${formatThreshold(freezeSuggestThreshold)}（0–1 分）`}
-              explain="待判定或可疑、关联程度达到建议冻结线的组。这只是建议，不会自动冻结。" />
+              explain="待判定或可疑、达到建议冻结的关联程度的组。这只是建议，不会自动冻结。" />
             <Stat tone={Number(stats.frozenClusters) > 0 ? "warn" : undefined} icon={Snowflake} label="已冻结账户组" value={statText("frozenClusters")} unit="组" sub={`共 ${statText("frozenAccounts")} 个账户`} />
             <Stat tone="role-1" icon={Gift} label="新人礼拦截" value={statKnown("giftBlockedUsd") ? `$${statText("giftBlockedUsd")}` : "—"} sub={statKnown("giftBlockedCnt") ? `${statText("giftBlockedCnt")} 笔重复领取被拦下` : "数据尚未接入，不能判定为 0"}
               explain={statKnown("giftBlockedUsd") ? undefined : "后端还没有提供这项统计。其他三个数字是真实读取的，不受影响。"} />
