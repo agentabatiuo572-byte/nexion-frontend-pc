@@ -309,4 +309,4 @@
 :is(.rd-head-actions, .rd-filter-end) > .rd-explain:last-child { margin-right: -3px; }
 
 /* 规则表：放得下时计算方式一行，1024 放不下时折行，上线批次留在屏内（DT-16）。 */
-.l1-rule-fx .rd-cell-main { white-space: normal; }
+.l1-rule-fx .rd-cell-main { white-space: normal; text-wrap: balance; }  /* 两行匀开，第二行不留单字 */
