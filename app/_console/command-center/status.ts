@@ -28,6 +28,8 @@ export type StatusSentence = {
   aboutFund?: boolean;
   /** 这句话说的是提现压力，页面给展开「风险与开关」的入口。 */
   aboutRisk?: boolean;
+  /** 这句话说的是资金数据读取失败：页面只在这里写一次，给重试，别处不再写（VS-107）。 */
+  fundFailed?: boolean;
 };
 
 export function statusSentence(input: {
@@ -63,7 +65,7 @@ export function statusSentence(input: {
   if (input.urgentRows > 0) return { state: "danger", text: `有紧急风险，先看待处理${also(pendingRows - input.urgentRows)}` };
   // 上面三句是告警，读到就说。下面的要等这一屏读完，不说半句，也不先说没事（F07）。
   if (input.loading) return { state: "unknown", text: "正在读取今天的状况…" };
-  if (input.fundFailed) return { state: "warn", text: `资金数据读取失败，状态不确定${also(pendingRows)}` };
+  if (input.fundFailed) return { state: "warn", fundFailed: true, text: `资金数据读取失败，状态不确定${also(pendingRows)}` };
   if (input.pressure === "danger") return { state: "danger", aboutRisk: true, text: "提现压力到红线，先看风险与开关", explain: "近 24 小时提现申请或待提现总额占储备的比例到了红线。" };
   if (input.withdrawClosed) {
     const notMoney = input.fundSafe ? "这是业务开关没开，不是钱不够。" : "";

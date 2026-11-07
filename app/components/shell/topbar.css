@@ -36,8 +36,14 @@
   flex: 1 1 0;
 }
 
-.admin-topbar-crumb-current {
-  flex: 1 1 0;
+/* 位置不够时先截中间段：末段是当前页，要写全（PG-10）；第一段是站点名，也不动。 */
+.admin-topbar-crumb-current,
+.admin-topbar-crumb-ancestor:first-child {
+  flex: 0 0 auto;
+}
+
+.admin-topbar-crumb-ancestor {
+  flex: 0 1 auto;
 }
 
 .admin-topbar-crumb-label {
@@ -88,6 +94,13 @@
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+}
+
+/* 中间段截到没字时只剩箭头，这一档直接不写中间段。 */
+@container admin-topbar (max-width: 1100px) {
+  .admin-topbar-crumb-ancestor:not(:first-child) {
+    display: none;
   }
 }
 
