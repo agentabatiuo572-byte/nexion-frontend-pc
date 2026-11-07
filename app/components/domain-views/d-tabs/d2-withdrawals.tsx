@@ -329,7 +329,7 @@ function userStatusLabel(value?: string) {
 function freezePeriodLabel(value?: string) {
   const rhythm = /^H1:M([1-9]\d*):(P[1-6])$/.exec(value ?? "");
   if (rhythm) return `下单时的运营阶段设置：第 ${rhythm[1]} 月 · ${rhythm[2]}（以复查时间为准）`;
-  return ({ "7D": "7 天", "14D": "14 天", "30D": "30 天", "45D": "45 天", LONG_TERM: "长期（需复查）", SEVEN_DAYS: "7 天", K3_DELAY_ONCE: "到期复核后再延迟一次（以复查时间为准）" } as Record<string, string>)[value?.toUpperCase() ?? ""] ?? (value ? "未知" : "—");
+  return ({ "7D": "7 天", "14D": "14 天", "30D": "30 天", "45D": "45 天", LONG_TERM: "自定复查（到期回待审核）", SEVEN_DAYS: "7 天", K3_DELAY_ONCE: "到期复核后再延迟一次（以复查时间为准）" } as Record<string, string>)[value?.toUpperCase() ?? ""] ?? (value ? "未知" : "—");
 }
 
 /** 待审核是「要处理」列表的默认状态，灰字加时钟；颜色留给冻结、失败、异常这些例外（VS-21）。 */
@@ -500,12 +500,12 @@ const REVIEW_TITLE: Record<D2ReviewAction, string> = { APPROVE: "放行提现", 
 
 /** 确认框的影响和提交前检查，写这个操作的真实影响（OP-51、OP-53）。 */
 const REVIEW_BRIEF: Record<D2ReviewAction, { impact: string; check: string }> = {
-  APPROVE: { impact: "这笔提现往下走，由系统打款。", check: "核对用户、金额、收款地址和命中的风险规则，理由写清依据或工单号。" },
-  DELAY: { impact: "这笔进入冷却，到复查时间自动回到待审核。", check: "复查时间跟着等待天数走，手动改过要核对，理由写清依据或工单号。" },
-  FREEZE: { impact: "这笔暂停处理，不会打款。到复查时间自动回到待审核。", check: "核对冻结期限、责任人和复查时间，理由写清依据或工单号。" },
+  APPROVE: { impact: "审核通过，交给系统打款；付款成功才算完成。", check: "核对用户、金额、收款地址和命中的风险规则，理由写清依据或工单号。" },
+  DELAY: { impact: "暂停审核，到复查时间自动回到待审核；到时前不能改。", check: "复查时间跟着等待天数走，手动改过要核对，理由写清依据或工单号。" },
+  FREEZE: { impact: "暂停处理并冻结资金；可提前解冻，或等复查时间回到待审核，不会直接打款。", check: "核对冻结期限、责任人和复查时间，理由写清依据或工单号。" },
   UNFREEZE: { impact: "这笔回到待审核重新决定，不会直接打款。", check: "确认冻结的原因已经核实，理由写清依据或工单号。" },
-  REJECT: { impact: "这笔被拒绝，钱当场退回用户余额。", check: "核对用户和拒绝原因，理由写清依据或工单号。" },
-  REFUND: { impact: "钱退回用户余额，这笔结束。", check: "先到打款方和账单确认钱没有打出去，理由写清依据或工单号。" },
+  REJECT: { impact: "这笔被拒绝，申请金额全额退回用户余额，手续费不扣。", check: "核对用户和拒绝原因，理由写清依据或工单号。" },
+  REFUND: { impact: "申请金额全额退回用户余额，手续费不扣，这笔结束。", check: "先到打款方和账单确认钱没有打出去，理由写清依据或工单号。" },
 };
 
 /** 确认框常显的「能否撤销」（OP-47）。拒绝和退款收不回来，写成标题下的「不能撤销」标签，不写这一行（VS-106）。 */
@@ -527,7 +527,7 @@ function reviewEffect(action: D2ReviewAction) {
 /** 复查时间怎么定，收进字段名旁的提示图标（DP-06）。 */
 const REVIEW_TIME_EXPLAIN: Partial<Record<D2ReviewAction, string>> = {
   DELAY: "复查时间跟着等待天数走。手动改过就保留，和等待天数最多差一天。",
-  FREEZE: "复查时间跟着冻结期限走。手动改过就保留，和期限最多差一天。长期冻结要在未来 1–365 天内复查，默认 7 天后。",
+  FREEZE: "复查时间跟着冻结期限走。手动改过就保留，和期限最多差一天。自定复查时间须在未来 1–365 天内，默认 7 天后。",
 };
 
 /** 谁能处理：按角色权限种子和后端的角色校验写（B9）。 */
@@ -552,7 +552,7 @@ function reviewTimeIssue(action: D2ReviewAction, value: BusinessFormValue) {
   if (!Number.isFinite(reviewAt) || reviewAt <= Date.now()) return "复查时间须在未来，请调整。";
   const date = new Intl.DateTimeFormat("en-CA", { timeZone: businessZone().zoneId, year: "numeric", month: "2-digit", day: "2-digit" });
   const days = (Date.parse(date.format(reviewAt)) - Date.parse(date.format(Date.now()))) / 86_400_000;
-  if (value.period === "LONG_TERM") return days >= 1 && days <= 365 ? undefined : "长期冻结要在未来 1–365 天内复查，请调整复查时间。";
+  if (value.period === "LONG_TERM") return days >= 1 && days <= 365 ? undefined : "自定复查时间须在未来 1–365 天内，请调整复查时间。";
   const expectedDays = action === "DELAY" ? holdDays : Number.parseInt(value.period, 10);
   return Math.abs(days - expectedDays) > 1 ? "复查时间和所选期限相差超过一天，请调整。" : undefined;
 }
@@ -560,7 +560,7 @@ function reviewTimeIssue(action: D2ReviewAction, value: BusinessFormValue) {
 function actionBusinessForm(action: D2ReviewAction, addressVerificationRequired = false): BusinessFormSpec | undefined {
   if (action === "REJECT") return {
     kind: "multi-field", title: "", fields: [
-      { key: "reasonCode", label: "拒绝原因", inputKind: "select", required: true, options: ["RISK_HIT", "ADDRESS_RISK", "DATA_MISMATCH", "USER_CANCELLED", "OTHER"], mustChoose: true, optionLabels: REJECT_REASON_LABELS },
+      { key: "reasonCode", label: "拒绝原因分类", inputKind: "select", required: true, options: ["RISK_HIT", "ADDRESS_RISK", "DATA_MISMATCH", "USER_CANCELLED", "OTHER"], mustChoose: true, optionLabels: REJECT_REASON_LABELS },
     ],
   };
   if (action === "DELAY" || action === "FREEZE") {
@@ -582,7 +582,7 @@ function actionBusinessForm(action: D2ReviewAction, addressVerificationRequired 
       fields: [
         ...(action === "DELAY"
           ? [{ key: "holdDays", label: "等待天数", inputKind: "number" as const, required: true, wide: true, current: "7", pattern: HOLD_DAYS.source, patternMessage: HOLD_DAYS_ISSUE, help: "1–45 天" }]
-          : [{ key: "period", label: "冻结期限", inputKind: "select" as const, required: true, wide: true, options: ["7d", "14d", "30d", "45d", "LONG_TERM"], optionLabels: { "7d": "7 天", "14d": "14 天", "30d": "30 天", "45d": "45 天", LONG_TERM: "长期，需复查" } }]),
+          : [{ key: "period", label: "冻结期限", inputKind: "select" as const, required: true, wide: true, options: ["7d", "14d", "30d", "45d", "LONG_TERM"], optionLabels: { "7d": "7 天", "14d": "14 天", "30d": "30 天", "45d": "45 天", LONG_TERM: "自定复查（到期回待审核）" } }]),
         { key: "owner", label: "责任人", required: true, current: OPERATOR() },
         { key: "reviewAt", label: "复查时间", inputKind: "datetime-local", required: true, current: reviewAtAfter(7), help: "北京时间 UTC+8", explain: REVIEW_TIME_EXPLAIN[action] },
       ],
@@ -1462,7 +1462,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           {targets.map((row) => <li key={row.withdrawalNo} className="d2-batch-row">
             <span data-mono title={row.withdrawalNo}>{shortNo(row.withdrawalNo)}</span>
             <span>{amountText(row.amount)} {row.asset}</span>
-            <span>{manual.includes(row) ? "转人工" : `${routingPriorityLabel(row)} ${row.riskScore ?? "—"}`}</span>
+            <span>{manual.includes(row) ? "转人工" : `${routingPriorityLabel(row)} · 风险分 ${row.riskScore ?? "—"}`}</span>
             {approve && <span className="d2-batch-pay">{chainText(row)} · <span data-mono>{row.targetAddress}</span></span>}
           </li>)}
         </ul>
@@ -1815,7 +1815,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
                     const selectionNote = pendingRow || selectable || !anyBatchAction ? "" : "当前动作不适用 · ";
                     const [mainAction, ...moreActions] = allowedActions(row);
                     const tone = routingPriorityTone(row);
-                    const riskLabel = `${routingPriorityLabel(row)} · ${row.riskScore ?? "—"}`;
+                    const riskLabel = `${routingPriorityLabel(row)} · 风险分 ${row.riskScore ?? "—"}`;
                     const hitCount = countEntries(row.hitRules, ",");
                     const reviewBasis = `风险规则：${routeLabel(row.k3RiskRoute)} · ${hitCount ? `${hitCount} 条命中` : "无"}`;
                     return <Tr key={row.withdrawalNo} selected={row.withdrawalNo === detail?.withdrawalNo} onOpen={() => { if (!submitting) void openDetail(row); }}>
