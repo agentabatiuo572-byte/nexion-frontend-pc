@@ -1476,7 +1476,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const teamWord = filterName ? `${filterName}的客户` : scopeMode === "ALL" ? "其他客户" : "组内其他客户";
   const scopeWord = reviewing ? teamWord : "你的客户";
   const chatMenu: MoreMenuItem[] = [
-    ...(profileCustomerId && !selectedUnbound ? [{ key: "profile", label: "在本页展开客户资料", onSelect: () => setProfileOpen(value => value + 1) }] : []),
+    ...(profileCustomerId && !selectedUnbound ? [{ key: "profile", label: "在本页展开资料", onSelect: () => setProfileOpen(value => value + 1) }] : []),
     ...(selected && canWriteM3 && selected.ownerAdminId === adminId ? [{ key: "archive", label: selected.archived ? "撤销归档" : "归档", disabledReason: actionChecking ? "正在核对客户归属…" : !selected.archived && allReplyTargets.length ? "客户还有消息没回，先回复才能归档" : undefined, onSelect: () => void archiveOne(selected) }] : []),
     ...(canReviewAll && selected?.customerId ? selectedUnbound
       ? [{ key: "pool", label: "前往待绑定客户池", onSelect: () => window.location.assign("/service/overview?view=pool") }]
@@ -1492,6 +1492,8 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   // 新建要有本人客户；已有批次和待确认的原操作照样能进去查（OP-93）。
   const bulkBlocked = hasBulkPending(adminId) || (bulkBatches ?? 0) > 0 ? undefined : baseBlocked ?? (bulkBatches === 0 ? noOwnCustomers : undefined);
   const checkingOwner = Boolean(selected && !writable && composerMode === "write" && !currentProfileDetail && !profileError && !recoveryBlocksTarget && canWriteM3 && selected.status === "open");
+  // 计数口径进结论句尾的问号，第二行只写还有谁要处理（VS-23）。
+  const countExplain = "左侧菜单「客服中心」里的数字含待回复、首次联系和到期待维护的客户；这里只数当前范围的待回复。";
   const guideRole = !canWriteM3 ? "当前账号只能查看会话，不能发消息。" : scopeMode === "ALL" ? "当前账号是超级管理员：能看全部客户。别人没在接待时，可以用你自己的名字回复，不能记为联系维护；能修改超时策略。" : scopeMode === "MANAGED" ? "当前账号是客服主管：「我的客户」是你本人的客户，「组内其他客户」是负责组中除你本人名下以外的客户。别人没在接待时，可以用你自己的名字回复组内客户，不能记为联系维护；超时策略只能看。" : "当前账号是专属客服：只看得到、只能回复自己的客户；超时策略只能看。";
 
   // 菜单能进但不在客服范围内：后端拒绝的是这个账号，不是服务坏了（ST-38）。
@@ -1516,11 +1518,11 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
         : qualificationUnknown
           ? <Conclusion state="unknown">正在确认你的专属客服身份，稍后显示可查看的会话。</Conclusion>
           : waitingRows.length
-            ? <Conclusion state={lateCount ? "warn" : "neutral"} icon={Clock3} hint={<>{waitingHint}{waitingHint && "；"}导航数字含待回复、首次联系和到期待维护的客户；本页只数当前范围的待回复。</>}
+            ? <Conclusion state={lateCount ? "warn" : "neutral"} icon={Clock3} hint={waitingHint || undefined} explain={countExplain}
                 action={oldestWaiting && oldestWaiting.customerId !== selected?.customerId ? <Button size="sm" onClick={() => { if (listTab !== "pending") changeTab("pending"); select(oldestWaiting); }}>{reviewing ? "查看等得最久的" : "回复等得最久的"}</Button> : undefined}>
                 {reviewing ? `${teamWord}中有 ${waitingRows.length} 位待回复` : "有客户等你回复"}{lateCount ? `，${lateCount} 位已超时` : ""}{oldestWaiting?.pendingReplySince != null ? `，最久等了 ${waitText(timeoutNow - oldestWaiting.pendingReplySince)}` : ""}
               </Conclusion>
-            : <Conclusion state={waitingHint ? "neutral" : "ok"} hint={<>{waitingHint}{waitingHint && "；"}导航数字含待回复、首次联系和到期待维护的客户；本页只数当前范围的待回复。</>}
+            : <Conclusion state={waitingHint ? "neutral" : "ok"} hint={waitingHint || undefined} explain={countExplain}
                 action={unassignedCount && !(reviewing && !agentFilter && listTab === "unassigned") ? <Button size="sm" onClick={() => { changeScope("team"); changeTab("unassigned"); }}>查看待分配</Button> : undefined}>
                 {scopeWord}没有待回复
               </Conclusion>}
@@ -1549,7 +1551,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
         <div ref={rowsRef} className="m3s-rows" onScroll={event => { const el = event.currentTarget; if (listLimit < filtered.length && el.scrollTop + el.clientHeight >= el.scrollHeight - 80) setListLimit(n => n + LIST_CHUNK); }}>
           {(recoveries.length > 0 || recoveryError) && <Notice tone="warn" action={recoveries.map(({ slot, locator }, index) => <Button size="sm" key={slot} disabled={Boolean(recoveryBusy)} onClick={() => void queryRecovery(slot, locator)}>查询原消息 {index + 1}</Button>)}>{recoveryError || "原消息结果待确认；私聊正文与图片已清除，只保留原编号供查询。"}</Notice>}
           {!conversationsAvailable && <div className="m3s-empty"><p>读不到会话。</p></div>}
-          {openElsewhere && <p className="m3s-row-note">打开的{title}不符合当前筛选，仍保留打开的对话 <button type="button" className="rd-link rd-link-button" onClick={() => { setQuery(""); changeTab(selected?.archived ? "archived" : "all"); }}>{selected?.archived ? "看归档" : "看全部"}</button></p>}
+          {openElsewhere && <p className="m3s-row-note">打开的{title}不符合当前筛选 <button type="button" className="rd-link rd-link-button" onClick={() => { setQuery(""); changeTab(selected?.archived ? "archived" : "all"); }}>{selected?.archived ? "看归档" : "看全部"}</button></p>}
           {conversationsAvailable && !qualificationUnknown && filtered.length === 0 && <div className="m3s-empty">
             <p>{query ? "没有匹配的客户，请清除搜索。" : listTab === "pending" ? "没有待回复的客户。" : listTab === "unassigned" ? "没有待分配的客户。" : "暂无会话。可从“我的客户”发起首次联系。"}</p>
             {query ? <Button size="sm" onClick={() => setQuery("")}>清除搜索</Button> : listTab === "pending" && customerRows.length > 0 ? <Button size="sm" onClick={() => changeTab("all")}>看全部会话</Button> : null}

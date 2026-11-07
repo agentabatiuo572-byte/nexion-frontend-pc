@@ -152,7 +152,7 @@ export function IdlePolicyModal({
       <div className="m3-policy-fields">
         {numField("待回复提醒", "客户消息等待回复达到该时长，标记待处理。", warn, setWarn, 1, 30, true, warnOk ? undefined : "填 1 到 30 的整数分钟")}
         {numField("严重超时", "超过该时长仍未回复，标记严重超时。须大于提醒时长。", close, setClose, 2, 120, true, !closeOk ? "填 2 到 120 的整数分钟" : warnOk && closeN <= warnN ? "要大于待回复提醒时长" : undefined)}
-        {numField("无人发言结束接待", endAvailable ? "后台人员最后一次发消息后，到时让出接待权。对话和待回复仍保留，其他人可以接待。" : "暂不可用：自动结束时长还不能在这里设置，其他两项照常保存。", end, setEnd, 2, 120, endAvailable, endOk ? undefined : "填 2 到 120 的整数分钟")}
+        {numField("无人发言结束接待", endAvailable ? "后台人员最后一次发消息后，到时让出接待权。对话和待回复仍保留，其他人可以接待。" : "暂不可用：结束接待时长还不能在这里设置，其他两项照常保存。", end, setEnd, 2, 120, endAvailable, endOk ? undefined : "填 2 到 120 的整数分钟")}
       </div>
       {confirm && <div className="rd-confirm-facts m3-policy-preview" role="status">
         <DiffList rows={[
@@ -161,7 +161,7 @@ export function IdlePolicyModal({
           ...(endAvailable ? [{ key: "end", label: "无人发言结束接待", before: `${policy.sessionEndMinutes} 分钟`, after: `${endN} 分钟` }] : []),
         ]} />
       </div>}
-      {canSave && <RdField label="操作理由" required hint={`至少 ${rule.min} 字`} explain="待回复提醒和严重超时只做标记。自动结束只让出接待：不结束对话、不改专属客服，客户的待回复照常保留。保存后立即生效。"
+      {canSave && <RdField label="操作理由" required hint={`至少 ${rule.min} 字`} explain="待回复提醒和严重超时只做标记。"
         error={blocked || unchanged || !orderOk || reasonOk || !reasonLeft ? undefined : rule.ready || rule.error ? rule.hint(reason) : "正在读取理由规则…"}>
         {(control) => <Textarea {...control} rows={3} value={reason} disabled={!canSave || blocked || confirm} maxLength={200} count={`${visibleReasonLength(reason)}/${rule.max}`}
           onChange={(event) => { setConfirm(false); setReason(event.target.value); }} onBlur={() => setReasonLeft(true)} placeholder="请说明调整的原因" />}
