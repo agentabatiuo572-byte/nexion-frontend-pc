@@ -14,12 +14,14 @@
 import type { DCtx } from "../d-tabs/types";
 import type { ActionConfirmReq as BaseActionConfirmReq } from "../k-tabs/types";
 import type { InlineOperationApproval } from "../design-kit";
+import type { ToastKind } from "@/lib/store/ui";
 
 export type { ConfirmReq, ConfirmChip } from "../k-tabs/types";
 
 export type ActionConfirmReq = BaseActionConfirmReq & { inlineApproval?: InlineOperationApproval; reasonPolicyOptional?: boolean };
 
-export type HCtx = Omit<DCtx, "openActionConfirm"> & {
+export type HCtx = Omit<DCtx, "openActionConfirm" | "toast"> & {
+  toast: (message: string, kind?: ToastKind) => void;
   openActionConfirm: (req: ActionConfirmReq | null) => void;
   /** UI convenience only; the backend remains the final authority boundary. */
   can: (authority: string) => boolean;

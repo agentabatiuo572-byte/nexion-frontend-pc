@@ -11,8 +11,8 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Bell, BellOff, Ban, Coins, History, Lock, RefreshCw, Settings2, SlidersHorizontal, Ticket, TrendingUp, Users } from "lucide-react";
-import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, JudgmentPoints, Notice, PageHeader, Pager, Panel, RecordList, ReleaseModal, SectionNav, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useSectionNav, type SectionNavItem, type StateTone } from "@/app/components/rd";
+import { Bell, BellOff, Ban, Coins, Copy, History, Lock, RefreshCw, Settings2, SlidersHorizontal, Ticket, TrendingUp, Users } from "lucide-react";
+import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IconButton, IrreversibleTag, JudgmentPoints, Notice, PageHeader, Pager, Panel, RecordList, ReleaseModal, SectionNav, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useSectionNav, type SectionNavItem, type StateTone } from "@/app/components/rd";
 import {
   createH2CommandKey,
   fetchH2Trials,
@@ -25,7 +25,7 @@ import { H2_TRIAL_ACTIONS, pendingH2TrialApprovals, submitH2TrialApproval, type 
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
-import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { ADVANCED_TRIAL_GROUPS, COMMON_TRIAL_PARAMS, TRIAL_PARAM_HELP, TRIAL_STATE_HELP } from "@/lib/admin/config-help/h2-trial";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -59,11 +59,9 @@ type TrialSession = {
   pendingApproval?: { action?: string | null; submittedBy?: string | null; submittedAt?: string | null } | null;
 };
 
-function TrialPendingApproval({ approval }: { approval: NonNullable<TrialSession["pendingApproval"]> }) {
-  return <>
-    <StatusTag tone="warn">待审批</StatusTag>
-    <span className="rd-approval-meta">{[approval.action, approval.submittedBy, approval.submittedAt && formatBusinessTimeFull(approval.submittedAt, "—")].filter(Boolean).join(" · ")}</span>
-  </>;
+/** 列表格里只留「待审批」，动作、提交人和时间写在抽屉里（PG-43 每格最多两行）。 */
+function trialApprovalMeta(approval: NonNullable<TrialSession["pendingApproval"]>) {
+  return [approval.action, approval.submittedBy, approval.submittedAt && formatBusinessTimeFull(approval.submittedAt, "—")].filter(Boolean).join(" · ");
 }
 
 type TrialState = { key: string; label: string; tone: string };
@@ -177,8 +175,14 @@ function trialProductReason(reason: string | undefined) {
   return formatAdminApiError(reason, "请到「商品管理与上架条件」核对商品状态");
 }
 
-function sessionTime(value: string | undefined) {
-  return value ? `${formatBusinessTimeFull(value, "—")}（${businessZone().label}）` : "—";
+/** 时区只写第一条（TX-25）。 */
+function sessionTime(value: string | undefined, zoned = false) {
+  return value ? `${formatBusinessTimeFull(value, "—")}${zoned ? `（${businessZone().label}）` : ""}` : "—";
+}
+
+/** 列表和框里中间省略，全值在悬停和抽屉里（ST-04）。编号开头都一样，留开头分不出谁是谁。 */
+function shortSid(sid: string) {
+  return sid.length > 24 ? `${sid.slice(0, 6)}…${sid.slice(-12)}` : sid;
 }
 
 /** 接口给「USDT 数 + UVT 数 UVT」，前一个数补上单位。 */
@@ -187,7 +191,8 @@ function shadowText(value: string) {
 }
 
 function stateTone(state: TrialState | undefined): StateTone {
-  if (state?.key === "active") return "progress";
+  // 宽限中、已延长都是还在走的正常状态，不用人处理，不用橙黄（VS-107）。
+  if (state?.key === "active" || state?.key === "grace" || state?.key === "extended") return "progress";
   if (state?.key === "idle") return "neutral";
   return STATE_TONE[state?.tone ?? ""] ?? "neutral";
 }
@@ -217,7 +222,7 @@ function paramValue(param: TrialParam, product: TrialProduct | undefined) {
   return unit ? `${paramInput(param)} ${unit}` : text(param.cur);
 }
 
-function ParamRow({ ctx, param, trialProducts, send, reach, blocked, killed }: {
+function ParamRow({ ctx, param, trialProducts, send, reach, blocked, killed, seatsLeft }: {
   ctx: HCtx;
   param: TrialParam;
   trialProducts: TrialProduct[];
@@ -225,6 +230,8 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, killed }: {
   reach: ReturnType<typeof useReach>;
   blocked?: string;
   killed?: boolean;
+  /** 今日实际剩余。修改框盖住了页面，不能让人回头看，直接写数字。 */
+  seatsLeft?: string;
 }) {
   const { openActionConfirm } = ctx;
   const help = TRIAL_PARAM_HELP[param.key];
@@ -258,6 +265,7 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, killed }: {
     // 怎么填留一句单位和范围，其余进提示图标。
     const hint = (hintText: string | undefined, more: string | undefined) => (hintText || more) && <>{hintText}{more && <Explain label={`${name}怎么填`} content={more} />}</>;
     const offsetClear = isOffsetCap && current ? "要清空点「不设上限」。" : "";
+    const seatsNote = param.key === "seatsLeftToday" ? (seatsLeft === undefined ? "今日实际剩余读不到。" : `今日实际剩余 ${seatsLeft} 张。`) : "";
     const edit: EditSpec | undefined = isProduct ? {
       kind: "select",
       label: "换成",
@@ -272,13 +280,19 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, killed }: {
       )])),
       // 当前商品在列表里只标「当前」，不能再选；不传 current，当前值就只出现这一处。
       disabledOptions: trialProducts.filter((product) => !product.selectable || product.productNo === current).map((product) => product.productNo),
-    } : isPushSwitch ? undefined : {
+    } : isPushSwitch ? {
+      // 开关只有另一个值可选，打开就选好，和别的参数框同一种写法（VS-103）。
+      kind: "toggle",
+      current,
+      options: [pushTarget],
+      initialValue: pushTarget,
+    } : {
       kind: help?.input ? "number" : "text",
       current: isOffsetCap && !current ? "不设上限" : current,
       disallowCurrent: true,
       ...help?.input,
       emptyOption: isOffsetCap && current ? "不设上限" : undefined,
-      hint: hint(help?.how && `${help.how}${offsetClear}`, help?.howMore),
+      hint: hint(help?.how && `${help.how}${offsetClear}${seatsNote}`, help?.howMore),
       preview: help?.whatIf && ((value) => {
         const rejected = help.reject?.(value);
         return rejected ? <span className="h2-field-warn">{rejected}</span> : help.whatIf!(value);
@@ -298,14 +312,13 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, killed }: {
       ),
       amplifies: false,
       edit,
-      // 开关只有另一个值可选，直接写前后值，不给选择（OP-126）。
       facts: isProduct ? <div className="rd-stack">
         {productMissing && <Facts><Fact k="现在">{current || "未设置"}，不在可选列表</Fact></Facts>}
         <div><Explain label="可选条件和商品编号" content={<>
           <p>{help?.howMore}</p>
           <RecordList label="可选商品编号" records={trialProducts.map((product) => ({ id: product.productNo, value: product.name, reference: product.productNo }))} />
         </>}>可选条件和商品编号</Explain></div>
-      </div> : isPushSwitch ? <Facts><Fact k="开关"><Change from={current} to={pushTarget} /></Fact></Facts> : undefined,
+      </div> : undefined,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认修改，立即生效",
       // 标题行写影响谁（OP-48）。这是什么和显示位置在标题旁的提示图标里。
@@ -314,22 +327,25 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, killed }: {
     });
   };
 
+  // 名称这一列只放名称和提示图标（PG-46）；库存、阻断原因和入口是值的补充，排在值后面。
+  const productLine = [
+    currentProduct && `库存 ${currentProduct.stock ?? 0}`,
+    productMissing && "不在可选列表",
+    // 阻断原因要看得见，不只放在灰按钮的提示里（OP-126）。
+    deadEndLead,
+  ].filter(Boolean).join(" · ");
+  const productLink = isProduct && reach(productHref) && <Link className="rd-link" href={productHref} prefetch={false}>去商品管理查看</Link>;
+  const killedLine = isPushSwitch && killed && "已紧急关闭";
+
   return (
     <ConfigRow
-      name={<>{name}{isProduct && reach(productHref) && <> <Link className="rd-link rd-config-link" href={productHref} prefetch={false}>去商品管理查看</Link></>}</>}
-      explainLabel={name}
+      name={name}
       what={help?.what ?? operatorCopyText(param.sub ?? "")}
       when={when}
       where={help?.where}
-      note={productDeadEnd}
+      note={[currentProduct && `商品编号 ${currentProduct.productNo}`, productDeadEnd].filter(Boolean).join("。") || undefined}
       value={displayCurrent}
-      sub={[
-        currentProduct && `商品编号 ${currentProduct.productNo} · 库存 ${currentProduct.stock ?? 0}`,
-        productMissing && "不在可选列表",
-        // 阻断原因要看得见，不只放在灰按钮的提示里（OP-126）。
-        deadEndLead,
-        isPushSwitch && killed && "已紧急关闭",
-      ].filter(Boolean).join(" · ") || undefined}
+      sub={productLine || productLink || killedLine ? <>{productLine}{killedLine}{productLine && productLink && " · "}{productLink}</> : undefined}
       action={ctx.can("growth_h2_write") ? (describedBy) => <Button size="sm" aria-label={`调整 ${name}`} aria-describedby={describedBy} disabledReason={blocked ?? (isPushSwitch && killed ? KILLED : productDeadEnd)} onClick={open}>调整</Button> : undefined}
     />
   );
@@ -374,7 +390,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       const nextModel = (await fetchH2Trials(sessionPage, sessionPageSize)) as H2Model;
       if (requestEpoch !== reloadEpochRef.current) return;
       setModel(nextModel);
-      setReadAt(formatBusinessTimeCompact(new Date().toISOString(), ""));
+      setReadAt(businessClock(Date.now()));
       setError(null);
     } catch (err) {
       if (requestEpoch !== reloadEpochRef.current) return;
@@ -452,18 +468,18 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       syncPending();
       if (!unknown) throw cause;
       setCurrentSid(null);
-      toast("结果未确认，不要重复操作。到页面上方按原操作重试或核查。");
+      toast("结果未确认，不要重复操作。到页面上方按原操作重试或核查。", "warn");
       return;
     }
     pendingCommands.forget(scope);
     syncPending();
     if (isProposal(item)) {
-      toast(APPROVAL_SENT);
+      toast(APPROVAL_SENT, "success");
       await reload();
       return;
     }
     await reload();
-    toast(item.kind === "param" ? `${item.name} 已更新` : "试用邀请弹窗已关闭");
+    toast(item.kind === "param" ? `${item.name} 已更新` : "试用邀请弹窗已关闭", "success");
   };
 
   /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有成功才解除待确认。 */
@@ -475,7 +491,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     if (!pendingCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
       pendingCommands.forget(record.fingerprint, record.commandKey);
       syncPending();
-      toast("原操作已结束或过期，本次未再次发送。请先核对记录，再决定如何处理。");
+      toast("原操作已结束或过期，本次未再次发送。请先核对记录，再决定如何处理。", "warn");
       return;
     }
     setRetryRejected((current) => current.filter((key) => key !== record.commandKey));
@@ -503,7 +519,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       }
       pendingCommands.forget(record.fingerprint, record.commandKey);
       syncPending();
-      toast(`已找回原审批单 ${original.id}，${PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`);
+      toast(`已找回原审批单 ${original.id}，${PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`, "success");
       await reload();
     } catch (cause) {
       notePending(record, `查询没有成功：${displayAdminError(cause)} 原操作继续保留。`);
@@ -517,7 +533,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     pendingCommands.forget(record.fingerprint, record.commandKey);
     syncPending();
     setReleasing(null);
-    toast(isProposal(record) ? "已解除待确认，这条记录可以重新处理" : "已解除待确认，这项可以重新修改");
+    toast(isProposal(record) ? "已解除待确认，这条记录可以重新处理" : "已解除待确认，这项可以重新修改", "success");
   };
 
   const openSessionCancel = (session: TrialSession, stateLabel: string) => {
@@ -526,7 +542,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       title: "强制取消试用",
       facts: <Facts>
         <Fact k="用户">{trialOwnerLabel(session)}</Fact>
-        <Fact k="试用"><span data-mono="">{session.sid}</span></Fact>
+        <Fact k="试用"><span data-mono="" title={session.sid}>{shortSid(session.sid)}</span></Fact>
         <Fact k="状态变化"><Change from={stateLabel} to="已取消" /></Fact>
       </Facts>,
       detail: "重复提交不会重复处理。",
@@ -546,7 +562,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     // 走共用确认框：理由规则读取中不放行，读不到才按 8–200 继续（Q-06，REV2-06）。
     openActionConfirm({ briefKind: "record",
       action: "紧急关闭试用邀请弹窗",
-      detail: <>记下紧急关闭，这页不能重新打开。开关的值不变。App 和 H5 现在不自动弹试用邀请，这次关闭暂不影响用户。</>,
+      detail: "开关的值不变。",
       effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag /></>,
       reasonPolicyOptional: true,
       reasonPlaceholder: "写清调整原因和依据",
@@ -561,21 +577,25 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     <>
       <section className="rd-guide-section">
         <h3>开始试用前系统检查什么</h3>
-        <p>都通过才能开始试用，这些是系统固定的检查，这页改不了：</p>
         <ol>
-          <li>紧急停用开关和当前运营阶段都开着</li>
-          <li>用户没有被风控判定为循环试用</li>
-          <li>用户没有进行中的试用、没买过，也过了冷却期</li>
-          <li>目标商品可用，今天还有名额，用户的设备位够</li>
+          <li>
+            <b>都通过才能开始试用，这些是系统固定的检查，这页改不了</b>
+            <ol>
+              <li>紧急停用开关和当前运营阶段都开着</li>
+              <li>用户没有被风控判定为循环试用</li>
+              <li>用户没有进行中的试用、没买过，也过了冷却期</li>
+              <li>目标商品可用，今天还有名额，用户的设备位够</li>
+            </ol>
+          </li>
         </ol>
-        {model.gates.length === 0 ? <p>后台配置的检查项：未配置检查项</p> : (
+        {model.gates.length === 0 ? <p>除了这四项，后台没有配置别的检查。</p> : (
           <dl>{model.gates.map((gate) => <div key={gate.gate}><dt>{gate.gate}：</dt><dd>已启用{gate.note ? `，${gate.note}` : ""}</dd></div>)}</dl>
         )}
       </section>
       <section className="rd-guide-section">
         <h3>试用流程的七种状态</h3>
         <p>状态由系统自动更新。</p>
-        <dl>{model.states.map((state) => <div key={state.key}><dt>{state.label}：</dt><dd>{TRIAL_STATE_HELP[state.key] ?? ""}</dd></div>)}</dl>
+        <dl>{model.states.map((state) => <div key={state.key}><dt><StatusTag tone={stateTone(state)}>{state.label}</StatusTag></dt> <dd>{TRIAL_STATE_HELP[state.key] ?? ""}</dd></div>)}</dl>
       </section>
     </>
   );
@@ -586,7 +606,10 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       title="免费试用设置"
       summary="设置试用商品、时长和优惠，查看试用记录。"
       guideExtra={guideExtra}
-      meta={model ? <>{readAt ? `${readAt} 读取（${businessZone().label}）· ` : ""}打开时读取 <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void reload()}>刷新</Button></> : undefined}
+      meta={model ? <span className="rd-toolbar">
+        <span>{readAt ? `${readAt} 读取（${businessZone().label}）· ` : ""}打开时读取</span>
+        <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void reload()}>刷新</Button>
+      </span> : undefined}
       readOnly={model && !canWrite ? "你只能查看；修改试用设置要有这页的修改权限。" : undefined}
     />
   );
@@ -600,14 +623,14 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       const ticket = await submitH2TrialApproval(adminSession, record, "", mode);
       if (!ticket) {
         setQueryMissing((current) => [...current, record.commandKey]);
-        toast("暂未查到原审批单，原命令号和记录继续保留。");
+        toast("暂未查到原审批单，原命令号和记录继续保留。", "warn");
         return;
       }
       setLegacyApprovals(pendingH2TrialApprovals(adminSession.adminId));
-      toast(`已找回原审批单 ${ticket.id}，${PROPOSAL_STATUS[ticket.status]}。`);
+      toast(`已找回原审批单 ${ticket.id}，${PROPOSAL_STATUS[ticket.status]}。`, "success");
       await reload();
     } catch (cause) {
-      toast(displayAdminError(cause));
+      toast(displayAdminError(cause), "error");
     } finally {
       setRecovering("");
     }
@@ -683,7 +706,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const sessionButtons = (row: (typeof rows)[number], variant: "row" | "drawer") => {
     const reason = row.session.pendingApproval ? "这条试用已有待审批操作，审批结束后才能再次处理" : lockedSids.has(row.session.sid) ? LOCKED : loading ? READING : row.owner ? undefined : "用户信息暂不可用";
     return {
-      cancel: canCancel && <Button size={variant === "row" ? "sm" : "md"} disabledReason={reason} onClick={() => openSessionCancel(row.session, row.label)}>强制取消</Button>,
+      cancel: canCancel && <Button variant="danger-outline" size={variant === "row" ? "sm" : "md"} disabledReason={reason} onClick={() => openSessionCancel(row.session, row.label)}>强制取消</Button>,
     };
   };
   const total = model.sessionsPage?.total ?? sessions.length;
@@ -720,13 +743,15 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         <div className="rd-config-grid">
           <div className="rd-config-rail">
             <SectionNav label="本页分组" items={sections} nav={nav} />
-            <Panel title="试用邀请弹窗" icon={killed || pushOff ? BellOff : Bell} tone={killed ? "warn" : pushOff ? "done" : "ok"} headingLevel={2}
+            <Panel title="试用邀请弹窗" icon={killed || pushOff ? BellOff : Bell} tone="done" headingLevel={2}
               explain={<>
                 <p>{killed ? "已紧急关闭，这页不能重新打开。" : "出问题时先关掉它，立即生效。关闭后这页不能重新打开。用户点试用卡领取不受影响。"}</p>
                 <p>App 和 H5 现在不自动弹这个邀请，这里的开关和高级设置「试用邀请弹窗」这几项暂不影响用户。</p>
               </>}>
               <div className="rd-push-state">
-                <StatusTag tone={killed ? "warn" : pushOff ? "done" : "ok"}>{killed ? "已紧急关闭" : pushOff ? "开关已关" : "开启中"}</StatusTag>
+                {/* 开关开着也不等于在弹：App 和 H5 现在不自动弹，不用绿色（DT-13）。已紧急关闭是结束状态，不是等待。 */}
+                <StatusTag tone="done">{killed ? "已紧急关闭" : pushOff ? "开关已关" : "开关开启，暂不影响用户"}</StatusTag>
+                {killed && <p className="rd-note">这页不能重新打开，要恢复找技术同事。{reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href={`${auditHref}?domain=H&object=${encodeURIComponent(KILL_AUDIT_OBJECT)}`} prefetch={false}>到操作记录看原因</Link></>}</p>}
                 {canWrite && !killed && <Button variant="danger-outline" disabledReason={loading ? READING : pending.some((record) => record.kind === "kill") ? PARAM_LOCKED : undefined} onClick={openPushKill}>紧急关闭试用邀请弹窗</Button>}
               </div>
             </Panel>
@@ -740,7 +765,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                   <p>三种优惠可以叠加：实付 = 售价 − 购买折扣 − 试用收益抵扣 − 提前购买立减，最低 0。提前购买立减只在试用期内有，在高级设置里改。</p>
                 </>}>
                 <ConfigList>
-                  {commonParams.map((param) => <ParamRow key={param.key} ctx={ctx} param={param} trialProducts={trialProducts} send={sendCommand} reach={reach} blocked={paramBlock(param.key)} />)}
+                  {commonParams.map((param) => <ParamRow key={param.key} ctx={ctx} param={param} trialProducts={trialProducts} send={sendCommand} reach={reach} blocked={paramBlock(param.key)} seatsLeft={seatsKnown ? seats?.cur : undefined} />)}
                 </ConfigList>
               </Panel>
             </div>
@@ -790,8 +815,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                       const buttons = sessionButtons(row, "row");
                       return (
                         <Tr key={row.session.sid} selected={row.session.sid === currentSid} onOpen={loading ? undefined : () => setCurrentSid(row.session.sid)}>
-                          <Td><Cell main={trialOwnerLabel(row.session)} sub={<span data-mono="">{row.session.sid}</span>} title={row.session.sid} full /></Td>
-                          <Td><Cell main={<StatusTag tone={row.tone} explain={TRIAL_STATE_HELP[row.session.state]}>{row.label}</StatusTag>} sub={row.session.pendingApproval && <TrialPendingApproval approval={row.session.pendingApproval} />} /></Td>
+                          <Td><Cell main={trialOwnerLabel(row.session)} sub={<span data-mono="">{shortSid(row.session.sid)}</span>} title={row.session.sid} full /></Td>
+                          <Td><Cell main={<StatusTag tone={row.tone} explain={TRIAL_STATE_HELP[row.session.state]}>{row.label}</StatusTag>} sub={row.session.pendingApproval && <StatusTag tone="warn">待审批</StatusTag>} /></Td>
                           <Td align="right"><Cell num main={shadowText(row.session.shadow)} /></Td>
                           {canHandle && <Td sticky="end">{row.terminal ? "—" : <span className="rd-row-actions">{buttons.cancel}</span>}</Td>}
                         </Tr>
@@ -811,7 +836,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         </div>
       </div>
 
-      <Drawer open={!!currentRow} onClose={() => setCurrentSid(null)} title="试用记录" sub={currentRow?.session.sid} icon={History} tone="role-3"
+      <Drawer open={!!currentRow} onClose={() => setCurrentSid(null)} title="试用记录" icon={History} tone="role-3"
+        sub={currentRow && <>{currentRow.session.sid} <IconButton aria-label="复制试用记录编号" data-size="sm" onClick={() => void navigator.clipboard?.writeText(currentRow.session.sid).then(() => toast("已复制试用记录编号", "success"), () => toast("复制失败，请手动选择编号", "error"))}><Copy size={13} aria-hidden /></IconButton></>}
         nav={{ hasPrev: !loading && currentIndex > 0, hasNext: !loading && currentIndex >= 0 && currentIndex < sessions.length - 1, onPrev: () => setCurrentSid(sessions[currentIndex - 1].sid), onNext: () => setCurrentSid(sessions[currentIndex + 1].sid) }}
         footer={currentRow && !currentRow.terminal && canHandle ? (
           <Decision explain="强制取消用于怀疑刷试用等风控介入，要提交审批，超级管理员批准后才执行。强制扣款现在批准后也不会扣款，用户要购买只能自己确认。" others={sessionButtons(currentRow, "drawer").cancel} />
@@ -820,16 +846,14 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           <>
             <JudgmentPoints rows={[
               { label: "状态", value: <StatusTag tone={currentRow.tone}>{currentRow.label}</StatusTag>, reason: TRIAL_STATE_HELP[currentRow.session.state] },
-              ...(currentRow.session.pendingApproval ? [{ label: "审批", value: <TrialPendingApproval approval={currentRow.session.pendingApproval} />, reason: "等待超级管理员审批，批准后才执行原操作。审批结束后才能发起新操作。" }] : []),
+              ...(currentRow.session.pendingApproval ? [{ label: "审批", value: <StatusTag tone="warn">待审批</StatusTag>, reason: <>{trialApprovalMeta(currentRow.session.pendingApproval)}<br />等待超级管理员审批，批准后才执行原操作。审批结束后才能发起新操作。</> }] : []),
               { label: "账户", value: trialOwnerLabel(currentRow.session), state: currentRow.owner ? undefined : "warn" },
               { label: "累计收益", value: shadowText(currentRow.session.shadow) },
-              ...(canCharge && !currentRow.terminal ? [{ label: "强制扣款", value: CHARGE_RESULT }] : []),
-              { label: "能不能处理", value: currentRow.session.pendingApproval ? "等待审批结果，审批结束后才能再次处理" : currentRow.terminal ? "已结束，不能再取消或扣款" : lockedSids.has(currentRow.session.sid) ? "有结果未确认的操作，先处理页面上方的待确认" : !currentRow.owner ? "没有用户归属，不能取消或扣款" : canCancel ? "平时不用处理，确要干预才提交强制取消审批" : "这个账号只能查看" },
+              { label: "能不能处理", reason: canCharge && !currentRow.terminal ? `${CHARGE_RESULT}。` : undefined, value: currentRow.session.pendingApproval ? "等待审批结果，审批结束后才能再次处理" : currentRow.terminal ? "已结束，不能再取消或扣款" : lockedSids.has(currentRow.session.sid) ? "有结果未确认的操作，先处理页面上方的待确认" : !currentRow.owner ? "没有用户归属，不能取消或扣款" : canCancel ? "平时不用处理，确要干预才提交强制取消审批" : "这个账号只能查看" },
             ]} />
             <Facts>
-              <Fact k="试用记录编号"><span data-mono="">{currentRow.session.sid}</span></Fact>
-              <Fact k="开始时间">{sessionTime(currentRow.session.claimedAt)}</Fact>
-              <Fact k="到期时间">{sessionTime(currentRow.session.expiresAt)}</Fact>
+              <Fact k="开始时间">{sessionTime(currentRow.session.claimedAt, true)}</Fact>
+              <Fact k="到期时间">{sessionTime(currentRow.session.expiresAt, !currentRow.session.claimedAt)}</Fact>
             </Facts>
           </>
         )}
