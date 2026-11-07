@@ -406,7 +406,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   };
 
   // F 域 5 写函数统一改 A2 propose:按 key 分发到 4 polymorphic op(commit afe51f2)。
-  const proposeFConfig = async (sourceDomain: string, key: string, value: string, reason: string, expectedVersion?: number, amplifies?: boolean) => {
+  const proposeFConfig = async (sourceDomain: string, key: string, value: string, reason: string, expectedVersion?: number, amplifies?: boolean, expectedMaterialRevision?: number) => {
     if (key === "F.unilevel.nex.L1") {
       const current = await fetchF2DirectReferralPolicy();
       setF2DirectPolicy(current);
@@ -415,20 +415,22 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     const op = resolveFOp(key);
     const def = findHighOp(op);
     if (!def) throw new Error(`F_OP_NOT_FOUND:${op}`);
-    await proposeStable(`f-config:${key}`, JSON.stringify([value, reason]), {
-      action: `${def.action} · ${key}`,
-      obj: key,
+    const ambassadorId = key.match(/^F\.ambassador\.(\d+)\.status$/)?.[1];
+    if (ambassadorId && value === "approved" && expectedMaterialRevision === undefined) throw new Error("缺少材料版本，请重新打开申请核对后提交。");
+    await proposeStable(`f-config:${key}`, JSON.stringify(expectedMaterialRevision === undefined ? [value, reason] : [value, reason, expectedMaterialRevision]), {
+      action: ambassadorId ? `${value === "approved" ? "批准" : "驳回"}大使申请 #${ambassadorId}` : `${def.action} · ${key}`,
+      obj: ambassadorId ?? key,
       before: "—",
       after: value,
-      type: def.type === "fund" ? "fund" : "param",
+      type: ambassadorId && value === "approved" ? "fund" : def.type === "fund" ? "fund" : "param",
       // F3 数值编辑按实际方向标记；其他参数保留既有分类，系统执行时仍须按当前值复核。
-      amplifies: amplifies ?? (isFFundAmplifyingKey(key) || def.amplifies),
+      amplifies: ambassadorId ? value === "approved" : amplifies ?? (isFFundAmplifyingKey(key) || def.amplifies),
       gate: { roles: [] },
       gateLabel: def.gateLabel,
       reason,
       sourceDomain,
       commandKey: fProposalCommandKey(mc?.commandKey, sourceDomain, key),
-      command: def.buildCommand({ key, value, expectedVersion }),
+      command: def.buildCommand({ key, value, expectedVersion, expectedMaterialRevision }),
       target: def.buildTarget({ key, value, expectedVersion }),
     });
   };
@@ -685,9 +687,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f4Loading,
     f4Error,
     refreshF4,
-    updateF4Config: async (key, value, reason, expectedVersion) => {
+    updateF4Config: async (key, value, reason, expectedVersion, expectedMaterialRevision) => {
       const vote = f4Overview?.voteWeights.find((row) => (row.configKey || `F.pool.votes.${row.v}`) === key);
-      await proposeFConfig("F4", key, value, reason, expectedVersion, vote ? Number(value) > vote.votes : undefined);
+      await proposeFConfig("F4", key, value, reason, expectedVersion, vote ? Number(value) > vote.votes : undefined, expectedMaterialRevision);
     },
     updateF4AmbassadorPolicy: async (policy, reason) => {
       requireTeamApprovalSession("F4");
@@ -866,7 +868,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             } else if (tab === "F3") {
               await ctx.updateF3Config(mc.paramKey, newVal, reason);
             } else if (tab === "F4") {
-              await ctx.updateF4Config(mc.paramKey, newVal, reason, mc.expectedVersion);
+              await ctx.updateF4Config(mc.paramKey, newVal, reason, mc.expectedVersion, mc.expectedMaterialRevision);
             } else if (tab === "F1") {
               await ctx.updateF1Config(mc.paramKey, newVal, reason);
             } else {
@@ -895,7 +897,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             } else if (tab === "F3") {
               await ctx.updateF3Config(mc.paramKey, mc.fixedVal, reason);
             } else if (tab === "F4") {
-              await ctx.updateF4Config(mc.paramKey, mc.fixedVal, reason, mc.expectedVersion);
+              await ctx.updateF4Config(mc.paramKey, mc.fixedVal, reason, mc.expectedVersion, mc.expectedMaterialRevision);
             } else if (tab === "F5") {
               if (mc.expectedVersion === undefined) throw new Error("F5_EXPECTED_VERSION_REQUIRED");
               await ctx.updateF5Config(mc.paramKey, mc.fixedVal, reason, mc.expectedVersion);

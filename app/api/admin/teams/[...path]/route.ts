@@ -45,6 +45,11 @@ function backendPath(parts: string[]) {
   if (parts.length === 1 && parts[0] === "ambassador-policy") {
     return "/api/admin/teams/ambassador-policy";
   }
+  if (parts[0] === "ambassador-applications" && /^\d+$/.test(parts[1] ?? "") && parts[2] === "materials"
+    && (parts.length === 3 || parts.length === 4 && parts[3] === "review"
+      || parts.length === 5 && parts[3] === "files" && isNonEmpty(parts[4]))) {
+    return `/api/admin/teams/${parts.map(encodeURIComponent).join("/")}`;
+  }
   if (parts.length === 2 && parts[0] === "leadership-pool" && parts[1] === "settle") {
     return "/api/admin/teams/leadership-pool/settle";
   }
@@ -170,6 +175,15 @@ async function proxy(request: Request, context: RouteContext) {
       body: hasBody ? await request.text() : undefined,
       cache: "no-store",
     });
+    if (path[0] === "ambassador-applications" && path[3] === "files" && upstream.ok) {
+      const responseHeaders = new Headers({
+        "Content-Type": upstream.headers.get("Content-Type") || "application/octet-stream",
+        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+      });
+      const disposition = upstream.headers.get("Content-Disposition");
+      if (disposition) responseHeaders.set("Content-Disposition", disposition);
+      return new Response(await upstream.arrayBuffer(), { status: upstream.status, headers: responseHeaders });
+    }
     if (path.length === 2 && path[0] === "commissions" && path[1] === "export" && upstream.ok) {
       const responseHeaders = new Headers({
         "Content-Type": upstream.headers.get("Content-Type") || "text/csv;charset=UTF-8",

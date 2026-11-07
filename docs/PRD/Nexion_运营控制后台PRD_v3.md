@@ -622,7 +622,7 @@
 > > **B1 红线拒绝码跨卷对账注**:本卷(V3)B1 红线拒绝统一 **422**(Ch4 B1 §③),本章沿用;V1 卷 B1 兑付覆盖率拒绝用 **403**(V1 §⑤「PUT 放大流出方向为覆盖率红线强约束」:覆盖率低于红线 server 拒绝、返回 403 + 当前覆盖率值)。二者指同一前置硬门(覆盖率低于红线即 server 拒绝提交),码值差异开发以单一码值落地。
 > 3. **Phase dial 权威归 H1(§1.7),H3-H6 是消费/生效面**:`questBonusMultiplier` 是 H1 Phase **dial**(§1.7;12 月节奏表 §6.4「月 1-2 = 4,其他 = 1」拉新期任务加成),**权威归 H1 调度器,前端 Phase 引擎(`lib/store/product-phase.ts` PHASES)尚未实装该 dial**(前端现状 dial 含 `inviteBonusMultiplier` / `withdrawalPointsPer100` / `withdrawalCooldownDays` / `binaryDailyCapUSD` / `complianceHoldEnabled` 等;**前端现状仍含已下线的 `premiumSubscriptionAvailable` / `nexV2LockAvailable`**,后台 8-dial 模型已移除该两 gate;前端无 quest 字段、亦无 newUser 字段),真后台 H1 落地后 H3 作为消费面读取并套用,H3 不持 dial 写权(分工同 D5 提现参数、F3 双轨 binaryDailyCap 的「H1 下发 / 业务域消费」范式)。
 > > **Phase dial 数口径脚注(B4-note 体例)**:H1 后台权威口径 = **10-dial**(§1.7 / 12 月 §6.4 九项 + `complianceHoldEnabled`);前端现状有差异——前端 §9.11c.1 / §9.11d.3 写 **8 dials**(缺 `newUserBonusMultiplier` + `questBonusMultiplier`,且把 `complianceHoldEnabled` 计入)、前端 §13.4.1 为 **7-dial**、`lib/store/product-phase.ts` PHASES 现状 **7 dial**(同样无 quest dial)。dial 数差异后台按 10-dial 口径落地。**`questBonusMultiplier` 为本章相关但前端未实装的 dial**(仅 12 月 §6.4 规划值),H3 落地时若 H1 尚未下发则任务结算乘数取 1×(等价于现状无乘数平铺,前端 `lib/mock/quest.ts` Day-One 500/200 NEX 即平铺无乘数)。
-> 4. **操作确认(Confirm-with-Reason,§1.8 原则二.4;2026-06 操作确认决议)**:改 quest 奖励 / 任务清单、改活动配置(上下架 / featured / 奖励)、改签到奖励 / Lucky 概率 / 里程碑奖励、改 Streak Saver 规则、改 milestone 阈值 / NEX 奖励 —— 一律单人执行 + 业务专属确认弹窗 + 理由必填(server 强制非空,400 `REASON_REQUIRED`,8–200 字)+ A2 审计留痕(operator / before / after / reason / IP / ts),即时生效;高敏动作落审计同时实时告警超管与对应域角色 lead(留痕落 A2 统一 schema,§2.x ⑥;确认门与 schema 变更权威归 A2,§3.14:审计/操作确认权威归 A2,本域不另立确认机制)。**改 Lucky 概率 / 里程碑 NEX 奖励 / 奖励倍率 / 奖池调升 = 放大流出方向,确认弹窗带 B1 红线预检(前置核 B1,低于红线 422 `COVERAGE_BELOW_REDLINE`,弹窗内展示 server 预检的「拟生效后覆盖率」);关闭 / 调降方向不带预检**(跨域事实 2)。
+> 4. **操作确认(Confirm-with-Reason,§1.8 原则二.4;2026-06 操作确认决议)**:改 quest 奖励 / 任务清单、改活动配置(上下架 / featured / 奖励)、改签到奖励 / Lucky 概率 / 里程碑奖励、改 milestone 阈值 / NEX 奖励 —— 一律单人执行 + 业务专属确认弹窗 + 理由必填(server 强制非空,400 `REASON_REQUIRED`,8–200 字)+ A2 审计留痕(operator / before / after / reason / IP / ts),即时生效;高敏动作落审计同时实时告警超管与对应域角色 lead(留痕落 A2 统一 schema,§2.x ⑥;确认门与 schema 变更权威归 A2,§3.14:审计/操作确认权威归 A2,本域不另立确认机制)。**改 Lucky 概率 / 里程碑 NEX 奖励 / 奖励倍率 / 奖池调升 = 放大流出方向,确认弹窗带 B1 红线预检(前置核 B1,低于红线 422 `COVERAGE_BELOW_REDLINE`,弹窗内展示 server 预检的「拟生效后覆盖率」);关闭 / 调降方向不带预检**(跨域事实 2)。
 > 5. **埋点对齐 A4(V1 §2.4 埋点事件体系)**:`quest.*` / `event.*` / `daily.*`(签到)/ `milestone.*` 事件须在 A4 schema registry 注册。**§2.4.3 domain 枚举现状(V1 §2.4.3 现行登记)**:`app / auth / referral / kyc / onboarding / store / checkout / device / earnings / wallet / withdraw / commission / staking / exchange / genesis / trial / quest / daily / nova / phase / risk / admin`——**已含** `quest` / `daily`(§2.4.5 ④ engagement family 已列 `quest.completed` / `daily.checkin`)→ H3/H5 复用,无需扩展;**未含** `event`(H4)/ `milestone`(H6)→ 这两个 domain **须向 A4 申请 domain 枚举扩展(§2.4.3),blocking 依赖,登记为 V3 起始工单**(体例参 V2 `order` domain 起始工单 / V3 G3 `nex`、G5 `premium`、G7 `repurchase`)。新增 object_action 的 registry 注册同走 **A4 schema 变更确认(§2.4.8;§2.x ⑥「审计/埋点 schema 变更(新增事件/属性)」仅超管经 A2-MD1 确认弹窗执行)**,emit 前完成,与 H4/H6 domain 扩展同属 blocking 前置。quest claim / 签到 / 里程碑 / Lucky 派发事件 `is_server_authoritative=true`(§2.4.4:资金 / 状态事件 = true)。这些事件喂 **B3 漏斗(§2.4.7)+ Day7 留存(KPI #2,§2.4.6)+ L 域 BI**。
 > 6. **12 月默认值口径(§7 硬规则)**:`questBonusMultiplier` 月 1-2 = 4× 以 **12 月节奏表 §6.4** 为权威(规划值,前端未实装);quest NEX 奖励 / Lucky 概率 / 里程碑阈值与奖励 / streak 规则等 12 月 §6 未覆盖 → 以前端 §5.15 / §9.8 / §11.3a / §11.10 / §11.13 现状值为**参考并标注「现状值」**。三者冲突以 12 月节奏表为准,就地注明差异。
 > 7. **中性运营语言**:全程真实平台增长运营者口径(任务运营 / 活动配置 / 签到留存 / 里程碑激励 / 连胜机制 / 概率型奖励);禁一切 meta / 编辑性措辞,留存 / 里程碑路线图 / 连胜保护等机制统一表述为「留存激励 / 里程碑路线图 / 连胜保护」。
@@ -969,9 +969,10 @@
 **① 目的 & 对齐**: 配置每日签到的积分规则、Lucky 概率倍率、30 天里程碑路线图、Streak Saver 断签复活卡、Streak Power-Ups 连胜增益,作为留存节奏的签到引擎。对齐前端 **§9.8**(`/daily`:§9.8.1 签到规则 + Lucky multiplier / §9.8.2 30 天里程碑 / §9.8.3 Streak Saver / §9.8.6 Streak Power-Ups)+ **§9.11c.1**(`POST /api/points/sign-in` 返 multiplier「A/B 实验值」)+ **§9.11d.3**(Lucky multiplier「必须 server-driven」,锚 `lib/v3/points.ts:87-88`)。服务业务目标:用每日签到 + 连胜里程碑形成留存激励的回访节奏(§9.8.2:累计连胜越久,里程碑路线图越临近),通过回访→`app.dau` 路径**间接**提升 Day7 活跃(KPI #2 口径为 `app.dau ÷ register cohort`,§2.4.6;本机制经回访间接贡献,非 KPI 直接口径)。**Lucky 概率是概率型奖励,必须 server-canonical RNG**(跨域事实 1);Day-30 里程碑发放一张转盘票(spin 票),转盘奖项池 / 概率 / 派奖治理归 H4(`wheel` EventKind);Streak Power-Ups 含跨域奖励(F2/G5/G1/G4),H5 是触发面。
 
 **② 后台界面**:
-- **签到规则配置面**(§9.8.1):baseline 积分 / 7 天连续 bonus / Lucky 15% → 1.5× / Lucky 5% → 2× / 断签阈值(>48h)/ Streak Saver 恢复上限(30 天)。
+- **签到规则配置面**(§9.8.1):baseline 积分 / 7 天连续 bonus / Lucky 15% → 1.5× / Lucky 5% → 2× / 断签阈值(>48h)/ Streak Saver 初始补救卡（固定 1 张，只读；断签恢复上限仍为 30 天）。
 - **30 天里程碑配置面**(§9.8.2,7 阶梯):`Day 阈值 / 奖励 / 类型(points/usdt/nex/spin/badge)`——Day3 +5 积分 / Day7 +15 积分 / Day14 +1 USDT / Day21 +100 NEX / Day30 🎰 Lucky Spin 票(转盘治理归 H4)/ Day60 +10 USDT / Day100 ⭐ Streak Master Badge(NFT)。
 - **签到规则生效口径（T02）**：签到规则提交「操作记录与审批」，另一位超级管理员批准后生效；提交成功不表示规则已更新。连签、成长和收益里程碑的既有直接保存路径不变。
+- **初始补救卡只读（BUG-254，2026-11-07）**：PC H5 签到规则中 `revive` 行保留现有名称、说明和布局，固定显示「1 张」及「只读」，不再提供调整入口，也不从该行新建审批提案。旧规则行残留其他值时仍按当前初始化合同显示初始 1 张；不修改旧配置、用户实际持卡余额、H4 活动额外发卡或补救卡消耗与恢复逻辑。用户余卡继续读取实际余额。
 - **幸运概率资金方向（BUG-258 Follow-up 1，T11）**：与当前同一档概率比较，只有拟改值更大才提示多付钱并标记放大方向；下调和原值不提示。提案中的放大标记与确认框使用相同方向，系统执行时继续按当前值复验覆盖率。
 - **幸运概率反馈（BUG-258）**：调整任一档时实时显示两档合计；每档须在 0–100%，合计不超过 100%，否则说明原因并禁用确认。合法概率提交到「操作记录与审批」，批准后生效；提交失败保留输入。系统执行时仍复验概率与覆盖率。
 - **成长奖励备注（BUG-253）**：运营备注明确标为可选，允许清空并保存空字符串；触发天数和版本校验保持不变。
@@ -989,7 +990,7 @@
 | **Lucky 2× 概率** | **现状值(§9.8.1 / §9.11d.3 / `points.ts:88`)**:5% | 0–100%;且 `p(1.5×)+p(2×) ≤ 100%`,余为 baseline 1.0×;server 校验和 >100% 返 **422** | 实时(server 裁决) | §9.8.5 副字 `5% chance of 2×`(UI 公示) |
 | 幸运奖励最高倍率（BUG-254） | 2× | 固定 2×，签到规则页只读 | 按当前服务端 1×、1.5×、2× 档位显示上限。运营仍可按原审批流程调整 1.5× 和 2× 的概率 | §9.8.5 签到奖励 |
 | 断签阈值 | **现状值(§9.8.1 / `points.ts:82`)**:>48h 未签 → 重置 0 | ≥ 24h | 实时 | §9.8.3 Saver 按钮亮起判定 |
-| Streak Saver 默认持有 / 恢复上限 | **现状值(§9.8.3 / `points.ts:66,127`)**:默认 1 张 / 恢复至 `min(longestStreak,30)` | ≥ 0 张 / 上限 ≤ 30 天 | 实时 | §9.8.3 复活卡余量 + 恢复值 |
+| 初始补救卡 / 断签恢复上限（BUG-254） | 初始 1 张 / 恢复至 `min(longestStreak,30)` | 初始 1 张固定只读；原恢复上限 30 天不变 | 首次建立用户连签状态时初始化 1 张；已有余额不覆盖，活动额外发卡保持独立 | §9.8.3 实际余卡与恢复值；PC H5 仅展示初始规则 |
 | 30 天里程碑 7 阶梯(阈值 / 奖励 / 类型) | **现状值(§9.8.2)**:3/+5积分 · 7/+15积分 · 14/+1USDT · 21/+100NEX · 30/Lucky Spin 票 · 60/+10USDT · 100/Badge | 阶梯可增删改;奖励 ≥ 0 | 仅新达成(已 claimable 按当前值) | §9.8.2 里程碑路线图 7 行 |
 | Streak Power-Ups 4 档(§9.8.6) | **现状值(`streak-powerups.ts:32-69`)**:7d Royalty Boost / 14d Premium trial / 30d +2% APY / 60d Genesis whitelist | 阈值 + 增益值可改 | 实时(streak 达阈值即解锁) | §9.8.6 4 行 conversion-tied unlock |
 
@@ -998,7 +999,7 @@
 **④ 操作动作**:
 | 动作 | 执行权 | 确认弹窗 | 审计点 |
 |---|---|---|---|
-| 改 baseline / 7天 bonus / 断签阈值 / Saver 规则 | 增长(lead)/ 超管(2026-06 操作确认决议,原复核层级就高为执行门槛) | H5-MD1(理由必填) | `admin.checkin_rules_changed`(字段 / 前后值 / operator) |
+| 改 baseline / 7天 bonus / 断签阈值 | 增长(lead)/ 超管(2026-06 操作确认决议,原复核层级就高为执行门槛) | H5-MD1(理由必填) | `admin.checkin_rules_changed`(字段 / 前后值 / operator) |
 | **改 Lucky 概率(1.5× / 2×)** | 财务(lead)/ 超管(放大方向原复核层级就高) | H5-MD2(理由必填+B1 红线预检(调升方向);和 >100% 返 422;改后 server RNG 即用新概率) | `admin.checkin_lucky_prob_changed`(前后概率 / coverageAtSubmit / operator) |
 | 改 30 天里程碑奖励 / 阶梯 | 财务(lead)/ 超管 | H5-MD3(理由必填+B1 红线预检(升 NEX/USDT 奖励方向)) | `admin.checkin_milestone_changed`(阶梯 / 前后奖励 / coverageAtSubmit / operator) |
 | 改 Streak Power-Ups(跨域增益) | 财务(lead)/ 超管 | H5-MD4(理由必填+B1 红线预检(增益调升方向);改后联动下游域兑现) | `admin.checkin_powerup_changed`(档位 / 前后增益 / 下游域 ref / coverageAtSubmit / operator) |
@@ -1012,7 +1013,7 @@
 
 | 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
 |---|---|---|---|---|
-| 改基础规则(baseline / bonus / 断签 / Saver) | ② 签到规则配置面参数卡「编辑」 | 行内按钮 | 仅增长(lead)/ 超管渲染 | 打开弹窗 H5-MD1 |
+| 改基础规则(baseline / bonus / 断签) | ② 签到规则配置面参数卡「编辑」 | 行内按钮 | 仅增长(lead)/ 超管渲染 | 打开弹窗 H5-MD1 |
 | 改 Lucky 概率 | ② 签到规则配置面 Lucky 区「编辑概率」 | 次按钮 | 仅财务(lead)/ 超管渲染 | 打开弹窗 H5-MD2 |
 | 改里程碑奖励 / 阶梯 | ② 30 天里程碑配置面阶梯行「编辑」 | 行内按钮 | 仅财务(lead)/ 超管渲染 | 打开弹窗 H5-MD3 |
 | 改 Streak Power-Ups | ② Power-Ups 配置面档位行「编辑」 | 行内按钮 | 仅财务(lead)/ 超管渲染 | 打开弹窗 H5-MD4 |
@@ -1021,7 +1022,7 @@
 **(2) 弹窗规格**
 
 ##### [H5-MD1] 签到基础规则变更
-- **功能**:修改 baseline 积分 / 7 天连续 bonus / 断签阈值 / Streak Saver 持有与恢复上限,确认即实时生效(下次签到 / 判定即用新值)。
+- **功能**:修改 baseline 积分 / 7 天连续 bonus / 断签阈值,确认即实时生效(下次签到 / 判定即用新值)。初始补救卡固定 1 张只读，不进入此弹窗。
 - **布局结构**:1. **信息区**:当前各规则值 / 当日签到量 / Saver 消耗量(② 监控同源)。2. **影响预览区**:before→after 并排;缩短断签阈值时提示行「将放宽 broken 判定,在签用户下个判定周期生效」。3. **输入区**:见下表。4. **按钮区**:取消 / 确认变更。
 - **输入与选择控件**:
 
@@ -1030,7 +1031,6 @@
 | 目标 baseline 积分 | 数字输入 | 改该项时必填 | ≥ 0(③ 表) | 当前值(+1) |
 | 目标 7 天 bonus | 数字输入 | 改该项时必填 | ≥ 0(③ 表) | 当前值(+5) |
 | 目标断签阈值(h) | 数字输入 | 改该项时必填 | ≥ 24h(③ 表) | 当前值(48h) |
-| 目标 Saver 持有 / 恢复上限 | 数字输入组 | 改该项时必填 | 持有 ≥ 0;上限 ≤ 30 天(③ 表) | 当前值(1 / 30) |
 | reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
 
 - **按钮区**:`[取消]` · `[确认变更]`(必填未过校验时置灰;提交 loading 锁定)。

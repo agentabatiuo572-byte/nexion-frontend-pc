@@ -51,6 +51,7 @@ export interface McSpec {
   detail?: string;
   completionCopy?: string;       // 明确保存后的生效时点，避免统一“立即生效”文案误导周期性配置
   expectedVersion?: number;
+  expectedMaterialRevision?: number;
   teamApproval?: Pick<InlineOperationApproval, "resolve" | "renderForm"> & { source: keyof TeamFundApprovalValues };
 }
 export type Mc = (McSpec & { teamApprovalOwner?: AdminSession["adminId"] }) | null;
@@ -150,7 +151,7 @@ export interface FViewCtx {
   f4Loading: boolean;
   f4Error: string | null;
   refreshF4: () => Promise<void>;
-  updateF4Config: (key: string, value: string, reason: string, expectedVersion?: number) => Promise<void>;
+  updateF4Config: (key: string, value: string, reason: string, expectedVersion?: number, expectedMaterialRevision?: number) => Promise<void>;
   updateF4AmbassadorPolicy: (policy: F4AmbassadorPolicyUpdate, reason: string) => Promise<void>;
   proposeF4Settlement: (reason: string) => Promise<void>;
   proposeF4LeaderboardPayout: (period: "today" | "week" | "month" | "allTime", reason: string) => Promise<void>;

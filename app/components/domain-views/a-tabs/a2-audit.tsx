@@ -3,6 +3,7 @@ import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { a2ActionText, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
 import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
+import { AmbassadorMaterialSummary } from "../f-tabs/f4-ambassador-materials";
 
 /**
  * A2 操作记录与审批中心 — design_handoff_a_domain/A2 设计稿 port(387 行 + SPEC §4 矩阵 14 行权威 + §7 三铁律)。
@@ -381,6 +382,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const approveWo = (w: A2OperationRow) => {
     if (w.retiredOperation) { toast(RETIRED_OPERATION_COPY); return; }
     if (w.phoneCalibrationError) { toast(w.phoneCalibrationError); return; }
+    if (w.ambassadorMaterialError) { toast(w.ambassadorMaterialError); return; }
     const commandKey = createA2CommandKey(`a2-approve-${w.id}`);
     const isRefund = w.fundEffect === "ORDER_REFUND";
     const isFunds = w.type === "fund" || isRefund || w.fundEffect === "REWARD_SUSPENSION" || w.fundEffect === "REWARD_RESUMPTION";
@@ -397,6 +399,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           谁能执行：<b>{w.roleGate}</b>
           {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
           {w.phoneCalibrationError && <p role="alert">{w.phoneCalibrationError}</p>}
+          {w.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={w.ambassadorMaterialProposal} expectedMaterialRevision={w.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? w.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
+          {w.ambassadorMaterialError && <p role="alert">{w.ambassadorMaterialError}</p>}
         </>
       ),
       amplifies: w.amplifies && !w.coverageCheckOnApproval,
@@ -774,7 +778,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                         <>
                           <button
                             className="l-btn sm mc"
-                            disabled={!!w.phoneCalibrationError}
+                            disabled={!!w.phoneCalibrationError || !!w.ambassadorMaterialError}
+                            title={w.ambassadorMaterialError}
                             onClick={(e) => { e.stopPropagation(); approveWo(w); }}
                           >执行</button>{" "}
                           <button
@@ -1074,7 +1079,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   <div style={{ display: "flex", gap: 8, padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
                     <button
                       className="l-btn mc"
-                      disabled={!!w.phoneCalibrationError}
+                      disabled={!!w.phoneCalibrationError || !!w.ambassadorMaterialError}
+                      title={w.ambassadorMaterialError}
                       style={{ flex: 1, justifyContent: "center" }}
                       onClick={() => { setWoIdx(null); approveWo(w); }}
                     >执行</button>
@@ -1098,6 +1104,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               <A2ChangeReview before={w.before} after={w.after} />
               {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
               {w.phoneCalibrationError && <p role="alert">{w.phoneCalibrationError}</p>}
+              {w.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={w.ambassadorMaterialProposal} expectedMaterialRevision={w.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? w.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
+              {w.ambassadorMaterialError && <div className="amb-alert" role="alert">{w.ambassadorMaterialError}</div>}
               <div className="kv"><span className="k">操作理由</span><span className="v" style={{ maxWidth: 360, textAlign: "right" }}>{w.reason}</span></div>
               <div className="kv"><span className="k">记录时间</span><span className="v">{w.ts}{w.sos ? "（应急，优先处理）" : ""}</span></div>
               <div className="kv"><span className="k">{w.retiredOperation ? "原执行权限" : "谁能执行"}</span><span className="v">{w.roleGate}</span></div>

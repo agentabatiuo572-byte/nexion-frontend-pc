@@ -4,8 +4,9 @@ import { operatorNicknameText } from "@/lib/admin/brand-copy";
 
 /** F4 · 池/配额/大使/榜 —— 数据源为后端 /api/admin/teams/leadership-pool。 */
 import { useState } from "react";
-import { formatF4AmbassadorBucketRule, formatF4AmbassadorBucketTitle } from "@/lib/admin/f4-ambassador-display";
-import type { F4AmbassadorPolicy, F4AmbassadorPolicyUpdate } from "@/lib/admin/f1-client";
+import { ambassadorBucketLabel, ambassadorMaterialStateLabel, formatF4AmbassadorBucketRule, formatF4AmbassadorBucketTitle } from "@/lib/admin/f4-ambassador-display";
+import type { F4AmbassadorApplication, F4AmbassadorPolicy, F4AmbassadorPolicyUpdate } from "@/lib/admin/f1-client";
+import { F4AmbassadorMaterials } from "./f4-ambassador-materials";
 import type { FViewCtx } from "./types";
 import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
 import { validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
@@ -166,10 +167,10 @@ function openAmbassadorPolicy(ctx: FViewCtx, policy: F4AmbassadorPolicy) {
 
 export function F4Ops({ ctx }: { ctx: FViewCtx }) {
   const [leaderboardPeriod, setLeaderboardPeriod] = useState<"today" | "week" | "month" | "all">("week");
+  const [materialApplication, setMaterialApplication] = useState<F4AmbassadorApplication | null>(null);
   const data = ctx.f4Overview;
   const canWrite = ctx.can("network_f4_write");
   const canFund = ctx.can("network_f4_pool_fund");
-  const canApproveAmbassador = ctx.can("network_f4_ambassador_approve");
   const canControlLeaderboard = ctx.can("network_f4_leaderboard_control");
   const ambassadorPolicy = ctx.f4AmbassadorPolicy;
 
@@ -359,17 +360,15 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
         <section className="sect">
           <div className="sect-h">
             <span className="ic amb"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="8" r="3" /><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" /><circle cx="17" cy="9" r="2.2" /><path d="M21 20c0-2.6-1.8-4.8-4.2-5.4" /></svg></span>
-            <div className="t"><div className="nm">区域大使确认</div><div className="s">V5 及以上可申请 · 4 类预算 · 待审核 {data.ambassadorPendingCount} 单</div></div>
+            <div className="t"><div className="nm">区域大使确认</div><div className="s">V5 及以上可申请 · 每份申请一类预算 · 待审核 {data.ambassadorPendingCount} 单</div></div>
           </div>
-          <div className="amb-bands">
+          <div className="amb-applications">
             {data.ambassadorApplications.length ? data.ambassadorApplications.map((application) => (
-              <div key={application.id} className="amb-band">
-                <div className="nm">#{application.id} · {operatorNicknameText(application.applicantName)} · {application.region}{application.city ? `/${application.city}` : ""}</div>
-                <div className="ct">{application.currentRank} · ${application.requestedBudgetUsd.toLocaleString("en-US")} · {({PENDING:"待审核",APPROVED:"已通过",REJECTED:"已驳回",pending:"待审核",approved:"已通过",rejected:"已驳回"} as Record<string,string>)[application.status] ?? "状态未知"}</div>
-                {canApproveAmbassador && application.status.toUpperCase() === "PENDING" && <>
-                  <button className="primary amp" onClick={() => ctx.openActionConfirm({ briefKind: "funds", name: `批准大使申请 #${application.id}`, amplify: true, op: "dispose", paramKey: `F.ambassador.${application.id}.status`, fixedVal: "approved", detail: "批准这一份申请，同时发放推广、活动、差旅、宣传四类预算。" })}>批准</button>
-                  <button className="danger" onClick={() => ctx.openActionConfirm({ briefKind: "record", name: `驳回大使申请 #${application.id}`, op: "dispose", paramKey: `F.ambassador.${application.id}.status`, fixedVal: "rejected", detail: "驳回这一份申请。" })}>驳回</button>
-                </>}
+              <div key={application.id} className="amb-application">
+                <div><b>#{application.id} · {operatorNicknameText(application.applicantName)}</b><p>{application.region}{application.city ? ` / ${application.city}` : ""} · {application.currentRank}</p></div>
+                <div><span className="amb-category">{ambassadorBucketLabel(application.bucket)}</span><p className="mono">{application.requestedBudgetUsd.toLocaleString("en-US")} USDT</p></div>
+                <div><span className={`bdg ${application.materialState === "PASSED" ? "ok" : application.materialState === "NEEDS_MORE" ? "warn" : "dim"}`}>{application.legacyApproved ? "历史已批准" : ambassadorMaterialStateLabel(application.materialState)}</span><p>{({PENDING:"待审核",APPROVED:"已通过",REJECTED:"已驳回",pending:"待审核",approved:"已通过",rejected:"已驳回"} as Record<string,string>)[application.status] ?? "状态未知"}{application.materialRevision != null ? ` · 材料 V${application.materialRevision}` : ""}</p></div>
+                <button className="btn sm" onClick={() => setMaterialApplication(application)}>查看材料</button>
               </div>
             )) : <div className="empty">暂无大使申请</div>}
           </div>
@@ -483,6 +482,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
       </section>
 
       <p className="f-foot">团队激励池 <b>{settlementEff}</b>。按已付款订单金额、每月上限、参与等级和会员等级票数计算发放，同一周不会重复发放；提前结算需要审批。补发、冲正、冻结请到「奖励记录核对」处理。硬件配额、区域大使、排行榜各自独立生效；会多发钱的调整先看兑付覆盖率。</p>
+      {materialApplication && <F4AmbassadorMaterials application={materialApplication} ctx={ctx} onClose={() => setMaterialApplication(null)} />}
     </>
   );
 }

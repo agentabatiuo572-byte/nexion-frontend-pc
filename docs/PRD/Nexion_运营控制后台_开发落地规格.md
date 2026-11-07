@@ -505,7 +505,7 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | `/api/admin/commissions?kind=&status=&cursor=` · `/commissions/anomalies` | GET | 六类佣金流水(by commission.paid)/ 异常预警 | — | F5 |
 | `/api/admin/commissions/:id/reverse` · `/commissions/reissue` · `/users/:userId/commission/suspend` | POST | 撤销/补发/暂停(携 Key;原子+D4 冲正) | F5-MD1~MD3 | F5 |
 | `/api/admin/config/quota` · `/users/:userId/quota/override` · `/config/quota/:tier/pause` | GET/PUT/POST | 配额解锁配置 / 单用户覆盖 / 断货暂停 | F4b-MD1~MD4(写) | F4b |
-| `/api/admin/agent/applications?type=&status=` · `/applications/:id/review` · `/agent/budget` | GET/POST/PUT | 大使预算申请队列 / 审批 / 调区域预算(携 Key) | F4c-MD1~MD3(review/budget) | F4c |
+| `/api/admin/teams/leadership-pool` · `/ambassador-applications/:id/materials` · `/materials/review` · `/materials/files/:fileId` | GET/POST | 原大使申请队列／材料与独立业务、费用核验／私有附件；批准走原A2命令并携独立材料版本 | [BE-27材料核验](BE-27-大使材料核验-20261107.md) | F4c |
 | `/api/admin/leaderboard?period=&cursor=` | GET | 4 周期奖池+榜单快照(每 5min) | — | F4d |
 | `/api/admin/leaderboard/:period/{payout\|pause\|topup}` | POST | 补发纠错派发 / 暂停 / 追加奖池(携 Key;topup+B1) | F4d-MD1/MD3/MD4 | F4d |
 | `/api/admin/risk/leaderboard/:userId/disqualify` | POST | **F4d owns 取消刷榜资格**(剔除名单+标 disqualified;携 Key) | F4d-MD2 | F4d |

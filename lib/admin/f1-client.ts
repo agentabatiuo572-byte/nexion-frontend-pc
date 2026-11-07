@@ -250,7 +250,7 @@ interface BackendF4Podium {
 }
 
 interface BackendF4QuotaUsage { id?: number | string | null; quotaCode?: string | null; productNo?: string | null; userId?: number | string | null; orderNo?: string | null; quantity?: number | string | null; status?: string | null; occurredAt?: string | null }
-interface BackendF4AmbassadorApplication { id?: number | string | null; userId?: number | string | null; applicantName?: string | null; region?: string | null; city?: string | null; currentRank?: string | null; requestedBudgetUsd?: number | string | null; kolBudgetPct?: number | string | null; status?: string | null; eventDate?: string | null; createdAt?: string | null }
+interface BackendF4AmbassadorApplication extends Partial<F4AmbassadorMaterialSummary> { id?: number | string | null; userId?: number | string | null; applicantName?: string | null; region?: string | null; city?: string | null; currentRank?: string | null; requestedBudgetUsd?: number | string | null; kolBudgetPct?: number | string | null; status?: string | null; eventDate?: string | null; createdAt?: string | null }
 
 interface BackendF4VoteWeight {
   v?: string | null;
@@ -734,7 +734,63 @@ export interface F4LeaderboardPeriod {
 export type F4LeaderboardPeriods = Partial<Record<"today" | "week" | "month" | "all", F4LeaderboardPeriod>>;
 
 export interface F4QuotaUsage { id: number; quotaCode: string; productNo: string; userId: number; orderNo: string; quantity: number; status: string; occurredAt: string }
-export interface F4AmbassadorApplication { id: number; userId: number; applicantName: string; region: string; city: string; currentRank: string; requestedBudgetUsd: number; kolBudgetPct: number; status: string; eventDate: string; createdAt: string }
+export type F4AmbassadorBucket = "venue" | "kol" | "print" | "dev";
+export interface F4AmbassadorReview {
+  status: "PENDING" | "NEEDS_MORE" | "PASSED";
+  reviewerLabel: string | null;
+  reviewedAt: string | null;
+  reason: string | null;
+  verifiedAttendees?: number | null;
+  recognizedBudgetUsdt?: number | string | null;
+  materialRevision?: number;
+  stage?: "BUSINESS" | "FINANCE";
+}
+export interface F4AmbassadorMaterialSummary {
+  bucket: F4AmbassadorBucket | null;
+  materialRevision: number;
+  materialState: "NOT_SUBMITTED" | "PENDING" | "NEEDS_MORE" | "PASSED";
+  businessReview: F4AmbassadorReview;
+  financeReview: F4AmbassadorReview;
+  missingKinds: string[];
+  approvalBlockers: string[];
+  legacyApproved: boolean;
+}
+export interface F4AmbassadorMaterialPacket extends F4AmbassadorMaterialSummary {
+  applicationId: number;
+  eventDate: string | null;
+  budgetUsdt: number | string;
+  requirements: { kind: string; label: string; required: boolean }[];
+  attachments: { fileId: string; kind: string; name: string; contentType: string; sizeBytes: number }[];
+  statement: string;
+  canSubmit: boolean;
+  canReviewBusiness: boolean;
+  canReviewFinance: boolean;
+  canProposeApproval: boolean;
+  proposalBlockers: string[];
+  canApprove: boolean;
+  reviewHistory?: F4AmbassadorReview[];
+}
+export type F4AmbassadorMaterialProposal = Pick<F4AmbassadorMaterialPacket,
+  "applicationId" | "bucket" | "budgetUsdt" | "materialRevision" | "materialState" | "businessReview" | "financeReview" | "canApprove" | "approvalBlockers"> & {
+  expectedMaterialRevision: number | null;
+  applicationDecision: "APPROVE" | "REJECT" | null;
+  recognizedBudgetUsdt: number | string | null;
+};
+export interface F4AmbassadorReviewInput {
+  expectedMaterialRevision: number;
+  stage: "BUSINESS" | "FINANCE";
+  decision: "PASSED" | "NEEDS_MORE";
+  reason: string;
+  verifiedAttendees?: number;
+  recognizedBudgetUsdt?: string;
+  missingKinds?: string[];
+}
+export class F4MaterialReviewNotAppliedError extends Error {
+  constructor(message: string, public readonly code: "MATERIAL_REVISION_STALE" | "APPLICATION_NOT_PENDING") {
+    super(message); this.name = "F4MaterialReviewNotAppliedError";
+  }
+}
+export interface F4AmbassadorApplication extends Partial<F4AmbassadorMaterialSummary> { id: number; userId: number; applicantName: string; region: string; city: string; currentRank: string; requestedBudgetUsd: number; kolBudgetPct: number; status: string; eventDate: string; createdAt: string }
 
 export interface F4AmbassadorPolicyBucket {
   id: "venue" | "kol" | "print" | "dev";
@@ -1410,6 +1466,9 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     region: asText(row.region), city: asText(row.city), currentRank: asText(row.currentRank),
     requestedBudgetUsd: toNumber(row.requestedBudgetUsd), kolBudgetPct: toNumber(row.kolBudgetPct),
     status: asText(row.status), eventDate: asText(row.eventDate), createdAt: asText(row.createdAt),
+    bucket: row.bucket ?? null, materialRevision: row.materialRevision, materialState: row.materialState,
+    businessReview: row.businessReview, financeReview: row.financeReview, missingKinds: row.missingKinds,
+    approvalBlockers: row.approvalBlockers, legacyApproved: row.legacyApproved,
   }));
   const podium = (paused && !frozen ? [] : data?.podium ?? []).map((row) => ({
     rank: toNumber(row.rank),
@@ -1706,6 +1765,14 @@ async function f1Request<T>(
   }
 
   if (!response.ok || !result || result.code !== 0) {
+    // Retained success replays before the review supplier. These two exact supplier
+    // conflicts therefore prove the original review did not commit; permission or
+    // generic 4xx errors do not establish that fact and must retain the pending key.
+    const reviewConflict = result?.message?.trim();
+    if (response.status === 409 && result?.code === 409 && /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)
+      && (reviewConflict === "MATERIAL_REVISION_STALE" || reviewConflict === "APPLICATION_NOT_PENDING")) {
+      throw new F4MaterialReviewNotAppliedError(formatAdminApiError(reviewConflict, "F1_REQUEST_FAILED_409"), reviewConflict);
+    }
     throw new Error(formatAdminApiError(result?.message, `F1_REQUEST_FAILED_${response.status}`));
   }
 
@@ -1801,6 +1868,16 @@ function normalizeF4AmbassadorPolicy(raw: unknown): F4AmbassadorPolicy {
 
 export async function fetchF4AmbassadorPolicy() {
   return normalizeF4AmbassadorPolicy(await f1Request<unknown>("/ambassador-policy"));
+}
+
+export async function fetchF4AmbassadorMaterials(applicationId: number) {
+  return f1Request<F4AmbassadorMaterialPacket>(`/ambassador-applications/${applicationId}/materials`);
+}
+
+export async function reviewF4AmbassadorMaterials(applicationId: number, input: F4AmbassadorReviewInput, commandKey: string) {
+  return f1Request<F4AmbassadorMaterialPacket>(`/ambassador-applications/${applicationId}/materials/review`, {
+    method: "POST", stableIdempotencyKey: commandKey, expectsData: true, body: JSON.stringify(input),
+  });
 }
 
 export async function updateF4AmbassadorPolicy(

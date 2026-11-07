@@ -9,6 +9,7 @@ import {
 import { fetchA7MenusOverview, type A7MenuTreeNode } from "@/lib/admin/a7-client";
 import { fetchA8Permissions, type A8Permission } from "@/lib/admin/a8-client";
 import { groupPermissionsByDomain, type PermDomainGroup } from "@/lib/admin/perm-domain";
+import { F4_MATERIAL_PERMISSIONS } from "@/lib/admin/f4-ambassador-display";
 import { CONSOLE_NAV } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Card, CardH, CodeTag, Badge, Btn, Drawer, OperationConfirmModal, useToast } from "@/app/components/domain-views/design-kit";
@@ -190,6 +191,10 @@ export default function A6Roles() {
               <Row label="备注">{detail.remark || "—"}</Row>
               <Row label="状态"><Badge tone={detail.status === 1 ? "ok" : "dim"}>{detail.status === 1 ? "启用" : "停用"}</Badge></Row>
               <Row label="权限">{detail.permissionCodes.length} 项</Row>
+              <div className="amb-permission-summary"><b>区域大使独立核验权限</b>
+                {F4_MATERIAL_PERMISSIONS.map((permission) => <div key={permission.code}><span>{permission.label}</span><Badge tone={detail.permissionCodes.includes(permission.code) ? "ok" : "dim"}>{detail.permissionCodes.includes(permission.code) ? "已授权" : "未授权"}</Badge></div>)}
+                <p>核验与最终批准分别授权；普通增长不会自动获得核验写权，审计保持只读。</p>
+              </div>
               <Row label="可见菜单">{detail.menuIds.length} 个菜单</Row>
               <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                 {canWrite && <Btn sm onClick={() => setFormMode({ kind: "update" })}>编辑基本信息</Btn>}
@@ -419,7 +424,7 @@ function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubmit }: {
             perms: p.perms.filter(
               (pp) =>
                 pp.permissionCode.toLowerCase().includes(q) ||
-                pp.permissionName.toLowerCase().includes(q) ||
+                (F4_MATERIAL_PERMISSIONS.find((item) => item.code === pp.permissionCode)?.label ?? pp.permissionName).toLowerCase().includes(q) ||
                 p.l2.id.toLowerCase().includes(q) ||
                 p.l2.name.toLowerCase().includes(q),
             ),
@@ -541,7 +546,7 @@ function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubmit }: {
                               return (
                                 <label key={pp.permissionCode} title={pp.permissionCode} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", borderRadius: 6, cursor: "pointer", fontSize: 12, background: on ? "var(--surface-2)" : "transparent" }}>
                                   <input type="checkbox" checked={on} onChange={() => togglePerm(pp.permissionCode)} />
-                                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{operatorCopyText(pp.permissionName || pp.permissionCode)}</span>
+                                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{F4_MATERIAL_PERMISSIONS.find((item) => item.code === pp.permissionCode)?.label ?? operatorCopyText(pp.permissionName || pp.permissionCode)}</span>
                                   <Badge tone={tone}>{({ HIGH: "敏感操作", WRITE: "修改", READ: "查询" } as Record<string,string>)[pp.permType] ?? "未知权限类型"}</Badge>
                                   {pp.amplifies === 1 && <span title="会让平台多付钱" style={{ color: "var(--danger)", fontSize: 12 }}>⚠</span>}
                                 </label>

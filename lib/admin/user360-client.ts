@@ -6,6 +6,7 @@ import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { normalizeAuthoritativePage } from "@/lib/admin/authoritative-page-contract";
 import { normalizeC3Adjustment } from "@/lib/admin/c3-adjustment-contract";
 import { parseStrictFiniteNumber } from "@/lib/admin/strict-number";
+import { parseBusinessTime } from "@/lib/admin/business-time";
 import { supportRequest, supportObject, parseSupportId } from "./m-support-client.ts";
 
 interface ApiResult<T> {
@@ -849,6 +850,14 @@ function c2ResponseInvalid(): never {
   throw new Error(formatAdminApiError("C2_RESPONSE_INVALID", "C2_RESPONSE_INVALID"));
 }
 
+function normalizeC2ReadonlySessionTimes(session: JsonRecord) {
+  for (const key of ["createdAt", "expiresAt", "endedAt"]) {
+    const value = session[key];
+    if (typeof value === "string") session[key] = new Date(parseBusinessTime(value)).toISOString();
+  }
+  return session;
+}
+
 function requireC2Overview(value: unknown): UserAccountActionOverview {
   if (!isJsonRecord(value)
     || !Array.isArray(value.accounts)
@@ -893,6 +902,7 @@ function requireC2Overview(value: unknown): UserAccountActionOverview {
       || (typeof fact.userId !== "number" && typeof fact.userId !== "string"))) {
     return c2ResponseInvalid();
   }
+  value.impersonations.forEach(normalizeC2ReadonlySessionTimes);
   return value as UserAccountActionOverview;
 }
 
@@ -1379,7 +1389,7 @@ export async function fetchImpersonationReadonlyView(accessToken: string, page =
   if (!response.ok || !result || result.code !== 0 || !result.data) {
     throw new Error(formatAdminApiError(result?.message, `IMPERSONATION_VIEW_FAILED_${response.status}`));
   }
-  return result.data as JsonRecord;
+  return normalizeC2ReadonlySessionTimes(result.data);
 }
 
 export async function terminateUserImpersonation(sessionNo: string, reason: string, operator: string) {
