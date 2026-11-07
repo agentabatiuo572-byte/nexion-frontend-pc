@@ -145,6 +145,7 @@ function operationMarkers(w: A2OperationRow): OperationMarker[] {
 }
 
 const OWN_TICKET_REASON = "这是你发起的，需要另一位管理员处理";
+const RETIRED_OPERATION_COPY = "此操作已退役，不可执行或重新发起；保留原申请和历史记录，待审申请可按原权限取消。";
 const COVERAGE_ON_APPROVAL_COPY = "批准执行时，系统会检查兑付覆盖率。低于红线时，审批单继续待处理，账户组状态和提现限制保持原样。";
 
 function isCurrentOperator(w: A2OperationRow, username: string | undefined) {
@@ -378,6 +379,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   /* ────────────────── 高敏动作 ────────────────── */
 
   const approveWo = (w: A2OperationRow) => {
+    if (w.retiredOperation) { toast(RETIRED_OPERATION_COPY); return; }
     if (w.phoneCalibrationError) { toast(w.phoneCalibrationError); return; }
     const commandKey = createA2CommandKey(`a2-approve-${w.id}`);
     const isRefund = w.fundEffect === "ORDER_REFUND";
@@ -422,7 +424,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       action: <>取消执行 · {w.id} · {a2ActionText(w.action)}</>,
       detail: (
         <>
-          取消后不能恢复，如需再做请重新发起。
+          {w.retiredOperation ? "此操作已退役。取消后保留历史记录，不能重新发起。" : "取消后不能恢复，如需再做请重新发起。"}
         </>
       ),
       amplifies: false,
@@ -753,6 +755,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {isFinal ? (
                         <span className={`bdg ${HIST_TONE[status] ?? "dim"}`}>{HIST_LABEL[status] ?? status}</span>
+                      ) : w.retiredOperation ? (
+                        <>
+                          <span className="bdg dim">已退役 · 不可执行</span>{" "}
+                          {isCurrentOperator(w, session?.username)
+                            ? <button className="l-btn sm" disabled={!canWithdraw} onClick={(e) => { e.stopPropagation(); withdrawWo(w); }}>撤回我的申请</button>
+                            : canDecide(w) && <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); rejectWo(w); }}>取消</button>}
+                        </>
                       ) : isCurrentOperator(w, session?.username) ? (
                         <>
                           <span title={OWN_TICKET_REASON}>
@@ -1045,7 +1054,14 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             onClose={() => setWoIdx(null)}
             footer={
               !isFinal ? (
-                isCurrentOperator(w, session?.username) ? (
+                w.retiredOperation ? (
+                  <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
+                    <p style={{ margin: "0 0 8px", color: "var(--ink-3)" }}>{RETIRED_OPERATION_COPY}</p>
+                    {isCurrentOperator(w, session?.username)
+                      ? <button className="l-btn" disabled={!canWithdraw} onClick={() => { setWoIdx(null); withdrawWo(w); }}>撤回我的申请</button>
+                      : canDecide(w) && <button className="l-btn" onClick={() => { setWoIdx(null); rejectWo(w); }}>取消</button>}
+                  </div>
+                ) : isCurrentOperator(w, session?.username) ? (
                   <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
                     <div style={{ display: "flex", gap: 8 }}>
                       <button className="l-btn mc" disabled title={OWN_TICKET_REASON}>执行</button>
@@ -1084,10 +1100,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               {w.phoneCalibrationError && <p role="alert">{w.phoneCalibrationError}</p>}
               <div className="kv"><span className="k">操作理由</span><span className="v" style={{ maxWidth: 360, textAlign: "right" }}>{w.reason}</span></div>
               <div className="kv"><span className="k">记录时间</span><span className="v">{w.ts}{w.sos ? "（应急，优先处理）" : ""}</span></div>
-              <div className="kv"><span className="k">谁能执行</span><span className="v">{w.roleGate}</span></div>
+              <div className="kv"><span className="k">{w.retiredOperation ? "原执行权限" : "谁能执行"}</span><span className="v">{w.roleGate}</span></div>
             </div>
             <div className="atint" style={{ marginTop: 14 }}>
-              {w.coverageCheckOnApproval ? COVERAGE_ON_APPROVAL_COPY : w.amplifies ? (
+              {w.retiredOperation ? RETIRED_OPERATION_COPY : w.coverageCheckOnApproval ? COVERAGE_ON_APPROVAL_COPY : w.amplifies ? (
                 <>
                   <b>🔥 会让平台多付钱</b>：执行时会再次显示当前兑付覆盖率，如已跌破红线请取消并注明原因。
                 </>

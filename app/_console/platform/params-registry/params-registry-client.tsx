@@ -35,6 +35,7 @@ const E6_DOWNLOAD_COPY_KEYS: ReadonlySet<string> = new Set([
  */
 function rowValueLabel(row: A5RegistryRow): string {
   if (row.canonicalKey === "E.compute.h5BaseFactor") return "已停用（只能查看）";
+  if (row.canonicalKey === "E.compute.continuityFullHours") return "历史兼容值（只读）";
   if (row.live) {
     return row.stale
       ? "实时值 · 暂时获取不到"
@@ -271,12 +272,14 @@ function DomainSection({ domain, rows }: { domain: string; rows: A5RegistryRow[]
                   「这就是当前生效的服务端事实」,而陈旧快照恰恰不是。 */}
               {row.canonicalKey === "E.compute.h5BaseFactor"
                 ? <span>已停用 · 只能查看</span>
+                : row.canonicalKey === "E.compute.continuityFullHours"
+                ? <span>已退役 · 只读</span>
                 : row.stale
                 ? <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}>旧值 · 已过期</span>
                 : rowValueEffective(row)
                   ? <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-success-soft)", color: "var(--v5-success)" }}>{row.live ? "实时值" : "已生效"}</span>
                   : <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}>已保存 · 未生效</span>}
-              {row.operationConfirm && row.canonicalKey !== "E.compute.h5BaseFactor" && <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}><ShieldCheck size={9} />修改需确认</span>}
+              {row.operationConfirm && !["E.compute.h5BaseFactor", "E.compute.continuityFullHours"].includes(row.canonicalKey) && <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}><ShieldCheck size={9} />修改需确认</span>}
               <span>更新于 {formatTime(row.live && row.observedAt ? row.observedAt : row.updatedAt)}</span>
             </div>
           </article>

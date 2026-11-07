@@ -12,7 +12,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Ban, Coins, Copy, History, Lock, RefreshCw, Settings2, SlidersHorizontal, Ticket, TrendingUp, Users } from "lucide-react";
-import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IconButton, IrreversibleTag, JudgmentPoints, Notice, PageHeader, Pager, Panel, RecordList, ReleaseModal, SectionNav, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useSectionNav, type SectionNavItem, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IconButton, IrreversibleTag, JudgmentPoints, Modal, Notice, PageHeader, Pager, Panel, RecordList, ReleaseModal, SectionNav, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useSectionNav, type SectionNavItem, type StateTone } from "@/app/components/rd";
 import {
   createH2CommandKey,
   fetchH2Trials,
@@ -20,10 +20,10 @@ import {
   updateH2TrialParam,
 } from "@/lib/admin/h-client";
 import { usePropose } from "@/lib/admin/use-propose";
-import { H2_TRIAL_ACTIONS, pendingH2TrialApprovals, submitH2TrialApproval, type H2TrialApprovalMode } from "@/lib/admin/h2-trial-approval";
+import { finishRetiredH2TrialChargeLookup, H2_TRIAL_ACTIONS, pendingH2TrialApprovals, submitH2TrialApproval, type H2TrialApprovalMode } from "@/lib/admin/h2-trial-approval";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
-import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { ADVANCED_TRIAL_GROUPS, COMMON_TRIAL_PARAMS, TRIAL_PARAM_HELP, TRIAL_STATE_HELP } from "@/lib/admin/config-help/h2-trial";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
@@ -112,6 +112,10 @@ type TrialProposal = { kind: "cancel" | "charge"; sid: string; owner: string; be
 type TrialCommand = TrialProposal
   | { kind: "param"; paramKey: string; value: string; name: string; reason: string; label: string };
 type PendingCommand = PendingMutationRecord & TrialCommand;
+type RetiredCharge = { adminId: number } & (
+  | { source: "legacy"; record: ReturnType<typeof pendingH2TrialApprovals>[number] }
+  | { source: "redesign"; record: PendingCommand & TrialProposal }
+);
 
 const pendingCommands = createPendingMutationStore<PendingCommand>({
   storageKey: "nexion-admin-h2-trial-commands-v1",
@@ -362,6 +366,9 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
   const [releasing, setReleasing] = useState<PendingCommand | null>(null);
   const [queryMissing, setQueryMissing] = useState<string[]>([]);
+  const [retiredCharge, setRetiredCharge] = useState<RetiredCharge | null>(null);
+  const [chargeLookup, setChargeLookup] = useState<{ missing?: boolean; ticket?: A2OperationRow; error?: string }>({});
+  const [chargeLookupBusy, setChargeLookupBusy] = useState(false);
   const reloadEpochRef = useRef(0);
   const syncPending = useCallback(() => setPending(pendingCommands.list()), []);
   const notePending = (record: PendingCommand, note: string) => setPendingNotes((current) => ({ ...current, [record.commandKey]: note }));
@@ -608,23 +615,90 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       setRecovering("");
     }
   };
+
+  const finishChargeLookup = (charge: RetiredCharge) => {
+    if (charge.source === "legacy") finishRetiredH2TrialChargeLookup(charge.adminId, charge.record.sid, charge.record.commandKey);
+    else pendingCommands.forget(charge.record.fingerprint, charge.record.commandKey);
+    setLegacyApprovals(pendingH2TrialApprovals(charge.adminId));
+    syncPending();
+  };
+
+  const queryRetiredCharge = async () => {
+    if (!retiredCharge || !canCharge || adminSession?.adminId !== retiredCharge.adminId) return;
+    setChargeLookupBusy(true);
+    setChargeLookup({});
+    try {
+      const ticket = retiredCharge.source === "legacy"
+        ? await submitH2TrialApproval(adminSession, retiredCharge.record, "", "lookup")
+        : await fetchA2ProposalByKey(retiredCharge.record.commandKey, true);
+      if (useAdminAuth.getState().session?.adminId !== retiredCharge.adminId) return;
+      if (ticket && retiredCharge.source === "redesign" && (!ticket.mine
+          || ticket.obj !== `${retiredCharge.record.owner} · ${retiredCharge.record.sid}`
+          || ticket.action !== retiredCharge.record.label
+          || ticket.operationCode !== "h2_trial_charge" || ticket.retiredOperation !== true)) {
+        throw new Error("审批回执与原操作不符，原命令已保留，请到操作记录核对。");
+      }
+      if (ticket) finishChargeLookup(retiredCharge);
+      setChargeLookup(ticket ? { ticket } : { missing: true });
+      if (ticket) await reload();
+    } catch (cause) {
+      setChargeLookup({ error: `暂时无法确认原申请，原命令已保留。${displayAdminError(cause)}` });
+    } finally {
+      setChargeLookupBusy(false);
+    }
+  };
+
+  const retiredChargeModal = retiredCharge && adminSession?.adminId === retiredCharge.adminId && canCharge && (
+    <Modal title="核对旧扣款申请" busy={chargeLookupBusy} onClose={() => setRetiredCharge(null)} footer={<>
+      <Button disabled={chargeLookupBusy} onClick={() => setRetiredCharge(null)}>关闭</Button>
+      {chargeLookup.missing && <Button disabled={chargeLookupBusy} onClick={() => {
+        if (useAdminAuth.getState().session?.adminId !== retiredCharge.adminId) return;
+        finishChargeLookup(retiredCharge);
+        setRetiredCharge(null);
+      }}>结束本机核对</Button>}
+      {!chargeLookup.ticket && <Button variant="primary" loading={chargeLookupBusy} onClick={() => void queryRetiredCharge()}>查询原申请</Button>}
+    </>}>
+      <Facts>
+        <Fact k="原试用记录">{retiredCharge.source === "legacy" ? retiredCharge.record.obj : `${retiredCharge.record.owner} · ${retiredCharge.record.sid}`}</Fact>
+        <Fact k="原操作理由"><span className="rd-pre">{retiredCharge.record.reason}</span></Fact>
+      </Facts>
+      <Explain label="技术信息" content={`命令号 ${retiredCharge.record.commandKey}`} />
+      <p>旧强制扣款已退役，仅查询原申请，不新建或执行扣款。</p>
+      {chargeLookup.error && <p role="alert" className="rd-form-error">{chargeLookup.error}</p>}
+      {chargeLookup.missing && <p role="status">未找到可核对的原申请，旧入口不能重建。可结束本机这一条核对；历史事实请到操作记录核查，不会删除服务端记录。</p>}
+      {chargeLookup.ticket && <p role="status">已找到原审批单 {chargeLookup.ticket.id} · {{ pending: "待审批，已退役不可执行", approved: "历史已执行", rejected: "历史已取消", withdrawn: "历史已撤回", expired: "已过期" }[chargeLookup.ticket.status]}。请到操作记录查看原申请和处理结果。</p>}
+      {reach(auditHref, "platform_a2_read") && <Link className="rd-link" href={`${auditHref}?domain=H&object=${encodeURIComponent(retiredCharge.record.sid)}`} prefetch={false}>到操作记录核查</Link>}
+    </Modal>
+  );
+
   // 待确认常显，读取失败时也在（OP-93）。
   const pendingNotices = [
-    ...legacyApprovals.map((record) => <Notice key={record.commandKey} tone="warn" title={`${H2_TRIAL_ACTIONS[record.op]} · ${record.sid} · 原结果未确认`}
+    ...legacyApprovals.map((record) => record.op === "h2_trial_charge" ? (
+      <Notice key={record.commandKey} tone="warn" title={`强制扣款 · ${record.sid} · 原结果未确认`}
+        action={adminSession && canCharge && <Button size="sm" disabled={!!recovering} onClick={() => { setChargeLookup({}); setRetiredCharge({ adminId: adminSession.adminId, source: "legacy", record }); }}>核对旧申请</Button>}>
+        原对象 {record.obj}，原理由 {record.reason}。旧强制扣款已退役，只能核对原申请。
+      </Notice>
+    ) : <Notice key={record.commandKey} tone="warn" title={`${H2_TRIAL_ACTIONS[record.op]} · ${record.sid} · 原结果未确认`}
       action={<>
         {canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void recoverLegacy(record, "lookup")}>查询原操作</Button>}
         {record.expiresAt > Date.now() && <Button size="sm" disabled={!!recovering}
-          disabledReason={record.op === "h2_trial_charge" ? CHARGE_RESULT : !canCancel ? NO_WRITE : !queryMissing.includes(record.commandKey) ? "先查原审批单，明确查不到才能重试" : undefined}
+          disabledReason={!canCancel ? NO_WRITE : !queryMissing.includes(record.commandKey) ? "先查原审批单，明确查不到才能重试" : undefined}
           onClick={() => void recoverLegacy(record, "retry")}>按原操作重试</Button>}
       </>}>原对象 {record.obj}，原理由 {record.reason}。查询和重试均使用原命令号，结果确认前这条试用不能再操作。{record.expiresAt <= Date.now() && "已超过 24 小时，只能核对原审批单。"}</Notice>),
     ...pending.map((record) => {
+    if (record.kind === "charge") return (
+      <Notice key={record.fingerprint} tone="warn" title={`${commandTitle(record)} · 结果未确认`}
+        action={adminSession && canCharge && <Button size="sm" disabled={!!recovering} onClick={() => { setChargeLookup({}); setRetiredCharge({ adminId: adminSession.adminId, source: "redesign", record }); }}>核对旧申请</Button>}>
+        原对象 {record.owner} · {record.sid}，原理由 {record.reason}。旧强制扣款已退役，只能核对原申请。
+      </Notice>
+    );
     const proposal = isProposal(record);
     const expired = record.expiresAt <= Date.now();
     const object = proposal ? record.sid : record.paramKey;
     // 能查原提案就先查，明确查不到才重试；重试要当前还有这项写权（OP-93）。没有查询能力的路径只能重试，照实写。
-    const canRetry = record.kind === "cancel" ? canCancel : record.kind === "charge" ? false : canWrite;
+    const canRetry = record.kind === "cancel" ? canCancel : canWrite;
     const needQuery = proposal && canQuery && !queryMissing.includes(record.commandKey);
-    const retryBlock = record.kind === "charge" ? CHARGE_RESULT : !canRetry ? NO_WRITE : needQuery ? "先查原提案，明确查不到才能重试" : undefined;
+    const retryBlock = !canRetry ? NO_WRITE : needQuery ? "先查原提案，明确查不到才能重试" : undefined;
     return (
       <Notice key={record.fingerprint} tone="warn" title={`${commandTitle(record)} · 结果未确认`} action={<>
         {proposal && canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void checkPending(record)}>查询原提案</Button>}
@@ -634,7 +708,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         {formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，
         {proposal ? "提案可能已经提交，批准前不会执行。这条记录确认前不能再操作。" : "可能已经生效。这项确认前不能再改。"}
         {proposal && !canQuery ? " 这个账号查不了原提案，请能看操作记录的同事核查。" : ""}
-        {expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : record.kind === "charge" ? ` ${CHARGE_RESULT}。` : !canRetry ? " 这个账号已没有这项权限，不能重试。" : needQuery ? " 先查原提案，查不到再按原操作重试。" : " 重发原内容，已成功的不会重复执行。"}
+        {expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? " 这个账号已没有这项权限，不能重试。" : needQuery ? " 先查原提案，查不到再按原操作重试。" : " 重发原内容，已成功的不会重复执行。"}
         {reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href={`${auditHref}?domain=H&object=${encodeURIComponent(object)}`} prefetch={false}>到操作记录核查</Link></>}
         <Explain label="技术信息" content={`命令号 ${record.commandKey}${proposal ? ` ｜ 用户 ${record.owner}` : ` ｜ 新值 ${record.value || "空"}`} ｜ 理由 ${record.reason}`} />
         {!expired && pendingNotes[record.commandKey] && <div>{pendingNotes[record.commandKey]}</div>}
@@ -647,11 +721,11 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   );
 
   if (loading && !model) {
-    return <>{header()}{pendingNotices}<BlockState state="loading" title="试用数据加载中…" />{releaseModal}</>;
+    return <>{header()}{pendingNotices}<BlockState state="loading" title="试用数据加载中…" />{releaseModal}{retiredChargeModal}</>;
   }
 
   if (error || !model) {
-    return <>{header()}{pendingNotices}<BlockState state="error" title="试用数据加载失败" detail={error ?? "没有收到数据，请重试；一直失败请联系值班同事。"} onRetry={() => void reload()} />{releaseModal}</>;
+    return <>{header()}{pendingNotices}<BlockState state="error" title="试用数据加载失败" detail={error ?? "没有收到数据，请重试；一直失败请联系值班同事。"} onRetry={() => void reload()} />{releaseModal}{retiredChargeModal}</>;
   }
 
   const phaseHref = "/growth/phase";
@@ -693,7 +767,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       {/* 一切正常时一句话、不放大，和其他页的结论条一个样子（VS-23）；有异常时下面的提示条就是结论。 */}
       {loading
         ? <Conclusion state="unknown">{READING}</Conclusion>
-        : issues.length === 0 && pending.length === 0 && <Conclusion state="ok">{Number(stats.activeSessions) > 0 ? "试用正常开放，进行中的试用由系统自动结束，没有要处理的事" : "试用正常开放，没有要处理的事"}</Conclusion>}
+        : issues.length === 0 && pending.length === 0 && legacyApprovals.length === 0 && <Conclusion state="ok">{Number(stats.activeSessions) > 0 ? "试用正常开放，进行中的试用由系统自动结束，没有要处理的事" : "试用正常开放，没有要处理的事"}</Conclusion>}
 
       {issues.map((issue) => <Notice key={issue.key} tone={issue.tone} title={issue.title}>{issue.body}</Notice>)}
 
@@ -759,7 +833,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
 
             <div id={nav.anchor("records")}>
               <Fold title="试用记录" icon={History} tone="role-3" summary={`共 ${total} 条，平时不用处理`} open={!!folds.records} onOpenChange={(open) => setFolds((state) => ({ ...state, records: open }))}
-                explain={<>宽限中是正常状态：到期系统自动结束，不扣款，不用处理。{canHandle && "强制取消用于怀疑刷试用等风控介入，平时不用点，要提交审批。强制扣款现在批准后也不会扣款。"}</>}>
+                explain={<>宽限中是正常状态：到期系统自动结束，不扣款，不用处理。{canHandle && "强制取消用于怀疑刷试用等风控介入，平时不用点，要提交审批。强制扣款已退役。"}</>}>
                 {canCharge && <Notice tone="neutral">{CHARGE_RESULT}。</Notice>}
                 <Table label="试用记录">
                   <thead>
@@ -800,13 +874,13 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         sub={currentRow && <><span title={currentRow.session.sid}>{shortSid(currentRow.session.sid)}</span> <IconButton aria-label="复制试用记录编号" data-size="sm" onClick={() => void navigator.clipboard?.writeText(currentRow.session.sid).then(() => toast("已复制试用记录编号", "success"), () => toast("复制失败，请手动选择编号", "error"))}><Copy size={13} aria-hidden /></IconButton></>}
         nav={{ hasPrev: !loading && currentIndex > 0, hasNext: !loading && currentIndex >= 0 && currentIndex < sessions.length - 1, onPrev: () => setCurrentSid(sessions[currentIndex - 1].sid), onNext: () => setCurrentSid(sessions[currentIndex + 1].sid) }}
         footer={currentRow && !currentRow.terminal && canHandle ? (
-          <Decision explain="强制取消用于怀疑刷试用等风控介入，要提交审批，超级管理员批准后才执行。强制扣款现在批准后也不会扣款，用户要购买只能自己确认。" others={sessionButtons(currentRow, "drawer").cancel} />
+          <Decision explain="强制取消用于怀疑刷试用等风控介入，要提交审批，超级管理员批准后才执行。强制扣款已退役，用户要购买只能自己确认。" others={sessionButtons(currentRow, "drawer").cancel} />
         ) : undefined}>
         {currentRow && (
           <>
             <JudgmentPoints rows={[
               { label: "状态", value: <StatusTag tone={currentRow.tone}>{currentRow.label}</StatusTag>, reason: TRIAL_STATE_HELP[currentRow.session.state] },
-              ...(currentRow.session.pendingApproval ? [{ label: "审批", value: <StatusTag tone="warn">待审批</StatusTag>, reason: <>{trialApprovalMeta(currentRow.session.pendingApproval)}<br />等待超级管理员审批，批准后才执行原操作。审批结束后才能发起新操作。</> }] : []),
+              ...(currentRow.session.pendingApproval ? [{ label: "审批", value: <StatusTag tone="warn">待审批</StatusTag>, reason: <>{trialApprovalMeta(currentRow.session.pendingApproval)}<br />审批进度到「操作记录与审批」看；旧扣款已退役，只能按原权限取消或撤回。审批结束后才能发起新操作。</> }] : []),
               { label: "账户", value: trialOwnerLabel(currentRow.session), state: currentRow.owner ? undefined : "warn" },
               { label: "累计收益", value: shadowText(currentRow.session.shadow) },
               { label: "能不能处理", reason: canCharge && !currentRow.terminal ? `${CHARGE_RESULT}。` : undefined, value: currentRow.session.pendingApproval ? "等待审批结果，审批结束后才能再次处理" : currentRow.terminal ? "已结束，不能再取消或扣款" : lockedSids.has(currentRow.session.sid) ? "有结果未确认的操作，先处理页面上方的待确认" : !currentRow.owner ? "没有用户归属，不能取消或扣款" : canCancel ? "平时不用处理，确要干预才提交强制取消审批" : "这个账号只能查看" },
@@ -820,6 +894,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       </Drawer>
 
       {releaseModal}
+      {retiredChargeModal}
     </>
   );
 }
