@@ -129,6 +129,10 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-stat-sub { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 /* 数字不折行也不缩字：一格至少放得下数字，长金额自己撑宽这一列，再放不下才换行。 */
 .rd-stats .rd-stat { flex: 1 1 120px; min-width: min-content; }
+/* fit：两三个数按内容宽挨着排，窄时也不让关键数字独占一行，放不下才自然换行。 */
+.rd-stats[data-fit] { gap: 16px 48px; }
+.rd-stats[data-fit] > .rd-stat, .rd-stats[data-fit] > .rd-stat[data-lead] { flex: 0 1 auto; }
+.rd-stats[data-fit] > .rd-stat > .rd-tile { margin-inline: 0; }
 .rd-stat { position: relative; }
 .rd-stat-hit { position: absolute; inset: -8px; padding: 0; border: 0; border-radius: var(--rd-radius-control); background: none; cursor: pointer; }
 .rd-stat-hit:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 0; }
@@ -614,6 +618,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-approval-meta { display: block; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: normal; overflow-wrap: anywhere; }
 .rd-stack { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .rd-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-links[data-stack] { flex-direction: column; align-items: flex-start; }  /* 窄栏里一行一个 */
 
 /* ── 键值列表 ── */
 .rd-kv { margin: 0; }
@@ -943,6 +948,8 @@ td .rd-flow { margin-bottom: 0; }
   .rd-section-nav { display: flex; }
   .rd-config-rail > .rd-section-nav a { border-radius: 0; }
   .rd-config-rail > .rd-section-nav a[aria-current] { background: none; box-shadow: inset 0 -2px 0 var(--rd-brand-ink); }
+  .rd-config-rail[data-end] > * { order: 4; }  /* 窄栏只放相关页面时排到最后（PG-46） */
+  .rd-config-rail .rd-links[data-stack] { flex-direction: row; align-items: center; }
 }
 @container (max-width: 560px) {
   .rd-config-row { grid-template-columns: minmax(0, 1fr) auto; }

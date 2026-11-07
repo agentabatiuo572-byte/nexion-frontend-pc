@@ -1236,6 +1236,11 @@ function normalizeD1VietQrOverview(raw: unknown): D1VietQrOverview {
   };
 }
 
+/** 越南盾牌价：基准价 ×（1 + 买入点差），取整到十位，和后端 VietnamPaymentPolicy.quoteRate 一样。修改框按它预览改后的报价。 */
+export function d6QuoteRate(baseRateVndPerUsdt: number, buySpreadPct: number) {
+  return Math.round((baseRateVndPerUsdt * (10_000 + Math.round(buySpreadPct * 100))) / 10_000 / 10) * 10;
+}
+
 function normalizeD6FxQuote(raw: unknown): D6FxQuote {
   const root = d1Object(raw, "fxQuote");
   const configCode = d1String(root.configCode, "fxQuote.configCode");
@@ -1279,9 +1284,7 @@ function normalizeD6FxQuote(raw: unknown): D6FxQuote {
       || !Number.isInteger(result.baseRateVndPerUsdt)
       || Math.abs(result.buySpreadPct * 100 - Math.round(result.buySpreadPct * 100)) > 1e-8
       || !Number.isInteger(result.lockWindowMinutes)
-      || result.quoteRateVndPerUsdt !== Math.round(
-        (result.baseRateVndPerUsdt * (10_000 + Math.round(result.buySpreadPct * 100))) / 10_000 / 10,
-      ) * 10) d1Invalid("fxQuote.rangeOrDerivedQuote");
+      || result.quoteRateVndPerUsdt !== d6QuoteRate(result.baseRateVndPerUsdt, result.buySpreadPct)) d1Invalid("fxQuote.rangeOrDerivedQuote");
   return result;
 }
 
@@ -2232,12 +2235,15 @@ export async function updateD6FxQuote(
   expectedVersion: number,
   reason: string,
   operator: string,
+  /** 页面持有的命令号：结果未知时原样重试（OP-94）。 */
+  idempotencyKey: string,
 ) {
-  return normalizeD6FxQuote(await apiRequest<Record<string, unknown>>("finance", "/fx-quote", {
+  const raw = await apiRequest<Record<string, unknown>>("finance", "/fx-quote", {
     method: "PATCH",
     body: JSON.stringify({ ...values, expectedVersion, reason, operator }),
-    idempotencyPrefix: "d6-fx-quote",
-  }));
+    idempotencyKey,
+  });
+  return readWriteResult(idempotencyKey, () => normalizeD6FxQuote(raw));
 }
 
 /** Legacy name retained for B1 callers; the authority and endpoint are owned by B1. */
