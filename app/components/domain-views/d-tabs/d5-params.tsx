@@ -266,22 +266,25 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
             {canDailyWrite && <button className="l-btn sm mc" disabled={!smallAmountValid || smallAmount === params.smallAmountThresholdUsd} onClick={() => submit("小额免审线", { smallAmountThresholdUsd: smallAmount }, smallAmount > params.smallAmountThresholdUsd, `$${params.smallAmountThresholdUsd}`, `$${smallAmount}`)}>预览并提交</button>}
           </div>
           <div className="p-row">
-            <div className="txt"><div className="k">提现网络（三个一起保存）</div><div className="s">关闭是收紧；开启是放宽，提交时检查兑付覆盖率。</div></div>
-            {(["trc20", "bep20", "erc20"] as const).map((network) => {
-              const enabled = params.networkEnabled[network];
-              const label = network.toUpperCase();
-              const next = { ...params.networkEnabled, [network]: !enabled };
-              return <button key={network} aria-label={`${label} 提现通道${enabled ? "关闭" : "开启"}`} className={`l-btn sm ${enabled ? "mc" : ""}`} disabled={!canFeeWrite} onClick={() => submit(`${label} 提现通道`, { networkEnabled: next }, !enabled, `${label} ${enabled ? "开启" : "关闭"}`, enabled ? "关闭" : "开启")}>{label} 配置{enabled ? "开" : "关"}</button>;
-            })}
+            <div className="txt"><div className="k">提现网络</div><div className="s">开启需审批并检查兑付覆盖率；关闭经确认后生效。</div></div>
           </div>
-          <div className="d5-network-status-list" aria-label="提现网络实际生效状态">
-            {!params.networkStatus && <p>后端尚未提供实际生效状态，请核对部署并刷新；不能只凭配置开启判断 App 可用。</p>}
-            {params.networkStatus?.map(row => <div className="d5-network-status" key={row.network}>
-              <strong>{row.network.replace("USDT-", "")}</strong><span>运营配置：{row.configured ? "开启" : "关闭"}</span>
-              <span className={row.enabled ? "" : "blocked"}>{row.enabled ? "实际已生效" : `实际未生效：${networkStateReason(row.disabledReason)}`}</span>
-            </div>)}
-            <p>配置开启不等于实际可用，App 只显示服务端实际生效的提现网络。</p>
-            <Link className="cregis-config-link" href="/finance/recon">前往 USDT 资金页核对 →</Link>
+          {(["trc20", "bep20", "erc20"] as const).map((network) => {
+            const enabled = params.networkEnabled[network];
+            const label = network.toUpperCase();
+            const status = params.networkStatus?.find(row => row.network === `USDT-${label}`);
+            const next = { ...params.networkEnabled, [network]: !enabled };
+            const action = enabled ? "关闭通道" : "申请开启";
+            return <div className="p-row d5-network-row" key={network}>
+              <div className="txt"><div className="k">{label} 提现通道</div><div className="s">当前配置：{enabled ? "已开启" : "已关闭"}</div></div>
+              <div className={`s d5-network-effective ${status?.enabled ? "" : "blocked"}`}>
+                {status ? status.enabled ? "实际状态：可提现" : `实际不可用：${networkStateReason(status.disabledReason)}` : "实际状态：尚未核实，请刷新或到资金页查看"}
+              </div>
+              <button aria-label={`${label} ${action}`} className={`l-btn sm ${enabled ? "" : "mc"}`} disabled={!canFeeWrite} onClick={() => submit(`${label} 提现通道`, { networkEnabled: next }, !enabled, `${label} ${enabled ? "开启" : "关闭"}`, enabled ? "关闭" : "开启")}>{action}</button>
+            </div>;
+          })}
+          <div className="p-row">
+            <div className="txt"><div className="s">App 仅显示实际可用的提现网络。</div></div>
+            <Link className="l-btn sm" href="/finance/recon">USDT 资金设置 →</Link>
           </div>
           <div className="p-row">
             <div className="txt"><div className="k">到账时效</div><div className="s">{D5_PAYOUT_SLA_HOURS_MIN}–{D5_PAYOUT_SLA_HOURS_MAX} 小时；缩短时间会加大出款压力</div></div>
