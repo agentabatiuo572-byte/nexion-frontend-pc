@@ -29,7 +29,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 页头：标题、一句说明、「这页怎么用」、动作、数据时间；详情页的身份行传 `identity` | `PageHeader` | `page-header.tsx` |
 | 这页怎么用 | `PageGuide`，`PageHeader` 自动带 | `page-guide.tsx` |
 | 看板第一句话 | `Conclusion`；正常态不放大，`lead` 只在异常或带关键数字时放大；`hint` 只写建议和该做什么，怎么算传 `explain` 进句尾的提示图标 | `conclusion.tsx` |
-| 一排关键数字，最多 4 个 | `StatBand`、`Stat`；普通数字 24px，最重要的一个传 `lead` 放到 40px，页面不改字号；这一屏的结论已经放大了数字时不传，每屏一个 40px；没有明显主次的可以不传；整张可点传 `href` 或 `onOpen`；值是 0 或「—」时自动弱化（字色弱、图标底灰、`lead` 不放大），不带数字的文字（「无权限」）16px，传了 `lead` 也不放大；口径传 `explain` 进名称旁的提示图标，`sub` 只放数据。一格至少放得下数字，长金额放不下就换行，不折行不缩字。窄于 900 时 `lead` 独占一行，其余排在下面；没有 `lead` 时四个两两一行，三个留在一行；只有两三个数时 `StatBand` 传 `fit`，每格按内容宽挨着排，不拉满整行 | `stat.tsx` |
+| 一排关键数字，最多 4 个 | `StatBand`、`Stat`；普通数字 24px，最重要的一个传 `lead` 放到 40px，页面不改字号；这一屏的结论已经放大了数字时不传，每屏一个 40px；没有明显主次的可以不传；整张可点传 `href` 或 `onOpen`；值是 0 或「—」时自动弱化（字色弱、图标底灰、`lead` 不放大），不带数字的文字（「无权限」）16px，传了 `lead` 也不放大；口径传 `explain` 进名称旁的提示图标，`sub` 只放数据。一格至少放得下数字，长金额放不下就换行，不折行不缩字。窄于 900 时 `lead` 独占一行，其余排在下面；没有 `lead` 时四个两两一行，三个留在一行；只有两三个数时 `StatBand` 传 `fit`，每格从内容宽往外长填满一行，不拉成等宽的半格，窄时 `lead` 也不独占一行 | `stat.tsx` |
 | 一组经营数字：每个都带对比和分项，要切时段 | `MetricBoard`、`MetricCard`；一张卡四层：名称、主数、对比一行、分项，层高都是定的，同排同高，切时段不跳版。分项是 `rows`（最多三行名称和值），或 `bar` 比例条：两样比哪样多，条下只写图例不写数，全是 0 时写 `bar.empty`。`MetricBoard` 的 `rows` 传这组卡各时段最多几行（比例条算两行），分项区按它留高。0、读不到（`state="failed"`，传 `onRetry`）、读取中（`state="loading"`）分开，没权限不渲染；两套主题 0 和「—」都弱化。整张可点传 `href`，名称行右边有箭头，悬停整张变亮。3、6 张三列，4 张够宽四列，不够两两一行，2 张两列，只有 2 张时分项限宽 360；这组卡任一时段有 8 位以上长金额时页面传 `long`（用导出的 `LONG` 算），内容区窄于 900 时两列，不缩字，切时段列数不变。对比行里可以放一个问号，不撑高这一行。目前只有今日概览用（PG-41），其他页用 `StatBand` | `metric.tsx` |
 | 一块内容 | `Panel`；已经在一个面板里的分区传 `plain`，不套底；`sub` 只放数据（范围、单位、数量、时间），解释传 `explain` 进标题旁的提示图标 | `panel.tsx` |
 | 区块标题、统计数字前的图标 | `IconTile`，`Panel`、`Stat` 传 `icon` 就有 | `icon-tile.tsx` |
@@ -113,7 +113,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 </div></div>
 ```
 
-窄栏只放「相关页面」时（D6）给 `.rd-config-rail` 加 `data-end`，窄宽时排到全部分组后面；链接用 `<nav className="rd-links" data-stack>`，宽时一行一个，窄宽时排成一行。
+窄栏只放「相关页面」时（D6）给 `.rd-config-rail` 加 `data-end`，窄宽时整块排到全部分组后面；链接用 `<nav className="rd-links" data-stack>`，宽时一行一个，窄宽时排成一行。
 
 一切正常时用 `Conclusion` 一句话（16px，不放大），和看板、报表、工作台一个样子；有异常才用 `Notice`。每项自己保存，页头不放全局保存。没有修改权限时 `ConfigRow` 不传 `action`。`PageHeader` 的 `guideExtra` 放「这页怎么用」里随数据变的内容。
 

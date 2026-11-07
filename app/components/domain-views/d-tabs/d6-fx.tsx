@@ -424,7 +424,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
           )}
 
           <div className="rd-config-groups">
-            {/* 只有两个数：放在主栏里，按内容宽挨着排，不拉满整行（DP-12）。 */}
+            {/* 只有两个数：放在主栏里，每格从内容宽往外长，不拉成等宽的半格（DP-12）。 */}
             <StatBand label="汇率摘要" fit>
               <Stat lead tone="role-1" icon={Coins} label="当前报价" value={vnd(data.quoteRateVndPerUsdt)} unit="₫/USDT"
                 explain={<>
