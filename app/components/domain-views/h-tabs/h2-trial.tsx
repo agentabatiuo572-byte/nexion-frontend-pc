@@ -217,7 +217,7 @@ function paramValue(param: TrialParam, product: TrialProduct | undefined) {
   if (param.key === "trialProductId") return product?.name ?? text(param.cur);
   if (param.key === "trialPriceUSD") return usdt(param.cur);
   if (param.serverOnly) return operatorCopyText(text(param.cur));
-  if (unit === "%") return `${text(param.cur)}%`;
+  if (unit === "%") return `减 ${text(param.cur)}%`;
   return unit ? `${paramInput(param)} ${unit}` : text(param.cur);
 }
 
@@ -260,7 +260,7 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, seatsLeft }
     // 怎么填留一句单位和范围，其余进提示图标。
     const hint = (hintText: string | undefined, more: string | undefined) => (hintText || more) && <>{hintText}{more && <Explain label={`${name}怎么填`} content={more} />}</>;
     const offsetClear = isOffsetCap && current ? "要清空点「不设上限」。" : "";
-    const seatsNote = param.key === "seatsLeftToday" ? (seatsLeft === undefined ? "今日实际剩余读不到。" : `今日实际剩余 ${seatsLeft} 张。`) : "";
+    const seatsNote = param.key === "seatsLeftToday" ? (seatsLeft === undefined ? "今日实际剩余读不到。" : `今日还可领取试用 ${seatsLeft} 人。`) : "";
     const edit: EditSpec | undefined = isProduct ? {
       kind: "select",
       label: "换成",
@@ -778,7 +778,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         <Stat tone="role-4" icon={TrendingUp} label="试用转购买率" value={text(stats.trialBuyRate)}
           sub={`提前购买 ${text(stats.earlyBuyRate)}`}
           explain={<>已购买账号 ÷ 全部已开始试用的账号，每个账号只算最近一次。提前购买 = 试用期内买、按提前购买规则结算的账号 ÷ 全部已开始试用的账号。没有分母时显示「—」，表示不可计算，不是 0。绑卡转化 {text(stats.bindCardRate)}：绑卡环节已退役，不再计算。</>} />
-        <Stat tone="role-2" icon={Ticket} label="今日实际剩余免费名额" value={seatsKnown ? text(seats?.cur) : "—"} unit={seatsKnown ? "张" : undefined}
+        <Stat tone="role-2" icon={Ticket} label="今日实际剩余免费名额" value={seatsKnown ? text(seats?.cur) : "—"} unit={seatsKnown ? "人" : undefined}
           sub={seats?.businessDate && seats.businessDate !== "UNKNOWN" ? `日期 ${seats.businessDate}` : undefined}
           explain="按试用业务日实时读取，和 App 用同一个名额计数。「每日免费名额上限」是配置，这个是领取后的实际剩余。" />
         <Stat tone="role-other" icon={Ban} label="拦截反复薅试用" value={text(stats.k2Blocked)} unit="人"
