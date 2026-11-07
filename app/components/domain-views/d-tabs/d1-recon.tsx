@@ -587,7 +587,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
       >
         <FilterField grow><Input data-search id="d1-flow-keyword" aria-label="充值流水查询关键字：充值单号 / 用户编号 / 交易号" placeholder="充值单号 / 用户编号 / 交易号" value={keyword} onChange={(e) => setKeyword(e.target.value)} /></FilterField>
       </FilterBar>
-      <Panel flush icon={FileText} tone="role-2" title="充值流水" explain="所有通道的充值单，按提交时间倒序。金额按 USDT。"
+      <Panel flush icon={FileText} tone="role-2" title="充值流水" explain="所有通道的充值单。金额按 USDT。"
         actions={<Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={flowsLoading} onClick={() => { void loadFlows(); void loadOverview(); }}>刷新</Button>}>
         <Table label="充值流水" aria-busy={flowsLoading}>
           <thead><tr>

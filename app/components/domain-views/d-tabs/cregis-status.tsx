@@ -525,7 +525,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       <Stat tone={data ? switchState(gate?.assignEnabled) : undefined} icon={MapPin} label="地址分配" value={!data ? "—" : gate?.assignEnabled ? "已开启" : "已关闭"}
         sub={data ? cregisStateText(gate?.state) : undefined} explain="给用户分配 USDT 收款地址。关掉后用户拿不到收款地址。" />
       <Stat tone={data ? switchState(gate?.creditEnabled) : undefined} icon={ToggleRight} label="自动入账" value={!data ? "—" : gate?.creditEnabled ? "已开启" : "已关闭"}
-        explain="到账后自动进用户钱包。关掉后到账的进人工复核。" />
+        explain="到账后自动进用户钱包。关掉后到账的进人工复核，App 写「该方式暂不自动入账。转账前请先联系客服。」" />
     </StatBand>
 
     <Fold title="收款状态" icon={ShieldCheck} tone="role-2" summary={statusSummary} alert={!!error} alertTone="danger"
@@ -679,7 +679,8 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                   ] },
                   toBody: (form) => ({ payoutEnabled: form?.payout === "true" }) })}>调整</Button> : undefined} />
             </ConfigList>
-            {switchCases.length > 0 && <Table label="待复核申请">
+            {switchCases.length > 0 && <Fold inset title="待复核申请" summary={`${switchCases.length} 个提案待复核`} alert defaultOpen>
+              <Table label="待复核申请">
               <thead><tr><Th>提案</Th><Th>改成</Th><Th>发起理由</Th>{canManage && <Th sticky="end" align="right">操作</Th>}</tr></thead>
               <tbody>{switchCases.map(row => {
                 const own = isMaker(row, session?.adminId);
@@ -702,7 +703,8 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                   </span></Td>}
                 </tr>;
               })}</tbody>
-            </Table>}
+              </Table>
+            </Fold>}
           </div>}
       </Panel>
       <Panel icon={ShieldAlert} tone="danger" title="全局紧急停用" explain="立即停止两网的地址分配、自动入账和新出款，继续接收回调并查询原单。旧提案失效，恢复须重新核对条件并提交审批。"
