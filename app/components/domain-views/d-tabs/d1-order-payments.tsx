@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Coins, CreditCard, ReceiptText, RefreshCw, User } from "lucide-react";
 import {
-  BlockState, Button, Cell, Decision, DiffList, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, JudgmentPoints, KeyValues,
+  BlockState, Button, Cell, Decision, DiffList, Drawer, Explain, Fact, Facts, Fold, JudgmentPoints, KeyValues,
   Modal, Notice, NumberInput, Pager, Panel, Select, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr,
 } from "@/app/components/rd";
 import type { StateTone } from "@/app/components/rd";
@@ -222,18 +222,12 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, reloadTick }: { ctx
         金额不对、到账太晚或核对没通过的付款，系统不会自动完成，要人核对后处理。
       </Notice>
     )}
-    <FilterBar
-      scope={<>
-        <FilterField><Select aria-label="付款状态" value={status} onChange={value => { setStatus(value); setPage(1); }} options={[{ value: "", label: "全部状态" }]} groups={statusOptions} /></FilterField>
-        <FilterField><Select aria-label="付款方式" value={method} onChange={value => { setMethod(value); setPage(1); }} options={[{ value: "", label: "全部方式" }, ...purchasePaymentMethods.map(value => ({ value, label: methodText[value] }))]} /></FilterField>
-      </>}
-      onSubmit={() => void loadRecords()}
-      action={<Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={recordsLoading} onClick={() => { void loadRecords(); void loadCount(); }}>刷新</Button>}
-      onClear={() => { setStatus(""); setMethod(""); setPage(1); }}
-      canClear={filtered}
-      result={records && filtered ? `当前筛选 ${records.total} 笔` : undefined}
-    />
-    <Panel flush icon={ReceiptText} tone="role-2" title="付款记录" explain="用户购买设备、试用转购买、升级置换和扩容时的付款。钱包余额付款不在这里。">
+    <Panel flush icon={ReceiptText} tone="role-2" title="付款记录" sub={records && filtered ? `当前筛选 ${records.total} 笔` : undefined} explain="用户购买设备、试用转购买、升级置换和扩容时的付款。钱包余额付款不在这里。"
+      actions={<>
+        <Select aria-label="付款状态" value={status} onChange={value => { setStatus(value); setPage(1); }} options={[{ value: "", label: "全部状态" }]} groups={statusOptions} />
+        <Select aria-label="付款方式" value={method} onChange={value => { setMethod(value); setPage(1); }} options={[{ value: "", label: "全部方式" }, ...purchasePaymentMethods.map(value => ({ value, label: methodText[value] }))]} />
+        <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={recordsLoading} onClick={() => { void loadRecords(); void loadCount(); }}>刷新</Button>
+      </>}>
       <Table label="付款记录" aria-busy={recordsLoading}>
         <thead><tr>
           <Th sticky="start">付款单 · 用户</Th>
@@ -266,10 +260,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, reloadTick }: { ctx
     <Fold title="付款手续费" icon={CreditCard} tone="role-4" summary={feeSummary} alert={unconfigured > 0 || changed || !!policyError} alertTone={policyError ? "danger" : "warn"}
       open={feeFoldOpen} onOpenChange={setFeeOpen}
       explain={<><p>用户实付 = 订单金额 + 订单金额 × 手续费比例 + 每笔固定费 + 网络费（仅 USDT）。全部填 0 表示免费。</p><p>新手续费只用于之后发起的付款，已下单的按原费用。没配置的付款方式，用户在付款弹窗里看不到。</p><p>银行卡和 USDT 付款不需要支付密码。钱包余额付款不收手续费，要输入支付密码。</p></>}
-      actions={<>
-        {reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=D">修改历史</Link>}
-        <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} disabled={busy} loading={policyLoading} onClick={() => changed ? setRefreshAsk(true) : doRefreshPolicy()}>刷新</Button>
-      </>}>
+      actions={reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=D">修改历史</Link> : undefined}>
       {policyLoading && !policy ? <BlockState state="loading" title="正在读取付款手续费…" />
         : policyError ? <BlockState state="error" title="付款手续费读取失败" detail={policyError} onRetry={() => void loadPolicy()} />
           : policy && <div className="rd-stack">
@@ -302,13 +293,16 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, reloadTick }: { ctx
                 </tr>;
               })}</tbody>
             </Table>
-            {canEdit && policy.constraints && <div className="rd-toolbar" data-end="">
+            <div className="rd-toolbar" data-end="">
               <span className="rd-note">{changed ? `没保存：${changedChannels.map(row => methodText[row.paymentMethod]).join("、")}。切页签不会丢。` : ""}</span>
               <span className="rd-row-actions">
-                <Button disabled={busy || policyLoading || policyPending} disabledReason={changed ? undefined : "还没有修改"} onClick={() => { setDraft(policy.channels.map(row => ({ ...row }))); setTouched(false); }}>撤销修改</Button>
-                <Button variant="primary" disabledReason={saveBlock} onBlockedClick={() => setTouched(true)} onClick={savePolicy}>保存修改</Button>
+                <Button variant="ghost" icon={<RefreshCw size={14} aria-hidden />} disabled={busy} loading={policyLoading} onClick={() => changed ? setRefreshAsk(true) : doRefreshPolicy()}>刷新</Button>
+                {canEdit && policy.constraints && <>
+                  <Button disabled={busy || policyLoading || policyPending} disabledReason={changed ? undefined : "还没有修改"} onClick={() => { setDraft(policy.channels.map(row => ({ ...row }))); setTouched(false); }}>撤销修改</Button>
+                  <Button variant="primary" disabledReason={saveBlock} onBlockedClick={() => setTouched(true)} onClick={savePolicy}>保存修改</Button>
+                </>}
               </span>
-            </div>}
+            </div>
           </div>}
     </Fold>
 

@@ -205,7 +205,8 @@ function D1Workspace({ ctx }: { ctx: DCtx }) {
 
   return <>
     <PageHeader pageId="D1" title="充值与收款对账" summary="核对订单付款和充值，处理没对上的钱。"
-      meta="打开和点「刷新」时读取，不自动刷新"
+      meta={<span className="rd-toolbar"><span>打开和点「刷新」时读取，不自动刷新</span>
+        <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={() => setReloadTick(value => value + 1)}>刷新</Button></span>}
       readOnly={canWriteAny ? undefined : "没有修改权限时，这页只能查看。"} />
     {conclusion}
     <CrossAreaNotice rows={crossRows} onGo={select} />
@@ -508,8 +509,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
         blocked={(order) => bankPending.some(command => command.path === `/vietqr/orders/${order.intentNo}/manual-credit`)}
         onManualCredit={openBankManualCredit} />
       <Fold title="银行卡支付设置" icon={Settings2} tone="role-4" summary={bankSummary}
-        alert={!!overviewError || !!vietQrError || bankChannels.some(channel => !channel.enabled)} alertTone={overviewError || vietQrError ? "danger" : "warn"}
-        actions={<Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={overviewLoading} disabled={busy} onClick={() => void loadOverview()}>刷新</Button>}>
+        alert={!!overviewError || !!vietQrError || bankChannels.some(channel => !channel.enabled)} alertTone={overviewError || vietQrError ? "danger" : "warn"}>
         {overviewError && <BlockState state="error" compact title="充值通道读取失败" detail={overviewError} onRetry={() => void loadOverview()} />}
         {vietQrError && <BlockState state="error" compact title="银行卡支付参数读取失败" detail={vietQrError} onRetry={() => void loadOverview()} />}
         <ConfigList label="银行卡支付设置">
@@ -532,10 +532,10 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
             action={canManageBankConfig ? <Button size="sm" disabledReason={readingReason ?? (vietQr ? undefined : "银行卡支付参数没读到，刷新后再试")} onClick={editPerTxLimit}>调整</Button> : undefined} />
           <ConfigRow name="最低充值金额" what="银行卡充值的最低金额。" where="App 充值页 › 银行卡支付「单笔限额」" effect="只限制充值，不限制订单付款。"
             value="在「订单付款 › 付款手续费」里设置"
-            action={<Button size="sm" variant="ghost" onClick={() => onGo("payments")}>去设置</Button>} />
+            action={<Button size="sm" onClick={() => onGo("payments")}>去设置</Button>} />
           <ConfigRow name="USDT 链上充值（BEP20 / ERC20）" what="收款地址分配、入账和异常处理由 USDT 收款开关控制。"
             value="在「USDT 充值」看"
-            action={<Button size="sm" variant="ghost" onClick={() => onGo("usdt")}>查看实际状态</Button>} />
+            action={<Button size="sm" onClick={() => onGo("usdt")}>查看实际状态</Button>} />
         </ConfigList>
       </Fold>
     </div>

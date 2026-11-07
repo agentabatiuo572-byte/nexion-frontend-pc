@@ -528,8 +528,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
         explain="到账后自动进用户钱包。关掉后到账的进人工复核，App 写「该方式暂不自动入账。转账前请先联系客服。」" />
     </StatBand>
 
-    <Fold title="收款状态" icon={ShieldCheck} tone="role-2" summary={statusSummary} alert={!!error} alertTone="danger"
-      actions={<Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} disabled={busy} onClick={() => void refresh()}>刷新</Button>}>
+    <Fold title="收款状态" icon={ShieldCheck} tone="role-2" summary={statusSummary} alert={!!error} alertTone="danger">
       {!data ? <BlockState state={loading ? "loading" : "error"} title={loading ? "正在读取收款状态…" : "收款状态读取失败"} detail={error || undefined} onRetry={loading ? undefined : () => void refresh()} />
         : <div className="rd-stack">
           <ConfigList label="收款状态">
@@ -559,7 +558,8 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                   detail: "向 Cregis 创建一个候选地址；系统核对归属、余额和链上历史后才可分配给用户。创建结果不明时请先核查，勿连续重试。",
                   completion: "提交后立即执行。地址核对通过后才会分配给用户。", path: `/cregis/addresses/provision?network=${network}` })}>补充收款地址</Button>
                 <MoreMenu label={`${network} 更多操作`} items={[{ key: "recon", label: "立即完整对账", disabledReason: readBlock, onSelect: () => confirmCommand({ kind: "record",
-                  action: `立即运行 Cregis ${network} 完整对账`, title: `立即完整对账 · ${network}`, confirmLabel: "确认对账", effect: now,
+                  action: `立即运行 Cregis ${network} 完整对账`, title: `立即完整对账`, confirmLabel: "确认对账", effect: now,
+                  facts: <Facts><Fact k="网络">{network}</Fact><Fact k="最近完整对账">{reconLatest(network) ? `${time(reconLatest(network))}（${zone}）` : "尚无"}</Fact></Facts>,
                   detail: `核对 Cregis 和 ${network} 链上记录，发现异常会生成告警。`, completion: "提交后立即执行，发现异常会生成告警。",
                   path: `/cregis/reconciliation/run?network=${network}` }) }]} />
               </span></Td>}
