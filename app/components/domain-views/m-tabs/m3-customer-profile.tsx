@@ -69,7 +69,12 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   const [detailSection, setDetailSection] = useState("");
   const [recordSection, setRecordSection] = useState("");
   const open360 = (section = "") => { setDetailSection(section); setRecordSection(section); setView360(true); };
-  useEffect(() => { if (openRequest > 0) open360(); }, [openRequest]);
+  const previousOpenRequest = useRef(openRequest);
+  useEffect(() => {
+    if (previousOpenRequest.current === openRequest) return;
+    previousOpenRequest.current = openRequest;
+    if (openRequest > 0) open360();
+  }, [openRequest]);
   useEffect(() => {
     if (!view360 || !detailSection) return;
     const target = [...document.querySelectorAll<HTMLElement>(".m3-service-profile details")].find(element => element.querySelector("summary")?.textContent?.startsWith(detailSection));
