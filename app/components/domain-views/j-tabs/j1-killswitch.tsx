@@ -658,7 +658,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     if (backfill) return canKill ? <Button disabledReason={block} onClick={() => confirmAutoTrigger(backfill)}>补录结论</Button> : undefined;
     if (!canResume) return undefined;
     if (approvalsLoading || approvalsError) return <Button disabledReason={approvalsLoading ? "正在读取恢复审批状态，读完再操作" : approvalsError}>提交恢复审批</Button>;
-    if (gate.coveragePrecheckRequired && !covPass) return <Button disabledReason={recoveryBlock}>恢复受阻</Button>;
+    // 按钮写动作，状态写在标签上（DT-20）。
+    if (gate.coveragePrecheckRequired && !covPass) return <Button disabledReason={recoveryBlock}>提交恢复审批</Button>;
     return <Button disabledReason={block} onClick={() => resumeGate(gate)}>提交恢复审批</Button>;
   };
 
@@ -725,6 +726,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
                 {restoreApprovals.filter((row) => row.obj === gate.key).map((row) => <span key={row.id}><StatusTag tone="progress">恢复待审批</StatusTag> <span className="rd-note">审批号 {row.id}</span></span>)}
                 {gate.emergency && <StatusTag tone="warn" icon={Siren}>应急</StatusTag>}
                 {backfill && (backfill.overdue ? <StatusTag tone="danger">已逾期</StatusTag> : <StatusTag tone="warn">待补录</StatusTag>)}
+                {!gate.enabled && !backfill && gate.coveragePrecheckRequired && !covPass && <StatusTag tone="warn">恢复受阻</StatusTag>}
               </>}
               select={gate.enabled && canBatchKill ? <Checkbox data-proof="j1-gate-select" checked={!!sel[gate.key]} disabled={locks.has(gate.key)} onChange={() => setSel((state) => ({ ...state, [gate.key]: !state[gate.key] }))} aria-label={`勾选${name}纳入批量关停`} title={`勾选${name}纳入批量关停`} /> : undefined}
               action={cardAction(gate)} />
