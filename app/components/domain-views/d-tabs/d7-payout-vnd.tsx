@@ -164,10 +164,8 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     ? { coverageRatio: bDomain.ledger.coverageRatio, redlinePct: bDomain.ledger.redlinePct, healthyPct: bDomain.ledger.healthyPct }
     : undefined;
   const zone = businessZone().label;
-  const auditHref = "/platform/audit";
-  const canReachAudit = reach(auditHref, "platform_a2_read");
-  const fxHref = "/finance/fx-rate";
-  const canReachFx = reach(fxHref, "finance_d6_read");
+  const canReachAudit = reach("/platform/audit", "platform_a2_read");
+  const canReachFx = reach("/finance/fx-rate", "finance_d6_read");
 
   const [config, setConfig] = useState<PayoutVndConfig | null>(null);
   const [readAt, setReadAt] = useState<number | null>(null);
@@ -530,7 +528,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     }
   };
 
-  const auditLink = canReachAudit && <> <Link className="rd-link" href={`${auditHref}?domain=D`} prefetch={false}>到操作记录核查</Link></>;
+  const auditLink = canReachAudit && <> <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false}>到操作记录核查</Link></>;
   const sentAt = (record: PendingMutationRecord) => `${formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（${zone}）发出`;
 
   const directNotices = direct.map((record) => {
@@ -612,7 +610,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       {loading
         ? <BlockState state="loading" title="正在读取越南盾提现参数…" />
         : <BlockState state="error" title="越南盾提现参数读取失败" onRetry={() => void reload()}
-          detail={<>{loadError?.message}{loadError?.code === "D7_D6_SOURCE_UNAVAILABLE" && canReachFx && <> <Link className="rd-link" href={fxHref} prefetch={false}>去汇率设置</Link></>}</>} />}
+          detail={<>{loadError?.message}{loadError?.code === "D7_D6_SOURCE_UNAVAILABLE" && canReachFx && <> <Link className="rd-link" href="/finance/fx-rate" prefetch={false}>去汇率设置</Link></>}</>} />}
       {releaseModal}
     </>;
   }
@@ -625,7 +623,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     : loadError ? `读取失败，下面是 ${readAtText}的数据。重试读取后再改`
     : undefined;
   const somethingOpen = direct.length > 0 || !!approval || queue.rows.length > 0 || queue.failed || !!approvalRejected;
-  const fxLink = canReachFx && <Link className="rd-link" href={fxHref} prefetch={false}>去修改</Link>;
+  const fxLink = canReachFx && <Link className="rd-link" href="/finance/fx-rate" prefetch={false}>去修改</Link>;
 
   const row = (key: Key) => {
     const help = PAYOUT_VND_HELP[key];
@@ -683,7 +681,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       {approvalNotice}
       {approvalRejected && <Notice tone="danger" title="放宽提交被拒绝">{approvalRejected}</Notice>}
       {queue.rows.map((ticket) => (
-        <Notice key={ticket.id} tone="progress" action={canReachAudit ? <Link className="rd-link" href={`${auditHref}?domain=D`} prefetch={false}>到操作记录查看</Link> : undefined}>
+        <Notice key={ticket.id} tone="progress" action={canReachAudit ? <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false}>到操作记录查看</Link> : undefined}>
           放宽单 {ticket.id} 等待批准，批准前当前参数不变
         </Notice>
       ))}
@@ -732,10 +730,10 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
 
       <nav className="rd-links" aria-label="相关页面">
         <span>相关页面</span>
-        {canReachFx && <Link className="rd-link" href={fxHref} prefetch={false}>汇率设置</Link>}
+        {canReachFx && <Link className="rd-link" href="/finance/fx-rate" prefetch={false}>汇率设置</Link>}
         {reach("/finance/withdrawals") && <Link className="rd-link" href="/finance/withdrawals" prefetch={false}>提现审核</Link>}
         {reach("/finance/params", "finance_d5_read") && <Link className="rd-link" href="/finance/params" prefetch={false}>USDT 提现参数</Link>}
-        {canReachAudit && <Link className="rd-link" href={auditHref} prefetch={false}>操作记录</Link>}
+        {canReachAudit && <Link className="rd-link" href="/platform/audit" prefetch={false}>操作记录</Link>}
       </nav>
 
       <Drawer open={!!editing} onClose={() => requestClose()} title="修改越南盾提现参数" icon={SlidersHorizontal} tone="role-4"
