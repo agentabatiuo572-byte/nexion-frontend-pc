@@ -386,7 +386,7 @@ export function D3Treasury() {
     setConfirm({
       action: "储备注入登记",
       title: "登记储备注入",
-      detail: "凭证号不可重复。",
+      detail: "这里只登记已经到账的资金，不会转账。凭证号不可重复。",
       facts: <Facts><Fact k="注入金额" lead tone="role-1" unit="USDT">{amountText(Number(nextAmount))}</Fact><Fact k="凭证类型">{typeLabel}</Fact><Fact k="凭证号"><span data-mono>{nextVoucher}</span></Fact></Facts>,
       briefKind: "funds",
       statedBrief: { impact: "登记后计入可用储备。", check: "核对金额和凭证号，理由写清到账依据或工单号。" },
@@ -826,6 +826,7 @@ export function D3Treasury() {
         tone="role-1"
         footer={<Decision explain="凭证号重复时不会登记。下一步核对金额和凭证，再写理由。" others={<Button variant="ghost" onClick={() => setInjectOpen(false)}>取消</Button>} primary={<Button variant="primary" disabledReason={dataBlocked ?? ([amountIssue, voucherIssue].filter(Boolean).join("；") || undefined)} onBlockedClick={() => setInjectShown({ amount: true, voucher: true })} onClick={saveInjection}>下一步：确认</Button>} />}
       >
+        <p className="rd-note">这里只登记已经到账的资金，不会转账。</p>
         {/* 可用储备归零时看不出锁定本金缺口，不从归零的余额预估（DT-10）。 */}
         {main && (
           <Facts>
