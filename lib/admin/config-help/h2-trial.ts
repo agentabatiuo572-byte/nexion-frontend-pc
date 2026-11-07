@@ -129,7 +129,7 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
   earlyPurchaseDiscountUSD: {
     what: "试用期内购买再减的固定金额",
     when: AT_PURCHASE,
-    impact: "原试用期内购买，领取记录完整且每日 USDT 和 UVT 收益都大于 0 时，立减并结算全部试用天数的收益；其他按已累计结算",
+    impact: "符合条件时再减这笔，并结算全部试用天数的收益",
     how: "0–100 USDT，最多两位小数，填 0 表示关闭。",
     howMore: "立减金额大于 0，且原领取记录的时长、收益、价格和日期齐全时，才能在原试用期内提前购买。每日 USDT 和 UVT 收益也必须都大于 0。符合条件时，在购买折扣和试用收益抵扣之外再减，不超过应付金额，并按「每日收益 × 全部试用天数」结算。抵扣仍只用已累计的 USDT，多出的 USDT 和全部 UVT 购买后进余额，入账前检查覆盖率。其他情况或填 0 时按已累计结算，不享提前购买立减。",
     where: "App 我的 › 试用页「现在购买再减」",
