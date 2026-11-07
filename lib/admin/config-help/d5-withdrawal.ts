@@ -62,7 +62,7 @@ export const D5_PARAM_HELP = {
     when: "关闭提交后立即生效，开启批准后生效",
     effect: "关掉 TRC20：App 不再显示这个网络，已提交的提现不受影响",
     where: "App「选择提现网络」页的网络卡片；全部关闭时写「提现通道暂不可用，请稍后再试。」",
-    note: "开启只是配置。打款方不支持或没开的网络，这里开着 App 也不显示，比如接打款方时 TRC20 不显示",
+    note: "开启只是配置，用户能不能用看这一行写的实际状态，和 App 提现用的是同一个判断",
   },
   networkConfirmFeeUsd: {
     label: "网络确认费",
@@ -99,3 +99,19 @@ export const D5_PARAM_HELP = {
     where: "App 提现页「提现安全确认中」提示",
   },
 } satisfies Record<string, D5ParamHelp>;
+
+/**
+ * 网络开着、用户却用不了的原因（后端 networkStatus.disabledReason）。
+ * 来源：WithdrawalNetworkPolicy.statuses 和 CregisPayoutControl.capability，App 提现用同一个判断。
+ * global：出款服务整体的原因，开着的网络会一起用不了，合成一句话说。
+ */
+export const D5_NETWORK_BLOCK_REASON: Record<string, { text: string; global?: true }> = {
+  NOT_CONFIGURED: { text: "出款服务没有接通（这个环境没开打款服务，或打款服务没配好这个网络），请技术值班核对出款配置", global: true },
+  SWITCH_OFF: { text: "「充值与收款对账」里的全局出款总闸关着", global: true },
+  RISK_HOLD: { text: "有资金风险没处理完，出款暂停", global: true },
+  RECONCILIATION_REQUIRED: { text: "最近没有完成一次完整对账" },
+  NETWORK_UNSUPPORTED: { text: "打款服务不支持这个网络" },
+  PAYOUT_ASSET_UNAVAILABLE: { text: "打款服务没开通这个网络的出款" },
+  PROVIDER_CAPABILITY_UNAVAILABLE: { text: "暂时查不到打款服务开通了哪些网络" },
+};
+export const D5_NETWORK_BLOCK_UNKNOWN = "原因暂时读不到，到「充值与收款对账」核对";
