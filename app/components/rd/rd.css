@@ -408,6 +408,7 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-drawer-title-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .rd-drawer-title { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; color: var(--rd-text); }
 .rd-drawer-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-drawer-sub [data-mono] { font-family: var(--rd-font-mono); word-break: break-all; }  /* 长单号等宽，铺满一行再换，不在连字符后断成「WD-」一截 */
 .rd-drawer-tools { flex: none; display: inline-flex; align-items: center; gap: 2px; }
 .rd-drawer-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 20px 20px; display: flex; flex-direction: column; gap: 12px; }
 .rd-drawer-foot { flex: none; padding: 12px 20px; background: var(--rd-panel-inner); }

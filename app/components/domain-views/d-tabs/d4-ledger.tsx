@@ -822,7 +822,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
             <Fact k="业务类型原值"><span data-mono>{shown.bill.bizType}</span></Fact>
             <Fact k="方向"><span data-mono>{shown.bill.direction}</span></Fact>
             <Fact k="账单记录号"><span data-mono>{shown.bill.id}</span></Fact>
-            <Fact k={`更新时间（${businessZone().label}）`}>{formatBusinessTimeFull(shown.bill.updatedAt, "—")}</Fact>
+            <Fact k="更新时间">{`${formatBusinessTimeFull(shown.bill.updatedAt, "—")}（${businessZone().label}）`}</Fact>
           </Facts>
         </Fold>
       </>}
