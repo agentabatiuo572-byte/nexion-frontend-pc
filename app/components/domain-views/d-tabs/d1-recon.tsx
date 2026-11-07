@@ -593,7 +593,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
           <thead><tr>
             <Th sticky="start">充值单 · 提交时间（{zone}）</Th>
             <Th>用户 · 通道</Th>
-            <Th align="right" icon={Coins} tone="money">金额 · 实收（USDT）</Th>
+            <Th align="right" icon={Coins} tone="money">金额（USDT）</Th>
             <Th>状态</Th>
             <Th sticky="end" align="right">操作</Th>
           </tr></thead>

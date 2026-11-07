@@ -238,7 +238,7 @@ function CregisDepositHistory({ reloadKey }: { reloadKey: number }) {
         <thead><tr>
           <Th sticky="start">入金 · 充值单</Th>
           <Th>用户 · 网络</Th>
-          <Th align="right" icon={Coins} tone="money">净额 · 毛额（USDT）</Th>
+          <Th align="right" icon={Coins} tone="money">净额（USDT）</Th>
           <Th>状态</Th>
           <Th>发现 · 入账（{zone}）</Th>
           <Th sticky="end" align="right">操作</Th>
@@ -541,7 +541,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
             })}
           </ConfigList>
           <Table label="专属收款地址池">
-            <thead><tr><Th>网络</Th><Th align="right">可分配 · 待创建</Th><Th align="right">已分配 · 总计</Th><Th align="right">核对中 · 待核查</Th><Th>完整对账（{zone}）</Th>{canManage && <Th sticky="end" align="right">操作</Th>}</tr></thead>
+            <thead><tr><Th>网络</Th><Th align="right">可分配</Th><Th align="right">已分配</Th><Th align="right">核对中</Th><Th>最近完整对账（{zone}）</Th>{canManage && <Th sticky="end" align="right">操作</Th>}</tr></thead>
             <tbody>{pools.map(({ network, pool }) => <tr key={network}>
               <Td><Cell main={network} sub={pool?.automatic ? `自动补充至 ${pool.reserveTarget ?? 5} 个` : "不自动补充"} /></Td>
               {pool?.available ? <>
