@@ -638,7 +638,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                 <MoreMenu label={`${network} 更多操作`} items={[{ key: "recon", label: "立即完整对账", disabledReason: readBlock ?? d1PendingObjectReason(`/cregis/reconciliation/run?network=${network}`), onSelect: () => confirmCommand({ kind: "record",
                   action: `立即运行 ${network} 完整对账`, title: `立即完整对账`, confirmLabel: "确认对账", effect: now,
                   facts: <Facts><Fact k="网络">{network}</Fact><Fact k="最近完整对账">{reconLatest(network) ? `${time(reconLatest(network))}（${zone}）` : "尚无"}</Fact></Facts>,
-                  detail: `核对收款服务和 ${network} 链上记录，发现异常会生成告警。`, completion: "提交后立即执行，发现异常会生成告警。",
+                  detail: `核对收款服务和 ${network} 链上记录。`, completion: "发现异常会生成告警，不改余额，也不改开关。",
                   path: `/cregis/reconciliation/run?network=${network}` }) }]} />
               </span></Td>}
             </tr>)}</tbody>

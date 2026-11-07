@@ -413,7 +413,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       facts: <Facts><Fact k="通道">{name}</Fact><Fact k="状态"><Change from={stopping ? "启用" : "停用"} to={stopping ? "停用" : "启用"} /></Fact></Facts>,
       detail: "只影响之后的新交易。",
-      completionCopy: stopping ? "确认后立即生效。App 充值页不再显示银行卡支付。已在付款的不受影响，订单付款也不受影响。" : "确认后立即生效，App 充值页重新显示银行卡支付，只影响新充值。",
+      completionCopy: stopping ? "App 充值页不再显示银行卡支付。已在付款的不受影响，订单付款也不受影响。" : "App 充值页重新显示银行卡支付，只影响新充值。",
       run: (reason) => write(() => updateD1TopupChannelEnabled(channel.code, !channel.enabled, channel.enabled, reason, operator), `${name} 已${stopping ? "停用" : "启用"}`),
     });
   };
@@ -444,8 +444,8 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
       confirmLabel: "确认调整",
       reasonMin: 8, reasonMax: 200,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
-      detail: "只对之后的新付款单生效。",
-      completionCopy: "只对之后的新付款单生效。",
+      detail: "银行卡支付参数要整组提交，这次只改单笔上限，其他参数按读回的值原样提交。",
+      completionCopy: "只对之后的新付款单生效，已下的付款单按原上限。",
       edit: { kind: "number", current: String(current), unit: "USD", min: 100, max: 10_000, step: 1, disallowCurrent: true, hint: "100–10,000 的整数",
         preview: (value) => /^\d+$/.test(value) ? `改成 ${Number(value).toLocaleString("en-US")}：用户一笔最多充 ${Number(value).toLocaleString("en-US")} USD。` : undefined },
       run: (reason, value) => {
@@ -607,9 +607,10 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
           <Stat tone="role-1" icon={Coins} label="今日入账" value={overview ? usdt(overview.ledgerTotal) : "—"} unit={overview ? "USDT" : undefined}
             explain="今天对账记录里平台已入账的充值合计，只算 USDT，按业务日算。和上面的历史累计无关。" />
           <Stat tone="role-2" icon={Hash} label="今日入账笔数" value={overview ? String(overview.ledgerCount) : "—"} unit={overview ? "笔" : undefined} />
-          <Stat tone={hasDiff ? "warn" : undefined} icon={Scale} iconTone={hasDiff ? "warn" : undefined} label="对账差异" value={overview ? String(overview.diffCount) : "—"} unit={overview ? "个通道" : undefined}
+          <Stat tone={hasDiff ? "warn" : undefined} icon={Scale} iconTone={hasDiff ? "warn" : undefined} label="对账差异" value={overview && reconRows.length ? String(overview.diffCount) : "—"} unit={overview && reconRows.length ? "个通道" : undefined}
+            sub={overview && !reconRows.length ? "今天还没有流水" : undefined}
             explain="今天支付商记录和平台账目对不上、还没挂账的通道数。已挂账的差异仍在，但不算在这里。" />
-          <Stat tone={hasDiff ? "warn" : undefined} icon={ArrowLeftRight} label="差异金额" value={overview ? usdt(overview.diffAmount) : "—"} unit={overview ? "USDT" : undefined}
+          <Stat tone={hasDiff ? "warn" : undefined} icon={ArrowLeftRight} label="差异金额" value={overview && reconRows.length ? usdt(overview.diffAmount) : "—"} unit={overview && reconRows.length ? "USDT" : undefined}
             explain="还没挂账的通道里，支付商金额减平台金额的合计。" />
         </StatBand>}
       <Fold title="对账差异" icon={Scale} tone="role-2" summary={reconSummary} alert={hasDiff} open={reconOpen ?? hasDiff} onOpenChange={setReconOpen}
