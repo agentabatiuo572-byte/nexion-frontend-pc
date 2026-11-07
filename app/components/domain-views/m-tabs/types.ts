@@ -7,6 +7,7 @@
  */
 
 export type { ActionConfirmReq, ConfirmReq, ConfirmChip } from "../k-tabs/types";
+import type { ToastKind } from "@/lib/store/ui";
 
 export type MCtx = {
   pget: (k: string) => string | undefined;
@@ -27,7 +28,7 @@ export type MCtx = {
   removeCustomerTag: (convoId: string, tag: string) => Promise<boolean>;
   addCustomerNote: (convoId: string, text: string) => Promise<boolean>;
   removeCustomerNote: (convoId: string, noteId: string, reason?: string, onFailure?: (message: string) => void) => Promise<boolean>;
-  toast: (s: string) => void;
+  toast: (s: string, kind?: ToastKind) => void;
   /** M5 未绑定策略的「等待分配提醒」分钟数；未读到时按 5 分钟。 */
   unboundAlertMinutes?: number;
   openActionConfirm: (req: import("../k-tabs/types").ActionConfirmReq & { briefKind: import("../design-kit").OperatorBriefKind }) => void;
