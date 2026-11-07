@@ -411,7 +411,8 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
 
   type ConfirmSpec = { kind: OperatorBriefKind; action: string; title: string; detail: string; path: string; body?: Record<string, unknown>;
     confirmLabel: string; danger?: boolean; effect: ReactNode; facts?: ReactNode; completion: string; businessForm?: Parameters<DCtx["openActionConfirm"]>[0]["businessForm"];
-    toBody?: (form: Record<string, string> | undefined) => Record<string, unknown>; optionalPolicy?: boolean };
+    toBody?: (form: Record<string, string> | undefined, value?: string) => Record<string, unknown>; optionalPolicy?: boolean;
+    edit?: Parameters<DCtx["openActionConfirm"]>[0]["edit"] };
   const confirmCommand = (spec: ConfirmSpec) => {
     const held = d1PendingObjectReason(spec.path, spec.body);
     if (held) { toast(held, "warn"); return; }
@@ -419,11 +420,11 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     openActionConfirm({ briefKind: spec.kind,
       action: spec.action, title: spec.title, detail: spec.detail, reasonMin: 10, reasonMax: 255,
       confirmLabel: spec.confirmLabel, confirmTone: spec.danger ? "danger" : "primary",
-      effect: spec.effect, facts: spec.facts, completionCopy: spec.completion, businessForm: spec.businessForm,
+      effect: spec.effect, facts: spec.facts, completionCopy: spec.completion, businessForm: spec.businessForm, edit: spec.edit,
       reasonPolicyOptional: spec.optionalPolicy,
       run: (reason, _value, form) => {
         if (authEpoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
-        return command(spec.path, { ...spec.body, ...spec.toBody?.(form), reason });
+        return command(spec.path, { ...spec.body, ...spec.toBody?.(form, _value), reason });
       },
     });
   };
@@ -688,14 +689,13 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                   const block = waiting ? "待另一管理员复核" : proposalBlock;
                   const proposal = (target: boolean, restoring: boolean) => confirmCommand({ kind: "config",
                     action: `提交 ${row.network} 充值${restoring ? "恢复" : "开关"}审批`, title: restoring ? `恢复 ${row.network} 充值` : `调整 ${row.network} 充值开关`, confirmLabel: "提交审批", effect: approval,
-                    facts: <Facts><Fact k="网络">{row.network}</Fact><Fact k="充值开关">{restoring ? `${row.depositEnabled ? "开" : "关"} → 开（申请恢复）` : `现在${row.depositEnabled ? "开" : "关"}`}</Fact><Fact k="实际开放情况">{row.depositAvailable ? "已开放" : availabilityText(row.depositDisabledReason)}</Fact></Facts>,
+                    facts: <Facts><Fact k="网络">{row.network}</Fact>{restoring && <Fact k="充值开关"><Change from={row.depositEnabled ? "开" : "关"} to="开（申请恢复）" /></Fact>}<Fact k="实际开放情况">{row.depositAvailable ? "已开放" : availabilityText(row.depositDisabledReason)}</Fact></Facts>,
                     detail: `${restoring ? "当前全局暂停，本次只申请恢复所选网络充值；其他网络充值继续保持暂停，不会恢复出款总闸。" : ""}关闭将停止该网地址分配、链上直付新下单与自动入账，原交易继续核验。`,
                     completion: `另一位管理员复核后生效。${restoring ? "只恢复这条网络的充值，另一条网络和出款总闸保持现状。" : "关闭一条网络，不改变另一条网络的充值开关。"}`,
                     path: "/cregis/switch-cases", body: { network: row.network, expectedVersion: gate?.version, expectedNetworkVersion: row.version, ...(restoring ? { depositEnabled: target } : {}) },
-                    businessForm: restoring ? undefined : { kind: "multi-field", requireAnyChange: true, fields: [
-                      { key: "deposit", label: `${row.network} 充值`, inputKind: "select", options: ["true", "false"], optionLabels: { true: "开", false: "关" }, current: String(row.depositEnabled), showDiff: true },
-                    ] },
-                    toBody: restoring ? undefined : (form) => ({ depositEnabled: form?.deposit === "true" }) });
+                    edit: restoring ? undefined : { kind: "select", label: `${row.network} 充值`, current: String(row.depositEnabled), options: ["true", "false"], optionLabels: { true: "开", false: "关" },
+                      disallowCurrent: true, amplifiesWhen: { from: "false", to: "true" }, submitEditValue: true },
+                    toBody: restoring ? undefined : (_form, value) => ({ depositEnabled: value === "true" }) });
                   return <tr key={row.network}>
                     <Td><Cell main={row.network} sub={row.network === "BEP20" ? "BNB Smart Chain" : "Ethereum"} /></Td>
                     <Td><Cell main={<SwitchTag on={row.depositEnabled}>{row.depositEnabled ? "开启" : "关闭"}</SwitchTag>} sub={waiting ? "有提案待复核" : undefined} /></Td>
@@ -716,10 +716,9 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                   detail: "不恢复充值，也不修改 D5 的分网络提现许可；开启后仍须满足支付商、对账、风险和单笔审核条件。",
                   completion: "另一位管理员复核后生效。复核时条件不满足会被拒绝。不会直接放行任何提现。",
                   path: "/cregis/switch-cases", body: { expectedVersion: gate?.version },
-                  businessForm: { kind: "multi-field", requireAnyChange: !globalPaused, fields: [
-                    { key: "payout", label: "全局链上出款", inputKind: "select", options: ["true", "false"], optionLabels: { true: "开", false: "关" }, current: String(Boolean(gate?.payoutEnabled)), showDiff: true, explain: payoutCapabilityText(data) },
-                  ] },
-                  toBody: (form) => ({ payoutEnabled: form?.payout === "true" }) })}>调整</Button> : undefined} />
+                  edit: { kind: "select", label: "全局链上出款", current: String(Boolean(gate?.payoutEnabled)), options: ["true", "false"], optionLabels: { true: "开", false: "关" },
+                    disallowCurrent: !globalPaused, amplifiesWhen: { from: "false", to: "true" }, hint: payoutCapabilityText(data), submitEditValue: true },
+                  toBody: (_form, value) => ({ payoutEnabled: value === "true" }) })}>调整</Button> : undefined} />
             </ConfigList>
             {switchCases.length > 0 && <Fold inset title="待复核申请" summary={`${switchCases.length} 个提案待复核`} alert defaultOpen>
               <Table label="待复核申请">
@@ -730,7 +729,10 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                 const target = row.network ? `${network} 充值 ${row.beforeDepositEnabled == null ? "原值" : row.beforeDepositEnabled ? "开" : "关"} → ${row.creditEnabled ? "开" : "关"}` : `全局链上出款 → ${onOff(row.payoutEnabled)}`;
                 const stale = row.expectedVersion !== gate?.version || (!!row.network && data.networkSwitches?.find(item => item.network === row.network)?.version !== row.expectedNetworkVersion);
                 const decisionBusy = switchPending.some(record => record.path === `/cregis/switch-cases/${text(row.id)}/decision`) ? "上次复核结果未确认，先在上方核对" : readBlock;
-                const facts = <Facts><Fact k="提案">#{text(row.id)}</Fact><Fact k="改成">{target}</Fact><Fact k="发起人">{text(row.makerId)}</Fact><Fact k="发起理由">{text(row.reason)}</Fact></Facts>;
+                const currentSwitch = row.network ? data.networkSwitches?.find(item => item.network === row.network)?.depositEnabled : gate?.payoutEnabled;
+                const facts = <Facts><Fact k="提案">#{text(row.id)}</Fact>
+                  <Fact k={row.network ? `${network} 充值` : "全局链上出款"}><Change from={currentSwitch == null ? "现在读不到" : `现在${currentSwitch ? "开" : "关"}`} to={row.network ? (row.creditEnabled ? "开" : "关") : onOff(row.payoutEnabled)} /></Fact>
+                  <Fact k="发起人">{text(row.makerId)}</Fact><Fact k="发起理由">{text(row.reason)}</Fact></Facts>;
                 return <tr key={String(row.id)}>
                   <Td><Cell mono main={`#${text(row.id)}`} sub={`发起人 ${text(row.makerId)}${own ? "（你）" : ""}`} /></Td>
                   <Td><Cell main={target} sub={stale ? "配置版本已变，请拒绝后重新申请" : undefined} /></Td>

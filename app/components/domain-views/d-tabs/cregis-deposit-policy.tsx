@@ -64,15 +64,17 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
       businessForm: { kind: "multi-field", requireAnyChange: true,
         feedback: (form) => {
           const min = form.min ?? "", fee = form.fee ?? "", confirmations = Number(form.confirmations);
-          if (!/^[1-9]\d*$/.test(min) || !/^\d+$/.test(form.confirmations ?? "")) return { message: "", invalid: false };
-          return valid(min, fee, confirmations) ? { message: "", invalid: false } : { field: "fee", message: "手续费要低于最低充值额，最多六位小数", invalid: true };
+          const changed = [min !== minText, fee !== current.feeUsdt, form.confirmations !== String(current.confirmations)].filter(Boolean).length;
+          const count = { message: changed ? `改了 ${changed} 项` : "", invalid: false };
+          if (!/^[1-9]\d*$/.test(min) || !/^\d+$/.test(form.confirmations ?? "")) return count;
+          return valid(min, fee, confirmations) ? count : { field: "fee", message: "手续费要低于最低充值额，最多六位小数", invalid: true };
         },
         fields: [
-          { key: "min", label: "最低充值额（USDT）", inputKind: "number", current: minText, min: 1, step: 1, showDiff: true, required: true,
+          { key: "min", label: "最低充值额（USDT）", inputKind: "number", current: minText, min: 1, step: 1, showDiff: true, required: true, help: `现在 ${minText} USDT`,
             explain: "正整数。低于它的到账不自动入账。显示位置：App 充值页 › USDT 链上「最低充值」。" },
-          { key: "fee", label: "固定手续费（USDT）", inputKind: "text", current: current.feeUsdt, pattern: "^(0|[1-9]\\d{0,11})(\\.\\d{1,6})?$", patternMessage: "填不小于 0 的数，最多六位小数", showDiff: true, required: true,
+          { key: "fee", label: "固定手续费（USDT）", inputKind: "text", current: current.feeUsdt, pattern: "^(0|[1-9]\\d{0,11})(\\.\\d{1,6})?$", patternMessage: "填不小于 0 的数，最多六位小数", showDiff: true, required: true, help: `现在 ${current.feeUsdt} USDT`,
             explain: "每笔到账扣的手续费，要低于最低充值额。改成 1：每笔到账少入 1 USDT。显示位置：App 充值页 › USDT 链上「手续费」。" },
-          { key: "confirmations", label: "链上确认数", inputKind: "number", current: String(current.confirmations), min: 15, max: 10000, step: 1, showDiff: true, required: true,
+          { key: "confirmations", label: "链上确认数", inputKind: "number", current: String(current.confirmations), min: 15, max: 10000, step: 1, showDiff: true, required: true, help: `现在 ${current.confirmations} 次`,
             explain: "到账前要等的区块确认数，15–10000 的整数；环境下限更高时按提示调高。调大：到账更慢。显示位置：App 充值页 › USDT 链上「确认数」。" },
         ] },
       run: async (reason, _value, form) => {

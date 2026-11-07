@@ -47,14 +47,16 @@ export function CregisPoolPolicy({canManage,openActionConfirm,onChanged}:{canMan
       businessForm:{kind:"multi-field",requireAnyChange:true,
         feedback:(form)=>{
           const target=Number(form.target),low=Number(form.lowWatermark),batch=Number(form.batchSize),concurrency=Number(form.concurrency);
-          if([target,low,batch,concurrency].some(n=>!Number.isFinite(n)))return {message:"",invalid:false};
+          const changed=[form.enabled!==String(current.enabled),...NUMBERS.map(([key])=>form[key]!==String(current[key]))].filter(Boolean).length;
+          const count={message:changed?`改了 ${changed} 项`:"",invalid:false};
+          if([target,low,batch,concurrency].some(n=>!Number.isFinite(n)))return count;
           if(low>=target)return {field:"lowWatermark",message:"补充触发阈值要低于备用地址目标",invalid:true};
           if(concurrency>batch)return {field:"concurrency",message:"建址并发上限不能超过每批补充数量",invalid:true};
-          return {message:"",invalid:false};
+          return count;
         },
         fields:[
-          {key:"enabled",label:"自动补充",inputKind:"select",options:["true","false"],optionLabels:{true:"开启",false:"关闭"},current:String(current.enabled),showDiff:true,explain:"库存低时自动补地址。"},
-          ...NUMBERS.map(([key,label,what,hint,min,max])=>({key,label,inputKind:"number" as const,current:String(current[key]),min,max,step:1,showDiff:true,required:true,explain:`${what}。${hint}。用户看不到，只影响地址库存。`})),
+          {key:"enabled",label:"自动补充",inputKind:"select",options:["true","false"],optionLabels:{true:"开启",false:"关闭"},current:String(current.enabled),showDiff:true,help:`现在${current.enabled?"开启":"关闭"}`,explain:"库存低时自动补地址。"},
+          ...NUMBERS.map(([key,label,what,hint,min,max])=>({key,label,inputKind:"number" as const,current:String(current[key]),min,max,step:1,showDiff:true,required:true,help:`现在 ${current[key].toLocaleString("en-US")} 个`,explain:`${what}。${hint}。用户看不到，只影响地址库存。`})),
         ]},
       run:async(reason,_value,form)=>{
         if(!owns() || !useAdminAuth.getState().session?.authorities.includes("finance_d1_channel_manage"))throw new Error("登录身份或权限已变化，请重新打开页面");

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Coins, FileCheck2, HandCoins, Receipt, RotateCcw, Undo2 } from "lucide-react";
 import {
-  BlockState, Button, Cell, ConfigList, ConfigRow, Decision, Drawer, Fact, Facts, Field, Fold, Input, IrreversibleTag, JudgmentPoints, KeyValues, Notice, Select, StatusTag, Steps,
+  BlockState, Button, Cell, Change, ConfigList, ConfigRow, Decision, Drawer, Fact, Facts, Field, Fold, Input, IrreversibleTag, JudgmentPoints, KeyValues, Notice, Select, StatusTag, Steps,
   Table, Td, Textarea, Th, Tr,
 } from "@/app/components/rd";
 import type { KeyValueRow, StateTone } from "@/app/components/rd";
@@ -149,8 +149,8 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
   const configureFee = () => openActionConfirm({ briefKind: "config", action: "提议异常退款费用规则", title: "配置退款手续费", confirmLabel: "提交审批", effect: approval,
     completionCopy: "提案提交后，须由另一管理员复核才生效", detail: "另一管理员复核后仅对新工单生效，已有工单保留原毛额、费用与净额快照。",
     reasonMin: 10, reasonMax: 200, businessForm: { kind: "multi-field", requireAnyChange: true, fields: [
-      { key: "mode", label: "退款费用方式", inputKind: "select", current: String(policy?.mode ?? "UNCONFIGURED"), options: Object.keys(MODE), optionLabels: MODE, required: true, showDiff: true },
-      { key: "fee", label: "固定扣费（USDT）", current: policy?.mode === "FIXED_USDT" ? String(policy.feeUsdt ?? "0") : "0", inputKind: "text", visibleWhen: { key: "mode", equals: "FIXED_USDT" }, pattern: "^(0|[1-9][0-9]{0,11})(\\.[0-9]{1,6})?$", patternMessage: "填不小于 0 的数，最多六位小数", required: true },
+      { key: "mode", label: "退款费用方式", inputKind: "select", current: String(policy?.mode ?? "UNCONFIGURED"), options: Object.keys(MODE), optionLabels: MODE, required: true, showDiff: true, help: `现在：${MODE[String(policy?.mode ?? "UNCONFIGURED")]}` },
+      { key: "fee", label: "固定扣费（USDT）", current: policy?.mode === "FIXED_USDT" ? String(policy.feeUsdt ?? "0") : "0", inputKind: "text", help: policy?.mode === "FIXED_USDT" ? `现在 ${String(policy.feeUsdt ?? "0")} USDT` : "现在不扣固定费", visibleWhen: { key: "mode", equals: "FIXED_USDT" }, pattern: "^(0|[1-9][0-9]{0,11})(\\.[0-9]{1,6})?$", patternMessage: "填不小于 0 的数，最多六位小数", required: true },
     ] }, run: (reason, _value, form) => mutate("/refunds/fee-policy/cases", { expectedVersion: exceptionVersion(policy?.version),
       mode: form?.mode, feeUsdt: exceptionFee(form?.mode ?? "", form?.fee ?? ""), reason }),
   });
@@ -267,7 +267,10 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
             <thead><tr><Th>提案</Th><Th>改成</Th><Th>状态</Th><Th sticky="end" align="right">操作</Th></tr></thead>
             <tbody>{policyCases.map(row => {
               const own = isMaker(row, session?.adminId);
-              const facts = <Facts><Fact k="费用方式">{MODE[String(row.mode)]}</Fact><Fact k="固定费">{label(row.feeUsdt)} USDT</Fact><Fact k="发起人">{label(row.makerId)}</Fact></Facts>;
+              const facts = <Facts>
+                <Fact k="费用方式"><Change from={MODE[String(policy.mode)]} to={MODE[String(row.mode)]} /></Fact>
+                <Fact k="固定费"><Change from={`${policy.mode === "FIXED_USDT" ? label(policy.feeUsdt) : "0"} USDT`} to={`${label(row.feeUsdt)} USDT`} /></Fact>
+                <Fact k="发起人">{label(row.makerId)}</Fact></Facts>;
               return <tr key={label(row.id)}>
                 <Td><Cell mono main={`#${label(row.id)}`} sub={`发起人 ${label(row.makerId)}${own ? "（你）" : ""}`} /></Td>
                 <Td><Cell main={MODE[String(row.mode)]} sub={`固定费 ${label(row.feeUsdt)} USDT`} /></Td>
