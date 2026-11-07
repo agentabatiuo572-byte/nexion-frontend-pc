@@ -76,8 +76,8 @@ export function CregisPoolPolicy({canManage,openActionConfirm}:{canManage:boolea
     {loading && !saved ? <BlockState state="loading" title="正在读取地址池配置…"/>
       : !saved ? <BlockState state="error" title="地址池配置读取失败" detail={error} onRetry={()=>void refresh()}/>
         : <ConfigList label="地址池补充">
-          <ConfigRow name="自动补充" what="库存低时自动补地址。" when="保存后立即生效。" value={<SwitchTag on={saved.enabled}>{saved.enabled?"开启":"关闭"}</SwitchTag>}/>
-          {NUMBERS.map(([key,label,what,hint])=><ConfigRow key={key} name={label} what={what} when="保存后立即生效。" effect={`${hint}。用户看不到，只影响地址库存。`} value={`${saved[key].toLocaleString("en-US")} 个`}/>)}
+          <ConfigRow name="自动补充" what="库存低时自动补地址" when="保存后立即生效" value={<SwitchTag on={saved.enabled}>{saved.enabled?"开启":"关闭"}</SwitchTag>}/>
+          {NUMBERS.map(([key,label,what,hint])=><ConfigRow key={key} name={label} what={what} when="保存后立即生效" effect={`${hint}。用户看不到，只影响地址库存`} value={`${saved[key].toLocaleString("en-US")} 个`}/>)}
         </ConfigList>}
   </Panel>;
 }

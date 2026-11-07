@@ -114,10 +114,10 @@ function Owned({canManage,openActionConfirm,owner,epoch}:Props&{owner:number;epo
             待复核提案：归集 {status.pendingCollection?"开":"关"} · 付款 {status.pendingPayment?"开":"关"} · 理由 {String(status.reason)}
           </Notice>}
           <ConfigList label="自动流程开关">
-            <ConfigRow name="运行总开关" what="自动转账能不能运行。" when="批准后生效。" value={<SwitchTag on={status.runtimeApproved===true}>{status.runtimeApproved?"已批准":"关闭"}</SwitchTag>}/>
-            <ConfigRow name="自动归集" what="入账后归集到平台钱包。" when="另一位管理员复核后生效。" value={<SwitchTag on={status.collectionEnabled===true}>{status.collectionEnabled?"开启":"关闭"}</SwitchTag>}
+            <ConfigRow name="运行总开关" what="自动转账能不能运行" when="批准后生效" value={<SwitchTag on={status.runtimeApproved===true}>{status.runtimeApproved?"已批准":"关闭"}</SwitchTag>}/>
+            <ConfigRow name="自动归集" what="入账后归集到平台钱包" when="另一位管理员复核后生效" value={<SwitchTag on={status.collectionEnabled===true}>{status.collectionEnabled?"开启":"关闭"}</SwitchTag>}
               action={canWrite?<Button size="sm" disabledReason={proposeBlock} onClick={()=>policy("PROPOSE")}>调整</Button>:undefined}/>
-            <ConfigRow name="自动甲方付款" what="归集后付款给甲方。" when="另一位管理员复核后生效。" value={<SwitchTag on={status.paymentEnabled===true}>{status.paymentEnabled?"开启":"关闭"}</SwitchTag>}/>
+            <ConfigRow name="自动甲方付款" what="归集后付款给甲方" when="另一位管理员复核后生效" value={<SwitchTag on={status.paymentEnabled===true}>{status.paymentEnabled?"开启":"关闭"}</SwitchTag>}/>
             <ConfigRow name="归集接收 / 付款来源" value={<span data-mono="">{String(status.platformAddress)}</span>}/>
             <ConfigRow name="甲方接收" value={<span data-mono="">{String(status.counterpartyAddress)}</span>}/>
             <ConfigRow name="处理范围" value={status.startEventId===null?"尚未首次启用，不会处理历史充值。":"仅处理首次启用水位之后的充值事件。"}/>

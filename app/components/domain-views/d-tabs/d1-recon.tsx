@@ -516,24 +516,24 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
           {bankChannels.map(channel => {
             const name = depositChannelText(channel.code) ?? channel.id;
             return <ConfigRow key={channel.code} name={name}
-              what="银行卡充值入口开不开。" when="确认后立即生效，只影响新充值。" where="App 充值页的银行卡支付入口"
-              effect="停用后 App 充值页不再显示银行卡支付。已在付款的不受影响，订单付款也不受影响。"
+              what="银行卡充值入口开不开" when="确认后立即生效，只影响新充值" where="App 充值页的银行卡支付入口"
+              effect="停用后 App 充值页不再显示银行卡支付。已在付款的不受影响，订单付款也不受影响"
               value={<SwitchTag on={channel.enabled}>{channel.enabled ? "启用" : "停用"}</SwitchTag>}
               action={canManageChannels ? <Button size="sm" variant={channel.enabled ? "danger-outline" : "secondary"} disabledReason={readingReason} onClick={() => toggleChannel(channel)}>{channel.enabled ? "停用" : "启用"}</Button> : undefined} />;
           })}
           {bankChannels.filter(channel => channel.maxAmountValue !== null).map(channel => (
-            <ConfigRow key={`${channel.code}-max`} name={`${depositChannelText(channel.code)}单笔上限`} what="这个通道一笔充值的上限。" when="确认后立即生效，只影响新交易。"
+            <ConfigRow key={`${channel.code}-max`} name={`${depositChannelText(channel.code)}单笔上限`} what="这个通道一笔充值的上限" when="确认后立即生效，只影响新交易"
               value={`${(channel.maxAmountValue ?? 0).toLocaleString("en-US")} USD`}
               action={canManageChannels ? <Button size="sm" disabledReason={readingReason} onClick={() => updateChannelMax(channel)}>调整</Button> : undefined} />
           ))}
-          <ConfigRow name="单笔上限" what="银行卡充值一笔的上限。" when="确认后立即生效，只对之后的新付款单。" where="App 充值页 › 银行卡支付「单笔限额」"
-            effect="改成 1,000：用户一笔最多充 1,000 USD。"
+          <ConfigRow name="单笔上限" what="银行卡充值一笔的上限" when="确认后立即生效，只对之后的新付款单" where="App 充值页 › 银行卡支付「单笔限额」"
+            effect="改成 1,000：用户一笔最多充 1,000 USD"
             value={perTxLimit != null ? `${perTxLimit.toLocaleString("en-US")} USD` : "—"}
             action={canManageBankConfig ? <Button size="sm" disabledReason={readingReason ?? (vietQr ? undefined : "银行卡支付参数没读到，刷新后再试")} onClick={editPerTxLimit}>调整</Button> : undefined} />
-          <ConfigRow name="最低充值金额" what="银行卡充值的最低金额。" where="App 充值页 › 银行卡支付「单笔限额」" effect="只限制充值，不限制订单付款。"
+          <ConfigRow name="最低充值金额" what="银行卡充值的最低金额" where="App 充值页 › 银行卡支付「单笔限额」" effect="只限制充值，不限制订单付款"
             value="在「订单付款 › 付款手续费」里设置"
             action={<Button size="sm" onClick={() => onGo("payments")}>去设置</Button>} />
-          <ConfigRow name="USDT 链上充值（BEP20 / ERC20）" what="收款地址分配、入账和异常处理由 USDT 收款开关控制。"
+          <ConfigRow name="USDT 链上充值（BEP20 / ERC20）" what="收款地址分配、入账和异常处理由 USDT 收款开关控制"
             value="在「USDT 充值」看"
             action={<Button size="sm" onClick={() => onGo("usdt")}>查看实际状态</Button>} />
         </ConfigList>

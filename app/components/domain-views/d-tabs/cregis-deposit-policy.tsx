@@ -171,11 +171,11 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
       {loading && !policy ? <BlockState state="loading" title="正在读取充值规则…" />
         : !policy ? <BlockState state="error" title="充值规则读取失败" detail={error} onRetry={() => void refresh()} />
           : <ConfigList label="USDT 共同充值规则">
-            <ConfigRow name="最低充值额" what="USDT 充值的最低金额。" when="超级管理员批准后生效。" where="App 充值页 › USDT 链上「最低充值」" effect="低于它的到账不自动入账。"
+            <ConfigRow name="最低充值额" what="USDT 充值的最低金额" when="超级管理员批准后生效" where="App 充值页 › USDT 链上「最低充值」" effect="低于它的到账不自动入账"
               value={`${usdt(policy.minDepositUsdt)} USDT`} />
-            <ConfigRow name="固定手续费" what="USDT 充值每笔扣的手续费。" when="超级管理员批准后生效。" where="App 充值页 › USDT 链上「手续费」" effect="改成 1：每笔到账少入 1 USDT。"
+            <ConfigRow name="固定手续费" what="USDT 充值每笔扣的手续费" when="超级管理员批准后生效" where="App 充值页 › USDT 链上「手续费」" effect="改成 1：每笔到账少入 1 USDT"
               value={`${usdt(policy.feeUsdt)} USDT`} />
-            <ConfigRow name="链上确认数" what="到账前要等的区块确认数。" when="超级管理员批准后生效。" where="App 充值页 › USDT 链上「确认数」" effect="调大：到账更慢。"
+            <ConfigRow name="链上确认数" what="到账前要等的区块确认数" when="超级管理员批准后生效" where="App 充值页 › USDT 链上「确认数」" effect="调大：到账更慢"
               value={`${policy.confirmations} 次`} />
           </ConfigList>}
     </div>

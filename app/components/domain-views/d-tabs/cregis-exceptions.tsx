@@ -240,7 +240,7 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
         explain="异常入金原路退款时扣多少费用。另一位管理员复核后生效，只对新工单；待配置时不能退款。">
         <div className="rd-stack">
           <ConfigList label="退款手续费">
-            <ConfigRow name="退款手续费" what="异常退款时扣多少费用。" when="另一位管理员复核后生效，只对新工单。" effect="待配置时不能退款。"
+            <ConfigRow name="退款手续费" what="异常退款时扣多少费用" when="另一位管理员复核后生效，只对新工单" effect="待配置时不能退款"
               value={`${MODE[String(policy.mode)]}${policy.mode === "FIXED_USDT" ? ` ${label(policy.feeUsdt)} USDT` : ""}`} sub={`版本 ${label(policy.version)}`}
               action={canRefund ? <Button size="sm" disabledReason={readBlock} onClick={configureFee}>配置退款手续费</Button> : undefined} />
           </ConfigList>
