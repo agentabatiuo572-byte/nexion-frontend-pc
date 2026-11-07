@@ -451,7 +451,7 @@ function recordConclusion(kind: RecordKind, row: JsonRecord): { tone: StateTone;
     : withdrawalTone(row) === "ok" ? { tone: "ok", text: "这笔提现已到账，无需重复放行。" }
     : withdrawalTone(row) === "progress" ? { tone: "progress", text: "这笔提现正在处理中，请到提现审核跟进原单。" } : undefined;
   if (kind === "device") return deviceAbnormal(row) ? { tone: "danger", text: "这台设备有异常，请到设备运行管理核对。" }
-    : FINAL_DEVICE_STATUS.includes(String(row.status).toUpperCase()) ? { tone: "neutral", text: "这台设备已回收或停用，不能再置换或回收。" } : undefined;
+    : FINAL_DEVICE_STATUS.includes(String(row.status).toUpperCase()) ? { tone: "neutral", text: "这台设备已回收或停用，不能再回收或记录置换。" } : undefined;
   if (kind === "order") return orderTone(row) === "danger" ? { tone: "danger", text: "这笔订单付款、开通或拒付有异常，请到订单进度核对。" }
     : orderTone(row) === "ok" ? { tone: "ok", text: "这笔订单已开通，无需重复开通。" } : undefined;
   if (kind === "deposit" && row.confirmedAt) return { tone: "ok", text: "这笔充值已有确认记录；需要查账时按充值单号核对。" };
@@ -878,7 +878,7 @@ export default function UserDetailPage() {
         <Fact k="资金和新设备">不退款，不发新设备</Fact>
         <Fact k="用户通知">不发通知</Fact>
       </Facts>,
-      confirmLabel: operation === "replace" ? "确认置换，立即生效" : "确认回收，立即生效",
+      confirmLabel: operation === "replace" ? "确认回收并记录置换，立即生效" : "确认回收，立即生效",
       confirmTone: "danger",
       irreversible: true,
       statedBrief: { impact: operation === "replace" ? "和设备回收的差别只有一点：多记一张已完成的置换单，留下这次置换的记录。设备有任务在跑时系统会拒绝。" : "和回收并记录置换的差别只有一点：不留置换单。设备有任务在跑时系统会拒绝。", check: "核对设备实例号和用户，理由写清依据或工单号。" },
@@ -1005,18 +1005,19 @@ export default function UserDetailPage() {
   // 风险档以后端的档为准：客服只拿到档、没有分数，也要算（R04）。
   const riskHigh = riskAuthorityReady && riskTone === "danger";
   // 数字在下面的区块里，这里只写有什么事，不重复（DP-61）。
-  const issues: { key: string; text: string; danger?: boolean; go?: () => void }[] = [
-    summary.locked === true && { key: "locked", text: "账号已锁定", go: () => locate("security") },
-    paymentSecurity.state === "exception" && { key: "payment", text: "支付密码有异常", go: () => locate("security") },
-    paymentSecurity.pending && { key: "release", text: "有一笔解除结果等待确认", go: () => locate("security") },
-    unfinishedRevokes.length > 0 && { key: "revoke", text: "有已解绑的卡仍可能被扣款", danger: true, go: () => locate("security", "hub-payment-methods") },
+  // 按钮写会落到哪一块，不写「首项」：排在最前的风险档没有入口时，按钮去的是后面那件（DT-19）。
+  const issues: { key: string; text: string; danger?: boolean; go?: () => void; goLabel?: string }[] = [
+    summary.locked === true && { key: "locked", text: "账号已锁定", go: () => locate("security"), goLabel: "查看安全信息" },
+    paymentSecurity.state === "exception" && { key: "payment", text: "支付密码有异常", go: () => locate("security"), goLabel: "查看安全信息" },
+    paymentSecurity.pending && { key: "release", text: "有一笔解除结果等待确认", go: () => locate("security"), goLabel: "查看安全信息" },
+    unfinishedRevokes.length > 0 && { key: "revoke", text: "有已解绑的卡仍可能被扣款", danger: true, go: () => locate("security", "hub-payment-methods"), goLabel: "查看支付方式" },
     riskHigh && { key: "risk", text: "风险档是高风险", danger: true },
     openCases > 0 && { key: "cases", text: "有未关闭的风险案件" },
-    withdrawalExceptions > 0 && { key: "withdrawal", text: "有提现异常", danger: true, go: () => locate("funds", "hub-withdrawal") },
-    withdrawalsWaiting > 0 && { key: "waiting", text: "有提现等待处理", go: () => locate("funds", "hub-withdrawal") },
-    deviceExceptions > 0 && { key: "device", text: "有设备异常", go: () => locate("devices", "hub-devices") },
-    orderExceptions > 0 && { key: "order", text: "有订单异常", go: () => locate("records", "hub-orders") },
-    failedPushCount > 0 && { key: "push", text: "有通知推送失败", go: () => locate("records") },
+    withdrawalExceptions > 0 && { key: "withdrawal", text: "有提现异常", danger: true, go: () => locate("funds", "hub-withdrawal"), goLabel: "查看提现记录" },
+    withdrawalsWaiting > 0 && { key: "waiting", text: "有提现等待处理", go: () => locate("funds", "hub-withdrawal"), goLabel: "查看提现记录" },
+    deviceExceptions > 0 && { key: "device", text: "有设备异常", go: () => locate("devices", "hub-devices"), goLabel: "查看设备明细" },
+    orderExceptions > 0 && { key: "order", text: "有订单异常", go: () => locate("records", "hub-orders"), goLabel: "查看商城订单" },
+    failedPushCount > 0 && { key: "push", text: "有通知推送失败", go: () => locate("records"), goLabel: "查看通知记录" },
   ].filter((value) => !!value).sort((a, b) => Number(!!b.danger) - Number(!!a.danger));
   const unreadable = [
     securityUnread && "账号锁定和两步验证",
@@ -1061,7 +1062,7 @@ export default function UserDetailPage() {
   const conclusion = nonActive
     ? <Conclusion state={status === "BANNED" ? "danger" : "warn"} lead icon={ShieldAlert} hint={issueText || undefined} explain={checkedExplain} action={c2Link}>账户状态：{statusLabel(status)}，提现和交易可能受限。</Conclusion>
     : issues.length > 0
-      ? <Conclusion state={issues.some((issue) => issue.danger) ? "danger" : "warn"} hint={issueText} explain={checkedExplain} action={firstGo ? <Button onClick={firstGo}>{firstIssue?.key === "waiting" || firstIssue?.key === "withdrawal" ? "查看提现记录" : "查看首项问题"}</Button> : (riskHigh || openCases > 0) ? k4Link : undefined}>有 <b>{issues.length}</b> 件事要处理{unreadCount && `，${unreadCount}`}</Conclusion>
+      ? <Conclusion state={issues.some((issue) => issue.danger) ? "danger" : "warn"} hint={issueText} explain={checkedExplain} action={firstGo ? <Button onClick={firstGo}>{firstIssue?.goLabel}</Button> :(riskHigh || openCases > 0) ? k4Link : undefined}>有 <b>{issues.length}</b> 件事要处理{unreadCount && `，${unreadCount}`}</Conclusion>
       : status === "UNKNOWN"
         ? <Conclusion state="unknown" hint={unreadText || undefined} explain={checkedExplain}>账户状态未确认，暂时无法判断</Conclusion>
         : unreadable.length > 0
@@ -1074,7 +1075,7 @@ export default function UserDetailPage() {
               : <Conclusion state="ok" icon={ShieldCheck} explain={<><p>核对了：{checked.join("、")}。</p><p>这只说明这些项目没发现问题，不代表全部没事：{scopeNote}。</p></>}>账户正常，已核对的项目没发现问题</Conclusion>;
 
   const hasEntries = !supportScope;
-  const inPageWrites = [canWriteC1 && "重置昵称、处理支付方式", canWriteC2 && "置换和回收设备", canReleasePayment && "解除支付密码异常"].filter(Boolean).join("，");
+  const inPageWrites = [canWriteC1 && "重置昵称、处理支付方式", canWriteC2 && "回收设备", canReleasePayment && "解除支付密码异常"].filter(Boolean).join("，");
   const crossLinks = [
     canReadC6 && ["注册与登录风险", "/users/reg-risk"],
     canReadD2 && ["提现审核", "/finance/withdrawals"],
