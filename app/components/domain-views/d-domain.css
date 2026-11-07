@@ -332,22 +332,23 @@
 .ddom .l-inp:disabled { color: var(--ink-4); cursor: not-allowed; }
 
 /* D1: network-specific business controls, shared by embedded and standalone panels. */
-.ddom .cregis-network-controls { font-size: 14px; line-height: 1.6; }
-.ddom .cregis-network-controls .cregis-panel-title { margin: 0; font-size: 16px; line-height: 24px; }
-.ddom .cregis-network-controls .sub { font-size: 13px; line-height: 18px; margin-top: 4px; }
+.ddom .cregis-network-controls { font-size: 12px; line-height: 1.65; }
+.ddom .cregis-network-controls .cregis-panel-title { margin: 0; font-size: 14px; line-height: 1.65; }
+.ddom .cregis-network-controls .sub { font-size: 12px; line-height: 1.5; margin-top: 4px; }
 .ddom .cregis-network-grid { overflow-x: auto; margin: 16px 0; }
 .ddom .cregis-network-row { display: grid; grid-template-columns: minmax(220px,1.3fr) minmax(120px,.7fr) minmax(260px,1.5fr) minmax(150px,1fr); gap: 20px; align-items: center; min-width: 900px; padding: 16px 12px; }
-.ddom .cregis-network-head { color: var(--ink-3); font-size: 13px; background: var(--surface-3); border-radius: 8px; padding-top: 10px; padding-bottom: 10px; }
+.ddom .cregis-network-head { color: var(--ink-3); font-size: 12px; background: var(--surface-3); border-radius: 8px; padding-top: 10px; padding-bottom: 10px; }
 .ddom .cregis-network-row label { display: inline-flex; gap: 8px; align-items: center; min-height: 40px; }
 .ddom .cregis-network-row input { accent-color: var(--success); width: 18px; height: 18px; }
 .ddom .cregis-network-row input:focus-visible { outline: 2px solid var(--success); outline-offset: 3px; }
-.ddom .cregis-network-row strong { color: var(--ink); font-size: 16px; font-weight: 600; }
+.ddom .cregis-network-row strong { color: var(--ink); font-size: 13px; font-weight: 600; }
 .ddom .cregis-network-availability { color: var(--ink); }
 .ddom .cregis-network-blocked { color: var(--warning); }
 
 .ddom .cregis-global-payout { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; padding: 16px 0; color: var(--ink-3); }
 .ddom .cregis-global-payout label { display: inline-flex; gap: 8px; align-items: center; color: var(--ink); }
-.ddom .cregis-config-link { display: inline-block; margin-top: 8px; color: var(--success); font-size: 14px; }
+.ddom .cregis-global-payout > strong, .ddom .cregis-danger-zone.cregis-network-controls > strong { font-size: 13px; font-weight: 600; }
+.ddom .cregis-config-link { display: inline-block; margin-top: 8px; color: var(--success); font-size: 12px; }
 .ddom .cregis-config-link:focus-visible { outline: 2px solid var(--success); outline-offset: 3px; }
 .ddom .d5-network-row .d5-network-effective { flex: 1; min-width: 0; margin-top: 0; }
 .ddom .d5-network-row .blocked { color: var(--warning); }
