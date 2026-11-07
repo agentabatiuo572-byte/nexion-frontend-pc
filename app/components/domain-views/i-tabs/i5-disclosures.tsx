@@ -312,7 +312,8 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
 
   // ---------- 地区 ----------
   const editJurisdiction = (current?: DisclosureJurisdictionOption) => openActionConfirm({ briefKind: "config",
-    action: <>{current ? "编辑" : "新增"}披露适用范围</>,
+    action: <>{current ? "编辑" : "新增"}披露适用地区</>,
+    title: `${current ? "编辑" : "新增"}披露适用范围`,
     detail: <>版本和国家在生效版本设置里单独管理。</>,
     amplifies: false,
     effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
@@ -344,7 +345,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
     } as const;
     openActionConfirm({ briefKind: "content", ...approvalProps,
       ...(action === "archive" ? { confirmTone: "danger" as const, effect: irreversibleApproval } : {}),
-      action: <>{labels[action]}适用范围 · {item.code}</>,
+      action: <>{labels[action]}适用地区 · {item.code}</>,
       title: `${labels[action]}适用范围`,
       confirmLabel: `提交${labels[action]}审批`,
       detail: <>{effects[action]}</>,
@@ -362,7 +363,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   };
 
   const deleteJurisdiction = (item: DisclosureJurisdictionOption) => openActionConfirm({ briefKind: "config", ...approvalProps,
-    action: <>删除未使用的适用范围 · {item.code}</>,
+    action: <>删除未使用适用地区 · {item.code}</>,
     title: "删除未使用的适用范围",
     detail: <>只有已归档、且没有任何披露版本用到的适用范围可以删除。</>,
     confirmTone: "danger",
@@ -403,7 +404,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       affected: current ? current.affected : undefined,
     };
     openActionConfirm({ briefKind: "config", ...approvalProps,
-      action: <>{current ? "调整" : "设置"}生效版本</>,
+      action: <>{current ? "编辑" : "新增"}适用地区 × 版本映射</>,
       title: current ? "调整生效版本" : "设置生效版本",
       confirmLabel: `提交${current ? "调整" : "新增"}审批`,
       detail: <>{gateEffect}</>,
@@ -442,7 +443,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   };
 
   const archiveMatrix = (j: DisclosureJurisdictionView) => openActionConfirm({ briefKind: "record", ...approvalProps,
-    action: <>归档生效版本设置 · {j.code}</>,
+    action: <>归档适用地区版本映射 · {j.code}</>,
     title: "归档生效版本设置",
     detail: <>历史版本和操作记录仍保留。</>,
     confirmTone: "danger",
