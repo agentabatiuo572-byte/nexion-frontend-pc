@@ -1043,7 +1043,8 @@ export default function UserDetailPage() {
     detail.notifications && "通知推送失败",
   ].filter((value): value is string => !!value);
   const checking = paymentSecurity.state === "loading" || !supportScope && (!paymentMethods && !paymentError || !revokeScan && !revokeScanFailed);
-  const firstGo = issues.find((issue) => issue.go)?.go;
+  const firstIssue = issues.find((issue) => issue.go);
+  const firstGo = firstIssue?.go;
   const c2Link = canReadC2 && !supportScope
     ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={{ pathname: "/users/actions", query: { userCode: userNo, source: "C1", returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">去账户操作</span></Link>
     : undefined;
@@ -1060,7 +1061,7 @@ export default function UserDetailPage() {
   const conclusion = nonActive
     ? <Conclusion state={status === "BANNED" ? "danger" : "warn"} lead icon={ShieldAlert} hint={issueText || undefined} explain={checkedExplain} action={c2Link}>账户状态：{statusLabel(status)}，提现和交易可能受限。</Conclusion>
     : issues.length > 0
-      ? <Conclusion state={issues.some((issue) => issue.danger) ? "danger" : "warn"} hint={issueText} explain={checkedExplain} action={firstGo ? <Button onClick={firstGo}>去看看</Button> : (riskHigh || openCases > 0) ? k4Link : undefined}>有 <b>{issues.length}</b> 件事要处理{unreadCount && `，${unreadCount}`}</Conclusion>
+      ? <Conclusion state={issues.some((issue) => issue.danger) ? "danger" : "warn"} hint={issueText} explain={checkedExplain} action={firstGo ? <Button onClick={firstGo}>{firstIssue?.key === "waiting" || firstIssue?.key === "withdrawal" ? "查看提现记录" : "查看首项问题"}</Button> : (riskHigh || openCases > 0) ? k4Link : undefined}>有 <b>{issues.length}</b> 件事要处理{unreadCount && `，${unreadCount}`}</Conclusion>
       : status === "UNKNOWN"
         ? <Conclusion state="unknown" hint={unreadText || undefined} explain={checkedExplain}>账户状态未确认，暂时无法判断</Conclusion>
         : unreadable.length > 0
@@ -1179,7 +1180,7 @@ export default function UserDetailPage() {
     : securityAlert
       ? joined([summary.locked === true && "账号已锁定", paymentSecurity.state === "exception" && "支付密码有异常", paymentSecurity.pending && "解除结果等待确认", unfinishedRevokes.length > 0 && `${unfinishedRevokes.length} 张卡仍可能被扣款`])
       : joined([
-        detail.sessions && `在线设备 ${numberLabel(summary.activeSessionCount)}`,
+        detail.sessions && `在线登录设备 ${numberLabel(summary.activeSessionCount)}`,
         detail.sessions && `两步验证${summary.twoFactorEnabled ? "开启" : "关闭"}`,
         paymentSecurity.state === "clear" ? "支付密码无异常" : paymentSecurity.state === "loading" && "正在读取…",
         !supportScope && paymentCount !== null && `支付方式 ${paymentCount} 张`,
@@ -1291,7 +1292,7 @@ export default function UserDetailPage() {
           <Fold title="安全" icon={ShieldCheck} tone="role-3" summary={foldSummary("security", securityAlert || securityFailed, securityText)} alertTone={securityFailed ? "danger" : "warn"} {...foldProps("security", securityAlert || securityFailed)}>
             {detail.sessions && <Block title="登录安全" {...listProps("session")} section={{ sourceStatus: "READY" }} issue={summary.locked === true ? "账号已锁定" : undefined} sub={filteredSessions.length > C1_SESSION_PAGE_SIZE ? "最近 50 条登录记录" : `最近 50 条登录记录 · 筛选后 ${filteredSessions.length} 条`} explain="这是最近最多 50 条样本，不是全部历史。登录记录读取失败时后端也返回空，写 0 或没有记录不能证明没登录过。">
               <Values rows={[
-                ["在线设备", numberLabel(summary.activeSessionCount)],
+                ["在线登录设备", numberLabel(summary.activeSessionCount)],
                 ["两步验证", securityValue(summary.twoFactorEnabled, "开启", "关闭")],
                 ["锁定", summary.locked ? <StatusTag tone="warn">是</StatusTag> : securityValue(summary.locked)],
               ]} />
