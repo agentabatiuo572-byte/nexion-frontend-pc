@@ -46,12 +46,12 @@ export function PromotionRefundImpact({ orderNo, compact = false }: { orderNo: s
   const refundResult = (r: RewardAdmin): { text: string; tone: StateTone; short: string } => ["CANCELLED", "REVERSED"].includes(r.state) ? { text: "不重复处理", tone: "done", short: "原奖励已取消或已冲正，本次不重复处理。" }
             : ["PENDING", "READY", "RETRYABLE_FAILED"].includes(r.state) && !r.assetReceipt ? { text: "取消发放", tone: "done", short: "退款确认执行后，取消未发放的奖励。" }
             : ["PROCESSING", "OUTCOME_UNKNOWN", "MANUAL_REVIEW"].includes(r.state) ? { text: "先核对", tone: "warn", short: "先核对原发放结果，未发放的取消，已发放的按售后规则处理。" }
-            : r.reward.type === "DEVICE" ? { text: "收回设备", tone: "warn", short: "收回赠品设备并停止任务，已到账收益记平台损失。" }
+            : r.reward.type === "DEVICE" ? { text: "收回设备", tone: "warn", short: "赠品设备收回并停止任务；已到账收益不扣回，由平台承担，损失金额以执行后奖励台账为准。" }
             : r.reward.type === "DISCOUNT_USDT" ? { text: "随订单退款", tone: "done", short: "已计入原订单金额，按整单退款金额处理。" }
             : { text: "按余额追回", tone: "warn", short: "按执行时余额同币种追回，不足部分由平台承担。" };
   const rewards = <ul className="rd-impact-list">
         {result.items.map(r => <li key={r.obligationId}>
-          <b>{r.beneficiaryRole === "BUYER" ? "购买者" : "直接邀请人"} · {r.beneficiaryId} · {r.reward.type === "DEVICE" ? `${r.disclosure.deviceName || "赠品设备"} × ${r.reward.quantity} 台` : `${r.reward.amount} ${nexGridBrandText(r.reward.type === "DISCOUNT_USDT" ? "USDT" : r.reward.type)}`}</b>
+          <b>{r.beneficiaryRole === "BUYER" ? "购买者 ID" : "直接邀请人 ID"} · {r.beneficiaryId} · {r.reward.type === "DEVICE" ? `${r.disclosure.deviceName || "赠品设备"} × ${r.reward.quantity} 台` : `${r.reward.amount} ${nexGridBrandText(r.reward.type === "DISCOUNT_USDT" ? "USDT" : r.reward.type)}`}</b>
           {compact ? <Explain label="奖励台账编号" content={`奖励项 ${r.obligationId}`} /> : <div className="rd-note">奖励项 {r.obligationId}</div>}
           <div>{refundOutcome(r)}</div>
         </li>)}
@@ -75,7 +75,7 @@ export function PromotionRefundImpact({ orderNo, compact = false }: { orderNo: s
           id: r.obligationId,
           value: r.reward.type === "DEVICE" ? `${r.disclosure.deviceName || "赠品设备"} × ${r.reward.quantity}` : r.reward.amount,
           unit: r.reward.type === "DEVICE" ? "台" : nexGridBrandText(r.reward.type === "DISCOUNT_USDT" ? "USDT" : r.reward.type),
-          object: <>{r.beneficiaryRole === "BUYER" ? "购买者" : "直接邀请人"} {r.beneficiaryId}<Explain label="奖励台账编号" content={<RecordList label="奖励台账编号" records={[{ id: r.obligationId, value: "奖励项", reference: r.obligationId }]} />} /></>,
+          object: <>{r.beneficiaryRole === "BUYER" ? "购买者 ID" : "直接邀请人 ID"} {r.beneficiaryId}<Explain label="奖励台账编号" content={<RecordList label="奖励台账编号" records={[{ id: r.obligationId, value: "奖励项", reference: r.obligationId }]} />} /></>,
           status: <StatusTag tone={tone} icon={tone === "warn" ? AlertTriangle : undefined}>{text}</StatusTag>,
         };
       })} /></div>
