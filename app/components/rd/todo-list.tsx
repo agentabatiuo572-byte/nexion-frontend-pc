@@ -8,6 +8,7 @@
  * </TodoList>
  *
  * - tone 只给告警和逾期，日常待办不上色（DP-22）。负责人的小图标按域色（VS-15）。
+ * - 目标页不可达时不传 href：这一行照样提醒，只是不能点，没有箭头（X03）。sub 写清该找谁。
  * - 数量为 0 的行不要传进来。读不到时用 TodoFailed，不能当 0（T09）。
  */
 import type { ReactNode } from "react";
@@ -21,7 +22,7 @@ export function TodoList({ label, children }: { label: string; children: ReactNo
 }
 
 export function TodoItem({ href, title, sub, owner, ownerIcon: OwnerIcon, ownerTone, tone }: {
-  href: string;
+  href?: string;
   title: ReactNode;
   sub?: ReactNode;
   owner?: ReactNode;
@@ -29,16 +30,23 @@ export function TodoItem({ href, title, sub, owner, ownerIcon: OwnerIcon, ownerT
   ownerTone?: DomainTone;
   tone?: StateTone;
 }) {
+  const body = (
+    <>
+      <span className="rd-todo-text" data-tone={tone}>
+        <span className="rd-todo-title">{title}</span>
+        {sub && <span className="rd-todo-sub">{sub}</span>}
+      </span>
+      {owner && <span className="rd-todo-owner" data-tone={ownerTone}>{OwnerIcon && <OwnerIcon size={14} strokeWidth={1.9} aria-hidden />}{owner}</span>}
+    </>
+  );
   return (
     <li className="rd-todo-item">
-      <Link className="rd-todo-row" href={href} prefetch={false}>
-        <span className="rd-todo-text" data-tone={tone}>
-          <span className="rd-todo-title">{title}</span>
-          {sub && <span className="rd-todo-sub">{sub}</span>}
-        </span>
-        {owner && <span className="rd-todo-owner" data-tone={ownerTone}>{OwnerIcon && <OwnerIcon size={14} strokeWidth={1.9} aria-hidden />}{owner}</span>}
-        <ChevronRight className="rd-todo-chevron" size={16} aria-hidden />
-      </Link>
+      {href ? (
+        <Link className="rd-todo-row" href={href} prefetch={false}>
+          {body}
+          <ChevronRight className="rd-todo-chevron" size={16} aria-hidden />
+        </Link>
+      ) : <div className="rd-todo-row">{body}</div>}
     </li>
   );
 }

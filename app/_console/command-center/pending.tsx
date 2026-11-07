@@ -7,15 +7,16 @@
  */
 import Link from "next/link";
 import { Fragment, type ReactNode } from "react";
-import { Headset, ListChecks, ShieldAlert, Wallet, type LucideIcon } from "lucide-react";
+import { Headset, ListChecks, Server, ShieldAlert, Wallet, type LucideIcon } from "lucide-react";
 import { Panel, TodoFailed, TodoItem, TodoList, type DomainTone, type StateTone } from "@/app/components/rd";
 
 export type PendingRow = {
   key: string;
   title: string;
   sub?: string;
-  owner: "财务" | "风控" | "客服" | "内容" | "增长" | "审计" | "其他";
-  href: string;
+  owner: "财务" | "风控" | "客服" | "设备" | "内容" | "增长" | "审计" | "其他";
+  /** 目标页不可达时不传：照样提醒，不能点（X03）。 */
+  href?: string;
   tone?: StateTone;
 };
 
@@ -25,6 +26,7 @@ const OWNER: Record<PendingRow["owner"], { icon?: LucideIcon; tone?: DomainTone 
   财务: { icon: Wallet, tone: "money" },
   风控: { icon: ShieldAlert, tone: "risk" },
   客服: { icon: Headset, tone: "users" },
+  设备: { icon: Server, tone: "devices" },
   内容: {},
   增长: {},
   审计: {},
@@ -51,7 +53,7 @@ export function PendingPanel({ rows, failures, loading, aside }: { rows: readonl
           {rest.map((row, index) => (
             <Fragment key={row.key}>
               {index > 0 && "、"}
-              {isFailure(row) ? `${row.name}读取失败` : <Link href={row.href} prefetch={false}>{row.title}</Link>}
+              {isFailure(row) ? `${row.name}读取失败` : row.href ? <Link href={row.href} prefetch={false}>{row.title}</Link> : row.title}
             </Fragment>
           ))}
         </p>

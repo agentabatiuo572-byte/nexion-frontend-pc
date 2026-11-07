@@ -80,13 +80,16 @@
 .cc-brief > .rd-conclusion { border-radius: var(--rd-radius-panel) var(--rd-radius-panel) 0 0; }
 .cc-brief > .rd-conclusion:last-child { border-radius: var(--rd-radius-panel); }
 .cc-brief > .rd-conclusion:not([data-alarm]) { background: none; }
-.cc-brief-body { padding: 12px var(--rd-panel-pad-x) var(--rd-panel-pad-y); border-top: 1px solid var(--rd-line); }
+.cc-brief-body { display: flex; flex-direction: column; gap: 12px; padding: 12px var(--rd-panel-pad-x) var(--rd-panel-pad-y); border-top: 1px solid var(--rd-line); }
+.cc-lines { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.cc-lines > .cc-fundline { flex: 1 1 460px; width: auto; }  /* 两句都要一行写完，放不下就上下排 */
 .cc-pending .rd-panel-head { margin-bottom: 8px; }
 .cc-pending .rd-todo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; }
 .cc-pending .rd-todo-item + .rd-todo-item { margin-top: 0; }
 .cc-pending .rd-todo-item:only-child { grid-column: 1 / -1; }
 .cc-pending .rd-todo-row { height: 100%; }  /* 同一行两格等高 */
 .cc-pending .rd-todo-sub { white-space: normal; }  /* 两列窄时折行，审批详情这类长文字不切掉 */
+.cc-pending .rd-block-loading { display: flex; align-items: center; min-height: 48px; margin-top: 4px; padding: 0 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }  /* 读取中的占位和一行待处理一样高，读完不往下推 */
 .cc-pending-rest { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .cc-pending-rest a { color: var(--rd-text-2); }
 
