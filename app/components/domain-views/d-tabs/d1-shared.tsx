@@ -3,8 +3,8 @@
 /** 充值与收款对账四个区共用的小件：网址参数、要处理的数、金额写法、结果未确认的提醒条。 */
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { PowerOff } from "lucide-react";
-import { Button, Explain, Notice, ReleaseModal, StatusTag } from "@/app/components/rd";
+import { Copy, PowerOff } from "lucide-react";
+import { Button, Explain, IconButton, Notice, ReleaseModal, StatusTag } from "@/app/components/rd";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { isDOutcomeUnknownError } from "@/lib/admin/d-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -68,6 +68,21 @@ export function vnd(value: number | string | null | undefined): string {
 }
 
 export const zoneLabel = () => businessZone().label;
+
+/** 哈希、地址这类长值：写前后几位，完整值在提示里，旁边能复制；不在值列折行掉一位（VS-52、DT-09）。 */
+export function LongValue({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState("");
+  if (value.length <= 22) return <>{value}</>;
+  return (
+    <span className="rd-record-reference">
+      <span title={value}>{`${value.slice(0, 10)}…${value.slice(-8)}`}</span>
+      <IconButton aria-label={copied || `复制${label}`} onClick={() => {
+        if (!navigator.clipboard) { setCopied("复制失败，请从提示里手动选择"); return; }
+        void navigator.clipboard.writeText(value).then(() => setCopied(`已复制${label}`), () => setCopied("复制失败，请从提示里手动选择"));
+      }}><Copy size={14} aria-hidden /></IconButton>
+    </span>
+  );
+}
 
 /** 开关现在开还是关：开绿，关灰，紧急停用后红（D1 颜色表）。 */
 export function SwitchTag({ on, stopped, children }: { on: boolean; stopped?: boolean; children: ReactNode }) {

@@ -14,7 +14,7 @@ import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { purchasePaymentMethods, purchaseWasDelivered, validPurchaseChannel, type PurchasePaymentChannel, type PurchasePaymentMethod, type PurchasePaymentPolicy, type PurchasePaymentPage, type PurchasePaymentRecord, type PurchasePaymentState } from "@/lib/admin/purchase-payment-contract";
 import { fetchPurchasePaymentPolicy, fetchPurchasePaymentRecords, fetchPurchasePaymentRecord, updatePurchasePaymentPolicy, revalidatePurchasePayment, pendingPurchasePayments, retryPurchasePayment, releasePurchasePayment, canRetryPurchasePayment, type PendingPurchasePayment } from "@/lib/admin/purchase-payment-client";
-import { PendingNotices, readPage, readParam, usdt, vnd, writeParams, zoneLabel, type D1Activity, type D1Count, type D1PendingItem } from "./d1-shared";
+import { LongValue, PendingNotices, readPage, readParam, usdt, vnd, writeParams, zoneLabel, type D1Activity, type D1Count, type D1PendingItem } from "./d1-shared";
 import type { DCtx } from "./types";
 
 const methodText: Record<PurchasePaymentMethod, string> = { HDPAY_BANK: "银行卡支付", CREGIS_USDT_BSC: "USDT（BEP20）", CREGIS_USDT_ERC20: "USDT（ERC20）" };
@@ -311,14 +311,14 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, reloadTick }: { ctx
       </Modal>
     )}
 
-    <PaymentDetail key={selected ?? "none"} intentNo={selected} owner={owner} owns={owns} ctx={ctx}
+    <PaymentDetail key={selected ?? "none"} intentNo={selected} owner={owner} owns={owns} ctx={ctx} reloadTick={reloadTick}
       pending={!!selected && pending.some(row => row.scope === selected)}
       nav={{ hasPrev: index > 0, hasNext: index >= 0 && index < items.length - 1, onPrev: () => setSelected(items[index - 1]?.intentNo ?? selected), onNext: () => setSelected(items[index + 1]?.intentNo ?? selected) }}
       onChanged={() => { syncPending(); void loadRecords(); void loadCount(); }} onClose={() => setSelected(null)} />
   </>;
 }
 
-function PaymentDetail({ intentNo, owner, owns, ctx, pending, nav, onChanged, onClose }: { intentNo: string | null; owner: number; owns: () => boolean; ctx: DCtx; pending: boolean; nav: { hasPrev: boolean; hasNext: boolean; onPrev: () => void; onNext: () => void }; onChanged: () => void; onClose: () => void }) {
+function PaymentDetail({ intentNo, owner, owns, ctx, reloadTick, pending, nav, onChanged, onClose }: { intentNo: string | null; owner: number; owns: () => boolean; ctx: DCtx; reloadTick: number; pending: boolean; nav: { hasPrev: boolean; hasNext: boolean; onPrev: () => void; onNext: () => void }; onChanged: () => void; onClose: () => void }) {
   const reach = useReach();
   const [record, setRecord] = useState<PurchasePaymentRecord | null>(null), [error, setError] = useState(""), [busy, setBusy] = useState(false), [loading, setLoading] = useState(false);
   const live = useRef(true), sequence = useRef(0), mutation = useRef(false);
@@ -330,6 +330,9 @@ function PaymentDetail({ intentNo, owner, owns, ctx, pending, nav, onChanged, on
     finally { if (live.current && owns() && id === sequence.current) setLoading(false); }
   }, [intentNo, owns]);
   useEffect(() => { live.current = true; void load(); return () => { live.current = false; sequence.current++; }; }, [load]);
+  // 页头「刷新」也重读打开着的这笔（D1-A02）。
+  const firstTick = useRef(reloadTick);
+  useEffect(() => { if (reloadTick !== firstTick.current) void load(); }, [reloadTick, load]);
   const canReconcile = allowed("finance_d1_bank_reconcile");
   const block = loading ? "正在读取最新数据" : busy ? "正在提交" : error ? "这笔付款读取失败，刷新后再试" : revalidateBlock(record, pending);
   function revalidate() {
@@ -359,11 +362,16 @@ function PaymentDetail({ intentNo, owner, owns, ctx, pending, nav, onChanged, on
       } });
   }
   const r = record;
+  const auditReachable = reach("/platform/audit", "platform_a2_read") && !!intentNo;
   return <Drawer open={!!intentNo} onClose={onClose} title="付款详情" sub={intentNo ?? undefined} icon={ReceiptText} tone="role-2" busy={busy} nav={nav}
     footer={<Decision
       note={canReconcile ? block : undefined}
-      explain="再查一次支付商或链上记录。不会重新收款、强制完成、退款，也不会转进钱包余额。"
-      others={reach("/platform/audit", "platform_a2_read") && intentNo ? <Link className="rd-link" href={`/platform/audit?domain=D&object=${encodeURIComponent(intentNo)}`}>到「操作记录」查看处理过程</Link> : undefined}
+      explain={auditReachable ? "再查一次支付商或链上记录。不会重新收款、强制完成、退款，也不会转进钱包余额。" : undefined}
+      others={<>
+        {/* 只读刷新：只重读这笔，不发写请求；提交中不能点（D1-A02）。 */}
+        <Button variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} disabled={busy} onClick={() => void load()}>刷新</Button>
+        {auditReachable && intentNo && <Link className="rd-link" href={`/platform/audit?domain=D&object=${encodeURIComponent(intentNo)}`}>到「操作记录」查看处理过程</Link>}
+      </>}
       primary={canReconcile ? <Button variant="primary" disabledReason={block} onClick={revalidate}>重新核对到账</Button> : undefined} />}>
     {error ? <BlockState state="error" title="付款详情读取失败" detail={error} onRetry={() => void load()} />
       : <JudgmentPoints loading={loading || !r} rows={r ? [
@@ -392,7 +400,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, pending, nav, onChanged, on
         {r.arrivals.length === 0 ? <p className="rd-note">还没有链上到账记录。</p> : <Table label="链上到账">
           <thead><tr><Th>交易号</Th><Th align="right">到账（USDT）</Th><Th align="right">确认数</Th><Th>核对结果</Th></tr></thead>
           <tbody>{r.arrivals.map(row => <tr key={`${row.txid}:${row.log_index}`}>
-            <Td><Cell mono main={row.txid} title={row.txid} sub={`日志 ${row.log_index} · 区块 ${row.block_number}`} /></Td>
+            <Td><Cell mono main={<LongValue value={row.txid} label="交易号" />} sub={<>日志序号 {row.log_index} · 区块号 {row.block_number} · 区块哈希 <LongValue value={row.block_hash} label="区块哈希" /></>} /></Td>
             <Td align="right"><Cell num main={usdt(row.amount)} /></Td>
             <Td align="right"><Cell num main={row.confirmations} /></Td>
             <Td><Cell main={row.status === "CONFIRMED" ? "已核对" : row.status === "MANUAL_REVIEW" ? "需人工处理" : "待确认"} /></Td>

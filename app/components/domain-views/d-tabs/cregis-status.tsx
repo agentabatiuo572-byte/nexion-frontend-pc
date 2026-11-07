@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, BellRing, Coins, FileSearch, Inbox, MapPin, Power, RefreshCw, ShieldAlert, ShieldCheck, ToggleRight, Wallet } from "lucide-react";
 import {
-  BlockState, Button, Cell, ConfigList, ConfigRow, Decision, Drawer, Fact, Facts, Fold, Input, IrreversibleTag, JudgmentPoints, KeyValues, MoreMenu, Notice,
+  BlockState, Button, Cell, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, Input, IrreversibleTag, JudgmentPoints, KeyValues, MoreMenu, Notice,
   PageTabs, Panel, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, useTabIds, FilterField, Change,
 } from "@/app/components/rd";
 import type { StateTone } from "@/app/components/rd";
@@ -11,7 +11,7 @@ import { financeAdminRequest, listD1PendingCommands, listD1PendingCregisSwitchCo
 import { adminAuthLifecycleEpoch, AdminAuthEpochChangedError } from "@/lib/admin/auth-lifecycle";
 import { useReach } from "@/lib/nav/use-reach";
 import Link from "next/link";
-import { displayAdminReadError } from "@/lib/admin/error-messages";
+import { ADMIN_ERROR_MESSAGES, displayAdminReadError } from "@/lib/admin/error-messages";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { OperatorBriefKind } from "../design-kit";
@@ -21,7 +21,7 @@ import { CregisFundsPreparation } from "./cregis-funds-preparation";
 import { CregisAutoForward } from "./cregis-auto-forward";
 import { CregisPoolPolicy } from "./cregis-pool-policy";
 import { CregisDepositPolicy, type DepositProposalActivity } from "./cregis-deposit-policy";
-import { PendingNotices, SwitchTag, countText, readParam, usdt, writeParams, zoneLabel, type D1Activity, type D1Count, type D1PendingItem } from "./d1-shared";
+import { LongValue, PendingNotices, SwitchTag, countText, readParam, usdt, writeParams, zoneLabel, type D1Activity, type D1Count, type D1PendingItem } from "./d1-shared";
 
 type ExceptionRow = Record<string, unknown>;
 type FundsNetwork = "BEP20" | "ERC20";
@@ -736,7 +736,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
             <thead><tr><Th>网络</Th><Th>结果</Th><Th>时间（{zone}）</Th></tr></thead>
             <tbody>{(data.reconcileRuns ?? []).slice(0, 6).map((row, index) => <tr key={index}>
               <Td><Cell main={rowNetwork(row) ?? "—"} /></Td>
-              <Td><Cell main={<StatusTag tone={row.status === "COMPLETE" ? "ok" : row.status === "RUNNING" ? "progress" : "warn"}>{cregisStateText(row.status)}</StatusTag>} sub={row.failureCode ? "对账没完成，看告警" : undefined} /></Td>
+              <Td><Cell main={<StatusTag tone={row.status === "COMPLETE" ? "ok" : row.status === "RUNNING" ? "progress" : "warn"}>{cregisStateText(row.status)}</StatusTag>} sub={row.failureCode ? <>{ADMIN_ERROR_MESSAGES[text(row.failureCode)] ?? "对账没完成，原因待核对"}<Explain label="失败码" content={`失败码 ${text(row.failureCode)}`} /></> : undefined} /></Td>
               <Td><Cell num main={time(row.completedAt ?? row.startedAt)} /></Td>
             </tr>)}</tbody>
           </Table>}
@@ -777,8 +777,10 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
             { key: "id", label: "编号", value: `#${text(entry.row.id)}` },
             ...(entry.row.cid != null ? [{ key: "cid", label: "CID", value: text(entry.row.cid), mono: true }] : []),
             ...(entry.row.userId != null ? [{ key: "user", label: "用户", value: text(entry.row.userId) }] : []),
-            ...(entry.row.txid != null ? [{ key: "tx", label: "交易哈希", value: text(entry.row.txid), mono: true }] : []),
-            ...(entry.row.address != null ? [{ key: "addr", label: "地址", value: text(entry.row.address), mono: true }] : []),
+            ...(entry.row.txid != null ? [{ key: "tx", label: "交易哈希", value: <LongValue value={text(entry.row.txid)} label="交易哈希" />, mono: true }] : []),
+            ...(entry.row.logIndex != null ? [{ key: "log", label: "日志序号", value: text(entry.row.logIndex) }] : []),
+            ...(entry.row.address != null ? [{ key: "addr", label: "地址", value: <LongValue value={text(entry.row.address)} label="地址" />, mono: true }] : []),
+            ...(entry.row.ageSeconds != null ? [{ key: "age", label: "已等待", value: `${text(entry.row.ageSeconds)} 秒` }] : []),
             ...(entry.row.lastError != null || entry.row.last_error != null ? [{ key: "err", label: "错误记录", value: text(entry.row.lastError ?? entry.row.last_error), mono: true }] : []),
             { key: "time", label: `时间（${zone}）`, value: time(entry.row.createdAt ?? entry.row.checkedAt) },
           ]} />
@@ -882,10 +884,12 @@ function ReviewDrawer({ cid, caseRow, canManage, adminId, busy, readBlock, onClo
     ]} />
     {(evidence || caseRow) && <Fold inset title="链上证据" summary={`确认数 ${text(evidence?.confirmations ?? caseRow?.confirmations)}`}>
       <KeyValues rows={[
-        { key: "tx", label: "交易哈希", value: text(evidence?.txid ?? caseRow?.txid), mono: true },
-        { key: "addr", label: "地址", value: text(evidence?.address ?? caseRow?.address), mono: true },
-        { key: "block", label: "区块哈希", value: text(evidence?.blockHash ?? caseRow?.blockNumber), mono: true },
-        { key: "hash", label: "证据摘要", value: text(evidence?.evidenceHash ?? caseRow?.evidenceHash), mono: true },
+        { key: "tx", label: "交易哈希", value: <LongValue value={text(evidence?.txid ?? caseRow?.txid)} label="交易哈希" />, mono: true },
+        { key: "log", label: "日志序号", value: text(evidence?.logIndex ?? caseRow?.logIndex) },
+        { key: "addr", label: "地址", value: <LongValue value={text(evidence?.address ?? caseRow?.address)} label="地址" />, mono: true },
+        { key: "blockNumber", label: "区块号", value: text(evidence?.blockNumber ?? caseRow?.blockNumber) },
+        { key: "blockHash", label: "区块哈希", value: evidence?.blockHash != null ? <LongValue value={text(evidence.blockHash)} label="区块哈希" /> : caseRow?.blockHash != null ? <LongValue value={text(caseRow.blockHash)} label="区块哈希" /> : "刷新证据后显示", mono: true },
+        { key: "hash", label: "证据摘要", value: <LongValue value={text(evidence?.evidenceHash ?? caseRow?.evidenceHash)} label="证据摘要" />, mono: true },
       ]} />
     </Fold>}
   </Drawer>;
