@@ -563,13 +563,16 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
             <ol>
               <li>紧急停用开关和当前运营阶段都开着</li>
               <li>用户没有被风控判定为循环试用</li>
-              <li>用户没有进行中的试用、没买过，也过了冷却期</li>
-              <li>目标商品可用，今天还有名额，用户的设备位够</li>
+              <li>用户没有进行中的试用或已转购的试用记录，原记录可重新领取，也过了冷却期</li>
+              <li>目标商品是允许试用且已上架的可用实物商品</li>
+              <li>今天还有免费名额，用户的实物设备位够</li>
+              <li>本次若带有支付方式，该方式仍可用；不要求先绑卡</li>
             </ol>
           </li>
         </ol>
-        {model.gates.length === 0 ? <p>除了这四项，后台没有配置别的检查。</p> : (
-          <dl>{model.gates.map((gate) => <div key={gate.gate}><dt>{gate.gate}：</dt><dd>已启用{gate.note ? `，${gate.note}` : ""}</dd></div>)}</dl>
+        <p>后台门禁表仅供展示，不控制领取；实际领取按以上固定条件检查。</p>
+        {model.gates.length === 0 ? <p>门禁展示表暂无记录。</p> : (
+          <dl>{model.gates.map((gate) => <div key={gate.gate}><dt>{gate.gate}：</dt><dd>仅展示{gate.note ? `，${gate.note}` : ""}</dd></div>)}</dl>
         )}
       </section>
       <section className="rd-guide-section">
@@ -776,8 +779,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           sub={`试用中 ${text(stats.inTrial)} · 宽限 ${text(stats.inGrace)} · 延长 ${text(stats.inExtended)}`}
           explain="试用中、宽限中和已延长的账号数，每个账号只算最近一次试用，不受下方分页影响。" />
         <Stat tone="role-4" icon={TrendingUp} label="试用转购买率" value={text(stats.trialBuyRate)}
-          sub={`提前购买 ${text(stats.earlyBuyRate)}`}
-          explain={<>已购买账号 ÷ 全部已开始试用的账号，每个账号只算最近一次。提前购买 = 试用期内买、按提前购买规则结算的账号 ÷ 全部已开始试用的账号。没有分母时显示「—」，表示不可计算，不是 0。绑卡转化 {text(stats.bindCardRate)}：绑卡环节已退役，不再计算。</>} />
+          sub={`提前购买率 ${text(stats.earlyBuyRate)}`}
+          explain={<>已购买账号 ÷ 全部已开始试用的账号，每个账号只算最近一次。提前购买率 = 按提前购买规则结算的账号 ÷ 全部已开始试用的账号。提前购买立减为 0 时，试用期内购买也不计入提前购买率。没有分母时显示「—」，表示不可计算，不是 0。绑卡转化 {text(stats.bindCardRate)}：绑卡环节已退役，不再计算。</>} />
         <Stat tone="role-2" icon={Ticket} label="今日实际剩余免费名额" value={seatsKnown ? text(seats?.cur) : "—"} unit={seatsKnown ? "张" : undefined}
           sub={seats?.businessDate && seats.businessDate !== "UNKNOWN" ? `日期 ${seats.businessDate}` : undefined}
           explain="按试用业务日实时读取，和 App 用同一个名额计数。「每日免费名额上限」是配置，这个是领取后的实际剩余。" />
