@@ -533,7 +533,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       effect: <StatusTag tone="neutral" filled>保存草稿，App 不变</StatusTag>,
       confirmLabel: "保存草稿",
       statedBrief: { impact: "只保存草稿，用户看到的内容不变。之后还要发布并切换生效版本，用户才看得到。", check: "核对适用范围、语言范围和七章内容，理由写清修改依据。" },
-      facts: <Facts><Fact k="适用范围">{jurisdiction} · {nameOf(jurisdiction)}</Fact><Fact k="版本">{version}</Fact><Fact k="语言">{languageText(form.languageScope)}</Fact><Fact k="生效日期">{form.effectiveDate}{form.effectiveDate < businessDay() ? "（早于今天）" : ""}</Fact>{!editing && sameDisclosure(form, editorFrom(versions.find((row) => row.jurisdiction === jurisdiction && row.status.toLowerCase() === "published"), jurisdiction, version, "create")) && <Fact k="内容" tone="warn">和当前已发布版本相同</Fact>}</Facts>,
+      facts: <Facts><Fact k="适用范围">{jurisdiction} · {nameOf(jurisdiction)}</Fact><Fact k="版本">{version}</Fact><Fact k="语言">{languageText(form.languageScope)}</Fact><Fact k="生效日期">{form.effectiveDate}{form.effectiveDate < businessDay() ? "（早于今天）" : ""}</Fact>{!editing && !form.narrowedFrom && sameDisclosure(form, editorFrom(versions.find((row) => row.jurisdiction === jurisdiction && row.status.toLowerCase() === "published"), jurisdiction, version, "create")) && <Fact k="内容" tone="warn">和当前已发布版本相同</Fact>}</Facts>,
       reasonPlaceholder: "例如：监管要求更新第 3 章",
       run: async (reason) => {
         const result = await writes.send(editing
@@ -1032,7 +1032,7 @@ function VersionEditor({ initial, switcher, regions, languageScopes, loadRegionB
       footer={<Decision explain="保存草稿不改变 App 内容。" others={<Button onClick={close}>取消</Button>} primary={<Button variant="primary" disabledReason={saveBlocked} onClick={() => onSave(form)}>保存草稿</Button>} />}>
       <div data-business-form="version-authoring" className="rd-form-stack">
         <MergeNotice report={merged} name={fieldName} />
-        {initial.mode === "create" && !!form.zh.trim() && sameDisclosure(form, baseline) && <Notice tone="progress">内容和当前已发布版本相同，改完再保存，不改也能存成新草稿。</Notice>}
+        {initial.mode === "create" && !!form.zh.trim() && !form.narrowedFrom && sameDisclosure(form, baseline) && <Notice tone="progress">内容和当前已发布版本相同，改完再保存，不改也能存成新草稿。</Notice>}
         <div className="rd-form-grid i5-form-grid">
           <Field label="披露版本"><div className="rd-form-static">{form.version}<Explain label="版本号怎么来的" content="系统自动编号，不能手填。" /></div></Field>
           <Field label="适用范围">{initial.mode === "edit" ? <div className="rd-form-static">{regions[0]?.label ?? form.jurisdiction}</div>
