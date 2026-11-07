@@ -1887,9 +1887,13 @@ export const HIGH_OPS: HighOpDef[] = [
     targetType: "ui_config",
     buildCommand: (ctx) => ({ domain: "F", op: "f_ui_config",
       params: { key: String(ctx.key), value: String(ctx.value),
-        ...(ctx.expectedVersion === undefined ? {} : { expectedMonthlyQuota: Number(ctx.expectedVersion) }) } }),
-    // 后端查锁 countActiveByTarget("F","ui_config",key) → id = key
-    buildTarget: (ctx) => ({ domain: "F", type: "ui_config", id: String(ctx.key) }),
+        ...(ctx.expectedVersion === undefined ? {} : { expectedMonthlyQuota: Number(ctx.expectedVersion) }),
+        ...(ctx.expectedMaterialRevision === undefined ? {} : { expectedMaterialRevision: Number(ctx.expectedMaterialRevision) }) } }),
+    // 大使处置锁原申请；其他参数继续锁 ui_config/key，与后端特化目标保持一致。
+    buildTarget: (ctx) => {
+      const applicationId = String(ctx.key).match(/^F\.ambassador\.(\d+)\.status$/)?.[1];
+      return { domain: "F", type: applicationId ? "ambassador_application" : "ui_config", id: applicationId ?? String(ctx.key) };
+    },
   },
   // f_unilevel_rule: F.unilevel.L{n}(usdtRate) / F.unilevel.nex.L{n}(nexPerUsd)。amplifies true(费率放大佣金流出)。
   {

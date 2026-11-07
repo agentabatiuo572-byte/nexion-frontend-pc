@@ -1,5 +1,6 @@
 "use client";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { F4_MATERIAL_PERMISSIONS } from "@/lib/admin/f4-ambassador-display";
 
 const credentialStatusText = (value?: string | null) => value === "PASSWORD_CHANGE_REQUIRED" ? "下次登录需修改密码" : value === "ACTIVE" ? "正常" : "—";
 
@@ -249,12 +250,12 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     : mutatingAction ? "正在提交，请稍候" : null;
   const permissionActions = useMemo(() => {
     const codes = [...new Set(Object.values(permissionCodesByRole).flat())].sort();
-    return codes.map((code) => ({ label: code, domainGroup: code.split("_")[0]?.toUpperCase() || "OTHER" }));
+    return codes.map((code) => ({ code, label: F4_MATERIAL_PERMISSIONS.find((item) => item.code === code)?.label ?? code, domainGroup: code.split("_")[0]?.toUpperCase() || "OTHER" }));
   }, [permissionCodesByRole]);
   const grantsByRole = useMemo(() => Object.fromEntries(
     Object.entries(permissionCodesByRole).map(([role, codes]) => {
       const owned = new Set(codes);
-      return [role, permissionActions.map((action) => owned.has(action.label) ? "R" : "-")];
+      return [role, permissionActions.map((action) => owned.has(action.code) ? "R" : "-")];
     }),
   ), [permissionActions, permissionCodesByRole]);
   const supersTone = effectiveSupers <= 1 ? "danger" : effectiveSupers === 2 ? "warn" : "ok";
@@ -1040,6 +1041,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       {detailAccount && (
         <AccountDetailDrawer
           account={detailAccount}
+          materialPermissionCodes={permissionDiffReady ? permissionCodesByRole[detailAccount.role] ?? [] : null}
           roles={roles}
           sessionRevokeBlockReason={forceLogoutBlockReason(detailAccount)}
           editBlockReason={profileEditBlockReason}
@@ -1304,6 +1306,7 @@ function NewAccountDrawer({
 
 function AccountDetailDrawer({
   account,
+  materialPermissionCodes,
   roles,
   sessionRevokeBlockReason,
   editBlockReason,
@@ -1312,6 +1315,7 @@ function AccountDetailDrawer({
   onRevokeSession,
 }: {
   account: A1Operator;
+  materialPermissionCodes: string[] | null;
   roles: A1RoleDefinition[];
   sessionRevokeBlockReason: string | null;
   editBlockReason: string | null;
@@ -1367,6 +1371,10 @@ function AccountDetailDrawer({
           ))}
         </tbody>
       </table>
+      <div className="amb-permission-summary"><b>区域大使独立核验权限</b>
+        {F4_MATERIAL_PERMISSIONS.map((permission) => <div key={permission.code}><span>{permission.label}</span><span className={`bdg ${materialPermissionCodes?.includes(permission.code) ? "ok" : "dim"}`}>{materialPermissionCodes == null ? "尚未核实" : materialPermissionCodes.includes(permission.code) ? "已授权" : "未授权"}</span></div>)}
+        <p>按当前角色的实际授权显示；核验权限与最终批准权限分别管理。</p>
+      </div>
       <div className="dlg-sec" style={{ marginTop: 16 }}>角色变更记录</div>
       <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
         {(account.roleHistory ?? []).map((history, index) => (

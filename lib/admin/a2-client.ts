@@ -1,5 +1,7 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import type { F4AmbassadorMaterialProposal } from "@/lib/admin/f1-client";
+import { ambassadorApprovalBlocker } from "@/lib/admin/f4-ambassador-display";
 import { parsePhoneProposalView, type PhoneProposalView } from "@/lib/admin/phone-calibration-client";
 import {
   buildA2FilterQuery,
@@ -55,6 +57,7 @@ interface BackendStats {
 type A2FundEffect = "REWARD_SUSPENSION" | "REWARD_RESUMPTION" | "ORDER_REFUND";
 
 interface BackendTicket {
+  ambassadorMaterialProposal?: F4AmbassadorMaterialProposal | null;
   id: string;
   action: string;
   obj: string;
@@ -151,6 +154,8 @@ export interface A2Stats {
 }
 
 export interface A2OperationRow {
+  ambassadorMaterialProposal?: F4AmbassadorMaterialProposal;
+  ambassadorMaterialError?: string;
   phoneCalibrationProposal?: PhoneProposalView;
   phoneCalibrationError?: string;
   coverageCheckOnApproval?: boolean;
@@ -301,6 +306,27 @@ function formatTime(value: string | null | undefined) {
 }
 
 function fromTicket(ticket: BackendTicket): A2OperationRow {
+  const ambassadorTicket = !!ticket.ambassadorMaterialProposal || /F\.ambassador\.\d+\.status|(?:批准|驳回)大使申请/.test(`${ticket.obj} ${ticket.action}`);
+  let ambassadorMaterialProposal: F4AmbassadorMaterialProposal | undefined;
+  let ambassadorMaterialError: string | undefined;
+  if (ambassadorTicket) {
+    const packet = ticket.ambassadorMaterialProposal;
+    const approval = packet?.applicationDecision === "APPROVE";
+    const pending = normalizeStatus(ticket.status) === "pending";
+    if (!packet || !Number.isSafeInteger(packet.applicationId) || !Number.isSafeInteger(packet.materialRevision)
+      || !packet.businessReview || !packet.financeReview || !Array.isArray(packet.approvalBlockers)) {
+      if (pending) ambassadorMaterialError = "大使材料摘要未能读取，不能执行。请核对材料读取权限、刷新原工单；旧提案须补齐后重新发起。";
+    } else {
+      ambassadorMaterialProposal = packet;
+      if (pending && !["APPROVE", "REJECT"].includes(packet.applicationDecision ?? "")) {
+        ambassadorMaterialError = "原申请的批准或驳回意图未能核实，不能执行，请刷新原工单。";
+      } else if (pending && approval && (packet.expectedMaterialRevision == null || packet.expectedMaterialRevision !== packet.materialRevision)) {
+        ambassadorMaterialError = ambassadorApprovalBlocker("MATERIAL_REVISION_STALE");
+      } else if (pending && packet.canApprove !== true) {
+        ambassadorMaterialError = packet.approvalBlockers.map(ambassadorApprovalBlocker).join("；") || "本申请尚未满足执行条件，请刷新材料核对。";
+      }
+    }
+  }
   let phoneCalibrationProposal: PhoneProposalView | undefined;
   let phoneCalibrationError: string | undefined;
   if (ticket.obj === "phone-calibration") {
@@ -309,6 +335,8 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
     } catch { phoneCalibrationError = "手机规则申请的详情加载失败，不能执行；可取消后重新提交。"; }
   }
   return {
+    ...(ambassadorMaterialProposal ? { ambassadorMaterialProposal } : {}),
+    ...(ambassadorMaterialError ? { ambassadorMaterialError } : {}),
     ...(phoneCalibrationProposal ? { phoneCalibrationProposal } : {}),
     ...(phoneCalibrationError ? { phoneCalibrationError } : {}),
     ...(ticket.coverageCheckOnApproval === true ? { coverageCheckOnApproval: true } : {}),

@@ -1,4 +1,52 @@
 /* Scoped additions follow the console's existing surfaces and type scale. */
+.dkpage .amb-applications { container: ambassador-list / inline-size; display: grid; gap: 8px; margin-bottom: 14px; }
+.dkpage .amb-application { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 10px 14px; padding: 12px; border-radius: 9px; background: var(--surface-2); font-size: 12px; }
+.dkpage .amb-application > div { min-width: 0; overflow-wrap: anywhere; }
+.dkpage .amb-application b { font-weight: 600; color: var(--ink-2); }
+.dkpage .amb-application p { margin: 5px 0 0; color: var(--ink-3); font-size: 12px; }
+.dkpage .amb-application .btn { justify-self: end; }
+.dkpage .amb-category { color: var(--admin-domain-f); font-size: 12px; font-weight: 600; }
+@container ambassador-list (min-width: 560px) { .dkpage .amb-application { grid-template-columns: minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) auto; } }
+.dkpage .amb-materials, .dkpage .amb-material-summary { min-width: 0; font-size: 12.5px; line-height: 1.65; color: var(--ink-2); }
+.dkpage .amb-materials p { margin: 8px 0; overflow-wrap: anywhere; }
+.dkpage .amb-material-heading, .dkpage .amb-material-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.dkpage .amb-material-heading { justify-content: space-between; color: var(--ink-3); font-size: 12px; margin-bottom: 14px; }
+.dkpage .amb-material-actions { padding: 14px 18px; justify-content: flex-end; }
+.dkpage .amb-facts { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; padding: 14px; margin: 0 0 14px; border-radius: 10px; background: var(--surface-2); }
+.dkpage .amb-facts > div { min-width: 0; }
+.dkpage .amb-facts dt { color: var(--ink-3); font-size: 12px; margin-bottom: 5px; }
+.dkpage .amb-facts dd { margin: 0; color: var(--ink); font-weight: 500; overflow-wrap: anywhere; }
+.dkpage .amb-review-record { background: var(--surface-2); border-radius: 9px; padding: 12px 14px; margin: 8px 0; font-size: 12px; }
+.dkpage .amb-review-record > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.dkpage .amb-review-record b { font-weight: 600; }
+.dkpage .amb-review-record p { margin: 5px 0 0; color: var(--ink-3); overflow-wrap: anywhere; }
+.dkpage .amb-section { margin: 16px 0 0; padding: 14px; background: var(--surface-2); border-radius: 10px; }
+.dkpage .amb-section h3 { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: var(--ink); }
+.dkpage .amb-section summary { font-size: 13px; font-weight: 600; cursor: pointer; }
+.dkpage .amb-file-group + .amb-file-group { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; }
+.dkpage .amb-file-heading, .dkpage .amb-file { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.dkpage .amb-file-heading b { font-weight: 500; }
+.dkpage .amb-file-heading > span { font-size: 12px; }
+.dkpage .amb-file { padding: 9px 0; color: var(--admin-domain-f); text-decoration: none; }
+.dkpage .amb-file > span { min-width: 0; overflow-wrap: anywhere; }
+.dkpage .amb-file small { flex-shrink: 0; color: var(--ink-3); font-size: 12px; }
+.dkpage .amb-missing { color: var(--warning); }
+.dkpage .amb-statement { white-space: pre-wrap; }
+.dkpage .amb-note { margin-top: 14px; padding: 11px 13px; border-radius: 9px; background: color-mix(in srgb,var(--admin-domain-f) 12%,var(--surface-2)); color: var(--ink-2); font-size: 12px; }
+.dkpage .amb-alert { margin-top: 14px; padding: 12px 14px; border-radius: 9px; background: var(--warning-soft); color: var(--warning); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+.dkpage .amb-alert ul { padding-left: 18px; margin: 8px 0 0; }
+.dkpage .amb-form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin-bottom: 14px; }
+.dkpage .amb-form-grid > label { display: flex; flex-direction: column; gap: 6px; color: var(--ink-3); min-width: 0; font-size: 12px; }
+.dkpage .amb-form-grid .fld { width: 100%; min-width: 0; }
+.dkpage .amb-missing-fields { margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; }
+.dkpage .amb-missing-fields legend { padding: 0 6px; color: var(--ink-3); font-size: 12px; }
+.dkpage .amb-missing-fields > label { display: inline-flex; align-items: center; gap: 6px; margin: 5px 12px 5px 0; }
+.dkpage .amb-permission-summary { margin-top: 14px; padding: 12px 14px; background: var(--surface-2); border-radius: 9px; font-size: 12px; }
+.dkpage .amb-permission-summary > b { display: block; font-size: 13px; margin-bottom: 8px; font-weight: 600; }
+.dkpage .amb-permission-summary > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 5px 0; }
+.dkpage .amb-permission-summary > p { color: var(--ink-3); margin: 8px 0 0; }
+.dkpage :is(.amb-file,.amb-section summary):focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+@media (max-width: 480px) { .dkpage .amb-facts, .dkpage .amb-form-grid { grid-template-columns: minmax(0,1fr); } .dkpage .amb-file { align-items: flex-start; flex-direction: column; gap: 2px; } }
 .ui-support-workflow { color: var(--ink); font-size: 12px; line-height: 1.7; }
 .ui-support-workflow .ui-workflow-steps { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); list-style: none; padding: 0; margin: 0 0 18px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
 .ui-support-workflow .ui-workflow-steps li { display: flex; align-items: center; gap: 8px; padding: 12px 10px; background: var(--surface-2); color: var(--ink-3); font-size: 12px; }
