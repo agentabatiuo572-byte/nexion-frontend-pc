@@ -84,7 +84,11 @@ export type ConfirmReq = {
     min?: number;
     max?: number;
     step?: number;
+    /** 输入不对时的原因：失焦或点过确认后用橙黄写在输入框下，确认按钮禁用（PCN-37）。不传时只查非空。 */
+    validate?: (value: string) => string | undefined;
   };
+  /** 备注框旁的说明，替换「选填，最多 200 字」。内容不写入命令时写「选填，不会保存」（EX-18）。 */
+  remarkHint?: string;
   /** 调用方已展示错误时，共享确认不重复提示。 */
   errorHandled?: boolean | ((error: unknown) => boolean);
   okLabel?: string;

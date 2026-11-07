@@ -16,6 +16,8 @@ import { D7PayoutVnd } from "./d-tabs/d7-payout-vnd";
 import type { ConfirmReq, DCtx, ActionConfirmReq } from "./d-tabs/types";
 
 const FOLD: Record<string, string> = { D1: "D1", D2: "D2", D3: "D3", D4: "D4", D5: "D5", D6: "D6", D7: "D7" };
+/** 已改版的页：包 RdPage，页头由页面自己写。 */
+const REDESIGNED = ["D1", "D2", "D6", "D7"];
 
 
 export function DDomainView({ meta }: { meta: DomainViewMeta }) {
@@ -32,10 +34,11 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
   } as DCtx;
 
   if (tab === "D3") return <D3Treasury />;
+  // 已改版的页包 RdPage，页头在页面里，不再渲染旧的域页头。
 
   const page = (
     <>
-      {tab !== "D2" && tab !== "D1" && <DomainHeader {...meta} />}
+      {!REDESIGNED.includes(tab) && <DomainHeader {...meta} />}
 
       {tab === "D1" && <D1Recon ctx={ctx} />}
       {tab === "D2" && <D2Withdrawals ctx={ctx} />}
@@ -50,7 +53,6 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
           title={mc.title}
           detail={mc.detail}
           content={mc.content}
-          reasonPlaceholder={mc.reasonPlaceholder}
           reasonPolicyOptional={mc.reasonPolicyOptional}
           amplifies={mc.amplifies}
           coverage={mc.coverage}
@@ -78,6 +80,7 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
           facts={mc.facts}
           confirmTone={mc.confirmTone}
           coverageLead={mc.coverageLead}
+          reasonPlaceholder={mc.reasonPlaceholder}
           onBusinessSelectionChange={mc.onBusinessSelectionChange}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {
@@ -91,5 +94,5 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
     </>
   );
 
-  return tab === "D2" || tab === "D1" ? <RdPage className="ddom">{page}</RdPage> : <div className="dkpage ddom">{page}</div>;
+  return REDESIGNED.includes(tab) ? <RdPage className="ddom">{page}</RdPage> : <div className="dkpage ddom">{page}</div>;
 }

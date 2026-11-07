@@ -19,7 +19,8 @@ import { CircleHelp } from "lucide-react";
 
 export interface ExplainRow { k: ReactNode; v: ReactNode }
 
-export function Explain({ label, content, rows, side, children }: { label: string; content?: ReactNode; rows?: readonly ExplainRow[]; side?: "top" | "bottom"; children?: ReactNode }) {
+/** side、align：统计数字的问号向上、配置项的问号向下展开，都从问号左边起（align start），不盖住被解释的数字，也不压到侧栏；放不下时自动翻边。 */
+export function Explain({ label, content, rows, side, align, children }: { label: string; content?: ReactNode; rows?: readonly ExplainRow[]; side?: "top" | "bottom" | "right" | "left"; align?: "start" | "center" | "end"; children?: ReactNode }) {
   const [open, setOpen] = useState(false);
   const pinned = useRef(false);
   const timer = useRef<number | undefined>(undefined);
@@ -48,7 +49,7 @@ export function Explain({ label, content, rows, side, children }: { label: strin
         {children ?? <CircleHelp className="rd-explain-mark" size={14} strokeWidth={1.75} aria-hidden />}
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content className="rd-pop" side={side} sideOffset={6} collisionPadding={12} {...hover} onOpenAutoFocus={(event) => { if (!pinned.current) event.preventDefault(); }}>
+        <Popover.Content className="rd-pop" side={side} align={align} sideOffset={6} collisionPadding={12} {...hover} onOpenAutoFocus={(event) => { if (!pinned.current) event.preventDefault(); }}>
           {content}
           {shown.length > 0 && (
             <dl className="rd-pop-rows" data-after={content ? "" : undefined}>

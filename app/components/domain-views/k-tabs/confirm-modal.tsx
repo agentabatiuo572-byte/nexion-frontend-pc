@@ -24,6 +24,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   // 刚打开不报错：字数不够等失焦或点过提交才用警告色（DP-06）。
   const [attempted, setAttempted] = useState(false);
   const [reasonLeft, setReasonLeft] = useState(false);
+  const [valueLeft, setValueLeft] = useState(false);
   const fieldId = useId();
   // 改版页面里和 OperationConfirmModal 同一个样子；旧页面不变。
   const surface = useRdSurface();
@@ -43,7 +44,8 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   const reasonOk = !req.reason || (reasonLength >= reasonMin && reasonLength <= reasonMax);
   // chips 模式:所选项即非空,用精确判空(防空串 option 误配后按钮静默禁用);文本模式:仍要求 trim 后非空(拒纯空白)。
   const inputOk = !req.input || req.input.required === false || (req.input.options ? value !== "" : value.trim().length >= 1);
-  const can = reasonOk && inputOk && policySettled;
+  const valueProblem = req.input?.validate?.(value);
+  const can = reasonOk && inputOk && !valueProblem && policySettled;
   const reasonShort = reasonLength < reasonMin ? `还差 ${reasonMin - reasonLength} 字` : `已填写 ${reasonLength}/${reasonMax} 字`;
   const submit = async () => {
     if (!can || submitting) return;
@@ -83,7 +85,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
               variant={req.confirmTone ?? "primary"}
               loading={submitting}
               loadingText="提交中…"
-              disabledReason={can || submitting ? undefined : [!policySettled && "正在读取理由规则", !inputOk && `填写${req.input?.label}`, !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : `操作理由不能超过 ${reasonMax} 字`)].filter(Boolean).join("；")}
+              disabledReason={can || submitting ? undefined : [!policySettled && "正在读取理由规则", !inputOk ? `填写${req.input?.label}` : valueProblem, !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : `操作理由不能超过 ${reasonMax} 字`)].filter(Boolean).join("；")}
               onBlockedClick={() => setAttempted(true)}
               onClick={() => void submit()}
             >
@@ -144,17 +146,21 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
               step={req.input.step}
               value={value}
               onChange={(e) => setValue(e.target.value)}
+              onBlur={() => setValueLeft(true)}
+              aria-invalid={valueProblem && (valueLeft || attempted) ? true : undefined}
+              aria-describedby={valueProblem && (valueLeft || attempted) ? `${fieldId}-value-error` : undefined}
               placeholder={req.input.placeholder}
               className={surface ? undefined : "k-confirm-input"}
             />
           )}
+          {valueProblem && (valueLeft || attempted) && <div id={`${fieldId}-value-error`} className="rd-form-error" role="alert">{valueProblem}</div>}
         </div>
       )}
       <div className={surface ? "field rd-reason-field" : "k-confirm-field"}>
         {surface ? (
           // 字段名强，下限跟在后面，上限在框角的字数里，各写一处（VS-104、VS-105）。
           <label htmlFor={`${fieldId}-reason`}>
-            {req.reason ? <>操作理由<span className="rd-form-required" aria-hidden="true">*</span><span className="rd-form-hint">至少 {reasonMin} 字</span></> : <>备注<span className="rd-form-hint">选填，最多 200 字</span></>}
+            {req.reason ? <>操作理由<span className="rd-form-required" aria-hidden="true">*</span><span className="rd-form-hint">至少 {reasonMin} 字</span></> : <>备注<span className="rd-form-hint">{req.remarkHint ?? "选填，最多 200 字"}</span></>}
           </label>
         ) : (
           <label htmlFor={`${fieldId}-reason`} style={{ display: "block", fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>

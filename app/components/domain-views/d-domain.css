@@ -149,3 +149,4 @@
 
 .ddom .d5-network-row .d5-network-effective { flex: 1; min-width: 0; margin-top: 0; }
 .ddom .d5-network-row .blocked { color: var(--warning); }
+.ddom .l-inp:disabled { color: var(--ink-4); cursor: not-allowed; }
