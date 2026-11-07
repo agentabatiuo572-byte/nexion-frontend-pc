@@ -548,7 +548,8 @@ function latestIndex(rows: readonly JsonRecord[], field: string) {
 
 /**
  * 统计格第二行的最近一笔（成熟规范 StatisticCard 的 footer 额外指标）：名称和金额一行，时间和状态一行。
- * 金额点开这一笔的抽屉；没有记录写弱字，读不到写「—」，都不能点。正常的状态不上色，要人注意的才用标签。
+ * 金额点开这一笔的抽屉；没有记录写弱字，读不到写「—」，都不能点。状态都用标签：要人注意的上色，已结束的灰，不像警告。
+ * 状态放不下时整个换到时间下面一行，不撑宽统计带（「打款异常，需人工核对」在 1024 会把第四格挤到下一行）。
  */
 function Recent({ label, amount, time, status, tone, openLabel, onOpen, note }: {
   label: string;
@@ -565,7 +566,7 @@ function Recent({ label, amount, time, status, tone, openLabel, onOpen, note }: 
   return (
     <span className="rd-detail-recent">
       <span>{label} <button type="button" className="rd-link" aria-label={openLabel} onClick={onOpen}>{amount}</button></span>
-      <span><span data-num>{time}</span> · {tone && tone !== "ok" && tone !== "done" ? <StatusTag tone={tone}>{status}</StatusTag> : status}</span>
+      <span><span data-num>{time}</span><StatusTag tone={tone && tone !== "ok" ? tone : "done"}>{status}</StatusTag></span>
     </span>
   );
 }
