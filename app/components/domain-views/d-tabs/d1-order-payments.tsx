@@ -212,7 +212,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, reloadTick }: { ctx
   const items = records?.items ?? [];
   const index = items.findIndex(row => row.intentNo === selected);
   const statusOptions = STATE_GROUPS.map(group => ({ label: group.label, options: group.states.map(value => ({ value, label: stateText[value] })) }));
-  const columns = 6;
+  const columns = 5;
   const filtered = status !== "" || method !== "";
   return <>
     <PendingNotices items={pendingItems} disabled={busy} />
@@ -230,11 +230,10 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, reloadTick }: { ctx
       </>}>
       <Table label="付款记录" aria-busy={recordsLoading}>
         <thead><tr>
-          <Th sticky="start">付款单 · 用户</Th>
-          <Th>用途 · 付款方式</Th>
+          <Th sticky="start">付款单 · 时间（{zoneLabel()}）</Th>
+          <Th icon={User} tone="users">用户 · 用途</Th>
           <Th align="right" icon={Coins} tone="money">用户实付（USDT）</Th>
           <Th>状态</Th>
-          <Th>创建时间（{zoneLabel()}）</Th>
           <Th sticky="end" align="right">操作</Th>
         </tr></thead>
         <tbody>
@@ -244,11 +243,10 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, reloadTick }: { ctx
                 : items.map(row => {
                   const rowPending = pending.some(item => item.scope === row.intentNo);
                   return <Tr key={row.intentNo} selected={row.intentNo === selected} onOpen={() => setSelected(row.intentNo)}>
-                    <Td sticky="start"><Cell mono full main={row.intentNo} sub={`用户 ${row.userId}`} /></Td>
-                    <Td><Cell main={kindText[row.kind] ?? "用途待确认"} sub={methodText[row.paymentMethod]} /></Td>
+                    <Td sticky="start"><Cell mono full main={row.intentNo} sub={time(row.createdAt)} /></Td>
+                    <Td><Cell main={row.userId} sub={`${kindText[row.kind] ?? "用途待确认"} · ${methodText[row.paymentMethod]}`} /></Td>
                     <Td align="right"><Cell num main={usdt(row.totalUsdt)} sub={`订单 ${usdt(row.subtotalUsdt)}`} /></Td>
                     <Td><Cell main={<StatusTag tone={stateTone(row.status)}>{stateText[row.status]}</StatusTag>} sub={rowPending ? "有操作结果未确认" : purchaseWasDelivered(row) && row.status !== "DELIVERED" ? "业务已完成" : row.reason ?? undefined} title={row.reason ?? undefined} /></Td>
-                    <Td><Cell num main={time(row.createdAt)} /></Td>
                     <Td sticky="end" align="right"><Button size="sm" variant="ghost" onClick={() => setSelected(row.intentNo)}>查看详情</Button></Td>
                   </Tr>;
                 })}

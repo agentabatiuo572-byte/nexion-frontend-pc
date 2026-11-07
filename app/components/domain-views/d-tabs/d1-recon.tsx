@@ -591,23 +591,21 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
         actions={<Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={flowsLoading} onClick={() => { void loadFlows(); void loadOverview(); }}>刷新</Button>}>
         <Table label="充值流水" aria-busy={flowsLoading}>
           <thead><tr>
-            <Th sticky="start">充值单 · 用户</Th>
-            <Th>通道</Th>
+            <Th sticky="start">充值单 · 提交时间（{zone}）</Th>
+            <Th>用户 · 通道</Th>
             <Th align="right" icon={Coins} tone="money">金额 · 实收（USDT）</Th>
             <Th>状态</Th>
-            <Th>提交 · 入账（{zone}）</Th>
             <Th sticky="end" align="right">操作</Th>
           </tr></thead>
           <tbody>
-            {flowsLoading ? <TableLoading columns={6} rows={5} />
-              : flowsError ? <TableMessage columns={6} role="alert">充值流水读取失败。{flowsError} <Button size="sm" onClick={() => void loadFlows()}>重试</Button></TableMessage>
-                : flowRecords.length === 0 ? <TableMessage columns={6} role="status">{status || query ? "没有符合条件的充值流水。" : "暂无充值流水"}</TableMessage>
+            {flowsLoading ? <TableLoading columns={5} rows={5} />
+              : flowsError ? <TableMessage columns={5} role="alert">充值流水读取失败。{flowsError} <Button size="sm" onClick={() => void loadFlows()}>重试</Button></TableMessage>
+                : flowRecords.length === 0 ? <TableMessage columns={5} role="status">{status || query ? "没有符合条件的充值流水。" : "暂无充值流水"}</TableMessage>
                   : flowRecords.map((item) => <Tr key={item.depositNo} selected={item.depositNo === flowSelected} onOpen={() => setFlowSelected(item.depositNo)}>
-                    <Td sticky="start"><Cell mono full main={item.depositNo} sub={`用户 ${item.userId}`} /></Td>
-                    <Td><Cell main={depositChannelText(item.channel)} sub={nexGridBrandText(item.asset)} /></Td>
+                    <Td sticky="start"><Cell mono full main={item.depositNo} sub={time(item.createdAt)} /></Td>
+                    <Td><Cell main={String(item.userId)} sub={`${depositChannelText(item.channel)} · ${nexGridBrandText(item.asset)}`} /></Td>
                     <Td align="right"><Cell num main={usdt(item.amount)} sub={`实收 ${usdt(item.providerReceived)}`} /></Td>
-                    <Td><Cell main={<StatusTag tone={flowTone(item.status)}>{d1StatusText(item.status)}</StatusTag>} /></Td>
-                    <Td><Cell num main={time(item.createdAt)} sub={item.creditedAt ? `入账 ${time(item.creditedAt)}` : "尚未入账"} /></Td>
+                    <Td><Cell main={<StatusTag tone={flowTone(item.status)}>{d1StatusText(item.status)}</StatusTag>} sub={item.creditedAt ? `入账 ${time(item.creditedAt)}` : "尚未入账"} /></Td>
                     <Td sticky="end" align="right"><Button size="sm" variant="ghost" onClick={() => setFlowSelected(item.depositNo)}>查看详情</Button></Td>
                   </Tr>)}
           </tbody>
