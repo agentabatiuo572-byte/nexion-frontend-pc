@@ -708,7 +708,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
       <StatBand label="业务开关摘要">
         <Stat tone={liveCount < gates.length ? "warn" : "role-2"} icon={Power} label="在线业务" value={`${liveCount} / ${gates.length}`} />
-        <Stat tone={data.stats.emergencyGateCount > 0 ? "warn" : "role-other"} icon={Siren} label="其中应急关停" value={String(data.stats.emergencyGateCount)} unit="项" explain="由自动规则、批量应急或应急预案联动关停的业务。" />
+        <Stat tone={data.stats.emergencyGateCount > 0 ? "warn" : "role-other"} icon={Siren} label="自动或批量关停" value={String(data.stats.emergencyGateCount)} unit="项" explain="由自动规则、批量应急或应急预案联动关停的业务。" />
         <Stat tone="role-other" icon={ShieldAlert} label="未能恢复" value={String(data.stats.coverageBlockedCount)} unit="次" explain="因覆盖率或估值检查未通过而未能恢复的累计次数，不是现在受限的业务数。审批时覆盖率不通过仍保留待批工单。" />
         <Stat tone={covPass ? "role-1" : "danger"} icon={Coins} label="兑付覆盖率" value={coverageReady ? pct(COV) : "暂时无法判断"} sub={`红线 ${RED}%`} explain={`储备除以应付款，${coverageGapText}。恢复提现、兑换、创世节点或质押批准时，系统重查覆盖率；试用免查。`} />
       </StatBand>
