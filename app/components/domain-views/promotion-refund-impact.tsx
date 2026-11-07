@@ -69,11 +69,11 @@ export function PromotionRefundImpact({ orderNo, compact = false }: { orderNo: s
           id: r.obligationId,
           value: r.reward.type === "DEVICE" ? `${r.disclosure.deviceName || "赠品设备"} × ${r.reward.quantity}` : r.reward.amount,
           unit: r.reward.type === "DEVICE" ? "台" : nexGridBrandText(r.reward.type === "DISCOUNT_USDT" ? "USDT" : r.reward.type),
-          object: <>{r.beneficiaryRole === "BUYER" ? "购买者" : "直接邀请人"} {r.beneficiaryId}<Explain label="奖励台账编号" content={`奖励项 ${r.obligationId}`} /></>,
+          object: <>{r.beneficiaryRole === "BUYER" ? "购买者" : "直接邀请人"} {r.beneficiaryId}<Explain label="奖励台账编号" content={<RecordList label="奖励台账编号" records={[{ id: r.obligationId, value: "奖励项", reference: r.obligationId }]} />} /></>,
           status: <StatusTag tone={tone} icon={tone === "warn" ? AlertTriangle : undefined}>{text}</StatusTag>,
         };
       })} /></div>
-      {[...new Map(result.items.map(r => [refundResult(r).short, refundOutcome(r)]))].map(([short, full]) => <p key={short} className="e4-refund-outcome">{short}<Explain label="奖励退款后怎么处理" content={full} /></p>)}
+      {[...new Map(result.items.map(r => [refundOutcome(r), refundResult(r).short]))].map(([full, short]) => <p key={full} className="e4-refund-outcome">{short}<Explain label="奖励退款后怎么处理" content={full} /></p>)}
     </>;
   }
   return <section className="rd-confirm-facts rd-impact" aria-label="促销奖励影响">
