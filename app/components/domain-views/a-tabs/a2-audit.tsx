@@ -1122,9 +1122,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   /* 待审批：行内按钮都是小号次按钮，点了只开确认框（D2 新手测试）。整屏主按钮只有抽屉里的「批准」（DP-40）。 */
   const rowActions = (w: A2OperationRow) => {
     const own = isMine(w);
-    if (w.retiredOperation && !own && !canDecide(w)) return <span className="rd-weak">{WAIT_OTHERS}</span>;
+    if (w.retiredOperation && !own && !canDecide(w)) return <Cell main={<span className="rd-weak">{WAIT_OTHERS}</span>} />;
     if (own) return <Button size="sm" disabledReason={decideBlock(w, "withdraw")} onClick={() => confirmDecision(w, "withdraw")}>撤回我的申请</Button>;
-    if (!canDecide(w)) return <span className="rd-weak">{WAIT_OTHERS}</span>;
+    if (!canDecide(w)) return <Cell main={<span className="rd-weak">{WAIT_OTHERS}</span>} />;
     return <>
       <Button size="sm" disabledReason={decideBlock(w, "reject")} onClick={() => confirmDecision(w, "reject")}>驳回</Button>
       {!w.retiredOperation && <Button size="sm" disabledReason={decideBlock(w, "approve")} onClick={() => confirmDecision(w, "approve")}>批准</Button>}
@@ -1177,7 +1177,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   const changeText = w.action.startsWith("首次配置 V0–V8") ? "创建 V0–V8 共 9 个等级，点击本行核对完整配置" : w.after;
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
-                      <Td sticky="start"><Cell main={actionName(w.action)} title={`${actionName(w.action)}\n对象：${w.obj}`} sub={<><span data-mono>{w.id}</span> · {bizTime(w.rawTs, w.ts)}</>} /></Td>
+                      <Td sticky="start"><Cell main={actionName(w.action)} title={`${actionName(w.action)}\n对象：${w.obj}\n${w.id} · ${bizTime(w.rawTs, w.ts)}`} sub={<><span data-mono>{w.id}</span> · {bizTime(w.rawTs, w.ts)}</>} /></Td>
                       <Td grow><Cell main={changeText} sub={`原 ${w.before}`} title={`变更前：${w.before}\n变更后：${changeText}`} /></Td>
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
                       <Td><Cell main={markers(w)} sub={w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined} /></Td>
@@ -1239,7 +1239,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         <Panel flush icon={FileText} tone="role-3" title="操作记录"
           sub={recordStats ? `今日 ${count(recordStats.todayAuditEvents)} 条 · ${(records?.recentLogs.length ?? 0) >= 200 ? "已显示最近 200 条，更早的缩小时间范围再查" : "最多显示最近 200 条"}` : undefined}
           explain="「今日」按业务日历的今天，跟着上面的筛选变。">
-          <Table label="操作记录">
+          <Table label="操作记录" data-tight="">
             <thead><tr>
               <Th sticky="start">时间（{zone}）</Th>
               <Th icon={Users} tone="users">操作者</Th>
@@ -1274,7 +1274,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         <Panel flush icon={History} tone="role-3" title="审批结果"
           sub={recordStats ? `按上方筛选 · 累计 已批准 ${count(recordStats.weeklyApproved)} · 已驳回 ${count(recordStats.weeklyRejected)} · 已撤回 ${count(recordStats.weeklyWithdrawn)} · 已过期 ${count(recordStats.weeklyExpired)}` : undefined}
           explain="按上面的筛选数全部处理过的审批单，不分时间段。">
-          <Table label="审批结果">
+          <Table label="审批结果" data-tight="">
             <thead><tr>
               <Th sticky="start">审批单</Th>
               <Th>操作</Th>
