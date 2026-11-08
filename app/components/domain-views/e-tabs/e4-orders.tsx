@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { AlertTriangle, ClipboardList, Coins, Copy, History, Package, Receipt, RefreshCw, Route, Server, User, Workflow } from "lucide-react";
 import {
-  BlockState, Button, Cell, Change, ColumnPicker, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input, IrreversibleTag,
+  Button, Cell, Change, ColumnPicker, Conclusion, Decision, Drawer, Explain, Fact, Facts, KeepText, FilterBar, FilterField, Fold, IconButton, Input, IrreversibleTag,
   JudgmentPoints, Notice, PageHeader, Pager, Panel, RecordList, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Steps, Table, TableLoading, TableMessage, Td, Th, Timeline, Tr,
   useTableColumns, type JudgmentRow, type SegmentItem, type StateTone, type TableColumn,
 } from "@/app/components/rd";
@@ -432,7 +432,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
                 {channel && <Fact k="退款去向">{REFUND_CHANNEL_LABELS[channel] ?? channel}</Fact>}
                 {/* 退款入口只在读到覆盖率时开。 */}
                 <Fact k="兑付覆盖率"><Change from={fmtPct(e4Detail.coverageCurrent!)} to={fmtPct(e4Detail.coverageProjected!)} /><span className="rd-fact-unit">红线 {fmtConfigPct(e4Detail.coverageRedline!)}</span><Explain label="兑付覆盖率什么时候检查" content="批准执行时后端再查一次，当前或执行后低于红线就不退款。" /></Fact>
-                <Fact k="购买设备">{refundDeviceLine}<Explain label="退款后设备和收益怎么处理" content={refundDeviceDetail} /></Fact>
+                <Fact k="购买设备"><KeepText text={refundDeviceLine} phrases={["已到账收益不扣回"]} /><Explain label="退款后设备和收益怎么处理" content={refundDeviceDetail} /></Fact>
                 <Fact k="审批身份">具退款权限的财务主管或超管发起，另一位有权超管批准<Explain label="发起身份如何核实" content="会话不提供每项权限的角色来源。这里仅开放申请入口，提交时由后端核实退款权来自财务主管，或发起人是真实超管；增长不能发起。" /></Fact>
                 {e4Detail.orderType === "TRIAL_CONVERT" && <Fact k="试用奖励">这单发给购买者的试用奖励可能追回，金额以执行结果为准<Explain label="试用奖励追回规则" content="按整期结算转购发出的试用奖励，退款后最多收回未花掉的部分；未追回部分转人工核查。" /></Fact>}
               </>, true)}
@@ -485,7 +485,9 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
       {!finalized && <Steps label="订单进度" items={orderFlow.map((state, position) => ({ label: stateLabel(state), state: position < idx ? "done" as const : position === idx ? "current" as const : "todo" as const }))} />}
       {orderPending && <Notice tone="warn">这单有结果未确认的操作，不要重复处理。状态变了也不算确认。到页面上方核查结果，或看操作记录核查。</Notice>}
       {pendingApproval && <Notice tone="warn" title="这单已有待审批操作">批准后才执行原操作。审批结束后才能发起新操作。<E4PendingApprovalDetails approval={pendingApproval} /></Notice>}
-      {e4DetailError && <BlockState state="error" title="详情加载失败" detail={`${e4DetailError} · 为避免按旧数据操作，已暂停处理。`} onRetry={() => ctx.openOrder(o)} />}
+      {e4DetailError && <Notice tone="danger" title="详情加载失败" actionBelow action={<Button size="sm" onClick={() => ctx.openOrder(o)}>重试</Button>}>
+        {e4DetailError} · 为避免按旧数据操作，已暂停处理。
+      </Notice>}
       <JudgmentPoints rows={rows} />
       {e4Detail && e4Detail.orderType !== "TRIAL_CONVERT" && <OrdinaryRefundImpact impact={e4Detail.refundImpact} />}
       <Fold inset title="订单信息" icon={Package} tone="devices" open={infoOpen} onOpenChange={setInfoOpen} summary={infoOpen ? undefined : `${o.dc === "—" ? "未分配数据中心" : o.dc} · 下单 ${o.age}前`}>

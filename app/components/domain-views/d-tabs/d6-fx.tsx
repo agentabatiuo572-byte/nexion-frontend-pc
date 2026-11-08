@@ -9,7 +9,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Coins, History, RefreshCw, SlidersHorizontal } from "lucide-react";
-import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConflictBar, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Field, Fold, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
+import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConflictBar, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Field, KeepText, Fold, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { createA2OperationProposal, fetchA2Overview, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
