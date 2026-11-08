@@ -1187,7 +1187,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
                 <ConfigList label="随运营阶段变化的设置">
                   <ConfigRow name={H.currentPhase.label} what={H.currentPhase.what} when={H.currentPhase.when} value={`${p.currentPhase} · 第 ${p.currentMonth} 月`} />
                   <ConfigRow name={H.cooldownDays.label} what={H.cooldownDays.what} when={H.cooldownDays.when} where={H.cooldownDays.where} note={H.cooldownDays.note} value={`${p.cooldownDays} 天`} />
-                  <ConfigRow name={H.complianceHoldEnabled.label} what={H.complianceHoldEnabled.what} when={H.complianceHoldEnabled.when} where={H.complianceHoldEnabled.where}
+                  <ConfigRow name={H.complianceHoldEnabled.label} what={H.complianceHoldEnabled.what} when={H.complianceHoldEnabled.when} where={H.complianceHoldEnabled.where} note={H.complianceHoldEnabled.note}
                     value={<StatusTag tone={p.complianceHoldEnabled ? "progress" : "neutral"} icon={p.complianceHoldEnabled ? undefined : CircleMinus}>{p.complianceHoldEnabled ? "开启" : "关闭"}</StatusTag>} />
                 </ConfigList>
               </Fold>
