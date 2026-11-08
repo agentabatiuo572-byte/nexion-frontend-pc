@@ -1470,7 +1470,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 {protectedEntries.map((entry) => (
                   <Tr key={entry.entryNo}>
                     <Td><Cell mono full main={entry.entryNo} sub={formatBusinessTimeFull(entry.createdAt, "—")} /></Td>
-                    <Td><Cell mono main={`U${entry.userId}`} sub={entry.clusterId} /></Td>
+                    <Td><Cell mono main={`U${entry.userId}`} sub={<span data-mono>{entry.clusterId}</span>} /></Td>
                     <Td><Cell main={({ TRIAL: "试用收益", DEVICE: "设备收益", TASK: "任务奖励", COMMISSION: "团队奖励", REFERRAL: "邀请奖励", WELCOME: "新人奖励" } as Record<string, string>)[entry.sourceType.toUpperCase()] ?? "来源未知"} sub={<span data-mono>{entry.sourceRef}</span>} /></Td>
                     <Td><StatusTag tone={entry.bucket === "bonus_locked" ? "danger" : "warn"} explain={entry.bucket === "bonus_locked" ? "这笔收益被锁定，不能提现。账户组解除后不会自动放行，要人工放行。" : "这笔收益等人工审核，不会到期自动放行。"}>{entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}</StatusTag></Td>
                     <Td align="right"><Cell num full main={`${amountText(entry.amount)} ${nexGridBrandText(entry.asset)}`} /></Td>

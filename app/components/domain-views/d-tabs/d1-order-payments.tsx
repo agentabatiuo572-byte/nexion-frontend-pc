@@ -405,7 +405,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, reloadTick, pending, nav, o
         {r.arrivals.length === 0 ? <p className="rd-note">还没有链上到账记录。</p> : <Table label="链上到账">
           <thead><tr><Th>交易号</Th><Th align="right">到账（USDT）</Th><Th align="right">确认数</Th><Th>核对结果</Th></tr></thead>
           <tbody>{r.arrivals.map(row => <tr key={`${row.txid}:${row.log_index}`}>
-            <Td><Cell mono main={<LongValue value={row.txid} label="交易号" />} sub={<>日志序号 {row.log_index} · 区块号 {row.block_number} · 区块哈希 <LongValue value={row.block_hash} label="区块哈希" /></>} /></Td>
+            <Td><Cell mono main={<LongValue value={row.txid} label="交易号" />} sub={<>日志序号 {row.log_index} · 区块号 {row.block_number} · 区块哈希 <span data-mono><LongValue value={row.block_hash} label="区块哈希" /></span></>} /></Td>
             <Td align="right"><Cell num main={usdt(row.amount)} /></Td>
             <Td align="right"><Cell num main={row.confirmations} /></Td>
             <Td><Cell main={row.status === "CONFIRMED" ? "已核对" : row.status === "MANUAL_REVIEW" ? "需人工处理" : "待确认"} /></Td>

@@ -29,7 +29,8 @@
  * - 抽屉上最多再叠一层弹窗，弹窗上不再叠弹窗（PG-38）；错误写在最上层。
  *
  * Modal 用法同旧 Modal。RdPage 里的旧 Modal、OperationConfirmModal 会自动走这个组件，不用改调用。
- * 框里打过字后点空白和 Esc 都不关，免得填的内容丢了，要走就点取消或 ×；只靠点选的表单传 dirty，搜索框不算填内容。
+ * 框里打过字后点空白不关；按 Esc 先在底栏左边轻提示「再按一次 Esc 关闭」，再按一次才关，免得手滑丢了填的内容。
+ * ×、取消照常关。只靠点选的表单传 dirty，搜索框不算填内容。
  *
  * 弹窗里的文字分四层（VS-100～VS-108）：
  * - 这是什么操作：title 只写动作和对象，页面分组和长单号不进标题。icon 给标题前的图标底，默认灰；
@@ -43,7 +44,7 @@
  *
  * 框里直接放的 Facts 自动带关键信息区的底。解除待确认全站一个样子，用 ReleaseModal，页面只传原操作的名字和核对说明。
  */
-import { Children, Fragment, isValidElement, useEffect, useRef, type ComponentProps, type ReactNode, type CSSProperties } from "react";
+import { Children, Fragment, isValidElement, useEffect, useRef, useState, type ComponentProps, type ReactNode, type CSSProperties } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronDown, ChevronUp, ShieldCheck, X, type LucideIcon } from "lucide-react";
 import { Button, IconButton, TipSide } from "./button";
@@ -214,7 +215,11 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
   const focus = useFocusHandoff(true);
   const feedbackId = useDialogFeedback();
   const typed = useRef(false);
+  // 填过内容后第一次按 Esc 只提示，第二次才关；接着打字就收起提示，重新算。
+  const [escArmed, setEscArmed] = useState(false);
   const close = () => { if (!busy) onClose(); };
+  // 提示区一直在底栏里，读屏先认得这块，有字时才读出来。
+  const escHint = <p className="rd-modal-esc" role="status">{escArmed ? "再按一次 Esc 关闭，已填的内容不保留" : ""}</p>;
   return (
     <Dialog.Root open onOpenChange={(next) => { if (!next) close(); }}>
       <Dialog.Portal container={surface?.container ?? undefined}>
@@ -227,8 +232,16 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
           aria-modal="true"
           aria-busy={busy}
           aria-describedby={undefined}
-          onInput={(event) => { if (!(event.target instanceof Element && event.target.matches(SEARCH_INPUT))) typed.current = true; }}
-          onEscapeKeyDown={(event) => { if (dirty || typed.current) event.preventDefault(); }}
+          onInput={(event) => {
+            if (event.target instanceof Element && event.target.matches(SEARCH_INPUT)) return;
+            typed.current = true;
+            setEscArmed(false);
+          }}
+          onEscapeKeyDown={(event) => {
+            if (busy || !(dirty || typed.current) || escArmed) return;
+            event.preventDefault();
+            setEscArmed(true);
+          }}
           onOpenAutoFocus={focus.onOpenAutoFocus}
           onCloseAutoFocus={focus.onCloseAutoFocus}
           onPointerDownOutside={(event) => event.preventDefault()}
@@ -246,7 +259,7 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
           </div>
           <ToastHost dialogId={feedbackId} />
           <div className="rd-modal-body">{children}</div>
-          {footer && <div className="rd-modal-foot"><TipSide side="left">{footer}</TipSide></div>}
+          {(footer || escArmed) && <div className="rd-modal-foot">{escHint}<TipSide side="left">{footer}</TipSide></div>}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

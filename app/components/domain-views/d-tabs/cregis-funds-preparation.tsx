@@ -146,7 +146,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
           {records.length === 0 ? <p className="rd-note">暂无准备单</p> : <Table label="准备记录 · 不代表已转账">
             <thead><tr><Th>准备单 · 业务参考</Th><Th align="right">金额（USDT）</Th><Th>状态</Th><Th sticky="end" align="right">操作</Th></tr></thead>
             <tbody>{records.map(row => { const actions = planActions(row); return <Tr key={String(row.planNo)} selected={String(row.planNo) === selected} onOpen={() => setSelected(String(row.planNo))}>
-              <Td><Cell mono main={String(row.planNo)} sub={String(row.businessReference)} /></Td>
+              <Td><Cell mono main={String(row.planNo)} sub={<span data-mono>{String(row.businessReference)}</span>} /></Td>
               <Td align="right"><Cell num main={usdt(String(row.amountUsdt))} sub={kindLabel(row.kind)} /></Td>
               <Td><Cell main={<StatusTag tone={planTone(row.state)}>{PREPARATION_STATE[String(row.state)] ?? "状态未知"}</StatusTag>} sub={row.state === "DRAFT" && String(row.makerId) === String(owner) ? "你发起的，等另一位管理员复核" : undefined} /></Td>
               <Td sticky="end" align="right">{actions[0] ? <Button size="sm" disabledReason={block} onClick={actions[0].run}>{actions[0].label}</Button> : <Button size="sm" variant="ghost" onClick={() => setSelected(String(row.planNo))}>查看详情</Button>}</Td>

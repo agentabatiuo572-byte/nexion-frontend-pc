@@ -33,7 +33,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 一组经营数字：每个都带对比和分项，要切时段 | `MetricBoard`、`MetricCard`；一张卡四层：名称、主数、对比一行、分项，层高都是定的，同排同高，切时段不跳版。分项是 `rows`（最多三行名称和值），或 `bar` 比例条：两样比哪样多，条下只写图例不写数，全是 0 时写 `bar.empty`。`MetricBoard` 的 `rows` 传这组卡各时段最多几行（比例条算两行），分项区按它留高。0、读不到（`state="failed"`，传 `onRetry`）、读取中（`state="loading"`）分开，没权限不渲染；两套主题 0 和「—」都弱化。整张可点传 `href`，名称行右边有箭头，悬停整张变亮。3、6 张三列，4 张够宽四列，不够两两一行，2 张两列，只有 2 张时分项限宽 360；这组卡任一时段有 8 位以上长金额时页面传 `long`（用导出的 `LONG` 算），内容区窄于 900 时两列，不缩字，切时段列数不变。对比行里可以放一个问号，不撑高这一行。目前只有今日概览用（PG-41），其他页用 `StatBand` | `metric.tsx` |
 | 一块内容 | `Panel`；已经在一个面板里的分区传 `plain`，不套底；`sub` 只放数据（范围、单位、数量、时间），解释传 `explain` 进标题旁的提示图标 | `panel.tsx` |
 | 区块标题、统计数字前的图标 | `IconTile`，`Panel`、`Stat` 传 `icon` 就有 | `icon-tile.tsx` |
-| 切不同内容 | `PageTabs`；`useTabIds` 一处给 id，内容包 `role="tabpanel"`，页签和面板互相指向；`count` 写页签里要处理的数，0 弱化，读不到传「—」，数到上限传「50+」这类文字 | `tabs.tsx` |
+| 切不同内容 | `PageTabs`；`useTabIds` 一处给 id，内容包 `role="tabpanel"`，页签和面板互相指向；`count` 写页签里要处理的数，0 弱化，读不到传「—」，数到上限传「50+」这类文字；页签里面再分一层传 `level={2}`，下划线式（Ant Design Tabs 默认），和外层的底色块分得开 | `tabs.tsx` |
 | 筛同一张表、切时间窗 | `Segments` | `tabs.tsx` |
 | 表单里二选一、三选一（放在 `Field` 里，自带底槽和抬起的选中项） | `Segments` | `tabs.tsx` |
 | 次要内容收起来 | `Fold`，`summary` 必填；区块的「查看…」传 `actions` 放标题行右侧，每块最多一个；这组怎么算传 `explain`，不在折叠里铺长段落 | `fold.tsx` |
@@ -215,7 +215,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 确认框提交中锁住里面全部输入、选项、取消和 ×，失败后恢复（OP-33）。数字框填坏（只填了「-」「.」）不算空，不能提交。
 
-理由字段写「操作理由 * 至少 8 字」，上限在理由框角落的字数里。缺什么写在灰按钮的提示里，刚打开不报错，字段失焦或点过提交才在字段下用警告色写原因。框里填过内容后点空白和 Esc 都不关，×、取消照常关，搜索框里打字不算填内容（`data-search`）。多字段表单里，每个字段的范围、格式错写在这个字段下；跨字段的 `feedback` 传 `field` 就写在那一项下面，不传写在表单最后。
+理由字段写「操作理由 * 至少 8 字」，上限在理由框角落的字数里。缺什么写在灰按钮的提示里，刚打开不报错，字段失焦或点过提交才在字段下用警告色写原因。框里填过内容后点空白不关；按 Esc 先在底栏左边轻提示「再按一次 Esc 关闭，已填的内容不保留」，再按一次才关，接着打字就收起提示重新算；×、取消照常关，搜索框里打字不算填内容（`data-search`）。多字段表单里，每个字段的范围、格式错写在这个字段下；跨字段的 `feedback` 传 `field` 就写在那一项下面，不传写在表单最后。
 
 收到权限层的 403（`ADMIN_PERMISSION_DENIED`、`ACCESS_DENIED`）时共用层提示「这个账号没有这项权限」，关框，外壳重读权限，页面上的按钮随之收起。业务规则的 403 有自己的说明，按普通失败留在框里。页面自己的表单（不走 `OperationConfirmModal`、`KConfirmModal`）在 catch 里用 `isPermissionDenied(error)` 判断，调 `announcePermissionDenied()` 后自己关框。
 
@@ -288,6 +288,6 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 `TimelineEntry` 的 `id`、`action`、`actor`、`at` 必填，`detail`、`role`、`ip`、`tone` 选填。组件复制后排序，不改写输入记录。`RecordListEntry` 的 `id`、`value` 必填，`unit`、`at`、`object`、`status`、`reference` 选填，保持调用方的顺序。两者的 `at` 都传原始时间，显示按业务时区写成 `2026-11-06 09:00`（`Timeline` 带秒），时区只写在第一条有时间的记录上（TX-25、TX-26）；不把后端无时区时间当浏览器时间。金额由调用方按业务精度格式化，组件提供 tabular-nums 和单位层级。单号等宽、换行、复制有成功或失败反馈，复制按钮有完整名称。
 
-`DiffField` 的 `hint` 和 `error` 放在前后值下面，占整行；不要把说明塞在新值的窄列里（VS-105）。原有输入框的 `aria-describedby` 仍连接这些提示。
+`DiffField` 的 `hint` 和 `error` 写在新值输入框正下方，和输入框左对齐（Ant Design Form.Item 的 help、extra，VS-103「范围写在输入框下面」）；`note`（改了会怎样）仍在整块下面占整行。原有输入框的 `aria-describedby` 仍连接这些提示。
 
 结构采用 [Ant Design Timeline](https://ant.design/components/timeline/) 的单侧节点、连线和事件内容，以及 [List](https://ant.design/components/list/) 的横排主内容、右侧附属信息、行分隔和默认 `12px 0` 内边距。节点灰色、失败红、待确认橙黄，14/22 正文、13/18 辅助，以及超过 5 条折起，是 VS-109 的产品差异；颜色全部取已有 `--rd-*`。

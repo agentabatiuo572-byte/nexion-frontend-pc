@@ -278,7 +278,7 @@ function CregisDepositHistory({ reloadKey }: { reloadKey: number }) {
               : page && !page.available ? <TableMessage columns={6} role="status">USDT 收款还没接入或已停用，历史记录暂时查不了（不代表没有入金）。</TableMessage>
                 : items.length === 0 ? <TableMessage columns={6} role="status">暂无已核实的链上入金。待处理的回调和缺单可在“异常处理”查看。</TableMessage>
                   : items.map((item) => <Tr key={item.id} selected={item.id === selected} onOpen={() => setSelected(item.id)}>
-                    <Td sticky="start"><Cell mono main={`CID ${item.cid}`} sub={item.depositNo || (item.status === "CREDITED" ? "充值单缺失，请核对" : "尚未生成充值单")} /></Td>
+                    <Td sticky="start"><Cell mono main={`CID ${item.cid}`} sub={item.depositNo ? <span data-mono>{item.depositNo}</span> : item.status === "CREDITED" ? "充值单缺失，请核对" : "尚未生成充值单"} /></Td>
                     <Td><Cell main={item.userId} sub={rowNetwork(item) ?? "网络待核实"} /></Td>
                     <Td align="right"><Cell num main={usdt(item.netAmount)} sub={`毛额 ${usdt(item.grossAmount)}`} /></Td>
                     <Td><Cell main={<StatusTag tone={depositTone(item)}>{depositLabel(item)}</StatusTag>} /></Td>
@@ -327,7 +327,7 @@ function exceptionEntries(data: CregisExceptions): ExceptionEntry[] {
 function entryObject(entry: ExceptionEntry) {
   const row = entry.row;
   if (entry.queue === "uncertainAddresses") return { main: shortHash(row.address), full: text(row.address), sub: `地址 #${text(row.id)}` };
-  if (row.cid != null) return { main: `CID ${text(row.cid)}`, full: text(row.txid), sub: shortHash(row.txid) };
+  if (row.cid != null) return { main: `CID ${text(row.cid)}`, full: text(row.txid), sub: <span data-mono>{shortHash(row.txid)}</span> };
   return { main: shortHash(row.txid), full: text(row.txid), sub: row.logIndex != null ? `日志 ${text(row.logIndex)}` : `#${text(row.id)}` };
 }
 const entryAmount = (row: ExceptionRow) => row.grossAmount ?? row.rawAmount;
@@ -647,7 +647,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
         </div>}
     </Fold>}
 
-    <PageTabs ids={subIds} label="USDT 操作分区" value={sub} onChange={setSub} items={[
+    <PageTabs ids={subIds} level={2} label="USDT 操作分区" value={sub} onChange={setSub} items={[
       { value: "records", label: "收款记录" },
       { value: "exceptions", label: "异常处理", count: exceptionsCountText },
       { value: "settings", label: "充值与地址设置" },
