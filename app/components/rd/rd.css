@@ -392,6 +392,10 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-filter-grow { flex: 1 1 240px; min-width: 200px; }
 .rd-filter-more { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; padding: 16px; border-radius: var(--rd-radius-panel); background: var(--rd-panel); }
 .rd-filter-more[hidden] { display: none; }
+.rd-filter-more > [data-wide] { grid-column: span 2; }  /* 日期一对放不进 200 宽的一列 */
+.rd-filter-range { display: flex; align-items: center; gap: 8px; min-width: 0; }  /* 成对的上下限一个字段，一对不拆到两行 */
+.rd-filter-range > .rd-input { flex: 1 1 0; min-width: 0; }
+.rd-filter-range > [aria-hidden] { flex: none; color: var(--rd-text-3); }
 .rd-filter-more-row { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .rd-filter-scope-row { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }  /* 范围控件项多（八类账单）时独占第一行，搜索和按钮排第二行，不让按钮单个掉下去 */
 .rd-filter-line { order: 1; flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

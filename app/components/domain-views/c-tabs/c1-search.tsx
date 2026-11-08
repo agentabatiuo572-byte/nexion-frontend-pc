@@ -252,6 +252,9 @@ function draftProblem(keyword: string, filters: Filters, badFields: readonly Fil
   return null;
 }
 
+/** 接口说明后面再接一句时补句号，中文句间不留空格。 */
+const sentence = (text: string) => /[。；！？.]$/.test(text) ? text : `${text}。`;
+
 /** 后端明确拒绝的才算没导出；幂等层说还在处理、结果查不清的，和 5xx、断网一样算结果未知（OP-91）。 */
 const exportRejected = (error: unknown) => error instanceof UsersRequestError
   && isDeterministicRejection(error.status) && !isIdempotencyOutcomeOpen(error.code);
@@ -540,7 +543,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
       }
       syncPending();
       setDialog({ mode: "pending" });
-      setDialogNotice({ tone: "warn", title: "名单尚未下载成功，原操作结果尚未确认。", text: `${displayAdminError(error)} 可按原筛选、理由和编号重试；要更改筛选或理由，请发起新导出。` });
+      setDialogNotice({ tone: "warn", title: "名单尚未下载成功，原操作结果尚未确认。", text: `${sentence(displayAdminError(error))}可按原筛选、理由和编号重试；要更改筛选或理由，请发起新导出。` });
     } finally {
       exportCooldownUntil.current = Date.now() + 1_000;
       exportingRef.current = false;
@@ -565,7 +568,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
     } catch (error) {
       if (isPermissionDenied(error)) announcePermissionDenied();
       setRetryRejected(exportRejected(error));
-      setDialogNotice({ tone: "warn", title: "名单尚未下载成功，原操作结果尚未确认。", text: `重试没有成功：${displayAdminError(error)} 这说明不了原操作的结果，原操作继续保留。` });
+      setDialogNotice({ tone: "warn", title: "名单尚未下载成功，原操作结果尚未确认。", text: `重试没有成功：${sentence(displayAdminError(error))}这说明不了原操作的结果，原操作继续保留。` });
     } finally {
       exportCooldownUntil.current = Date.now() + 1_000;
       exportingRef.current = false;
@@ -645,8 +648,10 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
     {pending && (
       <Notice tone="warn" title="导出用户名单 · 结果未确认">
         {businessStamp(pending.createdAt)}（{businessZone().label}）发起，可能已经生成文件，文件没下载到就算没导出。
-        {pendingExpired ? `${RETRY_EXPIRED_TEXT}。` : "点右上角「继续原导出」按原操作重试，或发起新导出。"}
-        {auditHref && <> <Link className="rd-link" href={auditHref}>到操作记录与审批核对</Link></>}
+        {/* 过期那句已经说了去哪核对，链接放进句子里，不再另写一遍。 */}
+        {pendingExpired
+          ? <>已超过 24 小时，不能再重试，请到{auditHref ? <Link className="rd-link" href={auditHref}>操作记录与审批</Link> : "操作记录与审批"}核对。</>
+          : <>点右上角「继续原导出」按原操作重试，或发起新导出。{auditHref && <> <Link className="rd-link" href={auditHref}>到操作记录与审批核对</Link></>}</>}
         <Explain label="技术信息" content={`命令号 ${pending.commandKey} ｜ 操作者 ${pending.operator} ｜ 理由 ${pending.reason}`} />
       </Notice>
     )}
@@ -668,12 +673,13 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
     </StatBand>
 
     <FilterBar
-      scope={<Segments label="用户状态快捷筛选" value={applied.seg} onChange={changeSeg}
+      // 分段独占一行：1024 下和搜索框、三个按钮排一行放不下，「清除筛选」会单个掉到下一行。
+      scope={<div className="rd-filter-scope-row"><Segments label="用户状态快捷筛选" value={applied.seg} onChange={changeSeg}
         items={[
           { value: "all" as Seg, label: "全部" },
           { value: "frozen" as Seg, label: "冻结、受限、封禁" },
           ...(canReadRisk ? [{ value: "highrisk" as Seg, label: "高风险" }] : []),
-        ]} />}
+        ]} /></div>}
       onSubmit={submitFilters}
       querying={listLoading}
       onClear={clearAll}
@@ -697,37 +703,41 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
         <FilterField label="推荐码">
           <Input aria-label="推荐码" value={draftFilters.referralCode} onChange={(event) => editFilter("referralCode", event.target.value)} />
         </FilterField>
-        <FilterField label={<span>累计充值下限<Explain label="累计充值的口径" content="按确认、已入账、成功三种状态的充值单金额合计。" /></span>}>
-          <Input aria-label="累计充值下限" aria-invalid={invalid("depositMin")} type="number" min="0" inputMode="decimal" value={draftFilters.depositMin}
-            onChange={(event) => editFilter("depositMin", event.target.value, event.target.validity.badInput)} />
+        <FilterField label={<span>累计充值<Explain label="累计充值的口径" content="按确认、已入账、成功三种状态的充值单金额合计。" /></span>}>
+          <span className="rd-filter-range">
+            <Input aria-label="累计充值下限" aria-invalid={invalid("depositMin")} type="number" min="0" inputMode="decimal" placeholder="下限" value={draftFilters.depositMin}
+              onChange={(event) => editFilter("depositMin", event.target.value, event.target.validity.badInput)} />
+            <span aria-hidden>–</span>
+            <Input aria-label="累计充值上限" aria-invalid={invalid("depositMax")} type="number" min="0" inputMode="decimal" placeholder="上限" value={draftFilters.depositMax}
+              onChange={(event) => editFilter("depositMax", event.target.value, event.target.validity.badInput)} />
+          </span>
         </FilterField>
-        <FilterField label="累计充值上限">
-          <Input aria-label="累计充值上限" aria-invalid={invalid("depositMax")} type="number" min="0" inputMode="decimal" value={draftFilters.depositMax}
-            onChange={(event) => editFilter("depositMax", event.target.value, event.target.validity.badInput)} />
+        <FilterField label={<span>USDT 余额<Explain label="USDT 余额的口径" content="钱包可用余额。" /></span>}>
+          <span className="rd-filter-range">
+            <Input aria-label="USDT 余额下限" aria-invalid={invalid("usdtMin")} type="number" min="0" inputMode="decimal" placeholder="下限" value={draftFilters.usdtMin}
+              onChange={(event) => editFilter("usdtMin", event.target.value, event.target.validity.badInput)} />
+            <span aria-hidden>–</span>
+            <Input aria-label="USDT 余额上限" aria-invalid={invalid("usdtMax")} type="number" min="0" inputMode="decimal" placeholder="上限" value={draftFilters.usdtMax}
+              onChange={(event) => editFilter("usdtMax", event.target.value, event.target.validity.badInput)} />
+          </span>
         </FilterField>
-        <FilterField label={<span>USDT 余额下限<Explain label="USDT 余额的口径" content="钱包可用余额。" /></span>}>
-          <Input aria-label="USDT 余额下限" aria-invalid={invalid("usdtMin")} type="number" min="0" inputMode="decimal" value={draftFilters.usdtMin}
-            onChange={(event) => editFilter("usdtMin", event.target.value, event.target.validity.badInput)} />
+        <FilterField label={<span>UVT 余额<Explain label="UVT 余额的口径" content="钱包可用余额。" /></span>}>
+          <span className="rd-filter-range">
+            <Input aria-label="UVT 余额下限" aria-invalid={invalid("nexMin")} type="number" min="0" inputMode="decimal" placeholder="下限" value={draftFilters.nexMin}
+              onChange={(event) => editFilter("nexMin", event.target.value, event.target.validity.badInput)} />
+            <span aria-hidden>–</span>
+            <Input aria-label="UVT 余额上限" aria-invalid={invalid("nexMax")} type="number" min="0" inputMode="decimal" placeholder="上限" value={draftFilters.nexMax}
+              onChange={(event) => editFilter("nexMax", event.target.value, event.target.validity.badInput)} />
+          </span>
         </FilterField>
-        <FilterField label="USDT 余额上限">
-          <Input aria-label="USDT 余额上限" aria-invalid={invalid("usdtMax")} type="number" min="0" inputMode="decimal" value={draftFilters.usdtMax}
-            onChange={(event) => editFilter("usdtMax", event.target.value, event.target.validity.badInput)} />
-        </FilterField>
-        <FilterField label={<span>UVT 余额下限<Explain label="UVT 余额的口径" content="钱包可用余额。" /></span>}>
-          <Input aria-label="UVT 余额下限" aria-invalid={invalid("nexMin")} type="number" min="0" inputMode="decimal" value={draftFilters.nexMin}
-            onChange={(event) => editFilter("nexMin", event.target.value, event.target.validity.badInput)} />
-        </FilterField>
-        <FilterField label="UVT 余额上限">
-          <Input aria-label="UVT 余额上限" aria-invalid={invalid("nexMax")} type="number" min="0" inputMode="decimal" value={draftFilters.nexMax}
-            onChange={(event) => editFilter("nexMax", event.target.value, event.target.validity.badInput)} />
-        </FilterField>
-        <FilterField label="注册日期起（北京时间）">
-          <Input aria-label="注册日期起" aria-invalid={invalid("joinedFrom")} type="date" value={draftFilters.joinedFrom}
-            onChange={(event) => editFilter("joinedFrom", event.target.value, event.target.validity.badInput)} />
-        </FilterField>
-        <FilterField label={<span>注册日期止（北京时间）<Explain label="注册日期止的说明" content="结束日期含当天。" /></span>}>
-          <Input aria-label="注册日期止" aria-invalid={invalid("joinedTo")} type="date" value={draftFilters.joinedTo}
-            onChange={(event) => editFilter("joinedTo", event.target.value, event.target.validity.badInput)} />
+        <FilterField wide label={<span>注册日期（北京时间）<Explain label="注册日期的说明" content="开始日期从当天 0 点算起，结束日期含当天。" /></span>}>
+          <span className="rd-filter-range">
+            <Input aria-label="注册日期起" aria-invalid={invalid("joinedFrom")} type="date" value={draftFilters.joinedFrom}
+              onChange={(event) => editFilter("joinedFrom", event.target.value, event.target.validity.badInput)} />
+            <span aria-hidden>–</span>
+            <Input aria-label="注册日期止" aria-invalid={invalid("joinedTo")} type="date" value={draftFilters.joinedTo}
+              onChange={(event) => editFilter("joinedTo", event.target.value, event.target.validity.badInput)} />
+          </span>
         </FilterField>
       </>}
       applied={chips}
@@ -798,7 +808,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
                 {deviceVisible && <Td align="right"><Cell num main={`${textOf(row.deviceCount)} / ${textOf(row.activeDeviceCount)}`} /></Td>}
                 {canOpenDetail && (
                   <Td sticky="end">
-                    <Button size="sm" aria-label={`查看用户详情 ${userNo || "未生成"}`} onClick={() => openProfile(row)}>查看资料</Button>
+                    <Button size="sm" variant="ghost" aria-label={`查看用户详情 ${userNo || "未生成"}`} onClick={() => openProfile(row)}>查看资料</Button>
                   </Td>
                 )}
               </Tr>
@@ -848,7 +858,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
               <Fact k="发起时间">{businessStamp(pending.createdAt)}（{businessZone().label}）</Fact>
             )}
             {dialog.mode === "new" && dialog.total > EXPORT_MAX_ROWS && (
-              <Fact k="导出上限" tone="warn">超过 5000 条，只导出最新注册的 5000 条，要导出其余的请缩小范围</Fact>
+              <Fact k="导出上限" tone="warn">只导出最新注册的 5000 条，其余请缩小范围</Fact>
             )}
             <Fact k={dialog.mode === "new" ? "本次导出筛选" : "原操作筛选"}>
               {exportScopeLines(dialog.mode === "new" ? dialog.query : pending?.query ?? {}).map((line, index) => <Fragment key={line}>{index > 0 && <br />}{line}</Fragment>)}
