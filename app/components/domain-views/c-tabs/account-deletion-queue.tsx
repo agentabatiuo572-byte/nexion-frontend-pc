@@ -281,7 +281,6 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
       facts,
       detail: impact,
       amplifies: false,
-      completionCopy: "确认后立即生效。",
       statedBrief: { impact, check: "核对申请号和用户，理由写清依据或工单号。" },
       confirmLabel: { review: "确认开始审核", block: "确认拒绝", complete: "确认完成注销", cancel: "确认取消" }[action],
       confirmTone: action === "complete" ? "danger" : undefined,

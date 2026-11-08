@@ -810,7 +810,6 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     const effect = freezeProposalOnly
       ? <StatusTag tone="progress" filled explain="由有审批权限的同事在「操作记录与审批」批准；批准前账户和提现都不变。">批准后生效</StatusTag>
       : <StatusTag tone="progress" filled>立即生效</StatusTag>;
-    const completionCopy = freezeProposalOnly ? "提交后需在「操作记录与审批」确认才生效。" : "确认后立即生效。";
     const run = async (reason: string, _value?: string, businessValue?: Record<string, string>) => {
       const reasonCode = kind === "freeze" ? businessValue?.reasonCode ?? "" : null;
       if (kind === "freeze" && !reasonCode) throw new Error("请选择冻结原因分类后再提交。");
@@ -859,7 +858,6 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           ? "提交后需确认才生效。生效后账户被冻结、所有设备下线，待处理的提现也会被冻结。"
           : "确认后账户立即冻结、所有设备下线，待处理的提现也会被冻结。",
         amplifies: false,
-        completionCopy,
         statedBrief: { impact: "确认后账户立即冻结、所有设备下线，待处理的提现也会被冻结。", check: "核对对象账号和冻结原因，理由写清工单号和处理依据。" },
         confirmLabel: freezeProposalOnly ? "提交审批" : "确认冻结",
         reasonMin: 8,
@@ -892,7 +890,6 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         : "确认后账户恢复正常，因这次冻结暂停的提现也会恢复。已下线的设备需用户重新登录。",
       amplifies: true,
       coverageLead: withdrawals ? `恢复后，这 ${withdrawals} 笔提现回到冻结前的状态，冻结前已审核通过的会继续出款。` : "这个账户没有因冻结暂停的提现。",
-      completionCopy,
       statedBrief: { impact: "确认后账户恢复正常，因这次冻结暂停的提现也会恢复。已下线的设备需用户重新登录。", check: "核对冻结来源和原因，理由写清依据或工单号。" },
       confirmLabel: freezeProposalOnly ? "提交审批" : "确认恢复",
       reasonMin: 8,
@@ -946,7 +943,6 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       </Facts>,
       detail: pendingRevoke ? "审批提交结果尚未确认，重试原操作会使用原理由和操作编号。" : `提交审批后，由另一位超级管理员批准，该用户的全部在线设备才会退出登录（当前 ${activeCount} 台）。`,
       amplifies: false,
-      completionCopy: "批准后生效；提交审批不会立即退出设备。",
       statedBrief: { impact: "批准后这个用户的全部设备立即退出登录，要重新登录才能用。", check: "核对用户和在线设备数，理由写清工单号和处理依据。" },
       confirmLabel: "提交审批",
       reasonMin: 8,
@@ -1000,7 +996,6 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       </Facts> : undefined,
       detail: "确认后打开用户数据只读视图，只能看不能改，到时间自动关闭。",
       amplifies: false,
-      completionCopy: "确认后立即生效。",
       statedBrief: { impact: "打开后能看这个用户的账户、钱包、设备和资料，不能改；打开和每次切页都记进操作记录，到时间自动关闭。", check: "核对用户和查看原因，理由写清工单号或用户反馈。" },
       confirmLabel: "开始查看",
       reasonMin: 8,
@@ -1049,7 +1044,6 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       </Facts>,
       detail: fromMirror ? "确认后立即结束这次只读查看并关闭窗口。" : "确认后立即结束这次只读查看。",
       amplifies: false,
-      completionCopy: "确认后立即生效。",
       statedBrief: { impact: "确认后这次查看立即结束，令牌失效，不能再看。", check: "核对编号和用户，理由写清结束原因。" },
       confirmLabel: fromMirror ? "退出并结束" : "确认结束",
       reasonMin: 8,
@@ -1117,7 +1111,6 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       </Facts> : undefined,
       detail: "确认后立即生效，到了失效日期自动失效。",
       amplifies: false,
-      completionCopy: "确认后立即生效。",
       statedBrief: listKind === "BLOCK"
         ? { impact: "加入后这个用户登录不了 App，已登录的设备全部立即下线；到期或移出后可以重新登录。", check: "核对用户和有效期，理由写清工单号和处理依据。" }
         : { impact: "加入后这个用户标为信任，目前不改变任何检查；到了失效日期自动失效。", check: "核对用户和有效期，理由写清依据或工单号。" },
@@ -1173,7 +1166,6 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       </Facts>,
       detail: "确认后该用户按正常风控规则判断，名单历史会保留。",
       amplifies: false,
-      completionCopy: "确认后立即生效。",
       statedBrief: { impact: "移出后这条名单不再生效，记录保留；禁入的用户可以重新登录。", check: "核对用户和名单种类，理由写清移出依据。" },
       confirmLabel: "确认移出",
       reasonMin: 8,
