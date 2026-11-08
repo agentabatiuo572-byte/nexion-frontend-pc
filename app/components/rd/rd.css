@@ -7,7 +7,7 @@
   --rd-z-pop: 120;
 }
 
-.rd-page, .rd-side, .rd-top, .rd-gate, .rd-drawer, .rd-modal, .rd-pop, .rd-tip, .rd-select-content { font-family: var(--rd-font); }
+.rd-page, .rd-side, .rd-top, .rd-gate, .rd-drawer, .rd-modal, .rd-pop, .rd-tip, .rd-select-content, .rd-search-pop { font-family: var(--rd-font); }
 
 /* 每种 tone 写一次，组件用 --tone、--tone-bg、--tone-tile、--tone-tile-ink、--tone-pill 取值。 */
 [data-tone="ok"] { --tone: var(--rd-ok); --tone-bg: var(--rd-ok-bg); --tone-tile: var(--rd-ok-tile); --tone-tile-ink: var(--rd-ok-tile-ink); --tone-pill: var(--rd-ok-pill); }
@@ -372,6 +372,7 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-table-scroll:has(td[data-align="right"] .rd-row-actions > .rd-iconbtn:last-child):not(.rd-panel[data-flush] > *) { margin-right: -8px; padding-right: 8px; }  /* 不贴边的表格末列没有内边距，这 8px 要借面板的留白，不然多出一条横向滚动条 */
 .rd-cell-main { display: block; color: var(--rd-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rd-cell-sub { display: block; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rd-cell-sub > span[data-tone] { color: var(--tone); }  /* 第二行里要人注意的一句（比如「批准时覆盖率不足，系统驳回」）按状态上色 */
 .rd-cell[data-mono] .rd-cell-main, .rd-cell[data-mono] .rd-cell-sub { font-family: var(--rd-font-mono); }
 .rd-cell-main [data-mono] { font-family: var(--rd-font-mono); }  /* 第一行是单号、第二行是人名时只给单号等宽 */
 .rd-cell[data-num] .rd-cell-main, .rd-cell[data-num] .rd-cell-sub { font-variant-numeric: tabular-nums; }
@@ -423,9 +424,23 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-select-item[data-highlighted] { background: var(--rd-control); }
 .rd-select-item[data-disabled] { opacity: .45; cursor: not-allowed; }
 .rd-select-check { position: absolute; right: 8px; display: inline-flex; color: var(--rd-brand-ink); }
+/* 可输可选的下拉（SearchSelect）：框和 Input 一个样子，弹层和 Select 一个样子，宽度跟输入框。 */
+.rd-search-select { position: relative; min-width: 0; }
+.rd-search-select .rd-input { padding-right: 32px; }
+.rd-search-select-icon { position: absolute; top: 50%; right: 10px; display: inline-flex; color: var(--rd-text-3); transform: translateY(-50%); pointer-events: none; }
+.rd-search-pop { z-index: var(--rd-z-pop); width: var(--radix-popover-trigger-width); max-height: min(320px, var(--radix-popover-content-available-height)); overflow-y: auto; padding: 4px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); border: 1px solid var(--rd-line-strong); }
+.rd-search-option { display: flex; align-items: center; gap: 12px; min-height: var(--rd-control-h); padding: 0 12px; border-radius: var(--rd-radius-tag); color: var(--rd-text); font-size: 14px; cursor: pointer; user-select: none; }
+.rd-search-option[data-active] { background: var(--rd-control); }
+.rd-search-option[aria-disabled="true"] { color: var(--rd-text-disabled); cursor: not-allowed; }
+.rd-search-option-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-search-option[aria-selected="true"] .rd-search-option-label { font-weight: 500; }
+.rd-search-option-extra { flex: none; font-size: var(--rd-text-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
+.rd-search-option-check { flex: none; color: var(--rd-brand-ink); }
+.rd-search-state { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: var(--rd-control-h); padding: 4px 12px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-search-state[data-error] { color: var(--rd-danger); }
 
 /* ── 抽屉和弹窗 ── */
-:is(.rd-pop, .rd-tip, .rd-select-content, .rd-drawer, .rd-modal, .rd-toast) { box-shadow: var(--rd-shadow-float); }
+:is(.rd-pop, .rd-tip, .rd-select-content, .rd-search-pop, .rd-drawer, .rd-modal, .rd-toast) { box-shadow: var(--rd-shadow-float); }
 /* 抽屉不用暗遮罩（PG-63）。这层透明，只在抽屉提交中挡住外面的点击；data-modal 是弹窗的暗遮罩。 */
 .rd-scrim { position: fixed; inset: 0; z-index: var(--rd-z-drawer); background: transparent; }
 .rd-scrim[data-modal] { z-index: var(--rd-z-modal); background: var(--rd-scrim); }
@@ -649,11 +664,15 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-split > * + * { flex: 5 1 480px; }
 .rd-split[data-even] > * { flex: 1 1 480px; }
 .rd-split[data-detail] { align-items: flex-start; }
+.rd-fold-body > .rd-split > .rd-panel[data-plain] { flex-basis: 520px; }  /* 折叠里的并排两块少了折叠的内边距，按原来的起始宽度 1440 下就并不排了；左边填、右边随填随算的表单要并排 */
+.rd-fold-body > .rd-split > .rd-panel[data-plain] + .rd-panel[data-plain] { flex-basis: 400px; }
 .rd-split .rd-table[data-tight] .rd-cell { max-width: 200px; }
 @media (max-width: 1279px) { .rd-table[data-tight] .rd-cell { max-width: 200px; } }  /* 1024 也要放下 6 列：长单号这类第一列收窄，宽屏不收 */
 .rd-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .rd-toolbar-note { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-toolbar-note[data-tone] { color: var(--tone); }  /* 操作行左边写现在为什么不能提交时，按这件事的状态上色（OP-126） */
 .rd-toolbar[data-end] > .rd-explain { margin-right: auto; }  /* 整页表单的操作行：状态在左，按钮在右，和抽屉底部同一条线 */
+.rd-toolbar[data-end] > .rd-toolbar-note:not(:has(~ .rd-explain)) { margin-right: auto; }  /* 左边只有一句说明、没有问号时，说明推开按钮 */
 .rd-panel-foot { padding: 12px 20px 16px; }
 .rd-note { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-approval-meta { display: block; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: normal; overflow-wrap: anywhere; }
@@ -706,10 +725,10 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 :is(.rd-modal, .rd-drawer) .rd-form-label { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; color: var(--rd-text); }
 .rd-form-hint { margin-left: 8px; font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
 .rd-form-help { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
-.rd-form-error { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-danger); }
+.rd-form-error { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-warn); }  /* 填错是「要你处理」，页面上的表单也用橙黄（VS-107） */
 .rd-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--rd-space-6) 20px; }
 .rd-form-grid[data-cols="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-:is(.rd-input, .rd-select)[aria-invalid="true"] { outline: 1px solid var(--rd-danger); }
+:is(.rd-input, .rd-select)[aria-invalid="true"] { outline: 1px solid var(--rd-warn); }
 .rd-filter :is(.rd-input, .rd-select)[aria-invalid="true"] { outline-color: var(--rd-warn); }  /* 筛选条件填错是要改的输入，不是失败（VS-107） */
 /* 弹窗和抽屉里填错了是「要你处理」，用橙黄；红只给失败和不能撤销（VS-107）。 */
 :is(.rd-modal, .rd-drawer) .rd-form-error { color: var(--rd-warn); }
@@ -871,6 +890,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-fact-change > svg { flex: none; }
 .rd-fact-change [data-after] { color: var(--rd-progress); font-weight: 500; }
 .rd-fact-change [data-settled] { color: var(--rd-text); font-weight: 500; }  /* 已经生效的新值不是待生效，不用蓝（VS-103） */
+.rd-fact-change [data-after][data-tone] { color: var(--tone); }  /* 改后的值本身有问题（扣成负数、低于红线）时按状态上色 */
 .rd-fact[data-empty] dd { color: var(--rd-text-3); font-weight: 400; }  /* 读不到写「—」时弱化（VS-11） */
 /* 这次操作的关键数字（VS-102）：弹窗里最大最亮，每个框最多一个。字号借页面标题那一档，不加新字号。 */
 .rd-fact[data-lead] { grid-template-columns: minmax(0, 1fr); gap: 2px; }
