@@ -30,7 +30,7 @@ const STATE_TEXT: Record<string, string> = {
   payment_failed: "下单后未成功扣款",
   expired: "订单超时未支付",
   provisioning_failed: "开通没有完成，订单已终止。已付款的单可以退款",
-  refunded: "人工退款，钱已退回，相关记录已冲回",
+  refunded: "钱已退回，付款记录标为已退款；普通订单的已完成任务收益仍按原规则结算。",
   chargeback: "支付渠道拒付 / 争议",
   cancelled: "仅未支付订单可取消。用户未付款，订单已终止",
 };
