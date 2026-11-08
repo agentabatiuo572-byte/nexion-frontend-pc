@@ -3,13 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import { Clock3 } from "lucide-react";
 import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
-import { BlockState, Button, Change, Decision, Drawer, Explain, Fact, Facts, JudgmentPoints, Notice, ReleaseModal, StatusTag, Timeline } from "@/app/components/rd";
+import { BlockState, Button, Change, Decision, Drawer, Explain, Fact, Facts, JudgmentPoints, KeepText, Notice, ReleaseModal, StatusTag, Timeline } from "@/app/components/rd";
 import { correctNotificationTime, fetchNotificationTimeEvidence, UsersOutcomeUnknownError, UsersRequestError, type NotificationTimeEvidence } from "@/lib/admin/user360-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 
-type CorrectionCommand = PendingMutationRecord & { preview: NotificationTimeEvidence; reason: string; retryRejected?: boolean };
+type CorrectionCommand = PendingMutationRecord & {
+  preview: NotificationTimeEvidence;
+  reason: string;
+  rejection?: { status: number; reasonCode?: string; backendMessage?: string };
+};
 export type PendingCorrection = CorrectionCommand;
 const corrections = createPendingMutationStore<CorrectionCommand>({
   storageKey: "nexion-admin-notification-time-corrections-v1",
@@ -85,9 +90,8 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
       corrections.forget(slot, command.commandKey);
       throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
     }
-    corrections.remember(slot, command.commandKey, { preview: command.preview, reason: command.reason, retryRejected: false });
-    setPending(command);
-    onPendingChange?.();
+    corrections.remember(slot, command.commandKey, { preview: command.preview, reason: command.reason, rejection: undefined });
+    refreshPending();
     busy.current = true;
     setSubmitting(true);
     const ownedGeneration = generation.current;
@@ -102,7 +106,8 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
       onCorrected?.();
     } catch (cause) {
       if (ownedGeneration !== generation.current) return;
-      const settled = cause instanceof UsersRequestError && SETTLED_CODES.includes(cause.code ?? "");
+      const refusal = isExplicitRejection(cause) ? cause as { status: number; reasonCode?: string; backendMessage?: string } : undefined;
+      const settled = !!refusal && cause instanceof UsersRequestError && SETTLED_CODES.includes(cause.code ?? "");
       if (outcomeUnknown(cause)) { reread(); return; }
       if (settled) {
         corrections.forget(slot);
@@ -114,11 +119,12 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
       if (retained) {
         // 重试被拒说明不了原操作的结果：原命令继续保留，人核实后才解除（OP-93 第 8 条）。
         setNotice({ tone: "warn", text: `重试没有成功：${displayAdminError(cause)} 这说明不了原校正的结果，原命令继续保留。` });
-        corrections.remember(slot, command.commandKey, { preview: command.preview, reason: command.reason, retryRejected: true });
+        corrections.remember(slot, command.commandKey, { preview: command.preview, reason: command.reason,
+          rejection: refusal && { status: refusal.status, reasonCode: refusal.reasonCode, backendMessage: refusal.backendMessage } });
         refreshPending();
         return;
       }
-      // 第一次提交被明确拒绝：框留着写原因，理由不丢。
+      // 首次提交沿用新命令的失败清理规则，确认框和理由保留。
       corrections.forget(slot);
       refreshPending();
       if (isPermissionDenied(cause)) throw cause;
@@ -132,7 +138,7 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
     corrections.forget(slot);
     refreshPending();
     setReleasing(false);
-    setNotice({ tone: "ok", text: "已解除待确认，可以重新校正。" });
+    setNotice({ tone: "ok", text: "已移除本地待确认记录，后端结果和锁定状态不变。" });
   };
   const expired = !!pending && pending.expiresAt <= Date.now();
   const correctable = !pending && canCorrect && !!actorKey && data?.status === "MATCHED" && data.storedCreatedAt !== data.deliveryFactTime;
@@ -144,11 +150,11 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
   return <Drawer open onClose={onClose} busy={submitting} icon={Clock3} tone="role-3" title="通知时间证据" sub={`通知 ${notificationId}`}
     explain={<><p>读取证据不会修改通知。校正时间需要单独确认，已读状态保持不变。</p><p>此处展示当前回读证据；是否曾执行校正请查审计记录。</p></>}
     footer={correctable ? <Decision primary={<Button variant="primary" onClick={() => setConfirmation(data)}>按投递事实校正时间</Button>} /> : undefined}>
-    {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
+    {notice && <Notice tone={notice.tone}><KeepText text={notice.text} /></Notice>}
     {pending && canCorrect && actorKey && <Notice tone="warn" title="原校正请求结果尚未确认。"
       action={<>
         <Button size="sm" loading={submitting} disabledReason={expired ? EXPIRED_TEXT : undefined} onClick={() => void submit(pending.reason)}>重试原校正</Button>
-        {pending.retryRejected && <Button size="sm" disabled={submitting} onClick={() => setReleasing(true)}>解除待确认</Button>}
+        {isExplicitRejection(pending.rejection) && <Button size="sm" disabled={submitting} onClick={() => setReleasing(true)}>解除待确认</Button>}
       </>}>
       {expired ? `${EXPIRED_TEXT}。` : "重试将保留原证据、理由和请求号。"}原理由：{pending.reason}
       <Explain label="技术信息" content={`请求号：${pending.commandKey}`} />
@@ -179,6 +185,6 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
       statedBrief={{ impact: "只改这条通知显示的时间，不重新发送，已读状态不变。", check: "核对当前记录时间和投递事实时间，理由写明依据。" }}
       reasonMax={500} onClose={() => { if (!busy.current) setConfirmation(null); }} onConfirm={submit} />}
     {releasing && pending && <ReleaseModal label={`校正通知 ${notificationId} 的时间`} onCancel={() => setReleasing(false)} onConfirm={release}
-      explain="重试被拒说明不了原校正的结果，先到操作记录确认原操作有没有生效。解除后原操作不再重试。" />}
+      explain="重试被明确拒绝也说明不了原校正的结果，先到操作记录核实。解除只移除本标签页的待确认记录，后端结果和锁不变。" />}
   </Drawer>;
 }
