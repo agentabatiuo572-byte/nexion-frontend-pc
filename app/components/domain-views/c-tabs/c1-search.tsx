@@ -752,7 +752,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
     </FilterBar>
 
     <Panel flush icon={Users} tone="role-3" title="用户" sub="新注册的在前"
-      explain={hidden.length ? `你的账号看不到${hidden.join("、")}，这几列不显示。` : undefined}
+      explain={hidden.length ? <><p>你的账号看不到这几列，所以不显示：</p><p>{hidden.join("、")}</p></> : undefined}
       actions={showDevice ? <ColumnPicker columns={columns} /> : undefined}>
       <Table label="用户列表" aria-busy={listLoading} data-tight="">
         <thead><tr>
