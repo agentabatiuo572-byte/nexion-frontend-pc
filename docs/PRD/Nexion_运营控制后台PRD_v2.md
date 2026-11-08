@@ -43,7 +43,7 @@
 > - **E3 换新阶梯权威归 E3**，K2 只读消费已完成置换、正数佣金与 IN 向正数赠送事实；K2 不持有换新配置，也不再读取 `minHoldingMonths`。
 > - **E1 设备规格(baseRate / baseRateNEX / price)被 C1 用户画像 fleet 卡引用**(§Ch5 C1 展示用户持有设备的日产基准),E1 为规格权威源,C1 只读展示。
 > - **E1 代际发布门由 H1 Phase 月龄派发驱动**(§1.7 Phase 引擎权威归 H1),E1 调整的是「代际发布时点 / trade-in 折扣」,Phase 月龄判定本身归 H1;E1 联动 H1 但不持 Phase 权威。
-> - **E4 订单支付链路依赖 D 域**:支付走 **D1 充值对账中心 / PSP**,paid 状态写 **D4 账本 / 账单审计**,退款联动 D 资金回退 + `cumulativeDepositUsdt` 核减(原子)。E4 持订单状态机权威,资金侧动作归 D。
+> - **E4 订单支付链路依赖 D 域**:支付走 **D1 充值与收款对账 / PSP**,paid 状态写 **D4 账本 / 账单审计**,退款联动 D 资金回退 + `cumulativeDepositUsdt` 核减(原子)。E4 持订单状态机权威,资金侧动作归 D。
 > - **salvage credit 不入余额**:E3 残值额度**仅在置换结账时作为扣减项使用,不写 `creditBalance`、不可提现、不可累加**(§7.5 不变量 M2),后台不得提供「将 salvage 转入余额」的运营动作。
 >
 > **本章须在 V4 跨文档收口时补入 V1 §3.14 跨域归属表的条目**(与 V1 其他章节记录 §3.14 待补条目的体例保持一致):**E1 设备规格权威归 E1**(C1 只读引用)/ **E3 `minHoldingMonths` 权威归 E3**(K2 只读消费)/ **E4 订单状态机权威归 E4**(资金侧动作走 D 域,D1/D4 为资金联动方)/ **E4 `cumulativeDepositUsdt` 退款核减写权归属**(下条单列)。
@@ -987,7 +987,7 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 
 **⑦ 风控 & 联动**
 - **订单 ID server mint**(§9.11d.2):订单 ID(及 Bill ID)服务端单源生成,client 不可 mint / 枚举 / 撞 ID(防伪造 PSP token / 枚举订单)。
-- **支付走 D1 PSP**:订单支付经 D1 充值对账中心 / PSP(Stripe / Adyen 等),`payment_failed` / `chargeback` 由 PSP 回调驱动(前端永不可知失败概率 / RNG,§9.11d.2)。
+- **支付走 D1 PSP**:订单支付经 D1 充值与收款对账 / PSP(Stripe / Adyen 等),`payment_failed` / `chargeback` 由 PSP 回调驱动(前端永不可知失败概率 / RNG,§9.11d.2)。
 - **paid 写 D4 bill**:订单进入 `paid` 时 server 在 D4 账本写入账单(server 是唯一账本,client 拉 `GET /api/bills` 不写,§9.11d.2);`device.replaced` 类置换订单的扣款 + bill 同理。
 - **退款联动 D 资金 + `cumulativeDepositUsdt` 核减(原子)**:退款须 server 单事务同时执行资金回退(D 余额 / PSP 退款)+ D4 bill 冲正 + `cumulativeDepositUsdt` 核减(拟由 D4 事务内 `recordDeposit(-amount)` 写入,避免「退款后累计入金虚高」绕过 E3b trade-in 资格门槛 / F 团队业绩)。**该核减写路径归属(D4)须在 V2 落地前与 D1/D4 对齐确认**——V1 D1④ chargeback 动作(`admin.topup_chargeback_refunded`)有「影响 cumulativeDepositUsdt」说明但未指定执行域/函数,D1⑦ 仅定义正向充值写路径,故 E4 不可单方面声明 D4 行为(§3.14 待补 + V2 gate 阻断,见 ① / ⑤)。
 - **退款核减为防套利目的,不追溯撤销已完成的 eligibility 校验**:核减影响**未来新购资格判定**,但**不追溯撤销已完成的 eligibility 校验**——已购设备的持有和已激活状态不因退款核减而无效;eligibility 校验为购买时点快照,仅对退款后的新购申请重新判定。**鉴于 E3b eligibility 消费方在 V2 期间即需读取 `cumulativeDepositUsdt`,该「不追溯」口径不可等至 V4——须在 V2 sprint 开始时,E4 开发团队读 V1 D1④ chargeback 退款规定,确认不追溯口径是否已有冲突**(V1 §8.3 实为 Unilevel 费率章节、非退款扣减规定,不可作为退款口径引用源)。
