@@ -12,16 +12,16 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Ban, CheckCircle2, Copy, Eye, Inbox, Info, ListChecks, LogOut, RefreshCw, ShieldCheck, Snowflake, User, UserRound } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton,
-  InlineMeter, InlineRetry, Input, JudgmentPoints, KeyValues, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, ReleaseModal,
+  InlineMeter, InlineRetry, Input, JudgmentPoints, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, ReleaseModal,
   Segments, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, useTabIds,
-  type JudgmentRow, type KeyValueRow, type MoreMenuItem,
+  type JudgmentRow, type MoreMenuItem,
 } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { fetchAccountDeletion, fetchAccountDeletions, updateAccountDeletion, AccountDeletionRequestError, type AccountDeletionRequest, type AccountDeletionStatus } from "@/lib/admin/account-deletion-client";
-import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { A2OutcomeUncertainError, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { nexGridBrandText, operatorNicknameText, platformSessionDeviceText, userNicknameText } from "@/lib/admin/brand-copy";
 import { businessClock, businessDay, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
-import { formatAccountStatus, formatC1DeviceStatus, formatC1RiskBand, formatC1SessionStatus } from "@/lib/admin/c1-detail-display";
+import { formatAccountStatus, formatC1DeviceStatus, formatC1RiskBand, formatC1SessionStatus, riskBandFromScore, riskBandTone } from "@/lib/admin/c1-detail-display";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -30,7 +30,6 @@ import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { listSessionRevocationApprovals, pendingSessionRevocationApproval, proposeSessionRevocation } from "@/lib/admin/session-revocation-approval";
-import { usePropose } from "@/lib/admin/use-propose";
 import {
   fetchImpersonationReadonlyView,
   fetchUserAccountActionAccount,
@@ -52,6 +51,7 @@ import {
   type UserImpersonationSession,
   type UserSession,
 } from "@/lib/admin/user360-client";
+import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { AccountDeletionQueue, DELETION_STATUS_LABELS, deletionActionLabel, deletionResultToast, type DeletionAction } from "./account-deletion-queue";
@@ -59,6 +59,7 @@ import type { ActionConfirmReq, CCtx } from "./types";
 
 const OPERATOR = currentAdminOperator;
 const K1_PATH = "/risk/multi-account";
+const D1_PATH = "/finance/recon";
 const FOCUS_SOURCES: Record<string, string> = { C1: "用户详情", M1: "客服工作台", M3: "专属会话", J3: "篡改防御监控" };
 const PAGE_SIZES = [10, 20, 50] as const;
 const TABS = ["accounts", "deletions", "views", "lists"] as const;
@@ -70,6 +71,11 @@ const FREEZE_SOURCE: Record<string, string> = {
   C2_DIRECT: "账户操作直接冻结",
   K1_MULTI_ACCOUNT_CLUSTER: "随多账户风险排查的账户组冻结",
   CREGIS_DEPOSIT_INCIDENT: "USDT 充值异常",
+};
+/** 充值异常冻结时后端把事件状态码写进冻结原因（CregisDepositService），用充值对账页的叫法。 */
+const CREGIS_REASONS: Record<string, string> = {
+  REORG_INVESTIGATING: "链重组调查中",
+  PROVIDER_CONFLICT_HOLD: "收款服务与链上记录冲突待处理",
 };
 const IMPERSONATION_STATUS: Record<string, { label: string; tone: "progress" | "done" }> = {
   ACTIVE: { label: "进行中", tone: "progress" },
@@ -84,7 +90,8 @@ const MIRROR_PAGES = [
 ] as const;
 
 const K1_BLOCK = "这个账户是随多账户风险排查的账户组冻结的，要在那里解除，这里不能恢复。";
-const CREGIS_BLOCK = "这个账户因 USDT 充值异常冻结，异常处理完系统会解除，这里不能恢复。";
+/** 系统不会自己解冻：要在充值异常处置里单独提交解冻，另一位同事复核（后端 CregisReorgResolutionService 的 UNFREEZE）。 */
+const CREGIS_BLOCK = "这个账户因 USDT 充值异常冻结，这里不能恢复，需要单独解冻处置：异常和欠款处理完后，在「充值与收款对账」提交解冻，另一位同事复核后解除。";
 const LOCKED_USER = "这个账户有结果未确认的操作，先到页面上方核对";
 const LOCKED_LIST = "这个用户的名单有结果未确认的操作，先到页面上方核对";
 const LOCKED_VIEW = "这次查看有结果未确认的操作，先到页面上方核对";
@@ -106,6 +113,7 @@ const REASON_CODE_LABELS: Record<string, string> = { RISK_HIT: "触发风控规�
 /* ── 未确认的写操作：按对象存原命令（OP-92～OP-94） ── */
 
 type Kind = "freeze" | "unfreeze" | "impStart" | "impEnd" | "listAdd" | "listRemove" | "deletion";
+type ProposalInput = Parameters<typeof createA2OperationProposal>[0];
 const KINDS: readonly Kind[] = ["freeze", "unfreeze", "impStart", "impEnd", "listAdd", "listRemove", "deletion"];
 const KIND_PREFIX: Record<Kind, string> = {
   freeze: "c2-user-status", unfreeze: "c2-user-status", impStart: "c2-user-impersonation-start", impEnd: "c2-user-impersonation-end",
@@ -131,6 +139,8 @@ type C2Pending = PendingMutationRecord & {
   listExpiresAt?: string | null;
   action?: DeletionAction;
   version?: number;
+  /** 财务提交审批的原内容（EX-11）：重试先按原号查审批单，查不到才原样再提交。 */
+  proposal?: ProposalInput;
 };
 
 /** 按对象锁，不按内容（OP-93）：同一个账户、同一个人的名单、同一次查看、同一张注销申请各一把锁。 */
@@ -180,10 +190,27 @@ function displayAccount(account: Pick<User360Profile, "userNo" | "nickname" | "p
   return name ? `${code} · ${name}` : code;
 }
 
-function riskText(account: Pick<User360Profile, "riskBand" | "riskScore"> | null | undefined) {
-  if (!account) return "—";
-  const band = formatC1RiskBand(account.riskBand);
-  return account.riskScore === null || account.riskScore === undefined || account.riskScore === "" ? band : `${band} · ${text(account.riskScore)}`;
+/**
+ * 风险写「3 · 低风险」，同用户详情（DT-14）：后端给了档就用后端的（概况给的是中文档名，也可能是 LOW 这类码），
+ * 没给时按和用户详情共用的兜底按分数落档。
+ */
+function riskOf(account: Pick<User360Profile, "riskBand" | "riskScore"> | null | undefined) {
+  if (!account) return { text: "—", tone: "done" as const };
+  const raw = account.riskScore;
+  const hasScore = raw !== null && raw !== undefined && raw !== "";
+  const score = Number(raw);
+  const label = text(account.riskBand, "").trim();
+  const code = formatC1RiskBand(label);
+  const band = code !== "未分档" ? code
+    : label && !["NONE", "UNKNOWN"].includes(label.toUpperCase()) ? label
+      : hasScore && Number.isFinite(score) ? riskBandFromScore(score) : "暂无风险分";
+  return { text: hasScore ? `${text(raw)} · ${band}` : band, tone: riskBandTone(band) };
+}
+
+/** 表格里只给中、高风险上色，低风险和没有档的不上色（VS-21）。 */
+function RiskCell({ account }: { account: Pick<User360Profile, "riskBand" | "riskScore"> }) {
+  const risk = riskOf(account);
+  return risk.tone === "danger" || risk.tone === "warn" ? <StatusTag tone={risk.tone}>{risk.text}</StatusTag> : <Cell main={risk.text} />;
 }
 
 /** 金额按接口原值显示，至少两位小数，不舍入，千分位（TX-20，同用户详情）。读不到写「—」，不当成 0。 */
@@ -193,7 +220,8 @@ function amountValue(value: unknown) {
     : typeof value === "string" ? value.trim() : "";
   const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(raw);
   if (!match) return raw || "—";
-  return `${match[1]}${match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${(match[3] ?? "").padEnd(2, "0")}`;
+  // 两位以后的尾零去掉（无损），同一笔钱在抽屉和只读视图写一样的位数。
+  return `${match[1]}${match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${(match[3] ?? "").replace(/(?<=\d{2})0+$/, "").padEnd(2, "0")}`;
 }
 
 function amountWith(value: unknown, unit: string) {
@@ -217,12 +245,13 @@ function isActiveListEntry(entry: UserAccountListEntry | null | undefined) {
   return Number.isFinite(at) && at > Date.now();
 }
 
-function listStatus(entry: UserAccountListEntry) {
-  if (isActiveListEntry(entry)) return { label: "生效中", tone: "ok" as const };
+/** 生效中是名单的默认状态，灰字加勾，不用绿（VS-21、DT-13）；已移出、已到期灰。 */
+function listStatus(entry: UserAccountListEntry): { label: string; tone: "neutral" | "done"; icon?: typeof CheckCircle2 } {
+  if (isActiveListEntry(entry)) return { label: "生效中", tone: "neutral", icon: CheckCircle2 };
   const status = upper(entry.status);
-  return status === "REMOVED" ? { label: "已移出", tone: "done" as const }
-    : status === "EXPIRED" || status === "ACTIVE" ? { label: "已到期", tone: "done" as const }
-      : { label: "状态未知", tone: "done" as const };
+  return status === "REMOVED" ? { label: "已移出", tone: "done" }
+    : status === "EXPIRED" || status === "ACTIVE" ? { label: "已到期", tone: "done" }
+      : { label: "状态未知", tone: "done" };
 }
 
 function listKindText(kind: unknown) {
@@ -234,12 +263,23 @@ function listEntryText(entry: UserAccountListEntry | null | undefined) {
   return `${listKindText(entry.kind)} · ${entry.expiresAt ? `${formatBusinessTimeCompact(entry.expiresAt, "—").slice(0, 10)} 到期` : "长期"}`;
 }
 
+/** 解除禁入后能不能登录还看账户状态：后端登录只放正常账户（AppUserAuthService）。 */
+function loginAfterUnblock(status: unknown) {
+  const now = upper(status);
+  return now === "ACTIVE" ? "用户可以重新登录" : now ? `账户是「${formatAccountStatus(now).label}」，仍登录不了` : "账户冻结、封禁或受限时仍登录不了";
+}
+
 function impersonationStatus(session: UserImpersonationSession | null | undefined) {
   return IMPERSONATION_STATUS[upper(session?.status)] ?? { label: "状态未知", tone: "done" as const };
 }
 
 function isActiveImpersonation(session: UserImpersonationSession | null | undefined) {
   return upper(session?.status) === "ACTIVE";
+}
+
+function freezeReasonText(fact: { freezeSource?: unknown; freezeReason?: unknown } | null | undefined) {
+  const reason = text(fact?.freezeReason, "未记录");
+  return upper(fact?.freezeSource) === "CREGIS_DEPOSIT_INCIDENT" ? CREGIS_REASONS[upper(reason)] ?? reason : reason;
 }
 
 function freezeSourceText(source: unknown) {
@@ -268,6 +308,11 @@ function jsonRecords(value: unknown): JsonRecord[] {
 
 function errorMessage(error: unknown) {
   return displayAdminError(error);
+}
+
+/** 接两句话时句号补齐，不留空格（「流程。这说明」）。 */
+function sentence(value: string) {
+  return /[。！？；]$/.test(value) ? value : `${value.replace(/[.\s]+$/, "")}。`;
 }
 
 function readError(error: unknown) {
@@ -300,6 +345,8 @@ function isOutcomeUnknown(error: unknown) {
   if (error instanceof UsersOutcomeUnknownError || isA2OutcomeUncertainError(error)) return true;
   if (error instanceof UsersRequestError) return isIdempotencyOutcomeOpen(error.code);
   if (error instanceof AccountDeletionRequestError) return outcomeStaysUnknown(error.status, error.apiCode) || isIdempotencyOutcomeOpen(error.reasonCode);
+  // 审批接口的确定拒绝带 status 和 backendMessage（结果未知的已是 A2OutcomeUncertainError）。
+  if (error instanceof Error && "backendMessage" in error) return isIdempotencyOutcomeOpen(String((error as { backendMessage?: unknown }).backendMessage ?? ""));
   // 注销接口断网时是普通 Error（guardedFetch 转的网络句）；页面自己的参数检查不算未知。
   return error instanceof Error && error.message !== "ACCOUNT_DELETION_COMMAND_INVALID";
 }
@@ -307,6 +354,17 @@ function isOutcomeUnknown(error: unknown) {
 /** 重试被明确拒绝（带原因码的 4xx）：用户接口的原因码在 code 上，交给共用判断时换成 reasonCode。 */
 function explicitlyRejected(error: unknown) {
   return error instanceof UsersRequestError ? isExplicitRejection({ status: error.status, reasonCode: error.code }) : isExplicitRejection(error);
+}
+
+/**
+ * 财务提交冻结、恢复审批（EX-11）：原内容先存进待确认再发，用固定命令号。重试先按原号查审批单，查到就是原来那张；
+ * 查不到才用原号原内容再提交，不会多出一张（同退出全部设备）。
+ */
+async function submitStatusProposal(input: ProposalInput, key: string, retry: boolean) {
+  const found = retry ? await fetchA2ProposalByKey(key) : null;
+  const ticket = found ?? await createA2OperationProposal(input, key, true);
+  if (!ticket.mine || ticket.obj !== input.obj) throw new A2OutcomeUncertainError("审批回执与原操作不符，请到操作记录核对。", key);
+  return ticket;
 }
 
 function newCommandKey(kind: Kind) {
@@ -355,36 +413,38 @@ function deviceDailyReference(device: JsonRecord): string {
   return `${amountWith(device.dailyUsdt, "USDT")} · ${amountWith(device.dailyNex, "UVT")}`;
 }
 
+/** 名字和值挨着（Facts，同账户抽屉），不用两端对齐的 KeyValues（VS-65）。 */
 function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
   const template = text(screen.template, "");
   if (template === "H5_HOME") {
     const devices = jsonRecord(screen.deviceSummary);
-    const rows: KeyValueRow[] = [
-      { key: "greeting", label: "问候语", value: text(screen.greeting).replace(/^(你好，)(.+)$/, (_, greeting: string, name: string) => greeting + operatorNicknameText(name)) },
-      ...jsonRecords(screen.assetSummary).map((asset) => ({ key: `asset-${text(asset.symbol)}`, label: `${nexGridBrandText(text(asset.symbol))} 可用`, value: amountWith(asset.available, nexGridBrandText(text(asset.symbol))) })),
-      { key: "devices", label: "设备概况", value: `活跃 ${text(devices.active, "0")} / 共 ${text(devices.total, "0")}` },
-      { key: "entries", label: "首页入口", value: Array.isArray(screen.entries) && screen.entries.length ? screen.entries.join(" · ") : "—" },
-    ];
-    return <div data-testid="impersonation-home-screen"><KeyValues rows={rows} /></div>;
+    return <div data-testid="impersonation-home-screen"><Facts>
+      <Fact k="问候语">{text(screen.greeting).replace(/^(你好，)(.+)$/, (_, greeting: string, name: string) => greeting + operatorNicknameText(name))}</Fact>
+      {jsonRecords(screen.assetSummary).map((asset) => <Fact key={`asset-${text(asset.symbol)}`} k={`${nexGridBrandText(text(asset.symbol))} 可用余额`}>{amountWith(asset.available, nexGridBrandText(text(asset.symbol)))}</Fact>)}
+      <Fact k="设备概况">{`活跃 ${text(devices.active, "0")} / 共 ${text(devices.total, "0")}`}</Fact>
+      <Fact k="首页入口">{Array.isArray(screen.entries) && screen.entries.length ? screen.entries.join(" · ") : "—"}</Fact>
+    </Facts></div>;
   }
   if (template === "H5_WALLET") {
     return <div data-testid="impersonation-wallet-screen" className="rd-stack">
-      <KeyValues rows={jsonRecords(screen.assets).map((asset) => ({ key: text(asset.symbol), label: `${nexGridBrandText(text(asset.symbol))} 可用`, value: amountWith(asset.available, nexGridBrandText(text(asset.symbol))) }))} />
+      <Facts>
+        {jsonRecords(screen.assets).map((asset) => <Fact key={text(asset.symbol)} k={`${nexGridBrandText(text(asset.symbol))} 可用余额`}>{amountWith(asset.available, nexGridBrandText(text(asset.symbol)))}</Fact>)}
+      </Facts>
       {Boolean(screen.readOnlyHint) && <p className="rd-weak">{text(screen.readOnlyHint)}</p>}
     </div>;
   }
   if (template === "H5_DEVICES") {
     const devices = jsonRecords(screen.devices);
     return <div data-testid="impersonation-devices-screen" className="rd-stack">
-      <KeyValues rows={[{ key: "summary", label: "设备概况", value: `活跃 ${text(screen.active, "0")} / 共 ${text(screen.total, "0")}` }]} />
+      <Facts><Fact k="设备概况">{`活跃 ${text(screen.active, "0")} / 共 ${text(screen.total, "0")}`}</Fact></Facts>
       {Boolean(screen.truncated) && <Notice tone="done">该用户共有 {text(screen.total, "0")} 台设备，这里只显示最近 {text(screen.shown, String(devices.length))} 台。</Notice>}
       <Table label="用户的设备">
         <thead><tr><Th>设备</Th><Th>状态</Th><Th align="right">算力</Th><Th align="right">日收益参考</Th></tr></thead>
         <tbody>
           {devices.length === 0 ? <TableMessage columns={4}>该用户暂无设备。</TableMessage> : devices.map((device) => (
             <Tr key={text(device.instanceNo)}>
-              <Td><Cell main={text(device.name)} sub={<span data-mono>{text(device.instanceNo)}</span>} /></Td>
-              <Td>{formatC1DeviceStatus(device.status)}</Td>
+              <Td grow><Cell main={text(device.name)} sub={<span data-mono>{text(device.instanceNo)}</span>} /></Td>
+              <Td><StatusTag tone={["ONLINE", "RUNNING", "BUSY", "ACTIVE"].includes(upper(device.status)) ? "ok" : "done"}>{formatC1DeviceStatus(device.status)}</StatusTag></Td>
               <Td align="right"><Cell num main={amountValue(device.hashrate)} /></Td>
               <Td align="right"><Cell num main={deviceDailyReference(device)} /></Td>
             </Tr>
@@ -394,13 +454,13 @@ function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
     </div>;
   }
   return <div data-testid="impersonation-profile-screen">
-    <KeyValues rows={[
-      { key: "userNo", label: "用户编码", value: text(screen.userNo), mono: true },
-      { key: "nickname", label: "昵称", value: operatorNicknameText(text(screen.nickname)) },
-      { key: "status", label: "账户状态", value: formatAccountStatus(screen.accountStatus).label },
-      { key: "level", label: "等级", value: `${text(screen.userLevel)} / ${text(screen.vRank)}` },
-      { key: "security", label: "安全", value: `两步验证 ${screen.twoFactorEnabled ? "已开启" : "未开启"} · 在线设备 ${text(screen.activeSessions, "0")}` },
-    ]} />
+    <Facts>
+      <Fact k="用户编码"><span data-mono>{text(screen.userNo)}</span></Fact>
+      <Fact k="昵称">{operatorNicknameText(text(screen.nickname))}</Fact>
+      <Fact k="账户状态">{formatAccountStatus(screen.accountStatus).label}</Fact>
+      <Fact k="分层">{`${text(screen.userLevel)} · ${text(screen.vRank)}`}</Fact>
+      <Fact k="安全">{`两步验证 ${screen.twoFactorEnabled ? "已开启" : "未开启"} · 在线设备 ${text(screen.activeSessions, "0")}`}</Fact>
+    </Facts>
   </div>;
 }
 
@@ -414,26 +474,27 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const params = useSearchParams();
   const zone = businessZone().label;
   const authorities = session?.authorities ?? [];
-  const superadmin = session?.role === "superadmin";
   const canReadC2 = authorities.includes("user_c2_read");
-  const canReadDeletions = superadmin || authorities.includes("user_c1_read");
-  const canWriteDeletions = superadmin || authorities.includes("user_c1_write");
+  // 注销申请只认后端控制器的精确码，角色不绕过（OpsAccountDeletionController）。
+  const canReadDeletions = authorities.includes("user_c1_read");
+  const canWriteDeletions = authorities.includes("user_c1_write");
   const canFreeze = authorities.includes("user_c2_account_freeze");
   const canUnfreeze = authorities.includes("user_c2_account_unfreeze");
-  const canRevoke = authorities.includes("user_c2_session_revoke_all")
+  // 退出全部设备是审批：C2 或 C5 的退出码都认，加审批提交权（后端 AuditReplayBusinessPermissionGuard、A2AccessPolicy 同样）。
+  const canRevoke = authorities.some((authority) => ["user_c2_session_revoke_all", "user_c5_session_revoke_all"].includes(authority))
     && authorities.some((authority) => ["platform_a2_write", "platform_a2_proposal_create"].includes(authority));
   const canStartImpersonation = authorities.includes("user_c2_impersonate_start");
   const canTerminateImpersonation = authorities.includes("user_c2_impersonate_terminate");
   const canManageLists = authorities.includes("user_c2_blocklist_add");
   const canWriteAny = canFreeze || canUnfreeze || canRevoke || canStartImpersonation || canTerminateImpersonation || canManageLists || canWriteDeletions;
   const canOpenK1 = reach(K1_PATH, "risk_k1_read");
+  const canOpenD1 = reach(D1_PATH, "finance_d1_read");
   const canReadAudit = reach("/platform/audit", "platform_a2_read");
   const canReadUserDetail = reach("/users/search", "user_c1hub_read");
   // 财务提交审批分支保留（EX-11）：B30 下内置财务进不来，自定义角色还可能走到。
   const freezeProposalOnly = session?.role === "finance"
     && authorities.includes("platform_a2_proposal_create")
     && !authorities.includes("platform_a2_operation_approve");
-  const propose = usePropose();
 
   const focusUserCode = (params?.get("userCode") ?? "").trim().toUpperCase();
   const source = params?.get("source") ?? "";
@@ -719,11 +780,11 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   };
 
   /* ── 各写操作的命令 ── */
-  const statusCommand = (kind: "freeze" | "unfreeze", id: string, userNo: string, display: string, reason: string, operator: string, reasonCode: string | null, retry = false) => sendCommand(
-    { kind, label: `${kind === "freeze" ? "冻结账户" : "恢复账户"} · ${userNo}`, target: id, userNo, reason, operator, reasonCode, fromStatus: kind === "freeze" ? "ACTIVE" : "FROZEN" },
-    (key) => updateUserStatus(id, kind === "freeze" ? "FROZEN" : "ACTIVE", reasonCode, reason, operator, key),
+  const statusCommand = (kind: "freeze" | "unfreeze", id: string, userNo: string, display: string, reason: string, operator: string, reasonCode: string | null, proposal?: ProposalInput, retry = false) => sendCommand(
+    { kind, label: `${kind === "freeze" ? "冻结账户" : "恢复账户"}${proposal ? "审批" : ""} · ${userNo}`, target: id, userNo, reason, operator, reasonCode, fromStatus: kind === "freeze" ? "ACTIVE" : "FROZEN", ...(proposal ? { proposal } : {}) },
+    (key): Promise<unknown> => proposal ? submitStatusProposal(proposal, key, retry) : updateUserStatus(id, kind === "freeze" ? "FROZEN" : "ACTIVE", reasonCode, reason, operator, key),
     async () => {
-      toast(kind === "freeze" ? `${display} 已冻结` : `${display} 已恢复`, "success");
+      toast(proposal ? `已提交${kind === "freeze" ? "冻结" : "恢复"}审批，批准后生效` : kind === "freeze" ? `${display} 已冻结` : `${display} 已恢复`, "success");
       await refreshAfterWrite();
     },
     retry,
@@ -753,11 +814,11 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   );
 
   const impEndCommand = (sessionNo: string, userNo: string, reason: string, operator: string, fromMirror: boolean, retry = false) => sendCommand(
-    { kind: "impEnd", label: `结束只读查看 · ${sessionNo}`, target: sessionNo, userNo, reason, operator, fromStatus: "ACTIVE" },
+    { kind: "impEnd", label: `结束只读视图 · ${sessionNo}`, target: sessionNo, userNo, reason, operator, fromStatus: "ACTIVE" },
     (key) => terminateUserImpersonation(sessionNo, reason, operator, key),
     async () => {
       if (fromMirror || text(mirror?.sessionNo, "") === sessionNo) closeMirror();
-      toast(`只读查看 ${sessionNo} 已结束`, "success");
+      toast(`只读视图 ${sessionNo} 已结束`, "success");
       await refreshAfterWrite();
     },
     retry,
@@ -807,23 +868,25 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     const fact = latest.controlFact ?? null;
     const devices = count(latest.activeSessions);
     const withdrawals = count(fact?.d2FrozenWithdrawalCount);
+    const risk = riskOf(account);
     const effect = freezeProposalOnly
       ? <StatusTag tone="progress" filled explain="由有审批权限的同事在「操作记录与审批」批准；批准前账户和提现都不变。">批准后生效</StatusTag>
       : <StatusTag tone="progress" filled>立即生效</StatusTag>;
     const run = async (reason: string, _value?: string, businessValue?: Record<string, string>) => {
       const reasonCode = kind === "freeze" ? businessValue?.reasonCode ?? "" : null;
       if (kind === "freeze" && !reasonCode) throw new Error("请选择冻结原因分类后再提交。");
-      if (freezeProposalOnly) {
-        const def = findHighOp(kind === "freeze" ? "c2_account_freeze" : "c2_account_unfreeze")!;
-        await propose(toast, {
-          action: `${kind === "freeze" ? "冻结账户" : "恢复账户"} · ${display}`, obj: id, before: kind === "freeze" ? "ACTIVE" : "FROZEN", after: kind === "freeze" ? "FROZEN" : "ACTIVE",
-          type: "acct", amplifies: kind === "unfreeze", gate: { roles: [] }, gateLabel: def.gateLabel, reason,
-          sourceDomain: "C2", command: def.buildCommand(kind === "freeze" ? { userId: id, reasonCode } : { userId: id }), target: def.buildTarget({ userId: id }),
-        });
-        return;
-      }
+      // 财务走审批：原内容先存好再发，结果未知时同样转成待确认，只能按原号查、原样重试（R3）。
+      const def = freezeProposalOnly ? findHighOp(kind === "freeze" ? "c2_account_freeze" : "c2_account_unfreeze")! : null;
+      const proposal: ProposalInput | undefined = def && session ? {
+        action: `${kind === "freeze" ? "冻结账户" : "恢复账户"} · ${display}`, obj: id,
+        beforeValue: kind === "freeze" ? "ACTIVE" : "FROZEN", afterValue: kind === "freeze" ? "FROZEN" : "ACTIVE",
+        operator: OPERATOR(), operatorRole: roleLabel(session.role), type: "acct", amplifies: kind === "unfreeze", sos: false,
+        roleGate: def.gateLabel, reason, sourceDomain: "C2",
+        command: def.buildCommand(kind === "freeze" ? { userId: id, reasonCode } : { userId: id }), target: def.buildTarget({ userId: id }),
+      } : undefined;
+      if (freezeProposalOnly && !proposal) throw new Error("请登录后再提交");
       try {
-        await statusCommand(kind, id, userNo, display, reason, OPERATOR(), reasonCode);
+        await statusCommand(kind, id, userNo, display, reason, OPERATOR(), reasonCode, proposal);
       } catch (cause) {
         if (deniedClosesModal(cause)) return;
         const code = codeOf(cause);
@@ -842,6 +905,10 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       }
     };
     if (kind === "freeze") {
+      // 后果和禁入框同一套写法：登录、设备、提现、怎么解除（冻结的用户登录被拒，后端 AppUserAuthService 只放 ACTIVE）。
+      const impact = freezeProposalOnly
+        ? "提交审批，批准后生效：账户冻结，用户登录不了，已登录的设备全部下线，待处理的提现一起冻结。"
+        : "确认后账户立即冻结，用户登录不了，已登录的设备全部下线，待处理的提现一起冻结。恢复前一直这样。";
       return {
         briefKind: "security",
         action: `冻结账户 · ${display}`,
@@ -852,13 +919,12 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           <Fact k="用户">{display}</Fact>
           <Fact k="账户状态"><Change from="正常" to="冻结" /></Fact>
           <Fact k="待处理的提现">一起冻结，恢复账户时回到冻结前的状态</Fact>
-          <Fact k="风险">{riskText(account)}</Fact>
+          <Fact k="登录">冻结期间登录不了，恢复后要重新登录</Fact>
+          <Fact k="风险" tone={risk.tone === "danger" || risk.tone === "warn" ? risk.tone : undefined}>{risk.text}</Fact>
         </Facts>,
-        detail: freezeProposalOnly
-          ? "提交后需确认才生效。生效后账户被冻结、所有设备下线，待处理的提现也会被冻结。"
-          : "确认后账户立即冻结、所有设备下线，待处理的提现也会被冻结。",
+        detail: impact,
         amplifies: false,
-        statedBrief: { impact: "确认后账户立即冻结、所有设备下线，待处理的提现也会被冻结。", check: "核对账号和冻结原因，理由写清工单号和处理依据。" },
+        statedBrief: { impact, check: "核对用户和冻结原因，理由写清工单号和处理依据。" },
         confirmLabel: freezeProposalOnly ? "提交审批" : "确认冻结",
         reasonMin: 8,
         reasonMax: 200,
@@ -871,6 +937,9 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         run,
       };
     }
+    const impact = freezeProposalOnly
+      ? "提交审批，批准后生效：账户恢复正常，因这次冻结暂停的提现一起恢复。"
+      : "确认后账户恢复正常，因这次冻结暂停的提现一起恢复；已下线的设备要用户重新登录。";
     return {
       briefKind: "security",
       action: `恢复账户 · ${display}`,
@@ -881,16 +950,15 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         <Fact k="用户">{display}</Fact>
         <Fact k="账户状态"><Change from="冻结" to="正常" /></Fact>
         <Fact k="冻结来源">{freezeSourceText(fact?.freezeSource)}</Fact>
-        <Fact k="冻结原因">{text(fact?.freezeReason, "未记录")}</Fact>
+        <Fact k="冻结原因">{freezeReasonText(fact)}</Fact>
         <Fact k="冻结时间">{fact?.frozenAt ? `${timeText(fact.frozenAt)}（${zone}）` : "—"}</Fact>
-        <Fact k="登录">已下线的设备不会自动登录，用户要重新登录</Fact>
       </Facts>,
-      detail: freezeProposalOnly
-        ? "提交后需确认才生效，确认前账户和提现仍保持冻结。"
-        : "确认后账户恢复正常，因这次冻结暂停的提现也会恢复。已下线的设备需用户重新登录。",
+      detail: impact,
       amplifies: true,
-      coverageLead: withdrawals ? `恢复后，这 ${withdrawals} 笔提现回到冻结前的状态，冻结前已审核通过的会继续出款。` : "这个账户没有因冻结暂停的提现。",
-      statedBrief: { impact: "确认后账户恢复正常，因这次冻结暂停的提现也会恢复。已下线的设备需用户重新登录。", check: "核对冻结来源和原因，理由写清依据或工单号。" },
+      // 恢复链只改状态、恢复提现，不查兑付覆盖率（后端 OpsUserService 直接更新链、FinanceWithdrawalControlFacadeAdapter）。
+      coverageLead: withdrawals ? "恢复后这些提现回到冻结前的状态，之后按原来的提现流程处理。" : "这个账户没有因冻结暂停的提现。",
+      coverageCheck: "恢复时不查兑付覆盖率，也不重新审核。",
+      statedBrief: { impact, check: "核对冻结来源和原因，理由写清依据或工单号。" },
       confirmLabel: freezeProposalOnly ? "提交审批" : "确认恢复",
       reasonMin: 8,
       reasonMax: 200,
@@ -937,11 +1005,12 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       title: "退出全部设备",
       effect: <StatusTag tone="progress" filled explain="由另一位超级管理员在「操作记录与审批」批准；批准前用户的设备不会下线。">批准后生效</StatusTag>,
       facts: <Facts>
-        <Fact k="现在在线" lead unit="台">{String(activeCount)}</Fact>
+        <Fact k="在线设备" lead unit="台">{String(activeCount)}</Fact>
         <Fact k="用户">{display}</Fact>
         <Fact k="退出范围">批准时在线的全部设备</Fact>
       </Facts>,
-      detail: pendingRevoke ? "审批提交结果尚未确认，重试原操作会使用原理由和操作编号。" : `提交审批后，由另一位超级管理员批准，该用户的全部在线设备才会退出登录（当前 ${activeCount} 台）。`,
+      // 没有未决记录时说明和影响是一件事，只写影响（VS-105）。
+      detail: pendingRevoke ? "审批提交结果尚未确认，重试原操作会使用原理由和操作编号。" : "批准后这个用户的全部设备立即退出登录，要重新登录才能用。",
       amplifies: false,
       statedBrief: { impact: "批准后这个用户的全部设备立即退出登录，要重新登录才能用。", check: "核对用户和在线设备数，理由写清工单号和处理依据。" },
       confirmLabel: "提交审批",
@@ -954,7 +1023,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         setSubmitting(`user|${id}`);
         try {
           await proposeSessionRevocation(session, id, display, reason);
-          toast("已提交强制登出审批，批准后生效", "success");
+          toast("已提交退出全部设备的审批，批准后生效", "success");
         } catch (cause) {
           if (isA2OutcomeUncertainError(cause)) { toast(UNKNOWN_TOAST, "warn"); return; }
           throw cause;
@@ -994,7 +1063,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         <Fact k="用户">{displayAccount(target)}</Fact>
         <Fact k="账户状态">{formatAccountStatus(target.status).label}</Fact>
       </Facts> : undefined,
-      detail: "确认后打开用户数据只读视图，只能看不能改，到时间自动关闭。",
+      detail: "能看这个用户的账户、钱包、设备和资料，不能改；打开和每次切页都记进操作记录，到时间自动关闭。",
       amplifies: false,
       statedBrief: { impact: "能看这个用户的账户、钱包、设备和资料，不能改；打开和每次切页都记进操作记录，到时间自动关闭。", check: "核对用户和查看原因，理由写清工单号或用户反馈。" },
       confirmLabel: "开始查看",
@@ -1033,8 +1102,8 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     const left = count(row.leftMinutes);
     return {
       briefKind: "security",
-      action: fromMirror ? `退出并结束只读查看 · ${sessionNo}` : `结束只读查看 · ${sessionNo}`,
-      title: fromMirror ? "退出并结束" : "结束只读查看",
+      action: fromMirror ? `退出并结束只读视图 · ${sessionNo}` : `结束只读视图 · ${sessionNo}`,
+      title: fromMirror ? "退出并结束" : "结束只读视图",
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       facts: <Facts>
         <Fact k="查看编号"><span data-mono>{sessionNo}</span></Fact>
@@ -1042,9 +1111,9 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         <Fact k="查看人">{text(row.operator)}</Fact>
         <Fact k="剩余时间">{left === null ? "—" : `${left} 分钟`}</Fact>
       </Facts>,
-      detail: fromMirror ? "确认后立即结束这次只读查看并关闭窗口。" : "确认后立即结束这次只读查看。",
+      detail: fromMirror ? "确认后这次查看立即结束并关闭窗口，令牌失效，不能再看。" : "确认后这次查看立即结束，令牌失效，不能再看。",
       amplifies: false,
-      statedBrief: { impact: "确认后这次查看立即结束，令牌失效，不能再看。", check: "核对编号和用户，理由写清结束原因。" },
+      statedBrief: { impact: fromMirror ? "确认后这次查看立即结束并关闭窗口，令牌失效，不能再看。" : "确认后这次查看立即结束，令牌失效，不能再看。", check: "核对编号和用户，理由写清结束原因。" },
       confirmLabel: fromMirror ? "退出并结束" : "确认结束",
       reasonMin: 8,
       reasonMax: 200,
@@ -1091,42 +1160,54 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   };
 
   /* ── 名单 ── */
-  const addList = (listKind: "ALLOW" | "BLOCK", latest: UserAccountActionContext | null, blockedReason?: ReactNode): ActionConfirmReq => {
-    const target = latest?.account ?? null;
+  /**
+   * 每个用户只有一条名单记录，加入另一种会替换现在的（后端 upsert）。禁入换成信任就是解除禁入，框里要写出来（F01）：
+   * 名单页签进来时还不知道是谁，先按填的用户读一次现在的名单，在名单上就带着它重开这个框，确认后才提交。
+   */
+  const addList = (listKind: "ALLOW" | "BLOCK", latest: UserAccountActionContext | null, blockedReason?: ReactNode, fromPanel = false): ActionConfirmReq => {
+    // 抽屉进来对象固定；名单页签进来对象由框里填的编码定，读到的名单只用来写事实，提交前按填的编码再核一次。
+    const target = fromPanel ? null : latest?.account ?? null;
+    const shownAccount = latest?.account ?? null;
     const current = latest?.accountList && isActiveListEntry(latest.accountList) ? latest.accountList : null;
     const other = current && upper(current.kind) !== listKind ? current : null;
     const devices = count(latest?.activeSessions);
     const today = businessDay(0);
+    const check = listKind === "BLOCK" ? "核对用户和有效期，理由写清工单号和处理依据。" : "核对用户和有效期，理由写清依据或工单号。";
+    // 有效期按选的写：长期没有失效日期（VS-105「写的必须是真的」）。
+    const until = (value: Record<string, string>) => value.expiryMode === "SPECIFIED" && value.expiresAt ? `到 ${value.expiresAt} 23:59:59（${zone}）后自动失效` : "一直有效，直到移出";
+    const brief = (value: Record<string, string>) => listKind === "BLOCK"
+      ? { impact: `加入后这个用户登录不了 App，已登录的设备全部立即下线；${until(value)}。`, check }
+      : other
+        ? { impact: `禁入会被替换成信任，等于解除禁入，${loginAfterUnblock(shownAccount?.status)}；信任${until(value)}。`, check }
+        : { impact: `加入后这个用户标为信任，目前没有哪项检查按它放宽，只做记录；${until(value)}。`, check };
     return {
       briefKind: "security",
       action: listKind === "ALLOW" ? "加入信任名单" : "加入禁入名单",
       title: listKind === "ALLOW" ? "加入信任名单" : "加入禁入名单",
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
-      facts: target ? <Facts>
+      facts: shownAccount ? <Facts>
         {listKind === "BLOCK" && <Fact k="会下线的设备" lead unit="台">{devices === null ? "—" : String(devices)}</Fact>}
-        <Fact k="用户">{displayAccount(target)}</Fact>
+        <Fact k="用户">{displayAccount(shownAccount)}</Fact>
         {other
-          ? <Fact k="现在的名单" tone="warn">{listKind === "BLOCK" ? "信任 · 会被替换成禁入" : "禁入 · 会被替换成信任，用户可以重新登录"}</Fact>
-          : <Fact k="现在的名单">不在名单上</Fact>}
+          ? <Fact k="现在的名单" tone="warn">{listKind === "BLOCK" ? "信任 · 会被替换成禁入" : `禁入 · 会被替换成信任，禁入解除`}</Fact>
+          : <Fact k="现在的名单">{listEntryText(current)}</Fact>}
       </Facts> : undefined,
-      detail: "确认后立即生效，到了失效日期自动失效。",
+      detail: "",
       amplifies: false,
-      statedBrief: listKind === "BLOCK"
-        ? { impact: "加入后这个用户登录不了 App，已登录的设备全部立即下线；到期或移出后可以重新登录。", check: "核对用户和有效期，理由写清工单号和处理依据。" }
-        : { impact: "加入后这个用户标为信任，不改变任何检查；到了失效日期自动失效。", check: "核对用户和有效期，理由写清依据或工单号。" },
-      confirmLabel: "确认加入",
+      statedBrief: brief,
+      confirmLabel: other ? "确认替换" : "确认加入",
       reasonMin: 8,
       reasonMax: 200,
       reasonPlaceholder: listKind === "BLOCK" ? "例如：工单 20261108-005，确认盗号，禁止登录" : "例如：工单 20261108-006，核实为内部测试账号",
       businessForm: {
         kind: "multi-field",
         feedback: (value) => value.expiryMode === "SPECIFIED" && value.expiresAt && value.expiresAt < today
-          ? { message: "失效日期不能早于今天。", invalid: true, field: "expiresAt" }
+          ? { message: `失效日期不能早于今天；选的日期当天 23:59:59（${zone}）后失效。`, invalid: true, field: "expiresAt" }
           : { message: "", invalid: false },
         fields: [
           ...(target ? [] : [{ key: "userCode", label: "用户编码或系统编号", inputKind: "text" as const, required: true, placeholder: "例如 U00000010", explain: "可以填用户编码或系统编号" }]),
           { key: "expiryMode", label: "有效期", inputKind: "select", required: true, current: "PERMANENT", options: ["PERMANENT", "SPECIFIED"], optionLabels: { PERMANENT: "长期", SPECIFIED: "指定日期" } },
-          { key: "expiresAt", label: "失效日期", inputKind: "date", required: true, help: "这天 23:59:59（北京时间）后失效", visibleWhen: { key: "expiryMode", equals: "SPECIFIED" } },
+          { key: "expiresAt", label: "失效日期", inputKind: "date", required: true, wide: true, help: `这天 23:59:59（${zone}）后失效`, visibleWhen: { key: "expiryMode", equals: "SPECIFIED" } },
         ],
       },
       blockedReason,
@@ -1136,6 +1217,23 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         const expiresAt = businessValue?.expiryMode === "SPECIFIED" ? businessValue.expiresAt ?? "" : null;
         if (!id || expiresAt === "") throw new Error("请填写用户和失效日期");
         if (locked.has(`list|${id}`)) throw new Error(LOCKED_LIST);
+        if (!target) {
+          // 先读这个用户现在的名单：在名单上、而框里还没写出来（或换了人、名单变了），就带着它重开，这次不提交。
+          const fresh = await fetchUserAccountActionContext(id).catch((cause: unknown) => { throw new Error(`这个用户现在的名单读不到，没有提交：${readError(cause)}`); });
+          const now = fresh.accountList && isActiveListEntry(fresh.accountList) ? fresh.accountList : null;
+          if (shownAccount && accountId(shownAccount) !== id) {
+            openActionConfirm(addList(listKind, fresh, undefined, true));
+            toast("框里的用户换了，核对上面的用户和名单后再确认。", "warn");
+            return false;
+          }
+          const shownEntry = shownAccount ? current : undefined;
+          if (now && (upper(now.kind) === listKind || shownEntry === undefined || upper(shownEntry?.kind) !== upper(now.kind))) {
+            const same = upper(now.kind) === listKind;
+            openActionConfirm(addList(listKind, fresh, undefined, true));
+            toast(same ? `这个用户已经在${listKindText(now.kind)}名单上，不用再加入。` : `这个用户现在在${listKindText(now.kind)}名单上，加入会替换掉它。核对框里的名单后再确认。`, "warn");
+            return false;
+          }
+        }
         try {
           await listAddCommand(id, text(account.userNo), displayAccount(account), listKind, expiresAt, reason, OPERATOR());
         } catch (cause) {
@@ -1151,9 +1249,10 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     };
   };
 
-  const removeList = (entry: UserAccountListEntry, blockedReason?: ReactNode): ActionConfirmReq => {
+  const removeList = (entry: UserAccountListEntry, accountStatus: unknown, blockedReason?: ReactNode): ActionConfirmReq => {
     const id = text(entry.userId, "");
     const block = upper(entry.kind) === "BLOCK";
+    const impact = "移出后这条名单不再生效，记录保留。";
     return {
       briefKind: "security",
       action: `移出名单 · ${displayAccount(entry)}`,
@@ -1162,11 +1261,11 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       facts: <Facts>
         <Fact k="用户">{displayAccount(entry)}</Fact>
         <Fact k="名单">{`${listKindText(entry.kind)} · ${entry.expiresAt ? `${timeText(entry.expiresAt)}（${zone}）失效` : "长期"}`}</Fact>
-        {block && <Fact k="移出后">用户可以重新登录</Fact>}
+        {block && <Fact k="移出后">{`禁入解除，${loginAfterUnblock(accountStatus)}`}</Fact>}
       </Facts>,
-      detail: "确认后该用户按正常风控规则判断，名单历史会保留。",
+      detail: impact,
       amplifies: false,
-      statedBrief: { impact: "移出后这条名单不再生效，记录保留；禁入的用户可以重新登录。", check: "核对用户和名单种类，理由写清移出依据。" },
+      statedBrief: { impact, check: "核对用户和名单种类，理由写清移出依据。" },
       confirmLabel: "确认移出",
       reasonMin: 8,
       reasonMax: 200,
@@ -1181,7 +1280,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           const code = codeOf(cause);
           if (code === "INVALID_STATE_TRANSITION" || code === "ACCOUNT_LIST_ENTRY_NOT_FOUND") {
             const fresh = await readLatestContext(id);
-            if (fresh) openActionConfirm(removeList(entry, `这个用户现在是「${listEntryText(fresh.accountList)}」，这次移出没有执行。关闭后按最新状态处理。`));
+            if (fresh) openActionConfirm(removeList(entry, fresh.account?.status ?? accountStatus, `这个用户现在是「${listEntryText(fresh.accountList)}」，这次移出没有执行。关闭后按最新状态处理。`));
             void loadOverview();
           }
           throw new Error(accountListErrorMessage(cause));
@@ -1198,7 +1297,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       const fresh = await fetchUserAccountActionContext(id).catch(() => null);
       if (fresh && !isActiveListEntry(fresh.accountList)) { toast(`这个用户现在是「${listEntryText(fresh.accountList)}」，不用再移出`, "warn"); void loadOverview(); return; }
       // 上下文里的名单行不一定带用户编码和昵称，用账户的补上，框里的「用户」不写成「—」。
-      openActionConfirm(removeList({ ...entry, ...(fresh?.accountList ?? {}), userId: entry.userId, userNo: fresh?.account?.userNo ?? entry.userNo, nickname: fresh?.account?.nickname ?? entry.nickname, phoneMasked: fresh?.account?.phoneMasked ?? entry.phoneMasked }));
+      openActionConfirm(removeList({ ...entry, ...(fresh?.accountList ?? {}), userId: entry.userId, userNo: fresh?.account?.userNo ?? entry.userNo, nickname: fresh?.account?.nickname ?? entry.nickname, phoneMasked: fresh?.account?.phoneMasked ?? entry.phoneMasked }, fresh?.account?.status));
     } finally {
       setOpening("");
     }
@@ -1217,8 +1316,10 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   );
 
   /* ── 待确认：读回、重试、解除 ── */
-  const canRetry = (record: C2Pending) => record.kind === "freeze" ? canFreeze || freezeProposalOnly
-    : record.kind === "unfreeze" ? canUnfreeze || freezeProposalOnly
+  // 重试要原操作的精确权限，财务身份不能顶替；审批的原操作还要审批提交权（F08）。
+  const canPropose = authorities.includes("platform_a2_proposal_create");
+  const canRetry = (record: C2Pending) => record.kind === "freeze" ? canFreeze && (!record.proposal || canPropose)
+    : record.kind === "unfreeze" ? canUnfreeze && (!record.proposal || canPropose)
       : record.kind === "impStart" ? canStartImpersonation
         : record.kind === "impEnd" ? canTerminateImpersonation
           : record.kind === "deletion" ? canWriteDeletions : canManageLists;
@@ -1235,7 +1336,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     const userNo = text(record.userNo);
     try {
       let outcome: "done" | "unknown";
-      if (record.kind === "freeze" || record.kind === "unfreeze") outcome = await statusCommand(record.kind, record.target, userNo, userNo, record.reason, record.operator, record.reasonCode ?? null, true);
+      if (record.kind === "freeze" || record.kind === "unfreeze") outcome = await statusCommand(record.kind, record.target, userNo, userNo, record.reason, record.operator, record.reasonCode ?? null, record.proposal, true);
       else if (record.kind === "impStart") outcome = await impStartCommand(record.target, userNo, userNo, record.ttlMinutes ?? 15, record.reasonCode ?? "", record.reason, record.operator, true);
       else if (record.kind === "impEnd") outcome = await impEndCommand(record.target, userNo, record.reason, record.operator, false, true);
       else if (record.kind === "listAdd") outcome = await listAddCommand(record.target, userNo, userNo, record.listKind ?? "BLOCK", record.listExpiresAt ?? null, record.reason, record.operator, true);
@@ -1247,10 +1348,11 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       if (outcome === "unknown") notePending(record.fingerprint, "还是没有确认，原命令继续保留。");
     } catch (cause) {
       if (isC2PermissionDenied(cause)) announcePermissionDenied();
+      // 系统要求核查、核查已有结论这些幂等层的码不算明确拒绝（共用分类），原命令和锁都留着，不放「解除待确认」。
       if (explicitlyRejected(cause)) {
-        notePending(record.fingerprint, `重试没有成功：${errorMessage(cause)} 这说明不了原操作的结果，原命令继续保留。`);
+        notePending(record.fingerprint, `重试没有成功：${sentence(errorMessage(cause))}这说明不了原操作的结果，原命令继续保留。`);
         setRetryRejected((keys) => [...keys, record.commandKey]);
-      } else notePending(record.fingerprint, `这次没能确认结果：${errorMessage(cause)} 原命令继续保留。`);
+      } else notePending(record.fingerprint, `这次没能确认结果：${sentence(errorMessage(cause))}原命令继续保留。`);
     }
   };
 
@@ -1304,9 +1406,10 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     setSubmitting(`user|${record.userId}`);
     try {
       await proposeSessionRevocation(session, record.userId, record.label, record.reason);
-      toast("已提交强制登出审批，批准后生效", "success");
+      toast("已提交退出全部设备的审批，批准后生效", "success");
     } catch (cause) {
       notePending(fingerprint, isA2OutcomeUncertainError(cause) ? "还是没有确认，原命令继续保留。" : `重试没有成功：${errorMessage(cause)}`);
+      // 共用库只在明确拒绝后清掉原命令，其他情况记录照旧留着（F04）。
     } finally {
       setSubmitting("");
       syncPending();
@@ -1369,7 +1472,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           </>}>
           <p>
             {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，可能已经生效。
-            {expired ? `${RETRY_EXPIRED_TEXT}。` : "按原操作重试会用同一个命令号重新发送，不会重复执行。"}
+            {expired ? `${RETRY_EXPIRED_TEXT}。` : "按原操作重试用同一个命令号和原内容，已经执行过的不会再执行一次；系统要求先核查时原命令继续保留。"}
             {canReadAudit ? <> <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link></> : "请有操作记录读权限的同事核对。"}
             <Explain label="这次操作的技术信息" rows={[
               { k: "命令号", v: <span data-mono>{record.commandKey}</span> },
@@ -1427,12 +1530,12 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const statValue = (value: number | null) => firstLoading ? "" : value === null ? "—" : value.toLocaleString("en-US");
   const statBand = canReadC2 && (
     <StatBand label="账户操作概况">
+      {/* 读不到时四格都写「—」，重试在下面页签里的失败块上，不挂在第一格下（看着像只重试这一格）。 */}
       <Stat tone="role-3" icon={Snowflake} label="冻结中账户" value={statValue(frozenUsers)} unit={frozenUsers === null ? undefined : "个"}
-        sub={overviewFailedFirst ? <InlineRetry onRetry={() => void loadOverview()} /> : undefined}
         explain="现在冻结中的全部账户，含随账户组冻结和充值异常冻结的。下面的列表只有最近注册的 50 个，不一定都在。" />
       <Stat tone="progress" icon={Eye} label="只读视图进行中" value={statValue(activeViews)} unit={activeViews === null ? undefined : "个"}
         sub={longestLeft !== null && activeViews ? `最长剩 ${longestLeft} 分钟` : undefined}
-        explain="按读取时算，不会自己倒数。" onOpen={() => changeTab("views")} openLabel="到用户数据只读视图" />
+        explain={activeViews ? "「最长剩」按页面读取时算，不会自己倒数，点「刷新」更新。" : "现在打开着的用户数据只读视图。"} onOpen={() => changeTab("views")} openLabel="到用户数据只读视图" />
       <Stat tone="role-2" icon={ShieldCheck} label="信任名单" value={statValue(trustCount)} unit={trustCount === null ? undefined : "人"}
         explain="标为信任的用户。目前没有哪项检查按它放宽，只做记录。" onOpen={() => changeTab("lists")} openLabel="到账户名单" />
       <Stat tone="role-4" icon={Ban} label="禁入名单" value={statValue(blockedCount)} unit={blockedCount === null ? undefined : "人"}
@@ -1468,19 +1571,23 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
 
   // 一个写权都没有时不放操作列（OP-124）：只读账号不看一列空格子。
   const accountActions = canFreeze || canUnfreeze;
+  // 样本截断时「至少」写在表头一次，格子里只写数（建议 1）。
   const sessionCell = (account: User360Profile) => {
     const n = sessionCounts.get(accountId(account)) ?? 0;
     if (!sessionsTruncated) return n === 0 ? <span className="rd-weak">0 台</span> : `${n} 台`;
-    return n === 0 ? <span className="rd-weak" title="最近 200 条登录里没有这个账户的，准确数打开详情看">—</span> : `至少 ${n} 台`;
+    return n === 0 ? <span className="rd-weak" title="最近 200 条登录里没有这个账户的，准确数打开详情看">—</span> : `${n} 台`;
   };
+  // 时区只在面板标题旁写一次，表头不再写（TX-25）。
+  const zoneNote = `时间为${zone}`;
 
   const accountsPane = (
     <div className="rd-stack">
       <FilterBar onSubmit={() => void findAccount()} querying={lookup.state === "loading"}
         action={<Button type="submit" loading={lookup.state === "loading"}>打开</Button>}
         notice={lookup.state === "empty" ? "填用户编码、系统编号、邀请码或邮箱。" : lookup.state === "error" ? <>{lookup.error} <InlineRetry onRetry={() => void findAccount()} /></> : undefined}>
-        <FilterField grow>
-          <Input aria-label="查找账户" placeholder="用户编码、系统编号、邀请码或邮箱" value={query} aria-invalid={lookup.state === "empty" ? true : undefined}
+        {/* 定宽查找框，「打开」紧贴右边（同 Ant Input.Search、提现审核），不横跨整行。 */}
+        <FilterField>
+          <Input aria-label="查找账户" placeholder="用户编码、系统编号、邀请码或邮箱" size={46} value={query} aria-invalid={lookup.state === "empty" ? true : undefined}
             onChange={(event) => { setQuery(event.target.value); if (lookup.state === "empty" || lookup.state === "not-found") setLookup({ state: "idle", error: "" }); }} />
         </FilterField>
       </FilterBar>
@@ -1489,15 +1596,15 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       {staleNotice}
       {overviewBlock("账户概况") ?? (
         <Panel title="账户" icon={UserRound} tone="role-3" flush
-          sub={firstLoading ? undefined : totalAccounts !== null && totalAccounts > accounts.length ? `最近注册的 ${accounts.length} 个 · 共 ${totalAccounts.toLocaleString("en-US")} 个` : `共 ${accounts.length} 个`}
-          explain="列表只取最近注册的 50 个账户，冻结的排在前面；冻结中的账户不一定都在这里。找具体用户用上面的查找。在线设备按最近 200 条登录记录数，可能少算，准确数在详情里。">
+          sub={firstLoading ? undefined : totalAccounts !== null && totalAccounts > accounts.length ? `最近注册的 ${accounts.length} 个 · 共 ${totalAccounts.toLocaleString("en-US")} 个 · ${zoneNote}` : zoneNote}
+          explain="列表只取最近注册的 50 个账户，冻结的排在前面；冻结中的账户不一定都在这里。找具体用户用上面的查找。">
           <Table label="账户">
             <thead><tr>
               <Th icon={User} tone="users">账户</Th>
               <Th>账户状态</Th>
               <Th>风险</Th>
-              <Th>注册 · 最近登录（{zone}）</Th>
-              <Th align="right">在线设备</Th>
+              <Th>注册 · 最近登录</Th>
+              <Th align="right">{sessionsTruncated ? <>在线设备（至少）<Explain label="在线设备的算法" content="按最近 200 条登录记录数，可能少算，准确数打开详情看。" /></> : "在线设备"}</Th>
               {accountActions && <Th sticky="end">操作</Th>}
             </tr></thead>
             <tbody>
@@ -1507,11 +1614,12 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
                     const id = accountId(account);
                     return (
                       <Tr key={id} selected={accountId(acct) === id} aria-label={`查看账户 ${displayAccount(account)}`} onOpen={() => openAccount(account)}>
-                        <Td><Cell main={<span data-mono>{text(account.userNo, id)}</span>} sub={userNicknameText(text(account.nickname), account.phoneMasked)} /></Td>
+                        {/* 账户列伸缩，时间列按内容定宽，在线设备紧跟在后面（第 6 列的列宽）。 */}
+                        <Td grow><Cell main={<span data-mono>{text(account.userNo, id)}</span>} sub={userNicknameText(text(account.nickname), account.phoneMasked)} /></Td>
                         <Td><AccountStatusTag status={account.status} table /></Td>
-                        <Td><Cell main={riskText(account)} /></Td>
-                        {/* 列表是最近注册的 50 个：注册时间说明排在这里的是谁，最近登录帮着判断账户还在不在用。 */}
-                        <Td><Cell num main={timeText(account.registeredAt)} sub={account.lastLoginAt ? timeText(account.lastLoginAt) : "没有登录记录"} /></Td>
+                        <Td><RiskCell account={account} /></Td>
+                        {/* 最近登录帮着判断账户还在不在用；列表是最近注册的 50 个，注册时间说明排在这里的是谁。 */}
+                        <Td data-fit=""><Cell num main={timeText(account.registeredAt)} sub={account.lastLoginAt ? timeText(account.lastLoginAt) : "没有登录记录"} /></Td>
                         <Td align="right"><Cell num main={sessionCell(account)} /></Td>
                         {accountActions && <Td sticky="end">{rowAction(account)}</Td>}
                       </Tr>
@@ -1532,12 +1640,12 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       {staleNotice}
       {overviewBlock("用户数据只读视图") ?? (
         <Panel title="用户数据只读视图" icon={Eye} tone="progress" flush
-          sub={firstLoading ? undefined : totalViews !== null && totalViews > impersonations.length ? `最近 ${impersonations.length} 次 · 共 ${totalViews.toLocaleString("en-US")} 次` : `共 ${impersonations.length} 次`}
+          sub={firstLoading ? undefined : `${totalViews !== null && totalViews > impersonations.length ? `最近 ${impersonations.length} 次 · 共 ${totalViews.toLocaleString("en-US")} 次` : `共 ${impersonations.length} 次`} · ${zoneNote}`}
           explain="按这个用户的数据显示账户、钱包、设备和资料四组内容，不是用户看到的 App 页面。只能看不能改，到时间自动关闭；打开和每次切页都记进操作记录。"
           actions={canStartImpersonation ? <Button disabled={busy} disabledReason={submitting ? SUBMITTING : undefined} onClick={() => startView(null)}>开始查看</Button> : undefined}>
           <Table label="用户数据只读视图记录">
             <thead><tr>
-              <Th>查看 · 开始时间（{zone}）</Th>
+              <Th>查看 · 开始时间</Th>
               <Th icon={User} tone="users">查看人 → 用户</Th>
               <Th>状态</Th>
               <Th>剩余</Th>
@@ -1546,7 +1654,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
             </tr></thead>
             <tbody>
               {firstLoading ? <TableLoading columns={canTerminateImpersonation ? 6 : 5} rows={4} />
-                : impersonations.length === 0 ? <TableMessage columns={canTerminateImpersonation ? 6 : 5}>暂无记录。</TableMessage>
+                : impersonations.length === 0 ? <TableMessage columns={canTerminateImpersonation ? 6 : 5}>暂无记录。{canStartImpersonation && <><br /><span className="rd-weak">在账户详情底部「…」或上面「开始查看」打开。</span></>}</TableMessage>
                   : impersonations.map((row) => {
                     const no = text(row.sessionNo, "");
                     const status = impersonationStatus(row);
@@ -1578,7 +1686,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       {staleNotice}
       {overviewBlock("账户名单") ?? (
         <Panel title="信任和禁入名单" icon={ListChecks} tone="role-4" flush explain={listsExplain}
-          sub={firstLoading ? undefined : totalLists !== null && totalLists > listRows.length ? `最近更新的 ${listRows.length} 条 · 共 ${totalLists.toLocaleString("en-US")} 条` : `共 ${listRows.length} 条`}
+          sub={firstLoading ? undefined : totalLists !== null && totalLists > listRows.length ? `最近更新的 ${listRows.length} 条 · 共 ${totalLists.toLocaleString("en-US")} 条 · ${zoneNote}` : zoneNote}
           actions={canManageLists ? <span className="rd-row-actions">
             <Button disabled={busy} disabledReason={submitting ? SUBMITTING : overviewStale ? STALE : undefined} onClick={() => openActionConfirm(addList("ALLOW", null))}>+ 加入信任名单</Button>
             <Button disabled={busy} disabledReason={submitting ? SUBMITTING : overviewStale ? STALE : undefined} onClick={() => openActionConfirm(addList("BLOCK", null))}>+ 加入禁入名单</Button>
@@ -1588,13 +1696,13 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
               <Th icon={User} tone="users">用户</Th>
               <Th>名单</Th>
               <Th>状态</Th>
-              <Th>失效时间（{zone}）</Th>
+              <Th>失效时间</Th>
               <Th>理由 · 加入人</Th>
               {canManageLists && <Th sticky="end">操作</Th>}
             </tr></thead>
             <tbody>
               {firstLoading ? <TableLoading columns={canManageLists ? 6 : 5} rows={4} />
-                : listPageRows.length === 0 ? <TableMessage columns={canManageLists ? 6 : 5}>暂无名单</TableMessage>
+                : listPageRows.length === 0 ? <TableMessage columns={canManageLists ? 6 : 5}>暂无名单{canManageLists && <><br /><span className="rd-weak">从账户详情底部「…」或上面的按钮加入。</span></>}</TableMessage>
                   : listPageRows.map((entry) => {
                     const id = text(entry.userId, "");
                     const status = listStatus(entry);
@@ -1602,9 +1710,10 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
                     return (
                       <Tr key={`${id}-${text(entry.kind)}-${text(entry.status)}`}>
                         <Td><Cell main={<span data-mono>{text(entry.userNo)}</span>} sub={userNicknameText(text(entry.nickname), entry.phoneMasked)} /></Td>
-                        <Td><StatusTag tone={upper(entry.kind) === "BLOCK" ? "danger" : "neutral"} icon={upper(entry.kind) === "BLOCK" ? Ban : ShieldCheck}>{listKindText(entry.kind)}</StatusTag></Td>
-                        <Td><StatusTag tone={status.tone}>{status.label}</StatusTag></Td>
-                        <Td><Cell num main={entry.expiresAt ? timeText(entry.expiresAt) : "长期"} /></Td>
+                        {/* 只有生效中的禁入用红；已移出、已到期降成灰，图标留着分得清禁入和信任（VS-21）。 */}
+                        <Td><StatusTag tone={!active ? "done" : upper(entry.kind) === "BLOCK" ? "danger" : "neutral"} icon={upper(entry.kind) === "BLOCK" ? Ban : ShieldCheck}>{listKindText(entry.kind)}</StatusTag></Td>
+                        <Td><StatusTag tone={status.tone} icon={status.icon}>{status.label}</StatusTag></Td>
+                        <Td><Cell num main={active ? (entry.expiresAt ? timeText(entry.expiresAt) : "长期") : <span className="rd-weak">{entry.expiresAt ? timeText(entry.expiresAt) : "长期"}</span>} /></Td>
                         <Td grow><Cell main={text(entry.reason)} sub={`${text(entry.createdBy)} · ${timeText(entry.createdAt)}`} title={text(entry.reason)} /></Td>
                         {canManageLists && <Td sticky="end">{active && <Button size="sm" disabled={busy && opening !== `listRemove|${id}`} loading={opening === `listRemove|${id}`} disabledReason={listBlock(`list|${id}`)} onClick={() => void confirmRemoveList(entry)}>移出名单</Button>}</Td>}
                       </Tr>
@@ -1645,7 +1754,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     ...(canStartImpersonation ? [{ key: "view", label: "查看这个用户的数据", disabledReason: viewBlock, onSelect: () => startView(shown) }] : []),
     ...(canManageLists && upper(shownList?.kind) !== "ALLOW" ? [{ key: "allow", label: "加入信任名单", disabledReason: listBase, onSelect: () => ctxData && openActionConfirm(addList("ALLOW", ctxData)) }] : []),
     ...(canManageLists && upper(shownList?.kind) !== "BLOCK" ? [{ key: "block", label: "加入禁入名单", disabledReason: listBase, onSelect: () => ctxData && openActionConfirm(addList("BLOCK", ctxData)) }] : []),
-    ...(canManageLists && shownList ? [{ key: "remove", label: "移出名单", disabledReason: listBase, onSelect: () => openActionConfirm(removeList({ ...shownList, userNo: shown.userNo, nickname: shown.nickname })) }] : []),
+    ...(canManageLists && shownList ? [{ key: "remove", label: "移出名单", disabledReason: listBase, onSelect: () => openActionConfirm(removeList({ ...shownList, userNo: shown.userNo, nickname: shown.nickname }, shown.status)) }] : []),
   ];
   const primaryKind = shownStatus === "ACTIVE" && canFreeze ? "freeze" : shownStatus === "FROZEN" && canUnfreeze ? "unfreeze" : null;
   const primaryBlock = primaryKind === "unfreeze" ? unfreezeBlock : primaryKind === "freeze" ? drawerBase : undefined;
@@ -1653,7 +1762,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const drawerNote = context.loading && !ctxData ? undefined : primaryBlock ?? (canRevoke ? revokeBlock : undefined);
   const hasFooter = Boolean(primaryKind) || canRevoke || moreItems.length > 0;
   const accountFooter = shown && hasFooter && (
-    <Decision note={drawerNote ? <>{drawerNote}{primaryBlock === K1_BLOCK && canOpenK1 && <> <Link className="rd-link" href={K1_PATH} prefetch={false}>去多账户风险排查</Link></>}</> : undefined}
+    <Decision note={drawerNote ? <>{drawerNote}{primaryBlock === K1_BLOCK && canOpenK1 && <> <Link className="rd-link" href={K1_PATH} prefetch={false}>去多账户风险排查</Link></>}{primaryBlock === CREGIS_BLOCK && canOpenD1 && <> <Link className="rd-link" href={D1_PATH} prefetch={false}>去充值与收款对账</Link></>}</> : undefined}
       others={<>
         {canRevoke && <Button icon={<LogOut size={14} aria-hidden />} disabled={busy} disabledReason={revokeBlock} onClick={() => ctxData && revokeAll(ctxData)}>退出全部设备</Button>}
         {moreItems.length > 0 && <MoreMenu label="更多操作" items={moreItems} disabled={busy} />}
@@ -1662,13 +1771,16 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         disabledReason={primaryBlock} onClick={() => void confirmStatus(shown, primaryKind)}>{primaryKind === "freeze" ? "冻结" : "恢复"}</Button> : undefined} />
   );
 
+  const shownRisk = riskOf(shown);
+  const statusMeta = formatAccountStatus(shown?.status);
+  // 正常时标题旁的标签已经写了，这一行不重复；其他状态跟标签同色（建议 3）。
   const judgment: JudgmentRow[] = !shown ? [] : [
-    { label: "账户状态", value: shownStatus === "FROZEN" ? `冻结 · ${freezeSourceText(fact?.freezeSource)}` : formatAccountStatus(shown.status).label,
-      state: shownStatus === "ACTIVE" ? undefined : formatAccountStatus(shown.status).tone === "danger" ? "danger" : "warn",
-      reason: shownStatus === "FROZEN" && fact?.freezeSource && !FREEZE_SOURCE[sourceCode] ? <Explain label="冻结来源的原码" content={`来源原码 ${text(fact.freezeSource)}`} /> : undefined },
+    ...(shownStatus === "ACTIVE" ? [] : [{ label: "账户状态", value: shownStatus === "FROZEN" ? `冻结 · ${freezeSourceText(fact?.freezeSource)}` : statusMeta.label,
+      state: statusMeta.tone === "ok" ? undefined : statusMeta.tone,
+      reason: shownStatus === "FROZEN" && fact?.freezeSource && !FREEZE_SOURCE[sourceCode] ? <Explain label="冻结来源的原码" content={`来源原码 ${text(fact.freezeSource)}`} /> : undefined }]),
     { label: "在线设备", value: shownActiveCount === null ? "—" : shownActiveCount === 0 ? <span className="rd-weak">0 台</span> : `${shownActiveCount} 台` },
     { label: "名单", value: listEntryText(shownList), state: upper(shownList?.kind) === "BLOCK" ? "danger" : undefined },
-    { label: "风险", value: riskText(shown) },
+    { label: "风险", value: shownRisk.text, state: shownRisk.tone === "done" ? undefined : shownRisk.tone },
     ...(shownStatus === "FROZEN" ? [{ label: "一起冻结的提现", value: count(fact?.d2FrozenWithdrawalCount) === null ? "—" : `${count(fact?.d2FrozenWithdrawalCount)} 笔 · 恢复账户时一起恢复` }] : []),
   ];
 
@@ -1681,14 +1793,16 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       nav={{ hasPrev: Boolean(prevAccount), hasNext: Boolean(nextAccount), onPrev: () => { if (prevAccount) openAccount(prevAccount); }, onNext: () => { if (nextAccount) openAccount(nextAccount); } }}
       footer={accountFooter}>
       {shown && <>
-        {context.error && <BlockState compact state="error" title={context.error === NO_ID ? NO_ID : `账户详情加载失败：${context.error.replace(/[。.]$/, "")}。已暂停处理，请重新加载。`}
-          onRetry={context.error === NO_ID ? undefined : reloadContext} retryLabel="重新加载" retrying={context.loading} />}
-        <JudgmentPoints title={`判断要点 · 时间为${zone}`} loading={context.loading && !ctxData} rows={ctxData ? judgment : judgment.filter((row) => row.label === "账户状态" || row.label === "风险")} />
+        {/* 读取失败用带图标的红色提示和次按钮；底栏已经写了还没读到，这里不再写「已暂停处理」（建议 4）。 */}
+        {context.error && <Notice tone="danger" action={context.error === NO_ID ? undefined : <Button size="sm" loading={context.loading} onClick={reloadContext}>重新加载</Button>}>
+          {context.error === NO_ID ? NO_ID : `账户详情加载失败：${sentence(context.error)}`}
+        </Notice>}
+        <JudgmentPoints title="判断要点" loading={context.loading && !ctxData} rows={ctxData ? judgment : judgment.filter((row) => row.label === "账户状态" || row.label === "风险")} />
         {ctxData && shownStatus === "FROZEN" && (
-          <Panel plain headingLevel={3} title="冻结情况">
+          <Panel plain headingLevel={3} title="冻结情况" sub={zoneNote}>
             <Facts>
               <Fact k="来源单号">{fact?.freezeSourceRef ? <span data-mono>{text(fact.freezeSourceRef)}</span> : "—"}</Fact>
-              <Fact k="原因">{text(fact?.freezeReason, "未记录")}</Fact>
+              <Fact k="原因">{freezeReasonText(fact)}</Fact>
               <Fact k="操作人">{text(fact?.freezeOperator)}</Fact>
               <Fact k="冻结时间">{timeText(fact?.frozenAt)}</Fact>
             </Facts>
@@ -1698,22 +1812,24 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           <Facts>
             <Fact k="昵称">{userNicknameText(text(shown.nickname), shown.phoneMasked)}</Fact>
             <Fact k="手机号">{text(shown.phoneMasked)}</Fact>
-            <Fact k="等级">{`用户 ${text(shown.userLevel)} · 团队 ${text(shown.vRank)}`}</Fact>
-            <Fact k="USDT 余额">{amountWith(shown.walletUsdt, "USDT")}</Fact>
-            <Fact k="UVT 余额">{amountWith(shown.walletNex, "UVT")}</Fact>
+            {/* 名字同用户详情：分层、可用余额（DT-14）。 */}
+            <Fact k="分层">{`${text(shown.userLevel)} · ${text(shown.vRank)}`}</Fact>
+            <Fact k="USDT 可用余额">{amountWith(shown.walletUsdt, "USDT")}</Fact>
+            <Fact k="UVT 可用余额">{amountWith(shown.walletNex, "UVT")}</Fact>
           </Facts>
         </Panel>
         {ctxData && <div className="rd-fold-flush">
-          <Fold inset title="登录记录" summary={`最近 ${shownSessions.length} 条，${shownSessions.filter(isActiveSession).length} 条活跃`}>
+          <Fold inset title="登录记录" summary={`最近 ${shownSessions.length} 条，${shownSessions.filter(isActiveSession).length} 条活跃 · ${zoneNote}`}>
             <Table label="登录记录">
-              <thead><tr><Th>设备 · 编号 · IP</Th><Th>状态</Th><Th>到期（{zone}）</Th></tr></thead>
+              <thead><tr><Th>设备 · 编号 · IP</Th><Th>状态</Th><Th>到期</Th></tr></thead>
               <tbody>
                 {shownSessions.length === 0 ? <TableMessage columns={3}>暂无登录记录。</TableMessage> : shownSessions.map((row) => (
                   <Tr key={text(row.refreshTokenId)}>
                     {/* 抽屉只有 540 宽：编号和 IP 进设备的第二行，到期不用横向滚动就看得到（D6-key）。 */}
                     <Td grow><Cell main={platformSessionDeviceText(text(row.deviceName))} sub={<span data-mono>{maskedSessionId(row.refreshTokenId)} · {text(row.clientIpMasked)}</span>} /></Td>
                     <Td><StatusTag tone={isActiveSession(row) ? "ok" : "done"}>{formatC1SessionStatus(row.status)}</StatusTag></Td>
-                    <Td><Cell num main={timeText(row.expiresAt)} /></Td>
+                    {/* 已撤销、已过期的登录没有「到期」可言，写「—」（建议 10）。 */}
+                    <Td><Cell num main={isActiveSession(row) ? timeText(row.expiresAt) : <span className="rd-weak">—</span>} /></Td>
                   </Tr>
                 ))}
               </tbody>
@@ -1738,7 +1854,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const traceActive = isActiveImpersonation(traceRow);
   const traceDrawer = (
     <Drawer open={Boolean(traceRow) && tab === "views" && !mirror} onClose={() => setTrace(null)} title="查看记录" icon={Eye} tone="progress" busy={Boolean(submitting)}
-      sub={traceRow && <><span data-mono>{traceNo}</span> <StatusTag tone={impersonationStatus(traceRow).tone}>{traceActive ? `进行中 · 剩 ${count(traceRow.leftMinutes) ?? 0} 分钟` : impersonationStatus(traceRow).label}</StatusTag></>}
+      sub={traceRow && <><span data-mono>{traceNo}</span> <StatusTag tone={impersonationStatus(traceRow).tone}>{traceActive ? `进行中 · 剩 ${count(traceRow.leftMinutes) ?? 0} 分钟` : impersonationStatus(traceRow).label}</StatusTag> <span className="rd-weak">{zoneNote}</span></>}
       footer={traceRow && traceActive && canTerminateImpersonation && <Decision note={listBlock(`view|${traceNo}`) === LOCKED_VIEW ? LOCKED_VIEW : undefined}
         primary={<Button variant="primary" disabled={busy && opening !== `impEnd|${traceNo}`} loading={opening === `impEnd|${traceNo}`} disabledReason={listBlock(`view|${traceNo}`)} onClick={() => void confirmEndView(traceRow)}>立即结束</Button>} />}>
       {traceRow && <>
@@ -1746,12 +1862,12 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           <Fact k="用户编码"><span data-mono>{text(traceRow.userNo)}</span></Fact>
           <Fact k="查看人">{text(traceRow.operator)}</Fact>
           <Fact k="原因">{text(traceRow.reason)}</Fact>
-          <Fact k="开始时间">{`${timeText(traceRow.createdAt)}（${zone}）`}</Fact>
-          <Fact k="到期时间">{`${timeText(traceRow.expiresAt)}（${zone}）`}</Fact>
+          <Fact k="开始时间">{timeText(traceRow.createdAt)}</Fact>
+          <Fact k="到期时间">{timeText(traceRow.expiresAt)}</Fact>
           <Fact k="结束人">{text(traceRow.endedBy)}</Fact>
           <Fact k="结束原因">{text(traceRow.endReason)}</Fact>
         </Facts>
-        <p className="rd-weak">具体看了哪些页面，可在{canReadAudit ? <Link className="rd-link" href="/platform/audit" prefetch={false}>「操作记录与审批」</Link> : "「操作记录与审批」"}查询。</p>
+        <p className="rd-weak">具体看了哪些页面，可在{canReadAudit ? <>「<Link className="rd-link" href="/platform/audit" prefetch={false}>操作记录与审批</Link>」</> : "「操作记录与审批」"}查询。</p>
       </>}
     </Drawer>
   );
@@ -1770,8 +1886,9 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     }
   };
   const mirrorDrawer = (
-    <Drawer wide open={Boolean(mirror)} onClose={closeMirror} title={`用户数据只读视图 · ${text(jsonRecord(mirror?.user).userNo)}`} icon={Eye} tone="progress" busy={Boolean(submitting)}
-      footer={mirror && canTerminateImpersonation && <Decision explain={`当前页面：${MIRROR_PAGES.find((item) => item.value === text(mirror.currentPage, mirrorPage))?.label ?? text(mirror.currentPage, mirrorPage)}。每次切换页面都会被记录。`}
+    // 和账户抽屉同为 540 宽（VS-64）；当前页面写成按钮左边一行弱文字，不留孤零零的问号。
+    <Drawer open={Boolean(mirror)} onClose={closeMirror} title={`用户数据只读视图 · ${text(jsonRecord(mirror?.user).userNo)}`} icon={Eye} tone="progress" busy={Boolean(submitting)}
+      footer={mirror && canTerminateImpersonation && <Decision others={<span className="rd-toolbar-note">当前在「{MIRROR_PAGES.find((item) => item.value === text(mirror.currentPage, mirrorPage))?.label ?? text(mirror.currentPage, mirrorPage)}」，每次切页都记进操作记录</span>}
         primary={<Button variant="primary" disabled={busy} disabledReason={locked.has(`view|${text(mirror.sessionNo, "")}`) ? LOCKED_VIEW : undefined} onClick={exitMirror}>退出并结束</Button>} />}>
       {mirror && <div className="rd-stack">
         <Notice tone="warn">
@@ -1825,6 +1942,6 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     {traceDrawer}
     {mirrorDrawer}
     {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-      explain="重试被拒说明不了原操作的结果。先读回核对，或请有操作记录读权限的同事核对。解除后原操作不再重试，系统仍按对象现在的状态校验。" />}
+      explain="重试被拒说明不了原操作的结果，先读回核对或到操作记录确认。这里只清理本页的待确认，不是系统结案；之后的操作仍须通过系统校验。" />}
   </>;
 }

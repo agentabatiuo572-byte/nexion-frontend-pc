@@ -1041,7 +1041,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   IMPERSONATION_SESSION_ALREADY_ACTIVE: "该用户已有进行中的用户数据只读视图；本次未创建新会话，现有数据未变化。请先在「用户数据只读视图」结束当前会话，或等待到期后再试。",
   IMPERSONATION_SESSION_CONCURRENTLY_CHANGED: "该用户数据只读视图已被其他操作员结束或已到期；本次没有覆盖最新状态。请刷新后查看系统当前结果。",
   USER_FROZEN_BY_K1_CLUSTER: "这个账户是随多账户风险排查的账户组冻结的，要在那里解除，这里不能恢复。",
-  USER_FROZEN_BY_CREGIS_INCIDENT: "这个账户因 USDT 充值异常冻结，异常处理完系统会解除，这里不能恢复。",
+  USER_FROZEN_BY_CREGIS_INCIDENT: "这个账户因 USDT 充值异常冻结，这里不能恢复，需要单独解冻处置：异常和欠款处理完后，在「充值与收款对账」提交解冻，另一位同事复核后解除。",
   C2_STATUS_CONCURRENTLY_CHANGED: "账户状态刚被别人改了，这次没有执行，请刷新后查看最新状态。",
   ACCOUNT_LIST_ENTRY_NOT_FOUND: "这个用户不在名单上，请刷新后查看。",
   ACCOUNT_LIST_EXPIRES_AT_NOT_FUTURE: "失效日期不能早于今天。",

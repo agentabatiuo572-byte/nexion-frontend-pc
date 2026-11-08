@@ -2,12 +2,12 @@
 
 /**
  * C2「注销申请」页签。列表、状态筛选、详情抽屉在这里；理由在确认框里填（OP-24），命令由页面统一发，
- * 结果未知时转成页面上方的待确认条（OP-91～OP-96）。读写判断原样：读超管或 user_c1_read，写超管或 user_c1_write。
+ * 结果未知时转成页面上方的待确认条（OP-91～OP-96）。读写只认后端的精确码：读 user_c1_read，写 user_c1_write，角色不绕过。
  * 会话变化清列表和详情，晚到的响应不覆盖新的（代次判断原样）。
  */
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Copy, FileText, UserX } from "lucide-react";
+import { AlertTriangle, Copy, FileText } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, Decision, Drawer, Explain, Fact, Facts, IconButton, IrreversibleTag, JudgmentPoints, Notice, Panel,
   Select, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, type JudgmentRow, type StateTone,
@@ -46,12 +46,14 @@ export type DeletionAction = "review" | "block" | "complete" | "cancel";
 const ACTION_LABELS: Record<DeletionAction, string> = { review: "开始审核", block: "拒绝申请", complete: "完成注销", cancel: "取消申请" };
 export const deletionActionLabel = (action: DeletionAction) => ACTION_LABELS[action];
 
-/** 被系统拦下的原因写中文，不再显示英文码；运营写的理由原样。 */
+/** 被系统拦下的原因写中文，不再显示英文码；运营写的理由原样。「没有注销」由状态和提示说，原因里不再重复（DT-12）。 */
 const BLOCK_REASONS: Record<string, string> = {
-  UNSETTLED_FUNDS_OR_ORDERS: "还有余额、提现中金额，或没结束的提现、充值、兑换、质押、订单，没有注销",
-  UNSETTLED_STATE_UNAVAILABLE: "资金和订单状态暂时查不到，系统没有注销",
+  UNSETTLED_FUNDS_OR_ORDERS: "还有余额、提现中金额，或没结束的提现、充值、兑换、质押、订单",
+  UNSETTLED_STATE_UNAVAILABLE: "资金和订单状态暂时查不到",
   USER_REQUESTED_CANCEL: "用户主动取消申请",
 };
+/** 系统拦下的两个原因码；列表里加「系统拦下：」，分得清是系统拦的还是运营拒的。 */
+const SYSTEM_BLOCKS = ["UNSETTLED_FUNDS_OR_ORDERS", "UNSETTLED_STATE_UNAVAILABLE"];
 const PAGE_SIZE = 20;
 const LOCKED = "这张申请有结果未确认的操作，先到页面上方核对";
 const SUBMITTING = "正在提交，稍候";
@@ -72,7 +74,9 @@ export function reasonText(value: string | null | undefined) {
 
 /** 最近理由：已拒绝时写拦下原因，其他写这一次流转的理由。 */
 function latestReason(row: AccountDeletionRequest) {
-  return row.status === "BLOCKED" ? reasonText(row.blockReason || row.reason) : reasonText(row.reason);
+  if (row.status !== "BLOCKED") return reasonText(row.reason);
+  const raw = (row.blockReason || row.reason || "").trim();
+  return SYSTEM_BLOCKS.includes(raw) ? `系统拦下：${reasonText(raw)}` : reasonText(raw);
 }
 
 function statusLabel(status: string) {
@@ -95,7 +99,8 @@ const TARGET: Record<DeletionAction, string> = { review: "IN_REVIEW", block: "BL
 
 /** 动作做完后的提示：完成注销按返回的最终状态说话，被拦下不算成功（OP-90）。 */
 export function deletionResultToast(action: DeletionAction, row: AccountDeletionRequest): [string, "success" | "warn"] {
-  if (action === "complete" && row.status === "BLOCKED") return [`系统没有注销：${reasonText(row.blockReason || row.reason)}`, "warn"];
+  // 原因只写在抽屉的「拦下原因」一处，提示只说结果（DT-12）。
+  if (action === "complete" && row.status === "BLOCKED") return ["系统没有注销，申请已改成已拒绝。原因见「拦下原因」。", "warn"];
   if (action === "complete") return [`${row.requestNo} 已完成注销`, "success"];
   if (action === "review") return [`${row.requestNo} 已开始审核`, "success"];
   if (action === "block") return [`${row.requestNo} 已拒绝`, "success"];
@@ -270,7 +275,7 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
     const impact = {
       review: "改成审核中，用户在 App 还能取消。",
       block: "改成已拒绝，账号不注销；用户能看到这次的理由。",
-      complete: "通过检查后账号立即禁用、全部设备下线，个人信息匿名化，不能撤销。",
+      complete: "通过检查后账号立即注销、全部设备下线，个人信息匿名化。",
       cancel: "申请结束，账号不注销；用户可以再提交。",
     }[action];
     return {
@@ -333,13 +338,16 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
     void navigator.clipboard?.writeText(value).then(() => toast("已复制申请号", "success"), () => toast("复制失败，请手动选择申请号", "error"));
   };
 
+  const blockedRaw = selected?.status === "BLOCKED" ? (selected.blockReason || selected.reason || "").trim() : "";
+  // 已拒绝时标题旁已有标签，状态行不再写一遍；被系统拦下是正常的业务结果，不用红（VS-107），原因只写这一处。
   const judgment: JudgmentRow[] = !selected ? [] : [
-    { label: "状态", value: statusLabel(selected.status), state: STATUS_TONE[selected.status] === "warn" ? "warn" : undefined },
-    { label: "用户", icon: UserX, tone: "users", value: <>系统编号 {selected.userId}{canReadUserDetail && <> · <Link className="rd-link" href={`/users/search/${selected.userId}`} prefetch={false}>到用户详情</Link></>}</>,
+    ...(selected.status === "BLOCKED" ? [] : [{ label: "状态", value: statusLabel(selected.status), state: STATUS_TONE[selected.status] === "warn" || STATUS_TONE[selected.status] === "progress" ? STATUS_TONE[selected.status] : undefined }]),
+    { label: "用户", value: <>系统编号 {selected.userId}{canReadUserDetail && <> · <Link className="rd-link" href={`/users/search/${selected.userId}`} prefetch={false}>到用户详情</Link></>}</>,
       reason: selected.status === "IN_REVIEW" || selected.status === "REQUESTED" ? "完成注销前到用户详情核对资金和订单" : undefined },
     { label: "申请时间", value: formatBusinessTimeCompact(selected.requestedAt, "—") },
-    ...(selected.status === "BLOCKED" ? [{ label: "拦下原因", state: "danger" as const, value: reasonText(selected.blockReason || selected.reason) }] : []),
-    ...(selected.status === "IN_REVIEW" ? [{ label: "完成后会怎样", value: "完成注销后，该账号会被禁用并立即下线，个人信息会被匿名化处理。" }] : []),
+    ...(selected.status === "BLOCKED" ? [{ label: SYSTEM_BLOCKS.includes(blockedRaw) ? "拦下原因" : "拒绝理由", value: <><span className="rd-point-mark" data-tone="warn"><AlertTriangle size={14} aria-hidden /></span>{reasonText(blockedRaw)}</>,
+      reason: "用户可以在 App 取消这次申请，结清后再重新提交" }] : []),
+    ...(selected.status === "IN_REVIEW" ? [{ label: "完成后会怎样", value: "账号注销并立即下线，个人信息匿名化。" }] : []),
   ];
 
   const footer = actions.length > 0 && selected && (
@@ -353,7 +361,7 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
 
   return (
     <Panel data-testid="account-deletion-queue" title={<span ref={titleRef} tabIndex={-1} data-section-focus="">注销申请</span>} explainLabel="注销申请" icon={FileText} tone="role-3" flush
-      sub={`共 ${total === null ? "—" : total.toLocaleString("en-US")} 条 · 时间为${zone}`}
+      sub={`时间为${zone}`}
       explain="用户在 App 里申请注销后，在这里审核处理。"
       actions={<Select aria-label="注销申请状态筛选" value={status} onChange={(value) => changeStatus(value as AccountDeletionStatus | "")}
         options={[{ value: "", label: "全部状态" }, ...ACCOUNT_DELETION_STATUSES.map((value) => ({ value, label: DELETION_STATUS_LABELS[value] }))]} />}>
@@ -367,7 +375,7 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
         <tbody>
           {loading && rows.length === 0 && !error ? <TableLoading columns={4} rows={4} />
             : error ? <TableMessage columns={4} role="alert">注销申请读取失败，不显示旧数据：{error} <Button size="sm" onClick={() => void refresh()}>重试</Button></TableMessage>
-              : rows.length === 0 ? <TableMessage columns={4}>暂无申请。</TableMessage>
+              : rows.length === 0 ? <TableMessage columns={4}>暂无申请。{status === "" && <><br /><span className="rd-weak">用户在 App 提交注销后出现在这里。</span></>}</TableMessage>
                 : rows.map((row) => (
                   <Tr key={row.requestNo} selected={selected?.requestNo === row.requestNo} aria-label={`查看注销申请 ${row.requestNo}`} onOpen={() => void openDetail(row)}>
                     <Td><Cell main={<span data-mono>{shortNo(row.requestNo)}</span>} sub={formatBusinessTimeCompact(row.requestedAt, "—")} title={row.requestNo} /></Td>
@@ -398,12 +406,15 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
           {detailRead?.status === "stale" && <Notice tone="warn" action={<Button size="sm" onClick={() => void openDetail(selected)}>刷新</Button>}>申请状态已变化，请刷新后再审核。</Notice>}
           {blockedNote?.requestNo === selected.requestNo && selected.status === "BLOCKED" && <Notice tone="warn">{blockedNote.text}</Notice>}
           <JudgmentPoints title={`判断要点 · 时间为${zone}`} loading={detailRead?.status === "loading"} rows={judgment} />
-          {detailReady && <Facts>
-            <Fact k="审核时间">{formatBusinessTimeCompact(selected.reviewedAt, "—")}</Fact>
-            <Fact k="完成时间">{formatBusinessTimeCompact(selected.completedAt, "—")}</Fact>
-            {/* 已拒绝时理由就是上面的拦下原因，同一句不写两次（DP-61）。 */}
-            {!(selected.status === "BLOCKED" && (selected.blockReason || selected.reason) === selected.reason) && <Fact k="原因">{reasonText(selected.reason)}</Fact>}
-          </Facts>}
+          {/* 判断要点和处理记录之间用小标题分开，字段名同一条左边线（对齐）。 */}
+          {detailReady && <Panel plain headingLevel={3} title="处理记录">
+            <Facts>
+              <Fact k="审核时间">{formatBusinessTimeCompact(selected.reviewedAt, "—")}</Fact>
+              <Fact k="完成时间">{formatBusinessTimeCompact(selected.completedAt, "—")}</Fact>
+              {/* 已拒绝时理由就是上面那一行，同一句不写两次（DP-61）。 */}
+              {!(selected.status === "BLOCKED" && blockedRaw === (selected.reason ?? "").trim()) && <Fact k="原因">{reasonText(selected.reason)}</Fact>}
+            </Facts>
+          </Panel>}
         </div>}
       </Drawer>
     </Panel>
