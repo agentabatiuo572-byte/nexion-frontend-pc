@@ -717,7 +717,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
         {!canExport ? <>你的账号现在不能导出名单，请到{auditLink}核对。</>
           : pendingExpired ? <>已超过 24 小时，不能再重试，请到{auditLink}核对。</>
             : retryBlocked ? <>你的账号现在没有风险读权，不能按原操作重试，请到{auditLink}核对。</>
-              : <>点右上角「继续原导出」按原操作重试，或到{auditLink}核对。</>}
+              : <>点右上角<span className="rd-keep">「继续原导出」</span>按原操作重试，或到{auditLink}核对。</>}
         <Explain label="技术信息" content={`命令号 ${pending.commandKey} ｜ 操作者 ${pending.operator} ｜ 理由 ${pending.reason}`} />
       </Notice>
     )}
