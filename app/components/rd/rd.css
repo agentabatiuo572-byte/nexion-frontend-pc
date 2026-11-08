@@ -1037,7 +1037,7 @@ td .rd-flow { margin-bottom: 0; }
 @container (max-width: 860px) { .rd-config-rail .rd-push-state { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; } }  /* 窄栏上移时状态、说明、按钮排一行，不把参数挤出首屏 */
 .rd-row-actions { display: inline-flex; gap: 8px; }
 /* 宽度按内容定（Ant Design InputNumber）：--rd-number-chars 是 min、max、现在的值里最长的字数（ch），--rd-number-unit 是单位的字宽，组件算好传进来。 */
-.rd-number { --rd-number-unit-w: calc(var(--rd-number-unit) * .62 * var(--rd-text-body)); position: relative; display: inline-block; max-width: 100%; vertical-align: middle; }
+.rd-number { --rd-number-unit-w: calc(var(--rd-number-unit) * .62 * var(--rd-text-body)); position: relative; display: inline-block; width: max-content; max-width: 100%; vertical-align: middle; }  /* 放在表单栅格里也不被拉满，单位才跟着框 */
 .rd-number .rd-input { width: calc((var(--rd-number-chars) + .5) * 1ch + 24px); max-width: 100%; font-variant-numeric: tabular-nums; }
 .rd-number[data-unit] .rd-input { width: calc((var(--rd-number-chars) + .5) * 1ch + 32px + var(--rd-number-unit-w)); padding-right: calc(20px + var(--rd-number-unit-w)); }  /* 单位紧跟数字，中间 8 */
 .rd-number-unit { position: absolute; z-index: 1; top: 0; right: 12px; height: var(--rd-control-h); display: inline-flex; align-items: center; color: var(--rd-text-3); font-size: var(--rd-text-body); pointer-events: none; }
