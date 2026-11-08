@@ -323,7 +323,7 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, seatsLeft }
     // 阻断原因要看得见，不只放在灰按钮的提示里（OP-126）。
     deadEndLead,
   ].filter(Boolean).join(" · ");
-  const productLink = isProduct && reach(productHref) && <Link className="rd-link" href={productHref} prefetch={false}>去商品管理查看</Link>;
+  const productLink = isProduct && reach(productHref) && <Link className="rd-link" href={productHref} prefetch={false}>到商品管理与上架条件查看</Link>;
 
   return (
     <ConfigRow
@@ -740,7 +740,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   if (j1Closed) issues.push({ key: "j1", tone: "danger", title: "试用已被紧急停用开关关闭", body: <>用户现在不能开始试用。{reach(j1Href) && <Link className="rd-link" href={j1Href} prefetch={false}>去紧急停用开关</Link>}</> });
   if (productBlocked) issues.push({ key: "product", tone: "danger", title: "当前目标商品不可用", body: product
     ? <>库存 {product.stock ?? 0} · {trialProductReason(product.unavailableReason)}</>
-    : <>商品编号 {productNo || "未设置"} 不在可选列表，用户现在不能开始试用。{reach(pricingHref) && <Link className="rd-link" href={pricingHref} prefetch={false}>去商品管理核对「允许试用」</Link>}</> });
+    : <>商品编号 {productNo || "未设置"} 不在可选列表，用户现在不能开始试用。{reach(pricingHref) && <Link className="rd-link" href={pricingHref} prefetch={false}>到商品管理与上架条件核对「允许试用」</Link>}</> });
   if (phaseClosed) issues.push({ key: "phase", tone: "warn", title: "当前运营阶段不开放试用", body: <>用户现在不能开始试用。{reach(phaseHref) && <Link className="rd-link" href={phaseHref} prefetch={false}>去运营阶段设置</Link>}</> });
   if (!seatsKnown) issues.push({ key: "seats", tone: "warn", title: "今日实际剩余名额读不到", body: operatorCopyText(seats?.sub ?? "名额计数暂不可用，请稍后刷新；不能作为领取依据") });
   else if (Number(seats?.cur) === 0 && Number(paramOf("seatsLeftToday")?.cur) === 0) issues.push({ key: "seats", tone: "warn", title: "每日免费名额上限是 0", body: `用户不能开始试用，次日也不会恢复。${canWrite ? "要开放试用，调高「每日免费名额上限」。" : ""}` });

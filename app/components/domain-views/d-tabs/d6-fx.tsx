@@ -9,7 +9,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Coins, History, RefreshCw, SlidersHorizontal } from "lucide-react";
-import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConflictBar, ConfigRow, Drawer, Explain, Fact, Facts, Fold, Notice, PageHeader, Panel, ReleaseModal, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
+import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConflictBar, ConfigRow, Drawer, Explain, Fact, Facts, KeepText, Fold, Notice, PageHeader, Panel, ReleaseModal, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
@@ -281,7 +281,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
           <Facts>
             {lock ? <>
               <Fact k="影响范围">之后在充值页「银行卡支付」新建的付款单</Fact>
-              <Fact k="不受影响">买设备用银行卡付款的报价（最长 15 分钟）、提现报价</Fact>
+              <Fact k="不受影响"><KeepText text="买设备用银行卡付款的报价（最长 15 分钟）、提现报价" phrases={["提现报价"]} /></Fact>
             </> : <Fact k="买入价" unit="₫/USDT">{next
               ? <Change from={vnd(quote.quoteRateVndPerUsdt)} to={vnd(d6QuoteRate(next.baseRateVndPerUsdt, next.buySpreadPct))} />
               : vnd(quote.quoteRateVndPerUsdt)}</Fact>}

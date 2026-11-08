@@ -26,6 +26,7 @@ import {
   Explain,
   Field,
   Fold,
+  KeepText,
   Modal,
   Notice,
   NumberInput,
@@ -935,7 +936,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         </ul>
       ) : <p>你只能查看，修改要有这页的修改权限。</p>}
       <h3>以前页头的说明</h3>
-      <p>「设置每日提现次数、可提比例、网络费、UVT 抵扣、小额免审和到账时限。放宽限制前先看兑付覆盖率；随运营阶段变化的设置在「运营阶段设置」修改。」</p>
+      <p><KeepText text="「设置每日提现次数、可提比例、网络费、UVT 抵扣、小额免审和到账时限。放宽限制前先看兑付覆盖率；随运营阶段变化的设置在「运营阶段设置」修改。」" phrases={["在「运营阶段设置」修改。」"]} /></p>
     </section>
   );
 
