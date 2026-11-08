@@ -403,7 +403,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
         {!expired && !canManage && <p>{NO_WRITE}。</p>}
         {retryRejected && !expired && <>
           <p>重试没有成功：{retryRejected}</p>
-          <p>{data ? "" : "先读到汇率设置，"}先展开下面的「调整历史」，找 {when} {what} 的那一条：有就是已经生效，没有就是没生效。核对完点「解除待确认」。</p>
+          <p>{data ? "先" : "先读到汇率设置，再"}展开下面的「调整历史」，找 {when} {what} 的那一条：有就是已经生效，没有就是没生效。核对完点「解除待确认」。</p>
         </>}
         {pendingNote && <p>{pendingNote}</p>}
       </Notice>
