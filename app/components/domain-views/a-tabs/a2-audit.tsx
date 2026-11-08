@@ -392,7 +392,7 @@ const RECOVERY_HINT: Record<A2CommandKind, string> = {
   reject: "读回只看这张单现在的状态，说明不了这次操作的结果。可以按原操作重试，不会重复执行。",
   withdraw: "读回只看这张单现在的状态，说明不了这次操作的结果。可以按原操作重试，不会重复执行。",
   param: "读回只看现在的值，值相同也可能是别人改的。可以按原操作重试，不会重复执行。",
-  retention: "可以按原操作重试，已完成的清理不会再做一次。",
+  retention: "读回只看最近一次手动清理。可以按原操作重试，不会重复清理。",
   export: "读回只看有没有这次的导出记录。可以按原操作重试，按当时的条件重新下载。",
 };
 const PARAM_NAME: Record<string, string> = { ttl: "操作理由最短长度", retention: "操作记录保留期", schema: "记录字段版本" };
