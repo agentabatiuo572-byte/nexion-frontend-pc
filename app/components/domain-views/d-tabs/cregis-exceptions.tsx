@@ -306,6 +306,7 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
 
     {claim && <ClaimDrawer key={`${claim.sourceType}:${claim.sourceId}`} source={claim} sources={sources} policyMode={policy ? String(policy.mode) : "UNREAD"} canRefund={canRefund}
       recoveredChallenge={recoveredChallenge?.request.sourceType === claim.sourceType && recoveredChallenge.request.sourceId === claim.sourceId ? recoveredChallenge : null}
+      onChanged={onChanged}
       scopeFor={scopeFor} owns={owns} busy={busy} onClose={onClaimClose}
       onPropose={(intent, body, facts) => confirm({ kind: "funds", action: intent === "CLAIM_CREDIT" ? "提交认领入账提案" : "提交原路退款提案", title: intent === "CLAIM_CREDIT" ? "提交认领入账提案" : "提交原路退款提案", confirmLabel: "提交审批",
         path: intent === "CLAIM_CREDIT" ? "/exception-claims" : "/refunds/cases", body, facts,
@@ -314,11 +315,12 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
 }
 
 /** 认领或原路退款：四步，换来源或方式清掉已生成的证明（D1-A43～A45）。 */
-function ClaimDrawer({ source, sources, policyMode, canRefund, scopeFor, owns, busy, onClose, onPropose, recoveredChallenge }: {
+function ClaimDrawer({ source, sources, policyMode, canRefund, scopeFor, owns, busy, onClose, onPropose, recoveredChallenge, onChanged }: {
   source: ClaimSource; sources: ClaimSource[]; policyMode: string; canRefund: boolean;
   scopeFor: (write?: boolean, refund?: boolean) => ExceptionRequestScope; owns: () => boolean; busy: boolean; onClose: () => void;
   onPropose: (intent: string, body: ExceptionRecord, facts: React.ReactNode) => void;
   recoveredChallenge?: RecoveredChallenge | null;
+  onChanged: () => void;
 }) {
   const [intent, setIntent] = useState(String(recoveredChallenge?.request.action ?? (source.dust ? "REFUND_ORIGIN" : "CLAIM_CREDIT")));
   const [userId, setUserId] = useState(String(recoveredChallenge?.request.targetUserId ?? ""));
@@ -331,7 +333,9 @@ function ClaimDrawer({ source, sources, policyMode, canRefund, scopeFor, owns, b
   const clearProof = () => { selection.current++; setChallenge(null); setEvidence(null); setSignature(""); setError(""); };
   const refund = intent === "REFUND_ORIGIN";
   const userValid = /^[1-9][0-9]{0,18}$/.test(userId);
-  const prepareBlock = working || busy ? "正在处理" : refund && !canRefund ? "没有退款权限" : refund && policyMode === "UNREAD" ? "退款手续费没读到，刷新后再试" : refund && policyMode === "UNCONFIGURED" ? "退款手续费待配置，先在「退款手续费」里配置" : !refund && source.dust ? "这笔低额入金已有归属，仅支持原路退款" : !refund && !userValid ? "先填认领用户编号" : undefined;
+  const prepareBlock = working || busy ? "正在处理" : d1PendingObjectReason("/cregis/exception-ownership/challenges", { sourceType: source.sourceType, sourceId: source.sourceId })
+    ?? (refund && !canRefund ? "没有退款权限" : refund && policyMode === "UNREAD" ? "退款手续费没读到，刷新后再试" : refund && policyMode === "UNCONFIGURED" ? "退款手续费待配置，先在「退款手续费」里配置" : !refund && source.dust ? "这笔低额入金已有归属，仅支持原路退款" : !refund && !userValid ? "先填认领用户编号" : undefined);
+  const previewPath = intent === "CLAIM_CREDIT" ? "/exception-claims/preview" : "/refunds/preview";
   const prepare = async () => {
     const scope = scopeFor(true, refund); scope.assertOwner();
     setWorking(true); setError(""); const epoch = ++selection.current;
@@ -343,20 +347,20 @@ function ClaimDrawer({ source, sources, policyMode, canRefund, scopeFor, owns, b
       scope.assertOwner();
       if (epoch === selection.current) setChallenge(result);
     } catch (failure) { if (epoch === selection.current && owns()) setError(displayAdminError(failure)); }
-    finally { if (owns()) setWorking(false); }
+    finally { if (owns()) { setWorking(false); onChanged(); } }
   };
   const preview = async () => {
     const scope = scopeFor(true, refund); scope.assertOwner();
     if (!challenge) return;
     setWorking(true); setError(""); const epoch = selection.current;
     try {
-      const result = await exceptionCommand(intent === "CLAIM_CREDIT" ? "/exception-claims/preview" : "/refunds/preview", {
+      const result = await exceptionCommand(previewPath, {
         challengeId: exceptionChallengeId(challenge.challengeId), signature, ...(intent === "CLAIM_CREDIT" ? { targetUserId: exceptionId(userId) } : {}),
       }, scope);
       scope.assertOwner();
       if (epoch === selection.current) setEvidence(result);
     } catch (failure) { if (epoch === selection.current && owns()) { setEvidence(null); setError(displayAdminError(failure)); } }
-    finally { if (owns()) setWorking(false); }
+    finally { if (owns()) { setWorking(false); onChanged(); } }
   };
   const signatureValid = /^0x[0-9a-fA-F]{130}$/.test(signature);
   const step = evidence ? 3 : challenge ? (signatureValid ? 2 : 1) : 0;
@@ -394,7 +398,7 @@ function ClaimDrawer({ source, sources, policyMode, canRefund, scopeFor, owns, b
       <Field label="签名结果" required error={signature && !signatureValid ? "签名是 0x 开头的 130 位十六进制" : undefined}>
         <Textarea aria-label="钱包签名结果" rows={3} value={signature} disabled={working} onChange={(event) => { setSignature(event.target.value.trim()); setEvidence(null); }} />
       </Field>
-      <div><Button disabledReason={working ? "正在处理" : signatureValid ? undefined : "先粘贴签名结果"} onClick={() => void preview()}>核对归属与资金证据</Button></div>
+      <div><Button disabledReason={working ? "正在处理" : d1PendingObjectReason(`/cregis${previewPath}`) ?? (signatureValid ? undefined : "先粘贴签名结果")} onClick={() => void preview()}>核对归属与资金证据</Button></div>
     </>}
     {evidence && <Fold inset defaultOpen title="归属与资金证据" summary={`净额 ${label(evidence.netAmount)} USDT`}>
       <KeyValues rows={caseRows(evidence)} />
