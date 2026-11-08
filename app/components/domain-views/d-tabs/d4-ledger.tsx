@@ -4,16 +4,16 @@ import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeftRight, CheckCircle2, Clock3, Coins, Copy, Download, Layers, Receipt, RefreshCw, Scale, Wallet } from "lucide-react";
+import { ArrowLeftRight, CheckCircle2, Clock3, Coins, Copy, Download, Info, Layers, Receipt, RefreshCw, Scale, Wallet } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import {
   BlockState, Button, Cell, Check, ColumnPicker, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, InlineRetry, Input,
   JudgmentPoints, Notice, PageHeader, PageTabs, Pager, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr,
   useTabIds, useTableColumns, type JudgmentRow, type StateTone,
 } from "@/app/components/rd";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
 import { businessClock, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import {
   downloadD4BillsCsv,
@@ -63,13 +63,16 @@ const PAGE_SIZES = [10, 20, 50] as const;
 /** 后端单次核对、导出的上限（OpsTreasuryService D4_MAX_AUDIT_ROWS）。 */
 const MAX_ROWS = 100_000;
 const TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/;
-const USER_HINT = "请输入用户编码或系统编号，比如 U00000005 或 5";
+/** 条件有误时写哪一项错了、怎么填，一行放得下（VS-107）。 */
+const PROBLEM_TEXT = { user: "用户编码有误：要填 U00000005 或 5。", time: "时间有误：开始时间要早于结束时间。" } as const;
+const PENDING_STATUSES = ["PENDING", "PROCESSING"];
 
 type View = "all" | "user";
 type Applied = { userId?: number; keyword: string; status: string; from: string; to: string };
 type Counts = { state: "loading" } | { state: "failed" } | { state: "ok"; pending: number; failed: number; rejected: number };
 type UserData = { ledger: D4UserLedger; running: D4RunningBalance; from: string; to: string; readAt: number };
-type Problem = { kind: "user" | "time"; reason: string };
+type UserError = { message: string; notFound: boolean };
+type Problem = { kind: "user" | "time" };
 
 const billStatus = (status: string) => BILL_STATUS[status.toUpperCase()] ?? { label: "状态未知", tone: "warn" as StateTone };
 const credit = (row: D4Bill) => row.direction === "IN" || row.direction === "CREDIT";
@@ -91,6 +94,8 @@ function amountText(value: number, digits = digitsOf([value])) {
   return value.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
+const diffDigitsOf = (running: D4RunningBalance) => (running.reconciliation ? digitsOf([running.reconciliation.USDT, running.reconciliation.UVT]) : 2);
+
 /** 入账 +，出账 -，0 不带符号。 */
 function signed(row: D4Bill, digits?: number) {
   return `${row.amount === 0 ? "" : credit(row) ? "+" : "-"}${amountText(row.amount, digits)}`;
@@ -98,6 +103,18 @@ function signed(row: D4Bill, digits?: number) {
 
 function signedDiff(value: number, digits?: number) {
   return `${value > 0 ? "+" : value < 0 ? "-" : ""}${amountText(Math.abs(value), digits)}`;
+}
+
+/** 长账单号中间省略（Carbon 的中间截断）：留开头 10 个字和最后一个「:」之后的一段，同一单的净额、网络费分得开。全文在悬停和抽屉里。 */
+function shortBillNo(value: string) {
+  if (value.length <= 24) return value;
+  const cut = value.lastIndexOf(":");
+  return `${value.slice(0, 10)}…${cut > 10 ? value.slice(cut) : value.slice(-6)}`;
+}
+
+/** 抽屉里的账单号全文：在「:」后允许换行，「NETWORK_FEE」这类一段不被拆开。 */
+function billNoWithBreaks(value: string) {
+  return value.split(":").map((part, index, parts) => <Fragment key={index}>{part}{index < parts.length - 1 && <>:<wbr /></>}</Fragment>);
 }
 
 /** 用户编码 U00000005 和系统编号 5 都认：后端的用户编码是 U 加 8 位补零的系统编号。 */
@@ -209,9 +226,9 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
   const [loading, setLoading] = useState(canGlobalRead);
   const [userLoading, setUserLoading] = useState(false);
   const [error, setError] = useState("");
-  const [userError, setUserError] = useState("");
+  const [userError, setUserError] = useState<UserError | null>(null);
   // Refused before any request: nothing was queried, so the last results stay and these say so.
-  const [filterProblem, setFilterProblem] = useState("");
+  const [filterProblem, setFilterProblem] = useState<Problem | null>(null);
   const [userProblem, setUserProblem] = useState<Problem | null>(null);
   const [billsReload, setBillsReload] = useState(0);
   const [countsReload, setCountsReload] = useState(0);
@@ -223,13 +240,15 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
   const billsRequest = useRef(0);
   const countsRequest = useRef(0);
   const userRequest = useRef(0);
+  const userInputRef = useRef<HTMLInputElement>(null);
+  const focusUserInput = useRef(false);
   const columns = useTableColumns("d4-bills", [
     { key: "bill", label: "账单", locked: "第一列不能关" },
     { key: "type", label: "类型", locked: "类型不能关" },
     { key: "amount", label: "金额", locked: "金额不能关" },
     { key: "status", label: "状态", locked: "状态不能关" },
-    { key: "remark", label: "备注", extra: true },
     { key: "time", label: "时间", locked: "时间不能关" },
+    { key: "remark", label: "备注", extra: true },
     { key: "action", label: "操作", locked: "操作列不能关" },
   ]);
 
@@ -297,7 +316,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
     // 换用户、换时间先清掉上一份，不让旧用户的账单和核对暂留（D4-C61、ST-27）。
     setUserData(null);
     setUserLoading(true);
-    setUserError("");
+    setUserError(null);
     setDetail((current) => (current?.tab === "user" ? null : current));
     const from = applied.from;
     const to = applied.to;
@@ -313,7 +332,9 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
     }).catch((reason) => {
       if (requestId !== userRequest.current) return;
       setUserData(null);
-      setUserError(reason instanceof Error ? displayAdminError(reason) : "该用户账单加载失败");
+      const message = reason instanceof Error ? displayAdminError(reason) : "该用户账单加载失败";
+      // 用户不存在是查询结果，不是故障：不给重试，改提示核对编号（D4 决定 2、DT-23）。
+      setUserError({ message, notFound: message === ADMIN_ERROR_MESSAGES.USER_NOT_FOUND });
     }).finally(() => {
       if (requestId === userRequest.current) setUserLoading(false);
     });
@@ -350,19 +371,19 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
   const draftChanged = draft.keyword.trim() !== applied.keyword || draft.status !== applied.status || draftUserId !== applied.userId || timeChanged;
   const hasConditions = Boolean(type || applied.keyword || applied.status || applied.userId || applied.from || applied.to || bizNo);
 
-  const timeProblem = () => (timeDraft.from && timeDraft.to && timeDraft.from >= timeDraft.to ? "开始时间必须早于结束时间" : "");
+  const timeInvalid = () => Boolean(timeDraft.from && timeDraft.to && timeDraft.from >= timeDraft.to);
 
   const applyFilters = () => {
     const parsedUserId = draft.userId.trim() ? parseUser(draft.userId) : null;
     if (draft.userId.trim() && !parsedUserId) {
-      setFilterProblem(USER_HINT);
+      setFilterProblem({ kind: "user" });
       return;
     }
-    if (timeProblem()) {
-      setFilterProblem(timeProblem());
+    if (timeInvalid()) {
+      setFilterProblem({ kind: "time" });
       return;
     }
-    setFilterProblem("");
+    setFilterProblem(null);
     const keyword = draft.keyword.trim();
     if (keyword !== bizNo) setBizNo("");
     setDraft((value) => ({ ...value, keyword, userId: parsedUserId ? userCode(parsedUserId) : "" }));
@@ -371,7 +392,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
   };
 
   const removeCondition = (patch: Partial<Applied>) => {
-    setFilterProblem("");
+    setFilterProblem(null);
     setApplied((value) => ({ ...value, ...patch }));
     if ("userId" in patch) setDraft((value) => ({ ...value, userId: "" }));
     if ("from" in patch) setTimeDraft((value) => ({ ...value, from: "" }));
@@ -380,7 +401,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
   };
 
   const clearFilters = () => {
-    setFilterProblem("");
+    setFilterProblem(null);
     setType("");
     setBizNo("");
     setDraft({ userId: "", keyword: "", status: "" });
@@ -390,7 +411,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
   };
 
   const onlyStatus = (status: string) => {
-    setFilterProblem("");
+    setFilterProblem(null);
     setDraft((value) => ({ ...value, status }));
     setApplied((value) => ({ ...value, status }));
     setPage(1);
@@ -399,11 +420,11 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
   const openUser = () => {
     const userId = parseUser(userInput);
     if (!userId) {
-      setUserProblem({ kind: "user", reason: USER_HINT });
+      setUserProblem({ kind: "user" });
       return;
     }
-    if (timeProblem()) {
-      setUserProblem({ kind: "time", reason: timeProblem() });
+    if (timeInvalid()) {
+      setUserProblem({ kind: "time" });
       return;
     }
     setUserProblem(null);
@@ -417,12 +438,21 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
   };
 
   const viewAccount = (row: D4Bill) => {
+    focusUserInput.current = true;
     setUserProblem(null);
     setUserInput(parseUser(row.userNo) === row.userId ? row.userNo : String(row.userId));
     if (row.userId === selectedUserId) setUserReload((value) => value + 1);
     setSelectedUserId(row.userId);
     setView("user");
   };
+
+  // 从账单行切过来后焦点落在用户框，键盘用户不用从头 Tab。
+  useEffect(() => {
+    if (view === "user" && focusUserInput.current) {
+      focusUserInput.current = false;
+      userInputRef.current?.focus();
+    }
+  }, [view]);
 
   const refresh = () => {
     if (tab === "all") setBillsReload((value) => value + 1);
@@ -508,8 +538,8 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
     ];
     if (check) {
       rows.push(check.breakDetected
-        ? { label: "核对结果", state: "danger", value: `断点，差 ${signedDiff(check.difference)} ${unit(bill.asset)}`, reason: check.expectedBalanceAfter === null ? undefined : `按上一笔算应为 ${amountText(check.expectedBalanceAfter)} ${unit(bill.asset)}` }
-        : { label: "核对结果", value: check.settlementBucket === "UNSETTLED" ? "未结算 · 不参与钱包核对" : "连续" });
+        ? { label: "核对结果", state: "danger", value: `对不上，差 ${signedDiff(check.difference)} ${unit(bill.asset)}` }
+        : { label: "核对结果", value: check.settlementBucket === "UNSETTLED" ? "未结算 · 不参与钱包核对" : "对得上" });
     }
     return rows;
   };
@@ -538,13 +568,15 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
   }
 
   const notFound = !loading && !error && bills.records.length === 0;
+  // 列表 0 条时数量也都是 0，空状态已经说清楚，不再放结论句（DT-12）。
+  const showGlobalConclusion = !error && !notFound;
   const failedTotal = counts.state === "ok" ? counts.failed + counts.rejected : 0;
   const globalConclusion = counts.state === "loading"
     ? <Conclusion state="unknown">正在读取…</Conclusion>
     : counts.state === "failed"
       ? <Conclusion state="unknown" action={<InlineRetry onRetry={() => setCountsReload((value) => value + 1)} />}>暂时读不到处理中和失败的数量</Conclusion>
       : (
-        <Conclusion state={failedTotal > 0 ? "warn" : "neutral"} icon={failedTotal === 0 && counts.pending > 0 ? Clock3 : undefined}
+        <Conclusion state={failedTotal > 0 ? "warn" : "neutral"} icon={failedTotal > 0 ? undefined : counts.pending > 0 ? Clock3 : Info}
           explain="数量算当前条件下的全部账单，不随账单状态筛选变；失败含已拒绝。处理中的账单还没结算，余额核对不算它们。这句话不代表账都对，核对要到「按用户查账单」。"
           action={(counts.pending > 0 || failedTotal > 0) && <>
             {counts.pending > 0 && <button type="button" className="rd-link rd-link-button" onClick={() => onlyStatus("PENDING")}>只看处理中</button>}
@@ -575,10 +607,12 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
   const globalPane = <>
     {bizNo && (
       <div data-proof="d4-deep-link">
-        <Notice tone={notFound ? "warn" : "neutral"}>正在查找相关账单 · <span data-mono>{bizNo}</span>{notFound ? " · 未找到匹配账单" : ""}</Notice>
+        {loading ? <Notice tone="neutral">正在定位账单 <span data-mono>{bizNo}</span></Notice>
+          : notFound ? <Notice tone="warn">没有找到账单 <span data-mono>{bizNo}</span></Notice>
+            : <Notice tone="neutral">已定位账单 <span data-mono>{bizNo}</span></Notice>}
       </div>
     )}
-    {!error && globalConclusion}
+    {showGlobalConclusion && globalConclusion}
     <FilterBar
       scope={<div className="rd-filter-scope-row"><Segments label="账单类型" value={type} onChange={(next) => { setType(next); setPage(1); }}
         items={BILL_TYPES.map(([value, label]) => ({ value, label }))} /></div>}
@@ -588,24 +622,24 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
       canClear={hasConditions || draftChanged}
       moreCount={appliedChips.length}
       more={<>
-        <FilterField label="用户编码或系统编号"><Input aria-label="用户编码或系统编号" placeholder="比如 U00000005 或 5" value={draft.userId} onChange={(event) => setDraft((value) => ({ ...value, userId: event.target.value }))} /></FilterField>
+        <FilterField label="用户编码或系统编号"><Input aria-label="用户编码或系统编号" aria-invalid={filterProblem?.kind === "user" || undefined} placeholder="比如 U00000005 或 5" value={draft.userId} onChange={(event) => setDraft((value) => ({ ...value, userId: event.target.value }))} /></FilterField>
         <FilterField label={<span>开始时间（北京时间）<Explain label="时间范围的说明" content={TIME_EXPLAIN} /></span>}>
-          <Input aria-label="开始时间" type="datetime-local" value={timeDraft.from} onChange={(event) => setFrom(event.target.value)} />
+          <Input aria-label="开始时间" aria-invalid={filterProblem?.kind === "time" || undefined} type="datetime-local" value={timeDraft.from} onChange={(event) => setFrom(event.target.value)} />
         </FilterField>
         <FilterField label="结束时间（北京时间，不含）">
-          <Input aria-label="结束时间" type="datetime-local" value={timeDraft.to} onChange={(event) => setTo(event.target.value)} />
+          <Input aria-label="结束时间" aria-invalid={filterProblem?.kind === "time" || undefined} type="datetime-local" value={timeDraft.to} onChange={(event) => setTo(event.target.value)} />
         </FilterField>
       </>}
       applied={appliedChips}
       result={draftChanged ? "条件未应用" : undefined}
       notice={filterProblem && (
         <span data-proof="d4-filter-refused">
-          查询条件有误：{filterProblem}。这次没有查询{error ? "。" : `，下方表格仍是上次查询的结果（${appliedConditions(applied, type, bizNo)}）。`}
+          {PROBLEM_TEXT[filterProblem.kind]}没有查询{error ? "。" : "，下面仍是上次的结果。"}
         </span>
       )}
     >
-      <FilterField grow><Input aria-label="账单关键词" placeholder="账单号 / 用户编码 / 昵称 / 备注" value={draft.keyword} onChange={(event) => setDraft((value) => ({ ...value, keyword: event.target.value }))} /></FilterField>
       <FilterField><Select aria-label="账单状态" value={draft.status} onChange={(status) => setDraft((value) => ({ ...value, status }))} options={statusOptions} /></FilterField>
+      <FilterField grow><Input aria-label="账单关键词" placeholder="账单号 / 用户编码 / 昵称 / 备注" value={draft.keyword} onChange={(event) => setDraft((value) => ({ ...value, keyword: event.target.value }))} /></FilterField>
     </FilterBar>
     <Panel flush icon={Receipt} tone="role-2" title="全平台账单" actions={<ColumnPicker columns={columns} />}>
       <Table label="全平台账单" aria-busy={loading} data-tight="">
@@ -614,15 +648,15 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
           <Th>类型</Th>
           <Th align="right" icon={Coins} tone="money">金额</Th>
           <Th>状态</Th>
-          {columns.isVisible("remark") && <Th>备注</Th>}
           <Th>时间（{businessZone().label}）</Th>
+          {columns.isVisible("remark") && <Th>备注</Th>}
           <Th sticky="end">操作</Th>
         </tr></thead>
         <tbody>
           {loading ? <TableLoading columns={columnCount} rows={Math.min(pageSize, 10)} />
             : error ? (
               <TableMessage columns={columnCount} role="alert">
-                <span data-proof="d4-fail-closed">全平台账单已停止展示旧数据 · {error}</span> <Button size="sm" onClick={() => setBillsReload((value) => value + 1)}>重试</Button>
+                <span data-proof="d4-fail-closed">全平台账单读取失败，不显示旧数据：{error}</span> <Button size="sm" onClick={() => setBillsReload((value) => value + 1)}>重试</Button>
               </TableMessage>
             )
               : bills.records.length === 0 ? (
@@ -635,13 +669,13 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
                   const remark = formatD4Remark(row.remark);
                   return (
                     <Tr key={row.id} selected={detail?.tab === "all" && detail.id === row.id} mark={bizNo && row.bizNo === bizNo ? "hit" : undefined} onOpen={() => openDetail("all", row.id)}>
-                      <Td sticky="start"><Cell title={row.bizNo} main={<span data-mono>{row.bizNo}</span>} sub={userLabel(row)} /></Td>
+                      <Td sticky="start"><Cell title={row.bizNo} main={<span data-mono>{shortBillNo(row.bizNo)}</span>} sub={userLabel(row)} /></Td>
                       <Td><Cell main={BILL_TYPE_LABELS[row.billType]} sub={formatD4Subtype(row.subtype)} /></Td>
                       <Td align="right"><Cell num main={`${signed(row, amountDigits)} ${unit(row.asset)}`} sub={`余 ${amountText(row.balanceAfter, balanceDigits)} ${unit(row.asset)}`} /></Td>
                       <Td><StatusTag tone={status.tone}>{status.label}</StatusTag></Td>
-                      {columns.isVisible("remark") && <Td><Cell title={remark.label} main={remark.label} /></Td>}
                       <Td><Cell num main={listTime(row.createdAt)} /></Td>
-                      <Td sticky="end"><Button size="sm" onClick={() => viewAccount(row)}>查看账户</Button></Td>
+                      {columns.isVisible("remark") && <Td><Cell title={remark.label} main={remark.label} /></Td>}
+                      <Td sticky="end"><Button size="sm" onClick={() => viewAccount(row)}>查这个用户</Button></Td>
                     </Tr>
                   );
                 })}
@@ -650,7 +684,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
       {/* 服务端分页：Pager 按服务端返回的总数翻页 */}
       {!error && bills.total > 0 && (
         <Pager label="全平台账单" total={bills.total} page={page} pageSize={pageSize} sizes={PAGE_SIZES} loading={loading}
-          note={loading ? undefined : `本页入账 ${stats.inflow} 笔 · 出账 ${stats.outflow} 笔 · 处理中 ${stats.pending} 笔`}
+          note={loading ? undefined : `本页：入账 ${stats.inflow} 条 · 出账 ${stats.outflow} 条 · 处理中 ${stats.pending} 条`}
           onPage={setPage} onPageSize={(size) => { setPageSize(size); setPage(1); }} />
       )}
     </Panel>
@@ -658,45 +692,65 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
 
   const userRefused = userProblem && (
     <span data-proof="d4-user-refused">
-      {userProblem.kind === "user" ? "用户编码或系统编号有误" : "查询条件有误"}：{userProblem.reason}。这次没有查询{userData ? `，下方仍是用户 ${userLabel(userData.ledger)} 的账单和余额核对（时间范围：${appliedTimeRange(userData)}）。` : "。"}
+      {PROBLEM_TEXT[userProblem.kind]}没有查询{userData ? `，下面仍是 ${userLabel(userData.ledger)} 的结果。` : "。"}
     </span>
   );
+  // 对不上的拆开说：几条账单、哪个币种钱包差多少（都是接口现有字段，不新增算法）。
+  const walletGaps = walletChecked && running?.reconciliation
+    ? (["USDT", "UVT"] as const).filter((asset) => running.reconciliation?.[asset] !== 0).map((asset) => `${unit(asset)} 钱包差 ${signedDiff(running.reconciliation?.[asset] ?? 0, diffDigitsOf(running))} ${unit(asset)}`)
+    : [];
+  const unsettledNote = running && running.unsettledCount > 0 ? `另有 ${running.unsettledCount} 条未结算的不参与核对` : "";
+  const notComparedNote = !running || walletChecked ? ""
+    : running.reconciliationScope === "HISTORICAL_RANGE" ? "结束时间早于现在，没有和当前钱包比。" : "没有和钱包比。要比，清空开始时间后点「加载账户」。";
+  const conclusionHint = breakCount > 0
+    ? `${[rowBreaks > 0 ? `${rowBreaks} 条账单对不上` : "", ...walletGaps].filter(Boolean).join("，")}。到对应业务单核查${unsettledNote ? `；${unsettledNote}` : ""}。`
+    : [notComparedNote, unsettledNote && `${unsettledNote}。`].filter(Boolean).join("");
   const userConclusion = running && userData && (
     <div data-proof="d4-running-balance">
-      <Conclusion state={breakCount > 0 ? "danger" : nothingToCheck ? "neutral" : "ok"} lead={breakCount > 0} icon={breakCount > 0 ? undefined : CheckCircle2}
+      <Conclusion state={breakCount > 0 ? "danger" : nothingToCheck ? "neutral" : "ok"} lead={breakCount > 0} icon={breakCount > 0 ? undefined : nothingToCheck ? Info : CheckCircle2}
         explain={running.reconciliationScope === "HISTORICAL_RANGE"
           ? <><p>历史时段不与当前钱包对比。</p><p>{running.reconciliationNote}</p></>
           : userData.from
-            ? "设了开始时间时，只核对这段时间里每一笔余额是否连续，不和当前钱包比，也不显示钱包差额：开始时间之前的余额还没带进核对，比了会误报。要和钱包比，清空开始时间后再加载。"
+            ? "设了开始时间时，只核对这段时间里每一笔余额是否连续，不和当前钱包比，也不显示钱包差额：开始时间之前的余额还没带进核对，比了会显示错误的差额。"
             : "逐笔看每一笔的变动后余额是不是等于上一笔余额加减这笔金额，再拿最后一笔已结算账单的余额和当前钱包比。处理中的账单不参与。"}
-        hint={running.unsettledCount > 0 ? `（另有 ${running.unsettledCount} 条未结算的不参与核对）` : undefined}
+        hint={conclusionHint || undefined}
         action={breakCount > 0 && reach("/users/assets", "user_c3_read") ? <Link className="rd-link" href="/users/assets" prefetch={false}>余额与资产调整</Link> : undefined}>
         {breakCount > 0
-          ? `发现 ${breakCount} 处余额对不上，请到对应业务单核查`
+          ? <>余额核对：<b>{breakCount}</b> 处对不上</>
           : nothingToCheck ? "这段时间没有账单，没有可核对的余额"
             : walletChecked ? "余额都对得上，且最终余额与钱包一致" : "这段时间的账单余额都对得上"}
       </Conclusion>
     </div>
   );
-  const diffDigits = running?.reconciliation ? digitsOf([running.reconciliation.USDT, running.reconciliation.UVT]) : 2;
+  const diffDigits = running ? diffDigitsOf(running) : 2;
   const changeDigits = userData ? digitsOf([userData.ledger.totals.USDT ?? 0, userData.ledger.totals.UVT ?? 0]) : 2;
-  const PERIOD_EXPLAIN = "这段时间里全部账单的合计，入账加、出账减，处理中的也算。这次没和钱包比（设了开始时间，或结束时间早于现在），所以这里不写钱包差额。";
+  const PERIOD_EXPLAIN = "这段时间里这个用户全部账单的合计：入账加、出账减。处理中、失败、已拒绝、已取消的账单也算在内，所以不一定等于钱包实际变化。这次没和钱包比（设了开始时间，或结束时间早于现在），所以这里不写钱包差额。";
+  // 净变动里算进了还没结算的账单，按币种常显条数（口径不同的地方写在格子上，PG-29）。
+  const notSettledNote = (asset: "USDT" | "UVT") => {
+    const rows = userData?.ledger.rows.filter((row) => row.asset === asset) ?? [];
+    const pending = rows.filter((row) => PENDING_STATUSES.includes(row.status.toUpperCase())).length;
+    const other = rows.filter((row) => ["FAILED", "REJECTED", "CANCELLED"].includes(row.status.toUpperCase())).length;
+    return [pending && `含处理中 ${pending} 条`, other && `含失败或取消 ${other} 条`].filter(Boolean).join("，") || undefined;
+  };
   const userPane = <>
     <FilterBar onSubmit={openUser} action={<Button type="submit" disabled={userLoading}>加载账户</Button>}
       result={userDraftChanged ? "条件未应用" : undefined} notice={userRefused}>
-      <FilterField grow><Input aria-label="按用户查账单的用户编码或系统编号" placeholder="输入用户编码或系统编号，比如 U00000005 或 5" value={userInput} onChange={(event) => setUserInput(event.target.value)} /></FilterField>
-      <div className="rd-filter-line">
+      <FilterField grow><Input ref={userInputRef} autoFocus={!selectedUserId} aria-label="按用户查账单的用户编码或系统编号" aria-invalid={userProblem?.kind === "user" || undefined} placeholder="用户编码或系统编号，比如 U00000005 或 5" value={userInput} onChange={(event) => setUserInput(event.target.value)} /></FilterField>
+      <span className="rd-filter-group">
         <label className="rd-note" htmlFor="d4-user-from">开始时间（北京时间）</label>
-        <Input id="d4-user-from" aria-label="开始时间" type="datetime-local" value={timeDraft.from} onChange={(event) => setFrom(event.target.value)} />
-        <label className="rd-note" htmlFor="d4-user-to">结束时间（不含）</label>
-        <Input id="d4-user-to" aria-label="结束时间" type="datetime-local" value={timeDraft.to} onChange={(event) => setTo(event.target.value)} />
+        <Input id="d4-user-from" aria-label="开始时间" aria-invalid={userProblem?.kind === "time" || undefined} type="datetime-local" value={timeDraft.from} onChange={(event) => setFrom(event.target.value)} />
+      </span>
+      <span className="rd-filter-group">
+        <label className="rd-note" htmlFor="d4-user-to">结束时间（北京时间，不含）</label>
+        <Input id="d4-user-to" aria-label="结束时间" aria-invalid={userProblem?.kind === "time" || undefined} type="datetime-local" value={timeDraft.to} onChange={(event) => setTo(event.target.value)} />
         <Explain label="时间范围的说明" content={TIME_EXPLAIN} />
-      </div>
+      </span>
     </FilterBar>
-    {!selectedUserId ? <BlockState state="empty" title="输入用户编码或系统编号，查看这个用户的账单和余额核对。" />
+    {!selectedUserId ? <BlockState state="empty" title="还没选用户" detail="输入用户编码或系统编号，点「加载账户」，看这个用户的账单和余额核对。" />
+      : userError?.notFound ? <BlockState state="empty" title={`没有找到用户 ${userCode(selectedUserId)}`} detail="检查用户编码或系统编号，改好后点「加载账户」。" />
       : userError ? (
         <div data-proof="d4-fail-closed">
-          <BlockState state="error" title="用户账单已停止展示旧数据" detail={userError} onRetry={() => setUserReload((value) => value + 1)} />
+          <BlockState state="error" title="用户账单读取失败，不显示旧数据" detail={userError.message} onRetry={() => setUserReload((value) => value + 1)} />
         </div>
       )
         : !userData || !running ? <>
@@ -713,13 +767,13 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
               <Stat tone={running.reconciliation.USDT === 0 ? undefined : "danger"} icon={Scale} label="USDT 钱包差额" value={signedDiff(running.reconciliation.USDT, diffDigits)} unit={unit("USDT")} explain="用户钱包余额减最后一笔已结算账单的余额，0 表示一致。" />
               <Stat tone={running.reconciliation.UVT === 0 ? undefined : "danger"} icon={Scale} label="UVT 钱包差额" value={signedDiff(running.reconciliation.UVT, diffDigits)} unit={unit("UVT")} explain="用户钱包余额减最后一笔已结算账单的余额，0 表示一致。" />
             </> : <>
-              {/* 不和钱包比时没有差额（决定 09、D4-V13），换成这段时间的净变动，不写 0 差额。 */}
-              <Stat tone="role-2" icon={ArrowLeftRight} label="这段时间 USDT 变动" value={signedDiff(userData.ledger.totals.USDT ?? 0, changeDigits)} unit={unit("USDT")} explain={PERIOD_EXPLAIN} />
-              <Stat tone="role-2" icon={ArrowLeftRight} label="这段时间 UVT 变动" value={signedDiff(userData.ledger.totals.UVT ?? 0, changeDigits)} unit={unit("UVT")} explain={PERIOD_EXPLAIN} />
+              {/* 不和钱包比时没有差额（决定 09、D4-V13），换成这段时间的净变动：带符号的合计用正文色、灰图标（VS-11），不写 0 差额。 */}
+              <Stat iconTone="role-other" icon={ArrowLeftRight} label="这段时间 USDT 净变动" value={signedDiff(userData.ledger.totals.USDT ?? 0, changeDigits)} unit={unit("USDT")} sub={notSettledNote("USDT")} explain={PERIOD_EXPLAIN} />
+              <Stat iconTone="role-other" icon={ArrowLeftRight} label="这段时间 UVT 净变动" value={signedDiff(userData.ledger.totals.UVT ?? 0, changeDigits)} unit={unit("UVT")} sub={notSettledNote("UVT")} explain={PERIOD_EXPLAIN} />
             </>}
           </StatBand>
-          <Panel flush icon={Scale} tone="role-1" title="余额核对" sub={`${userLabel(userData.ledger)} · 共 ${running.total} 笔 · 最新在前`}
-            actions={rowBreaks > 0 ? <Check label={`只看对不上的（${rowBreaks} 笔）`} checked={onlyBreaks} onChange={(event) => { setOnlyBreaks(event.target.checked); setUserPage(1); }} /> : undefined}>
+          <Panel flush icon={Scale} tone="role-1" title="余额核对" sub={`${userLabel(userData.ledger)} · 最新在前`}
+            actions={rowBreaks > 0 ? <Check label={`只看对不上的账单（${rowBreaks} 条）`} checked={onlyBreaks} onChange={(event) => { setOnlyBreaks(event.target.checked); setUserPage(1); }} /> : undefined}>
             <Table label="余额核对" data-tight="">
               <thead><tr>
                 <Th>账单</Th>
@@ -733,15 +787,15 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
                   ? <TableMessage columns={5} role="status">{userData.from || userData.to ? "这段时间该用户没有账单。" : "该用户暂无账单。"}</TableMessage>
                   : pageChecks.map((row) => (
                     <Tr key={row.bill.id} selected={detail?.tab === "user" && detail.id === row.bill.id} mark={row.breakDetected ? "danger" : undefined} onOpen={() => openDetail("user", row.bill.id)}>
-                      <Td><Cell title={row.bill.bizNo} main={<span data-mono>{row.bill.bizNo}</span>} sub={`${BILL_TYPE_LABELS[row.bill.billType]} · ${formatD4Subtype(row.bill.subtype)}`} /></Td>
+                      <Td><Cell title={row.bill.bizNo} main={<span data-mono>{shortBillNo(row.bill.bizNo)}</span>} sub={`${BILL_TYPE_LABELS[row.bill.billType]} · ${formatD4Subtype(row.bill.subtype)}`} /></Td>
                       <Td align="right"><Cell num main={`${signed(row.bill, checkAmountDigits)} ${unit(row.bill.asset)}`} /></Td>
                       <Td align="right"><Cell num main={`${amountText(row.bill.balanceAfter, checkBalanceDigits)} ${unit(row.bill.asset)}`}
-                        sub={row.breakDetected && row.expectedBalanceAfter !== null ? `期望 ${amountText(row.expectedBalanceAfter, checkBalanceDigits)}` : undefined} /></Td>
+                        sub={row.breakDetected && row.expectedBalanceAfter !== null ? `期望 ${amountText(row.expectedBalanceAfter, checkBalanceDigits)} ${unit(row.bill.asset)}` : undefined} /></Td>
                       <Td>{row.breakDetected
-                        ? <StatusTag tone="danger">断点 差 {signedDiff(row.difference)}</StatusTag>
+                        ? <StatusTag tone="danger">对不上 差 {signedDiff(row.difference)} {unit(row.bill.asset)}</StatusTag>
                         : row.settlementBucket === "UNSETTLED"
                           ? <StatusTag tone="done">未结算 · 不参与钱包核对</StatusTag>
-                          : <StatusTag tone="neutral" icon={CheckCircle2}>连续</StatusTag>}</Td>
+                          : <StatusTag tone="neutral" icon={CheckCircle2}>对得上</StatusTag>}</Td>
                       <Td><Cell num main={listTime(row.bill.createdAt)} /></Td>
                     </Tr>
                   ))}
@@ -752,7 +806,8 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
                 onPage={setUserPage} onPageSize={(size) => { setUserPageSize(size); setUserPage(1); }} />
             )}
           </Panel>
-          <Fold title="分类合计" icon={Layers} summary={categories.length ? `${categories.length} 类有变动` : "这段时间没有变动"} explain="按时间范围内的账单合计，入账加、出账减。">
+          <Fold title="分类合计" icon={Layers} summary={userData.ledger.rows.length === 0 ? "没有账单" : categories.length ? `${categories.length} 类净合计不为 0` : "各类净合计都是 0"}
+            explain="按时间范围内的全部账单合计，入账加、出账减；处理中、失败、已取消的也算。净合计是 0 不代表没有账单，一入一出也会相抵。">
             {categories.length > 0 ? <>
               <Table label="分类合计">
                 <thead><tr><Th>类型</Th><Th align="right">USDT</Th><Th align="right">UVT</Th></tr></thead>
@@ -766,8 +821,8 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
                   ))}
                 </tbody>
               </Table>
-              {categories.length < BILL_TYPES.length - 1 && <p className="rd-note">其余类型为 0</p>}
-            </> : <p className="rd-note">八类账单的合计都是 0。</p>}
+              {categories.length < BILL_TYPES.length - 1 && <p className="rd-note">其余类型净合计为 0</p>}
+            </> : <p className="rd-note">{userData.ledger.rows.length === 0 ? "这段时间没有账单。" : "八类账单的净合计都是 0。"}</p>}
           </Fold>
         </>}
   </>;
@@ -798,8 +853,10 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
 
     <Drawer open={Boolean(shown)} onClose={() => setDetail(null)} title="账单详情" icon={Receipt} tone="role-2"
       sub={shown && <>
-        <span data-mono>{shown.bill.bizNo}</span>
-        <IconButton aria-label="复制账单号" data-size="sm" onClick={() => copyBizNo(shown.bill.bizNo)}><Copy size={13} aria-hidden /></IconButton>
+        <span className="rd-drawer-ref">
+          <span data-mono>{billNoWithBreaks(shown.bill.bizNo)}</span>
+          <IconButton aria-label="复制账单号" data-size="sm" onClick={() => copyBizNo(shown.bill.bizNo)}><Copy size={13} aria-hidden /></IconButton>
+        </span>
         <StatusTag tone={billStatus(shown.bill.status).tone}>{billStatus(shown.bill.status).label}</StatusTag>
       </>}
       nav={{
@@ -808,22 +865,28 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
         onPrev: () => { if (drawerIndex > 0) openDetail(tab, drawerRows[drawerIndex - 1].bill.id); },
         onNext: () => { if (drawerIndex < drawerRows.length - 1) openDetail(tab, drawerRows[drawerIndex + 1].bill.id); },
       }}
-      footer={shown && detail?.tab === "all" ? <Decision primary={<Button variant="primary" onClick={() => viewAccount(shown.bill)}>查看账户</Button>} /> : undefined}>
+      footer={shown && detail?.tab === "all" ? <Decision primary={<Button variant="primary" onClick={() => viewAccount(shown.bill)}>查这个用户</Button>} /> : undefined}>
       {shown && <>
         <JudgmentPoints title={`判断要点 · 时间为${businessZone().label}`} rows={judgment(shown)} />
         <Facts>
+          {shown.check && <>
+            {/* 每一行的核对读数都看得到，不只断点行（F02）：期望是上一笔余额加减这笔金额。 */}
+            <Fact k="按上一笔算应为">{shown.check.expectedBalanceAfter === null ? "—" : `${amountText(shown.check.expectedBalanceAfter)} ${unit(shown.bill.asset)}`}</Fact>
+            <Fact k="差额" tone={shown.check.breakDetected ? "danger" : undefined}>{shown.check.settlementBucket === "UNSETTLED" ? "不参与核对" : `${signedDiff(shown.check.difference)} ${unit(shown.bill.asset)}`}</Fact>
+          </>}
           <Fact k="类型">{BILL_TYPE_LABELS[shown.bill.billType]}</Fact>
           <Fact k="明细">{formatD4Subtype(shown.bill.subtype)}</Fact>
           <Fact k="备注">{formatD4Remark(shown.bill.remark).label}</Fact>
         </Facts>
         <Fold inset title="技术详情" summary={`账单记录号 ${shown.bill.id}`}>
-          <Facts>
-            <Fact k="原始备注">{shown.bill.remark ? <span data-mono>{shown.bill.remark}</span> : "—"}</Fact>
-            <Fact k="业务类型原值"><span data-mono>{shown.bill.bizType}</span></Fact>
-            <Fact k="方向"><span data-mono>{shown.bill.direction}</span></Fact>
-            <Fact k="账单记录号"><span data-mono>{shown.bill.id}</span></Fact>
-            <Fact k="更新时间">{`${formatBusinessTimeFull(shown.bill.updatedAt, "—")}（${businessZone().label}）`}</Fact>
-          </Facts>
+          <div className="rd-fold-flush">
+            <Facts>
+              <Fact k="原始备注">{shown.bill.remark ? <span data-mono>{shown.bill.remark}</span> : "—"}</Fact>
+              <Fact k="业务类型原值"><span data-mono>{shown.bill.bizType}</span></Fact>
+              <Fact k="方向">{`${credit(shown.bill) ? "入账" : "出账"}（${shown.bill.direction}）`}</Fact>
+              <Fact k="更新时间">{formatBusinessTimeFull(shown.bill.updatedAt, "—")}</Fact>
+            </Facts>
+          </div>
         </Fold>
       </>}
     </Drawer>

@@ -39,13 +39,13 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 看板里要处理的事 | `TodoList`、`TodoItem`，读不到用 `TodoFailed`；目标页不可达时不传 `href`，这一行照样提醒，不能点、没有箭头，`sub` 写该找谁 | `todo-list.tsx` |
 | 一块内容读取中、失败、空 | `BlockState`，折叠摘要里的失败传 `compact` 一行写完，重试是文字链；一个数字或一行读不到用 `InlineRetry`，同一个样子 | `block-state.tsx` |
 | 按天的柱图 | `Bars`，全是 0 别画，写一句话 | `bars.tsx` |
-| 表格 | `Table`、`Th`、`Tr`、`Td`、`Cell`；金额、数量、日期传 `num`，单号、哈希、地址才传 `mono`；理由这类长文本列给 `Td` 传 `grow`，占满剩下的列宽，放不下才省略（一张表最多一列）；只有第一行是单号时把它包进 `<span data-mono>`；6 列在 1024 放不下、第一列是长单号时给 `Table` 传 `data-tight`，格子最宽 200；要一直标出来的行给 `Tr` 传 `mark`：带单号进来命中的 `hit`（蓝底），对不上要核查的 `danger`（红底），和打开详情的 `selected` 分开 | `table.tsx` |
+| 表格 | `Table`、`Th`、`Tr`、`Td`、`Cell`；金额、数量、日期传 `num`，单号、哈希、地址才传 `mono`；理由这类长文本列给 `Td` 传 `grow`，占满剩下的列宽，放不下才省略（一张表最多一列）；只有第一行是单号时把它包进 `<span data-mono>`；6 列在 1024 放不下、第一列是长单号时给 `Table` 传 `data-tight`，窄于 1280 时格子最宽 200（`.rd-split` 里始终 200），长单号由页面中间省略，留能区分的尾段；要一直标出来的行给 `Tr` 传 `mark`：带单号进来命中的 `hit`（蓝底），对不上要核查的 `danger`（红底），和打开详情的 `selected` 分开 | `table.tsx` |
 | 显示更多列 | `useTableColumns`、`ColumnPicker` | `table.tsx` |
 | 表格加载、空、失败 | `TableLoading`、`TableMessage`；失败传 `role="alert"`，自动是失败红 | `table.tsx` |
 | 表格分页 | `Pager`，有数据才渲染 | `pager.tsx` |
 | 勾选后的批量操作 | `BatchBar`，勾选框用 `Checkbox`，勾选列的表头传 `Th control`；`hint` 收进已勾选数旁的提示图标 | `batch-bar.tsx`、`checkbox.tsx` |
 | 行操作放不下 | `MoreMenu` | `menu.tsx` |
-| 查询区 | `FilterBar`、`FilterField`、`Input`；范围控件项多、和搜索框排一行放不下时，`scope` 外面包 `<div className="rd-filter-scope-row">`，独占第一行 | `filter-bar.tsx` |
+| 查询区 | `FilterBar`、`FilterField`、`Input`；范围控件项多、和搜索框排一行放不下时，`scope` 外面包 `<div className="rd-filter-scope-row">`，独占第一行；左标签加一个框（比如「开始时间」和日期时间框）包 `<span className="rd-filter-group">`，折行时不拆开；条件有误时给出错的框传 `aria-invalid`，筛选条里描边是橙黄 | `filter-bar.tsx` |
 | 多行输入 | `Textarea`，放进 `Field`；字数传 `count`，写在框的右下角 | `filter-bar.tsx` |
 | 中、越、英三语正文 | `LocaleTabs`，切语言不动其他语言的内容，缺内容的页签写「缺失」 | `locale-tabs.tsx` |
 | 下拉、排序 | `Select`；放进 `Field` 自动接上 `id`、`aria-describedby`、`aria-invalid` | `select.tsx` |
@@ -157,7 +157,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 </Drawer>
 ```
 
-风险、阻断原因放 `JudgmentPoints`，不能放进 `Fold`。有未保存内容时在 `onPrev`、`onNext`、`onClose` 和行的 `onOpen` 里先拦；切条时让旧请求失效，这两件都是页面的事。
+风险、阻断原因放 `JudgmentPoints`，不能放进 `Fold`。折叠里的 `Facts` 要和上面的事实同一条左边线时，外面包 `<div className="rd-fold-flush">`。有未保存内容时在 `onPrev`、`onNext`、`onClose` 和行的 `onOpen` 里先拦；切条时让旧请求失效，这两件都是页面的事。
 
 ## 弹窗里的四层
 
@@ -235,13 +235,14 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 - `Panel`：标题行放不下时动作换到下一行，标题不拆字。
 - `Table`：放不下时横向滚动，两侧影子提示还有内容；右对齐列的格子贴右边；悬停不盖选中色。操作列传 `sticky="end"`，默认右对齐，窄屏时固定在右边。
 - `Steps` 排法跟上游：图标和文字一行，连线跟在文字后面，第一步贴左；`TrendLines` 的纵轴包住全部值和线，值和线都远离 0 时从整齐的低值起。
-- `Tr`：传 `onOpen` 后 Tab 能到，Enter、Space 打开，行内的按钮、链接、输入不触发。
+- `Tr`：传 `onOpen` 后 Tab 能到，Enter、Space 打开，行内的按钮、链接、输入不触发。焦点环画在格子上，固定列也是完整的框；`mark` 的底色选中时不变。
+- `Table`：内容能横向滚时，固定列朝内容一侧带影子，滚到头消失。
 - `Modal`：模态，Tab 圈在里面。`Drawer`：不挡外面的列表，不写 `aria-modal`，Tab 走到头回到页面。两者都是 Esc 只关最上层，打开时聚焦容器，关闭后焦点回到当前高亮行或原来的按钮，`busy` 时全部锁住。
 - `Decision`：危险决定在左，主决定在右；只有危险决定时放右边，和别的框收在同一条线上。`explain` 的问号没有 `note` 时紧挨右边的按钮，不孤零零留在左下角。
 - 整页表单的操作行用 `<div className="rd-toolbar" data-end="">`：状态和提示图标在左，按钮在右，顺序和抽屉底部一样。
 - `PageTabs`、`Segments`：方向键、Home、End 移动并立即选中，禁用项跳过。页签的网址读写在页面做。
 - `Select`：方向键环绕，Tab 和 Esc 收起，选后焦点回到触发器，禁用时收起且恢复后不自动展开。`required` 时空串算没选，表单提交被拦下，空值选项不进列表；不必填时空值选项是能选中的「全部」，表单值是空串。
-- `FilterBar`：Enter 等于查询；查询中只禁「查询」，条件照常能改；更多筛选收起不丢值。`action` 换掉「查询」的位置，Enter 仍走 `onSubmit`；自定义日期这类第二行放进 `.rd-filter-line`。
+- `FilterBar`：有 `notice` 时「条件未应用」这类 `result` 和原因排在一行；Enter 等于查询；查询中只禁「查询」，条件照常能改；更多筛选收起不丢值。`action` 换掉「查询」的位置，Enter 仍走 `onSubmit`；自定义日期这类第二行放进 `.rd-filter-line`。
 - 列选择按账号和表格记在本地，记忆损坏时回到默认列，不影响导出和请求。按钮写「显示更多列」，选了才写「· 已选 n」。
 - `Fold`：`alert` 的颜色只给这一行的摘要，折叠里的内容和子折叠不跟着变色。
 - `JudgmentPoints`：有的行带图标时，不带的留出位置，标签一条线；值线和 `Fact` 一样。

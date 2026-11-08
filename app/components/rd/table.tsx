@@ -36,7 +36,8 @@
  *
  * - 可点的行传 onOpen：Tab 能到，Enter、Space 打开，行内按钮、链接、输入不触发（ST-06、OP-06）。
  * - 详情开着时给当前行传 selected：抽屉浮在列表上，这一行保持高亮，抽屉关上才取消（PG-63）。
- *   要一直标出来的行传 mark：带单号进来命中的行 "hit"，对不上要核查的行 "danger"。它不滚动、不表示已打开，选中时选中色优先。
+ *   要一直标出来的行传 mark：带单号进来命中的行 "hit"，对不上要核查的行 "danger"。它不滚动、不表示已打开，选中时底色不变，选中只靠首格的点。
+ * - 内容能横向滚时固定列自带影子；行的焦点环画在格子上，固定列也看得全。
  *   上一条下一条切到视口外的行时自动滚过去。默认列按列表占满宽度定，不给抽屉留宽度。
  * - 对齐按 ST-02：文字、状态左对齐，金额、数量、百分比 align="right"；操作列传 sticky="end"，默认右对齐，贴表格右边，窄屏也看得全。空值写「—」。
  * - 加载用 <TableLoading columns={n} />；空和失败用 <TableMessage columns={n}>…</TableMessage> 放表体，
@@ -55,8 +56,28 @@ const INTERACTIVE = "a, button, input, select, textarea, label, summary, [role='
 
 /** rowFocus：行本身是一组单选，Tab 只停在当前行，滚动区不再占一个停靠点。 */
 export function Table({ label, rowFocus, children, className, ...rest }: HTMLAttributes<HTMLTableElement> & { label: string; rowFocus?: boolean }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // 两侧还有内容时写 data-more-start、data-more-end，固定列据此带影子（antd 固定列）。
+  useEffect(() => {
+    const box = scrollRef.current;
+    if (!box) return;
+    const update = () => {
+      const max = box.scrollWidth - box.clientWidth;
+      box.toggleAttribute("data-more-start", box.scrollLeft > 1);
+      box.toggleAttribute("data-more-end", box.scrollLeft < max - 1);
+    };
+    update();
+    box.addEventListener("scroll", update, { passive: true });
+    const observer = new ResizeObserver(update);
+    observer.observe(box);
+    if (box.firstElementChild) observer.observe(box.firstElementChild);
+    return () => {
+      box.removeEventListener("scroll", update);
+      observer.disconnect();
+    };
+  }, []);
   return (
-    <div className="rd-table-scroll" role="region" aria-label={label} tabIndex={rowFocus ? undefined : 0}>
+    <div ref={scrollRef} className="rd-table-scroll" role="region" aria-label={label} tabIndex={rowFocus ? undefined : 0}>
       <table {...rest} className={className ? `rd-table ${className}` : "rd-table"}>{children}</table>
     </div>
   );

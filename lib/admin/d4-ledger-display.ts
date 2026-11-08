@@ -49,30 +49,71 @@ const SUBTYPE_LABELS: Record<string, string> = {
   c3_asset_adjustment: "人工调整",
 };
 
-/** 后端写入的英文技术备注 → 运营可读说明。 */
+/**
+ * 后端写入的英文技术备注 → 运营可读说明。逐项对照 proto-backend origin/test 现在的写入处
+ * （AppWithdrawalService、WithdrawalPayoutFinalizer、AppExchangeService、PromotionRewardService、
+ * H4EventEngine、GenesisRaffleService、BinaryCommissionSettlementService、各 Mapper 的 INSERT）。
+ * NEX 是改名 UVT 之前的写法，历史账单里还有，保留同样的说明。
+ */
 const REMARK_LABELS: Record<string, string> = {
   "g1 early withdrawal net principal; unearned interest forfeited": "质押提前解锁 · 返还扣除扣款后的锁定金额，未获得的质押奖励不发放",
   "g7 early withdrawal net principal; interest and tickets forfeited": "锁定计划提前解锁 · 返还扣除扣款后的锁定金额，锁定奖励不发放，本单已发且未使用的抽奖券作废",
   "bank payout net principal": "银行出款 · 净额",
   "d7 bank payout fee": "银行出款 · 手续费",
   "d2 withdrawal net principal": "提现 · 净额",
+  "d5 actual network fee after uvt offset": "提现 · UVT 抵扣后的实际网络费",
   "d5 actual network fee after nex offset": "提现 · UVT 抵扣后的实际网络费",
+  "h1 actual withdrawal penalty after uvt offset": "提现 · UVT 抵扣后的实际违约金",
   "h1 actual withdrawal penalty after nex offset": "提现 · UVT 抵扣后的实际违约金",
+  "d5 uvt fee offset; penalty first, then network fee": "提现 · UVT 手续费抵扣（先抵违约金，再抵网络费）",
   "d5 nex fee offset; penalty first, then network fee": "提现 · UVT 手续费抵扣（先抵违约金，再抵网络费）",
+  "provider payout failed; reserved withdrawal returned": "出款失败 · 退回冻结的提现金额",
+  "provider payout failed; uvt fee offset returned": "出款失败 · 退回 UVT 手续费抵扣",
+  "g2 canonical swap debit": "兑换 · 转出",
+  "g2 canonical swap credit; fee allocated server side": "兑换 · 转入（已扣手续费）",
+  "g2 queued swap source reservation": "兑换排队 · 预扣转出的资产",
+  "g2 queued swap source reservation refund": "兑换排队 · 退回预扣",
+  "g2 queued swap source reservation refund by ops cancellation": "兑换排队 · 运营取消后退回预扣",
+  "uvel wallet order settlement": "商品购买 · 钱包付款",
+  "e3 trade in upgrade wallet payment": "升级置换 · 钱包付款",
+  "e3 capacity keep purchase wallet payment": "保留算力 · 钱包付款",
+  "trial converted by server canonical charge": "试用转购买 · 扣款",
+  "confirmed full order refund": "整单退款",
+  "confirmed whole order wallet refund": "整单退款 · 退回钱包",
+  "cloud share daily uvt from settled compute receipt": "算力收益 · 每日 UVT",
+  "server authoritative compute task reward": "算力任务收益",
+  "server authoritative task reward": "任务收益",
+  "activity reward": "活动中心奖励",
+  "h4 lucky spin reward": "活动中心 · 幸运转盘奖励",
+  "genesis raffle reward": "创世节点抽奖奖励",
+  "f3 binary commission cooling payout": "团队平衡奖励 · 冷却期后发放",
 };
 
 /**
- * 带业务单号的备注前缀 → 中文业务名。
- *
- * 这些串由服务端在记账时写入(如 HDPayCallbackSettlementService 的
- * `"HDPay BANKQR deposit " + merchantOrderId`),前缀是稳定的业务词,单号是可变的。
- * 按前缀归一既中文化了单元格,又保留了原始串作为技术详情。
+ * 带业务单号、参数的备注按开头的业务词归类，单号和参数留在技术详情。
+ * 只按后端现在写的开头匹配，不按「D+数字」这类编号猜业务。
  */
 const REMARK_PREFIXES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^E4 order refund\b/i, "订单退款"],
+  [/^ADMIN manual HDPay BANKQR deposit\b/i, "人工补记 · HDPay 扫码充值"],
   [/^HDPay\s+BANKQR\s+deposit\b/i, "HDPay 扫码充值"],
   [/^HDPay\s+.*\bwithdraw(al)?\b/i, "HDPay 出款"],
   [/^VietQR\s+.*\bdeposit\b/i, "VietQR 银行充值"],
-  [/^D[0-9]\s+/i, "平台参数调整"],
+  [/^H2 forced trial charge\b/i, "试用强制扣款"],
+  [/^Trial early-conversion reward reversed with order refund\b/i, "订单退款 · 追回提前转购的试用奖励"],
+  [/^Trial reward reversed with refund\b/i, "退款 · 追回试用奖励"],
+  [/^Cregis incident\b/i, "Cregis 链上异常处置"],
+  [/^Approved promotion reward\b/i, "促销奖励"],
+  [/^Direct referral recovery\b/i, "直推奖励追回"],
+  [/^Direct referral wallet release\b/i, "直推奖励到账"],
+  [/^Seven layer reissue recovery\b/i, "七层奖励补发追回"],
+  [/^F5 commission reissue\b/i, "团队奖励补发"],
+  [/^F2 unilevel\b/i, "团队奖励"],
+  [/^F1 V-Rank reward REISSUE\b/i, "等级晋升奖励补发"],
+  [/^F1 V-Rank reward\b/i, "等级晋升奖励"],
+  [/^F3 binary settlement\b/i, "团队平衡奖励结算"],
+  [/^Commission wallet release\b/i, "团队奖励到账"],
+  [/^Commission wallet reversal\b/i, "团队奖励冲正"],
 ];
 
 function normalizeKey(value: string) {
@@ -105,9 +146,9 @@ export function formatD4Remark(value: unknown): { label: string; technical: stri
     return { label: prefixed[1], technical: raw };
   }
 
-  // 未命中任何已知业务词的英文技术串:整串降级为技术详情,单元格给中性说明而不是把
-  // 内部标识当业务文案展示(否则仍是一次内部信息泄露)。
-  if (/^[A-Za-z][A-Za-z0-9 ._:-]*$/.test(raw)) {
+  // 没有中文的串都是系统写的技术备注（含单号、键值、竖线分隔的参数）：整串降级为技术详情，
+  // 单元格给中性说明，不把内部标识当业务文案上屏。有中文的（课程名、新人礼、运营写的理由）原样显示。
+  if (!/[\u3400-\u9fff]/.test(raw)) {
     return { label: "系统备注（详见技术详情）", technical: raw };
   }
   return { label: raw, technical: "" };
