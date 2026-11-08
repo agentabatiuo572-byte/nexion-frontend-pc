@@ -231,7 +231,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 ## 已经由组件保证的事
 
 - `Explain`：鼠标悬停 100ms 打开、移开关闭，不抢焦点；点击或 Enter、Space 打开并钉住，焦点进气泡，再点一下、Esc 或点外面关闭，焦点回到图标；触屏点一下就开。图标 14px、弱文字色，全站一个样子。
-- `Button`：`type` 默认 `button`，属性全部透传，`loading` 时点击无效、宽度不变，没传 `loadingText` 时显示转圈；`disabledReason` 时不可点但能聚焦，悬停和聚焦都看得到原因，点一下走 `onBlockedClick`。浅色主题次按钮浅底描边、深色填底（VS-94）。禁用不靠透明度，所有样式一个中性灰，两套主题强度一样。
+- `Button`：`type` 默认 `button`，属性全部透传，`loading` 时点击无效、宽度不变，没传 `loadingText` 时显示转圈；`disabledReason` 时不可点但能聚焦，悬停和聚焦都看得到原因，点一下走 `onBlockedClick`；在 `Modal`、`Drawer` 的底栏里原因气泡朝左开（Ant Design Tooltip `placement="left"`），不往上盖理由框角上的字数。浅色主题次按钮浅底描边、深色填底（VS-94）。禁用不靠透明度，所有样式一个中性灰，两套主题强度一样。
 - `IconButton`：`aria-label` 同时是悬停和聚焦时的提示，不用再包一层。
 - `Panel`：标题行放不下时动作换到下一行，标题不拆字。
 - `Table`：放不下时横向滚动，两侧影子提示还有内容；右对齐列的格子贴右边；悬停不盖选中色。操作列传 `sticky="end"`，默认右对齐，窄屏时固定在右边。

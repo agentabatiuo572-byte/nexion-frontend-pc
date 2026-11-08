@@ -46,7 +46,7 @@
 import { Children, Fragment, isValidElement, useEffect, useRef, type ComponentProps, type ReactNode, type CSSProperties } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronDown, ChevronUp, ShieldCheck, X, type LucideIcon } from "lucide-react";
-import { Button, IconButton } from "./button";
+import { Button, IconButton, TipSide } from "./button";
 import { Explain } from "./explain";
 import { Fact, Facts } from "./facts";
 import { IconTile } from "./icon-tile";
@@ -156,7 +156,7 @@ export function Drawer({ open, onClose, title, sub, explain, icon, tone = "role-
             </div>
           </div>
           <div className="rd-drawer-body">{children}</div>
-          {footer && <div className="rd-drawer-foot">{footer}</div>}
+          {footer && <div className="rd-drawer-foot"><TipSide side="left">{footer}</TipSide></div>}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
@@ -246,7 +246,7 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
           </div>
           <ToastHost dialogId={feedbackId} />
           <div className="rd-modal-body">{children}</div>
-          {footer && <div className="rd-modal-foot">{footer}</div>}
+          {footer && <div className="rd-modal-foot"><TipSide side="left">{footer}</TipSide></div>}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
