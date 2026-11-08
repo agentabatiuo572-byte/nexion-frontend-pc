@@ -51,7 +51,7 @@ const SUBTYPE_LABELS: Record<string, string> = {
 
 /**
  * 后端写入的英文技术备注 → 运营可读说明。逐项对照 proto-backend origin/test 现在的写入处
- * （AppWithdrawalService、WithdrawalPayoutFinalizer、AppExchangeService、PromotionRewardService、
+ * （AppWithdrawalService、WithdrawalPayoutFinalizer、AppExchangeService、AppTrialLifecycleService、PromotionRewardService、
  * H4EventEngine、GenesisRaffleService、BinaryCommissionSettlementService、各 Mapper 的 INSERT）。
  * NEX 是改名 UVT 之前的写法，历史账单里还有，保留同样的说明。
  */
@@ -78,6 +78,11 @@ const REMARK_LABELS: Record<string, string> = {
   "e3 trade in upgrade wallet payment": "升级置换 · 钱包付款",
   "e3 capacity keep purchase wallet payment": "保留算力 · 钱包付款",
   "trial converted by server canonical charge": "试用转购买 · 扣款",
+  "h2 conversion via uvel usdt wallet": "试用转购买 · USDT 钱包付款",
+  "h2 conversion via nexion usdt wallet": "试用转购买 · USDT 钱包付款",
+  "h2 shadow remainder credited after purchase": "试用转购买 · 试用剩余金额到账",
+  "h2 shadow uvt credited after purchase": "试用转购买 · 试用奖励 UVT 到账",
+  "h2 shadow nex credited after purchase": "试用转购买 · 试用奖励 UVT 到账",
   "confirmed full order refund": "整单退款",
   "confirmed whole order wallet refund": "整单退款 · 退回钱包",
   "cloud share daily uvt from settled compute receipt": "算力收益 · 每日 UVT",

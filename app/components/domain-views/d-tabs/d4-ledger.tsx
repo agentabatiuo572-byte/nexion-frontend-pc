@@ -105,11 +105,11 @@ function signedDiff(value: number, digits?: number) {
   return `${value > 0 ? "+" : value < 0 ? "-" : ""}${amountText(Math.abs(value), digits)}`;
 }
 
-/** 长账单号中间省略（Carbon 的中间截断）：留开头 10 个字和最后一个「:」之后的一段，同一单的净额、网络费分得开。全文在悬停和抽屉里。 */
+/** 长账单号中间省略（Carbon 的中间截断）：有「:」分段时留开头 8 个字和最后一段（同一单的净额、网络费分得开），没有时留开头 10 个字和末 6 位。全文在悬停和抽屉里。 */
 function shortBillNo(value: string) {
-  if (value.length <= 24) return value;
+  if (value.length <= 22) return value;
   const cut = value.lastIndexOf(":");
-  return `${value.slice(0, 10)}…${cut > 10 ? value.slice(cut) : value.slice(-6)}`;
+  return cut > 8 ? `${value.slice(0, 8)}…${value.slice(cut)}` : `${value.slice(0, 10)}…${value.slice(-6)}`;
 }
 
 /** 抽屉里的账单号全文：在「:」后允许换行，「NETWORK_FEE」这类一段不被拆开。 */
@@ -735,7 +735,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
   const userPane = <>
     <FilterBar onSubmit={openUser} action={<Button type="submit" disabled={userLoading}>加载账户</Button>}
       result={userDraftChanged ? "条件未应用" : undefined} notice={userRefused}>
-      <FilterField grow><Input ref={userInputRef} autoFocus={!selectedUserId} aria-label="按用户查账单的用户编码或系统编号" aria-invalid={userProblem?.kind === "user" || undefined} placeholder="用户编码或系统编号，比如 U00000005 或 5" value={userInput} onChange={(event) => setUserInput(event.target.value)} /></FilterField>
+      <FilterField grow><Input ref={userInputRef} autoFocus={!selectedUserId} aria-label="按用户查账单的用户编码或系统编号" aria-invalid={userProblem?.kind === "user" || undefined} placeholder="用户编码或系统编号" value={userInput} onChange={(event) => setUserInput(event.target.value)} /></FilterField>
       <span className="rd-filter-group">
         <label className="rd-note" htmlFor="d4-user-from">开始时间（北京时间）</label>
         <Input id="d4-user-from" aria-label="开始时间" aria-invalid={userProblem?.kind === "time" || undefined} type="datetime-local" value={timeDraft.from} onChange={(event) => setFrom(event.target.value)} />
