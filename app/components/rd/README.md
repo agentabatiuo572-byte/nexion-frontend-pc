@@ -247,6 +247,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 - `FilterBar`：有 `notice` 时「条件未应用」这类 `result` 和原因排在一行；Enter 等于查询；查询中只禁「查询」，条件照常能改；更多筛选收起不丢值。`action` 换掉「查询」的位置，Enter 仍走 `onSubmit`；自定义日期这类第二行放进 `.rd-filter-line`。
 - 列选择按账号和表格记在本地，记忆损坏时回到默认列，不影响导出和请求。按钮写「显示更多列」，选了才写「· 已选 n」。
 - `Fold`：`alert` 的颜色只给这一行的摘要，折叠里的内容和子折叠不跟着变色。
+- `ConfigRow`：气泡里的说明同时拼成一句给读屏，「这是什么：…。」一项一句；说明自己带了句末标点（。！？；）就不再补句号，页面写不写「。」都行。
 - `JudgmentPoints`：有的行带图标时，不带的留出位置，标签一条线；值线和 `Fact` 一样。
 - `Textarea`：随内容长高，不在外层滚动里再套一层滚动。
 - 宽抽屉（`wide`）窄屏时停在侧栏右边。抽屉头下面有条线，内容滚上去不切成半行。
