@@ -1237,25 +1237,6 @@ export async function createUserAssetAdjustment(
   });
 }
 
-export async function requestLargeUserAssetAdjustment(
-  userId: number | string,
-  input: CreateUserAssetAdjustmentInput,
-) {
-  return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/asset-adjustment-requests`, {
-    method: "POST",
-    body: JSON.stringify({
-      asset: input.asset,
-      direction: input.direction,
-      amount: input.amount,
-      reasonCode: input.reasonCode,
-      reason: input.reason,
-      evidenceRef: input.evidenceRef,
-      operator: input.operator,
-    }),
-    idempotencyKey: input.idempotencyKey,
-  });
-}
-
 export async function reverseUserAssetAdjustment(
   adjustmentNo: string,
   reason: string,

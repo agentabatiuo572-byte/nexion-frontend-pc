@@ -14,9 +14,10 @@ import Link from "next/link";
 import { ADMIN_ERROR_MESSAGES, displayAdminReadError } from "@/lib/admin/error-messages";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { exceptionObject } from "@/lib/admin/cregis-exceptions";
 import type { OperatorBriefKind } from "../design-kit";
 import type { DCtx } from "./types";
-import { CregisExceptionOperations, type ClaimSource } from "./cregis-exceptions";
+import { CregisExceptionOperations, type ClaimSource, type RecoveredChallenge } from "./cregis-exceptions";
 import { CregisFundsPreparation } from "./cregis-funds-preparation";
 import { CregisAutoForward } from "./cregis-auto-forward";
 import { CregisPoolPolicy } from "./cregis-pool-policy";
@@ -379,6 +380,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   const [entryKey, setEntryKey] = useState<string | null>(null);
   const [review, setReview] = useState<{ cid: string; caseRow?: ExceptionRow } | null>(null);
   const [claim, setClaim] = useState<ClaimSource | null>(null);
+  const [recoveredChallenge, setRecoveredChallenge] = useState<RecoveredChallenge | null>(null);
   const [manualCid, setManualCid] = useState("");
   const [childKey, setChildKey] = useState(0);
   const sequence = useRef(0);
@@ -501,7 +503,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   /** 读回这条命令改的对象现在是什么样，只给事实，不当成原命令的结果（OP-93、OP-95）。 */
   const verifyCregisCommand = async (record: D1PendingCommand) => {
     const kept = "状态可能是别人改的，待确认继续保留。";
-    if (record.path.startsWith("/cregis/exception-ownership/challenges")) return "生成签名原文不动钱，也不改记录；无法据此确认原操作结果。记录保留到关标签页。";
+    if (record.path.startsWith("/cregis/exception-ownership/challenges")) return "生成签名原文不动钱；读回不能证明原操作的结果，待确认继续保留。请按原操作重试取回原文。";
     if (record.path.startsWith("/cregis/addresses/policy")) {
       const policy = await financeAdminRequest<Record<string, unknown>>("/cregis/addresses/policy");
       return `读回：地址池配置现在是第 ${text(policy.version)} 版，自动补充${policy.enabled ? "开启" : "关闭"}，备用目标 ${text(policy.target)} 个。${kept}`;
@@ -534,11 +536,22 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       label: cregisCommandLabel(record.path),
       createdAt: record.createdAt,
       hint: replayable ? "先读回核对；按原操作重试用同一个命令号，不会重复执行。"
-        : "这项操作后端不按命令号去重，不能重试。读回只展示当前事实，记录保留到关标签页。",
+        : "这项操作未接入命令号去重，不能重试。读回只展示当前事实，记录保留到关标签页。",
       blocked: record.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : (refund ? canRefund : canManage) ? undefined : "这个账号没有这项权限",
       auditHref: "/platform/audit?domain=D",
       verify: () => verifyCregisCommand(record),
-      retry: replayable ? async () => { setBusy(true); try { await retryD1PendingCommand(record.commandKey); } finally { setBusy(false); } } : undefined,
+      retry: replayable ? async () => {
+        setBusy(true);
+        try {
+          const result = await retryD1PendingCommand(record.commandKey);
+          if (record.path === "/cregis/exception-ownership/challenges") {
+            const request = exceptionObject(JSON.parse(record.body));
+            setRecoveredChallenge({ request, challenge: exceptionObject(result) });
+            const source = entries.map(claimSource).find(item => item?.sourceType === request.sourceType && item?.sourceId === request.sourceId);
+            if (source) setClaim(source);
+          }
+        } finally { setBusy(false); }
+      } : undefined,
       release: () => releaseD1PendingCommand(record.commandKey),
       after: () => { syncPending(); void refresh(); setChildKey(value => value + 1); },
     };
@@ -713,8 +726,9 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
         </div>
       </Fold>}
       {data && <CregisExceptionOperations key={childKey} canManage={canManage} openActionConfirm={openActionConfirm}
+        recoveredChallenge={recoveredChallenge}
         sources={entries.map(claimSource).filter((source): source is ClaimSource => !!source)}
-        claim={claim} onClaimClose={() => setClaim(null)} onChanged={() => { syncPending(); void refresh(); }} />}
+        claim={claim} onClaimClose={() => { setClaim(null); setRecoveredChallenge(null); }} onChanged={() => { syncPending(); void refresh(); }} />}
     </div>
 
     <div {...subIds.panel("settings")} hidden={sub !== "settings"} className="rd-tab-pane">

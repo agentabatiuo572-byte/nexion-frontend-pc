@@ -616,11 +616,20 @@ const pendingMutations = createPendingMutationStore<PersistedPendingMutation>({
 const isD1Write = (base: string, path: string) => base === "finance" && /^\/(topup|cregis|vietqr)\//.test(path);
 
 /**
- * 后端不按请求号去重的写接口（后端 origin/test 这几个控制器不收 Idempotency-Key）：结果未知时只能读回核对，
- * 不能按原请求再发，再发可能再执行一次（建地址会再入队一个）。
+ * 只开放已逐项核对 origin/test@8e48596d、保留原结果的 Cregis 写接口。
+ * preview / preflight 不走命令去重，不能当成可原号重发的业务命令。
  */
-const D1_NOT_DEDUPED = /^\/cregis\/(?:addresses\/(?:policy|provision)|reconciliation\/run|review-cases(?:\/[1-9]\d*\/decision)?|exception-ownership\/challenges)(?:\?|$)/;
-export const d1CommandReplayable = (path: string) => !D1_NOT_DEDUPED.test(path);
+const D1_RETAINED_CREGIS_WRITES = [
+  /^\/cregis\/(?:addresses\/(?:policy|provision)|reconciliation\/run|review-cases(?:\/[1-9]\d*\/decision)?|exception-ownership\/challenges)$/,
+  D1_CREGIS_SWITCH_PATH,
+  /^\/cregis\/exception-claims(?:\/[1-9]\d*\/decision)?$/,
+  /^\/cregis\/refunds\/(?:fee-policy\/cases(?:\/[1-9]\d*\/decision)?|cases(?:\/[1-9]\d*\/(?:decision|recover|retry))?)$/,
+  /^\/cregis\/reorg\/(?:incidents\/[1-9]\d*\/proposals|proposals\/[1-9]\d*\/decision)$/,
+  /^\/cregis\/auto-forward\/(?:policy|tasks\/[1-9]\d*\/recover)$/,
+  /^\/cregis\/funds-preparation\/plans(?:\/[^/]+\/decision)?$/,
+];
+export const d1CommandReplayable = (path: string) => !path.startsWith("/cregis/")
+  || D1_RETAINED_CREGIS_WRITES.some((pattern) => pattern.test(path.split("?")[0]));
 
 export const D1_PENDING_OBJECT_TEXT = "这项上次的操作结果还没确认，先在本页上方核对";
 export const D1_COMMAND_EXPIRED_TEXT = "已超过 24 小时，不能再按原请求重试，请到操作记录核查";

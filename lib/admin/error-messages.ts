@@ -999,6 +999,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   C3_MAKER_CANNOT_REVIEW: "发起人不能复核自己的余额调整请求，请交由另一位有权限的复核人处理。",
   C3_ONLY_ORIGINAL_APPROVED_ADJUSTMENT_REVERSIBLE: "仅未冲正过的已执行原调整单可以冲正。",
   C3_ALREADY_REVERSED: "该调整单已冲正，本次未重复执行。",
+  C3_ADJUSTMENT_CREATE_CONFLICT: "创建调整申请时发生冲突，本次未完成。请刷新后到待审批和调整历史核对。",
+  C3_LARGE_REQUEST_RETIRED: "大额调整请求已停用。请由有权限的财务主管或超级管理员提交调整申请。",
   C3_REVERSAL_ENDPOINT_REQUIRED: "冲正必须从原调整单的冲正操作发起。",
   C3_INSUFFICIENT_BALANCE: "扣减后余额不足，本次未执行。",
   C3_ADJUSTMENT_CREATE_STATE_LOST: "调整申请没有完成，请刷新后到待审批核对，再决定是否重新提交。",

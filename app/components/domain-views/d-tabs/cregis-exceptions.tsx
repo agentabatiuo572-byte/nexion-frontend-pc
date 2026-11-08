@@ -31,6 +31,7 @@ const isMaker = (row: ExceptionRecord, adminId: unknown) => String(row.makerId) 
 
 /** 认领或退款的来源：低额入金（EVENT）、未归属链上入金（OBSERVATION）。 */
 export type ClaimSource = { sourceType: string; sourceId: string; title: string; network: "BEP20" | "ERC20" | "TRC20" | null; dust: boolean };
+export type RecoveredChallenge = { request: ExceptionRecord; challenge: ExceptionRecord };
 type CaseKind = "claim" | "refund" | "incident" | "reorg";
 const CASE_TITLE: Record<CaseKind, string> = { claim: "认领工单", refund: "退款工单", incident: "重组事件", reorg: "重组处置提案" };
 
@@ -48,6 +49,7 @@ function caseRows(row: ExceptionRecord): KeyValueRow[] {
 type OperationsProps = {
   canManage: boolean; openActionConfirm: DCtx["openActionConfirm"]; sources: ClaimSource[];
   claim: ClaimSource | null; onClaimClose: () => void; onChanged: () => void;
+  recoveredChallenge?: RecoveredChallenge | null;
 };
 export function CregisExceptionOperations(props: OperationsProps) {
   const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch);
@@ -55,7 +57,7 @@ export function CregisExceptionOperations(props: OperationsProps) {
   return <OwnedExceptionOperations key={`${session.adminId}:${epoch}:${adminAuthLifecycleEpoch()}:${props.canManage}:${session.authorities.join("|")}`}
     {...props} owner={session.adminId} ownerEpoch={epoch} />;
 }
-function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim, onClaimClose, onChanged, owner, ownerEpoch }: OperationsProps & { owner: number; ownerEpoch: number }) {
+function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim, onClaimClose, onChanged, recoveredChallenge, owner, ownerEpoch }: OperationsProps & { owner: number; ownerEpoch: number }) {
   const session = useAdminAuth(state => state.session);
   const canRefund = canManage && (session?.authorities ?? []).includes("finance_d2_withdrawal_approve");
   const lifecycleEpoch = useRef(adminAuthLifecycleEpoch()).current;
@@ -303,6 +305,7 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
     </Drawer>
 
     {claim && <ClaimDrawer key={`${claim.sourceType}:${claim.sourceId}`} source={claim} sources={sources} policyMode={policy ? String(policy.mode) : "UNREAD"} canRefund={canRefund}
+      recoveredChallenge={recoveredChallenge?.request.sourceType === claim.sourceType && recoveredChallenge.request.sourceId === claim.sourceId ? recoveredChallenge : null}
       scopeFor={scopeFor} owns={owns} busy={busy} onClose={onClaimClose}
       onPropose={(intent, body, facts) => confirm({ kind: "funds", action: intent === "CLAIM_CREDIT" ? "提交认领入账提案" : "提交原路退款提案", title: intent === "CLAIM_CREDIT" ? "提交认领入账提案" : "提交原路退款提案", confirmLabel: "提交审批",
         path: intent === "CLAIM_CREDIT" ? "/exception-claims" : "/refunds/cases", body, facts,
@@ -311,15 +314,16 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
 }
 
 /** 认领或原路退款：四步，换来源或方式清掉已生成的证明（D1-A43～A45）。 */
-function ClaimDrawer({ source, sources, policyMode, canRefund, scopeFor, owns, busy, onClose, onPropose }: {
+function ClaimDrawer({ source, sources, policyMode, canRefund, scopeFor, owns, busy, onClose, onPropose, recoveredChallenge }: {
   source: ClaimSource; sources: ClaimSource[]; policyMode: string; canRefund: boolean;
   scopeFor: (write?: boolean, refund?: boolean) => ExceptionRequestScope; owns: () => boolean; busy: boolean; onClose: () => void;
   onPropose: (intent: string, body: ExceptionRecord, facts: React.ReactNode) => void;
+  recoveredChallenge?: RecoveredChallenge | null;
 }) {
-  const [intent, setIntent] = useState(source.dust ? "REFUND_ORIGIN" : "CLAIM_CREDIT");
-  const [userId, setUserId] = useState("");
+  const [intent, setIntent] = useState(String(recoveredChallenge?.request.action ?? (source.dust ? "REFUND_ORIGIN" : "CLAIM_CREDIT")));
+  const [userId, setUserId] = useState(String(recoveredChallenge?.request.targetUserId ?? ""));
   const [signature, setSignature] = useState("");
-  const [challenge, setChallenge] = useState<ExceptionRecord | null>(null);
+  const [challenge, setChallenge] = useState<ExceptionRecord | null>(recoveredChallenge?.challenge ?? null);
   const [evidence, setEvidence] = useState<ExceptionRecord | null>(null);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");

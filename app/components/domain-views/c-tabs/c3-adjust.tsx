@@ -36,7 +36,6 @@ import {
   fetchUserAssetAdjustmentOverview,
   fetchUserAssetAdjustments,
   rejectUserAssetAdjustment,
-  requestLargeUserAssetAdjustment,
   reverseUserAssetAdjustment,
   UsersRequestError,
   withdrawUserAssetAdjustment,
@@ -98,6 +97,7 @@ const WAITING = "等待有批准权限的同事处理";
 const A2_WITHOUT_USER_DOMAIN = ["finance", "finance_lead", "growth", "content"];
 const AUDIT_ELSEWHERE = "请能查看「用户与账户」操作记录的同事按单号核对";
 const LARGE_EXPLAIN = "超过 500 USDT 等值，只有财务主管或超级管理员能发起。";
+const LARGE_REQUEST_RETIRED = "旧大额请求接口已退役，不能重试。原记录和对象锁继续保留，请按命令号核对。";
 /** 状态已被别人或系统改了：框不关，读回写最新状态（D2-C89）。 */
 const MOVED_CODES = ["ASSET_ADJUSTMENT_REVIEW_RACE_LOST", "INVALID_STATE_TRANSITION", "C3_ADJUSTMENT_WITHDRAW_CONFLICT", "C3_ADJUSTMENT_WITHDRAW_RACE_LOST", "C3_ALREADY_REVERSED", "C3_ONLY_ORIGINAL_APPROVED_ADJUSTMENT_REVERSIBLE"];
 
@@ -123,8 +123,9 @@ type C3Pending = PendingMutationRecord & {
   fromStatus?: string;
 };
 
+// large 只用于读取旧待确认记录；接口已退役，不再发起或重试，也不丢弃原操作。
 const KINDS: readonly Kind[] = ["create", "large", "approve", "reject", "withdraw", "reverse"];
-const KIND_LABEL: Record<Kind, string> = { create: "提交调整申请", large: "提交大额调整请求", approve: "批准调整申请", reject: "驳回调整申请", withdraw: "撤回调整申请", reverse: "冲正调整" };
+const KIND_LABEL: Record<Kind, string> = { create: "提交调整申请", large: "旧大额请求", approve: "批准调整申请", reject: "驳回调整申请", withdraw: "撤回调整申请", reverse: "冲正调整" };
 const KIND_PREFIX: Record<Kind, string> = { create: "c3-adjust", large: "c3-adjust", approve: "c3-approve", reject: "c3-reject", withdraw: "c3-withdraw", reverse: "c3-reverse" };
 /** 按对象锁，不按内容（OP-93）：同一个用户的提交、同一张单的审批、同一张单的冲正各一把锁。 */
 const scopeOf = (kind: Kind, target: string) => kind === "create" || kind === "large" ? `create|${target}` : kind === "reverse" ? `reverse|${target}` : `adjustment|${target}`;
@@ -373,7 +374,6 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const canApprove = authorities.includes("user_c3_adjust_approve");
   const canReverse = authorities.includes("user_c3_adjust_reverse");
   const canWriteAny = canCreate || canApprove || canReverse;
-  const isSupport = session?.role === "support";
   const isFinance = session?.role === "finance";
   const canReadLedger = reach("/finance/ledger", "finance_d4_read");
   const canReadPool = reach("/finance/pool", "finance_d3_read");
@@ -632,8 +632,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const balanceAfter = balanceNow !== null && amountPositive ? shifted(balanceNow, amountInput, direction) : null;
   const debitInsufficient = direction === "DEBIT" && balanceAfter !== null && isNegative(balanceAfter);
   const largeAdjustment = Number.isFinite(amountUsd) && amountUsd > largeThreshold;
-  const supportLargeRequest = isSupport && largeAdjustment;
-  const formCoverageBlock = direction === "CREDIT" && amountPositive && Number.isFinite(amountUsd) && !supportLargeRequest ? creditCoverageBlock(contextCoverage, amountUsd) : null;
+  const formCoverageBlock = direction === "CREDIT" && amountPositive && Number.isFinite(amountUsd) ? creditCoverageBlock(contextCoverage, amountUsd) : null;
   const reasonTrim = reason.trim();
   const evidenceTrim = evidenceRef.trim();
   // 重试成功时拿来比：表单里还是不是这条原申请（F04）。
@@ -708,9 +707,9 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     }
   };
 
-  const createCommand = (kind: "create" | "large", userId: string, userNo: string, input: CreateInput, operator: string, retry = false) => sendCommand(
-    { kind, label: `${KIND_LABEL[kind]} · ${userNo} · ${input.direction === "CREDIT" ? "+" : "-"}${money(input.amount)} ${nexGridBrandText(input.asset)}`, target: userId, userNo, input, operator },
-    (key) => (kind === "large" ? requestLargeUserAssetAdjustment : createUserAssetAdjustment)(userId, { ...input, operator, idempotencyKey: key }),
+  const createCommand = (userId: string, userNo: string, input: CreateInput, operator: string, retry = false) => sendCommand(
+    { kind: "create", label: `${KIND_LABEL.create} · ${userNo} · ${input.direction === "CREDIT" ? "+" : "-"}${money(input.amount)} ${nexGridBrandText(input.asset)}`, target: userId, userNo, input, operator },
+    (key) => createUserAssetAdjustment(userId, { ...input, operator, idempotencyKey: key }),
     async (result) => {
       const draft = draftRef.current;
       // 首次成功清掉；原操作重试成功时，表单里还是这条原申请（同一用户，资产、方向、金额、分类、原因、凭证都一样）才清，
@@ -723,7 +722,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         setTouched({});
         setAttempted(false);
       }
-      toast(kind === "large" ? `大额调整请求已提交 · ${text(result.requestNo)}` : `调整申请已提交 · ${text(result.adjustmentNo)} · 等待审批`, "success");
+      toast(`调整申请已提交 · ${text(result.adjustmentNo)} · 等待审批`, "success");
       await refreshAll();
     },
     retry,
@@ -755,16 +754,13 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     const userId = accountId(contextAccount);
     const userNo = text(contextAccount.userNo);
     const input: CreateInput = { asset, direction, amount: amountInput, reasonCode, reason: reasonTrim, evidenceRef: evidenceTrim };
-    const large = supportLargeRequest;
     const generation = contextGeneration.current;
     const shownAmount = `${direction === "CREDIT" ? "+" : "-"}${money(amountInput)}`;
     openConfirm({
       briefKind: "funds",
-      action: large
-        ? `提交大额调整请求 · ${money(amountInput)} ${nexGridBrandText(asset)}`
-        : `提交${direction === "CREDIT" ? "增加" : "扣减"}调整申请 · ${money(amountInput)} ${nexGridBrandText(asset)}`,
-      title: large ? "提交大额调整请求" : "提交调整申请",
-      effect: <StatusTag tone="progress" filled explain={large ? "超过 500 USDT 等值，由财务主管或超级管理员处理；处理前余额不变。" : "由另一位有批准权限的同事批准；批准前余额不变。"}>批准后生效</StatusTag>,
+      action: `提交${direction === "CREDIT" ? "增加" : "扣减"}调整申请 · ${money(amountInput)} ${nexGridBrandText(asset)}`,
+      title: "提交调整申请",
+      effect: <StatusTag tone="progress" filled explain="由另一位有批准权限的同事批准；批准前余额不变。">批准后生效</StatusTag>,
       content: <div className="rd-confirm-facts"><Facts>
         <Fact k="调整金额" lead tone="role-1" unit={nexGridBrandText(asset)}>{shownAmount}</Fact>
         <Fact k="用户">{userText(contextAccount)}</Fact>
@@ -773,9 +769,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         <Fact k="原因分类">{reasonCodeLabel(reasonCode)}</Fact>
         <Fact k="凭证">{evidenceTrim}</Fact>
       </Facts></div>,
-      detail: large
-        ? `${userText(contextAccount)}；超过 500 USDT 等值，提交后需由财务主管或超级管理员处理，余额暂不变。`
-        : `${userText(contextAccount)}；提交后需由另一位同事复核，批准后余额才会变化。同一次提交重试不会多建单。`,
+      detail: `${userText(contextAccount)}；提交后需由另一位同事复核，批准后余额才会变化。同一次提交重试不会多建单。`,
       statedBrief: { impact: "进入待审批，批准后余额才变并生成账单。", check: "核对用户、方向、金额和凭证。" },
       remarkHint: "选填，不会保存",
       reasonPlaceholder: "这里写的不会保存",
@@ -786,7 +780,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
           toast("账户信息已变化，请重新核对后提交", "warn");
           return false;
         }
-        await createCommand(large ? "large" : "create", userId, userNo, input, OPERATOR());
+        await createCommand(userId, userNo, input, OPERATOR());
       },
     });
   };
@@ -1007,11 +1001,12 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   };
 
   /* ── 待确认：读回、重试、解除 ── */
-  const canRetry = (record: C3Pending) => record.kind === "create" || record.kind === "large" || record.kind === "withdraw" ? canCreate
+  const canRetry = (record: C3Pending) => record.kind === "large" ? false : record.kind === "create" || record.kind === "withdraw" ? canCreate
     : record.kind === "reverse" ? canReverse : canApprove;
 
   /** 按原操作重试：同命令号、同内容、同操作人，不接受新输入（OP-94）。成功才解除；后端明确拒绝后才能人工解除。 */
   const retryPending = async (record: C3Pending) => {
+    if (record.kind === "large") { notePending(record, LARGE_REQUEST_RETIRED); return; }
     if (isRetryExpired(record)) { notePending(record, `${RETRY_EXPIRED_TEXT}。`); return; }
     if (!canRetry(record)) { notePending(record, `${RETRY_NO_PERMISSION}。`); return; }
     if (!c3Commands.isDurablyStored(record.fingerprint, record.commandKey)) {
@@ -1020,8 +1015,8 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     }
     setRetryRejected((keys) => keys.filter((key) => key !== record.commandKey));
     try {
-      const outcome = record.kind === "create" || record.kind === "large"
-        ? await createCommand(record.kind, record.target, text(record.userNo), record.input as CreateInput, record.operator, true)
+      const outcome = record.kind === "create"
+        ? await createCommand(record.target, text(record.userNo), record.input as CreateInput, record.operator, true)
         : record.kind === "reverse"
           ? await reverseCommand(record.target, record.reason ?? "", record.operator, true)
           : await reviewCommand(record.kind, record.target, record.reason ?? "", record.operator, true);
@@ -1405,12 +1400,12 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未确认`} actionBelow
         action={<>
           <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>读回核对</Button>
-          <Button size="sm" disabled={!!submitting} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原操作重试</Button>
+          {record.kind !== "large" && <Button size="sm" disabled={!!submitting} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原操作重试</Button>}
           {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除待确认</Button>}
         </>}>
         <p>
           {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，可能已经生效。
-          {expired ? `${RETRY_EXPIRED_TEXT}。` : "按原操作重试会用同一个命令号重新发送，不会多建单，也不会重复入账。"}
+          {record.kind === "large" ? LARGE_REQUEST_RETIRED : expired ? `${RETRY_EXPIRED_TEXT}。` : "按原操作重试会用同一个命令号重新发送，不会多建单，也不会重复入账。"}
           {canReadAudit ? <> <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批按单号核对</Link></> : <KeepText text={`${AUDIT_ELSEWHERE}。`} />}
           <Explain label="这次操作的技术信息" rows={[
             { k: "命令号", v: <span data-mono>{record.commandKey}</span> },
