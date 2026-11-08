@@ -13,6 +13,7 @@ import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConflictBar, 
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import {
@@ -244,7 +245,9 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       await sendCommand(record, record);
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
-      setRetryRejected(retryRejectedReason(cause));
+      // 只有后端明确拒绝才给「解除待确认」；登录、权限、限流这类不是对原操作的结论，可以再重试（OP-153）。
+      if (isExplicitRejection(cause)) setRetryRejected(retryRejectedReason(cause));
+      else setPendingNote(`这次没能确认结果：${retryRejectedReason(cause)}原操作继续保留。`);
     } finally {
       setRetrying(false);
     }

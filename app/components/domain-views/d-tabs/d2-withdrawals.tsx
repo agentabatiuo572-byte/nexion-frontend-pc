@@ -3,6 +3,7 @@ import { operatorNicknameText } from "@/lib/admin/brand-copy";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
@@ -1506,8 +1507,11 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       if (record.kind === "simulate") await runDevelopmentSimulation(no, record.reason, record.operator);
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
-      notePending(record, `重试没有成功：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，原命令继续保留。`);
-      setRetryRejected((current) => [...current, record.commandKey]);
+      // 只有后端明确拒绝才给「解除待确认」；登录、权限、限流这类不是对原命令的结论（OP-153）。
+      if (isExplicitRejection(cause)) {
+        notePending(record, `重试没有成功：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，原命令继续保留。`);
+        setRetryRejected((current) => [...current, record.commandKey]);
+      } else notePending(record, `这次没能确认结果：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 原命令继续保留。`);
     }
   };
 

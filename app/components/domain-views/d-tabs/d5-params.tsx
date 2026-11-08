@@ -9,6 +9,7 @@
 import { useReach } from "@/lib/nav/use-reach";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, CalendarClock, CalendarRange, CircleDot, CircleMinus, Gauge, Lock, LockOpen, Network, RefreshCw, ShieldCheck, Zap, type LucideIcon } from "lucide-react";
@@ -82,10 +83,10 @@ function rejectionCode(err: unknown) {
 }
 
 /**
- * 后端明确拒绝了这次请求：有 4xx 状态和拒绝码。只有这种才能丢号、才能给「解除待确认」。
- * 本地出错、读不懂、存不下、网络断开都说明不了原命令的结果，原命令留着（OP-93、OP-153）。
+ * 后端拒绝了这次请求：有 4xx 状态和拒绝码，新命令据此丢号（OP-93）。本地出错、读不懂、存不下、网络断开都说明不了结果，原命令留着。
+ * 重试被拒后给不给「解除待确认」另按 isExplicitRejection，登录、权限、限流、IDEMPOTENCY_* 不算（OP-153）。
  */
-function explicitRejection(err: unknown) {
+function backendRejected(err: unknown) {
   if (isDOutcomeUnknownError(err) || isA2OutcomeUncertainError(err)) return false;
   if (err instanceof DRequestError) return err.status >= 400 && err.status < 500 && err.code !== undefined;
   const status = (err as { status?: unknown } | null)?.status;
@@ -696,7 +697,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       return "done" as const;
     } catch (cause) {
       // 只有后端明确拒绝才丢号；读不懂、断开、本地出错都按结果未知留着（F03）。
-      const rejected = explicitRejection(cause);
+      const rejected = backendRejected(cause);
       if (rejected && !retained) tightenCommands.forget(TIGHTEN_SCOPE);
       syncPending();
       if (!rejected) return "unknown" as const;
@@ -805,8 +806,8 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       if (outcome === "unknown") note(record.commandKey, "重试的结果也没确认，原操作继续保留。稍后再试。");
       else toast(`${record.label.replace(/^调整提现参数 · /, "")}已生效`, "success");
     } catch (cause) {
-      // 后端明确拒绝了这次重试才给「解除待确认」；本地出错不算（F03）。
-      if (explicitRejection(cause)) {
+      // 后端明确拒绝了这次重试才给「解除待确认」；本地出错、登录、权限、限流不算（F03、OP-153）。
+      if (isExplicitRejection(cause)) {
         note(record.commandKey, `重试被拒绝：${sentence(errorText(cause))}这说明不了原操作的结果，原操作继续保留。`);
         setRetryRejected((current) => [...current, record.commandKey]);
       } else {
@@ -843,7 +844,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         note(key, `${detail ? sentence(detail) : ""}结果还是没确认，原操作继续保留。`);
       }
       else if (!kept) toast(`重试被拒绝：${sentence(errorText(cause))}原审批命令已清除，可以重新发起。`, "warn");
-      else if (mode === "retry" && explicitRejection(cause)) {
+      else if (mode === "retry" && isExplicitRejection(cause)) {
         note(key, `重试被拒绝：${sentence(errorText(cause))}这说明不了原操作的结果，原操作继续保留。`);
         setRetryRejected((current) => [...current, key]);
       } else {
@@ -905,7 +906,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       return (
         <Notice key={record.commandKey} tone="warn" title={`${editTitle(record.label.replace(/^调整提现参数 · /, ""))} · 结果未确认`} action={<>
           {!expired && <Button size="sm" disabled={!!recovering} disabledReason={commandAuthorities(record.changes).every(can) ? undefined : NO_WRITE} onClick={() => void retryTighten(record)}>按原操作重试</Button>}
-          {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: record.label, slot: record.fingerprint, commandKey: record.commandKey, loosen: false })}>解除待确认</Button>}
+          {!expired && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: record.label, slot: record.fingerprint, commandKey: record.commandKey, loosen: false })}>解除待确认</Button>}
         </>}>
           {`${formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（${zone}）发出：${describeChanges(record.changes)}。可能已经生效，确认前这页不能再修改。`}
           {expired ? `${RETRY_EXPIRED_TEXT}。` : "用同一命令号重新发送，不会重复生效。"}
