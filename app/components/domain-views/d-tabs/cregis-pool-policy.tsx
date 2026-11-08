@@ -70,7 +70,7 @@ export function CregisPoolPolicy({canManage,openActionConfirm,onChanged}:{canMan
   };
   const block=loading?"正在读取最新数据":busy?"正在提交":!saved?"地址池配置没读到，刷新后再试":d1PendingObjectReason("/cregis/addresses/policy");
   return <Panel icon={MapPin} tone="role-4" title="专属充值地址 · 库存与自动补充"
-    explain={`首次进入充值页时分配专属地址，后续重复使用。BEP20 与 ERC20 分别计算库存，共用以下补充目标。低于补充阈值后，分批补至目标库存；已分配地址不计入备用库存。保存后直接生效；收款服务限流或额度不足时延后补充。${saved?` 现在是第 ${saved.version} 版。`:""}`}
+    explain={`首次进入充值页时分配专属地址，后续重复使用。BEP20、ERC20 与 TRC20 分别计算库存，共用以下补充目标。低于补充阈值后，分批补至目标库存；已分配地址不计入备用库存。保存后直接生效；收款服务限流或额度不足时延后补充。${saved?` 现在是第 ${saved.version} 版。`:""}`}
     actions={<>
       <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden/>} loading={loading} disabled={busy} onClick={()=>void refresh()}>刷新</Button>
       {canManage && <Button size="sm" disabledReason={block} onClick={save}>调整</Button>}

@@ -14,7 +14,7 @@ import { announcePermissionDenied, isPermissionDenied, operationConfirmErrorMess
 import { useUI, type ToastKind } from "@/lib/store/ui";
 import { useDialogFeedback } from "@/app/components/kit/dialog-feedback";
 import { ToastHost } from "@/app/components/kit/toast-host";
-import { fmtPct } from "@/lib/format";
+import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
 import { fetchA2ReasonPolicy, isA2OutcomeUncertainError, visibleReasonLength } from "@/lib/admin/a2-client";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
@@ -3560,7 +3560,7 @@ export type InlineOperationApproval = {
   fieldLayout?: "compact";
 };
 
-export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", coverageCheck = "提交时会先检查兑付覆盖率。", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional }: { /** 系统什么时候查覆盖率，写真实路径；走审批的后端不在提交时查，传批准时的说法。 */ coverageCheck?: string; /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode; confirmLabel?: string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string }; facts?: ReactNode; confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", coverageCheck = "提交时会先检查兑付覆盖率。", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional }: { /** 系统什么时候查覆盖率，写真实路径；走审批的后端不在提交时查，传批准时的说法。 */ coverageCheck?: string; /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode; confirmLabel?: string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string }; /** 传函数时随输入变：参数是填好的新值，没填好是 undefined；每次都要返回事实块，没填好时写现在的值。 */ facts?: ReactNode | ((value?: string) => ReactNode); confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const surface = useRdSurface();
   const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
   const [draftReason, setReason] = useState(pendingReason ?? "");
@@ -3760,7 +3760,9 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const submitLabel = pendingReason !== undefined ? "重试原操作" : approvalRecovery === "retry" ? "按原操作重试" : approval ? "提交审批" : confirmLabel;
   // 资金信息排在要填的字段前（OP-47）。改一个值的框方向随输入变，放在输入框下面，不然打字时输入框会跳。
   const coverageFirst = surface && (!approval || rdApproval) && !spec;
-  const coverageInFacts = coverageFirst && !!facts;
+  // 事实区随输入变（比如改基准价时买入价写「现在 → 改后」）：新值填好才交给页面。
+  const shownFacts = typeof facts === "function" ? facts(editValueOk ? newVal : undefined) : facts;
+  const coverageInFacts = coverageFirst && !!shownFacts;
   const checkCopy = rdApproval ? approvalSpec?.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。" : coverageCheck;
   const coverageNotice = effectiveAmplifies && (
     <div className={surface && !covBlocked ? "alertbar calm" : "alertbar danger"} style={{ marginBottom: coverageInFacts ? 0 : 16, border: 0 }}>
@@ -3768,8 +3770,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       {surface && coverage && !covBlocked ? (
         // 够得上红线时只留数字，后果和检查说明进提示图标（DP-06）。
         <div className="tiny">
-          兑付覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b>，红线 <b>{fmtPct(coverage.redlinePct)}</b>
-          <Explain label="这项操作对资金的影响" content={<><p>{coverageLead}</p><p>{checkCopy}</p>{coverage.healthyPct !== undefined && <p>健康线 {fmtPct(coverage.healthyPct)}。</p>}</>} />
+          兑付覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b>，红线 <b>{fmtConfigPct(coverage.redlinePct)}</b>
+          <Explain label="这项操作对资金的影响" content={<><p>{coverageLead}</p><p>{checkCopy}</p>{coverage.healthyPct !== undefined && <p>健康线 {fmtConfigPct(coverage.healthyPct)}。</p>}</>} />
         </div>
       ) : surface && !covBlocked && !coverage && auditSink !== "local-history" ? (
         // 页面自己把覆盖率写进 coverageLead 时也只留这一句，检查说明进提示图标（DP-06）。
@@ -3780,12 +3782,12 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
           <>
             兑付覆盖率 <b className={surface ? undefined : "mono"}>{fmtPct(coverage.coverageRatio)}</b>
             {coverage.healthyPct !== undefined && coverage.coverageRatio >= coverage.healthyPct
-              ? `，高于健康线 ${fmtPct(coverage.healthyPct)}`
+              ? `，高于健康线 ${fmtConfigPct(coverage.healthyPct)}`
               : coverage.coverageRatio > coverage.redlinePct
-                ? `，高于红线 ${fmtPct(coverage.redlinePct)}，请谨慎提交`
+                ? `，高于红线 ${fmtConfigPct(coverage.redlinePct)}，请谨慎提交`
                 : coverage.coverageRatio === coverage.redlinePct
-                  ? `，正好在红线 ${fmtPct(coverage.redlinePct)}，请谨慎提交`
-                  : `，低于红线 ${fmtPct(coverage.redlinePct)}，提交会被拒绝`}
+                  ? `，正好在红线 ${fmtConfigPct(coverage.redlinePct)}，请谨慎提交`
+                  : `，低于红线 ${fmtConfigPct(coverage.redlinePct)}，提交会被拒绝`}
           </>
         ) : auditSink === "local-history" ? (
           <>本页暂不自动检查覆盖率，请自行确认资金影响。</>
@@ -3844,21 +3846,21 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
             {!approval.heading && <>
               <div>{completionCopy}</div>
               <div>{approval.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。"}{covBlocked && "兑付覆盖率低于红线，暂时无法提交。"}</div>
-              {coverage && <div>兑付覆盖率 <b className="mono">{fmtPct(coverage.coverageRatio)}</b> · 红线 <span className="mono">{fmtPct(coverage.redlinePct)}</span></div>}
+              {coverage && <div>兑付覆盖率 <b className="mono">{fmtPct(coverage.coverageRatio)}</b> · 红线 <span className="mono">{fmtConfigPct(coverage.redlinePct)}</span></div>}
             </>}
             {approval.disabledReason && <div role="status">{approval.disabledReason}</div>}
           </div>
         </div>
         {approval.heading ? <>
           <p style={{ margin: "0 0 14px", lineHeight: 1.5 }}>{completionCopy}</p>
-          {coverage && <p className="operation-approval-coverage">兑付覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b> · 红线 <b>{fmtPct(coverage.redlinePct)}</b></p>}
+          {coverage && <p className="operation-approval-coverage">兑付覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b> · 红线 <b>{fmtConfigPct(coverage.redlinePct)}</b></p>}
           {approval.comparison}
         </> : !compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} completionCopy={statedBrief ? undefined : completionCopy} auditSink={auditSink} kind={effectiveBriefKind} stated={statedBrief} />}
       </>}
       {!surface && !approval && coverageNotice}
       {!surface && !approval && completionCopy && <div className="tint tiny" style={{ marginBottom: 14 }}>{completionCopy}</div>}
-      {facts && <div className="rd-confirm-facts">{facts}{coverageInFacts && coverageNotice}</div>}
-      {coverageFirst && !facts && coverageNotice}
+      {shownFacts && <div className="rd-confirm-facts">{shownFacts}{coverageInFacts && coverageNotice}</div>}
+      {coverageFirst && !shownFacts && coverageNotice}
       {surface && content}
       {activeBusinessForm && (
         <fieldset disabled={formLocked} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>

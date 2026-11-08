@@ -8,6 +8,7 @@ import { Button, Explain, IconButton, Notice, ReleaseModal, StatusTag } from "@/
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { isDOutcomeUnknownError } from "@/lib/admin/d-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { useReach } from "@/lib/nav/use-reach";
 
@@ -113,21 +114,6 @@ export type D1PendingItem = {
 const unknownOutcome = (error: unknown) => isDOutcomeUnknownError(error)
   || (typeof error === "object" && error !== null && (error as { unknownOutcome?: unknown }).unknownOutcome === true);
 
-/** 这些状态码说的是登录、权限、超时、限流，不是后端对这条命令的结论。 */
-const NOT_A_VERDICT = new Set([401, 403, 408, 425, 429]);
-
-/**
- * 后端明确拒绝：带原因码的 4xx。处理中、结果未知、响应读不懂、本地没发出去的都不算，原命令照旧保留（OP-153）。
- * 写法同提现审核：只有明确拒绝之后才能人工核实解除。
- */
-export function explicitRejection(error: unknown) {
-  if (typeof error !== "object" || error === null || unknownOutcome(error)) return false;
-  const value = error as { name?: unknown; status?: unknown; reasonCode?: unknown };
-  return (value.name === "DRequestError" || value.name === "PurchasePaymentApiError")
-    && typeof value.status === "number" && value.status >= 400 && value.status < 500 && !NOT_A_VERDICT.has(value.status)
-    && typeof value.reasonCode === "string" && value.reasonCode !== "" && !value.reasonCode.startsWith("IDEMPOTENCY_");
-}
-
 /**
  * 结果未确认的写操作，所在页签顶部常显（OP-93）。只能按原请求重试（OP-94）；重试被后端明确拒绝后才出现「解除待确认」，
  * 后端不按命令号去重的操作不给重试，读回核对之后才出现「核对后解除」。解除只放开本页的锁，不发请求（OP-153）。写法同提现审核。
@@ -149,7 +135,7 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
       note(item.key, "");
     } catch (error) {
       if (isPermissionDenied(error)) announcePermissionDenied();
-      if (explicitRejection(error)) {
+      if (isExplicitRejection(error)) {
         note(item.key, <>重试被拒：{displayAdminError(error)} 这说明不了原操作的结果，先核实原操作，再决定要不要解除。</>);
         setReleasable((current) => [...current, item.key]);
       } else if (unknownOutcome(error)) note(item.key, "重试结果仍未确认，原操作继续保留。");

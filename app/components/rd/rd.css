@@ -232,6 +232,13 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-tab-count { font-variant-numeric: tabular-nums; font-size: var(--rd-text-aux); color: var(--rd-warn); }
 .rd-tab-count[data-zero] { color: var(--rd-text-3); }
 @media (hover: hover) and (pointer: fine) { .rd-tab:not(:disabled):not([aria-selected="true"]):hover { background: var(--rd-panel); color: var(--rd-text); } }
+/* 第二层页签：下划线式（Ant Design Tabs 默认 line），页签间距 32，整排下面一条细线，选中项 2px 品牌色下划线。 */
+.rd-tabs-sub { gap: 0 32px; box-shadow: inset 0 -1px 0 var(--rd-line); }
+.rd-tabs-sub .rd-tab { height: 40px; padding: 0; border-radius: 0; }
+.rd-tabs-sub .rd-tab[aria-selected="true"] { background: none; box-shadow: inset 0 -2px 0 var(--rd-brand-ink); }
+.rd-tabs-sub .rd-tab[aria-selected="true"]::before { content: none; }
+.rd-tabs-sub .rd-tab:focus-visible { outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) { .rd-tabs-sub .rd-tab:not(:disabled):not([aria-selected="true"]):hover { background: none; color: var(--rd-text); } }
 
 /* ── 状态分段 ── */
 .rd-segs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
@@ -372,8 +379,9 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-table-scroll:has(td[data-align="right"] .rd-row-actions > .rd-iconbtn:last-child):not(.rd-panel[data-flush] > *) { margin-right: -8px; padding-right: 8px; }  /* 不贴边的表格末列没有内边距，这 8px 要借面板的留白，不然多出一条横向滚动条 */
 .rd-cell-main { display: block; color: var(--rd-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rd-cell-sub { display: block; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rd-cell[data-mono] .rd-cell-main, .rd-cell[data-mono] .rd-cell-sub { font-family: var(--rd-font-mono); }
-.rd-cell-main [data-mono] { font-family: var(--rd-font-mono); }  /* 第一行是单号、第二行是人名时只给单号等宽 */
+.rd-cell[data-mono] .rd-cell-main { font-family: var(--rd-font-mono); }
+.rd-cell[data-mono] .rd-cell-sub { font-variant-numeric: tabular-nums; }  /* 第二行多是时间、用户、名称，用正文字体加等宽数字（VS-52，Ant Design 表格同样）；第二行也是单号、哈希时页面包 <span data-mono> */
+.rd-cell-main [data-mono], .rd-cell-sub [data-mono] { font-family: var(--rd-font-mono); }  /* 第一行是单号、第二行是人名时只给单号等宽 */
 .rd-cell[data-num] .rd-cell-main, .rd-cell[data-num] .rd-cell-sub { font-variant-numeric: tabular-nums; }
 .rd-skeleton { display: block; height: 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); animation: rd-pulse 1.4s ease-in-out infinite; }
 @keyframes rd-pulse { 50% { opacity: .5; } }
@@ -474,6 +482,7 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 :where(.rd-modal-body) p { margin: 0; color: var(--rd-text-2); }
 .rd-modal-body .rd-facts:not(.rd-confirm-facts *, .rd-fold *) { padding: 12px 16px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
 .rd-modal-foot { flex: none; display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; background: var(--rd-panel-inner); border-radius: 0 0 var(--rd-radius-panel) var(--rd-radius-panel); }
+.rd-modal-esc { flex: 1 1 auto; align-self: center; min-width: 0; margin: 0 auto 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }  /* 打过字后第一次按 Esc 的轻提示，排在按钮左边，不挤动内容 */
 
 /* 确认框外观：OperationConfirmModal 的旧内容块在新框里的样子，逻辑都在旧组件里没动。 */
 .rd-modal.rd-confirm .operator-brief { padding: 0; margin-bottom: 12px; }
@@ -521,6 +530,8 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-modal.rd-confirm .field:has(> input[type="checkbox"]) > span { grid-column: 2; }
 .rd-modal.rd-confirm .field:has(> input[type="checkbox"]) > span:first-of-type { color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
 .rd-toast { position: fixed; top: calc(var(--admin-topbar-h) + 32px); left: 50%; z-index: var(--admin-z-toast); width: min(420px, calc(100vw - 40px)); padding: 12px 20px; border: 1px solid var(--rd-line-strong); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); color: var(--rd-text); font-family: var(--rd-font); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); text-align: center; transform: translateX(-50%); }
+/* 抽屉开着时提示条在抽屉左边那块居中，不盖抽屉头的标题、单号和上一条下一条；宽抽屉几乎占满内容区，照旧居中。 */
+body:has(.rd-drawer[data-state="open"]:not([data-wide])) .rd-toast-host { left: calc((100vw - min(var(--rd-drawer-w), 100vw)) / 2); }
 /* 理由框排在内容里，不吸底：吸底会盖住要填的字段和后果，点开查看详情后尤其明显（DT-17）。 */
 .rd-modal.rd-confirm .rd-reason-field { margin-bottom: 0; }
 .rd-reason-box { position: relative; }
@@ -592,10 +603,11 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 @media (hover: hover) and (pointer: fine) { .rd-guide-entry:hover { background: var(--rd-panel-inner); color: var(--rd-text); } }
 .rd-guide-hint { display: inline-flex; align-items: center; gap: 4px; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 .rd-guide-section { display: grid; gap: 8px; }
-.rd-guide-section h3 { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; color: var(--rd-text); }
+.rd-guide-section + .rd-guide-section { margin-top: 8px; }  /* 分区之间 20，比分区里的 8 宽一档，看得出是三块 */
+.rd-guide-section h3 { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; color: var(--rd-text); }  /* 分区标题高一档，每件事的小标题才分得出层级（Ant Design Typography h5） */
 .rd-guide-section p, .rd-guide-section ol, .rd-guide-section dl { margin: 0; color: var(--rd-text-2); }
 .rd-guide-section ol { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }  /* 每件事一个小标题，下面一步一行，不用箭头串成长句（DT-02） */
-.rd-guide-section ol li > b { font-weight: 500; color: var(--rd-text); }
+.rd-guide-section ol li > h4 { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; color: var(--rd-text); }
 .rd-guide-section ol ol { gap: 4px; margin-top: 4px; padding-left: 20px; list-style: decimal; }
 .rd-guide-section dl { display: grid; gap: 8px; }
 .rd-guide-section dt { display: inline; font-weight: 500; color: var(--rd-text); }
@@ -759,7 +771,8 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-change-unit { margin-left: 4px; font-size: var(--rd-text-body); font-weight: 400; color: var(--rd-text-3); }
 .rd-change-arrow { flex: none; color: var(--rd-text-3); }
 .rd-change-entry { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: var(--rd-control-h-lg); }
-.rd-change-entry > :is(.rd-number, .rd-input) { flex: 1 1 160px; width: auto; min-width: 0; max-width: none; }
+.rd-change-entry > .rd-input { flex: 1 1 160px; width: auto; min-width: 0; max-width: none; }
+.rd-change-entry > .rd-number { flex: none; }  /* 数字框按内容定宽，方向标签紧跟在后面 */
 .rd-change[data-size="key"] .rd-change-entry .rd-input { height: var(--rd-control-h-lg); font-size: var(--rd-text-title); font-weight: 600; font-variant-numeric: tabular-nums; }
 .rd-change[data-size="key"] .rd-change-entry .rd-number-unit { height: var(--rd-control-h-lg); }
 .rd-change[data-size="body"] :is(.rd-change-now, .rd-change-entry) { min-height: var(--rd-control-h); }
@@ -767,7 +780,6 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-change[data-size="body"]:not([data-stack]) { padding: 0; background: none; }
 .rd-change[data-size="body"] .rd-change-now, .rd-change-now[data-words] { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); }
 .rd-change-hint { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
-.rd-change > :is(.rd-change-hint, .rd-form-error) { flex-basis: 100%; }
 .rd-change-note { flex-basis: 100%; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-change-note .rd-diff-note { margin-top: 8px; }
 .rd-change-note .rd-diff-note svg { margin-top: 2px; }
@@ -776,7 +788,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-change[data-stack] .rd-change-now { min-height: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; white-space: normal; overflow-wrap: anywhere; }
 .rd-change[data-stack] .rd-change-arrow { display: none; }
 .rd-change[data-stack] .rd-change-entry { min-height: 0; }
-.rd-change[data-stack] .rd-change-entry > :is(.rd-number, .rd-input) { flex: 1 1 100%; max-width: none; }
+.rd-change[data-stack] .rd-change-entry > .rd-input { flex: 1 1 100%; max-width: none; }
 
 /* ── 等级表 ── */
 .rd-levels { margin: 0; padding: 0; list-style: none; }
@@ -1024,10 +1036,11 @@ td .rd-flow { margin-bottom: 0; }
 .rd-push-state { display: grid; justify-items: start; gap: 8px; }
 @container (max-width: 860px) { .rd-config-rail .rd-push-state { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; } }  /* 窄栏上移时状态、说明、按钮排一行，不把参数挤出首屏 */
 .rd-row-actions { display: inline-flex; gap: 8px; }
-.rd-number { position: relative; display: block; width: 100%; max-width: 240px; }
-.rd-number .rd-input { padding-right: 56px; font-variant-numeric: tabular-nums; appearance: textfield; }
-.rd-number .rd-input::-webkit-inner-spin-button, .rd-number .rd-input::-webkit-outer-spin-button { appearance: none; margin: 0; }
-.rd-number-unit { position: absolute; z-index: 1; top: 0; right: 12px; height: var(--rd-control-h); display: inline-flex; align-items: center; color: var(--rd-text-3); pointer-events: none; }
+/* 宽度按内容定（Ant Design InputNumber）：--rd-number-chars 是 min、max、现在的值里最长的字数（ch），--rd-number-unit 是单位的字宽，组件算好传进来。 */
+.rd-number { --rd-number-unit-w: calc(var(--rd-number-unit) * .62 * var(--rd-text-body)); position: relative; display: inline-block; width: max-content; max-width: 100%; vertical-align: middle; }  /* 放在表单栅格里也不被拉满，单位才跟着框 */
+.rd-number .rd-input { width: calc((var(--rd-number-chars) + .5) * 1ch + 24px); max-width: 100%; font-variant-numeric: tabular-nums; }
+.rd-number[data-unit] .rd-input { width: calc((var(--rd-number-chars) + .5) * 1ch + 32px + var(--rd-number-unit-w)); padding-right: calc(20px + var(--rd-number-unit-w)); }  /* 单位紧跟数字，中间 8 */
+.rd-number-unit { position: absolute; z-index: 1; top: 0; right: 12px; height: var(--rd-control-h); display: inline-flex; align-items: center; color: var(--rd-text-3); font-size: var(--rd-text-body); pointer-events: none; }
 .rd-confirm-preview { margin-top: 8px; color: var(--rd-text); }
 
 /* 主题开关（顶栏、登录页）：太阳浅色、月亮深色，选中的一格亮底。 */
@@ -1047,6 +1060,17 @@ td .rd-flow { margin-bottom: 0; }
 /* 浅色次按钮浅底描边：十几个「调整」和分页按钮排在一起不压过红色紧急按钮（novice-2）；主按钮、危险按钮、弱按钮不变。 */
 :root[data-theme="light"] .rd-btn[data-variant="secondary"]:not(:disabled):not([aria-disabled="true"]) { background: var(--rd-panel-inner); box-shadow: inset 0 0 0 1px var(--rd-line-strong); }
 @media (hover: hover) and (pointer: fine) { :root[data-theme="light"] .rd-btn[data-variant="secondary"]:not(:disabled):not([aria-disabled="true"]):hover { background: var(--rd-control); } }
+/* 浅色输入框白底加 1px 描边，悬停描边深一档（Ant Design Input 默认）。只靠 #E8EAEF 填充时，放在浅灰块上几乎看不出框（D6 复查约 1.1:1）。
+   禁用和只读保留各自的灰底，描边照样有；填错时只留橙黄或红的外框，不叠两道线。主题选择器包在 :where 里，和 .rd-input 本身同一档，
+   页面自己改过底色的控件（比如透明底的下拉）照旧。 */
+:where(:root[data-theme="light"]) :is(.rd-input, .rd-select) { box-shadow: inset 0 0 0 1px var(--rd-line-strong); }
+:where(:root[data-theme="light"]) :is(.rd-input, .rd-select):where(:not(:disabled):not([readonly])) { background: var(--rd-panel); }
+@media (hover: hover) and (pointer: fine) { :where(:root[data-theme="light"]) :is(.rd-input, .rd-select):where(:not(:disabled):not([readonly]):not([aria-invalid="true"])):hover { box-shadow: inset 0 0 0 1px var(--rd-control-line); } }
+:where(:root[data-theme="light"]) :is(.rd-input, .rd-select)[aria-invalid="true"] { box-shadow: none; }
+/* 确认框里旧写法的字段（理由框、业务表单）同样。 */
+:root[data-theme="light"] .rd-modal.rd-confirm :is(.field textarea, .field input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), .fld) { box-shadow: inset 0 0 0 1px var(--rd-line-strong); }
+:root[data-theme="light"] .rd-modal.rd-confirm :is(.field textarea, .field input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), .fld):not(:disabled):not([readonly]) { background: var(--rd-panel); }
+@media (hover: hover) and (pointer: fine) { :root[data-theme="light"] .rd-modal.rd-confirm :is(.field textarea, .field input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), .fld):not(:disabled):not([readonly]):hover { box-shadow: inset 0 0 0 1px var(--rd-control-line); } }
 
 /* 还没迁移的页面：内容区挂 data-theme="dark" 和 .rd-legacy，里面仍是旧的深色取值；浅色主题的原生控件配色在这里面改回深色。 */
 :root[data-theme="light"] .rd-legacy :is(select, input[type="date"], input[type="datetime-local"]) { color-scheme: dark; }
@@ -1080,7 +1104,6 @@ td .rd-flow { margin-bottom: 0; }
 .rd-detail-groups .rd-fold-body { padding-top: 8px; padding-bottom: 20px; }
 .rd-detail-groups > div > .rd-fold > summary .rd-fold-title { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; }
 .rd-detail-groups .rd-panel[data-plain] .rd-panel-title { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; }
-.rd-detail-groups .rd-cell[data-mono] .rd-cell-sub { font-family: var(--rd-font); }
 .rd-detail-block { display: grid; gap: 12px; min-width: 0; }
 .rd-detail-block + .rd-detail-block { margin-top: 24px; }
 .rd-detail-block:has(> .rd-fold[data-inset]) + .rd-detail-block:has(> .rd-fold[data-inset]) { margin-top: 0; }  /* 收起的子项只靠线分开，上下留白才相等 */

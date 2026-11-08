@@ -9,10 +9,11 @@ import { useReach } from "@/lib/nav/use-reach";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Coins, History, RefreshCw, SlidersHorizontal } from "lucide-react";
-import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Drawer, Explain, Fact, Facts, Fold, Notice, PageHeader, Panel, ReleaseModal, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
+import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConflictBar, ConfigRow, Drawer, Explain, Fact, Facts, Fold, Notice, PageHeader, Panel, ReleaseModal, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import {
@@ -141,26 +142,6 @@ function retryRejectedReason(cause: unknown) {
   return `${displayAdminError(cause).split("；")[0].replace(/[。.]$/, "")}。`;
 }
 
-/** 确认框里的版本冲突：框不关，按钮读最新（OP-97）。 */
-function ConflictBar({ onRead }: { onRead: () => Promise<void> }) {
-  const [state, setState] = useState<"idle" | "reading" | "failed">("idle");
-  const read = async () => {
-    setState("reading");
-    try {
-      await onRead();
-      setState("idle");
-    } catch {
-      setState("failed");
-    }
-  };
-  return (
-    <span className="rd-toolbar">
-      <span>{state === "failed" ? "读取最新失败，稍后再试。已填写的内容还在。" : "这组汇率刚被别人改过，这次没有保存。读取最新后再核对新值。"}</span>
-      <Button size="sm" loading={state === "reading"} onClick={() => void read()}>读取最新</Button>
-    </span>
-  );
-}
-
 export function D6Fx({ ctx }: { ctx: DCtx }) {
   const reach = useReach();
   const { toast, openActionConfirm } = ctx;
@@ -264,7 +245,9 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       await sendCommand(record, record);
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
-      setRetryRejected(retryRejectedReason(cause));
+      // 只有后端明确拒绝才给「解除待确认」；登录、权限、限流这类不是对原操作的结论，可以再重试（OP-153）。
+      if (isExplicitRejection(cause)) setRetryRejected(retryRejectedReason(cause));
+      else setPendingNote(`这次没能确认结果：${retryRejectedReason(cause)}原操作继续保留。`);
     } finally {
       setRetrying(false);
     }
@@ -291,16 +274,21 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       formKey,
       detail: param.scope,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
-      // 有效期不改买入价：事实写它管哪些单、不管哪些单（F2）；另两项写买入价。
-      facts: (
-        <Facts>
-          {lock ? <>
-            <Fact k="影响范围">之后在充值页「银行卡支付」新建的付款单</Fact>
-            <Fact k="不受影响">买设备用银行卡付款的报价（最长 15 分钟）、提现报价</Fact>
-          </> : <Fact k="买入价" unit="₫/USDT">{vnd(quote.quoteRateVndPerUsdt)}</Fact>}
-          {carried && <Fact k="刚被别人改过" tone="warn">{carried.changed}<p className="rd-note">理由已清空，请按最新的值重写</p></Fact>}
-        </Facts>
-      ),
+      // 有效期不改买入价：事实写它管哪些单、不管哪些单（F2）；另两项写买入价，填好新值后写「现在 → 改后」，随输入变。
+      facts: (value?: string) => {
+        const next = value === undefined ? null : { ...quote, [param.key]: Number(value) };
+        return (
+          <Facts>
+            {lock ? <>
+              <Fact k="影响范围">之后在充值页「银行卡支付」新建的付款单</Fact>
+              <Fact k="不受影响">买设备用银行卡付款的报价（最长 15 分钟）、提现报价</Fact>
+            </> : <Fact k="买入价" unit="₫/USDT">{next
+              ? <Change from={vnd(quote.quoteRateVndPerUsdt)} to={vnd(d6QuoteRate(next.baseRateVndPerUsdt, next.buySpreadPct))} />
+              : vnd(quote.quoteRateVndPerUsdt)}</Fact>}
+            {carried && <Fact k="刚被别人改过" tone="warn">{carried.changed}<p className="rd-note">理由已清空，请按最新的值重写</p></Fact>}
+          </Facts>
+        );
+      },
       edit: {
         kind: "number",
         current: String(current),
@@ -348,7 +336,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
             operator,
           });
         } catch (cause) {
-          if (isConflict(cause)) openActionConfirm({ ...req, blockedReason: <ConflictBar onRead={readLatest(value ?? "")} /> });
+          if (isConflict(cause)) openActionConfirm({ ...req, blockedReason: <ConflictBar message="这组汇率刚被别人改过，这次没有保存。读取最新后再核对新值。" onRead={readLatest(value ?? "")} /> });
           throw cause;
         }
       },
