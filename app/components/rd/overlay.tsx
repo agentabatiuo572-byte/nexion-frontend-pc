@@ -218,8 +218,7 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
   // 填过内容后第一次按 Esc 只提示，第二次才关；接着打字就收起提示，重新算。
   const [escArmed, setEscArmed] = useState(false);
   const close = () => { if (!busy) onClose(); };
-  // 提示区一直在底栏里，读屏先认得这块，有字时才读出来。
-  const escHint = <p className="rd-modal-esc" role="status">{escArmed ? "再按一次 Esc 关闭，已填的内容不保留" : ""}</p>;
+  const escText = "再按一次 Esc 关闭，已填的内容不保留";
   return (
     <Dialog.Root open onOpenChange={(next) => { if (!next) close(); }}>
       <Dialog.Portal container={surface?.container ?? undefined}>
@@ -259,7 +258,9 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
           </div>
           <ToastHost dialogId={feedbackId} />
           <div className="rd-modal-body">{children}</div>
-          {(footer || escArmed) && <div className="rd-modal-foot">{escHint}<TipSide side="left">{footer}</TipSide></div>}
+          {/* 读屏用的状态区一直在，有字时才读出来；看得见的提示只在按过一次 Esc 后排进底栏，平时不占位。 */}
+          <span className="rd-sr-only" role="status">{escArmed ? escText : ""}</span>
+          {(footer || escArmed) && <div className="rd-modal-foot">{escArmed && <p className="rd-modal-esc" aria-hidden>{escText}</p>}<TipSide side="left">{footer}</TipSide></div>}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
