@@ -332,26 +332,30 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
           <div className="p-row"><div className="txt"><div className="k">加强合规审查</div><div className="s">开启后所有新 USDT 提现须人工复核，小额免审暂停适用</div></div><span className={`bdg ${params.complianceHoldEnabled ? "warn" : "ok"}`}>{params.complianceHoldEnabled ? "开启" : "关闭"}</span></div>
           <div className="p-row">
             <div className="txt">
-              <div className="k">大额审查窗口</div>
-              <div className="s">{complianceThreshold === undefined ? "大额金额门槛尚未核实，请刷新或到运营阶段设置查看" : `仅加强审查开启且金额超过 ${complianceThreshold} USDT 时生效`}</div>
-              <div className="s">0 天不额外等待；开启加强审查后仍须人工复核</div>
+              <div className="k">分网络审查窗口</div>
+              <div className="s">{complianceThreshold === undefined ? "BEP20 / ERC20：大额金额门槛尚未核实，请刷新或到运营阶段设置查看" : `BEP20 / ERC20：仅加强审查开启且金额超过 ${complianceThreshold} USDT 时生效`}</div>
+              <div className="s">TRC20：每笔自提交时间起计算阶段窗口，不受加强审查开关或金额限制</div>
+              <div className="s">0 天不额外等待；审核方式仍按加强审查、小额免审与风控规则判断</div>
             </div>
             <div style={{ textAlign: "right", flexShrink: 0 }}>
-              <div className="v">{complianceThreshold === undefined ? "待核实" : `${params.cooldownDays} 天`}</div>
-              {complianceThreshold !== undefined && <div className="s" style={params.complianceHoldEnabled && params.cooldownDays > 0 ? { color: "var(--warning)" } : undefined}>{params.complianceHoldEnabled && params.cooldownDays > 0 ? "仅大额适用" : "未启用额外等待"}</div>}
+              <div className="v">{params.cooldownDays} 天</div>
+              <div className="s" style={params.cooldownDays > 0 ? { color: "var(--warning)" } : undefined}>{params.cooldownDays > 0 ? "TRC20 每笔适用" : "无额外阶段等待"}</div>
             </div>
           </div>
           <div className="p-row">
             <div className="txt">
               <div className="k">当前执行规则</div>
               <div className="s">{complianceThreshold === undefined
-                ? "合规规则尚未核实，请刷新或到运营阶段设置查看"
+                ? "BEP20 / ERC20：合规规则尚未核实，请刷新或到运营阶段设置查看"
                 : !params.complianceHoldEnabled
-                  ? "按小额免审与风控规则处理，不附加大额审查等待"
+                  ? "BEP20 / ERC20：按小额免审与风控规则处理，不附加大额审查等待"
                   : params.cooldownDays > 0
-                    ? `≤${complianceThreshold} USDT 不额外等待；>${complianceThreshold} USDT 须满足 ${params.cooldownDays} 天窗口`
-                    : "所有新 USDT 提现须人工复核，不附加大额审查等待"}</div>
-              {complianceThreshold !== undefined && params.complianceHoldEnabled && <div className="s">到期后仍须复核放行，链上确认后才显示到账</div>}
+                    ? `BEP20 / ERC20：≤${complianceThreshold} USDT 不额外等待；>${complianceThreshold} USDT 须满足 ${params.cooldownDays} 天窗口`
+                    : "BEP20 / ERC20：所有新提现须人工复核，不附加大额审查等待"}</div>
+              <div className="s">{params.cooldownDays > 0
+                ? `TRC20：每笔须满足 ${params.cooldownDays} 天阶段窗口；符合小额免审条件也不能跳过窗口`
+                : "TRC20：不附加阶段等待，小额免审及人工审核仍按当前风控规则处理"}</div>
+              <div className="s">到期或批准不代表到账；需要人工复核的仍须放行，链上确认后才显示到账</div>
             </div>
             <span className="v">{complianceThreshold === undefined ? "待核实" : params.complianceHoldEnabled ? "全部人工复核" : "按普通规则审核"}</span>
           </div>

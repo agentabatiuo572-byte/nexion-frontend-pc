@@ -64,8 +64,8 @@ function Owned({canManage,openActionConfirm,owner,epoch}:Props&{owner:number;epo
     finally{if(owns()&&at===read.current)setLoading(false);}
   };
   return <section className="cregis-exceptions cregis-settings-card" aria-label="自动归集与甲方付款">
-    <div className="cregis-section-title">自动归集与甲方付款 <button className="l-btn sm" disabled={busy||loading} onClick={()=>void refresh()}>刷新自动流程</button></div>
-    <p>充值核实入账 → 自动归集充值全额至平台钱包 → 链上确认 → 自动向甲方支付用户入账净额。充值手续费留平台，链上手续费由平台另付；不重复入账或扣用户余额。</p>
+    <div className="cregis-section-title">BEP20 自动归集与甲方付款 <button className="l-btn sm" disabled={busy||loading} onClick={()=>void refresh()}>刷新自动流程</button></div>
+    <p>仅适用于 BEP20：充值核实入账 → 自动归集充值全额至平台钱包 → 链上确认 → 自动向甲方支付用户入账净额。充值手续费留平台，链上手续费由平台另付；不重复入账或扣用户余额。</p>
     {error&&<p role="alert" className="dtint bad">{error}</p>}{loading&&<p>正在读取自动资金流程…</p>}
     {status&&<>
       <p className={status.executionEnabled?"dtint warn":"dtint"}>运行总开关：{status.runtimeApproved?"已批准":"关闭"} · 自动归集：{status.collectionEnabled?"开启":"关闭"} · 自动付款：{status.paymentEnabled?"开启":"关闭"}</p>

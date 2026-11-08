@@ -107,8 +107,8 @@ function OwnedPreparation({ canManage, openActionConfirm, owner, ownerEpoch }: P
   const balance = preflight?.balance && typeof preflight.balance === "object" ? preflight.balance as ExceptionRecord : null;
 
   return <section className="cregis-exceptions cregis-settings-card" aria-label="归集与甲方付款准备">
-    <div className="cregis-section-title">USDT-BSC 归集与甲方付款准备 <button className="l-btn sm" disabled={busy || loading} onClick={() => void refresh()}>刷新准备记录</button></div>
-    <p className="dtint warn">这里只保存准备单和复核意见，不会转出资金。真实转账须另行授权后在 Cregis 执行，审批不自动发送。</p>
+    <div className="cregis-section-title">USDT-BEP20 归集与甲方付款准备 <button className="l-btn sm" disabled={busy || loading} onClick={() => void refresh()}>刷新准备记录</button></div>
+    <p className="dtint warn">仅适用于 BEP20；这里只保存准备单和复核意见，不会转出资金。真实转账须另行授权后在 Cregis 执行，审批不自动发送。</p>
     {error && <p role="alert" className="dtint bad">{error}</p>}
     {loading && <p>正在读取资金准备记录…</p>}
     {config && <>

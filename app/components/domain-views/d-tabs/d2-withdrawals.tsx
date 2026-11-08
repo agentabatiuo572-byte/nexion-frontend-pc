@@ -260,10 +260,14 @@ function actionLabel(action: D2ReviewAction) {
   return ({ APPROVE: "放行", DELAY: "延迟", FREEZE: "冻结", UNFREEZE: "解冻", REJECT: "拒绝并退款", REFUND: "手动退款" } as const)[action];
 }
 
+function isCregisWithdrawal(row: D2Withdrawal): boolean {
+  return ["USDT-BEP20", "BEP20", "USDT-ERC20", "ERC20", "USDT-TRC20", "TRC20"].includes(row.chain);
+}
+
 function actionCandidates(row: D2Withdrawal, cregis?: D2CregisPayout | null): D2ReviewAction[] {
   const status = row.status.toUpperCase();
   if (erc20ConfirmationLost(row)) return [];
-  if (["USDT-BEP20", "BEP20"].includes(row.chain)) {
+  if (isCregisWithdrawal(row)) {
     if (cregis?.withdrawalNo === row.withdrawalNo && cregis.source === "provider") return [];
     if (["PROCESSING", "SENT", "CHAIN_SUBMITTED", "FAILED", "TX_FAILED", "TX_ORPHANED", "DEAD", "REVIEW_REJECTED", "REJECTED", "ADDRESS_INVALID"].includes(status)
         && (!cregis || cregis.withdrawalNo !== row.withdrawalNo)) return [];
@@ -789,7 +793,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     try {
       const latest = await fetchD2WithdrawalDetail(row.withdrawalNo);
       const bank = latest.chain === "BANK-VND" ? await fetchD2BankPayout(row.withdrawalNo) : null;
-      const cregis = ["USDT-BEP20", "BEP20"].includes(latest.chain) ? await fetchD2CregisPayout(row.withdrawalNo) : null;
+      const cregis = isCregisWithdrawal(latest) ? await fetchD2CregisPayout(row.withdrawalNo) : null;
       if (seq === detailRequestSeq.current) { setDetail(latest); setBankDetail(bank); setCregisDetail(cregis); }
     } catch (cause) {
       if (seq !== detailRequestSeq.current) return;
@@ -1107,7 +1111,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         <div className="f-stat"><div className="k">当前状态</div><div className="v">{cregisDetail?.source === "provider" ? cregisStatusLabel(cregisDetail.state) : bankStatusLabel(detail)}</div><div className="sub">{detail.chain === "BANK-VND" ? "已派发后以 HDPay 查单结果结算；结果不明不重发、不手工退款。" : cregisDetail?.source === "provider" ? "按原代付单查询与链上证据处理；恢复原单不会重新发款。" : lifecycleSummary(detail)}</div></div>
       </div>
       <div className="d2-detail-grid">
-        {["USDT-BEP20", "BEP20"].includes(detail.chain) && <section className="d2-detail-section">
+        {isCregisWithdrawal(detail) && <section className="d2-detail-section">
           <h3>Cregis 打款核对</h3>
           {cregisDetail ? <>
             <KV k="打款渠道" v={cregisDetail.source === "provider" ? "Cregis" : "未经 Cregis 打款"} />

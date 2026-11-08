@@ -670,7 +670,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
           <div className="l-b">
             <div className="p-row">
               <div className="txt">
-                <div className="k">USDT 链上充值（BEP20 / ERC20）</div>
+                <div className="k">USDT 链上充值（BEP20 / ERC20 / TRC20）</div>
                 <div className="s">收款地址分配、入账和异常处理由 Cregis 开关控制。</div>
               </div>
               <button className="l-btn sm" onClick={() => {
@@ -755,7 +755,7 @@ function D1RechargeRecon({ ctx, section, onUsdt, onPendingChange, onUsdtActivity
           <TabGroup label="收款类型" value={reconciliationType} items={canReadCregis ? ["bank", "cregis"] : ["bank"]}
             onSelect={setReconciliationType} className="chips" disabled={() => loading || busy}
             itemClassName={(_key, selected) => `chip${selected ? " sel" : ""}`}>
-            {(key) => key === "bank" ? "银行转账（VietQR）/ HDPay" : "USDT（BEP20 / ERC20）"}
+            {(key) => key === "bank" ? "银行转账（VietQR）/ HDPay" : "USDT（BEP20 / ERC20 / TRC20）"}
           </TabGroup>
         </div>
         {reconciliationType === "cregis" && canReadCregis ? (
