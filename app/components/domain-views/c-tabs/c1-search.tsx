@@ -760,7 +760,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
           <Th>状态</Th>
           <Th>等级</Th>
           {canReadRisk && <Th icon={ShieldAlert} tone="risk"><Explain label="风险分怎么来" content="风险分取最近 24 小时内的评分，没有评分写「—」。">风险</Explain></Th>}
-          {showBalance && <Th align="right" icon={Coins} tone="money"><Explain label="USDT 余额的口径" content="钱包可用余额。">USDT 余额</Explain></Th>}
+          {showBalance && <Th align="right" icon={Coins} tone="money"><Explain label="余额这一列的口径" content="钱包可用余额。">USDT 余额</Explain></Th>}
           {deviceVisible && <Th align="right"><Explain label="设备数的口径" content="总数 / 活跃。活跃算在线、忙碌、已激活、运行中的设备。">设备</Explain></Th>}
           {canOpenDetail && <Th sticky="end">操作</Th>}
         </tr></thead>
