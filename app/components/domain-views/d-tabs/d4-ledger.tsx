@@ -538,7 +538,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
     ];
     if (check) {
       rows.push(check.breakDetected
-        ? { label: "核对结果", state: "danger", value: `对不上，差 ${signedDiff(check.difference)} ${unit(bill.asset)}` }
+        ? { label: "核对结果", state: "danger", value: "对不上" }
         : { label: "核对结果", value: check.settlementBucket === "UNSETTLED" ? "未结算 · 不参与钱包核对" : "对得上" });
     }
     return rows;
@@ -792,9 +792,9 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
                       <Td align="right"><Cell num main={`${amountText(row.bill.balanceAfter, checkBalanceDigits)} ${unit(row.bill.asset)}`}
                         sub={row.breakDetected && row.expectedBalanceAfter !== null ? `期望 ${amountText(row.expectedBalanceAfter, checkBalanceDigits)} ${unit(row.bill.asset)}` : undefined} /></Td>
                       <Td>{row.breakDetected
-                        ? <StatusTag tone="danger">对不上 差 {signedDiff(row.difference)} {unit(row.bill.asset)}</StatusTag>
+                        ? <Cell main={<StatusTag tone="danger">对不上</StatusTag>} sub={`差 ${signedDiff(row.difference)} ${unit(row.bill.asset)}`} />
                         : row.settlementBucket === "UNSETTLED"
-                          ? <StatusTag tone="done">未结算 · 不参与钱包核对</StatusTag>
+                          ? <Cell main={<StatusTag tone="done">未结算</StatusTag>} sub="不参与钱包核对" />
                           : <StatusTag tone="neutral" icon={CheckCircle2}>对得上</StatusTag>}</Td>
                       <Td><Cell num main={listTime(row.bill.createdAt)} /></Td>
                     </Tr>
