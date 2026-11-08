@@ -15,7 +15,7 @@ import { Explain } from "./explain";
 import { IconTile } from "./icon-tile";
 import type { RoleTone, StateTone } from "./tone";
 
-export function Panel({ title, sub, explain, explainLabel, icon, tone = "role-other", actions, flush, plain, headingLevel = 2, children, className, ...rest }: Omit<HTMLAttributes<HTMLElement>, "title"> & {
+export function Panel({ title, sub, explain, explainLabel, explainSide, icon, tone = "role-other", actions, flush, plain, headingLevel = 2, children, className, ...rest }: Omit<HTMLAttributes<HTMLElement>, "title"> & {
   title?: ReactNode;
   /** 数据型副标题：范围、单位、数量、时间。 */
   sub?: ReactNode;
@@ -23,6 +23,8 @@ export function Panel({ title, sub, explain, explainLabel, icon, tone = "role-ot
   explain?: ReactNode;
   /** title 不是纯文字时，给提示图标起读屏名字。 */
   explainLabel?: string;
+  /** 提示气泡朝哪边开；下面紧跟着要对着看的数字时传 right 或 top，不盖数字。 */
+  explainSide?: "top" | "bottom" | "right" | "left";
   icon?: LucideIcon;
   tone?: RoleTone | StateTone;
   actions?: ReactNode;
@@ -38,7 +40,7 @@ export function Panel({ title, sub, explain, explainLabel, icon, tone = "role-ot
         <div className="rd-panel-head">
           {icon && <IconTile tone={tone} icon={icon} />}
           {title && <Heading className="rd-panel-title">{title}</Heading>}
-          {explain && <Explain label={`${explainLabel ?? (typeof title === "string" ? title : "这一块")}的说明`} content={explain} />}
+          {explain && <Explain label={`${explainLabel ?? (typeof title === "string" ? title : "这一块")}的说明`} content={explain} side={explainSide} />}
           {sub && <span className="rd-panel-sub">{sub}</span>}
           {actions && <div className="rd-panel-actions">{actions}</div>}
         </div>
