@@ -726,7 +726,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       else notePending(record, "重试的结果仍未确认，待确认继续保留。");
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
-      notePending(record, `重试没有成功：${displayAdminError(cause)} 这说明不了原操作的结果，原记录继续保留。`);
+      notePending(record, `重试没有成功：${displayAdminError(cause).replace(/[。.]$/, "")}。这说明不了原操作的结果，原记录继续保留。`);
       setRetryRejected((current) => [...current, record.commandKey]);
     }
   };
@@ -1014,8 +1014,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         <Facts>
           <Fact k="可清理" lead unit="条">{count(preview.eligibleRows)}</Fact>
           <Fact k="最早到期">{preview.earliestExpireAt ? bizTime(preview.earliestExpireAt, preview.earliestExpireAt) : "—"}</Fact>
-          <Fact k="未到期（不受影响）">{`${count(preview.notYetExpiredRows)} 条`}</Fact>
-          <Fact k="旧版历史（不受影响）">{`${count(preview.legacyRowsWithoutExpireAt)} 条`}</Fact>
+          <Fact k="未到期">{`${count(preview.notYetExpiredRows)} 条，不动`}</Fact>
+          <Fact k="旧版历史">{`${count(preview.legacyRowsWithoutExpireAt)} 条，不动`}</Fact>
           <Fact k="保留期">{`${preview.retentionMonths} 个月`}</Fact>
           <Fact k="每次最多处理">2,000 条</Fact>
         </Facts>
@@ -1366,7 +1366,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const prevTicket = ticketIndex > 0 ? qPageRows[ticketIndex - 1] : undefined;
   const nextTicket = ticketIndex >= 0 ? qPageRows[ticketIndex + 1] : undefined;
   const shownTiming = shown ? g3PolicyExecutionTiming(shown) : undefined;
-  const shownBlock = shown && (pendingTicketIds.has(shown.id) ? PENDING_LOCK
+  // 有结果未确认的操作时抽屉顶上已有一条提示，这里不再写一遍（DT-12）。
+  const shownBlock = shown && (pendingTicketIds.has(shown.id) ? undefined
     : shown.retiredOperation ? RETIRED_OPERATION_COPY
       : shown.phoneCalibrationError ?? shown.ambassadorMaterialError
         ?? (isMine(shown) ? OWN_TICKET_REASON : canDecide(shown) ? undefined : "这个账号没有批准权限"));
