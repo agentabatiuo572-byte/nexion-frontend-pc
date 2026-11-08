@@ -868,7 +868,7 @@ function lifecycleOwnerText(owner?: string) {
 /** 这两种状态放行一定不生效，入口禁用，不开框（DP-42）。提现开关读不到时照旧开框，后端再查。 */
 function approveGateText(gate: "open" | "closed" | "unknown" | null, d5: D5Params | null) {
   if (gate === "closed") return "提现已关停，现在放行不会生效。到「紧急停用开关」恢复提现后再放行。";
-  if (d5 && d5.coverageRatio < d5.redlinePct) return `兑付覆盖率 ${fmtPct(d5.coverageRatio)}，低于红线 ${d5.redlinePct}%，现在不能放行。到「资金储备与应付款」补足储备后再放行。`;
+  if (d5 && d5.coverageRatio < d5.redlinePct) return `兑付覆盖率 ${fmtPct(d5.coverageRatio)}，低于红线 ${fmtPct(d5.redlinePct)}，现在不能放行。到「资金储备与应付款」补足储备后再放行。`;
   return undefined;
 }
 
@@ -1189,7 +1189,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   /** 覆盖率和开关排在勾选项前面（OP-42）。低于红线、已关停时入口已禁用，到这里的都是能放行的。 */
   const coverageFacts = () => <>
-    {d5Ref.current && <Fact k="覆盖率">{fmtPct(d5Ref.current.coverageRatio)}，红线 {d5Ref.current.redlinePct}%</Fact>}
+    {d5Ref.current && <Fact k="兑付覆盖率">{fmtPct(d5Ref.current.coverageRatio)}，红线 {fmtPct(d5Ref.current.redlinePct)}</Fact>}
     {gateRef.current === "unknown" && <Fact k="提现开关">读不到，提交时系统会再查，已关停时不会放行</Fact>}
   </>;
 
@@ -1643,7 +1643,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     { label: "收款", value: payoutChannel(shown), reason: shown.chain === "BANK-VND" ? bankDetail?.maskedAccount ?? "账户信息见下方" : <span data-mono>{shown.targetAddress}</span> },
     { label: "风险", icon: Shield, tone: "risk", state: riskTone, value: `${routingPriorityLabel(shown)}，${k4RiskText(shown)}`, reason: [`风险规则：${routeLabel(shown.k3RiskRoute)}`, ...(hitRulesText(shown) === "无" ? [] : [hitRulesText(shown)])].join(" · ") },
     ...(plainPending ? [] : [{ label: "说明", state: orphaned ? "warn" as const : undefined, value: stateNote, reason: holdsForReview(shown) ? `复查时间：${timeText(shown.holdUntil)}` : orphaned && !plainStatus ? lifecycleNote : undefined }]),
-    ...(detailActions.includes("APPROVE") ? [{ label: "覆盖率", state: !canReadD5 || !d5 ? "warn" as const : coverageBelow ? "danger" as const : undefined, value: !canReadD5 ? "无权限" : d5 ? `${fmtPct(d5.coverageRatio)}，红线 ${d5.redlinePct}%` : "读取失败" }] : []),
+    ...(detailActions.includes("APPROVE") ? [{ label: "兑付覆盖率", state: !canReadD5 || !d5 ? "warn" as const : coverageBelow ? "danger" as const : undefined, value: !canReadD5 ? "无权限" : d5 ? `${fmtPct(d5.coverageRatio)}，红线 ${fmtPct(d5.redlinePct)}` : "读取失败" }] : []),
     ...(gateClosedHere ? [{ label: "提现开关", state: "warn" as const, value: "已关停" }] : []),
   ] : [];
   const ruleCount = shown ? countEntries(shown.hitRules, ",") : 0;
@@ -1664,7 +1664,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除待确认</Button>}
       </>}>
       {timeText(new Date(record.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效。{record.expiresAt <= Date.now() ? `${RETRY_EXPIRED}。` : RECOVERY_HINT[record.kind]}
-      {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=D&object=${encodeURIComponent(record.nos[0])}`}>到操作记录核查</Link></>}
+      {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=D&object=${encodeURIComponent(record.nos[0])}`}>到操作记录与审批核对</Link></>}
       <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 操作人 ${record.operator} ｜ 理由 ${record.reason}`} />
       {pendingNotes[record.fingerprint] && <div>{pendingNotes[record.fingerprint]}</div>}
     </Notice>
@@ -1681,14 +1681,14 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       </span>}
       readOnly={canWriteAny ? undefined : "你只能查看；处理提现需要对应的审核权限"} />
 
-    {withdrawGate === "closed" && <Notice tone="warn" title={<>提现已关停<Explain label="关停提现的范围" content="关停后暂停尚未提交通道的打款；已提交通道的继续核对和结算，不因关停退款。恢复后按原条件继续派发。" /></>}
+    {withdrawGate === "closed" && <Notice tone="warn" title={<>提现已关停<Explain label="关停提现的范围" content="关停后暂停尚未提交通道的打款；已提交通道的继续核对和结算，不因关停退款。恢复后重新检查派发条件，符合的继续派发。" /></>}
       action={reach("/emergency/kill-switch", "emergency_j1_read") ? <Link className="rd-link" href="/emergency/kill-switch">去紧急停用开关</Link> : undefined}>
       用户现在不能提交新提现。现在放行不会生效：系统会拒绝，这笔留在待审核，钱不动。拒绝、延迟、冻结、解冻和退款照常可用。
     </Notice>}
     {withdrawGate === "unknown" && <Notice tone="warn">提现开关状态暂时读不到。放行时系统会再查，已关停时不会放行。</Notice>}
     {coverageBelow && d5 && hasAuthority(ACTION_AUTHORITY.APPROVE) && <Notice tone="danger" title="兑付覆盖率低于红线，放行已暂停"
-      action={reach("/finance/pool", "finance_d3_read") ? <Link className="rd-link" href="/finance/pool">去资金储备</Link> : undefined}>
-      现在 {fmtPct(d5.coverageRatio)}，红线 {d5.redlinePct}%。补足储备后再放行。拒绝、延迟、冻结、解冻和退款照常可用。
+      action={reach("/finance/pool", "finance_d3_read") ? <Link className="rd-link" href="/finance/pool">去资金储备与应付款</Link> : undefined}>
+      现在 {fmtPct(d5.coverageRatio)}，红线 {fmtPct(d5.redlinePct)}。补足储备后再放行。拒绝、延迟、冻结、解冻和退款照常可用。
     </Notice>}
     {pendingNotices}
 
@@ -1861,7 +1861,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           summary={bankDetail ? (bankDetail.beneficiaryEligibility?.canWithdraw === true ? "收款账户一致" : "暂不能审核放行") : "暂时无法获取"}>
           {bankDetail ? <><Facts>
             <Fact k="收款方式">按银行账号打款（银行未提前核验账号）</Fact><Fact k="收款账号">{bankDetail.maskedAccount}</Fact>
-            <Fact k="锁定汇率">{`${bankDetail.rateVnd.toLocaleString("en-US")} ₫ / USDT`}</Fact>
+            <Fact k="锁定汇率">{`${bankDetail.rateVnd.toLocaleString("en-US")} ₫/USDT`}</Fact>
             <Fact k="银行到账金额">{`${bankDetail.amountVnd.toLocaleString("en-US")} ₫`}</Fact>
             <Fact k="打款状态">{({READY:"准备出款",DISPATCHING:"派发中",PAID:"已到账",MANUAL_REVIEW:"待人工核查",CREATED:"待派发",PENDING:"待处理",PROCESSING:"银行处理中",SENT:"银行处理中",SUCCESS:"已到账",COMPLETED:"已到账",FAILED:"打款失败",REFUNDED:"已退款",CANCELLED:"已取消",UNKNOWN:"状态待核实"} as Record<string,string>)[bankDetail.state] ?? "状态待核实"}</Fact><Fact k="HDPay 单号">{bankDetail.providerOrderId || "尚未取得"}</Fact>
             <Fact k="收款账户">{bankDetail.beneficiaryEligibility?.canWithdraw === true ? "与订单收款账户一致" : "暂不能审核放行"}</Fact>

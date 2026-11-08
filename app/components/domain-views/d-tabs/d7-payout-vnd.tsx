@@ -608,7 +608,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     }
   };
 
-  const auditLink = canReachAudit && <> <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false} onClick={guard("/platform/audit?domain=D")}>到操作记录核查</Link></>;
+  const auditLink = canReachAudit && <> <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false} onClick={guard("/platform/audit?domain=D")}>到操作记录与审批核对</Link></>;
   const sentAt = (record: PendingMutationRecord) => `${formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（${zone}）发出`;
   const expiredDirect = canReachAudit ? `${RETRY_EXPIRED_TEXT}。` : EXPIRED_DIRECT_NO_AUDIT;
   const expiredApproval = canReachAudit ? `${RETRY_EXPIRED_TEXT}。` : canQueryOriginal ? EXPIRED_APPROVAL_NO_AUDIT : EXPIRED_NO_QUERY;
@@ -773,7 +773,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       {approvalNotice}
       {approvalRejected && <Notice tone="danger" title="放宽提交被拒绝">{approvalRejected}</Notice>}
       {queue.rows.map((ticket) => (
-        <Notice key={ticket.id} tone="progress" action={canReachAudit ? <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false} onClick={guard("/platform/audit?domain=D")}>到操作记录查看</Link> : undefined}>
+        <Notice key={ticket.id} tone="progress" action={canReachAudit ? <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false} onClick={guard("/platform/audit?domain=D")}>到操作记录与审批查看</Link> : undefined}>
           放宽单 {ticket.id} 等待批准，批准前当前参数不变
         </Notice>
       ))}
@@ -828,7 +828,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         {canReachFx && <Link className="rd-link" href="/finance/fx-rate" prefetch={false} onClick={guard("/finance/fx-rate")}>汇率设置</Link>}
         {reach("/finance/withdrawals") && <Link className="rd-link" href="/finance/withdrawals" prefetch={false} onClick={guard("/finance/withdrawals")}>提现审核</Link>}
         {reach("/finance/params", "finance_d5_read") && <Link className="rd-link" href="/finance/params" prefetch={false} onClick={guard("/finance/params")}>USDT 提现参数</Link>}
-        {canReachAudit && <Link className="rd-link" href="/platform/audit" prefetch={false} onClick={guard("/platform/audit")}>操作记录</Link>}
+        {canReachAudit && <Link className="rd-link" href="/platform/audit" prefetch={false} onClick={guard("/platform/audit")}>操作记录与审批</Link>}
       </nav>
 
       <Drawer open={!!editing} onClose={() => requestClose()} title="修改越南盾提现参数" icon={SlidersHorizontal} tone="role-4"

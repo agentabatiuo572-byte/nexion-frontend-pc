@@ -327,7 +327,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
       ...(bankSettingsPending.length ? [`有 ${bankSettingsPending.length} 次设置修改结果未确认`] : []),
     ]);
   }, [onBankActivity, bankPending.length, bankSettingsPending.length]);
-  useEffect(() => { onLedgerActivity(ledgerPending.length ? [`有 ${ledgerPending.length} 次核销结果未确认`] : []); }, [onLedgerActivity, ledgerPending.length]);
+  useEffect(() => { onLedgerActivity(ledgerPending.length ? [`有 ${ledgerPending.length} 次挂账结果未确认`] : []); }, [onLedgerActivity, ledgerPending.length]);
 
   const refreshAfterWrite = async () => {
     syncPending();

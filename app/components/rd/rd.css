@@ -487,7 +487,9 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-modal.rd-confirm .rd-brief[open] .rd-brief-head > span { display: none; }  /* 展开后「影响」在下面那一行，标题行不重复 */
 /* 展开的摘要和关键信息同一条值线（名称列 128 = 事实块的内边距 16 + 112），不带底块：这是补充说明，不是关键信息，句子也多一点宽度（VS-105）。 */
 .rd-brief-rows { display: grid; gap: 8px; margin: 8px 0 0; }
-.rd-brief-rows > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; }  /* 和事实区 .rd-fact 同一条值线 */
+.rd-brief-rows > div { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 12px; }  /* 和事实底块里 .rd-fact 的值同一条线 */
+/* 事实区只有一行、不带底块时（见下面 .rd-confirm-facts 那条），事实的值线在 112 + 12，摘要跟着收到 112 */
+.rd-modal.rd-confirm:is(:has(.rd-confirm-facts > .rd-diff-one:only-child), :has(.rd-confirm-facts > .rd-facts:only-child > .rd-fact:only-child)) .rd-brief-rows > div { grid-template-columns: 112px minmax(0, 1fr); }  /* :has 不能套 :has */
 .rd-brief-rows dt { font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); color: var(--rd-text-3); }
 .rd-brief-rows dd { margin: 0; color: var(--rd-text-2); overflow-wrap: anywhere; }
 .rd-modal.rd-confirm .chip.tab.sel { background: var(--rd-brand); color: var(--rd-text-on-brand); border-color: var(--rd-brand); }
@@ -657,6 +659,8 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-approval-meta { display: block; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: normal; overflow-wrap: anywhere; }
 .rd-stack { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .rd-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-links[aria-label="相关页面"] { padding-left: calc(4em + 20px); }  /* 链接多到折行时，第二行和第一个链接对齐，不从「相关页面」底下起头 */
+.rd-links[aria-label="相关页面"] > span:first-child { width: 4em; margin-left: calc(-4em - 20px); }
 
 /* ── 键值列表 ── */
 .rd-kv { margin: 0; }
@@ -687,6 +691,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-notice-text > p { margin: 0; }
 .rd-notice-text > p + p { margin-top: 8px; }
 .rd-notice .rd-link { white-space: nowrap; }  /* 链接不在词中间折行 */
+.rd-keep { display: inline-block; }  /* 一句话放得下一行就整句换行，不在「也 / 不记」这种词中间断开；放不下才在句内折 */
 /* 三个以上动作挤窄正文时，动作换到正文下面一行，和正文同一条左边线（VS-105） */
 .rd-notice:has(> .rd-notice-action > :nth-child(3)) { flex-wrap: wrap; }
 .rd-notice:has(> .rd-notice-action > :nth-child(3)) > .rd-notice-text { flex-basis: calc(100% - 24px); }

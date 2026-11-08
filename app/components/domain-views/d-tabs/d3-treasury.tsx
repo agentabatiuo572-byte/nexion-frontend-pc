@@ -750,7 +750,7 @@ export function D3Treasury() {
           )}
         >
           {item.body}{item.expiresAt <= Date.now() ? `${RETRY_EXPIRED}。` : item.hint}
-          {reach(item.auditHref, "platform_a2_read") && <> <Link className="rd-link" href={item.auditHref}>到操作记录核查</Link></>}
+          {reach(item.auditHref, "platform_a2_read") && <> <Link className="rd-link" href={item.auditHref}>到操作记录与审批核对</Link></>}
           <Explain label="技术信息" content={`命令号 ${item.commandKey}`} />
           {pendingNotes[item.commandKey] && <div>{pendingNotes[item.commandKey]}</div>}
         </Notice>

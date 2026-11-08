@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * D6 汇率设置（配置页，PG-46）：先看用户现在按什么价下单，再改基准价、买入点差、报价有效期，调整历史收起，相关页面在页底。
+ * D6 汇率设置（配置页，PG-46）：先看用户现在按什么价下单（买入价），再改基准价、买入点差、报价有效期，调整历史收起，相关页面在页底。
  * 三项共用一个版本号，发的是整组值；修改立即生效（资金审批待后端 BE-02，未交付前不写审批）。
  * 写操作照提现审核：先存原操作再发；明确被拒留在框里，版本冲突读最新后重开，结果未知转页面上方的待确认（OP-91～OP-97）。
  */
@@ -37,34 +37,34 @@ const PARAMS = [
     what: "人工设定的 1 USDT 折合越南盾基准",
     when: "立即生效，影响之后的新付款单和新的提现报价，已下的单不变",
     where: "App 和 H5 充值页「银行卡支付」的「牌价」这一行；App 和 H5 银行卡提现确认页「每 USDT 兑换 VND」",
-    effect: "当前报价跟着变，银行卡提现的新报价也跟着变",
+    effect: "买入价跟着变，银行卡提现的新报价也跟着变",
     scope: "影响之后的新付款单和新的提现报价，已下的单不变。",
     hint: "整数，20,000–35,000",
     impact: "用户下单和提现报价都用新价",
-    check: "核对新值和改后的报价，理由写清调价依据。",
+    check: "核对新值和改后的买入价，理由写清调价依据。",
     placeholder: "例如：工单号、参考的市场价",
     done: "基准价已更新，新付款单和新的提现报价起生效",
   },
   {
     key: "buySpreadPct", label: "买入点差", unit: "%", min: 0, max: 3, step: 0.01, maxDecimals: 2,
-    what: "基准价上加的比例，算出用户的牌价",
+    what: "基准价上加的比例，算出买入价",
     when: "立即生效，只对新付款单生效，已下的单不变",
     where: "App 和 H5 充值页「银行卡支付」的「牌价」这一行",
-    effect: "当前报价跟着变，提现报价不变",
+    effect: "买入价跟着变，提现报价不变",
     scope: "只影响之后的新付款单，已下的单不变。",
     hint: "0–3%，最多两位小数",
-    impact: "用户下单的报价跟着变，提现报价不变",
-    check: "核对新值和改后的报价，理由写清调价依据。",
+    impact: "用户下单的买入价跟着变，提现报价不变",
+    check: "核对新值和改后的买入价，理由写清调价依据。",
     placeholder: "例如：工单号、参考的市场价",
     done: "买入点差已更新，新付款单起生效",
   },
   {
     key: "lockWindowMinutes", label: "报价有效期", unit: "分钟", min: 5, max: 120, step: 1,
-    what: "用户在充值页下单后，牌价能锁定多久",
+    what: "用户在充值页下单后，买入价能锁定多久",
     when: "立即生效，只对充值页新建的付款单生效，已下的单不变",
     where: "App 和 H5 充值页「银行卡支付」的「牌价」这一行",
     note: "只管充值页「银行卡支付」新建的付款单。买设备用银行卡付款的报价最长 15 分钟，不受这项影响；提现报价的时长在「越南盾提现参数」改。",
-    effect: "之后在充值页新建的付款单按新的时长锁定牌价",
+    effect: "之后在充值页新建的付款单按新的时长锁定买入价",
     scope: "只影响之后在充值页新建的付款单，已下的单不变。",
     hint: "整数，5–120 分钟",
     impact: "只管充值页新建付款单的锁价时长",
@@ -291,13 +291,13 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       formKey,
       detail: param.scope,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
-      // 有效期不改报价：事实写它管哪些单、不管哪些单（F2）；另两项写当前报价。
+      // 有效期不改买入价：事实写它管哪些单、不管哪些单（F2）；另两项写买入价。
       facts: (
         <Facts>
           {lock ? <>
             <Fact k="影响范围">之后在充值页「银行卡支付」新建的付款单</Fact>
             <Fact k="不受影响">买设备用银行卡付款的报价（最长 15 分钟）、提现报价</Fact>
-          </> : <Fact k="当前报价" unit="₫/USDT">{vnd(quote.quoteRateVndPerUsdt)}</Fact>}
+          </> : <Fact k="买入价" unit="₫/USDT">{vnd(quote.quoteRateVndPerUsdt)}</Fact>}
           {carried && <Fact k="刚被别人改过" tone="warn">{carried.changed}<p className="rd-note">理由已清空，请按最新的值重写</p></Fact>}
         </Facts>
       ),
@@ -314,9 +314,9 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
         hint: param.hint,
         preview: (value) => {
           const next = Number(value);
-          if (lock) return `改成 ${next} 分钟：之后在充值页新建的付款单按 ${next} 分钟锁定牌价`;
+          if (lock) return `改成 ${next} 分钟：之后在充值页新建的付款单按 ${next} 分钟锁定买入价`;
           const values = { ...quote, [param.key]: next };
-          const quoteText = <>当前报价变成 <b>{vnd(d6QuoteRate(values.baseRateVndPerUsdt, values.buySpreadPct))}</b> ₫/USDT</>;
+          const quoteText = <>买入价变成 <b>{vnd(d6QuoteRate(values.baseRateVndPerUsdt, values.buySpreadPct))}</b> ₫/USDT</>;
           return param.key === "baseRateVndPerUsdt"
             ? <>改成 {vnd(next)}：{quoteText}，银行卡提现的新报价也跟着变</>
             : <>改成 {valueText(param.key, next)}：{quoteText}，提现报价不变</>;
@@ -386,7 +386,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     const what = `把${param.label}改成 ${valueText(pending.param, pending.after)}`;
     const retryBlock = expired ? "已超过 24 小时，不能再重试" : !canManage ? NO_WRITE : retryRejected ? RETRY_AGAIN : undefined;
     return (
-      <Notice tone="warn" title="保存结果未确认，已停止展示旧牌价" actionBelow action={<>
+      <Notice tone="warn" title="保存结果未确认，已停止展示旧的买入价" actionBelow action={<>
         <span data-pair="">
           <Button size="sm" loading={retrying} disabledReason={retryBlock} onClick={() => void retryPending(pending)}>按原操作重试</Button>
           {!retryBlock && <Explain label="按原操作重试会怎样" content="重发原内容和原命令号，已成功的不会重复执行。" />}
@@ -403,7 +403,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
         {!expired && !canManage && <p>{NO_WRITE}。</p>}
         {retryRejected && !expired && <>
           <p>重试没有成功：{retryRejected}</p>
-          <p>{data ? "" : "先读到汇率设置，"}先展开下面的「调整历史」，找 {when} {what} 的那一条：有就是已经生效，没有就是没生效。核对完点「解除待确认」。</p>
+          <p>{data ? "先" : "先读到汇率设置，再"}展开下面的「调整历史」，找 {when} {what} 的那一条：有就是已经生效，没有就是没生效。核对完点「解除待确认」。</p>
         </>}
         {pendingNote && <p>{pendingNote}</p>}
       </Notice>
@@ -447,23 +447,23 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       {/* 正常时一句话、不放大（VS-23）；有待确认时上面的提示条就是结论。 */}
       {loading
         ? <Conclusion state="unknown">{READING}</Conclusion>
-        : !pending && <Conclusion state="ok" explain="读取成功，这个窗口里也没有待确认的修改。这句话不比较市场价。汇率不会自动更新，要人工调整。">当前报价已生效，没有要处理的事</Conclusion>}
+        : !pending && <Conclusion state="ok" explain="读取成功，这个窗口里也没有待确认的修改。这句话不比较市场价。汇率不会自动更新，要人工调整。">买入价已生效，没有要处理的事</Conclusion>}
 
       {/* 只有两个数：每格从内容宽往外长，不拉成等宽的半格（DP-12）。 */}
       <StatBand label="汇率摘要" fit>
-        <Stat lead tone="role-1" icon={Coins} label="当前报价" value={vnd(data.quoteRateVndPerUsdt)} unit="₫/USDT"
+        <Stat lead tone="role-1" icon={Coins} label="买入价" value={vnd(data.quoteRateVndPerUsdt)} unit="₫/USDT"
           explain={<>
             <p>基准价 ×（1 + 买入点差），取整到十位。</p>
             <p>{nbsp(`${vnd(data.baseRateVndPerUsdt)} ₫/USDT ×（1 + ${valueText("buySpreadPct", data.buySpreadPct)}）= ${vnd(data.quoteRateVndPerUsdt)} ₫/USDT`)}</p>
-            <p>用户在 App 和 H5 用银行卡支付时按这个价算。充值页新建付款单时取服务端当时的报价；买设备用银行卡付款时，在报价那一刻取价，报价有效期内建单沿用这个价。</p>
-            <p>用户页面上的牌价可能还没刷新。</p>
+            <p>用户在 App 和 H5 用银行卡支付时按这个价算。充值页新建付款单时取服务端当时的买入价；买设备用银行卡付款时，在报价那一刻取价，报价有效期内建单沿用这个价。</p>
+            <p>用户页面上的「牌价」可能还没刷新。</p>
           </>} />
         <Stat tone="role-other" icon={History} label="最近调整" value={latest ? minuteText(latest.createdAt) : "—"} unit={latest ? zone : undefined}
           sub={latest ? `${maskAuditActor(latest.operator)} · ${latestChanges.map((change) => change.param.label).join("、") || "—"}` : undefined} />
       </StatBand>
 
       <Panel title="报价参数" icon={SlidersHorizontal} tone="role-4"
-        explain="基准价和买入点差决定用户付多少越南盾，报价有效期决定充值付款单的牌价锁多久。每项是什么、显示在哪、什么时候生效，看名称旁的提示；改一项存一项。">
+        explain="基准价和买入点差决定用户付多少越南盾，报价有效期决定充值付款单的买入价锁多久。每项是什么、显示在哪、什么时候生效，看名称旁的提示；改一项存一项。">
         <ConfigList label="报价参数">
           {PARAMS.map((param) => (
             <ConfigRow key={param.key} name={param.label} what={param.what} when={param.when} where={param.where} effect={param.effect}
@@ -508,7 +508,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
         </nav>
       )}
 
-      {/* 单条记录：三项完整的改前改后、当时的报价、理由全文（F1）。 */}
+      {/* 单条记录：三项完整的改前改后、当时的买入价、理由全文（F1）。 */}
       <Drawer open={!!currentRow} onClose={() => setCurrentId(null)} title="调整记录" icon={History} tone="role-other"
         sub={currentRow && `${formatBusinessTimeFull(currentRow.createdAt, "—")}（${zone}）`}
         nav={{ hasPrev: currentIndex > 0, hasNext: currentIndex >= 0 && currentIndex < history.length - 1, onPrev: () => setCurrentId(history[currentIndex - 1].id), onNext: () => setCurrentId(history[currentIndex + 1].id) }}>
@@ -525,9 +525,9 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
                     : <Change from={valueText(param.key, before[param.key])} to={valueText(param.key, currentRow[param.key])} />}
                 </Fact>
               ))}
-              <Fact k="当时的报价">
+              <Fact k="当时的买入价">
                 {quoteBefore === quoteAfter ? <>{vnd(quoteAfter)} ₫/USDT{" "}<span className="rd-note">没变</span></> : <Change from={`${vnd(quoteBefore)} ₫/USDT`} to={`${vnd(quoteAfter)} ₫/USDT`} />}
-                <Explain label="当时的报价怎么算" content="按这次改前、改后的基准价和买入点差算，基准价 ×（1 + 买入点差），取整到十位。" />
+                <Explain label="当时的买入价怎么算" content="按这次改前、改后的基准价和买入点差算，基准价 ×（1 + 买入点差），取整到十位。" />
               </Fact>
               <Fact k="操作者">{maskAuditActor(currentRow.operator)}</Fact>
               <Fact k="理由"><span className="rd-pre">{currentRow.reason}</span></Fact>

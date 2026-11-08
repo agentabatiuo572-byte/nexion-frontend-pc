@@ -265,7 +265,7 @@ export function ReleaseModal({ label, explain, onCancel, onConfirm }: { label: R
     </>}>
       <div className="rd-stack">
         <Facts><Fact k="原操作">{label}</Fact></Facts>
-        <p>确认原操作的结果后再解除。解除后可以重新操作，这一步不改任何数据，也不记操作记录。{explain && <Explain label="解除待确认的说明" content={explain} />}</p>
+        <p>确认原操作的结果后再解除。<span className="rd-keep">解除后可以重新操作，这一步不改任何数据，也不记操作记录。</span>{explain && <Explain label="解除待确认的说明" content={explain} />}</p>
       </div>
     </Modal>
   );

@@ -384,7 +384,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除待确认</Button>}
         </>}>
         {expired ? formatBusinessTimeCompact(new Date(record.createdAt).toISOString()) : businessClock(record.createdAt)}（{businessZone().label}）发出，{expired ? `${EXPIRED}。` : "可能已经生效。重发原内容，已成功的不会重复执行。"}
-        {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href="/platform/audit?domain=J">到操作记录核查</Link></>}
+        {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href="/platform/audit?domain=J">到操作记录与审批核对</Link></>}
         <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 理由 ${record.reason}`} />
         {pendingNotes[record.fingerprint] && <div>{pendingNotes[record.fingerprint]}</div>}
       </Notice>
@@ -801,7 +801,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
       <Fold title="功能开关总表" explain="关停确认后立即生效，恢复提交应急审批、批准后生效，都要填写理由。提交恢复后业务仍已关停。提现关停还会停止未派发的链上打款；已提交打款方的链上单继续核对原结果，不能保证撤回。"
         icon={ScrollText} tone="role-other" summary={`${gates.length} 个业务开关`}
-        actions={reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=J">查看操作记录</Link> : undefined}
+        actions={reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=J">查看操作记录与审批</Link> : undefined}
         open={!!folds.table} onOpenChange={(open) => setFolds((state) => ({ ...state, table: open }))}>
         <Table label="功能开关总表">
           <thead><tr><Th>业务开关 · 控制的能力</Th><Th>状态</Th><Th>资金影响</Th><Th>恢复需备付金</Th><Th>最近变更</Th></tr></thead>

@@ -228,7 +228,7 @@ export default function CommandCenter() {
     : sentence.aboutSwitch && reach("/emergency/kill-switch")
     ? <Link className="rd-btn" data-variant="secondary" data-size="md" href="/emergency/kill-switch" prefetch={false}><span className="rd-btn-face">查看或恢复业务开关</span></Link>
     : sentence.aboutFund && reach(RESERVE_PAGE)
-      ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={RESERVE_PAGE} prefetch={false}><span className="rd-btn-face">查看资金总览</span></Link>
+      ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={RESERVE_PAGE} prefetch={false}><span className="rd-btn-face">查看资金与应付款总览</span></Link>
       : sentence.aboutRisk
         ? <Button onClick={() => openFold("risk", "risk")}>查看风险与开关</Button>
         : undefined;

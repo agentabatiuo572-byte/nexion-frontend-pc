@@ -3664,7 +3664,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   // 按钮灰着时缺什么写在按钮的提示里（OP-126）。
   const missing: ReactNode[] = canConfirm || submitting ? [] : blockedReason ? [blockedReason] : [
     !reasonPolicyReady && (reasonPolicyError ?? "正在加载"),
-    covBlocked && "当前覆盖率低于红线，暂时无法提交",
+    covBlocked && "兑付覆盖率低于红线，暂时无法提交",
     approval?.disabledReason,
     inlineApproval?.disabledReason,
     businessSelectionLoading && "正在加载",
@@ -3769,7 +3769,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         // 够得上红线时只留数字，后果和检查说明进提示图标（DP-06）。
         <div className="tiny">
           兑付覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b>，红线 <b>{fmtPct(coverage.redlinePct)}</b>
-          <Explain label="这项操作对资金的影响" content={<><p>{coverageLead}</p><p>{checkCopy}</p>{coverage.healthyPct !== undefined && <p>健康线 {coverage.healthyPct}%。</p>}</>} />
+          <Explain label="这项操作对资金的影响" content={<><p>{coverageLead}</p><p>{checkCopy}</p>{coverage.healthyPct !== undefined && <p>健康线 {fmtPct(coverage.healthyPct)}。</p>}</>} />
         </div>
       ) : surface && !covBlocked && !coverage && auditSink !== "local-history" ? (
         // 页面自己把覆盖率写进 coverageLead 时也只留这一句，检查说明进提示图标（DP-06）。
@@ -3778,14 +3778,14 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         <b>{coverageLead}</b> · {checkCopy}
         {coverage ? (
           <>
-            当前覆盖率 <b className={surface ? undefined : "mono"}>{fmtPct(coverage.coverageRatio)}</b>
+            兑付覆盖率 <b className={surface ? undefined : "mono"}>{fmtPct(coverage.coverageRatio)}</b>
             {coverage.healthyPct !== undefined && coverage.coverageRatio >= coverage.healthyPct
-              ? `，高于健康线 ${coverage.healthyPct}%`
+              ? `，高于健康线 ${fmtPct(coverage.healthyPct)}`
               : coverage.coverageRatio > coverage.redlinePct
-                ? `，高于红线 ${coverage.redlinePct}%，请谨慎提交`
+                ? `，高于红线 ${fmtPct(coverage.redlinePct)}，请谨慎提交`
                 : coverage.coverageRatio === coverage.redlinePct
-                  ? `，正好在红线 ${coverage.redlinePct}%，请谨慎提交`
-                  : `，低于红线 ${coverage.redlinePct}%，提交会被拒绝`}
+                  ? `，正好在红线 ${fmtPct(coverage.redlinePct)}，请谨慎提交`
+                  : `，低于红线 ${fmtPct(coverage.redlinePct)}，提交会被拒绝`}
           </>
         ) : auditSink === "local-history" ? (
           <>本页暂不自动检查覆盖率，请自行确认资金影响。</>
@@ -3843,15 +3843,15 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
             <b style={{ color: "var(--warning)" }}>{approval.heading ?? "放宽配置 · 批准后生效"}</b>
             {!approval.heading && <>
               <div>{completionCopy}</div>
-              <div>{approval.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。"}{covBlocked && "当前覆盖率低于红线，暂时无法提交。"}</div>
-              {coverage && <div>当前覆盖率 <b className="mono">{fmtPct(coverage.coverageRatio)}</b> · 红线 <span className="mono">{coverage.redlinePct}%</span></div>}
+              <div>{approval.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。"}{covBlocked && "兑付覆盖率低于红线，暂时无法提交。"}</div>
+              {coverage && <div>兑付覆盖率 <b className="mono">{fmtPct(coverage.coverageRatio)}</b> · 红线 <span className="mono">{fmtPct(coverage.redlinePct)}</span></div>}
             </>}
             {approval.disabledReason && <div role="status">{approval.disabledReason}</div>}
           </div>
         </div>
         {approval.heading ? <>
           <p style={{ margin: "0 0 14px", lineHeight: 1.5 }}>{completionCopy}</p>
-          {coverage && <p className="operation-approval-coverage">当前覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b> · 红线 <b>{coverage.redlinePct}%</b></p>}
+          {coverage && <p className="operation-approval-coverage">兑付覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b> · 红线 <b>{fmtPct(coverage.redlinePct)}</b></p>}
           {approval.comparison}
         </> : !compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} completionCopy={statedBrief ? undefined : completionCopy} auditSink={auditSink} kind={effectiveBriefKind} stated={statedBrief} />}
       </>}

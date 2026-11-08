@@ -95,7 +95,7 @@ export function FundFold({ ledger, liquidity, error, retrying, onRetry, alert, l
   const coverTone = !ledger ? "ok" : ledger.coverageRatio < ledger.redlinePct ? "danger" : ledger.coverageRatio < ledger.healthyPct ? "warn" : "ok";
   return (
     <Fold title="资金明细" summary={fundFoldSummary(ledger, liquidity, error, level)} icon={Wallet} tone="role-1" alert={alert} alertTone={level === "danger" ? "danger" : "warn"} open={open} onOpenChange={onOpenChange}
-      actions={linkInBrief ? undefined : <FoldLink reach={reach} href="/overview/dual-ledger">查看资金总览</FoldLink>}>
+      actions={linkInBrief ? undefined : <FoldLink reach={reach} href="/overview/dual-ledger">查看资金与应付款总览</FoldLink>}>
       {error ? <BlockState compact state="error" title="资金数据读取失败" detail={error} onRetry={onRetry} retrying={retrying} />
         : !ledger || !liquidity ? <BlockState compact state="loading" title="正在读取…" />
           : (

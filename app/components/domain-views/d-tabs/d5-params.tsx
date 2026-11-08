@@ -864,7 +864,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   };
 
   const auditHref = "/platform/audit";
-  const auditLink = reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href="/platform/audit?domain=D&object=current" prefetch={false}>到操作记录核查</Link></>;
+  const auditLink = reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href="/platform/audit?domain=D&object=current" prefetch={false}>到操作记录与审批核对</Link></>;
   const zone = businessZone().label;
 
   // 待确认常显，读取失败时也在（OP-93）。
@@ -1008,7 +1008,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       : networks.outage
       ? <Conclusion state="warn" lead hint={<>{networks.outage}。{outageNext} {coverageLine}</>} explain={NETWORK_RULE}>用户现在不能发起 USDT 提现</Conclusion>
       : pendingApproval.length
-        ? <Conclusion state="warn" hint={<>{pendingApproval.map(approvalLine).join("；")}。{reach(auditHref, "platform_a2_read") && <><Link className="rd-link" href="/platform/audit?domain=D&object=current" prefetch={false}>到操作记录查看</Link> </>}{coverageLine}</>} explain={APPROVAL_NOTE}>
+        ? <Conclusion state="warn" hint={<>{pendingApproval.map(approvalLine).join("；")}。{reach(auditHref, "platform_a2_read") && <><Link className="rd-link" href="/platform/audit?domain=D&object=current" prefetch={false}>到操作记录与审批查看</Link> </>}{coverageLine}</>} explain={APPROVAL_NOTE}>
           有 {pendingApproval.length} 项放宽等批准，批准前当前值不变
         </Conclusion>
         : <Conclusion state="ok" explain={coverageExplain}>
@@ -1198,7 +1198,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
               {reach("/finance/pool") && <Link className="rd-link" href="/finance/pool" prefetch={false}>资金储备与应付款</Link>}
               {reach("/overview/dual-ledger") && <Link className="rd-link" href="/overview/dual-ledger" prefetch={false}>资金与应付款总览</Link>}
               {reach("/finance/withdrawals") && <Link className="rd-link" href="/finance/withdrawals" prefetch={false}>提现审核</Link>}
-              {reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href="/platform/audit" prefetch={false}>操作记录</Link>}
+              {reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href="/platform/audit" prefetch={false}>操作记录与审批</Link>}
               {reach("/platform/events") && <Link className="rd-link" href="/platform/events" prefetch={false}>用户行为事件</Link>}
             </nav>
           </div>
