@@ -1,9 +1,12 @@
 /* Scoped additions follow the console's existing surfaces and type scale. */
 /* A2 details and confirmation share these styles through their own .dkpage wrappers. */
-.dkpage .a2-change-review { display: grid; gap: 12px; min-width: 0; margin: 12px 0; font-size: 12.5px; line-height: 1.65; color: var(--ink-2); }
-.dkpage .a2-change-review > div { min-width: 0; padding: 14px; border-radius: 10px; background: var(--surface-2); }
-.dkpage .a2-change-review dt { color: var(--ink-3); font-size: 12px; margin-bottom: 5px; }
-.dkpage .a2-change-review dd { margin: 0; color: var(--ink); font-weight: 500; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A2 只在改版外壳里渲染：两块卡片取 --rd-*，和确认框的事实底块同一种底色、圆角和内边距，两套主题各自取值。 */
+.dkpage .a2-change-review { display: grid; gap: var(--rd-space-3); min-width: 0; margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text); }
+.dkpage .a2-change-review > div { min-width: 0; padding: var(--rd-space-3) var(--rd-space-4); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.dkpage .a2-change-review dt { margin-bottom: var(--rd-space-1); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.dkpage .a2-change-review dd { margin: 0; color: var(--rd-text); font-weight: var(--rd-weight-medium); white-space: pre-wrap; overflow-wrap: anywhere; }
+.dkpage .a2-locked { display: inline-flex; align-items: center; gap: var(--rd-space-1); }
+.dkpage .a2-locked > svg { flex: none; color: var(--rd-text-3); }
 
 .dkpage .amb-applications { container: ambassador-list / inline-size; display: grid; gap: 8px; margin-bottom: 14px; }
 .dkpage .amb-application { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 10px 14px; padding: 12px; border-radius: 9px; background: var(--surface-2); font-size: 12px; }

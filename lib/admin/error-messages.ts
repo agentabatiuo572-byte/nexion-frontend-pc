@@ -1635,6 +1635,70 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   EMERGENCY_SLA_PARAM_NOT_FOUND: "这项参数读不到了，请刷新后重试。",
   AUTO_RULE_NOT_FOUND: "这条规则读不到了，请刷新后重试。",
   AUTO_RULE_THRESHOLD_MUST_BE_POSITIVE_USDT: "这项要填大于 0 的 USDT 金额。",
+  // 操作记录与审批（A2）：导出、清理、决定和机制参数会收到的码。
+  A2_EXPORT_SCOPE_CHANGED: "你的可见范围变了，原来的导出文件不能再下载；请按现在的范围重新导出。",
+  A2_EXPORT_HASH_FAILED: "导出请求无法处理，这次没有导出；请刷新后重试。",
+  A2_RETENTION_HASH_FAILED: "清理请求无法处理，这次没有清理；请刷新后重试。",
+  A2_REQUEST_HASH_FAILED: "请求无法处理，这次没有执行；请刷新后重试。",
+  A2_REASON_POLICY_UNAVAILABLE: "理由规则暂时读不到，这次没有执行；请稍后重试。",
+  // 也由通用业务命令入口返回，所以不写成只针对审批单。
+  COMMAND_REQUIRED: "缺少要执行的内容，这次没有执行；审批单请驳回后重新发起。",
+  // 这两个码包含 COMMAND_REQUIRED，补精确条目，保持原来的通用提示，不被上面那句接走。
+  ATTACHMENT_COMMAND_REQUIRED: "操作未完成，请刷新页面核对最新状态后重试；仍未恢复请联系值班人员。",
+  G4_EMISSION_REAL_COMMAND_REQUIRED: "操作未完成，请刷新页面核对最新状态后重试；仍未恢复请联系值班人员。",
+  // 后端带「:权限码」后缀，按包含匹配；权限码不上屏。
+  A2_BUSINESS_PERMISSION_DENIED: "批准这项操作还要有对应业务的操作权限，这个账号没有；请换有权限的超级管理员处理。",
+  H4_APPROVAL_FORBIDDEN: "只有另一位有批准权限的超级管理员能处理这项审批。",
+  H3_APPROVAL_FORBIDDEN: "只有另一位有批准权限的超级管理员能处理这项审批。",
+  H5_APPROVAL_FORBIDDEN: "只有另一位有批准权限的超级管理员能处理这项审批。",
+  G4_APPROVAL_FORBIDDEN: "只有另一位有批准权限的超级管理员能处理这项审批，还要有对应业务的权限。",
+  K2_OTP_APPROVAL_FORBIDDEN: "只有另一位有批准权限的超级管理员能处理这项审批。",
+  E2_TASK_PRICING_APPROVAL_FORBIDDEN: "只有另一位有批准权限的超级管理员能处理这项审批。",
+  B_THRESHOLD_APPROVAL_FORBIDDEN: "只有另一位有批准权限的超级管理员能处理这项审批。",
+  G4_CATALOG_APPROVAL_FORBIDDEN: "只有另一位有批准权限的超级管理员能处理这项审批。",
+  LEARNING_ACTIVATION_APPROVAL_FORBIDDEN: "只有另一位有批准权限的超级管理员能处理这项审批。",
+  LEARNING_COURSE_REWARD_APPROVAL_FORBIDDEN: "只有另一位有批准权限的超级管理员能处理这项审批。",
+  G4_GENESIS_PARAM_KEY_INVALID: "创世节点参数无效，不能批准；请驳回后重新发起。",
+  F5_COMMISSION_STATUS_COMMAND_REQUIRED: "这张奖励处置审批单格式过旧，不能批准；请驳回后到奖励处置页重新发起。",
+  LEGACY_UNKNOWN_RESOLUTION_UNAVAILABLE: "历史异常处理服务暂时不可用，这次没有批准；请稍后重试。",
+  J4_PLAYBOOK_NOT_FOUND: "应急预案不存在或已改过，这张审批单不能批准；请驳回后按最新预案重新发起。",
+  J4_PLAYBOOK_SNAPSHOT_CHANGED: "应急预案不存在或已改过，这张审批单不能批准；请驳回后按最新预案重新发起。",
+  J4_TARGET_AUTHORIZATION_SNAPSHOT_REQUIRED: "这张应急预案审批单缺少授权快照，不能批准；请驳回后重新发起。",
+  // 增长、奖励等页面也会收到，不写成只针对批准。
+  B1_COVERAGE_DATA_UNAVAILABLE: "兑付覆盖率暂时算不出来，这次没有执行；请稍后重试。",
+  H4_CONFIG_STALE: "这张审批单提交后，原配置已被改过，不能批准；请驳回后按最新配置重新发起。",
+  H3_CONFIG_STALE: "这张审批单提交后，原配置已被改过，不能批准；请驳回后按最新配置重新发起。",
+  // 分红设置页直接保存也会收到，不写成只针对审批单。
+  G4_DIVIDEND_STALE: "分红设置已被改过，这次没有执行；请刷新后按最新设置处理，审批单请驳回后重新发起。",
+  G4_CATALOG_SNAPSHOT_CHANGED: "这张审批单提交后，原配置已被改过，不能批准；请驳回后按最新配置重新发起。",
+  LEARNING_ACTIVATION_SNAPSHOT_CHANGED: "这张审批单提交后，原配置已被改过，不能批准；请驳回后按最新配置重新发起。",
+  G4_EMISSION_ALREADY_COMPLETED: "这期产出已经发过，不能再批准；请驳回这张审批单。",
+  A2_MECHANISM_PARAM_NOT_MUTABLE: "这项设置不能修改。",
+  A2_SCHEMA_VERSION_DOWNGRADE_OR_NOOP: "记录字段版本只能往上升级，不能降级或重复提交。",
+  A2_SCHEMA_VERSION_UNSUPPORTED: "字段版本只能选已登记的 v3、v4。",
+  A2_SCHEMA_VERSION_UNAVAILABLE: "记录设置暂时读不到或配置无效，这次没有执行；请联系值班人员核对。",
+  A2_SCHEMA_VERSION_INVALID: "记录设置暂时读不到或配置无效，这次没有执行；请联系值班人员核对。",
+  A2_RETENTION_POLICY_UNAVAILABLE: "记录设置暂时读不到或配置无效，这次没有执行；请联系值班人员核对。",
+  A2_RETENTION_POLICY_INVALID: "记录设置暂时读不到或配置无效，这次没有执行；请联系值班人员核对。",
+  IDEMPOTENCY_RECLAIM_CONFLICT: "同一个命令号的上一次请求没有正常结束，这次没有重复执行；请到「操作记录与审批」核对后再处理。",
+  IDEMPOTENCY_RETRY_CONFLICT: "同一个命令号的上一次请求没有正常结束，这次没有重复执行；请到「操作记录与审批」核对后再处理。",
+  IDEMPOTENCY_PREVIOUS_REQUEST_FAILED: "同一个命令号的上一次请求没有正常结束，这次没有重复执行；请到「操作记录与审批」核对后再处理。",
+  IDEMPOTENCY_SUCCESS_STATE_LOST: "同一个命令号的上一次请求没有正常结束，这次没有重复执行；请到「操作记录与审批」核对后再处理。",
+  // 包含 IDEMPOTENCY_SUCCESS_STATE_LOST，保持原来的通用提示。
+  H8_SANDBOX_IDEMPOTENCY_SUCCESS_STATE_LOST: "操作未完成，请刷新页面核对最新状态后重试；仍未恢复请联系值班人员。",
+  IDEMPOTENCY_FAILURE_STATE_LOST: "同一个命令号的上一次请求没有正常结束，这次没有重复执行；请到「操作记录与审批」核对后再处理。",
+  // 和上面的正则同一句；写成精确条目，A2 批准回放时也查得到。
+  REASON_TOO_LONG_MAX_200: "操作理由不能超过 200 个可见字符。",
+  // A2 批准回放到 G3 定价、E6 手机校准时会收到。
+  G3_PRICE_UNAVAILABLE: "当前 UVT 价格暂时读不到，这次没有执行；请稍后重试。",
+  PHONE_CALIBRATION_EFFECTIVE_TIME_INVALID: "生效时间无效：只能选现在到一年内的时间，请重新选择。",
+  PHONE_CALIBRATION_CONFIG_UNAVAILABLE: "手机校准规则暂时读不到，这次没有发布；请稍后重试。",
+  PHONE_CALIBRATION_READBACK_FAILED: "手机校准规则保存后读回不一致，结果尚未确认；请刷新核对后再处理。",
+  // 机制参数校验的英文原句（作为 VALIDATION_FAILED 的说明返回）。页面先校验，正常走不到。
+  "reason min chars must be 8-200": "理由最短长度必须是 8–200 的整数。",
+  "reason min chars is required": "理由最短长度必须是 8–200 的整数。",
+  "audit retention months must be 13-36": "日志保留期必须是 13–36 的整数月。",
+  "audit retention months is required": "日志保留期必须是 13–36 的整数月。",
 };
 
 /**
