@@ -269,7 +269,7 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
     );
     const impact = {
       review: "改成审核中，用户在 App 还能取消。",
-      block: "申请改成已拒绝，账号不注销；用户能看到这次的理由。",
+      block: "改成已拒绝，账号不注销；用户能看到这次的理由。",
       complete: "通过检查后账号立即禁用、全部设备下线，个人信息匿名化，不能撤销。",
       cancel: "申请结束，账号不注销；用户可以再提交。",
     }[action];

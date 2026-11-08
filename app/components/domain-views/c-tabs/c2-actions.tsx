@@ -858,7 +858,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           ? "提交后需确认才生效。生效后账户被冻结、所有设备下线，待处理的提现也会被冻结。"
           : "确认后账户立即冻结、所有设备下线，待处理的提现也会被冻结。",
         amplifies: false,
-        statedBrief: { impact: "确认后账户立即冻结、所有设备下线，待处理的提现也会被冻结。", check: "核对对象账号和冻结原因，理由写清工单号和处理依据。" },
+        statedBrief: { impact: "确认后账户立即冻结、所有设备下线，待处理的提现也会被冻结。", check: "核对账号和冻结原因，理由写清工单号和处理依据。" },
         confirmLabel: freezeProposalOnly ? "提交审批" : "确认冻结",
         reasonMin: 8,
         reasonMax: 200,
@@ -996,7 +996,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       </Facts> : undefined,
       detail: "确认后打开用户数据只读视图，只能看不能改，到时间自动关闭。",
       amplifies: false,
-      statedBrief: { impact: "打开后能看这个用户的账户、钱包、设备和资料，不能改；打开和每次切页都记进操作记录，到时间自动关闭。", check: "核对用户和查看原因，理由写清工单号或用户反馈。" },
+      statedBrief: { impact: "能看这个用户的账户、钱包、设备和资料，不能改；打开和每次切页都记进操作记录，到时间自动关闭。", check: "核对用户和查看原因，理由写清工单号或用户反馈。" },
       confirmLabel: "开始查看",
       reasonMin: 8,
       reasonMax: 200,
@@ -1113,7 +1113,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       amplifies: false,
       statedBrief: listKind === "BLOCK"
         ? { impact: "加入后这个用户登录不了 App，已登录的设备全部立即下线；到期或移出后可以重新登录。", check: "核对用户和有效期，理由写清工单号和处理依据。" }
-        : { impact: "加入后这个用户标为信任，目前不改变任何检查；到了失效日期自动失效。", check: "核对用户和有效期，理由写清依据或工单号。" },
+        : { impact: "加入后这个用户标为信任，不改变任何检查；到了失效日期自动失效。", check: "核对用户和有效期，理由写清依据或工单号。" },
       confirmLabel: "确认加入",
       reasonMin: 8,
       reasonMax: 200,
@@ -1197,7 +1197,8 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     try {
       const fresh = await fetchUserAccountActionContext(id).catch(() => null);
       if (fresh && !isActiveListEntry(fresh.accountList)) { toast(`这个用户现在是「${listEntryText(fresh.accountList)}」，不用再移出`, "warn"); void loadOverview(); return; }
-      openActionConfirm(removeList(fresh?.accountList ?? entry));
+      // 上下文里的名单行不一定带用户编码和昵称，用账户的补上，框里的「用户」不写成「—」。
+      openActionConfirm(removeList({ ...entry, ...(fresh?.accountList ?? {}), userId: entry.userId, userNo: fresh?.account?.userNo ?? entry.userNo, nickname: fresh?.account?.nickname ?? entry.nickname, phoneMasked: fresh?.account?.phoneMasked ?? entry.phoneMasked }));
     } finally {
       setOpening("");
     }
@@ -1495,19 +1496,22 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
               <Th icon={User} tone="users">账户</Th>
               <Th>账户状态</Th>
               <Th>风险</Th>
+              <Th>注册 · 最近登录（{zone}）</Th>
               <Th align="right">在线设备</Th>
               {accountActions && <Th sticky="end">操作</Th>}
             </tr></thead>
             <tbody>
-              {firstLoading ? <TableLoading columns={accountActions ? 5 : 4} rows={5} />
-                : accountRows.length === 0 ? <TableMessage columns={accountActions ? 5 : 4}>暂无账户</TableMessage>
+              {firstLoading ? <TableLoading columns={accountActions ? 6 : 5} rows={5} />
+                : accountRows.length === 0 ? <TableMessage columns={accountActions ? 6 : 5}>暂无账户</TableMessage>
                   : accountRows.map((account) => {
                     const id = accountId(account);
                     return (
                       <Tr key={id} selected={accountId(acct) === id} aria-label={`查看账户 ${displayAccount(account)}`} onOpen={() => openAccount(account)}>
                         <Td><Cell main={<span data-mono>{text(account.userNo, id)}</span>} sub={userNicknameText(text(account.nickname), account.phoneMasked)} /></Td>
                         <Td><AccountStatusTag status={account.status} table /></Td>
-                        <Td>{riskText(account)}</Td>
+                        <Td><Cell main={riskText(account)} /></Td>
+                        {/* 列表是最近注册的 50 个：注册时间说明排在这里的是谁，最近登录帮着判断账户还在不在用。 */}
+                        <Td><Cell num main={timeText(account.registeredAt)} sub={account.lastLoginAt ? timeText(account.lastLoginAt) : "没有登录记录"} /></Td>
                         <Td align="right"><Cell num main={sessionCell(account)} /></Td>
                         {accountActions && <Td sticky="end">{rowAction(account)}</Td>}
                       </Tr>
@@ -1702,13 +1706,12 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         {ctxData && <div className="rd-fold-flush">
           <Fold inset title="登录记录" summary={`最近 ${shownSessions.length} 条，${shownSessions.filter(isActiveSession).length} 条活跃`}>
             <Table label="登录记录">
-              <thead><tr><Th>编号</Th><Th>IP</Th><Th>设备</Th><Th>状态</Th><Th>到期（{zone}）</Th></tr></thead>
+              <thead><tr><Th>设备 · 编号 · IP</Th><Th>状态</Th><Th>到期（{zone}）</Th></tr></thead>
               <tbody>
-                {shownSessions.length === 0 ? <TableMessage columns={5}>暂无登录记录。</TableMessage> : shownSessions.map((row) => (
+                {shownSessions.length === 0 ? <TableMessage columns={3}>暂无登录记录。</TableMessage> : shownSessions.map((row) => (
                   <Tr key={text(row.refreshTokenId)}>
-                    <Td><Cell mono main={maskedSessionId(row.refreshTokenId)} /></Td>
-                    <Td><Cell mono main={text(row.clientIpMasked)} /></Td>
-                    <Td><Cell main={platformSessionDeviceText(text(row.deviceName))} /></Td>
+                    {/* 抽屉只有 540 宽：编号和 IP 进设备的第二行，到期不用横向滚动就看得到（D6-key）。 */}
+                    <Td grow><Cell main={platformSessionDeviceText(text(row.deviceName))} sub={<span data-mono>{maskedSessionId(row.refreshTokenId)} · {text(row.clientIpMasked)}</span>} /></Td>
                     <Td><StatusTag tone={isActiveSession(row) ? "ok" : "done"}>{formatC1SessionStatus(row.status)}</StatusTag></Td>
                     <Td><Cell num main={timeText(row.expiresAt)} /></Td>
                   </Tr>
