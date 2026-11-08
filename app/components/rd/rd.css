@@ -659,6 +659,8 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-approval-meta { display: block; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: normal; overflow-wrap: anywhere; }
 .rd-stack { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .rd-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-links[aria-label="相关页面"] { padding-left: calc(4em + 20px); }  /* 链接多到折行时，第二行和第一个链接对齐，不从「相关页面」底下起头 */
+.rd-links[aria-label="相关页面"] > span:first-child { width: 4em; margin-left: calc(-4em - 20px); }
 
 /* ── 键值列表 ── */
 .rd-kv { margin: 0; }
