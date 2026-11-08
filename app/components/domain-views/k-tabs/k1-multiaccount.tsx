@@ -8,7 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Coins, Gift, ListChecks, Lock, LockOpen, Network, RefreshCw, ShieldAlert, ShieldCheck, SlidersHorizontal, Snowflake, Users, type LucideIcon } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, ChartLegend, Conclusion, ConfigList, ConfigRow, Decision, DiffField, Explain, Fact, Facts, Field, Figure, FilterBar, FilterField, Fold, InlineMeter, Input, IrreversibleTag, JudgmentPoints, KeyValues,
-  Modal, Notice, NumberInput, PageHeader, PageTabs, Pager, Panel, RecordList, ReleaseModal, SectionNav, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useSectionNav,
+  ConflictBar, Modal, Notice, NumberInput, PageHeader, PageTabs, Pager, Panel, RecordList, ReleaseModal, SectionNav, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useSectionNav,
   type ExplainRow, type JudgmentRow, type SectionNavItem, useTabIds
 } from "@/app/components/rd";
 import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1_RELEASE_MODE_VALUES, K1_RELEASE_PARAM_LIMITS, newK1CommandKey, updateK1RegistrationParam } from "@/lib/admin/k-client";
@@ -436,26 +436,6 @@ function DraftModal({ title, icon, effect, explain, wide, busy, reading, busyLab
         </Field>
       </div>
     </Modal>
-  );
-}
-
-/** 确认框里的版本冲突：框不关，按钮读最新（OP-97）。 */
-function ConflictBar({ onRead }: { onRead: () => Promise<void> }) {
-  const [state, setState] = useState<"idle" | "reading" | "failed">("idle");
-  const read = async () => {
-    setState("reading");
-    try {
-      await onRead();
-      setState("idle");
-    } catch {
-      setState("failed");
-    }
-  };
-  return (
-    <span className="rd-toolbar">
-      <span>{state === "failed" ? "读取最新失败，稍后再试。已填写的内容还在。" : CONFLICT_TEXT}</span>
-      <Button size="sm" loading={state === "reading"} onClick={() => void read()}>读取最新</Button>
-    </span>
   );
 }
 
@@ -1022,7 +1002,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         try {
           await runRecord(clusterRecord(c, action, label, reason));
         } catch (cause) {
-          if (isVersionConflict(cause)) ctx.openActionConfirm({ ...req, formKey, blockedReason: <ConflictBar onRead={readLatest} />, run: () => undefined });
+          if (isVersionConflict(cause)) ctx.openActionConfirm({ ...req, formKey, blockedReason: <ConflictBar message={CONFLICT_TEXT} onRead={readLatest} />, run: () => undefined });
           throw cause;
         }
       },

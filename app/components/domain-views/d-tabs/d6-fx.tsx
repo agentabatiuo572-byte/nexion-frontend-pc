@@ -9,7 +9,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Coins, History, RefreshCw, SlidersHorizontal } from "lucide-react";
-import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Drawer, Explain, Fact, Facts, Fold, Notice, PageHeader, Panel, ReleaseModal, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
+import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConflictBar, ConfigRow, Drawer, Explain, Fact, Facts, Fold, Notice, PageHeader, Panel, ReleaseModal, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
@@ -139,26 +139,6 @@ function retryRejectedReason(cause: unknown) {
   if (isConflict(cause)) return "这期间这组汇率被别人改过，原操作没有再执行。";
   if (cause instanceof DRequestError && cause.reasonCode === "FX_QUOTE_NO_CHANGES") return "现在的值已经和原操作要改成的一样，原操作没有再执行。";
   return `${displayAdminError(cause).split("；")[0].replace(/[。.]$/, "")}。`;
-}
-
-/** 确认框里的版本冲突：框不关，按钮读最新（OP-97）。 */
-function ConflictBar({ onRead }: { onRead: () => Promise<void> }) {
-  const [state, setState] = useState<"idle" | "reading" | "failed">("idle");
-  const read = async () => {
-    setState("reading");
-    try {
-      await onRead();
-      setState("idle");
-    } catch {
-      setState("failed");
-    }
-  };
-  return (
-    <span className="rd-toolbar">
-      <span>{state === "failed" ? "读取最新失败，稍后再试。已填写的内容还在。" : "这组汇率刚被别人改过，这次没有保存。读取最新后再核对新值。"}</span>
-      <Button size="sm" loading={state === "reading"} onClick={() => void read()}>读取最新</Button>
-    </span>
-  );
 }
 
 export function D6Fx({ ctx }: { ctx: DCtx }) {
@@ -353,7 +333,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
             operator,
           });
         } catch (cause) {
-          if (isConflict(cause)) openActionConfirm({ ...req, blockedReason: <ConflictBar onRead={readLatest(value ?? "")} /> });
+          if (isConflict(cause)) openActionConfirm({ ...req, blockedReason: <ConflictBar message="这组汇率刚被别人改过，这次没有保存。读取最新后再核对新值。" onRead={readLatest(value ?? "")} /> });
           throw cause;
         }
       },
