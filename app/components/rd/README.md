@@ -222,7 +222,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 提示类型写第二个参数：`setToast("已保存", "success")`，失败 `error`，要人注意和结果未知 `warn`，其余 `info`。没传时按文字判断：「已」开头又没有转折「但」是 `success`，含「失败」「错误」是 `error`，含「未确认」「待确认」「未完成」「不能」「无法」「没有提交」是 `warn`，别的是 `info`。这是迁移期的兜底，页面都传了就删。`Notice` 的 `tone` 同理，按这条提示说的事传，不要整页写死一种：失败 `danger`、等人处理 `warn`、已完成 `ok`、处理中 `progress`。
 
-`Conclusion` 的气泡标题可传 `explainTitle`，默认仍为「这句话怎么算」。`PageGuide` 的技术信息用 `Fold`，默认收起，`more` 是纯文字，按句号和分号一句一行；最常做的三件事一件一个小标题，步骤一行一步。页面编号只作为查找指南的内部键。
+`Conclusion` 的气泡标题可传 `explainTitle`，默认仍为「这句话怎么算」。`PageGuide` 的技术信息用 `Fold`，默认收起，`more` 是纯文字，按句号和分号一句一行；三个分区标题 16/600，最常做的三件事一件一个 14/500 的小标题，步骤一行一步。页面编号只作为查找指南的内部键。
 
 旧的 `KConfirmModal` 放进 `RdPage` 后同样换新外观；`statedBrief`、`effect`、`reasonPlaceholder` 用法同上。它按 A2 理由规则和可见字符计数，规则读不到时按默认 8–200 继续，紧急关闭这类操作继续用它（Q-06）。
 

@@ -6,6 +6,9 @@
  *
  * 首次打开时入口旁显示一行提示，不抢焦点、不自动打开、不盖住内容；关掉后按账号和页面记住，
  * 读不到记忆时当已看过，不反复打扰。
+ *
+ * 层级照 Ant Design Typography：三个分区（这页管什么、最常做的三件事、用到的术语）是 16/600 的 h3，
+ * 每件事的小标题是 14/500 的 h4，步骤是正文。技术信息收在折叠里，是第三层。
  */
 import { useEffect, useState, type ReactNode } from "react";
 import { CircleHelp, X } from "lucide-react";
@@ -59,7 +62,7 @@ export function PageGuide({ pageId, extra }: { pageId: string; extra?: ReactNode
         </section>
         <section className="rd-guide-section">
           <h3>最常做的三件事</h3>
-          <ol>{guide.tasks.map((task) => <li key={task.title}><b>{task.title}</b><ol>{task.steps.map((step) => <li key={step}>{step}</li>)}</ol></li>)}</ol>
+          <ol>{guide.tasks.map((task) => <li key={task.title}><h4>{task.title}</h4><ol>{task.steps.map((step) => <li key={step}>{step}</li>)}</ol></li>)}</ol>
         </section>
         {guide.terms.length > 0 && (
           <section className="rd-guide-section">

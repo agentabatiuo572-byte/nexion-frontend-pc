@@ -592,10 +592,11 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 @media (hover: hover) and (pointer: fine) { .rd-guide-entry:hover { background: var(--rd-panel-inner); color: var(--rd-text); } }
 .rd-guide-hint { display: inline-flex; align-items: center; gap: 4px; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 .rd-guide-section { display: grid; gap: 8px; }
-.rd-guide-section h3 { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; color: var(--rd-text); }
+.rd-guide-section + .rd-guide-section { margin-top: 8px; }  /* 分区之间 20，比分区里的 8 宽一档，看得出是三块 */
+.rd-guide-section h3 { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; color: var(--rd-text); }  /* 分区标题高一档，每件事的小标题才分得出层级（Ant Design Typography h5） */
 .rd-guide-section p, .rd-guide-section ol, .rd-guide-section dl { margin: 0; color: var(--rd-text-2); }
 .rd-guide-section ol { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }  /* 每件事一个小标题，下面一步一行，不用箭头串成长句（DT-02） */
-.rd-guide-section ol li > b { font-weight: 500; color: var(--rd-text); }
+.rd-guide-section ol li > h4 { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; color: var(--rd-text); }
 .rd-guide-section ol ol { gap: 4px; margin-top: 4px; padding-left: 20px; list-style: decimal; }
 .rd-guide-section dl { display: grid; gap: 8px; }
 .rd-guide-section dt { display: inline; font-weight: 500; color: var(--rd-text); }
