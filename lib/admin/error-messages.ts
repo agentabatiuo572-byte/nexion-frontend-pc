@@ -371,6 +371,8 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   K4_RISK_SCORE_UNAVAILABLE: "当前风险分、评分规则版本或阈值暂时拿不到，本次没有放行；请刷新详情后重试。",
   RISK_DISCLOSURE_PUBLISHED_VERSION_NOT_FOUND: "当前账户对应的已发布风险告知正文缺失，本次操作未执行；请到「风险披露」风险告知核对并补齐对应版本，刷新页面不能修复此配置问题。",
   RISK_DISCLOSURE_ACK_REQUIRED: "用户尚未确认当前版本的风险告知，本次操作未执行；请用户在 APP 阅读并确认后重试。",
+  TRC20_WINDOW_SNAPSHOT_UNAVAILABLE: "本笔 TRC20 提现的原阶段窗口尚未核实，暂不能审批或出款。请核对原订单的阶段记录。",
+  TRC20_WINDOW_SNAPSHOT_INVALID: "本笔 TRC20 提现的原阶段窗口快照不完整，暂不能审批或出款。请核查原订单记录。",
   WITHDRAWAL_KILL_SWITCH_DISABLED: "「紧急停用开关」提现总开关已关闭，本次未放行；请在「紧急停用开关」核对关停原因，完成必要确认并恢复提现后重试。",
   WITHDRAWAL_ROLE_NOT_ALLOWED: "当前账号无权执行这项提现操作，请联系有权限的管理员处理。",
   WITHDRAWAL_FREEZE_LIFECYCLE_REQUIRED: "冻结信息不符合要求。请填写责任人并核对复查时间：固定期限允许相差一天；长期冻结须在未来 1–365 天内复查。",
