@@ -105,11 +105,11 @@ function signedDiff(value: number, digits?: number) {
   return `${value > 0 ? "+" : value < 0 ? "-" : ""}${amountText(Math.abs(value), digits)}`;
 }
 
-/** 长账单号中间省略（Carbon 的中间截断）：有「:」分段时留开头 8 个字和最后一段（同一单的净额、网络费分得开），没有时留开头 10 个字和末 6 位。全文在悬停和抽屉里。 */
+/** 长账单号中间省略（Carbon 的中间截断）：有「:」分段时留开头 6 个字和最后一段（同一单的净额、网络费分得开），没有时留开头 10 个字和末 6 位。全文在悬停和抽屉里。 */
 function shortBillNo(value: string) {
   if (value.length <= 22) return value;
   const cut = value.lastIndexOf(":");
-  return cut > 8 ? `${value.slice(0, 8)}…${value.slice(cut)}` : `${value.slice(0, 10)}…${value.slice(-6)}`;
+  return cut > 6 ? `${value.slice(0, 6)}…${value.slice(cut)}` : `${value.slice(0, 10)}…${value.slice(-6)}`;
 }
 
 /** 抽屉里的账单号全文：在「:」后允许换行，「NETWORK_FEE」这类一段不被拆开。 */
