@@ -1202,7 +1202,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const recordsTab = (
     <>
       {locateNotice}
+      {/* 视图切换独占筛选条第一行：先选看哪张表，再筛。放在面板标题右边时分段的字离面板右边线太远（P1-right）。 */}
       <FilterBar
+        scope={<div className="rd-filter-scope-row">{viewSwitch}</div>}
         onSubmit={submitFilter}
         querying={recordsLoading}
         onClear={clearFilter}
@@ -1228,7 +1230,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       </FilterBar>
 
       {recordsError && !records ? (
-        <Panel flush icon={view === "logs" ? FileText : History} tone="role-3" title={view === "logs" ? "操作记录" : "审批结果"} actions={viewSwitch}>
+        <Panel flush icon={view === "logs" ? FileText : History} tone="role-3" title={view === "logs" ? "操作记录" : "审批结果"}>
           <Table label={view === "logs" ? "操作记录" : "审批结果"}><tbody>
             <TableMessage columns={logColumns} role="alert">操作记录读取失败，不显示旧数据：{recordsError} <Button size="sm" onClick={() => void (hasApplied ? loadFiltered(appliedFilter) : loadMain().catch(() => undefined))}>重试</Button></TableMessage>
           </tbody></Table>
@@ -1236,7 +1238,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       ) : view === "logs" ? (
         <Panel flush icon={FileText} tone="role-3" title="操作记录"
           sub={recordStats ? `今日 ${count(recordStats.todayAuditEvents)} 条 · ${(records?.recentLogs.length ?? 0) >= 200 ? "已显示最近 200 条，更早的缩小时间范围再查" : "最多显示最近 200 条"}` : undefined}
-          explain={`「今日」按业务日历的今天，跟着上面的筛选变。${VIEW_NOTE}`} actions={viewSwitch}>
+          explain={`「今日」按业务日历的今天，跟着上面的筛选变。${VIEW_NOTE}`}>
           <Table label="操作记录" data-tight="">
             <thead><tr>
               <Th sticky="start">时间（{zone}）</Th>
@@ -1271,7 +1273,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       ) : (
         <Panel flush icon={History} tone="role-3" title="审批结果"
           sub={recordStats ? `按上方筛选 · 累计 已批准 ${count(recordStats.weeklyApproved)} · 已驳回 ${count(recordStats.weeklyRejected)} · 已撤回 ${count(recordStats.weeklyWithdrawn)} · 已过期 ${count(recordStats.weeklyExpired)}` : undefined}
-          explain={`按上面的筛选数全部处理过的审批单，不分时间段。${VIEW_NOTE}`} actions={viewSwitch}>
+          explain={`按上面的筛选数全部处理过的审批单，不分时间段。${VIEW_NOTE}`}>
           <Table label="审批结果" data-tight="">
             <thead><tr>
               <Th sticky="start">审批单</Th>
