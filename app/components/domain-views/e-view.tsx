@@ -289,11 +289,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const canWriteE2 = useAdminAuth((s) => s.session?.authorities.includes("device_e2_write") ?? false);
   const canWriteE3 = useAdminAuth((s) => s.session?.authorities.includes("device_e3_write") ?? false);
   const canWriteE4 = useAdminAuth((s) => s.session?.authorities.includes("device_e4_write") ?? false);
-  // 会话没有逐权限的 grant-role 投影：只给已知财务主管／超管身份开放申请入口，
-  // 不把主角色当成退款权来源的证明；提交时后端仍核实 FINANCE_LEAD 授权关系或真实超管身份。
+  // 会话没有逐权限的 grant-role 投影，主角色不能证明退款权来源，也不能排除其他主角色兼任财务主管。
+  // 增长不开放；其他账号须同时有退款和提案权才给受限申请入口，资格仍由后端核实。
   const canRefundE4 = useAdminAuth((s) => !!s.session
     && s.session.authorities.includes("device_e4_order_refund")
-    && ["superadmin", "super", "FINANCE_LEAD"].includes(s.session.role));
+    && s.session.role !== "growth"
+    && s.session.authorities.some((code) => ["platform_a2_proposal_create", "platform_a2_write"].includes(code)));
   const canQueryE4 = useAdminAuth((s) => s.session?.authorities.some((code) => ["platform_a2_read", "platform_a2_proposal_create"].includes(code)) ?? false);
   const canWriteE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_write") ?? false);
   const hasForceActivateE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_device_force_activate") ?? false);

@@ -382,7 +382,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
     : !refundableState ? { label: "退款", value: "不能退款", reason: "用户还没付款。只有已支付、开通中、已激活、已入库或已付款的开通失败订单能退款。" }
       : !e4Detail ? { label: "退款", ...pendingFact }
         : pendingApproval ? { label: "退款", value: "等待审批结束" }
-          : e4Detail.refundAllowed ? { label: "退款", value: canRefundE4 ? "可提交退款审批" : "符合退款条件，需具退款权限的财务主管或超管发起", reason: coverageReason }
+          : e4Detail.refundAllowed ? { label: "退款", value: canRefundE4 ? "可申请退款审批" : "符合退款条件，需具退款权限的财务主管或超管发起", reason: coverageReason }
           : { label: "退款", value: refundBlockText, reason: coverageKnown ? coverageReason : "要先读到兑付覆盖率才能退款。过一会儿重新打开这单。", state: coverageKnown ? "danger" : "warn" };
   const rows: JudgmentRow[] = [
     nextRow,
