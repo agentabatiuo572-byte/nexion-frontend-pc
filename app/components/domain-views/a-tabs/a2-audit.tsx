@@ -1158,27 +1158,26 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         </FilterBar>
 
         <Panel flush icon={ClipboardList} tone="role-3" title="待审批的操作" sub={`应急在前，资金类其次，其余按提交时间从新到旧 · 时间为${zone}`}>
-          <Table label="待审批的操作">
+          {/* 1024 也要放下：对象多是系统键，名字里通常已经带着，列表不单列，抽屉和确认框里常显（DP-13）。 */}
+          <Table label="待审批的操作" data-tight="">
             <thead><tr>
               <Th sticky="start">审批单</Th>
-              <Th>对象</Th>
               <Th>变更</Th>
               <Th icon={Users} tone="users">发起人</Th>
               <Th>标记</Th>
               <Th sticky="end">操作</Th>
             </tr></thead>
             <tbody>
-              {!main && mainLoading ? <TableLoading columns={6} rows={5} />
+              {!main && mainLoading ? <TableLoading columns={5} rows={5} />
                 : qPageRows.length === 0 ? (
-                  <TableMessage columns={6} role="status">
+                  <TableMessage columns={5} role="status">
                     {queueFiltered ? <>没有符合条件的待审批操作 <Button size="sm" onClick={() => { setQType("all"); setQOperator("all"); setQPage(1); }}>清除筛选</Button></> : "没有待审批的操作"}
                   </TableMessage>
                 ) : qPageRows.map((w) => {
                   const changeText = w.action.startsWith("首次配置 V0–V8") ? "创建 V0–V8 共 9 个等级，点击本行核对完整配置" : w.after;
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
-                      <Td sticky="start"><Cell main={actionName(w.action)} title={actionName(w.action)} sub={<><span data-mono>{w.id}</span> · {bizTime(w.rawTs, w.ts)}</>} /></Td>
-                      <Td><Cell main={w.obj} title={w.obj} /></Td>
+                      <Td sticky="start"><Cell main={actionName(w.action)} title={`${actionName(w.action)}\n对象：${w.obj}`} sub={<><span data-mono>{w.id}</span> · {bizTime(w.rawTs, w.ts)}</>} /></Td>
                       <Td grow><Cell main={changeText} sub={`原 ${w.before}`} title={`变更前：${w.before}\n变更后：${changeText}`} /></Td>
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
                       <Td><Cell main={markers(w)} sub={w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined} /></Td>
