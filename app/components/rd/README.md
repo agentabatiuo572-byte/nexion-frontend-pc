@@ -85,7 +85,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 一列固定的等级 | `LevelList` | `level-list.tsx` |
 | 配置项：名称、提示图标、当前值、动作 | `ConfigList`（`label` 给这组起名）、`ConfigRow`；一项一行，这是什么、显示位置、生效时间、改了会怎样（`what`、`where`、`when`、`effect`）都在提示图标的气泡里；说明表放 `lib/admin/config-help/`，按参数键取 | `config-list.tsx` |
 | 配置页三组以上的分组导航，详情页的分区导航（传 `row` 横排） | `SectionNav`、`useSectionNav`；定位写进网址 `section`，目标在折叠组里先展开，滚到底时亮最后一组 | `section-nav.tsx` |
-| 数字输入，单位写在框里 | `NumberInput`；照 Ant Design InputNumber：显示带千分位，`value` 和 `onChange` 里的 `event.target.value` 是不带逗号的原值；宽度按 `min`、`max` 和现在的值定，单位紧跟数字，不拉满；只收数字、一个小数点和允许时的负号，空、填了一半（「-」「.」）和 0 原样交给页面，页面把不是数字的当填错；上下方向键按 `step` 加减。`OperationConfirmModal` 的 `edit.kind: "number"` 在 `RdPage` 里自动用它 | `number-input.tsx` |
+| 数字输入，单位写在框里 | `NumberInput`；照 Ant Design InputNumber：显示带千分位，`value` 和 `onChange` 里的 `event.target.value` 是不带逗号的原值；宽度按 `min`、`max` 和现在的值定，单位紧跟数字，不拉满；组件不改写数值：只收数字、一个小数点和允许时的开头负号，合法千分位粘贴只去逗号；空格、字母、单位、多余小数点、非千分位逗号或范围不允许的负号整次拒收，保留原值并在框下提示。空、填了一半（「-」「.」）和 0 原样交给页面，页面把不是数字的当填错；上下方向键按 `step` 加减。`OperationConfirmModal` 的 `edit.kind: "number"` 在 `RdPage` 里自动用它 | `number-input.tsx` |
 
 ## 颜色：只传 tone，不写色值
 

@@ -8,13 +8,13 @@
  * 照 Ant Design InputNumber：
  * - 显示带千分位（formatter），value 和 onChange 里的 event.target.value 都是不带逗号的原值（parser），调用方不用改。
  * - 宽度按内容定：放得下 min、max 和现在的值，单位紧跟在数字后面，不拉满整行。值比 max 还长时框跟着变宽，不切字。
- * - 只收数字、一个小数点，min 小于 0 或没给 min 时开头可以有负号；粘贴进来的逗号、空格、单位会去掉。
+ * - 只收数字、一个小数点，min 小于 0 或没给 min 时开头可以有负号；合法千分位只去逗号，其他输入整次拒收并提示。
  *   空、填了一半（「-」「.」）和 0 是三种值，原样交给调用方；「-」这类不是数字，调用方按填错处理。
  * - 上下方向键按 step 加减（原生数字框的行为），不超出 min、max。
  *
  * 范围当场校验和错误文字由调用方写（OP-141），超范围不取整。
  */
-import { forwardRef, useCallback, useLayoutEffect, useRef, type ChangeEvent, type CSSProperties, type InputHTMLAttributes, type KeyboardEvent } from "react";
+import { forwardRef, useCallback, useId, useLayoutEffect, useRef, useState, type ChangeEvent, type CSSProperties, type InputHTMLAttributes, type KeyboardEvent } from "react";
 
 type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "value" | "min" | "max" | "step"> & {
   unit?: string;
@@ -26,17 +26,10 @@ type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "value" | "min
 
 const finite = (value: number | string | undefined) => value === undefined || value === "" || !Number.isFinite(Number(value)) ? undefined : Number(value);
 
-/** 整数部分加千分位；不是完整写法的（「1.2.3」不会出现，「-」「.」会）原样显示。 */
+/** 整数部分加千分位；不是完整写法的（如「-」「.」）原样显示。 */
 function format(raw: string) {
   const match = raw.match(/^(-?)(\d+)(\.\d*)?$/);
   return match ? `${match[1]}${match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${match[3] ?? ""}` : raw;
-}
-
-/** 去掉逗号和别的字，只留数字、第一个小数点，允许时留开头的负号。 */
-function sanitize(text: string, negative: boolean) {
-  const sign = negative && /^\s*-/.test(text) ? "-" : "";
-  const [whole, ...rest] = text.replace(/[^\d.]/g, "").split(".");
-  return `${sign}${whole}${rest.length ? `.${rest.join("")}` : ""}`;
 }
 
 /** 中文和全角字符按两个字宽算，宽度单位是 ch。 */
@@ -57,12 +50,15 @@ const setNativeValue = (input: HTMLInputElement, value: string) => {
 
 export const NumberInput = forwardRef<HTMLInputElement, Props>(function NumberInput({ unit, className, value, min, max, step, onChange, onKeyDown, placeholder, style, ...rest }, forwarded) {
   const inner = useRef<HTMLInputElement | null>(null);
+  const [rejected, setRejected] = useState(false);
+  const rejectionId = useId();
   // 改完值后光标前有几个非逗号字符；重新加千分位后按这个数放回光标。
   const caret = useRef<number | null>(null);
   const raw = value === undefined || value === null ? "" : String(value);
   const shown = format(raw);
   const lo = finite(min), hi = finite(max), by = finite(step) ?? 1;
   const negative = lo === undefined || lo < 0;
+  const rejectionText = `未接收这次输入，原值未变。只填数字和一个小数点${negative ? "，开头可加负号" : ""}；可用千分位逗号，不含空格、字母或单位。`;
   const decimals = Math.max(decimalsOf(by), decimalsOf(lo));
   const chars = Math.max(
     hi === undefined ? 0 : width(format(hi.toFixed(decimals))),
@@ -90,9 +86,23 @@ export const NumberInput = forwardRef<HTMLInputElement, Props>(function NumberIn
     const input = event.target;
     const typed = input.value;
     const before = typed.slice(0, input.selectionStart ?? typed.length);
-    let next = sanitize(typed, negative);
-    caret.current = sanitize(before, negative).length;
-    const kind = (event.nativeEvent as InputEvent).inputType;
+    // 框里原有的千分位随编辑重新排；只去显示用的逗号，不删除任何其他字符。
+    const native = event.nativeEvent as InputEvent;
+    const kind = native.inputType;
+    // 删字或新插入的文本不含逗号时，框里原有逗号只作显示；新输入逗号时校验完整分组。
+    const editsFormattedValue = kind?.startsWith("delete")
+      || typeof native.data === "string" && !native.data.includes(",");
+    const candidate = editsFormattedValue ? typed.replace(/,/g, "") : typed;
+    const syntax = negative ? /^-?(?:\d*|\d{1,3}(?:,\d{3})+)(?:\.\d*)?$/ : /^(?:\d*|\d{1,3}(?:,\d{3})+)(?:\.\d*)?$/;
+    if (!syntax.test(candidate)) {
+      // 同步受控输入的值追踪，连续输入同一非法文本时也会再次拒收。
+      input.value = shown;
+      setRejected(true);
+      return;
+    }
+    setRejected(false);
+    let next = candidate.replace(/,/g, "");
+    caret.current = before.replace(/,/g, "").length;
     if (next === raw && kind === "deleteContentBackward" && caret.current > 0) {
       // 退格删掉的是千分位逗号：删它前面那一位数字。
       next = raw.slice(0, caret.current - 1) + raw.slice(caret.current);
@@ -101,8 +111,8 @@ export const NumberInput = forwardRef<HTMLInputElement, Props>(function NumberIn
       next = raw.slice(0, caret.current) + raw.slice(caret.current + 1);
     }
     if (next === raw) {
-      // 打的是收不进的字（字母、第二个小数点）：和原生数字框一样不算改动，框里放回原样，光标不跳。
-      setNativeValue(input, shown);
+      // 数值没变（如重新输入显示用的逗号），框里放回原样，光标不跳。
+      input.value = shown;
       const at = caretAt(shown, caret.current);
       input.setSelectionRange(at, at);
       caret.current = null;
@@ -131,26 +141,31 @@ export const NumberInput = forwardRef<HTMLInputElement, Props>(function NumberIn
   const numeric = raw.trim() !== "" && Number.isFinite(Number(raw)) ? Number(raw) : undefined;
   const box = { "--rd-number-chars": chars, "--rd-number-unit": unit ? width(unit) : 0 } as CSSProperties;
   return (
-    <span className="rd-number" data-unit={unit ? "" : undefined} style={box}>
-      <input
-        ref={ref}
-        {...rest}
-        type="text"
-        inputMode={rest.inputMode ?? (decimals > 0 || !Number.isInteger(by) ? "decimal" : "numeric")}
-        autoComplete="off"
-        role="spinbutton"
-        aria-valuemin={lo}
-        aria-valuemax={hi}
-        aria-valuenow={numeric}
-        aria-valuetext={numeric === undefined ? undefined : `${shown}${unit ? ` ${unit}` : ""}`}
-        placeholder={placeholder}
-        value={shown}
-        onChange={handleChange}
-        onKeyDown={handleKeyDown}
-        style={style}
-        className={className ? `rd-input ${className}` : "rd-input"}
-      />
-      {unit && <span className="rd-number-unit">{unit}</span>}
-    </span>
+    <>
+      <span className="rd-number" data-unit={unit ? "" : undefined} style={box}>
+        <input
+          ref={ref}
+          {...rest}
+          type="text"
+          inputMode={rest.inputMode ?? (decimals > 0 || !Number.isInteger(by) ? "decimal" : "numeric")}
+          autoComplete="off"
+          role="spinbutton"
+          aria-invalid={rejected || rest["aria-invalid"] || undefined}
+          aria-describedby={[rest["aria-describedby"], rejected ? rejectionId : ""].filter(Boolean).join(" ") || undefined}
+          aria-valuemin={lo}
+          aria-valuemax={hi}
+          aria-valuenow={numeric}
+          aria-valuetext={numeric === undefined ? undefined : `${shown}${unit ? ` ${unit}` : ""}`}
+          placeholder={placeholder}
+          value={shown}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          style={style}
+          className={className ? `rd-input ${className}` : "rd-input"}
+        />
+        {unit && <span className="rd-number-unit">{unit}</span>}
+      </span>
+      {rejected && <div id={rejectionId} className="rd-form-error" role="alert">{rejectionText}</div>}
+    </>
   );
 });
