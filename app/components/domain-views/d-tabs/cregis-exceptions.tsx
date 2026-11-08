@@ -48,7 +48,7 @@ function caseRows(row: ExceptionRecord): KeyValueRow[] {
 
 type OperationsProps = {
   canManage: boolean; openActionConfirm: DCtx["openActionConfirm"]; sources: ClaimSource[];
-  claim: ClaimSource | null; onClaimClose: () => void; onChanged: () => void;
+  claim: ClaimSource | null; onClaimClose: () => void; onChanged: () => void; onPendingChanged: () => void;
   recoveredChallenge?: RecoveredChallenge | null;
 };
 export function CregisExceptionOperations(props: OperationsProps) {
@@ -57,7 +57,7 @@ export function CregisExceptionOperations(props: OperationsProps) {
   return <OwnedExceptionOperations key={`${session.adminId}:${epoch}:${adminAuthLifecycleEpoch()}:${props.canManage}:${session.authorities.join("|")}`}
     {...props} owner={session.adminId} ownerEpoch={epoch} />;
 }
-function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim, onClaimClose, onChanged, recoveredChallenge, owner, ownerEpoch }: OperationsProps & { owner: number; ownerEpoch: number }) {
+function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim, onClaimClose, onChanged, onPendingChanged, recoveredChallenge, owner, ownerEpoch }: OperationsProps & { owner: number; ownerEpoch: number }) {
   const session = useAdminAuth(state => state.session);
   const canRefund = canManage && (session?.authorities ?? []).includes("finance_d2_withdrawal_approve");
   const lifecycleEpoch = useRef(adminAuthLifecycleEpoch()).current;
@@ -306,7 +306,7 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
 
     {claim && <ClaimDrawer key={`${claim.sourceType}:${claim.sourceId}`} source={claim} sources={sources} policyMode={policy ? String(policy.mode) : "UNREAD"} canRefund={canRefund}
       recoveredChallenge={recoveredChallenge?.request.sourceType === claim.sourceType && recoveredChallenge.request.sourceId === claim.sourceId ? recoveredChallenge : null}
-      onChanged={onChanged}
+      onPendingChanged={onPendingChanged}
       scopeFor={scopeFor} owns={owns} busy={busy} onClose={onClaimClose}
       onPropose={(intent, body, facts) => confirm({ kind: "funds", action: intent === "CLAIM_CREDIT" ? "提交认领入账提案" : "提交原路退款提案", title: intent === "CLAIM_CREDIT" ? "提交认领入账提案" : "提交原路退款提案", confirmLabel: "提交审批",
         path: intent === "CLAIM_CREDIT" ? "/exception-claims" : "/refunds/cases", body, facts,
@@ -315,12 +315,12 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
 }
 
 /** 认领或原路退款：四步，换来源或方式清掉已生成的证明（D1-A43～A45）。 */
-function ClaimDrawer({ source, sources, policyMode, canRefund, scopeFor, owns, busy, onClose, onPropose, recoveredChallenge, onChanged }: {
+function ClaimDrawer({ source, sources, policyMode, canRefund, scopeFor, owns, busy, onClose, onPropose, recoveredChallenge, onPendingChanged }: {
   source: ClaimSource; sources: ClaimSource[]; policyMode: string; canRefund: boolean;
   scopeFor: (write?: boolean, refund?: boolean) => ExceptionRequestScope; owns: () => boolean; busy: boolean; onClose: () => void;
   onPropose: (intent: string, body: ExceptionRecord, facts: React.ReactNode) => void;
   recoveredChallenge?: RecoveredChallenge | null;
-  onChanged: () => void;
+  onPendingChanged: () => void;
 }) {
   const [intent, setIntent] = useState(String(recoveredChallenge?.request.action ?? (source.dust ? "REFUND_ORIGIN" : "CLAIM_CREDIT")));
   const [userId, setUserId] = useState(String(recoveredChallenge?.request.targetUserId ?? ""));
@@ -347,7 +347,7 @@ function ClaimDrawer({ source, sources, policyMode, canRefund, scopeFor, owns, b
       scope.assertOwner();
       if (epoch === selection.current) setChallenge(result);
     } catch (failure) { if (epoch === selection.current && owns()) setError(displayAdminError(failure)); }
-    finally { if (owns()) { setWorking(false); onChanged(); } }
+    finally { if (owns()) { setWorking(false); onPendingChanged(); } }
   };
   const preview = async () => {
     const scope = scopeFor(true, refund); scope.assertOwner();
@@ -360,7 +360,7 @@ function ClaimDrawer({ source, sources, policyMode, canRefund, scopeFor, owns, b
       scope.assertOwner();
       if (epoch === selection.current) setEvidence(result);
     } catch (failure) { if (epoch === selection.current && owns()) { setEvidence(null); setError(displayAdminError(failure)); } }
-    finally { if (owns()) { setWorking(false); onChanged(); } }
+    finally { if (owns()) { setWorking(false); onPendingChanged(); } }
   };
   const signatureValid = /^0x[0-9a-fA-F]{130}$/.test(signature);
   const step = evidence ? 3 : challenge ? (signatureValid ? 2 : 1) : 0;

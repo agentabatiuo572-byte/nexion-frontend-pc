@@ -727,6 +727,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       </Fold>}
       {data && <CregisExceptionOperations key={childKey} canManage={canManage} openActionConfirm={openActionConfirm}
         recoveredChallenge={recoveredChallenge}
+        onPendingChanged={syncPending}
         sources={entries.map(claimSource).filter((source): source is ClaimSource => !!source)}
         claim={claim} onClaimClose={() => { setClaim(null); setRecoveredChallenge(null); }} onChanged={() => { syncPending(); void refresh(); }} />}
     </div>
