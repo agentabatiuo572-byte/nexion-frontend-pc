@@ -297,7 +297,7 @@ function routeLabel(value?: string) {
 }
 
 function userStatusLabel(value?: string) {
-  return ({ active: "正常", enabled: "正常", frozen: "冻结", disabled: "停用", locked: "锁定" } as Record<string, string>)[value?.toLowerCase() ?? ""] ?? (value ? "未知" : "—");
+  return ({ active: "正常", enabled: "正常", frozen: "冻结", banned: "封禁", restricted: "受限", disabled: "停用", locked: "锁定" } as Record<string, string>)[value?.toLowerCase() ?? ""] ?? (value ? "未知" : "—");
 }
 
 /** 后端在提交时记下当时的运营阶段：H1:M{第几月}:{P1–P6}（AppWithdrawalService）。 */
