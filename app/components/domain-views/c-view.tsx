@@ -8,6 +8,7 @@
  */
 import { useMemo, useState } from "react";
 import "./c-domain.css";
+import { RdPage } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
@@ -19,6 +20,8 @@ import { C6Regrisk } from "./c-tabs/c6-regrisk";
 import type { CCtx, ConfirmReq, ActionConfirmReq } from "./c-tabs/types";
 
 const FOLD: Record<string, string> = { C1: "C1", C2: "C2", C3: "C3", C5: "C5", C6: "C6" };
+/** 已改版的页：包 RdPage，页头由页面自己写。 */
+const REDESIGNED = ["C2"];
 
 
 export function CDomainView({ meta }: { meta: DomainViewMeta }) {
@@ -36,9 +39,9 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const right = tab === "C1" ? <C1HeaderActions ctx={ctx} query={c1ExportQuery} /> : null;
 
-  return (
-    <div className="dkpage cdom">
-      <DomainHeader {...meta} right={right} />
+  const page = (
+    <>
+      {!REDESIGNED.includes(tab) && <DomainHeader {...meta} right={right} />}
 
       {tab === "C1" && <C1Search ctx={ctx} onExportQueryChange={setC1ExportQuery} />}
       {tab === "C2" && <C2Actions ctx={ctx} />}
@@ -47,16 +50,28 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "C6" && <C6Regrisk ctx={ctx} />}
 
       {mc && (
-        <OperationConfirmModal briefKind={mc.briefKind}
+        <OperationConfirmModal key={mc.formKey} briefKind={mc.briefKind}
           action={mc.action}
+          title={mc.title}
           detail={mc.detail}
           amplifies={mc.amplifies}
+          coverage={mc.coverage}
+          coverageCheck={mc.coverageCheck}
+          coverageLead={mc.coverageLead}
           edit={mc.edit}
           businessForm={mc.businessForm}
           completionCopy={mc.completionCopy}
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
           getPendingReason={mc.getPendingReason}
+          getPendingBusinessValue={mc.getPendingBusinessValue}
+          effect={mc.effect}
+          confirmLabel={mc.confirmLabel}
+          blockedReason={mc.blockedReason}
+          statedBrief={mc.statedBrief}
+          facts={mc.facts}
+          confirmTone={mc.confirmTone}
+          reasonPlaceholder={mc.reasonPlaceholder}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {
             const succeeded = await mc.run(reason, newValue, businessValue);
@@ -66,6 +81,8 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
       )}
       {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
       {toastNode}
-    </div>
+    </>
   );
+
+  return REDESIGNED.includes(tab) ? <RdPage className="cdom">{page}</RdPage> : <div className="dkpage cdom">{page}</div>;
 }

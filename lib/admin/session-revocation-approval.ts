@@ -22,6 +22,11 @@ export function pendingSessionRevocationApproval(adminId: number, userId: number
   return attempts.list().find((record) => record.fingerprint === `${adminId}:${userId}`);
 }
 
+/** 这个操作人还没确认结果的全部退出全部设备审批（账户操作页的待确认条用）。 */
+export function listSessionRevocationApprovals(adminId: number) {
+  return attempts.list().filter((record) => record.fingerprint.startsWith(`${adminId}:`));
+}
+
 export async function proposeSessionRevocation(
   session: AdminSession,
   userId: number | string,

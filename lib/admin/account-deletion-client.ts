@@ -14,6 +14,8 @@ export interface AccountDeletionRequest {
   reviewedAt?: string | null;
   completedAt?: string | null;
   reason?: string | null;
+  /** 被系统拦下（已拒绝）时的原因码，比如 UNSETTLED_FUNDS_OR_ORDERS；运营拒绝时是运营写的理由。 */
+  blockReason?: string | null;
   sessionsRevoked?: boolean;
   accountDisabled?: boolean;
 }
@@ -28,7 +30,13 @@ export interface AccountDeletionPage {
 interface ApiResult<T> { code: number; message?: string; data?: T; }
 
 export class AccountDeletionRequestError extends Error {
-  constructor(public readonly status: number, public readonly apiCode: number | undefined, message: string) {
+  constructor(
+    public readonly status: number,
+    public readonly apiCode: number | undefined,
+    message: string,
+    /** 后端原因码（ApiResult.message），给「重试是不是被明确拒绝」和页面按码处理用。 */
+    public readonly reasonCode?: string,
+  ) {
     super(message);
     this.name = "AccountDeletionRequestError";
   }
@@ -74,6 +82,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       response.status,
       result?.code,
       formatAdminApiError(result?.message, `ACCOUNT_DELETION_REQUEST_FAILED_${response.status}`),
+      result?.message,
     );
     throw error;
   }
@@ -96,10 +105,19 @@ export async function updateAccountDeletion(
   action: "review" | "block" | "complete" | "cancel",
   expectedVersion: number,
   reason: string,
+  /** 页面自己存原命令时传：用这个号，不进本文件的旧表（按原操作重试用同一个号）。 */
+  pageCommandKey?: string,
 ) {
   const normalizedReason = reason.trim();
   if (!requestNo.trim() || !Number.isSafeInteger(expectedVersion) || expectedVersion < 0 || normalizedReason.length < 1) {
     throw new Error("ACCOUNT_DELETION_COMMAND_INVALID");
+  }
+  if (pageCommandKey) {
+    return normalizeRow(await request<unknown>(`/api/admin/users/account-deletions/${encodeURIComponent(requestNo)}/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": pageCommandKey },
+      body: JSON.stringify({ expectedVersion, reason: normalizedReason }),
+    }));
   }
   const slot = `account-deletion:${requestNo}:${action}`;
   const fingerprint = JSON.stringify({ expectedVersion, reason: normalizedReason });
