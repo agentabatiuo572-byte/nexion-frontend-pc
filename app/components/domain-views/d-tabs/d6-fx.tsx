@@ -138,12 +138,14 @@ function fxCommandKey() {
   return `d6-fx-${uuid.replaceAll("-", "").slice(0, 16)}`;
 }
 
-const isConflict = (error: unknown) => error instanceof DRequestError && error.reasonCode === "FX_QUOTE_VERSION_CONFLICT";
+const fxReasonCode = (error: unknown) => error instanceof DRequestError ? error.reasonCode
+  : error instanceof Error && "backendMessage" in error ? String(error.backendMessage) : undefined;
+const isConflict = (error: unknown) => fxReasonCode(error) === "FX_QUOTE_VERSION_CONFLICT";
 
 /** 重试被拒的原因只写发生了什么，不带「刷新后重试」这类动作句：下一步由待确认条统一给。 */
 function retryRejectedReason(cause: unknown) {
   if (isConflict(cause)) return "这期间这组汇率被别人改过，原操作没有再执行。";
-  if (cause instanceof DRequestError && cause.reasonCode === "FX_QUOTE_NO_CHANGES") return "现在的值已经和原操作要改成的一样，原操作没有再执行。";
+  if (fxReasonCode(cause) === "FX_QUOTE_NO_CHANGES") return "现在的值已经和原操作要改成的一样，原操作没有再执行。";
   return `${displayAdminError(cause).split("；")[0].replace(/[。.]$/, "")}。`;
 }
 
@@ -338,7 +340,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
           await sendCommand({ param: param.key, values, before: quote[param.key], after: value, expectedVersion: quote.version, reason, operator, ...(proposal ? { proposal } : {}) });
           setEditing(null);
         } catch (cause) {
-          const code = cause instanceof DRequestError ? cause.reasonCode : undefined;
+          const code = fxReasonCode(cause);
           if (isConflict(cause)) openActionConfirm({ ...req, blockedReason: <ConflictBar message="这组汇率刚被别人改过，这次没有保存。读取最新后再核对新值。" onRead={async () => {
             const latest = await load();
             if (!latest) throw new Error("读取最新失败");
