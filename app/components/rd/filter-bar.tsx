@@ -89,7 +89,7 @@ export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, o
           {onClearMore && <div><Button variant="ghost" size="sm" onClick={onClearMore}>清除更多筛选</Button></div>}
         </div>
       )}
-      {(Boolean(applied?.length) || result) && (
+      {(Boolean(applied?.length) || (result && !notice)) && (
         <div className="rd-filter-row">
           {Boolean(applied?.length) && (
             <div className="rd-filter-chips">
@@ -101,10 +101,16 @@ export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, o
               ))}
             </div>
           )}
+          {result && !notice && <span className="rd-filter-result" role="status">{result}</span>}
+        </div>
+      )}
+      {/* 条件有误时「条件未应用」和原因排在一行，不各占一行。 */}
+      {notice && (
+        <div className="rd-filter-row">
+          <p className="rd-filter-notice" role="alert">{notice}</p>
           {result && <span className="rd-filter-result" role="status">{result}</span>}
         </div>
       )}
-      {notice && <p className="rd-filter-notice" role="alert">{notice}</p>}
     </form>
   );
 }
