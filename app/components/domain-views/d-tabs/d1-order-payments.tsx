@@ -391,7 +391,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, reloadTick, pending, nav, o
         ...(pending ? [{ label: "待确认", state: "warn" as const, value: "这笔付款有一次操作还没确认结果，请在页面上方的提醒里查看。" }] : []),
       ] : []} />}
     {r && <>
-      <Fold inset title="金额明细" summary={r.paymentMethod === "HDPAY_BANK" ? (r.amountVnd ? `应付 ${vnd(r.amountVnd)} VND` : "应付越南盾尚未提供") : r.paymentMethod === "CREGIS_USDT_TRC20" ? "外部链上费用由用户另付" : "矿工费由用户另付"}>
+      <Fold inset title="金额明细" summary={r.paymentMethod === "HDPAY_BANK" ? (r.amountVnd ? `应付 ${vnd(r.amountVnd)} ₫` : "应付越南盾尚未提供") : r.paymentMethod === "CREGIS_USDT_TRC20" ? "外部链上费用由用户另付" : "矿工费由用户另付"}>
         <KeyValues rows={[
           { key: "business", label: "订单金额", value: r.businessAmountUsdt == null ? "尚未提供" : `${usdt(r.businessAmountUsdt)} USDT` },
           { key: "subtotal", label: "收款金额", value: `${usdt(r.subtotalUsdt)} USDT` },
@@ -400,8 +400,8 @@ function PaymentDetail({ intentNo, owner, owns, ctx, reloadTick, pending, nav, o
           { key: "network", label: "网络费", value: `${usdt(r.networkConfirmFeeUsdt)} USDT` },
           { key: "cost", label: "通道实际成本", value: r.providerActualFeeUsdt == null ? "尚未提供" : `${usdt(r.providerActualFeeUsdt)} USDT` },
           ...(r.paymentMethod === "HDPAY_BANK" ? [
-            { key: "fx", label: "锁定汇率", value: r.fxRateVndPerUsdt ? `1 USDT = ${vnd(r.fxRateVndPerUsdt)} VND` : "尚未提供" },
-            { key: "vnd", label: "应付越南盾", value: r.amountVnd ? `${vnd(r.amountVnd)} VND` : "尚未提供" },
+            { key: "fx", label: "锁定汇率", value: r.fxRateVndPerUsdt ? `1 USDT = ${vnd(r.fxRateVndPerUsdt)} ₫` : "尚未提供" },
+            { key: "vnd", label: "应付越南盾", value: r.amountVnd ? `${vnd(r.amountVnd)} ₫` : "尚未提供" },
           ] : r.paymentMethod === "CREGIS_USDT_TRC20" ? [{ key: "gas", label: "外部链上费用", value: "TRON 钱包可能另收 TRX 或消耗能量、带宽，这些外部链上费用不算在用户实付金额内。" }]
             : [{ key: "gas", label: "矿工费", value: `用户在自己钱包里另付的 ${r.paymentMethod === "CREGIS_USDT_ERC20" ? "ETH" : "BNB"} 矿工费不算在内。` }]),
         ]} />

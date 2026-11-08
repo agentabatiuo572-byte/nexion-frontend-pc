@@ -360,12 +360,12 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
       effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag /></>,
       facts: <Facts>
         <Fact k="入账" lead tone="role-1" unit="USDT">{usdt(order.requestedUsdt)}</Fact>
-        <Fact k="应付">{vnd(order.payableVnd)} VND</Fact>
+        <Fact k="应付">{vnd(order.payableVnd)} ₫</Fact>
         <Fact k="用户">{order.userId}</Fact>
         <Fact k="付款单">{order.intentNo}</Fact>
         <Fact k="状态"><Change from={orderStatusText(order.status)} to="已入账" /></Fact>
       </Facts>,
-      detail: `请先核实已实际到账 ${vnd(order.payableVnd)} VND，确认后按下单时的金额入账 ${usdt(order.requestedUsdt)} USDT。`,
+      detail: `请先核实已实际到账 ${vnd(order.payableVnd)} ₫，确认后按下单时的金额入账 ${usdt(order.requestedUsdt)} USDT。`,
       completionCopy: "确认后立即入账到用户钱包，不能撤销。实际到账金额必须等于应付金额。已入账的订单不会重复入账。",
       reasonPlaceholder: "例如：银行回单已核对，工单号",
       businessForm: { kind: "multi-field", fields: [
