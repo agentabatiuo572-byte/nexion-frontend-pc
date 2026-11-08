@@ -9,7 +9,7 @@ import {
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
-import { E4_CLOSE_REASONS, E4_CLOSE_REASON_LABELS, E4_REFUND_REASONS, E4_REFUND_REASON_LABELS, e4FundingLedgerHref, type E4PendingApproval, type E4RefundImpact, type E4TaskEarnings } from "@/lib/admin/e4-client";
+import { E4_CLOSE_REASONS, E4_CLOSE_REASON_LABELS, E4_REFUND_REASONS, E4_REFUND_REASON_LABELS, e4FundingLedgerHref, type E4PendingApproval, type E4RefundImpact } from "@/lib/admin/e4-client";
 import { operatorDeviceStatus, operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { useReach } from "@/lib/nav/use-reach";
@@ -61,20 +61,24 @@ const REFUND_RULES = [
 
 /** 仅这页两处使用，保留在页内；任务投影和促销奖励分别展示。 */
 function OrdinaryRefundImpact({ impact }: { impact: E4RefundImpact | null }) {
-  const earnings = (value: E4TaskEarnings) => <>{value.taskCount.toLocaleString("en-US")} 项 · {orderAmount(value.usdtAmount)} USDT · {orderAmount(value.uvtAmount)} UVT</>;
+  const pending = impact?.runtimeComplete ? impact.completedPending : null;
   const reason = impact?.runtimeUnavailableReason;
   const runtimeText = reason === "SIMULATED_TASK_RUNTIME_UNRESOLVED" ? "模拟任务的运行关联暂无法核实"
     : reason === "COMPUTE_V2_COMPLETION_OUTCOME_UNKNOWN" ? "任务完成结果暂无法核实" : "任务运行状态暂无法核实";
   return <section aria-label="普通订单退款影响">
     <h3 className="rd-form-group-title">退款影响 · 购买设备</h3>
-    <p className="rd-note">已完成任务按原规则结算一次，未完成任务随退款停止，已到账收益不扣回。</p>
+    <p className="rd-note"><KeepText text="已完成任务按原规则结算一次，未完成任务随退款停止，已到账收益不扣回。" /></p>
     {!impact ? <Notice tone="warn">暂未读到普通订单的任务影响，不能按没有任务处理。</Notice> : <>
       {!impact.runtimeComplete && <Notice tone="warn">{runtimeText}，完成待结算和未完成数未知。<Explain label="任务状态技术信息" content={reason ?? "运行状态未提供"} /></Notice>}
       <Facts>
-        <Fact k="完成待结算">{impact.runtimeComplete && impact.completedPending ? earnings(impact.completedPending) : "未知"}</Fact>
+        <Fact k="完成待结算" unit={pending ? "项" : undefined}>{pending ? pending.taskCount.toLocaleString("en-US") : "未知"}</Fact>
+        <Fact k="待结算 USDT">{pending ? orderAmount(pending.usdtAmount) : "未知"}</Fact>
+        <Fact k="待结算 UVT">{pending ? orderAmount(pending.uvtAmount) : "未知"}</Fact>
         <Fact k="未完成任务">{impact.runtimeComplete && impact.unfinishedTaskCount !== null ? `${impact.unfinishedTaskCount.toLocaleString("en-US")} 项，退款后停止` : "未知"}</Fact>
         <Fact k="已停止任务">{impact.stoppedTaskCount.toLocaleString("en-US")} 项</Fact>
-        <Fact k="已到账保留">{earnings(impact.creditedRetained)}</Fact>
+        <Fact k="已到账保留" unit="项">{impact.creditedRetained.taskCount.toLocaleString("en-US")}</Fact>
+        <Fact k="保留 USDT">{orderAmount(impact.creditedRetained.usdtAmount)}</Fact>
+        <Fact k="保留 UVT">{orderAmount(impact.creditedRetained.uvtAmount)}</Fact>
       </Facts>
       <p className="rd-note">普通购买设备 · 截至 {formatBusinessTimeFull(impact.asOf, "—")}（{businessZone().label}）<Explain label="退款影响范围" content="只含普通购买设备，不含促销赠品；这是任务影响快照，不是收益已经到账的证明，也不改变应退金额。" /></p>
     </>}
