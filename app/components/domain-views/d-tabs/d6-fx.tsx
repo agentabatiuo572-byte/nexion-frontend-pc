@@ -291,16 +291,21 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       formKey,
       detail: param.scope,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
-      // 有效期不改买入价：事实写它管哪些单、不管哪些单（F2）；另两项写买入价。
-      facts: (
-        <Facts>
-          {lock ? <>
-            <Fact k="影响范围">之后在充值页「银行卡支付」新建的付款单</Fact>
-            <Fact k="不受影响">买设备用银行卡付款的报价（最长 15 分钟）、提现报价</Fact>
-          </> : <Fact k="买入价" unit="₫/USDT">{vnd(quote.quoteRateVndPerUsdt)}</Fact>}
-          {carried && <Fact k="刚被别人改过" tone="warn">{carried.changed}<p className="rd-note">理由已清空，请按最新的值重写</p></Fact>}
-        </Facts>
-      ),
+      // 有效期不改买入价：事实写它管哪些单、不管哪些单（F2）；另两项写买入价，填好新值后写「现在 → 改后」，随输入变。
+      facts: (value?: string) => {
+        const next = value === undefined ? null : { ...quote, [param.key]: Number(value) };
+        return (
+          <Facts>
+            {lock ? <>
+              <Fact k="影响范围">之后在充值页「银行卡支付」新建的付款单</Fact>
+              <Fact k="不受影响">买设备用银行卡付款的报价（最长 15 分钟）、提现报价</Fact>
+            </> : <Fact k="买入价" unit="₫/USDT">{next
+              ? <Change from={vnd(quote.quoteRateVndPerUsdt)} to={vnd(d6QuoteRate(next.baseRateVndPerUsdt, next.buySpreadPct))} />
+              : vnd(quote.quoteRateVndPerUsdt)}</Fact>}
+            {carried && <Fact k="刚被别人改过" tone="warn">{carried.changed}<p className="rd-note">理由已清空，请按最新的值重写</p></Fact>}
+          </Facts>
+        );
+      },
       edit: {
         kind: "number",
         current: String(current),

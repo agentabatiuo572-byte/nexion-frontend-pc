@@ -34,8 +34,8 @@ export type ActionConfirmReq = {
   formKey?: number;
   /** 这个操作自己声明的影响和提交前检查，传了就不按文字猜摘要（OP-51）。 */
   statedBrief?: { impact: string; check: string };
-  /** 做决定要核对的事实，常显在业务字段上面，比如收款网络和完整地址。 */
-  facts?: ReactNode;
+  /** 做决定要核对的事实，常显在业务字段上面，比如收款网络和完整地址。改一个值的框可以传函数，随输入变（参数是填好的新值，没填好是 undefined）。 */
+  facts?: ReactNode | ((value?: string) => ReactNode);
   /** 不能撤销的操作传 danger，确认按钮用危险色。 */
   confirmTone?: "primary" | "danger";
   /** 放大方向提示的开头，默认「这项操作会让平台多付钱」。 */
