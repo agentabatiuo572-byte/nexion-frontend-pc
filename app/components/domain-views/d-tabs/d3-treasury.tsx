@@ -614,7 +614,7 @@ export function D3Treasury() {
     item.forget();
     setUnknownTick((tick) => tick + 1);
     setReleasing(null);
-    toast("已解除待确认，可以重新提交", "success");
+    toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
   };
 
   const crossLink = (href: string, label: string): CrossLink => ({

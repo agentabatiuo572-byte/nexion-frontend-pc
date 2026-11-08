@@ -1524,7 +1524,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     pendingKeys.forget(record.fingerprint, record.commandKey);
     syncPending();
     setReleasing(null);
-    toast("已解除待确认，这笔可以重新处理", "success");
+    toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
   };
 
   /** 读回这笔单，只给现在的事实。状态变了可能是别人改的，不能当成原命令的回执，待确认和原命令都保留（OP-93、OP-95）。 */
@@ -1728,8 +1728,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       moreCount={moreCount}
       onClearMore={resetAdvancedFilters}
       more={<>
-        <FilterField label="最低金额"><Input type="number" min="0" value={draft.minAmount} onChange={(event) => { setDraft({ ...draft, minAmount: event.target.value }); setAmountRangeInvalid(false); }} /></FilterField>
-        <FilterField label="最高金额"><Input type="number" min="0" value={draft.maxAmount} onChange={(event) => { setDraft({ ...draft, maxAmount: event.target.value }); setAmountRangeInvalid(false); }} /></FilterField>
+        <FilterField label="最低金额"><Input type="number" min="0" step="any" value={draft.minAmount} onChange={(event) => { setDraft({ ...draft, minAmount: event.target.value }); setAmountRangeInvalid(false); }} /></FilterField>
+        <FilterField label="最高金额"><Input type="number" min="0" step="any" value={draft.maxAmount} onChange={(event) => { setDraft({ ...draft, maxAmount: event.target.value }); setAmountRangeInvalid(false); }} /></FilterField>
         <FilterField label="最低风险分"><Input inputMode="numeric" placeholder="0–100" aria-invalid={!riskScoreIsValid(draft.minRiskScore)} value={draft.minRiskScore} onChange={(event) => { setDraft({ ...draft, minRiskScore: event.target.value }); setRiskDropped(""); }} /></FilterField>
         <FilterField label="触发规则（只筛选当前页）"><Input value={ruleFilter} onChange={(event) => setRuleFilter(event.target.value)} /></FilterField>
         <FilterField label="IP 段"><Input placeholder="例如 192.168.1" value={draft.ipSegment} onChange={(event) => setDraft({ ...draft, ipSegment: event.target.value })} /></FilterField>
@@ -1759,12 +1759,12 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           {showSelection && <Th control><Checkbox aria-label="全选本页可批量处理的提现单" disabled={selectableVisibleRows.length === 0} checked={allVisibleSelected} indeterminate={!allVisibleSelected && selectedRows.length > 0} onChange={(event) => toggleVisibleSelection(event.target.checked)} /></Th>}
           <Th sticky="start">提现单 · 时间（{businessZone().label}）</Th>
           {columns.isVisible("user") && <Th icon={User} tone="users">用户</Th>}
-          {columns.isVisible("asset") && <Th>资产 / 链</Th>}
           {columns.isVisible("amount") && <Th align="right" icon={Coins} tone="money">金额 USDT</Th>}
-          {columns.isVisible("fee") && <Th align="right">手续费</Th>}
           <Th icon={Shield} tone="risk">风险</Th>
-          {columns.isVisible("account") && <Th>账户状态</Th>}
           <Th>状态</Th>
+          {columns.isVisible("asset") && <Th>资产 / 链</Th>}
+          {columns.isVisible("fee") && <Th align="right">手续费</Th>}
+          {columns.isVisible("account") && <Th>账户状态</Th>}
           {columns.isVisible("lifecycle") && <Th>生命周期 / 异常</Th>}
           <Th sticky="end" align="right">操作</Th>
         </tr></thead>
@@ -1802,12 +1802,12 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
                       {showSelection && <Td><Checkbox aria-label={`${selectionHint}：${row.withdrawalNo}`} title={`${selectionNote}${selectionHint}`} disabled={!selectable && !selectedNow} checked={selectedNow} onChange={(event) => setSelected((current) => { const next = new Set(current); event.target.checked ? next.add(row.withdrawalNo) : next.delete(row.withdrawalNo); return next; })} /></Td>}
                       <Td sticky="start"><Cell mono full main={<button type="button" className="rd-cell-link" title={row.withdrawalNo} aria-label={`打开提现单 ${row.withdrawalNo} 的详情`} onClick={() => { if (!submitting) void openDetail(row); }}>{shortNo(row.withdrawalNo)}</button>} sub={listTime(row.createdAt)} /></Td>
                       {columns.isVisible("user") && <Td><Cell main={operatorNicknameText(row.nickname)} sub={canReadUserDetail ? <Link className="rd-link" href={`/users/search/${encodeURIComponent(row.userNo)}`}>{row.userNo}</Link> : row.userNo} /></Td>}
-                      {columns.isVisible("asset") && <Td><Cell main={<span title={`${row.asset} / ${row.chain}`} aria-label={`资产与渠道：${row.asset} / ${row.chain}`}>{row.chain === "BANK-VND" ? "越南银行卡 · HDPay" : chainText(row)}</span>} sub={<span title={row.targetAddress}>{row.chain === "BANK-VND" ? "账户信息见详情" : shortAddress(row.targetAddress)}</span>} /></Td>}
                       {columns.isVisible("amount") && <Td align="right"><Cell num main={amountText(row.amount)} sub={`${row.chain === "BANK-VND" ? "兑换" : "到账"} ${amountText(row.netReceive)}`} /></Td>}
-                      {columns.isVisible("fee") && <Td align="right"><Cell num main={amountText(row.actualFee)} sub={<button type="button" className="rd-link" onClick={() => void openDetail(row)}>详情中查看完整费用</button>} /></Td>}
                       <Td><Cell title={`低风险 ≤ ${row.k4BandLowMax ?? "—"}，高风险 ≥ ${row.k4BandHighMin ?? "—"}，加强审核 ≥ ${row.k4AutoEscalateScore ?? "—"}`} main={tone ? <StatusTag tone={tone} icon={tone === "danger" ? ShieldAlert : Flag}>{riskLabel}</StatusTag> : riskLabel} sub={hitCount ? reviewBasis : undefined} /></Td>
-                      {columns.isVisible("account") && <Td><Cell main={`账户 ${userStatusLabel(row.userStatus)}`} sub={`近 24h ${row.withdrawalCount24h} 笔 · 每日上限 ${canReadD5 ? `${dailyLimit || "—"} 笔` : "无权限"}`} /></Td>}
                       <Td><Cell main={<StatusTag tone={statusTone(row.status)} icon={STATUS_ICON[row.status.toUpperCase()]}>{bankStatusLabel(row)}</StatusTag>} sub={pendingRow ? "有操作结果未确认" : isReviewPending(row.status) ? (mainAction === "APPROVE" ? approveBlock(row) : undefined) : lifecycleSummary(row)} title={(mainAction === "APPROVE" && approveBlock(row)) || lifecycleSummary(row)} /></Td>
+                      {columns.isVisible("asset") && <Td><Cell main={<span title={`${row.asset} / ${row.chain}`} aria-label={`资产与渠道：${row.asset} / ${row.chain}`}>{row.chain === "BANK-VND" ? "越南银行卡 · HDPay" : chainText(row)}</span>} sub={<span title={row.targetAddress}>{row.chain === "BANK-VND" ? "账户信息见详情" : shortAddress(row.targetAddress)}</span>} /></Td>}
+                      {columns.isVisible("fee") && <Td align="right"><Cell num main={amountText(row.actualFee)} sub={<button type="button" className="rd-link" onClick={() => void openDetail(row)}>详情中查看完整费用</button>} /></Td>}
+                      {columns.isVisible("account") && <Td><Cell main={`账户 ${userStatusLabel(row.userStatus)}`} sub={`近 24h ${row.withdrawalCount24h} 笔 · 每日上限 ${canReadD5 ? `${dailyLimit || "—"} 笔` : "无权限"}`} /></Td>}
                       {columns.isVisible("lifecycle") && <Td><Cell main={lifecycleSummary(row)} sub={holdsForReview(row) ? `复查时间：${timeText(row.holdUntil)}` : undefined} title={lifecycleSummary(row)} /></Td>}
                       <Td sticky="end" align="right"><span className="rd-row-actions">
                         {mainAction
@@ -1949,7 +1949,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     </Drawer>
 
     {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-      explain="重试被拒说明不了原操作的结果，先到操作记录或打款方确认。解除后原操作不再重试，系统仍按这笔现在的状态校验。" />}
+      explain="重试被拒说明不了原操作的结果，先到操作记录或打款方确认。解除只移除本地记录，不办理后端核查结案；后端仍可能锁住这笔提现。" />}
 
     {batchResult && <Modal title={`批量${actionLabel(batchResult.action)}结果`} icon={ClipboardList} onClose={() => setBatchResult(null)} footer={<Button variant="primary" onClick={() => setBatchResult(null)}>知道了</Button>}>
       <Facts>

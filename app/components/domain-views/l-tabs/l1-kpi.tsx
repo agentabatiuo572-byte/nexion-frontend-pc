@@ -279,7 +279,7 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
     setRetryRejected(false);
     setRetryNote("");
     setReleasing(false);
-    ctx.toast("已解除待确认，可以重新导出", "success");
+    ctx.toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
   };
 
   const expired = pending ? pending.expiresAt <= Date.now() : false;

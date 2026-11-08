@@ -227,6 +227,7 @@ export type K1WhitelistRow = { cidr: string; note: string; operator: string; exp
 export type K1ProtectedEntry = {
   entryNo: string;
   userId: number;
+  userNo: string | null;
   clusterId: string;
   sourceType: string;
   sourceRef: string;
@@ -1604,6 +1605,7 @@ export const kRiskActions: Omit<KRiskActions, "reloadKRisk"> = {
       return {
         entryNo: requiredK1String(row.entryNo, `${path}.entryNo`),
         userId: requiredK1Integer(row.userId, `${path}.userId`, 1),
+        userNo: row.userNo == null ? null : requiredK1String(row.userNo, `${path}.userNo`),
         clusterId: requiredK1String(row.clusterId, `${path}.clusterId`),
         sourceType: requiredK1String(row.sourceType, `${path}.sourceType`),
         sourceRef: requiredK1String(row.sourceRef, `${path}.sourceRef`),

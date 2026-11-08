@@ -18,11 +18,12 @@ const ORDER_STATUS: Record<string, string> = {
   CANCELLED: "已取消", CREDITED: "已入账", RETURNED: "已退回",
   RECEIPT_REVIEW: "回单待核对", MISMATCH_REVIEW: "信息不一致待核对",
   LATE_REVIEW: "逾期回单待核对", RETURN_PENDING: "退回处理中",
+  MANUAL_REVIEW: "本地待人工核对",
 };
-/** 待核对就是要人处理的三种（需求第 28 条）。 */
+/** 原有三种展示状态与本地待人工核对取并集。 */
 export const BANK_REVIEW_STATUSES = ["RECEIPT_REVIEW", "MISMATCH_REVIEW", "LATE_REVIEW"] as const;
 const STATUS_GROUPS = [
-  { label: "待核对", statuses: BANK_REVIEW_STATUSES },
+  { label: "待核对", statuses: [...BANK_REVIEW_STATUSES, "MANUAL_REVIEW"] },
   { label: "处理中", statuses: ["CREATING", "AWAITING_PAYMENT", "UNKNOWN", "PROCESSING", "RETURN_PENDING"] },
   { label: "已结束", statuses: ["CREDITED", "FAILED", "EXPIRED", "CANCELLED", "RETURNED"] },
 ] as const;
@@ -30,7 +31,7 @@ const PAGE_SIZES = [10, 20, 50, 100] as const;
 
 export function orderStatusText(status: string) { return ORDER_STATUS[status] ?? "状态未知"; }
 const orderTone = (order: D1BankOrder): StateTone => order.creditedUsdt > 0 || order.status === "CREDITED" ? "ok"
-  : (BANK_REVIEW_STATUSES as readonly string[]).includes(order.status) || order.status === "UNKNOWN" ? "warn"
+  : order.settlementStatus === "MANUAL_REVIEW" || (BANK_REVIEW_STATUSES as readonly string[]).includes(order.status) || order.status === "UNKNOWN" ? "warn"
     : ["FAILED", "EXPIRED", "CANCELLED", "RETURNED"].includes(order.status) ? "done" : "progress";
 const originalOrderStatusText = (value?: string | null) => value ? ({ AWAITING_PAYMENT: "待付款", EXPIRED: "已过期", CANCELLED: "已取消", RECEIPT_REVIEW: "回单待核对", MISMATCH_REVIEW: "金额或信息不符待核对", LATE_REVIEW: "逾期到账待核对", CREDITED: "已入账", RETURNED: "已登记退回", RETURN_PENDING: "退回处理中" } as Record<string,string>)[value] ?? "原订单状态待核实" : "未提供";
 const submissionStatusText = (value?: string | null) => value ? ({ PENDING: "待提交", SUBMIT_UNKNOWN: "提交结果待核实", CREATED: "付款单已创建", REJECTED: "支付商拒绝创建" } as Record<string,string>)[value] ?? "未知" : "—";
@@ -72,11 +73,12 @@ function creditBlock(order: D1BankOrder, actions: OrderActions) {
   return undefined;
 }
 
-export function D1BankOrders({ refreshKey, onCount, ...actions }: OrderActions & {
+export function D1BankOrders({ refreshKey, onCount, allManualReviewCount, ...actions }: OrderActions & {
   refreshKey: string;
   onCount: (count: D1Count) => void;
+  allManualReviewCount: number | "failed" | undefined;
 }) {
-  const [status, setStatus] = useState(() => readParam("bankStatus", Object.keys(ORDER_STATUS)) ?? "");
+  const [status, setStatus] = useState(() => readParam("bankSettlementStatus", ["MANUAL_REVIEW"]) === "MANUAL_REVIEW" ? "MANUAL_REVIEW" : readParam("bankStatus", Object.keys(ORDER_STATUS)) ?? "");
   const [keyword, setKeyword] = useState(() => readParam("bankQ") ?? "");
   const [query, setQuery] = useState(() => readParam("bankQ") ?? "");
   const [pageNum, setPageNum] = useState(() => readPage("bankPage"));
@@ -84,7 +86,7 @@ export function D1BankOrders({ refreshKey, onCount, ...actions }: OrderActions &
   const [data, setData] = useState<D1BankOrdersPage | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [reviewCounts, setReviewCounts] = useState<Record<string, number> | "failed" | null>(null);
+  const [reviewCounts, setReviewCounts] = useState<{ byStatus: Record<string, number>; manual: number; nonManual: number } | "failed" | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const requestId = useRef(0), countId = useRef(0);
   const load = useCallback(async () => {
@@ -92,7 +94,7 @@ export function D1BankOrders({ refreshKey, onCount, ...actions }: OrderActions &
     const current = ++requestId.current;
     setLoading(true); setError(""); setData(null);
     try {
-      const next = await fetchD1BankOrders({ paymentRail: "HDPAY", status, keyword: query, pageNum, pageSize }, authEpoch);
+      const next = await fetchD1BankOrders({ paymentRail: "HDPAY", status: status === "MANUAL_REVIEW" ? undefined : status, settlementStatus: status === "MANUAL_REVIEW" ? "MANUAL_REVIEW" : undefined, keyword: query, pageNum, pageSize }, authEpoch);
       if (authEpoch === adminAuthLifecycleEpoch() && current === requestId.current) {
         const lastPage = Math.max(1, Math.ceil(next.total / pageSize));
         if (pageNum > lastPage) setPageNum(lastPage);
@@ -102,14 +104,21 @@ export function D1BankOrders({ refreshKey, onCount, ...actions }: OrderActions &
       if (authEpoch === adminAuthLifecycleEpoch() && current === requestId.current) setError(displayAdminReadError(failure));
     } finally { if (authEpoch === adminAuthLifecycleEpoch() && current === requestId.current) setLoading(false); }
   }, [status, query, pageNum, pageSize]);
-  // 待核对的数：三个状态各取一次总数，和列表同一个口径（银行卡支付）。
+  // 全量待办不受列表关键词和分页影响；三种旧状态扣掉与本地待人工的交集。
   const loadCounts = useCallback(async () => {
     const authEpoch = adminAuthLifecycleEpoch();
     const current = ++countId.current;
     setReviewCounts(null);
     try {
-      const totals = await Promise.all(BANK_REVIEW_STATUSES.map(value => fetchD1BankOrders({ paymentRail: "HDPAY", status: value, pageNum: 1, pageSize: 1 }, authEpoch).then(page => [value, page.total] as const)));
-      if (authEpoch === adminAuthLifecycleEpoch() && current === countId.current) setReviewCounts(Object.fromEntries(totals));
+      const [pages, all] = await Promise.all([
+        Promise.all(BANK_REVIEW_STATUSES.map(value => fetchD1BankOrders({ paymentRail: "HDPAY", status: value, pageNum: 1, pageSize: 1 }, authEpoch))),
+        fetchD1BankOrders({ paymentRail: "HDPAY", pageNum: 1, pageSize: 1 }, authEpoch),
+      ]);
+      if (authEpoch === adminAuthLifecycleEpoch() && current === countId.current) setReviewCounts({
+        byStatus: Object.fromEntries(BANK_REVIEW_STATUSES.map((value, index) => [value, pages[index].total])),
+        manual: all.manualReviewCount,
+        nonManual: pages.reduce((sum, page) => sum + page.total - page.manualReviewCount, 0),
+      });
     } catch {
       if (authEpoch === adminAuthLifecycleEpoch() && current === countId.current) setReviewCounts("failed");
     }
@@ -117,15 +126,17 @@ export function D1BankOrders({ refreshKey, onCount, ...actions }: OrderActions &
   useEffect(() => { void load(); return () => { requestId.current++; }; }, [load, refreshKey]);
   useEffect(() => { void loadCounts(); return () => { countId.current++; }; }, [loadCounts, refreshKey]);
   useEffect(() => {
-    onCount(reviewCounts === null ? undefined : reviewCounts === "failed" ? "failed" : { n: Object.values(reviewCounts).reduce((sum, value) => sum + value, 0) });
-  }, [onCount, reviewCounts]);
-  useEffect(() => { writeParams({ bankStatus: status || null, bankQ: query || null, bankPage: pageNum > 1 ? pageNum : null, bankPageSize: pageSize !== 20 ? pageSize : null }); }, [status, query, pageNum, pageSize]);
+    onCount(reviewCounts === null || allManualReviewCount === undefined ? undefined
+      : reviewCounts === "failed" || allManualReviewCount === "failed" ? "failed"
+        : { n: allManualReviewCount + reviewCounts.nonManual });
+  }, [onCount, reviewCounts, allManualReviewCount]);
+  useEffect(() => { writeParams({ bankStatus: status === "MANUAL_REVIEW" ? null : status || null, bankSettlementStatus: status === "MANUAL_REVIEW" ? "MANUAL_REVIEW" : null, bankQ: query || null, bankPage: pageNum > 1 ? pageNum : null, bankPageSize: pageSize !== 20 ? pageSize : null }); }, [status, query, pageNum, pageSize]);
 
   const submit = () => { setPageNum(1); if (query === keyword.trim() && pageNum === 1) void load(); else setQuery(keyword.trim()); };
   const records = data?.records ?? [];
   const index = records.findIndex(order => order.intentNo === selected);
   const current = index >= 0 ? records[index] : null;
-  const reviewing = reviewCounts && reviewCounts !== "failed" ? BANK_REVIEW_STATUSES.filter(value => reviewCounts[value] > 0) : [];
+  const reviewing = reviewCounts && reviewCounts !== "failed" ? [...BANK_REVIEW_STATUSES.filter(value => reviewCounts.byStatus[value] > 0), ...(reviewCounts.manual > 0 ? ["MANUAL_REVIEW"] : [])] : [];
   const filtered = status !== "" || query !== "";
   const columns = 5;
   const zone = zoneLabel();
@@ -136,8 +147,6 @@ export function D1BankOrders({ refreshKey, onCount, ...actions }: OrderActions &
         回单、金额或到账时间和订单对不上，要人核对后再人工入账；挂着多张回单的要先核清回单，这页没有入口，请联系财务负责人。
       </Notice>
     )}
-    {/* 页签上的数只算三种待核对；本地待人工核对的后端还没给计数（BE-27），常显说明，不能让 0 变成「都处理完了」（D1-S04）。 */}
-    <Notice tone="neutral">页签上的数只算三种待核对，「本地待人工核对」的要在列表里看每行状态。</Notice>
     <FilterBar
       scope={<FilterField><Select aria-label="银行订单状态" value={status} onChange={value => { setStatus(value); setPageNum(1); }} options={[{ value: "", label: "全部状态" }]}
         groups={STATUS_GROUPS.map(group => ({ label: group.label, options: group.statuses.map(value => ({ value, label: ORDER_STATUS[value] })) }))} /></FilterField>}
