@@ -1223,7 +1223,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           <Select aria-label="审计业务域" value={filterDraft.domain && filterDraft.domain !== "all" ? filterDraft.domain : ""} onChange={(value) => setDraft("domain", value)}
             options={[{ value: "", label: "全部模块" }, ...A2_AUDIT_DOMAINS.map((domain) => ({ value: domain, label: DOMAIN_NAMES[domain] }))]} />
         </FilterField>
-        <FilterField label="操作者"><Input aria-label="审计操作者" placeholder="账号或姓名" value={filterDraft.operator ?? ""} onChange={(event) => setDraft("operator", event.target.value)} /></FilterField>
+        <FilterField label="操作者"><Input aria-label="审计操作者" placeholder="账号或姓名" size={10} value={filterDraft.operator ?? ""} onChange={(event) => setDraft("operator", event.target.value)} /></FilterField>
         <FilterField label="对象" grow><Input aria-label="审计对象" placeholder="对象编号或类型" value={filterDraft.object ?? ""} onChange={(event) => setDraft("object", event.target.value)} /></FilterField>
       </FilterBar>
 
