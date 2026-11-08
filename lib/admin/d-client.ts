@@ -134,6 +134,7 @@ export interface D1Overview {
   feeEvidenceAnomalyCount: number;
   treasuryReserveAnomalyCount: number;
   historicalBackfillAnomalyCount: number;
+  bankManualReviewCount: number;
   bins: D1BinRisk[];
   binLockedCount: number;
   chargebacks: D1Chargeback[];
@@ -190,6 +191,7 @@ export interface D1BankOrder {
 }
 
 export interface D1BankOrdersPage extends PageResult<D1BankOrder> {
+  manualReviewCount: number;
   source: string;
   asOf: string;
 }
@@ -519,6 +521,8 @@ export interface D4RunningBalance {
   userId: number;
   total: number;
   rows: D4RunningBalanceRow[];
+  openingBalances: Record<string, number>;
+  closingBalances: Record<string, number>;
   breakCount: number;
   unsettledCount: number;
   reconciliationScope: "CURRENT_WALLET" | "HISTORICAL_RANGE";
@@ -537,8 +541,9 @@ export interface D5Params {
   networkConfirmFeeUsd: { trc20: number; bep20: number; erc20: number };
   /** 三网络提现通道状态；由 D5 权威配置下发，缺失时冻结页面而非猜测可用性。 */
   networkEnabled: { trc20: boolean; bep20: boolean; erc20: boolean };
-  effectiveNetworks?: string[];
-  networkStatus?: Array<{ network: string; configured: boolean; enabled: boolean; disabledReason: string | null }>;
+  effectiveNetworks?: string[] | null;
+  networkStatusReliable?: boolean;
+  networkStatus?: Array<{ network: string; configured: boolean; enabled: boolean | null; disabledReason: string | null; state: "AVAILABLE" | "UNAVAILABLE" | "UNKNOWN" }>;
   nexFeeOffsetRate: number;
   /** FEAT-WD01:小额免审线(USD)。金额 ≤ 此值时可跳过新地址冷却；0 = 关闭快车道。
    *  **永不**免除服务端风控路由裁决(冻结簇/共用地址/风险分)。 */
@@ -1093,6 +1098,7 @@ function requireD1Overview(raw: Record<string, unknown> | null | undefined): D1O
     feeEvidenceAnomalyCount: d1Number(root.feeEvidenceAnomalyCount, "feeEvidenceAnomalyCount"),
     treasuryReserveAnomalyCount: d1Number(root.treasuryReserveAnomalyCount, "treasuryReserveAnomalyCount"),
     historicalBackfillAnomalyCount: d1Number(root.historicalBackfillAnomalyCount, "historicalBackfillAnomalyCount"),
+    bankManualReviewCount: d1Number(root.bankManualReviewCount, "bankManualReviewCount"),
     bins: d1Array(root.bins, "bins").map((item, index) => {
       const row = d1Object(item, `bins[${index}]`);
       return {
@@ -1216,13 +1222,14 @@ function requireD1BankOrdersPage(raw: unknown): D1BankOrdersPage {
     };
   });
   const total = d1Number(page.total, "bankOrders.total");
+  const manualReviewCount = d1Number(page.manualReviewCount, "bankOrders.manualReviewCount");
   const pageNum = d1Number(page.pageNum, "bankOrders.pageNum");
   const pageSize = d1Number(page.pageSize, "bankOrders.pageSize");
-  if (![total, pageNum, pageSize].every(Number.isSafeInteger) || total < 0 || pageNum < 1 || pageSize < 1
+  if (![total, manualReviewCount, pageNum, pageSize].every(Number.isSafeInteger) || total < 0 || manualReviewCount < 0 || pageNum < 1 || pageSize < 1
       || records.length > pageSize || total < records.length || new Set(records.map(row => row.intentNo)).size !== records.length) {
     d1Invalid("bankOrders.page");
   }
-  return { records, total, pageNum, pageSize,
+  return { records, total, manualReviewCount, pageNum, pageSize,
     source: d1String(page.source, "bankOrders.source"), asOf: d1String(page.asOf, "bankOrders.asOf") };
 }
 
@@ -1963,27 +1970,42 @@ export function normalizeD5Params(value: unknown): D5Params {
   }
   let networkStatus: D5Params["networkStatus"];
   let effectiveNetworks: D5Params["effectiveNetworks"];
-  if (raw.networkStatus !== undefined || raw.effectiveNetworks !== undefined) {
-    if (!Array.isArray(raw.networkStatus) || raw.networkStatus.length !== 3 || !Array.isArray(raw.effectiveNetworks))
+  let networkStatusReliable: D5Params["networkStatusReliable"];
+  if (raw.networkStatus !== undefined || raw.effectiveNetworks !== undefined || raw.networkStatusReliable !== undefined) {
+    if (!Array.isArray(raw.networkStatus) || raw.networkStatus.length !== 3)
       throw new Error("提现网络实际状态加载不完整，请刷新后再试");
+    networkStatusReliable = d5Boolean(raw.networkStatusReliable, "networkStatusReliable");
     const networks = ["USDT-TRC20", "USDT-BEP20", "USDT-ERC20"];
     networkStatus = raw.networkStatus.map((item, index, all) => {
       const row = d5Object(item, "networkStatus");
       const network = d5String(row.network, "networkStatus.network");
-      const configured = d5Boolean(row.configured, "networkStatus.configured"), enabled = d5Boolean(row.enabled, "networkStatus.enabled");
+      const configured = d5Boolean(row.configured, "networkStatus.configured");
+      const enabled = row.enabled === null ? null : d5Boolean(row.enabled, "networkStatus.enabled");
+      const state = d5String(row.state, "networkStatus.state");
       if (!networks.includes(network) || all.findIndex(value => (value as Record<string, unknown>).network === network) !== index
           || (row.disabledReason !== null && (typeof row.disabledReason !== "string" || !row.disabledReason))
-          || enabled !== (row.disabledReason === null) || enabled && !configured)
+          || !["AVAILABLE", "UNAVAILABLE", "UNKNOWN"].includes(state)
+          || (state === "AVAILABLE" ? enabled !== true || !configured || row.disabledReason !== null
+            : state === "UNAVAILABLE" ? enabled !== false || row.disabledReason === null
+              : enabled !== null || row.disabledReason === null))
         throw new Error("提现网络实际状态加载不完整，请刷新后再试");
-      return { network, configured, enabled, disabledReason: row.disabledReason as string | null };
+      return { network, configured, enabled, disabledReason: row.disabledReason as string | null, state: state as "AVAILABLE" | "UNAVAILABLE" | "UNKNOWN" };
     });
-    effectiveNetworks = raw.effectiveNetworks as string[];
-    const expected = networkStatus.filter(row => row.enabled).map(row => row.network);
-    if (effectiveNetworks.length !== expected.length || effectiveNetworks.some((value, index, all) => typeof value !== "string" || !expected.includes(value) || all.indexOf(value) !== index))
+    if (networkStatusReliable !== networkStatus.every(row => row.state !== "UNKNOWN"))
       throw new Error("提现网络实际状态加载不完整，请刷新后再试");
+    if (!networkStatusReliable) {
+      if (raw.effectiveNetworks !== null) throw new Error("提现网络实际状态加载不完整，请刷新后再试");
+      effectiveNetworks = null;
+    } else {
+      if (!Array.isArray(raw.effectiveNetworks)) throw new Error("提现网络实际状态加载不完整，请刷新后再试");
+      effectiveNetworks = raw.effectiveNetworks as string[];
+      const expected = networkStatus.filter(row => row.state === "AVAILABLE").map(row => row.network);
+      if (effectiveNetworks.length !== expected.length || effectiveNetworks.some((value, index, all) => typeof value !== "string" || !expected.includes(value) || all.indexOf(value) !== index))
+        throw new Error("提现网络实际状态加载不完整，请刷新后再试");
+    }
   }
   const result: D5Params = {
-    networkStatus, effectiveNetworks,
+    networkStatus, effectiveNetworks, networkStatusReliable,
     version: d5Integer(raw.version, "version", 0),
     dailyLimitCount: d5Integer(raw.dailyLimitCount, "dailyLimitCount", 1),
     maxBalanceRatio: d5Number(raw.balanceMaxRatio, "balanceMaxRatio"),
@@ -2071,7 +2093,7 @@ export async function fetchD1TopupFlows(params: { status?: string; userId?: numb
   return requireD1FlowsPage(await apiRequest<PageResult<D1DepositFlow>>("finance", `/topup/flows${buildQuery(params)}`));
 }
 
-export async function fetchD1BankOrders(params: { paymentRail?: string; status?: string; keyword?: string; pageNum?: number; pageSize?: number }, bankManualAuthEpoch = adminAuthLifecycleEpoch()) {
+export async function fetchD1BankOrders(params: { paymentRail?: string; status?: string; settlementStatus?: string; keyword?: string; pageNum?: number; pageSize?: number }, bankManualAuthEpoch = adminAuthLifecycleEpoch()) {
   const page = requireD1BankOrdersPage(await apiRequest<unknown>("finance", `/vietqr/orders${buildQuery(params)}`, { bankManualAuthEpoch }));
   assertD1BankManualAuthEpoch(bankManualAuthEpoch);
   return page;
@@ -2537,6 +2559,10 @@ export async function fetchD4RunningBalance(
   return {
     userId: d4Integer(raw.userId, "runningBalance.userId", 1),
     total: d4Integer(raw.total, "runningBalance.total"),
+    openingBalances: Object.fromEntries(Object.entries(d4Object(raw.openingBalances, "runningBalance.openingBalances"))
+      .map(([asset, value]) => [asset, d4Number(value, `runningBalance.openingBalances.${asset}`)])),
+    closingBalances: Object.fromEntries(Object.entries(d4Object(raw.closingBalances, "runningBalance.closingBalances"))
+      .map(([asset, value]) => [asset, d4Number(value, `runningBalance.closingBalances.${asset}`)])),
     rows: raw.rows.map((value, index) => {
       const row = d4Object(value, `runningBalance.rows.${index}`);
       const settlementBucket = d4String(

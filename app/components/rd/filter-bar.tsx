@@ -18,6 +18,10 @@
  *   <FilterField grow><Input aria-label="搜索提现" placeholder="输入提现单号、用户编号或昵称" … /></FilterField>
  * </FilterBar>
  *
+ * 成对的上下限放一个字段，不拆成两格（折行时一对不会被拆到两行）：
+ *   <FilterField label="USDT 余额"><span className="rd-filter-range"><Input aria-label="USDT 余额下限" placeholder="下限" … /><span aria-hidden>–</span><Input aria-label="USDT 余额上限" placeholder="上限" … /></span></FilterField>
+ *   日期一对放不进一列，传 wide 占两列。
+ *
  * - 默认露 3 个：范围控件、搜索框、普通筛选都算，按钮和排序不算（DP-14）。
  * - 查询区在加载、空、失败时都不消失，失败只换表格内容。
  * - 更多筛选收起时内容留在页面上，已填的值不丢；条件条在收起时也看得到。
@@ -37,9 +41,10 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
   return count === undefined ? area : <div className="rd-reason-box">{area}<span className="rd-reason-count">{count}</span></div>;
 });
 
-export function FilterField({ label, grow, children }: { label?: ReactNode; grow?: boolean; children: ReactNode }) {
+/** wide：在「更多筛选」里占两列，放日期这类一对放不进一列的范围（下限、上限包 <span className="rd-filter-range">）。 */
+export function FilterField({ label, grow, wide, children }: { label?: ReactNode; grow?: boolean; wide?: boolean; children: ReactNode }) {
   return (
-    <div data-cp="filter" className={grow ? "rd-filter-grow" : undefined}>
+    <div data-cp="filter" className={grow ? "rd-filter-grow" : undefined} data-wide={wide ? "" : undefined}>
       {label ? <label className="rd-field">{label}{children}</label> : children}
     </div>
   );

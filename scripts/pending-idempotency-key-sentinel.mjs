@@ -93,6 +93,8 @@ const MIGRATED = [
   "app/components/domain-views/a-tabs/a3-config.tsx",
   "app/components/domain-views/c-tabs/c5-security.tsx",
   "app/components/domain-views/c-tabs/c6-regrisk.tsx",
+  // C1：导出名单结果未知时保留原命令号、条件和理由，刷新后按原操作重试。
+  "app/components/domain-views/c-tabs/c1-search.tsx",
   "app/components/domain-views/d-tabs/d2-withdrawals.tsx",
   // D5：收紧结果未知时保留原命令号和原内容，刷新后按原操作重试。
   "app/components/domain-views/d-tabs/d5-params.tsx",

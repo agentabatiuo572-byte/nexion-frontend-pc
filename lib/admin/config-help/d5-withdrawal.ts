@@ -45,7 +45,7 @@ export const D5_PARAM_HELP = {
     what: "不超过这条线的低风险 USDT 提现可以自动过审",
     when: NEW_ONLY,
     how: "0–500 USD，0 表示关闭",
-    effect: "改成 100：100 USD 及以下的 USDT 提现，还要没到强审门槛、风险分是低风险、提现风控通过，才自动过审；TRC20 要等到账审查窗口结束后才放行。超过这条线的进人工审核。冻结、延迟这些仍按原风控处理。加强合规审查开着时，BEP20、ERC20 的提现不走这条线，TRC20 照常走。设成 0 关闭小额自动过审。越南盾提现只在到账审查窗口是 0 天时按这条线判断",
+    effect: "改成 100：100 USD 及以下的 USDT 提现，还要没到强审门槛、风险分是低风险、提现风控通过，才自动过审。超过这条线的进人工审核。冻结、延迟这些仍按原风控处理。加强合规审查开着时，TRC20、BEP20、ERC20 都进人工审核，不走这条线。设成 0 关闭小额自动过审。越南盾提现只在到账审查窗口是 0 天时按这条线判断",
     where: "用户看不到，只影响新提现走不走人工审核",
   },
   payoutSlaHours: {
@@ -87,21 +87,21 @@ export const D5_PARAM_HELP = {
   },
   cooldownDays: {
     label: "到账审查窗口",
-    what: "新提现提交后要等几天才能放行",
-    when: `${PHASE}，只影响新提现`,
-    where: "App 提现进度页的「预计处理时刻」从窗口结束时间起算；App 提现页选 TRC20 时，「TRC20 提现规则」提示写本阶段每笔等几天",
-    note: "TRC20 每笔都等，从提交时起算，和加强合规审查、金额都无关，不超过小额免审线也要等；BEP20、ERC20 只有加强合规审查开着、单笔超过大额门槛时才等。0 天不额外等待。被风控延迟、冻结的提现照旧按这个天数等。不超过小额免审线、还满足其他风控条件的提现，不用等或等完后自动过审，超过这条线的进人工审核",
+    what: "按审查规则，提现放行前要等待的天数",
+    when: `${PHASE}，新提现提交和放行前按规则核对`,
+    where: "App 提现进度页的「预计处理时刻」从窗口结束时间起算",
+    note: "TRC20、BEP20、ERC20 用同一套规则：加强合规审查开着且单笔超过大额门槛时，才从提交时起等这个天数。0 天不额外等待。风控延迟、冻结仍按原风控处理。不超过小额免审线、还满足其他风控条件的提现，加强合规审查关着时可自动过审，超过这条线的进人工审核",
   },
   complianceHoldEnabled: {
     label: "加强合规审查",
-    what: "开着时 BEP20、ERC20 提现都进人工审核",
+    what: "开着时三个网络的 USDT 提现都进人工审核",
     when: PHASE,
     where: "App 提现页「提现合规复核」提示",
-    note: "开着时这两个网络的提现不走小额自动过审；超过大额门槛的还要等到账审查窗口结束。TRC20 不受这个开关影响",
+    note: "TRC20、BEP20、ERC20 用同一套规则：开着时不走小额自动过审；超过大额门槛的还要等到账审查窗口结束。关闭后仍按小额免审和风控判断",
   },
   complianceReviewThresholdUsdt: {
     label: "大额门槛",
-    what: "BEP20、ERC20 加强合规时按它分大额",
+    what: "三个网络加强合规时按它分大额",
     when: "后端合规规则定的，这页和运营阶段设置都不能改",
     note: "单笔超过这个金额才算大额，正好等于不算",
   },
@@ -109,7 +109,7 @@ export const D5_PARAM_HELP = {
     label: "现在怎么审",
     what: "按现在的阶段设置，新提现怎么审",
     when: PHASE,
-    note: "到期或批准不等于到账：要人工复核的仍要有人放行，链上确认后才显示到账",
+    note: "尚未首次出款的三网订单会重新核对当前合规规则。到期或批准不等于到账：要人工复核的仍要有人放行，链上确认后才显示到账",
   },
 } satisfies Record<string, D5ParamHelp>;
 
@@ -126,6 +126,9 @@ export const D5_NETWORK_BLOCK_REASON: Record<string, { text: string; global?: tr
   NETWORK_UNSUPPORTED: { text: "打款服务不支持这个网络" },
   PAYOUT_ASSET_UNAVAILABLE: { text: "打款服务没开通这个网络的出款" },
   PROVIDER_CAPABILITY_UNAVAILABLE: { text: "暂时查不到打款服务开通了哪些网络" },
+  NETWORK_STATUS_UNAVAILABLE: { text: "网络实际状态暂时读不到" },
+  WITHDRAWAL_KILL_SWITCH_UNAVAILABLE: { text: "「紧急停用开关」的提现开关状态暂时读不到" },
+  WITHDRAWAL_KILL_SWITCH_DISABLED: { text: "「紧急停用开关」的提现开关关着", global: true },
   CHAIN_PROOF_UNAVAILABLE: { text: "TRON 节点读不到，链上确认核不了" },
 };
 export const D5_NETWORK_BLOCK_UNKNOWN = "原因暂时读不到，到「充值与收款对账」核对";

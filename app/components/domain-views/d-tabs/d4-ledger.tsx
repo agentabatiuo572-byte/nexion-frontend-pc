@@ -500,11 +500,11 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
   // ── 按用户查账单 ──
   const running = userData?.running;
   const rowBreaks = running ? running.rows.filter((row) => row.breakDetected).length : 0;
-  // 决定 09：设了开始时间时，期初余额还没带进核对，钱包差额会误报。只看逐笔断点，不比钱包，等 BE-09 交付。
-  const walletChecked = Boolean(running && running.reconciliationScope === "CURRENT_WALLET" && running.reconciliation && !userData?.from);
-  const breakCount = running ? (walletChecked ? running.breakCount : rowBreaks) : 0;
-  // 不和钱包比、区间里又没有账单时，没有东西可核对，不说「都对得上」，也不把没账单当余额 0（决定 09）。
-  const nothingToCheck = Boolean(running && !walletChecked && running.rows.length === 0);
+  // 后端带入期初；是否比钱包完全按服务端核对范围判断。
+  const walletChecked = Boolean(running && running.reconciliationScope === "CURRENT_WALLET" && running.reconciliation);
+  const breakCount = running?.breakCount ?? 0;
+  const balanceAssets = running ? [...new Set([...Object.keys(running.openingBalances), ...Object.keys(running.closingBalances)])] : [];
+  const nothingToCheck = Boolean(running && !walletChecked && running.rows.length === 0 && balanceAssets.length === 0);
   const newestFirst = useMemo(() => (running ? [...running.rows].reverse() : []), [running]);
   const shownChecks = onlyBreaks && rowBreaks > 0 ? newestFirst.filter((row) => row.breakDetected) : newestFirst;
   const userPages = Math.max(1, Math.ceil(shownChecks.length / userPageSize));
@@ -701,7 +701,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
     : [];
   const unsettledNote = running && running.unsettledCount > 0 ? `另有 ${running.unsettledCount} 条未结算的不参与核对` : "";
   const notComparedNote = !running || walletChecked ? ""
-    : running.reconciliationScope === "HISTORICAL_RANGE" ? "结束时间早于现在，没有和当前钱包比。" : "没有和钱包比。要比，清空开始时间后点「加载账户」。";
+    : running.reconciliationScope === "HISTORICAL_RANGE" ? "结束时间早于现在，没有和当前钱包比。" : "没有和当前钱包比。";
   const conclusionHint = breakCount > 0
     ? `${[rowBreaks > 0 ? `${rowBreaks} 条账单对不上` : "", ...walletGaps].filter(Boolean).join("，")}。到对应业务单核查${unsettledNote ? `；${unsettledNote}` : ""}。`
     : [notComparedNote, unsettledNote && `${unsettledNote}。`].filter(Boolean).join("");
@@ -710,21 +710,19 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
       <Conclusion state={breakCount > 0 ? "danger" : nothingToCheck ? "neutral" : "ok"} lead={breakCount > 0} icon={breakCount > 0 ? undefined : nothingToCheck ? Info : CheckCircle2}
         explain={running.reconciliationScope === "HISTORICAL_RANGE"
           ? <><p>历史时段不与当前钱包对比。</p><p>{running.reconciliationNote}</p></>
-          : userData.from
-            ? "设了开始时间时，只核对这段时间里每一笔余额是否连续，不和当前钱包比，也不显示钱包差额：开始时间之前的余额还没带进核对，比了差额不准。"
-            : "逐笔看每一笔的变动后余额是不是等于上一笔余额加减这笔金额，再拿最后一笔已结算账单的余额和当前钱包比。处理中的账单不参与。"}
+          : "按币种带入开始时间前最后一笔已结算余额，逐笔核对区间内已结算账单，再拿期末余额与当前钱包比。区间没有新账单时，期末沿用已提供的期初余额。未结算账单不参与。"}
         hint={conclusionHint || undefined}
         action={breakCount > 0 && reach("/users/assets", "user_c3_read") ? <Link className="rd-link" href="/users/assets" prefetch={false}>余额与资产调整</Link> : undefined}>
         {breakCount > 0
           ? <>余额核对：<b>{breakCount}</b> 处对不上</>
           : nothingToCheck ? "这段时间没有账单，没有可核对的余额"
-            : walletChecked ? "余额都对得上，且最终余额与钱包一致" : "这段时间的账单余额都对得上"}
+            : walletChecked ? "余额都对得上，且最终余额与钱包一致" : running.rows.length === 0 ? "这段时间没有新账单，期初与期末余额一致" : "这段时间的账单余额都对得上"}
       </Conclusion>
     </div>
   );
   const diffDigits = running ? diffDigitsOf(running) : 2;
   const changeDigits = userData ? digitsOf([userData.ledger.totals.USDT ?? 0, userData.ledger.totals.UVT ?? 0]) : 2;
-  const PERIOD_EXPLAIN = "这段时间里这个用户全部账单的合计：入账加、出账减。处理中、失败、已拒绝、已取消的账单也算在内，所以不一定等于钱包实际变化。这次没和钱包比（设了开始时间，或结束时间早于现在），所以这里不写钱包差额。";
+  const PERIOD_EXPLAIN = "这段时间里这个用户全部账单的合计：入账加、出账减。处理中、失败、已拒绝、已取消的账单也算在内，所以不一定等于钱包实际变化。历史截止区间不和当前钱包比，所以这里显示账单净变动。";
   // 净变动里算进了还没结算的账单，按币种常显条数（口径不同的地方写在格子上，PG-29）。
   const notSettledNote = (asset: "USDT" | "UVT") => {
     const rows = userData?.ledger.rows.filter((row) => row.asset === asset) ?? [];
@@ -764,14 +762,21 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
             <Stat tone="role-1" icon={Wallet} label="USDT 当前余额" value={amountText(userData.ledger.balance.USDT)} unit={unit("USDT")} explain="当前余额取自用户钱包，不随时间范围变。" />
             <Stat tone="role-1" icon={Coins} label="UVT 当前余额" value={amountText(userData.ledger.balance.UVT)} unit={unit("UVT")} explain="当前余额取自用户钱包，不随时间范围变。" />
             {walletChecked && running.reconciliation ? <>
-              <Stat tone={running.reconciliation.USDT === 0 ? undefined : "danger"} icon={Scale} label="USDT 钱包差额" value={signedDiff(running.reconciliation.USDT, diffDigits)} unit={unit("USDT")} explain="用户钱包余额减最后一笔已结算账单的余额，0 表示一致。" />
-              <Stat tone={running.reconciliation.UVT === 0 ? undefined : "danger"} icon={Scale} label="UVT 钱包差额" value={signedDiff(running.reconciliation.UVT, diffDigits)} unit={unit("UVT")} explain="用户钱包余额减最后一笔已结算账单的余额，0 表示一致。" />
+              <Stat tone={running.reconciliation.USDT === 0 ? undefined : "danger"} icon={Scale} label="USDT 钱包差额" value={signedDiff(running.reconciliation.USDT, diffDigits)} unit={unit("USDT")} explain="用户钱包余额减区间期末已结算余额，0 表示一致。" />
+              <Stat tone={running.reconciliation.UVT === 0 ? undefined : "danger"} icon={Scale} label="UVT 钱包差额" value={signedDiff(running.reconciliation.UVT, diffDigits)} unit={unit("UVT")} explain="用户钱包余额减区间期末已结算余额，0 表示一致。" />
             </> : <>
               {/* 不和钱包比时没有差额（决定 09、D4-V13），换成这段时间的净变动：带符号的合计用正文色、灰图标（VS-11），不写 0 差额。 */}
               <Stat iconTone="role-other" icon={ArrowLeftRight} label="这段时间 USDT 净变动" value={signedDiff(userData.ledger.totals.USDT ?? 0, changeDigits)} unit={unit("USDT")} sub={notSettledNote("USDT")} explain={PERIOD_EXPLAIN} />
               <Stat iconTone="role-other" icon={ArrowLeftRight} label="这段时间 UVT 净变动" value={signedDiff(userData.ledger.totals.UVT ?? 0, changeDigits)} unit={unit("UVT")} sub={notSettledNote("UVT")} explain={PERIOD_EXPLAIN} />
             </>}
           </StatBand>
+          {balanceAssets.length > 0 && <Panel icon={Scale} tone="role-1" title="区间期初与期末"
+            explain="期初取开始时间前最后一笔已结算余额；期末取区间最后一笔已结算余额，没有新流水时沿用期初。未提供的币种余额不按 0 推算。">
+            <Facts>{balanceAssets.map((asset) => <Fragment key={asset}>
+              <Fact k={`${unit(asset)} 期初余额`}>{running.openingBalances[asset] === undefined ? "未提供" : `${amountText(running.openingBalances[asset])} ${unit(asset)}`}</Fact>
+              <Fact k={`${unit(asset)} 期末余额`}>{running.closingBalances[asset] === undefined ? "未提供" : `${amountText(running.closingBalances[asset])} ${unit(asset)}`}</Fact>
+            </Fragment>)}</Facts>
+          </Panel>}
           <Panel flush icon={Scale} tone="role-1" title="余额核对" sub={`${userLabel(userData.ledger)} · 最新在前`}
             actions={rowBreaks > 0 ? <Check label={`只看对不上的账单（${rowBreaks} 条）`} checked={onlyBreaks} onChange={(event) => { setOnlyBreaks(event.target.checked); setUserPage(1); }} /> : undefined}>
             <Table label="余额核对" data-tight="">

@@ -897,7 +897,7 @@ export default function UserDetailPage() {
     c1UserCommands.forget(command.fingerprint, command.commandKey);
     syncPending();
     setReleasing(null);
-    toast.success("已解除待确认，这个对象可以重新处理");
+    toast.success("已移除本地待确认记录，后端结果和锁定状态不变");
   };
 
   /** 读回只给现在的事实，变了也可能是别人改的，不能当成原命令的回执，待确认保留（OP-93、OP-95）。 */
@@ -1557,7 +1557,7 @@ export default function UserDetailPage() {
         />
       )}
       {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-        explain={`${releasing.legacy ? "这条记录是升级前留下的，不能重试" : "重试被拒说明不了原操作的结果"}，先到操作记录确认原操作有没有生效。解除后原操作不再重试，系统仍按现在的状态校验。`} />}
+        explain={`${releasing.legacy ? "这条记录是升级前留下的，不能重试" : "重试被拒说明不了原操作的结果"}，先到操作记录确认原操作有没有生效。解除只移除本地记录，不办理后端核查结案；后端仍可能锁住这个对象。`} />}
       {notificationEvidence && canReadNotificationEvidence
         && notificationEvidence.userKey === userKey && notificationEvidence.authEpoch === authEpoch && (
         <NotificationTimeEvidenceDrawer key={`${userKey}:${authEpoch}:${notificationEvidence.id}`}
