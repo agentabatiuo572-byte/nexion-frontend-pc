@@ -40,7 +40,8 @@ export function Panel({ title, sub, explain, explainLabel, explainSide, icon, to
         <div className="rd-panel-head">
           {icon && <IconTile tone={tone} icon={icon} />}
           {title && <Heading className="rd-panel-title">{title}</Heading>}
-          {explain && <Explain label={`${explainLabel ?? (typeof title === "string" ? title : "这一块")}的说明`} content={explain} side={explainSide} />}
+          {/* 气泡从问号左边起（和 Stat、ConfigRow 一样）：标题旁的问号离内容区左边近，居中展开会压进侧栏。 */}
+          {explain && <Explain label={`${explainLabel ?? (typeof title === "string" ? title : "这一块")}的说明`} content={explain} side={explainSide} align="start" />}
           {sub && <span className="rd-panel-sub">{sub}</span>}
           {actions && <div className="rd-panel-actions">{actions}</div>}
         </div>

@@ -51,6 +51,7 @@ import { Button, IconButton, TipSide } from "./button";
 import { Explain } from "./explain";
 import { Fact, Facts } from "./facts";
 import { IconTile } from "./icon-tile";
+import { KeepText } from "./keep-text";
 import { EffectSlot } from "./status-tag";
 import { useRdSurface } from "./surface";
 import type { RoleTone, StateTone } from "./tone";
@@ -277,10 +278,20 @@ export function ReleaseModal({ label, explain, onCancel, onConfirm }: { label: R
       <Button onClick={onCancel}>取消</Button>
       <Button variant="primary" onClick={onConfirm}>确认解除</Button>
     </>}>
-      <div className="rd-stack">
-        <Facts><Fact k="原操作">{label}</Fact></Facts>
-        <p>确认原操作的结果后再解除。这里只移除本浏览器的待确认记录，不撤销原操作，也不办理后端核查结案。后端仍可能保持对象锁。{explain && <Explain label="解除待确认的说明" content={explain} />}</p>
-      </div>
+      <ReleaseBody label={label} explain={explain} />
     </Modal>
+  );
+}
+
+/**
+ * ReleaseModal 的正文。原操作本来就开在一个弹窗里时，在同一个框里换成这块（标题「解除待确认」、盾牌图标、底栏「返回」「确认解除」），
+ * 不在框上再叠一个框（PG-38）。
+ */
+export function ReleaseBody({ label, explain }: { label: ReactNode; explain?: ReactNode }) {
+  return (
+    <div className="rd-stack">
+      <Facts><Fact k="原操作">{label}</Fact></Facts>
+      <p><KeepText text="确认原操作的结果后再解除。这里只移除本浏览器的待确认记录，不撤销原操作，也不办理后端核查结案。后端仍可能保持对象锁。" />{explain && <Explain label="解除待确认的说明" content={explain} />}</p>
+    </div>
   );
 }

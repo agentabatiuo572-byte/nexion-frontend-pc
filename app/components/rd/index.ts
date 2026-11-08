@@ -23,7 +23,7 @@ export { LevelList } from "./level-list";
 export { LocaleTabs } from "./locale-tabs";
 export { MoreMenu, type MoreMenuItem } from "./menu";
 export { NumberInput } from "./number-input";
-export { Decision, Drawer, Modal, ReleaseModal, type DrawerNav } from "./overlay";
+export { Decision, Drawer, Modal, ReleaseBody, ReleaseModal, type DrawerNav } from "./overlay";
 export { PageGuide } from "./page-guide";
 export { PageHeader } from "./page-header";
 export { Pager } from "./pager";

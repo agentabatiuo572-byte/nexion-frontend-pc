@@ -40,13 +40,13 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 看板里要处理的事 | `TodoList`、`TodoItem`，读不到用 `TodoFailed`；目标页不可达时不传 `href`，这一行照样提醒，不能点、没有箭头，`sub` 写该找谁 | `todo-list.tsx` |
 | 一块内容读取中、失败、空 | `BlockState`，折叠摘要里的失败传 `compact` 一行写完，重试是文字链；一个数字或一行读不到用 `InlineRetry`，同一个样子 | `block-state.tsx` |
 | 按天的柱图 | `Bars`，全是 0 别画，写一句话 | `bars.tsx` |
-| 表格 | `Table`、`Th`、`Tr`、`Td`、`Cell`；金额、数量、日期传 `num`，单号、哈希、地址才传 `mono`；理由这类长文本列给 `Td` 传 `grow`，占满剩下的列宽，放不下才省略（一张表最多一列）；只有第一行是单号时把它包进 `<span data-mono>`；6 列在 1024 放不下、第一列是长单号时给 `Table` 传 `data-tight`，窄于 1280 时格子最宽 200（`.rd-split` 里始终 200），长单号由页面中间省略，留能区分的尾段；要一直标出来的行给 `Tr` 传 `mark`：带单号进来命中的 `hit`（蓝底），对不上要核查的 `danger`（红底），和打开详情的 `selected` 分开 | `table.tsx` |
+| 表格 | `Table`、`Th`、`Tr`、`Td`、`Cell`；金额、数量、日期传 `num`，单号、哈希、地址才传 `mono`；理由这类长文本列给 `Td` 传 `grow`，占满剩下的列宽，放不下才省略（一张表最多一列）；列少、表格比内容宽、操作列左边空出一大段时，给操作列的 `Td` 加 `data-fit=""`，它只占按钮宽，多出的宽度按内容分给前面各列；只有第一行是单号时把它包进 `<span data-mono>`；6 列在 1024 放不下、第一列是长单号时给 `Table` 传 `data-tight`，窄于 1280 时格子最宽 200（`.rd-split` 里始终 200），长单号由页面中间省略，留能区分的尾段；要一直标出来的行给 `Tr` 传 `mark`：带单号进来命中的 `hit`（蓝底），对不上要核查的 `danger`（红底），和打开详情的 `selected` 分开 | `table.tsx` |
 | 显示更多列 | `useTableColumns`、`ColumnPicker` | `table.tsx` |
 | 表格加载、空、失败 | `TableLoading`、`TableMessage`；失败传 `role="alert"`，自动是失败红 | `table.tsx` |
 | 表格分页 | `Pager`，有数据才渲染 | `pager.tsx` |
 | 勾选后的批量操作 | `BatchBar`，勾选框用 `Checkbox`，勾选列的表头传 `Th control`；`hint` 收进已勾选数旁的提示图标 | `batch-bar.tsx`、`checkbox.tsx` |
 | 行操作放不下 | `MoreMenu` | `menu.tsx` |
-| 查询区 | `FilterBar`、`FilterField`、`Input`；范围控件项多、和搜索框排一行放不下时，`scope` 外面包 `<div className="rd-filter-scope-row">`，独占第一行；左标签加一个框（比如「开始时间」和日期时间框）包 `<span className="rd-filter-group">`，折行时不拆开；条件有误时给出错的框传 `aria-invalid`，筛选条里描边是橙黄 | `filter-bar.tsx` |
+| 查询区 | `FilterBar`、`FilterField`、`Input`；范围控件项多、和搜索框排一行放不下时，`scope` 外面包 `<div className="rd-filter-scope-row">`，独占第一行；左标签加一个框（比如「开始时间」和日期时间框）包 `<span className="rd-filter-group">`，折行时不拆开；更多筛选里成对的上下限放一个 `FilterField`，两个框包 `<span className="rd-filter-range">`，中间放 `<span aria-hidden>–</span>`，一对不会拆到两行，日期这种一列放不下的传 `wide` 占两列；条件有误时给出错的框传 `aria-invalid`，筛选条里描边是橙黄 | `filter-bar.tsx` |
 | 多行输入 | `Textarea`，放进 `Field`；字数传 `count`，写在框的右下角 | `filter-bar.tsx` |
 | 中、越、英三语正文 | `LocaleTabs`，切语言不动其他语言的内容，缺内容的页签写「缺失」 | `locale-tabs.tsx` |
 | 下拉、排序 | `Select`；放进 `Field` 自动接上 `id`、`aria-describedby`、`aria-invalid` | `select.tsx` |
@@ -60,10 +60,10 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 短任务弹窗 | `Modal`；`icon` 是标题前的图标底，`sub` 放标题下的后果标签，危险确认传 `tone="danger"` | `overlay.tsx` |
 | 写操作确认 | 继续用 `OperationConfirmModal` | 见下 |
 | 确认框、修改框里的版本冲突：框不关，读最新 | `ConflictBar`，放进 `blockedReason` 或框里的错误条；`message` 写这页被改的是什么，`onRead` 读到最新后页面按最新的值重开框（OP-97），读取失败时组件换成统一的一句，已填的留着 | `conflict-bar.tsx` |
-| 解除待确认 | `ReleaseModal`；`label` 写原操作，统一的一句话在组件里，页面特有的说明传 `explain`。按原操作重试失败后放不放出「解除待确认」只用 `lib/admin/explicit-rejection.ts` 的 `isExplicitRejection`：带原因码的 4xx 才算，401、403、408、425、429 和 `IDEMPOTENCY_*` 不算 | `overlay.tsx` |
+| 解除待确认 | `ReleaseModal`；`label` 写原操作，统一的一句话在组件里，页面特有的说明传 `explain`。原操作本来就开在一个弹窗里时不叠第二个框：同一个 `Modal` 换成标题「解除待确认」、盾牌图标、正文 `ReleaseBody`、底栏「返回」「确认解除」（用户名单导出这样做）。按原操作重试失败后放不放出「解除待确认」只用 `lib/admin/explicit-rejection.ts` 的 `isExplicitRejection`：带原因码的 4xx 才算，401、403、408、425、429 和 `IDEMPOTENCY_*` 不算 | `overlay.tsx` |
 | 按钮 | `Button`、`IconButton`；和主按钮并排的危险入口用 `danger-outline`，实心 `danger` 只给最终确认。高度读 `--rd-control-h`（32）、`-sm`（24）、`-lg`（40），页面不写高度 | `button.tsx` |
 | 状态 | `StatusTag`；列表筛成只有一种状态时，这个默认状态传 `neutral`（灰字加图标）；弹窗标题下「不能撤销」用 `IrreversibleTag`，走审批的「批准后生效」把谁来批、批准前什么不变传 `explain`，不写事实行 | `status-tag.tsx` |
-| 提示图标和气泡：这是什么、显示位置、生效时间、口径、后果 | `Explain`，悬停、点击、键盘都能开；`Stat` 里的气泡向上、`ConfigRow` 里的向下展开，都从问号左边起，不盖住被解释的数字、不压侧栏，放不下自动翻边；`content` 自由内容（多段用 `<p>`），`rows` 分行写；`Panel`、`Fold`、`Conclusion`、`Stat`、`ConfigRow`、`Field`、`Check`、`CheckGroup`、`KeyValues`、`Decision`、`Drawer`、`StatusTag` 传 `explain` 就自带。正文里的词写成 children 就是虚线下划线，不加图标 | `explain.tsx` |
+| 提示图标和气泡：这是什么、显示位置、生效时间、口径、后果 | `Explain`，悬停、点击、键盘都能开；`Stat` 里的气泡向上、`ConfigRow` 里的向下展开，`Panel` 标题旁的也一样，都从问号左边起，不盖住被解释的数字、不压侧栏，放不下自动翻边；`content` 自由内容（多段用 `<p>`），`rows` 分行写；`Panel`、`Fold`、`Conclusion`、`Stat`、`ConfigRow`、`Field`、`Check`、`CheckGroup`、`KeyValues`、`Decision`、`Drawer`、`StatusTag` 传 `explain` 就自带。正文里的词写成 children 就是虚线下划线，不加图标 | `explain.tsx` |
 | 一个整体分几份 | `Donut` 环图，中间写总额，图例写数；旁边有表格时传 `legend={false}`，表格第一列放色点当图例；两类都有钱才画 | `chart.tsx` |
 | 图和数据放一起 | `Figure`，图在左（`width` 是上限）、数据在右，名字和数字挨着；容器窄时上下排，尺和条这类宽图传 `stack="wide"` | `chart.tsx` |
 | 几类比大小 | `BarList` 排序条，一个颜色，数字在条右边；`value` 传 `null` 写「样本过小」 | `chart.tsx` |
@@ -266,7 +266,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 深色默认，浅色挂 `data-theme="light"`，两套都正式保留。`theme-switch.tsx` 管三件事：`<ThemeScript />` 在 `app/layout.tsx` 的 `<head>` 里同步执行，首屏按记住的选择设属性，不闪屏；`<ThemeToggle adminId={…} />` 是顶栏和登录页的开关（太阳「浅色」、月亮「深色」）；`useAdminTheme(adminId)` 登录后按账号记住的选择切换。记忆在本机：`nexion-admin-rd-theme` 是最近一次的选择（登录前也用它），`nexion-admin-rd-theme:<adminId>` 是每个账号的选择。网址参数 `?theme=light|dark` 只给截图和验收脚本用，不是入口。
 
-两套主题的差别只在 `tokens.css` 和 `rd.css` 里：浅色数字用正文色、身份靠实色图标底和图表色（VS-14）；白面板加 1px 边（VS-94）；输入框、下拉和确认框里的旧字段白底加 1px `--rd-line-strong` 描边，悬停 `--rd-control-line`（Ant Design Input），禁用和只读保留灰底，填错时只留外框；Logo 换横版 on-light（`shell.css`）。告警横幅和 `Notice` 两套主题一个样子：浅底加同色 1px 边，取 Ant Design Alert 默认。页面不写这些。
+两套主题的差别只在 `tokens.css` 和 `rd.css` 里：浅色数字用正文色、身份靠实色图标底和图表色（VS-14）；白面板加 1px 边（VS-94）；输入框、下拉和确认框里的旧字段白底加 1px `--rd-line-strong` 描边，悬停 `--rd-control-line`（Ant Design Input），禁用和只读保留灰底，填错时只留外框；筛选的条件条加 1px `--rd-line` 边（底色和页面几乎一样）；Logo 换横版 on-light（`shell.css`）。告警横幅和 `Notice` 两套主题一个样子：浅底加同色 1px 边，取 Ant Design Alert 默认。页面不写这些。
 
 还没迁移的页面，`console-shell.tsx` 给内容区 `<main>` 挂 `data-theme="dark"` 和 `.rd-legacy`，里面仍是旧的深色取值，侧栏和顶栏跟主题走（VS-95）。迁完一页就把它的路径加进 `lib/nav/console-nav.ts` 的 `REDESIGNED_PATHS`；路径带对象编号的详情页加进 `REDESIGNED_DETAIL_PREFIXES`。
 
