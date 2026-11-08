@@ -192,4 +192,6 @@ export const GLOSSARY_TERMS: string[] = Object.keys(GLOSSARY).sort((a, b) => b.l
  */
 export const GLOSSARY_GUARD: string[] = [
   "累计提现",
+  "核对账号",
+  "核对账户",
 ];

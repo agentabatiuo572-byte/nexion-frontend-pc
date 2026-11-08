@@ -1338,11 +1338,11 @@ export async function executeUserDeviceTradein(
   return result.data as JsonRecord;
 }
 
-export async function updateUserStatus(userId: number | string, status: UserStatus, reasonCode: string | null, reason: string, operator: string) {
+export async function updateUserStatus(userId: number | string, status: UserStatus, reasonCode: string | null, reason: string, operator: string, commandKey?: string) {
   return usersRequest<User360Profile>(`/profiles/${encodeURIComponent(String(userId))}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status, reasonCode, reason, operator }),
-    idempotencyPrefix: "c2-user-status",
+    ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "c2-user-status" }),
   });
 }
 
@@ -1377,11 +1377,11 @@ export async function revokeUserSessions(userId: number | string, reason: string
   });
 }
 
-export async function startUserImpersonation(userId: number | string, reasonCode: string, reason: string, operator: string, ttlMinutes = 15) {
+export async function startUserImpersonation(userId: number | string, reasonCode: string, reason: string, operator: string, ttlMinutes = 15, commandKey?: string) {
   return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/impersonations`, {
     method: "POST",
     body: JSON.stringify({ ttlMinutes, reasonCode, reason, operator }),
-    idempotencyPrefix: "c2-user-impersonation-start",
+    ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "c2-user-impersonation-start" }),
   });
 }
 
@@ -1397,27 +1397,27 @@ export async function fetchImpersonationReadonlyView(accessToken: string, page =
   return normalizeC2ReadonlySessionTimes(result.data);
 }
 
-export async function terminateUserImpersonation(sessionNo: string, reason: string, operator: string) {
+export async function terminateUserImpersonation(sessionNo: string, reason: string, operator: string, commandKey?: string) {
   return usersRequest<UserImpersonationSession>(`/impersonations/${encodeURIComponent(sessionNo)}/terminate`, {
     method: "POST",
     body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "c2-user-impersonation-end",
+    ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "c2-user-impersonation-end" }),
   });
 }
 
-export async function upsertUserAccountList(userId: number | string, kind: "ALLOW" | "BLOCK", reason: string, operator: string, expiresAt?: string | null) {
+export async function upsertUserAccountList(userId: number | string, kind: "ALLOW" | "BLOCK", reason: string, operator: string, expiresAt?: string | null, commandKey?: string) {
   return usersRequest<UserAccountListEntry>("/account-lists", {
     method: "POST",
     body: JSON.stringify({ userId, kind, reason, operator, expiresAt: expiresAt ?? null }),
-    idempotencyPrefix: "c2-account-list-upsert",
+    ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "c2-account-list-upsert" }),
   });
 }
 
-export async function removeUserAccountList(userId: number | string, reason: string, operator: string) {
+export async function removeUserAccountList(userId: number | string, reason: string, operator: string, commandKey?: string) {
   return usersRequest<UserAccountListEntry>(`/account-lists/${encodeURIComponent(String(userId))}/remove`, {
     method: "POST",
     body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "c2-account-list-remove",
+    ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "c2-account-list-remove" }),
   });
 }
 

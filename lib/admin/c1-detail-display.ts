@@ -5,6 +5,7 @@
  * 与中文运营界面混排。这是展示层问题,不改后端契约:在 PC 侧映射,
  * 原始枚举降级为次级技术信息(见 `technical`)。
  */
+import { Lock, Snowflake, type LucideIcon } from "lucide-react";
 
 /** 会话状态。 */
 const SESSION_STATUS_LABELS: Record<string, string> = {
@@ -115,6 +116,33 @@ export function formatC1ReadFlag(value: unknown) {
   if (raw === "READ" || raw === "TRUE" || raw === "1" || raw === "YES") return "已读";
   if (raw === "UNREAD" || raw === "FALSE" || raw === "0" || raw === "NO") return "未读";
   return "已读状态未知";
+}
+
+/**
+ * 账户状态的共用叫法（BANNED 叫「封禁」，产品 11-08 定）。图标：冻结雪花、受限锁，同用户详情。
+ * DISABLED 只有完成注销会写（后端 AccountDeletionAdminService → disableAndAnonymizeUser），叫「已注销」，灰色终态。
+ */
+const ACCOUNT_STATUS: Record<string, { label: string; tone: "ok" | "warn" | "danger" | "done"; icon?: LucideIcon }> = {
+  ACTIVE: { label: "正常", tone: "ok" },
+  FROZEN: { label: "冻结", tone: "warn", icon: Snowflake },
+  RESTRICTED: { label: "受限", tone: "warn", icon: Lock },
+  BANNED: { label: "封禁", tone: "danger" },
+  DISABLED: { label: "已注销", tone: "done" },
+};
+
+export function formatAccountStatus(value: unknown): { label: string; tone: "ok" | "warn" | "danger" | "done"; icon?: LucideIcon } {
+  const raw = typeof value === "string" ? value.trim().toUpperCase() : "";
+  return ACCOUNT_STATUS[raw] ?? { label: "状态未知", tone: "done" };
+}
+
+/** 后端没给风险档时的兜底：70 分起高风险、40 分起中风险，其余低风险。用户详情和账户操作共用，同一个人两页写同一个档。 */
+export function riskBandFromScore(score: number) {
+  return score >= 70 ? "高风险" : score >= 40 ? "中风险" : "低风险";
+}
+
+/** 风险档的颜色按档名：高（含极高）红、中橙黄、低绿，其他灰。 */
+export function riskBandTone(band: string): "danger" | "warn" | "ok" | "done" {
+  return band.includes("高") ? "danger" : band.includes("中") ? "warn" : band.includes("低") ? "ok" : "done";
 }
 
 export function formatC1RiskBand(value: unknown) {

@@ -513,10 +513,12 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-page input[type="date"], .rd-page input[type="datetime-local"], .rd-modal input[type="date"], .rd-modal input[type="datetime-local"] { color-scheme: dark; }
 :root[data-theme="light"] :is(.rd-page, .rd-modal) :is(input[type="date"], input[type="datetime-local"]) { color-scheme: light; }
 /* 影响一句是给人读的句子，用正文字号；「执行摘要」和「查看详情」是辅助。 */
-.rd-modal.rd-confirm .rd-brief > summary { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); }
-.rd-modal.rd-confirm .rd-brief-head { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 8px; align-items: baseline; min-width: 0; }  /* 影响句折行时对齐第一行 */
-.rd-modal.rd-confirm .rd-brief-head b { font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
-.rd-modal.rd-confirm .rd-brief-toggle { flex: none; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+/* 收起时第一行左边「执行摘要」、右边「查看详情」，影响句另起一整行：夹在两者之间的窄列放不下就会断词、留孤字（VS-105）。 */
+.rd-modal.rd-confirm .rd-brief > summary { display: grid; grid-template-columns: minmax(0, 1fr) max-content; column-gap: 12px; row-gap: 4px; align-items: baseline; cursor: pointer; list-style: none; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); }
+.rd-modal.rd-confirm .rd-brief-head { display: contents; }
+.rd-modal.rd-confirm .rd-brief-head b { grid-row: 1; grid-column: 1; font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
+.rd-modal.rd-confirm .rd-brief-head > span { grid-row: 2; grid-column: 1 / -1; min-width: 0; }
+.rd-modal.rd-confirm .rd-brief-toggle { grid-row: 1; grid-column: 2; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 .rd-modal.rd-confirm .rd-brief[open] .rd-brief-head > span { display: none; }  /* 展开后「影响」在下面那一行，标题行不重复 */
 /* 展开的摘要和关键信息同一条值线（名称列 128 = 事实块的内边距 16 + 112），不带底块：这是补充说明，不是关键信息，句子也多一点宽度（VS-105）。 */
 .rd-brief-rows { display: grid; gap: 8px; margin: 8px 0 0; }
@@ -590,6 +592,7 @@ body:has(.rd-drawer[data-state="open"]:not([data-wide])) .rd-toast-host { left: 
 .rd-points:has(.rd-point-label svg) .rd-point-label:not(:has(svg))::before { content: ""; flex: none; width: 13px; }  /* 有的行带图标时，不带的留出位置，标签文字一条线 */
 .rd-point-value { color: var(--rd-text); font-weight: 500; overflow-wrap: anywhere; }
 .rd-point[data-state-tone] .rd-point-value { color: var(--tone); }
+.rd-point-mark { display: inline-flex; margin-right: 4px; vertical-align: -2px; color: var(--tone); }  /* 值前的状态小图标：要人注意、但不是失败的结果（比如被系统拦下），值本身仍是主文字色 */
 .rd-point-reason { display: block; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-2); }
 
 /* ── 一句话结论 ── */
@@ -754,7 +757,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 /* 弹窗和抽屉里填错了是「要你处理」，用橙黄；红只给失败和不能撤销（VS-107）。 */
 :is(.rd-modal, .rd-drawer) .rd-form-error { color: var(--rd-warn); }
 :is(.rd-modal, .rd-drawer) :is(.rd-input, .rd-select)[aria-invalid="true"] { outline-color: var(--rd-warn); }
-.rd-modal.rd-confirm .fld[aria-invalid="true"] { outline: 1px solid var(--rd-warn); }
+.rd-modal.rd-confirm .fld[aria-invalid="true"], .rd-modal.rd-confirm .field input[aria-invalid="true"]:not([type="checkbox"]):not([type="radio"]) { outline: 1px solid var(--rd-warn); }  /* 框外层还有旧壳 .dkpage .field input 的 outline: none，选择器要比它重 */
 .rd-check-item { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 2px 8px; align-items: start; }
 .rd-check-item .rd-check, .dkpage .field .rd-check-item .rd-check { margin-top: 3px; }  /* 16px 的框对准 22px 行高的中线；.field 的旧规则会把它清成 0 */
 .rd-check-item label { color: var(--rd-text); cursor: pointer; }
@@ -986,7 +989,7 @@ td .rd-flow { margin-bottom: 0; }
 .rd-inline-meter { display: inline-flex; align-items: center; gap: 8px; }
 .rd-inline-meter-track { display: block; flex: none; width: 56px; height: 6px; overflow: hidden; border-radius: var(--rd-radius-bar); background: var(--rd-panel-inner); }
 .rd-inline-meter-track span { display: block; height: 100%; border-radius: var(--rd-radius-bar); background: var(--tone); }
-.rd-inline-meter-text { color: var(--tone); font-variant-numeric: tabular-nums; }
+.rd-inline-meter-text { color: var(--tone); font-variant-numeric: tabular-nums; white-space: nowrap; }  /* 读数是一个短值（0.82、剩 9 分钟），旁边有长文本列时不竖着折 */
 .rd-meter-marks { position: relative; display: block; height: var(--rd-lh-aux); }
 /* 小刻度对准尺上那条线，字跟在刻度右边；靠右端时字放到刻度左边。 */
 .rd-meter-marks span { position: absolute; top: 0; display: inline-flex; align-items: center; gap: 4px; transform: translateX(-1px); white-space: nowrap; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
