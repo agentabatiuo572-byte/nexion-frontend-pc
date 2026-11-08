@@ -140,6 +140,7 @@ const RELOADING = "审批单还在读取，读完再处理";
 const SUBMITTING = "正在提交";
 const NO_WITHDRAW = "你没有撤回申请的权限";
 const NO_DECIDE = "这个账号没有处理这张单的权限";
+const UNKNOWN_KIND = "认不出这类单要哪项业务权限，这页先不放出批准和驳回；请联系管理员核对后处理";
 const WAIT_OTHERS = "等待有权限的人处理";
 const UNKNOWN_TOAST = "结果未确认，不要重复操作。到页面上方读回核对或按原操作重试。";
 const RETRY_EXPIRED = "已超过 24 小时，不能再重试，请在「操作记录」里按单号核对。";
@@ -161,11 +162,15 @@ function isCurrentOperator(w: A2OperationRow, username: string | undefined) {
   return w.mine || (!!username && username === w.operator);
 }
 
-function g3PolicyExecutionTiming(w: A2OperationRow) {
-  const g3 = w.obj === "weekly" && /^提高周价格计划·D[1-7]·(?:目标价（USDT\/UVT）|上涨概率)$/.test(w.action)
+/** G3 价格计划单：后端写死的对象和动作名（G3MarketApproval 的描述）。 */
+function isG3Policy(w: Pick<A2OperationRow, "action" | "obj">) {
+  return w.obj === "weekly" && /^提高周价格计划·D[1-7]·(?:目标价（USDT\/UVT）|上涨概率)$/.test(w.action)
     || w.obj === "currentPrice" && w.action === "提高当前UVT价格"
     || w.obj === "schedule" && w.action === "首次配置UVT自动推进";
-  if (!g3) return undefined;
+}
+
+function g3PolicyExecutionTiming(w: A2OperationRow) {
+  if (!isG3Policy(w)) return undefined;
   try {
     const review = JSON.parse(w.after) as Record<string, unknown>;
     if (review && typeof review["生效时间"] === "string") return review["生效时间"];
@@ -174,17 +179,73 @@ function g3PolicyExecutionTiming(w: A2OperationRow) {
 }
 
 /**
- * 批准、驳回要的业务权限，和后端 AuditReplayBusinessPermissionGuard 对齐（M5）。只写前端认得出的单：
- * - 退款、J1 恢复、A4 登记、代金券按后端给的 operationCode 和 fundEffect；
- * - D5、D6、D7 参数和 J4 应急预案按后端写死的动作名和对象（发起方写的描述会被后端换掉）；
- * - 账号类按「操作员账号」页提交时写的动作名，后端批准时要发起人同一项权限。
- * 其余单前端只知道 A2 批准权，后端仍按原业务权限拒（A2_BUSINESS_PERMISSION_DENIED）。不给所有单统一加超管。
+ * 批准、驳回要的业务权限，和后端 AuditReplayBusinessPermissionGuard 对齐（M5、F02）。认单只用后端给的东西：
+ * - 退款、J1 恢复、A4 登记、代金券、F5 暂停、试用扣费按后端给的 operationCode 和 fundEffect；
+ * - 其余按后端写死的动作名、对象和摘要（validateProposalContext 用命令生成的描述换掉发起方写的），
+ *   手机规则单还有后端给的 phoneCalibrationProposal，大使申请有 ambassadorMaterialProposal；
+ * - 账号类另认「操作员账号」页提交时写的动作名。
+ * 认不出的单返回 null：不按 A2 批准权默认放出入口，批准、驳回灰着写原因（F02）。不给所有单统一加超管。
  */
-type DecisionRule = { superadmin?: boolean; approve?: readonly string[]; reject?: readonly string[] };
-type TicketIdentity = Pick<A2OperationRow, "action" | "obj" | "operationCode" | "fundEffect">;
+/** 一项要的权限；数组是有其中一个就行。 */
+type Need = string | readonly string[];
+type DecisionRule = { superadmin?: boolean; approve?: readonly Need[]; reject?: readonly Need[] };
+type TicketIdentity = Pick<A2OperationRow, "action" | "obj" | "operationCode" | "fundEffect" | "before" | "after">
+  & Partial<Pick<A2OperationRow, "phoneCalibrationProposal" | "ambassadorMaterialProposal">>;
 const A4_REGISTRY_CODES = ["a4_schema_register", "a4_schema_property_add", "a4_domain_extension_register"];
 const J4_CODE = /^SOP-[A-Z0-9-]{1,64}$/;
-const A1_ACTION_AUTHORITY: readonly (readonly [string, string])[] = [
+/** 后端要另一位超管批准、驳回的单（各自的 validateChecker：超管＋A2 批准权）。 */
+const SUPER_ONLY: DecisionRule = { superadmin: true };
+/**
+ * 后端写死的动作名 → 批准要的业务权限（validateApproval 走 requiredAuthority 或 approvalAuthority）。
+ * 这些单驳回只要 A2 批准权（validateRejection 对它们放行）。
+ */
+const CANONICAL_APPROVE: Readonly<Record<string, Need>> = {
+  冻结账户: "user_c2_account_freeze",
+  恢复账户: "user_c2_account_unfreeze",
+  强制登出: ["user_c2_session_revoke_all", "user_c5_session_revoke_all"],
+  用户数据只读视图: "user_c2_impersonate_start",
+  加入信任名单: "user_c2_blocklist_add",
+  加入禁入名单: "user_c2_blocklist_add",
+  移出账户名单: "user_c2_blocklist_add",
+  终止模拟会话: "user_c2_impersonate_terminate",
+  批量冻结关联账户: "risk_k1_cluster_freeze",
+  解除误判: "risk_k1_cluster_release",
+  判定为正常: "risk_k1_cluster_cleared",
+  标记可疑账户簇: "risk_k1_cluster_flag",
+  标记套利账户: "risk_k2_row_flag",
+  拦截新人礼: "risk_k2_row_blockgift",
+  标记刷榜账户: "risk_k2_row_boardflag",
+  "联动 K1 批量冻结": "risk_k2_row_freeze",
+  强制激活设备: "device_e5_device_force_activate",
+  解绑设备资产: "device_e5_device_unbind",
+  "结束未确认任务（不计收益）": "device_e5_write",
+  发布手机校准规则: "device_e6_read",
+  发布手机换机策略: "device_e6_read",
+  "USDT BEP20 充值政策": "finance_d1_channel_manage",
+  "首次配置 V0–V8": "network_f1_write",
+  七层结算启用: "network_f2_policy_amplify",
+  七层结算暂停: "network_f2_policy_amplify",
+  七层结算恢复: "network_f2_policy_amplify",
+  好友奖励双币政策: "network_f2_royalty_rate",
+  批准区域大使申请: "network_f4_ambassador_approve",
+  驳回区域大使申请: "network_f4_ambassador_approve",
+  调整每周任务地区映射: "growth_h3_write",
+  批准取消成交奖励: "growth_promotion_reward_cancel",
+  批准追回成交奖励: "growth_promotion_reward_reverse",
+  执行指定新人邀请奖励结算: "growth_h8_settle",
+  执行邀请奖励真实结算: "growth_h8_settle",
+  // 后端代发起时写的账号类动作名（对象是账号编号）。
+  编辑账号资料: "platform_a1_write",
+  变更角色: "platform_a1_account_role_change",
+  重置两步验证: "platform_a1_account_2fa_reset",
+  "启用/禁用账号": "platform_a1_account_disable",
+};
+/** 动作名前面是后端写死的部分，后面接对象。 */
+const CANONICAL_APPROVE_PREFIX: readonly (readonly [string, Need])[] = [
+  ["更新 E3 生命周期配置 · ", "device_e3_read"],
+  ["批量更新算力配置参数 · ", "device_e6_read"],
+  ["调整通知优先级 CAP · ", "content_i3_cap_adjust"],
+  // 「操作员账号」页自己提交时写的动作名（后端按发起时同一项权限核批准人）。
   ["编辑账号 · ", "platform_a1_write"],
   ["变更角色 · ", "platform_a1_account_role_change"],
   ["重置两步验证 · ", "platform_a1_account_2fa_reset"],
@@ -197,18 +258,38 @@ function isJ4Execution(w: Pick<A2OperationRow, "action" | "obj">) {
   return J4_CODE.test(w.obj) && w.action === `执行应急剧本 · ${w.obj}`;
 }
 
-function decisionRule(w: TicketIdentity): DecisionRule {
+/**
+ * D7 放宽单是不是强制保存倒挂价：后端预览摘要（PayoutVndConfigService.previewValues）在末尾写 forceInverted。
+ * 摘要不是这个格式时按「是」算，宁可多要一项权限，不放宽入口。
+ */
+function d7ForceInverted(after: string) {
+  return !/^v\d+ spread=/.test(after.trim()) || /\bforceInverted\b/.test(after);
+}
+
+function decisionRule(w: TicketIdentity): DecisionRule | null {
   const code = w.operationCode ?? "";
   if (w.fundEffect === "ORDER_REFUND" || code === "e4_order_refund") return { superadmin: true, approve: ["device_e4_order_refund"], reject: ["device_e4_order_refund"] };
   if (code === "j1_gate_resume") return { superadmin: true, approve: ["emergency_j1_gate_resume"], reject: ["emergency_j1_gate_resume"] };
-  if (A4_REGISTRY_CODES.includes(code)) return { superadmin: true };
+  if (A4_REGISTRY_CODES.includes(code)) return SUPER_ONLY;
   // 代金券删除和批量作废：有券操作权限的审批人就行，不要求超管（角色例外）。
   if (isH7VoucherApproval(code)) return { approve: ["growth_h7_write"], reject: ["growth_h7_write"] };
+  if (code === "f5_commission_suspension") return { approve: ["network_f5_commission_suspend"] };
+  if (code === "h2_trial_charge") return { approve: ["growth_h2_session_charge"] };
   if (w.obj === "current" && w.action === "调整敏感汇率") return { superadmin: true, approve: ["finance_d6_manage"], reject: ["finance_d6_manage"] };
-  if (w.obj === "current" && (w.action === "放宽提现参数" || w.action === "放宽越南盾提现参数")) return { superadmin: true };
+  if (w.obj === "current" && w.action === "放宽越南盾提现参数") return { superadmin: true, approve: d7ForceInverted(w.after) ? ["finance_d7_force_inverted"] : [] };
+  if (w.obj === "current" && w.action === "放宽提现参数") return SUPER_ONLY;
+  if (w.action === "降低兑付覆盖率红线" || w.action === "提高提现压力红线" || w.action === "变更正式任务目录") return SUPER_ONLY;
+  if (isG3Policy(w) || w.before.startsWith("H4 original configuration: ")) return SUPER_ONLY;
+  // 创世节点价格档位：改价要价格权限，动供应量还要写权限；页面看不出动没动供应量，两项都要。
+  if (w.obj === "tiers" && w.action === "调整创世节点价格档位") return { superadmin: true, approve: ["finprod_g4_price_write", "finprod_g4_write"], reject: ["finprod_g4_price_write", "finprod_g4_write"] };
   if (isJ4Execution(w)) return { approve: ["emergency_j4_playbook_execute"] };
-  const a1 = A1_ACTION_AUTHORITY.find(([prefix]) => w.action.startsWith(prefix));
-  return a1 ? { approve: [a1[1]] } : {};
+  if (w.phoneCalibrationProposal || w.obj === "phone-calibration") return { approve: ["device_e6_read"] };
+  if (w.ambassadorMaterialProposal) return { approve: ["network_f4_ambassador_approve"] };
+  if (w.obj.startsWith("E.compute.")) return { approve: ["device_e6_read"] };
+  const exact = CANONICAL_APPROVE[w.action];
+  if (exact) return { approve: [exact] };
+  const prefixed = CANONICAL_APPROVE_PREFIX.find(([prefix]) => w.action.startsWith(prefix));
+  return prefixed ? { approve: [prefixed[1]] } : null;
 }
 
 /** 手机规则申请带未来的生效时间时，批准只登记排程，到点才生效（M6）。effectiveAt 是毫秒，0 是批准后立即。 */
@@ -365,10 +446,13 @@ type A2PendingCommand = PendingMutationRecord & {
   operator: string;
   /** 机制参数的新值。 */
   value?: string;
-  /** 重试时按这几项判断这张单要的业务权限（decisionRule）。 */
+  /** 重试时按发出时这张单要的业务权限判断（decisionRule 的结果，null 是认不出）。 */
+  rule?: DecisionRule | null;
   operationCode?: string;
   obj?: string;
   fundEffect?: A2OperationRow["fundEffect"];
+  /** 退款单的原订单号：重试前要先读到退款金额（F01）。 */
+  refundOrderNo?: string;
   /** 审批单的原动作，重试时写进标签。 */
   action?: string;
   /** 导出时已应用的筛选：重试只用这一份，不读页面上现在的条件（M2）。 */
@@ -594,12 +678,16 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   } as AuthPrincipal;
   const canApprove = canApprovePending(principal);
   /** 按读到的权限判断，不按角色名写死（B38 后财务主管有 D 域读权、没有批准权）。 */
-  const canDecide = (ticket: TicketIdentity, kind: "approve" | "reject") => {
-    if (!canApprove) return false;
-    const rule = decisionRule(ticket);
+  const has = (need: Need) => typeof need === "string" ? principal.authorities.includes(need) : need.some((authority) => principal.authorities.includes(authority));
+  /** 认不出类型（rule 为 null）不放行，不按 A2 批准权默认给入口（F02）。 */
+  const allowed = (rule: DecisionRule | null, kind: "approve" | "reject") => {
+    if (!canApprove || !rule) return false;
     if (rule.superadmin && principal.role !== "superadmin") return false;
-    return (kind === "approve" ? rule.approve : rule.reject)?.every((authority) => principal.authorities.includes(authority)) ?? true;
+    return (kind === "approve" ? rule.approve : rule.reject)?.every(has) ?? true;
   };
+  const canDecide = (ticket: TicketIdentity, kind: "approve" | "reject") => allowed(decisionRule(ticket), kind);
+  /** 有 A2 批准权、但认不出这张单要哪项业务权限：批准、驳回灰着写原因。 */
+  const unknownKind = (ticket: TicketIdentity) => canApprove && decisionRule(ticket) === null;
   const canExport = canAccessA2Export(principal.authorities);
   const canReadOrders = principal.authorities.includes("device_e4_read");
   // 和顶栏同一份兑付覆盖率；读不到时批准框写「暂时读不到」，批准时后端再查。
@@ -836,12 +924,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const qPageRows = queueRows.slice((qSafePage - 1) * qPageSize, qSafePage * qPageSize);
   const queueFiltered = qType !== "all" || qOperator !== "all";
 
-  // 队列里的退款单各读一次订单；行内、抽屉和两个框用同一份金额。
+  // 队列里的退款单、待确认条里结果未知的退款批准各读一次订单；行内、抽屉、两个框和待确认条用同一份金额。
   useEffect(() => {
-    for (const w of pendingQueue) if (w.refundOrderNo && !refundAsked.current.has(w.refundOrderNo)) void loadRefundAmount(w.refundOrderNo);
-    // loadRefundAmount 每次渲染都是新函数，只跟着队列读。
+    const orders = [...pendingQueue.map((w) => w.refundOrderNo), ...pendingCommands.map((record) => record.kind === "approve" ? record.refundOrderNo : undefined)];
+    for (const no of orders) if (no && !refundAsked.current.has(no)) void loadRefundAmount(no);
+    // loadRefundAmount 每次渲染都是新函数，只跟着队列和待确认条读。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingQueue]);
+  }, [pendingQueue, pendingCommands]);
   const refundAmount = (w: A2OperationRow): RefundAmount | undefined => w.fundEffect === "ORDER_REFUND"
     ? (w.refundOrderNo ? refundAmounts[w.refundOrderNo] ?? { state: "loading" } : { state: "error", message: "审批单没有带订单号" })
     : undefined;
@@ -922,9 +1011,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     }
   };
 
-  const runDecision = (kind: "approve" | "reject" | "withdraw", w: TicketIdentity & Pick<A2OperationRow, "id">, reason: string, by = operator) => sendCommand(
+  type DecisionTicket = TicketIdentity & Pick<A2OperationRow, "id" | "refundOrderNo"> & { rule?: DecisionRule | null };
+  const runDecision = (kind: "approve" | "reject" | "withdraw", w: DecisionTicket, reason: string, by = operator) => sendCommand(
     `${kind}|${w.id}`,
-    { kind, label: `${DECISION_VERB[kind]} · ${actionName(w.action)}`, target: w.id, reason, operator: by, operationCode: w.operationCode, obj: w.obj, fundEffect: w.fundEffect, action: w.action },
+    { kind, label: `${DECISION_VERB[kind]} · ${actionName(w.action)}`, target: w.id, reason, operator: by, rule: w.rule !== undefined ? w.rule : decisionRule(w),
+      operationCode: w.operationCode, obj: w.obj, fundEffect: w.fundEffect, refundOrderNo: w.refundOrderNo, action: w.action },
     `a2-${kind}-${w.id}`,
     (key) => kind === "approve" ? approveA2Operation(w.id, reason, key)
       : kind === "reject" ? rejectA2Operation(w.id, reason, key)
@@ -994,7 +1085,20 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const canRetry = (record: A2PendingCommand) => record.kind === "withdraw" ? canWithdraw
     : record.kind === "param" || record.kind === "retention" ? canWrite
       : record.kind === "export" ? canExport
-        : canDecide({ action: record.action ?? "", obj: record.obj ?? "", operationCode: record.operationCode, fundEffect: record.fundEffect }, record.kind);
+        : allowed(record.rule !== undefined ? record.rule : decisionRule({ action: record.action ?? "", obj: record.obj ?? "", operationCode: record.operationCode, fundEffect: record.fundEffect, before: "", after: "" }), record.kind);
+
+  /** 重试前退款单要先读到退款金额，和新开的批准框同一个前提（F01）；读不到只能读回核对，原命令照旧保留。 */
+  const retryAmount = (record: A2PendingCommand): RefundAmount | undefined => record.kind === "approve" && record.fundEffect === "ORDER_REFUND"
+    ? (record.refundOrderNo ? refundAmounts[record.refundOrderNo] ?? { state: "loading" } : { state: "error", message: "原命令没有记下订单号" })
+    : undefined;
+  const retryBlock = (record: A2PendingCommand) => {
+    if (isRetryExpired(record)) return RETRY_EXPIRED;
+    if (!canRetry(record)) return RETRY_NO_PERMISSION;
+    const amount = retryAmount(record);
+    if (amount?.state === "loading") return "正在读取退款金额，读完再重试";
+    if (amount && amount.state !== "ok") return REFUND_AMOUNT_REQUIRED;
+    return undefined;
+  };
 
   /**
    * 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有成功并读回到目标状态才解除待确认。
@@ -1002,15 +1106,16 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
    * 登录、权限、超时、限流、IDEMPOTENCY_* 只更新说明，原命令和锁都留着（M1、OP-153）。
    */
   const retryPending = async (record: A2PendingCommand) => {
-    if (isRetryExpired(record)) { notePending(record, RETRY_EXPIRED); return; }
-    if (!canRetry(record)) { notePending(record, RETRY_NO_PERMISSION); return; }
+    const blocked = retryBlock(record);
+    if (blocked) { notePending(record, blocked); return; }
     if (!a2Commands.isDurablyStored(record.fingerprint, record.commandKey)) {
       notePending(record, "浏览器里查不到这条记录，本次没有发送。待确认继续保留，请在「操作记录」里核对。");
       return;
     }
     setRetryRejected((current) => current.filter((key) => key !== record.commandKey));
     try {
-      const ticketLike = { id: record.target, action: record.action ?? record.target, obj: record.obj ?? "", operationCode: record.operationCode, fundEffect: record.fundEffect };
+      const ticketLike = { id: record.target, action: record.action ?? record.target, obj: record.obj ?? "", before: "", after: "",
+        operationCode: record.operationCode, fundEffect: record.fundEffect, refundOrderNo: record.refundOrderNo, rule: record.rule };
       const outcome = record.kind === "param" ? await runParam(record.target as "ttl" | "retention" | "schema", record.value ?? "", record.reason, record.operator)
         : record.kind === "retention" ? await runRetention(record.reason, record.operator)
           : record.kind === "export" ? await runExport(record.reason, record.filter ?? {}, record.operator)
@@ -1095,6 +1200,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (isMine(w)) return OWN_TICKET_REASON;
     if (kind === "approve" && w.retiredOperation) return RETIRED_OPERATION_COPY;
     if (kind === "approve" && (w.phoneCalibrationError || w.ambassadorMaterialError)) return w.phoneCalibrationError ?? w.ambassadorMaterialError;
+    if (unknownKind(w)) return UNKNOWN_KIND;
     if (!canDecide(w, kind)) return NO_DECIDE;
     // 读不到退款金额时不能批准（协调人定，同 C3 读不到详情）；驳回不受影响。
     const amount = kind === "approve" ? refundAmount(w) : undefined;
@@ -1465,11 +1571,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   const pendingNotices = pendingCommands.map((record) => {
     const expired = isRetryExpired(record);
+    const amount = retryAmount(record);
     return (
       <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未确认`} actionBelow
         action={<>
           <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>读回核对</Button>
-          <Button size="sm" disabled={!!submitting} disabledReason={expired ? RETRY_EXPIRED : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原操作重试</Button>
+          <Button size="sm" disabled={!!submitting} disabledReason={retryBlock(record)} onClick={() => void retryPending(record)}>按原操作重试</Button>
           {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除待确认</Button>}
           <Button size="sm" variant="ghost" onClick={() => showInRecords(record)}>在操作记录里查看</Button>
         </>}>
@@ -1477,6 +1584,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           {bizTimeFull(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，可能已经生效。{expired ? RETRY_EXPIRED : RECOVERY_HINT[record.kind]}
           <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 操作人 ${record.operator} ｜ 理由 ${record.reason}`} />
         </p>
+        {amount && <p>退款金额 {amount.state === "ok" ? <b className="a2-amount">{refundAmountText(amount)}</b> : <span className="a2-warn-text">{refundAmountText(amount)}</span>}
+          {amount.state === "error" && record.refundOrderNo && <> <InlineRetry onRetry={() => void loadRefundAmount(record.refundOrderNo!)} /></>}</p>}
         {pendingNotes[record.fingerprint] && <p>{pendingNotes[record.fingerprint]}</p>}
       </Notice>
     );
@@ -1484,9 +1593,14 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   /* 待审批：行内按钮都是小号次按钮，点了只开确认框（D2 新手测试）。整屏主按钮只有抽屉里的「批准」（DP-40）。
      没有这张单的业务权限时不显示批准、驳回（OP-124）；整页一行都没有可做的事时不画「操作」列（建议 3）。 */
-  const rowCanAct = (w: A2OperationRow) => isMine(w) || canDecide(w, "reject") || (!w.retiredOperation && canDecide(w, "approve"));
+  // 认不出类型的单，有 A2 批准权的人看到灰的驳回、批准和原因（F02），不默认放行，也不悄悄藏起来。
+  const rowCanAct = (w: A2OperationRow) => isMine(w) || unknownKind(w) || canDecide(w, "reject") || (!w.retiredOperation && canDecide(w, "approve"));
   const rowActions = (w: A2OperationRow) => {
     if (isMine(w)) return <Button size="sm" disabledReason={decideBlock(w, "withdraw")} onClick={() => confirmDecision(w, "withdraw")}>撤回我的申请</Button>;
+    if (unknownKind(w)) return <>
+      <Button size="sm" disabledReason={UNKNOWN_KIND}>驳回</Button>
+      {!w.retiredOperation && <Button size="sm" disabledReason={UNKNOWN_KIND}>批准</Button>}
+    </>;
     if (!rowCanAct(w)) return <Cell main={<span className="rd-weak">{WAIT_OTHERS}</span>} />;
     return <>
       {canDecide(w, "reject") && <Button size="sm" disabledReason={decideBlock(w, "reject")} onClick={() => confirmDecision(w, "reject")}>驳回</Button>}
@@ -1745,7 +1859,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const shownBlock = shown && (pendingTicketIds.has(shown.id) ? undefined
     : shown.retiredOperation ? RETIRED_OPERATION_COPY
       : shown.phoneCalibrationError ?? shown.ambassadorMaterialError
-        ?? (isMine(shown) ? OWN_TICKET_REASON : !shownCanApprove ? NO_DECIDE
+        ?? (isMine(shown) ? OWN_TICKET_REASON : unknownKind(shown) ? UNKNOWN_KIND : !shownCanApprove ? NO_DECIDE
           : shownAmount && shownAmount.state !== "ok" && shownAmount.state !== "loading" ? REFUND_AMOUNT_REQUIRED : undefined));
   const judgment: JudgmentRow[] = shown ? [
     // 批准退款是直接出钱、收不回的操作，第一行就是这笔钱（必须改 1，DP-03）。
@@ -1762,7 +1876,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   ] : [];
   const shownOwn = shown ? isMine(shown) : false;
   // 驳回只是不执行，用普通次按钮，仍在左边和「批准」隔开（必须改 2、DP-40）。退役单右下放灰的「批准」写原因，按钮位置不跳（建议 9）。
-  const ticketFooter = shown && (shownOwn || shownCanApprove || shownCanReject ? (
+  const ticketFooter = shown && (!shownOwn && unknownKind(shown) ? (
+    <Decision danger={<Button disabledReason={UNKNOWN_KIND}>驳回</Button>} primary={<Button variant="primary" disabledReason={shown.retiredOperation ? RETIRED_OPERATION_COPY : UNKNOWN_KIND}>批准</Button>} />
+  ) : shownOwn || shownCanApprove || shownCanReject ? (
     <Decision
       explain={shownCanApprove && !shownOwn && !shown.retiredOperation ? approvalTiming(shown).drawer : undefined}
       danger={shownCanReject ? <Button disabledReason={decideBlock(shown, "reject")} onClick={() => confirmDecision(shown, "reject")}>驳回</Button> : undefined}
