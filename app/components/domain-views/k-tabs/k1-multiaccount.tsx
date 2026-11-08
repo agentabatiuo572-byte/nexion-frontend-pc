@@ -8,7 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Coins, Gift, ListChecks, Lock, LockOpen, Network, RefreshCw, ShieldAlert, ShieldCheck, SlidersHorizontal, Snowflake, Users, type LucideIcon } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, ChartLegend, Conclusion, ConfigList, ConfigRow, Decision, DiffField, Explain, Fact, Facts, Field, Figure, FilterBar, FilterField, Fold, InlineMeter, Input, IrreversibleTag, JudgmentPoints, KeyValues,
-  Modal, Notice, NumberInput, PageHeader, PageTabs, Pager, Panel, RecordList, ReleaseModal, SectionNav, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useSectionNav,
+  ConflictBar, Modal, Notice, NumberInput, PageHeader, PageTabs, Pager, Panel, RecordList, ReleaseModal, SectionNav, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useSectionNav,
   type ExplainRow, type JudgmentRow, type SectionNavItem, useTabIds
 } from "@/app/components/rd";
 import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1_RELEASE_MODE_VALUES, K1_RELEASE_PARAM_LIMITS, newK1CommandKey, updateK1RegistrationParam } from "@/lib/admin/k-client";
@@ -436,26 +436,6 @@ function DraftModal({ title, icon, effect, explain, wide, busy, reading, busyLab
         </Field>
       </div>
     </Modal>
-  );
-}
-
-/** 确认框里的版本冲突：框不关，按钮读最新（OP-97）。 */
-function ConflictBar({ onRead }: { onRead: () => Promise<void> }) {
-  const [state, setState] = useState<"idle" | "reading" | "failed">("idle");
-  const read = async () => {
-    setState("reading");
-    try {
-      await onRead();
-      setState("idle");
-    } catch {
-      setState("failed");
-    }
-  };
-  return (
-    <span className="rd-toolbar">
-      <span>{state === "failed" ? "读取最新失败，稍后再试。已填写的内容还在。" : CONFLICT_TEXT}</span>
-      <Button size="sm" loading={state === "reading"} onClick={() => void read()}>读取最新</Button>
-    </span>
   );
 }
 
@@ -1022,7 +1002,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         try {
           await runRecord(clusterRecord(c, action, label, reason));
         } catch (cause) {
-          if (isVersionConflict(cause)) ctx.openActionConfirm({ ...req, formKey, blockedReason: <ConflictBar onRead={readLatest} />, run: () => undefined });
+          if (isVersionConflict(cause)) ctx.openActionConfirm({ ...req, formKey, blockedReason: <ConflictBar message={CONFLICT_TEXT} onRead={readLatest} />, run: () => undefined });
           throw cause;
         }
       },
@@ -1490,7 +1470,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 {protectedEntries.map((entry) => (
                   <Tr key={entry.entryNo}>
                     <Td><Cell mono full main={entry.entryNo} sub={formatBusinessTimeFull(entry.createdAt, "—")} /></Td>
-                    <Td><Cell mono main={`U${entry.userId}`} sub={entry.clusterId} /></Td>
+                    <Td><Cell mono main={`U${entry.userId}`} sub={<span data-mono>{entry.clusterId}</span>} /></Td>
                     <Td><Cell main={({ TRIAL: "试用收益", DEVICE: "设备收益", TASK: "任务奖励", COMMISSION: "团队奖励", REFERRAL: "邀请奖励", WELCOME: "新人奖励" } as Record<string, string>)[entry.sourceType.toUpperCase()] ?? "来源未知"} sub={<span data-mono>{entry.sourceRef}</span>} /></Td>
                     <Td><StatusTag tone={entry.bucket === "bonus_locked" ? "danger" : "warn"} explain={entry.bucket === "bonus_locked" ? "这笔收益被锁定，不能提现。账户组解除后不会自动放行，要人工放行。" : "这笔收益等人工审核，不会到期自动放行。"}>{entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}</StatusTag></Td>
                     <Td align="right"><Cell num full main={`${amountText(entry.amount)} ${nexGridBrandText(entry.asset)}`} /></Td>

@@ -21,6 +21,7 @@ import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/ad
 import { PAYOUT_VND_HELP, PAYOUT_VND_SOURCE_HELP } from "@/lib/admin/config-help/d7-payout-vnd";
 import { DRequestError, isDOutcomeUnknownError } from "@/lib/admin/d-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { loadPayoutVndConfig, updatePayoutVndConfig } from "@/lib/admin/payout-vnd-client";
 import {
@@ -104,7 +105,7 @@ function alignsToStep(value: number, min: number, step: number) {
   return Math.abs(units - Math.round(units)) < 1e-9;
 }
 
-/** 空、填坏和 0 分开（CP-54）：空输入不当 0，填坏的数字框值是空串，只有 badInput 分得出。跨字段规则同后端 validateUpdateRequest，写在相关的那一项下面。 */
+/** 空、填坏和 0 分开（CP-54）：空输入不当 0，数字框里只填了一半（「-」「.」）算填坏。跨字段规则同后端 validateUpdateRequest，写在相关的那一项下面。 */
 function parseDrafts(drafts: Drafts, bad: readonly Key[]) {
   const values = {} as PayoutVndValues;
   const errors: Partial<Record<Key, string>> = {};
@@ -524,9 +525,12 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       if (isDOutcomeUnknownError(cause)) {
         note(record.commandKey, "重试的结果也没有确认，原操作继续保留。稍后再读回核对或重试。");
-      } else {
+      } else if (isExplicitRejection(cause)) {
         note(record.commandKey, `重试被拒绝：${reasonOf(displayAdminError(cause))}。先点「读回核对」确认没有生效，再点「解除待确认」，然后重新修改。`);
         setRetryRejected((current) => [...current, record.commandKey]);
+      } else {
+        // 登录、权限、限流这类不是对原操作的结论，不给解除（OP-153）。
+        note(record.commandKey, `重试没有完成：${reasonOf(displayAdminError(cause))}。原操作继续保留，稍后再读回核对或重试。`);
       }
     } finally {
       setRecovering("");
@@ -597,9 +601,13 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         return;
       }
       const message = reasonOf(errorCode(cause) === "OBJECT_ALREADY_PENDING" ? (canReachAudit ? PENDING_HERE : PENDING_ELSEWHERE) : displayAdminError(cause));
-      if (pendingConfigApproval("D7", session.adminId)) {
+      const kept = pendingConfigApproval("D7", session.adminId);
+      if (kept && isExplicitRejection(cause)) {
         note(key, `重试被拒绝：${message}。确认没有生成审批单后，再点「解除待确认」，然后重新修改。`);
         setRetryRejected((current) => [...current, key]);
+      } else if (kept) {
+        // 登录、权限、限流这类不是对原操作的结论，不给解除（OP-153）。
+        note(key, `重试没有完成：${message}。原操作继续保留，稍后再查询或重试。`);
       } else {
         setApprovalRejected(`${message}。原记录已清除，可以重新修改参数。`);
       }
@@ -743,7 +751,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         {(control) => (
           <NumberInput {...control} aria-label={`${spec.label}目标值`} unit={spec.unit} min={spec.min} max={spec.max} step={spec.step}
             value={editing.drafts[key]} onBlur={() => touch(key)}
-            onChange={(event) => setDraft(key, event.target.value, event.target.validity.badInput)} />
+            onChange={(event) => setDraft(key, event.target.value, event.target.value.trim() !== "" && !Number.isFinite(Number(event.target.value)))} />
         )}
       </Field>
     );

@@ -22,6 +22,7 @@
  *   size="body" 给选项和短词。
  * - stack 给长文字：现在值和输入上下排，不放大。
  * - 填错时 error 顶替 hint，所以 error 要把范围写全（「要填 1–10 的整数」），不要两行说同一件事。
+ * - hint 和 error 写在新值输入框正下方，和输入框左对齐（Ant Design Form.Item 的 help、extra，VS-103）；note 在整块下面占整行。
  */
 import { useId, type ReactNode } from "react";
 import { AlertTriangle, ArrowRight, ShieldAlert } from "lucide-react";
@@ -119,8 +120,8 @@ export function DiffField({ before, unit, beforeLabel = "现在", label = "改�
           {typeof children === "function" ? children({ id, "aria-describedby": described, "aria-invalid": error ? true : undefined }) : children}
           {state}
         </div>
+        {error ? <div id={`${id}-error`} className="rd-form-error" role="alert">{error}</div> : hint && <div id={`${id}-hint`} className="rd-change-hint">{hint}</div>}
       </div>
-      {error ? <div id={`${id}-error`} className="rd-form-error" role="alert">{error}</div> : hint && <div id={`${id}-hint`} className="rd-change-hint">{hint}</div>}
       {note && <div id={`${id}-note`} className="rd-change-note">{note}</div>}
     </div>
   );

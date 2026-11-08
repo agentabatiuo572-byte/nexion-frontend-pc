@@ -21,7 +21,7 @@ import { rollupKpiPassState } from "@/lib/admin/dashboard-number";
 import { liabilityDisplayName } from "@/lib/admin/liability-labels";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { UNAVAILABLE_GATES, byGateDisplayOrder } from "@/lib/admin/j-client";
-import { fmtAmount, fmtNum, fmtPct } from "@/lib/format";
+import { fmtAmount, fmtConfigPct, fmtNum, fmtPct } from "@/lib/format";
 import type { FundLevel } from "./status";
 import { useBlock } from "./use-block";
 
@@ -109,8 +109,8 @@ export function FundFold({ ledger, liquidity, error, retrying, onRetry, alert, l
                 label="覆盖率和红线、健康线"
                 rows={[{ key: "coverage", label: "覆盖率（储备 ÷ 应付款）", value: ledger.coverageRatio, text: fmtPct(ledger.coverageRatio), tone: coverTone }]}
                 marks={[
-                  { key: "redline", text: `红线 ${fmtPct(ledger.redlinePct, 0)}`, value: ledger.redlinePct, tone: "danger" },
-                  { key: "healthy", text: `健康线 ${fmtPct(ledger.healthyPct, 0)}`, value: ledger.healthyPct, tone: "ok" },
+                  { key: "redline", text: `红线 ${fmtConfigPct(ledger.redlinePct)}`, value: ledger.redlinePct, tone: "danger" },
+                  { key: "healthy", text: `健康线 ${fmtConfigPct(ledger.healthyPct)}`, value: ledger.healthyPct, tone: "ok" },
                 ]}
               />
               <div className="cc-cols">
@@ -212,7 +212,7 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
               )}
               {/* 尺在左、其余数字在右（VS-49）；两条比率都是 0 时不画尺，一句话写完（DP-62）。 */}
               <Figure width={560} stack="wide" graphic={risk.bankRunRatio === 0 && ledger.pressureRatio === 0
-                ? <p className="cc-line">近 24 小时提现申请占储备 {fmtPct(risk.bankRunRatio)}，待提现总额占储备 {fmtPct(ledger.pressureRatio * 100)}；黄线 {fmtPct(risk.bankRunYellowPct, 0)}、红线 {fmtPct(risk.bankRunRedlinePct, 0)}</p>
+                ? <p className="cc-line">近 24 小时提现申请占储备 {fmtPct(risk.bankRunRatio)}，待提现总额占储备 {fmtPct(ledger.pressureRatio * 100)}；黄线 {fmtConfigPct(risk.bankRunYellowPct)}、红线 {fmtConfigPct(risk.bankRunRedlinePct)}</p>
                 : <ThresholdMeter
                     label="提现压力和黄线、红线"
                     rows={[
@@ -220,8 +220,8 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                       { key: "backlog", label: "待提现总额占储备", value: ledger.pressureRatio * 100, text: fmtPct(ledger.pressureRatio * 100), tone: pressure.backlog },
                     ]}
                     marks={[
-                      { key: "yellow", text: `黄线 ${fmtPct(risk.bankRunYellowPct, 0)}`, value: risk.bankRunYellowPct, tone: "warn" },
-                      { key: "red", text: `红线 ${fmtPct(risk.bankRunRedlinePct, 0)}`, value: risk.bankRunRedlinePct, tone: "danger" },
+                      { key: "yellow", text: `黄线 ${fmtConfigPct(risk.bankRunYellowPct)}`, value: risk.bankRunYellowPct, tone: "warn" },
+                      { key: "red", text: `红线 ${fmtConfigPct(risk.bankRunRedlinePct)}`, value: risk.bankRunRedlinePct, tone: "danger" },
                     ]}
                   />}>
               <ul className="cc-list">

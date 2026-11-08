@@ -23,6 +23,9 @@
  *   ]} />
  *
  * 时间窗（J3、L4、D3）也用 Segments，不传 tone。多选不能用这两个（CP-62）。
+ *
+ * 页签里面再分一层（D1 的 USDT 充值分四个分区）传 level={2}：下划线式（Ant Design Tabs 默认），
+ * 选中项 2px 品牌色下划线、文字 14/500，和外层的底色块分得开，一眼看出是里面的分区。
  */
 import { useId, useMemo, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { TabGroup } from "@/app/components/kit/tab-group";
@@ -52,12 +55,12 @@ export function useTabIds(): TabIds {
   }), [base]);
 }
 
-export function PageTabs<T extends string>({ label, value, items, onChange, ids }: { label: string; value: T; items: readonly PageTabItem<T>[]; onChange: (value: T) => void; ids?: TabIds }) {
+export function PageTabs<T extends string>({ label, value, items, onChange, ids, level = 1 }: { label: string; value: T; items: readonly PageTabItem<T>[]; onChange: (value: T) => void; ids?: TabIds; level?: 1 | 2 }) {
   const byValue = new Map(items.map((item) => [item.value, item]));
   return (
     <TabGroup
       label={label}
-      className="rd-tabs"
+      className={level === 2 ? "rd-tabs rd-tabs-sub" : "rd-tabs"}
       value={value}
       items={items.map((item) => item.value)}
       onSelect={onChange}

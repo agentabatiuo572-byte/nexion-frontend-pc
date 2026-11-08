@@ -5,6 +5,7 @@ import "./risk-radar.css";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { fmtConfigPct } from "@/lib/format";
 import { AlertTriangle, BellRing, Gauge, Landmark, Radar, ShieldAlert, ShieldCheck } from "lucide-react";
 import { BPageHeader } from "../b-page-header";
 import { BDomainDataState } from "@/app/components/dashboard/b-domain-state";
@@ -360,7 +361,7 @@ export default function RiskRadarPage() {
       <div className="b5-summary">
         <span><Radar size={15} /> 实时汇总</span>
         <span>更新于 {new Date(data.generatedAt).toLocaleString()}</span>
-        <span>提现与充值比率红线 {pct(data.bankrun.pressureRedLine)}（只提醒，不自动处理）</span>
+        <span>提现与充值比率红线 {fmtConfigPct(data.bankrun.pressureRedLine * 100)}（只提醒，不自动处理）</span>
       </div>
       {radar.streamWarning && <div className="b5-error" role="status">{radar.streamWarning}</div>}
 
@@ -380,7 +381,7 @@ export default function RiskRadarPage() {
             <div>
               <span>提现与充值比率</span>
               <strong>{pct(data.bankrun.pressureRatio)}</strong>
-              <small>{data.bankrun.pressureCalculable ? `红线 ${pct(data.bankrun.pressureRedLine)} · 只提醒` : "近 24 小时没有充值，暂无法计算"}</small>
+              <small>{data.bankrun.pressureCalculable ? `红线 ${fmtConfigPct(data.bankrun.pressureRedLine * 100)} · 只提醒` : "近 24 小时没有充值，暂无法计算"}</small>
             </div>
           </div>
           <p>提现压力（24 小时提现 ÷ 可用储备）：黄线 {bankRunYellowPct}% · 红线 {bankRunRedlinePct}%。超过红线会触发最高级告警，并自动暂停提现。</p>
@@ -531,7 +532,7 @@ export default function RiskRadarPage() {
                 <div>调高红线后，自动暂停提现会更晚触发。另一位超管批准前，当前红线仍为 {threshold.redPct}%。</div>
               </div>
             </div>}
-            <p>提现压力 = 24 小时提现 ÷ 可用储备。超过红线会触发最高级告警并自动暂停提现。当前提现压力 {pct(data.bankrun.ratio24h)}；提现与充值比率 {pct(data.bankrun.pressureRatio)}（{data.bankrun.pressureCalculable ? `红线 ${pct(data.bankrun.pressureRedLine)}，只提醒，不在这里调整` : "近 24 小时没有充值，暂无法计算"}）</p>
+            <p>提现压力 = 24 小时提现 ÷ 可用储备。超过红线会触发最高级告警并自动暂停提现。当前提现压力 {pct(data.bankrun.ratio24h)}；提现与充值比率 {pct(data.bankrun.pressureRatio)}（{data.bankrun.pressureCalculable ? `红线 ${fmtConfigPct(data.bankrun.pressureRedLine * 100)}，只提醒，不在这里调整` : "近 24 小时没有充值，暂无法计算"}）</p>
             <ThresholdComparison approval={requiresApproval} fields={[
               { label: "黄线（5%–50%）", current: threshold.yellowPct, input: <input className="w-full" aria-label="黄线（5%–50%）" value={yellowInput} disabled={thresholdLocked} onChange={(event) => setYellowInput(event.target.value)} inputMode="decimal" /> },
               { label: "红线（10%–80%）", current: threshold.redPct, input: <input className="w-full" aria-label="红线（10%–80%）" value={redInput} disabled={thresholdLocked} onChange={(event) => setRedInput(event.target.value)} inputMode="decimal" /> },

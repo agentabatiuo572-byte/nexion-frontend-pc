@@ -56,7 +56,7 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
     if (!policy || pending || busy || !canManage || !owns()) return;
     const current = policy;
     const minText = String(Number(current.minDepositUsdt));
-    openActionConfirm({ briefKind: "config", action: "提交 USDT BEP20 / ERC20 共同充值规则", title: "调整共同充值规则", confirmLabel: "提交审批",
+    openActionConfirm({ briefKind: "config", action: "提交 USDT BEP20 / ERC20 / TRC20 共同充值规则", title: "调整共同充值规则", confirmLabel: "提交审批",
       effect: <StatusTag tone="progress" filled>超级管理员批准后生效</StatusTag>,
       detail: `当前：最低 ${current.minDepositUsdt} USDT；手续费 ${current.feeUsdt} USDT；确认数 ${current.confirmations}；版本 ${current.version}。提交后需审批，批准前不生效。`,
       completionCopy: APPROVAL_TEXT,
@@ -87,7 +87,7 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
         const before = `最低 ${current.minDepositUsdt} USDT；手续费 ${current.feeUsdt} USDT；确认数 ${current.confirmations}；版本 ${current.version}`;
         const after = `最低 ${min} USDT；手续费 ${fee} USDT；确认数 ${confirmations}`;
         mutation.current = true; setBusy(true); setError(""); setMessage("");
-        const input: ProposalInput = { action: "调整 USDT BEP20 / ERC20 共同充值规则", obj: "current", beforeValue: before, afterValue: after,
+        const input: ProposalInput = { action: "调整 USDT BEP20 / ERC20 / TRC20 共同充值规则", obj: "current", beforeValue: before, afterValue: after,
           operator, operatorRole: "运营人员", type: "param", amplifies: true, sos: false, roleGate: "另一位有审批权的管理员", reason, sourceDomain: "D1",
           command: { domain: "D", op: "d_cregis_deposit_policy", params: { minDepositUsdt: min, feeUsdt: fee, confirmations: Number(confirmations), expectedVersion: current.version, reason } },
           target: { domain: "D", type: "cregis_deposit_policy", id: "current" } };
@@ -152,7 +152,7 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
   const entryBlock = loading ? "正在读取最新数据" : busy ? "正在提交" : !policy ? "规则没读到，刷新后再试" : pending && !pending.terminal ? "有一个提案还没结束，先在上面查询原提案" : pending ? "先点「核对完成，准备新变更」" : undefined;
   const audit = reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=D">查看操作记录与审批</Link>;
   return <Panel icon={Scale} tone="role-4" title="USDT 共同充值规则"
-    explain={<><p>BEP20 和 ERC20 共用这三项。三项一起提交审批。</p><p>{APPROVAL_TEXT}未入账交易仍须满足环境安全确认数下限。</p>{policy && <p>现在生效的是第 {policy.version} 版。</p>}</>}
+    explain={<><p>BEP20、ERC20 和 TRC20 共用这三项。三项一起提交审批。</p><p>{APPROVAL_TEXT}未入账交易仍须满足环境安全确认数下限，TRC20 还须通过固化区块核验。</p>{policy && <p>现在生效的是第 {policy.version} 版。</p>}</>}
     actions={<>
       <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} disabled={busy} onClick={() => void refresh()}>刷新</Button>
       {canManage && <Button size="sm" disabledReason={entryBlock} onClick={submit}>调整</Button>}

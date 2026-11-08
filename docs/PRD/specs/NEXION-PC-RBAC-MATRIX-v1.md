@@ -1,5 +1,7 @@
 # Nexion PC 运营后台 75 模块权限矩阵 v1.0
 
+> **B38 后端对齐（2026-11-08）**：本轮按[九项契约](../B38-后端九项交付契约-20261108.md)更新 D 域审批读取、退款双人、客服用户范围、D6/I5；为后端目标口径，正式 TEST 结果另记。用户本轮要求先只改后端，不改 UI；另已确认未知结果核查仅超管、仍须原业务权限与权威凭据，证据不足继续锁定。
+
 > **现行裁决(2026-08-07)**:全项目已取消 KYC、钱包配对、C4 与 K5；本文相关旧字段、门禁、用例、权限或流程仅保留为历史基线，不得作为现行实现、运营或验收依据。
 
 > 状态：Target Baseline
@@ -67,7 +69,8 @@
 | 模块 | R 权限 | 可读角色 | W/H/X 角色 | 数据范围与关键限制 |
 |---|---|---|---|---|
 | A1 运营账号 & RBAC | `platform_a1_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR | W/H：SUPER_ADMIN；CONFIG_ADMIN 仅账号生命周期 | ALL；授权更新与账号启停分权，禁止自授予 |
-| A2 审计 & 操作确认 | `platform_a2_read` | 全角色按本域证据、AUDITOR 全量 | W：有本域发起权；H：目标动作独立执行人 | 发起人只看本人/本域；AUDITOR MASKED 全量；审计不可改 |
+| A2 审计 & 操作确认 | `platform_a2_read` | 全角色按本域证据、AUDITOR 全量；FINANCE_LEAD 只读 D 域与精确本人 E4 原单 | W：有本域发起权；H：目标动作独立执行人；主管的待批读取不新增批准权 | 本人原键按原业务权限找回；无关票拒绝；AUDITOR MASKED 全量；审计不可改 |
+| A2 未知操作结果核查（后端） | 原业务读权；结案须 `platform_a2_unknown_investigate` | 原操作者按当前业务范围读回执；有权超管按原业务范围核查 | HIGH：仅真实有效 SUPER_ADMIN；财务／风控不可结案 | 绑定原对象／动作／请求及权威证据；不新增付款／退款权，不重放；证据不足保持锁定 |
 | A3 系统配置 | `platform_a3_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR | W：CONFIG_ADMIN；H：SUPER_ADMIN | ALL；单例写加全局锁、版本、快照和恢复 |
 | A4 埋点事件体系 | `platform_a4_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR；域 Owner 看本域 | W：CONFIG_ADMIN；schema 发布 H：SUPER_ADMIN | 域级；历史事件不可改，schema 只新增 revision |
 | A5 平台参数寄存器 | `platform_a5_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR | W：CONFIG_ADMIN；敏感参数 H：SUPER_ADMIN | ALL；Owner、类型、范围、生效面必填 |
@@ -135,9 +138,9 @@ A6 当前执行路径（2026-11-04，T02、BUG-134）：新建角色、修改名
 | D1 充值与收款对账 | `finance_d1_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR | W/H：FINANCE_LEAD；风险锁：RISK；PSP 切换：SUPER_ADMIN | ALL；银行账号只显尾号，密文不回传 |
 | D2 提现审核队列 | `finance_d2_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR | 审核：FINANCE；冻结：RISK；放行/退款/解冻：FINANCE_LEAD+对应风控门 | REGION/ALL；地址与 tx 敏感字段按需显示 |
 | D3 资金池水位仪表盘 | `finance_d3_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR | W：FINANCE_LEAD（储备/处置命令） | ALL；读模型不直接改账 |
-| D4 账本与账单核对 | `finance_d4_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR | X：FINANCE_LEAD/AUDITOR；无原记录修改 | MASKED；冲正为新流水 |
-| D5 USDT 提现参数 | `finance_d5_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR | H：FINANCE_LEAD；风险参数需 RISK 共同门禁 | ALL；版本/CAS、B1、H1 只读边界 |
-| D6 汇率设置 | `finance_d6_read` | FINANCE、FINANCE_LEAD、GROWTH、AUDITOR | W/H：FINANCE_LEAD | ALL；锁价版本不可回写历史订单 |
+| D4 账本与账单核对 | `finance_d4_read`；单用户 `finance_d4_user_read` | 平台：FINANCE、FINANCE_LEAD、RISK、AUDITOR；SUPPORT 仅已授权用户 | X：FINANCE_LEAD/AUDITOR；SUPPORT 无平台／导出／写权 | 两个用户账单／运行余额入口统一校验客服用户范围；MASKED；冲正为新流水 |
+| D5 USDT 提现参数 | `finance_d5_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR | 写／审批沿独立权限；FINANCE_LEAD 可读待批与本人原单，不因读取增加批准权 | ALL；版本/CAS、可靠资金门槛、B1/H1 只读边界 |
+| D6 汇率设置 | `finance_d6_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR、SUPER_ADMIN；GROWTH 拒绝 | 沿原管理权；需审批方向由另一有权超管批准，基准价上调两次资金检查 | ALL；整组方向、版本/CAS；锁价版本不可回写历史订单 |
 
 ### 3.5 E 设备与商城（6）
 
@@ -146,7 +149,7 @@ A6 当前执行路径（2026-11-04，T02、BUG-134）：新建角色、修改名
 | E1 商品目录 & 上架门 | `device_e1_read` | GROWTH、FINANCE、SUPPORT、AUDITOR | W：GROWTH；上架/删除 H：GROWTH lead | ALL；关联订单、券、奖励完整性保护 |
 | E2 收益 & 任务引擎 | `device_e2_read` | GROWTH、RISK、AUDITOR | W/H：GROWTH lead | ALL；规则版本只影响明确批次 |
 | E3 生命周期 & Trade-in | `device_e3_read` | GROWTH、SUPPORT、FINANCE、AUDITOR | W：GROWTH；回收恢复/抵扣规则 H | REGION；设备归属、实付价、累计产出不可伪造 |
-| E4 订单状态机 | `device_e4_read` | GROWTH、FINANCE、SUPPORT、AUDITOR | W：SUPPORT/GROWTH；退款 H：FINANCE_LEAD | REGION/QUEUE；订单单向迁移、退款走账本 |
+| E4 订单状态机 | `device_e4_read` | GROWTH、FINANCE、SUPPORT、AUDITOR；财务主管及超管按既有读权 | 普通动作沿原权限；退款发起：FINANCE_LEAD／有权 SUPER_ADMIN，GROWTH 不可；批准：另一有权 SUPER_ADMIN | REGION/QUEUE；本人不能批准；直接接口与服务不可绕过 A2；退款走账本 |
 | E5 设备运维 | `device_e5_read` | GROWTH、SUPPORT、RISK、AUDITOR | W：GROWTH/SUPPORT；force/unbind H | REGION；批量动作限制目标集与上限 |
 | E6 算力与设备配置 | `device_e6_read` | GROWTH、CONFIG_ADMIN、AUDITOR | W/H：GROWTH lead/CONFIG_ADMIN | ALL；App 投影版本、唯一六档、失败关闭 |
 
@@ -192,7 +195,7 @@ A6 当前执行路径（2026-11-04，T02、BUG-134）：新建角色、修改名
 | I2 Nova 推送运营 | `content_i2_read` | CONTENT、SUPPORT、AUDITOR | W：CONTENT；通道 kill H | ALL；禁用不抹历史送达 |
 | I3 通知 Campaign | `content_i3_read` | CONTENT、GROWTH、SUPPORT、AUDITOR | W：CONTENT；立即全量发送 H | REGION/ALL；已发送不可撤回 |
 | I4 信任中心 | `content_i4_read` | CONTENT、RISK、FINANCE、AUDITOR | 发布/回滚/下架 H：CONTENT lead+合规权限 | REGION；公开证明版本不可覆盖 |
-| I5 风险披露 | `content_i5_read` | CONTENT、RISK、FINANCE、AUDITOR | H：RISK/CONTENT lead | JURISDICTION；版本确认和资金门禁联动 |
+| I5 风险披露 | `content_i5_read` | CONTENT、RISK、FINANCE、AUDITOR | CONTENT 等独立有权者按原规则写／发布；RISK 仅只读 | JURISDICTION；风控不保留旧 draft 写、发布或开关权；版本确认和资金门禁联动 |
 | I6 i18n 文案 | `content_i6_read` | CONTENT、GROWTH、SUPPORT、AUDITOR | W：CONTENT；namespace 发布 H | locale/namespace；占位符等集、禁词门禁 |
 
 ### 3.10 J 紧急与合规控制（4）

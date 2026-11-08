@@ -25,6 +25,7 @@ import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operat
 import { isIdempotencyOutcomeOpen } from "@/lib/admin/outcome-classification";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useReach } from "@/lib/nav/use-reach";
+import { fmtConfigPct } from "@/lib/format";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   approveUserAssetAdjustment,
@@ -777,7 +778,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     if (!latest && overview.error) return "兑付覆盖率暂时读不到，刷新后再批准增加余额";
     const block = creditCoverageBlock(coverage, Number(row.amountUsd ?? row.amount));
     if (block === "unreliable") return "兑付覆盖率暂时算不出来，现在不能批准增加余额。";
-    if (block === "below") return `按现在的覆盖率算，批准后会低于红线 ${pct(coverage!.redline)}，现在不能批准。可以先驳回，或等覆盖率回升。`;
+    if (block === "below") return `按现在的覆盖率算，批准后会低于红线 ${fmtConfigPct(coverage!.redline)}，现在不能批准。可以先驳回，或等覆盖率回升。`;
     return undefined;
   };
 
@@ -1148,7 +1149,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         {balanceNow === null ? "—" : balanceAfter === null ? money(balanceNow) : <Change from={money(balanceNow)} to={money(balanceAfter)} tone={debitInsufficient ? "warn" : undefined} />}
       </Fact>
       {asset === "UVT" && <Fact k="USDT 等值" unit={amountPositive && rateOk ? "USDT" : undefined}>{amountPositive && rateOk ? usdEquivalent(amountUsd) : "—"}</Fact>}
-      <Fact k="兑付覆盖率" unit={contextCoverage?.reliable ? `红线 ${pct(contextCoverage.redline)}` : undefined} tone={!contextCoverage?.reliable ? "warn" : undefined}>
+      <Fact k="兑付覆盖率" unit={contextCoverage?.reliable ? `红线 ${fmtConfigPct(contextCoverage.redline)}` : undefined} tone={!contextCoverage?.reliable ? "warn" : undefined}>
         {!contextCoverage?.reliable ? "算不出来"
           : coverageAfter === undefined ? pct(contextCoverage.ratio)
             : <Change from={pct(contextCoverage.ratio)} to={coverageAfter === null ? "批准后应付款为 0" : pct(coverageAfter)}
@@ -1299,7 +1300,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       label: "兑付覆盖率",
       state: detailLoading || !detail ? undefined : !shownCoverage?.reliable || (shownCoverageAfter != null && shownCoverageAfter < shownCoverage.redline) ? "danger" as const : undefined,
       value: detailLoading ? "正在读取…" : !detail ? "读不到" : !shownCoverage?.reliable ? "算不出来，现在不能批准增加余额"
-        : `现在 ${pct(shownCoverage.ratio)} → 批准后约 ${shownCoverageAfter == null ? "应付款为 0" : pct(shownCoverageAfter)}，红线 ${pct(shownCoverage.redline)}`,
+        : `现在 ${pct(shownCoverage.ratio)} → 批准后约 ${shownCoverageAfter == null ? "应付款为 0" : pct(shownCoverageAfter)}，红线 ${fmtConfigPct(shownCoverage.redline)}`,
     }] : []),
     { label: "提交人", value: text(shown.maker), reason: formatBusinessTimeFull(shown.createdAt, "—") },
     ...(shownPending ? [{ label: "能不能批", value: !canApprove ? WAITING : shownMine ? MINE : shownApproveBlock ? "现在不能批" : "你能批", state: canApprove && !shownMine && shownApproveBlock ? "warn" as const : undefined }] : []),
@@ -1363,7 +1364,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       guideExtra={canWriteAny ? undefined : <p>你的账号只能查看，「发起」「批准」「冲正」的步骤要有对应权限的同事办。</p>} />
 
     {pendingNotices}
-    {(canCreate || canApprove) && coverageBelow && overviewCoverage && <Notice tone="danger" title={`兑付覆盖率 ${pct(overviewCoverage.ratio)}，低于红线 ${pct(overviewCoverage.redline)}`}
+    {(canCreate || canApprove) && coverageBelow && overviewCoverage && <Notice tone="danger" title={`兑付覆盖率 ${pct(overviewCoverage.ratio)}，低于红线 ${fmtConfigPct(overviewCoverage.redline)}`}
       action={canReadPool ? <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款</Link> : undefined}>
       现在不能增加用户余额：提交和批准都会被拒。扣减照常。
     </Notice>}

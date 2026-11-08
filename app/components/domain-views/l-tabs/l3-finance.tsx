@@ -409,7 +409,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
       <div className="f-stats">
         <div className="f-stat"><div className="k">本期总收入</div><div className="v">{fmtM(revTotal)}</div><div className="sub">按当前报表周期汇总</div></div>
         <div className="f-stat ok"><div className="k">本期确认 / 本期申请</div><div className="v">{redRate}</div><div className="sub">本期确认数 ÷ 本期申请数 · 周期核账指标</div></div>
-        <div className="f-stat ok"><div className="k">兑付覆盖率</div><div className="v">{TREASURY.coverageRatio}%</div><div className="sub">红线 {TREASURY.redLine} / 健康线 {TREASURY.yellowLine}</div></div>
+        <div className="f-stat ok"><div className="k">兑付覆盖率</div><div className="v">{TREASURY.coverageRatio}%</div><div className="sub">红线 {TREASURY.redLine}% / 健康线 {TREASURY.yellowLine}%</div></div>
         <div className="f-stat cyan"><div className="k">储备可覆盖到期</div><div className="v">{reserveCoverDaysValue}</div><div className="sub">{reserveCoverDaysCopy} · 来自可用资金与应付款</div></div>
       </div>
 

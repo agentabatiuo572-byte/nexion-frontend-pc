@@ -259,7 +259,7 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
                 <Fold inset title="段落标识和顺序" summary={`${section.id || "未填写"} · 顺序 ${section.order}`} defaultOpen={!section.id.trim()}>
                   <div className="rd-form-grid">
                     <Field label="段落标识" required explain="后台用它区分段落，同一语言里不能重复。新增段落会自动生成。">{(control) => <Input {...control} maxLength={64} value={section.id} onChange={(event) => setSection(index, { id: event.target.value })} />}</Field>
-                    <Field label="顺序" explain="数字小的排前面。">{(control) => <NumberInput {...control} aria-label="顺序" min={0} max={100000} step={1} value={String(section.order)} onChange={(event) => setSection(index, { order: Number(event.target.value) })} />}</Field>
+                    <Field label="顺序" explain="数字小的排前面。">{(control) => <NumberInput {...control} aria-label="顺序" min={0} max={100000} step={1} value={String(section.order)} onChange={(event) => setSection(index, { order: Number(event.target.value) || 0 })} />}</Field>
                   </div>
                 </Fold>
                 <div><Button size="sm" variant="ghost" icon={<Trash2 size={14} aria-hidden />} onClick={() => setContent({ ...current, sections: current.sections.filter((_, itemIndex) => itemIndex !== index) })}>删除段落</Button></div>
