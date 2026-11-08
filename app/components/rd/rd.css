@@ -104,6 +104,7 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-panel { background: var(--rd-panel); border-radius: var(--rd-radius-panel); padding: var(--rd-panel-pad-y) var(--rd-panel-pad-x); min-width: 0; }
 .rd-panel[data-flush] { padding: 0; overflow: hidden; }
 .rd-panel[data-plain] { padding: 0; background: none; border-radius: 0; }
+.rd-panel > .rd-notice + .rd-config { margin-top: 12px; }  /* 面板顶上的提示条和下面的配置行，和标题到内容一样隔 12（VS-65） */
 .rd-panel-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; min-width: 0; }  /* 放不下时动作换到下一行，标题不拆字 */
 .rd-panel[data-flush] > .rd-panel-head { margin: 0; padding: var(--rd-panel-pad-y) var(--rd-panel-pad-x) 12px; }
 .rd-panel-title { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; color: var(--rd-text); }
@@ -240,6 +241,13 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-seg-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--tone); }
 .rd-seg-count { font-variant-numeric: tabular-nums; font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
 @media (hover: hover) and (pointer: fine) { .rd-seg:not(:disabled):not([aria-checked="true"]):hover { background: var(--rd-panel); color: var(--rd-text); } }
+/* 表单字段里的分段是一组二选一的控件：有底槽、浅色下一圈描边、选中项抬起，和指标头的分段同一写法（Ant Design Segmented）。列表上方的筛选分段不变 */
+.rd-form-field .rd-segs { justify-self: start; width: fit-content; max-width: 100%; gap: 2px; padding: 2px; border-radius: var(--rd-radius-control); background: var(--rd-bg); }
+.rd-form-field .rd-seg { height: calc(var(--rd-control-h) - 4px); }
+.rd-form-field .rd-seg[aria-checked="true"] { background: var(--rd-control); }
+:root[data-theme="light"] .rd-form-field .rd-segs { background: var(--rd-panel-inner); box-shadow: inset 0 0 0 1px var(--rd-line); }
+:root[data-theme="light"] .rd-form-field .rd-seg[aria-checked="true"] { background: var(--rd-panel); box-shadow: 0 1px 2px rgba(0, 0, 0, .08), 0 0 0 1px var(--rd-line); }
+@media (hover: hover) and (pointer: fine) { .rd-form-field .rd-seg:not(:disabled):not([aria-checked="true"]):hover { background: transparent; } }
 
 /* ── 折叠组 ── */
 .rd-fold { background: var(--rd-panel); border-radius: var(--rd-radius-panel); }
@@ -492,7 +500,7 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-reason-box textarea { display: block; width: 100%; padding-bottom: 24px; }
 .rd-reason-count { position: absolute; right: 10px; bottom: 6px; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; pointer-events: none; }
 .rd-confirm-facts { margin-bottom: 16px; padding: 12px 16px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
-.rd-confirm-facts .rd-facts + .rd-notice { margin-top: 12px; }
+.rd-confirm-facts :is(.rd-facts, .rd-diff) + .rd-notice { margin-top: 12px; }
 /* 覆盖率跟在事实后面，是这一块的最后一行：资金信息排在要填的字段前。 */
 .rd-modal.rd-confirm .rd-confirm-facts > .alertbar { margin-top: 8px; }
 .rd-modal.rd-confirm .rd-confirm-facts > .alertbar.calm { padding: 0; background: none; }

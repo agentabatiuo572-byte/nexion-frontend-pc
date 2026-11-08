@@ -2596,11 +2596,24 @@ export async function updateD5WithdrawalLimits(
   expectedVersion: number,
   reason: string,
   operator: string,
+  /** 页面自己保存的命令号；结果未知后按原操作重试时传同一个（OP-94）。 */
+  commandKey?: string,
 ) {
   const payload = { ...d5WithdrawalLimitsValues(changes, expectedVersion), reason, operator };
-  return normalizeD5Params(await apiRequest<Record<string, unknown>>("withdraw", "/limits", {
-    method: "PUT",
-    body: JSON.stringify(payload),
-    idempotencyPrefix: "d5-withdrawal-limits",
-  }));
+  let data: Record<string, unknown>;
+  try {
+    data = await apiRequest<Record<string, unknown>>("withdraw", "/limits", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+      ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "d5-withdrawal-limits" }),
+    });
+  } catch (cause) {
+    // HTTP 成功、外壳却读不懂：后端可能已经改了，算结果未知，原命令号留着（OP-91）。
+    if (commandKey && cause instanceof DRequestError && cause.status >= 200 && cause.status < 300 && cause.code === undefined) {
+      throw new DOutcomeUnknownError(commandKey);
+    }
+    throw cause;
+  }
+  // 写成功了，回来的内容读不懂也算结果未知，不能当失败丢号（OP-91）。
+  return commandKey ? readWriteResult(commandKey, () => normalizeD5Params(data)) : normalizeD5Params(data);
 }
