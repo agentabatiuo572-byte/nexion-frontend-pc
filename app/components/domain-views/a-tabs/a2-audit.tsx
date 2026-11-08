@@ -1381,7 +1381,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         </Facts>
       ),
       // 「不能撤销」标题下已有标签，摘要不再写（VS-106）。
-      statedBrief: { impact: "到期记录先长期归档，再从在线列表移除；未到期和旧版历史不动。", check: "核对条数和最早到期时间，理由写清依据或工单号。" },
+      statedBrief: { impact: "到期记录先归档再移出列表；未到期的不动。", check: "核对条数和最早到期时间，理由写清依据或工单号。" },
       amplifies: false,
       reasonMin,
       reasonMax: 200,
