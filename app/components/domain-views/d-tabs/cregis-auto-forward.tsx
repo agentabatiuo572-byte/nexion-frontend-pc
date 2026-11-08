@@ -98,8 +98,8 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch}:Props&{owner:
       ...(state.endsWith("FAILED")&&!row[`${stage}Cid`]&&row.lastError==="CREGIS_AUTO_CREATE_REJECTED"?[{key:"retry",label:"申请重试明确拒绝任务",run:()=>recover(row,true)}]:[])];
   };
   const waiting=records.filter(row=>/_(UNKNOWN|FAILED)$/.test(String(row.state))).length;
-  return <Panel icon={ArrowRightLeft} tone="role-2" title="自动归集与甲方付款"
-    explain="充值核实入账 → 自动归集充值全额至平台钱包 → 链上确认 → 自动向甲方支付用户入账净额。充值手续费留平台，链上手续费由平台另付；不重复入账或扣用户余额。仅处理首次启用水位之后的充值事件，暂停和恢复不会重置水位；已发送单在关闭后仍继续只读核对。"
+  return <Panel icon={ArrowRightLeft} tone="role-2" title="BEP20 自动归集与甲方付款"
+    explain="仅适用于 BEP20：充值核实入账 → 自动归集充值全额至平台钱包 → 链上确认 → 自动向甲方支付用户入账净额。充值手续费留平台，链上手续费由平台另付；不重复入账或扣用户余额。仅处理首次启用水位之后的充值事件，暂停和恢复不会重置水位；已发送单在关闭后仍继续只读核对。"
     actions={<>
       <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden/>} loading={loading} disabled={busy} onClick={()=>void refresh()}>刷新</Button>
       {canWrite&&status&&<Button size="sm" variant="danger-outline" disabledReason={block} onClick={()=>policy("PAUSE")}>暂停自动归集及付款</Button>}

@@ -1,6 +1,7 @@
 "use client";
 
 import type { L3FinanceSnapshot, L3LiveFact } from "./l3-live-data";
+import { fmtConfigPct } from "@/lib/format";
 
 function usd(value: number | undefined) {
   return value === undefined ? "—" : `${value.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
@@ -10,7 +11,7 @@ export function L3LiveFacts({ facts, snapshot }: { facts: L3LiveFact[]; snapshot
   const headline = snapshot ? [
     { key: "reserve", label: "实际储备", value: usd(snapshot.reserveUsd), sub: "资金池总额" },
     { key: "liability", label: "应付负债", value: usd(snapshot.liabilitiesUsd), sub: "负债账本" },
-    { key: "coverage", label: "兑付覆盖率", value: snapshot.coverageRatio === undefined ? "—" : `${snapshot.coverageRatio.toFixed(2)}%`, sub: snapshot.redlinePct === undefined ? "当前值" : `红线 ${snapshot.redlinePct.toFixed(2)}%` },
+    { key: "coverage", label: "兑付覆盖率", value: snapshot.coverageRatio === undefined ? "—" : `${snapshot.coverageRatio.toFixed(2)}%`, sub: snapshot.redlinePct === undefined ? "当前值" : `红线 ${fmtConfigPct(snapshot.redlinePct)}` },
     { key: "queue", label: "待处理提现", value: snapshot.queueBacklogCount === undefined ? "—" : `${snapshot.queueBacklogCount.toLocaleString("zh-CN")} 笔`, sub: usd(snapshot.queueBacklogUsd) },
   ] : facts.slice(0, 4).map((fact) => ({ key: fact.key, label: fact.label, value: fact.value.toLocaleString("zh-CN"), sub: `实时累计 · ${fact.sourceLabel}` }));
   return (

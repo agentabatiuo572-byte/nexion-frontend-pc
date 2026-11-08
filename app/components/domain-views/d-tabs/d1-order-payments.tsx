@@ -17,8 +17,8 @@ import { fetchPurchasePaymentPolicy, fetchPurchasePaymentRecords, fetchPurchaseP
 import { LongValue, PendingNotices, readPage, readParam, usdt, vnd, writeParams, zoneLabel, type D1Activity, type D1Count, type D1PendingItem } from "./d1-shared";
 import type { DCtx } from "./types";
 
-const methodText: Record<PurchasePaymentMethod, string> = { HDPAY_BANK: "银行卡支付", CREGIS_USDT_BSC: "USDT（BEP20）", CREGIS_USDT_ERC20: "USDT（ERC20）" };
-const methodNote: Record<PurchasePaymentMethod, string> = { HDPAY_BANK: "按手续费收取，不收网络费，不需要支付密码。", CREGIS_USDT_BSC: "按手续费和网络费收取，不需要支付密码。", CREGIS_USDT_ERC20: "以太坊网络费较高，单独设置，不需要支付密码。" };
+const methodText: Record<PurchasePaymentMethod, string> = { HDPAY_BANK: "银行卡支付", CREGIS_USDT_BSC: "USDT（BEP20）", CREGIS_USDT_ERC20: "USDT（ERC20）", CREGIS_USDT_TRC20: "USDT（TRC20）" };
+const methodNote: Record<PurchasePaymentMethod, string> = { HDPAY_BANK: "按手续费收取，不收网络费，不需要支付密码。", CREGIS_USDT_BSC: "按手续费和网络费收取，不需要支付密码。", CREGIS_USDT_ERC20: "以太坊网络费较高，单独设置，不需要支付密码。", CREGIS_USDT_TRC20: "TRON 网络，按手续费和网络费收取，不需要支付密码。" };
 const stateText: Record<PurchasePaymentState, string> = { CREATING: "正在创建", SUBMIT_UNKNOWN: "创建结果未确认", AWAITING_PAYMENT: "等待付款", FUNDS_CONFIRMED: "已收款，待完成", DELIVERED: "已完成", MANUAL_REVIEW: "需人工处理", EXPIRED: "已过期" };
 const stateTone = (state: PurchasePaymentState): StateTone => state === "MANUAL_REVIEW" ? "warn" : state === "DELIVERED" ? "ok" : state === "EXPIRED" ? "done" : "progress";
 const STATE_GROUPS: readonly { label: string; states: readonly PurchasePaymentState[] }[] = [
@@ -127,7 +127,9 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
   const valid = !!policy?.constraints && changedChannels.length > 0 && changedChannels.every(row => validPurchaseChannel(row, policy.constraints));
   const changed = changedChannels.length > 0;
   const canEdit = allowed("finance_d1_fx_manage");
-  const unconfigured = policy?.channels.filter(row => !row.configured).length ?? 0;
+  // 旧响应可能少返回 TRC20 渠道：少了的也算未配置，用户付款时同样看不到（test 5e5a5168）。
+  const missingMethods = policy ? purchasePaymentMethods.filter(method => !policy.channels.some(row => row.paymentMethod === method)) : [];
+  const unconfigured = (policy?.channels.filter(row => !row.configured).length ?? 0) + missingMethods.length;
   useEffect(() => { onUnconfigured(unconfigured); }, [onUnconfigured, unconfigured]);
   const activity = useMemo(() => [
     ...(changed ? [`付款手续费有 ${changedChannels.length} 种付款方式没保存`] : []),
@@ -210,7 +212,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
   const saveBlock = !canEdit ? "只有超级管理员能改" : policyLoading ? "正在读取最新数据" : busy ? "正在提交" : policyPending ? "上次保存结果未确认，先在本页上方核对"
     : !policy?.constraints ? "暂时拿不到可填范围，只能查看" : !changed ? "还没有修改" : !valid ? "有填错的项，按框下的提示改" : undefined;
   const feeSummary = policyLoading ? "正在读取" : policyError ? "读取失败" : policy
-    ? `${policy.channels.length} 种付款方式${unconfigured ? `，${unconfigured} 种未配置 · 用户付款时看不到` : "，都已配置"}${changed ? "，有修改没保存" : ""}` : "—";
+    ? `${policy.channels.length + missingMethods.length} 种付款方式${unconfigured ? `，${unconfigured} 种未配置 · 用户付款时看不到` : "，都已配置"}${changed ? "，有修改没保存" : ""}` : "—";
   const feeFoldOpen = feeOpen ?? (unconfigured > 0 || changed || !!policyError);
   const doRefreshPolicy = () => { setRefreshAsk(false); void loadPolicy(); };
 
@@ -294,7 +296,11 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
                     </Td>;
                   })}
                 </tr>;
-              })}</tbody>
+              })}
+              {missingMethods.map(method => <tr key={method}>
+                <Td><Cell main={methodText[method]} sub={<StatusTag tone="warn">未配置</StatusTag>} /></Td>
+                <Td colSpan={FEE_FIELDS.length}><Cell full main="后端没返回这个渠道，不能修改" sub="用户付款时看不到；核对部署后刷新" /></Td>
+              </tr>)}</tbody>
             </Table>
             <div className="rd-col-foot">
               <span className="rd-row-actions">
@@ -387,7 +393,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, reloadTick, pending, nav, o
         ...(pending ? [{ label: "待确认", state: "warn" as const, value: "这笔付款有一次操作还没确认结果，请在页面上方的提醒里查看。" }] : []),
       ] : []} />}
     {r && <>
-      <Fold inset title="金额明细" summary={r.paymentMethod === "HDPAY_BANK" ? (r.amountVnd ? `应付 ${vnd(r.amountVnd)} VND` : "应付越南盾尚未提供") : "矿工费由用户另付"}>
+      <Fold inset title="金额明细" summary={r.paymentMethod === "HDPAY_BANK" ? (r.amountVnd ? `应付 ${vnd(r.amountVnd)} ₫` : "应付越南盾尚未提供") : r.paymentMethod === "CREGIS_USDT_TRC20" ? "外部链上费用由用户另付" : "矿工费由用户另付"}>
         <KeyValues rows={[
           { key: "business", label: "订单金额", value: r.businessAmountUsdt == null ? "尚未提供" : `${usdt(r.businessAmountUsdt)} USDT` },
           { key: "subtotal", label: "收款金额", value: `${usdt(r.subtotalUsdt)} USDT` },
@@ -396,16 +402,17 @@ function PaymentDetail({ intentNo, owner, owns, ctx, reloadTick, pending, nav, o
           { key: "network", label: "网络费", value: `${usdt(r.networkConfirmFeeUsdt)} USDT` },
           { key: "cost", label: "通道实际成本", value: r.providerActualFeeUsdt == null ? "尚未提供" : `${usdt(r.providerActualFeeUsdt)} USDT` },
           ...(r.paymentMethod === "HDPAY_BANK" ? [
-            { key: "fx", label: "锁定汇率", value: r.fxRateVndPerUsdt ? `1 USDT = ${vnd(r.fxRateVndPerUsdt)} VND` : "尚未提供" },
-            { key: "vnd", label: "应付越南盾", value: r.amountVnd ? `${vnd(r.amountVnd)} VND` : "尚未提供" },
-          ] : [{ key: "gas", label: "矿工费", value: `用户在自己钱包里另付的 ${r.paymentMethod === "CREGIS_USDT_ERC20" ? "ETH" : "BNB"} 矿工费不算在内。` }]),
+            { key: "fx", label: "锁定汇率", value: r.fxRateVndPerUsdt ? `1 USDT = ${vnd(r.fxRateVndPerUsdt)} ₫` : "尚未提供" },
+            { key: "vnd", label: "应付越南盾", value: r.amountVnd ? `${vnd(r.amountVnd)} ₫` : "尚未提供" },
+          ] : r.paymentMethod === "CREGIS_USDT_TRC20" ? [{ key: "gas", label: "外部链上费用", value: "用户在钱包里另付的 TRX、能量和带宽不算在内。" }]
+            : [{ key: "gas", label: "矿工费", value: `用户在自己钱包里另付的 ${r.paymentMethod === "CREGIS_USDT_ERC20" ? "ETH" : "BNB"} 矿工费不算在内。` }]),
         ]} />
       </Fold>
       {r.arrivals && <Fold inset title="链上到账" summary={r.arrivals.length ? `${r.arrivals.length} 笔` : "还没有链上到账记录"}>
         {r.arrivals.length === 0 ? <p className="rd-note">还没有链上到账记录。</p> : <Table label="链上到账">
           <thead><tr><Th>交易号</Th><Th align="right">到账（USDT）</Th><Th align="right">确认数</Th><Th>核对结果</Th></tr></thead>
           <tbody>{r.arrivals.map(row => <tr key={`${row.txid}:${row.log_index}`}>
-            <Td><Cell mono main={<LongValue value={row.txid} label="交易号" />} sub={<>日志序号 {row.log_index} · 区块号 {row.block_number} · 区块哈希 <LongValue value={row.block_hash} label="区块哈希" /></>} /></Td>
+            <Td><Cell mono main={<LongValue value={row.txid} label="交易号" />} sub={<>日志序号 {row.log_index} · 区块号 {row.block_number} · 区块哈希 <span data-mono><LongValue value={row.block_hash} label="区块哈希" /></span></>} /></Td>
             <Td align="right"><Cell num main={usdt(row.amount)} /></Td>
             <Td align="right"><Cell num main={row.confirmations} /></Td>
             <Td><Cell main={row.status === "CONFIRMED" ? "已核对" : row.status === "MANUAL_REVIEW" ? "需人工处理" : "待确认"} /></Td>

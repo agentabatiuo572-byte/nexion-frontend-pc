@@ -156,8 +156,8 @@ export function D1BankOrders({ refreshKey, onCount, ...actions }: OrderActions &
       <Table label="银行卡支付订单" aria-busy={loading}>
         <thead><tr>
           <Th sticky="start">付款单 · 用户</Th>
-          <Th align="right" icon={Coins} tone="money">应付（VND）</Th>
-          <Th align="right">实际收款（VND）</Th>
+          <Th align="right" icon={Coins} tone="money">应付（₫）</Th>
+          <Th align="right">实际收款（₫）</Th>
           <Th>状态</Th>
           <Th sticky="end" align="right">操作</Th>
         </tr></thead>
@@ -193,9 +193,9 @@ export function D1BankOrders({ refreshKey, onCount, ...actions }: OrderActions &
         primary={<Button variant="primary" disabledReason={creditBlock(current, actions)} onClick={() => actions.onManualCredit(current, async () => { await load(); void loadCounts(); })}>人工确认入账</Button>} /> : undefined}>
       {!current ? <BlockState state="loading" title="正在读取订单…" /> : <>
         <JudgmentPoints rows={[
-          { label: "应付", icon: Coins, tone: "money", value: `${vnd(current.payableVnd)} VND`, reason: `申请 ${usdt(current.requestedUsdt)} USDT · 锁价 1 USDT = ${vnd(current.lockedFxRateVndPerUsdt)} VND` },
+          { label: "应付", icon: Coins, tone: "money", value: `${vnd(current.payableVnd)} ₫`, reason: `申请 ${usdt(current.requestedUsdt)} USDT · 锁价 1 USDT = ${vnd(current.lockedFxRateVndPerUsdt)} ₫` },
           { label: "实际收款", state: current.receivedVnd !== null && current.payableVnd !== null && current.receivedVnd !== current.payableVnd ? "warn" : undefined,
-            value: current.receivedVnd === null ? "还没收到" : `${vnd(current.receivedVnd)} VND`, reason: current.receivedVnd === null ? undefined : `到账 ${time(current.receivedAt)}（${zone}）` },
+            value: current.receivedVnd === null ? "还没收到" : `${vnd(current.receivedVnd)} ₫`, reason: current.receivedVnd === null ? undefined : `到账 ${time(current.receivedAt)}（${zone}）` },
           { label: "用户", icon: User, tone: "users", value: String(current.userId), reason: `附言 ${current.memoCode || "—"}` },
           { label: "状态", state: orderTone(current) === "progress" ? undefined : orderTone(current), value: orderStatusText(current.status), reason: `原订单 ${originalOrderStatusText(current.intentStatus)} · 本地 ${settlementStatusText(current.settlementStatus)}` },
           ...(credited(current) ? [{ label: "入账", state: "ok" as const, value: `${usdt(current.creditedUsdt)} USDT`, reason: confirmationSourceText(current.confirmationSource) }]

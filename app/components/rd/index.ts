@@ -6,6 +6,7 @@ export { InlineMeter, ThresholdMeter, TierBand } from "./meter";
 export { BatchBar } from "./batch-bar";
 export { Checkbox } from "./checkbox";
 export { Conclusion } from "./conclusion";
+export { ConflictBar } from "./conflict-bar";
 export { ControlCard, ControlGrid } from "./control-card";
 export { ConfigList, ConfigRow } from "./config-list";
 export { DiffField, DiffList, type DiffRow } from "./diff-list";

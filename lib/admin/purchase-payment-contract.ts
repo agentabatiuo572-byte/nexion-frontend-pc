@@ -1,4 +1,4 @@
-export const purchasePaymentMethods = ["HDPAY_BANK", "CREGIS_USDT_BSC", "CREGIS_USDT_ERC20"] as const;
+export const purchasePaymentMethods = ["HDPAY_BANK", "CREGIS_USDT_BSC", "CREGIS_USDT_ERC20", "CREGIS_USDT_TRC20"] as const;
 export type PurchasePaymentMethod = typeof purchasePaymentMethods[number];
 export const purchasePaymentStates = ["CREATING", "SUBMIT_UNKNOWN", "AWAITING_PAYMENT", "FUNDS_CONFIRMED", "DELIVERED", "MANUAL_REVIEW", "EXPIRED"] as const;
 export type PurchasePaymentState = typeof purchasePaymentStates[number];
@@ -45,7 +45,7 @@ export function parsePurchasePaymentPolicy(raw: unknown): PurchasePaymentPolicy 
       || !purchaseTopupMinimum(c.minTopupPrincipal.min) || !purchaseTopupMinimum(c.minTopupPrincipal.max) || c.minTopupPrincipal.integer !== true
       || cents(c.minTopupPrincipal.min) > cents(c.minTopupPrincipal.max)) throw new Error("可填范围不完整，请刷新后再试，暂时不能修改。");
   }
-  if (![2, 3].includes(channels.length) || !purchasePaymentMethods.slice(0, 2).every(method => channels.filter(row => object(row) && row.paymentMethod === method).length === 1)
+  if (![2, 3, 4].includes(channels.length) || !purchasePaymentMethods.slice(0, 2).every(method => channels.filter(row => object(row) && row.paymentMethod === method).length === 1)
     || channels.some((row, index) => !object(row) || !purchasePaymentMethods.includes(row.paymentMethod as PurchasePaymentMethod) || channels.findIndex(item => object(item) && item.paymentMethod === row.paymentMethod) !== index || typeof row.configured !== "boolean" || !purchaseTopupMinimum(row.minTopupPrincipal)
       || (row.configured ? !validPurchaseChannel(row as PurchasePaymentChannel, raw.constraints as PurchasePaymentConstraints | undefined)
         : row.channelFeeRatePct !== null || row.channelFeeFixed !== null || row.networkConfirmFeeUsdt !== null))) throw new Error("手续费数据不完整，请刷新后再试，暂时不能修改。");

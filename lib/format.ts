@@ -51,3 +51,8 @@ export function fmtNum(n: number): string {
 export function fmtPct(n: number, digits = 1): string {
   return `${n.toFixed(digits)}%`;
 }
+
+/** 配置值（红线、健康线这类阈值）按原值写，不补零也不取整（TX-23）：100 → 100%，100.5 → 100.5%。比例先乘 100。 */
+export function fmtConfigPct(n: number): string {
+  return `${Number(n.toFixed(6))}%`;
+}

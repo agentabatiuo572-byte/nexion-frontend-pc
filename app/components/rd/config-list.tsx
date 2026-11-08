@@ -15,8 +15,23 @@
  * - sub 是值的补充数据（编号、库存），和值同一行；说明不放这里。
  * - name 不是纯文字时传 explainLabel，给提示图标起读屏名字；label 是这组配置的名字，读屏按列表读。
  */
-import { useId, type ReactNode } from "react";
+import { Children, isValidElement, useId, type ReactNode } from "react";
 import { Explain } from "./explain";
+
+/** 说明最后一段文字；读屏用的整句按它判断要不要补句号。 */
+function lastText(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (isValidElement<{ children?: ReactNode }>(node)) return lastText(node.props.children);
+  const parts = Children.toArray(node);
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    const text = lastText(parts[index]);
+    if (text.trim()) return text;
+  }
+  return "";
+}
+
+/** 说明自己带了句末标点就不再补「。」，读屏不读两个句号。 */
+const sentenceEnd = (node: ReactNode) => /[。！？；.!?;]\s*$/.test(lastText(node)) ? "" : "。";
 
 export function ConfigList({ label, children }: { label?: string; children: ReactNode }) {
   return <div className="rd-config" role="list" aria-label={label}>{children}</div>;
@@ -52,7 +67,7 @@ export function ConfigRow({ name, explainLabel, what, when, where, effect, note,
         {name}
         {hasHelp && <Explain label={`${explainLabel ?? (typeof name === "string" ? name : "这一项")}的说明`} rows={rows} side="bottom" align="start" />}
       </div>
-      {hasHelp && <span id={helpId} className="rd-sr-only">{rows.map((row, index) => <span key={index}>{row.k}：{row.v}。</span>)}</span>}
+      {hasHelp && <span id={helpId} className="rd-sr-only">{rows.map((row, index) => <span key={index}>{row.k}：{row.v}{sentenceEnd(row.v)}</span>)}</span>}
       <div className="rd-config-value">
         <span>{value}</span>
         {sub && <small>{sub}</small>}

@@ -9,6 +9,8 @@
 import { useReach } from "@/lib/nav/use-reach";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { fmtConfigPct } from "@/lib/format";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, CalendarClock, CalendarRange, CircleDot, CircleMinus, Gauge, Lock, LockOpen, Network, RefreshCw, ShieldCheck, Zap, type LucideIcon } from "lucide-react";
@@ -82,10 +84,10 @@ function rejectionCode(err: unknown) {
 }
 
 /**
- * 后端明确拒绝了这次请求：有 4xx 状态和拒绝码。只有这种才能丢号、才能给「解除待确认」。
- * 本地出错、读不懂、存不下、网络断开都说明不了原命令的结果，原命令留着（OP-93、OP-153）。
+ * 后端拒绝了这次请求：有 4xx 状态和拒绝码，新命令据此丢号（OP-93）。本地出错、读不懂、存不下、网络断开都说明不了结果，原命令留着。
+ * 重试被拒后给不给「解除待确认」另按 isExplicitRejection，登录、权限、限流、IDEMPOTENCY_* 不算（OP-153）。
  */
-function explicitRejection(err: unknown) {
+function backendRejected(err: unknown) {
   if (isDOutcomeUnknownError(err) || isA2OutcomeUncertainError(err)) return false;
   if (err instanceof DRequestError) return err.status >= 400 && err.status < 500 && err.code !== undefined;
   const status = (err as { status?: unknown } | null)?.status;
@@ -619,7 +621,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const coverageBlock = params && (!params.coverageReliable
     ? "放宽已暂停：兑付覆盖率暂时读不到可靠结果"
     : params.coverageRatio < params.redlinePct
-      ? `放宽已暂停：兑付覆盖率 ${pct(params.coverageRatio)}，低于红线 ${pct(params.redlinePct)}`
+      ? `放宽已暂停：兑付覆盖率 ${pct(params.coverageRatio)}，低于红线 ${fmtConfigPct(params.redlinePct)}`
       : undefined);
   const pendingApproval = approvals.state === "ready" ? approvals.rows : [];
   /** 放宽现在为什么提交不了，从上往下取第一条。 */
@@ -696,7 +698,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       return "done" as const;
     } catch (cause) {
       // 只有后端明确拒绝才丢号；读不懂、断开、本地出错都按结果未知留着（F03）。
-      const rejected = explicitRejection(cause);
+      const rejected = backendRejected(cause);
       if (rejected && !retained) tightenCommands.forget(TIGHTEN_SCOPE);
       syncPending();
       if (!rejected) return "unknown" as const;
@@ -805,8 +807,8 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       if (outcome === "unknown") note(record.commandKey, "重试的结果也没确认，原操作继续保留。稍后再试。");
       else toast(`${record.label.replace(/^调整提现参数 · /, "")}已生效`, "success");
     } catch (cause) {
-      // 后端明确拒绝了这次重试才给「解除待确认」；本地出错不算（F03）。
-      if (explicitRejection(cause)) {
+      // 后端明确拒绝了这次重试才给「解除待确认」；本地出错、登录、权限、限流不算（F03、OP-153）。
+      if (isExplicitRejection(cause)) {
         note(record.commandKey, `重试被拒绝：${sentence(errorText(cause))}这说明不了原操作的结果，原操作继续保留。`);
         setRetryRejected((current) => [...current, record.commandKey]);
       } else {
@@ -843,7 +845,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         note(key, `${detail ? sentence(detail) : ""}结果还是没确认，原操作继续保留。`);
       }
       else if (!kept) toast(`重试被拒绝：${sentence(errorText(cause))}原审批命令已清除，可以重新发起。`, "warn");
-      else if (mode === "retry" && explicitRejection(cause)) {
+      else if (mode === "retry" && isExplicitRejection(cause)) {
         note(key, `重试被拒绝：${sentence(errorText(cause))}这说明不了原操作的结果，原操作继续保留。`);
         setRetryRejected((current) => [...current, key]);
       } else {
@@ -905,7 +907,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       return (
         <Notice key={record.commandKey} tone="warn" title={`${editTitle(record.label.replace(/^调整提现参数 · /, ""))} · 结果未确认`} action={<>
           {!expired && <Button size="sm" disabled={!!recovering} disabledReason={commandAuthorities(record.changes).every(can) ? undefined : NO_WRITE} onClick={() => void retryTighten(record)}>按原操作重试</Button>}
-          {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: record.label, slot: record.fingerprint, commandKey: record.commandKey, loosen: false })}>解除待确认</Button>}
+          {!expired && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: record.label, slot: record.fingerprint, commandKey: record.commandKey, loosen: false })}>解除待确认</Button>}
         </>}>
           {`${formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（${zone}）发出：${describeChanges(record.changes)}。可能已经生效，确认前这页不能再修改。`}
           {expired ? `${RETRY_EXPIRED_TEXT}。` : "用同一命令号重新发送，不会重复生效。"}
@@ -982,9 +984,9 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const p = params;
 
   // 一句话结论：从上往下取第一条成立的（重构说明 3.2）。比较用接口原值。
-  const coverageText = `兑付覆盖率 ${pct(p.coverageRatio)}，红线 ${pct(p.redlinePct)}`;
+  const coverageText = `兑付覆盖率 ${pct(p.coverageRatio)}，红线 ${fmtConfigPct(p.redlinePct)}`;
   // 覆盖率、红线和可不可靠每个状态都留一处读数（D5-V10，F05）：结论句没写的，写在第二行。
-  const coverageLine = p.coverageReliable ? `${coverageText}。` : `读到的兑付覆盖率 ${pct(p.coverageRatio)} 不可靠，红线 ${pct(p.redlinePct)}。`;
+  const coverageLine = p.coverageReliable ? `${coverageText}。` : `读到的兑付覆盖率 ${pct(p.coverageRatio)} 不可靠，红线 ${fmtConfigPct(p.redlinePct)}。`;
   const poolHint = reach("/finance/pool") ? <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款核对</Link> : "去资金储备与应付款核对";
   const coverageExplain = COVERAGE_RULE;
   const approvalLine = (row: A2OperationRow) => `审批单 ${row.id} · ${row.operator} · ${row.rawTs ? `${formatBusinessTimeFull(row.rawTs, row.ts)}（${zone}）` : row.ts}提交`;
@@ -1004,7 +1006,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     // 大字留给答案：有待确认时结论只说后果，不放大、不再指路（DT-12、DT-21）。
     ? <Conclusion state="warn" hint={coverageLine}>{tightenPending.length ? `${pendingCount} 项修改结果没确认，确认前这页暂停修改` : "1 项放宽结果没确认，确认前暂停放宽，收紧照常"}</Conclusion>
     : coverageBlock
-      ? <Conclusion state="danger" lead hint={<>{p.coverageReliable ? "" : `读到 ${pct(p.coverageRatio)}，红线 ${pct(p.redlinePct)}。`}收紧不受影响。{poolHint}</>} explain={coverageExplain}>{coverageBlock}</Conclusion>
+      ? <Conclusion state="danger" lead hint={<>{p.coverageReliable ? "" : `读到 ${pct(p.coverageRatio)}，红线 ${fmtConfigPct(p.redlinePct)}。`}收紧不受影响。{poolHint}</>} explain={coverageExplain}>{coverageBlock}</Conclusion>
       : networks.outage
       ? <Conclusion state="warn" lead hint={<>{networks.outage}。{outageNext} {coverageLine}</>} explain={NETWORK_RULE}>用户现在不能发起 USDT 提现</Conclusion>
       : pendingApproval.length
@@ -1054,6 +1056,12 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       effect={help.effect} note={help.note} value={tag} sub={reason} action={action("network", `${NET_LABEL[net]} 提现`, netKey(net))} />;
   };
   const phaseSummary = `${p.currentPhase} · 第 ${p.currentMonth} 月 · 到账审查窗口 ${p.cooldownDays} 天 · 加强合规审查${p.complianceHoldEnabled ? "开启" : "关闭"}`;
+  // 大额门槛是后端合规规则下发的（complianceReviewThresholdUsdt）；旧接口没有时两网规则写待核实，不猜 1,000。
+  const threshold = p.complianceReviewThresholdUsdt == null ? null : `${p.complianceReviewThresholdUsdt.toLocaleString("en-US", { maximumFractionDigits: 6 })} USDT`;
+  const evmRule = threshold === null ? "待核实"
+    : !p.complianceHoldEnabled ? "按小额免审和风控审核，不额外等待"
+      : p.cooldownDays > 0 ? `全部人工复核，超过 ${threshold} 等 ${p.cooldownDays} 天` : "全部人工复核，不额外等待";
+  const trc20Rule = p.cooldownDays > 0 ? `每笔满 ${p.cooldownDays} 天才能放行，小额免审和风控照常` : "按小额免审和风控审核，不额外等待";
 
   const drawerIcon: Record<Group, LucideIcon> = { limits: Gauge, network: Network, fee: Network, nex: Network };
   const fieldProps = (key: NumKey) => ({
@@ -1189,6 +1197,11 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
                   <ConfigRow name={H.cooldownDays.label} what={H.cooldownDays.what} when={H.cooldownDays.when} where={H.cooldownDays.where} note={H.cooldownDays.note} value={`${p.cooldownDays} 天`} />
                   <ConfigRow name={H.complianceHoldEnabled.label} what={H.complianceHoldEnabled.what} when={H.complianceHoldEnabled.when} where={H.complianceHoldEnabled.where} note={H.complianceHoldEnabled.note}
                     value={<StatusTag tone={p.complianceHoldEnabled ? "progress" : "neutral"} icon={p.complianceHoldEnabled ? undefined : CircleMinus}>{p.complianceHoldEnabled ? "开启" : "关闭"}</StatusTag>} />
+                  <ConfigRow name={H.complianceReviewThresholdUsdt.label} what={H.complianceReviewThresholdUsdt.what} when={H.complianceReviewThresholdUsdt.when} note={threshold === null ? `现在读不到，请刷新或到运营阶段设置核对。${H.complianceReviewThresholdUsdt.note}` : H.complianceReviewThresholdUsdt.note}
+                    value={threshold ?? "待核实"} />
+                  <ConfigRow name={`BEP20、ERC20 ${H.networkRules.label}`} explainLabel="BEP20、ERC20 现在怎么审" what={H.networkRules.what} when={H.networkRules.when} note={H.networkRules.note} value={evmRule} />
+                  <ConfigRow name={`TRC20 ${H.networkRules.label}`} explainLabel="TRC20 现在怎么审" what={H.networkRules.what} when={H.networkRules.when}
+                    note={`不受加强合规审查影响，不超过小额免审线也要等完窗口。${H.networkRules.note}`} value={trc20Rule} />
                 </ConfigList>
               </Fold>
             </div>
