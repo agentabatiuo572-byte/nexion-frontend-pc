@@ -586,7 +586,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
             value="在「订单付款 › 付款手续费」里设置"
             action={<Button size="sm" onClick={() => onGo("payments")}>去设置</Button>} />
           <ConfigRow name="USDT 链上充值" what="收款地址分配、入账和异常处理由 USDT 收款开关控制"
-            value="BEP20、ERC20、TRC20 · 在「USDT 充值」看"
+            value="在「USDT 充值」看" sub="BEP20、ERC20、TRC20"
             action={<Button size="sm" onClick={() => onGo("usdt")}>查看实际状态</Button>} />
         </ConfigList>
       </Fold>
