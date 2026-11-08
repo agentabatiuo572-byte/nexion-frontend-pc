@@ -156,6 +156,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   const operator = session?.operator || session?.username || "";
   const authorities = session?.authorities ?? [];
   const canManage = authorities.includes("finance_d6_manage");
+  const canReadApproval = authorities.includes("platform_a2_read");
   const canQueryOriginal = authorities.includes("platform_a2_read") || authorities.includes("platform_a2_proposal_create");
   const proposalBlocked = !authorities.includes("platform_a2_proposal_create") && !authorities.includes("platform_a2_write") ? "这个账号没有发起审批的权限" : undefined;
   const [data, setData] = useState<D6FxQuote | null>(null);
@@ -185,7 +186,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       setApprovalValues(null);
       setApprovalReadError("");
       if (next.approval?.status === "pending") {
-        if (authorities.includes("platform_a2_read")) {
+        if (canReadApproval) {
           try {
             const overview = await fetchA2Overview({ domain: "D" });
             if (epoch !== loadEpoch.current) return null;
@@ -210,7 +211,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     } finally {
       if (epoch === loadEpoch.current) setLoading(false);
     }
-  }, [session]);
+  }, [canReadApproval]);
 
   useEffect(() => {
     void load();
