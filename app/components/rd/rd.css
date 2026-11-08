@@ -418,6 +418,8 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-filter-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .rd-chip { display: inline-flex; align-items: center; gap: 4px; height: var(--rd-control-h-sm); padding: 0 4px 0 8px; border-radius: var(--rd-radius-tag); background: var(--rd-panel-inner); color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 .rd-chip-x { display: inline-grid; place-items: center; width: 20px; height: 20px; border: 0; border-radius: 4px; background: transparent; color: var(--rd-text-3); cursor: pointer; }
+/* 浅色下条件条底 #F3F4F7 落在 #F2F3F6 的页面上看不出边，加一道和面板一样的 1px 边，一枚一枚分得开（VS-94 第 3 条）。 */
+:root[data-theme="light"] .rd-chip { box-shadow: inset 0 0 0 1px var(--rd-line); }
 .rd-filter-notice { margin: 0; color: var(--rd-warn); }
 .rd-filter-result { margin-left: auto; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 .rd-field { display: grid; gap: 8px; font-size: var(--rd-text-body); color: var(--rd-text-3); }
