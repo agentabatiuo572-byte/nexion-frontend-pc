@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TabGroup } from "@/app/components/kit/tab-group";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { fmtConfigPct } from "@/lib/format";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
@@ -523,7 +524,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         <div className="f-stat"><div className="k">已执行</div><div className="v">{number(overview?.approved).toLocaleString("en-US")} 笔</div><div className="sub">余额已变化</div></div>
         <div className="f-stat warn"><div className="k">待审核</div><div className="v">{number(overview?.pending).toLocaleString("en-US")} 笔</div><div className="sub">由提交人以外的同事复核</div></div>
         <div className="f-stat cyan"><div className="k">UVT 价格</div><div className="v">${formatNumber(nexUsdRate || overview?.nexUsdRate)}</div><div className="sub">用来换算是否超过 500 USDT 等值</div></div>
-        <div className="f-stat ok"><div className="k">兑付覆盖率</div><div className="v">{formatPercent(coverageRatio)}</div><div className="sub">红线 {formatPercent(redlinePct)}</div></div>
+        <div className="f-stat ok"><div className="k">兑付覆盖率</div><div className="v">{formatPercent(coverageRatio)}</div><div className="sub">红线 {Number.isFinite(redlinePct) ? fmtConfigPct(redlinePct) : "—"}</div></div>
       </div>
 
       {error && <div className="ctint warn" style={{ marginBottom: 12 }}>余额调整数据加载失败 · {error}</div>}
@@ -609,7 +610,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
             <div className="kv"><span className="k">USDT 等值</span><span className="v mono">{selectedAccount ? `$${formatUsdEquivalent(amountUsd)}` : "—"}</span></div>
             <div className="kv"><span className="k">当前兑付覆盖率</span><span className="v">{selectedAccount ? formatPercent(coverageRatio) : "—"}</span></div>
             <div className="kv"><span className="k">批准后兑付覆盖率</span><span className="v" style={{ color: selectedAccount && (creditCoverageUnavailable || creditBelowRedline) ? "var(--danger)" : "var(--success)" }}>{selectedAccount ? formatPercent(projectedCoverage) : "—"}</span></div>
-            <div className="kv"><span className="k">红线</span><span className="v">{selectedAccount ? formatPercent(redlinePct) : "—"}</span></div>
+            <div className="kv"><span className="k">红线</span><span className="v">{selectedAccount && Number.isFinite(redlinePct) ? fmtConfigPct(redlinePct) : "—"}</span></div>
             <div className="ctint cyan" style={{ marginTop: 14 }}><b>流程</b> · 提交后余额不会马上变，需由另一位同事复核批准后才生效。</div>
           </div>
         </section>

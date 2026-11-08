@@ -16,7 +16,7 @@ import {
   TableLoading, TableMessage, Td, Th, Tr, useTableColumns, type JudgmentRow, type RecordListEntry, type SegmentItem, type StateTone, type TableColumn, type TimelineEntry,
 } from "@/app/components/rd";
 import { businessClock, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
-import { fmtPct } from "@/lib/format";
+import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { fetchWithdrawalGateOpen } from "@/lib/admin/ops-dashboard-client";
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useReach } from "@/lib/nav/use-reach";
@@ -347,10 +347,14 @@ function actionLabel(action: D2ReviewAction) {
   return ({ APPROVE: "放行", DELAY: "延迟", FREEZE: "冻结", UNFREEZE: "解冻", REJECT: "拒绝并退款", REFUND: "手动退款" } as const)[action];
 }
 
+function isCregisWithdrawal(row: D2Withdrawal): boolean {
+  return ["USDT-BEP20", "BEP20", "USDT-ERC20", "ERC20", "USDT-TRC20", "TRC20"].includes(row.chain);
+}
+
 function actionCandidates(row: D2Withdrawal, cregis?: D2CregisPayout | null): D2ReviewAction[] {
   const status = row.status.toUpperCase();
   if (erc20ConfirmationLost(row)) return [];
-  if (["USDT-BEP20", "BEP20"].includes(row.chain)) {
+  if (isCregisWithdrawal(row)) {
     if (cregis?.withdrawalNo === row.withdrawalNo && cregis.source === "provider") return [];
     if (["PROCESSING", "SENT", "CHAIN_SUBMITTED", "FAILED", "TX_FAILED", "TX_ORPHANED", "DEAD", "REVIEW_REJECTED", "REJECTED", "ADDRESS_INVALID"].includes(status)
         && (!cregis || cregis.withdrawalNo !== row.withdrawalNo)) return [];
@@ -869,7 +873,7 @@ function lifecycleOwnerText(owner?: string) {
 /** 这两种状态放行一定不生效，入口禁用，不开框（DP-42）。提现开关读不到时照旧开框，后端再查。 */
 function approveGateText(gate: "open" | "closed" | "unknown" | null, d5: D5Params | null) {
   if (gate === "closed") return "提现已关停，现在放行不会生效。到「紧急停用开关」恢复提现后再放行。";
-  if (d5 && d5.coverageRatio < d5.redlinePct) return `兑付覆盖率 ${fmtPct(d5.coverageRatio)}，低于红线 ${fmtPct(d5.redlinePct)}，现在不能放行。到「资金储备与应付款」补足储备后再放行。`;
+  if (d5 && d5.coverageRatio < d5.redlinePct) return `兑付覆盖率 ${fmtPct(d5.coverageRatio)}，低于红线 ${fmtConfigPct(d5.redlinePct)}，现在不能放行。到「资金储备与应付款」补足储备后再放行。`;
   return undefined;
 }
 
@@ -1190,7 +1194,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   /** 覆盖率和开关排在勾选项前面（OP-42）。低于红线、已关停时入口已禁用，到这里的都是能放行的。 */
   const coverageFacts = () => <>
-    {d5Ref.current && <Fact k="兑付覆盖率">{fmtPct(d5Ref.current.coverageRatio)}，红线 {fmtPct(d5Ref.current.redlinePct)}</Fact>}
+    {d5Ref.current && <Fact k="兑付覆盖率">{fmtPct(d5Ref.current.coverageRatio)}，红线 {fmtConfigPct(d5Ref.current.redlinePct)}</Fact>}
     {gateRef.current === "unknown" && <Fact k="提现开关">读不到，提交时系统会再查，已关停时不会放行</Fact>}
   </>;
 
@@ -1242,7 +1246,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     try {
       const latest = await fetchD2WithdrawalDetail(row.withdrawalNo);
       const bank = latest.chain === "BANK-VND" ? await fetchD2BankPayout(row.withdrawalNo) : null;
-      const cregis = ["USDT-BEP20", "BEP20"].includes(latest.chain) ? await fetchD2CregisPayout(row.withdrawalNo) : null;
+      const cregis = isCregisWithdrawal(latest) ? await fetchD2CregisPayout(row.withdrawalNo) : null;
       if (seq === detailRequestSeq.current) { setDetail(latest); setBankDetail(bank); setCregisDetail(cregis); }
     } catch (cause) {
       if (seq !== detailRequestSeq.current) return;
@@ -1647,7 +1651,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     { label: "收款", value: payoutChannel(shown), reason: shown.chain === "BANK-VND" ? bankDetail?.maskedAccount ?? "账户信息见下方" : <span data-mono>{shown.targetAddress}</span> },
     { label: "风险", icon: Shield, tone: "risk", state: riskTone, value: `${routingPriorityLabel(shown)}，${k4RiskText(shown)}`, reason: [`风险规则：${routeLabel(shown.k3RiskRoute)}`, ...(hitRulesText(shown) === "无" ? [] : [hitRulesText(shown)])].join(" · ") },
     ...(plainPending ? [] : [{ label: "说明", state: orphaned ? "warn" as const : undefined, value: stateNote, reason: holdsForReview(shown) ? `复查时间：${timeText(shown.holdUntil)}` : orphaned && !plainStatus ? lifecycleNote : undefined }]),
-    ...(detailActions.includes("APPROVE") ? [{ label: "兑付覆盖率", state: !canReadD5 || !d5 ? "warn" as const : coverageBelow ? "danger" as const : undefined, value: !canReadD5 ? "无权限" : d5 ? `${fmtPct(d5.coverageRatio)}，红线 ${fmtPct(d5.redlinePct)}` : "读取失败" }] : []),
+    ...(detailActions.includes("APPROVE") ? [{ label: "兑付覆盖率", state: !canReadD5 || !d5 ? "warn" as const : coverageBelow ? "danger" as const : undefined, value: !canReadD5 ? "无权限" : d5 ? `${fmtPct(d5.coverageRatio)}，红线 ${fmtConfigPct(d5.redlinePct)}` : "读取失败" }] : []),
     ...(gateClosedHere ? [{ label: "提现开关", state: "warn" as const, value: "已关停" }] : []),
   ] : [];
   const ruleCount = shown ? countEntries(shown.hitRules, ",") : 0;
@@ -1692,7 +1696,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     {withdrawGate === "unknown" && <Notice tone="warn">提现开关状态暂时读不到。放行时系统会再查，已关停时不会放行。</Notice>}
     {coverageBelow && d5 && hasAuthority(ACTION_AUTHORITY.APPROVE) && <Notice tone="danger" title="兑付覆盖率低于红线，放行已暂停"
       action={reach("/finance/pool", "finance_d3_read") ? <Link className="rd-link" href="/finance/pool">去资金储备与应付款</Link> : undefined}>
-      现在 {fmtPct(d5.coverageRatio)}，红线 {fmtPct(d5.redlinePct)}。补足储备后再放行。拒绝、延迟、冻结、解冻和退款照常可用。
+      现在 {fmtPct(d5.coverageRatio)}，红线 {fmtConfigPct(d5.redlinePct)}。补足储备后再放行。拒绝、延迟、冻结、解冻和退款照常可用。
     </Notice>}
     {pendingNotices}
 
@@ -1844,7 +1848,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
             <RawRecord label="查看风险原始记录" content={<div className="rd-stack"><p>{shown.riskReason || "—"}</p><p>{shown.riskScoreBreakdown || "—"}</p><p>{shown.hitRules || "—"}</p></div>} />
           </div>
         </Fold>
-        {["USDT-BEP20", "BEP20"].includes(shown.chain) && <Fold inset title="Cregis 打款核对" icon={Link2} alert={!detailLoading && (!cregisDetail || cregisDetail.canRecover)} alertTone={cregisDetail?.canRecover ? "danger" : "warn"}
+        {isCregisWithdrawal(shown) && <Fold inset title="Cregis 打款核对" icon={Link2} alert={!detailLoading && (!cregisDetail || cregisDetail.canRecover)} alertTone={cregisDetail?.canRecover ? "danger" : "warn"}
           summary={cregisDetail ? (detailProvider ? cregisStatusLabel(cregisDetail.state) : "未经 Cregis 打款") : "暂时无法获取"}>
           {cregisDetail ? <Facts>
             <Fact k="打款渠道">{detailProvider ? "Cregis" : "未经 Cregis 打款"}</Fact>

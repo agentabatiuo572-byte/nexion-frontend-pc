@@ -30,7 +30,7 @@ const waitsReview = (row: ExceptionRecord) => ["MAKER_DONE", "PROPOSED"].include
 const isMaker = (row: ExceptionRecord, adminId: unknown) => String(row.makerId) === String(adminId);
 
 /** 认领或退款的来源：低额入金（EVENT）、未归属链上入金（OBSERVATION）。 */
-export type ClaimSource = { sourceType: string; sourceId: string; title: string; network: "BEP20" | "ERC20" | null; dust: boolean };
+export type ClaimSource = { sourceType: string; sourceId: string; title: string; network: "BEP20" | "ERC20" | "TRC20" | null; dust: boolean };
 type CaseKind = "claim" | "refund" | "incident" | "reorg";
 const CASE_TITLE: Record<CaseKind, string> = { claim: "认领工单", refund: "退款工单", incident: "重组事件", reorg: "重组处置提案" };
 

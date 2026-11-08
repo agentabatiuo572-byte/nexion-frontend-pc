@@ -3457,6 +3457,10 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 **页面**：改版页写在 [D1 / D5 USDT 分网络资金控制](D1-D5-USDT分网络资金控制-20261107.md)「D5：USDT 提现参数」：结论句、「额度和时效」「网络和费用」两组配置行、整组「调整」抽屉、提现网络实际状态、放宽提交审批和收紧立即生效、结果未知。放宽结果未知时只锁新的放宽，允许收紧，原记录继续核查，这是同对象新操作全锁规则的明确例外。仍待实施：财务主管读待批审批待 B38／BE-RBAC，不增加批准权；D5 读接口直接返回提现总开关。
 
+> **USDT 合规审查更正(2026-11-08)**：加强审查关闭时沿用小额免审及现有风控，不附加 H1 大额审查等待；开启后所有新 USDT 提现须人工复核，小额免审暂停适用，只有金额严格大于服务端 `complianceReviewThresholdUsdt`（本轮为 1,000 USDT）才附加 `cooldownDays` 天窗口，等于门槛不附加等待。0 天仍须人工复核，窗口到期不代表到账；关闭合规不解除既有风险冻结或延迟，不改历史费用。BEP20/ERC20 同规则，网络权限仍独立。下文旧冷却、自动到期及 Phase 说明与本条冲突时，以本条及[D1 / D5 当前契约](D1-D5-USDT分网络资金控制-20261107.md#d5加强合规审查与大额审查窗口2026-11-08)为准。
+
+> **D 域生效面定位(§3.14 铁律)**:提现 cooldown / 惩罚费率由 H1 Phase 引擎按用户 Phase 下发(权威源 H1),**D5 是这两个参数在 D 域的生效面 / 展示面,非权威源**——D5 只读展示 Phase 现值 + 跳 H1 调整;D5 **owns** 的是非 Phase 参数(日限额 / 余额上限 / 网络费 / NEX 抵扣率)。这一分工避免"两源"问题(H1 派发 + D5 又设一套)。
+
 **② 后台界面**
 页面名「USDT 提现参数」，路由 `/finance/params`。结论句一行，下面三组：
 
@@ -3465,6 +3469,20 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 3. **随运营阶段变化的设置**（H1 派发，只读折叠）：当前运营阶段和第几月、到账审查窗口天数、加强合规审查开关，带「去运营阶段设置」。旧兼容字段 `penaltyFeeRate` 不显示。
 
 每行名称旁问号写这是什么、什么时候生效、显示位置、改了会怎样；行上按钮叫「调整」。结论句、网络状态、抽屉、审批和结果未知的规则见上面「页面」所指文档。
+
+   | 参数 | 现值来源 | D5 可写? |
+   |---|---|---|
+   | 日限额(次数) | D5 配置 | ✅ 可配(确认弹窗 D5-MD1,理由必填) |
+   | 余额上限(可提比例) | D5 配置 | ✅ 可配(同 D5-MD1) |
+   | 网络确认费(`networkConfirmFeeUsd`,TRC20 / BEP20 / ERC20 每笔固定) | D5 配置 | ✅ 可配(同 D5-MD1,三个一起保存) |
+   | NEX 抵扣率(`nexFeeOffsetRate`) | D5 配置 | ✅ 可配(同 D5-MD1) |
+   | cooldown(`withdrawCooldownDays`) | **H1 Phase 派发**(只读) | ❌ 只读,跳 H1 |
+   | `complianceHoldEnabled` | **H1 Phase 派发**(只读) | ❌ 只读,跳 H1 |
+   | 大额合规门槛(`complianceReviewThresholdUsdt`) | 服务端合规规则(`sourceByField:'compliance-rule'`) | ❌ 只读，不增加配置入口 |
+
+2. **Phase 联动现值**：右侧按「当前运营阶段 → 加强合规审查 → 大额审查窗口 → 当前执行规则」展示，沿用 D5 参数行，标题 13.5px、说明 12px、值 15px；只读且保留有 H1 读取权限时的「去运营阶段设置 →」跳转。加强审查说明全部新 USDT 提现须人工复核、小额免审暂停；窗口只在开关开启且金额严格超过服务端门槛时适用，N 取服务端实际值。当前执行规则区分关闭时普通小额/风控审核与开启时全部人工复核、仅大额附加 N 天，并说明到期后仍须复核放行、链上确认后才显示到账。惩罚费率已下线，不再展示。旧接口同时缺门槛和来源时，该区域显示「待核实」并提示刷新，不推断门槛或执行规则；半字段或非法字段沿用加载失败、清空旧值与重试。
+
+顶部小额免审卡说明同步为「低风险且未开启加强审查时，可自动审核」；左侧绿色提示按小额免审线与风控结果解释审核，明确开启加强审查须人工复核，到账截止按配置计算且链上确认后才显示到账。仅改文字，原布局、字号、配置与操作不变。
 
 **③ 可控参数**
 
@@ -3521,6 +3539,8 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 **⑤ 接口**
 - `GET /api/admin/withdraw/limits` — 返回提现参数现值 `{ version, dailyLimitCount, balanceMaxRatio, smallAmountThresholdUsd, payoutSlaHours, networkConfirmFeeUsd: { trc20, bep20, erc20 }, networkEnabled: { trc20, bep20, erc20 }, networkStatus(每个网络的实际状态和 disabledReason), effectiveNetworks(实际可用网络), nexFeeOffsetRate(来自 D5,可写,source:'d5'), complianceReviewThresholdUsdt(固定 1000,只读,source:'compliance-rule'), coverageRatio, redlinePct, coverageReliable, currentMonth, penaltyFeeRate(旧兼容字段,PC 不读取,不参与手续费), cooldownDays(来自 H1 Phase 派发,只读,source:'phase-h1'), complianceHoldEnabled(来自 H1,只读,source:'phase-h1'), currentPhase }`;日限 / 上限 / fee / NEX 抵扣率标注 `source:'d5'`(可写)。对齐前端 §9.11c.1 `GET /api/config/wallet/withdraw-limits`。
+
+- `GET /api/admin/withdraw/limits` — 返回提现参数现值，含 `version`、日限/上限/网络确认费/网络开关/UVT 抵扣率/小额免审线/到账时效，以及只读 `cooldownDays`、`complianceHoldEnabled`、`currentPhase`、`currentMonth`。新增 `complianceReviewThresholdUsdt:number`（本轮 1,000），其 `sourceByField.complianceReviewThresholdUsdt='compliance-rule'`；开关与天数来源保持 `'phase-h1'`，不在前端写死金额门槛。GET 与 PUT 回读使用同一返回契约，服务端阈值不纳入 D5 可写字段。
 - `PUT /api/admin/withdraw/limits` 直接执行收紧变更，携带 `expectedVersion`、`reason` 与 `Idempotency-Key`。放宽直写返回 409 `D5_WITHDRAWAL_LIMITS_APPROVAL_REQUIRED`，通过 `POST /api/admin/platform/audit/operations` 创建 `D/d5_withdrawal_limits` 审批单，命令值携带 `expectedVersion`。
 
 > **D5 PUT 拒绝 Phase 参数写入(防双源)**:`PUT /api/admin/withdraw/limits` 服务端**仅接受非 Phase 参数**;若请求体携带 `cooldownDays` / `penaltyFeeRate` / `complianceHoldEnabled`,server 返回 **422 Unprocessable Entity** + error body `{code:'PHASE_PARAM_READONLY', message:'cooldownDays/penaltyFeeRate/complianceHoldEnabled 为 Phase 派发参数，请经 H1 调整', redirect:'/admin/phase/h1'}`。这从接口层 enforce "D5 不是这些参数的权威源"(§3.14)。

@@ -32,7 +32,7 @@ import { createD3Injection, downloadD3Csv, fetchD3NetExposure, updateD3Threshold
 import { pendingThresholdConfigApproval, submitConfigApproval } from "@/lib/admin/withdrawal-config-approval";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { TREASURY_VALUATION_UNAVAILABLE } from "@/lib/admin/treasury-valuation";
-import { fmtUsd, fmtUsdCompact, fmtPct, fmtNum } from "@/lib/format";
+import { fmtUsd, fmtUsdCompact, fmtPct, fmtConfigPct, fmtNum } from "@/lib/format";
 import { Sparkline as MiniSparkline } from "@/app/components/kit/kpi-stat-card";
 import { TabGroup } from "@/app/components/kit/tab-group";
 import {
@@ -266,7 +266,7 @@ export default function DualLedgerPage() {
           current.idempotencyKey,
         );
         await bDomain.reload();
-        setToast(`已更新 · 红线 ${fmtPct(redline, 0)} / 健康线 ${fmtPct(healthy, 0)}`);
+        setToast(`已更新 · 红线 ${fmtConfigPct(redline)} / 健康线 ${fmtConfigPct(healthy)}`);
       } else if (current.kind === "injection") {
         const amount = Number(businessValue?.amount);
         const voucherType = businessValue?.voucherType;
@@ -325,7 +325,7 @@ export default function DualLedgerPage() {
             {coverageRatio.toFixed(1)}<span>%</span>
           </div> : <div className="alertbar" role="status">{TREASURY_VALUATION_UNAVAILABLE}</div>}
           <div className="cov-ref">
-            红线 <b>{fmtPct(effRedline, 0)}</b> · 健康 <b>{fmtPct(healthyPct, 0)}</b>{valuationReliable && ` · ${refTail}`}
+            红线 <b>{fmtConfigPct(effRedline)}</b> · 健康 <b>{fmtConfigPct(healthyPct)}</b>{valuationReliable && ` · ${refTail}`}
           </div>
 
           {/* zone 仪表条 */}
@@ -346,8 +346,8 @@ export default function DualLedgerPage() {
               </div>
               <div className="scale">
                 <span>0%</span>
-                <span>红线 {fmtPct(effRedline, 0)}</span>
-                <span>健康 {fmtPct(healthyPct, 0)}</span>
+                <span>红线 {fmtConfigPct(effRedline)}</span>
+                <span>健康 {fmtConfigPct(healthyPct)}</span>
                 <span>{fmtPct(SCALE_MAX, 0)}</span>
               </div>
             </>
@@ -491,7 +491,7 @@ export default function DualLedgerPage() {
                   title="调整兑付覆盖率的红线和健康线，健康线须高于红线"
                 >
                   <span className="ic"><SlidersHorizontal size={14} /></span>
-                  <span className="nm">红线 / 健康线</span><span className="vl">{fmtPct(effRedline, 0)} / {fmtPct(healthyPct, 0)}</span>
+                  <span className="nm">红线 / 健康线</span><span className="vl">{fmtConfigPct(effRedline)} / {fmtConfigPct(healthyPct)}</span>
                 </button>
               )}
               {canInjectReserve && (

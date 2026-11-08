@@ -16,7 +16,7 @@ import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { opsAlertHref, useC2HighRiskAlerts, useJ1DutyAlerts, useJ2GeoAlerts, useJ3TamperConfigAlerts } from "@/lib/admin/ops-dashboard-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel, type AdminRole } from "@/lib/nav/console-nav";
-import { fmtPct } from "@/lib/format";
+import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { a2ActionText } from "@/lib/admin/operator-copy";
 import { isRiskConclusion, riskFeedTitle } from "@/lib/admin/risk-feed";
@@ -116,9 +116,9 @@ export function NotificationBell() {
     if (!bDomain.hasData) return [];
     const { coverageRatio, redlinePct, healthyPct } = bDomain.ledger;
     const coverage: ShellAlert[] = coverageRatio < redlinePct
-      ? [{ id: "b-coverage", level: "high", text: `兑付覆盖率 ${fmtPct(coverageRatio)} 已跌破红线 ${fmtPct(redlinePct)}`, href: "/overview/dual-ledger" }]
+      ? [{ id: "b-coverage", level: "high", text: `兑付覆盖率 ${fmtPct(coverageRatio)} 已跌破红线 ${fmtConfigPct(redlinePct)}`, href: "/overview/dual-ledger" }]
       : coverageRatio < healthyPct
-        ? [{ id: "b-coverage", level: "mid", text: `兑付覆盖率 ${fmtPct(coverageRatio)} 低于健康线 ${fmtPct(healthyPct)}`, href: "/overview/dual-ledger" }]
+        ? [{ id: "b-coverage", level: "mid", text: `兑付覆盖率 ${fmtPct(coverageRatio)} 低于健康线 ${fmtConfigPct(healthyPct)}`, href: "/overview/dual-ledger" }]
         : [];
     return [
       ...coverage,
