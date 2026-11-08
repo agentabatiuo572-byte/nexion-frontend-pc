@@ -240,7 +240,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       <div className="f-stat warn"><div className="k">网络确认费</div><div className="v">${params.networkConfirmFeeUsd.trc20} / ${params.networkConfirmFeeUsd.bep20} / ${params.networkConfirmFeeUsd.erc20}</div><div className="sub">TRC20 / BEP20 / ERC20 · 每笔固定</div></div>
       <div className="f-stat"><div className="k">实际可用提现网络</div><div className="v">{params.effectiveNetworks === undefined ? "尚未核实" : params.effectiveNetworks.length ? params.effectiveNetworks.map(network => network.replace("USDT-", "")).join(" / ") : "暂无可用网络"}</div><div className="sub">运营配置：TRC20 {params.networkEnabled.trc20 ? "开" : "关"} / BEP20 {params.networkEnabled.bep20 ? "开" : "关"} / ERC20 {params.networkEnabled.erc20 ? "开" : "关"}</div></div>
       <div className="f-stat cyan"><div className="k">UVT 抵扣率</div><div className="v">${params.nexFeeOffsetRate.toFixed(2)}/UVT</div><div className="sub">1 UVT 能抵多少手续费</div></div>
-      <div className="f-stat"><div className="k">小额免审线</div><div className="v">${params.smallAmountThresholdUsd}</div><div className="sub">低风险时按各网络规则判断免审</div></div>
+      <div className="f-stat"><div className="k">小额免审线</div><div className="v">${params.smallAmountThresholdUsd}</div><div className="sub">加强审查关闭且低风险时可免审</div></div>
       <div className="f-stat"><div className="k">预计到账时限</div><div className="v">{params.payoutSlaHours} 小时</div><div className="sub">承诺用户的到账时间</div></div>
       <div className={`f-stat ${params.coverageReliable && params.coverageRatio >= params.redlinePct ? "ok" : "danger"}`}><div className="k">兑付覆盖率</div><div className="v">{pct(params.coverageRatio)}</div><div className="sub">红线 {pct(params.redlinePct)} · {params.coverageReliable ? "可信" : "不可用"}</div></div>
     </div>
@@ -259,10 +259,10 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
             {canDailyWrite && <button className="l-btn sm mc" disabled={!dailyValid || daily === params.dailyLimitCount} onClick={() => submit("每日提现次数", { dailyLimitCount: daily }, daily > params.dailyLimitCount, `${params.dailyLimitCount} 次`, `${daily} 次`)}>预览并提交</button>}
           </div>
           <div className="dtint ok" style={{ marginBottom: 12 }}>
-            新提现按网络规则和风控结果审核；BEP20/ERC20 开启加强审查后须人工复核。TRC20 每笔仍须满足阶段窗口。到账截止时间按配置计算，链上确认后才显示到账。
+            TRC20 / BEP20 / ERC20 使用同一审查规则：加强审查关闭时按小额免审线、大额强审门槛与 K3/K4 判断；开启时全部须人工复核，仅大额附加窗口。到账时限按配置计算，链上确认后才显示到账。
           </div>
           <div className="p-row">
-            <div className="txt"><div className="k">小额免审线</div><div className="s">0–{D5_SMALL_AMOUNT_THRESHOLD_MAX} USD；调高后，更多提现会自动通过</div></div>
+            <div className="txt"><div className="k">小额免审线</div><div className="s">0–{D5_SMALL_AMOUNT_THRESHOLD_MAX} USD；加强审查关闭且低风险时，调高可让更多提现免审</div></div>
             <input aria-label="小额免审线目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.smallAmount} disabled={!canDailyWrite} onChange={(event) => updateDraft("smallAmount", event.target.value)} />
             <span>USD</span>
             {canDailyWrite && <button className="l-btn sm mc" disabled={!smallAmountValid || smallAmount === params.smallAmountThresholdUsd} onClick={() => submit("小额免审线", { smallAmountThresholdUsd: smallAmount }, smallAmount > params.smallAmountThresholdUsd, `$${params.smallAmountThresholdUsd}`, `$${smallAmount}`)}>预览并提交</button>}
@@ -329,35 +329,33 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         <div className="l-h"><span className="ttl">随运营阶段变化的设置</span><span className="sub">· 只能查看，修改请到「运营阶段设置」</span></div>
         <div className="l-b">
           <div className="p-row"><div className="txt"><div className="k">当前运营阶段</div><div className="s">第 {params.currentMonth} 月</div></div><span className="v">{params.currentPhase}</span></div>
-          <div className="p-row"><div className="txt"><div className="k">加强合规审查</div><div className="s">BEP20/ERC20 开启后须人工复核，小额免审暂停；TRC20 按原免审与风控判断</div></div><span className={`bdg ${params.complianceHoldEnabled ? "warn" : "ok"}`}>{params.complianceHoldEnabled ? "开启" : "关闭"}</span></div>
+          <div className="p-row"><div className="txt"><div className="k">加强合规审查</div><div className="s">三网同一规则：开启后全部须人工复核，小额免审暂停</div></div><span className={`bdg ${params.complianceHoldEnabled ? "warn" : "ok"}`}>{params.complianceHoldEnabled ? "开启" : "关闭"}</span></div>
           <div className="p-row">
             <div className="txt">
-              <div className="k">分网络审查窗口</div>
-              <div className="s">{complianceThreshold === undefined ? "BEP20 / ERC20：大额金额门槛尚未核实，请刷新或到运营阶段设置查看" : `BEP20 / ERC20：仅加强审查开启且金额超过 ${complianceThreshold} USDT 时生效`}</div>
-              <div className="s">TRC20：每笔自提交时间起计算阶段窗口，不受加强审查开关或金额限制</div>
-              <div className="s">0 天不额外等待；审核方式仍按各网络免审与风控规则判断</div>
+              <div className="k">大额审查窗口</div>
+              <div className="s">{complianceThreshold === undefined ? "大额本金门槛尚未核实，请刷新或到运营阶段设置查看" : `三网仅加强审查开启且本金严格大于 ${complianceThreshold} USDT 时生效`}</div>
+              <div className="s">窗口从原申请提交时间起计算，等于门槛不附加等待</div>
+              <div className="s">0 天不额外等待；加强审查开启时仍须人工复核</div>
             </div>
             <div style={{ textAlign: "right", flexShrink: 0 }}>
               <div className="v">{params.cooldownDays} 天</div>
-              <div className="s" style={params.cooldownDays > 0 ? { color: "var(--warning)" } : undefined}>{params.cooldownDays > 0 ? "TRC20 每笔适用" : "无额外阶段等待"}</div>
+              <div className="s" style={params.complianceHoldEnabled && params.cooldownDays > 0 ? { color: "var(--warning)" } : undefined}>{complianceThreshold === undefined ? "适用条件待核实" : !params.complianceHoldEnabled ? "当前不附加等待" : params.cooldownDays > 0 ? "仅超过门槛适用" : "无额外等待，仍须人工"}</div>
             </div>
           </div>
           <div className="p-row">
             <div className="txt">
               <div className="k">当前执行规则</div>
               <div className="s">{complianceThreshold === undefined
-                ? "BEP20 / ERC20：合规规则尚未核实，请刷新或到运营阶段设置查看"
+                ? "三网合规规则尚未核实，请刷新或到运营阶段设置查看"
                 : !params.complianceHoldEnabled
-                  ? "BEP20 / ERC20：按小额免审与风控规则处理，不附加大额审查等待"
+                  ? "三网按小额免审线、大额强审门槛与 K3/K4 风控处理，不附加阶段等待"
                   : params.cooldownDays > 0
-                    ? `BEP20 / ERC20：≤${complianceThreshold} USDT 不额外等待；>${complianceThreshold} USDT 须满足 ${params.cooldownDays} 天窗口`
-                    : "BEP20 / ERC20：所有新提现须人工复核，不附加大额审查等待"}</div>
-              <div className="s">{params.cooldownDays > 0
-                ? `TRC20：每笔须满足 ${params.cooldownDays} 天阶段窗口；符合小额免审条件也不能跳过窗口`
-                : "TRC20：不附加阶段等待，小额免审及人工审核仍按当前风控规则处理"}</div>
+                    ? `三网全部须人工复核；本金 ≤${complianceThreshold} USDT 不额外等待，>${complianceThreshold} USDT 须自原提交时间起满足 ${params.cooldownDays} 天窗口`
+                    : "三网所有新提现须人工复核，0 天不附加等待"}</div>
+              <div className="s">加强审查开启时小额免审暂停；关闭后仍保留原风控冻结与延迟</div>
               <div className="s">到期或批准不代表到账；需要人工复核的仍须放行，链上确认后才显示到账</div>
             </div>
-            <span className="v">{complianceThreshold === undefined ? "待核实" : "按网络规则审核"}</span>
+            <span className="v">{complianceThreshold === undefined ? "待核实" : params.complianceHoldEnabled ? "全部人工复核" : "普通审核规则"}</span>
           </div>
           {authorities.includes("growth_h1_read") && <Link href="/growth/phase" className="l-btn">去运营阶段设置 →</Link>}
         </div>
