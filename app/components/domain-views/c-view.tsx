@@ -40,7 +40,7 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
     <>
       {!REDESIGNED.includes(tab) && <DomainHeader {...meta} />}
 
-const REDESIGNED = ["C1", "C3"];
+      {tab === "C1" && <C1Search ctx={ctx} />}
       {tab === "C2" && <C2Actions ctx={ctx} />}
       {tab === "C3" && <C3Adjust ctx={ctx} />}
       {tab === "C5" && <C5Security ctx={ctx} />}
