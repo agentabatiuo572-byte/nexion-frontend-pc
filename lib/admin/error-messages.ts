@@ -1658,6 +1658,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   G4_CATALOG_APPROVAL_FORBIDDEN: "只有另一位有批准权限的超级管理员能处理这项审批。",
   LEARNING_ACTIVATION_APPROVAL_FORBIDDEN: "只有另一位有批准权限的超级管理员能处理这项审批。",
   LEARNING_COURSE_REWARD_APPROVAL_FORBIDDEN: "只有另一位有批准权限的超级管理员能处理这项审批。",
+  // 退款审批的批准和驳回都要超级管理员同时有订单退款权限（后端 3fb5dfe3 起）。
+  E4_REFUND_APPROVAL_FORBIDDEN: "处理退款审批要超级管理员同时有订单退款权限，这个账号没有；请换有权限的超级管理员处理。",
   G4_GENESIS_PARAM_KEY_INVALID: "创世节点参数无效，不能批准；请驳回后重新发起。",
   F5_COMMISSION_STATUS_COMMAND_REQUIRED: "这张奖励处置审批单格式过旧，不能批准；请驳回后到奖励处置页重新发起。",
   LEGACY_UNKNOWN_RESOLUTION_UNAVAILABLE: "历史异常处理服务暂时不可用，这次没有批准；请稍后重试。",

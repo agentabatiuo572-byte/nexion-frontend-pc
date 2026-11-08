@@ -941,7 +941,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           <Fact k="隐藏">操作者、资源编号、业务编号只留首尾两位</Fact>
         </Facts>
       ),
-      statedBrief: { impact: "按已查询的条件生成 CSV 并下载，这次导出记入操作记录。", check: "核对导出范围，理由写明导出依据或工单号。" },
+      statedBrief: { impact: "按查询条件生成 CSV 下载，这次导出也会记录。", check: "核对导出范围，理由写明导出依据或工单号。" },
       amplifies: false,
       reasonMin,
       reasonMax: 200,
@@ -972,7 +972,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         : { kind: "text", current, unit: "", disallowCurrent: true, hint: "只能逐版升级到已登记的版本（目前有 v3、v4）。新事件或字段请先在「用户行为事件」登记。",
           validate: (v) => { const result = validateA2MechanismValue("schema", v, current); return result.ok ? undefined : `${result.message}。`; } };
     const brief = key === "ttl"
-      ? { impact: "全后台的确认框按新字数检查理由，已有记录不受影响。", check: "核对新字数，理由写清依据或工单号。" }
+      ? { impact: "全后台确认框按新字数检查，已有记录不受影响。", check: "核对新字数，理由写清依据或工单号。" }
       : key === "retention"
         ? { impact: "只对之后新写的操作记录生效，已有记录按自己的到期时间。", check: "核对新值，理由写清依据或工单号。" }
         : { impact: "之后的新记录和导出带新版本号，历史记录不改。", check: "核对目标版本，理由写清依据或工单号。" };
@@ -1020,7 +1020,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           <Fact k="每次最多处理">2,000 条</Fact>
         </Facts>
       ),
-      statedBrief: { impact: "到期记录先长期归档，再从在线列表移除，不能撤销；未到期和旧版历史记录不动。", check: "核对可清理条数和最早到期时间，理由写清依据或工单号。" },
+      statedBrief: { impact: "到期记录先长期归档，再从在线列表移除，不能撤销；未到期和旧版历史记录不动。", check: "核对条数和最早到期时间，理由写清依据或工单号。" },
       amplifies: false,
       reasonMin,
       reasonMax: 200,
@@ -1153,9 +1153,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             explain="会改变用户资金、提现或平台账目的审批单。" onOpen={() => { setQType("fund"); setQPage(1); }} openLabel="只看资金类" />
         </StatBand>
 
-        <FilterBar scope={<Segments label="审批单类型" value={qType} items={TYPE_ITEMS} onChange={(value) => { setQType(value); setQPage(1); }} />}>
-          <FilterField><Select aria-label="发起人" value={qOperator} onChange={(value) => { setQOperator(value as QOperator); setQPage(1); }} options={OPERATOR_OPTIONS} /></FilterField>
-        </FilterBar>
+        {/* 没有搜索框占满这一行，发起人下拉靠右，这一行才铺得开（P2-side）。 */}
+        <FilterBar scope={<Segments label="审批单类型" value={qType} items={TYPE_ITEMS} onChange={(value) => { setQType(value); setQPage(1); }} />}
+          sort={<FilterField><Select aria-label="发起人" value={qOperator} onChange={(value) => { setQOperator(value as QOperator); setQPage(1); }} options={OPERATOR_OPTIONS} /></FilterField>} />
 
         <Panel flush icon={ClipboardList} tone="role-3" title="待审批的操作" sub={`应急在前，资金类其次，其余按提交时间从新到旧 · 时间为${zone}`}>
           {/* 1024 也要放下：对象多是系统键，名字里通常已经带着，列表不单列，抽屉和确认框里常显（DP-13）。 */}
@@ -1195,6 +1195,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   );
 
   const logColumns = 5;
+  // 视图切换放在列表标题行右边，切的就是这张表（不另占一行）。
+  const viewSwitch = <Segments label="操作记录视图" value={view} onChange={(next) => { setLogId(null); setHistoryId(null); setView(next); }}
+    items={[{ value: "logs", label: "操作记录" }, { value: "history", label: "审批结果" }]} />;
+  const VIEW_NOTE = "两个视图共用上面的筛选，导出只导操作记录。";
   const recordsTab = (
     <>
       {locateNotice}
@@ -1220,17 +1224,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             options={[{ value: "", label: "全部模块" }, ...A2_AUDIT_DOMAINS.map((domain) => ({ value: domain, label: DOMAIN_NAMES[domain] }))]} />
         </FilterField>
         <FilterField label="操作者"><Input aria-label="审计操作者" placeholder="账号或姓名" value={filterDraft.operator ?? ""} onChange={(event) => setDraft("operator", event.target.value)} /></FilterField>
-        <FilterField label="对象"><Input aria-label="审计对象" placeholder="对象编号或类型" value={filterDraft.object ?? ""} onChange={(event) => setDraft("object", event.target.value)} /></FilterField>
+        <FilterField label="对象" grow><Input aria-label="审计对象" placeholder="对象编号或类型" value={filterDraft.object ?? ""} onChange={(event) => setDraft("object", event.target.value)} /></FilterField>
       </FilterBar>
 
-      <div className="rd-toolbar">
-        <Segments label="操作记录视图" value={view} onChange={(next) => { setLogId(null); setHistoryId(null); setView(next); }}
-          items={[{ value: "logs", label: "操作记录" }, { value: "history", label: "审批结果" }]} />
-        <Explain label="两个视图的说明" content="两个视图共用上面的筛选，导出只导操作记录。" />
-      </div>
-
       {recordsError && !records ? (
-        <Panel flush icon={view === "logs" ? FileText : History} tone="role-3" title={view === "logs" ? "操作记录" : "审批结果"}>
+        <Panel flush icon={view === "logs" ? FileText : History} tone="role-3" title={view === "logs" ? "操作记录" : "审批结果"} actions={viewSwitch}>
           <Table label={view === "logs" ? "操作记录" : "审批结果"}><tbody>
             <TableMessage columns={logColumns} role="alert">操作记录读取失败，不显示旧数据：{recordsError} <Button size="sm" onClick={() => void (hasApplied ? loadFiltered(appliedFilter) : loadMain().catch(() => undefined))}>重试</Button></TableMessage>
           </tbody></Table>
@@ -1238,7 +1236,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       ) : view === "logs" ? (
         <Panel flush icon={FileText} tone="role-3" title="操作记录"
           sub={recordStats ? `今日 ${count(recordStats.todayAuditEvents)} 条 · ${(records?.recentLogs.length ?? 0) >= 200 ? "已显示最近 200 条，更早的缩小时间范围再查" : "最多显示最近 200 条"}` : undefined}
-          explain="「今日」按业务日历的今天，跟着上面的筛选变。">
+          explain={`「今日」按业务日历的今天，跟着上面的筛选变。${VIEW_NOTE}`} actions={viewSwitch}>
           <Table label="操作记录" data-tight="">
             <thead><tr>
               <Th sticky="start">时间（{zone}）</Th>
@@ -1273,7 +1271,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       ) : (
         <Panel flush icon={History} tone="role-3" title="审批结果"
           sub={recordStats ? `按上方筛选 · 累计 已批准 ${count(recordStats.weeklyApproved)} · 已驳回 ${count(recordStats.weeklyRejected)} · 已撤回 ${count(recordStats.weeklyWithdrawn)} · 已过期 ${count(recordStats.weeklyExpired)}` : undefined}
-          explain="按上面的筛选数全部处理过的审批单，不分时间段。">
+          explain={`按上面的筛选数全部处理过的审批单，不分时间段。${VIEW_NOTE}`} actions={viewSwitch}>
           <Table label="审批结果" data-tight="">
             <thead><tr>
               <Th sticky="start">审批单</Th>
@@ -1446,12 +1444,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         </>}
       </Drawer>
 
-      <Drawer open={Boolean(log)} onClose={() => setLogId(null)} title={shownLog ? `操作记录 · ${logActionText(shownLog.action)}` : "操作记录"} icon={FileText} tone="role-3"
+      <Drawer open={Boolean(log)} onClose={() => setLogId(null)} title="操作记录" icon={FileText} tone="role-3"
         sub={shownLog && `${bizTimeFull(shownLog.createdAt, shownLog.ts)}（${zone}）`}
         explain="手机号、地址等隐私信息只以加密编号保存，导出时也会隐藏。"
         nav={{ hasPrev: logIndex > 0, hasNext: logIndex >= 0 && logIndex < logPageRows.length - 1, onPrev: () => { if (logIndex > 0) setLogId(logPageRows[logIndex - 1].id); }, onNext: () => { if (logIndex >= 0 && logPageRows[logIndex + 1]) setLogId(logPageRows[logIndex + 1].id); } }}>
         {shownLog && <>
           <JudgmentPoints rows={[
+            { label: "动作", value: A2_ACTION_NAMES[shownLog.action] !== undefined || a2ActionText(shownLog.action) !== shownLog.action ? logActionText(shownLog.action) : <span data-mono>{shownLog.action}</span> },
             { label: shownLog.action === "A1_SUPER_ADMIN_BREAK_GLASS_RECOVERED" ? "执行人 / 角色" : "操作者 / 角色", icon: Users, tone: "users", value: `${shownLog.actor} · ${shownLog.role}` },
             { label: "对象", value: shownLog.obj },
             { label: "前值 → 后值", value: <span data-mono>{shownLog.delta}</span> },
@@ -1467,8 +1466,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         </>}
       </Drawer>
 
-      <Drawer open={Boolean(history)} onClose={() => setHistoryId(null)} title={shownHistory ? `处理过程 · ${shownHistory.id}` : "处理过程"} icon={History} tone="role-3"
-        sub={shownHistory && <StatusTag tone={HIST_TONE[shownHistory.st] ?? "done"}>{HIST_LABEL[shownHistory.st] ?? shownHistory.st}</StatusTag>}
+      <Drawer open={Boolean(history)} onClose={() => setHistoryId(null)} title="处理过程" icon={History} tone="role-3"
+        sub={shownHistory && <><span data-mono>{shownHistory.id}</span> <StatusTag tone={HIST_TONE[shownHistory.st] ?? "done"}>{HIST_LABEL[shownHistory.st] ?? shownHistory.st}</StatusTag></>}
         nav={{ hasPrev: historyIndex > 0, hasNext: historyIndex >= 0 && historyIndex < histPageRows.length - 1, onPrev: () => { if (historyIndex > 0) setHistoryId(histPageRows[historyIndex - 1].id); }, onNext: () => { if (historyIndex >= 0 && histPageRows[historyIndex + 1]) setHistoryId(histPageRows[historyIndex + 1].id); } }}>
         {shownHistory && <>
           <JudgmentPoints title={`判断要点 · 时间为${zone}`} rows={[
@@ -1499,7 +1498,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               ))}
             </tbody>
           </Table>
-        ) : <BlockState state="empty" title="系统暂未提供分类说明，不代表操作无需审批。请按各操作页面的权限和审批提示办理。" />}
+        ) : <Notice tone="neutral">系统暂未提供分类说明，不代表操作无需审批。请按各操作页面的权限和审批提示办理。</Notice>}
       </Drawer>
 
       {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
