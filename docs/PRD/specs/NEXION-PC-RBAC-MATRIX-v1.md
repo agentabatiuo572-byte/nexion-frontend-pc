@@ -136,7 +136,7 @@ A6 当前执行路径（2026-11-04，T02、BUG-134）：新建角色、修改名
 | D2 提现审核队列 | `finance_d2_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR | 审核：FINANCE；冻结：RISK；放行/退款/解冻：FINANCE_LEAD+对应风控门 | REGION/ALL；地址与 tx 敏感字段按需显示 |
 | D3 资金池水位仪表盘 | `finance_d3_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR | W：FINANCE_LEAD（储备/处置命令） | ALL；读模型不直接改账 |
 | D4 账本/账单审计 | `finance_d4_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR | X：FINANCE_LEAD/AUDITOR；无原记录修改 | MASKED；冲正为新流水 |
-| D5 提现参数配置 | `finance_d5_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR | H：FINANCE_LEAD；风险参数需 RISK 共同门禁 | ALL；版本/CAS、B1、H1 只读边界 |
+| D5 USDT 提现参数 | `finance_d5_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR | H：FINANCE_LEAD；风险参数需 RISK 共同门禁 | ALL；版本/CAS、B1、H1 只读边界 |
 | D6 汇率牌价 | `finance_d6_read` | FINANCE、FINANCE_LEAD、GROWTH、AUDITOR | W/H：FINANCE_LEAD | ALL；锁价版本不可回写历史订单 |
 
 ### 3.5 E 设备与商城（6）
