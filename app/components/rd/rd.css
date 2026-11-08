@@ -1145,6 +1145,7 @@ td .rd-flow { margin-bottom: 0; }
 .rd-detail-values dt { display: flex; align-items: center; gap: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-detail-values dt .rd-explain { height: var(--rd-lh-aux); }  /* 带问号的名称不撑高，值才在一条线上 */
 .rd-detail-values dd { margin: 0; color: var(--rd-text); font-weight: 500; font-variant-numeric: tabular-nums; }
+.rd-detail-values dd[data-empty] { color: var(--rd-text-3); font-weight: 400; }  /* 0 和「—」弱化，页面在这两种值上传 data-empty（VS-11） */
 .rd-detail-empty { margin: 0; color: var(--rd-text-3); }
 /* 用户详情统计格第二行的最近一笔：名称和金额一行、时间和状态一行，词不拆；金额是点开那一笔的链接，状态标签跟着辅助字号。
    限宽：长状态（「打款异常，需人工核对」）整个换到时间下面，不撑宽这一格，统计带不被挤成三行。 */

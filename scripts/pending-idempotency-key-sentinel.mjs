@@ -87,6 +87,8 @@ const MIGRATED = [
   // J1/J2/J4 emergency writes retain their command key after an outcome-unknown refresh retry.
   "lib/admin/j-client.ts",
   "app/components/domain-views/c-tabs/c3-adjust.tsx",
+  // A2：批准、驳回、撤回、机制参数和立即清理结果未知时保留原命令号和原内容，刷新后只能原样重试。
+  "app/components/domain-views/a-tabs/a2-audit.tsx",
   // A3：参数写入在结果未知时必须保留同一幂等键，刷新后仍可安全重试。
   "app/components/domain-views/a-tabs/a3-config.tsx",
   "app/components/domain-views/c-tabs/c5-security.tsx",

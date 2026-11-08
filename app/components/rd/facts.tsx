@@ -16,7 +16,7 @@
  * - 一行里的前后变化写成 <Change from="在线" to="已关停" />：现在值弱，改后的值进行中蓝（VS-103），不要写成「在线 → 已关停」一串。
  *   已经生效的变化（读取最新后别人改了什么）传 settled，新值用正文色，不用待生效的蓝。
  *   改后的值本身有问题（扣成负数、低于红线）传 tone，新值按状态上色：<Change from="20.00" to="-100.00" tone="warn" />。
- * - 值是「—」时自动弱化，和 Stat 一样（VS-11）。
+ * - 值是「—」时自动弱化，和 Stat 一样（VS-11）；lead 的值是 0 时不放大，也弱化。
  */
 import type { ReactNode } from "react";
 import { ArrowRight } from "lucide-react";
@@ -28,9 +28,11 @@ export function Facts({ children }: { children: ReactNode }) {
 }
 
 export function Fact({ k, children, tone, lead, unit }: { k: string; children: ReactNode; tone?: StateTone | RoleTone; lead?: boolean; unit?: ReactNode }) {
-  const big = lead && !(typeof children === "string" && !/\d/.test(children));
+  // 关键数字是 0 时不放大，弱化成和「—」一样（VS-11）：最大的字不给 0。
+  const zero = lead && typeof children === "string" && /^0(\.0+)?$/.test(children.trim());
+  const big = lead && !zero && !(typeof children === "string" && !/\d/.test(children));
   return (
-    <div className="rd-fact" data-tone={tone} data-lead={big ? "" : undefined} data-empty={children === "—" ? "" : undefined}>
+    <div className="rd-fact" data-tone={tone} data-lead={big ? "" : undefined} data-empty={children === "—" || zero ? "" : undefined}>
       <dt><AutoGloss>{k}</AutoGloss></dt>
       <dd>{children}{unit && <span className="rd-fact-unit">{unit}</span>}</dd>
     </div>

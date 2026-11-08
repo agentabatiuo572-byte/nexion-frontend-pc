@@ -1,9 +1,24 @@
 /* Scoped additions follow the console's existing surfaces and type scale. */
 /* A2 details and confirmation share these styles through their own .dkpage wrappers. */
-.dkpage .a2-change-review { display: grid; gap: 12px; min-width: 0; margin: 12px 0; font-size: 12.5px; line-height: 1.65; color: var(--ink-2); }
-.dkpage .a2-change-review > div { min-width: 0; padding: 14px; border-radius: 10px; background: var(--surface-2); }
-.dkpage .a2-change-review dt { color: var(--ink-3); font-size: 12px; margin-bottom: 5px; }
-.dkpage .a2-change-review dd { margin: 0; color: var(--ink); font-weight: 500; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A2 只在改版外壳里渲染，取 --rd-*，两套主题各自取值。 */
+/* 完整变更内容：一块底，里面是「现在 → 改后」、只列改了的项、成组记录的小表（必须改 3）。块里的表和滚动影子跟着块的底色。 */
+.dkpage .a2-change-review { --rd-panel: var(--rd-panel-inner); display: grid; gap: var(--rd-space-2); min-width: 0; margin: 0; padding: var(--rd-space-3) var(--rd-space-4); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); color: var(--rd-text); }
+.dkpage .a2-change-title { display: flex; align-items: center; gap: var(--rd-space-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.dkpage .a2-change-group, .dkpage .a2-change-rows { display: grid; gap: var(--rd-space-1); min-width: 0; }
+.dkpage .a2-change-sub { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+/* 确认框标题下的动作名：和标题同一档，一行放不下省略，悬停看全文；生效标签换到下一行。 */
+.dkpage .rd-modal-sub > .a2-confirm-subject { flex-basis: 100%; min-width: 0; overflow: hidden; font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; color: var(--rd-text); white-space: nowrap; text-overflow: ellipsis; }
+/* 读不到覆盖率时，多付钱这一行橙黄带图标，不是一句白字（必须改 12）。 */
+.dkpage .a2-coverage-unknown { display: inline-flex; align-items: flex-start; gap: var(--rd-space-1); color: var(--rd-warn); font-weight: 500; }
+.dkpage .a2-coverage-unknown > svg { flex: none; margin-top: 2px; }
+/* 编号整段不拆，放不下整段换行（必须改 14）。 */
+.dkpage .a2-code { overflow-wrap: normal; word-break: keep-all; white-space: nowrap; }
+.dkpage .a2-amount { font-weight: 600; font-variant-numeric: tabular-nums; }
+.dkpage .a2-warn-text { color: var(--rd-warn); }
+.dkpage .rd-table th.a2-col-delta { min-width: 160px; }
+.dkpage .a2-confirm-note { margin-bottom: var(--rd-space-4); }
+.dkpage .a2-locked { display: inline-flex; align-items: center; gap: var(--rd-space-1); }
+.dkpage .a2-locked > svg { flex: none; color: var(--rd-text-3); }
 
 .dkpage .amb-applications { container: ambassador-list / inline-size; display: grid; gap: 8px; margin-bottom: 14px; }
 .dkpage .amb-application { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 10px 14px; padding: 12px; border-radius: 9px; background: var(--surface-2); font-size: 12px; }

@@ -1,4 +1,5 @@
 import type { PhoneProposalView } from "@/lib/admin/phone-calibration-client";
+import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { IOS_CHANGE_LABELS, diffIosRules, formatRange } from "@/lib/admin/ios-model-rules";
 import { diffAndroidRules } from "@/lib/admin/android-soc-rules";
 
@@ -13,8 +14,9 @@ export function PhoneCalibrationReview({ proposal }: { proposal: PhoneProposalVi
   const chips = proposal.androidSocRules.reduce((sum, rule) => sum + rule.chips.length, 0);
   return <section className="phone-calibration-review" aria-label="待发布的手机算力规则">
     <header><h4>待发布的手机算力规则</h4><p>只影响后续校准。已分配的算力、已激活设备和历史结算保持不变。</p></header>
+    {/* 生效时间按业务时区写并标出时区，和审批页的「生效时间」同一个口径，不按浏览器时区（F04）。 */}
     <div className="ui-review-facts">
-      <div><small>基准版本与生效时间</small>版本 {proposal.expectedRevision}<br />{proposal.effectiveAt === 0 ? "审批通过后立即生效" : new Date(proposal.effectiveAt).toLocaleString("zh-CN")}</div>
+      <div><small>基准版本与生效时间</small>版本 {proposal.expectedRevision}<br />{proposal.effectiveAt === 0 ? "审批通过后立即生效" : `${businessStamp(proposal.effectiveAt)}（${businessZone().label}）`}</div>
       <div><small>T1–T5 平台算力分界</small>{proposal.thresholds.join(" / ")}<p>分界值归入较高档位。</p></div>
       <div><small>Android 芯片档</small>{proposal.androidSocRules.length} 档 · {chips} 颗芯片<p>{proposal.androidSocRules.length === 0
         ? "这次申请没有 Android 芯片档，Android 新校准均进入待核验。" : "芯片连同全部标识整体归档；范围是运营预设，不是厂商指标。"}</p></div>
