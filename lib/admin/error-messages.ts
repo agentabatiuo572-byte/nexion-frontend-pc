@@ -6,6 +6,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   CREGIS_SWITCH_RECOVERY_NOT_SAFE: "暂不满足恢复条件，请先核对所选网络的完整对账、链配置和未解决风险。",
   CREGIS_SWITCH_MAKER_INACTIVE: "发起管理员已停用，请由当前有权限的管理员重新发起申请。",
   CREGIS_SWITCH_NETWORK_REQUIRED: "充值开关须按 BEP20、ERC20 或 TRC20 网络单独提交，请刷新后重新操作。",
+  CREGIS_TRC20_BOOTSTRAP_NOT_EMPTY_OR_READY: "TRC20 首次空库存对账没完成：已有地址或交易、还有没处理完的资金风险，或收款服务没开通 TRC20 收款地址。这次没有建地址，也没有入账；请核对后再对账。",
+  CREGIS_TRC20_BOOTSTRAP_PROVIDER_NOT_EMPTY: "TRC20 首次空库存对账没完成：收款服务查到了已有记录，不能按空库存完成。这次没有建地址，也没有入账；请按正常对账核对这些记录。",
   MATERIAL_REVISION_STALE: "材料版本已变化，请刷新原申请，旧版本核验或批准不能继续执行。",
   MATERIALS_NOT_SUBMITTED: "申请人尚未提交材料，暂不能批准。",
   MATERIALS_NEEDS_MORE: "请申请人按核验意见补交材料，再重新核验。",
