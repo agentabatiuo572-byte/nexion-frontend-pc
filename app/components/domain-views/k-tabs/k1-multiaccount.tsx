@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Coins, Gift, ListChecks, Lock, LockOpen, Network, RefreshCw, ShieldAlert, ShieldCheck, SlidersHorizontal, Snowflake, Users, type LucideIcon } from "lucide-react";
-import {
+import { KeepText,
   BlockState, Button, Cell, Change, ChartLegend, Conclusion, ConfigList, ConfigRow, Decision, DiffField, Explain, Fact, Facts, Field, Figure, FilterBar, FilterField, Fold, InlineMeter, Input, IrreversibleTag, JudgmentPoints, KeyValues,
   ConflictBar, Modal, Notice, NumberInput, PageHeader, PageTabs, Pager, Panel, RecordList, ReleaseModal, SectionNav, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useSectionNav,
   type ExplainRow, type JudgmentRow, type SectionNavItem, useTabIds
@@ -1370,10 +1370,10 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           {!expired && <Button size="sm" loading={retrying === record.fingerprint} disabled={Boolean(retrying || checking)} disabledReason={blocked} onClick={() => void retryPending(record)}>按原操作重试</Button>}
           {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={Boolean(retrying || checking)} onClick={() => setReleasing(record)}>解除待确认</Button>}
         </>}>
-          {formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，{expired ? EXPIRED_TEXT : <>{RECOVERY_HINT[record.kind]}{blocked ?? "重发原内容，已成功的不会重复执行。"}</>}
+          {formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，<KeepText text={expired ? EXPIRED_TEXT : `${RECOVERY_HINT[record.kind]}${blocked ?? "重发原内容，已成功的不会重复执行。"}`} />
           {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=K&object=${encodeURIComponent(record.target)}`}>到操作记录与审批核对</Link></>}
           {" "}<Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 操作人 ${record.operator} ｜ 理由 ${record.reason}`} />
-          {pendingNotes[record.fingerprint] && !(expired && pendingNotes[record.fingerprint].includes("重试")) && <div>{pendingNotes[record.fingerprint]}</div>}
+          {pendingNotes[record.fingerprint] && !(expired && pendingNotes[record.fingerprint].includes("重试")) && <div><KeepText text={pendingNotes[record.fingerprint]} /></div>}
         </Notice>
         );
       })}

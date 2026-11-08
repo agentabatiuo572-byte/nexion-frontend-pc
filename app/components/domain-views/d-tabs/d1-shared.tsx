@@ -4,7 +4,7 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Copy, PowerOff } from "lucide-react";
-import { Button, Explain, IconButton, Notice, ReleaseModal, StatusTag } from "@/app/components/rd";
+import { Button, Explain, IconButton, KeepText, Notice, ReleaseModal, StatusTag } from "@/app/components/rd";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { isDOutcomeUnknownError } from "@/lib/admin/d-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -136,10 +136,10 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
     } catch (error) {
       if (isPermissionDenied(error)) announcePermissionDenied();
       if (isExplicitRejection(error)) {
-        note(item.key, <>重试被拒：{displayAdminError(error)} 这说明不了原操作的结果，先核实原操作，再决定要不要解除。</>);
+        note(item.key, `重试被拒：${displayAdminError(error)} 这说明不了原操作的结果，先核实原操作，再决定要不要解除。`);
         setReleasable((current) => [...current, item.key]);
       } else if (unknownOutcome(error)) note(item.key, "重试结果仍未确认，原操作继续保留。");
-      else note(item.key, <>这次没能确认结果：{displayAdminError(error)} 原操作继续保留。</>);
+      else note(item.key, `这次没能确认结果：${displayAdminError(error)} 原操作继续保留。`);
     } finally {
       setRunning("");
       item.after();
@@ -155,19 +155,23 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
   };
   return (
     <>
-      {items.map((item) => (
+      {items.map((item) => {
+        const hint = item.retry ? item.blocked ?? item.hint : item.hint;
+        const message = notes[item.key];
+        return (
         <Notice key={item.key} tone="warn" title={`${item.label} · 结果未确认`}
           action={<>
             {item.verify && <Button size="sm" disabled={disabled || !!running} onClick={() => void verify(item)}>读回核对</Button>}
             {item.retry && <Button size="sm" loading={running === item.key} disabled={disabled || (!!running && running !== item.key)} disabledReason={item.blocked} onClick={() => void retry(item)}>按原操作重试</Button>}
             {item.retry && releasable.includes(item.key) && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>解除待确认</Button>}
           </>}>
-          {businessStamp(item.createdAt)}（{zoneLabel()}）发出，可能已经生效。{item.retry ? item.blocked ?? item.hint : item.hint}
+          {businessStamp(item.createdAt)}（{zoneLabel()}）<KeepText text="发出，可能已经生效。" />{typeof hint === "string" ? <KeepText text={hint} /> : hint}
           {item.auditHref && reach(item.auditHref, "platform_a2_read") && <> <Link className="rd-link" href={item.auditHref}>到操作记录与审批核对</Link></>}
           <Explain label="技术信息" content={`命令号 ${item.key}`} />
-          {notes[item.key] && <div>{notes[item.key]}</div>}
+          {message && <div>{typeof message === "string" ? <KeepText text={message} /> : message}</div>}
         </Notice>
-      ))}
+        );
+      })}
       {releasing && (
         <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)}
           explain="重试被明确拒绝后，先到操作记录核实原操作。解除只移除本标签页的待确认记录，后端结果和锁定状态不变。"

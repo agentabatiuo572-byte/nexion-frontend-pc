@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Download, Landmark, RefreshCw, ShieldCheck } from "lucide-react";
 import { OperationConfirmModal, useToast, type OperatorBriefKind } from "../design-kit";
 import { ForecastConfigImpact } from "@/app/components/forecast-config-preview";
-import { BlockState, Button, Change, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Input, IrreversibleTag, Modal, Notice, PageHeader, PageTabs, RdPage, ReleaseModal, Select, StatusTag, useTabIds } from "@/app/components/rd";
+import { KeepText, BlockState, Button, Change, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Input, IrreversibleTag, Modal, Notice, PageHeader, PageTabs, RdPage, ReleaseModal, Select, StatusTag, useTabIds } from "@/app/components/rd";
 import { B2RequestError, previewB2ForecastConfig, type ForecastConfigPreview } from "@/lib/admin/b2-client";
 import { useB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import { businessClock, businessZone, parseBusinessTime } from "@/lib/admin/business-time";
@@ -753,7 +753,7 @@ export function D3Treasury() {
           {item.body}{item.expiresAt <= Date.now() ? `${RETRY_EXPIRED}。` : item.hint}
           {reach(item.auditHref, "platform_a2_read") && <> <Link className="rd-link" href={item.auditHref}>到操作记录与审批核对</Link></>}
           <Explain label="技术信息" content={`命令号 ${item.commandKey}`} />
-          {pendingNotes[item.commandKey] && <div>{pendingNotes[item.commandKey]}</div>}
+          {pendingNotes[item.commandKey] && <div><KeepText text={pendingNotes[item.commandKey]} /></div>}
         </Notice>
       ))}
       <PageTabs

@@ -13,7 +13,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObjec
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
-import { Button, Explain, Modal, Notice, ReleaseModal } from "@/app/components/rd";
+import { KeepText, Button, Explain, Modal, Notice, ReleaseModal } from "@/app/components/rd";
 import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -408,10 +408,10 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
         {!expired && <Button size="sm" disabled={!!recovering} disabledReason={record.op.kind === "a2" && !canQuery ? "当前账号不能查询原提案，请联系有查看权限的同事核对" : undefined} onClick={() => void retry(record)}>按原操作重试</Button>}
         {isExplicitRejection(record.rejection) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除待确认</Button>}
       </>}>
-        {formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出。{expired ? EXPIRED_TEXT : "重发原内容，已成功的不会重复执行。"}
+        {formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出。<KeepText text={expired ? EXPIRED_TEXT : "重发原内容，已成功的不会重复执行。"} />
         {reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href={auditHref} prefetch={false}>到操作记录与审批核对</Link></>}
         <Explain label="这条操作怎么恢复" rows={[{ k: "恢复", v: expired ? "原操作结果仍待核实，记录和对象锁继续保留。请到操作记录与审批核对。" : recoveryText(record.op, canQuery) }, { k: "命令号", v: record.commandKey }]} />
-        {notes[record.commandKey] && <div>{notes[record.commandKey]}</div>}
+        {notes[record.commandKey] && <div><KeepText text={notes[record.commandKey]} /></div>}
       </Notice>
     );
   });

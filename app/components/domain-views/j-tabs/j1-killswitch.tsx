@@ -371,7 +371,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       提交恢复审批不会打开业务。{record.expiresAt <= Date.now() ? EXPIRED : "先查原审批单，未查到且仍在 24 小时内才按原内容、原理由和原命令号重试。"}
       {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href="/platform/audit?domain=J">到操作记录与审批核对</Link></>}
       <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 理由 ${record.input.reason}`} />
-      {pendingNotes[record.fingerprint] && <div>{pendingNotes[record.fingerprint]}</div>}
+      {pendingNotes[record.fingerprint] && <div><KeepText text={pendingNotes[record.fingerprint]} /></div>}
     </Notice>
   ));
 
@@ -384,10 +384,10 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           {!expired && <Button size="sm" disabled={!expired && !!submitting} disabledReason={expired ? EXPIRED : canRetry(record) ? undefined : RETRY_DENIED} onClick={() => void retryPending(record)}>按原操作重试</Button>}
           {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除待确认</Button>}
         </>}>
-        {expired ? formatBusinessTimeCompact(new Date(record.createdAt).toISOString()) : businessClock(record.createdAt)}（{businessZone().label}）发出，{expired ? `${EXPIRED}。` : "可能已经生效。重发原内容，已成功的不会重复执行。"}
+        {expired ? formatBusinessTimeCompact(new Date(record.createdAt).toISOString()) : businessClock(record.createdAt)}（{businessZone().label}）发出，<KeepText text={expired ? `${EXPIRED}。` : "可能已经生效。重发原内容，已成功的不会重复执行。"} />
         {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href="/platform/audit?domain=J">到操作记录与审批核对</Link></>}
         <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 理由 ${record.reason}`} />
-        {pendingNotes[record.fingerprint] && <div>{pendingNotes[record.fingerprint]}</div>}
+        {pendingNotes[record.fingerprint] && <div><KeepText text={pendingNotes[record.fingerprint]} /></div>}
       </Notice>
     );
   });

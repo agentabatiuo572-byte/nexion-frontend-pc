@@ -13,7 +13,7 @@ import { Activity, CheckCircle2, CircleHelp, Download, Flag, Gauge, ListChecks, 
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { KpiTrendPoint } from "@/lib/admin/kpi-trend";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
-import { BlockState, Button, Cell, Check, Conclusion, DiffField, Explain, Fact, Facts, Figure, FilterBar, FilterField, Fold, Input, Modal, Notice, NumberInput, PageHeader, Panel, RecordList, ReleaseModal, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
+import { KeepText, BlockState, Button, Cell, Check, Conclusion, DiffField, Explain, Fact, Facts, Figure, FilterBar, FilterField, Fold, Input, Modal, Notice, NumberInput, PageHeader, Panel, RecordList, ReleaseModal, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { businessClock, businessDay, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
@@ -302,9 +302,9 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
           {!expired && <Button size="sm" loading={retrying} disabledReason={!ctx.canExport ? "这个账号已没有导出权限，请有权限的同事处理" : undefined} onClick={() => void retry(pending)}>按原操作重试</Button>}
           {!expired && retryRejected && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除待确认</Button>}
         </>}>
-          {formatBusinessTimeFull(new Date(pending.createdAt).toISOString(), "—")}（{businessZone().label}）发出，任务可能已经生成，不要重新导出。{expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !ctx.canExport ? "这个账号已没有导出权限，不能重试，请有权限的同事处理。" : "重发原内容，已成功的不会重复执行。"}{exportPage(`到「${pageName}」核对`)}
+          {formatBusinessTimeFull(new Date(pending.createdAt).toISOString(), "—")}（{businessZone().label}）发出，任务可能已经生成，不要重新导出。<KeepText text={expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !ctx.canExport ? "这个账号已没有导出权限，不能重试，请有权限的同事处理。" : "重发原内容，已成功的不会重复执行。"} />{exportPage(`到「${pageName}」核对`)}
           <Explain label="技术信息" content={`命令号 ${pending.commandKey} ｜ 理由 ${pending.reason}`} />
-          {!expired && retryNote && <div>{retryNote}</div>}
+          {!expired && retryNote && <div><KeepText text={retryNote} /></div>}
         </Notice>
       )}
       {finished && !pending && (

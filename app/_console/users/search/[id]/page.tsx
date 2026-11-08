@@ -30,7 +30,7 @@ import {
 import { fetchD1TopupFlows } from "@/lib/admin/d-client";
 import { withdrawalRecordLabel } from "@/lib/admin/withdrawal-status";
 import { OperationConfirmModal, type OperatorBriefKind } from "@/app/components/domain-views/design-kit";
-import {
+import { KeepText,
   BlockState, Button, Cell, Change, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, Notice, PageHeader, Pager, Panel,
   RdPage, ReleaseModal, SectionNav, Segments, Stat, StatBand, StatusTag, Table, Td, Th, Timeline, Tr, useSectionNav, type SectionNavItem, type StateTone, type TimelineEntry,
 } from "@/app/components/rd";
@@ -1205,11 +1205,11 @@ export default function UserDetailPage() {
         {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason} onClick={() => void retryPending(command)}>按原操作重试</Button>}
         {writable && !command.legacy && isExplicitRejection(command.rejection) && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除待确认</Button>}
       </>}>
-      {shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效，不要重复操作。{!quietStep && nextStep}
+      {shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）<KeepText text={`发出，可能已经生效，不要重复操作。${quietStep ? "" : nextStep}`} />
       {supportScope && hasWrite && <> <Link className="rd-link" href={`/users/search/${encodeURIComponent(userNo)}`} prefetch={false}>到用户详情</Link></>}
       {auditLink}
       <Explain label="技术信息" content={<>{quietStep && <p>{nextStep}</p>}<p>{command.legacy ? `命令号 ${command.commandKey} ｜ 升级前的记录，没有存操作人和理由` : `命令号 ${command.commandKey} ｜ 操作人 ${command.operator} ｜ 理由 ${command.reason}`}</p></>} />
-      {pendingNotes[command.fingerprint] && <div>{pendingNotes[command.fingerprint]}</div>}
+      {pendingNotes[command.fingerprint] && <div><KeepText text={pendingNotes[command.fingerprint]} /></div>}
     </Notice>;
   });
   const correctionNotices = corrections.map((command) => {

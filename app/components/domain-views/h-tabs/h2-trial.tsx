@@ -12,7 +12,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Ban, Coins, Copy, History, Lock, RefreshCw, Settings2, SlidersHorizontal, Ticket, TrendingUp, Users } from "lucide-react";
-import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IconButton, IrreversibleTag, JudgmentPoints, Modal, Notice, PageHeader, Pager, Panel, RecordList, ReleaseModal, SectionNav, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useSectionNav, type SectionNavItem, type StateTone } from "@/app/components/rd";
+import { KeepText, BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IconButton, IrreversibleTag, JudgmentPoints, Modal, Notice, PageHeader, Pager, Panel, RecordList, ReleaseModal, SectionNav, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useSectionNav, type SectionNavItem, type StateTone } from "@/app/components/rd";
 import {
   createH2CommandKey,
   fetchH2Trials,
@@ -710,12 +710,12 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         {!expired && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除待确认</Button>}
       </>}>
         {formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，
-        {proposal ? "提案可能已经提交，批准前不会执行。这条记录确认前不能再操作。" : "可能已经生效。这项确认前不能再改。"}
+        <KeepText text={proposal ? "提案可能已经提交，批准前不会执行。这条记录确认前不能再操作。" : "可能已经生效。这项确认前不能再改。"} />
         {proposal && !canQuery ? " 这个账号查不了原提案，请能看操作记录的同事核查。" : ""}
-        {expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? " 这个账号已没有这项权限，不能重试。" : needQuery ? " 先查原提案，查不到再按原操作重试。" : " 重发原内容，已成功的不会重复执行。"}
+        <KeepText text={expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? " 这个账号已没有这项权限，不能重试。" : needQuery ? " 先查原提案，查不到再按原操作重试。" : " 重发原内容，已成功的不会重复执行。"} />
         {reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href={`${auditHref}?domain=H&object=${encodeURIComponent(object)}`} prefetch={false}>到操作记录与审批核对</Link></>}
         <Explain label="技术信息" content={`命令号 ${record.commandKey}${proposal ? ` ｜ 用户 ${record.owner}` : ` ｜ 新值 ${record.value || "空"}`} ｜ 理由 ${record.reason}`} />
-        {!expired && pendingNotes[record.commandKey] && <div>{pendingNotes[record.commandKey]}</div>}
+        {!expired && pendingNotes[record.commandKey] && <div><KeepText text={pendingNotes[record.commandKey]} /></div>}
       </Notice>
     );
   })];
