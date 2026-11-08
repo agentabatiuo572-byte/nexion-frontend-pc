@@ -540,7 +540,7 @@ export function canAccessResolvedPath(domains: NavDomain[], pathname: string | n
 }
 
 /** 已按改版规范迁移的页面。浅色主题只对这些页的内容区生效，其余页的内容区保持深色，等迁移批次（06 VS-95）。 */
-export const REDESIGNED_PATHS: readonly string[] = ["/", "/finance/withdrawals", "/finance/pool", "/devices/orders", "/growth/trial", "/analytics/kpi", "/risk/multi-account", "/emergency/kill-switch", "/service/sessions", "/content/disclosures", "/finance/fx-rate", "/finance/payout-vnd", "/finance/recon", "/finance/params", "/finance/ledger", "/users/actions"];
+export const REDESIGNED_PATHS: readonly string[] = ["/", "/finance/withdrawals", "/finance/pool", "/devices/orders", "/growth/trial", "/analytics/kpi", "/risk/multi-account", "/emergency/kill-switch", "/service/sessions", "/content/disclosures", "/finance/fx-rate", "/finance/payout-vnd", "/finance/recon", "/finance/params", "/finance/ledger", "/users/assets", "/users/search", "/users/actions"];
 /** 不在菜单里的详情页，路径带对象编号，按前缀认。 */
 export const REDESIGNED_DETAIL_PREFIXES: readonly string[] = ["/users/search/", "/service/customers/"];
 export const isRedesignedPath = (pathname: string) => {

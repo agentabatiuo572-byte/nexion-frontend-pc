@@ -15,6 +15,7 @@
  * - k 过 AutoGloss，命中词典的术语带解释。
  * - 一行里的前后变化写成 <Change from="在线" to="已关停" />：现在值弱，改后的值进行中蓝（VS-103），不要写成「在线 → 已关停」一串。
  *   已经生效的变化（读取最新后别人改了什么）传 settled，新值用正文色，不用待生效的蓝。
+ *   改后的值本身有问题（扣成负数、低于红线）传 tone，新值按状态上色：<Change from="20.00" to="-100.00" tone="warn" />。
  * - 值是「—」时自动弱化，和 Stat 一样（VS-11）。
  */
 import type { ReactNode } from "react";
@@ -37,13 +38,13 @@ export function Fact({ k, children, tone, lead, unit }: { k: string; children: R
 }
 
 /** 事实一行里的前后变化。前后靠位置和箭头分，不只靠颜色；读屏读「改为」。 */
-export function Change({ from, to, settled }: { from: ReactNode; to: ReactNode; settled?: boolean }) {
+export function Change({ from, to, settled, tone }: { from: ReactNode; to: ReactNode; settled?: boolean; tone?: StateTone }) {
   return (
     <span className="rd-fact-change">
       <span>{from}</span>
       <ArrowRight size={14} aria-hidden />
       <span className="rd-sr-only">改为</span>
-      <span data-after={settled ? undefined : ""} data-settled={settled ? "" : undefined}>{to}</span>
+      <span data-after={settled ? undefined : ""} data-settled={settled ? "" : undefined} data-tone={tone}>{to}</span>
     </span>
   );
 }

@@ -86,7 +86,7 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
     what: "试用收益最多能抵多少购机款",
     when: "立即生效，按领取时的设置算",
     impact: "之后领取的试用按新上限，已领取的不变",
-    how: "0–1,000,000 USDT，填 0 表示试用收益不能抵购机款。",
+    how: "0–1,000,000 USDT，填 0 不抵扣。",
     howMore: "只管试用收益能抵多少，和购买减价、提前购买立减叠加。",
     where: "App 领取弹窗「最高」金额、我的 › 试用页规则",
     input: USDT_RANGE,

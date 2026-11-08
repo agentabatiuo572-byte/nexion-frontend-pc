@@ -171,7 +171,7 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
       ))}
       {releasing && (
         <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)}
-          explain={releasing.retry ? "重试被拒说明不了原操作的结果，先到操作记录确认。解除后原操作不再重试。" : "这项操作不能按原请求重试。按读回的结果和操作记录确认原操作有没有执行，再解除；解除后可以重新操作。"}
+          explain={releasing.retry ? "重试被拒说明不了原操作的结果，先到操作记录确认。解除后原操作不再重试。" : "这项操作不能按原请求重试。先核对原操作有没有执行；这里只清理本地待确认，后续操作仍须通过服务端校验。"}
           onConfirm={() => { releasing.release(); setReleasing(null); releasing.after(); }} />
       )}
     </>

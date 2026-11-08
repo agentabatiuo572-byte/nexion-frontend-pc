@@ -978,7 +978,12 @@ export async function exportUserProfilesCsv(
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw new Error(formatAdminApiError(result?.message, `USERS_EXPORT_FAILED_${response.status}`));
+    // 带上 HTTP 状态和接口码，页面才分得清明确拒绝和结果未知（OP-91）。HTTP 2xx 却回了 JSON 错误时，状态取接口的 code。
+    throw new UsersRequestError(
+      response.ok ? Number(result?.code) || 0 : response.status,
+      result?.message ?? undefined,
+      formatAdminApiError(result?.message, `USERS_EXPORT_FAILED_${response.status}`),
+    );
   }
 
   return {

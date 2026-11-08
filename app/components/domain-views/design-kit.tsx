@@ -32,6 +32,7 @@ import { StatusTag as RdStatusTag } from "@/app/components/rd/status-tag";
 import { Modal as RdModal } from "@/app/components/rd/overlay";
 import { NumberInput as RdNumberInput } from "@/app/components/rd/number-input";
 import { useRdSurface } from "@/app/components/rd/surface";
+import { KeepText } from "@/app/components/rd/keep-text";
 
 /* ---------------- 域 → 落地路由(ctx.navigate 跨域跳转) ---------------- */
 export const DOMAIN_HOME: Record<string, string> = {
@@ -884,12 +885,12 @@ export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, complet
     return (
       <details className="operator-brief rd-brief">
         <summary>
-          <span className="rd-brief-head"><b>执行摘要</b>{impact && <span>{impact}</span>}</span>
+          <span className="rd-brief-head"><b>执行摘要</b>{impact && <span><KeepText text={impact} /></span>}</span>
           <span className="rd-brief-toggle"><span className="brief-closed">查看详情</span><span className="brief-open">收起</span></span>
         </summary>
         <dl className="rd-brief-rows">
-          {brief.filter((row) => row.label !== "要做什么").map((row) => <div key={row.label}><dt>{row.label}</dt><dd><AutoGloss>{row.text}</AutoGloss></dd></div>)}
-          {detailText && detailText !== compactText(impact ?? "") && <div><dt>说明</dt><dd><AutoGloss>{detail}</AutoGloss></dd></div>}
+          {brief.filter((row) => row.label !== "要做什么").map((row) => <div key={row.label}><dt>{row.label}</dt><dd><KeepText text={row.text}>{(part) => <AutoGloss>{part}</AutoGloss>}</KeepText></dd></div>)}
+          {detailText && detailText !== compactText(impact ?? "") && <div><dt>说明</dt><dd>{typeof detail === "string" ? <KeepText text={detail}>{(part) => <AutoGloss>{part}</AutoGloss>}</KeepText> : <AutoGloss>{detail}</AutoGloss>}</dd></div>}
         </dl>
       </details>
     );

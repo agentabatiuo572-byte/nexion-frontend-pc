@@ -12,7 +12,7 @@ import { RdPage } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
-import { C1Search, C1HeaderActions, type C1ExportQuery } from "./c-tabs/c1-search";
+import { C1Search } from "./c-tabs/c1-search";
 import { C2Actions } from "./c-tabs/c2-actions";
 import { C3Adjust } from "./c-tabs/c3-adjust";
 import { C5Security } from "./c-tabs/c5-security";
@@ -21,7 +21,7 @@ import type { CCtx, ConfirmReq, ActionConfirmReq } from "./c-tabs/types";
 
 const FOLD: Record<string, string> = { C1: "C1", C2: "C2", C3: "C3", C5: "C5", C6: "C6" };
 /** 已改版的页：包 RdPage，页头由页面自己写。 */
-const REDESIGNED = ["C2"];
+const REDESIGNED = ["C1", "C2", "C3"];
 
 
 export function CDomainView({ meta }: { meta: DomainViewMeta }) {
@@ -29,7 +29,6 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "C1", [meta.l2Id]);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
-  const [c1ExportQuery, setC1ExportQuery] = useState<C1ExportQuery | null>(null);
 
   const ctx: CCtx = {
     toast: setToast,
@@ -37,13 +36,11 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
     openConfirm: setCf,
   };
 
-  const right = tab === "C1" ? <C1HeaderActions ctx={ctx} query={c1ExportQuery} /> : null;
-
   const page = (
     <>
-      {!REDESIGNED.includes(tab) && <DomainHeader {...meta} right={right} />}
+      {!REDESIGNED.includes(tab) && <DomainHeader {...meta} />}
 
-      {tab === "C1" && <C1Search ctx={ctx} onExportQueryChange={setC1ExportQuery} />}
+      {tab === "C1" && <C1Search ctx={ctx} />}
       {tab === "C2" && <C2Actions ctx={ctx} />}
       {tab === "C3" && <C3Adjust ctx={ctx} />}
       {tab === "C5" && <C5Security ctx={ctx} />}
