@@ -196,10 +196,8 @@ function D1Workspace({ ctx }: { ctx: DCtx }) {
   const capped = values.some(value => value && value !== "failed" && value.capped);
   const totalText = `${total}${capped ? "+" : ""}`;
   const failedNames = failed.map(key => D1_SECTION_NAME[key]).join("、");
-  const explain = "算了需人工处理的付款、待核对的银行卡订单、USDT 异常和待挂账的对账差异。系统还在处理的不算。没有数据不代表已经对上。";
-  // 后端还没给「本地待人工核对」的银行卡订单计数（BE-27），这个数不全，零也不是绝对的：常显说明，不收进问号（D1-S04）。
-  const bankGap = "不含银行卡本地待人工核对的订单";
-  const feeGap = unconfiguredFees ? `；手续费 ${unconfiguredFees} 种未配置` : "";
+  const explain = "算了需人工处理的付款、银行卡待核对订单、USDT 异常和待挂账的对账差异。银行卡包括全渠道本地待人工核对及银行卡支付原有三种待核对，重叠订单只算一次；列表保留银行卡支付范围。系统还在处理的不算。没有数据不代表已经对上。";
+  const feeGap = unconfiguredFees ? `手续费 ${unconfiguredFees} 种未配置` : "";
   const retryAll = <Button size="sm" onClick={() => setReloadTick(value => value + 1)}>重试</Button>;
   const alertLead = usdtAlert ? "USDT 有未解除的紧急或严重告警" : "";
   const conclusion = failed.length === D1_SECTIONS.length
@@ -207,15 +205,14 @@ function D1Workspace({ ctx }: { ctx: DCtx }) {
     : loadingCount && !usdtAlert
       ? <Conclusion state="unknown" explain={explain}>正在读取要处理的事</Conclusion>
       : total > 0
-        ? <Conclusion state={usdtAlert ? "danger" : "warn"} lead explain={explain} hint={failed.length ? undefined : `点页签上带数字的区处理，${bankGap}`} action={failed.length ? retryAll : undefined}>
+        ? <Conclusion state={usdtAlert ? "danger" : "warn"} lead explain={explain} hint={failed.length ? undefined : "点页签上带数字的区处理"} action={failed.length ? retryAll : undefined}>
           {alertLead && `${alertLead}；`}有 <b>{totalText}</b> 项要处理{failed.length ? `，${failedNames}读取失败，这个数不全` : ""}
         </Conclusion>
         : usdtAlert
           ? <Conclusion state="danger" explain={explain} hint="到「USDT 充值」看告警。">{alertLead}{failed.length ? `；${failedNames}读取失败` : ""}</Conclusion>
           : failed.length
             ? <Conclusion state="warn" explain={explain} action={retryAll}>{failedNames}读取失败，不知道这部分有没有要处理的事</Conclusion>
-            // 零态不用绿色：银行卡本地人工核对还没计入，不能说成全部正常（重构说明版面例外）。
-            : <Conclusion state="neutral" explain={explain} hint={`${bankGap}${feeGap}`}>没有发现要处理的事</Conclusion>;
+            : <Conclusion state="neutral" explain={explain} hint={feeGap || undefined}>没有发现要处理的事</Conclusion>;
   const crossRows = D1_SECTIONS.filter(key => key !== section && activity[key].length > 0).map(key => ({ section: key, lines: activity[key] }));
 
   return <>
@@ -557,9 +554,10 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
     <div {...tabIds.panel("bank")} hidden={section !== "bank"} className="rd-tab-pane">
       <PendingNotices items={bankItems} disabled={busy} />
       <D1BankOrders canManage={canBankReconcile} busyReason={busy ? "正在提交" : undefined} onCount={onBankCount}
+        allManualReviewCount={overviewLoading ? undefined : overview ? overview.bankManualReviewCount : "failed"}
         refreshKey={`${vietQr?.asOf ?? ""}:${bankKey}`}
         blocked={(order) => bankPending.some(command => command.path === `/vietqr/orders/${order.intentNo}/manual-credit`)}
-        onManualCredit={openBankManualCredit} />
+        onManualCredit={(order, onSettled) => openBankManualCredit(order, async () => { await Promise.all([onSettled(), loadOverview()]); })} />
       <Fold title="银行卡支付设置" icon={Settings2} tone="role-4" summary={bankSummary}
         alert={!!overviewError || !!vietQrError || bankChannels.some(channel => !channel.enabled)} alertTone={overviewError || vietQrError ? "danger" : "warn"}>
         {overviewError && <BlockState state="error" compact title="充值通道读取失败" detail={overviewError} onRetry={() => void loadOverview()} />}
