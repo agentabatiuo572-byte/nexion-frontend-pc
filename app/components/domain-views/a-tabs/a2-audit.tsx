@@ -248,7 +248,8 @@ function shortCodes(text: string) {
 
 /** 理由里的工单号、订单号整段不拆（必须改 14）：编号包一层不换行，放不下时整段换到下一行。 */
 function keepCodes(text: string): ReactNode {
-  const parts = text.split(/([A-Z][A-Z0-9]*-[A-Z0-9-]+)/);
+  // 编号前面的两个字（「工单」「订单」）和编号连在一起，不在词中间折行。
+  const parts = text.split(/((?:[\u4e00-\u9fa5]{2} ?)?[A-Z][A-Z0-9]*-[A-Z0-9-]+)/);
   return parts.length === 1 ? text : parts.map((part, index) => index % 2 ? <span key={index} className="a2-code">{part}</span> : part);
 }
 
@@ -1331,7 +1332,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       edit,
       facts: key === "schema" && next ? <DiffList rows={[{ key: "schema", before: current, after: next }]} /> : undefined,
       content: key === "schema" ? (
-        <p className="rd-note">
+        <p className="rd-note a2-confirm-note">
           只能逐版升级，升级后不能回到 {current}。新事件或字段先在
           {reach("/platform/events") ? <Link className="rd-link" href="/platform/events" prefetch={false}>「用户行为事件」</Link> : "「用户行为事件」"}登记。
         </p>
