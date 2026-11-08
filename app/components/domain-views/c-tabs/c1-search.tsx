@@ -618,6 +618,11 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
    */
   const retryExport = async () => {
     if (!pending || exporting || throttled() || retryBlocked) return;
+    // retryBlocked 是上次渲染时算的：框开着跨过 24 小时再点，要用现在的时间再判断一次，过期就不发，原记录照旧留着（F06）。
+    if (pending.expiresAt <= Date.now()) {
+      setDialogNotice({ tone: "warn", title: "不能再重试", text: `${RETRY_EXPIRED_TEXT}。` });
+      return;
+    }
     if (!exportStore.isDurablyStored(pending.fingerprint, pending.commandKey)) {
       setDialogNotice({ tone: "warn", title: "没有重试", text: "浏览器里查不到这条记录，本次没有发送。待确认继续保留，请到操作记录与审批核对。" });
       return;
@@ -904,7 +909,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
         <Button autoFocus onClick={backToPending}>返回</Button>
         <Button variant="primary" onClick={releasePending}>确认解除</Button>
       </>}>
-        <ReleaseBody label="导出用户名单" explain="先到操作记录与审批核对这次导出有没有记下。解除只放开这个标签页里的锁，不改后端的导出记录。" />
+        <ReleaseBody label="导出用户名单" explain="先到操作记录与审批核对这次导出有没有记下。" />
       </Modal>
     ) : dialog && (
       <Modal title="导出用户名单" icon={Download} sub={<StatusTag tone="progress" filled>立即生效</StatusTag>} busy={exporting}
