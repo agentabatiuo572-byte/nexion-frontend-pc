@@ -651,6 +651,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-notice-text > p { margin: 0; }
 .rd-notice-text > p + p { margin-top: 8px; }
 .rd-notice .rd-link { white-space: nowrap; }  /* 链接不在词中间折行 */
+.rd-keep { display: inline-block; }  /* 一句话放得下一行就整句换行，不在「也 / 不记」这种词中间断开；放不下才在句内折 */
 /* 三个以上动作挤窄正文时，动作换到正文下面一行，和正文同一条左边线（VS-105） */
 .rd-notice:has(> .rd-notice-action > :nth-child(3)) { flex-wrap: wrap; }
 .rd-notice:has(> .rd-notice-action > :nth-child(3)) > .rd-notice-text { flex-basis: calc(100% - 24px); }
