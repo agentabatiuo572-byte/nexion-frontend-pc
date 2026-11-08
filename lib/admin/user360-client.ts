@@ -1328,7 +1328,7 @@ export async function executeUserDeviceTradein(
       || outcomeStaysUnknown(response.status, result?.code)) {
       throw new UsersOutcomeUnknownError(commandKey);
     }
-    throw new Error(formatAdminApiError(result?.message, `C2_DEVICE_COMMAND_FAILED_${response.status}`));
+    throw Object.assign(new Error(formatAdminApiError(result?.message, `C2_DEVICE_COMMAND_FAILED_${response.status}`)), { status: response.status, reasonCode: result?.message });
   }
   return result.data as JsonRecord;
 }

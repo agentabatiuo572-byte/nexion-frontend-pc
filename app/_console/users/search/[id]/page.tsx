@@ -859,7 +859,12 @@ export default function UserDetailPage() {
           return;
         }
         if (isPermissionDenied(cause)) throw cause;
-        throw new Error(`${COMMAND_FAILURE[command.kind]}：${displayAdminError(cause)}`);
+        const message = `${COMMAND_FAILURE[command.kind]}：${displayAdminError(cause)}`;
+        if (cause instanceof Error) {
+          cause.message = message;
+          throw cause;
+        }
+        throw new Error(message);
       }
       c1UserCommands.forget(slot);
       syncPending();
