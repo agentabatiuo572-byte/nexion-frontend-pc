@@ -31,7 +31,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 看板第一句话 | `Conclusion`；正常态不放大，`lead` 只在异常或带关键数字时放大；`hint` 只写建议和该做什么，怎么算传 `explain` 进句尾的提示图标 | `conclusion.tsx` |
 | 一排关键数字，最多 4 个 | `StatBand`、`Stat`；普通数字 24px，最重要的一个传 `lead` 放到 40px，页面不改字号；这一屏的结论已经放大了数字时不传，每屏一个 40px；没有明显主次的可以不传；整张可点传 `href` 或 `onOpen`；值是 0 或「—」时自动弱化（字色弱、图标底灰、`lead` 不放大），不带数字的文字（「无权限」）16px，传了 `lead` 也不放大；口径传 `explain` 进名称旁的提示图标，`sub` 只放数据。一格至少放得下数字，长金额放不下就换行，不折行不缩字。窄于 900 时 `lead` 独占一行，其余排在下面；没有 `lead` 时四个两两一行，三个留在一行；只有两三个数时 `StatBand` 传 `fit`，每格从内容宽往外长填满一行，不拉成等宽的半格，窄时 `lead` 也不独占一行 | `stat.tsx` |
 | 一组经营数字：每个都带对比和分项，要切时段 | `MetricBoard`、`MetricCard`；一张卡四层：名称、主数、对比一行、分项，层高都是定的，同排同高，切时段不跳版。分项是 `rows`（最多三行名称和值），或 `bar` 比例条：两样比哪样多，条下只写图例不写数，全是 0 时写 `bar.empty`。`MetricBoard` 的 `rows` 传这组卡各时段最多几行（比例条算两行），分项区按它留高。0、读不到（`state="failed"`，传 `onRetry`）、读取中（`state="loading"`）分开，没权限不渲染；两套主题 0 和「—」都弱化。整张可点传 `href`，名称行右边有箭头，悬停整张变亮。3、6 张三列，4 张够宽四列，不够两两一行，2 张两列，只有 2 张时分项限宽 360；这组卡任一时段有 8 位以上长金额时页面传 `long`（用导出的 `LONG` 算），内容区窄于 900 时两列，不缩字，切时段列数不变。对比行里可以放一个问号，不撑高这一行。目前只有今日概览用（PG-41），其他页用 `StatBand` | `metric.tsx` |
-| 一块内容 | `Panel`；已经在一个面板里的分区传 `plain`，不套底；`sub` 只放数据（范围、单位、数量、时间），解释传 `explain` 进标题旁的提示图标 | `panel.tsx` |
+| 一块内容 | `Panel`；已经在一个面板里的分区传 `plain`，不套底；`sub` 只放数据（范围、单位、数量、时间），解释传 `explain` 进标题旁的提示图标，紧挨着下面要对着看的数字时传 `explainSide="top"`，气泡不盖数字 | `panel.tsx` |
 | 区块标题、统计数字前的图标 | `IconTile`，`Panel`、`Stat` 传 `icon` 就有 | `icon-tile.tsx` |
 | 切不同内容 | `PageTabs`；`useTabIds` 一处给 id，内容包 `role="tabpanel"`，页签和面板互相指向；`count` 写页签里要处理的数，0 弱化，读不到传「—」，数到上限传「50+」这类文字；页签里面再分一层传 `level={2}`，下划线式（Ant Design Tabs 默认），和外层的底色块分得开 | `tabs.tsx` |
 | 筛同一张表、切时间窗 | `Segments` | `tabs.tsx` |
@@ -50,7 +50,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 多行输入 | `Textarea`，放进 `Field`；字数传 `count`，写在框的右下角 | `filter-bar.tsx` |
 | 中、越、英三语正文 | `LocaleTabs`，切语言不动其他语言的内容，缺内容的页签写「缺失」 | `locale-tabs.tsx` |
 | 下拉、排序 | `Select`；放进 `Field` 自动接上 `id`、`aria-describedby`、`aria-invalid` | `select.tsx` |
-| 可输可选：边打字边从服务端候选里选一项（选账户、选用户） | `SearchSelect`；交互照 Ant Design AutoComplete、Select showSearch：点框、打字或按 ↓ 展开（聚焦本身不展开），第一项默认高亮，方向键移动（到头绕回）、Enter 选中、Esc 收起，Tab 和点外面收起，鼠标移到哪项高亮哪项；查询、防抖、丢弃过期结果由页面做，组件只管弹层、键盘、读屏（combobox 加 `aria-activedescendant`）和搜索中、无匹配、查询失败带「重试」三种状态；右边弱字传 `extra`（比如脱敏手机号），已选的传 `selected` 打勾；放进 `Field` 自动接上 `id` 和错误。选项是固定几个时用 `Select` | `search-select.tsx` |
+| 可输可选：边打字边从服务端候选里选一项（选账户、选用户） | `SearchSelect`；交互照 Ant Design AutoComplete、Select showSearch：点框、打字或按 ↓ 展开（聚焦本身不展开），第一项默认高亮，方向键移动（到头绕回，高亮项滚进可视区）、Enter 选中、Esc 收起，Tab 和点外面收起，鼠标移到哪项高亮哪项，输入法组合中按键不动候选；查询、防抖、丢弃过期结果由页面做，远程搜索传 `optionsFor`（这组候选按哪段输入查的，没查过传 null），和框里的字不一样就写「搜索中…」、回车不选（Ant Design Select 远程搜索：输入一变就不留旧候选），组件只管弹层、键盘、读屏（combobox 加 `aria-activedescendant`）和搜索中、无匹配、查询失败带「重试」三种状态；右边弱字传 `extra`（比如脱敏手机号），已选的传 `selected` 打勾；放进 `Field` 自动接上 `id` 和错误。选项是固定几个时用 `Select` | `search-select.tsx` |
 | 单条详情、长表单 | `Drawer`，底部用 `Decision` | `overlay.tsx` |
 | 详情开头 3～5 行 | `JudgmentPoints` | `judgment.tsx` |
 | 详情、确认框里成对的名称和值 | `Facts`、`Fact`；确认框的关键数字传 `lead`（每框最多一个，放第一行），值是不带数字的文字时按普通的值显示，大字只给数字；带含义的值传 `tone`；状态变化写 `Change`（改后蓝），已经生效的变化传 `settled`（新值正文色），改后的值本身有问题（扣成负数、低于红线）传 `tone`；值是「—」时自动弱化。放在 `Modal` 里自动带浅底 | `facts.tsx` |
@@ -74,7 +74,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 只读的流程进度：走到哪一步 | `Steps`，当前步从现有状态字段取 | `steps.tsx` |
 | 几条线比走势，或要画目标线、事件线 | `TrendLines`，目标线传 `marks`，事件线传 `event` | `chart.tsx` |
 | 表格里看走向 | `Sparkline`，至少两个点才传，数值要在别处读到 | `chart.tsx` |
-| 并排两块 | `.rd-split` 放两个 `Panel`。看板里对等的两块等高，`data-even` 再等宽；左边选一行右边看详情的主从结构传 `data-detail`，高度跟内容走。放不下时按内容折成上下排，不写窗口宽度；主从结构给明细面板 `id`，点行后 `scrollIntoView` | `rd.css` |
+| 并排两块 | `.rd-split` 放两个 `Panel`。看板里对等的两块等高，`data-even` 再等宽；左边选一行右边看详情的主从结构传 `data-detail`，高度跟内容走；左边填表、右边随填随算结果（余额调整的「批准后会怎样」）传 `data-detail` 加 `data-preview`，起始宽度 420、300，1024 也并排，结果不落到提交按钮下面，右栏高度跟内容走。放不下时按内容折成上下排，不写窗口宽度；主从结构给明细面板 `id`，点行后 `scrollIntoView` | `rd.css` |
 | 表单字段、勾选 | `Field`、`Check`、`CheckGroup`；页面上常驻表单的说明传 `explain`（标签旁的提示图标），填错的提示和描边在页面、弹窗、抽屉里都是橙黄（VS-107），修改框和抽屉里填写时要看的「怎么填」传 `help`；范围、字数传 `hint`，跟在字段名后面。rd 控件直接放就接上 `id` 和错误，别的控件用函数子项 | `field.tsx` |
 | 名称和值成对 | `KeyValues`；名称的解释传 `explain`，`sub` 只放数据 | `key-values.tsx` |
 | 一块内容的加载、空、失败、无权限 | `BlockState` | `block-state.tsx` |

@@ -3,15 +3,18 @@
 /**
  * SearchSelect 可输可选的下拉（ST-29）。交互照 Ant Design AutoComplete、Select showSearch：
  * 点框、打字或按 ↓ 展开候选（聚焦本身不展开：弹窗关上焦点回到框里时不会自己弹出来）；第一项默认高亮，
- * 方向键上下移动（到头绕回），Enter 选中高亮项，Esc 收起，Tab 和点外面收起；鼠标移到哪一项就高亮哪一项，点一项选中并收起。
+ * 方向键上下移动（到头绕回），高亮项跟着滚进可视区；Enter 选中高亮项，Esc 收起，Tab 和点外面收起；鼠标移到哪一项就高亮哪一项，点一项选中并收起。
+ * 输入法组合中（中文昵称拼音没上屏）按键不动候选，Enter 只是上屏。
  *
  * <SearchSelect aria-label="选择资产调整账户" placeholder="搜索用户编码、昵称或邀请码"
  *   value={query} onChange={setQuery} onOpen={() => setArmed(true)}
  *   options={[{ value: "10", label: "U00000010 · 徐丽", extra: "138****0000" }]} selected="10"
- *   onSelect={(value) => pick(value)} loading={searching} error={searchError && `没有查到：${searchError}`}
- *   onRetry={retry} empty="无匹配用户" />
+ *   onSelect={(value) => pick(value)} loading={searching} optionsFor={resultQuery} error={searchError && `搜索失败：${searchError}`}
+ *   onRetry={retry} empty="没有匹配的用户" />
  *
  * - 查询由页面做：防抖、请求、丢弃过期结果都在页面，组件只管弹层、键盘、读屏和加载、空、失败三种状态。
+ * - 远程搜索传 `optionsFor`：这组候选（或失败）是按框里哪段文字查出来的，还没查过传 null。和框里现在的字不一样就是旧候选，
+ *   照 Ant Design Select 远程搜索：输入一变就不显示旧候选，写「搜索中…」，回车不选，防抖期间回车也不会选到上一次的第一项。
  * - 读屏：输入框是 combobox，aria-activedescendant 指向高亮项，候选是 listbox 里的 option。
  * - 放进 Field 自动接上 id、aria-describedby、aria-invalid。
  * - 选中后框里显示什么由页面定（value）；改动框里的文字要不要清掉已选，也由页面定。
@@ -29,7 +32,7 @@ export interface SearchOption {
   disabled?: boolean;
 }
 
-export function SearchSelect({ value, onChange, options, selected, onSelect, onOpen, loading = false, error, onRetry, empty = "没有匹配的结果", placeholder, disabled, id, "aria-label": ariaLabel, "aria-describedby": describedBy, "aria-invalid": invalid }: {
+export function SearchSelect({ value, onChange, options, selected, onSelect, onOpen, loading = false, optionsFor, error, onRetry, empty = "没有匹配的结果", placeholder, disabled, id, "aria-label": ariaLabel, "aria-describedby": describedBy, "aria-invalid": invalid }: {
   value: string;
   onChange: (value: string) => void;
   options: readonly SearchOption[];
@@ -39,6 +42,8 @@ export function SearchSelect({ value, onChange, options, selected, onSelect, onO
   /** 每次展开时调用：页面据此开始查询。 */
   onOpen?: () => void;
   loading?: boolean;
+  /** 远程搜索时这组候选对应的输入；和 value 不同（或 null）时当作还在搜索。不传就是本地候选，不比较。 */
+  optionsFor?: string | null;
   /** 查询失败的原因，写在下拉里；传 onRetry 时带「重试」。 */
   error?: ReactNode;
   onRetry?: () => void;
@@ -56,10 +61,15 @@ export function SearchSelect({ value, onChange, options, selected, onSelect, onO
   const inputRef = useRef<HTMLInputElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const shown = open && !disabled;
-  const listed = shown && !loading && !error && options.length > 0;
-  // 候选换了，高亮回到第一个能选的（defaultActiveFirstOption）。
-  useEffect(() => { setActive(Math.max(0, options.findIndex((option) => !option.disabled))); }, [options]);
+  const searching = loading || (optionsFor !== undefined && optionsFor !== value);
+  const listed = shown && !searching && !error && options.length > 0;
+  // 候选换了，高亮回到第一个能选的（defaultActiveFirstOption）。按内容比，页面每次重渲染新建数组不算换。
+  const optionKey = options.map((option) => `${option.value}${option.disabled ? "!" : ""}`).join("|");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setActive(Math.max(0, options.findIndex((option) => !option.disabled))); }, [optionKey]);
   useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
+  // 方向键移到弹层外的项时滚进来，看得到高亮的是谁。
+  useEffect(() => { if (listed) document.getElementById(`${listId}-${active}`)?.scrollIntoView({ block: "nearest" }); }, [active, listed, listId]);
   const show = () => {
     if (shown) return;
     setOpen(true);
@@ -77,6 +87,8 @@ export function SearchSelect({ value, onChange, options, selected, onSelect, onO
     }
   };
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    // 输入法组合中的 Enter、方向键归输入法（keyCode 229 是 Safari 组合中的按键）。
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       if (!shown) show();
@@ -127,7 +139,7 @@ export function SearchSelect({ value, onChange, options, selected, onSelect, onO
             onKeyDown={onKeyDown}
           />
           <span className="rd-search-select-icon" aria-hidden>
-            {loading && shown ? <Loader2 className="rd-spin" size={14} /> : <ChevronDown size={14} />}
+            {searching && shown ? <Loader2 className="rd-spin" size={14} /> : <ChevronDown size={14} />}
           </span>
         </div>
       </Popover.Anchor>
@@ -144,7 +156,7 @@ export function SearchSelect({ value, onChange, options, selected, onSelect, onO
           // 点候选不抢走输入框的焦点，选完还能接着打字。
           onMouseDown={(event) => event.preventDefault()}
         >
-          {loading ? (
+          {searching ? (
             <div className="rd-search-state" role="status"><Loader2 className="rd-spin" size={14} aria-hidden />搜索中…</div>
           ) : error ? (
             <div className="rd-search-state" data-error="" role="alert">{error}{onRetry && <InlineRetry onRetry={onRetry} />}</div>

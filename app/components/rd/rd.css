@@ -379,7 +379,9 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-table-scroll:has(td[data-align="right"] .rd-row-actions > .rd-iconbtn:last-child):not(.rd-panel[data-flush] > *) { margin-right: -8px; padding-right: 8px; }  /* 不贴边的表格末列没有内边距，这 8px 要借面板的留白，不然多出一条横向滚动条 */
 .rd-cell-main { display: block; color: var(--rd-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rd-cell-sub { display: block; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rd-cell-sub > span[data-tone] { color: var(--tone); }  /* 第二行里要人注意的一句（比如「批准时覆盖率不足，系统驳回」）按状态上色 */
+.rd-cell-sub > span[data-tone] { color: var(--tone); }  /* 第二行里要人注意的一句（比如「覆盖率不足，系统驳回」）按状态上色 */
+.rd-cell-sub > [data-tagline] { display: inline-flex; align-items: center; gap: 8px; }  /* 第二行里的值加一个短标签（「大额」） */
+.rd-cell-sub .rd-tag { font-size: inherit; line-height: inherit; }  /* 第二行里的标签跟第二行同字号，不撑高这一行 */
 .rd-cell[data-mono] .rd-cell-main { font-family: var(--rd-font-mono); }
 .rd-cell[data-mono] .rd-cell-sub { font-variant-numeric: tabular-nums; }  /* 第二行多是时间、用户、名称，用正文字体加等宽数字（VS-52，Ant Design 表格同样）；第二行也是单号、哈希时页面包 <span data-mono> */
 .rd-cell-main [data-mono], .rd-cell-sub [data-mono] { font-family: var(--rd-font-mono); }  /* 第一行是单号、第二行是人名时只给单号等宽 */
@@ -676,8 +678,8 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-split > * + * { flex: 5 1 480px; }
 .rd-split[data-even] > * { flex: 1 1 480px; }
 .rd-split[data-detail] { align-items: flex-start; }
-.rd-fold-body > .rd-split > .rd-panel[data-plain] { flex-basis: 520px; }  /* 折叠里的并排两块少了折叠的内边距，按原来的起始宽度 1440 下就并不排了；左边填、右边随填随算的表单要并排 */
-.rd-fold-body > .rd-split > .rd-panel[data-plain] + .rd-panel[data-plain] { flex-basis: 400px; }
+.rd-split[data-preview] > * { flex-basis: 420px; }  /* 左边填、右边随填随算：起始宽度窄，1024 也并排，答案不落到提交按钮下面；和 data-detail 一起用，右栏跟内容高 */
+.rd-split[data-preview] > * + * { flex-basis: 300px; }
 .rd-split .rd-table[data-tight] .rd-cell { max-width: 200px; }
 @media (max-width: 1279px) { .rd-table[data-tight] .rd-cell { max-width: 200px; } }  /* 1024 也要放下 6 列：长单号这类第一列收窄，宽屏不收 */
 .rd-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
