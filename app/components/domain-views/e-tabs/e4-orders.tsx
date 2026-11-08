@@ -69,7 +69,7 @@ function OrdinaryRefundImpact({ impact }: { impact: E4RefundImpact | null }) {
     <h3 className="rd-form-group-title">退款影响 · 购买设备</h3>
     <p className="rd-note"><KeepText text="已完成任务按原规则结算一次，未完成任务随退款停止，已到账收益不扣回。" /></p>
     {!impact ? <Notice tone="warn">暂未读到普通订单的任务影响，不能按没有任务处理。</Notice> : <>
-      {!impact.runtimeComplete && <Notice tone="warn">{runtimeText}，完成待结算和未完成数未知。<Explain label="任务状态技术信息" content={reason ?? "运行状态未提供"} /></Notice>}
+      {!impact.runtimeComplete && <Notice tone="warn"><KeepText text={`${runtimeText}，部分任务统计未知。`} /><Explain label="任务状态技术信息" content={reason ?? "运行状态未提供"} /></Notice>}
       <Facts>
         <Fact k="完成待结算" unit={pending ? "项" : undefined}>{pending ? pending.taskCount.toLocaleString("en-US") : "未知"}</Fact>
         <Fact k="待结算 USDT">{pending ? orderAmount(pending.usdtAmount) : "未知"}</Fact>
