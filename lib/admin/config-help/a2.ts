@@ -37,7 +37,7 @@ export const A2_MECHANISM_HELP: Record<string, A2MechanismHelp> = {
     label: "记录字段版本",
     what: "新写的操作记录用哪一版统一字段",
     when: "升级后新记录带新版本号，历史记录不改",
-    effect: "升到 v4：之后的新记录和导出里的「Schema 版本」列写 v4",
+    effect: "升到 v4：之后新写的记录带 v4，导出时这些记录的「Schema 版本」写 v4，旧记录照旧",
   },
   confirm_list: {
     label: "需要确认的操作",

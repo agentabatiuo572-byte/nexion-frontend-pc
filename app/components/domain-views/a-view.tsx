@@ -105,6 +105,8 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
           detail={actionConfirmReq.detail}
           content={actionConfirmReq.content}
           amplifies={actionConfirmReq.amplifies}
+          coverage={actionConfirmReq.coverage}
+          coverageLead={actionConfirmReq.coverageLead}
           coverageCheck={actionConfirmReq.coverageCheck}
           edit={actionConfirmReq.edit}
           businessForm={actionConfirmReq.businessForm}

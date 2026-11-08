@@ -10,19 +10,20 @@ import { AmbassadorMaterialSummary } from "../f-tabs/f4-ambassador-materials";
  *
  * - 待审批和机制设置读不带筛选的总览；操作记录有生效筛选时另读一次带筛选的总览。后端把同一组筛选同时套在
  *   审批单、统计和记录上，不分开读的话待审批数会跟着操作记录的筛选变。
- * - 批准、驳回、撤回、调整机制参数、立即清理：先把命令号和原内容存进本标签页再发；结果未知时关框，
- *   转成页面上方的待确认条，这张单（这项设置、清理）锁住，只能按原操作重试，重试被后端明确拒绝后才能解除（OP-92～OP-96）。
- * - 导出只下载文件、记一条导出记录，不做页面级待确认：框开着时重试用打开时生成的同一个命令号。
+ * - 批准、驳回、撤回、调整机制参数、立即清理、导出：先把命令号和原内容（导出连同已应用的筛选）存进本标签页再发；
+ *   结果未知时关框，转成页面上方的待确认条，这张单（这项设置、清理、导出）锁住，只能按原操作重试；
+ *   重试被后端明确拒绝（isExplicitRejection）后才能解除，超过 24 小时只能核对（OP-92～OP-96、OP-153）。
+ * - 批准、驳回入口按工单类型对齐后端的业务权限（decisionRule），没有权限的不显示入口（OP-124）。
  * - 记录只追加：没有改、删记录的接口，页面也不给入口。所有写操作都要填理由。
  */
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Archive, ArrowLeft, ClipboardList, Coins, Copy, Download, FileText, Flame, History, Inbox, ListChecks, Lock, RefreshCw, Siren, SlidersHorizontal, Users } from "lucide-react";
+import { AlertTriangle, Archive, ArrowLeft, ClipboardList, Coins, Copy, Download, FileText, Flame, History, Inbox, ListChecks, Lock, RefreshCw, Siren, SlidersHorizontal, Users } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import {
-  BlockState, Button, Cell, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input, InlineRetry,
+  BlockState, Button, Cell, Change, ConfigList, ConfigRow, Decision, DiffList, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input, InlineRetry,
   IrreversibleTag, JudgmentPoints, Notice, PageHeader, PageTabs, Pager, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading,
-  TableMessage, Td, Th, Tr, useTabIds, type JudgmentRow, type SegmentItem, type StateTone,
+  TableMessage, Td, Th, Tr, useTabIds, type DiffRow, type JudgmentRow, type SegmentItem, type StateTone,
 } from "@/app/components/rd";
 import {
   approveA2Operation,
@@ -50,7 +51,6 @@ import {
   A2_AUDIT_DOMAINS,
   canAccessA2Export,
   canAccessA2Write,
-  matchesA2AuditFilter,
   matchesA2OperationRole,
   normalizeA2AuditFilter,
   parseA2FilterQuery,
@@ -60,13 +60,21 @@ import {
   validateA2AuditFilterRange,
 } from "@/lib/admin/a2-policy";
 import { A2_MECHANISM_HELP, A2_MECHANISM_WHERE } from "@/lib/admin/config-help/a2";
-import { businessClock, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { businessClock, businessStamp, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { createPendingMutationStore, isRetryExpired, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canApprovePending, type AuthPrincipal } from "@/lib/admin/ops-authority";
 import { isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
+import { fetchE4OrderDetail } from "@/lib/admin/e4-client";
+import { useBDomainDashboard } from "@/lib/admin/b-client";
+import { B_DASHBOARD_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
+import { normalizeSessionRole } from "@/lib/admin/session-role";
+import { roleLabel } from "@/lib/nav/console-nav";
+import { useReach } from "@/lib/nav/use-reach";
+import { orderAmount } from "../e-tabs/data";
 import type { ActionConfirmReq, ACtx } from "./types";
 
 /* ────────────────── 名字和规则 ────────────────── */
@@ -131,6 +139,7 @@ const PENDING_LOCK = "这条有结果未确认的操作，先到页面上方核�
 const RELOADING = "审批单还在读取，读完再处理";
 const SUBMITTING = "正在提交";
 const NO_WITHDRAW = "你没有撤回申请的权限";
+const NO_DECIDE = "这个账号没有处理这张单的权限";
 const WAIT_OTHERS = "等待有权限的人处理";
 const UNKNOWN_TOAST = "结果未确认，不要重复操作。到页面上方读回核对或按原操作重试。";
 const RETRY_EXPIRED = "已超过 24 小时，不能再重试，请在「操作记录」里按单号核对。";
@@ -164,8 +173,88 @@ function g3PolicyExecutionTiming(w: A2OperationRow) {
   return "批准后按完整变更内容注明的时点生效，请先核对";
 }
 
+/**
+ * 批准、驳回要的业务权限，和后端 AuditReplayBusinessPermissionGuard 对齐（M5）。只写前端认得出的单：
+ * - 退款、J1 恢复、A4 登记、代金券按后端给的 operationCode 和 fundEffect；
+ * - D5、D6、D7 参数和 J4 应急预案按后端写死的动作名和对象（发起方写的描述会被后端换掉）；
+ * - 账号类按「操作员账号」页提交时写的动作名，后端批准时要发起人同一项权限。
+ * 其余单前端只知道 A2 批准权，后端仍按原业务权限拒（A2_BUSINESS_PERMISSION_DENIED）。不给所有单统一加超管。
+ */
+type DecisionRule = { superadmin?: boolean; approve?: readonly string[]; reject?: readonly string[] };
+type TicketIdentity = Pick<A2OperationRow, "action" | "obj" | "operationCode" | "fundEffect">;
+const A4_REGISTRY_CODES = ["a4_schema_register", "a4_schema_property_add", "a4_domain_extension_register"];
+const J4_CODE = /^SOP-[A-Z0-9-]{1,64}$/;
+const A1_ACTION_AUTHORITY: readonly (readonly [string, string])[] = [
+  ["编辑账号 · ", "platform_a1_write"],
+  ["变更角色 · ", "platform_a1_account_role_change"],
+  ["重置两步验证 · ", "platform_a1_account_2fa_reset"],
+  ["禁用账号 · ", "platform_a1_account_disable"],
+  ["启用账号 · ", "platform_a1_account_disable"],
+];
+
+/** J4 执行应急预案：后端逐步执行，中途失败时前面的步骤可能已经生效（J4_EXECUTION_PARTIAL）。 */
+function isJ4Execution(w: Pick<A2OperationRow, "action" | "obj">) {
+  return J4_CODE.test(w.obj) && w.action === `执行应急剧本 · ${w.obj}`;
+}
+
+function decisionRule(w: TicketIdentity): DecisionRule {
+  const code = w.operationCode ?? "";
+  if (w.fundEffect === "ORDER_REFUND" || code === "e4_order_refund") return { superadmin: true, approve: ["device_e4_order_refund"], reject: ["device_e4_order_refund"] };
+  if (code === "j1_gate_resume") return { superadmin: true, approve: ["emergency_j1_gate_resume"], reject: ["emergency_j1_gate_resume"] };
+  if (A4_REGISTRY_CODES.includes(code)) return { superadmin: true };
+  // 代金券删除和批量作废：有券操作权限的审批人就行，不要求超管（角色例外）。
+  if (isH7VoucherApproval(code)) return { approve: ["growth_h7_write"], reject: ["growth_h7_write"] };
+  if (w.obj === "current" && w.action === "调整敏感汇率") return { superadmin: true, approve: ["finance_d6_manage"], reject: ["finance_d6_manage"] };
+  if (w.obj === "current" && (w.action === "放宽提现参数" || w.action === "放宽越南盾提现参数")) return { superadmin: true };
+  if (isJ4Execution(w)) return { approve: ["emergency_j4_playbook_execute"] };
+  const a1 = A1_ACTION_AUTHORITY.find(([prefix]) => w.action.startsWith(prefix));
+  return a1 ? { approve: [a1[1]] } : {};
+}
+
+/** 手机规则申请带未来的生效时间时，批准只登记排程，到点才生效（M6）。effectiveAt 是毫秒，0 是批准后立即。 */
+function phoneScheduledAt(w: A2OperationRow) {
+  const at = w.phoneCalibrationProposal?.effectiveAt;
+  return typeof at === "number" && at > Date.now() ? `${businessStamp(at)}（${businessZone().label}）` : undefined;
+}
+
+/** 批准后什么时候生效、会怎样：标题下的标签、执行摘要的影响、抽屉底部说明用同一份（M3、M6）。 */
+function approvalTiming(w: A2OperationRow) {
+  const scheduled = phoneScheduledAt(w);
+  if (scheduled) return { tag: `按计划在 ${scheduled} 生效`, impact: `批准后登记排程，到 ${scheduled} 才生效。`, drawer: `点「批准」确认后登记排程，到 ${scheduled} 生效；点「驳回」原操作不执行。` };
+  if (isJ4Execution(w)) return { tag: "立即逐步执行", impact: "批准后逐步执行，可能只执行一部分；失败时到「监管要求应急处理」的执行追溯里看哪些步骤已生效。", drawer: "点「批准」确认后逐步执行，可能只执行一部分；点「驳回」原操作不执行。" };
+  if (w.coverageCheckOnApproval) return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先检查兑付覆盖率，够了才执行；点「驳回」原操作不执行。" };
+  if (g3PolicyExecutionTiming(w)) return { tag: "按计划时点生效", impact: "", drawer: "点「批准」确认后按生效时间执行；点「驳回」原操作不执行。" };
+  return { tag: "立即生效", impact: "", drawer: "点「批准」确认后立即执行，失败不改原值；点「驳回」原操作不执行。" };
+}
+
 function roleText(role: string) {
   return ["super", "superadmin", "super_admin", "超管"].includes(role.trim().toLowerCase()) ? "超级管理员" : role;
+}
+
+/** 操作记录的角色码写中文，和待审批的发起人同一套名字（DP-30、DT-14）。ADMIN 是兜底的执行者类型，不是角色，不写；对不上的码也不写，原码在记录抽屉的技术信息里。 */
+function logRoleText(code: string) {
+  const raw = code.trim();
+  if (!raw || raw === "—" || raw.toUpperCase() === "ADMIN") return "";
+  if (raw.toUpperCase() === "USER") return "用户";
+  const role = normalizeSessionRole(raw);
+  const label = roleLabel(role);
+  return label === role && label === raw ? "" : label;
+}
+
+/** 长编号（订单号、提现单号）中间省略，留住区分用的前后段，全文在 title（同 D2 的提现单号）。 */
+function shortCodes(text: string) {
+  return text.replace(/[A-Z][A-Z0-9]*-[A-Z0-9-]{16,}/g, (code) => `${code.slice(0, 12)}…${code.slice(-6)}`);
+}
+
+/** 理由里的工单号、订单号整段不拆（必须改 14）：编号包一层不换行，放不下时整段换到下一行。 */
+function keepCodes(text: string): ReactNode {
+  const parts = text.split(/([A-Z][A-Z0-9]*-[A-Z0-9-]+)/);
+  return parts.length === 1 ? text : parts.map((part, index) => index % 2 ? <span key={index} className="a2-code">{part}</span> : part);
+}
+
+/** 没翻成中文的动作码太长时中间省略：前面是模块，后面是动作，两头都要留。 */
+function middle(text: string, max: number) {
+  return text.length > max ? `${text.slice(0, max - 9)}…${text.slice(-8)}` : text;
 }
 
 function actionName(action: string) {
@@ -188,6 +277,13 @@ function bizTimeFull(value: string | undefined, fallback: string) {
   if (!value?.trim()) return fallback;
   const text = /[T ]\d{2}:\d{2}$/.test(value.trim()) ? `${value.trim()}:00` : value.trim();
   return formatBusinessTimeFull(text, fallback);
+}
+
+/** 队列第二行的提交时间，当年不写年（「11-08 17:08」）。时间放在单号前面，放不下时省略的是单号（必须改 6）。 */
+function queueTime(w: A2OperationRow) {
+  const full = bizTime(w.rawTs, w.ts);
+  const year = businessStamp(Date.now()).slice(0, 5);
+  return full.startsWith(year) ? full.slice(5) : full;
 }
 
 /** a2-client 没有 tsLabel 时按浏览器时区写成「11/08 14:30」；那种情况改按业务时区重写，有 tsLabel 时用它（a2-client.ts:378）。 */
@@ -245,21 +341,25 @@ function readRoute(search: string) {
 
 /* ────────────────── 结果未知的命令 ────────────────── */
 
-type A2CommandKind = "approve" | "reject" | "withdraw" | "param" | "retention";
+type A2CommandKind = "approve" | "reject" | "withdraw" | "param" | "retention" | "export";
 type A2PendingCommand = PendingMutationRecord & {
   kind: A2CommandKind;
   /** 待确认条上写的「做了什么」。 */
   label: string;
-  /** 审批单号、参数键或 retention。 */
+  /** 审批单号、参数键、retention 或 export。 */
   target: string;
   reason: string;
   operator: string;
   /** 机制参数的新值。 */
   value?: string;
-  /** 重试时按这个判断批准权（J1 恢复、A4 登记、代金券）。 */
+  /** 重试时按这几项判断这张单要的业务权限（decisionRule）。 */
   operationCode?: string;
+  obj?: string;
+  fundEffect?: A2OperationRow["fundEffect"];
   /** 审批单的原动作，重试时写进标签。 */
   action?: string;
+  /** 导出时已应用的筛选：重试只用这一份，不读页面上现在的条件（M2）。 */
+  filter?: A2AuditFilter;
 };
 type A2PendingExtra = PendingMutationExtra<A2PendingCommand>;
 
@@ -269,6 +369,9 @@ const a2Commands = createPendingMutationStore<A2PendingCommand>({
   retainExpiredRecords: true,
 });
 
+type RefundAmount = { state: "loading" } | { state: "ok"; amount: number } | { state: "error"; message: string } | { state: "denied" };
+const REFUND_AMOUNT_REQUIRED = "先读到退款金额才能批准";
+
 const DECISION_VERB: Record<"approve" | "reject" | "withdraw", string> = { approve: "批准", reject: "驳回", withdraw: "撤回" };
 const DECISION_STATUS: Record<"approve" | "reject" | "withdraw", A2OperationRow["status"]> = { approve: "approved", reject: "rejected", withdraw: "withdrawn" };
 const RECOVERY_HINT: Record<A2CommandKind, string> = {
@@ -276,10 +379,13 @@ const RECOVERY_HINT: Record<A2CommandKind, string> = {
   reject: "读回只看这张单现在的状态，说明不了这次操作的结果。可以按原操作重试，不会重复执行。",
   withdraw: "读回只看这张单现在的状态，说明不了这次操作的结果。可以按原操作重试，不会重复执行。",
   param: "读回只看现在的值，值相同也可能是别人改的。可以按原操作重试，不会重复执行。",
-  retention: "按原操作重试会用原来的命令号，已完成的清理不会再做一次。",
+  retention: "可以按原操作重试，已完成的清理不会再做一次。",
+  export: "读回只看有没有导出记录，说明不了是不是这一次。可以按原操作重试，按当时的条件重新下载，不会多记一次导出。",
 };
 const PARAM_NAME: Record<string, string> = { ttl: "操作理由最短长度", retention: "操作记录保留期", schema: "记录字段版本" };
-const PARAM_AUDIT_OBJECT: Record<A2CommandKind, string | undefined> = { approve: undefined, reject: undefined, withdraw: undefined, param: "A2_MECHANISM_PARAM", retention: "A2_AUDIT_RETENTION" };
+const PARAM_TITLE: Record<"ttl" | "retention" | "schema", string> = { ttl: "调整操作理由最短长度", retention: "调整操作记录保留期", schema: "升级记录字段版本" };
+const RETENTION_TITLE = "清理到期记录";
+const PARAM_AUDIT_OBJECT: Record<A2CommandKind, string | undefined> = { approve: undefined, reject: undefined, withdraw: undefined, param: "A2_MECHANISM_PARAM", retention: "A2_AUDIT_RETENTION", export: undefined };
 
 function backendCode(error: unknown) {
   return error instanceof Error && "backendMessage" in error && typeof error.backendMessage === "string" ? error.backendMessage : "";
@@ -307,51 +413,165 @@ function ticketStatus(overview: A2Overview | null, id: string) {
 
 /* ────────────────── 完整变更内容 ────────────────── */
 
-/** 详情与批准确认均完整展示已持久化的前后值。 */
-export function A2ChangeReview({ before, after }: { before: string; after: string }) {
-  const labels: Record<string, string> = {
-    skuId: "商品编号", id: "商品编号", name: "商品名称", tier: "商品档位", tagline: "卖点", badge: "角标",
-    gpu: "GPU", vram: "显存", hashRate: "算力", power: "功耗", datacenter: "数据中心", uptime: "在线率",
-    warranty: "保修", phoneDailyEarn: "手机日产收益", phoneDailyEarnNex: "手机日产 UVT", price: "价格", computePoints: "每件算力点",
-    dailyEarn: "日产收益", dailyEarnNex: "日产 UVT", shareYieldMin: "份额收益下限", shareYieldMax: "份额收益上限",
-    baseRate: "收益展示文字", sold: "累计销量", stock: "库存", rating: "评分", reviews: "评价数",
-    aiImageGenPerMin: "图像生成性能", aiLlmTokensPerSec: "大模型推理性能", aiVideoMinPerHour: "视频渲染性能",
-    aiFineTuneMins: "LoRA 微调性能", aiUnlocks: "解锁算力池", features: "产品特性", generation: "产品代际",
-    lifecycle: "生命周期", supersededBy: "后继商品", tradeinDiscount: "换新折扣", unlockPhase: "解锁阶段",
-    purchaseGate: "购买限制", imageAssetId: "产品图标识", imageObjectKey: "产品图对象键", imagePreviewUrl: "产品图预览",
-    tag: "商品标签", status: "商城状态", inventoryMode: "库存模式", expectedUpdatedAt: "修改前的更新时间",
-    updatedAt: "更新时间", trialEligible: "允许试用", productType: "商品类型", reason: "操作理由", operator: "操作人",
-    rankMin: "最低 V 等级", directsMin: "最低有效直接邀请", teamUsdtMin: "最低团队订单额", mode: "条件组合",
-    activeDirectMin: "最低有效直接邀请", teamComputePointsMin: "最低团队算力点",
-    enforce: "启用限制", quotaCap: "总配额", quotaSold: "已用配额", quotaPeriod: "配额周期",
-    ranks: "会员等级", rankCode: "等级", titleCn: "中文头衔", titleEn: "英文头衔",
-    selfComputePoints: "自购算力点", directRefs: "直接邀请人数", teamComputePoints: "团队算力点",
-    requiredDownlineRank: "分支最低等级", requiredDownlineCount: "达标分支数", unilevelDepth: "团队购买奖励范围",
-    peerBonusRate: "同级奖比例", leadershipVotes: "团队激励池票数", rewards: "晋升奖励",
-  };
-  const format = (value: unknown): string => {
-    if (value === null) return "未设置";
-    if (Array.isArray(value)) return value.length ? value.map(format).join("\n\n") : "无";
-    if (typeof value === "object") return Object.entries(value as Record<string, unknown>)
-      .map(([key, item]) => `${labels[key] ?? key}：${key === "peerBonusRate" && typeof item === "number" ? `${(item * 100).toFixed(2)}%` : key === "baseRate" && typeof item === "string" ? shareBaseRateText(item) : format(item)}`).join("\n") || "无（新建）";
-    return typeof value === "boolean" ? (value ? "是" : "否") : String(value);
-  };
-  const review = (value: string) => {
-    try {
-      const parsed: unknown = JSON.parse(value);
-      return parsed && typeof parsed === "object" ? format(parsed) : value;
-    } catch { return value; }
-  };
-  return <dl className="a2-change-review" aria-label="完整变更内容">
-    <div><dt>变更前</dt><dd>{review(before)}</dd></div>
-    <div><dt>变更后</dt><dd>{review(after)}</dd></div>
-  </dl>;
+const CHANGE_LABELS: Record<string, string> = {
+  skuId: "商品编号", id: "商品编号", name: "商品名称", tier: "商品档位", tagline: "卖点", badge: "角标",
+  gpu: "GPU", vram: "显存", hashRate: "算力", power: "功耗", datacenter: "数据中心", uptime: "在线率",
+  warranty: "保修", phoneDailyEarn: "手机日产收益", phoneDailyEarnNex: "手机日产 UVT", price: "价格", computePoints: "每件算力点",
+  dailyEarn: "日产收益", dailyEarnNex: "日产 UVT", shareYieldMin: "份额收益下限", shareYieldMax: "份额收益上限",
+  baseRate: "收益展示文字", sold: "累计销量", stock: "库存", rating: "评分", reviews: "评价数",
+  aiImageGenPerMin: "图像生成性能", aiLlmTokensPerSec: "大模型推理性能", aiVideoMinPerHour: "视频渲染性能",
+  aiFineTuneMins: "LoRA 微调性能", aiUnlocks: "解锁算力池", features: "产品特性", generation: "产品代际",
+  lifecycle: "生命周期", supersededBy: "后继商品", tradeinDiscount: "换新折扣", unlockPhase: "解锁阶段",
+  purchaseGate: "购买限制", imageAssetId: "产品图标识", imageObjectKey: "产品图对象键", imagePreviewUrl: "产品图预览",
+  tag: "商品标签", status: "商城状态", inventoryMode: "库存模式", expectedUpdatedAt: "修改前的更新时间",
+  updatedAt: "更新时间", trialEligible: "允许试用", productType: "商品类型", reason: "操作理由", operator: "操作人",
+  rankMin: "最低 V 等级", directsMin: "最低有效直接邀请", teamUsdtMin: "最低团队订单额", mode: "条件组合",
+  activeDirectMin: "最低有效直接邀请", teamComputePointsMin: "最低团队算力点",
+  enforce: "启用限制", quotaCap: "总配额", quotaSold: "已用配额", quotaPeriod: "配额周期",
+  ranks: "会员等级", rankCode: "等级", titleCn: "中文头衔", titleEn: "英文头衔",
+  selfComputePoints: "自购算力点", directRefs: "直接邀请人数", teamComputePoints: "团队算力点",
+  requiredDownlineRank: "分支最低等级", requiredDownlineCount: "达标分支数", unilevelDepth: "团队购买奖励范围",
+  peerBonusRate: "同级奖比例", leadershipVotes: "团队激励池票数", rewards: "晋升奖励",
+};
+/** 成组记录的量词：「查看全部 9 个等级」。 */
+const ROW_UNIT: Record<string, string> = { ranks: "个等级", rewards: "项奖励" };
+const ROWS_SHOWN = 5;
+
+const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
+const isRowList = (value: unknown): value is Record<string, unknown>[] => Array.isArray(value) && value.length > 0 && value.every(isRecord);
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/** 纯数字加千分位，只排版，不舍入（必须改 5）。后端的值不带单位，页面不猜单位。 */
+function grouped(text: string) {
+  return /^-?\d{4,}(\.\d+)?$/.test(text) ? text.replace(/^-?\d+/, (whole) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")) : text;
+}
+
+function valueText(key: string | undefined, value: unknown): string {
+  if (value === null || value === undefined) return "未设置";
+  if (typeof value === "boolean") return value ? "是" : "否";
+  if (key === "peerBonusRate" && typeof value === "number") return `${(value * 100).toFixed(2)}%`;
+  if (key === "baseRate" && typeof value === "string") return shareBaseRateText(value);
+  if (Array.isArray(value)) return value.length ? value.map((item) => valueText(undefined, item)).join("、") : "无";
+  if (isRecord(value)) return Object.entries(value).map(([name, item]) => `${CHANGE_LABELS[name] ?? name} ${valueText(name, item)}`).join("；") || "无";
+  return grouped(String(value));
+}
+
+type Review = { kind: "text"; text: string } | { kind: "object"; value: Record<string, unknown> } | { kind: "rows"; rows: Record<string, unknown>[] };
+
+/** 后端存的前后值：JSON 对象、成组记录或一段文字。空和「—」是首次配置，返回 null。 */
+function parseReview(value: string): Review | null {
+  const raw = value.trim();
+  if (!raw || raw === "—") return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (isRowList(parsed)) return { kind: "rows", rows: parsed };
+    if (isRecord(parsed)) return Object.keys(parsed).length ? { kind: "object", value: parsed } : null;
+    return { kind: "text", text: valueText(undefined, parsed) };
+  } catch {
+    return { kind: "text", text: grouped(raw) };
+  }
+}
+
+/** 队列「变更」列：和详情同一套格式。第一项做第一行，原值做第二行，多项时写「等 N 项」（必须改 5）。 */
+function changeSummary(before: string, after: string, omit: readonly string[] = []) {
+  const b = parseReview(before);
+  const a = parseReview(after);
+  if (!a) return { main: "—", sub: b ? `原 ${b.kind === "text" ? b.text : "见详情"}` : undefined };
+  if (a.kind === "text") return { main: a.text, sub: b ? `原 ${b.kind === "text" ? b.text : "见详情"}` : "新建" };
+  if (a.kind === "rows") return { main: `共 ${a.rows.length} 行`, sub: b ? "原 见详情" : "新建" };
+  const keys = Object.keys(a.value).filter((key) => !omit.includes(key));
+  const changed = b?.kind === "object" ? keys.filter((key) => !same(b.value[key], a.value[key])) : keys;
+  const first = changed[0] ?? keys[0];
+  if (!first) return { main: "—" };
+  const label = CHANGE_LABELS[first] ?? first;
+  const now = a.value[first];
+  const main = `${label} ${isRowList(now) ? `${now.length} ${ROW_UNIT[first] ?? "行"}` : valueText(first, now)}${changed.length > 1 ? ` 等 ${changed.length} 项` : ""}`;
+  const was = b?.kind === "object" ? b.value[first] : undefined;
+  return { main, sub: !b ? "新建" : b.kind === "object" && first in b.value && !isRowList(was) ? `原 ${valueText(first, was)}` : "原 见详情" };
+}
+
+/** 成组的记录画成小表，每组一行，列头用字段名；超过 5 行的收在「查看全部」后面（VS-109）。 */
+function ReviewRows({ name, rows }: { name: string; rows: readonly Record<string, unknown>[] }) {
+  const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
+  const unit = ROW_UNIT[name] ?? "行";
+  const table = (part: readonly Record<string, unknown>[], label: string) => (
+    <Table label={label} data-tight="">
+      <thead><tr>{columns.map((column) => <Th key={column}>{CHANGE_LABELS[column] ?? column}</Th>)}</tr></thead>
+      <tbody>{part.map((row, index) => <Tr key={index}>{columns.map((column) => <Td key={column}><Cell main={valueText(column, row[column])} title={valueText(column, row[column])} /></Td>)}</Tr>)}</tbody>
+    </Table>
+  );
+  const title = CHANGE_LABELS[name] ?? name;
+  return (
+    <div className="a2-change-rows">
+      {table(rows.slice(0, ROWS_SHOWN), title)}
+      {rows.length > ROWS_SHOWN && <Fold inset title={`查看全部 ${rows.length} ${unit}`} summary={`还有 ${rows.length - ROWS_SHOWN} ${unit}`}>{table(rows.slice(ROWS_SHOWN), `${title}（续）`)}</Fold>}
+    </div>
+  );
+}
+
+/**
+ * 详情与批准确认均完整展示已持久化的前后值（必须改 3）。一块底：
+ * - 单个值：一行「现在 → 改后」，现在值弱，改后进行中蓝（VS-103）；
+ * - 对象：只列改了的项，其余收进「其余 N 项不变」（DiffList）；
+ * - 成组记录（等级、奖励）：小表，不拼成一大片文字（VS-109）；
+ * - 变更前是空（首次配置）：不画变更前，标题旁写「新建」。
+ */
+export function A2ChangeReview({ before, after, omit = [] }: { before: string; after: string; omit?: readonly string[] }) {
+  const b = parseReview(before);
+  const a = parseReview(after);
+  const created = !b;
+  let body: ReactNode;
+  if (!a) {
+    body = <Facts><Fact k="变更后">—</Fact></Facts>;
+  } else if (a.kind === "text") {
+    body = <Facts><Fact k={created ? "内容" : "变更"}>{!b ? a.text : <Change from={b.kind === "text" ? b.text : valueText(undefined, b.kind === "object" ? b.value : b.rows)} to={a.text} />}</Fact></Facts>;
+  } else if (a.kind === "rows") {
+    body = <>
+      <ReviewRows name="" rows={a.rows} />
+      {b && <Fold inset title="变更前" summary={b.kind === "rows" ? `共 ${b.rows.length} 行` : "原来的内容"}>{b.kind === "rows" ? <ReviewRows name="" rows={b.rows} /> : <p className="rd-note">{b.kind === "text" ? b.text : valueText(undefined, b.value)}</p>}</Fold>}
+    </>;
+  } else {
+    const keys = Object.keys(a.value).filter((key) => !omit.includes(key));
+    const was = b?.kind === "object" ? b.value : undefined;
+    const removed = was ? Object.keys(was).filter((key) => !omit.includes(key) && !(key in a.value)) : [];
+    const groups = keys.filter((key) => isRowList(a.value[key]));
+    const plain = [...keys.filter((key) => !isRowList(a.value[key])), ...removed];
+    const rows: DiffRow[] = plain.map((key) => ({
+      key,
+      label: CHANGE_LABELS[key] ?? key,
+      before: was && key in was ? valueText(key, was[key]) : "未设置",
+      after: key in a.value ? valueText(key, a.value[key]) : "未设置",
+    }));
+    body = <>
+      {b && b.kind !== "object" && <Facts><Fact k="变更前">{b.kind === "text" ? b.text : valueText(undefined, b.rows)}</Fact></Facts>}
+      {plain.length > 0 && (was
+        ? <DiffList rows={rows} restTitle="其余内容" emptyNote="这些项没有改动" />
+        : <Facts>{rows.map((row) => <Fact key={row.key} k={String(row.label)}>{row.after}</Fact>)}</Facts>)}
+      {groups.map((key) => {
+        const old = was?.[key];
+        return (
+          <div key={key} className="a2-change-group">
+            <div className="a2-change-sub">{CHANGE_LABELS[key] ?? key}{was && same(old, a.value[key]) && <span className="rd-weak"> · 没有改动</span>}</div>
+            <ReviewRows name={key} rows={a.value[key] as Record<string, unknown>[]} />
+            {isRowList(old) && !same(old, a.value[key]) && <Fold inset title={`变更前的${CHANGE_LABELS[key] ?? key}`} summary={`${old.length} ${ROW_UNIT[key] ?? "行"}`}><ReviewRows name={key} rows={old} /></Fold>}
+          </div>
+        );
+      })}
+    </>;
+  }
+  return (
+    <section className="a2-change-review" aria-label="完整变更内容">
+      <div className="a2-change-title">完整变更内容{created && <StatusTag tone="neutral">新建</StatusTag>}</div>
+      {body}
+    </section>
+  );
 }
 
 /* ────────────────── 页面 ────────────────── */
 
 export function A2Audit({ ctx }: { ctx: ACtx }) {
   const { toast, openActionConfirm } = ctx;
+  const reach = useReach();
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
   const session = useAdminAuth((s) => s.session);
   const principal = {
@@ -360,13 +580,20 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     authorities: session?.authorities ?? [],
   } as AuthPrincipal;
   const canApprove = canApprovePending(principal);
-  const canDecide = (ticket: Pick<A2OperationRow, "operationCode">) => canApprove
-    && (ticket.operationCode !== "j1_gate_resume"
-      || principal.role === "superadmin" && principal.authorities.includes("emergency_j1_gate_resume"))
-    && (!["a4_schema_register", "a4_schema_property_add", "a4_domain_extension_register"].includes(ticket.operationCode ?? "")
-      || principal.role === "superadmin")
-    && (!isH7VoucherApproval(ticket.operationCode) || principal.authorities.includes("growth_h7_write"));
+  /** 按读到的权限判断，不按角色名写死（B38 后财务主管有 D 域读权、没有批准权）。 */
+  const canDecide = (ticket: TicketIdentity, kind: "approve" | "reject") => {
+    if (!canApprove) return false;
+    const rule = decisionRule(ticket);
+    if (rule.superadmin && principal.role !== "superadmin") return false;
+    return (kind === "approve" ? rule.approve : rule.reject)?.every((authority) => principal.authorities.includes(authority)) ?? true;
+  };
   const canExport = canAccessA2Export(principal.authorities);
+  const canReadOrders = principal.authorities.includes("device_e4_read");
+  // 和顶栏同一份兑付覆盖率；读不到时批准框写「暂时读不到」，批准时后端再查。
+  const bDomain = useBDomainDashboard(B_DASHBOARD_READ_AUTHORITIES.every((authority) => principal.authorities.includes(authority)));
+  const coverage = bDomain.hasData && !bDomain.error && bDomain.ledger.valuationReliable
+    ? { coverageRatio: bDomain.ledger.coverageRatio, redlinePct: bDomain.ledger.redlinePct, healthyPct: bDomain.ledger.healthyPct }
+    : undefined;
   const canWrite = canAccessA2Write(principal.authorities);
   const canWithdraw = principal.authorities.includes("platform_a2_proposal_create");
   const isMine = (w: A2OperationRow) => isCurrentOperator(w, session?.username);
@@ -423,6 +650,21 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const [historyId, setHistoryId] = useState<string | null>(null);
   const [confirmListOpen, setConfirmListOpen] = useState(false);
   const tabIds = useTabIds();
+
+  /* 退款单的退款金额：按订单号读订单，金额口径和订单进度的退款框一致，A2 不另算（必须改 1）。 */
+  const [refundAmounts, setRefundAmounts] = useState<Record<string, RefundAmount>>({});
+  const refundAsked = useRef(new Set<string>());
+  const loadRefundAmount = async (orderNo: string) => {
+    refundAsked.current.add(orderNo);
+    if (!canReadOrders) { setRefundAmounts((current) => ({ ...current, [orderNo]: { state: "denied" } })); return; }
+    setRefundAmounts((current) => ({ ...current, [orderNo]: { state: "loading" } }));
+    try {
+      const detail = await fetchE4OrderDetail(orderNo);
+      setRefundAmounts((current) => ({ ...current, [orderNo]: { state: "ok", amount: detail.order.amt } }));
+    } catch (error) {
+      setRefundAmounts((current) => ({ ...current, [orderNo]: isPermissionDenied(error) ? { state: "denied" } : { state: "error", message: displayAdminReadError(error) } }));
+    }
+  };
 
   const syncPending = () => setPendingCommands(a2Commands.list());
 
@@ -494,13 +736,17 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     }
   };
 
-  /** 页头「刷新」：重读当前需要的总览（一次或两次）、清理范围和上次手动清理，不动已应用条件（ST-50）。 */
-  const refreshAll = () => Promise.all([
-    loadMain().catch(() => undefined),
-    loadFiltered(appliedRef.current),
-    refreshRetentionPreview(),
-    refreshRetentionRun(),
-  ]);
+  /** 页头「刷新」：重读当前需要的总览（一次或两次）、清理范围、上次手动清理和退款金额，不动已应用条件（ST-50）。 */
+  const refreshAll = () => {
+    refundAsked.current.clear();
+    setRefundAmounts({});
+    return Promise.all([
+      loadMain().catch(() => undefined),
+      loadFiltered(appliedRef.current),
+      refreshRetentionPreview(),
+      refreshRetentionRun(),
+    ]);
+  };
 
   useEffect(() => {
     const route = readRoute(window.location.search);
@@ -526,6 +772,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   }, []);
 
   // 替换写网址，不加历史；默认值不写，别的参数（userCode、returnTo）不动（ST-23、ST-24）。
+  // 有已应用的筛选时页签一定写上：没写页签又带筛选的网址按外链兼容规则打开「操作记录」，刷新会跳走（M7）。
   useEffect(() => {
     if (!ready) return;
     const url = new URL(window.location.href);
@@ -533,7 +780,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       if (value === fallback || value === "") url.searchParams.delete(name);
       else url.searchParams.set(name, String(value));
     };
-    write("tab", tab, "pending");
+    write("tab", tab, filterEmpty(appliedFilter) ? "pending" : "");
     write("list", view === "history" ? "history" : "", "");
     write("type", qType, "all");
     write("operatorRole", qOperator, "all");
@@ -576,7 +823,20 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const qPageRows = queueRows.slice((qSafePage - 1) * qPageSize, qSafePage * qPageSize);
   const queueFiltered = qType !== "all" || qOperator !== "all";
 
-  const logRows = useMemo(() => (records?.recentLogs ?? []).filter((l) => matchesA2AuditFilter(l, appliedFilter)), [records, appliedFilter]);
+  // 队列里的退款单各读一次订单；行内、抽屉和两个框用同一份金额。
+  useEffect(() => {
+    for (const w of pendingQueue) if (w.refundOrderNo && !refundAsked.current.has(w.refundOrderNo)) void loadRefundAmount(w.refundOrderNo);
+    // loadRefundAmount 每次渲染都是新函数，只跟着队列读。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingQueue]);
+  const refundAmount = (w: A2OperationRow): RefundAmount | undefined => w.fundEffect === "ORDER_REFUND"
+    ? (w.refundOrderNo ? refundAmounts[w.refundOrderNo] ?? { state: "loading" } : { state: "error", message: "审批单没有带订单号" })
+    : undefined;
+  const refundAmountText = (amount: RefundAmount) => amount.state === "ok" ? `${orderAmount(amount.amount)} USDT`
+    : amount.state === "loading" ? "正在读取" : amount.state === "denied" ? "读不到（没有订单查看权限）" : "读取失败";
+
+  // 已应用的条件后端查过了，以后端的结果为准；对象还会命中详情里的命令号这类字段，前端再按窄的字段筛会把查到的记录删掉（M4）。
+  const logRows = records?.recentLogs ?? [];
   const logPages = Math.max(1, Math.ceil(logRows.length / logPageSize));
   const logSafePage = Math.min(logPage, logPages);
   const logPageRows = logRows.slice((logSafePage - 1) * logPageSize, logSafePage * logPageSize);
@@ -649,9 +909,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     }
   };
 
-  const runDecision = (kind: "approve" | "reject" | "withdraw", w: Pick<A2OperationRow, "id" | "action" | "operationCode">, reason: string, by = operator) => sendCommand(
+  const runDecision = (kind: "approve" | "reject" | "withdraw", w: TicketIdentity & Pick<A2OperationRow, "id">, reason: string, by = operator) => sendCommand(
     `${kind}|${w.id}`,
-    { kind, label: `${DECISION_VERB[kind]} · ${actionName(w.action)}`, target: w.id, reason, operator: by, operationCode: w.operationCode, action: w.action },
+    { kind, label: `${DECISION_VERB[kind]} · ${actionName(w.action)}`, target: w.id, reason, operator: by, operationCode: w.operationCode, obj: w.obj, fundEffect: w.fundEffect, action: w.action },
     `a2-${kind}-${w.id}`,
     (key) => kind === "approve" ? approveA2Operation(w.id, reason, key)
       : kind === "reject" ? rejectA2Operation(w.id, reason, key)
@@ -666,7 +926,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   const runParam = (key: "ttl" | "retention" | "schema", value: string, reason: string, by = operator) => sendCommand(
     `param|${key}`,
-    { kind: "param", label: key === "schema" ? "升级记录字段版本" : `调整${PARAM_NAME[key]}`, target: key, value, reason, operator: by },
+    { kind: "param", label: PARAM_TITLE[key], target: key, value, reason, operator: by },
     `a2-mechanism-${key}`,
     (commandKey) => updateA2MechanismParam(key, value, reason, commandKey),
     async () => paramReadback(await loadMain(), key) === value,
@@ -676,7 +936,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const box: { result?: RetentionExecution } = {};
     const outcome = await sendCommand(
       "retention",
-      { kind: "retention", label: "立即清理到期记录", target: "retention", reason, operator: by },
+      { kind: "retention", label: RETENTION_TITLE, target: "retention", reason, operator: by },
       "a2-retention-run",
       (key) => runA2RetentionNow(reason, key),
       async (result) => {
@@ -694,7 +954,21 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     return outcome;
   };
 
-  const decisionToast = (kind: "approve" | "reject" | "withdraw", id: string) => toast(`${id} 已${DECISION_VERB[kind]}`, "success");
+  /** 导出：理由、已应用的筛选、命令号先存好再发；下载到文件才算完成（M2）。 */
+  const runExport = async (reason: string, filter: A2AuditFilter, by = operator) => {
+    const box: { fileName?: string } = {};
+    const outcome = await sendCommand(
+      "export",
+      { kind: "export", label: "导出操作记录", target: "export", reason, operator: by, filter },
+      "a2-audit-export",
+      (key) => exportA2Audit(reason, normalizeA2AuditFilter(filter), key),
+      async (file) => { box.fileName = file.fileName; void refreshAfterWrite(); return true; },
+    );
+    if (outcome === "ok" && box.fileName) toast(`已下载 ${box.fileName}`, "success");
+    return outcome;
+  };
+
+  const decisionToast =(kind: "approve" | "reject" | "withdraw", id: string) => toast(`${id} 已${DECISION_VERB[kind]}`, "success");
   const paramToast = (key: "ttl" | "retention" | "schema", value: string) => toast(key === "ttl" ? `理由最短长度已改为 ${value} 字`
     : key === "retention" ? `保留期已改为 ${value} 个月` : `字段版本已升级为 ${value}`, "success");
 
@@ -706,9 +980,14 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   /** 重试也是写操作，按这个账号现在的权限判断，和原入口一样（OP-124）。读回核对不受影响。 */
   const canRetry = (record: A2PendingCommand) => record.kind === "withdraw" ? canWithdraw
     : record.kind === "param" || record.kind === "retention" ? canWrite
-      : canDecide({ operationCode: record.operationCode });
+      : record.kind === "export" ? canExport
+        : canDecide({ action: record.action ?? "", obj: record.obj ?? "", operationCode: record.operationCode, fundEffect: record.fundEffect }, record.kind);
 
-  /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有成功并读回到目标状态才解除待确认。 */
+  /**
+   * 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有成功并读回到目标状态才解除待确认。
+   * 失败时只有后端对这条命令下了结论（isExplicitRejection：带原因码的 4xx）才放出「解除待确认」；
+   * 登录、权限、超时、限流、IDEMPOTENCY_* 只更新说明，原命令和锁都留着（M1、OP-153）。
+   */
   const retryPending = async (record: A2PendingCommand) => {
     if (isRetryExpired(record)) { notePending(record, RETRY_EXPIRED); return; }
     if (!canRetry(record)) { notePending(record, RETRY_NO_PERMISSION); return; }
@@ -718,21 +997,36 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     }
     setRetryRejected((current) => current.filter((key) => key !== record.commandKey));
     try {
-      const ticketLike = { id: record.target, action: record.action ?? record.target, operationCode: record.operationCode };
+      const ticketLike = { id: record.target, action: record.action ?? record.target, obj: record.obj ?? "", operationCode: record.operationCode, fundEffect: record.fundEffect };
       const outcome = record.kind === "param" ? await runParam(record.target as "ttl" | "retention" | "schema", record.value ?? "", record.reason, record.operator)
         : record.kind === "retention" ? await runRetention(record.reason, record.operator)
-          : await runDecision(record.kind, ticketLike, record.reason, record.operator);
-      if (outcome === "ok") toast(`已确认：${record.label}已生效`, "success");
+          : record.kind === "export" ? await runExport(record.reason, record.filter ?? {}, record.operator)
+            : await runDecision(record.kind, ticketLike, record.reason, record.operator);
+      // 导出和清理自己会提示「已下载」「清理完成」，不再多弹一条。
+      if (outcome === "ok") { if (record.kind !== "export" && record.kind !== "retention") toast(`已确认：${record.label}已生效`, "success"); }
       else notePending(record, "重试的结果仍未确认，待确认继续保留。");
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
-      notePending(record, `重试没有成功：${displayAdminError(cause).replace(/[。.]$/, "")}。这说明不了原操作的结果，原记录继续保留。`);
-      setRetryRejected((current) => [...current, record.commandKey]);
+      const why = displayAdminError(cause).replace(/[。.]$/, "");
+      if (isExplicitRejection(cause)) {
+        notePending(record, `重试没有成功：${why}。这说明不了原操作的结果，原记录继续保留。`);
+        setRetryRejected((current) => [...current, record.commandKey]);
+      } else notePending(record, `这次没能确认结果：${why}。原操作继续保留，稍后再读回或重试。`);
     }
   };
 
   /** 读回只给现在的事实，不解除（OP-93、OP-95）。 */
   const verifyPending = async (record: A2PendingCommand) => {
+    if (record.kind === "export") {
+      // 后端把命令号写进这次导出记录的详情，按对象查得到；查到也只说明后端生成过，文件没下到时按原操作重试。
+      const found = await fetchA2Overview({ action: "A2_AUDIT_EXPORTED", object: record.commandKey }).catch(() => null);
+      if (!found) { notePending(record, "读回失败，导出记录暂时读不到。待确认继续保留。"); return; }
+      const hit = found.recentLogs[0];
+      notePending(record, hit
+        ? `读回：后端在 ${logTime(hit)} 记了这次导出（${hit.obj}）。没下载到文件时按原操作重试，会按当时的条件重新下载。待确认继续保留。`
+        : "读回：没找到这次导出的记录，可能没有生成。待确认继续保留。");
+      return;
+    }
     if (record.kind === "retention") {
       const latest = await fetchA2RetentionLatest().catch(() => undefined);
       if (latest === undefined) { notePending(record, "读回失败，上次手动清理暂时读不到。待确认继续保留。"); return; }
@@ -760,12 +1054,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     a2Commands.forget(record.fingerprint, record.commandKey);
     syncPending();
     setReleasing(null);
-    toast(record.kind === "param" ? "已解除待确认，这项设置可以重新调整" : record.kind === "retention" ? "已解除待确认，可以重新清理" : "已解除待确认，这张单可以重新处理", "success");
+    toast(record.kind === "param" ? "已解除待确认，这项设置可以重新调整" : record.kind === "retention" ? "已解除待确认，可以重新清理"
+      : record.kind === "export" ? "已解除待确认，可以重新导出" : "已解除待确认，这张单可以重新处理", "success");
   };
 
-  /** 「在操作记录里查看」：切到操作记录，对象填审批单号或机制、清理的资源名，模块不限。 */
+  /** 「在操作记录里查看」：切到操作记录，对象填审批单号或机制、清理的资源名，导出按这次的命令号查，模块不限。 */
   const showInRecords = (record: A2PendingCommand) => {
-    const next: A2AuditFilter = { object: PARAM_AUDIT_OBJECT[record.kind] ?? record.target };
+    const next: A2AuditFilter = record.kind === "export" ? { action: "A2_AUDIT_EXPORTED", object: record.commandKey } : { object: PARAM_AUDIT_OBJECT[record.kind] ?? record.target };
     applyFilter(next);
     chooseTab("records");
     setView("logs");
@@ -775,7 +1070,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   const immediate = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 
-  /** 本人、已退役、解析不了、没有权限、有未确认操作、正在读取：入口先禁用并写原因（第五节）。 */
+  /** 框标题只写「批准审批单」，动作名放在标题下面一行，长了省略、悬停看全文（设计偏差二选一的第一种）。 */
+  const subject = (w: A2OperationRow) => <span className="a2-confirm-subject" title={actionName(w.action)}>{shortCodes(actionName(w.action))}</span>;
+
+  /** 本人、已退役、解析不了、有未确认操作、正在读取、读不到退款金额：入口先禁用并写原因（第五节）。没有业务权限的入口不显示（OP-124），这里只兜底。 */
   const decideBlock = (w: A2OperationRow, kind: "approve" | "reject" | "withdraw") => {
     if (submitting) return SUBMITTING;
     if (pendingTicketIds.has(w.id)) return PENDING_LOCK;
@@ -784,7 +1082,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (isMine(w)) return OWN_TICKET_REASON;
     if (kind === "approve" && w.retiredOperation) return RETIRED_OPERATION_COPY;
     if (kind === "approve" && (w.phoneCalibrationError || w.ambassadorMaterialError)) return w.phoneCalibrationError ?? w.ambassadorMaterialError;
-    return canDecide(w) ? undefined : "这个账号没有批准权限";
+    if (!canDecide(w, kind)) return NO_DECIDE;
+    // 读不到退款金额时不能批准（协调人定，同 C3 读不到详情）；驳回不受影响。
+    const amount = kind === "approve" ? refundAmount(w) : undefined;
+    if (amount?.state === "loading") return "正在读取退款金额，读完再批准";
+    if (amount && amount.state !== "ok") return REFUND_AMOUNT_REQUIRED;
+    return undefined;
   };
 
   /** 已被别人处理（终态、状态变了）：框留着，写最新状态，确认按钮禁用（OP-97）。 */
@@ -795,46 +1098,70 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     return `这张单现在${found && found.status !== "pending" ? `是${now}` : now}，这次${DECISION_VERB[kind]}没有执行。关闭后看最新状态。`;
   };
 
-  const ticketFacts = (w: A2OperationRow, withReason: boolean) => (
-    <Facts>
-      <Fact k="操作">{actionName(w.action)}</Fact>
-      <Fact k="审批单"><span data-mono>{w.id}</span></Fact>
-      <Fact k="对象">{w.obj}</Fact>
-      <Fact k="发起人">{`${w.operator} · ${roleText(w.operatorRole)}`}</Fact>
-      {withReason && <Fact k="发起理由">{w.reason}</Fact>}
-    </Facts>
-  );
+  /** 框里的关键信息：退款单第一行是退款金额（VS-102）。动作名在标题下面，这里不再写「操作」，单号只写一次（建议 8）。 */
+  const ticketFacts = (w: A2OperationRow, kind: "approve" | "reject") => {
+    const amount = refundAmount(w);
+    const name = kind === "approve" ? "退款金额" : "申请退款金额";
+    const timing = kind === "approve" ? g3PolicyExecutionTiming(w) ?? phoneScheduledAt(w) : undefined;
+    return (
+      <Facts>
+        {amount && (amount.state === "ok"
+          ? <Fact k={name} lead tone="role-1" unit="USDT">{orderAmount(amount.amount)}</Fact>
+          : <Fact k={name} tone="warn">{refundAmountText(amount)}</Fact>)}
+        <Fact k="审批单"><span data-mono>{w.id}</span></Fact>
+        <Fact k="对象"><span data-mono className="a2-code">{w.obj}</span></Fact>
+        <Fact k="发起人">{`${w.operator} · ${roleText(w.operatorRole)}`}</Fact>
+        {kind === "approve" && <Fact k="发起理由">{keepCodes(w.reason)}</Fact>}
+        {timing && <Fact k="生效时间">{timing}</Fact>}
+      </Facts>
+    );
+  };
 
   const approveRequest = (w: A2OperationRow): ActionConfirmReq => {
     const isRefund = w.fundEffect === "ORDER_REFUND";
     const isFunds = w.type === "fund" || isRefund || w.fundEffect === "REWARD_SUSPENSION" || w.fundEffect === "REWARD_RESUMPTION";
     const briefKind = isFunds ? "funds" : w.type === "acct" ? "security" : w.type === "sos" ? "emergency" : "config";
-    const timing = g3PolicyExecutionTiming(w);
-    const brief = isFunds
-      ? { impact: "批准后立即执行，会改变用户资金或平台账目；执行失败不改原值，单子继续待审批。", check: "核对对象、金额、变更前后和发起理由，理由写清依据或工单号。" }
-      : w.type === "acct"
-        ? { impact: "批准后立即执行，会改变后台账号、权限或用户登录；执行失败不改原值。", check: "核对目标账号、申请的角色和发起理由，理由写清依据或工单号。" }
-        : w.type === "sos"
-          ? { impact: "批准后立即执行，会改变业务的停用或恢复状态；执行失败不改原值。", check: "核对值班授权、影响范围和恢复条件，理由写清依据或工单号。" }
-          : { impact: "批准后立即执行，按完整变更内容改线上配置；执行失败不改原值。", check: "核对修改前后的值和影响范围，理由写清依据或工单号。" };
+    const timing = approvalTiming(w);
+    const j4 = isJ4Execution(w);
+    const scheduled = phoneScheduledAt(w);
+    const g3 = g3PolicyExecutionTiming(w);
+    // 一行放得下（必须改 14）；时点只写在「生效时间」一处（建议 8）。
+    const impact = scheduled ? timing.impact
+      : j4 ? "批准后逐步执行，可能只执行一部分，失败要到执行追溯里看。"
+        : w.coverageCheckOnApproval ? "批准时先检查兑付覆盖率，够了才执行；不够时原样不动。"
+          : g3 ? "批准后按生效时间执行，按完整变更内容改线上配置。"
+            : isFunds ? "批准后立即执行，改用户资金或平台账目；失败不改原值。"
+              : w.type === "acct" ? "批准后立即执行，改账号、权限或登录状态；失败不改原值。"
+                : w.type === "sos" ? "批准后立即执行，改业务的停用或恢复状态；失败不改原值。"
+                  : "批准后立即执行，按完整变更内容改线上配置；失败不改原值。";
+    const check = isRefund ? "核对退款金额、订单和发起理由，理由写清依据或工单号。"
+      : isFunds ? "核对对象、变更前后和发起理由，理由写清依据或工单号。"
+        : w.type === "acct" ? "核对目标账号、申请的角色和发起理由，理由写清依据或工单号。"
+          : w.type === "sos" ? "核对值班授权、影响范围和恢复条件，理由写清依据或工单号。"
+            : "核对修改前后的值和影响范围，理由写清依据或工单号。";
+    const amplifies = w.amplifies && !w.coverageCheckOnApproval;
     return {
       briefKind,
       title: "批准审批单",
       action: <>确认执行 · {w.id}({a2ActionText(w.action)})</>,
-      effect: <StatusTag tone="progress" filled>{w.coverageCheckOnApproval ? "通过覆盖率检查后执行" : timing ? "按变更内容注明的时点生效" : "立即生效"}</StatusTag>,
-      detail: <>谁能批准：{approvalExecutorLabel(w)}。</>,
-      facts: ticketFacts(w, true),
+      effect: <>{subject(w)}<StatusTag tone="progress" filled>{timing.tag}</StatusTag>{isRefund && <IrreversibleTag />}</>,
+      detail: j4
+        ? <>中途失败时，前面的步骤可能已经生效。到「监管要求应急处理」的执行追溯里核对每一步。谁能批准：{approvalExecutorLabel(w)}。</>
+        : w.coverageCheckOnApproval ? <>{approvalCoverageCopy(w)}</> : <>谁能批准：{approvalExecutorLabel(w)}。</>,
+      facts: ticketFacts(w, "approve"),
       content: (
         <div className="rd-stack">
-          <A2ChangeReview before={w.before} after={w.after} />
+          <A2ChangeReview before={w.before} after={w.after} omit={g3 ? ["生效时间"] : undefined} />
           {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
           {w.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={w.ambassadorMaterialProposal} expectedMaterialRevision={w.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? w.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
           {isRefund && w.refundOrderNo && <PromotionRefundImpact orderNo={w.refundOrderNo} />}
         </div>
       ),
-      completionCopy: w.coverageCheckOnApproval ? approvalCoverageCopy(w) : timing,
-      statedBrief: brief,
-      amplifies: w.amplifies && !w.coverageCheckOnApproval,
+      statedBrief: { impact, check },
+      amplifies,
+      // 有覆盖率时事实区写「兑付覆盖率 X，红线 Y」，多付钱和检查时点进问号；读不到时橙黄写出来，不是一句白字（必须改 12）。
+      coverage: amplifies ? coverage : undefined,
+      coverageLead: amplifies && !coverage ? <span className="a2-coverage-unknown"><AlertTriangle size={14} aria-hidden />会让平台多付钱，兑付覆盖率暂时读不到</span> : undefined,
       coverageCheck: "批准时系统检查兑付覆盖率，低于红线不执行。",
       reasonMin,
       reasonMax: 200,
@@ -848,27 +1175,29 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         } catch (cause) {
           const stale = staleReason(w, "approve", cause);
           if (stale) openActionConfirm({ ...approveRequest(w), blockedReason: stale });
+          // 共用的说法对直接编辑、演练都成立；审批这里还要写下一步（M8）。
+          if (backendCode(cause) === "J4_PLAYBOOK_NOT_FOUND") throw new Error("应急预案不存在，可能已被删除，这张单不能批准。请驳回后按最新的预案重新发起。");
           throw cause;
         }
       },
     };
   };
 
+  /** 驳回只是不执行，业务什么都没变，还能重新发起：不标「不能撤销」，不用红（必须改 2，VS-106、VS-107）。 */
   const rejectRequest = (w: A2OperationRow): ActionConfirmReq => ({
     briefKind: "record",
     title: "驳回审批单",
     action: <>取消执行 · {w.id} · {a2ActionText(w.action)}</>,
-    effect: <>{immediate}<IrreversibleTag /></>,
-    detail: <>{w.retiredOperation ? "此操作已退役。驳回后保留历史记录，不能重新发起。" : "驳回后不能恢复，如需再做请重新发起。"}</>,
-    facts: ticketFacts(w, false),
+    effect: <>{subject(w)}{immediate}</>,
+    detail: <>{w.retiredOperation ? "此操作已退役。驳回后保留历史记录，不能重新发起。" : "驳回后这张单结束，要做需重新发起。"}</>,
+    facts: ticketFacts(w, "reject"),
     statedBrief: w.retiredOperation
-      ? { impact: "审批单改为已驳回，原操作不执行。", check: "理由写清驳回依据或工单号。" }
-      : { impact: "审批单改为已驳回，原操作不执行，这个对象可以重新发起修改。", check: "理由写清驳回依据或工单号。" },
+      ? { impact: "改为已驳回，原操作不执行。", check: "理由写清驳回依据或工单号。" }
+      : { impact: "改为已驳回，原操作不执行；可以重新发起。", check: "理由写清驳回依据或工单号。" },
     amplifies: false,
     reasonMin,
     reasonMax: 200,
     confirmLabel: "确认驳回",
-    confirmTone: "danger",
     run: async (reason) => {
       try {
         const outcome = await runDecision("reject", w, reason);
@@ -885,10 +1214,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     briefKind: "record",
     title: "撤回我的申请",
     action: <>撤回我的申请 · {w.id}</>,
-    effect: immediate,
+    effect: <>{subject(w)}{immediate}</>,
     detail: <>撤回后原操作不会执行。只有申请人本人能撤回。</>,
-    facts: <Facts><Fact k="操作">{actionName(w.action)}</Fact><Fact k="审批单"><span data-mono>{w.id}</span></Fact></Facts>,
-    statedBrief: { impact: "审批单改为已撤回，原操作不执行。", check: "理由写清撤回原因或工单号。" },
+    facts: <Facts><Fact k="审批单"><span data-mono>{w.id}</span></Fact><Fact k="对象"><span data-mono className="a2-code">{w.obj}</span></Fact></Facts>,
+    statedBrief: { impact: "改为已撤回，原操作不执行。", check: "理由写清撤回原因或工单号。" },
     amplifies: false,
     reasonMin,
     reasonMax: 200,
@@ -911,11 +1240,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     openActionConfirm(kind === "approve" ? approveRequest(w) : kind === "reject" ? rejectRequest(w) : withdrawRequest(w));
   };
 
-  /* 导出：按已查询的条件（appliedFilter），不做页面级待确认，见文件头。 */
+  /* 导出：按已查询的条件（appliedFilter），和其他写操作一样先存原命令（M2）。能不能导按后端查到的结果判断（M4）。 */
+  const exportPending = pendingCommands.some((record) => record.kind === "export");
   const exportBlock = !canExport ? undefined
-    : recordsLoading ? "操作记录还在读取，读完再导出"
-      : recordsError || !records ? "操作记录读取失败，暂不能导出"
-        : logRows.length === 0 ? "当前筛选没有可导出的记录" : undefined;
+    : exportPending ? "导出有结果未确认，先到页面上方核对"
+      : recordsLoading ? "操作记录还在读取，读完再导出"
+        : recordsError || !records ? "操作记录读取失败，暂不能导出"
+          : logRows.length === 0 ? "当前筛选没有可导出的记录" : undefined;
 
   const appliedText = (filter: A2AuditFilter) => {
     const parts = [
@@ -927,10 +1258,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   const exportAudit = () => {
     if (!canExport || exportBlock) return;
-    const commandKey = createA2CommandKey("a2-audit-export");
-    const scope = appliedText(appliedFilter);
+    const filter = appliedRef.current;
+    const scope = appliedText(filter);
     openActionConfirm({
       briefKind: "export",
+      title: "导出操作记录",
       action: "导出操作记录",
       effect: immediate,
       detail: null,
@@ -946,48 +1278,59 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       reasonMin,
       reasonMax: 200,
       confirmLabel: "确认导出",
-      run: async (reason) => {
-        const file = await exportA2Audit(reason, normalizeA2AuditFilter(appliedRef.current), commandKey);
-        toast(`已下载 ${file.fileName}`, "success");
-        void refreshAfterWrite();
-      },
+      run: async (reason) => { await runExport(reason, filter); },
     });
   };
 
-  /* 机制参数：理由最短长度、保留期、字段版本。e2e 认框名「操作理由最短长度」和默认按钮「确认提交」，不传 title 和 confirmLabel。 */
+  /* 机制参数：理由最短长度、保留期、字段版本。 */
   const paramBlock = (key: string) => submitting ? SUBMITTING
     : pendingParams.has(key) ? "这项有结果未确认的调整，先到页面上方核对"
       : mainLoading ? "设置还在读取，读完再调整" : undefined;
+
+  /** 字段版本只能逐版升级：现在 v3 时能填的只有 v4，直接写出来，不让人手打（必须改 11）。 */
+  const nextSchema = (current: string) => ["v3", "v4"].find((version) => validateA2MechanismValue("schema", version, current).ok);
 
   const adjustParam = (key: "ttl" | "retention" | "schema") => {
     if (paramBlock(key)) return;
     const raw = mechanismParams.find((p) => p.key === key)?.value;
     const current = key === "schema" ? schemaVersion(raw) || "v3" : raw?.match(/\d+/)?.[0] ?? (key === "ttl" ? "8" : "13");
+    const next = key === "schema" ? nextSchema(current) : undefined;
+    if (key === "schema" && !next) return;
     const edit: ActionConfirmReq["edit"] = key === "ttl"
       ? { kind: "number", current, unit: "字", min: 8, max: 200, step: 1, disallowCurrent: true, hint: "8–200 的整数",
-        preview: (v) => `改成 ${v} 字：之后所有确认框的理由少于 ${v} 个可见字符就不能提交，已有记录不受影响。` }
+        preview: (v) => `改成 ${v} 字：之后所有确认框的理由少于 ${v} 个可见字符就不能提交。` }
       : key === "retention"
         ? { kind: "number", current, unit: "月", min: 13, max: 36, step: 1, disallowCurrent: true, hint: "13–36 的整数，至少覆盖一个完整的 12 个月运营周期",
           preview: (v) => `改成 ${v} 个月：之后新写的记录在线保留 ${v} 个月，已有记录按原到期时间。` }
-        : { kind: "text", current, unit: "", disallowCurrent: true, hint: "只能逐版升级到已登记的版本（目前有 v3、v4）。新事件或字段请先在「用户行为事件」登记。",
-          validate: (v) => { const result = validateA2MechanismValue("schema", v, current); return result.ok ? undefined : `${result.message}。`; } };
+        : undefined;
     const brief = key === "ttl"
       ? { impact: "全后台确认框按新字数检查，已有记录不受影响。", check: "核对新字数，理由写清依据或工单号。" }
       : key === "retention"
         ? { impact: "只对之后新写的操作记录生效，已有记录按自己的到期时间。", check: "核对新值，理由写清依据或工单号。" }
-        : { impact: "之后的新记录和导出带新版本号，历史记录不改。", check: "核对目标版本，理由写清依据或工单号。" };
+        : { impact: "之后新写的记录带新版本号，历史记录不改。", check: "核对目标版本，理由写清依据或工单号。" };
     openActionConfirm({
       briefKind: "config",
+      title: PARAM_TITLE[key],
+      // action 是记进操作记录、被指纹核对的名字，不跟着标题改。
       action: key === "ttl" ? "操作理由最短长度" : key === "retention" ? "操作记录保留期" : "升级记录字段版本",
       effect: immediate,
       detail: null,
       edit,
+      facts: key === "schema" && next ? <DiffList rows={[{ key: "schema", before: current, after: next }]} /> : undefined,
+      content: key === "schema" ? (
+        <p className="rd-note">
+          只能逐版升级，升级后不能回到 {current}。新事件或字段先在
+          {reach("/platform/events") ? <Link className="rd-link" href="/platform/events" prefetch={false}>「用户行为事件」</Link> : "「用户行为事件」"}登记。
+        </p>
+      ) : undefined,
       statedBrief: brief,
       amplifies: false,
       reasonMin,
       reasonMax: 200,
+      confirmLabel: key === "schema" ? "确认升级" : undefined,
       run: async (reason, v) => {
-        const validation = validateA2MechanismValue(key, v ?? "", key === "schema" ? current : undefined);
+        const value = key === "schema" ? next ?? "" : v ?? "";
+        const validation = validateA2MechanismValue(key, value, key === "schema" ? current : undefined);
         if (!validation.ok) throw new Error(validation.message);
         const outcome = await runParam(key, validation.value, reason);
         if (outcome === "ok") paramToast(key, validation.value);
@@ -999,7 +1342,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     : retentionPending ? "清理有结果未确认，先到页面上方核对"
       : retentionPreviewError ? `清理范围加载失败，暂不能清理：${retentionPreviewError}`
         : !retentionPreview || retentionLoading ? "正在加载清理范围，请稍后重试"
-          : !main || mainLoading ? "设置还在读取，读完再清理" : undefined;
+          : !main || mainLoading ? "设置还在读取，读完再清理"
+            // 没有到期的记录时点开走完什么也没清，还会留一条空清理记录（必须改 9）。
+            : retentionPreview.eligibleRows === 0 ? "现在没有到期的记录，不用清理" : undefined;
 
   const confirmRetention = () => {
     // 服务端预览拿不到时不允许执行：操作前说不清范围的不可撤销操作，宁可挡住。
@@ -1007,6 +1352,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const preview = retentionPreview;
     openActionConfirm({
       briefKind: "record",
+      title: RETENTION_TITLE,
       action: <>归档并清理已到期操作记录</>,
       effect: <>{immediate}<IrreversibleTag /></>,
       detail: null,
@@ -1020,7 +1366,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           <Fact k="每次最多处理">2,000 条</Fact>
         </Facts>
       ),
-      statedBrief: { impact: "到期记录先长期归档，再从在线列表移除，不能撤销；未到期和旧版历史记录不动。", check: "核对条数和最早到期时间，理由写清依据或工单号。" },
+      // 「不能撤销」标题下已有标签，摘要不再写（VS-106）。
+      statedBrief: { impact: "到期记录先长期归档，再从在线列表移除；未到期和旧版历史不动。", check: "核对条数和最早到期时间，理由写清依据或工单号。" },
       amplifies: false,
       reasonMin,
       reasonMax: 200,
@@ -1036,6 +1383,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     setFilterDraft(next);
     setAppliedFilter(next);
     appliedRef.current = next;
+    // 上一组条件的结果不能当这组的显示，读完前是读取中（M4）。
+    setFiltered(null);
     setRangeError("");
     setLogPage(1);
     setHistPage(1);
@@ -1119,24 +1468,28 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     );
   });
 
-  /* 待审批：行内按钮都是小号次按钮，点了只开确认框（D2 新手测试）。整屏主按钮只有抽屉里的「批准」（DP-40）。 */
+  /* 待审批：行内按钮都是小号次按钮，点了只开确认框（D2 新手测试）。整屏主按钮只有抽屉里的「批准」（DP-40）。
+     没有这张单的业务权限时不显示批准、驳回（OP-124）；整页一行都没有可做的事时不画「操作」列（建议 3）。 */
+  const rowCanAct = (w: A2OperationRow) => isMine(w) || canDecide(w, "reject") || (!w.retiredOperation && canDecide(w, "approve"));
   const rowActions = (w: A2OperationRow) => {
-    const own = isMine(w);
-    if (w.retiredOperation && !own && !canDecide(w)) return <Cell main={<span className="rd-weak">{WAIT_OTHERS}</span>} />;
-    if (own) return <Button size="sm" disabledReason={decideBlock(w, "withdraw")} onClick={() => confirmDecision(w, "withdraw")}>撤回我的申请</Button>;
-    if (!canDecide(w)) return <Cell main={<span className="rd-weak">{WAIT_OTHERS}</span>} />;
+    if (isMine(w)) return <Button size="sm" disabledReason={decideBlock(w, "withdraw")} onClick={() => confirmDecision(w, "withdraw")}>撤回我的申请</Button>;
+    if (!rowCanAct(w)) return <Cell main={<span className="rd-weak">{WAIT_OTHERS}</span>} />;
     return <>
-      <Button size="sm" disabledReason={decideBlock(w, "reject")} onClick={() => confirmDecision(w, "reject")}>驳回</Button>
-      {!w.retiredOperation && <Button size="sm" disabledReason={decideBlock(w, "approve")} onClick={() => confirmDecision(w, "approve")}>批准</Button>}
+      {canDecide(w, "reject") && <Button size="sm" disabledReason={decideBlock(w, "reject")} onClick={() => confirmDecision(w, "reject")}>驳回</Button>}
+      {!w.retiredOperation && canDecide(w, "approve") && <Button size="sm" disabledReason={decideBlock(w, "approve")} onClick={() => confirmDecision(w, "approve")}>批准</Button>}
     </>;
   };
+  const showActions = qPageRows.some(rowCanAct);
+  const queueColumns = showActions ? 5 : 4;
 
+  /** 有结果未确认的操作时这一行也标出来，滚下去看不到上方的待确认条也知道（建议 4）。 */
   const markers = (w: A2OperationRow) => {
     const tags = <>
+      {pendingTicketIds.has(w.id) && <StatusTag tone="warn" explain={PENDING_LOCK}>待核对</StatusTag>}
       {w.sos && <StatusTag tone="danger" icon={Siren}>应急</StatusTag>}
       {w.amplifies && <StatusTag tone="warn" icon={Flame}>多付钱</StatusTag>}
     </>;
-    return w.sos || w.amplifies ? <span className="rd-row-actions">{tags}</span> : TYPE_NAME[w.type];
+    return w.sos || w.amplifies || pendingTicketIds.has(w.id) ? <span className="rd-row-actions">{tags}</span> : TYPE_NAME[w.type];
   };
 
   const pendingTab = (
@@ -1144,12 +1497,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       {mainError && !main ? (
         <BlockState state="error" title="审批单读取失败，不显示旧数据" detail={mainError} onRetry={() => void loadMain().catch(() => undefined)} retrying={mainLoading} />
       ) : <>
+        {/* 待审批是数量不是状态，按角色色；应急、资金类只给图标底上色，数字正文色（必须改 4，同提现审核）。 */}
         <StatBand label="待审批汇总" fit>
-          <Stat lead tone="warn" icon={Inbox} label="待审批" value={stats ? stats.pendingTickets : "—"} unit={stats ? "条" : undefined}
+          <Stat lead tone="role-2" icon={Inbox} label="待审批" value={stats ? stats.pendingTickets : "—"} unit={stats ? "条" : undefined}
             sub={mineCount > 0 ? `其中你发起的 ${mineCount} 条` : undefined} onOpen={() => { setQType("all"); setQPage(1); }} openLabel="看全部待审批" />
-          <Stat tone="danger" icon={Siren} label="应急" value={stats ? stats.sosTickets : "—"} unit={stats ? "条" : undefined}
+          <Stat iconTone="danger" icon={Siren} label="应急" value={stats ? stats.sosTickets : "—"} unit={stats ? "条" : undefined}
             explain="紧急停用的恢复申请和应急预案执行，排在最前。" onOpen={() => { setQType("sos"); setQPage(1); }} openLabel="只看应急" />
-          <Stat tone="role-1" icon={Coins} label="资金类" value={stats ? stats.fundTickets : "—"} unit={stats ? "条" : undefined}
+          <Stat iconTone="role-1" icon={Coins} label="资金类" value={stats ? stats.fundTickets : "—"} unit={stats ? "条" : undefined}
             explain="会改变用户资金、提现或平台账目的审批单。" onOpen={() => { setQType("fund"); setQPage(1); }} openLabel="只看资金类" />
         </StatBand>
 
@@ -1157,31 +1511,32 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         <FilterBar scope={<Segments label="审批单类型" value={qType} items={TYPE_ITEMS} onChange={(value) => { setQType(value); setQPage(1); }} />}
           sort={<FilterField><Select aria-label="发起人" value={qOperator} onChange={(value) => { setQOperator(value as QOperator); setQPage(1); }} options={OPERATOR_OPTIONS} /></FilterField>} />
 
-        <Panel flush icon={ClipboardList} tone="role-3" title="待审批的操作" sub={`应急在前，资金类其次，其余按提交时间从新到旧 · 时间为${zone}`}>
+        <Panel flush icon={ClipboardList} tone="role-3" title="待审批的操作" explain="应急在前，资金类其次，其余按提交时间从新到旧。">
           {/* 1024 也要放下：对象多是系统键，名字里通常已经带着，列表不单列，抽屉和确认框里常显（DP-13）。 */}
           <Table label="待审批的操作" data-tight="">
             <thead><tr>
-              <Th sticky="start">审批单</Th>
+              <Th sticky="start">审批单 · 提交时间（{zone}）</Th>
               <Th>变更</Th>
               <Th icon={Users} tone="users">发起人</Th>
               <Th>标记</Th>
-              <Th sticky="end">操作</Th>
+              {showActions && <Th sticky="end">操作</Th>}
             </tr></thead>
             <tbody>
-              {!main && mainLoading ? <TableLoading columns={5} rows={5} />
+              {!main && mainLoading ? <TableLoading columns={queueColumns} rows={5} />
                 : qPageRows.length === 0 ? (
-                  <TableMessage columns={5} role="status">
+                  <TableMessage columns={queueColumns} role="status">
                     {queueFiltered ? <>没有符合条件的待审批操作 <Button size="sm" onClick={() => { setQType("all"); setQOperator("all"); setQPage(1); }}>清除筛选</Button></> : "没有待审批的操作"}
                   </TableMessage>
                 ) : qPageRows.map((w) => {
-                  const changeText = w.action.startsWith("首次配置 V0–V8") ? "创建 V0–V8 共 9 个等级，点击本行核对完整配置" : w.after;
+                  const change = changeSummary(w.before, w.after, g3PolicyExecutionTiming(w) ? ["生效时间"] : []);
+                  const name = actionName(w.action);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
-                      <Td sticky="start"><Cell main={actionName(w.action)} title={`${actionName(w.action)}\n对象：${w.obj}\n${w.id} · ${bizTime(w.rawTs, w.ts)}`} sub={<><span data-mono>{w.id}</span> · {bizTime(w.rawTs, w.ts)}</>} /></Td>
-                      <Td grow><Cell main={changeText} sub={`原 ${w.before}`} title={`变更前：${w.before}\n变更后：${changeText}`} /></Td>
+                      <Td sticky="start"><Cell main={shortCodes(name)} title={`${name}\n对象：${w.obj}\n${w.id} · ${bizTime(w.rawTs, w.ts)}`} sub={<>{queueTime(w)} · <span data-mono>{w.id}</span></>} /></Td>
+                      <Td grow><Cell main={change.main} sub={change.sub} title={`${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
                       <Td><Cell main={markers(w)} sub={w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined} /></Td>
-                      <Td sticky="end"><span className="rd-row-actions">{rowActions(w)}</span></Td>
+                      {showActions && <Td sticky="end"><span className="rd-row-actions">{rowActions(w)}</span></Td>}
                     </Tr>
                   );
                 })}
@@ -1195,9 +1550,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   );
 
   const logColumns = 5;
-  // 视图切换放在列表标题行右边，切的就是这张表（不另占一行）。
+  // 页签、分段、面板不叫同一个名字：分段写「全部记录」（建议 2），网址参数不变。
   const viewSwitch = <Segments label="操作记录视图" value={view} onChange={(next) => { setLogId(null); setHistoryId(null); setView(next); }}
-    items={[{ value: "logs", label: "操作记录" }, { value: "history", label: "审批结果" }]} />;
+    items={[{ value: "logs", label: "全部记录" }, { value: "history", label: "审批结果" }]} />;
   const VIEW_NOTE = "两个视图共用上面的筛选，导出只导操作记录。";
   const recordsTab = (
     <>
@@ -1221,12 +1576,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         result={draftChanged ? "条件未应用" : undefined}
         notice={rangeError ? `时间有误：${rangeError}。没有查询，下面仍是上次的结果。` : undefined}
       >
-        <FilterField label="模块">
+        {/* 主行三项不带上方标签，按钮和框在同一条线上（必须改 10，同提现审核）；名字写在占位和读屏名里。 */}
+        <FilterField>
           <Select aria-label="审计业务域" value={filterDraft.domain && filterDraft.domain !== "all" ? filterDraft.domain : ""} onChange={(value) => setDraft("domain", value)}
             options={[{ value: "", label: "全部模块" }, ...A2_AUDIT_DOMAINS.map((domain) => ({ value: domain, label: DOMAIN_NAMES[domain] }))]} />
         </FilterField>
-        <FilterField label="操作者"><Input aria-label="审计操作者" placeholder="账号或姓名" size={10} value={filterDraft.operator ?? ""} onChange={(event) => setDraft("operator", event.target.value)} /></FilterField>
-        <FilterField label="对象" grow><Input aria-label="审计对象" placeholder="对象编号或类型" value={filterDraft.object ?? ""} onChange={(event) => setDraft("object", event.target.value)} /></FilterField>
+        <FilterField><Input aria-label="审计操作者" placeholder="操作者账号或姓名" size={14} value={filterDraft.operator ?? ""} onChange={(event) => setDraft("operator", event.target.value)} /></FilterField>
+        <FilterField grow><Input aria-label="审计对象" placeholder="对象编号或类型" value={filterDraft.object ?? ""} onChange={(event) => setDraft("object", event.target.value)} /></FilterField>
       </FilterBar>
 
       {recordsError && !records ? (
@@ -1243,9 +1599,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             <thead><tr>
               <Th sticky="start">时间（{zone}）</Th>
               <Th icon={Users} tone="users">操作者</Th>
-              <Th><span>动作<Explain label="动作名的说明" content="中文是本页的操作；英文是系统动作名，可以复制到「动作」筛选里查。" /></span></Th>
+              <Th><span>动作<Explain label="动作名的说明" content="中文是本页的操作；英文是系统动作名，长的中间省略，点开这一行看全文，可以复制到「动作」筛选里查。" /></span></Th>
               <Th>对象</Th>
-              <Th>前 → 后</Th>
+              {/* 「前 → 后」是查有没有生效唯一要看的列，留够宽度，对象列让出来（必须改 8）。 */}
+              <Th className="a2-col-delta">前 → 后</Th>
             </tr></thead>
             <tbody>
               {!records && recordsLoading ? <TableLoading columns={logColumns} rows={6} />
@@ -1258,9 +1615,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   return (
                     <Tr key={l.id} selected={l.id === logId} onOpen={() => setLogId(l.id)}>
                       <Td sticky="start"><Cell num main={logTime(l)} /></Td>
-                      <Td><Cell main={l.actor} sub={l.role} /></Td>
-                      <Td><Cell mono={!translated} main={logActionText(l.action)} title={logActionText(l.action)} /></Td>
-                      <Td><Cell main={l.obj} title={l.obj} /></Td>
+                      <Td><Cell main={l.actor} sub={logRoleText(l.role) || undefined} title={l.actor} /></Td>
+                      <Td><Cell mono={!translated} main={translated ? logActionText(l.action) : middle(l.action, 22)} title={logActionText(l.action)} /></Td>
+                      <Td><Cell main={shortCodes(l.obj)} title={l.obj} /></Td>
                       <Td grow><Cell mono main={l.delta} title={l.delta} /></Td>
                     </Tr>
                   );
@@ -1322,12 +1679,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               return <ConfigRow key={p.key} {...common} value={<span className="a2-locked" title="系统固定，不能关闭"><Lock size={13} aria-hidden />必填</span>} />;
             }
             if (p.key === "confirm_list") {
-              return <ConfigRow key={p.key} {...common} note={undefined} value={confirmCategories.length ? `${confirmCategories.length} 类` : "暂无分类说明"}
+              return <ConfigRow key={p.key} {...common} note={undefined} value={confirmCategories.length ? `${confirmCategories.length} 类` : <span className="rd-weak">暂无分类说明</span>}
                 action={(describedBy) => <Button size="sm" aria-describedby={describedBy} onClick={() => setConfirmListOpen(true)}>查看清单</Button>} />;
             }
             if (p.key === "ttl" || p.key === "retention" || p.key === "schema") {
               const key = p.key;
-              const top = key === "schema" && schemaNow === "v4";
+              const top = key === "schema" && !nextSchema(schemaNow || "v3");
               return <ConfigRow key={p.key} {...common} value={operatorCopyText(p.value)}
                 action={canWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={top ? "已是已登记的最高版本" : paramBlock(key)} onClick={() => adjustParam(key)}>{key === "schema" ? "升级版本" : "调整"}</Button> : undefined} />;
             }
@@ -1345,10 +1702,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           <BlockState compact state="loading" title="正在加载清理范围" />
         ) : (
           <dl className="rd-detail-values">
-            <div><dt>可清理</dt><dd>{count(retentionPreview.eligibleRows)} 条</dd></div>
-            <div><dt>最早到期</dt><dd>{retentionPreview.earliestExpireAt ? bizTime(retentionPreview.earliestExpireAt, retentionPreview.earliestExpireAt) : "—"}</dd></div>
-            <div><dt>未到期</dt><dd>{count(retentionPreview.notYetExpiredRows)} 条</dd></div>
-            <div><dt>旧版历史<Explain label="旧版历史的说明" content="没有到期时间的旧记录，清理不会动它们。" /></dt><dd>{count(retentionPreview.legacyRowsWithoutExpireAt)} 条</dd></div>
+            {/* 0 和「—」弱化（必须改 13，VS-11）。 */}
+            <div><dt>可清理</dt><dd data-empty={retentionPreview.eligibleRows === 0 ? "" : undefined}>{count(retentionPreview.eligibleRows)} 条</dd></div>
+            <div><dt>最早到期</dt><dd data-empty={retentionPreview.earliestExpireAt ? undefined : ""}>{retentionPreview.earliestExpireAt ? bizTime(retentionPreview.earliestExpireAt, retentionPreview.earliestExpireAt) : "—"}</dd></div>
+            <div><dt>未到期</dt><dd data-empty={retentionPreview.notYetExpiredRows === 0 ? "" : undefined}>{count(retentionPreview.notYetExpiredRows)} 条</dd></div>
+            <div><dt>旧版历史<Explain label="旧版历史的说明" content="没有到期时间的旧记录，清理不会动它们。" /></dt><dd data-empty={retentionPreview.legacyRowsWithoutExpireAt === 0 ? "" : undefined}>{count(retentionPreview.legacyRowsWithoutExpireAt)} 条</dd></div>
             <div><dt>上次手动清理</dt><dd>{retentionRunError
               ? <>上次清理情况加载失败：{retentionRunError} <InlineRetry onRetry={() => void refreshRetentionRun()} /></>
               : retentionRun
@@ -1365,29 +1723,37 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const ticketIndex = shown ? qPageRows.findIndex((w) => w.id === shown.id) : -1;
   const prevTicket = ticketIndex > 0 ? qPageRows[ticketIndex - 1] : undefined;
   const nextTicket = ticketIndex >= 0 ? qPageRows[ticketIndex + 1] : undefined;
-  const shownTiming = shown ? g3PolicyExecutionTiming(shown) : undefined;
+  const shownTiming = shown ? g3PolicyExecutionTiming(shown) ?? phoneScheduledAt(shown) : undefined;
+  const shownAmount = shown ? refundAmount(shown) : undefined;
+  const shownCanApprove = shown ? canDecide(shown, "approve") : false;
+  const shownCanReject = shown ? canDecide(shown, "reject") : false;
   // 有结果未确认的操作时抽屉顶上已有一条提示，这里不再写一遍（DT-12）。
   const shownBlock = shown && (pendingTicketIds.has(shown.id) ? undefined
     : shown.retiredOperation ? RETIRED_OPERATION_COPY
       : shown.phoneCalibrationError ?? shown.ambassadorMaterialError
-        ?? (isMine(shown) ? OWN_TICKET_REASON : canDecide(shown) ? undefined : "这个账号没有批准权限"));
+        ?? (isMine(shown) ? OWN_TICKET_REASON : !shownCanApprove ? NO_DECIDE
+          : shownAmount && shownAmount.state !== "ok" && shownAmount.state !== "loading" ? REFUND_AMOUNT_REQUIRED : undefined));
   const judgment: JudgmentRow[] = shown ? [
+    // 批准退款是直接出钱、收不回的操作，第一行就是这笔钱（必须改 1，DP-03）。
+    ...(shownAmount ? [shownAmount.state === "ok"
+      ? { label: "退款金额", value: <span className="a2-amount">{orderAmount(shownAmount.amount)} USDT</span> }
+      : { label: "退款金额", state: "warn" as const, value: <>{refundAmountText(shownAmount)}{shownAmount.state === "error" && shown.refundOrderNo && <InlineRetry onRetry={() => void loadRefundAmount(shown.refundOrderNo!)} />}</> }] : []),
     { label: "要做什么", value: actionName(shown.action) },
-    { label: "对象", value: shown.obj },
+    { label: "对象", value: <span data-mono className="a2-code">{shown.obj}</span> },
     { label: "发起人", icon: Users, tone: "users", value: `${shown.operator} · ${roleText(shown.operatorRole)}${isMine(shown) ? "（你发起的）" : ""}`, reason: bizTime(shown.rawTs, shown.ts) },
-    { label: "发起理由", value: shown.reason },
+    { label: "发起理由", value: keepCodes(shown.reason) },
     { label: shown.retiredOperation ? "原执行权限" : "谁能批准", value: approvalExecutorLabel(shown) },
     ...(shownBlock ? [{ label: "不能批准的原因", state: "warn" as const, value: shownBlock }] : []),
     ...(shownTiming ? [{ label: "生效时间", value: shownTiming }] : []),
   ] : [];
   const shownOwn = shown ? isMine(shown) : false;
-  const shownCanDecide = shown ? canDecide(shown) : false;
-  const ticketFooter = shown && (shownOwn || shownCanDecide ? (
+  // 驳回只是不执行，用普通次按钮，仍在左边和「批准」隔开（必须改 2、DP-40）。退役单右下放灰的「批准」写原因，按钮位置不跳（建议 9）。
+  const ticketFooter = shown && (shownOwn || shownCanApprove || shownCanReject ? (
     <Decision
-      explain={shownCanDecide && !shownOwn && !shown.retiredOperation ? "点「批准」并确认后立即执行；执行失败不改原值，单子继续待审批。点「驳回」后原操作不执行。" : undefined}
-      danger={shownCanDecide || shownOwn ? <Button variant="danger-outline" disabledReason={decideBlock(shown, "reject")} onClick={() => confirmDecision(shown, "reject")}>驳回</Button> : undefined}
+      explain={shownCanApprove && !shownOwn && !shown.retiredOperation ? approvalTiming(shown).drawer : undefined}
+      danger={shownCanReject ? <Button disabledReason={decideBlock(shown, "reject")} onClick={() => confirmDecision(shown, "reject")}>驳回</Button> : undefined}
       others={shownOwn ? <Button disabledReason={decideBlock(shown, "withdraw")} onClick={() => confirmDecision(shown, "withdraw")}>撤回我的申请</Button> : undefined}
-      primary={!shown.retiredOperation ? <Button variant="primary" disabledReason={decideBlock(shown, "approve")} onClick={() => confirmDecision(shown, "approve")}>批准</Button> : undefined} />
+      primary={shownCanApprove ? <Button variant="primary" disabledReason={decideBlock(shown, "approve")} onClick={() => confirmDecision(shown, "approve")}>批准</Button> : undefined} />
   ) : <Decision note={WAIT_OTHERS} />);
 
   /* 操作记录抽屉 */
@@ -1439,8 +1805,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           <JudgmentPoints title={`判断要点 · 时间为${zone}`} rows={judgment} />
           {shown.coverageCheckOnApproval && <Notice tone="warn">{approvalCoverageCopy(shown)}</Notice>}
           {shown.amplifies && !shown.coverageCheckOnApproval && <Notice tone="warn">会让平台多付钱：批准时系统检查兑付覆盖率，低于红线不执行。如已跌破红线请驳回并写明原因。</Notice>}
-          {shown.sos && <Notice tone="danger">应急操作：涉及紧急停用或恢复，请核对值班授权、影响范围和恢复条件后再处理。</Notice>}
-          <A2ChangeReview before={shown.before} after={shown.after} />
+          {/* J4 逐步执行，中途失败时前面的步骤不回滚，不能写「失败不改原值」（M3）。 */}
+          {shown.sos && <Notice tone="danger">{isJ4Execution(shown)
+            ? "应急预案逐步执行：中途失败时，前面的步骤可能已经生效。批准前核对值班授权和影响范围，失败后到「监管要求应急处理」的执行追溯里核对每一步。"
+            : "应急操作：涉及紧急停用或恢复，请核对值班授权、影响范围和恢复条件后再处理。"}</Notice>}
+          <A2ChangeReview before={shown.before} after={shown.after} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} />
           {shown.phoneCalibrationProposal && <PhoneCalibrationReview proposal={shown.phoneCalibrationProposal} />}
           {shown.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={shown.ambassadorMaterialProposal} expectedMaterialRevision={shown.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? shown.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
         </>}
@@ -1453,8 +1822,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         {shownLog && <>
           <JudgmentPoints rows={[
             { label: "动作", value: A2_ACTION_NAMES[shownLog.action] !== undefined || a2ActionText(shownLog.action) !== shownLog.action ? logActionText(shownLog.action) : <span data-mono>{shownLog.action}</span> },
-            { label: shownLog.action === "A1_SUPER_ADMIN_BREAK_GLASS_RECOVERED" ? "执行人 / 角色" : "操作者 / 角色", icon: Users, tone: "users", value: `${shownLog.actor} · ${shownLog.role}` },
-            { label: "对象", value: shownLog.obj },
+            { label: shownLog.action === "A1_SUPER_ADMIN_BREAK_GLASS_RECOVERED" ? "执行人 / 角色" : "操作者 / 角色", icon: Users, tone: "users", value: logRoleText(shownLog.role) ? `${shownLog.actor} · ${logRoleText(shownLog.role)}` : shownLog.actor },
+            { label: "对象", value: <span className="a2-code">{shownLog.obj}</span> },
             { label: "前值 → 后值", value: <span data-mono>{shownLog.delta}</span> },
             { label: "原因", value: shownLog.reason || "—" },
           ]} />
@@ -1462,7 +1831,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             <Facts>
               <Fact k="IP"><span data-mono>{shownLog.ip}</span></Fact>
               <Fact k="请求编号"><span data-mono>{requestNo}</span></Fact>
-              <Fact k="原始动作码"><span data-mono>{shownLog.action}</span></Fact>
+              {/* 没翻成中文时「动作」已经是原码，不再写一遍（建议 8）。 */}
+              {logActionText(shownLog.action) !== shownLog.action && <Fact k="原始动作码"><span data-mono>{shownLog.action}</span></Fact>}
+              <Fact k="角色码"><span data-mono>{shownLog.role}</span></Fact>
             </Facts>
           </Fold>
         </>}

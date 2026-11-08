@@ -649,22 +649,40 @@ export async function createA2OperationProposal(input: {
   return fromTicket(row);
 }
 
+/**
+ * 导出也是带命令号的写操作（后端按命令号存导出结果和这次导出的记录）。传了 commandKey 时失败按和其他写操作同一口径分：
+ * 没发出去或没读到回复、5xx、幂等处理中算结果未知（A2OutcomeUncertainError，原号保留）；带原因码的 4xx 是明确拒绝。
+ */
 export async function exportA2Audit(reason: string, filter: Record<string, unknown>, commandKey?: string) {
-  const response = await guardedFetch("/api/admin/platform/audit/exports", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Idempotency-Key": commandKey ?? idempotencyKey("a2-audit-export"),
-    },
-    body: JSON.stringify({ reason, filter }),
-    cache: "no-store",
-  });
+  const key = commandKey ?? idempotencyKey("a2-audit-export");
+  let response: Response;
+  try {
+    response = await guardedFetch("/api/admin/platform/audit/exports", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+      body: JSON.stringify({ reason, filter }),
+      cache: "no-store",
+    });
+  } catch (error) {
+    if (commandKey) throw new A2OutcomeUncertainError(error instanceof Error ? error.message : "A2_REQUEST_OUTCOME_UNKNOWN", commandKey);
+    throw error;
+  }
   const contentType = response.headers.get("Content-Type")?.split(";")[0]?.trim();
   if (!response.ok || (contentType !== "text/csv" && contentType !== "application/vnd.ms-excel")) {
     const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
-    throw new Error(formatAdminApiError(result?.message, `A2_AUDIT_EXPORT_FAILED_${response.status}`));
+    if (commandKey && (!result || isIdempotencyOutcomeOpen(result.message) || outcomeStaysUnknown(response.status, result.code)
+      || response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown")) {
+      throw new A2OutcomeUncertainError(formatAdminApiError(result?.message, `A2_REQUEST_OUTCOME_UNKNOWN_${response.status}`), commandKey);
+    }
+    throw Object.assign(new Error(formatAdminApiError(result?.message, `A2_AUDIT_EXPORT_FAILED_${response.status}`)), {
+      status: response.ok && typeof result?.code === "number" ? result.code : response.status,
+      backendMessage: result?.message,
+    });
   }
-  const blob = await response.blob();
+  const blob = await response.blob().catch((error: unknown) => {
+    if (commandKey) throw new A2OutcomeUncertainError(error instanceof Error ? error.message : "A2_RESPONSE_UNREADABLE", commandKey);
+    throw error;
+  });
   const extension = contentType === "text/csv" ? "csv" : "xls";
   const fileName = fileNameFromContentDisposition(
     response.headers.get("Content-Disposition"),
