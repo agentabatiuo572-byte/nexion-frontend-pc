@@ -1,6 +1,6 @@
 # Nexion PC 运营后台 75 模块权限矩阵 v1.0
 
-> **B38 后端对齐（2026-11-08）**：本轮按[九项契约](../B38-后端九项交付契约-20261108.md)更新 D 域审批读取、退款双人、客服用户范围、D6/I5；为后端目标口径，正式 TEST 结果另记。用户本轮要求先只改后端，页面 UI 与新增未知核查责任权限均未据此自动变更。
+> **B38 后端对齐（2026-11-08）**：本轮按[九项契约](../B38-后端九项交付契约-20261108.md)更新 D 域审批读取、退款双人、客服用户范围、D6/I5；为后端目标口径，正式 TEST 结果另记。用户本轮要求先只改后端，不改 UI；另已确认未知结果核查仅超管、仍须原业务权限与权威凭据，证据不足继续锁定。
 
 > **现行裁决(2026-08-07)**:全项目已取消 KYC、钱包配对、C4 与 K5；本文相关旧字段、门禁、用例、权限或流程仅保留为历史基线，不得作为现行实现、运营或验收依据。
 
@@ -70,6 +70,7 @@
 |---|---|---|---|---|
 | A1 运营账号 & RBAC | `platform_a1_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR | W/H：SUPER_ADMIN；CONFIG_ADMIN 仅账号生命周期 | ALL；授权更新与账号启停分权，禁止自授予 |
 | A2 审计 & 操作确认 | `platform_a2_read` | 全角色按本域证据、AUDITOR 全量；FINANCE_LEAD 只读 D 域与精确本人 E4 原单 | W：有本域发起权；H：目标动作独立执行人；主管的待批读取不新增批准权 | 本人原键按原业务权限找回；无关票拒绝；AUDITOR MASKED 全量；审计不可改 |
+| A2 未知操作结果核查（后端） | 原业务读权；结案须 `platform_a2_unknown_investigate` | 原操作者按当前业务范围读回执；有权超管按原业务范围核查 | HIGH：仅真实有效 SUPER_ADMIN；财务／风控不可结案 | 绑定原对象／动作／请求及权威证据；不新增付款／退款权，不重放；证据不足保持锁定 |
 | A3 系统配置 | `platform_a3_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR | W：CONFIG_ADMIN；H：SUPER_ADMIN | ALL；单例写加全局锁、版本、快照和恢复 |
 | A4 埋点事件体系 | `platform_a4_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR；域 Owner 看本域 | W：CONFIG_ADMIN；schema 发布 H：SUPER_ADMIN | 域级；历史事件不可改，schema 只新增 revision |
 | A5 平台参数寄存器 | `platform_a5_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR | W：CONFIG_ADMIN；敏感参数 H：SUPER_ADMIN | ALL；Owner、类型、范围、生效面必填 |
