@@ -262,7 +262,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 深色默认，浅色挂 `data-theme="light"`，两套都正式保留。`theme-switch.tsx` 管三件事：`<ThemeScript />` 在 `app/layout.tsx` 的 `<head>` 里同步执行，首屏按记住的选择设属性，不闪屏；`<ThemeToggle adminId={…} />` 是顶栏和登录页的开关（太阳「浅色」、月亮「深色」）；`useAdminTheme(adminId)` 登录后按账号记住的选择切换。记忆在本机：`nexion-admin-rd-theme` 是最近一次的选择（登录前也用它），`nexion-admin-rd-theme:<adminId>` 是每个账号的选择。网址参数 `?theme=light|dark` 只给截图和验收脚本用，不是入口。
 
-两套主题的差别只在 `tokens.css` 和 `rd.css` 里：浅色数字用正文色、身份靠实色图标底和图表色（VS-14）；白面板加 1px 边（VS-94）；Logo 换横版 on-light（`shell.css`）。告警横幅和 `Notice` 两套主题一个样子：浅底加同色 1px 边，取 Ant Design Alert 默认。页面不写这些。
+两套主题的差别只在 `tokens.css` 和 `rd.css` 里：浅色数字用正文色、身份靠实色图标底和图表色（VS-14）；白面板加 1px 边（VS-94）；输入框、下拉和确认框里的旧字段白底加 1px `--rd-line-strong` 描边，悬停 `--rd-control-line`（Ant Design Input），禁用和只读保留灰底，填错时只留外框；Logo 换横版 on-light（`shell.css`）。告警横幅和 `Notice` 两套主题一个样子：浅底加同色 1px 边，取 Ant Design Alert 默认。页面不写这些。
 
 还没迁移的页面，`console-shell.tsx` 给内容区 `<main>` 挂 `data-theme="dark"` 和 `.rd-legacy`，里面仍是旧的深色取值，侧栏和顶栏跟主题走（VS-95）。迁完一页就把它的路径加进 `lib/nav/console-nav.ts` 的 `REDESIGNED_PATHS`；路径带对象编号的详情页加进 `REDESIGNED_DETAIL_PREFIXES`。
 

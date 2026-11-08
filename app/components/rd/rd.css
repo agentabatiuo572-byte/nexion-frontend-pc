@@ -1050,6 +1050,17 @@ td .rd-flow { margin-bottom: 0; }
 /* 浅色次按钮浅底描边：十几个「调整」和分页按钮排在一起不压过红色紧急按钮（novice-2）；主按钮、危险按钮、弱按钮不变。 */
 :root[data-theme="light"] .rd-btn[data-variant="secondary"]:not(:disabled):not([aria-disabled="true"]) { background: var(--rd-panel-inner); box-shadow: inset 0 0 0 1px var(--rd-line-strong); }
 @media (hover: hover) and (pointer: fine) { :root[data-theme="light"] .rd-btn[data-variant="secondary"]:not(:disabled):not([aria-disabled="true"]):hover { background: var(--rd-control); } }
+/* 浅色输入框白底加 1px 描边，悬停描边深一档（Ant Design Input 默认）。只靠 #E8EAEF 填充时，放在浅灰块上几乎看不出框（D6 复查约 1.1:1）。
+   禁用和只读保留各自的灰底，描边照样有；填错时只留橙黄或红的外框，不叠两道线。主题选择器包在 :where 里，和 .rd-input 本身同一档，
+   页面自己改过底色的控件（比如透明底的下拉）照旧。 */
+:where(:root[data-theme="light"]) :is(.rd-input, .rd-select) { box-shadow: inset 0 0 0 1px var(--rd-line-strong); }
+:where(:root[data-theme="light"]) :is(.rd-input, .rd-select):where(:not(:disabled):not([readonly])) { background: var(--rd-panel); }
+@media (hover: hover) and (pointer: fine) { :where(:root[data-theme="light"]) :is(.rd-input, .rd-select):where(:not(:disabled):not([readonly]):not([aria-invalid="true"])):hover { box-shadow: inset 0 0 0 1px var(--rd-control-line); } }
+:where(:root[data-theme="light"]) :is(.rd-input, .rd-select)[aria-invalid="true"] { box-shadow: none; }
+/* 确认框里旧写法的字段（理由框、业务表单）同样。 */
+:root[data-theme="light"] .rd-modal.rd-confirm :is(.field textarea, .field input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), .fld) { box-shadow: inset 0 0 0 1px var(--rd-line-strong); }
+:root[data-theme="light"] .rd-modal.rd-confirm :is(.field textarea, .field input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), .fld):not(:disabled):not([readonly]) { background: var(--rd-panel); }
+@media (hover: hover) and (pointer: fine) { :root[data-theme="light"] .rd-modal.rd-confirm :is(.field textarea, .field input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), .fld):not(:disabled):not([readonly]):hover { box-shadow: inset 0 0 0 1px var(--rd-control-line); } }
 
 /* 还没迁移的页面：内容区挂 data-theme="dark" 和 .rd-legacy，里面仍是旧的深色取值；浅色主题的原生控件配色在这里面改回深色。 */
 :root[data-theme="light"] .rd-legacy :is(select, input[type="date"], input[type="datetime-local"]) { color-scheme: dark; }
