@@ -623,7 +623,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     setE4DetailLoading(false);
   }, []);
   const orderById = useMemo(() => new Map(orders.map((order) => [order.id, order])), [orders]);
-  const orderState = useCallback((order: EOrder): string => orderById.get(order.id)?.state ?? order.state, [orderById]);
+  const orderState = useCallback((order: EOrder): string => e4Detail?.order.id === order.id
+    ? e4Detail.order.state
+    : orderById.get(order.id)?.state ?? order.state, [e4Detail, orderById]);
   // ── E4 结果未确认：做法同提现审核的 sendCommand、retryPending、releasePending ──
   const [e4Pending, setE4Pending] = useState<E4PendingCommand[]>([]);
   const [e4PendingNotes, setE4PendingNotes] = useState<Record<string, string>>({});
