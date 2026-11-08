@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowLeftRight, Ban, CalendarClock, Coins, Gem, Landmark, Layers, ListChecks, Power, RefreshCw, ScrollText, ShieldAlert, ShieldCheck, SlidersHorizontal, Siren, Ticket, type LucideIcon } from "lucide-react";
-import { BatchBar, BlockState, Button, Cell, Change, Checkbox, Conclusion, ConfigList, ConfigRow, ControlCard, ControlGrid, Explain, Fact, Facts, Figure, Fold, Notice, PageHeader, Panel, RecordList, ReleaseModal, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr } from "@/app/components/rd";
+import { BatchBar, BlockState, Button, Cell, Change, Checkbox, Conclusion, ConfigList, ConfigRow, ControlCard, ControlGrid, Explain, Fact, Facts, KeepText, Figure, Fold, Notice, PageHeader, Panel, RecordList, ReleaseModal, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
@@ -506,8 +506,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       coverageCheck: "批准时重新检查兑付覆盖率，检查不通过仍保留待批工单，业务继续关停。",
       facts: <Facts>
         <Fact k="业务">{name}</Fact>
-        {gate.key === "withdraw" && <Fact k="控制范围" tone="warn">{gateCopy(gate).desc}</Fact>}
-        <Fact k="备付金检查">{gate.coveragePrecheckRequired ? "批准时重新检查覆盖率；不通过则保留待批工单，业务继续关停" : "试用免查，不直接付钱"}</Fact>
+        {gate.key === "withdraw" && <Fact k="控制范围" tone="warn"><KeepText text={gateCopy(gate).desc} /></Fact>}
+        <Fact k="备付金检查"><KeepText text={gate.coveragePrecheckRequired ? "批准时重新检查覆盖率；不通过则保留待批工单，业务继续关停" : "试用免查，不直接付钱"} /></Fact>
       </Facts>,
       detail: "恢复申请进入应急审批队列，排在其他待办前。审批人要有审批和恢复权限。",
       effect: <StatusTag tone="progress" filled>批准后生效</StatusTag>,
