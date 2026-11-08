@@ -1583,8 +1583,10 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
 
   const accountsPane = (
     <div className="rd-stack">
+      {/* 右端写列表的范围：为什么要用查找框，也让定宽的框右边不空着（量尺 P2-side）。 */}
       <FilterBar onSubmit={() => void findAccount()} querying={lookup.state === "loading"}
         action={<Button type="submit" loading={lookup.state === "loading"}>打开</Button>}
+        sort={!overviewFailedFirst ? <span className="rd-filter-result">列表只取最近注册的 50 个账户</span> : undefined}
         notice={lookup.state === "empty" ? "填用户编码、系统编号、邀请码或邮箱。" : lookup.state === "error" ? <>{lookup.error} <InlineRetry onRetry={() => void findAccount()} /></> : undefined}>
         {/* 定宽查找框，「打开」紧贴右边（同 Ant Input.Search、提现审核），不横跨整行。 */}
         <FilterField>
@@ -1597,15 +1599,15 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       {staleNotice}
       {overviewBlock("账户概况") ?? (
         <Panel title="账户" icon={UserRound} tone="role-3" flush
-          sub={firstLoading ? undefined : totalAccounts !== null && totalAccounts > accounts.length ? `最近注册的 ${accounts.length} 个 · 共 ${totalAccounts.toLocaleString("en-US")} 个 · ${zoneNote}` : zoneNote}
-          explain="列表只取最近注册的 50 个账户，冻结的排在前面；冻结中的账户不一定都在这里。找具体用户用上面的查找。">
+          sub={firstLoading ? undefined : totalAccounts !== null && totalAccounts > accounts.length ? `共 ${totalAccounts.toLocaleString("en-US")} 个账户 · ${zoneNote}` : zoneNote}
+          explain="冻结的排在前面；冻结中的账户不一定都在这里，找具体用户用上面的查找。在线设备按最近 200 条登录记录数，可能少算，准确数在详情里。">
           <Table label="账户">
             <thead><tr>
               <Th icon={User} tone="users">账户</Th>
               <Th>账户状态</Th>
               <Th>风险</Th>
               <Th>注册 · 最近登录</Th>
-              <Th align="right">{sessionsTruncated ? <>在线设备（至少）<Explain label="在线设备的算法" content="按最近 200 条登录记录数，可能少算，准确数打开详情看。" /></> : "在线设备"}</Th>
+              <Th align="right">{sessionsTruncated ? "在线设备（至少）" : "在线设备"}</Th>
               {accountActions && <Th sticky="end">操作</Th>}
             </tr></thead>
             <tbody>
