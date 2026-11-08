@@ -380,7 +380,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   const latestChanges = latest ? historyChanges(latest) : [];
   const history = data?.history ?? [];
   const zone = businessZone().label;
-  const blocked = loading ? READING : pending ? LOCKED : undefined;
+  const blocked = loading ? READING : pending ? LOCKED : editing ? "先完成或关闭当前调整" : undefined;
   const currentIndex = history.findIndex((row) => row.id === currentId);
   const currentRow = currentIndex >= 0 ? history[currentIndex] : null;
 
