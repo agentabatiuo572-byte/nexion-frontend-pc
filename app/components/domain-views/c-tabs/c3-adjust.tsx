@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Calculator, Coins, Copy, FilePen, FileText, History, Inbox, Info, RefreshCw, Scale, User } from "lucide-react";
 import {
   Button, Cell, Change, ColumnPicker, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, Fold, IconButton,
-  InlineRetry, Input, IrreversibleTag, JudgmentPoints, Notice, NumberInput, PageHeader, Pager, Panel, ReleaseModal, SearchSelect, Segments,
+  InlineRetry, Input, IrreversibleTag, JudgmentPoints, KeepText, Notice, NumberInput, PageHeader, Pager, Panel, ReleaseModal, SearchSelect, Segments,
   StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTableColumns, BlockState, type JudgmentRow, type StateTone,
 } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
@@ -91,6 +91,12 @@ const MINE = "这是你发起的，需要另一位管理员处理";
 /** 行内只有一格宽，写短句；完整的一句在抽屉里（OP-66）。 */
 const MINE_SHORT = "需另一位管理员处理";
 const WAITING = "等待有批准权限的同事处理";
+/**
+ * 操作记录与审批按角色限定能看哪些业务域（后端 A2AccessPolicy.scope）：财务、财务主管只看资金（D），增长、内容也看不到用户与账户（C）；
+ * 超管、审计、风控和按权限码定范围的自定义角色看得到。能进那一页不等于查得到这笔 C3 记录（复核 R2-N02），这几种角色不给链接。
+ */
+const A2_WITHOUT_USER_DOMAIN = ["finance", "finance_lead", "growth", "content"];
+const AUDIT_ELSEWHERE = "请能查看「用户与账户」操作记录的同事按单号核对";
 const LARGE_EXPLAIN = "超过 500 USDT 等值，只有财务主管或超级管理员能发起。";
 /** 状态已被别人或系统改了：框不关，读回写最新状态（D2-C89）。 */
 const MOVED_CODES = ["ASSET_ADJUSTMENT_REVIEW_RACE_LOST", "INVALID_STATE_TRANSITION", "C3_ADJUSTMENT_WITHDRAW_CONFLICT", "C3_ADJUSTMENT_WITHDRAW_RACE_LOST", "C3_ALREADY_REVERSED", "C3_ONLY_ORIGINAL_APPROVED_ADJUSTMENT_REVERSIBLE"];
@@ -371,7 +377,8 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const isFinance = session?.role === "finance";
   const canReadLedger = reach("/finance/ledger", "finance_d4_read");
   const canReadPool = reach("/finance/pool", "finance_d3_read");
-  const canReadAudit = reach("/platform/audit", "platform_a2_read");
+  // 会话里财务主管是 FINANCE_LEAD，内置角色是小写，按小写比。
+  const canReadAudit = reach("/platform/audit", "platform_a2_read") && !A2_WITHOUT_USER_DOMAIN.includes((session?.role ?? "").toLowerCase());
   const zone = businessZone().label;
 
   /* ── 网址里的分页和折叠（ST-23） ── */
@@ -630,8 +637,8 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const reasonTrim = reason.trim();
   const evidenceTrim = evidenceRef.trim();
   // 重试成功时拿来比：表单里还是不是这条原申请（F04）。
-  const draftRef = useRef({ userId: "", amount: "", reason: "", evidence: "" });
-  draftRef.current = { userId: selectedUserId, amount: amountInput, reason: reasonTrim, evidence: evidenceTrim };
+  const draftRef = useRef<{ userId: string; input: CreateInput }>({ userId: "", input: { asset, direction, amount: "", reasonCode, reason: "", evidenceRef: "" } });
+  draftRef.current = { userId: selectedUserId, input: { asset, direction, amount: amountInput, reasonCode, reason: reasonTrim, evidenceRef: evidenceTrim } };
 
   const amountIssue = !amountInput ? "请填写金额"
     : !amountValid ? "请输入数字，最多 6 位小数"
@@ -706,8 +713,10 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     (key) => (kind === "large" ? requestLargeUserAssetAdjustment : createUserAssetAdjustment)(userId, { ...input, operator, idempotencyKey: key }),
     async (result) => {
       const draft = draftRef.current;
-      // 首次成功清掉；原操作重试成功时，表单里还是这条原申请也清掉，免得换新号再提一次（F04）。用户、资产、方向、分类留着。
-      if (!retry || (draft.userId === userId && draft.amount === input.amount && draft.reason === input.reason && draft.evidence === input.evidenceRef)) {
+      // 首次成功清掉；原操作重试成功时，表单里还是这条原申请（同一用户，资产、方向、金额、分类、原因、凭证都一样）才清，
+      // 免得换新号再提一次（F04）；改成别的草稿就不动（R2-N03）。用户、资产、方向、分类留着。
+      const sameDraft = draft.userId === userId && (Object.keys(input) as (keyof CreateInput)[]).every((field) => draft.input[field] === input[field]);
+      if (!retry || sameDraft) {
         setAmountText("");
         setReason("");
         setEvidenceRef("");
@@ -1264,14 +1273,17 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   // 原「已执行」：概览的已批准总数，所有资产，不随筛选变（F02）。列表按提交时间倒序，只有第 1 页的首行才是最近提交的一笔（F06）。
   const approvedCount = overview.data && Number.isFinite(Number(overview.data.approved)) ? Number(overview.data.approved) : null;
   const latestSubmitted = historyPage === 1 ? historyRows[0] : undefined;
-  const historySummary = history.loading && !history.data ? "正在读取…"
+  // 已批准总数只看概览自己读没读到，历史为空、读取失败时照样写（R2-N04）；历史失败时它不跟着上红色。
+  const historyAssetPrefix = historyAsset ? `${nexGridBrandText(historyAsset)} ` : "";
+  const historyLead = history.loading && !history.data ? "正在读取…"
     : history.error ? "读取失败"
-      : !history.data?.total ? "暂无调整历史"
-        : [
-          `${historyAsset ? `${nexGridBrandText(historyAsset)} ` : ""}共 ${history.data.total.toLocaleString("en-US")} 笔`,
-          approvedCount === null ? "" : `${historyAsset ? "全部资产" : ""}已批准 ${approvedCount.toLocaleString("en-US")} 笔`,
-          latestSubmitted ? `最近提交 ${formatBusinessTimeCompact(latestSubmitted.createdAt, "—")}（${zone}）` : "",
-        ].filter(Boolean).join(" · ");
+      : !history.data?.total ? `${historyAssetPrefix}暂无调整历史`
+        : `${historyAssetPrefix}共 ${history.data.total.toLocaleString("en-US")} 笔`;
+  const historyRest = [
+    approvedCount === null ? "" : `${historyAsset ? "全部资产" : ""}已批准 ${approvedCount.toLocaleString("en-US")} 笔`,
+    !history.error && history.data?.total && latestSubmitted ? `最近提交 ${formatBusinessTimeCompact(latestSubmitted.createdAt, "—")}（${zone}）` : "",
+  ].filter(Boolean).join(" · ");
+  const historySummary = historyRest ? <>{historyLead}<span className={history.error ? "rd-weak" : undefined}> · {historyRest}</span></> : historyLead;
   const historyExplain = <>
     <p>「共 n 笔」是下面列表的条数：已批准、已驳回、已撤回和冲正单都算，跟着资产筛选变。</p>
     <p>「已批准」只算批准入账的单（冲正生成的反向单也算），不含驳回、撤回，按全部资产算，不跟筛选变。</p>
@@ -1399,14 +1411,15 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         <p>
           {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，可能已经生效。
           {expired ? `${RETRY_EXPIRED_TEXT}。` : "按原操作重试会用同一个命令号重新发送，不会多建单，也不会重复入账。"}
-          {canReadAudit ? <> <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批按单号核对</Link></> : "请有操作记录读权限的同事按单号核对。"}
+          {canReadAudit ? <> <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批按单号核对</Link></> : <KeepText text={`${AUDIT_ELSEWHERE}。`} />}
           <Explain label="这次操作的技术信息" rows={[
             { k: "命令号", v: <span data-mono>{record.commandKey}</span> },
             { k: "操作人", v: record.operator },
             { k: "理由", v: record.reason ?? record.input?.reason },
           ]} />
         </p>
-        {pendingNotes[record.fingerprint] && <p>{pendingNotes[record.fingerprint]}</p>}
+        {/* 按句整段换行，1024 下不折出「保留。」这种孤字。 */}
+        {pendingNotes[record.fingerprint] && <p><KeepText text={pendingNotes[record.fingerprint]} /></p>}
       </Notice>
     );
   });
@@ -1433,7 +1446,8 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
 
     {overview.loading && !overview.data ? <Conclusion state="unknown">正在读取…</Conclusion>
       : overview.error || pendingCount === null || !Number.isFinite(pendingCount) ? <Conclusion state="unknown" action={<InlineRetry onRetry={() => void loadOverview()} />}>暂时读不到待审批的数量</Conclusion>
-        : pendingCount > 0 ? <Conclusion state="warn" lead icon={Inbox} explain="只算待审批的单。批准、驳回和撤回在下面的队列里做。"
+        // 没有批准权的账号：这件事不归他处理，中性色、数字不放大（协调人 2026-11-08 定，VS-22）。
+        : pendingCount > 0 ? <Conclusion state={canApprove ? "warn" : "neutral"} lead={canApprove} icon={Inbox} explain="只算待审批的单。批准、驳回和撤回在下面的队列里做。"
           hint={canApprove ? undefined : "由有批准权限的同事处理，批准前余额不变。"}
           action={<button type="button" className="rd-link rd-link-button" onClick={goQueue}>到待审批 ↓</button>}>
           <b>{pendingCount.toLocaleString("en-US")}</b> 笔调整等待审批
@@ -1492,6 +1506,6 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     </Drawer>
 
     {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-      explain="重试被拒说明不了原操作的结果。先读回核对，或请有操作记录读权限的同事核对。解除后原操作不再重试，系统仍按这张单现在的状态校验。" />}
+      explain={`重试被拒说明不了原操作的结果。先读回核对，或${canReadAudit ? "到操作记录与审批按单号核对" : AUDIT_ELSEWHERE}。解除后原操作不再重试，系统仍按这张单现在的状态校验。`} />}
   </>;
 }
