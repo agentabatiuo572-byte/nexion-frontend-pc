@@ -3768,7 +3768,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       {surface && coverage && !covBlocked ? (
         // 够得上红线时只留数字，后果和检查说明进提示图标（DP-06）。
         <div className="tiny">
-          覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b>，红线 <b>{coverage.redlinePct}%</b>
+          兑付覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b>，红线 <b>{fmtPct(coverage.redlinePct)}</b>
           <Explain label="这项操作对资金的影响" content={<><p>{coverageLead}</p><p>{checkCopy}</p>{coverage.healthyPct !== undefined && <p>健康线 {coverage.healthyPct}%。</p>}</>} />
         </div>
       ) : surface && !covBlocked && !coverage && auditSink !== "local-history" ? (
