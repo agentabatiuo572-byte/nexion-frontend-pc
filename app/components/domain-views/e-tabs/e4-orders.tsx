@@ -312,7 +312,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const coverageText = coverageKnown
     ? `当前 ${fmtPct(e4Detail.coverageCurrent!)} → 执行后 ${fmtPct(e4Detail.coverageProjected!)} · 红线 ${fmtConfigPct(e4Detail.coverageRedline!)}`
     : "暂无数据";
-  const refundBlockText = coverageKnown ? "平台资金低于安全线，暂不能退款" : "资金覆盖率暂时读不到，暂不能退款";
+  const refundBlockText = coverageKnown ? "平台资金低于安全线，暂不能退款" : "兑付覆盖率暂时读不到，暂不能退款";
 
   const index = orders.findIndex((order) => order.id === o.id);
   const prev = index > 0 ? orders[index - 1] : undefined;
@@ -354,13 +354,13 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
       : nextStep ? { label: "下一步", value: `可以推进到「${stateLabel(nextStep)}」`, reason: canWriteE4 ? "条件都满足了，点下面「推进到下一步」提交审批。" : "条件都满足了，要有修改权限的账号提交。", state: "progress" }
         : progressBlock ? { label: "下一步", value: progressBlock.title, reason: <span title={progressBlock.code}>{progressBlock.text}</span>, state: eff === "placed" ? undefined : "warn" }
           : { label: "下一步", value: "暂无可推进步骤", reason: "订单已交付，不用处理。" };
-  const coverageReason = <><Explain label="覆盖率是什么" content="平台储备除以应付款，越高越安全。退款后低于红线时不能退款。">覆盖率</Explain> {coverageText}</>;
+  const coverageReason = <><Explain label="兑付覆盖率是什么" content="平台储备除以应付款，越高越安全。退款后低于红线时不能退款。">兑付覆盖率</Explain> {coverageText}</>;
   const refundRow: JudgmentRow | null = finalized && !refundableState ? null
     : !refundableState ? { label: "退款", value: "不能退款", reason: "用户还没付款。只有已支付、开通中、已激活、已入库或已付款的开通失败订单能退款。" }
       : !e4Detail ? { label: "退款", ...pendingFact }
         : pendingApproval ? { label: "退款", value: "等待审批结束" }
           : e4Detail.refundAllowed ? { label: "退款", value: canRefundE4 ? "可以退款" : "符合退款条件，这个账号不能退款", reason: coverageReason }
-          : { label: "退款", value: refundBlockText, reason: coverageKnown ? coverageReason : "要先读到资金覆盖率才能退款。过一会儿重新打开这单。", state: coverageKnown ? "danger" : "warn" };
+          : { label: "退款", value: refundBlockText, reason: coverageKnown ? coverageReason : "要先读到兑付覆盖率才能退款。过一会儿重新打开这单。", state: coverageKnown ? "danger" : "warn" };
   const rows: JudgmentRow[] = [
     nextRow,
     ...(finalized && closeRecord && e4Detail ? [{ label: FAILED_STATES.includes(eff) ? "失败原因" : "原因", value: operatorOrderHistoryReason(closeRecord.reason, e4Detail.paymentMethod) }] : []),
@@ -379,7 +379,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
     : !hasAction ? "这单现在没有人工操作。"
     : waitReason ? `${waitReason}。` : undefined;
   const consequence = (!canWriteE4 && !canRefundE4) || !hasAction ? undefined
-    : refundBlocked ? `${coverageKnown ? "退款后平台资金会低于安全线，补足后才能退款。" : "要先读到资金覆盖率才能退款。"}${terminalOptions.length > 0 ? "「标记失败结果」不会退款。" : ""}`
+    : refundBlocked ? `${coverageKnown ? "退款后平台资金会低于安全线，补足后才能退款。" : "要先读到兑付覆盖率才能退款。"}${terminalOptions.length > 0 ? "「标记失败结果」不会退款。" : ""}`
     : canRefundE4 && refundableState ? `退款不可撤销。批准后钱退回用户钱包；符合条件的购买设备停用${giftClause}。${terminalOptions.includes("chargeback") ? "标记拒付不会退款，标记后也不能再退。" : terminalOptions.length > 0 ? "「标记失败结果」不会退款。" : ""}`
       : canCancel ? "提交后要批准才生效。用户还没付款，取消和标记失败都不涉及退款。"
         : "提交后要批准才生效。";
@@ -408,7 +408,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
               {orderFacts(<Fact k="退款金额" lead tone="role-1" unit="USDT">{orderAmount(o.amt)}</Fact>, <>
                 {channel && <Fact k="退款去向">{REFUND_CHANNEL_LABELS[channel] ?? channel}</Fact>}
                 {/* 退款入口只在读到覆盖率时开。 */}
-                <Fact k="兑付覆盖率"><Change from={fmtPct(e4Detail.coverageCurrent!)} to={fmtPct(e4Detail.coverageProjected!)} /><span className="rd-fact-unit">红线 {fmtConfigPct(e4Detail.coverageRedline!)}</span><Explain label="覆盖率什么时候检查" content="批准执行时后端再查一次，当前或执行后低于红线就不退款。" /></Fact>
+                <Fact k="兑付覆盖率"><Change from={fmtPct(e4Detail.coverageCurrent!)} to={fmtPct(e4Detail.coverageProjected!)} /><span className="rd-fact-unit">红线 {fmtConfigPct(e4Detail.coverageRedline!)}</span><Explain label="兑付覆盖率什么时候检查" content="批准执行时后端再查一次，当前或执行后低于红线就不退款。" /></Fact>
                 <Fact k="购买设备">{refundDeviceLine}<Explain label="退款后设备和收益怎么处理" content={refundDeviceDetail} /></Fact>
                 {e4Detail.orderType === "TRIAL_CONVERT" && <Fact k="试用奖励">这单发给购买者的试用奖励可能追回，金额以执行结果为准<Explain label="试用奖励追回规则" content="按整期结算转购发出的试用奖励，退款后最多收回未花掉的部分；未追回部分转人工核查。" /></Fact>}
               </>, true)}
@@ -466,7 +466,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
         <Facts>
           <Fact k="数据中心">{o.dc}</Fact>
           <Fact k="下单时间">{o.orderedAt ? `${formatBusinessTimeFull(o.orderedAt, "—")}（${businessZone().label}）` : "—"}</Fact>
-          {e4Detail && !finalized && !refundableState && <Fact k="平台资金覆盖率">{coverageText}</Fact>}
+          {e4Detail && !finalized && !refundableState && <Fact k="兑付覆盖率">{coverageText}</Fact>}
         </Facts>
       </Fold>
       {e4Detail && <>
