@@ -50,7 +50,7 @@ const CONFLICT = "越南盾提现参数已被其他人员更新，当前输入�
 /** 抽屉没有改动时，底部问号只写规则，不说哪条路（「写的必须是真的」）。 */
 const RULE = "只要有一项放宽，整组走审批，另一位超管批准前当前参数不变；全部收紧提交后立即生效。只影响之后的报价。";
 const COVERAGE_CHECK = "提交和批准时都会检查兑付覆盖率，低于红线或读不到时不能提交，也不能批准。";
-/** 过期后继续锁住，等 BE-03 人工核查结案（OP-153）；不引导关标签页绕过。到不了操作记录的账号写这页上能走的路，再交财务负责人（同汇率设置）。 */
+/** 过期后继续锁住，受控核查后端已交付，但本页本轮未接入结案入口（OP-153）；不引导关标签页绕过。到不了操作记录的账号写这页上能走的路，再交财务负责人（同汇率设置）。 */
 const EXPIRED_DIRECT_NO_AUDIT = "已超过 24 小时，不能再重试。这个账号看不到操作记录，请点「读回核对」看版本有没有变，核对后交财务负责人处理。";
 const EXPIRED_APPROVAL_NO_AUDIT = "已超过 24 小时，不能再重试。这个账号看不到操作记录，请点「查询原操作」核对有没有生成审批单，核对后交财务负责人处理。";
 const EXPIRED_NO_QUERY = "已超过 24 小时，不能再重试。这个账号看不到操作记录，也查不了原审批单，请交财务负责人处理。";
@@ -61,7 +61,7 @@ const IMPACT = "只影响之后的报价；用户还没提交的旧报价需要�
 /** 确认框「批准后生效」标签的提示：谁来批、批准前什么不变（影响在执行摘要，不重复）。 */
 const APPROVAL_NOTE = "另一位超管批准前，当前参数不变；批准后新报价使用新参数。";
 const PROPOSAL_STATUS: Record<A2OperationRow["status"], string> = { pending: "等待另一位超管批准", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
-/** 共用文字泛指「这个对象」并让人去「操作记录与审批」；这页写明是哪组参数，到不了那页的账号（财务主管）写等谁处理。 */
+/** 共用文字泛指「这个对象」并让人去「操作记录与审批」；这页写明是哪组参数，当前权限到不了那页的账号写等谁处理。 */
 const PENDING_HERE = "这组参数已有放宽单在等批准，批准或驳回后才能再提交放宽";
 const PENDING_ELSEWHERE = "已有放宽单在等批准，等超级管理员处理后再提交。";
 
@@ -526,7 +526,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       if (isDOutcomeUnknownError(cause)) {
         note(record.commandKey, "重试的结果也没有确认，原操作继续保留。稍后再读回核对或重试。");
       } else if (isExplicitRejection(cause)) {
-        note(record.commandKey, `重试被拒绝：${reasonOf(displayAdminError(cause))}。先点「读回核对」确认没有生效，再点「解除待确认」，然后重新修改。`);
+        note(record.commandKey, `重试被拒绝：${reasonOf(displayAdminError(cause))}。先点「读回核对」核实当前状态。本地解除不证明原操作未执行，也不办理后端核查结案。`);
         setRetryRejected((current) => [...current, record.commandKey]);
       } else {
         // 登录、权限、限流这类不是对原操作的结论，不给解除（OP-153）。
@@ -544,7 +544,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     else if (session) releaseConfigApproval("D7", session.adminId, releasing.commandKey);
     syncPending();
     setReleasing(null);
-    toast("已解除待确认，可以重新修改参数", "success");
+    toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
   };
 
   /** 放宽提交的结果未知：先按命令号查原审批单，查到就有了结果（OP-95）。 */
@@ -603,13 +603,13 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       const message = reasonOf(errorCode(cause) === "OBJECT_ALREADY_PENDING" ? (canReachAudit ? PENDING_HERE : PENDING_ELSEWHERE) : displayAdminError(cause));
       const kept = pendingConfigApproval("D7", session.adminId);
       if (kept && isExplicitRejection(cause)) {
-        note(key, `重试被拒绝：${message}。确认没有生成审批单后，再点「解除待确认」，然后重新修改。`);
+        note(key, `重试被拒绝：${message}。先核对原审批单；查不到不代表没有生成。本地解除不办理后端核查结案。`);
         setRetryRejected((current) => [...current, key]);
       } else if (kept) {
         // 登录、权限、限流这类不是对原操作的结论，不给解除（OP-153）。
         note(key, `重试没有完成：${message}。原操作继续保留，稍后再查询或重试。`);
       } else {
-        setApprovalRejected(`${message}。原记录已清除，可以重新修改参数。`);
+        setApprovalRejected(`${message}。原本地记录已清除，重新提交仍须通过服务端校验。`);
       }
     } finally {
       setRecovering("");

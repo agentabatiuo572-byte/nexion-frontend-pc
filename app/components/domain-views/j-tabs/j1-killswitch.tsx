@@ -272,7 +272,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     pendingKeys.forget(record.fingerprint, record.commandKey);
     syncPending();
     setReleasing(null);
-    toast("已解除待确认，这项可以重新操作", "success");
+    toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
   };
 
   /** 读回只给现在的事实。状态变了可能是别人改的，不能当成原命令的回执（OP-95 丙档）。 */
@@ -393,7 +393,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   const releaseModal = releasing && (
     <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-      explain="重试被拒说明不了原操作的结果，到操作记录确认过再解除。解除后原操作不再重试，系统仍按现在的状态校验。" />
+      explain="重试被拒说明不了原操作的结果，到操作记录确认过再解除。解除只移除本地记录，不办理后端核查结案；后端仍可能锁住这个对象。" />
   );
 
   const header = (

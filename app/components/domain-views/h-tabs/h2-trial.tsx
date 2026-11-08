@@ -529,7 +529,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     pendingCommands.forget(record.fingerprint, record.commandKey);
     syncPending();
     setReleasing(null);
-    toast(isProposal(record) ? "已解除待确认，这条记录可以重新处理" : "已解除待确认，这项可以重新修改", "success");
+    toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
   };
 
   const openSessionCancel = (session: TrialSession, stateLabel: string) => {
@@ -722,7 +722,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   })];
   const releaseModal = releasing && (
     <ReleaseModal label={commandTitle(releasing)} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-      explain="重试被拒说明不了原操作的结果，先到操作记录确认它有没有生效。解除后原操作不再重试，系统仍按现在的状态校验。" />
+      explain="重试被拒说明不了原操作的结果，先到操作记录确认它有没有生效。解除只移除本地记录，不办理后端核查结案；后端仍可能锁住这个对象。" />
   );
 
   if (loading && !model) {

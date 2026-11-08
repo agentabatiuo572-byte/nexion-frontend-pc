@@ -866,7 +866,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     pendingCommands.forget(record.fingerprint, record.commandKey);
     syncPending();
     setReleasing(null);
-    ctx.toast("已解除待确认，可以重新处理", "success");
+    ctx.toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
   };
 
   const pendingBlocks = new Set(pending.map((record) => `${PENDING_GROUP[record.kind]}:${record.target}`));
@@ -1043,7 +1043,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       facts: <Facts>
         <Fact k="金额" lead tone="role-1" unit={nexGridBrandText(entry.asset)}>{amountText(entry.amount)}</Fact>
         <Fact k="收益记录">{entry.entryNo}</Fact>
-        <Fact k="用户">U{entry.userId}</Fact>
+        <Fact k="用户">{entry.userNo && reach(`/users/search/${entry.userId}`, "user_c1hub_read")
+          ? <Link className="rd-link" href={`/users/search/${entry.userId}`}>{entry.userNo}</Link> : entry.userNo ?? "用户编码未提供"}</Fact>
         <Fact k="账户组">{entry.clusterId}</Fact>
         <Fact k="前后状态"><Change from={entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"} to="已放行" /></Fact>
         <Fact k="提现">放行不解除账户组限制。账户组待判定、可疑、已冻结或人数达到锁定起点时仍不能提现。</Fact>
@@ -1470,7 +1471,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 {protectedEntries.map((entry) => (
                   <Tr key={entry.entryNo}>
                     <Td><Cell mono full main={entry.entryNo} sub={formatBusinessTimeFull(entry.createdAt, "—")} /></Td>
-                    <Td><Cell mono main={`U${entry.userId}`} sub={<span data-mono>{entry.clusterId}</span>} /></Td>
+                    <Td><Cell mono main={entry.userNo && reach(`/users/search/${entry.userId}`, "user_c1hub_read")
+                      ? <Link className="rd-link" href={`/users/search/${entry.userId}`}>{entry.userNo}</Link>
+                      : entry.userNo ?? "用户编码未提供"} sub={<span data-mono>{entry.clusterId}</span>} /></Td>
                     <Td><Cell main={({ TRIAL: "试用收益", DEVICE: "设备收益", TASK: "任务奖励", COMMISSION: "团队奖励", REFERRAL: "邀请奖励", WELCOME: "新人奖励" } as Record<string, string>)[entry.sourceType.toUpperCase()] ?? "来源未知"} sub={<span data-mono>{entry.sourceRef}</span>} /></Td>
                     <Td><StatusTag tone={entry.bucket === "bonus_locked" ? "danger" : "warn"} explain={entry.bucket === "bonus_locked" ? "这笔收益被锁定，不能提现。账户组解除后不会自动放行，要人工放行。" : "这笔收益等人工审核，不会到期自动放行。"}>{entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}</StatusTag></Td>
                     <Td align="right"><Cell num full main={`${amountText(entry.amount)} ${nexGridBrandText(entry.asset)}`} /></Td>
@@ -1736,7 +1739,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         );
       })()}
 
-      {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)} explain={releasing.expiresAt <= Date.now() ? "先到操作记录与审批确认原操作结果。解除只移除本页待确认记录和对象锁，不撤销原操作。" : "重试被拒说明不了原操作的结果，先到操作记录确认。解除后原操作不再重试，系统仍按这个对象现在的状态校验。"} />}
+      {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)} explain={releasing.expiresAt <= Date.now() ? "先到操作记录与审批确认原操作结果。解除只移除本页待确认记录，不撤销原操作，不解除后端对象锁。" : "重试被拒说明不了原操作的结果，先到操作记录确认。解除只移除本地记录，不办理后端核查结案；后端仍可能锁住这个对象。"} />}
     </>
   );
 }

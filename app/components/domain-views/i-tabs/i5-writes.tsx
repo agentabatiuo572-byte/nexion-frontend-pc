@@ -390,7 +390,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
     pendingWrites.forget(record.fingerprint, record.commandKey);
     sync();
     setReleasing(null);
-    toast("已解除待确认，这个对象可以重新操作", "success");
+    toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
   };
 
   const auditHref = "/platform/audit?domain=I";
