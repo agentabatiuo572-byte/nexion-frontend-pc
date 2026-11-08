@@ -532,17 +532,18 @@ export interface D5Params {
   /** FEAT-WD01:小额免审线(USD)。金额 ≤ 此值时可跳过新地址冷却；0 = 关闭快车道。
    *  **永不**免除服务端风控路由裁决(冻结簇/共用地址/风险分)。 */
   smallAmountThresholdUsd: number;
-  /** FEAT-WD01:正常到账时效(小时)。到账时间 = 提交 + 本值;命中大额合规审查时
-   *  改用 cooldownDays,取更晚者。 */
+  /** 正常到账时效(小时)；合规大额窗口到期后仍须人工复核，不能据此认定到账。 */
   payoutSlaHours: number;
   cooldownDays: number;
   complianceHoldEnabled: boolean;
+  /** 服务端合规大额门槛(USDT)，金额严格大于此值才附加窗口；旧接口缺失时待核实。 */
+  complianceReviewThresholdUsdt: number | null;
   currentPhase: string;
   currentMonth: number;
   coverageRatio: number;
   redlinePct: number;
   coverageReliable: boolean;
-  sourceByField: Record<string, "d5" | "phase-h1">;
+  sourceByField: Record<string, "d5" | "phase-h1" | "compliance-rule">;
   updatedFields?: string[];
 }
 
@@ -1827,7 +1828,7 @@ export function normalizeD5Params(value: unknown): D5Params {
     "networkConfirmFeeUsd", "networkEnabled", "nexFeeOffsetRate", "smallAmountThresholdUsd", "payoutSlaHours",
     "cooldownDays", "complianceHoldEnabled",
   ];
-  const sourceByField: Record<string, "d5" | "phase-h1"> = {};
+  const sourceByField: D5Params["sourceByField"] = {};
   sourceKeys.forEach((key) => {
     const item = d5String(source[key], `sourceByField.${key}`);
     if (item !== "d5" && item !== "phase-h1") {
@@ -1835,6 +1836,14 @@ export function normalizeD5Params(value: unknown): D5Params {
     }
     sourceByField[key] = item;
   });
+  let complianceReviewThresholdUsdt: number | null = null;
+  if (raw.complianceReviewThresholdUsdt !== undefined || source.complianceReviewThresholdUsdt !== undefined) {
+    complianceReviewThresholdUsdt = d5Number(raw.complianceReviewThresholdUsdt, "complianceReviewThresholdUsdt");
+    if (complianceReviewThresholdUsdt <= 0 || source.complianceReviewThresholdUsdt !== "compliance-rule") {
+      throw new Error(formatAdminApiError("D5_RESPONSE_INVALID", "D5_RESPONSE_INVALID:complianceReviewThresholdUsdt"));
+    }
+    sourceByField.complianceReviewThresholdUsdt = "compliance-rule";
+  }
   let networkStatus: D5Params["networkStatus"];
   let effectiveNetworks: D5Params["effectiveNetworks"];
   if (raw.networkStatus !== undefined || raw.effectiveNetworks !== undefined) {
@@ -1884,6 +1893,7 @@ export function normalizeD5Params(value: unknown): D5Params {
     payoutSlaHours: d5Integer(raw.payoutSlaHours, "payoutSlaHours", 1),
     cooldownDays: d5Integer(raw.cooldownDays, "cooldownDays", 0),
     complianceHoldEnabled: d5Boolean(raw.complianceHoldEnabled, "complianceHoldEnabled"),
+    complianceReviewThresholdUsdt,
     currentPhase: d5String(raw.currentPhase, "currentPhase"),
     currentMonth: d5Integer(raw.currentMonth, "currentMonth", 1),
     coverageRatio: d5Number(raw.coverageRatio, "coverageRatio"),
