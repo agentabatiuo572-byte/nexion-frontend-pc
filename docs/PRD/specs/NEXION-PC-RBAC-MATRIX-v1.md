@@ -69,7 +69,7 @@
 | 模块 | R 权限 | 可读角色 | W/H/X 角色 | 数据范围与关键限制 |
 |---|---|---|---|---|
 | A1 运营账号 & RBAC | `platform_a1_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR | W/H：SUPER_ADMIN；CONFIG_ADMIN 仅账号生命周期 | ALL；授权更新与账号启停分权，禁止自授予 |
-| A2 审计 & 操作确认 | `platform_a2_read` | 全角色按本域证据、AUDITOR 全量；FINANCE_LEAD 只读 D 域与精确本人 E4 原单 | W：有本域发起权；H：目标动作独立执行人；主管的待批读取不新增批准权 | 本人原键按原业务权限找回；无关票拒绝；AUDITOR MASKED 全量；审计不可改 |
+| A2 操作记录与审批 | `platform_a2_read` | 有菜单及读权者按服务端域范围；FINANCE/FINANCE_LEAD仅D，RISK C/K、GROWTH E/H、CONTENT I、SUPPORT本人、超管/审计全域 | 决定须operation_approve再按工单分别核批准/驳回；撤回proposal_create，导出export，机制/清理write | 已知规则精确判断；未知类型/摘要不足保留入口并提示后端批准时核业务权，待B44。E5增长委托仅两类且仍须批准权；退款金额未读到禁批准/原重试；本地解除不替后端结案 |
 | A2 未知操作结果核查（后端） | 原业务读权；结案须 `platform_a2_unknown_investigate` | 原操作者按当前业务范围读回执；有权超管按原业务范围核查 | HIGH：仅真实有效 SUPER_ADMIN；财务／风控不可结案 | 绑定原对象／动作／请求及权威证据；不新增付款／退款权，不重放；证据不足保持锁定 |
 | A3 系统配置 | `platform_a3_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR | W：CONFIG_ADMIN；H：SUPER_ADMIN | ALL；单例写加全局锁、版本、快照和恢复 |
 | A4 埋点事件体系 | `platform_a4_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR；域 Owner 看本域 | W：CONFIG_ADMIN；schema 发布 H：SUPER_ADMIN | 域级；历史事件不可改，schema 只新增 revision |
