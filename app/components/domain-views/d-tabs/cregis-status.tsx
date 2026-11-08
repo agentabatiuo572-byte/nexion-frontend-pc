@@ -578,7 +578,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   const pools = FUNDS_NETWORKS.map(network => ({ network, pool: data ? poolOf(data, network) : undefined }));
   const connected = data?.mode === "PROVIDER" || data?.mode === "provider";
   const statusSummary = !data ? (loading ? "正在读取" : "读取失败") : !connected ? "未接入"
-    : [MODE_TEXT[data.mode] ?? "接入模式未知", ...pools.map(({ network, pool }) => pool?.available ? `${network} 可分配 ${pool.unassigned}` : pool ? `${network} 不可用` : `${network} 未配置`)].join(" · ");
+    : [MODE_TEXT[data.mode] ?? "接入模式未知", ...pools.map(({ network, pool }) => pool?.available ? `${network} 可分配 ${pool.unassigned}` : pool || !data.addressPools ? `${network} 不可用` : `${network} 未配置`)].join(" · ");
   const reconLatest = (network: FundsNetwork) => data?.reconcileRuns?.find((row) => row.status === "COMPLETE" && rowNetwork(row) === network)?.completedAt;
   const openCases = reviewCases.filter(row => row.status === "MAKER_DONE" || row.status == null);
   const switchCases = data?.switchCases?.filter((row) => row.status === "MAKER_DONE") ?? [];
@@ -636,7 +636,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                 <Td align="right"><Cell num main={pool.unassigned} sub={`待创建 ${pool.queued ?? 0}`} /></Td>
                 <Td align="right"><Cell num main={pool.assigned} sub={`总计 ${pool.total}${pool.limit > 0 ? ` / ${pool.limit}` : " · 无上限"}`} /></Td>
                 <Td align="right"><Cell num main={pool.verifying} sub={`待核查 ${pool.unknown}`} /></Td>
-              </> : <Td colSpan={3}><Cell main={pool ? "暂不可用，请刷新核对" : "尚未配置，请核对部署后刷新"} /></Td>}
+              </> : <Td colSpan={3}><Cell main={pool || !data.addressPools ? "暂不可用，请刷新核对" : "尚未配置，请核对部署后刷新"} /></Td>}
               <Td><Cell num main={reconLatest(network) ? time(reconLatest(network)) : "尚无"} /></Td>
               {canManage && <Td sticky="end" align="right"><span className="rd-row-actions">
                 <Button size="sm" disabledReason={provisionBlock(data, network) ?? readBlock ?? d1PendingObjectReason(`/cregis/addresses/provision?network=${network}`)} onClick={() => confirmCommand({ kind: "record",
