@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Calculator, Coins, Copy, FilePen, FileText, History, Inbox, Info, RefreshCw, Scale, User } from "lucide-react";
 import {
   Button, Cell, Change, ColumnPicker, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, Fold, IconButton,
-  InlineRetry, Input, IrreversibleTag, JudgmentPoints, Notice, PageHeader, Pager, Panel, ReleaseModal, SearchSelect, Segments,
+  InlineRetry, Input, IrreversibleTag, JudgmentPoints, Notice, NumberInput, PageHeader, Pager, Panel, ReleaseModal, SearchSelect, Segments,
   StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTableColumns, BlockState, type JudgmentRow, type StateTone,
 } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
@@ -20,9 +20,9 @@ import { nexGridBrandText, operatorNicknameText } from "@/lib/admin/brand-copy";
 import { businessClock, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { formatC1RiskBand } from "@/lib/admin/c1-detail-display";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
-import { isIdempotencyOutcomeOpen } from "@/lib/admin/outcome-classification";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useReach } from "@/lib/nav/use-reach";
 import { fmtConfigPct } from "@/lib/format";
@@ -38,7 +38,6 @@ import {
   rejectUserAssetAdjustment,
   requestLargeUserAssetAdjustment,
   reverseUserAssetAdjustment,
-  UsersOutcomeUnknownError,
   UsersRequestError,
   withdrawUserAssetAdjustment,
   type User360Profile,
@@ -68,15 +67,18 @@ const REASON_CODE_LABELS: Record<string, string> = {
 };
 const PAGE_SIZES = [5, 10, 20, 50] as const;
 const PENDING_STATUSES = ["PENDING_REVIEW", "PENDING"];
-/** 状态名按审批单一套（OP-58、OP-59），不用后端的 statusLabel；枚举值不改（TX-34）。 */
-const STATUS: Record<string, { label: string; tone: StateTone }> = {
-  PENDING_REVIEW: { label: "待审批", tone: "neutral" },
-  PENDING: { label: "待审批", tone: "neutral" },
-  APPROVED: { label: "已批准", tone: "ok" },
-  REJECTED: { label: "已驳回", tone: "done" },
-  WITHDRAWN: { label: "已撤回", tone: "done" },
-  SUSPENDED: { label: "红线挂起", tone: "warn" },
+/** 状态名按审批单一套（OP-58、OP-59），不用后端的 statusLabel；枚举值不改（TX-34）。explain 是悬停的白话：这个状态意味着什么、下一步谁来做（DP-35）。 */
+const PENDING_EXPLAIN = "已提交，等另一位有批准权限的同事批准或驳回；批准前余额不变。";
+const STATUS: Record<string, { label: string; tone: StateTone; explain: string }> = {
+  PENDING_REVIEW: { label: "待审批", tone: "neutral", explain: PENDING_EXPLAIN },
+  PENDING: { label: "待审批", tone: "neutral", explain: PENDING_EXPLAIN },
+  APPROVED: { label: "已批准", tone: "ok", explain: "余额已按这笔变化，并生成了账单。原单调错了可以冲正一次。" },
+  REJECTED: { label: "已驳回", tone: "done", explain: "没有入账，余额没变。要调整需要重新提交。" },
+  WITHDRAWN: { label: "已撤回", tone: "done", explain: "提交人撤回了，没有入账，余额没变。" },
+  SUSPENDED: { label: "红线挂起", tone: "warn", explain: "旧版本留下的状态：还没批准，余额没变。这页的队列不列这种单，怎么处理待确认。" },
 };
+const REVERSAL_EXPLAIN = "这笔是为抵消另一笔而生成的反向调整，已经入账，不能再冲正。";
+const REVERSED_EXPLAIN = "这笔已被一笔反向调整抵消，原记录保留，不能再冲正。";
 /** 账户状态的叫法和用户详情一致（BANNED 叫「封禁」）。 */
 const ACCOUNT_STATUS: Record<string, string> = { ACTIVE: "正常", FROZEN: "冻结", RESTRICTED: "受限", BANNED: "封禁" };
 const C01_FLOW = "提交后余额不会马上变，需由另一位同事复核批准后才生效。";
@@ -89,6 +91,7 @@ const MINE = "这是你发起的，需要另一位管理员处理";
 /** 行内只有一格宽，写短句；完整的一句在抽屉里（OP-66）。 */
 const MINE_SHORT = "需另一位管理员处理";
 const WAITING = "等待有批准权限的同事处理";
+const LARGE_EXPLAIN = "超过 500 USDT 等值，只有财务主管或超级管理员能发起。";
 /** 状态已被别人或系统改了：框不关，读回写最新状态（D2-C89）。 */
 const MOVED_CODES = ["ASSET_ADJUSTMENT_REVIEW_RACE_LOST", "INVALID_STATE_TRANSITION", "C3_ADJUSTMENT_WITHDRAW_CONFLICT", "C3_ADJUSTMENT_WITHDRAW_RACE_LOST", "C3_ALREADY_REVERSED", "C3_ONLY_ORIGINAL_APPROVED_ADJUSTMENT_REVERSIBLE"];
 
@@ -148,7 +151,7 @@ function upper(value: unknown) {
 }
 
 function statusOf(row: Pick<Row, "status">) {
-  return STATUS[upper(row.status)] ?? { label: "状态未知", tone: "warn" as StateTone };
+  return STATUS[upper(row.status)] ?? { label: "状态未知", tone: "warn" as StateTone, explain: "后端返回了这页不认识的状态，请到操作记录核对。" };
 }
 
 function isPendingRow(row: Pick<Row, "status">) {
@@ -161,6 +164,11 @@ function reasonCodeLabel(value: unknown) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? displayAdminError(error) : "余额调整请求失败，请刷新后重试";
+}
+
+/** 纯读取失败只说没读到，不套写操作「结果尚未确认」的话（F08）。 */
+function readError(error: unknown) {
+  return displayAdminReadError(error);
 }
 
 function accountId(account: Pick<User360Profile, "userId" | "id"> | null | undefined) {
@@ -183,8 +191,17 @@ function newCommandKey(kind: Kind) {
   return `${KIND_PREFIX[kind]}-${suffix}`;
 }
 
-function isOutcomeUnknown(error: unknown) {
-  return error instanceof UsersOutcomeUnknownError || (error instanceof UsersRequestError && isIdempotencyOutcomeOpen(error.code));
+/**
+ * 首次发送失败后原命令留不留：只有后端带原因码的拒绝（UsersRequestError，不是 IDEMPOTENCY_*）才丢号、留在框里改；
+ * 结果未知、幂等层的任何状态（含没识别的幂等码）、响应读不懂都留着，转成待确认（OP-91、F01）。
+ */
+function keepsCommand(error: unknown) {
+  return !(error instanceof UsersRequestError) || (error.code ?? "").startsWith("IDEMPOTENCY_");
+}
+
+/** 按原操作重试失败后放不放出「解除待确认」：共用口径，登录、权限、限流、IDEMPOTENCY_* 都不算（OP-153）。 */
+function rejectsCommand(error: unknown) {
+  return error instanceof UsersRequestError && isExplicitRejection({ status: error.status, reasonCode: error.code });
 }
 
 function reasonCodeOf(error: unknown) {
@@ -251,6 +268,12 @@ function money(value: string, digits = 2) {
 function moneyOf(value: unknown, digits = 2) {
   const shown = decimal(value);
   return shown === null ? "—" : money(shown, digits);
+}
+
+/** 余额这类值：0 和「—」两套主题都弱化（runbook）。 */
+function quietMoney(value: unknown) {
+  const shown = decimal(value);
+  return shown === null || !/[1-9]/.test(shown) ? <span className="rd-weak">{moneyOf(value)}</span> : money(shown);
 }
 
 function signedAmount(row: Pick<Row, "amount" | "direction">, digits = 2, flip = false) {
@@ -390,7 +413,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       setOverview({ data, loading: false, error: "" });
       setReadAt(Date.now());
     } catch (cause) {
-      if (seq === overviewSeq.current) setOverview({ data: null, loading: false, error: errorMessage(cause) });
+      if (seq === overviewSeq.current) setOverview({ data: null, loading: false, error: readError(cause) });
     }
   }, []);
 
@@ -406,7 +429,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       setQueue({ data: page, loading: false, error: "" });
       setReadAt(Date.now());
     } catch (cause) {
-      if (seq === queueSeq.current) setQueue({ data: null, loading: false, error: errorMessage(cause) });
+      if (seq === queueSeq.current) setQueue({ data: null, loading: false, error: readError(cause) });
     }
   }, [queuePage, queueSize]);
 
@@ -421,7 +444,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       setHistory({ data: page, loading: false, error: "" });
       setReadAt(Date.now());
     } catch (cause) {
-      if (seq === historySeq.current) setHistory({ data: null, loading: false, error: errorMessage(cause) });
+      if (seq === historySeq.current) setHistory({ data: null, loading: false, error: readError(cause) });
     }
   }, [historyAsset, historyPage, historySize]);
 
@@ -435,7 +458,8 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const [query, setQuery] = useState("");
   const [searchArmed, setSearchArmed] = useState(false);
   const [searchRetry, setSearchRetry] = useState(0);
-  const [accounts, setAccounts] = useState<{ records: User360Profile[]; loading: boolean; error: string }>({ records: [], loading: false, error: "" });
+  // query 记这组候选是按框里哪段文字查的：和框里现在的字不一样就是旧候选，下拉写「搜索中…」、回车不选（看图复查 1）。
+  const [accounts, setAccounts] = useState<{ records: User360Profile[]; loading: boolean; error: string; query?: string }>({ records: [], loading: false, error: "" });
   const [selectedUser, setSelectedUser] = useState<User360Profile | null>(null);
   const [context, setContext] = useState<Block<UserAssetAdjustmentContext>>({ data: null, loading: false, error: "" });
   const [focusError, setFocusError] = useState("");
@@ -452,8 +476,8 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     const timer = window.setTimeout(() => {
       setAccounts((current) => ({ ...current, loading: true, error: "" }));
       fetchUserAssetAdjustmentAccounts(keyword || undefined)
-        .then((page) => { if (active) setAccounts({ records: page.records, loading: false, error: "" }); })
-        .catch((cause) => { if (active) setAccounts({ records: [], loading: false, error: errorMessage(cause) }); });
+        .then((page) => { if (active) setAccounts({ records: page.records, loading: false, error: "", query }); })
+        .catch((cause) => { if (active) setAccounts({ records: [], loading: false, error: readError(cause), query }); });
     }, 300);
     return () => { active = false; window.clearTimeout(timer); };
     // selectedUser 只用来取编码，换人时 query 一定跟着变。
@@ -470,7 +494,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       if (accountId(next.account) !== id) throw new Error("账户信息不一致，请重新选择");
       setContext({ data: next, loading: false, error: "" });
     } catch (cause) {
-      if (generation === contextGeneration.current) setContext({ data: null, loading: false, error: errorMessage(cause) });
+      if (generation === contextGeneration.current) setContext({ data: null, loading: false, error: readError(cause) });
     }
   }, []);
 
@@ -506,7 +530,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     }).catch((cause) => {
       if (!active || generation !== contextGeneration.current) return;
       setContext({ data: null, loading: false, error: "" });
-      setFocusError(errorMessage(cause));
+      setFocusError(readError(cause));
     });
     return () => { active = false; };
   }, [focusUserId, authEpoch, focusRetry]);
@@ -557,7 +581,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       const latest = await fetchUserAssetAdjustmentDetail(no);
       if (seq === detailSeq.current) setDetail(latest);
     } catch (cause) {
-      if (seq === detailSeq.current) setDetailError(errorMessage(cause));
+      if (seq === detailSeq.current) setDetailError(readError(cause));
     } finally {
       if (seq === detailSeq.current) setDetailLoading(false);
     }
@@ -579,8 +603,9 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     if (open) {
       const no = text(open.row.adjustmentNo, "");
       const seq = ++detailSeq.current;
+      // 读不到就不再用旧详情算「现在」的余额和覆盖率，抽屉回到当前列表行（F05）。
       await fetchUserAssetAdjustmentDetail(no).then((latest) => { if (seq === detailSeq.current) { setDetail(latest); setDetailError(""); } })
-        .catch((cause) => { if (seq === detailSeq.current) setDetailError(errorMessage(cause)); });
+        .catch((cause) => { if (seq === detailSeq.current) { setDetail(null); setDetailError(readError(cause)); } });
     }
   }, [loadOverview, loadQueue, loadHistory, loadContext, selectedUserId]);
 
@@ -604,12 +629,15 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const formCoverageBlock = direction === "CREDIT" && amountPositive && Number.isFinite(amountUsd) && !supportLargeRequest ? creditCoverageBlock(contextCoverage, amountUsd) : null;
   const reasonTrim = reason.trim();
   const evidenceTrim = evidenceRef.trim();
+  // 重试成功时拿来比：表单里还是不是这条原申请（F04）。
+  const draftRef = useRef({ userId: "", amount: "", reason: "", evidence: "" });
+  draftRef.current = { userId: selectedUserId, amount: amountInput, reason: reasonTrim, evidence: evidenceTrim };
 
   const amountIssue = !amountInput ? "请填写金额"
     : !amountValid ? "请输入数字，最多 6 位小数"
       : !amountPositive ? "金额必须大于 0"
         : Number.isFinite(amountUsd) && amountUsd > maxAmount ? `单笔不能超过 ${maxAmount.toLocaleString("en-US")} USDT 等值` : "";
-  const reasonIssue = reasonTrim.length < 8 || reasonTrim.length > 200 ? "详细原因需填写 8–200 个字符"
+  const reasonIssue = reasonTrim.length < 8 || reasonTrim.length > 200 ? "详细原因至少 8 个字，最多 200 个字"
     : /^[{[]/.test(reasonTrim) || reasonTrim.toLowerCase().includes("://") ? "详细原因只写事实，链接和凭证号放到凭证里" : "";
   const evidenceIssue = !evidenceTrim ? "请填写工单号、凭证号等证据引用"
     : evidenceTrim.length < 3 || evidenceTrim.length > 255 || /^[{[]/.test(evidenceTrim) ? "凭证要 3–255 个字，不能以 { 或 [ 开头" : "";
@@ -623,10 +651,10 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     : lockedUsers.has(selectedUserId) ? LOCKED_USER
       : amountIssue ? ""
         : asset === "UVT" && !rateOk ? "当前 UVT 价格不可用，暂不能提交 UVT 调整"
-          : debitInsufficient ? `扣减后余额不足（现在 ${money(balanceNow ?? "0")} ${nexGridBrandText(asset)}）`
+          : debitInsufficient ? `最多能扣 ${money(balanceNow ?? "0")} ${nexGridBrandText(asset)}`
             : formCoverageBlock === "unreliable" ? "兑付覆盖率暂时算不出来，暂不能加余额"
               : formCoverageBlock === "below" ? "加完后兑付覆盖率会低于红线"
-                : largeAdjustment && isFinance ? "超过 500 USDT 等值需由财务主管或超级管理员执行" : "";
+                : largeAdjustment && isFinance ? "超过 500 USDT 等值只能由财务主管或超级管理员发起" : "";
   const submitBlock = contextReading ? "正在读取…"
     : !contextAccount ? "请先选择账户"
       : businessBlock || amountIssue || reasonIssue || evidenceIssue || (submitting ? "正在提交" : "");
@@ -634,7 +662,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   /* ── 写操作共用一条路（照 D2 sendCommand） ── */
 
   /**
-   * 先把原操作存好再发（OP-92），存不下就不发。确定失败丢号，留在框里；结果未知保号、关框，转成页面上方的待确认条（OP-93）。
+   * 先把原操作存好再发（OP-92），存不下就不发。后端明确拒绝丢号，留在框里；其余都保号、关框，转成页面上方的待确认条（OP-93）。
    * 重试的是保留下来的原命令时，确定失败也证明不了原命令的结果，继续保留（CP-33）；只有成功才解除。
    */
   const sendCommand = async <T,>(record: Omit<C3Pending, keyof PendingMutationRecord>, send: (key: string) => Promise<T>, done: (result: T) => Promise<unknown> | unknown, retry = false): Promise<"done" | "unknown"> => {
@@ -653,7 +681,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       try {
         result = await send(key);
       } catch (cause) {
-        const unknown = isOutcomeUnknown(cause);
+        const unknown = keepsCommand(cause);
         if (!unknown && !retained) c3Commands.forget(scope, key);
         syncPending();
         if (unknown) {
@@ -677,7 +705,9 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     { kind, label: `${KIND_LABEL[kind]} · ${userNo} · ${input.direction === "CREDIT" ? "+" : "-"}${money(input.amount)} ${nexGridBrandText(input.asset)}`, target: userId, userNo, input, operator },
     (key) => (kind === "large" ? requestLargeUserAssetAdjustment : createUserAssetAdjustment)(userId, { ...input, operator, idempotencyKey: key }),
     async (result) => {
-      if (!retry) {
+      const draft = draftRef.current;
+      // 首次成功清掉；原操作重试成功时，表单里还是这条原申请也清掉，免得换新号再提一次（F04）。用户、资产、方向、分类留着。
+      if (!retry || (draft.userId === userId && draft.amount === input.amount && draft.reason === input.reason && draft.evidence === input.evidenceRef)) {
         setAmountText("");
         setReason("");
         setEvidenceRef("");
@@ -737,8 +767,9 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       detail: large
         ? `${userText(contextAccount)}；超过 500 USDT 等值，提交后需由财务主管或超级管理员处理，余额暂不变。`
         : `${userText(contextAccount)}；提交后需由另一位同事复核，批准后余额才会变化。同一次提交重试不会多建单。`,
-      statedBrief: { impact: "提交后进入待审批，余额暂不变。批准后余额才变化，并生成账单。", check: "核对用户、方向、金额和凭证。" },
+      statedBrief: { impact: "进入待审批，批准后余额才变并生成账单。", check: "核对用户、方向、金额和凭证。" },
       remarkHint: "选填，不会保存",
+      reasonPlaceholder: "这里写的不会保存",
       reason: false,
       okLabel: "确认提交",
       run: async () => {
@@ -770,7 +801,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     if (text(row.maker, "").trim().toLowerCase() === makerUsername) return MINE;
     if (latest) {
       const balance = detailBalance(latest);
-      if (balance && isNegative(balance.after)) return `扣减后余额不足（现在 ${money(balance.now)} ${nexGridBrandText(text(row.asset))}），批准会被拒`;
+      if (balance && isNegative(balance.after)) return `用户现在只有 ${money(balance.now)} ${nexGridBrandText(text(row.asset))}，不够扣，现在不能批准`;
     }
     if (upper(row.direction) !== "CREDIT") return undefined;
     const coverage = latest ? coverageOf(latest.coverage) : overviewCoverage;
@@ -790,13 +821,17 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     return undefined;
   };
 
+  /** 冲正要扣回原来加的钱，用户余额不够时写能做什么（建议 5），按钮已禁用，不说「会被拒」。 */
+  const reverseShortfall = (row: Row, now: string) => `冲正要扣回 ${moneyOf(row.amount)} ${nexGridBrandText(text(row.asset))}，用户现在只有 ${money(now)} ${nexGridBrandText(text(row.asset))}，不能冲正`;
+
   const isMine = (row: Row) => Boolean(makerUsername) && text(row.maker, "").trim().toLowerCase() === makerUsername;
 
   const reversibleReason = (row: Row) => row.reversalOf ? "冲正单不能再冲正"
     : row.reversedBy ? "这笔已冲正过"
       : upper(row.status) !== "APPROVED" ? "只有已批准的原单能冲正" : undefined;
 
-  const decisionFacts = (latest: UserAssetAdjustmentDetail, kind: Kind) => {
+  /** 每个框的事实。驳回、撤回框的关键数字是被决定的那笔，写「申请调整金额」（VS-102）。批准增加余额的框把覆盖率写成一行（和提现审核放行框一样）。 */
+  const decisionFacts = (latest: UserAssetAdjustmentDetail, kind: Kind, coverageSettled = false) => {
     const row = latest.adjustment ?? {};
     const no = text(row.adjustmentNo, "");
     const unit = nexGridBrandText(text(row.asset));
@@ -805,13 +840,19 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     const flip = kind === "reverse";
     const balance = kind === "approve" || kind === "reverse" ? detailBalance(latest, flip) : null;
     const original = `${upper(row.direction) === "CREDIT" ? "增加" : "扣减"} ${moneyOf(row.amount)} ${unit}`;
+    const coverage = coverageOf(latest.coverage);
+    const coverageAfter = coverage?.reliable ? projectedCoverage(coverage, "CREDIT", Number(row.amountUsd ?? row.amount)) : undefined;
     return (
       <Facts>
-        <Fact k={kind === "reverse" ? "冲正金额" : "调整金额"} lead tone="role-1" unit={unit}>{signedAmount(row, 2, flip)}</Fact>
+        <Fact k={kind === "reverse" ? "冲正金额" : kind === "approve" ? "调整金额" : "申请调整金额"} lead tone="role-1" unit={unit}>{signedAmount(row, 2, flip)}</Fact>
         <Fact k={kind === "reverse" ? "原调整单" : "调整单"}><span data-mono>{no}</span>{kind === "reverse" && ` · ${original}`}</Fact>
         <Fact k="用户">{userText(row)}</Fact>
         {balance && <Fact k="余额"><Change from={money(balance.now)} to={`约 ${money(balance.after)}`} tone={isNegative(balance.after) ? "warn" : undefined} /> {unit}</Fact>}
         {uvt && kind === "approve" && Number.isFinite(amountUsdValue) && <Fact k="USDT 等值">≈ {usdEquivalent(amountUsdValue)} USDT</Fact>}
+        {/* 系统已按批准时的覆盖率驳回时，不再摆打开时的快照，免得和上面的原因打架。 */}
+        {kind === "approve" && upper(row.direction) === "CREDIT" && coverage?.reliable && !coverageSettled && <Fact k="兑付覆盖率">
+          <Change from={pct(coverage.ratio)} to={`批准后约 ${coverageAfter == null ? "应付款为 0" : pct(coverageAfter)}`} /> · 红线 {fmtConfigPct(coverage.redline)}
+        </Fact>}
         {(kind === "approve" || kind === "reject") && <Fact k="提交人">{text(row.maker)}</Fact>}
         {(kind === "approve" || kind === "reject") && <Fact k="原因分类">{reasonCodeLabel(row.reasonCode)}</Fact>}
         {(kind === "approve" || kind === "reject") && <Fact k="凭证">{text(row.evidenceRef)}</Fact>}
@@ -825,7 +866,6 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     const no = text(row.adjustmentNo, "");
     const unit = nexGridBrandText(text(row.asset));
     const credit = upper(row.direction) === "CREDIT";
-    const coverage = coverageOf(latest.coverage);
     const label = { approve: "批准", reject: "驳回", withdraw: "撤回", reverse: "冲正" }[kind];
     const run = async (reasonText: string) => {
       try {
@@ -858,13 +898,10 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         title: "批准调整申请",
         detail: `${userText(row)} · ${signedAmount(row)} ${unit} · ${text(row.reason)}`,
         effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
-        facts: decisionFacts(latest, kind),
-        amplifies: credit,
-        coverage: credit && coverage?.reliable ? { coverageRatio: coverage.ratio, redlinePct: coverage.redline } : undefined,
-        coverageLead: `批准后用户余额增加，平台多付 ${usdEquivalent(Number(row.amountUsd ?? row.amount))} USDT`,
-        coverageCheck: "批准时系统按当时的覆盖率再算一次；不够会拒绝，并把这张单改成已驳回。",
-        completionCopy: "批准后余额立即变化，并生成账单。",
-        statedBrief: { impact: "批准后余额立即变化，并生成账单。", check: "核对用户、金额、原因和凭证，理由写清依据或工单号。" },
+        facts: decisionFacts(latest, kind, Boolean(blockedReason)),
+        // 覆盖率写进事实（同提现审核放行框）；入口已按估算禁用，后端批准时再算一次，不够会改成已驳回。
+        amplifies: false,
+        statedBrief: { impact: "批准后余额立即变化，并生成账单。", check: credit ? "核对用户、金额、原因和凭证，理由写清依据或工单号。批准时系统按当时的兑付覆盖率再算一次，低于红线会拒绝，并把这张单改成已驳回。" : "核对用户、金额、原因和凭证，理由写清依据或工单号。" },
         confirmTone: "danger",
         confirmLabel: "确认批准",
         reasonMin: 8,
@@ -883,7 +920,6 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
         facts: decisionFacts(latest, kind),
         amplifies: false,
-        completionCopy: "驳回后余额不变。",
         statedBrief: { impact: "驳回后这张单结束，余额不变；要调整需要重新提交。", check: "核对操作对象和凭证，理由写清依据或工单号。" },
         confirmLabel: "确认驳回",
         reasonMin: 8,
@@ -902,7 +938,6 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
         facts: decisionFacts(latest, kind),
         amplifies: false,
-        completionCopy: "撤回后不能再批准或驳回。",
         statedBrief: { impact: "撤回后不能再批准或驳回，余额不变。", check: "核对是不是要撤回的这张单，理由写清原因。" },
         confirmLabel: "确认撤回",
         reasonMin: 8,
@@ -921,7 +956,6 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       facts: decisionFacts(latest, kind),
       // 冲正不查兑付覆盖率（PCM-21、OP-57），摘要也不提。
       amplifies: false,
-      completionCopy: "确认后立即生效。",
       statedBrief: { impact: "立即生成一笔反向调整并入账，原记录保留。冲正单不能再冲正。", check: "核对原单的用户、方向和金额，理由写清依据或工单号。" },
       confirmTone: "danger",
       confirmLabel: "确认冲正",
@@ -949,7 +983,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         const why = reversibleReason(fresh);
         if (why) { toast(`这张单不能冲正：${why}`, "warn"); void loadHistory(); return; }
         const balance = detailBalance(latest, true);
-        if (balance && isNegative(balance.after)) { toast(`冲正后余额不足（现在 ${money(balance.now)} ${nexGridBrandText(text(fresh.asset))}），冲正会被拒`, "warn"); return; }
+        if (balance && isNegative(balance.after)) { toast(reverseShortfall(fresh, balance.now), "warn"); return; }
       } else {
         if (!isPendingRow(fresh)) { toast(`这张单已被处理：${statusOf(fresh).label}`, "warn"); void Promise.all([loadOverview(), loadQueue(), loadHistory()]); return; }
         if (kind === "approve") {
@@ -967,7 +1001,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const canRetry = (record: C3Pending) => record.kind === "create" || record.kind === "large" || record.kind === "withdraw" ? canCreate
     : record.kind === "reverse" ? canReverse : canApprove;
 
-  /** 按原操作重试：同命令号、同内容、同操作人，不接受新输入（OP-94）。只有成功才解除。 */
+  /** 按原操作重试：同命令号、同内容、同操作人，不接受新输入（OP-94）。成功才解除；后端明确拒绝后才能人工解除。 */
   const retryPending = async (record: C3Pending) => {
     if (isRetryExpired(record)) { notePending(record, `${RETRY_EXPIRED_TEXT}。`); return; }
     if (!canRetry(record)) { notePending(record, `${RETRY_NO_PERMISSION}。`); return; }
@@ -985,8 +1019,11 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       if (outcome === "unknown") notePending(record, "还是没有确认，原命令继续保留。");
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
-      notePending(record, `重试没有成功：${errorMessage(cause)} 这说明不了原操作的结果，原命令继续保留。`);
-      setRetryRejected((keys) => [...keys, record.commandKey]);
+      // 只有后端对这条命令下了结论才给「解除待确认」；登录、权限、限流、幂等层、本地异常都不算（F01、OP-153）。
+      if (rejectsCommand(cause)) {
+        notePending(record, `重试没有成功：${errorMessage(cause)}这说明不了原操作的结果，原命令继续保留。`);
+        setRetryRejected((keys) => [...keys, record.commandKey]);
+      } else notePending(record, `这次没能确认结果：${errorMessage(cause)}原命令继续保留。`);
     }
   };
 
@@ -1035,7 +1072,6 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     { key: "user", label: "用户" },
     { key: "amount", label: "金额" },
     { key: "status", label: "状态", locked: "状态列不能关" },
-    { key: "time", label: "时间" },
     { key: "reason", label: "原因", extra: true },
     { key: "evidence", label: "凭证", extra: true },
     { key: "ledger", label: "账单", extra: true },
@@ -1066,9 +1102,9 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     <dl className="rd-detail-values" data-proof="c3-target-card">
       <div><dt>账户状态</dt><dd>{accountStatus === "ACTIVE" ? "正常" : <StatusTag tone="warn">{ACCOUNT_STATUS[accountStatus] ?? "状态未知"}</StatusTag>}</dd></div>
       <div><dt>风险</dt><dd>{formatC1RiskBand(contextAccount.riskBand)}{contextAccount.riskScore != null && contextAccount.riskScore !== "" ? `（${text(contextAccount.riskScore)} 分）` : ""}</dd></div>
-      <div><dt>USDT 余额</dt><dd>{moneyOf(contextAccount.walletUsdt)}</dd></div>
-      <div><dt>UVT 余额</dt><dd>{moneyOf(contextAccount.walletNex)}</dd></div>
-      <div><dt>提现中</dt><dd>{moneyOf(context.data?.pendingWithdraw)} USDT</dd></div>
+      <div><dt>USDT 余额</dt><dd>{quietMoney(contextAccount.walletUsdt)}</dd></div>
+      <div><dt>UVT 余额</dt><dd>{quietMoney(contextAccount.walletNex)}</dd></div>
+      <div><dt>提现中（USDT）</dt><dd>{quietMoney(context.data?.pendingWithdraw)}</dd></div>
     </dl>
   );
 
@@ -1099,14 +1135,15 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
           selected={selectedUserId || undefined}
           onSelect={(value) => { const account = accounts.records.find((item) => accountId(item) === value); if (account) selectUser(account); }}
           loading={accounts.loading}
-          error={accounts.error ? `没有查到：${accounts.error}` : undefined}
+          optionsFor={accounts.query ?? null}
+          error={accounts.error ? `搜索失败：${accounts.error}` : undefined}
           onRetry={() => setSearchRetry((count) => count + 1)}
-          empty="无匹配用户" />}
+          empty="没有匹配的用户。可以搜用户编码、昵称或邀请码，手机号搜不到" />}
       </Field>
-      {focusError && <Notice tone="warn" action={/^[1-9]\d*$/.test(focusUserId) ? <Button size="sm" loading={context.loading} onClick={() => setFocusRetry((count) => count + 1)}>重试</Button> : undefined}>
-        {/^[1-9]\d*$/.test(focusUserId) ? `没有读到网址里的用户：${focusError}` : focusError}
-      </Notice>}
-      {selectedUser && context.error && <Notice tone="warn" action={<Button size="sm" onClick={() => void loadContext(selectedUserId, contextGeneration.current)}>重试</Button>}>没有读到这个用户的余额：{context.error}</Notice>}
+      {focusError && (/^[1-9]\d*$/.test(focusUserId)
+        ? <BlockState compact state="error" title="没有读到网址里的用户" detail={focusError} retrying={context.loading} onRetry={() => setFocusRetry((count) => count + 1)} />
+        : <BlockState compact state="error" title={focusError} />)}
+      {selectedUser && context.error && <BlockState compact state="error" title="没有读到这个用户的余额" detail={context.error} onRetry={() => void loadContext(selectedUserId, contextGeneration.current)} />}
       {context.loading && !contextAccount && <BlockState state="loading" title="正在读取这个用户的余额…" compact />}
       {targetCard}
       <div className="rd-form-grid">
@@ -1115,23 +1152,21 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       </div>
       <Field label="金额" required error={shownAmountIssue || undefined}
         help={asset === "UVT" ? rateOk ? `按 UVT 价格 ${rate.toLocaleString("en-US", { maximumFractionDigits: 8 })} USDT 换算成 USDT 等值` : "当前 UVT 价格不可用" : undefined}>
-        {(control) => <span className="rd-number">
-          <Input {...control} aria-label="调整金额" inputMode="decimal" autoComplete="off" placeholder="例如 120" value={amountText}
-            onChange={(event) => setAmountText(event.target.value)} onBlur={() => setTouched((state) => ({ ...state, amount: true }))} />
-          <span className="rd-number-unit">{nexGridBrandText(asset)}</span>
-        </span>}
+        {/* 共用数字框：千分位只是显示，交回来的是原值；空、「.」和 0 分开，页面照旧按 6 位小数校验。 */}
+        {(control) => <NumberInput {...control} aria-label="调整金额" inputMode="decimal" min={0} step={1} unit={nexGridBrandText(asset)} placeholder="例如 120" value={amountText}
+          onChange={(event) => setAmountText(event.target.value)} onBlur={() => setTouched((state) => ({ ...state, amount: true }))} />}
       </Field>
-      <Field label="原因分类">
+      {canCreate && <><Field label="原因分类">
         <Segments label="原因分类" value={reasonCode} onChange={setReasonCode} items={REASON_CODES.map(([value, label]) => ({ value, label }))} />
       </Field>
-      <Field label="详细原因" required error={shownReasonIssue || undefined}>
-        {(control) => <Textarea {...control} aria-label="详细原因" rows={3} maxLength={400} placeholder="8–200 字，说明事实、判断和处理依据" value={reason} count={`${reasonTrim.length}/200`}
+      <Field label="详细原因" required hint="至少 8 字" error={shownReasonIssue || undefined}>
+        {(control) => <Textarea {...control} aria-label="详细原因" rows={3} maxLength={400} placeholder="说明事实、判断和处理依据" value={reason} count={`${reasonTrim.length}/200`}
           onChange={(event) => setReason(event.target.value)} onBlur={() => setTouched((state) => ({ ...state, reason: true }))} />}
       </Field>
       <Field label="凭证" required error={shownEvidenceIssue || undefined}>
         {(control) => <Input {...control} aria-label="证据引用" maxLength={300} placeholder="例如：工单 20260718-001" value={evidenceRef}
           onChange={(event) => setEvidenceRef(event.target.value)} onBlur={() => setTouched((state) => ({ ...state, evidence: true }))} />}
-      </Field>
+      </Field></>}
       {canCreate && <div className="rd-toolbar" data-end="">
         <span className="rd-toolbar-note" data-tone={formTone}>{businessBlock || C01_FLOW}</span>
         <Button variant="primary" loading={submitting.startsWith("create|")} disabledReason={submitBlock || undefined} onBlockedClick={() => setAttempted(true)} onClick={submitAdjustment}>提交调整申请</Button>
@@ -1142,10 +1177,10 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   /* ── 批准后会怎样 ── */
   const coverageAfter = contextCoverage && amountPositive && Number.isFinite(amountUsd) ? projectedCoverage(contextCoverage, direction, amountUsd) : undefined;
   const preview = !contextAccount ? (
-    <p className="rd-detail-empty">选好账户后，这里写批准后的余额和覆盖率。</p>
+    <p className="rd-detail-empty">选好账户后，这里算批准后的结果。</p>
   ) : (
     <Facts>
-      <Fact k={`余额（${nexGridBrandText(asset)}）`} unit={balanceNow === null ? undefined : nexGridBrandText(asset)}>
+      <Fact k={balanceAfter === null ? "现在余额" : "批准后余额"} lead unit={balanceNow === null ? undefined : nexGridBrandText(asset)}>
         {balanceNow === null ? "—" : balanceAfter === null ? money(balanceNow) : <Change from={money(balanceNow)} to={money(balanceAfter)} tone={debitInsufficient ? "warn" : undefined} />}
       </Fact>
       {asset === "UVT" && <Fact k="USDT 等值" unit={amountPositive && rateOk ? "USDT" : undefined}>{amountPositive && rateOk ? usdEquivalent(amountUsd) : "—"}</Fact>}
@@ -1158,11 +1193,12 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     </Facts>
   );
 
+  // 左边填、右边随填随算：右栏跟内容高（data-detail），起始宽度窄一些，1024 也并排（data-preview）（看图复查 4、5）。
   const initiation = (
-    <div className="rd-split">
+    <div className="rd-split" data-detail="" data-preview="">
       {/* 只读账号的试算区：折叠标题已经说了是什么，不再写「发起调整」。 */}
       <Panel title={canCreate ? "发起调整" : undefined} icon={canCreate ? FilePen : undefined} tone="role-1" plain={!canCreate} headingLevel={canCreate ? 2 : 3}>{form}</Panel>
-      <Panel title="批准后会怎样" icon={Scale} tone="role-1" plain={!canCreate} headingLevel={canCreate ? 2 : 3}
+      <Panel title="批准后会怎样" icon={Scale} tone="role-1" plain={!canCreate} headingLevel={canCreate ? 2 : 3} explainSide="top"
         explain="按现在读到的余额和覆盖率估算，不是批准结果。批准时系统按当时的余额和覆盖率重新检查。">{preview}</Panel>
     </div>
   );
@@ -1181,9 +1217,12 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       </span>;
     }
     if (canApprove && mine) return <Cell main={withdraw ? <span className="rd-row-actions">{withdraw}</span> : <span className="rd-cell-sub" title={MINE}>{MINE_SHORT}</span>} sub={withdraw ? <span title={MINE}>{MINE_SHORT}</span> : undefined} />;
-    if (withdraw) return <span className="rd-row-actions">{withdraw}</span>;
-    return <span className="rd-cell-sub">{WAITING}</span>;
+    // 没有批准权：别人的单行内留空，「等待有批准权限的同事处理」只在结论和抽屉底部说一次（看图复查 6）。
+    return withdraw ? <span className="rd-row-actions">{withdraw}</span> : null;
   };
+  // 风控、审计这类只能看的账号，队列不画操作列（OP-124，历史已经这样）。
+  const queueActions = canApprove || canCreate;
+  const queueColumns = queueActions ? 6 : 5;
 
   const queueTable = (
     <Table label="待审批的调整" data-tight="">
@@ -1193,24 +1232,26 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         <Th align="right" icon={Coins} tone="money">金额</Th>
         <Th>原因 · 凭证</Th>
         <Th>提交人</Th>
-        <Th sticky="end">操作</Th>
+        {queueActions && <Th sticky="end">操作</Th>}
       </tr></thead>
       <tbody>
-        {queue.loading && !queue.data ? <TableLoading columns={6} rows={3} />
-          : queue.error ? <TableMessage columns={6} role="alert">待审批的调整读取失败，不显示旧数据：{queue.error} <InlineRetry onRetry={() => void loadQueue()} /></TableMessage>
-            : queueRows.length === 0 ? <TableMessage columns={6}>暂无待审批的调整</TableMessage>
+        {queue.loading && !queue.data ? <TableLoading columns={queueColumns} rows={3} />
+          : queue.error ? <TableMessage columns={queueColumns} role="alert">待审批的调整读取失败，不显示旧数据：{queue.error} <InlineRetry onRetry={() => void loadQueue()} /></TableMessage>
+            : queueRows.length === 0 ? <TableMessage columns={queueColumns}>暂无待审批的调整</TableMessage>
               : queueRows.map((row) => {
                 const no = text(row.adjustmentNo, "");
                 const uvt = upper(row.asset) === "UVT";
-                const amountSub = [uvt ? `≈ ${usdEquivalent(Number(row.amountUsd))} USDT` : "", row.escalated ? "超过 500 USDT 等值" : ""].filter(Boolean).join(" · ");
+                const equivalent = uvt ? `≈ ${usdEquivalent(Number(row.amountUsd))} USDT` : "";
+                // 大额做成短标签，不拼进长句被截掉（看图复查 11）。
+                const amountSub = row.escalated ? <span data-tagline="">{equivalent && <span>{equivalent}</span>}<StatusTag tone="warn" explain={LARGE_EXPLAIN}>大额</StatusTag></span> : equivalent;
                 return (
                   <Tr key={no} selected={current?.row.adjustmentNo === no} onOpen={() => void openDetail(row, "queue")}>
                     <Td><Cell main={<span data-mono>{shortNo(no)}</span>} sub={formatBusinessTimeCompact(row.createdAt, "—")} title={no} /></Td>
                     <Td><Cell main={userText(row)} title={userText(row)} /></Td>
-                    <Td align="right"><Cell num main={`${signedAmount(row, queueDigits)} ${nexGridBrandText(text(row.asset))}`} sub={amountSub || undefined} /></Td>
+                    <Td align="right"><Cell num main={`${signedAmount(row, queueDigits)} ${nexGridBrandText(text(row.asset))}`} sub={amountSub || undefined} title={[equivalent, row.escalated ? "超过 500 USDT 等值" : ""].filter(Boolean).join(" · ") || undefined} /></Td>
                     <Td grow><Cell main={text(row.reason)} sub={`${reasonCodeLabel(row.reasonCode)} · 凭证 ${text(row.evidenceRef)}`} title={text(row.reason)} /></Td>
                     <Td><Cell main={text(row.maker)} sub={isMine(row) ? "你提交的" : undefined} /></Td>
-                    <Td sticky="end">{queueAction(row)}</Td>
+                    {queueActions && <Td sticky="end">{queueAction(row)}</Td>}
                   </Tr>
                 );
               })}
@@ -1220,19 +1261,31 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
 
   /* ── 调整历史 ── */
   const historyTime = (row: Row) => row.reviewedAt ?? row.updatedAt ?? row.createdAt;
+  // 原「已执行」：概览的已批准总数，所有资产，不随筛选变（F02）。列表按提交时间倒序，只有第 1 页的首行才是最近提交的一笔（F06）。
+  const approvedCount = overview.data && Number.isFinite(Number(overview.data.approved)) ? Number(overview.data.approved) : null;
+  const latestSubmitted = historyPage === 1 ? historyRows[0] : undefined;
   const historySummary = history.loading && !history.data ? "正在读取…"
     : history.error ? "读取失败"
       : !history.data?.total ? "暂无调整历史"
-        : `${historyAsset ? `${historyAsset} ` : ""}共 ${history.data.total} 笔，最近 ${formatBusinessTimeCompact(historyTime(historyRows[0]), "—")}（${zone}）`;
+        : [
+          `${historyAsset ? `${nexGridBrandText(historyAsset)} ` : ""}共 ${history.data.total.toLocaleString("en-US")} 笔`,
+          approvedCount === null ? "" : `${historyAsset ? "全部资产" : ""}已批准 ${approvedCount.toLocaleString("en-US")} 笔`,
+          latestSubmitted ? `最近提交 ${formatBusinessTimeCompact(latestSubmitted.createdAt, "—")}（${zone}）` : "",
+        ].filter(Boolean).join(" · ");
+  const historyExplain = <>
+    <p>「共 n 笔」是下面列表的条数：已批准、已驳回、已撤回和冲正单都算，跟着资产筛选变。</p>
+    <p>「已批准」只算批准入账的单（冲正生成的反向单也算），不含驳回、撤回，按全部资产算，不跟筛选变。</p>
+    <p>{C01_RULE}</p>
+  </>;
 
   const historyTable = (
-    <Table label="调整历史">
+    // 1024 下状态、复核时间、操作要看得全（P6-key）：复核时间放在第一列第二行（同待审批队列），格子最宽 200，长的第二行省略、悬停看全文。
+    <Table label="调整历史" data-tight="">
       <thead><tr>
-        <Th>调整单</Th>
+        <Th>调整单 · 复核时间（{zone}）</Th>
         {columns.isVisible("user") && <Th icon={User} tone="users">用户</Th>}
         {columns.isVisible("amount") && <Th align="right" icon={Coins} tone="money">金额</Th>}
         <Th>状态</Th>
-        {columns.isVisible("time") && <Th>时间（{zone}）</Th>}
         {columns.isVisible("reason") && <Th>原因</Th>}
         {columns.isVisible("evidence") && <Th>凭证</Th>}
         {columns.isVisible("ledger") && <Th>账单</Th>}
@@ -1246,16 +1299,15 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
                 const no = text(row.adjustmentNo, "");
                 const status = statusOf(row);
                 const coverageRejected = upper(row.status) === "REJECTED" && text(row.reviewReason, "").startsWith("COVERAGE_BELOW_REDLINE:");
-                const relation = row.reversalOf ? `冲正单 · 原单 ${shortNo(text(row.reversalOf))}` : row.reversedBy ? `已冲正 · ${shortNo(text(row.reversedBy))}` : coverageRejected ? "批准时覆盖率不足，系统驳回" : undefined;
+                const relation = row.reversalOf ? `冲正单 · 原单 ${shortNo(text(row.reversalOf))}` : row.reversedBy ? `已冲正 · ${shortNo(text(row.reversedBy))}` : coverageRejected ? "覆盖率不足，系统驳回" : undefined;
                 const notReversible = reversibleReason(row);
                 return (
                   <Tr key={no} selected={current?.row.adjustmentNo === no} onOpen={() => void openDetail(row, "history")}>
-                    <Td><Cell main={<span data-mono>{shortNo(no)}</span>} sub={reasonCodeLabel(row.reasonCode)} title={no} /></Td>
+                    <Td><Cell main={<span data-mono>{shortNo(no)}</span>} sub={formatBusinessTimeCompact(historyTime(row), "—")} title={no} /></Td>
                     {columns.isVisible("user") && <Td><Cell main={userText(row)} title={userText(row)} /></Td>}
                     {columns.isVisible("amount") && <Td align="right"><Cell num main={`${signedAmount(row, historyDigits)} ${nexGridBrandText(text(row.asset))}`} sub={upper(row.asset) === "UVT" ? `≈ ${usdEquivalent(Number(row.amountUsd))} USDT` : undefined} /></Td>}
-                    <Td><Cell main={<StatusTag tone={status.tone}>{status.label}</StatusTag>} sub={relation && (coverageRejected && !row.reversalOf && !row.reversedBy ? <span data-tone="warn">{relation}</span> : relation)} /></Td>
-                    {columns.isVisible("time") && <Td><Cell num main={formatBusinessTimeCompact(historyTime(row), "—")} /></Td>}
-                    {columns.isVisible("reason") && <Td><Cell main={text(row.reason)} title={text(row.reason)} /></Td>}
+                    <Td><Cell title={relation} main={<StatusTag tone={status.tone} explain={status.explain}>{status.label}</StatusTag>} sub={relation && (coverageRejected && !row.reversalOf && !row.reversedBy ? <span data-tone="warn">{relation}</span> : relation)} /></Td>
+                    {columns.isVisible("reason") && <Td><Cell main={text(row.reason)} sub={reasonCodeLabel(row.reasonCode)} title={text(row.reason)} /></Td>}
                     {columns.isVisible("evidence") && <Td><Cell main={text(row.evidenceRef)} title={text(row.evidenceRef)} /></Td>}
                     {columns.isVisible("ledger") && <Td>{ledgerCell(row)}</Td>}
                     {canReverse && <Td sticky="end">{notReversible
@@ -1269,7 +1321,11 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   );
 
   /* ── 抽屉 ── */
-  const shown = detail?.adjustment ?? current?.row ?? null;
+  // 详情读不到时用当前列表里的这一行；当前列表里已经没有，才用打开时的那一行（F05）。
+  const currentNo = text(current?.row.adjustmentNo, "");
+  const listedRow = current ? (current.source === "history" ? historyRows : queueRows).find((row) => row.adjustmentNo === currentNo)
+    ?? [...queueRows, ...historyRows].find((row) => row.adjustmentNo === currentNo) : undefined;
+  const shown = detail?.adjustment ?? listedRow ?? current?.row ?? null;
   const shownNo = text(shown?.adjustmentNo, "");
   const shownPending = shown ? isPendingRow(shown) : false;
   const listRows = current?.source === "history" ? historyRows : queueRows;
@@ -1281,7 +1337,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const shownCoverage = detail ? coverageOf(detail.coverage) : null;
   const shownCredit = upper(shown?.direction) === "CREDIT";
   const shownMine = shown ? isMine(shown) : false;
-  const shownApproveBlock = shown && shownPending && canApprove && !shownMine ? (detailLoading ? "正在读取…" : detailError ? "详情读取失败，先重试" : approveBlock(shown, detail)) : undefined;
+  const shownApproveBlock = shown && shownPending && canApprove && !shownMine ? (detailLoading ? "正在读取…" : detailError || !detail ? "先读到详情才能批准" : approveBlock(shown, detail)) : undefined;
   const shownCoverageAfter = shownCoverage?.reliable ? projectedCoverage(shownCoverage, "CREDIT", Number(shown?.amountUsd ?? shown?.amount)) : undefined;
   const coverageReviewReason = text(shown?.reviewReason, "");
   const reviewReasonText = coverageReviewReason.startsWith("COVERAGE_BELOW_REDLINE:")
@@ -1292,34 +1348,36 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     { label: "金额", icon: Coins, tone: "money", value: `${signedAmount(shown)} ${shownUnit}`, reason: upper(shown.asset) === "UVT" ? `≈ ${usdEquivalent(Number(shown.amountUsd))} USDT` : undefined },
     { label: "用户", icon: User, tone: "users", value: userText(shown), state: detail?.user && upper(detail.user.status) !== "ACTIVE" ? "warn" : undefined, reason: detail?.user ? `账户${ACCOUNT_STATUS[upper(detail.user.status)] ?? "状态未知"}` : undefined },
     shownPending
-      ? { label: "余额", state: shownBalance && isNegative(shownBalance.after) ? "warn" : undefined,
-        value: detailLoading ? "正在读取…" : !shownBalance ? "读不到" : `现在 ${money(shownBalance.now)} → 批准后约 ${money(shownBalance.after)} ${shownUnit}`,
-        reason: shownBalance && isNegative(shownBalance.after) ? "余额不足，批准会被拒" : undefined }
+      ? { label: "余额",
+        value: detailLoading ? "正在读取…" : !shownBalance ? <span className="rd-weak">读不到</span>
+          : <><Change from={money(shownBalance.now)} to={`批准后约 ${money(shownBalance.after)}`} tone={isNegative(shownBalance.after) ? "warn" : undefined} /> {shownUnit}</> }
       : { label: "执行后余额", value: shown.balanceAfter == null ? "—" : `${moneyOf(shown.balanceAfter)} ${shownUnit}` },
     ...(shownPending && shownCredit ? [{
       label: "兑付覆盖率",
-      state: detailLoading || !detail ? undefined : !shownCoverage?.reliable || (shownCoverageAfter != null && shownCoverageAfter < shownCoverage.redline) ? "danger" as const : undefined,
-      value: detailLoading ? "正在读取…" : !detail ? "读不到" : !shownCoverage?.reliable ? "算不出来，现在不能批准增加余额"
-        : `现在 ${pct(shownCoverage.ratio)} → 批准后约 ${shownCoverageAfter == null ? "应付款为 0" : pct(shownCoverageAfter)}，红线 ${fmtConfigPct(shownCoverage.redline)}`,
+      // 算不出来是「要注意」，和页面上同一个原因同色；低于红线才用红（DT-13、VS-107）。
+      state: detailLoading || !detail ? undefined : !shownCoverage?.reliable ? "warn" as const : shownCoverageAfter != null && shownCoverageAfter < shownCoverage.redline ? "danger" as const : undefined,
+      value: detailLoading ? "正在读取…" : !detail ? <span className="rd-weak">读不到</span> : !shownCoverage?.reliable ? "算不出来"
+        : <><Change from={pct(shownCoverage.ratio)} to={`批准后约 ${shownCoverageAfter == null ? "应付款为 0" : pct(shownCoverageAfter)}`} /> · 红线 {fmtConfigPct(shownCoverage.redline)}</>,
     }] : []),
     { label: "提交人", value: text(shown.maker), reason: formatBusinessTimeFull(shown.createdAt, "—") },
-    ...(shownPending ? [{ label: "能不能批", value: !canApprove ? WAITING : shownMine ? MINE : shownApproveBlock ? "现在不能批" : "你能批", state: canApprove && !shownMine && shownApproveBlock ? "warn" as const : undefined }] : []),
+    // 能不能批只写结论，原因只在底部一句（DT-12）。
+    ...(shownPending && canApprove && !shownMine ? [{ label: "能不能批", value: shownApproveBlock ? "不能" : "能" }] : []),
   ];
 
   const shownLocked = lockedRows.has(shownNo);
   // 历史单的冲正：详情读到了钱包余额，扣回后为负就先禁用并写原因，不开框（死路不开框）。
   const reverseBalance = detail && !shownPending ? detailBalance(detail, true) : null;
-  const reverseBalanceBlock = reverseBalance && isNegative(reverseBalance.after) ? `冲正后余额不足（现在 ${money(reverseBalance.now)} ${shownUnit}），冲正会被拒` : undefined;
+  const reverseBalanceBlock = reverseBalance && shown && isNegative(reverseBalance.after) ? reverseShortfall(shown, reverseBalance.now) : undefined;
   const drawerNote = !shown ? undefined
     : shownLocked ? LOCKED_ROW
       : shownPending
         ? !canApprove ? (shownMine && canCreate ? undefined : WAITING)
-          : shownMine ? MINE : shownApproveBlock
+          : shownMine ? MINE : detailError ? undefined : shownApproveBlock
         : undefined;
   const drawerBusy = Boolean(submitting) || Boolean(opening);
   const drawerFooter = shown && (shownPending ? (
     <Decision note={drawerNote}
-      danger={canApprove ? <Button variant="danger-outline" disabled={drawerBusy} disabledReason={shownMine ? MINE : rowBlock(shown, "reject") ?? (detailLoading ? "正在读取…" : undefined)} onClick={() => void confirmDecision(shown, "reject")}>驳回</Button> : undefined}
+      danger={canApprove ? <Button disabled={drawerBusy} disabledReason={shownMine ? MINE : rowBlock(shown, "reject") ?? (detailLoading ? "正在读取…" : undefined)} onClick={() => void confirmDecision(shown, "reject")}>驳回</Button> : undefined}
       others={shownMine && canCreate ? <Button disabled={drawerBusy} disabledReason={rowBlock(shown, "withdraw")} onClick={() => void confirmDecision(shown, "withdraw")}>撤回</Button> : undefined}
       primary={canApprove ? <Button variant="primary" disabled={drawerBusy} disabledReason={shownMine ? MINE : shownApproveBlock} onClick={() => void confirmDecision(shown, "approve")}>批准</Button> : undefined} />
   ) : (canReverse && !reversibleReason(shown)) || (shown.ledgerId != null && shown.ledgerId !== "" && canReadLedger) || shownLocked ? (
@@ -1357,7 +1415,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     <PageHeader pageId="C3" title="余额与资产调整" summary={<AutoGloss>补偿或纠错时增减用户余额，另一位同事批准后才入账。</AutoGloss>}
       back={back ? <Link className="rd-link" href={back.href} prefetch={false}>{back.label}</Link> : undefined}
       meta={<span className="rd-toolbar">
-        <span>{readAt ? `${businessClock(readAt)} 读取（${zone}），` : ""}不自动刷新</span>
+        <span>{readAt ? `${businessClock(readAt)} 读取（${zone}）` : overview.loading || queue.loading || history.loading ? "正在读取" : "这页的数据都没读到"}，不自动刷新</span>
         <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={overview.loading || queue.loading || history.loading} onClick={() => void refreshAll()}>刷新</Button>
       </span>}
       readOnly={canWriteAny ? undefined : "你只能查看；发起、批准和冲正要有对应权限的同事办。"}
@@ -1366,7 +1424,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     {pendingNotices}
     {(canCreate || canApprove) && coverageBelow && overviewCoverage && <Notice tone="danger" title={`兑付覆盖率 ${pct(overviewCoverage.ratio)}，低于红线 ${fmtConfigPct(overviewCoverage.redline)}`}
       action={canReadPool ? <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款</Link> : undefined}>
-      现在不能增加用户余额：提交和批准都会被拒。扣减照常。
+      增加余额的提交和批准都已停用，扣减照常。
     </Notice>}
     {(canCreate || canApprove) && coverageUnknown && <Notice tone="warn"
       action={canReadPool ? <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款</Link> : undefined}>
@@ -1391,7 +1449,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         onPage={setQueuePage} onPageSize={(size) => { setQueueSize(size); setQueuePage(1); }} />}
     </Panel>
 
-    <Fold title="调整历史" icon={History} tone="role-3" summary={historySummary} alert={!!history.error} alertTone="danger" explain={C01_RULE}
+    <Fold title="调整历史" icon={History} tone="role-3" summary={historySummary} alert={!!history.error} alertTone="danger" explain={historyExplain}
       open={historyOpen} onOpenChange={setHistoryOpen}>
       <FilterBar scope={<Segments label="调整历史资产筛选" value={historyAsset} onChange={(next) => { setHistoryAsset(next); setHistoryPage(1); }}
         items={[{ value: "", label: "全部" }, ...ASSETS.map((item) => ({ value: item, label: nexGridBrandText(item) }))]} />}
@@ -1403,13 +1461,13 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
 
     <Drawer open={Boolean(current)} onClose={closeDetail} title="调整单详情" icon={FileText} tone="role-1" busy={Boolean(submitting)}
       sub={shown && <><span data-mono>{shownNo}</span> <IconButton aria-label="复制调整单号" data-size="sm" onClick={() => copyNo(shownNo)}><Copy size={13} aria-hidden /></IconButton>
-        <StatusTag tone={statusOf(shown).tone}>{statusOf(shown).label}</StatusTag>
-        {shown.reversalOf && <StatusTag tone="neutral">冲正单</StatusTag>}
-        {shown.reversedBy && <StatusTag tone="done">已冲正</StatusTag>}</>}
+        <StatusTag tone={statusOf(shown).tone} explain={statusOf(shown).explain}>{statusOf(shown).label}</StatusTag>
+        {shown.reversalOf && <StatusTag tone="neutral" explain={REVERSAL_EXPLAIN}>冲正单</StatusTag>}
+        {shown.reversedBy && <StatusTag tone="done" explain={REVERSED_EXPLAIN}>已冲正</StatusTag>}</>}
       nav={{ hasPrev: Boolean(prevRow), hasNext: Boolean(nextRow), onPrev: () => { if (prevRow) void openDetail(prevRow, current?.source ?? "queue"); }, onNext: () => { if (nextRow) void openDetail(nextRow, current?.source ?? "queue"); } }}
       footer={drawerFooter}>
       {shown && <>
-        {detailError && <BlockState compact state="error" title="详情读取失败，下面是列表里的信息" detail={detailError} onRetry={() => void openDetail(shown, current?.source ?? "queue")} />}
+        {detailError && <BlockState compact state="error" title={listedRow ? "详情读取失败，下面是当前列表里的信息" : "详情读取失败，下面是打开时列表里的信息"} detail={detailError} onRetry={() => void openDetail(shown, current?.source ?? "queue")} />}
         <JudgmentPoints title={`判断要点 · 时间为${zone}`} rows={judgment} />
         <Facts>
           <Fact k="原因分类">{reasonCodeLabel(shown.reasonCode)}</Fact>
