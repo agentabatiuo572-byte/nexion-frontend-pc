@@ -29,7 +29,7 @@ import {
   type PageResult,
 } from "@/lib/admin/d-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { formatD4Remark, formatD4Subtype } from "@/lib/admin/d4-ledger-display";
+import { d4SubtypeCode, formatD4Remark, formatD4Subtype } from "@/lib/admin/d4-ledger-display";
 import type { DCtx } from "./types";
 
 const BILL_TYPES: ReadonlyArray<readonly [D4BillType | "", string]> = [
@@ -670,7 +670,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
                   return (
                     <Tr key={row.id} selected={detail?.tab === "all" && detail.id === row.id} mark={bizNo && row.bizNo === bizNo ? "hit" : undefined} onOpen={() => openDetail("all", row.id)}>
                       <Td sticky="start"><Cell title={row.bizNo} main={<span data-mono>{shortBillNo(row.bizNo)}</span>} sub={userLabel(row)} /></Td>
-                      <Td><Cell main={BILL_TYPE_LABELS[row.billType]} sub={formatD4Subtype(row.subtype)} /></Td>
+                      <Td><Cell main={BILL_TYPE_LABELS[row.billType]} sub={<span title={d4SubtypeCode(row.subtype) ? `业务类型原值 ${d4SubtypeCode(row.subtype)}` : undefined}>{formatD4Subtype(row.subtype)}</span>} /></Td>
                       <Td align="right"><Cell num main={`${signed(row, amountDigits)} ${unit(row.asset)}`} sub={`余 ${amountText(row.balanceAfter, balanceDigits)} ${unit(row.asset)}`} /></Td>
                       <Td><StatusTag tone={status.tone}>{status.label}</StatusTag></Td>
                       <Td><Cell num main={listTime(row.createdAt)} /></Td>
@@ -787,7 +787,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
                   ? <TableMessage columns={5} role="status">{userData.from || userData.to ? "这段时间该用户没有账单。" : "该用户暂无账单。"}</TableMessage>
                   : pageChecks.map((row) => (
                     <Tr key={row.bill.id} selected={detail?.tab === "user" && detail.id === row.bill.id} mark={row.breakDetected ? "danger" : undefined} onOpen={() => openDetail("user", row.bill.id)}>
-                      <Td><Cell title={row.bill.bizNo} main={<span data-mono>{shortBillNo(row.bill.bizNo)}</span>} sub={`${BILL_TYPE_LABELS[row.bill.billType]} · ${formatD4Subtype(row.bill.subtype)}`} /></Td>
+                      <Td><Cell title={row.bill.bizNo} main={<span data-mono>{shortBillNo(row.bill.bizNo)}</span>} sub={<span title={d4SubtypeCode(row.bill.subtype) ? `业务类型原值 ${d4SubtypeCode(row.bill.subtype)}` : undefined}>{BILL_TYPE_LABELS[row.bill.billType]} · {formatD4Subtype(row.bill.subtype)}</span>} /></Td>
                       <Td align="right"><Cell num main={`${signed(row.bill, checkAmountDigits)} ${unit(row.bill.asset)}`} /></Td>
                       <Td align="right"><Cell num main={`${amountText(row.bill.balanceAfter, checkBalanceDigits)} ${unit(row.bill.asset)}`}
                         sub={row.breakDetected && row.expectedBalanceAfter !== null ? `期望 ${amountText(row.expectedBalanceAfter, checkBalanceDigits)} ${unit(row.bill.asset)}` : undefined} /></Td>
@@ -875,7 +875,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
             <Fact k="差额" tone={shown.check.breakDetected ? "danger" : undefined}>{shown.check.settlementBucket === "UNSETTLED" ? "不参与核对" : `${signedDiff(shown.check.difference)} ${unit(shown.bill.asset)}`}</Fact>
           </>}
           <Fact k="类型">{BILL_TYPE_LABELS[shown.bill.billType]}</Fact>
-          <Fact k="明细">{formatD4Subtype(shown.bill.subtype)}</Fact>
+          <Fact k="明细">{formatD4Subtype(shown.bill.subtype)}{d4SubtypeCode(shown.bill.subtype) && <Explain label="业务类型原值" content={`这类账单还没有中文名，业务类型原值 ${d4SubtypeCode(shown.bill.subtype)}，技术详情里也有。`} />}</Fact>
           <Fact k="备注">{formatD4Remark(shown.bill.remark).label}</Fact>
         </Facts>
         <Fold inset title="技术详情" summary={`账单记录号 ${shown.bill.id}`}>

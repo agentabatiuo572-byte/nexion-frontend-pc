@@ -47,7 +47,32 @@ const SUBTYPE_LABELS: Record<string, string> = {
   swap: "兑换",
   asset_adjustment: "人工调整",
   c3_asset_adjustment: "人工调整",
+  // 以下按 proto-backend origin/test 现在写进 nx_wallet_ledger.biz_type 的值补齐（重构说明「子类对照」）。
+  adjustment: "人工调整",
+  order_refund: "订单退款",
+  device_purchase: "设备购买",
+  exchange_swap: "兑换",
+  promotion_reward: "促销奖励",
+  promotion_reward_reversal: "促销奖励追回",
+  trial_bonus_reversal: "试用奖励冲回",
+  h2_trial_bonus: "试用奖励",
+  h2_trial_remainder: "试用剩余金额",
+  registration_gift_hold: "新人礼（待首笔购买）",
+  event_reward: "活动奖励",
+  wheel_reward: "幸运转盘奖励",
+  chargeback_recovery: "拒付追回",
+  staking_open: "质押锁定",
+  staking_claim: "质押奖励领取",
+  repurchase_claim: "锁定计划奖励领取",
+  genesis_emission: "创世节点产出",
+  genesis_secondary_sell: "创世节点转让卖出",
+  genesis_secondary_buy: "创世节点转让买入",
 };
+
+/** 带动作后缀的业务类型按开头归类（CREGIS_REORG_<动作>）。 */
+const SUBTYPE_PREFIXES: ReadonlyArray<readonly [string, string]> = [
+  ["cregis_reorg_", "Cregis 链上重组处置"],
+];
 
 /**
  * 后端写入的英文技术备注 → 运营可读说明。逐项对照 proto-backend origin/test 现在的写入处
@@ -129,7 +154,14 @@ function normalizeKey(value: string) {
 export function formatD4Subtype(value: unknown) {
   const raw = typeof value === "string" ? value.trim() : "";
   if (!raw) return "—";
-  return SUBTYPE_LABELS[raw.toLowerCase()] ?? (/[\u3400-\u9fff]/.test(raw) ? raw : "其他业务");
+  const key = raw.toLowerCase();
+  return SUBTYPE_LABELS[key] ?? SUBTYPE_PREFIXES.find(([prefix]) => key.startsWith(prefix))?.[1] ?? (/[\u3400-\u9fff]/.test(raw) ? raw : "其他业务");
+}
+
+/** 「其他业务」时给提示用的原码（大写，和后端 biz_type 一致）；认得的返回空串。 */
+export function d4SubtypeCode(value: unknown) {
+  const raw = typeof value === "string" ? value.trim() : "";
+  return raw && formatD4Subtype(raw) === "其他业务" ? raw.toUpperCase() : "";
 }
 
 /**
