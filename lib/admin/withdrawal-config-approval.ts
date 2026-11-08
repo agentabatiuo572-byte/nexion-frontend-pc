@@ -85,6 +85,7 @@ export function configApprovalOriginalInput(sourceDomain: ApprovalSource, input:
   if (!Array.isArray(original) || typeof original[1] !== "string"
     || (sourceDomain === "F3" ? !Number.isSafeInteger(original[0]?.ownerUserId) || typeof original[0]?.settlementDate !== "string"
       : sourceDomain === "F4" ? !Number.isSafeInteger(original[0]?.expectedRevision)
+      : sourceDomain === "D5" ? !Number.isSafeInteger(original[0]?.expectedVersion)
       : sourceDomain === "H8" ? !Number.isSafeInteger(original[0]?.expectedVersion)
         || typeof original[0]?.key !== "string" || typeof original[0]?.value !== "string"
       : sourceDomain === "G4" ? original[0]?.paramKey !== "dividend" || typeof original[0]?.value !== "string"
