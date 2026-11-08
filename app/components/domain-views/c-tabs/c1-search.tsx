@@ -12,7 +12,7 @@ import { CheckCircle2, CircleHelp, Coins, Download, Lock, RefreshCw, ShieldAlert
 import { AutoGloss } from "@/app/components/kit/gloss";
 import {
   Button, Cell, ColumnPicker, Decision, Explain, Fact, Facts, Field, FilterBar, FilterField, InlineRetry, Input, Modal, Notice, PageHeader,
-  Pager, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr,
+  Pager, Panel, ReleaseBody, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr,
   useTableColumns, type StateTone,
 } from "@/app/components/rd";
 import {
@@ -28,6 +28,7 @@ import { ADMIN_ERROR_MESSAGES, displayAdminError, displayAdminReadError } from "
 import { businessClock, businessStamp, businessZone } from "@/lib/admin/business-time";
 import { userNicknameText } from "@/lib/admin/brand-copy";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "@/lib/admin/outcome-classification";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createPendingMutationStore, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -46,6 +47,8 @@ type ExportQuery = Omit<UserProfileQuery, "pageNum" | "pageSize">;
 type PendingExport = PendingMutationRecord & { query: ExportQuery; reason: string; operator: string };
 type Problem = { text: string; fields: readonly FilterKey[]; keyword?: boolean };
 type DialogNotice = { tone: "danger" | "warn"; title: string; text: string };
+/** 导出框三种样子：新导出、原操作、解除待确认。解除在同一个框里换内容，不叠第二个框。 */
+type Dialog = { mode: "new"; query: ExportQuery; total: number } | { mode: "pending" } | { mode: "release" };
 
 const FILTER_KEYS: readonly FilterKey[] = ["tier", "vRank", "referralCode", "depositMin", "depositMax", "usdtMin", "usdtMax", "nexMin", "nexMax", "riskBand", "joinedFrom", "joinedTo"];
 const EMPTY_FILTERS = Object.fromEntries(FILTER_KEYS.map((key) => [key, ""])) as Filters;
@@ -58,17 +61,17 @@ const DEFAULT_PAGE_SIZE = 50;
 /** 后端最多读 25 页 × 200 条，按系统编号倒序（OpsUserService.buildProfileExport）。 */
 const EXPORT_MAX_ROWS = 5000;
 const REASON_RULE = "操作理由要 8–200 字";
+const REASON_FORMAT = "操作理由不能以 { 或 [ 开头，也不能带网址";
+/** 后端按角色给列：这三个角色 15 列，含风险分、设备数和余额，其他能导出的账号 9 列（OpsUserService.exportProfileExcel）。 */
+const FULL_EXPORT_ROLES = ["superadmin", "risk", "auditor"];
 const CHIP_PREFIX: Record<FilterKey, string> = {
   tier: "用户分层", vRank: "团队等级", referralCode: "推荐码", riskBand: "风险等级",
   depositMin: "累计充值 ≥", depositMax: "累计充值 ≤", usdtMin: "USDT 余额 ≥", usdtMax: "USDT 余额 ≤", nexMin: "UVT 余额 ≥", nexMax: "UVT 余额 ≤",
   joinedFrom: "注册日期起", joinedTo: "注册日期止",
 };
-const EXPORT_FILTER_LABELS: Record<keyof ExportQuery, string> = {
-  keyword: "关键词", status: "账户状态", riskMin: "最低风险分", userId: "系统编号",
-  phoneHash: "手机号哈希", phoneMasked: "脱敏手机号", tier: "用户分层", vRank: "团队等级",
-  referralCode: "推荐码", depositMin: "累计充值下限", depositMax: "累计充值上限",
-  usdtMin: "USDT 余额下限", usdtMax: "USDT 余额上限", nexMin: "UVT 余额下限", nexMax: "UVT 余额上限",
-  riskBand: "风险等级", joinedFrom: "注册日期起", joinedTo: "注册日期止",
+/** 导出框里的条件和条件条一个叫法（DT-14）。 */
+const EXPORT_PREFIX: Record<keyof ExportQuery, string> = {
+  ...CHIP_PREFIX, keyword: "关键词", status: "账户状态", riskMin: "风险分 ≥", userId: "系统编号", phoneHash: "手机号哈希", phoneMasked: "脱敏手机号",
 };
 const STATUS: Record<string, { label: string; tone: StateTone; icon: LucideIcon }> = {
   ACTIVE: { label: "正常", tone: "neutral", icon: CheckCircle2 },
@@ -78,7 +81,6 @@ const STATUS: Record<string, { label: string; tone: StateTone; icon: LucideIcon 
 };
 const UNKNOWN_STATUS = { label: "状态未知", tone: "warn" as StateTone, icon: CircleHelp };
 const SEARCH_EXPLAIN = "可以搜用户编码、系统编号、昵称、推荐码、脱敏手机号（138****8010）和手机号哈希。为保护隐私，不能按完整手机号查。停止输入后自动查询。";
-const NEW_EXPORT_EXPLAIN = "新导出会使用当前页面的筛选和新编号，不会撤销原操作可能已生成的文件或记录。";
 const RETRY_EXPLAIN = "用原编号重新发送。原操作已经生成过文件时，后端按原编号直接给回那个文件，不会再记一条导出。";
 
 const exportStore = createPendingMutationStore<PendingExport>({
@@ -96,6 +98,12 @@ const countText = (value: number) => value.toLocaleString("en-US");
 const present = (value: unknown) => value !== null && value !== undefined && value !== "";
 const textOf = (value: unknown, fallback = "—") => present(value) ? String(value) : fallback;
 const amountOk = (value: string) => value === "" || (Number.isFinite(Number(value)) && Number(value) >= 0);
+/** 和后端同一条规则（OpsUserService.containsRawJsonOrUrl），发请求前先挡住。 */
+const reasonProblem = (value: string) => {
+  const reason = value.trim();
+  if (reason.length < 8 || reason.length > 200) return REASON_RULE;
+  return /^[{[]/.test(reason) || reason.includes("://") ? REASON_FORMAT : undefined;
+};
 const dateOk = (value: string) => {
   if (value === "") return true;
   const time = /^\d{4}-\d{2}-\d{2}$/.test(value) ? Date.parse(`${value}T00:00:00Z`) : NaN;
@@ -178,7 +186,7 @@ function exportQueryOf(applied: Applied): ExportQuery {
 function exportScopeLines(query: ExportQuery) {
   const lines = (Object.entries(query) as [keyof ExportQuery, unknown][])
     .filter(([, value]) => present(value))
-    .map(([key, value]) => `${EXPORT_FILTER_LABELS[key]}：${key === "riskBand"
+    .map(([key, value]) => `${EXPORT_PREFIX[key]} ${key === "riskBand"
       ? RISK_BANDS[String(value)] ?? String(value)
       : key === "status" ? String(value).split(",").map((status) => statusOf(status).label).join("、") : String(value)}`);
   return lines.length ? lines : ["全部用户"];
@@ -252,12 +260,44 @@ function draftProblem(keyword: string, filters: Filters, badFields: readonly Fil
   return null;
 }
 
-/** 接口说明后面再接一句时补句号，中文句间不留空格。 */
-const sentence = (text: string) => /[。；！？.]$/.test(text) ? text : `${text}。`;
-
-/** 后端明确拒绝的才算没导出；幂等层说还在处理、结果查不清的，和 5xx、断网一样算结果未知（OP-91）。 */
+/** 新导出：后端明确拒绝的才算没导出，丢掉这次的编号；幂等层说还在处理、结果查不清的，和 5xx、断网一样算结果未知（OP-91）。 */
 const exportRejected = (error: unknown) => error instanceof UsersRequestError
   && isDeterministicRejection(error.status) && !isIdempotencyOutcomeOpen(error.code);
+
+/**
+ * 按原操作重试被拒后能不能「解除待确认」，只按共用的 isExplicitRejection（OP-153）：带原因码的 4xx 才算，
+ * 401、403、408、425、429 和 IDEMPOTENCY_* 不算。UsersRequestError 的原因码字段叫 code，这里换成 reasonCode 交给它。
+ */
+const retryVerdict = (error: unknown) => isExplicitRejection(error instanceof UsersRequestError ? { status: error.status, reasonCode: error.code } : error);
+
+/** 没有状态码（断网、请求没出去）、408、5xx：不知道这次有没有生效。 */
+const outcomeUnknown = (error: unknown) => !(error instanceof UsersRequestError) || error.status === 0 || error.status === 408 || error.status >= 500;
+
+/** 幂等层的码用这页的话说，通用句里的「稍后刷新」「重新发起」在原操作框里做不到。 */
+const IDEMPOTENCY_CAUSE: Record<string, string> = {
+  IDEMPOTENCY_KEY_PAYLOAD_MISMATCH: "服务端认为这次重试和原操作对不上，没有执行",
+  IDEMPOTENCY_REQUEST_IN_PROGRESS: "原操作还在处理",
+  IDEMPOTENCY_RETRY_CONFLICT: "原操作还在处理",
+  IDEMPOTENCY_RECLAIM_CONFLICT: "原操作还在处理",
+  IDEMPOTENCY_RESULT_UNKNOWN: "服务端也查不清原操作的结果",
+  IDEMPOTENCY_SUCCESS_STATE_LOST: "服务端没记下原操作的结果",
+  IDEMPOTENCY_FAILURE_STATE_LOST: "服务端没记下原操作的结果",
+  IDEMPOTENCY_INVESTIGATION_CONFIRMED_SUCCEEDED: "人工核查确认原操作已经生效",
+  IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED: "人工核查确认原操作没有执行",
+};
+
+/**
+ * 结果未知、重试失败时的原因，用这页自己的话（看图复查 2）。导出的结果页面查不到，筛选和理由也改不了，
+ * 通用错误句里的「刷新确认是否已生效」「把输入恢复为首次提交时的内容」在这里做不到。普通业务拒绝照用接口的中文原因。
+ */
+function exportCause(error: unknown) {
+  if (!(error instanceof UsersRequestError) || error.status === 0 || error.status === 408) return "网络断了或服务没有响应";
+  if (error.status >= 500) return "服务暂时异常";
+  if (error.code?.startsWith("IDEMPOTENCY_")) return IDEMPOTENCY_CAUSE[error.code] ?? "服务端没有处理这次请求";
+  if (error.status === 429) return "请求太频繁，这次没有处理";
+  if (error.status === 401 || error.status === 403) return "这个账号现在没有这项权限，这次没有处理";
+  return displayAdminError(error).replace(/[。；]$/, "");
+}
 
 function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
@@ -278,6 +318,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
   const authorities = session?.authorities ?? [];
   const canReadRisk = session?.role === "superadmin" || authorities.includes("risk_k4_read");
   const canExport = authorities.includes("user_c1_export");
+  const fullExport = FULL_EXPORT_ROLES.includes(session?.role ?? "");
   const canOpenDetail = reach("/users/search", "user_c1hub_read");
   const scope = exportScope(session?.adminId);
 
@@ -307,13 +348,15 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
   const overviewRequest = useRef(0);
 
   const [pending, setPending] = useState<PendingExport | null>(null);
-  const [dialog, setDialog] = useState<null | { mode: "new"; query: ExportQuery; total: number } | { mode: "pending" }>(null);
+  const [dialog, setDialog] = useState<Dialog | null>(null);
   const [reason, setReason] = useState("");
   const [reasonTouched, setReasonTouched] = useState(false);
+  // 后端说理由不合格时理由框也标出来，改了就收起。
+  const [reasonRejected, setReasonRejected] = useState("");
   const [exporting, setExporting] = useState(false);
   const [dialogNotice, setDialogNotice] = useState<DialogNotice | null>(null);
   const [retryRejected, setRetryRejected] = useState(false);
-  const [releasing, setReleasing] = useState(false);
+  const releaseButton = useRef<HTMLButtonElement>(null);
   const exportingRef = useRef(false);
   const exportCooldownUntil = useRef(0);
 
@@ -457,16 +500,26 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
         : listLoading ? "名单还在读取，读完再导出"
           : total === 0 ? "当前条件下没有用户，不用导出" : undefined;
 
+  const pendingExpired = pending ? pending.expiresAt <= Date.now() : false;
+  // 原操作按风险条件筛过，这个账号现在没有风险读权：不重发，也不能删掉风险条件再用原号发（F04）。
+  const pendingNeedsRisk = !!pending && (present(pending.query.riskBand) || present(pending.query.riskMin));
+  const retryBlocked = !pending ? undefined
+    : pendingExpired ? RETRY_EXPIRED_TEXT
+      : pendingNeedsRisk && !canReadRisk ? "原操作按风险条件筛选，你的账号现在没有风险读权，不能按原操作重试，请到操作记录与审批核对" : undefined;
+
   const closeDialog = () => {
     if (exporting) return;
     setDialog(null);
     setDialogNotice(null);
     setReasonTouched(false);
+    setReasonRejected("");
   };
 
+  /** 有原操作时只能打开原操作：结果没确认前不能换新编号另发一次（OP-94、OP-96）。 */
   const openExport = () => {
     setDialogNotice(null);
     setReasonTouched(false);
+    setReasonRejected("");
     setRetryRejected(false);
     if (pending) {
       setDialog({ mode: "pending" });
@@ -476,12 +529,9 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
     setDialog({ mode: "new", query: exportQueryOf(applied), total });
   };
 
-  const startNewExport = () => {
-    setDialogNotice(null);
-    setReasonTouched(false);
-    setRetryRejected(false);
-    setReason("");
-    setDialog({ mode: "new", query: exportQueryOf(applied), total });
+  const backToPending = () => {
+    setDialog({ mode: "pending" });
+    window.requestAnimationFrame(() => releaseButton.current?.focus());
   };
 
   const throttled = () => {
@@ -492,41 +542,47 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
     return false;
   };
 
-  /** 下载成功才清掉原操作，文件没下载到就算没导出。 */
+  /**
+   * 后端给回文件才清掉原操作：名单生成时后端就记了导出，浏览器有没有存下文件页面不知道，也不影响那条记录（F05）。
+   */
   const send = async (record: Pick<PendingExport, "commandKey" | "query" | "reason" | "operator">) => {
     const file = await exportUserProfilesCsv(record.query, record.commandKey, record.reason, record.operator);
     downloadBlob(file.blob, file.fileName);
-    exportStore.forget(scope);
+    exportStore.forget(scope, record.commandKey);
     syncPending();
     setDialog(null);
     setDialogNotice(null);
     setReason("");
-    ctx.toast(`已下载用户名单 · ${file.fileName}`, "success");
+    ctx.toast(`名单已生成，已发起下载 · ${file.fileName}`, "success");
   };
 
   /**
-   * 新导出：先把原操作存进会话存储，存不下就不发（OP-92）。真正发出时才替换旧的原操作。
+   * 新导出：先把原操作存进会话存储，存不下就不发（OP-92）。这时不能有别的原操作，有就转去原操作，不覆盖（F01）。
    * 明确拒绝丢掉这次的编号，框不关、理由留着；结果未知留着原操作，框转成原操作的样子（OP-93）。
    */
   const runNewExport = async () => {
     if (dialog?.mode !== "new" || exporting || throttled()) return;
-    const trimmed = reason.trim();
-    if (trimmed.length < 8 || trimmed.length > 200) {
+    if (reasonProblem(reason)) {
       setReasonTouched(true);
       return;
     }
+    if (exportStore.list().some((item) => item.fingerprint === scope)) {
+      syncPending();
+      setDialog({ mode: "pending" });
+      return;
+    }
     const commandKey = `c1-user-profile-export-${crypto.randomUUID()}`;
-    const record = { query: dialog.query, reason: trimmed, operator: currentAdminOperator() };
+    const record = { query: dialog.query, reason: reason.trim(), operator: currentAdminOperator() };
     exportStore.remember(scope, commandKey, record);
     if (!exportStore.isDurablyStored(scope, commandKey)) {
       exportStore.forget(scope, commandKey);
-      setDialogNotice({ tone: "danger", title: "名单没有导出", text: "浏览器存不下这次操作，没有导出。换一个窗口再试。" });
+      setDialogNotice({ tone: "danger", title: "名单没有导出", text: "浏览器存不下这次操作，换一个窗口再试。" });
       return;
     }
-    exportStore.list().filter((item) => item.fingerprint === scope && item.commandKey !== commandKey).forEach((item) => exportStore.forget(scope, item.commandKey));
     exportingRef.current = true;
     setExporting(true);
     setDialogNotice(null);
+    setReasonRejected("");
     try {
       await send({ commandKey, ...record });
     } catch (error) {
@@ -538,12 +594,17 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
           setDialog(null);
           return;
         }
+        if (error instanceof UsersRequestError && error.code === "C1_EXPORT_REASON_INVALID") {
+          setReasonRejected(displayAdminError(error));
+          setDialogNotice({ tone: "danger", title: "名单没有导出", text: "操作理由没有通过检查，改好后再导出。" });
+          return;
+        }
         setDialogNotice({ tone: "danger", title: "名单没有导出", text: displayAdminError(error) });
         return;
       }
       syncPending();
       setDialog({ mode: "pending" });
-      setDialogNotice({ tone: "warn", title: "名单尚未下载成功，原操作结果尚未确认。", text: `${sentence(displayAdminError(error))}可按原筛选、理由和编号重试；要更改筛选或理由，请发起新导出。` });
+      setDialogNotice({ tone: "warn", title: "导出结果未确认", text: `${exportCause(error)}，不知道名单生成没有。可能已生成文件并记录导出，请先到操作记录与审批核对，或按原操作重试。` });
     } finally {
       exportCooldownUntil.current = Date.now() + 1_000;
       exportingRef.current = false;
@@ -551,10 +612,12 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
     }
   };
 
-  /** 按原操作重试：同编号、同条件、同理由（OP-94）。失败不管什么原因都不解除，明确拒绝的才给「解除待确认」（CP-33）。 */
+  /**
+   * 按原操作重试：同编号、同条件、同理由（OP-94）。过期、没有风险读权了都不发（F04）。
+   * 失败不管什么原因都不解除；只有 retryVerdict 认的明确拒绝才给「解除待确认」（F03）。
+   */
   const retryExport = async () => {
-    if (!pending || exporting || throttled()) return;
-    if (pending.expiresAt <= Date.now()) return;
+    if (!pending || exporting || throttled() || retryBlocked) return;
     if (!exportStore.isDurablyStored(pending.fingerprint, pending.commandKey)) {
       setDialogNotice({ tone: "warn", title: "没有重试", text: "浏览器里查不到这条记录，本次没有发送。待确认继续保留，请到操作记录与审批核对。" });
       return;
@@ -567,8 +630,11 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
       await send(pending);
     } catch (error) {
       if (isPermissionDenied(error)) announcePermissionDenied();
-      setRetryRejected(exportRejected(error));
-      setDialogNotice({ tone: "warn", title: "名单尚未下载成功，原操作结果尚未确认。", text: `重试没有成功：${sentence(displayAdminError(error))}这说明不了原操作的结果，原操作继续保留。` });
+      const verdict = retryVerdict(error);
+      setRetryRejected(verdict);
+      setDialogNotice(outcomeUnknown(error)
+        ? { tone: "warn", title: "重试结果未确认", text: `${exportCause(error)}，不知道这次重试生效没有。原操作继续保留，可以稍后再按原操作重试。` }
+        : { tone: "warn", title: "重试没有成功", text: `${exportCause(error)}。原操作的结果仍不确定，${verdict ? "核实后可以解除待确认，再发起新导出。" : "继续保留，请到操作记录与审批核对。"}` });
     } finally {
       exportCooldownUntil.current = Date.now() + 1_000;
       exportingRef.current = false;
@@ -576,15 +642,14 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
     }
   };
 
-  /** 解除只清本地记录，不发请求，不进操作记录。 */
+  /** 解除只清本标签页的记录，不发请求，不进操作记录，后端那条导出记录不变。 */
   const releasePending = () => {
     exportStore.forget(scope);
     syncPending();
-    setReleasing(false);
     setDialog(null);
     setDialogNotice(null);
     setRetryRejected(false);
-    ctx.toast("已解除待确认，可以重新导出", "success");
+    ctx.toast("已解除待确认，可以发起新导出", "success");
   };
 
   // ---- 显示 ----
@@ -612,7 +677,8 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
   ]);
   const deviceVisible = showDevice && columns.isVisible("device");
   const columnCount = 3 + (canReadRisk ? 1 : 0) + (showBalance ? 1 : 0) + (deviceVisible ? 1 : 0) + (canOpenDetail ? 1 : 0);
-  const hidden = [!canReadRisk && "风险分", !showBalance && "USDT 余额", !showDevice && "设备数"].filter(Boolean);
+  // 用表头的名字，新手才对得上（DT-14）。
+  const hidden = [!canReadRisk && "风险", !showBalance && "USDT 余额", !showDevice && "设备"].filter(Boolean);
   const balances = rows.map((row) => rawAmount(row.walletUsdt));
   // 同一列按本页最多的小数位补零，至少 2 位、最多 6 位（钱包 DECIMAL(18,6)）。
   const balanceDigits = Math.min(6, Math.max(2, ...balances.map((raw) => raw?.split(".")[1]?.length ?? 0)));
@@ -620,14 +686,13 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
   const riskValue = !overview ? "—" : overview.riskAuthorityAvailable && overview.highRisk !== null ? countText(overview.highRisk) : "暂无评分";
   const statFailed = overviewFailed && !overview;
   const auditHref = reach("/platform/audit", "platform_a2_read") ? "/platform/audit?domain=C" : null;
-  const pendingExpired = pending ? pending.expiresAt <= Date.now() : false;
   const links = [
     reach("/users/actions", "user_c2_read") && <Link key="c2" className="rd-link" href="/users/actions">账户操作</Link>,
     reach("/users/assets", "user_c3_read") && <Link key="c3" className="rd-link" href="/users/assets">余额与资产调整</Link>,
     reach("/users/security", "user_c5_read") && <Link key="c5" className="rd-link" href="/users/security">安全与登录设备</Link>,
   ].filter(Boolean);
-  const reasonLength = (dialog?.mode === "pending" ? pending?.reason ?? "" : reason).trim().length;
-  const reasonValid = reasonLength >= 8 && reasonLength <= 200;
+  const reasonError = reasonProblem(reason);
+  const auditLink = auditHref ? <Link className="rd-link" href={auditHref}>操作记录与审批</Link> : "操作记录与审批";
   const readOnly = canExport ? (canOpenDetail ? undefined : "你的账号不能打开用户详情")
     : `你只能查看；导出名单需要「导出脱敏用户清单」权限${canOpenDetail ? "" : "；你的账号不能打开用户详情"}`;
 
@@ -641,34 +706,35 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
       readOnly={readOnly}
       actions={canExport ? (
         <Button icon={<Download size={14} aria-hidden />} disabledReason={pending ? undefined : exportBlocked} onClick={openExport}>
-          {pending ? "继续原导出" : "导出名单"}
+          {pending ? (retryBlocked ? "查看原导出" : "继续原导出") : "导出名单"}
         </Button>
       ) : undefined} />
 
     {pending && (
       <Notice tone="warn" title="导出用户名单 · 结果未确认">
-        {businessStamp(pending.createdAt)}（{businessZone().label}）发起，可能已经生成文件，文件没下载到就算没导出。
-        {/* 过期那句已经说了去哪核对，链接放进句子里，不再另写一遍。 */}
-        {pendingExpired
-          ? <>已超过 24 小时，不能再重试，请到{auditHref ? <Link className="rd-link" href={auditHref}>操作记录与审批</Link> : "操作记录与审批"}核对。</>
-          : <>点右上角「继续原导出」按原操作重试，或发起新导出。{auditHref && <> <Link className="rd-link" href={auditHref}>到操作记录与审批核对</Link></>}</>}
+        {businessStamp(pending.createdAt)}（{businessZone().label}）发起，可能已生成文件并记录导出，确认前不能发起新导出。
+        {/* 链接放进句子里只写一遍。 */}
+        {!canExport ? <>你的账号现在不能导出名单，请到{auditLink}核对。</>
+          : pendingExpired ? <>已超过 24 小时，不能再重试，请到{auditLink}核对。</>
+            : retryBlocked ? <>你的账号现在没有风险读权，不能按原操作重试，请到{auditLink}核对。</>
+              : <>点右上角「继续原导出」按原操作重试，或到{auditLink}核对。</>}
         <Explain label="技术信息" content={`命令号 ${pending.commandKey} ｜ 操作者 ${pending.operator} ｜ 理由 ${pending.reason}`} />
       </Notice>
     )}
 
     <StatBand label="用户汇总" fit>
       <Stat icon={Users} tone="role-3" label="注册用户" value={overview ? countText(overview.totalUsers) : "—"} unit={overview ? "人" : undefined}
-        sub={statFailed ? <>读取失败 <InlineRetry retrying={overviewLoading} onRetry={() => setOverviewReload((value) => value + 1)} /></> : undefined}
+        sub={statFailed ? <>统计读取失败 <InlineRetry retrying={overviewLoading} onRetry={() => setOverviewReload((value) => value + 1)} /></> : undefined}
         explain="全部注册账户，不随下面的筛选变。" />
       {canReadRisk && (
         <Stat icon={ShieldAlert} iconTone={riskValue === "暂无评分" ? undefined : "danger"} label="高风险用户" value={riskValue} unit={riskValue === "—" || riskValue === "暂无评分" ? undefined : "人"}
-          sub={statFailed ? "读取失败" : overview?.riskAuthorityAvailable && overview.highRiskThreshold !== null ? `风险分 ≥ ${overview.highRiskThreshold}` : undefined}
+          sub={overview?.riskAuthorityAvailable && overview.highRiskThreshold !== null ? `风险分 ≥ ${overview.highRiskThreshold}` : undefined}
           explain={overview && !overview.riskAuthorityAvailable
             ? "风险评分规则没有生效的版本，或最近 24 小时没有评分，这时不统计高风险用户。"
             : "风险分取最近 24 小时内的评分，达到高风险分数线就算。分数线在「风险评分规则」里定。"} />
       )}
+      {/* 三个数是一次请求，读取失败只在第一格写一次（DT-12）。 */}
       <Stat icon={Snowflake} iconTone="warn" label="冻结账户" value={overview ? countText(overview.frozen) : "—"} unit={overview ? "人" : undefined}
-        sub={statFailed ? "读取失败" : undefined}
         explain="只算状态是冻结的账户，不含受限和封禁。" />
     </StatBand>
 
@@ -705,28 +771,28 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
         </FilterField>
         <FilterField label={<span>累计充值<Explain label="累计充值的口径" content="按确认、已入账、成功三种状态的充值单金额合计。" /></span>}>
           <span className="rd-filter-range">
-            <Input aria-label="累计充值下限" aria-invalid={invalid("depositMin")} type="number" min="0" inputMode="decimal" placeholder="下限" value={draftFilters.depositMin}
+            <Input aria-label="累计充值下限" aria-invalid={invalid("depositMin")} type="number" min="0" step="any" inputMode="decimal" placeholder="下限" value={draftFilters.depositMin}
               onChange={(event) => editFilter("depositMin", event.target.value, event.target.validity.badInput)} />
             <span aria-hidden>–</span>
-            <Input aria-label="累计充值上限" aria-invalid={invalid("depositMax")} type="number" min="0" inputMode="decimal" placeholder="上限" value={draftFilters.depositMax}
+            <Input aria-label="累计充值上限" aria-invalid={invalid("depositMax")} type="number" min="0" step="any" inputMode="decimal" placeholder="上限" value={draftFilters.depositMax}
               onChange={(event) => editFilter("depositMax", event.target.value, event.target.validity.badInput)} />
           </span>
         </FilterField>
         <FilterField label={<span>USDT 余额<Explain label="USDT 余额的口径" content="钱包可用余额。" /></span>}>
           <span className="rd-filter-range">
-            <Input aria-label="USDT 余额下限" aria-invalid={invalid("usdtMin")} type="number" min="0" inputMode="decimal" placeholder="下限" value={draftFilters.usdtMin}
+            <Input aria-label="USDT 余额下限" aria-invalid={invalid("usdtMin")} type="number" min="0" step="any" inputMode="decimal" placeholder="下限" value={draftFilters.usdtMin}
               onChange={(event) => editFilter("usdtMin", event.target.value, event.target.validity.badInput)} />
             <span aria-hidden>–</span>
-            <Input aria-label="USDT 余额上限" aria-invalid={invalid("usdtMax")} type="number" min="0" inputMode="decimal" placeholder="上限" value={draftFilters.usdtMax}
+            <Input aria-label="USDT 余额上限" aria-invalid={invalid("usdtMax")} type="number" min="0" step="any" inputMode="decimal" placeholder="上限" value={draftFilters.usdtMax}
               onChange={(event) => editFilter("usdtMax", event.target.value, event.target.validity.badInput)} />
           </span>
         </FilterField>
         <FilterField label={<span>UVT 余额<Explain label="UVT 余额的口径" content="钱包可用余额。" /></span>}>
           <span className="rd-filter-range">
-            <Input aria-label="UVT 余额下限" aria-invalid={invalid("nexMin")} type="number" min="0" inputMode="decimal" placeholder="下限" value={draftFilters.nexMin}
+            <Input aria-label="UVT 余额下限" aria-invalid={invalid("nexMin")} type="number" min="0" step="any" inputMode="decimal" placeholder="下限" value={draftFilters.nexMin}
               onChange={(event) => editFilter("nexMin", event.target.value, event.target.validity.badInput)} />
             <span aria-hidden>–</span>
-            <Input aria-label="UVT 余额上限" aria-invalid={invalid("nexMax")} type="number" min="0" inputMode="decimal" placeholder="上限" value={draftFilters.nexMax}
+            <Input aria-label="UVT 余额上限" aria-invalid={invalid("nexMax")} type="number" min="0" step="any" inputMode="decimal" placeholder="上限" value={draftFilters.nexMax}
               onChange={(event) => editFilter("nexMax", event.target.value, event.target.validity.badInput)} />
           </span>
         </FilterField>
@@ -742,7 +808,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
       </>}
       applied={chips}
       result={draftChanged ? "条件未应用" : undefined}
-      notice={problem && <span data-proof="c1-filter-refused">{problem.text}{listError ? "这次没有查询。" : "这次没有查询，下面仍是上次的结果。"}</span>}
+      notice={problem && <span data-proof="c1-filter-refused">{problem.text}{listError ? "这次没有查询。" : "下面仍是上次的结果。"}</span>}
     >
       <FilterField grow>
         <Input data-search aria-label="检索用户" aria-invalid={problem?.keyword} placeholder="用户编码 / 昵称 / 推荐码 / 脱敏手机号" value={draftKeyword}
@@ -761,7 +827,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
           <Th>等级</Th>
           {canReadRisk && <Th icon={ShieldAlert} tone="risk"><Explain label="风险分怎么来" content="风险分取最近 24 小时内的评分，没有评分写「—」。">风险</Explain></Th>}
           {showBalance && <Th align="right" icon={Coins} tone="money"><Explain label="余额这一列的口径" content="钱包可用余额。">USDT 余额</Explain></Th>}
-          {deviceVisible && <Th align="right"><Explain label="设备数的口径" content="总数 / 活跃。活跃算在线、忙碌、已激活、运行中的设备。">设备</Explain></Th>}
+          {deviceVisible && <Th align="right"><Explain label="设备数的口径" content="上面是设备总数，下面是活跃的台数。活跃算在线、忙碌、已激活、运行中的设备。">设备</Explain></Th>}
           {canOpenDetail && <Th sticky="end">操作</Th>}
         </tr></thead>
         <tbody>
@@ -799,13 +865,14 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
                   </Td>
                 )}
                 {showBalance && (
-                  <Td align="right">
+                  // 余额列只占最长那个数的宽，多出的宽度分给前面几列，数字不贴着「查看资料」（建议 1）。
+                  <Td align="right" data-fit="">
                     <Cell num main={balance === null ? <span className="rd-weak">—</span>
                       : Number(balance) === 0 ? <span className="rd-weak">{amountText(balance, balanceDigits)}</span>
                         : amountText(balance, balanceDigits)} />
                   </Td>
                 )}
-                {deviceVisible && <Td align="right"><Cell num main={`${textOf(row.deviceCount)} / ${textOf(row.activeDeviceCount)}`} /></Td>}
+                {deviceVisible && <Td align="right"><Cell num main={textOf(row.deviceCount)} sub={present(row.activeDeviceCount) ? `活跃 ${row.activeDeviceCount}` : undefined} /></Td>}
                 {canOpenDetail && (
                   // 列少时操作列只占按钮宽，按钮不和左边的列隔一大段（DT-04）。
                   <Td sticky="end" data-fit="">
@@ -831,55 +898,68 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
       </nav>
     )}
 
-    {dialog && (
+    {dialog?.mode === "release" ? (
+      // 解除在同一个框里换内容（PG-38）：「返回」回到原操作，× 关掉整个框。
+      <Modal title="解除待确认" icon={ShieldCheck} onClose={closeDialog} footer={<>
+        <Button autoFocus onClick={backToPending}>返回</Button>
+        <Button variant="primary" onClick={releasePending}>确认解除</Button>
+      </>}>
+        <ReleaseBody label="导出用户名单" explain="先到操作记录与审批核对这次导出有没有记下。解除只放开这个标签页里的锁，不改后端的导出记录。" />
+      </Modal>
+    ) : dialog && (
       <Modal title="导出用户名单" icon={Download} sub={<StatusTag tone="progress" filled>立即生效</StatusTag>} busy={exporting}
         dirty={dialog.mode === "new" && reason.trim() !== ""} onClose={closeDialog}
         footer={dialog.mode === "new" ? (
           <Decision
             others={<Button disabled={exporting} onClick={closeDialog}>取消</Button>}
-            primary={<Button variant="primary" loading={exporting} loadingText="生成中…" disabledReason={reasonValid ? undefined : REASON_RULE}
+            primary={<Button variant="primary" loading={exporting} loadingText="生成中…" disabledReason={reasonError}
               onBlockedClick={() => setReasonTouched(true)} onClick={() => void runNewExport()}>确认并导出</Button>} />
         ) : (
           <Decision
-            explain={<><p>发起新导出：{NEW_EXPORT_EXPLAIN}</p><p>按原操作重试：{RETRY_EXPLAIN}</p></>}
+            explain={<><p>按原操作重试：{RETRY_EXPLAIN}</p><p>原操作结果确认前不能发起新导出。重试被明确拒绝后，核实原操作的结果，可以解除待确认。</p></>}
             others={<>
               <Button disabled={exporting} onClick={closeDialog}>稍后处理</Button>
-              {retryRejected && <Button disabled={exporting} onClick={() => setReleasing(true)}>解除待确认</Button>}
-              <Button disabled={exporting} disabledReason={exportBlocked} onClick={startNewExport}>发起新导出</Button>
+              {retryRejected && <Button ref={releaseButton} disabled={exporting} onClick={() => setDialog({ mode: "release" })}>解除待确认</Button>}
             </>}
-            primary={<Button variant="primary" loading={exporting} loadingText="生成中…" disabledReason={pendingExpired ? RETRY_EXPIRED_TEXT : undefined}
+            primary={<Button variant="primary" loading={exporting} loadingText="生成中…" disabledReason={retryBlocked}
               onClick={() => void retryExport()}>按原操作重试</Button>} />
         )}>
         <div className="rd-stack">
-          {dialogNotice && <Notice tone={dialogNotice.tone} title={dialogNotice.title}>{dialogNotice.text}</Notice>}
+          {dialogNotice ? <Notice tone={dialogNotice.tone} title={dialogNotice.title}>{dialogNotice.text}</Notice>
+            // 不能重试的原因写在框里，不只藏在灰按钮的悬停里（建议 3）。
+            : dialog.mode === "pending" && retryBlocked && <Notice tone="warn" title="不能再重试">{retryBlocked}。</Notice>}
           <Facts>
-            {dialog.mode === "new" ? (
+            {dialog.mode === "new" && dialog.total > EXPORT_MAX_ROWS ? <>
+              {/* 最大的数写这次实际导出多少（VS-102），符合条件的人数放下一行。 */}
+              <Fact k="导出条数" lead unit="条">{countText(EXPORT_MAX_ROWS)}</Fact>
+              <Fact k="符合条件">{countText(dialog.total)} 条</Fact>
+              <Fact k="导出上限" tone="warn">只导出最新注册的 {countText(EXPORT_MAX_ROWS)} 条，其余请缩小范围</Fact>
+            </> : dialog.mode === "new" ? (
               <Fact k="名单条数" lead unit="条">{countText(dialog.total)}</Fact>
             ) : pending && (
               <Fact k="发起时间">{businessStamp(pending.createdAt)}（{businessZone().label}）</Fact>
             )}
-            {dialog.mode === "new" && dialog.total > EXPORT_MAX_ROWS && (
-              <Fact k="导出上限" tone="warn">只导出最新注册的 5000 条，其余请缩小范围</Fact>
-            )}
             <Fact k={dialog.mode === "new" ? "本次导出筛选" : "原操作筛选"}>
               {exportScopeLines(dialog.mode === "new" ? dialog.query : pending?.query ?? {}).map((line, index) => <Fragment key={line}>{index > 0 && <br />}{line}</Fragment>)}
             </Fact>
-            <Fact k="导出内容">固定字段的脱敏 CSV，手机号只显示脱敏号<Explain label="导出哪些列" content="超级管理员、风控、审计导出 15 列，含风险分、设备数和余额；其他账号 9 列，不含这些。" /></Fact>
+            {/* 原操作的理由只读，写成事实行，不放一个看着能填的框（VS-104）。 */}
+            {dialog.mode === "pending" && pending && <Fact k="操作理由">{pending.reason}</Fact>}
+            {/* 两件事各一行，520 宽的框里一句话折行会剩下「出过。」这类孤字。 */}
+            <Fact k="导出内容">{fullExport ? "15 列脱敏 CSV，含风险分、设备数和余额" : "9 列脱敏 CSV"}<br />手机号只显示脱敏号</Fact>
             <Fact k="去向">浏览器直接下载</Fact>
-            <Fact k="记录">这次导出记入操作记录。</Fact>
+            <Fact k="记录">名单生成时记入操作记录。<br />浏览器没存下文件也算导出过。</Fact>
           </Facts>
-          <Field label="操作理由" required hint={dialog.mode === "new" ? "至少 8 字" : "原操作的理由不能改"}
-            error={dialog.mode === "new" && reasonTouched && !reasonValid ? REASON_RULE : undefined}>
-            {(control) => (
-              <Textarea {...control} aria-label="导出用户名单理由" placeholder="写清导出用途和接收人" rows={3}
-                value={dialog.mode === "new" ? reason : pending?.reason ?? ""} readOnly={dialog.mode === "pending"} disabled={exporting}
-                count={`${reasonLength}/200`} onBlur={() => setReasonTouched(true)}
-                onChange={(event) => setReason(event.target.value)} />
-            )}
-          </Field>
+          {dialog.mode === "new" && (
+            <Field label="操作理由" required hint="至少 8 字" error={reasonRejected || (reasonTouched ? reasonError : undefined)}>
+              {(control) => (
+                <Textarea {...control} aria-label="导出用户名单理由" placeholder="写清导出用途和接收人" rows={3}
+                  value={reason} disabled={exporting} count={`${reason.trim().length}/200`} onBlur={() => setReasonTouched(true)}
+                  onChange={(event) => { setReason(event.target.value); setReasonRejected(""); }} />
+              )}
+            </Field>
+          )}
         </div>
       </Modal>
     )}
-    {releasing && <ReleaseModal label="导出用户名单" explain="解除不发请求，不进操作记录。" onCancel={() => setReleasing(false)} onConfirm={releasePending} />}
   </>;
 }

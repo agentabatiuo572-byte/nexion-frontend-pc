@@ -1528,6 +1528,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   IDEMPOTENCY_RECLAIM_CONFLICT: "同一操作正在重试，请稍后刷新核对结果。",
   IDEMPOTENCY_SUCCESS_STATE_LOST: "操作结果没记下来，请到操作记录核对，不要重复发起。",
   IDEMPOTENCY_FAILURE_STATE_LOST: "操作结果没记下来，请到操作记录核对，不要重复发起。",
+  IDEMPOTENCY_CLAIM_STATE_LOST: "这次请求的处理记录已经变了，没有执行；请到操作记录核对原操作，不要重复发起。",
   // 人工核查结案后，原编号不再执行（AdminIdempotencyTransactionExecutor.replay 拼「IDEMPOTENCY_INVESTIGATION_」加结案状态）。
   IDEMPOTENCY_INVESTIGATION_CONFIRMED_SUCCEEDED: "原操作已经核查确认成功，不能再按原编号重试；请到操作记录与审批查看结果。",
   IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED: "原操作已经核查确认没有执行，不能再按原编号重试；需要的话请重新发起。",
