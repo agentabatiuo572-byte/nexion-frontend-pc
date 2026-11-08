@@ -63,6 +63,13 @@ export interface OpsSku {
   computePoints?: number;
   dailyEarn: number;
   dailyEarnNEX: number;
+  monthlyTargetUsdt?: number;
+  monthlyTargetBandPct?: number;
+  /** Explicit write intent; absence of the target fields preserves the approved target. */
+  clearMonthlyTarget?: boolean;
+  derivedDailyEarnUsdt?: number;
+  derivedShareYieldMinPct?: number;
+  derivedShareYieldMaxPct?: number;
   shareYieldMin?: number;
   shareYieldMax?: number;
   baseRate?: string;

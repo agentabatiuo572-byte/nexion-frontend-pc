@@ -1,4 +1,5 @@
 import { nexGridBrandText } from "./brand-copy.ts";
+import type { OpsSku } from "./platform-types";
 
 /** Only for system-owned display labels. Never use for request values or authored content. */
 export function operatorCopyText(value: string): string {
@@ -133,6 +134,24 @@ export function operatorCopyText(value: string): string {
 /** E1 为 Share 商品生成的收益展示串（`baseRate`，原值写回后端不变）在审批里的显示。 */
 export function shareBaseRateText(value: string): string {
   return value.replace(/^参考年化 /, "参考年奖励率 ").replace(/^年化区间暂不可用/, "参考年奖励率区间暂不可用");
+}
+
+/** Exact monthly value stays separate from the rounded daily display. */
+export function monthlyTargetEstimateText(sku: Pick<OpsSku, "monthlyTargetUsdt" | "monthlyTargetBandPct" | "derivedDailyEarnUsdt" | "tier" | "productType">): string {
+  const target = sku.monthlyTargetUsdt!;
+  const amount = (value: number) => value.toLocaleString("en-US", { maximumFractionDigits: 6 });
+  const daily = sku.derivedDailyEarnUsdt ?? target / 30;
+  const isShare = sku.productType === "SHARE" || sku.tier === "Share";
+  const dailyText = isShare
+    ? `$${amount(target * (1 - sku.monthlyTargetBandPct! / 100) / 30)}–$${amount(target * (1 + sku.monthlyTargetBandPct! / 100) / 30)}`
+    : `$${amount(daily)}`;
+  return `约 ${dailyText}/天 · $${amount(target)}/月`;
+}
+
+export function skuBaseRateText(sku: OpsSku): string | undefined {
+  return sku.monthlyTargetUsdt != null
+    ? `${monthlyTargetEstimateText(sku)} · ${sku.dailyEarnNEX.toLocaleString()} UVT/天`
+    : sku.baseRate;
 }
 
 /** A2 动作名的运营显示名。原值仍用于查找待审批申请（f-view F2 启用状态），这里只换显示。 */

@@ -18,6 +18,8 @@ import { Icon, Btn, Chip, Drawer, KV, Badge, OperationConfirmModal, useToast } f
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { supportsDeviceMonthlyTarget } from "@/lib/admin/device-monthly-target";
+import { monthlyTargetEstimateText } from "@/lib/admin/operator-copy";
 import { operatorDeviceStatus, operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -249,10 +251,10 @@ function SkuFieldGroup({ n, title, children }: { n: string; title: string; child
     </div>
   );
 }
-function SkuFld({ label, value, onChange, placeholder, type = "text", hint, list, min, max, step, disabled = false }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string; hint?: string; list?: string; min?: number; max?: number; step?: number; disabled?: boolean }) {
+function SkuFld({ label, value, onChange, placeholder, type = "text", hint, tip, list, min, max, step, disabled = false }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string; hint?: string; tip?: string; list?: string; min?: number; max?: number; step?: number; disabled?: boolean }) {
   return (
     <label className="col" style={{ gap: 5 }}>
-      <span className="muted tiny">{label}{hint ? <span style={{ color: "var(--ink-4)" }}> · {hint}</span> : null}</span>
+      <span className="muted tiny">{label}{tip ? <span className="has-tip" data-tip={tip} aria-label={`${label}说明：${tip}`} /> : null}{hint ? <span style={{ color: "var(--ink-4)" }}> · {hint}</span> : null}</span>
       <input className="fld" type={type} list={list} min={min} max={max} step={step} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} />
     </label>
   );
@@ -687,9 +689,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     workloadConfigJson: taskForm.workloadConfigJson.trim() || undefined,
   });
   const editedSku = editSkuId ? skus.find((sku) => sku.id === editSkuId) : undefined;
+  const monthlyTargetSupported = supportsDeviceMonthlyTarget(form.id || editSkuId || form.name, form.tier);
+  const monthlyTargetFilled = monthlyTargetSupported && form.monthlyTargetUsdt.trim() !== "";
+  const draftSku = attachSkuMedia(formToSku(form, editedSku), skuMedia);
   const skuTaskClassesReady = e1Gates?.taskClassPolicySupported === true && (!editSkuId || Array.isArray(editedSku?.allowedTaskClasses));
   const skuFormChanged = !editSkuId || !editedSku
-    || summarizeSkuProposal(editedSku, attachSkuMedia(formToSku(form, editedSku), skuMedia), { includeDerived: false }) !== null;
+    || summarizeSkuProposal(editedSku, draftSku, { includeDerived: false }) !== null;
   const [dcDrawer, setDcDrawer] = useState(false);
   const [editDcLocation, setEditDcLocation] = useState<string | null>(null);
   const [dcForm, setDcForm] = useState<DatacenterForm>({ dcLocation: "", regionLabel: "", location: "", displayName: "", status: "active", sortOrder: "100" });
@@ -1068,7 +1073,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }
     if (!skuTaskClassesReady) { setToast("商品任务大类尚未加载，请刷新后再提交"); return; }
     if (editedSku?.status === "on" && !form.allowedTaskClasses.length) { setToast("在售商品至少要勾选一个可跑任务大类"); return; }
-    const specErr = validateSkuSpecs(form);
+    const specErr = validateSkuSpecs(form, editedSku);
     if (specErr) { setToast(specErr); return; }
     const poolErr = validateSkuUnlockPool();
     if (poolErr) { setToast(poolErr); return; }
@@ -1411,20 +1416,28 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             </div>
           </SkuFieldGroup>
 
-          <SkuFieldGroup n="③" title={form.tier === "Share" ? "收益（参考年奖励率 + UVT）" : "收益（USDT + UVT）"}>
+          <SkuFieldGroup n="③" title="收益（USDT + UVT）">
+            {monthlyTargetSupported && <div className="grid g-2" style={{ gap: 12 }}>
+              <SkuFld label="月收益目标（USDT）" type="number" min={1} max={1_000_000} step={0.01} value={form.monthlyTargetUsdt} onChange={(v) => setForm({ ...form, monthlyTargetUsdt: v })} placeholder="留空按单计价"
+                tip={`App 商品卡、商品详情、设备卡和首页对比显示目标对应的预估收益；新领取试用按目标 ÷ 30 计算，已领试用和已成交订单不变。批准后只影响新建任务，运行中任务保持原金额。${form.tier === "Share" ? "云端共享份额默认不乘产能比例；是否参与以「设备使用与升级置换」设置为准。" : "参与产能变化的型号按「设备使用与升级置换」中的当期产能比例折算；不参与的为 100%。"}可跑任务须为正额 USDT，且每项不超过 60 分钟。开启、关闭目标或提高目标区间上限，批准时须通过兑付覆盖率检查。关闭时须重新填写${form.tier === "Share" ? "参考年奖励率" : "每日收益 USDT"}。范围 1–1,000,000，最多 2 位小数。`} />
+              <SkuFld label="允许波动 %" type="number" min={1} max={50} step={0.1} value={form.monthlyTargetBandPct} onChange={(v) => setForm({ ...form, monthlyTargetBandPct: v })} disabled={!monthlyTargetFilled} placeholder="10"
+                tip="1%–50%，最多 1 位小数。持续运行时的设备月目标区间为目标 × 当期产能比例 ×（1 ± 波动比例）；每天收益有起伏，停机不补发。设备月从购入日开始，购入日缺失时从激活日开始。" />
+            </div>}
+            {monthlyTargetFilled && <div className="mono">{Number(form.monthlyTargetUsdt) >= 1 && Number(form.monthlyTargetUsdt) <= 1_000_000 && Number(form.monthlyTargetBandPct) >= 1 && Number(form.monthlyTargetBandPct) <= 50
+              ? `App 显示${monthlyTargetEstimateText(draftSku)}` : "填写有效目标和波动后显示预估收益"}</div>}
             {form.tier !== "Share" ? (
               <div className="grid g-2" style={{ gap: 12 }}>
-                <SkuFld label="每日收益 USDT" type="number" value={form.dailyEarn} onChange={(v) => setForm({ ...form, dailyEarn: v })} placeholder="38.50" />
+                {!monthlyTargetFilled && <SkuFld label="每日收益 USDT" type="number" value={form.dailyEarn} onChange={(v) => setForm({ ...form, dailyEarn: v })} placeholder="38.50" />}
                 <SkuFld label="每日收益 UVT" type="number" value={form.dailyEarnNEX} onChange={(v) => setForm({ ...form, dailyEarnNEX: v })} placeholder="65" />
                 <SkuFld label="手机每日收益 USDT" type="number" min={0} step={0.000001} value={form.phoneDailyEarn} onChange={(v) => setForm({ ...form, phoneDailyEarn: v })} placeholder="0.06" hint="可留空，留空时 App 不显示" />
                 <SkuFld label="手机每日收益 UVT" type="number" min={0} step={0.000001} value={form.phoneDailyEarnNEX} onChange={(v) => setForm({ ...form, phoneDailyEarnNEX: v })} placeholder="10" hint="可留空，留空时 App 不显示" />
               </div>
             ) : (
               <>
-                <div className="grid g-2" style={{ gap: 12 }}>
+                {!monthlyTargetFilled && <div className="grid g-2" style={{ gap: 12 }}>
                   <SkuFld label="共享份额参考年奖励率下限 %" type="number" value={form.shareYieldMin} onChange={(v) => setForm({ ...form, shareYieldMin: v })} placeholder="8" />
                   <SkuFld label="共享份额参考年奖励率上限 %" type="number" value={form.shareYieldMax} onChange={(v) => setForm({ ...form, shareYieldMax: v })} placeholder="15" />
-                </div>
+                </div>}
                 <SkuFld label="每日额外发放 UVT" type="number" value={form.dailyEarnNEX} onChange={(v) => setForm({ ...form, dailyEarnNEX: v })} placeholder="30" />
               </>
             )}
@@ -1551,12 +1564,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           </SkuFieldGroup>
 
           {(() => {
-            if (form.tier === "Share") {
+            if (form.tier === "Share" && !monthlyTargetFilled) {
               const lo = skuNum(form.shareYieldMin); const hi = skuNum(form.shareYieldMax); const nex = skuNum(form.dailyEarnNEX); const pr = skuNum(form.price);
               const complete = form.shareYieldMin.trim() !== "" && form.shareYieldMax.trim() !== "" && lo > 0 && hi >= lo;
               return <div className="tint cyan tiny">估算 · {complete ? <>参考年奖励率 <span className="nowrap">{lo}–{hi}%</span></> : "参考年奖励率区间暂不可用"} · 每日收益 <span className="nowrap">{nex.toLocaleString()} UVT/天</span>{pr > 0 ? <> · 起购 <span className="nowrap">${pr.toLocaleString()}</span></> : null}</div>;
             }
-            const p = skuNum(form.price); const d = skuNum(form.dailyEarn);
+            const p = skuNum(form.price); const d = draftSku.dailyEarn;
             return p > 0 && d > 0 ? <div className="tint cyan tiny">估算 · 回本 ≈ <span className="nowrap">{Math.round(p / d)} 天</span> · 首年净 ≈ <span className="nowrap">${(d * 365 - p).toLocaleString()}</span> · 参考年奖励率 ≈ <span className="nowrap">{Math.round((d * 365 / p) * 100)}%</span> · vs 手机 ≈ <span className="nowrap">{Math.round(d / 0.08).toLocaleString()}×</span></div> : null;
           })()}
           <div className="tint warn tiny"><AutoGloss>价格、每日收益和状态修改需确认后才生效；新商品确认后才会上架</AutoGloss></div>
@@ -1571,7 +1584,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           {taskForm.simulated ? <>
             <div className="grid g-2" style={{ gap: 12 }}>
               <SkuFld label="固定时长（分钟）" type="number" value={taskForm.durationMinutes} onChange={(v) => setTaskForm({ ...taskForm, durationMinutes: v })} hint="1–1440，整数分钟" />
-              <SkuFld label="固定基础奖励" value={taskForm.baseReward} onChange={(v) => setTaskForm({ ...taskForm, baseReward: v })} hint="最多 6 位小数" />
+              <SkuFld label="固定基础奖励" value={taskForm.baseReward} onChange={(v) => setTaskForm({ ...taskForm, baseReward: v })} tip="最多 6 位小数。设了月收益目标的型号只用作任务之间的比例；这些型号的任务须为正额 USDT，且不超过 60 分钟。" />
               <label className="col" style={{ gap: 5 }}><span className="muted tiny">奖励资产</span><select className="fld" value={taskForm.asset} onChange={(e) => setTaskForm({ ...taskForm, asset: e.target.value })}><option value="USDT">USDT</option><option value="UVT">UVT</option></select></label>
               <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={taskForm.enabled} onChange={(e) => setTaskForm({ ...taskForm, enabled: e.target.checked })} />启用新任务</label>
               <label className="col" style={{ gap: 5 }}><span className="muted tiny">展示类别</span><select className="fld" value={taskForm.taskClass || "EM"} onChange={(e) => setTaskForm({ ...taskForm, taskClass: e.target.value })}>{["IG", "VG", "LL", "FT", "EM", "SP"].map((c) => <option key={c} value={c}>{c}</option>)}</select></label>
