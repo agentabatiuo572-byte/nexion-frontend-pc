@@ -1172,12 +1172,12 @@ export default function UserDetailPage() {
   const crossLinks = [
     canReadC6 && ["注册与登录风险", "/users/reg-risk"],
     canReadD2 && ["提现审核", "/finance/withdrawals"],
-    canReadD4 && ["资金账单", "/finance/ledger"],
+    canReadD4 && ["账本与账单核对", "/finance/ledger"],
     canReadK4 && ["风险评分规则", "/risk/scoring"],
-    canReadA2 && ["操作记录", "/platform/audit"],
+    canReadA2 && ["操作记录与审批", "/platform/audit"],
   ].filter((item): item is [string, string] => Array.isArray(item));
 
-  const auditLink = canReadA2 && <> <Link className="rd-link" href={{ pathname: "/platform/audit", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}>到操作记录核查</Link></>;
+  const auditLink = canReadA2 && <> <Link className="rd-link" href={{ pathname: "/platform/audit", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}>到操作记录与审批核对</Link></>;
   const pendingNotices = pendingCommands.map((command) => {
     const expired = command.expiresAt <= Date.now();
     // 重试和普通入口一样看现在的入口和权限（OP-123）。没权限只留核对，提示和记录都留着。

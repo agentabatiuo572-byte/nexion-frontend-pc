@@ -861,7 +861,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
             status: <StatusTag tone={versionState(row).tone}>{versionState(row).text}</StatusTag>,
           }))} />
         </Fold>
-        {auditReachable && <Link className="rd-link" href={`${auditHref}&object=${encodeURIComponent(jur.code)}`} prefetch={false}>查看操作记录</Link>}
+        {auditReachable && <Link className="rd-link" href={`${auditHref}&object=${encodeURIComponent(jur.code)}`} prefetch={false}>查看操作记录与审批</Link>}
       </>}
     </Drawer>
 

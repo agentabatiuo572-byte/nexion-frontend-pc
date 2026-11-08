@@ -178,7 +178,7 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
             {releasable.includes(item.key) && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>{item.retry ? "解除待确认" : "核对后解除"}</Button>}
           </>}>
           {businessStamp(item.createdAt)}（{zoneLabel()}）发出，可能已经生效。{item.retry ? item.blocked ?? item.hint : item.hint}
-          {item.auditHref && reach(item.auditHref, "platform_a2_read") && <> <Link className="rd-link" href={item.auditHref}>到操作记录核查</Link></>}
+          {item.auditHref && reach(item.auditHref, "platform_a2_read") && <> <Link className="rd-link" href={item.auditHref}>到操作记录与审批核对</Link></>}
           <Explain label="技术信息" content={`命令号 ${item.key}`} />
           {notes[item.key] && <div>{notes[item.key]}</div>}
         </Notice>

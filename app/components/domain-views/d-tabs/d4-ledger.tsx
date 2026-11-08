@@ -829,12 +829,12 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
 
   const links = [
     reach("/users/assets", "user_c3_read") && <Link key="assets" className="rd-link" href="/users/assets" prefetch={false}>余额与资产调整</Link>,
-    reach("/finance/recon", "finance_d1_read") && <Link key="recon" className="rd-link" href="/finance/recon" prefetch={false}>充值对账</Link>,
+    reach("/finance/recon", "finance_d1_read") && <Link key="recon" className="rd-link" href="/finance/recon" prefetch={false}>充值与收款对账</Link>,
     reach("/finance/withdrawals") && <Link key="withdrawals" className="rd-link" href="/finance/withdrawals" prefetch={false}>提现审核</Link>,
-    reach("/finance/pool") && <Link key="pool" className="rd-link" href="/finance/pool" prefetch={false}>资金储备</Link>,
-    reach("/platform/audit", "platform_a2_read") && <Link key="audit" className="rd-link" href="/platform/audit" prefetch={false}>操作记录</Link>,
+    reach("/finance/pool") && <Link key="pool" className="rd-link" href="/finance/pool" prefetch={false}>资金储备与应付款</Link>,
+    reach("/platform/audit", "platform_a2_read") && <Link key="audit" className="rd-link" href="/platform/audit" prefetch={false}>操作记录与审批</Link>,
     reach("/platform/events") && <Link key="events" className="rd-link" href="/platform/events" prefetch={false}>用户行为事件</Link>,
-    reach("/analytics/export", "bi_l5_read") && <Link key="export" className="rd-link" href="/analytics/export" prefetch={false}>数据导出</Link>,
+    reach("/analytics/export", "bi_l5_read") && <Link key="export" className="rd-link" href="/analytics/export" prefetch={false}>数据导出与监管报告</Link>,
   ].filter(Boolean);
 
   return <>

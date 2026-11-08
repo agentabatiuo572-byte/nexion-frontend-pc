@@ -375,7 +375,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, reloadTick, pending, nav, o
       others={<>
         {/* 只读刷新：只重读这笔，不发写请求；提交中不能点（D1-A02）。 */}
         <Button variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} disabled={busy} onClick={() => void load()}>刷新</Button>
-        {auditReachable && intentNo && <Link className="rd-link" href={`/platform/audit?domain=D&object=${encodeURIComponent(intentNo)}`}>到「操作记录」查看处理过程</Link>}
+        {auditReachable && intentNo && <Link className="rd-link" href={`/platform/audit?domain=D&object=${encodeURIComponent(intentNo)}`}>到「操作记录与审批」查看处理过程</Link>}
       </>}
       primary={canReconcile ? <Button variant="primary" disabledReason={block} onClick={revalidate}>重新核对到账</Button> : undefined} />}>
     {error ? <BlockState state="error" title="付款详情读取失败" detail={error} onRetry={() => void load()} />

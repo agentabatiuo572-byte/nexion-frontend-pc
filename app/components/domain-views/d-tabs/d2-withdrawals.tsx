@@ -1664,7 +1664,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除待确认</Button>}
       </>}>
       {timeText(new Date(record.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效。{record.expiresAt <= Date.now() ? `${RETRY_EXPIRED}。` : RECOVERY_HINT[record.kind]}
-      {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=D&object=${encodeURIComponent(record.nos[0])}`}>到操作记录核查</Link></>}
+      {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=D&object=${encodeURIComponent(record.nos[0])}`}>到操作记录与审批核对</Link></>}
       <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 操作人 ${record.operator} ｜ 理由 ${record.reason}`} />
       {pendingNotes[record.fingerprint] && <div>{pendingNotes[record.fingerprint]}</div>}
     </Notice>
@@ -1687,7 +1687,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     </Notice>}
     {withdrawGate === "unknown" && <Notice tone="warn">提现开关状态暂时读不到。放行时系统会再查，已关停时不会放行。</Notice>}
     {coverageBelow && d5 && hasAuthority(ACTION_AUTHORITY.APPROVE) && <Notice tone="danger" title="兑付覆盖率低于红线，放行已暂停"
-      action={reach("/finance/pool", "finance_d3_read") ? <Link className="rd-link" href="/finance/pool">去资金储备</Link> : undefined}>
+      action={reach("/finance/pool", "finance_d3_read") ? <Link className="rd-link" href="/finance/pool">去资金储备与应付款</Link> : undefined}>
       现在 {fmtPct(d5.coverageRatio)}，红线 {d5.redlinePct}%。补足储备后再放行。拒绝、延迟、冻结、解冻和退款照常可用。
     </Notice>}
     {pendingNotices}

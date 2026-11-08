@@ -154,7 +154,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           {!expired && ctx.e4RetryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除待确认</Button>}
         </>}>
         {formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，可能已经提交。{expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? "这个账号已没有这项权限，不能重试。" : needQuery ? "先查原提案，查不到再按原操作重试。" : "重发原内容，已成功的不会重复执行。"}这单在有结论前不能再操作。
-        {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=E&object=${encodeURIComponent(record.orderNo)}`}>到操作记录核查</Link></>}
+        {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=E&object=${encodeURIComponent(record.orderNo)}`}>到操作记录与审批核对</Link></>}
         <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 理由 ${record.spec.reason}`} />
         {!expired && ctx.e4PendingNotes[record.fingerprint] && <div>{ctx.e4PendingNotes[record.fingerprint]}</div>}
       </Notice>;
@@ -517,7 +517,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
 
       <nav className="rd-links" aria-label="相关页面">
         <span>相关页面</span>
-        {reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href={`/platform/audit?domain=E&object=${encodeURIComponent(o.id)}`}>操作记录</Link>}
+        {reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href={`/platform/audit?domain=E&object=${encodeURIComponent(o.id)}`}>操作记录与审批</Link>}
         {reach("/platform/events") && <Link className="rd-link" href="/platform/events">用户行为事件</Link>}
         {!e4Detail?.funding.some((item) => e4FundingLedgerHref(item)) && reach("/finance/ledger", "finance_d4_read") && <Link className="rd-link" href={`/finance/ledger?bizNo=${encodeURIComponent(o.id)}`}>按订单号查账单</Link>}
       </nav>
