@@ -42,10 +42,10 @@ export const D5_PARAM_HELP = {
   },
   smallAmountThresholdUsd: {
     label: "小额免审线",
-    what: "不超过这条线的低风险 USDT 提现自动过审",
+    what: "不超过这条线的低风险 USDT 提现可以自动过审",
     when: NEW_ONLY,
     how: "0–500 USD，0 表示关闭",
-    effect: "改成 100：100 USD 及以下的低风险 USDT 提现不进人工审核，等到账审查窗口结束后放行；超过的进人工审核。设成 0 时都进人工审核。越南盾提现只在到账审查窗口是 0 天时按这条线判断",
+    effect: "改成 100：100 USD 及以下的 USDT 提现，还要没到强审门槛、风险分是低风险、提现风控通过，才自动过审，等到账审查窗口结束后放行；超过这条线的进人工审核。冻结、延迟这些仍按原风控处理。设成 0 关闭小额自动过审。越南盾提现只在到账审查窗口是 0 天时按这条线判断",
     where: "用户看不到，只影响新提现走不走人工审核",
   },
   payoutSlaHours: {
@@ -60,9 +60,9 @@ export const D5_PARAM_HELP = {
     label: "提现网络",
     what: "这个网络能不能发起 USDT 提现",
     when: "关闭提交后立即生效，开启批准后生效",
-    effect: "关掉 TRC20：App 不再显示这个网络，已提交的提现不受影响",
+    effect: "关掉 TRC20：用户不能再用这个网络发起提现。接打款服务时，这个网络上已提交、还没交给打款服务的提现也会暂停打款；已交给打款服务的继续查询核对",
     where: "App「选择提现网络」页的网络卡片；全部关闭时写「提现通道暂不可用，请稍后再试。」",
-    note: "开启只是配置，用户能不能用看这一行写的实际状态，和 App 提现用的是同一个判断",
+    note: "开启只是配置，用户能不能用看这一行写的实际状态：网络本身能用，还要「紧急停用开关」的提现开关开着，和 App 提现的判断一样",
   },
   networkConfirmFeeUsd: {
     label: "网络确认费",
@@ -90,7 +90,7 @@ export const D5_PARAM_HELP = {
     what: "每笔新提现提交后要等几天才能放行",
     when: `${PHASE}，只影响新提现`,
     where: "App 提现进度页的预计到账时间",
-    note: "窗口是 0 天时，不超过小额免审线的低风险提现自动过审，超过的进人工审核",
+    note: "窗口是 0 天时，不超过小额免审线、还满足其他风控条件的提现自动过审，超过这条线的进人工审核",
   },
   complianceHoldEnabled: {
     label: "加强合规审查",
@@ -106,7 +106,7 @@ export const D5_PARAM_HELP = {
  * global：出款服务整体的原因，开着的网络会一起用不了，合成一句话说。
  */
 export const D5_NETWORK_BLOCK_REASON: Record<string, { text: string; global?: true }> = {
-  NOT_CONFIGURED: { text: "出款服务没有接通（这个环境没开打款服务，或打款服务没配好这个网络），请技术值班核对出款配置", global: true },
+  NOT_CONFIGURED: { text: "出款服务没有接通，请技术值班核对", global: true },
   SWITCH_OFF: { text: "「充值与收款对账」里的全局出款总闸关着", global: true },
   RISK_HOLD: { text: "有资金风险没处理完，出款暂停", global: true },
   RECONCILIATION_REQUIRED: { text: "最近没有完成一次完整对账" },
@@ -115,3 +115,5 @@ export const D5_NETWORK_BLOCK_REASON: Record<string, { text: string; global?: tr
   PROVIDER_CAPABILITY_UNAVAILABLE: { text: "暂时查不到打款服务开通了哪些网络" },
 };
 export const D5_NETWORK_BLOCK_UNKNOWN = "原因暂时读不到，到「充值与收款对账」核对";
+/** 「紧急停用开关」的提现开关关着：App 一个网络都不显示（AppWithdrawalService.withdrawGateEnabled）。 */
+export const D5_WITHDRAW_SWITCH_OFF = "「紧急停用开关」的提现开关关着";
