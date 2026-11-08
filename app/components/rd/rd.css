@@ -452,7 +452,9 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-modal.rd-confirm .rd-brief[open] .rd-brief-head > span { display: none; }  /* 展开后「影响」在下面那一行，标题行不重复 */
 /* 展开的摘要和关键信息同一条值线（名称列 128 = 事实块的内边距 16 + 112），不带底块：这是补充说明，不是关键信息，句子也多一点宽度（VS-105）。 */
 .rd-brief-rows { display: grid; gap: 8px; margin: 8px 0 0; }
-.rd-brief-rows > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; }  /* 和事实区 .rd-fact 同一条值线 */
+.rd-brief-rows > div { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 12px; }  /* 和事实底块里 .rd-fact 的值同一条线 */
+/* 事实区只有一行、不带底块时（见下面 .rd-confirm-facts 那条），事实的值线在 112 + 12，摘要跟着收到 112 */
+.rd-modal.rd-confirm:is(:has(.rd-confirm-facts > .rd-diff-one:only-child), :has(.rd-confirm-facts > .rd-facts:only-child > .rd-fact:only-child)) .rd-brief-rows > div { grid-template-columns: 112px minmax(0, 1fr); }  /* :has 不能套 :has */
 .rd-brief-rows dt { font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); color: var(--rd-text-3); }
 .rd-brief-rows dd { margin: 0; color: var(--rd-text-2); overflow-wrap: anywhere; }
 .rd-modal.rd-confirm .chip.tab.sel { background: var(--rd-brand); color: var(--rd-text-on-brand); border-color: var(--rd-brand); }
