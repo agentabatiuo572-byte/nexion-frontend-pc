@@ -9,7 +9,7 @@ import {
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
-import { E4_CLOSE_REASONS, E4_CLOSE_REASON_LABELS, E4_REFUND_REASONS, E4_REFUND_REASON_LABELS, e4FundingLedgerHref, type E4PendingApproval } from "@/lib/admin/e4-client";
+import { E4_CLOSE_REASONS, E4_CLOSE_REASON_LABELS, E4_REFUND_REASONS, E4_REFUND_REASON_LABELS, e4FundingLedgerHref, type E4PendingApproval, type E4RefundImpact, type E4TaskEarnings } from "@/lib/admin/e4-client";
 import { operatorDeviceStatus, operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { useReach } from "@/lib/nav/use-reach";
@@ -51,12 +51,35 @@ const TERMINAL_REFUND: Record<string, string> = {
 };
 // 每个审批框都一样的话，收进生效标签的提示图标，不和金额、用户同档（N09）。发起人不能批自己的单（后端 A2_MAKER_CHECKER_REQUIRED）。
 const APPROVAL_NOTE = "超级管理员批准后才执行，批准前这单不变。发起人不能批自己提交的单。";
+const REFUND_APPROVAL_NOTE = "退款须由另一位具退款权限和批准权的真实超管处理。发起人不能批自己提交的单；直接退款接口统一拒绝。";
 
 // 决定钱的规则一条一句，不写成一段（DT-02）。
 const REFUND_RULES = [
-  { title: "能退哪些", rules: ["只有已支付、开通中、已激活、已入库或已付款的开通失败订单能退款", "批准执行时会检查平台资金是否够退"] },
-  { title: "退了以后", rules: ["批准后钱退回用户钱包，退款不可撤销", "仍属于原购买者且未退款、未回收的购买设备停用并标为已退款，已到账的设备收益不扣回", "已发放的赠品设备收回并停止任务，已到账的赠品收益不扣回，由平台承担", "试用转购奖励可能追回", "促销奖励另按售后规则追回，追不回的部分由平台承担"] },
+  { title: "能退哪些", rules: ["只有已支付、开通中、已激活、已入库或已付款的开通失败订单能退款", "具退款权限的财务主管或超管发起，另一位有权超管批准；提交时后端核实退款权限来源", "批准执行时会检查平台资金是否够退"] },
+  { title: "退了以后", rules: ["批准后钱退回用户钱包，退款不可撤销", "仍属于原购买者且未退款、未回收的购买设备停用并标为已退款", "普通订单已完成任务按原规则结算一次，未完成任务随退款停止，已到账收益不扣回", "已发放的赠品设备收回并停止任务，已到账的赠品收益不扣回，由平台承担", "试用转购奖励可能追回", "促销奖励另按售后规则追回，追不回的部分由平台承担"] },
 ];
+
+/** 仅这页两处使用，保留在页内；任务投影和促销奖励分别展示。 */
+function OrdinaryRefundImpact({ impact }: { impact: E4RefundImpact | null }) {
+  const earnings = (value: E4TaskEarnings) => <>{value.taskCount.toLocaleString("en-US")} 项 · {orderAmount(value.usdtAmount)} USDT · {orderAmount(value.uvtAmount)} UVT</>;
+  const reason = impact?.runtimeUnavailableReason;
+  const runtimeText = reason === "SIMULATED_TASK_RUNTIME_UNRESOLVED" ? "模拟任务的运行关联暂无法核实"
+    : reason === "COMPUTE_V2_COMPLETION_OUTCOME_UNKNOWN" ? "任务完成结果暂无法核实" : "任务运行状态暂无法核实";
+  return <section aria-label="普通订单退款影响">
+    <h3 className="rd-form-group-title">退款影响 · 购买设备</h3>
+    <p className="rd-note">已完成任务按原规则结算一次，未完成任务随退款停止，已到账收益不扣回。</p>
+    {!impact ? <Notice tone="warn">暂未读到普通订单的任务影响，不能按没有任务处理。</Notice> : <>
+      {!impact.runtimeComplete && <Notice tone="warn">{runtimeText}，完成待结算和未完成数未知。<Explain label="任务状态技术信息" content={reason ?? "运行状态未提供"} /></Notice>}
+      <Facts>
+        <Fact k="完成待结算">{impact.runtimeComplete && impact.completedPending ? earnings(impact.completedPending) : "未知"}</Fact>
+        <Fact k="未完成任务">{impact.runtimeComplete && impact.unfinishedTaskCount !== null ? `${impact.unfinishedTaskCount.toLocaleString("en-US")} 项，退款后停止` : "未知"}</Fact>
+        <Fact k="已停止任务">{impact.stoppedTaskCount.toLocaleString("en-US")} 项</Fact>
+        <Fact k="已到账保留">{earnings(impact.creditedRetained)}</Fact>
+      </Facts>
+      <p className="rd-note">普通购买设备 · 截至 {formatBusinessTimeFull(impact.asOf, "—")}（{businessZone().label}）<Explain label="退款影响范围" content="只含普通购买设备，不含促销赠品；这是任务影响快照，不是收益已经到账的证明，也不改变应退金额。" /></p>
+    </>}
+  </section>;
+}
 
 const ORDER_COLUMNS: readonly TableColumn[] = [
   { key: "order", label: "订单号", locked: "第一列不能关" },
@@ -153,7 +176,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           {!expired && <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} disabledReason={retryBlock} onClick={() => void ctx.retryE4Pending(record)}>按原操作重试</Button>}
           {!expired && ctx.e4RetryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除待确认</Button>}
         </>}>
-        {formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，可能已经提交。{expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? "这个账号已没有这项权限，不能重试。" : needQuery ? "先查原提案，查不到再按原操作重试。" : "重发原内容，已成功的不会重复执行。"}这单在有结论前不能再操作。
+        {formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，可能已经提交。{expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? "这个账号已没有这项权限，不能重试。" : needQuery ? "先查原提案，查不到再按原操作重试。" : "重发原内容，已成功的不会重复执行。"}这单在有结论前不能再操作。解除待确认只清本页记录，不替后端原操作结案。
         {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=E&object=${encodeURIComponent(record.orderNo)}`}>到操作记录与审批核对</Link></>}
         <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 理由 ${record.spec.reason}`} />
         {!expired && ctx.e4PendingNotes[record.fingerprint] && <div>{ctx.e4PendingNotes[record.fingerprint]}</div>}
@@ -341,7 +364,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const giftClause = giftDevices == null ? "，赠品按促销规则处理" : giftDevices.length ? "，赠品收回，赠品已到账收益由平台承担" : "";
   const refundDeviceLine = purchaseDevices == null ? "明细未提供；仍归原购买者且未退款、未回收的设备会停用"
     : purchaseDevices.length ? "仍归原购买者且未退款、未回收的设备停用，已到账收益不扣回" : "尚未生成，退款后不再开通";
-  const refundDeviceDetail = `退款后用户钱包多这笔钱，平台的应付款跟着增加。购买设备只处理仍属于原购买者、且未退款或回收的设备：标为已退款并停用，不再产生新收益。已发放的赠品设备收回并停止任务；已到账的赠品收益不扣回，由平台承担。${e4Detail?.orderType === "TRIAL_CONVERT" ? "转购买时发的试用奖励按当时的规则处理，最多收回钱包里没花掉的部分。" : ""}活动奖励按活动规则处理。`;
+  const refundDeviceDetail = `退款后用户钱包多这笔钱，平台的应付款跟着增加。购买设备只处理仍属于原购买者、且未退款或回收的设备：标为已退款并停用。普通订单已完成任务按原规则结算一次，未完成任务随退款停止，已到账收益不扣回。已发放的赠品设备收回并停止任务；已到账的赠品收益不扣回，由平台承担。${e4Detail?.orderType === "TRIAL_CONVERT" ? "转购买时发的试用奖励按当时的规则处理，最多收回钱包里没花掉的部分。" : ""}活动奖励按活动规则处理。`;
 
   // 具体原因只从状态轨迹取，状态本身证明不了原因。
   const closeRecord = e4Detail?.history.findLast((item) => item.toState === eff);
@@ -359,7 +382,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
     : !refundableState ? { label: "退款", value: "不能退款", reason: "用户还没付款。只有已支付、开通中、已激活、已入库或已付款的开通失败订单能退款。" }
       : !e4Detail ? { label: "退款", ...pendingFact }
         : pendingApproval ? { label: "退款", value: "等待审批结束" }
-          : e4Detail.refundAllowed ? { label: "退款", value: canRefundE4 ? "可以退款" : "符合退款条件，这个账号不能退款", reason: coverageReason }
+          : e4Detail.refundAllowed ? { label: "退款", value: canRefundE4 ? "可提交退款审批" : "符合退款条件，需具退款权限的财务主管或超管发起", reason: coverageReason }
           : { label: "退款", value: refundBlockText, reason: coverageKnown ? coverageReason : "要先读到兑付覆盖率才能退款。过一会儿重新打开这单。", state: coverageKnown ? "danger" : "warn" };
   const rows: JudgmentRow[] = [
     nextRow,
@@ -402,7 +425,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
             // 标题只写动作，单号进事实区；name 照旧记进操作记录（VS-101）。
             // amplify 只管框里的覆盖率提示：那句写「提交时检查」，后端实际在批准执行时才查，所以覆盖率写进事实区。提案里的 amplifies 照旧是 true。
             briefKind: "funds", name: "退款 · " + o.id, title: "退款订单", op: "order-refund", orderId: o.id, amplify: false, fixedVal: channel,
-            effect: irreversibleApproval, confirmLabel: "提交审批", confirmTone: "danger", reasonPlaceholder: reasonHint,
+            effect: <><StatusTag tone="progress" filled explain={REFUND_APPROVAL_NOTE}>批准后生效</StatusTag><IrreversibleTag /></>, confirmLabel: "提交审批", confirmTone: "danger", reasonPlaceholder: reasonHint,
             statedBrief: { impact: `钱退回用户钱包；符合条件的购买设备停用${giftClause}`, check: "核对用户、金额和退款原因，理由写清依据或工单号。" },
             facts: <div className="rd-stack">
               {orderFacts(<Fact k="退款金额" lead tone="role-1" unit="USDT">{orderAmount(o.amt)}</Fact>, <>
@@ -410,8 +433,10 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
                 {/* 退款入口只在读到覆盖率时开。 */}
                 <Fact k="兑付覆盖率"><Change from={fmtPct(e4Detail.coverageCurrent!)} to={fmtPct(e4Detail.coverageProjected!)} /><span className="rd-fact-unit">红线 {fmtConfigPct(e4Detail.coverageRedline!)}</span><Explain label="兑付覆盖率什么时候检查" content="批准执行时后端再查一次，当前或执行后低于红线就不退款。" /></Fact>
                 <Fact k="购买设备">{refundDeviceLine}<Explain label="退款后设备和收益怎么处理" content={refundDeviceDetail} /></Fact>
+                <Fact k="审批身份">具退款权限的财务主管或超管发起，另一位有权超管批准<Explain label="发起身份如何核实" content="会话不提供每项权限的角色来源。这里仅开放申请入口，提交时由后端核实退款权来自财务主管，或发起人是真实超管；增长不能发起。" /></Fact>
                 {e4Detail.orderType === "TRIAL_CONVERT" && <Fact k="试用奖励">这单发给购买者的试用奖励可能追回，金额以执行结果为准<Explain label="试用奖励追回规则" content="按整期结算转购发出的试用奖励，退款后最多收回未花掉的部分；未追回部分转人工核查。" /></Fact>}
               </>, true)}
+              {e4Detail.orderType !== "TRIAL_CONVERT" && <OrdinaryRefundImpact impact={e4Detail.refundImpact} />}
               <section>
                 <h3 className="rd-form-group-title">促销奖励</h3>
                 <PromotionRefundImpact orderNo={o.id} compact />
@@ -462,6 +487,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
       {pendingApproval && <Notice tone="warn" title="这单已有待审批操作">批准后才执行原操作。审批结束后才能发起新操作。<E4PendingApprovalDetails approval={pendingApproval} /></Notice>}
       {e4DetailError && <BlockState state="error" title="详情加载失败" detail={`${e4DetailError} · 为避免按旧数据操作，已暂停处理。`} onRetry={() => ctx.openOrder(o)} />}
       <JudgmentPoints rows={rows} />
+      {e4Detail && e4Detail.orderType !== "TRIAL_CONVERT" && <OrdinaryRefundImpact impact={e4Detail.refundImpact} />}
       <Fold inset title="订单信息" icon={Package} tone="devices" open={infoOpen} onOpenChange={setInfoOpen} summary={infoOpen ? undefined : `${o.dc === "—" ? "未分配数据中心" : o.dc} · 下单 ${o.age}前`}>
         <Facts>
           <Fact k="数据中心">{o.dc}</Fact>

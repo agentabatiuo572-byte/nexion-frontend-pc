@@ -19,6 +19,7 @@ import { businessClock } from "@/lib/admin/business-time";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -288,8 +289,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const canWriteE2 = useAdminAuth((s) => s.session?.authorities.includes("device_e2_write") ?? false);
   const canWriteE3 = useAdminAuth((s) => s.session?.authorities.includes("device_e3_write") ?? false);
   const canWriteE4 = useAdminAuth((s) => s.session?.authorities.includes("device_e4_write") ?? false);
-  const canRefundE4 = useAdminAuth((s) => s.session?.authorities.includes("device_e4_order_refund") ?? false);
-  const canQueryE4 = useAdminAuth((s) => s.session?.authorities.includes("platform_a2_read") ?? false);
+  // 会话没有逐权限的 grant-role 投影：只给已知财务主管／超管身份开放申请入口，
+  // 不把主角色当成退款权来源的证明；提交时后端仍核实 FINANCE_LEAD 授权关系或真实超管身份。
+  const canRefundE4 = useAdminAuth((s) => !!s.session
+    && s.session.authorities.includes("device_e4_order_refund")
+    && ["superadmin", "super", "FINANCE_LEAD"].includes(s.session.role));
+  const canQueryE4 = useAdminAuth((s) => s.session?.authorities.some((code) => ["platform_a2_read", "platform_a2_proposal_create"].includes(code)) ?? false);
   const canWriteE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_write") ?? false);
   const hasForceActivateE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_device_force_activate") ?? false);
   const hasUnbindE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_device_unbind") ?? false);
@@ -699,7 +704,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       else noteE4Pending(record, "这次也没有确认结果，原操作继续保留。");
     } catch (error) {
       noteE4Pending(record, `重试没有成功：${displayAdminError(error)} 这说明不了原操作的结果，原操作继续保留。`);
-      setE4RetryRejected((current) => [...current, record.commandKey]);
+      if (isExplicitRejection(error)) setE4RetryRejected((current) => [...current, record.commandKey]);
     } finally {
       setE4Retrying("");
     }
@@ -708,7 +713,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const checkE4Pending = async (record: E4PendingCommand) => {
     setE4Retrying(record.fingerprint);
     try {
-      const original = await fetchA2ProposalByKey(record.commandKey);
+      const original = await fetchA2ProposalByKey(record.commandKey, true);
       if (!original) {
         setE4QueryMissing((current) => [...current, record.commandKey]);
         noteE4Pending(record, "暂未查到原提案，结果仍待核实。原操作继续保留，不会重新提交。");
@@ -728,7 +733,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const releaseE4Pending = (record: E4PendingCommand) => {
     e4PendingCommands.forget(record.fingerprint, record.commandKey);
     syncE4Pending();
-    setToast("已解除待确认，这单可以重新处理", "success");
+    setToast("已解除本页待确认；后端原操作未结案时仍会阻止新提交", "success");
   };
 
   // ── E5 设备运行管理:服务端 fleet / overview 为单一来源 ──
@@ -2006,6 +2011,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 target: def.buildTarget({ orderNo: mc.orderId }),
               })) setSelOrder(null);
             } else if (mc.op === "order-refund" && mc.orderId) {
+              if (!canRefundE4) throw new Error("只有具退款权限的财务主管或超管可发起退款审批。");
               const refundChannel = (businessValue?.refundChannel ?? mc.fixedVal ?? "").trim();
               if (!refundChannel) { throw new Error("请选择退款渠道"); }
               const refundReasonCode = (businessValue?.refundReasonCode ?? "").trim();
