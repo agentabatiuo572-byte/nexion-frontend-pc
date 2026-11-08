@@ -369,7 +369,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   }} title={`调整${editing.param.label}`} icon={SlidersHorizontal} tone="role-4"
     footer={<Decision note={editError ? undefined : editApproval ? "另一位有权超管批准前，当前值不变" : "直接保存后生效，旧单不变"} primary={<Button variant="primary" disabledReason={editError ? "先填有效的新值" : editValue === editing.quote[editing.param.key] ? "没有改动" : undefined} onClick={() => confirmAdjust(editing.param, editing.quote, editValue)}>继续填写理由</Button>} />}>
     <Facts><Fact k="当前值">{valueText(editing.param.key, editing.quote[editing.param.key])}</Fact></Facts>
-    <Field label="新值" required hint={editing.param.hint} error={editing.touched ? editError : undefined}>
+    <Field label="新值" required help={editing.param.hint} error={editing.touched ? editError : undefined}>
       <NumberInput value={editing.value} unit={editing.param.unit} min={editing.param.min} max={editing.param.max} step={editing.param.step} onChange={(event) => setEditing({ ...editing, value: event.target.value })} onBlur={() => setEditing({ ...editing, touched: true })} />
     </Field>
     {editQuote !== null && <Facts>
