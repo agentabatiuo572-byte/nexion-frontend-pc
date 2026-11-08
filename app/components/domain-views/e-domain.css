@@ -600,5 +600,6 @@
 /* 退款框常显四类任务和两币金额，紧凑行高给退款原因与操作理由留出首屏空间。 */
 /* 宽度沿用 rd Modal 的 wide 档；订单和任务影响并排，促销资金去向仍常显。 */
 .rd-modal:has(.e4-refund-impact-compact) { width: min(680px, calc(100vw - 48px)); }
+.rd-modal:has(.e4-refund-impact-compact) .rd-confirm-facts { padding-inline: var(--rd-space-2); }
 .e4-refund-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--rd-space-4); }
 .e4-refund-impact-compact .rd-table { --rd-cell-pad-y: var(--rd-space-1); --rd-cell-pad: var(--rd-space-2); }
