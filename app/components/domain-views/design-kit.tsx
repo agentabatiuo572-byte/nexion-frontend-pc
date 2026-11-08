@@ -1988,9 +1988,10 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
               ) : f.inputKind === "checkbox" ? (
                 <input id={`${formId}-${f.key}`} type="checkbox" required={f.required !== false} aria-required={f.required !== false} checked={value[f.key] === "true"} onChange={(e) => set(f.key, e.target.checked ? "true" : "")} />
               ) : (
-                <input id={`${formId}-${f.key}`} className="fld" type={f.inputKind === "number" ? "number" : f.inputKind === "datetime-local" || f.inputKind === "date" ? f.inputKind : "text"} min={f.min} max={f.max} step={f.step} minLength={f.minLength} maxLength={f.maxLength} required={f.required !== false} aria-required={f.required !== false} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
+                <input id={`${formId}-${f.key}`} className="fld" type={f.inputKind === "number" ? "number" : f.inputKind === "datetime-local" || f.inputKind === "date" ? f.inputKind : "text"} min={f.min} max={f.max} step={f.step} minLength={f.minLength} maxLength={f.maxLength} required={f.required !== false} aria-required={f.required !== false} aria-invalid={surface && fieldError(f.key) ? true : undefined} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
               )}
-              {f.help && <span className="tiny muted">{f.help}</span>}
+              {/* 填错时错误顶替说明那一行（VS-103）；日期框的显示格式跟浏览器走，选好后用全站的 YYYY-MM-DD 回显一次（DT-14）。 */}
+              {f.help && !(surface && fieldError(f.key)) && <span className="tiny muted">{surface && f.inputKind === "date" && value[f.key] ? `已选 ${value[f.key]}，${f.help}` : f.help}</span>}
               {surface && fieldError(f.key) && <span role="alert" className="rd-form-error">{fieldError(f.key)}</span>}
               {f.warning?.(value) && <span role="status" className="tiny" style={{ color: "var(--v5-warning)" }}>{f.warning(value)}</span>}
               {f.warnAbove != null && Number(value[f.key]) > f.warnAbove && (
@@ -3561,7 +3562,7 @@ export type InlineOperationApproval = {
   fieldLayout?: "compact";
 };
 
-export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", coverageCheck = "提交时会先检查兑付覆盖率。", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional }: { /** 系统什么时候查覆盖率，写真实路径；走审批的后端不在提交时查，传批准时的说法。 */ coverageCheck?: string; /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode; confirmLabel?: string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string }; /** 传函数时随输入变：参数是填好的新值，没填好是 undefined；每次都要返回事实块，没填好时写现在的值。 */ facts?: ReactNode | ((value?: string) => ReactNode); confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", coverageCheck = "提交时会先检查兑付覆盖率。", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional }: { /** 系统什么时候查覆盖率，写真实路径；走审批的后端不在提交时查，传批准时的说法。 */ coverageCheck?: string; /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode; confirmLabel?: string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string } | ((value: BusinessFormValue) => { impact: string; check: string }); /** 传函数时随输入变：参数是填好的新值，没填好是 undefined；每次都要返回事实块，没填好时写现在的值。 */ facts?: ReactNode | ((value?: string) => ReactNode); confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const surface = useRdSurface();
   const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
   const [draftReason, setReason] = useState(pendingReason ?? "");
@@ -3590,6 +3591,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const comparisonUnitId = useId();
   const selectionRequestRef = useRef(0);
   const effectiveBriefKind = typeof briefKind === "function" ? briefKind(businessValue) : briefKind;
+  // 影响随业务字段变（比如名单有效期选长期还是指定日期），传函数时按现在填的值算。
+  const effectiveStatedBrief = typeof statedBrief === "function" ? statedBrief(businessValue) : statedBrief;
   const approval = approvalSpec ?? inlineApproval?.resolve(businessValue, newVal);
   const compareEdit = approval ? inlineApproval?.compareEdit : undefined;
   const compactFields = !!approval && inlineApproval?.fieldLayout === "compact";
@@ -3819,7 +3822,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       </>}>
       {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
       <fieldset disabled={submitting} style={{ display: "contents" }}>
-      {(!approval || rdApproval) && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={rdApproval && statedBrief ? undefined : completionCopy} auditSink={auditSink} kind={effectiveBriefKind} stated={statedBrief} />}
+      {(!approval || rdApproval) && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={rdApproval && effectiveStatedBrief ? undefined : completionCopy} auditSink={auditSink} kind={effectiveBriefKind} stated={effectiveStatedBrief} />}
       {!surface && content}
       {surface ? (blockedReason || submitError) && (
         // 红只给明确失败；被别人改了、结果还不知道是要人处理，用橙黄（VS-107）。
@@ -3856,7 +3859,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
           <p style={{ margin: "0 0 14px", lineHeight: 1.5 }}>{completionCopy}</p>
           {coverage && <p className="operation-approval-coverage">兑付覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b> · 红线 <b>{fmtConfigPct(coverage.redlinePct)}</b></p>}
           {approval.comparison}
-        </> : !compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} completionCopy={statedBrief ? undefined : completionCopy} auditSink={auditSink} kind={effectiveBriefKind} stated={statedBrief} />}
+        </> : !compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} completionCopy={statedBrief ? undefined : completionCopy} auditSink={auditSink} kind={effectiveBriefKind} stated={effectiveStatedBrief} />}
       </>}
       {!surface && !approval && coverageNotice}
       {!surface && !approval && completionCopy && <div className="tint tiny" style={{ marginBottom: 14 }}>{completionCopy}</div>}

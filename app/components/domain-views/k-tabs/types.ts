@@ -32,8 +32,8 @@ export type ActionConfirmReq = {
   blockedReason?: ReactNode;
   /** 换了这个值，框按新内容重开，已填的理由清空（OP-97）。 */
   formKey?: number;
-  /** 这个操作自己声明的影响和提交前检查，传了就不按文字猜摘要（OP-51）。 */
-  statedBrief?: { impact: string; check: string };
+  /** 这个操作自己声明的影响和提交前检查，传了就不按文字猜摘要（OP-51）。影响随业务字段变时传函数，参数是现在填的值。 */
+  statedBrief?: { impact: string; check: string } | ((value: BusinessFormValue) => { impact: string; check: string });
   /** 做决定要核对的事实，常显在业务字段上面，比如收款网络和完整地址。改一个值的框可以传函数，随输入变（参数是填好的新值，没填好是 undefined）。 */
   facts?: ReactNode | ((value?: string) => ReactNode);
   /** 不能撤销的操作传 danger，确认按钮用危险色。 */

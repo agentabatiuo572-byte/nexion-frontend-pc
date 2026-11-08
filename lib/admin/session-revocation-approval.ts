@@ -1,6 +1,7 @@
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "./a2-client";
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 import { displayAdminError } from "./error-messages";
+import { isExplicitRejection } from "./explicit-rejection";
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 
@@ -79,10 +80,12 @@ export async function proposeSessionRevocation(
         && ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(String(error.backendMessage))) {
       throw new A2OutcomeUncertainError("原审批命令仍待确认，请重试原操作。", key);
     }
-    if (!isA2OutcomeUncertainError(error)
-        && (!previous || !(error instanceof Error && "status" in error && [401, 403, 404].includes(Number(error.status))))) {
-      attempts.forget(slot, key);
-    }
+    // 新提交被确定拒绝时丢号；重试的是保留下来的原命令时，只有后端明确拒绝（isExplicitRejection，且不是 404）才清，
+    // 限流、超时、幂等层要求核查这些都说明不了原命令的结果，记录和对象锁留着（R3）。安全与登录设备也用这里，只会更严。
+    const forget = previous
+      ? isExplicitRejection(error) && !(error instanceof Error && "status" in error && Number(error.status) === 404)
+      : !isA2OutcomeUncertainError(error);
+    if (forget) attempts.forget(slot, key);
     throw error;
   }
   if (!ticket.mine || ticket.obj !== original.userId
