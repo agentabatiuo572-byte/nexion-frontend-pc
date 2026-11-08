@@ -14,7 +14,7 @@ import { announcePermissionDenied, isPermissionDenied, operationConfirmErrorMess
 import { useUI, type ToastKind } from "@/lib/store/ui";
 import { useDialogFeedback } from "@/app/components/kit/dialog-feedback";
 import { ToastHost } from "@/app/components/kit/toast-host";
-import { fmtPct } from "@/lib/format";
+import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
 import { fetchA2ReasonPolicy, isA2OutcomeUncertainError, visibleReasonLength } from "@/lib/admin/a2-client";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
@@ -3768,8 +3768,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       {surface && coverage && !covBlocked ? (
         // 够得上红线时只留数字，后果和检查说明进提示图标（DP-06）。
         <div className="tiny">
-          兑付覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b>，红线 <b>{fmtPct(coverage.redlinePct)}</b>
-          <Explain label="这项操作对资金的影响" content={<><p>{coverageLead}</p><p>{checkCopy}</p>{coverage.healthyPct !== undefined && <p>健康线 {fmtPct(coverage.healthyPct)}。</p>}</>} />
+          兑付覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b>，红线 <b>{fmtConfigPct(coverage.redlinePct)}</b>
+          <Explain label="这项操作对资金的影响" content={<><p>{coverageLead}</p><p>{checkCopy}</p>{coverage.healthyPct !== undefined && <p>健康线 {fmtConfigPct(coverage.healthyPct)}。</p>}</>} />
         </div>
       ) : surface && !covBlocked && !coverage && auditSink !== "local-history" ? (
         // 页面自己把覆盖率写进 coverageLead 时也只留这一句，检查说明进提示图标（DP-06）。
@@ -3780,12 +3780,12 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
           <>
             兑付覆盖率 <b className={surface ? undefined : "mono"}>{fmtPct(coverage.coverageRatio)}</b>
             {coverage.healthyPct !== undefined && coverage.coverageRatio >= coverage.healthyPct
-              ? `，高于健康线 ${fmtPct(coverage.healthyPct)}`
+              ? `，高于健康线 ${fmtConfigPct(coverage.healthyPct)}`
               : coverage.coverageRatio > coverage.redlinePct
-                ? `，高于红线 ${fmtPct(coverage.redlinePct)}，请谨慎提交`
+                ? `，高于红线 ${fmtConfigPct(coverage.redlinePct)}，请谨慎提交`
                 : coverage.coverageRatio === coverage.redlinePct
-                  ? `，正好在红线 ${fmtPct(coverage.redlinePct)}，请谨慎提交`
-                  : `，低于红线 ${fmtPct(coverage.redlinePct)}，提交会被拒绝`}
+                  ? `，正好在红线 ${fmtConfigPct(coverage.redlinePct)}，请谨慎提交`
+                  : `，低于红线 ${fmtConfigPct(coverage.redlinePct)}，提交会被拒绝`}
           </>
         ) : auditSink === "local-history" ? (
           <>本页暂不自动检查覆盖率，请自行确认资金影响。</>
@@ -3844,14 +3844,14 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
             {!approval.heading && <>
               <div>{completionCopy}</div>
               <div>{approval.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。"}{covBlocked && "兑付覆盖率低于红线，暂时无法提交。"}</div>
-              {coverage && <div>兑付覆盖率 <b className="mono">{fmtPct(coverage.coverageRatio)}</b> · 红线 <span className="mono">{fmtPct(coverage.redlinePct)}</span></div>}
+              {coverage && <div>兑付覆盖率 <b className="mono">{fmtPct(coverage.coverageRatio)}</b> · 红线 <span className="mono">{fmtConfigPct(coverage.redlinePct)}</span></div>}
             </>}
             {approval.disabledReason && <div role="status">{approval.disabledReason}</div>}
           </div>
         </div>
         {approval.heading ? <>
           <p style={{ margin: "0 0 14px", lineHeight: 1.5 }}>{completionCopy}</p>
-          {coverage && <p className="operation-approval-coverage">兑付覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b> · 红线 <b>{fmtPct(coverage.redlinePct)}</b></p>}
+          {coverage && <p className="operation-approval-coverage">兑付覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b> · 红线 <b>{fmtConfigPct(coverage.redlinePct)}</b></p>}
           {approval.comparison}
         </> : !compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} completionCopy={statedBrief ? undefined : completionCopy} auditSink={auditSink} kind={effectiveBriefKind} stated={statedBrief} />}
       </>}

@@ -3,6 +3,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { fmtConfigPct } from "@/lib/format";
 /**
  * G3 NEX 价格管理 — 数据来自后端 /api/admin/market/nex/curve 与 /curve/history。
  * 页面只展示后端返回的 NEX 行情与控制状态。
@@ -245,7 +246,7 @@ function G3MarketEditor({ ctx }: { ctx: GCtx }) {
   const curDay = overview.activeDayIndex + 1;
   const peak = overview.weekPeakPrice;
   const cov = overview.coverage.coverageRatio.toFixed(1);
-  const redline = overview.coverage.redlinePct.toFixed(1);
+  const redline = fmtConfigPct(overview.coverage.redlinePct);
   const price = fmtPrice(overview.currentPrice);
   const volatility = `+/-${fmtCompact(overview.overrides.volatilityPct, 4)}%`;
   const oracle = overview.overrides.oracle;
@@ -329,7 +330,7 @@ function G3MarketEditor({ ctx }: { ctx: GCtx }) {
     }
     openActionConfirm({ briefKind: "config",
       action: `手动设置 · ${label}`,
-      detail: <><b>{label}</b> · 当前 {current} · {note}。{amp && <><b>会让平台多付钱</b>：系统会按本周最高价 {fmtPrice(peak)} 重新计算 UVT 应付款，覆盖率低于红线时无法保存（当前 {cov}%，红线 {redline}%）。</>}{overrideKey === "deviationPct" || overrideKey === "costBasis" ? "保存后立即生效，之后的价格计划切换不会覆盖此设置，直到再次修改。" : "手动设置只是临时的，下次自动切换时会被计划里的值替换。"}</>,
+      detail: <><b>{label}</b> · 当前 {current} · {note}。{amp && <><b>会让平台多付钱</b>：系统会按本周最高价 {fmtPrice(peak)} 重新计算 UVT 应付款，覆盖率低于红线时无法保存（当前 {cov}%，红线 {redline}）。</>}{overrideKey === "deviationPct" || overrideKey === "costBasis" ? "保存后立即生效，之后的价格计划切换不会覆盖此设置，直到再次修改。" : "手动设置只是临时的，下次自动切换时会被计划里的值替换。"}</>,
       amplifies: !!amp,
       coverage: amp ? coverageSnapshot : undefined,
       edit: overrideKey === "volatilityPct"
@@ -347,7 +348,7 @@ function G3MarketEditor({ ctx }: { ctx: GCtx }) {
   const pauseEngine = () => openActionConfirm({ briefKind: "emergency",
     action: paused ? "恢复价格自动变化" : "暂停价格自动变化",
     detail: paused
-      ? <>恢复后价格继续按计划变化。价格上涨会让平台多付钱，覆盖率低于红线时无法恢复（当前 {cov}%，红线 {redline}%）。</>
+      ? <>恢复后价格继续按计划变化。价格上涨会让平台多付钱，覆盖率低于红线时无法恢复（当前 {cov}%，红线 {redline}）。</>
       : <>暂停后全站 UVT 价格停在当前值，不再变化。需要风控主管或超级管理员操作。</>,
     amplifies: paused,
     coverage: paused ? coverageSnapshot : undefined,
