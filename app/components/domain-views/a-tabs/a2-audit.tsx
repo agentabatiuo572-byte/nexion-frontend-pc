@@ -140,8 +140,8 @@ const RELOADING = "审批单还在读取，读完再处理";
 const SUBMITTING = "正在提交";
 const NO_WITHDRAW = "你没有撤回申请的权限";
 const NO_DECIDE = "这个账号没有处理这张单的权限";
-/** 名字不是后端写的普通单：页面认不出要哪项原业务权限，批准时后端核（T02）。 */
-const UNMAPPED_NOTE = "还要原业务的权限，批准时后端核对";
+/** 页面判断不了这张单要哪项业务权限或附加条件时，入口照常放出，写这一句（协调人第五轮定）。 */
+const BACKEND_CHECKS_NOTE = "这类单的业务权限由后端在批准时检查，没有权限会被拒绝并写明原因";
 const WAIT_OTHERS = "等待有权限的人处理";
 const UNKNOWN_TOAST = "结果未确认，不要重复操作。到页面上方读回核对或按原操作重试。";
 const RETRY_EXPIRED = "已超过 24 小时，不能再重试，请在「操作记录」里按单号核对。";
@@ -185,13 +185,18 @@ function g3PolicyExecutionTiming(w: A2OperationRow) {
  * - 其余按后端写死的动作名、对象和摘要（validateProposalContext 等用命令生成的描述换掉发起方写的），
  *   手机规则单还有 phoneCalibrationProposal，大使申请有 ambassadorMaterialProposal；
  * - 账号类另认「操作员账号」页提交时写的动作名。
- * 有专项审批的单名字都是后端写的。名字不是后端写的（unmapped）就是普通单：后端驳回不另要权限，
- * 批准时按原操作再核一遍发起权限（validateProposal）。页面认不出是哪一项，按 A2 批准权放出入口，写明批准时后端还会核。
- * 后端摘要里没写的条件不额外加门槛（G4 动没动供应量、D7 是否强制倒挂），后端照样核（T03、T04）。
+ * 协调人第五轮定的规则：能认出类型、后端规则也确认得了的，照后端精确判断；认不出类型、旧记录拿不到原单、
+ * 条件判断不了（D7 摘要读不出是否强制倒挂、G4 摘要读不出动没动总量）的，有 A2 批准权就照常放出批准、驳回，
+ * 标 backendChecks，页面写 BACKEND_CHECKS_NOTE；后端按权限拒绝时写清原因（decisionDeniedText）。
  */
 /** 一项要的权限；数组是有其中一个就行。 */
 type Need = string | readonly string[];
-type DecisionRule = { superadmin?: boolean; approve?: readonly Need[]; reject?: readonly Need[]; unmapped?: boolean };
+type DecisionRule = { superadmin?: boolean; approve?: readonly Need[]; reject?: readonly Need[]; backendChecks?: boolean };
+/**
+ * 后端 scopedMakerMayPropose 的增长委托例外：角色是增长、有发起审批权、没有 A2 写权限时，
+ * E5 强制激活、解绑不要那两项设备权限（批准时 validateApproval 回到 validateProposal 用同一条，U03）。
+ */
+const GROWTH_DELEGATE = "@growth-delegate";
 type TicketIdentity = Pick<A2OperationRow, "action" | "obj" | "operationCode" | "fundEffect" | "before" | "after">
   & Partial<Pick<A2OperationRow, "phoneCalibrationProposal" | "ambassadorMaterialProposal" | "roleGate">>;
 const A4_REGISTRY_CODES = ["a4_schema_register", "a4_schema_property_add", "a4_domain_extension_register"];
@@ -256,8 +261,8 @@ const CANONICAL_WITH_OBJECT: Readonly<Record<string, Need>> = {
   拦截新人礼: "risk_k2_row_blockgift",
   标记刷榜账户: "risk_k2_row_boardflag",
   "联动 K1 批量冻结": "risk_k2_row_freeze",
-  强制激活设备: "device_e5_device_force_activate",
-  解绑设备资产: "device_e5_device_unbind",
+  强制激活设备: ["device_e5_device_force_activate", GROWTH_DELEGATE],
+  解绑设备资产: ["device_e5_device_unbind", GROWTH_DELEGATE],
   编辑账号资料: "platform_a1_write",
   变更角色: "platform_a1_account_role_change",
   重置两步验证: "platform_a1_account_2fa_reset",
@@ -312,17 +317,20 @@ function isJ4Execution(w: Pick<A2OperationRow, "action" | "obj">) {
   return J4_CODE.test(w.obj) && w.action === `执行应急剧本 · ${w.obj}`;
 }
 
-/** D7 放宽单是不是强制保存倒挂价：后端预览摘要（PayoutVndConfigService.previewValues）在末尾写 forceInverted。 */
+/**
+ * D7 放宽单是不是强制保存倒挂价：后端预览摘要（PayoutVndConfigService.previewValues）以「vN spread=」开头，
+ * 强制时末尾写 forceInverted。摘要不是这个格式（旧记录没存、读不到原单）就判断不了，返回 undefined。
+ */
 function d7ForceInverted(after: string) {
-  return /\bforceInverted\b/.test(after);
+  return /^v\d+ spread=/.test(after.trim()) ? /\bforceInverted\b/.test(after) : undefined;
 }
 
-/** G4 档位单动没动总供应量：后端两份摘要都写「· 总量 N ·」（G4CatalogApproval.summary），不一样才是动了。 */
+/** G4 档位单动没动总供应量：后端两份摘要都写「· 总量 N ·」（G4CatalogApproval.summary）。有一份读不出就判断不了。 */
 function g4ChangesSupply(w: Pick<A2OperationRow, "before" | "after">) {
   const supply = (text: string) => / · 总量 (\d+) · /.exec(text)?.[1];
   const before = supply(w.before);
   const after = supply(w.after);
-  return !!before && !!after && before !== after;
+  return before && after ? before !== after : undefined;
 }
 
 function decisionRule(w: TicketIdentity): DecisionRule {
@@ -335,13 +343,17 @@ function decisionRule(w: TicketIdentity): DecisionRule {
   if (code === "f5_commission_suspension") return { approve: ["network_f5_commission_suspend"] };
   if (code === "h2_trial_charge") return { approve: ["growth_h2_session_charge"] };
   if (w.obj === "current" && w.action === "调整敏感汇率") return { superadmin: true, approve: ["finance_d6_manage"], reject: ["finance_d6_manage"] };
-  if (w.obj === "current" && w.action === "放宽越南盾提现参数") return { superadmin: true, approve: d7ForceInverted(w.after) ? ["finance_d7_force_inverted"] : [] };
+  if (w.obj === "current" && w.action === "放宽越南盾提现参数") {
+    const forced = d7ForceInverted(w.after);
+    return forced === undefined ? { superadmin: true, backendChecks: true } : { superadmin: true, approve: forced ? ["finance_d7_force_inverted"] : [] };
+  }
   if (w.obj === "current" && w.action === "放宽提现参数") return SUPER_ONLY;
   if (SUPER_ACTIONS.has(w.action) || SUPER_ACTION_PATTERNS.some((pattern) => pattern.test(w.action)) || isG3Policy(w)) return SUPER_ONLY;
-  // 创世节点价格档位：改价要价格权限，动了总供应量还要写权限（T03）。
+  // 创世节点价格档位：改价要价格权限，动了总供应量还要写权限（T03）；读不出动没动时由后端核写权限。
   if (w.obj === "tiers" && w.action === "调整创世节点价格档位") {
-    const need = g4ChangesSupply(w) ? ["finprod_g4_price_write", "finprod_g4_write"] : ["finprod_g4_price_write"];
-    return { superadmin: true, approve: need, reject: need };
+    const supply = g4ChangesSupply(w);
+    const need = supply ? ["finprod_g4_price_write", "finprod_g4_write"] : ["finprod_g4_price_write"];
+    return { superadmin: true, approve: need, reject: need, ...(supply === undefined ? { backendChecks: true } : {}) };
   }
   // 创世分红：改分红率要分红率权限，重跑一批分红要 G4 写权限。
   if (w.action === "批准创世分红操作") {
@@ -364,7 +376,7 @@ function decisionRule(w: TicketIdentity): DecisionRule {
   const f = w.action === `F 域配置调整 · ${w.obj}` ? fConfigAuthority(w.obj) : undefined;
   if (f) return { approve: [f] };
   const prefixed = CANONICAL_APPROVE_PREFIX.find(([prefix]) => w.action.startsWith(prefix));
-  return prefixed ? { approve: [prefixed[1]] } : { unmapped: true };
+  return prefixed ? { approve: [prefixed[1]] } : { backendChecks: true };
 }
 
 /** 手机规则申请带未来的生效时间时，批准只登记排程，到点才生效（M6）。effectiveAt 是毫秒，0 是批准后立即。 */
@@ -521,8 +533,8 @@ type A2PendingCommand = PendingMutationRecord & {
   operator: string;
   /** 机制参数的新值。 */
   value?: string;
-  /** 重试时按发出时这张单要的业务权限判断（decisionRule 的结果）。第二轮的记录没有这项，第三轮的可能是 null。 */
-  rule?: DecisionRule | null;
+  /** 重试时按发出时这张单要的业务权限判断（decisionRule 的结果）。第二轮的记录没有这项，第三轮的可能是 null，第四轮的标记叫 unmapped。 */
+  rule?: (DecisionRule & { unmapped?: boolean }) | null;
   operationCode?: string;
   obj?: string;
   fundEffect?: A2OperationRow["fundEffect"];
@@ -561,6 +573,19 @@ const PARAM_AUDIT_OBJECT: Record<A2CommandKind, string | undefined> = { approve:
 
 function backendCode(error: unknown) {
   return error instanceof Error && "backendMessage" in error && typeof error.backendMessage === "string" ? error.backendMessage : "";
+}
+
+/**
+ * 后端按业务权限拒绝批准、驳回（validateProposal 回的 A2_BUSINESS_PERMISSION_DENIED:权限码）：写清是权限不够、单子没动，带上后端给的权限码。
+ * 这是带原因码的明确拒绝，首次提交照常丢号，不算结果未知（第五轮）。其他专项审批的拒绝码已有各自的中文。
+ */
+function decisionDeniedText(kind: "approve" | "reject", cause: unknown, retry = false) {
+  const code = backendCode(cause);
+  if (!code.startsWith("A2_BUSINESS_PERMISSION_DENIED")) return undefined;
+  const missing = /^A2_BUSINESS_PERMISSION_DENIED:([A-Za-z0-9_]+)$/.exec(code)?.[1];
+  const denied = `后端按业务权限拒绝了这次${kind === "approve" ? "批准" : "驳回"}，这个账号没有这张单要的业务权限${missing ? `（权限码 ${missing}）` : ""}`;
+  // 重试被拒说明不了原操作的结果，后半句由重试那边写。
+  return retry ? denied : `${denied}。${kind === "approve" ? "原操作没有执行" : "这张单没有驳回"}，还是待审批；请换有这项权限的管理员处理。`;
 }
 
 /** 后端现在写「统一字段 · v3」，parseA2SchemaVersion 只认旧的「统一 schema · v3」，认不出时取里面的版本号。 */
@@ -753,8 +778,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   } as AuthPrincipal;
   const canApprove = canApprovePending(principal);
   /** 按读到的权限判断，不按角色名写死（B38 后财务主管有 D 域读权、没有批准权）。 */
-  const has = (need: Need) => typeof need === "string" ? principal.authorities.includes(need) : need.some((authority) => principal.authorities.includes(authority));
-  /** 认不出名字的普通单（unmapped）只看 A2 批准权：后端驳回不另要权限，批准时还会核原业务权限（T02）。 */
+  const growthDelegate = principal.role === "growth" && principal.authorities.includes("platform_a2_proposal_create")
+    && !principal.authorities.includes("platform_a2_write");
+  const holds = (authority: string) => authority === GROWTH_DELEGATE ? growthDelegate : principal.authorities.includes(authority);
+  const has = (need: Need) => typeof need === "string" ? holds(need) : need.some(holds);
+  /** backendChecks 的单只看规则里能确认的部分（多数只剩 A2 批准权），其余由后端在批准时检查（第五轮）。 */
   const allowed = (rule: DecisionRule, kind: "approve" | "reject") => {
     if (!canApprove) return false;
     if (rule.superadmin && principal.role !== "superadmin") return false;
@@ -994,9 +1022,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const recordTicket = (record: A2PendingCommand) => pendingQueue.find((w) => w.id === record.target);
   const recordOrderNo = (record: A2PendingCommand) => record.refundOrderNo ?? recordTicket(record)?.refundOrderNo
     ?? (record.fundEffect === "ORDER_REFUND" ? record.obj : undefined);
-  const recordRule = (record: A2PendingCommand) => {
+  const recordRule = (record: A2PendingCommand): DecisionRule => {
     const queued = recordTicket(record);
-    return queued ? decisionRule(queued) : record.rule ?? decisionRule({ action: record.action ?? "", obj: record.obj ?? "", operationCode: record.operationCode, fundEffect: record.fundEffect, before: "", after: "" });
+    if (queued) return decisionRule(queued);
+    if (record.rule) return { ...record.rule, backendChecks: record.rule.backendChecks || record.rule.unmapped };
+    return decisionRule({ action: record.action ?? "", obj: record.obj ?? "", operationCode: record.operationCode, fundEffect: record.fundEffect, before: "", after: "" });
   };
   const queueRows = useMemo(() => pendingQueue.filter((w) => {
     const tOk = qType === "all" || w.type === qType || (qType === "sos" && w.sos);
@@ -1214,7 +1244,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       else notePending(record, "重试的结果仍未确认，待确认继续保留。");
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
-      const why = displayAdminError(cause).replace(/[。.]$/, "");
+      const why = ((record.kind === "approve" || record.kind === "reject" ? decisionDeniedText(record.kind, cause, true) : undefined) ?? displayAdminError(cause)).replace(/[。.]$/, "");
       if (isExplicitRejection(cause)) {
         notePending(record, `重试没有成功：${why}。这说明不了原操作的结果，原记录继续保留。`);
         setRetryRejected((current) => [...current, record.commandKey]);
@@ -1355,7 +1385,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       effect: <>{subject(w)}<StatusTag tone="progress" filled>{timing.tag}</StatusTag>{isRefund && <IrreversibleTag />}</>,
       detail: j4
         ? <>中途失败时，前面的步骤可能已经生效。到「监管要求应急处理」的执行追溯里核对每一步。谁能批准：{approvalExecutorLabel(w)}。</>
-        : w.coverageCheckOnApproval ? <>{approvalCoverageCopy(w)}</> : <>谁能批准：{approvalExecutorLabel(w)}。{decisionRule(w).unmapped && `${UNMAPPED_NOTE}。`}</>,
+        : w.coverageCheckOnApproval ? <>{approvalCoverageCopy(w)}</> : <>谁能批准：{approvalExecutorLabel(w)}。{decisionRule(w).backendChecks && `${BACKEND_CHECKS_NOTE}。`}</>,
       facts: ticketFacts(w, "approve"),
       content: (
         <div className="rd-stack">
@@ -1385,6 +1415,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           if (stale) openActionConfirm({ ...approveRequest(w), blockedReason: stale });
           // 共用的说法对直接编辑、演练都成立；审批这里还要写下一步（M8）。
           if (backendCode(cause) === "J4_PLAYBOOK_NOT_FOUND") throw new Error("应急预案不存在，可能已被删除，这张单不能批准。请驳回后按最新的预案重新发起。");
+          const denied = decisionDeniedText("approve", cause);
+          if (denied) throw new Error(denied);
           throw cause;
         }
       },
@@ -1413,6 +1445,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       } catch (cause) {
         const stale = staleReason(w, "reject", cause);
         if (stale) openActionConfirm({ ...rejectRequest(w), blockedReason: stale });
+        const denied = decisionDeniedText("reject", cause);
+        if (denied) throw new Error(denied);
         throw cause;
       }
     },
@@ -1674,6 +1708,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         </p>
         {amount && <p>退款金额 {amount.state === "ok" ? <b className="a2-amount">{refundAmountText(amount)}</b> : <span className="a2-warn-text">{refundAmountText(amount)}</span>}
           {amount.state === "error" && recordOrderNo(record) && <> <InlineRetry onRetry={() => void loadRefundAmount(recordOrderNo(record)!)} /></>}</p>}
+        {record.kind === "approve" && recordRule(record).backendChecks && <p>{BACKEND_CHECKS_NOTE}。</p>}
         {pendingNotes[record.fingerprint] && <p>{pendingNotes[record.fingerprint]}</p>}
       </Notice>
     );
@@ -1954,7 +1989,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     { label: "发起人", icon: Users, tone: "users", value: `${shown.operator} · ${roleText(shown.operatorRole)}${isMine(shown) ? "（你发起的）" : ""}`, reason: bizTime(shown.rawTs, shown.ts) },
     { label: "发起理由", value: keepCodes(shown.reason) },
     { label: shown.retiredOperation ? "原执行权限" : "谁能批准", value: approvalExecutorLabel(shown),
-      reason: !shown.retiredOperation && decisionRule(shown).unmapped ? UNMAPPED_NOTE : undefined },
+      reason: !shown.retiredOperation && decisionRule(shown).backendChecks ? BACKEND_CHECKS_NOTE : undefined },
     ...(shownBlock ? [{ label: "不能批准的原因", state: "warn" as const, value: shownBlock }] : []),
     ...(shownTiming ? [{ label: "生效时间", value: shownTiming }] : []),
   ] : [];
