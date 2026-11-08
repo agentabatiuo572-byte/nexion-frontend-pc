@@ -417,7 +417,7 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | `/api/admin/platform/audit/operations`（C2/C5） | POST | 退出全部设备、财务冻结／恢复提交审批，另一位有权超管批准后生效 | C2-MD1/MD2/MD3 | C2 |
 | `/api/admin/users/profiles/:userId/impersonations` · `/users/impersonations/:sessionNo/terminate` | POST | 开始／结束用户数据只读视图（5/10/15/30 分钟，默认15），不复现 App 页面 | C2-MD4 | C2 |
 | `/api/admin/users/account-lists` · `/users/account-lists/:userId/remove` | POST | 账户级信任／禁入名单；每用户一条，替换先核对；信任仅记录 | C2-MD5/MD6 | C2 |
-| `/api/admin/users/profiles/:userId/asset-adjustments` · `/asset-adjustment-requests` | POST | 普通申请全部待审批，余额不变；保留的客服大额路径在默认 B30 种子不可达 | C3-MD1 | C3 |
+| `/api/admin/users/profiles/:userId/asset-adjustments` | POST | 原申请全部待另一人批准，余额不变；唯一键冲突 `C3_ADJUSTMENT_CREATE_CONFLICT`。旧 `/asset-adjustment-requests` 已退役，有权返回 410 `C3_LARGE_REQUEST_RETIRED`，无页面入口 | C3-MD1 | C3 |
 | `/api/admin/users/asset-adjustments/:adjustmentNo/{approve\|reject\|withdraw\|reverse}` | POST | 另一人批准／驳回、本人撤回、一次直接反向冲正；普通增加余额检查覆盖率，冲正不查 | C3-MD2(reverse) | C3 |
 | `/api/admin/users/:userId/sessions` · `/revoke-session` | GET/POST | 多载体 session 列表 / 指定会话下线（不因异端登录自动强踢） | C5-MD1(POST) | C5 / 三端 SPEC-4 |
 | `/api/admin/users/:userId/invalidate-password` · `/disable-2fa` | POST | 密码重置/disable 2FA(理由必填+账户归属核实;携 Key) | C5-MD2/MD3 | C5 |

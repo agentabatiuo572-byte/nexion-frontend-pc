@@ -126,7 +126,7 @@ A6 当前执行路径（2026-11-04，T02、BUG-134）：新建角色、修改名
 |---|---|---|---|---|
 | C1 查找用户与查看资料 | `user_c1_read`；详情 `user_c1hub_read` | RISK、FINANCE、FINANCE_LEAD、GROWTH、SUPPORT、AUDITOR（超管沿种子） | X：`user_c1_export`，默认 SUPER_ADMIN/GROWTH/AUDITOR；RISK 默认无导出，财务主管不因角色继承得到导出 | MASKED；有权导出时 SUPER_ADMIN/RISK/AUDITOR 15 列、其余 9 列；风险读权独立，余额及设备按实际返回裁剪；未知导出锁新申请 |
 | C2 账户操作 | 处置／视图／名单 `user_c2_read`；注销 `user_c1_read` | 内置 SUPER_ADMIN、RISK、AUDITOR；FINANCE/FINANCE_LEAD/SUPPORT/GROWTH 无 C2 入口 | 冻结／恢复、查看起止、名单各按精确码；全设备退出认 C2 或 C5 退出码加 A2 提案权；注销只认 `user_c1_write`，无超管前端绕过 | 全设备退出由另一有权超管批准；财务冻结兼容提案须现有授权，原重试还须 proposal_create；信任名单只记录，不放宽检查；冻结来源阻断及只读会话限时保留 |
-| C3 余额与资产调整 | `user_c3_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR（超管沿种子）；SUPPORT 无权 | 发起 `user_c3_adjust_create`：FINANCE ≤500、FINANCE_LEAD/超管 ≤10,000 USDT 等值；批准／驳回 `user_c3_adjust_approve`、冲正 `user_c3_adjust_reverse`：FINANCE_LEAD/超管 | USDT/UVT；原调整全部待另一人批准，不能自批；客服大额路径默认不可达；冲正一次直接反向执行，不查覆盖率，余额不得为负 |
+| C3 余额与资产调整 | `user_c3_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR（超管沿种子）；SUPPORT 无权 | 发起 `user_c3_adjust_create`：FINANCE ≤500、FINANCE_LEAD/超管 ≤10,000 USDT 等值；批准／驳回 `user_c3_adjust_approve`、冲正 `user_c3_adjust_reverse`：FINANCE_LEAD/超管 | USDT/UVT；原调整全部待另一人批准，不能自批；B43 迁移移除 SUPPORT 全部 C3 码和菜单；旧大额请求接口退役（410），页面无入口；冲正一次直接反向执行，不查覆盖率，余额不得为负 |
 | C4 KYC 合规台账 | `user_c4_read` | RISK、FINANCE、SUPPORT、AUDITOR | W：RISK；X：监管导出专权 | REGION/MASKED；证件影像默认不可下载 |
 | C5 安全 & 会话 | `user_c5_read` | RISK、SUPPORT、AUDITOR | W：RISK；H：强退/MFA 重置/设备解绑 | REGION；会话 token 永不回显 |
 | C6 注册/登录风控 | `user_c6_read` | RISK、GROWTH、AUDITOR | W：RISK；增长只读 | ALL/REGION；OTP/滑块阈值不归增长修改 |
@@ -274,7 +274,7 @@ A6 当前执行路径（2026-11-04，T02、BUG-134）：新建角色、修改名
 | RBAC-OPEN-001 | maker/checker 与“按执行门槛分流”的最终术语和角色模型 | 测试中使用独立发起人与执行人，禁止同人自批 |
 | RBAC-OPEN-002 | I 域历史 `MENU_CONTENT_I4/I5` 与导航 `I4/I5` 映射 | 新夹具按导航 code 等集授权，旧 code 仅做迁移兼容 |
 | RBAC-OPEN-003 | REGION 数据范围按注册地、KYC 辖区还是当前服务辖区 | 涉资金/合规时取更严格交集，待产品裁决 |
-| RBAC-OPEN-004 | 旧 C3 迁移曾授 SUPPORT 读／发起，与 B30 种子不同 | 现行内置种子不授客服任何 C3 权限；页面按实际码，不能写成待定期间客服默认可发起 |
+| RBAC-OPEN-004 | 旧 C3 迁移曾授 SUPPORT 读／发起，与 B30 种子不同 | 已由 B43 `20261108_b43_support_c3_scope.sql` 前向纠正：SUPPORT 全部 `user_c3_*` 权限和 C3 菜单绑定软删除，与 B30 种子一致；页面按实际码，不授新权 |
 | RBAC-OPEN-005 | K6 senior/admin 是否映射独立持久角色 | 未落角色前采用最小临时授权并设置到期时间 |
 
 ## 7. HANDOFF
