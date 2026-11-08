@@ -1699,6 +1699,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   E2_TASK_PRICING_APPROVAL_FORBIDDEN: "只有另一位有批准权限的超级管理员能处理这项审批。",
   B_THRESHOLD_APPROVAL_FORBIDDEN: "只有另一位有批准权限的超级管理员能处理这项审批。",
   G4_CATALOG_APPROVAL_FORBIDDEN: "只有另一位有批准权限的超级管理员能处理这项审批。",
+  G4_CATALOG_MAKER_FORBIDDEN: "发起人没有调整价格档位的权限或账号已停用，这张单不能提交或批准；请由有权限的人重新发起。",
   LEARNING_ACTIVATION_APPROVAL_FORBIDDEN: "只有另一位有批准权限的超级管理员能处理这项审批。",
   LEARNING_COURSE_REWARD_APPROVAL_FORBIDDEN: "只有另一位有批准权限的超级管理员能处理这项审批。",
   // 退款审批的批准和驳回都要超级管理员同时有订单退款权限（后端 3fb5dfe3 起）。
