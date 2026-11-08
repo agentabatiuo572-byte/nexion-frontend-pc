@@ -1,4 +1,4 @@
-import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { parseBankEligibility, parseBankSettlement, readBankEvidence, type BankBeneficiaryEligibility, type BankSettlementEvidence } from "@/lib/admin/bank-payout-evidence";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { adminAuthLifecycleEpoch, AdminAuthEpochChangedError } from "@/lib/admin/auth-lifecycle";
@@ -281,6 +281,17 @@ export interface D6FxQuote {
   updatedBy: string;
   updateReason: string;
   updatedAt: string;
+  approval: {
+    operationId: string;
+    status: "pending" | "approved" | "rejected" | "withdrawn" | "expired";
+    submittedBy: string;
+    submittedAt: string;
+    decidedAt: string;
+    expectedVersion: number;
+    /** 仅表示这张单已批准，不能用它覆盖当前配置。 */
+    applied: boolean;
+  } | null;
+  applied: boolean | null;
   history: Array<{
     id: number;
     beforeBaseRateVndPerUsdt: number;
@@ -295,6 +306,19 @@ export interface D6FxQuote {
   }>;
   source: "nx_finance_fx_quote_config";
   asOf: string;
+}
+
+export type D6FxValues = Pick<D6FxQuote, "baseRateVndPerUsdt" | "buySpreadPct" | "lockWindowMinutes">;
+export interface D6FxPreflight {
+  current: D6FxValues & { version: number; quoteRateVndPerUsdt: number };
+  proposed: D6FxValues & { version: number; quoteRateVndPerUsdt: number };
+  before: string;
+  after: string;
+  approvalRequired: boolean;
+  baseRateIncrease: boolean;
+  rechargeQuoteDecrease: boolean;
+  fundingCheckRequired: boolean;
+  fundingCheckPassed: boolean;
 }
 
 export interface D2Withdrawal {
@@ -844,8 +868,7 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
     // 🔴 运营看到的话术必须与命令号去留同口径(2026-08-06 第三轮验收 P1-6)。
     //   先前只认 unknown 头:5xx 时命令号已经保住了,提示却仍说「失败」——运营据此重勾一批重试,
     //   而 D2 批量的指纹含 ids,换一批 ids 就是新指纹新号,已放行的那部分会**重复放行**。
-    if (commandKey && (result?.message === "IDEMPOTENCY_REQUEST_IN_PROGRESS"
-      || result?.message === "IDEMPOTENCY_RESULT_UNKNOWN"
+    if (commandKey && (isIdempotencyOutcomeOpen(result?.message)
       || response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
       || outcomeStaysUnknown(response.status, result?.code))) {
       throw new DOutcomeUnknownError(commandKey);
@@ -1408,6 +1431,21 @@ function normalizeD6FxQuote(raw: unknown): D6FxQuote {
       createdAt: d1String(row.createdAt, `fxQuote.history[${index}].createdAt`),
     };
   });
+  let approval: D6FxQuote["approval"] = null;
+  if (root.approval != null) {
+    const row = d1Object(root.approval, "fxQuote.approval");
+    const status = d1String(row.status, "fxQuote.approval.status");
+    if (!["pending", "approved", "rejected", "withdrawn", "expired"].includes(status)) d1Invalid("fxQuote.approval.status");
+    approval = {
+      operationId: d1String(row.operationId, "fxQuote.approval.operationId"),
+      status: status as NonNullable<D6FxQuote["approval"]>["status"],
+      submittedBy: d1OptionalText(row.submittedBy, "fxQuote.approval.submittedBy"),
+      submittedAt: d1String(row.submittedAt, "fxQuote.approval.submittedAt"),
+      decidedAt: d1OptionalText(row.decidedAt, "fxQuote.approval.decidedAt"),
+      expectedVersion: d1Number(row.expectedVersion, "fxQuote.approval.expectedVersion"),
+      applied: d1Boolean(row.applied, "fxQuote.approval.applied"),
+    };
+  }
   const result: D6FxQuote = {
     configCode: "VND_USDT",
     baseRateVndPerUsdt: d1Number(root.baseRateVndPerUsdt, "fxQuote.baseRateVndPerUsdt"),
@@ -1419,6 +1457,8 @@ function normalizeD6FxQuote(raw: unknown): D6FxQuote {
     updatedBy: d1OptionalText(root.updatedBy, "fxQuote.updatedBy"),
     updateReason: d1OptionalText(root.updateReason, "fxQuote.updateReason"),
     updatedAt: d1String(root.updatedAt, "fxQuote.updatedAt"),
+    approval,
+    applied: root.applied == null ? null : d1Boolean(root.applied, "fxQuote.applied"),
     history,
     source: "nx_finance_fx_quote_config",
     asOf: d1String(root.asOf, "fxQuote.asOf"),
@@ -2421,6 +2461,43 @@ export async function loadD6FxQuote() {
   return normalizeD6FxQuote(await apiRequest<Record<string, unknown>>("finance", "/fx-quote"));
 }
 
+/** A2 的 D6 前后值由后端 fxAuditValues(Map).toString() 生成。只解析这份固定投影，不猜待批值。 */
+export function parseD6ApprovalValues(text: string): D6FxValues {
+  const values = {} as D6FxValues;
+  for (const key of ["baseRateVndPerUsdt", "buySpreadPct", "lockWindowMinutes"] as const) {
+    const match = text.match(new RegExp(`(?:\\{|,\\s*)${key}=([0-9]+(?:\\.[0-9]+)?)(?=,|\\})`));
+    if (!match) d1Invalid("fxQuote.approval.values");
+    values[key] = d1Number(match[1], `fxQuote.approval.${key}`);
+  }
+  return values;
+}
+
+/** 只用于需审批方向。成功只说明预检通过，未保存配置。 */
+export async function preflightD6FxQuote(values: D6FxValues, expectedVersion: number, reason: string): Promise<D6FxPreflight> {
+  const row = d1Object(await apiRequest<unknown>("finance", "/fx-quote/preflight", {
+    method: "POST", body: JSON.stringify({ ...values, expectedVersion, reason }),
+  }), "fxQuote.preflight");
+  const snapshot = (value: unknown, name: string) => {
+    const item = d1Object(value, name);
+    return {
+      baseRateVndPerUsdt: d1Number(item.baseRateVndPerUsdt, `${name}.baseRateVndPerUsdt`),
+      buySpreadPct: d1Number(item.buySpreadPct, `${name}.buySpreadPct`),
+      lockWindowMinutes: d1Number(item.lockWindowMinutes, `${name}.lockWindowMinutes`),
+      version: d1Number(item.version, `${name}.version`),
+      quoteRateVndPerUsdt: d1Number(item.quoteRateVndPerUsdt, `${name}.quoteRateVndPerUsdt`),
+    };
+  };
+  return {
+    current: snapshot(row.current, "fxQuote.preflight.current"), proposed: snapshot(row.proposed, "fxQuote.preflight.proposed"),
+    before: d1String(row.before, "fxQuote.preflight.before"), after: d1String(row.after, "fxQuote.preflight.after"),
+    approvalRequired: d1Boolean(row.approvalRequired, "fxQuote.preflight.approvalRequired"),
+    baseRateIncrease: d1Boolean(row.baseRateIncrease, "fxQuote.preflight.baseRateIncrease"),
+    rechargeQuoteDecrease: d1Boolean(row.rechargeQuoteDecrease, "fxQuote.preflight.rechargeQuoteDecrease"),
+    fundingCheckRequired: d1Boolean(row.fundingCheckRequired, "fxQuote.preflight.fundingCheckRequired"),
+    fundingCheckPassed: d1Boolean(row.fundingCheckPassed, "fxQuote.preflight.fundingCheckPassed"),
+  };
+}
+
 export async function updateD6FxQuote(
   values: Pick<D6FxQuote, "baseRateVndPerUsdt" | "buySpreadPct" | "lockWindowMinutes">,
   expectedVersion: number,
@@ -2470,7 +2547,7 @@ export async function downloadD3Csv(
   if (!response.ok || contentType !== "text/csv" || outcomeUnknown) {
     const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
     if (isAdminAuthFailure(result?.code === 401 ? 401 : response.status, result?.message)) resetAdminSession();
-    if (outcomeUnknown || result?.message === "IDEMPOTENCY_REQUEST_IN_PROGRESS" || result?.message === "IDEMPOTENCY_RESULT_UNKNOWN"
+    if (outcomeUnknown || isIdempotencyOutcomeOpen(result?.message)
       || outcomeStaysUnknown(response.status, result?.code)) {
       throw new DOutcomeUnknownError(idempotencyKey);
     }

@@ -1,4 +1,4 @@
-import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
@@ -668,7 +668,7 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
     const commandKey = headers.get("Idempotency-Key");
     // 话术与命令号去留同口径:5xx 保住了号,提示也必须说「结果未知」而不是「失败」,
     // 否则运营会换个入口重做一遍(第三轮验收 P1-6)。
-    if (commandKey && (result?.message === "IDEMPOTENCY_REQUEST_IN_PROGRESS"
+    if (commandKey && (isIdempotencyOutcomeOpen(result?.message)
       || response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
       || outcomeStaysUnknown(response.status, result?.code))) {
       throw new UsersOutcomeUnknownError(commandKey);
@@ -978,7 +978,12 @@ export async function exportUserProfilesCsv(
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw new Error(formatAdminApiError(result?.message, `USERS_EXPORT_FAILED_${response.status}`));
+    // 带上 HTTP 状态和接口码，页面才分得清明确拒绝和结果未知（OP-91）。HTTP 2xx 却回了 JSON 错误时，状态取接口的 code。
+    throw new UsersRequestError(
+      response.ok ? Number(result?.code) || 0 : response.status,
+      result?.message ?? undefined,
+      formatAdminApiError(result?.message, `USERS_EXPORT_FAILED_${response.status}`),
+    );
   }
 
   return {
@@ -1323,7 +1328,7 @@ export async function executeUserDeviceTradein(
   const result = (await response.json().catch(() => null)) as ApiResult<JsonRecord> | null;
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
-    if (result?.message === "IDEMPOTENCY_REQUEST_IN_PROGRESS" || result?.message === "IDEMPOTENCY_RESULT_UNKNOWN"
+    if (isIdempotencyOutcomeOpen(result?.message)
       || response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
       || outcomeStaysUnknown(response.status, result?.code)) {
       throw new UsersOutcomeUnknownError(commandKey);
@@ -1333,11 +1338,11 @@ export async function executeUserDeviceTradein(
   return result.data as JsonRecord;
 }
 
-export async function updateUserStatus(userId: number | string, status: UserStatus, reasonCode: string | null, reason: string, operator: string) {
+export async function updateUserStatus(userId: number | string, status: UserStatus, reasonCode: string | null, reason: string, operator: string, commandKey?: string) {
   return usersRequest<User360Profile>(`/profiles/${encodeURIComponent(String(userId))}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status, reasonCode, reason, operator }),
-    idempotencyPrefix: "c2-user-status",
+    ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "c2-user-status" }),
   });
 }
 
@@ -1372,11 +1377,11 @@ export async function revokeUserSessions(userId: number | string, reason: string
   });
 }
 
-export async function startUserImpersonation(userId: number | string, reasonCode: string, reason: string, operator: string, ttlMinutes = 15) {
+export async function startUserImpersonation(userId: number | string, reasonCode: string, reason: string, operator: string, ttlMinutes = 15, commandKey?: string) {
   return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/impersonations`, {
     method: "POST",
     body: JSON.stringify({ ttlMinutes, reasonCode, reason, operator }),
-    idempotencyPrefix: "c2-user-impersonation-start",
+    ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "c2-user-impersonation-start" }),
   });
 }
 
@@ -1392,27 +1397,27 @@ export async function fetchImpersonationReadonlyView(accessToken: string, page =
   return normalizeC2ReadonlySessionTimes(result.data);
 }
 
-export async function terminateUserImpersonation(sessionNo: string, reason: string, operator: string) {
+export async function terminateUserImpersonation(sessionNo: string, reason: string, operator: string, commandKey?: string) {
   return usersRequest<UserImpersonationSession>(`/impersonations/${encodeURIComponent(sessionNo)}/terminate`, {
     method: "POST",
     body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "c2-user-impersonation-end",
+    ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "c2-user-impersonation-end" }),
   });
 }
 
-export async function upsertUserAccountList(userId: number | string, kind: "ALLOW" | "BLOCK", reason: string, operator: string, expiresAt?: string | null) {
+export async function upsertUserAccountList(userId: number | string, kind: "ALLOW" | "BLOCK", reason: string, operator: string, expiresAt?: string | null, commandKey?: string) {
   return usersRequest<UserAccountListEntry>("/account-lists", {
     method: "POST",
     body: JSON.stringify({ userId, kind, reason, operator, expiresAt: expiresAt ?? null }),
-    idempotencyPrefix: "c2-account-list-upsert",
+    ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "c2-account-list-upsert" }),
   });
 }
 
-export async function removeUserAccountList(userId: number | string, reason: string, operator: string) {
+export async function removeUserAccountList(userId: number | string, reason: string, operator: string, commandKey?: string) {
   return usersRequest<UserAccountListEntry>(`/account-lists/${encodeURIComponent(String(userId))}/remove`, {
     method: "POST",
     body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "c2-account-list-remove",
+    ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "c2-account-list-remove" }),
   });
 }
 

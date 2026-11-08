@@ -7,7 +7,7 @@
   --rd-z-pop: 120;
 }
 
-.rd-page, .rd-side, .rd-top, .rd-gate, .rd-drawer, .rd-modal, .rd-pop, .rd-tip, .rd-select-content { font-family: var(--rd-font); }
+.rd-page, .rd-side, .rd-top, .rd-gate, .rd-drawer, .rd-modal, .rd-pop, .rd-tip, .rd-select-content, .rd-search-pop { font-family: var(--rd-font); }
 
 /* 每种 tone 写一次，组件用 --tone、--tone-bg、--tone-tile、--tone-tile-ink、--tone-pill 取值。 */
 [data-tone="ok"] { --tone: var(--rd-ok); --tone-bg: var(--rd-ok-bg); --tone-tile: var(--rd-ok-tile); --tone-tile-ink: var(--rd-ok-tile-ink); --tone-pill: var(--rd-ok-pill); }
@@ -374,11 +374,15 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 /* 占满剩下的列宽，放不下才省略（Ant Design Table ellipsis 按列宽）：理由这类长文本列用 Td grow。 */
 .rd-table td[data-grow] { width: 100%; max-width: 0; }
 .rd-table td[data-grow] > .rd-cell { max-width: none; }
+.rd-table td[data-fit] { width: 1%; }  /* 列少、表格比内容宽时操作列只占按钮宽，多出的宽度按内容分给前面各列，操作列左边不空一大段（DT-04） */
 .rd-table td[data-align="right"] > .rd-cell { margin-left: auto; }  /* 右对齐列里的格子贴右边，表头和数值才对得齐 */
 .rd-table td[data-align="right"] .rd-row-actions > .rd-iconbtn:last-child { margin-right: -8px; }  /* 三个点贴到和表头一样的右边，图标按钮自带的留白不算 */
 .rd-table-scroll:has(td[data-align="right"] .rd-row-actions > .rd-iconbtn:last-child):not(.rd-panel[data-flush] > *) { margin-right: -8px; padding-right: 8px; }  /* 不贴边的表格末列没有内边距，这 8px 要借面板的留白，不然多出一条横向滚动条 */
 .rd-cell-main { display: block; color: var(--rd-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rd-cell-sub { display: block; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rd-cell-sub > span[data-tone] { color: var(--tone); }  /* 第二行里要人注意的一句（比如「覆盖率不足，系统驳回」）按状态上色 */
+.rd-cell-sub > [data-tagline] { display: inline-flex; align-items: center; gap: 8px; }  /* 第二行里的值加一个短标签（「大额」） */
+.rd-cell-sub .rd-tag { font-size: inherit; line-height: inherit; }  /* 第二行里的标签跟第二行同字号，不撑高这一行 */
 .rd-cell[data-mono] .rd-cell-main { font-family: var(--rd-font-mono); }
 .rd-cell[data-mono] .rd-cell-sub { font-variant-numeric: tabular-nums; }  /* 第二行多是时间、用户、名称，用正文字体加等宽数字（VS-52，Ant Design 表格同样）；第二行也是单号、哈希时页面包 <span data-mono> */
 .rd-cell-main [data-mono], .rd-cell-sub [data-mono] { font-family: var(--rd-font-mono); }  /* 第一行是单号、第二行是人名时只给单号等宽 */
@@ -400,6 +404,10 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-filter-grow { flex: 1 1 240px; min-width: 200px; }
 .rd-filter-more { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; padding: 16px; border-radius: var(--rd-radius-panel); background: var(--rd-panel); }
 .rd-filter-more[hidden] { display: none; }
+.rd-filter-more > [data-wide] { grid-column: span 2; }  /* 日期一对放不进 200 宽的一列 */
+.rd-filter-range { display: flex; align-items: center; gap: 8px; min-width: 0; }  /* 成对的上下限一个字段，一对不拆到两行 */
+.rd-filter-range > .rd-input { flex: 1 1 0; min-width: 0; }
+.rd-filter-range > [aria-hidden] { flex: none; color: var(--rd-text-3); }
 .rd-filter-more-row { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .rd-filter-scope-row { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }  /* 范围控件项多（八类账单）时独占第一行，搜索和按钮排第二行，不让按钮单个掉下去 */
 .rd-filter-line { order: 1; flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -413,6 +421,8 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-filter-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .rd-chip { display: inline-flex; align-items: center; gap: 4px; height: var(--rd-control-h-sm); padding: 0 4px 0 8px; border-radius: var(--rd-radius-tag); background: var(--rd-panel-inner); color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 .rd-chip-x { display: inline-grid; place-items: center; width: 20px; height: 20px; border: 0; border-radius: 4px; background: transparent; color: var(--rd-text-3); cursor: pointer; }
+/* 浅色下条件条底 #F3F4F7 落在 #F2F3F6 的页面上看不出边，加一道和面板一样的 1px 边，一枚一枚分得开（VS-94 第 3 条）。 */
+:root[data-theme="light"] .rd-chip { box-shadow: inset 0 0 0 1px var(--rd-line); }
 .rd-filter-notice { margin: 0; color: var(--rd-warn); }
 .rd-filter-result { margin-left: auto; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 .rd-field { display: grid; gap: 8px; font-size: var(--rd-text-body); color: var(--rd-text-3); }
@@ -431,9 +441,23 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-select-item[data-highlighted] { background: var(--rd-control); }
 .rd-select-item[data-disabled] { opacity: .45; cursor: not-allowed; }
 .rd-select-check { position: absolute; right: 8px; display: inline-flex; color: var(--rd-brand-ink); }
+/* 可输可选的下拉（SearchSelect）：框和 Input 一个样子，弹层和 Select 一个样子，宽度跟输入框。 */
+.rd-search-select { position: relative; min-width: 0; }
+.rd-search-select .rd-input { padding-right: 32px; }
+.rd-search-select-icon { position: absolute; top: 50%; right: 10px; display: inline-flex; color: var(--rd-text-3); transform: translateY(-50%); pointer-events: none; }
+.rd-search-pop { z-index: var(--rd-z-pop); width: var(--radix-popover-trigger-width); max-height: min(320px, var(--radix-popover-content-available-height)); overflow-y: auto; padding: 4px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); border: 1px solid var(--rd-line-strong); }
+.rd-search-option { display: flex; align-items: center; gap: 12px; min-height: var(--rd-control-h); padding: 0 12px; border-radius: var(--rd-radius-tag); color: var(--rd-text); font-size: 14px; cursor: pointer; user-select: none; }
+.rd-search-option[data-active] { background: var(--rd-control); }
+.rd-search-option[aria-disabled="true"] { color: var(--rd-text-disabled); cursor: not-allowed; }
+.rd-search-option-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-search-option[aria-selected="true"] .rd-search-option-label { font-weight: 500; }
+.rd-search-option-extra { flex: none; font-size: var(--rd-text-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
+.rd-search-option-check { flex: none; color: var(--rd-brand-ink); }
+.rd-search-state { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: var(--rd-control-h); padding: 4px 12px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-search-state[data-error] { color: var(--rd-danger); }
 
 /* ── 抽屉和弹窗 ── */
-:is(.rd-pop, .rd-tip, .rd-select-content, .rd-drawer, .rd-modal, .rd-toast) { box-shadow: var(--rd-shadow-float); }
+:is(.rd-pop, .rd-tip, .rd-select-content, .rd-search-pop, .rd-drawer, .rd-modal, .rd-toast) { box-shadow: var(--rd-shadow-float); }
 /* 抽屉不用暗遮罩（PG-63）。这层透明，只在抽屉提交中挡住外面的点击；data-modal 是弹窗的暗遮罩。 */
 .rd-scrim { position: fixed; inset: 0; z-index: var(--rd-z-drawer); background: transparent; }
 .rd-scrim[data-modal] { z-index: var(--rd-z-modal); background: var(--rd-scrim); }
@@ -489,10 +513,12 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-page input[type="date"], .rd-page input[type="datetime-local"], .rd-modal input[type="date"], .rd-modal input[type="datetime-local"] { color-scheme: dark; }
 :root[data-theme="light"] :is(.rd-page, .rd-modal) :is(input[type="date"], input[type="datetime-local"]) { color-scheme: light; }
 /* 影响一句是给人读的句子，用正文字号；「执行摘要」和「查看详情」是辅助。 */
-.rd-modal.rd-confirm .rd-brief > summary { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); }
-.rd-modal.rd-confirm .rd-brief-head { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 8px; align-items: baseline; min-width: 0; }  /* 影响句折行时对齐第一行 */
-.rd-modal.rd-confirm .rd-brief-head b { font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
-.rd-modal.rd-confirm .rd-brief-toggle { flex: none; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+/* 收起时第一行左边「执行摘要」、右边「查看详情」，影响句另起一整行：夹在两者之间的窄列放不下就会断词、留孤字（VS-105）。 */
+.rd-modal.rd-confirm .rd-brief > summary { display: grid; grid-template-columns: minmax(0, 1fr) max-content; column-gap: 12px; row-gap: 4px; align-items: baseline; cursor: pointer; list-style: none; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); }
+.rd-modal.rd-confirm .rd-brief-head { display: contents; }
+.rd-modal.rd-confirm .rd-brief-head b { grid-row: 1; grid-column: 1; font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
+.rd-modal.rd-confirm .rd-brief-head > span { grid-row: 2; grid-column: 1 / -1; min-width: 0; }
+.rd-modal.rd-confirm .rd-brief-toggle { grid-row: 1; grid-column: 2; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 .rd-modal.rd-confirm .rd-brief[open] .rd-brief-head > span { display: none; }  /* 展开后「影响」在下面那一行，标题行不重复 */
 /* 展开的摘要和关键信息同一条值线（名称列 128 = 事实块的内边距 16 + 112），不带底块：这是补充说明，不是关键信息，句子也多一点宽度（VS-105）。 */
 .rd-brief-rows { display: grid; gap: 8px; margin: 8px 0 0; }
@@ -566,6 +592,7 @@ body:has(.rd-drawer[data-state="open"]:not([data-wide])) .rd-toast-host { left: 
 .rd-points:has(.rd-point-label svg) .rd-point-label:not(:has(svg))::before { content: ""; flex: none; width: 13px; }  /* 有的行带图标时，不带的留出位置，标签文字一条线 */
 .rd-point-value { color: var(--rd-text); font-weight: 500; overflow-wrap: anywhere; }
 .rd-point[data-state-tone] .rd-point-value { color: var(--tone); }
+.rd-point-mark { display: inline-flex; margin-right: 4px; vertical-align: -2px; color: var(--tone); }  /* 值前的状态小图标：要人注意、但不是失败的结果（比如被系统拦下），值本身仍是主文字色 */
 .rd-point-reason { display: block; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-2); }
 
 /* ── 一句话结论 ── */
@@ -661,11 +688,15 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-split > * + * { flex: 5 1 480px; }
 .rd-split[data-even] > * { flex: 1 1 480px; }
 .rd-split[data-detail] { align-items: flex-start; }
+.rd-split[data-preview] > * { flex-basis: 420px; }  /* 左边填、右边随填随算：起始宽度窄，1024 也并排，答案不落到提交按钮下面；和 data-detail 一起用，右栏跟内容高 */
+.rd-split[data-preview] > * + * { flex-basis: 300px; }
 .rd-split .rd-table[data-tight] .rd-cell { max-width: 200px; }
 @media (max-width: 1279px) { .rd-table[data-tight] .rd-cell { max-width: 200px; } }  /* 1024 也要放下 6 列：长单号这类第一列收窄，宽屏不收 */
 .rd-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .rd-toolbar-note { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-toolbar-note[data-tone] { color: var(--tone); }  /* 操作行左边写现在为什么不能提交时，按这件事的状态上色（OP-126） */
 .rd-toolbar[data-end] > .rd-explain { margin-right: auto; }  /* 整页表单的操作行：状态在左，按钮在右，和抽屉底部同一条线 */
+.rd-toolbar[data-end] > .rd-toolbar-note:not(:has(~ .rd-explain)) { margin-right: auto; }  /* 左边只有一句说明、没有问号时，说明推开按钮 */
 .rd-panel-foot { padding: 12px 20px 16px; }
 .rd-note { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-approval-meta { display: block; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: normal; overflow-wrap: anywhere; }
@@ -718,15 +749,15 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 :is(.rd-modal, .rd-drawer) .rd-form-label { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; color: var(--rd-text); }
 .rd-form-hint { margin-left: 8px; font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
 .rd-form-help { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
-.rd-form-error { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-danger); }
+.rd-form-error { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-warn); }  /* 填错是「要你处理」，页面上的表单也用橙黄（VS-107） */
 .rd-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--rd-space-6) 20px; }
 .rd-form-grid[data-cols="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-:is(.rd-input, .rd-select)[aria-invalid="true"] { outline: 1px solid var(--rd-danger); }
+:is(.rd-input, .rd-select)[aria-invalid="true"] { outline: 1px solid var(--rd-warn); }
 .rd-filter :is(.rd-input, .rd-select)[aria-invalid="true"] { outline-color: var(--rd-warn); }  /* 筛选条件填错是要改的输入，不是失败（VS-107） */
 /* 弹窗和抽屉里填错了是「要你处理」，用橙黄；红只给失败和不能撤销（VS-107）。 */
 :is(.rd-modal, .rd-drawer) .rd-form-error { color: var(--rd-warn); }
 :is(.rd-modal, .rd-drawer) :is(.rd-input, .rd-select)[aria-invalid="true"] { outline-color: var(--rd-warn); }
-.rd-modal.rd-confirm .fld[aria-invalid="true"] { outline: 1px solid var(--rd-warn); }
+.rd-modal.rd-confirm .fld[aria-invalid="true"], .rd-modal.rd-confirm .field input[aria-invalid="true"]:not([type="checkbox"]):not([type="radio"]) { outline: 1px solid var(--rd-warn); }  /* 框外层还有旧壳 .dkpage .field input 的 outline: none，选择器要比它重 */
 .rd-check-item { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 2px 8px; align-items: start; }
 .rd-check-item .rd-check, .dkpage .field .rd-check-item .rd-check { margin-top: 3px; }  /* 16px 的框对准 22px 行高的中线；.field 的旧规则会把它清成 0 */
 .rd-check-item label { color: var(--rd-text); cursor: pointer; }
@@ -883,6 +914,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-fact-change > svg { flex: none; }
 .rd-fact-change [data-after] { color: var(--rd-progress); font-weight: 500; }
 .rd-fact-change [data-settled] { color: var(--rd-text); font-weight: 500; }  /* 已经生效的新值不是待生效，不用蓝（VS-103） */
+.rd-fact-change [data-after][data-tone] { color: var(--tone); }  /* 改后的值本身有问题（扣成负数、低于红线）时按状态上色 */
 .rd-fact[data-empty] dd { color: var(--rd-text-3); font-weight: 400; }  /* 读不到写「—」时弱化（VS-11） */
 /* 这次操作的关键数字（VS-102）：弹窗里最大最亮，每个框最多一个。字号借页面标题那一档，不加新字号。 */
 .rd-fact[data-lead] { grid-template-columns: minmax(0, 1fr); gap: 2px; }
@@ -957,7 +989,7 @@ td .rd-flow { margin-bottom: 0; }
 .rd-inline-meter { display: inline-flex; align-items: center; gap: 8px; }
 .rd-inline-meter-track { display: block; flex: none; width: 56px; height: 6px; overflow: hidden; border-radius: var(--rd-radius-bar); background: var(--rd-panel-inner); }
 .rd-inline-meter-track span { display: block; height: 100%; border-radius: var(--rd-radius-bar); background: var(--tone); }
-.rd-inline-meter-text { color: var(--tone); font-variant-numeric: tabular-nums; }
+.rd-inline-meter-text { color: var(--tone); font-variant-numeric: tabular-nums; white-space: nowrap; }  /* 读数是一个短值（0.82、剩 9 分钟），旁边有长文本列时不竖着折 */
 .rd-meter-marks { position: relative; display: block; height: var(--rd-lh-aux); }
 /* 小刻度对准尺上那条线，字跟在刻度右边；靠右端时字放到刻度左边。 */
 .rd-meter-marks span { position: absolute; top: 0; display: inline-flex; align-items: center; gap: 4px; transform: translateX(-1px); white-space: nowrap; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }

@@ -57,6 +57,8 @@ import {
   formatC1ReadFlag,
   formatC1RuntimeStatus,
   formatC1SessionStatus,
+  riskBandFromScore,
+  riskBandTone,
 } from "@/lib/admin/c1-detail-display";
 import { NotificationTimeEvidenceDrawer, pendingCorrections, type PendingCorrection } from "./notification-time-evidence";
 import { PaymentSecurityBlock, type PaymentSecurityState } from "@/app/components/payment-security/payment-security-block";
@@ -749,10 +751,10 @@ export default function UserDetailPage() {
   const hasRiskScore = rawRiskScore !== null && rawRiskScore !== undefined && rawRiskScore !== "";
   const riskScore = asNumber(rawRiskScore);
   const riskBand = riskAuthorityReady
-    ? asText(detail?.risk?.bandLabel, hasRiskScore ? (riskScore >= 70 ? "高风险" : riskScore >= 40 ? "中风险" : "低风险") : "暂无风险分")
+    ? asText(detail?.risk?.bandLabel, hasRiskScore ? riskBandFromScore(riskScore) : "暂无风险分")
     : "暂无风险分";
-  // 风险档以后端的档为准，档位线可配置，前端不用分数重算。
-  const riskTone = riskBand.includes("高") ? "danger" as const : riskBand.includes("中") ? "warn" as const : riskBand.includes("低") ? "ok" as const : "done" as const;
+  // 风险档以后端的档为准，档位线可配置，前端不用分数重算；后端没给档时的兜底和账户操作页共用。
+  const riskTone = riskBandTone(riskBand);
   const nonActive = status !== "ACTIVE" && status !== "UNKNOWN";
   const adminKey = String(session?.adminId ?? "");
 
