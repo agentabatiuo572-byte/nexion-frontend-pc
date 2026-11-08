@@ -186,6 +186,7 @@ export function A2ChangeReview({ before, after }: { before: string; after: strin
     gpu: "GPU", vram: "显存", hashRate: "算力", power: "功耗", datacenter: "数据中心", uptime: "在线率",
     warranty: "保修", phoneDailyEarn: "手机日产收益", phoneDailyEarnNex: "手机日产 UVT", price: "价格", computePoints: "每件算力点",
     dailyEarn: "日产收益", dailyEarnNex: "日产 UVT", shareYieldMin: "份额收益下限", shareYieldMax: "份额收益上限",
+    monthlyTargetUsdt: "月收益目标", monthlyTargetBandPct: "允许波动", clearMonthlyTarget: "关闭月收益目标",
     baseRate: "收益展示文字", sold: "累计销量", stock: "库存", rating: "评分", reviews: "评价数",
     aiImageGenPerMin: "图像生成性能", aiLlmTokensPerSec: "大模型推理性能", aiVideoMinPerHour: "视频渲染性能",
     aiFineTuneMins: "LoRA 微调性能", aiUnlocks: "解锁算力池", features: "产品特性", generation: "产品代际",
@@ -205,7 +206,14 @@ export function A2ChangeReview({ before, after }: { before: string; after: strin
     if (value === null) return "未设置";
     if (Array.isArray(value)) return value.length ? value.map(format).join("\n\n") : "无";
     if (typeof value === "object") return Object.entries(value as Record<string, unknown>)
-      .map(([key, item]) => `${labels[key] ?? key}：${key === "peerBonusRate" && typeof item === "number" ? `${(item * 100).toFixed(2)}%` : key === "baseRate" && typeof item === "string" ? shareBaseRateText(item) : format(item)}`).join("\n") || "无（新建）";
+      .map(([key, item]) => {
+        let text = format(item);
+        if (key === "monthlyTargetUsdt" && item != null) text = `${text} USDT`;
+        else if (key === "monthlyTargetBandPct" && item != null) text = `±${text}%`;
+        else if (key === "peerBonusRate" && typeof item === "number") text = `${(item * 100).toFixed(2)}%`;
+        else if (key === "baseRate" && typeof item === "string") text = shareBaseRateText(item);
+        return `${labels[key] ?? key}：${text}`;
+      }).join("\n") || "无（新建）";
     return typeof value === "boolean" ? (value ? "是" : "否") : String(value);
   };
   const review = (value: string) => {
