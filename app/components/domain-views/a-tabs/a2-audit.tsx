@@ -1319,7 +1319,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             const name = help?.label ?? p.name;
             const common = { name, what: help?.what, when: help?.when, effect: help?.effect, where: A2_MECHANISM_WHERE, note: p.sub || undefined };
             if (p.key === "reason_required") {
-              return <ConfigRow key={p.key} {...common} value={<span className="a2-locked"><Lock size={13} aria-hidden />必填<Explain label="操作理由必填的说明" content="系统固定，不能关闭" /></span>} />;
+              return <ConfigRow key={p.key} {...common} value={<span className="a2-locked" title="系统固定，不能关闭"><Lock size={13} aria-hidden />必填</span>} />;
             }
             if (p.key === "confirm_list") {
               return <ConfigRow key={p.key} {...common} note={undefined} value={confirmCategories.length ? `${confirmCategories.length} 类` : "暂无分类说明"}
