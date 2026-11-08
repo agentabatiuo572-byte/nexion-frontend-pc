@@ -44,7 +44,8 @@ export function InlineRetry({ onRetry, retrying, label = "重试" }: { onRetry: 
 
 const NOTICE_ICON: Record<StateTone, LucideIcon> = { ok: CheckCircle2, warn: AlertTriangle, danger: ShieldAlert, progress: Clock3, done: Info, neutral: Info };
 
-export function Notice({ tone, title, action, children }: { tone: StateTone; title?: ReactNode; action?: ReactNode; children?: ReactNode }) {
+/** actionBelow：正文超过一行、动作不止一个时，动作排到正文下面，和正文左边对齐，正文占满整条宽（DT-09）。多段正文用 <p>。 */
+export function Notice({ tone, title, action, actionBelow, children }: { tone: StateTone; title?: ReactNode; action?: ReactNode; actionBelow?: boolean; children?: ReactNode }) {
   const Icon = NOTICE_ICON[tone];
   return (
     <div className="rd-notice" data-tone={tone} role={tone === "danger" ? "alert" : "status"}>
@@ -52,8 +53,9 @@ export function Notice({ tone, title, action, children }: { tone: StateTone; tit
       <div className="rd-notice-text">
         {title && <div className="rd-notice-title">{title}</div>}
         {children}
+        {action && actionBelow && <div className="rd-notice-action" data-below="">{action}</div>}
       </div>
-      {action && <div className="rd-notice-action">{action}</div>}
+      {action && !actionBelow && <div className="rd-notice-action">{action}</div>}
     </div>
   );
 }

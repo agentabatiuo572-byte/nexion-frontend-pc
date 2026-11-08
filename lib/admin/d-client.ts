@@ -4,7 +4,7 @@ import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session"
 import { adminAuthLifecycleEpoch, AdminAuthEpochChangedError } from "@/lib/admin/auth-lifecycle";
 import { normalizeD1NullableString } from "@/lib/admin/d1-nullable-string";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, hasPersistedPendingCommandOwner, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { treasuryValuation } from "@/lib/admin/treasury-valuation";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
@@ -537,6 +537,8 @@ export interface D5Params {
   networkConfirmFeeUsd: { trc20: number; bep20: number; erc20: number };
   /** 三网络提现通道状态；由 D5 权威配置下发，缺失时冻结页面而非猜测可用性。 */
   networkEnabled: { trc20: boolean; bep20: boolean; erc20: boolean };
+  effectiveNetworks?: string[];
+  networkStatus?: Array<{ network: string; configured: boolean; enabled: boolean; disabledReason: string | null }>;
   nexFeeOffsetRate: number;
   /** FEAT-WD01:小额免审线(USD)。金额 ≤ 此值时可跳过新地址冷却；0 = 关闭快车道。
    *  **永不**免除服务端风控路由裁决(冻结簇/共用地址/风险分)。 */
@@ -562,10 +564,15 @@ interface PersistedPendingMutation extends PendingMutationRecord {
   path: string;
   method: string;
   body: string;
+  adminId?: number;
 }
+
+const D1_CREGIS_SWITCH_PATH = /^\/cregis\/(?:switch-cases(?:\/[1-9]\d*\/decision)?|switches\/emergency-off)$/;
 
 const pendingMutations = createPendingMutationStore<PersistedPendingMutation>({
   storageKey: "nexgrid-admin-d1-uncertain-commands-v1",
+  // 过期的留着做核查证据，只是不能再发（OP-96）。D1 以外过期的号在 apiRequest 里丢掉换新号，和原来一样。
+  retainExpiredRecords: true,
   isValidRecord: (value) =>
     ["finance", "treasury", "bills", "withdraw"].includes(value.base)
     && typeof value.path === "string"
@@ -574,6 +581,47 @@ const pendingMutations = createPendingMutationStore<PersistedPendingMutation>({
     && value.method !== "GET"
     && typeof value.body === "string",
 });
+
+/** D1 的写请求：充值通道、对账核销、银行卡支付、USDT 收款。 */
+const isD1Write = (base: string, path: string) => base === "finance" && /^\/(topup|cregis|vietqr)\//.test(path);
+
+/**
+ * 后端不按请求号去重的写接口（后端 origin/test 这几个控制器不收 Idempotency-Key）：结果未知时只能读回核对，
+ * 不能按原请求再发，再发可能再执行一次（建地址会再入队一个）。
+ */
+const D1_NOT_DEDUPED = /^\/cregis\/(?:addresses\/(?:policy|provision)|reconciliation\/run|review-cases(?:\/[1-9]\d*\/decision)?|exception-ownership\/challenges)(?:\?|$)/;
+export const d1CommandReplayable = (path: string) => !D1_NOT_DEDUPED.test(path);
+
+export const D1_PENDING_OBJECT_TEXT = "这项上次的操作结果还没确认，先在本页上方核对";
+export const D1_COMMAND_EXPIRED_TEXT = "已超过 24 小时，不能再按原请求重试，请到操作记录核查";
+const D1_IDENTITY_FIELDS = ["network", "cid", "sourceType", "sourceId", "intentNo"] as const;
+
+/**
+ * 写请求改的是哪个对象：路径去掉最后的动作（decision、recover、retry），再加上 network、cid、来源这类对象字段。
+ * 改理由或数值不换对象，结果未知时同一对象不能另发新命令（OP-93、OP-94）。暂停自动流程是收紧，不被未确认的提案挡。
+ */
+export function d1CommandObject(path: string, body = "") {
+  const [route, query = ""] = path.split("?");
+  const params = new URLSearchParams(query);
+  let parsed: Record<string, unknown> = {};
+  try {
+    const value: unknown = body ? JSON.parse(body) : {};
+    if (value && typeof value === "object" && !Array.isArray(value)) parsed = value as Record<string, unknown>;
+  } catch { /* 不是 JSON 的按路径认 */ }
+  if (parsed.action === "PAUSE") return `${route}|PAUSE`;
+  const ids = D1_IDENTITY_FIELDS.flatMap(field => {
+    const value = params.get(field) ?? parsed[field];
+    return value === undefined || value === null || value === "" ? [] : [`${field}=${String(value)}`];
+  });
+  return [route.replace(/\/(?:decision|recover|retry)$/, ""), ...ids].join("|");
+}
+
+/** 这个对象有没有还没确认结果的命令（资金开关按管理员另管，不在这里）。打开确认框前和发送前都查。 */
+export function d1PendingObjectReason(path: string, body?: Record<string, unknown>) {
+  const object = d1CommandObject(path, body ? JSON.stringify(body) : "");
+  return pendingMutations.list().some(value => isD1Write(value.base, value.path) && !D1_CREGIS_SWITCH_PATH.test(value.path)
+    && d1CommandObject(value.path, value.body) === object) ? D1_PENDING_OBJECT_TEXT : undefined;
+}
 
 export interface D1PendingTopupCommand {
   commandKey: string;
@@ -593,6 +641,65 @@ export function listD1PendingCregisCommands(): D1PendingTopupCommand[] {
   return pendingMutations.list()
     .filter(value => value.base === "finance" && value.path.startsWith("/cregis/"))
     .map(({ commandKey, path, createdAt, expiresAt }) => ({ commandKey, path, createdAt, expiresAt }));
+}
+
+export interface D1PendingCommand extends D1PendingTopupCommand {
+  method: string;
+  body: string;
+}
+
+/** D1 页上还没确认结果的写请求：充值通道、对账核销、银行卡支付参数和 USDT 收款，按发出时间排。资金开关的按管理员另列。 */
+export function listD1PendingCommands(): D1PendingCommand[] {
+  return pendingMutations.list()
+    .filter(value => value.base === "finance" && !D1_CREGIS_SWITCH_PATH.test(value.path)
+      && (value.path.startsWith("/topup/") || value.path.startsWith("/cregis/") || value.path === "/vietqr/config"))
+    .map(({ commandKey, path, method, body, createdAt, expiresAt }) => ({ commandKey, path, method, body, createdAt, expiresAt }))
+    .sort((left, right) => left.createdAt - right.createdAt);
+}
+
+/** 按原请求重发 USDT 收款和银行卡支付参数的写操作：同命令号、同路径、同内容（OP-94）。 */
+export async function retryD1PendingCommand(commandKey: string) {
+  const pending = pendingMutations.list().find(value => value.commandKey === commandKey);
+  if (!pending || pending.base !== "finance" || pending.method === "GET"
+      || !(pending.path.startsWith("/cregis/") || pending.path === "/vietqr/config")) {
+    throw new Error("待重试的请求不存在或已过期，请刷新页面");
+  }
+  return apiRequest<unknown>(pending.base, pending.path, {
+    method: pending.method,
+    body: pending.body || undefined,
+    idempotencyPrefix: "d1-retry",
+    idempotencyKey: pending.commandKey,
+  });
+}
+
+/** 重试被明确拒绝、人核实过原操作后，只放开本页的锁，不发请求（OP-153）。 */
+export function releaseD1PendingCommand(commandKey: string) {
+  const pending = pendingMutations.list().find(value => value.commandKey === commandKey);
+  if (pending) pendingMutations.forget(pending.fingerprint, pending.commandKey);
+}
+
+function currentD1PendingCregisSwitchCommands() {
+  const { session, isAuthenticated, logoutPending, logoutUnknown } = useAdminAuth.getState();
+  if (!session || !isAuthenticated || logoutPending || logoutUnknown) return [];
+  return pendingMutations.list().filter(value => value.base === "finance" && value.method === "POST"
+    && D1_CREGIS_SWITCH_PATH.test(value.path)
+    && (value.adminId === session.adminId || value.adminId === undefined && hasPersistedPendingCommandOwner(String(session.adminId))));
+}
+
+export function listD1PendingCregisSwitchCommands(): D1PendingTopupCommand[] {
+  return currentD1PendingCregisSwitchCommands()
+    .map(({ commandKey, path, createdAt, expiresAt }) => ({ commandKey, path, createdAt, expiresAt }))
+    .sort((left, right) => left.createdAt - right.createdAt);
+}
+
+export async function retryD1PendingCregisSwitchCommand(commandKey: string) {
+  const authEpoch = adminAuthLifecycleEpoch();
+  const pending = currentD1PendingCregisSwitchCommands().find(value => value.commandKey === commandKey);
+  if (!pending) throw new Error("待恢复的资金开关请求不存在、已过期或不属于当前管理员，请先刷新核对真实状态");
+  return apiRequest<unknown>("finance", pending.path, {
+    method: pending.method, body: pending.body, idempotencyPrefix: "cregis-ops",
+    idempotencyKey: pending.commandKey, bankManualAuthEpoch: authEpoch,
+  });
 }
 
 function nextId(prefix: string) {
@@ -653,9 +760,28 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
   const mutationFingerprint = init?.idempotencyPrefix && method !== "GET"
     ? `${method}|${base}|${path}|${typeof init.body === "string" ? init.body : ""}`
     : null;
-  const pendingKeyBeforeRequest = mutationFingerprint
+  let pendingKeyBeforeRequest = mutationFingerprint
     ? pendingMutations.get(mutationFingerprint)
     : undefined;
+  const d1Write = isD1Write(base, path) && method !== "GET";
+  if (mutationFingerprint) {
+    const previous = pendingMutations.list().find(value => value.commandKey === (init?.idempotencyKey ?? pendingKeyBeforeRequest));
+    if (previous && previous.expiresAt <= Date.now()) {
+      // D1 过期的命令只留作核查，不能再发；别的页按原来的做法丢掉过期号，换新号。
+      if (d1Write) throw new Error(D1_COMMAND_EXPIRED_TEXT);
+      pendingMutations.forget(previous.fingerprint, previous.commandKey);
+      pendingKeyBeforeRequest = undefined;
+    }
+    if (d1Write && init?.idempotencyKey && previous && !d1CommandReplayable(previous.path)) {
+      throw new Error("这项操作后端不按命令号去重，再发一次可能再执行一次，所以不能按原请求重试；先读回核对。");
+    }
+    // 从原入口再交一次（哪怕内容一样）也不发：只能从页面上方的恢复入口按原请求重试。
+    if (d1Write && !init?.idempotencyKey && !D1_CREGIS_SWITCH_PATH.test(path)) {
+      const object = d1CommandObject(path, typeof init?.body === "string" ? init.body : "");
+      if (pendingKeyBeforeRequest || pendingMutations.list().some(value => isD1Write(value.base, value.path) && !D1_CREGIS_SWITCH_PATH.test(value.path)
+        && d1CommandObject(value.path, value.body) === object)) throw new Error(D1_PENDING_OBJECT_TEXT);
+    }
+  }
   if (init?.idempotencyKey || init?.idempotencyPrefix) {
     const commandKey = init.idempotencyKey
       || pendingKeyBeforeRequest
@@ -667,7 +793,14 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
         path,
         method,
         body: typeof init?.body === "string" ? init.body : "",
+        ...(base === "finance" && method === "POST" && D1_CREGIS_SWITCH_PATH.test(path)
+          ? { adminId: useAdminAuth.getState().session?.adminId } : {}),
       });
+      // 记不住就不发：刷新后找不回原命令号，结果未知时没法按原请求核对（OP-96）。
+      if (d1Write && !pendingMutations.isDurablyStored(mutationFingerprint, commandKey)) {
+        if (!pendingKeyBeforeRequest && !init?.idempotencyKey) pendingMutations.forget(mutationFingerprint, commandKey);
+        throw new Error("浏览器无法保存这次操作的记录，没有提交。请允许浏览器存储后重试。");
+      }
     }
   }
   let response: Response;
@@ -738,6 +871,10 @@ export function financeAdminRequest<T>(
   path: string,
   init?: RequestInit & { idempotencyPrefix?: string; idempotencyKey?: string; bankManualAuthEpoch?: number },
 ) {
+  if ((init?.method ?? "GET").toUpperCase() === "POST" && D1_CREGIS_SWITCH_PATH.test(path)) {
+    const unresolved = currentD1PendingCregisSwitchCommands().find(value => value.path === path);
+    if (unresolved) throw new DOutcomeUnknownError(unresolved.commandKey);
+  }
   return apiRequest<T>("finance", path, init);
 }
 
@@ -1236,6 +1373,11 @@ function normalizeD1VietQrOverview(raw: unknown): D1VietQrOverview {
   };
 }
 
+/** 越南盾牌价：基准价 ×（1 + 买入点差），取整到十位，和后端 VietnamPaymentPolicy.quoteRate 一样。修改框按它预览改后的报价。 */
+export function d6QuoteRate(baseRateVndPerUsdt: number, buySpreadPct: number) {
+  return Math.round((baseRateVndPerUsdt * (10_000 + Math.round(buySpreadPct * 100))) / 10_000 / 10) * 10;
+}
+
 function normalizeD6FxQuote(raw: unknown): D6FxQuote {
   const root = d1Object(raw, "fxQuote");
   const configCode = d1String(root.configCode, "fxQuote.configCode");
@@ -1279,9 +1421,7 @@ function normalizeD6FxQuote(raw: unknown): D6FxQuote {
       || !Number.isInteger(result.baseRateVndPerUsdt)
       || Math.abs(result.buySpreadPct * 100 - Math.round(result.buySpreadPct * 100)) > 1e-8
       || !Number.isInteger(result.lockWindowMinutes)
-      || result.quoteRateVndPerUsdt !== Math.round(
-        (result.baseRateVndPerUsdt * (10_000 + Math.round(result.buySpreadPct * 100))) / 10_000 / 10,
-      ) * 10) d1Invalid("fxQuote.rangeOrDerivedQuote");
+      || result.quoteRateVndPerUsdt !== d6QuoteRate(result.baseRateVndPerUsdt, result.buySpreadPct)) d1Invalid("fxQuote.rangeOrDerivedQuote");
   return result;
 }
 
@@ -1812,7 +1952,29 @@ export function normalizeD5Params(value: unknown): D5Params {
     }
     sourceByField[key] = item;
   });
+  let networkStatus: D5Params["networkStatus"];
+  let effectiveNetworks: D5Params["effectiveNetworks"];
+  if (raw.networkStatus !== undefined || raw.effectiveNetworks !== undefined) {
+    if (!Array.isArray(raw.networkStatus) || raw.networkStatus.length !== 3 || !Array.isArray(raw.effectiveNetworks))
+      throw new Error("提现网络实际状态加载不完整，请刷新后再试");
+    const networks = ["USDT-TRC20", "USDT-BEP20", "USDT-ERC20"];
+    networkStatus = raw.networkStatus.map((item, index, all) => {
+      const row = d5Object(item, "networkStatus");
+      const network = d5String(row.network, "networkStatus.network");
+      const configured = d5Boolean(row.configured, "networkStatus.configured"), enabled = d5Boolean(row.enabled, "networkStatus.enabled");
+      if (!networks.includes(network) || all.findIndex(value => (value as Record<string, unknown>).network === network) !== index
+          || (row.disabledReason !== null && (typeof row.disabledReason !== "string" || !row.disabledReason))
+          || enabled !== (row.disabledReason === null) || enabled && !configured)
+        throw new Error("提现网络实际状态加载不完整，请刷新后再试");
+      return { network, configured, enabled, disabledReason: row.disabledReason as string | null };
+    });
+    effectiveNetworks = raw.effectiveNetworks as string[];
+    const expected = networkStatus.filter(row => row.enabled).map(row => row.network);
+    if (effectiveNetworks.length !== expected.length || effectiveNetworks.some((value, index, all) => typeof value !== "string" || !expected.includes(value) || all.indexOf(value) !== index))
+      throw new Error("提现网络实际状态加载不完整，请刷新后再试");
+  }
   const result: D5Params = {
+    networkStatus, effectiveNetworks,
     version: d5Integer(raw.version, "version", 0),
     dailyLimitCount: d5Integer(raw.dailyLimitCount, "dailyLimitCount", 1),
     maxBalanceRatio: d5Number(raw.balanceMaxRatio, "balanceMaxRatio"),
@@ -2232,12 +2394,15 @@ export async function updateD6FxQuote(
   expectedVersion: number,
   reason: string,
   operator: string,
+  /** 页面持有的命令号：结果未知时原样重试（OP-94）。 */
+  idempotencyKey: string,
 ) {
-  return normalizeD6FxQuote(await apiRequest<Record<string, unknown>>("finance", "/fx-quote", {
+  const raw = await apiRequest<Record<string, unknown>>("finance", "/fx-quote", {
     method: "PATCH",
     body: JSON.stringify({ ...values, expectedVersion, reason, operator }),
-    idempotencyPrefix: "d6-fx-quote",
-  }));
+    idempotencyKey,
+  });
+  return readWriteResult(idempotencyKey, () => normalizeD6FxQuote(raw));
 }
 
 /** Legacy name retained for B1 callers; the authority and endpoint are owned by B1. */

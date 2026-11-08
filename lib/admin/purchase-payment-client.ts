@@ -8,7 +8,8 @@ import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/ad
 import { parsePurchasePaymentPolicy, parsePurchasePaymentPage, parsePurchasePaymentRecord, type PurchasePaymentChannelInput } from "@/lib/admin/purchase-payment-contract";
 
 const base = "/api/admin/finance";
-export class PurchasePaymentApiError extends Error { constructor(message: string, readonly status: number, readonly unknownOutcome = false) { super(message); } }
+/** reasonCode 是后端给的拒绝原因码；只有带原因码的 4xx 才算后端明确拒绝（OP-153）。 */
+export class PurchasePaymentApiError extends Error { constructor(message: string, readonly status: number, readonly unknownOutcome = false, readonly reasonCode?: string) { super(message); this.name = "PurchasePaymentApiError"; } }
 export class PurchasePaymentOutcomeUnknownError extends PurchasePaymentApiError { constructor(message: string, status: number) { super(message, status, true); } }
 async function request(path: string, method = "GET", body?: unknown, key?: string): Promise<unknown> {
   const epoch = adminAuthLifecycleEpoch();
@@ -20,9 +21,10 @@ async function request(path: string, method = "GET", body?: unknown, key?: strin
   if (epoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
   if (isAdminAuthFailure(response.status, raw?.message)) useAdminAuth.getState().signOut();
   if (!response.ok || raw?.code !== 0 || raw?.data == null) {
-    const unknown = body !== undefined && (response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || outcomeStaysUnknown(response.status, raw?.code));
+    const unknown = body !== undefined && (response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || outcomeStaysUnknown(response.status, raw?.code)
+      || raw?.message === "IDEMPOTENCY_REQUEST_IN_PROGRESS" || raw?.message === "IDEMPOTENCY_RESULT_UNKNOWN");
     if (unknown) throw new PurchasePaymentOutcomeUnknownError("操作结果未确认，请保留原请求并核对，不能重新提交。", response.status);
-    throw new PurchasePaymentApiError(formatAdminApiError(raw?.message, "订单付款请求未完成，请重新加载后核对。"), response.status);
+    throw new PurchasePaymentApiError(formatAdminApiError(raw?.message, "订单付款请求未完成，请重新加载后核对。"), response.status, false, typeof raw?.message === "string" ? raw.message : undefined);
   }
   return raw.data;
 }
@@ -41,7 +43,10 @@ async function execute(row: PendingPurchasePayment, retry: boolean) {
   if (retry && !canRetryPurchasePayment(row)) throw new Error("已超过可重试时间，请到「操作记录」核对，不能再次提交。");
   try {
     const raw = await request(row.path, row.method, row.body, row.commandKey);
-    const result = row.scope === "policy" ? parsePurchasePaymentPolicy(raw) : parsePurchasePaymentRecord(raw, row.scope);
+    let result;
+    // 写成功了但响应读不懂：可能已经执行，按结果未确认保留原命令（OP-91）。
+    try { result = row.scope === "policy" ? parsePurchasePaymentPolicy(raw) : parsePurchasePaymentRecord(raw, row.scope); }
+    catch { throw new PurchasePaymentOutcomeUnknownError("已提交，但返回的结果读不懂，结果未确认；请保留原请求并核对。", 200); }
     commands.forget(row.fingerprint, row.commandKey);
     return result;
   } catch (failure) {
@@ -61,3 +66,5 @@ async function submit(owner: number, scope: string, path: string, method: "PATCH
 export const updatePurchasePaymentPolicy = (owner: number, expectedVersion: number, channels: PurchasePaymentChannelInput[], reason: string) => submit(owner, "policy", "/purchase-payment-policy", "PATCH", { expectedVersion, channels, reason });
 export const revalidatePurchasePayment = (owner: number, intentNo: string, expectedVersion: number, reason: string) => submit(owner, intentNo, `/purchase-payment-records/${encodeURIComponent(intentNo)}/revalidate-deliver`, "POST", { expectedVersion, reason });
 export const retryPurchasePayment = (row: PendingPurchasePayment) => execute(row, true);
+/** 重试被明确拒绝、人核实过原操作后，只放开本页的锁，不发请求（OP-153）。 */
+export const releasePurchasePayment = (row: PendingPurchasePayment) => commands.forget(row.fingerprint, row.commandKey);

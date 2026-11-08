@@ -42,6 +42,8 @@ export type ActionConfirmReq = {
   coverageLead?: ReactNode;
   /** 理由框的占位，按场景写（TX-11）。 */
   reasonPlaceholder?: string;
+  /** 紧急关停不能被规则服务挡住：理由规则读不到时按 reasonMin 继续（Q-06）。 */
+  reasonPolicyOptional?: boolean;
   /** 这项操作实际是什么；每个调用都必须声明，不按文字猜摘要。 */
   briefKind: OperatorBriefKind;
   /**
@@ -82,7 +84,11 @@ export type ConfirmReq = {
     min?: number;
     max?: number;
     step?: number;
+    /** 输入不对时的原因：失焦或点过确认后用橙黄写在输入框下，确认按钮禁用（PCN-37）。不传时只查非空。 */
+    validate?: (value: string) => string | undefined;
   };
+  /** 备注框旁的说明，替换「选填，最多 200 字」。内容不写入命令时写「选填，不会保存」（EX-18）。 */
+  remarkHint?: string;
   /** 调用方已展示错误时，共享确认不重复提示。 */
   errorHandled?: boolean | ((error: unknown) => boolean);
   okLabel?: string;

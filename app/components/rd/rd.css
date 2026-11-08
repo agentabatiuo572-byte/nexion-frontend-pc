@@ -91,6 +91,7 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 @keyframes rd-spin { to { transform: rotate(360deg); } }
 /* 链接不用品牌色：正文色加下划线（VS-06）。 */
 .rd-link { color: var(--rd-text); text-decoration: underline; text-decoration-color: var(--rd-text-3); text-underline-offset: 3px; }
+@media (hover: hover) and (pointer: fine) { .rd-link:hover { text-decoration-color: var(--rd-text); } }  /* 指上去下划线变实，看得出能点 */
 
 /* ── 图标底 ── */
 .rd-tile { flex: none; display: inline-grid; place-items: center; width: var(--rd-tile-title); height: var(--rd-tile-title); border-radius: var(--rd-radius-tile); background: var(--tone-tile); color: var(--tone-tile-ink); }
@@ -120,7 +121,7 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-stat-label > .rd-explain { height: var(--rd-lh-aux); }
 .rd-stat-value { margin-top: 4px; font-variant-numeric: tabular-nums; font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; color: var(--tone, var(--rd-text)); white-space: nowrap; }
 /* 浅色主题数字用正文色，身份靠实色图标底（VS-14）；状态色数字照旧。 */
-:root[data-theme="light"] .rd-stat-value[data-tone^="role-"] { color: var(--rd-text); }
+:root[data-theme="light"] .rd-stat-value[data-tone^="role-"]:not([data-zero]) { color: var(--rd-text); }  /* 0 和「—」两套主题都弱化，和经营卡一样 */
 /* 0 和「—」弱文字色：全 0 时不显得重要，图标底和大字号也一起让掉（组件按值判断）。 */
 .rd-stat-value[data-zero] { color: var(--rd-text-3); }
 /* 不带数字的文字不是答案，不给大字；行高不变，和邻格同一行。 */
@@ -129,6 +130,9 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-stat-sub { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 /* 数字不折行也不缩字：一格至少放得下数字，长金额自己撑宽这一列，再放不下才换行。 */
 .rd-stats .rd-stat { flex: 1 1 120px; min-width: min-content; }
+/* fit：两三个数时每格从内容宽往外长，填满一行，不拉成等宽的半格，窄时也不让关键数字独占一行；放不下才换行。 */
+.rd-stats[data-fit] > .rd-stat, .rd-stats[data-fit] > .rd-stat[data-lead] { flex: 1 1 auto; }
+.rd-stats[data-fit] > .rd-stat > .rd-tile { margin-inline: 0; }
 .rd-stat { position: relative; }
 .rd-stat-hit { position: absolute; inset: -8px; padding: 0; border: 0; border-radius: var(--rd-radius-control); background: none; cursor: pointer; }
 .rd-stat-hit:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 0; }
@@ -339,6 +343,9 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-cell-sub .rd-link:hover, .rd-cell-sub .rd-link:focus-visible { color: var(--rd-text); }
 .rd-cell { display: block; min-width: 0; max-width: 280px; }
 .rd-cell[data-full] { max-width: none; }
+/* 占满剩下的列宽，放不下才省略（Ant Design Table ellipsis 按列宽）：理由这类长文本列用 Td grow。 */
+.rd-table td[data-grow] { width: 100%; max-width: 0; }
+.rd-table td[data-grow] > .rd-cell { max-width: none; }
 .rd-table td[data-align="right"] > .rd-cell { margin-left: auto; }  /* 右对齐列里的格子贴右边，表头和数值才对得齐 */
 .rd-table td[data-align="right"] .rd-row-actions > .rd-iconbtn:last-child { margin-right: -8px; }  /* 三个点贴到和表头一样的右边，图标按钮自带的留白不算 */
 .rd-table-scroll:has(td[data-align="right"] .rd-row-actions > .rd-iconbtn:last-child):not(.rd-panel[data-flush] > *) { margin-right: -8px; padding-right: 8px; }  /* 不贴边的表格末列没有内边距，这 8px 要借面板的留白，不然多出一条横向滚动条 */
@@ -454,7 +461,7 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-modal.rd-confirm .rd-brief[open] .rd-brief-head > span { display: none; }  /* 展开后「影响」在下面那一行，标题行不重复 */
 /* 展开的摘要和关键信息同一条值线（名称列 128 = 事实块的内边距 16 + 112），不带底块：这是补充说明，不是关键信息，句子也多一点宽度（VS-105）。 */
 .rd-brief-rows { display: grid; gap: 8px; margin: 8px 0 0; }
-.rd-brief-rows > div { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 12px; }
+.rd-brief-rows > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; }  /* 和事实区 .rd-fact 同一条值线 */
 .rd-brief-rows dt { font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); color: var(--rd-text-3); }
 .rd-brief-rows dd { margin: 0; color: var(--rd-text-2); overflow-wrap: anywhere; }
 .rd-modal.rd-confirm .chip.tab.sel { background: var(--rd-brand); color: var(--rd-text-on-brand); border-color: var(--rd-brand); }
@@ -647,6 +654,16 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 /* 提示条和告警横幅两套主题一个样子：浅底加同色 1px 边，取 Ant Design Alert 默认。用内阴影，不改尺寸。 */
 :is(.rd-conclusion[data-alarm], .rd-notice) { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 30%, transparent); }
 .rd-notice-action { flex: none; display: inline-flex; align-items: center; gap: 8px; }
+/* 正文长、动作多的提示：动作排在正文下面，正文占满整条宽（DT-09）。段落之间 8px。 */
+.rd-notice-action[data-below] { display: flex; flex-wrap: wrap; gap: 8px 12px; margin-top: 8px; }
+.rd-notice-action [data-pair] { display: inline-flex; align-items: center; gap: 4px; }  /* 按钮和解释它的问号挨着 */
+.rd-notice-text > p { margin: 0; }
+.rd-notice-text > p + p { margin-top: 8px; }
+.rd-notice .rd-link { white-space: nowrap; }  /* 链接不在词中间折行 */
+/* 三个以上动作挤窄正文时，动作换到正文下面一行，和正文同一条左边线（VS-105） */
+.rd-notice:has(> .rd-notice-action > :nth-child(3)) { flex-wrap: wrap; }
+.rd-notice:has(> .rd-notice-action > :nth-child(3)) > .rd-notice-text { flex-basis: calc(100% - 24px); }
+.rd-notice:has(> .rd-notice-action > :nth-child(3)) > .rd-notice-action { flex-basis: 100%; padding-left: 24px; }
 
 /* ── 表单字段 ── */
 .rd-form-field { display: grid; gap: 8px; align-content: start; min-width: 0; }
@@ -820,6 +837,8 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-fact-change { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; color: var(--rd-text-3); font-weight: 400; }
 .rd-fact-change > svg { flex: none; }
 .rd-fact-change [data-after] { color: var(--rd-progress); font-weight: 500; }
+.rd-fact-change [data-settled] { color: var(--rd-text); font-weight: 500; }  /* 已经生效的新值不是待生效，不用蓝（VS-103） */
+.rd-fact[data-empty] dd { color: var(--rd-text-3); font-weight: 400; }  /* 读不到写「—」时弱化（VS-11） */
 /* 这次操作的关键数字（VS-102）：弹窗里最大最亮，每个框最多一个。字号借页面标题那一档，不加新字号。 */
 .rd-fact[data-lead] { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 .rd-fact[data-lead] + .rd-fact { margin-top: 4px; }

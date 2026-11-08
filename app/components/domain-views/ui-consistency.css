@@ -1,4 +1,10 @@
 /* Scoped additions follow the console's existing surfaces and type scale. */
+/* A2 details and confirmation share these styles through their own .dkpage wrappers. */
+.dkpage .a2-change-review { display: grid; gap: 12px; min-width: 0; margin: 12px 0; font-size: 12.5px; line-height: 1.65; color: var(--ink-2); }
+.dkpage .a2-change-review > div { min-width: 0; padding: 14px; border-radius: 10px; background: var(--surface-2); }
+.dkpage .a2-change-review dt { color: var(--ink-3); font-size: 12px; margin-bottom: 5px; }
+.dkpage .a2-change-review dd { margin: 0; color: var(--ink); font-weight: 500; white-space: pre-wrap; overflow-wrap: anywhere; }
+
 .dkpage .amb-applications { container: ambassador-list / inline-size; display: grid; gap: 8px; margin-bottom: 14px; }
 .dkpage .amb-application { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 10px 14px; padding: 12px; border-radius: 9px; background: var(--surface-2); font-size: 12px; }
 .dkpage .amb-application > div { min-width: 0; overflow-wrap: anywhere; }

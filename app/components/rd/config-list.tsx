@@ -50,7 +50,7 @@ export function ConfigRow({ name, explainLabel, what, when, where, effect, note,
     <div className="rd-config-row" role="listitem" id={id}>
       <div className="rd-config-name">
         {name}
-        {hasHelp && <Explain label={`${explainLabel ?? (typeof name === "string" ? name : "这一项")}的说明`} rows={rows} />}
+        {hasHelp && <Explain label={`${explainLabel ?? (typeof name === "string" ? name : "这一项")}的说明`} rows={rows} side="bottom" align="start" />}
       </div>
       {hasHelp && <span id={helpId} className="rd-sr-only">{rows.map((row, index) => <span key={index}>{row.k}：{row.v}。</span>)}</span>}
       <div className="rd-config-value">

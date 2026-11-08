@@ -74,8 +74,9 @@ export function Th({ align, sticky, control, icon: Icon, tone, children, ...rest
   );
 }
 
-export function Td({ align, sticky, children, ...rest }: TdHTMLAttributes<HTMLTableCellElement> & { align?: "left" | "right"; sticky?: "start" | "end" }) {
-  return <td {...rest} data-align={align ?? (sticky === "end" ? "right" : undefined)} data-sticky={sticky}>{children}</td>;
+/** grow：这一列占满剩下的宽度，里面的 Cell 放不下才省略（长文本列，比如理由）。一张表最多一列。 */
+export function Td({ align, sticky, grow, children, ...rest }: TdHTMLAttributes<HTMLTableCellElement> & { align?: "left" | "right"; sticky?: "start" | "end"; grow?: boolean }) {
+  return <td {...rest} data-align={align ?? (sticky === "end" ? "right" : undefined)} data-sticky={sticky} data-grow={grow ? "" : undefined}>{children}</td>;
 }
 
 /** mark 是常亮的行标记，和打开详情的 selected 无关：hit 是带单号进来定位到的行，danger 是对不上要核查的行。 */
