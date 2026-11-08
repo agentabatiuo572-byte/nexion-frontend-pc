@@ -104,7 +104,7 @@ function alignsToStep(value: number, min: number, step: number) {
   return Math.abs(units - Math.round(units)) < 1e-9;
 }
 
-/** 空、填坏和 0 分开（CP-54）：空输入不当 0，填坏的数字框值是空串，只有 badInput 分得出。跨字段规则同后端 validateUpdateRequest，写在相关的那一项下面。 */
+/** 空、填坏和 0 分开（CP-54）：空输入不当 0，数字框里只填了一半（「-」「.」）算填坏。跨字段规则同后端 validateUpdateRequest，写在相关的那一项下面。 */
 function parseDrafts(drafts: Drafts, bad: readonly Key[]) {
   const values = {} as PayoutVndValues;
   const errors: Partial<Record<Key, string>> = {};
@@ -743,7 +743,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         {(control) => (
           <NumberInput {...control} aria-label={`${spec.label}目标值`} unit={spec.unit} min={spec.min} max={spec.max} step={spec.step}
             value={editing.drafts[key]} onBlur={() => touch(key)}
-            onChange={(event) => setDraft(key, event.target.value, event.target.validity.badInput)} />
+            onChange={(event) => setDraft(key, event.target.value, event.target.value.trim() !== "" && !Number.isFinite(Number(event.target.value)))} />
         )}
       </Field>
     );

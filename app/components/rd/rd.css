@@ -760,7 +760,8 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-change-unit { margin-left: 4px; font-size: var(--rd-text-body); font-weight: 400; color: var(--rd-text-3); }
 .rd-change-arrow { flex: none; color: var(--rd-text-3); }
 .rd-change-entry { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: var(--rd-control-h-lg); }
-.rd-change-entry > :is(.rd-number, .rd-input) { flex: 1 1 160px; width: auto; min-width: 0; max-width: none; }
+.rd-change-entry > .rd-input { flex: 1 1 160px; width: auto; min-width: 0; max-width: none; }
+.rd-change-entry > .rd-number { flex: none; }  /* 数字框按内容定宽，方向标签紧跟在后面 */
 .rd-change[data-size="key"] .rd-change-entry .rd-input { height: var(--rd-control-h-lg); font-size: var(--rd-text-title); font-weight: 600; font-variant-numeric: tabular-nums; }
 .rd-change[data-size="key"] .rd-change-entry .rd-number-unit { height: var(--rd-control-h-lg); }
 .rd-change[data-size="body"] :is(.rd-change-now, .rd-change-entry) { min-height: var(--rd-control-h); }
@@ -777,7 +778,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-change[data-stack] .rd-change-now { min-height: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; white-space: normal; overflow-wrap: anywhere; }
 .rd-change[data-stack] .rd-change-arrow { display: none; }
 .rd-change[data-stack] .rd-change-entry { min-height: 0; }
-.rd-change[data-stack] .rd-change-entry > :is(.rd-number, .rd-input) { flex: 1 1 100%; max-width: none; }
+.rd-change[data-stack] .rd-change-entry > .rd-input { flex: 1 1 100%; max-width: none; }
 
 /* ── 等级表 ── */
 .rd-levels { margin: 0; padding: 0; list-style: none; }
@@ -1025,10 +1026,11 @@ td .rd-flow { margin-bottom: 0; }
 .rd-push-state { display: grid; justify-items: start; gap: 8px; }
 @container (max-width: 860px) { .rd-config-rail .rd-push-state { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; } }  /* 窄栏上移时状态、说明、按钮排一行，不把参数挤出首屏 */
 .rd-row-actions { display: inline-flex; gap: 8px; }
-.rd-number { position: relative; display: block; width: 100%; max-width: 240px; }
-.rd-number .rd-input { padding-right: 56px; font-variant-numeric: tabular-nums; appearance: textfield; }
-.rd-number .rd-input::-webkit-inner-spin-button, .rd-number .rd-input::-webkit-outer-spin-button { appearance: none; margin: 0; }
-.rd-number-unit { position: absolute; z-index: 1; top: 0; right: 12px; height: var(--rd-control-h); display: inline-flex; align-items: center; color: var(--rd-text-3); pointer-events: none; }
+/* 宽度按内容定（Ant Design InputNumber）：--rd-number-chars 是 min、max、现在的值里最长的字数（ch），--rd-number-unit 是单位的字宽，组件算好传进来。 */
+.rd-number { --rd-number-unit-w: calc(var(--rd-number-unit) * .62 * var(--rd-text-body)); position: relative; display: inline-block; max-width: 100%; vertical-align: middle; }
+.rd-number .rd-input { width: calc((var(--rd-number-chars) + .5) * 1ch + 24px); max-width: 100%; font-variant-numeric: tabular-nums; }
+.rd-number[data-unit] .rd-input { width: calc((var(--rd-number-chars) + .5) * 1ch + 32px + var(--rd-number-unit-w)); padding-right: calc(20px + var(--rd-number-unit-w)); }  /* 单位紧跟数字，中间 8 */
+.rd-number-unit { position: absolute; z-index: 1; top: 0; right: 12px; height: var(--rd-control-h); display: inline-flex; align-items: center; color: var(--rd-text-3); font-size: var(--rd-text-body); pointer-events: none; }
 .rd-confirm-preview { margin-top: 8px; color: var(--rd-text); }
 
 /* 主题开关（顶栏、登录页）：太阳浅色、月亮深色，选中的一格亮底。 */

@@ -83,7 +83,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 一列固定的等级 | `LevelList` | `level-list.tsx` |
 | 配置项：名称、提示图标、当前值、动作 | `ConfigList`（`label` 给这组起名）、`ConfigRow`；一项一行，这是什么、显示位置、生效时间、改了会怎样（`what`、`where`、`when`、`effect`）都在提示图标的气泡里；说明表放 `lib/admin/config-help/`，按参数键取 | `config-list.tsx` |
 | 配置页三组以上的分组导航，详情页的分区导航（传 `row` 横排） | `SectionNav`、`useSectionNav`；定位写进网址 `section`，目标在折叠组里先展开，滚到底时亮最后一组 | `section-nav.tsx` |
-| 数字输入，单位写在框里 | `NumberInput`；`OperationConfirmModal` 的 `edit.kind: "number"` 在 `RdPage` 里自动用它 | `number-input.tsx` |
+| 数字输入，单位写在框里 | `NumberInput`；照 Ant Design InputNumber：显示带千分位，`value` 和 `onChange` 里的 `event.target.value` 是不带逗号的原值；宽度按 `min`、`max` 和现在的值定，单位紧跟数字，不拉满；只收数字、一个小数点和允许时的负号，空、填了一半（「-」「.」）和 0 原样交给页面，页面把不是数字的当填错；上下方向键按 `step` 加减。`OperationConfirmModal` 的 `edit.kind: "number"` 在 `RdPage` 里自动用它 | `number-input.tsx` |
 
 ## 颜色：只传 tone，不写色值
 
@@ -212,7 +212,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 改一个值的确认框（`edit`）在 `RdPage` 里自动用 `DiffField`：现在值在左、新值输入在右，数字放大，不再有「新值 · 当前 X」的标签和「当前 X」的占位。再给三个可选项：`hint` 写怎么填（范围只写这里），`preview(value)` 写改了会怎样、随输入变化，这两项只在 `RdPage` 里显示（CP-87）；`emptyOption` 写清空选项的名字，比如「不设上限」，要人点它才算清空，框里没填或填坏了都不算。`disallowCurrent` 时没改动不能保存，框里写原因（OP-18）。
 
-确认框提交中锁住里面全部输入、选项、取消和 ×，失败后恢复（OP-33）。数字框填坏（`badInput`）不算空，不能提交。
+确认框提交中锁住里面全部输入、选项、取消和 ×，失败后恢复（OP-33）。数字框填坏（只填了「-」「.」）不算空，不能提交。
 
 理由字段写「操作理由 * 至少 8 字」，上限在理由框角落的字数里。缺什么写在灰按钮的提示里，刚打开不报错，字段失焦或点过提交才在字段下用警告色写原因。框里填过内容后点空白和 Esc 都不关，×、取消照常关，搜索框里打字不算填内容（`data-search`）。多字段表单里，每个字段的范围、格式错写在这个字段下；跨字段的 `feedback` 传 `field` 就写在那一项下面，不传写在表单最后。
 
