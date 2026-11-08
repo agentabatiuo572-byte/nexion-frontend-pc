@@ -961,7 +961,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   // 一句话结论：从上往下取第一条成立的（重构说明 3.2）。比较用接口原值。
   const coverageText = `兑付覆盖率 ${pct(p.coverageRatio)}，红线 ${fmtConfigPct(p.redlinePct)}`;
   // 覆盖率、红线和可不可靠每个状态都留一处读数（D5-V10，F05）：结论句没写的，写在第二行。
-  const coverageLine = p.coverageReliable ? `${coverageText}。` : `读到的兑付覆盖率 ${pct(p.coverageRatio)} 不可靠，红线 ${fmtConfigPct(p.redlinePct)}。`;
+  const coverageLine = <KeepText text={p.coverageReliable ? `${coverageText}。` : `读到的兑付覆盖率 ${pct(p.coverageRatio)} 不可靠，红线 ${fmtConfigPct(p.redlinePct)}。`} />;
   const poolHint = reach("/finance/pool") ? <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款核对</Link> : "去资金储备与应付款核对";
   const coverageExplain = COVERAGE_RULE;
   const approvalLine = (row: A2OperationRow) => `审批单 ${row.id} · ${row.operator} · ${row.rawTs ? `${formatBusinessTimeFull(row.rawTs, row.ts)}（${zone}）` : row.ts}提交`;
