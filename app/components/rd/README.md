@@ -31,7 +31,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 看板第一句话 | `Conclusion`；正常态不放大，`lead` 只在异常或带关键数字时放大；`hint` 只写建议和该做什么，怎么算传 `explain` 进句尾的提示图标 | `conclusion.tsx` |
 | 一排关键数字，最多 4 个 | `StatBand`、`Stat`；普通数字 24px，最重要的一个传 `lead` 放到 40px，页面不改字号；这一屏的结论已经放大了数字时不传，每屏一个 40px；没有明显主次的可以不传；整张可点传 `href` 或 `onOpen`；值是 0 或「—」时自动弱化（字色弱、图标底灰、`lead` 不放大），不带数字的文字（「无权限」）16px，传了 `lead` 也不放大；口径传 `explain` 进名称旁的提示图标，`sub` 只放数据。一格至少放得下数字，长金额放不下就换行，不折行不缩字。窄于 900 时 `lead` 独占一行，其余排在下面；没有 `lead` 时四个两两一行，三个留在一行；只有两三个数时 `StatBand` 传 `fit`，每格从内容宽往外长填满一行，不拉成等宽的半格，窄时 `lead` 也不独占一行 | `stat.tsx` |
 | 一组经营数字：每个都带对比和分项，要切时段 | `MetricBoard`、`MetricCard`；一张卡四层：名称、主数、对比一行、分项，层高都是定的，同排同高，切时段不跳版。分项是 `rows`（最多三行名称和值），或 `bar` 比例条：两样比哪样多，条下只写图例不写数，全是 0 时写 `bar.empty`。`MetricBoard` 的 `rows` 传这组卡各时段最多几行（比例条算两行），分项区按它留高。0、读不到（`state="failed"`，传 `onRetry`）、读取中（`state="loading"`）分开，没权限不渲染；两套主题 0 和「—」都弱化。整张可点传 `href`，名称行右边有箭头，悬停整张变亮。3、6 张三列，4 张够宽四列，不够两两一行，2 张两列，只有 2 张时分项限宽 360；这组卡任一时段有 8 位以上长金额时页面传 `long`（用导出的 `LONG` 算），内容区窄于 900 时两列，不缩字，切时段列数不变。对比行里可以放一个问号，不撑高这一行。目前只有今日概览用（PG-41），其他页用 `StatBand` | `metric.tsx` |
-| 一块内容 | `Panel`；已经在一个面板里的分区传 `plain`，不套底；`sub` 只放数据（范围、单位、数量、时间），解释传 `explain` 进标题旁的提示图标 | `panel.tsx` |
+| 一块内容 | `Panel`；已经在一个面板里的分区传 `plain`，不套底；`sub` 只放数据（范围、单位、数量、时间），解释传 `explain` 进标题旁的提示图标，紧挨着下面要对着看的数字时传 `explainSide="top"`，气泡不盖数字 | `panel.tsx` |
 | 区块标题、统计数字前的图标 | `IconTile`，`Panel`、`Stat` 传 `icon` 就有 | `icon-tile.tsx` |
 | 切不同内容 | `PageTabs`；`useTabIds` 一处给 id，内容包 `role="tabpanel"`，页签和面板互相指向；`count` 写页签里要处理的数，0 弱化，读不到传「—」，数到上限传「50+」这类文字；页签里面再分一层传 `level={2}`，下划线式（Ant Design Tabs 默认），和外层的底色块分得开 | `tabs.tsx` |
 | 筛同一张表、切时间窗 | `Segments` | `tabs.tsx` |
@@ -40,29 +40,30 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 看板里要处理的事 | `TodoList`、`TodoItem`，读不到用 `TodoFailed`；目标页不可达时不传 `href`，这一行照样提醒，不能点、没有箭头，`sub` 写该找谁 | `todo-list.tsx` |
 | 一块内容读取中、失败、空 | `BlockState`，折叠摘要里的失败传 `compact` 一行写完，重试是文字链；一个数字或一行读不到用 `InlineRetry`，同一个样子 | `block-state.tsx` |
 | 按天的柱图 | `Bars`，全是 0 别画，写一句话 | `bars.tsx` |
-| 表格 | `Table`、`Th`、`Tr`、`Td`、`Cell`；金额、数量、日期传 `num`，单号、哈希、地址才传 `mono`；理由这类长文本列给 `Td` 传 `grow`，占满剩下的列宽，放不下才省略（一张表最多一列）；只有第一行是单号时把它包进 `<span data-mono>`；6 列在 1024 放不下、第一列是长单号时给 `Table` 传 `data-tight`，窄于 1280 时格子最宽 200（`.rd-split` 里始终 200），长单号由页面中间省略，留能区分的尾段；要一直标出来的行给 `Tr` 传 `mark`：带单号进来命中的 `hit`（蓝底），对不上要核查的 `danger`（红底），和打开详情的 `selected` 分开 | `table.tsx` |
+| 表格 | `Table`、`Th`、`Tr`、`Td`、`Cell`；金额、数量、日期传 `num`，单号、哈希、地址才传 `mono`；理由这类长文本列给 `Td` 传 `grow`，占满剩下的列宽，放不下才省略（一张表最多一列）；列少、表格比内容宽、操作列左边空出一大段时，给操作列的 `Td` 加 `data-fit=""`，它只占按钮宽，多出的宽度按内容分给前面各列；只有第一行是单号时把它包进 `<span data-mono>`；6 列在 1024 放不下、第一列是长单号时给 `Table` 传 `data-tight`，窄于 1280 时格子最宽 200（`.rd-split` 里始终 200），长单号由页面中间省略，留能区分的尾段；要一直标出来的行给 `Tr` 传 `mark`：带单号进来命中的 `hit`（蓝底），对不上要核查的 `danger`（红底），和打开详情的 `selected` 分开 | `table.tsx` |
 | 显示更多列 | `useTableColumns`、`ColumnPicker` | `table.tsx` |
 | 表格加载、空、失败 | `TableLoading`、`TableMessage`；失败传 `role="alert"`，自动是失败红 | `table.tsx` |
 | 表格分页 | `Pager`，有数据才渲染 | `pager.tsx` |
 | 勾选后的批量操作 | `BatchBar`，勾选框用 `Checkbox`，勾选列的表头传 `Th control`；`hint` 收进已勾选数旁的提示图标 | `batch-bar.tsx`、`checkbox.tsx` |
 | 行操作放不下 | `MoreMenu` | `menu.tsx` |
-| 查询区 | `FilterBar`、`FilterField`、`Input`；范围控件项多、和搜索框排一行放不下时，`scope` 外面包 `<div className="rd-filter-scope-row">`，独占第一行；左标签加一个框（比如「开始时间」和日期时间框）包 `<span className="rd-filter-group">`，折行时不拆开；条件有误时给出错的框传 `aria-invalid`，筛选条里描边是橙黄 | `filter-bar.tsx` |
+| 查询区 | `FilterBar`、`FilterField`、`Input`；范围控件项多、和搜索框排一行放不下时，`scope` 外面包 `<div className="rd-filter-scope-row">`，独占第一行；左标签加一个框（比如「开始时间」和日期时间框）包 `<span className="rd-filter-group">`，折行时不拆开；更多筛选里成对的上下限放一个 `FilterField`，两个框包 `<span className="rd-filter-range">`，中间放 `<span aria-hidden>–</span>`，一对不会拆到两行，日期这种一列放不下的传 `wide` 占两列；条件有误时给出错的框传 `aria-invalid`，筛选条里描边是橙黄 | `filter-bar.tsx` |
 | 多行输入 | `Textarea`，放进 `Field`；字数传 `count`，写在框的右下角 | `filter-bar.tsx` |
 | 中、越、英三语正文 | `LocaleTabs`，切语言不动其他语言的内容，缺内容的页签写「缺失」 | `locale-tabs.tsx` |
 | 下拉、排序 | `Select`；放进 `Field` 自动接上 `id`、`aria-describedby`、`aria-invalid` | `select.tsx` |
+| 可输可选：边打字边从服务端候选里选一项（选账户、选用户） | `SearchSelect`；交互照 Ant Design AutoComplete、Select showSearch：点框、打字或按 ↓ 展开（聚焦本身不展开），第一项默认高亮，方向键移动（到头绕回，高亮项滚进可视区）、Enter 选中、Esc 收起，Tab 和点外面收起，鼠标移到哪项高亮哪项，输入法组合中按键不动候选；查询、防抖、丢弃过期结果由页面做，远程搜索传 `optionsFor`（这组候选按哪段输入查的，没查过传 null），和框里的字不一样就写「搜索中…」、回车不选（Ant Design Select 远程搜索：输入一变就不留旧候选），组件只管弹层、键盘、读屏（combobox 加 `aria-activedescendant`）和搜索中、无匹配、查询失败带「重试」三种状态；右边弱字传 `extra`（比如脱敏手机号），已选的传 `selected` 打勾；放进 `Field` 自动接上 `id` 和错误。选项是固定几个时用 `Select` | `search-select.tsx` |
 | 单条详情、长表单 | `Drawer`，底部用 `Decision` | `overlay.tsx` |
 | 详情开头 3～5 行 | `JudgmentPoints` | `judgment.tsx` |
-| 详情、确认框里成对的名称和值 | `Facts`、`Fact`；确认框的关键数字传 `lead`（每框最多一个，放第一行），值是不带数字的文字时按普通的值显示，大字只给数字；带含义的值传 `tone`；状态变化写 `Change`（改后蓝），已经生效的变化传 `settled`（新值正文色）；值是「—」时自动弱化。放在 `Modal` 里自动带浅底 | `facts.tsx` |
+| 详情、确认框里成对的名称和值 | `Facts`、`Fact`；确认框的关键数字传 `lead`（每框最多一个，放第一行），值是不带数字的文字时按普通的值显示，大字只给数字；带含义的值传 `tone`；状态变化写 `Change`（改后蓝），已经生效的变化传 `settled`（新值正文色），改后的值本身有问题（扣成负数、低于红线）传 `tone`；值是「—」时自动弱化。放在 `Modal` 里自动带浅底 | `facts.tsx` |
 | 按时间发生的操作、状态历史 | `Timeline`；最新在上，主体在组件内经 `maskAuditActor` 打码；仅失败 `danger`、待确认 `warn` 的节点上色 | `timeline.tsx` |
 | 提现历史、流水、同组账户等同类记录 | `RecordList`；主值、单位、时间和对象、状态、可复制单号分层；默认 5 条，点「查看全部」展开 | `record-list.tsx` |
 | 要人看到的提醒、错误、待确认条 | `Notice`；正文超过一行、动作不止一个时传 `actionBelow`，动作排到正文下面、和正文左对齐，正文占满整条宽；没传时动作有三个以上也会自动换到正文下面一行；多段正文用 `<p>`，段间 8px；按钮和解释它的问号包在 `<span data-pair>` 里挨着；条里的链接不在词中间折行 | `block-state.tsx` |
 | 短任务弹窗 | `Modal`；`icon` 是标题前的图标底，`sub` 放标题下的后果标签，危险确认传 `tone="danger"` | `overlay.tsx` |
 | 写操作确认 | 继续用 `OperationConfirmModal` | 见下 |
 | 确认框、修改框里的版本冲突：框不关，读最新 | `ConflictBar`，放进 `blockedReason` 或框里的错误条；`message` 写这页被改的是什么，`onRead` 读到最新后页面按最新的值重开框（OP-97），读取失败时组件换成统一的一句，已填的留着 | `conflict-bar.tsx` |
-| 解除待确认 | `ReleaseModal`；`label` 写原操作，统一的一句话在组件里，页面特有的说明传 `explain`。按原操作重试失败后放不放出「解除待确认」只用 `lib/admin/explicit-rejection.ts` 的 `isExplicitRejection`：带原因码的 4xx 才算，401、403、408、425、429 和 `IDEMPOTENCY_*` 不算 | `overlay.tsx` |
+| 解除待确认 | `ReleaseModal`；`label` 写原操作，统一的一句话在组件里，页面特有的说明传 `explain`。原操作本来就开在一个弹窗里时不叠第二个框：同一个 `Modal` 换成标题「解除待确认」、盾牌图标、正文 `ReleaseBody`、底栏「返回」「确认解除」（用户名单导出这样做）。按原操作重试失败后放不放出「解除待确认」只用 `lib/admin/explicit-rejection.ts` 的 `isExplicitRejection`：带原因码的 4xx 才算，401、403、408、425、429 和 `IDEMPOTENCY_*` 不算 | `overlay.tsx` |
 | 按钮 | `Button`、`IconButton`；和主按钮并排的危险入口用 `danger-outline`，实心 `danger` 只给最终确认。高度读 `--rd-control-h`（32）、`-sm`（24）、`-lg`（40），页面不写高度 | `button.tsx` |
 | 状态 | `StatusTag`；列表筛成只有一种状态时，这个默认状态传 `neutral`（灰字加图标）；弹窗标题下「不能撤销」用 `IrreversibleTag`，走审批的「批准后生效」把谁来批、批准前什么不变传 `explain`，不写事实行 | `status-tag.tsx` |
-| 提示图标和气泡：这是什么、显示位置、生效时间、口径、后果 | `Explain`，悬停、点击、键盘都能开；`Stat` 里的气泡向上、`ConfigRow` 里的向下展开，都从问号左边起，不盖住被解释的数字、不压侧栏，放不下自动翻边；`content` 自由内容（多段用 `<p>`），`rows` 分行写；`Panel`、`Fold`、`Conclusion`、`Stat`、`ConfigRow`、`Field`、`Check`、`CheckGroup`、`KeyValues`、`Decision`、`Drawer`、`StatusTag` 传 `explain` 就自带。正文里的词写成 children 就是虚线下划线，不加图标 | `explain.tsx` |
+| 提示图标和气泡：这是什么、显示位置、生效时间、口径、后果 | `Explain`，悬停、点击、键盘都能开；`Stat` 里的气泡向上、`ConfigRow` 里的向下展开，`Panel` 标题旁的也一样，都从问号左边起，不盖住被解释的数字、不压侧栏，放不下自动翻边；`content` 自由内容（多段用 `<p>`），`rows` 分行写；`Panel`、`Fold`、`Conclusion`、`Stat`、`ConfigRow`、`Field`、`Check`、`CheckGroup`、`KeyValues`、`Decision`、`Drawer`、`StatusTag` 传 `explain` 就自带。正文里的词写成 children 就是虚线下划线，不加图标 | `explain.tsx` |
 | 一个整体分几份 | `Donut` 环图，中间写总额，图例写数；旁边有表格时传 `legend={false}`，表格第一列放色点当图例；两类都有钱才画 | `chart.tsx` |
 | 图和数据放一起 | `Figure`，图在左（`width` 是上限）、数据在右，名字和数字挨着；容器窄时上下排，尺和条这类宽图传 `stack="wide"` | `chart.tsx` |
 | 几类比大小 | `BarList` 排序条，一个颜色，数字在条右边；`value` 传 `null` 写「样本过小」 | `chart.tsx` |
@@ -73,8 +74,8 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 只读的流程进度：走到哪一步 | `Steps`，当前步从现有状态字段取 | `steps.tsx` |
 | 几条线比走势，或要画目标线、事件线 | `TrendLines`，目标线传 `marks`，事件线传 `event` | `chart.tsx` |
 | 表格里看走向 | `Sparkline`，至少两个点才传，数值要在别处读到 | `chart.tsx` |
-| 并排两块 | `.rd-split` 放两个 `Panel`。看板里对等的两块等高，`data-even` 再等宽；左边选一行右边看详情的主从结构传 `data-detail`，高度跟内容走。放不下时按内容折成上下排，不写窗口宽度；主从结构给明细面板 `id`，点行后 `scrollIntoView` | `rd.css` |
-| 表单字段、勾选 | `Field`、`Check`、`CheckGroup`；页面上常驻表单的说明传 `explain`（标签旁的提示图标），修改框和抽屉里填写时要看的「怎么填」传 `help`；范围、字数传 `hint`，跟在字段名后面。rd 控件直接放就接上 `id` 和错误，别的控件用函数子项 | `field.tsx` |
+| 并排两块 | `.rd-split` 放两个 `Panel`。看板里对等的两块等高，`data-even` 再等宽；左边选一行右边看详情的主从结构传 `data-detail`，高度跟内容走；左边填表、右边随填随算结果（余额调整的「批准后会怎样」）传 `data-detail` 加 `data-preview`，起始宽度 420、300，1024 也并排，结果不落到提交按钮下面，右栏高度跟内容走。放不下时按内容折成上下排，不写窗口宽度；主从结构给明细面板 `id`，点行后 `scrollIntoView` | `rd.css` |
+| 表单字段、勾选 | `Field`、`Check`、`CheckGroup`；页面上常驻表单的说明传 `explain`（标签旁的提示图标），填错的提示和描边在页面、弹窗、抽屉里都是橙黄（VS-107），修改框和抽屉里填写时要看的「怎么填」传 `help`；范围、字数传 `hint`，跟在字段名后面。rd 控件直接放就接上 `id` 和错误，别的控件用函数子项 | `field.tsx` |
 | 名称和值成对 | `KeyValues`；名称的解释传 `explain`，`sub` 只放数据 | `key-values.tsx` |
 | 一块内容的加载、空、失败、无权限 | `BlockState` | `block-state.tsx` |
 | 页内提示：待生效、结果未知、只读说明 | `Notice` | `block-state.tsx` |
@@ -241,9 +242,10 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 - `Table`：内容能横向滚时，固定列朝内容一侧带影子，滚到头消失。
 - `Modal`：模态，Tab 圈在里面。`Drawer`：不挡外面的列表，不写 `aria-modal`，Tab 走到头回到页面。两者都是 Esc 只关最上层，打开时聚焦容器，关闭后焦点回到当前高亮行或原来的按钮，`busy` 时全部锁住。
 - `Decision`：危险决定在左，主决定在右；只有危险决定时放右边，和别的框收在同一条线上。`explain` 的问号没有 `note` 时紧挨右边的按钮，不孤零零留在左下角。
-- 整页表单的操作行用 `<div className="rd-toolbar" data-end="">`：状态和提示图标在左，按钮在右，顺序和抽屉底部一样。
+- 整页表单的操作行用 `<div className="rd-toolbar" data-end="">`：状态和提示图标在左，按钮在右，顺序和抽屉底部一样。左边的说明用 `.rd-toolbar-note`，写现在为什么不能提交时传 `data-tone`（填错、余额不足这类要人改的用 `warn`）。
 - `PageTabs`、`Segments`：方向键、Home、End 移动并立即选中，禁用项跳过。页签的网址读写在页面做。
 - `Select`：方向键环绕，Tab 和 Esc 收起，选后焦点回到触发器，禁用时收起且恢复后不自动展开。`required` 时空串算没选，表单提交被拦下，空值选项不进列表；不必填时空值选项是能选中的「全部」，表单值是空串。
+- `SearchSelect`：点候选不抢走输入框的焦点；弹层宽度跟输入框；框里打字不算填了弹窗内容（`data-search`），照样能关。
 - `FilterBar`：有 `notice` 时「条件未应用」这类 `result` 和原因排在一行；Enter 等于查询；查询中只禁「查询」，条件照常能改；更多筛选收起不丢值。`action` 换掉「查询」的位置，Enter 仍走 `onSubmit`；自定义日期这类第二行放进 `.rd-filter-line`。
 - 列选择按账号和表格记在本地，记忆损坏时回到默认列，不影响导出和请求。按钮写「显示更多列」，选了才写「· 已选 n」。
 - `Fold`：`alert` 的颜色只给这一行的摘要，折叠里的内容和子折叠不跟着变色。
@@ -264,7 +266,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 深色默认，浅色挂 `data-theme="light"`，两套都正式保留。`theme-switch.tsx` 管三件事：`<ThemeScript />` 在 `app/layout.tsx` 的 `<head>` 里同步执行，首屏按记住的选择设属性，不闪屏；`<ThemeToggle adminId={…} />` 是顶栏和登录页的开关（太阳「浅色」、月亮「深色」）；`useAdminTheme(adminId)` 登录后按账号记住的选择切换。记忆在本机：`nexion-admin-rd-theme` 是最近一次的选择（登录前也用它），`nexion-admin-rd-theme:<adminId>` 是每个账号的选择。网址参数 `?theme=light|dark` 只给截图和验收脚本用，不是入口。
 
-两套主题的差别只在 `tokens.css` 和 `rd.css` 里：浅色数字用正文色、身份靠实色图标底和图表色（VS-14）；白面板加 1px 边（VS-94）；输入框、下拉和确认框里的旧字段白底加 1px `--rd-line-strong` 描边，悬停 `--rd-control-line`（Ant Design Input），禁用和只读保留灰底，填错时只留外框；Logo 换横版 on-light（`shell.css`）。告警横幅和 `Notice` 两套主题一个样子：浅底加同色 1px 边，取 Ant Design Alert 默认。页面不写这些。
+两套主题的差别只在 `tokens.css` 和 `rd.css` 里：浅色数字用正文色、身份靠实色图标底和图表色（VS-14）；白面板加 1px 边（VS-94）；输入框、下拉和确认框里的旧字段白底加 1px `--rd-line-strong` 描边，悬停 `--rd-control-line`（Ant Design Input），禁用和只读保留灰底，填错时只留外框；筛选的条件条加 1px `--rd-line` 边（底色和页面几乎一样）；Logo 换横版 on-light（`shell.css`）。告警横幅和 `Notice` 两套主题一个样子：浅底加同色 1px 边，取 Ant Design Alert 默认。页面不写这些。
 
 还没迁移的页面，`console-shell.tsx` 给内容区 `<main>` 挂 `data-theme="dark"` 和 `.rd-legacy`，里面仍是旧的深色取值，侧栏和顶栏跟主题走（VS-95）。迁完一页就把它的路径加进 `lib/nav/console-nav.ts` 的 `REDESIGNED_PATHS`；路径带对象编号的详情页加进 `REDESIGNED_DETAIL_PREFIXES`。
 

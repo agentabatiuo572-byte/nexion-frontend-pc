@@ -8,7 +8,7 @@ import { PORTED_EMPTY_CONTENT } from "./ported-content";
 export const DOMAIN_C: ModuleEntry[] = [
   {
     path: "/users/search",
-    summary: "按条件查找用户，一屏看全分层、设备、风险分、余额和状态。这里只能查看：冻结去「账户操作」，调余额去「余额与资产调整」，安全问题去「安全与登录设备」。",
+    summary: "按用户编码、昵称或推荐码找用户，点一行看完整资料。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
