@@ -89,9 +89,9 @@ export const NumberInput = forwardRef<HTMLInputElement, Props>(function NumberIn
     // 框里原有的千分位随编辑重新排；只去显示用的逗号，不删除任何其他字符。
     const native = event.nativeEvent as InputEvent;
     const kind = native.inputType;
-    // 普通打字、删字会打乱框里原有的分组；新粘贴或新输入的逗号则必须是完整千分位。
+    // 删字或新插入的文本不含逗号时，框里原有逗号只作显示；新输入逗号时校验完整分组。
     const editsFormattedValue = kind?.startsWith("delete")
-      || kind === "insertText" && typeof native.data === "string" && !native.data.includes(",");
+      || typeof native.data === "string" && !native.data.includes(",");
     const candidate = editsFormattedValue ? typed.replace(/,/g, "") : typed;
     const syntax = negative ? /^-?(?:\d*|\d{1,3}(?:,\d{3})+)(?:\.\d*)?$/ : /^(?:\d*|\d{1,3}(?:,\d{3})+)(?:\.\d*)?$/;
     if (!syntax.test(candidate)) {
