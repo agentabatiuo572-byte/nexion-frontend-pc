@@ -1060,7 +1060,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const evmRule = threshold === null ? "待核实"
     : !p.complianceHoldEnabled ? "按小额免审和风控审核，不额外等待"
       : p.cooldownDays > 0 ? `全部人工复核，超过 ${threshold} 等 ${p.cooldownDays} 天` : "全部人工复核，不额外等待";
-  const trc20Rule = p.cooldownDays > 0 ? `每笔等 ${p.cooldownDays} 天，再按小额免审和风控审核` : "不额外等待，按小额免审和风控审核";
+  const trc20Rule = p.cooldownDays > 0 ? `每笔满 ${p.cooldownDays} 天才能放行，小额免审和风控照常` : "不额外等待，按小额免审和风控审核";
 
   const drawerIcon: Record<Group, LucideIcon> = { limits: Gauge, network: Network, fee: Network, nex: Network };
   const fieldProps = (key: NumKey) => ({

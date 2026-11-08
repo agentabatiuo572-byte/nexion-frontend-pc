@@ -33,7 +33,8 @@ const availabilityText = (reason: string | null) => ({ NETWORK_SWITCH_OFF: "该�
   NOT_CONFIGURED: "接入配置未就绪", RISK_HOLD: "风险暂停，请核对异常与告警", RECONCILIATION_REQUIRED: "需完成资金对账",
   ADDRESS_POOL_EMPTY: "缺少可分配地址，已有地址按原状态处理", WITHDRAWAL_NETWORK_OFF: "请核对 D5 提现网络许可",
   SWITCH_OFF: "全局出款开关已关闭", PAYOUT_ASSET_UNAVAILABLE: "收款服务未开通该网络出款",
-  PROVIDER_CAPABILITY_UNAVAILABLE: "暂时无法核实收款服务能力" } as Record<string,string>)[reason ?? ""] ?? (reason ? "状态待核实，请刷新或查看异常" : "可用");
+  PROVIDER_CAPABILITY_UNAVAILABLE: "暂时无法核实收款服务能力", ADDRESS_ASSET_UNAVAILABLE: "收款服务未开通该网络收款地址",
+  CHAIN_PROOF_UNAVAILABLE: "TRON 节点或收款服务暂时读不到" } as Record<string,string>)[reason ?? ""] ?? (reason ? "状态待核实，请刷新或查看异常" : "可用");
 type AddressPool = { available: boolean; total: number; unassigned: number; assigned: number; verifying: number; unknown: number; limit: number; reserveTarget?: number; automatic?: boolean; queued?: number; lastError?: string | null; retryAfter?: number | null };
 type CregisExceptions = {
   mode: string;
@@ -622,7 +623,8 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
             {FUNDS_NETWORKS.map(network => {
               const capability = data.networkCapabilities?.find(item => item.network === network);
               const state = !capability ? ["待核实", "尚未配置，出款能力待核实"] : capability.enabled ? ["已启用", "是否放行仍看「USDT 提现参数」里的网络开关"] : !capability.configured ? ["未就绪", "出款接入尚未就绪"]
-                : ["SWITCH_OFF", "NETWORK_SWITCH_OFF"].includes(capability.disabledReason ?? "") ? ["已关闭", "出款开关已关闭"] : ["暂停", "出款暂停，须核对配置与风险状态"];
+                : ["SWITCH_OFF", "NETWORK_SWITCH_OFF"].includes(capability.disabledReason ?? "") ? ["已关闭", "出款开关已关闭"]
+                  : capability.disabledReason === "CHAIN_PROOF_UNAVAILABLE" ? ["暂停", "TRON 节点读不到，链上确认核不了"] : ["暂停", "出款暂停，须核对配置与风险状态"];
               return <ConfigRow key={network} name={`${network} 出款`} value={state[0]} note={state[1]} />;
             })}
           </ConfigList>

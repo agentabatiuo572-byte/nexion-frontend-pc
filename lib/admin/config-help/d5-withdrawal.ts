@@ -126,6 +126,7 @@ export const D5_NETWORK_BLOCK_REASON: Record<string, { text: string; global?: tr
   NETWORK_UNSUPPORTED: { text: "打款服务不支持这个网络" },
   PAYOUT_ASSET_UNAVAILABLE: { text: "打款服务没开通这个网络的出款" },
   PROVIDER_CAPABILITY_UNAVAILABLE: { text: "暂时查不到打款服务开通了哪些网络" },
+  CHAIN_PROOF_UNAVAILABLE: { text: "TRON 节点读不到，链上确认核不了" },
 };
 export const D5_NETWORK_BLOCK_UNKNOWN = "原因暂时读不到，到「充值与收款对账」核对";
 /** 「紧急停用开关」的提现开关关着：App 一个网络都不显示（AppWithdrawalService.withdrawGateEnabled）。 */
