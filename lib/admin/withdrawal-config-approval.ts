@@ -5,6 +5,7 @@ import {
   fetchA2ProposalByKey,
   isA2OutcomeUncertainError,
 } from "./a2-client";
+import { isExplicitRejection } from "./explicit-rejection";
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
@@ -173,7 +174,9 @@ export async function submitConfigApproval<T>(
         && ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(String(error.backendMessage))) {
       throw new A2OutcomeUncertainError("原命令仍待确认，请稍后查询。", key);
     }
-    if (canClearOnRejection && !isA2OutcomeUncertainError(error)) attempts.forget(slot, key);
+    // 查无原单后的恢复，只能由带原因码的明确拒绝解除；权限、限流等仍保留原记录。
+    // 首次新命令沿用原来的拒绝清理规则。
+    if (canClearOnRejection && (previous ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error))) attempts.forget(slot, key);
     throw error;
   }
 
