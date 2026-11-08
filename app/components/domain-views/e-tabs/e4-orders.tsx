@@ -60,17 +60,25 @@ const REFUND_RULES = [
 ];
 
 /** 仅这页两处使用，保留在页内；任务投影和促销奖励分别展示。 */
-function OrdinaryRefundImpact({ impact }: { impact: E4RefundImpact | null }) {
+function OrdinaryRefundImpact({ impact, compact = false }: { impact: E4RefundImpact | null; compact?: boolean }) {
   const pending = impact?.runtimeComplete ? impact.completedPending : null;
   const reason = impact?.runtimeUnavailableReason;
   const runtimeText = reason === "SIMULATED_TASK_RUNTIME_UNRESOLVED" ? "模拟任务的运行关联暂无法核实"
     : reason === "COMPUTE_V2_COMPLETION_OUTCOME_UNKNOWN" ? "任务完成结果暂无法核实" : "任务运行状态暂无法核实";
-  return <section aria-label="普通订单退款影响">
-    <h3 className="rd-form-group-title">退款影响 · 购买设备</h3>
-    <p className="rd-note"><KeepText text="已完成任务按原规则结算一次，未完成任务随退款停止，已到账收益不扣回。" /></p>
+  return <section aria-label="普通订单退款影响" className={compact ? "e4-refund-impact-compact" : undefined}>
+    <h3 className="rd-form-group-title">退款影响 · {compact ? "普通购买设备" : "购买设备"}{compact && <Explain label="普通订单任务如何处理" content="已完成任务按原规则结算一次，未完成任务随退款停止，已到账收益不扣回。只含普通购买设备，不含促销赠品；这是任务影响快照，不是收益已经到账的证明，也不改变应退金额。" />}</h3>
+    {!compact && <p className="rd-note"><KeepText text="已完成任务按原规则结算一次，未完成任务随退款停止，已到账收益不扣回。" /></p>}
     {!impact ? <Notice tone="warn">暂未读到普通订单的任务影响，不能按没有任务处理。</Notice> : <>
       {!impact.runtimeComplete && <Notice tone="warn"><KeepText text={`${runtimeText}，部分任务统计未知。`} /><Explain label="任务状态技术信息" content={reason ?? "运行状态未提供"} /></Notice>}
-      <Facts>
+      {compact ? <Table label="普通订单退款任务与收益">
+        <thead><tr><Th>任务</Th><Th align="right">项数</Th><Th align="right">USDT</Th><Th align="right">UVT</Th></tr></thead>
+        <tbody>
+          <tr><Td>完成待结算</Td><Td align="right">{pending ? pending.taskCount.toLocaleString("en-US") : "未知"}</Td><Td align="right">{pending ? orderAmount(pending.usdtAmount) : "未知"}</Td><Td align="right">{pending ? orderAmount(pending.uvtAmount) : "未知"}</Td></tr>
+          <tr><Td>未完成待停止</Td><Td align="right">{impact.runtimeComplete && impact.unfinishedTaskCount !== null ? impact.unfinishedTaskCount.toLocaleString("en-US") : "未知"}</Td><Td align="right">—</Td><Td align="right">—</Td></tr>
+          <tr><Td>已停止</Td><Td align="right">{impact.stoppedTaskCount.toLocaleString("en-US")}</Td><Td align="right">—</Td><Td align="right">—</Td></tr>
+          <tr><Td>已到账保留</Td><Td align="right">{impact.creditedRetained.taskCount.toLocaleString("en-US")}</Td><Td align="right">{orderAmount(impact.creditedRetained.usdtAmount)}</Td><Td align="right">{orderAmount(impact.creditedRetained.uvtAmount)}</Td></tr>
+        </tbody>
+      </Table> : <Facts>
         <Fact k="完成待结算" unit={pending ? "项" : undefined}>{pending ? pending.taskCount.toLocaleString("en-US") : "未知"}</Fact>
         <Fact k="待结算 USDT">{pending ? orderAmount(pending.usdtAmount) : "未知"}</Fact>
         <Fact k="待结算 UVT">{pending ? orderAmount(pending.uvtAmount) : "未知"}</Fact>
@@ -79,8 +87,8 @@ function OrdinaryRefundImpact({ impact }: { impact: E4RefundImpact | null }) {
         <Fact k="已到账保留" unit="项">{impact.creditedRetained.taskCount.toLocaleString("en-US")}</Fact>
         <Fact k="保留 USDT">{orderAmount(impact.creditedRetained.usdtAmount)}</Fact>
         <Fact k="保留 UVT">{orderAmount(impact.creditedRetained.uvtAmount)}</Fact>
-      </Facts>
-      <p className="rd-note">普通购买设备 · 截至 {formatBusinessTimeFull(impact.asOf, "—")}（{businessZone().label}）<Explain label="退款影响范围" content="只含普通购买设备，不含促销赠品；这是任务影响快照，不是收益已经到账的证明，也不改变应退金额。" /></p>
+      </Facts>}
+      <p className="rd-note"><KeepText text={`${compact ? "" : "普通购买设备 · "}截至 ${formatBusinessTimeFull(impact.asOf, "—")}（${businessZone().label}）`} phrases={[businessZone().label]} /><Explain label="退款影响范围" content="只含普通购买设备，不含促销赠品；这是任务影响快照，不是收益已经到账的证明，也不改变应退金额。" /></p>
     </>}
   </section>;
 }
@@ -352,10 +360,10 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   // 批准后收不回来的操作：不能撤销，红按钮（VS-25、VS-106）。
   const irreversibleApproval = <>{approvalTag}<IrreversibleTag /></>;
   // 对象、金额、审批人常显在框里（OP-48）。lead 是第一行：退款写退款金额，其余框写订单状态，金额是普通事实（VS-102）。
-  const orderFacts = (lead: ReactNode, rows?: ReactNode, refund = false) => <Facts>
+  const orderFacts = (lead: ReactNode, rows?: ReactNode) => <Facts>
     {lead}
     <Fact k="订单"><span data-mono>{o.id}</span></Fact>
-    {!refund && <Fact k="金额">{orderMoney(o.amt)}</Fact>}
+    <Fact k="金额">{orderMoney(o.amt)}</Fact>
     <Fact k="用户">{o.user}</Fact>
     <Fact k="商品">{o.sku}</Fact>
     {rows}
@@ -430,17 +438,31 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
             // amplify 只管框里的覆盖率提示：那句写「提交时检查」，后端实际在批准执行时才查，所以覆盖率写进事实区。提案里的 amplifies 照旧是 true。
             briefKind: "funds", name: "退款 · " + o.id, title: "退款订单", op: "order-refund", orderId: o.id, amplify: false, fixedVal: channel,
             effect: <><StatusTag tone="progress" filled explain={REFUND_APPROVAL_NOTE}>批准后生效</StatusTag><IrreversibleTag /></>, confirmLabel: "提交审批", confirmTone: "danger", reasonPlaceholder: reasonHint,
-            statedBrief: { impact: `钱退回用户钱包；符合条件的购买设备停用${giftClause}`, check: "核对用户、金额和退款原因，理由写清依据或工单号。" },
+            statedBrief: { impact: `另一位有权超管批准后，钱退回用户钱包；符合条件的购买设备停用${giftClause}`, check: "核对用户、金额和退款原因，理由写清依据或工单号。" },
             facts: <div className="rd-stack">
-              {orderFacts(<Fact k="退款金额" lead tone="role-1" unit="USDT">{orderAmount(o.amt)}</Fact>, <>
-                {channel && <Fact k="退款去向">{REFUND_CHANNEL_LABELS[channel] ?? channel}</Fact>}
-                {/* 退款入口只在读到覆盖率时开。 */}
-                <Fact k="兑付覆盖率"><Change from={fmtPct(e4Detail.coverageCurrent!)} to={fmtPct(e4Detail.coverageProjected!)} /><span className="rd-fact-unit">红线 {fmtConfigPct(e4Detail.coverageRedline!)}</span><Explain label="兑付覆盖率什么时候检查" content="批准执行时后端再查一次，当前或执行后低于红线就不退款。" /></Fact>
-                <Fact k="购买设备"><KeepText text={refundDeviceLine} phrases={["已到账收益不扣回"]} /><Explain label="退款后设备和收益怎么处理" content={refundDeviceDetail} /></Fact>
-                <Fact k="审批身份">具退款权限的财务主管或超管发起，另一位有权超管批准<Explain label="发起身份如何核实" content="会话不提供每项权限的角色来源。这里仅开放申请入口，提交时由后端核实退款权来自财务主管，或发起人是真实超管；增长不能发起。" /></Fact>
-                {e4Detail.orderType === "TRIAL_CONVERT" && <Fact k="试用奖励">这单发给购买者的试用奖励可能追回，金额以执行结果为准<Explain label="试用奖励追回规则" content="按整期结算转购发出的试用奖励，退款后最多收回未花掉的部分；未追回部分转人工核查。" /></Fact>}
-              </>, true)}
-              {e4Detail.orderType !== "TRIAL_CONVERT" && <OrdinaryRefundImpact impact={e4Detail.refundImpact} />}
+              <div className={e4Detail.orderType !== "TRIAL_CONVERT" ? "e4-refund-grid" : undefined}>
+                <div className="rd-stack">
+                  <Facts>
+                    <Fact k="退款金额" lead tone="role-1" unit="USDT">{orderAmount(o.amt)}</Fact>
+                    <Fact k="订单"><span data-mono>{o.id}</span></Fact>
+                    <Fact k="用户">{o.user}</Fact>
+                    {channel && <Fact k="退款去向">{REFUND_CHANNEL_LABELS[channel] ?? channel}</Fact>}
+                    {/* 退款入口只在读到覆盖率时开。 */}
+                    <Fact k="兑付覆盖率"><Change from={fmtPct(e4Detail.coverageCurrent!)} to={fmtPct(e4Detail.coverageProjected!)} /><span className="rd-fact-unit">红线 {fmtConfigPct(e4Detail.coverageRedline!)}</span><Explain label="兑付覆盖率什么时候检查" content="批准执行时后端再查一次，当前或执行后低于红线就不退款。" /></Fact>
+                    {e4Detail.orderType === "TRIAL_CONVERT" && <Fact k="试用奖励">这单发给购买者的试用奖励可能追回，金额以执行结果为准<Explain label="试用奖励追回规则" content="按整期结算转购发出的试用奖励，退款后最多收回未花掉的部分；未追回部分转人工核查。" /></Fact>}
+                  </Facts>
+                  <Fold title="商品与购买设备" summary={purchaseDevices == null ? "明细未提供" : purchaseDevices.length ? `${purchaseDevices.length} 台` : "尚未生成"} inset>
+                    <div className="rd-fold-flush rd-stack">
+                      <Facts>
+                        <Fact k="商品">{o.sku}</Fact>
+                        <Fact k="购买设备"><KeepText text={refundDeviceLine} phrases={["已到账收益不扣回"]} /><Explain label="退款后设备和收益怎么处理" content={refundDeviceDetail} /></Fact>
+                        <Fact k="审批身份">具退款权限的财务主管或超管发起，另一位有权超管批准<Explain label="发起身份如何核实" content="会话不提供每项权限的角色来源。这里仅开放申请入口，提交时由后端核实退款权来自财务主管，或发起人是真实超管；增长不能发起。" /></Fact>
+                      </Facts>
+                    </div>
+                  </Fold>
+                </div>
+              {e4Detail.orderType !== "TRIAL_CONVERT" && <OrdinaryRefundImpact impact={e4Detail.refundImpact} compact />}
+              </div>
               <section>
                 <h3 className="rd-form-group-title">促销奖励</h3>
                 <PromotionRefundImpact orderNo={o.id} compact />
