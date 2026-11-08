@@ -16,6 +16,7 @@ import { getPageGuide } from "@/lib/admin/page-guides";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Fold } from "./fold";
 import { Drawer } from "./overlay";
+import { KeepText } from "./keep-text";
 
 function seenKey(adminId: number | undefined, pageId: string) {
   return `nexion-admin-page-guide-seen-v1:${adminId ?? "anonymous"}:${pageId}`;
@@ -62,16 +63,16 @@ export function PageGuide({ pageId, extra }: { pageId: string; extra?: ReactNode
         </section>
         <section className="rd-guide-section">
           <h3>最常做的三件事</h3>
-          <ol>{guide.tasks.map((task) => <li key={task.title}><h4>{task.title}</h4><ol>{task.steps.map((step) => <li key={step}>{step}</li>)}</ol></li>)}</ol>
+          <ol>{guide.tasks.map((task) => <li key={task.title}><h4>{task.title}</h4><ol>{task.steps.map((step) => <li key={step}><KeepText text={step} phrases={guide.keep ?? []} /></li>)}</ol></li>)}</ol>
         </section>
         {guide.terms.length > 0 && (
           <section className="rd-guide-section">
             <h3>用到的术语</h3>
-            <dl>{guide.terms.map((term) => <div key={term.name}><dt>{term.name}：</dt><dd>{term.text}</dd></div>)}</dl>
+            <dl>{guide.terms.map((term) => <div key={term.name}><dt>{term.name}：</dt><dd><KeepText text={term.text} phrases={guide.keep ?? []} /></dd></div>)}</dl>
           </section>
         )}
         {extra}
-        {more && <Fold key={pageId} inset title="技术信息" summary={`${more.length} 条`}><ul className="rd-guide-more">{more.map((line) => <li key={line}>{line}</li>)}</ul></Fold>}
+        {more && <Fold key={pageId} inset title="技术信息" summary={`${more.length} 条`}><ul className="rd-guide-more">{more.map((line) => <li key={line}><KeepText text={line} phrases={guide.keep ?? []} /></li>)}</ul></Fold>}
       </Drawer>
     </>
   );
