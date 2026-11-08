@@ -711,7 +711,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
         explain={running.reconciliationScope === "HISTORICAL_RANGE"
           ? <><p>历史时段不与当前钱包对比。</p><p>{running.reconciliationNote}</p></>
           : userData.from
-            ? "设了开始时间时，只核对这段时间里每一笔余额是否连续，不和当前钱包比，也不显示钱包差额：开始时间之前的余额还没带进核对，比了会显示错误的差额。"
+            ? "设了开始时间时，只核对这段时间里每一笔余额是否连续，不和当前钱包比，也不显示钱包差额：开始时间之前的余额还没带进核对，比了差额不准。"
             : "逐笔看每一笔的变动后余额是不是等于上一笔余额加减这笔金额，再拿最后一笔已结算账单的余额和当前钱包比。处理中的账单不参与。"}
         hint={conclusionHint || undefined}
         action={breakCount > 0 && reach("/users/assets", "user_c3_read") ? <Link className="rd-link" href="/users/assets" prefetch={false}>余额与资产调整</Link> : undefined}>
