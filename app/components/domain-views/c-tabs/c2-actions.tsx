@@ -1102,7 +1102,8 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     const left = count(row.leftMinutes);
     return {
       briefKind: "security",
-      action: fromMirror ? `退出并结束只读视图 · ${sessionNo}` : `结束只读视图 · ${sessionNo}`,
+      // action 是进操作记录的名字，原样不改；框上的标题和页签同名（看图建议 6）。
+      action: fromMirror ? `退出并结束只读查看 · ${sessionNo}` : `结束只读查看 · ${sessionNo}`,
       title: fromMirror ? "退出并结束" : "结束只读视图",
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       facts: <Facts>
