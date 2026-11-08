@@ -17,7 +17,7 @@ import type { ConfirmReq, DCtx, ActionConfirmReq } from "./d-tabs/types";
 
 const FOLD: Record<string, string> = { D1: "D1", D2: "D2", D3: "D3", D4: "D4", D5: "D5", D6: "D6", D7: "D7" };
 /** 已改版的页：包 RdPage，页头由页面自己写。 */
-const REDESIGNED = ["D1", "D2", "D5", "D6", "D7"];
+const REDESIGNED = ["D1", "D2", "D4", "D5", "D6", "D7"];
 
 
 export function DDomainView({ meta }: { meta: DomainViewMeta }) {
