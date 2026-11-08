@@ -746,7 +746,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
         <Explain label="时间范围的说明" content={TIME_EXPLAIN} />
       </span>
     </FilterBar>
-    {!selectedUserId ? <BlockState state="empty" title="还没选用户" detail="输入用户编码或系统编号，点「加载账户」，看这个用户的账单和余额核对。" />
+    {!selectedUserId ? <BlockState state="empty" title="还没选用户" detail="输入用户编码或系统编号，点「加载账户」。" />
       : userError?.notFound ? <BlockState state="empty" title={`没有找到用户 ${userCode(selectedUserId)}`} detail="检查用户编码或系统编号，改好后点「加载账户」。" />
       : userError ? (
         <div data-proof="d4-fail-closed">
