@@ -1,4 +1,4 @@
-import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
@@ -668,7 +668,7 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
     const commandKey = headers.get("Idempotency-Key");
     // 话术与命令号去留同口径:5xx 保住了号,提示也必须说「结果未知」而不是「失败」,
     // 否则运营会换个入口重做一遍(第三轮验收 P1-6)。
-    if (commandKey && (result?.message === "IDEMPOTENCY_REQUEST_IN_PROGRESS"
+    if (commandKey && (isIdempotencyOutcomeOpen(result?.message)
       || response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
       || outcomeStaysUnknown(response.status, result?.code))) {
       throw new UsersOutcomeUnknownError(commandKey);
@@ -1328,7 +1328,7 @@ export async function executeUserDeviceTradein(
   const result = (await response.json().catch(() => null)) as ApiResult<JsonRecord> | null;
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
-    if (result?.message === "IDEMPOTENCY_REQUEST_IN_PROGRESS" || result?.message === "IDEMPOTENCY_RESULT_UNKNOWN"
+    if (isIdempotencyOutcomeOpen(result?.message)
       || response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
       || outcomeStaysUnknown(response.status, result?.code)) {
       throw new UsersOutcomeUnknownError(commandKey);

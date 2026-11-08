@@ -456,7 +456,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
                       <Facts>
                         <Fact k="商品">{o.sku}</Fact>
                         <Fact k="购买设备"><KeepText text={refundDeviceLine} phrases={["已到账收益不扣回"]} /><Explain label="退款后设备和收益怎么处理" content={refundDeviceDetail} /></Fact>
-                        <Fact k="审批身份"><KeepText text="具退款权限的财务主管或超管发起，另一位有权超管批准" phrases={["另一位有权超管批准"]} /><Explain label="发起身份如何核实" content="会话不提供每项权限的角色来源。这里仅开放申请入口，提交时由后端核实退款权来自财务主管，或发起人是真实超管；增长不能发起。" /></Fact>
+                        <Fact k="审批身份"><KeepText text="具退款权限的财务主管或超管发起，另一位有权超管批准" phrases={["另一位有权超管批准"]} /><Explain label="发起身份如何核实" content="会话不提供每项权限的角色来源，主角色不能证明退款权来源。这里仅开放申请入口，提交时由后端核实退款权来自财务主管，或发起人是真实超管。" /></Fact>
                       </Facts>
                     </div>
                   </Fold>

@@ -290,10 +290,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const canWriteE3 = useAdminAuth((s) => s.session?.authorities.includes("device_e3_write") ?? false);
   const canWriteE4 = useAdminAuth((s) => s.session?.authorities.includes("device_e4_write") ?? false);
   // 会话没有逐权限的 grant-role 投影，主角色不能证明退款权来源，也不能排除其他主角色兼任财务主管。
-  // 增长不开放；其他账号须同时有退款和提案权才给受限申请入口，资格仍由后端核实。
+  // 同时有退款和提案权才给受限申请入口，资格仍由后端按实际授权来源核实。
   const canRefundE4 = useAdminAuth((s) => !!s.session
     && s.session.authorities.includes("device_e4_order_refund")
-    && s.session.role !== "growth"
     && s.session.authorities.some((code) => ["platform_a2_proposal_create", "platform_a2_write"].includes(code)));
   const canQueryE4 = useAdminAuth((s) => s.session?.authorities.some((code) => ["platform_a2_read", "platform_a2_proposal_create"].includes(code)) ?? false);
   const canWriteE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_write") ?? false);
@@ -666,8 +665,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     const key = retained?.commandKey ?? createA2CommandKey("e-domain-action");
     e4PendingCommands.remember(scope, key, { label: spec.action, orderNo: spec.obj, spec });
     if (!e4PendingCommands.isDurablyStored(scope, key)) {
-      e4PendingCommands.forget(scope, key);
-      throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
+      if (!retained) e4PendingCommands.forget(scope, key);
+      throw new Error(retained
+        ? "浏览器存不下原操作，本次没有发送，结果仍未知。原命令继续保留，请查询原操作。"
+        : "浏览器存不下这次操作，没有提交。换一个窗口再试。");
     }
     try {
       await rawPropose(() => undefined, { ...spec, commandKey: key });
@@ -692,12 +693,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       noteE4Pending(record, "这个账号已没有这项权限，请有权限的同事处理");
       return;
     }
-    // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
+    // 先核实持久副本；读取失败只停发，不能把本地故障当成原命令结案。
     if (!e4PendingCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
-      e4PendingCommands.forget(record.fingerprint, record.commandKey);
-      syncE4Pending();
-      await refreshE4();
-      setToast("原操作已结束或过期，本次未再次发送。请先核对列表，再决定如何处理。", "warn");
+      noteE4Pending(record, "浏览器里查不到这条记录，本次没有发送，结果仍未知。原命令继续保留，请查询原操作。");
       return;
     }
     setE4Retrying(record.fingerprint);
