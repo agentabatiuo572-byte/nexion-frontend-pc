@@ -420,7 +420,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
         {auditLink && !expired && <span>到{auditLink}核对</span>}
         <Explain label="技术信息" content={`命令号 ${pending.commandKey} ｜ 原版本 ${pending.expectedVersion} ｜ 理由 ${pending.reason}`}>技术信息</Explain>
       </>}>
-        <p>{when}（{zone}）{what} 的操作可能已经提交，{data ? "下面是重新读到的值。" : ""}确认前不能再改。</p>
+        <p><KeepText text={`${when}（${zone}）${what} 的操作可能已经提交，${data ? "下面是重新读到的值。" : ""}确认前不能再改。`} phrases={["确认前不能再改。"]} /></p>
         {/* 过期后不能重试、不能解除，也不引导关标签页绕过：如实写怎么核对、交给谁（F4、BE-03）。 */}
         {expired && (canAudit
           ? <p>已超过 24 小时，不能再重试。请财务负责人到{auditLink}和下面的调整历史核对这次修改有没有生效。</p>
