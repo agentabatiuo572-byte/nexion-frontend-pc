@@ -17,8 +17,8 @@ import { fetchPurchasePaymentPolicy, fetchPurchasePaymentRecords, fetchPurchaseP
 import { LongValue, PendingNotices, readPage, readParam, usdt, vnd, writeParams, zoneLabel, type D1Activity, type D1Count, type D1PendingItem } from "./d1-shared";
 import type { DCtx } from "./types";
 
-const methodText: Record<PurchasePaymentMethod, string> = { HDPAY_BANK: "银行卡支付", CREGIS_USDT_BSC: "USDT（BEP20）", CREGIS_USDT_ERC20: "USDT（ERC20）" };
-const methodNote: Record<PurchasePaymentMethod, string> = { HDPAY_BANK: "按手续费收取，不收网络费，不需要支付密码。", CREGIS_USDT_BSC: "按手续费和网络费收取，不需要支付密码。", CREGIS_USDT_ERC20: "以太坊网络费较高，单独设置，不需要支付密码。" };
+const methodText: Record<PurchasePaymentMethod, string> = { HDPAY_BANK: "银行卡支付", CREGIS_USDT_BSC: "USDT（BEP20）", CREGIS_USDT_ERC20: "USDT（ERC20）", CREGIS_USDT_TRC20: "USDT（TRC20）" };
+const methodNote: Record<PurchasePaymentMethod, string> = { HDPAY_BANK: "按手续费收取，不收网络费，不需要支付密码。", CREGIS_USDT_BSC: "按手续费和网络费收取，不需要支付密码。", CREGIS_USDT_ERC20: "以太坊网络费较高，单独设置，不需要支付密码。", CREGIS_USDT_TRC20: "TRON 网络，按手续费和网络费收取，不需要支付密码。" };
 const stateText: Record<PurchasePaymentState, string> = { CREATING: "正在创建", SUBMIT_UNKNOWN: "创建结果未确认", AWAITING_PAYMENT: "等待付款", FUNDS_CONFIRMED: "已收款，待完成", DELIVERED: "已完成", MANUAL_REVIEW: "需人工处理", EXPIRED: "已过期" };
 const stateTone = (state: PurchasePaymentState): StateTone => state === "MANUAL_REVIEW" ? "warn" : state === "DELIVERED" ? "ok" : state === "EXPIRED" ? "done" : "progress";
 const STATE_GROUPS: readonly { label: string; states: readonly PurchasePaymentState[] }[] = [
@@ -294,7 +294,11 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
                     </Td>;
                   })}
                 </tr>;
-              })}</tbody>
+              })}
+              {purchasePaymentMethods.filter(method => !policy.channels.some(row => row.paymentMethod === method)).map(method => <tr key={method}>
+                <Td><Cell main={methodText[method]} sub={<StatusTag tone="warn">未配置</StatusTag>} /></Td>
+                <Td colSpan={FEE_FIELDS.length}><Cell main="该网络付款费率尚未配置，请核对后端部署后刷新；当前不能修改或用于付款。" /></Td>
+              </tr>)}</tbody>
             </Table>
             <div className="rd-col-foot">
               <span className="rd-row-actions">
@@ -387,7 +391,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, reloadTick, pending, nav, o
         ...(pending ? [{ label: "待确认", state: "warn" as const, value: "这笔付款有一次操作还没确认结果，请在页面上方的提醒里查看。" }] : []),
       ] : []} />}
     {r && <>
-      <Fold inset title="金额明细" summary={r.paymentMethod === "HDPAY_BANK" ? (r.amountVnd ? `应付 ${vnd(r.amountVnd)} VND` : "应付越南盾尚未提供") : "矿工费由用户另付"}>
+      <Fold inset title="金额明细" summary={r.paymentMethod === "HDPAY_BANK" ? (r.amountVnd ? `应付 ${vnd(r.amountVnd)} VND` : "应付越南盾尚未提供") : r.paymentMethod === "CREGIS_USDT_TRC20" ? "外部链上费用由用户另付" : "矿工费由用户另付"}>
         <KeyValues rows={[
           { key: "business", label: "订单金额", value: r.businessAmountUsdt == null ? "尚未提供" : `${usdt(r.businessAmountUsdt)} USDT` },
           { key: "subtotal", label: "收款金额", value: `${usdt(r.subtotalUsdt)} USDT` },
@@ -398,7 +402,8 @@ function PaymentDetail({ intentNo, owner, owns, ctx, reloadTick, pending, nav, o
           ...(r.paymentMethod === "HDPAY_BANK" ? [
             { key: "fx", label: "锁定汇率", value: r.fxRateVndPerUsdt ? `1 USDT = ${vnd(r.fxRateVndPerUsdt)} VND` : "尚未提供" },
             { key: "vnd", label: "应付越南盾", value: r.amountVnd ? `${vnd(r.amountVnd)} VND` : "尚未提供" },
-          ] : [{ key: "gas", label: "矿工费", value: `用户在自己钱包里另付的 ${r.paymentMethod === "CREGIS_USDT_ERC20" ? "ETH" : "BNB"} 矿工费不算在内。` }]),
+          ] : r.paymentMethod === "CREGIS_USDT_TRC20" ? [{ key: "gas", label: "外部链上费用", value: "TRON 钱包可能另收 TRX 或消耗能量、带宽，这些外部链上费用不算在用户实付金额内。" }]
+            : [{ key: "gas", label: "矿工费", value: `用户在自己钱包里另付的 ${r.paymentMethod === "CREGIS_USDT_ERC20" ? "ETH" : "BNB"} 矿工费不算在内。` }]),
         ]} />
       </Fold>
       {r.arrivals && <Fold inset title="链上到账" summary={r.arrivals.length ? `${r.arrivals.length} 笔` : "还没有链上到账记录"}>

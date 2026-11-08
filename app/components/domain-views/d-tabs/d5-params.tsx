@@ -1054,6 +1054,12 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       effect={help.effect} note={help.note} value={tag} sub={reason} action={action("network", `${NET_LABEL[net]} 提现`, netKey(net))} />;
   };
   const phaseSummary = `${p.currentPhase} · 第 ${p.currentMonth} 月 · 到账审查窗口 ${p.cooldownDays} 天 · 加强合规审查${p.complianceHoldEnabled ? "开启" : "关闭"}`;
+  // 大额门槛是后端合规规则下发的（complianceReviewThresholdUsdt）；旧接口没有时两网规则写待核实，不猜 1,000。
+  const threshold = p.complianceReviewThresholdUsdt == null ? null : `${p.complianceReviewThresholdUsdt.toLocaleString("en-US", { maximumFractionDigits: 6 })} USDT`;
+  const evmRule = threshold === null ? "待核实"
+    : !p.complianceHoldEnabled ? "按小额免审和风控审核，不额外等待"
+      : p.cooldownDays > 0 ? `全部人工复核，超过 ${threshold} 等 ${p.cooldownDays} 天` : "全部人工复核，不额外等待";
+  const trc20Rule = p.cooldownDays > 0 ? `每笔等 ${p.cooldownDays} 天，再按小额免审和风控审核` : "不额外等待，按小额免审和风控审核";
 
   const drawerIcon: Record<Group, LucideIcon> = { limits: Gauge, network: Network, fee: Network, nex: Network };
   const fieldProps = (key: NumKey) => ({
@@ -1189,6 +1195,11 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
                   <ConfigRow name={H.cooldownDays.label} what={H.cooldownDays.what} when={H.cooldownDays.when} where={H.cooldownDays.where} note={H.cooldownDays.note} value={`${p.cooldownDays} 天`} />
                   <ConfigRow name={H.complianceHoldEnabled.label} what={H.complianceHoldEnabled.what} when={H.complianceHoldEnabled.when} where={H.complianceHoldEnabled.where} note={H.complianceHoldEnabled.note}
                     value={<StatusTag tone={p.complianceHoldEnabled ? "progress" : "neutral"} icon={p.complianceHoldEnabled ? undefined : CircleMinus}>{p.complianceHoldEnabled ? "开启" : "关闭"}</StatusTag>} />
+                  <ConfigRow name={H.complianceReviewThresholdUsdt.label} what={H.complianceReviewThresholdUsdt.what} when={H.complianceReviewThresholdUsdt.when} note={threshold === null ? `现在读不到，请刷新或到运营阶段设置核对。${H.complianceReviewThresholdUsdt.note}` : H.complianceReviewThresholdUsdt.note}
+                    value={threshold ?? "待核实"} />
+                  <ConfigRow name={`BEP20、ERC20 ${H.networkRules.label}`} explainLabel="BEP20、ERC20 现在怎么审" what={H.networkRules.what} when={H.networkRules.when} note={H.networkRules.note} value={evmRule} />
+                  <ConfigRow name={`TRC20 ${H.networkRules.label}`} explainLabel="TRC20 现在怎么审" what={H.networkRules.what} when={H.networkRules.when}
+                    note={`不受加强合规审查影响，不超过小额免审线也要等完窗口。${H.networkRules.note}`} value={trc20Rule} />
                 </ConfigList>
               </Fold>
             </div>
