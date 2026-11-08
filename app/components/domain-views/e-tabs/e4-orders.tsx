@@ -308,9 +308,9 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const refundReady = canRefundE4 && refundableState && e4Detail?.refundAllowed === true && !pendingApproval;
   // 三个数缺一个就算不出能不能退，和资金不足是两回事，阻断相同（后端 refundCoverageBlocked）。
   const coverageKnown = e4Detail?.coverageCurrent != null && e4Detail.coverageProjected != null && e4Detail.coverageRedline != null;
-  // 覆盖率一位小数，红线是配置值，按原值写（TX-23）。
+  // 覆盖率和红线都写一位小数，和确认框的兑付覆盖率一行同一个写法。
   const coverageText = coverageKnown
-    ? `当前 ${fmtPct(e4Detail.coverageCurrent!)} → 执行后 ${fmtPct(e4Detail.coverageProjected!)} · 红线 ${e4Detail.coverageRedline}%`
+    ? `当前 ${fmtPct(e4Detail.coverageCurrent!)} → 执行后 ${fmtPct(e4Detail.coverageProjected!)} · 红线 ${fmtPct(e4Detail.coverageRedline!)}`
     : "暂无数据";
   const refundBlockText = coverageKnown ? "平台资金低于安全线，暂不能退款" : "资金覆盖率暂时读不到，暂不能退款";
 
@@ -408,7 +408,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
               {orderFacts(<Fact k="退款金额" lead tone="role-1" unit="USDT">{orderAmount(o.amt)}</Fact>, <>
                 {channel && <Fact k="退款去向">{REFUND_CHANNEL_LABELS[channel] ?? channel}</Fact>}
                 {/* 退款入口只在读到覆盖率时开。 */}
-                <Fact k="覆盖率"><Change from={fmtPct(e4Detail.coverageCurrent!)} to={fmtPct(e4Detail.coverageProjected!)} /><span className="rd-fact-unit">红线 {e4Detail.coverageRedline}%</span><Explain label="覆盖率什么时候检查" content="批准执行时后端再查一次，当前或执行后低于红线就不退款。" /></Fact>
+                <Fact k="兑付覆盖率"><Change from={fmtPct(e4Detail.coverageCurrent!)} to={fmtPct(e4Detail.coverageProjected!)} /><span className="rd-fact-unit">红线 {fmtPct(e4Detail.coverageRedline!)}</span><Explain label="覆盖率什么时候检查" content="批准执行时后端再查一次，当前或执行后低于红线就不退款。" /></Fact>
                 <Fact k="购买设备">{refundDeviceLine}<Explain label="退款后设备和收益怎么处理" content={refundDeviceDetail} /></Fact>
                 {e4Detail.orderType === "TRIAL_CONVERT" && <Fact k="试用奖励">这单发给购买者的试用奖励可能追回，金额以执行结果为准<Explain label="试用奖励追回规则" content="按整期结算转购发出的试用奖励，退款后最多收回未花掉的部分；未追回部分转人工核查。" /></Fact>}
               </>, true)}
