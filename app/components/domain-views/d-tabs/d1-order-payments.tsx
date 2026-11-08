@@ -127,7 +127,9 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
   const valid = !!policy?.constraints && changedChannels.length > 0 && changedChannels.every(row => validPurchaseChannel(row, policy.constraints));
   const changed = changedChannels.length > 0;
   const canEdit = allowed("finance_d1_fx_manage");
-  const unconfigured = policy?.channels.filter(row => !row.configured).length ?? 0;
+  // 旧响应可能少返回 TRC20 渠道：少了的也算未配置，用户付款时同样看不到（test 5e5a5168）。
+  const missingMethods = policy ? purchasePaymentMethods.filter(method => !policy.channels.some(row => row.paymentMethod === method)) : [];
+  const unconfigured = (policy?.channels.filter(row => !row.configured).length ?? 0) + missingMethods.length;
   useEffect(() => { onUnconfigured(unconfigured); }, [onUnconfigured, unconfigured]);
   const activity = useMemo(() => [
     ...(changed ? [`付款手续费有 ${changedChannels.length} 种付款方式没保存`] : []),
@@ -210,7 +212,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
   const saveBlock = !canEdit ? "只有超级管理员能改" : policyLoading ? "正在读取最新数据" : busy ? "正在提交" : policyPending ? "上次保存结果未确认，先在本页上方核对"
     : !policy?.constraints ? "暂时拿不到可填范围，只能查看" : !changed ? "还没有修改" : !valid ? "有填错的项，按框下的提示改" : undefined;
   const feeSummary = policyLoading ? "正在读取" : policyError ? "读取失败" : policy
-    ? `${policy.channels.length} 种付款方式${unconfigured ? `，${unconfigured} 种未配置 · 用户付款时看不到` : "，都已配置"}${changed ? "，有修改没保存" : ""}` : "—";
+    ? `${policy.channels.length + missingMethods.length} 种付款方式${unconfigured ? `，${unconfigured} 种未配置 · 用户付款时看不到` : "，都已配置"}${changed ? "，有修改没保存" : ""}` : "—";
   const feeFoldOpen = feeOpen ?? (unconfigured > 0 || changed || !!policyError);
   const doRefreshPolicy = () => { setRefreshAsk(false); void loadPolicy(); };
 
@@ -295,9 +297,9 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
                   })}
                 </tr>;
               })}
-              {purchasePaymentMethods.filter(method => !policy.channels.some(row => row.paymentMethod === method)).map(method => <tr key={method}>
+              {missingMethods.map(method => <tr key={method}>
                 <Td><Cell main={methodText[method]} sub={<StatusTag tone="warn">未配置</StatusTag>} /></Td>
-                <Td colSpan={FEE_FIELDS.length}><Cell main="该网络付款费率尚未配置，请核对后端部署后刷新；当前不能修改或用于付款。" /></Td>
+                <Td colSpan={FEE_FIELDS.length}><Cell full main="后端没返回这个渠道，不能修改" sub="用户付款时看不到；核对部署后刷新" /></Td>
               </tr>)}</tbody>
             </Table>
             <div className="rd-col-foot">
@@ -402,7 +404,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, reloadTick, pending, nav, o
           ...(r.paymentMethod === "HDPAY_BANK" ? [
             { key: "fx", label: "锁定汇率", value: r.fxRateVndPerUsdt ? `1 USDT = ${vnd(r.fxRateVndPerUsdt)} ₫` : "尚未提供" },
             { key: "vnd", label: "应付越南盾", value: r.amountVnd ? `${vnd(r.amountVnd)} ₫` : "尚未提供" },
-          ] : r.paymentMethod === "CREGIS_USDT_TRC20" ? [{ key: "gas", label: "外部链上费用", value: "TRON 钱包可能另收 TRX 或消耗能量、带宽，这些外部链上费用不算在用户实付金额内。" }]
+          ] : r.paymentMethod === "CREGIS_USDT_TRC20" ? [{ key: "gas", label: "外部链上费用", value: "用户在钱包里另付的 TRX、能量和带宽不算在内。" }]
             : [{ key: "gas", label: "矿工费", value: `用户在自己钱包里另付的 ${r.paymentMethod === "CREGIS_USDT_ERC20" ? "ETH" : "BNB"} 矿工费不算在内。` }]),
         ]} />
       </Fold>
