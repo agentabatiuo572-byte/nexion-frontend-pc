@@ -96,7 +96,7 @@ export const D5_PARAM_HELP = {
     label: "加强合规审查",
     what: "开着时 BEP20、ERC20 提现都进人工审核",
     when: PHASE,
-    where: "App 提现页「提现安全确认中」提示",
+    where: "App 提现页「提现合规复核」提示",
     note: "开着时这两个网络的提现不走小额自动过审；超过 1,000 USDT 的还要等到账审查窗口结束",
   },
 } satisfies Record<string, D5ParamHelp>;
