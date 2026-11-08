@@ -11,7 +11,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle2, CircleHelp, Coins, Download, Lock, RefreshCw, ShieldAlert, ShieldCheck, Snowflake, Users, type LucideIcon } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import {
-  Button, Cell, ColumnPicker, Decision, Explain, Fact, Facts, Field, FilterBar, FilterField, InlineRetry, Input, Modal, Notice, PageHeader,
+  Button, Cell, ColumnPicker, Decision, Explain, Fact, Facts, Field, FilterBar, FilterField, InlineRetry, Input, KeepText, Modal, Notice, PageHeader,
   Pager, Panel, ReleaseBody, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr,
   useTableColumns, type StateTone,
 } from "@/app/components/rd";
@@ -717,12 +717,12 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
 
     {pending && (
       <Notice tone="warn" title="导出用户名单 · 结果未确认">
-        {businessStamp(pending.createdAt)}（{businessZone().label}）发起，可能已生成文件并记录导出，确认前不能发起新导出。
-        {/* 链接放进句子里只写一遍。 */}
-        {!canExport ? <>你的账号现在不能导出名单，请到{auditLink}核对。</>
-          : pendingExpired ? <>已超过 24 小时，不能再重试，请到{auditLink}核对。</>
-            : retryBlocked ? <>你的账号现在没有风险读权，不能按原操作重试，请到{auditLink}核对。</>
-              : <>点右上角<span className="rd-keep">「继续原导出」</span>按原操作重试，或到{auditLink}核对。</>}
+        {/* 按逗号、句号分段整段换行，不在「24 小 / 时」「原操 / 作」这种词中间断开；链接放进句子里只写一遍。 */}
+        <KeepText text={`${businessStamp(pending.createdAt)}（${businessZone().label}）发起，可能已生成文件并记录导出，确认前不能发起新导出。`} />
+        {!canExport ? <><span className="rd-keep">你的账号现在不能导出名单，</span><span className="rd-keep">请到{auditLink}核对。</span></>
+          : pendingExpired ? <><KeepText text="已超过 24 小时，不能再重试，" /><span className="rd-keep">请到{auditLink}核对。</span></>
+            : retryBlocked ? <><KeepText text="你的账号现在没有风险读权，不能按原操作重试，" /><span className="rd-keep">请到{auditLink}核对。</span></>
+              : <><span className="rd-keep">点右上角「继续原导出」按原操作重试，</span><span className="rd-keep">或到{auditLink}核对。</span></>}
         <Explain label="技术信息" content={`命令号 ${pending.commandKey} ｜ 操作者 ${pending.operator} ｜ 理由 ${pending.reason}`} />
       </Notice>
     )}
@@ -930,9 +930,9 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
               onClick={() => void retryExport()}>按原操作重试</Button>} />
         )}>
         <div className="rd-stack">
-          {dialogNotice ? <Notice tone={dialogNotice.tone} title={dialogNotice.title}>{dialogNotice.text}</Notice>
+          {dialogNotice ? <Notice tone={dialogNotice.tone} title={dialogNotice.title}><KeepText text={dialogNotice.text} /></Notice>
             // 不能重试的原因写在框里，不只藏在灰按钮的悬停里（建议 3）。
-            : dialog.mode === "pending" && retryBlocked && <Notice tone="warn" title="不能再重试">{retryBlocked}。</Notice>}
+            : dialog.mode === "pending" && retryBlocked && <Notice tone="warn" title="不能再重试"><KeepText text={`${retryBlocked}。`} /></Notice>}
           <Facts>
             {dialog.mode === "new" && dialog.total > EXPORT_MAX_ROWS ? <>
               {/* 最大的数写这次实际导出多少（VS-102），符合条件的人数放下一行。 */}
