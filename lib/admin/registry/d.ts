@@ -38,7 +38,7 @@ export const DOMAIN_D: ModuleEntry[] = [
   },
   {
     path: "/finance/payout-vnd",
-    summary: "设置越南盾银行提现的参数，汇率沿用「汇率设置」。银行提现通过 HDPay 审核和付款。",
+    summary: "设置银行卡提现的报价、手续费和单笔限额。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

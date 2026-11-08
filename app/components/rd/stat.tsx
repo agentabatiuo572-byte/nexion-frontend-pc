@@ -9,6 +9,7 @@
  *   <Stat tone="role-4" icon={Gauge} label="每日提现次数上限" value="2" unit="次" />
  * </StatBand>
  *
+ * 只有两三个数时 StatBand 传 fit：每格从内容宽往外长，填满一行，放不下才换行；不拉成等宽的半格让数字孤零零留在左边。
  * 读取失败传 value="—"，不写 0（CP-42）。explain 是口径说明，收进名称旁的提示图标（DP-06、DP-36）；sub 只放数据（昨天全天多少、涉及几个账户），说明不写在 sub 里。
  * 深色主题数字用角色色字，浅色主题数字用正文色、身份靠实色图标底（VS-14），这条写在 rd.css 里。
  * 普通数字 24px，lead 40px（VS-50）。名称、数字、单位、第二行分四层，页面不改字号；长金额放不下时 rd.css 换行，不缩字。
@@ -29,8 +30,9 @@ import type { RoleTone, StateTone } from "./tone";
 /** 0、0.00、$0、0%、「—」：不是要看的数。 */
 const ZERO = /^[-–—]$|^\$?0(?:[.,]0+)?\s*%?$/;
 
-export function StatBand({ children, label }: { children: ReactNode; label?: string }) {
-  return <div className="rd-stats" role="group" aria-label={label}>{children}</div>;
+/** fit：只有两三个数时传，每格从内容宽往外长填满一行，不拉成等宽的半格（D6）。 */
+export function StatBand({ children, label, fit }: { children: ReactNode; label?: string; fit?: boolean }) {
+  return <div className="rd-stats" role="group" aria-label={label} data-fit={fit ? "" : undefined}>{children}</div>;
 }
 
 export function Stat({ label, value, unit, sub, tone, icon, iconTone, lead, explain, href, onOpen, openLabel }: {
@@ -58,7 +60,7 @@ export function Stat({ label, value, unit, sub, tone, icon, iconTone, lead, expl
       <div>
         <div className="rd-stat-label">
           {label}
-          {explain && <Explain label={typeof label === "string" ? `${label}的口径` : "数字口径"} content={explain} />}
+          {explain && <Explain label={typeof label === "string" ? `${label}的口径` : "数字口径"} content={explain} side="top" align="start" />}
         </div>
         <div className="rd-stat-value" data-tone={tone} data-zero={zero ? "" : undefined} data-words={words ? "" : undefined}>{value}{unit && <span className="rd-stat-unit">{unit}</span>}</div>
         {sub && <div className="rd-stat-sub">{sub}</div>}

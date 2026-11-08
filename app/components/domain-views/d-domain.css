@@ -15,91 +15,11 @@
   border: 1px solid var(--success-border); background: var(--success-soft); color: var(--success);
   font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; font-family: inherit; }
 @media (hover: hover) and (pointer: fine) { .ddom .f-cta:hover { background: var(--success); color: #0A0A0A; } }
-.ddom .cregis-status .l-b { display: grid; gap: 16px; }
-.ddom .cregis-intro { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--ink-3); }
-.ddom .cregis-intro strong { color: var(--ink-2); margin-right: 12px; }
-.ddom .cregis-overview { margin: 0; gap: 10px; }
-.ddom .cregis-overview .f-stat { background: var(--surface-2); min-width: 0; }
-.ddom .cregis-overview .v { font-size: 19px; }
-.ddom .cregis-overview .v small { font-size: 11px; font-weight: 500; }
-.ddom .cregis-overview .v.cregis-off { color: var(--warning); }
-.ddom .cregis-overview .sub { overflow-wrap: anywhere; }
-.ddom .cregis-recon { display: flex; align-items: center; gap: 12px 24px; flex-wrap: wrap; padding: 10px 14px; background: var(--surface-2); border-radius: 8px; font-size: 12px; color: var(--ink-3); }
-.ddom .cregis-recon strong { color: var(--ink-2); }
-.ddom .cregis-recon details { flex: 1 1 220px; }
-.ddom .cregis-recon summary { cursor: pointer; color: var(--ink-2); }
-.ddom .cregis-recon .s, .ddom .cregis-queue .s { margin-top: 7px; line-height: 1.5; overflow-wrap: anywhere; }
-.ddom .cregis-operations { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.ddom .cregis-panel { min-width: 0; padding: 16px; border-radius: 9px; background: var(--surface-2); font-size: 12px; color: var(--ink-3); }
-.ddom .cregis-panel-title, .ddom .cregis-section-title { font-size: 13px; font-weight: 600; color: var(--ink); }
-.ddom .cregis-panel p { line-height: 1.5; margin: 6px 0 14px; }
-.ddom .cregis-switch-form, .ddom .cregis-review-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-.ddom .cregis-switch-form label { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; white-space: nowrap; }
-.ddom .cregis-review-form input { min-width: 0; max-width: 145px; padding: 5px 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--ink); }
-.ddom .cregis-case { margin-top: 10px; padding: 10px; border-radius: 7px; background: var(--surface-3); line-height: 1.55; overflow-wrap: anywhere; }
-.ddom .cregis-case .l-btn { margin: 4px 4px 0 0; }
-.ddom .cregis-case-count { margin-top: 14px; }
-.ddom .cregis-exceptions { display: grid; gap: 10px; }
-.ddom .cregis-section-title span { margin-left: 6px; font-size: 11px; font-weight: 500; color: var(--ink-4); }
-.ddom .cregis-history { display: grid; gap: 10px; min-width: 0; }
-.ddom .cregis-history .cregis-section-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.ddom .cregis-history > .sub { font-size: 12px; color: var(--ink-4); line-height: 1.5; }
-.ddom .cregis-history-scroll { overflow-x: auto; border-radius: 8px; background: var(--surface-2); }
-.ddom .cregis-history-scroll .l-tbl { min-width: 1100px; }
-.ddom .cregis-history-scroll .l-tbl th { background: var(--surface-3); }
-.ddom .cregis-history-scroll .l-tbl td { vertical-align: top; }
-.ddom .cregis-chain-cell { max-width: 230px; overflow-wrap: anywhere; font-size: 11px; }
-.ddom .cregis-chain-cell span { display: block; color: var(--ink-4); margin-top: 4px; }
-.ddom .cregis-history-empty { text-align: center; color: var(--ink-4); padding: 24px 12px; }
-.ddom .cregis-queue-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.ddom .cregis-queue { min-width: 0; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); color: var(--ink-3); font-size: 12px; }
-.ddom .cregis-queue.active { background: var(--warning-soft); }
-.ddom .cregis-queue-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-.ddom .cregis-queue-head strong { color: var(--ink); font-size: 15px; font-variant-numeric: tabular-nums; }
-.ddom .cregis-workspace .cregis-navigation { display: flex; gap: 4px; flex-wrap: wrap; padding: 5px; background: var(--surface-2); border-radius: 10px; }
-.ddom .cregis-navigation button { padding: 9px 16px; border: 0; border-radius: 7px; font: inherit; font-size: 12px; font-weight: 600; color: var(--ink-3); background: transparent; cursor: pointer; }
-.ddom .cregis-navigation button[aria-pressed="true"] { color: var(--success); background: var(--success-soft); }
-.ddom .cregis-navigation button:focus-visible { outline: 2px solid var(--success); outline-offset: 2px; }
-.ddom .cregis-content { display: grid; gap: 20px; min-width: 0; }
-.ddom .cregis-content[hidden] { display: none; }
-.ddom .cregis-content > .sub { font-size: 12px; color: var(--ink-3); line-height: 1.7; margin: 0; }
-.ddom .cregis-settings-card { padding: 20px; border-radius: var(--r-card); background: var(--surface-2); font-size: 12px; line-height: 1.65; min-width: 0; }
-.ddom .cregis-workspace .cregis-section-title { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 14px; }
-.ddom .cregis-workspace .l-btn { justify-self: start; width: auto; flex-shrink: 0; }
-.ddom .cregis-workspace :is(input:not([type="checkbox"]),select,textarea) { box-sizing: border-box; min-width: 0; max-width: 100%; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; padding: 9px 11px; line-height: 1.5; }
-.ddom .cregis-workspace :is(input,select,textarea):focus-visible { outline: 2px solid var(--success); outline-offset: 2px; }
-.ddom .cregis-workspace :is(input,select,textarea):disabled { opacity: .55; cursor: not-allowed; }
-.ddom .cregis-workspace input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--success); flex-shrink: 0; }
-.ddom .cregis-form-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; margin: 10px 0; padding: 16px; border: 1px solid var(--border); border-radius: 10px; }
-.ddom .cregis-form-grid legend { padding: 0 6px; color: var(--ink-2); font-size: 12px; font-weight: 600; }
-.ddom .cregis-form-grid > label { display: flex; flex-direction: column; gap: 7px; color: var(--ink-3); font-size: 12px; min-width: 0; }
-.ddom .cregis-form-grid :is(input,select) { width: 100%; }
-.ddom .cregis-check { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-2); }
-.ddom .cregis-policy-current { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; position: relative; }
-.ddom .cregis-policy-current > div { min-width: 0; padding: 14px 16px; background: var(--surface); border-radius: 8px; }
-.ddom .cregis-policy-current span { color: var(--ink-3); font-size: 12px; }
-.ddom .cregis-policy-current strong { display: block; color: var(--ink); font-size: 20px; font-weight: 600; margin-top: 7px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.ddom .cregis-policy-current small { font-size: 11px; color: var(--ink-3); font-weight: 500; }
-.ddom .cregis-policy-current .cregis-version { grid-column: 1 / -1; }
-.ddom .cregis-form-actions { display: flex; flex-wrap: wrap; gap: 10px; grid-column: 1 / -1; }
-.ddom .cregis-preparation-form { grid-template-columns: repeat(2,minmax(0,1fr)); }
-.ddom .cregis-address-facts { display: grid; grid-template-columns: 160px minmax(0,1fr); gap: 8px 16px; margin: 0; padding: 14px; background: var(--surface); border-radius: 8px; }
-.ddom .cregis-address-facts dt { color: var(--ink-3); }
-.ddom .cregis-address-facts dd { margin: 0; color: var(--ink-2); font-family: var(--mono); overflow-wrap: anywhere; }
-.ddom .cregis-settings-card > :is(p,ol) { margin: 0; color: var(--ink-3); font-size: 12px; line-height: 1.7; }
-.ddom .cregis-settings-card ol { padding-left: 20px; }
-.ddom .cregis-settings-card h4 { font-size: 13px; font-weight: 600; margin: 8px 0 0; }
-.ddom .cregis-danger-zone { margin-top: 20px; padding: 16px; border-radius: 8px; background: var(--danger-soft); color: var(--danger); }
-.ddom .cregis-danger-zone .l-btn { border-color: var(--danger); color: var(--danger); background: transparent; }
-@container ddom (max-width: 760px) { .ddom .cregis-form-grid, .ddom .cregis-policy-current { grid-template-columns: 1fr; } .ddom .cregis-address-facts { grid-template-columns: 1fr; } .ddom .cregis-settings-card { padding: 14px; } }
-@container ddom (max-width: 900px) { .ddom .cregis-operations { grid-template-columns: 1fr; } .ddom .cregis-queue-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@container ddom (max-width: 560px) { .ddom .cregis-queue-grid, .ddom .cregis-overview { grid-template-columns: 1fr; } }
 
 .ddom .dcode { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3);
   background: var(--surface-3); border-radius: 5px; padding: 2px 7px; white-space: nowrap; }
 .ddom .dcode.electric { background: var(--success-soft); color: var(--success); }
 .ddom .chip.sel { background: var(--success); color: #0A0A0A; font-weight: 600; }
-/* 不上提：要排在 .cregis-danger-zone .l-btn 之后，悬停才盖得住它的文字色和底色。 */
 @media (hover: hover) and (pointer: fine) { .ddom .l-btn:hover { background: var(--surface-3); color: var(--ink); } }
 .ddom .l-btn:disabled { cursor: not-allowed; opacity: .5; filter: grayscale(.25); }
 @media (hover: hover) and (pointer: fine) { .ddom .l-btn:disabled:hover { background: var(--surface-2); color: var(--ink-2); } }
@@ -226,21 +146,11 @@
 /* 改完不用往下找保存：操作条贴住视口底部（DT-11）。 */
 .d3-savebar { position: sticky; bottom: calc(-1 * var(--admin-gutter)); z-index: 2; margin-bottom: calc(-1 * var(--admin-gutter)); padding-block: var(--rd-space-3) calc(var(--rd-space-3) + var(--admin-gutter)); background: var(--rd-bg); }
 
-/* D1: network-specific business controls, shared by embedded and standalone panels. */
-.ddom .cregis-network-controls { font-size: 14px; line-height: 1.6; }
-.ddom .cregis-network-controls .cregis-panel-title { margin: 0; font-size: 16px; line-height: 24px; }
-.ddom .cregis-network-controls .sub { font-size: 13px; line-height: 18px; margin-top: 4px; }
-.ddom .cregis-network-grid { overflow-x: auto; margin: 16px 0; }
-.ddom .cregis-network-row { display: grid; grid-template-columns: minmax(220px,1.3fr) minmax(120px,.7fr) minmax(260px,1.5fr) minmax(150px,1fr); gap: 20px; align-items: center; min-width: 900px; padding: 16px 12px; }
-.ddom .cregis-network-head { color: var(--ink-3); font-size: 13px; background: var(--surface-3); border-radius: 8px; padding-top: 10px; padding-bottom: 10px; }
-.ddom .cregis-network-row label { display: inline-flex; gap: 8px; align-items: center; min-height: 40px; }
-.ddom .cregis-network-row input { accent-color: var(--success); width: 18px; height: 18px; }
-.ddom .cregis-network-row input:focus-visible { outline: 2px solid var(--success); outline-offset: 3px; }
-.ddom .cregis-network-row strong { color: var(--ink); font-size: 16px; font-weight: 600; }
-.ddom .cregis-network-availability { color: var(--ink); }
-.ddom .cregis-network-blocked { color: var(--warning); }
+.ddom .d5-network-row .d5-network-effective { flex: 1; min-width: 0; margin-top: 0; }
+.ddom .d5-network-row .blocked { color: var(--warning); }
+.ddom .l-inp:disabled { color: var(--ink-4); cursor: not-allowed; }
 
-.ddom .cregis-global-payout { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; padding: 16px 0; color: var(--ink-3); }
-.ddom .cregis-global-payout label { display: inline-flex; gap: 8px; align-items: center; color: var(--ink); }
-.ddom .cregis-config-link { display: inline-block; margin-top: 8px; color: var(--success); font-size: 14px; }
-.ddom .cregis-config-link:focus-visible { outline: 2px solid var(--success); outline-offset: 3px; }
+/* D1 付款手续费表：付款方式一列、四个数值列等宽，1024 下输入框里放得下「未配置」（视觉复查必须改 13）。 */
+.ddom .d1-fee-table { table-layout: fixed; }
+.ddom .d1-fee-table :is(th, td):first-child { width: 22%; }
+.ddom .d1-fee-table .rd-number { max-width: none; }

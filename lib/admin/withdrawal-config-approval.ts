@@ -90,6 +90,7 @@ export function configApprovalOriginalInput(sourceDomain: ApprovalSource, input:
         || typeof original[0]?.key !== "string" || typeof original[0]?.value !== "string"
       : sourceDomain === "G4" ? original[0]?.paramKey !== "dividend" || typeof original[0]?.value !== "string"
         || typeof original[0]?.decisionRef !== "string" || !/^[0-9a-f]{64}$/.test(original[0]?.expectedRevision)
+      : sourceDomain === "D7" ? !Number.isSafeInteger(original[0]?.expectedVersion)
       : typeof original[0]?.expectedRevision !== "string")) {
     throw new Error("原审批命令不完整，请到操作记录核对。");
   }
@@ -127,9 +128,12 @@ export async function submitConfigApproval<T>(
   let ticket;
   let canClearOnRejection = !previous;
   try {
-    if (previous && (domain === "B" || domain === "F" || sourceDomain === "E2" || sourceDomain === "G4" || sourceDomain === "H8" || session.authorities.includes("platform_a2_read"))) {
+    // 发起人也能按命令号查自己发起的单（后端 A2AccessPolicy.requireProposalReader、WithdrawalConfigApproval.canReadOwnProposal）。
+    if (previous && (domain === "B" || domain === "F" || sourceDomain === "E2" || sourceDomain === "G4" || sourceDomain === "H8"
+      || session.authorities.includes("platform_a2_read") || session.authorities.includes("platform_a2_proposal_create"))) {
       try {
-        ticket = await fetchA2ProposalByKey(key);
+        // 只有 A2_PROPOSAL_NOT_FOUND 才算没有原单；OPERATION_RESULT_UNKNOWN 这类 404 说明不了，按查询失败保留原命令。
+        ticket = await fetchA2ProposalByKey(key, true);
       } catch {
         throw new A2OutcomeUncertainError("暂时无法查询原审批单。", key);
       }

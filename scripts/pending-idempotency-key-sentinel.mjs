@@ -94,8 +94,12 @@ const MIGRATED = [
   "app/components/domain-views/d-tabs/d2-withdrawals.tsx",
   // D5：收紧结果未知时保留原命令号和原内容，刷新后按原操作重试。
   "app/components/domain-views/d-tabs/d5-params.tsx",
+  // D7 direct saves retain the immutable original values, version, reason and key until success or an explicit release.
+  "app/components/domain-views/d-tabs/d7-payout-vnd.tsx",
   "app/components/domain-views/l-tabs/l1-kpi.tsx",
   "app/components/domain-views/d-tabs/d3-treasury.tsx",
+  // D6 汇率整组写入：结果未知时保留原值、版本号、理由和命令号，刷新后只能原样重试。
+  "app/components/domain-views/d-tabs/d6-fx.tsx",
   // 资金储备和旧「可用资金与应付款」共用的注入、导出命令表，只建一份。
   "lib/admin/treasury-commands.ts",
   "app/components/domain-views/f-view.tsx",

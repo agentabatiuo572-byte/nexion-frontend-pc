@@ -8,7 +8,7 @@
  * 页内页签切不同内容：
  *   <PageTabs label="资金储备内容" value={tab} onChange={setTab}
  *     items={[{ value: "overview", label: "资金概况" }, { value: "due", label: "应付款与到期", count: 3 }]} />
- *   没有读权限的页签不要传进来；count 是别的页签里的待处理数（PG-52）。
+ *   没有读权限的页签不要传进来；count 是别的页签里的待处理数（PG-52），读不到传「—」。
  *   内容面板用 useTabIds 接上，读屏才知道这块内容属于哪个页签：
  *   const ids = useTabIds();
  *   <PageTabs ids={ids} … />
@@ -32,7 +32,8 @@ import type { StateTone } from "./tone";
 export interface PageTabItem<T extends string> {
   value: T;
   label: ReactNode;
-  count?: number;
+  /** 读不到写「—」，数到上限写「50+」这类文字；0 和「—」弱化。 */
+  count?: number | string;
   disabled?: boolean;
 }
 
@@ -67,8 +68,8 @@ export function PageTabs<T extends string>({ label, value, items, onChange, ids 
     >
       {(item) => {
         const tab = byValue.get(item);
-        // 读到 0 也写 0，弱文字色：和读取中、读取失败（不传 count）分得开（DT-23、VS-11）。
-        return <>{tab?.label}{tab?.count !== undefined ? <span className="rd-tab-count" data-zero={tab.count === 0 ? "" : undefined}>{tab.count}</span> : null}</>;
+        // 读到 0 也写 0，弱文字色；读不到写「—」，也弱化：和读取中（不传 count）分得开（DT-23、VS-11）。
+        return <>{tab?.label}{tab?.count !== undefined ? <span className="rd-tab-count" data-zero={tab.count === 0 || tab.count === "—" ? "" : undefined}>{tab.count}</span> : null}</>;
       }}
     </TabGroup>
   );
