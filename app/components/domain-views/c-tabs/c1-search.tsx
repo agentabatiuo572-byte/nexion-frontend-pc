@@ -807,7 +807,8 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
                 )}
                 {deviceVisible && <Td align="right"><Cell num main={`${textOf(row.deviceCount)} / ${textOf(row.activeDeviceCount)}`} /></Td>}
                 {canOpenDetail && (
-                  <Td sticky="end">
+                  // 列少时操作列只占按钮宽，按钮不和左边的列隔一大段（DT-04）。
+                  <Td sticky="end" data-fit="">
                     <Button size="sm" variant="ghost" aria-label={`查看用户详情 ${userNo || "未生成"}`} onClick={() => openProfile(row)}>查看资料</Button>
                   </Td>
                 )}

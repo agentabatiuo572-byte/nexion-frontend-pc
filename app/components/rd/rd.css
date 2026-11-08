@@ -367,6 +367,7 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 /* 占满剩下的列宽，放不下才省略（Ant Design Table ellipsis 按列宽）：理由这类长文本列用 Td grow。 */
 .rd-table td[data-grow] { width: 100%; max-width: 0; }
 .rd-table td[data-grow] > .rd-cell { max-width: none; }
+.rd-table td[data-fit] { width: 1%; }  /* 列少、表格比内容宽时操作列只占按钮宽，多出的宽度按内容分给前面各列，操作列左边不空一大段（DT-04） */
 .rd-table td[data-align="right"] > .rd-cell { margin-left: auto; }  /* 右对齐列里的格子贴右边，表头和数值才对得齐 */
 .rd-table td[data-align="right"] .rd-row-actions > .rd-iconbtn:last-child { margin-right: -8px; }  /* 三个点贴到和表头一样的右边，图标按钮自带的留白不算 */
 .rd-table-scroll:has(td[data-align="right"] .rd-row-actions > .rd-iconbtn:last-child):not(.rd-panel[data-flush] > *) { margin-right: -8px; padding-right: 8px; }  /* 不贴边的表格末列没有内边距，这 8px 要借面板的留白，不然多出一条横向滚动条 */
