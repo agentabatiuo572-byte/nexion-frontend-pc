@@ -55,13 +55,12 @@ export function PoolRouteModal({ item, groups, onClose, onDone }: { item: Suppor
       .catch(cause => { if (!controller.signal.aborted) setError(errorText(cause)); });
     return () => controller.abort();
   }, [item.routeGroupId, targetId, pending, reload, requiresFreshPool]);
-  const canSave = !pending && !requiresFreshPool && !busy && !error && Boolean(versions) && item.routeState !== "UNKNOWN" && (targetId || null) !== item.routeGroupId && reason.trim().length >= 8 && reason.trim().length <= 200;
-  async function verifyRouteFacts(record: RoutePending, status: "SUCCEEDED" | "FAILED") {
+  const reasonLength = Array.from(reason.trim()).length;
+  const canSave = !pending && !requiresFreshPool && !busy && !error && Boolean(versions) && item.routeState !== "UNKNOWN" && (targetId || null) !== item.routeGroupId && reasonLength >= 8 && reasonLength <= 200;
+  async function verifyRouteFacts(record: RoutePending) {
     const current = await readSupportPoolCustomer(record.item.customerId);
     if (current.routeGroupId) await supportGroupClient.detail(current.routeGroupId);
-    const matches = status === "SUCCEEDED"
-      ? current.routeState === "AVAILABLE" && (record.item.routeState === "ABSENT" || current.routeId === record.item.routeId) && current.routeGroupId === record.payload.targetGroupId && current.routeVersion !== null && current.routeVersion > record.payload.expectedRouteVersion
-      : current.routeState === record.item.routeState && current.routeId === record.item.routeId && current.routeGroupId === record.item.routeGroupId && current.routeVersion === record.item.routeVersion;
+    const matches = current.routeState === "AVAILABLE" && (record.item.routeState === "ABSENT" || current.routeId === record.item.routeId) && current.routeGroupId === record.payload.targetGroupId && current.routeVersion !== null && current.routeVersion > record.payload.expectedRouteVersion;
     if (!matches) throw new Error("SUPPORT_ROUTE_RECOVERY_FACTS_CHANGED");
   }
   async function save() {
@@ -76,7 +75,7 @@ export function PoolRouteModal({ item, groups, onClose, onDone }: { item: Suppor
     try {
       await setSupportPoolRoute(item.customerId, payload, commandKey);
       if (stamp !== actorStamp() || !mounted.current) return;
-      await verifyRouteFacts(record, "SUCCEEDED");
+      await verifyRouteFacts(record);
       if (stamp !== actorStamp() || !mounted.current || record.actorId !== useAdminAuth.getState().session?.adminId) return;
       routeCommands.forget(fingerprint, commandKey); onDone();
     } catch (cause) {
@@ -91,22 +90,22 @@ export function PoolRouteModal({ item, groups, onClose, onDone }: { item: Suppor
       const result = await supportGroupClient.command(pending.commandKey);
       if (stamp !== actorStamp() || !mounted.current) return;
       if (result.status === "SUCCEEDED" || result.status === "FAILED") {
-        await verifyRouteFacts(pending, result.status);
+        if (result.status === "SUCCEEDED") await verifyRouteFacts(pending);
         if (stamp !== actorStamp() || !mounted.current || pending.actorId !== useAdminAuth.getState().session?.adminId) return;
         routeCommands.forget(pending.fingerprint, pending.commandKey);
         if (result.status === "SUCCEEDED") onDone();
-        else { setPending(null); setVersions(null); setRequiresFreshPool(true); setError("原调整已失败，当前资料已核对。请返回客户池重新确认。"); }
+        else { setPending(null); setVersions(null); setRequiresFreshPool(true); setError("原调整已确认失败；请返回客户池读取最新资料后重新确认。"); }
       }
       else setError("原调整仍待确认，请稍后继续查询。");
     } catch (cause) { if (stamp === actorStamp() && mounted.current) setError("暂时无法确认原调整结果，原命令与理由已保留。"); }
     finally { inFlight.current = false; if (mounted.current) setBusy(false); }
   }
   if (pending) return <Modal title="查询未确认的组范围调整" icon="users" busy={busy} onClose={onClose} footer={<><button className="btn btn-sec btn-sm" disabled={busy} onClick={onClose}>返回</button><button className="btn btn-pri btn-sm" disabled>确认调整</button></>}><p>存在尚未核对的调整。查询原命令并读取当前授权资料后，才能结束本次恢复。</p><button className="btn btn-sec btn-sm" disabled={busy} onClick={() => void check()}>查询原调整结果</button>{error && <p role="alert">{error}</p>}</Modal>;
-  if (requiresFreshPool) return <Modal title="返回客户池重新确认" icon="users" onClose={onClose} footer={<><button className="btn btn-sec btn-sm" onClick={onClose}>返回</button><button className="btn btn-pri btn-sm" disabled>确认调整</button></>}><p role="alert">{error}</p></Modal>;
+  if (requiresFreshPool) return <Modal title="返回客户池重新确认" icon="users" onClose={onDone} footer={<><button className="btn btn-sec btn-sm" onClick={onDone}>返回</button><button className="btn btn-pri btn-sm" disabled>确认调整</button></>}><p role="alert">{error}</p></Modal>;
   return <Modal title="调整待绑定客户组范围" icon="users" busy={busy} onClose={onClose} footer={<><button className="btn btn-sec btn-sm" disabled={busy} onClick={onClose}>返回</button><button className="btn btn-pri btn-sm" disabled={!canSave} onClick={() => void save()}>确认调整</button></>}>
     <p>客户 {operatorNicknameText(item.displayName || "") || item.customerNo || item.customerId}；当前范围：{item.routeState === "UNKNOWN" ? "资料未同步" : groups.find(group => group.id === item.routeGroupId)?.name || "未分组"}。调整范围后仍须明确分配给专属客服。</p>
     <label className="field"><span>目标组</span><select aria-label="目标客服组" value={targetId} disabled={busy || Boolean(pending)} onChange={event => setTargetId(event.target.value)}><option value="">未分组</option>{groups.filter(group => group.status === "ENABLED").map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
-    <label className="field"><span>调整理由（8–200 字）</span><textarea value={reason} maxLength={200} disabled={busy || Boolean(pending)} onChange={event => setReason(event.target.value)} /></label>
+    <label className="field"><span>调整理由（8–200 字）</span><textarea value={reason} disabled={busy || Boolean(pending)} onChange={event => setReason(event.target.value)} /></label>
     {pending ? <button className="btn btn-sec btn-sm" disabled={busy} onClick={() => void check()}>查询原调整结果</button> : !versions && !error ? <p role="status">正在加载分组资料…</p> : null}
     {error && <p role="alert" className="m-admin-error">{error}{!pending && !requiresFreshPool && <button className="btn btn-sec btn-sm" disabled={busy} onClick={() => setReload(n => n + 1)}>重读组资料</button>}</p>}
   </Modal>;
@@ -149,10 +148,12 @@ export function M1SupervisorPool({ permission, initialGroupId }: { permission: M
   const [randomCustomers,setRandomCustomers]=useState<SupportBindingPoolItem[]|null>(null);
   const [target, setTarget] = useState<SupportAgentCandidate | null>(null);
   const [assignmentReason, setAssignmentReason] = useState("");
+  const [failedReason, setFailedReason] = useState<string | null>(null);
   const [pending, setPending] = useState<{ key: string; payload: Parameters<typeof supportClient.transfer>[0] } | null>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const assignmentInFlight = useRef(false);
   useEffect(() => {
+    setFailedReason(null);
     const record = poolCommands.list().find((row) => row.actorId === adminId);
     if (!record) { setPending(null); setSelected(new Map()); setTarget(null); return; }
     setGroupId(record.groupId);
@@ -245,8 +246,9 @@ export function M1SupervisorPool({ permission, initialGroupId }: { permission: M
 
   function openFor(item?: SupportBindingPoolItem) {
     if (pending && item) return;
-    if (item) { setSelected(new Map([[item.customerId, item]])); setStaleIds(new Set()); setTarget(null); setAssignmentReason("新客户首次咨询分配"); }
+    if (item) { setSelected(new Map([[item.customerId, item]])); setStaleIds(new Set()); setTarget(null); setAssignmentReason(failedReason ?? "新客户首次咨询分配"); }
     if (!item && selected.size === 0) return;
+    setFailedReason(null);
     setConfirm(true); setError("");
   }
 
@@ -284,12 +286,17 @@ export function M1SupervisorPool({ permission, initialGroupId }: { permission: M
     try {
       const result = await supportClient.command(pending.key);
       if (actor !== actorStamp()) return;
-      if (result.status === "SUCCEEDED" || result.status === "FAILED") {
-        await verifySupportTransfer(pending.payload, result.status, groupId);
+      if (result.status === "FAILED") {
+        poolCommands.forget(`pool-transfer:${pending.payload.customers.map((item) => item.id).sort().join(",")}`, pending.key);
+        setAssignmentReason(pending.payload.reason); setFailedReason(pending.payload.reason);
+        setPool(null); setAgents(null); setSelected(new Map()); setStaleIds(new Set()); setPending(null); setTarget(null); setConfirm(false);
+        setScopeReload(n => n + 1);
+      } else if (result.status === "SUCCEEDED") {
+        await verifySupportTransfer(pending.payload, "SUCCEEDED", groupId);
         const refreshed = await supportClient.bindingPool({ pageNum: page, pageSize: PAGE_SIZE, groupId, keyword: keyword || undefined, reason: reasonFilter || undefined });
         if (actor !== actorStamp()) return;
         poolCommands.forget(`pool-transfer:${pending.payload.customers.map((item) => item.id).sort().join(",")}`, pending.key);
-        setPool(refreshed); setSelected(new Map()); setStaleIds(new Set()); setPending(null); setTarget(null); setConfirm(false); setReload(n => n + 1); setError(result.status === "FAILED" ? "原命令已失败，当前资料已核对，请重新预览。" : "");
+        setPool(refreshed); setSelected(new Map()); setStaleIds(new Set()); setPending(null); setTarget(null); setConfirm(false); setReload(n => n + 1); setError("");
       } else setError("原分配命令仍在处理中，请稍后继续查询。");
     } catch { if (actor === actorStamp()) setError("暂时无法确认原分配结果；所选客户与命令已保留。"); }
     finally { setSaving(false); }
@@ -303,8 +310,9 @@ export function M1SupervisorPool({ permission, initialGroupId }: { permission: M
   return <section className="m-admin-grid" aria-label="待绑定客户池">
     <div className="m-admin-panel">
       <h2>待绑定客户池</h2>
+      {failedReason !== null && <p role="status" className="m-admin-muted">原命令已确认失败，理由已保留；请按最新资料重新选择并预览。</p>}
       {scope.mode === "ALL" && adminId && routeCommands.list().some(row => row.actorId === adminId) && <button className="btn btn-sec btn-sm" onClick={() => setRouteItem(routeCommands.list().find(row => row.actorId === adminId)!.item)}>查询上次组范围调整结果</button>}
-      <label className="field"><span>分配范围</span><select aria-label="选择客服组" value={groupId ?? ""} disabled={Boolean(pending) || saving || Boolean(randomCustomers)} onChange={event => { setGroupId(event.target.value ? Number(event.target.value) : undefined); setPage(1); setAgentPage(1); setPool(null); setAgents(null); setSelected(new Map()); setStaleIds(new Set()); setTarget(null); setAssignmentReason(""); setConfirm(false); }}><option value="">{scope.mode === "ALL" ? "全部授权组及未分组客户" : "全部主管管理组"}</option>{scope.groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+      <label className="field"><span>分配范围</span><select aria-label="选择客服组" value={groupId ?? ""} disabled={Boolean(pending) || saving || Boolean(randomCustomers)} onChange={event => { setGroupId(event.target.value ? Number(event.target.value) : undefined); setPage(1); setAgentPage(1); setPool(null); setAgents(null); setSelected(new Map()); setStaleIds(new Set()); setTarget(null); setAssignmentReason(""); setFailedReason(null); setConfirm(false); }}><option value="">{scope.mode === "ALL" ? "全部授权组及未分组客户" : "全部主管管理组"}</option>{scope.groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
       {adminId&&hasPendingRandomAssignment(adminId)&&<button className="btn btn-sec btn-sm" onClick={()=>setRandomCustomers([])}>查询上次随机分配结果</button>}
       <div className="m-admin-muted">选择明确的客户后分配给一位专属客服。未选客户保持原状。</div>
       <div className="m-admin-toolbar">

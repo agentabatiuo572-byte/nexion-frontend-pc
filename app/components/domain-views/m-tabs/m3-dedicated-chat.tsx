@@ -427,7 +427,9 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   const [holdRead, setHoldRead] = useState<{ customerId: string; hold: SupportSessionHold | null } | null>(null);
   const [holdRetry, setHoldRetry] = useState(0), [holdEnding, setHoldEnding] = useState(false);
   const [holdEndCommand, setHoldEndCommand] = useState<SessionEndRecord | null>(null);
-  useEffect(() => { setHoldEndCommand(sessionEndCommands.list().find(row => row.actorId === adminId && row.customerId === holdCustomer) ?? null); }, [adminId, holdCustomer, authEpoch]);
+  const holdEndView = useRef({ customerId: holdCustomer, commandKey: holdEndCommand?.commandKey });
+  holdEndView.current = { customerId: holdCustomer, commandKey: holdEndCommand?.commandKey };
+  useEffect(() => { setHoldEndCommand(sessionEndCommands.list().find(row => row.actorId === adminId && row.customerId === holdCustomer) ?? null); setHoldEnding(false); }, [adminId, holdCustomer, authEpoch]);
   const holdRequest = useRef<{ generation: number; controller: AbortController | null }>({ generation: 0, controller: null });
   const hold = holdRead && holdRead.customerId === holdCustomer ? holdRead.hold : undefined;
   const inboxHolder = selectedSummary?.holder === undefined ? "unknown" : selectedSummary.holder === null ? "none" : `${selectedSummary.holder.adminId}:${selectedSummary.holder.role}`;
@@ -912,7 +914,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
         let conversationNo = "";
         if (firstPending) {
           const recovered = await supportClient.command(record.key).catch((cause: unknown) => {
-            if (cause instanceof SupportClientError && cause.status === 404) return null;
+            if (cause instanceof SupportClientError && cause.status === 404 && cause.backendMessage === "SUPPORT_COMMAND_NOT_FOUND") return null;
             throw cause;
           });
           if (identityRef.current !== identity) return;
@@ -1012,7 +1014,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     try {
       if (retry) {
         const recovered = await supportClient.command(record.key).catch((cause: unknown) => {
-          if (cause instanceof SupportClientError && cause.status === 404) return null;
+          if (cause instanceof SupportClientError && cause.status === 404 && cause.backendMessage === "SUPPORT_COMMAND_NOT_FOUND") return null;
           throw cause;
         });
         if (identityRef.current !== identity) return;
@@ -1161,22 +1163,31 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
       if (!sessionEndCommands.isDurablyStored(fingerprint, commandKey)) { sessionEndCommands.forget(fingerprint, commandKey); setActionError("浏览器无法保存这次操作的记录，还没结束会话；请检查浏览器设置后重试。"); return; }
       command = sessionEndCommands.list().find(row => row.commandKey === commandKey)!;
     }
-    const settle = (message = "") => { sessionEndCommands.forget(command.fingerprint, command.commandKey); setHoldEndCommand(null); setActionError(message); setHoldRetry((value) => value + 1); };
+    const current = () => stamp === identityRef.current && holdEndView.current.customerId === command.customerId && holdEndView.current.commandKey === command.commandKey;
+    const settle = (message = "") => {
+      sessionEndCommands.forget(command.fingerprint, command.commandKey);
+      const visible = current();
+      setHoldEndCommand(previous => previous?.customerId === command.customerId && previous.commandKey === command.commandKey ? null : previous);
+      if (visible) { setActionError(message); setHoldRetry((value) => value + 1); setHoldEnding(false); }
+    };
+    holdEndView.current = { customerId: command.customerId, commandKey: command.commandKey };
     setHoldEndCommand(command); setHoldEnding(true); setActionError("");
+    let submitted = false;
     try {
       // A number already sent is checked first; only a number the system never received goes out again, unchanged.
-      const receipt = endPending ? await supportClient.command(command.commandKey).catch((cause: unknown) => { if (cause instanceof SupportClientError && cause.status === 404) return null; throw cause; }) : null;
+      const receipt = endPending ? await supportClient.command(command.commandKey).catch((cause: unknown) => { if (cause instanceof SupportClientError && cause.status === 404 && cause.backendMessage === "SUPPORT_COMMAND_NOT_FOUND") return null; throw cause; }) : null;
       if (stamp !== identityRef.current) return;
       if (receipt?.status === "SUCCEEDED") { settle(); return; }
       if (receipt?.status === "FAILED") { settle("原操作没有结束会话，请确认后再点一次。"); return; }
-      if (receipt) { setActionError("结束会话的结果尚未确认，原操作还在处理，请稍后再查询。"); return; }
+      if (receipt) { if (current()) setActionError("结束会话的结果尚未确认，原操作还在处理，请稍后再查询。"); return; }
+      submitted = true;
       await supportClient.endSessionHold(command.customerId, command.commandKey);
       if (stamp === identityRef.current) settle();
     } catch (cause) {
       if (stamp !== identityRef.current) return;
-      if (cause instanceof SupportClientError && [400, 403, 404, 409, 422].includes(cause.status) && !isIndeterminateSupportError(cause)) settle(`结束会话没有成功：${displayAdminError(cause)}`);
-      else { setActionError("结束会话的结果尚未确认。请再点「结束会话」，会先查询原操作，不会重复结束。"); setHoldRetry((value) => value + 1); }
-    } finally { if (stamp === identityRef.current) setHoldEnding(false); }
+      if (submitted && cause instanceof SupportClientError && [400, 403, 404, 409, 422].includes(cause.status) && !isIndeterminateSupportError(cause)) settle(`结束会话没有成功：${displayAdminError(cause)}`);
+      else if (current()) { setActionError("结束会话的结果尚未确认。请再点「结束会话」，会先查询原操作，不会重复结束。"); setHoldRetry((value) => value + 1); }
+    } finally { if (current()) setHoldEnding(false); }
   };
   const insertText = (text: string) => {
     const start=composerRef.current?.selectionStart??draft.length, end=composerRef.current?.selectionEnd??start;

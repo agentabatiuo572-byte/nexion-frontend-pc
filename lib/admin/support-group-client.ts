@@ -27,7 +27,7 @@ export function inviteRevokeReason(value: string) {
   const error = length < 8 ? "作废原因至少需要 8 个字" : length > 200 ? "作废原因最多可填 200 个字" : invalidReasonControl.test(normalized) ? "作废原因含有不支持的控制字符" : "";
   return { normalized, length, error };
 }
-function reason(value: unknown): string { const result = text(value).trim(); if (Array.from(result).length < 8 || result.length > 200 || invalidReasonControl.test(result)) bad("reason"); return result; }
+function reason(value: unknown): string { const result = text(value).trim(), length = Array.from(result).length; if (length < 8 || length > 200 || invalidReasonControl.test(result)) bad("reason"); return result; }
 function name(value: unknown): string { const result = nonempty(value).trim(); if (result.length > 120) bad("name"); return result; }
 export function accountVersion(value: unknown): number { const s = text(value); if (!/^(0|[1-9]\d*)$/.test(s) || BigInt(s) > BigInt(Number.MAX_SAFE_INTEGER)) bad("accountVersion"); return Number(s); }
 export function parseSupportGroup(value: unknown) { const r = object(value, "id name supervisorAdminId status version"); return { id: id(r.id), name: name(r.name), supervisorAdminId: id(r.supervisorAdminId), status: enumeration(r.status, GROUP_STATES), version: positive(r.version) }; }

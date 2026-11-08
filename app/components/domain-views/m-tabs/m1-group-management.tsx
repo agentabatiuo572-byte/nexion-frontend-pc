@@ -16,7 +16,7 @@ const KIND_TEXT = { SERVICE: "专属客服", SUPERVISOR: "主管" };
 const QUAL_OPTIONS = [{ value: "ENABLED", label: "启用" }, { value: "DISABLED", label: "停用" }, { value: "REMOVED", label: "移除" }];
 function errorStatus(error: unknown): number { return error && typeof error === "object" && "status" in error ? Number(error.status) : 0; }
 function errorText(error: unknown): string { const code = errorStatus(error); return [401,403,404].includes(code) ? "你已无权查看这些资料，请返回后刷新。" : code === 409 ? "资料刚被修改过，已填写的内容还在，请刷新预览后再确认。" : code === 422 ? "当前账号、资格或组状态不允许此操作，请核对账号启用状态、成员和交接任务。" : "暂时无法确认结果，原命令与资料已保留；请先查询原操作。"; }
-function reasonValid(value: string) { return Array.from(value.trim()).length >= 8 && value.trim().length <= 200; }
+function reasonValid(value: string) { const length = Array.from(value.trim()).length; return length >= 8 && length <= 200; }
 function authStamp() { const a = useAdminAuth.getState(); return adminShellSessionKey(a.session, a.authEpoch) + JSON.stringify(a.session?.menuNodes ?? null) + `|${a.isAuthenticated}|${a.logoutPending}|${a.logoutUnknown}`; }
 export function canManageSupportQualifications(session: { role: string; authorities: string[] } | null) { return !!session && ["SUPERADMIN", "SUPER_ADMIN", "SUPER"].includes(session.role.toUpperCase()) && session.authorities.includes("platform_a1_read") && session.authorities.includes("platform_a1_write"); }
 function expiredText() { return "原操作超过回查保护期，请先核对是否已创建或执行，不能直接重发。原命令和理由仍保留。"; }
@@ -249,7 +249,7 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
         <label className="field"><span>目标组</span>{saving || pending ? <p>{draft.target?.name ?? "待分组"}</p> : <HDSelect value={draft.targetGroupId} options={[...(mode === "ALL" ? [{ value: "", label: "待分组" }] : []), ...targetGroups.map(g => ({ value: g.id, label: g.name }))]} placeholder="选择启用的目标组" onChange={targetGroupId => { setDraft({ ...draft, targetGroupId, target: undefined, stale: true }); if (draft.member) void previewMove(draft.member.adminId, targetGroupId, draft); }} />}</label>
       </>}
       {draft.kind === "OWNER" && <p>移交负责人会更新本组管理范围，影响成员与待分配队列；个人绑定和历史事件保留。成员 {currentDetail?.memberCount ?? "-"} 人，待分配 {currentDetail?.routedCustomers ?? "-"} 人。</p>}
-      <label className="field"><span>操作理由（8–200 字）</span><textarea value={draft.reason} maxLength={200} disabled={saving || !!pending || previewBusy} onChange={e => setDraft({ ...draft, reason: e.target.value })} /></label>{previewBusy && <p role="status">正在加载最新成员与来源、目标组版本…</p>}{draft.stale && <p role="alert">预览尚未核实或版本已变化，请重读后再次确认。</p>}{error && <p role="alert" className="m-admin-error">{error}</p>}
+      <label className="field"><span>操作理由（8–200 字）</span><textarea value={draft.reason} disabled={saving || !!pending || previewBusy} onChange={e => setDraft({ ...draft, reason: e.target.value })} /></label>{previewBusy && <p role="status">正在加载最新成员与来源、目标组版本…</p>}{draft.stale && <p role="alert">预览尚未核实或版本已变化，请重读后再次确认。</p>}{error && <p role="alert" className="m-admin-error">{error}</p>}
     </Modal>}
   </section>;
 }
@@ -285,7 +285,7 @@ export function SupportQualificationEditor({ adminId, kind, onClose, onChanged }
   return <Modal title={pending ? "查询原操作" : `${KIND_TEXT[kind]}资格`} busy={busy} onClose={() => { if (!busy) onClose(); }} footer={<><Btn disabled={busy} onClick={onClose}>关闭</Btn>{allowed && pending ? <Btn disabled={busy} onClick={() => void check()}>查询原操作</Btn> : <><Btn disabled={!allowed || busy} onClick={() => setRefresh(n => n + 1)}>重读当前资格</Btn><Btn variant="primary" disabled={!allowed || busy || !canSubmit} onClick={() => void submit()}>{busy ? "正在提交…" : "确认并提交"}</Btn></>}</>}>
     {!allowed ? <p role="alert">只有总管理员（并有账号查看和修改权限）能管理资格。</p> : pending ? <p role="status">上次操作结果还没确认，请先查询结果。</p> : !data ? <p role="status">{error || "正在加载…"}</p> : <><p>{data.name} · {data.accountStatus === 1 ? "账号启用" : "账号停用"}</p><p>当前{KIND_TEXT[kind]}资格：{fact?.observationState === "UNKNOWN" ? "信息不完整，不能保存" : fact?.observationState === "ABSENT" ? "确证未授予" : fact?.state ? STATUS_TEXT[fact.state] : "未知"}</p>
       <p className="m-admin-muted">专属客服是唯一人工客服身份；主管是独立管理资格，同一账号可兼任。授予资格不自动绑定客户，也不改普通账号角色。</p>{kind === "SUPERVISOR" && state !== "ENABLED" && <p>停用或移除前，须先将全部负责组（含归档组）移交给有效主管。</p>}{kind === "SERVICE" && state !== "ENABLED" && <p>停用或移除前，须先处理已有绑定客户并退出组；不会自动改派客户。</p>}
-      <label className="field"><span>资格状态</span>{busy ? <p>{STATUS_TEXT[state]}</p> : <HDSelect value={state} onChange={value => setState(value as QualificationStatus)} options={QUAL_OPTIONS} />}</label><label className="field"><span>操作理由（8–200 字）</span><textarea value={reason} maxLength={200} disabled={busy} onChange={e => setReason(e.target.value)} /></label></>}
+      <label className="field"><span>资格状态</span>{busy ? <p>{STATUS_TEXT[state]}</p> : <HDSelect value={state} onChange={value => setState(value as QualificationStatus)} options={QUAL_OPTIONS} />}</label><label className="field"><span>操作理由（8–200 字）</span><textarea value={reason} disabled={busy} onChange={e => setReason(e.target.value)} /></label></>}
     {allowed && pending && <p role="alert">{QUERY_PENDING_TEXT}{!canReplayGroupCommand(pending) && expiredText()}</p>}{allowed && !pending && stale && <p role="alert">版本已变化，请重读当前资格并再次确认。理由已保留。</p>}{error && data && <p role="alert">{error}</p>}
   </Modal>;
 }
