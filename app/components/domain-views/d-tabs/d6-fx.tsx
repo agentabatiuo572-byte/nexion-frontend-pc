@@ -307,6 +307,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     const req: ActionConfirmReq = {
       briefKind: "config", action: `调整汇率 · ${param.label}`, title: `调整${param.label}`, formKey,
       detail: param.scope,
+      blockedReason: value === quote[param.key] ? "最新值已与输入相同，没有需要提交的修改。" : undefined,
       approval: approvalRequired ? { coverageCheckCopy: checkCopy, disabledReason: proposalBlocked ?? (quote.approval?.status === "pending" ? "已有汇率审批单等待处理，请先核对原单" : undefined) } : undefined,
       effect: approvalRequired ? <StatusTag tone="progress" filled explain="另一位有权超管批准前，当前配置不变；批准时重核双方权限和配置版本。">批准后生效</StatusTag> : <StatusTag tone="progress" filled>立即生效</StatusTag>,
       facts: <Facts>
