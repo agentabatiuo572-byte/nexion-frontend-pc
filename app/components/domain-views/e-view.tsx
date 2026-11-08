@@ -1419,7 +1419,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           <SkuFieldGroup n="③" title="收益（USDT + UVT）">
             {monthlyTargetSupported && <div className="grid g-2" style={{ gap: 12 }}>
               <SkuFld label="月收益目标（USDT）" type="number" min={1} max={1_000_000} step={0.01} value={form.monthlyTargetUsdt} onChange={(v) => setForm({ ...form, monthlyTargetUsdt: v })} placeholder="留空按单计价"
-                tip={`App 商品卡、商品详情、设备卡和首页对比显示目标对应的预估收益；新领取试用按目标 ÷ 30 计算，已领试用和已成交订单不变。批准后只影响新建任务，运行中任务保持原金额。${form.tier === "Share" ? "云端共享份额默认不乘产能比例；是否参与以「设备使用与升级置换」设置为准。" : "参与产能变化的型号按「设备使用与升级置换」中的当期产能比例折算；不参与的为 100%。"}可跑任务须为正额 USDT，且每项不超过 60 分钟。开启、关闭目标或提高目标区间上限，批准时须通过兑付覆盖率检查。关闭时须重新填写${form.tier === "Share" ? "参考年奖励率" : "每日收益 USDT"}。范围 1–1,000,000，最多 2 位小数。`} />
+                tip={`App 商品卡、商品详情、设备卡和首页对比显示目标对应的预估收益；新领取试用按目标 ÷ 30 计算，已领试用和已成交订单不变。批准后只影响新建任务，运行中任务保持原金额。${form.tier === "Share" ? "云端共享份额默认不乘产能比例；是否参与以「设备使用与升级置换」设置为准。" : "参与产能变化的型号按「设备使用与升级置换」中的当期产能比例折算；不参与的为 100%。"}可跑任务须为正额 USDT，且每项不超过 120 分钟。开启、关闭目标或提高目标区间上限，批准时须通过兑付覆盖率检查。关闭时须重新填写${form.tier === "Share" ? "参考年奖励率" : "每日收益 USDT"}。范围 1–1,000,000，最多 2 位小数。`} />
               <SkuFld label="允许波动 %" type="number" min={1} max={50} step={0.1} value={form.monthlyTargetBandPct} onChange={(v) => setForm({ ...form, monthlyTargetBandPct: v })} disabled={!monthlyTargetFilled} placeholder="10"
                 tip="1%–50%，最多 1 位小数。持续运行时的设备月目标区间为目标 × 当期产能比例 ×（1 ± 波动比例）；每天收益有起伏，停机不补发。设备月从购入日开始，购入日缺失时从激活日开始。" />
             </div>}
@@ -1584,7 +1584,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           {taskForm.simulated ? <>
             <div className="grid g-2" style={{ gap: 12 }}>
               <SkuFld label="固定时长（分钟）" type="number" value={taskForm.durationMinutes} onChange={(v) => setTaskForm({ ...taskForm, durationMinutes: v })} hint="1–1440，整数分钟" />
-              <SkuFld label="固定基础奖励" value={taskForm.baseReward} onChange={(v) => setTaskForm({ ...taskForm, baseReward: v })} tip="最多 6 位小数。设了月收益目标的型号只用作任务之间的比例；这些型号的任务须为正额 USDT，且不超过 60 分钟。" />
+              <SkuFld label="固定基础奖励" value={taskForm.baseReward} onChange={(v) => setTaskForm({ ...taskForm, baseReward: v })} tip="最多 6 位小数。设了月收益目标的型号只用作任务之间的比例；这些型号的任务须为正额 USDT，且不超过 120 分钟。" />
               <label className="col" style={{ gap: 5 }}><span className="muted tiny">奖励资产</span><select className="fld" value={taskForm.asset} onChange={(e) => setTaskForm({ ...taskForm, asset: e.target.value })}><option value="USDT">USDT</option><option value="UVT">UVT</option></select></label>
               <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={taskForm.enabled} onChange={(e) => setTaskForm({ ...taskForm, enabled: e.target.checked })} />启用新任务</label>
               <label className="col" style={{ gap: 5 }}><span className="muted tiny">展示类别</span><select className="fld" value={taskForm.taskClass || "EM"} onChange={(e) => setTaskForm({ ...taskForm, taskClass: e.target.value })}>{["IG", "VG", "LL", "FT", "EM", "SP"].map((c) => <option key={c} value={c}>{c}</option>)}</select></label>
