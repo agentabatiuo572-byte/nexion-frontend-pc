@@ -3,7 +3,7 @@
 /**
  * ToastHost — 顶部居中 toast 堆栈,在 root layout 挂载一次。用 toast.* 触发。
  * 位置照 Ant Design Message：距视口顶 8px，落在顶栏那一条里，不盖页标题和页头的主按钮。
- * 一行高 40，放得进 56 的顶栏；折成两行也停在页标题上面的留白里。
+ * 一行高 40，放得进 56 的顶栏；折成两行也停在页标题上面的留白里。抽屉开着时在抽屉左边那块居中（rd.css），不盖抽屉头。
  */
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, Info, AlertTriangle, XCircle, X } from "lucide-react";
@@ -27,7 +27,7 @@ export function ToastHost({ dialogId }: { dialogId?: string }) {
 
   return (
     <div
-      className={dialogId ? "rd-dialog-feedback flex flex-col gap-2" : "pointer-events-none fixed left-1/2 flex -translate-x-1/2 flex-col gap-2"}
+      className={dialogId ? "rd-dialog-feedback flex flex-col gap-2" : "rd-toast-host pointer-events-none fixed left-1/2 flex -translate-x-1/2 flex-col gap-2"}
       role="status"
       style={dialogId ? undefined : {
         zIndex: "var(--admin-z-toast)",

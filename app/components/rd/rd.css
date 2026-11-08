@@ -530,6 +530,8 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-modal.rd-confirm .field:has(> input[type="checkbox"]) > span { grid-column: 2; }
 .rd-modal.rd-confirm .field:has(> input[type="checkbox"]) > span:first-of-type { color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
 .rd-toast { position: fixed; top: calc(var(--admin-topbar-h) + 32px); left: 50%; z-index: var(--admin-z-toast); width: min(420px, calc(100vw - 40px)); padding: 12px 20px; border: 1px solid var(--rd-line-strong); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); color: var(--rd-text); font-family: var(--rd-font); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); text-align: center; transform: translateX(-50%); }
+/* 抽屉开着时提示条在抽屉左边那块居中，不盖抽屉头的标题、单号和上一条下一条；宽抽屉几乎占满内容区，照旧居中。 */
+body:has(.rd-drawer[data-state="open"]:not([data-wide])) .rd-toast-host { left: calc((100vw - min(var(--rd-drawer-w), 100vw)) / 2); }
 /* 理由框排在内容里，不吸底：吸底会盖住要填的字段和后果，点开查看详情后尤其明显（DT-17）。 */
 .rd-modal.rd-confirm .rd-reason-field { margin-bottom: 0; }
 .rd-reason-box { position: relative; }
