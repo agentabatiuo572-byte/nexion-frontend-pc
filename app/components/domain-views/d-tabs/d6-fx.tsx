@@ -312,7 +312,10 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       effect: approvalRequired ? <StatusTag tone="progress" filled explain="另一位有权超管批准前，当前配置不变；批准时重核双方权限和配置版本。">批准后生效</StatusTag> : <StatusTag tone="progress" filled>立即生效</StatusTag>,
       facts: <Facts>
         <Fact k={param.label}><Change from={valueText(param.key, quote[param.key])} to={valueText(param.key, value)} /></Fact>
-        <Fact k="买入价" unit="₫/USDT"><Change from={vnd(quote.quoteRateVndPerUsdt)} to={vnd(newRate)} /></Fact>
+        {param.key === "lockWindowMinutes" ? <>
+          <Fact k="影响范围">之后在充值页「银行卡支付」新建的付款单</Fact>
+          <Fact k="不受影响"><KeepText text="买设备用银行卡付款的报价（最长 15 分钟）、提现报价" phrases={["提现报价"]} /></Fact>
+        </> : <Fact k="买入价" unit="₫/USDT"><Change from={vnd(quote.quoteRateVndPerUsdt)} to={vnd(newRate)} /></Fact>}
         {approvalRequired && <Fact k="资金检查">{checkCopy}</Fact>}
         {!approvalRequired && quote.approval?.status === "pending" && <Fact k="待批原单" tone="warn">直接保存会更新版本，原审批单批准时须重新核对版本。</Fact>}
         {changed && <Fact k="刚被别人改过" tone="warn">{changed}<p className="rd-note">理由已清空，请按最新的值重写</p></Fact>}
