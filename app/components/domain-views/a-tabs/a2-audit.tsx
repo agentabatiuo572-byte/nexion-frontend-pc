@@ -220,7 +220,7 @@ function phoneScheduledAt(w: A2OperationRow) {
 /** 批准后什么时候生效、会怎样：标题下的标签、执行摘要的影响、抽屉底部说明用同一份（M3、M6）。 */
 function approvalTiming(w: A2OperationRow) {
   const scheduled = phoneScheduledAt(w);
-  if (scheduled) return { tag: `按计划在 ${scheduled} 生效`, impact: `批准后登记排程，到 ${scheduled} 才生效。`, drawer: `点「批准」确认后登记排程，到 ${scheduled} 生效；点「驳回」原操作不执行。` };
+  if (scheduled) return { tag: `按计划在 ${scheduled} 生效`, impact: "批准后登记排程，到点才生效。", drawer: `点「批准」确认后登记排程，到 ${scheduled} 生效；点「驳回」原操作不执行。` };
   if (isJ4Execution(w)) return { tag: "立即逐步执行", impact: "批准后逐步执行，可能只执行一部分；失败时到「监管要求应急处理」的执行追溯里看哪些步骤已生效。", drawer: "点「批准」确认后逐步执行，可能只执行一部分；点「驳回」原操作不执行。" };
   if (w.coverageCheckOnApproval) return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先检查兑付覆盖率，够了才执行；点「驳回」原操作不执行。" };
   if (g3PolicyExecutionTiming(w)) return { tag: "按计划时点生效", impact: "", drawer: "点「批准」确认后按生效时间执行；点「驳回」原操作不执行。" };
@@ -252,6 +252,14 @@ function keepCodes(text: string): ReactNode {
   return parts.length === 1 ? text : parts.map((part, index) => index % 2 ? <span key={index} className="a2-code">{part}</span> : part);
 }
 
+/** 记录的对象是「类型 · 编号」：编号放第一行，长的中间省略留住前后段，类型放第二行（必须改 8）。 */
+function objectCell(obj: string) {
+  const [kind, ...rest] = obj.split(" · ");
+  if (!rest.length) return { main: middle(shortCodes(obj), 20), sub: undefined };
+  const id = rest.join(" · ");
+  return { main: id.length > 16 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id, sub: kind };
+}
+
 /** 没翻成中文的动作码太长时中间省略：前面是模块，后面是动作，两头都要留。 */
 function middle(text: string, max: number) {
   return text.length > max ? `${text.slice(0, max - 9)}…${text.slice(-8)}` : text;
@@ -279,11 +287,15 @@ function bizTimeFull(value: string | undefined, fallback: string) {
   return formatBusinessTimeFull(text, fallback);
 }
 
-/** 队列第二行的提交时间，当年不写年（「11-08 17:08」）。时间放在单号前面，放不下时省略的是单号（必须改 6）。 */
-function queueTime(w: A2OperationRow) {
-  const full = bizTime(w.rawTs, w.ts);
+/** 当年的时间不写年（「11-08 17:08」），1024 下表格才放得下（必须改 6、8）。 */
+function thisYear(full: string) {
   const year = businessStamp(Date.now()).slice(0, 5);
   return full.startsWith(year) ? full.slice(5) : full;
+}
+
+/** 队列第二行的提交时间放在单号前面，放不下时省略的是单号（必须改 6）。 */
+function queueTime(w: A2OperationRow) {
+  return thisYear(bizTime(w.rawTs, w.ts));
 }
 
 /** a2-client 没有 tsLabel 时按浏览器时区写成「11/08 14:30」；那种情况改按业务时区重写，有 tsLabel 时用它（a2-client.ts:378）。 */
@@ -380,7 +392,7 @@ const RECOVERY_HINT: Record<A2CommandKind, string> = {
   withdraw: "读回只看这张单现在的状态，说明不了这次操作的结果。可以按原操作重试，不会重复执行。",
   param: "读回只看现在的值，值相同也可能是别人改的。可以按原操作重试，不会重复执行。",
   retention: "可以按原操作重试，已完成的清理不会再做一次。",
-  export: "读回只看有没有导出记录，说明不了是不是这一次。可以按原操作重试，按当时的条件重新下载，不会多记一次导出。",
+  export: "读回只看有没有这次的导出记录。可以按原操作重试，按当时的条件重新下载。",
 };
 const PARAM_NAME: Record<string, string> = { ttl: "操作理由最短长度", retention: "操作记录保留期", schema: "记录字段版本" };
 const PARAM_TITLE: Record<"ttl" | "retention" | "schema", string> = { ttl: "调整操作理由最短长度", retention: "调整操作记录保留期", schema: "升级记录字段版本" };
@@ -1023,7 +1035,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       if (!found) { notePending(record, "读回失败，导出记录暂时读不到。待确认继续保留。"); return; }
       const hit = found.recentLogs[0];
       notePending(record, hit
-        ? `读回：后端在 ${logTime(hit)} 记了这次导出（${hit.obj}）。没下载到文件时按原操作重试，会按当时的条件重新下载。待确认继续保留。`
+        ? `读回：${logTime(hit)} 有这次的导出记录（${hit.obj.split(" · ").pop()}）。没下到文件就按原操作重试。待确认继续保留。`
         : "读回：没找到这次导出的记录，可能没有生成。待确认继续保留。");
       return;
     }
@@ -1126,14 +1138,15 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const scheduled = phoneScheduledAt(w);
     const g3 = g3PolicyExecutionTiming(w);
     // 一行放得下（必须改 14）；时点只写在「生效时间」一处（建议 8）。
+    // 摘要标题行只放得下 20 字左右，长了会折出孤字（D10）；细节写在「说明」和事实区。
     const impact = scheduled ? timing.impact
-      : j4 ? "批准后逐步执行，可能只执行一部分，失败要到执行追溯里看。"
-        : w.coverageCheckOnApproval ? "批准时先检查兑付覆盖率，够了才执行；不够时原样不动。"
-          : g3 ? "批准后按生效时间执行，按完整变更内容改线上配置。"
-            : isFunds ? "批准后立即执行，改用户资金或平台账目；失败不改原值。"
-              : w.type === "acct" ? "批准后立即执行，改账号、权限或登录状态；失败不改原值。"
-                : w.type === "sos" ? "批准后立即执行，改业务的停用或恢复状态；失败不改原值。"
-                  : "批准后立即执行，按完整变更内容改线上配置；失败不改原值。";
+      : j4 ? "逐步执行，失败时可能只执行了一部分。"
+        : w.coverageCheckOnApproval ? "先查兑付覆盖率，够了才执行，不够不动。"
+          : g3 ? "按生效时间执行，改线上配置。"
+            : isFunds ? "立即执行，改资金或账目；失败不改原值。"
+              : w.type === "acct" ? "立即执行，改账号或权限；失败不改原值。"
+                : w.type === "sos" ? "立即执行，停用或恢复业务；失败不改原值。"
+                  : "立即执行，改线上配置；失败不改原值。";
     const check = isRefund ? "核对退款金额、订单和发起理由，理由写清依据或工单号。"
       : isFunds ? "核对对象、变更前后和发起理由，理由写清依据或工单号。"
         : w.type === "acct" ? "核对目标账号、申请的角色和发起理由，理由写清依据或工单号。"
@@ -1581,7 +1594,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           <Select aria-label="审计业务域" value={filterDraft.domain && filterDraft.domain !== "all" ? filterDraft.domain : ""} onChange={(value) => setDraft("domain", value)}
             options={[{ value: "", label: "全部模块" }, ...A2_AUDIT_DOMAINS.map((domain) => ({ value: domain, label: DOMAIN_NAMES[domain] }))]} />
         </FilterField>
-        <FilterField><Input aria-label="审计操作者" placeholder="操作者账号或姓名" size={14} value={filterDraft.operator ?? ""} onChange={(event) => setDraft("operator", event.target.value)} /></FilterField>
+        <FilterField><Input aria-label="审计操作者" placeholder="操作者" size={10} value={filterDraft.operator ?? ""} onChange={(event) => setDraft("operator", event.target.value)} /></FilterField>
         <FilterField grow><Input aria-label="审计对象" placeholder="对象编号或类型" value={filterDraft.object ?? ""} onChange={(event) => setDraft("object", event.target.value)} /></FilterField>
       </FilterBar>
 
@@ -1614,10 +1627,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   const translated = A2_ACTION_NAMES[l.action] !== undefined || a2ActionText(l.action) !== l.action;
                   return (
                     <Tr key={l.id} selected={l.id === logId} onOpen={() => setLogId(l.id)}>
-                      <Td sticky="start"><Cell num main={logTime(l)} /></Td>
-                      <Td><Cell main={l.actor} sub={logRoleText(l.role) || undefined} title={l.actor} /></Td>
-                      <Td><Cell mono={!translated} main={translated ? logActionText(l.action) : middle(l.action, 22)} title={logActionText(l.action)} /></Td>
-                      <Td><Cell main={shortCodes(l.obj)} title={l.obj} /></Td>
+                      <Td sticky="start"><Cell num main={thisYear(logTime(l))} title={logTime(l)} /></Td>
+                      <Td><Cell main={middle(l.actor, 16)} sub={logRoleText(l.role) || undefined} title={l.actor} /></Td>
+                      <Td><Cell mono={!translated} main={translated ? logActionText(l.action) : middle(l.action, 18)} title={logActionText(l.action)} /></Td>
+                      <Td><Cell main={objectCell(l.obj).main} sub={objectCell(l.obj).sub} title={l.obj} /></Td>
                       <Td grow><Cell mono main={l.delta} title={l.delta} /></Td>
                     </Tr>
                   );
@@ -1649,7 +1662,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     <Td grow><Cell main={actionName(h.action)} title={actionName(h.action)} /></Td>
                     <Td><StatusTag tone={HIST_TONE[h.st] ?? "done"}>{HIST_LABEL[h.st] ?? h.st}</StatusTag></Td>
                     <Td><Cell main={historyActorText(h.chain)} /></Td>
-                    <Td><Cell num main={bizTime(h.t, h.t)} /></Td>
+                    <Td><Cell num main={thisYear(bizTime(h.t, h.t))} title={bizTime(h.t, h.t)} /></Td>
                   </Tr>
                 ))}
             </tbody>
@@ -1737,7 +1750,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     // 批准退款是直接出钱、收不回的操作，第一行就是这笔钱（必须改 1，DP-03）。
     ...(shownAmount ? [shownAmount.state === "ok"
       ? { label: "退款金额", value: <span className="a2-amount">{orderAmount(shownAmount.amount)} USDT</span> }
-      : { label: "退款金额", state: "warn" as const, value: <>{refundAmountText(shownAmount)}{shownAmount.state === "error" && shown.refundOrderNo && <InlineRetry onRetry={() => void loadRefundAmount(shown.refundOrderNo!)} />}</> }] : []),
+      : { label: "退款金额", state: "warn" as const, value: <>{refundAmountText(shownAmount)}{" "}{shownAmount.state === "error" && shown.refundOrderNo && <InlineRetry onRetry={() => void loadRefundAmount(shown.refundOrderNo!)} />}</> }] : []),
     { label: "要做什么", value: actionName(shown.action) },
     { label: "对象", value: <span data-mono className="a2-code">{shown.obj}</span> },
     { label: "发起人", icon: Users, tone: "users", value: `${shown.operator} · ${roleText(shown.operatorRole)}${isMine(shown) ? "（你发起的）" : ""}`, reason: bizTime(shown.rawTs, shown.ts) },
