@@ -241,6 +241,13 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-seg-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--tone); }
 .rd-seg-count { font-variant-numeric: tabular-nums; font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
 @media (hover: hover) and (pointer: fine) { .rd-seg:not(:disabled):not([aria-checked="true"]):hover { background: var(--rd-panel); color: var(--rd-text); } }
+/* 表单字段里的分段是一组二选一的控件：有底槽、浅色下一圈描边、选中项抬起，和指标头的分段同一写法（Ant Design Segmented）。列表上方的筛选分段不变 */
+.rd-form-field .rd-segs { justify-self: start; width: fit-content; max-width: 100%; gap: 2px; padding: 2px; border-radius: var(--rd-radius-control); background: var(--rd-bg); }
+.rd-form-field .rd-seg { height: calc(var(--rd-control-h) - 4px); }
+.rd-form-field .rd-seg[aria-checked="true"] { background: var(--rd-control); }
+:root[data-theme="light"] .rd-form-field .rd-segs { background: var(--rd-panel-inner); box-shadow: inset 0 0 0 1px var(--rd-line); }
+:root[data-theme="light"] .rd-form-field .rd-seg[aria-checked="true"] { background: var(--rd-panel); box-shadow: 0 1px 2px rgba(0, 0, 0, .08), 0 0 0 1px var(--rd-line); }
+@media (hover: hover) and (pointer: fine) { .rd-form-field .rd-seg:not(:disabled):not([aria-checked="true"]):hover { background: transparent; } }
 
 /* ── 折叠组 ── */
 .rd-fold { background: var(--rd-panel); border-radius: var(--rd-radius-panel); }
