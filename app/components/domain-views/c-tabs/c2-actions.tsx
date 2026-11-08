@@ -358,10 +358,18 @@ function explicitlyRejected(error: unknown) {
 
 /**
  * 财务提交冻结、恢复审批（EX-11）：原内容先存进待确认再发，用固定命令号。重试先按原号查审批单，查到就是原来那张；
- * 查不到才用原号原内容再提交，不会多出一张（同退出全部设备）。
+ * 后端明确回 A2_PROPOSAL_NOT_FOUND 才算没有原单，用原号原内容再提交，不会多出一张（同 withdrawal-config-approval.ts）。
+ * 其他查询失败（比如读不到原单回执时的 404 OPERATION_RESULT_UNKNOWN）说明不了原单在不在，按结果未知保留原命令。
  */
 async function submitStatusProposal(input: ProposalInput, key: string, retry: boolean) {
-  const found = retry ? await fetchA2ProposalByKey(key) : null;
+  let found: Awaited<ReturnType<typeof fetchA2ProposalByKey>> = null;
+  if (retry) {
+    try {
+      found = await fetchA2ProposalByKey(key, true);
+    } catch {
+      throw new A2OutcomeUncertainError("暂时查不到原审批单，请到操作记录与审批核对。", key);
+    }
+  }
   const ticket = found ?? await createA2OperationProposal(input, key, true);
   if (!ticket.mine || ticket.obj !== input.obj) throw new A2OutcomeUncertainError("审批回执与原操作不符，请到操作记录核对。", key);
   return ticket;
@@ -1346,7 +1354,9 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         outcome = await deletionCommand(record.target, Number(record.userNo), record.action ?? "review", record.version ?? 0, record.fromStatus ?? "", record.reason, record.operator, undefined, true);
         setDeletionRefresh((value) => value + 1);
       }
-      if (outcome === "unknown") notePending(record.fingerprint, "还是没有确认，原命令继续保留。");
+      if (outcome === "unknown") notePending(record.fingerprint, record.proposal
+        ? "还是没有确认，原命令继续保留。原审批单可能已经提交，请到操作记录与审批核对。"
+        : "还是没有确认，原命令继续保留。");
     } catch (cause) {
       if (isC2PermissionDenied(cause)) announcePermissionDenied();
       // 系统要求核查、核查已有结论这些幂等层的码不算明确拒绝（共用分类），原命令和锁都留着，不放「解除待确认」。
