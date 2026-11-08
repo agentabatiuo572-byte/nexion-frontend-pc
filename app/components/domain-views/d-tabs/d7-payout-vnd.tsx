@@ -601,10 +601,11 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         return;
       }
       const message = reasonOf(errorCode(cause) === "OBJECT_ALREADY_PENDING" ? (canReachAudit ? PENDING_HERE : PENDING_ELSEWHERE) : displayAdminError(cause));
-      if (pendingConfigApproval("D7", session.adminId) && isExplicitRejection(cause)) {
+      const kept = pendingConfigApproval("D7", session.adminId);
+      if (kept && isExplicitRejection(cause)) {
         note(key, `重试被拒绝：${message}。确认没有生成审批单后，再点「解除待确认」，然后重新修改。`);
         setRetryRejected((current) => [...current, key]);
-      } else if (pendingConfigApproval("D7", session.adminId)) {
+      } else if (kept) {
         // 登录、权限、限流这类不是对原操作的结论，不给解除（OP-153）。
         note(key, `重试没有完成：${message}。原操作继续保留，稍后再查询或重试。`);
       } else {
