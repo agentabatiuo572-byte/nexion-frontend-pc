@@ -112,7 +112,7 @@ const B2_RESERVE_KEYS = ["usdt", "otherLiquid"] as const;
 const B2_WATER_TIERS = ["NORMAL", "WATCH", "WARNING", "DANGER"] as const;
 
 export class B2RequestError extends Error {
-  constructor(message: string, public readonly status: number) {
+  constructor(message: string, public readonly status: number, public readonly reasonCode?: string) {
     super(message);
     this.name = "B2RequestError";
   }
@@ -424,7 +424,7 @@ async function request<T>(path: string, init?: RequestInit) {
       || outcomeStaysUnknown(response.status, result?.code))) {
       throw new B2OutcomeUnknownError(commandKey);
     }
-    throw new B2RequestError(formatAdminApiError(result?.message, `B2_REQUEST_FAILED_${response.status}`), response.status);
+    throw new B2RequestError(formatAdminApiError(result?.message, `B2_REQUEST_FAILED_${response.status}`), response.status, result?.message);
   }
   return result.data;
 }

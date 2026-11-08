@@ -11,7 +11,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const body = await response.json().catch(() => null) as ApiResult<T> | null;
   if (!response.ok || !body || body.code !== 0 || body.data == null) {
     const message = formatAdminApiError(body?.message, `PUBLISHED_CONTENT_REQUEST_FAILED_${response.status}`);
-    throw isWrite && (outcomeStaysUnknown(response.status, body?.code) || isIdempotencyOutcomeOpen(body?.message)) ? new OutcomeUnknownError(message) : new Error(message);
+    throw Object.assign(isWrite && (outcomeStaysUnknown(response.status, body?.code) || isIdempotencyOutcomeOpen(body?.message)) ? new OutcomeUnknownError(message) : new Error(message), { status: response.status, reasonCode: body?.message });
   }
   return body.data;
 }

@@ -17,6 +17,7 @@ import { Button, Explain, Modal, Notice, ReleaseModal } from "@/app/components/r
 import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import type { IContentActions } from "@/lib/admin/i-client";
 import type { ToastKind } from "@/lib/store/ui";
 import { saveLegalTermsDraft, transitionLegalTerms, type LegalTermsVersion } from "@/lib/admin/legal-terms-client";
@@ -45,8 +46,8 @@ export type I5Op =
 
 /** target 是这条操作锁住的对象：`jur:CN`、`gate`、`legal:en:GLOBAL`、`privacy`。 */
 export type I5Write = { target: string; label: string; op: I5Op };
-/** rejected：重试被后端明确拒绝过，只有这时才给「解除待确认」。 */
-type I5Pending = PendingMutationRecord & I5Write & { rejected?: boolean };
+/** 保存明确拒绝的状态与原因；旧 rejected 布尔值不能证明原重试得到结论。 */
+type I5Pending = PendingMutationRecord & I5Write & { rejection?: { status: number; reasonCode?: string; backendMessage?: string } };
 
 const pendingWrites = createPendingMutationStore<I5Pending>({
   storageKey: "nexion-admin-i5-disclosure-commands-v1",
@@ -323,6 +324,8 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
       return;
     }
     note(record, "");
+    pendingWrites.remember(record.fingerprint, record.commandKey, { target: record.target, label: record.label, op: record.op, rejection: undefined });
+    sync();
     setRecovering(record.commandKey);
     try {
       if (record.op.kind === "a2") {
@@ -347,7 +350,9 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
       if (await execute({ target: record.target, label: record.label, op: record.op }, record.fingerprint, record.commandKey, true) === "done") toast("原操作已完成，请核对最新内容", "success");
     } catch (cause) {
       note(record, `重试没有成功：${displayAdminError(cause)} 这说明不了原操作的结果，原操作继续保留。`);
-      pendingWrites.remember(record.fingerprint, record.commandKey, { target: record.target, label: record.label, op: record.op, rejected: true });
+      const refusal = isExplicitRejection(cause) ? cause as { status: number; reasonCode?: string; backendMessage?: string } : undefined;
+      pendingWrites.remember(record.fingerprint, record.commandKey, { target: record.target, label: record.label, op: record.op,
+        rejection: refusal && { status: refusal.status, reasonCode: refusal.reasonCode, backendMessage: refusal.backendMessage } });
       sync();
     } finally {
       setRecovering("");
@@ -401,7 +406,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
         {record.op.kind === "a2" && canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void check(record)}>查询原提案</Button>}
         {(record.op.kind === "legal-save" || record.op.kind === "legal-transition" || record.op.kind === "privacy") && <Button size="sm" disabled={!!recovering} onClick={() => void readBack(record)}>读回核对</Button>}
         {!expired && <Button size="sm" disabled={!!recovering} disabledReason={record.op.kind === "a2" && !canQuery ? "当前账号不能查询原提案，请联系有查看权限的同事核对" : undefined} onClick={() => void retry(record)}>按原操作重试</Button>}
-        {record.rejected && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除待确认</Button>}
+        {isExplicitRejection(record.rejection) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除待确认</Button>}
       </>}>
         {formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出。{expired ? EXPIRED_TEXT : "重发原内容，已成功的不会重复执行。"}
         {reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href={auditHref} prefetch={false}>到操作记录与审批核对</Link></>}

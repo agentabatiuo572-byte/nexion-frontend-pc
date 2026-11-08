@@ -44,6 +44,7 @@ import { createPendingMutationStore, type PendingMutationExtra, type PendingMuta
 import { roleLabel, type AdminRole } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
@@ -79,7 +80,7 @@ type C1Command = PendingMutationRecord & {
   deviceId?: number;
   deviceStatus?: string;
   /** 重试被后端明确拒绝过，只有这时才给「解除待确认」（OP-93 第 8 条）。存在记录里，刷新和过期后还在。 */
-  retryRejected?: boolean;
+  rejection?: { status: number; reasonCode?: string; backendMessage?: string };
   /** 改版前留下的记录：只有命令号和目标，没存理由，不能原样重试（OP-94），但原操作可能已经生效，要留着核对。 */
   legacy?: boolean;
   inputFingerprint?: string;
@@ -835,7 +836,7 @@ export default function UserDetailPage() {
     const slot = commandSlot(command);
     const retained = c1UserCommands.get(slot);
     const commandKey = retained ?? `${COMMAND_PREFIX[command.kind]}-${crypto.randomUUID()}`;
-    c1UserCommands.remember(slot, commandKey, { ...command, retryRejected: false });
+    c1UserCommands.remember(slot, commandKey, { ...command, rejection: undefined });
     if (!c1UserCommands.isDurablyStored(slot, commandKey)) {
       if (!retained) c1UserCommands.forget(slot, commandKey);
       throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
@@ -887,7 +888,9 @@ export default function UserDetailPage() {
       await execute(command);
     } catch (cause) {
       setPendingNotes((current) => ({ ...current, [command.fingerprint]: `重试没有成功：${cause instanceof Error ? cause.message : "原因未知"} 这说明不了原操作的结果，原命令继续保留。` }));
-      c1UserCommands.remember(command.fingerprint, command.commandKey, { ...command, retryRejected: true });
+      const refusal = isExplicitRejection(cause) ? cause as { status: number; reasonCode?: string; backendMessage?: string } : undefined;
+      c1UserCommands.remember(command.fingerprint, command.commandKey, { ...command,
+        rejection: refusal && { status: refusal.status, reasonCode: refusal.reasonCode, backendMessage: refusal.backendMessage } });
       syncPending();
     }
   };
@@ -1195,7 +1198,7 @@ export default function UserDetailPage() {
       action={<>
         <Button size="sm" disabled={!!busyReason} onClick={() => void verifyPending(command)}>读回核对</Button>
         {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason} onClick={() => void retryPending(command)}>按原操作重试</Button>}
-        {writable && (command.retryRejected || command.legacy) && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除待确认</Button>}
+        {writable && !command.legacy && isExplicitRejection(command.rejection) && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除待确认</Button>}
       </>}>
       {shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效，不要重复操作。{!quietStep && nextStep}
       {supportScope && hasWrite && <> <Link className="rd-link" href={`/users/search/${encodeURIComponent(userNo)}`} prefetch={false}>到用户详情</Link></>}

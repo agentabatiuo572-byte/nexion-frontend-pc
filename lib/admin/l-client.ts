@@ -216,8 +216,10 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     throw new LOutcomeUnknownError();
   }
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    const error = new Error(formatAdminApiError(payload.message, `BI_API_${res.status}`)) as Error & { code?: string };
+    const error = new Error(formatAdminApiError(payload.message, `BI_API_${res.status}`)) as Error & { code?: string; status: number; reasonCode?: string };
     error.code = payload.message;
+    error.status = res.status;
+    error.reasonCode = payload.message;
     throw error;
   }
   return payload.data as T;

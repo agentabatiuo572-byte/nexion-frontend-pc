@@ -33,6 +33,7 @@ import {
   type D3NetExposure,
 } from "@/lib/admin/d-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { exportScope, treasuryCommandKey, treasuryCommands, type TreasuryExportKind } from "@/lib/admin/treasury-commands";
@@ -602,7 +603,7 @@ export function D3Treasury() {
     } catch (err) {
       if (isPermissionDenied(err)) announcePermissionDenied();
       setPendingNotes((current) => ({ ...current, [retry.commandKey]: `${businessClock(Date.now())} 重试没有成功：${errorText(err, "原因未知")} 这说明不了原操作的结果，原命令继续保留。` }));
-      setRetryRejected((current) => [...current, retry.commandKey]);
+      if (isExplicitRejection(err)) setRetryRejected((current) => [...current, retry.commandKey]);
     } finally {
       setRetrying(false);
       setRetry(null);

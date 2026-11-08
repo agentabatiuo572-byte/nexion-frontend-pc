@@ -27,6 +27,7 @@ import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError, ty
 import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { ADVANCED_TRIAL_GROUPS, COMMON_TRIAL_PARAMS, TRIAL_PARAM_HELP, TRIAL_STATE_HELP } from "@/lib/admin/config-help/h2-trial";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { useReach } from "@/lib/nav/use-reach";
@@ -485,9 +486,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     if (!(record.kind === "cancel" ? canCancel : canWrite)) { notePending(record, NO_WRITE); return; }
     // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
     if (!pendingCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
-      pendingCommands.forget(record.fingerprint, record.commandKey);
-      syncPending();
-      toast("原操作已结束或过期，本次未再次发送。请先核对记录，再决定如何处理。", "warn");
+      notePending(record, "浏览器里读不到原操作，这次没有发送。记录继续保留，请到操作记录与审批核对。");
       return;
     }
     setRetryRejected((current) => current.filter((key) => key !== record.commandKey));
@@ -497,7 +496,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       await sendCommand(record);
     } catch (cause) {
       notePending(record, `重试没有成功：${displayAdminError(cause)} 这说明不了原操作的结果，原操作继续保留。`);
-      setRetryRejected((current) => [...current, record.commandKey]);
+      if (isExplicitRejection(cause)) setRetryRejected((current) => [...current, record.commandKey]);
     } finally {
       setRecovering("");
     }

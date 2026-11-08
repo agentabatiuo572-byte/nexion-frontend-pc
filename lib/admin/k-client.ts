@@ -65,7 +65,7 @@ export class K1OutcomeUncertainError extends Error {
 
 /** 后端明确拒绝。status 是 409 时表示对象被别人改过（OP-97）。 */
 export class K1RequestError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly reasonCode?: string) {
     super(message);
     this.name = "K1RequestError";
   }
@@ -108,7 +108,7 @@ async function apiRequest<T>(path: string, init?: RiskRequestInit): Promise<T> {
       throw new K1OutcomeUncertainError(
         formatAdminApiError(payload.message, `RISK_REQUEST_OUTCOME_UNKNOWN_${res.status}`), commandKey);
     }
-    throw new K1RequestError(formatAdminApiError(payload.message, `RISK_API_${res.status}`), res.status);
+    throw new K1RequestError(formatAdminApiError(payload.message, `RISK_API_${res.status}`), res.status, payload.message);
   }
   return payload.data as T;
 }

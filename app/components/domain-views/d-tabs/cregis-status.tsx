@@ -501,7 +501,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   /** 读回这条命令改的对象现在是什么样，只给事实，不当成原命令的结果（OP-93、OP-95）。 */
   const verifyCregisCommand = async (record: D1PendingCommand) => {
     const kept = "状态可能是别人改的，待确认继续保留。";
-    if (record.path.startsWith("/cregis/exception-ownership/challenges")) return "生成签名原文不动钱，也不改记录；核对后可以解除，再重新生成。";
+    if (record.path.startsWith("/cregis/exception-ownership/challenges")) return "生成签名原文不动钱，也不改记录；无法据此确认原操作结果。记录保留到关标签页。";
     if (record.path.startsWith("/cregis/addresses/policy")) {
       const policy = await financeAdminRequest<Record<string, unknown>>("/cregis/addresses/policy");
       return `读回：地址池配置现在是第 ${text(policy.version)} 版，自动补充${policy.enabled ? "开启" : "关闭"}，备用目标 ${text(policy.target)} 个。${kept}`;
@@ -534,7 +534,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       label: cregisCommandLabel(record.path),
       createdAt: record.createdAt,
       hint: replayable ? "先读回核对；按原操作重试用同一个命令号，不会重复执行。"
-        : "这项操作后端不按命令号去重，再发一次可能再执行一次，所以不能重试。先读回核对，确认原操作有没有执行，再解除。",
+        : "这项操作后端不按命令号去重，不能重试。读回只展示当前事实，记录保留到关标签页。",
       blocked: record.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : (refund ? canRefund : canManage) ? undefined : "这个账号没有这项权限",
       auditHref: "/platform/audit?domain=D",
       verify: () => verifyCregisCommand(record),

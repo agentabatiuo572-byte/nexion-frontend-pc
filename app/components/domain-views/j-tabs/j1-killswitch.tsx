@@ -15,6 +15,7 @@ import { BatchBar, BlockState, Button, Cell, Change, Checkbox, Conclusion, Confi
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { UNAVAILABLE_GATES, createJEmergencyCommandKey, isEmergencyOutcomeUncertain } from "@/lib/admin/j-client";
 import type { AutoConfirmationRow, AutoRuleRow, EmergencySlaRow, JGate, KillSwitchOverview } from "@/lib/admin/j-client";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
@@ -263,7 +264,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       await sendCommand(fingerprint, extra);
     } catch (cause) {
       notePending(record, `重试没有成功：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，原命令继续保留。`);
-      setRetryRejected((current) => [...current, commandKey]);
+      if (isExplicitRejection(cause)) setRetryRejected((current) => [...current, commandKey]);
     }
   };
 

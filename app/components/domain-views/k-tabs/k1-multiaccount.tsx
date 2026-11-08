@@ -13,6 +13,7 @@ import {
 } from "@/app/components/rd";
 import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1_RELEASE_MODE_VALUES, K1_RELEASE_PARAM_LIMITS, newK1CommandKey, updateK1RegistrationParam } from "@/lib/admin/k-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { A2OutcomeUncertainError, fetchA2ProposalByKey, fetchA2ReasonPolicy, visibleReasonLength } from "@/lib/admin/a2-client";
@@ -817,7 +818,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       await runRecord(record);
     } catch (cause) {
       setPendingNotes((current) => ({ ...current, [record.fingerprint]: `重试被拒绝：${errorText(cause)} 这说明不了原操作的结果，原操作继续保留。` }));
-      setRetryRejected((current) => [...current, record.commandKey]);
+      if (isExplicitRejection(cause)) setRetryRejected((current) => [...current, record.commandKey]);
     } finally {
       setRetrying("");
     }

@@ -174,7 +174,7 @@ export async function growthRequest<T>(path: string, init?: RequestInit, idempot
     // 带上 HTTP 状态码 + 回执是否读得出:H8 的稳定命令号靠它们区分「后端明确拒绝(4xx)」与
     // 「结果未知(5xx / 回执读不出)」。growth proxy 后端不可达时返回的是**带 JSON body 的 503**,
     // 只认解析异常会把它误判成确定性失败。网络层异常已由 guardedFetch 接管(抛出的 Error 没有 status)。
-    Object.assign(error, { status: response.status, apiCode: result?.code, apiMessage: result?.message, bodyUnreadable: result === null });
+    Object.assign(error, { status: response.status, reasonCode: result?.message, apiCode: result?.code, apiMessage: result?.message, bodyUnreadable: result === null });
     throw error;
   }
   return result.data as T;

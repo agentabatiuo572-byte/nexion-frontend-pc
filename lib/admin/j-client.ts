@@ -118,7 +118,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     if (res.status === 401 || payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED") {
       useAdminAuth.getState().signOut();
     }
-    throw new Error(formatAdminApiError(payload.message, `EMERGENCY_API_${res.status}`));
+    throw Object.assign(new Error(formatAdminApiError(payload.message, `EMERGENCY_API_${res.status}`)), { status: res.status, reasonCode: payload.message });
   }
   if (isWrite) emergencyAttempts.forget(writeSlot);
   return payload.data as T;

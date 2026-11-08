@@ -15,6 +15,7 @@ import type { KpiTrendPoint } from "@/lib/admin/kpi-trend";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
 import { BlockState, Button, Cell, Check, Conclusion, DiffField, Explain, Fact, Facts, Figure, FilterBar, FilterField, Fold, Input, Modal, Notice, NumberInput, PageHeader, Panel, RecordList, ReleaseModal, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { businessClock, businessDay, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { findByPath } from "@/lib/nav/console-nav";
 import { PaginationExemptionList } from "../design-kit";
@@ -266,7 +267,7 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
       await send(record.mode, record.input, record.reason, record.label);
     } catch (cause) {
       setRetryNote(`重试被拒绝：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，原操作继续保留。`);
-      setRetryRejected(true);
+      setRetryRejected(isExplicitRejection(cause));
     } finally {
       setRetrying(false);
     }

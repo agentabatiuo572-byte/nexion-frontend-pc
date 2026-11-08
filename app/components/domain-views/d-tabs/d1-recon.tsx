@@ -555,6 +555,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
       <PendingNotices items={bankItems} disabled={busy} />
       <D1BankOrders canManage={canBankReconcile} busyReason={busy ? "正在提交" : undefined} onCount={onBankCount}
         allManualReviewCount={overviewLoading ? undefined : overview ? overview.bankManualReviewCount : "failed"}
+        onRefreshOverview={loadOverview}
         refreshKey={`${vietQr?.asOf ?? ""}:${bankKey}`}
         blocked={(order) => bankPending.some(command => command.path === `/vietqr/orders/${order.intentNo}/manual-credit`)}
         onManualCredit={(order, onSettled) => openBankManualCredit(order, async () => { await Promise.all([onSettled(), loadOverview()]); })} />

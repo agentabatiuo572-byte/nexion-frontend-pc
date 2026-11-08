@@ -73,10 +73,11 @@ function creditBlock(order: D1BankOrder, actions: OrderActions) {
   return undefined;
 }
 
-export function D1BankOrders({ refreshKey, onCount, allManualReviewCount, ...actions }: OrderActions & {
+export function D1BankOrders({ refreshKey, onCount, allManualReviewCount, onRefreshOverview, ...actions }: OrderActions & {
   refreshKey: string;
   onCount: (count: D1Count) => void;
   allManualReviewCount: number | "failed" | undefined;
+  onRefreshOverview: () => Promise<void>;
 }) {
   const [status, setStatus] = useState(() => readParam("bankSettlementStatus", ["MANUAL_REVIEW"]) === "MANUAL_REVIEW" ? "MANUAL_REVIEW" : readParam("bankStatus", Object.keys(ORDER_STATUS)) ?? "");
   const [keyword, setKeyword] = useState(() => readParam("bankQ") ?? "");
@@ -161,7 +162,7 @@ export function D1BankOrders({ refreshKey, onCount, allManualReviewCount, ...act
     <Panel flush icon={Landmark} tone="role-2" title="银行卡支付订单"
       sub={data ? `数据时间 ${time(data.asOf)}（${zone}）` : undefined}
       explain="包含所有状态的订单。订单数不等于实际收款，实际入账看「实际入账」列。到账时间按越南时间（UTC+7）填写和核对。"
-      actions={<Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => { void load(); void loadCounts(); }}>刷新</Button>}>
+      actions={<Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => { void load(); void loadCounts(); void onRefreshOverview(); }}>刷新</Button>}>
       <Table label="银行卡支付订单" aria-busy={loading}>
         <thead><tr>
           <Th sticky="start">付款单 · 用户</Th>

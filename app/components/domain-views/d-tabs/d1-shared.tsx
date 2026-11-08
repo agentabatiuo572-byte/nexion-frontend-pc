@@ -106,7 +106,7 @@ export type D1PendingItem = {
   verify?: () => Promise<ReactNode>;
   /** 按原请求重发。后端不按命令号去重的操作不给：再发可能再执行一次，只能读回核对（OP-94）。 */
   retry?: () => Promise<unknown>;
-  /** 被明确拒绝、或不能重试的读回核对过之后，人核实过原操作再放开本页的锁，不发请求。 */
+  /** 原样重试被明确拒绝后，人核实过原操作再放开本页的锁，不发请求。 */
   release: () => void;
   after: () => void;
 };
@@ -116,7 +116,7 @@ const unknownOutcome = (error: unknown) => isDOutcomeUnknownError(error)
 
 /**
  * 结果未确认的写操作，所在页签顶部常显（OP-93）。只能按原请求重试（OP-94）；重试被后端明确拒绝后才出现「解除待确认」，
- * 后端不按命令号去重的操作不给重试，读回核对之后才出现「核对后解除」。解除只放开本页的锁，不发请求（OP-153）。写法同提现审核。
+ * 后端不按命令号去重的操作只读回事实，不给重试或解除，记录保留到关标签页（决定 03）。解除只清本地记录，不发请求（OP-153）。
  */
 export function PendingNotices({ items, disabled }: { items: readonly D1PendingItem[]; disabled?: boolean }) {
   const reach = useReach();
@@ -150,7 +150,6 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
     setRunning(item.key);
     try {
       note(item.key, await item.verify());
-      if (!item.retry) setReleasable((current) => current.includes(item.key) ? current : [...current, item.key]);
     } catch (error) { note(item.key, `读回失败：${displayAdminError(error)} 待确认继续保留。`); }
     finally { setRunning(""); }
   };
@@ -161,7 +160,7 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
           action={<>
             {item.verify && <Button size="sm" disabled={disabled || !!running} onClick={() => void verify(item)}>读回核对</Button>}
             {item.retry && <Button size="sm" loading={running === item.key} disabled={disabled || (!!running && running !== item.key)} disabledReason={item.blocked} onClick={() => void retry(item)}>按原操作重试</Button>}
-            {releasable.includes(item.key) && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>{item.retry ? "解除待确认" : "核对后解除"}</Button>}
+            {item.retry && releasable.includes(item.key) && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>解除待确认</Button>}
           </>}>
           {businessStamp(item.createdAt)}（{zoneLabel()}）发出，可能已经生效。{item.retry ? item.blocked ?? item.hint : item.hint}
           {item.auditHref && reach(item.auditHref, "platform_a2_read") && <> <Link className="rd-link" href={item.auditHref}>到操作记录与审批核对</Link></>}
@@ -171,7 +170,7 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
       ))}
       {releasing && (
         <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)}
-          explain={releasing.retry ? "重试被拒说明不了原操作的结果，先到操作记录确认。解除后原操作不再重试。" : "这项操作不能按原请求重试。先核对原操作有没有执行；这里只清理本地待确认，后续操作仍须通过服务端校验。"}
+          explain="重试被明确拒绝后，先到操作记录核实原操作。解除只移除本标签页的待确认记录，后端结果和锁定状态不变。"
           onConfirm={() => { releasing.release(); setReleasing(null); releasing.after(); }} />
       )}
     </>
