@@ -988,10 +988,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   }, [main]);
   /**
    * 待确认记录对应的审批单还在队列里时，用后端这份补齐记录没存的字段（T04）：同一张单内容不变，
-   * 第二轮的记录没有订单号和权限规则，第三轮认不出的存成 null。不在队列里时用记录自己存的，前后值缺就不加额外门槛。
+   * 第二轮的记录没有订单号和权限规则，第三轮认不出的存成 null。不在队列里时用记录自己存的，前后值缺就不加额外门槛；
+   * 退款单的对象就是订单号（后端发起时核过 obj 等于 orderNo）。
    */
   const recordTicket = (record: A2PendingCommand) => pendingQueue.find((w) => w.id === record.target);
-  const recordOrderNo = (record: A2PendingCommand) => record.refundOrderNo ?? recordTicket(record)?.refundOrderNo;
+  const recordOrderNo = (record: A2PendingCommand) => record.refundOrderNo ?? recordTicket(record)?.refundOrderNo
+    ?? (record.fundEffect === "ORDER_REFUND" ? record.obj : undefined);
   const recordRule = (record: A2PendingCommand) => {
     const queued = recordTicket(record);
     return queued ? decisionRule(queued) : record.rule ?? decisionRule({ action: record.action ?? "", obj: record.obj ?? "", operationCode: record.operationCode, fundEffect: record.fundEffect, before: "", after: "" });
