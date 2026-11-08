@@ -1524,7 +1524,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     pendingKeys.forget(record.fingerprint, record.commandKey);
     syncPending();
     setReleasing(null);
-    toast("已解除待确认，这笔可以重新处理", "success");
+    toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
   };
 
   /** 读回这笔单，只给现在的事实。状态变了可能是别人改的，不能当成原命令的回执，待确认和原命令都保留（OP-93、OP-95）。 */
@@ -1728,8 +1728,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       moreCount={moreCount}
       onClearMore={resetAdvancedFilters}
       more={<>
-        <FilterField label="最低金额"><Input type="number" min="0" value={draft.minAmount} onChange={(event) => { setDraft({ ...draft, minAmount: event.target.value }); setAmountRangeInvalid(false); }} /></FilterField>
-        <FilterField label="最高金额"><Input type="number" min="0" value={draft.maxAmount} onChange={(event) => { setDraft({ ...draft, maxAmount: event.target.value }); setAmountRangeInvalid(false); }} /></FilterField>
+        <FilterField label="最低金额"><Input type="number" min="0" step="any" value={draft.minAmount} onChange={(event) => { setDraft({ ...draft, minAmount: event.target.value }); setAmountRangeInvalid(false); }} /></FilterField>
+        <FilterField label="最高金额"><Input type="number" min="0" step="any" value={draft.maxAmount} onChange={(event) => { setDraft({ ...draft, maxAmount: event.target.value }); setAmountRangeInvalid(false); }} /></FilterField>
         <FilterField label="最低风险分"><Input inputMode="numeric" placeholder="0–100" aria-invalid={!riskScoreIsValid(draft.minRiskScore)} value={draft.minRiskScore} onChange={(event) => { setDraft({ ...draft, minRiskScore: event.target.value }); setRiskDropped(""); }} /></FilterField>
         <FilterField label="触发规则（只筛选当前页）"><Input value={ruleFilter} onChange={(event) => setRuleFilter(event.target.value)} /></FilterField>
         <FilterField label="IP 段"><Input placeholder="例如 192.168.1" value={draft.ipSegment} onChange={(event) => setDraft({ ...draft, ipSegment: event.target.value })} /></FilterField>
@@ -1949,7 +1949,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     </Drawer>
 
     {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-      explain="重试被拒说明不了原操作的结果，先到操作记录或打款方确认。解除后原操作不再重试，系统仍按这笔现在的状态校验。" />}
+      explain="重试被拒说明不了原操作的结果，先到操作记录或打款方确认。解除只移除本地记录，不办理后端核查结案；后端仍可能锁住这笔提现。" />}
 
     {batchResult && <Modal title={`批量${actionLabel(batchResult.action)}结果`} icon={ClipboardList} onClose={() => setBatchResult(null)} footer={<Button variant="primary" onClick={() => setBatchResult(null)}>知道了</Button>}>
       <Facts>
