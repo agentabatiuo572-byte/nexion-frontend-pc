@@ -218,7 +218,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 收到权限层的 403（`ADMIN_PERMISSION_DENIED`、`ACCESS_DENIED`）时共用层提示「这个账号没有这项权限」，关框，外壳重读权限，页面上的按钮随之收起。业务规则的 403 有自己的说明，按普通失败留在框里。页面自己的表单（不走 `OperationConfirmModal`、`KConfirmModal`）在 catch 里用 `isPermissionDenied(error)` 判断，调 `announcePermissionDenied()` 后自己关框。
 
-`useToast` 保留 `[toastNode, setToast]` 调用方式，提示统一交给根布局的 `ToastHost`，发起页面卸载后仍显示。打开 `Modal`（含 `OperationConfirmModal`、`KConfirmModal`）或全局确认框时立即清掉旧提示；框打开后新来的提示放在最上层框的标题下面，参与排版，不覆盖标题或表单。默认 3 秒，悬停暂停，移开重新计时。
+`useToast` 保留 `[toastNode, setToast]` 调用方式，提示统一交给根布局的 `ToastHost`，发起页面卸载后仍显示。没有框开着时提示条顶部居中、距视口顶 8px（Ant Design Message），落在顶栏那一条里，不盖页标题和页头的主按钮。打开 `Modal`（含 `OperationConfirmModal`、`KConfirmModal`）或全局确认框时立即清掉旧提示；框打开后新来的提示放在最上层框的标题下面，参与排版，不覆盖标题或表单。默认 3 秒，悬停暂停，移开重新计时。
 
 提示类型写第二个参数：`setToast("已保存", "success")`，失败 `error`，要人注意和结果未知 `warn`，其余 `info`。没传时按文字判断：「已」开头又没有转折「但」是 `success`，含「失败」「错误」是 `error`，含「未确认」「待确认」「未完成」「不能」「无法」「没有提交」是 `warn`，别的是 `info`。这是迁移期的兜底，页面都传了就删。`Notice` 的 `tone` 同理，按这条提示说的事传，不要整页写死一种：失败 `danger`、等人处理 `warn`、已完成 `ok`、处理中 `progress`。
 
