@@ -3,9 +3,9 @@ export type AutoNetwork="BEP20"|"ERC20"|"TRC20";
 const CHAIN:Record<AutoNetwork,string>={BEP20:"2510",ERC20:"60",TRC20:"195"};
 export const AUTO_STATES: Record<string,string> = {
   WAIT_COLLECTION:"等待自动归集到cregis", COLLECTION_SUBMITTING:"归集到cregis请求提交中，禁止重复发送", COLLECTION_PENDING:"归集到cregis确认中",
-  COLLECTION_UNKNOWN:"归集到cregis结果待核查，禁止重发", COLLECTION_FAILED:"归集到cregis未完成", WAIT_PAYMENT:"归集到cregis已确认，等待cregis转平台收款钱包",
-  PAYMENT_SUBMITTING:"cregis转平台收款钱包请求提交中，禁止重复发送", PAYMENT_PENDING:"cregis转平台收款钱包确认中", PAYMENT_UNKNOWN:"cregis转平台收款钱包结果待核查，禁止重发",
-  PAYMENT_FAILED:"cregis转平台收款钱包未完成", COMPLETED:"归集到cregis及转平台收款钱包均已链上确认",
+  COLLECTION_UNKNOWN:"归集到cregis结果待核查，禁止重发", COLLECTION_FAILED:"归集到cregis未完成", WAIT_PAYMENT:"归集到cregis已确认，等待自动cregis转平台收款钱包",
+  PAYMENT_SUBMITTING:"自动cregis转平台收款钱包请求提交中，禁止重复发送", PAYMENT_PENDING:"自动cregis转平台收款钱包确认中", PAYMENT_UNKNOWN:"自动cregis转平台收款钱包结果待核查，禁止重发",
+  PAYMENT_FAILED:"自动cregis转平台收款钱包未完成", COMPLETED:"自动归集到cregis及自动cregis转平台收款钱包均已链上确认",
 };
 export const AUTO_ERRORS: Record<string,string> = {
   CREGIS_AUTO_READ_OR_RISK_UNAVAILABLE:"链上证据、渠道或风控条件待核实，已暂停推进",
