@@ -571,7 +571,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     } else {
       setE5Devices([]);
       setE5Total(0);
-      setE5DeviceError(`设备库存：${displayAdminError(deviceResult.reason)}`);
+      setE5DeviceError(`${tab === "E6" ? "手机列表" : "设备列表"}：${displayAdminError(deviceResult.reason)}`);
     }
     if (overviewResult.status === "fulfilled") {
       setE5Overview(overviewResult.value);
@@ -732,7 +732,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!canMutateE2Tasks) return rejectE2Mutation();
     const err = validateTaskForm();
     if (err) { setToast(err); return; }
-    openActionConfirm({ briefKind: "config", name: "新增任务 · " + taskForm.n.trim(), op: "task-create", detail: `新增任务「${taskForm.n.trim()}」。批准后，对之后新派的任务生效。` });
+    openActionConfirm({ briefKind: "config", name: "新增任务 · " + taskForm.n.trim(), op: "task-create", content: <div className="col" style={{ gap: 10 }}><KV k="任务类型" v={TASK_CLASS_LABELS[taskForm.taskClass as keyof typeof TASK_CLASS_LABELS]} /><KV k="时长" v={`${taskForm.durationMinutes} 分钟`} /><KV k="每任务奖励" v={`${taskForm.baseReward} ${taskForm.asset}`} /><KV k="状态" v={taskForm.enabled ? "启用" : "停用"} /></div>, detail: `新增任务「${taskForm.n.trim()}」。批准后，对之后新派的任务生效。` });
     setTaskDrawer(false);
   };
   // 编辑提交:校验后走操作确认(高敏 · 改单价/门槛/taskClass server-canonical)→ onConfirm 真写 updateTask。
@@ -740,7 +740,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!canMutateE2Tasks) return rejectE2Mutation();
     const err = validateTaskForm();
     if (err) { setToast(err); return; }
-    openActionConfirm({ briefKind: "config", name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", detail: `修改任务「${taskForm.n.trim()}」。只对之后新派的任务生效，已派出的按原设置完成。` });
+    openActionConfirm({ briefKind: "config", name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", content: <div className="col" style={{ gap: 10 }}><KV k="任务类型" v={TASK_CLASS_LABELS[taskForm.taskClass as keyof typeof TASK_CLASS_LABELS]} /><KV k="时长" v={`${taskForm.durationMinutes} 分钟`} /><KV k="每任务奖励" v={`${taskForm.baseReward} ${taskForm.asset}`} /><KV k="状态" v={taskForm.enabled ? "启用" : "停用"} /></div>, detail: `修改任务「${taskForm.n.trim()}」。只对之后新派的任务生效，已派出的按原设置完成。` });
     setTaskDrawer(false);
   };
   // ── 产品媒体上传(SKU 抽屉)──
@@ -890,7 +890,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setToast("没有任何修改，无需提交");
       return;
     }
-    openActionConfirm({ briefKind: "config", name: (editSkuId ? "编辑商品 · " : "新增商品 · ") + (form.name || "未命名"), op: "sku-save", isNew: !editSkuId, hasImg: !!skuMedia });
+    openActionConfirm({ briefKind: "config", name: (editSkuId ? "编辑商品 · " : "新增商品 · ") + (form.name || "未命名"), op: "sku-save", isNew: !editSkuId, hasImg: !!skuMedia,
+      content: <div className="col" style={{ gap: 10 }}><KV k="任务等级" v={devicePools.filter(pool => form.allowedPoolCodes.includes(pool.code)).map(pool => `${pool.code} ${pool.name}`).join("、") || "未选择"} /><KV k="月收益目标" v={form.monthlyTargetUsdt ? `${form.monthlyTargetUsdt} USDT · ±${form.monthlyTargetBandPct}%` : "未设置"} /><KV k="托管机房" v={form.datacenter.trim() || "未填写"} /></div>,
+    });
     setSkuDrawer(false);
   };
 
