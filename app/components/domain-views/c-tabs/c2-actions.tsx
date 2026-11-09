@@ -499,6 +499,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const canOpenD1 = reach(D1_PATH, "finance_d1_read");
   const canReadAudit = reach("/platform/audit", "platform_a2_read");
   const canReadUserDetail = reach("/users/search", "user_c1hub_read");
+  const canReadAssetAdjustments = reach("/users/assets", "user_c3_read");
   // 财务提交审批分支保留（EX-11）：B30 下内置财务进不来，自定义角色还可能走到。
   const freezeProposalOnly = session?.role === "finance"
     && authorities.includes("platform_a2_proposal_create")
@@ -1944,7 +1945,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     <div {...tabIds.panel(tab)} className="rd-tab-pane">
       {tab === "accounts" && accountsPane}
       {tab === "deletions" && <AccountDeletionQueue ctx={ctx} canWrite={canWriteDeletions} status={deletionStatus} onStatus={setDeletionStatus}
-        refreshKey={deletionRefresh} focusKey={deletionFocus} onChanged={() => void loadDeletionCounts()} canReadUserDetail={canReadUserDetail}
+        refreshKey={deletionRefresh} focusKey={deletionFocus} onChanged={() => void loadDeletionCounts()} canReadUserDetail={canReadUserDetail} canReadAssetAdjustments={canReadAssetAdjustments}
         locked={(requestNo) => locked.has(`deletion|${requestNo}`)} submitting={Boolean(submitting)} send={deletionCommand} />}
       {tab === "views" && viewsPane}
       {tab === "lists" && listsPane}

@@ -113,7 +113,7 @@ export type DeletionSend = (
   onDone?: (row: AccountDeletionRequest) => unknown,
 ) => Promise<"done" | "unknown">;
 
-export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshKey, focusKey, onChanged, canReadUserDetail, locked, submitting, send }: {
+export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshKey, focusKey, onChanged, canReadUserDetail, canReadAssetAdjustments, locked, submitting, send }: {
   ctx: CCtx;
   canWrite: boolean;
   status: AccountDeletionStatus | "";
@@ -124,6 +124,7 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
   focusKey: number;
   onChanged: () => void;
   canReadUserDetail: boolean;
+  canReadAssetAdjustments: boolean;
   locked: (requestNo: string) => boolean;
   submitting: boolean;
   send: DeletionSend;
@@ -353,7 +354,9 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
     { label: "用户", value: <>系统编号 {selected.userId}{canReadUserDetail && <> · <Link className="rd-link" href={`/users/search/${selected.userId}`} prefetch={false}>到用户详情</Link></>}</>,
       reason: selected.status === "IN_REVIEW" || selected.status === "REQUESTED" ? "完成注销前到用户详情核对资金和订单" : undefined },
     { label: "申请时间", value: formatBusinessTimeCompact(selected.requestedAt, "—") },
-    ...(selected.status === "BLOCKED" ? [{ label: SYSTEM_BLOCKS.includes(blockedRaw) ? "拦下原因" : "拒绝理由", value: <><span className="rd-point-mark" data-tone="warn"><AlertTriangle size={14} aria-hidden /></span>{reasonText(blockedRaw)}</>,
+    ...(selected.status === "BLOCKED" ? [{ label: SYSTEM_BLOCKS.includes(blockedRaw) ? "拦下原因" : "拒绝理由", value: <><span className="rd-point-mark" data-tone="warn"><AlertTriangle size={14} aria-hidden /></span>{reasonText(blockedRaw)}{blockedRaw === "UNSETTLED_FUNDS_OR_ORDERS" && <> <Explain label="零头余额的处理方法" content={<>低于最低提现额或最低兑换量的零头余额，用户联系客服后由财务在「{canReadAssetAdjustments
+        ? <Link className="rd-link" href={`/users/assets?userId=${selected.userId}&returnTo=${encodeURIComponent(`/users/actions?tab=deletions${status ? `&deletionStatus=${status}` : ""}`)}`} prefetch={false}>余额与资产调整</Link>
+        : "余额与资产调整"}」写理由，经审批清零，之后运营点「重新审核」再「完成注销」。</>} /></>}</>,
       reason: <KeepText text={blockedRaw === "UNSETTLED_FUNDS_OR_ORDERS"
         ? "用户结清后，点「重新审核」再「完成注销」；用户也可以在 App 取消申请。"
         : blockedRaw === "UNSETTLED_STATE_UNAVAILABLE"
