@@ -435,6 +435,8 @@ export function menuCodesFromAuthorities(authorities: string[]): string[] {
       found.add(match[1] === "I7" ? "I6" : match[1]);
     }
   }
+  // PHONE tools moved to E6; DB menu grants remain authoritative when supplied.
+  if (authorities.some(code => /^device_e[25]_/.test(code))) found.add("E6");
   return [...found].sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
 }
 

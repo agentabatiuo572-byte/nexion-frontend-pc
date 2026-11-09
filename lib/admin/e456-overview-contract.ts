@@ -66,7 +66,7 @@ function validateE5Device(value: unknown, message: string, phones: boolean) {
   if (!phones) {
     if (!["WAITING_ACTIVATION", "WAITING_INIT", "LEGACY_PENDING", "RUNNING", "WAITING_CONFIG", "PAUSED", "CLOSING", "STOPPED", "UNBOUND", "ERROR", "SIM_OFF"].includes(String(row.simState))) throw new Error(message);
     if (!["ORDER", "TRADE_IN", "TRIAL", "PROMOTION_GIFT"].includes(String(row.sourceChannel))) throw new Error(message);
-    text(row.hostingLabel, message, true);
+    if (row.hostingLabel !== null) text(row.hostingLabel, message, true);
     nonNegativeInteger(row.activeDevicesForUser, message);
     nonNegativeInteger(row.maxDevicesPerUser, message, 1);
     if (row.simLastError != null) text(row.simLastError, message, true);

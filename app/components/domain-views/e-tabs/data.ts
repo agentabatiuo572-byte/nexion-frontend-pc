@@ -4,7 +4,7 @@
  * 视图局部的纯设计数组(timeline / 热力图 / DC / feed / tx 监控 等)放各子视图文件内,保持本文件聚焦逻辑。
  */
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
-import { supportsDeviceMonthlyTarget } from "@/lib/admin/device-monthly-target";
+import { supportsDeviceMonthlyTarget, UNSUPPORTED_MONTHLY_TARGET_REASON } from "@/lib/admin/device-monthly-target";
 import { skuBaseRateText } from "@/lib/admin/operator-copy";
 
 // 全系统统一连续编号 E1-E5(上架节奏门并入 E1、设备生命周期归 E3)。
@@ -85,6 +85,8 @@ export function joinGpu(model: string, count: string): string | undefined {
 }
 export function validateSkuSpecs(f: SkuForm, existing?: OpsSku): string | null {
   if (f.datacenter.trim().length > 128) return "托管机房最多 128 字";
+  if (!supportsDeviceMonthlyTarget(f.id || existing?.id || f.name, f.tier)
+    && (f.allowedPoolCodes.length || f.monthlyTargetUsdt.trim() || existing?.status === "on")) return UNSUPPORTED_MONTHLY_TARGET_REASON;
   if (f.allowedPoolCodes.length && !f.monthlyTargetUsdt.trim()) return existing?.monthlyTargetUsdt != null
     ? "仍选有任务等级，不能清空月收益目标" : "已选任务等级，必须设置月收益目标，用于配平每单收益";
   if (supportsDeviceMonthlyTarget(f.id || existing?.id || f.name, f.tier)) {

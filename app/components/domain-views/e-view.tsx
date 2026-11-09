@@ -18,7 +18,7 @@ import { Icon, Btn, Chip, Drawer, KV, Badge, OperationConfirmModal, useToast } f
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import { supportsDeviceMonthlyTarget } from "@/lib/admin/device-monthly-target";
+import { supportsDeviceMonthlyTarget, UNSUPPORTED_MONTHLY_TARGET_REASON } from "@/lib/admin/device-monthly-target";
 import { monthlyTargetEstimateText } from "@/lib/admin/operator-copy";
 import { operatorDeviceStatus, operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
@@ -58,7 +58,7 @@ import {
   EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, validateSkuSpecs, skuNum, stateLabel, ostate,
 } from "./e-tabs/data";
 import type { Mc, EOp, EViewCtx, EOrder } from "./e-tabs/types";
-import { DevicePoolChoices } from "./e-tabs/task-type-policy";
+import { DevicePoolChoices, FIXED_DEVICE_LEVELS } from "./e-tabs/task-type-policy";
 import { E1Catalog } from "./e-tabs/e1-catalog";
 import { E2Tasks } from "./e-tabs/e2-tasks";
 import { E3Lifecycle } from "./e-tabs/e3-lifecycle";
@@ -269,10 +269,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
   const canReadE1 = useAdminAuth((s) => s.session?.authorities.includes("device_e1_read") ?? false);
   const canWriteE1 = useAdminAuth((s) => s.session?.authorities.includes("device_e1_write") ?? false);
+  const canReadE2 = useAdminAuth((s) => s.session?.authorities.includes("device_e2_read") ?? false);
   const canWriteE2 = useAdminAuth((s) => s.session?.authorities.includes("device_e2_write") ?? false);
   const canWriteE3 = useAdminAuth((s) => s.session?.authorities.includes("device_e3_write") ?? false);
   const canWriteE4 = useAdminAuth((s) => s.session?.authorities.includes("device_e4_write") ?? false);
   const canRefundE4 = useAdminAuth((s) => s.session?.authorities.includes("device_e4_order_refund") ?? false);
+  const canReadE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_read") ?? false);
   const canWriteE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_write") ?? false);
   const hasForceActivateE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_device_force_activate") ?? false);
   const hasUnbindE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_device_unbind") ?? false);
@@ -281,6 +283,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       && s.session.authorities.includes("platform_a2_proposal_create"));
   const canForceActivateE5 = hasForceActivateE5 || canProposeE5;
   const canUnbindE5 = hasUnbindE5 || canProposeE5;
+  const canReadE6 = useAdminAuth((s) => s.session?.authorities.includes("device_e6_read") ?? false);
   const canWriteE6 = useAdminAuth((s) => s.session?.authorities.includes("device_e6_write") ?? false);
   const hasToggleE6 = useAdminAuth((s) => s.session?.authorities.includes("device_e6_flag_toggle") ?? false);
   const canProposeE6 = useAdminAuth((s) =>
@@ -380,8 +383,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [e2Loading, setE2Loading] = useState(false);
   const [e2Error, setE2Error] = useState<string | null>(null);
   const [e2TaskCatalogReady, setE2TaskCatalogReady] = useState(false);
-  const canMutateE2 = canWriteE2 && !e2Loading && !e2Error;
-  const canMutateE2Tasks = canWriteE2 && !e2Loading && e2TaskCatalogReady;
+  const canMutateE2 = canReadE6 && canWriteE6 && !e2Loading && !e2Error;
+  const canMutateE2Tasks = canReadE2 && canWriteE2 && !e2Loading && e2TaskCatalogReady;
   useEffect(() => {
     setActionConfirm((current) => {
       if (current && isE2TaskMutation(current.op) && !canMutateE2Tasks) return null;
@@ -393,7 +396,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     setE2Loading(true);
     setE2Error(null);
     const [tasksResult, phoneResult] = await Promise.allSettled([
-      fetchE2Tasks(), fetchE2PhoneTiers(),
+      canReadE2 ? fetchE2Tasks() : Promise.resolve([]),
+      canReadE6 ? fetchE2PhoneTiers() : Promise.resolve({ tiers: [], comparisons: [] }),
     ]);
     const errors: string[] = [];
     if (tasksResult.status === "fulfilled") {
@@ -414,8 +418,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }
     setE2Error(errors.length ? errors.join("；") : null);
     setE2Loading(false);
-  }, []);
-  useEffect(() => { if (tab === "E6") void refreshE2(); }, [tab, refreshE2]);
+  }, [canReadE2, canReadE6]);
+  useEffect(() => { if (tab === "E6" && (canReadE2 || canReadE6)) void refreshE2(); }, [tab, canReadE2, canReadE6, refreshE2]);
 
   // ── E3 设备使用与升级置换:服务端配置 / 概览 / tx 监控为单一来源 ──
   const refreshE3 = useCallback(async () => {
@@ -581,7 +585,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }
     setE5Loading(false);
   }, [tab, e5ProductFilter, e5Keyword, e5SourceFilter, e5Page, e5PageSize, e5StateFilter]);
-  useEffect(() => { if (tab === "E5" || tab === "E6") void refreshE5(); }, [tab, refreshE5]);
+  useEffect(() => { if ((tab === "E5" || tab === "E6") && canReadE5) void refreshE5(); }, [tab, canReadE5, refreshE5]);
   const runE5DeviceAction = useCallback(async (deviceId: number, action: "activate" | "deactivate", reason: string) => {
     const device = action === "activate"
       ? await activateE5Device(deviceId, false, reason, operator)
@@ -595,17 +599,15 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     setToast(`${paused ? "暂停" : "恢复"}成功 · ${result.changedCount} 台设备`);
   }, [operator, refreshE5, setToast]);
   const [devicePools, setDevicePools] = useState<TaskPool[]>([]);
-  const [poolsReady, setPoolsReady] = useState(false);
   const [hostingLabels, setHostingLabels] = useState<string[]>([]);
   const [hostingLabelError, setHostingLabelError] = useState("");
   const refreshSkuChoices = useCallback(async () => {
-    setPoolsReady(false);
-    const [poolResult, labelResult] = await Promise.allSettled([fetchTaskPools(), fetchSkuDatacenterLabels()]);
-    if (poolResult.status === "fulfilled") { setDevicePools(poolResult.value); setPoolsReady(true); }
-    else setToast(displayAdminError(poolResult.reason));
+    const [poolResult, labelResult] = await Promise.allSettled([canReadE2 ? fetchTaskPools() : Promise.resolve([]), fetchSkuDatacenterLabels()]);
+    if (poolResult.status === "fulfilled") setDevicePools(poolResult.value);
+    else { setDevicePools([]); setToast(displayAdminError(poolResult.reason)); }
     if (labelResult.status === "fulfilled") { setHostingLabels(labelResult.value); setHostingLabelError(""); }
     else setHostingLabelError(displayAdminError(labelResult.reason));
-  }, [setToast]);
+  }, [canReadE2, setToast]);
 
   // ── E6 算力与设备配置:服务端聚合视图为单一来源 ──
   const [e6Config, setE6Config] = useState<E6ComputeConfigView | null>(null);
@@ -623,7 +625,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE6Loading(false);
     }
   }, []);
-  useEffect(() => { if (tab === "E6") void refreshE6(); }, [tab, refreshE6]);
+  useEffect(() => { if (tab === "E6" && canReadE6) void refreshE6(); }, [tab, canReadE6, refreshE6]);
 
   // ── 抽屉本地态 ──
   const [skuDrawer, setSkuDrawer] = useState(false);
@@ -740,7 +742,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!canMutateE2Tasks) return rejectE2Mutation();
     const err = validateTaskForm();
     if (err) { setToast(err); return; }
-    openActionConfirm({ briefKind: "config", name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", content: <div className="col" style={{ gap: 10 }}><KV k="任务类型" v={TASK_CLASS_LABELS[taskForm.taskClass as keyof typeof TASK_CLASS_LABELS]} /><KV k="时长" v={`${taskForm.durationMinutes} 分钟`} /><KV k="每任务奖励" v={`${taskForm.baseReward} ${taskForm.asset}`} /><KV k="状态" v={taskForm.enabled ? "启用" : "停用"} /></div>, detail: `修改任务「${taskForm.n.trim()}」。只对之后新派的任务生效，已派出的按原设置完成。` });
+    const current = tasks.find(task => task.id === editTaskId);
+    if (!current) { setToast("手机任务已变化，请刷新后重试"); return; }
+    const amplify = Number(taskForm.baseReward) > Number(current.simulation!.baseReward)
+      || (!current.simulation!.enabled && taskForm.enabled);
+    openActionConfirm({ briefKind: "config", name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", amplify, content: <div className="col" style={{ gap: 10 }}><KV k="任务类型" v={TASK_CLASS_LABELS[taskForm.taskClass as keyof typeof TASK_CLASS_LABELS]} /><KV k="时长" v={`${taskForm.durationMinutes} 分钟`} /><KV k="每任务奖励" v={`${taskForm.baseReward} ${taskForm.asset}`} /><KV k="状态" v={taskForm.enabled ? "启用" : "停用"} /></div>, detail: `修改任务「${taskForm.n.trim()}」。只对之后新派的任务生效，已派出的按原设置完成。` });
     setTaskDrawer(false);
   };
   // ── 产品媒体上传(SKU 抽屉)──
@@ -860,7 +866,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       return;
     }
     if (form.datacenter.trim().length > 128) { setToast("托管机房最多 128 字"); return; }
-    if (!poolsReady) { setToast("任务等级尚未加载，请刷新后再提交"); return; }
+    if (!monthlyTargetSupported && editedSku?.status === "on") { setToast(UNSUPPORTED_MONTHLY_TARGET_REASON); return; }
     if (editedSku?.status === "on" && !form.allowedPoolCodes.length) { setToast("在售商品至少要选择一个任务等级"); return; }
     if (editedSku?.status === "on" && !form.datacenter.trim()) { setToast("在售商品必须填写托管机房"); return; }
     const specErr = validateSkuSpecs(form, editedSku);
@@ -891,7 +897,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       return;
     }
     openActionConfirm({ briefKind: "config", name: (editSkuId ? "编辑商品 · " : "新增商品 · ") + (form.name || "未命名"), op: "sku-save", isNew: !editSkuId, hasImg: !!skuMedia,
-      content: <div className="col" style={{ gap: 10 }}><KV k="任务等级" v={devicePools.filter(pool => form.allowedPoolCodes.includes(pool.code)).map(pool => `${pool.code} ${pool.name}`).join("、") || "未选择"} /><KV k="月收益目标" v={form.monthlyTargetUsdt ? `${form.monthlyTargetUsdt} USDT · ±${form.monthlyTargetBandPct}%` : "未设置"} /><KV k="托管机房" v={form.datacenter.trim() || "未填写"} /></div>,
+      content: <div className="col" style={{ gap: 10 }}><KV k="任务等级" v={FIXED_DEVICE_LEVELS.filter(pool => form.allowedPoolCodes.includes(pool.code)).map(pool => `${pool.code} ${pool.name}`).join("、") || "未选择"} /><KV k="月收益目标" v={form.monthlyTargetUsdt ? `${form.monthlyTargetUsdt} USDT · ±${form.monthlyTargetBandPct}%` : "未设置"} /><KV k="托管机房" v={form.datacenter.trim() || "未填写"} /></div>,
     });
     setSkuDrawer(false);
   };
@@ -899,15 +905,15 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const ctx: EViewCtx = {
     pE, openActionConfirm, toast: setToast,
     canWriteE1: canUseE1Writes, skus, e1InvalidSkus, e1Loading, e1Error, e1Gates, e1BundleDiscount, phaseCur, refreshE1, openSku, delSku,
-    canWriteE2, tasks, phoneTiers, yieldComparisons, e2Loading, e2Error, e2TaskCatalogReady, refreshE2, openAddTask, openEditTask,
+    canReadE2, canWriteE2, tasks, phoneTiers, yieldComparisons, e2Loading, e2Error, e2TaskCatalogReady, refreshE2, openAddTask, openEditTask,
     canWriteE3, e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
     canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4Page, e4PageSize, e4Total, e4Filter, e4Keyword, setE4Page, setE4PageSize, setE4Filter, setE4Keyword, refreshE4, orderState, isCancelled, isRefunded, terminalOf, openOrder,
-    canWriteE5, canForceActivateE5, canUnbindE5,
+    canReadE5, canWriteE5, canForceActivateE5, canUnbindE5,
     runE5DeviceAction, runE5UserBatch,
     e5Devices, e5Overview, e5Loading, e5DeviceError, e5OverviewError, e5Page, e5PageSize, e5Total,
     e5Keyword, e5StateFilter, e5SourceFilter, e5ProductFilter, setE5Keyword, setE5StateFilter, setE5SourceFilter, setE5ProductFilter,
     setE5Page, setE5PageSize, refreshE5,
-    canWriteE6, canToggleE6, e6Config, e6Loading, e6Error, refreshE6,
+    canReadE6, canWriteE6, canToggleE6, e6Config, e6Loading, e6Error, refreshE6,
   };
 
   // ── 批6 A2 propose 辅助(壳集中回调,被 onConfirm 复用)──
@@ -1154,8 +1160,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               <Btn sm disabled={skuMediaUploading} onClick={() => resetSkuMedia(null)}>移除</Btn>
             </div>}
           </div>
-          <DevicePoolChoices pools={devicePools} selected={form.allowedPoolCodes} ready={poolsReady} onChange={(codes) => setForm({ ...form, allowedPoolCodes: codes })} />
-          {!poolsReady && <Btn sm onClick={() => void refreshSkuChoices()}>重新加载等级</Btn>}
+          <DevicePoolChoices pools={devicePools} selected={form.allowedPoolCodes} supported={monthlyTargetSupported} onChange={(codes) => setForm({ ...form, allowedPoolCodes: codes })} />
           <SkuFieldGroup n="①" title="基本信息">
             <SkuFld label="型号名称" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="如 UVELBox Pro v3" />
             <div className="grid g-2" style={{ gap: 12 }}>
@@ -1197,6 +1202,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           </SkuFieldGroup>
 
           <SkuFieldGroup n="③" title="收益（USDT + UVT）">
+            {!monthlyTargetSupported && <div className="tint warn" role="alert">{UNSUPPORTED_MONTHLY_TARGET_REASON}</div>}
             {monthlyTargetSupported && <div className="grid g-2" style={{ gap: 12 }}>
               <SkuFld label="月收益目标（USDT）" type="number" min={1} max={1_000_000} step={0.01} value={form.monthlyTargetUsdt} onChange={(v) => setForm({ ...form, monthlyTargetUsdt: v })} placeholder="必填，如 50"
                 tip="商品展示、新领取试用与任务收益按月目标推算；批准后只影响新任务。目标提高仍须通过兑付覆盖率检查。" />
@@ -1465,6 +1471,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             const sku = skus.find((x) => x.id === mc.target);
             const skuId = mc.target;
             if (mc.status === "on") {
+              if (sku && !supportsDeviceMonthlyTarget(sku.id, sku.tier)) throw new Error(UNSUPPORTED_MONTHLY_TARGET_REASON);
               if (!sku?.allowedPoolCodes?.length) throw new Error("上架前请在商品抽屉至少选择一个任务等级");
               if (sku.monthlyTargetUsdt == null) throw new Error("上架前请设置月收益目标");
               if (!sku.datacenter?.trim()) throw new Error("上架前请填写托管机房");
@@ -1484,7 +1491,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             const describe = (task: typeof taskForm) => `${task.n} · ${task.taskClass} · ${task.durationMinutes} 分钟 · ${task.baseReward} ${task.asset} · ${task.enabled ? "启用" : "停用"}`;
             await propose(ctx.toast, { action: mc.name, obj: editTaskId ?? taskForm.n.trim(),
               before: current ? `${current.n} · ${current.simulation!.durationMinutes} 分钟 · ${current.simulation!.baseReward} ${current.simulation!.asset}` : "未创建",
-              after: describe(taskForm), type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel,
+              after: describe(taskForm), type: def.type, amplifies: !!mc.amplify, gate: { roles: [] }, gateLabel: def.gateLabel,
               reason, sourceDomain: "E6", command: def.buildCommand(taskCtx), target: def.buildTarget(taskCtx) });
             setEditTaskId(null);
           } else if (mc.op === "task-status" && mc.taskId) {
@@ -1492,7 +1499,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             if (!current) throw new Error("手机任务已变化，请刷新后重试");
             const def = findHighOp("e2_task_status")!;
             await propose(ctx.toast, { action: mc.name, obj: mc.taskId, before: current.simulation!.enabled ? "启用" : "停用", after: mc.fixedVal === "active" ? "启用" : "停用",
-              type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E6",
+              type: def.type, amplifies: !!mc.amplify, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E6",
               command: def.buildCommand({ taskId: mc.taskId, status: mc.fixedVal }), target: def.buildTarget({ taskId: mc.taskId }) });
           } else if (mc.op === "phone-tier" && mc.phoneTier && mc.phoneField) {
             const v = normalizePositiveDecimal18x6(newValue);

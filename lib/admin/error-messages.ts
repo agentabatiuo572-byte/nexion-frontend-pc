@@ -35,6 +35,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   SIMULATED_PRODUCT_POLICY_VERSION_CONFLICT: "可跑任务策略已更新，请刷新后重新编辑。",
   SIMULATED_TASK_CLASSES_REQUIRED: "请刷新商品或手机策略并按大类选择可跑任务。",
   SIMULATED_TASK_CLASS_INVALID: "请选择列表中的任务大类。",
+  TASK_STATUS_REQUIRES_LIFECYCLE_ACTION: "参数编辑不能改变任务启停状态，请刷新后重试；如需启用或停用，请使用任务行的启用／停用操作。",
   TASK_POOL_FORMAT_RETIRED: "这份操作仍使用旧任务格式，请关闭后重新从手机任务池提交。",
   E5_OVERVIEW_CONTRACT_INVALID: "设备概览数据不完整，暂时无法显示统计，请稍后刷新或联系值班人员。",
   E5_DEVICE_PAGE_CONTRACT_INVALID: "设备列表数据不完整，暂时不能操作，请稍后刷新或联系值班人员。",

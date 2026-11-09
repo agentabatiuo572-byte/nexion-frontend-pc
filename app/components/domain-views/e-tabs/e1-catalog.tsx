@@ -1,6 +1,7 @@
 import { monthlyTargetEstimateText, operatorCopyText } from "@/lib/admin/operator-copy";
 import { datacenterNameText } from "@/lib/admin/brand-copy";
 import { operatorSkuTier } from "@/lib/admin/e-operator-display";
+import { supportsDeviceMonthlyTarget, UNSUPPORTED_MONTHLY_TARGET_REASON } from "@/lib/admin/device-monthly-target";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CodeTag, Badge } from "../design-kit";
 import type { E1GenerationRelease, E1Phase } from "@/lib/admin/e1-client";
@@ -698,7 +699,10 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                 <div className="acts">
                   {canWrite ? <button className="primary" aria-label={`改价 / 编辑 ${(s.name)}`} onClick={() => ctx.openSku(s.id)}>改价 / 编辑</button> : null}
                   {canWrite && st === "on" && (unlimitedInventory || Number(s.stock) > 0) && !open && !releaseGate && hasPhaseConfig ? <button className="brand" aria-label={`按当前阶段上架 ${(s.name)}`} onClick={() => ctx.openSku(s.id, phaseCur)}>按当前阶段上架</button> : null}
-                  {canWrite ? <button disabled={listingBlocked || s.publishBlocked === true} title={s.publishBlocked === true ? `未满足上架条件 · ${publishBlockLabel} · App 上看不到` : s.publishBlocked === undefined ? "服务端未返回上架条件结论，上架是否生效未确认" : listingBlocked ? listingBlocker : undefined} aria-label={`${st === "on" ? "下架" : "上架"} ${(s.name)}`} onClick={() => ctx.openActionConfirm({ briefKind: "content", name: st === "on" ? `下架商品· ${(s.name)}` : `上架商品· ${(s.name)}`, op: "sku-status", target: s.id, status: st === "on" ? "off" : "on", detail: st === "on" ? "下架后从商城隐藏,不影响已售设备结算" : "上架后对用户可见", amplify: false })}>{st === "on" ? "下架" : "上架"}</button> : null}
+                  {canWrite ? <button disabled={listingBlocked || s.publishBlocked === true} title={s.publishBlocked === true ? `未满足上架条件 · ${publishBlockLabel} · App 上看不到` : s.publishBlocked === undefined ? "服务端未返回上架条件结论，上架是否生效未确认" : listingBlocked ? listingBlocker : undefined} aria-label={`${st === "on" ? "下架" : "上架"} ${(s.name)}`} onClick={() => {
+                    if (st !== "on" && !supportsDeviceMonthlyTarget(s.id, s.tier)) { ctx.toast(UNSUPPORTED_MONTHLY_TARGET_REASON); return; }
+                    ctx.openActionConfirm({ briefKind: "content", name: st === "on" ? `下架商品· ${(s.name)}` : `上架商品· ${(s.name)}`, op: "sku-status", target: s.id, status: st === "on" ? "off" : "on", detail: st === "on" ? "下架后从商城隐藏,不影响已售设备结算" : "上架后对用户可见", amplify: false });
+                  }}>{st === "on" ? "下架" : "上架"}</button> : null}
                   {canWrite ? <button className="danger" aria-label={`删除 ${(s.name)}`} onClick={() => ctx.delSku(s.id, s.name ?? s.id)}>删除</button> : null}
                 </div>
               </div>

@@ -56,7 +56,8 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
   return (
     <div>
       <PhoneTasksSection ctx={ctx} />
-      <E5Ops ctx={ctx} phones />
+      {ctx.canReadE5 && <E5Ops ctx={ctx} phones />}
+      {ctx.canReadE6 && <>
       {e6Error && <section className="tint warn" role="alert">设备配置加载失败：{e6Error} <button className="adj" onClick={() => void refreshE6()}>重新加载</button></section>}
       {e6Loading && !e6Config && <div className="tint">正在加载设备配置…</div>}
       <div id="phone-calibration"><PhoneCalibrationPanel ctx={ctx} /></div>
@@ -136,6 +137,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
       <p className="f-foot">
         <b>说明</b>：<AutoGloss>机型风控立即生效；手机校准和换机策略批准后生效，校准预约发布还须到达生效时间。连续在线满额时长已退役，仅兼容读取；收益估算参数批准后发布到公共配置。</AutoGloss>
       </p>
+      </>}
     </div>
   );
 }
