@@ -47,7 +47,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   TASK_TYPE_NOT_IN_POOL: "所选任务不属于当前等级，请刷新列表后重新选择。",
   SKU_POOL_REQUIRED: "上架前请至少选择一个任务等级。",
   SKU_POOL_TARGET_REQUIRED: "已选任务等级的商品必须设置月收益目标，任务收益将按目标配平。",
-  SKU_POOL_KIND_INVALID: "任务等级无效，商城商品只能选择 DEVICE 等级，请刷新后重新选择。",
+  SKU_POOL_KIND_INVALID: "任务等级无效，商城商品只能选择设备任务等级，请刷新后重新选择。",
   MONTHLY_TARGET_CLEAR_FORBIDDEN_WITH_POOLS: "仍选有任务等级，不能清空月收益目标。",
   SKU_DATACENTER_REQUIRED: "上架前请填写托管机房（最多 128 字）。",
   SKU_PHONE_KEY_RESERVED: "phone 是手机策略的专用编号，请为硬件商品填写其他编号。",

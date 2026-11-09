@@ -76,7 +76,7 @@ export function E5Ops({ ctx, phones = false }: { ctx: EViewCtx; phones?: boolean
   return <>
     {!phones && <><EStats items={[
       { k: "设备总数", v: overview?.total ?? "—" }, { k: "运行中", v: overview?.running ?? "—", tone: "ok" },
-      { k: "待激活", v: overview?.waitingActivation ?? "—", tone: "warn" }, { k: "已停用", v: overview?.stopped ?? "—" },
+      { k: <span className="row" style={{ gap: 6 }}>等待启动<OpsHint label="等待启动统计范围">包含待激活、等待初始化和旧任务未结清的设备。</OpsHint></span>, v: overview?.waitingActivation ?? "—", tone: "warn" }, { k: "已停用", v: overview?.stopped ?? "—" },
     ]} />{ctx.e5OverviewError && <div className="tint warn" role="alert">{ctx.e5OverviewError}</div>}</>}
     <section className="pane" data-proof={phones ? "e6-phone-devices" : "e5-devices"}>
       {phones && <div className="pane-h"><span className="ttl">用户手机</span><OpsHint>操作权限与设备管理一致；每人 6 台上限包含手机。</OpsHint></div>}
