@@ -115,6 +115,15 @@
 .ddom .cregis-settings-card > :is(p,ol) { margin: 0; color: var(--ink-3); font-size: 12px; line-height: 1.7; }
 .ddom .cregis-settings-card ol { padding-left: 20px; }
 .ddom .cregis-settings-card h4 { font-size: 13px; font-weight: 600; margin: 8px 0 0; }
+.ddom .cregis-auto-forward .cregis-auto-warning { display: flex; align-items: center; gap: 9px; border: 1px solid var(--warning-border); color: var(--warning); }
+.ddom .cregis-auto-warning svg { flex-shrink: 0; }
+.ddom .cregis-auto-options, .ddom .cregis-auto-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
+.ddom .cregis-auto-actions { margin-left: auto; gap: 10px; }
+.ddom .cregis-auto-controls > p { flex-basis: 100%; margin: 0; }
+.ddom .cregis-auto-tasks { display: grid; gap: 12px; margin-top: 4px; padding-top: 16px; border-top: 1px solid var(--border); }
+.ddom .cregis-auto-tasks h4 { margin: 0; }
+.ddom .cregis-auto-empty { padding: 18px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink-3); text-align: center; }
+@container ddom (max-width: 760px) { .ddom .cregis-auto-actions { margin-left: 0; width: 100%; } }
 .ddom .cregis-danger-zone { margin-top: 20px; padding: 16px; border-radius: 8px; background: var(--danger-soft); color: var(--danger); }
 .ddom .cregis-danger-zone .l-btn { border-color: var(--danger); color: var(--danger); background: transparent; }
 @container ddom (max-width: 760px) { .ddom .cregis-form-grid, .ddom .cregis-policy-current { grid-template-columns: 1fr; } .ddom .cregis-address-facts { grid-template-columns: 1fr; } .ddom .cregis-settings-card { padding: 14px; } }

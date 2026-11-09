@@ -65,7 +65,7 @@ function Owned({canManage,openActionConfirm,owner,epoch,network,onNetworkChange}
     catch(failure){if(owns()&&at===read.current)setError((failure as Error).message);}
     finally{if(owns()&&at===read.current)setLoading(false);}
   };
-  return <section className="cregis-exceptions cregis-settings-card" aria-label="自动归集与甲方付款">
+  return <section className="cregis-exceptions cregis-settings-card cregis-auto-forward" aria-label="自动归集与甲方付款">
     <div className="cregis-section-title">{network} 自动归集与甲方付款 <button className="l-btn sm" disabled={busy||loading} onClick={()=>void refresh()}>刷新自动流程</button></div>
     <nav className="cregis-navigation" aria-label="自动资金流程网络">{(["BEP20","ERC20","TRC20"] as const).map(n=><button key={n} aria-pressed={network===n} onClick={()=>onNetworkChange(n)}>{n}</button>)}</nav>
     <p>充值核实入账 → 自动归集充值全额至平台钱包 → 链上确认 → 自动向甲方支付用户入账净额。充值手续费留平台，{String(status?.gasSymbol??({BEP20:"BNB",ERC20:"ETH",TRC20:"TRX"}[network]))} 链上手续费由平台另付；不重复入账或扣用户余额。</p>
@@ -74,19 +74,24 @@ function Owned({canManage,openActionConfirm,owner,epoch,network,onNetworkChange}
       <p className={status.executionEnabled?"dtint warn":"dtint"}>{network} · {status.configured?"地址已配置":"地址待配置"} · 运行总开关：{status.runtimeApproved?"已批准":"关闭"} · 自动归集：{status.collectionEnabled?"开启":"关闭"} · 自动付款：{status.paymentEnabled?"开启":"关闭"}</p>
       {!status.runtimeApproved&&<p>当前不发送自动转账。未来启用前须确认 Cregis 自动审批/签名及套餐权益、绑定钱包和 {String(status.gasSymbol)} 手续费安排，再取得运行总开关批准，并由另一位管理员复核开关。</p>}
       <dl className="cregis-address-facts"><dt>平台归集地址 / 付款来源</dt><dd>{String(status.platformAddress??"待配置")}</dd><dt>甲方收款地址</dt><dd>{String(status.counterpartyAddress??"待配置")}</dd></dl>
-      {!status.configured&&<p className="dtint warn">地址与运行权限核实后才能启用。</p>}
+      {!status.configured&&<p className="dtint warn cregis-auto-warning"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 3 2 21h20L12 3Z"/><path d="M12 9v5"/><circle cx="12" cy="17" r=".8" fill="currentColor" stroke="none"/></svg><span>地址与运行权限核实后才能启用。</span></p>}
       <p>{status.startEventId===null?"尚未首次启用，不会处理历史充值。":"仅处理首次启用水位之后的充值事件，暂停和恢复不会重置水位。"} 已发送单在关闭后仍继续只读核对。</p>
-      {canWrite&&<div className="cregis-switch-form">
+      {canWrite&&<div className="cregis-switch-form cregis-auto-controls">
+        <div className="cregis-auto-options">
         <label><input aria-label="自动归集提案开关" type="checkbox" checked={collect} disabled={busy||loading||!status.runtimeApproved||!status.configured} onChange={e=>setCollect(e.target.checked)}/>自动归集</label>{" "}
         <label><input aria-label="自动甲方付款提案开关" type="checkbox" checked={pay} disabled={busy||loading||!status.runtimeApproved||!status.configured} onChange={e=>setPay(e.target.checked)}/>自动甲方付款</label>{" "}
+        </div>
+        <div className="cregis-auto-actions">
         <button className="l-btn" disabled={busy||loading||!status.runtimeApproved||!status.configured||status.makerId!==null} onClick={()=>policy("PROPOSE")}>提交自动流程开关提案</button>{" "}
         <button className="l-btn" disabled={busy||loading} onClick={()=>policy("PAUSE")}>暂停本网络流程</button>
+        </div>
         {status.makerId!==null&&<p>待复核提案：归集 {status.pendingCollection?"开":"关"} · 付款 {status.pendingPayment?"开":"关"} · 理由 {String(status.reason)}{" "}
           {String(status.makerId)!==String(owner)&&<button className="l-btn" disabled={busy||loading} onClick={()=>policy("APPROVE")}>复核自动流程开关</button>}{" "}
           <button className="l-btn" disabled={busy||loading} onClick={()=>policy("CANCEL")}>取消自动流程开关提案</button></p>}
       </div>}
+      <div className="cregis-auto-tasks">
       <h4>{network} 自动任务与原单跟踪</h4>
-      {!page.records.length&&!loading&&<p>暂无自动任务。关闭状态不会创建任务或发送资金。</p>}
+      {!page.records.length&&!loading&&<div className="cregis-auto-empty">暂无自动任务。关闭状态不会创建任务或发送资金。</div>}
       {page.records.map(row=>{const id=String(row.id),state=String(row.state),stage=state.startsWith("COLLECTION")?"collection":"payment";return <article key={id} style={{border:"1px solid var(--border)",padding:12,overflowWrap:"anywhere"}}>
         <strong>{network} · 任务 {id} · {AUTO_STATES[state]??"状态未知"}</strong>
         <p>充值事件 {String(row.eventId)} · 归集 {String(row.grossAmount)} USDT · 甲方 {String(row.netAmount)} USDT · 留存手续费 {String(row.feeAmount)} USDT</p>
@@ -101,6 +106,7 @@ function Owned({canManage,openActionConfirm,owner,epoch,network,onNetworkChange}
         </div>}
       </article>;})}
       {page.hasMore&&<button className="l-btn" disabled={busy||loading} onClick={()=>void more()}>加载更早自动任务</button>}
+      </div>
     </>}
   </section>;
 }
