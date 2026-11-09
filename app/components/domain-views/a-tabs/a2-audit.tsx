@@ -388,21 +388,23 @@ function phoneScheduledAt(w: A2OperationRow) {
 }
 
 /** 批准后什么时候生效、会怎样：标题下的标签、执行摘要的影响、抽屉底部说明用同一份（M3、M6）。 */
-function monthlyTargetChanged(w: Pick<A2OperationRow, "action" | "before" | "after">) {
-  if (w.action !== "调整设备型号") return false;
+function monthlyTargetChange(w: Pick<A2OperationRow, "action" | "before" | "after">) {
+  if (w.action !== "调整设备型号") return null;
   const before = parseReview(w.before), after = parseReview(w.after);
-  if (after?.kind !== "object") return false;
+  if (after?.kind !== "object") return null;
   const was = before?.kind === "object" ? before.value : {};
-  return after.value.clearMonthlyTarget === true
-    || ["monthlyTargetUsdt", "monthlyTargetBandPct"].some((key) => !same(was[key] ?? null, after.value[key] ?? null));
+  if (after.value.clearMonthlyTarget === true) return "close";
+  return ["monthlyTargetUsdt", "monthlyTargetBandPct"].some((key) => !same(was[key] ?? null, after.value[key] ?? null)) ? "target" : null;
 }
 
 function approvalTiming(w: A2OperationRow) {
-  if (monthlyTargetChanged(w)) return {
-    tag: "批准后新任务生效",
-    impact: "批准后只影响新建任务，运行中的任务金额和历史到账不变。",
-    drawer: "点「批准」确认后按新目标建立后续任务；点「驳回」原操作不执行。",
-  };
+  const monthlyChange = monthlyTargetChange(w);
+  if (monthlyChange) {
+    const impact = monthlyChange === "close"
+      ? "批准后关闭月收益目标，之后新建的任务恢复按单计价；已建任务和历史到账不变。"
+      : "批准后按新目标建立后续任务；已建任务和历史到账不变。";
+    return { tag: "批准后新任务生效", impact, drawer: `${impact}点「驳回」原操作不执行。` };
+  }
   const scheduled = phoneScheduledAt(w);
   if (scheduled) return { tag: `按计划在 ${scheduled} 生效`, impact: "批准后登记排程，到点才生效。", drawer: `点「批准」确认后登记排程，到 ${scheduled} 生效；点「驳回」原操作不执行。` };
   if (isJ4Execution(w)) return { tag: "立即逐步执行", impact: "批准后逐步执行，可能只执行一部分；失败时到「监管要求应急处理」的执行追溯里看哪些步骤已生效。", drawer: "点「批准」确认后逐步执行，可能只执行一部分；点「驳回」原操作不执行。" };
@@ -1391,7 +1393,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const g3 = g3PolicyExecutionTiming(w);
     // 一行放得下（必须改 14）；时点只写在「生效时间」一处（建议 8）。
     // 摘要标题行只放得下 20 字左右，长了会折出孤字（D10）；细节写在「说明」和事实区。
-    const impact = scheduled || monthlyTargetChanged(w) ? timing.impact
+    const impact = scheduled || monthlyTargetChange(w) ? timing.impact
       : j4 ? "逐步执行，失败时可能只执行了一部分。"
         : w.coverageCheckOnApproval ? "先查兑付覆盖率，够了才执行，不够不动。"
           : g3 ? "按生效时间执行，改线上配置。"

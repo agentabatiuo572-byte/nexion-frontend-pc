@@ -1,6 +1,7 @@
 import { MContentReadError, parseMContentApiEnvelope } from "./m-support-read-contract.ts";
 import { parseBusinessTime } from "./business-time.ts";
 import { guardedFetch } from "./error-messages.ts";
+import { isExplicitRejection } from "./explicit-rejection";
 
 const BASE = "/api/admin/content";
 const FILTERS = ["ALL", "WINDOW_ACTIVE", "ACTIVE", "DORMANT", "UNKNOWN", "TODO", "DUE", "WAITING_REPLY", "FIRST_CONTACT", "STOPPED"] as const;
@@ -183,9 +184,9 @@ export function isIndeterminateSupportError(error: unknown): boolean {
     && (error.backendMessage ?? "").startsWith("IDEMPOTENCY_");
 }
 
-/** The server read the request and said no: nothing was written, so the command can be released. */
+/** Authorization, throttling and indeterminate outcomes are not command verdicts. */
 export function isDefiniteSupportRefusal(error: unknown): error is SupportClientError {
-  return error instanceof SupportClientError && [400, 403, 404, 409, 422].includes(error.status) && !isIndeterminateSupportError(error);
+  return error instanceof SupportClientError && isExplicitRejection(error);
 }
 /** BUG-121: the policy endpoint names why images are off; operators get that reason, not a storage guess. */
 export function supportAttachmentUnavailableText(reason: string | null): string {

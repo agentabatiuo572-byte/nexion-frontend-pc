@@ -5,10 +5,11 @@ import { customerConversations, replyTimeout } from "@/lib/admin/customer-conver
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Bell, BellOff, Check as CheckIcon, Clock3, Image as ImageIcon, Lock, Megaphone, Plus, SendHorizontal, Square } from "lucide-react";
-import { BlockState, Button, Check, Checkbox, Conclusion, Explain, Fact, Facts, Field, IconButton, Input, Modal as RdModal, MoreMenu, Notice, PageHeader, RecordList, Segments, Select, StatusTag, Textarea, type MoreMenuItem, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Check, Checkbox, Conclusion, Explain, Fact, Facts, Field, IconButton, Input, Modal as RdModal, MoreMenu, Notice, PageHeader, RecordList, ReleaseModal, Segments, Select, StatusTag, Textarea, type MoreMenuItem, type StateTone } from "@/app/components/rd";
 import { subscribeAdminRealtime, getAdminRealtimeSnapshot, watchAdminConversation, sendAdminTyping } from "@/lib/admin/admin-conversation-realtime";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { userNicknameText } from "@/lib/admin/brand-copy";
 import { supportClient, SupportClientError, readSupportPoolCustomer, isIndeterminateSupportError, supportAttachmentUnavailableText, supportSessionBusy, agentSwitchText, SUPPORT_SESSION_ROLE_LABEL, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode, type SupportSessionHold } from "@/lib/admin/m-support-client";
 import { markM3MessagePageRead, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
@@ -479,9 +480,11 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const [holdRead, setHoldRead] = useState<{ customerId: string; hold: SupportSessionHold | null } | null>(null);
   const [holdRetry, setHoldRetry] = useState(0), [holdEnding, setHoldEnding] = useState(false);
   const [holdEndCommand, setHoldEndCommand] = useState<SessionEndRecord | null>(null);
+  const [holdEndRejected, setHoldEndRejected] = useState<string | null>(null);
+  const [holdEndRelease, setHoldEndRelease] = useState<SessionEndRecord | null>(null);
   const holdEndView = useRef({ customerId: holdCustomer, commandKey: holdEndCommand?.commandKey });
   holdEndView.current = { customerId: holdCustomer, commandKey: holdEndCommand?.commandKey };
-  useEffect(() => { setHoldEndCommand(sessionEndCommands.list().find(row => row.actorId === adminId && row.customerId === holdCustomer) ?? null); setHoldEnding(false); }, [adminId, holdCustomer, authEpoch]);
+  useEffect(() => { setHoldEndCommand(sessionEndCommands.list().find(row => row.actorId === adminId && row.customerId === holdCustomer) ?? null); setHoldEnding(false); setHoldEndRejected(null); setHoldEndRelease(null); }, [adminId, holdCustomer, authEpoch]);
   const holdRequest = useRef<{ generation: number; controller: AbortController | null }>({ generation: 0, controller: null });
   const hold = holdRead && holdRead.customerId === holdCustomer ? holdRead.hold : undefined;
   const inboxHolder = selectedSummary?.holder === undefined ? "unknown" : selectedSummary.holder === null ? "none" : `${selectedSummary.holder.adminId}:${selectedSummary.holder.role}`;
@@ -500,10 +503,6 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     holdRequest.current.generation++; holdRequest.current.controller?.abort();
     setHoldRead({ customerId, hold: busyHold });
   };
-  useEffect(() => {
-    // The pending 结束会话 command is settled once the hold is read as no longer this account's.
-    if (holdEndCommand && holdEndCommand.customerId === holdCustomer && hold && hold.state !== "MINE") { sessionEndCommands.forget(holdEndCommand.fingerprint, holdEndCommand.commandKey); setHoldEndCommand(null); }
-  }, [holdEndCommand, holdCustomer, hold]);
   useEffect(() => {
     if (!hold?.autoEndAt || hold.state === "FREE") return;
     const timer = setTimeout(() => setHoldRetry(n => n + 1), Math.min(Math.max(parseBusinessTime(hold.autoEndAt) - Date.now() + 1000, 1000), 2147483647));
@@ -1265,10 +1264,10 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       sessionEndCommands.forget(command.fingerprint, command.commandKey);
       const visible = current();
       setHoldEndCommand(previous => previous?.customerId === command.customerId && previous.commandKey === command.commandKey ? null : previous);
-      if (visible) { setActionError(message); setHoldRetry((value) => value + 1); setHoldEnding(false); }
+      if (visible) { setActionError(message); setHoldRetry((value) => value + 1); setHoldEnding(false); setHoldEndRejected(null); }
     };
     holdEndView.current = { customerId: command.customerId, commandKey: command.commandKey };
-    setHoldEndCommand(command); setHoldEnding(true); setActionError("");
+    setHoldEndCommand(command); setHoldEnding(true); setActionError(""); setHoldEndRejected(null);
     let submitted = false;
     try {
       // A number already sent is checked first; only a number the system never received goes out again, unchanged.
@@ -1283,7 +1282,9 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (stamp === identityRef.current) settle();
     } catch (cause) {
       if (stamp !== identityRef.current) return;
-      if (submitted && cause instanceof SupportClientError && [400, 403, 404, 409, 422].includes(cause.status) && !isIndeterminateSupportError(cause)) settle(`结束会话没有成功：${displayAdminError(cause)}`);
+      if (submitted && isExplicitRejection(cause)) {
+        if (current()) { setHoldEndRejected(command.commandKey); setActionError(`这次结束会话被明确拒绝：${displayAdminError(cause).replace(/[。.]$/, "")}。原操作已保留，请核实原结果后再解除待确认。`); }
+      }
       else if (current()) { setActionError("结束会话的结果尚未确认。请再点「结束会话」，会先查询原操作，不会重复结束。"); setHoldRetry((value) => value + 1); }
     } finally { if (current()) setHoldEnding(false); }
   };
@@ -1515,6 +1516,11 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   </>;
 
   return <>
+    {holdEndRelease && <ReleaseModal label="结束会话" onCancel={() => setHoldEndRelease(null)} onConfirm={() => {
+      sessionEndCommands.forget(holdEndRelease.fingerprint, holdEndRelease.commandKey);
+      setHoldEndCommand(previous => previous?.commandKey === holdEndRelease.commandKey ? null : previous);
+      setHoldEndRejected(null); setHoldEndRelease(null);
+    }} />}
     <PageHeader pageId="M3" title="专属会话" back={back}
       summary={<>{summary} <Explain label="时间和更新方式" content={`时间均为${zoneLabel}。${streamReady ? "有新消息时自动更新。" : ""}`} /></>}
       actions={pendingAssignment ? <Button onClick={() => setAssignOpen(true)}>{assignLabel}</Button> : undefined}
@@ -1617,7 +1623,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
           </div>
         </header>
         {(endPending && !holdEnding || serviceStatus && conversationsAvailable || actionError || actionResult || !requestedCustomerIdValid || readError || paneMessages && messagePages.error || messagePages.gap) && <div className="m3s-notices">
-          {endPending && !holdEnding && <Notice tone="warn">{holdEndCommand && isRetryExpired(holdEndCommand) ? RETRY_EXPIRED_TEXT : "上次结束会话的结果尚未确认，原操作已保留。点「结束会话」会先查询原操作，不会重复结束。"}</Notice>}
+          {endPending && !holdEnding && <Notice tone="warn" action={holdEndCommand && holdEndRejected === holdEndCommand.commandKey ? <Button size="sm" onClick={() => setHoldEndRelease(holdEndCommand)}>解除待确认</Button> : undefined}>{holdEndCommand && isRetryExpired(holdEndCommand) ? RETRY_EXPIRED_TEXT : "上次结束会话的结果尚未确认，原操作已保留。点「结束会话」会先查询原操作，不会重复结束。"}</Notice>}
           {serviceStatus && conversationsAvailable && <Notice tone="danger">{serviceStatus}</Notice>}
           {actionResult && <Notice tone="progress" action={<Button size="sm" onClick={() => setActionResult("")}>知道了</Button>}>{actionResult}</Notice>}
           {actionError && <Notice tone="danger" action={<Button size="sm" onClick={() => setActionError("")}>知道了</Button>}>{actionError}</Notice>}
