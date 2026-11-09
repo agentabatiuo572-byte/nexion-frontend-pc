@@ -1880,6 +1880,8 @@ export function displayAdminReadError(error: unknown): string {
 export function displayAdminError(error: unknown): string {
   if (!(error instanceof Error) && typeof error !== "string") return NEUTRAL_DISPLAY_FALLBACK;
   if (error instanceof Error && "backendMessage" in error && typeof error.backendMessage === "string") {
+    // The monthly-target client has already added the server limit and affected model names.
+    if (error.backendMessage === "MONTHLY_TARGET_REWARD_OUT_OF_RANGE" && HAS_CJK_RE.test(error.message)) return error.message;
     const known = ADMIN_ERROR_MESSAGES[error.backendMessage];
     if (typeof known === "string") return known;
   }
