@@ -19,6 +19,8 @@ export function LegacyUnknownResolutionAction({ device, canWrite, toast }: { dev
   const [read, setRead] = useState<{ key: string; candidate: LegacyUnknownCandidate } | null>(null);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
+  const [requestedKey, setRequestedKey] = useState("");
+  const requested = requestedKey === key;
   const [selected, setSelected] = useState<LegacyUnknownCandidate | null>(null);
   const [ticketId, setTicketId] = useState("");
   const [checking, setChecking] = useState(false);
@@ -27,16 +29,17 @@ export function LegacyUnknownResolutionAction({ device, canWrite, toast }: { dev
     active.current = true;
     const abort = new AbortController();
     setRead(null); setError(""); setSelected(null); setTicketId(""); setChecking(false);
-    if (allowed && adminId) void fetchLegacyUnknownCandidate(device.deviceId, abort.signal).then(candidate => {
+    if (requested && allowed && adminId) void fetchLegacyUnknownCandidate(device.deviceId, abort.signal).then(candidate => {
       if (candidate.caseId && (candidate.ownerId !== device.userId || candidate.instanceNo !== device.serial))
         throw new Error("LEGACY_UNKNOWN_DEVICE_IDENTITY_CHANGED");
       if (live) setRead({ key, candidate });
     }).catch(cause => { if (live) setError(displayAdminError(cause)); });
     return () => { live = false; active.current = false; abort.abort(); };
-  }, [key, retry, allowed, adminId, device.deviceId, device.userId, device.serial]);
+  }, [key, retry, requested, allowed, adminId, device.deviceId, device.userId, device.serial]);
 
   if (!allowed) return null;
   const candidate = read?.key === key ? read.candidate : null;
+  const reading = requested && !candidate && !error;
   const currentAdmin = () => {
     const auth = useAdminAuth.getState();
     return active.current && currentKey.current === key && auth.session?.adminId === adminId && auth.authEpoch === epoch;
@@ -54,8 +57,11 @@ export function LegacyUnknownResolutionAction({ device, canWrite, toast }: { dev
     } catch (cause) { if (currentAdmin()) setError(displayAdminError(cause)); }
     finally { if (currentAdmin()) setChecking(false); }
   };
-  return <>
-    {error && <div className="tiny" role="alert" style={{ color: "var(--warning)", whiteSpace: "normal" }}>终结资格读取失败：{error}{" "}<button className="l-btn sm" type="button" onClick={() => setRetry(value => value + 1)}>重新核对</button></div>}
+  return <div onClick={event => event.stopPropagation()}>
+    {!ticketId && !candidate?.resolution && <button className="l-btn sm" type="button" disabled={reading || checking} onClick={() => requested ? setRetry(value => value + 1) : setRequestedKey(key)}>{requested ? "重新核对" : "终结资格"}</button>}
+    {reading && <div className="tiny" role="status">正在核对终结资格…</div>}
+    {error && <div className="tiny" role="alert" style={{ color: "var(--warning)", whiteSpace: "normal" }}>终结资格读取失败：{error}</div>}
+    {candidate && !candidate.caseId && <div className="tiny" style={{ whiteSpace: "normal" }}>无可终结的未确认旧任务</div>}
     {candidate?.caseId && !candidate.eligible && !candidate.resolution && <div className="tiny" style={{ whiteSpace: "normal" }} title={candidate.reason}>
       {candidate.status === "QUIESCENCE_REQUIRED" ? "等待有效退出证明" : "终结条件未满足，请核对原任务与资金证据"}
     </div>}
@@ -79,5 +85,5 @@ export function LegacyUnknownResolutionAction({ device, canWrite, toast }: { dev
         if (!currentAdmin()) return;
         setTicketId(ticket.id); setSelected(null); toast(`A2 ${ticket.id} 已提交，等待另一管理员复核。`);
       }} />}
-  </>;
+  </div>;
 }

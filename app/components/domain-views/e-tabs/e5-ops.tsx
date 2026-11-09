@@ -37,7 +37,7 @@ function DeviceActions({ device: d, ctx, phones }: { device: E5Device; ctx: EVie
       {deactivatable && ctx.canUnbindE5 && <button type="button" onClick={() => ctx.openActionConfirm({ briefKind: "record", op: "device-deactivate", deviceId: d.deviceId, deviceNo: d.serial, deviceAction: "unbind", name: `解绑设备 · ${d.serial}`, detail: `设备将不再属于 ${d.user}，不退款，购入时间不变。` })}>解绑</button>}
       {deactivatable && ctx.canWriteE5 && <button type="button" onClick={() => open(d.pausedReason ? "resume" : "pause")}>{d.pausedReason ? "恢复该用户" : "暂停该用户"}</button>}
       {!ctx.canWriteE5 && !ctx.canForceActivateE5 && !ctx.canUnbindE5 && <span className="muted">只读</span>}
-      <LegacyUnknownResolutionAction device={d} canWrite={ctx.canWriteE5} toast={ctx.toast} />
+      {!phones && d.simState === "LEGACY_PENDING" && <LegacyUnknownResolutionAction device={d} canWrite={ctx.canWriteE5} toast={ctx.toast} />}
     </div></details>}
     {readOnly && <span className="muted">只读</span>}
     {action && <Drawer title={title} sub={d.serial} onClose={() => { if (!busy) setAction(null); }} footer={<><Btn disabled={busy} onClick={() => setAction(null)}>取消</Btn><Btn variant={action === "deactivate" || action === "pause" ? "danger" : "primary"} disabled={busy || reason.trim().length < 8 || reason.trim().length > 200 || action === "activate" && full} onClick={async () => {
