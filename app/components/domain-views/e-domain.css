@@ -530,7 +530,7 @@ html[data-theme="dark"] :is(.e1-phone-task-policy, .e1-sku-task-policy) > .col i
 
 /* Task pool and device operations: names, values, then actions. */
 .edom .ops-hint { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; padding:0; width:20px; height:20px; font-size:15px; vertical-align:middle; color:var(--ink-3); border:0; background:none; border-radius:50%; cursor:pointer; }
-.ops-hint-popover { position:fixed; z-index:5000; width:300px; max-width:calc(100vw - 24px); box-sizing:border-box; padding:14px; font-size:13px; line-height:1.7; font-weight:400; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:0 10px 30px #0002; white-space:normal; }
+.ops-hint-popover { position:fixed; z-index:5000; width:300px; max-width:calc(100vw - 24px); box-sizing:border-box; padding:14px; font-size:13px; line-height:1.7; font-weight:400; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:0 10px 30px #0002; white-space:normal; overflow-wrap:anywhere; }
 .edom .tp-levels { gap:10px; flex-wrap:wrap; margin-bottom:20px; }
 .edom .tp-level { display:flex; gap:16px; align-items:center; padding:14px 18px; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--ink-3); cursor:pointer; font-size:14px; }
 .edom .tp-level span { font-variant-numeric:tabular-nums; }
