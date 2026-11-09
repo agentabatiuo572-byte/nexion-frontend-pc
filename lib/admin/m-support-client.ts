@@ -404,7 +404,8 @@ function parsePoolRoute(row: Record<string, unknown>): Pick<SupportBindingPoolIt
 
 export type SupportRouteInput = { targetGroupId: string | null; expectedRouteVersion: number; sourceGroupVersion: number | null; targetGroupVersion: number | null; reason: string };
 export function setSupportPoolRoute(customerId: string, input: SupportRouteInput, key: string, signal?: AbortSignal) {
-  if (input.reason.trim().length < 8 || input.reason.trim().length > 200) malformed("route.reason");
+  const reasonLength = Array.from(input.reason.trim()).length;
+  if (reasonLength < 8 || reasonLength > 200) malformed("route.reason");
   const targetGroupId = input.targetGroupId === null ? null : wireId(input.targetGroupId, "route.targetGroupId");
   if (targetGroupId === null ? input.targetGroupVersion !== null : input.targetGroupVersion === null) malformed("route.targetVersion");
   const body = { ...input, targetGroupId, expectedRouteVersion: count(input.expectedRouteVersion, "route.expectedVersion"), sourceGroupVersion: nullablePositive(input.sourceGroupVersion, "route.sourceVersion"), targetGroupVersion: nullablePositive(input.targetGroupVersion, "route.targetVersion") };

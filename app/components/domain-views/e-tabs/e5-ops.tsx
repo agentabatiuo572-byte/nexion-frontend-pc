@@ -2,6 +2,7 @@ import { operatorSkuTier } from "@/lib/admin/e-operator-display";
 import { datacenterNameText} from "@/lib/admin/brand-copy";
 import { useEffect, useState } from "react";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { businessZoneText, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { operatorDatacenterLabel, operatorDeviceIdentifier, operatorDeviceName, operatorDeviceStatus, operatorOperationalNote, operatorProductLabel, operatorRate, operatorTaskLabel, operatorThermalLabel, operatorTimestamp, operatorUserIdentifier, operatorUserName } from "@/lib/admin/e-operator-display";
 import { Badge, DataListPager } from "../design-kit";
 import { e5HeartbeatLagMinutes, fetchE5Devices, fetchE5Observability, type E5Device, type E5DeviceState, type E5Observability } from "@/lib/admin/e5-client";
@@ -218,29 +219,30 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
           {ctx.canWriteE5 && <span className="muted tiny">{actionReason.trim().length}/200{reasonReady ? " · 可以操作" : " · 需 8–200 字"}</span>}
         </div>
         <div style={{ overflowX: "auto", padding: "4px 4px 0" }}>
-          <table style={{ width: "100%", minWidth: 1480, borderCollapse: "collapse", fontSize: 12.5 }}>
+          <table style={{ width: "100%", minWidth: 1700, borderCollapse: "collapse", fontSize: 12.5 }}>
             <thead>
               <tr style={{ textAlign: "left", color: "var(--ink-4)", fontSize: 11.5 }}>
                 <th style={{ padding: "8px 10px" }}>设备编号</th><th style={{ padding: "8px 10px" }}>设备名称</th><th style={{ padding: "8px 10px" }}>用户</th>
                 <th style={{ padding: "8px 10px" }}>商品</th><th style={{ padding: "8px 10px" }}>数据中心</th><th style={{ padding: "8px 10px" }}>用户设备数</th>
                 <th style={{ padding: "8px 10px" }}>购入 / 激活</th><th style={{ padding: "8px 10px" }}>基础收益 / 效率</th>
+                <th style={{ padding: "8px 10px" }}>本设备月</th>
                 <th style={{ padding: "8px 10px" }}>心跳与任务</th><th style={{ padding: "8px 10px" }}>状态</th><th style={{ padding: "8px 10px", textAlign: "right" }}>操作</th>
               </tr>
             </thead>
             <tbody>
               {ctx.e5Loading && (
                 <tr style={{ borderTop: "1px solid var(--border)" }}>
-                  <td colSpan={11} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>正在加载…</td>
+                  <td colSpan={12} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>正在加载…</td>
                 </tr>
               )}
               {!ctx.e5Loading && ctx.e5DeviceError && (
                 <tr style={{ borderTop: "1px solid var(--border)" }}>
-                  <td colSpan={11} style={{ padding: "18px 10px", color: "var(--danger)" }}>设备库存加载失败：{ctx.e5DeviceError}</td>
+                  <td colSpan={12} style={{ padding: "18px 10px", color: "var(--danger)" }}>设备库存加载失败：{ctx.e5DeviceError}</td>
                 </tr>
               )}
               {!ctx.e5Loading && !ctx.e5DeviceError && filteredDevices.length === 0 && (
                 <tr style={{ borderTop: "1px solid var(--border)" }}>
-                  <td colSpan={11} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>没有符合条件的设备</td>
+                  <td colSpan={12} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>没有符合条件的设备</td>
                 </tr>
               )}
               {!ctx.e5Loading && !ctx.e5DeviceError && filteredDevices.map((d) => {
@@ -253,6 +255,8 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
                 const displayDc = operatorDatacenterLabel(d.dc);
                 const displayUserNo = operatorUserIdentifier(d.userNo);
                 const displayUserName = operatorUserName(d.nickname);
+                const target = d.monthlyTarget;
+                const targetAmount = (value: number) => `$${value.toLocaleString("en-US", { maximumFractionDigits: 6 })}`;
                 return (
                   <tr key={`${d.deviceId}-${d.serial}`} style={{ borderTop: "1px solid var(--border)" }}>
                     <td style={{ padding: "9px 10px", fontFamily: "var(--mono)", color: "var(--ink)", fontWeight: 600 }}>{displaySerial}</td>
@@ -272,6 +276,11 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
                     <td style={{ padding: "9px 10px", fontFamily: "var(--mono)" }}>{slotLabel(d)}</td>
                     <td style={{ padding: "9px 10px" }}><div className="mono">购 {operatorTimestamp(d.purchasedAt)}</div><div className="mono" style={{ marginTop: 2 }}>激 {operatorTimestamp(d.activatedAt)}</div></td>
                     <td style={{ padding: "9px 10px" }}><div>{operatorRate(d.dailyUsdt, d.dailyNex)}</div><div style={{ marginTop: 2 }}>{(d.currentEfficiency * 100).toFixed(1)}%</div></td>
+                    <td style={{ padding: "9px 10px", whiteSpace: "nowrap" }}>
+                      {target == null ? "—" : <span className="has-tip" data-tip={`第 ${target.cycleIndex} 个设备月 · ${formatBusinessTimeCompact(target.cycleStartAt)} 至 ${formatBusinessTimeCompact(target.cycleEndAt)}（不含结束时刻，${businessZoneText()}）。当前产能 ${target.capacityPct}%。已入账仅计本周期完成的目标任务 USDT。${target.rangeLowUsdt == null ? "目标已关闭，当前无预估区间。" : `区间按当前配置满运行预估。${!target.targetActive ? "目标已关闭。" : ""}`}${target.configChangedInCycle ? "本设备月内改过配置，历史到账不重算。" : ""}`}>
+                        {targetAmount(target.creditedUsdt)} / {target.rangeLowUsdt == null || target.rangeHighUsdt == null ? "—" : `${targetAmount(target.rangeLowUsdt)}–${targetAmount(target.rangeHighUsdt)}`}（预估）
+                      </span>}
+                    </td>
                     <td style={{ padding: "9px 10px" }}>
                       <div className="mono">{operatorTimestamp(d.heartbeatAt)}</div>
                       <div className="muted tiny" style={{ marginTop: 2 }}>电量 {d.batteryLevel == null ? "—" : `${d.batteryLevel}%`} · {d.isCharging == null ? "充电状态 —" : d.isCharging ? "充电中" : "未充电"} · {d.isWifiConnected == null ? "网络 —" : d.isWifiConnected ? "网络可达" : "网络断开"}</div>

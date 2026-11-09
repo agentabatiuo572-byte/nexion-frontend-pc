@@ -13,6 +13,7 @@ export interface SkuProposalSummary {
 interface FieldDescriptor {
   label: string;
   derived?: boolean;
+  targetDerived?: boolean;
   read: (sku: OpsSku) => unknown;
   format: (value: unknown, sku: OpsSku) => string;
   equal?: (before: unknown, after: unknown) => boolean;
@@ -61,6 +62,8 @@ const SKU_FIELDS: FieldDescriptor[] = [
   { label: "可跑任务大类", read: (sku) => taskClassNames(sku.allowedTaskClasses), format: text },
   { label: "库存", read: (sku) => sku.stock, format: stock, equal: numberEqual },
   { label: "价格", read: (sku) => sku.price, format: money, equal: numberEqual },
+  { label: "月收益目标（USDT）", read: (sku) => sku.monthlyTargetUsdt, format: money, equal: numberEqual },
+  { label: "允许波动", read: (sku) => sku.monthlyTargetBandPct, format: (value) => value == null ? "未设置" : `±${number(value)}%`, equal: numberEqual },
   { label: "每件算力点", read: (sku) => sku.computePoints, format: number, equal: numberEqual },
   { label: "允许试用", read: (sku) => sku.trialEligible, format: yesNo, equal: (a, b) => Boolean(a) === Boolean(b) },
   { label: "商品 ID", read: (sku) => sku.id, format: text, equal: stringEqual },
@@ -69,7 +72,7 @@ const SKU_FIELDS: FieldDescriptor[] = [
   { label: "商城状态", read: (sku) => sku.status, format: text, equal: stringEqual },
   { label: "商品类型", read: (sku) => sku.productType, format: productType },
   { label: "商品档位", read: (sku) => sku.tier, format: text, equal: stringEqual },
-  { label: "日产收益", read: (sku) => sku.dailyEarn, format: money, equal: numberEqual },
+  { label: "日产收益", targetDerived: true, read: (sku) => sku.dailyEarn, format: money, equal: numberEqual },
   { label: "日产 UVT", read: (sku) => sku.dailyEarnNEX, format: number, equal: numberEqual },
   { label: "手机日产收益", read: (sku) => sku.phoneDailyEarn, format: money, equal: numberEqual },
   { label: "手机日产 UVT", read: (sku) => sku.phoneDailyEarnNEX, format: number, equal: numberEqual },
@@ -85,8 +88,8 @@ const SKU_FIELDS: FieldDescriptor[] = [
   { label: "保修", read: (sku) => sku.warranty, format: text, equal: stringEqual },
   { label: "角标", read: (sku) => sku.badge, format: text, equal: stringEqual },
   { label: "卖点", read: (sku) => sku.tagline, format: text, equal: stringEqual },
-  { label: "份额收益下限", read: (sku) => sku.shareYieldMin, format: number, equal: numberEqual },
-  { label: "份额收益上限", read: (sku) => sku.shareYieldMax, format: number, equal: numberEqual },
+  { label: "份额收益下限", targetDerived: true, read: (sku) => sku.shareYieldMin, format: number, equal: numberEqual },
+  { label: "份额收益上限", targetDerived: true, read: (sku) => sku.shareYieldMax, format: number, equal: numberEqual },
   { label: "收益展示串", derived: true, read: (sku) => sku.baseRate, format: (value) => shareBaseRateText(text(value)), equal: stringEqual },
   { label: "图像生成性能", read: (sku) => sku.aiImageGenPerMin, format: number, equal: numberEqual },
   { label: "LLM 推理性能", read: (sku) => sku.aiLlmTokensPerSec, format: number, equal: numberEqual },
@@ -108,7 +111,7 @@ export function summarizeSkuProposal(
   { includeDerived = true }: { includeDerived?: boolean } = {},
 ): SkuProposalSummary | null {
   const changes = SKU_FIELDS.flatMap((field) => {
-    if (field.derived && !includeDerived) return [];
+    if (!includeDerived && (field.derived || field.targetDerived && (beforeSku.monthlyTargetUsdt != null || afterSku.monthlyTargetUsdt != null))) return [];
     const before = field.read(beforeSku);
     const after = field.read(afterSku);
     const equal = field.equal ? field.equal(before, after) : Object.is(before, after);

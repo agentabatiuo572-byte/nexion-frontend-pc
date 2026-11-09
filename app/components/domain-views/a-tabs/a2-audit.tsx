@@ -220,6 +220,7 @@ const SUPER_ACTION_PATTERNS = [/^首次配置验证码设置 · /, /^放宽 \S+ 
  * 这些单驳回只要 A2 批准权（validateRejection 对它们放行）。
  */
 const CANONICAL_APPROVE: Readonly<Record<string, Need>> = {
+  调整设备型号: "device_e1_write",
   "结束未确认任务（不计收益）": "device_e5_write",
   发布手机校准规则: "device_e6_read",
   发布手机换机策略: "device_e6_read",
@@ -615,6 +616,7 @@ const CHANGE_LABELS: Record<string, string> = {
   gpu: "GPU", vram: "显存", hashRate: "算力", power: "功耗", datacenter: "数据中心", uptime: "在线率",
   warranty: "保修", phoneDailyEarn: "手机日产收益", phoneDailyEarnNex: "手机日产 UVT", price: "价格", computePoints: "每件算力点",
   dailyEarn: "日产收益", dailyEarnNex: "日产 UVT", shareYieldMin: "份额收益下限", shareYieldMax: "份额收益上限",
+  monthlyTargetUsdt: "月收益目标", monthlyTargetBandPct: "允许波动", clearMonthlyTarget: "关闭月收益目标",
   baseRate: "收益展示文字", sold: "累计销量", stock: "库存", rating: "评分", reviews: "评价数",
   aiImageGenPerMin: "图像生成性能", aiLlmTokensPerSec: "大模型推理性能", aiVideoMinPerHour: "视频渲染性能",
   aiFineTuneMins: "LoRA 微调性能", aiUnlocks: "解锁算力池", features: "产品特性", generation: "产品代际",
@@ -646,6 +648,8 @@ function grouped(text: string) {
 function valueText(key: string | undefined, value: unknown): string {
   if (value === null || value === undefined) return "未设置";
   if (typeof value === "boolean") return value ? "是" : "否";
+  if (key === "monthlyTargetUsdt") return `${grouped(String(value))} USDT`;
+  if (key === "monthlyTargetBandPct") return `±${grouped(String(value))}%`;
   if (key === "peerBonusRate" && typeof value === "number") return `${(value * 100).toFixed(2)}%`;
   if (key === "baseRate" && typeof value === "string") return shareBaseRateText(value);
   if (Array.isArray(value)) return value.length ? value.map((item) => valueText(undefined, item)).join("、") : "无";

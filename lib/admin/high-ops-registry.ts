@@ -1,4 +1,5 @@
 import { accountAvatarFields } from "./account-avatar-contract.ts";
+import { supportsDeviceMonthlyTarget } from "./device-monthly-target.ts";
 export type DomainCode = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M";
 
 export interface ReplayCommand {
@@ -34,10 +35,20 @@ function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unkn
     // ⚠ 待后端仓到位后确认:A2 replay 的 SKU upsert 对「缺该列」是跳过还是置 null —— 若是后者
     //   且前台直读该列,需改为由后端按 assetId 回填(见 docs/changes 记档)。
     imagePreviewUrl: _imagePreviewUrl,
+    monthlyTargetUsdt, monthlyTargetBandPct, clearMonthlyTarget,
+    derivedDailyEarnUsdt: _derivedDailyEarnUsdt,
+    derivedShareYieldMinPct: _derivedShareYieldMinPct,
+    derivedShareYieldMaxPct: _derivedShareYieldMaxPct,
     ...rest
   } = ctx;
+  const targetSupported = supportsDeviceMonthlyTarget(String(ctx.skuId), String(ctx.tier ?? ""));
+  const hasTarget = targetSupported && monthlyTargetUsdt != null;
   return {
     ...rest,
+    ...(targetSupported ? { monthlyTargetUsdt, monthlyTargetBandPct, clearMonthlyTarget: clearMonthlyTarget === true ? true : undefined } : {}),
+    dailyEarn: hasTarget ? undefined : ctx.dailyEarn,
+    shareYieldMin: hasTarget ? undefined : ctx.shareYieldMin,
+    shareYieldMax: hasTarget ? undefined : ctx.shareYieldMax,
     dailyEarnNex: dailyEarnNEX,
     unlockPhase: unlock,
     expectedUpdatedAt: updatedAt,
@@ -985,7 +996,8 @@ export const HIGH_OPS: HighOpDef[] = [
     type: "param",
     gateLabel: "门槛者",
     targetType: "device_sku",
-    // 全 DeviceSkuUpsertRequest 透传:后端 buildSkuUpsertRequest 按 key 从 params 读取(37 字段)
+    // A2 derives amplification from approved before/after target bounds; client metadata is not a decision.
+    // Response-only estimates are omitted; explicit clearing retains the manual earnings in this request.
     buildCommand: (ctx) => ({ domain: "E", op: "e1_sku_create", params: canonicalE1SkuParams(ctx) }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_sku", id: String(ctx.skuId) }),
   },
@@ -997,7 +1009,7 @@ export const HIGH_OPS: HighOpDef[] = [
     type: "param",
     gateLabel: "门槛者",
     targetType: "device_sku",
-    // 全 DeviceSkuUpsertRequest 透传:后端 buildSkuUpsertRequest 按 key 从 params 读取(37 字段)
+    // A2 derives amplification from approved before/after target bounds; client metadata is not a decision.
     buildCommand: (ctx) => ({ domain: "E", op: "e1_sku_update", params: canonicalE1SkuParams(ctx) }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_sku", id: String(ctx.skuId) }),
   },

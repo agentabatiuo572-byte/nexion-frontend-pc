@@ -69,6 +69,9 @@ function backendPath(parts: string[]) {
   if (parts.length === 1 && parts[0] === "fx-quote") {
     return "/api/admin/finance/fx-quote";
   }
+  if (parts.length === 2 && parts[0] === "fx-quote" && parts[1] === "preflight") {
+    return "/api/admin/finance/fx-quote/preflight";
+  }
   if (parts.length === 2 && parts[0] === "payout-vnd" && ["config", "channel"].includes(parts[1])) {
     return `/api/admin/finance/payout-vnd/${parts[1]}`;
   }
@@ -119,6 +122,8 @@ function backendPath(parts: string[]) {
 
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
+  const fxPreflight = path.length === 2 && path[0] === "fx-quote" && path[1] === "preflight";
+  if (fxPreflight && request.method !== "POST") return jsonError(405, "FX_PREFLIGHT_METHOD_NOT_ALLOWED");
   if ((path[0] === "purchase-payment-policy" && !["GET", "PATCH"].includes(request.method))
     || (path[0] === "purchase-payment-records" && !(path.length === 3 ? request.method === "POST" : request.method === "GET"))) {
     return jsonError(405, "PURCHASE_PAYMENT_METHOD_NOT_ALLOWED");
@@ -179,7 +184,7 @@ async function proxy(request: Request, context: RouteContext) {
     });
   } catch {
     const response = jsonError(503, "FINANCE_BACKEND_UNAVAILABLE");
-    if (hasBody) response.headers.set("X-Nexion-Upstream-Outcome", "unknown");
+    if (hasBody && !fxPreflight) response.headers.set("X-Nexion-Upstream-Outcome", "unknown");
     return response;
   }
 }

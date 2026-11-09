@@ -1,3 +1,5 @@
+import { supportsDeviceMonthlyTarget } from "./device-monthly-target.ts";
+
 type UnknownRecord = Record<string, unknown>;
 
 export interface E1SkuPageContract<T = UnknownRecord> {
@@ -91,6 +93,24 @@ export function e1SkuInvalidFields(value: unknown): string[] {
   for (const key of ["price", "dailyEarn", "dailyEarnNex", "phoneDailyEarn", "phoneDailyEarnNex", "shareYieldMin", "shareYieldMax", "sold",
     "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"]) {
     if (!isOptionalNonNegativeNumberLike(value[key])) invalid.push(key);
+  }
+  for (const [key, maximum, precision] of [["monthlyTargetUsdt", 1_000_000, 2], ["monthlyTargetBandPct", 50, 1]] as const) {
+    const field = value[key];
+    if (field == null) continue;
+    if (!isFiniteNumberLike(field) || Number(field) < 1 || Number(field) > maximum
+        || Number(Number(field).toFixed(precision)) !== Number(field)) invalid.push(key);
+  }
+  for (const key of ["derivedDailyEarnUsdt", "derivedShareYieldMinPct", "derivedShareYieldMaxPct"]) {
+    if (!isOptionalNonNegativeNumberLike(value[key])) invalid.push(key);
+  }
+  if (value.monthlyTargetUsdt != null) {
+    if (typeof value.skuId === "string" && !supportsDeviceMonthlyTarget(value.skuId, String(value.tier ?? ""))) invalid.push("monthlyTargetUsdt.skuId");
+    if (value.monthlyTargetBandPct == null) invalid.push("monthlyTargetBandPct");
+    if (value.derivedDailyEarnUsdt == null) invalid.push("derivedDailyEarnUsdt");
+    if (value.productType === "SHARE" || value.tier === "Share") {
+      if (value.derivedShareYieldMinPct == null) invalid.push("derivedShareYieldMinPct");
+      if (value.derivedShareYieldMaxPct == null) invalid.push("derivedShareYieldMaxPct");
+    }
   }
   if (value.features !== undefined && value.features !== null && !isStringArray(value.features)) invalid.push("features");
   if (!validPurchaseGate(value.purchaseGate)) invalid.push("purchaseGate");

@@ -1,5 +1,6 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { monthlyTargetPoolErrorText } from "@/lib/admin/monthly-target-pool-error";
 import type { F4AmbassadorMaterialProposal } from "@/lib/admin/f1-client";
 import { ambassadorApprovalBlocker } from "@/lib/admin/f4-ambassador-display";
 import { parsePhoneProposalView, type PhoneProposalView } from "@/lib/admin/phone-calibration-client";
@@ -470,7 +471,8 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
         init.commandKey,
       );
     }
-    throw Object.assign(new Error(formatAdminApiError(result?.message, `A2_REQUEST_FAILED_${response.status}`)), {
+    throw Object.assign(new Error(await monthlyTargetPoolErrorText(result?.message, result?.data)
+      ?? formatAdminApiError(result?.message, `A2_REQUEST_FAILED_${response.status}`)), {
       status: response.ok && typeof result?.code === "number" ? result.code : response.status,
       details: result?.data,
       backendMessage: result?.message,
