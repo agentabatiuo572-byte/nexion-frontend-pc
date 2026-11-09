@@ -1,5 +1,3 @@
-import { supportsDeviceMonthlyTarget } from "./device-monthly-target.ts";
-
 type UnknownRecord = Record<string, unknown>;
 
 export interface E1SkuPageContract<T = UnknownRecord> {
@@ -104,7 +102,6 @@ export function e1SkuInvalidFields(value: unknown): string[] {
     if (!isOptionalNonNegativeNumberLike(value[key])) invalid.push(key);
   }
   if (value.monthlyTargetUsdt != null) {
-    if (typeof value.skuId === "string" && !supportsDeviceMonthlyTarget(value.skuId, String(value.tier ?? ""), value.productType as string | undefined)) invalid.push("monthlyTargetUsdt.skuId");
     if (value.monthlyTargetBandPct == null) invalid.push("monthlyTargetBandPct");
     if (value.derivedDailyEarnUsdt == null) invalid.push("derivedDailyEarnUsdt");
     if (value.productType === "SHARE" || value.tier === "Share") {

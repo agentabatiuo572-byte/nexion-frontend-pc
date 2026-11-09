@@ -86,6 +86,9 @@ export function joinGpu(model: string, count: string): string | undefined {
 export function validateSkuSpecs(f: SkuForm, existing?: OpsSku): string | null {
   if (f.datacenter.trim().length > 128) return "托管机房最多 128 字";
   if (!existing && !supportsDeviceMonthlyTarget(f.id.trim() || f.name.trim(), f.tier)) return SKU_MODEL_UNRECOGNIZED_REASON;
+  if (existing && !supportsDeviceMonthlyTarget(existing.id, f.tier, existing.productType)
+      && ((f.monthlyTargetUsdt.trim() ? Number(f.monthlyTargetUsdt) : undefined) !== existing.monthlyTargetUsdt
+        || (f.monthlyTargetBandPct.trim() ? Number(f.monthlyTargetBandPct) : undefined) !== existing.monthlyTargetBandPct)) return SKU_MODEL_UNRECOGNIZED_REASON;
   if (f.allowedPoolCodes.length && !f.monthlyTargetUsdt.trim()) return existing?.monthlyTargetUsdt != null
     ? "仍选有任务等级，不能清空月收益目标" : "已选任务等级，必须设置月收益目标，用于配平每单收益";
   if (supportsDeviceMonthlyTarget(f.id.trim() || existing?.id || f.name.trim(), f.tier, existing?.productType)) {
@@ -278,8 +281,7 @@ export function validateGateForm(f: SkuForm): string | null {
 
 // 表单 → OpsSku(提交:string 转结构化双币 + 合成 baseRate 兼容串;上下架 status 沿用既有/新建 pending)。
 export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
-  const targetSupported = supportsDeviceMonthlyTarget(f.id.trim() || existing?.id || f.name.trim(), f.tier, existing?.productType);
-  const monthlyTargetUsdt = targetSupported ? skuNumU(f.monthlyTargetUsdt) : undefined;
+  const monthlyTargetUsdt = skuNumU(f.monthlyTargetUsdt);
   const monthlyTargetBandPct = monthlyTargetUsdt != null ? skuNumU(f.monthlyTargetBandPct) : undefined;
   const dailyEarn = monthlyTargetUsdt != null ? Number((monthlyTargetUsdt / 30).toFixed(6)) : skuNum(f.dailyEarn);
   const dailyEarnNEX = skuNum(f.dailyEarnNEX);
@@ -317,7 +319,7 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
     derivedDailyEarnUsdt: monthlyTargetUsdt != null ? dailyEarn : undefined,
     derivedShareYieldMinPct: monthlyTargetUsdt != null && isShare ? shareYieldMin : undefined,
     derivedShareYieldMaxPct: monthlyTargetUsdt != null && isShare ? shareYieldMax : undefined,
-    clearMonthlyTarget: targetSupported && existing?.monthlyTargetUsdt != null && monthlyTargetUsdt == null ? true : undefined,
+    clearMonthlyTarget: existing?.monthlyTargetUsdt != null && monthlyTargetUsdt == null ? true : undefined,
     // Sales remains display-only; write payloads omit it and Java retains the live counter.
     sold: existing?.sold ?? 0, productType, inventoryMode,
     rating: existing?.rating, reviews: existing?.reviews, generation: existing?.generation,

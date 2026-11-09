@@ -1,5 +1,4 @@
 import { accountAvatarFields } from "./account-avatar-contract.ts";
-import { supportsDeviceMonthlyTarget } from "./device-monthly-target.ts";
 export type DomainCode = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M";
 
 export interface ReplayCommand {
@@ -41,11 +40,10 @@ function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unkn
     derivedShareYieldMaxPct: _derivedShareYieldMaxPct,
     ...rest
   } = ctx;
-  const targetSupported = supportsDeviceMonthlyTarget(String(ctx.skuId), String(ctx.tier ?? ""), ctx.productType as string | undefined);
-  const hasTarget = targetSupported && monthlyTargetUsdt != null;
+  const hasTarget = monthlyTargetUsdt != null;
   return {
     ...rest,
-    ...(targetSupported ? { monthlyTargetUsdt, monthlyTargetBandPct, clearMonthlyTarget: clearMonthlyTarget === true ? true : undefined } : {}),
+    monthlyTargetUsdt, monthlyTargetBandPct, clearMonthlyTarget: clearMonthlyTarget === true ? true : undefined,
     dailyEarn: hasTarget ? undefined : ctx.dailyEarn,
     shareYieldMin: hasTarget ? undefined : ctx.shareYieldMin,
     shareYieldMax: hasTarget ? undefined : ctx.shareYieldMax,

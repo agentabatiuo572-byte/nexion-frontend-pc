@@ -696,6 +696,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                   {s.publishBlocked === true ? <Badge tone="warn">{`未满足上架条件 · ${publishBlockLabel}`}</Badge> : null}
                   {s.publishBlocked === undefined ? <Badge tone="neutral">上架状态未知</Badge> : null}
                 </div>
+                {!supportsDeviceMonthlyTarget(s.id, s.tier, s.productType) && <div className="tint warn">{SKU_MODEL_UNRECOGNIZED_REASON}</div>}
                 <div className="acts">
                   {canWrite ? <button className="primary" aria-label={`改价 / 编辑 ${(s.name)}`} onClick={() => ctx.openSku(s.id)}>改价 / 编辑</button> : null}
                   {canWrite && st === "on" && (unlimitedInventory || Number(s.stock) > 0) && !open && !releaseGate && hasPhaseConfig ? <button className="brand" aria-label={`按当前阶段上架 ${(s.name)}`} onClick={() => ctx.openSku(s.id, phaseCur)}>按当前阶段上架</button> : null}
