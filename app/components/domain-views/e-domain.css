@@ -604,3 +604,7 @@
 .rd-modal:has(.e4-refund-impact-compact) .rd-confirm-alert .rd-notice-text { text-wrap: balance; }
 .e4-refund-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--rd-space-4); }
 .e4-refund-impact-compact .rd-table { --rd-cell-pad-y: var(--rd-space-1); --rd-cell-pad: var(--rd-space-2); }
+
+/* E1 月收益字段沿用商品编辑的间距与提示层级。 */
+.sku-earn-grid { gap: 12px; }
+.sku-field-hint { color: var(--ink-4); }

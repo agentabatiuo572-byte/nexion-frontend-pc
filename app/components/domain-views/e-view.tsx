@@ -275,7 +275,7 @@ function SkuFieldGroup({ n, title, children }: { n: string; title: string; child
 function SkuFld({ label, value, onChange, placeholder, type = "text", hint, tip, list, min, max, step, disabled = false }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string; hint?: string; tip?: string; list?: string; min?: number; max?: number; step?: number; disabled?: boolean }) {
   return (
     <label className="col" style={{ gap: 5 }}>
-      <span className="muted tiny">{label}{tip ? <span className="has-tip" data-tip={tip} aria-label={`${label}说明：${tip}`} /> : null}{hint ? <span style={{ color: "var(--ink-4)" }}> · {hint}</span> : null}</span>
+      <span className="muted tiny">{label}{tip ? <span className="has-tip" data-tip={tip} aria-label={`${label}说明：${tip}`} /> : null}{hint ? <span className="sku-field-hint"> · {hint}</span> : null}</span>
       <input className="fld" type={type} list={list} min={min} max={max} step={step} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} />
     </label>
   );
@@ -932,8 +932,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const monthlyTargetFilled = monthlyTargetSupported && form.monthlyTargetUsdt.trim() !== "";
   const draftSku = attachSkuMedia(formToSku(form, editedSku), skuMedia);
   const skuTaskClassesReady = e1Gates?.taskClassPolicySupported === true && (!editSkuId || Array.isArray(editedSku?.allowedTaskClasses));
-  const skuFormChanged = !editSkuId || !editedSku
-    || summarizeSkuProposal(editedSku, draftSku, { includeDerived: false }) !== null;
+  const skuFormChanged = !monthlyPending.some((row) => row.spec.obj === (editSkuId || form.id || form.name))
+    && (!editSkuId || !editedSku || summarizeSkuProposal(editedSku, draftSku, { includeDerived: false }) !== null);
   const [dcDrawer, setDcDrawer] = useState(false);
   const [editDcLocation, setEditDcLocation] = useState<string | null>(null);
   const [dcForm, setDcForm] = useState<DatacenterForm>({ dcLocation: "", regionLabel: "", location: "", displayName: "", status: "active", sortOrder: "100" });
@@ -1460,7 +1460,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
       {/* SKU 新增 / 编辑 抽屉 */}
       {skuDrawer && <Drawer title={editSkuId ? "编辑商品" : "新增商品"} sub={<AutoGloss>{editSkuId ? "改价、库存、每日收益、开放阶段等，提交后需确认" : "填写商品信息，提交后需确认"}</AutoGloss>} onClose={() => { setSkuDrawer(false); setEditSkuId(null); resetSkuMedia(null); }}
-        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setSkuDrawer(false); setEditSkuId(null); resetSkuMedia(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={monthlyPending.some((row) => row.spec.obj === (editSkuId || form.id || form.name)) || !form.name || !form.price || !skuFormChanged || skuMediaUploading || (!!skuMedia && !skuMedia.assetId)} onClick={openSkuSaveConfirm}>{editSkuId ? "保存修改" : "提交确认"}</Btn></>}>
+        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setSkuDrawer(false); setEditSkuId(null); resetSkuMedia(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!form.name || !form.price || !skuFormChanged || skuMediaUploading || (!!skuMedia && !skuMedia.assetId)} onClick={openSkuSaveConfirm}>{editSkuId ? "保存修改" : "提交确认"}</Btn></>}>
         <div className="col" style={{ gap: 12 }}>
           <div className="col" style={{ gap: 5 }}><span className="muted tiny">产品图 / 视频</span>
             <label className={"sku-drop" + (dragOver ? " drag" : "")} style={skuMedia ? { padding: 0, borderStyle: "solid" } : {}}
@@ -1539,7 +1539,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           </SkuFieldGroup>
 
           <SkuFieldGroup n="③" title="收益（USDT + UVT）">
-            {monthlyTargetSupported && <div className="grid g-2" style={{ gap: 12 }}>
+            {monthlyTargetSupported && <div className="grid g-2 sku-earn-grid">
               <SkuFld label="月收益目标（USDT）" type="number" min={1} max={1_000_000} step={0.01} value={form.monthlyTargetUsdt} onChange={(v) => setForm({ ...form, monthlyTargetUsdt: v })} placeholder="留空按单计价"
                 tip={`App 商品卡、商品详情、设备卡和首页对比显示目标对应的预估收益；新领取试用按目标 ÷ 30 计算，已领试用和已成交订单不变。批准后只影响新建任务，运行中任务保持原金额。${form.tier === "Share" ? "云端共享份额默认不乘产能比例；是否参与以「设备使用与升级置换」设置为准。" : "参与产能变化的型号按「设备使用与升级置换」中的当期产能比例折算；不参与的为 100%。"}可跑任务须为正额 USDT，且每项不超过 120 分钟。开启、关闭目标或提高目标区间上限，批准时须通过兑付覆盖率检查。关闭时须重新填写${form.tier === "Share" ? "参考年奖励率" : "每日收益 USDT"}。范围 1–1,000,000，最多 2 位小数。`} />
               <SkuFld label="允许波动 %" type="number" min={1} max={50} step={0.1} value={form.monthlyTargetBandPct} onChange={(v) => setForm({ ...form, monthlyTargetBandPct: v })} disabled={!monthlyTargetFilled} placeholder="10"
@@ -1556,7 +1556,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               </div>
             ) : (
               <>
-                {!monthlyTargetFilled && <div className="grid g-2" style={{ gap: 12 }}>
+                {!monthlyTargetFilled && <div className="grid g-2 sku-earn-grid">
                   <SkuFld label="共享份额参考年奖励率下限 %" type="number" value={form.shareYieldMin} onChange={(v) => setForm({ ...form, shareYieldMin: v })} placeholder="8" />
                   <SkuFld label="共享份额参考年奖励率上限 %" type="number" value={form.shareYieldMax} onChange={(v) => setForm({ ...form, shareYieldMax: v })} placeholder="15" />
                 </div>}
