@@ -275,7 +275,7 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
         <Fact k="申请号"><span data-mono>{row.requestNo}</span></Fact>
         <Fact k="系统编号">{String(row.userId)}</Fact>
         <Fact k="状态"><Change from={statusLabel(row.status)} to={statusLabel(TARGET[action])} /></Fact>
-        {reviewingAgain && <Fact k={SYSTEM_BLOCKS.includes(previousReason) ? "原拦下原因" : "原拒绝理由"}><KeepText text={reasonText(previousReason)} phrases={["提现冻结金额", "设备订单", "提现", "充值", "兑换", "质押"]} /></Fact>}
+        {reviewingAgain && <Fact k={SYSTEM_BLOCKS.includes(previousReason) ? "原拦下原因" : "原拒绝理由"}><KeepText text={reasonText(previousReason)} phrases={["提现冻结金额", "设备订单", "提现、", "充值、", "兑换、", "质押、"]} /></Fact>}
         {action === "block" && <Fact k="理由会显示给用户" tone="warn">App「我的 › 安全设置」写「注销受阻：{"{理由}"}」</Fact>}
         {action === "complete" && <Fact k="系统先查" tone="warn">可用 USDT、可用 NEX、提现冻结金额任一大于 0，或有未结束的提现、充值、兑换、质押、设备订单，就不注销，改成已拒绝</Fact>}
       </Facts>
