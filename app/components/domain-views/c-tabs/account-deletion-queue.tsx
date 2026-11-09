@@ -9,7 +9,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, Copy, FileText } from "lucide-react";
 import {
-  BlockState, Button, Cell, Change, Decision, Drawer, Explain, Fact, Facts, IconButton, IrreversibleTag, JudgmentPoints, Notice, Panel,
+  BlockState, Button, Cell, Change, Decision, Drawer, Explain, Fact, Facts, IconButton, IrreversibleTag, JudgmentPoints, KeepText, Notice, Panel,
   Select, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, type JudgmentRow, type StateTone,
 } from "@/app/components/rd";
 import {
@@ -275,7 +275,7 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
         <Fact k="申请号"><span data-mono>{row.requestNo}</span></Fact>
         <Fact k="系统编号">{String(row.userId)}</Fact>
         <Fact k="状态"><Change from={statusLabel(row.status)} to={statusLabel(TARGET[action])} /></Fact>
-        {reviewingAgain && <Fact k={SYSTEM_BLOCKS.includes(previousReason) ? "原拦下原因" : "原拒绝理由"}>{reasonText(previousReason)}</Fact>}
+        {reviewingAgain && <Fact k={SYSTEM_BLOCKS.includes(previousReason) ? "原拦下原因" : "原拒绝理由"}><KeepText text={reasonText(previousReason)} phrases={["设备订单"]} /></Fact>}
         {action === "block" && <Fact k="理由会显示给用户" tone="warn">App「我的 › 安全设置」写「注销受阻：{"{理由}"}」</Fact>}
         {action === "complete" && <Fact k="系统先查" tone="warn">可用 USDT、可用 NEX、提现冻结金额任一大于 0，或有未结束的提现、充值、兑换、质押、设备订单，就不注销，改成已拒绝</Fact>}
       </Facts>
@@ -354,11 +354,11 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
       reason: selected.status === "IN_REVIEW" || selected.status === "REQUESTED" ? "完成注销前到用户详情核对资金和订单" : undefined },
     { label: "申请时间", value: formatBusinessTimeCompact(selected.requestedAt, "—") },
     ...(selected.status === "BLOCKED" ? [{ label: SYSTEM_BLOCKS.includes(blockedRaw) ? "拦下原因" : "拒绝理由", value: <><span className="rd-point-mark" data-tone="warn"><AlertTriangle size={14} aria-hidden /></span>{reasonText(blockedRaw)}</>,
-      reason: blockedRaw === "UNSETTLED_FUNDS_OR_ORDERS"
+      reason: <KeepText text={blockedRaw === "UNSETTLED_FUNDS_OR_ORDERS"
         ? "用户结清后，点「重新审核」再「完成注销」；用户也可以在 App 取消申请。"
         : blockedRaw === "UNSETTLED_STATE_UNAVAILABLE"
           ? "财务状态恢复且已结清后，点「重新审核」再「完成注销」；用户也可以在 App 取消申请。"
-          : "核对拒绝理由后，可以重新审核或取消申请；用户也可以在 App 取消。" }] : []),
+          : "核对拒绝理由后，可以重新审核或取消申请；用户也可以在 App 取消。"} /> }] : []),
     ...(selected.status === "IN_REVIEW" ? [{ label: "完成后会怎样", value: "账号注销并立即下线，个人信息匿名化。" }] : []),
   ];
 
