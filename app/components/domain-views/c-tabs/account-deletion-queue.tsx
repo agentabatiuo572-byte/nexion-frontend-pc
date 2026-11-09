@@ -44,12 +44,12 @@ const STATUS_TONE: Record<string, StateTone> = { REQUESTED: "warn", IN_REVIEW: "
 
 export type DeletionAction = "review" | "block" | "complete" | "cancel";
 const ACTION_LABELS: Record<DeletionAction, string> = { review: "开始审核", block: "拒绝申请", complete: "完成注销", cancel: "取消申请" };
-export const deletionActionLabel = (action: DeletionAction) => ACTION_LABELS[action];
+export const deletionActionLabel = (action: DeletionAction, fromStatus?: string) => action === "review" && fromStatus === "BLOCKED" ? "重新审核" : ACTION_LABELS[action];
 
-/** 被系统拦下的原因写中文，不再显示英文码；运营写的理由原样。「没有注销」由状态和提示说，原因里不再重复（DT-12）。 */
+/** 被系统拦下的原因写中文，财务读不到写当时的事实；运营写的理由原样。 */
 const BLOCK_REASONS: Record<string, string> = {
-  UNSETTLED_FUNDS_OR_ORDERS: "还有余额、提现中金额，或没结束的提现、充值、兑换、质押、订单",
-  UNSETTLED_STATE_UNAVAILABLE: "资金和订单状态暂时查不到",
+  UNSETTLED_FUNDS_OR_ORDERS: "可用 USDT、可用 NEX、提现冻结金额任一大于 0，或有未结束的提现、充值、兑换、质押、设备订单",
+  UNSETTLED_STATE_UNAVAILABLE: "当时读不到财务状态，没有注销",
   USER_REQUESTED_CANCEL: "用户主动取消申请",
 };
 /** 系统拦下的两个原因码；列表里加「系统拦下：」，分得清是系统拦的还是运营拒的。 */
@@ -86,6 +86,7 @@ function statusLabel(status: string) {
 function availableActions(status: string): DeletionAction[] {
   if (status === "REQUESTED") return ["review", "block", "cancel"];
   if (status === "IN_REVIEW") return ["block", "complete", "cancel"];
+  if (status === "BLOCKED") return ["review", "cancel"];
   return [];
 }
 
@@ -98,11 +99,11 @@ function shortNo(no: string) {
 const TARGET: Record<DeletionAction, string> = { review: "IN_REVIEW", block: "BLOCKED", complete: "COMPLETED", cancel: "CANCELLED" };
 
 /** 动作做完后的提示：完成注销按返回的最终状态说话，被拦下不算成功（OP-90）。 */
-export function deletionResultToast(action: DeletionAction, row: AccountDeletionRequest): [string, "success" | "warn"] {
+export function deletionResultToast(action: DeletionAction, row: AccountDeletionRequest, fromStatus?: string): [string, "success" | "warn"] {
   // 原因只写在抽屉的「拦下原因」一处，提示只说结果（DT-12）。
   if (action === "complete" && row.status === "BLOCKED") return ["系统没有注销，申请已改成已拒绝。原因见「拦下原因」。", "warn"];
   if (action === "complete") return [`${row.requestNo} 已完成注销`, "success"];
-  if (action === "review") return [`${row.requestNo} 已开始审核`, "success"];
+  if (action === "review") return [`${row.requestNo} 已${deletionActionLabel(action, fromStatus)}`, "success"];
   if (action === "block") return [`${row.requestNo} 已拒绝`, "success"];
   return [`${row.requestNo} 已取消`, "success"];
 }
@@ -221,7 +222,11 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
     try {
       const detail = await fetchAccountDeletion(row.requestNo);
       if (sessionKey !== currentSessionKey() || !isCurrentAccountDeletionSelection(selectedRef.current?.requestNo ?? null, row.requestNo, detailGenerationRef.current, generation)) return null;
-      if (detail.requestNo !== row.requestNo || detail.userId !== row.userId || detail.version < row.version) throw new Error("ACCOUNT_DELETION_DETAIL_MISMATCH");
+      if (detail.requestNo !== row.requestNo || detail.userId !== row.userId) throw new Error("ACCOUNT_DELETION_DETAIL_MISMATCH");
+      if (detail.version < row.version) {
+        publishDetailRead({ status: "stale", sessionKey });
+        return null;
+      }
       selectedRef.current = detail;
       setSelected(detail);
       publishDetailRead({ status: "ready", sessionKey });
@@ -262,18 +267,21 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
 
   /* ── 确认框：理由在框里填，8–200 字（OP-20、OP-24；后端 1–255 不动） ── */
   const request = (row: AccountDeletionRequest, action: DeletionAction, blockedReason?: ReactNode): ActionConfirmReq => {
-    const label = ACTION_LABELS[action];
+    const label = deletionActionLabel(action, row.status);
+    const reviewingAgain = action === "review" && row.status === "BLOCKED";
+    const previousReason = (row.blockReason || row.reason || "").trim();
     const facts = (
       <Facts>
         <Fact k="申请号"><span data-mono>{row.requestNo}</span></Fact>
         <Fact k="系统编号">{String(row.userId)}</Fact>
         <Fact k="状态"><Change from={statusLabel(row.status)} to={statusLabel(TARGET[action])} /></Fact>
+        {reviewingAgain && <Fact k={SYSTEM_BLOCKS.includes(previousReason) ? "原拦下原因" : "原拒绝理由"}>{reasonText(previousReason)}</Fact>}
         {action === "block" && <Fact k="理由会显示给用户" tone="warn">App「我的 › 安全设置」写「注销受阻：{"{理由}"}」</Fact>}
-        {action === "complete" && <Fact k="系统先查" tone="warn">余额、提现中金额不为 0，或还有没结束的提现、充值、兑换、质押、订单，就不注销，改成已拒绝</Fact>}
+        {action === "complete" && <Fact k="系统先查" tone="warn">可用 USDT、可用 NEX、提现冻结金额任一大于 0，或有未结束的提现、充值、兑换、质押、设备订单，就不注销，改成已拒绝</Fact>}
       </Facts>
     );
     const impact = {
-      review: "改成审核中，用户在 App 还能取消。",
+      review: reviewingAgain ? "改回审核中，可以再完成注销或拒绝。" : "改成审核中，用户在 App 还能取消。",
       block: "改成已拒绝，账号不注销；用户能看到这次的理由。",
       complete: "通过检查后账号立即注销、全部设备下线，个人信息匿名化。",
       cancel: "申请结束，账号不注销；用户可以再提交。",
@@ -281,22 +289,22 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
     return {
       briefKind: "security",
       action: `${label} · ${row.requestNo}`,
-      title: { review: "开始审核", block: "拒绝注销申请", complete: "完成注销", cancel: "取消注销申请" }[action],
+      title: { review: label, block: "拒绝注销申请", complete: "完成注销", cancel: "取消注销申请" }[action],
       effect: action === "complete" ? <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag /></> : <StatusTag tone="progress" filled>立即生效</StatusTag>,
       facts,
       detail: impact,
       amplifies: false,
       statedBrief: { impact, check: "核对申请号和用户，理由写清依据或工单号。" },
-      confirmLabel: { review: "确认开始审核", block: "确认拒绝", complete: "确认完成注销", cancel: "确认取消" }[action],
+      confirmLabel: { review: `确认${label}`, block: "确认拒绝", complete: "确认完成注销", cancel: "确认取消" }[action],
       confirmTone: action === "complete" ? "danger" : undefined,
       reasonMin: 8,
       reasonMax: 200,
-      reasonPlaceholder: action === "block" ? "例如：账户还有未结清的提现，请处理完后再申请" : "例如：工单 20261108-008，已核对资金和订单",
+      reasonPlaceholder: action === "block" ? "例如：账户还有未结清的提现，请先处理完" : "例如：工单 20261108-008，已核对资金和订单",
       blockedReason,
       run: async (reason) => {
         try {
           await send(row.requestNo, row.userId, action, row.version, row.status, reason, currentAdminOperator(), async (next) => {
-            const [message, kind] = deletionResultToast(action, next);
+            const [message, kind] = deletionResultToast(action, next, row.status);
             toast(message, kind);
             setBlockedNote(action === "complete" && next.status === "BLOCKED" ? { requestNo: next.requestNo, text: message } : null);
             if (selectedRef.current?.requestNo === next.requestNo) {
@@ -346,7 +354,11 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
       reason: selected.status === "IN_REVIEW" || selected.status === "REQUESTED" ? "完成注销前到用户详情核对资金和订单" : undefined },
     { label: "申请时间", value: formatBusinessTimeCompact(selected.requestedAt, "—") },
     ...(selected.status === "BLOCKED" ? [{ label: SYSTEM_BLOCKS.includes(blockedRaw) ? "拦下原因" : "拒绝理由", value: <><span className="rd-point-mark" data-tone="warn"><AlertTriangle size={14} aria-hidden /></span>{reasonText(blockedRaw)}</>,
-      reason: "用户可以在 App 取消这次申请，结清后再重新提交" }] : []),
+      reason: blockedRaw === "UNSETTLED_FUNDS_OR_ORDERS"
+        ? "用户结清后，点「重新审核」再「完成注销」；用户也可以在 App 取消申请。"
+        : blockedRaw === "UNSETTLED_STATE_UNAVAILABLE"
+          ? "财务状态恢复且已结清后，点「重新审核」再「完成注销」；用户也可以在 App 取消申请。"
+          : "核对拒绝理由后，可以重新审核或取消申请；用户也可以在 App 取消。" }] : []),
     ...(selected.status === "IN_REVIEW" ? [{ label: "完成后会怎样", value: "账号注销并立即下线，个人信息匿名化。" }] : []),
   ];
 
@@ -355,7 +367,7 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
       danger={actions.includes("block") ? <Button variant="danger-outline" disabledReason={actionBlock} onClick={() => openActionConfirm(request(selected, "block"))}>拒绝申请</Button> : undefined}
       others={actions.includes("cancel") ? <Button disabledReason={actionBlock} onClick={() => openActionConfirm(request(selected, "cancel"))}>取消申请</Button> : undefined}
       primary={actions.includes("review")
-        ? <Button variant="primary" disabledReason={actionBlock} onClick={() => openActionConfirm(request(selected, "review"))}>开始审核</Button>
+        ? <Button variant="primary" disabledReason={actionBlock} onClick={() => openActionConfirm(request(selected, "review"))}>{deletionActionLabel("review", selected.status)}</Button>
         : actions.includes("complete") ? <Button variant="primary" disabledReason={actionBlock} onClick={() => openActionConfirm(request(selected, "complete"))}>完成注销</Button> : undefined} />
   );
 

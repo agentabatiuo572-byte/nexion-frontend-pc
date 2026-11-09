@@ -1314,11 +1314,11 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
 
   /* ── 注销申请的写操作：页签里开框，命令在这里发，待确认条在页面上方 ── */
   const deletionCommand = (requestNo: string, userId: number, action: DeletionAction, version: number, fromStatus: string, reason: string, operator: string, onDone?: (row: AccountDeletionRequest) => unknown, retry = false) => sendCommand(
-    { kind: "deletion", label: `${deletionActionLabel(action)} · ${shortNo(requestNo)}`, target: requestNo, userNo: String(userId), reason, operator, action, version, fromStatus },
+    { kind: "deletion", label: `${deletionActionLabel(action, fromStatus)} · ${shortNo(requestNo)}`, target: requestNo, userNo: String(userId), reason, operator, action, version, fromStatus },
     (key) => updateAccountDeletion(requestNo, action, version, reason, key),
     async (row) => {
       if (onDone) await onDone(row);
-      else { const [message, kind] = deletionResultToast(action, row); toast(message, kind); }
+      else { const [message, kind] = deletionResultToast(action, row, fromStatus); toast(message, kind); }
       await loadDeletionCounts();
     },
     retry,
@@ -1526,7 +1526,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     </Notice>
   );
 
-  const conclusionExplain = "待审核和审核中的注销申请都要人处理。已拒绝的用户可以在 App 取消。";
+  const conclusionExplain = "待审核和审核中的注销申请都要人处理。已拒绝的申请可以重新审核或取消；用户也可以在 App 取消。";
   const conclusion = !canReadDeletions ? null
     : deletionCounts.loading && !deletionCounts.data ? <Conclusion state="unknown">正在读取…</Conclusion>
       : deletionCounts.error || pendingDeletions === null ? <Conclusion state="unknown" action={<InlineRetry onRetry={() => void loadDeletionCounts()} />}>暂时读不到注销申请的数量</Conclusion>
