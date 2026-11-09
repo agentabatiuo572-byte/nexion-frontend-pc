@@ -355,8 +355,8 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
       reason: selected.status === "IN_REVIEW" || selected.status === "REQUESTED" ? "完成注销前到用户详情核对资金和订单" : undefined },
     { label: "申请时间", value: formatBusinessTimeCompact(selected.requestedAt, "—") },
     ...(selected.status === "BLOCKED" ? [{ label: SYSTEM_BLOCKS.includes(blockedRaw) ? "拦下原因" : "拒绝理由", value: <><span className="rd-point-mark" data-tone="warn"><AlertTriangle size={14} aria-hidden /></span>{reasonText(blockedRaw)}{blockedRaw === "UNSETTLED_FUNDS_OR_ORDERS" && <> <Explain label="零头余额的处理方法" content={<>低于最低提现额或最低兑换量的零头余额，用户联系客服后由财务在「{canReadAssetAdjustments
-        ? <Link className="rd-link" href={`/users/assets?userId=${selected.userId}&returnTo=${encodeURIComponent(`/users/actions?tab=deletions${status ? `&deletionStatus=${status}` : ""}`)}`} prefetch={false}>余额与资产调整</Link>
-        : "余额与资产调整"}」写理由，经审批清零，之后运营点「重新审核」再「完成注销」。</>} /></>}</>,
+        ? <a className="rd-link" href={`/users/assets?userId=${selected.userId}&returnTo=${encodeURIComponent(`/users/actions?tab=deletions${status ? `&deletionStatus=${status}` : ""}`)}`}>余额与资产调整</a>
+        : "余额与资产调整"}<KeepText text="」写理由，经审批清零，之后运营点「重新审核」再「完成注销」。" phrases={["「重新审核」", "「完成注销」。"]} /></>} /></>}</>,
       reason: <KeepText text={blockedRaw === "UNSETTLED_FUNDS_OR_ORDERS"
         ? "用户结清后，点「重新审核」再「完成注销」；用户也可以在 App 取消申请。"
         : blockedRaw === "UNSETTLED_STATE_UNAVAILABLE"
