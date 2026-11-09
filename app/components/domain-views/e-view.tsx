@@ -383,7 +383,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [e2Loading, setE2Loading] = useState(false);
   const [e2Error, setE2Error] = useState<string | null>(null);
   const [e2TaskCatalogReady, setE2TaskCatalogReady] = useState(false);
-  const canMutateE2 = canReadE6 && canWriteE6 && !e2Loading && !e2Error;
+  const canMutateE2 = canReadE2 && canWriteE2 && !e2Loading && !e2Error;
   const canMutateE2Tasks = canReadE2 && canWriteE2 && !e2Loading && e2TaskCatalogReady;
   useEffect(() => {
     setActionConfirm((current) => {
@@ -397,7 +397,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     setE2Error(null);
     const [tasksResult, phoneResult] = await Promise.allSettled([
       canReadE2 ? fetchE2Tasks() : Promise.resolve([]),
-      canReadE6 ? fetchE2PhoneTiers() : Promise.resolve({ tiers: [], comparisons: [] }),
+      canReadE2 ? fetchE2PhoneTiers() : Promise.resolve({ tiers: [], comparisons: [] }),
     ]);
     const errors: string[] = [];
     if (tasksResult.status === "fulfilled") {
@@ -418,8 +418,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }
     setE2Error(errors.length ? errors.join("；") : null);
     setE2Loading(false);
-  }, [canReadE2, canReadE6]);
-  useEffect(() => { if (tab === "E6" && (canReadE2 || canReadE6)) void refreshE2(); }, [tab, canReadE2, canReadE6, refreshE2]);
+  }, [canReadE2]);
+  useEffect(() => { if (tab === "E6" && canReadE2) void refreshE2(); }, [tab, canReadE2, refreshE2]);
 
   // ── E3 设备使用与升级置换:服务端配置 / 概览 / tx 监控为单一来源 ──
   const refreshE3 = useCallback(async () => {

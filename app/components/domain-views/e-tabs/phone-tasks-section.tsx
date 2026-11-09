@@ -21,7 +21,7 @@ export function PhoneTasksSection({ ctx }: { ctx: EViewCtx }) {
   }, [ctx.canReadE2, ctx.tasks]);
   const ready = !ctx.e2Loading && ctx.e2TaskCatalogReady;
   const canWriteTasks = ctx.canWriteE2 && ready;
-  const canWriteTiers = ctx.canWriteE6 && !ctx.e2Loading && !ctx.e2Error;
+  const canWriteTiers = ctx.canWriteE2 && !ctx.e2Loading && !ctx.e2Error;
   const currentPage = Math.min(page, Math.max(1, Math.ceil(ctx.tasks.length / pageSize)));
   return <div className="phone-sections">
     {ctx.canReadE2 && <section className="pane">
@@ -34,8 +34,7 @@ export function PhoneTasksSection({ ctx }: { ctx: EViewCtx }) {
       </tbody></table></div>
       <DataListPager label="手机任务" page={currentPage} pageSize={pageSize} total={ctx.tasks.length} onPageChange={setPage} onPageSizeChange={value => { setPageSize(value); setPage(1); }} pageSizeOptions={[10, 20, 50]} />
     </section>}
-    {ctx.canReadE6 && <><section className="pane"><div className="pane-h"><span className="ttl">手机 5 档收益</span><OpsHint>App 手机算力卡片使用此每日收益快照。调整走原 A2 审批与覆盖率检查，从下个结算周期生效，已发收益不变。</OpsHint></div>
-      {!ctx.canReadE2 && ctx.e2Error && <div className="tint warn" role="alert">{ctx.e2Error}<Btn sm onClick={() => void ctx.refreshE2()}>重新加载</Btn></div>}
+    {ctx.canReadE2 && <><section className="pane"><div className="pane-h"><span className="ttl">手机 5 档收益</span><OpsHint>App 手机算力卡片使用此每日收益快照。调整走原 A2 审批与覆盖率检查，从下个结算周期生效，已发收益不变。</OpsHint></div>
       <table className="tp-table"><thead><tr><th>档位</th><th>名称</th><th>USDT/天</th><th>UVT/天</th><th>操作</th></tr></thead><tbody>{ctx.phoneTiers.map(tier => <tr key={tier.tier}><td><Badge tone="cyan">T{tier.tier}</Badge></td><td><strong>{operatorCopyText(tier.name)}</strong> <OpsHint>{operatorCopyText(tier.note)}</OpsHint></td><td>{tier.dailyUsdt}</td><td>{tier.dailyNex}</td><td>{canWriteTiers && <div className="row" style={{ gap: 8 }}>{(["dailyUsdt", "dailyNex"] as const).map(field => <Btn sm key={field} onClick={() => ctx.openActionConfirm({ briefKind: "config", name: `调整手机 T${tier.tier} 每日收益（${field === "dailyUsdt" ? "USDT" : "UVT"}）`, op: "phone-tier", phoneTier: tier.tier, phoneField: field, amplify: true,
         edit: { kind: "number", current: String(tier[field]), unit: `${field === "dailyUsdt" ? "USDT" : "UVT"}/天`, min: 0.00001, step: 0.00001, disallowCurrent: true }, detail: "调整需另一位管理员批准；调高会增加平台支出，仍检查兑付覆盖率。从下个结算周期生效，已发收益不变。" })}>调 {field === "dailyUsdt" ? "USDT" : "UVT"}</Btn>)}</div>}</td></tr>)}</tbody></table>
     </section>

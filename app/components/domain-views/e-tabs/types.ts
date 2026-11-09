@@ -96,7 +96,7 @@ export interface EViewCtx {
   refreshE1: () => Promise<void>;
   openSku: (skuId?: string, unlockPhase?: string) => void; // 打开 SKU 抽屉;可预选当前解锁阶段
   delSku: (skuId: string, displayName: string) => void;
-  // E6 手机任务沿用 E2 权限；档位与引导收益由 E6 权限管理。
+  // E6 手机任务、档位与引导收益沿用原 E2 权限。
   canReadE2: boolean;
   canWriteE2: boolean;
   tasks: OpsTask[];
