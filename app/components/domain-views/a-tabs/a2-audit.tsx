@@ -660,9 +660,9 @@ function grouped(text: string) {
   return /^-?\d{4,}(\.\d+)?$/.test(text) ? text.replace(/^-?\d+/, (whole) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")) : text;
 }
 
-function valueText(key: string | undefined, value: unknown): string {
+function valueText(key: string | undefined, value: unknown, compared?: unknown): string {
+  if (typeof value === "boolean" || value == null && typeof compared === "boolean") return value === true ? "是" : "否";
   if (value === null || value === undefined) return "未设置";
-  if (typeof value === "boolean") return value ? "是" : "否";
   if (key === "monthlyTargetUsdt") return `${grouped(String(value))} USDT`;
   if (key === "monthlyTargetBandPct") return `±${grouped(String(value))}%`;
   if (key === "dailyEarn") return `${grouped(String(value))} USDT/日`;
@@ -697,6 +697,12 @@ function changeSummary(before: string, after: string, omit: readonly string[] = 
   if (!a) return { main: "—", sub: b ? `原 ${b.kind === "text" ? b.text : "见详情"}` : undefined };
   if (a.kind === "text") return { main: a.text, sub: b ? `原 ${b.kind === "text" ? b.text : "见详情"}` : "新建" };
   if (a.kind === "rows") return { main: `共 ${a.rows.length} 行`, sub: b ? "原 见详情" : "新建" };
+  if (a.value.clearMonthlyTarget === true) return {
+    main: "关闭月收益目标",
+    sub: a.value.shareYieldMin != null && a.value.shareYieldMax != null
+      ? `年奖励率 ${valueText("shareYieldMin", a.value.shareYieldMin)}–${valueText("shareYieldMax", a.value.shareYieldMax)}`
+      : `日产收益 ${valueText("dailyEarn", a.value.dailyEarn)}`,
+  };
   const keys = Object.keys(a.value).filter((key) => !omit.includes(key));
   const changed = b?.kind === "object" ? keys.filter((key) => !same(b.value[key], a.value[key])) : keys;
   const first = changed[0] ?? keys[0];
@@ -705,7 +711,7 @@ function changeSummary(before: string, after: string, omit: readonly string[] = 
   const now = a.value[first];
   const main = `${label} ${isRowList(now) ? `${now.length} ${ROW_UNIT[first] ?? "行"}` : valueText(first, now)}${changed.length > 1 ? ` 等 ${changed.length} 项` : ""}`;
   const was = b?.kind === "object" ? b.value[first] : undefined;
-  return { main, sub: !b ? "新建" : b.kind === "object" && first in b.value && !isRowList(was) ? `原 ${valueText(first, was)}` : "原 见详情" };
+  return { main, sub: !b ? "新建" : b.kind === "object" && (first in b.value || typeof now === "boolean") && !isRowList(was) ? `原 ${valueText(first, was, now)}` : "原 见详情" };
 }
 
 /** 成组的记录画成小表，每组一行，列头用字段名；超过 5 行的收在「查看全部」后面（VS-109）。 */
@@ -757,8 +763,8 @@ export function A2ChangeReview({ before, after, omit = [] }: { before: string; a
     const rows: DiffRow[] = plain.map((key) => ({
       key,
       label: CHANGE_LABELS[key] ?? key,
-      before: was && key in was ? valueText(key, was[key]) : "未设置",
-      after: key in a.value ? valueText(key, a.value[key]) : "未设置",
+      before: valueText(key, was?.[key], a.value[key]),
+      after: valueText(key, a.value[key], was?.[key]),
     }));
     body = <>
       {b && b.kind !== "object" && <Facts><Fact k="变更前">{b.kind === "text" ? b.text : valueText(undefined, b.rows)}</Fact></Facts>}
