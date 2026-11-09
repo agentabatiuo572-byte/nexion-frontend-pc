@@ -12,7 +12,7 @@ import { LegacyUnknownResolutionAction } from "./legacy-unknown-resolution-actio
 const SIM_STATES: Record<E5SimState, [string, string]> = {
   WAITING_ACTIVATION: ["待激活", "warn"], WAITING_INIT: ["等待初始化", "neutral"], LEGACY_PENDING: ["旧任务未结清", "warn"],
   RUNNING: ["运行中", "ok"], WAITING_CONFIG: ["等待配置", "warn"], PAUSED: ["已暂停", "neutral"],
-  CLOSING: ["停用中", "warn"], STOPPED: ["已停用", "neutral"], UNBOUND: ["已解绑", "neutral"], ERROR: ["出错重试中", "danger"], SIM_OFF: ["模拟任务已关闭", "neutral"],
+  CLOSING: ["停用中", "warn"], STOPPED: ["已停用", "neutral"], UNBOUND: ["已解绑", "neutral"], ERROR: ["出错重试中", "err"], SIM_OFF: ["模拟任务已关闭", "neutral"],
 };
 const SOURCES: Record<string, string> = { ORDER: "购买", TRADE_IN: "置换", TRIAL: "试用转正", PROMOTION_GIFT: "赠送" };
 const PHONE_STATES: Record<E5Device["state"], string> = { active: "在线", busy: "任务中", offline: "离线", inventory: "待激活", "pending-deactivate": "停用中", unbound: "已解绑 / 停用", abnormal: "异常", unknown: "状态未知" };
