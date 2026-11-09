@@ -53,7 +53,7 @@ export async function exceptionRead(path: string, scope?: ExceptionRequestScope)
 
 export async function exceptionList(path: string, beforeId?: string, scope?: ExceptionRequestScope): Promise<ExceptionPage> {
   scope?.assertOwner();
-  const response = await financeAdminRequest<unknown>(`/cregis${path}?limit=20&beforeId=${beforeId ? exceptionId(beforeId) : "0"}`, { bankManualAuthEpoch: scope?.authEpoch });
+  const response = await financeAdminRequest<unknown>(`/cregis${path}${path.includes("?")?"&":"?"}limit=20&beforeId=${beforeId ? exceptionId(beforeId) : "0"}`, { bankManualAuthEpoch: scope?.authEpoch });
   scope?.assertOwner();
   return exceptionPage(response);
 }

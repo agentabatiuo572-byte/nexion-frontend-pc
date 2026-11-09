@@ -430,7 +430,7 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
         {data.depositEnabled && data.depositCreditEnabled && data.provisionGate.assignEnabled && !data.provisionGate.creditEnabled && <div className="dtint warn">仅开放试点收款地址，到账后进入人工复核，暂不自动入账；请仅按测试安排转账。</div>}
       </>}
       <nav className="cregis-navigation" aria-label="USDT 操作分区">
-        {[["records", "收款记录"], ["exceptions", `异常处理${count ? `（${count}）` : ""}`], ["settings", "充值与地址设置"], ["funds", "归集与付款"]].map(([key, title]) =>
+        {[["records", "收款记录"], ["exceptions", `异常处理${count ? `（${count}）` : ""}`], ["settings", "充值与地址设置"], ["funds", "归集到cregis与cregis转平台收款钱包"]].map(([key, title]) =>
           <button key={key} type="button" aria-pressed={section === key} aria-controls={`cregis-${key}`} onClick={() => setSection(key)}>{title}</button>)}
       </nav>
       <section id="cregis-records" hidden={section !== "records"} aria-label="收款记录" className="cregis-content">
@@ -561,7 +561,7 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
         </div>}
         </>}
       </section>
-      <section id="cregis-funds" hidden={section !== "funds"} aria-label="归集与付款" className="cregis-content">
+      <section id="cregis-funds" hidden={section !== "funds"} aria-label="归集到cregis与cregis转平台收款钱包" className="cregis-content">
         <p className="sub">自动任务与人工准备单分别管理。查看各自的运行状态和执行条件后再操作。</p>
         {data && <>
           <CregisAutoForward canManage={canManage} openActionConfirm={openActionConfirm} />
