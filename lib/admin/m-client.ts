@@ -5,6 +5,7 @@ import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { supportWireId, supportRequest, supportObject, parseSupportCount, supportClient, parseSupportSessionHolder } from "@/lib/admin/m-support-client";
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
+import { skuBaseRateText } from "@/lib/admin/operator-copy";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { User360Profile, UserProfileQuery } from "@/lib/admin/user360-client";
 import {
@@ -387,6 +388,11 @@ type SupportWorkbenchSkuView = {
   price?: number | string | null;
   dailyEarn?: number | string | null;
   dailyEarnNex?: number | string | null;
+  monthlyTargetUsdt?: number | string | null;
+  monthlyTargetBandPct?: number | string | null;
+  derivedDailyEarnUsdt?: number | string | null;
+  derivedShareYieldMinPct?: number | string | null;
+  derivedShareYieldMaxPct?: number | string | null;
   shareYieldMin?: number | string | null;
   shareYieldMax?: number | string | null;
   baseRate?: string | null;
@@ -674,7 +680,7 @@ function adaptPurchaseGate(gate: SupportWorkbenchPurchaseGate | null | undefined
 }
 
 function adaptSupportWorkbenchSku(sku: SupportWorkbenchSkuView): OpsSku {
-  return {
+  const mapped: OpsSku = {
     id: str(sku.skuId),
     name: str(sku.name, str(sku.skuId, "未命名 SKU")),
     tier: str(sku.tier, "Entry"),
@@ -686,10 +692,15 @@ function adaptSupportWorkbenchSku(sku: SupportWorkbenchSkuView): OpsSku {
     power: sku.power ?? undefined,
     datacenter: sku.datacenter ?? undefined,
     price: num(sku.price),
-    dailyEarn: num(sku.dailyEarn),
+    dailyEarn: num(sku.derivedDailyEarnUsdt ?? sku.dailyEarn),
     dailyEarnNEX: num(sku.dailyEarnNex),
-    shareYieldMin: optionalNum(sku.shareYieldMin),
-    shareYieldMax: optionalNum(sku.shareYieldMax),
+    monthlyTargetUsdt: optionalNum(sku.monthlyTargetUsdt),
+    monthlyTargetBandPct: optionalNum(sku.monthlyTargetBandPct),
+    derivedDailyEarnUsdt: optionalNum(sku.derivedDailyEarnUsdt),
+    derivedShareYieldMinPct: optionalNum(sku.derivedShareYieldMinPct),
+    derivedShareYieldMaxPct: optionalNum(sku.derivedShareYieldMaxPct),
+    shareYieldMin: optionalNum(sku.derivedShareYieldMinPct ?? sku.shareYieldMin),
+    shareYieldMax: optionalNum(sku.derivedShareYieldMaxPct ?? sku.shareYieldMax),
     baseRate: sku.baseRate ?? undefined,
     sold: sku.sold ?? undefined,
     stock: sku.stock ?? "0",
@@ -711,6 +722,7 @@ function adaptSupportWorkbenchSku(sku: SupportWorkbenchSkuView): OpsSku {
     tag: str(sku.tag),
     status: str(sku.status, "pending"),
   };
+  return { ...mapped, baseRate: skuBaseRateText(mapped) };
 }
 
 function requireLoadRaw(raw: Record<string, unknown> | undefined): Record<string, unknown> {

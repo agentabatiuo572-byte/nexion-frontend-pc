@@ -63,6 +63,19 @@ function validateE5Device(value: unknown, message: string) {
   if (typeof row.id === "string" && !row.id.trim()) throw new Error(message);
   if (row.userId != null && typeof row.userId !== "number" && typeof row.userId !== "string") throw new Error(message);
   if (row.status != null) text(row.status, message);
+  if (row.monthlyTarget != null) {
+    const target = object(row.monthlyTarget, message);
+    nonNegativeInteger(target.cycleIndex, message, 1);
+    text(target.cycleStartAt, message);
+    text(target.cycleEndAt, message);
+    for (const key of ["creditedUsdt", "capacityPct"]) finiteNumber(target[key], message);
+    if (typeof target.targetActive !== "boolean" || typeof target.configChangedInCycle !== "boolean") throw new Error(message);
+    // A closed target currently has no forecast bounds; preserve the credited amount without inventing zeroes.
+    if (target.rangeLowUsdt == null && target.rangeHighUsdt == null && !target.targetActive) return;
+    const low = finiteNumber(target.rangeLowUsdt, message);
+    const high = finiteNumber(target.rangeHighUsdt, message);
+    if (high < low) throw new Error(message);
+  }
 }
 
 export function parseE5DevicePage<T = UnknownRecord>(raw: unknown): T {

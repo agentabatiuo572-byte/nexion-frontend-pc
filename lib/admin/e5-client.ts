@@ -19,6 +19,18 @@ export type { E5Observability } from "@/lib/admin/e5-observability-contract";
 export type E5DeviceState = "active" | "busy" | "offline" | "inventory" | "pending-deactivate" | "unbound" | "abnormal" | "unknown";
 export type E5DatacenterStatus = "active" | "maintenance" | "disabled";
 
+export interface E5MonthlyTarget {
+  cycleIndex: number;
+  cycleStartAt: string;
+  cycleEndAt: string;
+  creditedUsdt: number;
+  rangeLowUsdt: number | null;
+  rangeHighUsdt: number | null;
+  capacityPct: number;
+  targetActive: boolean;
+  configChangedInCycle: boolean;
+}
+
 export interface E5Device {
   id: string;
   deviceId: number;
@@ -38,6 +50,7 @@ export interface E5Device {
   hashrate: number;
   dailyUsdt: number | null;
   dailyNex: number | null;
+  monthlyTarget: E5MonthlyTarget | null;
   activeTaskNo: string;
   heartbeatAt: string;
   heartbeatAgeSeconds: number | null;
@@ -141,6 +154,12 @@ interface BackendDevice {
   hashrate?: number | string | null;
   dailyUsdt?: number | string | null;
   dailyNex?: number | string | null;
+  monthlyTarget?: Omit<E5MonthlyTarget, "creditedUsdt" | "rangeLowUsdt" | "rangeHighUsdt" | "capacityPct"> & {
+    creditedUsdt: number | string;
+    rangeLowUsdt: number | string | null;
+    rangeHighUsdt: number | string | null;
+    capacityPct: number | string;
+  } | null;
   lastSeenAt?: string | null;
   purchasedAt?: string | null;
   activatedAt?: string | null;
@@ -350,6 +369,13 @@ export function mapE5Device(row: BackendDevice): E5Device {
     hashrate: toNumber(row.hashrate),
     dailyUsdt: dailyRate.dailyUsdt,
     dailyNex: dailyRate.dailyNex,
+    monthlyTarget: row.monthlyTarget == null ? null : {
+      ...row.monthlyTarget,
+      creditedUsdt: Number(row.monthlyTarget.creditedUsdt),
+      rangeLowUsdt: row.monthlyTarget.rangeLowUsdt == null ? null : Number(row.monthlyTarget.rangeLowUsdt),
+      rangeHighUsdt: row.monthlyTarget.rangeHighUsdt == null ? null : Number(row.monthlyTarget.rangeHighUsdt),
+      capacityPct: Number(row.monthlyTarget.capacityPct),
+    },
     activeTaskNo: text(row.activeTaskNo, "—"),
     heartbeatAt: text(row.heartbeatAt, "—"),
     heartbeatAgeSeconds: Number.isFinite(heartbeatAgeSeconds) && heartbeatAgeSeconds >= 0 ? heartbeatAgeSeconds : null,

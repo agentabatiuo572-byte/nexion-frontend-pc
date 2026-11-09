@@ -1,5 +1,6 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import type { OpsTask } from "@/lib/admin/platform-types";
+import { monthlyTargetPoolErrorText } from "@/lib/admin/monthly-target-pool-error";
 import { TASK_DURATION_DEFAULTS, validateComputeTaskConfig, type ComputeTaskConfig } from "@/lib/admin/e2-compute-config";
 import { parseE2OnboardingYieldConfig } from "@/lib/admin/e2-onboarding-yield-contract";
 import type {
@@ -198,7 +199,8 @@ async function e2Request<T>(path: string, init?: RequestInit & { idempotencyPref
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
-    throw new Error(formatAdminApiError(result?.message, `E2_REQUEST_FAILED_${response.status}`));
+    throw new Error(await monthlyTargetPoolErrorText(result?.message, result?.data)
+      ?? formatAdminApiError(result?.message, `E2_REQUEST_FAILED_${response.status}`));
   }
 
   return result.data as T;

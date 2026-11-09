@@ -1,5 +1,8 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import type { OpsSku } from "@/lib/admin/platform-types";
+import { supportsDeviceMonthlyTarget } from "@/lib/admin/device-monthly-target";
+import { skuBaseRateText } from "@/lib/admin/operator-copy";
+import { monthlyTargetPoolErrorText } from "@/lib/admin/monthly-target-pool-error";
 import { fromPurchaseGate, toPurchaseGate, type BackendPurchaseGate } from "@/lib/admin/e1-purchase-gate";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 import {
@@ -46,6 +49,11 @@ interface BackendSku {
   computePoints?: number | string | null;
   dailyEarn?: number | string | null;
   dailyEarnNex?: number | string | null;
+  monthlyTargetUsdt?: number | string | null;
+  monthlyTargetBandPct?: number | string | null;
+  derivedDailyEarnUsdt?: number | string | null;
+  derivedShareYieldMinPct?: number | string | null;
+  derivedShareYieldMaxPct?: number | string | null;
   shareYieldMin?: number | string | null;
   shareYieldMax?: number | string | null;
   baseRate?: string | null;
@@ -207,7 +215,8 @@ async function e1Request<T>(path: string, init?: RequestInit & { idempotencyPref
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
-    throw new Error(formatAdminApiError(result?.message, `E1_REQUEST_FAILED_${response.status}`));
+    throw new Error(await monthlyTargetPoolErrorText(result?.message, result?.data)
+      ?? formatAdminApiError(result?.message, `E1_REQUEST_FAILED_${response.status}`));
   }
 
   return result.data as T;
@@ -222,7 +231,7 @@ async function e1Request<T>(path: string, init?: RequestInit & { idempotencyPref
 function fromSku(sku: BackendSku): OpsSku {
   const inventoryMode = sku.inventoryMode;
   const stock = inventoryMode === "UNLIMITED" ? undefined : sku.stock as string;
-  return {
+  const mapped: OpsSku = {
     allowedTaskClasses: sku.allowedTaskClasses,
     productTaskPolicyVersion: sku.productTaskPolicyVersion,
     productTaskPolicyEffectiveAt: sku.productTaskPolicyEffectiveAt,
@@ -242,10 +251,15 @@ function fromSku(sku: BackendSku): OpsSku {
     phoneDailyEarnNEX: toOptionalNumber(sku.phoneDailyEarnNex),
     price: toNumber(sku.price),
     computePoints: toOptionalNumber(sku.computePoints),
-    dailyEarn: toNumber(sku.dailyEarn),
+    dailyEarn: toNumber(sku.derivedDailyEarnUsdt ?? sku.dailyEarn),
     dailyEarnNEX: toNumber(sku.dailyEarnNex),
-    shareYieldMin: toOptionalNumber(sku.shareYieldMin),
-    shareYieldMax: toOptionalNumber(sku.shareYieldMax),
+    monthlyTargetUsdt: toOptionalNumber(sku.monthlyTargetUsdt),
+    monthlyTargetBandPct: toOptionalNumber(sku.monthlyTargetBandPct),
+    derivedDailyEarnUsdt: toOptionalNumber(sku.derivedDailyEarnUsdt),
+    derivedShareYieldMinPct: toOptionalNumber(sku.derivedShareYieldMinPct),
+    derivedShareYieldMaxPct: toOptionalNumber(sku.derivedShareYieldMaxPct),
+    shareYieldMin: toOptionalNumber(sku.derivedShareYieldMinPct ?? sku.shareYieldMin),
+    shareYieldMax: toOptionalNumber(sku.derivedShareYieldMaxPct ?? sku.shareYieldMax),
     baseRate: sku.baseRate ?? undefined,
     sold: sku.sold ?? undefined,
     rating: toOptionalNumber(sku.rating),
@@ -277,9 +291,12 @@ function fromSku(sku: BackendSku): OpsSku {
     status: sku.status ?? "pending",
     updatedAt: sku.updatedAt ?? undefined,
   };
+  return { ...mapped, baseRate: skuBaseRateText(mapped) };
 }
 
 function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
+  const targetSupported = supportsDeviceMonthlyTarget(sku.id, sku.tier);
+  const hasTarget = targetSupported && sku.monthlyTargetUsdt != null;
   const inventoryMode = sku.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE";
   const productType = sku.productType ?? (sku.tier === "Share" ? "SHARE" : "DEVICE");
   if (inventoryMode === "UNLIMITED" && productType !== "SHARE") {
@@ -303,10 +320,15 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     phoneDailyEarnNex: sku.phoneDailyEarnNEX ?? null,
     price: sku.price,
     computePoints: sku.computePoints ?? null,
-    dailyEarn: sku.dailyEarn,
+    ...(targetSupported ? {
+      monthlyTargetUsdt: sku.monthlyTargetUsdt,
+      monthlyTargetBandPct: sku.monthlyTargetBandPct,
+      clearMonthlyTarget: sku.clearMonthlyTarget === true ? true : undefined,
+    } : {}),
+    dailyEarn: hasTarget ? undefined : sku.dailyEarn,
     dailyEarnNex: sku.dailyEarnNEX,
-    shareYieldMin: sku.shareYieldMin ?? null,
-    shareYieldMax: sku.shareYieldMax ?? null,
+    shareYieldMin: hasTarget ? undefined : sku.shareYieldMin ?? null,
+    shareYieldMax: hasTarget ? undefined : sku.shareYieldMax ?? null,
     baseRate: sku.baseRate ?? null,
     rating: sku.rating ?? null,
     reviews: sku.reviews ?? null,

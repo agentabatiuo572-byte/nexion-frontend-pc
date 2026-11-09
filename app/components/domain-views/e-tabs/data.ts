@@ -4,6 +4,8 @@
  * 视图局部的纯设计数组(timeline / 热力图 / DC / feed / tx 监控 等)放各子视图文件内,保持本文件聚焦逻辑。
  */
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
+import { supportsDeviceMonthlyTarget } from "@/lib/admin/device-monthly-target";
+import { skuBaseRateText } from "@/lib/admin/operator-copy";
 
 // 全系统统一连续编号 E1-E5(上架节奏门并入 E1、设备生命周期归 E3)。
 // nav id == 视图 key == 组件名 == prdAnchor == PRD §10 章节,FOLD 恒等映射。
@@ -42,6 +44,7 @@ export const EMPTY_SKU_FORM = {
   allowedTaskClasses: [] as string[],
   price: "", computePoints: "",
   dailyEarn: "", dailyEarnNEX: "", shareYieldMin: "", shareYieldMax: "",
+  monthlyTargetUsdt: "", monthlyTargetBandPct: "",
   inventoryMode: "FINITE", stock: "", trialEligible: "false",
   aiImageGenPerMin: "", aiLlmTokensPerSec: "", aiVideoMinPerHour: "", aiFineTuneMins: "", aiUnlocks: "",
   features: "",
@@ -80,7 +83,20 @@ export function joinGpu(model: string, count: string): string | undefined {
   const value = model.trim();
   return value ? count.trim() ? `${Number(count)}× ${value}` : value : undefined;
 }
-export function validateSkuSpecs(f: SkuForm): string | null {
+export function validateSkuSpecs(f: SkuForm, existing?: OpsSku): string | null {
+  if (supportsDeviceMonthlyTarget(f.id || existing?.id || f.name, f.tier)) {
+    const target = f.monthlyTargetUsdt.trim();
+    const band = f.monthlyTargetBandPct.trim();
+    if (target) {
+      if (!/^\d+(?:\.\d{1,2})?$/.test(target) || Number(target) < 1 || Number(target) > 1_000_000) return "月收益目标须为 1–1,000,000 USDT，最多 2 位小数";
+      if (!/^\d+(?:\.\d)?$/.test(band) || Number(band) < 1 || Number(band) > 50) return "允许波动须为 1%–50%，最多 1 位小数";
+    } else if (existing?.monthlyTargetUsdt != null) {
+      if (f.tier === "Share") {
+        const low = Number(f.shareYieldMin); const high = Number(f.shareYieldMax);
+        if (!f.shareYieldMin.trim() || !f.shareYieldMax.trim() || !Number.isFinite(low) || !Number.isFinite(high) || low < 0 || high < low) return "关闭月收益目标时，请填写有效的参考年奖励率上下限";
+      } else if (!/^\d+(?:\.\d{1,6})?$/.test(f.dailyEarn.trim()) || !Number.isFinite(Number(f.dailyEarn))) return "关闭月收益目标时，请填写不小于 0 的每日收益 USDT，最多 6 位小数";
+    }
+  }
   if (f.gpuCount.trim() && (!/^[1-9]\d*$/.test(f.gpuCount.trim()) || Number(f.gpuCount) > 1024 || !f.gpu.trim())) return "GPU 数量须为 1–1024 的整数，并填写单卡型号";
   if (f.gpuCount.trim() && /^\d+\s*[×xX*]/u.test(f.gpu.trim())) return "GPU 型号请只填单卡型号，数量填写在 GPU 数量中";
   if (f.computePoints.trim() && !/^(?:0|[1-9]\d{0,17})$/.test(f.computePoints.trim())) return "每件算力点须为不小于 0 的整数";
@@ -102,7 +118,9 @@ export function skuToForm(s: OpsSku): SkuForm {
     gpu: gpuParts.model, vram: s.vram ?? "", hashRate: s.hashRate ?? "", power: s.power ?? "", datacenter: s.datacenter ?? "", uptime: s.uptime ?? "", warranty: s.warranty ?? "", phoneDailyEarn: str(s.phoneDailyEarn), phoneDailyEarnNEX: str(s.phoneDailyEarnNEX),
     allowedTaskClasses: s.allowedTaskClasses ?? [],
     price: str(s.price), computePoints: str(s.computePoints),
-    dailyEarn: str(s.dailyEarn), dailyEarnNEX: str(s.dailyEarnNEX), shareYieldMin: str(s.shareYieldMin), shareYieldMax: str(s.shareYieldMax),
+    dailyEarn: s.monthlyTargetUsdt == null ? str(s.dailyEarn) : "", dailyEarnNEX: str(s.dailyEarnNEX),
+    shareYieldMin: s.monthlyTargetUsdt == null ? str(s.shareYieldMin) : "", shareYieldMax: s.monthlyTargetUsdt == null ? str(s.shareYieldMax) : "",
+    monthlyTargetUsdt: str(s.monthlyTargetUsdt), monthlyTargetBandPct: str(s.monthlyTargetBandPct),
     inventoryMode: s.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE", stock: s.inventoryMode === "UNLIMITED" ? "" : str(s.stock), trialEligible: s.trialEligible ? "true" : "false",
     aiImageGenPerMin: str(s.aiImageGenPerMin), aiLlmTokensPerSec: str(s.aiLlmTokensPerSec), aiVideoMinPerHour: str(s.aiVideoMinPerHour), aiFineTuneMins: str(s.aiFineTuneMins), aiUnlocks: s.aiUnlocks ?? "",
     features: (s.features ?? []).join("\n"),
@@ -256,15 +274,22 @@ export function validateGateForm(f: SkuForm): string | null {
 
 // 表单 → OpsSku(提交:string 转结构化双币 + 合成 baseRate 兼容串;上下架 status 沿用既有/新建 pending)。
 export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
-  const dailyEarn = skuNum(f.dailyEarn);
+  const targetSupported = supportsDeviceMonthlyTarget(f.id || existing?.id || f.name, f.tier);
+  const monthlyTargetUsdt = targetSupported ? skuNumU(f.monthlyTargetUsdt) : undefined;
+  const monthlyTargetBandPct = monthlyTargetUsdt != null ? skuNumU(f.monthlyTargetBandPct) : undefined;
+  const dailyEarn = monthlyTargetUsdt != null ? Number((monthlyTargetUsdt / 30).toFixed(6)) : skuNum(f.dailyEarn);
   const dailyEarnNEX = skuNum(f.dailyEarnNEX);
   const isShare = f.tier === "Share";
-  const shareYieldMin = skuNumU(f.shareYieldMin);
-  const shareYieldMax = skuNumU(f.shareYieldMax);
+  const price = skuNum(f.price);
+  const shareYieldMin = isShare && monthlyTargetUsdt != null
+    ? Number((monthlyTargetUsdt * (1 - (monthlyTargetBandPct ?? 0) / 100) * 365 / 30 / price * 100).toFixed(4)) : skuNumU(f.shareYieldMin);
+  const shareYieldMax = isShare && monthlyTargetUsdt != null
+    ? Number((monthlyTargetUsdt * (1 + (monthlyTargetBandPct ?? 0) / 100) * 365 / 30 / price * 100).toFixed(4)) : skuNumU(f.shareYieldMax);
   const derivedBaseRate = isShare
     ? `${shareYieldMin != null && shareYieldMax != null && shareYieldMin > 0 && shareYieldMax >= shareYieldMin ? `参考年化 ${shareYieldMin}–${shareYieldMax}%` : "年化区间暂不可用"} · ${dailyEarnNEX.toLocaleString()} UVT/天`
     : `$${dailyEarn.toFixed(2)}/d · ${dailyEarnNEX.toLocaleString()} UVT`;
   const earningsUnchanged = existing
+    && existing.monthlyTargetUsdt == null && monthlyTargetUsdt == null
     && existing.tier === f.tier
     && Number(existing.dailyEarn) === dailyEarn
     && Number(existing.dailyEarnNEX) === dailyEarnNEX
@@ -276,14 +301,19 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
   const inventoryMode = f.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE";
   const productType = existing?.productType ?? (isShare ? "SHARE" : "DEVICE");
   const stockTrim = f.stock.trim();
-  return {
+  const sku: OpsSku = {
     name: f.name.trim(), id: f.id.trim() || existing?.id || f.name.trim(),
     tier: f.tier, tagline: f.tagline.trim() || undefined, badge: f.badge.trim() || undefined,
     specDocumentTitle: f.specDocumentTitle.trim() || undefined, specDocumentUrl: f.specDocumentUrl.trim() || undefined,
     gpu: joinGpu(f.gpu, f.gpuCount), vram: f.vram.trim() || undefined, hashRate: f.hashRate.trim() || undefined, power: f.power.trim() || undefined, datacenter: f.datacenter.trim() || undefined, uptime: f.uptime.trim() || undefined, warranty: f.warranty.trim() || undefined, phoneDailyEarn: skuNumU(f.phoneDailyEarn), phoneDailyEarnNEX: skuNumU(f.phoneDailyEarnNEX),
     allowedTaskClasses: f.allowedTaskClasses,
-    price: skuNum(f.price), computePoints: skuNumU(f.computePoints) ?? existing?.computePoints,
+    price, computePoints: skuNumU(f.computePoints) ?? existing?.computePoints,
     dailyEarn, dailyEarnNEX, shareYieldMin, shareYieldMax, baseRate,
+    monthlyTargetUsdt, monthlyTargetBandPct,
+    derivedDailyEarnUsdt: monthlyTargetUsdt != null ? dailyEarn : undefined,
+    derivedShareYieldMinPct: monthlyTargetUsdt != null && isShare ? shareYieldMin : undefined,
+    derivedShareYieldMaxPct: monthlyTargetUsdt != null && isShare ? shareYieldMax : undefined,
+    clearMonthlyTarget: targetSupported && existing?.monthlyTargetUsdt != null && monthlyTargetUsdt == null ? true : undefined,
     // Sales remains display-only; write payloads omit it and Java retains the live counter.
     sold: existing?.sold ?? 0, productType, inventoryMode,
     rating: existing?.rating, reviews: existing?.reviews, generation: existing?.generation,
@@ -296,4 +326,5 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
     unlock: f.unlock, purchaseGate: formToGate(f), tag: f.tag.trim() || existing?.tag || "", status: existing?.status ?? "pending",
     updatedAt: existing?.updatedAt,
   };
+  return { ...sku, baseRate: skuBaseRateText(sku) };
 }
