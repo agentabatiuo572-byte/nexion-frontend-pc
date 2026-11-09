@@ -14,6 +14,7 @@ export function CregisAutoForward(props:Props){
   return <Owned network={network} onNetworkChange={setNetwork} key={`${network}:${auth.adminId}:${epoch}:${adminAuthLifecycleEpoch()}:${props.canManage}:${auth.authorities.join("|")}`} {...props} owner={auth.adminId} epoch={epoch}/>;
 }
 function Owned({canManage,openActionConfirm,owner,epoch,network,onNetworkChange}:Props&{owner:number;epoch:number;network:AutoNetwork;onNetworkChange:(network:AutoNetwork)=>void}){
+  const networkQuery=network==="BEP20"?"":`?network=${network}`;
   const lifecycle=useRef(adminAuthLifecycleEpoch()).current,live=useRef(true),mutation=useRef(false),read=useRef(0);
   const [status,setStatus]=useState<ExceptionRecord|null>(null),[page,setPage]=useState<ExceptionPage>(EMPTY);
   const [collect,setCollect]=useState(false),[pay,setPay]=useState(false),[cids,setCids]=useState<Record<string,string>>({});
@@ -30,7 +31,7 @@ function Owned({canManage,openActionConfirm,owner,epoch,network,onNetworkChange}
   const scope=useCallback((write=false)=>({authEpoch:lifecycle,assertOwner:()=>assertOwner(write)}),[lifecycle,assertOwner]);
   const refresh=useCallback(async()=>{
     const request=scope();request.assertOwner();const at=++read.current;setLoading(true);setError("");
-    try{const [config,next]=await Promise.all([exceptionRead(`${ROOT}/status?network=${network}`,request),exceptionList(`${ROOT}/tasks?network=${network}`,undefined,request)]);
+    try{const [config,next]=await Promise.all([exceptionRead(`${ROOT}/status${networkQuery}`,request),exceptionList(`${ROOT}/tasks${networkQuery}`,undefined,request)]);
       request.assertOwner();if(at!==read.current)return false;const checked=autoForwardStatus(config,network);setStatus(checked);setPage(autoForwardPage(next,network));setCollect(checked.collectionEnabled===true);setPay(checked.paymentEnabled===true);return true;
     }catch(failure){if(owns()&&at===read.current){setStatus(null);setPage(EMPTY);setError((failure as Error).message);}return false;}
     finally{if(owns()&&at===read.current)setLoading(false);}
@@ -39,7 +40,7 @@ function Owned({canManage,openActionConfirm,owner,epoch,network,onNetworkChange}
   const command=async(path:string,body:ExceptionRecord)=>{
     const request=scope(true);request.assertOwner();if(mutation.current)throw new Error("上一项操作尚未完成，请先刷新核对");
     mutation.current=true;setBusy(true);setError("");
-    try{await exceptionCommand(`${ROOT}${path}?network=${network}`,body,request);request.assertOwner();if(!await refresh())throw new Error("已提交，但页面没刷新出来。请不要重复提交，关闭弹窗后刷新查看。");}
+    try{await exceptionCommand(`${ROOT}${path}${networkQuery}`,body,request);request.assertOwner();if(!await refresh())throw new Error("已提交，但页面没刷新出来。请不要重复提交，关闭弹窗后刷新查看。");}
     catch(failure){if(owns())setError((failure as Error).message);throw failure;}
     finally{mutation.current=false;if(owns())setBusy(false);}
   };
@@ -60,7 +61,7 @@ function Owned({canManage,openActionConfirm,owner,epoch,network,onNetworkChange}
   };
   const more=async()=>{
     const request=scope();request.assertOwner();const at=++read.current;setLoading(true);
-    try{const next=await exceptionList(`${ROOT}/tasks?network=${network}`,page.nextBeforeId??undefined,request);request.assertOwner();if(at===read.current){const checked=autoForwardPage(next,network);setPage({...checked,records:[...page.records,...checked.records]});}}
+    try{const next=await exceptionList(`${ROOT}/tasks${networkQuery}`,page.nextBeforeId??undefined,request);request.assertOwner();if(at===read.current){const checked=autoForwardPage(next,network);setPage({...checked,records:[...page.records,...checked.records]});}}
     catch(failure){if(owns()&&at===read.current)setError((failure as Error).message);}
     finally{if(owns()&&at===read.current)setLoading(false);}
   };
