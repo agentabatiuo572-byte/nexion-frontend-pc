@@ -1,3 +1,5 @@
+import { PhoneTasksSection } from "./phone-tasks-section";
+import { E5Ops } from "./e5-ops";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 /**
  * E6 · 算力与设备配置(server-canonical 聚合视图)。
@@ -51,25 +53,13 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
     });
   };
 
-  if (e6Loading && !e6Config) {
-    return <section className="pane"><div className="empty">正在加载…</div></section>;
-  }
-  if (e6Error) {
-    return (
-      <section className="pane" data-proof="e6-load-error">
-        <div className="empty">设备配置加载失败:{e6Error}</div>
-        <div className="row" style={{ justifyContent: "center", paddingBottom: 16 }}>
-          <button type="button" className="adj" onClick={() => void refreshE6()}>重新加载</button>
-        </div>
-      </section>
-    );
-  }
-  if (!e6Config) {
-    return <section className="pane"><div className="empty">设置还没加载出来，暂时不能修改。</div></section>;
-  }
-
   return (
     <div>
+      <PhoneTasksSection ctx={ctx} />
+      {ctx.canReadE5 && <E5Ops ctx={ctx} phones />}
+      {ctx.canReadE6 && <>
+      {e6Error && <section className="tint warn" role="alert">设备配置加载失败：{e6Error} <button className="adj" onClick={() => void refreshE6()}>重新加载</button></section>}
+      {e6Loading && !e6Config && <div className="tint">正在加载设备配置…</div>}
       <div id="phone-calibration"><PhoneCalibrationPanel ctx={ctx} /></div>
       <EStats items={[
         { k: "在线参数（含退役项）", v: coefficients.length, sub: "退役项仅兼容读取", tone: "cyan" },
@@ -147,6 +137,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
       <p className="f-foot">
         <b>说明</b>：<AutoGloss>机型风控立即生效；手机校准和换机策略批准后生效，校准预约发布还须到达生效时间。连续在线满额时长已退役，仅兼容读取；收益估算参数批准后发布到公共配置。</AutoGloss>
       </p>
+      </>}
     </div>
   );
 }

@@ -2,14 +2,14 @@
 
 /**
  * E 设备与商城 — 设计稿 design_handoff_e_domain 内容视图。
- * 全系统统一连续编号 E1-E5:E1 商品目录&上架门 / E2 收益&用户任务管理 /
- * E3 生命周期&Trade-in / E4 订单进度 / E5 设备运行管理。
+ * 全系统统一连续编号 E1-E5:E1 商品目录&上架门 / E2 任务池 /
+ * E3 生命周期&Trade-in / E4 订单进度 / E5 设备管理。
  * nav id == 视图 key == prdAnchor == PRD §10 章节(已全部重编号统一,FOLD 现为恒等映射)。
  *
  * 本 shell 持有全部共享 store 接线 + SKU / 任务 / 订单详情抽屉 + OperationConfirmModal;
  * 各 tab 视觉/布局拆到 e-tabs/*(复用 design-kit 原语 + e-domain.css 设计类),经 EViewCtx 注入派生读 + 回调。
- * 真写落点:E1 SKU/上架门、E2 用户任务管理、E3 生命周期&Trade-in、E4 订单进度、E5 设备运行管理走后端 API。
- * 操作确认 显式 edit 契约:调参(param / task-price)传 edit{kind,current,unit};处置/纯动作(sku-status / param-fixed / order-* / ops-pause)不传 edit。
+ * 真写落点:E1 SKU/上架门、E6 手机任务与收益、E3 生命周期&Trade-in、E4 订单进度、E5 设备管理走后端 API。
+ * 操作确认 显式 edit 契约:调参(param / task-price)传 edit{kind,current,unit};处置/纯动作(sku-status / param-fixed / order-*)不传 edit。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
@@ -18,31 +18,30 @@ import { Icon, Btn, Chip, Drawer, KV, Badge, OperationConfirmModal, useToast } f
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import { supportsDeviceMonthlyTarget } from "@/lib/admin/device-monthly-target";
+import { supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
 import { monthlyTargetEstimateText } from "@/lib/admin/operator-copy";
 import { operatorDeviceStatus, operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
-import { TASK_DURATION_DEFAULTS, validateComputeTaskConfig } from "@/lib/admin/e2-compute-config";
-import { TASK_CLASSES } from "@/lib/admin/task-classes";
+import { TASK_CLASSES, TASK_CLASS_LABELS } from "@/lib/admin/task-classes";
+import { fetchTaskPools, fetchSkuDatacenterLabels, type TaskPool } from "@/lib/admin/task-pool-client";
+import { OpsHint } from "./e-tabs/ops-hint";
 import {
   fetchE1Catalog,
   type E1BundleDiscount,
   type E1GenerationGateData,
   type E1InvalidSku,
 } from "@/lib/admin/e1-client";
-import { fetchE2PhoneTiers, fetchE2TaskPricing, fetchE2Tasks, type E2PhoneTier, type E2TaskPricingSnapshot, type E2YieldComparison } from "@/lib/admin/e2-client";
+import { fetchE2PhoneTiers, fetchE2Tasks, type E2PhoneTier, type E2YieldComparison } from "@/lib/admin/e2-client";
 import { fetchE3Snapshot, type E3OperationMetric, type E3Stats } from "@/lib/admin/e3-client";
 import { E4_CLOSE_REASONS, E4_CLOSE_REASON_LABELS, E4_REFUND_REASONS, E4_REFUND_REASON_LABELS, e4FundingLedgerHref, fetchE4OrderDetail, fetchE4OrderPage, type E4OrderDetail } from "@/lib/admin/e4-client";
 import {
-  fetchE5Datacenters,
   fetchE5Devices,
   fetchE5Overview,
   activateE5Device,
   deactivateE5Device,
   setE5UserDevicesPaused,
-  type E5Datacenter,
   type E5Device,
   type E5Overview,
 } from "@/lib/admin/e5-client";
@@ -58,8 +57,8 @@ import {
   FOLD, ORDER_FLOW, TERMINAL_STATES,
   EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, validateSkuSpecs, skuNum, stateLabel, ostate,
 } from "./e-tabs/data";
-import type { DatacenterForm, Mc, EOp, EViewCtx, EOrder } from "./e-tabs/types";
-import { TaskClassChoices, PhoneTaskPolicy } from "./e-tabs/task-type-policy";
+import type { Mc, EOp, EViewCtx, EOrder } from "./e-tabs/types";
+import { DevicePoolChoices, FIXED_DEVICE_LEVELS } from "./e-tabs/task-type-policy";
 import { E1Catalog } from "./e-tabs/e1-catalog";
 import { E2Tasks } from "./e-tabs/e2-tasks";
 import { E3Lifecycle } from "./e-tabs/e3-lifecycle";
@@ -105,13 +104,7 @@ const SKU_LIFECYCLE_OPTIONS = [
   { value: "active", label: "在售" },
   { value: "legacy", label: "已停产" },
 ] as const;
-const DC_STATUS_OPTIONS: { value: DatacenterForm["status"]; label: string }[] = [
-  { value: "active", label: "启用中" },
-  { value: "maintenance", label: "维护中" },
-  { value: "disabled", label: "已禁用" },
-];
-
-const E2_TASK_MUTATION_OPS = new Set<EOp>(["task-create", "task-down", "task-price", "task-save"]);
+const E2_TASK_MUTATION_OPS = new Set<EOp>(["task-create", "task-save", "task-status"]);
 const E2_CONFIG_MUTATION_OPS = new Set<EOp>(["phone-tier", "yield-comparison"]);
 
 function isE2TaskMutation(op: EOp) {
@@ -251,11 +244,12 @@ function SkuFieldGroup({ n, title, children }: { n: string; title: string; child
     </div>
   );
 }
-function SkuFld({ label, value, onChange, placeholder, type = "text", hint, tip, list, min, max, step, disabled = false }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string; hint?: string; tip?: string; list?: string; min?: number; max?: number; step?: number; disabled?: boolean }) {
+function SkuFld({ label, value, onChange, placeholder, type = "text", hint, tip, error, list, min, max, step, disabled = false }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string; hint?: string; tip?: string; error?: string; list?: string; min?: number; max?: number; step?: number; disabled?: boolean }) {
   return (
     <label className="col" style={{ gap: 5 }}>
       <span className="muted tiny">{label}{tip ? <span className="has-tip" data-tip={tip} aria-label={`${label}说明：${tip}`} /> : null}{hint ? <span style={{ color: "var(--ink-4)" }}> · {hint}</span> : null}</span>
-      <input className="fld" type={type} list={list} min={min} max={max} step={step} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} />
+      <input className="fld" aria-invalid={error ? true : undefined} type={type} list={list} min={min} max={max} step={step} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} />
+      {error && <span role="alert" style={{ color: "var(--danger)", fontSize: 12 }}>{error}</span>}
     </label>
   );
 }
@@ -274,11 +268,14 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [e4RecoveryLoading, setE4RecoveryLoading] = useState(false);
   const [manualOpen, setManualOpen] = useState(false); // E3 操作说明手册弹窗
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
+  const canReadE1 = useAdminAuth((s) => s.session?.authorities.includes("device_e1_read") ?? false);
   const canWriteE1 = useAdminAuth((s) => s.session?.authorities.includes("device_e1_write") ?? false);
+  const canReadE2 = useAdminAuth((s) => s.session?.authorities.includes("device_e2_read") ?? false);
   const canWriteE2 = useAdminAuth((s) => s.session?.authorities.includes("device_e2_write") ?? false);
   const canWriteE3 = useAdminAuth((s) => s.session?.authorities.includes("device_e3_write") ?? false);
   const canWriteE4 = useAdminAuth((s) => s.session?.authorities.includes("device_e4_write") ?? false);
   const canRefundE4 = useAdminAuth((s) => s.session?.authorities.includes("device_e4_order_refund") ?? false);
+  const canReadE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_read") ?? false);
   const canWriteE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_write") ?? false);
   const hasForceActivateE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_device_force_activate") ?? false);
   const hasUnbindE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_device_unbind") ?? false);
@@ -287,7 +284,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       && s.session.authorities.includes("platform_a2_proposal_create"));
   const canForceActivateE5 = hasForceActivateE5 || canProposeE5;
   const canUnbindE5 = hasUnbindE5 || canProposeE5;
-  const canPauseDcE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_datacenter_pause") ?? false);
+  const canReadE6 = useAdminAuth((s) => s.session?.authorities.includes("device_e6_read") ?? false);
   const canWriteE6 = useAdminAuth((s) => s.session?.authorities.includes("device_e6_write") ?? false);
   const hasToggleE6 = useAdminAuth((s) => s.session?.authorities.includes("device_e6_flag_toggle") ?? false);
   const canProposeE6 = useAdminAuth((s) =>
@@ -368,7 +365,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE1Loading(false);
     }
   }, []);
-  useEffect(() => { if (tab === "E1") void refreshE1(); }, [tab, refreshE1]);
+  useEffect(() => { if (tab === "E1" || tab === "E5" && canReadE1) void refreshE1(); }, [tab, canReadE1, refreshE1]);
   const skus = e1Skus;
   const phaseCur = e1Gates?.phaseCurrent ?? "P3";
   const e1PhaseIds = e1Gates?.phaseOrder?.length
@@ -380,16 +377,15 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     return phase?.label || phaseId;
   };
 
-  // ── E2 用户任务管理:服务端数据为单一来源 ──
+  // ── E6 手机任务与收益:服务端数据为单一来源 ──
   const [tasks, setTasks] = useState<OpsTask[]>([]);
   const [phoneTiers, setPhoneTiers] = useState<E2PhoneTier[]>([]);
   const [yieldComparisons, setYieldComparisons] = useState<E2YieldComparison[]>([]);
-  const [e2Pricing, setE2Pricing] = useState<E2TaskPricingSnapshot | null>(null);
   const [e2Loading, setE2Loading] = useState(false);
   const [e2Error, setE2Error] = useState<string | null>(null);
   const [e2TaskCatalogReady, setE2TaskCatalogReady] = useState(false);
-  const canMutateE2 = canWriteE2 && !e2Loading && !e2Error && !!e2Pricing;
-  const canMutateE2Tasks = canWriteE2 && !e2Loading && e2TaskCatalogReady;
+  const canMutateE2 = canReadE2 && canWriteE2 && !e2Loading && !e2Error;
+  const canMutateE2Tasks = canReadE2 && canWriteE2 && !e2Loading && e2TaskCatalogReady;
   useEffect(() => {
     setActionConfirm((current) => {
       if (current && isE2TaskMutation(current.op) && !canMutateE2Tasks) return null;
@@ -400,8 +396,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const refreshE2 = useCallback(async () => {
     setE2Loading(true);
     setE2Error(null);
-    const [tasksResult, phoneResult, pricingResult] = await Promise.allSettled([
-      fetchE2Tasks(), fetchE2PhoneTiers(), fetchE2TaskPricing(),
+    const [tasksResult, phoneResult] = await Promise.allSettled([
+      canReadE2 ? fetchE2Tasks() : Promise.resolve([]),
+      canReadE2 ? fetchE2PhoneTiers() : Promise.resolve({ tiers: [], comparisons: [] }),
     ]);
     const errors: string[] = [];
     if (tasksResult.status === "fulfilled") {
@@ -420,22 +417,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setYieldComparisons([]);
       errors.push(`手机档位：${displayAdminError(phoneResult.reason)}`);
     }
-    if (pricingResult.status === "fulfilled") {
-      setE2Pricing(pricingResult.value);
-    } else {
-      setE2Pricing(null);
-      errors.push(`任务定价：${displayAdminError(pricingResult.reason)}`);
-    }
-    if (errors.length) {
-      // 简报要求失败时可定位:附上读取时刻与逐面结果,值班人员据此能直接区分
-      // 「后端没有 6 类权威定价」和「前端解析拒绝」,不必靠猜。
-      errors.push(`加载时间 ${new Date().toLocaleString("zh-CN", { hour12: false })}`);
-      errors.push(`任务目录${tasksResult.status === "fulfilled" ? "正常" : "失败"} · 手机档位${phoneResult.status === "fulfilled" ? "正常" : "失败"} · 任务定价${pricingResult.status === "fulfilled" ? "正常" : "失败"}`);
-    }
     setE2Error(errors.length ? errors.join("；") : null);
     setE2Loading(false);
-  }, []);
-  useEffect(() => { if (tab === "E1" || tab === "E2") void refreshE2(); }, [tab, refreshE2]);
+  }, [canReadE2]);
+  useEffect(() => { if (tab === "E6" && canReadE2) void refreshE2(); }, [tab, canReadE2, refreshE2]);
 
   // ── E3 设备使用与升级置换:服务端配置 / 概览 / tx 监控为单一来源 ──
   const refreshE3 = useCallback(async () => {
@@ -552,30 +537,23 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     return state && (TERMINAL_STATES as readonly string[]).includes(state) ? state : undefined;
   }, [orderById]);
 
-  // ── E5 设备运行管理:服务端 fleet / overview 为单一来源 ──
+  // ── E5 设备管理:服务端 fleet / overview 为单一来源 ──
   const [e5Devices, setE5Devices] = useState<E5Device[]>([]);
   const [e5Overview, setE5Overview] = useState<E5Overview | null>(null);
-  const [e5Datacenters, setE5Datacenters] = useState<E5Datacenter[]>([]);
   const [e5Loading, setE5Loading] = useState(tab === "E5");
-  // 🔴 zentao #44:三个服务面各留各的失败态。此前只有一个 e5Error,任一面失败就把它写满,
-  // 而设备表以它为准 —— 于是「概览」或「数据中心」5xx 会把**已经读到的设备**整表藏掉,
-  // 运维台在单面故障时对设备失明(工单截图正是:页脚「当前页命中 4 台 / 筛选后 4 条」还在,
-  // 表体却只有一行「设备库存读取异常」)。上面 Promise.allSettled 的注释早就写明「任一面失败
-  // 只冻结它自己,不能把另外两面的真实数据一起清空」—— 分状态才是那句话的落地。
   const [e5DeviceError, setE5DeviceError] = useState<string | null>(null);
   const [e5OverviewError, setE5OverviewError] = useState<string | null>(null);
-  const [e5DatacenterError, setE5DatacenterError] = useState<string | null>(null);
   const [e5Page, setE5Page] = useState(1);
   const [e5PageSize, setE5PageSizeState] = useState(10);
   const [e5Total, setE5Total] = useState(0);
   const [e5Keyword, setE5KeywordState] = useState("");
   const [e5StateFilter, setE5StateFilterState] = useState("all");
-  const [e5KindFilter, setE5KindFilterState] = useState("all");
-  const [e5HeartbeatFilter, setE5HeartbeatFilterState] = useState("all");
+  const [e5SourceFilter, setE5SourceFilterState] = useState("all");
+  const [e5ProductFilter, setE5ProductFilterState] = useState("all");
   const setE5Keyword = useCallback((value: string) => { setE5KeywordState(value); setE5Page(1); }, []);
   const setE5StateFilter = useCallback((value: string) => { setE5StateFilterState(value); setE5Page(1); }, []);
-  const setE5KindFilter = useCallback((value: string) => { setE5KindFilterState(value); setE5Page(1); }, []);
-  const setE5HeartbeatFilter = useCallback((value: string) => { setE5HeartbeatFilterState(value); setE5Page(1); }, []);
+  const setE5SourceFilter = useCallback((value: string) => { setE5SourceFilterState(value); setE5Page(1); }, []);
+  const setE5ProductFilter = useCallback((value: string) => { setE5ProductFilterState(value); setE5Page(1); }, []);
   const setE5PageSize = useCallback((pageSize: number) => {
     setE5PageSizeState(pageSize);
     setE5Page(1);
@@ -584,14 +562,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     setE5Loading(true);
     setE5DeviceError(null);
     setE5OverviewError(null);
-    setE5DatacenterError(null);
-    // 设备库存 / 概览 / 数据中心是三个独立服务面:任一面失败只冻结它自己,
-    // 不能把另外两面的真实数据一起清空 —— 那会让运维台在单面故障时整页失明。
-    const [deviceResult, overviewResult, datacenterResult] = await Promise.allSettled([
-      fetchE5Devices({ pageNum: e5Page, pageSize: e5PageSize,
-        keyword: e5Keyword, status: e5StateFilter, kind: e5KindFilter, heartbeat: e5HeartbeatFilter }),
-      fetchE5Overview(),
-      fetchE5Datacenters(),
+    const [deviceResult, overviewResult] = await Promise.allSettled([
+      fetchE5Devices(tab === "E6" ? { pageNum: e5Page, pageSize: e5PageSize, keyword: e5Keyword } : {
+        pageNum: e5Page, pageSize: e5PageSize, keyword: e5Keyword, simState: e5StateFilter, source: e5SourceFilter, productCode: e5ProductFilter,
+      }, tab === "E6"),
+      tab === "E5" ? fetchE5Overview() : Promise.resolve(null),
     ]);
     if (deviceResult.status === "fulfilled") {
       setE5Devices(deviceResult.value.records);
@@ -601,7 +576,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     } else {
       setE5Devices([]);
       setE5Total(0);
-      setE5DeviceError(`设备库存：${displayAdminError(deviceResult.reason)}`);
+      setE5DeviceError(`${tab === "E6" ? "手机列表" : "设备列表"}：${displayAdminError(deviceResult.reason)}`);
     }
     if (overviewResult.status === "fulfilled") {
       setE5Overview(overviewResult.value);
@@ -609,17 +584,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE5Overview(null);
       setE5OverviewError(`设备概览：${displayAdminError(overviewResult.reason)}`);
     }
-    if (datacenterResult.status === "fulfilled") {
-      setE5Datacenters(datacenterResult.value);
-    } else {
-      setE5Datacenters([]);
-      setE5DatacenterError(`数据中心：${displayAdminError(datacenterResult.reason)}`);
-    }
     setE5Loading(false);
-  }, [e5HeartbeatFilter, e5Keyword, e5KindFilter, e5Page, e5PageSize, e5StateFilter]);
-  useEffect(() => { if (tab === "E5") void refreshE5(); }, [tab, refreshE5]);
-  const e5PausedDcs = useMemo(() => new Map(e5Datacenters.map((dc) => [dc.dcLocation, dc.dispatchPaused])), [e5Datacenters]);
-  const isDcPaused = (dc: string): boolean => e5PausedDcs.get(dc) ?? false;
+  }, [tab, e5ProductFilter, e5Keyword, e5SourceFilter, e5Page, e5PageSize, e5StateFilter]);
+  useEffect(() => { if ((tab === "E5" || tab === "E6") && canReadE5) void refreshE5(); }, [tab, canReadE5, refreshE5]);
   const runE5DeviceAction = useCallback(async (deviceId: number, action: "activate" | "deactivate", reason: string) => {
     const device = action === "activate"
       ? await activateE5Device(deviceId, false, reason, operator)
@@ -632,18 +599,16 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     await refreshE5();
     setToast(`${paused ? "暂停" : "恢复"}成功 · ${result.changedCount} 台设备`);
   }, [operator, refreshE5, setToast]);
-  const skuDatacenterOptions = useMemo(() => {
-    const seen = new Set<string>();
-    return e5Datacenters.reduce<{ value: string; label: string }[]>((acc, dc) => {
-      const value = dc.displayName.trim();
-      if (!value || seen.has(value)) return acc;
-      seen.add(value);
-      acc.push({ value, label: `${value} · ${dc.dcLocation}` });
-      return acc;
-    }, []);
-  }, [e5Datacenters]);
-  const skuDatacenterSet = useMemo(() => new Set(skuDatacenterOptions.map((item) => item.value)), [skuDatacenterOptions]);
-  const skuDatacenterDefault = skuDatacenterOptions[0]?.value ?? "";
+  const [devicePools, setDevicePools] = useState<TaskPool[]>([]);
+  const [hostingLabels, setHostingLabels] = useState<string[]>([]);
+  const [hostingLabelError, setHostingLabelError] = useState("");
+  const refreshSkuChoices = useCallback(async () => {
+    const [poolResult, labelResult] = await Promise.allSettled([canReadE2 ? fetchTaskPools() : Promise.resolve([]), fetchSkuDatacenterLabels()]);
+    if (poolResult.status === "fulfilled") setDevicePools(poolResult.value);
+    else { setDevicePools([]); setToast(displayAdminError(poolResult.reason)); }
+    if (labelResult.status === "fulfilled") { setHostingLabels(labelResult.value); setHostingLabelError(""); }
+    else setHostingLabelError(displayAdminError(labelResult.reason));
+  }, [canReadE2, setToast]);
 
   // ── E6 算力与设备配置:服务端聚合视图为单一来源 ──
   const [e6Config, setE6Config] = useState<E6ComputeConfigView | null>(null);
@@ -661,14 +626,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE6Loading(false);
     }
   }, []);
-  useEffect(() => { if (tab === "E6") void refreshE6(); }, [tab, refreshE6]);
+  useEffect(() => { if (tab === "E6" && canReadE6) void refreshE6(); }, [tab, canReadE6, refreshE6]);
 
   // ── 抽屉本地态 ──
   const [skuDrawer, setSkuDrawer] = useState(false);
   const [form, setForm] = useState<SkuForm>(EMPTY_SKU_FORM);
-  const staleSkuDatacenter = form.datacenter.trim() && !skuDatacenterSet.has(form.datacenter.trim())
-    ? form.datacenter.trim()
-    : "";
   const [skuMedia, setSkuMedia] = useState<SkuMedia>(null);
   const [skuMediaUploading, setSkuMediaUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -676,29 +638,16 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const mediaSeq = useRef(0);
   const [taskDrawer, setTaskDrawer] = useState(false);
   const [editTaskId, setEditTaskId] = useState<string | null>(null);
-  const emptyTaskForm = { simulated: true, durationMinutes: "5", baseReward: "", asset: "USDT", enabled: true, version: 0, n: "", price: "", req: "", unit: "", sat: "", taskClass: "", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "", selectionWeight: "1", expectedDurationMinSec: "18", expectedDurationMaxSec: "18", executionTimeoutSec: "", runtimeKey: "", validatorKey: "", workloadConfigJson: "" };
+  const emptyTaskForm = { durationMinutes: "10", baseReward: "", asset: "USDT", enabled: true, version: 0, n: "", taskClass: "EM" };
   const [taskForm, setTaskForm] = useState(emptyTaskForm);
-  const taskSimulation = () => taskForm.simulated ? ({ durationMinutes: Number(taskForm.durationMinutes), baseReward: taskForm.baseReward.trim(), asset: taskForm.asset, enabled: taskForm.enabled, expectedVersion: taskForm.version }) : undefined;
-  const taskComputeConfig = () => ({
-    selectionWeight: Number(taskForm.selectionWeight),
-    expectedDurationMinSec: Number(taskForm.expectedDurationMinSec),
-    expectedDurationMaxSec: Number(taskForm.expectedDurationMaxSec),
-    executionTimeoutSec: taskForm.executionTimeoutSec.trim() ? Number(taskForm.executionTimeoutSec) : undefined,
-    runtimeKey: taskForm.runtimeKey.trim() || undefined,
-    validatorKey: taskForm.validatorKey.trim() || undefined,
-    workloadConfigJson: taskForm.workloadConfigJson.trim() || undefined,
-  });
+  const taskSimulation = () => ({ durationMinutes: Number(taskForm.durationMinutes), baseReward: taskForm.baseReward.trim(), asset: taskForm.asset, enabled: taskForm.enabled, expectedVersion: taskForm.version });
   const editedSku = editSkuId ? skus.find((sku) => sku.id === editSkuId) : undefined;
-  const monthlyTargetSupported = supportsDeviceMonthlyTarget(form.id || editSkuId || form.name, form.tier);
-  const monthlyTargetFilled = monthlyTargetSupported && form.monthlyTargetUsdt.trim() !== "";
+  const skuModelError = !editSkuId && (form.id.trim() || form.name.trim())
+    && !supportsDeviceMonthlyTarget(form.id.trim() || form.name.trim(), form.tier) ? SKU_MODEL_UNRECOGNIZED_REASON : undefined;
+  const monthlyTargetFilled = form.monthlyTargetUsdt.trim() !== "";
   const draftSku = attachSkuMedia(formToSku(form, editedSku), skuMedia);
-  const skuTaskClassesReady = e1Gates?.taskClassPolicySupported === true && (!editSkuId || Array.isArray(editedSku?.allowedTaskClasses));
   const skuFormChanged = !editSkuId || !editedSku
     || summarizeSkuProposal(editedSku, draftSku, { includeDerived: false }) !== null;
-  const [dcDrawer, setDcDrawer] = useState(false);
-  const [editDcLocation, setEditDcLocation] = useState<string | null>(null);
-  const [dcForm, setDcForm] = useState<DatacenterForm>({ dcLocation: "", regionLabel: "", location: "", displayName: "", status: "active", sortOrder: "100" });
-
   const resetSkuMedia = useCallback((media: SkuMedia = null) => {
     mediaSeq.current += 1;
     setSkuMediaUploading(false);
@@ -710,17 +659,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!src?.startsWith("blob:")) return;
     return () => URL.revokeObjectURL(src);
   }, [skuMedia?.src]);
-  useEffect(() => {
-    if (!skuDrawer || e5Loading || skuDatacenterOptions.length === 0) return;
-    setForm((current) => {
-      const datacenter = current.datacenter.trim();
-      // 已有 SKU 可能仍引用已删除 DC 的历史展示名。PRD 要求保留旧值，
-      // 不能在打开编辑抽屉时静默覆盖；仅为空时给新 SKU 选择当前首项。
-      if (datacenter) return current;
-      return { ...current, datacenter: skuDatacenterDefault };
-    });
-  }, [skuDrawer, e5Loading, skuDatacenterOptions.length, skuDatacenterSet, skuDatacenterDefault]);
-
   const refreshCurrentSkuMediaPreview = useCallback(async (assetId?: string) => {
     if (!assetId) return;
     try {
@@ -743,8 +681,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
   // ── 回调(注入 ctx)──
   const openSku = (skuId?: string, unlockPhase?: string) => {
-    if (!tasks.length && !e2Loading) void refreshE2();
-    if (!e5Datacenters.length && !e5Loading) void refreshE5();
+    void refreshSkuChoices();
     if (skuId) {
       const s = skus.find((x) => x.id === skuId);
       if (s) {
@@ -773,86 +710,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       },
     });
   };
-  const openDatacenter = (dc?: E5Datacenter) => {
-    setDcForm(dc
-      ? {
-          dcLocation: dc.dcLocation,
-          regionLabel: dc.regionLabel,
-          location: dc.location,
-          displayName: dc.displayName,
-          status: dc.status,
-          sortOrder: String(dc.sortOrder),
-        }
-      : { dcLocation: "", regionLabel: "", location: "", displayName: "", status: "active", sortOrder: "100" });
-    setEditDcLocation(dc?.dcLocation ?? null);
-    setDcDrawer(true);
-  };
-  const openDatacenterSaveConfirm = () => {
-    const dcLocation = dcForm.dcLocation.trim();
-    const regionLabel = dcForm.regionLabel.trim();
-    const location = dcForm.location.trim();
-    const displayName = dcForm.displayName.trim();
-    const sortOrder = Number(dcForm.sortOrder.trim() || "100");
-    if (!editDcLocation && !dcLocation) { setToast("请填写数据中心编号"); return; }
-    if (!regionLabel || !location || !displayName) { setToast("请填写区域、所在地和展示名称"); return; }
-    if (!Number.isFinite(sortOrder) || sortOrder < 0) { setToast("请填写有效排序值"); return; }
-    const normalized: DatacenterForm = {
-      dcLocation,
-      regionLabel,
-      location,
-      displayName,
-      status: dcForm.status,
-      sortOrder: String(Math.floor(sortOrder)),
-    };
-    const statusLabel = DC_STATUS_OPTIONS.find((item) => item.value === normalized.status)?.label ?? normalized.status;
-    openActionConfirm({ briefKind: "config",
-      name: (editDcLocation ? "编辑数据中心 · " : "新增数据中心 · ") + normalized.dcLocation,
-      op: "dc-save",
-      dc: editDcLocation ?? normalized.dcLocation,
-      dcForm: normalized,
-      isNew: !editDcLocation,
-      detail: `${editDcLocation ? "更新" : "新增"}数据中心:${normalized.dcLocation} · ${normalized.location} · ${normalized.displayName} · 状态 ${statusLabel}。修改编号时，设备和暂停状态会一起迁移。`,
-    });
-    setDcDrawer(false);
-  };
-  const deleteDatacenter = (dc: E5Datacenter) => {
-    openActionConfirm({ briefKind: "config",
-      name: "删除数据中心 · " + dc.dcLocation,
-      op: "dc-delete",
-      dc: dc.dcLocation,
-      detail: `删除数据中心 ${dc.dcLocation}。只有没有设备、没有待开通订单、也没有商品在用时才能删除；请先确认「操作记录与审批」里没有相关的待确认操作。`,
-      businessForm: {
-        kind: "destructive-reason",
-        target: dc.dcLocation,
-        impact: "数据中心列表里会移除这一项，不会删除设备库存。",
-      },
-    });
-  };
-  // 任务表单校验(新增 + 编辑共用):取值完整性,非锁死业务值。
   const validateTaskForm = (): string | null => {
-    if (taskForm.simulated) {
-      if (!taskForm.n.trim()) return "请填写任务名称";
-      if (!/^[1-9]\d*$/.test(taskForm.durationMinutes) || Number(taskForm.durationMinutes) > 1440) return "固定时长须为 1–1440 的整数分钟";
-      if (!/^(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/.test(taskForm.baseReward.trim())) return "固定奖励须为非负数，最多 12 位整数、6 位小数";
-      return null;
-    }
-    const price = Number(taskForm.price) || 0;
-    if (!taskForm.n.trim() || !price) return "请填写任务名称和单价";
-    if (!taskForm.unit.trim() || !taskForm.req.trim() || !taskForm.killInit.trim()) return "请填写计价单位、设备要求和初始接单状态";
-    const satText = taskForm.sat.trim();
-    if (satText) {
-      const sat = Number(satText);
-      if (!Number.isFinite(sat) || sat < 0 || sat > 100) return "饱和度需为 0-100";
-    }
-    // #36 核心配置字段校验:taskClass / 代表模型 / min·maxReward / minVRAM 必填,reward 区间须 min ≤ max
-    if (!taskForm.taskClass.trim() || !taskForm.model.trim() || !taskForm.minVRAM.trim()) return "请填写任务类型、代表模型和最低显存";
-    const minR = Number(taskForm.minReward), maxR = Number(taskForm.maxReward);
-    const minVram = Number(taskForm.minVRAM.replace(/GB$/i, "").trim());
-    if (![taskForm.minReward, taskForm.maxReward].every((value) => /^(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/.test(value.trim()))
-      || !Number.isFinite(minR) || !Number.isFinite(maxR) || minR < 0 || maxR < minR) return "奖励须为最多 6 位小数，且 0 ≤ 最低奖励 ≤ 最高奖励";
-    if (!Number.isInteger(minVram) || minVram < 0) return "最低显存须为不小于 0 的整数（GB）";
-    if (![taskForm.selectionWeight, taskForm.expectedDurationMinSec, taskForm.expectedDurationMaxSec, taskForm.executionTimeoutSec || "1"].every((value) => /^\d+$/.test(value.trim()))) return "权重、预计时长和执行超时须填写整数";
-    return validateComputeTaskConfig(taskComputeConfig());
+    if (!taskForm.n.trim()) return "请填写任务名称";
+    if (!/^[1-9]\d*$/.test(taskForm.durationMinutes) || Number(taskForm.durationMinutes) > 1440) return "固定时长须为 1–1440 的整数分钟";
+    if (!/^(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/.test(taskForm.baseReward.trim())) return "固定奖励须为非负数，最多 12 位整数、6 位小数";
+    return null;
   };
   const rejectE2Mutation = () => {
     setToast("设备收益设置加载失败，本次没有提交");
@@ -865,18 +727,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   // 编辑任务:把任务字段回填到抽屉全字段。
   const openEditTask = (t: OpsTask) => {
     if (!canMutateE2Tasks) return rejectE2Mutation();
-    setTaskForm({
-      simulated: !!t.simulation, durationMinutes: String(t.simulation?.durationMinutes ?? 5), baseReward: String(t.simulation?.baseReward ?? ""), asset: t.simulation?.asset ?? "USDT", enabled: t.simulation?.enabled ?? true, version: t.simulation?.version ?? 0,
-      n: t.n, price: String(t.price), req: t.req, unit: t.unit, sat: t.sat == null ? "" : String(Math.round(t.sat * 100)),
-      taskClass: t.taskClass || "", model: t.model || "",
-      minReward: t.minReward != null ? String(t.minReward) : "", maxReward: t.maxReward != null ? String(t.maxReward) : "",
-      minVRAM: t.minVRAM || "", killInit: t.killInit || "",
-      selectionWeight: String(t.selectionWeight ?? 1),
-      expectedDurationMinSec: String(t.expectedDurationMinSec ?? TASK_DURATION_DEFAULTS[t.taskClass || ""] ?? 18),
-      expectedDurationMaxSec: String(t.expectedDurationMaxSec ?? TASK_DURATION_DEFAULTS[t.taskClass || ""] ?? 18),
-      executionTimeoutSec: t.executionTimeoutSec == null ? "" : String(t.executionTimeoutSec),
-      runtimeKey: t.runtimeKey || "", validatorKey: t.validatorKey || "", workloadConfigJson: t.workloadConfigJson || "",
-    });
+    setTaskForm({ durationMinutes: String(t.simulation!.durationMinutes), baseReward: String(t.simulation!.baseReward),
+      asset: t.simulation!.asset, enabled: t.simulation!.enabled, version: t.simulation!.version, n: t.n, taskClass: t.taskClass! });
     setEditTaskId(t.id);
     setTaskDrawer(true);
   };
@@ -884,7 +736,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!canMutateE2Tasks) return rejectE2Mutation();
     const err = validateTaskForm();
     if (err) { setToast(err); return; }
-    openActionConfirm({ briefKind: "config", name: "新增任务 · " + taskForm.n.trim(), op: "task-create", detail: `新增任务「${taskForm.n.trim()}」。批准后，对之后新派的任务生效。` });
+    openActionConfirm({ briefKind: "config", name: "新增任务 · " + taskForm.n.trim(), op: "task-create", content: <div className="col" style={{ gap: 10 }}><KV k="任务类型" v={TASK_CLASS_LABELS[taskForm.taskClass as keyof typeof TASK_CLASS_LABELS]} /><KV k="时长" v={`${taskForm.durationMinutes} 分钟`} /><KV k="每任务奖励" v={`${taskForm.baseReward} ${taskForm.asset}`} /><KV k="状态" v={taskForm.enabled ? "启用" : "停用"} /></div>, detail: `新增任务「${taskForm.n.trim()}」。批准后，对之后新派的任务生效。` });
     setTaskDrawer(false);
   };
   // 编辑提交:校验后走操作确认(高敏 · 改单价/门槛/taskClass server-canonical)→ onConfirm 真写 updateTask。
@@ -892,39 +744,13 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!canMutateE2Tasks) return rejectE2Mutation();
     const err = validateTaskForm();
     if (err) { setToast(err); return; }
-    openActionConfirm({ briefKind: "config", name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", detail: `修改任务「${taskForm.n.trim()}」。只对之后新派的任务生效，已派出的按原设置完成。` });
+    const current = tasks.find(task => task.id === editTaskId);
+    if (!current) { setToast("手机任务已变化，请刷新后重试"); return; }
+    const amplify = Number(taskForm.baseReward) > Number(current.simulation!.baseReward)
+      || (!current.simulation!.enabled && taskForm.enabled);
+    openActionConfirm({ briefKind: "config", name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", amplify, content: <div className="col" style={{ gap: 10 }}><KV k="任务类型" v={TASK_CLASS_LABELS[taskForm.taskClass as keyof typeof TASK_CLASS_LABELS]} /><KV k="时长" v={`${taskForm.durationMinutes} 分钟`} /><KV k="每任务奖励" v={`${taskForm.baseReward} ${taskForm.asset}`} /><KV k="状态" v={taskForm.enabled ? "启用" : "停用"} /></div>, detail: `修改任务「${taskForm.n.trim()}」。只对之后新派的任务生效，已派出的按原设置完成。` });
     setTaskDrawer(false);
   };
-  const skuLabelsUsingTask = (taskId: string, taskName: string) => skus
-    .filter((sku) => {
-      const unlocks = sku.aiUnlocks?.trim();
-      return unlocks === taskId || unlocks === taskName;
-    })
-    .map((sku) => {
-      const id = sku.id || sku.name;
-      return id && id !== sku.name ? `${sku.name}(${id})` : sku.name;
-  });
-  const delTask = (t: { id: string; n: string }) => {
-    if (!canMutateE2Tasks) return rejectE2Mutation();
-    const refSkus = skuLabelsUsingTask(t.id, t.n);
-    if (refSkus.length > 0) {
-      setToast(`无法下架：${t.n} 正被这些商品使用：${refSkus.join("、")}。请先在「商品管理与上架条件」修改它们的解锁算力池。`);
-      return;
-    }
-    openActionConfirm({ briefKind: "config",
-      name: "下架任务 · " + t.n,
-      op: "task-down",
-      taskId: t.id,
-      target: t.n,
-      detail: `下架「${t.n}」：停止派发，用户任务页也不再显示。`,
-      businessForm: {
-        kind: "destructive-reason",
-        target: t.n,
-        impact: "不再派发这个任务；已完成或已结算的不受影响。",
-      },
-    });
-  };
-
   // ── 产品媒体上传(SKU 抽屉)──
   const onPickSkuMedia = async (file?: File) => {
     if (!file) return;
@@ -1028,23 +854,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }
   };
   const isSquare = !!(skuMedia?.kind === "image" && skuMedia.w && skuMedia.h && Math.abs(skuMedia.w - skuMedia.h) <= Math.max(skuMedia.w, skuMedia.h) * 0.02);
-  const skuUnlockPoolOptions = useMemo(() => {
-    const seen = new Set<string>();
-    return tasks.reduce<{ id: string; name: string }[]>((acc, task) => {
-      const id = task.id.trim();
-      if (!id || seen.has(id)) return acc;
-      seen.add(id);
-      acc.push({ id, name: task.n.trim() || id });
-      return acc;
-    }, []);
-  }, [tasks]);
-  const skuUnlockPoolIdSet = useMemo(() => new Set(skuUnlockPoolOptions.map((item) => item.id)), [skuUnlockPoolOptions]);
-  const validateSkuUnlockPool = () => {
-    const poolId = form.aiUnlocks.trim();
-    if (!poolId || skuUnlockPoolIdSet.has(poolId)) return "";
-    if (e2Loading) return "任务列表正在加载，请稍后再提交";
-    return "解锁算力池请选择 6 类任务中的一项";
-  };
   const canUseE1Writes = canWriteE1 && !e1Loading && !e1Error
     && e1Gates !== null && e1BundleDiscount !== null;
   const openSkuSaveConfirm = () => {
@@ -1058,25 +867,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setToast("请选择档位和生命周期");
       return;
     }
-    const datacenter = form.datacenter.trim();
-    if (!datacenter) {
-      setToast(skuDatacenterDefault
-        ? "请选择一个当前有效的数据中心"
-        : "请先在「设备运行管理」添加至少一个数据中心，再保存商品");
-      return;
-    }
-    // 已有 SKU 可继续保留已删除 DC 的历史展示名，避免编辑其它字段时静默改写部署中心。
-    // 新 SKU 则必须显式选择当前 E5 配置中的有效展示名。
-    if (!skuDatacenterSet.has(datacenter) && !editSkuId) {
-      setToast("请选择一个当前有效的数据中心");
-      return;
-    }
-    if (!skuTaskClassesReady) { setToast("商品任务大类尚未加载，请刷新后再提交"); return; }
-    if (editedSku?.status === "on" && !form.allowedTaskClasses.length) { setToast("在售商品至少要勾选一个可跑任务大类"); return; }
+    if (form.datacenter.trim().length > 128) { setToast("托管机房最多 128 字"); return; }
+    if (!editSkuId && !supportsDeviceMonthlyTarget(form.id.trim() || form.name.trim(), form.tier)) { setToast(SKU_MODEL_UNRECOGNIZED_REASON); return; }
+    if (editedSku?.status === "on" && !form.allowedPoolCodes.length) { setToast("在售商品至少要选择一个任务等级"); return; }
+    if (editedSku?.status === "on" && !form.datacenter.trim()) { setToast("在售商品必须填写托管机房"); return; }
     const specErr = validateSkuSpecs(form, editedSku);
     if (specErr) { setToast(specErr); return; }
-    const poolErr = validateSkuUnlockPool();
-    if (poolErr) { setToast(poolErr); return; }
     const inventoryMode = form.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE";
     if (inventoryMode === "UNLIMITED" && form.tier !== "Share") {
       setToast("无限库存只适用于云端共享份额这类非实物商品");
@@ -1102,22 +898,24 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setToast("没有任何修改，无需提交");
       return;
     }
-    openActionConfirm({ briefKind: "config", name: (editSkuId ? "编辑商品 · " : "新增商品 · ") + (form.name || "未命名"), op: "sku-save", isNew: !editSkuId, hasImg: !!skuMedia });
+    openActionConfirm({ briefKind: "config", name: (editSkuId ? "编辑商品 · " : "新增商品 · ") + (form.name || "未命名"), op: "sku-save", isNew: !editSkuId, hasImg: !!skuMedia,
+      content: <div className="col" style={{ gap: 10 }}><KV k="任务等级" v={FIXED_DEVICE_LEVELS.filter(pool => form.allowedPoolCodes.includes(pool.code)).map(pool => `${pool.code} ${pool.name}`).join("、") || "未选择"} /><KV k="月收益目标" v={form.monthlyTargetUsdt ? `${form.monthlyTargetUsdt} USDT · ±${form.monthlyTargetBandPct}%` : "未设置"} /><KV k="托管机房" v={form.datacenter.trim() || "未填写"} /></div>,
+    });
     setSkuDrawer(false);
   };
 
   const ctx: EViewCtx = {
     pE, openActionConfirm, toast: setToast,
     canWriteE1: canUseE1Writes, skus, e1InvalidSkus, e1Loading, e1Error, e1Gates, e1BundleDiscount, phaseCur, refreshE1, openSku, delSku,
-    canWriteE2, tasks, phoneTiers, yieldComparisons, e2Pricing, e2Loading, e2Error, e2TaskCatalogReady, refreshE2, openAddTask, openEditTask, delTask,
+    canReadE2, canWriteE2, tasks, phoneTiers, yieldComparisons, e2Loading, e2Error, e2TaskCatalogReady, refreshE2, openAddTask, openEditTask,
     canWriteE3, e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
     canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4Page, e4PageSize, e4Total, e4Filter, e4Keyword, setE4Page, setE4PageSize, setE4Filter, setE4Keyword, refreshE4, orderState, isCancelled, isRefunded, terminalOf, openOrder,
-    canWriteE5, canForceActivateE5, canUnbindE5, canPauseDcE5,
+    canReadE5, canWriteE5, canForceActivateE5, canUnbindE5,
     runE5DeviceAction, runE5UserBatch,
-    e5Devices, e5Overview, e5Datacenters, e5Loading, e5DeviceError, e5OverviewError, e5DatacenterError, e5Page, e5PageSize, e5Total,
-    e5Keyword, e5StateFilter, e5KindFilter, e5HeartbeatFilter, setE5Keyword, setE5StateFilter, setE5KindFilter, setE5HeartbeatFilter,
-    setE5Page, setE5PageSize, refreshE5, isDcPaused, openDatacenter, deleteDatacenter,
-    canWriteE6, canToggleE6, e6Config, e6Loading, e6Error, refreshE6,
+    e5Devices, e5Overview, e5Loading, e5DeviceError, e5OverviewError, e5Page, e5PageSize, e5Total,
+    e5Keyword, e5StateFilter, e5SourceFilter, e5ProductFilter, setE5Keyword, setE5StateFilter, setE5SourceFilter, setE5ProductFilter,
+    setE5Page, setE5PageSize, refreshE5,
+    canReadE6, canWriteE6, canToggleE6, e6Config, e6Loading, e6Error, refreshE6,
   };
 
   // ── 批6 A2 propose 辅助(壳集中回调,被 onConfirm 复用)──
@@ -1185,15 +983,14 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const headerRight =
     tab === "E1" ? (canUseE1Writes ? <button className="f-cta" onClick={() => openSku()}>+ 新增商品</button> : undefined)
-      : tab === "E2" ? (canMutateE2Tasks ? <button className="f-cta" onClick={openAddTask}>+ 新增任务</button> : undefined)
-        : tab === "E3" ? <button className="f-cta manual" onClick={() => setManualOpen(true)}><Icon name="doc" size={15} /> 操作说明手册</button>
+      : tab === "E3" ? <button className="f-cta manual" onClick={() => setManualOpen(true)}><Icon name="doc" size={15} /> 操作说明手册</button>
           : undefined;
 
   return (
     <div className="dkpage edom">
       <DomainHeader {...meta} right={headerRight} />
 
-      {tab === "E1" && <><PhoneTaskPolicy canWrite={canUseE1Writes} toast={setToast} /><E1Catalog ctx={ctx} /></>}
+      {tab === "E1" && <E1Catalog ctx={ctx} />}
       {tab === "E2" && <E2Tasks ctx={ctx} />}
       {tab === "E3" && <E3Lifecycle ctx={ctx} />}
       {tab === "E4" && <E4Orders ctx={ctx} />}
@@ -1243,9 +1040,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         const progressBlock = eff === "placed"
           ? { code: "ORDER_PAYMENT_CONFIRMATION_REQUIRED", text: "要等付款记录确认用户真的付了款，后台不能手动标记已付款。" }
           : eff === "paid" && (!hasSettledFunding || !hasAllocatedDevice)
-            ? { code: "ORDER_PROVISIONING_EVIDENCE_REQUIRED", text: "要先确认款项已结算，并在「设备运行管理」分配好设备和数据中心。" }
+            ? { code: "ORDER_PROVISIONING_EVIDENCE_REQUIRED", text: "要先确认款项已结算，并在「设备管理」核对设备和托管机房标签。" }
             : eff === "provisioning" && !e4Detail?.deviceActivatedAt
-              ? { code: "ORDER_DEVICE_ACTIVATION_REQUIRED", text: "要先在「设备运行管理」激活设备，订单才能完成。" }
+              ? { code: "ORDER_DEVICE_ACTIVATION_REQUIRED", text: "要先在「设备管理」激活设备，订单才能完成。" }
               : null;
         const refundableState = ["paid", "provisioning", "activated", "inventory"].includes(eff);
         const refundReady = canRefundE4 && refundableState && e4Detail?.refundAllowed === true && !pendingApproval;
@@ -1291,7 +1088,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             </div>}
             {!finalized && <KV k="下一处理步骤" v={nextState ? stateLabel(nextState) : <span style={{ color: "var(--ink-4)" }}>暂无可推进步骤</span>} />}
             {progressBlock && <div className="tint warn tiny" style={{ marginBottom: 10 }} title={progressBlock.code}>{progressBlock.text}</div>}
-            <KV k="数据中心" v={o.dc} />
+            <KV k="托管机房" v={o.dc} />
             <KV k="用户" v={o.user} />
             <KV k="下单时间" v={o.age + " 前"} />
             {e4DetailLoading && <div className="tint tiny">正在加载…</div>}
@@ -1365,15 +1162,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               <Btn sm disabled={skuMediaUploading} onClick={() => resetSkuMedia(null)}>移除</Btn>
             </div>}
           </div>
-          <section className="col e1-sku-task-policy" aria-labelledby="e1-sku-task-heading">
-            <header className="row">
-              <span className="e1-sku-task-icon"><Icon name="tree" size={15} /></span>
-              <h3 id="e1-sku-task-heading">可跑任务类型</h3>
-              {skuTaskClassesReady && <output>已选 <b>{form.allowedTaskClasses.length}/{TASK_CLASSES.length}</b></output>}
-            </header>
-            <TaskClassChoices selected={form.allowedTaskClasses} onChange={(classes) => setForm({ ...form, allowedTaskClasses: classes })} ready={skuTaskClassesReady} />
-            <p className="muted tiny">设备从已选大类的启用任务中随机接单。同类新任务启用后自动加入，正在运行的任务按原配置结算。</p>
-          </section>
+          <DevicePoolChoices pools={devicePools} selected={form.allowedPoolCodes} onChange={(codes) => setForm({ ...form, allowedPoolCodes: codes })} />
           <SkuFieldGroup n="①" title="基本信息">
             <SkuFld label="型号名称" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="如 UVELBox Pro v3" />
             <div className="grid g-2" style={{ gap: 12 }}>
@@ -1388,7 +1177,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             <div className="grid g-2" style={{ gap: 12 }}>
               <SkuFld label="售价(USD)" type="number" value={form.price} onChange={(v) => setForm({ ...form, price: v })} placeholder="1319" />
               <SkuFld label="每件算力点" type="number" min={0} step={1} value={form.computePoints} onChange={(v) => setForm({ ...form, computePoints: v })} placeholder={editSkuId ? "留空保留原值" : "留空按售价 × 10"} hint="计入团队等级与配额，只影响之后的订单" />
-              <SkuFld label="商品编号" value={form.id} onChange={(v) => setForm({ ...form, id: v })} placeholder="uvelbox-pro-v2" disabled={Boolean(editSkuId)} hint={editSkuId ? "创建后不能修改" : undefined} />
+              <SkuFld label="商品编号" value={form.id} onChange={(v) => setForm({ ...form, id: v })} placeholder="uvelbox-pro-v2" disabled={Boolean(editSkuId)} error={skuModelError} hint={editSkuId ? "创建后不能修改" : undefined} />
             </div>
           </SkuFieldGroup>
 
@@ -1402,13 +1191,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               <SkuFld label="算力" value={form.hashRate} onChange={(v) => setForm({ ...form, hashRate: v })} placeholder="1,240 MH/s" />
               <SkuFld label="功耗 / 功率说明" value={form.power} onChange={(v) => setForm({ ...form, power: v })} placeholder="1,800W（GPU 额定合计）" hint="注明是单卡、显卡合计还是整机实测" />
             </div>}
-            <label className="col" style={{ gap: 5 }}>
-              <span className="muted tiny">数据中心<span style={{ color: "var(--ink-4)" }}> · 在「设备运行管理」增删改</span></span>
-              <select className="fld" value={form.datacenter} onChange={(e) => setForm({ ...form, datacenter: e.target.value })}>
-                {skuDatacenterOptions.length === 0 && <option value="">暂无数据中心</option>}
-                {staleSkuDatacenter && <option value={staleSkuDatacenter}>{staleSkuDatacenter} · 旧值（现在不能选）</option>}
-                {skuDatacenterOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-              </select>
+            <label className="col" style={{ gap: 8 }}>
+              <span>托管机房 <OpsHint>上架必填，最多 128 字。用户获得设备时复制此标签；修改商品不影响已交付设备。建议填写英文城市 + 编号。</OpsHint></span>
+              <input className="fld" maxLength={128} list="sku-hosting-labels" value={form.datacenter} onChange={(event) => setForm({ ...form, datacenter: event.target.value })} placeholder="如 Singapore · SG-1" />
+              <datalist id="sku-hosting-labels">{hostingLabels.map(label => <option key={label} value={label} />)}</datalist>
+              {hostingLabelError && <span className="muted">建议暂不可用，可直接填写。<OpsHint>{hostingLabelError}</OpsHint></span>}
             </label>
             <div className="grid g-2" style={{ gap: 12 }}>
               <SkuFld label="在线率" value={form.uptime} onChange={(v) => setForm({ ...form, uptime: v })} placeholder="99.9%" />
@@ -1417,12 +1204,13 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           </SkuFieldGroup>
 
           <SkuFieldGroup n="③" title="收益（USDT + UVT）">
-            {monthlyTargetSupported && <div className="grid g-2" style={{ gap: 12 }}>
-              <SkuFld label="月收益目标（USDT）" type="number" min={1} max={1_000_000} step={0.01} value={form.monthlyTargetUsdt} onChange={(v) => setForm({ ...form, monthlyTargetUsdt: v })} placeholder="留空按单计价"
-                tip={`App 商品卡、商品详情、设备卡和首页对比显示目标对应的预估收益；新领取试用按目标 ÷ 30 计算，已领试用和已成交订单不变。批准后只影响新建任务，运行中任务保持原金额。${form.tier === "Share" ? "云端共享份额默认不乘产能比例；是否参与以「设备使用与升级置换」设置为准。" : "参与产能变化的型号按「设备使用与升级置换」中的当期产能比例折算；不参与的为 100%。"}可跑任务须为正额 USDT，且每项不超过 120 分钟。开启、关闭目标或提高目标区间上限，批准时须通过兑付覆盖率检查。关闭时须重新填写${form.tier === "Share" ? "参考年奖励率" : "每日收益 USDT"}。范围 1–1,000,000，最多 2 位小数。`} />
+            <div className="grid g-2" style={{ gap: 12 }}>
+              <SkuFld label="月收益目标（USDT）" type="number" min={1} max={1_000_000} step={0.01} value={form.monthlyTargetUsdt} onChange={(v) => setForm({ ...form, monthlyTargetUsdt: v })} placeholder="必填，如 50"
+                tip="商品展示、新领取试用与任务收益按月目标推算；批准后只影响新任务。目标提高仍须通过兑付覆盖率检查。" />
               <SkuFld label="允许波动 %" type="number" min={1} max={50} step={0.1} value={form.monthlyTargetBandPct} onChange={(v) => setForm({ ...form, monthlyTargetBandPct: v })} disabled={!monthlyTargetFilled} placeholder="10"
                 tip="1%–50%，最多 1 位小数。持续运行时的设备月目标区间为目标 × 当期产能比例 ×（1 ± 波动比例）；每天收益有起伏，停机不补发。设备月从购入日开始，购入日缺失时从激活日开始。" />
-            </div>}
+            </div>
+            <div className={`tint ${form.allowedPoolCodes.length && !monthlyTargetFilled ? "warn" : "cyan"}`} role={form.allowedPoolCodes.length && !monthlyTargetFilled ? "alert" : undefined}>月收益目标必填：任务等级只决定跑什么任务，每单收益按目标配平。{form.allowedPoolCodes.length > 0 && "已选任务等级，不能清空目标。"}</div>
             {monthlyTargetFilled && <div className="mono">{Number(form.monthlyTargetUsdt) >= 1 && Number(form.monthlyTargetUsdt) <= 1_000_000 && Number(form.monthlyTargetBandPct) >= 1 && Number(form.monthlyTargetBandPct) <= 50
               ? `App 显示${monthlyTargetEstimateText(draftSku)}` : "填写有效目标和波动后显示预估收益"}</div>}
             {form.tier !== "Share" ? (
@@ -1454,13 +1242,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 <SkuFld label="LoRA 微调（分钟）" type="number" value={form.aiFineTuneMins} onChange={(v) => setForm({ ...form, aiFineTuneMins: v })} placeholder="6" />
               </div>
             </>}
-            <label className="col" style={{ gap: 5 }}>
-              <span className="muted tiny">{form.tier === "Share" ? "解锁算力池（份额可访问的池）" : "解锁算力池"}</span>
-              <select className="fld" value={form.aiUnlocks} onChange={(e) => setForm({ ...form, aiUnlocks: e.target.value })} disabled={skuUnlockPoolOptions.length === 0}>
-                <option value="">{e2Loading ? "任务列表加载中" : skuUnlockPoolOptions.length ? "请选择算力池" : "暂无可选任务"}</option>
-                {skuUnlockPoolOptions.map((item) => <option key={item.id} value={item.id}>{nexGridBrandText(item.name)}</option>)}
-              </select>
-            </label>
           </SkuFieldGroup>
 
           <SkuFieldGroup n="" title="相关资料">
@@ -1576,93 +1357,18 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         </div>
       </Drawer>}
 
-      {/* 任务新增 抽屉 */}
-      {taskDrawer && <Drawer title={editTaskId ? "编辑任务" : "新增任务"} sub={<AutoGloss>{editTaskId ? "修改后需确认，只对之后新派的任务生效" : "新增任务类型，确认后对新任务生效"}</AutoGloss>} onClose={() => { setTaskDrawer(false); setEditTaskId(null); }}
-        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setTaskDrawer(false); setEditTaskId(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!canMutateE2Tasks || !taskForm.n.trim()} onClick={editTaskId ? submitTaskEdit : submitTask}>{editTaskId ? "保存修改" : "提交新增"}</Btn></>}>
-        <div className="col" style={{ gap: 12 }}>
-          <label className="col" style={{ gap: 5 }}><span className="muted tiny">任务名称</span><input className="fld" value={taskForm.n} onChange={(e) => setTaskForm({ ...taskForm, n: e.target.value })} placeholder="如 大模型推理 405B" /></label>
-          {taskForm.simulated ? <>
-            <div className="grid g-2" style={{ gap: 12 }}>
-              <SkuFld label="固定时长（分钟）" type="number" value={taskForm.durationMinutes} onChange={(v) => setTaskForm({ ...taskForm, durationMinutes: v })} hint="1–1440，整数分钟" />
-              <SkuFld label="固定基础奖励" value={taskForm.baseReward} onChange={(v) => setTaskForm({ ...taskForm, baseReward: v })} tip="最多 6 位小数。设了月收益目标的型号只用作任务之间的比例；这些型号的任务须为正额 USDT，且不超过 120 分钟。" />
-              <label className="col" style={{ gap: 5 }}><span className="muted tiny">奖励资产</span><select className="fld" value={taskForm.asset} onChange={(e) => setTaskForm({ ...taskForm, asset: e.target.value })}><option value="USDT">USDT</option><option value="UVT">UVT</option></select></label>
-              <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={taskForm.enabled} onChange={(e) => setTaskForm({ ...taskForm, enabled: e.target.checked })} />启用新任务</label>
-              <label className="col" style={{ gap: 5 }}><span className="muted tiny">展示类别</span><select className="fld" value={taskForm.taskClass || "EM"} onChange={(e) => setTaskForm({ ...taskForm, taskClass: e.target.value })}>{["IG", "VG", "LL", "FT", "EM", "SP"].map((c) => <option key={c} value={c}>{c}</option>)}</select></label>
-            </div>
-            <div className="tint tiny">商品及手机类别单独勾选可跑类型。各类型等概率抽取；发布修改只影响之后的新任务，运行中任务保留原版本。{taskForm.version ? ` 当前版本 v${taskForm.version}` : ""}</div>
-          </> : <>
-          <div className="grid g-2" style={{ gap: 12 }}>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny"><AutoGloss>单价(USDT)</AutoGloss></span><input className="fld" type="number" value={taskForm.price} onChange={(e) => setTaskForm({ ...taskForm, price: e.target.value })} placeholder="1.20" /></label>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">计价单位</span><div className="row wrap" style={{ gap: 6 }}>{["/job", "/1k", "/min"].map((u) => <Chip key={u} tab sel={taskForm.unit === u} onClick={() => setTaskForm({ ...taskForm, unit: u })}>{({ "/job": "每项任务", "/1k": "每千单位", "/min": "每分钟" } as Record<string,string>)[u]}</Chip>)}</div></label>
+      {taskDrawer && <Drawer title={editTaskId ? "编辑手机任务" : "新增手机任务"} sub="仅用于手机任务池 · 另一位管理员批准后生效" onClose={() => setTaskDrawer(false)}
+        footer={<><Btn onClick={() => setTaskDrawer(false)}>取消</Btn><Btn variant="primary" disabled={!canMutateE2Tasks || !taskForm.n.trim()} onClick={editTaskId ? submitTaskEdit : submitTask}>提交审批</Btn></>}>
+        <div className="tp-dialog"><div className="tp-key-info">{editTaskId ? taskForm.n : "新任务将加入手机任务池"}</div>
+          <label className="col">任务名称<input className="fld" value={taskForm.n} onChange={event => setTaskForm({ ...taskForm, n: event.target.value })} /></label>
+          <div className="grid g-2" style={{ gap: 16 }}>
+            <SkuFld label="固定时长（分钟）" type="number" min={1} max={1440} step={1} value={taskForm.durationMinutes} onChange={value => setTaskForm({ ...taskForm, durationMinutes: value })} />
+            <SkuFld label="每任务奖励" value={taskForm.baseReward} onChange={value => setTaskForm({ ...taskForm, baseReward: value })} tip="最多 12 位整数、6 位小数。修改仍走 A2 双人审批和覆盖率检查。" />
+            <label className="col">奖励资产<select className="fld" value={taskForm.asset} onChange={event => setTaskForm({ ...taskForm, asset: event.target.value })}><option value="USDT">USDT</option><option value="UVT">UVT</option></select></label>
+            <label className="col">任务类型<select className="fld" value={taskForm.taskClass} onChange={event => setTaskForm({ ...taskForm, taskClass: event.target.value })}>{TASK_CLASSES.map(c => <option key={c} value={c}>{TASK_CLASS_LABELS[c]}</option>)}</select></label>
           </div>
-          <label className="col" style={{ gap: 5 }}><span className="muted tiny">设备要求<span style={{ color: "var(--ink-4)" }}> · 手机+ 表示手机也能接</span></span><div className="row wrap" style={{ gap: 6 }}>{["手机+", "S1+", "需 UVELBox Pro", "需 UVELRack"].map((r) => <Chip key={r} tab sel={taskForm.req === r} onClick={() => setTaskForm({ ...taskForm, req: r })}>{r}</Chip>)}</div></label>
-          <SkuFld label="初始饱和度 %（预估）" type="number" value={taskForm.sat} onChange={(v) => setTaskForm({ ...taskForm, sat: v })} placeholder="50" hint="0-100" />
-          {/* #36 任务核心配置:taskClass / 代表模型 / 奖励区间 / 最低显存 / kill 初始态 */}
-          <div className="grid g-2" style={{ gap: 12 }}>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">任务类型</span>
-              <select className="fld" value={taskForm.taskClass} onChange={(e) => setTaskForm({ ...taskForm, taskClass: e.target.value, ...(!editTaskId && TASK_DURATION_DEFAULTS[e.target.value] ? { expectedDurationMinSec: String(TASK_DURATION_DEFAULTS[e.target.value]), expectedDurationMaxSec: String(TASK_DURATION_DEFAULTS[e.target.value]) } : {}) })}>
-                <option value="">请选择任务类型</option>
-                {["IG", "VG", "LL", "FT", "EM", "SP"].map((c) => <option key={c} value={c}>{({IG:"图像生成",VG:"视频生成",LL:"大模型推理",FT:"模型微调",EM:"向量计算",SP:"语音处理"} as Record<string,string>)[c]}</option>)}
-              </select>
-            </label>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">代表模型</span><input className="fld" value={taskForm.model} onChange={(e) => setTaskForm({ ...taskForm, model: e.target.value })} placeholder="如 Llama-3.1-405B" /></label>
-          </div>
-          <div className="grid g-2" style={{ gap: 12 }}>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">最低奖励（USDT）</span><input className="fld" type="number" value={taskForm.minReward} onChange={(e) => setTaskForm({ ...taskForm, minReward: e.target.value })} placeholder="0.80" /></label>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">最高奖励（USDT）</span><input className="fld" type="number" value={taskForm.maxReward} onChange={(e) => setTaskForm({ ...taskForm, maxReward: e.target.value })} placeholder="2.40" /></label>
-          </div>
-          <div className="grid g-2" style={{ gap: 12 }}>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">抽选权重（1–1000000）</span><input className="fld" type="number" min={1} max={1000000} step={1} value={taskForm.selectionWeight} onChange={(e) => setTaskForm({ ...taskForm, selectionWeight: e.target.value })} /></label>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">执行超时（秒，可留空沿用）</span><input className="fld" type="number" min={1} max={172800} step={1} value={taskForm.executionTimeoutSec} onChange={(e) => setTaskForm({ ...taskForm, executionTimeoutSec: e.target.value })} /></label>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">预计最短时长（秒）</span><input className="fld" type="number" min={1} max={86400} step={1} value={taskForm.expectedDurationMinSec} onChange={(e) => setTaskForm({ ...taskForm, expectedDurationMinSec: e.target.value })} /></label>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">预计最长时长（秒）</span><input className="fld" type="number" min={1} max={86400} step={1} value={taskForm.expectedDurationMaxSec} onChange={(e) => setTaskForm({ ...taskForm, expectedDurationMaxSec: e.target.value })} /></label>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">执行器标识</span><input className="fld" maxLength={96} value={taskForm.runtimeKey} onChange={(e) => setTaskForm({ ...taskForm, runtimeKey: e.target.value })} /></label>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">独立校验器标识</span><input className="fld" maxLength={96} value={taskForm.validatorKey} onChange={(e) => setTaskForm({ ...taskForm, validatorKey: e.target.value })} /></label>
-          </div>
-          <label className="col" style={{ gap: 5 }}><span className="muted tiny">任务输入配置（JSON 对象，最多 16KB）</span><textarea className="fld" rows={4} value={taskForm.workloadConfigJson} onChange={(e) => setTaskForm({ ...taskForm, workloadConfigJson: e.target.value })} placeholder="留空沿用服务端配置" /></label>
-          <div className="tint tiny">预计时长只用于展示；排队不计运行时长。只有已安装且通过能力校验的执行器才可接单，填写标识不会安装执行器。配置仅影响新派任务。</div>
-          <div className="grid g-2" style={{ gap: 12 }}>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">最低显存（GB）</span><input className="fld" type="number" min={0} step={1} value={taskForm.minVRAM.replace(/GB$/i, "")} onChange={(e) => setTaskForm({ ...taskForm, minVRAM: e.target.value })} placeholder="80" /></label>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">初始接单状态</span><div className="row wrap" style={{ gap: 6 }}>{["派发中", "已 kill", "限流中"].map((k) => <Chip key={k} tab sel={taskForm.killInit === k} onClick={() => setTaskForm({ ...taskForm, killInit: k })}>{k === "已 kill" ? "已停止接单" : k === "派发中" ? "正常接单" : "限量接单"}</Chip>)}</div></label>
-          </div>
-          <div className="tint warn tiny"><AutoGloss>单价、设备要求和任务类型修改后需确认，只对之后新派的任务生效，用户任务页同步更新。</AutoGloss></div>
-          </>}
-        </div>
-      </Drawer>}
-
-      {/* E5 数据中心新增 / 编辑抽屉 */}
-      {dcDrawer && <Drawer title={editDcLocation ? "编辑数据中心" : "新增数据中心"} sub={<AutoGloss>保存后生效</AutoGloss>} onClose={() => { setDcDrawer(false); setEditDcLocation(null); }}
-        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setDcDrawer(false); setEditDcLocation(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!dcForm.dcLocation.trim() || !dcForm.regionLabel.trim() || !dcForm.location.trim() || !dcForm.displayName.trim()} onClick={openDatacenterSaveConfirm}>{editDcLocation ? "保存修改" : "提交新增"}</Btn></>}>
-        <div className="col" style={{ gap: 12 }}>
-          <label className="col" style={{ gap: 5 }}>
-            <span className="muted tiny">数据中心编号</span>
-            <input className="fld" value={dcForm.dcLocation} onChange={(e) => setDcForm({ ...dcForm, dcLocation: e.target.value })} placeholder="us-east-2" />
-          </label>
-          <label className="col" style={{ gap: 5 }}>
-            <span className="muted tiny">区域</span>
-            <input className="fld" value={dcForm.regionLabel} onChange={(e) => setDcForm({ ...dcForm, regionLabel: e.target.value })} placeholder="美国 · 弗吉尼亚" />
-          </label>
-          <label className="col" style={{ gap: 5 }}>
-            <span className="muted tiny">所在地</span>
-            <input className="fld" value={dcForm.location} onChange={(e) => setDcForm({ ...dcForm, location: e.target.value })} placeholder="美国弗吉尼亚州阿什本" />
-          </label>
-          <label className="col" style={{ gap: 5 }}>
-            <span className="muted tiny">展示名称</span>
-            <input className="fld" value={dcForm.displayName} onChange={(e) => setDcForm({ ...dcForm, displayName: e.target.value })} placeholder="美东算力中心" />
-          </label>
-          <div className="grid g-2" style={{ gap: 12 }}>
-            <label className="col" style={{ gap: 5 }}>
-              <span className="muted tiny">状态</span>
-              <select className="fld" value={dcForm.status} onChange={(e) => setDcForm({ ...dcForm, status: e.target.value as DatacenterForm["status"] })}>
-                {DC_STATUS_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-              </select>
-            </label>
-            <label className="col" style={{ gap: 5 }}>
-              <span className="muted tiny">排序</span>
-              <input className="fld" type="number" min={0} value={dcForm.sortOrder} onChange={(e) => setDcForm({ ...dcForm, sortOrder: e.target.value })} placeholder="100" />
-            </label>
-          </div>
-          <div className="tint warn tiny"><AutoGloss>删除数据中心不会删除设备库存；暂停或恢复派单请在「设备运行管理」操作。</AutoGloss></div>
+          <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={taskForm.enabled} onChange={event => setTaskForm({ ...taskForm, enabled: event.target.checked })} />启用任务</label>
+          <div className="row"><span className="muted">当前版本 {taskForm.version || "待创建"}</span><OpsHint>批准后只影响新派的任务，运行中的任务保留原版本。手机任务在线有效期仍为 1 小时。</OpsHint></div>
         </div>
       </Drawer>}
 
@@ -1674,6 +1380,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         amplifies={!!mc.amplify}
         edit={mc.edit}
         businessForm={mc.businessForm}
+        reasonMin={8}
         reasonMax={200}
         completionCopy="批准后生效：提交后请另一位超级管理员在「操作记录与审批」中批准。"
         onClose={() => setActionConfirm(null)}
@@ -1691,384 +1398,314 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           }
           // 批6: E 域高敏动作统一 propose 入 A2 后端待确认队列(壳集中回调)。
           // propose 内部自管成功/失败 toast;此处仅做 mc.op → op 映射 + 构造 ctx + 本地 UI 状态收尾。
-          try {
-            if (mc.op === "bundle-discount" && businessValue) {
-              const current = e1BundleDiscount;
-              if (!current) { setToast("组合优惠设置加载失败，请刷新后重试"); return; }
-              const next = {
-                twoItemsPct: Number(businessValue.twoItemsPct),
-                threeItemsPct: Number(businessValue.threeItemsPct),
-                fourPlusItemsPct: Number(businessValue.fourPlusItemsPct),
-              };
-              if (Object.values(next).some((value) => !Number.isFinite(value) || value < 0.01 || value > 30)
-                  || next.threeItemsPct < next.twoItemsPct
-                  || next.fourPlusItemsPct < next.threeItemsPct) {
-                setToast("折扣须在 0.01%–30% 之间，且买得越多折扣不能越少");
-                return;
-              }
-              const def = findHighOp("e1_bundle_discount")!;
-              const commandContext = { ...next, expectedVersion: current.version };
-              await propose(ctx.toast, {
-                action: mc.name,
-                obj: "App 组合购阶梯折扣",
-                before: `v${current.version} · 2 件 ${current.twoItemsPct}% · 3 件 ${current.threeItemsPct}% · 4+ 件 ${current.fourPlusItemsPct}%`,
-                after: `2 件 ${next.twoItemsPct}% · 3 件 ${next.threeItemsPct}% · 4+ 件 ${next.fourPlusItemsPct}%`,
-                type: def.type,
-                amplifies: def.amplifies,
-                gate: { roles: [] },
-                gateLabel: def.gateLabel,
-                reason,
-                sourceDomain: "E1",
-                command: def.buildCommand(commandContext),
-                target: def.buildTarget(commandContext),
-              });
-            } else if (mc.op === "sku-save") {
-              if (e1Gates?.skuReviewContractVersion !== 1) {
-                throw new Error("商品审核暂时不可用，请刷新后重试；已填写的内容会保留");
-              }
-              const ex = editSkuId ? skus.find((x) => x.id === editSkuId) : undefined;
-              const sku = attachSkuMedia(formToSku(form, ex), skuMedia);
-              const skuId = editSkuId ?? (form.id.trim() || form.name.trim());
-              const def = findHighOp(editSkuId ? "e1_sku_update" : "e1_sku_create")!;
-              if (editSkuId && !ex) {
-                setToast("商品信息已更新，请重新打开商品后再提交");
-                setActionConfirm(null);
-                return;
-              }
-              if (ex && !summarizeSkuProposal(ex, sku, { includeDerived: false })) {
-                setToast("没有任何修改，无需提交");
-                setActionConfirm(null);
-                return;
-              }
-              const summary = ex ? summarizeSkuProposal(ex, sku) : summarizeSkuCreation(sku);
-              await propose(ctx.toast, {
-                action: mc.name, obj: skuId,
-                before: summary?.before ?? "未创建",
-                after: summary?.after ?? "未配置",
-                type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel, reason,
-                sourceDomain: "E1",
-                command: def.buildCommand({ skuId, ...sku }),
-                target: def.buildTarget({ skuId }),
-              });
-              setEditSkuId(null);
-              resetSkuMedia(null);
-            } else if (mc.op === "sku-delete" && mc.target) {
-              const sku = skus.find((x) => x.id === mc.target);
-              const skuId = mc.target;
-              const def = findHighOp("e1_sku_delete")!;
-              await propose(ctx.toast, {
-                action: mc.name, obj: skuId, before: sku?.name ?? skuId, after: "已移除", type: def.type, amplifies: false,
-                gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
-                command: def.buildCommand({ skuId, updatedAt: sku?.updatedAt }),
-                target: def.buildTarget({ skuId }),
-              });
-            } else if (mc.op === "sku-status" && mc.target) {
-              const sku = skus.find((x) => x.id === mc.target);
-              const skuId = mc.target;
-              const def = findHighOp("e1_sku_status")!;
-              await propose(ctx.toast, {
-                action: mc.name, obj: skuId, before: sku?.name ?? skuId, after: mc.status === "off" ? "下架" : "上架",
-                type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
-                command: def.buildCommand({ skuId, status: String(mc.status ?? ""), updatedAt: sku?.updatedAt }),
-                target: def.buildTarget({ skuId }),
-              });
-            } else if (mc.op === "task-create") {
-              // 任务 create:taskId 后端序列生成;propose 时未知,锁 id 暂空(create-id 已知缺口,可接受)。
-              const price = Number(taskForm.price) || 0;
-              const minR = Number(taskForm.minReward), maxR = Number(taskForm.maxReward);
-              const sat = taskForm.sat.trim() ? Math.max(0, Math.min(100, Number(taskForm.sat))) / 100 : null;
-              const def = findHighOp("e2_task_create")!;
-              const taskCtx = {
-                taskId: "", name: taskForm.n.trim(), price, unit: taskForm.unit, requirement: taskForm.req,
-                saturation: sat, status: "active", taskClass: taskForm.taskClass, model: taskForm.model.trim(),
-                minReward: minR, maxReward: maxR, minVram: taskForm.minVRAM.trim(), killInit: taskForm.killInit,
-                ...taskComputeConfig(), simulation: taskSimulation(),
-              };
-              await propose(ctx.toast, {
-                action: mc.name, obj: taskForm.n.trim(), before: "—", after: taskForm.n.trim() + " · taskClass=" + taskForm.taskClass,
-                type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E2",
-                command: def.buildCommand(taskCtx),
-                target: def.buildTarget(taskCtx),
-              });
-              setEditTaskId(null);
-            } else if (mc.op === "task-down" && mc.taskId) {
-              const def = findHighOp("e2_task_delete")!;
-              await propose(ctx.toast, {
-                action: mc.name, obj: mc.taskId, before: mc.target ?? mc.taskId, after: "已下架", type: def.type, amplifies: false,
-                gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E2",
-                command: def.buildCommand({ taskId: mc.taskId }),
-                target: def.buildTarget({ taskId: mc.taskId }),
-              });
-            } else if (mc.op === "task-price" && mc.taskId) {
-              const v = Number(newValue);
-              if (!(Number.isFinite(v) && v > 0)) { setToast("请填写有效单价"); return; }
-              const def = findHighOp("e2_task_price")!;
-              await propose(ctx.toast, {
-                action: mc.name, obj: mc.taskId, before: String(v), after: String(v), type: def.type, amplifies: true,
-                gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E2",
-                command: def.buildCommand({ taskId: mc.taskId, price: v }),
-                target: def.buildTarget({ taskId: mc.taskId }),
-              });
-            } else if (mc.op === "task-save" && editTaskId) {
-              const price = Number(taskForm.price) || 0;
-              const minR = Number(taskForm.minReward), maxR = Number(taskForm.maxReward);
-              const sat = taskForm.sat.trim() ? Math.max(0, Math.min(100, Number(taskForm.sat))) / 100 : null;
-              const currentTask = tasks.find((task) => task.id === editTaskId);
-              if (!currentTask) { setToast("任务已更新，请重新打开后再编辑"); return; }
-              const def = findHighOp("e2_task_update")!;
-              const taskCtx = {
-                taskId: editTaskId, name: taskForm.n.trim(), price, unit: taskForm.unit, requirement: taskForm.req,
-                saturation: sat, status: currentTask.status, taskClass: taskForm.taskClass, model: taskForm.model.trim(),
-                minReward: minR, maxReward: maxR, minVram: taskForm.minVRAM.trim(), killInit: taskForm.killInit,
-                ...taskComputeConfig(), simulation: taskSimulation(),
-              };
-              await propose(ctx.toast, {
-                action: mc.name, obj: editTaskId, before: "编辑前任务", after: taskForm.n.trim(), type: def.type, amplifies: false,
-                gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E2",
-                command: def.buildCommand(taskCtx),
-                target: def.buildTarget(taskCtx),
-              });
-              setEditTaskId(null);
-            } else if (mc.op === "phone-tier" && mc.phoneTier && mc.phoneField) {
-              const v = normalizePositiveDecimal18x6(newValue);
-              if (!v) { setToast("收益必须为正数，且最多 12 位整数、6 位小数"); return; }
-              const def = findHighOp("e2_phone_tier")!;
-              const currentTier = phoneTiers.find((row) => row.tier === mc.phoneTier);
-              if (!currentTier) { setToast("手机档位设置已更新，请重试"); return; }
-              const tierCtx = { tier: mc.phoneTier, expectedRevision: currentTier.revision,
-                dailyUsdt: mc.phoneField === "dailyUsdt" ? v : undefined,
-                dailyNex: mc.phoneField === "dailyNex" ? v : undefined };
-              await propose(ctx.toast, {
-                action: mc.name, obj: String(mc.phoneTier),
-                before: String(mc.phoneField === "dailyUsdt" ? currentTier.dailyUsdt : currentTier.dailyNex),
-                after: v, type: def.type, amplifies: true,
-                gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E2",
-                command: def.buildCommand(tierCtx),
-                target: def.buildTarget(tierCtx),
-              });
-            } else if (mc.op === "yield-comparison" && mc.comparisonKey && mc.comparisonField) {
-              const isLabel = mc.comparisonField === "label";
-              const labelValue = String(newValue ?? "").trim();
-              const numericValue = normalizePositiveDecimal18x6(newValue);
-              if ((isLabel && !labelValue) || (!isLabel && !numericValue)) {
-                setToast(isLabel ? "请填写配置名称" : "收益必须为正数，且最多 12 位整数、6 位小数"); return;
-              }
-              if (isLabel && labelValue.length > 128) { setToast("配置名称最多 128 个字符"); return; }
-              const def = findHighOp("e2_phone_tier")!;
-              const comparison = yieldComparisons.find((row) => row.configKey === mc.comparisonKey);
-              if (!comparison) { setToast("收益对比设置已更新，请重试"); return; }
-              const comparisonCtx = {
-                configKey: comparison.configKey,
-                expectedRevision: comparison.revision,
-                label: isLabel ? labelValue : comparison.label,
-                dailyUsdt: mc.comparisonField === "dailyUsdt" ? numericValue! : String(comparison.dailyUsdt),
-                dailyNex: mc.comparisonField === "dailyNex" ? numericValue! : String(comparison.dailyNex),
-              };
-              await propose(ctx.toast, {
-                action: mc.name, obj: comparison.configKey,
-                before: isLabel ? comparison.label : `${comparison.dailyUsdt} USDT / ${comparison.dailyNex} UVT`,
-                after: isLabel ? comparisonCtx.label : `${comparisonCtx.dailyUsdt} USDT / ${comparisonCtx.dailyNex} UVT`,
-                type: def.type, amplifies: !isLabel,
-                gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E2",
-                command: def.buildCommand(comparisonCtx), target: def.buildTarget(comparisonCtx),
-              });
-            } else if (mc.op === "param" && mc.paramKey) {
-              const v = (newValue ?? "").trim();
-              const before = typeof mc.edit?.current === "string" ? mc.edit.current : "—";
-              await proposeParam(mc.paramKey, v, before, reason, mc.name, typeof mc.edit?.amplifiesWhen === "function" ? mc.edit.amplifiesWhen(v) : !!mc.amplify);
-            } else if (mc.op === "early-access" && businessValue) {
-              const enabled = businessValue.enabled === "开" || businessValue.enabled === "true";
-              const leadDays = Number(businessValue.leadDays);
-              if (![7, 14, 30, 60, 90].includes(leadDays)) { setToast("提前天数只能选 7、14、30、60 或 90 天"); return; }
-              const def = findHighOp("e1_early_access_update")!;
-              await propose(ctx.toast, {
-                action: mc.name, obj: "置换侧抢先购", before: `${pE("E.release.earlyAccess.enabled")} · ${pE("E.release.earlyAccess.leadDays")} 天`, after: `${enabled ? "开" : "关"} · ${leadDays} 天`,
-                type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
-                command: def.buildCommand({ enabled, leadDays }), target: def.buildTarget({}),
-              });
-            } else if (mc.op === "param-multi" && mc.paramKeys && businessValue) {
-              const isE6Batch = mc.paramKeys.every(({ paramKey }) => isE6ParamKey(paramKey));
-              const def = findHighOp(isE6Batch ? "e6_compute_config_batch" : "e3_config_batch")!;
-              const values = Object.fromEntries(mc.paramKeys.map(({ key, paramKey }) => [
-                paramKey,
-                isE6Batch ? (businessValue[key] ?? "").trim() : canonicalE3Value(paramKey, (businessValue[key] ?? "").trim()),
-              ]));
-              await propose(ctx.toast, {
-                action: mc.name, obj: mc.paramKeys.map(({ paramKey }) => paramKey).sort().join(","), before: "批量配置变更前", after: "批量配置待审批", type: def.type,
-                amplifies: (mc.businessForm?.kind === "multi-field" ? mc.businessForm.amplifies?.(businessValue) : undefined) ?? !!mc.amplify, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: isE6Batch ? "E6" : "E3",
-                command: def.buildCommand({ values }), targets: def.buildTargets?.({ values }),
-              });
-            } else if (mc.op === "param-fixed" && mc.paramKey && mc.fixedVal != null) {
-              await proposeParam(mc.paramKey, mc.fixedVal, "—", reason, mc.name, !!mc.amplify);
-            } else if (mc.op === "phase-save" && businessValue) {
-              const label = businessValue.label?.trim() ?? "";
-              const phaseCtx = {
-                phaseId: mc.phaseId ?? "", label, meta: businessValue.meta?.trim() ?? "", skus: businessValue.skus?.trim() ?? "",
-                sortOrder: Number(businessValue.sortOrder), status: (businessValue.status as string) || "active",
-              };
-              const def = findHighOp(mc.phaseId ? "e1_phase_patch" : "e1_phase_create")!;
-              await propose(ctx.toast, {
-                action: mc.name, obj: mc.phaseId ?? label, before: mc.phaseId ? "编辑前阶段" : "—", after: label, type: def.type, amplifies: false,
-                gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
-                command: def.buildCommand(phaseCtx),
-                target: def.buildTarget(phaseCtx),
-              });
-            } else if (mc.op === "phase-archive" && mc.phaseId) {
-              const def = findHighOp("e1_phase_archive")!;
-              await propose(ctx.toast, {
-                action: mc.name, obj: mc.phaseId, before: mc.target ?? mc.phaseId, after: "已归档", type: def.type, amplifies: false,
-                gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
-                command: def.buildCommand({ phaseId: mc.phaseId }),
-                target: def.buildTarget({ phaseId: mc.phaseId }),
-              });
-            } else if (mc.op === "generation-gate-save" && businessValue) {
-              const gateCtx = {
-                skuId: String(businessValue.skuId ?? ""), name: businessValue.name?.trim() ?? "", releaseMonth: Number(businessValue.releaseMonth),
-                phase: String(businessValue.phase ?? ""), eligibility: businessValue.eligibility === "true",
-                phaseOffset: Number(businessValue.phaseOffset || "0"), forceUnlock: businessValue.forceUnlock === "true", status: "active",
-              };
-              const def = findHighOp(mc.generationGateId ? "e1_gate_patch" : "e1_gate_create")!;
-              await propose(ctx.toast, {
-                action: mc.name, obj: mc.generationGateId ?? gateCtx.skuId, before: mc.generationGateId ? "编辑前上架条件" : "—", after: gateCtx.skuId,
-                type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
-                command: def.buildCommand(gateCtx),
-                target: def.buildTarget(gateCtx),
-              });
-            } else if (mc.op === "generation-gate-force" && mc.generationGateId && mc.generationGate?.forceUnlock != null) {
-              const enabled = !!mc.generationGate.forceUnlock;
-              const def = findHighOp("e1_gate_field")!;
-              const key = `E.gen.${mc.generationGateId}.forceUnlock`;
-              await propose(ctx.toast, {
-                action: mc.name, obj: mc.generationGateId, before: enabled ? "未强制" : "已强制", after: enabled ? "已强制开放" : "已撤销强制",
-                type: def.type, amplifies: enabled, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
-                command: def.buildCommand({ key, value: String(enabled) }),
-                target: { domain: "E", type: def.targetType, id: mc.generationGateId },
-              });
-            } else if (mc.op === "generation-gate-archive" && mc.generationGateId) {
-              const def = findHighOp("e1_gate_archive")!;
-              await propose(ctx.toast, {
-                action: mc.name, obj: mc.generationGateId, before: mc.generationGateId, after: "已归档", type: def.type, amplifies: false,
-                gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
-                command: def.buildCommand({ skuId: mc.generationGateId }),
-                target: def.buildTarget({ skuId: mc.generationGateId }),
-              });
-            } else if (mc.op === "order-state" && mc.orderId && mc.fixedVal) {
-              const def = findHighOp("e4_order_state")!;
-              await propose(ctx.toast, {
-                action: mc.name, obj: mc.orderId, before: stateLabel(effOrderState(mc.orderId)), after: stateLabel(mc.fixedVal), type: def.type, amplifies: false,
-                gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
-                command: def.buildCommand({ orderNo: mc.orderId, state: mc.fixedVal }),
-                target: def.buildTarget({ orderNo: mc.orderId }),
-              });
-              setSelOrder(null);
-            } else if (mc.op === "order-refund" && mc.orderId) {
-              const refundChannel = (businessValue?.refundChannel ?? "").trim();
-              if (!refundChannel) { throw new Error("请选择退款渠道"); }
-              const refundReasonCode = (businessValue?.refundReasonCode ?? "").trim();
-              if (!(E4_REFUND_REASONS as readonly string[]).includes(refundReasonCode)) { throw new Error("请选择退款原因"); }
-              const def = findHighOp("e4_order_refund")!;
-              await propose(ctx.toast, {
-                action: mc.name, obj: mc.orderId, before: effOrderState(mc.orderId), after: "已退款", type: def.type, amplifies: true,
-                gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
-                command: def.buildCommand({ orderNo: mc.orderId, refundChannel, refundReasonCode }),
-                target: def.buildTarget({ orderNo: mc.orderId }),
-              });
-              setSelOrder(null);
-            } else if (mc.op === "order-cancel" && mc.orderId) {
-              const closeReasonCode = (businessValue?.closeReasonCode ?? "").trim();
-              if (!E4_CLOSE_REASONS.cancelled.includes(closeReasonCode)) { throw new Error("请选择取消原因"); }
-              const def = findHighOp("e4_order_cancel")!;
-              await propose(ctx.toast, {
-                action: mc.name, obj: mc.orderId, before: effOrderState(mc.orderId), after: "已取消", type: def.type, amplifies: false,
-                gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
-                command: def.buildCommand({ orderNo: mc.orderId, closeReasonCode }),
-                target: def.buildTarget({ orderNo: mc.orderId }),
-              });
-              setSelOrder(null);
-            } else if (mc.op === "order-terminal" && mc.orderId) {
-              const v = (businessValue?.terminalState ?? "").trim();
-              if (!v) { throw new Error("请选择失败结果"); }
-              const choices = E4_CLOSE_REASONS[v];
-              const closeReasonCode = choices ? (businessValue?.closeReasonCode ?? "").trim() : "";
-              if (choices && !choices.includes(closeReasonCode)) { throw new Error("请选择原因"); }
-              const def = findHighOp("e4_order_terminal")!;
-              await propose(ctx.toast, {
-                action: mc.name, obj: mc.orderId, before: effOrderState(mc.orderId), after: stateLabel(v), type: def.type, amplifies: false,
-                gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
-                command: def.buildCommand({ orderNo: mc.orderId, terminalState: v, closeReasonCode }),
-                target: def.buildTarget({ orderNo: mc.orderId }),
-              });
-              setSelOrder(null);
-            } else if (mc.op === "device-activate" && mc.deviceId) {
-              const highOp = mc.deviceAction === "force-activate" ? "e5_device_force_activate" : "e5_device_activate";
-              const def = findHighOp(highOp)!;
-              await propose(ctx.toast, {
-                action: mc.name, obj: String(mc.deviceId), before: "未激活", after: "已激活", type: def.type, amplifies: !!def.amplifies,
-                gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E5",
-                command: def.buildCommand({ deviceId: mc.deviceId }),
-                target: def.buildTarget({ deviceId: mc.deviceId }),
-              });
-            } else if (mc.op === "device-deactivate" && mc.deviceId) {
-              const highOp = mc.deviceAction === "unbind" ? "e5_device_unbind" : "e5_device_deactivate";
-              const def = findHighOp(highOp)!;
-              await propose(ctx.toast, {
-                action: mc.name, obj: String(mc.deviceId), before: "已激活", after: "已取消激活/解绑", type: def.type, amplifies: false,
-                gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E5",
-                command: def.buildCommand({ deviceId: mc.deviceId }),
-                target: def.buildTarget({ deviceId: mc.deviceId }),
-              });
-            } else if (mc.op === "device-batch" && mc.userId) {
-              const paused = mc.fixedVal === "true";
-              const def = findHighOp(paused ? "e5_device_batch_pause" : "e5_device_batch_resume")!;
-              await propose(ctx.toast, {
-                action: mc.name, obj: String(mc.userId), before: paused ? "派单中" : "已暂停",
-                after: paused ? "该用户设备已暂停" : "该用户设备已恢复", type: def.type, amplifies: !paused,
-                gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E5",
-                command: def.buildCommand({ userId: mc.userId }),
-                target: def.buildTarget({ userId: mc.userId }),
-              });
-            } else if (mc.op === "dc-save" && mc.dcForm) {
-              const dcCtx = {
-                dcLocation: mc.dcForm.dcLocation.trim(), regionLabel: mc.dcForm.regionLabel.trim(),
-                oldDcLocation: mc.dc ?? mc.dcForm.dcLocation.trim(),
-                location: mc.dcForm.location.trim(), displayName: mc.dcForm.displayName.trim(),
-                status: mc.dcForm.status, sortOrder: Number(mc.dcForm.sortOrder),
-              };
-              const def = findHighOp(mc.isNew ? "e5_datacenter_create" : "e5_datacenter_update")!;
-              await propose(ctx.toast, {
-                action: mc.name, obj: dcCtx.dcLocation, before: mc.isNew ? "—" : "编辑前数据中心", after: dcCtx.dcLocation + " · " + dcCtx.regionLabel,
-                type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E5",
-                command: def.buildCommand(dcCtx),
-                target: def.buildTarget(dcCtx),
-              });
-              setEditDcLocation(null);
-            } else if (mc.op === "dc-delete" && mc.dc) {
-              const def = findHighOp("e5_datacenter_delete")!;
-              await propose(ctx.toast, {
-                action: mc.name, obj: mc.dc, before: mc.dc, after: "已删除", type: def.type, amplifies: false,
-                gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E5",
-                command: def.buildCommand({ dcLocation: mc.dc }),
-                target: def.buildTarget({ dcLocation: mc.dc }),
-              });
-            } else if (mc.op === "ops-pause" && mc.dc) {
-              // pause/resume 按 fixedVal 选 op:false→resume(放大)、true→pause(收缩)
-              const paused = mc.fixedVal === "true";
-              const def = findHighOp(paused ? "e5_datacenter_pause" : "e5_datacenter_resume")!;
-              await propose(ctx.toast, {
-                action: mc.name, obj: mc.dc, before: paused ? "派单中" : "已暂停", after: paused ? "已暂停派单" : "已恢复派单",
-                type: def.type, amplifies: !paused, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E5",
-                command: def.buildCommand({ dcLocation: mc.dc }),
-                target: def.buildTarget({ dcLocation: mc.dc }),
-              });
-            } else { setToast("已确认生效"); }
-          } catch (error) {
-            // 不在这里再 toast 一次:本 try 块内每条会失败的路径都经 propose(含 proposeParam),
-            // 它在 rethrow 前已 toast 过;这里再弹就是同一个错误两条。
-            // 反馈不丢:rethrow 后确认弹窗的 alertbar 会经 displayAdminError 显示同一错误。
-            throw error;
-          }
+          if (mc.op === "bundle-discount" && businessValue) {
+            const current = e1BundleDiscount;
+            if (!current) { setToast("组合优惠设置加载失败，请刷新后重试"); return; }
+            const next = {
+              twoItemsPct: Number(businessValue.twoItemsPct),
+              threeItemsPct: Number(businessValue.threeItemsPct),
+              fourPlusItemsPct: Number(businessValue.fourPlusItemsPct),
+            };
+            if (Object.values(next).some((value) => !Number.isFinite(value) || value < 0.01 || value > 30)
+                || next.threeItemsPct < next.twoItemsPct
+                || next.fourPlusItemsPct < next.threeItemsPct) {
+              setToast("折扣须在 0.01%–30% 之间，且买得越多折扣不能越少");
+              return;
+            }
+            const def = findHighOp("e1_bundle_discount")!;
+            const commandContext = { ...next, expectedVersion: current.version };
+            await propose(ctx.toast, {
+              action: mc.name,
+              obj: "App 组合购阶梯折扣",
+              before: `v${current.version} · 2 件 ${current.twoItemsPct}% · 3 件 ${current.threeItemsPct}% · 4+ 件 ${current.fourPlusItemsPct}%`,
+              after: `2 件 ${next.twoItemsPct}% · 3 件 ${next.threeItemsPct}% · 4+ 件 ${next.fourPlusItemsPct}%`,
+              type: def.type,
+              amplifies: def.amplifies,
+              gate: { roles: [] },
+              gateLabel: def.gateLabel,
+              reason,
+              sourceDomain: "E1",
+              command: def.buildCommand(commandContext),
+              target: def.buildTarget(commandContext),
+            });
+          } else if (mc.op === "sku-save") {
+            if (e1Gates?.skuReviewContractVersion !== 1) {
+              throw new Error("商品审核暂时不可用，请刷新后重试；已填写的内容会保留");
+            }
+            const ex = editSkuId ? skus.find((x) => x.id === editSkuId) : undefined;
+            const sku = attachSkuMedia(formToSku(form, ex), skuMedia);
+            const skuId = editSkuId ?? (form.id.trim() || form.name.trim());
+            const def = findHighOp(editSkuId ? "e1_sku_update" : "e1_sku_create")!;
+            if (editSkuId && !ex) {
+              setToast("商品信息已更新，请重新打开商品后再提交");
+              setActionConfirm(null);
+              return;
+            }
+            if (ex && !summarizeSkuProposal(ex, sku, { includeDerived: false })) {
+              setToast("没有任何修改，无需提交");
+              setActionConfirm(null);
+              return;
+            }
+            const summary = ex ? summarizeSkuProposal(ex, sku) : summarizeSkuCreation(sku);
+            await propose(ctx.toast, {
+              action: mc.name, obj: skuId,
+              before: summary?.before ?? "未创建",
+              after: summary?.after ?? "未配置",
+              type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel, reason,
+              sourceDomain: "E1",
+              command: def.buildCommand({ skuId, ...sku }),
+              target: def.buildTarget({ skuId }),
+            });
+            setEditSkuId(null);
+            resetSkuMedia(null);
+          } else if (mc.op === "sku-delete" && mc.target) {
+            const sku = skus.find((x) => x.id === mc.target);
+            const skuId = mc.target;
+            const def = findHighOp("e1_sku_delete")!;
+            await propose(ctx.toast, {
+              action: mc.name, obj: skuId, before: sku?.name ?? skuId, after: "已移除", type: def.type, amplifies: false,
+              gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
+              command: def.buildCommand({ skuId, updatedAt: sku?.updatedAt }),
+              target: def.buildTarget({ skuId }),
+            });
+          } else if (mc.op === "sku-status" && mc.target) {
+            const sku = skus.find((x) => x.id === mc.target);
+            const skuId = mc.target;
+            if (mc.status === "on") {
+              if (sku && !supportsDeviceMonthlyTarget(sku.id, sku.tier, sku.productType)) throw new Error(SKU_MODEL_UNRECOGNIZED_REASON);
+              if (!sku?.allowedPoolCodes?.length) throw new Error("上架前请在商品抽屉至少选择一个任务等级");
+              if (sku.monthlyTargetUsdt == null) throw new Error("上架前请设置月收益目标");
+              if (!sku.datacenter?.trim()) throw new Error("上架前请填写托管机房");
+            }
+            const def = findHighOp("e1_sku_status")!;
+            await propose(ctx.toast, {
+              action: mc.name, obj: skuId, before: sku?.name ?? skuId, after: mc.status === "off" ? "下架" : "上架",
+              type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
+              command: def.buildCommand({ skuId, status: String(mc.status ?? ""), updatedAt: sku?.updatedAt }),
+              target: def.buildTarget({ skuId }),
+            });
+          } else if (mc.op === "task-create" || mc.op === "task-save") {
+            const current = tasks.find(task => task.id === editTaskId);
+            if (mc.op === "task-save" && !current) throw new Error("手机任务已变化，请刷新后重试");
+            const def = findHighOp(mc.op === "task-create" ? "e2_task_create" : "e2_task_update")!;
+            const taskCtx = { taskId: editTaskId ?? "", name: taskForm.n.trim(), taskClass: taskForm.taskClass, simulation: taskSimulation() };
+            const describe = (task: typeof taskForm) => `${task.n} · ${task.taskClass} · ${task.durationMinutes} 分钟 · ${task.baseReward} ${task.asset} · ${task.enabled ? "启用" : "停用"}`;
+            await propose(ctx.toast, { action: mc.name, obj: editTaskId ?? taskForm.n.trim(),
+              before: current ? `${current.n} · ${current.simulation!.durationMinutes} 分钟 · ${current.simulation!.baseReward} ${current.simulation!.asset}` : "未创建",
+              after: describe(taskForm), type: def.type, amplifies: !!mc.amplify, gate: { roles: [] }, gateLabel: def.gateLabel,
+              reason, sourceDomain: "E6", command: def.buildCommand(taskCtx), target: def.buildTarget(taskCtx) });
+            setEditTaskId(null);
+          } else if (mc.op === "task-status" && mc.taskId) {
+            const current = tasks.find(task => task.id === mc.taskId);
+            if (!current) throw new Error("手机任务已变化，请刷新后重试");
+            const def = findHighOp("e2_task_status")!;
+            await propose(ctx.toast, { action: mc.name, obj: mc.taskId, before: current.simulation!.enabled ? "启用" : "停用", after: mc.fixedVal === "active" ? "启用" : "停用",
+              type: def.type, amplifies: !!mc.amplify, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E6",
+              command: def.buildCommand({ taskId: mc.taskId, status: mc.fixedVal }), target: def.buildTarget({ taskId: mc.taskId }) });
+          } else if (mc.op === "phone-tier" && mc.phoneTier && mc.phoneField) {
+            const v = normalizePositiveDecimal18x6(newValue);
+            if (!v) { setToast("收益必须为正数，且最多 12 位整数、6 位小数"); return; }
+            const def = findHighOp("e2_phone_tier")!;
+            const currentTier = phoneTiers.find((row) => row.tier === mc.phoneTier);
+            if (!currentTier) { setToast("手机档位设置已更新，请重试"); return; }
+            const tierCtx = { tier: mc.phoneTier, expectedRevision: currentTier.revision,
+              dailyUsdt: mc.phoneField === "dailyUsdt" ? v : undefined,
+              dailyNex: mc.phoneField === "dailyNex" ? v : undefined };
+            await propose(ctx.toast, {
+              action: mc.name, obj: String(mc.phoneTier),
+              before: String(mc.phoneField === "dailyUsdt" ? currentTier.dailyUsdt : currentTier.dailyNex),
+              after: v, type: def.type, amplifies: true,
+              gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E2",
+              command: def.buildCommand(tierCtx),
+              target: def.buildTarget(tierCtx),
+            });
+          } else if (mc.op === "yield-comparison" && mc.comparisonKey && mc.comparisonField) {
+            const isLabel = mc.comparisonField === "label";
+            const labelValue = String(newValue ?? "").trim();
+            const numericValue = normalizePositiveDecimal18x6(newValue);
+            if ((isLabel && !labelValue) || (!isLabel && !numericValue)) {
+              setToast(isLabel ? "请填写配置名称" : "收益必须为正数，且最多 12 位整数、6 位小数"); return;
+            }
+            if (isLabel && labelValue.length > 128) { setToast("配置名称最多 128 个字符"); return; }
+            const def = findHighOp("e2_phone_tier")!;
+            const comparison = yieldComparisons.find((row) => row.configKey === mc.comparisonKey);
+            if (!comparison) { setToast("收益对比设置已更新，请重试"); return; }
+            const comparisonCtx = {
+              configKey: comparison.configKey,
+              expectedRevision: comparison.revision,
+              label: isLabel ? labelValue : comparison.label,
+              dailyUsdt: mc.comparisonField === "dailyUsdt" ? numericValue! : String(comparison.dailyUsdt),
+              dailyNex: mc.comparisonField === "dailyNex" ? numericValue! : String(comparison.dailyNex),
+            };
+            await propose(ctx.toast, {
+              action: mc.name, obj: comparison.configKey,
+              before: isLabel ? comparison.label : `${comparison.dailyUsdt} USDT / ${comparison.dailyNex} UVT`,
+              after: isLabel ? comparisonCtx.label : `${comparisonCtx.dailyUsdt} USDT / ${comparisonCtx.dailyNex} UVT`,
+              type: def.type, amplifies: !isLabel,
+              gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E2",
+              command: def.buildCommand(comparisonCtx), target: def.buildTarget(comparisonCtx),
+            });
+          } else if (mc.op === "param" && mc.paramKey) {
+            const v = (newValue ?? "").trim();
+            const before = typeof mc.edit?.current === "string" ? mc.edit.current : "—";
+            await proposeParam(mc.paramKey, v, before, reason, mc.name, typeof mc.edit?.amplifiesWhen === "function" ? mc.edit.amplifiesWhen(v) : !!mc.amplify);
+          } else if (mc.op === "early-access" && businessValue) {
+            const enabled = businessValue.enabled === "开" || businessValue.enabled === "true";
+            const leadDays = Number(businessValue.leadDays);
+            if (![7, 14, 30, 60, 90].includes(leadDays)) { setToast("提前天数只能选 7、14、30、60 或 90 天"); return; }
+            const def = findHighOp("e1_early_access_update")!;
+            await propose(ctx.toast, {
+              action: mc.name, obj: "置换侧抢先购", before: `${pE("E.release.earlyAccess.enabled")} · ${pE("E.release.earlyAccess.leadDays")} 天`, after: `${enabled ? "开" : "关"} · ${leadDays} 天`,
+              type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
+              command: def.buildCommand({ enabled, leadDays }), target: def.buildTarget({}),
+            });
+          } else if (mc.op === "param-multi" && mc.paramKeys && businessValue) {
+            const isE6Batch = mc.paramKeys.every(({ paramKey }) => isE6ParamKey(paramKey));
+            const def = findHighOp(isE6Batch ? "e6_compute_config_batch" : "e3_config_batch")!;
+            const values = Object.fromEntries(mc.paramKeys.map(({ key, paramKey }) => [
+              paramKey,
+              isE6Batch ? (businessValue[key] ?? "").trim() : canonicalE3Value(paramKey, (businessValue[key] ?? "").trim()),
+            ]));
+            await propose(ctx.toast, {
+              action: mc.name, obj: mc.paramKeys.map(({ paramKey }) => paramKey).sort().join(","), before: "批量配置变更前", after: "批量配置待审批", type: def.type,
+              amplifies: (mc.businessForm?.kind === "multi-field" ? mc.businessForm.amplifies?.(businessValue) : undefined) ?? !!mc.amplify, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: isE6Batch ? "E6" : "E3",
+              command: def.buildCommand({ values }), targets: def.buildTargets?.({ values }),
+            });
+          } else if (mc.op === "param-fixed" && mc.paramKey && mc.fixedVal != null) {
+            await proposeParam(mc.paramKey, mc.fixedVal, "—", reason, mc.name, !!mc.amplify);
+          } else if (mc.op === "phase-save" && businessValue) {
+            const label = businessValue.label?.trim() ?? "";
+            const phaseCtx = {
+              phaseId: mc.phaseId ?? "", label, meta: businessValue.meta?.trim() ?? "", skus: businessValue.skus?.trim() ?? "",
+              sortOrder: Number(businessValue.sortOrder), status: (businessValue.status as string) || "active",
+            };
+            const def = findHighOp(mc.phaseId ? "e1_phase_patch" : "e1_phase_create")!;
+            await propose(ctx.toast, {
+              action: mc.name, obj: mc.phaseId ?? label, before: mc.phaseId ? "编辑前阶段" : "—", after: label, type: def.type, amplifies: false,
+              gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
+              command: def.buildCommand(phaseCtx),
+              target: def.buildTarget(phaseCtx),
+            });
+          } else if (mc.op === "phase-archive" && mc.phaseId) {
+            const def = findHighOp("e1_phase_archive")!;
+            await propose(ctx.toast, {
+              action: mc.name, obj: mc.phaseId, before: mc.target ?? mc.phaseId, after: "已归档", type: def.type, amplifies: false,
+              gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
+              command: def.buildCommand({ phaseId: mc.phaseId }),
+              target: def.buildTarget({ phaseId: mc.phaseId }),
+            });
+          } else if (mc.op === "generation-gate-save" && businessValue) {
+            const gateCtx = {
+              skuId: String(businessValue.skuId ?? ""), name: businessValue.name?.trim() ?? "", releaseMonth: Number(businessValue.releaseMonth),
+              phase: String(businessValue.phase ?? ""), eligibility: businessValue.eligibility === "true",
+              phaseOffset: Number(businessValue.phaseOffset || "0"), forceUnlock: businessValue.forceUnlock === "true", status: "active",
+            };
+            const def = findHighOp(mc.generationGateId ? "e1_gate_patch" : "e1_gate_create")!;
+            await propose(ctx.toast, {
+              action: mc.name, obj: mc.generationGateId ?? gateCtx.skuId, before: mc.generationGateId ? "编辑前上架条件" : "—", after: gateCtx.skuId,
+              type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
+              command: def.buildCommand(gateCtx),
+              target: def.buildTarget(gateCtx),
+            });
+          } else if (mc.op === "generation-gate-force" && mc.generationGateId && mc.generationGate?.forceUnlock != null) {
+            const enabled = !!mc.generationGate.forceUnlock;
+            const def = findHighOp("e1_gate_field")!;
+            const key = `E.gen.${mc.generationGateId}.forceUnlock`;
+            await propose(ctx.toast, {
+              action: mc.name, obj: mc.generationGateId, before: enabled ? "未强制" : "已强制", after: enabled ? "已强制开放" : "已撤销强制",
+              type: def.type, amplifies: enabled, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
+              command: def.buildCommand({ key, value: String(enabled) }),
+              target: { domain: "E", type: def.targetType, id: mc.generationGateId },
+            });
+          } else if (mc.op === "generation-gate-archive" && mc.generationGateId) {
+            const def = findHighOp("e1_gate_archive")!;
+            await propose(ctx.toast, {
+              action: mc.name, obj: mc.generationGateId, before: mc.generationGateId, after: "已归档", type: def.type, amplifies: false,
+              gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
+              command: def.buildCommand({ skuId: mc.generationGateId }),
+              target: def.buildTarget({ skuId: mc.generationGateId }),
+            });
+          } else if (mc.op === "order-state" && mc.orderId && mc.fixedVal) {
+            const def = findHighOp("e4_order_state")!;
+            await propose(ctx.toast, {
+              action: mc.name, obj: mc.orderId, before: stateLabel(effOrderState(mc.orderId)), after: stateLabel(mc.fixedVal), type: def.type, amplifies: false,
+              gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
+              command: def.buildCommand({ orderNo: mc.orderId, state: mc.fixedVal }),
+              target: def.buildTarget({ orderNo: mc.orderId }),
+            });
+            setSelOrder(null);
+          } else if (mc.op === "order-refund" && mc.orderId) {
+            const refundChannel = (businessValue?.refundChannel ?? "").trim();
+            if (!refundChannel) { throw new Error("请选择退款渠道"); }
+            const refundReasonCode = (businessValue?.refundReasonCode ?? "").trim();
+            if (!(E4_REFUND_REASONS as readonly string[]).includes(refundReasonCode)) { throw new Error("请选择退款原因"); }
+            const def = findHighOp("e4_order_refund")!;
+            await propose(ctx.toast, {
+              action: mc.name, obj: mc.orderId, before: effOrderState(mc.orderId), after: "已退款", type: def.type, amplifies: true,
+              gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
+              command: def.buildCommand({ orderNo: mc.orderId, refundChannel, refundReasonCode }),
+              target: def.buildTarget({ orderNo: mc.orderId }),
+            });
+            setSelOrder(null);
+          } else if (mc.op === "order-cancel" && mc.orderId) {
+            const closeReasonCode = (businessValue?.closeReasonCode ?? "").trim();
+            if (!E4_CLOSE_REASONS.cancelled.includes(closeReasonCode)) { throw new Error("请选择取消原因"); }
+            const def = findHighOp("e4_order_cancel")!;
+            await propose(ctx.toast, {
+              action: mc.name, obj: mc.orderId, before: effOrderState(mc.orderId), after: "已取消", type: def.type, amplifies: false,
+              gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
+              command: def.buildCommand({ orderNo: mc.orderId, closeReasonCode }),
+              target: def.buildTarget({ orderNo: mc.orderId }),
+            });
+            setSelOrder(null);
+          } else if (mc.op === "order-terminal" && mc.orderId) {
+            const v = (businessValue?.terminalState ?? "").trim();
+            if (!v) { throw new Error("请选择失败结果"); }
+            const choices = E4_CLOSE_REASONS[v];
+            const closeReasonCode = choices ? (businessValue?.closeReasonCode ?? "").trim() : "";
+            if (choices && !choices.includes(closeReasonCode)) { throw new Error("请选择原因"); }
+            const def = findHighOp("e4_order_terminal")!;
+            await propose(ctx.toast, {
+              action: mc.name, obj: mc.orderId, before: effOrderState(mc.orderId), after: stateLabel(v), type: def.type, amplifies: false,
+              gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
+              command: def.buildCommand({ orderNo: mc.orderId, terminalState: v, closeReasonCode }),
+              target: def.buildTarget({ orderNo: mc.orderId }),
+            });
+            setSelOrder(null);
+          } else if (mc.op === "device-activate" && mc.deviceId) {
+            const highOp = mc.deviceAction === "force-activate" ? "e5_device_force_activate" : "e5_device_activate";
+            const def = findHighOp(highOp)!;
+            await propose(ctx.toast, {
+              action: mc.name, obj: String(mc.deviceId), before: "未激活", after: "已激活", type: def.type, amplifies: !!def.amplifies,
+              gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E5",
+              command: def.buildCommand({ deviceId: mc.deviceId }),
+              target: def.buildTarget({ deviceId: mc.deviceId }),
+            });
+          } else if (mc.op === "device-deactivate" && mc.deviceId) {
+            const highOp = mc.deviceAction === "unbind" ? "e5_device_unbind" : "e5_device_deactivate";
+            const def = findHighOp(highOp)!;
+            await propose(ctx.toast, {
+              action: mc.name, obj: String(mc.deviceId), before: "已激活", after: "已取消激活/解绑", type: def.type, amplifies: false,
+              gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E5",
+              command: def.buildCommand({ deviceId: mc.deviceId }),
+              target: def.buildTarget({ deviceId: mc.deviceId }),
+            });
+          } else if (mc.op === "device-batch" && mc.userId) {
+            const paused = mc.fixedVal === "true";
+            const def = findHighOp(paused ? "e5_device_batch_pause" : "e5_device_batch_resume")!;
+            await propose(ctx.toast, {
+              action: mc.name, obj: String(mc.userId), before: paused ? "派单中" : "已暂停",
+              after: paused ? "该用户设备已暂停" : "该用户设备已恢复", type: def.type, amplifies: !paused,
+              gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E5",
+              command: def.buildCommand({ userId: mc.userId }),
+              target: def.buildTarget({ userId: mc.userId }),
+            });
+          } else { setToast("已确认生效"); }
           setActionConfirm(null);
           if (mc.orderId) void refreshE4();
+          if (mc.op.startsWith("sku-")) void refreshE1();
+          if (isE2TaskMutation(mc.op) || isE2ConfigMutation(mc.op)) void refreshE2();
+          if (mc.op.startsWith("device-")) void refreshE5();
         }} />}
       {toastNode}
     </div>

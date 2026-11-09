@@ -1,68 +1,20 @@
-"use client";
+import type { TaskPool } from "@/lib/admin/task-pool-client";
+import { OpsHint } from "./ops-hint";
 
-import { useEffect, useState } from "react";
-import { Btn, OperationConfirmModal } from "../design-kit";
-import { TASK_CLASSES, TASK_CLASS_LABELS, taskClassNames } from "@/lib/admin/task-classes";
-import { guardedFetch, formatAdminApiError } from "@/lib/admin/error-messages";
-import { usePropose } from "@/lib/admin/use-propose";
-import { findHighOp } from "@/lib/admin/high-ops-registry";
-import { createA2CommandKey } from "@/lib/admin/a2-client";
+export const FIXED_DEVICE_LEVELS = [
+  { code: "L1", name: "初级" }, { code: "L2", name: "中级" },
+  { code: "L3", name: "高级" }, { code: "L4", name: "旗舰" },
+];
 
-export function TaskClassChoices({ selected, onChange, ready, readOnly = false }: {
-  selected: string[]; onChange: (classes: string[]) => void; ready: boolean; readOnly?: boolean;
-}) {
-  if (!ready) return <div className="tint warn tiny">可跑任务大类尚未加载，请刷新后再提交。</div>;
-  return <div className="col" style={{ gap: 8 }}>
-    {TASK_CLASSES.map((key) => <label key={key} className="row" style={{ gap: 8 }}>
-      <input type="checkbox" checked={selected.includes(key)} disabled={readOnly}
-        onChange={(e) => onChange(TASK_CLASSES.filter((c) => c === key ? e.target.checked : selected.includes(c)))} />
-      <span>{TASK_CLASS_LABELS[key]}</span>
-    </label>)}
-  </div>;
-}
-
-interface PhonePolicy {
-  policy: { allowedTaskClasses: string[]; productTaskPolicyVersion: number; productTaskPolicyEffectiveAt?: string };
-}
-
-async function fetchTaskClassPolicy(): Promise<PhonePolicy> {
-  const response = await guardedFetch("/api/admin/e1/skus/phone/task-policy?classesOnly=true", { cache: "no-store" });
-  const result = await response.json() as { code: number; message?: string; data: PhonePolicy };
-  if (!response.ok || result.code !== 0) throw new Error(formatAdminApiError(result.message, "任务策略加载失败"));
-  if (!Array.isArray(result.data?.policy?.allowedTaskClasses)) throw new Error("手机任务大类尚未加载，请刷新后重试。");
-  return result.data;
-}
-
-export function PhoneTaskPolicy({ canWrite, toast }: { canWrite: boolean; toast: (message: string) => void }) {
-  const [data, setData] = useState<PhonePolicy | null>(null);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [error, setError] = useState("");
-  const [confirmation, setConfirmation] = useState<{ classes: string[]; version: number; key: string } | null>(null);
-  const propose = usePropose();
-  async function refresh() {
-    setError("");
-    const next = await fetchTaskClassPolicy();
-    setData(next); setSelected(next.policy.allowedTaskClasses);
-  }
-  useEffect(() => { void refresh().catch(() => setError("任务策略加载失败")); }, []);
-  return <section className="pane e1-phone-task-policy">
-    <header>
-      <div className="row">
-        <strong>手机类别可跑任务</strong>
-        <span className="badge-s neutral">当前版本 {data?.policy.productTaskPolicyVersion ?? "—"}</span>
-      </div>
-      <Btn sm onClick={() => void refresh().catch(() => setError("任务策略加载失败"))}>刷新</Btn>
-    </header>
-    {error && <div className="tint warn tiny" role="alert">{error}</div>}
-    <TaskClassChoices selected={selected} onChange={setSelected} ready={!!data && !error} readOnly={!canWrite} />
-    <footer>
-      <p className="muted tiny">手机从已选大类的启用任务中随机接单。同类新任务启用后自动加入。</p>
-      {canWrite && <Btn sm variant="primary" disabled={!data || !!error || !selected.length || taskClassNames(selected) === taskClassNames(data.policy.allowedTaskClasses)} onClick={() => setConfirmation({ classes: [...selected], version: data!.policy.productTaskPolicyVersion, key: createA2CommandKey("e1-phone-policy") })}>提交发布</Btn>}
-    </footer>
-    {confirmation && <OperationConfirmModal briefKind={"content"} action="发布手机可跑任务" detail={`发布 ${taskClassNames(confirmation.classes)}，同类新任务启用后自动可派。`} onClose={() => setConfirmation(null)} onConfirm={async (reason) => {
-      const def = findHighOp("e1_phone_task_policy")!;
-      await propose(toast, { action: def.action, obj: "phone", before: taskClassNames(data!.policy.allowedTaskClasses), after: taskClassNames(confirmation.classes), type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1", command: def.buildCommand({ allowedTaskClasses: confirmation.classes, expectedVersion: confirmation.version }), target: def.buildTarget({}), commandKey: confirmation.key });
-      setConfirmation(null);
-    }} />}
+export function DevicePoolChoices({ pools, selected, onChange }: { pools: TaskPool[]; selected: string[]; onChange: (codes: string[]) => void }) {
+  const selectedNames = FIXED_DEVICE_LEVELS.filter(pool => selected.includes(pool.code)).map(pool => pool.name);
+  const appPreview = selectedNames.length ? `可运行${selectedNames.join(" / ")} AI 算力任务` : "请选择任务等级后预览";
+  return <section className="e1-sku-task-policy col" style={{ gap: 14 }} aria-label="任务等级">
+    <header className="row" style={{ gap: 8 }}><h3 style={{ margin: 0 }}>任务等级</h3><span className="muted">已选 {selected.length} 个</span><OpsHint label="任务等级在 App 中如何展示">App 商城的商品介绍会展示「可运行初级 / 中级 AI 算力任务」这类文案，使用商品已发布的等级。此处预览当前选择，审批发布后才更新 App。<br />等级只决定设备运行哪些任务，不决定赚多少钱；收益由月收益目标配平。App 不展示具体任务名、时长或数量。</OpsHint></header>
+    <div className="tp-choices">{FIXED_DEVICE_LEVELS.map(level => {
+      const pool = pools.find(pool => pool.code === level.code);
+      return <label key={level.code}><input type="checkbox" checked={selected.includes(level.code)} onChange={event => onChange(event.target.checked ? [...selected, level.code] : selected.filter(code => code !== level.code))} /><span><b>{level.code} {level.name}</b>{pool && <small style={{ display: "block", marginTop: 4, color: "var(--ink-3)" }}>{pool.enabledCount} 个启用任务</small>}</span></label>;
+    })}</div>
+    <div className="tint" style={{ display: "flex", flexDirection: "column", gap: 6, padding: "12px 14px" }}><span className="muted" style={{ fontSize: 12 }}>App 展示预览</span><output aria-label="App 任务等级文案预览" style={{ fontSize: 14 }}>{appPreview}</output></div>
   </section>;
 }

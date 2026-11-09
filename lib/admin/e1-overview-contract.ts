@@ -1,5 +1,3 @@
-import { supportsDeviceMonthlyTarget } from "./device-monthly-target.ts";
-
 type UnknownRecord = Record<string, unknown>;
 
 export interface E1SkuPageContract<T = UnknownRecord> {
@@ -104,7 +102,6 @@ export function e1SkuInvalidFields(value: unknown): string[] {
     if (!isOptionalNonNegativeNumberLike(value[key])) invalid.push(key);
   }
   if (value.monthlyTargetUsdt != null) {
-    if (typeof value.skuId === "string" && !supportsDeviceMonthlyTarget(value.skuId, String(value.tier ?? ""))) invalid.push("monthlyTargetUsdt.skuId");
     if (value.monthlyTargetBandPct == null) invalid.push("monthlyTargetBandPct");
     if (value.derivedDailyEarnUsdt == null) invalid.push("derivedDailyEarnUsdt");
     if (value.productType === "SHARE" || value.tier === "Share") {
@@ -112,6 +109,8 @@ export function e1SkuInvalidFields(value: unknown): string[] {
       if (value.derivedShareYieldMaxPct == null) invalid.push("derivedShareYieldMaxPct");
     }
   }
+  if (!isStringArray(value.allowedPoolCodes)) invalid.push("allowedPoolCodes");
+  if (typeof value.datacenter === "string" && value.datacenter.length > 128) invalid.push("datacenter");
   if (value.features !== undefined && value.features !== null && !isStringArray(value.features)) invalid.push("features");
   if (!validPurchaseGate(value.purchaseGate)) invalid.push("purchaseGate");
   if (typeof value.trialEligible !== "boolean") invalid.push("trialEligible");

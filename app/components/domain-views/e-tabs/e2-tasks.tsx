@@ -1,433 +1,120 @@
-import { operatorCopyText } from "@/lib/admin/operator-copy";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Btn, CodeTag, OperationConfirmModal } from "../design-kit";
-import { AutoGloss } from "@/app/components/kit/gloss";
+import { useCallback, useEffect, useState } from "react";
+import { Btn, Badge, Drawer, DataListPager } from "../design-kit";
+import { displayAdminError } from "@/lib/admin/error-messages";
+import { TASK_CLASSES, TASK_CLASS_LABELS } from "@/lib/admin/task-classes";
+import { fetchDisableImpact, fetchPoolTasks, fetchTaskPools, randomPoolTasks, setPoolTaskStatus,
+  type DisableImpact, type PoolTask, type TaskClass, type TaskPool } from "@/lib/admin/task-pool-client";
 import type { EViewCtx } from "./types";
-import type { OpsTask } from "@/lib/admin/platform-types";
-import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import { EStats } from "./stats";
-import { PhoneCalibrationPanel } from "./phone-calibration-panel";
-import { fetchE2TaskPricing, updateE2TaskPricing, type E2TaskPricingClass } from "@/lib/admin/e2-client";
-import { pendingConfigApproval, submitConfigApproval } from "@/lib/admin/withdrawal-config-approval";
-import { useAdminAuth } from "@/lib/store/admin-auth";
+import { OpsHint } from "./ops-hint";
 
-/* ── 任务类型 → 图标 kind(单一真源:taskClass 权威枚举 ↔ 图标)── */
-type Kind = "llm" | "img" | "vid" | "ft" | "em" | "speech" | "unknown";
-const KIND_ORDER: Kind[] = ["img", "vid", "llm", "ft", "em", "speech", "unknown"];
-const taskUnitText = (value: string): string => ({ "/job": "/项任务", "/1k": "/千单位", "/min": "/分钟" } as Record<string,string>)[value] ?? "（单位未知）";
-const KIND_LABEL: Record<Kind, string> = { llm: "大模型推理", img: "图像生成", vid: "视频生成", ft: "微调", em: "向量计算", speech: "语音处理", unknown: "类型未知" };
-// 新增/编辑任务弹窗的 taskClass 权威枚举 → 图标 kind(与 e-view.tsx 抽屉 select 同源)。
-const CLASS_TO_KIND: Record<string, Exclude<Kind, "unknown">> = { LL: "llm", IG: "img", VG: "vid", FT: "ft", EM: "em", SP: "speech" };
-
-function taskKindOf(t: OpsTask): Kind {
-  if (t.taskClass && CLASS_TO_KIND[t.taskClass]) return CLASS_TO_KIND[t.taskClass];
-  return "unknown";
-}
-
-function KindIcon({ k }: { k: Kind }) {
-  const p: Record<Kind, ReactNode> = {
-    llm: <><path d="M12 2v4M12 18v4M2 12h4M18 12h4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" /><circle cx="12" cy="12" r="3" /></>,
-    img: <><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="M21 15l-5-5L5 21" /></>,
-    vid: <><rect x="2" y="6" width="14" height="12" rx="2" /><path d="M16 10l6-3v10l-6-3z" /></>,
-    ft: <><path d="M14 4l6 6-12 12H2v-6z" /><path d="M14 4l3-3 3 3-3 3z" /></>,
-    em: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
-    speech: <><path d="M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3z" /><path d="M5 11a7 7 0 0014 0M12 18v3M9 21h6" /></>,
-    unknown: <><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.7 2.7 0 015 1.4c0 1.9-2.5 2.1-2.5 3.6" /><path d="M12 17h.01" /></>,
-  };
-  return <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>{p[k]}</svg>;
-}
-const LockMini = () => <svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V7a4 4 0 018 0v4" /></svg>;
-const LockSm = () => <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V7a4 4 0 018 0v4" /></svg>;
-const CheckSm = () => <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12l4 4 10-10" /></svg>;
-
-const satColor = (pct: number): string => (pct >= 75 ? "var(--warning)" : pct >= 40 ? "var(--success)" : "var(--ink-4)");
-
-function heatBg(v: number): string {
-  if (v < 20) return "var(--surface-3)";
-  if (v < 40) return "rgba(41,210,127,.4)";
-  if (v < 60) return "var(--success)";
-  if (v < 75) return "var(--warning)";
-  if (v < 88) return "var(--brand-2)";
-  return "var(--danger)";
-}
-
-function money(value: number) {
-  return `$${value.toFixed(value >= 10 ? 0 : 2)}`;
-}
-function amount(value: number) {
-  return value.toFixed(6).replace(/\.?0+$/, "");
-}
-
-const LIST_PAGE_SIZE = 6;   // 任务列表每页行数
-
-type PricingAction =
-  | { row: E2TaskPricingClass; field: "minReward" | "maxReward" | "minVRAM" }
-  | { row: E2TaskPricingClass; field: "enabled"; nextEnabled: boolean }
-  | { field: "queueSaturation"; current: number; revision?: string };
-
-const PRICING_FIELD_LABEL = { minReward: "最低奖励", maxReward: "最高奖励", minVRAM: "最低显存", queueSaturation: "队列饱和度" };
-
+type PoolDialog = { kind: "random" | "status"; key: string; pool: TaskPool; enabled?: boolean; ids?: string[] };
 export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
-  const session = useAdminAuth((state) => state.session);
-  const tasks = useMemo(() => ctx.tasks.filter((task) => task.simulation), [ctx.tasks]);
-  const canMutate = ctx.canWriteE2 && !ctx.e2Loading && !ctx.e2Error && !!ctx.e2Pricing;
-  const canMutateTasks = ctx.canWriteE2 && !ctx.e2Loading && ctx.e2TaskCatalogReady;
-  const [teaserDevice, setTeaserDevice] = useState("phone");
-  const [pricingAction, setPricingAction] = useState<PricingAction | null>(null);
-  useEffect(() => {
-    if (!canMutate) setPricingAction(null);
-  }, [canMutate]);
-
-  // ── 任务列表:分类筛选 + 翻页(纯视图态)──
-  const [filterKind, setFilterKind] = useState<"all" | Kind>("all");
+  const [pools, setPools] = useState<TaskPool[]>([]);
+  const [code, setCode] = useState("");
+  const [rows, setRows] = useState<PoolTask[]>([]);
+  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [taskClass, setTaskClass] = useState("");
+  const [enabledFilter, setEnabledFilter] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [dialog, setDialog] = useState<PoolDialog | null>(null);
+  const [count, setCount] = useState("10");
+  const [classes, setClasses] = useState<TaskClass[]>([]);
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [dialogError, setDialogError] = useState("");
+  const [impact, setImpact] = useState<DisableImpact | null>(null);
+  const [impactLoading, setImpactLoading] = useState(false);
+  const pool = pools.find(row => row.code === code);
+  const refresh = useCallback(async () => {
+    setLoading(true); setError("");
+    try {
+      const levels = await fetchTaskPools(); setPools(levels);
+      const current = levels.some(row => row.code === code) ? code : levels[0]?.code ?? "";
+      if (current !== code) { setCode(current); setPage(1); }
+      if (current) {
+        const tasks = await fetchPoolTasks(current, { taskClass, enabled: enabledFilter, pageNum: current === code ? page : 1, pageSize });
+        setRows(tasks.records); setTotal(tasks.total);
+      } else { setRows([]); setTotal(0); }
+      setSelected([]);
+    } catch (cause) { setError(displayAdminError(cause)); setRows([]); setTotal(0); setSelected([]); }
+    finally { setLoading(false); }
+  }, [code, page, pageSize, taskClass, enabledFilter]);
+  useEffect(() => { void refresh(); }, [refresh]);
 
-  // 每个任务的 kind(真源 taskClass)— 列表筛选/图标/计数共用,单点派生。
-  const kindMap = useMemo(() => new Map(tasks.map((t) => [t.id, taskKindOf(t)])), [tasks]);
-  const kindCount = (k: Kind): number => tasks.reduce((acc, t) => acc + (kindMap.get(t.id) === k ? 1 : 0), 0);
-  const tasksWithSat = tasks.filter((t): t is OpsTask & { sat: number } => t.sat != null && Number.isFinite(t.sat));
-  const avgPrice = tasks.length ? tasks.reduce((sum, t) => sum + t.price, 0) / tasks.length : 0;
-  const avgSat = tasksWithSat.length ? Math.round((tasksWithSat.reduce((sum, t) => sum + t.sat, 0) / tasksWithSat.length) * 100) : null;
-  const peakTask = [...tasksWithSat].sort((a, b) => b.sat - a.sat)[0];
-  const maxPriceTask = [...tasks].sort((a, b) => b.price - a.price)[0];
-  const queueRank = [...tasksWithSat].sort((a, b) => b.sat - a.sat).slice(0, 5);
-  const donutOffset = avgSat == null ? 464.96 : 464.96 * (1 - avgSat / 100);
-  const pricingRows = ctx.e2Pricing?.taskClasses ?? [];
-  const selectedTeaser = ctx.e2Pricing?.teaser.find((row) => row.deviceClass === teaserDevice);
-
-  const pricingCurrent = pricingAction?.field === "queueSaturation" ? pricingAction.current : pricingAction?.row[pricingAction.field];
-  const pricingRevision = pricingAction?.field === "queueSaturation" ? pricingAction.revision : pricingAction?.row.pricingRevision;
-  const pricingTaskClass = pricingAction && pricingAction.field !== "queueSaturation" ? pricingAction.row.taskClass : undefined;
-  const approvalScope = pricingAction && pricingAction.field !== "enabled" ? {
-    objectId: pricingAction.field === "queueSaturation" ? "queue_saturation" : pricingAction.row.taskId,
-    field: pricingAction.field,
-  } : null;
-  const pendingApproval = session && approvalScope && pendingConfigApproval("E2", session.adminId, approvalScope);
-  const requiresPricingApproval = (newValue?: string) => {
-    const next = Number(newValue);
-    return !!approvalScope && typeof pricingCurrent === "number" && !!newValue?.trim() && Number.isFinite(next)
-      && (approvalScope.field === "minVRAM" ? next < pricingCurrent : next > pricingCurrent);
-  };
-  const submitPricingApproval = async (reason: string, newValue?: string, mode: boolean | "retry-original" = false) => {
-    if (!canMutate || !session || !approvalScope) throw new Error("当前账号缺少调整任务定价的权限。");
-    if (!pricingRevision && mode === false) throw new Error("暂未取得任务定价版本，请刷新页面后重试。");
-    const { field } = approvalScope;
-    const change = field === "queueSaturation" ? { queueSaturation: newValue }
-      : { taskClass: pricingTaskClass, [field === "minVRAM" ? "minVram" : field]: field === "minVRAM" ? Number(newValue) : newValue };
-    const result = await submitConfigApproval("E2", session, { ...change, expectedRevision: pricingRevision ?? "" },
-      reason, fetchE2TaskPricing, mode, approvalScope);
-    if (!result) return false;
-    ctx.toast(result.acknowledgement);
-    setPricingAction(null);
-    await ctx.refreshE2();
-    return true;
-  };
-
-  const filtered = filterKind === "all" ? tasks : tasks.filter((t) => kindMap.get(t.id) === filterKind);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / LIST_PAGE_SIZE));
-  const curPage = Math.min(page, totalPages);   // clamp 防筛选/缩页越界
-  const pageRows = filtered.slice((curPage - 1) * LIST_PAGE_SIZE, curPage * LIST_PAGE_SIZE);
-
-  // donut 负载分布(派生,与任务列表同源,随增删自动同步)。
-  const hiLoad = tasksWithSat.filter((t) => t.sat >= 0.75).length;
-  const loLoad = tasksWithSat.filter((t) => t.sat < 0.40).length;
-  const midLoad = tasksWithSat.length - hiLoad - loLoad;
-
-  if (ctx.e2Loading) return <div className="tint" role="status">正在加载…</div>;
-  return (
-    <>
-      <PhoneCalibrationPanel ctx={ctx} thresholdsOnly />
-      <EStats items={[
-        { k: "任务类型", v: pricingRows.length, sub: pricingRows.length === 6 ? "6 类已齐" : "类型不全", tone: pricingRows.length === 6 ? "ok" : "warn" },
-        { k: "平均单价", v: money(avgPrice), sub: tasks.length ? `${tasks.length} 个任务均价` : "暂无任务" },
-        { k: "平均饱和度", v: avgSat == null ? "—" : `${avgSat}%`, sub: peakTask ? `最高 ${Math.round(peakTask.sat * 100)}% · ${nexGridBrandText(peakTask.n)}` : "暂无数据", tone: avgSat != null && avgSat >= 75 ? "warn" : "cyan" },
-        { k: "最高单价任务", v: money(maxPriceTask?.price ?? 0), sub: nexGridBrandText(maxPriceTask?.n ?? "暂无任务"), tone: "cyan" },
-      ]} />
-
-      {ctx.e2Error && (
-        <section className="tint danger" role="alert" style={{ marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-          <span>设备收益数据加载失败，页面上的空值不代表真的是零：{ctx.e2Error}</span>
-          <Btn sm variant="primary" onClick={() => void ctx.refreshE2()}>重试</Btn>
-        </section>
-      )}
-
-      <section className="pane" data-testid="e2-task-pricing-canonical">
-        <div className="pane-h">
-          <span className="ttl">6 类 AI 任务定价</span>
-          <span className="sub">只对新派的任务生效</span>
-          <span className="r"><CodeTag tone={pricingRows.length === 6 ? "electric" : "warn"}>{pricingRows.length}/6 类</CodeTag></span>
-        </div>
-        <div style={{ overflowX: "auto", padding: "8px 16px 14px" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-            <thead><tr style={{ color: "var(--ink-4)", textAlign: "left" }}><th>任务类型</th><th>代表模型</th><th title="最低奖励">最低奖励</th><th title="最高奖励">最高奖励</th><th title="最低显存">最低显存</th><th>接单状态</th><th>操作</th></tr></thead>
-            <tbody>{pricingRows.map((row) => <tr key={row.taskClass} style={{ borderTop: "1px solid var(--border)" }}>
-              <td style={{ padding: "11px 6px", fontFamily: "var(--mono)", fontWeight: 700 }}>{row.taskClass} · {KIND_LABEL[CLASS_TO_KIND[row.taskClass]]}</td>
-              <td>{row.models.map(nexGridBrandText).join(" / ")}</td><td className="tnum">${amount(row.minReward)}</td><td className="tnum">${amount(row.maxReward)}</td>
-              <td className="tnum">{row.minVRAM} GB</td><td><CodeTag tone={row.enabled ? "electric" : "warn"}>{row.enabled ? "派发中" : "已停止派发"}</CodeTag></td>
-              <td><div className="row" style={{ gap: 5 }}>
-                {canMutate && <>
-                  <Btn sm onClick={() => setPricingAction({ row, field: "minReward" })}>调最低奖励</Btn>
-                  <Btn sm onClick={() => setPricingAction({ row, field: "maxReward" })}>调最高奖励</Btn>
-                  <Btn sm onClick={() => setPricingAction({ row, field: "minVRAM" })}>调最低显存</Btn>
-                  <Btn sm variant={row.enabled ? "danger" : "primary"} onClick={() => setPricingAction({ row, field: "enabled", nextEnabled: !row.enabled })}>{row.enabled ? "停止派发" : "恢复"}</Btn>
-                </>}
-              </div></td>
-            </tr>)}</tbody>
-          </table>
-          {!ctx.e2Loading && pricingRows.length !== 6 && <div className="tint danger tiny" style={{ marginTop: 10 }}>任务类型不全（应为 6 类），请检查任务设置。</div>}
-        </div>
-      </section>
-
-      <div className="e3-main">
-        <section className="pane" data-testid="e2-queue-saturation">
-          <div className="pane-h"><span className="ttl" title="任务队列饱和度">队列饱和度</span><span className="r"><CodeTag>{ctx.e2Pricing?.queueSaturation ?? "—"}</CodeTag></span></div>
-          <div style={{ padding: 16 }}>
-            <div className="tnum" style={{ fontSize: 30, fontWeight: 700 }}>{ctx.e2Pricing ? `${Math.round(ctx.e2Pricing.queueSaturation * 100)}%` : "—"}</div>
-            <div className="tint tiny" style={{ margin: "10px 0" }}>每日潜在收益 =（一天的秒数 ÷ 平均处理秒数）× 饱和度 × 平均奖励。</div>
-            {canMutate && <Btn variant="primary" onClick={() => setPricingAction({ field: "queueSaturation", current: ctx.e2Pricing!.queueSaturation, revision: ctx.e2Pricing!.queueSaturationRevision })}>调整全局队列饱和度</Btn>}
-          </div>
-        </section>
-        <section className="pane" data-testid="e2-locked-teaser">
-          <div className="pane-h"><span className="ttl" title="升级后能多赚多少">升级收益预览</span><span className="sub">按设备显存档位</span></div>
-          <div style={{ padding: 16 }}>
-            <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>{(ctx.e2Pricing?.teaser ?? []).map((row) => <Btn key={row.deviceClass} sm variant={teaserDevice === row.deviceClass ? "primary" : undefined} onClick={() => setTeaserDevice(row.deviceClass)}>{({ phone: "手机", "cloud-share": "云端共享份额", s1: "入门设备", pro: "专业设备", rack: "机柜设备" } as Record<string,string>)[row.deviceClass.toLowerCase()] ?? "其他设备"} · {row.vram}GB</Btn>)}</div>
-            <div style={{ marginTop: 14, fontSize: 13 }}>当前接不了的任务：<b>{selectedTeaser?.lockedTasks.map(code => KIND_LABEL[CLASS_TO_KIND[code]] ?? "其他任务").join(" / ") || "无"}</b></div>
-            <div style={{ marginTop: 8, fontSize: 13 }}>升级后每日可多赚：<b className="tnum">${amount(selectedTeaser?.dailyPotential ?? 0)} / 天</b></div>
-          </div>
-        </section>
+  function open(kind: PoolDialog["kind"], status?: boolean) {
+    if (!pool) return;
+    setCount("10"); setClasses([]); setReason(""); setDialogError(""); setImpact(null);
+    const ids = rows.filter(row => selected.includes(row.taskTypeId) && row.enabled !== status).map(row => row.taskTypeId);
+    setDialog({ kind, pool, enabled: status, ids, key: crypto.randomUUID() });
+    if (kind === "status" && status === false) {
+      setImpactLoading(true);
+      void fetchDisableImpact(pool.code, ids).then(setImpact).catch(cause => setDialogError(displayAdminError(cause))).finally(() => setImpactLoading(false));
+    }
+  }
+  const reasonReady = reason.trim().length >= 8 && reason.trim().length <= 200;
+  const formReady = reasonReady && !impactLoading && (dialog?.kind !== "status" || dialog.enabled || impact !== null)
+    && (dialog?.kind !== "random" || /^\d+$/.test(count) && Number(count) >= 1 && Number(count) <= 50);
+  async function submit() {
+    if (!dialog || !formReady || saving) return;
+    setSaving(true); setDialogError("");
+    try {
+      if (dialog.kind === "random") await randomPoolTasks(dialog.pool.code, { count: Number(count), taskClasses: classes.length ? classes : undefined, idempotencyKey: dialog.key, reason: reason.trim() });
+      if (dialog.kind === "status") await setPoolTaskStatus(dialog.pool.code, { taskTypeIds: dialog.ids!, enabled: dialog.enabled!, idempotencyKey: dialog.key, reason: reason.trim() });
+      setDialog(null); ctx.toast("已生效"); await refresh();
+    } catch (cause) { setDialogError(displayAdminError(cause)); }
+    finally { setSaving(false); }
+  }
+  const selectedRows = rows.filter(row => selected.includes(row.taskTypeId));
+  return <div className="task-pools">
+    <div className="row tp-levels" role="tablist" aria-label="任务等级">
+      {pools.map(level => <button type="button" role="tab" aria-selected={level.code === code} className={`tp-level${level.code === code ? " on" : ""}`} key={level.code} onClick={() => { setCode(level.code); setPage(1); setSelected([]); }}>
+        <b>{level.code} {level.name}</b><span>· {level.taskCount}</span>
+      </button>)}
+      <span style={{ marginLeft: "auto" }}><Btn sm disabled={loading} onClick={() => void refresh()}>刷新</Btn></span>
+    </div>
+    {error && <div className="tint danger" role="alert">{error}</div>}
+    {pool && <section className="pane">
+      <div className="tp-pool-head">
+        <div><h2>{pool.code} {pool.name}</h2><div className="row" style={{ gap: 7, marginTop: 8 }}>
+          <span className="muted">被 {pool.referencedBy.length} 个商品使用{pool.referencedBy.length ? `：${pool.referencedBy.slice(0, 3).map(row => row.productName).join("、")}${pool.referencedBy.length > 3 ? "…" : ""}` : ""}</span><OpsHint label="查看使用此等级的商品">{pool.referencedBy.length ? pool.referencedBy.map(row => <div key={row.productKey}>{row.productName} · {{ PUBLISHED: "已发布", DRAFT: "草稿", DELISTED_WITH_DEVICES: "已下架，仍有设备" }[row.state]}</div>) : "暂无商品引用"}</OpsHint>
+        </div></div>
+        <div className="tp-load"><strong>{pool.avgDurationMinutes == null ? "平均时长 —" : `平均时长 ${Number(pool.avgDurationMinutes).toLocaleString("zh-CN", { maximumFractionDigits: 1 })} 分钟`}</strong><span>约 {pool.estTasksPerDevicePerDay == null ? "—" : Number(pool.estTasksPerDevicePerDay).toLocaleString("zh-CN", { maximumFractionDigits: 1 })} 单/台/天</span></div>
       </div>
-
-      {/* 手机算力档位收益 —— 手机端按校准能力分 5 档,每档日产 USDT/NEX 运营可调 */}
-      <section className="pane">
-        <div className="pane-h">
-          <span className="ttl">手机算力收益 · 5 档</span>
-        </div>
-        <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-          {ctx.phoneTiers.length === 0 && !ctx.e2Loading ? <div className="tint tiny">暂无手机档位数据。</div> : ctx.phoneTiers.map((t) => {
-            const u = amount(t.dailyUsdt);
-            const n = amount(t.dailyNex);
-            return (
-              <div key={t.tier} style={{ display: "grid", gridTemplateColumns: "auto 1fr auto auto", gap: 14, alignItems: "center", paddingTop: t.tier === 1 ? 0 : 10, borderTop: t.tier === 1 ? "none" : "1px solid var(--border)" }}>
-                <span style={{ minWidth: 40, height: 26, padding: "0 8px", borderRadius: 7, background: "var(--brand-soft)", color: "var(--brand)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)" }}>T{t.tier}</span>
-                <div className="col" style={{ gap: 2 }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{operatorCopyText(t.name)}</span>
-                  <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{operatorCopyText(t.note)}</span>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div className="tnum" style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>${u}<span style={{ fontSize: 11, color: "var(--ink-4)", fontWeight: 400 }}> /天</span></div>
-                  <div className="tnum" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{n} UVT/天</div>
-                </div>
-                {canMutate && <div className="row" style={{ gap: 6 }}>
-                  <Btn sm variant="primary" onClick={() => ctx.openActionConfirm({ briefKind: "config",
-                    name: `调整手机 T${t.tier} 每日收益（USDT）`, op: "phone-tier", phoneTier: t.tier, phoneField: "dailyUsdt", amplify: true,
-                    edit: { kind: "number", current: u, unit: "USDT/天", min: 0.00001, step: 0.00001, disallowCurrent: true },
-                    detail: `手机 T${t.tier}（${operatorCopyText(t.name)}）当前每日 $${u}。调高会让平台多付钱，提交时检查兑付覆盖率；从下个结算周期生效，已发的收益不变。`,
-                  })}>调 USDT</Btn>
-                  <Btn sm onClick={() => ctx.openActionConfirm({ briefKind: "config",
-                    name: `调整手机 T${t.tier} 每日收益（UVT）`, op: "phone-tier", phoneTier: t.tier, phoneField: "dailyNex", amplify: true,
-                    edit: { kind: "number", current: n, unit: "UVT/天", min: 0.00001, step: 0.00001, disallowCurrent: true },
-                    detail: `手机 T${t.tier}（${operatorCopyText(t.name)}）当前每日 ${n} UVT。调高会让平台多发 UVT，提交时检查兑付覆盖率；从下个结算周期生效。`,
-                  })}>调 UVT</Btn>
-                </div>}
-              </div>
-            );
-          })}
-        </div>
-        <div className="tint cyan tiny" style={{ margin: "0 16px 14px" }}>
-          <AutoGloss>这 5 档就是 App 手机算力卡片上显示的每日收益，改这里用户看到的数字就会变。调高某一档平台会多付钱，提交时检查兑付覆盖率，不够会被拦下。从下个结算周期开始算，已发的收益不变。T3 是典型机型，对应宣传里说的 </AutoGloss><span className="nowrap">$0.06/天</span>。
-        </div>
-      </section>
-
-      <section className="pane" data-testid="e2-onboarding-yield-comparison">
-        <div className="pane-h">
-          <span className="ttl">新用户引导里的收益对比</span>
-          <span className="sub">和 App 校准结果使用同一数据</span>
-        </div>
-        <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-          {!ctx.e2Loading && ctx.yieldComparisons.length !== 4 && <div className="tint danger tiny">数据不全，请检查在售商品和手机 T3 档位。</div>}
-          {ctx.yieldComparisons.map((row) => {
-            return (
-            <div key={row.configKey} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 14, alignItems: "center", paddingTop: row.sortOrder === 1 ? 0 : 10, borderTop: row.sortOrder === 1 ? "none" : "1px solid var(--border)" }}>
-              <div className="col" style={{ gap: 2 }}>
-                <span style={{ fontSize: 13.5, fontWeight: 600 }}>{nexGridBrandText(row.label)}</span>
-                <span className="tint tiny">{row.configKey === "phone" ? "来源：手机 T3 档位" : "来源：商品管理"}</span>
-              </div>
-              <div className="tnum" style={{ textAlign: "right", fontSize: 12.5 }}>${amount(row.dailyUsdt)} · {amount(row.dailyNex)} UVT/天</div>
-              <span className="tint tiny">请到来源处修改</span>
-            </div>
-            );
-          })}
-        </div>
-      </section>
-
-      <div className="e3-main">
-        {/* 左:任务列表(分类筛选 + 翻页) */}
-        <section className="pane">
-          <div className="pane-h">
-            <span className="ttl">任务列表</span>
-            <span className="tcount">共 {tasks.length} 个{filterKind !== "all" ? ` · 筛选 ${filtered.length}` : ""}</span>
-            <span className="sub">与 App 任务页同步</span>
-          </div>
-          <div className="filter-bar">
-            <span className={`fchip${filterKind === "all" ? " on" : ""}`} onClick={() => { setFilterKind("all"); setPage(1); }}>全部 {tasks.length}</span>
-            <span className="fdiv" aria-hidden />
-            {KIND_ORDER.filter((k) => k !== "unknown" || kindCount(k) > 0).map((k) => (
-              <span key={k} className={`fchip${filterKind === k ? " on" : ""}`} onClick={() => { setFilterKind(k); setPage(1); }}>
-                {KIND_LABEL[k]} {kindCount(k)}
-              </span>
-            ))}
-          </div>
-          <div className="task-list">
-            {pageRows.length === 0 ? (
-              <div className="rv-empty">这个分类下没有任务</div>
-            ) : pageRows.map((t) => {
-              const k = kindMap.get(t.id) ?? "unknown";
-              const pct = t.sat == null ? null : Math.round(t.sat * 100);
-              const minVram = Number.parseInt(t.minVRAM ?? "", 10);
-              const reqLabel = Number.isFinite(minVram) ? `最低 ${minVram}GB 显存` : "最低显存未知";
-              const locked = Number.isFinite(minVram) && minVram > 8;
-              return (
-                <div className="task" key={t.id}>
-                  <span className={`ic ${k}`}><KindIcon k={k} /></span>
-                  <div className="nm">{nexGridBrandText(t.n)}<span className="pid">{t.id}</span><small style={{ display: "block", color: "var(--ink-4)", marginTop: 4 }}>{t.simulation ? `固定 ${t.simulation.durationMinutes} 分钟 · v${t.simulation.version} · ${t.simulation.enabled ? "启用" : "停用"}` : <>权重 {t.selectionWeight ?? 1} · 预计 {t.expectedDurationMinSec ?? "—"}–{t.expectedDurationMaxSec ?? "—"} 秒</>}</small></div>
-                  <div className="price">{t.simulation ? `${t.simulation.baseReward} ${t.simulation.asset}` : `$${t.price.toFixed(2)}`}<small>{t.simulation ? "每任务基础奖励" : taskUnitText(t.unit)}</small></div>
-                  <span className={`req ${locked ? "lock" : "open"}`}>{locked && <LockMini />}{t.simulation ? "按商品勾选范围" : reqLabel}</span>
-                  <div className="sat">
-                    <div className="bar">{pct == null ? null : <div className="f" style={{ width: `${pct}%`, background: satColor(pct) }} />}</div>
-                    <span className="pct">{pct == null ? "—" : `${pct}%`}</span>
-                  </div>
-                  {canMutateTasks && <div className="acts">
-                    <button className="primary" onClick={() => ctx.openEditTask(t)}>编辑</button>
-                    {!t.simulation && <button onClick={() => ctx.delTask({ id: t.id, n: t.n })}>下架</button>}
-                  </div>}
-                </div>
-              );
-            })}
-          </div>
-          {totalPages > 1 && (
-            <div className="rv-pager">
-              <button className="step" disabled={curPage <= 1} onClick={() => setPage(curPage - 1)}>‹ 上一页</button>
-              <span className="ind">第 <b>{curPage}</b> / {totalPages} 页 · 共 {filtered.length} 个</span>
-              <button className="step" disabled={curPage >= totalPages} onClick={() => setPage(curPage + 1)}>下一页 ›</button>
-            </div>
-          )}
-        </section>
-
-        {/* 右 rail:饱和度 donut + 锁定钩子 */}
-        <aside className="rail">
-          <div className="donut-card">
-            <div className="h">全网队列饱和度</div>
-            <div className="s">当前均值</div>
-            <div className="donut-wrap">
-              <svg width={180} height={180} viewBox="0 0 180 180">
-                <circle className="ring-bg" cx="90" cy="90" r="74" fill="none" strokeWidth="14" />
-                <circle className="ring-f" cx="90" cy="90" r="74" fill="none" strokeWidth="14" strokeDasharray="464.96" strokeDashoffset={donutOffset} />
-              </svg>
-              <div className="ctr"><div className="num">{avgSat == null ? "—" : avgSat}<small>{avgSat == null ? "" : "%"}</small></div><div className="lb">{peakTask ? `最高 ${Math.round(peakTask.sat * 100)}%` : "暂无数据"}</div></div>
-            </div>
-            <div className="legend">
-              <div className="row"><span className="dot" style={{ background: "var(--warning)" }} /><span className="nm">高负载(≥75%)</span><span className="pct">{hiLoad} 个</span></div>
-              <div className="row"><span className="dot" style={{ background: "var(--success)" }} /><span className="nm">中负载(40%≤负载&lt;75%)</span><span className="pct">{midLoad} 个</span></div>
-              <div className="row"><span className="dot" style={{ background: "var(--ink-4)" }} /><span className="nm">低负载(&lt;40%)</span><span className="pct">{loLoad} 个</span></div>
-            </div>
-          </div>
-          <div className="hook-card">
-            <div className="h">任务负载排行<span className="tag">实时</span></div>
-            {queueRank.length === 0 ? <div className="tint tiny">暂无任务排行</div> : queueRank.map((task) => (
-              <div className={`hook-row${task.req.includes("需") ? "" : " up"}`} key={task.id}>
-                <span className="ic">{task.req.includes("需") ? <LockSm /> : <CheckSm />}</span>
-                <span className="nm">{nexGridBrandText(task.n)}</span>
-                <span className="ct">{Math.round(task.sat * 100)}% · {money(task.price)}{taskUnitText(task.unit)}</span>
-              </div>
-            ))}
-          </div>
-        </aside>
+      <div className="tp-toolbar">
+        {ctx.canWriteE2 && <><Btn variant="primary" disabled={loading} onClick={() => open("random")}>随机添加任务</Btn>
+          <Btn disabled={loading || !selectedRows.some(row => row.enabled)} onClick={() => open("status", false)}>批量停用</Btn>
+          <Btn disabled={loading || !selectedRows.some(row => !row.enabled)} onClick={() => open("status", true)}>批量启用</Btn></>}
+        <span className="muted">{selected.length ? `已选 ${selected.length} 项` : `${pool.enabledCount} 个启用中`}</span>
+        <OpsHint>等级只决定跑什么任务，收益由商品的月收益目标决定。当前任务保持原配置，修改只影响之后的新任务。每级最多 200 个启用任务、300 个任务（含停用）。</OpsHint>
+        <select className="fld" aria-label="任务类型筛选" value={taskClass} onChange={event => { setTaskClass(event.target.value); setPage(1); }}><option value="">全部类型</option>{TASK_CLASSES.map(c => <option key={c} value={c}>{TASK_CLASS_LABELS[c]}</option>)}</select>
+        <select className="fld" aria-label="任务启用状态筛选" value={enabledFilter} onChange={event => { setEnabledFilter(event.target.value); setPage(1); }}><option value="">全部状态</option><option value="true">启用中</option><option value="false">已停用</option></select>
       </div>
-
-      {/* 任务饱和度快照仅采用当前运营数据，不在前端合成 24h 曲线。 */}
-      <div className="heat-card">
-        <div className="heat-h">
-          <span className="ttl">当前任务饱和度</span>
-          <span className="sub">当前各任务的排队饱和度</span>
-          {peakTask && <span className="r">最高 · {peakTask.n} {Math.round(peakTask.sat * 100)}%</span>}
-        </div>
-        <div className="heat-zones">
-          <div className="heat-zone">
-              <div className="zone-h">
-                <span className="z-ttl">任务队列</span>
-                <span className="z-sub">{tasks.length} 任务</span>
-              </div>
-              <div className="heat-grid">
-                {tasks.map((t) => {
-                  const pct = t.sat == null ? null : Math.max(0, Math.min(100, Math.round(t.sat * 100)));
-                  return (
-                    <div key={t.id} style={{ display: "contents" }}>
-                      <span className="lbl" title={nexGridBrandText(t.n)}>{nexGridBrandText(t.n)}</span>
-                      <div className="heat-row" title={pct == null ? `${nexGridBrandText(t.n)} · 暂无饱和度` : `${nexGridBrandText(t.n)} · 当前饱和度 ${pct}%`}>
-                        {pct == null
-                          ? <span className="muted tiny">—</span>
-                          : <div className="heat-cell" style={{ background: heatBg(pct), width: `${Math.max(3, pct)}%`, minWidth: 10 }} />}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-          </div>
-        </div>
-        <div className="heat-legend">
-          <span>按任务运行情况汇总</span>
-        </div>
+      <div className="tp-table-wrap"><table className="tp-table"><thead><tr>
+        <th><input type="checkbox" aria-label="选择本页全部任务" disabled={!ctx.canWriteE2 || !rows.length || loading} checked={!!rows.length && rows.every(row => selected.includes(row.taskTypeId))} onChange={event => setSelected(event.target.checked ? rows.map(row => row.taskTypeId) : [])} /></th>
+        <th>任务名称</th><th>类型</th><th>时长</th><th>状态</th>
+      </tr></thead><tbody>{loading ? <tr><td colSpan={5} className="empty">正在加载…</td></tr> : rows.length ? rows.map(row => <tr key={row.taskTypeId}>
+        <td><input type="checkbox" aria-label={`选择 ${row.name}`} disabled={!ctx.canWriteE2} checked={selected.includes(row.taskTypeId)} onChange={event => setSelected(event.target.checked ? [...selected, row.taskTypeId] : selected.filter(id => id !== row.taskTypeId))} /></td>
+        <td><strong>{row.name}</strong></td><td><Badge tone="cyan">{TASK_CLASS_LABELS[row.taskClass]}</Badge></td><td className="tnum">{row.durationMinutes} 分钟</td><td><Badge tone={row.enabled ? "ok" : "neutral"}>{row.enabled ? "启用" : "停用"}</Badge></td>
+      </tr>) : <tr><td colSpan={5} className="empty">{error ? "任务读取失败" : "暂无任务，可随机添加"}</td></tr>}</tbody></table></div>
+      <DataListPager total={total} page={page} pageSize={pageSize} label="任务" onPageChange={setPage} onPageSizeChange={value => { setPageSize(value); setPage(1); }} pageSizeOptions={[10, 20, 50]} />
+    </section>}
+    {!pool && !loading && !error && <div className="empty">固定任务等级尚未加载，请刷新或核对后端配置。</div>}
+    {dialog && <Drawer title={dialog.kind === "random" ? "随机添加任务" : dialog.enabled ? "批量启用任务" : "批量停用任务"}
+      sub={`${dialog.pool.code} ${dialog.pool.name}`} onClose={() => { if (!saving) setDialog(null); }}
+      footer={<><Btn disabled={saving} onClick={() => setDialog(null)}>取消</Btn><Btn variant={dialog.kind === "status" && !dialog.enabled ? "danger" : "primary"} disabled={!formReady || saving} onClick={() => void submit()}>{saving ? "提交中…" : "确认并生效"}</Btn></>}>
+      <div className="tp-dialog">
+          <div className="tp-key-info">{dialog.kind === "random" ? "生成后立即加入当前等级" : `本次${dialog.enabled ? "启用" : "停用"} ${dialog.ids?.length} 个任务`}</div>
+          {dialog.kind === "random" && <><label className="col">任务数量<input className="fld" type="number" min={1} max={50} step={1} value={count} onChange={event => setCount(event.target.value)} /><span className="muted">1–50 个</span></label>
+            <fieldset><legend>限定类型 <span className="muted">（可选，不选则全部类型）</span></legend><div className="tp-choices">{TASK_CLASSES.map(c => <label key={c}><input type="checkbox" checked={classes.includes(c)} onChange={event => setClasses(event.target.checked ? [...classes, c] : classes.filter(item => item !== c))} />{TASK_CLASS_LABELS[c]}</label>)}</div></fieldset>
+            <div className="row"><span className="muted">仅影响之后新派的任务</span><OpsHint>时长为 30–120 分钟、5 分钟整数倍，按类型生成。名称由服务端生成，同一等级内不重名。重复点击本次提交不会重复添加。</OpsHint></div></>}
+          {dialog.kind === "status" && !dialog.enabled && <>{impactLoading ? <div role="status">正在计算停用影响…</div> : impact && (impact.productsLosingAllTasks.length ? <div className="tint warn" role="alert"><strong>以下商品将没有可用任务</strong><ul>{impact.productsLosingAllTasks.map(row => <li key={row.productKey}>{row.productName}</li>)}</ul><b>影响 {impact.devicesAffected} 台设备</b><p>当前单照常完成，之后等待配置；停跑期间不计收益、不补发。</p></div> : <div className="muted">没有商品会失去全部可用任务。</div>)}</>}
+          <label className="col">操作理由<textarea className="fld" rows={3} minLength={8} maxLength={200} value={reason} onChange={event => setReason(event.target.value)} placeholder="请填写本次调整的原因（8–200 字）" /><span className="muted">{reason.trim().length}/200</span></label>
+        {dialogError && <div className="tint danger" role="alert">{dialogError}</div>}
       </div>
-      <p className="f-foot">当前最高单价任务{maxPriceTask ? `「${nexGridBrandText(maxPriceTask.n)}」` : "暂无"}、最高负载任务{peakTask ? `「${nexGridBrandText(peakTask.n)}」` : "暂无"}会影响任务池的展示。改单价<b>只对新派的任务生效</b>，已派出的按原价完成。</p>
-      {pricingAction && <OperationConfirmModal briefKind={pricingAction.field === "enabled" ? "record" : "config"}
-        action={pricingAction.field === "enabled" ? `${pricingAction.nextEnabled ? "恢复派发" : "紧急停止派发"} · ${pricingTaskClass}` : pricingAction.field === "queueSaturation" ? "调整队列饱和度" : `调整 ${pricingTaskClass} · ${PRICING_FIELD_LABEL[pricingAction.field]}`}
-        detail={pricingAction.field === "enabled" && !pricingAction.nextEnabled ? "立即停止派发这类任务；已派出的按原价结算。" : "确认后立即生效，只影响之后新派的任务。"}
-        amplifies={pricingAction.field !== "enabled" || !!pricingAction.nextEnabled}
-        edit={pricingAction.field === "enabled" ? undefined : {
-          kind: "number",
-          current: String(pricingCurrent),
-          unit: pricingAction.field === "minVRAM" ? "GB" : pricingAction.field === "queueSaturation" ? "0–1" : "USDT",
-          min: 0,
-          max: pricingAction.field === "queueSaturation" ? 1 : undefined,
-          step: pricingAction.field === "minVRAM" ? 1 : pricingAction.field === "queueSaturation" ? 0.01 : 0.00001,
-          disallowCurrent: true,
-        }}
-        inlineApproval={approvalScope ? {
-          compareEdit: { rangeLabel: approvalScope.field === "queueSaturation" ? "取值范围 0–1" : undefined },
-          pending: !!pendingApproval,
-          expired: !!pendingApproval && pendingApproval.expiresAt <= Date.now(),
-          resolve: (_, value) => requiresPricingApproval(value) ? {
-            completionCopy: `另一位超管批准前，当前${PRICING_FIELD_LABEL[approvalScope.field]}保持不变。批准后只影响新派任务，已派任务按原价结算。`,
-            disabledReason: pricingRevision ? undefined : "暂未取得任务定价版本，请刷新页面后重试。",
-          } : undefined,
-          recover: (reason, _, value) => submitPricingApproval(reason, value || undefined, true),
-          retry: async () => { await submitPricingApproval("", undefined, "retry-original"); },
-        } : undefined}
-        reasonMin={8}
-        reasonMax={200}
-        onClose={() => setPricingAction(null)}
-        onConfirm={async (reason, newValue) => {
-          if (!canMutate) {
-            ctx.toast("设备收益设置加载失败，本次没有提交");
-            setPricingAction(null);
-            return;
-          }
-          const action = pricingAction;
-          const value = action.field === "enabled" ? action.nextEnabled : Number(newValue);
-          if (action.field !== "enabled" && !Number.isFinite(value)) throw new Error("请输入有效数字");
-          if (requiresPricingApproval(newValue)) {
-            await submitPricingApproval(reason, newValue);
-            return;
-          }
-          const patch = action.field === "queueSaturation"
-            ? { queueSaturation: value as number }
-            : { taskClass: action.row.taskClass, [action.field]: value };
-          await updateE2TaskPricing({ ...patch, expectedRevision: action.field === "enabled" ? undefined : pricingRevision }, reason, "admin-console");
-          await ctx.refreshE2();
-          ctx.toast("已生效");
-          setPricingAction(null);
-        }}
-      />}
-    </>
-  );
+    </Drawer>}
+  </div>;
 }

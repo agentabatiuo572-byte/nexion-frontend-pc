@@ -57,12 +57,25 @@ export function parseE4OrderPage<T = UnknownRecord>(raw: unknown): T {
   return raw as T;
 }
 
-function validateE5Device(value: unknown, message: string) {
+function validateE5Device(value: unknown, message: string, phones: boolean) {
   const row = object(value, message);
   if (row.id == null || (typeof row.id !== "number" && typeof row.id !== "string")) throw new Error(message);
   if (typeof row.id === "string" && !row.id.trim()) throw new Error(message);
   if (row.userId != null && typeof row.userId !== "number" && typeof row.userId !== "string") throw new Error(message);
   if (row.status != null) text(row.status, message);
+  if (!phones) {
+    if (!["WAITING_ACTIVATION", "WAITING_INIT", "LEGACY_PENDING", "RUNNING", "WAITING_CONFIG", "PAUSED", "CLOSING", "STOPPED", "UNBOUND", "ERROR", "SIM_OFF"].includes(String(row.simState))) throw new Error(message);
+    if (!["ORDER", "TRADE_IN", "TRIAL", "PROMOTION_GIFT"].includes(String(row.sourceChannel))) throw new Error(message);
+    if (row.hostingLabel !== null) text(row.hostingLabel, message, true);
+    nonNegativeInteger(row.activeDevicesForUser, message);
+    nonNegativeInteger(row.maxDevicesPerUser, message, 1);
+    if (row.simLastError != null) text(row.simLastError, message, true);
+    if (row.simNextActionAt != null) text(row.simNextActionAt, message);
+    if (row.currentTask != null) {
+      const task = object(row.currentTask, message);
+      for (const key of ["taskNo", "name", "taskClass", "startedAt", "dueAt"]) text(task[key], message);
+    }
+  }
   if (row.monthlyTarget != null) {
     const target = object(row.monthlyTarget, message);
     nonNegativeInteger(target.cycleIndex, message, 1);
@@ -78,7 +91,7 @@ function validateE5Device(value: unknown, message: string) {
   }
 }
 
-export function parseE5DevicePage<T = UnknownRecord>(raw: unknown): T {
+export function parseE5DevicePage<T = UnknownRecord>(raw: unknown, phones = false): T {
   const message = "E5_DEVICE_PAGE_CONTRACT_INVALID";
   const page = object(raw, message);
   for (const key of ["total", "pageNum", "pageSize", "records"]) has(page, key, message);
@@ -91,72 +104,14 @@ export function parseE5DevicePage<T = UnknownRecord>(raw: unknown): T {
       || (total === 0 && page.records.length !== 0)) {
     throw new Error(message);
   }
-  page.records.forEach((row) => validateE5Device(row, message));
-  return raw as T;
-}
-
-function validateE5Datacenter(value: unknown, message: string) {
-  const row = object(value, message);
-  text(row.dcLocation, message);
-  for (const key of ["regionLabel", "location", "displayName", "status"]) {
-    if (row[key] != null) text(row[key], message, key !== "status");
-  }
-  for (const key of [
-    "sortOrder",
-    "totalDevices",
-    "onlineDevices",
-    "pendingRecycleDevices",
-    "abnormalDevices",
-    "avgGpuUsage",
-    "avgGpuTempC",
-    "avgGpuPowerW",
-  ]) {
-    if (row[key] != null) finiteNumber(row[key], message);
-  }
-  if (row.dispatchPaused != null
-      && typeof row.dispatchPaused !== "boolean"
-      && typeof row.dispatchPaused !== "number"
-      && typeof row.dispatchPaused !== "string") {
-    throw new Error(message);
-  }
-  if (row.onlineSeries != null && !Array.isArray(row.onlineSeries)) throw new Error(message);
-}
-
-export function parseE5DatacenterRows<T = UnknownRecord[]>(raw: unknown): T {
-  const message = "E5_DATACENTERS_CONTRACT_INVALID";
-  if (!Array.isArray(raw)) throw new Error(message);
-  raw.forEach((row) => validateE5Datacenter(row, message));
+  page.records.forEach((row) => validateE5Device(row, message, phones));
   return raw as T;
 }
 
 export function parseE5Overview<T = UnknownRecord>(raw: unknown): T {
   const message = "E5_OVERVIEW_CONTRACT_INVALID";
   const overview = object(raw, message);
-  for (const key of [
-    "totalDevices",
-    "onlineDevices",
-    "offlineDevices",
-    "recycledDevices",
-    "pendingRecycleDevices",
-    "abnormalDevices",
-    "maxDevicesPerUser",
-    "datacenters",
-  ]) {
-    has(overview, key, message);
-  }
-  for (const key of [
-    "totalDevices",
-    "onlineDevices",
-    "offlineDevices",
-    "recycledDevices",
-    "pendingRecycleDevices",
-    "abnormalDevices",
-  ]) {
-    nonNegativeInteger(overview[key], message);
-  }
-  if (overview.maxDevicesPerUser != null) nonNegativeInteger(overview.maxDevicesPerUser, message, 1);
-  if (!Array.isArray(overview.datacenters)) throw new Error(message);
-  overview.datacenters.forEach((row) => validateE5Datacenter(row, message));
+  for (const key of ["total", "running", "waitingActivation", "stopped"]) nonNegativeInteger(overview[key], message);
   return raw as T;
 }
 

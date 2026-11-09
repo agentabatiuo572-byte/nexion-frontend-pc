@@ -13,7 +13,7 @@
  *   A. a2-audit.tsx 必订阅实时 audit[](usePlatformConfig((s) => s.audit)),否则重连被回改回种子。
  *   B. a1-accounts.tsx:① 唯一写动作 chokepoint runMutation 内有集中 logAudit;
  *      ② 每个 runMutation 调用都传 audit 对象({ target: … })——防新增账号治理动作漏审计。
- *   C. e-view.tsx onConfirm 每个高敏 gap 分支(上架门 / 阶段 / 订单 / 设备 / E3 参数 / 派单 / 数据中心)必含 logAudit。
+ *   C. e-view.tsx onConfirm 每个高敏 gap 分支(上架门 / 阶段 / 订单 / 设备 / E3 参数)必含 logAudit。
  * 注:360 HUB 用户详情页冻结/解冻是轻量快捷动作(confirm + per-user 审计),不进平台 A2;权威
  *     reason-required 冻结/解冻在 C2 账户操作页(操作确认 + logAudit admin.user_frozen),已覆盖平台 A2。
  */
@@ -61,8 +61,7 @@ const GAP_OPS = [
   "phase-save", "phase-archive",
   "generation-gate-save", "generation-gate-force", "generation-gate-archive",
   "order-state", "order-refund", "order-cancel", "order-terminal",
-  "device-activate", "device-deactivate", "ops-pause",
-  "dc-save", "dc-delete",
+  "device-activate", "device-deactivate",
 ];
 const ev = read(EVIEW);
 if (ev == null) failures.push(`${EVIEW} 未找到`);

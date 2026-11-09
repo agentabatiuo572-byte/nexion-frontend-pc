@@ -39,7 +39,7 @@ export interface PurchaseGate {
 }
 
 export interface OpsSku {
-  allowedTaskClasses?: string[];
+  allowedPoolCodes?: string[];
   productTaskPolicyVersion?: number;
   productTaskPolicyEffectiveAt?: string;
   name: string;
@@ -105,12 +105,6 @@ export interface OpsSku {
   tag: string;
   status: string;
   updatedAt?: string;
-}
-
-export interface OpsDataCenter {
-  id: string;
-  location: string;
-  displayName: string;
 }
 
 export interface OpsVoucher {

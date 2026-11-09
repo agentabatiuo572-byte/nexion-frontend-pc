@@ -2,7 +2,6 @@ import { expect, request, test, type Page, type Response } from "@playwright/tes
 import { mkdir } from "node:fs/promises";
 import {
   parseE4OrderPage,
-  parseE5DatacenterRows,
   parseE5DevicePage,
   parseE5Overview,
   parseE6ComputeConfig,
@@ -153,13 +152,11 @@ test("E1/E4/E5/E6 接口来源、匿名边界及无副作用拒绝分支", async
   const e5 = await apiJson(page, "/api/admin/devices/overview");
   parseE5Overview(e5.data);
   expect(e5.data).toEqual(expect.objectContaining({
-    totalDevices: expect.any(Number),
-    datacenters: expect.any(Array),
+    total: expect.any(Number),
+    running: expect.any(Number),
+    waitingActivation: expect.any(Number),
+    stopped: expect.any(Number),
   }));
-  const e5Datacenters = await apiJson(page, "/api/admin/devices/datacenters");
-  parseE5DatacenterRows(e5Datacenters.data);
-  expect(e5Datacenters.data).toBeInstanceOf(Array);
-
   const e6 = await apiJson(page, "/api/admin/devices/compute-config");
   parseE6ComputeConfig(e6.data);
   expect(e6.data.sources).toEqual(expect.arrayContaining([

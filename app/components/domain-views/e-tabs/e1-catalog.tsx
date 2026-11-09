@@ -1,6 +1,7 @@
 import { monthlyTargetEstimateText, operatorCopyText } from "@/lib/admin/operator-copy";
 import { datacenterNameText } from "@/lib/admin/brand-copy";
 import { operatorSkuTier } from "@/lib/admin/e-operator-display";
+import { supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CodeTag, Badge } from "../design-kit";
 import type { E1GenerationRelease, E1Phase } from "@/lib/admin/e1-client";
@@ -117,7 +118,7 @@ function SkuMediaThumb({ sku }: { sku: OpsSku }) {
 }
 
 export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
-  const { skus, tasks } = ctx;
+  const { skus } = ctx;
   const canWrite = ctx.canWriteE1;
   const [skuQuery, setSkuQuery] = useState("");
   const [skuStatus, setSkuStatus] = useState("all");
@@ -151,8 +152,6 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
     });
   }, [skuQuery, skuStatus, skuTier, skus]);
   const skuTiers = Array.from(new Set(skus.map((sku) => sku.tier).filter(Boolean))).sort();
-  const taskNameById = new Map(tasks.map((task) => [task.id, task.n]));
-  const unlockPoolName = (value?: string) => value ? nexGridBrandText(taskNameById.get(value) ?? value) : "—";
   const phaseOrder = ctx.e1Gates?.phaseOrder ?? [];
   const phases = ctx.e1Gates?.phases ?? [];
   const platformMonth = ctx.e1Gates?.platformMonth ?? 0;
@@ -598,7 +597,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
             <input
               aria-label="搜索商品"
               value={skuQuery}
-              placeholder="名称 / 商品编号 / GPU / 数据中心"
+              placeholder="名称 / 商品编号 / GPU / 托管机房"
               onChange={(event) => setSkuQuery(event.target.value)}
             />
           </label>
@@ -675,8 +674,8 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                 <div className="spec">
                   <div className="it"><span className="k">GPU</span><span className="v">{s.gpu || "—"}</span></div>
                   <div className="it"><span className="k">显存</span><span className="v">{s.vram || "—"}</span></div>
-                  <div className="it"><span className="k">数据中心</span><span className="v">{datacenterNameText(s.datacenter || "—")}</span></div>
-                  <div className="it"><span className="k">算力池</span><span className="v">{unlockPoolName(s.aiUnlocks)}</span></div>
+                  <div className="it"><span className="k">托管机房</span><span className="v">{datacenterNameText(s.datacenter || "—")}</span></div>
+                  <div className="it"><span className="k">任务等级</span><span className="v">{s.allowedPoolCodes?.join("、") || "未配置"}</span></div>
                 </div>
                 <div className="meta">
                   {s.sold != null && <span className="sold">{s.sold.toLocaleString()} 售</span>}
@@ -697,10 +696,14 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                   {s.publishBlocked === true ? <Badge tone="warn">{`未满足上架条件 · ${publishBlockLabel}`}</Badge> : null}
                   {s.publishBlocked === undefined ? <Badge tone="neutral">上架状态未知</Badge> : null}
                 </div>
+                {!supportsDeviceMonthlyTarget(s.id, s.tier, s.productType) && <div className="tint warn">{SKU_MODEL_UNRECOGNIZED_REASON}</div>}
                 <div className="acts">
                   {canWrite ? <button className="primary" aria-label={`改价 / 编辑 ${(s.name)}`} onClick={() => ctx.openSku(s.id)}>改价 / 编辑</button> : null}
                   {canWrite && st === "on" && (unlimitedInventory || Number(s.stock) > 0) && !open && !releaseGate && hasPhaseConfig ? <button className="brand" aria-label={`按当前阶段上架 ${(s.name)}`} onClick={() => ctx.openSku(s.id, phaseCur)}>按当前阶段上架</button> : null}
-                  {canWrite ? <button disabled={listingBlocked || s.publishBlocked === true} title={s.publishBlocked === true ? `未满足上架条件 · ${publishBlockLabel} · App 上看不到` : s.publishBlocked === undefined ? "服务端未返回上架条件结论，上架是否生效未确认" : listingBlocked ? listingBlocker : undefined} aria-label={`${st === "on" ? "下架" : "上架"} ${(s.name)}`} onClick={() => ctx.openActionConfirm({ briefKind: "content", name: st === "on" ? `下架商品· ${(s.name)}` : `上架商品· ${(s.name)}`, op: "sku-status", target: s.id, status: st === "on" ? "off" : "on", detail: st === "on" ? "下架后从商城隐藏,不影响已售设备结算" : "上架后对用户可见", amplify: false })}>{st === "on" ? "下架" : "上架"}</button> : null}
+                  {canWrite ? <button disabled={listingBlocked || s.publishBlocked === true} title={s.publishBlocked === true ? `未满足上架条件 · ${publishBlockLabel} · App 上看不到` : s.publishBlocked === undefined ? "服务端未返回上架条件结论，上架是否生效未确认" : listingBlocked ? listingBlocker : undefined} aria-label={`${st === "on" ? "下架" : "上架"} ${(s.name)}`} onClick={() => {
+                    if (st !== "on" && !supportsDeviceMonthlyTarget(s.id, s.tier, s.productType)) { ctx.toast(SKU_MODEL_UNRECOGNIZED_REASON); return; }
+                    ctx.openActionConfirm({ briefKind: "content", name: st === "on" ? `下架商品· ${(s.name)}` : `上架商品· ${(s.name)}`, op: "sku-status", target: s.id, status: st === "on" ? "off" : "on", detail: st === "on" ? "下架后从商城隐藏,不影响已售设备结算" : "上架后对用户可见", amplify: false });
+                  }}>{st === "on" ? "下架" : "上架"}</button> : null}
                   {canWrite ? <button className="danger" aria-label={`删除 ${(s.name)}`} onClick={() => ctx.delSku(s.id, s.name ?? s.id)}>删除</button> : null}
                 </div>
               </div>
@@ -709,7 +712,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
         })}
       </div>
 
-      <p className="f-foot">这里的商品卡片就是 App 商城里的商品，上下架、改价和调库存都会<b>立即在 App 生效</b>。</p>
+      <p className="f-foot">商品变更经另一位管理员批准发布后，更新 App 商城。</p>
     </>
   );
 }

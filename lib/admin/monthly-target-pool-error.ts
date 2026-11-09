@@ -4,7 +4,7 @@ import { parseE1SkuPage } from "./e1-overview-contract";
 /** Resolve the backend's affected IDs from the catalog, including delisted models. */
 export async function monthlyTargetPoolErrorText(message: string | null | undefined, data: unknown): Promise<string | null> {
   if (message !== "MONTHLY_TARGET_POOL_INELIGIBLE") return null;
-  const instruction = "设了月收益目标的型号只能使用正额 USDT、时长不超过 120 分钟的任务。请调整任务奖励、时长或可跑任务大类后重新提交。";
+  const instruction = "设了月收益目标的型号只能使用正额 USDT、时长不超过 120 分钟的任务。请核对任务等级及任务配置后重新提交。";
   if (!data || typeof data !== "object" || Array.isArray(data)) return `任务配置不符合月收益目标要求。${instruction}受影响型号信息缺失，请核对商品配置。`;
   const ids = (data as Record<string, unknown>).affectedSkuIds;
   if (!Array.isArray(ids) || !ids.length || !ids.every((id): id is string => typeof id === "string" && id.trim() !== "")) {
