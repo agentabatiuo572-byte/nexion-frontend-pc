@@ -42,7 +42,7 @@ function backendPath(parts: string[]) {
   const isE5BatchAction = parts[0] === "batch" && parts.length === 2
     && (parts[1] === "pause" || parts[1] === "resume");
   const isTaskPool = parts[0] === "task-pools" && (
-    parts.length === 1 || parts.length === 2 && !!parts[1]
+    parts.length === 1
     || parts.length === 3 && !!parts[1] && ["tasks", "random-tasks", "disable-impact"].includes(parts[2])
     || parts.length === 4 && !!parts[1] && parts[2] === "tasks" && parts[3] === "status");
   const isHostingLabels = parts.length === 1 && parts[0] === "sku-datacenter-labels";
@@ -95,6 +95,10 @@ function backendPath(parts: string[]) {
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
   const targetPath = backendPath(path);
+  if (targetPath && path[0] === "task-pools") {
+    const expectedMethod = path[2] === "random-tasks" || path[3] === "status" ? "POST" : "GET";
+    if (request.method !== expectedMethod) return jsonError(405, "METHOD_NOT_ALLOWED");
+  }
   if (targetPath && path[0] === "compute-config" && request.method !== (path.length === 1 ? "GET" : "PATCH")) {
     return jsonError(405, "METHOD_NOT_ALLOWED");
   }

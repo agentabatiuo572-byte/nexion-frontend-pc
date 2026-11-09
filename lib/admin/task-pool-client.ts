@@ -20,7 +20,7 @@ export interface TaskStatusInput { taskTypeIds: string[]; enabled: boolean; idem
 export interface RandomTaskResult { created: PoolTask[]; pool: TaskPool }
 export interface TaskStatusResult { updated: number; pool: TaskPool }
 export interface PoolLimitErrorData { limit: number; enabled?: number; total?: number; requested: number }
-export type TaskPoolErrorCode = "TASK_POOL_FORMAT_RETIRED" | "TASK_POOL_HAS_TASKS" | "TASK_POOL_IN_USE" | "TASK_POOL_KIND_FORBIDDEN" | "TASK_POOL_ENABLED_LIMIT" | "TASK_POOL_TOTAL_LIMIT" | "TASK_POOL_IDEMPOTENCY_CONFLICT" | "TASK_TYPE_NOT_IN_POOL";
+export type TaskPoolErrorCode = "TASK_POOL_FORMAT_RETIRED" | "TASK_POOL_KIND_FORBIDDEN" | "TASK_POOL_ENABLED_LIMIT" | "TASK_POOL_TOTAL_LIMIT" | "TASK_POOL_IDEMPOTENCY_CONFLICT" | "TASK_TYPE_NOT_IN_POOL";
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("任务池数据格式不完整，请刷新重试。");
@@ -73,9 +73,6 @@ async function request(path: string, method = "GET", body?: object): Promise<unk
       const currentValue = code === "TASK_POOL_ENABLED_LIMIT" ? data.enabled : data.total;
       const current = currentValue == null ? null : integer(currentValue);
       message = `${code === "TASK_POOL_ENABLED_LIMIT" ? "启用任务" : "任务总数"}上限为 ${limit} 个${current == null ? "" : `，当前 ${current} 个`}，本次 ${requested} 个。请减少数量${code === "TASK_POOL_ENABLED_LIMIT" ? "或先停用部分任务" : ""}。`;
-    } else if (code === "TASK_POOL_IN_USE" && envelope.data) {
-      const data = record(envelope.data);
-      if (Array.isArray(data.referencedBy)) message = `不能删除：仍被商品 ${data.referencedBy.map(product).map(row => row.productName).join("、")} 引用（含草稿和下架商品）。`;
     }
     throw new Error(message);
   }
@@ -103,12 +100,6 @@ export async function fetchPoolTasks(code: string, query: PoolTaskQuery = {}): P
     return { ...parsed, baseReward: decimal(row.baseReward), asset: row.asset };
   });
   return { total: integer(raw.total), records };
-}
-export async function saveTaskPool(code: string | null, name: string, reason: string): Promise<void> {
-  await request(`/task-pools${code ? `/${encodeURIComponent(code)}` : ""}`, code ? "PATCH" : "POST", { name, reason });
-}
-export async function deleteTaskPool(code: string, reason: string): Promise<void> {
-  await request(`/task-pools/${encodeURIComponent(code)}`, "DELETE", { reason });
 }
 export async function randomPoolTasks(code: string, input: RandomTaskInput): Promise<RandomTaskResult> {
   const raw = record(await request(`/task-pools/${encodeURIComponent(code)}/random-tasks`, "POST", input));

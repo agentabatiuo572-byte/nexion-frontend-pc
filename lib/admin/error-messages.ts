@@ -38,8 +38,6 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   TASK_POOL_FORMAT_RETIRED: "这份操作仍使用旧任务格式，请关闭后重新从手机任务池提交。",
   E5_SIM_STATE_INVALID: "设备状态筛选无效，请重新选择状态。",
   E5_SOURCE_INVALID: "设备来源筛选无效，请重新选择来源。",
-  TASK_POOL_HAS_TASKS: "不能删除：等级中仍有任务（含停用任务）。",
-  TASK_POOL_IN_USE: "不能删除：仍有商品引用此等级（含草稿和已下架商品）。",
   TASK_POOL_KIND_FORBIDDEN: "商城任务等级与手机任务池不可混用，请从对应页面操作。",
   TASK_POOL_ENABLED_LIMIT: "每个等级最多启用 200 个任务，请先停用部分任务或减少数量。",
   TASK_POOL_TOTAL_LIMIT: "每个等级最多 300 个任务（含停用任务），请减少数量。",
