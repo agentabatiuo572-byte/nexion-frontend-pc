@@ -665,6 +665,8 @@ function valueText(key: string | undefined, value: unknown): string {
   if (typeof value === "boolean") return value ? "是" : "否";
   if (key === "monthlyTargetUsdt") return `${grouped(String(value))} USDT`;
   if (key === "monthlyTargetBandPct") return `±${grouped(String(value))}%`;
+  if (key === "dailyEarn") return `${grouped(String(value))} USDT/日`;
+  if (key === "shareYieldMin" || key === "shareYieldMax") return `${grouped(String(value))}%`;
   if (key === "peerBonusRate" && typeof value === "number") return `${(value * 100).toFixed(2)}%`;
   if (key === "baseRate" && typeof value === "string") return shareBaseRateText(value);
   if (Array.isArray(value)) return value.length ? value.map((item) => valueText(undefined, item)).join("、") : "无";
