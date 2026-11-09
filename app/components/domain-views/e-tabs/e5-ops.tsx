@@ -30,7 +30,7 @@ function DeviceActions({ device: d, ctx, phones }: { device: E5Device; ctx: EVie
   const open = (next: typeof action) => { setReason(""); setError(""); setAction(next); };
   return <>
     {!readOnly && <details className="device-menu"><summary aria-label={`操作 ${d.serial}`}>⋯</summary><div onClick={event => event.currentTarget.closest("details")?.removeAttribute("open")}>
-      {activatable && ctx.canWriteE5 && (phones ? d.state === "inventory" : d.simState !== "UNBOUND") && <button type="button" onClick={() => open("activate")}>激活</button>}
+      {activatable && ctx.canWriteE5 && (phones ? d.state === "inventory" : d.simState === "WAITING_ACTIVATION") && <button type="button" onClick={() => open("activate")}>激活</button>}
       {activatable && ctx.canForceActivateE5 && <button type="button" disabled={full} title={full ? `已达 ${d.maxDevicesPerUser} 台上限` : undefined} onClick={() => ctx.openActionConfirm({ briefKind: "record", op: "device-activate", deviceId: d.deviceId, deviceNo: d.serial, deviceAction: "force-activate", name: `强制激活 · ${d.serial}`, detail: `用户 ${d.user}，当前激活 ${d.activeDevicesForUser}/${d.maxDevicesPerUser} 台（含手机）。强制激活也不能绕过每人 6 台上限。` })}>强制激活</button>}
       {deactivatable && ctx.canWriteE5 && <button type="button" onClick={() => open("deactivate")}>取消激活</button>}
       {deactivatable && ctx.canUnbindE5 && <button type="button" onClick={() => ctx.openActionConfirm({ briefKind: "record", op: "device-deactivate", deviceId: d.deviceId, deviceNo: d.serial, deviceAction: "unbind", name: `解绑设备 · ${d.serial}`, detail: `设备将不再属于 ${d.user}，不退款，购入时间不变。` })}>解绑</button>}

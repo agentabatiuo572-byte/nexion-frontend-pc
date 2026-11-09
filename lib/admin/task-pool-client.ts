@@ -4,7 +4,7 @@ import { TASK_CLASSES } from "@/lib/admin/task-classes";
 export type TaskClass = typeof TASK_CLASSES[number];
 export interface PoolProduct { productKey: string; productName: string; state: "PUBLISHED" | "DRAFT" | "DELISTED_WITH_DEVICES" }
 export interface TaskPool {
-  code: string; kind: "DEVICE" | "PHONE"; level: number; name: string; sortOrder: number;
+  code: string; kind: "DEVICE" | "PHONE"; level: number | null; name: string; sortOrder: number;
   taskCount: number; enabledCount: number; avgDurationMinutes: string | null; estTasksPerDevicePerDay: string | null;
   referencedBy: PoolProduct[];
 }
@@ -20,7 +20,7 @@ export interface TaskStatusInput { taskTypeIds: string[]; enabled: boolean; idem
 export interface RandomTaskResult { created: PoolTask[]; pool: TaskPool }
 export interface TaskStatusResult { updated: number; pool: TaskPool }
 export interface PoolLimitErrorData { limit: number; enabled?: number; total?: number; requested: number }
-export type TaskPoolErrorCode = "TASK_POOL_HAS_TASKS" | "TASK_POOL_IN_USE" | "TASK_POOL_KIND_FORBIDDEN" | "TASK_POOL_ENABLED_LIMIT" | "TASK_POOL_TOTAL_LIMIT" | "TASK_POOL_IDEMPOTENCY_CONFLICT" | "TASK_TYPE_NOT_IN_POOL";
+export type TaskPoolErrorCode = "TASK_POOL_FORMAT_RETIRED" | "TASK_POOL_HAS_TASKS" | "TASK_POOL_IN_USE" | "TASK_POOL_KIND_FORBIDDEN" | "TASK_POOL_ENABLED_LIMIT" | "TASK_POOL_TOTAL_LIMIT" | "TASK_POOL_IDEMPOTENCY_CONFLICT" | "TASK_TYPE_NOT_IN_POOL";
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("任务池数据格式不完整，请刷新重试。");
@@ -47,7 +47,7 @@ function product(value: unknown): PoolProduct {
 export function parseTaskPool(value: unknown): TaskPool {
   const row = record(value);
   if (row.kind !== "DEVICE" && row.kind !== "PHONE" || !Array.isArray(row.referencedBy)) throw new Error("任务等级数据不完整，请刷新重试。");
-  return { code: string(row.code), kind: row.kind, level: integer(row.level), name: string(row.name), sortOrder: integer(row.sortOrder),
+  return { code: string(row.code), kind: row.kind, level: row.kind === "PHONE" && row.level === null ? null : integer(row.level), name: string(row.name), sortOrder: integer(row.sortOrder),
     taskCount: integer(row.taskCount), enabledCount: integer(row.enabledCount),
     avgDurationMinutes: row.avgDurationMinutes === null ? null : decimal(row.avgDurationMinutes),
     estTasksPerDevicePerDay: row.estTasksPerDevicePerDay === null ? null : decimal(row.estTasksPerDevicePerDay), referencedBy: row.referencedBy.map(product) };

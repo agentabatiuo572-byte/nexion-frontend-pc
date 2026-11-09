@@ -16,6 +16,7 @@ import {
 export type { E5Observability } from "@/lib/admin/e5-observability-contract";
 
 export type E5DeviceState = "active" | "busy" | "offline" | "inventory" | "pending-deactivate" | "unbound" | "abnormal" | "unknown";
+export type E5QueryErrorCode = "E5_SIM_STATE_INVALID" | "E5_SOURCE_INVALID";
 export type E5SimState = "WAITING_ACTIVATION" | "RUNNING" | "WAITING_CONFIG" | "PAUSED" | "CLOSING" | "STOPPED" | "UNBOUND" | "ERROR" | "SIM_OFF";
 export interface E5CurrentTask { taskNo: string; name: string; taskClass: string; startedAt: string; dueAt: string }
 export type E5SourceChannel = "ORDER" | "TRADE_IN" | "TRIAL" | "PROMOTION_GIFT";

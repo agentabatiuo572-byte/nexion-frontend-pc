@@ -1162,7 +1162,7 @@ export const HIGH_OPS: HighOpDef[] = [
     type: "param",
     gateLabel: "门槛者",
     targetType: "device_task",
-    buildCommand: (ctx) => ({ domain: "E", op: "e2_task_create", params: { name: String(ctx.name), taskClass: String(ctx.taskClass), simulation: ctx.simulation } }),
+    buildCommand: (ctx) => ({ domain: "E", op: "e2_task_create", params: { poolCode: "PHONE", name: String(ctx.name), taskClass: String(ctx.taskClass), simulation: ctx.simulation } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_task", id: String(ctx.taskId) }),
   },
   {
@@ -1173,7 +1173,7 @@ export const HIGH_OPS: HighOpDef[] = [
     type: "param",
     gateLabel: "门槛者",
     targetType: "device_task",
-    buildCommand: (ctx) => ({ domain: "E", op: "e2_task_update", params: { taskId: String(ctx.taskId), name: String(ctx.name), taskClass: String(ctx.taskClass), simulation: ctx.simulation } }),
+    buildCommand: (ctx) => ({ domain: "E", op: "e2_task_update", params: { poolCode: "PHONE", taskId: String(ctx.taskId), name: String(ctx.name), taskClass: String(ctx.taskClass), simulation: ctx.simulation } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_task", id: String(ctx.taskId) }),
   },
   {
@@ -1197,7 +1197,7 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "device_task",
     buildCommand: (ctx) => ({ domain: "E", op: "e2_task_status",
-      params: { taskId: String(ctx.taskId), status: String(ctx.status) } }),
+      params: { poolCode: "PHONE", taskId: String(ctx.taskId), status: String(ctx.status) } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_task", id: String(ctx.taskId) }),
   },
   {

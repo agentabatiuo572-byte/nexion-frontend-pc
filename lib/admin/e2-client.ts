@@ -279,6 +279,7 @@ function toTaskPayload(task: OpsTask, reason: string, operator: string) {
   const error = task.simulation ? null : validateComputeTaskConfig(task);
   if (error) throw new Error(error);
   return {
+    poolCode: "PHONE" as const,
     simulation: task.simulation ? { ...task.simulation, expectedVersion: task.simulation.version } : undefined,
     name: task.n,
     price: task.price,
