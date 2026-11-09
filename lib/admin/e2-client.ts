@@ -1,3 +1,4 @@
+import { fetchPoolTasks, type PhonePoolTask } from "./task-pool-client";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import type { OpsTask } from "@/lib/admin/platform-types";
 import { monthlyTargetPoolErrorText } from "@/lib/admin/monthly-target-pool-error";
@@ -310,20 +311,19 @@ function positiveDecimal18x6(value: number | string): boolean {
   return Number.isFinite(parsed) && parsed > 0 && parsed <= 999_999_999_999.999999;
 }
 
-export async function fetchE2Tasks() {
-  const pageSize = 100;
+/** E6 reads only PHONE types; DEVICE tasks have separate pool routes. */
+export async function fetchE2Tasks(): Promise<OpsTask[]> {
+  const records: PhonePoolTask[] = [];
   let pageNum = 1;
-  let total = Number.POSITIVE_INFINITY;
-  const records: BackendTask[] = [];
-  while (records.length < total) {
-    const page = await e2Request<PageResult<BackendTask>>(`/tasks?pageNum=${pageNum}&pageSize=${pageSize}`);
-    const current = page.records ?? [];
-    records.push(...current);
-    total = Math.max(0, Number(page.total ?? records.length));
-    if (current.length === 0 || current.length < pageSize) break;
+  while (true) {
+    const page = await fetchPoolTasks("PHONE", { pageNum, pageSize: 100 });
+    records.push(...page.records);
+    if (records.length >= page.total || !page.records.length) break;
     pageNum += 1;
   }
-  return records.map(fromTask);
+  return records.map(row => ({ id: row.taskTypeId, n: row.name, taskClass: row.taskClass, price: Number(row.baseReward),
+    unit: "/job", req: "手机", sat: null, status: row.enabled ? "active" : "inactive",
+    simulation: { durationMinutes: row.durationMinutes, baseReward: row.baseReward, asset: row.asset, enabled: row.enabled, version: row.version, effectiveAt: row.effectiveAt } }));
 }
 
 export async function createE2Task(task: OpsTask, reason: string, operator: string) {

@@ -28,7 +28,7 @@ interface PageResult<T> {
 }
 
 interface BackendSku {
-  allowedTaskClasses?: string[];
+  allowedPoolCodes: string[];
   productTaskPolicyVersion?: number;
   productTaskPolicyEffectiveAt?: string;
   skuId: string;
@@ -125,7 +125,6 @@ export interface E1GenerationRelease {
 export interface E1GenerationGateData {
   domain: "E1";
   skuReviewContractVersion?: number;
-  taskClassPolicySupported?: boolean;
   phaseOrder: string[];
   phases: E1Phase[];
   platformMonth: number;
@@ -232,7 +231,7 @@ function fromSku(sku: BackendSku): OpsSku {
   const inventoryMode = sku.inventoryMode;
   const stock = inventoryMode === "UNLIMITED" ? undefined : sku.stock as string;
   const mapped: OpsSku = {
-    allowedTaskClasses: sku.allowedTaskClasses,
+    allowedPoolCodes: sku.allowedPoolCodes,
     productTaskPolicyVersion: sku.productTaskPolicyVersion,
     productTaskPolicyEffectiveAt: sku.productTaskPolicyEffectiveAt,
     id: sku.skuId,
@@ -303,7 +302,7 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     throw new Error("E1_SKU_INVENTORY_CONTRACT_INVALID");
   }
   return {
-    allowedTaskClasses: sku.allowedTaskClasses,
+    allowedPoolCodes: sku.allowedPoolCodes,
     skuId: sku.id || undefined,
     name: sku.name,
     tier: sku.tier,

@@ -13,7 +13,7 @@ export const DOMAIN_E: ModuleEntry[] = [
   },
   {
     path: "/devices/tasks",
-    summary: "设置设备每日收益、UVT 发放比例和每日任务奖励。改收益从次日起对所有在线设备生效，会直接增加平台应付款。",
+    summary: "管理任务等级，随机添加任务并批量启停；查看各等级平均时长和每日单量。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
@@ -28,12 +28,12 @@ export const DOMAIN_E: ModuleEntry[] = [
   },
   {
     path: "/devices/ops",
-    summary: "监控在线设备的状态、算力波动和告警，处理掉线、算力骤降和收益异常。",
+    summary: "查看商城设备的运行状态、来源、本月收益和当前任务，管理激活、停用与解绑。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/devices/compute-config",
-    summary: "设置手机绑定与换机规则、收益估算参数，查看已退役的在线兼容参数。H5 手机算力奖励已停用，已购设备不受影响。",
+    summary: "集中管理手机任务、5 档收益、新用户引导对比、用户手机与校准规则。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

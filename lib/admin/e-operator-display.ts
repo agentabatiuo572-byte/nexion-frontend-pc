@@ -1,7 +1,6 @@
 import { nexGridBrandText, operatorNicknameText } from "./brand-copy.ts";
 const INTERNAL_FIXTURE_PATTERN = /(?:TRIALDEV|DEVTI|E3ACC|TIO|DEVICETRIALSTANDARD|INTERNAL|FIXTURE|QA(?:TEST)?|TEST(?:DEVICE|TASK)?)/i;
 const SAFE_DEVICE_IDENTIFIER = /^[A-Za-z0-9._:-]{3,64}$/;
-const SAFE_DATACENTER_IDENTIFIER = /^[A-Z]{2,6}-\d{1,3}$/;
 const SAFE_SKU_DISPLAY = /^[\p{L}\p{N}][\p{L}\p{N} ._+()/-]{1,79}$/u;
 const SAFE_DEVICE_NAME = /^[\p{L}\p{N}][\p{L}\p{N} ._+()/:·~\-]{1,79}$/u;
 const TRUSTED_SKU_SOURCES = new Set(["ORDER_ITEM", "PRODUCT_CATALOG"]);
@@ -46,9 +45,7 @@ export function operatorDeviceStatus(value: string | null | undefined) {
 }
 
 export function operatorDatacenterLabel(value: string | null | undefined) {
-  const normalized = text(value);
-  if (normalized.toUpperCase() === "UNASSIGNED") return "未分配";
-  return SAFE_DATACENTER_IDENTIFIER.test(normalized) && !hasInternalFixtureMarker(normalized) ? normalized : "数据中心待核验";
+  return value || "—";
 }
 
 // 原子换机 tx 监控按后端三条独立事务分列(recycle / replace / deactivate)。

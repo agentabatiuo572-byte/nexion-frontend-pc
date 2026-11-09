@@ -1,6 +1,5 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import {
-  parseE5DatacenterRows,
   parseE5DevicePage,
   parseE5Overview,
 } from "@/lib/admin/e456-overview-contract";
@@ -17,7 +16,9 @@ import {
 export type { E5Observability } from "@/lib/admin/e5-observability-contract";
 
 export type E5DeviceState = "active" | "busy" | "offline" | "inventory" | "pending-deactivate" | "unbound" | "abnormal" | "unknown";
-export type E5DatacenterStatus = "active" | "maintenance" | "disabled";
+export type E5SimState = "WAITING_ACTIVATION" | "RUNNING" | "WAITING_CONFIG" | "PAUSED" | "CLOSING" | "STOPPED" | "UNBOUND" | "ERROR" | "SIM_OFF";
+export interface E5CurrentTask { taskNo: string; name: string; taskClass: string; startedAt: string; dueAt: string }
+export type E5SourceChannel = "ORDER" | "TRADE_IN" | "TRIAL" | "PROMOTION_GIFT";
 
 export interface E5MonthlyTarget {
   cycleIndex: number;
@@ -43,7 +44,13 @@ export interface E5Device {
   productTier: string;
   productCode: string;
   serial: string;
-  dc: string;
+  hostingLabel: string;
+  sourceChannel: E5SourceChannel | string;
+  simState: E5SimState | null;
+  simLastError: string | null;
+  simNextActionAt: string | null;
+  currentTask: E5CurrentTask | null;
+  maxDevicesPerUser: number;
   state: E5DeviceState;
   rawStatus: string;
   runtimeStatus: string;
@@ -70,52 +77,12 @@ export interface E5Device {
   slot: string;
 }
 
-export interface E5Datacenter {
-  dcLocation: string;
-  regionLabel: string;
-  location: string;
-  displayName: string;
-  status: E5DatacenterStatus;
-  sortOrder: number;
-  totalDevices: number;
-  onlineDevices: number;
-  pendingRecycleDevices: number;
-  abnormalDevices: number;
-  avgGpuUsage: number;
-  avgGpuTempC: number;
-  avgGpuPowerW: number;
-  dispatchPaused: boolean;
-  pausedReason: string;
-  onlineSeries: number[];
-}
-
-export interface E5DatacenterInput {
-  dcLocation: string;
-  regionLabel: string;
-  location: string;
-  displayName: string;
-  status: E5DatacenterStatus;
-  sortOrder: number;
-}
-
-export interface E5Overview {
-  totalDevices: number;
-  onlineDevices: number;
-  offlineDevices: number;
-  recycledDevices: number;
-  pendingRecycleDevices: number;
-  abnormalDevices: number;
-  maxDevicesPerUser: number | null;
-  datacenters: E5Datacenter[];
-}
-
+export interface E5Overview { total: number; running: number; waitingActivation: number; stopped: number }
 export interface E5DeviceQuery {
-  status?: string;
-  dcLocation?: string;
   keyword?: string;
-  userId?: number;
-  kind?: string;
-  heartbeat?: string;
+  simState?: string;
+  source?: string;
+  productCode?: string;
   pageNum?: number;
   pageSize?: number;
 }
@@ -150,7 +117,13 @@ interface BackendDevice {
   productTier?: string | null;
   productCode?: string | null;
   status?: string | null;
-  dcLocation?: string | null;
+  hostingLabel?: string | null;
+  sourceChannel?: string | null;
+  simState?: E5SimState | null;
+  simLastError?: string | null;
+  simNextActionAt?: string | null;
+  currentTask?: E5CurrentTask | null;
+  maxDevicesPerUser?: number | null;
   hashrate?: number | string | null;
   dailyUsdt?: number | string | null;
   dailyNex?: number | string | null;
@@ -168,9 +141,6 @@ interface BackendDevice {
   currentEfficiency?: number | string | null;
   pendingDeactivate?: number | string | boolean | null;
   runtimeStatus?: string | null;
-  gpuUsage?: number | string | null;
-  gpuTempC?: number | string | null;
-  gpuPowerW?: number | string | null;
   pausedReason?: string | null;
   activeTaskNo?: string | null;
   heartbeatAt?: string | null;
@@ -181,36 +151,6 @@ interface BackendDevice {
   thermalState?: string | null;
   activeDevicesForUser?: number | string | null;
   userDeviceSlotNo?: number | string | null;
-}
-
-interface BackendDatacenter {
-  dcLocation?: string | null;
-  regionLabel?: string | null;
-  location?: string | null;
-  displayName?: string | null;
-  status?: string | null;
-  sortOrder?: number | string | null;
-  totalDevices?: number | string | null;
-  onlineDevices?: number | string | null;
-  pendingRecycleDevices?: number | string | null;
-  abnormalDevices?: number | string | null;
-  avgGpuUsage?: number | string | null;
-  avgGpuTempC?: number | string | null;
-  avgGpuPowerW?: number | string | null;
-  dispatchPaused?: boolean | string | number | null;
-  pausedReason?: string | null;
-  onlineSeries?: unknown;
-}
-
-interface BackendOverview {
-  totalDevices?: number | string | null;
-  onlineDevices?: number | string | null;
-  offlineDevices?: number | string | null;
-  recycledDevices?: number | string | null;
-  pendingRecycleDevices?: number | string | null;
-  abnormalDevices?: number | string | null;
-  maxDevicesPerUser?: number | string | null;
-  datacenters?: BackendDatacenter[] | null;
 }
 
 function toNumber(value: number | string | boolean | null | undefined, fallback = 0) {
@@ -300,41 +240,13 @@ async function e5Request<T>(path: string, init?: RequestInit & { idempotencyKey?
 
 function queryString(query: E5DeviceQuery) {
   const params = new URLSearchParams();
-  if (query.status && query.status !== "all") params.set("status", query.status);
-  if (query.dcLocation && query.dcLocation !== "all") params.set("dcLocation", query.dcLocation);
-  if (query.keyword?.trim()) params.set("keyword", query.keyword.trim());
-  if (query.userId && query.userId > 0) params.set("userId", String(query.userId));
-  if (query.kind && query.kind !== "all") params.set("kind", query.kind);
-  if (query.heartbeat && query.heartbeat !== "all") params.set("heartbeat", query.heartbeat);
+  for (const key of ["simState", "source", "productCode", "keyword"] as const) {
+    const value = query[key]?.trim();
+    if (value && value !== "all") params.set(key, value);
+  }
   params.set("pageNum", String(query.pageNum ?? 1));
   params.set("pageSize", String(query.pageSize ?? 10));
-  const raw = params.toString();
-  return raw ? `?${raw}` : "";
-}
-
-function fromDatacenter(row: BackendDatacenter): E5Datacenter {
-  const status = text(row.status, "active").toLowerCase();
-  const onlineSeries = Array.isArray(row.onlineSeries)
-    ? row.onlineSeries.map((value) => toNumber(value as number | string | boolean | null | undefined)).filter((value) => value >= 0)
-    : [];
-  return {
-    dcLocation: text(row.dcLocation, "UNASSIGNED"),
-    regionLabel: text(row.regionLabel, "未配置区域"),
-    location: text(row.location || row.regionLabel, "未配置所在地"),
-    displayName: text(row.displayName || row.regionLabel, "未配置展示名"),
-    status: status === "maintenance" || status === "disabled" ? status : "active",
-    sortOrder: toNumber(row.sortOrder, 100),
-    totalDevices: toNumber(row.totalDevices),
-    onlineDevices: toNumber(row.onlineDevices),
-    pendingRecycleDevices: toNumber(row.pendingRecycleDevices),
-    abnormalDevices: toNumber(row.abnormalDevices),
-    avgGpuUsage: toNumber(row.avgGpuUsage),
-    avgGpuTempC: toNumber(row.avgGpuTempC),
-    avgGpuPowerW: toNumber(row.avgGpuPowerW),
-    dispatchPaused: toBool(row.dispatchPaused),
-    pausedReason: text(row.pausedReason, ""),
-    onlineSeries,
-  };
+  return `?${params}`;
 }
 
 export function mapE5Device(row: BackendDevice): E5Device {
@@ -362,7 +274,13 @@ export function mapE5Device(row: BackendDevice): E5Device {
     productTier,
     productCode,
     serial: identity.serial,
-    dc: text(row.dcLocation, "UNASSIGNED"),
+    hostingLabel: row.hostingLabel ?? "",
+    sourceChannel: row.sourceChannel ?? "",
+    simState: row.simState ?? null,
+    simLastError: row.simLastError ?? null,
+    simNextActionAt: row.simNextActionAt ?? null,
+    currentTask: row.currentTask ?? null,
+    maxDevicesPerUser: row.maxDevicesPerUser ?? 6,
     state: normalizeState(row.status, row.runtimeStatus, pendingDeactivate, row.activatedAt, row.deactivatedAt),
     rawStatus: text(row.status, "UNKNOWN"),
     runtimeStatus: text(row.runtimeStatus, "UNKNOWN"),
@@ -404,9 +322,10 @@ function mapDevices(records: BackendDevice[]) {
   return (records ?? []).map(mapE5Device);
 }
 
-export async function fetchE5Devices(query: E5DeviceQuery = {}): Promise<E5DevicePage> {
+export async function fetchE5Devices(query: E5DeviceQuery = {}, phones = false): Promise<E5DevicePage> {
   const page = parseE5DevicePage<PageResult<BackendDevice>>(
-    await e5Request<unknown>(queryString(query)),
+    await e5Request<unknown>(`${phones ? "/phones" : ""}${queryString(query)}`),
+    phones,
   );
   return {
     total: toNumber(page.total),
@@ -417,28 +336,10 @@ export async function fetchE5Devices(query: E5DeviceQuery = {}): Promise<E5Devic
 }
 
 export async function fetchE5Overview(): Promise<E5Overview> {
-  const overview = parseE5Overview<BackendOverview>(await e5Request<unknown>("/overview"));
-  return {
-    totalDevices: toNumber(overview.totalDevices),
-    onlineDevices: toNumber(overview.onlineDevices),
-    offlineDevices: toNumber(overview.offlineDevices),
-    recycledDevices: toNumber(overview.recycledDevices),
-    pendingRecycleDevices: toNumber(overview.pendingRecycleDevices),
-    abnormalDevices: toNumber(overview.abnormalDevices),
-    maxDevicesPerUser: toNumber(overview.maxDevicesPerUser) > 0 ? toNumber(overview.maxDevicesPerUser) : null,
-    datacenters: (overview.datacenters ?? []).map(fromDatacenter),
-  };
+  return parseE5Overview<E5Overview>(await e5Request<unknown>("/overview"));
 }
-
 export async function fetchE5Observability(): Promise<E5Observability> {
   return parseE5Observability(await e5Request<unknown>("/observability"));
-}
-
-export async function fetchE5Datacenters(): Promise<E5Datacenter[]> {
-  const rows = parseE5DatacenterRows<BackendDatacenter[]>(
-    await e5Request<unknown>("/datacenters"),
-  );
-  return (rows ?? []).map(fromDatacenter);
 }
 
 export async function activateE5Device(deviceId: number, force: boolean, reason: string, operator: string) {
@@ -479,61 +380,6 @@ export async function setE5UserDevicesPaused(userId: number, paused: boolean, re
     JSON.stringify(body),
     commandKey => e5Request<{ userId: number; changedCount: number; paused: boolean }>(`/batch/${action}`, {
       method: "POST",
-      body: JSON.stringify(body),
-      idempotencyKey: commandKey,
-    }),
-  );
-}
-
-export async function setE5DatacenterPaused(dcLocation: string, paused: boolean, reason: string, operator: string) {
-  const action = paused ? "pause" : "resume";
-  const body = { reason, operator };
-  return e5StableDeviceCommand(
-    `e5-datacenter:${dcLocation}:${action}`,
-    JSON.stringify(body),
-    commandKey => e5Request<E5Overview>(`/datacenters/${encodeURIComponent(dcLocation)}/${action}`, {
-      method: "POST",
-      body: JSON.stringify(body),
-      idempotencyKey: commandKey,
-    }),
-  );
-}
-
-export async function createE5Datacenter(input: E5DatacenterInput, reason: string, operator: string) {
-  const body = { ...input, reason, operator };
-  const saved = await e5StableDeviceCommand(
-    "e5-datacenter:create",
-    JSON.stringify(body),
-    commandKey => e5Request<BackendDatacenter>("/datacenters", {
-      method: "POST",
-      body: JSON.stringify(body),
-      idempotencyKey: commandKey,
-    }),
-  );
-  return fromDatacenter(saved);
-}
-
-export async function updateE5Datacenter(dcLocation: string, input: E5DatacenterInput, reason: string, operator: string) {
-  const body = { ...input, reason, operator };
-  const saved = await e5StableDeviceCommand(
-    `e5-datacenter:${dcLocation}:update`,
-    JSON.stringify(body),
-    commandKey => e5Request<BackendDatacenter>(`/datacenters/${encodeURIComponent(dcLocation)}`, {
-      method: "PATCH",
-      body: JSON.stringify(body),
-      idempotencyKey: commandKey,
-    }),
-  );
-  return fromDatacenter(saved);
-}
-
-export async function deleteE5Datacenter(dcLocation: string, reason: string, operator: string) {
-  const body = { reason, operator };
-  return e5StableDeviceCommand(
-    `e5-datacenter:${dcLocation}:delete`,
-    JSON.stringify(body),
-    commandKey => e5Request<{ dcLocation: string; deleted: boolean }>(`/datacenters/${encodeURIComponent(dcLocation)}`, {
-      method: "DELETE",
       body: JSON.stringify(body),
       idempotencyKey: commandKey,
     }),

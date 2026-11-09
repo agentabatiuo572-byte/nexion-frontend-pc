@@ -183,7 +183,7 @@ function g3PolicyExecutionTiming(w: A2OperationRow) {
 export function A2ChangeReview({ before, after }: { before: string; after: string }) {
   const labels: Record<string, string> = {
     skuId: "商品编号", id: "商品编号", name: "商品名称", tier: "商品档位", tagline: "卖点", badge: "角标",
-    gpu: "GPU", vram: "显存", hashRate: "算力", power: "功耗", datacenter: "数据中心", uptime: "在线率",
+    gpu: "GPU", vram: "显存", hashRate: "算力", power: "功耗", datacenter: "托管机房", allowedPoolCodes: "任务等级", uptime: "在线率",
     warranty: "保修", phoneDailyEarn: "手机日产收益", phoneDailyEarnNex: "手机日产 UVT", price: "价格", computePoints: "每件算力点",
     dailyEarn: "日产收益", dailyEarnNex: "日产 UVT", shareYieldMin: "份额收益下限", shareYieldMax: "份额收益上限",
     monthlyTargetUsdt: "月收益目标", monthlyTargetBandPct: "允许波动", clearMonthlyTarget: "关闭月收益目标",

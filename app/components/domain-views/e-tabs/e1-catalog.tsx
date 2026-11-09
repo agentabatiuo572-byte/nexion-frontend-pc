@@ -117,7 +117,7 @@ function SkuMediaThumb({ sku }: { sku: OpsSku }) {
 }
 
 export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
-  const { skus, tasks } = ctx;
+  const { skus } = ctx;
   const canWrite = ctx.canWriteE1;
   const [skuQuery, setSkuQuery] = useState("");
   const [skuStatus, setSkuStatus] = useState("all");
@@ -151,8 +151,6 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
     });
   }, [skuQuery, skuStatus, skuTier, skus]);
   const skuTiers = Array.from(new Set(skus.map((sku) => sku.tier).filter(Boolean))).sort();
-  const taskNameById = new Map(tasks.map((task) => [task.id, task.n]));
-  const unlockPoolName = (value?: string) => value ? nexGridBrandText(taskNameById.get(value) ?? value) : "—";
   const phaseOrder = ctx.e1Gates?.phaseOrder ?? [];
   const phases = ctx.e1Gates?.phases ?? [];
   const platformMonth = ctx.e1Gates?.platformMonth ?? 0;
@@ -598,7 +596,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
             <input
               aria-label="搜索商品"
               value={skuQuery}
-              placeholder="名称 / 商品编号 / GPU / 数据中心"
+              placeholder="名称 / 商品编号 / GPU / 托管机房"
               onChange={(event) => setSkuQuery(event.target.value)}
             />
           </label>
@@ -675,8 +673,8 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                 <div className="spec">
                   <div className="it"><span className="k">GPU</span><span className="v">{s.gpu || "—"}</span></div>
                   <div className="it"><span className="k">显存</span><span className="v">{s.vram || "—"}</span></div>
-                  <div className="it"><span className="k">数据中心</span><span className="v">{datacenterNameText(s.datacenter || "—")}</span></div>
-                  <div className="it"><span className="k">算力池</span><span className="v">{unlockPoolName(s.aiUnlocks)}</span></div>
+                  <div className="it"><span className="k">托管机房</span><span className="v">{datacenterNameText(s.datacenter || "—")}</span></div>
+                  <div className="it"><span className="k">任务等级</span><span className="v">{s.allowedPoolCodes?.join("、") || "未配置"}</span></div>
                 </div>
                 <div className="meta">
                   {s.sold != null && <span className="sold">{s.sold.toLocaleString()} 售</span>}

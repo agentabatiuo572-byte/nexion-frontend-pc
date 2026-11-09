@@ -112,6 +112,8 @@ export function e1SkuInvalidFields(value: unknown): string[] {
       if (value.derivedShareYieldMaxPct == null) invalid.push("derivedShareYieldMaxPct");
     }
   }
+  if (!isStringArray(value.allowedPoolCodes)) invalid.push("allowedPoolCodes");
+  if (typeof value.datacenter === "string" && value.datacenter.length > 128) invalid.push("datacenter");
   if (value.features !== undefined && value.features !== null && !isStringArray(value.features)) invalid.push("features");
   if (!validPurchaseGate(value.purchaseGate)) invalid.push("purchaseGate");
   if (typeof value.trialEligible !== "boolean") invalid.push("trialEligible");
