@@ -10,7 +10,8 @@ import { OpsHint } from "./ops-hint";
 import { LegacyUnknownResolutionAction } from "./legacy-unknown-resolution-action";
 
 const SIM_STATES: Record<E5SimState, [string, string]> = {
-  WAITING_ACTIVATION: ["待激活", "warn"], RUNNING: ["运行中", "ok"], WAITING_CONFIG: ["等待配置", "warn"], PAUSED: ["已暂停", "neutral"],
+  WAITING_ACTIVATION: ["待激活", "warn"], WAITING_INIT: ["等待初始化", "neutral"], LEGACY_PENDING: ["旧任务未结清", "warn"],
+  RUNNING: ["运行中", "ok"], WAITING_CONFIG: ["等待配置", "warn"], PAUSED: ["已暂停", "neutral"],
   CLOSING: ["停用中", "warn"], STOPPED: ["已停用", "neutral"], UNBOUND: ["已解绑", "neutral"], ERROR: ["出错重试中", "danger"], SIM_OFF: ["模拟任务已关闭", "neutral"],
 };
 const SOURCES: Record<string, string> = { ORDER: "购买", TRADE_IN: "置换", TRIAL: "试用转正", PROMOTION_GIFT: "赠送" };
@@ -24,7 +25,7 @@ function DeviceActions({ device: d, ctx, phones }: { device: E5Device; ctx: EVie
   const [busy, setBusy] = useState(false);
   const readOnly = !phones && d.simState === "SIM_OFF";
   const activatable = phones ? d.state === "inventory" || d.state === "unbound" : d.simState === "WAITING_ACTIVATION" || d.simState === "STOPPED" || d.simState === "UNBOUND";
-  const deactivatable = phones ? ["active", "busy", "offline", "abnormal", "unknown"].includes(d.state) : ["RUNNING", "WAITING_CONFIG", "PAUSED", "ERROR"].includes(d.simState ?? "");
+  const deactivatable = phones ? ["active", "busy", "offline", "abnormal", "unknown"].includes(d.state) : ["WAITING_INIT", "LEGACY_PENDING", "RUNNING", "WAITING_CONFIG", "PAUSED", "ERROR"].includes(d.simState ?? "");
   const full = d.activeDevicesForUser >= d.maxDevicesPerUser;
   const title = action === "activate" ? "激活设备" : action === "deactivate" ? "取消激活" : action === "pause" ? "暂停该用户" : "恢复该用户";
   const open = (next: typeof action) => { setReason(""); setError(""); setAction(next); };
@@ -89,18 +90,18 @@ export function E5Ops({ ctx, phones = false }: { ctx: EViewCtx; phones?: boolean
       {ctx.e5DeviceError && <div className="tint danger" role="alert">{ctx.e5DeviceError}</div>}
       <div className="tp-table-wrap" style={{ minHeight: ctx.e5Devices.length ? 300 : undefined }}><table className="tp-table"><thead><tr><th>设备</th><th>用户</th><th>{phones ? "手机状态" : "商品 · 托管机房"}</th>{!phones && <th>来源</th>}<th>状态</th><th>{phones ? "每日收益" : "本月收益"}</th><th>当前任务</th><th>操作</th></tr></thead>
         <tbody>{ctx.e5Loading ? <tr><td colSpan={8} className="empty">正在加载…</td></tr> : ctx.e5DeviceError ? <tr><td colSpan={8} className="empty">设备读取失败，请刷新重试</td></tr> : !ctx.e5Devices.length ? <tr><td colSpan={8} className="empty">暂无符合条件的{phones ? "手机" : "设备"}</td></tr> : ctx.e5Devices.map(d => {
-          const state = d.simState ? SIM_STATES[d.simState] : [PHONE_STATES[d.state], "neutral"];
+          const state = d.simState ? SIM_STATES[d.simState] : [d.pausedReason ? "已暂停" : PHONE_STATES[d.state], "neutral"];
           const target = d.monthlyTarget; const task = d.currentTask;
           return <tr key={d.deviceId}><td><strong>{d.deviceName}</strong><small>{d.serial}</small></td><td><strong>{d.nickname}</strong><small>{d.userNo}</small></td>
             <td>{phones ? <div className="row"><span>{d.batteryLevel == null ? "—" : `${d.batteryLevel}%`}</span><OpsHint>心跳：{d.heartbeatAt}<br />{d.isCharging ? "充电中" : "未充电"} · {d.isWifiConnected ? "网络可达" : "网络断开"}<br />温控：{d.thermalState}</OpsHint></div> : <><strong>{productOptions.get(d.productCode) || d.productCode || "—"}</strong><small>{d.hostingLabel || "—"}</small></>}</td>
             {!phones && <td>{SOURCES[d.sourceChannel] ?? "—"}</td>}
-            <td><div className="row" style={{ gap: 6 }}><Badge tone={state[1]}>{state[0]}</Badge>{d.simState === "ERROR" && <OpsHint>错误：{d.simLastError || "未提供错误原因"}<br />下次自动重试：{d.simNextActionAt ? formatBusinessTimeCompact(d.simNextActionAt) : "等待调度"}<br />系统每 30 秒自动重试。</OpsHint>}{d.simState === "CLOSING" && <OpsHint>当前单完成并结算后停用。</OpsHint>}{d.simState === "WAITING_CONFIG" && <OpsHint>等待商品发布任务等级、月收益目标及可用任务；停跑期间不计收益、不补发。</OpsHint>}</div></td>
+            <td><div className="row" style={{ gap: 6 }}><Badge tone={state[1]}>{state[0]}</Badge>{d.simState === "ERROR" && <OpsHint>错误：{d.simLastError || "未提供错误原因"}<br />下次自动重试：{d.simNextActionAt ? formatBusinessTimeCompact(d.simNextActionAt) : "等待调度"}<br />系统每 30 秒自动重试。</OpsHint>}{d.simState === "CLOSING" && <OpsHint>当前单完成并结算后停用。</OpsHint>}{d.simState === "WAITING_INIT" && <OpsHint>系统会自动开始，无需操作。</OpsHint>}{d.simState === "LEGACY_PENDING" && <OpsHint>设备还有旧版任务没结算完，结清前不会开始新任务；改任务池配置不能解决。</OpsHint>}{d.simState === "WAITING_CONFIG" && <OpsHint>商品的任务等级没有可用任务，请添加或启用任务。停跑期间不计收益、不补发。</OpsHint>}</div></td>
             <td>{phones ? `${d.dailyUsdt ?? "—"} USDT` : target ? <div className="row" style={{ gap: 6 }}><div><strong style={{ color: "var(--success)" }}>${target.creditedUsdt.toFixed(2)}</strong><small>/ {target.rangeLowUsdt == null || target.rangeHighUsdt == null ? "—" : `$${target.rangeLowUsdt.toFixed(2)}–${target.rangeHighUsdt.toFixed(2)}`}（预估）</small></div><OpsHint>第 {target.cycleIndex} 个设备月：{formatBusinessTimeCompact(target.cycleStartAt)} 至 {formatBusinessTimeCompact(target.cycleEndAt)}（不含结束时刻）。<br />当前产能 {target.capacityPct}%；已到账为本周期已完成目标任务 USDT。{!target.targetActive && "目标已关闭。"}{target.configChangedInCycle && "本周期配置曾变化，历史到账不重算。"}区间按当前配置满运行预估。</OpsHint></div> : "—"}</td>
             <td>{task ? <><strong>{TASK_CLASS_LABELS[task.taskClass as keyof typeof TASK_CLASS_LABELS] ?? task.taskClass}</strong><small>{Math.max(0, Math.ceil((Date.parse(task.dueAt) - Date.parse(task.startedAt)) / 60000))} 分钟 <OpsHint>{task.name}<br />任务号：{task.taskNo}<br />开始：{formatBusinessTimeCompact(task.startedAt)}<br />预计完成：{formatBusinessTimeCompact(task.dueAt)}</OpsHint></small></> : phones && d.activeTaskNo !== "—" ? d.activeTaskNo : "—"}</td>
             <td><DeviceActions device={d} ctx={ctx} phones={phones} /></td></tr>;
         })}</tbody></table></div>
       <DataListPager label={phones ? "用户手机" : "设备"} total={ctx.e5Total} page={ctx.e5Page} pageSize={ctx.e5PageSize} onPageChange={ctx.setE5Page} onPageSizeChange={ctx.setE5PageSize} pageSizeOptions={[10, 20, 50]} />
     </section>
-    {!phones && <details className="pane device-activity" onToggle={event => setActivityOpen(event.currentTarget.open)}><summary>最近 24 小时操作</summary><div style={{ padding: "0 22px 18px" }}>{activityError ? <div className="tint warn" role="alert">{activityError}</div> : !activity ? "正在加载…" : !activity.activity.length ? "暂无设备操作" : activity.activity.map((entry, index) => <div className="pkv" key={`${entry.aggregateId}:${index}`}><span>{({ E5_DEVICE_ACTIVATED: "激活设备", E5_DEVICE_DEACTIVATED: "取消激活", E5_DEVICE_UNBOUND: "解绑设备", E5_DEVICE_FORCE_ACTIVATED: "强制激活设备", E5_DEVICE_BATCH_PAUSED: "暂停用户设备", E5_DEVICE_BATCH_RESUMED: "恢复用户设备" } as Record<string, string>)[entry.eventType] ?? "设备操作"} · {entry.aggregateId}</span><span className="muted">{formatBusinessTimeCompact(entry.occurredAt)}</span></div>)}</div></details>}
+    {!phones && <details className="pane device-activity" onToggle={event => setActivityOpen(event.currentTarget.open)}><summary>最近 24 小时操作</summary><div style={{ padding: "0 22px 18px" }}>{activityError ? <div className="tint warn" role="alert">{activityError}</div> : !activity ? "正在加载…" : !activity.activity.length ? "暂无设备操作" : activity.activity.map((entry, index) => <div className="pkv" key={`${entry.aggregateId}:${index}`}><span>{({ E5_DEVICE_ACTIVATED: "激活设备", E5_DEVICE_DEACTIVATED: "取消激活", E5_DEVICE_UNBOUND: "解绑设备", E5_DEVICE_FORCE_ACTIVATED: "强制激活设备", E5_DEVICE_BATCH_PAUSED: "暂停用户设备", E5_DEVICE_BATCH_RESUMED: "恢复用户设备", "admin.device_activated": "激活设备", "admin.device_deactivation_requested": "取消激活", "admin.device_deactivated": "设备已停用", "admin.device_unbound": "解绑设备", "admin.device_paused": "暂停用户设备", "admin.device_resumed": "恢复用户设备" } as Record<string, string>)[entry.eventType] ?? "设备操作"} · {entry.aggregateId}</span><span className="muted">{formatBusinessTimeCompact(entry.occurredAt)}</span></div>)}</div></details>}
   </>;
 }

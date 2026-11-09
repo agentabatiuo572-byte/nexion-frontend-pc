@@ -21,7 +21,7 @@ export function OpsHint({ children, label = "查看说明" }: { children: ReactN
     onMouseEnter={event => show(event.currentTarget)} onMouseLeave={() => { if (!pinned) setPosition(null); }}
     onFocus={event => show(event.currentTarget)} onBlur={() => { setPinned(false); setPosition(null); }}
     onClick={event => { if (pinned) { setPinned(false); setPosition(null); } else { setPinned(true); show(event.currentTarget); } }}
-    onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); setPinned(false); setPosition(null); } }}>ⓘ</button>
+    onKeyDownCapture={event => { if (event.key === "Escape") { event.stopPropagation(); setPinned(false); setPosition(null); } }}>ⓘ</button>
     {position && createPortal(<div id={id} className="ops-hint-popover" role="tooltip" style={{ left: position.left, top: position.top, transform: position.above ? "translateY(-100%)" : undefined }}>{children}</div>, document.body)}
   </>;
 }

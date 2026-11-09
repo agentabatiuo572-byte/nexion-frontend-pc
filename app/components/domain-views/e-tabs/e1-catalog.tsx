@@ -707,7 +707,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
         })}
       </div>
 
-      <p className="f-foot">这里的商品卡片就是 App 商城里的商品，上下架、改价和调库存都会<b>立即在 App 生效</b>。</p>
+      <p className="f-foot">商品变更经另一位管理员批准发布后，更新 App 商城。</p>
     </>
   );
 }
