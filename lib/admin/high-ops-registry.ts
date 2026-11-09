@@ -41,7 +41,7 @@ function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unkn
     derivedShareYieldMaxPct: _derivedShareYieldMaxPct,
     ...rest
   } = ctx;
-  const targetSupported = supportsDeviceMonthlyTarget(String(ctx.skuId), String(ctx.tier ?? ""));
+  const targetSupported = supportsDeviceMonthlyTarget(String(ctx.skuId), String(ctx.tier ?? ""), ctx.productType as string | undefined);
   const hasTarget = targetSupported && monthlyTargetUsdt != null;
   return {
     ...rest,

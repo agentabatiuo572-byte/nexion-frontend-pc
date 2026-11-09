@@ -294,7 +294,7 @@ function fromSku(sku: BackendSku): OpsSku {
 }
 
 function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
-  const targetSupported = supportsDeviceMonthlyTarget(sku.id, sku.tier);
+  const targetSupported = supportsDeviceMonthlyTarget(sku.id, sku.tier, sku.productType);
   const hasTarget = targetSupported && sku.monthlyTargetUsdt != null;
   const inventoryMode = sku.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE";
   const productType = sku.productType ?? (sku.tier === "Share" ? "SHARE" : "DEVICE");

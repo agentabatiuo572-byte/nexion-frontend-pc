@@ -1,4 +1,7 @@
+import { SKU_MODEL_UNRECOGNIZED_REASON } from "./device-monthly-target.ts";
+
 const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  SKU_MODEL_UNRECOGNIZED: SKU_MODEL_UNRECOGNIZED_REASON,
   CREGIS_SWITCH_DIFFERENT_CHECKER_REQUIRED: "不能复核自己发起的资金开关申请，请由另一位有权限的管理员复核。",
   CREGIS_SWITCH_VERSION_CHANGED: "资金开关版本已变化，请刷新当前状态后重新提交审批。",
   CREGIS_SWITCH_CASE_CHANGED: "该资金开关申请已处理或状态已变化，请刷新待复核申请。",

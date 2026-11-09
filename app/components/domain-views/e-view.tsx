@@ -18,7 +18,7 @@ import { Icon, Btn, Chip, Drawer, KV, Badge, OperationConfirmModal, useToast } f
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import { supportsDeviceMonthlyTarget, UNSUPPORTED_MONTHLY_TARGET_REASON } from "@/lib/admin/device-monthly-target";
+import { supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
 import { monthlyTargetEstimateText } from "@/lib/admin/operator-copy";
 import { operatorDeviceStatus, operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
@@ -244,11 +244,12 @@ function SkuFieldGroup({ n, title, children }: { n: string; title: string; child
     </div>
   );
 }
-function SkuFld({ label, value, onChange, placeholder, type = "text", hint, tip, list, min, max, step, disabled = false }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string; hint?: string; tip?: string; list?: string; min?: number; max?: number; step?: number; disabled?: boolean }) {
+function SkuFld({ label, value, onChange, placeholder, type = "text", hint, tip, error, list, min, max, step, disabled = false }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string; hint?: string; tip?: string; error?: string; list?: string; min?: number; max?: number; step?: number; disabled?: boolean }) {
   return (
     <label className="col" style={{ gap: 5 }}>
       <span className="muted tiny">{label}{tip ? <span className="has-tip" data-tip={tip} aria-label={`${label}说明：${tip}`} /> : null}{hint ? <span style={{ color: "var(--ink-4)" }}> · {hint}</span> : null}</span>
-      <input className="fld" type={type} list={list} min={min} max={max} step={step} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} />
+      <input className="fld" aria-invalid={error ? true : undefined} type={type} list={list} min={min} max={max} step={step} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} />
+      {error && <span role="alert" style={{ color: "var(--danger)", fontSize: 12 }}>{error}</span>}
     </label>
   );
 }
@@ -641,8 +642,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [taskForm, setTaskForm] = useState(emptyTaskForm);
   const taskSimulation = () => ({ durationMinutes: Number(taskForm.durationMinutes), baseReward: taskForm.baseReward.trim(), asset: taskForm.asset, enabled: taskForm.enabled, expectedVersion: taskForm.version });
   const editedSku = editSkuId ? skus.find((sku) => sku.id === editSkuId) : undefined;
-  const monthlyTargetSupported = supportsDeviceMonthlyTarget(form.id || editSkuId || form.name, form.tier);
-  const monthlyTargetFilled = monthlyTargetSupported && form.monthlyTargetUsdt.trim() !== "";
+  const skuModelError = !editSkuId && (form.id.trim() || form.name.trim())
+    && !supportsDeviceMonthlyTarget(form.id.trim() || form.name.trim(), form.tier) ? SKU_MODEL_UNRECOGNIZED_REASON : undefined;
+  const monthlyTargetFilled = form.monthlyTargetUsdt.trim() !== "";
   const draftSku = attachSkuMedia(formToSku(form, editedSku), skuMedia);
   const skuFormChanged = !editSkuId || !editedSku
     || summarizeSkuProposal(editedSku, draftSku, { includeDerived: false }) !== null;
@@ -866,7 +868,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       return;
     }
     if (form.datacenter.trim().length > 128) { setToast("托管机房最多 128 字"); return; }
-    if (!monthlyTargetSupported && editedSku?.status === "on") { setToast(UNSUPPORTED_MONTHLY_TARGET_REASON); return; }
+    if (!editSkuId && !supportsDeviceMonthlyTarget(form.id.trim() || form.name.trim(), form.tier)) { setToast(SKU_MODEL_UNRECOGNIZED_REASON); return; }
     if (editedSku?.status === "on" && !form.allowedPoolCodes.length) { setToast("在售商品至少要选择一个任务等级"); return; }
     if (editedSku?.status === "on" && !form.datacenter.trim()) { setToast("在售商品必须填写托管机房"); return; }
     const specErr = validateSkuSpecs(form, editedSku);
@@ -1160,7 +1162,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               <Btn sm disabled={skuMediaUploading} onClick={() => resetSkuMedia(null)}>移除</Btn>
             </div>}
           </div>
-          <DevicePoolChoices pools={devicePools} selected={form.allowedPoolCodes} supported={monthlyTargetSupported} onChange={(codes) => setForm({ ...form, allowedPoolCodes: codes })} />
+          <DevicePoolChoices pools={devicePools} selected={form.allowedPoolCodes} onChange={(codes) => setForm({ ...form, allowedPoolCodes: codes })} />
           <SkuFieldGroup n="①" title="基本信息">
             <SkuFld label="型号名称" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="如 UVELBox Pro v3" />
             <div className="grid g-2" style={{ gap: 12 }}>
@@ -1175,7 +1177,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             <div className="grid g-2" style={{ gap: 12 }}>
               <SkuFld label="售价(USD)" type="number" value={form.price} onChange={(v) => setForm({ ...form, price: v })} placeholder="1319" />
               <SkuFld label="每件算力点" type="number" min={0} step={1} value={form.computePoints} onChange={(v) => setForm({ ...form, computePoints: v })} placeholder={editSkuId ? "留空保留原值" : "留空按售价 × 10"} hint="计入团队等级与配额，只影响之后的订单" />
-              <SkuFld label="商品编号" value={form.id} onChange={(v) => setForm({ ...form, id: v })} placeholder="uvelbox-pro-v2" disabled={Boolean(editSkuId)} hint={editSkuId ? "创建后不能修改" : undefined} />
+              <SkuFld label="商品编号" value={form.id} onChange={(v) => setForm({ ...form, id: v })} placeholder="uvelbox-pro-v2" disabled={Boolean(editSkuId)} error={skuModelError} hint={editSkuId ? "创建后不能修改" : undefined} />
             </div>
           </SkuFieldGroup>
 
@@ -1202,14 +1204,13 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           </SkuFieldGroup>
 
           <SkuFieldGroup n="③" title="收益（USDT + UVT）">
-            {!monthlyTargetSupported && <div className="tint warn" role="alert">{UNSUPPORTED_MONTHLY_TARGET_REASON}</div>}
-            {monthlyTargetSupported && <div className="grid g-2" style={{ gap: 12 }}>
+            <div className="grid g-2" style={{ gap: 12 }}>
               <SkuFld label="月收益目标（USDT）" type="number" min={1} max={1_000_000} step={0.01} value={form.monthlyTargetUsdt} onChange={(v) => setForm({ ...form, monthlyTargetUsdt: v })} placeholder="必填，如 50"
                 tip="商品展示、新领取试用与任务收益按月目标推算；批准后只影响新任务。目标提高仍须通过兑付覆盖率检查。" />
               <SkuFld label="允许波动 %" type="number" min={1} max={50} step={0.1} value={form.monthlyTargetBandPct} onChange={(v) => setForm({ ...form, monthlyTargetBandPct: v })} disabled={!monthlyTargetFilled} placeholder="10"
                 tip="1%–50%，最多 1 位小数。持续运行时的设备月目标区间为目标 × 当期产能比例 ×（1 ± 波动比例）；每天收益有起伏，停机不补发。设备月从购入日开始，购入日缺失时从激活日开始。" />
-            </div>}
-            {monthlyTargetSupported && <div className={`tint ${form.allowedPoolCodes.length && !monthlyTargetFilled ? "warn" : "cyan"}`} role={form.allowedPoolCodes.length && !monthlyTargetFilled ? "alert" : undefined}>月收益目标必填：任务等级只决定跑什么任务，每单收益按目标配平。{form.allowedPoolCodes.length > 0 && "已选任务等级，不能清空目标。"}</div>}
+            </div>
+            <div className={`tint ${form.allowedPoolCodes.length && !monthlyTargetFilled ? "warn" : "cyan"}`} role={form.allowedPoolCodes.length && !monthlyTargetFilled ? "alert" : undefined}>月收益目标必填：任务等级只决定跑什么任务，每单收益按目标配平。{form.allowedPoolCodes.length > 0 && "已选任务等级，不能清空目标。"}</div>
             {monthlyTargetFilled && <div className="mono">{Number(form.monthlyTargetUsdt) >= 1 && Number(form.monthlyTargetUsdt) <= 1_000_000 && Number(form.monthlyTargetBandPct) >= 1 && Number(form.monthlyTargetBandPct) <= 50
               ? `App 显示${monthlyTargetEstimateText(draftSku)}` : "填写有效目标和波动后显示预估收益"}</div>}
             {form.tier !== "Share" ? (
@@ -1471,7 +1472,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             const sku = skus.find((x) => x.id === mc.target);
             const skuId = mc.target;
             if (mc.status === "on") {
-              if (sku && !supportsDeviceMonthlyTarget(sku.id, sku.tier)) throw new Error(UNSUPPORTED_MONTHLY_TARGET_REASON);
+              if (sku && !supportsDeviceMonthlyTarget(sku.id, sku.tier, sku.productType)) throw new Error(SKU_MODEL_UNRECOGNIZED_REASON);
               if (!sku?.allowedPoolCodes?.length) throw new Error("上架前请在商品抽屉至少选择一个任务等级");
               if (sku.monthlyTargetUsdt == null) throw new Error("上架前请设置月收益目标");
               if (!sku.datacenter?.trim()) throw new Error("上架前请填写托管机房");

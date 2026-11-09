@@ -4,7 +4,7 @@
  * 视图局部的纯设计数组(timeline / 热力图 / DC / feed / tx 监控 等)放各子视图文件内,保持本文件聚焦逻辑。
  */
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
-import { supportsDeviceMonthlyTarget, UNSUPPORTED_MONTHLY_TARGET_REASON } from "@/lib/admin/device-monthly-target";
+import { supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
 import { skuBaseRateText } from "@/lib/admin/operator-copy";
 
 // 全系统统一连续编号 E1-E5(上架节奏门并入 E1、设备生命周期归 E3)。
@@ -85,11 +85,10 @@ export function joinGpu(model: string, count: string): string | undefined {
 }
 export function validateSkuSpecs(f: SkuForm, existing?: OpsSku): string | null {
   if (f.datacenter.trim().length > 128) return "托管机房最多 128 字";
-  if (!supportsDeviceMonthlyTarget(f.id || existing?.id || f.name, f.tier)
-    && (f.allowedPoolCodes.length || f.monthlyTargetUsdt.trim() || existing?.status === "on")) return UNSUPPORTED_MONTHLY_TARGET_REASON;
+  if (!existing && !supportsDeviceMonthlyTarget(f.id.trim() || f.name.trim(), f.tier)) return SKU_MODEL_UNRECOGNIZED_REASON;
   if (f.allowedPoolCodes.length && !f.monthlyTargetUsdt.trim()) return existing?.monthlyTargetUsdt != null
     ? "仍选有任务等级，不能清空月收益目标" : "已选任务等级，必须设置月收益目标，用于配平每单收益";
-  if (supportsDeviceMonthlyTarget(f.id || existing?.id || f.name, f.tier)) {
+  if (supportsDeviceMonthlyTarget(f.id.trim() || existing?.id || f.name.trim(), f.tier, existing?.productType)) {
     const target = f.monthlyTargetUsdt.trim();
     const band = f.monthlyTargetBandPct.trim();
     if (target) {
@@ -279,7 +278,7 @@ export function validateGateForm(f: SkuForm): string | null {
 
 // 表单 → OpsSku(提交:string 转结构化双币 + 合成 baseRate 兼容串;上下架 status 沿用既有/新建 pending)。
 export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
-  const targetSupported = supportsDeviceMonthlyTarget(f.id || existing?.id || f.name, f.tier);
+  const targetSupported = supportsDeviceMonthlyTarget(f.id.trim() || existing?.id || f.name.trim(), f.tier, existing?.productType);
   const monthlyTargetUsdt = targetSupported ? skuNumU(f.monthlyTargetUsdt) : undefined;
   const monthlyTargetBandPct = monthlyTargetUsdt != null ? skuNumU(f.monthlyTargetBandPct) : undefined;
   const dailyEarn = monthlyTargetUsdt != null ? Number((monthlyTargetUsdt / 30).toFixed(6)) : skuNum(f.dailyEarn);
