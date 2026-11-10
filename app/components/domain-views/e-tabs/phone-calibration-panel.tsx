@@ -129,7 +129,7 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false, onPendingCo
     ...diffAndroidRules(publishedPolicy?.androidSocRules??[],confirm.proposal.androidSocRules).map(c=>`Android「${c.name}」${IOS_CHANGE_LABELS[c.kind]}：${c.details.join("；")||"状态变化"}`),
     ...diffIosRules(publishedPolicy?.iosModelRules??[],confirm.proposal.iosModelRules).map(c=>`iPhone「${c.after?.model??c.before?.model}」${IOS_CHANGE_LABELS[c.kind]}：${c.details.join("；")||"状态变化"}`),
   ] : [];
-  const summary = !snapshot ? busy ? "正在读取手机校准规则" : "等校准规则读取成功后可用" : `${snapshot.policy.current?`当前校准规则第 ${snapshot.policy.current.version} 版`:"尚未发布手机校准规则"}${snapshot.policy.scheduled?`；第 ${snapshot.policy.scheduled.version} 版预约于 ${time(snapshot.policy.scheduled.effectiveAt)}（${Intl.DateTimeFormat().resolvedOptions().timeZone}）生效`:""}${!publishedPolicy?.androidSocRules.length?"；Android 0 档，需补充规则":""}${snapshot.pendingHardware.length?`；${snapshot.pendingHardware.length} 组硬件待核验`:""}`;
+  const summary = !snapshot ? busy ? "正在读取手机校准规则" : "等校准规则读取成功后可用" : `${snapshot.policy.current?`校准第 ${snapshot.policy.current.version} 版`:"尚未发布手机校准规则"}${snapshot.policy.scheduled?`；第 ${snapshot.policy.scheduled.version} 版预约于 ${time(snapshot.policy.scheduled.effectiveAt)}（${Intl.DateTimeFormat().resolvedOptions().timeZone}）生效`:""}${!publishedPolicy?.androidSocRules.length?"；Android 0 档待补":""}${snapshot.pendingHardware.length?`；${snapshot.pendingHardware.length} 组硬件待核验`:""}`;
 
   return <div className="e6-tab">
     <E6PendingNotice section="calibration" onRead={()=>{void refresh();void ctx.refreshE6();}}/>
