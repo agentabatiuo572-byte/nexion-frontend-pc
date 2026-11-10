@@ -578,6 +578,8 @@
 .e6-middle-text > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .e6-middle-text > :last-child { flex: none; }
 .e6-phone-device .rd-cell-sub > .e6-original, .e6-tasks-table .rd-cell-main > .e6-original { display: block; }
+.e6-page .e6-phones-table .e6-phone-task { min-width: 180px; width: 20%; }
+.e6-phone-task > .e6-original { display: block; }
 .e6-phone-telemetry, .e6-phone-status { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 .e6-phone-telemetry { justify-content: flex-end; }
 .e6-threshold-block { display: grid; gap: var(--rd-section-gap); }
