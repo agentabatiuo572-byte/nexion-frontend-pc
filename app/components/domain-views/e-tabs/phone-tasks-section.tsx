@@ -86,14 +86,13 @@ export function PhoneTasksSection({ ctx }: { ctx: EViewCtx }) {
     </Panel>
     {form && <Drawer open title={task?"编辑手机任务":"新增手机任务"} icon={Smartphone} tone="role-2" onClose={()=>setForm(null)} footer={<Decision primary={<Button variant="primary" disabled={!ready} onClick={submitForm}>提交审批</Button>} others={<Button onClick={()=>setForm(null)}>取消</Button>}/>}>
       <Facts><Fact k="当前版本">{task?String(form.version):"待创建"}</Fact><Fact k="生效方式">另一位管理员批准后，对新派任务生效</Fact></Facts>
-      <div className="e6-form-grid"><Field label="任务名称" required error={formError&&!form.n.trim()?formError:undefined}><Input value={form.n} onChange={e=>setForm({...form,n:e.target.value})}/></Field>
+      <div className="e6-form-grid"><Field label="任务名称" required error={formError&&!form.n.trim()?formError:undefined}><Input value={form.n} onChange={e=>{setFormError("");setForm({...form,n:e.target.value});}}/></Field>
         <Field label="任务类型" explain="六类业务任务，批准后用于新派任务。"><Select aria-label="任务类型" value={form.taskClass} onChange={taskClass=>setForm({...form,taskClass})} options={TASK_CLASSES.map(value=>({value,label:TASK_CLASS_LABELS[value]}))}/></Field>
-        <Field label="固定时长" help="1–1440 整数分钟。" explain="缩短启用任务时长须检查兑付覆盖率。"><NumberInput value={form.durationMinutes} min={1} max={1440} step={1} unit="分钟" onChange={e=>setForm({...form,durationMinutes:e.target.value})}/></Field>
-        <Field label="每任务奖励" help={<><span className="rd-keep">非负，整数最多 12 位。</span>{" "}<span className="rd-keep">小数最多 6 位。</span></>} explain="一次任务完成的固定奖励；增加奖励或启用正奖励任务会增加支出。"><NumberInput value={form.baseReward} min={0} step={0.000001} unit={form.asset} onChange={e=>setForm({...form,baseReward:e.target.value})}/></Field>
+        <Field label="固定时长" error={formError.startsWith("固定时长")?formError:undefined} help="1–1440 整数分钟。" explain="缩短启用任务时长须检查兑付覆盖率。"><NumberInput value={form.durationMinutes} min={1} max={1440} step={1} unit="分钟" onChange={e=>{setFormError("");setForm({...form,durationMinutes:e.target.value});}}/></Field>
+        <Field label="每任务奖励" error={formError.startsWith("固定奖励")?formError:undefined} help={<><span className="rd-keep">非负，整数最多 12 位。</span>{" "}<span className="rd-keep">小数最多 6 位。</span></>} explain="一次任务完成的固定奖励；增加奖励或启用正奖励任务会增加支出。"><NumberInput value={form.baseReward} min={0} step={0.000001} unit={form.asset} onChange={e=>{setFormError("");setForm({...form,baseReward:e.target.value});}}/></Field>
         <Field label="奖励资产" help="币种切换不自动换汇。"><Select aria-label="奖励资产" value={form.asset} onChange={asset=>setForm({...form,asset})} options={[{value:"USDT",label:"USDT"},{value:"UVT",label:"UVT"}]}/></Field>
       </div>
       {task ? <Notice tone="neutral" title={`当前${form.enabled?"已启用":"已停用"} · 只读`}>启停请用任务行的「启用 / 停用」操作。</Notice> : <Check label="启用任务" checked={form.enabled} onChange={e=>setForm({...form,enabled:e.target.checked})} explain="新建默认启用，批准后生效。已有任务通过行上动作启停。"/>}
-      {formError&&<Notice tone="warn">{formError}</Notice>}
     </Drawer>}
     {confirm && <OperationConfirmModal briefKind="config" statedBrief={{impact:"只创建审批提案，批准后对新派任务生效；已派任务按原版本完成。",check:"核对原任务、固定时长、每任务奖励与理由；批准时检查兑付覆盖率。"}} action={confirm.action} amplifies={confirm.amplifies} coverageCheck="批准时检查兑付覆盖率，未达标不会执行。" reasonMin={8} reasonMax={200}
       detail="批准后对新任务生效；已派出的任务按原版本完成。" completionCopy="提交后请另一位有批准权限和任务池修改权限的管理员在「操作记录与审批」中批准。"
