@@ -127,7 +127,7 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
       // One native table, with content-sized bounded columns. Device and task share the available growth first.
       const deviceMin = Math.max(132, Math.min(340, Math.ceil(nameWidth / 2) + 28));
       const deviceWant = Math.min(340, Math.max(deviceMin, nameWidth + 28, ...rows.map(row => measure(row.serial, sub) + 28)));
-      const user = Math.min(260, widest(".e5-user-meta", 26, 184));
+      const user = Math.min(260, widest(".e5-user-meta", 34, 184));
       const status = widest(".e5-status-col .rd-tag", 48, 136);
       const income = Math.max(widest(".e5-amount", 16, 180), widest(".e5-income-range .e5-sub", 154, 180));
       const taskMin = Math.max(160, ...Array.from(host.querySelectorAll(".e5-task-time"), element => measure(element.textContent ?? "", element.querySelector(".e5-sub")) + (element.querySelector(".rd-ratio") ? 88 : 16)));
@@ -135,12 +135,10 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
       const widths = [deviceMin, user, ...(showProduct ? [Math.min(240, widest(".e5-product-col .rd-cell-main", 16, 176))] : []), ...(showSource ? [80] : []), status, income, taskMin, 52];
       const taskIndex = widths.length - 2;
       let remaining = Math.max(0, host.clientWidth - widths.reduce((sum, width) => sum + width, 0));
-      const deviceGrowth = Math.min(deviceWant - deviceMin, remaining * .6);
-      const taskGrowth = Math.min(taskWant - taskMin, remaining * .4);
-      widths[0] += deviceGrowth; widths[taskIndex] += taskGrowth; remaining -= deviceGrowth + taskGrowth;
-      for (const [index, wanted] of [[0, deviceWant], [taskIndex, taskWant]]) {
-        const growth = Math.min(wanted - widths[index], remaining); widths[index] += growth; remaining -= growth;
-      }
+      const deviceGrowth = Math.min(deviceWant - deviceMin, remaining);
+      widths[0] += deviceGrowth; remaining -= deviceGrowth;
+      const taskGrowth = Math.min(taskWant - taskMin, remaining);
+      widths[taskIndex] += taskGrowth; remaining -= taskGrowth;
       const gap = remaining / (widths.length - 1);
       const deviceContent = widths[0] - 28;
       const serials: Record<number, string> = {};
