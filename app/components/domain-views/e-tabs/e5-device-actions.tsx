@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
@@ -48,7 +48,7 @@ interface ActionsState {
 }
 const CommandsContext = createContext<ActionsState | null>(null);
 
-export function E5CommandScope({ children, refresh, toast }: { children: ReactNode; refresh: () => Promise<void>; toast: (message: string) => void }) {
+export function E5CommandScope({ children, refresh, toast }: { children: ReactNode; refresh: (successMessage?: string) => Promise<void>; toast: (message: string) => void }) {
   const actorId = useAdminAuth(s => String(s.session?.adminId ?? ""));
   const authorities = useAdminAuth(s => s.session?.authorities ?? []);
   const role = useAdminAuth(s => s.session?.role);
@@ -83,7 +83,7 @@ export function E5CommandScope({ children, refresh, toast }: { children: ReactNo
         ? result.pendingDeactivate ? "已申请停用，等待当前任务结算后自动停用" : "设备已取消激活"
         : record.intent === "pause" || record.intent === "resume" ? `${record.intent === "pause" ? "暂停" : "恢复"}成功 · ${result.changedCount} 台设备` : "设备已激活";
       toast(message);
-      await refresh();
+      await refresh(message);
     } catch (cause) {
       if (cause instanceof Error && "status" in cause && (cause.status === 401 || cause.status === 403)) announcePermissionDenied();
       sync();
@@ -162,7 +162,7 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
       if (auth.authEpoch !== epoch || auth.session?.adminId !== session?.adminId) return;
       if (fresh.caseId && (fresh.ownerId !== d.userId || fresh.instanceNo !== d.serial)) throw new Error("旧任务身份已变化，请重新核对。");
       setCandidate(fresh);
-    } catch (cause) { setCandidateError(displayAdminError(cause)); }
+    } catch (cause) { setCandidateError(displayAdminReadError(cause)); }
     finally { setReading(false); }
   }
   const proposal = action === "force-activate" || action === "unbind" || action === "legacy";
@@ -177,7 +177,7 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
         <div className="rd-toolbar"><Button onClick={() => void readCandidate()}>重新核对</Button>{candidate.eligible && <Button variant="danger" disabledReason={locked("legacy")} onClick={async () => {
           setReading(true); setCandidateError("");
           try { const fresh = await fetchLegacyUnknownCandidate(d.deviceId); if (!sameLegacyUnknownProof(candidate, fresh)) throw new Error("退出证据或设备状态已更新，请重新核对。"); setCandidate(fresh); setCandidateOpen(false); setAction("legacy"); }
-          catch (cause) { setCandidate(null); setCandidateError(displayAdminError(cause)); }
+          catch (cause) { setCandidate(null); setCandidateError(displayAdminReadError(cause)); }
           finally { setReading(false); }
         }}>结束未确认任务（不计收益）</Button>}</div>
       </>}

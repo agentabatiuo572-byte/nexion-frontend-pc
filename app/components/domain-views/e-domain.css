@@ -533,3 +533,5 @@
 .e5-list-panel .e5-table th:first-child, .e5-list-panel .e5-table td:first-child { padding-left: var(--rd-panel-pad-x); }
 .e5-list-panel .e5-table th:last-child, .e5-list-panel .e5-table td:last-child { padding-right: var(--rd-panel-pad-x); }
 .e5-phone-search { flex: 1; min-width: 220px; }
+
+.e5-summary { display: grid; gap: 16px; }
