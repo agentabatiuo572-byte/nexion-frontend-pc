@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import Link from "next/link";
 import { Boxes, CirclePause, Clock3, Copy, Play, RefreshCw } from "lucide-react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -106,7 +107,58 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
   const [activityVersion, setActivityVersion] = useState(0);
   const request = useRef(0);
   const overviewRequest = useRef(0);
+  const tableHost = useRef<HTMLDivElement>(null);
+  const [tableLayout, setTableLayout] = useState<{ widths: number[]; gap: number; serials: Record<number, string>; total: number } | null>(null);
   const columns = useTableColumns("e5-devices", [{ key: "device", label: "设备", locked: "设备不能收起" }, { key: "user", label: "用户", locked: "用户不能收起" }, { key: "status", label: "状态", locked: "状态不能收起" }, { key: "income", label: "本月收益", locked: "收益不能收起" }, { key: "task", label: "当前任务", locked: "当前任务不能收起" }, { key: "actions", label: "操作", locked: "操作不能收起" }, { key: "product", label: "商品 · 托管机房", extra: true }, { key: "source", label: "来源", extra: true }]);
+  const showProduct = columns.isVisible("product"), showSource = columns.isVisible("source");
+  useLayoutEffect(() => {
+    const host = tableHost.current;
+    if (!host) return;
+    const canvas = document.createElement("canvas").getContext("2d")!;
+    const measure = (text: string, element: Element | null) => {
+      const font = getComputedStyle(element ?? host);
+      canvas.font = `${font.fontWeight} ${font.fontSize} ${font.fontFamily}`;
+      return canvas.measureText(text).width;
+    };
+    const widest = (selector: string, extra: number, minimum: number) => Math.max(minimum, ...Array.from(host.querySelectorAll(selector), element => measure(element.textContent ?? "", element) + extra));
+    const update = () => {
+      const main = host.querySelector(".e5-device-col .rd-cell-main"), sub = host.querySelector(".e5-device-col .rd-cell-sub");
+      const nameWidth = Math.max(0, ...rows.map(row => measure(row.deviceName, main)));
+      // One native table, with content-sized bounded columns. Device and task share the available growth first.
+      const deviceMin = Math.max(132, Math.min(340, Math.ceil(nameWidth / 2) + 28));
+      const deviceWant = Math.min(340, Math.max(deviceMin, nameWidth + 28, ...rows.map(row => measure(row.serial, sub) + 28)));
+      const user = Math.min(260, widest(".e5-user-meta", 26, 184));
+      const status = widest(".e5-status-col .rd-tag", 48, 136);
+      const income = Math.max(widest(".e5-amount", 16, 180), widest(".e5-income-range .e5-sub", 154, 180));
+      const taskMin = Math.max(160, ...Array.from(host.querySelectorAll(".e5-task-time"), element => measure(element.textContent ?? "", element.querySelector(".e5-sub")) + (element.querySelector(".rd-ratio") ? 88 : 16)));
+      const taskWant = Math.max(taskMin, Math.min(280, taskMin * 1.3));
+      const widths = [deviceMin, user, ...(showProduct ? [Math.min(240, widest(".e5-product-col .rd-cell-main", 16, 176))] : []), ...(showSource ? [80] : []), status, income, taskMin, 52];
+      const taskIndex = widths.length - 2;
+      let remaining = Math.max(0, host.clientWidth - widths.reduce((sum, width) => sum + width, 0));
+      const deviceGrowth = Math.min(deviceWant - deviceMin, remaining * .6);
+      const taskGrowth = Math.min(taskWant - taskMin, remaining * .4);
+      widths[0] += deviceGrowth; widths[taskIndex] += taskGrowth; remaining -= deviceGrowth + taskGrowth;
+      for (const [index, wanted] of [[0, deviceWant], [taskIndex, taskWant]]) {
+        const growth = Math.min(wanted - widths[index], remaining); widths[index] += growth; remaining -= growth;
+      }
+      const gap = remaining / (widths.length - 1);
+      const deviceContent = widths[0] - 28;
+      const serials: Record<number, string> = {};
+      for (const row of rows) {
+        if (measure(row.serial, sub) <= deviceContent) continue;
+        let suffix = Math.min(14, row.serial.length - 4);
+        while (suffix > 7 && measure(`${row.serial.slice(0, 3)}…${row.serial.slice(-suffix)}`, sub) > deviceContent) suffix--;
+        serials[row.deviceId] = `${row.serial.slice(0, 3)}…${row.serial.slice(-suffix)}`;
+      }
+      for (let index = 0; index < widths.length - 1; index++) widths[index] += gap;
+      const next = { widths, gap, serials, total: widths.reduce((sum, width) => sum + width, 0) };
+      setTableLayout(current => JSON.stringify(current) === JSON.stringify(next) ? current : next);
+    };
+    update();
+    const observer = new ResizeObserver(update); observer.observe(host);
+    return () => observer.disconnect();
+  }, [rows, readAt, showProduct, showSource, products]);
+  const tableStyle = tableLayout ? { width: tableLayout.total, "--e5-column-gap": `${tableLayout.gap}px`, "--e5-device-width": `${tableLayout.widths[0]}px` } as CSSProperties : undefined;
   useEffect(() => {
     const restore = () => { const value = readQuery(); setQuery(value.q); setKeyword(value.q.keyword); setQueryError(value.error); setTotalSelected(false); const id = new URLSearchParams(window.location.search).get("deviceId"); setSelectedId(id && /^\d+$/.test(id) ? Number(id) : null); setReady(true); };
     restore(); window.addEventListener("popstate", restore); return () => window.removeEventListener("popstate", restore);
@@ -200,10 +252,10 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
           <FilterField grow><Input value={keyword} aria-label="搜索用户设备" placeholder="搜索用户 / 设备 / 商品" onChange={event => setKeyword(event.target.value)} /></FilterField>
           <FilterField><Select aria-label="设备来源筛选" value={query.source} onChange={source => change({ source })} options={[{ value: "all", label: "全部来源" }, ...Object.entries(SOURCES).map(([value, label]) => ({ value, label }))]} /></FilterField>
         </FilterBar>
-        <div data-proof="e5-devices"><Table label="用户设备" className="e5-table"><thead><tr><Th sticky="start" className="e5-device-col">设备</Th><Th className="e5-user-col">用户</Th>{columns.isVisible("product") && <Th>商品 · 托管机房</Th>}{columns.isVisible("source") && <Th>来源</Th>}<Th align="left" sticky="end" className="e5-status-col">状态</Th><Th align="right" className="e5-income-col">本月收益（USDT）<Explain label="设备月收益口径" content="到账是本设备月已完成目标任务的收益，预估按当前配置满运行计算；没有设备月数据不认定为 0。点设备行可核对周期起止、产能、目标关闭和周期内配置变化。停跑期间不计收益、不补发。" /></Th><Th className="e5-task-col">当前任务</Th><Th sticky="end" className="e5-action-col">操作</Th></tr></thead><tbody>
-          {loading ? <TableLoading columns={6 + Number(columns.isVisible("product")) + Number(columns.isVisible("source"))} /> : error || queryError ? <TableMessage columns={8}><BlockState state="error" title="用户设备读取失败，请刷新重试" detail={error || queryError} onRetry={queryError ? clear : () => void readList()} /></TableMessage> : !rows.length ? <TableMessage columns={8}><BlockState state="empty" title="暂无符合条件的用户设备" onRetry={activeFilters.length ? clear : undefined} retryLabel="清除筛选" /></TableMessage> : rows.map(d => <Tr key={d.deviceId} selected={d.deviceId === selectedId} onOpen={() => select(d.deviceId)}>
-            <Td sticky="start" className="e5-device-col"><Cell main={d.deviceName} sub={d.serial.length > 12 ? `${d.serial.slice(0, 4)}…${d.serial.slice(-8)}` : d.serial} title={`${d.deviceName} · ${d.serial}`} /></Td><Td className="e5-user-col"><Cell main={d.nickname} sub={<span className="e5-user-meta">{reach(`/users/search/${d.userNo}`) ? <Link href={`/users/search/${d.userNo}`}>{d.userNo.length > 11 ? `U…${d.userNo.slice(-8)}` : d.userNo}</Link> : d.userNo.length > 11 ? `U…${d.userNo.slice(-8)}` : d.userNo}<span aria-hidden>·</span><Button size="sm" variant="ghost" className="e5-user-slots" data-full={d.activeDevicesForUser >= d.maxDevicesPerUser ? "" : undefined} aria-label={`这位用户已激活 ${d.activeDevicesForUser} 台设备（含手机），每人最多 ${d.maxDevicesPerUser} 台。点击只看这位用户的设备`} title={`这位用户已激活 ${d.activeDevicesForUser} 台设备（含手机），每人最多 ${d.maxDevicesPerUser} 台。点击只看这位用户的设备`} onClick={() => { setKeyword(d.userNo); change({ keyword: d.userNo }); }}>已激活 {d.activeDevicesForUser}/{d.maxDevicesPerUser}</Button></span>} title={d.user} /></Td>
-            {columns.isVisible("product") && <Td><Cell main={products.get(d.productCode) ?? d.productCode} sub={d.hostingLabel || "—"} title={d.hostingLabel} /></Td>}{columns.isVisible("source") && <Td>{SOURCES[d.sourceChannel]}</Td>}
+        <div ref={tableHost} data-proof="e5-devices"><Table label="用户设备" className="e5-table" style={tableStyle}>{tableLayout && <colgroup>{tableLayout.widths.map((width, index) => <col key={index} width={width} />)}</colgroup>}<thead><tr><Th sticky="start" className="e5-device-col">设备</Th><Th className="e5-user-col">用户</Th>{showProduct && <Th className="e5-product-col">商品 · 托管机房</Th>}{showSource && <Th>来源</Th>}<Th align="left" sticky="end" className="e5-status-col">状态</Th><Th align="right" className="e5-income-col">本月收益（USDT）<Explain label="设备月收益口径" content="到账是本设备月已完成目标任务的收益，预估按当前配置满运行计算；没有设备月数据不认定为 0。点设备行可核对周期起止、产能、目标关闭和周期内配置变化。停跑期间不计收益、不补发。" /></Th><Th className="e5-task-col">当前任务</Th><Th sticky="end" className="e5-action-col">操作</Th></tr></thead><tbody>
+          {loading ? <TableLoading columns={6 + Number(columns.isVisible("product")) + Number(columns.isVisible("source"))} /> : error || queryError ? <TableMessage columns={6 + Number(showProduct) + Number(showSource)}><BlockState state="error" title="用户设备读取失败，请刷新重试" detail={error || queryError} onRetry={queryError ? clear : () => void readList()} /></TableMessage> : !rows.length ? <TableMessage columns={6 + Number(showProduct) + Number(showSource)}><BlockState state="empty" title="暂无符合条件的用户设备" onRetry={activeFilters.length ? clear : undefined} retryLabel="清除筛选" /></TableMessage> : rows.map(d => <Tr key={d.deviceId} selected={d.deviceId === selectedId} onOpen={() => select(d.deviceId)}>
+            <Td sticky="start" className="e5-device-col"><Cell main={d.deviceName} sub={<Tooltip.Provider><Tooltip.Root><Tooltip.Trigger asChild><span className="e5-serial" tabIndex={tableLayout?.serials[d.deviceId] ? 0 : undefined} aria-label={d.serial} title={d.serial}>{tableLayout?.serials[d.deviceId] ?? d.serial}</span></Tooltip.Trigger><Tooltip.Portal><Tooltip.Content className="rd-tip" sideOffset={6}>{d.serial}</Tooltip.Content></Tooltip.Portal></Tooltip.Root></Tooltip.Provider>} title={`${d.deviceName} · ${d.serial}`} /></Td><Td className="e5-user-col"><Cell main={d.nickname} sub={<span className="e5-user-meta">{reach(`/users/search/${d.userNo}`) ? <Link href={`/users/search/${d.userNo}`}>{d.userNo.length > 11 ? `U…${d.userNo.slice(-8)}` : d.userNo}</Link> : d.userNo.length > 11 ? `U…${d.userNo.slice(-8)}` : d.userNo}<span aria-hidden>·</span><Button size="sm" variant="ghost" className="e5-user-slots" data-full={d.activeDevicesForUser >= d.maxDevicesPerUser ? "" : undefined} aria-label={`这位用户已激活 ${d.activeDevicesForUser} 台设备（含手机），每人最多 ${d.maxDevicesPerUser} 台。点击只看这位用户的设备`} title={`这位用户已激活 ${d.activeDevicesForUser} 台设备（含手机），每人最多 ${d.maxDevicesPerUser} 台。点击只看这位用户的设备`} onClick={() => { setKeyword(d.userNo); change({ keyword: d.userNo }); }}>已激活 {d.activeDevicesForUser}/{d.maxDevicesPerUser}</Button></span>} title={d.user} /></Td>
+            {showProduct && <Td className="e5-product-col"><Cell main={products.get(d.productCode) ?? d.productCode} sub={d.hostingLabel || "—"} title={d.hostingLabel} /></Td>}{showSource && <Td>{SOURCES[d.sourceChannel]}</Td>}
             <Td align="left" sticky="end" className="e5-status-col"><DeviceStatus device={d} /></Td><Td align="right" className="e5-income-col"><MonthlyIncome device={d} compact /></Td><Td className="e5-task-col"><CurrentTask device={d} readAt={readAt} /></Td><Td sticky="end" className="e5-action-col"><E5DeviceActions device={d} ctx={ctx} /></Td>
           </Tr>)}
         </tbody></Table></div>

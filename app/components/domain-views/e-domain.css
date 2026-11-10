@@ -518,15 +518,12 @@
 .e5-task .e5-sub { max-width: 160px; }
 .e5-group-choices { display: grid; gap: 12px; }
 .e5-group-choices > button { justify-content: flex-start; }
-.e5-table { min-width: 1040px; }
-.e5-table .e5-device-col { width: 132px; min-width: 132px; max-width: 132px; }
-.e5-table .e5-device-col .rd-cell { max-width: 104px; }
-.e5-table .e5-user-col { width: 220px; min-width: 220px; max-width: 220px; }
-.e5-table .e5-user-col .rd-cell { max-width: 204px; }
-.e5-table .e5-income-col { min-width: 260px; }
-.e5-table .e5-task-col { min-width: 208px; }
-.e5-table :is(th, td).e5-status-col { left: 132px; right: 56px; min-width: 160px; max-width: 160px; text-align: left; }
-.e5-table .e5-action-col { width: 56px; min-width: 56px; max-width: 56px; }
+.e5-table { table-layout: fixed; }
+.e5-table :is(th, td):not(:last-child) { padding-right: calc(var(--rd-cell-pad) + var(--e5-column-gap, 0px)); }
+.e5-table :is(.e5-device-col, .e5-user-col) .rd-cell { max-width: none; }
+.e5-table .e5-device-col .rd-cell-main { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+.e5-table :is(th, td).e5-status-col { left: var(--e5-device-width, 132px); right: 52px; text-align: left; }
+.e5-serial:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
 .e5-table .e5-status-col .rd-th-inner { justify-content: flex-start; }
 .e5-empty-value { white-space: nowrap; }
 
