@@ -34,6 +34,7 @@ function useMutations() {
   const [legacy, setLegacy] = useState<ReturnType<typeof legacyCommands.list>>([]);
   const [busy, setBusy] = useState("");
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [technicalErrors, setTechnicalErrors] = useState<Record<string, string>>({});
   const [rejected, setRejected] = useState<string[]>([]);
   const [release, setRelease] = useState<E6Pending | null>(null);
   const active = useRef(true), sending = useRef(false);
@@ -96,7 +97,8 @@ function useMutations() {
       if (active.current) {
         sync();
         if (retry && isExplicitRejection(failure)) setRejected(r => [...r, record.commandKey]);
-        setNotes(n => ({ ...n, [record.commandKey]: displayAdminError(failure) }));
+        setNotes(n => ({ ...n, [record.commandKey]: isExplicitRejection(failure) ? "原操作重试已被明确拒绝，可核对后解除待确认。" : "原请求已保留，结果仍待核实。" }));
+        setTechnicalErrors(n => ({ ...n, [record.commandKey]: JSON.stringify(failure instanceof Error ? { ...failure, name: failure.name, message: failure.message } : failure, null, 2) }));
       }
       throw failure;
     } finally { sending.current = false; if (active.current) setBusy(""); }
@@ -127,7 +129,7 @@ function useMutations() {
     } catch (failure) { if (active.current) setNotes(n => ({ ...n, [record.commandKey]: displayAdminError(failure) })); }
     finally { if (active.current) setBusy(""); }
   }
-  return { pending, legacy, busy, notes, rejected, release, setRelease, sync, locked, visible, allowed, canPropose, canAudit, proposal, start, check, send,
+  return { pending, legacy, busy, notes, technicalErrors, rejected, release, setRelease, sync, locked, visible, allowed, canPropose, canAudit, proposal, start, check, send,
     device: (scope: string, label: string, input: Omit<DeviceInput, "operator">) => start(scope, "phones", label, { kind: "device", input: { ...input, operator: session!.operator || session!.username } }),
     risk: (revision: number, input: PhoneRiskUpdate) => start("risk", "calibration", "保存机型风控设置", { kind: "risk", revision, input }),
     legacyPhoneLocked: (serial: string, deviceId: number, userId: string) => legacy.some(r => r.fingerprint.startsWith(`e5-device:${deviceId}:`) || r.fingerprint.startsWith(`e5-user:${userId}:`) || r.fingerprint.startsWith("e5_device_") && r.fingerprint.endsWith(`|${serial}`)),
@@ -142,18 +144,22 @@ export function E6MutationProvider({ children }: { children: ReactNode }) {
 export function useE6Mutations() { return useContext(Context)!; }
 export function E6PendingNotice({ section, onRead }: { section: E6Section; onRead?: (result?: { changedCount?: number; pendingDeactivate?: boolean }) => void }) {
   const m = useE6Mutations();
+  const records = m.pending.filter(r => r.section === section && m.visible(section));
+  const waiting = records.filter(r => r.ticketId && !r.terminal);
   return <>
-    {m.pending.filter(r => r.section === section && m.visible(section)).map(r => <Notice key={r.commandKey} tone="warn" title={`${r.label} · ${r.ticketId ? "待核对审批结果" : "结果未确认，请先核对原操作"}`} actionBelow action={<>
-      {r.payload.kind === "proposal" && <Button size="sm" disabled={!!m.busy} onClick={() => void m.check(r)}>只读查询审批结果</Button>}
-      {r.payload.kind !== "risk" && !r.ticketId && !isRetryExpired(r) && <Button size="sm" disabled={!m.allowed(r) || !!m.busy} onClick={() => { void m.send(r, true).then(onRead).catch(() => { /* send has recorded the failure in the persistent notice. */ }); }}>按原操作重试</Button>}
+    {waiting.length === 1 && <Notice tone="progress" action={<Button size="sm" disabled={!!m.busy} onClick={() => void m.check(waiting[0])}>查审批结果</Button>}>{waiting[0].label}的变更已提交，等待审批 · <span data-mono>{waiting[0].ticketId}</span></Notice>}
+    {waiting.length > 1 && <Notice tone="progress"><Fold title={`${waiting.length} 项变更等待审批`} summary="展开查看审批单" inset><div className="e6-pending-list">{waiting.map(r => <div key={r.commandKey} className="e6-pending-row"><span>{r.label} · <span data-mono>{r.ticketId}</span></span><Button size="sm" disabled={!!m.busy} onClick={() => void m.check(r)}>查审批结果</Button></div>)}</div></Fold></Notice>}
+    {records.filter(r => !r.ticketId || r.terminal).map(r => <Notice key={r.commandKey} tone={r.terminal ? "progress" : "warn"} title={`${r.label} · ${r.terminal ? "原提案已结束" : m.rejected.includes(r.commandKey) ? "原操作重试已被明确拒绝" : "结果未确认，请先核对原操作"}`} actionBelow action={<>
+      {r.payload.kind === "proposal" && <Button size="sm" disabled={!!m.busy} onClick={() => void m.check(r)}>查审批结果</Button>}
+      {r.payload.kind !== "risk" && !r.ticketId && !isRetryExpired(r) && !m.rejected.includes(r.commandKey) && <Button size="sm" disabled={!m.allowed(r) || !!m.busy} onClick={() => { void m.send(r, true).then(onRead).catch(() => { /* send has recorded the failure in the persistent notice. */ }); }}>按原操作重试</Button>}
       {r.payload.kind === "risk" && <Button size="sm" onClick={() => window.dispatchEvent(new Event("e6-read-risk"))}>读取当前风控设置</Button>}
       {r.terminal && <Button size="sm" onClick={() => { m.forget(r); onRead?.(); }}>原提案已结束，准备新变更</Button>}
-      {m.rejected.includes(r.commandKey) && <Button size="sm" onClick={() => m.setRelease(r)}>解除待确认</Button>}
+      {m.rejected.includes(r.commandKey) && <Button variant="primary" size="sm" onClick={() => m.setRelease(r)}>解除待确认</Button>}
       {m.canAudit && <Link href="/platform/audit?domain=E">核对操作记录与审批</Link>}
     </>}>
-      <p>原对象、内容、理由和命令号已保存，这个对象暂不能提交新变更。{r.payload.kind === "risk" ? "此接口不按命令号去重，只能读回核对；当前值相同不能证明原请求成功。" : "重试只能使用原内容、原理由和原命令号。"}</p>
-      {isRetryExpired(r) && <p>{RETRY_EXPIRED_TEXT}</p>}{m.notes[r.commandKey] && <p>{m.notes[r.commandKey]}</p>}
-      <Fold title="原操作与技术信息" summary={r.commandKey} inset><p>命令号：{r.commandKey}</p><p>发起：{new Date(r.createdAt).toLocaleString("zh-CN")}</p><p>原对象：{r.scope}</p>{r.payload.kind === "device" && <p>原状态：{r.payload.input.before}</p>}<p>理由：{r.payload.input.reason}</p><pre className="e6-json">{r.body}</pre></Fold>
+      {!r.terminal && <p>原内容、理由和命令号已保存，这个对象暂不能提交新变更。{r.payload.kind === "risk" ? "此接口不按命令号去重，只能读回核对；当前值相同不能证明原请求成功。" : m.rejected.includes(r.commandKey) ? "请核对拒绝结果，再解除这条原操作。" : "重试只能使用原内容、原理由和原命令号。"}</p>}
+      {isRetryExpired(r) && <p>{RETRY_EXPIRED_TEXT}</p>}{m.notes[r.commandKey] && !["原请求已保留，结果仍待核实。","原操作重试已被明确拒绝，可核对后解除待确认。"].includes(m.notes[r.commandKey]) && <p>{m.notes[r.commandKey]}</p>}
+      <Fold title="原操作与技术信息" summary={r.commandKey} inset><div className="e6-fold-content"><p>命令号：<code>{r.commandKey}</code></p><p>发起：{new Date(r.createdAt).toLocaleString("zh-CN")}</p><p>原对象：{r.label}</p>{r.payload.kind === "device" && <p>原状态：{r.payload.input.before}</p>}<p>理由：{r.payload.input.reason}</p><pre className="e6-json">{JSON.stringify({ scope: r.scope, request: JSON.parse(r.body) }, null, 2)}</pre>{m.technicalErrors[r.commandKey] && <pre className="e6-json">{m.technicalErrors[r.commandKey]}</pre>}</div></Fold>
     </Notice>)}
     {m.legacy.filter(r => section === "tasks" ? r.fingerprint.startsWith("e2_task_") : section === "tiers" ? r.fingerprint.startsWith("e2_phone_tier") : section === "phones" ? r.fingerprint.startsWith("e5") : r.fingerprint.startsWith("e6_")).map(r => <Notice key={r.commandKey} tone="warn" title="升级前的原提案待核查"><p>旧记录缺少完整内容与理由，只能凭原命令号到操作记录与审批核对，不能重试或解除。原命令号：{r.commandKey}</p></Notice>)}
     {m.release?.section === section && <ReleaseModal label={m.release.label} onCancel={() => m.setRelease(null)} onConfirm={() => { m.forget(m.release!); m.setRelease(null); onRead?.(); }} />}

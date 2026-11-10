@@ -597,3 +597,30 @@
   .e6-threshold-inputs { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .e6-trial-form .e6-form-grid { grid-template-columns: minmax(0,1fr); }
 }
+
+/* E6 review: stable columns, compact actions and readable recovery details. */
+.e6-page .e6-tasks-table { table-layout: fixed; }
+.e6-page .e6-tasks-table th:first-child { width: clamp(180px, 36%, 460px); }
+.e6-page .e6-tasks-table th:nth-child(2) { width: 16%; }
+.e6-page .e6-tasks-table th:nth-child(3) { width: 11%; }
+.e6-page .e6-tasks-table th:nth-child(4) { width: 20%; }
+.e6-page .e6-tasks-table th:nth-child(5) { width: 11%; }
+.e6-page .e6-tasks-table th:nth-child(6) { width: 6%; }
+.e6-page .e6-tasks-table td[data-grow] { width: auto; max-width: none; }
+.e6-page .e6-tasks-table .rd-cell { max-width: none; }
+.e6-page .e6-tasks-table .rd-cell-main { overflow: hidden; }
+.e6-page .e6-phones-table .e6-phone-device .rd-cell-main > .e6-original { display: block; }
+.e6-confirm-facts, .e6-fold-content { display: grid; gap: 16px; min-width: 0; }
+.e6-fold-content > :is(p, pre), .e6-confirm-facts p { margin: 0; }
+.e6-confirm-facts .e6-fold-content { gap: 8px; }
+.e6-json { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
+.e6-device-slots { display: inline-flex; align-items: center; gap: 12px; }
+.e6-serial { font-size: var(--rd-text-aux); overflow-wrap: anywhere; }
+.e6-no-action, .e6-help { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
+.e6-no-action { display: block; max-width: 104px; }
+.e6-pending-list { display: grid; gap: 12px; }
+.e6-pending-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; }
+@container (max-width: 860px) {
+  .e6-page .rd-config-rail > .rd-section-nav { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; padding-bottom: 4px; }
+  .e6-page .rd-config-rail > .rd-section-nav a { flex: none; white-space: nowrap; }
+}

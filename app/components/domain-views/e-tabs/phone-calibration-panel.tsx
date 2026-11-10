@@ -2,10 +2,10 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
-import { Btn, OperationConfirmModal } from "../design-kit";
+import { E6ConfirmModal } from "./e6-confirm-modal";
 import type { EViewCtx } from "./types";
 import { Activity, Cpu, Gauge, Send, Smartphone } from "lucide-react";
-import { BlockState, Button, Check, Conclusion, Explain, Decision, Field, Fold, Input, Modal, Notice, NumberInput, Panel, ScaleBar, Segments, Select, Stat, StatBand, Table, Td, Th, Tr, Textarea, Facts, Fact } from "@/app/components/rd";
+import { BlockState, Button, Conclusion, DiffList, Explain, Decision, Field, Fold, Input, Modal, Notice, NumberInput, Panel, ScaleBar, Segments, Select, Stat, StatBand, Table, Td, Th, Tr, Textarea, Facts, Fact } from "@/app/components/rd";
 import { E6PendingNotice, useE6Mutations } from "./e6-mutations";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
@@ -18,6 +18,7 @@ import { diffIosRules, IOS_CHANGE_LABELS, formatRange, type IosModelRule } from 
 import { IosModelRulesSection } from "./ios-model-rules-section";
 
 import { RISK_CODE_LABELS, RISK_MODE_LABELS } from "@/lib/admin/phone-risk-client";
+import { phonePlatformLabel } from "@/lib/admin/phone-replacement-contract";
 
 const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 };
 const time = (value: number) => new Date(value).toLocaleString("zh-CN", { hour12: false });
@@ -52,6 +53,7 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false, onPendingCo
   const [snapshot, setSnapshot] = useState<PhoneCalibrationOverview | null>(null);
   useEffect(()=>onPendingCount?.(snapshot?.pendingHardware.length??null),[snapshot,onPendingCount]);
   const [thresholds, setThresholds] = useState<string[]>(["","","",""]);
+  const [thresholdTouched, setThresholdTouched] = useState([false,false,false,false]);
   const [androidRules, setAndroidRules] = useState<AndroidSocRule[]>([]);
   const [removals, setRemovals] = useState<AndroidPresetRemovals>(NO_REMOVALS);
   const [iosRules, setIosRules] = useState<IosModelRule[]>([]);
@@ -61,7 +63,7 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false, onPendingCo
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<{ key: string; result: PhonePreview; amplifies: boolean } | null>(null);
-  const [confirm, setConfirm] = useState<{ proposal: PhonePolicyProposal; commandKey: string; amplifies: boolean } | null>(null);
+  const [confirm, setConfirm] = useState<{ proposal: PhonePolicyProposal; commandKey: string; amplifies: boolean; impact: PhonePreview["impact"] } | null>(null);
   const generation = useRef(0);
   const live = useRef(true);
   const editing = ctx.canWriteE6 && !!snapshot && !snapshot.policy.scheduled && !busy && !confirm && !mutations.locked("calibration") && mutations.canPropose;
@@ -99,6 +101,7 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false, onPendingCo
       setSnapshot(result);
       const policy = result.policy.scheduled ?? result.policy.current;
       setThresholds(policy ? policy.thresholds.map(String) : ["","","",""]);
+      setThresholdTouched([false,false,false,false]);
       setAndroidRules(policy?.androidSocRules ?? []); setRemovals(policy?.androidPresetRemovals ?? NO_REMOVALS);
       setIosRules(policy?.iosModelRules ?? []); setEffective("");
     } catch (failure) {
@@ -121,55 +124,60 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false, onPendingCo
     } finally { if (live.current && request === generation.current) setBusy(false); }
   }
 
+  const thresholdChanges = confirm ? confirm.proposal.thresholds.map((value,index)=>({key:String(index),label:`T${index+1} / T${index+2} 分界`,before:publishedPolicy?String(publishedPolicy.thresholds[index]):"尚未发布",after:String(value)})).filter(row=>row.before!==row.after) : [];
+  const hardwareChanges = confirm ? [
+    ...diffAndroidRules(publishedPolicy?.androidSocRules??[],confirm.proposal.androidSocRules).map(c=>`Android「${c.name}」${IOS_CHANGE_LABELS[c.kind]}：${c.details.join("；")||"状态变化"}`),
+    ...diffIosRules(publishedPolicy?.iosModelRules??[],confirm.proposal.iosModelRules).map(c=>`iPhone「${c.after?.model??c.before?.model}」${IOS_CHANGE_LABELS[c.kind]}：${c.details.join("；")||"状态变化"}`),
+  ] : [];
+  const summary = !snapshot ? busy ? "正在读取手机校准规则" : "等校准规则读取成功后可用" : `${snapshot.policy.current?`当前校准规则第 ${snapshot.policy.current.version} 版`:"尚未发布手机校准规则"}${snapshot.policy.scheduled?`；第 ${snapshot.policy.scheduled.version} 版预约于 ${time(snapshot.policy.scheduled.effectiveAt)}（${Intl.DateTimeFormat().resolvedOptions().timeZone}）生效`:""}${!publishedPolicy?.androidSocRules.length?"；Android 0 档，需补充规则":""}${snapshot.pendingHardware.length?`；${snapshot.pendingHardware.length} 组硬件待核验`:""}`;
+
   return <div className="e6-tab">
     <E6PendingNotice section="calibration" onRead={()=>{void refresh();void ctx.refreshE6();}}/>
-    <Conclusion state={error?"warn":!snapshot?"unknown":snapshot.policy.scheduled?"warn":"neutral"} icon={Gauge}>{error?"手机校准读取失败":!snapshot?"正在读取手机校准规则":snapshot.policy.current?`当前校准规则第 ${snapshot.policy.current.version} 版`:"尚未发布手机校准规则"}</Conclusion>
-    {snapshot?.policy.scheduled&&<Notice tone="warn" title={`第 ${snapshot.policy.scheduled.version} 版预约在 ${time(snapshot.policy.scheduled.effectiveAt)} 生效`}>整个校准草稿只读；到达预约时间后仍须刷新核对，不能据本地时钟认定已发布。</Notice>}
+    {snapshot?.policy.scheduled?<Notice tone="progress">{summary}</Notice>:<Conclusion state={snapshot&&(!publishedPolicy?.androidSocRules.length||snapshot.pendingHardware.length)?"warn":"neutral"} icon={Gauge}>{summary}</Conclusion>}
     <Panel id="section-rules" title="档位分界" icon={Gauge} tone="role-4" data-proof="phone-calibration-panel" sub={snapshot?`修订号 ${snapshot.policy.revision}`:undefined}
-      explain="平台算力值用于后续校准分档，不代表硬件物理 TOPS；等于分界进入高一档，不修改历史结算。" actions={<Button size="sm" disabled={busy||!!confirm} onClick={()=>dirty?setDiscard(true):void refresh()}>刷新</Button>}>
-      {error&&<Notice tone="warn">{error}</Notice>}
-      {!snapshot?<BlockState state={busy?"loading":"error"} title={busy?"正在加载…":"手机校准规则加载失败"} onRetry={busy?undefined:()=>void refresh()}/>:<>
+      explain="平台算力值用于后续校准分档，不代表硬件物理 TOPS；等于分界进入高一档，不修改历史结算。预约期间草稿只读，到点须刷新核对实际版本。" actions={snapshot?<Button size="sm" disabled={busy||!!confirm} onClick={()=>dirty?setDiscard(true):void refresh()}>刷新</Button>:undefined}>
+      {!snapshot?<BlockState state={busy?"loading":"error"} title={busy?"正在读取校准规则…":"手机校准规则读取失败"} detail={busy?undefined:error} onRetry={busy?undefined:()=>void refresh()}/>:<>
         <div className="e6-threshold-block"><div className="e6-axis-grid">{([{label:"当前生效",policy:snapshot.policy.current},{label:"预约版本",policy:snapshot.policy.scheduled}]).filter(p=>p.policy).map(({label,policy})=><div className="e6-axis" key={label}><div className="e6-actions"><strong>{label} · 第 {policy!.version} 版</strong><Explain label={`${label}分档区间`} content={axisText(policy!.thresholds)}/></div><ScaleBar label={`${label}平台算力分界`} valueText={axisText(policy!.thresholds)} max={axisMax} bands={{labels:["T1","T2","T3","T4","T5"],openEnd:true,marks:policy!.thresholds.map(value=>({value,text:String(value)}))}}/></div>)}</div>
         {!snapshot.policy.current&&<Notice tone="neutral">尚未发布，填写四个分界和硬件规则后试算。</Notice>}
         {dirty&&!thresholdError&&<div className="e6-axis"><div className="e6-actions"><strong>草稿 · 未提交</strong><Explain label="草稿分档区间" content={axisText(proposal.thresholds)}/></div><ScaleBar label="草稿平台算力分界" valueText={axisText(proposal.thresholds)} max={axisMax} bands={{labels:["T1","T2","T3","T4","T5"],openEnd:true,marks:proposal.thresholds.map(value=>({value,text:String(value)}))}}/></div>}
-        {ctx.canWriteE6&&!snapshot.policy.scheduled&&<div className="e6-threshold-inputs">{thresholds.map((value,index)=><Field key={index} label={`T${index+1} / T${index+2} 分界`} help="严格递增正数" error={dirty&&thresholdError?"四个分界须为严格递增的正数":undefined} explain="等于分界进入高一档，批准后用于后续校准。"><NumberInput aria-label={`T${index+1} / T${index+2} 分界`} min={0} step={0.001} value={value} disabled={!editing} onChange={event=>setThresholds(old=>old.map((v,i)=>i===index?event.target.value:v))}/></Field>)}</div>}
+        {ctx.canWriteE6&&!snapshot.policy.scheduled&&<><div className="e6-threshold-inputs">{thresholds.map((value,index)=><Field key={index} label={`T${index+1} / T${index+2} 分界`} error={thresholdTouched[index]&&(!Number.isFinite(proposal.thresholds[index])||proposal.thresholds[index]<=0||index>0&&proposal.thresholds[index]<=proposal.thresholds[index-1]||index<3&&proposal.thresholds[index]>=proposal.thresholds[index+1])?"须为正数，并按档位严格递增":undefined} explain="等于分界进入高一档，批准后用于后续校准。"><NumberInput aria-label={`T${index+1} / T${index+2} 分界`} min={0} step={0.001} value={value} disabled={!editing} onChange={event=>{setThresholdTouched(old=>old.map((v,i)=>i===index||v));setThresholds(old=>old.map((v,i)=>i===index?event.target.value:v));}}/></Field>)}</div><p className="e6-help">四个分界须为严格递增的正数，等于分界进入高一档。</p></>}
         </div>
       </>}
     </Panel>
     {!thresholdsOnly&&<>
       <Panel id="section-hardware" title="硬件规则" icon={Cpu} tone="role-3" sub={snapshot?`Android ${androidRules.length} 档 · iPhone ${iosRules.length} 机型 · ${dirty?"草稿有变更":"无变更"}`:undefined}>
-        {!snapshot?<BlockState state={busy?"loading":"error"} title="硬件规则暂不可读"/>:<div className="e6-hardware">{!editing&&<Notice tone="neutral">{!ctx.canWriteE6?"你只能查看硬件规则，修改需要设备配置权限。":snapshot.policy.scheduled?"已有预约版本，硬件规则暂只读。":!mutations.canPropose?"修改硬件规则需要发起审批权限。":mutations.locked("calibration")?"原校准提案待确认，硬件草稿暂不可修改。":"正在读取或确认规则，硬件草稿暂不可修改。"}</Notice>}<Segments label="硬件目录" value={hardwareTab} onChange={setHardwareTab} items={[{value:"android",label:"Android 芯片"},{value:"ios",label:"iPhone 机型"}]}/>
+        {!snapshot?<BlockState state={busy?"loading":"empty"} title={busy?"正在读取校准规则…":"等校准规则读取成功后可用"}/>:<div className="e6-hardware">{!editing&&<Notice tone="neutral">{!ctx.canWriteE6?"你只能查看硬件规则，修改需要设备配置权限。":snapshot.policy.scheduled?"已有预约版本，硬件规则暂只读。":!mutations.canPropose?"修改硬件规则需要发起审批权限。":mutations.locked("calibration")?"原校准提案待确认，硬件草稿暂不可修改。":"正在读取或确认规则，硬件草稿暂不可修改。"}</Notice>}<Segments label="硬件目录" value={hardwareTab} onChange={setHardwareTab} items={[{value:"android",label:"Android 芯片"},{value:"ios",label:"iPhone 机型"}]}/>
           <div hidden={hardwareTab!=="android"} className="e6-legacy-fields"><AndroidSocTiersSection rules={androidRules} removals={removals} published={publishedPolicy?.androidSocRules??[]} iosRuleIds={iosRules.map(r=>r.id)} canWrite={ctx.canWriteE6} editing={editing&&hardwareTab==="android"} onChange={(next,nextRemovals)=>{setAndroidRules(next);setRemovals(nextRemovals);setPreview(null);}}/></div>
           <div hidden={hardwareTab!=="ios"} className="e6-legacy-fields"><IosModelRulesSection rules={iosRules} published={publishedPolicy?.iosModelRules??[]} androidRuleIds={androidRules.map(r=>r.id)} canWrite={ctx.canWriteE6} editing={editing&&hardwareTab==="ios"} onChange={next=>{setIosRules(next);setPreview(null);}}/></div>
         </div>}
       </Panel>
       <Panel id="section-pending" title="待核验硬件" icon={Smartphone} tone="role-3" sub={snapshot?`${snapshot.pendingHardware.length} 组`:undefined} explain="最多展示 100 组，记录数不是独立手机数。核实整组芯片标识后维护规则，不可把冲突样本拆开直接加入。">
-        {!snapshot?<BlockState state={busy?"loading":"error"} title="待核验样本暂不可读"/>:!snapshot.pendingHardware.length?<BlockState state="empty" title="暂无待核验样本。"/>:<Table label="待核验样本（最多展示 100 组）"><thead><tr><Th>平台 / 机型</Th><Th>同次上报的芯片标识</Th><Th>原因</Th><Th align="right">记录数</Th></tr></thead><tbody>{snapshot.pendingHardware.map((sample,index)=><Tr key={index}><Td>{sample.platform||"未知"} / {sample.model||"未知"}</Td><Td>{sample.socIds.join("、")||"—"}</Td><Td>{sample.reason?PENDING_TEXT[sample.reason]??"待核验（原因未识别）":"待核验（原因未识别）"} <Explain label="待核验原因原码" content={sample.reason??"未提供"}/></Td><Td align="right">{sample.count}</Td></Tr>)}</tbody></Table>}
+        {!snapshot?<BlockState state={busy?"loading":"empty"} title={busy?"正在读取校准规则…":"等校准规则读取成功后可用"}/>:!snapshot.pendingHardware.length?<BlockState state="empty" title="暂无待核验样本。"/>:<Table label="待核验样本（最多展示 100 组）"><thead><tr><Th>平台 / 机型</Th><Th>同次上报的芯片标识</Th><Th>原因</Th><Th align="right">记录数</Th></tr></thead><tbody>{snapshot.pendingHardware.map((sample,index)=><Tr key={index}><Td>{phonePlatformLabel(sample.platform)} / {sample.model||"未知"}</Td><Td>{sample.socIds.join("、")||"—"}</Td><Td>{sample.reason?PENDING_TEXT[sample.reason]??"待核验（原因未识别）":"待核验（原因未识别）"} <Explain label="待核验原因原码" content={sample.reason??"未提供"}/></Td><Td align="right">{sample.count}</Td></Tr>)}</tbody></Table>}
       </Panel>
     </>}
     <Panel id="section-trial" title="试算与发布" icon={Send} tone="role-2" explain="试算只读，不激活手机，不创建校准记录；硬件预览和放大方向必须同次成功。已匹配人群中的变化数不是独立人群。审批生效后用于后续校准，不修改历史结算。">
-      {!snapshot?<BlockState state={busy?"loading":"error"} title="校准规则未就绪，暂不能试算"/>:<>
+      {!snapshot?<BlockState state={busy?"loading":"empty"} title={busy?"正在读取校准规则…":"等校准规则读取成功后可用"}/>:<>
+        {error&&<Notice tone="warn" title="试算未完成">{error}</Notice>}
         {!ctx.canWriteE6?<Notice tone="neutral">你只能查看，修改和发布需要设备配置权限。</Notice>:<>
-          <div className="e6-trial-form"><div className="e6-form-grid"><Field label="平台"><Select aria-label="平台" value={hardware.platform} disabled={!editing} onChange={platform=>setHardware(old=>({...old,platform}))} options={[{value:"android",label:"Android"},{value:"ios",label:"iOS"}]}/></Field>
+          <div className="e6-trial-form"><div className="e6-form-grid"><Field label="平台"><Select aria-label="平台" value={hardware.platform} disabled={!editing} onChange={platform=>setHardware(old=>({...old,platform}))} options={[{value:"android",label:"Android"},{value:"ios",label:"iPhone"}]}/></Field>
             {ios?<Field label="试算机型（名称或硬件标识符）"><Input value={hardware.model} disabled={!editing} onChange={event=>setHardware(old=>({...old,model:event.target.value}))}/></Field>:<Field label="试算芯片标识" help="最多 4 个，每行或逗号分隔，例如 SM8550"><Textarea rows={2} value={hardware.socIds} disabled={!editing} onChange={event=>setHardware(old=>({...old,socIds:event.target.value}))}/></Field>}
             {ios&&<><Field label="试算系统版本（选填）"><Input value={facts.osVersion} maxLength={8} disabled={!editing} onChange={event=>setFacts(old=>({...old,osVersion:event.target.value}))}/></Field><Field label="试算屏幕倍率（选填）" help="1–3 整数"><NumberInput value={facts.pixelRatio} min={1} max={3} step={1} disabled={!editing} onChange={event=>setFacts(old=>({...old,pixelRatio:event.target.value}))}/></Field><Field label="试算屏幕宽（选填）"><NumberInput aria-label="试算屏幕宽" value={facts.screenWidth} min={1} step={1} unit="点" disabled={!editing} onChange={event=>setFacts(old=>({...old,screenWidth:event.target.value}))}/></Field><Field label="试算屏幕高（选填）"><NumberInput aria-label="试算屏幕高" value={facts.screenHeight} min={1} step={1} unit="点" disabled={!editing} onChange={event=>setFacts(old=>({...old,screenHeight:event.target.value}))}/></Field></>}
             <Field label="生效时间（留空为批准后生效）" help={`浏览器时区：${Intl.DateTimeFormat().resolvedOptions().timeZone}`} explain="预约须先获批准并到达所选时间；批准时已过预约时间则批准后生效。"><Input type="datetime-local" value={effective} disabled={!editing} onChange={event=>setEffective(event.target.value)}/></Field>
           </div>
-          {validation&&<Notice tone="warn">{validation}</Notice>}
-          <div className="e6-actions"><Button disabledReason={!editing?"规则只读、待确认或尚未就绪":validation??undefined} onClick={()=>void runPreview()}>试算并预览影响</Button><Button variant="primary" disabledReason={!editing?"规则只读、待确认或尚未就绪":validation??(!previewCurrent?"请先完成本次草稿的试算和方向预览":undefined)} onClick={()=>preview&&setConfirm({proposal,commandKey:createA2CommandKey("phone-policy"),amplifies:preview.amplifies})}>提交审批</Button></div></div>
+          <div className="e6-actions"><Button disabledReason={!editing?"规则只读、待确认或尚未就绪":validation??undefined} onClick={()=>void runPreview()}>试算并预览影响</Button><Button variant="primary" disabledReason={!editing?"规则只读、待确认或尚未就绪":validation??(!previewCurrent?"请先完成本次草稿的试算和方向预览":undefined)} onClick={()=>preview&&setConfirm({proposal,commandKey:createA2CommandKey("phone-policy"),amplifies:preview.amplifies,impact:preview.result.impact})}>提交审批</Button></div></div>
         </>}
-        {previewCurrent&&preview&&<div className="e6-trial-result"><Notice tone={preview.result.match.status==="MATCHED"?"neutral":"warn"}>{trialText(preview.result)}{trialFacts&&preview.result.match.status==="MATCHED"&&<p>{riskText(preview.result)}</p>}</Notice><StatBand fit><Stat label="匹配记录" value={preview.result.impact.matched} icon={Activity} tone="role-2"/><Stat label="数值或档位变化" value={preview.result.impact.changed} icon={Gauge} tone="role-4" explain="已匹配记录中的变化数，不与匹配数相加。"/><Stat label="待核验记录" value={preview.result.impact.pending} icon={Smartphone} tone="role-3"/></StatBand></div>}
+        {previewCurrent&&preview&&<div className="e6-trial-result"><Notice tone={preview.result.match.status==="MATCHED"?"neutral":"warn"}>{trialText(preview.result)}{trialFacts&&preview.result.match.status==="MATCHED"&&<p>{riskText(preview.result)}</p>}</Notice><StatBand fit><Stat label="匹配记录" value={preview.result.impact.matched} icon={Activity} tone="role-other" lead sub={`其中数值或档位变化 ${preview.result.impact.changed} 条`} explain="变化数包含在匹配记录中，两者不能相加。"/><Stat label="待核验记录" value={preview.result.impact.pending} icon={Smartphone} tone={preview.result.impact.pending?"warn":"role-other"}/></StatBand></div>}
         <div className="e6-section-link">{mutations.canAudit?<Link href="/platform/audit?domain=E&object=phone-calibration">查看审批记录</Link>:<p>查看审批记录需要操作记录与审批读取权限。</p>}</div>
       </>}
     </Panel>
     {discard&&<Modal title="刷新会放弃未提交草稿" onClose={()=>setDiscard(false)} footer={<Decision primary={<Button variant="primary" onClick={()=>{setDiscard(false);void refresh();}}>放弃草稿并刷新</Button>} others={<Button onClick={()=>setDiscard(false)}>继续编辑</Button>}/>}><Notice tone="warn">将放弃校准分界、硬件规则及本次试算的普通草稿。已发出的待确认原操作会继续保留。</Notice></Modal>}
-    {confirm&&<OperationConfirmModal briefKind="config" statedBrief={{impact:"整份规则只提交审批，批准后用于后续校准；历史结算不变。",check:"核对原修订号、同次试算和生效时间，批准时检查兑付覆盖率。"}} action="发布手机校准规则" amplifies={confirm.amplifies} coverageCheck="批准时检查兑付覆盖率。" detail="整份 Android 芯片档、iPhone 机型与四分界一起提交审批，批准后用于后续校准；已派任务和历史结算不变。预约发布还须到所选时间。" completionCopy="另一位有批准权限和手机配置读取权限的管理员批准后生效。" reasonMin={8} reasonMax={200}
-      facts={<Facts><Fact k="原修订号">{confirm.proposal.expectedRevision}</Fact><Fact k="当前分界">{publishedPolicy?.thresholds.join(" / ")??"尚未发布"}</Fact><Fact k="目标分界">{confirm.proposal.thresholds.join(" / ")}</Fact><Fact k="硬件规则">Android {confirm.proposal.androidSocRules.length} 档 · iPhone {confirm.proposal.iosModelRules.length} 个</Fact><Fact k="生效时间">{confirm.proposal.effectiveAt?`${time(confirm.proposal.effectiveAt)}（${Intl.DateTimeFormat().resolvedOptions().timeZone}）`:"批准后生效"}</Fact></Facts>}
+    {confirm&&<E6ConfirmModal scope="calibration" amplificationBasis={<>{<p>同次服务端方向预览判断支出会增加。本次改动：</p>}{thresholdChanges.map(row=><p key={row.key}>{row.label}：{row.before} → {row.after}。</p>)}{hardwareChanges.map((text,index)=><p key={index}>{text}</p>)}</>} briefKind="config" statedBrief={{impact:"整份规则只提交审批，批准后用于后续校准；历史结算不变。",check:"核对原修订号、同次试算和生效时间，批准时检查兑付覆盖率。"}} action="发布手机校准规则" amplifies={confirm.amplifies} coverageCheck="批准时检查兑付覆盖率。" detail="整份 Android 芯片档、iPhone 机型与四分界一起提交审批，批准后用于后续校准；已派任务和历史结算不变。预约发布还须到所选时间。" completionCopy="另一位有批准权限和手机配置读取权限的管理员批准后生效。" reasonMin={8} reasonMax={200}
+      facts={<Facts><Fact k="原修订号">{confirm.proposal.expectedRevision}</Fact>{thresholdChanges.map(row=><Fact key={row.key} k={row.label}><DiffList rows={[row]}/></Fact>)}<Fact k="匹配记录">{confirm.impact.matched} 条</Fact><Fact k="其中数值或档位变化">{confirm.impact.changed} 条（包含在匹配记录内）</Fact><Fact k="待核验记录">{confirm.impact.pending} 条</Fact><Fact k="生效时间">{confirm.proposal.effectiveAt?`${time(confirm.proposal.effectiveAt)}（${Intl.DateTimeFormat().resolvedOptions().timeZone}）`:"批准后生效"}</Fact></Facts>}
       content={<Fold title="规则差异与完整草稿" summary="核对硬件改动、同次试算与原修订" inset>
-        <p>{preview?`本次试算：匹配 ${preview.result.impact.matched}，其中变化 ${preview.result.impact.changed}；待核验 ${preview.result.impact.pending}。`:"本次试算已记录"}方向：{confirm.amplifies?"会增加支出":"未增加支出"}。</p>
+        <p>方向：{confirm.amplifies?"会增加支出":"未增加支出"}。</p>
         {diffAndroidRules(publishedPolicy?.androidSocRules??[],confirm.proposal.androidSocRules).map(c=><p key={`android-${c.id}`}>Android · {IOS_CHANGE_LABELS[c.kind]}「{c.name}」：{c.details.join("；")||"状态变化"}</p>)}
         {diffIosRules(publishedPolicy?.iosModelRules??[],confirm.proposal.iosModelRules).map(c=><p key={`ios-${c.id}`}>iPhone · {IOS_CHANGE_LABELS[c.kind]}「{c.after?.model??c.before?.model}」：{c.details.join("；")||"状态变化"}</p>)}
-        <Fold title="完整规则技术信息" summary="当前规则与目标草稿，含全部字段" inset><pre className="e6-json">{JSON.stringify({before:publishedPolicy,after:confirm.proposal})}</pre></Fold>
+        <Fold title="完整规则技术信息" summary="当前规则与目标草稿，含全部字段" inset><pre className="e6-json">{JSON.stringify({before:publishedPolicy,after:confirm.proposal},null,2)}</pre></Fold>
       </Fold>}
       getPendingReason={()=>mutations.pendingReason("calibration")} onClose={()=>setConfirm(null)} onConfirm={async reason=>{
         const original=mutations.pending.find(r=>r.scope==="calibration");
