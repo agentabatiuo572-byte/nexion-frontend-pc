@@ -1,115 +1,39 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Btn, OperationConfirmModal } from "../design-kit";
+import { ShieldCheck } from "lucide-react";
+import { OperationConfirmModal } from "../design-kit";
+import { BlockState, Button, ConfigList, ConfigRow, Decision, Drawer, Field, Fold, Notice, NumberInput, Panel, RatioBar, Select, Table, Td, Th, Tr, Facts, Fact } from "@/app/components/rd";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { phoneTime } from "../phone-replacement-receipt";
 import { phonePlatformLabel as platformLabel } from "@/lib/admin/phone-replacement-contract";
-import { RISK_CHECKS, RISK_CODE_LABELS, RISK_MODE_LABELS, fetchPhoneRisk, riskModeError, savePhoneRisk,
-  type PhoneRiskOverview, type PhoneRiskUpdate } from "@/lib/admin/phone-risk-client";
-
-const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 };
-const draftOf = ({ settings }: PhoneRiskOverview): PhoneRiskUpdate => ({
-  installModelLock: settings.installModelLock, osVersion: settings.osVersion, screenScale: settings.screenScale,
-  screenSize: settings.screenSize, missingSignals: settings.missingSignals, accountModelChurn: settings.accountModelChurn,
-  churnWindowDays: settings.churnWindowDays, churnModelCount: settings.churnModelCount, reason: "",
-});
-
-/** E6 "机型风控": checks run before a phone calibration draws a value. Saved directly; the server audits each save. */
-export function PhoneRiskSection({ canWrite, toast }: { canWrite: boolean; toast: (message: string) => void }) {
-  const [overview, setOverview] = useState<PhoneRiskOverview | null>(null);
-  const [draft, setDraft] = useState<PhoneRiskUpdate | null>(null);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  // One key per confirmation, so a retry after an unknown outcome is the same command.
-  const [confirming, setConfirming] = useState<string | null>(null);
-  const live = useRef(true);
-
-  async function load() {
-    setBusy(true); setError("");
-    try {
-      const next = await fetchPhoneRisk();
-      if (live.current) { setOverview(next); setDraft(draftOf(next)); }
-    } catch (failure) {
-      if (live.current) setError(displayAdminError(failure));
-    } finally { if (live.current) setBusy(false); }
-  }
-  useEffect(() => { live.current = true; void load(); return () => { live.current = false; }; }, []);
-
-  const saved = overview ? draftOf(overview) : null;
-  const validation = draft ? riskModeError(draft) : null;
-  const editable = canWrite && !busy && !!overview;
-  const statsOf = (code: string) => overview?.stats.checks.find(row => row.code === code);
-  const summary = draft && saved ? [
-    ...RISK_CHECKS.filter(check => draft[check.key] !== saved[check.key])
-      .map(check => `${check.label}：${RISK_MODE_LABELS[saved[check.key]]} → ${RISK_MODE_LABELS[draft[check.key]]}`),
-    ...(draft.churnWindowDays !== saved.churnWindowDays ? [`统计窗口：${saved.churnWindowDays} → ${draft.churnWindowDays} 天`] : []),
-    ...(draft.churnModelCount !== saved.churnModelCount ? [`机型数上限：${saved.churnModelCount} → ${draft.churnModelCount} 个`] : []),
-  ] : [];
-  const changed = summary.length > 0;
-  // Leaving the facts out is the way around an enforced OS or scale check until missing facts are enforced too.
-  const bypassable = !!draft && draft.missingSignals !== "ENFORCE" && (draft.osVersion === "ENFORCE" || draft.screenScale === "ENFORCE");
-
-  return <fieldset className="phone-risk" aria-label="机型风控">
-    <legend>机型风控（保存后立即生效）</legend>
-    <p className="f-foot">检查在分配算力之前执行。观察：照常校准，只记录命中；拦截：这次校准进入待核验，不分配算力、不能激活。用户只看到「机型待核验」，不会知道命中了哪一项。已激活的手机不受影响。</p>
-    {error && <p role="alert">{error}</p>}
-    {!overview || !draft ? <p role="status">{busy ? "正在加载…" : "设置加载失败，请刷新重试。"}</p> : <>
-      <p role="status">版本 {overview.settings.revision}{overview.settings.updatedAt
-        ? ` · ${phoneTime(overview.settings.updatedAt)} 修改：${overview.settings.reason ?? "—"}`
-        : " · 默认设置：同一手机换报机型直接拦截，其余只观察"}</p>
-      {!canWrite && <p>你只能查看，修改需要设备配置权限。</p>}
-      <div className="ui-table-scroll"><table>
-        <thead><tr>{["检查项", "说明", "处理方式", `最近 ${overview.stats.days} 天`].map(label => <th key={label}>{label}</th>)}</tr></thead>
-        <tbody>{RISK_CHECKS.map(check => {
-          const stats = statsOf(check.code);
-          // The install lock also holds Android chip changes, which the server counts under their own code.
-          const chip = check.key === "installModelLock" ? statsOf("SOC_CHANGED") : undefined;
-          return <tr key={check.key}>
-            <td><strong>{check.label}</strong></td>
-            <td><small>{check.detail}</small></td>
-            <td><select aria-label={`${check.label}的处理方式`} value={draft[check.key]} disabled={!editable}
-              onChange={event => setDraft({ ...draft, [check.key]: event.target.value })}>
-              {check.modes.map(mode => <option key={mode} value={mode}>{RISK_MODE_LABELS[mode]}</option>)}</select></td>
-            <td>{!stats && !chip ? "无命中" : <>
-              {stats && <>{chip && "换报机型："}命中 {stats.flagged} 次 · 拦截 {stats.held} 次<br /><small>{stats.accounts} 个账号</small></>}
-              {chip && <>{stats && <br />}换报芯片：命中 {chip.flagged} 次 · 拦截 {chip.held} 次<br /><small>{chip.accounts} 个账号</small></>}
-            </>}</td>
-          </tr>;
-        })}</tbody>
-      </table></div>
-      <div style={grid}>
-        <label>同一账号多机型 · 统计窗口（天）<input type="number" min="1" max="365" step="1" value={Number.isFinite(draft.churnWindowDays) ? draft.churnWindowDays : ""} disabled={!editable}
-          onChange={event => setDraft({ ...draft, churnWindowDays: event.target.value === "" ? NaN : Number(event.target.value) })} /></label>
-        <label>同一账号多机型 · 达到几个机型算命中<input type="number" min="2" max="20" step="1" value={Number.isFinite(draft.churnModelCount) ? draft.churnModelCount : ""} disabled={!editable}
-          onChange={event => setDraft({ ...draft, churnModelCount: event.target.value === "" ? NaN : Number(event.target.value) })} /></label>
-      </div>
-      {validation && <p role="alert">{validation}</p>}
-      {bypassable && <p role="status">「缺少系统或屏幕信息」仍是观察：不上报系统版本或屏幕的请求不会被这两项拦下。新版 App 普及后，再把它改为拦截。</p>}
-      <div className="ios-actions">
-        <Btn variant="primary" disabled={!editable || !changed || !!validation} onClick={() => setConfirming(crypto.randomUUID())}>保存并生效</Btn>
-        <Btn disabled={busy || !changed} onClick={() => setDraft(draftOf(overview))}>撤销修改</Btn>
-        <Btn disabled={busy} onClick={() => void load()}>刷新</Btn>
-      </div>
-      {overview.stats.models.length > 0 && <details><summary>命中较多的机型（最近 {overview.stats.days} 天，最多 50 组）</summary>
-        <div className="ui-table-scroll"><table>
-          <thead><tr>{["检查项", "平台", "上报机型", "命中", "拦截"].map(label => <th key={label}>{label}</th>)}</tr></thead>
-          <tbody>{overview.stats.models.map(row => <tr key={`${row.code}:${row.platform}:${row.model}`}>
-            <td>{RISK_CODE_LABELS[row.code] ?? row.code}</td><td>{platformLabel(row.platform)}</td>
-            <td style={{ overflowWrap: "anywhere" }}>{row.model ?? "未上报"}</td><td>{row.flagged}</td><td>{row.held}</td>
-          </tr>)}</tbody>
-        </table></div>
-        <p className="f-foot">被拦下的正常用户（例如从备份恢复到新手机）由客服在「用户 · 手机绑定与换机特批」中解除机型锁。</p>
-      </details>}
+import { RISK_CHECKS, RISK_CODE_LABELS, RISK_MODE_LABELS, fetchPhoneRisk, riskModeError, type PhoneRiskOverview, type PhoneRiskUpdate, type PhoneRiskMode } from "@/lib/admin/phone-risk-client";
+import { useE6Mutations } from "./e6-mutations";
+const draftOf=({settings:s}:PhoneRiskOverview):PhoneRiskUpdate=>({installModelLock:s.installModelLock,osVersion:s.osVersion,screenScale:s.screenScale,screenSize:s.screenSize,missingSignals:s.missingSignals,accountModelChurn:s.accountModelChurn,churnWindowDays:s.churnWindowDays,churnModelCount:s.churnModelCount,reason:""});
+export function PhoneRiskSection({canWrite,toast}:{canWrite:boolean;toast:(message:string)=>void}) {
+  const m=useE6Mutations();
+  const [overview,setOverview]=useState<PhoneRiskOverview|null>(null),[draft,setDraft]=useState<PhoneRiskUpdate|null>(null),[error,setError]=useState(""),[busy,setBusy]=useState(false),[editor,setEditor]=useState(false),[confirming,setConfirming]=useState(false);
+  const live=useRef(true);
+  async function load(){setBusy(true);setError("");try{const next=await fetchPhoneRisk();if(live.current){setOverview(next);setDraft(draftOf(next));}}catch(failure){if(live.current){setOverview(null);setError(displayAdminError(failure));}}finally{if(live.current)setBusy(false);}}
+  useEffect(()=>{live.current=true;void load();const read=()=>void load();window.addEventListener("e6-read-risk",read);return()=>{live.current=false;window.removeEventListener("e6-read-risk",read);};},[]);
+  const saved=overview?draftOf(overview):null,validation=draft?riskModeError(draft):null;
+  const changes=draft&&saved?[...RISK_CHECKS.filter(c=>draft[c.key]!==saved[c.key]).map(c=>({label:c.label,before:RISK_MODE_LABELS[saved[c.key]],after:RISK_MODE_LABELS[draft[c.key]]})),...(draft.churnWindowDays!==saved.churnWindowDays?[{label:"多机型统计窗口",before:`${saved.churnWindowDays} 天`,after:`${draft.churnWindowDays} 天`}]:[]),...(draft.churnModelCount!==saved.churnModelCount?[{label:"多机型数量阈值",before:`${saved.churnModelCount} 个`,after:`${draft.churnModelCount} 个`}]:[])]:[];
+  const bypass=(s:PhoneRiskUpdate)=>s.missingSignals!=="ENFORCE"&&(s.osVersion==="ENFORCE"||s.screenScale==="ENFORCE");
+  const blocked=m.locked("risk");
+  return <Panel title="机型风控" icon={ShieldCheck} tone="role-3" sub={overview?`版本 ${overview.settings.revision} · 保存后立即生效`:undefined} explain="观察只记录命中；拦截使本次校准进入待核验，不分配算力、不能激活。已激活手机和历史结算不受影响。" actions={<><Button size="sm" disabled={busy} onClick={()=>void load()}>重试读取</Button>{canWrite&&<Button size="sm" disabledReason={!overview?"先读取当前风控设置":blocked?"原保存结果待核查，不能重复保存":undefined} onClick={()=>{setEditor(true);}}>修改风控设置</Button>}</>}>
+    {!overview?<BlockState state={busy?"loading":"error"} title={busy?"正在读取风控设置…":"机型风控设置读取失败"} detail={error} onRetry={busy?undefined:()=>void load()}/>:<>
+      {overview.settings.updatedAt&&<p className="rd-muted">{phoneTime(overview.settings.updatedAt)} · {overview.settings.reason??"—"}</p>}
+      {saved&&bypass(saved)&&<Notice tone="warn">「缺少系统或屏幕信息」仍是观察：不上报系统或屏幕的请求不会被系统版本、屏幕倍率的拦截挡下。新版 App 普及后再核对是否收紧。</Notice>}
+      <ConfigList label="机型风控当前设置">{RISK_CHECKS.map(c=><ConfigRow key={c.key} name={c.label} what={c.detail} when="保存后立即用于后续校准" value={RISK_MODE_LABELS[overview.settings[c.key]]} action={canWrite?<Button size="sm" disabledReason={blocked?"原保存结果待核查":undefined} onClick={()=>{setEditor(true);}}>调整</Button>:undefined}/>)}<ConfigRow name="多机型统计窗口" value={`${overview.settings.churnWindowDays} 天`} what="判断同账号多机型的回看天数" when="保存后用于后续校准"/><ConfigRow name="多机型数量阈值" value={`${overview.settings.churnModelCount} 个`} what="同账号达到几种机型算命中" when="保存后用于后续校准"/></ConfigList>
+      <Fold title={`风控统计 · 最近 ${overview.stats.days} 天`} summary={overview.stats.checks.length?`${overview.stats.checks.length} 项检查统计`:"暂无检查统计"} inset>
+        {!overview.stats.checks.length?<BlockState state="empty" title="暂无检查统计"/>:<Table label="风控检查统计"><thead><tr><Th>检查项</Th><Th align="right">命中次数</Th><Th align="right">拦截次数</Th><Th align="right">账号数</Th><Th>拦截 / 命中</Th></tr></thead><tbody>{overview.stats.checks.map(s=><Tr key={s.code}><Td>{RISK_CODE_LABELS[s.code]??s.code}</Td><Td align="right">{s.flagged}</Td><Td align="right">{s.held}</Td><Td align="right">{s.accounts}</Td><Td>{s.held>s.flagged?"统计数据异常":s.flagged===0?"没有命中":<RatioBar label={`${RISK_CODE_LABELS[s.code]??s.code}拦截占比`} value={s.held} total={s.flagged} valueText={`拦截 ${s.held} / 命中 ${s.flagged}`} tone="role-3"/>}</Td></Tr>)}</tbody></Table>}
+        {!!overview.stats.models.length&&<Fold title={`命中较多的机型（最近 ${overview.stats.days} 天，最多 50 组）`} summary={`${overview.stats.models.length} 组`} inset><Table label="命中较多的机型"><thead><tr><Th>检查项</Th><Th>平台</Th><Th>上报机型</Th><Th align="right">命中</Th><Th align="right">拦截</Th></tr></thead><tbody>{overview.stats.models.map((r,i)=><Tr key={i}><Td>{RISK_CODE_LABELS[r.code]??r.code}</Td><Td>{platformLabel(r.platform)}</Td><Td>{r.model??"未上报"}</Td><Td align="right">{r.flagged}</Td><Td align="right">{r.held}</Td></Tr>)}</tbody></Table><p>被拦下的正常用户由客服在「用户 · 手机绑定与换机特批」中核对后解除机型锁。</p></Fold>}
+      </Fold>
     </>}
-    {confirming && draft && overview && <OperationConfirmModal briefKind={"config"} action="保存机型风控设置"
-      detail={<>{summary.map(line => <span key={line}>{line}<br /></span>)}保存后立即用于之后的校准，不走审批；已激活的手机和历史结算不受影响。</>}
-      completionCopy="立即生效：保存后用于之后的校准，已激活的手机和历史结算不受影响。"
-      reasonMin={8} reasonMax={200} onClose={() => setConfirming(null)} onConfirm={async reason => {
-        if (!canWrite) throw new Error("你没有修改设备配置的权限");
-        const next = await savePhoneRisk(overview.settings.revision, { ...draft, reason }, confirming);
-        if (!live.current) return;
-        setOverview(next); setDraft(draftOf(next)); setConfirming(null);
-        toast("机型风控设置已生效");
-      }} />}
-  </fieldset>;
+    {editor&&draft&&overview&&<Drawer open title="修改机型风控设置" icon={ShieldCheck} busy={!!m.busy} onClose={()=>setEditor(false)} footer={<Decision primary={<Button variant="primary" disabledReason={blocked?"原保存结果待核查":validation??(!changes.length?"没有修改":undefined)} onClick={()=>setConfirming(true)}>保存并生效</Button>} others={<><Button disabled={!changes.length} onClick={()=>setDraft(draftOf(overview))}>撤销修改</Button><Button onClick={()=>setEditor(false)}>取消</Button></>}/>}>
+      <Notice tone="neutral"><p>保存后立即用于后续校准，无需审批。</p><p>已激活手机和历史结算不变。</p></Notice>
+      <div className="e6-form-grid">{RISK_CHECKS.map(c=><Field key={c.key} label={`${c.label}的处理方式`} explain={c.detail} help={c.key==="missingSignals"?"拦截时转入待核验。":undefined}><Select aria-label={`${c.label}的处理方式`} value={draft[c.key]} onChange={v=>setDraft({...draft,[c.key]:v as PhoneRiskMode})} options={c.modes.map(v=>({value:v,label:RISK_MODE_LABELS[v]}))}/></Field>)}<Field label="同一账号多机型 · 统计窗口（天）" hint="1–365 整数天"><NumberInput value={Number.isFinite(draft.churnWindowDays)?String(draft.churnWindowDays):""} min={1} max={365} step={1} unit="天" onChange={e=>setDraft({...draft,churnWindowDays:e.target.value?Number(e.target.value):NaN})}/></Field><Field label="同一账号多机型 · 达到几个机型算命中" hint="2–20 整数"><NumberInput value={Number.isFinite(draft.churnModelCount)?String(draft.churnModelCount):""} min={2} max={20} step={1} unit="个" onChange={e=>setDraft({...draft,churnModelCount:e.target.value?Number(e.target.value):NaN})}/></Field></div>
+      {validation&&<Notice tone="warn">{validation}</Notice>}{bypass(draft)&&<Notice tone="warn">缺少信息仍为观察，上报不完整的请求不会被系统版本或倍率检查拦下。</Notice>}
+    </Drawer>}
+    {confirming&&draft&&overview&&<OperationConfirmModal briefKind="config" statedBrief={{impact:"保存后立即用于之后校准，不走审批；已激活手机和历史结算不变。",check:"核对全部模式、两项阈值、原修订号和理由，结果未知后只读回。"}} action="保存机型风控设置" detail="立即用于之后校准；已激活手机和历史结算不受影响。此接口的命令号只用于审计，结果未知后不能重写。" reasonMin={8} reasonMax={200} completionCopy="保存成功后立即生效。" facts={<Facts><Fact k="原修订号">{overview.settings.revision}</Fact>{changes.map(c=><Fact key={c.label} k={c.label}>{c.before} → {c.after}</Fact>)}</Facts>} blockedReason={blocked?"结果未确认，请关闭本框后读取当前风控设置核对；不能重新保存。":undefined} onClose={()=>setConfirming(false)} onConfirm={async reason=>{await m.risk(overview.settings.revision,{...draft,reason});setConfirming(false);setEditor(false);await load();toast("机型风控设置已生效");}}/>}
+  </Panel>;
 }

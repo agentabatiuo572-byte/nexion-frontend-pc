@@ -507,3 +507,56 @@
 .edom .device-activity { margin-top:24px; }
 .edom .device-activity > summary { cursor:pointer; padding:18px 22px; font-weight:600; }
 .edom .phone-sections { display:flex; flex-direction:column; gap:24px; margin-bottom:24px; }
+
+/* E6 · 手机算力配置：页面专用排版，图形复用 rd。 */
+.e6-page { display: grid; gap: var(--rd-section-gap); min-width: 0; }
+.e6-tab:not([hidden]) { display: grid; gap: 16px; min-width: 0; }
+.e6-tab[hidden] { display: none; }
+.e6-actions { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.e6-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.e6-json { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--rd-font-mono); color: var(--rd-text-3); }
+.e6-config-groups { display: grid; gap: var(--rd-section-gap); min-width: 0; }
+.e6-page [id^="section-"] { scroll-margin-top: var(--rd-section-gap); min-width: 0; }
+.e6-axis-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--rd-section-gap); }
+.e6-axis { display: grid; gap: 12px; min-width: 0; }
+.e6-axis p { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
+.e6-page .e6-hardware { display: grid; gap: 16px; }
+.e6-legacy-fields { display: grid; gap: 16px; min-width: 0; }
+.e6-legacy-fields fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.e6-legacy-fields legend { font-size: var(--rd-text-body); font-weight: 500; padding: 0; margin-bottom: 12px; }
+.e6-legacy-fields label { display: flex; flex-direction: column; gap: 8px; font-size: var(--rd-text-aux); }
+.e6-legacy-fields label.ios-check { flex-direction: row; align-items: flex-start; }
+.e6-legacy-fields :is(input:not([type="checkbox"]),select,textarea) { background: var(--rd-control); color: var(--rd-text); border: 1px solid var(--rd-control-line); border-radius: var(--rd-radius-control); padding: 8px 12px; font: inherit; min-width: 0; max-width: 100%; }
+.e6-legacy-fields input[type="checkbox"] { accent-color: var(--rd-brand); }
+.e6-legacy-fields :is(input,textarea,select):focus-visible { outline: 2px solid var(--rd-brand); outline-offset: 2px; }
+.e6-legacy-fields .ios-field.invalid :is(input,textarea) { border-color: var(--rd-warn); }
+.e6-legacy-fields :is(.ios-actions,.ios-row-actions,.phone-actions) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.e6-legacy-fields :is(.ios-table,.ui-table-scroll) { overflow: auto; max-height: 560px; }
+.e6-legacy-fields :is(.ios-head,.ios-import,.ios-form) { padding: 0; background: none; border: 0; }
+.e6-legacy-fields p { font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
+.e6-legacy-fields .f-foot { color: var(--rd-text-3); }
+.e6-legacy-fields .ios-preset-list { max-height: 340px; overflow: auto; display: grid; gap: 8px; }
+.e6-legacy-fields .ios-stats { display: flex; flex-wrap: wrap; gap: var(--rd-section-gap); padding-block: 12px; }
+.e6-legacy-fields .ios-stats > div { display: grid; gap: 4px; }
+.e6-legacy-fields details { padding-block: 12px; border-top: 1px solid var(--rd-line); }
+.e6-legacy-fields summary { cursor: pointer; margin-bottom: 12px; }
+.e6-page .rd-table [data-num] { font-variant-numeric: tabular-nums; white-space: nowrap; }
+@container (max-width: 900px) { .e6-axis-grid { grid-template-columns: minmax(0,1fr); } }
+@media (max-width: 900px) { .e6-form-grid { grid-template-columns: minmax(0,1fr); } }
+
+@container (max-width: 860px) { .e6-config-groups { display: contents; } }
+
+.e6-phone-tools { padding: 0 var(--rd-panel-pad-x) 12px; }
+.e6-hardware-tools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
+.e6-hardware-tools > label { flex: 1 1 140px; min-width: 140px; }
+.e6-hardware-tools > label:first-child { flex: 2 1 220px; }
+.e6-legacy-fields .ios-clear { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.e6-legacy-fields :is(input:not([type="checkbox"]),select) { height: var(--rd-control-h); padding-block: 0; font-size: var(--rd-text-body); }
+
+.e6-axis-grid:has(> :only-child) { grid-template-columns: minmax(0,1fr); }
+.e6-axis p { text-wrap: balance; }
+
+.e6-page .rd-table .rd-cell[data-full] { max-width: none; }
+.e6-page .rd-table .rd-cell[data-full] :is(.rd-cell-main,.rd-cell-sub) { white-space: normal; overflow-wrap: anywhere; }
+.e6-page :is(.e6-tasks-table,.e6-phones-table) tbody td:first-child { min-width: 180px; }
+.e6-page .e6-phones-table .e6-phone-user { min-width: 112px; width: 22%; }

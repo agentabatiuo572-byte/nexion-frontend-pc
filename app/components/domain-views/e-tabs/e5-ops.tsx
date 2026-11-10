@@ -1,3 +1,4 @@
+import { E6PhoneDevices } from "./e6-phone-devices";
 import { useEffect, useState } from "react";
 import { Btn, Badge, DataListPager, Drawer } from "../design-kit";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -70,6 +71,7 @@ export function E5Ops({ ctx, phones = false }: { ctx: EViewCtx; phones?: boolean
     void fetchE5Observability().then(value => { if (live) { setActivity(value); setActivityError(""); } }).catch(cause => { if (live) setActivityError(displayAdminError(cause)); });
     return () => { live = false; };
   }, [activityOpen, phones, ctx.e5Devices]);
+  if (phones) return <E6PhoneDevices ctx={ctx} />;
   const overview = ctx.e5Overview;
   const productOptions = new Map(ctx.skus.map(sku => [sku.id, sku.name]));
   for (const d of ctx.e5Devices) if (!productOptions.has(d.productCode)) productOptions.set(d.productCode, d.productCode);

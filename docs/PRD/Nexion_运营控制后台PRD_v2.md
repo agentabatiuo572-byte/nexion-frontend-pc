@@ -953,7 +953,7 @@ SKU 目录管理台,自上而下三区:
 
 **手机功能集中（2026-11-09）**：E6 顶部为「手机任务池」，使用 `GET /api/admin/devices/task-pools?kind=PHONE` 和 `/task-pools/PHONE/tasks` 展示英文任务名、类型、时长、`baseReward`、`asset` 与启用状态。没有随机添加；新增、编辑、启停继续使用现有 `/tasks` 与 A2 双人审批、覆盖率和版本规则，HTTP 和 A2 参数均携顶层 `poolCode:"PHONE"`，旧格式明确拒绝；仅可写 PHONE 类型。手机策略固定解析为 `["PHONE"]`，旧手机大类选择入口删除。
 
-PHONE 参数编辑继续省略 catalog `status`，由后端保留原状态；catalog 状态变更走行内启用／停用。`TASK_STATUS_REQUIRES_LIFECYCLE_ACTION` 明确提示参数编辑不能改变启停状态及正确操作入口。正奖励任务从停用改为启用、编辑提高奖励或启用任务时，确认弹窗沿用「会多付钱」提示，A2 提案同步携 `amplifies:true`；单纯停用不标资金放大，后端覆盖率校验保持。
+PHONE 参数编辑省略 catalog `status`，编辑已有任务时启停只读，明确引导行内启用／停用。新建启用且正奖励、编辑提高奖励、已启用任务只缩短固定时长，以及行上启用，按后端实际检查路径显示「多付钱／需检查兑付覆盖率」，A2 提案保存同一 `amplifies`。单纯停用不标放大；零奖励启用不承诺免覆盖率检查。
 
 E6 逐区授权：PHONE 任务、手机 5 档收益和新用户引导收益对比均沿用原 E2 权限，只有 `device_e2_read` 才读取和显示，PHONE 任务与档位调整按钮及提交还须 `device_e2_write`，引导对比保持只读；用户手机列表和设备动作沿用 E5 读取与各动作权限；校准及其余设备配置读取／修改分别用 `device_e6_read/write`（换机等专项条件照旧）。无对应读取权不挂载区块、不请求其数据。持 E2／E5 手机权限的操作者通过既有菜单机制获得 E6 入口；显式菜单由后端迁移，PC 仅在缺少显式菜单时扩展原权限推导，不授予 E6 写权。页面迁移不改变后端原有权限。
 
@@ -961,6 +961,19 @@ E2 的「手机 5 档收益」「新用户引导收益对比」迁入本页，�
 
 「用户手机」列表读 `GET /api/admin/devices/phones?keyword=&pageNum=&pageSize=`，保留现有手机遥测与激活／取消／强制激活／解绑／按用户暂停动作。动作权限沿用 E5，E6 配置权不授予设备处置权。理由在各动作弹窗填写，每人 6 台上限包含手机。手机每任务奖励、固定时长及 1 小时在线有效期保持；PHONE 与商城 DEVICE 池互不相通。
 
+
+
+**四分区改版（2026-11-10）**：按读权显示「手机任务」「档位与收益」「用户手机」「校准与风控」。`tab=tasks|tiers|phones|calibration` 和校准 `section` 记住位置，替换 URL 保留其他参数；旧 `#phone-calibration` 继续定位校准。切分区保留本页会话普通草稿，刷新有变更时先提示；已发原命令独立保留。
+
+手机任务以三项节奏小结与六列表显示，仅取 PHONE 池；无启用任务的平均时长与约每天单数显示「—」。五档用同尺度 USDT 阶梯，UVT 单独完整显示，T3 标「当前引导档」；合法响应必须五档齐全、身份唯一且金额为正，不完整时整组不画。引导对比只读，手机行置顶，少于四项保留提醒。日收益调整除 E2_write 和提案能力外还按 `device_e2_phone_tier_usdt` / `device_e2_phone_tier_nex` 隐藏对应入口；固定后端 fdc9f469 的 A2 逐币种回放保护尚待后端核实，不能以此页面裁剪视为后端验收通过。
+
+用户手机复用 E5 phones 模式与原权限：默认设备、用户、状态、每日收益、电量、操作六列；当前任务号在「显示更多列」保留。暂停原因优先；充电／网络遥测 null 显示「未采集」。查询只传 keyword/pageNum/pageSize，不造全平台手机状态分布。六种动作的六台门槛、全用户暂停范围、不退款／不补发及审批边界不变。
+
+校准与风控用八个主题定位；当前、预约、草稿分界轴明确区分，共同数值刻度。待核验样本非空直接展示；Android/iPhone 共用一个可切换目录，预设与编辑用抽屉，完整本地规则校验、整颗芯片移动、主动删除记忆及补设备事实默认不选均保留。风控独立首次失败即可重试；六模式和两阈值整组编辑、直接保存，统计按真实检查码呈现命中／拦截与比例，不将命中当全部校准量。换机仍为 E6_write AND flag_toggle，四值一单原子审批，原发布结果与当前资源分别显示。
+
+**结果未确认**：首发前保存当前账号、原对象、完整请求（含理由、版本、命令和目标）、原命令号与发起时间；存储失败阻止发送。未知结果锁住相应对象，切区、刷新、404、当前值相同或超过 24 小时均不清除。有去重保证的操作只原样重试；A2 先查原票，只有权威终态才能准备新变更；重试明确拒绝后按 `isExplicitRejection` 人工解除本地保护，401/403/408/425/429 和 IDEMPOTENCY_* 不算。风控 PUT 的 UUID 只用于审计，无按号去重，未知后仅读回当前设置核对，不重复保存。旧缺完整请求／理由记录只可查原票。连续在线兼容值只读；三估算值按精确 paramKey 单独审批，只承诺公共配置发布，不承诺现行手机结算消费。
+
+金额在响应接收边界保留后端十进制字面值供显示、确认与原请求；18x6 比较用缩放整数，图形比例才用 Number。不额外舍入、缩写或把 null 当零。
 
 **① 目的 & 对齐**：为原生 APP 提供可审计的硬件匹配规则、五档分界和换机资格。普通手机校准自动匹配，不逐个审批；平台算力不冒充物理 TOPS 或真实跑分。对齐前端 §4.7.3、§6.10、§6.11。
 
@@ -999,7 +1012,7 @@ E2 的「手机 5 档收益」「新用户引导收益对比」迁入本页，�
 
 **① 目的 & 对齐**:为运营提供平台布尔特性开关(feature flag)寄存器,规划用于门控用户端对应功能的显隐(forward-spec);本期(SPEC-0)示范 `computeShareEnabled`(电脑共享算力 PC 入口,默认关闭)。对齐 uniapp `store/config-types.ts`(`FeatureFlags.computeShareEnabled` / `FeatureFlagKey`)+ `mock/platform-config.ts`(`DEFAULT_PLATFORM_CONFIG.featureFlags`,DR-1 默认 OFF),admin `lib/mock/admin/compute-config.ts`(`COMPUTE_FLAGS`)。**现状(真)**:flag 在 admin 可切换 + DR-1 默认 OFF + admin/uniapp 双 mock 镜像;前端**尚无任何 UI 消费此 flag**(grep `computeShareEnabled` 于 uniapp `src/` 仅命中 `mock/platform-config.ts` 与 `store/config-types.ts`,0 个 `.vue` / 组件 / store 消费;`config-types.ts` 注:「前端零入口零推送;后台一键开启后前端才长出弱入口」—— 将来时)。**门控用户端「电脑共享算力」PC 弱入口与下载页显隐是 forward-spec(后续 SPEC,pending),前端消费未落地**;电脑算力本体(对应 §6.11 载体分层将新增的 PC 载体)亦为后续 SPEC,前端 PRD 暂无独立章节。服务的业务目标:以可控开关分阶段对用户放开新算力载体入口(对齐 §1.4 **算力撮合服务费**新增量 —— 共享自有 PC 算力 ≠ 购买 NexionBox,故不含设备销售口径;撮合服务费是三杠杆里最直接的 §1.4 链;与 12 月节奏的功能开放节拍对齐)。
 
-**② 后台界面**:同路由 `/devices/compute-config` 的「平台特性开关 · feature flags」面板。逐行 = flag 中文名 + key(`computeShareEnabled`)+ 用途说明 + 当前态(已开启 / 已关闭)+ 开关控件(`role=switch`,`aria-checked`,`data-on`,`data-proof=e6-flag-toggle`);未设值时回退 `COMPUTE_FLAGS.defaultOn`(`false`)。切换唯一出口 = shell `OperationConfirmModal`(`op:"param-fixed"`,固定 `on` / `off`,不传 `edit` → 不出「目标新值」number 输入)。该开关 → server-canonical 配置的处置路径见 [E6a] ② 流水线节点 I(`computeShareEnabled` 规划门控 PC 入口显隐分支,`:::pending`)。
+**② 后台界面（现行边界）**：本页当前接口的 flags/gpuTiers 为空、下载地址为空，不再生成旧平台开关或 GPU／下载编辑入口。以下 `computeShareEnabled` 表仅保留历史 forward-spec 背景，不代表本轮 E6 已提供该操作。
 
 **③ 可控参数**:
 
