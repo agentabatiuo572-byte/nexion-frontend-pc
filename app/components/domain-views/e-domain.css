@@ -509,8 +509,7 @@
 .edom .phone-sections { display:flex; flex-direction:column; gap:24px; margin-bottom:24px; }
 
 /* E5: device operations. Shared graphics retain their rd styling. */
-.e5-shortcuts, .e5-task-head, .e5-slots { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.e5-shortcuts { gap: 4px; }
+.e5-task-head, .e5-slots { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .e5-income, .e5-task, .e5-state { display: flex; flex-direction: column; gap: 5px; }
 .e5-income { align-items: flex-end; }
 .e5-amount { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
@@ -519,14 +518,14 @@
 .e5-task .e5-sub { max-width: 160px; }
 .e5-group-choices { display: grid; gap: 12px; }
 .e5-group-choices > button { justify-content: flex-start; }
-.e5-table { min-width: 740px; }
+.e5-table { min-width: 1040px; }
 .e5-table .e5-device-col { width: 132px; min-width: 132px; max-width: 132px; }
 .e5-table .e5-device-col .rd-cell { max-width: 104px; }
-.e5-table .e5-user-col { width: 96px; min-width: 96px; max-width: 96px; }
-.e5-table .e5-user-col .rd-cell { max-width: 80px; }
-.e5-table .e5-income-col { min-width: 176px; }
-.e5-table .e5-task-col { min-width: 144px; }
-.e5-table :is(th, td).e5-status-col { right: 56px; min-width: 136px; max-width: 160px; text-align: left; }
+.e5-table .e5-user-col { width: 220px; min-width: 220px; max-width: 220px; }
+.e5-table .e5-user-col .rd-cell { max-width: 204px; }
+.e5-table .e5-income-col { min-width: 260px; }
+.e5-table .e5-task-col { min-width: 208px; }
+.e5-table :is(th, td).e5-status-col { left: 132px; right: 56px; min-width: 160px; max-width: 160px; text-align: left; }
 .e5-table .e5-action-col { width: 56px; min-width: 56px; max-width: 56px; }
 .e5-table .e5-status-col .rd-th-inner { justify-content: flex-start; }
 .e5-empty-value { white-space: nowrap; }
@@ -538,6 +537,18 @@
 
 .e5-summary { display: grid; gap: 16px; }
 
-.e5-serial { display: flex; max-width: 100%; }
-.e5-serial > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.e5-serial > :last-child { flex: none; }
+
+.e5-income-range, .e5-task-time { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.e5-income-range { justify-content: flex-end; }
+.e5-income-range .rd-scale { flex: none; }
+.e5-task-time .e5-sub { max-width: none; }
+.e5-distribution button.rd-dist-item { box-shadow: none; }
+.e5-distribution .rd-dist-legend li:first-child > button.rd-dist-item { margin-left: 0; }
+.e5-distribution button.rd-dist-item[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--rd-line-strong); }
+
+.e5-user-meta { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.e5-user-meta > a { color: var(--rd-brand-ink); text-decoration: underline; text-underline-offset: 2px; }
+.e5-user-slots.rd-btn { height: 20px; padding: 0 4px; font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-2); border-radius: var(--rd-radius-tag); }
+.e5-user-slots.rd-btn[data-full], .e5-slots[data-full] { color: var(--rd-warn); }
+.e5-user-slots.rd-btn:hover, .e5-user-slots.rd-btn:focus-visible { background: var(--rd-hover); }
+.e5-table .e5-task-head { flex-wrap: nowrap; }

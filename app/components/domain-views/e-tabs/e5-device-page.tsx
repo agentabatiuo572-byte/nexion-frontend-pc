@@ -40,24 +40,23 @@ function amount(value: number | string) {
     expanded = point <= 0 ? `0.${"0".repeat(-point)}${digits}` : point >= digits.length ? digits + "0".repeat(point - digits.length) : `${digits.slice(0, point)}.${digits.slice(point)}`;
   }
   const [whole, decimal = ""] = expanded.split(".");
-  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${decimal.padEnd(2, "0")}`;
+  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${decimal.replace(/0+$/, "").padEnd(2, "0")}`;
 }
 
 function MonthlyIncome({ device, compact = false }: { device: E5Device; compact?: boolean }) {
   const target = device.monthlyTarget;
-  if (!target) return <span className="e5-empty-value">— <Explain label="没有设备月数据" content="没有可显示的设备月数据，不能据此认定已到账为0。" /></span>;
+  if (!target) return <span className="e5-empty-value">—{!compact && <Explain label="没有设备月数据" content="没有可显示的设备月数据，不能据此认定已到账为0。" />}</span>;
   const { rangeLowUsdt: low, rangeHighUsdt: high, creditedUsdt: credited } = target;
   const hasRange = low !== null && high !== null;
   const max = hasRange ? Math.max(Number(high), Number(credited)) : 0;
   return <div className="e5-income">
-    <div className="e5-amount">{amount(credited)} <span className="rd-muted">USDT</span><Explain label="设备月收益口径" content={<>
-      <p>第{target.cycleIndex}个设备月，{formatBusinessTimeCompact(target.cycleStartAt)}（含）至{formatBusinessTimeCompact(target.cycleEndAt)}（不含）。</p>
-      <p>当前产能{target.capacityPct}%，已到账来自本周期已完成目标任务。</p>
+    <div className="e5-amount">{amount(credited)}{!compact && <> <span className="rd-muted">USDT</span><Explain label="设备月收益口径" content={<>
+      <p>第 {target.cycleIndex} 个设备月，{formatBusinessTimeCompact(target.cycleStartAt)}（含）至{formatBusinessTimeCompact(target.cycleEndAt)}（不含）。</p>
+      <p>当前产能 {target.capacityPct}%，已到账来自本周期已完成目标任务。</p>
       {!target.targetActive && <p>目标已关闭，保留历史到账，没有预估。</p>}{target.configChangedInCycle && <p>本周期配置曾变化，历史到账不重算。</p>}
       <p>区间按当前配置满运行预估；停跑期间不计收益、不补发。</p>
-    </>} /></div>
-    {hasRange ? <><ScaleBar label="已到账相对满运行预估" valueText={`已到账${amount(credited)} USDT，预估${amount(low)}至${amount(high)} USDT`} max={max} value={Number(credited)} fill range={{ low: Number(low), high: Number(high) }} tone="role-2" compact={compact} quiet state={max === 0 ? "empty" : "ready"} />
-      <span className="e5-sub">{amount(low)}–{amount(high)} USDT</span></> : <span className="e5-sub">没有预估</span>}
+    </>} /></>}</div>
+    {hasRange ? <div className="e5-income-range"><span className="e5-sub">预估 {amount(low)}—{amount(high)}</span><ScaleBar label="已到账相对满运行预估" valueText={`已到账 ${amount(credited)} USDT，预估 ${amount(low)} 至 ${amount(high)} USDT`} max={max} value={Number(credited)} fill range={{ low: Number(low), high: Number(high) }} tone="role-2" compact quiet state={max === 0 ? "empty" : "ready"} /></div> : <span className="e5-sub">没有预估</span>}
   </div>;
 }
 function CurrentTask({ device, readAt }: { device: E5Device; readAt: number }) {
@@ -65,10 +64,10 @@ function CurrentTask({ device, readAt }: { device: E5Device; readAt: number }) {
   if (!task) return <span className="rd-muted">—</span>;
   const start = parseBusinessTime(task.startedAt), due = parseBusinessTime(task.dueAt);
   const valid = Number.isFinite(start) && Number.isFinite(due) && start < due;
-  const text = !valid ? "任务时间不可计算" : readAt >= due ? "已到应完成时间，刷新核对" : readAt < start ? "尚未到开始时间" : `距应完成${Math.ceil((due - readAt) / 60000)}分钟`;
+  const text = !valid ? "任务时间不可计算" : readAt >= due ? "已到应完成时间，刷新核对" : readAt < start ? "尚未到开始时间" : `距应完成 ${Math.ceil((due - readAt) / 60000)} 分钟`;
   return <div className="e5-task"><div className="e5-task-head"><TaskClassTag taskClass={task.taskClass as TaskClass} /><Explain label="当前任务时间" content={<>
     <p>{task.name}</p><p>任务号：{task.taskNo}</p><p>开始：{formatBusinessTimeCompact(task.startedAt)}</p><p>应完成：{formatBusinessTimeCompact(task.dueAt)}</p><p>总时长：{valid ? `${Math.ceil((due - start) / 60000)}分钟` : "无法计算"}</p><p>读取：{formatBusinessTimeCompact(new Date(readAt).toISOString())}</p><p>时间位置按读取时刻估算，不是执行完成率。</p>
-  </>} /></div>{valid && readAt >= start && readAt < due && <RatioBar label="读取时刻的时间位置" value={readAt - start} total={due - start} valueText={text} tone="progress" compact quiet />}<span className="e5-sub">{text}</span></div>;
+  </>} /></div><div className="e5-task-time">{valid && readAt >= start && readAt < due && <RatioBar label="读取时刻的时间位置" value={readAt - start} total={due - start} valueText={text} tone="progress" compact quiet />}<span className="e5-sub">{text}</span></div></div>;
 }
 function DeviceStatus({ device: d }: { device: E5Device }) {
   const value = E5_STATES[d.simState!];
@@ -97,6 +96,7 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
   const [overviewError, setOverviewError] = useState("");
   const [readAt, setReadAt] = useState(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [totalSelected, setTotalSelected] = useState(false);
   const [group, setGroup] = useState<"waiting" | "other" | null>(null);
   const [products, setProducts] = useState<Map<string, string>>(new Map());
   const [activityOpen, setActivityOpen] = useState(false);
@@ -108,7 +108,7 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
   const overviewRequest = useRef(0);
   const columns = useTableColumns("e5-devices", [{ key: "device", label: "设备", locked: "设备不能收起" }, { key: "user", label: "用户", locked: "用户不能收起" }, { key: "status", label: "状态", locked: "状态不能收起" }, { key: "income", label: "本月收益", locked: "收益不能收起" }, { key: "task", label: "当前任务", locked: "当前任务不能收起" }, { key: "actions", label: "操作", locked: "操作不能收起" }, { key: "product", label: "商品 · 托管机房", extra: true }, { key: "source", label: "来源", extra: true }]);
   useEffect(() => {
-    const restore = () => { const value = readQuery(); setQuery(value.q); setKeyword(value.q.keyword); setQueryError(value.error); const id = new URLSearchParams(window.location.search).get("deviceId"); setSelectedId(id && /^\d+$/.test(id) ? Number(id) : null); setReady(true); };
+    const restore = () => { const value = readQuery(); setQuery(value.q); setKeyword(value.q.keyword); setQueryError(value.error); setTotalSelected(false); const id = new URLSearchParams(window.location.search).get("deviceId"); setSelectedId(id && /^\d+$/.test(id) ? Number(id) : null); setReady(true); };
     restore(); window.addEventListener("popstate", restore); return () => window.removeEventListener("popstate", restore);
   }, []);
   const change = useCallback((patch: Partial<Query>) => {
@@ -117,7 +117,7 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
       if (value === "all" || value === "" || key === "pageNum" && value === 1 || key === "pageSize" && value === 10) url.searchParams.delete(key); else url.searchParams.set(key, String(value));
     }
     url.searchParams.delete("deviceId"); window.history.pushState(null, "", url);
-    setSelectedId(null); setQueryError(""); setQuery(next);
+    setSelectedId(null); setTotalSelected(false); setQueryError(""); setQuery(next);
   }, [query]);
   useEffect(() => { if (!ready || keyword === query.keyword) return; const timer = setTimeout(() => change({ keyword }), 300); return () => clearTimeout(timer); }, [keyword, ready, query.keyword, change]);
   const readList = useCallback(async (successMessage?: string) => {
@@ -174,36 +174,37 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
     {!ctx.canReadE5 ? <BlockState state="denied" title="无设备管理读取权限" /> : <E5CommandScope refresh={refresh} toast={ctx.toast}>
       <Panel plain className="e5-summary" aria-label="用户设备概览与状态分布">
       <Conclusion state={overview ? "neutral" : "unknown"} icon={Boxes} explain={<><p>这里是用户通过购买、置换、试用转正、赠送得到的设备，不含手机。</p><p>手机在{reach("/devices/compute-config", "device_e5_read") ? <Link href="/devices/compute-config">手机算力配置</Link> : "手机算力配置"}的用户手机里。统计不随筛选变。</p><p>等待启动含待激活、等待初始化、旧任务未结清，后两者不能笼统当成点激活。</p><p>其他含等待配置、已暂停、停用中、已解绑、出错重试中、模拟任务已关闭。</p></>}>
-        {overviewLoading ? "正在读取用户设备概览…" : overview ? overview.total ? `${overview.total}台用户设备，${overview.running}台运行中${overview.waitingActivation ? `，${overview.waitingActivation}台等待启动` : ""}` : "暂无用户设备" : "用户设备概览暂时读不到"}
+        {overviewLoading ? "正在读取用户设备概览…" : overview ? overview.total ? `${overview.total} 台用户设备，${overview.running} 台运行中${overview.waitingActivation ? `，${overview.waitingActivation} 台等待启动` : ""}` : "暂无用户设备" : "用户设备概览暂时读不到"}
       </Conclusion>
-      <StatBand label="全用户设备概览">
-        <Stat icon={Boxes} label="设备总数" value={overviewLoading ? <span className="rd-skeleton" aria-label="正在读取" /> : overview?.total ?? "—"} unit="台" tone="role-2" onOpen={() => change({ simState: "all" })} openLabel="查看全部设备状态" selected={query.simState === "all"} selectedText="已筛选" />
+      <StatBand label="全部用户设备概览">
+        <Stat icon={Boxes} label="设备总数" value={overviewLoading ? <span className="rd-skeleton" aria-label="正在读取" /> : overview?.total ?? "—"} unit="台" tone="role-2" onOpen={() => { change({ simState: "all" }); setTotalSelected(true); }} openLabel="查看全部设备状态" selected={totalSelected} selectedText="已筛选" />
         <Stat icon={Play} label="运行中" value={overviewLoading ? <span className="rd-skeleton" aria-label="正在读取" /> : overview?.running ?? "—"} unit="台" tone="ok" onOpen={() => change({ simState: "RUNNING" })} openLabel="查运行中" selected={query.simState === "RUNNING"} selectedText="已筛选" />
         <Stat icon={Clock3} label="等待启动" value={overviewLoading ? <span className="rd-skeleton" aria-label="正在读取" /> : overview?.waitingActivation ?? "—"} unit="台" tone="neutral" explain="包含待激活、等待初始化和旧任务未结清；请选择一个真实状态筛选。" onOpen={() => setGroup("waiting")} openLabel="选择等待启动状态" selected={selectedGroup === "waiting"} selectedText="已筛选" />
         <Stat icon={CirclePause} label="已停用" value={overviewLoading ? <span className="rd-skeleton" aria-label="正在读取" /> : overview?.stopped ?? "—"} unit="台" tone="done" onOpen={() => change({ simState: "STOPPED" })} openLabel="查已停用" selected={query.simState === "STOPPED"} selectedText="已筛选" />
       </StatBand>
+      <Panel title="状态分布" className="e5-distribution" explain="只统计用户通过购买、置换、试用转正、赠送得到的设备，不含手机；四数不随筛选变。点击等待启动或其他后，选择一个真实状态。">
       {overviewError && <BlockState compact state="error" title="用户设备概览暂时读不到" detail={overviewError} onRetry={() => void readOverview()} />}
-      {overview && other < 0 ? <BlockState compact state="error" title="状态分布暂时无法核对" onRetry={() => void readOverview()} /> : overview && overview.total > 0 && <StatusDistributionBar label={`用户设备状态分布，共${overview.total}台`} selectedKey={selectedGroup} segments={[
-        { key: "running", label: "运行中", value: overview.running, text: `${overview.running}台`, tone: "ok", onSelect: () => change({ simState: "RUNNING" }) },
-        { key: "waiting", label: "等待启动", value: overview.waitingActivation, text: `${overview.waitingActivation}台`, tone: "neutral", onSelect: () => setGroup("waiting") },
-        { key: "stopped", label: "已停用", value: overview.stopped, text: `${overview.stopped}台`, tone: "done", onSelect: () => change({ simState: "STOPPED" }) },
-        { key: "other", label: "其他", value: other, text: `${other}台`, tone: "role-other", onSelect: () => setGroup("other") },
+      {overview && other < 0 ? <BlockState compact state="error" title="状态分布暂时无法核对" onRetry={() => void readOverview()} /> : overview && overview.total > 0 && <StatusDistributionBar label={`用户设备状态分布，共 ${overview.total} 台`} selectedKey={selectedGroup} segments={[
+        { key: "running", label: "运行中", value: overview.running, text: `${overview.running} 台`, tone: "ok", onSelect: () => change({ simState: "RUNNING" }) },
+        { key: "waiting", label: "等待启动", value: overview.waitingActivation, text: `${overview.waitingActivation} 台`, tone: "neutral", onSelect: () => setGroup("waiting") },
+        { key: "stopped", label: "已停用", value: overview.stopped, text: `${overview.stopped} 台`, tone: "done", onSelect: () => change({ simState: "STOPPED" }) },
+        { key: "other", label: "其他", value: other, text: `${other} 台`, tone: "role-other", onSelect: () => setGroup("other") },
       ]} />}
-      <div className="e5-shortcuts">{(["WAITING_ACTIVATION", "WAITING_CONFIG", "LEGACY_PENDING", "ERROR"] as E5SimState[]).map(key => <Button key={key} size="sm" variant="ghost" onClick={() => change({ simState: key })}>查{E5_STATES[key].label}</Button>)}</div>
+      </Panel>
       </Panel>
       <Panel title="用户设备" flush className="e5-list-panel" actions={<ColumnPicker columns={columns} />}>
         <FilterBar onClear={clear} canClear={!!activeFilters.length || !!queryError} onSubmit={() => change({ keyword })} action={<></>} moreCount={query.productCode !== "all" ? 1 : 0}
           notice={queryError} applied={activeFilters.map(([key, value]) => ({ key, label: key === "simState" ? E5_STATES[value as E5SimState]?.label ?? String(value) : key === "source" ? SOURCES[String(value)] ?? String(value) : String(value), onRemove: () => { if (key === "keyword") setKeyword(""); change({ [key]: key === "keyword" ? "" : "all" }); } }))}
           more={<FilterField label="商品"><Select aria-label="商品筛选" value={query.productCode} onChange={productCode => change({ productCode })} options={[{ value: "all", label: "全部商品" }, ...Array.from(productOptions).map(([value, label]) => ({ value, label }))]} /></FilterField>}>
-          <FilterField label="状态"><Select aria-label="设备状态筛选" value={query.simState} onChange={simState => change({ simState })} options={[{ value: "all", label: "全部状态" }]} groups={GROUPS.map(group => ({ label: group.label, options: group.keys.map(value => ({ value, label: E5_STATES[value as E5SimState].label })) }))} /></FilterField>
+          <FilterField><Select aria-label="设备状态筛选" value={query.simState} onChange={simState => change({ simState })} options={[{ value: "all", label: "全部状态" }]} groups={GROUPS.map(group => ({ label: group.label, options: group.keys.map(value => ({ value, label: E5_STATES[value as E5SimState].label })) }))} /></FilterField>
           <FilterField grow><Input value={keyword} aria-label="搜索用户设备" placeholder="搜索用户 / 设备 / 商品" onChange={event => setKeyword(event.target.value)} /></FilterField>
-          <FilterField label="来源"><Select aria-label="设备来源筛选" value={query.source} onChange={source => change({ source })} options={[{ value: "all", label: "全部来源" }, ...Object.entries(SOURCES).map(([value, label]) => ({ value, label }))]} /></FilterField>
+          <FilterField><Select aria-label="设备来源筛选" value={query.source} onChange={source => change({ source })} options={[{ value: "all", label: "全部来源" }, ...Object.entries(SOURCES).map(([value, label]) => ({ value, label }))]} /></FilterField>
         </FilterBar>
-        <div data-proof="e5-devices"><Table label="用户设备" className="e5-table"><thead><tr><Th sticky="start" className="e5-device-col">设备</Th><Th className="e5-user-col">用户</Th>{columns.isVisible("product") && <Th>商品 · 托管机房</Th>}{columns.isVisible("source") && <Th>来源</Th>}<Th align="right" className="e5-income-col">本月收益</Th><Th className="e5-task-col">当前任务</Th><Th align="left" sticky="end" className="e5-status-col">状态</Th><Th sticky="end" className="e5-action-col">操作</Th></tr></thead><tbody>
-          {loading ? <TableLoading columns={6 + Number(columns.isVisible("product")) + Number(columns.isVisible("source"))} /> : error || queryError ? <TableMessage columns={8}><BlockState state="error" title="设备读取失败，请刷新重试" detail={error || queryError} onRetry={queryError ? clear : () => void readList()} /></TableMessage> : !rows.length ? <TableMessage columns={8}><BlockState state="empty" title="暂无符合条件的设备" onRetry={activeFilters.length ? clear : undefined} retryLabel="清除筛选" /></TableMessage> : rows.map(d => <Tr key={d.deviceId} selected={d.deviceId === selectedId} onOpen={() => select(d.deviceId)}>
-            <Td sticky="start" className="e5-device-col"><Cell main={d.deviceName} sub={<span className="e5-serial"><span>{d.serial.slice(0, -8)}</span><span>{d.serial.slice(-8)}</span></span>} title={`${d.deviceName} · ${d.serial}`} /></Td><Td className="e5-user-col"><Cell main={d.nickname} sub={reach(`/users/search/${d.userNo}`) ? <Link href={`/users/search/${d.userNo}`}>{d.userNo}</Link> : d.userNo} title={d.user} /></Td>
+        <div data-proof="e5-devices"><Table label="用户设备" className="e5-table"><thead><tr><Th sticky="start" className="e5-device-col">设备</Th><Th className="e5-user-col">用户</Th>{columns.isVisible("product") && <Th>商品 · 托管机房</Th>}{columns.isVisible("source") && <Th>来源</Th>}<Th align="left" sticky="end" className="e5-status-col">状态</Th><Th align="right" className="e5-income-col">本月收益（USDT）<Explain label="设备月收益口径" content="到账是本设备月已完成目标任务的收益，预估按当前配置满运行计算；没有设备月数据不认定为0。点设备行可核对周期起止、产能、目标关闭和周期内配置变化。停跑期间不计收益、不补发。" /></Th><Th className="e5-task-col">当前任务</Th><Th sticky="end" className="e5-action-col">操作</Th></tr></thead><tbody>
+          {loading ? <TableLoading columns={6 + Number(columns.isVisible("product")) + Number(columns.isVisible("source"))} /> : error || queryError ? <TableMessage columns={8}><BlockState state="error" title="用户设备读取失败，请刷新重试" detail={error || queryError} onRetry={queryError ? clear : () => void readList()} /></TableMessage> : !rows.length ? <TableMessage columns={8}><BlockState state="empty" title="暂无符合条件的用户设备" onRetry={activeFilters.length ? clear : undefined} retryLabel="清除筛选" /></TableMessage> : rows.map(d => <Tr key={d.deviceId} selected={d.deviceId === selectedId} onOpen={() => select(d.deviceId)}>
+            <Td sticky="start" className="e5-device-col"><Cell main={d.deviceName} sub={d.serial.length > 16 ? `${d.serial.slice(0, 4)}…${d.serial.slice(-8)}` : d.serial} title={`${d.deviceName} · ${d.serial}`} /></Td><Td className="e5-user-col"><Cell main={d.nickname} sub={<span className="e5-user-meta">{reach(`/users/search/${d.userNo}`) ? <Link href={`/users/search/${d.userNo}`}>{d.userNo.length > 11 ? `U…${d.userNo.slice(-8)}` : d.userNo}</Link> : d.userNo.length > 11 ? `U…${d.userNo.slice(-8)}` : d.userNo}<span aria-hidden>·</span><Button size="sm" variant="ghost" className="e5-user-slots" data-full={d.activeDevicesForUser >= d.maxDevicesPerUser ? "" : undefined} aria-label={`这位用户已激活 ${d.activeDevicesForUser} 台设备（含手机），每人最多 ${d.maxDevicesPerUser} 台。点击只看这位用户的设备`} title={`这位用户已激活 ${d.activeDevicesForUser} 台设备（含手机），每人最多 ${d.maxDevicesPerUser} 台。点击只看这位用户的设备`} onClick={() => { setKeyword(d.userNo); change({ keyword: d.userNo }); }}>已激活 {d.activeDevicesForUser}/{d.maxDevicesPerUser}</Button></span>} title={d.user} /></Td>
             {columns.isVisible("product") && <Td><Cell main={products.get(d.productCode) ?? d.productCode} sub={d.hostingLabel || "—"} title={d.hostingLabel} /></Td>}{columns.isVisible("source") && <Td>{SOURCES[d.sourceChannel]}</Td>}
-            <Td align="right" className="e5-income-col"><MonthlyIncome device={d} compact /></Td><Td className="e5-task-col"><CurrentTask device={d} readAt={readAt} /></Td><Td align="left" sticky="end" className="e5-status-col"><DeviceStatus device={d} /></Td><Td sticky="end" className="e5-action-col"><E5DeviceActions device={d} ctx={ctx} /></Td>
+            <Td align="left" sticky="end" className="e5-status-col"><DeviceStatus device={d} /></Td><Td align="right" className="e5-income-col"><MonthlyIncome device={d} compact /></Td><Td className="e5-task-col"><CurrentTask device={d} readAt={readAt} /></Td><Td sticky="end" className="e5-action-col"><E5DeviceActions device={d} ctx={ctx} /></Td>
           </Tr>)}
         </tbody></Table></div>
         {total > 0 && <Pager label="设备" total={total} page={query.pageNum} pageSize={query.pageSize} sizes={[10, 20, 50]} loading={loading} onPage={pageNum => change({ pageNum })} onPageSize={pageSize => change({ pageSize })} />}
