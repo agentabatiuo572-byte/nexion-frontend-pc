@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ClipboardList, Plus, RefreshCw, ShieldCheck, TriangleAlert } from "lucide-react";
 import { BatchBar, BlockState, Button, Cell, Check, CheckGroup, Checkbox, Conclusion, Explain, Fact, Facts, Field,
-  FilterBar, FilterField, Fold, LevelStrip, Modal, Notice, NumberInput, PageHeader, Pager, Panel, RatioBar,
+  FilterBar, FilterField, Fold, KeepText, LevelStrip, Modal, Notice, NumberInput, PageHeader, Pager, Panel, RatioBar,
   ReleaseBody, ScaleBar, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, TaskClassTag, Td, Textarea, Th, Tr, useTabIds } from "@/app/components/rd";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
@@ -341,7 +341,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           {dialogError && <Notice tone={dialog.original ? "warn" : "danger"}>{dialogError}</Notice>}
           {dialog.original && rejected.includes(dialog.original.commandKey) && !isRetryExpired(dialog.original) && <Button disabled={saving} onClick={() => setReleasing(true)}>解除待确认</Button>}
           <Fold title="执行摘要" summary="立即生效，不经审批"><p>{TASK_RULES}</p></Fold>
-          <Fold title="技术信息" summary="任务池与命令号"><Facts><Fact k="任务池">{dialog.pool.code}</Fact><Fact k="命令号">{dialog.key}<Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard.writeText(dialog.key).then(() => ctx.toast("命令号已复制"), () => setDialogError("复制失败，请选择完整命令号复制。")); }}>复制命令号</Button></Fact>{dialogErrorCode && <Fact k="原错误码">{dialogErrorCode}</Fact>}</Facts><p>{GENERATION}</p></Fold>
+          <Fold title="技术信息" summary="任务池与命令号"><Facts><Fact k="任务池">{dialog.pool.code}</Fact><Fact k="命令号">{dialog.key}<Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard.writeText(dialog.key).then(() => ctx.toast("命令号已复制"), () => setDialogError("复制失败，请选择完整命令号复制。")); }}>复制命令号</Button></Fact>{dialogErrorCode && <Fact k="原错误码">{dialogErrorCode}</Fact>}</Facts><p><KeepText text={GENERATION} /></p></Fold>
         </div>}
     </Modal>}
   </>;
