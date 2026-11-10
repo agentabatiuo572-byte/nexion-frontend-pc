@@ -161,10 +161,10 @@ export const CONSOLE_NAV: NavDomain[] = [
     // 设备生命周期(原 E4)并入 E5→现 E3。同 F 域 F1-F8→F1-F5。nav id == prdAnchor == PRD §10 章节(PRD 已同步重编号)。
     l2: [
       { id: "E1", name: "商品管理与上架条件", path: "/devices/pricing", prdAnchor: "E1", batch: "V2", status: "flagship" },
-      { id: "E2", name: "设备收益与任务", path: "/devices/tasks", prdAnchor: "E2", batch: "V2", status: "flagship" },
+      { id: "E2", name: "任务池", path: "/devices/tasks", prdAnchor: "E2", batch: "V2", status: "flagship" },
       { id: "E3", name: "设备使用与升级置换", path: "/devices/trade-in", prdAnchor: "E3", batch: "V2", status: "flagship" },
       { id: "E4", name: "订单进度", path: "/devices/orders", prdAnchor: "E4", batch: "V2", status: "flagship" },
-      { id: "E5", name: "设备运行管理", path: "/devices/ops", prdAnchor: "E5", batch: "V2", status: "flagship" },
+      { id: "E5", name: "设备管理", path: "/devices/ops", prdAnchor: "E5", batch: "V2", status: "flagship" },
       { id: "E6", name: "手机算力配置", path: "/devices/compute-config", prdAnchor: "E6", batch: "V2", status: "flagship" },
     ],
   },
@@ -313,10 +313,10 @@ const LEGACY_MENU_NAMES: Record<string, string> = {
   "D4": "账本/账单审计",
   "D6": "汇率牌价",
   "E1": "商品目录 & 上架门",
-  "E2": "收益 & 任务引擎",
+  "E2": "任务池",
   "E3": "生命周期 & Trade-in",
   "E4": "订单状态机",
-  "E5": "设备运维",
+  "E5": "设备管理",
   "F1": "V-Rank 晋升",
   "F2": "网络版税与分成",
   "F3": "双轨结算引擎",
@@ -355,6 +355,8 @@ const STOCK_MENU_ALIASES: Record<string, string[]> = {
   D2: ["待审核提现"],
   D5: ["提现参数配置"],
   D7: ["法币提现参数"],
+  E2: ["收益 & 任务引擎", "设备收益与任务"],
+  E5: ["设备运维", "设备运行管理"],
   E6: ["算力与设备配置"],
   F2: ["网络版税费率"],
   G2: ["兑换风险规则"],
@@ -438,6 +440,8 @@ export function menuCodesFromAuthorities(authorities: string[]): string[] {
       found.add(match[1] === "I7" ? "I6" : match[1]);
     }
   }
+  // PHONE tools moved to E6; DB menu grants remain authoritative when supplied.
+  if (authorities.some(code => /^device_e[25]_/.test(code))) found.add("E6");
   return [...found].sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
 }
 

@@ -1,5 +1,4 @@
 import { accountAvatarFields } from "./account-avatar-contract.ts";
-import { supportsDeviceMonthlyTarget } from "./device-monthly-target.ts";
 export type DomainCode = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M";
 
 export interface ReplayCommand {
@@ -27,7 +26,7 @@ export interface HighOpDef {
 
 function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unknown> {
   const {
-    dailyEarnNEX, unlock, sold: _sold,
+    dailyEarnNEX, phoneDailyEarnNEX, unlock, sold: _sold,
     updatedAt,
     // 媒体预览链接是带时效的预签名 URL,每次拉目录都会重新续签 —— 它既不是运营编辑的商品属性
     // (后端认 assetId / objectKey,展示时按 assetId 重新签发),又会让「业务输入一字未改的重试」
@@ -41,15 +40,15 @@ function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unkn
     derivedShareYieldMaxPct: _derivedShareYieldMaxPct,
     ...rest
   } = ctx;
-  const targetSupported = supportsDeviceMonthlyTarget(String(ctx.skuId), String(ctx.tier ?? ""));
-  const hasTarget = targetSupported && monthlyTargetUsdt != null;
+  const hasTarget = monthlyTargetUsdt != null;
   return {
     ...rest,
-    ...(targetSupported ? { monthlyTargetUsdt, monthlyTargetBandPct, clearMonthlyTarget: clearMonthlyTarget === true ? true : undefined } : {}),
+    monthlyTargetUsdt, monthlyTargetBandPct, clearMonthlyTarget: clearMonthlyTarget === true ? true : undefined,
     dailyEarn: hasTarget ? undefined : ctx.dailyEarn,
     shareYieldMin: hasTarget ? undefined : ctx.shareYieldMin,
     shareYieldMax: hasTarget ? undefined : ctx.shareYieldMax,
     dailyEarnNex: dailyEarnNEX,
+    phoneDailyEarnNex: phoneDailyEarnNEX,
     unlockPhase: unlock,
     expectedUpdatedAt: updatedAt,
     // 内部兼容列不能通过库存编辑重置；新建仍沿用既有默认值。
@@ -982,13 +981,6 @@ export const HIGH_OPS: HighOpDef[] = [
     buildTarget: () => ({ domain: "E", type: "store_bundle_discount", id: "canonical" }),
   },
   {
-    op: "e1_phone_task_policy", domain: "E", action: "发布手机可跑任务", amplifies: false,
-    type: "param", gateLabel: "门槛者", targetType: "device_sku",
-    buildCommand: (ctx) => ({ domain: "E", op: "e1_phone_task_policy", params: {
-      allowedTaskClasses: ctx.allowedTaskClasses, expectedVersion: ctx.expectedVersion } }),
-    buildTarget: () => ({ domain: "E", type: "device_sku", id: "phone" }),
-  },
-  {
     op: "e1_sku_create",
     domain: "E",
     action: "新建设备 SKU",
@@ -1169,14 +1161,7 @@ export const HIGH_OPS: HighOpDef[] = [
     type: "param",
     gateLabel: "门槛者",
     targetType: "device_task",
-    buildCommand: (ctx) => ({ domain: "E", op: "e2_task_create",
-      params: { name: String(ctx.name), price: ctx.price, unit: String(ctx.unit),
-        requirement: String(ctx.requirement), saturation: ctx.saturation, status: String(ctx.status),
-        taskClass: String(ctx.taskClass), model: String(ctx.model), minReward: ctx.minReward,
-        maxReward: ctx.maxReward, minVram: String(ctx.minVram), killInit: String(ctx.killInit),
-        selectionWeight: ctx.selectionWeight, expectedDurationMinSec: ctx.expectedDurationMinSec,
-        expectedDurationMaxSec: ctx.expectedDurationMaxSec, executionTimeoutSec: ctx.executionTimeoutSec,
-        runtimeKey: ctx.runtimeKey, validatorKey: ctx.validatorKey, workloadConfigJson: ctx.workloadConfigJson, simulation: ctx.simulation } }),
+    buildCommand: (ctx) => ({ domain: "E", op: "e2_task_create", params: { poolCode: "PHONE", name: String(ctx.name), taskClass: String(ctx.taskClass), simulation: ctx.simulation } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_task", id: String(ctx.taskId) }),
   },
   {
@@ -1187,14 +1172,7 @@ export const HIGH_OPS: HighOpDef[] = [
     type: "param",
     gateLabel: "门槛者",
     targetType: "device_task",
-    buildCommand: (ctx) => ({ domain: "E", op: "e2_task_update",
-      params: { taskId: String(ctx.taskId), name: String(ctx.name), price: ctx.price, unit: String(ctx.unit),
-        requirement: String(ctx.requirement), saturation: ctx.saturation, status: String(ctx.status),
-        taskClass: String(ctx.taskClass), model: String(ctx.model), minReward: ctx.minReward,
-        maxReward: ctx.maxReward, minVram: String(ctx.minVram), killInit: String(ctx.killInit),
-        selectionWeight: ctx.selectionWeight, expectedDurationMinSec: ctx.expectedDurationMinSec,
-        expectedDurationMaxSec: ctx.expectedDurationMaxSec, executionTimeoutSec: ctx.executionTimeoutSec,
-        runtimeKey: ctx.runtimeKey, validatorKey: ctx.validatorKey, workloadConfigJson: ctx.workloadConfigJson, simulation: ctx.simulation } }),
+    buildCommand: (ctx) => ({ domain: "E", op: "e2_task_update", params: { poolCode: "PHONE", taskId: String(ctx.taskId), name: String(ctx.name), taskClass: String(ctx.taskClass), simulation: ctx.simulation } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_task", id: String(ctx.taskId) }),
   },
   {
@@ -1218,7 +1196,7 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "device_task",
     buildCommand: (ctx) => ({ domain: "E", op: "e2_task_status",
-      params: { taskId: String(ctx.taskId), status: String(ctx.status) } }),
+      params: { poolCode: "PHONE", taskId: String(ctx.taskId), status: String(ctx.status) } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_task", id: String(ctx.taskId) }),
   },
   {
@@ -1351,7 +1329,7 @@ export const HIGH_OPS: HighOpDef[] = [
       params: { orderNo: String(ctx.orderNo), state: String(ctx.state) } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_order", id: String(ctx.orderNo) }),
   },
-  // E5 设备与数据中心运维
+  // E5 设备管理
   {
     op: "e5_device_activate",
     domain: "E",
@@ -1423,71 +1401,6 @@ export const HIGH_OPS: HighOpDef[] = [
     buildCommand: (ctx) => ({ domain: "E", op: "e5_device_batch_resume",
       params: { userId: Number(ctx.userId) } }),
     buildTarget: (ctx) => ({ domain: "E", type: "user_device_batch", id: String(ctx.userId) }),
-  },
-  {
-    op: "e5_datacenter_create",
-    domain: "E",
-    action: "新建数据中心",
-    amplifies: false,
-    type: "param",
-    gateLabel: "门槛者",
-    targetType: "device_datacenter",
-    buildCommand: (ctx) => ({ domain: "E", op: "e5_datacenter_create",
-      params: { dcLocation: String(ctx.dcLocation), regionLabel: String(ctx.regionLabel),
-        location: String(ctx.location), displayName: String(ctx.displayName),
-        status: String(ctx.status), sortOrder: ctx.sortOrder } }),
-    buildTarget: (ctx) => ({ domain: "E", type: "device_datacenter", id: String(ctx.dcLocation) }),
-  },
-  {
-    op: "e5_datacenter_update",
-    domain: "E",
-    action: "更新数据中心",
-    amplifies: false,
-    type: "param",
-    gateLabel: "门槛者",
-    targetType: "device_datacenter",
-    buildCommand: (ctx) => ({ domain: "E", op: "e5_datacenter_update",
-      params: { dcLocation: String(ctx.dcLocation), regionLabel: String(ctx.regionLabel),
-        oldDcLocation: String(ctx.oldDcLocation ?? ctx.dcLocation),
-        location: String(ctx.location), displayName: String(ctx.displayName),
-        status: String(ctx.status), sortOrder: ctx.sortOrder } }),
-    buildTarget: (ctx) => ({ domain: "E", type: "device_datacenter", id: String(ctx.dcLocation) }),
-  },
-  {
-    op: "e5_datacenter_delete",
-    domain: "E",
-    action: "删除数据中心",
-    amplifies: false,
-    type: "sos",
-    gateLabel: "门槛者",
-    targetType: "device_datacenter",
-    buildCommand: (ctx) => ({ domain: "E", op: "e5_datacenter_delete",
-      params: { dcLocation: String(ctx.dcLocation) } }),
-    buildTarget: (ctx) => ({ domain: "E", type: "device_datacenter", id: String(ctx.dcLocation) }),
-  },
-  {
-    op: "e5_datacenter_pause",
-    domain: "E",
-    action: "暂停数据中心派单",
-    amplifies: false, // 暂停=收缩(resume 见 e5_datacenter_resume)
-    type: "sos",
-    gateLabel: "门槛者",
-    targetType: "device_datacenter",
-    buildCommand: (ctx) => ({ domain: "E", op: "e5_datacenter_pause",
-      params: { dcLocation: String(ctx.dcLocation) } }),
-    buildTarget: (ctx) => ({ domain: "E", type: "device_datacenter", id: String(ctx.dcLocation) }),
-  },
-  {
-    op: "e5_datacenter_resume",
-    domain: "E",
-    action: "恢复数据中心派单",
-    amplifies: true, // 恢复派单放大
-    type: "fund",
-    gateLabel: "门槛者",
-    targetType: "device_datacenter",
-    buildCommand: (ctx) => ({ domain: "E", op: "e5_datacenter_resume",
-      params: { dcLocation: String(ctx.dcLocation) } }),
-    buildTarget: (ctx) => ({ domain: "E", type: "device_datacenter", id: String(ctx.dcLocation) }),
   },
   // E6 算力(e6 compute_config)
   {

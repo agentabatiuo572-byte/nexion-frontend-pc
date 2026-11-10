@@ -1,6 +1,5 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import type { OpsSku } from "@/lib/admin/platform-types";
-import { supportsDeviceMonthlyTarget } from "@/lib/admin/device-monthly-target";
 import { skuBaseRateText } from "@/lib/admin/operator-copy";
 import { monthlyTargetPoolErrorText } from "@/lib/admin/monthly-target-pool-error";
 import { fromPurchaseGate, toPurchaseGate, type BackendPurchaseGate } from "@/lib/admin/e1-purchase-gate";
@@ -28,7 +27,7 @@ interface PageResult<T> {
 }
 
 interface BackendSku {
-  allowedTaskClasses?: string[];
+  allowedPoolCodes: string[];
   productTaskPolicyVersion?: number;
   productTaskPolicyEffectiveAt?: string;
   skuId: string;
@@ -125,7 +124,6 @@ export interface E1GenerationRelease {
 export interface E1GenerationGateData {
   domain: "E1";
   skuReviewContractVersion?: number;
-  taskClassPolicySupported?: boolean;
   phaseOrder: string[];
   phases: E1Phase[];
   platformMonth: number;
@@ -232,7 +230,7 @@ function fromSku(sku: BackendSku): OpsSku {
   const inventoryMode = sku.inventoryMode;
   const stock = inventoryMode === "UNLIMITED" ? undefined : sku.stock as string;
   const mapped: OpsSku = {
-    allowedTaskClasses: sku.allowedTaskClasses,
+    allowedPoolCodes: sku.allowedPoolCodes,
     productTaskPolicyVersion: sku.productTaskPolicyVersion,
     productTaskPolicyEffectiveAt: sku.productTaskPolicyEffectiveAt,
     id: sku.skuId,
@@ -295,15 +293,14 @@ function fromSku(sku: BackendSku): OpsSku {
 }
 
 function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
-  const targetSupported = supportsDeviceMonthlyTarget(sku.id, sku.tier);
-  const hasTarget = targetSupported && sku.monthlyTargetUsdt != null;
+  const hasTarget = sku.monthlyTargetUsdt != null;
   const inventoryMode = sku.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE";
   const productType = sku.productType ?? (sku.tier === "Share" ? "SHARE" : "DEVICE");
   if (inventoryMode === "UNLIMITED" && productType !== "SHARE") {
     throw new Error("E1_SKU_INVENTORY_CONTRACT_INVALID");
   }
   return {
-    allowedTaskClasses: sku.allowedTaskClasses,
+    allowedPoolCodes: sku.allowedPoolCodes,
     skuId: sku.id || undefined,
     name: sku.name,
     tier: sku.tier,
@@ -320,11 +317,9 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     phoneDailyEarnNex: sku.phoneDailyEarnNEX ?? null,
     price: sku.price,
     computePoints: sku.computePoints ?? null,
-    ...(targetSupported ? {
-      monthlyTargetUsdt: sku.monthlyTargetUsdt,
-      monthlyTargetBandPct: sku.monthlyTargetBandPct,
-      clearMonthlyTarget: sku.clearMonthlyTarget === true ? true : undefined,
-    } : {}),
+    monthlyTargetUsdt: sku.monthlyTargetUsdt,
+    monthlyTargetBandPct: sku.monthlyTargetBandPct,
+    clearMonthlyTarget: sku.clearMonthlyTarget === true ? true : undefined,
     dailyEarn: hasTarget ? undefined : sku.dailyEarn,
     dailyEarnNex: sku.dailyEarnNEX,
     shareYieldMin: hasTarget ? undefined : sku.shareYieldMin ?? null,

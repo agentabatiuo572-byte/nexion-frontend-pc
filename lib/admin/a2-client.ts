@@ -58,6 +58,8 @@ interface BackendStats {
 type A2FundEffect = "REWARD_SUSPENSION" | "REWARD_RESUMPTION" | "ORDER_REFUND";
 
 interface BackendTicket {
+  canApprove?: boolean | null;
+  canReject?: boolean | null;
   ambassadorMaterialProposal?: F4AmbassadorMaterialProposal | null;
   id: string;
   action: string;
@@ -155,6 +157,8 @@ export interface A2Stats {
 }
 
 export interface A2OperationRow {
+  canApprove?: boolean;
+  canReject?: boolean;
   ambassadorMaterialProposal?: F4AmbassadorMaterialProposal;
   ambassadorMaterialError?: string;
   phoneCalibrationProposal?: PhoneProposalView;
@@ -342,6 +346,8 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
     ...(ambassadorMaterialError ? { ambassadorMaterialError } : {}),
     ...(phoneCalibrationProposal ? { phoneCalibrationProposal } : {}),
     ...(phoneCalibrationError ? { phoneCalibrationError } : {}),
+    ...(typeof ticket.canApprove === "boolean" ? { canApprove: ticket.canApprove } : {}),
+    ...(typeof ticket.canReject === "boolean" ? { canReject: ticket.canReject } : {}),
     ...(ticket.coverageCheckOnApproval === true ? { coverageCheckOnApproval: true } : {}),
     ...(ticket.operationCode ? { operationCode: ticket.operationCode } : {}),
     ...(ticket.retiredOperation === true ? { retiredOperation: true } : {}),

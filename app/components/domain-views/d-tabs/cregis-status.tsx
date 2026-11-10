@@ -673,7 +673,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       { value: "records", label: "收款记录" },
       { value: "exceptions", label: "异常处理", count: exceptionsCountText },
       { value: "settings", label: "充值与地址设置" },
-      { value: "funds", label: "归集与付款" },
+      { value: "funds", label: "归集与转入" },
     ]} />
     <div {...subIds.panel("records")} hidden={sub !== "records"} className="rd-tab-pane"><CregisDepositHistory reloadKey={childKey} /></div>
 
@@ -833,7 +833,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       {data ? <>
         <CregisAutoForward key={`auto-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} onChanged={syncPending} />
         <CregisFundsPreparation key={`prep-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} onChanged={syncPending} />
-      </> : <BlockState state={loading ? "loading" : "error"} title={loading ? "正在读取…" : "收款状态读取失败，归集与付款先不显示"} onRetry={loading ? undefined : () => void refresh()} />}
+      </> : <BlockState state={loading ? "loading" : "error"} title={loading ? "正在读取…" : "收款状态读取失败，自动流程与人工准备先不显示"} onRetry={loading ? undefined : () => void refresh()} />}
     </div>
 
     <Drawer open={alertsOpen} onClose={() => setAlertsOpen(false)} title="最近对账与告警" icon={BellRing} tone={alertCount > 0 ? "danger" : "role-other"}>
@@ -922,7 +922,7 @@ function cregisCommandLabel(path: string) {
   if (path.startsWith("/cregis/exception-claims")) return "认领入账";
   if (path.startsWith("/cregis/exception-ownership")) return "生成钱包签名原文";
   if (path.startsWith("/cregis/reorg")) return "重组处置";
-  if (path.startsWith("/cregis/auto-forward")) return "自动归集及付款";
+  if (path.startsWith("/cregis/auto-forward")) return `${new URLSearchParams(path.split("?")[1]).get("network") ?? "BEP20"} 自动资金流程`;
   if (path.startsWith("/cregis/funds-preparation")) return "资金准备单";
   return "USDT 收款操作";
 }

@@ -277,7 +277,7 @@ export default function CommandCenter() {
           设备：在线 {fmtNum(devices.data.online)} 台，异常 <span className="cc-num" data-tone={devices.data.abnormal > 0 ? "warn" : undefined}>{fmtNum(devices.data.abnormal)}</span> 台
         </Explain>
       ) : <span>正在读取设备…</span>}
-      {devices.data && reach("/devices/ops") && <Link className="cc-fundline-toggle" href="/devices/ops" prefetch={false}>查看设备运行管理</Link>}
+      {devices.data && reach("/devices/ops") && <Link className="cc-fundline-toggle" href="/devices/ops" prefetch={false}>查看设备管理</Link>}
     </div>
   );
   // 待处理在时资金安全句放在它的标题行；还有设备那一行时两句并排放在待处理下面。

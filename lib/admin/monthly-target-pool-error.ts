@@ -11,7 +11,7 @@ export async function monthlyTargetPoolErrorText(message: string | null | undefi
     ? `单笔任务奖励上限：${max.replace(/^\d+/, (whole) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ","))} USDT。` : "";
   const instruction = rewardOutOfRange
     ? `${formatAdminApiError(message, "月收益目标对应的任务奖励金额超出允许范围。")}${limit}`
-    : "设了月收益目标的型号只能使用正额 USDT、时长不超过 120 分钟的任务。请调整任务奖励、时长或可跑任务大类后重新提交。";
+    : "设了月收益目标的型号只能使用正额 USDT、时长不超过 120 分钟的任务。请核对任务等级及任务配置后重新提交。";
   const missing = `${rewardOutOfRange ? "" : "任务配置不符合月收益目标要求。"}${instruction}受影响型号信息缺失，请核对商品配置。`;
   const ids = details?.affectedSkuIds;
   if (!Array.isArray(ids) || !ids.length || !ids.every((id): id is string => typeof id === "string" && id.trim() !== "")) {

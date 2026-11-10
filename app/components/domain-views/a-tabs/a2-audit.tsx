@@ -199,7 +199,7 @@ type DecisionRule = { superadmin?: boolean; approve?: readonly Need[]; reject?: 
  */
 const GROWTH_DELEGATE = "@growth-delegate";
 type TicketIdentity = Pick<A2OperationRow, "action" | "obj" | "operationCode" | "fundEffect" | "before" | "after">
-  & Partial<Pick<A2OperationRow, "phoneCalibrationProposal" | "ambassadorMaterialProposal" | "roleGate">>;
+  & Partial<Pick<A2OperationRow, "phoneCalibrationProposal" | "ambassadorMaterialProposal" | "roleGate" | "canApprove" | "canReject">>;
 const A4_REGISTRY_CODES = ["a4_schema_register", "a4_schema_property_add", "a4_domain_extension_register"];
 const J4_CODE = /^SOP-[A-Z0-9-]{1,64}$/;
 /** 有专项审批、要另一位超管处理的单（各自的 validateChecker：超管＋A2 批准权，批准、驳回一样）。 */
@@ -630,7 +630,7 @@ function ticketStatus(overview: A2Overview | null, id: string) {
 
 const CHANGE_LABELS: Record<string, string> = {
   skuId: "商品编号", id: "商品编号", name: "商品名称", tier: "商品档位", tagline: "卖点", badge: "角标",
-  gpu: "GPU", vram: "显存", hashRate: "算力", power: "功耗", datacenter: "数据中心", uptime: "在线率",
+  gpu: "GPU", vram: "显存", hashRate: "算力", power: "功耗", datacenter: "托管机房", allowedPoolCodes: "任务等级", uptime: "在线率",
   warranty: "保修", phoneDailyEarn: "手机日产收益", phoneDailyEarnNex: "手机日产 UVT", price: "价格", computePoints: "每件算力点",
   dailyEarn: "日产收益", dailyEarnNex: "日产 UVT", shareYieldMin: "份额收益下限", shareYieldMax: "份额收益上限",
   monthlyTargetUsdt: "月收益目标", monthlyTargetBandPct: "允许波动", clearMonthlyTarget: "关闭月收益目标",
@@ -674,6 +674,7 @@ function valueText(key: string | undefined, value: unknown): string {
   if (key === "shareYieldMin" || key === "shareYieldMax") return `${grouped(String(value))}%`;
   if (key === "peerBonusRate" && typeof value === "number") return `${(value * 100).toFixed(2)}%`;
   if (key === "baseRate" && typeof value === "string") return shareBaseRateText(value);
+  if (key === "allowedPoolCodes" && Array.isArray(value)) return value.length ? value.map(code => ({L1:"L1 初级",L2:"L2 中级",L3:"L3 高级",L4:"L4 旗舰",PHONE:"手机任务池"}[String(code)] ?? String(code))).join("、") : "未选择";
   if (Array.isArray(value)) return value.length ? value.map((item) => valueText(undefined, item)).join("、") : "无";
   if (isRecord(value)) return Object.entries(value).map(([name, item]) => `${CHANGE_LABELS[name] ?? name} ${valueText(name, item)}`).join("；") || "无";
   return grouped(String(value));
@@ -820,7 +821,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (rule.superadmin && principal.role !== "superadmin") return false;
     return (kind === "approve" ? rule.approve : rule.reject)?.every(has) ?? true;
   };
-  const canDecide = (ticket: TicketIdentity, kind: "approve" | "reject") => allowed(decisionRule(ticket), kind);
+  const canDecide = (ticket: TicketIdentity, kind: "approve" | "reject") => {
+    const qualified = kind === "approve" ? ticket.canApprove : ticket.canReject;
+    return canApprove && (qualified ?? allowed(decisionRule(ticket), kind));
+  };
   const canExport = canAccessA2Export(principal.authorities);
   const canReadOrders = principal.authorities.includes("device_e4_read");
   // 和顶栏同一份兑付覆盖率；读不到时批准框写「暂时读不到」，批准时后端再查。

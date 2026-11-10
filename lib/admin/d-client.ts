@@ -647,7 +647,7 @@ export function d1CommandObject(path: string, body = "") {
     const value: unknown = body ? JSON.parse(body) : {};
     if (value && typeof value === "object" && !Array.isArray(value)) parsed = value as Record<string, unknown>;
   } catch { /* 不是 JSON 的按路径认 */ }
-  if (parsed.action === "PAUSE") return `${route}|PAUSE`;
+  if (parsed.action === "PAUSE") return `${route}|PAUSE|network=${params.get("network") ?? parsed.network ?? "BEP20"}`;
   const ids = D1_IDENTITY_FIELDS.flatMap(field => {
     const value = params.get(field) ?? parsed[field];
     return value === undefined || value === null || value === "" ? [] : [`${field}=${String(value)}`];

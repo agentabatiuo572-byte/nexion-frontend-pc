@@ -15,7 +15,7 @@ import type { DCtx } from "./types";
 
 const EMPTY: ExceptionPage = { records: [], hasMore: false, nextBeforeId: null };
 const ROOT = "/funds-preparation";
-const kindLabel = (kind: unknown) => kind === "COLLECTION" ? "归集准备" : "甲方付款准备";
+const kindLabel = (kind: unknown) => kind === "COLLECTION" ? "归集到 Cregis 准备" : "Cregis 转平台收款钱包准备";
 const planTone = (state: unknown): StateTone => state === "DRAFT" ? "warn" : state === "REVIEWED" ? "ok" : "done";
 type Props = { canManage: boolean; openActionConfirm: DCtx["openActionConfirm"]; onChanged?: () => void };
 
@@ -63,7 +63,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
   const edit = (action: () => void) => { selection.current++; setPreflight(null); setFormError(""); action(); };
   const payload = () => {
     if (!config) throw new Error("请先读取资金准备配置");
-    if (kind === "COLLECTION" && !config.sources.some(row => row.address === source)) throw new Error("请选择可归集的来源地址");
+    if (kind === "COLLECTION" && !config.sources.some(row => row.address === source)) throw new Error("请选择归集到cregis的来源地址");
     return { kind, sourceAddress: kind === "COLLECTION" ? source : config.platformAddress, amountUsdt: preparationAmount(amount) };
   };
   const check = async () => {
@@ -128,8 +128,8 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
   const amountIssue = amount && !/^(0|[1-9][0-9]{0,11})(\.[0-9]{1,6})?$/.test(amount) ? "金额须大于零，最多十二位整数和六位小数" : undefined;
   const createBlock = block ?? (kind === "COLLECTION" && !source ? "先选来源子地址" : !amount ? "先填金额" : amountIssue ? amountIssue : !reference.trim() ? "先填业务参考号" : undefined);
 
-  return <Panel icon={ClipboardList} tone="role-2" title="BEP20 归集与甲方付款准备"
-    explain={<><p>仅适用于 BEP20；这里只保存准备单和复核意见，不会转出资金。真实转账须另行授权后在收款服务后台执行，审批不自动发送。</p><p>1. 选择本项目充值子地址，核对金额后创建归集准备单。2. 由另一位管理员复核，后续另行授权后在收款服务后台将资金归集到平台钱包。3. 平台钱包到账后，按业务金额创建并复核甲方付款准备单；后续在收款服务后台单独付款，保存原单号和交易哈希。</p></>}
+  return <Panel icon={ClipboardList} tone="role-2" title="BEP20 人工资金准备"
+    explain={<><p>仅适用于 BEP20；这里只保存准备单和复核意见，不会转出资金。真实转账须另行授权后在收款服务后台执行，审批不自动发送。</p><p>1. 选择本项目充值子地址，核对金额后创建归集到 Cregis 准备单。2. 由另一位管理员复核，后续另行授权后在收款服务后台将资金归集到 Cregis 钱包。3. Cregis 钱包到账后，按业务金额创建并复核Cregis 转平台收款钱包准备单；后续在收款服务后台单独付款，保存原单号和交易哈希。</p></>}
     actions={<>
       <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} disabled={busy} onClick={() => void refresh()}>刷新</Button>
       {canWrite && config && <Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={block} onClick={() => setCreating(true)}>新建准备单</Button>}
@@ -140,8 +140,8 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
         : <div className="rd-stack">
           <p className="rd-note">只保存准备单和复核意见，不会转出资金。</p>
           <ConfigList label="准备地址">
-            <ConfigRow name="归集接收 / 甲方付款来源" value={<span data-mono="">{config.platformAddress}</span>} />
-            <ConfigRow name="甲方 BEP20 接收地址" value={<span data-mono="">{config.counterpartyAddress}</span>} />
+            <ConfigRow name="Cregis 归集钱包 / 转出来源" value={<span data-mono="">{config.platformAddress}</span>} />
+            <ConfigRow name="平台收款钱包（BEP20）" value={<span data-mono="">{config.counterpartyAddress}</span>} />
           </ConfigList>
           {records.length === 0 ? <p className="rd-note">暂无准备单</p> : <Table label="准备记录 · 不代表已转账">
             <thead><tr><Th>准备单 · 业务参考</Th><Th align="right">金额（USDT）</Th><Th>状态</Th><Th sticky="end" align="right">操作</Th></tr></thead>
@@ -161,12 +161,12 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
         primary={<Button variant="primary" disabledReason={createBlock} onClick={create}>创建准备单</Button>} />}>
       {config && <>
         <Field label="操作类型" required>
-          <Select aria-label="资金准备操作类型" value={kind} disabled={busy} onChange={value => edit(() => setKind(value as PreparationKind))} options={[{ value: "COLLECTION", label: "归集准备" }, { value: "SUPPLIER_PAYMENT", label: "甲方付款准备" }]} />
+          <Select aria-label="资金准备操作类型" value={kind} disabled={busy} onChange={value => edit(() => setKind(value as PreparationKind))} options={[{ value: "COLLECTION", label: "归集到 Cregis 准备" }, { value: "SUPPLIER_PAYMENT", label: "Cregis 转平台收款钱包准备" }]} />
         </Field>
         {kind === "COLLECTION" && (config.sources.length === 0
           ? <p className="rd-note">当前没有已分配且可用于准备的充值子地址。</p>
           : <Field label="来源子地址" required>
-            <Select aria-label="归集来源子地址" value={source} disabled={busy} onChange={value => edit(() => setSource(value))} placeholder="请选择" required
+            <Select aria-label="归集到 Cregis 来源子地址" value={source} disabled={busy} onChange={value => edit(() => setSource(value))} placeholder="请选择" required
               options={[{ value: "", label: "请选择" }, ...config.sources.map(row => ({ value: row.address, label: `${row.address} · 用户 ${row.userId}` }))]} />
           </Field>)}
         <Field label="金额" required hint="USDT，最多六位小数" error={amountIssue}>

@@ -1,5 +1,4 @@
 import type { OpsSku } from "./platform-types";
-import { taskClassNames } from "./task-classes";
 import { shareBaseRateText } from "./operator-copy.ts";
 
 export interface SkuProposalSummary {
@@ -59,7 +58,7 @@ const mediaIdentityText = (value: unknown): string => {
 
 // 高风险审核首先回答“改了哪个字段、从什么改成什么”。库存放在首位，避免长配置挤掉核心变更。
 const SKU_FIELDS: FieldDescriptor[] = [
-  { label: "可跑任务大类", read: (sku) => taskClassNames(sku.allowedTaskClasses), format: text },
+  { label: "任务等级", read: (sku) => (sku.allowedPoolCodes ?? []).join("、") || "未选择", format: text },
   { label: "库存", read: (sku) => sku.stock, format: stock, equal: numberEqual },
   { label: "价格", read: (sku) => sku.price, format: money, equal: numberEqual },
   { label: "月收益目标（USDT）", read: (sku) => sku.monthlyTargetUsdt, format: money, equal: numberEqual },
@@ -79,7 +78,7 @@ const SKU_FIELDS: FieldDescriptor[] = [
   { label: "生命周期", read: (sku) => sku.lifecycle, format: text, equal: stringEqual },
   { label: "解锁条件", read: (sku) => sku.unlock, format: text, equal: stringEqual },
   { label: "商品标签", read: (sku) => sku.tag, format: text, equal: stringEqual },
-  { label: "数据中心", read: (sku) => sku.datacenter, format: text, equal: stringEqual },
+  { label: "托管机房", read: (sku) => sku.datacenter, format: text, equal: stringEqual },
   { label: "GPU", read: (sku) => sku.gpu, format: text, equal: stringEqual },
   { label: "显存", read: (sku) => sku.vram, format: text, equal: stringEqual },
   { label: "算力", read: (sku) => sku.hashRate, format: text, equal: stringEqual },
