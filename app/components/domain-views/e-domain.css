@@ -462,8 +462,18 @@
 .sku-field-hint { color: var(--ink-4); }
 
 /* Task pool and device operations: names, values, then actions. */
-.edom .ops-hint { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; padding:0; width:20px; height:20px; font-size:15px; vertical-align:middle; color:var(--ink-3); border:0; background:none; border-radius:50%; cursor:pointer; }
-.ops-hint-popover { position:fixed; z-index:5000; width:300px; max-width:calc(100vw - 24px); box-sizing:border-box; padding:14px; font-size:13px; line-height:1.7; font-weight:400; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:0 10px 30px #0002; white-space:normal; overflow-wrap:anywhere; }
+.edom .ops-hint { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; padding:0; width:20px; height:20px; font-size:var(--rd-text-body); vertical-align:middle; color:var(--ink-3); border:0; background:none; border-radius:50%; cursor:pointer; }
+.ops-hint-popover { position:fixed; z-index:5000; width:300px; max-width:calc(100vw - 24px); box-sizing:border-box; padding:14px; font-size:var(--rd-text-aux); line-height:1.7; font-weight:400; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:var(--rd-shadow-float); white-space:normal; overflow-wrap:anywhere; }
+.edom .e1-sku-task-policy { gap:14px; }
+.edom .e1-sku-task-policy header { gap:var(--rd-space-2); }
+.edom .e1-sku-task-policy h3 { margin:0; }
+.edom .sku-task-count { display:block; margin-top:var(--rd-space-1); color:var(--ink-3); }
+.edom .sku-task-preview { display:flex; flex-direction:column; gap:6px; padding:12px 14px; }
+.edom .sku-task-preview output { font-size:var(--rd-text-body); }
+.edom .sku-field-error { color:var(--danger); }
+.edom .e-confirm-details { gap:10px; }
+.edom .sku-hosting-field, .edom .phone-task-toggle { gap:var(--rd-space-2); }
+.edom .phone-task-fields { gap:var(--rd-space-4); }
 .edom .tp-levels { gap:10px; flex-wrap:wrap; margin-bottom:20px; }
 .edom .tp-level { display:flex; gap:16px; align-items:center; padding:14px 18px; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--ink-3); cursor:pointer; font-size:14px; }
 .edom .tp-level span { font-variant-numeric:tabular-nums; }
