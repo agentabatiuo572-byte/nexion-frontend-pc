@@ -508,7 +508,7 @@
 .edom .device-activity > summary { cursor:pointer; padding:18px 22px; font-weight:600; }
 .edom .phone-sections { display:flex; flex-direction:column; gap:24px; margin-bottom:24px; }
 
-/* E2 command lists scroll with the modal body, never inside a second list viewport. */
+/* E2 complete lists expand inside the modal body; product popovers have their own bounded viewport. */
 .e2-command-tasks { display: grid; gap: var(--rd-space-2); margin: 0; padding: 0; list-style: none; }
 
 /* E2 follows the panel gutter; each wrapped filter row keeps the shared control baseline. */
@@ -519,3 +519,32 @@
 
 /* Reserve the selection control column so headings, filters and task-name text share one edge. */
 .e2-task-panel .rd-panel[data-flush] > :is(.rd-panel-head, .rd-pager), .e2-task-panel :is(.rd-filter, .rd-batch) { padding-inline-start: calc(var(--rd-panel-pad-x) + var(--rd-space-4) + var(--rd-space-4)); }
+
+/* Equal card slots preserve comparison lines for loading, no enabled tasks and full pools. */
+.e2-levels .rd-stat-main { min-block-size: 57.5px; }
+.e2-card-ratio { display: flex; align-items: center; min-block-size: var(--rd-lh-body); }
+.e2-card-metrics { grid-template-rows: var(--rd-lh-aux) 42px var(--rd-lh-aux); }
+.e2-card-scale { min-block-size: 42px; padding-top: var(--rd-space-1); }
+.e2-product-counts { display: flex; align-content: start; flex-wrap: wrap; gap: 0 var(--rd-space-1); min-block-size: calc(var(--rd-lh-aux) * 2); }
+.e2-product-counts > span { white-space: nowrap; }
+.e2-product-counts [data-empty] { color: var(--rd-text-3); }
+.e2-product-list { max-block-size: min(360px, calc(var(--radix-popover-content-available-height, 70vh) - 32px)); overflow-y: auto; }
+.e2-task-table { table-layout: fixed; }
+.e2-task-table .e2-control-column { width: 44px; }
+.e2-task-table .e2-name-column { width: 58ch; }
+.e2-task-table th:nth-child(2) { padding-inline-start: var(--rd-cell-pad); }
+@container (max-width: 900px) { .e2-levels .rd-stat[data-selected]::after { display: none; } }
+.e2-task-table .rd-cell-main { white-space: normal; overflow-wrap: break-word; }
+.e2-task-table col:nth-child(4) { width: 24%; }
+@media (max-width: 1279px) {
+  .e2-duration > .rd-scale { width: 64px; }
+  .e2-task-table .e2-name-column { width: calc(100% - 432px); }
+  .e2-task-table col:nth-child(3) { width: 112px; }
+  .e2-task-table col:nth-child(4) { width: 168px; }
+  .e2-task-table col:nth-child(5) { width: 108px; }
+}
+@media (max-width: 1100px) {
+  .e2-duration > .rd-scale { display: none; }
+  .e2-task-table .e2-name-column { width: calc(100% - 348px); }
+  .e2-task-table col:nth-child(4) { width: 84px; }
+}
