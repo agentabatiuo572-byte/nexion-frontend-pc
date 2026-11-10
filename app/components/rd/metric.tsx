@@ -67,7 +67,7 @@ export function MetricBoard({ title, explain, tools, meta, rows = 3, long, child
   );
 }
 
-export function MetricCard({ label, value, prefix, unit, compare, rows = [], bar, tone, icon, explain, href, openLabel, state = "ready", onRetry }: {
+export function MetricCard({ label, value, prefix, unit, compare, rows = [], bar, tone, icon, explain, explainAbove, href, openLabel, state = "ready", onRetry }: {
   label: string;
   value: string;
   prefix?: string;
@@ -80,6 +80,7 @@ export function MetricCard({ label, value, prefix, unit, compare, rows = [], bar
   tone?: RoleTone;
   icon?: LucideIcon;
   explain?: ReactNode;
+  explainAbove?: boolean;
   href?: string;
   openLabel?: string;
   state?: "ready" | "loading" | "failed";
@@ -93,7 +94,7 @@ export function MetricCard({ label, value, prefix, unit, compare, rows = [], bar
       <div className="rd-metric-label">
         {icon && <IconTile tone={quiet ? "role-other" : tone ?? "role-other"} icon={icon} size={28} />}
         {label}
-        {explain && <Explain label={`${label}怎么算`} content={explain} />}
+        {explain && <Explain label={`${label}怎么算`} content={explain} side={explainAbove ? "top" : undefined} align={explainAbove ? "start" : undefined} />}
         {href && <ChevronRight className="rd-metric-go" size={16} aria-hidden />}
       </div>
       {state === "loading"

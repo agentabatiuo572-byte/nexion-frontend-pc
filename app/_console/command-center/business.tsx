@@ -248,6 +248,7 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, moneyFlo
             { k: "已停用", v: `${fmtNum(devices.data.stopped)} 台` },
           ] : []}
           explain="只算商城设备，不含手机。总数包含所有商城设备状态；运行中、等待启动和已停用是其中三类，不一定加起来等于总数。等待启动包含待激活、等待初始化和旧任务未结清的设备。这些是此刻的台数，不随时段变。"
+          explainAbove
           href={link("/devices/ops")}
           openLabel="查看设备管理"
           state={cardState(devices)}
