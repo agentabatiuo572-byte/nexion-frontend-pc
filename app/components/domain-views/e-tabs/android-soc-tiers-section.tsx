@@ -62,7 +62,7 @@ export function AndroidSocTiersSection({ rules, removals, published, iosRuleIds,
     setChipForm(null);
   }
 
-  const actions = canWrite && <div className="ios-clear"><Btn disabled={!editable || loading || !!presets || !!chipForm || importOpen} onClick={() => void loadPresets()}>{loading ? "正在读取预设…" : "载入芯片预设"}</Btn>
+  const actions = canWrite && <div className="ios-clear"><Btn disabled={!editable || loading || !!chipForm || importOpen} onClick={() => void loadPresets()}>{loading ? "正在读取预设…" : "载入芯片预设"}</Btn>
     <Btn disabled={!editable} onClick={() => onChange([...rules, blankAndroidRule(rules, iosRuleIds)], removals)}>新增芯片档</Btn></div>;
 
   return <fieldset className="ios-model-rules" aria-label="Android 芯片档">
@@ -73,7 +73,7 @@ export function AndroidSocTiersSection({ rules, removals, published, iosRuleIds,
       {actions}
     </div>}
     {error && !importOpen && <p role="alert">{error}</p>}
-    {importOpen && <Drawer open wide title="载入芯片预设" onClose={()=>setImportOpen(false)} footer={presets ? <Decision primary={<Button variant="primary" disabled={!editable || presets.plan.tiers.length + presets.plan.chips.length + presets.plan.aliases.length === 0 && !(presets.restore && presets.plan.removed.length)} onClick={applyPresets}>加入草稿</Button>} others={<Button onClick={()=>setImportOpen(false)}>取消</Button>}/> : <Decision others={<Button onClick={()=>setImportOpen(false)}>取消</Button>}/> }><div className="e6-legacy-fields ios-import" aria-label="Android 芯片预设导入预览">
+    {importOpen && <Drawer open wide title="载入芯片预设" onClose={()=>{setImportOpen(false);setPresets(null);}} footer={presets ? <Decision primary={<Button variant="primary" disabled={!editable || presets.plan.tiers.length + presets.plan.chips.length + presets.plan.aliases.length === 0 && !(presets.restore && presets.plan.removed.length)} onClick={applyPresets}>加入草稿</Button>} others={<Button onClick={()=>{setImportOpen(false);setPresets(null);}}>取消</Button>}/> : <Decision others={<Button onClick={()=>{setImportOpen(false);setPresets(null);}}>取消</Button>}/> }><div className="e6-legacy-fields ios-import" aria-label="Android 芯片预设导入预览">
       {!presets ? <BlockState state={loading?"loading":"error"} title={loading?"正在读取预设…":"预设加载失败"} detail={error} onRetry={loading?undefined:()=>void loadPresets()}/> : <>
       <h4>导入预览 · {presets.catalog.catalogVersion}</h4>
       <p>核对于 {presets.catalog.verifiedOn}。只补草稿中缺少的芯片档、芯片和标识，不改已有的区间、启停和归档。</p>

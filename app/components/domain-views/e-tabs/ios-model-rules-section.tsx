@@ -94,7 +94,7 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
   }
 
   const actions = canWrite && <div className="ios-actions">
-    <Btn disabled={!editable || loading || !!presets || !!form} onClick={() => void loadPresets()}>{loading ? "正在读取预设…" : "载入 iPhone 机型预设"}</Btn>
+    <Btn disabled={!editable || loading || importOpen || !!form} onClick={() => void loadPresets()}>{loading ? "正在读取预设…" : "载入 iPhone 机型预设"}</Btn>
     <Btn variant="primary" disabled={!editable || rules.length >= 500 || !!form || importOpen || loading}
       onClick={() => setForm(editing(null, blankIosRule(rules, androidRuleIds)))}>新增机型</Btn>
   </div>;
@@ -107,7 +107,7 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
     {rules.length > 0 && actions}
     {error && !importOpen && <p role="alert">{error}</p>}
 
-    {importOpen && <Drawer open wide title="载入 iPhone 机型预设" onClose={()=>setImportOpen(false)} footer={presets ? <Decision primary={<Button variant="primary" disabled={!editable || presets.selected.size === 0 && !(presets.fillFacts && presets.plan.factsFilled.length > 0)} onClick={applyImport}>加入草稿</Button>} others={<Button onClick={()=>setImportOpen(false)}>取消</Button>}/> : <Decision others={<Button onClick={()=>setImportOpen(false)}>取消</Button>}/> }><div className="e6-legacy-fields ios-import" aria-label="iPhone 预设导入预览">
+    {importOpen && <Drawer open wide title="载入 iPhone 机型预设" onClose={()=>{setImportOpen(false);setPresets(null);}} footer={presets ? <Decision primary={<Button variant="primary" disabled={!editable || presets.selected.size === 0 && !(presets.fillFacts && presets.plan.factsFilled.length > 0)} onClick={applyImport}>加入草稿</Button>} others={<Button onClick={()=>{setImportOpen(false);setPresets(null);}}>取消</Button>}/> : <Decision others={<Button onClick={()=>{setImportOpen(false);setPresets(null);}}>取消</Button>}/> }><div className="e6-legacy-fields ios-import" aria-label="iPhone 预设导入预览">
       {!presets ? <BlockState state={loading?"loading":"error"} title={loading?"正在读取预设…":"预设加载失败"} detail={error} onRetry={loading?undefined:()=>void loadPresets()}/> : <>
       <h4>导入预览 · {presets.catalog.catalogVersion}</h4>
       <p>核对于 {presets.catalog.verifiedOn}，从 iPhone 6 起共 {presets.catalog.models.length} 个已售机型。只补草稿中缺少的机型，不覆盖已维护的范围、别名和停用状态。</p>
