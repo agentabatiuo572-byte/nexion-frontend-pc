@@ -10,6 +10,7 @@ import { fetchE1Catalog, type E1CatalogSnapshot, type E1BundleDiscount, type E1G
 import { fetchE3Snapshot } from "@/lib/admin/e3-client";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { roleLabel } from "@/lib/nav/console-nav";
+import { useReach } from "@/lib/nav/use-reach";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
@@ -42,6 +43,8 @@ export function E1Page() {
   const canReadE3 = authorities.includes("device_e3_read");
   const canWrite = authorities.includes("device_e1_write") && authorities.some(a => a === "platform_a2_proposal_create" || a === "platform_a2_write");
   const canQuery = authorities.some(a => a === "platform_a2_read" || a === "platform_a2_proposal_create");
+  const reach = useReach();
+  const canOpenAudit = reach("/platform/audit", "platform_a2_read");
   const forceUnlock = authorities.includes("device_e1_generation_gate_force_unlock"), forceLock = authorities.includes("device_e1_generation_gate_force_lock");
   const [skus, setSkus] = useState<OpsSku[]>([]);
   const [invalid, setInvalid] = useState<E1InvalidSku[]>([]);
@@ -240,10 +243,10 @@ export function E1Page() {
         <Button disabledReason={!canWrite ? "当前账号不能重试" : busy ? "正在提交原操作" : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : undefined} onClick={() => { void send(record, true).catch(failure => toast(e1Error(failure))); }}>按原操作重试</Button>
         {canQuery && <Button disabled={!!busy} onClick={() => void check(record)}>读回核对</Button>}
         {rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button disabled={!!busy} onClick={() => setRelease(record)}>解除待确认</Button>}
-        {canQuery && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}
+        {canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}
       </>}>
         <p>{isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "原对象、内容、理由和命令号已保留；此对象暂停新修改，只能原样重试。"}</p>
-        {!canQuery && <p>可复制原命令号，请有权查看操作记录与审批的管理员核对。</p>}
+        {!canOpenAudit && <p>可复制原命令号，请有权查看操作记录与审批的管理员核对。</p>}
         {notes[record.commandKey] && <p role="status">{notes[record.commandKey]}</p>}
         <Fold inset title="原操作与技术信息" summary={`${businessClock(record.createdAt)} · ${record.commandKey}`}><Facts><Fact k="原对象">{record.spec.obj}</Fact><Fact k="原理由">{record.spec.reason}</Fact><Fact k="命令号">{record.commandKey}</Fact></Facts><pre className="e1-raw">{JSON.stringify(record.spec, null, 2)}</pre><Button size="sm" onClick={() => { void navigator.clipboard.writeText(record.commandKey).then(() => toast("已复制命令号"), () => toast("复制失败，请从技术信息选择命令号")); }}>复制命令号</Button></Fold>
       </Notice>)}
