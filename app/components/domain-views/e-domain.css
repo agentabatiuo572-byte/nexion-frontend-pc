@@ -510,3 +510,9 @@
 
 /* E2 command lists scroll with the modal body, never inside a second list viewport. */
 .e2-command-tasks { display: grid; gap: var(--rd-space-2); margin: 0; padding: 0; list-style: none; }
+
+/* E2 follows the panel gutter; each wrapped filter row keeps the shared control baseline. */
+.e2-task-panel .rd-filter { padding-inline: var(--rd-panel-pad-x); }
+.e2-task-panel .rd-filter-row > [data-cp="filter"] { display: flex; align-items: center; }
+.e2-duration { display: flex; align-items: center; justify-content: flex-end; gap: var(--rd-space-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.e2-duration-value { min-inline-size: 8ch; text-align: right; }
