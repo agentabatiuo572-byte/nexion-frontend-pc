@@ -507,3 +507,29 @@
 .edom .device-activity { margin-top:24px; }
 .edom .device-activity > summary { cursor:pointer; padding:18px 22px; font-weight:600; }
 .edom .phone-sections { display:flex; flex-direction:column; gap:24px; margin-bottom:24px; }
+
+/* E5: device operations. Shared graphics retain their rd styling. */
+.e5-shortcuts, .e5-task-head, .e5-slots { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.e5-shortcuts { gap: 4px; }
+.e5-income, .e5-task, .e5-state { display: flex; flex-direction: column; gap: 5px; }
+.e5-income { align-items: flex-end; }
+.e5-amount { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
+.e5-amount .rd-explain { margin-left: 4px; }
+.e5-sub { display: block; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: 1.5; }
+.e5-task .e5-sub { max-width: 160px; }
+.e5-group-choices { display: grid; gap: 12px; }
+.e5-group-choices > button { justify-content: flex-start; }
+.e5-table { min-width: 760px; }
+.e5-table .e5-device-col { min-width: 132px; max-width: 160px; }
+.e5-table .e5-user-col { min-width: 112px; max-width: 150px; }
+.e5-table .e5-income-col { min-width: 180px; }
+.e5-table .e5-task-col { min-width: 160px; }
+.e5-table .e5-status-col { right: 56px; min-width: 136px; max-width: 160px; text-align: left; }
+.e5-table .e5-action-col { width: 56px; min-width: 56px; max-width: 56px; }
+.e5-table .e5-status-col .rd-th-inner { justify-content: flex-start; }
+.e5-empty-value { white-space: nowrap; }
+
+.e5-list-panel > .rd-filter { padding: 0 var(--rd-panel-pad-x) 12px; }
+.e5-list-panel .e5-table th:first-child, .e5-list-panel .e5-table td:first-child { padding-left: var(--rd-panel-pad-x); }
+.e5-list-panel .e5-table th:last-child, .e5-list-panel .e5-table td:last-child { padding-right: var(--rd-panel-pad-x); }
+.e5-phone-search { flex: 1; min-width: 220px; }

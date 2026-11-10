@@ -435,7 +435,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE1Loading(false);
     }
   }, []);
-  useEffect(() => { if (tab === "E1" || tab === "E5" && canReadE1) void refreshE1(); }, [tab, canReadE1, refreshE1]);
+  useEffect(() => { if (tab === "E1") void refreshE1(); }, [tab, canReadE1, refreshE1]);
   const skus = e1Skus;
   const phaseCur = e1Gates?.phaseCurrent ?? "P3";
   const e1PhaseIds = e1Gates?.phaseOrder?.length
@@ -825,7 +825,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }
     setE5Loading(false);
   }, [tab, e5ProductFilter, e5Keyword, e5SourceFilter, e5Page, e5PageSize, e5StateFilter]);
-  useEffect(() => { if ((tab === "E5" || tab === "E6") && canReadE5) void refreshE5(); }, [tab, canReadE5, refreshE5]);
+  useEffect(() => { if (tab === "E6" && canReadE5) void refreshE5(); }, [tab, canReadE5, refreshE5]);
   const runE5DeviceAction = useCallback(async (deviceId: number, action: "activate" | "deactivate", reason: string) => {
     const device = action === "activate"
       ? await activateE5Device(deviceId, false, reason, operator)
@@ -1228,7 +1228,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const page = (
     <>
-      {tab !== "E4" && <DomainHeader {...meta} right={headerRight} />}
+      {tab !== "E4" && tab !== "E5" && <DomainHeader {...meta} right={headerRight} />}
 
       {tab === "E1" && monthlyPending.map((record) => <div className="dtint warn" role="status" key={record.commandKey}>
         <strong>{record.spec.obj} · 月收益修改结果未确认</strong>
